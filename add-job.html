@@ -1,0 +1,34 @@
+<h2>เพิ่มงานใหม่</h2>
+
+<input id="name" placeholder="ชื่อลูกค้า"><br>
+<input id="phone" placeholder="เบอร์"><br>
+<input id="type" placeholder="ล้าง/ซ่อม/ติดตั้ง"><br>
+<input id="date" type="datetime-local"><br>
+<input id="price" placeholder="ราคา"><br>
+<input id="addr" placeholder="ที่อยู่"><br>
+<input id="team" placeholder="ทีมช่าง"><br><br>
+
+<button onclick="save()">บันทึก</button>
+
+<script>
+function save() {
+  fetch("/jobs", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      customer_name: name.value,
+      customer_phone: phone.value,
+      job_type: type.value,
+      appointment_datetime: date.value,
+      job_price: price.value,
+      address_text: addr.value,
+      technician_team: team.value
+    })
+  })
+  .then(r => r.json())
+  .then(() => {
+    alert("เพิ่มงานแล้ว");
+    location.href = "/admin.html";
+  });
+}
+</script>

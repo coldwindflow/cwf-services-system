@@ -1,0 +1,378 @@
+/* =========================================================
+   CWF – Modern UI (B style)
+   - Mobile-first
+   - Modern card + soft shadow
+   - CWF primary (blue) + accent (yellow)
+   ========================================================= */
+
+:root{
+  --bg: #0b1220;               /* fallback */
+  --surface: #0f172a;          /* fallback */
+
+  /* Light modern */
+  --page: #f5f7fb;
+  --card: #ffffff;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: rgba(15, 23, 42, 0.10);
+
+  /* Brand */
+  --primary: #2563eb;          /* modern blue */
+  --primary-2: #06b6d4;        /* cyan accent */
+  --accent: #fbbf24;           /* modern yellow */
+  --danger: #ef4444;
+  --success: #22c55e;
+
+  --radius: 18px;
+  --shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  --shadow-2: 0 6px 18px rgba(15, 23, 42, 0.10);
+
+  --tap: 46px;                 /* min touch target */
+}
+
+*{ box-sizing:border-box; }
+html,body{ height:100%; }
+body{
+  margin:0;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans Thai", "Noto Sans", sans-serif;
+  background: radial-gradient(1200px 600px at 20% -10%, rgba(37, 99, 235, 0.18), transparent 55%),
+              radial-gradient(900px 500px at 100% 10%, rgba(251, 191, 36, 0.16), transparent 55%),
+              var(--page);
+  color: var(--text);
+}
+
+/* =========================================================
+   🎨 Theme System (ต่อยอด ไม่กระทบของเดิม)
+   - theme-1: เดิม (ไม่มี class ก็ได้)
+   - theme-2: (ปล่อยให้ของเดิมทำงานตามเดิม)  ❗ไม่แตะ
+   - theme-3: เหลืองสด #FFFD01 ชัดบน ไล่ลงน้ำเงิน ~70% + Header Glossy
+   - theme-4: พรีเมี่ยม (โทนทอง/น้ำเงินเข้ม + ลายทางการ)
+   ========================================================= */
+
+/* ---------- Theme 3: Yellow Vivid (#FFFD01) + Blue 70% ---------- */
+body.theme-3{
+  /* พื้นหลัง: เหลืองชัดด้านบน → ไล่ลงน้ำเงิน (ประมาณ 70%) */
+  background:
+    radial-gradient(900px 520px at 15% -10%, rgba(255, 253, 1, 0.55), transparent 58%),
+    radial-gradient(900px 520px at 95% 10%, rgba(37, 99, 235, 0.18), transparent 60%),
+    linear-gradient(180deg,
+      #FFFD01 0%,
+      #FFFD01 20%,
+      #2563eb 70%,
+      #1e40af 100%
+    );
+}
+
+/* Header glossy (Theme 3) */
+body.theme-3 .topbar{
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(15,23,42,0.10);
+  background: linear-gradient(180deg, #FFFD01 0%, #ffd24d 100%);
+}
+body.theme-3 .topbar::before{
+  /* เงาแวววับ */
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(140% 80% at 20% 0%, rgba(255,255,255,0.65), transparent 45%),
+    linear-gradient(180deg, rgba(255,255,255,0.35), transparent 55%);
+  pointer-events:none;
+}
+body.theme-3 .brand .title span{ color: rgba(15,23,42,0.70); }
+
+/* การ์ดโปรไฟล์/แท็บ (Theme 3) */
+body.theme-3 #sec-new{
+  /* บนขาวโทนเดียวกับปุ่ม / ล่างเหลืองโทนเดียวกับ header */
+  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0.98) 42%, rgba(255,253,1,0.92) 100%);
+}
+body.theme-3 .card{ background: rgba(255,255,255,0.92); }
+body.theme-3 #sec-new.card{ border-color: rgba(15,23,42,0.12); }
+
+/* Tab inactive = ขาวนม/ขาวขุ่นแบบไล่เฉด */
+body.theme-3 .tab-btn,
+body.theme-3 .nav-btn{
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,255,255,0.78));
+  color: #1d4ed8;
+  border-color: rgba(15,23,42,0.10);
+}
+body.theme-3 .tab-btn.active,
+body.theme-3 .nav-btn.active{
+  /* ตอนกด ใช้เดิม */
+}
+
+/* ---------- Theme 4: Premium (Formal) ---------- */
+body.theme-4{
+  /* โทนทางการ: ทองอ่อนด้านบน + น้ำเงินเข้ม + ลายเส้นเบาๆ */
+  background:
+    repeating-linear-gradient(135deg, rgba(255,255,255,0.05) 0 14px, rgba(0,0,0,0.02) 14px 28px),
+    radial-gradient(900px 520px at 20% -10%, rgba(255, 215, 0, 0.35), transparent 60%),
+    linear-gradient(180deg,
+      #ffd700 0%,
+      #ffec8a 18%,
+      #1e3a8a 70%,
+      #0b1220 100%
+    );
+}
+body.theme-4 .topbar{
+  position: relative;
+  overflow: hidden;
+  border-color: rgba(15,23,42,0.10);
+  background: linear-gradient(180deg, #ffd700 0%, #fbbf24 100%);
+}
+body.theme-4 .topbar::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background:
+    radial-gradient(120% 80% at 20% 0%, rgba(255,255,255,0.55), transparent 48%),
+    linear-gradient(180deg, rgba(255,255,255,0.25), transparent 60%);
+  pointer-events:none;
+}
+body.theme-4 #sec-new{
+  background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(255,255,255,0.96) 40%, rgba(255,215,0,0.40) 100%);
+}
+body.theme-4 .tab-btn,
+body.theme-4 .nav-btn{
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(255,255,255,0.80));
+  color: #1e3a8a;
+}
+
+/* ---------- App Shell ---------- */
+.app{
+  width:100%;
+  max-width: 460px;
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: 16px 14px 24px;
+  display:flex;
+  flex-direction:column;
+  gap: 14px;
+}
+
+/* Header */
+.topbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.75);
+  backdrop-filter: blur(10px);
+  border-radius: calc(var(--radius) + 6px);
+  box-shadow: var(--shadow);
+}
+.brand{
+  display:flex;
+  align-items:center;
+  gap: 10px;
+  min-width: 0;
+}
+.brand img{
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  object-fit: cover;
+  box-shadow: var(--shadow-2);
+}
+.brand .title{
+  display:flex;
+  flex-direction:column;
+  line-height:1.1;
+  min-width:0;
+}
+.brand .title b{
+  font-size: 14px;
+  letter-spacing: 0.2px;
+}
+.brand .title span{
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow:hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Typography ---------- */
+h1,h2,h3{ margin: 0; }
+h2{
+  font-size: 18px;
+  letter-spacing: 0.2px;
+}
+h3{
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 600;
+}
+hr{
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 10px 0;
+}
+
+/* ---------- Card ---------- */
+.card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
+}
+.card.tight{ padding: 12px; }
+
+.job-card{
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 14px;
+  margin: 10px 0;
+}
+.job-card h3{
+  margin: 0 0 6px 0;
+  font-size: 16px;
+  color: var(--text);
+}
+.job-card p{
+  margin: 6px 0;
+  color: rgba(15, 23, 42, 0.92);
+  font-size: 13px;
+}
+.job-card small{
+  color: var(--muted);
+}
+
+/* ---------- Form Controls ---------- */
+input, select, textarea{
+  width: 100%;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.9);
+  border-radius: 14px;
+  padding: 12px 12px;
+  font-size: 14px;
+  outline: none;
+  transition: 0.15s ease;
+  min-height: var(--tap);
+}
+textarea{ min-height: 110px; resize: vertical; }
+
+input:focus, select:focus, textarea:focus{
+  border-color: rgba(37, 99, 235, 0.55);
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
+}
+
+label{
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 6px;
+  display:block;
+}
+
+/* ---------- Buttons ---------- */
+button{
+  width: 100%;
+  min-height: var(--tap);
+  border: none;
+  border-radius: 14px;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.06s ease, filter 0.15s ease, opacity 0.15s ease;
+  background: linear-gradient(135deg, var(--primary), var(--primary-2));
+  color: #fff;
+  box-shadow: var(--shadow-2);
+}
+button:active{ transform: translateY(1px) scale(0.99); }
+button:hover{ filter: brightness(1.02); }
+
+button.secondary{
+  background: rgba(37, 99, 235, 0.10);
+  color: var(--primary);
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  box-shadow: none;
+}
+button.warning{
+  background: linear-gradient(135deg, var(--accent), #f59e0b);
+  color: #111827;
+}
+button.danger{
+  background: linear-gradient(135deg, #fb7185, var(--danger));
+}
+button:disabled{
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* compact row buttons */
+.row{
+  display:flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.row > *{ flex: 1; min-width: 140px; }
+
+/* ---------- Badge / Status ---------- */
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.8);
+}
+.badge.ok{ border-color: rgba(34,197,94,0.25); color: #15803d; background: rgba(34,197,94,0.10); }
+.badge.wait{ border-color: rgba(251,191,36,0.28); color: #a16207; background: rgba(251,191,36,0.14); }
+.badge.run{ border-color: rgba(37,99,235,0.25); color: #1d4ed8; background: rgba(37,99,235,0.10); }
+.badge.bad{ border-color: rgba(239,68,68,0.25); color: #b91c1c; background: rgba(239,68,68,0.10); }
+
+/* ---------- Helper blocks ---------- */
+.muted{ color: var(--muted); font-size: 12px; }
+.kpi{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  gap: 10px;
+}
+.kpi b{ font-size: 18px; }
+.kpi span{ color: var(--muted); font-size: 12px; }
+
+/* ---------- Pricing box ---------- */
+.pricing-box{
+  margin-top: 10px;
+}
+.pricing-box > div{
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: rgba(255,255,255,0.85);
+}
+
+/* ---------- Links ---------- */
+a{
+  color: var(--primary);
+  text-decoration: none;
+  font-weight: 700;
+}
+a:hover{ text-decoration: underline; }
+
+/* ---------- Mobile safe area ---------- */
+@supports (padding: max(0px)) {
+  .app{ padding-bottom: max(24px, env(safe-area-inset-bottom)); }
+}
+
+
+/* ---------- Mini button (for profile edit) ---------- */
+.btn-mini{
+  width: auto !important;
+  min-height: 36px !important;
+  padding: 8px 10px !important;
+  font-size: 12px !important;
+  border-radius: 12px !important;
+  box-shadow: none !important;
+}

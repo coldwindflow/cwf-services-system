@@ -1,0 +1,352 @@
+// admin-tech.js
+// หน้านี้ใช้สำหรับ: อนุมัติคำขอแก้ไขโปรไฟล์ + จัดการข้อมูลช่าง (รหัส/ตำแหน่ง/รูป)
+// ✅ ต่อเติม ไม่กระทบโค้ดเดิม (ปรับให้ robust: เช็ค res.ok + รองรับรูปแบบ JSON หลายแบบ)
+
+const API = window.location.origin;
+
+// ====== Guard: ต้องเป็น admin ======
+const role = localStorage.getItem("role");
+if (role !== "admin") {
+  alert("ต้องเป็นแอดมินเท่านั้น");
+  location.href = "/login.html";
+}
+
+function esc(s) {
+  return String(s || "").replace(/[&<>"']/g, (m) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#39;"
+  }[m]));
+}
+
+const POS_LABEL = {
+  junior: "Junior Tech",
+  senior: "Senior Tech",
+  lead: "Lead Tech",
+  founder_ceo: "👑 FOUNDER & CEO"
+};
+
+/* =========================================
+   ✅ Helper: fetch JSON แบบทนทาน
+   - เช็ค res.ok
+   - ถ้า backend ส่ง {error:"..."} ให้เอามาโชว์
+   - รองรับ return เป็น [] ตรงๆ หรือ {rows:[]} หรือ {data:[]}
+========================================= */
+/* =========================================
+   ✅ Helper: fetch JSON แบบทนทาน
+   - เช็ค res.ok
+   - ถ้า backend ส่ง {error:"..."} ให้เอามาโชว์
+   - แยกเป็น 2 แบบ:
+     1) fetchJSONAny(): รับได้ทั้ง Object/Array (ใช้กับ approve/reject/save/upload)
+     2) fetchJSONArray(): บังคับให้เป็น Array (ใช้กับ loadRequests/loadTechnicians)
+========================================= */
+async function fetchJSONAny(url, options = {}) {
+  const res = await fetch(url, options);
+
+  let data;
+  try {
+    data = await res.json();
+  } catch (e) {
+    throw new Error(`เซิร์ฟเวอร์ตอบกลับไม่ใช่ JSON (HTTP ${res.status})`);
+  }
+
+  if (!res.ok) {
+    const msg = (data && (data.error || data.message)) ? (data.error || data.message) : `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+
+  return data; // ✅ ไม่บังคับรูปแบบ
+}
+
+async function fetchJSONArray(url, options = {}) {
+  const data = await fetchJSONAny(url, options);
+
+  // ✅ normalize: บางที backend/โค้ดเก่าอาจห่อมาเป็น {rows:[]} หรือ {data:[]}
+  if (Array.isArray(data)) return data;
+  if (data && Array.isArray(data.rows)) return data.rows;
+  if (data && Array.isArray(data.data)) return data.data;
+
+  throw new Error("รูปแบบข้อมูลไม่ถูกต้อง");
+}
+
+
+/* =========================================
+   ====== Load pending requests ======
+   GET /admin/profile/requests
+========================================= */
+async function loadRequests() {
+  const box = document.getElementById("reqList");
+  if (!box) return;
+
+  box.textContent = "กำลังโหลด...";
+  try {
+    const list = await fetchJSONArray(`${API}/admin/profile/requests`);
+
+    if (list.length === 0) {
+      box.innerHTML = "<div class='muted'>✅ ไม่มีคำขอค้าง</div>";
+      return;
+    }
+
+    box.innerHTML = list.map((r) => {
+      const img = r.photo_temp_path
+        ? `<img src="${esc(r.photo_temp_path)}" style="width:56px;height:56px;border-radius:999px;object-fit:cover;border:2px solid rgba(37,99,235,0.25);">`
+        : "";
+
+      return `
+        <div class="job-card">
+          <div style="display:flex;gap:12px;align-items:center;justify-content:space-between;">
+            <div style="display:flex;gap:12px;align-items:center;">
+              ${img}
+              <div>
+                <div><b>${esc(r.username)}</b></div>
+                <div class="muted">ชื่อที่ขอ: ${esc(r.full_name || "-")}</div>
+                <div class="muted">เวลา: ${esc(r.requested_at || "-")}</div>
+              </div>
+            </div>
+            <span class="badge wait">pending</span>
+          </div>
+
+          <hr>
+
+          <div class="grid2">
+            <div>
+              <label>รหัสช่าง (ต้องมี)</label>
+              <input id="req_code_${r.id}" placeholder="เช่น T001" value="${esc(r.technician_code || "")}">
+            </div>
+            <div>
+              <label>ตำแหน่ง</label>
+              <select id="req_pos_${r.id}">
+                <option value="junior">Junior</option>
+                <option value="senior">Senior</option>
+                <option value="lead">Lead</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="row" style="margin-top:10px;">
+            <button type="button" onclick="approveReq(${r.id})">✅ อนุมัติ</button>
+            <button class="danger" type="button" onclick="rejectReq(${r.id})">❌ ปฏิเสธ</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    // set select defaults
+    list.forEach((r) => {
+      const sel = document.getElementById(`req_pos_${r.id}`);
+      if (sel) sel.value = r.position || "junior";
+    });
+
+  } catch (e) {
+    box.innerHTML = `<div style="color:#b91c1c;font-weight:800;">❌ โหลดคำขอไม่สำเร็จ: ${esc(e.message)}</div>`;
+  }
+}
+
+async function approveReq(id) {
+  const code = (document.getElementById(`req_code_${id}`)?.value || "").trim();
+  const position = document.getElementById(`req_pos_${id}`)?.value || "junior";
+
+  if (!code) {
+    alert("ต้องใส่รหัสช่างก่อนอนุมัติ");
+    return;
+  }
+
+  try {
+    await fetchJSONAny(`${API}/admin/profile/requests/${id}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ technician_code: code, position })
+    });
+
+    alert("✅ อนุมัติแล้ว");
+    await loadRequests();
+    await loadTechnicians();
+  } catch (e) {
+    alert("❌ " + e.message);
+  }
+}
+
+async function rejectReq(id) {
+  if (!confirm("ปฏิเสธคำขอนี้?")) return;
+
+  try {
+    await fetchJSONAny(`${API}/admin/profile/requests/${id}/reject`, {
+      method: "POST"
+    });
+
+    alert("✅ ปฏิเสธแล้ว");
+    await loadRequests();
+  } catch (e) {
+    alert("❌ " + e.message);
+  }
+}
+
+/* =========================================
+   ====== Technician management ======
+   GET /admin/technicians
+   PUT /admin/technicians/:username
+   POST /admin/technicians/:username/photo
+========================================= */
+async function loadTechnicians() {
+  const box = document.getElementById("techList");
+  if (!box) return;
+
+  box.textContent = "กำลังโหลด...";
+  try {
+    const list = await fetchJSONArray(`${API}/admin/technicians`);
+
+    if (list.length === 0) {
+      box.innerHTML = "<div class='muted'>ยังไม่มีช่างในระบบ</div>";
+      return;
+    }
+
+    box.innerHTML = list.map((t) => {
+      const imgSrc = t.photo_path ? t.photo_path : "/logo.png";
+      const posLabel = t.position ? (POS_LABEL[t.position] || t.position) : "-";
+      const st = String(t.accept_status || 'ready').toLowerCase();
+      const stBadge = st === 'paused'
+        ? `<span class="badge bad">🔴 หยุดรับงาน</span>`
+        : `<span class="badge ok">🟢 พร้อมรับงาน</span>`;
+
+      return `
+        <div class="job-card">
+          <div style="display:flex;gap:12px;align-items:center;">
+            <img src="${esc(imgSrc)}" style="width:56px;height:56px;border-radius:999px;object-fit:cover;border:2px solid rgba(37,99,235,0.25);background:#fff;">
+            <div style="flex:1;">
+              <div><b>${esc(t.full_name || t.username)}</b> <span class="muted">(${esc(t.username)})</span></div>
+              <div class="muted">รหัสช่าง: <b>${esc(t.technician_code || "-")}</b> · ตำแหน่ง: <b>${esc(posLabel)}</b></div>
+              <div class="muted">⭐ ${esc(t.rating ?? 0)} · ✅ งานสะสม ${esc(t.done_count ?? 0)} · เกรด ${esc(t.grade || "D")}</div>
+              <div style="margin-top:6px;">${stBadge}</div>
+            </div>
+          </div>
+
+          <hr>
+
+          <label>ชื่อแสดงผล</label>
+          <input id="tech_name_${esc(t.username)}" value="${esc(t.full_name || "")}">
+
+          <div class="grid2" style="margin-top:10px;">
+            <div>
+              <label>รหัสช่าง</label>
+              <input id="tech_code_${esc(t.username)}" value="${esc(t.technician_code || "")}" placeholder="เช่น T001">
+            </div>
+            <div>
+              <label>ตำแหน่ง</label>
+              <select id="tech_pos_${esc(t.username)}">
+                <option value="junior">Junior</option>
+                <option value="senior">Senior</option>
+                <option value="lead">Lead</option>
+              </select>
+            </div>
+          </div>
+
+          <label style="margin-top:10px;">อัปโหลดรูปให้ช่าง (จากเครื่อง)</label>
+          <input id="tech_file_${esc(t.username)}" type="file" accept="image/*">
+
+          <div class="row" style="margin-top:10px;">
+            <button type="button" onclick="saveTech('${esc(t.username)}')">💾 บันทึก</button>
+            <button class="secondary" type="button" onclick="uploadTechPhoto('${esc(t.username)}')">📷 อัปโหลดรูป</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    // set select defaults
+    list.forEach((t) => {
+      const sel = document.getElementById(`tech_pos_${t.username}`);
+      if (sel) sel.value = t.position || "junior";
+    });
+
+  } catch (e) {
+    box.innerHTML = `<div style="color:#b91c1c;font-weight:800;">❌ โหลดช่างไม่สำเร็จ: ${esc(e.message)}</div>`;
+  }
+}
+
+async function saveTech(username) {
+  const full_name = (document.getElementById(`tech_name_${username}`)?.value || "").trim();
+  const technician_code = (document.getElementById(`tech_code_${username}`)?.value || "").trim();
+  const position = document.getElementById(`tech_pos_${username}`)?.value || "junior";
+
+  if (!technician_code) {
+    alert("ต้องใส่รหัสช่างก่อนบันทึก");
+    return;
+  }
+
+  try {
+    await fetchJSONAny(`${API}/admin/technicians/${encodeURIComponent(username)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ full_name, technician_code, position })
+    });
+
+    alert("✅ บันทึกแล้ว");
+    await loadTechnicians();
+  } catch (e) {
+    alert("❌ " + e.message);
+  }
+}
+
+async function uploadTechPhoto(username) {
+  const input = document.getElementById(`tech_file_${username}`);
+  const file = input?.files?.[0];
+
+  if (!file) {
+    alert("เลือกรูปก่อน");
+    return;
+  }
+
+  const form = new FormData();
+  form.append("photo", file);
+
+  try {
+    await fetchJSONAny(`${API}/admin/technicians/${encodeURIComponent(username)}/photo`, {
+      method: "POST",
+      body: form
+    });
+
+    alert("✅ อัปโหลดรูปแล้ว");
+    await loadTechnicians();
+  } catch (e) {
+    alert("❌ " + e.message);
+  }
+}
+
+// init
+loadRequests();
+loadTechnicians();
+
+
+/* =========================================
+   ➕ CREATE TECHNICIAN (สร้างไอดีช่าง)
+========================================= */
+async function createTechnician() {
+  const u = document.getElementById("new_username")?.value?.trim();
+  const p = document.getElementById("new_password")?.value?.trim();
+  const full_name = document.getElementById("new_full_name")?.value?.trim();
+  const technician_code = document.getElementById("new_technician_code")?.value?.trim();
+  const position = document.getElementById("new_position")?.value || "junior";
+  const box = document.getElementById("create_result");
+
+  if (!u || !p) {
+    if (box) box.textContent = "❌ ต้องกรอก username และ password";
+    return;
+  }
+
+  try {
+    const data = await fetchJSONAny(`${API}/admin/technicians/create`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: u, password: p, full_name, technician_code, position }),
+    });
+
+    if (box) box.textContent = `✅ สร้างสำเร็จ: ${data.username || u}`;
+
+    // refresh technicians list (ถ้าอยู่แท็บข้อมูลช่าง)
+    try { loadTechnicians(); } catch(e){}
+  } catch (e) {
+    if (box) box.textContent = `❌ ${e.message}`;
+  }
+}
+window.createTechnician = createTechnician;

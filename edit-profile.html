@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>แก้ไขโปรไฟล์ช่าง - CWF</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <img src="/logo.png" alt="CWF">
+        <div class="title">
+          <b>แก้ไขโปรไฟล์ช่าง</b>
+          <span class="muted">การเปลี่ยนชื่อ/รูป ต้องรอแอดมิน “อนุมัติ” ก่อน</span>
+        </div>
+      </div>
+      <button class="secondary" style="width:auto;min-height:40px;padding:10px 12px;" type="button" onclick="history.back()">ย้อนกลับ</button>
+    </div>
+
+    <div class="card">
+      <h2>📌 ข้อมูลปัจจุบัน</h2>
+      <div class="muted" id="currentBox" style="margin-top:8px;">กำลังโหลด...</div>
+    </div>
+
+    <div class="card">
+      <h2>✏️ ส่งคำขอแก้ไขโปรไฟล์</h2>
+
+      <label>ชื่อที่ต้องการแก้ไข</label>
+      <input id="full_name" placeholder="ชื่อ-นามสกุล">
+
+      <label style="margin-top:10px;">อัปโหลดรูปโปรไฟล์ (จากเครื่อง)</label>
+      <input id="photo_file" type="file" accept="image/*">
+
+      <p class="muted" style="margin:10px 0 0;">
+        ✅ ช่างแก้ได้: ชื่อ + รูป<br>
+        ❌ ช่างแก้ไม่ได้: รหัสช่าง / ตำแหน่ง (แอดมินเป็นคนกำหนด)
+      </p>
+
+      <div class="row" style="margin-top:12px;">
+        <button type="button" onclick="submitRequest()">📨 ส่งคำขอ (รออนุมัติ)</button>
+        <button class="secondary" type="button" onclick="resetForm()">ล้างฟอร์ม</button>
+      </div>
+
+      <div id="msg" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+<script>
+const API = window.location.origin;
+const username = localStorage.getItem("username");
+const role = localStorage.getItem("role");
+if(!username || !role){ location.href="/login.html"; }
+
+function esc(s){ return String(s||"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[m])); }
+
+async function loadCurrent(){
+  try{
+    const res = await fetch(`${API}/technicians/${encodeURIComponent(username)}/profile`);
+    const data = await res.json();
+    const box = document.getElementById("currentBox");
+
+    const posMap = {junior:"Junior Tech", senior:"Senior Tech", lead:"Lead Tech"};
+    const pos = data.position ? (posMap[data.position] || data.position) : "-";
+
+    box.innerHTML = `
+      <div>ผู้ใช้: <b>${esc(data.username)}</b></div>
+      <div>รหัสช่าง: <b>${esc(data.technician_code || "-")}</b></div>
+      <div>ตำแหน่ง: <b>${esc(pos)}</b></div>
+      <div>ชื่อ: <b>${esc(data.full_name || data.username)}</b></div>
+      <div class="muted" style="margin-top:6px;">สถานะคำขอ: <b>${esc(data.request_status || "none")}</b></div>
+    `;
+
+    // เติมค่าเริ่มต้นในฟอร์ม
+    document.getElementById("full_name").value = data.full_name || "";
+  }catch(e){
+    document.getElementById("currentBox").textContent = "❌ โหลดข้อมูลไม่สำเร็จ";
+  }
+}
+
+function resetForm(){
+  document.getElementById("photo_file").value = "";
+}
+
+async function submitRequest(){
+  const name = (document.getElementById("full_name").value || "").trim();
+  const file = document.getElementById("photo_file").files[0];
+  const msg = document.getElementById("msg");
+  msg.innerHTML = "";
+
+  if(!name && !file){
+    msg.innerHTML = "<div class='muted'>ใส่ชื่อใหม่ หรือเลือกรูปอย่างน้อย 1 อย่าง</div>";
+    return;
+  }
+
+  const form = new FormData();
+  form.append("username", username);
+  if(name) form.append("full_name", name);
+  if(file) form.append("photo", file);
+
+  try{
+    const res = await fetch(`${API}/profile/request`, { method:"POST", body: form });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error || "ส่งคำขอไม่สำเร็จ");
+    msg.innerHTML = "<div class='muted'>✅ ส่งคำขอแล้ว (รอแอดมินอนุมัติ)</div>";
+    await loadCurrent();
+    resetForm();
+  }catch(e){
+    msg.innerHTML = `<div style="color:#b91c1c;font-weight:800;">❌ ${esc(e.message)}</div>`;
+  }
+}
+
+loadCurrent();
+</script>
+</body>
+</html>

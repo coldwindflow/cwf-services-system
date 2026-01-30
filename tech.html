@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>หน้าช่าง - CWF</title>
+  <link rel="stylesheet" href="style.css">
+
+  <style>
+    .tabs { display:flex; gap:10px; }
+    .tab-btn{
+      flex:1; min-height: 44px; border-radius: 14px;
+      border: 1px solid rgba(15,23,42,0.10);
+      background: rgba(37,99,235,0.08);
+      color: #2563eb; font-weight: 800; box-shadow: none;
+    }
+    .tab-btn.active{
+      background: linear-gradient(135deg, #2563eb, #06b6d4);
+      color: #fff; border: none; box-shadow: var(--shadow-2);
+    }
+
+    .section{ display:none; }
+    .section.active{ display:block; }
+
+    /* ✅ bottom bar ล็อคติดขอบล่างจอมือถือ */
+    .bottom-nav{
+      position: fixed;
+      left: 50%;
+      transform: translateX(-50%);
+      bottom: 0;
+      width: min(460px, calc(100% - 28px));
+      z-index: 999;
+      display:flex;
+      gap:10px;
+      padding: 10px;
+      border-radius: 18px 18px 0 0;
+      border: 1px solid rgba(15,23,42,0.10);
+      background: rgba(255,255,255,0.92);
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow);
+    }
+
+    /* ✅ กัน content โดนเมนูทับ */
+    .app{ padding-bottom: 110px; }
+
+    .nav-btn{
+      flex:1; min-height: 44px; border-radius: 14px;
+      border: 1px solid rgba(15,23,42,0.10);
+      background: rgba(15,23,42,0.04);
+      color: #0f172a; font-weight: 800; box-shadow:none;
+      padding: 10px 8px; font-size: 12px;
+    }
+    .nav-btn.active{
+      background: rgba(37,99,235,0.12);
+      color: #2563eb;
+      border-color: rgba(37,99,235,0.25);
+    }
+
+    /* ✅ โปรไฟล์ช่าง: รูป + ชื่อ + เกรด */
+    .profile-box{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:12px;
+      margin: 6px 0 12px;
+    }
+    .profile-left{
+      display:flex;
+      align-items:center;
+      gap:12px;
+    }
+    .tech-avatar{
+      width:56px;
+      height:56px;
+      border-radius: 999px;
+      border: 3px solid rgba(37,99,235,0.25);
+      object-fit: cover;
+      background:#fff;
+    }
+    .profile-meta b{ font-size:18px; }
+    .profile-meta .muted{ font-size:13px; margin-top:2px; }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <!-- ✅ ใช้ absolute path -->
+        <img src="/logo.png" alt="CWF">
+        <div class="title">
+          <b>CWF – Technician</b>
+          <span id="me">ผู้ใช้: -</span>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:10px;">
+        <!-- 🎨 ปุ่มสลับธีม (ไอคอน) - ต่อเติม ไม่กระทบของเดิม -->
+        <button id="themeToggleBtn" class="btn" type="button"
+          title="สลับธีม"
+          style="width:44px;min-width:44px;min-height:44px;padding:0;border-radius:14px;display:flex;align-items:center;justify-content:center;">
+          🎨
+        </button>
+
+        <button class="danger" style="width:auto;min-height:44px;padding:10px 12px;"
+          type="button" onclick="logout()">ออก</button>
+      </div>
+    </div>
+
+    
+        <!-- ===============================
+         🎛️ แถบควบคุมช่าง (สั้น ชัด ใช้งานจริง)
+         - ปุ่มเดียว สีเขียว/แดง สลับรับงาน/หยุดรับงาน
+         - โซนรับงาน: dropdown (กว้างเท่าปุ่ม) อยู่แถวเดียวกัน
+         - แสดงสถานะใต้แถวปุ่มให้เห็นชัด
+    =============================== -->
+    <div class="card tight" style="margin-top:10px;">
+      <style>
+        /* ✅ แถบควบคุมบนมือถือ: ปุ่ม + โซน กว้างเท่ากัน */
+        .tech-ctrl-row{
+          display:flex;
+          gap:10px;
+          align-items:stretch;
+        }
+        .tech-ctrl-row > *{
+          flex:1;
+          min-width:0;
+        }
+
+        /* ✅ ปุ่มรับงาน/หยุดรับงาน: กว้างเท่ากันตลอด */
+        .accept-btn{
+          width:100%;
+          min-height:44px;
+          border-radius:14px;
+          border:1px solid rgba(15,23,42,0.10);
+          font-weight:900;
+          font-size:14px;
+          display:flex;
+          align-items:center;
+          justify-content:center;
+          gap:8px;
+          padding:10px 12px;
+          box-shadow:none;
+          cursor:pointer;
+          user-select:none;
+          white-space:nowrap;
+        }
+        .accept-btn.ready{
+          background: rgba(34,197,94,0.18);
+          color:#0f172a;
+          border-color: rgba(34,197,94,0.35);
+        }
+        .accept-btn.paused{
+          background: rgba(239,68,68,0.18);
+          color:#0f172a;
+          border-color: rgba(239,68,68,0.35);
+        }
+        .accept-btn:disabled{
+          opacity:0.75;
+          cursor:not-allowed;
+        }
+
+        /* ✅ dropdown โซน: กว้างเท่าปุ่ม */
+        .zone-select{
+          width:100%;
+          min-height:44px;
+          border-radius:14px;
+          border:1px solid rgba(15,23,42,0.10);
+          padding:10px 12px;
+          font-weight:800;
+          font-size:14px;
+          background:#fff;
+        }
+
+        /* ✅ ข้อความสถานะใต้แถว */
+        .accept-hint{
+          margin-top:8px;
+          font-size:12px;
+          color: rgba(15,23,42,0.65);
+        }
+
+        @media (max-width:380px){
+          .accept-btn,.zone-select{ font-size:13px; }
+        }
+      </style>
+
+      <div class="tech-ctrl-row">
+        <button id="acceptToggleBtn" class="accept-btn ready" type="button">
+          🟢 รับงาน
+        </button>
+
+        <select id="zoneSelect" class="zone-select">
+          <!-- ✅ เอาคำว่า "โซนที่รับงาน:" ออก ให้เห็นสั้น ๆ อ่านง่าย -->
+          <option value="">ทุกโซน</option>
+          <option value="สุขุมวิท">สุขุมวิท</option>
+          <option value="อ่อนนุช">อ่อนนุช</option>
+          <option value="พระโขนง">พระโขนง</option>
+          <option value="บางนา">บางนา</option>
+          <option value="ศรีนครินทร์">ศรีนครินทร์</option>
+          <option value="อื่นๆ">อื่นๆ</option>
+        </select>
+      </div>
+
+      <!-- ✅ แสดงสถานะให้เห็นชัด -->
+      <div id="acceptStatusText" class="accept-hint">กำลังโหลดสถานะ...</div>
+
+      <!-- ✅ รองรับหน้าเก่า/โค้ดเดิม (ซ่อนไว้ ไม่ให้รก) -->
+      <select id="acceptStatusSelect" style="display:none;">
+        <option value="ready">ready</option>
+        <option value="paused">paused</option>
+      </select>
+      <div id="att-status" style="display:none;"></div>
+    </div>
+
+<div class="tabs">
+      <button class="tab-btn active" id="tab-new" onclick="switchTab('new')">รับงานใหม่</button>
+      <button class="tab-btn" id="tab-active" onclick="switchTab('active')">งานปัจจุบัน</button>
+      <button class="tab-btn" id="tab-history" onclick="switchTab('history')">ประวัติงาน</button>
+    </div>
+
+    <div class="card section active" id="sec-new">
+      <h2>🧑‍🔧 โปรไฟล์ช่าง</h2>
+
+      <!-- ✅ เพิ่มชื่อ/เกรด/รูปช่าง -->
+      <div class="profile-box">
+        <div class="profile-left">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
+            <img id="profile-photo" class="tech-avatar" src="/logo.png" alt="photo">
+            <!-- ✅ ปุ่มเล็กใต้รูป (ไม่รก) -->
+            <button class="secondary btn-mini" type="button" onclick="goEditProfile()" style="min-height:32px;padding:6px 10px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;">✏️ <span>แก้โปรไฟล์</span></button>
+          </div>
+
+          <div class="profile-meta">
+            <b id="profile-name">-</b>
+            <div class="muted" id="profile-code">รหัสช่าง: -</div>
+            <div class="muted" id="profile-position">ตำแหน่ง: -</div>
+            <div class="muted" id="profile-grade">เกรด: -</div>
+            <!-- ✅ ใช้โชว์สถานะคำขอโปรไฟล์ -->
+            <div class="muted" id="profile-hint" style="margin-top:4px;"></div>
+          </div>
+        </div>
+
+        <div class="muted" style="text-align:right;">
+          <div>⭐ คะแนน: <b id="rating">-</b></div>
+          <div>✅ งานสะสม: <b id="doneCount">-</b></div>
+        </div>
+      </div>
+
+      <hr>
+
+      <!-- ✅ กันหัวข้อซ้อน ให้เหลืออันเดียว -->
+      <h2 style="margin-top:6px;">📨 งานที่แนะนำ (รับภายใน 10 นาที)</h2>
+      <div id="offer-list"></div>
+    </div>
+
+    <div class="card section" id="sec-active">
+      <h2>🧰 งานปัจจุบัน</h2>
+      <!-- ✅ ต้องตรงกับ app.js -->
+      <div id="active-list"></div>
+    </div>
+
+    <div class="card section" id="sec-history">
+      <h2>📚 ประวัติงาน</h2>
+      <!-- ✅ ต้องตรงกับ app.js -->
+      <div id="history-list"></div>
+    </div>
+  </div>
+
+  <!-- ✅ bottom nav ล็อค -->
+  <div class="bottom-nav">
+    <button class="nav-btn active" id="nav-new" onclick="switchTab('new')">🏠 รับงานใหม่</button>
+    <button class="nav-btn" id="nav-active" onclick="switchTab('active')">🧰 งานปัจจุบัน</button>
+    <button class="nav-btn" id="nav-history" onclick="switchTab('history')">📚 ประวัติงาน</button>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+        function goEditProfile(){ location.href = '/edit-profile.html'; }
+
+function logout(){
+      localStorage.removeItem("username");
+      localStorage.removeItem("role");
+      location.href = "/login.html";
+    }
+
+    function switchTab(key){
+      ["new","active","history"].forEach(k=>{
+        document.getElementById("sec-"+k).classList.toggle("active", k===key);
+        document.getElementById("tab-"+k).classList.toggle("active", k===key);
+        document.getElementById("nav-"+k).classList.toggle("active", k===key);
+      });
+    }
+  </script>
+</body>
+</html>

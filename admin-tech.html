@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>จัดการช่าง - CWF Admin</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .tabs { display:flex; gap:10px; }
+    .tab-btn{
+      flex:1; min-height: 44px; border-radius: 14px;
+      border: 1px solid rgba(15,23,42,0.10);
+      background: rgba(37,99,235,0.08);
+      color: #2563eb; font-weight: 800; box-shadow: none;
+    }
+    .tab-btn.active{
+      background: linear-gradient(135deg, #2563eb, #06b6d4);
+      color: #fff; border: none; box-shadow: var(--shadow-2);
+    }
+    .section{ display:none; }
+    .section.active{ display:block; }
+    .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:10px; }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <img src="/logo.png" alt="CWF">
+        <div class="title">
+          <b>👷 จัดการช่าง</b>
+          <span class="muted">อนุมัติโปรไฟล์ / แก้ข้อมูลช่าง / อัปโหลดรูป</span>
+        </div>
+      </div>
+      <button class="secondary" style="width:auto;min-height:40px;padding:10px 12px;" type="button" onclick="location.href='/admin.html'">กลับหน้าเพิ่มงาน</button>
+    </div>
+
+    <div class="tabs">
+      <button class="tab-btn active" id="tab-req" onclick="switchTab('req')">📨 คำขออนุมัติ</button>
+      <button class="tab-btn" id="tab-tech" onclick="switchTab('tech')">🧑‍🔧 ข้อมูลช่าง</button>
+      <button class="tab-btn" id="tab-create" onclick="switchTab('create')">➕ สร้างไอดีช่าง</button>
+    </div>
+
+    <div class="card section active" id="sec-req">
+      <h2>📨 คำขอแก้ไขโปรไฟล์ (รออนุมัติ)</h2>
+      <div id="reqList" class="muted" style="margin-top:10px;">กำลังโหลด...</div>
+    </div>
+
+    <div class="card section" id="sec-tech">
+      <h2>🧑‍🔧 รายชื่อช่าง / แก้ไขโปรไฟล์</h2>
+      <div class="muted" style="margin-top:8px;">
+        - ใส่ “รหัสช่าง” / “ตำแหน่ง” จากหน้านี้ได้<br>
+        - อัปโหลดรูปให้ช่างได้ (กรณีช่างไม่สะดวก)
+      </div>
+      <div id="techList" class="muted" style="margin-top:10px;">กำลังโหลด...</div>
+    </div>
+  
+    <div class="card section" id="sec-create">
+      <h2>➕ สร้างไอดีช่างใหม่</h2>
+      <div class="muted" style="margin-top:8px;">สร้าง user ช่าง + โปรไฟล์ช่างในครั้งเดียว</div>
+
+      <div class="grid2" style="margin-top:10px;">
+        <input id="new_username" placeholder="username เช่น tech5">
+        <input id="new_password" placeholder="password">
+        <input id="new_full_name" placeholder="ชื่อ-นามสกุล">
+        <input id="new_technician_code" placeholder="รหัสช่าง (ถ้ามี)">
+      </div>
+
+      <select id="new_position" style="margin-top:10px;">
+        <option value="junior">junior</option>
+        <option value="senior">senior</option>
+        <option value="lead">lead</option>
+      </select>
+
+      <div class="row" style="margin-top:10px;">
+        <button type="button" onclick="createTechnician()">✅ สร้างไอดีช่าง</button>
+      </div>
+
+      <div id="create_result" class="muted" style="margin-top:10px;"></div>
+    </div>
+
+</div>
+
+<script src="/admin-tech.js"></script>
+<script>
+  function switchTab(key){
+    ["req","tech","create"].forEach(k=>{
+      document.getElementById("sec-"+k).classList.toggle("active", k===key);
+      document.getElementById("tab-"+k).classList.toggle("active", k===key);
+    });
+  }
+</script>
+</body>
+</html>

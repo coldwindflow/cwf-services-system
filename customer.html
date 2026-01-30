@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CWF - จองคิวงาน</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="theme-2">
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <img src="/logo.png" alt="CWF">
+        <div class="title">
+          <b>📅 จองคิวงาน (ลูกค้า)</b>
+          <span class="muted">Coldwindflow air services</span>
+        </div>
+      </div>
+      <button class="secondary" style="width:auto;min-height:40px;padding:10px 12px;" type="button"
+        onclick="location.href='/track.html'">🔎 ติดตามงาน</button>
+    </div>
+
+    <div class="card">
+      <h2>1) เลือกวัน/เวลา</h2>
+
+      <div class="grid2">
+        <input id="date" type="date">
+        <button type="button" onclick="loadSlots()">🔄 โหลดเวลาว่าง</button>
+      </div>
+
+      <div id="slots" class="muted" style="margin-top:10px;">เลือกวันที่แล้วกด “โหลดเวลาว่าง”</div>
+
+      <div class="muted" style="margin-top:8px;">เวลาที่เลือก: <b id="picked">-</b></div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <h2>2) กรอกข้อมูล</h2>
+
+      <input id="customer_name" placeholder="ชื่อ-นามสกุล">
+      <input id="customer_phone" placeholder="เบอร์โทร (ถ้ามี)">
+
+      <select id="job_type">
+        <option value="">-- เลือกประเภทงาน --</option>
+        <option value="ล้าง">ล้าง</option>
+        <option value="ซ่อม">ซ่อม</option>
+        <option value="ติดตั้ง">ติดตั้ง</option>
+      </select>
+
+      <input id="address_text" placeholder="ที่อยู่ (สำคัญ)">
+      <input id="maps_url" type="url" placeholder="ลิงก์ Google Maps (ถ้ามี) — แนะนำ: ปักหมุดแล้วแชร์ลิงก์มาวาง">
+      <textarea id="customer_note" rows="3" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"></textarea>
+<hr style="margin:14px 0;">
+<h2 style="margin:0 0 8px;">3) เลือกรายการบริการ/สินค้า</h2>
+<div class="muted" style="margin-bottom:8px;">
+  * เลือกรายการให้ตรงกับประเภทแอร์/จำนวนเครื่อง เพื่อให้แอดมินมอบหมายงาน + สรุปราคาได้ถูกต้อง<br>
+  * โปรโมชั่นให้แอดมินเป็นคนใส่/ลบเท่านั้น
+</div>
+
+<select id="catalog_select">
+  <option value="">-- เลือกรายการ --</option>
+</select>
+
+<div class="grid2" style="margin-top:8px;">
+  <input id="item_qty" type="number" step="1" min="1" value="1" placeholder="จำนวน">
+  <button type="button" class="secondary" onclick="addItem()">➕ เพิ่มรายการ</button>
+</div>
+
+<div id="items_preview" class="muted" style="margin-top:10px;">ยังไม่มีรายการ</div>
+<p style="margin-top:10px;">💵 <b>ยอดรวมประมาณ:</b> <span id="grand_total">0</span> บาท</p>
+
+      <button type="button" onclick="book()" style="margin-top:10px;">✅ ยืนยันจอง</button>
+
+      <div id="result" class="muted" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+<script>
+const API = window.location.origin;
+let pickedTime = null;
+let jobItems = [];      // [{item_id, item_name, qty, unit_price}]
+let catalogItems = [];
+
+// โหลดรายการจากฝั่งแอดมิน (catalog)
+fetch(`${API}/catalog/items`)
+  .then(r => r.json())
+  .then(items => {
+    catalogItems = Array.isArray(items) ? items : [];
+    const cs = document.getElementById("catalog_select");
+    if(!cs) return;
+    cs.innerHTML = `<option value="">-- เลือกรายการ --</option>`;
+    catalogItems.forEach(it=>{
+      const opt = document.createElement("option");
+      opt.value = it.item_id;
+      opt.textContent = `${it.item_name} (${Number(it.base_price)} บาท/${it.unit_label})`;
+      cs.appendChild(opt);
+    });
+  })
+  .catch(()=>{ /* เงียบไว้ */ });
+
+function addItem(){
+  const id = Number(document.getElementById("catalog_select").value);
+  const qty = Number(document.getElementById("item_qty").value || 1);
+  if(!id) return alert("เลือกรายการก่อน");
+  if(qty <= 0) return alert("จำนวนต้องมากกว่า 0");
+
+  const found = catalogItems.find(x => Number(x.item_id) === id);
+  if(!found) return alert("ไม่พบรายการ");
+
+  const existed = jobItems.find(x => Number(x.item_id) === id);
+  if(existed) existed.qty += qty;
+  else jobItems.push({ item_id: found.item_id, item_name: found.item_name, qty, unit_price: Number(found.base_price||0) });
+
+  renderItems();
+}
+
+function removeItem(id){
+  jobItems = jobItems.filter(x => Number(x.item_id) !== Number(id));
+  renderItems();
+}
+
+function renderItems(){
+  const box = document.getElementById("items_preview");
+  const totalBox = document.getElementById("grand_total");
+  if(!box || !totalBox) return;
+
+  if(!jobItems.length){
+    box.textContent = "ยังไม่มีรายการ";
+    totalBox.textContent = "0";
+    return;
+  }
+
+  let total = 0;
+  const html = jobItems.map(it=>{
+    const line = Number(it.qty||0)*Number(it.unit_price||0);
+    total += line;
+    return `<div style="display:flex;justify-content:space-between;gap:10px;margin:6px 0;">
+      <div>• ${it.item_name} x${it.qty}</div>
+      <div>
+        <b>${line.toFixed(0)}</b> บาท
+        <button type="button" class="danger" style="width:auto;min-height:34px;padding:6px 10px;margin-left:8px;"
+          onclick="removeItem(${it.item_id})">ลบ</button>
+      </div>
+    </div>`;
+  }).join("");
+
+  box.innerHTML = html;
+  totalBox.textContent = total.toFixed(0);
+}
+
+function setPicked(time){
+  pickedTime = time;
+  document.getElementById("picked").textContent = time || "-";
+}
+
+function loadSlots(){
+  const d = document.getElementById("date").value;
+  if(!d) return alert("เลือกวันที่ก่อน");
+  setPicked(null);
+
+  const slotsBox = document.getElementById("slots");
+  slotsBox.textContent = "กำลังโหลด...";
+
+  fetch(`${API}/public/availability?date=${encodeURIComponent(d)}&slot_min=30`)
+    .then(r=>r.json())
+    .then(data=>{
+      if(data.error) throw new Error(data.error);
+      if(!data.slots || !data.slots.length){
+        slotsBox.textContent = "ไม่พบช่วงเวลา";
+        return;
+      }
+
+      const html = data.slots.map(s=>{
+        const disabled = s.available ? "" : "disabled";
+        const cls = s.available ? "" : "secondary";
+        return `<button type="button" class="${cls}" style="width:auto;min-height:40px;margin:4px;" ${disabled}
+                  onclick="setPicked('${s.time}')">${s.time}</button>`;
+      }).join("");
+
+      slotsBox.innerHTML = `<div class="muted">ความจุทีมวันนี้: ${data.tech_count} | งานทับช่วง: ใช้คำนวณอัตโนมัติ</div>
+                            <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">${html}</div>`;
+    })
+    .catch(e=>{
+      slotsBox.textContent = "❌ โหลดเวลาว่างไม่สำเร็จ";
+      console.error(e);
+    });
+}
+
+function book(){
+  const d = document.getElementById("date").value;
+  if(!d) return alert("เลือกวันที่ก่อน");
+  if(!pickedTime) return alert("เลือกเวลาว่างก่อน");
+
+  const customer_name = document.getElementById("customer_name").value.trim();
+  const customer_phone = document.getElementById("customer_phone").value.trim();
+  const job_type = document.getElementById("job_type").value.trim();
+  const address_text = document.getElementById("address_text").value.trim();
+  const maps_url = document.getElementById("maps_url").value.trim();
+  const customer_note = document.getElementById("customer_note").value.trim();
+
+  if(!customer_name || !job_type || !address_text){
+    return alert("กรอกข้อมูลให้ครบ (ชื่อ/ประเภทงาน/ที่อยู่)");
+  }
+
+  // combine date + time -> ISO-like string local (backend จะเก็บเป็น timestamp)
+  const appointment_datetime = `${d}T${pickedTime}:00`;
+
+  fetch(`${API}/public/book`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ customer_name, customer_phone, job_type, appointment_datetime, address_text, maps_url, customer_note, items: jobItems.map(x=>({item_id:x.item_id, qty:x.qty})) })
+  })
+  .then(async r=>{
+    const data = await r.json().catch(()=> ({}));
+    if(!r.ok) throw new Error(data.error || "จองไม่สำเร็จ");
+    return data;
+  })
+  .then(data=>{
+    const box = document.getElementById("result");
+    const token = data.token;
+    box.innerHTML = `✅ จองสำเร็จ!<br>
+      <b>เลข Booking:</b> <span style="font-size:18px;">${data.booking_code || '-'}</span><br>
+      <b>รหัสติดตาม (token):</b> <span style="font-size:14px;">${token}</span><br>
+      <button type="button" class="secondary" style="width:auto;min-height:40px;margin-top:8px;"
+        onclick="location.href='/track.html?q=${encodeURIComponent(data.booking_code || token)}'">🔎 ไปหน้าติดตามงาน</button>`;
+  })
+  .catch(e=>{
+    alert(`❌ ${e.message}`);
+  });
+}
+</script>
+</body>
+</html>

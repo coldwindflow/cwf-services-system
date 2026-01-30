@@ -1,0 +1,1258 @@
+// =======================================
+// 🔧 CONFIG
+// =======================================
+// ใช้ origin เดียวกับเว็บที่เปิดอยู่ (เสถียรสุด ไม่ต้องแก้ IP)
+const API_BASE = window.location.origin;
+
+// =======================================
+// 📦 DOM (ต้องตรงกับ tech.html)
+// =======================================
+const offerList = document.getElementById("offer-list");
+
+// ✅ ใช้ id ให้ตรงกับ tech.html
+const activeJobsEl =
+  document.getElementById("active-list") || document.getElementById("active-jobs");
+const historyJobsEl =
+  document.getElementById("history-list") || document.getElementById("history-jobs");
+
+// ✅ โปรไฟล์
+const meEl = document.getElementById("me");
+const profileNameEl = document.getElementById("profile-name");
+const profileGradeEl = document.getElementById("profile-grade");
+const profilePhotoEl = document.getElementById("profile-photo");
+const ratingEl = document.getElementById("rating");
+const doneCountEl = document.getElementById("doneCount");
+const profileCodeEl = document.getElementById("profile-code");
+const profilePositionEl = document.getElementById("profile-position");
+const profileHintEl = document.getElementById("profile-hint");
+
+// ✅ แถบควบคุมช่าง (dropdown)
+const acceptStatusSelect = document.getElementById("acceptStatusSelect");
+const zoneSelect = document.getElementById("zoneSelect");
+
+
+// =======================================
+// 🔐 AUTH CHECK
+// =======================================
+const username = localStorage.getItem("username");
+const role = localStorage.getItem("role");
+
+if (!username || !role) {
+  location.href = "/login.html";
+}
+
+// =======================================
+// 🎨 THEME (Theme 2/3/4)
+// - theme-2: ของเดิม (ห้ามแตะ)
+// - theme-3: เหลือง #FFFD01 ชัด + ไล่น้ำเงิน ~70% + Header Glossy
+// - theme-4: พรีเมี่ยม (โทนทอง/น้ำเงินเข้ม)
+// หมายเหตุ: ใช้ class ที่ <body> เพื่อไม่ไปกระทบส่วนอื่น
+// =======================================
+
+const THEME_KEY = "cwf_theme";
+const themeToggleBtn = document.getElementById("themeToggleBtn");
+
+// ✅ วน 2 -> 3 -> 4 -> 2 (ตามที่คุย: Theme 2 ไม่แตะ, เพิ่ม 3/4)
+const THEMES = [2, 3, 4];
+
+function applyTheme(themeNo) {
+  const n = Number(themeNo) || 2;
+  // ลบทุก theme class ก่อน เพื่อกันซ้อน
+  document.body.classList.remove("theme-1", "theme-2", "theme-3", "theme-4");
+  document.body.classList.add(`theme-${n}`);
+  localStorage.setItem(THEME_KEY, String(n));
+}
+
+// ✅ init theme (ค่าเริ่มต้น = 2)
+applyTheme(localStorage.getItem(THEME_KEY) || 2);
+
+// ✅ ปุ่มสลับธีม (ไอคอน)
+if (themeToggleBtn) {
+  themeToggleBtn.addEventListener("click", () => {
+    const current = Number(localStorage.getItem(THEME_KEY) || 2);
+    const idx = THEMES.indexOf(current);
+    const next = THEMES[(idx + 1 + THEMES.length) % THEMES.length];
+    applyTheme(next);
+  });
+}
+
+
+// =======================================
+// 🕘 TECH CONTROLS (สถานะรับงาน + โซนรับงาน) — "เอาที่เดียวจบ"
+// - รองรับทั้ง UI แบบปุ่ม (ใหม่) และ dropdown (เก่า) เพื่อไม่พัง
+// - ❗ สำคัญ: ห้ามค้าง "กำลังโหลด..." → ถ้าโหลดไม่ได้ก็ยังให้กดได้
+// =======================================
+
+const acceptToggleBtn = document.getElementById("acceptToggleBtn");
+const acceptStatusText = document.getElementById("acceptStatusText");
+
+// ✅ เก็บสถานะล่าสุดไว้ในเครื่อง (กันโหลดไม่ได้/กัน SW แคชพัง)
+const LS_ACCEPT_KEY = "cwf_accept_status";
+
+// ✅ แปลงสถานะให้ชัวร์
+function normalizeAcceptStatus(st) {
+  const v = String(st || "ready").toLowerCase();
+  return (v === "paused") ? "paused" : "ready";
+}
+
+// ✅ อัปเดต UI ปุ่ม/ข้อความ (ไม่ผูกกับ API)
+function renderAcceptUI(status, updatedAtText, note) {
+  const st = normalizeAcceptStatus(status);
+
+  // dropdown เก่า (ซ่อนไว้ แต่คงค่าไว้เพื่อ compatibility)
+  if (acceptStatusSelect) acceptStatusSelect.value = st;
+
+  // ปุ่มใหม่
+  if (acceptToggleBtn) {
+    acceptToggleBtn.dataset.status = st;
+    acceptToggleBtn.classList.remove("ready", "paused");
+    acceptToggleBtn.classList.add(st);
+
+    // ทำให้ "กว้างเท่ากัน" ตลอด โดยไม่เปลี่ยน padding/ขนาด
+    acceptToggleBtn.innerHTML = (st === "paused")
+      ? "🔴 หยุดรับงาน"
+      : "🟢 รับงาน";
+  }
+
+  // ข้อความสถานะด้านล่าง (ให้เห็นชัด)
+  if (acceptStatusText) {
+    acceptStatusText.textContent =
+      (st === "paused" ? "⛔ ไม่ได้รับงานอยู่" : "✅ กำลังรับงานอยู่")
+      + (updatedAtText ? ` · อัปเดต: ${updatedAtText}` : "")
+      + (note ? ` · ${note}` : "");
+  }
+
+  // att-status เก่า (ซ่อน) เผื่อโค้ดอื่นอ่านค่า
+  const oldBox = document.getElementById("att-status");
+  if (oldBox) oldBox.textContent = (st === "paused") ? "paused" : "ready";
+}
+
+// ✅ โหลดสถานะจาก Server (แต่ไม่ให้ค้าง)
+async function loadAcceptStatusSafe() {
+  // แสดงสถานะจาก localStorage ก่อน (เร็ว และกันค้าง)
+  const cached = normalizeAcceptStatus(localStorage.getItem(LS_ACCEPT_KEY) || "ready");
+  renderAcceptUI(cached, null, "กำลังซิงก์...");
+
+  try {
+    // timeout กันค้างเน็ต/endpoint ไม่ตอบ
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 5000);
+
+    const res = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/accept-status`, {
+      signal: controller.signal
+    });
+    clearTimeout(t);
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "โหลดสถานะไม่สำเร็จ");
+
+    const st = normalizeAcceptStatus(data.accept_status);
+    localStorage.setItem(LS_ACCEPT_KEY, st);
+
+    const at = data.accept_status_updated_at
+      ? new Date(data.accept_status_updated_at).toLocaleString("th-TH")
+      : null;
+
+    renderAcceptUI(st, at, null);
+  } catch (e) {
+    // ❗ ห้ามค้าง: ใช้ค่าสุดท้าย และปล่อยให้กดได้
+    console.warn("loadAcceptStatusSafe:", e?.message || e);
+    const st = normalizeAcceptStatus(localStorage.getItem(LS_ACCEPT_KEY) || "ready");
+    renderAcceptUI(st, null, "ออฟไลน์/โหลดไม่สำเร็จ");
+  } finally {
+    // ปุ่มต้องกดได้เสมอ (ยกเว้นตอนกำลังบันทึกจริงๆ)
+    if (acceptToggleBtn) acceptToggleBtn.disabled = false;
+  }
+}
+
+// ✅ ส่งสถานะไป Server (optimistic UI)
+async function setAcceptStatusSafe(nextStatus) {
+  const st = normalizeAcceptStatus(nextStatus);
+
+  // ป้องกันกดรัว
+  if (acceptToggleBtn) acceptToggleBtn.disabled = true;
+
+  // เปลี่ยน UI ทันที (ให้รู้สึกทำงาน)
+  localStorage.setItem(LS_ACCEPT_KEY, st);
+  renderAcceptUI(st, null, "กำลังบันทึก...");
+
+  try {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 7000);
+
+    const res = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/accept-status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: st }),
+      signal: controller.signal
+    });
+
+    clearTimeout(t);
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "ตั้งค่าสถานะไม่สำเร็จ");
+
+    // sync final
+    const finalSt = normalizeAcceptStatus(data.accept_status || st);
+    localStorage.setItem(LS_ACCEPT_KEY, finalSt);
+    renderAcceptUI(finalSt, null, null);
+
+    // รีเฟรช offer ตามสถานะ
+    if (typeof loadOffers === "function") loadOffers();
+  } catch (e) {
+    console.warn("setAcceptStatusSafe:", e?.message || e);
+
+    // rollback เป็นค่าสถานะล่าสุดที่เชื่อถือได้ (ก่อนเปลี่ยน)
+    const rollback = normalizeAcceptStatus(localStorage.getItem(LS_ACCEPT_KEY) || "ready");
+    renderAcceptUI(rollback, null, "บันทึกไม่สำเร็จ");
+    alert(`❌ ${e.message || "บันทึกไม่สำเร็จ"}`);
+  } finally {
+    if (acceptToggleBtn) acceptToggleBtn.disabled = false;
+  }
+}
+
+// ✅ โซน (เหมือนเดิม แต่ทำให้ไม่พังแม้ backend ไม่ตอบ)
+async function updateZone(zone) {
+  const z = String(zone || "").trim();
+  try {
+    localStorage.setItem("cwf_zone", z);
+
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), 7000);
+
+    const res = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/zone`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ zone: z }),
+      signal: controller.signal
+    });
+    clearTimeout(t);
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "บันทึกโซนไม่สำเร็จ");
+  } catch (e) {
+    console.warn("updateZone:", e?.message || e);
+  } finally {
+    // กรอง offer ใหม่
+    if (typeof loadOffers === "function") loadOffers();
+  }
+}
+
+// ✅ bind controls (ทั้งปุ่มใหม่ + dropdown เก่า)
+function bindTechControls() {
+  // ปุ่มใหม่
+  if (acceptToggleBtn) {
+    acceptToggleBtn.onclick = () => {
+      const cur = normalizeAcceptStatus(acceptToggleBtn.dataset.status || localStorage.getItem(LS_ACCEPT_KEY) || "ready");
+      const next = (cur === "paused") ? "ready" : "paused";
+      setAcceptStatusSafe(next);
+    };
+  }
+
+  // dropdown เก่า (เผื่อบางเครื่องยังใช้)
+  if (acceptStatusSelect) {
+    acceptStatusSelect.onchange = () => setAcceptStatusSafe(acceptStatusSelect.value);
+  }
+
+  if (zoneSelect) {
+    zoneSelect.onchange = () => updateZone(zoneSelect.value);
+  }
+}
+
+// expose for compatibility (inline onclick)
+async function clockIn() { return setAcceptStatusSafe("ready"); }
+async function clockOut() { return setAcceptStatusSafe("paused"); }
+window.clockIn = clockIn;
+window.clockOut = clockOut;
+
+// ✅ init: ห้ามค้างกำลังโหลด
+(function initTechControlsOnce(){
+  // set zone from localStorage
+  if (zoneSelect) zoneSelect.value = localStorage.getItem("cwf_zone") || "";
+
+  bindTechControls();
+  loadAcceptStatusSafe();
+})();
+
+
+// =======================================
+// 👤 PROFILE UI
+// =======================================
+
+// ✅ คำนวณเกรดจากจำนวนงานเสร็จ
+function calcGrade(doneCount) {
+  if (doneCount >= 20) return "A";
+  if (doneCount >= 10) return "B";
+  if (doneCount >= 5) return "C";
+  return "D";
+}
+
+// ✅ alias กันพัง (ของเดิมบางส่วนเรียกชื่อฟังก์ชันนี้)
+function calcGradeFromDone(doneCount) {
+  return calcGrade(doneCount);
+}
+
+// ✅ แปลงตำแหน่งจากค่าฐานข้อมูล -> ข้อความแสดงผล
+function prettyPosition(pos) {
+  const p = String(pos || "").trim();
+  if (p === "founder_ceo") return "👑 FOUNDER & CEO";
+  if (p === "junior") return "Junior Tech";
+  if (p === "senior") return "Senior Tech";
+  if (p === "lead") return "Lead Tech";
+  return p || "-";
+}
+
+async function loadProfile() {
+  try {
+    const res = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/profile`);
+    const data = await res.json();
+
+    // Top user line
+    if (meEl) meEl.textContent = `ผู้ใช้: ${data.username || username || "-"}`;
+
+    // Name
+    const displayName = data.full_name || data.username || username || "-";
+    if (profileNameEl) profileNameEl.textContent = displayName;
+
+    // Technician code
+    if (profileCodeEl) profileCodeEl.textContent = `รหัสช่าง: ${data.technician_code || "-"}`;
+
+    // ✅ Position label (รองรับ founder_ceo)
+    if (profilePositionEl) {
+      profilePositionEl.textContent = `ตำแหน่ง: ${prettyPosition(data.position)}`;
+    }
+
+    // Grade / stats
+    const done = Number(data.done_count ?? 0);
+    const grade = data.grade || calcGradeFromDone(done);
+    if (profileGradeEl) profileGradeEl.textContent = `เกรด: ${grade}`;
+    if (ratingEl) ratingEl.textContent = (data.rating ?? 0).toString();
+    if (doneCountEl) doneCountEl.textContent = done.toString();
+
+    // Photo (serve from /uploads)
+    const photo = data.photo_path || "/logo.png";
+    if (profilePhotoEl) profilePhotoEl.src = photo;
+
+    // ✅ โซนรับงาน (แอดมิน/ช่างตั้งไว้)
+    const pz = String(data.preferred_zone || "").trim();
+    if (zoneSelect) {
+      const cached = String(localStorage.getItem("cwf_zone") || "").trim();
+      zoneSelect.value = (pz || cached || "");
+      if (pz) localStorage.setItem("cwf_zone", pz);
+    }
+
+
+    // Pending request hint
+    if (profileHintEl) {
+      if (data.request_status === "pending") {
+        profileHintEl.textContent = "⏳ มีคำขอแก้ไขโปรไฟล์ค้างอยู่ (รอแอดมินอนุมัติ)";
+      } else {
+        profileHintEl.textContent = "";
+      }
+    }
+  } catch (e) {
+    // fallback
+    const u = username || "-";
+    if (meEl) meEl.textContent = `ผู้ใช้: ${u}`;
+    if (profileNameEl) profileNameEl.textContent = u;
+    if (profileCodeEl) profileCodeEl.textContent = "รหัสช่าง: -";
+    if (profilePositionEl) profilePositionEl.textContent = "ตำแหน่ง: -";
+    if (profileGradeEl) profileGradeEl.textContent = "เกรด: -";
+    if (ratingEl) ratingEl.textContent = "0.0";
+    if (doneCountEl) doneCountEl.textContent = "0";
+    if (profilePhotoEl) profilePhotoEl.src = "/logo.png";
+  }
+}
+
+function renderProfile(doneCount = 0) {
+  // ✅ คงชื่อฟังก์ชันเดิมไว้เพื่อไม่ให้ส่วนอื่นพัง
+  loadProfile();
+}
+
+// =======================================
+// 🗃️ IndexedDB (เก็บรูปไว้ในเครื่องก่อนอัปโหลด)
+// =======================================
+const IDB_NAME = "cwf_photos_db";
+const IDB_STORE = "pending_photos";
+
+function idbOpen() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(IDB_NAME, 2);
+
+    req.onupgradeneeded = () => {
+      const db = req.result;
+
+      let store;
+      if (!db.objectStoreNames.contains(IDB_STORE)) {
+        store = db.createObjectStore(IDB_STORE, { keyPath: "photo_id" });
+      } else {
+        store = req.transaction.objectStore(IDB_STORE);
+      }
+
+      if (!store.indexNames.contains("job_id")) {
+        store.createIndex("job_id", "job_id", { unique: false });
+      }
+      if (!store.indexNames.contains("job_phase")) {
+        store.createIndex("job_phase", ["job_id", "phase"], { unique: false });
+      }
+    };
+
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbPut(record) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).put(record);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+async function idbGetByJob(jobId) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readonly");
+    const idx = tx.objectStore(IDB_STORE).index("job_id");
+    const req = idx.getAll(Number(jobId));
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function idbDelete(photoId) {
+  const db = await idbOpen();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(IDB_STORE, "readwrite");
+    tx.objectStore(IDB_STORE).delete(Number(photoId));
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+// =======================================
+// 🔁 REFRESH LOOP
+// =======================================
+loadProfile();
+loadOffers();
+loadJobs();
+setInterval(() => loadOffers(), 15000);
+
+// =======================================
+// 📨 LOAD OFFERS
+// =======================================
+function loadOffers() {
+  fetch(`${API_BASE}/offers/tech/${username}`)
+    .then((res) => res.json())
+    .then((offers) => renderOffers(Array.isArray(offers) ? offers : []))
+    .catch((err) => {
+      console.error(err);
+      if (offerList) offerList.innerHTML = "<p>❌ โหลดข้อเสนองานไม่สำเร็จ</p>";
+    });
+}
+
+function renderOffers(offers) {
+  if (!offerList) return;
+
+  // ✅ กรองตามโซนที่ช่างเลือก (ถ้าในงานมี job_zone)
+  const z = String((zoneSelect && zoneSelect.value) || localStorage.getItem('cwf_zone') || '').trim();
+  const filtered = z ? (offers || []).filter(o => !o.job_zone || String(o.job_zone).trim() === z) : (offers || []);
+
+  if (!filtered.length) {
+    offerList.innerHTML = "<p>ไม่มีข้อเสนองานตอนนี้</p>";
+    return;
+  }
+
+  offerList.innerHTML = filtered
+    .map((o) => {
+      const expires = new Date(o.expires_at).getTime();
+      const now = Date.now();
+      const secLeft = Math.max(0, Math.floor((expires - now) / 1000));
+      const min = Math.floor(secLeft / 60);
+      const sec = secLeft % 60;
+
+      return `
+      <div class="job-card" style="border:1px solid rgba(251,191,36,0.55);">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <b>📌 งานใหม่เสนอให้รับ</b>
+          <span class="badge wait">⏳ ${min}:${String(sec).padStart(2, "0")}</span>
+        </div>
+
+        <p style="margin-top:10px;"><b>Booking:</b> ${o.booking_code || ('CWF'+String(o.job_id).padStart(7,'0'))}</p>
+        <p><b>ลูกค้า:</b> ${o.customer_name}</p>
+        <p><b>ประเภท:</b> ${o.job_type}</p>
+        <p><b>นัด:</b> ${new Date(o.appointment_datetime).toLocaleString("th-TH")}</p>
+        <p><b>ที่อยู่:</b> ${o.address_text || "-"}</p>
+
+        <div class="row" style="margin-top:10px;">
+          <button onclick="acceptOffer(${o.offer_id})">✅ รับงาน</button>
+          <button class="danger" onclick="declineOffer(${o.offer_id})">❌ ไม่รับงาน</button>
+        </div>
+      </div>
+    `;
+    })
+    .join("");
+}
+
+function acceptOffer(offerId) {
+  fetch(`${API_BASE}/offers/${offerId}/accept`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username }),
+  })
+    .then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "รับงานไม่สำเร็จ");
+      return data;
+    })
+    .then(() => {
+      alert("✅ รับงานเรียบร้อย");
+      loadOffers();
+      loadJobs();
+    })
+    .catch((err) => {
+      console.error(err);
+      alert(`❌ ${err.message}`);
+      loadOffers();
+    });
+}
+
+function declineOffer(offerId) {
+  fetch(`${API_BASE}/offers/${offerId}/decline`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username }),
+  })
+    .then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "ไม่รับงานไม่สำเร็จ");
+      return data;
+    })
+    .then((data) => {
+      alert(data.status === "expired" ? "⏳ หมดเวลารับงานแล้ว" : "✅ ส่งกลับแอดมินแล้ว");
+      loadOffers();
+      loadJobs();
+    })
+    .catch((err) => {
+      console.error(err);
+      alert(`❌ ${err.message}`);
+      loadOffers();
+    });
+}
+
+// =======================================
+// 📡 LOAD JOBS
+// =======================================
+function loadJobs() {
+  fetch(`${API_BASE}/jobs/tech/${username}`)
+    .then((res) => {
+      if (!res.ok) throw new Error("โหลดข้อมูลงานไม่สำเร็จ");
+      return res.json();
+    })
+    .then((jobs) => renderJobs(jobs))
+    .catch((err) => {
+      console.error(err);
+      if (activeJobsEl) activeJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
+      if (historyJobsEl) historyJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
+      renderProfile(0);
+    });
+}
+
+// =======================================
+// 🧩 RENDER JOBS
+// ✅ FIX: trim สถานะก่อนกรอง (กันช่องว่าง/พิมพ์เพี้ยนจาก DB)
+// =======================================
+function normStatus(s) {
+  return String(s || "").trim();
+}
+
+function renderJobs(jobs) {
+  if (activeJobsEl) activeJobsEl.innerHTML = "";
+  if (historyJobsEl) historyJobsEl.innerHTML = "";
+
+  if (!Array.isArray(jobs) || jobs.length === 0) {
+    if (activeJobsEl) activeJobsEl.innerHTML = "<p>✅ ไม่มีงานค้างตอนนี้</p>";
+    if (historyJobsEl) historyJobsEl.innerHTML = "<p>ยังไม่มีประวัติงาน</p>";
+    if (doneCountEl) doneCountEl.textContent = "0";
+    renderProfile(0);
+    return;
+  }
+
+  const active = jobs.filter((j) => {
+    const st = normStatus(j.job_status);
+    return st === "รอดำเนินการ" || st === "กำลังทำ";
+  });
+
+  const history = jobs.filter((j) => {
+    const st = normStatus(j.job_status);
+    return st === "เสร็จแล้ว" || st === "ยกเลิก";
+  });
+
+  if (activeJobsEl) {
+    if (!active.length) activeJobsEl.innerHTML = "<p>✅ ไม่มีงานค้างตอนนี้</p>";
+    active.forEach((job) => activeJobsEl.appendChild(buildJobCard(job, false)));
+  }
+
+  if (historyJobsEl) {
+    if (!history.length) historyJobsEl.innerHTML = "<p>ยังไม่มีงานที่ปิดแล้ว</p>";
+    history.forEach((job) => historyJobsEl.appendChild(buildJobCard(job, true)));
+  }
+
+  const done = history.filter((j) => normStatus(j.job_status) === "เสร็จแล้ว").length;
+  if (doneCountEl) doneCountEl.textContent = String(done);
+  renderProfile(done);
+}
+
+
+// =======================================
+// 🧭 GPS NAVIGATION (เปิด Google Maps)
+// =======================================
+function openMaps(lat, lng, address, mapsUrl) {
+  try {
+    let url = "";
+    const direct = String(mapsUrl || "").trim();
+    if (direct) {
+      window.open(direct, "_blank");
+      return;
+    }
+
+    const hasLatLng = (lat !== null && lat !== undefined && lng !== null && lng !== undefined);
+    if (hasLatLng && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lng))) {
+      url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(lat + "," + lng)}`;
+    } else if (address) {
+      url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
+    } else {
+      return alert("ไม่มีพิกัด/ที่อยู่สำหรับนำทาง");
+    }
+    window.open(url, "_blank");
+  } catch (e) {
+    alert("เปิดแผนที่ไม่สำเร็จ");
+  }
+}
+window.openMaps = openMaps;
+
+// =======================================
+// 🧱 BUILD JOB CARD
+// =======================================
+
+function buildJobCard(job, historyMode = false) {
+  const div = document.createElement("div");
+  div.className = "job-card";
+
+  const status = normStatus(job.job_status) || "รอดำเนินการ";
+
+  const badge =
+    status === "รอดำเนินการ"
+      ? `<span class="badge wait">⏳ รอดำเนินการ</span>`
+      : status === "กำลังทำ"
+      ? `<span class="badge run">🛠️ กำลังทำ</span>`
+      : status === "เสร็จแล้ว"
+      ? `<span class="badge ok">✅ เสร็จแล้ว</span>`
+      : `<span class="badge bad">⛔ ยกเลิก</span>`;
+
+  const jobId = Number(job.job_id);
+  const travelKey = `cwf_travel_${jobId}`;
+  const travelStarted = !!localStorage.getItem(travelKey) || !!job.travel_started_at;
+  const checkedIn = !!job.checkin_at;
+  const isWorking = status === "กำลังทำ";
+  const canEdit = !historyMode && (status === "รอดำเนินการ" || status === "กำลังทำ");
+
+  // ✅ ปุ่มขั้นตอนเดียว (เดินทาง -> เช็คอิน -> เริ่มทำงาน)
+  let flowLabel = "";
+  let flowAction = "";
+  let flowDisabled = historyMode ? "disabled" : "";
+
+  if (historyMode || status === "เสร็จแล้ว" || status === "ยกเลิก") {
+    flowLabel = "✅ สิ้นสุดแล้ว";
+    flowDisabled = "disabled";
+  } else if (!travelStarted) {
+    flowLabel = "🚗 เริ่มเดินทาง";
+    flowAction = `startTravel(${jobId})`;
+  } else if (!checkedIn) {
+    flowLabel = "📍 เช็คอิน";
+    flowAction = `checkin(${jobId})`;
+  } else if (!isWorking) {
+    flowLabel = "▶️ เริ่มทำงาน";
+    flowAction = `startWork(${jobId})`;
+  }
+
+  const escape = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const appt = job.appointment_datetime ? new Date(job.appointment_datetime).toLocaleString("th-TH") : "-";
+  const addr = escape(job.address_text || "-");
+  const bookingCode = job.booking_code || ("CWF" + String(jobId).padStart(7, "0"));
+
+  // ✅ สรุปสถานะเช็คอิน
+  const checkinText = checkedIn
+    ? `✅ เช็คอินแล้ว (${new Date(job.checkin_at).toLocaleString("th-TH")})`
+    : "ยังไม่เช็คอิน";
+
+  // ✅ แสดงส่วนรูป/หมายเหตุ/ปิดงาน เฉพาะตอนเริ่มทำงานแล้ว
+  const showWorkTools = isWorking || historyMode;
+
+  div.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <div>
+        <b>📌 Booking: ${bookingCode}</b>
+        <div class="muted" style="font-size:12px;margin-top:2px;">งานในระบบ: #${jobId}</div>
+      </div>
+      ${badge}
+    </div>
+
+    <p style="margin-top:8px;"><b>ลูกค้า:</b> ${escape(job.customer_name || "-")}</p>
+    <p><b>โทร:</b> ${escape(job.customer_phone || "-")}</p>
+    <p><b>ประเภท:</b> ${escape(job.job_type || "-")}</p>
+    <p><b>นัด:</b> ${appt}</p>
+    <p><b>ที่อยู่:</b> ${addr}</p>
+
+    ${historyMode ? "" : `
+      <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+        <button type="button" id="flow-btn-${jobId}" ${flowDisabled} ${flowAction ? `onclick="${flowAction}"` : ""}>${flowLabel}</button>
+        <button class="secondary" type="button" style="width:auto;" ${travelStarted ? "" : "disabled"} onclick="openMaps(${job.gps_latitude ?? null}, ${job.gps_longitude ?? null}, '${(job.address_text||"").replace(/'/g,"\'")}' )">🧭 แผนที่</button>
+      </div>
+
+      <div id="travel-hint-${jobId}" class="muted" style="margin-top:6px;">
+        ${!travelStarted ? "กด “เริ่มเดินทาง” ก่อน ถึงจะเห็นปุ่มเช็คอิน และข้อมูล GPS" : (checkedIn ? checkinText : "🚗 เริ่มเดินทางแล้ว → ไปถึงหน้าบ้านลูกค้าแล้วกด “เช็คอิน”")}
+      </div>
+    `}
+
+    <div class="card tight" style="margin-top:10px;">
+      <b>💰 รายละเอียดราคา</b>
+      <div id="pricing-${jobId}" style="margin-top:6px;">กำลังโหลด...</div>
+    </div>
+
+    ${showWorkTools ? `
+      <div class="card tight" style="margin-top:10px;">
+        <b>📷 รูปหน้างาน</b>
+        <div class="row" style="margin-top:8px;flex-wrap:wrap;">
+          <button onclick="pickPhotos(${jobId}, 'before')" ${!canEdit ? "disabled" : ""}>ก่อนทำ</button>
+          <button onclick="pickPhotos(${jobId}, 'after')" ${!canEdit ? "disabled" : ""}>หลังทำ</button>
+          <button onclick="pickPhotos(${jobId}, 'pressure', 4)" ${!canEdit ? "disabled" : ""}>วัดน้ำยา</button>
+          <button onclick="pickPhotos(${jobId}, 'current', 4)" ${!canEdit ? "disabled" : ""}>วัดกระแส</button>
+          <button onclick="pickPhotos(${jobId}, 'temp', 4)" ${!canEdit ? "disabled" : ""}>อุณหภูมิ</button>
+          <button onclick="pickPhotos(${jobId}, 'defect', 4)" ${!canEdit ? "disabled" : ""}>ตำหนิ</button>
+        </div>
+        <div id="photo-status-${jobId}" style="margin-top:8px;"></div>
+      </div>
+
+      <div class="card tight" style="margin-top:10px;border-style:dashed;">
+        <b>📝 หมายเหตุช่าง</b>
+        <textarea id="note-${jobId}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""}>${escape(job.technician_note || "")}</textarea>
+
+        ${historyMode ? "" : (isWorking ? `
+          <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
+            <button class="secondary" type="button" style="width:auto;" onclick="saveNote(${jobId})">💾 บันทึกหมายเหตุ</button>
+            <button type="button" style="width:auto;" onclick="requestFinalize(${jobId}, 'เสร็จแล้ว')">✅ เสร็จสิ้น</button>
+            <button class="danger" type="button" style="width:auto;" onclick="requestFinalize(${jobId}, 'ยกเลิก')">⛔ ยกเลิก</button>
+          </div>
+        ` : ``)}
+        <div id="note-status-${jobId}" style="margin-top:6px;"></div>
+      </div>
+    ` : `
+      <div class="muted" style="margin-top:10px;">* หลังจาก “เริ่มทำงาน” แล้ว จะเปิดให้ใส่รูป/หมายเหตุ และปุ่มเสร็จสิ้น/ยกเลิก *</div>
+    `}
+  `;
+
+  setTimeout(() => {
+    loadPricing(jobId);
+    if (showWorkTools) refreshPhotoStatus(jobId);
+  }, 0);
+
+  return div;
+}
+
+window.startTravel = startTravel;
+window.startWork = startWork;
+window.requestFinalize = requestFinalize;
+
+
+
+// =======================================
+// 🧭 NAVIGATION (Google Maps)
+// - ถ้ามีพิกัด: เปิดแบบ lat,lng
+// - ถ้าไม่มีพิกัด: ใช้ค้นหาจากที่อยู่
+// =======================================
+function openNav(lat, lng, addressText) {
+  try {
+    let url = "";
+    const direct = String(mapsUrl || "").trim();
+    if (direct) {
+      window.open(direct, "_blank");
+      return;
+    }
+
+    const hasLatLng = lat !== null && lng !== null && lat !== "null" && lng !== "null" && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lng));
+
+    if (hasLatLng) {
+      url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(lat + "," + lng)}&travelmode=driving`;
+    } else {
+      const q = (addressText || "").toString().trim();
+      if (!q) return alert("ไม่มีพิกัด/ที่อยู่สำหรับนำทาง");
+      url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+    }
+
+    window.open(url, "_blank");
+  } catch (e) {
+    alert("เปิดแผนที่ไม่สำเร็จ");
+  }
+}
+
+
+// =======================================
+// 🚗/📍/🛠️ WORKFLOW (เดินทาง -> เช็คอิน -> เริ่มทำงาน)
+// =======================================
+async function startTravel(jobId) {
+  try {
+    // ✅ บันทึกในเครื่อง เพื่อให้ปุ่มเปลี่ยนสถานะทันที
+    localStorage.setItem(`cwf_travel_${jobId}`, String(Date.now()));
+
+    // เปิดแผนที่ (หลังจากกดเริ่มเดินทาง ถึงจะแสดง GPS/ปุ่มเช็คอิน)
+    const job = (window.__JOB_CACHE__ || []).find(j => Number(j.job_id) === Number(jobId));
+    if (job) openMaps(job.gps_latitude, job.gps_longitude, job.address_text);
+
+    // แจ้ง backend (optional)
+    await fetch(`${API_BASE}/jobs/${jobId}/travel-start`, { method: "POST" }).catch(() => {});
+  } finally {
+    loadJobs();
+  }
+}
+
+async function startWork(jobId) {
+  try {
+    await fetch(`${API_BASE}/jobs/${jobId}/status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "กำลังทำ" }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "เริ่มงานไม่สำเร็จ");
+        return data;
+      });
+
+    loadJobs();
+  } catch (e) {
+    alert(`❌ ${e.message}`);
+  }
+}
+
+// =======================================
+// ✍️ SIGNATURE MODAL (ลายเซ็นต์ลูกค้า)
+// - ต้องเด้งทุกครั้งเมื่อกด "เสร็จสิ้น" หรือ "ยกเลิก"
+// =======================================
+let __sigModalInited = false;
+let __sigOnConfirm = null;
+
+function ensureSignatureModal() {
+  if (__sigModalInited) return;
+  __sigModalInited = true;
+
+  const wrap = document.createElement("div");
+  wrap.id = "sig-modal";
+  wrap.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,0.6);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px;";
+  wrap.innerHTML = `
+    <div class="card" style="width:min(520px, 100%);">
+      <h3 style="margin-top:0;">✍️ ลายเซ็นต์ลูกค้า</h3>
+      <div class="muted">ให้ลูกค้าเซ็นเพื่อยืนยัน “เสร็จสิ้น/ยกเลิก” งาน</div>
+      <div style="margin-top:10px;border:1px solid rgba(15,23,42,0.15);border-radius:14px;overflow:hidden;background:#fff;">
+        <canvas id="sig-canvas" width="480" height="220" style="width:100%;height:auto;touch-action:none;"></canvas>
+      </div>
+      <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+        <button class="secondary" type="button" style="width:auto;" id="sig-clear">ล้างลายเซ็น</button>
+        <button class="danger" type="button" style="width:auto;" id="sig-cancel">ยกเลิก</button>
+        <button type="button" style="width:auto;" id="sig-confirm">ยืนยัน</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+
+  const canvas = wrap.querySelector("#sig-canvas");
+  const ctx = canvas.getContext("2d");
+  ctx.lineWidth = 2.6;
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+
+  let drawing = false;
+  let hasStroke = false;
+
+  const getPos = (evt) => {
+    const rect = canvas.getBoundingClientRect();
+    const t = evt.touches?.[0];
+    const clientX = t ? t.clientX : evt.clientX;
+    const clientY = t ? t.clientY : evt.clientY;
+    return {
+      x: (clientX - rect.left) * (canvas.width / rect.width),
+      y: (clientY - rect.top) * (canvas.height / rect.height),
+    };
+  };
+
+  const start = (evt) => {
+    drawing = true;
+    const p = getPos(evt);
+    ctx.beginPath();
+    ctx.moveTo(p.x, p.y);
+    evt.preventDefault?.();
+  };
+  const move = (evt) => {
+    if (!drawing) return;
+    const p = getPos(evt);
+    ctx.lineTo(p.x, p.y);
+    ctx.stroke();
+    hasStroke = true;
+    evt.preventDefault?.();
+  };
+  const end = (evt) => {
+    drawing = false;
+    evt.preventDefault?.();
+  };
+
+  canvas.addEventListener("mousedown", start);
+  canvas.addEventListener("mousemove", move);
+  window.addEventListener("mouseup", end);
+
+  canvas.addEventListener("touchstart", start, { passive: false });
+  canvas.addEventListener("touchmove", move, { passive: false });
+  canvas.addEventListener("touchend", end, { passive: false });
+
+  wrap.querySelector("#sig-clear").onclick = () => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    hasStroke = false;
+  };
+
+  wrap.querySelector("#sig-cancel").onclick = () => {
+    wrap.style.display = "none";
+    __sigOnConfirm = null;
+  };
+
+  wrap.querySelector("#sig-confirm").onclick = () => {
+    if (!hasStroke) return alert("ให้ลูกค้าเซ็นก่อน");
+    const dataUrl = canvas.toDataURL("image/png");
+    wrap.style.display = "none";
+
+    if (typeof __sigOnConfirm === "function") {
+      const fn = __sigOnConfirm;
+      __sigOnConfirm = null;
+      fn(dataUrl);
+    }
+  };
+}
+
+function openSignatureModal(onConfirm) {
+  ensureSignatureModal();
+  const wrap = document.getElementById("sig-modal");
+  if (!wrap) return;
+  __sigOnConfirm = onConfirm;
+
+  // เคลียร์ canvas ทุกครั้ง
+  const canvas = wrap.querySelector("#sig-canvas");
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  wrap.style.display = "flex";
+}
+
+// =======================================
+// ✅ FINALIZE (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์
+// =======================================
+function requestFinalize(jobId, targetStatus) {
+  // เปิดลายเซ็นต์ก่อน (ถ้ากดยกเลิกในลายเซ็นต์ จะต้องกลับไปเลือกใหม่เอง)
+  openSignatureModal((signatureDataUrl) => finalizeJob(jobId, targetStatus, signatureDataUrl));
+}
+
+async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
+  try {
+    // อัปโหลดรูปค้างก่อน
+    await uploadPendingPhotos(jobId);
+
+    // บันทึก note ล่าสุด (เพื่อส่งให้แอดมินตอนยกเลิก)
+    const note = (document.getElementById(`note-${jobId}`)?.value || "").trim();
+    await fetch(`${API_BASE}/jobs/${jobId}/note`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ note }),
+    }).catch(() => {});
+
+    const res = await fetch(`${API_BASE}/jobs/${jobId}/finalize`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        status: targetStatus,
+        signature_data: signatureDataUrl,
+        note,
+      }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "ปิดงาน/ยกเลิกไม่สำเร็จ");
+
+    alert(targetStatus === "ยกเลิก" ? "⛔ ยกเลิกงานเรียบร้อย" : "✅ เสร็จสิ้นงานเรียบร้อย");
+    loadJobs();
+  } catch (e) {
+    alert(`❌ ${e.message}`);
+  }
+}
+
+
+// =======================================
+// ✅ STATUS
+// =======================================
+function setStatus(jobId, status) {
+  fetch(`${API_BASE}/jobs/${jobId}/status`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status }),
+  })
+    .then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "อัปเดตสถานะไม่สำเร็จ");
+      return data;
+    })
+    .then(() => loadJobs())
+    .catch((e) => alert(`❌ ${e.message}`));
+}
+
+async function closeJob(jobId) {
+  try {
+    await uploadPendingPhotos(jobId);
+
+    const res = await fetch(`${API_BASE}/jobs/${jobId}/status`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "เสร็จแล้ว" }),
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "ปิดงานไม่สำเร็จ");
+
+    alert("✅ ปิดงานเรียบร้อย");
+    loadJobs(); // ✅ จะหายจาก “งานปัจจุบัน” และไป “ประวัติงาน”
+  } catch (e) {
+    console.error(e);
+    alert(`❌ ${e.message}`);
+  }
+}
+
+// =======================================
+// 📍 CHECK-IN
+// =======================================
+function checkin(jobId) {
+  if (!navigator.geolocation) return alert("เครื่องนี้ไม่รองรับ GPS");
+
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+
+      fetch(`${API_BASE}/jobs/${jobId}/checkin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat, lng }),
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "เช็คอินไม่สำเร็จ");
+          return data;
+        })
+        .then(() => {
+          const box = document.getElementById(`checkin-status-${jobId}`);
+          if (box) box.innerHTML = "✅ เช็คอินสำเร็จ";
+          loadJobs();
+        })
+        .catch((e) => alert(`❌ ${e.message}`));
+    },
+    () => alert("ขอสิทธิ์ GPS ไม่สำเร็จ/ถูกปฏิเสธ")
+  );
+}
+
+// =======================================
+// 📝 NOTE
+// =======================================
+function saveNote(jobId) {
+  const el = document.getElementById(`note-${jobId}`);
+  const note = (el?.value || "").trim();
+
+  fetch(`${API_BASE}/jobs/${jobId}/note`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ note }),
+  })
+    .then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "บันทึกหมายเหตุไม่สำเร็จ");
+      return data;
+    })
+    .then(() => {
+      const box = document.getElementById(`note-status-${jobId}`);
+      if (box) box.innerHTML = "✅ บันทึกแล้ว";
+    })
+    .catch((e) => alert(`❌ ${e.message}`));
+}
+
+// =======================================
+// 💰 PRICING
+// =======================================
+function loadPricing(jobId) {
+  fetch(`${API_BASE}/jobs/${jobId}/pricing`)
+    .then((res) => res.json())
+    .then((data) => {
+      const box = document.getElementById(`pricing-${jobId}`);
+      if (!box) return;
+
+      const itemsHtml =
+        data.items && data.items.length
+          ? data.items
+              .map((it) => {
+                const qty = Number(it.qty || 0);
+                const up = Number(it.unit_price || 0);
+                const lt = Number(it.line_total || qty * up);
+                return `<li>${it.item_name} x${qty} @ ${up} = ${lt} บาท</li>`;
+              })
+              .join("")
+          : "<li>ไม่มีรายการ</li>";
+
+      box.innerHTML = `
+        <div style="padding:10px;">
+          <ul style="margin:8px 0 8px 18px;">${itemsHtml}</ul>
+          <p>ราคาเต็ม: <b>${Number(data.subtotal || 0).toFixed(2)}</b> บาท</p>
+          <p>ส่วนลด: <b>${Number(data.discount || 0).toFixed(2)}</b> บาท</p>
+          <p>สุทธิ: <b>${Number(data.total || 0).toFixed(2)}</b> บาท</p>
+        </div>
+          <div class="row" style="margin-top:8px;flex-wrap:wrap;">          </div>
+      `;
+    })
+    .catch(() => {
+      const box = document.getElementById(`pricing-${jobId}`);
+      if (box) box.textContent = "❌ โหลดราคาไม่สำเร็จ";
+    });
+}
+
+// =======================================
+// 📷 PHOTO STATUS
+// =======================================
+async function refreshPhotoStatus(jobId) {
+  const box = document.getElementById(`photo-status-${jobId}`);
+  if (!box) return;
+
+  try {
+    const all = await idbGetByJob(jobId);
+    const byPhase = (ph) => all.filter((x) => x.phase === ph).length;
+
+    box.innerHTML = `
+      <div class="muted">
+        ค้างในเครื่อง → ก่อนทำ: <b>${byPhase("before")}</b>,
+        หลังทำ: <b>${byPhase("after")}</b>,
+        วัดน้ำยา: <b>${byPhase("pressure")}</b>,
+        วัดกระแส: <b>${byPhase("current")}</b>,
+        อุณหภูมิ: <b>${byPhase("temp")}</b>,
+        ตำหนิ: <b>${byPhase("defect")}</b>
+      </div>
+    `;
+  } catch (e) {
+    console.error(e);
+    box.textContent = "❌ โหลดสถานะรูปไม่สำเร็จ";
+  }
+}
+
+// =======================================
+// ⬆️ UPLOAD PENDING PHOTOS
+// =======================================
+async function uploadPendingPhotos(jobId) {
+  const items = await idbGetByJob(jobId);
+  if (!items.length) return true;
+
+  for (const it of items) {
+    const form = new FormData();
+    form.append("photo", it.blob, it.original_name || "photo.jpg");
+
+    const res = await fetch(`${API_BASE}/jobs/${jobId}/photos/${it.photo_id}/upload`, {
+      method: "POST",
+      body: form,
+    });
+
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "อัปโหลดรูปไม่สำเร็จ");
+
+    await idbDelete(it.photo_id);
+  }
+
+  return true;
+}
+
+// =======================================
+// 📷 PICK PHOTOS (เข้าคิวลง IndexedDB)
+// =======================================
+async function pickPhotos(jobId, phase, maxFiles = 20) {
+  try {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.multiple = true;
+
+    input.onchange = async () => {
+      const selected = Array.from(input.files || []).slice(0, maxFiles);
+      if (!selected.length) return;
+
+      for (const f of selected) {
+        const metaRes = await fetch(`${API_BASE}/jobs/${jobId}/photos/meta`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phase,
+            mime_type: f.type,
+            original_name: f.name,
+            file_size: f.size,
+          }),
+        });
+
+        const meta = await metaRes.json().catch(() => ({}));
+        if (!metaRes.ok) throw new Error(meta.error || "สร้าง meta ไม่สำเร็จ");
+
+        const photo_id = meta.photo_id;
+
+        const buffer = await f.arrayBuffer();
+        // ✅ อัปโหลดทันที (ถ้าเน็ตพร้อม) - ถ้าไม่สำเร็จค่อยค้างในเครื่อง
+        try {
+          const formNow = new FormData();
+          formNow.append("photo", f, f.name || "photo.jpg");
+
+          const upRes = await fetch(`${API_BASE}/jobs/${jobId}/photos/${photo_id}/upload`, {
+            method: "POST",
+            body: formNow,
+          });
+
+          const upData = await upRes.json().catch(() => ({}));
+          if (upRes.ok) {
+            // อัปโหลดแล้ว ไม่ต้องค้างในเครื่อง
+            continue;
+          } else {
+            console.warn("upload-now failed, fallback to idb:", upData.error || upRes.status);
+          }
+        } catch (e) {
+          console.warn("upload-now error, fallback to idb:", e.message);
+        }
+
+        await idbPut({
+          photo_id: Number(photo_id),
+          job_id: Number(jobId),
+          phase: String(phase),
+          mime_type: f.type,
+          original_name: f.name,
+          file_size: f.size,
+          blob: new Blob([buffer], { type: f.type }),
+          created_at: Date.now(),
+        });
+      }
+
+      alert("✅ รับรูปแล้ว (อัปโหลดทันทีถ้าเน็ตพร้อม / ถ้าไม่พร้อมจะค้างในเครื่อง)");
+      refreshPhotoStatus(jobId);
+    };
+
+    input.click();
+  } catch (e) {
+    console.error(e);
+    alert(`❌ ${e.message}`);
+  }
+}

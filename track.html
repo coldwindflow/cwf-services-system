@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CWF - ติดตามสถานะงาน</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="theme-2">
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <img src="/logo.png" alt="CWF">
+        <div class="title">
+          <b>🔎 ติดตามสถานะงาน (ลูกค้า)</b>
+          <span class="muted">ใส่เลข Booking หรือ token</span>
+        </div>
+      </div>
+      <button class="secondary" style="width:auto;min-height:40px;padding:10px 12px;" type="button"
+        onclick="location.href='/customer.html'">📅 ไปหน้าจองคิว</button>
+    </div>
+
+    <div class="card">
+      <div class="grid2">
+        <input id="q" placeholder="เช่น CWF0000123 หรือ token" />
+        <button type="button" onclick="track()">ค้นหา</button>
+      </div>
+      <div class="muted" style="margin-top:8px;">* แนะนำใช้เลข Booking เพราะค้นหาง่าย</div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <h2>📌 ผลการติดตาม</h2>
+      <div id="result" class="muted" style="margin-top:10px;">ยังไม่มีข้อมูล</div>
+    </div>
+  </div>
+
+<script>
+const API = window.location.origin;
+
+function qs(name){
+  const u = new URL(location.href);
+  return u.searchParams.get(name);
+}
+
+function statusBadge(st){
+  const s = String(st||"").trim();
+  if(s==="รอดำเนินการ") return '<span class="badge wait">⏳ รอดำเนินการ</span>';
+  if(s==="กำลังทำ") return '<span class="badge run">🛠️ กำลังทำ</span>';
+  if(s==="เสร็จแล้ว") return '<span class="badge ok">✅ เสร็จแล้ว</span>';
+  if(s==="ยกเลิก") return '<span class="badge bad">⛔ ยกเลิก</span>';
+  return '<span class="badge wait">⏳ รอดำเนินการ</span>';
+}
+
+function openNav(lat,lng,addr){
+  let url="";
+  const has = lat!==null && lng!==null && lat!==undefined && lng!==undefined && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lng));
+  if(has){
+    url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(lat + "," + lng)}&travelmode=driving`;
+  }else{
+    const q=(addr||"").toString().trim();
+    if(!q) return alert("ไม่มีพิกัด/ที่อยู่สำหรับนำทาง");
+    url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
+  }
+  window.open(url,"_blank");
+}
+
+async function track(){
+  const qEl = document.getElementById("q");
+  const q = (qEl.value || "").trim();
+  if(!q) return alert("ใส่เลข Booking หรือ token");
+
+  const box = document.getElementById("result");
+  box.textContent = "กำลังค้นหา...";
+
+  try{
+    const res = await fetch(`${API}/public/track?q=${encodeURIComponent(q)}`);
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error || "ค้นหาไม่สำเร็จ");
+
+    const dt = data.appointment_datetime ? new Date(data.appointment_datetime).toLocaleString("th-TH") : "-";
+    const tech = data.technician;
+
+    box.innerHTML = `
+      <div class="job-card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <b>📌 Booking: ${data.booking_code || "-"}</b>
+          ${statusBadge(data.job_status)}
+        </div>
+
+        <p style="margin-top:10px;"><b>ชื่อลูกค้า:</b> ${data.customer_name || "-"}</p>
+        <p><b>ประเภทงาน:</b> ${data.job_type || "-"}</p>
+        <p><b>นัดหมาย:</b> ${dt}</p>
+        <p><b>ที่อยู่:</b> ${data.address_text || "-"}</p>
+
+        <div class="row" style="margin-top:10px;">
+          <button class="secondary" type="button" onclick="openNav(${data.gps_latitude ?? "null"}, ${data.gps_longitude ?? "null"}, '${String(data.address_text||"").replace(/'/g,"\\'")}')">🧭 นำทาง</button>
+        </div>
+
+        <hr style="margin:10px 0;">
+
+        <div>
+          <b>👨‍🔧 ช่างที่รับงาน</b>
+          ${tech ? `
+            <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
+              <img src="${tech.photo || "/logo.png"}" style="width:56px;height:56px;border-radius:999px;object-fit:cover;border:2px solid rgba(37,99,235,0.25);background:#fff;">
+              <div>
+                <div><b>${tech.full_name || tech.username || "-"}</b></div>
+                <div class="muted">⭐ ${tech.rating ?? 0} · เกรด ${tech.grade || "-"}</div>
+              </div>
+            </div>
+          ` : `<div class="muted" style="margin-top:6px;">ยังไม่มีช่างรับงาน (รอแอดมินมอบหมาย/รอช่างกดรับ)</div>`}
+        </div>
+
+        <div class="muted" style="margin-top:10px;">* ถ้าต้องการช่วยเหลือ โทร 098-877-7321 หรือ LINE OA: @cwfair</div>
+      </div>
+    `;
+  }catch(e){
+    box.innerHTML = `<div class="muted">❌ ${e.message}</div>`;
+  }
+}
+
+// auto load from query string
+const q0 = qs("q") || qs("token") || "";
+if(q0){
+  document.getElementById("q").value = q0;
+  track();
+}
+</script>
+</body>
+</html>

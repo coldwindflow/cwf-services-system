@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Login - CWF</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="theme-yellowblue" data-theme-lock="yellowblue">
+
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <!-- ✅ ใช้ absolute path -->
+        <img src="/logo.png" alt="CWF">
+        <div class="title">
+          <b>CWF – Smart Field Service</b>
+          <span>เข้าสู่ระบบ</span>
+        </div>
+      </div>
+      <span class="badge wait">🔒 Secure</span>
+    </div>
+
+    <div class="card">
+      <h2>เข้าสู่ระบบ</h2>
+      <p class="muted" style="margin:6px 0 14px;">สำหรับ Admin / Technician</p>
+
+      <label for="u">Username</label>
+      <input id="u" placeholder="เช่น admin / tech1" autocomplete="username">
+
+      <label for="p" style="margin-top:10px;">Password</label>
+      <input id="p" type="password" placeholder="รหัสผ่าน" autocomplete="current-password">
+
+      <div class="row" style="margin-top:12px;">
+        <button onclick="login()">Login</button>
+      </div>
+
+      <p class="muted" style="margin-top:10px;">
+        ถ้าเข้าไม่ได้ ให้เช็ค username/password ในฐานข้อมูล (users)
+      </p>
+    </div>
+  </div>
+
+<script>
+  // ✅ ใช้ origin เดียวกับที่เปิดอยู่ (HTTP/HTTPS/พอร์ตไหนก็ได้)
+  const API_BASE = window.location.origin;
+
+  async function login() {
+    try {
+      const res = await fetch(`${API_BASE}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: u.value.trim(),
+          password: p.value
+        })
+      });
+
+      const d = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(d.error || "login failed");
+
+      localStorage.setItem("username", d.username);
+      localStorage.setItem("role", d.role);
+
+      if (d.role === "admin") location.href = "/admin.html";
+      if (d.role === "technician") location.href = "/tech.html";
+      if (!d.role) alert("Login ผ่าน แต่ไม่มี role ในระบบ");
+    } catch (err) {
+      alert(`❌ ${err.message}`);
+    }
+  }
+</script>
+
+</body>
+</html>
