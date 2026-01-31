@@ -11,6 +11,14 @@ try {
   console.warn("⚠️ dotenv not installed or failed to load:", e.message);
 }
 
+// =======================================
+// 🕒 TIMEZONE (Fix: เวลาเพี้ยน +7 ชม.)
+// - Server (เช่น Render) มักใช้ UTC
+// - แต่ระบบ CWF ใช้เวลาไทย (Asia/Bangkok)
+// - ตั้งค่า TZ ให้ Node เพื่อให้การ format เวลาในฝั่ง server ตรง
+// =======================================
+process.env.TZ = process.env.TZ || "Asia/Bangkok";
+
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
@@ -127,6 +135,18 @@ async function ensureSchema() {
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS final_signature_status TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS final_signature_at TIMESTAMPTZ`);
 
+    // 2.2) jobs: check-in lat/lng + checkin_at (บางฐานเดิมยังไม่มี)
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS checkin_latitude DOUBLE PRECISION`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS checkin_longitude DOUBLE PRECISION`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS checkin_at TIMESTAMPTZ`);
+
+    // 2.3) jobs: customer review fields (ใช้แสดงใน Tracking + โปรไฟล์ช่าง)
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS customer_rating INT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS customer_review TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS customer_complaint TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`);
+
+
     await pool.query(
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_booking_code_unique ON public.jobs(booking_code)`
     );
@@ -144,6 +164,10 @@ async function ensureSchema() {
     await pool.query(
       `ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS accept_status_updated_at TIMESTAMPTZ`
     );
+
+    // 3.3) technician_profiles: เบอร์โทร (ใช้แสดงให้ลูกค้า "หลังเริ่มเดินทาง" เท่านั้น)
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS phone TEXT`);
+
 
     // 3.1) technician_profiles: preferred_zone (โซนที่รับงาน)
     // 3.2) ✅ บังคับชนิดคอลัมน์ทีมช่างให้เป็น TEXT (กัน error inconsistent types)
@@ -230,6 +254,68 @@ await pool.query(`
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_offers_tech_status ON public.job_offers(technician_username, status)`);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_offers_job_id ON public.job_offers(job_id)`);
 
+
+// 3.4) ✅ รูปภาพหน้างาน (job_photos)
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.job_photos (
+    photo_id BIGSERIAL PRIMARY KEY,
+    job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
+    phase TEXT NOT NULL,
+    mime_type TEXT,
+    original_name TEXT,
+    file_size BIGINT,
+    photo_type TEXT DEFAULT 'job',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    uploaded_at TIMESTAMPTZ,
+    storage_path TEXT,
+    public_url TEXT
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_photos_job_id ON public.job_photos(job_id)`);
+
+// 3.5) ✅ ทีมช่างหลายคนต่อ 1 งาน (job_team_members)
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.job_team_members (
+    job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
+    username TEXT NOT NULL,
+    added_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (job_id, username)
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_team_members_user ON public.job_team_members(username)`);
+
+// 3.6) ✅ คำขอแก้ไขราคา/รายการ (ช่าง -> แอดมินอนุมัติ)
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.job_pricing_requests (
+    request_id BIGSERIAL PRIMARY KEY,
+    job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
+    requested_by TEXT NOT NULL,
+    payload_json JSONB NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','declined')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    decided_at TIMESTAMPTZ,
+    decided_by TEXT,
+    admin_note TEXT
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_pricing_requests_status ON public.job_pricing_requests(status, created_at DESC)`);
+
+// 3.7) ✅ รีวิวลูกค้า (ผูกกับ job_id) -> คำนวณ rating ช่าง
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.technician_reviews (
+    review_id BIGSERIAL PRIMARY KEY,
+    job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
+    technician_username TEXT NOT NULL,
+    rating INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    review_text TEXT,
+    complaint_text TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_technician_reviews_job_unique ON public.technician_reviews(job_id)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_technician_reviews_tech ON public.technician_reviews(technician_username, created_at DESC)`);
+
+
     // 4) position check constraint: เพิ่ม founder_ceo
     await pool.query(`ALTER TABLE public.technician_profiles DROP CONSTRAINT IF EXISTS technician_profiles_position_check`);
     await pool.query(`
@@ -268,6 +354,57 @@ function calcPricing(items, promo) {
     discount: Number(discount.toFixed(2)),
     total: Number(total.toFixed(2)),
   };
+}
+
+// =======================================
+// 🕒 Helper: normalize/format เวลาไทย
+// - แก้เคส "เลือก 11:00 แต่แสดง 18:00" (server UTC + input ไม่มี timezone)
+// - หลักการ: ถ้าค่า input ไม่มี timezone ให้ถือว่าเป็นเวลาไทย (+07:00)
+// =======================================
+function normalizeAppointmentDatetime(input) {
+  if (input == null) return null;
+  const s = String(input).trim();
+  if (!s) return null;
+
+  // 1) มี timezone อยู่แล้ว (Z หรือ +07:00)
+  if (/[zZ]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s)) return s;
+
+  // 2) รูปแบบจาก <input type="datetime-local">: YYYY-MM-DDTHH:mm
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) {
+    return `${s}:00+07:00`;
+  }
+
+  // 3) บางที่อาจส่งมาเป็น "YYYY-MM-DD HH:mm" หรือมีวินาที
+  if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(s)) {
+    const t = s.replace(" ", "T");
+    const withSec = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(t) ? `${t}:00` : t;
+    return `${withSec}+07:00`;
+  }
+
+  // 4) fallback: ให้ JS ลอง parse แล้วแปลงเป็น ISO (UTC)
+  const d = new Date(s);
+  if (!Number.isNaN(d.getTime())) return d.toISOString();
+  return s;
+}
+
+function formatBangkokDateTime(input) {
+  try {
+    const d = new Date(input);
+    if (Number.isNaN(d.getTime())) return "-";
+
+    // รูปแบบ: dd/mm/yyyy HH:mm
+    return new Intl.DateTimeFormat("th-TH", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(d);
+  } catch {
+    return "-";
+  }
 }
 
 // =======================================
@@ -496,7 +633,13 @@ app.post("/jobs", async (req, res) => {
     dispatch_mode,
   } = req.body || {};
 
-  if (!customer_name || !job_type || !appointment_datetime || !technician_username) {
+  // ✅ FIX TIMEZONE: ถ้ามีการส่งวันนัดมา ให้ normalize เป็นเวลาไทยก่อนบันทึก
+  const appointment_dt =
+    appointment_datetime === undefined || appointment_datetime === null || appointment_datetime === ""
+      ? null
+      : normalizeAppointmentDatetime(appointment_datetime);
+
+  if (!customer_name || !job_type || !appointment_dt || !technician_username) {
     return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ (ชื่อลูกค้า/ประเภทงาน/วันนัด/ช่าง)" });
   }
 
@@ -538,12 +681,14 @@ app.post("/jobs", async (req, res) => {
         customer_name,
         customer_phone || "",
         job_type,
-        appointment_datetime,
+        appointment_dt,
         pricing.total,
         address_text || "",
         gps_latitude ? Number(gps_latitude) : null,
         gps_longitude ? Number(gps_longitude) : null,
+        // technician_team: ใส่เฉพาะกรณี forced (บังคับงาน)
         mode === "forced" ? technician_username : null,
+        // technician_username: คนที่แอดมินเลือกส่งงาน (จำเป็นเสมอ)
         technician_username,
         "รอดำเนินการ",
         mode,
@@ -610,7 +755,7 @@ app.post("/jobs", async (req, res) => {
     if (mode === "forced") {
       notifyTechnician(
         technician_username,
-        `📌 มีงานใหม่ (บังคับ) ${booking_code} นัด: ${new Date(appointment_datetime).toLocaleString("th-TH")}`
+        `📌 มีงานใหม่ (บังคับ) ${booking_code} นัด: ${formatBangkokDateTime(appointment_dt)}`
       );
     } else {
       notifyTechnician(technician_username, `📨 มีข้อเสนองานใหม่ ${booking_code} (กดรับภายใน 10 นาที)`);
@@ -674,7 +819,22 @@ app.put("/jobs/:job_id/assign", async (req, res) => {
       );
       offer = offerR.rows[0];
     } else {
-      await client.query(`UPDATE public.jobs SET technician_team=$1 WHERE job_id=$2`, [technician_username, job_id]);
+      // ✅ set ทั้ง technician_username + technician_team (กันหน้าช่าง/Tracking มองคนละคอลัมน์)
+    await client.query(
+      `UPDATE public.jobs
+       SET technician_username=$1,
+           technician_team=$1
+       WHERE job_id=$2`,
+      [technician_username, job_id]
+    );
+
+    // ✅ เพิ่มเป็นสมาชิกทีมของงาน (ไว้รองรับหลายช่าง)
+    await client.query(
+      `INSERT INTO public.job_team_members (job_id, username)
+       VALUES ($1,$2)
+       ON CONFLICT (job_id, username) DO NOTHING`,
+      [job_id, technician_username]
+    );
     }
 
     await client.query("COMMIT");
@@ -717,7 +877,12 @@ app.get("/jobs/tech/:username", async (req, res) => {
         checkin_latitude, checkin_longitude, checkin_at,
         technician_note, technician_note_at
       FROM public.jobs
-      WHERE technician_team=$1
+      WHERE technician_username=$1
+         OR technician_team=$1
+         OR EXISTS (
+            SELECT 1 FROM public.job_team_members tm
+            WHERE tm.job_id = public.jobs.job_id AND tm.username=$1
+         )
       ORDER BY appointment_datetime ASC
       `,
       [username]
@@ -750,6 +915,12 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
     gps_longitude,
   } = req.body || {};
 
+  // ✅ FIX TIMEZONE: ถ้ามีการแก้วันนัด ให้ normalize เป็นเวลาไทยก่อนบันทึก
+  const appointment_dt =
+    appointment_datetime === undefined || appointment_datetime === null || appointment_datetime === ""
+      ? null
+      : normalizeAppointmentDatetime(appointment_datetime);
+
   try {
     await pool.query(
       `
@@ -770,7 +941,7 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
         customer_name ?? null,
         customer_phone ?? null,
         job_type ?? null,
-        appointment_datetime ?? null,
+        appointment_dt,
         address_text ?? null,
         customer_note ?? null,
         maps_url ?? null,
@@ -877,6 +1048,48 @@ app.post("/jobs/:job_id/admin-cancel", async (req, res) => {
 });
 
 
+
+
+// =======================================
+// 🗑️ ADMIN HARD DELETE JOB (ลบถาวร)
+// - ใช้กับงานทดสอบ/งานลงผิด (ลบจะหายทุกหน้าทันที)
+// - ต้องส่ง confirm_code = booking_code หรือคำว่า "DELETE"
+// =======================================
+app.delete("/jobs/:job_id/admin-delete", async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  const confirm_code = (req.body?.confirm_code || "").toString().trim().toUpperCase();
+
+  if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const jr = await client.query(
+      `SELECT booking_code FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+      [job_id]
+    );
+    if (!jr.rows.length) throw new Error("ไม่พบงาน");
+
+    const code = (jr.rows[0].booking_code || "").toString().trim().toUpperCase();
+    const ok = confirm_code === "DELETE" || (code && confirm_code === code);
+
+    if (!ok) {
+      throw new Error(`ต้องยืนยันด้วย booking_code (${code}) หรือพิมพ์ DELETE`);
+    }
+
+    await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [job_id]);
+
+    await client.query("COMMIT");
+    res.json({ success: true });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    res.status(400).json({ error: e.message || "ลบงานไม่สำเร็จ" });
+  } finally {
+    client.release();
+  }
+});
+
 // =======================================
 // 🔄 UPDATE JOB STATUS
 // =======================================
@@ -969,6 +1182,157 @@ app.get("/jobs/:job_id/pricing", async (req, res) => {
   }
 });
 
+
+// =======================================
+// 💸 PRICING CHANGE REQUEST (ช่างเสนอแก้ไขราคา/รายการ)
+// - ช่างส่ง: POST /jobs/:job_id/pricing-request { username, items, note }
+// - แอดมินดูคิว: GET /admin/pricing-requests
+// - แอดมินอนุมัติ: POST /admin/pricing-requests/:id/approve { decided_by }
+// - แอดมินปฏิเสธ: POST /admin/pricing-requests/:id/decline { decided_by, admin_note }
+// =======================================
+app.post("/jobs/:job_id/pricing-request", async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  const { username, items, note } = req.body || {};
+  const requested_by = (username || "").toString().trim();
+
+  if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+  if (!requested_by) return res.status(400).json({ error: "ต้องส่ง username" });
+
+  const safeItems = Array.isArray(items) ? items : [];
+  const cleaned = safeItems
+    .map((x) => ({
+      item_name: (x.item_name || "").toString().trim(),
+      qty: Number(x.qty || 0),
+      unit_price: Number(x.unit_price || 0),
+    }))
+    .filter((x) => x.item_name && Number.isFinite(x.qty) && x.qty > 0 && Number.isFinite(x.unit_price) && x.unit_price >= 0);
+
+  if (!cleaned.length) return res.status(400).json({ error: "ต้องมีรายการอย่างน้อย 1 รายการ" });
+
+  const payload = {
+    requested_by,
+    note: (note || "").toString().trim() || null,
+    items: cleaned.map((x) => ({
+      ...x,
+      line_total: Number((x.qty * x.unit_price).toFixed(2)),
+    })),
+  };
+
+  payload.pricing = calcPricing(payload.items, null);
+
+  try {
+    const r = await pool.query(
+      `INSERT INTO public.job_pricing_requests (job_id, requested_by, payload_json)
+       VALUES ($1,$2,$3::jsonb)
+       RETURNING request_id`,
+      [job_id, requested_by, JSON.stringify(payload)]
+    );
+    res.json({ success: true, request_id: r.rows[0].request_id });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "ส่งคำขอแก้ไขราคาไม่สำเร็จ" });
+  }
+});
+
+app.get("/admin/pricing-requests", async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT pr.request_id, pr.job_id, pr.requested_by, pr.payload_json, pr.status, pr.created_at,
+              j.booking_code, j.customer_name, j.job_type, j.appointment_datetime
+       FROM public.job_pricing_requests pr
+       LEFT JOIN public.jobs j ON j.job_id = pr.job_id
+       WHERE pr.status='pending'
+       ORDER BY pr.created_at ASC`
+    );
+    res.json(r.rows || []);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "โหลดคำขอแก้ไขราคาไม่สำเร็จ" });
+  }
+});
+
+app.post("/admin/pricing-requests/:id/approve", async (req, res) => {
+  const request_id = Number(req.params.id);
+  const decided_by = (req.body.decided_by || "admin").toString().trim();
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const rr = await client.query(
+      `SELECT request_id, job_id, payload_json, status
+       FROM public.job_pricing_requests
+       WHERE request_id=$1
+       FOR UPDATE`,
+      [request_id]
+    );
+    if (!rr.rows.length) throw new Error("ไม่พบคำขอ");
+    const reqRow = rr.rows[0];
+    if (reqRow.status !== "pending") throw new Error("คำขอนี้ถูกตัดสินไปแล้ว");
+
+    const payload = reqRow.payload_json || {};
+    const items = Array.isArray(payload.items) ? payload.items : [];
+
+    // ล้างรายการเดิม แล้วใส่ใหม่
+    await client.query(`DELETE FROM public.job_items WHERE job_id=$1`, [reqRow.job_id]);
+
+    for (const it of items) {
+      const name = (it.item_name || "").toString().trim();
+      const qty = Number(it.qty || 0);
+      const unit_price = Number(it.unit_price || 0);
+      if (!name || !Number.isFinite(qty) || qty <= 0 || !Number.isFinite(unit_price) || unit_price < 0) continue;
+
+      const line_total = Number((qty * unit_price).toFixed(2));
+      await client.query(
+        `INSERT INTO public.job_items (job_id, item_name, qty, unit_price, line_total)
+         VALUES ($1,$2,$3,$4,$5)`,
+        [reqRow.job_id, name, qty, unit_price, line_total]
+      );
+    }
+
+    const total = Number(payload.pricing?.total || 0);
+    await client.query(`UPDATE public.jobs SET job_price=$1 WHERE job_id=$2`, [total, reqRow.job_id]);
+
+    await client.query(
+      `UPDATE public.job_pricing_requests
+       SET status='approved', decided_at=NOW(), decided_by=$1
+       WHERE request_id=$2`,
+      [decided_by, request_id]
+    );
+
+    await client.query("COMMIT");
+    res.json({ success: true, job_id: reqRow.job_id, total });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    res.status(400).json({ error: e.message || "อนุมัติไม่สำเร็จ" });
+  } finally {
+    client.release();
+  }
+});
+
+app.post("/admin/pricing-requests/:id/decline", async (req, res) => {
+  const request_id = Number(req.params.id);
+  const decided_by = (req.body.decided_by || "admin").toString().trim();
+  const admin_note = (req.body.admin_note || "").toString().trim() || null;
+
+  try {
+    const r = await pool.query(
+      `UPDATE public.job_pricing_requests
+       SET status='declined', decided_at=NOW(), decided_by=$1, admin_note=$2
+       WHERE request_id=$3 AND status='pending'
+       RETURNING request_id`,
+      [decided_by, admin_note, request_id]
+    );
+
+    if (!r.rows.length) return res.status(400).json({ error: "ไม่พบคำขอ หรือคำขอถูกตัดสินไปแล้ว" });
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "ปฏิเสธคำขอไม่สำเร็จ" });
+  }
+});
+
+
 // =======================================
 // 📩 JOB SUMMARY TEXT
 // =======================================
@@ -985,14 +1349,17 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
 
     const job = jobR.rows[0];
 
+    // ✅ ใช้ทำลิงก์ Tracking ให้ลูกค้า
+    const origin = `${req.protocol}://${req.get("host")}`;
+
     const itemsR = await pool.query(
       `SELECT item_name, qty, unit_price, line_total FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
       [job_id]
     );
 
     const dt = new Date(job.appointment_datetime);
-    const dd = dt.toLocaleDateString("th-TH");
-    const tt = dt.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+    const dd = dt.toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" });
+    const tt = dt.toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" });
 
     const lines = itemsR.rows.map((it) => {
       const qty = Number(it.qty);
@@ -1005,7 +1372,8 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
       `ยืนยันนัดหมายบริการแอร์\n\n` +
       `Coldwindflow Air Services\n` +
       `แอดมินฝ่ายบริการลูกค้า ขอเรียนยืนยันนัดหมายดังนี้ค่ะ\n\n` +
-      `🔎 เลขงาน: ${job.booking_code || "#" + job.job_id}\n` +
+      `🔎 เลขงาน: ${job.booking_code || "#" + job.job_id}\n🔗 ติดตามงาน: ${origin}/track.html?q=${encodeURIComponent(job.booking_code || String(job.job_id))}
+` +
       `📍 ชื่อลูกค้า: ${job.customer_name || "-"}\n` +
       `📞 เบอร์: ${job.customer_phone || "-"}\n` +
       `📅 วันที่นัด: ${dd} เวลา ${tt} น.\n` +
@@ -1098,7 +1466,22 @@ app.post("/offers/:offer_id/accept", async (req, res) => {
     );
 
     // ✅ FIX สำคัญ: ต้อง set technician_team ถึงจะไปอยู่ “งานปัจจุบัน”
-    await client.query(`UPDATE public.jobs SET technician_team=$1 WHERE job_id=$2`, [offer.technician_username, offer.job_id]);
+    // ✅ set ทั้ง technician_username + technician_team เพื่อให้ทุกหน้ามองเห็นตรงกัน
+    await client.query(
+      `UPDATE public.jobs
+       SET technician_username=$1,
+           technician_team=$1
+       WHERE job_id=$2`,
+      [offer.technician_username, offer.job_id]
+    );
+
+    // ✅ เผื่อกรณีงานนี้มีทีม (ให้คนรับเป็นสมาชิกทีมด้วย)
+    await client.query(
+      `INSERT INTO public.job_team_members (job_id, username)
+       VALUES ($1,$2)
+       ON CONFLICT (job_id, username) DO NOTHING`,
+      [offer.job_id, offer.technician_username]
+    );
 
     await client.query("COMMIT");
     res.json({ success: true, job_id: offer.job_id });
@@ -1780,7 +2163,8 @@ function money(n) {
 
 async function getJobDocData(job_id) {
   const jobR = await pool.query(
-    `SELECT job_id, booking_code, customer_name, customer_phone, job_type, appointment_datetime, address_text, job_price
+    `SELECT job_id, booking_code, customer_name, customer_phone, job_type, appointment_datetime, address_text, job_price,
+            final_signature_path, final_signature_at
      FROM public.jobs WHERE job_id=$1`,
     [job_id]
   );
@@ -1813,6 +2197,16 @@ async function getJobDocData(job_id) {
 
 function docHtml(title, data) {
   const j = data.job;
+
+  // ✅ ข้อมูลบริษัท (ปรับได้จาก .env)
+  const COMPANY_NAME = process.env.COMPANY_NAME || "Coldwindflow air services";
+  const COMPANY_ADDRESS = process.env.COMPANY_ADDRESS || "23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260";
+  const COMPANY_PHONE = process.env.COMPANY_PHONE || "098-877-7321";
+  const COMPANY_LINE = process.env.COMPANY_LINE || "@cwfair";
+
+  const BANK_NAME = process.env.COMPANY_BANK_NAME || "";
+  const BANK_ACCOUNT = process.env.COMPANY_BANK_ACCOUNT || "";
+  const BANK_QR_URL = process.env.COMPANY_BANK_QR_URL || "";
   const rows =
     data.items && data.items.length
       ? data.items
@@ -1849,9 +2243,14 @@ function docHtml(title, data) {
     </style>
   </head><body>
     <div class="top">
-      <div>
-        <h2 style="margin:0;">${title}</h2>
-        <div class="muted">Coldwindflow air services (CWF)</div>
+      <div style="display:flex;gap:12px;align-items:center;">
+        <img src="/logo.png" alt="CWF" style="width:54px;height:54px;border-radius:14px;object-fit:cover;"/>
+        <div>
+          <h2 style="margin:0;">${title}</h2>
+          <div class="muted"><b>${COMPANY_NAME}</b></div>
+          <div class="muted">${COMPANY_ADDRESS}</div>
+          <div class="muted">โทร ${COMPANY_PHONE} | LINE ${COMPANY_LINE}</div>
+        </div>
       </div>
       <div class="box">
         <div><b>${j.booking_code || "งาน #" + j.job_id}</b></div>
@@ -1879,6 +2278,36 @@ function docHtml(title, data) {
       <div>รวมก่อนลด: <b>${money(data.subtotal)}</b> บาท</div>
       <div>ส่วนลด: <b>${money(data.discount)}</b> บาท</div>
       <div style="font-size:18px;margin-top:6px;">ยอดสุทธิ: <b>${money(data.total)}</b> บาท</div>
+    </div>
+    <div class="box" style="margin-top:12px;">
+      <div style="display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;">
+        <div style="flex:1;min-width:240px;">
+          <div><b>ข้อมูลการชำระเงิน</b></div>
+          ${BANK_NAME || BANK_ACCOUNT ? `
+            <div class="muted" style="margin-top:6px;">โอนเข้าบัญชี: <b>${BANK_NAME}</b></div>
+            <div class="muted">เลขบัญชี: <b>${BANK_ACCOUNT}</b></div>
+          ` : `<div class="muted" style="margin-top:6px;">(ยังไม่ได้ตั้งค่าบัญชีใน .env)</div>`}
+        </div>
+        <div style="width:170px;">
+          ${BANK_QR_URL ? `<img src="${BANK_QR_URL}" alt="QR" style="width:170px;height:auto;border:1px solid rgba(15,23,42,.15);border-radius:12px;">` : ``}
+        </div>
+      </div>
+    </div>
+
+    <div class="box" style="margin-top:12px;">
+      <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:240px;">
+          <div class="muted">ลายเซ็นผู้รับเงิน / ผู้ให้บริการ</div>
+          <div style="height:70px;border-bottom:1px dashed rgba(15,23,42,.35);margin-top:8px;"></div>
+          <div class="muted" style="margin-top:6px;">(${COMPANY_NAME})</div>
+        </div>
+        <div style="width:220px;text-align:center;">
+          ${j.final_signature_path ? `
+            <div class="muted">ลายเซ็นลูกค้า</div>
+            <img src="${j.final_signature_path}" alt="signature" style="width:220px;height:auto;border:1px solid rgba(15,23,42,.15);border-radius:12px;margin-top:6px;">
+          ` : `<div class="muted">ลายเซ็นลูกค้า: -</div>`}
+        </div>
+      </div>
     </div>
 
     <div class="noprint" style="margin-top:12px;">
@@ -1942,7 +2371,9 @@ app.get("/public/availability", async (req, res) => {
 
     const jobWindows = jobsR.rows.map((j) => {
       const d = new Date(j.appointment_datetime);
-      const m = d.getHours() * 60 + d.getMinutes();
+      const hhmm = d.toLocaleTimeString("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false });
+      const [hh, mm] = hhmm.split(":").map((x) => Number(x || 0));
+      const m = hh * 60 + mm;
       const dur = Number(j.duration_min || 60);
       const buffer = 30;
       return { start: m - buffer, end: m + dur + buffer };
@@ -2093,12 +2524,18 @@ app.get("/public/track", async (req, res) => {
   try {
     const r = await pool.query(
       `
-      SELECT j.job_id, j.booking_code, j.booking_token, j.customer_name, j.job_type, j.appointment_datetime, j.job_status,
-             j.address_text, j.gps_latitude, j.gps_longitude, j.maps_url, j.job_zone,
-             j.technician_team,
-             tp.full_name AS tech_name, tp.photo_path AS tech_photo, tp.rating, tp.grade
+      SELECT
+        j.job_id, j.booking_code, j.booking_token,
+        j.customer_name, j.customer_phone, j.job_type,
+        j.appointment_datetime, j.job_status,
+        j.address_text, j.gps_latitude, j.gps_longitude, j.maps_url, j.job_zone,
+        j.technician_username, j.technician_team,
+        j.travel_started_at, j.checkin_at, j.started_at, j.finished_at, j.canceled_at, j.cancel_reason,
+        j.technician_note,
+        j.customer_rating, j.customer_review, j.customer_complaint, j.reviewed_at,
+        tp.full_name AS tech_name, tp.photo_path AS tech_photo, tp.rating, tp.grade, tp.phone AS tech_phone
       FROM public.jobs j
-      LEFT JOIN public.technician_profiles tp ON tp.username = j.technician_team
+      LEFT JOIN public.technician_profiles tp ON tp.username = j.technician_username
       WHERE (j.booking_token=$1 OR j.booking_code=$1)
       LIMIT 1
       `,
@@ -2108,11 +2545,29 @@ app.get("/public/track", async (req, res) => {
     if (r.rows.length === 0) return res.status(404).json({ error: "ไม่พบงาน" });
 
     const row = r.rows[0];
+    const origin = `${req.protocol}://${req.get("host")}`;
+
+    // ✅ รูป/หมายเหตุ แสดงเฉพาะหลังปิดงาน
+    const isDone = String(row.job_status || "").trim() === "เสร็จแล้ว";
+
+    let photos = [];
+    if (isDone) {
+      const pr = await pool.query(
+        `SELECT photo_id, phase, created_at, uploaded_at, public_url
+         FROM public.job_photos
+         WHERE job_id=$1 AND public_url IS NOT NULL
+         ORDER BY photo_id ASC`,
+        [row.job_id]
+      );
+      photos = pr.rows || [];
+    }
+
     res.json({
       job_id: row.job_id,
       booking_code: row.booking_code || null,
       booking_token: row.booking_token || null,
       customer_name: row.customer_name,
+      customer_phone: row.customer_phone || null,
       job_type: row.job_type,
       appointment_datetime: row.appointment_datetime,
       job_status: row.job_status,
@@ -2121,19 +2576,160 @@ app.get("/public/track", async (req, res) => {
       job_zone: row.job_zone || null,
       gps_latitude: row.gps_latitude,
       gps_longitude: row.gps_longitude,
-      technician: row.technician_team
+
+      travel_started_at: row.travel_started_at,
+      checkin_at: row.checkin_at,
+      started_at: row.started_at,
+      finished_at: row.finished_at,
+      canceled_at: row.canceled_at,
+      cancel_reason: row.cancel_reason || null,
+
+      // ✅ notes/photos only after done
+      technician_note: isDone ? (row.technician_note || "") : null,
+      photos,
+
+      receipt_url: isDone ? `${origin}/docs/receipt/${row.job_id}` : null,
+
+      review: {
+        already_reviewed: !!row.customer_rating,
+        rating: row.customer_rating || null,
+        review_text: row.customer_review || null,
+        complaint_text: row.customer_complaint || null,
+        reviewed_at: row.reviewed_at || null,
+      },
+
+      technician: row.technician_username
         ? {
-            username: row.technician_team,
+            username: row.technician_username,
             full_name: row.tech_name,
             photo: row.tech_photo,
             rating: row.rating,
             grade: row.grade,
+            // ✅ ให้ลูกค้าเห็นเบอร์ "หลังเริ่มเดินทาง" เท่านั้น
+            phone: row.travel_started_at ? (row.tech_phone || null) : null,
           }
         : null,
     });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "ติดตามงานไม่สำเร็จ" });
+  }
+});
+
+
+// =======================================
+// ⭐ PUBLIC REVIEW (ลูกค้าให้คะแนน/รีวิว หลังปิดงาน)
+// - ยืนยันด้วย booking_code หรือ token
+// - จำกัด 1 รีวิวต่อ 1 job_id
+// =======================================
+app.post("/public/review", async (req, res) => {
+  const { q, booking_code, token, rating, review_text, complaint_text } = req.body || {};
+  const key = (q || booking_code || token || "").toString().trim();
+  const star = Number(rating);
+
+  if (!key) return res.status(400).json({ error: "ต้องส่ง booking_code หรือ token" });
+  if (!Number.isFinite(star) || star < 1 || star > 5) return res.status(400).json({ error: "rating ต้องอยู่ระหว่าง 1-5" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const jr = await client.query(
+      `SELECT job_id, job_status, technician_username, customer_rating
+       FROM public.jobs
+       WHERE booking_code=$1 OR booking_token=$1
+       LIMIT 1
+       FOR UPDATE`,
+      [key]
+    );
+
+    if (!jr.rows.length) throw new Error("ไม่พบงาน");
+    const job = jr.rows[0];
+
+    if (String(job.job_status || "").trim() !== "เสร็จแล้ว") {
+      throw new Error("งานยังไม่ปิด ไม่สามารถให้คะแนนได้");
+    }
+    if (job.customer_rating) {
+      throw new Error("งานนี้ให้คะแนนไปแล้ว");
+    }
+    if (!job.technician_username) {
+      throw new Error("งานนี้ยังไม่มีช่างรับงาน");
+    }
+
+    await client.query(
+      `INSERT INTO public.technician_reviews (job_id, technician_username, rating, review_text, complaint_text)
+       VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (job_id) DO NOTHING`,
+      [
+        job.job_id,
+        job.technician_username,
+        Math.round(star),
+        (review_text || "").toString().trim() || null,
+        (complaint_text || "").toString().trim() || null,
+      ]
+    );
+
+    await client.query(
+      `UPDATE public.jobs
+       SET customer_rating=$1,
+           customer_review=$2,
+           customer_complaint=$3,
+           reviewed_at=NOW()
+       WHERE job_id=$4`,
+      [
+        Math.round(star),
+        (review_text || "").toString().trim() || null,
+        (complaint_text || "").toString().trim() || null,
+        job.job_id,
+      ]
+    );
+
+    // ✅ อัปเดตคะแนนเฉลี่ยลงโปรไฟล์ (เก็บในคอลัมน์ rating)
+    const ar = await client.query(
+      `SELECT AVG(rating)::numeric(10,2) AS avg_rating
+       FROM public.technician_reviews
+       WHERE technician_username=$1`,
+      [job.technician_username]
+    );
+    const avg = Number(ar.rows[0]?.avg_rating || 0);
+
+    await client.query(
+      `UPDATE public.technician_profiles
+       SET rating=$1
+       WHERE username=$2`,
+      [avg, job.technician_username]
+    );
+
+    await client.query("COMMIT");
+    res.json({ success: true, avg_rating: avg });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    res.status(400).json({ error: e.message || "ส่งรีวิวไม่สำเร็จ" });
+  } finally {
+    client.release();
+  }
+});
+
+// =======================================
+// ⭐ TECH REVIEWS (ช่างดูข้อความรีวิว)
+// =======================================
+app.get("/technicians/:username/reviews", async (req, res) => {
+  const username = (req.params.username || "").toString().trim();
+  if (!username) return res.status(400).json({ error: "username หาย" });
+
+  try {
+    const r = await pool.query(
+      `SELECT review_id, job_id, rating, review_text, complaint_text, created_at
+       FROM public.technician_reviews
+       WHERE technician_username=$1
+       ORDER BY created_at DESC
+       LIMIT 50`,
+      [username]
+    );
+    res.json(r.rows || []);
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "โหลดรีวิวไม่สำเร็จ" });
   }
 });
 
