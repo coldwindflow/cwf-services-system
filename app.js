@@ -844,127 +844,6 @@ function returnJob(jobId) {
 window.returnJob = returnJob;
 
 // =======================================
-// ✅ WORKFLOW MENU (ปุ่มเดียว) — สำหรับการ์ดงานของช่าง
-// - รวม: เริ่มเดินทาง / แผนที่ / เช็คอิน / เริ่มทำงาน / จ่ายเงิน / e-slip / ตีกลับงาน
-// - แยก: โทรลูกค้า (เป็นอีกปุ่ม และเป็นตัวปลดล็อก “เริ่มเดินทาง”)
-// =======================================
-function handleWorkflowAction(jobId, action) {
-  const id = Number(jobId);
-  const act = String(action || "").trim();
-  if (!id || !act) return;
-
-  // ดึง job จาก cache เพื่อใช้ข้อมูลแผนที่
-  const job = (window.__JOB_CACHE__ || []).find(j => Number(j.job_id) === id) || {};
-  // ✅ ปรับตามคำสั่งล่าสุด: แผนที่ “กดได้ตลอด” (ทำเป็นปุ่มแยก)
-  // แต่ยังคงรองรับ action=nav เผื่อโค้ดเก่าเรียกอยู่
-  const travelStarted = !!localStorage.getItem(`cwf_travel_${id}`) || !!job.travel_started_at;
-
-  switch (act) {
-    case "travel":
-      startTravel(id);
-      break;
-    case "nav":
-      openMaps(job.gps_latitude, job.gps_longitude, job.address_text, job.maps_url);
-      break;
-    case "checkin":
-      checkin(id);
-      break;
-    case "startwork":
-      startWork(id);
-      break;
-    case "pay":
-      payJob(id);
-      break;
-    case "eslip":
-      openESlip(id);
-      break;
-    case "return":
-      returnJob(id);
-      break;
-    default:
-      break;
-  }
-}
-window.handleWorkflowAction = handleWorkflowAction;
-
-// =======================================
-// ✅ WORKFLOW BUTTON (ปุ่มกดสลับอัตโนมัติ) — ตามลำดับที่สั่ง
-// - ลำดับ: เริ่มเดินทาง -> เช็คอิน -> เริ่มทำงาน -> จ่ายเงิน -> e-slip
-// - เงื่อนไข: ต้องโทรลูกค้าก่อนถึงเริ่มเดินทาง
-// - e-slip ค้างดูได้ตลอด (ทั้งงานปัจจุบัน + ประวัติ)
-// =======================================
-function getJobFromCache(jobId) {
-  const id = Number(jobId);
-  return (window.__JOB_CACHE__ || []).find((j) => Number(j.job_id) === id) || null;
-}
-
-function computeNextWorkflow(job, historyMode) {
-  const jobId = Number(job?.job_id);
-  const status = normStatus(job?.job_status) || "รอดำเนินการ";
-
-  const travelStarted = !!localStorage.getItem(`cwf_travel_${jobId}`) || !!job?.travel_started_at;
-  const called = !!localStorage.getItem(`cwf_called_${jobId}`);
-  const checkedIn = !!job?.checkin_at;
-  const paid = !!job?.paid_at || String(job?.payment_status || "").trim().toLowerCase() === "paid";
-  const isWorking = status === "กำลังทำ";
-
-  // ✅ ถ้าจ่ายแล้ว = ค้างที่ e-slip (ดูได้ตลอด)
-  if (paid) {
-    return { act: "eslip", label: "🧾 e-slip", disabled: false };
-  }
-
-  // ✅ งานถูกปิดไปแล้วแต่ยังไม่จ่าย: ไม่ให้กดจ่ายย้อนหลัง (กันผิดขั้นตอน)
-  if (historyMode || status === "เสร็จแล้ว" || status === "ยกเลิก") {
-    return { act: "", label: "ปิดงานแล้ว", disabled: true };
-  }
-
-  // ✅ ต้องโทรก่อนเริ่มเดินทาง
-  if (!called) {
-    return { act: "travel", label: "🚗 เริ่มเดินทาง", disabled: true };
-  }
-
-  if (!travelStarted) {
-    return { act: "travel", label: "🚗 เริ่มเดินทาง", disabled: false };
-  }
-
-  if (!checkedIn) {
-    return { act: "checkin", label: "📍 เช็คอิน", disabled: false };
-  }
-
-  if (!isWorking) {
-    return { act: "startwork", label: "▶️ เริ่มทำงาน", disabled: false };
-  }
-
-  return { act: "pay", label: "💳 จ่ายเงิน", disabled: false };
-}
-
-function handleWorkflowNext(jobId, historyMode = false) {
-  const job = getJobFromCache(jobId);
-  if (!job) return alert("ไม่พบข้อมูลงาน (ลองรีเฟรชหน้า)");
-
-  const next = computeNextWorkflow(job, !!historyMode);
-  if (next.disabled) {
-    // กรณีเดียวที่เราปลดล็อกได้เองคือ โทรลูกค้าก่อน
-    if (!localStorage.getItem(`cwf_called_${Number(jobId)}`)) {
-      alert("ต้องกด ‘โทรลูกค้า’ ก่อน ถึงจะเริ่มเดินทางได้");
-    }
-    return;
-  }
-
-  // ✅ เรียก action เดิม (เพื่อไม่พังของเดิม)
-  handleWorkflowAction(jobId, next.act);
-}
-window.handleWorkflowNext = handleWorkflowNext;
-
-// ✅ ปุ่มแผนที่ (แยก) — กดได้ตลอด
-function openMapForJob(jobId) {
-  const job = getJobFromCache(jobId);
-  if (!job) return alert("ไม่พบข้อมูลงาน (ลองรีเฟรชหน้า)");
-  openMaps(job.gps_latitude, job.gps_longitude, job.address_text, job.maps_url);
-}
-window.openMapForJob = openMapForJob;
-
-// =======================================
 // 🧱 BUILD JOB CARD
 // =======================================
 
@@ -993,8 +872,7 @@ function buildJobCard(job, historyMode = false) {
   const isWorking = status === "กำลังทำ";
   const canEdit = !historyMode && (status === "รอดำเนินการ" || status === "กำลังทำ");
 
-  // ✅ ปุ่มสถานะ/เครื่องมือ (รวมเป็นปุ่มเดียว) เรียงลำดับ:
-  // เริ่มเดินทาง → แผนที่ → เช็คอิน → เริ่มทำงาน → จ่ายเงิน → e-slip
+  // ✅ ปุ่มสถานะจะแสดงเป็น 4 ปุ่มเรียงลำดับ (เริ่มเดินทาง → เช็คอิน → เริ่มทำงาน → จ่ายเงิน)
 
   const escape = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -1013,28 +891,15 @@ function buildJobCard(job, historyMode = false) {
   const flowHint = !called
     ? "📞 ต้องกด “โทรลูกค้า” ก่อน ถึงจะเริ่มเดินทางได้"
     : (!travelStarted
-      ? "กด “เริ่มเดินทาง” แล้วเดินทางไปหน้างาน (แผนที่กดได้ตลอด)"
+      ? "กด “เริ่มเดินทาง” เพื่อปลดล็อกแผนที่และเช็คอิน"
       : (!checkedIn
         ? "ไปถึงหน้างานแล้วกด “เช็คอิน”"
         : (!isWorking
           ? "เช็คอินแล้ว กด “เริ่มทำงาน” เพื่อเปิดสถานะกำลังทำ"
-          : (!paid ? "ทำงานเสร็จให้กด “จ่ายเงิน” เพื่อแสดง QR และแนบสลิป" : "✅ จ่ายเงินแล้ว เปิด e-slip ได้ตลอด"))));
+          : (!paid ? "ทำงานเสร็จให้กด “จ่ายเงิน” เพื่อแสดง QR และแนบสลิป" : "✅ จ่ายเงินแล้ว"))));
 
   // ✅ แสดงส่วนรูป/หมายเหตุ/ปิดงาน เฉพาะตอนเริ่มทำงานแล้ว
   const showWorkTools = checkedIn || isWorking || historyMode;
-
-  // ✅ ปุ่มหลัก: กดแล้ว “สลับขั้นตอน” ตามลำดับที่กำหนด
-  const next = computeNextWorkflow(job, historyMode);
-
-  // ✅ ปุ่มแผนที่: แยกออกมา และกดได้ตลอด (ถ้ามีข้อมูลพิกัด/ที่อยู่)
-  const hasLatLng = (job.gps_latitude !== null && job.gps_latitude !== undefined
-    && job.gps_longitude !== null && job.gps_longitude !== undefined
-    && String(job.gps_latitude) !== "null" && String(job.gps_longitude) !== "null"
-    && !Number.isNaN(Number(job.gps_latitude)) && !Number.isNaN(Number(job.gps_longitude)));
-  const canMap = !!String(job.maps_url || "").trim() || hasLatLng || !!String(job.address_text || "").trim();
-
-  // ✅ ปุ่มตีกลับ: ใช้เฉพาะงานที่ยังไม่ปิด
-  const canReturn = !historyMode && (status !== "เสร็จแล้ว" && status !== "ยกเลิก");
 
   div.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
@@ -1051,70 +916,75 @@ function buildJobCard(job, historyMode = false) {
     <p><b>นัด:</b> ${appt}</p>
     <p><b>ที่อยู่:</b> ${addr}</p>
 
-    ${historyMode ? `
-      <!-- ✅ History Mode: ดู e-slip ได้ตลอด (ถ้าจ่ายแล้ว) + แผนที่กดได้ตลอด -->
+    ${historyMode ? "" : `
       <div style="margin-top:10px;">
         <div class="row" style="gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" style="width:auto;" ${canMap ? "" : "disabled"} onclick="openMapForJob(${jobId})">🧭 แผนที่</button>
-          <button class="secondary" type="button" style="width:auto;" ${paid ? "" : "disabled"} onclick="openESlip(${jobId})">🧾 e-slip</button>
-        </div>
-      </div>
-    ` : `
-      <!-- ✅ Active Mode: ปุ่มกดสลับอัตโนมัติ (ไม่ใช้ dropdown) + แผนที่แยกกดได้ตลอด -->
-      <div style="margin-top:10px;">
-        <div class="row" style="gap:10px;flex-wrap:wrap;align-items:center;">
-          <!-- แยกปุ่มโทร: กดได้ตลอด และเป็นตัวปลดล็อก “เริ่มเดินทาง” -->
           <button class="secondary" type="button" style="width:auto;" ${telPhone ? "" : "disabled"} onclick="callCustomer(${jobId}, '${telPhone}')">📞 โทรลูกค้า</button>
+          <button class="secondary" type="button" style="width:auto;" ${paid ? "" : "disabled"} onclick="openESlip(${jobId})">🧾 e-slip</button>
+          <button class="danger" type="button" style="width:auto;" onclick="returnJob(${jobId})">↩️ ตีกลับงาน</button>
+        </div>
 
-          <!-- ปุ่มหลัก: กดแล้วทำขั้นตอนถัดไปตามลำดับที่กำหนด -->
-          <button type="button" style="width:auto;" ${next.disabled ? "disabled" : ""} onclick="handleWorkflowNext(${jobId}, false)">${next.label}</button>
+        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+          <button class="secondary" type="button" style="width:auto;" ${((job.address_text || job.maps_url || (job.gps_latitude != null && job.gps_longitude != null)) ? "" : "disabled")} onclick="openMaps(${job.gps_latitude ?? null}, ${job.gps_longitude ?? null}, '${(job.address_text||"").replace(/'/g,"\\'")}', '${String(job.maps_url||"").replace(/'/g,"\\'")}' )">🧭 แผนที่</button>
+        </div>
 
-          <!-- แผนที่: กดได้ตลอด (ไม่ล็อก) -->
-          <button class="secondary" type="button" style="width:auto;" ${canMap ? "" : "disabled"} onclick="openMapForJob(${jobId})">🧭 แผนที่</button>
-
-          <!-- ตีกลับงาน: แยกเป็นปุ่มเล็ก ไม่ทำให้ปุ่มเยอะเกิน -->
-          <button class="secondary" type="button" style="width:auto;" ${canReturn ? "" : "disabled"} onclick="returnJob(${jobId})">↩️ ตีกลับงาน</button>
+        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+          <button type="button" style="width:auto;" ${(!called || travelStarted || historyMode || status === "เสร็จแล้ว" || status === "ยกเลิก") ? "disabled" : ""} onclick="startTravel(${jobId})">🚗 เริ่มเดินทาง</button>
+          <button type="button" style="width:auto;" ${(!travelStarted || checkedIn || historyMode || status === "เสร็จแล้ว" || status === "ยกเลิก") ? "disabled" : ""} onclick="checkin(${jobId})">📍 เช็คอิน</button>
+          <button type="button" style="width:auto;" ${(!checkedIn || isWorking || historyMode || status === "เสร็จแล้ว" || status === "ยกเลิก") ? "disabled" : ""} onclick="startWork(${jobId})">▶️ เริ่มทำงาน</button>
+          <button type="button" style="width:auto;" ${(!isWorking || paid || historyMode || status === "เสร็จแล้ว" || status === "ยกเลิก") ? "disabled" : ""} onclick="payJob(${jobId})">💳 จ่ายเงิน</button>
         </div>
 
         <div id="travel-hint-${jobId}" class="muted" style="margin-top:6px;">${flowHint}</div>
+
       </div>
 
     `}
 
-    <div class="card tight" style="margin-top:10px;">
-      <b>💰 รายละเอียดราคา</b>
-      <div id="pricing-${jobId}" style="margin-top:6px;">กำลังโหลด...</div>
-    </div>
+    <details class="cwf-details" style="margin-top:10px;">
+      <summary>💰 รายละเอียดราคา</summary>
+      <div class="cwf-details-body">
+        <div id="pricing-${jobId}">กำลังโหลด...</div>
+      </div>
+    </details>
+
 
     ${showWorkTools ? `
-      <div class="card tight" style="margin-top:10px;">
-        <b>📷 รูปหน้างาน</b>
-        <div class="row" style="margin-top:8px;flex-wrap:wrap;">
-          <button onclick="pickPhotos(${jobId}, 'before')" ${!canEdit ? "disabled" : ""}>ก่อนทำ</button>
-          <button onclick="pickPhotos(${jobId}, 'after')" ${!canEdit ? "disabled" : ""}>หลังทำ</button>
-          <button onclick="pickPhotos(${jobId}, 'pressure', 4)" ${!canEdit ? "disabled" : ""}>วัดน้ำยา</button>
-          <button onclick="pickPhotos(${jobId}, 'current', 4)" ${!canEdit ? "disabled" : ""}>วัดกระแส</button>
-          <button onclick="pickPhotos(${jobId}, 'temp', 4)" ${!canEdit ? "disabled" : ""}>อุณหภูมิ</button>
-          <button onclick="pickPhotos(${jobId}, 'defect', 4)" ${!canEdit ? "disabled" : ""}>ตำหนิ</button>
-        </div>
-        <div id="photo-status-${jobId}" style="margin-top:8px;"></div>
-      </div>
-
-      <div class="card tight" style="margin-top:10px;border-style:dashed;">
-        <b>📝 หมายเหตุช่าง</b>
-        <textarea id="note-${jobId}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""}>${escape(job.technician_note || "")}</textarea>
-
-        ${historyMode ? "" : ((checkedIn || isWorking) ? `
-          <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
-            <button class="secondary" type="button" style="width:auto;" onclick="saveNote(${jobId})" ${!canEdit ? "disabled" : ""}>💾 บันทึกหมายเหตุ</button>
-            ${isWorking ? `
-              <button type="button" style="width:auto;" onclick="requestFinalize(${jobId}, 'เสร็จแล้ว')">✅ เสร็จสิ้น</button>
-              <button class="danger" type="button" style="width:auto;" onclick="requestFinalize(${jobId}, 'ยกเลิก')">⛔ ยกเลิก</button>
-            ` : ``}
+      <details class="cwf-details" style="margin-top:10px;" ${isWorking ? "open" : ""}>
+        <summary>🛠️ รูป / หมายเหตุ / ปิดงาน</summary>
+        <div class="cwf-details-body">
+          <div>
+            <b>📷 รูปหน้างาน</b>
+            <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:10px;">
+              <button onclick="pickPhotos(${jobId}, 'before')" ${!canEdit ? "disabled" : ""}>ก่อนทำ</button>
+              <button onclick="pickPhotos(${jobId}, 'after')" ${!canEdit ? "disabled" : ""}>หลังทำ</button>
+              <button onclick="pickPhotos(${jobId}, 'pressure', 4)" ${!canEdit ? "disabled" : ""}>วัดน้ำยา</button>
+              <button onclick="pickPhotos(${jobId}, 'current', 4)" ${!canEdit ? "disabled" : ""}>วัดกระแส</button>
+              <button onclick="pickPhotos(${jobId}, 'temp', 4)" ${!canEdit ? "disabled" : ""}>อุณหภูมิ</button>
+              <button onclick="pickPhotos(${jobId}, 'defect', 4)" ${!canEdit ? "disabled" : ""}>ตำหนิ</button>
+            </div>
+            <div id="photo-status-${jobId}" style="margin-top:8px;"></div>
           </div>
-        ` : ``)}
-        <div id="note-status-${jobId}" style="margin-top:6px;"></div>
-      </div>
+
+          <hr style="margin:10px 0;" />
+
+          <div>
+            <b>📝 หมายเหตุช่าง</b>
+            <textarea id="note-${jobId}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""}>${escape(job.technician_note || "")}</textarea>
+
+            ${historyMode ? "" : ((checkedIn || isWorking) ? `
+              <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
+                <button class="secondary" type="button" style="width:auto;" onclick="saveNote(${jobId})" ${!canEdit ? "disabled" : ""}>💾 บันทึกหมายเหตุ</button>
+                ${isWorking ? `
+                  <button type="button" style="width:auto;" onclick="requestFinalize(${jobId}, 'เสร็จแล้ว')">✅ เสร็จสิ้น</button>
+                  <button class="danger" type="button" style="width:auto;" onclick="requestFinalize(${jobId}, 'ยกเลิก')">⛔ ยกเลิก</button>
+                ` : ``}
+              </div>
+            ` : ``)}
+            <div id="note-status-${jobId}" style="margin-top:6px;"></div>
+          </div>
+        </div>
+      </details>
     ` : `
       <div class="muted" style="margin-top:10px;">* หลังจาก “เช็คอิน” แล้ว จะเปิดให้ใส่รูป/หมายเหตุ (ปุ่มเสร็จสิ้น/ยกเลิก จะขึ้นหลังเริ่มทำงาน) *</div>
     `}
@@ -1180,8 +1050,9 @@ async function startTravel(jobId) {
     // ✅ บันทึกในเครื่อง เพื่อให้ปุ่มเปลี่ยนสถานะทันที
     localStorage.setItem(`cwf_travel_${jobId}`, String(Date.now()));
 
-    // ✅ ไม่เปิดแผนที่อัตโนมัติ (กันเด้งหน้าจอ)
-    // ให้ช่างไปกดเมนู “แผนที่” ในปุ่มเดียว (Workflow Menu) หลังเริ่มเดินทางแทน
+    // เปิดแผนที่ (หลังจากกดเริ่มเดินทาง ถึงจะแสดง GPS/ปุ่มเช็คอิน)
+    const job = (window.__JOB_CACHE__ || []).find(j => Number(j.job_id) === Number(jobId));
+    if (job) openMaps(job.gps_latitude, job.gps_longitude, job.address_text);
 
     // แจ้ง backend (optional)
     await fetch(`${API_BASE}/jobs/${jobId}/travel-start`, { method: "POST" }).catch(() => {});
@@ -1216,9 +1087,7 @@ async function startWork(jobId) {
 // - กด "จ่ายแล้ว" => บันทึก paid_at ในระบบ + เปิดให้แนบรูปสลิป (phase = payment_slip)
 // - e-slip (ย่อ) เปิดได้ที่ /docs/eslip/:job_id
 // =======================================
-// ✅ PromptPay บริษัท (ตามที่แจ้งล่าสุด)
-// - สามารถ override ได้ด้วย window.CWF_PROMPTPAY_PHONE (กรณีอนาคตอยากให้แอดมินตั้งค่าเอง)
-const CWF_PROMPTPAY_PHONE = (window.CWF_PROMPTPAY_PHONE || "0653157648").replace(/[^0-9]/g, "");
+const CWF_PROMPTPAY_PHONE = (window.CWF_PROMPTPAY_PHONE || "0988777321").replace(/[^0-9]/g, "");
 
 // ✅ สร้าง URL รูป QR (PromptPay) ตามยอดเงิน
 function buildPromptPayQrUrl(amount) {
