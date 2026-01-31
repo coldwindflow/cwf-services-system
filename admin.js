@@ -822,7 +822,13 @@ async function loadCustomerBookings() {
     if (!res.ok) throw new Error(all?.error || "โหลดงานไม่สำเร็จ");
 
     const jobs = (Array.isArray(all) ? all : [])
-      .filter(j => (j.job_source === "customer") && !j.technician_team);
+      .filter(j => {
+        const st = String(j.job_status || "").trim();
+        const isReturned = st === "ตีกลับ";
+        const isCustomer = j.job_source === "customer";
+        const isOfferBackToAdmin = (String(j.dispatch_mode || "").trim() === "offer") && !j.technician_team && !j.technician_username;
+        return !j.technician_team && (isCustomer || isReturned || isOfferBackToAdmin);
+      });
 
     if (!jobs.length) {
       box.innerHTML = "<div class='muted'>ไม่มีงานจองที่รอมอบหมาย</div>";
@@ -835,12 +841,14 @@ async function loadCustomerBookings() {
     box.innerHTML = jobs.map(j => {
       const b = j.booking_code || ("CWF" + String(j.job_id).padStart(7, "0"));
       const dt = j.appointment_datetime ? new Date(j.appointment_datetime).toLocaleString("th-TH") : "-";
+      const st = String(j.job_status || "").trim();
+      const badgeText = st === "ตีกลับ" ? "↩️ ตีกลับ" : (j.job_source === "customer" ? "🆕 จองใหม่" : "📝 รอมอบหมาย");
 
       return `
         <div class="job-card" style="border:1px solid rgba(37,99,235,0.22);">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
             <b>📌 Booking: ${b}</b>
-            <span class="badge wait">🆕 จองใหม่</span>
+            <span class=\"badge wait\">${badgeText}</span>
           </div>
 
           <p style="margin-top:10px;"><b>ลูกค้า:</b> ${j.customer_name || "-"}</p>
