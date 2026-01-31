@@ -3,6 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <!-- ✅ PWA (Phase 2) -->
+  <link rel="manifest" href="/mainfest.json">
+  <meta name="theme-color" content="#0b5ed7">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="apple-touch-icon" href="/icon-180.png">
+
   <title>Admin - CWF</title>
 
   <!-- CSS หลักของระบบ -->
@@ -273,6 +281,7 @@
 
         <div class="btn-row">
           <button id="editSaveBtn" type="button" onclick="saveEditModal()">✅ บันทึก</button>
+          <button class="danger" type="button" style="width:auto;" onclick="hardDeleteJobFromModal()">🗑️ ลบถาวร</button>
           <button class="secondary" type="button" onclick="closeEditModal()">ยกเลิก</button>
         </div>
       </div>
@@ -290,5 +299,13 @@
     location.href = "/login.html";
   }
 </script>
+
+<script>
+  // ✅ Register Service Worker (เพื่อให้เปิดแบบ PWA เสถียร)
+  if ("serviceWorker" in navigator) {
+    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  }
+</script>
+
 </body>
 </html>
