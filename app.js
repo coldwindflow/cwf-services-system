@@ -916,30 +916,37 @@ function buildJobCard(job, historyMode = false) {
     <p><b>นัด:</b> ${appt}</p>
     <p><b>ที่อยู่:</b> ${addr}</p>
 
-    ${historyMode ? "" : `
+    
       <div style="margin-top:10px;">
+        <!-- ✅ แถวปุ่มโทร: กดได้ตลอด -->
         <div class="row" style="gap:10px;flex-wrap:wrap;">
           <button class="secondary" type="button" style="width:auto;" ${telPhone ? "" : "disabled"} onclick="callCustomer(${jobId}, '${telPhone}')">📞 โทรลูกค้า</button>
-          <button class="secondary" type="button" style="width:auto;" ${paid ? "" : "disabled"} onclick="openESlip(${jobId})">🧾 e-slip</button>
-          <button class="danger" type="button" style="width:auto;" onclick="returnJob(${jobId})">↩️ ตีกลับงาน</button>
         </div>
 
+        <!-- ✅ แถวปุ่มแผนที่: อยู่ใต้ปุ่มโทร และกดดูได้ตลอด -->
         <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
           <button class="secondary" type="button" style="width:auto;" ${((job.address_text || job.maps_url || (job.gps_latitude != null && job.gps_longitude != null)) ? "" : "disabled")} onclick="openMaps(${job.gps_latitude ?? null}, ${job.gps_longitude ?? null}, '${(job.address_text||"").replace(/'/g,"\\'")}', '${String(job.maps_url||"").replace(/'/g,"\\'")}' )">🧭 แผนที่</button>
         </div>
 
+        <!-- ✅ e-slip: โชว์ทั้งงานปัจจุบัน/ประวัติงาน (ดูได้ตลอดถ้าจ่ายแล้ว) -->
         <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-          <button type="button" style="width:auto;" ${(!called || travelStarted || historyMode || status === "เสร็จแล้ว" || status === "ยกเลิก") ? "disabled" : ""} onclick="startTravel(${jobId})">🚗 เริ่มเดินทาง</button>
-          <button type="button" style="width:auto;" ${(!travelStarted || checkedIn || historyMode || status === "เสร็จแล้ว" || status === "ยกเลิก") ? "disabled" : ""} onclick="checkin(${jobId})">📍 เช็คอิน</button>
-          <button type="button" style="width:auto;" ${(!checkedIn || isWorking || historyMode || status === "เสร็จแล้ว" || status === "ยกเลิก") ? "disabled" : ""} onclick="startWork(${jobId})">▶️ เริ่มทำงาน</button>
-          <button type="button" style="width:auto;" ${(!isWorking || paid || historyMode || status === "เสร็จแล้ว" || status === "ยกเลิก") ? "disabled" : ""} onclick="payJob(${jobId})">💳 จ่ายเงิน</button>
+          <button class="secondary" type="button" style="width:auto;" ${paid ? "" : "disabled"} onclick="openESlip(${jobId})">🧾 e-slip</button>
+          ${historyMode ? "" : `<button class="danger" type="button" style="width:auto;" onclick="returnJob(${jobId})">↩️ ตีกลับงาน</button>`}
         </div>
 
-        <div id="travel-hint-${jobId}" class="muted" style="margin-top:6px;">${flowHint}</div>
+        <!-- ✅ ปุ่มอัปเดตสถานะ (ปุ่มเดียว) กดแล้วสลับขั้นตอนตามลำดับ (เฉพาะงานปัจจุบัน) -->
+        ${historyMode ? "" : `
+          <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+            <button type="button" style="width:100%;" ${((!called && !travelStarted) || status === "เสร็จแล้ว" || status === "ยกเลิก") ? "disabled" : ""} onclick="workflowNext(${jobId})">
+              ${paid ? "🧾 e-slip" : (!travelStarted ? "🚗 เริ่มเดินทาง" : (!checkedIn ? "📍 เช็คอิน" : (!isWorking ? "▶️ เริ่มทำงาน" : "💳 จ่ายเงิน")))}
+            </button>
+          </div>
+          <div id="travel-hint-${jobId}" class="muted" style="margin-top:6px;">${flowHint}</div>
+        `}
 
       </div>
 
-    `}
+
 
     <details class="cwf-details" style="margin-top:10px;">
       <summary>💰 รายละเอียดราคา</summary>
@@ -1081,13 +1088,73 @@ async function startWork(jobId) {
 }
 
 
+
+
+// =======================================
+// 🔁 WORKFLOW NEXT (ปุ่มเดียวสลับขั้นตอน)
+// - ลำดับ: เริ่มเดินทาง -> เช็คอิน -> เริ่มทำงาน -> จ่ายเงิน -> e-slip
+// - เงื่อนไข: ต้องโทรลูกค้าก่อน ถึงจะเริ่มเดินทางได้
+// =======================================
+function workflowNext(jobId) {
+  try {
+    const id = Number(jobId);
+    const job = (window.__JOB_CACHE__ || []).find(j => Number(j.job_id) === id);
+    if (!job) {
+      alert("ไม่พบข้อมูลงาน (ลองรีเฟรช)");
+      return;
+    }
+
+    const status = normStatus(job.job_status);
+    const called = !!localStorage.getItem(`cwf_called_${id}`);
+    const travelStarted = !!localStorage.getItem(`cwf_travel_${id}`) || !!job.travel_started_at;
+    const checkedIn = !!job.checkin_at;
+    const paid = !!job.paid_at || String(job.payment_status || "").trim().toLowerCase() === "paid";
+    const isWorking = status === "กำลังทำ";
+
+    // งานปิดแล้ว: ให้ไปดู e-slip (ถ้ามี) และจบ
+    if (status === "เสร็จแล้ว" || status === "ยกเลิก") {
+      if (paid) return openESlip(id);
+      alert("งานนี้ปิดแล้ว");
+      return;
+    }
+
+    if (!travelStarted) {
+      if (!called) {
+        alert("ต้องกด ‘โทรลูกค้า’ ก่อน ถึงจะเริ่มเดินทางได้");
+        return;
+      }
+      return startTravel(id);
+    }
+
+    if (!checkedIn) {
+      return checkin(id);
+    }
+
+    if (!isWorking) {
+      return startWork(id);
+    }
+
+    if (!paid) {
+      return payJob(id);
+    }
+
+    // จ่ายแล้ว => ดู e-slip ได้ตลอด
+    return openESlip(id);
+  } catch (e) {
+    console.error(e);
+    alert("เกิดข้อผิดพลาดในการอัปเดตสถานะ");
+  }
+}
+window.workflowNext = workflowNext;
+
+
 // =======================================
 // 💳 PAYMENT (จ่ายเงิน + QR + แนบสลิป + e-slip)
 // - ปุ่ม "จ่ายเงิน" จะเด้งเป็น Popup แสดงยอดรวม + QR ให้ลูกค้าแสกน
 // - กด "จ่ายแล้ว" => บันทึก paid_at ในระบบ + เปิดให้แนบรูปสลิป (phase = payment_slip)
 // - e-slip (ย่อ) เปิดได้ที่ /docs/eslip/:job_id
 // =======================================
-const CWF_PROMPTPAY_PHONE = (window.CWF_PROMPTPAY_PHONE || "0988777321").replace(/[^0-9]/g, "");
+const CWF_PROMPTPAY_PHONE = (window.CWF_PROMPTPAY_PHONE || "0653157648").replace(/[^0-9]/g, "");
 
 // ✅ สร้าง URL รูป QR (PromptPay) ตามยอดเงิน
 function buildPromptPayQrUrl(amount) {
