@@ -766,9 +766,6 @@ app.post("/jobs", async (req, res) => {
       notifyTechnician(technician_username, `📨 มีข้อเสนองานใหม่ ${booking_code} (กดรับภายใน 10 นาที)`);
     }
 
-    // ✅ กันลูกค้าสับสน: สถานะ "ตีกลับ" เป็นสถานะภายใน (ให้ลูกค้าเห็นเป็นรอดำเนินการ)
-    const publicStatus = String(row.job_status || "").trim() === "ตีกลับ" ? "รอดำเนินการ" : String(row.job_status || "").trim();
-
     res.json({
       success: true,
       job_id,
@@ -2739,6 +2736,10 @@ app.get("/public/track", async (req, res) => {
 
     // ✅ รูป/หมายเหตุ แสดงเฉพาะหลังปิดงาน
     const isDone = String(row.job_status || "").trim() === "เสร็จแล้ว";
+
+    // ✅ กันลูกค้าสับสน: สถานะ "ตีกลับ" เป็นสถานะภายใน (ให้ลูกค้าเห็นเป็นรอดำเนินการ)
+    const rawStatus = String(row.job_status || "").trim();
+    const publicStatus = rawStatus === "ตีกลับ" ? "รอดำเนินการ" : rawStatus;
 
     let photos = [];
     if (isDone) {
