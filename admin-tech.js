@@ -316,6 +316,105 @@ async function uploadTechPhoto(username) {
 // init
 loadRequests();
 loadTechnicians();
+loadPricingRequests();
+
+
+/* =========================================
+   💸 PRICING REQUESTS (คำขอแก้รายการ/ราคา)
+   GET /admin/pricing-requests
+   POST /admin/pricing-requests/:id/approve
+   POST /admin/pricing-requests/:id/decline
+========================================= */
+async function loadPricingRequests() {
+  const box = document.getElementById("priceReqList");
+  if (!box) return;
+
+  box.textContent = "กำลังโหลด...";
+  try {
+    const list = await fetchJSONArray(`${API}/admin/pricing-requests`);
+    if (!list.length) {
+      box.innerHTML = "<div class='muted'>✅ ไม่มีคำขอแก้ราคา</div>";
+      return;
+    }
+
+    box.innerHTML = list.map((r) => {
+      const payload = r.payload_json || {};
+      const items = Array.isArray(payload.items) ? payload.items : [];
+      const pricing = payload.pricing || {};
+      const total = Number(pricing.total || 0);
+      const dt = r.appointment_datetime ? new Date(r.appointment_datetime).toLocaleString("th-TH") : "-";
+
+      return `
+        <div class="job-card">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;">
+            <div>
+              <div><b>📌 Booking: ${esc(r.booking_code || "-")}</b> <span class="muted">(งาน #${Number(r.job_id)})</span></div>
+              <div class="muted">ลูกค้า: ${esc(r.customer_name || "-")} · ประเภท: ${esc(r.job_type || "-")}</div>
+              <div class="muted">นัด: ${esc(dt)} · ขอโดย: <b>${esc(r.requested_by || "-")}</b></div>
+            </div>
+            <span class="badge wait">pending</span>
+          </div>
+
+          <hr>
+
+          <div><b>🧾 รายการที่ขอปรับ</b></div>
+          ${items.length ? `
+            <ul style="margin:8px 0 0 18px;">
+              ${items.map(it => `<li>${esc(it.item_name)} · qty ${Number(it.qty||0)} · ฿${Number(it.unit_price||0)}</li>`).join("")}
+            </ul>
+          ` : `<div class="muted" style="margin-top:6px;">(ไม่มีรายการ)</div>`}
+
+          <div style="margin-top:8px;"><b>รวมใหม่:</b> ฿${total.toLocaleString("th-TH")}</div>
+
+          <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+            <button type="button" onclick="approvePricingReq(${Number(r.request_id)})">✅ อนุมัติ</button>
+            <button class="danger" type="button" onclick="declinePricingReq(${Number(r.request_id)})">⛔ ปฏิเสธ</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+  } catch (e) {
+    box.innerHTML = `<div class='muted'>❌ ${esc(e.message)}</div>`;
+  }
+}
+
+async function approvePricingReq(request_id) {
+  const ok = confirm("อนุมัติคำขอแก้ราคา?");
+  if (!ok) return;
+  try {
+    const decided_by = (localStorage.getItem("username") || "admin").toString();
+    await fetchJSONAny(`${API}/admin/pricing-requests/${Number(request_id)}/approve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decided_by }),
+    });
+    alert("✅ อนุมัติเรียบร้อย");
+    loadPricingRequests();
+  } catch (e) {
+    alert("❌ " + e.message);
+  }
+}
+
+async function declinePricingReq(request_id) {
+  const ok = confirm("ปฏิเสธคำขอแก้ราคา?");
+  if (!ok) return;
+  try {
+    const decided_by = (localStorage.getItem("username") || "admin").toString();
+    await fetchJSONAny(`${API}/admin/pricing-requests/${Number(request_id)}/decline`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decided_by }),
+    });
+    alert("✅ ปฏิเสธเรียบร้อย");
+    loadPricingRequests();
+  } catch (e) {
+    alert("❌ " + e.message);
+  }
+}
+
+window.loadPricingRequests = loadPricingRequests;
+window.approvePricingReq = approvePricingReq;
+window.declinePricingReq = declinePricingReq;
 
 
 /* =========================================

@@ -3,14 +3,6 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <!-- ✅ PWA (Phase 2) -->
-  <link rel="manifest" href="/mainfest.json">
-  <meta name="theme-color" content="#0b5ed7">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="apple-touch-icon" href="/icon-180.png">
-
   <title>หน้าช่าง - CWF</title>
   <link rel="stylesheet" href="style.css">
 
@@ -40,7 +32,7 @@
       z-index: 999;
       display:flex;
       gap:10px;
-      padding: 10px 10px calc(10px + env(safe-area-inset-bottom)); /* ✅ รองรับจอมี safe-area */
+      padding: 10px;
       border-radius: 18px 18px 0 0;
       border: 1px solid rgba(15,23,42,0.10);
       background: rgba(255,255,255,0.92);
@@ -49,7 +41,7 @@
     }
 
     /* ✅ กัน content โดนเมนูทับ */
-    .app{ padding-bottom: calc(84px + env(safe-area-inset-bottom)); } /* ✅ กันเมนูทับ แต่ไม่เว้นที่ว่างเกิน */
+    .app{ padding-bottom: 110px; }
 
     .nav-btn{
       flex:1; min-height: 44px; border-radius: 14px;
@@ -108,6 +100,13 @@
           title="สลับธีม"
           style="width:44px;min-width:44px;min-height:44px;padding:0;border-radius:14px;display:flex;align-items:center;justify-content:center;">
           🎨
+        </button>
+
+        <!-- 🔔 ปุ่มเปิดแจ้งเตือน/เสียงเตือน (ช่าง) -->
+        <button id="notifyBtn" class="btn" type="button"
+          title="เปิดแจ้งเตือน"
+          style="width:44px;min-width:44px;min-height:44px;padding:0;border-radius:14px;display:flex;align-items:center;justify-content:center;">
+          🔔
         </button>
 
         <button class="danger" style="width:auto;min-height:44px;padding:10px 12px;"
@@ -299,13 +298,5 @@ function logout(){
       });
     }
   </script>
-
-<script>
-  // ✅ Register Service Worker (เพื่อให้เปิดแบบ PWA เสถียร)
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
-  }
-</script>
-
 </body>
 </html>

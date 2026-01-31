@@ -13,6 +13,11 @@ let promotions = [];
 let technicians = [];
 
 // =======================================
+// 🧾 STATE: รายการของงานใน "Modal แก้ไข" (แยกจากตอนสร้างงาน)
+// =======================================
+let editJobItems = [];         // [{item_name, qty, unit_price}]
+
+// =======================================
 // 🧩 HELPERS
 // =======================================
 
@@ -52,10 +57,24 @@ function toDatetimeLocal(value) {
   }
 }
 
+// ✅ แปลงค่าจาก <input type="datetime-local"> -> ISO (เก็บเป็น UTC ให้แสดงท้องถิ่นตรงกันทุกหน้า)
+function datetimeLocalToISO(value) {
+  if (!value) return null;
+  try {
+    const d = new Date(value); // ✅ interpret as local time
+    if (Number.isNaN(d.getTime())) return null;
+    return d.toISOString();
+  } catch {
+    return null;
+  }
+}
+
+
 // =======================================
 // 🧩 EDIT MODAL STATE
 // =======================================
 let currentEditJobId = null;
+let currentEditBookingCode = null;
 
 function openEditModal(job) {
   currentEditJobId = Number(job?.job_id);
@@ -63,6 +82,7 @@ function openEditModal(job) {
   if (!backdrop) return alert("ไม่พบ UI แก้ไขใบงาน");
 
   const booking = job.booking_code || ("CWF" + String(job.job_id).padStart(7, "0"));
+  currentEditBookingCode = booking;
   const src = job.job_source || job.source || "-";
 
   const title = document.getElementById("editModalTitle");
@@ -81,6 +101,15 @@ function openEditModal(job) {
   document.getElementById("edit_customer_note").value = job.customer_note || "";
   document.getElementById("edit_gps_latitude").value = (job.gps_latitude ?? "");
   document.getElementById("edit_gps_longitude").value = (job.gps_longitude ?? "");
+
+  // ✅ reset (รายการ/ทีม)
+  editJobItems = [];
+  const teamInput = document.getElementById("edit_team_members");
+  if (teamInput) teamInput.value = "";
+  renderEditItemsPreview();
+
+  // ✅ โหลดรายการ/โปร/ทีมจริงจากเซิร์ฟเวอร์ (กรณีงานเดิมมีข้อมูล)
+  try { loadEditModalExtras(Number(job.job_id)); } catch(e) {}
 
   backdrop.classList.add("show");
 }
@@ -113,7 +142,7 @@ async function saveEditModal() {
     customer_name: document.getElementById("edit_customer_name")?.value || "",
     customer_phone: document.getElementById("edit_customer_phone")?.value || "",
     job_type: document.getElementById("edit_job_type")?.value || "",
-    appointment_datetime: document.getElementById("edit_appointment_datetime")?.value || "",
+    appointment_datetime: datetimeLocalToISO(document.getElementById("edit_appointment_datetime")?.value) || null,
     address_text: document.getElementById("edit_address_text")?.value || "",
     maps_url: document.getElementById("edit_maps_url")?.value || "",
     job_zone: document.getElementById("edit_job_zone")?.value || "",
@@ -147,10 +176,244 @@ async function saveEditModal() {
   }
 }
 
+// =======================================
+// 🗑️ ลบถาวร (Hard Delete) เฉพาะแอดมิน
+// - ใช้กับงานทดสอบ/ลงผิด (ลบแล้วหายทุกหน้าทันที)
+// - ต้องพิมพ์ booking_code หรือ DELETE เพื่อยืนยัน
+// =======================================
+async function hardDeleteJobFromModal(){
+  if(!currentEditJobId) return;
+
+  const code = (currentEditBookingCode || "").toString().trim();
+  const input = prompt(`พิมพ์เพื่อยืนยันลบถาวร\n- ใส่ booking_code: ${code}\n- หรือพิมพ์ DELETE\n\n⚠️ ลบแล้วกู้คืนไม่ได้`);
+  if(!input) return;
+
+  try{
+    const r = await fetch(`${API_BASE}/jobs/${currentEditJobId}/admin-delete`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ confirm_code: input.trim() })
+    });
+
+    const data = await r.json().catch(()=> ({}));
+    if(!r.ok) throw new Error(data.error || "ลบไม่สำเร็จ");
+
+    alert("✅ ลบงานถาวรแล้ว");
+    closeEditModal();
+    await loadAllJobs();
+  }catch(e){
+    alert(`❌ ${e.message}`);
+  }
+}
+
+
+// =======================================
+// ✅ MODAL EXTRAS: โหลดรายการ/โปร/ทีม จากเซิร์ฟเวอร์
+// =======================================
+async function loadEditModalExtras(jobId){
+  if (!jobId) return;
+
+  // 1) ทีมช่าง
+  try {
+    const r = await fetch(`${API_BASE}/jobs/${Number(jobId)}/team`);
+    const data = await r.json().catch(()=> ({}));
+    if (r.ok) {
+      const members = Array.isArray(data.members) ? data.members : [];
+      const teamInput = document.getElementById("edit_team_members");
+      if (teamInput) teamInput.value = members.join(",");
+    }
+  } catch { /* ignore */ }
+
+  // 2) รายการ/โปร (pricing)
+  try {
+    const r = await fetch(`${API_BASE}/jobs/${Number(jobId)}/pricing`);
+    const data = await r.json().catch(()=> ({}));
+    if (!r.ok) return;
+
+    // data.items => [{item_name, qty, unit_price, line_total}]
+    editJobItems = Array.isArray(data.items)
+      ? data.items.map(it => ({
+          item_name: it.item_name,
+          qty: Number(it.qty || 0),
+          unit_price: Number(it.unit_price || 0)
+        })).filter(x => x.item_name && x.qty > 0)
+      : [];
+
+    // promo select
+    const promoSelect = document.getElementById("edit_promotion_select");
+    if (promoSelect) {
+      const pid = data?.promotion?.promo_id ? String(data.promotion.promo_id) : "";
+      promoSelect.value = pid;
+    }
+    renderEditItemsPreview();
+  } catch { /* ignore */ }
+}
+
+// =======================================
+// ✅ แอดมินเพิ่ม/ลบรายการใน "Modal แก้ไข"
+// =======================================
+function addEditItem(){
+  const jobId = currentEditJobId;
+  if (!jobId) return alert("ยังไม่เลือกงาน");
+
+  const sel = document.getElementById("edit_catalog_select");
+  const qtyEl = document.getElementById("edit_item_qty");
+  const priceEl = document.getElementById("edit_item_unit_price");
+
+  const catalogId = Number(sel?.value || 0);
+  const qty = Number(qtyEl?.value || 1);
+  const unit_price = Number(priceEl?.value || 0);
+
+  if (!catalogId) return alert("เลือกรายการก่อน");
+  if (!Number.isFinite(qty) || qty <= 0) return alert("จำนวนต้องมากกว่า 0");
+  if (!Number.isFinite(unit_price) || unit_price < 0) return alert("ราคา/หน่วยไม่ถูกต้อง");
+
+  const found = catalogItems.find(x => Number(x.item_id) === catalogId);
+  if (!found) return alert("ไม่พบรายการใน catalog");
+
+  const name = String(found.item_name || "").trim();
+  if (!name) return alert("ชื่อรายการไม่ถูกต้อง");
+
+  // รวมรายการชื่อเดียวกัน
+  const existed = editJobItems.find(x => String(x.item_name) === name);
+  if (existed) {
+    existed.qty += qty;
+    existed.unit_price = unit_price; // อัปเดตราคาล่าสุด
+  } else {
+    editJobItems.push({ item_name: name, qty, unit_price });
+  }
+
+  renderEditItemsPreview();
+}
+
+function removeEditItem(idx){
+  editJobItems.splice(Number(idx), 1);
+  renderEditItemsPreview();
+}
+
+function renderEditItemsPreview(){
+  const box = document.getElementById("edit_items_preview");
+  const promoSelect = document.getElementById("edit_promotion_select");
+  if (!box) return;
+
+  if (!Array.isArray(editJobItems) || editJobItems.length === 0) {
+    box.innerHTML = "(ยังไม่มีรายการ)";
+    return;
+  }
+
+  const promoId = promoSelect?.value ? Number(promoSelect.value) : null;
+  const promo = promotions.find(p => Number(p.promo_id) === Number(promoId)) || null;
+
+  let subtotal = 0;
+  const rows = editJobItems.map((it, i) => {
+    const qty = Number(it.qty || 0);
+    const up = Number(it.unit_price || 0);
+    const line = qty * up;
+    subtotal += line;
+    return `
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:6px;">
+        <div>
+          <b>${it.item_name}</b> <span class="muted">x${qty}</span>
+          <div class="muted">฿${up.toLocaleString('th-TH')}/หน่วย</div>
+        </div>
+        <div style="text-align:right;">
+          <div><b>฿${line.toLocaleString('th-TH')}</b></div>
+          <button class="danger btn-mini" type="button" onclick="removeEditItem(${i})">ลบ</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  let discount = 0;
+  if (promo) {
+    if (promo.promo_type === "percent") discount = subtotal * (Number(promo.promo_value) / 100);
+    else discount = Number(promo.promo_value || 0);
+    if (discount > subtotal) discount = subtotal;
+  }
+  const total = Math.max(0, subtotal - discount);
+
+  box.innerHTML = `
+    ${rows}
+    <hr style="margin:10px 0;">
+    <div style="display:flex;justify-content:space-between;"><span>รวมย่อย</span><b>฿${subtotal.toLocaleString('th-TH')}</b></div>
+    <div style="display:flex;justify-content:space-between;"><span>ส่วนลด</span><b>-฿${discount.toLocaleString('th-TH')}</b></div>
+    <div style="display:flex;justify-content:space-between;"><span>รวมสุทธิ</span><b>฿${total.toLocaleString('th-TH')}</b></div>
+  `;
+}
+
+// =======================================
+// 💾 บันทึกรายการ/ราคา (admin direct)
+// =======================================
+async function saveEditItems(){
+  const jobId = currentEditJobId;
+  if (!jobId) return;
+  const statusEl = document.getElementById("edit_items_status");
+  if (statusEl) statusEl.textContent = "กำลังบันทึก...";
+
+  try {
+    const promotion_id = document.getElementById("edit_promotion_select")?.value || "";
+    const payload = {
+      items: (editJobItems || []).map(it => ({
+        item_name: it.item_name,
+        qty: Number(it.qty || 0),
+        unit_price: Number(it.unit_price || 0),
+      })),
+      promotion_id: promotion_id ? Number(promotion_id) : null,
+    };
+
+    const r = await fetch(`${API_BASE}/jobs/${Number(jobId)}/items-admin`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await r.json().catch(()=> ({}));
+    if (!r.ok) throw new Error(data.error || "บันทึกรายการไม่สำเร็จ");
+
+    if (statusEl) statusEl.textContent = `✅ บันทึกแล้ว (รวมสุทธิ ฿${Number(data.total || 0).toLocaleString('th-TH')})`;
+    // refresh lists
+    loadCustomerBookings();
+    loadAllJobs();
+  } catch (e) {
+    if (statusEl) statusEl.textContent = `❌ ${e.message}`;
+  }
+}
+
+// =======================================
+// 👥 บันทึกทีมช่าง (admin)
+// =======================================
+async function saveTeamMembersFromModal(){
+  const jobId = currentEditJobId;
+  if (!jobId) return;
+  const statusEl = document.getElementById("edit_team_status");
+  if (statusEl) statusEl.textContent = "กำลังบันทึก...";
+
+  try {
+    const raw = document.getElementById("edit_team_members")?.value || "";
+    const members = raw.split(",").map(s=>s.trim()).filter(Boolean);
+
+    const r = await fetch(`${API_BASE}/jobs/${Number(jobId)}/team`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ members }),
+    });
+    const data = await r.json().catch(()=> ({}));
+    if (!r.ok) throw new Error(data.error || "บันทึกทีมไม่สำเร็จ");
+
+    if (statusEl) statusEl.textContent = `✅ บันทึกทีมแล้ว (${(data.members||[]).length} คน)`;
+  } catch (e) {
+    if (statusEl) statusEl.textContent = `❌ ${e.message}`;
+  }
+}
+
+
 // expose ให้ปุ่มใน HTML ใช้ได้
 window.closeEditModal = closeEditModal;
 window.parseMapsToLatLngInModal = parseMapsToLatLngInModal;
 window.saveEditModal = saveEditModal;
+window.addEditItem = addEditItem;
+window.removeEditItem = removeEditItem;
+window.saveEditItems = saveEditItems;
+window.saveTeamMembersFromModal = saveTeamMembersFromModal;
 
 // =======================================
 // 👷 LOAD TECHNICIANS
@@ -199,6 +462,26 @@ function loadCatalogAndPromos() {
         cs.appendChild(opt);
       });
 
+      // ✅ dropdown catalog (ใน Modal แก้ไข)
+      const ecs = document.getElementById("edit_catalog_select");
+      if (ecs) {
+        ecs.innerHTML = `<option value="">-- เลือกรายการ --</option>`;
+        catalogItems.forEach(it => {
+          const opt = document.createElement("option");
+          opt.value = it.item_id;
+          opt.textContent = `${it.item_name} (${Number(it.base_price)} บาท/${it.unit_label})`;
+          ecs.appendChild(opt);
+        });
+        ecs.onchange = () => {
+          const id = Number(ecs.value || 0);
+          const found = catalogItems.find(x => Number(x.item_id) === id);
+          if (found) {
+            const inp = document.getElementById("edit_item_unit_price");
+            if (inp) inp.value = String(Number(found.base_price || 0));
+          }
+        };
+      }
+
       // dropdown promo
       const ps = document.getElementById("promotion_select");
       ps.innerHTML = `<option value="">-- ไม่ใช้โปร --</option>`;
@@ -211,6 +494,22 @@ function loadCatalogAndPromos() {
         opt.textContent = `${p.promo_name} (${label})`;
         ps.appendChild(opt);
       });
+
+      // ✅ dropdown promo (ใน Modal แก้ไข)
+      const eps = document.getElementById("edit_promotion_select");
+      if (eps) {
+        eps.innerHTML = `<option value="">-- ไม่ใช้โปร --</option>`;
+        promotions.forEach(p => {
+          const label = p.promo_type === "percent"
+            ? `-${Number(p.promo_value)}%`
+            : `-${Number(p.promo_value)} บาท`;
+          const opt = document.createElement("option");
+          opt.value = p.promo_id;
+          opt.textContent = `${p.promo_name} (${label})`;
+          eps.appendChild(opt);
+        });
+        eps.onchange = () => renderEditItemsPreview();
+      }
 
       ps.onchange = () => renderJobItems();
       renderJobItems();
@@ -324,7 +623,7 @@ function addJob() {
     customer_name: customer_name.value.trim(),
     customer_phone: customer_phone.value.trim(),
     job_type: job_type.value.trim(),
-    appointment_datetime: appointment_datetime.value,
+    appointment_datetime: datetimeLocalToISO(appointment_datetime.value),
     address_text: address_text.value.trim(),
 
     // ✅ GPS หน้างาน (สำหรับเช็คอิน)

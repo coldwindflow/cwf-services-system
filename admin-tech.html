@@ -39,6 +39,7 @@
       <button class="tab-btn active" id="tab-req" onclick="switchTab('req')">📨 คำขออนุมัติ</button>
       <button class="tab-btn" id="tab-tech" onclick="switchTab('tech')">🧑‍🔧 ข้อมูลช่าง</button>
       <button class="tab-btn" id="tab-create" onclick="switchTab('create')">➕ สร้างไอดีช่าง</button>
+      <button class="tab-btn" id="tab-price" onclick="switchTab('price')">💸 คำขอแก้ราคา</button>
     </div>
 
     <div class="card section active" id="sec-req">
@@ -79,12 +80,21 @@
       <div id="create_result" class="muted" style="margin-top:10px;"></div>
     </div>
 
+    <div class="card section" id="sec-price">
+      <h2>💸 คำขอแก้ไขรายการ/ราคา (รออนุมัติ)</h2>
+      <div class="muted" style="margin-top:8px;">
+        - ช่างส่งคำขอแก้รายการ/ราคา → แอดมินกดอนุมัติ/ปฏิเสธ<br>
+        - อนุมัติแล้วระบบจะอัปเดตราคาในใบงานทันที
+      </div>
+      <div id="priceReqList" class="muted" style="margin-top:10px;">กำลังโหลด...</div>
+    </div>
+
 </div>
 
 <script src="/admin-tech.js"></script>
 <script>
   function switchTab(key){
-    ["req","tech","create"].forEach(k=>{
+    ["req","tech","create","price"].forEach(k=>{
       document.getElementById("sec-"+k).classList.toggle("active", k===key);
       document.getElementById("tab-"+k).classList.toggle("active", k===key);
     });

@@ -146,6 +146,11 @@ async function ensureSchema() {
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS customer_complaint TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`);
 
+    // 2.4) jobs: งานตีกลับ (ช่างคืนงานให้แอดมิน) - เก็บไว้เพื่อ audit
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS returned_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS return_reason TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS returned_by TEXT`);
+
 
     await pool.query(
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_booking_code_unique ON public.jobs(booking_code)`
@@ -761,6 +766,9 @@ app.post("/jobs", async (req, res) => {
       notifyTechnician(technician_username, `📨 มีข้อเสนองานใหม่ ${booking_code} (กดรับภายใน 10 นาที)`);
     }
 
+    // ✅ กันลูกค้าสับสน: สถานะ "ตีกลับ" เป็นสถานะภายใน (ให้ลูกค้าเห็นเป็นรอดำเนินการ)
+    const publicStatus = String(row.job_status || "").trim() === "ตีกลับ" ? "รอดำเนินการ" : String(row.job_status || "").trim();
+
     res.json({
       success: true,
       job_id,
@@ -1097,7 +1105,8 @@ app.put("/jobs/:job_id/status", async (req, res) => {
   const { job_id } = req.params;
   const { status } = req.body || {};
 
-  const allow = ["รอดำเนินการ", "กำลังทำ", "เสร็จแล้ว", "ยกเลิก"];
+  // ✅ เพิ่มสถานะ "ตีกลับ" (ช่างคืนงานให้แอดมิน) เพื่อให้ admin คุม workflow ได้ครบ
+  const allow = ["รอดำเนินการ", "กำลังทำ", "เสร็จแล้ว", "ยกเลิก", "ตีกลับ"];
   if (!allow.includes(status)) return res.status(400).json({ error: "status ไม่ถูกต้อง" });
 
   try {
@@ -1329,6 +1338,187 @@ app.post("/admin/pricing-requests/:id/decline", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "ปฏิเสธคำขอไม่สำเร็จ" });
+  }
+});
+
+
+// =======================================
+// 🧾 ADMIN: EDIT JOB ITEMS / PROMOTION (แก้รายการ-ราคา-โปร)
+// - แอดมินแก้ได้เลย ไม่ต้องผ่าน workflow (ใช้กับงานลงผิด/แก้หน้างาน)
+// - ไม่กระทบของเดิม: เป็น endpoint เพิ่มเติม
+// =======================================
+app.put("/jobs/:job_id/items-admin", async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  const items = Array.isArray(req.body?.items) ? req.body.items : [];
+  const promotion_id = req.body?.promotion_id ? Number(req.body.promotion_id) : null;
+
+  if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // โหลดโปร (ถ้าเลือก)
+    let promo = null;
+    if (promotion_id) {
+      const pr = await client.query(
+        `SELECT promo_id, promo_name, promo_type, promo_value
+         FROM public.promotions WHERE promo_id=$1 AND is_active=TRUE`,
+        [promotion_id]
+      );
+      promo = pr.rows[0] || null;
+    }
+
+    // คำนวณราคา (subtotal/discount/total)
+    const safeItems = items
+      .map((it) => ({
+        item_id: it.item_id || null,
+        item_name: String(it.item_name || "").trim(),
+        qty: Math.max(0, Number(it.qty || 0)),
+        unit_price: Math.max(0, Number(it.unit_price || 0)),
+      }))
+      .filter((it) => it.item_name);
+
+    const pricing = safeItems.length
+      ? calcPricing(safeItems, promo)
+      : { subtotal: 0, discount: 0, total: 0 };
+
+    // ล้างรายการเดิม
+    await client.query(`DELETE FROM public.job_items WHERE job_id=$1`, [job_id]);
+    await client.query(`DELETE FROM public.job_promotions WHERE job_id=$1`, [job_id]);
+
+    // ใส่รายการใหม่
+    for (const it of safeItems) {
+      const line_total = Number(it.qty) * Number(it.unit_price);
+      await client.query(
+        `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [job_id, it.item_id, it.item_name, it.qty, it.unit_price, line_total]
+      );
+    }
+
+    // ใส่โปร (ถ้ามี)
+    if (promo && safeItems.length) {
+      await client.query(
+        `INSERT INTO public.job_promotions (job_id, promo_id, applied_discount)
+         VALUES ($1,$2,$3)`,
+        [job_id, promo.promo_id, pricing.discount]
+      );
+    }
+
+    // อัปเดตราคารวมใน jobs
+    await client.query(`UPDATE public.jobs SET job_price=$1 WHERE job_id=$2`, [pricing.total, job_id]);
+
+    await client.query("COMMIT");
+    res.json({ success: true, pricing });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error(e);
+    res.status(500).json({ error: e.message || "แก้รายการไม่สำเร็จ" });
+  } finally {
+    client.release();
+  }
+});
+
+
+// =======================================
+// 👥 TEAM: เพิ่ม/แก้สมาชิกทีมช่างของงาน (admin)
+// - ใช้กรณีงานต้องเข้าพร้อมกันหลายคน และช่วยกันลงรูปได้
+// =======================================
+app.get("/jobs/:job_id/team", async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+  try {
+    const r = await pool.query(
+      `SELECT username FROM public.job_team_members WHERE job_id=$1 ORDER BY username ASC`,
+      [job_id]
+    );
+    res.json({ members: r.rows.map((x) => x.username) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "โหลดทีมไม่สำเร็จ" });
+  }
+});
+
+app.put("/jobs/:job_id/team", async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  const members = Array.isArray(req.body?.members) ? req.body.members : [];
+  if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+  const safe = [...new Set(members.map((x) => String(x || "").trim()).filter(Boolean))];
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
+    for (const u of safe) {
+      await client.query(
+        `INSERT INTO public.job_team_members (job_id, username)
+         VALUES ($1,$2) ON CONFLICT (job_id, username) DO NOTHING`,
+        [job_id, u]
+      );
+    }
+    await client.query("COMMIT");
+    res.json({ success: true, members: safe });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error(e);
+    res.status(500).json({ error: "อัปเดตทีมไม่สำเร็จ" });
+  } finally {
+    client.release();
+  }
+});
+
+
+// =======================================
+// ↩️ RETURN JOB (technician) - ตีกลับงานให้แอดมิน
+// - ใช้กรณีรับงานแล้วแต่ไม่สะดวก/ติดเหตุฉุกเฉิน
+// - แอดมินจะเห็นงานเป็นสถานะ "ตีกลับ" และส่งต่อให้ช่างคนอื่นได้
+// =======================================
+app.post("/jobs/:job_id/return", async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  const username = (req.body?.username || "").toString().trim();
+  const reason = (req.body?.reason || "").toString().trim();
+
+  if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+  if (!username) return res.status(400).json({ error: "ต้องส่ง username" });
+
+  try {
+    // ✅ ดึงคนที่ถูกมอบหมายล่าสุด เพื่อกันคืนงานคนละ job
+    const j = await pool.query(
+      `SELECT technician_username, technician_team, job_status FROM public.jobs WHERE job_id=$1`,
+      [job_id]
+    );
+    if (!j.rows.length) return res.status(404).json({ error: "ไม่พบงาน" });
+
+    const current = j.rows[0];
+    const st = String(current.job_status || "").trim();
+    if (["เสร็จแล้ว", "ยกเลิก"].includes(st)) {
+      return res.status(400).json({ error: "งานนี้ปิดไปแล้ว ไม่สามารถตีกลับได้" });
+    }
+
+    // ✅ อัปเดตสถานะ + ล้างคนมอบหมาย เพื่อให้แอดมินส่งต่อได้
+    await pool.query(
+      `UPDATE public.jobs
+       SET job_status='ตีกลับ',
+           returned_at=NOW(),
+           return_reason=$1,
+           returned_by=$2,
+           technician_username=NULL,
+           technician_team=NULL,
+           dispatch_mode='offer'
+       WHERE job_id=$3`,
+      [reason || null, username, job_id]
+    );
+
+    // ล้างทีม (ไม่ให้ยังเห็นงานในหน้าช่าง)
+    await pool.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
+
+    res.json({ success: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "ตีกลับงานไม่สำเร็จ" });
   }
 });
 
@@ -2570,7 +2760,7 @@ app.get("/public/track", async (req, res) => {
       customer_phone: row.customer_phone || null,
       job_type: row.job_type,
       appointment_datetime: row.appointment_datetime,
-      job_status: row.job_status,
+      job_status: publicStatus,
       address_text: row.address_text,
       maps_url: row.maps_url || null,
       job_zone: row.job_zone || null,

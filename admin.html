@@ -3,14 +3,6 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <!-- ✅ PWA (Phase 2) -->
-  <link rel="manifest" href="/mainfest.json">
-  <meta name="theme-color" content="#0b5ed7">
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
-  <link rel="apple-touch-icon" href="/icon-180.png">
-
   <title>Admin - CWF</title>
 
   <!-- CSS หลักของระบบ -->
@@ -279,6 +271,40 @@
         <input id="edit_job_zone" placeholder="โซนงาน (ถ้ามี)">
         <textarea id="edit_customer_note" rows="3" placeholder="หมายเหตุลูกค้า (ถ้ามี)" style="width:100%;"></textarea>
 
+        <hr style="margin:12px 0;">
+
+        <!-- ✅ ต่อเติม: ระบบทีมช่าง (ใช้ Booking เดียวกัน) -->
+        <b>👥 ทีมช่าง (ใช้ Booking เดียวกัน)</b>
+        <div class="muted" style="margin-top:4px;">ใส่ username คั่นด้วย , เช่น <b>tech1,tech2</b> (ช่างทุกคนจะช่วยกันอัปโหลดรูปได้)</div>
+        <input id="edit_team_members" placeholder="ทีมช่าง (username,... )" style="margin-top:8px;">
+        <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
+          <button class="secondary" type="button" style="width:auto;" onclick="saveTeamMembersFromModal()">💾 บันทึกทีมช่าง</button>
+          <div id="edit_team_status" class="muted"></div>
+        </div>
+
+        <hr style="margin:12px 0;">
+
+        <!-- ✅ ต่อเติม: แอดมินแก้รายการ/ราคาได้ทั้งหมด -->
+        <b>🧾 รายการ/ราคา (แอดมินแก้ได้)</b>
+        <div class="muted" style="margin-top:4px;">ใช้แก้เคส “ลงงานผิด/แก้ราคา/แก้สินค้า” (ไม่ต้องรอ workflow)</div>
+
+        <div class="grid2" style="margin-top:10px;">
+          <select id="edit_catalog_select"></select>
+          <input id="edit_item_qty" type="number" min="1" step="1" placeholder="จำนวน" value="1">
+        </div>
+        <div class="grid2" style="margin-top:8px;">
+          <input id="edit_item_unit_price" type="number" min="0" step="1" placeholder="ราคา/หน่วย">
+          <button class="secondary" type="button" style="width:auto;" onclick="addEditItem()">➕ เพิ่มรายการ</button>
+        </div>
+
+        <div id="edit_items_preview" class="muted" style="margin-top:10px;">(ยังไม่มีรายการ)</div>
+
+        <select id="edit_promotion_select" style="margin-top:10px;"></select>
+        <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
+          <button class="secondary" type="button" style="width:auto;" onclick="saveEditItems()">💾 บันทึกรายการ/ราคา</button>
+          <div id="edit_items_status" class="muted"></div>
+        </div>
+
         <div class="btn-row">
           <button id="editSaveBtn" type="button" onclick="saveEditModal()">✅ บันทึก</button>
           <button class="danger" type="button" style="width:auto;" onclick="hardDeleteJobFromModal()">🗑️ ลบถาวร</button>
@@ -299,13 +325,5 @@
     location.href = "/login.html";
   }
 </script>
-
-<script>
-  // ✅ Register Service Worker (เพื่อให้เปิดแบบ PWA เสถียร)
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
-  }
-</script>
-
 </body>
 </html>

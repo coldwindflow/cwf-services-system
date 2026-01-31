@@ -78,6 +78,93 @@ if (themeToggleBtn) {
 
 
 // =======================================
+// 🔔 NOTIFY + SOUND (งานเข้า / เตือนก่อนถึงเวลานัด 30 นาที)
+// - เป้าหมาย: ใช้งานจริงบนมือถือ/PWA โดยไม่ต้องเพิ่มไฟล์เสียง
+// - วิธี: เล่นเสียง beep แบบ WebAudio + Notification (ถ้าอนุญาต)
+// =======================================
+
+const notifyBtn = document.getElementById("notifyBtn");
+const LS_NOTIFY_KEY = "cwf_notify_enabled"; // '1' = เปิด
+const LS_LAST_OFFER_KEY = "cwf_last_offer_ids"; // เก็บ offer_id ล่าสุด (กันเด้งซ้ำ)
+const LS_REMIND_KEY = "cwf_remind_30m"; // เก็บ job_id+เวลา ที่เตือนไปแล้ว
+
+function isNotifyEnabled() {
+  return localStorage.getItem(LS_NOTIFY_KEY) === "1";
+}
+
+function setNotifyEnabled(v) {
+  localStorage.setItem(LS_NOTIFY_KEY, v ? "1" : "0");
+  if (notifyBtn) notifyBtn.style.opacity = v ? "1" : "0.45";
+}
+
+// ✅ เสียง beep สั้น ๆ (ไม่ต้องใช้ไฟล์)
+function playBeep() {
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = "sine";
+    o.frequency.value = 880;
+    g.gain.value = 0.05;
+    o.connect(g);
+    g.connect(ctx.destination);
+    o.start();
+    setTimeout(() => {
+      o.stop();
+      ctx.close().catch(() => {});
+    }, 220);
+  } catch (e) {
+    // เงียบไว้ (บางเครื่องบล็อคเสียงถ้าไม่มี user gesture)
+  }
+}
+
+function showNotify(title, body) {
+  if (!isNotifyEnabled()) return;
+  playBeep();
+
+  // ✅ Notification (ถ้าอนุญาต)
+  try {
+    if ("Notification" in window && Notification.permission === "granted") {
+      new Notification(title, { body });
+    }
+  } catch {
+    // ignore
+  }
+}
+
+async function requestNotifyPermission() {
+  // ต้องกดปุ่มเองบนมือถือ (user gesture)
+  if (!("Notification" in window)) {
+    alert("อุปกรณ์นี้ไม่รองรับ Notification แต่ยังมีเสียงเตือนได้");
+    return;
+  }
+
+  const p = await Notification.requestPermission();
+  if (p === "granted") {
+    setNotifyEnabled(true);
+    showNotify("CWF แจ้งเตือนพร้อมใช้งาน", "จะมีเสียงเตือนเมื่อมีงานเข้า และเตือนก่อนถึงเวลานัด 30 นาที");
+  } else {
+    setNotifyEnabled(false);
+    alert("ยังไม่ได้อนุญาตการแจ้งเตือน (แต่ยังเปิดเสียงเตือนได้)");
+  }
+}
+
+// init
+setNotifyEnabled(isNotifyEnabled());
+if (notifyBtn) {
+  notifyBtn.addEventListener("click", async () => {
+    // toggle + ขอ permission
+    if (!isNotifyEnabled()) {
+      setNotifyEnabled(true);
+      await requestNotifyPermission();
+    } else {
+      setNotifyEnabled(false);
+      alert("ปิดแจ้งเตือนแล้ว");
+    }
+  });
+}
+
+// =======================================
 // 🕘 TECH CONTROLS (สถานะรับงาน + โซนรับงาน) — "เอาที่เดียวจบ"
 // - รองรับทั้ง UI แบบปุ่ม (ใหม่) และ dropdown (เก่า) เพื่อไม่พัง
 // - ❗ สำคัญ: ห้ามค้าง "กำลังโหลด..." → ถ้าโหลดไม่ได้ก็ยังให้กดได้
@@ -447,7 +534,28 @@ setInterval(() => loadOffers(), 15000);
 function loadOffers() {
   fetch(`${API_BASE}/offers/tech/${username}`)
     .then((res) => res.json())
-    .then((offers) => renderOffers(Array.isArray(offers) ? offers : []))
+    .then((offers) => {
+      const list = Array.isArray(offers) ? offers : [];
+
+      // 🔔 แจ้งเตือนเมื่อมีงานเข้า (เฉพาะงานใหม่ที่ยังไม่เคยเห็น)
+      try {
+        const prev = JSON.parse(localStorage.getItem(LS_LAST_OFFER_KEY) || "[]");
+        const prevSet = new Set(Array.isArray(prev) ? prev.map((x) => Number(x)) : []);
+        const nowIds = list.map((o) => Number(o.offer_id)).filter((x) => Number.isFinite(x));
+
+        const newOnes = nowIds.filter((id) => !prevSet.has(id));
+        if (newOnes.length > 0) {
+          showNotify("📌 CWF มีงานเข้าใหม่", `มีข้อเสนอใหม่ ${newOnes.length} งาน`);
+        }
+
+        // เก็บล่าสุด (จำกัด 50)
+        localStorage.setItem(LS_LAST_OFFER_KEY, JSON.stringify(nowIds.slice(0, 50)));
+      } catch {
+        // ignore
+      }
+
+      renderOffers(list);
+    })
     .catch((err) => {
       console.error(err);
       if (offerList) offerList.innerHTML = "<p>❌ โหลดข้อเสนองานไม่สำเร็จ</p>";
@@ -601,9 +709,53 @@ function renderJobs(jobs) {
     history.forEach((job) => historyJobsEl.appendChild(buildJobCard(job, true)));
   }
 
+  // 🔔 เตือนก่อนถึงเวลานัด 30 นาที (เฉพาะงานที่รับแล้ว)
+  try {
+    check30mReminder(active);
+  } catch {
+    // ignore
+  }
+
   const done = history.filter((j) => normStatus(j.job_status) === "เสร็จแล้ว").length;
   if (doneCountEl) doneCountEl.textContent = String(done);
   renderProfile(done);
+}
+
+// =======================================
+// ⏰ Reminder: งานที่รับแล้ว ใกล้ถึงเวลานัด (30 นาที)
+// - กันเด้งซ้ำ: key = job_id + appointment_datetime
+// =======================================
+function check30mReminder(activeJobs) {
+  if (!isNotifyEnabled()) return;
+  const now = Date.now();
+
+  const memo = JSON.parse(localStorage.getItem(LS_REMIND_KEY) || "{}") || {};
+
+  for (const j of (activeJobs || [])) {
+    const ap = j.appointment_datetime;
+    if (!ap) continue;
+    const t = new Date(ap).getTime();
+    if (!Number.isFinite(t)) continue;
+
+    const diff = t - now;
+    const key = `${j.job_id}__${new Date(ap).toISOString()}`;
+
+    // เตือนเมื่อเหลือ 30 นาที (0 < diff <= 30 นาที)
+    if (diff > 0 && diff <= 30 * 60 * 1000) {
+      if (!memo[key]) {
+        memo[key] = now;
+        const when = new Date(ap).toLocaleString("th-TH");
+        showNotify("⏰ ใกล้ถึงเวลางาน", `งาน ${j.booking_code || ('CWF'+String(j.job_id).padStart(7,'0'))} นัด ${when}`);
+      }
+    }
+  }
+
+  // จำกัดขนาด (ลบของเก่าเกิน 14 วัน)
+  const cutoff = now - 14 * 24 * 60 * 60 * 1000;
+  for (const k of Object.keys(memo)) {
+    if (Number(memo[k] || 0) < cutoff) delete memo[k];
+  }
+  localStorage.setItem(LS_REMIND_KEY, JSON.stringify(memo));
 }
 
 
@@ -633,6 +785,50 @@ function openMaps(lat, lng, address, mapsUrl) {
   }
 }
 window.openMaps = openMaps;
+
+// =======================================
+// 📞 CALL CUSTOMER (กดโทรจากงานที่รับแล้ว)
+// =======================================
+function callCustomer(phone) {
+  const p = String(phone || "").trim();
+  if (!p) return alert("ไม่มีเบอร์โทรลูกค้า");
+  // มือถือจะเด้งไปที่แอพโทร
+  window.location.href = `tel:${p}`;
+}
+window.callCustomer = callCustomer;
+
+// =======================================
+// ↩️ RETURN JOB (ช่างตีกลับงานให้แอดมิน)
+// =======================================
+function returnJob(jobId) {
+  const id = Number(jobId);
+  if (!id) return;
+  const ok = confirm("ต้องการตีกลับงานนี้ให้แอดมินใช่ไหม?\n(แอดมินจะส่งต่อให้ช่างคนอื่นได้)");
+  if (!ok) return;
+
+  const reason = prompt("เหตุผลที่ตีกลับ (ใส่สั้นๆ):", "ติดงาน/ไม่สะดวก") || "";
+
+  fetch(`${API_BASE}/jobs/${id}/return`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, reason }),
+  })
+    .then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "ตีกลับงานไม่สำเร็จ");
+      return data;
+    })
+    .then(() => {
+      alert("✅ ตีกลับงานเรียบร้อย");
+      loadJobs();
+      loadOffers();
+    })
+    .catch((e) => {
+      console.error(e);
+      alert(`❌ ${e.message}`);
+    });
+}
+window.returnJob = returnJob;
 
 // =======================================
 // 🧱 BUILD JOB CARD
@@ -684,6 +880,8 @@ function buildJobCard(job, historyMode = false) {
   const appt = job.appointment_datetime ? new Date(job.appointment_datetime).toLocaleString("th-TH") : "-";
   const addr = escape(job.address_text || "-");
   const bookingCode = job.booking_code || ("CWF" + String(jobId).padStart(7, "0"));
+  const rawPhone = String(job.customer_phone || "").trim();
+  const telPhone = rawPhone.replace(/[^0-9+]/g, "");
 
   // ✅ สรุปสถานะเช็คอิน
   const checkinText = checkedIn
@@ -711,7 +909,9 @@ function buildJobCard(job, historyMode = false) {
     ${historyMode ? "" : `
       <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
         <button type="button" id="flow-btn-${jobId}" ${flowDisabled} ${flowAction ? `onclick="${flowAction}"` : ""}>${flowLabel}</button>
-        <button class="secondary" type="button" style="width:auto;" ${travelStarted ? "" : "disabled"} onclick="openMaps(${job.gps_latitude ?? null}, ${job.gps_longitude ?? null}, '${(job.address_text||"").replace(/'/g,"\'")}' )">🧭 แผนที่</button>
+        <button class="secondary" type="button" style="width:auto;" ${travelStarted ? "" : "disabled"} onclick="openMaps(${job.gps_latitude ?? null}, ${job.gps_longitude ?? null}, '${(job.address_text||"").replace(/'/g,"\'")}', '${String(job.maps_url||"").replace(/'/g,"\'")}' )">🧭 แผนที่</button>
+        <button class="secondary" type="button" style="width:auto;" ${telPhone ? "" : "disabled"} onclick="callCustomer('${telPhone}')">📞 โทรลูกค้า</button>
+        <button class="danger" type="button" style="width:auto;" onclick="returnJob(${jobId})">↩️ ตีกลับงาน</button>
       </div>
 
       <div id="travel-hint-${jobId}" class="muted" style="margin-top:6px;">
@@ -1140,6 +1340,16 @@ async function refreshPhotoStatus(jobId) {
     const all = await idbGetByJob(jobId);
     const byPhase = (ph) => all.filter((x) => x.phase === ph).length;
 
+    // ✅ นับรูปที่อัปโหลดแล้วจากเซิร์ฟเวอร์ (ให้ช่างรู้ว่าขึ้นจริง)
+    let uploaded = [];
+    try {
+      const rr = await fetch(`${API_BASE}/jobs/${jobId}/photos`);
+      if (rr.ok) uploaded = (await rr.json()) || [];
+    } catch {
+      // ignore
+    }
+    const upByPhase = (ph) => (uploaded || []).filter((x) => x.phase === ph && x.public_url).length;
+
     box.innerHTML = `
       <div class="muted">
         ค้างในเครื่อง → ก่อนทำ: <b>${byPhase("before")}</b>,
@@ -1149,12 +1359,94 @@ async function refreshPhotoStatus(jobId) {
         อุณหภูมิ: <b>${byPhase("temp")}</b>,
         ตำหนิ: <b>${byPhase("defect")}</b>
       </div>
+
+      <div class="muted" style="margin-top:6px;">
+        อัปโหลดแล้ว → ก่อนทำ: <b>${upByPhase("before")}</b>,
+        หลังทำ: <b>${upByPhase("after")}</b>,
+        วัดน้ำยา: <b>${upByPhase("pressure")}</b>,
+        วัดกระแส: <b>${upByPhase("current")}</b>,
+        อุณหภูมิ: <b>${upByPhase("temp")}</b>,
+        ตำหนิ: <b>${upByPhase("defect")}</b>
+      </div>
+
+      <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
+        <button class="secondary" type="button" style="width:auto;" onclick="openUploadedPhotos(${jobId})">🖼️ ดูรูปที่อัปโหลดแล้ว</button>
+        <button class="secondary" type="button" style="width:auto;" onclick="forceUpload(${jobId})">⬆️ อัปโหลดค้างในเครื่อง</button>
+      </div>
     `;
   } catch (e) {
     console.error(e);
     box.textContent = "❌ โหลดสถานะรูปไม่สำเร็จ";
   }
 }
+
+// ✅ แสดงรูปที่อัปโหลดแล้ว (modal ง่าย ๆ)
+async function openUploadedPhotos(jobId) {
+  try {
+    const rr = await fetch(`${API_BASE}/jobs/${jobId}/photos`);
+    const photos = rr.ok ? (await rr.json()) : [];
+    const list = Array.isArray(photos) ? photos.filter((p) => p.public_url) : [];
+
+    if (!list.length) return alert("ยังไม่มีรูปที่อัปโหลดขึ้นเซิร์ฟเวอร์");
+
+    const html = `
+      <div style="position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:9999;display:flex;align-items:flex-end;justify-content:center;">
+        <div style="width:100%;max-width:920px;background:#fff;border-radius:18px 18px 0 0;padding:14px;max-height:75vh;overflow:auto;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+            <b>🖼️ รูปที่อัปโหลดแล้ว (งาน #${jobId})</b>
+            <button class="secondary" type="button" style="width:auto;" onclick="closeModal()">ปิด</button>
+          </div>
+          <div class="muted" style="margin-top:6px;">แตะรูปเพื่อเปิดเต็มจอ</div>
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;">
+            ${list
+              .map(
+                (p) =>
+                  `<a href="${p.public_url}" target="_blank" rel="noopener" style="display:block;">
+                     <img src="${p.public_url}" alt="${p.phase}" style="width:100%;height:110px;object-fit:cover;border-radius:12px;border:1px solid rgba(0,0,0,.08);"/>
+                   </a>`
+              )
+              .join("")}
+          </div>
+        </div>
+      </div>
+    `;
+
+    // ปิด modal (ฟังก์ชัน global แบบเบา ๆ)
+    window.closeModal = () => {
+      const el = document.getElementById("cwf-modal");
+      if (el) el.remove();
+    };
+
+    const wrap = document.createElement("div");
+    wrap.id = "cwf-modal";
+    wrap.innerHTML = html;
+    document.body.appendChild(wrap);
+  } catch (e) {
+    console.error(e);
+    alert("โหลดรูปไม่สำเร็จ");
+  }
+}
+window.openUploadedPhotos = openUploadedPhotos;
+
+// ✅ บังคับอัปโหลดค้างในเครื่อง (กดเอง)
+async function forceUpload(jobId) {
+  const id = Number(jobId);
+  if (!id) return;
+  try {
+    const btn = document.querySelector(`#photo-status-${id} button`);
+    if (btn) btn.disabled = true;
+    await uploadPendingPhotos(id);
+    await refreshPhotoStatus(id);
+    alert("✅ อัปโหลดรูปค้างในเครื่องเรียบร้อย");
+  } catch (e) {
+    console.error(e);
+    alert(`❌ ${e.message || "อัปโหลดไม่สำเร็จ"}`);
+  } finally {
+    const btn = document.querySelector(`#photo-status-${id} button`);
+    if (btn) btn.disabled = false;
+  }
+}
+window.forceUpload = forceUpload;
 
 // =======================================
 // ⬆️ UPLOAD PENDING PHOTOS

@@ -51,6 +51,108 @@ function statusBadge(st){
   return '<span class="badge wait">⏳ รอดำเนินการ</span>';
 }
 
+// ✅ สถานะที่ลูกค้าเข้าใจง่าย (อิงจาก timestamps จริง)
+function derivedStatus(d){
+  const s = String(d.job_status || '').trim();
+  if (s === 'ยกเลิก') return 'ยกเลิก';
+  if (s === 'เสร็จแล้ว') return 'เสร็จสิ้น';
+  if (d.started_at) return 'กำลังทำงาน';
+  if (d.checkin_at) return 'ถึงหน้างานแล้ว';
+  if (d.travel_started_at) return 'กำลังเดินทาง';
+  return 'รอช่างรับงาน';
+}
+
+function timelineHTML(d){
+  const steps = [
+    { k: 'accepted', label: 'รับงาน / เตรียมเข้าพื้นที่', ok: !!d.technician },
+    { k: 'travel', label: 'กำลังเดินทาง', ok: !!d.travel_started_at },
+    { k: 'checkin', label: 'ถึงหน้างาน (เช็คอิน)', ok: !!d.checkin_at },
+    { k: 'start', label: 'เริ่มทำงาน', ok: !!d.started_at },
+    { k: 'done', label: 'เสร็จสิ้น', ok: String(d.job_status||'').trim()==='เสร็จแล้ว' },
+  ];
+  return `
+    <div class="card tight" style="margin-top:10px;">
+      <b>📍 ไทม์ไลน์สถานะ</b>
+      <div class="muted" style="margin-top:6px;">สถานะปัจจุบัน: <b>${derivedStatus(d)}</b></div>
+      <ul style="margin:10px 0 0 18px;">
+        ${steps.map(s => `<li style="margin:6px 0;">${s.ok ? '✅' : '⏳'} ${s.label}</li>`).join('')}
+      </ul>
+    </div>
+  `;
+}
+
+function photosHTML(d){
+  if (!Array.isArray(d.photos) || !d.photos.length) return '';
+  return `
+    <div class="card tight" style="margin-top:10px;">
+      <b>📷 รูปหน้างาน (แสดงหลังเสร็จสิ้นเท่านั้น)</b>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;">
+        ${d.photos.map(p=>`
+          <a href="${p.public_url}" target="_blank" rel="noopener" style="display:block;">
+            <img src="${p.public_url}" alt="${p.phase}" style="width:100%;height:110px;object-fit:cover;border-radius:12px;border:1px solid rgba(0,0,0,.08);" />
+          </a>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function reviewHTML(d){
+  const done = String(d.job_status||'').trim()==='เสร็จแล้ว';
+  if (!done) return '';
+  if (d.review && d.review.already_reviewed) {
+    return `
+      <div class="card tight" style="margin-top:10px;">
+        <b>⭐ รีวิวของคุณ</b>
+        <div style="margin-top:6px;">ให้คะแนน: <b>${d.review.rating || '-'}</b> / 5</div>
+        ${d.review.review_text ? `<div class="muted" style="margin-top:6px;">"${String(d.review.review_text).replace(/</g,'&lt;')}"</div>` : ''}
+      </div>
+    `;
+  }
+  return `
+    <div class="card tight" style="margin-top:10px;border-style:dashed;">
+      <b>⭐ ให้คะแนนช่าง</b>
+      <div class="muted" style="margin-top:6px;">รีวิวได้ 1 ครั้ง หลังงานเสร็จสิ้น</div>
+      <div class="grid2" style="margin-top:8px;">
+        <select id="rate">
+          <option value="5">5 - ดีมาก</option>
+          <option value="4">4 - ดี</option>
+          <option value="3">3 - พอใช้</option>
+          <option value="2">2 - ควรปรับปรุง</option>
+          <option value="1">1 - แย่</option>
+        </select>
+        <button type="button" onclick="submitReview('${d.booking_token || d.booking_code || ''}')">ส่งรีวิว</button>
+      </div>
+      <textarea id="review_text" rows="3" style="margin-top:8px;" placeholder="เขียนรีวิว (ถ้ามี)"></textarea>
+      <textarea id="complaint_text" rows="2" style="margin-top:8px;" placeholder="ร้องเรียน/ข้อเสนอแนะ (ถ้ามี)"></textarea>
+      <div id="review_status" class="muted" style="margin-top:6px;"></div>
+    </div>
+  `;
+}
+
+// ✅ ส่งรีวิว (หลังงานเสร็จเท่านั้น)
+async function submitReview(key){
+  const status = document.getElementById('review_status');
+  if (status) status.textContent = 'กำลังส่งรีวิว...';
+  try{
+    const rate = Number(document.getElementById('rate')?.value || 5);
+    const review_text = document.getElementById('review_text')?.value || '';
+    const complaint_text = document.getElementById('complaint_text')?.value || '';
+    const res = await fetch(`${API}/public/review`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ q:key, rating: rate, review_text, complaint_text })
+    });
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) throw new Error(data.error || 'ส่งรีวิวไม่สำเร็จ');
+    if (status) status.textContent = '✅ ส่งรีวิวเรียบร้อย ขอบคุณครับ';
+    // refresh
+    setTimeout(()=>track(), 600);
+  }catch(e){
+    if (status) status.textContent = `❌ ${e.message}`;
+  }
+}
+
 function openNav(lat,lng,addr){
   let url="";
   const has = lat!==null && lng!==null && lat!==undefined && lng!==undefined && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lng));
@@ -80,6 +182,10 @@ async function track(){
     const dt = data.appointment_datetime ? new Date(data.appointment_datetime).toLocaleString("th-TH") : "-";
     const tech = data.technician;
 
+    const tel = tech && tech.phone ? String(tech.phone).trim() : "";
+    const telBtn = tel ? `<button class="secondary" type="button" onclick="location.href='tel:${tel}'">📞 โทรหาช่าง</button>` : "";
+    const receiptBtn = data.receipt_url ? `<a class="btn" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;" href="${data.receipt_url}" target="_blank" rel="noopener">🧾 ใบเสร็จ</a>` : "";
+
     box.innerHTML = `
       <div class="job-card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
@@ -92,9 +198,13 @@ async function track(){
         <p><b>นัดหมาย:</b> ${dt}</p>
         <p><b>ที่อยู่:</b> ${data.address_text || "-"}</p>
 
-        <div class="row" style="margin-top:10px;">
+        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
           <button class="secondary" type="button" onclick="openNav(${data.gps_latitude ?? "null"}, ${data.gps_longitude ?? "null"}, '${String(data.address_text||"").replace(/'/g,"\\'")}')">🧭 นำทาง</button>
+          ${receiptBtn}
+          ${telBtn}
         </div>
+
+        ${timelineHTML(data)}
 
         <hr style="margin:10px 0;">
 
@@ -106,10 +216,22 @@ async function track(){
               <div>
                 <div><b>${tech.full_name || tech.username || "-"}</b></div>
                 <div class="muted">⭐ ${tech.rating ?? 0} · เกรด ${tech.grade || "-"}</div>
+                ${tech.phone ? `<div class="muted" style="margin-top:4px;">☎️ เบอร์ช่างจะแสดงหลังเริ่มเดินทาง</div>` : ``}
               </div>
             </div>
           ` : `<div class="muted" style="margin-top:6px;">ยังไม่มีช่างรับงาน (รอแอดมินมอบหมาย/รอช่างกดรับ)</div>`}
         </div>
+
+        ${data.technician_note ? `
+          <div class="card tight" style="margin-top:10px;">
+            <b>📝 หมายเหตุจากช่าง (แสดงหลังเสร็จสิ้น)</b>
+            <div class="muted" style="margin-top:6px;white-space:pre-wrap;">${String(data.technician_note).replace(/</g,'&lt;')}</div>
+          </div>
+        ` : ``}
+
+        ${photosHTML(data)}
+
+        ${reviewHTML(data)}
 
         <div class="muted" style="margin-top:10px;">* ถ้าต้องการช่วยเหลือ โทร 098-877-7321 หรือ LINE OA: @cwfair</div>
       </div>
