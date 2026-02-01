@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CWF - ใบรับเงินอิเล็กทรอนิกส์</title>
+  <link rel="stylesheet" href="style.css">
+
+  <style>
+    /* =====================================================
+       🧾 E-Slip (Standard View)
+       -----------------------------------------------------
+       หน้านี้เป็น "หน้าแสดงผลเอกสาร" เท่านั้น
+       ✅ ใช้ข้อมูลเดิมทั้งหมดจากระบบ (อ่านจาก /docs/receipt/:job_id)
+       ✅ ไม่แก้การคำนวณราคา
+       ✅ ไม่เพิ่ม/ลบ field ใด ๆ ในฐานข้อมูล
+       ❌ ไม่แตะ API/Controller/DB ใด ๆ
+       -----------------------------------------------------
+       หมายเหตุ: รูปแบบหัว/ท้าย ต้องตรงตาม requirement 100%
+       ===================================================== */
+
+    .page{ max-width: 520px; margin: 0 auto; padding: 12px; }
+
+    /* เอกสาร */
+    .eslip{
+      background:#ffffff;
+      border:1px solid rgba(15,23,42,0.10);
+      border-radius:16px;
+      padding:14px;
+      box-shadow: 0 10px 24px rgba(2,6,23,0.08);
+    }
+    .eslip-head{ text-align:center; }
+    .eslip-head .h1{ font-weight:900; font-size:18px; }
+    .eslip-head .h2{ margin-top:4px; font-weight:800; font-size:14px; color:#0f172a; }
+
+    .eslip-meta{ display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-top:10px; }
+    .eslip-meta .box{ padding:10px 12px; border:1px solid rgba(15,23,42,0.10); border-radius:12px; background:rgba(37,99,235,0.04); }
+
+    .eslip-table{ width:100%; border-collapse:collapse; margin-top:12px; }
+    .eslip-table th,.eslip-table td{ border:1px solid rgba(15,23,42,0.10); padding:8px; font-size:13px; }
+    .eslip-table th{ background: rgba(37,99,235,0.08); text-align:left; }
+
+    .eslip-sum{ margin-top:10px; padding:10px 12px; border:1px solid rgba(15,23,42,0.10); border-radius:12px; background:#fff; }
+    .eslip-sum .row{ display:flex; justify-content:space-between; gap:10px; margin:6px 0; }
+    .eslip-sum .total{ font-size:18px; font-weight:900; }
+
+    .eslip-foot{ margin-top:12px; text-align:center; color:#475569; font-size:12.5px; line-height:1.45; }
+
+    /* ปุ่ม/แถบควบคุม */
+    .top-actions{ display:flex; gap:10px; justify-content:flex-end; margin: 6px 0 12px; }
+    .top-actions button{ width:auto; }
+
+    /* พิมพ์ */
+    @media print{
+      .top-actions{ display:none !important; }
+      body{ background:#fff; }
+      .page{ max-width: none; padding: 0; }
+      .eslip{ box-shadow:none; border: none; border-radius: 0; }
+    }
+  </style>
+</head>
+
+<body class="theme-2">
+  <div class="page">
+    <div class="top-actions">
+      <button class="secondary" type="button" onclick="window.close()">ปิด</button>
+      <button type="button" onclick="window.print()">พิมพ์</button>
+    </div>
+
+    <div class="eslip" id="doc">
+      <div class="muted">กำลังสร้าง E-Slip...</div>
+    </div>
+  </div>
+
+<script>
+  const API = window.location.origin;
+
+  // ==============================
+  // 🔒 Helper: escape HTML
+  // ==============================
+  function esc(s){
+    return String(s ?? "").replace(/[&<>"']/g, (m) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    }[m]));
+  }
+
+  // ==============================
+  // 🔎 Read query string
+  // ==============================
+  function qs(name){
+    const u = new URL(location.href);
+    return u.searchParams.get(name);
+  }
+
+  // ==============================
+  // 🧾 Parse receipt HTML (ใช้ข้อมูลเดิม)
+  // - ดึงตารางรายการ + สรุปยอด
+  // - ดึงข้อมูลลูกค้า/งาน จากกล่องข้อมูลในใบเสร็จ
+  // ==============================
+  function parseReceiptHtml(html){
+    const doc = new DOMParser().parseFromString(html, "text/html");
+
+    // 1) rows (รายการ)
+    const table = doc.querySelector("table");
+    const rows = Array.from(table?.querySelectorAll("tbody tr") || []).map(tr => {
+      const tds = Array.from(tr.querySelectorAll("td")).map(td => (td.textContent || "").trim());
+      return {
+        name: tds[0] || "-",
+        qty: tds[1] || "-",
+        unit: tds[2] || "-",
+        line: tds[3] || "-",
+      };
+    });
+
+    // 2) summary (รวมก่อนลด / ส่วนลด / ยอดสุทธิ)
+    const boxes = Array.from(doc.querySelectorAll(".box"));
+    const sumBox = boxes.find(b => (b.textContent || "").includes("ยอดสุทธิ")) || null;
+    const sumText = (sumBox?.textContent || "").replace(/\s+/g," ").trim();
+
+    const subtotal = (sumText.match(/รวมก่อนลด:\s*([0-9,\.]+)/) || [])[1] || "-";
+    const discount = (sumText.match(/ส่วนลด:\s*([0-9,\.]+)/) || [])[1] || "-";
+    const total = (sumText.match(/ยอดสุทธิ:\s*([0-9,\.]+)/) || [])[1] || "-";
+
+    // 3) customer/job meta (กล่องที่มีคำว่า ลูกค้า:)
+    const metaBox = boxes.find(b => (b.textContent || "").includes("ลูกค้า:")) || null;
+    const metaText = (metaBox?.textContent || "").replace(/\s+/g," ").trim();
+
+    function pick(label){
+      const re = new RegExp(label + "\\s*([^\\n]+)", "i");
+      const m = metaText.match(re);
+      if (!m) return "-";
+      return (m[1] || "-").trim();
+    }
+
+    const customerName = pick("ลูกค้า:");
+    const customerPhone = pick("โทร:");
+    const jobType = pick("ประเภทงาน:");
+    const appointment = pick("นัด:");
+    const address = pick("ที่อยู่:");
+
+    // 4) booking (กล่องด้านขวาบน หรือ title)
+    const bookingBox = boxes.find(b => (b.textContent || "").includes("CWF") || (b.textContent || "").includes("งาน #")) || null;
+    const bookingRaw = (bookingBox?.textContent || "").replace(/\s+/g," ").trim();
+    const booking = bookingRaw ? bookingRaw.split(" ")[0] : "-";
+
+    return {
+      booking,
+      rows: rows.length ? rows : [{name:"-",qty:"-",unit:"-",line:"-"}],
+      subtotal,
+      discount,
+      total,
+      meta: {
+        customerName,
+        customerPhone,
+        jobType,
+        appointment,
+        address
+      }
+    };
+  }
+
+  // ==============================
+  // 🧾 Render E-Receipt (รูปแบบตาม requirement 100%)
+  // ==============================
+  function renderESlip(data){
+    const printedAt = new Date().toLocaleString("th-TH");
+    const mount = document.getElementById("doc");
+
+    mount.innerHTML = `
+      <div class="eslip-head">
+        <div class="h1">ใบรับเงินอิเล็กทรอนิกส์ (E-Receipt)</div>
+        <div class="h2">Coldwindflow Air Services</div>
+      </div>
+
+      <div class="eslip-meta">
+        <div class="box"><b>Booking:</b> ${esc(data.booking || "-")}</div>
+        <div class="box"><b>วันที่แสดงผล:</b> ${esc(printedAt)}</div>
+      </div>
+
+      <div style="margin-top:10px;">
+        <div><b>ชื่อลูกค้า:</b> ${esc(data.meta.customerName || "-")}</div>
+        <div><b>เบอร์โทร:</b> ${esc(data.meta.customerPhone || "-")}</div>
+        <div><b>ประเภทงาน:</b> ${esc(data.meta.jobType || "-")}</div>
+        <div><b>นัดหมาย:</b> ${esc(data.meta.appointment || "-")}</div>
+        <div><b>ที่อยู่:</b> ${esc(data.meta.address || "-")}</div>
+      </div>
+
+      <table class="eslip-table" aria-label="รายการและราคา">
+        <thead>
+          <tr>
+            <th>รายการ</th>
+            <th style="text-align:right;">จำนวน</th>
+            <th style="text-align:right;">ราคา/หน่วย</th>
+            <th style="text-align:right;">รวม</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.rows.map(it => `
+            <tr>
+              <td>${esc(it.name)}</td>
+              <td style="text-align:right;">${esc(it.qty)}</td>
+              <td style="text-align:right;">${esc(it.unit)}</td>
+              <td style="text-align:right;">${esc(it.line)}</td>
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+
+      <div class="eslip-sum">
+        <div class="row"><span>รวมก่อนลด</span><b>${esc(data.subtotal)}</b></div>
+        <div class="row"><span>ส่วนลด</span><b>${esc(data.discount)}</b></div>
+        <div class="row total"><span>ยอดสุทธิ</span><span>${esc(data.total)}</span></div>
+      </div>
+
+      <div class="eslip-foot">
+        เอกสารนี้ใช้เป็นหลักฐานการรับเงินเท่านั้น<br>
+        ไม่สามารถใช้เป็นใบกำกับภาษีได้<br>
+        ราคาดังกล่าวไม่รวมภาษีมูลค่าเพิ่ม
+      </div>
+    `;
+  }
+
+  // ==============================
+  // 🚀 Main
+  // ==============================
+  (async function main(){
+    const jobId = Number(qs("job_id") || qs("id") || 0);
+    const mount = document.getElementById("doc");
+
+    if (!jobId){
+      mount.innerHTML = `<div class="muted">❌ ไม่พบ job_id ในลิงก์</div>`;
+      return;
+    }
+
+    // ใช้เอกสารเดิม (receipt) เป็นแหล่งข้อมูลหลัก เพื่อไม่แตะ backend
+    const receiptUrl = `${API}/docs/receipt/${encodeURIComponent(jobId)}`;
+
+    try{
+      const r = await fetch(receiptUrl, { cache: "no-store" });
+      const html = await r.text();
+      if (!r.ok) throw new Error("โหลดข้อมูลใบเสร็จเดิมไม่สำเร็จ");
+
+      const parsed = parseReceiptHtml(html);
+      renderESlip(parsed);
+    }catch(e){
+      mount.innerHTML = `<div class="muted">❌ สร้าง E-Slip ไม่สำเร็จ: ${esc(e.message || e)}</div>`;
+    }
+  })();
+</script>
+</body>
+</html>
