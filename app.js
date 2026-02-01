@@ -811,37 +811,9 @@ function callCustomer(jobId, phone) {
 window.callCustomer = callCustomer;
 
 // =======================================
-// ↩️ RETURN JOB (ช่างตีกลับงานให้แอดมิน)
+// ↩️ RETURN JOB (ช่างตีกลับงาน) - (ปิดใช้งานฝั่งช่างตามคำสั่งล่าสุด)
+// - ยังไม่ลบ endpoint ฝั่ง backend เผื่อใช้งานอนาคต
 // =======================================
-function returnJob(jobId) {
-  const id = Number(jobId);
-  if (!id) return;
-  const ok = confirm("ต้องการตีกลับงานนี้ให้แอดมินใช่ไหม?\n(แอดมินจะส่งต่อให้ช่างคนอื่นได้)");
-  if (!ok) return;
-
-  const reason = prompt("เหตุผลที่ตีกลับ (ใส่สั้นๆ):", "ติดงาน/ไม่สะดวก") || "";
-
-  fetch(`${API_BASE}/jobs/${id}/return`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, reason }),
-  })
-    .then(async (res) => {
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "ตีกลับงานไม่สำเร็จ");
-      return data;
-    })
-    .then(() => {
-      alert("✅ ตีกลับงานเรียบร้อย");
-      loadJobs();
-      loadOffers();
-    })
-    .catch((e) => {
-      console.error(e);
-      alert(`❌ ${e.message}`);
-    });
-}
-window.returnJob = returnJob;
 
 // =======================================
 // 🧱 BUILD JOB CARD
@@ -871,6 +843,27 @@ function buildJobCard(job, historyMode = false) {
   const checkedIn = !!job.checkin_at;
   const isWorking = status === "กำลังทำ";
   const canEdit = !historyMode && (status === "รอดำเนินการ" || status === "กำลังทำ");
+
+  // ✅ ปุ่มอัปเดตสถานะ (ปุ่มเดียว) + e-slip (ขั้นตอนสุดท้าย)
+  // - งานประวัติ: ปุ่มนี้จะกลายเป็น "🧾 e-slip" อย่างเดียว (ดูได้ตลอดถ้าจ่ายแล้ว)
+  const workflowDisabled = historyMode
+    ? !paid
+    : (paid
+        ? false
+        : ((!travelStarted && !called) || status === "เสร็จแล้ว" || status === "ยกเลิก"));
+
+  const workflowOnclick = historyMode ? `openESlip(${jobId})` : `workflowNext(${jobId})`;
+
+  const workflowLabel = historyMode
+    ? "🧾 e-slip"
+    : (paid
+        ? "🧾 e-slip"
+        : (!travelStarted
+            ? "🚗 เริ่มเดินทาง"
+            : (!checkedIn
+                ? "📍 เช็คอิน"
+                : (!isWorking ? "▶️ เริ่มทำงาน" : "💳 จ่ายเงิน"))));
+
 
   // ✅ ปุ่มสถานะจะแสดงเป็น 4 ปุ่มเรียงลำดับ (เริ่มเดินทาง → เช็คอิน → เริ่มทำงาน → จ่ายเงิน)
 
@@ -928,23 +921,15 @@ function buildJobCard(job, historyMode = false) {
           <button class="secondary" type="button" style="width:auto;" ${((job.address_text || job.maps_url || (job.gps_latitude != null && job.gps_longitude != null)) ? "" : "disabled")} onclick="openMaps(${job.gps_latitude ?? null}, ${job.gps_longitude ?? null}, '${(job.address_text||"").replace(/'/g,"\\'")}', '${String(job.maps_url||"").replace(/'/g,"\\'")}' )">🧭 แผนที่</button>
         </div>
 
-        <!-- ✅ e-slip: โชว์ทั้งงานปัจจุบัน/ประวัติงาน (ดูได้ตลอดถ้าจ่ายแล้ว) -->
+        <!-- ✅ ปุ่มอัปเดตสถานะ / e-slip (ปุ่มเดียว) -->
         <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" style="width:auto;" ${paid ? "" : "disabled"} onclick="openESlip(${jobId})">🧾 e-slip</button>
-          ${historyMode ? "" : `<button class="danger" type="button" style="width:auto;" onclick="returnJob(${jobId})">↩️ ตีกลับงาน</button>`}
+          <button type="button" style="width:100%;" ${workflowDisabled ? "disabled" : ""} onclick="${workflowOnclick}">
+            ${workflowLabel}
+          </button>
         </div>
 
-        <!-- ✅ ปุ่มอัปเดตสถานะ (ปุ่มเดียว) กดแล้วสลับขั้นตอนตามลำดับ (เฉพาะงานปัจจุบัน) -->
-        ${historyMode ? "" : `
-          <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-            <button type="button" style="width:100%;" ${((!called && !travelStarted) || status === "เสร็จแล้ว" || status === "ยกเลิก") ? "disabled" : ""} onclick="workflowNext(${jobId})">
-              ${paid ? "🧾 e-slip" : (!travelStarted ? "🚗 เริ่มเดินทาง" : (!checkedIn ? "📍 เช็คอิน" : (!isWorking ? "▶️ เริ่มทำงาน" : "💳 จ่ายเงิน")))}
-            </button>
-          </div>
-          <div id="travel-hint-${jobId}" class="muted" style="margin-top:6px;">${flowHint}</div>
-        `}
+        ${historyMode ? "" : `<div id="travel-hint-${jobId}" class="muted" style="margin-top:6px;">${flowHint}</div>`}
 
-      </div>
 
 
 
