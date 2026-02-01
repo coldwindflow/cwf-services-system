@@ -31,10 +31,24 @@
     .eslip-sum{ margin-top:10px; padding:10px 12px; border:1px solid rgba(15,23,42,0.10); border-radius:12px; background:#fff; }
     .eslip-sum .row{ display:flex; justify-content:space-between; gap:10px; margin:6px 0; }
     .eslip-sum .total{ font-size:18px; font-weight:900; }
-    .eslip-contact{ margin-top:10px; text-align:center; color:#334155; font-size:12.5px; line-height:1.45; }
-
     .eslip-foot{ margin-top:12px; text-align:center; color:#475569; font-size:12.5px; line-height:1.45; }
-  </style>
+  
+    .eslip-actions{ display:flex; gap:10px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap; }
+    .eslip-actions button{ width:auto; min-height:40px; padding:10px 12px; }
+    .eslip-logo{ width: min(220px, 55vw); height:auto; max-height:90px; object-fit:contain; display:block; margin:0 auto 8px; }
+
+    /* 🖨️ Print: พิมพ์เฉพาะเอกสาร E-Slip */
+    @media print{
+      body *{ visibility:hidden !important; }
+      #docMount, #docMount *{ visibility:visible !important; }
+      #docMount{ position:fixed; left:0; top:0; width:100%; margin:0; padding:0; }
+      .eslip{ box-shadow:none !important; border:none !important; border-radius:0 !important; }
+      .eslip-actions{ display:none !important; }
+      .topbar{ display:none !important; }
+      .app{ padding:0 !important; }
+    }
+
+</style>
 </head>
 <body class="theme-2">
   <div class="app">
@@ -179,6 +193,7 @@ async function renderCustomerESlip(jobData){
       <div class="eslip-wrap">
         <div class="eslip">
           <div class="eslip-head">
+            <img class="eslip-logo" src="/logo.png" alt="Coldwindflow Air Services">
             <div class="h1">ใบรับเงินอิเล็กทรอนิกส์ (E-Receipt)</div>
             <div class="h2">Coldwindflow Air Services</div>
           </div>
@@ -186,6 +201,10 @@ async function renderCustomerESlip(jobData){
           <div class="eslip-meta">
             <div class="box"><b>Booking:</b> ${esc(booking)}</div>
             <div class="box"><b>วันที่แสดงผล:</b> ${esc(printedAt)}</div>
+          </div>
+
+          <div class="eslip-actions">
+            <button type="button" onclick="window.print()">🖨️ พิมพ์</button>
           </div>
 
           <div style="margin-top:10px;">
@@ -221,11 +240,6 @@ async function renderCustomerESlip(jobData){
             <div class="row"><span>รวมก่อนลด</span><b>${esc(subtotal)}</b></div>
             <div class="row"><span>ส่วนลด</span><b>${esc(discount)}</b></div>
             <div class="row total"><span>ยอดสุทธิ</span><span>${esc(total)}</span></div>
-          </div>
-
-          <div class="eslip-contact">
-            ที่อยู่: 23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260<br>
-            โทร: 098-877-7321 · LINE OA: @cwfair · เว็บไซต์: www.cwf-air.com
           </div>
 
           <div class="eslip-foot">

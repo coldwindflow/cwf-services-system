@@ -33,8 +33,7 @@
     .eslip-head .h1{ font-weight:900; font-size:18px; }
     .eslip-head .h2{ margin-top:4px; font-weight:800; font-size:14px; color:#0f172a; }
 
-    /* ข้อมูลร้าน (ต้องแสดงในเอกสาร) */
-    .eslip-store{ text-align:center; margin-top:8px; color:#334155; font-size:12.5px; line-height:1.45; }
+    .eslip-logo{ width: min(220px, 55vw); height:auto; max-height:96px; object-fit:contain; display:block; margin:0 auto 8px; }
 
     .eslip-meta{ display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-top:10px; }
     .eslip-meta .box{ padding:10px 12px; border:1px solid rgba(15,23,42,0.10); border-radius:12px; background:rgba(37,99,235,0.04); }
@@ -77,16 +76,6 @@
 
 <script>
   const API = window.location.origin;
-
-  // ==============================
-  // 🏪 ข้อมูลร้าน (แสดงบนเอกสาร)
-  // ==============================
-  const STORE_NAME = 'Coldwindflow Air Services';
-  const STORE_ADDRESS = '23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260';
-  const STORE_PHONE = '098-877-7321';
-  const STORE_LINE = '@cwfair';
-  const STORE_WEB = 'www.cwf-air.com';
-
 
   // ==============================
   // 🔒 Helper: escape HTML
@@ -138,58 +127,17 @@
     const discount = (sumText.match(/ส่วนลด:\s*([0-9,\.]+)/) || [])[1] || "-";
     const total = (sumText.match(/ยอดสุทธิ:\s*([0-9,\.]+)/) || [])[1] || "-";
 
-    // 3) customer/job meta (อ่านแบบ DOM เพื่อกันข้อความไหล/ซ้ำ)
-    // - ใบเสร็จเดิมสร้างจาก backend ด้วยโครงสร้าง:
-    //   <div class="box"> <div><b>ลูกค้า:</b> ...</div> ... </div>
-    // - ห้ามใช้ regex จาก textContent เพราะจะทำให้ค่าติดกันเป็นยาว ๆ (อาการที่มึงเจอ)
-    const metaBox = boxes.find(b => (b.textContent || "").includes("ลูกค้า:")) || null;
-    const metaMap = {};
-    if (metaBox){
-      const divs = Array.from(metaBox.querySelectorAll("div"));
-      divs.forEach(d => {
-        const b = d.querySelector("b");
-        const label = (b?.textContent || "").trim();
-        if (!label) return;
-        // ค่า = text ทั้ง div ลบ label ออก
-        const value = (d.textContent || "").replace(label, "").trim();
-        metaMap[label] = value || "-";
-      });
-    }
-
-    // fallback (เผื่อโครงสร้างเปลี่ยน) - ใช้ regex แบบ "ตัดจนถึง label ถัดไป" ลดโอกาสซ้ำ
-    const metaText = (metaBox?.textContent || "").replace(/\s+/g," ").trim();
-    function pickSafe(label, nextLabels){
-      if (metaMap[label]) return metaMap[label];
-      const stop = nextLabels && nextLabels.length ? `(?=${nextLabels.map(x=>x.replace(/[.*+?^${}()|[\\]\\]/g,'\\\\$&')).join('|')})` : "$";
-      const re = new RegExp(label.replace(/[.*+?^${}()|[\\]\\]/g,'\\\\$&') + "\\s*(.*?)\\s*" + stop, "i");
-      const m = metaText.match(re);
-      return (m && m[1] ? m[1].trim() : "-");
-    }
-
-    const customerName  = pickSafe("ลูกค้า:",   ["โทร:","ประเภทงาน:","นัด:","ที่อยู่:"]);
-    const customerPhone = pickSafe("โทร:",      ["ประเภทงาน:","นัด:","ที่อยู่:"]);
-    const jobType       = pickSafe("ประเภทงาน:",["นัด:","ที่อยู่:"]);
-    const appointment   = pickSafe("นัด:",      ["ที่อยู่:"]);
-    const address       = pickSafe("ที่อยู่:",  []);
-
-    // 4) booking (อ่านแบบ DOM จากกล่องขวาบนของใบเสร็จเดิม)
-    const booking = (doc.querySelector(".top .box b")?.textContent || "").trim()
-      || (doc.title || "").match(/(CWF\d{7}|งาน\s*#\s*\d+)/)?.[1]
-      || "-";
+    // 3) booking (พยายามหาจากตัวอักษร CWF ในหน้าเอกสารเดิม)
+    const allText = (doc.body?.textContent || "").replace(/\s+/g," ").trim();
+    const bookingMatch = allText.match(/\bCWF[A-Z0-9]{6,}\b/);
+    const booking = bookingMatch ? bookingMatch[0] : "-";
 
     return {
       booking,
       rows: rows.length ? rows : [{name:"-",qty:"-",unit:"-",line:"-"}],
       subtotal,
       discount,
-      total,
-      meta: {
-        customerName,
-        customerPhone,
-        jobType,
-        appointment,
-        address
-      }
+      total
     };
   }
 
@@ -202,6 +150,7 @@
 
     mount.innerHTML = `
       <div class="eslip-head">
+        <img class="eslip-logo" src="/logo.png" alt="Coldwindflow Air Services">
         <div class="h1">ใบรับเงินอิเล็กทรอนิกส์ (E-Receipt)</div>
         <div class="h2">Coldwindflow Air Services</div>
       </div>
@@ -259,6 +208,7 @@
   // ==============================
   (async function main(){
     const jobId = Number(qs("job_id") || qs("id") || 0);
+    const q = String(qs("q") || "").trim(); // booking/token (ถ้ามี)
     const mount = document.getElementById("doc");
 
     if (!jobId){
@@ -266,16 +216,79 @@
       return;
     }
 
-    // ใช้เอกสารเดิม (receipt) เป็นแหล่งข้อมูลหลัก เพื่อไม่แตะ backend
+    // ✅ แหล่งข้อมูล "meta" ที่แม่นที่สุด: /public/track (อ่านอย่างเดียว ไม่แตะ backend)
+    // - แก้ปัญหา meta ซ้ำ/มั่วจากการ parse ใบเสร็จที่เป็นข้อความยาว
+    let meta = {
+      customerName: "-",
+      customerPhone: "-",
+      jobType: "-",
+      appointment: "-",
+      address: "-"
+    };
+    let bookingFromTrack = "";
+
+    if (q){
+      try{
+        const tr = await fetch(`${API}/public/track?q=${encodeURIComponent(q)}`, { cache:"no-store" });
+        const td = await tr.json().catch(()=> ({}));
+        if (tr.ok && td){
+          bookingFromTrack = String(td.booking_code || td.booking || "").trim();
+          meta.customerName = td.customer_name || "-";
+          meta.customerPhone = td.customer_phone || "-";
+          meta.jobType = td.job_type || "-";
+          meta.appointment = td.appointment_datetime ? new Date(td.appointment_datetime).toLocaleString("th-TH") : "-";
+          meta.address = td.address_text || "-";
+        }
+      }catch(e){
+        // ถ้า public/track ใช้ไม่ได้ ให้ fallback ไป parse จากเอกสารเดิม
+      }
+    }
+
+    // ✅ ใช้เอกสารเดิม (receipt) เป็นแหล่งข้อมูลหลักของ "รายการ/ยอดรวม" เพื่อไม่แตะคำนวณราคา
     const receiptUrl = `${API}/docs/receipt/${encodeURIComponent(jobId)}`;
 
     try{
-      const r = await fetch(receiptUrl, { cache: "no-store" });
+      const r = await fetch(receiptUrl, { cache: "no-store", credentials: "include" });
       const html = await r.text();
       if (!r.ok) throw new Error("โหลดข้อมูลใบเสร็จเดิมไม่สำเร็จ");
 
       const parsed = parseReceiptHtml(html);
-      renderESlip(parsed);
+
+      // ถ้า meta ยังว่าง (เช่น public/track ไม่ได้) ให้พยายาม parse แบบปลอดภัยจากข้อความในเอกสารเดิม
+      if ((!q) || (meta.customerName === "-" && meta.customerPhone === "-" && meta.address === "-")){
+        const text = (new DOMParser().parseFromString(html, "text/html").body?.textContent || "").replace(/\s+/g," ").trim();
+        // ดึงค่าระหว่าง label กับ label ถัดไป (กันไหลซ้ำ)
+        const labels = ["ลูกค้า:", "โทร:", "ประเภทงาน:", "นัด:", "ที่อยู่:"];
+        const between = (label) => {
+          const start = text.indexOf(label);
+          if (start < 0) return "-";
+          const from = start + label.length;
+          let end = text.length;
+          for (const l of labels){
+            if (l === label) continue;
+            const idx = text.indexOf(l, from);
+            if (idx >= 0 && idx < end) end = idx;
+          }
+          return text.slice(from, end).trim() || "-";
+        };
+        meta.customerName = between("ลูกค้า:");
+        meta.customerPhone = between("โทร:");
+        meta.jobType = between("ประเภทงาน:");
+        meta.appointment = between("นัด:");
+        meta.address = between("ที่อยู่:");
+      }
+
+      // booking: ให้ยึด booking จาก track ก่อน > query q > parsed
+      const bookingFinal = bookingFromTrack || q || parsed.booking || "-";
+
+      renderESlip({
+        booking: bookingFinal,
+        rows: parsed.rows,
+        subtotal: parsed.subtotal,
+        discount: parsed.discount,
+        total: parsed.total,
+        meta
+      });
     }catch(e){
       mount.innerHTML = `<div class="muted">❌ สร้าง E-Slip ไม่สำเร็จ: ${esc(e.message || e)}</div>`;
     }
