@@ -35,7 +35,7 @@
   
     .eslip-actions{ display:flex; gap:10px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap; }
     .eslip-actions button{ width:auto; min-height:40px; padding:10px 12px; }
-    .eslip-logo{ width:46px; height:46px; object-fit:contain; display:block; margin:0 auto 6px; }
+    .eslip-logo{ width: min(220px, 55vw); height:auto; max-height:90px; object-fit:contain; display:block; margin:0 auto 8px; }
 
     /* 🖨️ Print: พิมพ์เฉพาะเอกสาร E-Slip */
     @media print{
@@ -196,11 +196,6 @@ async function renderCustomerESlip(jobData){
             <img class="eslip-logo" src="/logo.png" alt="Coldwindflow Air Services">
             <div class="h1">ใบรับเงินอิเล็กทรอนิกส์ (E-Receipt)</div>
             <div class="h2">Coldwindflow Air Services</div>
-            <div class="muted" style="margin-top:6px;font-size:12px;line-height:1.4;">
-              23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260<br>
-              โทร 098-877-7321 · LINE OA: @cwfair · www.cwf-air.com
-            </div>
-
           </div>
 
           <div class="eslip-meta">

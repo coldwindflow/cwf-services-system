@@ -1297,10 +1297,16 @@ function openESlip(jobId) {
   const job = (window.__JOB_CACHE__ || []).find(j => Number(j.job_id) === id) || {};
   const bookingCode = (job.booking_code || "").toString().trim();
 
-  // เปิดหน้าแสดงผล E-Slip แบบมาตรฐานเดียวกับลูกค้า (ทำงานเป็นไฟล์หน้าเว็บล้วน)
-  // NOTE: ถ้า booking_code ว่าง หน้า eslip.html จะ fallback ไปอ่าน /docs/receipt/:job_id โดยตรง
-  const url = `/eslip.html?job_id=${encodeURIComponent(id)}&q=${encodeURIComponent(bookingCode)}`;
-  window.open(url, "_blank");
+  // ✅ ใส่ cache-busting เพื่อกัน WebView/PWA บางรุ่น "เปิดได้ครั้งเดียว"
+  // และเพิ่ม fallback: ถ้า window.open ถูกบล็อค ให้เปลี่ยนหน้าแทน
+  const ts = Date.now();
+  const url = `/eslip.html?job_id=${encodeURIComponent(id)}&q=${encodeURIComponent(bookingCode)}&ts=${ts}`;
+
+  const w = window.open(url, "_blank", "noopener,noreferrer");
+  if (!w) {
+    // popup ถูกบล็อค/พฤติกรรม WebView บางรุ่น → เปิดในแท็บเดิม
+    window.location.href = url;
+  }
 }
 window.openESlip = openESlip;
 
