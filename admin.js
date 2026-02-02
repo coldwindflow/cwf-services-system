@@ -45,162 +45,6 @@ function parseLatLngFromMapsUrl(url) {
   return null;
 }
 
-function parseLatLngFromText(text) {
-  const s = String(text || "").trim();
-  if (!s) return null;
-
-  // รับรูปแบบ "lat,lng" หรือ "lat lng" ในข้อความทั่วไป
-  const m = s.match(/(-?\d{1,3}(?:\.\d+)?)[,\s]+(-?\d{1,3}(?:\.\d+)?)/);
-  if (!m) return null;
-
-  const lat = Number(m[1]);
-  const lng = Number(m[2]);
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  if (lat < -90 || lat > 90) return null;
-  if (lng < -180 || lng > 180) return null;
-  return { lat, lng };
-}
-
-function ensureMapsStatusEl() {
-  let el = document.getElementById("maps_status");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "maps_status";
-    el.style.marginTop = "6px";
-    el.style.fontSize = "12px";
-    el.style.opacity = "0.9";
-    const linkEl = document.getElementById("maps_link");
-    if (linkEl && linkEl.parentNode) {
-      // insert after button if exists, else after input
-      const btn = linkEl.parentNode.querySelector('button[onclick="parseMapsLink()"]');
-      if (btn && btn.nextSibling) linkEl.parentNode.insertBefore(el, btn.nextSibling);
-      else linkEl.parentNode.insertBefore(el, linkEl.nextSibling);
-    } else {
-      document.body.appendChild(el);
-    }
-  }
-  return el;
-}
-
-function setMapsStatus(msg = "", kind = "info") {
-  const el = ensureMapsStatusEl();
-  el.textContent = msg;
-  el.style.color = kind === "error" ? "#b00020" : (kind === "ok" ? "#0b7a0b" : "#555");
-}
-function setGpsFields(lat, lng) {
-  const latEl = document.getElementById("gps_latitude");
-  const lngEl = document.getElementById("gps_longitude");
-
-  const nlat = Number(lat);
-  const nlng = Number(lng);
-
-  const ok =
-    Number.isFinite(nlat) && Number.isFinite(nlng) &&
-    nlat >= -90 && nlat <= 90 &&
-    nlng >= -180 && nlng <= 180;
-
-  if (latEl) latEl.value = ok ? String(nlat) : "";
-  if (lngEl) lngEl.value = ok ? String(nlng) : "";
-}
-
-// ✅ auto parse เมื่อวางลิงก์/พิกัด โดยไม่ต้องกดปุ่ม
-let __mapsAutoTimer = null;
-function autoParseMapsLink(opts = {}) {
-  const { forceResolveShort = false, showAlertOnFail = false } = opts;
-  const linkEl = document.getElementById("maps_link");
-  const link = (linkEl?.value || "").trim();
-  if (!link) return;
-
-  // 1) พยายามแยกพิกัดจาก URL เต็มก่อน
-  let loc =
-    parseLatLngFromMapsUrl(link) ||
-    parseLatLngFromText(link);
-
-  if (loc) {
-    setGpsFields(loc.lat, loc.lng);
-    setMapsStatus(`✅ ได้พิกัดแล้ว: ${loc.lat}, ${loc.lng}`, "ok");
-    return;
-  }
-
-  // 2) ถ้าเป็น short link (maps.app.goo.gl / goo.gl) ให้ยิงไป backend เพื่อ resolve redirect แล้วค่อยแยกพิกัด
-  const isShort =
-    /(^|\b)(https?:\/\/)?maps\.app\.goo\.gl\//i.test(link) ||
-    /(^|\b)(https?:\/\/)?goo\.gl\//i.test(link);
-
-  if (!isShort && !forceResolveShort) {
-    if (showAlertOnFail) alert("ลิงก์นี้ยังแยกพิกัดไม่ได้ ลองวางเป็นพิกัดตรงๆ เช่น 13.705, 100.601 หรือวางลิงก์ Google Maps แบบเต็ม");
-    return;
-  }
-
-  // Debounce กันยิงซ้ำเวลาแก้ไขข้อความ
-  if (__mapsAutoTimer) clearTimeout(__mapsAutoTimer);
-  __mapsAutoTimer = setTimeout(async () => {
-    try {
-      setMapsStatus("⏳ กำลังแปลงพิกัดจากลิงก์...", "info");
-      const resp = await fetch("/api/maps/resolve", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: link }),
-      });
-      const data = await resp.json().catch(() => ({}));
-      if (!resp.ok) throw new Error(data?.error || "resolve failed");
-
-      const lat = Number(data?.lat);
-      const lng = Number(data?.lng);
-      if (Number.isFinite(lat) && Number.isFinite(lng)) {
-        setGpsFields(lat, lng);
-        setMapsStatus(`✅ ได้พิกัดแล้ว: ${lat}, ${lng}`, "ok");
-        // ถ้าต้องการให้เก็บเป็นลิงก์เต็ม ให้ uncomment บรรทัดนี้
-        // if (data?.resolvedUrl && linkEl) linkEl.value = data.resolvedUrl;
-        return;
-      }
-
-      // resolve ได้ แต่ยังหา lat/lng ไม่เจอ
-      setGpsFields("", "");
-      setMapsStatus("❌ ลิงก์นี้ยังดึงพิกัดไม่ได้ (ลองเปิดลิงก์แล้วแชร์ใหม่ หรือวางพิกัดตรงๆ เช่น 13.705,100.601)", "error");
-
-      // ถ้า resolve ได้แต่ยังหา lat/lng ไม่เจอ
-      if (showAlertOnFail) {
-        alert("แยกพิกัดจากลิงก์นี้ไม่ได้ ลองเปิดลิงก์แล้วกดแชร์ใหม่แบบ 'คัดลอกลิงก์' หรือวางพิกัดตรงๆ เช่น 13.705, 100.601");
-      }
-    } catch (e) {
-      setGpsFields("", "");
-      setMapsStatus("❌ แยกพิกัดไม่สำเร็จ: " + (e?.message || e), "error");
-      if (showAlertOnFail) alert("แยกพิกัดไม่สำเร็จ: " + (e?.message || e));
-    }
-  }, 300);
-}
-
-document.addEventListener("DOMContentLoaded", () => {
-  // ไม่จำเป็นต้องกดปุ่มแล้ว (auto)
-  try {
-    const btnParse = document.querySelector('button[onclick="parseMapsLink()"]');
-    if (btnParse) {
-      btnParse.style.display = "none";
-    }
-  } catch(e) {}
-
-  const linkEl = document.getElementById("maps_link");
-  if (!linkEl) return;
-
-  // แปลงทันทีตอน paste
-  linkEl.addEventListener("paste", () => {
-    setTimeout(() => autoParseMapsLink({ forceResolveShort: true, showAlertOnFail: false }), 0);
-  });
-
-  // แปลงตอนพิมพ์/วาง (debounce)
-  linkEl.addEventListener("input", () => {
-    autoParseMapsLink({ forceResolveShort: false, showAlertOnFail: false });
-  });
-
-  // แปลงซ้ำตอนออกจากช่อง (กันเคส input ไม่ยิง)
-  linkEl.addEventListener("blur", () => {
-    autoParseMapsLink({ forceResolveShort: true, showAlertOnFail: false });
-  });
-});
-
-
-
 function toDatetimeLocal(value) {
   if (!value) return "";
   try {
@@ -927,8 +771,115 @@ function copySummary() {
 // 2) ...?q=13.7,100.6
 // 3) ...?query=13.7,100.6
 // =======================================
-function parseMapsLink() {
-  autoParseMapsLink({ forceResolveShort: true, showAlertOnFail: true });
+function ensureMapsStatusEl() {
+  const input = document.getElementById("maps_link");
+  if (!input) return null;
+  let el = document.getElementById("maps_status");
+  if (el) return el;
+  el = document.createElement("div");
+  el.id = "maps_status";
+  el.style.marginTop = "6px";
+  el.style.fontSize = "12px";
+  el.style.opacity = "0.9";
+  input.parentNode?.insertBefore(el, input.nextSibling);
+  return el;
+}
+
+function setMapsStatus(msg, isError) {
+  const el = ensureMapsStatusEl();
+  if (!el) return;
+  el.textContent = msg || "";
+  el.style.color = isError ? "#dc2626" : "#2563eb";
+}
+
+function extractLatLngFromText(text) {
+  if (!text) return null;
+  const s = String(text);
+  // พิกัดตรงๆ 13.705,100.601 (มี/ไม่มีช่องว่าง)
+  {
+    const m = s.match(/(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
+  }
+  // @lat,lng
+  {
+    const m = s.match(/@\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
+  }
+  // q=lat,lng | query=lat,lng | ll=lat,lng
+  {
+    const m = s.match(/[?&](?:q|query|ll)=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
+  }
+  // !3dlat!4dlng
+  {
+    const m = s.match(/!3d(-?\d{1,3}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
+  }
+  return null;
+}
+
+let __mapsDebounceTimer = null;
+async function parseMapsLink(options = { silent: false }) {
+  const link = (document.getElementById("maps_link")?.value || "").trim();
+  if (!link) {
+    setMapsStatus("", false);
+    return;
+  }
+
+  const latEl = document.getElementById("gps_latitude");
+  const lngEl = document.getElementById("gps_longitude");
+  if (!latEl || !lngEl) return;
+
+  // 1) ลองดึงจากข้อความ/URL ก่อน (เร็วสุด)
+  const direct = extractLatLngFromText(link);
+  if (direct && Number.isFinite(direct.lat) && Number.isFinite(direct.lng)) {
+    latEl.value = String(direct.lat);
+    lngEl.value = String(direct.lng);
+    setMapsStatus("✅ แยกพิกัดแล้ว", false);
+    if (!options.silent) alert("✅ แยกพิกัดสำเร็จ");
+    return;
+  }
+
+  // 2) ถ้าเป็น maps.app.goo.gl หรือ google maps ให้ถาม backend resolve
+  setMapsStatus("กำลังแปลงพิกัด...", false);
+  try {
+    const res = await fetch(`${API_BASE}/api/maps/resolve?url=${encodeURIComponent(link)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok) {
+      throw new Error(data?.error || "RESOLVE_FAILED");
+    }
+    if (Number.isFinite(data.lat) && Number.isFinite(data.lng)) {
+      latEl.value = String(data.lat);
+      lngEl.value = String(data.lng);
+      setMapsStatus("✅ แยกพิกัดจากลิงก์แล้ว", false);
+      if (!options.silent) alert("✅ แยกพิกัดสำเร็จ");
+      return;
+    }
+    // ไม่พบพิกัด
+    latEl.value = "";
+    lngEl.value = "";
+    setMapsStatus("❌ แปลงพิกัดไม่สำเร็จ (ลิงก์นี้ Google ไม่ส่งพิกัด) — วางพิกัดตรงๆ เช่น 13.705,100.601", true);
+    if (!options.silent) alert("แยกพิกัดไม่สำเร็จ: ลิงก์นี้ไม่พบพิกัด\nลองวางพิกัดตรงๆ เช่น 13.705,100.601");
+  } catch (e) {
+    latEl.value = "";
+    lngEl.value = "";
+    setMapsStatus("❌ แปลงพิกัดไม่สำเร็จ — ลองวางพิกัดตรงๆ เช่น 13.705,100.601", true);
+    if (!options.silent) alert("แยกพิกัดไม่สำเร็จ: ลองวางพิกัดตรงๆ เช่น 13.705,100.601");
+  }
+}
+
+// Auto-parse: วางลิงก์แล้วแปลงทันที (ไม่ต้องกดปุ่ม)
+function initMapsAutoParse() {
+  const input = document.getElementById("maps_link");
+  if (!input) return;
+  const handler = () => {
+    if (__mapsDebounceTimer) clearTimeout(__mapsDebounceTimer);
+    __mapsDebounceTimer = setTimeout(() => parseMapsLink({ silent: true }), 250);
+  };
+  input.addEventListener("paste", handler);
+  input.addEventListener("input", handler);
+  input.addEventListener("change", handler);
+  setMapsStatus("GPS Parser: gps-v4", false);
 }
 
 
@@ -1181,6 +1132,8 @@ function renderAllJobs(list, filter, isLateFn) {
 window.addEventListener("load", () => {
   loadCustomerBookings();
   loadAllJobs();
+  // 📍 Auto-parse maps link -> lat/lng
+  initMapsAutoParse();
   const f = document.getElementById('allJobsFilter');
   if (f) f.addEventListener('change', loadAllJobs);
 });
