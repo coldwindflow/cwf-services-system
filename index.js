@@ -68,6 +68,74 @@ function parseLatLngFromAnyText(input) {
   return null;
 }
 
+
+// ===================================================
+// 🗺️ GOOGLE MAPS: Extract Lat/Lng from HTML (for short links that resolve to cid/place without coords)
+// ===================================================
+function extractLatLngFromHtml(html) {
+  const s = String(html || "");
+
+  // 1) @lat,lng
+  let m = s.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+  if (m) return { lat: Number(m[1]), lng: Number(m[2]), from: "html:@", };
+
+  // 2) !3dlat!4dlng
+  m = s.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+  if (m) return { lat: Number(m[1]), lng: Number(m[2]), from: "html:!3d!4d", };
+
+  // 3) "lat":..,"lng":..
+  m = s.match(/"lat"\s*:\s*(-?\d+(?:\.\d+)?)\s*,\s*"lng"\s*:\s*(-?\d+(?:\.\d+)?)/);
+  if (m) return { lat: Number(m[1]), lng: Number(m[2]), from: "html:json", };
+
+  // 4) center=lat%2Clng
+  m = s.match(/center=(-?\d+(?:\.\d+)?)%2C(-?\d+(?:\.\d+)?)/);
+  if (m) return { lat: Number(m[1]), lng: Number(m[2]), from: "html:center", };
+
+  // 5) Fallback: scan plausible lat/lng pairs with >=4 decimals to avoid noise
+  const pairRe = /(-?\d{1,3}\.\d{4,})[^\d-]+(-?\d{1,3}\.\d{4,})/g;
+  let best = null;
+  let mm;
+  while ((mm = pairRe.exec(s))) {
+    const lat = Number(mm[1]);
+    const lng = Number(mm[2]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    if (lat < -90 || lat > 90) continue;
+    if (lng < -180 || lng > 180) continue;
+    best = { lat, lng, from: "html:scan" };
+    break;
+  }
+  return best;
+}
+
+async function fetchLatLngFromPage(url, timeoutMs = 5000) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(url, {
+      method: "GET",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        // mimic real browser (helps Google return normal HTML)
+        "User-Agent": "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7",
+      },
+    });
+
+    const ct = (resp.headers.get("content-type") || "").toLowerCase();
+    if (!ct.includes("text/html")) return null;
+
+    // limit size (กันกินเมม)
+    const text = await resp.text();
+    return extractLatLngFromHtml(text);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 const __MAPS_ALLOW_HOSTS = new Set([
   "maps.app.goo.gl",
   "goo.gl",
@@ -87,7 +155,7 @@ async function resolveShortUrlWithRedirects(startUrl, maxHops = 5, timeoutMs = 5
 
     let resp;
     try {
-      resp = await fetch(current, { method: "GET", redirect: "manual", signal: controller.signal, headers: { "User-Agent": "CWF/1.0" } });
+      resp = await fetch(current, { method: "GET", redirect: "manual", signal: controller.signal, headers: { "User-Agent": "Mozilla/5.0 (Linux; Android 13; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36", "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8", "Accept-Language": "th-TH,th;q=0.9,en-US;q=0.8,en;q=0.7" } });
     } finally {
       clearTimeout(t);
     }
@@ -137,24 +205,27 @@ app.post("/api/maps/resolve", async (req, res) => {
     if (direct) return res.json({ resolvedUrl: normalized, lat: direct.lat, lng: direct.lng, from: "direct" });
 
     const resolvedUrl = await resolveShortUrlWithRedirects(normalized, 5, 5000);
-    const loc = parseLatLngFromAnyText(resolvedUrl);
+    let loc = parseLatLngFromAnyText(resolvedUrl);
+
+    // ถ้ายังไม่เจอพิกัดใน URL ให้พยายามดึงจาก HTML ของหน้า Google Maps
+    if (!loc) {
+      try {
+        const hu = new URL(resolvedUrl);
+        if (__MAPS_ALLOW_HOSTS.has(hu.hostname)) {
+          const htmlLoc = await fetchLatLngFromPage(resolvedUrl, 5000);
+          if (htmlLoc && Number.isFinite(htmlLoc.lat) && Number.isFinite(htmlLoc.lng)) {
+            loc = { lat: htmlLoc.lat, lng: htmlLoc.lng, _from: htmlLoc.from };
+          }
+        }
+      } catch (e) {}
+    }
 
     return res.json({
       resolvedUrl,
       lat: loc?.lat ?? null,
       lng: loc?.lng ?? null,
-      from: "resolved",
-    });
-  } catch (e) {
-    return res.status(500).json({ error: e?.message || String(e) });
-  }
-});
-
-
-// =======================================
-// 📣 LINE OA (optional)
-// =======================================
-const LINE_CHANNEL_ACCESS_TOKEN = process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
+      from: loc?._from ? `resolved+${loc._from}` : "resolved",
+    }); process.env.LINE_CHANNEL_ACCESS_TOKEN || "";
 
 function pushLineMessage(lineUserId, text) {
   return new Promise((resolve) => {
