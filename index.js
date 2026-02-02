@@ -33,6 +33,124 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+
+// ===================================================
+// 📍 Google Maps Short Link Resolver (maps.app.goo.gl)
+// - สำหรับแปลงลิงก์สั้นให้ได้ lat/lng แบบปลอดภัย
+// - Allowlist โดเมน + timeout + limit redirect กัน SSRF
+// ===================================================
+function parseLatLngFromAnyText(input) {
+  const s = String(input || "").trim();
+  if (!s) return null;
+
+  // 1) @lat,lng
+  let m = s.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+  if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
+
+  // 2) q=lat,lng / query=lat,lng / ll=lat,lng
+  m = s.match(/[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+  if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
+
+  // 3) !3dlat!4dlng
+  m = s.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+  if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
+
+  // 4) lat,lng ในข้อความ
+  m = s.match(/(-?\d{1,3}(?:\.\d+)?)[,\s]+(-?\d{1,3}(?:\.\d+)?)/);
+  if (m) {
+    const lat = Number(m[1]);
+    const lng = Number(m[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return { lat, lng };
+    }
+  }
+
+  return null;
+}
+
+const __MAPS_ALLOW_HOSTS = new Set([
+  "maps.app.goo.gl",
+  "goo.gl",
+  "www.google.com",
+  "google.com",
+  "maps.google.com",
+  "www.google.co.th",
+  "google.co.th",
+]);
+
+async function resolveShortUrlWithRedirects(startUrl, maxHops = 5, timeoutMs = 5000) {
+  let current = startUrl;
+
+  for (let hop = 0; hop < maxHops; hop++) {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), timeoutMs);
+
+    let resp;
+    try {
+      resp = await fetch(current, { method: "GET", redirect: "manual", signal: controller.signal, headers: { "User-Agent": "CWF/1.0" } });
+    } finally {
+      clearTimeout(t);
+    }
+
+    // ถ้า redirect
+    if (resp.status >= 300 && resp.status < 400) {
+      const loc = resp.headers.get("location");
+      if (!loc) return current;
+      const next = new URL(loc, current).toString();
+      current = next;
+      continue;
+    }
+
+    // ถ้าได้หน้า html ของ short link บางกรณี ให้พยายามดึงลิงก์ maps จาก body (จำกัดขนาด)
+    const ct = (resp.headers.get("content-type") || "").toLowerCase();
+    if (ct.includes("text/html")) {
+      const text = await resp.text();
+      const m = text.match(/https:\/\/www\.google\.(?:com|co\.th)\/maps[^"'\\s]+/i);
+      if (m) {
+        current = m[0];
+        continue;
+      }
+    }
+
+    // 200/อื่นๆ ถือว่าจบ
+    return current;
+  }
+
+  return current;
+}
+
+app.post("/api/maps/resolve", async (req, res) => {
+  try {
+    const url = (req.body?.url || "").toString().trim();
+    if (!url) return res.status(400).json({ error: "missing url" });
+
+    // เติม https ถ้าผู้ใช้วางแบบไม่มี protocol
+    const normalized = url.startsWith("http://") || url.startsWith("https://") ? url : `https://${url}`;
+
+    const u = new URL(normalized);
+    if (!__MAPS_ALLOW_HOSTS.has(u.hostname)) {
+      return res.status(400).json({ error: "domain not allowed" });
+    }
+
+    // ถ้าเป็น URL เต็มและมีพิกัดแล้ว ให้คืนเลย
+    const direct = parseLatLngFromAnyText(normalized);
+    if (direct) return res.json({ resolvedUrl: normalized, lat: direct.lat, lng: direct.lng, from: "direct" });
+
+    const resolvedUrl = await resolveShortUrlWithRedirects(normalized, 5, 5000);
+    const loc = parseLatLngFromAnyText(resolvedUrl);
+
+    return res.json({
+      resolvedUrl,
+      lat: loc?.lat ?? null,
+      lng: loc?.lng ?? null,
+      from: "resolved",
+    });
+  } catch (e) {
+    return res.status(500).json({ error: e?.message || String(e) });
+  }
+});
+
+
 // =======================================
 // 📣 LINE OA (optional)
 // =======================================
@@ -635,6 +753,8 @@ app.post("/jobs", async (req, res) => {
     appointment_datetime,
     job_price,
     address_text,
+    maps_url,
+    job_zone,
     gps_latitude,
     gps_longitude,
     technician_username,
@@ -681,10 +801,11 @@ app.post("/jobs", async (req, res) => {
       `
       INSERT INTO public.jobs
       (customer_name, customer_phone, job_type, appointment_datetime, job_price, address_text,
+       maps_url, job_zone,
        gps_latitude, gps_longitude,
        technician_team, technician_username, job_status,
        job_source, dispatch_mode)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'admin',$12)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'admin',$14)
       RETURNING job_id
       `,
       [
@@ -694,6 +815,8 @@ app.post("/jobs", async (req, res) => {
         appointment_dt,
         pricing.total,
         address_text || "",
+        (maps_url || "").toString(),
+        (job_zone || "").toString(),
         gps_latitude ? Number(gps_latitude) : null,
         gps_longitude ? Number(gps_longitude) : null,
         // technician_team: ใส่เฉพาะกรณี forced (บังคับงาน)
