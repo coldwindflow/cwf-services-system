@@ -771,115 +771,36 @@ function copySummary() {
 // 2) ...?q=13.7,100.6
 // 3) ...?query=13.7,100.6
 // =======================================
-function ensureMapsStatusEl() {
-  const input = document.getElementById("maps_link");
-  if (!input) return null;
-  let el = document.getElementById("maps_status");
-  if (el) return el;
-  el = document.createElement("div");
-  el.id = "maps_status";
-  el.style.marginTop = "6px";
-  el.style.fontSize = "12px";
-  el.style.opacity = "0.9";
-  input.parentNode?.insertBefore(el, input.nextSibling);
-  return el;
-}
-
-function setMapsStatus(msg, isError) {
-  const el = ensureMapsStatusEl();
-  if (!el) return;
-  el.textContent = msg || "";
-  el.style.color = isError ? "#dc2626" : "#2563eb";
-}
-
-function extractLatLngFromText(text) {
-  if (!text) return null;
-  const s = String(text);
-  // พิกัดตรงๆ 13.705,100.601 (มี/ไม่มีช่องว่าง)
-  {
-    const m = s.match(/(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/);
-    if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
-  }
-  // @lat,lng
-  {
-    const m = s.match(/@\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
-    if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
-  }
-  // q=lat,lng | query=lat,lng | ll=lat,lng
-  {
-    const m = s.match(/[?&](?:q|query|ll)=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
-    if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
-  }
-  // !3dlat!4dlng
-  {
-    const m = s.match(/!3d(-?\d{1,3}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/);
-    if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
-  }
-  return null;
-}
-
-let __mapsDebounceTimer = null;
-async function parseMapsLink(options = { silent: false }) {
+function parseMapsLink() {
   const link = (document.getElementById("maps_link")?.value || "").trim();
-  if (!link) {
-    setMapsStatus("", false);
-    return;
+  if (!link) return alert("วางลิงก์ Google Maps ก่อน");
+
+  let lat = null;
+  let lng = null;
+
+  // รูปแบบ @lat,lng
+  const atMatch = link.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (atMatch) {
+    lat = atMatch[1];
+    lng = atMatch[2];
   }
 
-  const latEl = document.getElementById("gps_latitude");
-  const lngEl = document.getElementById("gps_longitude");
-  if (!latEl || !lngEl) return;
-
-  // 1) ลองดึงจากข้อความ/URL ก่อน (เร็วสุด)
-  const direct = extractLatLngFromText(link);
-  if (direct && Number.isFinite(direct.lat) && Number.isFinite(direct.lng)) {
-    latEl.value = String(direct.lat);
-    lngEl.value = String(direct.lng);
-    setMapsStatus("✅ แยกพิกัดแล้ว", false);
-    if (!options.silent) alert("✅ แยกพิกัดสำเร็จ");
-    return;
-  }
-
-  // 2) ถ้าเป็น maps.app.goo.gl หรือ google maps ให้ถาม backend resolve
-  setMapsStatus("กำลังแปลงพิกัด...", false);
-  try {
-    const res = await fetch(`${API_BASE}/api/maps/resolve?url=${encodeURIComponent(link)}`);
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok || !data?.ok) {
-      throw new Error(data?.error || "RESOLVE_FAILED");
+  // รูปแบบ q=lat,lng หรือ query=lat,lng
+  if (!lat || !lng) {
+    const qMatch = link.match(/[?&](q|query)=(-?\d+\.\d+),(-?\d+\.\d+)/);
+    if (qMatch) {
+      lat = qMatch[2];
+      lng = qMatch[3];
     }
-    if (Number.isFinite(data.lat) && Number.isFinite(data.lng)) {
-      latEl.value = String(data.lat);
-      lngEl.value = String(data.lng);
-      setMapsStatus("✅ แยกพิกัดจากลิงก์แล้ว", false);
-      if (!options.silent) alert("✅ แยกพิกัดสำเร็จ");
-      return;
-    }
-    // ไม่พบพิกัด
-    latEl.value = "";
-    lngEl.value = "";
-    setMapsStatus("❌ แปลงพิกัดไม่สำเร็จ (ลิงก์นี้ Google ไม่ส่งพิกัด) — วางพิกัดตรงๆ เช่น 13.705,100.601", true);
-    if (!options.silent) alert("แยกพิกัดไม่สำเร็จ: ลิงก์นี้ไม่พบพิกัด\nลองวางพิกัดตรงๆ เช่น 13.705,100.601");
-  } catch (e) {
-    latEl.value = "";
-    lngEl.value = "";
-    setMapsStatus("❌ แปลงพิกัดไม่สำเร็จ — ลองวางพิกัดตรงๆ เช่น 13.705,100.601", true);
-    if (!options.silent) alert("แยกพิกัดไม่สำเร็จ: ลองวางพิกัดตรงๆ เช่น 13.705,100.601");
   }
-}
 
-// Auto-parse: วางลิงก์แล้วแปลงทันที (ไม่ต้องกดปุ่ม)
-function initMapsAutoParse() {
-  const input = document.getElementById("maps_link");
-  if (!input) return;
-  const handler = () => {
-    if (__mapsDebounceTimer) clearTimeout(__mapsDebounceTimer);
-    __mapsDebounceTimer = setTimeout(() => parseMapsLink({ silent: true }), 250);
-  };
-  input.addEventListener("paste", handler);
-  input.addEventListener("input", handler);
-  input.addEventListener("change", handler);
-  setMapsStatus("GPS Parser: gps-v4", false);
+  if (!lat || !lng) {
+    return alert("แยกพิกัดไม่สำเร็จ: ลิงก์ไม่อยู่ในรูปแบบที่รองรับ\nลองเปิด Maps แล้วกดแชร์ลิงก์ใหม่");
+  }
+
+  document.getElementById("gps_latitude").value = lat;
+  document.getElementById("gps_longitude").value = lng;
+  alert("✅ แยกพิกัดสำเร็จ");
 }
 
 
@@ -901,13 +822,7 @@ async function loadCustomerBookings() {
     if (!res.ok) throw new Error(all?.error || "โหลดงานไม่สำเร็จ");
 
     const jobs = (Array.isArray(all) ? all : [])
-      .filter(j => {
-        const st = String(j.job_status || "").trim();
-        const isReturned = st === "ตีกลับ";
-        const isCustomer = j.job_source === "customer";
-        const isOfferBackToAdmin = (String(j.dispatch_mode || "").trim() === "offer") && !j.technician_team && !j.technician_username;
-        return !j.technician_team && (isCustomer || isReturned || isOfferBackToAdmin);
-      });
+      .filter(j => (j.job_source === "customer") && !j.technician_team);
 
     if (!jobs.length) {
       box.innerHTML = "<div class='muted'>ไม่มีงานจองที่รอมอบหมาย</div>";
@@ -920,14 +835,12 @@ async function loadCustomerBookings() {
     box.innerHTML = jobs.map(j => {
       const b = j.booking_code || ("CWF" + String(j.job_id).padStart(7, "0"));
       const dt = j.appointment_datetime ? new Date(j.appointment_datetime).toLocaleString("th-TH") : "-";
-      const st = String(j.job_status || "").trim();
-      const badgeText = st === "ตีกลับ" ? "↩️ ตีกลับ" : (j.job_source === "customer" ? "🆕 จองใหม่" : "📝 รอมอบหมาย");
 
       return `
         <div class="job-card" style="border:1px solid rgba(37,99,235,0.22);">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
             <b>📌 Booking: ${b}</b>
-            <span class=\"badge wait\">${badgeText}</span>
+            <span class="badge wait">🆕 จองใหม่</span>
           </div>
 
           <p style="margin-top:10px;"><b>ลูกค้า:</b> ${j.customer_name || "-"}</p>
@@ -1132,8 +1045,6 @@ function renderAllJobs(list, filter, isLateFn) {
 window.addEventListener("load", () => {
   loadCustomerBookings();
   loadAllJobs();
-  // 📍 Auto-parse maps link -> lat/lng
-  initMapsAutoParse();
   const f = document.getElementById('allJobsFilter');
   if (f) f.addEventListener('change', loadAllJobs);
 });

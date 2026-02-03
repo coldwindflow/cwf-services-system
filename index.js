@@ -22,116 +22,6 @@ process.env.TZ = process.env.TZ || "Asia/Bangkok";
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
-
-// ==============================
-// 🧭 GPS/Maps Resolver (safe)
-// - รองรับ maps.app.goo.gl (short link)
-// - พยายามดึง lat/lng จาก URL หรือ HTML (best-effort)
-// - มี allowlist + timeout + จำกัดขนาด response กัน SSRF/ค้าง
-// ==============================
-const MAPS_ALLOW_HOSTS = new Set([
-  "maps.app.goo.gl",
-  "goo.gl",
-  "google.com",
-  "www.google.com",
-  "maps.google.com",
-  "google.co.th",
-  "www.google.co.th",
-]);
-
-function extractLatLngFromText(text) {
-  if (!text) return null;
-  const s = String(text);
-
-  // 1) @lat,lng
-  {
-    const m = s.match(/@\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
-    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "@" };
-  }
-
-  // 2) q=lat,lng | query=lat,lng | ll=lat,lng
-  {
-    const m = s.match(/[?&](?:q|query|ll)=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
-    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "q" };
-  }
-
-  // 3) !3dlat!4dlng
-  {
-    const m = s.match(/!3d(-?\d{1,3}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/);
-    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "3d4d" };
-  }
-
-  // 4) center=lat%2Clng (อาจถูก encode)
-  try {
-    const decoded = decodeURIComponent(s);
-    const m = decoded.match(/[?&]center=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
-    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "center" };
-  } catch (_) {}
-
-  // 5) JSON-ish "lat":..,"lng":..
-  {
-    const m = s.match(/"lat"\s*:\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*"lng"\s*:\s*(-?\d{1,3}(?:\.\d+)?)/);
-    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "json" };
-  }
-
-  return null;
-}
-
-async function fetchWithTimeout(url, ms, opts = {}) {
-  const controller = new AbortController();
-  const t = setTimeout(() => controller.abort(), ms);
-  try {
-    const res = await fetch(url, {
-      ...opts,
-      redirect: "follow",
-      signal: controller.signal,
-      headers: {
-        "user-agent": "Mozilla/5.0 (CWF Maps Resolver)",
-        ...(opts.headers || {}),
-      },
-    });
-    return res;
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-async function resolveMapsUrlToLatLng(inputUrl) {
-  const u = new URL(inputUrl);
-  if (!MAPS_ALLOW_HOSTS.has(u.hostname)) {
-    throw new Error("HOST_NOT_ALLOWED");
-  }
-
-  // 1) fetch ตาม redirect เพื่อให้ได้ res.url (ลิงก์เต็ม)
-  const res = await fetchWithTimeout(u.toString(), 6000, { method: "GET" });
-  const finalUrl = res.url || u.toString();
-
-  // 2) พยายามดึงจาก URL ก่อน
-  const fromUrl = extractLatLngFromText(finalUrl);
-  if (fromUrl) return { ...fromUrl, resolvedUrl: finalUrl };
-
-  // 3) ถ้ายังไม่ได้ → อ่าน HTML แล้วหา pattern
-  const ctype = String(res.headers.get("content-type") || "");
-  let body = "";
-  if (ctype.includes("text") || ctype.includes("html") || ctype.includes("json")) {
-    // จำกัดขนาดอ่านกันกินแรม
-    const raw = await res.text();
-    body = raw.slice(0, 200_000);
-  }
-
-  // 3.1) หา @lat,lng ใน HTML
-  const fromHtmlDirect = extractLatLngFromText(body);
-  if (fromHtmlDirect) return { ...fromHtmlDirect, resolvedUrl: finalUrl };
-
-  // 3.2) หา canonical / maps URL ที่ฝังอยู่
-  const mUrl = body.match(/https?:\/\/[^\s"']*google\.[^\s"']*\/maps[^\s"']*/i);
-  if (mUrl) {
-    const fromEmbed = extractLatLngFromText(mUrl[0]);
-    if (fromEmbed) return { ...fromEmbed, resolvedUrl: finalUrl, embeddedUrl: mUrl[0] };
-  }
-
-  return { lat: null, lng: null, via: "not_found", resolvedUrl: finalUrl };
-}
 const fs = require("fs");
 const https = require("https");
 const crypto = require("crypto");
@@ -142,47 +32,6 @@ const pool = require("./db");
 const app = express();
 app.use(cors());
 app.use(express.json());
-
-// =======================================
-// 🔎 Health / Version (ใช้เช็คว่า deploy ล่าสุดจริง)
-// =======================================
-app.get("/api/version", (req, res) => {
-  res.json({ ok: true, version: "gps-v4", ts: new Date().toISOString() });
-});
-
-// =======================================
-// 📍 Resolve Google Maps URL -> lat/lng (best-effort)
-// รองรับ: maps.app.goo.gl + ลิงก์เต็ม + วางพิกัดตรงๆ
-// =======================================
-app.get("/api/maps/resolve", async (req, res) => {
-  try {
-    const input = String(req.query.url || "").trim();
-    if (!input) return res.status(400).json({ error: "MISSING_URL" });
-
-    // 1) ถ้าวางพิกัดตรงๆ เช่น 13.705,100.601
-    const direct = extractLatLngFromText(input);
-    if (direct && Number.isFinite(direct.lat) && Number.isFinite(direct.lng)) {
-      return res.json({ ok: true, lat: direct.lat, lng: direct.lng, via: "direct", resolvedUrl: input });
-    }
-
-    // 2) ต้องเป็น URL
-    let u;
-    try {
-      u = new URL(input);
-    } catch (_) {
-      return res.status(400).json({ error: "INVALID_URL" });
-    }
-
-    // 3) Resolve เฉพาะโดเมนที่อนุญาต
-    const r = await resolveMapsUrlToLatLng(u.toString());
-    return res.json({ ok: true, ...r });
-  } catch (e) {
-    const msg = String(e?.message || "");
-    if (msg === "HOST_NOT_ALLOWED") return res.status(400).json({ error: "HOST_NOT_ALLOWED" });
-    console.error("/api/maps/resolve error:", e);
-    return res.status(500).json({ error: "RESOLVE_FAILED" });
-  }
-});
 
 // =======================================
 // 📣 LINE OA (optional)
@@ -300,12 +149,7 @@ async function ensureSchema() {
     // 2.4) jobs: งานตีกลับ (ช่างคืนงานให้แอดมิน) - เก็บไว้เพื่อ audit
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS returned_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS return_reason TEXT`);
-        await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS returned_by TEXT`);
-
-    // 2.5) jobs: การชำระเงิน (จ่ายเงิน + แนบสลิป)
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`);
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS paid_by TEXT`);
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'unpaid'`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS returned_by TEXT`);
 
 
     await pool.query(
@@ -757,7 +601,7 @@ app.get("/jobs", async (req, res) => {
       SELECT
         job_id, booking_code, booking_token, job_source, dispatch_mode,
         customer_name, customer_phone, job_type, appointment_datetime,
-        job_status, job_price, paid_at, paid_by, payment_status, address_text,
+        job_status, job_price, address_text,
         gps_latitude, gps_longitude, air_type, air_quantity,
         technician_team, technician_username, created_at,
         maps_url, job_zone,
@@ -1027,7 +871,7 @@ app.get("/jobs/tech/:username", async (req, res) => {
       SELECT
         job_id, booking_code, booking_token, job_source, dispatch_mode,
         customer_name, customer_phone, job_type, appointment_datetime,
-        job_status, job_price, paid_at, paid_by, payment_status, address_text,
+        job_status, job_price, address_text,
         gps_latitude, gps_longitude, air_type, air_quantity,
         technician_team, technician_username, created_at,
         maps_url, job_zone,
@@ -1038,13 +882,13 @@ app.get("/jobs/tech/:username", async (req, res) => {
         checkin_latitude, checkin_longitude, checkin_at,
         technician_note, technician_note_at
       FROM public.jobs
-      WHERE technician_team=$1
+      WHERE technician_username=$1
+         OR technician_team=$1
          OR EXISTS (
             SELECT 1 FROM public.job_team_members tm
             WHERE tm.job_id = public.jobs.job_id AND tm.username=$1
          )
-         OR (technician_username=$1 AND COALESCE(dispatch_mode,'') <> 'offer')
-ORDER BY appointment_datetime ASC
+      ORDER BY appointment_datetime ASC
       `,
       [username]
     );
@@ -1341,34 +1185,6 @@ app.get("/jobs/:job_id/pricing", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "โหลดสรุปราคาไม่สำเร็จ" });
-  }
-});
-
-
-// =======================================
-// 💳 MARK PAID (ช่างกดจ่ายเงินแล้ว)
-// - บันทึก paid_at + payment_status='paid'
-// =======================================
-app.post("/jobs/:job_id/pay", async (req, res) => {
-  const job_id = Number(req.params.job_id);
-  const { username } = req.body || {};
-  const paid_by = (username || "").toString().trim() || null;
-
-  if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
-
-  try {
-    await pool.query(
-      `UPDATE public.jobs
-       SET paid_at = COALESCE(paid_at, NOW()),
-           paid_by = COALESCE(paid_by, $1),
-           payment_status = 'paid'
-       WHERE job_id=$2`,
-      [paid_by, job_id]
-    );
-    res.json({ success: true });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "บันทึกการจ่ายเงินไม่สำเร็จ" });
   }
 });
 
@@ -1888,39 +1704,11 @@ app.post("/offers/:offer_id/decline", async (req, res) => {
 
     if (new Date(offer.expires_at) < new Date()) {
       await client.query(`UPDATE public.job_offers SET status='expired', responded_at=NOW() WHERE offer_id=$1`, [offer_id]);
-
-      // ✅ คืนงานกลับหน้าแอดมิน (ถ้าเป็น offer และยังไม่ได้รับจริง)
-      await client.query(
-        `UPDATE public.jobs
-         SET technician_username=NULL,
-             technician_team=NULL,
-             dispatch_mode='offer'
-         WHERE job_id=$1
-           AND COALESCE(dispatch_mode,'')='offer'
-           AND technician_team IS NULL
-           AND technician_username=$2`,
-        [offer.job_id, offer.technician_username]
-      );
-
       await client.query("COMMIT");
       return res.json({ success: true, status: "expired" });
     }
 
     await client.query(`UPDATE public.job_offers SET status='declined', responded_at=NOW() WHERE offer_id=$1`, [offer_id]);
-
-    // ✅ คืนงานกลับหน้าแอดมิน (ถ้าเป็น offer และยังไม่ได้รับจริง)
-    await client.query(
-      `UPDATE public.jobs
-       SET technician_username=NULL,
-           technician_team=NULL,
-           dispatch_mode='offer'
-       WHERE job_id=$1
-         AND COALESCE(dispatch_mode,'')='offer'
-         AND technician_team IS NULL
-         AND technician_username=$2`,
-      [offer.job_id, offer.technician_username]
-    );
-
     await client.query("COMMIT");
     res.json({ success: true, status: "declined", job_id: offer.job_id });
   } catch (e) {
@@ -2003,7 +1791,7 @@ app.post("/jobs/:job_id/photos/meta", async (req, res) => {
   const { job_id } = req.params;
   const { phase, mime_type, original_name, file_size } = req.body || {};
 
-  const allowedPhases = ["before", "after", "pressure", "current", "temp", "defect", "payment_slip"];
+  const allowedPhases = ["before", "after", "pressure", "current", "temp", "defect"];
   if (!allowedPhases.includes(String(phase))) {
     return res.status(400).json({ error: `phase ไม่ถูกต้อง (ต้องเป็น ${allowedPhases.join(", ")})` });
   }
@@ -2563,7 +2351,6 @@ function money(n) {
 async function getJobDocData(job_id) {
   const jobR = await pool.query(
     `SELECT job_id, booking_code, customer_name, customer_phone, job_type, appointment_datetime, address_text, job_price,
-            paid_at, paid_by, payment_status,
             final_signature_path, final_signature_at
      FROM public.jobs WHERE job_id=$1`,
     [job_id]
@@ -2716,114 +2503,6 @@ function docHtml(title, data) {
   </body></html>`;
 }
 
-
-
-function eSlipHtml(data, slipUrl) {
-  const j = data.job;
-
-  const COMPANY_NAME = process.env.COMPANY_NAME || "Coldwindflow air services";
-  const COMPANY_ADDRESS = process.env.COMPANY_ADDRESS || "23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260";
-  const COMPANY_PHONE = process.env.COMPANY_PHONE || "098-877-7321";
-  const COMPANY_LINE = process.env.COMPANY_LINE || "@cwfair";
-
-  const BANK_QR_URL = process.env.COMPANY_BANK_QR_URL || "";
-
-  const phoneDigits = String(COMPANY_PHONE || "").replace(/[^0-9]/g, "");
-  const total = Number(data.total || 0);
-  const qrUrl = BANK_QR_URL || (phoneDigits ? `https://promptpay.io/${phoneDigits}/${total.toFixed(2)}.png` : "");
-
-  const rows =
-    data.items && data.items.length
-      ? data.items
-          .map(
-            (it) => `
-      <tr>
-        <td>${it.item_name}</td>
-        <td style="text-align:right;">${it.qty}</td>
-        <td style="text-align:right;">${money(it.unit_price)}</td>
-        <td style="text-align:right;">${money(it.line_total)}</td>
-      </tr>`
-          )
-          .join("")
-      : `<tr><td colspan="4">-</td></tr>`;
-
-  const paidAt = j.paid_at ? new Date(j.paid_at).toLocaleString("th-TH") : new Date().toLocaleString("th-TH");
-
-  return `<!doctype html>
-  <html lang="th"><head>
-    <meta charset="utf-8"/>
-    <meta name="viewport" content="width=device-width, initial-scale=1"/>
-    <title>e-slip - ${j.booking_code || "งาน #" + j.job_id}</title>
-    <style>
-      body{ font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; padding:18px; color:#0f172a; background:#f8fafc;}
-      .card{ background:#fff;border:1px solid rgba(15,23,42,.12); border-radius:16px; padding:14px; box-shadow: 0 12px 25px rgba(2,6,23,.08); }
-      .row{ display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; align-items:flex-start;}
-      .muted{ color:#64748b; font-size:13px;}
-      table{ width:100%; border-collapse:collapse; margin-top:12px;}
-      th,td{ border:1px solid rgba(15,23,42,.12); padding:8px; font-size:13px;}
-      th{ background: rgba(37,99,235,.08); text-align:left;}
-      @media print{ .noprint{ display:none; } body{ background:#fff; } }
-    </style>
-  </head><body>
-    <div class="card">
-      <div class="row">
-        <div style="display:flex;gap:10px;align-items:center;">
-          <img src="/logo.png" alt="CWF" style="width:44px;height:44px;border-radius:14px;object-fit:cover;"/>
-          <div>
-            <div style="font-size:18px;font-weight:900;">e-slip</div>
-            <div class="muted"><b>${COMPANY_NAME}</b></div>
-            <div class="muted">${COMPANY_ADDRESS}</div>
-            <div class="muted">โทร ${COMPANY_PHONE} | LINE ${COMPANY_LINE}</div>
-          </div>
-        </div>
-        <div style="text-align:right;">
-          <div style="font-weight:900;">${j.booking_code || "งาน #" + j.job_id}</div>
-          <div class="muted">ชำระเมื่อ: ${paidAt}</div>
-        </div>
-      </div>
-
-      <div class="card" style="margin-top:12px;background:#fff;">
-        <div><b>ลูกค้า:</b> ${j.customer_name}</div>
-        <div><b>โทร:</b> ${j.customer_phone || "-"}</div>
-        <div><b>ประเภทงาน:</b> ${j.job_type}</div>
-        <div><b>ที่อยู่:</b> ${j.address_text || "-"}</div>
-      </div>
-
-      <table>
-        <thead><tr>
-          <th>รายการ</th><th style="text-align:right;">จำนวน</th><th style="text-align:right;">ราคา/หน่วย</th><th style="text-align:right;">รวม</th>
-        </tr></thead>
-        <tbody>${rows}</tbody>
-      </table>
-
-      <div class="card" style="margin-top:12px;background:#fff;">
-        <div class="row" style="align-items:center;">
-          <div>
-            <div class="muted">ยอดสุทธิ</div>
-            <div style="font-size:22px;font-weight:900;">${money(total)} บาท</div>
-          </div>
-          <div style="text-align:center;min-width:170px;">
-            ${qrUrl ? `<img src="${qrUrl}" alt="QR" style="width:160px;height:auto;border:1px solid rgba(15,23,42,.12);border-radius:14px;background:#fff;">` : ``}
-            <div class="muted" style="margin-top:6px;">QR Payment</div>
-          </div>
-        </div>
-      </div>
-
-      ${slipUrl ? `
-        <div class="card" style="margin-top:12px;background:#fff;">
-          <div style="font-weight:800;">สลิปที่แนบ</div>
-          <img src="${slipUrl}" alt="slip" style="width:100%;max-width:520px;margin-top:8px;border-radius:14px;border:1px solid rgba(15,23,42,.12);">
-        </div>
-      ` : ``}
-
-      <div class="noprint" style="margin-top:12px;">
-        <button onclick="window.print()">🖨️ พิมพ์/บันทึกเป็น PDF</button>
-      </div>
-    </div>
-  </body></html>`;
-}
-
-
 app.get("/docs/quote/:job_id", async (req, res) => {
   const job_id = Number(req.params.job_id);
   const data = await getJobDocData(job_id);
@@ -2839,35 +2518,6 @@ app.get("/docs/receipt/:job_id", async (req, res) => {
   res.setHeader("Content-Type", "text/html; charset=utf-8");
   res.send(docHtml("ใบเสร็จรับเงิน", data));
 });
-
-
-app.get("/docs/eslip/:job_id", async (req, res) => {
-  const job_id = Number(req.params.job_id);
-  if (!job_id) return res.status(400).send("job_id ไม่ถูกต้อง");
-
-  try {
-    const data = await getJobDocData(job_id);
-    if (!data) return res.status(404).send("ไม่พบงาน");
-
-    // ✅ ดึงสลิป (ถ้ามี) - phase = payment_slip
-    const slipR = await pool.query(
-      `SELECT public_url
-       FROM public.job_photos
-       WHERE job_id=$1 AND phase='payment_slip' AND public_url IS NOT NULL
-       ORDER BY photo_id DESC
-       LIMIT 1`,
-      [job_id]
-    );
-    const slipUrl = slipR.rows?.[0]?.public_url || null;
-
-    res.setHeader("Content-Type", "text/html; charset=utf-8");
-    res.send(eSlipHtml(data, slipUrl));
-  } catch (e) {
-    console.error(e);
-    res.status(500).send("สร้าง e-slip ไม่สำเร็จ");
-  }
-});
-
 
 // =======================================
 // 🌍 PUBLIC (ลูกค้าจองเอง/ติดตามงาน)
