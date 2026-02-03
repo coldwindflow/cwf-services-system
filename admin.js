@@ -21,29 +21,150 @@ let editJobItems = [];         // [{item_name, qty, unit_price}]
 // 🧩 HELPERS
 // =======================================
 
-// ✅ parse Lat/Lng จาก Google Maps URL หลายรูปแบบ
+// ✅ parse Lat/Lng จาก Google Maps URL (เสถียรสุด)
+// - รองรับลิงก์ที่ "มีพิกัดอยู่ใน URL" เท่านั้น (ไม่รองรับ maps.app.goo.gl)
+// - รองรับวางพิกัดตรง ๆ: 13.7563,100.5018
 function parseLatLngFromMapsUrl(url) {
   const u = String(url || "").trim();
   if (!u) return null;
 
-  // 1) .../@lat,lng,zoom
-  let m = u.match(/@(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+  // ❌ ไม่รองรับ short link (ไม่เสถียร)
+  if (/^https?:\/\/maps\.app\.goo\.gl\//i.test(u)) return null;
+
+  // 1) วางพิกัดตรง ๆ "lat,lng" หรือ "lat lng"
+  let m = u.match(/(-?\d{1,2}\.\d+)\s*[, ]\s*(-?\d{1,3}\.\d+)/);
+  if (m) {
+    const lat = Number(m[1]); const lng = Number(m[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+      return { lat, lng };
+    }
+  }
+
+  // 2) .../@lat,lng
+  m = u.match(/@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/);
   if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
 
-  // 2) q=lat,lng หรือ query=lat,lng
-  m = u.match(/[?&](?:q|query)=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+  // 3) !3dlat!4dlng (share link บางแบบ)
+  m = u.match(/!3d(-?\d{1,2}\.\d+)!4d(-?\d{1,3}\.\d+)/);
   if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
 
-  // 3) ll=lat,lng
-  m = u.match(/[?&]ll=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
+  // 4) query=lat,lng / q=lat,lng / destination=lat,lng / ll=lat,lng / center=lat,lng
+  m = u.match(/[?&](?:query|q|destination|ll|center)=(-?\d{1,2}\.\d+)%2C(-?\d{1,3}\.\d+)/i);
   if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
 
-  // 4) !3dlat!4dlng (share link บางแบบ)
-  m = u.match(/!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/);
+  m = u.match(/[?&](?:query|q|destination|ll|center)=(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/i);
+  if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
+
+  // 5) daddr=lat,lng (directions link)
+  m = u.match(/[?&]daddr=(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/i);
   if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
 
   return null;
 }
+
+// =======================================
+// 🧭 GPS AUTO-PARSE (STABLE) + WARNING (กทม+ปริมณฑล)
+// - วางลิงก์/พิกัดแล้วแปลงให้ทันที (ADD + EDIT)
+// - ถ้าอยู่นอก กทม+ปริมณฑล: ขึ้นตัวหนังสือสีแดงเตือน แต่ยังบันทึกงานได้
+// - ไม่รองรับ maps.app.goo.gl: ขึ้นแดงเตือนให้ใช้ลิงก์เต็ม/วางพิกัดตรง ๆ
+// =======================================
+
+function isBangkokMetro(lat, lng) {
+  // Bounding box แบบปลอดภัย: ครอบคลุม กทม+ปริมณฑลโดยประมาณ (เตือน ไม่บล็อก)
+  return lat >= 13.20 && lat <= 14.20 && lng >= 99.80 && lng <= 101.20;
+}
+
+function upsertGpsWarning(inputEl, msg, isError = true) {
+  if (!inputEl) return;
+  const id = (inputEl.id || "maps_link") + "__gps_warn";
+  let warn = document.getElementById(id);
+  if (!warn) {
+    warn = document.createElement("div");
+    warn.id = id;
+    warn.style.marginTop = "6px";
+    warn.style.fontSize = "13px";
+    warn.style.lineHeight = "1.3";
+    inputEl.insertAdjacentElement("afterend", warn);
+  }
+  warn.textContent = msg || "";
+  warn.style.color = isError ? "#d00000" : "#116611";
+  warn.style.display = msg ? "block" : "none";
+}
+
+function stableParseAndFill(urlInput, latInput, lngInput) {
+  if (!urlInput || !latInput || !lngInput) return;
+
+  const raw = String(urlInput.value || "").trim();
+  if (!raw) {
+    upsertGpsWarning(urlInput, "", false);
+    return;
+  }
+
+  // Short link warning
+  if (/^https?:\/\/maps\.app\.goo\.gl\//i.test(raw)) {
+    upsertGpsWarning(
+      urlInput,
+      "⚠️ ไม่รองรับลิงก์สั้น maps.app.goo.gl (ไม่เสถียร) — กรุณาเปิดใน Google Maps แล้วคัดลอกลิงก์แบบเต็ม หรือวางพิกัดตรง ๆ เช่น 13.7563,100.5018",
+      true
+    );
+    return;
+  }
+
+  const out = parseLatLngFromMapsUrl(raw);
+  if (!out || !Number.isFinite(out.lat) || !Number.isFinite(out.lng)) {
+    upsertGpsWarning(
+      urlInput,
+      "❌ ไม่พบพิกัดในลิงก์นี้ — กรุณาวางลิงก์ Google Maps แบบเต็มที่มีพิกัด (@lat,lng หรือ q=lat,lng) หรือวางพิกัดตรง ๆ เช่น 13.7563,100.5018",
+      true
+    );
+    return;
+  }
+
+  latInput.value = String(out.lat);
+  lngInput.value = String(out.lng);
+
+  if (!isBangkokMetro(out.lat, out.lng)) {
+    upsertGpsWarning(
+      urlInput,
+      `⚠️ พิกัดอยู่นอก “กรุงเทพฯ + ปริมณฑล” (lat=${out.lat}, lng=${out.lng}) — บันทึกงานได้ แต่แนะนำให้ตรวจสอบ/แก้ไขภายหลัง`,
+      true
+    );
+  } else {
+    upsertGpsWarning(urlInput, `✅ แยกพิกัดสำเร็จ (lat=${out.lat}, lng=${out.lng})`, false);
+  }
+}
+
+function bindStableGpsAutoParse(urlId, latId, lngId) {
+  const urlInput = document.getElementById(urlId);
+  const latInput = document.getElementById(latId);
+  const lngInput = document.getElementById(lngId);
+  if (!urlInput || !latInput || !lngInput) return;
+
+  let t = null;
+  const schedule = () => {
+    clearTimeout(t);
+    t = setTimeout(() => stableParseAndFill(urlInput, latInput, lngInput), 120);
+  };
+
+  urlInput.addEventListener("paste", schedule);
+  urlInput.addEventListener("input", schedule);
+  urlInput.addEventListener("change", schedule);
+  urlInput.addEventListener("blur", () => stableParseAndFill(urlInput, latInput, lngInput));
+}
+
+// init auto-parse on both ADD + EDIT inputs
+(function initStableGpsAutoParse(){
+  const run = () => {
+    bindStableGpsAutoParse("maps_link", "gps_latitude", "gps_longitude");
+    bindStableGpsAutoParse("edit_maps_url", "edit_gps_latitude", "edit_gps_longitude");
+  };
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", run);
+  } else {
+    run();
+  }
+})();
+
 
 function toDatetimeLocal(value) {
   if (!value) return "";
@@ -121,15 +242,13 @@ function closeEditModal() {
 }
 
 function parseMapsToLatLngInModal() {
-  const url = document.getElementById("edit_maps_url")?.value || "";
-  const out = parseLatLngFromMapsUrl(url);
-  if (!out) {
-    alert("❌ แยกพิกัดไม่สำเร็จ\nลองวางลิงก์แบบแชร์จาก Google Maps ใหม่");
-    return;
-  }
-  document.getElementById("edit_gps_latitude").value = String(out.lat);
-  document.getElementById("edit_gps_longitude").value = String(out.lng);
+  // ใช้ตัว parser แบบเสถียร + แสดง warning สีแดง (ยังบันทึกได้)
+  const urlEl = document.getElementById("edit_maps_url");
+  const latEl = document.getElementById("edit_gps_latitude");
+  const lngEl = document.getElementById("edit_gps_longitude");
+  stableParseAndFill(urlEl, latEl, lngEl);
 }
+
 
 async function saveEditModal() {
   const jobId = currentEditJobId;
@@ -144,8 +263,8 @@ async function saveEditModal() {
     job_type: document.getElementById("edit_job_type")?.value || "",
     appointment_datetime: datetimeLocalToISO(document.getElementById("edit_appointment_datetime")?.value) || null,
     address_text: document.getElementById("edit_address_text")?.value || "",
-    maps_url: document.getElementById("edit_maps_url")?.value || "",
-    job_zone: document.getElementById("edit_job_zone")?.value || "",
+    maps_url: (document.getElementById("edit_maps_url")?.value || "").trim() || null,
+    job_zone: (document.getElementById("edit_job_zone")?.value || "").trim() || null,
     customer_note: document.getElementById("edit_customer_note")?.value || "",
     gps_latitude: null,
     gps_longitude: null,
@@ -626,9 +745,12 @@ function addJob() {
     appointment_datetime: datetimeLocalToISO(appointment_datetime.value),
     address_text: address_text.value.trim(),
 
+    // ✅ ลิงก์แผนที่ (เสถียรสุด: เก็บไว้เปิดนำทางได้เสมอ)
+    maps_url: (document.getElementById("maps_link")?.value || "").trim() || null,
+
     // ✅ GPS หน้างาน (สำหรับเช็คอิน)
-    gps_latitude: gps_latitude.value ? Number(gps_latitude.value) : null,
-    gps_longitude: gps_longitude.value ? Number(gps_longitude.value) : null,
+    gps_latitude: (String(gps_latitude.value || "").trim() !== "") ? Number(gps_latitude.value) : null,
+    gps_longitude: (String(gps_longitude.value || "").trim() !== "") ? Number(gps_longitude.value) : null,
 
     technician_username: technician_username.value,
 
@@ -649,8 +771,10 @@ function addJob() {
     return;
   }
 
-  // ถ้าใส่ GPS มา ต้องครบคู่
-  if ((data.gps_latitude && !data.gps_longitude) || (!data.gps_latitude && data.gps_longitude)) {
+  // ถ้าใส่ GPS มา ต้องครบคู่ (เช็คแบบ null-safe)
+  const hasLat = data.gps_latitude !== null && data.gps_latitude !== undefined && !Number.isNaN(Number(data.gps_latitude));
+  const hasLng = data.gps_longitude !== null && data.gps_longitude !== undefined && !Number.isNaN(Number(data.gps_longitude));
+  if ((hasLat && !hasLng) || (!hasLat && hasLng)) {
     alert("กรอก GPS ให้ครบทั้ง Latitude และ Longitude");
     return;
   }
@@ -771,36 +895,115 @@ function copySummary() {
 // 2) ...?q=13.7,100.6
 // 3) ...?query=13.7,100.6
 // =======================================
-function parseMapsLink() {
+function ensureMapsStatusEl() {
+  const input = document.getElementById("maps_link");
+  if (!input) return null;
+  let el = document.getElementById("maps_status");
+  if (el) return el;
+  el = document.createElement("div");
+  el.id = "maps_status";
+  el.style.marginTop = "6px";
+  el.style.fontSize = "12px";
+  el.style.opacity = "0.9";
+  input.parentNode?.insertBefore(el, input.nextSibling);
+  return el;
+}
+
+function setMapsStatus(msg, isError) {
+  const el = ensureMapsStatusEl();
+  if (!el) return;
+  el.textContent = msg || "";
+  el.style.color = isError ? "#dc2626" : "#2563eb";
+}
+
+function extractLatLngFromText(text) {
+  if (!text) return null;
+  const s = String(text);
+  // พิกัดตรงๆ 13.705,100.601 (มี/ไม่มีช่องว่าง)
+  {
+    const m = s.match(/(-?\d{1,3}(?:\.\d+)?)\s*,\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
+  }
+  // @lat,lng
+  {
+    const m = s.match(/@\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
+  }
+  // q=lat,lng | query=lat,lng | ll=lat,lng
+  {
+    const m = s.match(/[?&](?:q|query|ll)=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
+  }
+  // !3dlat!4dlng
+  {
+    const m = s.match(/!3d(-?\d{1,3}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]) };
+  }
+  return null;
+}
+
+let __mapsDebounceTimer = null;
+async function parseMapsLink(options = { silent: false }) {
   const link = (document.getElementById("maps_link")?.value || "").trim();
-  if (!link) return alert("วางลิงก์ Google Maps ก่อน");
-
-  let lat = null;
-  let lng = null;
-
-  // รูปแบบ @lat,lng
-  const atMatch = link.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
-  if (atMatch) {
-    lat = atMatch[1];
-    lng = atMatch[2];
+  if (!link) {
+    setMapsStatus("", false);
+    return;
   }
 
-  // รูปแบบ q=lat,lng หรือ query=lat,lng
-  if (!lat || !lng) {
-    const qMatch = link.match(/[?&](q|query)=(-?\d+\.\d+),(-?\d+\.\d+)/);
-    if (qMatch) {
-      lat = qMatch[2];
-      lng = qMatch[3];
+  const latEl = document.getElementById("gps_latitude");
+  const lngEl = document.getElementById("gps_longitude");
+  if (!latEl || !lngEl) return;
+
+  // 1) ลองดึงจากข้อความ/URL ก่อน (เร็วสุด)
+  const direct = extractLatLngFromText(link);
+  if (direct && Number.isFinite(direct.lat) && Number.isFinite(direct.lng)) {
+    latEl.value = String(direct.lat);
+    lngEl.value = String(direct.lng);
+    setMapsStatus("✅ แยกพิกัดแล้ว", false);
+    if (!options.silent) alert("✅ แยกพิกัดสำเร็จ");
+    return;
+  }
+
+  // 2) ถ้าเป็น maps.app.goo.gl หรือ google maps ให้ถาม backend resolve
+  setMapsStatus("กำลังแปลงพิกัด...", false);
+  try {
+    const res = await fetch(`${API_BASE}/api/maps/resolve?url=${encodeURIComponent(link)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || !data?.ok) {
+      throw new Error(data?.error || "RESOLVE_FAILED");
     }
+    if (Number.isFinite(data.lat) && Number.isFinite(data.lng)) {
+      latEl.value = String(data.lat);
+      lngEl.value = String(data.lng);
+      setMapsStatus("✅ แยกพิกัดจากลิงก์แล้ว", false);
+      if (!options.silent) alert("✅ แยกพิกัดสำเร็จ");
+      return;
+    }
+    // ไม่พบพิกัด
+    latEl.value = "";
+    lngEl.value = "";
+    setMapsStatus("❌ แปลงพิกัดไม่สำเร็จ (ลิงก์นี้ Google ไม่ส่งพิกัด) — วางพิกัดตรงๆ เช่น 13.705,100.601", true);
+    if (!options.silent) alert("แยกพิกัดไม่สำเร็จ: ลิงก์นี้ไม่พบพิกัด\nลองวางพิกัดตรงๆ เช่น 13.705,100.601");
+  } catch (e) {
+    latEl.value = "";
+    lngEl.value = "";
+    setMapsStatus("❌ แปลงพิกัดไม่สำเร็จ — ลองวางพิกัดตรงๆ เช่น 13.705,100.601", true);
+    if (!options.silent) alert("แยกพิกัดไม่สำเร็จ: ลองวางพิกัดตรงๆ เช่น 13.705,100.601");
   }
+}
 
-  if (!lat || !lng) {
-    return alert("แยกพิกัดไม่สำเร็จ: ลิงก์ไม่อยู่ในรูปแบบที่รองรับ\nลองเปิด Maps แล้วกดแชร์ลิงก์ใหม่");
-  }
-
-  document.getElementById("gps_latitude").value = lat;
-  document.getElementById("gps_longitude").value = lng;
-  alert("✅ แยกพิกัดสำเร็จ");
+// Auto-parse: วางลิงก์แล้วแปลงทันที (ไม่ต้องกดปุ่ม)
+function initMapsAutoParse() {
+  const input = document.getElementById("maps_link");
+  if (!input) return;
+  const handler = () => {
+    if (__mapsDebounceTimer) clearTimeout(__mapsDebounceTimer);
+    __mapsDebounceTimer = setTimeout(() => parseMapsLink({ silent: true }), 250);
+  };
+  input.addEventListener("paste", handler);
+  input.addEventListener("input", handler);
+  input.addEventListener("change", handler);
+  setMapsStatus("GPS Parser: gps-v4", false);
 }
 
 
@@ -1053,6 +1256,8 @@ function renderAllJobs(list, filter, isLateFn) {
 window.addEventListener("load", () => {
   loadCustomerBookings();
   loadAllJobs();
+  // 📍 Auto-parse maps link -> lat/lng
+  initMapsAutoParse();
   const f = document.getElementById('allJobsFilter');
   if (f) f.addEventListener('change', loadAllJobs);
 });

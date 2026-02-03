@@ -1284,7 +1284,29 @@ window.payJob = payJob;
 function openESlip(jobId) {
   const id = Number(jobId);
   if (!id) return;
-  window.open(`/docs/eslip/${id}`, "_blank");
+
+  // ===============================
+  // 🧾 E-SLIP (Technician view)
+  // เป้าหมาย: ให้รูปแบบเอกสาร "เหมือน" ฝั่งลูกค้า (Customer Tracking)
+  // ✅ แก้เฉพาะการแสดงผล/หน้าตาเอกสารที่ช่างเห็น
+  // ❌ ไม่แตะ DB / API / Controller
+  // ❌ ไม่แตะ Logic การกด "เสร็จสิ้น" / สถานะงาน
+  // ===============================
+
+  // ดึง booking_code จาก cache (ถ้ามี) เพื่อให้หน้า eslip.html สามารถเรียก public/track ได้
+  const job = (window.__JOB_CACHE__ || []).find(j => Number(j.job_id) === id) || {};
+  const bookingCode = (job.booking_code || "").toString().trim();
+
+  // ✅ ใส่ cache-busting เพื่อกัน WebView/PWA บางรุ่น "เปิดได้ครั้งเดียว"
+  // และเพิ่ม fallback: ถ้า window.open ถูกบล็อค ให้เปลี่ยนหน้าแทน
+  const ts = Date.now();
+  const url = `/eslip.html?job_id=${encodeURIComponent(id)}&q=${encodeURIComponent(bookingCode)}&ts=${ts}`;
+
+  const w = window.open(url, "_blank", "noopener,noreferrer");
+  if (!w) {
+    // popup ถูกบล็อค/พฤติกรรม WebView บางรุ่น → เปิดในแท็บเดิม
+    window.location.href = url;
+  }
 }
 window.openESlip = openESlip;
 

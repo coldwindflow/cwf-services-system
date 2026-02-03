@@ -22,6 +22,116 @@ process.env.TZ = process.env.TZ || "Asia/Bangkok";
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+
+// ==============================
+// 🧭 GPS/Maps Resolver (safe)
+// - รองรับ maps.app.goo.gl (short link)
+// - พยายามดึง lat/lng จาก URL หรือ HTML (best-effort)
+// - มี allowlist + timeout + จำกัดขนาด response กัน SSRF/ค้าง
+// ==============================
+const MAPS_ALLOW_HOSTS = new Set([
+  "maps.app.goo.gl",
+  "goo.gl",
+  "google.com",
+  "www.google.com",
+  "maps.google.com",
+  "google.co.th",
+  "www.google.co.th",
+]);
+
+function extractLatLngFromText(text) {
+  if (!text) return null;
+  const s = String(text);
+
+  // 1) @lat,lng
+  {
+    const m = s.match(/@\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "@" };
+  }
+
+  // 2) q=lat,lng | query=lat,lng | ll=lat,lng
+  {
+    const m = s.match(/[?&](?:q|query|ll)=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "q" };
+  }
+
+  // 3) !3dlat!4dlng
+  {
+    const m = s.match(/!3d(-?\d{1,3}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "3d4d" };
+  }
+
+  // 4) center=lat%2Clng (อาจถูก encode)
+  try {
+    const decoded = decodeURIComponent(s);
+    const m = decoded.match(/[?&]center=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "center" };
+  } catch (_) {}
+
+  // 5) JSON-ish "lat":..,"lng":..
+  {
+    const m = s.match(/"lat"\s*:\s*(-?\d{1,3}(?:\.\d+)?)\s*,\s*"lng"\s*:\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "json" };
+  }
+
+  return null;
+}
+
+async function fetchWithTimeout(url, ms, opts = {}) {
+  const controller = new AbortController();
+  const t = setTimeout(() => controller.abort(), ms);
+  try {
+    const res = await fetch(url, {
+      ...opts,
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        "user-agent": "Mozilla/5.0 (CWF Maps Resolver)",
+        ...(opts.headers || {}),
+      },
+    });
+    return res;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function resolveMapsUrlToLatLng(inputUrl) {
+  const u = new URL(inputUrl);
+  if (!MAPS_ALLOW_HOSTS.has(u.hostname)) {
+    throw new Error("HOST_NOT_ALLOWED");
+  }
+
+  // 1) fetch ตาม redirect เพื่อให้ได้ res.url (ลิงก์เต็ม)
+  const res = await fetchWithTimeout(u.toString(), 6000, { method: "GET" });
+  const finalUrl = res.url || u.toString();
+
+  // 2) พยายามดึงจาก URL ก่อน
+  const fromUrl = extractLatLngFromText(finalUrl);
+  if (fromUrl) return { ...fromUrl, resolvedUrl: finalUrl };
+
+  // 3) ถ้ายังไม่ได้ → อ่าน HTML แล้วหา pattern
+  const ctype = String(res.headers.get("content-type") || "");
+  let body = "";
+  if (ctype.includes("text") || ctype.includes("html") || ctype.includes("json")) {
+    // จำกัดขนาดอ่านกันกินแรม
+    const raw = await res.text();
+    body = raw.slice(0, 200_000);
+  }
+
+  // 3.1) หา @lat,lng ใน HTML
+  const fromHtmlDirect = extractLatLngFromText(body);
+  if (fromHtmlDirect) return { ...fromHtmlDirect, resolvedUrl: finalUrl };
+
+  // 3.2) หา canonical / maps URL ที่ฝังอยู่
+  const mUrl = body.match(/https?:\/\/[^\s"']*google\.[^\s"']*\/maps[^\s"']*/i);
+  if (mUrl) {
+    const fromEmbed = extractLatLngFromText(mUrl[0]);
+    if (fromEmbed) return { ...fromEmbed, resolvedUrl: finalUrl, embeddedUrl: mUrl[0] };
+  }
+
+  return { lat: null, lng: null, via: "not_found", resolvedUrl: finalUrl };
+}
 const fs = require("fs");
 const https = require("https");
 const crypto = require("crypto");
@@ -32,6 +142,47 @@ const pool = require("./db");
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// =======================================
+// 🔎 Health / Version (ใช้เช็คว่า deploy ล่าสุดจริง)
+// =======================================
+app.get("/api/version", (req, res) => {
+  res.json({ ok: true, version: "gps-v4", ts: new Date().toISOString() });
+});
+
+// =======================================
+// 📍 Resolve Google Maps URL -> lat/lng (best-effort)
+// รองรับ: maps.app.goo.gl + ลิงก์เต็ม + วางพิกัดตรงๆ
+// =======================================
+app.get("/api/maps/resolve", async (req, res) => {
+  try {
+    const input = String(req.query.url || "").trim();
+    if (!input) return res.status(400).json({ error: "MISSING_URL" });
+
+    // 1) ถ้าวางพิกัดตรงๆ เช่น 13.705,100.601
+    const direct = extractLatLngFromText(input);
+    if (direct && Number.isFinite(direct.lat) && Number.isFinite(direct.lng)) {
+      return res.json({ ok: true, lat: direct.lat, lng: direct.lng, via: "direct", resolvedUrl: input });
+    }
+
+    // 2) ต้องเป็น URL
+    let u;
+    try {
+      u = new URL(input);
+    } catch (_) {
+      return res.status(400).json({ error: "INVALID_URL" });
+    }
+
+    // 3) Resolve เฉพาะโดเมนที่อนุญาต
+    const r = await resolveMapsUrlToLatLng(u.toString());
+    return res.json({ ok: true, ...r });
+  } catch (e) {
+    const msg = String(e?.message || "");
+    if (msg === "HOST_NOT_ALLOWED") return res.status(400).json({ error: "HOST_NOT_ALLOWED" });
+    console.error("/api/maps/resolve error:", e);
+    return res.status(500).json({ error: "RESOLVE_FAILED" });
+  }
+});
 
 // =======================================
 // 📣 LINE OA (optional)
@@ -635,6 +786,8 @@ app.post("/jobs", async (req, res) => {
     appointment_datetime,
     job_price,
     address_text,
+    maps_url,
+    job_zone,
     gps_latitude,
     gps_longitude,
     technician_username,
@@ -681,10 +834,11 @@ app.post("/jobs", async (req, res) => {
       `
       INSERT INTO public.jobs
       (customer_name, customer_phone, job_type, appointment_datetime, job_price, address_text,
+       maps_url, job_zone,
        gps_latitude, gps_longitude,
        technician_team, technician_username, job_status,
        job_source, dispatch_mode)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'admin',$12)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'admin',$14)
       RETURNING job_id
       `,
       [
@@ -694,8 +848,10 @@ app.post("/jobs", async (req, res) => {
         appointment_dt,
         pricing.total,
         address_text || "",
-        gps_latitude ? Number(gps_latitude) : null,
-        gps_longitude ? Number(gps_longitude) : null,
+        (String(maps_url || "").trim() || null),
+        (String(job_zone || "").trim() || null),
+        (() => { const n = Number(gps_latitude); return Number.isFinite(n) ? n : null; })(),
+        (() => { const n = Number(gps_longitude); return Number.isFinite(n) ? n : null; })(),
         // technician_team: ใส่เฉพาะกรณี forced (บังคับงาน)
         mode === "forced" ? technician_username : null,
         // technician_username: คนที่แอดมินเลือกส่งงาน (จำเป็นเสมอ)
@@ -704,6 +860,7 @@ app.post("/jobs", async (req, res) => {
         mode,
       ]
     );
+
 
     const job_id = jobInsert.rows[0].job_id;
 
@@ -941,8 +1098,8 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
           appointment_datetime = COALESCE($4, appointment_datetime),
           address_text = COALESCE($5, address_text),
           customer_note = COALESCE($6, customer_note),
-          maps_url = COALESCE($7, maps_url),
-          job_zone = COALESCE($8, job_zone),
+          maps_url = COALESCE(NULLIF($7, ''), maps_url),
+          job_zone = COALESCE(NULLIF($8, ''), job_zone),
           gps_latitude = COALESCE($9, gps_latitude),
           gps_longitude = COALESCE($10, gps_longitude)
       WHERE job_id=$11
