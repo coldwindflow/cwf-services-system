@@ -5,6 +5,50 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CWF - ติดตามสถานะงาน</title>
   <link rel="stylesheet" href="style.css">
+
+  <style>
+    /* =====================================================
+       🧾 E-Slip (Customer Tracking Page Only)
+       - แก้เฉพาะการแสดงผลเอกสารฝั่งลูกค้าเท่านั้น
+       - ไม่กระทบ logic/สถานะ/ฐานข้อมูล/endpoint ใด ๆ
+       ===================================================== */
+    .eslip-wrap{ margin-top:12px; }
+    .eslip{
+      background:#ffffff;
+      border:1px solid rgba(15,23,42,0.10);
+      border-radius:16px;
+      padding:14px;
+      box-shadow: 0 10px 24px rgba(2,6,23,0.08);
+    }
+    .eslip-head{ text-align:center; }
+    .eslip-head .h1{ font-weight:900; font-size:18px; }
+    .eslip-head .h2{ margin-top:4px; font-weight:800; font-size:14px; color:#0f172a; }
+    .eslip-meta{ display:flex; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-top:10px; }
+    .eslip-meta .box{ padding:10px 12px; border:1px solid rgba(15,23,42,0.10); border-radius:12px; background:rgba(37,99,235,0.04); }
+    .eslip-table{ width:100%; border-collapse:collapse; margin-top:12px; }
+    .eslip-table th,.eslip-table td{ border:1px solid rgba(15,23,42,0.10); padding:8px; font-size:13px; }
+    .eslip-table th{ background: rgba(37,99,235,0.08); text-align:left; }
+    .eslip-sum{ margin-top:10px; padding:10px 12px; border:1px solid rgba(15,23,42,0.10); border-radius:12px; background:#fff; }
+    .eslip-sum .row{ display:flex; justify-content:space-between; gap:10px; margin:6px 0; }
+    .eslip-sum .total{ font-size:18px; font-weight:900; }
+    .eslip-foot{ margin-top:12px; text-align:center; color:#475569; font-size:12.5px; line-height:1.45; }
+  
+    .eslip-actions{ display:flex; gap:10px; justify-content:flex-end; margin-top:10px; flex-wrap:wrap; }
+    .eslip-actions button{ width:auto; min-height:40px; padding:10px 12px; }
+    .eslip-logo{ width: min(220px, 55vw); height:auto; max-height:90px; object-fit:contain; display:block; margin:0 auto 8px; }
+
+    /* 🖨️ Print: พิมพ์เฉพาะเอกสาร E-Slip */
+    @media print{
+      body *{ visibility:hidden !important; }
+      #docMount, #docMount *{ visibility:visible !important; }
+      #docMount{ position:fixed; left:0; top:0; width:100%; margin:0; padding:0; }
+      .eslip{ box-shadow:none !important; border:none !important; border-radius:0 !important; }
+      .eslip-actions{ display:none !important; }
+      .topbar{ display:none !important; }
+      .app{ padding:0 !important; }
+    }
+
+</style>
 </head>
 <body class="theme-2">
   <div class="app">
@@ -36,6 +80,180 @@
 
 <script>
 const API = window.location.origin;
+
+// ==============================
+// 🔒 Helper: escape HTML
+// ==============================
+function esc(s){
+  return String(s ?? "").replace(/[&<>"']/g, (m) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;"
+  }[m]));
+}
+
+// ==============================
+// 🧾 E-Slip (Customer view)
+// - แสดงเฉพาะเมื่อ job_status = 'เสร็จแล้ว'
+// - ใช้ข้อมูลเดิมจากระบบ (อ่านจาก /docs/receipt/:job_id)
+// - ไม่แก้คำนวณ ไม่เพิ่ม/ลบ field
+// ==============================
+function isDoneStatus(jobStatus){
+  // รองรับข้อความสถานะที่พบในระบบ: 'เสร็จแล้ว' หรือ 'เสร็จสิ้น'
+  // ✅ เปลี่ยนเฉพาะเงื่อนไขการแสดงผลเอกสารฝั่งลูกค้า (ไม่แตะสถานะ/logic ฝั่ง backend)
+  const s = String(jobStatus || "").trim();
+  return (s === "เสร็จแล้ว" || s === "เสร็จสิ้น");
+}
+
+// ✅ สร้าง URL ใบเสร็จเดิมให้ปลอดภัย (กัน backend ส่ง localhost / คนละโดเมน)
+// - เป้าหมาย: ป้องกัน Error 'Failed to fetch' ในมือถือ/PWA
+function buildReceiptUrl(jobData){
+  const id = jobData?.job_id;
+  const fallback = id ? `${API}/docs/receipt/${encodeURIComponent(id)}` : "";
+  const raw = String(jobData?.receipt_url || "").trim();
+  if(!raw) return fallback;
+
+  try{
+    // new URL จะรองรับทั้ง absolute และ relative
+    const u = new URL(raw, API);
+
+    // ถ้า backend ส่งลิงก์ localhost/127.0.0.1 หรือ origin คนละโดเมน
+    // ให้ยึด origin ปัจจุบัน เพื่อกัน CORS/ปลายทางเข้าถึงไม่ได้
+    const isLocalHost = (u.hostname === "localhost" || u.hostname === "127.0.0.1" || u.hostname === "0.0.0.0");
+    const isDifferentOrigin = (u.origin !== API);
+
+    if (isLocalHost || isDifferentOrigin){
+      return `${API}${u.pathname}${u.search}`;
+    }
+
+    return u.href;
+  }catch(e){
+    // fallback แบบไม่พัง
+    return fallback || raw;
+  }
+}
+
+// ✅ ดึงรายการ/ยอดรวมจากใบเสร็จเดิม (HTML) แล้วนำมาแสดงเป็น E-Slip รูปแบบใหม่
+async function renderCustomerESlip(jobData){
+  const mount = document.getElementById("docMount");
+  if(!mount) return;
+
+  // ❌ งานยังไม่เสร็จ: ห้ามแสดงเอกสารใด ๆ
+  if(!isDoneStatus(jobData?.job_status)){
+    mount.innerHTML = "";
+    return;
+  }
+
+  // ✅ ใช้ใบเสร็จเดิมเป็นแหล่งข้อมูลหลัก (แต่กันลิงก์ผิด เช่น localhost)
+  const receiptUrl = buildReceiptUrl(jobData);
+  if(!receiptUrl){
+    mount.innerHTML = "";
+    return;
+  }
+
+  mount.innerHTML = `<div class="muted" style="margin-top:10px;">กำลังสร้าง E-Slip...</div>`;
+
+  try{
+    const r = await fetch(receiptUrl, { cache: "no-store", credentials: "include" });
+    const html = await r.text();
+    if(!r.ok) throw new Error("โหลดใบเสร็จเดิมไม่สำเร็จ");
+
+    // ✅ Parse HTML เพื่อดึงตารางรายการ + สรุปยอด (ใช้ข้อมูลเดิม ไม่แตะ backend)
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const table = doc.querySelector("table");
+
+    // rows => [[name, qty, unit, total], ...]
+    const rows = Array.from(table?.querySelectorAll("tbody tr") || []).map(tr => {
+      const tds = Array.from(tr.querySelectorAll("td")).map(td => (td.textContent || "").trim());
+      return {
+        name: tds[0] || "-",
+        qty: tds[1] || "-",
+        unit: tds[2] || "-",
+        line: tds[3] || "-",
+      };
+    });
+
+    // สรุปยอด: หา box ที่มีคำว่า 'ยอดสุทธิ'
+    const boxes = Array.from(doc.querySelectorAll(".box"));
+    const sumBox = boxes.find(b => (b.textContent || "").includes("ยอดสุทธิ")) || null;
+    const sumText = (sumBox?.textContent || "").replace(/\s+/g," ").trim();
+
+    // ดึงตัวเลข (ปล่อยให้เป็นข้อความตามเอกสารเดิม เพื่อไม่แตะคำนวณ)
+    const subtotal = (sumText.match(/รวมก่อนลด:\s*([0-9,\.]+)/) || [])[1] || "-";
+    const discount = (sumText.match(/ส่วนลด:\s*([0-9,\.]+)/) || [])[1] || "-";
+    const total = (sumText.match(/ยอดสุทธิ:\s*([0-9,\.]+)/) || [])[1] || "-";
+
+    const booking = jobData.booking_code || "-";
+    const printedAt = new Date().toLocaleString("th-TH");
+
+    // ✅ รูปแบบ E-Slip ตามที่กำหนด (ต้องตรง 100%)
+    mount.innerHTML = `
+      <div class="eslip-wrap">
+        <div class="eslip">
+          <div class="eslip-head">
+            <img class="eslip-logo" src="/logo.png" alt="Coldwindflow Air Services">
+            <div class="h1">ใบรับเงินอิเล็กทรอนิกส์ (E-Receipt)</div>
+            <div class="h2">Coldwindflow Air Services</div>
+          </div>
+
+          <div class="eslip-meta">
+            <div class="box"><b>Booking:</b> ${esc(booking)}</div>
+            <div class="box"><b>วันที่แสดงผล:</b> ${esc(printedAt)}</div>
+          </div>
+
+          <div class="eslip-actions">
+            <button type="button" onclick="window.print()">🖨️ พิมพ์</button>
+          </div>
+
+          <div style="margin-top:10px;">
+            <div><b>ชื่อลูกค้า:</b> ${esc(jobData.customer_name || "-")}</div>
+            <div><b>เบอร์โทร:</b> ${esc(jobData.customer_phone || "-")}</div>
+            <div><b>ประเภทงาน:</b> ${esc(jobData.job_type || "-")}</div>
+            <div><b>นัดหมาย:</b> ${esc(jobData.appointment_datetime ? new Date(jobData.appointment_datetime).toLocaleString("th-TH") : "-")}</div>
+            <div><b>ที่อยู่:</b> ${esc(jobData.address_text || "-")}</div>
+          </div>
+
+          <table class="eslip-table" aria-label="รายการและราคา">
+            <thead>
+              <tr>
+                <th>รายการ</th>
+                <th style="text-align:right;">จำนวน</th>
+                <th style="text-align:right;">ราคา/หน่วย</th>
+                <th style="text-align:right;">รวม</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(rows.length ? rows : [{name:"-",qty:"-",unit:"-",line:"-"}]).map(it => `
+                <tr>
+                  <td>${esc(it.name)}</td>
+                  <td style="text-align:right;">${esc(it.qty)}</td>
+                  <td style="text-align:right;">${esc(it.unit)}</td>
+                  <td style="text-align:right;">${esc(it.line)}</td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+
+          <div class="eslip-sum">
+            <div class="row"><span>รวมก่อนลด</span><b>${esc(subtotal)}</b></div>
+            <div class="row"><span>ส่วนลด</span><b>${esc(discount)}</b></div>
+            <div class="row total"><span>ยอดสุทธิ</span><span>${esc(total)}</span></div>
+          </div>
+
+          <div class="eslip-foot">
+            เอกสารนี้ใช้เป็นหลักฐานการรับเงินเท่านั้น<br>
+            ไม่สามารถใช้เป็นใบกำกับภาษีได้<br>
+            ราคาดังกล่าวไม่รวมภาษีมูลค่าเพิ่ม
+          </div>
+        </div>
+      </div>
+    `;
+  }catch(e){
+    mount.innerHTML = `<div class="muted" style="margin-top:10px;">❌ สร้าง E-Slip ไม่สำเร็จ: ${esc(e.message)}</div>`;
+  }
+}
 
 function qs(name){
   const u = new URL(location.href);
@@ -184,7 +402,8 @@ async function track(){
 
     const tel = tech && tech.phone ? String(tech.phone).trim() : "";
     const telBtn = tel ? `<button class="secondary" type="button" onclick="location.href='tel:${tel}'">📞 โทรหาช่าง</button>` : "";
-    const receiptBtn = data.receipt_url ? `<a class="btn" style="text-decoration:none;display:inline-flex;align-items:center;justify-content:center;" href="${data.receipt_url}" target="_blank" rel="noopener">🧾 ใบเสร็จ</a>` : "";
+    // ❌ ตาม requirement: ห้ามแสดงเอกสารก่อนเสร็จ และแทนที่ใบเสร็จเดิมด้วย E-Slip ใหม่
+    const receiptBtn = "";
 
     box.innerHTML = `
       <div class="job-card">
@@ -233,9 +452,15 @@ async function track(){
 
         ${reviewHTML(data)}
 
+        <!-- ✅ E-Slip แสดงเฉพาะเมื่อสถานะงาน = 'เสร็จสิ้น' (job_status = 'เสร็จแล้ว') -->
+        <div id="docMount"></div>
+
         <div class="muted" style="margin-top:10px;">* ถ้าต้องการช่วยเหลือ โทร 098-877-7321 หรือ LINE OA: @cwfair</div>
       </div>
     `;
+
+    // ✅ สร้าง/แสดง E-Slip ตามเงื่อนไข (ห้ามแสดงก่อนเสร็จ)
+    try{ await renderCustomerESlip(data); }catch(e){}
   }catch(e){
     box.innerHTML = `<div class="muted">❌ ${e.message}</div>`;
   }

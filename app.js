@@ -678,6 +678,9 @@ function normStatus(s) {
 }
 
 function renderJobs(jobs) {
+  // ✅ cache ไว้ใช้กับ popup จ่ายเงิน / เปิด e-slip
+  window.__JOB_CACHE__ = Array.isArray(jobs) ? jobs : [];
+
   if (activeJobsEl) activeJobsEl.innerHTML = "";
   if (historyJobsEl) historyJobsEl.innerHTML = "";
 
@@ -787,48 +790,30 @@ function openMaps(lat, lng, address, mapsUrl) {
 window.openMaps = openMaps;
 
 // =======================================
-// 📞 CALL CUSTOMER (กดโทรจากงานที่รับแล้ว)
+// 📞 CALL CUSTOMER (บังคับให้กดโทรก่อนเริ่มเดินทาง)
+// - เมื่อกดโทร จะบันทึก flag ในเครื่อง (localStorage) เพื่อปลดล็อกปุ่ม "เริ่มเดินทาง"
 // =======================================
-function callCustomer(phone) {
+function callCustomer(jobId, phone) {
+  const id = Number(jobId);
   const p = String(phone || "").trim();
+  if (!id) return alert("job_id ไม่ถูกต้อง");
   if (!p) return alert("ไม่มีเบอร์โทรลูกค้า");
+
+  try {
+    localStorage.setItem(`cwf_called_${id}`, String(Date.now()));
+  } catch {
+    // ignore
+  }
+
   // มือถือจะเด้งไปที่แอพโทร
   window.location.href = `tel:${p}`;
 }
 window.callCustomer = callCustomer;
 
 // =======================================
-// ↩️ RETURN JOB (ช่างตีกลับงานให้แอดมิน)
+// ↩️ RETURN JOB (ช่างตีกลับงาน) - (ปิดใช้งานฝั่งช่างตามคำสั่งล่าสุด)
+// - ยังไม่ลบ endpoint ฝั่ง backend เผื่อใช้งานอนาคต
 // =======================================
-function returnJob(jobId) {
-  const id = Number(jobId);
-  if (!id) return;
-  const ok = confirm("ต้องการตีกลับงานนี้ให้แอดมินใช่ไหม?\n(แอดมินจะส่งต่อให้ช่างคนอื่นได้)");
-  if (!ok) return;
-
-  const reason = prompt("เหตุผลที่ตีกลับ (ใส่สั้นๆ):", "ติดงาน/ไม่สะดวก") || "";
-
-  fetch(`${API_BASE}/jobs/${id}/return`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, reason }),
-  })
-    .then(async (res) => {
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || "ตีกลับงานไม่สำเร็จ");
-      return data;
-    })
-    .then(() => {
-      alert("✅ ตีกลับงานเรียบร้อย");
-      loadJobs();
-      loadOffers();
-    })
-    .catch((e) => {
-      console.error(e);
-      alert(`❌ ${e.message}`);
-    });
-}
-window.returnJob = returnJob;
 
 // =======================================
 // 🧱 BUILD JOB CARD
@@ -852,28 +837,35 @@ function buildJobCard(job, historyMode = false) {
   const jobId = Number(job.job_id);
   const travelKey = `cwf_travel_${jobId}`;
   const travelStarted = !!localStorage.getItem(travelKey) || !!job.travel_started_at;
+  const calledKey = `cwf_called_${jobId}`;
+  const called = !!localStorage.getItem(calledKey);
+  const paid = !!job.paid_at || String(job.payment_status || "").trim().toLowerCase() === "paid";
   const checkedIn = !!job.checkin_at;
   const isWorking = status === "กำลังทำ";
   const canEdit = !historyMode && (status === "รอดำเนินการ" || status === "กำลังทำ");
 
-  // ✅ ปุ่มขั้นตอนเดียว (เดินทาง -> เช็คอิน -> เริ่มทำงาน)
-  let flowLabel = "";
-  let flowAction = "";
-  let flowDisabled = historyMode ? "disabled" : "";
+  // ✅ ปุ่มอัปเดตสถานะ (ปุ่มเดียว) + e-slip (ขั้นตอนสุดท้าย)
+  // - งานประวัติ: ปุ่มนี้จะกลายเป็น "🧾 e-slip" อย่างเดียว (ดูได้ตลอดถ้าจ่ายแล้ว)
+  const workflowDisabled = historyMode
+    ? !paid
+    : (paid
+        ? false
+        : ((!travelStarted && !called) || status === "เสร็จแล้ว" || status === "ยกเลิก"));
 
-  if (historyMode || status === "เสร็จแล้ว" || status === "ยกเลิก") {
-    flowLabel = "✅ สิ้นสุดแล้ว";
-    flowDisabled = "disabled";
-  } else if (!travelStarted) {
-    flowLabel = "🚗 เริ่มเดินทาง";
-    flowAction = `startTravel(${jobId})`;
-  } else if (!checkedIn) {
-    flowLabel = "📍 เช็คอิน";
-    flowAction = `checkin(${jobId})`;
-  } else if (!isWorking) {
-    flowLabel = "▶️ เริ่มทำงาน";
-    flowAction = `startWork(${jobId})`;
-  }
+  const workflowOnclick = historyMode ? `openESlip(${jobId})` : `workflowNext(${jobId})`;
+
+  const workflowLabel = historyMode
+    ? "🧾 e-slip"
+    : (paid
+        ? "🧾 e-slip"
+        : (!travelStarted
+            ? "🚗 เริ่มเดินทาง"
+            : (!checkedIn
+                ? "📍 เช็คอิน"
+                : (!isWorking ? "▶️ เริ่มทำงาน" : "💳 จ่ายเงิน"))));
+
+
+  // ✅ ปุ่มสถานะจะแสดงเป็น 4 ปุ่มเรียงลำดับ (เริ่มเดินทาง → เช็คอิน → เริ่มทำงาน → จ่ายเงิน)
 
   const escape = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -888,8 +880,19 @@ function buildJobCard(job, historyMode = false) {
     ? `✅ เช็คอินแล้ว (${new Date(job.checkin_at).toLocaleString("th-TH")})`
     : "ยังไม่เช็คอิน";
 
+  // ✅ ข้อความแนะนำตามขั้นตอน (กันช่างกดผิดลำดับ)
+  const flowHint = !called
+    ? "📞 ต้องกด “โทรลูกค้า” ก่อน ถึงจะเริ่มเดินทางได้"
+    : (!travelStarted
+      ? "กด “เริ่มเดินทาง” เพื่อปลดล็อกแผนที่และเช็คอิน"
+      : (!checkedIn
+        ? "ไปถึงหน้างานแล้วกด “เช็คอิน”"
+        : (!isWorking
+          ? "เช็คอินแล้ว กด “เริ่มทำงาน” เพื่อเปิดสถานะกำลังทำ"
+          : (!paid ? "ทำงานเสร็จให้กด “จ่ายเงิน” เพื่อแสดง QR และแนบสลิป" : "✅ จ่ายเงินแล้ว"))));
+
   // ✅ แสดงส่วนรูป/หมายเหตุ/ปิดงาน เฉพาะตอนเริ่มทำงานแล้ว
-  const showWorkTools = isWorking || historyMode;
+  const showWorkTools = checkedIn || isWorking || historyMode;
 
   div.innerHTML = `
     <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
@@ -906,53 +909,76 @@ function buildJobCard(job, historyMode = false) {
     <p><b>นัด:</b> ${appt}</p>
     <p><b>ที่อยู่:</b> ${addr}</p>
 
-    ${historyMode ? "" : `
-      <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-        <button type="button" id="flow-btn-${jobId}" ${flowDisabled} ${flowAction ? `onclick="${flowAction}"` : ""}>${flowLabel}</button>
-        <button class="secondary" type="button" style="width:auto;" ${travelStarted ? "" : "disabled"} onclick="openMaps(${job.gps_latitude ?? null}, ${job.gps_longitude ?? null}, '${(job.address_text||"").replace(/'/g,"\'")}', '${String(job.maps_url||"").replace(/'/g,"\'")}' )">🧭 แผนที่</button>
-        <button class="secondary" type="button" style="width:auto;" ${telPhone ? "" : "disabled"} onclick="callCustomer('${telPhone}')">📞 โทรลูกค้า</button>
-        <button class="danger" type="button" style="width:auto;" onclick="returnJob(${jobId})">↩️ ตีกลับงาน</button>
-      </div>
+    
+      <div style="margin-top:10px;">
+        <!-- ✅ แถวปุ่มโทร: กดได้ตลอด -->
+        <div class="row" style="gap:10px;flex-wrap:wrap;">
+          <button class="secondary" type="button" style="width:auto;" ${telPhone ? "" : "disabled"} onclick="callCustomer(${jobId}, '${telPhone}')">📞 โทรลูกค้า</button>
+        </div>
 
-      <div id="travel-hint-${jobId}" class="muted" style="margin-top:6px;">
-        ${!travelStarted ? "กด “เริ่มเดินทาง” ก่อน ถึงจะเห็นปุ่มเช็คอิน และข้อมูล GPS" : (checkedIn ? checkinText : "🚗 เริ่มเดินทางแล้ว → ไปถึงหน้าบ้านลูกค้าแล้วกด “เช็คอิน”")}
-      </div>
-    `}
+        <!-- ✅ แถวปุ่มแผนที่: อยู่ใต้ปุ่มโทร และกดดูได้ตลอด -->
+        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+          <button class="secondary" type="button" style="width:auto;" ${((job.address_text || job.maps_url || (job.gps_latitude != null && job.gps_longitude != null)) ? "" : "disabled")} onclick="openMaps(${job.gps_latitude ?? null}, ${job.gps_longitude ?? null}, '${(job.address_text||"").replace(/'/g,"\\'")}', '${String(job.maps_url||"").replace(/'/g,"\\'")}' )">🧭 แผนที่</button>
+        </div>
 
-    <div class="card tight" style="margin-top:10px;">
-      <b>💰 รายละเอียดราคา</b>
-      <div id="pricing-${jobId}" style="margin-top:6px;">กำลังโหลด...</div>
-    </div>
+        <!-- ✅ ปุ่มอัปเดตสถานะ / e-slip (ปุ่มเดียว) -->
+        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+          <button type="button" style="width:100%;" ${workflowDisabled ? "disabled" : ""} onclick="${workflowOnclick}">
+            ${workflowLabel}
+          </button>
+        </div>
+
+        ${historyMode ? "" : `<div id="travel-hint-${jobId}" class="muted" style="margin-top:6px;">${flowHint}</div>`}
+
+
+
+
+    <details class="cwf-details" style="margin-top:10px;">
+      <summary>💰 รายละเอียดราคา</summary>
+      <div class="cwf-details-body">
+        <div id="pricing-${jobId}">กำลังโหลด...</div>
+      </div>
+    </details>
+
 
     ${showWorkTools ? `
-      <div class="card tight" style="margin-top:10px;">
-        <b>📷 รูปหน้างาน</b>
-        <div class="row" style="margin-top:8px;flex-wrap:wrap;">
-          <button onclick="pickPhotos(${jobId}, 'before')" ${!canEdit ? "disabled" : ""}>ก่อนทำ</button>
-          <button onclick="pickPhotos(${jobId}, 'after')" ${!canEdit ? "disabled" : ""}>หลังทำ</button>
-          <button onclick="pickPhotos(${jobId}, 'pressure', 4)" ${!canEdit ? "disabled" : ""}>วัดน้ำยา</button>
-          <button onclick="pickPhotos(${jobId}, 'current', 4)" ${!canEdit ? "disabled" : ""}>วัดกระแส</button>
-          <button onclick="pickPhotos(${jobId}, 'temp', 4)" ${!canEdit ? "disabled" : ""}>อุณหภูมิ</button>
-          <button onclick="pickPhotos(${jobId}, 'defect', 4)" ${!canEdit ? "disabled" : ""}>ตำหนิ</button>
-        </div>
-        <div id="photo-status-${jobId}" style="margin-top:8px;"></div>
-      </div>
-
-      <div class="card tight" style="margin-top:10px;border-style:dashed;">
-        <b>📝 หมายเหตุช่าง</b>
-        <textarea id="note-${jobId}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""}>${escape(job.technician_note || "")}</textarea>
-
-        ${historyMode ? "" : (isWorking ? `
-          <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
-            <button class="secondary" type="button" style="width:auto;" onclick="saveNote(${jobId})">💾 บันทึกหมายเหตุ</button>
-            <button type="button" style="width:auto;" onclick="requestFinalize(${jobId}, 'เสร็จแล้ว')">✅ เสร็จสิ้น</button>
-            <button class="danger" type="button" style="width:auto;" onclick="requestFinalize(${jobId}, 'ยกเลิก')">⛔ ยกเลิก</button>
+      <details class="cwf-details" style="margin-top:10px;" ${isWorking ? "open" : ""}>
+        <summary>🛠️ รูป / หมายเหตุ / ปิดงาน</summary>
+        <div class="cwf-details-body">
+          <div>
+            <b>📷 รูปหน้างาน</b>
+            <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:10px;">
+              <button onclick="pickPhotos(${jobId}, 'before')" ${!canEdit ? "disabled" : ""}>ก่อนทำ</button>
+              <button onclick="pickPhotos(${jobId}, 'after')" ${!canEdit ? "disabled" : ""}>หลังทำ</button>
+              <button onclick="pickPhotos(${jobId}, 'pressure', 4)" ${!canEdit ? "disabled" : ""}>วัดน้ำยา</button>
+              <button onclick="pickPhotos(${jobId}, 'current', 4)" ${!canEdit ? "disabled" : ""}>วัดกระแส</button>
+              <button onclick="pickPhotos(${jobId}, 'temp', 4)" ${!canEdit ? "disabled" : ""}>อุณหภูมิ</button>
+              <button onclick="pickPhotos(${jobId}, 'defect', 4)" ${!canEdit ? "disabled" : ""}>ตำหนิ</button>
+            </div>
+            <div id="photo-status-${jobId}" style="margin-top:8px;"></div>
           </div>
-        ` : ``)}
-        <div id="note-status-${jobId}" style="margin-top:6px;"></div>
-      </div>
+
+          <hr style="margin:10px 0;" />
+
+          <div>
+            <b>📝 หมายเหตุช่าง</b>
+            <textarea id="note-${jobId}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""}>${escape(job.technician_note || "")}</textarea>
+
+            ${historyMode ? "" : ((checkedIn || isWorking) ? `
+              <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
+                <button class="secondary" type="button" style="width:auto;" onclick="saveNote(${jobId})" ${!canEdit ? "disabled" : ""}>💾 บันทึกหมายเหตุ</button>
+                ${isWorking ? `
+                  <button type="button" style="width:auto;" onclick="requestFinalize(${jobId}, 'เสร็จแล้ว')">✅ เสร็จสิ้น</button>
+                  <button class="danger" type="button" style="width:auto;" onclick="requestFinalize(${jobId}, 'ยกเลิก')">⛔ ยกเลิก</button>
+                ` : ``}
+              </div>
+            ` : ``)}
+            <div id="note-status-${jobId}" style="margin-top:6px;"></div>
+          </div>
+        </div>
+      </details>
     ` : `
-      <div class="muted" style="margin-top:10px;">* หลังจาก “เริ่มทำงาน” แล้ว จะเปิดให้ใส่รูป/หมายเหตุ และปุ่มเสร็จสิ้น/ยกเลิก *</div>
+      <div class="muted" style="margin-top:10px;">* หลังจาก “เช็คอิน” แล้ว จะเปิดให้ใส่รูป/หมายเหตุ (ปุ่มเสร็จสิ้น/ยกเลิก จะขึ้นหลังเริ่มทำงาน) *</div>
     `}
   `;
 
@@ -1006,6 +1032,13 @@ function openNav(lat, lng, addressText) {
 // =======================================
 async function startTravel(jobId) {
   try {
+    const id = Number(jobId);
+    const called = !!localStorage.getItem(`cwf_called_${id}`);
+    if (!called) {
+      alert("ต้องกด ‘โทรลูกค้า’ ก่อน ถึงจะเริ่มเดินทางได้");
+      return;
+    }
+
     // ✅ บันทึกในเครื่อง เพื่อให้ปุ่มเปลี่ยนสถานะทันที
     localStorage.setItem(`cwf_travel_${jobId}`, String(Date.now()));
 
@@ -1038,6 +1071,244 @@ async function startWork(jobId) {
     alert(`❌ ${e.message}`);
   }
 }
+
+
+
+
+// =======================================
+// 🔁 WORKFLOW NEXT (ปุ่มเดียวสลับขั้นตอน)
+// - ลำดับ: เริ่มเดินทาง -> เช็คอิน -> เริ่มทำงาน -> จ่ายเงิน -> e-slip
+// - เงื่อนไข: ต้องโทรลูกค้าก่อน ถึงจะเริ่มเดินทางได้
+// =======================================
+function workflowNext(jobId) {
+  try {
+    const id = Number(jobId);
+    const job = (window.__JOB_CACHE__ || []).find(j => Number(j.job_id) === id);
+    if (!job) {
+      alert("ไม่พบข้อมูลงาน (ลองรีเฟรช)");
+      return;
+    }
+
+    const status = normStatus(job.job_status);
+    const called = !!localStorage.getItem(`cwf_called_${id}`);
+    const travelStarted = !!localStorage.getItem(`cwf_travel_${id}`) || !!job.travel_started_at;
+    const checkedIn = !!job.checkin_at;
+    const paid = !!job.paid_at || String(job.payment_status || "").trim().toLowerCase() === "paid";
+    const isWorking = status === "กำลังทำ";
+
+    // งานปิดแล้ว: ให้ไปดู e-slip (ถ้ามี) และจบ
+    if (status === "เสร็จแล้ว" || status === "ยกเลิก") {
+      if (paid) return openESlip(id);
+      alert("งานนี้ปิดแล้ว");
+      return;
+    }
+
+    if (!travelStarted) {
+      if (!called) {
+        alert("ต้องกด ‘โทรลูกค้า’ ก่อน ถึงจะเริ่มเดินทางได้");
+        return;
+      }
+      return startTravel(id);
+    }
+
+    if (!checkedIn) {
+      return checkin(id);
+    }
+
+    if (!isWorking) {
+      return startWork(id);
+    }
+
+    if (!paid) {
+      return payJob(id);
+    }
+
+    // จ่ายแล้ว => ดู e-slip ได้ตลอด
+    return openESlip(id);
+  } catch (e) {
+    console.error(e);
+    alert("เกิดข้อผิดพลาดในการอัปเดตสถานะ");
+  }
+}
+window.workflowNext = workflowNext;
+
+
+// =======================================
+// 💳 PAYMENT (จ่ายเงิน + QR + แนบสลิป + e-slip)
+// - ปุ่ม "จ่ายเงิน" จะเด้งเป็น Popup แสดงยอดรวม + QR ให้ลูกค้าแสกน
+// - กด "จ่ายแล้ว" => บันทึก paid_at ในระบบ + เปิดให้แนบรูปสลิป (phase = payment_slip)
+// - e-slip (ย่อ) เปิดได้ที่ /docs/eslip/:job_id
+// =======================================
+const CWF_PROMPTPAY_PHONE = (window.CWF_PROMPTPAY_PHONE || "0653157648").replace(/[^0-9]/g, "");
+
+// ✅ สร้าง URL รูป QR (PromptPay) ตามยอดเงิน
+function buildPromptPayQrUrl(amount) {
+  const amt = Number(amount || 0);
+  // promptpay.io รองรับ amount เป็นเลขทศนิยมได้
+  return `https://promptpay.io/${encodeURIComponent(CWF_PROMPTPAY_PHONE)}/${encodeURIComponent(amt.toFixed(2))}.png`;
+}
+
+let __payModalInited = false;
+let __payJobId = null;
+
+function ensurePayModal() {
+  if (__payModalInited) return;
+  __payModalInited = true;
+
+  const wrap = document.createElement("div");
+  wrap.id = "pay-modal";
+  wrap.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,0.6);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px;";
+  wrap.innerHTML = `
+    <div class="card" style="width:min(520px, 100%);">
+      <h3 style="margin-top:0;">💳 ชำระเงิน</h3>
+      <div class="muted" id="pay-subtitle">แสดง QR ให้ลูกค้าแสกน</div>
+
+      <div class="card tight" style="margin-top:10px;">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <div>
+            <div class="muted">ยอดที่ต้องชำระ</div>
+            <div style="font-size:22px;font-weight:900;" id="pay-total">0.00 บาท</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="muted">Booking</div>
+            <div style="font-weight:800;" id="pay-booking">-</div>
+          </div>
+        </div>
+
+        <div style="margin-top:10px;display:flex;justify-content:center;">
+          <img id="pay-qr" src="" alt="QR" style="width:260px;height:260px;object-fit:contain;border-radius:16px;border:1px solid rgba(15,23,42,0.15);background:#fff;"/>
+        </div>
+
+        <div class="muted" style="margin-top:8px;font-size:12px;">
+          * ถ้ารูป QR ไม่ขึ้น ให้เช็คสัญญาณอินเทอร์เน็ต หรือเปลี่ยนเป็นลิงก์ QR ของบริษัทในภายหลัง
+        </div>
+      </div>
+
+      <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+        <button class="secondary" type="button" style="width:auto;" onclick="closePayModal()">ปิด</button>
+        <button type="button" style="width:auto;" id="btn-paid">✅ จ่ายแล้ว (แนบสลิป)</button>
+        <button class="secondary" type="button" style="width:auto;display:none;" id="btn-eslip">🧾 เปิด e-slip</button>
+      </div>
+
+      <div id="pay-msg" class="muted" style="margin-top:8px;"></div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+
+  window.closePayModal = () => {
+    const el = document.getElementById("pay-modal");
+    if (el) el.style.display = "none";
+    __payJobId = null;
+  };
+}
+
+async function payJob(jobId) {
+  const id = Number(jobId);
+  if (!id) return;
+
+  ensurePayModal();
+  __payJobId = id;
+
+  const modal = document.getElementById("pay-modal");
+  const tEl = document.getElementById("pay-total");
+  const bEl = document.getElementById("pay-booking");
+  const qrEl = document.getElementById("pay-qr");
+  const msgEl = document.getElementById("pay-msg");
+  const btnPaid = document.getElementById("btn-paid");
+  const btnE = document.getElementById("btn-eslip");
+
+  if (msgEl) msgEl.textContent = "";
+  if (btnE) btnE.style.display = "none";
+
+  // หา job จาก cache เพื่อโชว์ booking
+  const job = (window.__JOB_CACHE__ || []).find(j => Number(j.job_id) === id) || {};
+  const bookingCode = job.booking_code || ("CWF" + String(id).padStart(7, "0"));
+  if (bEl) bEl.textContent = bookingCode;
+
+  // ดึงยอดรวม (ใช้ pricing เป็นหลัก)
+  let total = Number(job.job_price || 0);
+  try {
+    const rr = await fetch(`${API_BASE}/jobs/${id}/pricing`);
+    if (rr.ok) {
+      const data = await rr.json().catch(() => ({}));
+      total = Number(data.total || total || 0);
+    }
+  } catch {
+    // ignore
+  }
+
+  if (tEl) tEl.textContent = `${total.toFixed(2)} บาท`;
+  if (qrEl) qrEl.src = buildPromptPayQrUrl(total);
+
+  if (btnPaid) {
+    btnPaid.disabled = false;
+    btnPaid.onclick = async () => {
+      try {
+        btnPaid.disabled = true;
+        if (msgEl) msgEl.textContent = "กำลังบันทึกการชำระเงิน...";
+
+        const res = await fetch(`${API_BASE}/jobs/${id}/pay`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, amount: total }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "บันทึกการจ่ายเงินไม่สำเร็จ");
+
+        if (msgEl) msgEl.textContent = "✅ บันทึกแล้ว กรุณาแนบรูปสลิป";
+        // แนบสลิป (phase = payment_slip) 1 รูป
+        await pickPhotos(id, "payment_slip", 1);
+
+        if (msgEl) msgEl.textContent = "✅ แนบสลิปแล้ว (ถ้าเน็ตพร้อมจะอัปโหลดทันที)";
+        if (btnE) {
+          btnE.style.display = "";
+          btnE.onclick = () => openESlip(id);
+        }
+
+        // รีเฟรชรายการ
+        loadJobs();
+      } catch (e) {
+        console.error(e);
+        alert(`❌ ${e.message}`);
+        if (msgEl) msgEl.textContent = `❌ ${e.message}`;
+      } finally {
+        btnPaid.disabled = false;
+      }
+    };
+  }
+
+  if (modal) modal.style.display = "flex";
+}
+window.payJob = payJob;
+
+function openESlip(jobId) {
+  const id = Number(jobId);
+  if (!id) return;
+
+  // ===============================
+  // 🧾 E-SLIP (Technician view)
+  // เป้าหมาย: ให้รูปแบบเอกสาร "เหมือน" ฝั่งลูกค้า (Customer Tracking)
+  // ✅ แก้เฉพาะการแสดงผล/หน้าตาเอกสารที่ช่างเห็น
+  // ❌ ไม่แตะ DB / API / Controller
+  // ❌ ไม่แตะ Logic การกด "เสร็จสิ้น" / สถานะงาน
+  // ===============================
+
+  // ดึง booking_code จาก cache (ถ้ามี) เพื่อให้หน้า eslip.html สามารถเรียก public/track ได้
+  const job = (window.__JOB_CACHE__ || []).find(j => Number(j.job_id) === id) || {};
+  const bookingCode = (job.booking_code || "").toString().trim();
+
+  // ✅ ใส่ cache-busting เพื่อกัน WebView/PWA บางรุ่น "เปิดได้ครั้งเดียว"
+  // และเพิ่ม fallback: ถ้า window.open ถูกบล็อค ให้เปลี่ยนหน้าแทน
+  const ts = Date.now();
+  const url = `/eslip.html?job_id=${encodeURIComponent(id)}&q=${encodeURIComponent(bookingCode)}&ts=${ts}`;
+
+  const w = window.open(url, "_blank", "noopener,noreferrer");
+  if (!w) {
+    // popup ถูกบล็อค/พฤติกรรม WebView บางรุ่น → เปิดในแท็บเดิม
+    window.location.href = url;
+  }
+}
+window.openESlip = openESlip;
 
 // =======================================
 // ✍️ SIGNATURE MODAL (ลายเซ็นต์ลูกค้า)
@@ -1357,7 +1628,8 @@ async function refreshPhotoStatus(jobId) {
         วัดน้ำยา: <b>${byPhase("pressure")}</b>,
         วัดกระแส: <b>${byPhase("current")}</b>,
         อุณหภูมิ: <b>${byPhase("temp")}</b>,
-        ตำหนิ: <b>${byPhase("defect")}</b>
+        ตำหนิ: <b>${byPhase("defect")}</b>,
+        สลิป: <b>${byPhase("payment_slip")}</b>
       </div>
 
       <div class="muted" style="margin-top:6px;">
@@ -1366,7 +1638,8 @@ async function refreshPhotoStatus(jobId) {
         วัดน้ำยา: <b>${upByPhase("pressure")}</b>,
         วัดกระแส: <b>${upByPhase("current")}</b>,
         อุณหภูมิ: <b>${upByPhase("temp")}</b>,
-        ตำหนิ: <b>${upByPhase("defect")}</b>
+        ตำหนิ: <b>${upByPhase("defect")}</b>,
+        สลิป: <b>${upByPhase("payment_slip")}</b>
       </div>
 
       <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">

@@ -222,6 +222,42 @@ hr{
 }
 .card.tight{ padding: 12px; }
 
+/* ---------- Collapsible (Dropdown) ---------- */
+details.cwf-details{
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+details.cwf-details > summary{
+  list-style: none;
+  cursor: pointer;
+  padding: 12px 14px;
+  font-size: 14px;
+  font-weight: 900;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap: 10px;
+}
+
+details.cwf-details > summary::-webkit-details-marker{ display:none; }
+
+details.cwf-details > summary::after{
+  content: "▾";
+  color: var(--muted);
+  font-weight: 900;
+}
+
+details.cwf-details[open] > summary::after{ content: "▴"; }
+
+details.cwf-details .cwf-details-body{
+  padding: 12px 14px;
+  border-top: 1px solid var(--border);
+}
+
 .job-card{
   background: var(--card);
   border: 1px solid var(--border);
