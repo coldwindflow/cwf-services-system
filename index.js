@@ -158,6 +158,61 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+
+// =======================================
+// 🔐 AUTH (minimal) for admin-only rank update
+// - ระบบเดิมใช้ localStorage/cookie (cwf_auth) ฝั่ง client
+// - สำหรับงานนี้: กันสิทธิ์ "แก้แรงค์" ที่ฝั่ง server ด้วยการ
+//   1) อ่าน cookie cwf_auth (base64 JSON: {u,r,exp})
+//   2) validate exp
+//   3) เช็คซ้ำกับ DB ว่า user นั้น role=admin จริง
+// =======================================
+function parseCookies(cookieHeader) {
+  const out = {};
+  const raw = String(cookieHeader || "");
+  raw.split(";").forEach((part) => {
+    const s = part.trim();
+    if (!s) return;
+    const idx = s.indexOf("=");
+    if (idx <= 0) return;
+    const k = s.slice(0, idx).trim();
+    const v = s.slice(idx + 1).trim();
+    out[k] = v;
+  });
+  return out;
+}
+
+function parseCwfAuth(req) {
+  try {
+    const cookies = parseCookies(req.headers?.cookie || "");
+    const token = cookies.cwf_auth;
+    if (!token) return null;
+    const obj = JSON.parse(Buffer.from(token, "base64").toString("utf8"));
+    if (!obj || !obj.u || !obj.r) return null;
+    if (obj.exp && Date.now() > Number(obj.exp)) return null;
+    return { username: String(obj.u), role: String(obj.r) };
+  } catch (_) {
+    return null;
+  }
+}
+
+async function requireAdminForRank(req, res, next) {
+  try {
+    const auth = parseCwfAuth(req);
+    if (!auth) return res.status(401).json({ error: "UNAUTHORIZED" });
+    const q = await pool.query(
+      `SELECT username FROM public.users WHERE username=$1 AND role='admin' LIMIT 1`,
+      [auth.username]
+    );
+    if ((q.rows || []).length === 0) return res.status(403).json({ error: "FORBIDDEN" });
+    req.auth = auth;
+    return next();
+  } catch (e) {
+    console.error("requireAdminForRank error:", e);
+    return res.status(500).json({ error: "AUTH_FAILED" });
+  }
+}
+
 // =======================================
 // 🔎 Health / Version (ใช้เช็คว่า deploy ล่าสุดจริง)
 // =======================================
@@ -343,6 +398,35 @@ async function ensureSchema() {
 
     // 3.3) technician_profiles: เบอร์โทร (ใช้แสดงให้ลูกค้า "หลังเริ่มเดินทาง" เท่านั้น)
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS phone TEXT`);
+
+
+    // 3.4) technician_profiles: ✅ Premium Rank (Lv.1-5)
+    // - Backward compatible: เก็บเพิ่ม โดยไม่แตะ/เปลี่ยนความหมายของ position เดิม
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS rank_level INT`);
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS rank_key TEXT`);
+
+    // backfill: ถ้า rank_level ยังว่าง ให้ map จาก position เดิมแบบปลอดภัย
+    // junior -> Lv.2 Technician, senior -> Lv.3 Senior Technician, lead -> Lv.4 Team Lead, founder_ceo -> Lv.5 Head Supervisor, null/อื่น ๆ -> Lv.1 Apprentice
+    await pool.query(`
+      UPDATE public.technician_profiles
+      SET rank_level = CASE
+        WHEN rank_level IS NOT NULL THEN rank_level
+        WHEN position='junior' THEN 2
+        WHEN position='senior' THEN 3
+        WHEN position='lead' THEN 4
+        WHEN position='founder_ceo' THEN 5
+        ELSE 1
+      END,
+      rank_key = CASE
+        WHEN rank_key IS NOT NULL AND rank_key<>'' THEN rank_key
+        WHEN position='junior' THEN 'technician'
+        WHEN position='senior' THEN 'senior_technician'
+        WHEN position='lead' THEN 'team_lead'
+        WHEN position='founder_ceo' THEN 'head_supervisor'
+        ELSE 'apprentice'
+      END
+      WHERE rank_level IS NULL OR rank_key IS NULL OR rank_key=''
+    `);
 
 
     // 3.1) technician_profiles: preferred_zone (โซนที่รับงาน)
@@ -2377,7 +2461,7 @@ app.get("/technicians/:username/profile", async (req, res) => {
     const username = req.params.username;
 
     const p = await pool.query(
-      `SELECT username, technician_code, full_name, photo_path, position, rating, grade, done_count,
+      `SELECT username, technician_code, full_name, photo_path, position, rank_level, rank_key, rating, grade, done_count,
               COALESCE(accept_status,'ready') AS accept_status, accept_status_updated_at,
               COALESCE(preferred_zone,'') AS preferred_zone,
               COALESCE(phone,'') AS phone
@@ -2611,7 +2695,7 @@ app.get("/admin/technicians", async (req, res) => {
   try {
     const q = await pool.query(
       `SELECT u.username,
-              p.full_name, p.technician_code, p.position, p.photo_path, p.phone,
+              p.full_name, p.technician_code, p.position, p.rank_level, p.rank_key, p.photo_path, p.phone,
               p.rating, p.grade, p.done_count,
               COALESCE(p.accept_status,'ready') AS accept_status, p.accept_status_updated_at
        FROM public.users u
@@ -2672,6 +2756,49 @@ app.put("/admin/technicians/:username", async (req, res) => {
     res.status(500).json({ error: "บันทึกไม่สำเร็จ" });
   }
 });
+
+// =======================================
+// 🏅 ADMIN: update technician rank (Premium Rank Set)
+// - IMPORTANT: server-side guard (admin-only)
+// - ไม่กระทบ position เดิม / ไม่เปลี่ยน meaning ของ role เดิม
+// =======================================
+const PREMIUM_RANKS = {
+  1: { key: "apprentice", label: "Apprentice" },
+  2: { key: "technician", label: "Technician" },
+  3: { key: "senior_technician", label: "Senior Technician" },
+  4: { key: "team_lead", label: "Team Lead" },
+  5: { key: "head_supervisor", label: "Head Supervisor" },
+};
+
+app.put("/admin/technicians/:username/rank", requireAdminForRank, async (req, res) => {
+  try {
+    const username = String(req.params.username || "").trim();
+    const level = Number(req.body?.rank_level);
+
+    if (!username) return res.status(400).json({ error: "username หาย" });
+    if (!Number.isFinite(level) || level < 1 || level > 5) {
+      return res.status(400).json({ error: "rank_level ต้องอยู่ระหว่าง 1-5" });
+    }
+
+    const rank = PREMIUM_RANKS[level];
+
+    await pool.query(
+      `INSERT INTO public.technician_profiles (username, rank_level, rank_key)
+       VALUES ($1,$2,$3)
+       ON CONFLICT (username) DO UPDATE SET
+         rank_level = EXCLUDED.rank_level,
+         rank_key = EXCLUDED.rank_key,
+         updated_at = CURRENT_TIMESTAMP`,
+      [username, level, rank.key]
+    );
+
+    res.json({ ok: true, username, rank_level: level, rank_key: rank.key, rank_label: rank.label });
+  } catch (e) {
+    console.error("PUT admin rank error:", e);
+    res.status(500).json({ error: "อัปเดตแรงค์ไม่สำเร็จ" });
+  }
+});
+
 
 app.post("/admin/technicians/:username/photo", upload.single("photo"), async (req, res) => {
   try {
@@ -3208,7 +3335,7 @@ app.get("/public/track", async (req, res) => {
         j.travel_started_at, j.checkin_at, j.started_at, j.finished_at, j.canceled_at, j.cancel_reason,
         j.technician_note,
         j.customer_rating, j.customer_review, j.customer_complaint, j.reviewed_at,
-        tp.full_name AS tech_name, tp.photo_path AS tech_photo, tp.rating, tp.grade, tp.phone AS tech_phone
+        tp.full_name AS tech_name, tp.photo_path AS tech_photo, tp.rank_level AS tech_rank_level, tp.rank_key AS tech_rank_key, tp.rating, tp.grade, tp.phone AS tech_phone
       FROM public.jobs j
       LEFT JOIN public.technician_profiles tp ON tp.username = j.technician_username
       WHERE (j.booking_token=$1 OR j.booking_code=$1)
@@ -3268,7 +3395,7 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING) {
     if (uniq.length) {
       const detR = await pool.query(
         `
-        SELECT username, full_name, photo_path, rating, grade, phone
+        SELECT username, full_name, photo_path, rank_level, rank_key, rating, grade, phone
         FROM public.technician_profiles
         WHERE username = ANY($1::text[])
         `,
@@ -3285,6 +3412,8 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING) {
           username: u,
           full_name: d.full_name || null,
           photo: d.photo_path || null,
+          rank_level: d.rank_level ?? null,
+          rank_key: d.rank_key || null,
           rating: d.rating ?? null,
           grade: d.grade || null,
           phone: showPhone ? (d.phone || null) : null,
@@ -3339,6 +3468,8 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING) {
             username: row.technician_username,
             full_name: row.tech_name,
             photo: row.tech_photo,
+            rank_level: row.tech_rank_level ?? null,
+            rank_key: row.tech_rank_key || null,
             rating: row.rating,
             grade: row.grade,
             // ✅ เบอร์โทรช่างสำหรับ Tracking (ต้องผ่าน token/booking_code ที่ถูกต้องเท่านั้น)

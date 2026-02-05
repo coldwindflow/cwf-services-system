@@ -24,6 +24,8 @@ const ratingEl = document.getElementById("rating");
 const doneCountEl = document.getElementById("doneCount");
 const profileCodeEl = document.getElementById("profile-code");
 const profilePositionEl = document.getElementById("profile-position");
+const profileRankBadgeEl = document.getElementById("profile-rank-badge");
+const profileRankLabelEl = document.getElementById("profile-rank-label");
 const profileHintEl = document.getElementById("profile-hint");
 
 // ✅ แถบควบคุมช่าง (dropdown)
@@ -408,6 +410,22 @@ function prettyPosition(pos) {
   return p || "-";
 }
 
+// 🏅 Premium Rank Set (Lv.1-5)
+const PREMIUM_RANK_SET = {
+  1: { label: 'Apprentice', icon64: '/assets/ranks/rank_lv1_64.png' },
+  2: { label: 'Technician', icon64: '/assets/ranks/rank_lv2_64.png' },
+  3: { label: 'Senior Technician', icon64: '/assets/ranks/rank_lv3_64.png' },
+  4: { label: 'Team Lead', icon64: '/assets/ranks/rank_lv4_64.png' },
+  5: { label: 'Head Supervisor', icon64: '/assets/ranks/rank_lv5_64.png' },
+};
+
+function getPremiumRankInfo(level){
+  const n = Number(level);
+  if (Number.isFinite(n) && PREMIUM_RANK_SET[n]) return { level:n, ...PREMIUM_RANK_SET[n] };
+  return { level:1, ...PREMIUM_RANK_SET[1] };
+}
+
+
 async function loadProfile() {
   try {
     const res = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/profile`);
@@ -427,6 +445,11 @@ async function loadProfile() {
     if (profilePositionEl) {
       profilePositionEl.textContent = `ตำแหน่ง: ${prettyPosition(data.position)}`;
     }
+
+    // ✅ Premium Rank (badge + label)
+    const ri = getPremiumRankInfo(data.rank_level);
+    if (profileRankBadgeEl) profileRankBadgeEl.src = ri.icon64;
+    if (profileRankLabelEl) profileRankLabelEl.textContent = `Rank: Lv.${ri.level} ${ri.label}`;
 
     // Grade / stats
     const done = Number(data.done_count ?? 0);
@@ -463,6 +486,8 @@ async function loadProfile() {
     if (profileNameEl) profileNameEl.textContent = u;
     if (profileCodeEl) profileCodeEl.textContent = "รหัสช่าง: -";
     if (profilePositionEl) profilePositionEl.textContent = "ตำแหน่ง: -";
+    if (profileRankBadgeEl) profileRankBadgeEl.src = "/assets/ranks/rank_lv1_64.png";
+    if (profileRankLabelEl) profileRankLabelEl.textContent = "Rank: -";
     if (profileGradeEl) profileGradeEl.textContent = "เกรด: -";
     if (ratingEl) ratingEl.textContent = "0.0";
     if (doneCountEl) doneCountEl.textContent = "0";

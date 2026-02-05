@@ -94,6 +94,28 @@ function esc(s){
   }[m]));
 }
 
+
+
+// 🏅 Premium Rank Set (Lv.1-5)
+const PREMIUM_RANK_SET = {
+  1: { label: 'Apprentice', icon64: '/assets/ranks/rank_lv1_64.png' },
+  2: { label: 'Technician', icon64: '/assets/ranks/rank_lv2_64.png' },
+  3: { label: 'Senior Technician', icon64: '/assets/ranks/rank_lv3_64.png' },
+  4: { label: 'Team Lead', icon64: '/assets/ranks/rank_lv4_64.png' },
+  5: { label: 'Head Supervisor', icon64: '/assets/ranks/rank_lv5_64.png' },
+};
+function getPremiumRankInfo(level){
+  const n = Number(level);
+  if (Number.isFinite(n) && PREMIUM_RANK_SET[n]) return { level:n, ...PREMIUM_RANK_SET[n] };
+  return { level:1, ...PREMIUM_RANK_SET[1] };
+}
+function renderRankLine(t){
+  const ri = getPremiumRankInfo(t && t.rank_level);
+  return `<div class="muted" style="margin-top:4px;display:flex;align-items:center;gap:6px;">`+
+         `<img src="${ri.icon64}" alt="rank" style="width:22px;height:22px;">`+
+         `<span><b>Rank:</b> Lv.${ri.level} ${ri.label}</span>`+
+         `</div>`;
+}
 // ==============================
 // 🧾 E-Slip (Customer view)
 // - แสดงเฉพาะเมื่อ job_status = 'เสร็จแล้ว'
@@ -444,7 +466,8 @@ async function track(){
                     <img src="${photo}" style="width:56px;height:56px;border-radius:999px;object-fit:cover;border:2px solid rgba(37,99,235,0.25);background:#fff;">
                     <div style="flex:1;min-width:0;">
                       <div><b>${esc(name)}</b></div>
-                      <div class="muted">⭐ ${t.rating ?? 0} · เกรด ${esc(t.grade || "-")}</div>
+                      ${renderRankLine(t)}
+                      <div class=\"muted\">⭐ ${t.rating ?? 0} · เกรด ${esc(t.grade || "-")}</div>
                       <div class="muted" style="margin-top:4px;">
                         ${phone ? `☎️ <a href="${telLink}">${esc(phone)}</a>` : `☎️ ยังไม่มีเบอร์โทร`}
                       </div>

@@ -50,6 +50,21 @@ const POS_LABEL = {
   founder_ceo: "👑 FOUNDER & CEO"
 };
 
+// 🏅 Premium Rank Set (Lv.1-5)
+const PREMIUM_RANK_SET = {
+  1: { label: 'Apprentice', icon64: '/assets/ranks/rank_lv1_64.png' },
+  2: { label: 'Technician', icon64: '/assets/ranks/rank_lv2_64.png' },
+  3: { label: 'Senior Technician', icon64: '/assets/ranks/rank_lv3_64.png' },
+  4: { label: 'Team Lead', icon64: '/assets/ranks/rank_lv4_64.png' },
+  5: { label: 'Head Supervisor', icon64: '/assets/ranks/rank_lv5_64.png' },
+};
+
+function getPremiumRankInfo(level){
+  const n = Number(level);
+  if (Number.isFinite(n) && PREMIUM_RANK_SET[n]) return { level:n, ...PREMIUM_RANK_SET[n] };
+  return { level:1, ...PREMIUM_RANK_SET[1] };
+}
+
 /* =========================================
    ✅ Helper: fetch JSON แบบทนทาน
    - เช็ค res.ok
@@ -239,6 +254,10 @@ async function loadTechnicians() {
             <div style="flex:1;">
               <div><b>${esc(t.full_name || t.username)}</b> <span class="muted">(${esc(t.username)})</span></div>
               <div class="muted">รหัสช่าง: <b>${esc(t.technician_code || "-")}</b> · ตำแหน่ง: <b>${esc(posLabel)}</b></div>
+              <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
+                <img src="${esc(getPremiumRankInfo(t.rank_level).icon64)}" alt="rank" style="width:28px;height:28px;">
+                <div class="muted"><b>Rank:</b> Lv.${esc(getPremiumRankInfo(t.rank_level).level)} ${esc(getPremiumRankInfo(t.rank_level).label)}</div>
+              </div>
               <div class="muted">⭐ ${esc(t.rating ?? 0)} · ✅ งานสะสม ${esc(t.done_count ?? 0)} · เกรด ${esc(t.grade || "D")}</div>
               <div style="margin-top:6px;">${stBadge}</div>
             </div>
@@ -262,6 +281,17 @@ async function loadTechnicians() {
                 <option value="lead">Lead</option>
               </select>
             </div>
+            <div>
+              <label>Premium Rank (Admin-only)</label>
+              <select id="tech_rank_${esc(t.username)}">
+                <option value="1">Lv.1 Apprentice</option>
+                <option value="2">Lv.2 Technician</option>
+                <option value="3">Lv.3 Senior Technician</option>
+                <option value="4">Lv.4 Team Lead</option>
+                <option value="5">Lv.5 Head Supervisor</option>
+              </select>
+              <div class="muted" style="margin-top:4px;">* กันที่ฝั่ง Server แล้ว (ยิง API โดยไม่ใช่ admin จะถูกปฏิเสธ)</div>
+            </div>
           </div>
 
           <label style="margin-top:10px;">เบอร์โทรช่าง (แสดงให้ลูกค้าโทรใน Tracking)</label>
@@ -282,7 +312,8 @@ async function loadTechnicians() {
           <input id="tech_file_${esc(t.username)}" type="file" accept="image/*">
 
           <div class="row" style="margin-top:10px;">
-            <button type="button" onclick="saveTech('${esc(t.username)}')">💾 บันทึก</button>
+            <button type="button" onclick="saveTech('${esc(t.username)}')">💾 บันทึกโปรไฟล์</button>
+            <button class="secondary" type="button" onclick="saveRank('${esc(t.username)}')">🏅 บันทึกแรงค์</button>
             <button class="secondary" type="button" onclick="uploadTechPhoto('${esc(t.username)}')">📷 อัปโหลดรูป</button>
           </div>
         </div>
@@ -293,6 +324,8 @@ async function loadTechnicians() {
     list.forEach((t) => {
       const sel = document.getElementById(`tech_pos_${t.username}`);
       if (sel) sel.value = t.position || "junior";
+      const selRank = document.getElementById(`tech_rank_${t.username}`);
+      if (selRank) selRank.value = String(t.rank_level || 1);
     });
 
   } catch (e) {
@@ -326,6 +359,22 @@ async function saveTech(username) {
     alert("❌ " + e.message);
   }
 }
+
+async function saveRank(username) {
+  const rank_level = Number(document.getElementById(`tech_rank_${username}`)?.value || 1);
+  try {
+    await fetchJSONAny(`${API}/admin/technicians/${encodeURIComponent(username)}/rank`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rank_level })
+    });
+    alert('✅ บันทึกแรงค์แล้ว');
+    await loadTechnicians();
+  } catch (e) {
+    alert('❌ ' + e.message);
+  }
+}
+
 
 async function uploadTechPhoto(username) {
   const input = document.getElementById(`tech_file_${username}`);
