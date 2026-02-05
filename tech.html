@@ -56,25 +56,23 @@
       border-color: rgba(37,99,235,0.25);
     }
 
-    /* ✅ โปรไฟล์ช่าง: รูป + ชื่อ + เกรด */
+    /* ✅ โปรไฟล์ช่าง: รูป + ชื่อ + (สถิติ)
+       - align-items:flex-start กันชื่อ/แรงค์ดูต่ำเวลามีปุ่มใต้รูป
+       - flex-wrap กันล้นจอบนมือถือ */
     .profile-box{
       display:flex;
-      align-items:center;
+      align-items:flex-start;
       justify-content:space-between;
       gap:12px;
       margin: 6px 0 12px;
-      /* ✅ กันล้นเฟรมบนจอแคบ: อนุญาตให้ขึ้นบรรทัดใหม่ */
       flex-wrap: wrap;
-      max-width: 100%;
     }
     .profile-left{
       display:flex;
-      align-items:center;
+      align-items:flex-start;
       gap:12px;
-      /* ✅ ให้ยืด/หดได้ และไม่ดันอีกฝั่งล้น */
-      flex: 1 1 260px;
       min-width: 0;
-      max-width: 100%;
+      flex: 1 1 260px;
     }
     .tech-avatar{
       width:56px;
@@ -84,34 +82,42 @@
       object-fit: cover;
       background:#fff;
     }
-    .profile-meta{ min-width: 0; }
-    .profile-meta b{ font-size:18px; }
-    .profile-meta .muted{ font-size:13px; margin-top:2px; }
+    .profile-meta{ padding-top: 2px; min-width:0; }
+    .profile-meta b{ font-size:20px; line-height:1.15; display:block; }
+    .profile-meta .muted{ font-size:13px; margin-top:4px; }
 
-    /* ✅ จัดรูปแบบ รหัสช่าง/คะแนน/งานสะสม ให้เป็นบล็อกเดียว อ่านง่าย */
-    .profile-right{
-      /* ✅ ให้บล็อกสถิติขึ้นบรรทัดใหม่ได้ ไม่ล้นขวา */
-      flex: 0 1 220px;
-      min-width: 0;
-      max-width: 100%;
-      margin-left: auto;
+    /* ✅ Rank label ให้ดูพรีเมี่ยม (ตัวหนังสือ/ระยะ/โทน) */
+    #profile-rank{ margin-top:8px; }
+    #profile-rank-label{
+      font-weight: 900;
+      letter-spacing: 0.2px;
+      color: rgba(15,23,42,0.92);
+      background: rgba(255,255,255,0.75);
+      border: 1px solid rgba(15,23,42,0.10);
+      padding: 6px 10px;
+      border-radius: 12px;
+      line-height: 1.15;
+      max-width: 220px;
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
+
+    /* ✅ กล่องสถิติ: เกรด/คะแนน/งานสะสม */
+    .profile-right{ min-width: 168px; flex: 0 1 200px; }
     .profile-stats{
       display:grid;
       gap:8px;
       padding:10px 12px;
       border-radius:14px;
       border: 1px solid rgba(15,23,42,0.10);
-      background: rgba(15,23,42,0.03);
+      background: rgba(255,255,255,0.80);
       box-shadow: none;
-      box-sizing: border-box;
       max-width: 100%;
     }
     .profile-stats .stat-line{
       font-size:12px;
       font-weight:900;
       color:#0f172a;
-      /* ✅ ไม่บังคับความกว้างจนล้น */
       white-space: normal;
       overflow-wrap: anywhere;
     }
@@ -122,26 +128,19 @@
       gap:10px;
       font-size:12px;
       color: rgba(15,23,42,0.70);
-      /* ✅ ไม่บังคับจนล้น และให้ตัวเลขชิดขวาอ่านง่าย */
       white-space: normal;
-      overflow-wrap: anywhere;
+      min-width: 0;
     }
     .profile-stats .stat b{
       font-size:14px;
       color:#0f172a;
-      text-align: right;
     }
 
     /* ✅ มือถือจอแคบ: ให้กล่องสถิติกินเต็มบรรทัด ไม่เบียดกัน */
     @media (max-width: 420px){
-      .profile-box{ align-items:flex-start; }
-      .profile-right{ flex: 1 1 100%; margin-left: 0; }
+      .profile-left{ flex: 1 1 100%; }
+      .profile-right{ min-width: 0; flex: 1 1 100%; }
       .profile-stats{ width: 100%; }
-    }
-
-    /* ✅ ช่วงจอแคบ/กลาง: ให้กล่องสถิติลงบรรทัดใหม่แบบเนียน ๆ */
-    @media (max-width: 560px){
-      .profile-right{ flex: 1 1 100%; margin-left: 0; }
     }
   </style>
 </head>
@@ -306,13 +305,15 @@
 
           <div class="profile-meta">
             <b id="profile-name">-</b>
+            <!-- ✅ รหัสช่างอยู่ใต้ชื่อ (อ่านง่าย) -->
+            <div class="muted" id="profile-code">รหัสช่าง: -</div>
             <!-- ตำแหน่งเดิมยกเลิกใช้แล้ว (ใช้ Premium Rank แทน) -->
             <div id="profile-rank" style="margin-top:6px;display:flex;align-items:center;gap:8px;">
               <!-- 🏅 Rank badge (PNG สัดส่วนไม่ใช่สี่เหลี่ยมจัตุรัส) → ใช้ height:auto กันรูปบี้ -->
               <img id="profile-rank-badge" src="/assets/ranks/rank_lv1_128.png" alt="rank" style="width:44px;height:auto;display:block;">
               <div class="muted" id="profile-rank-label">Rank: -</div>
             </div>
-            <div class="muted" id="profile-grade">เกรด: -</div>
+            <!-- (ย้ายเกรดไปอยู่ในกล่องสถิติฝั่งขวา) -->
             <!-- ✅ ใช้โชว์สถานะคำขอโปรไฟล์ -->
             <div class="muted" id="profile-hint" style="margin-top:4px;"></div>
           </div>
@@ -320,7 +321,7 @@
 
         <div class="profile-right">
           <div class="profile-stats">
-            <div class="stat-line" id="profile-code">รหัสช่าง: -</div>
+            <div class="stat-line" id="profile-grade">เกรด: -</div>
             <div class="stat"><span>⭐ คะแนน</span><b id="rating">-</b></div>
             <div class="stat"><span>✅ งานสะสม</span><b id="doneCount">-</b></div>
           </div>
