@@ -53,6 +53,33 @@
   // ✅ ใช้ origin เดียวกับที่เปิดอยู่ (HTTP/HTTPS/พอร์ตไหนก็ได้)
   const API_BASE = window.location.origin;
 
+
+  // ✅ Auto-restore session เมื่อเปิดแอพใหม่/รีเฟรช (กันเหมือนหลุดล็อกอิน)
+  function getCookie(name){
+    try{
+      return document.cookie.split(";").map(s=>s.trim()).find(s=>s.startsWith(name+"="))?.split("=").slice(1).join("=") || "";
+    }catch{ return ""; }
+  }
+  function restoreAuthFromCookie(){
+    try{
+      if (localStorage.getItem("username") && localStorage.getItem("role")) return;
+      const raw = getCookie("cwf_auth");
+      if (!raw) return;
+      const obj = JSON.parse(decodeURIComponent(escape(atob(raw))));
+      if (!obj || !obj.u || !obj.r) return;
+      if (obj.exp && Date.now() > Number(obj.exp)) return;
+      localStorage.setItem("username", obj.u);
+      localStorage.setItem("role", obj.r);
+    }catch{}
+  }
+  function redirectIfAlreadyLoggedIn(){
+    const role = localStorage.getItem("role");
+    if (role === "admin") location.replace("/admin.html");
+    if (role === "technician") location.replace("/tech.html");
+  }
+  restoreAuthFromCookie();
+  redirectIfAlreadyLoggedIn();
+
   async function login() {
     try {
       const res = await fetch(`${API_BASE}/login`, {
@@ -69,6 +96,24 @@
 
       localStorage.setItem("username", d.username);
       localStorage.setItem("role", d.role);
+
+      // ✅ Persist auth fallback (cookie) เพื่อกันเคส localStorage หลุดในบางเครื่อง/PWA
+      // - เก็บแค่ username/role + exp (ไม่ใช่ข้อมูลลับ)
+      try {
+        const expMs = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 วัน
+        const payload = btoa(unescape(encodeURIComponent(JSON.stringify({ u: d.username, r: d.role, exp: expMs }))));
+        const secure = (location.protocol === "https:") ? "; Secure" : "";
+        document.cookie = `cwf_auth=${payload}; Max-Age=${7 * 24 * 60 * 60}; Path=/; SameSite=Lax${secure}`;
+      } catch (e) {}
+
+
+      // ✅ Persist auth fallback (cookie) เพื่อกันเคส localStorage หลุดในบางเครื่อง/PWA
+      try {
+        const expMs = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 วัน
+        const payload = btoa(unescape(encodeURIComponent(JSON.stringify({ u: d.username, r: d.role, exp: expMs }))));
+        const secure = location.protocol === "https:" ? "; Secure" : "";
+        document.cookie = `cwf_auth=; Path=/; Max-Age=; SameSite=Lax`;
+      } catch (e) {}
 
       if (d.role === "admin") location.href = "/admin.html";
       if (d.role === "technician") location.href = "/tech.html";

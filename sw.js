@@ -44,13 +44,32 @@ self.addEventListener("activate", (e) => {
 
 // ดึงจาก network ก่อน ถ้าไม่ได้ค่อยใช้ cache (กันไฟล์เก่าค้าง)
 self.addEventListener("fetch", (e) => {
-  // ✅ อย่า cache request แบบ POST/PUT/DELETE
+  // ✅ อย่าแตะ request แบบ POST/PUT/DELETE
   if (e.request.method !== "GET") return;
+
+  const url = new URL(e.request.url);
+
+  // ✅ กัน cache API/ข้อมูล dynamic (สำคัญ: ไม่ให้เก็บ response งาน/สถานะไว้ใน cache)
+  // - cache เฉพาะไฟล์ static (html/css/js/png/json) หรือไฟล์ที่อยู่ใน ASSETS
+  const isSameOrigin = url.origin === self.location.origin;
+  const pathname = url.pathname || "/";
+  const isStaticExt = /\.(?:html|css|js|png|jpg|jpeg|webp|svg|ico|json)$/.test(pathname);
+  const isAssetListed = ASSETS.includes(pathname) || (pathname === "/" && ASSETS.includes("/"));
+  const shouldCache = isSameOrigin && (isStaticExt || isAssetListed || e.request.mode === "navigate");
+
+  // ถ้าไม่ควร cache → ปล่อยผ่าน network ตรง ๆ
+  if (!shouldCache) return;
 
   e.respondWith(
     fetch(e.request)
       .then((resp) => {
         const copy = resp.clone();
+        caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
+        return resp;
+      })
+      .catch(() => caches.match(e.request))
+  );
+});
         caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
         return resp;
       })

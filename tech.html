@@ -287,6 +287,7 @@
 function logout(){
       localStorage.removeItem("username");
       localStorage.removeItem("role");
+      try { document.cookie = "cwf_auth=; Max-Age=0; Path=/; SameSite=Lax"; } catch(e) {}
       location.href = "/login.html";
     }
 

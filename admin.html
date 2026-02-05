@@ -17,10 +17,13 @@
     .modal-backdrop{
       position: fixed; inset: 0;
       background: rgba(2,6,23,0.55);
-      display:none; align-items:flex-end; justify-content:center;
+      display:none; align-items:center; justify-content:center;
       z-index: 2000;
       padding: 12px;
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+      overscroll-behavior: contain;
     }
+    body.modal-open{ overflow:hidden; }
     .modal-backdrop.show{ display:flex; }
     .modal{
       width: min(520px, 100%);
@@ -29,8 +32,10 @@
       border: 1px solid rgba(15,23,42,0.12);
       box-shadow: var(--shadow);
       padding: 14px;
-      max-height: 90vh;
+      max-height: calc(100vh - 24px);
       overflow:auto;
+      -webkit-overflow-scrolling: touch;
+      contain: layout paint;
     }
     .modal .modal-head{
       display:flex; justify-content:space-between; align-items:center; gap:10px;
@@ -322,6 +327,8 @@
   function logoutAdmin(){
     localStorage.removeItem("username");
     localStorage.removeItem("role");
+    // clear cookie fallback
+    try { document.cookie = "cwf_auth=; Max-Age=0; Path=/; SameSite=Lax"; } catch(e) {}
     location.href = "/login.html";
   }
 </script>

@@ -3392,6 +3392,18 @@ function sendHtml(file) {
   return fs.existsSync(p1) ? p1 : p2;
 }
 
+// ✅ รองรับ Refresh/Deep-link แบบ "ไม่ต้องมี .html" (กันรีเฟรชเด้งไปหน้าแรก)
+// - ตัวอย่าง: /tech, /admin, /track, /customer
+app.get("/login", (req, res) => res.sendFile(sendHtml("login.html")));
+app.get("/admin", (req, res) => res.sendFile(sendHtml("admin.html")));
+app.get("/admin-tech", (req, res) => res.sendFile(sendHtml("admin-tech.html")));
+app.get("/edit-profile", (req, res) => res.sendFile(sendHtml("edit-profile.html")));
+app.get("/tech", (req, res) => res.sendFile(sendHtml("tech.html")));
+app.get("/add-job", (req, res) => res.sendFile(sendHtml("add-job.html")));
+app.get("/customer", (req, res) => res.sendFile(sendHtml("customer.html")));
+app.get("/track", (req, res) => res.sendFile(sendHtml("track.html")));
+app.get("/home", (req, res) => res.sendFile(sendHtml("index.html")));
+
 app.get("/login.html", (req, res) => res.sendFile(sendHtml("login.html")));
 app.get("/admin.html", (req, res) => res.sendFile(sendHtml("admin.html")));
 app.get("/admin-tech.html", (req, res) => res.sendFile(sendHtml("admin-tech.html")));

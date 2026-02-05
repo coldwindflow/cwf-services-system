@@ -4,6 +4,28 @@
 
 const API = window.location.origin;
 
+
+// ====== Restore auth from cookie (fallback) ======
+function getCookie(name){
+  try{
+    return document.cookie.split(";").map(s=>s.trim()).find(s=>s.startsWith(name+"="))?.split("=").slice(1).join("=") || "";
+  }catch{ return ""; }
+}
+function restoreAuthFromCookie(){
+  try{
+    if (localStorage.getItem("username") && localStorage.getItem("role")) return;
+    const raw = getCookie("cwf_auth");
+    if (!raw) return;
+    const obj = JSON.parse(decodeURIComponent(escape(atob(raw))));
+    if (!obj || !obj.u || !obj.r) return;
+    if (obj.exp && Date.now() > Number(obj.exp)) return;
+    localStorage.setItem("username", obj.u);
+    localStorage.setItem("role", obj.r);
+  }catch{}
+}
+restoreAuthFromCookie();
+
+
 // ====== Guard: ต้องเป็น admin ======
 const role = localStorage.getItem("role");
 if (role !== "admin") {

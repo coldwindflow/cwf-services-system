@@ -4,6 +4,36 @@
 // ใช้ origin เดียวกับเว็บที่เปิดอยู่ (เสถียรสุด ไม่ต้องแก้ IP)
 const API_BASE = window.location.origin;
 
+
+// =======================================
+// 🔐 AUTH GUARD (Admin) + RESTORE (cookie fallback)
+// =======================================
+function getCookie(name){
+  try{
+    return document.cookie.split(";").map(s=>s.trim()).find(s=>s.startsWith(name+"="))?.split("=").slice(1).join("=") || "";
+  }catch{ return ""; }
+}
+function restoreAuthFromCookie(){
+  try{
+    if (localStorage.getItem("username") && localStorage.getItem("role")) return;
+    const raw = getCookie("cwf_auth");
+    if (!raw) return;
+    const obj = JSON.parse(decodeURIComponent(escape(atob(raw))));
+    if (!obj || !obj.u || !obj.r) return;
+    if (obj.exp && Date.now() > Number(obj.exp)) return;
+    localStorage.setItem("username", obj.u);
+    localStorage.setItem("role", obj.r);
+  }catch{}
+}
+restoreAuthFromCookie();
+
+const __role = localStorage.getItem("role");
+if (__role !== "admin") {
+  alert("ต้องเป็นแอดมินเท่านั้น");
+  location.href = "/login.html";
+}
+
+
 // =======================================
 // 🧾 STATE: รายการของงาน (หลายรายการได้)
 // =======================================
@@ -233,11 +263,13 @@ function openEditModal(job) {
   try { loadEditModalExtras(Number(job.job_id)); } catch(e) {}
 
   backdrop.classList.add("show");
+  try { document.body.classList.add("modal-open"); } catch(e) {}
 }
 
 function closeEditModal() {
   const backdrop = document.getElementById("editModalBackdrop");
   if (backdrop) backdrop.classList.remove("show");
+  try { document.body.classList.remove("modal-open"); } catch(e) {}
   currentEditJobId = null;
 }
 

@@ -32,8 +32,27 @@ const zoneSelect = document.getElementById("zoneSelect");
 
 
 // =======================================
-// 🔐 AUTH CHECK
+// 🔐 AUTH CHECK + RESTORE (localStorage / cookie fallback)
 // =======================================
+function getCookie(name){
+  try{
+    return document.cookie.split(";").map(s=>s.trim()).find(s=>s.startsWith(name+"="))?.split("=").slice(1).join("=") || "";
+  }catch{ return ""; }
+}
+function restoreAuthFromCookie(){
+  try{
+    if (localStorage.getItem("username") && localStorage.getItem("role")) return;
+    const raw = getCookie("cwf_auth");
+    if (!raw) return;
+    const obj = JSON.parse(decodeURIComponent(escape(atob(raw))));
+    if (!obj || !obj.u || !obj.r) return;
+    if (obj.exp && Date.now() > Number(obj.exp)) return; // expired
+    localStorage.setItem("username", obj.u);
+    localStorage.setItem("role", obj.r);
+  }catch{}
+}
+restoreAuthFromCookie();
+
 const username = localStorage.getItem("username");
 const role = localStorage.getItem("role");
 
