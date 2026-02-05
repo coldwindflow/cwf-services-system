@@ -14,8 +14,10 @@ function getCookie(name){
 function restoreAuthFromCookie(){
   try{
     if (localStorage.getItem("username") && localStorage.getItem("role")) return;
-    const raw = getCookie("cwf_auth");
+    let raw = getCookie("cwf_auth");
     if (!raw) return;
+    raw = raw.replace(/^"|"$/g, "");
+    try{ raw = decodeURIComponent(raw); }catch{}
     const obj = JSON.parse(decodeURIComponent(escape(atob(raw))));
     if (!obj || !obj.u || !obj.r) return;
     if (obj.exp && Date.now() > Number(obj.exp)) return;
@@ -38,25 +40,20 @@ function esc(s) {
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
-    """: "&quot;",
+    "\"": "&quot;",
     "'": "&#39;"
   }[m]));
 }
 
-const POS_LABEL = {
-  junior: "Junior Tech",
-  senior: "Senior Tech",
-  lead: "Lead Tech",
-  founder_ceo: "👑 FOUNDER & CEO"
-};
+// NOTE: ตำแหน่งเดิม (position) ยกเลิกใช้งานใน UI แล้ว → ใช้ Premium Rank แทน
 
 // 🏅 Premium Rank Set (Lv.1-5)
 const PREMIUM_RANK_SET = {
-  1: { label: 'Apprentice', icon128: '/assets/ranks/rank_lv1_128.png' },
-  2: { label: 'Technician', icon128: '/assets/ranks/rank_lv2_128.png' },
-  3: { label: 'Senior Technician', icon128: '/assets/ranks/rank_lv3_128.png' },
-  4: { label: 'Team Lead', icon128: '/assets/ranks/rank_lv4_128.png' },
-  5: { label: 'Head Supervisor', icon128: '/assets/ranks/rank_lv5_128.png' },
+  1: { label: 'Apprentice', icon64: '/assets/ranks/rank_lv1_128.png' },
+  2: { label: 'Technician', icon64: '/assets/ranks/rank_lv2_128.png' },
+  3: { label: 'Senior Technician', icon64: '/assets/ranks/rank_lv3_128.png' },
+  4: { label: 'Team Lead', icon64: '/assets/ranks/rank_lv4_128.png' },
+  5: { label: 'Head Supervisor', icon64: '/assets/ranks/rank_lv5_128.png' },
 };
 
 function getPremiumRankInfo(level){
@@ -152,14 +149,6 @@ async function loadRequests() {
               <label>รหัสช่าง (ต้องมี)</label>
               <input id="req_code_${r.id}" placeholder="เช่น T001" value="${esc(r.technician_code || "")}">
             </div>
-            <div>
-              <label>ตำแหน่ง</label>
-              <select id="req_pos_${r.id}">
-                <option value="junior">Junior</option>
-                <option value="senior">Senior</option>
-                <option value="lead">Lead</option>
-              </select>
-            </div>
           </div>
 
           <div class="row" style="margin-top:10px;">
@@ -170,11 +159,7 @@ async function loadRequests() {
       `;
     }).join("");
 
-    // set select defaults
-    list.forEach((r) => {
-      const sel = document.getElementById(`req_pos_${r.id}`);
-      if (sel) sel.value = r.position || "junior";
-    });
+    // (ตำแหน่งเดิมถูกยกเลิกใช้งานใน UI)
 
   } catch (e) {
     box.innerHTML = `<div style="color:#b91c1c;font-weight:800;">❌ โหลดคำขอไม่สำเร็จ: ${esc(e.message)}</div>`;
@@ -183,7 +168,8 @@ async function loadRequests() {
 
 async function approveReq(id) {
   const code = (document.getElementById(`req_code_${id}`)?.value || "").trim();
-  const position = document.getElementById(`req_pos_${id}`)?.value || "junior";
+  // backward compatible: server เดิมอาจเก็บ position อยู่ แต่ UI ไม่ใช้แล้ว
+  const position = "junior";
 
   if (!code) {
     alert("ต้องใส่รหัสช่างก่อนอนุมัติ");
@@ -255,7 +241,7 @@ async function loadTechnicians() {
               <div class="muted">รหัสช่าง: <b>${esc(t.technician_code || "-")}</b></div>
               <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
                 <!-- 🏅 Rank badge: ใช้ height:auto กันรูปบี้ (ไฟล์มีสัดส่วนไม่ใช่สี่เหลี่ยม) -->
-                <img src="${esc(getPremiumRankInfo(t.rank_level).icon128)}" alt="rank" style="width:40px;height:auto;display:block;object-fit:contain;">
+                <img src="${esc(getPremiumRankInfo(t.rank_level).icon64)}" alt="rank" style="width:40px;height:auto;display:block;">
                 <div class="muted"><b>Rank:</b> Lv.${esc(getPremiumRankInfo(t.rank_level).level)} ${esc(getPremiumRankInfo(t.rank_level).label)}</div>
               </div>
               <div class="muted">⭐ ${esc(t.rating ?? 0)} · ✅ งานสะสม ${esc(t.done_count ?? 0)} · เกรด ${esc(t.grade || "D")}</div>
@@ -272,7 +258,8 @@ async function loadTechnicians() {
             <div>
               <label>รหัสช่าง</label>
               <input id="tech_code_${esc(t.username)}" value="${esc(t.technician_code || "")}" placeholder="เช่น T001">
-            </div> 
+            </div>
+            <!-- ตำแหน่งเดิมยกเลิกใช้แล้ว (ใช้ Premium Rank แทน) -->
             <div>
               <label>Premium Rank (Admin-only)</label>
               <select id="tech_rank_${esc(t.username)}">
@@ -314,8 +301,6 @@ async function loadTechnicians() {
 
     // set select defaults
     list.forEach((t) => {
-      const sel = document.getElementById(`tech_pos_${t.username}`);
-      if (sel) sel.value = t.position || "junior";
       const selRank = document.getElementById(`tech_rank_${t.username}`);
       if (selRank) selRank.value = String(t.rank_level || 1);
     });
@@ -341,6 +326,7 @@ async function saveTech(username) {
     await fetchJSONAny(`${API}/admin/technicians/${encodeURIComponent(username)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
+      // NOTE: position เดิมยกเลิกใช้แล้ว
       body: JSON.stringify({ full_name, technician_code, phone, new_password, confirm_password })
     });
 
@@ -504,7 +490,7 @@ async function createTechnician() {
   const p = document.getElementById("new_password")?.value?.trim();
   const full_name = document.getElementById("new_full_name")?.value?.trim();
   const technician_code = document.getElementById("new_technician_code")?.value?.trim();
-  const position = "junior";
+  const position = document.getElementById("new_position")?.value || "junior";
   const box = document.getElementById("create_result");
 
   if (!u || !p) {

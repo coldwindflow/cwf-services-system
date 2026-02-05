@@ -188,34 +188,19 @@ function parseCwfAuth(req) {
     let token = cookies.cwf_auth;
     if (!token) return null;
 
-    // รองรับกรณี cookie ถูก URL-encode เช่น %3D %2B
-    try { token = decodeURIComponent(token); } catch (e) {}
+    // cookie อาจถูก encode/quote มาได้ (บาง browser/hosting)
+    token = token.replace(/^"|"$/g, "");
+    try { token = decodeURIComponent(token); } catch (_) {}
 
-    // บางกรณีมี quote ครอบ
-    token = String(token).replace(/^"|"$/g, "");
-
-    // base64 decode (หลายวิธี) ให้เข้ากับฝั่ง client เดิม
-    let jsonText = null;
-
-    // 1) แบบตรง ๆ
+    // รองรับทั้งแบบ base64 JSON และแบบ JSON ตรงๆ (กันของเดิม/ของหลุด)
+    let obj;
     try {
-      jsonText = Buffer.from(token, "base64").toString("utf8");
-    } catch (e) {}
-
-    // 2) แบบ binary->utf8 (กันกรณี charset เพี้ยน)
-    if (!jsonText) {
-      try {
-        const bin = Buffer.from(token, "base64").toString("binary");
-        jsonText = decodeURIComponent(escape(bin));
-      } catch (e) {}
+      obj = JSON.parse(Buffer.from(token, "base64").toString("utf8"));
+    } catch (_e) {
+      obj = JSON.parse(token);
     }
-
-    if (!jsonText) return null;
-
-    const obj = JSON.parse(jsonText);
     if (!obj || !obj.u || !obj.r) return null;
     if (obj.exp && Date.now() > Number(obj.exp)) return null;
-
     return { username: String(obj.u), role: String(obj.r) };
   } catch (_) {
     return null;
