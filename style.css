@@ -275,6 +275,9 @@ details.cwf-details .cwf-details-body{
   margin: 6px 0;
   color: rgba(15, 23, 42, 0.92);
   font-size: 13px;
+  /* กันข้อความยาว (เช่น URL) ทะลุกรอบบนมือถือ */
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 .job-card small{
   color: var(--muted);
@@ -394,6 +397,10 @@ a{
   color: var(--primary);
   text-decoration: none;
   font-weight: 700;
+  /* กัน URL ยาวทะลุกรอบ */
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  max-width: 100%;
 }
 a:hover{ text-decoration: underline; }
 
