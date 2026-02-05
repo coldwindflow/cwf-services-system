@@ -928,7 +928,11 @@ function buildJobCard(job, historyMode = false) {
     <p><b>นัด:</b> ${appt}</p>
     <p><b>ที่อยู่:</b> ${addr}</p>
 
-    
+    <details class="cwf-details" style="margin-top:10px;">
+      <summary>👥 ทีมช่างในงานนี้</summary>
+      <div class="cwf-details-body" id="team-${jobId}">กำลังโหลด...</div>
+    </details>
+
       <div style="margin-top:10px;">
         <!-- ✅ แถวปุ่มโทร: กดได้ตลอด -->
         <div class="row" style="gap:10px;flex-wrap:wrap;">
@@ -1003,6 +1007,7 @@ function buildJobCard(job, historyMode = false) {
 
   setTimeout(() => {
     loadPricing(jobId);
+    loadTeam(jobId);
     if (showWorkTools) refreshPhotoStatus(jobId);
   }, 0);
 
@@ -1618,6 +1623,55 @@ function loadPricing(jobId) {
       if (box) box.textContent = "❌ โหลดราคาไม่สำเร็จ";
     });
 }
+
+
+
+// =======================================
+// 👥 TEAM (Technician view)
+// - แสดงรายชื่อช่างทุกคนที่ถูก assign ในงานเดียวกัน
+// - ระบุช่างคนปัจจุบันว่า "คุณ"
+// - ไม่พังงานช่างเดี่ยว / ถ้าโหลดไม่ได้ให้แสดงข้อความแทน
+// =======================================
+function loadTeam(jobId){
+  const box = document.getElementById(`team-${jobId}`);
+  if (!box) return;
+
+  fetch(`${API_BASE}/jobs/${jobId}/team?details=1`, { cache: "no-store" })
+    .then((res) => res.json())
+    .then((data) => {
+      const members = Array.isArray(data?.members) ? data.members : [];
+
+      if (!members.length) {
+        box.innerHTML = `<div class="muted">งานนี้ยังไม่มีทีมช่าง</div>`;
+        return;
+      }
+
+      box.innerHTML = `
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          ${members.map(m => {
+            const u = String(m.username || "").trim();
+            const isMe = (u && u === username);
+            const name = m.full_name || u || "-";
+            const badge = isMe ? `<span class="badge ok" style="margin-left:6px;">คุณ</span>` : ``;
+            const photo = m.photo || "/logo.png";
+            return `
+              <div style="display:flex;align-items:center;gap:10px;">
+                <img src="${photo}" alt="${name}" style="width:40px;height:40px;border-radius:999px;object-fit:cover;border:2px solid rgba(37,99,235,0.18);background:#fff;">
+                <div>
+                  <div><b>${name}</b>${badge}</div>
+                  <div class="muted" style="font-size:12px;">${u ? ("@" + u) : ""}</div>
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    })
+    .catch(() => {
+      box.innerHTML = `<div class="muted">❌ โหลดรายชื่อทีมไม่สำเร็จ</div>`;
+    });
+}
+window.loadTeam = loadTeam;
 
 // =======================================
 // 📷 PHOTO STATUS

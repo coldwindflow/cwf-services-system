@@ -398,10 +398,13 @@ async function track(){
     if(!res.ok) throw new Error(data.error || "ค้นหาไม่สำเร็จ");
 
     const dt = data.appointment_datetime ? new Date(data.appointment_datetime).toLocaleString("th-TH") : "-";
-    const tech = data.technician;
+    const techTeam = Array.isArray(data.technician_team)
+      ? data.technician_team
+      : (data.technician ? [data.technician] : []);
 
-    const tel = tech && tech.phone ? String(tech.phone).trim() : "";
-    const telBtn = tel ? `<button class="secondary" type="button" onclick="location.href='tel:${tel}'">📞 โทรหาช่าง</button>` : "";
+    // ปุ่มโทร (เลือกเบอร์แรกที่มี)
+    const firstTel = techTeam.find(t => t && t.phone) ? String(techTeam.find(t => t && t.phone).phone).trim() : "";
+    const telBtn = firstTel ? `<button class="secondary" type="button" onclick="location.href='tel:${firstTel}'">📞 โทรหาช่าง</button>` : "";
     // ❌ ตาม requirement: ห้ามแสดงเอกสารก่อนเสร็จ และแทนที่ใบเสร็จเดิมด้วย E-Slip ใหม่
     const receiptBtn = "";
 
@@ -428,15 +431,28 @@ async function track(){
         <hr style="margin:10px 0;">
 
         <div>
-          <b>👨‍🔧 ช่างที่รับงาน</b>
-          ${tech ? `
-            <div style="display:flex;gap:10px;align-items:center;margin-top:8px;">
-              <img src="${tech.photo || "/logo.png"}" style="width:56px;height:56px;border-radius:999px;object-fit:cover;border:2px solid rgba(37,99,235,0.25);background:#fff;">
-              <div>
-                <div><b>${tech.full_name || tech.username || "-"}</b></div>
-                <div class="muted">⭐ ${tech.rating ?? 0} · เกรด ${tech.grade || "-"}</div>
-                ${tech.phone ? `<div class="muted" style="margin-top:4px;">☎️ เบอร์ช่างจะแสดงหลังเริ่มเดินทาง</div>` : ``}
-              </div>
+          <b>👨‍🔧 ช่างทั้งหมดในงาน</b>
+          ${techTeam && techTeam.length ? `
+            <div style="display:flex;flex-direction:column;gap:10px;margin-top:10px;">
+              ${techTeam.map(t => {
+                const name = t.full_name || t.username || "-";
+                const photo = t.photo || "/logo.png";
+                const phone = t.phone ? String(t.phone).trim() : "";
+                const telLink = phone ? `tel:${phone}` : "";
+                return `
+                  <div style="display:flex;gap:10px;align-items:center;">
+                    <img src="${photo}" style="width:56px;height:56px;border-radius:999px;object-fit:cover;border:2px solid rgba(37,99,235,0.25);background:#fff;">
+                    <div style="flex:1;min-width:0;">
+                      <div><b>${esc(name)}</b></div>
+                      <div class="muted">⭐ ${t.rating ?? 0} · เกรด ${esc(t.grade || "-")}</div>
+                      <div class="muted" style="margin-top:4px;">
+                        ${phone ? `☎️ <a href="${telLink}">${esc(phone)}</a>` : `☎️ ยังไม่มีเบอร์โทร`}
+                      </div>
+                    </div>
+                    ${phone ? `<button class="secondary" type="button" style="width:auto;" onclick="location.href='${telLink}'">โทร</button>` : ``}
+                  </div>
+                `;
+              }).join('')}
             </div>
           ` : `<div class="muted" style="margin-top:6px;">ยังไม่มีช่างรับงาน (รอแอดมินมอบหมาย/รอช่างกดรับ)</div>`}
         </div>
