@@ -246,8 +246,9 @@
             <!-- ตำแหน่งเดิมยกเลิกใช้แล้ว (ใช้ Premium Rank แทน) -->
             <div id="profile-rank" style="margin-top:6px;display:flex;align-items:center;gap:8px;">
               <!-- 🏅 Rank badge (PNG สัดส่วนไม่ใช่สี่เหลี่ยมจัตุรัส) → ใช้ height:auto กันรูปบี้ -->
-              <img id="profile-rank-badge" src="/assets/ranks/rank_lv1_128.png" alt="rank" style="width:44px;height:auto;display:block;">
-              <div class="muted" id="profile-rank-label">Rank: -</div>
+              <img id="profile-rank-badge" src="/assets/ranks/rank_lv1_128.png" alt="rank" style="width:44px;height:auto;display:block;cursor:pointer;" tabindex="0" role="button" aria-label="แตะเพื่อดูชื่อแรงค์">
+              <!-- ✅ ซ่อนชื่อแรงค์ไว้ก่อน → ให้แตะที่ไอคอนถึงจะแสดง (ไม่กระทบ logic เดิมที่ setText ใน app.js) -->
+              <div class="muted" id="profile-rank-label" style="display:none;">Rank: -</div>
             </div>
             <div class="muted" id="profile-grade">เกรด: -</div>
             <!-- ✅ ใช้โชว์สถานะคำขอโปรไฟล์ -->
@@ -338,6 +339,41 @@ function logout(){
       }
 
       switchTab(initial, { persist: false });
+
+      // 🏅 แตะที่ไอคอนแรงค์เพื่อแสดงชื่อแรงค์ (ซ่อนอัตโนมัติ)
+      const badge = document.getElementById("profile-rank-badge");
+      const label = document.getElementById("profile-rank-label");
+      let hideTimer = null;
+
+      function showRankLabel(){
+        if (!label) return;
+        label.style.display = "block";
+        if (hideTimer) clearTimeout(hideTimer);
+        hideTimer = setTimeout(() => {
+          try { label.style.display = "none"; } catch(e) {}
+        }, 2500);
+      }
+
+      function onBadgeActivate(e){
+        // รองรับ click + keyboard
+        if (e && e.type === "keydown") {
+          const k = e.key;
+          if (k !== "Enter" && k !== " ") return;
+          e.preventDefault();
+        }
+        if (!label) return;
+        const isHidden = (label.style.display === "none" || getComputedStyle(label).display === "none");
+        if (isHidden) showRankLabel();
+        else {
+          label.style.display = "none";
+          if (hideTimer) clearTimeout(hideTimer);
+        }
+      }
+
+      if (badge && label) {
+        badge.addEventListener("click", onBadgeActivate);
+        badge.addEventListener("keydown", onBadgeActivate);
+      }
     });
   </script>
 </body>

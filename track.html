@@ -49,6 +49,14 @@
     }
 
 </style>
+
+<style>
+  /* 🏅 Rank label: ซ่อนชื่อไว้ก่อน → แตะที่ไอคอนถึงจะแสดง */
+  .rank-line{ margin-top:4px; display:flex; align-items:center; gap:6px; }
+  .rank-badge-btn{ width:40px; height:auto; display:block; cursor:pointer; }
+  .rank-text{ display:none; }
+  .rank-text.show{ display:inline; }
+</style>
 </head>
 <body class="theme-2">
   <div class="app">
@@ -111,9 +119,11 @@ function getPremiumRankInfo(level){
 }
 function renderRankLine(t){
   const ri = getPremiumRankInfo(t && t.rank_level);
-  return `<div class="muted" style="margin-top:4px;display:flex;align-items:center;gap:6px;">`+
-         `<img src="${ri.icon64}" alt="rank" style="width:40px;height:auto;display:block;">`+
-         `<span><b>Rank:</b> Lv.${ri.level} ${ri.label}</span>`+
+  const txt = `Rank: Lv.${ri.level} ${ri.label}`;
+  const id = `rank_txt_${Math.random().toString(36).slice(2)}`;
+  return `<div class="muted rank-line">`+
+         `<img src="${ri.icon64}" alt="rank" class="rank-badge-btn" data-rank-target="${id}" aria-label="แตะเพื่อดูชื่อแรงค์" tabindex="0" role="button">`+
+         `<span id="${id}" class="rank-text"><b>Rank:</b> Lv.${ri.level} ${ri.label}</span>`+
          `</div>`;
 }
 // ==============================
@@ -504,6 +514,46 @@ async function track(){
     box.innerHTML = `<div class="muted">❌ ${e.message}</div>`;
   }
 }
+
+// 🏅 แตะที่ไอคอนแรงค์เพื่อแสดงชื่อแรงค์ (ซ่อนอัตโนมัติ)
+(function bindRankBadgeToggle(){
+  let hideTimer = null;
+
+  function toggle(targetId){
+    const el = targetId ? document.getElementById(targetId) : null;
+    if (!el) return;
+    const isShown = el.classList.contains('show');
+    // ซ่อนตัวอื่น ๆ ที่อาจโชว์อยู่
+    try{ document.querySelectorAll('.rank-text.show').forEach(x=>x.classList.remove('show')); }catch(e){}
+
+    if (isShown) {
+      el.classList.remove('show');
+      if (hideTimer) clearTimeout(hideTimer);
+      return;
+    }
+
+    el.classList.add('show');
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      try{ el.classList.remove('show'); }catch(e){}
+    }, 2500);
+  }
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('.rank-badge-btn') : null;
+    if (!btn) return;
+    toggle(btn.getAttribute('data-rank-target'));
+  });
+
+  document.addEventListener('keydown', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('.rank-badge-btn') : null;
+    if (!btn) return;
+    const k = e.key;
+    if (k !== 'Enter' && k !== ' ') return;
+    e.preventDefault();
+    toggle(btn.getAttribute('data-rank-target'));
+  });
+})();
 
 // auto load from query string
 const q0 = qs("q") || qs("token") || "";

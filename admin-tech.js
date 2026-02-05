@@ -246,8 +246,16 @@ async function loadTechnicians() {
               <div class="muted">รหัสช่าง: <b>${esc(t.technician_code || "-")}</b></div>
               <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
                 <!-- 🏅 Rank badge: ใช้ height:auto กันรูปบี้ (ไฟล์มีสัดส่วนไม่ใช่สี่เหลี่ยม) -->
-                <img src="${esc(getPremiumRankInfo(t.rank_level).icon64)}" alt="rank" style="width:40px;height:auto;display:block;">
-                <div class="muted"><b>Rank:</b> Lv.${esc(getPremiumRankInfo(t.rank_level).level)} ${esc(getPremiumRankInfo(t.rank_level).label)}</div>
+                <img
+                  src="${esc(getPremiumRankInfo(t.rank_level).icon64)}"
+                  alt="rank"
+                  style="width:40px;height:auto;display:block;cursor:pointer;"
+                  tabindex="0"
+                  role="button"
+                  aria-label="แตะเพื่อดูชื่อแรงค์"
+                  data-rank-target="rank_lbl_${esc(t.username)}"
+                >
+                <div class="muted" id="rank_lbl_${esc(t.username)}" style="display:none;"><b>Rank:</b> Lv.${esc(getPremiumRankInfo(t.rank_level).level)} ${esc(getPremiumRankInfo(t.rank_level).label)}</div>
               </div>
               <div class="muted">⭐ ${esc(t.rating ?? 0)} · ✅ งานสะสม ${esc(t.done_count ?? 0)} · เกรด ${esc(t.grade || "D")}</div>
               <div style="margin-top:6px;">${stBadge}</div>
@@ -314,6 +322,52 @@ async function loadTechnicians() {
     box.innerHTML = `<div style="color:#b91c1c;font-weight:800;">❌ โหลดช่างไม่สำเร็จ: ${esc(e.message)}</div>`;
   }
 }
+
+// 🏅 แตะที่ไอคอนแรงค์เพื่อแสดงชื่อแรงค์ (ซ่อนอัตโนมัติ)
+(function bindAdminRankBadgeToggle(){
+  let hideTimer = null;
+
+  function toggle(id){
+    const el = id ? document.getElementById(id) : null;
+    if (!el) return;
+
+    const isHidden = (el.style.display === 'none' || getComputedStyle(el).display === 'none');
+
+    // ซ่อนตัวอื่น ๆ ที่อาจโชว์อยู่
+    try{
+      document.querySelectorAll('[id^="rank_lbl_"]').forEach(x => {
+        if (x && x !== el) x.style.display = 'none';
+      });
+    }catch(e){}
+
+    if (!isHidden) {
+      el.style.display = 'none';
+      if (hideTimer) clearTimeout(hideTimer);
+      return;
+    }
+
+    el.style.display = 'block';
+    if (hideTimer) clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => {
+      try{ el.style.display = 'none'; }catch(e){}
+    }, 2500);
+  }
+
+  document.addEventListener('click', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('[data-rank-target]') : null;
+    if (!btn) return;
+    toggle(btn.getAttribute('data-rank-target'));
+  });
+
+  document.addEventListener('keydown', (e) => {
+    const btn = e.target && e.target.closest ? e.target.closest('[data-rank-target]') : null;
+    if (!btn) return;
+    const k = e.key;
+    if (k !== 'Enter' && k !== ' ') return;
+    e.preventDefault();
+    toggle(btn.getAttribute('data-rank-target'));
+  });
+})();
 
 async function saveTech(username) {
   const full_name = (document.getElementById(`tech_name_${username}`)?.value || "").trim();
