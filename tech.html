@@ -63,11 +63,18 @@
       justify-content:space-between;
       gap:12px;
       margin: 6px 0 12px;
+      /* ✅ กันล้นเฟรมบนจอแคบ: อนุญาตให้ขึ้นบรรทัดใหม่ */
+      flex-wrap: wrap;
+      max-width: 100%;
     }
     .profile-left{
       display:flex;
       align-items:center;
       gap:12px;
+      /* ✅ ให้ยืด/หดได้ และไม่ดันอีกฝั่งล้น */
+      flex: 1 1 260px;
+      min-width: 0;
+      max-width: 100%;
     }
     .tech-avatar{
       width:56px;
@@ -77,11 +84,18 @@
       object-fit: cover;
       background:#fff;
     }
+    .profile-meta{ min-width: 0; }
     .profile-meta b{ font-size:18px; }
     .profile-meta .muted{ font-size:13px; margin-top:2px; }
 
     /* ✅ จัดรูปแบบ รหัสช่าง/คะแนน/งานสะสม ให้เป็นบล็อกเดียว อ่านง่าย */
-    .profile-right{ min-width: 168px; }
+    .profile-right{
+      /* ✅ ให้บล็อกสถิติขึ้นบรรทัดใหม่ได้ ไม่ล้นขวา */
+      flex: 0 1 220px;
+      min-width: 0;
+      max-width: 100%;
+      margin-left: auto;
+    }
     .profile-stats{
       display:grid;
       gap:8px;
@@ -90,12 +104,16 @@
       border: 1px solid rgba(15,23,42,0.10);
       background: rgba(15,23,42,0.03);
       box-shadow: none;
+      box-sizing: border-box;
+      max-width: 100%;
     }
     .profile-stats .stat-line{
       font-size:12px;
       font-weight:900;
       color:#0f172a;
-      white-space:nowrap;
+      /* ✅ ไม่บังคับความกว้างจนล้น */
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
     .profile-stats .stat{
       display:flex;
@@ -104,18 +122,26 @@
       gap:10px;
       font-size:12px;
       color: rgba(15,23,42,0.70);
-      white-space:nowrap;
+      /* ✅ ไม่บังคับจนล้น และให้ตัวเลขชิดขวาอ่านง่าย */
+      white-space: normal;
+      overflow-wrap: anywhere;
     }
     .profile-stats .stat b{
       font-size:14px;
       color:#0f172a;
+      text-align: right;
     }
 
     /* ✅ มือถือจอแคบ: ให้กล่องสถิติกินเต็มบรรทัด ไม่เบียดกัน */
     @media (max-width: 420px){
       .profile-box{ align-items:flex-start; }
-      .profile-right{ min-width: 0; }
+      .profile-right{ flex: 1 1 100%; margin-left: 0; }
       .profile-stats{ width: 100%; }
+    }
+
+    /* ✅ ช่วงจอแคบ/กลาง: ให้กล่องสถิติลงบรรทัดใหม่แบบเนียน ๆ */
+    @media (max-width: 560px){
+      .profile-right{ flex: 1 1 100%; margin-left: 0; }
     }
   </style>
 </head>
