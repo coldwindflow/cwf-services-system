@@ -263,6 +263,11 @@ function openEditModal(job) {
   try { loadEditModalExtras(Number(job.job_id)); } catch(e) {}
 
   backdrop.classList.add("show");
+  // ✅ กัน modal เปิดแล้วค้างตำแหน่งแปลก ๆ บนมือถือ
+  try {
+    const box = backdrop.querySelector(".modal");
+    if (box) box.scrollTop = 0;
+  } catch(e) {}
   try { document.body.classList.add("modal-open"); } catch(e) {}
 }
 

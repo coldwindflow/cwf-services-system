@@ -291,13 +291,45 @@ function logout(){
       location.href = "/login.html";
     }
 
-    function switchTab(key){
-      ["new","active","history"].forEach(k=>{
-        document.getElementById("sec-"+k).classList.toggle("active", k===key);
-        document.getElementById("tab-"+k).classList.toggle("active", k===key);
-        document.getElementById("nav-"+k).classList.toggle("active", k===key);
-      });
+    const TECH_TAB_KEY = "cwf_tech_active_tab";
+
+    function safeKey(k){
+      return ["new","active","history"].includes(k) ? k : "new";
     }
+
+    function switchTab(key, opts){
+      const k0 = safeKey(key);
+      const persist = (opts && opts.persist === false) ? false : true;
+
+      ["new","active","history"].forEach(k=>{
+        document.getElementById("sec-"+k).classList.toggle("active", k===k0);
+        document.getElementById("tab-"+k).classList.toggle("active", k===k0);
+        document.getElementById("nav-"+k).classList.toggle("active", k===k0);
+      });
+
+      if (persist) {
+        try { localStorage.setItem(TECH_TAB_KEY, k0); } catch(e) {}
+        try { location.hash = k0; } catch(e) {}
+      }
+    }
+
+    // ✅ รีเฟรชแล้วอยู่แท็บเดิม (งานปัจจุบัน/ประวัติงาน)
+    document.addEventListener("DOMContentLoaded", () => {
+      let initial = "new";
+      try {
+        const h = (location.hash || "").replace(/^#/, "").trim();
+        if (h) initial = h;
+      } catch(e) {}
+
+      if (initial === "new") {
+        try {
+          const saved = localStorage.getItem(TECH_TAB_KEY);
+          if (saved) initial = saved;
+        } catch(e) {}
+      }
+
+      switchTab(initial, { persist: false });
+    });
   </script>
 </body>
 </html>

@@ -26,13 +26,15 @@
     body.modal-open{ overflow:hidden; }
     .modal-backdrop.show{ display:flex; }
     .modal{
-      width: min(520px, 100%);
+      /* ✅ กว้างเท่ากรอบแอพ ลดอาการ "หลุดเฟรม" บนมือถือ/จอแคบ */
+      width: min(460px, calc(100% - 28px));
+      box-sizing: border-box;
       background:#fff;
       border-radius: 18px;
       border: 1px solid rgba(15,23,42,0.12);
       box-shadow: var(--shadow);
       padding: 14px;
-      max-height: calc(100vh - 24px);
+      max-height: calc(100vh - 24px - env(safe-area-inset-bottom));
       overflow:auto;
       -webkit-overflow-scrolling: touch;
       contain: layout paint;
