@@ -38,7 +38,7 @@ function esc(s) {
     "&": "&amp;",
     "<": "&lt;",
     ">": "&gt;",
-    "\"": "&quot;",
+    """: "&quot;",
     "'": "&#39;"
   }[m]));
 }
@@ -52,11 +52,11 @@ const POS_LABEL = {
 
 // 🏅 Premium Rank Set (Lv.1-5)
 const PREMIUM_RANK_SET = {
-  1: { label: 'Apprentice', icon64: '/assets/ranks/rank_lv1_64.png' },
-  2: { label: 'Technician', icon64: '/assets/ranks/rank_lv2_64.png' },
-  3: { label: 'Senior Technician', icon64: '/assets/ranks/rank_lv3_64.png' },
-  4: { label: 'Team Lead', icon64: '/assets/ranks/rank_lv4_64.png' },
-  5: { label: 'Head Supervisor', icon64: '/assets/ranks/rank_lv5_64.png' },
+  1: { label: 'Apprentice', icon128: '/assets/ranks/rank_lv1_128.png' },
+  2: { label: 'Technician', icon128: '/assets/ranks/rank_lv2_128.png' },
+  3: { label: 'Senior Technician', icon128: '/assets/ranks/rank_lv3_128.png' },
+  4: { label: 'Team Lead', icon128: '/assets/ranks/rank_lv4_128.png' },
+  5: { label: 'Head Supervisor', icon128: '/assets/ranks/rank_lv5_128.png' },
 };
 
 function getPremiumRankInfo(level){
@@ -241,7 +241,6 @@ async function loadTechnicians() {
 
     box.innerHTML = list.map((t) => {
       const imgSrc = t.photo_path ? t.photo_path : "/logo.png";
-      const posLabel = t.position ? (POS_LABEL[t.position] || t.position) : "-";
       const st = String(t.accept_status || 'ready').toLowerCase();
       const stBadge = st === 'paused'
         ? `<span class="badge bad">🔴 หยุดรับงาน</span>`
@@ -253,10 +252,10 @@ async function loadTechnicians() {
             <img src="${esc(imgSrc)}" style="width:56px;height:56px;border-radius:999px;object-fit:cover;border:2px solid rgba(37,99,235,0.25);background:#fff;">
             <div style="flex:1;">
               <div><b>${esc(t.full_name || t.username)}</b> <span class="muted">(${esc(t.username)})</span></div>
-              <div class="muted">รหัสช่าง: <b>${esc(t.technician_code || "-")}</b> · ตำแหน่ง: <b>${esc(posLabel)}</b></div>
+              <div class="muted">รหัสช่าง: <b>${esc(t.technician_code || "-")}</b></div>
               <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
                 <!-- 🏅 Rank badge: ใช้ height:auto กันรูปบี้ (ไฟล์มีสัดส่วนไม่ใช่สี่เหลี่ยม) -->
-                <img src="${esc(getPremiumRankInfo(t.rank_level).icon64)}" alt="rank" style="width:56px;height:auto;display:block;">
+                <img src="${esc(getPremiumRankInfo(t.rank_level).icon128)}" alt="rank" style="width:40px;height:auto;display:block;object-fit:contain;">
                 <div class="muted"><b>Rank:</b> Lv.${esc(getPremiumRankInfo(t.rank_level).level)} ${esc(getPremiumRankInfo(t.rank_level).label)}</div>
               </div>
               <div class="muted">⭐ ${esc(t.rating ?? 0)} · ✅ งานสะสม ${esc(t.done_count ?? 0)} · เกรด ${esc(t.grade || "D")}</div>
@@ -273,15 +272,7 @@ async function loadTechnicians() {
             <div>
               <label>รหัสช่าง</label>
               <input id="tech_code_${esc(t.username)}" value="${esc(t.technician_code || "")}" placeholder="เช่น T001">
-            </div>
-            <div>
-              <label>ตำแหน่ง</label>
-              <select id="tech_pos_${esc(t.username)}">
-                <option value="junior">Junior</option>
-                <option value="senior">Senior</option>
-                <option value="lead">Lead</option>
-              </select>
-            </div>
+            </div> 
             <div>
               <label>Premium Rank (Admin-only)</label>
               <select id="tech_rank_${esc(t.username)}">
@@ -337,7 +328,6 @@ async function loadTechnicians() {
 async function saveTech(username) {
   const full_name = (document.getElementById(`tech_name_${username}`)?.value || "").trim();
   const technician_code = (document.getElementById(`tech_code_${username}`)?.value || "").trim();
-  const position = document.getElementById(`tech_pos_${username}`)?.value || "junior";
   const phone = (document.getElementById(`tech_phone_${username}`)?.value || "").trim();
   const new_password = (document.getElementById(`tech_pwd_${username}`)?.value || "");
   const confirm_password = (document.getElementById(`tech_pwd2_${username}`)?.value || "");
@@ -351,7 +341,7 @@ async function saveTech(username) {
     await fetchJSONAny(`${API}/admin/technicians/${encodeURIComponent(username)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ full_name, technician_code, position, phone, new_password, confirm_password })
+      body: JSON.stringify({ full_name, technician_code, phone, new_password, confirm_password })
     });
 
     alert("✅ บันทึกแล้ว");
@@ -514,7 +504,7 @@ async function createTechnician() {
   const p = document.getElementById("new_password")?.value?.trim();
   const full_name = document.getElementById("new_full_name")?.value?.trim();
   const technician_code = document.getElementById("new_technician_code")?.value?.trim();
-  const position = document.getElementById("new_position")?.value || "junior";
+  const position = "junior";
   const box = document.getElementById("create_result");
 
   if (!u || !p) {

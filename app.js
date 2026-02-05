@@ -412,11 +412,11 @@ function prettyPosition(pos) {
 
 // 🏅 Premium Rank Set (Lv.1-5)
 const PREMIUM_RANK_SET = {
-  1: { label: 'Apprentice', icon64: '/assets/ranks/rank_lv1_64.png' },
-  2: { label: 'Technician', icon64: '/assets/ranks/rank_lv2_64.png' },
-  3: { label: 'Senior Technician', icon64: '/assets/ranks/rank_lv3_64.png' },
-  4: { label: 'Team Lead', icon64: '/assets/ranks/rank_lv4_64.png' },
-  5: { label: 'Head Supervisor', icon64: '/assets/ranks/rank_lv5_64.png' },
+  1: { label: 'Apprentice', icon128: '/assets/ranks/rank_lv1_128.png' },
+  2: { label: 'Technician', icon128: '/assets/ranks/rank_lv2_128.png' },
+  3: { label: 'Senior Technician', icon128: '/assets/ranks/rank_lv3_128.png' },
+  4: { label: 'Team Lead', icon128: '/assets/ranks/rank_lv4_128.png' },
+  5: { label: 'Head Supervisor', icon128: '/assets/ranks/rank_lv5_128.png' },
 };
 
 function getPremiumRankInfo(level){
@@ -448,7 +448,7 @@ async function loadProfile() {
 
     // ✅ Premium Rank (badge + label)
     const ri = getPremiumRankInfo(data.rank_level);
-    if (profileRankBadgeEl) profileRankBadgeEl.src = ri.icon64;
+    if (profileRankBadgeEl) profileRankBadgeEl.src = ri.icon128;
     if (profileRankLabelEl) profileRankLabelEl.textContent = `Rank: Lv.${ri.level} ${ri.label}`;
 
     // Grade / stats
@@ -486,7 +486,7 @@ async function loadProfile() {
     if (profileNameEl) profileNameEl.textContent = u;
     if (profileCodeEl) profileCodeEl.textContent = "รหัสช่าง: -";
     if (profilePositionEl) profilePositionEl.textContent = "ตำแหน่ง: -";
-    if (profileRankBadgeEl) profileRankBadgeEl.src = "/assets/ranks/rank_lv1_64.png";
+    if (profileRankBadgeEl) profileRankBadgeEl.src = "/assets/ranks/rank_lv1_128.png";
     if (profileRankLabelEl) profileRankLabelEl.textContent = "Rank: -";
     if (profileGradeEl) profileGradeEl.textContent = "เกรด: -";
     if (ratingEl) ratingEl.textContent = "0.0";

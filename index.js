@@ -185,11 +185,37 @@ function parseCookies(cookieHeader) {
 function parseCwfAuth(req) {
   try {
     const cookies = parseCookies(req.headers?.cookie || "");
-    const token = cookies.cwf_auth;
+    let token = cookies.cwf_auth;
     if (!token) return null;
-    const obj = JSON.parse(Buffer.from(token, "base64").toString("utf8"));
+
+    // รองรับกรณี cookie ถูก URL-encode เช่น %3D %2B
+    try { token = decodeURIComponent(token); } catch (e) {}
+
+    // บางกรณีมี quote ครอบ
+    token = String(token).replace(/^"|"$/g, "");
+
+    // base64 decode (หลายวิธี) ให้เข้ากับฝั่ง client เดิม
+    let jsonText = null;
+
+    // 1) แบบตรง ๆ
+    try {
+      jsonText = Buffer.from(token, "base64").toString("utf8");
+    } catch (e) {}
+
+    // 2) แบบ binary->utf8 (กันกรณี charset เพี้ยน)
+    if (!jsonText) {
+      try {
+        const bin = Buffer.from(token, "base64").toString("binary");
+        jsonText = decodeURIComponent(escape(bin));
+      } catch (e) {}
+    }
+
+    if (!jsonText) return null;
+
+    const obj = JSON.parse(jsonText);
     if (!obj || !obj.u || !obj.r) return null;
     if (obj.exp && Date.now() > Number(obj.exp)) return null;
+
     return { username: String(obj.u), role: String(obj.r) };
   } catch (_) {
     return null;

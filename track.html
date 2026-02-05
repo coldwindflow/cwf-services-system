@@ -98,11 +98,11 @@ function esc(s){
 
 // 🏅 Premium Rank Set (Lv.1-5)
 const PREMIUM_RANK_SET = {
-  1: { label: 'Apprentice', icon64: '/assets/ranks/rank_lv1_64.png' },
-  2: { label: 'Technician', icon64: '/assets/ranks/rank_lv2_64.png' },
-  3: { label: 'Senior Technician', icon64: '/assets/ranks/rank_lv3_64.png' },
-  4: { label: 'Team Lead', icon64: '/assets/ranks/rank_lv4_64.png' },
-  5: { label: 'Head Supervisor', icon64: '/assets/ranks/rank_lv5_64.png' },
+  1: { label: 'Apprentice', icon128: '/assets/ranks/rank_lv1_128.png' },
+  2: { label: 'Technician', icon128: '/assets/ranks/rank_lv2_128.png' },
+  3: { label: 'Senior Technician', icon128: '/assets/ranks/rank_lv3_128.png' },
+  4: { label: 'Team Lead', icon128: '/assets/ranks/rank_lv4_128.png' },
+  5: { label: 'Head Supervisor', icon128: '/assets/ranks/rank_lv5_128.png' },
 };
 function getPremiumRankInfo(level){
   const n = Number(level);
@@ -112,7 +112,7 @@ function getPremiumRankInfo(level){
 function renderRankLine(t){
   const ri = getPremiumRankInfo(t && t.rank_level);
   return `<div class="muted" style="margin-top:4px;display:flex;align-items:center;gap:6px;">`+
-         `<img src="${ri.icon64}" alt="rank" style="width:56px;height:auto;display:block;">`+
+         `<img src="${ri.icon128}" alt="rank" style="width:36px;height:auto;display:block;object-fit:contain;">`+
          `<span><b>Rank:</b> Lv.${ri.level} ${ri.label}</span>`+
          `</div>`;
 }

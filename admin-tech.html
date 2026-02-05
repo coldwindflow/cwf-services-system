@@ -50,7 +50,7 @@
     <div class="card section" id="sec-tech">
       <h2>🧑‍🔧 รายชื่อช่าง / แก้ไขโปรไฟล์</h2>
       <div class="muted" style="margin-top:8px;">
-        - ใส่ “รหัสช่าง” / “ตำแหน่ง” จากหน้านี้ได้<br>
+        - ใส่ “รหัสช่าง” จากหน้านี้ได้ (ตำแหน่งเดิมยกเลิก ใช้ Premium Rank)<br>
         - อัปโหลดรูปให้ช่างได้ (กรณีช่างไม่สะดวก)
       </div>
       <div id="techList" class="muted" style="margin-top:10px;">กำลังโหลด...</div>
@@ -66,14 +66,8 @@
         <input id="new_full_name" placeholder="ชื่อ-นามสกุล">
         <input id="new_technician_code" placeholder="รหัสช่าง (ถ้ามี)">
       </div>
-
-      <select id="new_position" style="margin-top:10px;">
-        <option value="junior">junior</option>
-        <option value="senior">senior</option>
-        <option value="lead">lead</option>
-      </select>
-
-      <div class="row" style="margin-top:10px;">
+      <!-- ตำแหน่งเดิม (junior/senior/lead) ถูกยกเลิกการใช้งาน: ใช้ Premium Rank แทน -->
+<div class="row" style="margin-top:10px;">
         <button type="button" onclick="createTechnician()">✅ สร้างไอดีช่าง</button>
       </div>
 
