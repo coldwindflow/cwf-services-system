@@ -112,7 +112,7 @@ function getPremiumRankInfo(level){
 function renderRankLine(t){
   const ri = getPremiumRankInfo(t && t.rank_level);
   return `<div class="muted" style="margin-top:4px;display:flex;align-items:center;gap:6px;">`+
-         `<img src="${ri.icon64}" alt="rank" style="width:22px;height:22px;">`+
+         `<img src="${ri.icon64}" alt="rank" style="width:56px;height:auto;display:block;">`+
          `<span><b>Rank:</b> Lv.${ri.level} ${ri.label}</span>`+
          `</div>`;
 }

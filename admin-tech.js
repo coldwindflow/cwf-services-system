@@ -255,7 +255,8 @@ async function loadTechnicians() {
               <div><b>${esc(t.full_name || t.username)}</b> <span class="muted">(${esc(t.username)})</span></div>
               <div class="muted">รหัสช่าง: <b>${esc(t.technician_code || "-")}</b> · ตำแหน่ง: <b>${esc(posLabel)}</b></div>
               <div style="margin-top:6px;display:flex;align-items:center;gap:8px;">
-                <img src="${esc(getPremiumRankInfo(t.rank_level).icon64)}" alt="rank" style="width:28px;height:28px;">
+                <!-- 🏅 Rank badge: ใช้ height:auto กันรูปบี้ (ไฟล์มีสัดส่วนไม่ใช่สี่เหลี่ยม) -->
+                <img src="${esc(getPremiumRankInfo(t.rank_level).icon64)}" alt="rank" style="width:56px;height:auto;display:block;">
                 <div class="muted"><b>Rank:</b> Lv.${esc(getPremiumRankInfo(t.rank_level).level)} ${esc(getPremiumRankInfo(t.rank_level).label)}</div>
               </div>
               <div class="muted">⭐ ${esc(t.rating ?? 0)} · ✅ งานสะสม ${esc(t.done_count ?? 0)} · เกรด ${esc(t.grade || "D")}</div>
