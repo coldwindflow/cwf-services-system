@@ -106,14 +106,9 @@
         document.cookie = `cwf_auth=${payload}; Max-Age=${7 * 24 * 60 * 60}; Path=/; SameSite=Lax${secure}`;
       } catch (e) {}
 
-
-      // ✅ Persist auth fallback (cookie) เพื่อกันเคส localStorage หลุดในบางเครื่อง/PWA
-      try {
-        const expMs = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 วัน
-        const payload = btoa(unescape(encodeURIComponent(JSON.stringify({ u: d.username, r: d.role, exp: expMs }))));
-        const secure = location.protocol === "https:" ? "; Secure" : "";
-        document.cookie = `cwf_auth=; Path=/; Max-Age=; SameSite=Lax`;
-      } catch (e) {}
+      // NOTE: เคยมีโค้ดที่ "ลบ cookie" ทิ้งทันทีหลัง set (ทำให้แอดมิน/ช่างไม่มี cwf_auth)
+      // ส่งผลให้ API ที่ต้องอ่าน cookie (เช่น admin-only rank update) ถูก 401/403
+      // จึงลบส่วนที่ clear cookie ออก และคง cookie ไว้ตาม Max-Age ที่กำหนด
 
       if (d.role === "admin") location.href = "/admin.html";
       if (d.role === "technician") location.href = "/tech.html";

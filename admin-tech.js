@@ -77,6 +77,10 @@ function getPremiumRankInfo(level){
      2) fetchJSONArray(): บังคับให้เป็น Array (ใช้กับ loadRequests/loadTechnicians)
 ========================================= */
 async function fetchJSONAny(url, options = {}) {
+  // ✅ ให้แน่ใจว่า cookie (cwf_auth) ถูกส่งไปกับ request เสมอ
+  // - ปกติ fetch same-origin จะส่ง cookie อยู่แล้ว แต่บาง environment/PWA อาจมี edge-case
+  // - ไม่กระทบ endpoint อื่น เพราะยังอยู่ origin เดียวกัน
+  if (!options.credentials) options.credentials = "include";
   const res = await fetch(url, options);
 
   let data;
@@ -95,6 +99,7 @@ async function fetchJSONAny(url, options = {}) {
 }
 
 async function fetchJSONArray(url, options = {}) {
+  if (!options.credentials) options.credentials = "include";
   const data = await fetchJSONAny(url, options);
 
   // ✅ normalize: บางที backend/โค้ดเก่าอาจห่อมาเป็น {rows:[]} หรือ {data:[]}
