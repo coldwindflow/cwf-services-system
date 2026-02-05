@@ -264,6 +264,20 @@ async function loadTechnicians() {
             </div>
           </div>
 
+          <label style="margin-top:10px;">เบอร์โทรช่าง (แสดงให้ลูกค้าโทรใน Tracking)</label>
+          <input id="tech_phone_${esc(t.username)}" value="${esc(t.phone || "")}" placeholder="เช่น 098-xxx-xxxx">
+
+          <div class="grid2" style="margin-top:10px;">
+            <div>
+              <label>ตั้งรหัสผ่านใหม่ (แอดมิน)</label>
+              <input id="tech_pwd_${esc(t.username)}" type="password" placeholder="เว้นว่าง = ไม่เปลี่ยน">
+            </div>
+            <div>
+              <label>ยืนยันรหัสผ่านใหม่</label>
+              <input id="tech_pwd2_${esc(t.username)}" type="password" placeholder="พิมพ์อีกครั้ง">
+            </div>
+          </div>
+
           <label style="margin-top:10px;">อัปโหลดรูปให้ช่าง (จากเครื่อง)</label>
           <input id="tech_file_${esc(t.username)}" type="file" accept="image/*">
 
@@ -290,6 +304,9 @@ async function saveTech(username) {
   const full_name = (document.getElementById(`tech_name_${username}`)?.value || "").trim();
   const technician_code = (document.getElementById(`tech_code_${username}`)?.value || "").trim();
   const position = document.getElementById(`tech_pos_${username}`)?.value || "junior";
+  const phone = (document.getElementById(`tech_phone_${username}`)?.value || "").trim();
+  const new_password = (document.getElementById(`tech_pwd_${username}`)?.value || "");
+  const confirm_password = (document.getElementById(`tech_pwd2_${username}`)?.value || "");
 
   if (!technician_code) {
     alert("ต้องใส่รหัสช่างก่อนบันทึก");
@@ -300,7 +317,7 @@ async function saveTech(username) {
     await fetchJSONAny(`${API}/admin/technicians/${encodeURIComponent(username)}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ full_name, technician_code, position })
+      body: JSON.stringify({ full_name, technician_code, position, phone, new_password, confirm_password })
     });
 
     alert("✅ บันทึกแล้ว");

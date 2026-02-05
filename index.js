@@ -23,23 +23,6 @@ const express = require("express");
 const cors = require("cors");
 const path = require("path");
 
-
-// =======================================
-// 🚩 FEATURE FLAGS (safe / backward compatible)
-// - ป้องกัน regression: เปิดใช้งานเฉพาะเมื่อ ENV = '1'/'true'
-// - ค่าเริ่มต้น: เปิดทีมช่างใน tracking = true (เพราะ requirement critical)
-//               เปิดเบอร์โทรใน tracking = true (ต้องกดโทรได้) แต่ยังคงต้องผ่านลิงก์ tracking ที่ถูกต้องเท่านั้น
-// =======================================
-function envBool(name, defVal=false){
-  const v = String(process.env[name] ?? "").trim().toLowerCase();
-  if (!v) return defVal;
-  return ["1","true","yes","on"].includes(v);
-}
-
-const FLAG_SHOW_TECH_TEAM_ON_TRACKING = envBool("SHOW_TECH_TEAM_ON_TRACKING", true);
-const FLAG_SHOW_TECH_PHONE_ON_TRACKING = envBool("SHOW_TECH_PHONE_ON_TRACKING", true);
-
-
 // ==============================
 // 🧭 GPS/Maps Resolver (safe)
 // - รองรับ maps.app.goo.gl (short link)
@@ -661,6 +644,45 @@ app.post("/login", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "server error" });
+  }
+});
+
+// =======================================
+// 🔑 CHANGE PASSWORD (Technician)
+// - ต้องใส่รหัสเดิม
+// - ต้องยืนยันรหัสใหม่ 2 ครั้ง
+// หมายเหตุ: ระบบเดิมเก็บรหัสแบบ plaintext (ยังไม่เปลี่ยนเพื่อกัน regression)
+// =======================================
+app.post("/auth/change-password", async (req, res) => {
+  try {
+    const username = (req.body?.username || "").toString().trim();
+    const oldPassword = (req.body?.old_password || "").toString();
+    const newPassword = (req.body?.new_password || "").toString();
+    const confirmPassword = (req.body?.confirm_password || "").toString();
+
+    if (!username) return res.status(400).json({ error: "username หาย" });
+    if (!oldPassword) return res.status(400).json({ error: "ต้องใส่รหัสเดิม" });
+    if (!newPassword) return res.status(400).json({ error: "ต้องใส่รหัสใหม่" });
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ error: "ยืนยันรหัสใหม่ไม่ตรงกัน" });
+    }
+    if (newPassword.length < 4) {
+      return res.status(400).json({ error: "รหัสใหม่ต้องยาวอย่างน้อย 4 ตัวอักษร" });
+    }
+
+    const r = await pool.query(
+      `SELECT username FROM public.users WHERE username=$1 AND password=$2 LIMIT 1`,
+      [username, oldPassword]
+    );
+    if (r.rows.length === 0) {
+      return res.status(401).json({ error: "รหัสเดิมไม่ถูกต้อง" });
+    }
+
+    await pool.query(`UPDATE public.users SET password=$2 WHERE username=$1`, [username, newPassword]);
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error("POST change-password error:", e);
+    return res.status(500).json({ error: "เปลี่ยนรหัสผ่านไม่สำเร็จ" });
   }
 });
 
@@ -1633,35 +1655,7 @@ app.get("/jobs/:job_id/team", async (req, res) => {
   const job_id = Number(req.params.job_id);
   if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
-  const wantDetails = String(req.query.details || "").trim() === "1";
-
   try {
-    if (wantDetails) {
-      const r = await pool.query(
-        `
-        SELECT tm.username,
-               tp.full_name,
-               tp.photo_path,
-               tp.phone
-        FROM public.job_team_members tm
-        LEFT JOIN public.technician_profiles tp ON tp.username = tm.username
-        WHERE tm.job_id=$1
-        ORDER BY tm.username ASC
-        `,
-        [job_id]
-      );
-
-      return res.json({
-        members: (r.rows || []).map((x) => ({
-          username: x.username,
-          full_name: x.full_name || null,
-          photo: x.photo_path || null,
-          phone: x.phone || null,
-        })),
-      });
-    }
-
-    // legacy (เดิม): ส่งแค่ username[]
     const r = await pool.query(
       `SELECT username FROM public.job_team_members WHERE job_id=$1 ORDER BY username ASC`,
       [job_id]
@@ -2341,7 +2335,8 @@ app.get("/technicians/:username/profile", async (req, res) => {
     const p = await pool.query(
       `SELECT username, technician_code, full_name, photo_path, position, rating, grade, done_count,
               COALESCE(accept_status,'ready') AS accept_status, accept_status_updated_at,
-              COALESCE(preferred_zone,'') AS preferred_zone
+              COALESCE(preferred_zone,'') AS preferred_zone,
+              COALESCE(phone,'') AS phone
        FROM public.technician_profiles
        WHERE username=$1`,
       [username]
@@ -2362,6 +2357,34 @@ app.get("/technicians/:username/profile", async (req, res) => {
   } catch (e) {
     console.error("GET profile error:", e);
     res.status(500).json({ error: "โหลดโปรไฟล์ไม่สำเร็จ" });
+  }
+});
+
+// 📞 Technician: update own phone (shown on Tracking)
+// - allow empty = clear
+// - basic validation to avoid broken values
+app.put("/technicians/:username/phone", async (req, res) => {
+  try {
+    const username = req.params.username;
+    const phoneRaw = (req.body?.phone ?? "").toString().trim();
+
+    if (phoneRaw && !/^[0-9+\-()\s]{6,20}$/.test(phoneRaw)) {
+      return res.status(400).json({ error: "รูปแบบเบอร์โทรไม่ถูกต้อง" });
+    }
+
+    await pool.query(
+      `INSERT INTO public.technician_profiles (username, phone)
+       VALUES ($1,$2)
+       ON CONFLICT (username) DO UPDATE SET
+         phone = EXCLUDED.phone,
+         updated_at = CURRENT_TIMESTAMP`,
+      [username, phoneRaw || null]
+    );
+
+    res.json({ ok: true, phone: phoneRaw || "" });
+  } catch (e) {
+    console.error("PUT technician phone error:", e);
+    res.status(500).json({ error: "บันทึกเบอร์โทรไม่สำเร็จ" });
   }
 });
 
@@ -2544,7 +2567,7 @@ app.get("/admin/technicians", async (req, res) => {
   try {
     const q = await pool.query(
       `SELECT u.username,
-              p.full_name, p.technician_code, p.position, p.photo_path,
+              p.full_name, p.technician_code, p.position, p.photo_path, p.phone,
               p.rating, p.grade, p.done_count,
               COALESCE(p.accept_status,'ready') AS accept_status, p.accept_status_updated_at
        FROM public.users u
@@ -2565,19 +2588,39 @@ app.put("/admin/technicians/:username", async (req, res) => {
     const technician_code = (req.body.technician_code || "").trim();
     const full_name = (req.body.full_name || "").trim();
     const position = (req.body.position || "").trim() || null; // ✅ ไม่ส่ง = ไม่ทับ
+    const phoneRaw = (req.body.phone ?? "").toString().trim();
+    const newPassword = (req.body.new_password ?? "").toString();
+    const confirmPassword = (req.body.confirm_password ?? "").toString();
 
     if (!technician_code) return res.status(400).json({ error: "ต้องใส่รหัสช่าง" });
 
+    if (phoneRaw && !/^[0-9+\-()\s]{6,20}$/.test(phoneRaw)) {
+      return res.status(400).json({ error: "รูปแบบเบอร์โทรไม่ถูกต้อง" });
+    }
+
+    // profile
     await pool.query(
-      `INSERT INTO public.technician_profiles (username, technician_code, full_name, position)
-       VALUES ($1,$2,$3,$4)
+      `INSERT INTO public.technician_profiles (username, technician_code, full_name, position, phone)
+       VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (username) DO UPDATE SET
          technician_code = EXCLUDED.technician_code,
          full_name = COALESCE(EXCLUDED.full_name, public.technician_profiles.full_name),
          position = COALESCE(EXCLUDED.position, public.technician_profiles.position),
+         phone = COALESCE(EXCLUDED.phone, public.technician_profiles.phone),
          updated_at = CURRENT_TIMESTAMP`,
-      [username, technician_code, full_name || null, position]
+      [username, technician_code, full_name || null, position, phoneRaw || null]
     );
+
+    // password (optional)
+    if (newPassword) {
+      if (newPassword !== confirmPassword) {
+        return res.status(400).json({ error: "ยืนยันรหัสใหม่ไม่ตรงกัน" });
+      }
+      if (newPassword.length < 4) {
+        return res.status(400).json({ error: "รหัสใหม่ต้องยาวอย่างน้อย 4 ตัวอักษร" });
+      }
+      await pool.query(`UPDATE public.users SET password=$2 WHERE username=$1`, [username, newPassword]);
+    }
 
     res.json({ ok: true });
   } catch (e) {
@@ -3154,63 +3197,6 @@ app.get("/public/track", async (req, res) => {
       photos = pr.rows || [];
     }
 
-
-
-// =======================================
-// 👥 TEAM (Public Tracking)
-// - แสดงรายชื่อทีมช่างทั้งหมดในงาน (ถ้าเปิด flag)
-// - Backward compatible: ยังส่ง field technician (ช่างหลัก) เหมือนเดิม
-// =======================================
-let technician_team = null;
-
-if (FLAG_SHOW_TECH_TEAM_ON_TRACKING) {
-  try {
-    // ดึงสมาชิกทีมจากตารางใหม่ (job_team_members)
-    const tmR = await pool.query(
-      `SELECT username FROM public.job_team_members WHERE job_id=$1 ORDER BY username ASC`,
-      [row.job_id]
-    );
-    const fromJoin = (tmR.rows || []).map((x) => String(x.username || "").trim()).filter(Boolean);
-
-    // รองรับ legacy fields
-    const legacy = [row.technician_username, row.technician_team]
-      .map((x) => String(x || "").trim())
-      .filter(Boolean);
-
-    const uniq = Array.from(new Set([...fromJoin, ...legacy]));
-    if (uniq.length) {
-      const detR = await pool.query(
-        `
-        SELECT username, full_name, photo_path, rating, grade, phone
-        FROM public.technician_profiles
-        WHERE username = ANY($1::text[])
-        `,
-        [uniq]
-      );
-      const byU = new Map((detR.rows || []).map((x) => [String(x.username || "").trim(), x]));
-
-      const allowPhone = FLAG_SHOW_TECH_PHONE_ON_TRACKING;
-      const showPhone = allowPhone ? true : !!row.travel_started_at;
-
-      technician_team = uniq.map((u) => {
-        const d = byU.get(u) || {};
-        return {
-          username: u,
-          full_name: d.full_name || null,
-          photo: d.photo_path || null,
-          rating: d.rating ?? null,
-          grade: d.grade || null,
-          phone: showPhone ? (d.phone || null) : null,
-        };
-      });
-    } else {
-      technician_team = [];
-    }
-  } catch (e) {
-    // ไม่ให้ tracking ล่ม (fail-open แบบไม่พังหน้า)
-    technician_team = [];
-  }
-}
     res.json({
       job_id: row.job_id,
       booking_code: row.booking_code || null,
@@ -3254,15 +3240,10 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING) {
             photo: row.tech_photo,
             rating: row.rating,
             grade: row.grade,
-            // ✅ เบอร์โทรช่างสำหรับ Tracking (ต้องผ่าน token/booking_code ที่ถูกต้องเท่านั้น)
-            // - ถ้าเปิด flag: แสดงได้เลย
-            // - ถ้าไม่เปิด: คงพฤติกรรมเดิม (แสดงหลังเริ่มเดินทาง)
-            phone: FLAG_SHOW_TECH_PHONE_ON_TRACKING ? (row.tech_phone || null) : (row.travel_started_at ? (row.tech_phone || null) : null),
+            // ✅ ให้ลูกค้าเห็นเบอร์ "หลังเริ่มเดินทาง" เท่านั้น
+            phone: row.travel_started_at ? (row.tech_phone || null) : null,
           }
         : null,
-
-      // ✅ รายชื่อทีมช่างทั้งหมด (ถ้าเปิด flag) — ใช้ในหน้า Tracking
-      technician_team,
     });
   } catch (e) {
     console.error(e);

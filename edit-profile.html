@@ -27,6 +27,17 @@
     <div class="card">
       <h2>✏️ ส่งคำขอแก้ไขโปรไฟล์</h2>
 
+      <div class="job-card" style="margin:10px 0 14px;">
+        <b>📞 เบอร์โทรสำหรับให้ลูกค้าโทร (Tracking)</b>
+        <div class="muted" style="margin-top:4px;">* ช่างสามารถใส่/แก้ไขได้ทันที (ไม่ต้องรออนุมัติ)</div>
+        <label style="margin-top:8px;">เบอร์โทร</label>
+        <input id="phone" placeholder="เช่น 098-xxx-xxxx">
+        <div class="row" style="margin-top:10px;">
+          <button type="button" onclick="savePhone()">💾 บันทึกเบอร์โทร</button>
+        </div>
+        <div id="phoneMsg" class="muted" style="margin-top:8px;"></div>
+      </div>
+
       <label>ชื่อที่ต้องการแก้ไข</label>
       <input id="full_name" placeholder="ชื่อ-นามสกุล">
 
@@ -69,13 +80,35 @@ async function loadCurrent(){
       <div>รหัสช่าง: <b>${esc(data.technician_code || "-")}</b></div>
       <div>ตำแหน่ง: <b>${esc(pos)}</b></div>
       <div>ชื่อ: <b>${esc(data.full_name || data.username)}</b></div>
+      <div>เบอร์โทร: <b>${esc(data.phone || "-")}</b></div>
       <div class="muted" style="margin-top:6px;">สถานะคำขอ: <b>${esc(data.request_status || "none")}</b></div>
     `;
 
     // เติมค่าเริ่มต้นในฟอร์ม
     document.getElementById("full_name").value = data.full_name || "";
+    document.getElementById("phone").value = data.phone || "";
   }catch(e){
     document.getElementById("currentBox").textContent = "❌ โหลดข้อมูลไม่สำเร็จ";
+  }
+}
+
+async function savePhone(){
+  const phone = (document.getElementById("phone").value || "").trim();
+  const box = document.getElementById("phoneMsg");
+  box.textContent = "";
+
+  try{
+    const res = await fetch(`${API}/technicians/${encodeURIComponent(username)}/phone`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ phone })
+    });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error || "บันทึกไม่สำเร็จ");
+    box.textContent = "✅ บันทึกเบอร์โทรแล้ว";
+    await loadCurrent();
+  }catch(e){
+    box.innerHTML = `<span style="color:#b91c1c;font-weight:800;">❌ ${esc(e.message)}</span>`;
   }
 }
 

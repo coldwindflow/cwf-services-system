@@ -234,7 +234,10 @@
           <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
             <img id="profile-photo" class="tech-avatar" src="/logo.png" alt="photo">
             <!-- ✅ ปุ่มเล็กใต้รูป (ไม่รก) -->
-            <button class="secondary btn-mini" type="button" onclick="goEditProfile()" style="min-height:32px;padding:6px 10px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;">✏️ <span>แก้โปรไฟล์</span></button>
+            <div style="display:flex;flex-direction:column;gap:8px;align-items:stretch;">
+              <button class="secondary btn-mini" type="button" onclick="goEditProfile()" style="min-height:32px;padding:6px 10px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;">✏️ <span>แก้โปรไฟล์</span></button>
+              <button class="secondary btn-mini" type="button" onclick="goChangePassword()" style="min-height:32px;padding:6px 10px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;">🔑 <span>เปลี่ยนรหัสผ่าน</span></button>
+            </div>
           </div>
 
           <div class="profile-meta">
@@ -283,6 +286,7 @@
   <script src="app.js"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
+        function goChangePassword(){ location.href = '/change-password.html'; }
 
 function logout(){
       localStorage.removeItem("username");
