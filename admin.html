@@ -208,7 +208,24 @@
          - งานที่ลูกค้าจองจะถูกสร้างเป็น job_source='customer'
          - แอดมินต้องมอบหมายช่าง (offer/forced) ก่อน
     =============================== -->
-    <div class="card">
+    
+    <div class="card" style="margin-top:12px;">
+      <h2>📅 ตารางคิวว่างช่าง (v2)</h2>
+      <div class="grid2">
+        <input id="av2_date" type="date">
+        <button type="button" class="secondary" onclick="adminLoadAvailabilityV2()">โหลดคิวว่าง</button>
+      </div>
+      <div class="grid2" style="margin-top:8px;">
+        <select id="av2_tech_type">
+          <option value="company">ช่างบริษัท</option>
+          <option value="partner">ช่างพาร์ทเนอร์</option>
+        </select>
+        <input id="av2_duration" type="number" min="15" step="5" value="60" placeholder="duration_min">
+      </div>
+      <div id="av2_result" class="muted" style="margin-top:10px;">เลือกวันแล้วกดโหลด</div>
+    </div>
+
+<div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
         <h3 style="margin:0;">📥 งานจองจากลูกค้า (รอมอบหมาย)</h3>
         <button class="secondary" style="width:auto;min-height:40px;padding:10px 12px;" type="button" onclick="loadCustomerBookings()">🔄 รีเฟรช</button>

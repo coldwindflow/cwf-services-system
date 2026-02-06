@@ -28,11 +28,6 @@
         <button type="button" onclick="loadSlots()">🔄 โหลดเวลาว่าง</button>
       </div>
 
-      <label style="display:flex;align-items:center;gap:10px;margin-top:10px;">
-        <input id="urgent_toggle" type="checkbox" />
-        <span><b>ลองยิงงานด่วน</b> (ต้องรอช่างยืนยัน)</span>
-      </label>
-
       <div id="slots" class="muted" style="margin-top:10px;">เลือกวันที่แล้วกด “โหลดเวลาว่าง”</div>
 
       <div class="muted" style="margin-top:8px;">เวลาที่เลือก: <b id="picked">-</b></div>
@@ -51,43 +46,42 @@
         <option value="ติดตั้ง">ติดตั้ง</option>
       </select>
 
-      <div class="grid2">
+      <div class="grid2" style="margin-top:8px;">
         <select id="ac_type">
           <option value="">-- ประเภทแอร์ --</option>
-          <option value="ผนัง">ผนัง</option>
+          <option value="ผนัง">ผนัง (Wall Type)</option>
           <option value="สี่ทิศทาง">สี่ทิศทาง</option>
           <option value="แขวน">แขวน</option>
           <option value="เปลือยใต้ฝ้า">เปลือยใต้ฝ้า</option>
         </select>
-        <select id="btu">
-          <option value="">-- BTU --</option>
-          <option value="9000">9,000</option>
-          <option value="12000">12,000</option>
-          <option value="18000">18,000</option>
-          <option value="24000">24,000</option>
-          <option value="30000">30,000</option>
-          <option value="36000">36,000</option>
-        </select>
+        <input id="btu" type="number" min="0" step="1000" placeholder="BTU (เช่น 12000)">
       </div>
 
-      <div class="grid2">
-        <input id="machine_count" type="number" step="1" min="1" value="1" placeholder="จำนวนเครื่อง">
-        <select id="wash_variant">
-          <option value="">-- แบบล้าง (เฉพาะผนัง) --</option>
-          <option value="ล้างธรรมดา">ล้างธรรมดา</option>
-          <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
-          <option value="ล้างแขวนคอยน์">ล้างแขวนคอยน์</option>
-          <option value="ล้างแบบตัดล้าง">ล้างแบบตัดล้าง</option>
-        </select>
+      <div class="grid2" style="margin-top:8px;">
+        <input id="machine_count" type="number" min="1" step="1" value="1" placeholder="จำนวนเครื่อง">
+        <label style="display:flex;align-items:center;gap:8px;padding:10px 0;">
+          <input id="urgent_toggle" type="checkbox" style="transform:scale(1.2);">
+          <span>ลองยิงงานด่วน (รอช่างยืนยัน)</span>
+        </label>
       </div>
 
-      <select id="repair_subtype" style="display:none;">
-        <option value="">-- ประเภทงานซ่อม --</option>
-        <option value="ตรวจเช็ค">ตรวจเช็ค</option>
-        <option value="ซ่อมเปลี่ยนอะไหล่">ซ่อมเปลี่ยนอะไหล่ (ต้องให้แอดมินยืนยันเวลา)</option>
+      <select id="wash_variant" style="margin-top:8px;display:none;">
+        <option value="ล้างธรรมดา">ล้างธรรมดา</option>
+        <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
+        <option value="ล้างแขวนคอยน์">ล้างแบบแขวนคอยล์</option>
+        <option value="ล้างแบบตัดล้าง">ตัดล้างใหญ่</option>
       </select>
 
-      <div class="muted" style="margin:6px 0 0;">⏱️ เวลางานโดยประมาณ (รวมกันชนเดินทาง): <b id="duration_preview">-</b></div>
+      <select id="repair_variant" style="margin-top:8px;display:none;">
+        <option value="ตรวจเช็ค">ตรวจเช็ค (500)</option>
+        <option value="ตรวจเช็ครั่ว">ตรวจเช็ครั่ว (1000)</option>
+        <option value="ซ่อมเปลี่ยนอะไหล่">ซ่อมเปลี่ยนอะไหล่ (แอดมินกำหนด)</option>
+      </select>
+
+      <div class="card" style="margin-top:12px;padding:12px;">
+        <div>💰 <b>ค่าบริการมาตรฐาน:</b> <span id="standard_price">-</span> บาท</div>
+        <div class="muted" style="margin-top:4px;">⏱️ เวลาโดยประมาณ: <span id="duration_min">-</span> นาที (รวมกันชนระบบอัตโนมัติ)</div>
+      </div>
 
       <input id="address_text" placeholder="ที่อยู่ (สำคัญ)">
       <input id="maps_url" type="url" placeholder="ลิงก์ Google Maps (ถ้ามี) — แนะนำ: ปักหมุดแล้วแชร์ลิงก์มาวาง">
@@ -117,33 +111,88 @@
     </div>
   </div>
 
+
 <script>
 const API = window.location.origin;
-let pickedTime = null;
-let jobItems = [];      // [{item_id, item_name, qty, unit_price}]
-let catalogItems = [];
 
-function getFormFilters(){
-  const job_category = document.getElementById("job_type")?.value?.trim() || "";
-  const ac_type = document.getElementById("ac_type")?.value?.trim() || "";
-  const btu = document.getElementById("btu")?.value || "";
-  return { job_category, ac_type, btu };
+let pickedTime = null;
+let jobItems = [];      // extras [{item_id, item_name, qty, unit_price}]
+let catalogItems = [];
+let standardPrice = 0;
+let durationMin = 60;
+
+function getPayloadV2(){
+  const job_type = document.getElementById("job_type").value.trim();
+  const ac_type = document.getElementById("ac_type").value.trim();
+  const btu = Number(document.getElementById("btu").value || 0);
+  const machine_count = Math.max(1, Number(document.getElementById("machine_count").value || 1));
+  const wash_variant = document.getElementById("wash_variant").value.trim();
+  const repair_variant = document.getElementById("repair_variant").value.trim();
+  return { job_type, ac_type, btu, machine_count, wash_variant, repair_variant };
+}
+
+function showVariantFields(){
+  const job_type = document.getElementById("job_type").value.trim();
+  const wash = document.getElementById("wash_variant");
+  const rep = document.getElementById("repair_variant");
+  wash.style.display = job_type === "ล้าง" ? "block" : "none";
+  rep.style.display = job_type === "ซ่อม" ? "block" : "none";
+}
+
+async function refreshPricing(){
+  const payload = getPayloadV2();
+  const sp = document.getElementById("standard_price");
+  const dm = document.getElementById("duration_min");
+
+  // ถ้ายังไม่เลือกประเภทงาน → reset
+  if(!payload.job_type){
+    standardPrice = 0; durationMin = 60;
+    sp.textContent = "-"; dm.textContent = "-";
+    return;
+  }
+
+  try{
+    const r = await fetch(`${API}/public/pricing_preview`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(payload)
+    });
+    const data = await r.json().catch(()=> ({}));
+    if(!r.ok) throw new Error(data.error || "คำนวณราคาไม่สำเร็จ");
+
+    standardPrice = Number(data.standard_price || 0);
+    durationMin = Number(data.duration_min || 60);
+
+    sp.textContent = standardPrice.toFixed(0);
+    dm.textContent = durationMin.toFixed(0);
+  }catch(e){
+    // งานซ่อมเปลี่ยนอะไหล่/ติดตั้ง ต้องให้แอดมินกำหนด → แสดง - และปล่อยให้จองได้ (แอดมินจัดการ)
+    standardPrice = 0; durationMin = 60;
+    sp.textContent = "-";
+    dm.textContent = "-";
+    console.warn(e);
+  } finally {
+    renderItems();
+  }
 }
 
 async function refreshCatalog(){
-  const { job_category, ac_type, btu } = getFormFilters();
-  const qs = new URLSearchParams();
-  qs.set("customer","1");
-  if(job_category) qs.set("job_category", job_category);
-  if(ac_type) qs.set("ac_type", ac_type);
-  if(btu) qs.set("btu", btu);
+  const payload = getPayloadV2();
+  const cs = document.getElementById("catalog_select");
+  cs.innerHTML = `<option value="">-- เลือกรายการ --</option>`;
+
+  // filter เฉพาะรายการที่อนุญาตให้ลูกค้าเห็น
+  const q = new URLSearchParams({
+    customer: "1",
+    job_category: payload.job_type || "",
+    ac_type: payload.ac_type || "",
+    btu: String(payload.btu || 0)
+  });
+
   try{
-    const r = await fetch(`${API}/catalog/items?${qs.toString()}`);
+    const r = await fetch(`${API}/catalog/items?${q.toString()}`);
     const items = await r.json();
     catalogItems = Array.isArray(items) ? items : [];
-    const cs = document.getElementById("catalog_select");
-    if(!cs) return;
-    cs.innerHTML = `<option value="">-- เลือกรายการ --</option>`;
     catalogItems.forEach(it=>{
       const opt = document.createElement("option");
       opt.value = it.item_id;
@@ -151,68 +200,56 @@ async function refreshCatalog(){
       cs.appendChild(opt);
     });
   }catch(e){
-    // เงียบไว้
+    catalogItems = [];
   }
 }
 
-async function refreshDurationPreview(){
-  const el = document.getElementById("duration_preview");
-  if(!el) return;
+function setPicked(time){
+  pickedTime = time;
+  document.getElementById("picked").textContent = time || "-";
+}
 
-  const payload = buildDurationPayload();
-  if(!payload) { el.textContent = "-"; return; }
+async function loadSlots(){
+  const d = document.getElementById("date").value;
+  if(!d) return alert("เลือกวันที่ก่อน");
+  setPicked(null);
 
-  try{
-    const r = await fetch(`${API}/public/compute-duration`, {
-      method: "POST",
-      headers: {"Content-Type":"application/json"},
-      body: JSON.stringify(payload)
+  const slotsBox = document.getElementById("slots");
+  slotsBox.textContent = "กำลังโหลด...";
+
+  const payload = getPayloadV2();
+  await refreshPricing(); // อัปเดต durationMin ก่อน
+
+  const duration_min = Number(durationMin || 60);
+  const urgent = document.getElementById("urgent_toggle").checked;
+  const tech_type = urgent ? "partner" : "company";
+
+  const url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`;
+
+  fetch(url)
+    .then(r=>r.json())
+    .then(data=>{
+      if(data.error) throw new Error(data.error);
+      if(!data.slots || !data.slots.length){
+        slotsBox.textContent = "ไม่พบช่วงเวลา";
+        return;
+      }
+
+      const html = data.slots.map(s=>{
+        const disabled = s.available ? "" : "disabled";
+        const cls = s.available ? "" : "secondary";
+        return `<button type="button" class="${cls}" style="width:auto;min-height:40px;margin:4px;" ${disabled}
+                  onclick="setPicked('${s.start}')">${s.start}</button>`;
+      }).join("");
+
+      slotsBox.innerHTML = `<div class="muted">กลุ่มช่าง: <b>${data.tech_type}</b> | ช่างที่พิจารณา: ${data.tech_count} | กันชนระบบ: ${data.travel_buffer_min} นาที</div>
+                            <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">${html}</div>`;
+    })
+    .catch(e=>{
+      slotsBox.textContent = "❌ โหลดเวลาว่างไม่สำเร็จ";
+      console.error(e);
     });
-    const data = await r.json().catch(()=> ({}));
-    if(!r.ok) throw new Error(data.error || "คำนวณไม่สำเร็จ");
-    const dmin = data.duration_min;
-    const eff = data.effective_block_min;
-    el.textContent = `${dmin} นาที (รวมกันชน ${data.travel_buffer_min} = ${eff} นาที)`;
-  }catch(e){
-    el.textContent = "-";
-  }
 }
-
-function onJobTypeChange(){
-  const jt = document.getElementById("job_type")?.value || "";
-  const rs = document.getElementById("repair_subtype");
-  if(rs) rs.style.display = (jt === "ซ่อม") ? "block" : "none";
-  refreshCatalog();
-  refreshDurationPreview();
-}
-
-function buildDurationPayload(){
-  const job_type = document.getElementById("job_type")?.value?.trim() || "";
-  if(!job_type) return null;
-  const ac_type = document.getElementById("ac_type")?.value?.trim() || "";
-  const wash_variant = document.getElementById("wash_variant")?.value?.trim() || "";
-  const repair_subtype = document.getElementById("repair_subtype")?.value?.trim() || "";
-  const machine_count = Number(document.getElementById("machine_count")?.value || 1);
-  return {
-    job_type,
-    job_category: job_type,
-    ac_type,
-    wash_variant,
-    repair_subtype,
-    machine_count
-  };
-}
-
-// init
-document.getElementById("job_type")?.addEventListener("change", onJobTypeChange);
-document.getElementById("ac_type")?.addEventListener("change", () => { refreshCatalog(); refreshDurationPreview(); });
-document.getElementById("btu")?.addEventListener("change", refreshCatalog);
-document.getElementById("wash_variant")?.addEventListener("change", refreshDurationPreview);
-document.getElementById("repair_subtype")?.addEventListener("change", refreshDurationPreview);
-document.getElementById("machine_count")?.addEventListener("input", refreshDurationPreview);
-
-refreshCatalog();
-refreshDurationPreview();
 
 function addItem(){
   const id = Number(document.getElementById("catalog_select").value);
@@ -242,88 +279,27 @@ function renderItems(){
 
   if(!jobItems.length){
     box.textContent = "ยังไม่มีรายการ";
-    totalBox.textContent = "0";
-    return;
+  } else {
+    const html = jobItems.map(it=>{
+      const line = Number(it.qty||0)*Number(it.unit_price||0);
+      return `<div style="display:flex;justify-content:space-between;gap:10px;margin:6px 0;">
+        <div>• ${it.item_name} x${it.qty}</div>
+        <div>
+          <b>${line.toFixed(0)}</b> บาท
+          <button type="button" class="danger" style="width:auto;min-height:34px;padding:6px 10px;margin-left:8px;"
+            onclick="removeItem(${it.item_id})">ลบ</button>
+        </div>
+      </div>`;
+    }).join("");
+    box.innerHTML = html;
   }
 
-  let total = 0;
-  const html = jobItems.map(it=>{
-    const line = Number(it.qty||0)*Number(it.unit_price||0);
-    total += line;
-    return `<div style="display:flex;justify-content:space-between;gap:10px;margin:6px 0;">
-      <div>• ${it.item_name} x${it.qty}</div>
-      <div>
-        <b>${line.toFixed(0)}</b> บาท
-        <button type="button" class="danger" style="width:auto;min-height:34px;padding:6px 10px;margin-left:8px;"
-          onclick="removeItem(${it.item_id})">ลบ</button>
-      </div>
-    </div>`;
-  }).join("");
-
-  box.innerHTML = html;
-  totalBox.textContent = total.toFixed(0);
+  const extrasTotal = jobItems.reduce((sum,it)=> sum + Number(it.qty||0)*Number(it.unit_price||0), 0);
+  const grand = Number(standardPrice||0) + extrasTotal;
+  totalBox.textContent = grand.toFixed(0);
 }
 
-function setPicked(time){
-  pickedTime = time;
-  document.getElementById("picked").textContent = time || "-";
-}
-
-function loadSlots(){
-  const d = document.getElementById("date").value;
-  if(!d) return alert("เลือกวันที่ก่อน");
-  setPicked(null);
-
-  const slotsBox = document.getElementById("slots");
-  slotsBox.textContent = "กำลังโหลด...";
-
-  const urgent = !!document.getElementById("urgent_toggle")?.checked;
-  const tech_type = urgent ? "partner" : "company";
-
-  // 1) compute duration (server-side) -> 2) load availability_v2
-  const payload = buildDurationPayload();
-  if(!payload) return alert("กรุณาเลือกประเภทงาน/ข้อมูลแอร์ให้ครบก่อนโหลดเวลาว่าง");
-
-  fetch(`${API}/public/compute-duration`, {
-    method: "POST",
-    headers: {"Content-Type":"application/json"},
-    body: JSON.stringify(payload)
-  })
-  .then(async r=>{
-    const data = await r.json().catch(()=> ({}));
-    if(!r.ok) throw new Error(data.error || "คำนวณเวลาไม่สำเร็จ");
-    return data;
-  })
-  .then(dur=>{
-    const duration_min = Number(dur.duration_min||0);
-    return fetch(`${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`)
-      .then(r=>r.json());
-  })
-  .then(data=>{
-    if(data.error) throw new Error(data.error);
-    if(!data.slots || !data.slots.length){
-      slotsBox.textContent = "ไม่พบช่วงเวลา";
-      return;
-    }
-    const html = data.slots.map(s=>{
-      const disabled = s.available ? "" : "disabled";
-      const cls = s.available ? "" : "secondary";
-      const label = `${s.start} - ${s.end}`;
-      return `<button type="button" class="${cls}" style="width:auto;min-height:40px;margin:4px;" ${disabled}
-                  onclick="setPicked('${s.start}')">${label}</button>`;
-    }).join("");
-
-    slotsBox.innerHTML = `<div class="muted">ช่าง${tech_type==='company'?'บริษัท':'พาร์ทเนอร์'}: ${data.tech_type} | Travel buffer: ${data.travel_buffer_min} นาที | Effective block: ${data.effective_block_min} นาที</div>
-                          <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">${html}</div>`;
-  })
-  .catch(e=>{
-    slotsBox.textContent = "❌ โหลดเวลาว่างไม่สำเร็จ";
-    alert(e.message || "โหลดเวลาว่างไม่สำเร็จ");
-    console.error(e);
-  });
-}
-
-function book(){
+async function book(){
   const d = document.getElementById("date").value;
   if(!d) return alert("เลือกวันที่ก่อน");
   if(!pickedTime) return alert("เลือกเวลาว่างก่อน");
@@ -339,33 +315,23 @@ function book(){
     return alert("กรอกข้อมูลให้ครบ (ชื่อ/ประเภทงาน/ที่อยู่)");
   }
 
-  const urgent = !!document.getElementById("urgent_toggle")?.checked;
-  const booking_mode = urgent ? "urgent" : "scheduled";
-
-  // combine date + time -> ISO-like string local (backend จะ normalize เป็นเวลาไทยก่อนบันทึก)
   const appointment_datetime = `${d}T${pickedTime}:00`;
 
-  const durationPayload = buildDurationPayload() || {};
+  const payload = getPayloadV2();
+  const urgent = document.getElementById("urgent_toggle").checked;
+
+  const body = {
+    customer_name, customer_phone, job_type,
+    appointment_datetime, address_text, maps_url, customer_note,
+    items: jobItems.map(x=>({item_id:x.item_id, qty:x.qty})),
+    booking_mode: urgent ? "urgent" : "scheduled",
+    ...payload
+  };
 
   fetch(`${API}/public/book`, {
     method: "POST",
     headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({
-      customer_name,
-      customer_phone,
-      job_type,
-      appointment_datetime,
-      address_text,
-      maps_url,
-      customer_note,
-      items: jobItems.map(x=>({item_id:x.item_id, qty:x.qty})),
-      booking_mode,
-      job_category: durationPayload.job_category,
-      ac_type: durationPayload.ac_type,
-      wash_variant: durationPayload.wash_variant,
-      repair_subtype: durationPayload.repair_subtype,
-      machine_count: durationPayload.machine_count,
-    })
+    body: JSON.stringify(body)
   })
   .then(async r=>{
     const data = await r.json().catch(()=> ({}));
@@ -377,7 +343,8 @@ function book(){
     const token = data.token;
     box.innerHTML = `✅ จองสำเร็จ!<br>
       <b>เลข Booking:</b> <span style="font-size:18px;">${data.booking_code || '-'}</span><br>
-      <b>รหัสติดตาม (token):</b> <span style="font-size:14px;">${token}</span><br>
+      <b>สถานะ:</b> <span>${data.booking_mode==='urgent' ? 'รอช่างยืนยัน' : 'รอดำเนินการ'}</span><br>
+      <b>เวลาโดยประมาณ:</b> ${data.duration_min || '-'} นาที<br>
       <button type="button" class="secondary" style="width:auto;min-height:40px;margin-top:8px;"
         onclick="location.href='/track.html?q=${encodeURIComponent(data.booking_code || token)}'">🔎 ไปหน้าติดตามงาน</button>`;
   })
@@ -385,6 +352,22 @@ function book(){
     alert(`❌ ${e.message}`);
   });
 }
+
+// listeners
+["job_type","ac_type","btu","machine_count","wash_variant","repair_variant"].forEach(id=>{
+  const el = document.getElementById(id);
+  if(el) el.addEventListener("change", async ()=>{
+    showVariantFields();
+    await refreshPricing();
+    await refreshCatalog();
+  });
+});
+document.getElementById("urgent_toggle").addEventListener("change", ()=>{ /* slots refresh optional */ });
+
+showVariantFields();
+refreshPricing();
+refreshCatalog();
 </script>
+
 </body>
 </html>

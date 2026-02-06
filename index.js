@@ -37,13 +37,8 @@ function envBool(name, defVal = false) {
 const FLAG_SHOW_TECH_TEAM_ON_TRACKING = envBool("SHOW_TECH_TEAM_ON_TRACKING", true);
 const FLAG_SHOW_TECH_PHONE_ON_TRACKING = envBool("SHOW_TECH_PHONE_ON_TRACKING", true);
 
-// =======================================
-// ⏱️ Scheduling Config
-// - Travel buffer กันชนเวลา (เก็บของ + เดินทาง) ต่อ 1 งาน
-// - ใช้ค่าจาก ENV ถ้ามี เพื่อปรับ production ได้โดยไม่ต้อง deploy
-// =======================================
-const TRAVEL_BUFFER_MIN = Number(process.env.TRAVEL_BUFFER_MIN || 30);
-const FLAG_ENABLE_AVAILABILITY_V2 = envBool("ENABLE_AVAILABILITY_V2", true);
+const ENABLE_AVAILABILITY_V2 = envBool("ENABLE_AVAILABILITY_V2", true);
+const TRAVEL_BUFFER_MIN = Math.max(0, Number(process.env.TRAVEL_BUFFER_MIN || 30)); // นาที/งาน (Travel Buffer)
 
 
 // ==============================
@@ -360,11 +355,10 @@ async function ensureSchema() {
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS job_source TEXT DEFAULT 'admin'`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS dispatch_mode TEXT DEFAULT 'offer'`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS duration_min INT DEFAULT 60`);
-    // ✅ v2 booking mode (scheduled/urgent) + admin override duration (ลูกค้าห้าม override)
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS booking_mode TEXT DEFAULT 'scheduled'`);
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS admin_override_duration_min INT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS customer_note TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS booking_code TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS booking_mode TEXT DEFAULT 'scheduled'`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS admin_override_duration_min INT`);
 
     // 2.1) jobs: maps_url / job_zone / travel_started_at / started_at / finished_at / canceled_at / final_signature_*
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS maps_url TEXT`);
@@ -420,8 +414,6 @@ async function ensureSchema() {
 
     // 3.3) technician_profiles: เบอร์โทร (ใช้แสดงให้ลูกค้า "หลังเริ่มเดินทาง" เท่านั้น)
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS phone TEXT`);
-
-    // ✅ v2: ประเภทช่าง + เวลาทำงานมาตรฐาน (Backward compatible)
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS employment_type TEXT DEFAULT 'company'`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS work_start TEXT DEFAULT '09:00'`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS work_end TEXT DEFAULT '18:00'`);
@@ -488,18 +480,10 @@ await pool.query(`
     item_category TEXT NOT NULL CHECK (item_category IN ('service','product')),
     base_price NUMERIC(12,2) DEFAULT 0,
     unit_label TEXT DEFAULT 'รายการ',
-    -- ✅ v2 customer booking filters (Backward compatible)
-    job_category TEXT,
-    ac_type TEXT,
-    btu_min INT,
-    btu_max INT,
-    is_customer_visible BOOLEAN DEFAULT FALSE,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )
 `);
-
-// ✅ v2 metadata for customer booking (Backward compatible)
 await pool.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS job_category TEXT`);
 await pool.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS ac_type TEXT`);
 await pool.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS btu_min INT`);
@@ -708,181 +692,6 @@ function formatBangkokDateTime(input) {
 }
 
 // =======================================
-// 🧮 Duration Engine (Server-side v2)
-// - ห้ามทับ logic เดิม: สร้างฟังก์ชันใหม่ตาม requirement
-// - สำหรับงานซ่อมเปลี่ยนอะไหล่/ติดตั้ง: ใช้ admin_override_duration_min เท่านั้น
-// =======================================
-function computeDurationMin(payload = {}, opts = {}) {
-  const source = (opts.source || "customer").toString();
-  const job_category = (payload.job_category || payload.job_type || "").toString().trim();
-  const ac_type = (payload.ac_type || "").toString().trim();
-  const wash_variant = (payload.wash_variant || payload.service_variant || "").toString().trim();
-  const repair_subtype = (payload.repair_subtype || "").toString().trim();
-  const machine_count = Math.max(1, Number(payload.machine_count || payload.qty || 1) || 1);
-
-  const admin_override = payload.admin_override_duration_min;
-  const admin_override_min = admin_override == null ? null : Number(admin_override);
-
-  const isRepair = job_category === "ซ่อม" || job_category.toLowerCase() === "repair";
-  const isInstall = job_category === "ติดตั้ง" || job_category.toLowerCase() === "install";
-  const isWash = job_category === "ล้าง" || job_category.toLowerCase() === "wash";
-
-  // 🔒 งานที่ต้องให้แอดมินกำหนด duration
-  if (isInstall || (isRepair && repair_subtype === "ซ่อมเปลี่ยนอะไหล่")) {
-    if (!Number.isFinite(admin_override_min) || admin_override_min <= 0) {
-      const err = new Error("งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration) ก่อน");
-      err.code = "ADMIN_DURATION_REQUIRED";
-      throw err;
-    }
-    return Math.floor(admin_override_min);
-  }
-
-  // ซ่อม: ตรวจเช็ค
-  if (isRepair) return 60;
-
-  // ล้าง
-  if (isWash) {
-    const ac = ac_type || "ผนัง";
-
-    // กลุ่มไม่ใช่ผนัง
-    if (["สี่ทิศทาง", "แขวน", "เปลือยใต้ฝ้า"].includes(ac)) {
-      if (machine_count <= 1) return 120;
-      return 90 * machine_count;
-    }
-
-    // ผนัง: 4 แบบ
-    const v = wash_variant || "ล้างธรรมดา";
-    const map = {
-      "ล้างธรรมดา": { one: 60, multi: 40 },
-      "ล้างพรีเมียม": { one: 80, multi: 50 },
-      "ล้างแขวนคอยน์": { one: 120, multi: 90 },
-      "ล้างแบบตัดล้าง": { one: 180, multi: 120 },
-    };
-    const rule = map[v] || map["ล้างธรรมดา"];
-    if (machine_count <= 1) return rule.one;
-    return rule.multi * machine_count;
-  }
-
-  // fallback สำหรับงานอื่น ๆ
-  const fallback = Number(payload.duration_min || 60);
-  return Number.isFinite(fallback) && fallback > 0 ? Math.floor(fallback) : 60;
-}
-
-function effectiveBlockMin(durationMin) {
-  const d = Number(durationMin);
-  const buf = Number(TRAVEL_BUFFER_MIN);
-  return Math.max(0, (Number.isFinite(d) ? d : 0) + (Number.isFinite(buf) ? buf : 0));
-}
-
-function hhmmToMin(hhmm) {
-  const [h, m] = String(hhmm || "00:00").split(":").map((x) => Number(x || 0));
-  return h * 60 + m;
-}
-
-function minToHHMM(min) {
-  const m = Math.max(0, Number(min) || 0);
-  const hh = Math.floor(m / 60);
-  const mm = m % 60;
-  return `${String(hh).padStart(2, "0")}:${String(mm).padStart(2, "0")}`;
-}
-
-async function listTechniciansByType(techType = "company") {
-  const type = (techType || "company").toString();
-  const r = await pool.query(
-    `
-    SELECT
-      u.username,
-      COALESCE(tp.employment_type,'company') AS employment_type,
-      COALESCE(tp.accept_status,'ready') AS accept_status,
-      COALESCE(tp.work_start,'09:00') AS work_start,
-      COALESCE(tp.work_end,'18:00') AS work_end
-    FROM public.users u
-    LEFT JOIN public.technician_profiles tp ON tp.username = u.username
-    WHERE u.role='technician'
-      AND COALESCE(tp.employment_type,'company') = $1
-    ORDER BY u.username
-    `,
-    [type]
-  );
-  return r.rows || [];
-}
-
-async function getTechJobsOnDate(client, username, dateStr, excludeJobId = null) {
-  const r = await client.query(
-    `
-    SELECT j.job_id, j.appointment_datetime, COALESCE(j.duration_min,60) AS duration_min, COALESCE(j.job_status,'') AS job_status
-    FROM public.jobs j
-    WHERE j.appointment_datetime::date = $1::date
-      AND COALESCE(j.job_status,'') <> 'ยกเลิก'
-      AND (
-        j.technician_team = $2
-        OR j.technician_username = $2
-        OR EXISTS (
-          SELECT 1 FROM public.job_team_members tm WHERE tm.job_id = j.job_id AND tm.username = $2
-        )
-      )
-      AND ($3::bigint IS NULL OR j.job_id <> $3::bigint)
-    ORDER BY j.appointment_datetime ASC
-    `,
-    [dateStr, username, excludeJobId]
-  );
-  return r.rows || [];
-}
-
-function jobToBusyWindowMin(jobRow) {
-  const d = new Date(jobRow.appointment_datetime);
-  const hhmm = d.toLocaleTimeString("en-GB", {
-    timeZone: "Asia/Bangkok",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-  const start = hhmmToMin(hhmm);
-  const dur = Number(jobRow.duration_min || 60);
-  const end = start + effectiveBlockMin(dur);
-  return { start, end, job_id: jobRow.job_id };
-}
-
-function isWindowOverlap(a, b) {
-  return a.start < b.end && b.start < a.end;
-}
-
-async function checkTechCollision(client, username, appointment_datetime, duration_min, excludeJobId = null) {
-  const normalized = normalizeAppointmentDatetime(appointment_datetime);
-  const d = new Date(normalized);
-  const dateStr = d.toISOString().slice(0, 10);
-  const hhmm = d.toLocaleTimeString("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit", hour12: false });
-  const start = hhmmToMin(hhmm);
-  const want = { start, end: start + effectiveBlockMin(duration_min) };
-
-  const jobs = await getTechJobsOnDate(client, username, dateStr, excludeJobId);
-  const windows = jobs.map(jobToBusyWindowMin);
-  const hit = windows.find((w) => isWindowOverlap(want, w));
-  return hit ? { collision: true, with_job_id: hit.job_id } : { collision: false };
-}
-
-async function availableTechIdsForSlot(dateStr, startHHMM, durationMin, techType) {
-  const techs = await listTechniciansByType(techType);
-  const startMin = hhmmToMin(startHHMM);
-  const want = { start: startMin, end: startMin + effectiveBlockMin(durationMin) };
-
-  const client = await pool.connect();
-  try {
-    const out = [];
-    for (const t of techs) {
-      if (String(t.accept_status || "ready") !== "ready") continue;
-      const jobs = await getTechJobsOnDate(client, t.username, dateStr, null);
-      const windows = jobs.map(jobToBusyWindowMin);
-      const overlap = windows.some((w) => isWindowOverlap(want, w));
-      if (!overlap) out.push(t.username);
-    }
-    return { techs, available_tech_ids: out };
-  } finally {
-    client.release();
-  }
-}
-
-// =======================================
 // 🔢 Booking code / token / accept-status helpers
 // =======================================
 function genToken(len = 10) {
@@ -1018,45 +827,39 @@ app.get("/users/technicians", async (req, res) => {
 // =======================================
 // 📦 CATALOG
 // =======================================
+
+// =======================================
+// 📦 CATALOG
+// =======================================
 app.get("/catalog/items", async (req, res) => {
   try {
-    const customerMode = (req.query.customer || "").toString() === "1";
+    const customer = String(req.query.customer || "").trim() === "1";
     const job_category = (req.query.job_category || "").toString().trim();
     const ac_type = (req.query.ac_type || "").toString().trim();
-    const btu = req.query.btu == null ? null : Number(req.query.btu);
+    const btu = Number(req.query.btu || 0);
 
     const where = [`is_active = TRUE`];
-    const vals = [];
+    const params = [];
+    let p = 1;
 
-    if (customerMode) where.push(`is_customer_visible = TRUE`);
-    if (job_category) {
-      vals.push(job_category);
-      where.push(`COALESCE(job_category,'') = $${vals.length}`);
-    }
-    if (ac_type) {
-      vals.push(ac_type);
-      where.push(`COALESCE(ac_type,'') = $${vals.length}`);
-    }
-    if (Number.isFinite(btu)) {
-      vals.push(btu);
-      const idx = vals.length;
-      // btu_min/btu_max ว่าง = ไม่จำกัด
-      where.push(`(
-        (btu_min IS NULL AND btu_max IS NULL)
-        OR (btu_min IS NULL AND $${idx} <= btu_max)
-        OR (btu_max IS NULL AND $${idx} >= btu_min)
-        OR ($${idx} BETWEEN btu_min AND btu_max)
-      )`);
+    if (customer) where.push(`is_customer_visible = TRUE`);
+    if (job_category) { params.push(job_category); where.push(`job_category = $${p++}`); }
+    if (ac_type) { params.push(ac_type); where.push(`ac_type = $${p++}`); }
+    if (Number.isFinite(btu) && btu > 0) {
+      params.push(btu); where.push(`(btu_min IS NULL OR btu_min <= $${p++})`);
+      params.push(btu); where.push(`(btu_max IS NULL OR btu_max >= $${p++})`);
     }
 
-    const sql = `
+    const r = await pool.query(
+      `
       SELECT item_id, item_name, item_category, base_price, unit_label, is_active,
              job_category, ac_type, btu_min, btu_max, is_customer_visible
       FROM public.catalog_items
       WHERE ${where.join(" AND ")}
       ORDER BY item_category, item_name
-    `;
-    const r = await pool.query(sql, vals);
+      `,
+      params
+    );
     res.json(r.rows);
   } catch (e) {
     console.error(e);
@@ -1064,8 +867,9 @@ app.get("/catalog/items", async (req, res) => {
   }
 });
 
+
 app.post("/catalog/items", async (req, res) => {
-  const { item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_customer_visible } = req.body || {};
+  const { item_name, item_category, base_price, unit_label } = req.body || {};
   if (!item_name) return res.status(400).json({ error: "กรอกชื่อรายการ" });
 
   const category = (item_category || "service").toLowerCase();
@@ -1076,21 +880,11 @@ app.post("/catalog/items", async (req, res) => {
   try {
     const r = await pool.query(
       `
-      INSERT INTO public.catalog_items (item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_customer_visible)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+      INSERT INTO public.catalog_items (item_name, item_category, base_price, unit_label)
+      VALUES ($1,$2,$3,$4)
       RETURNING item_id
       `,
-      [
-        item_name.trim(),
-        category,
-        Number(base_price || 0),
-        (unit_label || "รายการ").trim(),
-        job_category ? String(job_category).trim() : null,
-        ac_type ? String(ac_type).trim() : null,
-        btu_min == null || btu_min === "" ? null : Number(btu_min),
-        btu_max == null || btu_max === "" ? null : Number(btu_max),
-        is_customer_visible === true || is_customer_visible === 1 || is_customer_visible === "1",
-      ]
+      [item_name.trim(), category, Number(base_price || 0), (unit_label || "รายการ").trim()]
     );
     res.json({ success: true, item_id: r.rows[0].item_id });
   } catch (e) {
@@ -1355,20 +1149,16 @@ app.put("/jobs/:job_id/assign", async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
-
-    // ✅ collision validation (per-tech + travel buffer)
+    // ASSIGN_COLLISION_V2
     const jobR = await client.query(
-      `SELECT job_id, appointment_datetime, COALESCE(duration_min,60) AS duration_min
-       FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+      `SELECT appointment_datetime, COALESCE(duration_min,60) AS duration_min FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
       [job_id]
     );
-    if (!jobR.rows.length) throw new Error("ไม่พบงาน");
-    const appt = jobR.rows[0].appointment_datetime;
-    const dur = Number(jobR.rows[0].duration_min || 60);
-    const col = await checkTechCollision(client, technician_username, appt, dur, job_id);
-    if (col.collision) {
-      throw new Error(`เวลาชนกับงานอื่นของช่างคนนี้ (job_id=${col.with_job_id})`);
-    }
+    if (jobR.rows.length === 0) throw new Error("ไม่พบงาน");
+    const j = jobR.rows[0];
+    const free = await isTechFree(technician_username, j.appointment_datetime, j.duration_min, job_id);
+    if (!free) throw new Error("เวลาชนกับงานอื่นของช่าง (รวมเวลาเดินทาง 30 นาที)");
+
 
     await client.query(
       `UPDATE public.jobs
@@ -1488,7 +1278,6 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
     job_zone,
     gps_latitude,
     gps_longitude,
-    duration_min,
   } = req.body || {};
 
   // ✅ FIX TIMEZONE: ถ้ามีการแก้วันนัด ให้ normalize เป็นเวลาไทยก่อนบันทึก
@@ -1498,8 +1287,6 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
       : normalizeAppointmentDatetime(appointment_datetime);
 
   try {
-    const dmin = duration_min == null || duration_min === "" ? null : Number(duration_min);
-
     await pool.query(
       `
       UPDATE public.jobs
@@ -1512,10 +1299,8 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
           maps_url = COALESCE(NULLIF($7, ''), maps_url),
           job_zone = COALESCE(NULLIF($8, ''), job_zone),
           gps_latitude = COALESCE($9, gps_latitude),
-          gps_longitude = COALESCE($10, gps_longitude),
-          duration_min = COALESCE($11, duration_min),
-          admin_override_duration_min = CASE WHEN $11 IS NULL THEN admin_override_duration_min ELSE $11 END
-      WHERE job_id=$12
+          gps_longitude = COALESCE($10, gps_longitude)
+      WHERE job_id=$11
       `,
       [
         customer_name ?? null,
@@ -1528,7 +1313,6 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
         job_zone ?? null,
         gps_latitude ?? null,
         gps_longitude ?? null,
-        (Number.isFinite(dmin) && dmin > 0 ? Math.floor(dmin) : null),
         job_id,
       ]
     );
@@ -2273,21 +2057,20 @@ app.post("/offers/:offer_id/accept", async (req, res) => {
     if (username && username !== offer.technician_username) throw new Error("username ไม่ตรงกับ offer");
 
     const jobR = await client.query(
-      `SELECT job_id, technician_team, appointment_datetime, COALESCE(duration_min,60) AS duration_min
-       FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+      `SELECT job_id, technician_team FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
       [offer.job_id]
     );
     if (jobR.rows.length === 0) throw new Error("ไม่พบงาน");
     if (jobR.rows[0].technician_team) throw new Error("งานนี้ถูกช่างคนอื่นรับไปแล้ว");
+    // COLLISION_CHECK_V2
+    const jobInfoR = await client.query(
+      `SELECT appointment_datetime, COALESCE(duration_min,60) AS duration_min FROM public.jobs WHERE job_id=$1`,
+      [offer.job_id]
+    );
+    const jobInfo = jobInfoR.rows[0];
+    const ok = await isTechFree(offer.technician_username, jobInfo.appointment_datetime, jobInfo.duration_min, offer.job_id);
+    if (!ok) throw new Error("เวลาชนกับงานอื่นของช่าง (รวมเวลาเดินทาง 30 นาที)");
 
-    // ✅ collision validation (per-tech + travel buffer) ก่อนรับงานจริง
-    const appt = jobR.rows[0].appointment_datetime;
-    const dur = Number(jobR.rows[0].duration_min || 60);
-    const col = await checkTechCollision(client, offer.technician_username, appt, dur, offer.job_id);
-    if (col.collision) {
-      await client.query(`UPDATE public.job_offers SET status='expired', responded_at=NOW() WHERE offer_id=$1`, [offer_id]);
-      throw new Error(`เวลาชนกับงานอื่นของคุณ (job_id=${col.with_job_id})`);
-    }
 
     await client.query(`UPDATE public.job_offers SET status='accepted', responded_at=NOW() WHERE offer_id=$1`, [offer_id]);
     await client.query(
@@ -2303,14 +2086,6 @@ app.post("/offers/:offer_id/accept", async (req, res) => {
            technician_team=$1
        WHERE job_id=$2`,
       [offer.technician_username, offer.job_id]
-    );
-
-    // ✅ ถ้าเป็นงานด่วนที่รอช่างยืนยัน ให้ปรับสถานะกลับเข้าสู่ flow ปกติ
-    await client.query(
-      `UPDATE public.jobs
-       SET job_status = CASE WHEN COALESCE(job_status,'')='รอช่างยืนยัน' THEN 'รอดำเนินการ' ELSE job_status END
-       WHERE job_id=$1`,
-      [offer.job_id]
     );
 
     // ✅ เผื่อกรณีงานนี้มีทีม (ให้คนรับเป็นสมาชิกทีมด้วย)
@@ -2369,20 +2144,6 @@ app.post("/offers/:offer_id/decline", async (req, res) => {
         [offer.job_id, offer.technician_username]
       );
 
-      // ถ้าเป็นงานด่วน (รอช่างยืนยัน) และไม่มี offer ค้างแล้ว -> แจ้งว่าหาช่างไม่เจอ
-      const leftR = await client.query(
-        `SELECT COUNT(*)::int AS cnt FROM public.job_offers WHERE job_id=$1 AND status='pending'`,
-        [offer.job_id]
-      );
-      if ((leftR.rows[0]?.cnt || 0) === 0) {
-        await client.query(
-          `UPDATE public.jobs
-           SET job_status = CASE WHEN COALESCE(job_status,'')='รอช่างยืนยัน' THEN 'ไม่พบช่างรับงาน' ELSE job_status END
-           WHERE job_id=$1`,
-          [offer.job_id]
-        );
-      }
-
       await client.query("COMMIT");
       return res.json({ success: true, status: "expired" });
     }
@@ -2401,19 +2162,6 @@ app.post("/offers/:offer_id/decline", async (req, res) => {
          AND technician_username=$2`,
       [offer.job_id, offer.technician_username]
     );
-
-    const leftR = await client.query(
-      `SELECT COUNT(*)::int AS cnt FROM public.job_offers WHERE job_id=$1 AND status='pending'`,
-      [offer.job_id]
-    );
-    if ((leftR.rows[0]?.cnt || 0) === 0) {
-      await client.query(
-        `UPDATE public.jobs
-         SET job_status = CASE WHEN COALESCE(job_status,'')='รอช่างยืนยัน' THEN 'ไม่พบช่างรับงาน' ELSE job_status END
-         WHERE job_id=$1`,
-        [offer.job_id]
-      );
-    }
 
     await client.query("COMMIT");
     res.json({ success: true, status: "declined", job_id: offer.job_id });
@@ -3458,122 +3206,255 @@ app.get("/docs/eslip/:job_id", async (req, res) => {
 // =======================================
 // 🌍 PUBLIC (ลูกค้าจองเอง/ติดตามงาน)
 // =======================================
+
 // =======================================
-// 🧮 PUBLIC: compute duration (v2) - ใช้ให้หน้า Customer preview + คำนวณก่อนขอ slot
+// ⏱️ Duration + Pricing Engine (v2) + Travel Buffer
 // =======================================
-app.post("/public/compute-duration", async (req, res) => {
+function toMin(hhmm) {
+  const [h, m] = String(hhmm || "00:00").split(":").map((x) => Number(x || 0));
+  return h * 60 + m;
+}
+function minToHHMM(min) {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+function computeDurationMin(payload = {}, opts = {}) {
+  const src = opts.source || "unknown";
+  const job_type = String(payload.job_type || payload.jobType || "").trim();
+  const ac_type = String(payload.ac_type || payload.acType || "").trim();
+  const wash_variant = String(payload.wash_variant || payload.washVariant || "").trim();
+  const repair_variant = String(payload.repair_variant || payload.repairVariant || "").trim();
+  const machine_count = Math.max(1, Number(payload.machine_count || payload.machineCount || 1));
+  const admin_override = Number(payload.admin_override_duration_min || payload.adminOverrideDurationMin || 0);
+
+  let duration = 0;
+
+  if (job_type === "ล้าง") {
+    if (ac_type === "ผนัง" || !ac_type) {
+      if (wash_variant === "ล้างพรีเมียม") duration = machine_count === 1 ? 80 : 50 * machine_count;
+      else if (wash_variant === "ล้างแขวนคอยน์") duration = machine_count === 1 ? 120 : 90 * machine_count;
+      else if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่") duration = machine_count === 1 ? 180 : 120 * machine_count;
+      else duration = machine_count === 1 ? 60 : 40 * machine_count; // ล้างธรรมดา
+    } else {
+      duration = machine_count === 1 ? 120 : 90 * machine_count;
+    }
+  } else if (job_type === "ซ่อม") {
+    if (repair_variant === "ซ่อมเปลี่ยนอะไหล่") duration = admin_override > 0 ? admin_override : 0;
+    else duration = 60;
+  } else if (job_type === "ติดตั้ง") {
+    duration = admin_override > 0 ? admin_override : 0;
+  }
+
+  if (!Number.isFinite(duration) || duration <= 0) {
+    if (job_type === "ซ่อม" && repair_variant === "ซ่อมเปลี่ยนอะไหล่") return 0;
+    if (job_type === "ติดตั้ง") return 0;
+    duration = 60;
+  }
+
+  console.log("[computeDurationMin]", { src, job_type, ac_type, wash_variant, repair_variant, machine_count, duration });
+  return Math.round(duration);
+}
+
+function computeStandardPrice(payload = {}) {
+  const job_type = String(payload.job_type || "").trim();
+  const ac_type = String(payload.ac_type || "").trim();
+  const wash_variant = String(payload.wash_variant || "").trim();
+  const repair_variant = String(payload.repair_variant || "").trim();
+  const machine_count = Math.max(1, Number(payload.machine_count || 1));
+  const btu = Number(payload.btu || 0);
+
+  if (job_type === "ติดตั้ง") return 0;
+
+  if (job_type === "ซ่อม") {
+    if (repair_variant === "ตรวจเช็ครั่ว") return 1000;
+    return 500;
+  }
+
+  if (job_type !== "ล้าง") return 0;
+
+  const qty = machine_count;
+
+  if (ac_type === "ผนัง" || !ac_type) {
+    const tier18000 = Number.isFinite(btu) && btu > 12000;
+    if (!tier18000) {
+      if (wash_variant === "ล้างพรีเมียม") return 800 * qty;
+      if (wash_variant === "ล้างแขวนคอยน์") return 1250 * qty;
+      if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่") return 1800 * qty;
+      return 500 * qty;
+    } else {
+      if (wash_variant === "ล้างพรีเมียม") return 1000 * qty;
+      if (wash_variant === "ล้างแขวนคอยน์") return 1500 * qty;
+      if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่") return 2000 * qty;
+      return 650 * qty;
+    }
+  }
+
+  if (ac_type === "สี่ทิศทาง") {
+    if (Number.isFinite(btu) && btu > 48000) return 1700 * qty;
+    return 1500 * qty;
+  }
+
+  if (ac_type === "แขวน") {
+    if (Number.isFinite(btu) && btu >= 38000) return 1500 * qty;
+    if (Number.isFinite(btu) && btu <= 18000) return 800 * qty;
+    return 1200 * qty;
+  }
+
+  if (ac_type === "เปลือยใต้ฝ้า") {
+    if (Number.isFinite(btu) && btu >= 40000) return 1500 * qty;
+    return 1200 * qty;
+  }
+
+  return 0;
+}
+
+function effectiveBlockMin(durationMin) {
+  return Math.max(0, Number(durationMin || 0)) + TRAVEL_BUFFER_MIN;
+}
+
+async function listTechniciansByType(tech_type) {
+  const t = (tech_type || "company").toString().trim().toLowerCase();
+  const r = await pool.query(
+    `
+    SELECT u.username,
+           COALESCE(p.employment_type,'company') AS employment_type,
+           COALESCE(p.work_start,'09:00') AS work_start,
+           COALESCE(p.work_end,'18:00') AS work_end,
+           COALESCE(p.accept_status,'ready') AS accept_status
+    FROM public.users u
+    LEFT JOIN public.technician_profiles p ON p.username=u.username
+    WHERE u.role='technician'
+      AND COALESCE(p.accept_status,'ready') <> 'paused'
+      AND COALESCE(p.employment_type,'company') = $1
+    ORDER BY u.username
+    `,
+    [t]
+  );
+  return r.rows || [];
+}
+
+async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
+  const params = [username, dateStr];
+  let extra = "";
+  if (ignoreJobId) { params.push(ignoreJobId); extra = ` AND j.job_id <> $3`; }
+
+  const r = await pool.query(
+    `
+    SELECT j.job_id, j.appointment_datetime, COALESCE(j.duration_min,60) AS duration_min
+    FROM public.jobs j
+    LEFT JOIN public.job_team_members m ON m.job_id=j.job_id AND m.username=$1
+    WHERE j.appointment_datetime::date = $2::date
+      AND j.job_status <> 'ยกเลิก'
+      ${extra}
+      AND (j.technician_username=$1 OR j.technician_team=$1 OR m.username IS NOT NULL)
+    `,
+    params
+  );
+  return r.rows || [];
+}
+
+function overlaps(aStart, aEnd, bStart, bEnd) {
+  return aStart < bEnd && bStart < aEnd;
+}
+
+async function isTechFree(username, startIso, durationMin, ignoreJobId) {
+  const start = new Date(startIso);
+  const dateStr = start.toISOString().slice(0, 10);
+
+  const reqStart = start.getTime() - TRAVEL_BUFFER_MIN * 60000;
+  const reqEnd = start.getTime() + (Number(durationMin || 0) + TRAVEL_BUFFER_MIN) * 60000;
+
+  const jobs = await listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId);
+  for (const j of jobs) {
+    const js = new Date(j.appointment_datetime).getTime() - TRAVEL_BUFFER_MIN * 60000;
+    const je = new Date(j.appointment_datetime).getTime() + (Number(j.duration_min || 60) + TRAVEL_BUFFER_MIN) * 60000;
+    if (overlaps(reqStart, reqEnd, js, je)) return false;
+  }
+  return true;
+}
+
+
+// =======================================
+// 💰 Pricing + Duration Preview (public)
+// =======================================
+app.post("/public/pricing_preview", async (req, res) => {
   try {
-    if (!FLAG_ENABLE_AVAILABILITY_V2) {
-      return res.status(404).json({ error: "v2 disabled" });
-    }
     const payload = req.body || {};
-    const duration_min = computeDurationMin(payload, { source: "customer" });
-    if (!Number.isFinite(duration_min) || duration_min <= 0) {
-      return res.status(400).json({ error: "duration_min ไม่ถูกต้อง" });
-    }
-    const eff = effectiveBlockMin(duration_min);
-    console.log("[computeDurationMin]", {
-      job_category: payload.job_category || payload.job_type,
-      ac_type: payload.ac_type,
-      wash_variant: payload.wash_variant,
-      repair_subtype: payload.repair_subtype,
-      machine_count: payload.machine_count,
+    const duration_min = computeDurationMin(payload, { source: "pricing_preview" });
+    if (duration_min <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
+    const standard_price = computeStandardPrice(payload);
+    res.json({
+      standard_price,
       duration_min,
-      effective_block_min: eff,
+      travel_buffer_min: TRAVEL_BUFFER_MIN,
+      effective_block_min: effectiveBlockMin(duration_min),
     });
-    return res.json({ duration_min, effective_block_min: eff, travel_buffer_min: TRAVEL_BUFFER_MIN });
   } catch (e) {
-    const code = e.code || "";
-    const msg = e.message || "คำนวณเวลาไม่สำเร็จ";
-    console.warn("[computeDurationMin] error", { code, msg });
-    return res.status(400).json({ error: msg, code });
+    console.error(e);
+    res.status(500).json({ error: "คำนวณราคาไม่สำเร็จ" });
   }
 });
 
+
 // =======================================
-// 📅 PUBLIC: availability_v2 (company/partner, per-tech collision + travel buffer)
-// - Feature-flag: ENABLE_AVAILABILITY_V2 (default true)
-// - รองรับ duration_min ผ่าน query เพื่อคำนวณช่วงบล็อกเวลา
+// 📅 Availability v2 (รายช่าง + แยก company/partner + ใช้ buffer)
 // =======================================
 app.get("/public/availability_v2", async (req, res) => {
-  if (!FLAG_ENABLE_AVAILABILITY_V2) {
-    return res.status(404).json({ error: "availability_v2 disabled" });
-  }
+  if (!ENABLE_AVAILABILITY_V2) return res.status(404).json({ error: "DISABLED" });
+
+  const date = (req.query.date || new Date().toISOString().slice(0, 10)).toString();
+  const tech_type = (req.query.tech_type || "company").toString().trim().toLowerCase();
+  const duration_min = Math.max(15, Number(req.query.duration_min || 60));
+  const slot_step_min = 30;
 
   try {
-    const date = (req.query.date || "").toString().slice(0, 10);
-    const tech_type = (req.query.tech_type || "company").toString().toLowerCase();
-    const duration_min_in = Number(req.query.duration_min || 60);
-    const duration_min = Number.isFinite(duration_min_in) && duration_min_in > 0 ? Math.floor(duration_min_in) : 60;
-
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
-      return res.status(400).json({ error: "date ต้องเป็น YYYY-MM-DD" });
-    }
-    if (!["company", "partner"].includes(tech_type)) {
-      return res.status(400).json({ error: "tech_type ต้องเป็น company หรือ partner" });
-    }
-
     const techs = await listTechniciansByType(tech_type);
-    const work_start = techs[0]?.work_start || "09:00";
-    const work_end = techs[0]?.work_end || "18:00";
-    const step_min = 30;
-    const startMin = hhmmToMin(work_start);
-    const endMin = hhmmToMin(work_end);
-    const eff = effectiveBlockMin(duration_min);
+    const tech_count = techs.length;
+    const work_start = (techs[0]?.work_start || "09:00").toString();
+    const work_end = (techs[0]?.work_end || "18:00").toString();
+
+    const startMin = toMin(work_start);
+    const endMin = toMin(work_end);
+    const block = effectiveBlockMin(duration_min);
 
     const slots = [];
-    for (let t = startMin; t + eff <= endMin; t += step_min) {
-      slots.push({ startMin: t, endMin: t + eff });
-    }
+    for (let t = startMin; t + block <= endMin; t += slot_step_min) {
+      const startHHMM = minToHHMM(t);
+      const endHHMM = minToHHMM(t + block);
+      const startIso = `${date}T${startHHMM}:00`;
 
-    const client = await pool.connect();
-    try {
-      const result = [];
-      for (const s of slots) {
-        const startHHMM = minToHHMM(s.startMin);
-        const available = [];
-        // per-tech collision
-        for (const tech of techs) {
-          if (String(tech.accept_status || "ready") !== "ready") continue;
-          const jobs = await getTechJobsOnDate(client, tech.username, date, null);
-          const windows = jobs.map(jobToBusyWindowMin);
-          const want = { start: s.startMin, end: s.endMin };
-          if (!windows.some((w) => isWindowOverlap(want, w))) available.push(tech.username);
-        }
-        result.push({
-          start: startHHMM,
-          end: minToHHMM(s.endMin),
-          available: available.length > 0,
-          available_tech_ids: available,
-        });
+      const available_tech_ids = [];
+      for (const tech of techs) {
+        const free = await isTechFree(tech.username, startIso, duration_min, null);
+        if (free) available_tech_ids.push(tech.username);
       }
 
-      console.log("[availability_v2]", {
-        date,
-        tech_type,
-        duration_min,
-        travel_buffer_min: TRAVEL_BUFFER_MIN,
-        tech_count: techs.length,
-        slots_returned: result.length,
+      slots.push({
+        start: startHHMM,
+        end: endHHMM,
+        available: available_tech_ids.length > 0,
+        available_tech_ids,
       });
-
-      return res.json({
-        date,
-        tech_type,
-        work_start,
-        work_end,
-        duration_min,
-        travel_buffer_min: TRAVEL_BUFFER_MIN,
-        effective_block_min: eff,
-        slot_step_min: step_min,
-        slots: result,
-      });
-    } finally {
-      client.release();
     }
+
+    console.log("[availability_v2]", { date, tech_type, duration_min, tech_count, slots: slots.length });
+
+    res.json({
+      date,
+      tech_type,
+      work_start,
+      work_end,
+      travel_buffer_min: TRAVEL_BUFFER_MIN,
+      duration_min,
+      effective_block_min: block,
+      slot_step_min,
+      tech_count,
+      slots,
+    });
   } catch (e) {
     console.error(e);
-    return res.status(500).json({ error: "โหลดเวลาว่าง (v2) ไม่สำเร็จ" });
+    res.status(500).json({ error: "โหลดตารางว่างไม่สำเร็จ" });
   }
 });
 
@@ -3653,14 +3534,13 @@ app.post("/public/book", async (req, res) => {
     customer_note,
     maps_url,
     job_zone,
-    items, // [{item_id, qty}]
-    // v2 duration inputs (customer-side)
-    job_category,
-    ac_type,
-    wash_variant,
-    repair_subtype,
-    machine_count,
+    items, // [{item_id, qty}] (extras)
     booking_mode,
+    ac_type,
+    btu,
+    machine_count,
+    wash_variant,
+    repair_variant,
   } = req.body || {};
 
   if (!customer_name || !job_type || !appointment_datetime || !address_text) {
@@ -3674,52 +3554,21 @@ app.post("/public/book", async (req, res) => {
     .filter((x) => Number.isFinite(x.item_id) && x.item_id > 0 && Number.isFinite(x.qty) && x.qty > 0);
 
   const token = genToken(12);
+  // DURATION_PRICE_V2_PUBLIC_BOOK
+  const bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
+  const payloadV2 = {
+    job_type: String(job_type).trim(),
+    ac_type: (ac_type || "").toString().trim(),
+    btu: Number(btu || 0),
+    machine_count: Number(machine_count || 1),
+    wash_variant: (wash_variant || "").toString().trim(),
+    repair_variant: (repair_variant || "").toString().trim(),
+    admin_override_duration_min: 0, // ลูกค้าห้าม override
+  };
+  const duration_min_v2 = computeDurationMin(payloadV2, { source: "public_book" });
+  if (duration_min_v2 <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
+  const standard_price = computeStandardPrice(payloadV2);
 
-  // ✅ normalize datetime เป็นเวลาไทยก่อน (กัน timezone เพี้ยน)
-  const appointment_dt = normalizeAppointmentDatetime(appointment_datetime);
-
-  // ✅ booking_mode: scheduled(default) | urgent
-  const bmode = (booking_mode || "scheduled").toString().toLowerCase().trim();
-  if (!["scheduled", "urgent"].includes(bmode)) {
-    return res.status(400).json({ error: "booking_mode ต้องเป็น scheduled หรือ urgent" });
-  }
-
-  // ✅ Duration Engine: ห้ามให้ลูกค้า override
-  let duration_min;
-  try {
-    duration_min = computeDurationMin(
-      {
-        job_type,
-        job_category: job_category || job_type,
-        ac_type,
-        wash_variant,
-        repair_subtype,
-        machine_count,
-        // ห้ามส่ง admin_override_duration_min จากลูกค้า: ignore โดยไม่ใส่ไป
-      },
-      { source: "customer" }
-    );
-  } catch (e) {
-    // งานที่ต้องให้แอดมินกำหนด duration (ติดตั้ง/ซ่อมเปลี่ยนอะไหล่)
-    return res.status(400).json({ error: e.message || "คำนวณเวลาไม่สำเร็จ", code: e.code || "" });
-  }
-  if (!Number.isFinite(duration_min) || duration_min <= 0) {
-    return res.status(400).json({ error: "duration_min ไม่ถูกต้อง" });
-  }
-  const effective_block_min = effectiveBlockMin(duration_min);
-
-  // ✅ tech_type: scheduled => company, urgent => partner
-  const tech_type = bmode === "urgent" ? "partner" : "company";
-
-  // ✅ validate availability (ต้องมีช่างอย่างน้อย 1 คนว่างจริง)
-  const apptDate = new Date(appointment_dt);
-  const dateStr = apptDate.toISOString().slice(0, 10);
-  const startHHMM = apptDate.toLocaleTimeString("en-GB", {
-    timeZone: "Asia/Bangkok",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
 
   const client = await pool.connect();
   try {
@@ -3727,14 +3576,18 @@ app.post("/public/book", async (req, res) => {
 
     // 1) ดึงราคา base_price จาก DB
     let computedItems = [];
-    let total = 0;
+    let total = Number(standard_price || 0);
+    // STANDARD_SERVICE_LINE_V2
+    if (total > 0) {
+      computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: total, line_total: total });
+    }
 
     if (itemIdQty.length) {
       const ids = itemIdQty.map((x) => x.item_id);
       const catR = await client.query(
         `SELECT item_id, item_name, base_price
          FROM public.catalog_items
-         WHERE is_active=TRUE AND item_id = ANY($1::bigint[])`,
+         WHERE is_active=TRUE AND is_customer_visible=TRUE /* CUSTOMER_CATALOG_VISIBLE_ONLY */ AND item_id = ANY($1::bigint[])`,
         [ids]
       );
 
@@ -3758,18 +3611,6 @@ app.post("/public/book", async (req, res) => {
         .filter(Boolean);
     }
 
-    // 1.5) เช็ค slot ว่าง (รวม travel buffer)
-    const avail = await availableTechIdsForSlot(dateStr, startHHMM, duration_min, tech_type);
-    if (!avail.available_tech_ids.length) {
-      return res.status(409).json({
-        error: "เวลานี้เต็ม (ไม่มีช่างว่าง)",
-        code: "SLOT_FULL",
-        tech_type,
-        duration_min,
-        effective_block_min,
-      });
-    }
-
     // 2) สร้างงาน
     const r = await client.query(
       `
@@ -3785,16 +3626,16 @@ app.post("/public/book", async (req, res) => {
         String(customer_name).trim(),
         (customer_phone || "").toString().trim(),
         String(job_type).trim(),
-        appointment_dt,
+        appointment_datetime,
         Number(total || 0),
         String(address_text).trim(),
         token,
         (customer_note || "").toString(),
         (maps_url || "").toString(),
         (job_zone || "").toString(),
-        bmode === "urgent" ? "รอช่างยืนยัน" : "รอดำเนินการ",
-        duration_min,
-        bmode,
+        bm === 'urgent' ? 'รอช่างยืนยัน' : 'รอดำเนินการ',
+        duration_min_v2,
+        (bm === 'urgent' ? 'urgent' : 'scheduled'),
       ]
     );
 
@@ -3803,6 +3644,39 @@ app.post("/public/book", async (req, res) => {
     const booking_code = await generateUniqueBookingCode(client);
 
     await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
+
+    // CREATE_URGENT_OFFERS_V2
+    if (bm === "urgent") {
+      const partners = await client.query(
+        `
+        SELECT u.username
+        FROM public.users u
+        LEFT JOIN public.technician_profiles p ON p.username=u.username
+        WHERE u.role='technician'
+          AND COALESCE(p.accept_status,'ready') <> 'paused'
+          AND COALESCE(p.employment_type,'company') = 'partner'
+        ORDER BY u.username
+        `
+      );
+
+      const apptIso = appointment_datetime;
+      const availablePartners = [];
+      for (const row of partners.rows || []) {
+        const ok = await isTechFree(row.username, apptIso, duration_min_v2, null);
+        if (ok) availablePartners.push(row.username);
+      }
+
+      for (const u of availablePartners) {
+        await client.query(
+          `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
+           VALUES ($1,$2,'pending', NOW() + INTERVAL '10 minutes')`,
+          [job_id, u]
+        );
+      }
+
+      console.log("[public_book] urgent_offers", { job_id, booking_code, count: availablePartners.length });
+    }
+
 
     // 3) บันทึกรายการ (ถ้ามี)
     for (const it of computedItems) {
@@ -3815,47 +3689,10 @@ app.post("/public/book", async (req, res) => {
       );
     }
 
-    // 4) ถ้าเป็น urgent: สร้าง offer ไปยังช่าง partner ที่ว่างจริง
-    if (bmode === "urgent") {
-      const offerTargets = avail.available_tech_ids.slice(0, 20); // จำกัดกันพัง
-      for (const u of offerTargets) {
-        await client.query(
-          `
-          INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
-          VALUES ($1,$2,'pending', NOW() + INTERVAL '10 minutes')
-          ON CONFLICT DO NOTHING
-          `,
-          [job_id, u]
-        );
-        // แจ้งเตือน (best-effort)
-        notifyTechnician(u, `มีงานด่วนใหม่รอรับ (เลขงาน ${booking_code}) เวลา ${formatBangkokDateTime(appointment_dt)} กรุณากดยืนยันรับ/ปฏิเสธในแอพ`).catch(() => {});
-      }
-    }
-
     await client.query("COMMIT");
 
-    console.log("[public_book]", {
-      job_id,
-      booking_code,
-      booking_mode: bmode,
-      tech_type,
-      duration_min,
-      effective_block_min,
-      slot: { date: dateStr, start: startHHMM },
-      items: computedItems.length,
-    });
-
-    res.json({
-      success: true,
-      job_id,
-      booking_code,
-      token: r.rows[0].booking_token,
-      booking_mode: bmode,
-      status: bmode === "urgent" ? "pending_accept" : "scheduled",
-      duration_min,
-      effective_block_min,
-      travel_buffer_min: TRAVEL_BUFFER_MIN,
-    });
+    console.log('[public_book]', { job_id, booking_code, booking_mode: bm, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2) });
+    res.json({ success: true, job_id, booking_code, token: r.rows[0].booking_token, booking_mode: bm, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2), travel_buffer_min: TRAVEL_BUFFER_MIN });
   } catch (e) {
     await client.query("ROLLBACK");
     console.error(e);

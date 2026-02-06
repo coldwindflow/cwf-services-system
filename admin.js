@@ -1338,3 +1338,61 @@ window.addEventListener("load", () => {
   }
 })();
 
+
+
+// =======================================
+// 📅 Admin Availability v2 viewer
+// =======================================
+async function adminLoadAvailabilityV2(){
+  const API = window.location.origin;
+  const date = document.getElementById("av2_date")?.value;
+  const tech_type = document.getElementById("av2_tech_type")?.value || "company";
+  const duration_min = Number(document.getElementById("av2_duration")?.value || 60);
+  const box = document.getElementById("av2_result");
+  if(!date) { alert("เลือกวันที่ก่อน"); return; }
+  if(!box) return;
+
+  box.textContent = "กำลังโหลด...";
+
+  try{
+    const url = `${API}/public/availability_v2?date=${encodeURIComponent(date)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`;
+    const r = await fetch(url);
+    const data = await r.json().catch(()=> ({}));
+    if(!r.ok) throw new Error(data.error || "โหลดไม่สำเร็จ");
+
+    const slots = Array.isArray(data.slots) ? data.slots : [];
+    if(!slots.length){ box.textContent = "ไม่พบช่วงเวลา"; return; }
+
+    const html = slots.map(s=>{
+      const ok = s.available;
+      return `<tr>
+        <td>${s.start}</td>
+        <td>${s.end}</td>
+        <td>${ok ? "ว่าง" : "เต็ม"}</td>
+        <td class="muted">${(s.available_tech_ids||[]).slice(0,6).join(", ")}${(s.available_tech_ids||[]).length>6?"…":""}</td>
+      </tr>`;
+    }).join("");
+
+    box.innerHTML = `
+      <div class="muted">กลุ่มช่าง: <b>${data.tech_type}</b> | ช่าง: ${data.tech_count} | กันชน: ${data.travel_buffer_min} นาที | block: ${data.effective_block_min} นาที</div>
+      <div style="overflow:auto;margin-top:8px;">
+        <table class="table" style="min-width:520px;">
+          <thead><tr><th>เริ่ม</th><th>จบ (รวมกันชน)</th><th>สถานะ</th><th>ช่างที่ว่าง (บางส่วน)</th></tr></thead>
+          <tbody>${html}</tbody>
+        </table>
+      </div>
+    `;
+  }catch(e){
+    console.error(e);
+    box.textContent = "❌ โหลดคิวว่างไม่สำเร็จ";
+  }
+}
+
+// default date = today
+document.addEventListener("DOMContentLoaded", ()=>{
+  const d = document.getElementById("av2_date");
+  if(d && !d.value){
+    const now = new Date();
+    d.value = now.toISOString().slice(0,10);
+  }
+});
