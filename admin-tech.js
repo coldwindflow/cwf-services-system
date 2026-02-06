@@ -291,6 +291,24 @@ async function loadTechnicians() {
 
           <div class="grid2" style="margin-top:10px;">
             <div>
+              <label>ประเภทช่าง</label>
+              <select id="tech_emp_${esc(t.username)}">
+                <option value="company">ช่างบริษัท</option>
+                <option value="partner">ช่างพาร์ทเนอร์</option>
+              </select>
+            </div>
+            <div>
+              <label>เวลาทำงานมาตรฐาน</label>
+              <div style="display:flex;gap:8px;">
+                <input id="tech_ws_${esc(t.username)}" value="${esc(t.work_start || '09:00')}" placeholder="09:00">
+                <input id="tech_we_${esc(t.username)}" value="${esc(t.work_end || '18:00')}" placeholder="18:00">
+              </div>
+              <div class="muted" style="margin-top:4px;">* ใช้ใน availability_v2 และปฏิทินคิว</div>
+            </div>
+          </div>
+
+          <div class="grid2" style="margin-top:10px;">
+            <div>
               <label>ตั้งรหัสผ่านใหม่ (แอดมิน)</label>
               <input id="tech_pwd_${esc(t.username)}" type="password" placeholder="เว้นว่าง = ไม่เปลี่ยน">
             </div>
@@ -316,6 +334,9 @@ async function loadTechnicians() {
     list.forEach((t) => {
       const selRank = document.getElementById(`tech_rank_${t.username}`);
       if (selRank) selRank.value = String(t.rank_level || 1);
+
+      const selEmp = document.getElementById(`tech_emp_${t.username}`);
+      if (selEmp) selEmp.value = String(t.employment_type || 'company');
     });
 
   } catch (e) {
@@ -373,6 +394,9 @@ async function saveTech(username) {
   const full_name = (document.getElementById(`tech_name_${username}`)?.value || "").trim();
   const technician_code = (document.getElementById(`tech_code_${username}`)?.value || "").trim();
   const phone = (document.getElementById(`tech_phone_${username}`)?.value || "").trim();
+  const employment_type = (document.getElementById(`tech_emp_${username}`)?.value || 'company').trim();
+  const work_start = (document.getElementById(`tech_ws_${username}`)?.value || '09:00').trim();
+  const work_end = (document.getElementById(`tech_we_${username}`)?.value || '18:00').trim();
   const new_password = (document.getElementById(`tech_pwd_${username}`)?.value || "");
   const confirm_password = (document.getElementById(`tech_pwd2_${username}`)?.value || "");
 
@@ -386,7 +410,7 @@ async function saveTech(username) {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       // NOTE: position เดิมยกเลิกใช้แล้ว
-      body: JSON.stringify({ full_name, technician_code, phone, new_password, confirm_password })
+      body: JSON.stringify({ full_name, technician_code, phone, employment_type, work_start, work_end, new_password, confirm_password })
     });
 
     alert("✅ บันทึกแล้ว");

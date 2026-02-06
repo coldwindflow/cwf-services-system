@@ -39,6 +39,9 @@ const FLAG_SHOW_TECH_PHONE_ON_TRACKING = envBool("SHOW_TECH_PHONE_ON_TRACKING", 
 
 const ENABLE_AVAILABILITY_V2 = envBool("ENABLE_AVAILABILITY_V2", true);
 const TRAVEL_BUFFER_MIN = Math.max(0, Number(process.env.TRAVEL_BUFFER_MIN || 30)); // นาที/งาน (Travel Buffer)
+// ✅ จำกัดจำนวนทีม/ช่างที่ “แสดง” ต่อสล็อต (กัน UI หนัก + กันดูรก)
+// NOTE: ใช้เพื่อจำกัดผลลัพธ์ใน response เท่านั้น (ไม่เพิ่มจำนวนช่างปลอม)
+const MAX_DISPLAY_TEAMS = Math.max(1, Math.min(30, Number(process.env.MAX_DISPLAY_TEAMS || 30)));
 
 
 // ==============================
@@ -226,6 +229,9 @@ async function requireAdminForRank(req, res, next) {
     return res.status(500).json({ error: "AUTH_FAILED" });
   }
 }
+
+// ✅ ใช้ guard เดียวกันกับ endpoint admin อื่น ๆ (ไม่เพิ่มระบบ auth ใหม่)
+const requireAdmin = requireAdminForRank;
 
 // =======================================
 // 🔎 Health / Version (ใช้เช็คว่า deploy ล่าสุดจริง)
@@ -2766,7 +2772,10 @@ app.get("/admin/technicians", async (req, res) => {
       `SELECT u.username,
               p.full_name, p.technician_code, p.position, p.rank_level, p.rank_key, p.photo_path, p.phone,
               p.rating, p.grade, p.done_count,
-              COALESCE(p.accept_status,'ready') AS accept_status, p.accept_status_updated_at
+              COALESCE(p.accept_status,'ready') AS accept_status, p.accept_status_updated_at,
+              COALESCE(p.employment_type,'company') AS employment_type,
+              COALESCE(p.work_start,'09:00') AS work_start,
+              COALESCE(p.work_end,'18:00') AS work_end
        FROM public.users u
        LEFT JOIN public.technician_profiles p ON p.username=u.username
        WHERE u.role='technician'
@@ -2786,6 +2795,9 @@ app.put("/admin/technicians/:username", async (req, res) => {
     const full_name = (req.body.full_name || "").trim();
     const position = (req.body.position || "").trim() || null; // ✅ ไม่ส่ง = ไม่ทับ
     const phoneRaw = (req.body.phone ?? "").toString().trim();
+    const employment_type_raw = (req.body.employment_type ?? "").toString().trim().toLowerCase();
+    const work_start_raw = (req.body.work_start ?? "").toString().trim();
+    const work_end_raw = (req.body.work_end ?? "").toString().trim();
     const newPassword = (req.body.new_password ?? "").toString();
     const confirmPassword = (req.body.confirm_password ?? "").toString();
 
@@ -2795,17 +2807,34 @@ app.put("/admin/technicians/:username", async (req, res) => {
       return res.status(400).json({ error: "รูปแบบเบอร์โทรไม่ถูกต้อง" });
     }
 
+    // ✅ employment_type (company|partner) + work hours (HH:MM)
+    let employment_type = null;
+    if (employment_type_raw) {
+      if (!['company','partner'].includes(employment_type_raw)) {
+        return res.status(400).json({ error: "employment_type ต้องเป็น company หรือ partner" });
+      }
+      employment_type = employment_type_raw;
+    }
+    function isHHMM(s){ return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(s||'')); }
+    const work_start = work_start_raw ? (isHHMM(work_start_raw) ? work_start_raw : null) : undefined;
+    const work_end = work_end_raw ? (isHHMM(work_end_raw) ? work_end_raw : null) : undefined;
+    if (work_start_raw && work_start === null) return res.status(400).json({ error: "work_start ต้องเป็น HH:MM" });
+    if (work_end_raw && work_end === null) return res.status(400).json({ error: "work_end ต้องเป็น HH:MM" });
+
     // profile
     await pool.query(
-      `INSERT INTO public.technician_profiles (username, technician_code, full_name, position, phone)
-       VALUES ($1,$2,$3,$4,$5)
+      `INSERT INTO public.technician_profiles (username, technician_code, full_name, position, phone, employment_type, work_start, work_end)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
        ON CONFLICT (username) DO UPDATE SET
          technician_code = EXCLUDED.technician_code,
          full_name = COALESCE(EXCLUDED.full_name, public.technician_profiles.full_name),
          position = COALESCE(EXCLUDED.position, public.technician_profiles.position),
          phone = COALESCE(EXCLUDED.phone, public.technician_profiles.phone),
+         employment_type = COALESCE(EXCLUDED.employment_type, public.technician_profiles.employment_type),
+         work_start = COALESCE(EXCLUDED.work_start, public.technician_profiles.work_start),
+         work_end = COALESCE(EXCLUDED.work_end, public.technician_profiles.work_end),
          updated_at = CURRENT_TIMESTAMP`,
-      [username, technician_code, full_name || null, position, phoneRaw || null]
+      [username, technician_code, full_name || null, position, phoneRaw || null, employment_type, work_start ?? null, work_end ?? null]
     );
 
     // password (optional)
@@ -3358,6 +3387,17 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && bStart < aEnd;
 }
 
+// ✅ shuffle เพื่อกระจายรายชื่อช่างใน UI (ไม่เพิ่มจำนวนช่างปลอม)
+function shuffleInPlace(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = arr[i];
+    arr[i] = arr[j];
+    arr[j] = tmp;
+  }
+  return arr;
+}
+
 async function isTechFree(username, startIso, durationMin, ignoreJobId) {
   const start = new Date(startIso);
   const dateStr = start.toISOString().slice(0, 10);
@@ -3430,11 +3470,16 @@ app.get("/public/availability_v2", async (req, res) => {
         if (free) available_tech_ids.push(tech.username);
       }
 
+      // ✅ จำกัดการแสดงผลไม่เกิน MAX_DISPLAY_TEAMS และ shuffle ให้กระจาย
+      shuffleInPlace(available_tech_ids);
+      const display_tech_ids = available_tech_ids.slice(0, MAX_DISPLAY_TEAMS);
+
       slots.push({
         start: startHHMM,
         end: endHHMM,
         available: available_tech_ids.length > 0,
-        available_tech_ids,
+        available_tech_ids: display_tech_ids,
+        available_tech_count: available_tech_ids.length,
       });
     }
 
@@ -3455,6 +3500,237 @@ app.get("/public/availability_v2", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "โหลดตารางว่างไม่สำเร็จ" });
+  }
+});
+
+// =======================================
+// 🗓️ Admin Schedule v2 (ปฏิทิน/ตารางงานรายวัน)
+// - ใช้เพื่อแสดงผลในหน้า admin ให้ดูง่าย (ไม่กระทบ endpoint เดิม)
+// =======================================
+app.get("/admin/schedule_v2", requireAdmin, async (req, res) => {
+  const date = (req.query.date || new Date().toISOString().slice(0, 10)).toString();
+  const tech_type = (req.query.tech_type || "company").toString().trim().toLowerCase();
+
+  try {
+    const techs = await listTechniciansByType(tech_type);
+    const usernames = (techs || []).map(t => t.username);
+
+    let jobs = [];
+    if (usernames.length) {
+      const r = await pool.query(
+        `
+        SELECT j.job_id, j.booking_code, j.customer_name, j.customer_phone,
+               j.job_type, j.appointment_datetime, COALESCE(j.duration_min,60) AS duration_min,
+               j.job_status, COALESCE(j.booking_mode,'scheduled') AS booking_mode,
+               j.job_price, j.technician_username
+        FROM public.jobs j
+        WHERE j.appointment_datetime::date = $1::date
+          AND j.job_status <> 'ยกเลิก'
+          AND j.technician_username = ANY($2::text[])
+        ORDER BY j.appointment_datetime ASC
+        `,
+        [date, usernames]
+      );
+      jobs = r.rows || [];
+    }
+
+    // helper: bangkok HH:MM
+    const hhmm = (d) => {
+      const dt = new Date(d);
+      return dt.toLocaleTimeString('en-GB', { timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false });
+    };
+
+    const jobsByTech = {};
+    for (const u of usernames) jobsByTech[u] = [];
+    for (const j of jobs) {
+      const st = hhmm(j.appointment_datetime);
+      const end = minToHHMM(toMin(st) + effectiveBlockMin(j.duration_min));
+      jobsByTech[j.technician_username] = jobsByTech[j.technician_username] || [];
+      jobsByTech[j.technician_username].push({
+        job_id: j.job_id,
+        booking_code: j.booking_code,
+        customer_name: j.customer_name,
+        customer_phone: j.customer_phone,
+        job_type: j.job_type,
+        job_status: j.job_status,
+        booking_mode: j.booking_mode,
+        start: st,
+        end,
+        duration_min: Number(j.duration_min || 60),
+        effective_block_min: effectiveBlockMin(j.duration_min),
+        job_price: Number(j.job_price || 0),
+      });
+    }
+
+    console.log('[admin_schedule_v2]', { by: req?.auth?.username, date, tech_type, tech_count: usernames.length, jobs: jobs.length });
+
+    res.json({
+      date,
+      tech_type,
+      work_start: techs[0]?.work_start || '09:00',
+      work_end: techs[0]?.work_end || '18:00',
+      travel_buffer_min: TRAVEL_BUFFER_MIN,
+      tech_count: usernames.length,
+      technicians: techs.map(t => ({ username: t.username, work_start: t.work_start, work_end: t.work_end })),
+      jobs_by_tech: jobsByTech,
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'โหลดตารางงานไม่สำเร็จ' });
+  }
+});
+
+// =======================================
+// ➕ Admin Book v2 (flow เหมือน customer แต่แอดมิน override ได้ + เลือก company/partner)
+// - ไม่ลบ POST /jobs เดิม (กัน regression)
+// =======================================
+app.post('/admin/book_v2', requireAdmin, async (req, res) => {
+  const {
+    customer_name,
+    customer_phone,
+    job_type,
+    appointment_datetime,
+    address_text,
+    customer_note,
+    maps_url,
+    job_zone,
+    // v2 flow
+    ac_type,
+    btu,
+    machine_count,
+    wash_variant,
+    repair_variant,
+    // admin controls
+    tech_type,
+    technician_username,
+    dispatch_mode,
+    booking_mode,
+    override_duration_min,
+    override_price,
+  } = req.body || {};
+
+  if (!customer_name || !job_type || !appointment_datetime || !address_text) {
+    return res.status(400).json({ error: 'กรอกข้อมูลไม่ครบ (ชื่อ/ประเภทงาน/วันนัด/ที่อยู่)' });
+  }
+
+  const bm = (booking_mode || 'scheduled').toString().trim().toLowerCase();
+  const dm = (dispatch_mode || 'forced').toString().trim().toLowerCase();
+  if (!['offer','forced'].includes(dm)) return res.status(400).json({ error: 'dispatch_mode ต้องเป็น offer หรือ forced' });
+  if (!['scheduled','urgent'].includes(bm)) return res.status(400).json({ error: 'booking_mode ต้องเป็น scheduled หรือ urgent' });
+
+  const payloadV2 = {
+    job_type: String(job_type).trim(),
+    ac_type: (ac_type || '').toString().trim(),
+    btu: Number(btu || 0),
+    machine_count: Number(machine_count || 1),
+    wash_variant: (wash_variant || '').toString().trim(),
+    repair_variant: (repair_variant || '').toString().trim(),
+    admin_override_duration_min: Math.max(0, Number(override_duration_min || 0)),
+  };
+
+  // duration
+  let duration_min = computeDurationMin(payloadV2, { source: 'admin_book_v2' });
+  if (Number(payloadV2.admin_override_duration_min || 0) > 0) duration_min = Math.round(Number(payloadV2.admin_override_duration_min));
+  if (!Number.isFinite(duration_min) || duration_min <= 0) {
+    return res.status(400).json({ error: 'งานประเภทนี้ต้องกำหนด duration_min (แอดมิน)' });
+  }
+
+  // price
+  let standard_price = computeStandardPrice(payloadV2);
+  const overridePriceNum = Number(override_price);
+  if (Number.isFinite(overridePriceNum) && overridePriceNum >= 0) standard_price = overridePriceNum;
+
+  // pick technician
+  const type = (tech_type || 'company').toString().trim().toLowerCase();
+  const techs = await listTechniciansByType(type);
+  const allowed = new Set((techs || []).map(t => t.username));
+
+  let chosen = technician_username ? String(technician_username).trim() : '';
+  if (chosen) {
+    if (!allowed.has(chosen)) return res.status(400).json({ error: 'technician_username ไม่อยู่ในกลุ่มช่างที่เลือก' });
+    const ok = await isTechFree(chosen, appointment_datetime, duration_min, null);
+    if (!ok) return res.status(409).json({ error: 'ช่างคนนี้คิวชน (รวม travel buffer)' });
+  } else {
+    // auto pick first free
+    for (const t of techs) {
+      const ok = await isTechFree(t.username, appointment_datetime, duration_min, null);
+      if (ok) { chosen = t.username; break; }
+    }
+    if (!chosen) return res.status(409).json({ error: 'ไม่มีช่างว่างในช่วงเวลานี้ (รวม travel buffer)' });
+  }
+
+  const token = genToken(12);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    // create job
+    const r = await client.query(
+      `
+      INSERT INTO public.jobs
+      (customer_name, customer_phone, job_type, appointment_datetime, job_price,
+       address_text, technician_team, technician_username, job_status,
+       booking_token, job_source, dispatch_mode, customer_note,
+       maps_url, job_zone, duration_min, booking_mode)
+      VALUES ($1,$2,$3,$4,$5,$6,NULL,$7,$11,$8,'admin',$9,$10,$12,$13,$14,$15)
+      RETURNING job_id, booking_token
+      `,
+      [
+        String(customer_name).trim(),
+        (customer_phone || '').toString().trim(),
+        String(job_type).trim(),
+        appointment_datetime,
+        Number(standard_price || 0),
+        String(address_text).trim(),
+        chosen,
+        token,
+        dm,
+        (customer_note || '').toString(),
+        (maps_url || '').toString(),
+        (job_zone || '').toString(),
+        'รอดำเนินการ',
+        duration_min,
+        (bm === 'urgent' ? 'urgent' : 'scheduled'),
+      ]
+    );
+
+    const job_id = r.rows[0].job_id;
+    const booking_code = await generateUniqueBookingCode(client);
+    await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
+
+    // standard service line -> job_items
+    if (Number(standard_price || 0) > 0) {
+      await client.query(
+        `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total)
+         VALUES ($1,NULL,$2,1,$3,$3)`,
+        [job_id, `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, Number(standard_price || 0)]
+      );
+    }
+
+    await client.query('COMMIT');
+
+    console.log('[admin_book_v2]', { by: req?.auth?.username, job_id, booking_code, tech_type: type, technician_username: chosen, duration_min, standard_price, dm, bm });
+
+    res.json({
+      success: true,
+      job_id,
+      booking_code,
+      token: r.rows[0].booking_token,
+      technician_username: chosen,
+      tech_type: type,
+      dispatch_mode: dm,
+      booking_mode: bm,
+      duration_min,
+      effective_block_min: effectiveBlockMin(duration_min),
+      travel_buffer_min: TRAVEL_BUFFER_MIN,
+      standard_price: Number(standard_price || 0),
+    });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message || 'เพิ่มงานไม่สำเร็จ' });
+  } finally {
+    client.release();
   }
 });
 

@@ -69,8 +69,144 @@
          ✅ หมายเหตุ: job_type ต้องตรง constraint ใน DB
          คือ "ล้าง" | "ซ่อม" | "ติดตั้ง" เท่านั้น
     =============================== -->
-    <div class="card section-card">
-    <h3>➕ เพิ่มงานใหม่</h3>
+    <div class="card section-card" id="adminBookV2">
+    <h3>🗓️ จองงาน (Admin v2) — Flow เหมือนลูกค้า 100%</h3>
+
+    <div class="muted" style="margin-top:6px;">
+      เลือกประเภทงาน → ประเภทแอร์ → BTU → จำนวนเครื่อง → ระบบคำนวณ <b>ราคา/เวลา</b> ให้ แล้วค่อยเลือกวันเวลา + ช่าง
+    </div>
+
+    <label style="margin-top:12px;">ประเภทงาน</label>
+    <select id="v2_job_type">
+      <option value="">-- เลือกประเภทงาน --</option>
+      <option value="ล้าง">ล้าง</option>
+      <option value="ซ่อม">ซ่อม</option>
+      <option value="ติดตั้ง">ติดตั้ง</option>
+    </select>
+
+    <div class="grid2" style="margin-top:10px;">
+      <div>
+        <label>ประเภทแอร์</label>
+        <select id="v2_ac_type">
+          <option value="ผนัง">ผนัง</option>
+          <option value="สี่ทิศทาง">สี่ทิศทาง</option>
+          <option value="แขวน">แขวน</option>
+          <option value="เปลือยใต้ฝ้า">เปลือยใต้ฝ้า</option>
+        </select>
+      </div>
+      <div>
+        <label>BTU</label>
+        <input id="v2_btu" type="number" min="0" step="1000" placeholder="เช่น 12000">
+      </div>
+    </div>
+
+    <div class="grid2" style="margin-top:10px;">
+      <div>
+        <label>จำนวนเครื่อง</label>
+        <input id="v2_machine_count" type="number" min="1" step="1" value="1">
+      </div>
+      <div>
+        <label>โหมดจอง</label>
+        <select id="v2_booking_mode">
+          <option value="scheduled">ปกติ (นัดแน่นอน)</option>
+          <option value="urgent">ลองยิงงานด่วน (รอช่างยืนยัน)</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="v2_variant_box" style="margin-top:10px;"></div>
+
+    <div class="card" style="margin-top:12px;background:#f8fafc;border:1px solid rgba(15,23,42,0.08);">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <b>💰 ราคา/เวลา (คำนวณอัตโนมัติ)</b>
+        <button type="button" class="secondary" style="width:auto;min-height:40px;padding:10px 12px;" onclick="adminV2Preview()">คำนวณ</button>
+      </div>
+      <div class="grid2" style="margin-top:10px;">
+        <div>
+          <div class="muted">ราคามาตรฐาน</div>
+          <div><b><span id="v2_price">-</span></b> บาท</div>
+        </div>
+        <div>
+          <div class="muted">เวลา (duration)</div>
+          <div><b><span id="v2_duration">-</span></b> นาที (+ buffer 30 นาที)</div>
+        </div>
+      </div>
+
+      <hr style="margin:12px 0;">
+
+      <div class="grid2">
+        <div>
+          <label>Override ราคา (แอดมิน)</label>
+          <input id="v2_override_price" type="number" min="0" step="1" placeholder="เว้นว่าง = ใช้มาตรฐาน">
+        </div>
+        <div>
+          <label>Override เวลา (นาที) (แอดมิน)</label>
+          <input id="v2_override_duration" type="number" min="0" step="5" placeholder="เว้นว่าง = ใช้ตามกติกา">
+        </div>
+      </div>
+      <div class="muted" style="margin-top:6px;">
+        * งานติดตั้ง/ซ่อมเปลี่ยนอะไหล่: ถ้าไม่ระบุ override ระบบจะไม่ให้จอง
+      </div>
+    </div>
+
+    <hr>
+
+    <h3 style="margin-top:10px;">👤 ข้อมูลลูกค้า</h3>
+    <input id="v2_customer_name" placeholder="ชื่อลูกค้า">
+    <input id="v2_customer_phone" placeholder="เบอร์โทร">
+    <input id="v2_address_text" placeholder="ที่อยู่">
+
+    <h3 style="margin-top:16px;">📍 พิกัดหน้างาน (GPS)</h3>
+    <input id="v2_maps_link" placeholder="วางลิงก์ Google Maps (ถ้ามี)">
+    <button type="button" onclick="adminV2ParseMapsLink()">แยกพิกัดจากลิงก์</button>
+    <div style="display:flex; gap:8px; margin-top:8px;">
+      <input id="v2_gps_latitude" placeholder="Latitude">
+      <input id="v2_gps_longitude" placeholder="Longitude">
+    </div>
+
+    <hr>
+
+    <h3 style="margin-top:10px;">📅 เลือกวันเวลา + ช่าง</h3>
+    <input id="v2_appointment_datetime" type="datetime-local">
+
+    <div class="grid2" style="margin-top:10px;">
+      <div>
+        <label>กลุ่มช่าง</label>
+        <select id="v2_tech_type">
+          <option value="company">ช่างบริษัท</option>
+          <option value="partner">ช่างพาร์ทเนอร์</option>
+        </select>
+      </div>
+      <div>
+        <label>รูปแบบส่งงาน</label>
+        <select id="v2_dispatch_mode">
+          <option value="forced">Forced (มอบหมายทันที)</option>
+          <option value="offer">Offer (ให้ช่างกดรับ)</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+      <button class="secondary" type="button" style="width:auto;" onclick="adminV2LoadSlots()">โหลดคิวว่าง (v2)</button>
+      <div class="muted" id="v2_slot_hint">คำนวณราคา/เวลา แล้วเลือกวันเวลา ก่อนโหลดคิวว่าง</div>
+    </div>
+    <div id="v2_slots" class="muted" style="margin-top:10px;">-</div>
+
+    <label style="margin-top:12px;">เลือกช่าง (ถ้าเว้นว่าง ระบบจะเลือกช่างว่างให้อัตโนมัติ)</label>
+    <select id="v2_technician_username">
+      <option value="">-- auto --</option>
+    </select>
+
+    <textarea id="v2_customer_note" rows="3" placeholder="หมายเหตุ (ถ้ามี)" style="width:100%;margin-top:10px;"></textarea>
+
+    <button style="margin-top:12px;" onclick="adminV2Book()">✅ จองงาน (Admin v2)</button>
+
+    <!-- ✅ Legacy UI ถูกซ่อนไว้ (กันงง) เปิดได้ด้วย ?legacy=1 -->
+    <div id="legacyAddJobContainer" style="display:none;margin-top:12px;">
+      <div class="card" style="background:#fff7ed;border:1px solid rgba(234,88,12,0.25);">
+        <b>🧩 โหมดเพิ่มงานแบบเก่า (legacy)</b>
+        <div class="muted" style="margin-top:6px;">* ซ่อนไว้เพื่อกันงง (เปิดด้วย ?legacy=1) — แนะนำให้ใช้ Admin v2 ด้านบน</div>
+      </div>
 
     <input id="customer_name" placeholder="ชื่อลูกค้า">
     <input id="customer_phone" placeholder="เบอร์โทร">
@@ -157,6 +293,10 @@
     =============================== -->
     <button onclick="addJob()">➕ เพิ่มงาน</button>
 
+    </div><!-- /legacyAddJobContainer -->
+
+    </div> <!-- legacyAddJobContainer -->
+
     </div>
 
     <hr>
@@ -210,19 +350,30 @@
     =============================== -->
     
     <div class="card" style="margin-top:12px;">
-      <h2>📅 ตารางคิวว่างช่าง (v2)</h2>
-      <div class="grid2">
-        <input id="av2_date" type="date">
-        <button type="button" class="secondary" onclick="adminLoadAvailabilityV2()">โหลดคิวว่าง</button>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <h2 style="margin:0;">🗓️ ปฏิทินคิวช่าง (v2)</h2>
+        <button type="button" class="secondary" style="width:auto;min-height:40px;padding:10px 12px;" onclick="adminLoadScheduleV2()">🔄 โหลดปฏิทิน</button>
       </div>
-      <div class="grid2" style="margin-top:8px;">
+
+      <div class="grid2" style="margin-top:10px;">
+        <input id="av2_date" type="date">
         <select id="av2_tech_type">
           <option value="company">ช่างบริษัท</option>
           <option value="partner">ช่างพาร์ทเนอร์</option>
         </select>
-        <input id="av2_duration" type="number" min="15" step="5" value="60" placeholder="duration_min">
       </div>
-      <div id="av2_result" class="muted" style="margin-top:10px;">เลือกวันแล้วกดโหลด</div>
+
+      <div class="muted" style="margin-top:8px;">แสดงงานที่มอบหมายแล้วแบบรายช่าง (คิด buffer 30 นาทีในช่วงบล็อก)</div>
+      <div id="admin_schedule" class="muted" style="margin-top:10px;">เลือกวันแล้วกดโหลด</div>
+
+      <details style="margin-top:12px;">
+        <summary style="font-weight:800;">ดู “คิวว่าง” แบบสล็อต (availability)</summary>
+        <div class="grid2" style="margin-top:10px;">
+          <input id="av2_duration" type="number" min="15" step="5" value="60" placeholder="duration_min">
+          <button type="button" class="secondary" onclick="adminLoadAvailabilityV2()">โหลดคิวว่าง</button>
+        </div>
+        <div id="av2_result" class="muted" style="margin-top:10px;">-</div>
+      </details>
     </div>
 
 <div class="card">

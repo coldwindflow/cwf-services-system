@@ -1395,4 +1395,314 @@ document.addEventListener("DOMContentLoaded", ()=>{
     const now = new Date();
     d.value = now.toISOString().slice(0,10);
   }
+
+  // ✅ Legacy add-job UI (ซ่อน default)
+  try{
+    const params = new URLSearchParams(location.search);
+    const showLegacy = params.get('legacy') === '1';
+    const legacyBox = document.getElementById('legacyAddJobContainer');
+    if (legacyBox) legacyBox.style.display = showLegacy ? 'block' : 'none';
+  }catch{}
+
+  // ✅ init admin booking v2 form
+  try{
+    const jt = document.getElementById('v2_job_type');
+    const ac = document.getElementById('v2_ac_type');
+    const mc = document.getElementById('v2_machine_count');
+    const btu = document.getElementById('v2_btu');
+    if (jt){ jt.addEventListener('change', adminV2RenderVariants); }
+    if (ac){ ac.addEventListener('change', ()=>{}); }
+    if (mc){ mc.addEventListener('change', ()=>{}); }
+    if (btu){ btu.addEventListener('change', ()=>{}); }
+    adminV2RenderVariants();
+  }catch{}
 });
+
+// =======================================
+// 🗓️ Admin Booking v2 (flow เหมือน customer)
+// =======================================
+
+function adminV2RenderVariants(){
+  const box = document.getElementById('v2_variant_box');
+  if (!box) return;
+  const job_type = (document.getElementById('v2_job_type')?.value || '').trim();
+  let html = '';
+
+  if (job_type === 'ล้าง') {
+    html += `
+      <label>รูปแบบล้าง</label>
+      <select id="v2_wash_variant">
+        <option value="ล้างธรรมดา">ล้างธรรมดา</option>
+        <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
+        <option value="ล้างแขวนคอยน์">ล้างแขวนคอยน์</option>
+        <option value="ล้างแบบตัดล้าง">ตัดล้างใหญ่</option>
+      </select>
+    `;
+  } else if (job_type === 'ซ่อม') {
+    html += `
+      <label>ประเภทงานซ่อม</label>
+      <select id="v2_repair_variant">
+        <option value="ตรวจเช็ค">ตรวจเช็ค</option>
+        <option value="ตรวจเช็ครั่ว">ตรวจเช็ครั่ว</option>
+        <option value="ซ่อมเปลี่ยนอะไหล่">ซ่อมเปลี่ยนอะไหล่ (กำหนดเวลาเอง)</option>
+      </select>
+    `;
+  } else if (job_type === 'ติดตั้ง') {
+    html += `
+      <div class="muted">งานติดตั้ง: ราคา/เวลาให้แอดมินกำหนด (override) ตามหน้างาน</div>
+    `;
+  } else {
+    html += `<div class="muted">กรุณาเลือกประเภทงานก่อน</div>`;
+  }
+  box.innerHTML = html;
+}
+
+function adminV2GetPayload(){
+  const job_type = (document.getElementById('v2_job_type')?.value || '').trim();
+  const ac_type = (document.getElementById('v2_ac_type')?.value || '').trim();
+  const btu = Number(document.getElementById('v2_btu')?.value || 0);
+  const machine_count = Number(document.getElementById('v2_machine_count')?.value || 1);
+  const wash_variant = (document.getElementById('v2_wash_variant')?.value || '').trim();
+  const repair_variant = (document.getElementById('v2_repair_variant')?.value || '').trim();
+  return { job_type, ac_type, btu, machine_count, wash_variant, repair_variant };
+}
+
+async function adminV2Preview(){
+  const p = adminV2GetPayload();
+  const overrideDuration = Number(document.getElementById('v2_override_duration')?.value || 0);
+  const overridePrice = document.getElementById('v2_override_price')?.value;
+  const overridePriceNum = overridePrice === '' ? NaN : Number(overridePrice);
+
+  const priceEl = document.getElementById('v2_price');
+  const durEl = document.getElementById('v2_duration');
+
+  // ถ้า admin override -> แสดงทันที
+  if (Number.isFinite(overrideDuration) && overrideDuration > 0) {
+    durEl.textContent = String(Math.round(overrideDuration));
+  }
+  if (Number.isFinite(overridePriceNum) && overridePriceNum >= 0) {
+    priceEl.textContent = String(Math.round(overridePriceNum));
+  }
+
+  // งานติดตั้ง / ซ่อมเปลี่ยนอะไหล่ -> ต้อง override duration
+  if (p.job_type === 'ติดตั้ง' || (p.job_type === 'ซ่อม' && p.repair_variant === 'ซ่อมเปลี่ยนอะไหล่')) {
+    if (!overrideDuration || overrideDuration <= 0) {
+      durEl.textContent = '-';
+    }
+    if (!Number.isFinite(overridePriceNum)) priceEl.textContent = '-';
+    return;
+  }
+
+  try{
+    const r = await fetch(`${API_BASE}/public/pricing_preview`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(p)
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j?.error || 'preview_failed');
+    if (!Number.isFinite(overridePriceNum)) priceEl.textContent = String(Math.round(j.standard_price || 0));
+    if (!(overrideDuration > 0)) durEl.textContent = String(Math.round(j.duration_min || 0));
+  }catch(e){
+    console.warn('adminV2Preview error', e);
+    if (!Number.isFinite(overridePriceNum)) priceEl.textContent = '-';
+    if (!(overrideDuration > 0)) durEl.textContent = '-';
+  }
+}
+
+function adminV2ParseMapsLink(){
+  const input = document.getElementById('v2_maps_link');
+  const latEl = document.getElementById('v2_gps_latitude');
+  const lngEl = document.getElementById('v2_gps_longitude');
+  const v = input?.value || '';
+  const parsed = parseLatLngFromMapsUrl(v);
+  if (!parsed) {
+    upsertGpsWarning(input, "ลิงก์นี้แยกพิกัดไม่ได้ (แนะนำลิงก์เต็มที่มี @lat,lng หรือวางพิกัดตรง ๆ)");
+    return;
+  }
+  latEl.value = String(parsed.lat);
+  lngEl.value = String(parsed.lng);
+  if (!isBangkokMetro(parsed.lat, parsed.lng)) {
+    upsertGpsWarning(input, "⚠️ พิกัดอยู่นอก กทม+ปริมณฑล (เตือนเท่านั้น ยังบันทึกได้)");
+  } else {
+    upsertGpsWarning(input, "✅ แยกพิกัดสำเร็จ", false);
+  }
+}
+
+async function adminV2LoadSlots(){
+  const dt = document.getElementById('v2_appointment_datetime')?.value;
+  const hint = document.getElementById('v2_slot_hint');
+  const out = document.getElementById('v2_slots');
+  const techType = (document.getElementById('v2_tech_type')?.value || 'company').trim();
+
+  const overrideDuration = Number(document.getElementById('v2_override_duration')?.value || 0);
+  let duration = overrideDuration > 0 ? Math.round(overrideDuration) : Number(document.getElementById('v2_duration')?.textContent || 0);
+  if (!duration || duration <= 0 || String(duration)==='NaN') {
+    hint.textContent = 'กรุณากดคำนวณ และต้องมี duration ก่อน';
+    out.textContent = '-';
+    return;
+  }
+
+  if (!dt) {
+    hint.textContent = 'กรุณาเลือกวันเวลา ก่อน';
+    out.textContent = '-';
+    return;
+  }
+
+  const date = String(dt).slice(0,10);
+  hint.textContent = 'กำลังโหลดคิวว่าง...';
+  out.textContent = 'กำลังโหลด...';
+
+  try{
+    const url = `${API_BASE}/public/availability_v2?date=${encodeURIComponent(date)}&tech_type=${encodeURIComponent(techType)}&duration_min=${encodeURIComponent(duration)}`;
+    const r = await fetch(url);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j?.error || 'availability_failed');
+
+    const slots = Array.isArray(j.slots) ? j.slots : [];
+    if (!slots.length) {
+      out.textContent = 'ไม่พบสล็อต';
+      hint.textContent = 'ไม่พบสล็อต';
+      return;
+    }
+
+    out.innerHTML = slots.map((s, idx)=>{
+      const dis = s.available ? '' : 'disabled';
+      const count = s.available_tech_count || (s.available_tech_ids||[]).length;
+      return `<button type="button" class="secondary" style="width:auto;min-height:40px;padding:10px 12px;margin:4px;" ${dis} onclick="adminV2PickSlot(${idx})">${s.start} - ${s.end} (${count} ช่างว่าง)</button>`;
+    }).join('');
+
+    window.__adminV2Slots = slots;
+    hint.textContent = `โหลดแล้ว: ${slots.length} สล็อต (travel buffer 30 นาทีถูกคิดใน end เวลา)`;
+    // preload technician dropdown from current slot (none)
+    const sel = document.getElementById('v2_technician_username');
+    if (sel) sel.innerHTML = '<option value="">-- auto --</option>';
+  }catch(e){
+    console.error(e);
+    out.textContent = 'โหลดคิวว่างไม่สำเร็จ';
+    hint.textContent = 'โหลดคิวว่างไม่สำเร็จ';
+  }
+}
+
+function adminV2PickSlot(idx){
+  const slots = window.__adminV2Slots || [];
+  const s = slots[idx];
+  if (!s) return;
+  const dtEl = document.getElementById('v2_appointment_datetime');
+  if (!dtEl || !dtEl.value) return;
+  const date = String(dtEl.value).slice(0,10);
+  dtEl.value = `${date}T${s.start}`;
+
+  const sel = document.getElementById('v2_technician_username');
+  const ids = Array.isArray(s.available_tech_ids) ? s.available_tech_ids : [];
+  if (sel) {
+    sel.innerHTML = '<option value="">-- auto --</option>' + ids.map(u=>`<option value="${u}">${u}</option>`).join('');
+  }
+}
+
+async function adminV2Book(){
+  const p = adminV2GetPayload();
+  const body = {
+    customer_name: (document.getElementById('v2_customer_name')?.value || '').trim(),
+    customer_phone: (document.getElementById('v2_customer_phone')?.value || '').trim(),
+    job_type: p.job_type,
+    appointment_datetime: document.getElementById('v2_appointment_datetime')?.value,
+    address_text: (document.getElementById('v2_address_text')?.value || '').trim(),
+    customer_note: (document.getElementById('v2_customer_note')?.value || '').trim(),
+    maps_url: (document.getElementById('v2_maps_link')?.value || '').trim(),
+    job_zone: '',
+
+    ac_type: p.ac_type,
+    btu: p.btu,
+    machine_count: p.machine_count,
+    wash_variant: p.wash_variant,
+    repair_variant: p.repair_variant,
+
+    tech_type: (document.getElementById('v2_tech_type')?.value || 'company').trim(),
+    technician_username: (document.getElementById('v2_technician_username')?.value || '').trim(),
+    dispatch_mode: (document.getElementById('v2_dispatch_mode')?.value || 'forced').trim(),
+    booking_mode: (document.getElementById('v2_booking_mode')?.value || 'scheduled').trim(),
+    override_duration_min: Number(document.getElementById('v2_override_duration')?.value || 0) || 0,
+    override_price: (document.getElementById('v2_override_price')?.value === '' ? undefined : Number(document.getElementById('v2_override_price')?.value || 0)),
+  };
+
+  if (!body.customer_name || !body.job_type || !body.appointment_datetime || !body.address_text) {
+    alert('กรอกข้อมูลไม่ครบ (ชื่อ/ประเภทงาน/วันนัด/ที่อยู่)');
+    return;
+  }
+
+  try{
+    const r = await fetch(`${API_BASE}/admin/book_v2`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(body)
+    });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j?.error || 'book_failed');
+    alert(`✅ สร้างงานสำเร็จ\nเลขงาน: ${j.booking_code || j.job_id}\nช่าง: ${j.technician_username}\nราคา: ${j.standard_price} บาท\nเวลา: ${j.duration_min} นาที`);
+    // refresh
+    try{ loadAllJobs(); }catch{}
+    try{ loadCustomerBookings(); }catch{}
+  }catch(e){
+    alert(`❌ ${e.message || 'จองงานไม่สำเร็จ'}`);
+  }
+}
+
+// =======================================
+// 🗓️ Admin Schedule v2 UI
+// =======================================
+async function adminLoadScheduleV2(){
+  const date = document.getElementById('av2_date')?.value;
+  const tech_type = document.getElementById('av2_tech_type')?.value || 'company';
+  const out = document.getElementById('admin_schedule');
+  if (!out) return;
+  if (!date){ out.textContent = 'กรุณาเลือกวัน'; return; }
+  out.textContent = 'กำลังโหลด...';
+  try{
+    const r = await fetch(`${API_BASE}/admin/schedule_v2?date=${encodeURIComponent(date)}&tech_type=${encodeURIComponent(tech_type)}`);
+    const j = await r.json();
+    if (!r.ok) throw new Error(j?.error || 'schedule_failed');
+
+    const techs = Array.isArray(j.technicians) ? j.technicians : [];
+    const jobsByTech = j.jobs_by_tech || {};
+
+    if (!techs.length) {
+      out.innerHTML = '<div class="muted">ไม่พบช่างในกลุ่มนี้</div>';
+      return;
+    }
+
+    const cards = techs.map(t=>{
+      const jobs = Array.isArray(jobsByTech[t.username]) ? jobsByTech[t.username] : [];
+      const body = jobs.length ? jobs.map(x=>{
+        return `
+          <div style="padding:10px 12px;border:1px solid rgba(15,23,42,0.08);border-radius:12px;margin-top:8px;">
+            <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+              <b>${x.start}–${x.end}</b>
+              <span class="muted">${x.job_status}${x.booking_mode==='urgent'?' • urgent':''}</span>
+            </div>
+            <div style="margin-top:4px;">${x.customer_name || '-'} • ${x.job_type} • <b>${x.job_price}</b> บาท</div>
+            <div class="muted" style="margin-top:2px;font-size:12px;">${x.booking_code || ('#'+x.job_id)}</div>
+          </div>
+        `;
+      }).join('') : '<div class="muted" style="margin-top:8px;">(ว่างทั้งวัน)</div>';
+
+      return `
+        <div class="card" style="margin-top:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+            <b>👷 ${t.username}</b>
+            <span class="muted">${t.work_start || '09:00'}-${t.work_end || '18:00'}</span>
+          </div>
+          ${body}
+        </div>
+      `;
+    }).join('');
+
+    out.innerHTML = `
+      <div class="muted">วัน: <b>${j.date}</b> • กลุ่ม: <b>${j.tech_type}</b> • ช่าง: <b>${j.tech_count}</b> • buffer: <b>${j.travel_buffer_min} นาที</b></div>
+      ${cards}
+    `;
+  }catch(e){
+    console.error(e);
+    out.textContent = 'โหลดปฏิทินไม่สำเร็จ';
+  }
+}
