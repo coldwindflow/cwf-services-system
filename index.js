@@ -1689,7 +1689,16 @@ if (coerceNumber(override_price, 0) > 0) {
       await client.query(
         `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [job_id, it.item_id || null, it.item_name, it.qty, it.unit_price, it.line_total]
+        [
+          job_id,
+          it.item_id || null,
+          it.item_name,
+          Number(it.qty || 0),
+          Number(it.unit_price || 0),
+          Number(it.line_total || 0),
+          (it.assigned_technician_username || null),
+          !!it.is_service,
+        ]
       );
     }
 

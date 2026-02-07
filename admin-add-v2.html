@@ -38,8 +38,10 @@
     .slot-btn.full{background:#f1f5f9;color:#64748b;border-color:rgba(11,75,179,0.14);box-shadow:none}
     .slot-btn.selected{background:#0b4bb3;color:#fff;border-color:rgba(255,204,0,0.7)}
     .slot-btn.disabled{opacity:0.45}
-    .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(11,75,179,0.18);border-radius:999px;padding:8px 10px;background:#f8fafc;font-weight:900;cursor:pointer}
-    .chip.active{background:#ffcc00;color:#0b1b3a;border-color:rgba(11,75,179,0.22)}
+    /* Tech chips: ensure readable text even when not selected */
+    .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(11,75,179,0.22);border-radius:999px;padding:8px 10px;background:#ffffff;color:#0b1b3a;font-weight:900;cursor:pointer;box-shadow:0 6px 14px rgba(2,6,23,0.06)}
+    .chip:hover{transform:translateY(-1px)}
+    .chip.active{background:#ffcc00;color:#0b1b3a;border-color:rgba(11,75,179,0.28)}
     .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:#0b4bb3;display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:999;border-top:1px solid rgba(15,23,42,0.08)}
     .nav-btn{flex:1;min-height:46px;border:1px solid rgba(255,255,255,0.22);background:rgba(255,255,255,0.08);color:#fff;border-radius:14px;font-weight:800;font-size:13px}
     .nav-btn.active{background:#ffcc00;color:#0b1b3a;border-color:rgba(11,75,179,0.2)}
@@ -244,6 +246,7 @@
         <div>
           <label>วันที่</label>
           <input id="appt_date" type="date">
+          <button class="secondary" type="button" id="btnLoadSlots" style="margin-top:8px;width:100%">โหลดคิวว่าง</button>
         </div>
         <div>
           <label>กลุ่มช่าง</label>
@@ -270,11 +273,7 @@
             <option value="forced">forced (ล็อคช่าง)</option>
             <option value="offer">offer (ยิงข้อเสนอ)</option>
           </select>
-          <div style="margin-top:8px;display:flex;align-items:center;gap:10px">
-            <input id="forced_lock" type="checkbox" checked />
-            <label for="forced_lock" style="margin:0">Forced (รวมช่างที่ยังไม่เปิดรับงาน)</label>
-          </div>
-          <div class="muted2 mini" id="forced_lock_help" style="margin-top:6px">* ใช้กับ “ล็อคช่าง” เท่านั้น • ถ้าเป็น offer จะต้องให้ช่างเปิดรับงานก่อน</div>
+          <div class="muted2 mini" id="dispatch_help" style="margin-top:6px">* โหมด “ล็อคช่าง” เพิ่มงานได้แม้ช่างยังไม่เปิดรับงาน • โหมด “ข้อเสนอ” จะส่งเฉพาะช่างที่เปิดรับงานเท่านั้น</div>
         </div>
       </div>
 
@@ -331,13 +330,29 @@
         </div>
       </div>
       <div class="grid2" style="margin-top:12px">
-        <button class="secondary" type="button" id="btnLoadSlots">โหลดคิวว่าง</button>
         <button class="secondary" type="button" id="btnAddSpecialSlot">+ เพิ่มสลอตพิเศษ</button>
+        <button class="secondary" type="button" id="btnScrollAssign">มอบหมายงานล้าง</button>
       </div>
       <div id="slots_box" style="margin-top:10px"></div>
 
       <input id="appointment_datetime" type="datetime-local" style="margin-top:10px" />
       <div class="muted2 mini" style="margin-top:6px">* เมื่อเลือกสล็อต ระบบจะใส่วันเวลาให้อัตโนมัติ</div>
+
+      <!-- Workload assignment (wash split) -->
+      <div id="wash_assign_card" class="card card-lite" style="margin-top:12px; display:none">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
+          <div>
+            <b>มอบหมายงานล้าง (แบ่งจำนวนเครื่องต่อช่าง)</b>
+            <div class="muted2 mini" id="wash_assign_sub" style="margin-top:6px">-</div>
+          </div>
+          <div class="pill" title="ทำร่วมกันทั้งหมด">
+            <input id="wash_all_together" type="checkbox" />
+            <span class="mini"><b>ทำร่วมกันทั้งหมด</b></span>
+          </div>
+        </div>
+        <div id="wash_assign_table" style="margin-top:10px"></div>
+        <input id="split_assignments_json" type="hidden" />
+      </div>
 
       <button class="primary" type="button" style="margin-top:12px" id="btnSubmit">บันทึกงาน</button>
     </div>

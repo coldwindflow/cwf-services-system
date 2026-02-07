@@ -130,16 +130,11 @@ function updateAssignUIVisibility(){
     if(inp) inp.disabled = disabled;
   }
 
-  // Forced checkbox visibility
+  // dispatch_mode help only (no checkbox)
   try {
     const dm = (el('dispatch_mode')?.value || 'forced').toString();
-    const cb = el('forced_lock');
-    const help2 = el('forced_lock_help');
-    if(cb) {
-      cb.disabled = (dm !== 'forced');
-      if(dm !== 'forced') cb.checked = false;
-    }
-    if(help2) help2.style.opacity = (dm !== 'forced') ? 0.55 : 1;
+    const help2 = el('dispatch_help');
+    if(help2) help2.style.opacity = (dm !== 'forced') ? 0.85 : 1;
   } catch(e){}
 }
 
@@ -529,6 +524,19 @@ function getServicesPayload(){
     if(!ln || !ln.ac_type || !ln.btu || !ln.machine_count) return;
     if(all.some(x=>sameServiceLine(x,ln))) return;
     const out = { ...ln };
+    // Attach wash allocations (per technician) if user assigned workload in selected slot
+    try {
+      const dm = (el('dispatch_mode')?.value || 'forced').toString();
+      const hasSlot = !!state.selected_slot_iso;
+      const together = !!el('wash_all_together')?.checked;
+      if(dm === 'forced' && hasSlot && !together){
+        const k = `${out.ac_type||''}|${Number(out.btu||0)}|${Number(out.machine_count||0)}|${out.wash_variant||''}`;
+        const row = state.wash_alloc && state.wash_alloc[k];
+        if(row && typeof row === 'object' && Object.keys(row).length){
+          out.allocations = row;
+        }
+      }
+    } catch(e){}
     // keep allocations if present (used by server-side duration & job_items split)
     if(out.allocations && typeof out.allocations !== 'object') out.allocations = null;
     delete out.allocations_key_fixed;
@@ -773,7 +781,8 @@ async function loadAvailability() {
   const duration_min = state.duration_min;
   try {
     const dispatchMode = (el('dispatch_mode')?.value || 'forced').toString();
-    const forced = (dispatchMode === 'forced') && !!el('forced_lock')?.checked;
+    // No UI toggle: forced is implied by dispatch_mode=forced (lock)
+    const forced = (dispatchMode === 'forced');
     const qs = new URLSearchParams({
       date,
       tech_type,
@@ -810,6 +819,171 @@ function getConstraintTechs(){
     return out;
   }
   return [];
+}
+
+// =============================
+// Wash workload assignment (split machine counts per technician)
+// - UI only; persisted in split_assignments_json and sent to /admin/book_v2
+// - Safe default: if not assigned, system treats as "ทำร่วมกันทั้งหมด" (no split)
+// =============================
+
+function getWorkloadTechs(){
+  // Workload assignment is for lock mode only (forced). Offer flow should not show this.
+  const dm = (el('dispatch_mode')?.value || 'forced').toString();
+  if(dm !== 'forced') return [];
+  return getConstraintTechs();
+}
+
+function getWashServicesForAssignment(){
+  const jt = (el('job_type')?.value || '').trim();
+  if(jt !== 'ล้าง') return [];
+  const services = getServicesPayload();
+  if(Array.isArray(services) && services.length) return services;
+  // fallback single service line
+  const p = getPayloadV2();
+  return [{ job_type: p.job_type, ac_type: p.ac_type, btu: p.btu, machine_count: p.machine_count, wash_variant: p.wash_variant }];
+}
+
+function serviceKey(s){
+  return `${s.ac_type||''}|${Number(s.btu||0)}|${Number(s.machine_count||0)}|${s.wash_variant||''}`;
+}
+
+function ensureDefaultAllocations(){
+  state.wash_alloc = state.wash_alloc || {}; // { [serviceKey]: { [tech]: qty } }
+  const techs = getWorkloadTechs();
+  const primary = (state.teamPicker.primary || '').trim();
+  const services = getWashServicesForAssignment();
+  for(const s of services){
+    const k = serviceKey(s);
+    if(!state.wash_alloc[k]) state.wash_alloc[k] = {};
+    const row = state.wash_alloc[k];
+    // clean unknown techs
+    for(const t of Object.keys(row)) if(!techs.includes(t)) delete row[t];
+    // default: put all qty to primary (team) or the only tech (single)
+    const total = Math.max(0, Number(s.machine_count||0));
+    const hasAny = Object.values(row).some(v=>Number(v)>0);
+    if(!hasAny && techs.length){
+      const target = primary && techs.includes(primary) ? primary : techs[0];
+      row[target] = total;
+    }
+  }
+}
+
+function buildSplitAssignmentsPayload(){
+  const techs = getWorkloadTechs();
+  const services = getWashServicesForAssignment();
+  const out = [];
+  if(!techs.length || !services.length) return out;
+  const alloc = state.wash_alloc || {};
+
+  for(const t of techs){
+    const a = [];
+    for(const s of services){
+      const k = serviceKey(s);
+      const qty = Math.max(0, Number(alloc?.[k]?.[t] || 0));
+      if(qty <= 0) continue;
+      a.push({
+        job_type: 'ล้าง',
+        ac_type: s.ac_type,
+        btu: Number(s.btu||0),
+        wash_variant: s.wash_variant || '',
+        qty
+      });
+    }
+    if(a.length) out.push({ technician_username: t, allocations: a });
+  }
+  return out;
+}
+
+function renderWashAssign(){
+  const card = el('wash_assign_card');
+  const table = el('wash_assign_table');
+  const sub = el('wash_assign_sub');
+  const tog = el('wash_all_together');
+  const hidden = el('split_assignments_json');
+  if(!card || !table || !sub || !tog || !hidden) return;
+
+  const dm = (el('dispatch_mode')?.value || 'forced').toString();
+  const jt = (el('job_type')?.value || '').trim();
+  const techs = getWorkloadTechs();
+  const services = getWashServicesForAssignment();
+  const hasSlot = !!state.selected_slot_iso;
+
+  if(dm !== 'forced' || jt !== 'ล้าง' || !hasSlot || !techs.length || !services.length){
+    card.style.display = 'none';
+    hidden.value = '';
+    return;
+  }
+
+  card.style.display = 'block';
+
+  const together = !!tog.checked;
+  if(together){
+    table.innerHTML = `<div class="muted2 mini">โหมดทำร่วมกัน: ทีมช่างจะถูกบล็อกเวลาร่วมกันตามเวลารวมของใบงาน (ไม่แบ่งจำนวนเครื่อง)</div>`;
+    hidden.value = '';
+    sub.textContent = `${state.selected_slot_iso.slice(0,10)} • ${state.selected_slot_iso.slice(11,16)} • ทีม ${techs.join(', ')}`;
+    return;
+  }
+
+  ensureDefaultAllocations();
+
+  // Build table
+  const head = `<div class="muted2 mini">แตะช่องแล้วปรับจำนวนเครื่องให้แต่ละช่าง • รวมต่อแถวต้องเท่ากับจำนวนเครื่อง</div>`;
+  let html = head;
+  html += `<div style="overflow-x:auto;margin-top:10px">
+    <table style="width:100%;border-collapse:separate;border-spacing:0 10px">
+      <thead>
+        <tr>
+          <th style="text-align:left;padding:6px 8px;color:#0b1b3a">รายการ</th>
+          ${techs.map(t=>`<th style="text-align:center;padding:6px 8px;color:#0b1b3a">${escapeHtml(t)}</th>`).join('')}
+          <th style="text-align:center;padding:6px 8px;color:#0b1b3a">รวม</th>
+        </tr>
+      </thead>
+      <tbody>
+  `;
+
+  for(const s of services){
+    const label = `${s.ac_type||'-'} • ${Number(s.btu||0)} BTU • ${Number(s.machine_count||0)} เครื่อง` + (s.ac_type==='ผนัง' ? ` • ${s.wash_variant||'ล้างธรรมดา'}` : '');
+    const k = serviceKey(s);
+    const row = state.wash_alloc[k] || {};
+    const total = Math.max(0, Number(s.machine_count||0));
+    const curSum = techs.reduce((sum,t)=>sum+Math.max(0,Number(row[t]||0)),0);
+    const ok = curSum === total;
+    html += `<tr>
+      <td style="padding:10px 8px;border:1px solid rgba(11,75,179,0.14);border-radius:14px;background:#ffffff">
+        <b>${escapeHtml(label)}</b>
+        <div class="muted2 mini" style="margin-top:4px">ต้องรวม = <b>${total}</b></div>
+      </td>
+      ${techs.map(t=>{
+        const v = Math.max(0,Number(row[t]||0));
+        return `<td style="padding:10px 8px;border:1px solid rgba(11,75,179,0.14);border-radius:14px;background:#ffffff;text-align:center">
+          <input data-alloc="1" data-skey="${escapeHtml(k)}" data-tech="${escapeHtml(t)}" type="number" min="0" step="1" value="${v}" style="width:82px;text-align:center;font-weight:900">
+        </td>`;
+      }).join('')}
+      <td style="padding:10px 8px;border:1px solid rgba(11,75,179,0.14);border-radius:14px;background:${ok ? '#fffbdd' : '#fff1f2'};text-align:center;font-weight:900;color:${ok ? '#0b1b3a' : '#991b1b'}">${curSum}/${total}</td>
+    </tr>`;
+  }
+
+  html += `</tbody></table></div>`;
+  table.innerHTML = html;
+
+  // bind inputs
+  table.querySelectorAll('input[data-alloc="1"]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const k = (inp.getAttribute('data-skey')||'');
+      const t = (inp.getAttribute('data-tech')||'');
+      const n = Math.max(0, Math.floor(Number(inp.value||0)));
+      state.wash_alloc = state.wash_alloc || {};
+      if(!state.wash_alloc[k]) state.wash_alloc[k] = {};
+      state.wash_alloc[k][t] = n;
+      // re-render to update sums (small table)
+      renderWashAssign();
+    });
+  });
+
+  const payload = buildSplitAssignmentsPayload();
+  hidden.value = payload.length ? JSON.stringify(payload) : '';
+  sub.textContent = `${state.selected_slot_iso.slice(0,10)} • ${state.selected_slot_iso.slice(11,16)} • ทีม ${techs.join(', ')}`;
 }
 
 function renderSlots() {
@@ -901,6 +1075,7 @@ function selectSlot(startHHMM){
   }
 
   renderSlots();
+  try { renderWashAssign(); } catch(e){}
 }
 
 // =============================
@@ -970,6 +1145,7 @@ function openSlotModal(slot){
         if(selected.has(u)) selected.delete(u); else selected.add(u);
         state.teamPicker.selected = new Set(Array.from(selected));
         renderSlots();
+        try { renderWashAssign(); } catch(e){}
         openSlotModal(slot);
       });
       wrap.appendChild(b);
@@ -982,6 +1158,7 @@ function openSlotModal(slot){
       getTeamMembersForPayload();
       renderTeamPicker(ids);
       renderSlots();
+      try { renderWashAssign(); } catch(e){}
     });
   } else {
     const cur = (el('technician_username_select')?.value || '').trim();
@@ -1001,6 +1178,7 @@ function openSlotModal(slot){
         if(el('technician_username_select')) el('technician_username_select').value = '';
         if(el('technician_username')) el('technician_username').value = '';
         renderSlots();
+        try { renderWashAssign(); } catch(e){}
         return;
       }
       el('assign_mode').value = 'single';
@@ -1009,6 +1187,7 @@ function openSlotModal(slot){
       if(el('technician_username_select')) el('technician_username_select').value = v;
       if(el('technician_username')) el('technician_username').value = v;
       renderSlots();
+      try { renderWashAssign(); } catch(e){}
     });
   }
 
@@ -1086,11 +1265,22 @@ async function submitBooking() {
       const mode = (el('assign_mode')?.value || 'auto').toString();
       return mode === 'team' ? getTeamMembersForPayload() : [];
     })(),
+    // wash split assignment (optional, lock mode only)
+    split_assignments: (()=>{
+      try {
+        const dm = (el('dispatch_mode')?.value || 'forced').toString();
+        if(dm !== 'forced') return null;
+        const raw = (el('split_assignments_json')?.value || '').trim();
+        if(!raw) return null;
+        const j = JSON.parse(raw);
+        return Array.isArray(j) ? j : null;
+      } catch(e){ return null; }
+    })(),
   });
 
   const services = getServicesPayload();
   if(services) payload.services = services;
-  // NOTE: per-line assignment/parallel is intentionally removed from Admin Add (v2 UI)
+  // NOTE: split_assignments is optional and backward compatible
 
   try {
     el("btnSubmit").disabled = true;
@@ -1149,11 +1339,17 @@ function wireEvents() {
   el("tech_type").addEventListener("change", async ()=>{ await loadTechsForType(); await loadAvailability(); });
   const dmEl = el('dispatch_mode');
   if(dmEl) dmEl.addEventListener('change', async ()=>{ updateAssignUIVisibility(); if(state.slots_loaded) await loadAvailability(); });
-  const forcedEl = el('forced_lock');
-  if(forcedEl) forcedEl.addEventListener('change', async ()=>{ if(state.slots_loaded) await loadAvailability(); });
   const btnSlots = el("btnLoadSlots"); if(btnSlots) btnSlots.addEventListener("click", loadAvailability);
   const btnSpecial = el("btnAddSpecialSlot"); if(btnSpecial) btnSpecial.addEventListener("click", addSpecialSlotV2);
-
+  const btnAssign = el('btnScrollAssign');
+  if(btnAssign) btnAssign.addEventListener('click', ()=>{
+    // ensure UI is up to date then scroll into view
+    try { renderWashAssign(); } catch(e){}
+    const card = el('wash_assign_card');
+    if(card){ card.style.display = (card.style.display==='none' ? 'block' : card.style.display); card.scrollIntoView({ behavior:'smooth', block:'start' }); }
+  });
+  const togTogether = el('wash_all_together');
+  if(togTogether) togTogether.addEventListener('change', ()=>{ try { renderWashAssign(); } catch(e){} });
 
 // auto parse lat/lng from maps url (fail-open)
 const llUpdate = () => {
@@ -1178,12 +1374,14 @@ if (copyBtn) copyBtn.addEventListener("click", async () => {
     const mode = (el('assign_mode')?.value || 'auto').toString();
     if(mode === 'team') syncPrimaryFromSelect();
     renderSlots();
+    try { renderWashAssign(); } catch(e){}
   });
 
   // assign mode
   el('assign_mode')?.addEventListener('change', ()=>{
     updateAssignUIVisibility();
     renderSlots();
+    try { renderWashAssign(); } catch(e){}
   });
 
   // team picker
