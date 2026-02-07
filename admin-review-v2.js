@@ -113,47 +113,112 @@ async function loadQueue(){
   }
 }
 
-function renderTechPickers(){
-  const techType = $("mTechType").value || "company";
-  const group = (TECHS||[]).filter(t => (t.employment_type||"company") === techType);
 
-  // primary select
-  const primarySel = $("mPrimaryTech");
-  primarySel.innerHTML = '<option value="">-- เลือกช่างหลัก --</option>' + group.map(t=>{
-    const name = t.full_name || t.username;
-    return `<option value="${t.username}">${safe(name)} (${t.username})</option>`;
-  }).join("");
+// --- Premium Team Picker: chips + search + primary badge ---
+const TEAM_STATE = { selected: new Set(), primary: "" };
 
-  if (CURRENT?.technician_username) primarySel.value = CURRENT.technician_username;
+function setPrimaryInModal(username){
+  const u = String(username||"").trim();
+  if(!u) return;
+  TEAM_STATE.primary = u;
+  TEAM_STATE.selected.add(u);
+  $("mPrimaryTech").value = u;
+  renderTeamPickerModal();
+}
 
-  // chips for team (checkbox list)
-  const q = safe($("mTeamSearch").value).toLowerCase();
-  const filtered = q ? group.filter(t => (safe(t.full_name)+safe(t.username)).toLowerCase().includes(q)) : group;
+function addTeamMemberModal(username){
+  const u = String(username||"").trim();
+  if(!u) return;
+  TEAM_STATE.selected.add(u);
+  if(!TEAM_STATE.primary){
+    setPrimaryInModal(u);
+    return;
+  }
+  renderTeamPickerModal();
+}
 
-  const selected = new Set((CURRENT?.team_members||[]).map(String));
-  const box = $("mTeamChips");
-  box.innerHTML = filtered.map(t=>{
-    const name = t.full_name || t.username;
-    const checked = selected.has(t.username) ? "checked" : "";
-    return `<label class="chip"><input type="checkbox" data-u="${t.username}" ${checked}/> ${safe(name)}</label>`;
-  }).join("") || '<div class="muted">ไม่มีช่างในกลุ่มนี้</div>';
-
-  ensurePrimaryInTeam();
+function removeTeamMemberModal(username){
+  const u = String(username||"").trim();
+  if(!u) return;
+  if(u === TEAM_STATE.primary) return; // must change primary first
+  TEAM_STATE.selected.delete(u);
+  renderTeamPickerModal();
 }
 
 function getSelectedTeam(){
-  const out = [];
-  document.querySelectorAll('#mTeamChips input[type="checkbox"]').forEach(ch=>{
-    if (ch.checked) out.push(ch.getAttribute("data-u"));
-  });
-  return [...new Set(out.filter(Boolean))];
+  // assistants only
+  const primary = TEAM_STATE.primary || $("mPrimaryTech").value;
+  return Array.from(TEAM_STATE.selected).filter(u=>u && u!==primary);
 }
 
 function ensurePrimaryInTeam(){
   const primary = $("mPrimaryTech").value;
-  if (!primary) return;
-  const box = document.querySelector(`#mTeamChips input[data-u="${primary}"]`);
-  if (box) box.checked = true;
+  if(!primary) return;
+  TEAM_STATE.primary = primary;
+  TEAM_STATE.selected.add(primary);
+}
+
+function renderTeamPickerModal(){
+  const techType = ($("mTechType").value || "company").toLowerCase();
+  const group = (TECHS||[]).filter(t => ((t.employment_type||"company").toLowerCase() === techType));
+
+  // primary select
+  const primarySel = $("mPrimaryTech");
+  const currentPrimary = primarySel.value || CURRENT?.technician_username || "";
+  primarySel.innerHTML = '<option value="">-- เลือกช่างหลัก --</option>' + group.map(t=>{
+    const name = t.full_name || t.username;
+    return `<option value="${t.username}">${safe(name)} (${t.username})</option>`;
+  }).join("");
+  primarySel.value = currentPrimary;
+
+  // build TEAM_STATE from CURRENT (assistants) + primary
+  TEAM_STATE.selected = new Set([...(CURRENT?.team_members||[]).map(String).filter(Boolean)]);
+  TEAM_STATE.primary = primarySel.value || "";
+  if(TEAM_STATE.primary) TEAM_STATE.selected.add(TEAM_STATE.primary);
+
+  const q = safe($("mTeamSearch").value).toLowerCase();
+  const suggestBox = $("mTeamSuggest");
+  const selectedBox = $("mTeamSelected");
+
+  const suggestions = group
+    .filter(t=>{
+      const key = (safe(t.full_name)+safe(t.username)).toLowerCase();
+      return (!q || key.includes(q)) && !TEAM_STATE.selected.has(t.username);
+    })
+    .slice(0, 30);
+
+  suggestBox.innerHTML = suggestions.map(t=>{
+    const name = t.full_name || t.username;
+    return `<button type="button" class="team-chip team-chip-add" data-u="${t.username}">+ ${safe(name)} (${t.username})</button>`;
+  }).join("") || `<div class="team-empty">ไม่พบช่าง</div>`;
+
+  const selected = Array.from(TEAM_STATE.selected).filter(Boolean);
+  selected.sort((a,b)=>{
+    if(a===TEAM_STATE.primary) return -1;
+    if(b===TEAM_STATE.primary) return 1;
+    return a.localeCompare(b);
+  });
+
+  selectedBox.innerHTML = selected.map(u=>{
+    const isPrimary = (u===TEAM_STATE.primary);
+    const t = group.find(x=>x.username===u);
+    const name = (t?.full_name || u);
+    if(isPrimary){
+      return `<div class="team-chip team-chip-primary"><span class="team-name">${safe(name)} (${u})</span><span class="team-badge">Primary</span></div>`;
+    }
+    return `<div class="team-chip"><span class="team-name">${safe(name)} (${u})</span>
+      <button type="button" class="team-action" data-act="primary" data-u="${u}">ตั้งเป็นหลัก</button>
+      <button type="button" class="team-x" data-act="remove" data-u="${u}">✕</button>
+    </div>`;
+  }).join("") || `<div class="team-empty">ยังไม่ได้เลือกช่างร่วม</div>`;
+
+  // keep hidden team list in CURRENT for later dispatch
+  CURRENT.team_members = getSelectedTeam();
+}
+
+// public wrapper called on tech type/search changes
+function renderTechPickers(){
+  renderTeamPickerModal();
 }
 
 function setModal(show){
@@ -398,6 +463,31 @@ async function cancelJob(){
   $("mTechType").addEventListener("change", renderTechPickers);
   $("mPrimaryTech").addEventListener("change", ensurePrimaryInTeam);
   $("mTeamSearch").addEventListener("input", renderTechPickers);
+
+  // team picker actions (delegate)
+  document.addEventListener("click", (e)=>{
+    const addBtn = e.target.closest(".team-chip-add");
+    if(addBtn){ addTeamMemberModal(addBtn.getAttribute("data-u")); return; }
+    const act = e.target.getAttribute("data-act");
+    if(act === "remove"){ removeTeamMemberModal(e.target.getAttribute("data-u")); return; }
+    if(act === "primary"){ setPrimaryInModal(e.target.getAttribute("data-u")); return; }
+  });
+
+  $("mPrimaryTech").addEventListener("change", ()=>{
+    ensurePrimaryInTeam();
+    renderTechPickers();
+  });
+
+
+  // team picker actions
+  document.addEventListener("click", (e)=>{
+    const addBtn = e.target.closest(".team-chip-add");
+    if(addBtn){ addTeamMemberModal(addBtn.getAttribute("data-u")); return; }
+    const act = e.target.getAttribute("data-act");
+    if(act === "remove"){ removeTeamMemberModal(e.target.getAttribute("data-u")); return; }
+    if(act === "primary"){ setPrimaryInModal(e.target.getAttribute("data-u")); return; }
+  });
+
   const llUpdate = ()=>{
     const ll = parseLatLngClient($("mMaps").value) || parseLatLngClient($("mAddress").value);
     if(!ll) return;

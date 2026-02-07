@@ -139,6 +139,105 @@ body{
   background: rgba(255,255,255,0.85);
 }
 
+
+/* =========================================================
+   Premium Team Picker (chips + search + primary badge)
+   - ใช้ได้ทั้ง admin-add-v2 และ admin-review-v2
+   ========================================================= */
+.team-picker{
+  margin-top: 8px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 10px;
+  background: rgba(255,255,255,0.82);
+  box-shadow: var(--shadow-2);
+}
+.team-picker input{
+  width:100%;
+  border: 1px solid rgba(15,23,42,0.14);
+  border-radius: 14px;
+  padding: 12px;
+  font-weight: 700;
+  outline: none;
+  background: rgba(255,255,255,0.95);
+}
+.team-suggest, .team-selected{
+  display:flex;
+  flex-wrap:wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+.team-divider{
+  height:1px;
+  background: rgba(15,23,42,0.08);
+  margin: 12px 0 6px 0;
+}
+.team-selected-title{
+  font-size: 12px;
+  font-weight: 900;
+  color: var(--muted);
+  letter-spacing: .2px;
+}
+.team-chip{
+  display:inline-flex;
+  align-items:center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(15,23,42,0.14);
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,0.96));
+  box-shadow: 0 4px 14px rgba(15,23,42,0.08);
+  font-weight: 900;
+  font-size: 12px;
+}
+.team-chip-add{
+  cursor: pointer;
+  border-color: rgba(37,99,235,0.20);
+  background: linear-gradient(180deg, rgba(37,99,235,0.10), rgba(255,255,255,0.95));
+}
+.team-chip-primary{
+  border-color: rgba(251,191,36,0.60);
+  background: linear-gradient(180deg, rgba(251,191,36,0.22), rgba(255,255,255,0.96));
+}
+.team-badge{
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(37,99,235,0.12);
+  border: 1px solid rgba(37,99,235,0.20);
+  color: #1d4ed8;
+  font-weight: 900;
+  font-size: 11px;
+}
+.team-chip-primary .team-badge{
+  background: rgba(251,191,36,0.35);
+  border-color: rgba(251,191,36,0.65);
+  color: #7c2d12;
+}
+.team-action{
+  border: 1px solid rgba(37,99,235,0.20);
+  background: rgba(37,99,235,0.10);
+  color: #1d4ed8;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-weight: 900;
+  font-size: 11px;
+}
+.team-x{
+  border: 1px solid rgba(239,68,68,0.25);
+  background: rgba(239,68,68,0.10);
+  color: #b91c1c;
+  border-radius: 999px;
+  padding: 6px 10px;
+  font-weight: 900;
+  font-size: 11px;
+}
+.team-empty{
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 12px;
+  padding: 6px 2px;
+}
+
 /* =========================================================
    🎨 Theme System (ต่อยอด ไม่กระทบของเดิม)
    - theme-1: เดิม (ไม่มี class ก็ได้)

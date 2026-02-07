@@ -201,17 +201,19 @@
           </select>
         </div>
       </div>
-      
         <div>
-          <label>ช่างร่วม (หลายคน)</label>
-          <div class="team-help">เลือกช่างร่วมได้หลายคน (กดค้างเพื่อเลือกหลายรายการ)</div>
-          <select id="team_members_select" class="select-multi" multiple size="6"></select>
+          <label>ทีมช่าง (ช่างร่วม) • เลือกหลายคน</label>
+          <div class="team-help">พิมพ์ค้นหา แล้วแตะเพื่อเพิ่มเป็นทีม • ตั้ง “ช่างหลัก” ได้ด้วยป้าย Primary</div>
+          <div class="team-picker">
+            <input id="team_search" placeholder="ค้นหาช่างร่วม..." autocomplete="off">
+            <div class="team-suggest" id="team_suggest"></div>
+            <div class="team-divider"></div>
+            <div class="team-selected-title">เลือกแล้ว</div>
+            <div class="team-selected" id="team_selected"></div>
+          </div>
           <input id="team_members_csv" type="hidden" />
         </div>
-
-
-
-      <button class="secondary" type="button" style="margin-top:12px" id="btnLoadSlots">โหลดคิวว่าง</button>
+<button class="secondary" type="button" style="margin-top:12px" id="btnLoadSlots">โหลดคิวว่าง</button>
       <div id="slots_box" style="margin-top:10px"></div>
 
       <input id="appointment_datetime" type="datetime-local" style="margin-top:10px" />

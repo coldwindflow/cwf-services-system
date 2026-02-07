@@ -130,8 +130,15 @@
             </select>
           </div>
           <div class="muted" style="margin-top:8px">* ถ้าเลือกหลายคน ให้ติ๊ก “ช่างร่วม” ด้านล่าง ระบบจะเช็คชนคิวของทุกคน (รวม buffer)</div>
-          <input id="mTeamSearch" placeholder="ค้นหาชื่อช่าง..." style="margin-top:10px">
-          <div class="chips" id="mTeamChips" style="margin-top:8px"></div>
+          
+          <input id="mTeamSearch" placeholder="ค้นหาชื่อช่าง..." style="margin-top:10px" autocomplete="off">
+          <div class="team-picker" style="margin-top:8px">
+            <div class="team-suggest" id="mTeamSuggest"></div>
+            <div class="team-divider"></div>
+            <div class="team-selected-title">ทีมที่เลือก</div>
+            <div class="team-selected" id="mTeamSelected"></div>
+          </div>
+
         </div>
 
         <div class="card" style="padding:12px;background:#fff;border-radius:16px;border:1px solid rgba(15,23,42,0.10)">

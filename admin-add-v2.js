@@ -41,12 +41,12 @@ async function loadTechsForType(){
       work_end: r.work_end||"18:00",
     }));
     renderTechSelect(); 
-    renderTeamSelect();
+    renderTeamPicker();
   }catch(e){
     console.warn("[admin-add-v2] loadTechsForType failed", e);
     state.techs = [];
     renderTechSelect();
-    renderTeamSelect();
+    renderTeamPicker();
   }
 }
 
@@ -72,22 +72,154 @@ function renderTechSelect(allowedIds=null){
   if(el("technician_username")) el("technician_username").value = sel.value || "";
 }
 
-function renderTeamSelect(){
-  const sel = document.getElementById("team_members_select");
-  if(!sel) return;
-  const chosen = new Set(getSelectedMulti("team_members_select"));
-  sel.innerHTML = "";
-  for(const t of state.techs){
-    const o = document.createElement("option");
-    o.value = t.username;
-    o.textContent = t.username;
-    if(chosen.has(t.username)) o.selected = true;
-    sel.appendChild(o);
+
+// --- Premium Team Picker (chips + search + primary badge) ---
+function escapeHtml(s){
+  return String(s||'').replace(/[&<>'"]/g, (c)=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
+}
+
+state.teamPicker = {
+  q: "",
+  selected: new Set(),   // includes primary too for display
+  primary: "",
+};
+
+function syncPrimaryFromSelect(){
+  const u = (el("technician_username_select")?.value || "").trim();
+  state.teamPicker.primary = u;
+  if (u) state.teamPicker.selected.add(u);
+  renderTeamPicker();
+}
+
+function setPrimary(username){
+  const u = String(username||"").trim();
+  if(!u) return;
+  state.teamPicker.primary = u;
+  state.teamPicker.selected.add(u);
+  // push to select (backward compatible)
+  const sel = el("technician_username_select");
+  if(sel){
+    sel.value = u;
+    if(el("technician_username")) el("technician_username").value = u;
   }
-  // sync hidden csv
-  const csv = getSelectedMulti("team_members_select").join(",");
+  renderTeamPicker();
+}
+
+function addTeamMember(username){
+  const u = String(username||"").trim();
+  if(!u) return;
+  state.teamPicker.selected.add(u);
+  // if no primary selected, set this one as primary for safety
+  if(!state.teamPicker.primary){
+    setPrimary(u);
+    return;
+  }
+  renderTeamPicker();
+}
+
+function removeTeamMember(username){
+  const u = String(username||"").trim();
+  if(!u) return;
+  // never remove primary (force user to change primary first)
+  if(u === state.teamPicker.primary) return;
+  state.teamPicker.selected.delete(u);
+  renderTeamPicker();
+}
+
+function getTeamMembersForPayload(){
+  // return assistants only (exclude primary)
+  const primary = state.teamPicker.primary;
+  const arr = Array.from(state.teamPicker.selected).filter(u=>u && u!==primary);
+  // sync hidden csv (optional)
   const csvEl = el("team_members_csv");
-  if(csvEl) csvEl.value = csv;
+  if(csvEl) csvEl.value = arr.join(",");
+  return arr;
+}
+
+function renderTeamPicker(allowedIds=null){
+  const suggestBox = document.getElementById("team_suggest");
+  const selectedBox = document.getElementById("team_selected");
+  const searchEl = document.getElementById("team_search");
+  if(!suggestBox || !selectedBox || !searchEl){
+    // fallback: keep old hidden csv in sync if elements missing
+    getTeamMembersForPayload();
+    return;
+  }
+
+  const techList = (allowedIds && allowedIds.length)
+    ? state.techs.filter(t=>allowedIds.includes(t.username))
+    : state.techs;
+
+  const q = (searchEl.value||"").trim().toLowerCase();
+  const primary = state.teamPicker.primary || (el("technician_username_select")?.value||"").trim();
+  if(primary){
+    state.teamPicker.primary = primary;
+    state.teamPicker.selected.add(primary);
+  }
+
+  // Suggestions: top 30 matches that are not selected
+  const suggestions = techList
+    .filter(t=>{
+      const key = (t.username||"").toLowerCase();
+      return (!q || key.includes(q)) && !state.teamPicker.selected.has(t.username);
+    })
+    .slice(0, 30);
+
+  suggestBox.innerHTML = suggestions.map(t=>{
+    return `<button type="button" class="team-chip team-chip-add" data-u="${t.username}">+ ${escapeHtml(t.username)}</button>`;
+  }).join("") || `<div class="team-empty">ไม่พบช่าง</div>`;
+
+  // Selected chips: show primary first, then others
+  const selected = Array.from(state.teamPicker.selected).filter(Boolean);
+  selected.sort((a,b)=>{
+    if(a===state.teamPicker.primary) return -1;
+    if(b===state.teamPicker.primary) return 1;
+    return a.localeCompare(b);
+  });
+
+  selectedBox.innerHTML = selected.map(u=>{
+    const isPrimary = (u===state.teamPicker.primary);
+    if(isPrimary){
+      return `
+        <div class="team-chip team-chip-primary" data-u="${u}">
+          <span class="team-name">${escapeHtml(u)}</span>
+          <span class="team-badge">Primary</span>
+        </div>`;
+    }
+    return `
+      <div class="team-chip" data-u="${u}">
+        <span class="team-name">${escapeHtml(u)}</span>
+        <button type="button" class="team-action" data-act="primary" data-u="${u}">ตั้งเป็นหลัก</button>
+        <button type="button" class="team-x" data-act="remove" data-u="${u}">✕</button>
+      </div>`;
+  }).join("") || `<div class="team-empty">ยังไม่ได้เลือกช่างร่วม</div>`;
+
+  // sync hidden csv for payload
+  getTeamMembersForPayload();
+}
+
+// delegate events once
+function wireTeamPickerEvents(){
+  const searchEl = document.getElementById("team_search");
+  if(searchEl){
+    searchEl.addEventListener("input", ()=>renderTeamPicker());
+  }
+  document.addEventListener("click", (e)=>{
+    const btn = e.target.closest(".team-chip-add");
+    if(btn){
+      addTeamMember(btn.getAttribute("data-u"));
+      return;
+    }
+    const act = e.target.getAttribute("data-act");
+    if(act === "remove"){
+      removeTeamMember(e.target.getAttribute("data-u"));
+      return;
+    }
+    if(act === "primary"){
+      setPrimary(e.target.getAttribute("data-u"));
+      return;
+    }
+  });
 }
 
 
@@ -480,7 +612,7 @@ async function submitBooking() {
     override_duration_min: el("override_duration_min").value || 0,
     gps_latitude: (el("gps_latitude")?.value || "").trim() || null,
     gps_longitude: (el("gps_longitude")?.value || "").trim() || null,
-    team_members: getSelectedMulti("team_members_select").filter(u=>u),
+    team_members: getTeamMembersForPayload(),
   });
 
   try {
@@ -550,9 +682,11 @@ if (copyBtn) copyBtn.addEventListener("click", async () => {
 });
   const selTech = el("technician_username_select");
   if(selTech) selTech.addEventListener("change", ()=>{ if(el("technician_username")) el("technician_username").value = selTech.value||""; });
-  const teamSel = el("team_members_select");
-  if(teamSel) teamSel.addEventListener("change", renderTeamSelect);
-  el("btnSubmit").addEventListener("click", submitBooking);
+    // team picker
+  wireTeamPickerEvents();
+  if(selTech) selTech.addEventListener("change", syncPrimaryFromSelect);
+  syncPrimaryFromSelect();
+el("btnSubmit").addEventListener("click", submitBooking);
 }
 
 async function init() {
