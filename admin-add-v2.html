@@ -20,7 +20,7 @@
     body.cwf-lux .secondary{border-color:rgba(255,204,0,0.65)}
 
     /* Extra bottom padding so fixed bottom-nav never covers last actions */
-    .app{padding-bottom:140px}
+    .app{padding-bottom:220px}
     .section-card{margin-top:12px}
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
     @media (max-width:420px){.grid2{grid-template-columns:1fr}}
@@ -218,15 +218,7 @@
             <button id="btnAddServiceLine" class="secondary" type="button" style="display:none" aria-label="เพิ่มรายการ">เพิ่มรายการ</button>
           </div>
         </div>
-        <div>
-          <!-- booking_mode moved to Section 4 (below tech group) to avoid duplicate/confusing dispatch controls -->
-          <label style="opacity:.6">โหมดจอง</label>
-          <select id="booking_mode" style="display:none">
-            <option value="scheduled">ปกติ (นัดแน่นอน)</option>
-            <option value="urgent">ลองยิงงานด่วน (รอช่างยืนยัน)</option>
-          </select>
-          <div class="muted2 mini">เลือกโหมดจองในหัวข้อ 4) เลือกคิวช่าง</div>
-        </div>
+        <!-- booking_mode UI moved to Section 4 only (reduce confusion) -->
       </div>
 <!-- MULTI-SERVICE (ล้างหลายประเภทในใบงานเดียว) -->
 <div id="multi_service_box" class="card card-lite" style="margin-top:12px; display:none;">
@@ -323,7 +315,7 @@
             <option value="scheduled">ปกติ (นัดแน่นอน)</option>
             <option value="urgent">ลองยิงงานด่วน (รอช่างยืนยัน)</option>
           </select>
-          <div class="muted2 mini" style="margin-top:6px">* ใช้งานจริง: ปกติ = ล็อคช่าง • ด่วน = ยิงข้อเสนอ (ต้องรอช่างยืนยัน)</div>
+          <div class="muted2 mini" style="margin-top:6px">ปกติ = นัดแน่นอน • ด่วน = ยิงข้อเสนอ (รอช่างยืนยัน)</div>
 
           <label style="margin-top:10px">วันที่</label>
           <input id="appt_date" type="date">
@@ -346,6 +338,11 @@
         </div>
         <div>
           <!-- dispatch_mode kept hidden for backward compatibility; derived from booking_mode_ui -->
+          <!-- booking_mode (scheduled/urgent) kept hidden for backward compatibility; derived from booking_mode_ui -->
+          <select id="booking_mode" style="display:none">
+            <option value="scheduled">scheduled</option>
+            <option value="urgent">urgent</option>
+          </select>
           <select id="dispatch_mode" style="display:none">
             <option value="forced">forced (ล็อคช่าง)</option>
             <option value="offer">offer (ยิงข้อเสนอ)</option>
@@ -433,7 +430,7 @@
       <div id="wash_assign_card" class="card card-lite" style="margin-top:12px; display:none">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap;">
           <div>
-            <b>มอบหมายงานล้าง (แบ่งจำนวนเครื่องต่อช่าง)</b>
+            <b>กำหนดงานให้ช่าง (แบ่งจำนวนงานต่อช่าง)</b>
             <div class="muted2 mini" id="wash_assign_sub" style="margin-top:6px">-</div>
           </div>
           <div class="pill" title="ทำร่วมกันทั้งหมด">
