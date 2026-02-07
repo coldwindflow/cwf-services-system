@@ -70,10 +70,15 @@
 
       <div class="grid2" style="margin-top:8px;">
         <input id="machine_count" type="number" min="1" step="1" value="1" placeholder="จำนวนเครื่อง">
-        <label style="display:flex;align-items:center;gap:8px;padding:10px 0;">
-          <input id="urgent_toggle" type="checkbox" style="transform:scale(1.2);">
-          <span>ลองยิงงานด่วน (รอช่างยืนยัน)</span>
-        </label>
+        <div class="card" style="padding:10px;border:1px solid rgba(15,23,42,0.10);">
+          <label style="display:flex;align-items:center;gap:10px;">
+            <input id="urgent_toggle" type="checkbox" style="transform:scale(1.2);">
+            <div>
+              <b>ลองยิงงานด่วน</b>
+              <div class="muted" style="margin-top:2px;">(ต้องรอช่างรับงาน — อาจรับหรือไม่รับก็ได้)</div>
+            </div>
+          </label>
+        </div>
       </div>
 
       <select id="wash_variant" style="margin-top:8px;display:none;">
@@ -92,6 +97,27 @@
       <div class="card" style="margin-top:12px;padding:12px;">
         <div>💰 <b>ค่าบริการมาตรฐาน:</b> <span id="standard_price">-</span> บาท</div>
         <div class="muted" style="margin-top:4px;">⏱️ เวลาโดยประมาณ: <span id="duration_min">-</span> นาที (รวมกันชนระบบอัตโนมัติ)</div>
+      </div>
+
+      <details class="card" style="margin-top:12px;padding:12px;">
+        <summary style="cursor:pointer;"><b>➕ เพิ่มบริการเสริม/สินค้า (ไม่บังคับ)</b></summary>
+        <div class="muted" style="margin-top:6px;">เลือกได้หลายรายการ (extras) — ระบบจะรวมราคาให้</div>
+        <div class="grid2" style="margin-top:10px;">
+          <select id="catalog_select_customer"></select>
+          <div style="display:flex;gap:8px;">
+            <input id="item_qty_customer" type="number" min="1" step="1" value="1" style="flex:1;" placeholder="จำนวน">
+            <button type="button" class="secondary" style="width:auto;min-height:44px;" onclick="addItemCustomer()">เพิ่ม</button>
+          </div>
+        </div>
+        <div id="items_preview_customer" style="margin-top:10px;" class="muted">ยังไม่มีรายการ</div>
+      </details>
+
+      <div class="card" style="margin-top:12px;padding:12px;">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+          <b>🎁 โปรโมชั่น</b>
+          <select id="promotion_select_customer" style="width:auto;min-width:220px;"></select>
+        </div>
+        <div class="muted" style="margin-top:6px;">* โปรโมชั่นที่ลูกค้าเห็นได้ จะถูกกำหนดโดยแอดมิน</div>
       </div>
 
       <input id="address_text" placeholder="ที่อยู่ (สำคัญ)">
@@ -113,6 +139,81 @@ const API = window.location.origin;
 let pickedTime = null;
 let standardPrice = 0;
 let durationMin = 60;
+
+// extras + promo (customer)
+let catalogItemsCustomer = [];
+let promotionsCustomer = [];
+let selectedItemsCustomer = []; // {item_id,item_name,qty,unit_price}
+
+function calcDiscount(subtotal, promo) {
+  if (!promo) return 0;
+  const v = Number(promo.promo_value || 0);
+  if (promo.promo_type === "percent") return subtotal * (Math.max(0, v) / 100);
+  if (promo.promo_type === "amount") return Math.max(0, v);
+  return 0;
+}
+
+function getSelectedPromoCustomer() {
+  const promoId = document.getElementById("promotion_select_customer")?.value || "";
+  return promotionsCustomer.find(p => String(p.promo_id) === String(promoId)) || null;
+}
+
+function recomputeGrandTotal() {
+  const extrasSubtotal = selectedItemsCustomer.reduce((sum, it) => sum + (Number(it.qty) * Number(it.unit_price)), 0);
+  const subtotal = Number(standardPrice || 0) + extrasSubtotal;
+  const promo = getSelectedPromoCustomer();
+  const discount = Math.min(subtotal, calcDiscount(subtotal, promo));
+  const total = Math.max(0, subtotal - discount);
+  const totalBox = document.getElementById("grand_total");
+  if (totalBox) totalBox.textContent = total.toFixed(0);
+}
+
+function renderItemsCustomer() {
+  const box = document.getElementById("items_preview_customer");
+  if (!box) return;
+  if (!selectedItemsCustomer.length) {
+    box.textContent = "ยังไม่มีรายการ";
+    recomputeGrandTotal();
+    return;
+  }
+  const rows = selectedItemsCustomer.map((it, idx) => {
+    const line = Number(it.qty) * Number(it.unit_price);
+    return `
+      <div style="padding:8px;border:1px solid rgba(15,23,42,0.10);border-radius:10px;margin-bottom:8px;">
+        <b>${it.item_name}</b><div class="muted">รวม: ${line.toFixed(0)} บาท</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
+          <label class="muted">จำนวน</label>
+          <input type="number" min="1" step="1" value="${it.qty}" style="width:90px;" onchange="updateQtyCustomer(${idx}, this.value)">
+          <button type="button" class="danger" style="width:auto;min-height:40px;" onclick="removeItemCustomer(${idx})">ลบ</button>
+        </div>
+      </div>
+    `;
+  }).join("");
+  box.innerHTML = rows;
+  recomputeGrandTotal();
+}
+
+function addItemCustomer() {
+  const sel = document.getElementById("catalog_select_customer");
+  const qtyEl = document.getElementById("item_qty_customer");
+  const id = Number(sel?.value || 0);
+  const qty = Math.max(1, Number(qtyEl?.value || 1));
+  if (!id) return alert("เลือกรายการก่อน");
+  const found = catalogItemsCustomer.find(x => Number(x.item_id) === id);
+  if (!found) return alert("ไม่พบรายการ");
+  const existed = selectedItemsCustomer.find(x => Number(x.item_id) === id);
+  if (existed) existed.qty += qty;
+  else selectedItemsCustomer.push({ item_id: found.item_id, item_name: found.item_name, qty, unit_price: Number(found.base_price || 0) });
+  renderItemsCustomer();
+}
+function updateQtyCustomer(idx, val) {
+  selectedItemsCustomer[idx].qty = Math.max(1, Number(val || 1));
+  renderItemsCustomer();
+}
+function removeItemCustomer(idx) {
+  selectedItemsCustomer.splice(idx, 1);
+  renderItemsCustomer();
+}
 
 function getPayloadV2(){
   const job_type = document.getElementById("job_type").value.trim();
@@ -165,8 +266,7 @@ async function refreshPricing(){
     dm.textContent = "-";
     console.warn(e);
   } finally {
-    const totalBox = document.getElementById("grand_total");
-    if (totalBox) totalBox.textContent = Number(standardPrice || 0).toFixed(0);
+    recomputeGrandTotal();
   }
 }
 
@@ -256,6 +356,8 @@ async function book(){
     customer_name, customer_phone, job_type,
     appointment_datetime, address_text, maps_url, customer_note,
     booking_mode: urgent ? "urgent" : "scheduled",
+    items: selectedItemsCustomer.map(x => ({ item_id: x.item_id, qty: x.qty })),
+    promotion_id: (document.getElementById("promotion_select_customer")?.value || null) || null,
     ...payload
   };
 
@@ -294,8 +396,38 @@ async function book(){
 });
 document.getElementById("urgent_toggle").addEventListener("change", ()=>{ /* slots refresh optional */ });
 
+async function initCustomerCatalogAndPromos(){
+  try{
+    const [catR, proR] = await Promise.all([
+      fetch(`${API}/catalog/items?customer=1`).then(r=>r.json()).catch(()=>[]),
+      fetch(`${API}/promotions?customer=1`).then(r=>r.json()).catch(()=>[]),
+    ]);
+    catalogItemsCustomer = Array.isArray(catR) ? catR : (catR.items || []);
+    promotionsCustomer = Array.isArray(proR) ? proR : (proR.promotions || []);
+
+    const sel = document.getElementById("catalog_select_customer");
+    if (sel) {
+      sel.innerHTML = `<option value="">-- เลือกบริการเสริม/สินค้า --</option>` +
+        catalogItemsCustomer.map(it => `<option value="${it.item_id}">${it.item_name} (${Number(it.base_price||0)} บาท)</option>`).join("");
+    }
+    const ps = document.getElementById("promotion_select_customer");
+    if (ps) {
+      ps.innerHTML = `<option value="">-- ไม่ใช้โปร --</option>` +
+        promotionsCustomer.map(p => {
+          const label = p.promo_type === "percent" ? `-${Number(p.promo_value)}%` : `-${Number(p.promo_value)} บาท`;
+          return `<option value="${p.promo_id}">${p.promo_name} (${label})</option>`;
+        }).join("");
+      ps.addEventListener("change", ()=> recomputeGrandTotal());
+    }
+  }catch(e){
+    console.warn("initCustomerCatalogAndPromos", e);
+  }
+}
+
 showVariantFields();
+initCustomerCatalogAndPromos();
 refreshPricing();
+renderItemsCustomer();
 </script>
 
 </body>
