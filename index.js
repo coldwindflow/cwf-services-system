@@ -489,6 +489,7 @@ await pool.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS ac_t
 await pool.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS btu_min INT`);
 await pool.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS btu_max INT`);
 await pool.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS is_customer_visible BOOLEAN DEFAULT FALSE`);
+    await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS is_customer_visible BOOLEAN DEFAULT FALSE`);
 
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.promotions (
@@ -496,17 +497,10 @@ await pool.query(`
     promo_name TEXT NOT NULL,
     promo_type TEXT NOT NULL CHECK (promo_type IN ('percent','amount')),
     promo_value NUMERIC(12,2) DEFAULT 0,
-    is_customer_visible BOOLEAN DEFAULT FALSE,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )
 `);
-
-// backward compatible
-await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS is_customer_visible BOOLEAN DEFAULT FALSE`);
-
-// Backward compatible for existing DBs
-await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS is_customer_visible BOOLEAN DEFAULT FALSE`);
 
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.job_items (
@@ -905,17 +899,14 @@ app.post("/catalog/items", async (req, res) => {
 // =======================================
 app.get("/promotions", async (req, res) => {
   try {
-    const isCustomer = String(req.query.customer || "").trim() === "1";
-    const r = await pool.query(
-      `
-      SELECT promo_id, promo_name, promo_type, promo_value, is_customer_visible
+    const customer = String(req.query.customer || "").trim() === "1";
+    const r = await pool.query(`
+      SELECT promo_id, promo_name, promo_type, promo_value
       FROM public.promotions
       WHERE is_active = TRUE
-        AND ($1::boolean = FALSE OR is_customer_visible = TRUE)
+        ${customer ? "AND is_customer_visible = TRUE" : ""}
       ORDER BY promo_name
-      `,
-      [isCustomer]
-    );
+    `);
     res.json(r.rows);
   } catch (e) {
     console.error(e);
@@ -1461,7 +1452,7 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
     await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
 
     // job_items
-    for (const it of computedItems) {
+    for (const it of lines) {
       await client.query(
         `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total)
          VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -3021,6 +3012,10 @@ app.put("/technicians/:username/phone", async (req, res) => {
     const username = req.params.username;
     const phoneRaw = (req.body?.phone ?? "").toString().trim();
 
+    if (employment_type && !['company','partner'].includes(employment_type)) {
+      return res.status(400).json({ error: "employment_type ต้องเป็น company หรือ partner" });
+    }
+
     if (phoneRaw && !/^[0-9+\-()\s]{6,20}$/.test(phoneRaw)) {
       return res.status(400).json({ error: "รูปแบบเบอร์โทรไม่ถูกต้อง" });
     }
@@ -3222,7 +3217,10 @@ app.get("/admin/technicians", async (req, res) => {
       `SELECT u.username,
               p.full_name, p.technician_code, p.position, p.rank_level, p.rank_key, p.photo_path, p.phone,
               p.rating, p.grade, p.done_count,
-              COALESCE(p.accept_status,'ready') AS accept_status, p.accept_status_updated_at
+              COALESCE(p.accept_status,'ready') AS accept_status, p.accept_status_updated_at,
+              COALESCE(p.employment_type,'company') AS employment_type,
+              COALESCE(p.work_start,'09:00') AS work_start,
+              COALESCE(p.work_end,'18:00') AS work_end
        FROM public.users u
        LEFT JOIN public.technician_profiles p ON p.username=u.username
        WHERE u.role='technician'
@@ -3242,10 +3240,17 @@ app.put("/admin/technicians/:username", async (req, res) => {
     const full_name = (req.body.full_name || "").trim();
     const position = (req.body.position || "").trim() || null; // ✅ ไม่ส่ง = ไม่ทับ
     const phoneRaw = (req.body.phone ?? "").toString().trim();
+    const employment_type = (req.body.employment_type || "").toString().trim().toLowerCase();
+    const work_start = (req.body.work_start || "").toString().trim();
+    const work_end = (req.body.work_end || "").toString().trim();
     const newPassword = (req.body.new_password ?? "").toString();
     const confirmPassword = (req.body.confirm_password ?? "").toString();
 
     if (!technician_code) return res.status(400).json({ error: "ต้องใส่รหัสช่าง" });
+
+    if (employment_type && !['company','partner'].includes(employment_type)) {
+      return res.status(400).json({ error: "employment_type ต้องเป็น company หรือ partner" });
+    }
 
     if (phoneRaw && !/^[0-9+\-()\s]{6,20}$/.test(phoneRaw)) {
       return res.status(400).json({ error: "รูปแบบเบอร์โทรไม่ถูกต้อง" });
@@ -3253,15 +3258,18 @@ app.put("/admin/technicians/:username", async (req, res) => {
 
     // profile
     await pool.query(
-      `INSERT INTO public.technician_profiles (username, technician_code, full_name, position, phone)
-       VALUES ($1,$2,$3,$4,$5)
+      `INSERT INTO public.technician_profiles (username, technician_code, full_name, position, phone, employment_type, work_start, work_end)
+       VALUES ($1,$2,$3,$4,$5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''))
        ON CONFLICT (username) DO UPDATE SET
          technician_code = EXCLUDED.technician_code,
          full_name = COALESCE(EXCLUDED.full_name, public.technician_profiles.full_name),
          position = COALESCE(EXCLUDED.position, public.technician_profiles.position),
          phone = COALESCE(EXCLUDED.phone, public.technician_profiles.phone),
+         employment_type = COALESCE(NULLIF(EXCLUDED.employment_type,''), public.technician_profiles.employment_type),
+         work_start = COALESCE(NULLIF(EXCLUDED.work_start,''), public.technician_profiles.work_start),
+         work_end = COALESCE(NULLIF(EXCLUDED.work_end,''), public.technician_profiles.work_end),
          updated_at = CURRENT_TIMESTAMP`,
-      [username, technician_code, full_name || null, position, phoneRaw || null]
+      [username, technician_code, full_name || null, position, phoneRaw || null, employment_type || '', work_start || '', work_end || '']
     );
 
     // password (optional)
@@ -3980,7 +3988,7 @@ app.get("/public/availability", async (req, res) => {
 
 app.post("/public/book", async (req, res) => {
   // ✅ ลูกค้าจองคิว (ไม่บังคับกรอก lat/lng) + เลือกรายการบริการ/สินค้าได้
-  // - โปรโมชั่น: ให้แอดมินเป็นคนใส่/ลบเท่านั้น (ฝั่งลูกค้าไม่รับ promo_id)
+  // - โปรโมชั่น: รองรับฝั่งลูกค้าได้ แต่ใช้ได้เฉพาะโปรที่ is_active=TRUE และ is_customer_visible=TRUE
   const {
     customer_name,
     customer_phone,
@@ -3991,6 +3999,7 @@ app.post("/public/book", async (req, res) => {
     maps_url,
     job_zone,
     items, // [{item_id, qty}] (extras)
+    promotion_id,
     booking_mode,
     ac_type,
     btu,
@@ -4030,12 +4039,24 @@ app.post("/public/book", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // 1) ดึงราคา base_price จาก DB
-    let computedItems = [];
-    let total = Number(standard_price || 0);
-    // STANDARD_SERVICE_LINE_V2
-    if (total > 0) {
-      computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: total, line_total: total });
+    // promo (customer-visible only)
+    let promo = null;
+    if (promotion_id) {
+      const pr = await client.query(
+        `SELECT promo_id, promo_name, promo_type, promo_value
+         FROM public.promotions
+         WHERE promo_id=$1 AND is_active=TRUE AND is_customer_visible=TRUE
+         LIMIT 1`,
+        [promotion_id]
+      );
+      promo = pr.rows[0] || null;
+    }
+
+    // 1) ดึงราคา base_price จาก DB (standard + extras)
+    const lines = [];
+    const standard = Number(standard_price || 0);
+    if (standard > 0) {
+      lines.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'} )`, qty: 1, unit_price: standard, line_total: standard });
     }
 
     if (itemIdQty.length) {
@@ -4048,24 +4069,18 @@ app.post("/public/book", async (req, res) => {
       );
 
       const map = new Map(catR.rows.map((r) => [Number(r.item_id), r]));
-      computedItems = itemIdQty
-        .map((x) => {
-          const it = map.get(Number(x.item_id));
-          if (!it) return null;
-          const qty = Number(x.qty);
-          const unit_price = Number(it.base_price || 0);
-          const line_total = qty * unit_price;
-          total += line_total;
-          return {
-            item_id: Number(it.item_id),
-            item_name: it.item_name,
-            qty,
-            unit_price,
-            line_total,
-          };
-        })
-        .filter(Boolean);
+      for (const x of itemIdQty) {
+        const it = map.get(Number(x.item_id));
+        if (!it) continue;
+        const qty = Number(x.qty);
+        const unit_price = Number(it.base_price || 0);
+        const line_total = qty * unit_price;
+        lines.push({ item_id: Number(it.item_id), item_name: it.item_name, qty, unit_price, line_total });
+      }
     }
+
+    const pricing = calcPricing(lines, promo);
+    const total = pricing.total;
 
     // 2) สร้างงาน
     const r = await client.query(
@@ -4135,7 +4150,7 @@ app.post("/public/book", async (req, res) => {
 
 
     // 3) บันทึกรายการ (ถ้ามี)
-    for (const it of computedItems) {
+    for (const it of lines) {
       await client.query(
         `
         INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total)
@@ -4145,7 +4160,16 @@ app.post("/public/book", async (req, res) => {
       );
     }
 
-    await client.query("COMMIT");
+    
+
+    if (promo && pricing.discount > 0) {
+      await client.query(
+        `INSERT INTO public.job_promotions (job_id, promo_id, applied_discount)
+         VALUES ($1,$2,$3)`,
+        [job_id, promo.promo_id, pricing.discount]
+      );
+    }
+await client.query("COMMIT");
 
     console.log('[public_book]', { job_id, booking_code, booking_mode: bm, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2) });
     res.json({ success: true, job_id, booking_code, token: r.rows[0].booking_token, booking_mode: bm, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2), travel_buffer_min: TRAVEL_BUFFER_MIN });
