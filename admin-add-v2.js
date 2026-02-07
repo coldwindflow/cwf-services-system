@@ -202,38 +202,6 @@ async function loadPromotions() {
   }
 }
 
-
-async function loadTechnicians() {
-  try {
-    const techs = await apiFetch('/admin/technicians');
-    const list = Array.isArray(techs) ? techs : [];
-    const sel = el('technician_username');
-    if (!sel) return;
-    const cur = sel.value;
-    sel.innerHTML = '';
-    const o0 = document.createElement('option');
-    o0.value = '';
-    o0.textContent = '(ไม่ระบุ) ให้ระบบเลือกช่างที่ว่าง';
-    sel.appendChild(o0);
-
-    for (const t of list) {
-      const username = String(t.username || '').trim();
-      if (!username) continue;
-      const full = String(t.full_name || '').trim();
-      const code = String(t.technician_code || '').trim();
-      const emp = String(t.employment_type || 'company').trim();
-      const label = `${full || username}${code ? ' • ' + code : ''} (${emp})`;
-      const opt = document.createElement('option');
-      opt.value = username;
-      opt.textContent = label;
-      sel.appendChild(opt);
-    }
-    sel.value = cur || '';
-  } catch (e) {
-    console.warn('loadTechnicians failed', e);
-  }
-}
-
 function renderExtras() {
   const box = el("extras_list");
   box.innerHTML = "";
@@ -414,7 +382,7 @@ async function init() {
   setBtuOptions();
   buildVariantUI();
   el("appt_date").value = todayYMD();
-  await Promise.all([loadCatalog(), loadPromotions(), loadTechnicians()]);
+  await Promise.all([loadCatalog(), loadPromotions()]);
   renderExtras();
   wireEvents();
   refreshPreviewDebounced();
