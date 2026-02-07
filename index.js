@@ -524,6 +524,10 @@ await pool.query(`
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_items_job_id ON public.job_items(job_id)`);
 
+    // job_items: support assigning each service line to a technician (backward compatible)
+    await pool.query(`ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS assigned_technician_username TEXT`);
+    await pool.query(`ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS is_service BOOLEAN DEFAULT FALSE`);
+
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.job_promotions (
     job_id BIGINT PRIMARY KEY REFERENCES public.jobs(job_id) ON DELETE CASCADE,
@@ -1110,10 +1114,10 @@ for (const u of tmList) {
 
       await client.query(
         `
-        INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total)
-        VALUES ($1,$2,$3,$4,$5,$6)
+        INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
         `,
-        [job_id, it.item_id || null, item_name, qty, unit_price, line_total]
+        [job_id, it.item_id || null, item_name, qty, unit_price, line_total, it.assigned_technician_username || null, !!it.is_service]
       );
     }
 
@@ -1637,8 +1641,8 @@ if (coerceNumber(override_price, 0) > 0) {
     // job_items
     for (const it of computedItems) {
       await client.query(
-        `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
+        `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
         [job_id, it.item_id || null, it.item_name, it.qty, it.unit_price, it.line_total]
       );
     }
@@ -2602,8 +2606,8 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
     for (const it of safeItems) {
       const line_total = Number(it.qty) * Number(it.unit_price);
       await client.query(
-        `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total)
-         VALUES ($1,$2,$3,$4,$5,$6)`,
+        `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
         [job_id, it.item_id, it.item_name, it.qty, it.unit_price, line_total]
       );
     }
@@ -4244,6 +4248,7 @@ function normalizeServicesFromPayload(payload = {}) {
       wash_variant: String(s.wash_variant || "").trim(),
       repair_variant: String(s.repair_variant || "").trim(),
       admin_override_duration_min: Number(s.admin_override_duration_min || payload.admin_override_duration_min || 0),
+      assigned_to: (s.assigned_to || s.assigned_technician_username || null) ? String(s.assigned_to || s.assigned_technician_username).trim() : null,
     }))
     .filter((s) => s.job_type && s.ac_type && Number.isFinite(s.btu) && s.btu > 0 && Number.isFinite(s.machine_count) && s.machine_count > 0);
 }
@@ -4251,15 +4256,32 @@ function normalizeServicesFromPayload(payload = {}) {
 function computeDurationMinMulti(payload = {}, opts = {}) {
   const services = normalizeServicesFromPayload(payload);
   if (!services) return computeDurationMin(payload, opts);
+
+  // If services are assigned to multiple technicians and parallel mode is on,
+  // compute duration as max(total duration per tech) to reflect "ทำพร้อมกัน".
+  const parallel = payload && (payload.parallel_by_tech === true || payload.parallel_by_tech === "true" || payload.parallel_by_tech === 1 || payload.parallel_by_tech === "1");
+  const byTech = new Map();
   let total = 0;
+
   for (const s of services) {
-    // default wash variant for wall if missing
     if (s.job_type === "ล้าง" && (s.ac_type === "ผนัง" || !s.ac_type) && !s.wash_variant) s.wash_variant = "ล้างธรรมดา";
     const d = computeDurationMin(s, opts);
     if (d <= 0) return 0;
     total += d;
+
+    const tech = (s.assigned_to || s.assigned_technician_username || "").toString().trim();
+    if (tech) byTech.set(tech, (byTech.get(tech) || 0) + d);
   }
-  console.log("[computeDurationMinMulti]", { src: opts.source || "unknown", lines: services.length, total });
+
+  const distinctTech = byTech.size;
+  if (parallel && distinctTech >= 2) {
+    let mx = 0;
+    for (const v of byTech.values()) mx = Math.max(mx, Number(v || 0));
+    console.log("[computeDurationMinMulti]", { src: opts.source || "unknown", lines: services.length, parallel: true, distinctTech, max: mx, sum: total });
+    return Math.round(mx);
+  }
+
+  console.log("[computeDurationMinMulti]", { src: opts.source || "unknown", lines: services.length, parallel: false, total });
   return Math.round(total);
 }
 
@@ -4286,7 +4308,16 @@ function buildServiceLineItemsFromPayload(payload = {}) {
     labelParts.push(`${Number(s.btu || 0)} BTU`);
     labelParts.push(`${Number(s.machine_count || 1)} เครื่อง`);
     const item_name = labelParts.join(" • ");
-    items.push({ item_id: null, item_name, qty: 1, unit_price: linePrice, line_total: linePrice, is_service: true });
+    items.push({
+      item_id: null,
+      item_name,
+      qty: 1,
+      unit_price: linePrice,
+      line_total: linePrice,
+      // v2 fields (columns added by ensureSchema)
+      is_service: true,
+      assigned_technician_username: (s.assigned_to || s.assigned_technician_username || null),
+    });
   }
   return items;
 }
@@ -4721,8 +4752,8 @@ if (itemIdQty.length) {
     for (const it of computedItems) {
       await client.query(
         `
-        INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total)
-        VALUES ($1,$2,$3,$4,$5,$6)
+        INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
         `,
         [job_id, it.item_id, it.item_name, it.qty, it.unit_price, it.line_total]
       );

@@ -666,3 +666,101 @@ a:hover{ text-decoration: underline; }
 .svc-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid rgba(15,23,42,0.10);border-radius:14px;margin-bottom:8px;background:#fff;}
 .svc-title{font-size:14px;}
 .svc-del{padding:8px 10px;border-radius:12px;border:1px solid rgba(239,68,68,0.35);background:#fff;color:#b91c1c;font-weight:800;}
+
+
+/* TEAM_PICKER_V2 START */
+
+.team-picker { background:#fff; border:1px solid rgba(0,0,0,.08); border-radius:18px; padding:14px; }
+.team-search { width:100%; padding:12px 14px; border-radius:14px; border:1px solid rgba(0,0,0,.12); background:#fff; font-size:16px; }
+.team-suggest { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; }
+.team-selected { display:flex; flex-direction:column; gap:10px; margin-top:10px; }
+
+.team-chip {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:12px 14px;
+  border-radius:18px;
+  border:1px solid rgba(13, 110, 253, .35);
+  background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(245,250,255,.95));
+  box-shadow: 0 6px 18px rgba(0,0,0,.06);
+  color:#0b1b33;
+  font-weight:700;
+  letter-spacing:.2px;
+}
+.team-chip .team-name{ color:#0b1b33; font-weight:800; }
+.team-chip .team-badge{
+  margin-left:10px; padding:6px 10px; border-radius:999px;
+  font-size:12px; font-weight:900;
+  border:1px solid rgba(0,0,0,.08);
+  background:#fff;
+  color:#0b1b33;
+}
+.team-chip-primary{
+  border-color: rgba(255, 193, 7, .65);
+  background: linear-gradient(180deg, rgba(255,255,255,.96), rgba(255, 248, 225, .96));
+}
+.team-chip-primary .team-badge{
+  background:#ffc107; color:#3a2a00; border-color: rgba(0,0,0,.08);
+}
+.team-chip-add{
+  border-style:dashed;
+  cursor:pointer;
+  color:#0b1b33;
+}
+.team-chip-add:hover{ transform: translateY(-1px); }
+
+.team-empty{ padding:10px 6px; color:rgba(0,0,0,.55); }
+
+.team-sheet-overlay{
+  position:fixed; inset:0; background:rgba(0,0,0,.45);
+  display:none; align-items:flex-end; justify-content:center; z-index:9999;
+}
+.team-sheet{
+  width:min(520px, 96vw);
+  background:#fff;
+  border-radius:22px 22px 0 0;
+  padding:16px;
+  box-shadow: 0 -10px 30px rgba(0,0,0,.25);
+}
+.team-sheet h3{ margin:0; font-size:18px; color:#0b1b33; }
+.team-sheet p{ margin:6px 0 14px; color:rgba(0,0,0,.55); }
+.team-sheet .sheet-actions{ display:grid; gap:10px; }
+.team-sheet button{
+  width:100%;
+  padding:14px 14px;
+  border-radius:16px;
+  border:1px solid rgba(0,0,0,.10);
+  font-size:16px;
+  font-weight:900;
+}
+.team-sheet .btn-primary{ background:#0d6efd; color:#fff; border-color:rgba(13,110,253,.55); }
+.team-sheet .btn-danger{ background:#fff; color:#b02a37; border-color:rgba(176,42,55,.35); }
+.team-sheet .btn-close{ background:#f7f7f7; color:#111; }
+
+/* TEAM_PICKER_V2 END */
+
+
+/* BOTTOM_NAV_TONE START */
+
+.bottom-nav { background: #0b5ed7; border-top: 3px solid #ffc107; }
+.bottom-nav .nav-btn { background: rgba(255,255,255,.10); color:#fff; border:1px solid rgba(255,255,255,.18); }
+.bottom-nav .nav-btn.active { background:#ffc107; color:#2b2100; border-color: rgba(0,0,0,.08); }
+.bottom-nav .nav-btn .icon { filter:none; }
+
+/* BOTTOM_NAV_TONE END */
+
+
+/* SLOT_GRID_TEAM START */
+
+.slot-legend { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:12px 0 10px; }
+.slot-grid { display:flex; flex-direction:column; gap:10px; }
+.tech-row { border:1px solid rgba(0,0,0,.08); border-radius:18px; background:#fff; padding:10px; }
+.tech-row-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:10px; }
+.tech-pill { padding:6px 10px; border-radius:999px; font-weight:900; font-size:13px; color:#0b1b33; border:1px solid rgba(0,0,0,.08); background:#fff; }
+.tech-row-slots { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:10px; }
+.slot-btn { padding:12px 10px; border-radius:16px; border:1px solid rgba(0,0,0,.08); background:#f7f9ff; font-weight:900; }
+.slot-btn.full { opacity:.35; }
+.slot-btn.selected { outline: 3px solid rgba(255,193,7,.65); border-color: rgba(255,193,7,.65); background:#fff7d6; }
+.slot-time { font-size:14px; color:#0b1b33; }
+.slot-sub { font-size:12px; color:rgba(0,0,0,.55); margin-top:4px; }
+
+/* SLOT_GRID_TEAM END */

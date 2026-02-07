@@ -130,6 +130,17 @@
     </div>
     <button id="btnAddServiceLine" class="secondary" type="button">+ เพิ่มรายการบริการ</button>
   </div>
+
+  <div class="row" style="margin-top:10px">
+    <label>มอบหมาย “รายการหลัก” ให้ช่าง</label>
+    <select id="current_line_assigned_to"></select>
+    <div class="muted2 mini" style="margin-top:6px">ถ้าเลือกหลายช่าง ระบบจะคำนวณเวลาแบบ “ทำพร้อมกัน” (เวลาในใบงาน = งานที่ใช้เวลานานสุด)</div>
+    <label style="display:flex;align-items:center;gap:10px;margin-top:10px">
+      <input type="checkbox" id="parallel_by_tech" checked />
+      <span><b>แบ่งงานตามช่าง (ทำพร้อมกัน)</b> • สล็อตจะโชว์แยกสีตามช่าง</span>
+    </label>
+  </div>
+
   <div id="service_lines" style="margin-top:10px"></div>
 </div>
 
@@ -222,7 +233,7 @@
           <label>ทีมช่าง (ช่างร่วม) • เลือกหลายคน</label>
           <div class="team-help">พิมพ์ค้นหา แล้วแตะเพื่อเพิ่มเป็นทีม • ตั้ง “ช่างหลัก” ได้ด้วยป้าย Primary</div>
           <div class="team-picker">
-            <input id="team_search" placeholder="ค้นหาช่างร่วม..." autocomplete="off">
+            <input id="team_search" class="team-search" placeholder="ค้นหาช่างร่วม..." autocomplete="off">
             <div class="team-suggest" id="team_suggest"></div>
             <div class="team-divider"></div>
             <div class="team-selected-title">เลือกแล้ว</div>
@@ -231,18 +242,18 @@
           <input id="team_members_csv" type="hidden" />
         </div>
 
-        <!-- Action Sheet สำหรับทีมช่าง: ซ่อนปุ่มตั้งเป็นหลัก/ลบแบบเดิม ให้ดูพรีเมียม -->
-        <div id="team_actions" class="sheet" style="display:none">
-          <div class="sheet-backdrop" data-close="1"></div>
-          <div class="sheet-panel">
-            <div class="sheet-title">จัดการทีมช่าง</div>
-            <div class="sheet-sub" id="team_actions_name">-</div>
+        <!-- Action Sheet สำหรับทีมช่าง (Premium) -->
+        <div id="team_sheet_overlay" class="team-sheet-overlay">
+          <div class="team-sheet" role="dialog" aria-modal="true">
+            <h3 id="team_sheet_title">จัดการทีมช่าง</h3>
+            <p id="team_sheet_sub">-</p>
             <div class="sheet-actions">
-              <button id="btnTeamSetPrimary" class="primary" type="button">ตั้งเป็นช่างหลัก</button>
-              <button id="btnTeamRemove" class="secondary" type="button">เอาออกจากทีม</button>
-              <button class="secondary" type="button" data-close="1">ปิด</button>
+              <button id="team_sheet_set_primary" class="btn-primary" type="button">ตั้งเป็นช่างหลัก</button>
+              <button id="team_sheet_remove" class="btn-danger" type="button">เอาออกจากทีม</button>
+              <button id="team_sheet_close" class="btn-close" type="button">ปิด</button>
             </div>
           </div>
+        </div>
         </div>
 <button class="secondary" type="button" style="margin-top:12px" id="btnLoadSlots">โหลดคิวว่าง</button>
       <div id="slots_box" style="margin-top:10px"></div>

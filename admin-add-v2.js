@@ -196,7 +196,34 @@ function renderTeamPicker(allowedIds=null){
 
   // sync hidden csv for payload
   getTeamMembersForPayload();
+  refreshCurrentAssignSelect();
 }
+
+function getTeamListForAssign(){
+  // prefer selected team (primary first)
+  const selected = Array.from(state.teamPicker.selected||[]).filter(Boolean);
+  const primary = state.teamPicker.primary || "";
+  const out = [];
+  if(primary && !out.includes(primary)) out.push(primary);
+  for(const u of selected){
+    if(u && !out.includes(u)) out.push(u);
+  }
+  return out;
+}
+
+function refreshCurrentAssignSelect(){
+  const sel = el('current_line_assigned_to');
+  if(!sel) return;
+  const team = getTeamListForAssign();
+  const cur = (sel.value||'').trim() || (state.teamPicker.primary||'');
+  sel.innerHTML = '';
+  const list = team.length ? team : (state.techs||[]).map(t=>t.username);
+  for(const u of list){
+    const o=document.createElement('option'); o.value=u; o.textContent=u; sel.appendChild(o);
+  }
+  sel.value = list.includes(cur) ? cur : (list[0]||'');
+}
+
 
 // Team action sheet (tap chip -> set primary / remove)
 state.teamPicker.active = "";
@@ -357,12 +384,14 @@ function getPayloadV2() {
 function buildCurrentServiceLine(){
   const p = getPayloadV2();
   // ใช้เฉพาะงานล้างเท่านั้นสำหรับ multi-service
+  const assigned_to = (el('current_line_assigned_to')?.value || '').trim();
   return {
     job_type: p.job_type,
     ac_type: p.ac_type,
     btu: p.btu,
     machine_count: p.machine_count,
     wash_variant: p.wash_variant,
+    assigned_to: assigned_to || (state.teamPicker.primary||'') || null,
   };
 }
 
@@ -398,6 +427,7 @@ function renderServiceLines(){
       <div class="svc-main">
         <div class="svc-title"><b>${escapeHtml(label)}</b></div>
         <div class="muted2 mini">รายการบริการหลัก #${idx+1}</div>
+        <div class="muted2 mini" style="margin-top:6px"><b>มอบหมายให้:</b> <select class="svc-assign" data-idx="${idx}"></select></div>
       </div>
       <button type="button" class="svc-del" data-idx="${idx}">ลบ</button>
     </div>`;
@@ -405,7 +435,29 @@ function renderServiceLines(){
 
   list.innerHTML = rows;
 
+  // populate assignment selects (each line)
+  const team = getTeamListForAssign();
+  list.querySelectorAll('.svc-assign').forEach(sel=>{
+    const idx = Number(sel.getAttribute('data-idx'));
+    const ln = (Number.isFinite(idx) && state.service_lines[idx]) ? state.service_lines[idx] : null;
+    const curVal = (ln && ln.assigned_to) ? String(ln.assigned_to) : (state.teamPicker.primary||"");
+    sel.innerHTML = "";
+    const opts = team.length ? team : (state.techs||[]).map(t=>t.username);
+    for(const u of opts){
+      const o=document.createElement('option'); o.value=u; o.textContent=u; sel.appendChild(o);
+    }
+    sel.value = opts.includes(curVal) ? curVal : (opts[0]||"");
+    sel.addEventListener('change', ()=>{
+      if(!ln) return;
+      ln.assigned_to = (sel.value||"").trim();
+      refreshPreviewDebounced();
+      // re-render slots to reflect required techs
+      renderSlots();
+    });
+  });
+
   // bind delete
+
   list.querySelectorAll('.svc-del').forEach(btn=>{
     btn.addEventListener('click', ()=>{
       const i = Number(btn.getAttribute('data-idx'));
@@ -495,6 +547,7 @@ async function refreshPreview() {
   }
   try {
     const payload = getPayloadV2();
+    payload.parallel_by_tech = el('parallel_by_tech')?.checked ? 1 : 0;
     const services = getServicesPayload();
     if (services) payload.services = services;
     const r = await apiFetch("/public/pricing_preview", { method: "POST", body: JSON.stringify(payload) });
@@ -705,62 +758,142 @@ async function loadAvailability() {
 
 function renderSlots() {
   const box = el("slots_box");
-  if(!box) return;
+  if (!box) return;
   box.innerHTML = "";
   const slotsAll = Array.isArray(state.available_slots) ? state.available_slots.filter(Boolean) : [];
-  const slotsAvail = slotsAll.filter((s)=>!!s.available);
   if (!slotsAll.length) {
     box.innerHTML = `<div class="muted2">ไม่พบข้อมูลสล็อต (ลองเปลี่ยนวัน/กลุ่มช่าง)</div>`;
     return;
   }
 
-  // header summary
-  const sum = document.createElement('div');
-  sum.style.display = 'flex';
-  sum.style.justifyContent = 'space-between';
-  sum.style.alignItems = 'center';
-  sum.style.gap = '10px';
-  sum.style.flexWrap = 'wrap';
-  const teamCount = Math.max(1, Array.from(state.teamPicker.selected||[]).filter(Boolean).length || 1);
-  sum.innerHTML = `
+  const teamAll = getTeamListForAssign();
+  const parallel = !!(el('parallel_by_tech')?.checked);
+  // required techs = techs ที่ถูกใช้งานจริง (มอบหมายในรายการล้าง) หรืออย่างน้อยช่างหลัก
+  const services = getServicesPayload() || [];
+  const requiredTechSet = new Set();
+  for (const s of services) {
+    const u = (s.assigned_to || '').trim();
+    if (u) requiredTechSet.add(u);
+  }
+  if (!requiredTechSet.size && state.teamPicker.primary) requiredTechSet.add(state.teamPicker.primary);
+
+  const requiredTechs = Array.from(requiredTechSet).filter(Boolean);
+  const slotsSelectable = slotsAll.filter(s => {
+    if (!requiredTechs.length) return !!s.available;
+    const ids = Array.isArray(s.available_tech_ids) ? s.available_tech_ids : [];
+    return requiredTechs.every(u => ids.includes(u));
+  });
+
+  // header legend
+  const legend = document.createElement('div');
+  legend.className = 'slot-legend';
+  const teamCount = Math.max(1, teamAll.length || 1);
+  legend.innerHTML = `
     <div>
       <b>สล็อตเวลา</b> <span class="muted2 mini">(ว่าง/เต็ม ชัดเจน)</span>
       <div class="muted2 mini" style="margin-top:2px">ทีมช่างในใบงาน: <b>${teamCount}</b> คน</div>
+      ${requiredTechs.length ? `<div class="muted2 mini" style="margin-top:2px">ต้องว่างพร้อมกัน: <b>${requiredTechs.join(", ")}</b></div>` : ``}
     </div>
-    <div class="badge ${slotsAvail.length? 'ok':'muted'}">${slotsAvail.length? 'ว่าง':'เต็ม'} • ${slotsAvail.length}/${slotsAll.length} ช่วง</div>
+    <div class="badge ${slotsSelectable.length ? 'ok' : 'muted'}">${slotsSelectable.length ? 'ว่าง' : 'เต็ม'} • ${slotsSelectable.length}/${slotsAll.length} ช่วง</div>
   `;
-  box.appendChild(sum);
-  const grid = document.createElement("div");
-  grid.className = "slot-grid";
-  for (const s of slotsAll) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    const techCount = Array.isArray(s.available_tech_ids) ? s.available_tech_ids.length : 0;
-    btn.className = `slot-btn ${s.available ? 'is-available':'is-full'} ${!s.available? 'disabled':''}`;
-    btn.innerHTML = `
-      <div class="time">${s.start} - ${s.end}</div>
-      <div class="meta">${s.available ? `ว่าง • ${techCount} ช่าง` : 'เต็ม'}</div>
-    `;
-    const iso = `${el("appt_date").value}T${s.start}:00`;
-    if (state.selected_slot_iso === iso) btn.classList.add("selected");
-    btn.addEventListener("click", () => {
-      if (!s.available) return;
-      state.selected_slot_iso = iso;
-      // set appointment input
-      const ap = el("appointment_datetime");
-      if(ap) ap.value = toLocalInputDatetime(new Date(iso));
-      // filter tech dropdown by available tech ids (if any)
-      if (Array.isArray(s.available_tech_ids) && s.available_tech_ids.length) {
-        renderTechSelect(s.available_tech_ids);
-      } else {
-        renderTechSelect(null);
-      }
-      document.querySelectorAll(".slot-btn").forEach((b) => b.classList.remove("selected"));
-      btn.classList.add("selected");
-    });
-    grid.appendChild(btn);
+  box.appendChild(legend);
+
+  // If not parallel or only 1 tech: fallback to compact list
+  if (!parallel || teamAll.length <= 1) {
+    const grid = document.createElement("div");
+    grid.className = "slot-grid";
+    for (const s of slotsAll) {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      const techCount = Array.isArray(s.available_tech_ids) ? s.available_tech_ids.length : 0;
+      const selectable = slotsSelectable.includes(s);
+      btn.className = `slot-btn ${selectable ? '' : 'full'} ${state.selected_slot_iso.endsWith('T'+s.start+':00') ? 'selected':''}`;
+      btn.innerHTML = `<div class="slot-time">${s.start} - ${s.end}</div><div class="slot-sub">${selectable ? `ว่าง • ${techCount} ช่าง` : 'เต็ม'}</div>`;
+      btn.disabled = !selectable;
+      btn.addEventListener("click", () => selectSlot(s.start));
+      grid.appendChild(btn);
+    }
+    box.appendChild(grid);
+    return;
   }
+
+  // Parallel view: แยก 4 แถวตามช่าง (สีไม่ชน อ่านง่าย)
+  const maxRows = 4;
+  const techRows = teamAll.slice(0, maxRows);
+  const more = teamAll.length - techRows.length;
+
+  const grid = document.createElement('div');
+  grid.className = 'slot-grid';
+
+  techRows.forEach((u, rowIdx) => {
+    const row = document.createElement('div');
+    row.className = 'tech-row';
+
+    const head = document.createElement('div');
+    head.className = 'tech-row-head';
+
+    const pill = document.createElement('div');
+    pill.className = 'tech-pill';
+    pill.textContent = u + (u === state.teamPicker.primary ? ' • Primary' : '');
+    // assign subtle tint by row index using inline rgba (no extra colors list) -> keep within blue/yellow theme
+    const tints = ['rgba(13,110,253,.10)','rgba(255,193,7,.12)','rgba(13,110,253,.06)','rgba(255,193,7,.08)'];
+    row.style.background = `linear-gradient(180deg, ${tints[rowIdx%tints.length]}, rgba(255,255,255,.98))`;
+
+    const stat = document.createElement('div');
+    stat.className = 'muted2 mini';
+    stat.textContent = requiredTechSet.has(u) ? 'ต้องใช้ช่างคนนี้' : 'ช่างร่วม';
+
+    head.appendChild(pill);
+    head.appendChild(stat);
+    row.appendChild(head);
+
+    const slotsWrap = document.createElement('div');
+    slotsWrap.className = 'tech-row-slots';
+
+    // show first 16 slots (09:00-18:00 step 30) arranged 4 columns
+    for (const s of slotsAll) {
+      const ids = Array.isArray(s.available_tech_ids) ? s.available_tech_ids : [];
+      const techFree = ids.includes(u);
+      const selectable = slotsSelectable.includes(s);
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = `slot-btn ${techFree ? '' : 'full'} ${state.selected_slot_iso.endsWith('T'+s.start+':00') ? 'selected':''}`;
+      btn.innerHTML = `<div class="slot-time">${s.start}</div><div class="slot-sub">${techFree ? 'ว่าง' : 'เต็ม'}</div>`;
+      // Click chooses common slot only if all required techs available in that slot
+      btn.disabled = !selectable;
+      btn.addEventListener('click', () => selectSlot(s.start));
+      slotsWrap.appendChild(btn);
+    }
+
+    row.appendChild(slotsWrap);
+    grid.appendChild(row);
+  });
+
   box.appendChild(grid);
+
+  if (more > 0) {
+    const note = document.createElement('div');
+    note.className = 'muted2 mini';
+    note.style.marginTop = '8px';
+    note.textContent = `มีช่างมากกว่า ${maxRows} คน • แสดงแค่ ${maxRows} แถวแรก (ยังเลือกสล็อตได้ตามปกติ)`;
+    box.appendChild(note);
+  }
+}
+
+function selectSlot(startHHMM){
+  const date = el("appt_date")?.value;
+  if(!date) return;
+  const iso = `${date}T${startHHMM}:00`;
+  state.selected_slot_iso = iso;
+  const dtEl = el("appointment_datetime");
+  if(dtEl) dtEl.value = iso;
+  // Update technician selector allowlist based on selected slot
+  const s = (state.available_slots||[]).find(x=>x && x.start===startHHMM);
+  if(s && Array.isArray(s.available_tech_ids)){
+    renderTechSelect(s.available_tech_ids);
+    renderTeamPicker(s.available_tech_ids);
+  }
+  renderSlots();
 }
 
 // PATCH: machine count stepper (premium: กดได้ + พิมพ์ได้)
@@ -827,6 +960,10 @@ async function submitBooking() {
     gps_longitude: (el("gps_longitude")?.value || "").trim() || null,
     team_members: getTeamMembersForPayload(),
   });
+
+  const services = getServicesPayload();
+  if(services) payload.services = services;
+  payload.parallel_by_tech = el('parallel_by_tech')?.checked ? 1 : 0;
 
   try {
     el("btnSubmit").disabled = true;
@@ -901,7 +1038,10 @@ if (copyBtn) copyBtn.addEventListener("click", async () => {
   wireTeamPickerEvents();
   if(selTech) selTech.addEventListener("change", syncPrimaryFromSelect);
   syncPrimaryFromSelect();
-el("btnSubmit").addEventListener("click", submitBooking);
+  refreshCurrentAssignSelect();
+  el('current_line_assigned_to')?.addEventListener('change', ()=>{ refreshPreviewDebounced(); renderSlots(); });
+  el('parallel_by_tech')?.addEventListener('change', ()=>{ refreshPreviewDebounced(); renderSlots(); });
+  el("btnSubmit").addEventListener("click", submitBooking);
 }
 
 async function init() {
