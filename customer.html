@@ -54,7 +54,18 @@
           <option value="แขวน">แขวน</option>
           <option value="เปลือยใต้ฝ้า">เปลือยใต้ฝ้า</option>
         </select>
-        <input id="btu" type="number" min="0" step="1000" placeholder="BTU (เช่น 12000)">
+        <select id="btu">
+          <option value="">เลือก BTU</option>
+          <option value="9000">9,000</option>
+          <option value="12000">12,000</option>
+          <option value="15000">15,000</option>
+          <option value="18000">18,000</option>
+          <option value="24000">24,000</option>
+          <option value="30000">30,000</option>
+          <option value="36000">36,000</option>
+          <option value="48000">48,000</option>
+          <option value="60000">60,000</option>
+        </select>
       </div>
 
       <div class="grid2" style="margin-top:8px;">
@@ -87,23 +98,7 @@
       <input id="maps_url" type="url" placeholder="ลิงก์ Google Maps (ถ้ามี) — แนะนำ: ปักหมุดแล้วแชร์ลิงก์มาวาง">
       <textarea id="customer_note" rows="3" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"></textarea>
 <hr style="margin:14px 0;">
-<h2 style="margin:0 0 8px;">3) เลือกรายการบริการ/สินค้า</h2>
-<div class="muted" style="margin-bottom:8px;">
-  * เลือกรายการให้ตรงกับประเภทแอร์/จำนวนเครื่อง เพื่อให้แอดมินมอบหมายงาน + สรุปราคาได้ถูกต้อง<br>
-  * โปรโมชั่นให้แอดมินเป็นคนใส่/ลบเท่านั้น
-</div>
-
-<select id="catalog_select">
-  <option value="">-- เลือกรายการ --</option>
-</select>
-
-<div class="grid2" style="margin-top:8px;">
-  <input id="item_qty" type="number" step="1" min="1" value="1" placeholder="จำนวน">
-  <button type="button" class="secondary" onclick="addItem()">➕ เพิ่มรายการ</button>
-</div>
-
-<div id="items_preview" class="muted" style="margin-top:10px;">ยังไม่มีรายการ</div>
-<p style="margin-top:10px;">💵 <b>ยอดรวมประมาณ:</b> <span id="grand_total">0</span> บาท</p>
+<p style="margin-top:6px;">💵 <b>ยอดรวมประมาณ:</b> <span id="grand_total">0</span> บาท</p>
 
       <button type="button" onclick="book()" style="margin-top:10px;">✅ ยืนยันจอง</button>
 
@@ -116,8 +111,6 @@
 const API = window.location.origin;
 
 let pickedTime = null;
-let jobItems = [];      // extras [{item_id, item_name, qty, unit_price}]
-let catalogItems = [];
 let standardPrice = 0;
 let durationMin = 60;
 
@@ -172,35 +165,8 @@ async function refreshPricing(){
     dm.textContent = "-";
     console.warn(e);
   } finally {
-    renderItems();
-  }
-}
-
-async function refreshCatalog(){
-  const payload = getPayloadV2();
-  const cs = document.getElementById("catalog_select");
-  cs.innerHTML = `<option value="">-- เลือกรายการ --</option>`;
-
-  // filter เฉพาะรายการที่อนุญาตให้ลูกค้าเห็น
-  const q = new URLSearchParams({
-    customer: "1",
-    job_category: payload.job_type || "",
-    ac_type: payload.ac_type || "",
-    btu: String(payload.btu || 0)
-  });
-
-  try{
-    const r = await fetch(`${API}/catalog/items?${q.toString()}`);
-    const items = await r.json();
-    catalogItems = Array.isArray(items) ? items : [];
-    catalogItems.forEach(it=>{
-      const opt = document.createElement("option");
-      opt.value = it.item_id;
-      opt.textContent = `${it.item_name} (${Number(it.base_price)} บาท/${it.unit_label})`;
-      cs.appendChild(opt);
-    });
-  }catch(e){
-    catalogItems = [];
+    const totalBox = document.getElementById("grand_total");
+    if (totalBox) totalBox.textContent = Number(standardPrice || 0).toFixed(0);
   }
 }
 
@@ -218,6 +184,20 @@ async function loadSlots(){
   slotsBox.textContent = "กำลังโหลด...";
 
   const payload = getPayloadV2();
+  // ✅ ให้ลูกค้าเลือกข้อมูลบริการให้ครบก่อนค่อยโหลดคิวว่าง
+  if (!payload.job_type || !payload.ac_type || !payload.btu || !payload.machine_count) {
+    slotsBox.textContent = "กรุณาเลือก: ประเภทงาน / ประเภทแอร์ / BTU / จำนวนเครื่อง ก่อน";
+    return;
+  }
+  if (payload.job_type === "ล้าง" && !payload.wash_variant) {
+    slotsBox.textContent = "กรุณาเลือกประเภทการล้างก่อน";
+    return;
+  }
+  if (payload.job_type === "ซ่อม" && !payload.repair_variant) {
+    slotsBox.textContent = "กรุณาเลือกประเภทงานซ่อมก่อน";
+    return;
+  }
+
   await refreshPricing(); // อัปเดต durationMin ก่อน
 
   const duration_min = Number(durationMin || 60);
@@ -251,54 +231,6 @@ async function loadSlots(){
     });
 }
 
-function addItem(){
-  const id = Number(document.getElementById("catalog_select").value);
-  const qty = Number(document.getElementById("item_qty").value || 1);
-  if(!id) return alert("เลือกรายการก่อน");
-  if(qty <= 0) return alert("จำนวนต้องมากกว่า 0");
-
-  const found = catalogItems.find(x => Number(x.item_id) === id);
-  if(!found) return alert("ไม่พบรายการ");
-
-  const existed = jobItems.find(x => Number(x.item_id) === id);
-  if(existed) existed.qty += qty;
-  else jobItems.push({ item_id: found.item_id, item_name: found.item_name, qty, unit_price: Number(found.base_price||0) });
-
-  renderItems();
-}
-
-function removeItem(id){
-  jobItems = jobItems.filter(x => Number(x.item_id) !== Number(id));
-  renderItems();
-}
-
-function renderItems(){
-  const box = document.getElementById("items_preview");
-  const totalBox = document.getElementById("grand_total");
-  if(!box || !totalBox) return;
-
-  if(!jobItems.length){
-    box.textContent = "ยังไม่มีรายการ";
-  } else {
-    const html = jobItems.map(it=>{
-      const line = Number(it.qty||0)*Number(it.unit_price||0);
-      return `<div style="display:flex;justify-content:space-between;gap:10px;margin:6px 0;">
-        <div>• ${it.item_name} x${it.qty}</div>
-        <div>
-          <b>${line.toFixed(0)}</b> บาท
-          <button type="button" class="danger" style="width:auto;min-height:34px;padding:6px 10px;margin-left:8px;"
-            onclick="removeItem(${it.item_id})">ลบ</button>
-        </div>
-      </div>`;
-    }).join("");
-    box.innerHTML = html;
-  }
-
-  const extrasTotal = jobItems.reduce((sum,it)=> sum + Number(it.qty||0)*Number(it.unit_price||0), 0);
-  const grand = Number(standardPrice||0) + extrasTotal;
-  totalBox.textContent = grand.toFixed(0);
-}
-
 async function book(){
   const d = document.getElementById("date").value;
   if(!d) return alert("เลือกวันที่ก่อน");
@@ -323,7 +255,6 @@ async function book(){
   const body = {
     customer_name, customer_phone, job_type,
     appointment_datetime, address_text, maps_url, customer_note,
-    items: jobItems.map(x=>({item_id:x.item_id, qty:x.qty})),
     booking_mode: urgent ? "urgent" : "scheduled",
     ...payload
   };
@@ -359,14 +290,12 @@ async function book(){
   if(el) el.addEventListener("change", async ()=>{
     showVariantFields();
     await refreshPricing();
-    await refreshCatalog();
   });
 });
 document.getElementById("urgent_toggle").addEventListener("change", ()=>{ /* slots refresh optional */ });
 
 showVariantFields();
 refreshPricing();
-refreshCatalog();
 </script>
 
 </body>
