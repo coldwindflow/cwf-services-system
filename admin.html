@@ -81,6 +81,10 @@
       try{
         const secure = (location.protocol === 'https:') ? '; Secure' : '';
         document.cookie = `cwf_auth=; Max-Age=0; Path=/; SameSite=Lax${secure}`;
+        // extra safety: try delete variants
+        document.cookie = `cwf_auth=; Max-Age=0; Path=/; SameSite=None${secure}`;
+        document.cookie = `cwf_auth=; Max-Age=0; Path=/;`;
+
       }catch(e){}
 
       // force full reload to avoid auto-redirect loops

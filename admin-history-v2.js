@@ -24,7 +24,7 @@ async function loadJobs(){
     params.set("limit", String(limit));
 
     const r = await apiFetch(`/admin/jobs_v2?${params.toString()}`);
-    const rows = Array.isArray(r.jobs) ? r.jobs : [];
+    const rows = Array.isArray(r.rows) ? r.rows : (Array.isArray(r.jobs) ? r.jobs : []);
 
     const tb = el("tbody");
     tb.innerHTML = "";

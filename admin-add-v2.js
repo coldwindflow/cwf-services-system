@@ -20,6 +20,21 @@ let state = {
   available_slots: [],
 };
 
+
+function parseLatLngClient(input){
+  const s = String(input||'').trim();
+  if(!s) return null;
+  const m = s.match(/@(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/) ||
+            s.match(/[?&]q=(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/) ||
+            s.match(/[?&]ll=(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/) ||
+            s.match(/(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/);
+  if(!m) return null;
+  const lat = Number(m[1]); const lng = Number(m[2]);
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)) return null;
+  if(Math.abs(lat)>90 || Math.abs(lng)>180) return null;
+  return {lat,lng};
+}
+
 function setBtuOptions() {
   const sel = el("btu");
   sel.innerHTML = "";
@@ -154,6 +169,8 @@ function updateTotalPreview() {
   el("pv_total").textContent = fmtMoney(total);
   el("pv_discount").textContent = fmtMoney(discount);
   el("pv_subtotal").textContent = fmtMoney(subtotal);
+  const tp = el("total_preview");
+  if (tp) tp.value = fmtMoney(total);
 }
 
 async function loadCatalog() {
@@ -336,12 +353,24 @@ async function submitBooking() {
     promotion_id: el("promotion_id").value || null,
     override_price: el("override_price").value || 0,
     override_duration_min: el("override_duration_min").value || 0,
+    gps_latitude: (el("gps_latitude")?.value || "").trim() || null,
+    gps_longitude: (el("gps_longitude")?.value || "").trim() || null,
+    team_members: (el("team_members_csv")?.value || "").split(',').map(s=>s.trim()).filter(Boolean),
   });
 
   try {
     el("btnSubmit").disabled = true;
     const r = await apiFetch("/admin/book_v2", { method: "POST", body: JSON.stringify(payload) });
     showToast(`บันทึกงานสำเร็จ: ${r.booking_code}`, "success");
+    try {
+      const s = await apiFetch(`/jobs/${r.job_id}/summary`);
+      if (s && s.text) {
+        el('summary_card').style.display = 'block';
+        el('summary_text').value = s.text;
+      }
+    } catch (e) {
+      console.warn('summary load fail', e);
+    }
     // reset minimal
     state.selected_slot_iso = "";
     el("technician_username").value = "";
@@ -375,12 +404,37 @@ function wireEvents() {
   el("appt_date").addEventListener("change", loadAvailability);
   el("tech_type").addEventListener("change", loadAvailability);
   el("btnLoadSlots").addEventListener("click", loadAvailability);
+
+
+// auto parse lat/lng from maps url (fail-open)
+const llUpdate = () => {
+  const ll = parseLatLngClient(el("maps_url")?.value) || parseLatLngClient(el("address_text")?.value);
+  if (!ll) return;
+  if (el("gps_latitude")) el("gps_latitude").value = String(ll.lat);
+  if (el("gps_longitude")) el("gps_longitude").value = String(ll.lng);
+};
+el("maps_url").addEventListener("input", llUpdate);
+el("address_text").addEventListener("input", llUpdate);
+
+const copyBtn = el("btnCopySummary");
+if (copyBtn) copyBtn.addEventListener("click", async () => {
+  const txt = el("summary_text")?.value || "";
+  if (!txt) return;
+  try { await navigator.clipboard.writeText(txt); showToast("คัดลอกแล้ว", "success"); }
+  catch { el("summary_text").select(); document.execCommand("copy"); showToast("คัดลอกแล้ว", "success"); }
+});
   el("btnSubmit").addEventListener("click", submitBooking);
 }
 
 async function init() {
   setBtuOptions();
   buildVariantUI();
+  // attach listeners for dynamic selects on first render
+  const w0 = document.getElementById("wash_variant");
+  const r0 = document.getElementById("repair_variant");
+  if (w0) w0.addEventListener("change", refreshPreviewDebounced);
+  if (r0) r0.addEventListener("change", refreshPreviewDebounced);
+
   el("appt_date").value = todayYMD();
   await Promise.all([loadCatalog(), loadPromotions()]);
   renderExtras();

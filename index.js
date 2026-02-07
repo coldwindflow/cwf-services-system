@@ -1068,6 +1068,20 @@ app.post("/jobs", async (req, res) => {
 
     // ✅ booking_code (สุ่ม ไม่เรียง)
     const booking_code = await generateUniqueBookingCode(client);
+
+
+// ✅ Team members (primary + assistants) - backward compatible
+const tmIn = Array.isArray(team_members) ? team_members : [];
+const tmList = [...new Set([selectedTech, ...tmIn].map(x => (x||'').toString().trim()).filter(Boolean))].slice(0, 10);
+await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
+for (const u of tmList) {
+  await client.query(
+    `INSERT INTO public.job_team_members (job_id, username, is_primary)
+     VALUES ($1,$2,$3)`,
+    [job_id, u]
+  );
+}
+
     await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
 
     // job_items
@@ -1396,6 +1410,7 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
     booking_mode,
     tech_type,
     technician_username,
+    team_members,
     dispatch_mode,
     // v2 payload
     ac_type,
@@ -1441,6 +1456,14 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
   }
 
   const standard_price = computeStandardPrice(payloadV2);
+
+
+// ✅ Parse lat/lng from maps_url or address_text (fail-open)
+const parsedAdminLL = parseLatLngFromText(maps_url) || parseLatLngFromText(address_text);
+const parsed_lat = parsedAdminLL ? parsedAdminLL.lat : null;
+const parsed_lng = parsedAdminLL ? parsedAdminLL.lng : null;
+console.log("[latlng_parse]", { ok: !!parsedAdminLL });
+
 
   // sanitize items
   const safeItemsIn = Array.isArray(items) ? items : [];
@@ -1698,7 +1721,7 @@ app.get("/admin/jobs_v2", requireAdminSoft, async (req, res) => {
       `,
       params
     );
-    return res.json({ success: true, rows: r.rows });
+    return res.json({ success: true, rows: r.rows, jobs: r.rows });
   } catch (e) {
     console.error("/admin/jobs_v2 error:", e);
     return res.status(500).json({ error: "โหลดประวัติงานไม่สำเร็จ" });
@@ -4295,6 +4318,13 @@ app.post("/public/book", async (req, res) => {
   const duration_min_v2 = computeDurationMin(payloadV2, { source: "public_book" });
   if (duration_min_v2 <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
   const standard_price = computeStandardPrice(payloadV2);
+
+// ✅ Parse lat/lng from maps_url or address_text (fail-open)
+const parsedLL = parseLatLngFromText(maps_url) || parseLatLngFromText(address_text);
+const parsed_lat = parsedLL ? parsedLL.lat : null;
+const parsed_lng = parsedLL ? parsedLL.lng : null;
+console.log("[latlng_parse]", { ok: !!parsedLL });
+
 
   // ✅ Server-side validation: ต้องมีอย่างน้อย 1 ช่างว่างจริงในช่วงเวลานี้ (คิด buffer)
   // - scheduled => company, urgent => partner

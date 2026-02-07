@@ -1,140 +1,187 @@
-// Admin Review Queue v2
-// - List jobs in "รอตรวจสอบ" (customer scheduled bookings)
-// - Admin can edit job basics, load availability slots, pick primary technician + team members, and dispatch
+/**
+ * Admin Review Queue v2 (matches admin-review-v2.html)
+ * - ดูงาน "รอตรวจสอบ/ตีกลับ/ไม่พบช่างรับงาน"
+ * - แอดมินแก้ไขข้อมูล + โหลดเวลาว่างจาก availability_v2 + เลือกช่างหลัก/ทีม + dispatch_v2
+ * - Production-safe: fail-open, ไม่กระทบ endpoint เดิม
+ */
 
 let TECHS = [];
 let CURRENT = null;
 let CURRENT_SLOTS = [];
+let ROW_MAP = new Map();
 
-function byId(id){ return document.getElementById(id); }
+function $(id){ return document.getElementById(id); }
+function safe(s){ return (s==null?'':String(s)); }
+function pad2(x){ return String(x).padStart(2,'0'); }
+
+function parseLatLngClient(input){
+  const s = String(input||'').trim();
+  if(!s) return null;
+  const m = s.match(/@(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/) ||
+            s.match(/[?&]q=(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/) ||
+            s.match(/[?&]ll=(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/) ||
+            s.match(/(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/);
+  if(!m) return null;
+  const lat = Number(m[1]); const lng = Number(m[2]);
+  if(!Number.isFinite(lat)||!Number.isFinite(lng)) return null;
+  if(Math.abs(lat)>90 || Math.abs(lng)>180) return null;
+  return {lat,lng};
+}
+
 
 function thDateTime(iso){
   if (!iso) return "-";
   const d = new Date(iso);
-  return d.toLocaleString('th-TH', { timeZone: 'Asia/Bangkok', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
+  return d.toLocaleString('th-TH', { timeZone:'Asia/Bangkok', year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' });
 }
 
-function safe(s){ return (s==null?'':String(s)); }
+function toLocalInputDatetime(iso){
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}T${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
+}
+
+function showToast(msg, type="info"){
+  // reuse helper if exists
+  if (typeof window.showToast === "function") return window.showToast(msg, type);
+  alert(msg);
+}
+
+async function loadTechs(){
+  try{
+    const d = await apiFetch("/admin/technicians");
+    TECHS = Array.isArray(d) ? d : (d.rows||d.technicians||[]);
+  }catch(e){
+    console.warn("[admin-review-v2] loadTechs failed", e);
+    TECHS = [];
+  }
+}
+
+function mapFilterStatus(v){
+  const m = {
+    pending: "รอตรวจสอบ",
+    return: "ตีกลับ",
+    noaccept: "ไม่พบช่างรับงาน",
+    all: "all",
+  };
+  return m[v] || "รอตรวจสอบ";
+}
 
 async function loadQueue(){
-  const status = byId('statusFilter').value;
-  const date = byId('dateFilter').value;
-  byId('list').innerHTML = '<div class="muted">กำลังโหลด...</div>';
+  const f = $("filterStatus")?.value || "pending";
+  const status = mapFilterStatus(f);
+
+  $("list").innerHTML = '<div class="card"><div class="muted">กำลังโหลด...</div></div>';
+
   try{
     const q = new URLSearchParams();
-    q.set('status', status);
-    if (date) q.set('date', date);
-    q.set('limit', '200');
+    q.set("status", status);
+    q.set("limit", "200");
     const data = await apiFetch(`/admin/review_queue_v2?${q.toString()}`);
-    const rows = (data.rows || []);
-    byId('count').textContent = String(rows.length);
+    const rows = Array.isArray(data.rows) ? data.rows : [];
+    ROW_MAP = new Map(rows.map(r=>[Number(r.job_id), r]));
+    $("pillCount").textContent = `${rows.length} งาน`;
 
     if (!rows.length){
-      byId('list').innerHTML = '<div class="card"><div class="muted">ไม่มีงานในคิวนี้</div></div>';
+      $("list").innerHTML = '<div class="card"><div class="muted">ไม่มีงานในคิวนี้</div></div>';
       return;
     }
 
-    byId('list').innerHTML = rows.map(r=>{
-      const st = safe(r.job_status).trim();
-      const b = safe(r.booking_mode||'scheduled');
-      const badge = st ? `<span class="pill">${st}</span>` : '';
-      const urgent = b==='urgent' ? '<span class="pill" style="background:#fee2e2">ด่วน</span>' : '';
+    $("list").innerHTML = rows.map(r=>{
+      const badge = `<span class="pill">${safe(r.job_status||"")}</span>`;
+      const urgent = (String(r.booking_mode||"").toLowerCase()==="urgent") ? '<span class="pill" style="background:#fee2e2">ด่วน</span>' : '';
       return `
         <div class="card">
           <div class="row">
             <div>
-              <b>#${r.job_id} • ${safe(r.booking_code||'')}</b>
-              <div class="muted" style="margin-top:2px;">${safe(r.customer_name||'-')} • ${safe(r.customer_phone||'-')}</div>
+              <b>#${r.job_id} • ${safe(r.booking_code||"")}</b>
+              <div class="muted" style="margin-top:2px;">${safe(r.customer_name||"-")} • ${safe(r.customer_phone||"-")}</div>
             </div>
             <div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
               ${badge}${urgent}
               <button class="btn btn-primary" type="button" onclick="openJob(${r.job_id})">เปิด</button>
             </div>
           </div>
-          <div class="muted" style="margin-top:8px;">📅 ${thDateTime(r.appointment_datetime)} • 🧾 ${safe(r.job_type||'-')}</div>
-          <div class="muted" style="margin-top:4px;">📍 ${safe(r.job_zone||'')} ${safe(r.address_text||'')}</div>
-          <div class="muted" style="margin-top:4px;">⏱️ ${Number(r.duration_min||0)} นาที (รวม buffer ${Number(r.effective_block_min||0)} นาที)</div>
+          <div class="muted" style="margin-top:8px;">📅 ${thDateTime(r.appointment_datetime)} • 🧾 ${safe(r.job_type||"-")}</div>
+          <div class="muted" style="margin-top:4px;">📍 ${safe(r.job_zone||"")} ${safe(r.address_text||"")}</div>
+          <div class="muted" style="margin-top:4px;">⏱️ ${Number(r.duration_min||0)} นาที</div>
         </div>
       `;
-    }).join('');
-
+    }).join("");
   }catch(e){
     console.error(e);
-    byId('list').innerHTML = `<div class="card"><div class="muted">โหลดคิวไม่สำเร็จ: ${safe(e.message||e)}</div></div>`;
+    $("list").innerHTML = `<div class="card"><div class="muted">โหลดไม่สำเร็จ: ${safe(e.message||e)}</div></div>`;
   }
 }
 
-async function loadTechs(){
-  try{
-    const d = await apiFetch('/admin/technicians');
-    TECHS = Array.isArray(d) ? d : (d.rows||d.technicians||[]);
-  }catch(e){
-    console.warn('loadTechs failed', e);
-    TECHS = [];
-  }
-}
+function renderTechPickers(){
+  const techType = $("mTechType").value || "company";
+  const group = (TECHS||[]).filter(t => (t.employment_type||"company") === techType);
 
-function setModal(show){
-  byId('overlay').classList.toggle('show', !!show);
-}
-
-function renderTechSelectors(techType){
-  const group = (TECHS||[]).filter(t => (t.employment_type||'company') === techType);
-  const primarySel = byId('technician_username');
+  // primary select
+  const primarySel = $("mPrimaryTech");
   primarySel.innerHTML = '<option value="">-- เลือกช่างหลัก --</option>' + group.map(t=>{
     const name = t.full_name || t.username;
-    return `<option value="${t.username}">${name} (${t.username})</option>`;
-  }).join('');
+    return `<option value="${t.username}">${safe(name)} (${t.username})</option>`;
+  }).join("");
 
-  // team chips (checkbox list)
-  const teamBox = byId('teamBox');
-  const q = safe(byId('techSearch').value).toLowerCase();
+  if (CURRENT?.technician_username) primarySel.value = CURRENT.technician_username;
+
+  // chips for team (checkbox list)
+  const q = safe($("mTeamSearch").value).toLowerCase();
   const filtered = q ? group.filter(t => (safe(t.full_name)+safe(t.username)).toLowerCase().includes(q)) : group;
-  const selected = new Set((CURRENT?.team_members||[]).map(String));
-  teamBox.innerHTML = filtered.map(t=>{
-    const name = t.full_name || t.username;
-    const checked = selected.has(t.username) ? 'checked' : '';
-    return `<label class="chip"><input type="checkbox" data-u="${t.username}" ${checked}/> ${name}</label>`;
-  }).join('') || '<div class="muted">ไม่มีช่างในกลุ่มนี้</div>';
 
-  // keep primary in team by default
-  if (CURRENT?.technician_username){
-    primarySel.value = CURRENT.technician_username;
-    ensurePrimaryInTeam();
-  }
+  const selected = new Set((CURRENT?.team_members||[]).map(String));
+  const box = $("mTeamChips");
+  box.innerHTML = filtered.map(t=>{
+    const name = t.full_name || t.username;
+    const checked = selected.has(t.username) ? "checked" : "";
+    return `<label class="chip"><input type="checkbox" data-u="${t.username}" ${checked}/> ${safe(name)}</label>`;
+  }).join("") || '<div class="muted">ไม่มีช่างในกลุ่มนี้</div>';
+
+  ensurePrimaryInTeam();
 }
 
 function getSelectedTeam(){
-  const team = [];
-  document.querySelectorAll('#teamBox input[type=checkbox]').forEach(ch=>{
-    if (ch.checked) team.push(ch.getAttribute('data-u'));
+  const out = [];
+  document.querySelectorAll('#mTeamChips input[type="checkbox"]').forEach(ch=>{
+    if (ch.checked) out.push(ch.getAttribute("data-u"));
   });
-  // ensure unique
-  return [...new Set(team.filter(Boolean))];
+  return [...new Set(out.filter(Boolean))];
 }
 
 function ensurePrimaryInTeam(){
-  const primary = byId('technician_username').value;
+  const primary = $("mPrimaryTech").value;
   if (!primary) return;
-  const box = document.querySelector(`#teamBox input[data-u="${primary}"]`);
-  if (box){ box.checked = true; }
+  const box = document.querySelector(`#mTeamChips input[data-u="${primary}"]`);
+  if (box) box.checked = true;
 }
+
+function setModal(show){
+  $("overlay").classList.toggle("show", !!show);
+}
+
+function closeModal(){
+  setModal(false);
+  CURRENT = null;
+  CURRENT_SLOTS = [];
+  $("slotBox").style.display = "none";
+  $("slotBox").innerHTML = "";
+}
+
+window.closeModal = closeModal;
 
 async function openJob(jobId){
   try{
-    // pull job from admin jobs_v2 (fast) then fetch team + pricing
-    const j = await apiFetch(`/admin/review_queue_v2?job_id=${encodeURIComponent(String(jobId))}`);
-    const row = (j.rows||[])[0];
-    if (!row) throw new Error('ไม่พบงาน');
+    const row = ROW_MAP.get(Number(jobId));
+    if (!row) throw new Error("ไม่พบงาน");
 
     CURRENT = {
       job_id: row.job_id,
       booking_code: row.booking_code,
-      booking_mode: row.booking_mode || 'scheduled',
+      booking_mode: String(row.booking_mode||"scheduled").toLowerCase(),
       job_status: row.job_status,
       job_type: row.job_type,
-      duration_min: Number(row.duration_min||0),
-      effective_block_min: Number(row.effective_block_min||0),
+      duration_min: Number(row.duration_min||0) || 60,
       appointment_datetime: row.appointment_datetime,
       customer_name: row.customer_name,
       customer_phone: row.customer_phone,
@@ -142,8 +189,7 @@ async function openJob(jobId){
       maps_url: row.maps_url,
       customer_note: row.customer_note,
       job_zone: row.job_zone,
-      tech_type: row.tech_type || (row.booking_mode==='urgent'?'partner':'company'),
-      technician_username: row.technician_username || '',
+      technician_username: row.technician_username || "",
       team_members: [],
     };
 
@@ -151,196 +197,202 @@ async function openJob(jobId){
     try{
       const tm = await apiFetch(`/jobs/${CURRENT.job_id}/team?details=0`);
       CURRENT.team_members = Array.isArray(tm.members) ? tm.members : [];
-    }catch{}
+    }catch{ CURRENT.team_members = []; }
+
+    // fill
+    $("mTitle").textContent = `ตรวจงาน #${CURRENT.job_id}`;
+    $("mSub").textContent = `${safe(CURRENT.booking_code||"")} • สถานะ: ${safe(CURRENT.job_status||"")}`;
+
+    $("mCustomerName").value = safe(CURRENT.customer_name||"");
+    $("mCustomerPhone").value = safe(CURRENT.customer_phone||"");
+    $("mJobType").value = safe(CURRENT.job_type||"");
+    $("mBookingCode").value = safe(CURRENT.booking_code||"");
+    $("mAppt").value = toLocalInputDatetime(CURRENT.appointment_datetime);
+    $("mAddress").value = safe(CURRENT.address_text||"");
+    $("mMaps").value = safe(CURRENT.maps_url||"");
+    $("mZone").value = safe(CURRENT.job_zone||"");
+    // auto parse lat/lng (fail-open)
+    const ll = parseLatLngClient($("mMaps").value) || parseLatLngClient($("mAddress").value);
+    if (ll) { $("mLat").value = String(ll.lat); $("mLng").value = String(ll.lng); }
+
+    $("mNote").value = safe(CURRENT.customer_note||"");
+
+    // tech type default: urgent -> partner, else company (admin can change)
+    $("mTechType").value = (CURRENT.booking_mode === "urgent") ? "partner" : "company";
+    renderTechPickers();
 
     // pricing
-    try{
-      const pr = await apiFetch(`/jobs/${CURRENT.job_id}/pricing`);
-      byId('pricingBox').innerHTML = `ยอดรวม: <b>${fmtMoney(pr.total||0)}</b> บาท • ส่วนลด: ${fmtMoney(pr.discount||0)} บาท`;
-    }catch{
-      byId('pricingBox').innerHTML = 'ยอดรวม: -';
-    }
+    await loadPricing();
 
-    // fill modal
-    byId('mJobId').textContent = `#${CURRENT.job_id}`;
-    byId('mCode').textContent = safe(CURRENT.booking_code||'');
-    byId('job_type').value = safe(CURRENT.job_type||'');
-    byId('customer_name').value = safe(CURRENT.customer_name||'');
-    byId('customer_phone').value = safe(CURRENT.customer_phone||'');
-    byId('address_text').value = safe(CURRENT.address_text||'');
-    byId('maps_url').value = safe(CURRENT.maps_url||'');
-    byId('customer_note').value = safe(CURRENT.customer_note||'');
-    byId('job_zone').value = safe(CURRENT.job_zone||'');
-    byId('appointment_datetime').value = toLocalInputDatetime(new Date(CURRENT.appointment_datetime));
-
-    const techType = CURRENT.booking_mode === 'urgent' ? 'partner' : 'company';
-    byId('tech_type').value = techType;
-    renderTechSelectors(techType);
-
-    // ensure team defaults
-    if (!CURRENT.team_members.length && CURRENT.technician_username){
-      CURRENT.team_members = [CURRENT.technician_username];
-    }
-    byId('durationInfo').textContent = `${CURRENT.duration_min || 0} นาที (รวม buffer ${CURRENT.effective_block_min || 0} นาที)`;
-
+    // slots
+    $("slotBox").style.display = "none";
+    $("slotBox").innerHTML = "";
     CURRENT_SLOTS = [];
-    byId('slotBox').innerHTML = '<div class="muted">กด “โหลดคิวว่าง” เพื่อเลือกเวลาที่ว่างจริง</div>';
 
     setModal(true);
   }catch(e){
     console.error(e);
-    showToast(e.message||'เปิดงานไม่สำเร็จ','error');
+    showToast(e.message||"เปิดงานไม่สำเร็จ","error");
+  }
+}
+
+window.openJob = openJob;
+
+async function loadPricing(){
+  if (!CURRENT) return;
+  $("mPricing").textContent = "-";
+  try{
+    const pr = await apiFetch(`/jobs/${CURRENT.job_id}/pricing`);
+    $("mPricing").textContent = `ยอดรวม: ${Number(pr.total||0).toLocaleString("th-TH")} บาท • ส่วนลด: ${Number(pr.discount||0).toLocaleString("th-TH")} บาท`;
+  }catch(e){
+    $("mPricing").textContent = "โหลดสรุปราคาไม่สำเร็จ";
   }
 }
 
 async function saveJob(){
   if (!CURRENT) return;
   const payload = {
-    customer_name: byId('customer_name').value.trim() || null,
-    customer_phone: byId('customer_phone').value.trim() || null,
-    job_type: byId('job_type').value.trim() || null,
-    appointment_datetime: byId('appointment_datetime').value || null,
-    address_text: byId('address_text').value.trim() || null,
-    customer_note: byId('customer_note').value.trim() || null,
-    maps_url: byId('maps_url').value.trim() || null,
-    job_zone: byId('job_zone').value.trim() || null,
+    customer_name: $("mCustomerName").value.trim() || null,
+    customer_phone: $("mCustomerPhone").value.trim() || null,
+    job_type: $("mJobType").value.trim() || null,
+    appointment_datetime: $("mAppt").value || null,
+    address_text: $("mAddress").value.trim() || null,
+    customer_note: $("mNote").value.trim() || null,
+    maps_url: $("mMaps").value.trim() || null,
+    job_zone: $("mZone").value.trim() || null,
+    gps_latitude: $("mLat").value.trim() || null,
+    gps_longitude: $("mLng").value.trim() || null,
   };
   try{
-    await apiFetch(`/jobs/${CURRENT.job_id}/admin-edit`, { method:'PUT', body: JSON.stringify(payload) });
-    showToast('บันทึกใบงานแล้ว','success');
+    await apiFetch(`/jobs/${CURRENT.job_id}/admin-edit`, { method:"PUT", body: JSON.stringify(payload) });
+    showToast("บันทึกใบงานแล้ว","success");
     await loadQueue();
   }catch(e){
-    showToast(e.message||'บันทึกไม่สำเร็จ','error');
+    showToast(e.message||"บันทึกไม่สำเร็จ","error");
   }
 }
+
+function pickSlot(isoStart){
+  if (!CURRENT) return;
+  $("mAppt").value = toLocalInputDatetime(isoStart);
+  $("slotBox").style.display = "none";
+  showToast("เลือกเวลาแล้ว","success");
+}
+
+window.pickSlot = pickSlot;
 
 async function loadSlots(){
   if (!CURRENT) return;
-  const dtStr = byId('appointment_datetime').value;
+  const dtStr = $("mAppt").value;
   if (!dtStr){
-    showToast('ต้องเลือกวัน/เวลา ก่อนโหลดคิวว่าง','error');
+    showToast("ต้องเลือกวัน/เวลา ก่อนโหลดคิวว่าง","error");
     return;
   }
   const date = dtStr.slice(0,10);
-  const tech_type = byId('tech_type').value;
-  const duration_min = Number(CURRENT.duration_min||0) || 60;
+  const tech_type = $("mTechType").value || "company";
+  const duration_min = Number(CURRENT.duration_min||60);
 
-  byId('slotBox').innerHTML = '<div class="muted">กำลังโหลดคิวว่าง...</div>';
+  $("slotBox").style.display = "block";
+  $("slotBox").innerHTML = '<div class="muted">กำลังโหลดคิวว่าง...</div>';
+
   try{
     const q = new URLSearchParams();
-    q.set('date', date);
-    q.set('tech_type', tech_type);
-    q.set('duration_min', String(duration_min));
+    q.set("date", date);
+    q.set("tech_type", tech_type);
+    q.set("duration_min", String(duration_min));
     const data = await apiFetch(`/public/availability_v2?${q.toString()}`);
-    CURRENT_SLOTS = data.slots || [];
+    const slots = Array.isArray(data.slots) ? data.slots : [];
+    CURRENT_SLOTS = slots;
 
-    if (!CURRENT_SLOTS.length){
-      byId('slotBox').innerHTML = '<div class="muted">ไม่พบ slot ว่างในวันนี้</div>';
+    if (!slots.length){
+      $("slotBox").innerHTML = '<div class="muted">ไม่พบ slot ว่างในวันนี้</div>';
       return;
     }
 
-    const currentTime = dtStr.slice(11,16);
-
-    byId('slotBox').innerHTML = CURRENT_SLOTS.map(s=>{
-      const disabled = !s.available;
-      const label = `${s.start} - ${s.end}`;
-      const active = s.start===currentTime ? 'style="border-color:#22c55e"' : '';
+    $("slotBox").innerHTML = slots.map(s=>{
+      const dis = !s.available;
+      const iso = `${date}T${s.start}:00`;
       return `
-        <button class="btn btn-ghost" type="button" ${disabled?'disabled':''} ${active}
-          onclick="pickSlot('${s.start}','${s.end}', ${JSON.stringify(s.available_tech_ids||[]).replace(/</g,'\\u003c')})">
-          ${label} ${disabled?'(เต็ม)':''}
-        </button>
+        <div class="slot" style="${dis?'opacity:.5':''}">
+          <div>
+            <b>${s.start} - ${s.end}</b><br/>
+            <small>${dis ? "เต็ม" : `ว่าง • ช่างว่าง ${Array.isArray(s.available_tech_ids)?s.available_tech_ids.length:0} คน`}</small>
+          </div>
+          <button class="btn btn-ghost" type="button" ${dis?'disabled':''} onclick="pickSlot('${iso}')">เลือก</button>
+        </div>
       `;
-    }).join('');
-
-    showToast(`โหลดคิวว่างแล้ว (${CURRENT_SLOTS.filter(x=>x.available).length} slot)`,'success');
+    }).join("");
   }catch(e){
     console.error(e);
-    byId('slotBox').innerHTML = `<div class="muted">โหลดคิวว่างไม่สำเร็จ: ${safe(e.message||e)}</div>`;
+    $("slotBox").innerHTML = `<div class="muted">โหลดคิวว่างไม่สำเร็จ: ${safe(e.message||e)}</div>`;
   }
-}
-
-function pickSlot(start, end, availableTechIds){
-  if (!CURRENT) return;
-  const dtStr = byId('appointment_datetime').value;
-  const date = dtStr.slice(0,10);
-  // set to start time
-  byId('appointment_datetime').value = `${date}T${start}`;
-
-  // Auto select first available tech as suggestion (admin can change)
-  const primarySel = byId('technician_username');
-  if (!primarySel.value && Array.isArray(availableTechIds) && availableTechIds.length){
-    primarySel.value = String(availableTechIds[0]);
-  }
-  ensurePrimaryInTeam();
-  showToast(`เลือกเวลา ${start} แล้ว`,'success');
 }
 
 async function dispatchJob(){
   if (!CURRENT) return;
-  const tech_type = byId('tech_type').value;
-  const technician_username = byId('technician_username').value;
+
+  const tech_type = $("mTechType").value || "company";
+  const technician_username = $("mPrimaryTech").value;
   if (!technician_username){
-    showToast('ต้องเลือกช่างหลักก่อนยิงงาน','error');
+    showToast("ต้องเลือกช่างหลักก่อน","error");
     return;
   }
   ensurePrimaryInTeam();
   const team_members = getSelectedTeam();
-  if (!team_members.includes(technician_username)) team_members.unshift(technician_username);
 
-  const mode = byId('dispatch_mode').value;
-
-  // save job first (appointment edits)
+  // save appointment edits first
   await saveJob();
 
-  try{
-    const payload = {
-      technician_username,
-      tech_type,
-      mode,
-      team_members,
-    };
-    const out = await apiFetch(`/jobs/${CURRENT.job_id}/dispatch_v2`, { method:'POST', body: JSON.stringify(payload) });
-    showToast('ยิงงานสำเร็จ','success');
-    setModal(false);
-    await loadQueue();
+  const mode = ($("mDispatchMode").value || "forced").trim();
 
-    // notify summary
-    if (out && out.offer && out.offer.offer_id){
-      showToast('ส่งเป็นข้อเสนอแล้ว (offer)','info');
-    }
+  try{
+    const payload = { technician_username, tech_type, mode, team_members };
+    const out = await apiFetch(`/jobs/${CURRENT.job_id}/dispatch_v2`, { method:"POST", body: JSON.stringify(payload) });
+    showToast("ยิงงานสำเร็จ","success");
+    closeModal();
+    await loadQueue();
+    if (out && out.offer && out.offer.offer_id) showToast("ส่งเป็นข้อเสนอแล้ว (offer)","info");
   }catch(e){
     console.error(e);
-    showToast(e.message||'ยิงงานไม่สำเร็จ','error');
+    showToast(e.message||"ยิงงานไม่สำเร็จ","error");
   }
 }
 
-function closeModal(){ setModal(false); CURRENT=null; }
-
-window.pickSlot = pickSlot;
-window.openJob = openJob;
+async function cancelJob(){
+  if (!CURRENT) return;
+  if (!confirm("ยืนยันยกเลิกงานนี้?")) return;
+  try{
+    await apiFetch(`/jobs/${CURRENT.job_id}/cancel`, { method:"POST", body: JSON.stringify({ reason: "admin_cancel" }) });
+    showToast("ยกเลิกงานแล้ว","success");
+    closeModal();
+    await loadQueue();
+  }catch(e){
+    showToast(e.message||"ยกเลิกไม่สำเร็จ","error");
+  }
+}
 
 (async function init(){
-  byId('dateFilter').value = todayYMD();
   await loadTechs();
   await loadQueue();
 
-  byId('btnReload').addEventListener('click', loadQueue);
-  byId('statusFilter').addEventListener('change', loadQueue);
-  byId('dateFilter').addEventListener('change', loadQueue);
+  $("btnReload").addEventListener("click", loadQueue);
+  $("filterStatus").addEventListener("change", loadQueue);
 
-  byId('btnClose').addEventListener('click', closeModal);
-  byId('btnSave').addEventListener('click', saveJob);
-  byId('btnLoadSlots').addEventListener('click', loadSlots);
-  byId('btnDispatch').addEventListener('click', dispatchJob);
+  $("btnLoadSlots").addEventListener("click", loadSlots);
+  $("btnSave").addEventListener("click", saveJob);
+  $("btnDispatch").addEventListener("click", dispatchJob);
+  $("btnCancel").addEventListener("click", cancelJob);
+  $("btnLoadPricing").addEventListener("click", loadPricing);
 
-  byId('tech_type').addEventListener('change', (e)=>{
-    if (!CURRENT) return;
-    CURRENT.technician_username = '';
-    CURRENT.team_members = [];
-    byId('techSearch').value = '';
-    renderTechSelectors(e.target.value);
-  });
-  byId('technician_username').addEventListener('change', ensurePrimaryInTeam);
-  byId('techSearch').addEventListener('input', ()=> renderTechSelectors(byId('tech_type').value));
+  $("mTechType").addEventListener("change", renderTechPickers);
+  $("mPrimaryTech").addEventListener("change", ensurePrimaryInTeam);
+  $("mTeamSearch").addEventListener("input", renderTechPickers);
+  const llUpdate = ()=>{
+    const ll = parseLatLngClient($("mMaps").value) || parseLatLngClient($("mAddress").value);
+    if(!ll) return;
+    $("mLat").value = String(ll.lat);
+    $("mLng").value = String(ll.lng);
+  };
+  $("mMaps").addEventListener("input", llUpdate);
+  $("mAddress").addEventListener("input", llUpdate);
 })();
