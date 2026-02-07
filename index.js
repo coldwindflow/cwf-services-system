@@ -420,6 +420,19 @@ async function ensureSchema() {
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS work_start TEXT DEFAULT '09:00'`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS work_end TEXT DEFAULT '18:00'`);
 
+    // 3.5) technician special slots (admin can add extra availability windows)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_special_slots_v2 (
+        slot_id BIGSERIAL PRIMARY KEY,
+        technician_username TEXT NOT NULL,
+        slot_date DATE NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tss_v2_date_user ON public.technician_special_slots_v2(slot_date, technician_username)`);
+
 
     // 3.4) technician_profiles: ✅ Premium Rank (Lv.1-5)
     // - Backward compatible: เก็บเพิ่ม โดยไม่แตะ/เปลี่ยนความหมายของ position เดิม
@@ -3753,6 +3766,50 @@ app.put("/admin/technicians/:username", async (req, res) => {
   }
 });
 
+// Admin: add/list special availability slots per technician (v2)
+app.get("/admin/technicians/:username/special_slots_v2", async (req, res) => {
+  try {
+    const username = (req.params.username || "").toString();
+    const date = (req.query.date || new Date().toISOString().slice(0,10)).toString();
+    const r = await pool.query(
+      `SELECT slot_id, slot_date, start_time, end_time, created_at
+       FROM public.technician_special_slots_v2
+       WHERE technician_username=$1 AND slot_date=$2::date
+       ORDER BY start_time ASC`,
+      [username, date]
+    );
+    res.json({ username, date, slots: r.rows });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "โหลดสลอตพิเศษไม่สำเร็จ" });
+  }
+});
+
+app.post("/admin/technicians/:username/special_slots_v2", async (req, res) => {
+  try {
+    const username = (req.params.username || "").toString();
+    const slot_date = (req.body.date || req.body.slot_date || new Date().toISOString().slice(0,10)).toString();
+    const start_time = (req.body.start_time || "").toString();
+    const end_time = (req.body.end_time || "").toString();
+    if (!/^\d{2}:\d{2}$/.test(start_time) || !/^\d{2}:\d{2}$/.test(end_time)) {
+      return res.status(400).json({ error: "เวลาไม่ถูกต้อง (HH:MM)" });
+    }
+    if (toMin(end_time) <= toMin(start_time)) {
+      return res.status(400).json({ error: "เวลาสิ้นสุดต้องมากกว่าเวลาเริ่ม" });
+    }
+    await pool.query(
+      `INSERT INTO public.technician_special_slots_v2 (technician_username, slot_date, start_time, end_time)
+       VALUES ($1, $2::date, $3, $4)`,
+      [username, slot_date, start_time, end_time]
+    );
+    console.log("[admin_special_slot_v2]", { username, slot_date, start_time, end_time });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "เพิ่มสลอตพิเศษไม่สำเร็จ" });
+  }
+});
+
 // =======================================
 // 🏅 ADMIN: update technician rank (Premium Rank Set)
 // - IMPORTANT: server-side guard (admin-only)
@@ -4269,8 +4326,20 @@ function computeDurationMinMulti(payload = {}, opts = {}) {
     if (d <= 0) return 0;
     total += d;
 
-    const tech = (s.assigned_to || s.assigned_technician_username || "").toString().trim();
-    if (tech) byTech.set(tech, (byTech.get(tech) || 0) + d);
+    const mc = Math.max(1, Number(s.machine_count || 1));
+    const allocations = s && (s.allocations || s.allocation || null);
+    if (allocations && typeof allocations === "object") {
+      // distribute line duration proportionally by machine count per tech
+      const perMachine = d / mc;
+      for (const [tech, qty] of Object.entries(allocations)) {
+        const q = Math.max(0, Number(qty || 0));
+        if (!tech || q <= 0) continue;
+        byTech.set(tech, (byTech.get(tech) || 0) + perMachine * q);
+      }
+    } else {
+      const tech = (s.assigned_to || s.assigned_technician_username || "").toString().trim();
+      if (tech) byTech.set(tech, (byTech.get(tech) || 0) + d);
+    }
   }
 
   const distinctTech = byTech.size;
@@ -4302,22 +4371,41 @@ function buildServiceLineItemsFromPayload(payload = {}) {
   const items = [];
   for (const s of services) {
     const linePrice = Number(computeStandardPrice(s) || 0);
+    const mc = Math.max(1, Number(s.machine_count || 1));
     const labelParts = [];
     labelParts.push(`ล้างแอร์${s.ac_type || ""}`.trim());
     if (s.ac_type === "ผนัง") labelParts.push(s.wash_variant || "ล้างธรรมดา");
     labelParts.push(`${Number(s.btu || 0)} BTU`);
     labelParts.push(`${Number(s.machine_count || 1)} เครื่อง`);
     const item_name = labelParts.join(" • ");
-    items.push({
-      item_id: null,
-      item_name,
-      qty: 1,
-      unit_price: linePrice,
-      line_total: linePrice,
-      // v2 fields (columns added by ensureSchema)
-      is_service: true,
-      assigned_technician_username: (s.assigned_to || s.assigned_technician_username || null),
-    });
+    const allocations = s && (s.allocations || s.allocation || null);
+    if (allocations && typeof allocations === "object") {
+      const perMachine = (mc > 0) ? (linePrice / mc) : linePrice;
+      for (const [tech, qty] of Object.entries(allocations)) {
+        const q = Math.max(0, Number(qty || 0));
+        if (!tech || q <= 0) continue;
+        const unit = Math.round(perMachine);
+        items.push({
+          item_id: null,
+          item_name: `${item_name} • ช่าง ${tech}`,
+          qty: q,
+          unit_price: unit,
+          line_total: unit * q,
+          is_service: true,
+          assigned_technician_username: tech,
+        });
+      }
+    } else {
+      items.push({
+        item_id: null,
+        item_name,
+        qty: 1,
+        unit_price: linePrice,
+        line_total: linePrice,
+        is_service: true,
+        assigned_technician_username: (s.assigned_to || s.assigned_technician_username || null),
+      });
+    }
   }
   return items;
 }
@@ -4425,6 +4513,24 @@ app.get("/public/availability_v2", async (req, res) => {
 
   try {
     const techs = await listTechniciansByType(tech_type);
+    // special slots map (admin can extend availability)
+    const specialMap = new Map();
+    try {
+      const sr = await pool.query(
+        `SELECT technician_username, start_time, end_time
+         FROM public.technician_special_slots_v2
+         WHERE slot_date=$1::date`,
+        [date]
+      );
+      for (const row of sr.rows) {
+        const u = row.technician_username;
+        if (!specialMap.has(u)) specialMap.set(u, []);
+        specialMap.get(u).push({ start: row.start_time, end: row.end_time });
+      }
+    } catch (e) {
+      // fail-open: do not break availability
+      console.warn("[availability_v2] special slots query failed", e.message);
+    }
     const tech_count = techs.length;
     // ✅ Work hours: ใช้ per-tech จริง (แต่ยังคง default 09:00-18:00)
     // สำหรับการสร้าง slot: ใช้ช่วงเวลามาตรฐานทั้งวัน แล้วคัด tech ที่อยู่ในช่วงเวลาของตัวเองอีกที
@@ -4443,10 +4549,19 @@ app.get("/public/availability_v2", async (req, res) => {
 
       const available_tech_ids = [];
       for (const tech of techs) {
-        // Respect per-tech working hours
+        // Respect per-tech working hours OR special windows
         const ts = toMin(tech.work_start || "09:00");
         const te = toMin(tech.work_end || "18:00");
-        if (!(t >= ts && t + block <= te)) continue;
+        let within = (t >= ts && t + block <= te);
+        if (!within) {
+          const wins = specialMap.get(tech.username) || [];
+          for (const w of wins) {
+            const ws = toMin(w.start);
+            const we = toMin(w.end);
+            if (t >= ws && t + block <= we) { within = true; break; }
+          }
+        }
+        if (!within) continue;
 
         const free = await isTechFree(tech.username, startIso, duration_min, null);
         if (free) available_tech_ids.push(tech.username);
@@ -4474,6 +4589,78 @@ app.get("/public/availability_v2", async (req, res) => {
       tech_count,
       slots,
     });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: "โหลดตารางว่างไม่สำเร็จ" });
+  }
+});
+
+// Admin: availability by technician (v2) - used for colored rows per tech
+app.get("/admin/availability_by_tech_v2", async (req, res) => {
+  if (!ENABLE_AVAILABILITY_V2) return res.status(404).json({ error: "DISABLED" });
+  const date = (req.query.date || new Date().toISOString().slice(0, 10)).toString();
+  const tech_type = (req.query.tech_type || "company").toString().trim().toLowerCase();
+  const duration_min = Math.max(15, Number(req.query.duration_min || 60));
+  const slot_step_min = 30;
+  try {
+    const techs = await listTechniciansByType(tech_type);
+    const specialMap = new Map();
+    try {
+      const sr = await pool.query(
+        `SELECT technician_username, start_time, end_time
+         FROM public.technician_special_slots_v2
+         WHERE slot_date=$1::date`,
+        [date]
+      );
+      for (const row of sr.rows) {
+        const u = row.technician_username;
+        if (!specialMap.has(u)) specialMap.set(u, []);
+        specialMap.get(u).push({ start: row.start_time, end: row.end_time });
+      }
+    } catch (e) {
+      console.warn("[admin_availability_by_tech_v2] special slots query failed", e.message);
+    }
+
+    const work_start = "09:00";
+    const work_end = "18:00";
+    const startMin = toMin(work_start);
+    const endMin = toMin(work_end);
+    const block = effectiveBlockMin(duration_min);
+
+    const all_slots = [];
+    for (let t = startMin; t + block <= endMin; t += slot_step_min) {
+      all_slots.push({ start: minToHHMM(t), end: minToHHMM(t + block) });
+    }
+
+    // build per-tech availability
+    const techRows = [];
+    for (const tech of techs) {
+      const ts = toMin(tech.work_start || work_start);
+      const te = toMin(tech.work_end || work_end);
+      const wins = specialMap.get(tech.username) || [];
+      const slots = [];
+      for (const s of all_slots) {
+        const t0 = toMin(s.start);
+        let within = (t0 >= ts && t0 + block <= te);
+        if (!within) {
+          for (const w of wins) {
+            const ws = toMin(w.start);
+            const we = toMin(w.end);
+            if (t0 >= ws && t0 + block <= we) { within = true; break; }
+          }
+        }
+        if (!within) {
+          slots.push({ start: s.start, end: s.end, available: false });
+          continue;
+        }
+        const free = await isTechFree(tech.username, `${date}T${s.start}:00`, duration_min, null);
+        slots.push({ start: s.start, end: s.end, available: !!free });
+      }
+      techRows.push({ username: tech.username, full_name: tech.full_name || null, slots });
+    }
+
+    console.log("[admin_availability_by_tech_v2]", { date, tech_type, duration_min, tech_count: techs.length, slots: all_slots.length });
+    res.json({ date, tech_type, work_start, work_end, duration_min, effective_block_min: block, slot_step_min, tech_count: techs.length, all_slots, techs: techRows });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "โหลดตารางว่างไม่สำเร็จ" });

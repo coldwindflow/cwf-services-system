@@ -135,10 +135,13 @@
     <label>มอบหมาย “รายการหลัก” ให้ช่าง</label>
     <select id="current_line_assigned_to"></select>
     <div class="muted2 mini" style="margin-top:6px">ถ้าเลือกหลายช่าง ระบบจะคำนวณเวลาแบบ “ทำพร้อมกัน” (เวลาในใบงาน = งานที่ใช้เวลานานสุด)</div>
-    <label style="display:flex;align-items:center;gap:10px;margin-top:10px">
-      <input type="checkbox" id="parallel_by_tech" checked />
-      <span><b>แบ่งงานตามช่าง (ทำพร้อมกัน)</b> • สล็อตจะโชว์แยกสีตามช่าง</span>
-    </label>
+    <div id="parallel_wrap" style="display:none">
+      <label style="display:flex;align-items:center;gap:10px;margin-top:10px">
+        <input type="checkbox" id="parallel_by_tech" checked />
+        <span><b>แบ่งงานตามช่าง (ทำพร้อมกัน)</b> • สล็อตจะโชว์แยกสีตามช่าง</span>
+      </label>
+      <div id="current_alloc_box" style="margin-top:10px"></div>
+    </div>
   </div>
 
   <div id="service_lines" style="margin-top:10px"></div>
@@ -255,7 +258,10 @@
           </div>
         </div>
         </div>
-<button class="secondary" type="button" style="margin-top:12px" id="btnLoadSlots">โหลดคิวว่าง</button>
+      <div class="grid2" style="margin-top:12px">
+        <button class="secondary" type="button" id="btnLoadSlots">โหลดคิวว่าง</button>
+        <button class="secondary" type="button" id="btnAddSpecialSlot">+ เพิ่มสลอตพิเศษ</button>
+      </div>
       <div id="slots_box" style="margin-top:10px"></div>
 
       <input id="appointment_datetime" type="datetime-local" style="margin-top:10px" />
@@ -272,20 +278,6 @@
       <textarea id="summary_text" rows="10" style="margin-top:10px"></textarea>
       <button class="secondary" type="button" style="margin-top:10px" id="btnCopySummary">คัดลอกข้อความ</button>
     </div>
-
-    <!-- Team action sheet (ซ่อนปุ่มใน chip ให้ดูพรีเมียม) -->
-    <div id="team_sheet_overlay" class="sheet-overlay">
-      <div class="sheet">
-        <div class="sheet-title" id="team_sheet_title">จัดการทีมช่าง</div>
-        <div class="sheet-sub" id="team_sheet_sub">เลือกการทำงาน</div>
-        <div class="sheet-actions">
-          <button type="button" id="team_sheet_set_primary" class="sheet-btn primary">ตั้งเป็นช่างหลัก</button>
-          <button type="button" id="team_sheet_remove" class="sheet-btn">เอาออกจากทีม</button>
-          <button type="button" id="team_sheet_close" class="sheet-btn">ปิด</button>
-        </div>
-      </div>
-    </div>
-
 
   <div class="bottom-nav">
     <button class="nav-btn" type="button" onclick="location.href='/admin-review-v2.html'">📥 งานจอง</button>

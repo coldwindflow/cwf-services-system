@@ -706,6 +706,12 @@ a:hover{ text-decoration: underline; }
   cursor:pointer;
   color:#0b1b33;
 }
+.team-suggest .team-chip-add{
+  border-color: rgba(13,110,253,.45);
+  background: linear-gradient(180deg, rgba(255,255,255,1), rgba(237,245,255,1));
+  color:#0b1b33;
+}
+.team-suggest .team-chip-add .team-name{ color:#0b1b33; }
 .team-chip-add:hover{ transform: translateY(-1px); }
 
 .team-empty{ padding:10px 6px; color:rgba(0,0,0,.55); }

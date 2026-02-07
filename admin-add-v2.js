@@ -85,6 +85,18 @@ state.teamPicker = {
   primary: "",
 };
 
+function updateParallelUIVisibility(){
+  const wrap = el('parallel_wrap');
+  if(!wrap) return;
+  const team = getTeamListForAssign();
+  const show = team.length >= 2;
+  wrap.style.display = show ? 'block' : 'none';
+  if(!show){
+    const cb = el('parallel_by_tech');
+    if(cb) cb.checked = false;
+  }
+}
+
 function syncPrimaryFromSelect(){
   const u = (el("technician_username_select")?.value || "").trim();
   state.teamPicker.primary = u;
@@ -197,6 +209,85 @@ function renderTeamPicker(allowedIds=null){
   // sync hidden csv for payload
   getTeamMembersForPayload();
   refreshCurrentAssignSelect();
+  updateParallelUIVisibility();
+  renderCurrentAllocationUI();
+}
+
+// Allocation UI for current service line (when machine_count>1 and team>=2)
+state.current_alloc = {}; // {username: qty}
+function renderCurrentAllocationUI(){
+  const box = el('current_alloc_box');
+  if(!box) return;
+  const team = getTeamListForAssign();
+  const mc = Math.max(1, Number(el('machine_count')?.value||1));
+  const parallel = !!(el('parallel_by_tech')?.checked);
+  const jt = (el('job_type')?.value||'').trim();
+  // only for wash flow allocation; still useful for any job but keep scope conservative
+  if(!parallel || team.length < 2 || mc < 2 || jt !== 'ล้าง'){
+    box.innerHTML = '';
+    state.current_alloc = {};
+    return;
+  }
+  // init default: put all on primary if empty
+  if(!Object.keys(state.current_alloc||{}).length){
+    const p = state.teamPicker.primary || team[0];
+    state.current_alloc = {};
+    if(p) state.current_alloc[p] = mc;
+  }
+  // ensure members exist
+  for(const u of team){ if(!(u in state.current_alloc)) state.current_alloc[u]=0; }
+
+  const total = Object.values(state.current_alloc).reduce((a,b)=>a+Number(b||0),0);
+  const warn = total !== mc;
+
+  box.innerHTML = `
+    <div class="card card-lite" style="padding:12px;border-radius:16px">
+      <b>แบ่งจำนวนเครื่องต่อช่าง (ทำพร้อมกัน)</b>
+      <div class="muted2 mini" style="margin-top:4px">รวมต้องเท่ากับ <b>${mc}</b> เครื่อง</div>
+      <div id="curAllocRows" style="margin-top:10px;display:flex;flex-direction:column;gap:8px"></div>
+      <div class="muted2 mini" style="margin-top:8px;${warn?'color:#b91c1c;font-weight:900':''}">
+        รวมตอนนี้: ${total} / ${mc} ${warn ? ' (ยังไม่ครบ)' : ''}
+      </div>
+    </div>
+  `;
+  const rowsEl = el('curAllocRows');
+  if(!rowsEl) return;
+  const clamp=(n)=>Math.max(0, Math.min(mc, n));
+  for(const u of team){
+    const row = document.createElement('div');
+    row.className='line';
+    row.innerHTML = `
+      <div class="pill" style="flex:1;justify-content:space-between">
+        <span style="font-weight:900">${escapeHtml(u)}${u===state.teamPicker.primary?' • Primary':''}</span>
+        <div class="stepper" style="gap:6px">
+          <button type="button" class="btn-round" data-act="-" data-u="${u}">−</button>
+          <input type="number" min="0" max="${mc}" step="1" value="${Number(state.current_alloc[u]||0)}" style="width:72px;text-align:center" data-u="${u}">
+          <button type="button" class="btn-round" data-act="+" data-u="${u}">+</button>
+        </div>
+      </div>
+    `;
+    rowsEl.appendChild(row);
+  }
+  rowsEl.querySelectorAll('button.btn-round').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const u=btn.getAttribute('data-u');
+      const act=btn.getAttribute('data-act');
+      if(!u) return;
+      const v = Number(state.current_alloc[u]||0);
+      state.current_alloc[u] = clamp(v + (act==='+'?1:-1));
+      renderCurrentAllocationUI();
+      refreshPreviewDebounced();
+    });
+  });
+  rowsEl.querySelectorAll('input[type="number"]').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const u=inp.getAttribute('data-u');
+      if(!u) return;
+      state.current_alloc[u] = clamp(Number(inp.value||0));
+      renderCurrentAllocationUI();
+      refreshPreviewDebounced();
+    });
+  });
 }
 
 function getTeamListForAssign(){
@@ -385,6 +476,24 @@ function buildCurrentServiceLine(){
   const p = getPayloadV2();
   // ใช้เฉพาะงานล้างเท่านั้นสำหรับ multi-service
   const assigned_to = (el('current_line_assigned_to')?.value || '').trim();
+  const parallel = !!(el('parallel_by_tech')?.checked);
+  let allocations = null;
+  if(parallel && p.job_type==='ล้าง'){
+    // allocations ใช้เฉพาะกรณีจำนวนเครื่องมากกว่า 1
+    const mc = Math.max(1, Number(p.machine_count||1));
+    if(mc >= 2){
+      const a = state.current_alloc || {};
+      const sum = Object.values(a).reduce((x,y)=>x+Number(y||0),0);
+      if(sum === mc){
+        const cleaned = {};
+        for(const [k,v] of Object.entries(a)){
+          const q = Math.max(0, Number(v||0));
+          if(q>0) cleaned[k]=q;
+        }
+        allocations = Object.keys(cleaned).length ? cleaned : null;
+      }
+    }
+  }
   return {
     job_type: p.job_type,
     ac_type: p.ac_type,
@@ -392,6 +501,7 @@ function buildCurrentServiceLine(){
     machine_count: p.machine_count,
     wash_variant: p.wash_variant,
     assigned_to: assigned_to || (state.teamPicker.primary||'') || null,
+    allocations,
   };
 }
 
@@ -428,6 +538,7 @@ function renderServiceLines(){
         <div class="svc-title"><b>${escapeHtml(label)}</b></div>
         <div class="muted2 mini">รายการบริการหลัก #${idx+1}</div>
         <div class="muted2 mini" style="margin-top:6px"><b>มอบหมายให้:</b> <select class="svc-assign" data-idx="${idx}"></select></div>
+        <div class="svc-alloc" data-idx="${idx}"></div>
       </div>
       <button type="button" class="svc-del" data-idx="${idx}">ลบ</button>
     </div>`;
@@ -466,6 +577,68 @@ function renderServiceLines(){
         renderServiceLines();
         refreshPreviewDebounced();
       }
+    });
+  });
+
+  // allocation per line (only when parallel, team>=2, and machine_count>=2)
+  const parallel = !!(el('parallel_by_tech')?.checked);
+  const team2 = getTeamListForAssign();
+  list.querySelectorAll('.svc-alloc').forEach(div=>{
+    const idx = Number(div.getAttribute('data-idx'));
+    const ln = (Number.isFinite(idx) && state.service_lines[idx]) ? state.service_lines[idx] : null;
+    if(!ln){ div.innerHTML=''; return; }
+    const mc = Math.max(1, Number(ln.machine_count||1));
+    if(!parallel || team2.length<2 || mc<2){ div.innerHTML=''; ln.allocations = null; return; }
+    // init allocations default -> assigned_to gets all
+    if(!ln.allocations || typeof ln.allocations!=='object'){
+      ln.allocations = {};
+      const p = (ln.assigned_to||state.teamPicker.primary||team2[0]||'').trim();
+      if(p) ln.allocations[p] = mc;
+    }
+    for(const u of team2){ if(!(u in ln.allocations)) ln.allocations[u]=0; }
+    const total = Object.values(ln.allocations).reduce((a,b)=>a+Number(b||0),0);
+    const warn = total!==mc;
+    div.innerHTML = `
+      <div class="muted2 mini" style="margin-top:8px">แบ่งจำนวนเครื่องต่อช่าง (รวม ${mc} เครื่อง)</div>
+      <div class="alloc-grid" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"></div>
+      <div class="muted2 mini" style="margin-top:4px;${warn?'color:#b91c1c;font-weight:900':''}">รวม: ${total}/${mc}${warn?' (ยังไม่ครบ)':''}</div>
+    `;
+    const grid = div.querySelector('.alloc-grid');
+    if(!grid) return;
+    const clamp=(n)=>Math.max(0, Math.min(mc, n));
+    for(const u of team2){
+      const r=document.createElement('div');
+      r.className='line';
+      r.innerHTML = `
+        <div class="pill" style="flex:1;justify-content:space-between">
+          <span style="font-weight:900">${escapeHtml(u)}</span>
+          <div class="stepper" style="gap:6px">
+            <button type="button" class="btn-round" data-act="-" data-u="${u}">−</button>
+            <input type="number" min="0" max="${mc}" step="1" value="${Number(ln.allocations[u]||0)}" style="width:72px;text-align:center" data-u="${u}">
+            <button type="button" class="btn-round" data-act="+" data-u="${u}">+</button>
+          </div>
+        </div>`;
+      grid.appendChild(r);
+    }
+    grid.querySelectorAll('button.btn-round').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const u=btn.getAttribute('data-u');
+        const act=btn.getAttribute('data-act');
+        if(!u) return;
+        const v = Number(ln.allocations[u]||0);
+        ln.allocations[u] = clamp(v + (act==='+'?1:-1));
+        refreshPreviewDebounced();
+        renderServiceLines();
+      });
+    });
+    grid.querySelectorAll('input[type="number"]').forEach(inp=>{
+      inp.addEventListener('input', ()=>{
+        const u=inp.getAttribute('data-u');
+        if(!u) return;
+        ln.allocations[u] = clamp(Number(inp.value||0));
+        refreshPreviewDebounced();
+        renderServiceLines();
+      });
     });
   });
 }
@@ -507,7 +680,11 @@ function getServicesPayload(){
   const pushUnique=(ln)=>{
     if(!ln || !ln.ac_type || !ln.btu || !ln.machine_count) return;
     if(all.some(x=>sameServiceLine(x,ln))) return;
-    all.push(ln);
+    const out = { ...ln };
+    // keep allocations if present (used by server-side duration & job_items split)
+    if(out.allocations && typeof out.allocations !== 'object') out.allocations = null;
+    delete out.allocations_key_fixed;
+    all.push(out);
   };
   for(const ln of (state.service_lines||[])) pushUnique(ln);
   pushUnique(cur);
@@ -1013,6 +1190,7 @@ function wireEvents() {
   el("appt_date").addEventListener("change", loadAvailability);
   el("tech_type").addEventListener("change", async ()=>{ await loadTechsForType(); await loadAvailability(); });
   const btnSlots = el("btnLoadSlots"); if(btnSlots) btnSlots.addEventListener("click", loadAvailability);
+  const btnSpecial = el("btnAddSpecialSlot"); if(btnSpecial) btnSpecial.addEventListener("click", addSpecialSlotV2);
 
 
 // auto parse lat/lng from maps url (fail-open)
@@ -1042,6 +1220,27 @@ if (copyBtn) copyBtn.addEventListener("click", async () => {
   el('current_line_assigned_to')?.addEventListener('change', ()=>{ refreshPreviewDebounced(); renderSlots(); });
   el('parallel_by_tech')?.addEventListener('change', ()=>{ refreshPreviewDebounced(); renderSlots(); });
   el("btnSubmit").addEventListener("click", submitBooking);
+}
+
+async function addSpecialSlotV2(){
+  try {
+    const date = (el("appt_date")?.value || todayYMD()).trim();
+    const team = getTeamListForAssign();
+    if(!team.length){ showToast("ยังไม่มีรายชื่อช่างให้เพิ่มสลอต", "error"); return; }
+    const username = (state.teamPicker.primary || team[0]).trim();
+    const st = prompt(`เพิ่มสลอตพิเศษ\nช่าง: ${username}\nวันที่: ${date}\n\nใส่เวลาเริ่ม (HH:MM)`, "18:00");
+    if(!st) return;
+    const en = prompt(`ใส่เวลาสิ้นสุด (HH:MM)\nช่าง: ${username}\nวันที่: ${date}`, "19:00");
+    if(!en) return;
+    await apiFetch(`/admin/technicians/${encodeURIComponent(username)}/special_slots_v2`, {
+      method: "POST",
+      body: JSON.stringify({ date, start_time: st.trim(), end_time: en.trim() })
+    });
+    showToast("เพิ่มสลอตพิเศษแล้ว", "success");
+    await loadAvailability();
+  } catch (e) {
+    showToast(e.message || "เพิ่มสลอตพิเศษไม่สำเร็จ", "error");
+  }
 }
 
 async function init() {
