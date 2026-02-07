@@ -496,12 +496,16 @@ await pool.query(`
     promo_name TEXT NOT NULL,
     promo_type TEXT NOT NULL CHECK (promo_type IN ('percent','amount')),
     promo_value NUMERIC(12,2) DEFAULT 0,
+    is_customer_visible BOOLEAN DEFAULT FALSE,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
   )
 `);
 
-// ✅ ลูกค้าเห็นเฉพาะโปรที่อนุญาต (Backward compatible)
+// backward compatible
+await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS is_customer_visible BOOLEAN DEFAULT FALSE`);
+
+// Backward compatible for existing DBs
 await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS is_customer_visible BOOLEAN DEFAULT FALSE`);
 
 await pool.query(`
@@ -901,15 +905,16 @@ app.post("/catalog/items", async (req, res) => {
 // =======================================
 app.get("/promotions", async (req, res) => {
   try {
-    const customer = String(req.query.customer || "") === "1";
+    const isCustomer = String(req.query.customer || "").trim() === "1";
     const r = await pool.query(
       `
-      SELECT promo_id, promo_name, promo_type, promo_value
+      SELECT promo_id, promo_name, promo_type, promo_value, is_customer_visible
       FROM public.promotions
       WHERE is_active = TRUE
-        ${customer ? "AND is_customer_visible = TRUE" : ""}
+        AND ($1::boolean = FALSE OR is_customer_visible = TRUE)
       ORDER BY promo_name
-      `
+      `,
+      [isCustomer]
     );
     res.json(r.rows);
   } catch (e) {
@@ -1810,15 +1815,6 @@ app.post("/jobs/:job_id/admin-set-promo", async (req, res) => {
         ON CONFLICT (job_id) DO UPDATE SET promo_id=EXCLUDED.promo_id, created_at=NOW()
         `,
         [job_id, promo_id]
-      );
-    }
-
-    if (promo) {
-      await client.query(
-        `INSERT INTO public.job_promotions (job_id, promo_id, applied_discount)
-         VALUES ($1,$2,$3)
-         ON CONFLICT (job_id) DO UPDATE SET promo_id=EXCLUDED.promo_id, applied_discount=EXCLUDED.applied_discount`,
-        [job_id, promo.promo_id, Number(pricing.discount || 0)]
       );
     }
 
@@ -3984,7 +3980,7 @@ app.get("/public/availability", async (req, res) => {
 
 app.post("/public/book", async (req, res) => {
   // ✅ ลูกค้าจองคิว (ไม่บังคับกรอก lat/lng) + เลือกรายการบริการ/สินค้าได้
-  // - โปรโมชั่น: รองรับฝั่งลูกค้าเฉพาะโปรที่เปิดให้เห็น (is_customer_visible=TRUE)
+  // - โปรโมชั่น: ให้แอดมินเป็นคนใส่/ลบเท่านั้น (ฝั่งลูกค้าไม่รับ promo_id)
   const {
     customer_name,
     customer_phone,
@@ -3995,7 +3991,6 @@ app.post("/public/book", async (req, res) => {
     maps_url,
     job_zone,
     items, // [{item_id, qty}] (extras)
-    promotion_id,
     booking_mode,
     ac_type,
     btu,
@@ -4037,39 +4032,30 @@ app.post("/public/book", async (req, res) => {
 
     // 1) ดึงราคา base_price จาก DB
     let computedItems = [];
+    let total = Number(standard_price || 0);
     // STANDARD_SERVICE_LINE_V2
-    if (Number(standard_price || 0) > 0) {
-      const sp = Number(standard_price || 0);
-      computedItems.push({
-        item_id: null,
-        item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`,
-        qty: 1,
-        unit_price: sp,
-        line_total: sp,
-      });
+    if (total > 0) {
+      computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: total, line_total: total });
     }
 
     if (itemIdQty.length) {
       const ids = itemIdQty.map((x) => x.item_id);
       const catR = await client.query(
-        `
-        SELECT item_id, item_name, base_price
-        FROM public.catalog_items
-        WHERE is_active=TRUE
-          AND is_customer_visible=TRUE /* CUSTOMER_CATALOG_VISIBLE_ONLY */
-          AND item_id = ANY($1::bigint[])
-        `,
+        `SELECT item_id, item_name, base_price
+         FROM public.catalog_items
+         WHERE is_active=TRUE AND is_customer_visible=TRUE /* CUSTOMER_CATALOG_VISIBLE_ONLY */ AND item_id = ANY($1::bigint[])`,
         [ids]
       );
 
       const map = new Map(catR.rows.map((r) => [Number(r.item_id), r]));
-      const extras = itemIdQty
+      computedItems = itemIdQty
         .map((x) => {
           const it = map.get(Number(x.item_id));
           if (!it) return null;
           const qty = Number(x.qty);
           const unit_price = Number(it.base_price || 0);
           const line_total = qty * unit_price;
+          total += line_total;
           return {
             item_id: Number(it.item_id),
             item_name: it.item_name,
@@ -4079,29 +4065,7 @@ app.post("/public/book", async (req, res) => {
           };
         })
         .filter(Boolean);
-      computedItems = computedItems.concat(extras);
     }
-
-    // ✅ Promo (customer) — เฉพาะที่อนุญาตให้ลูกค้าเห็น
-    let promo = null;
-    if (promotion_id) {
-      const pr = await client.query(
-        `
-        SELECT promo_id, promo_name, promo_type, promo_value
-        FROM public.promotions
-        WHERE promo_id=$1 AND is_active=TRUE AND is_customer_visible=TRUE
-        `,
-        [Number(promotion_id)]
-      );
-      promo = pr.rows[0] || null;
-    }
-
-    const pricing = calcPricing(computedItems.map((x) => ({
-      qty: Number(x.qty || 1),
-      unit_price: Number(x.unit_price || 0),
-    })), promo);
-
-    const total = Number(pricing.total || 0);
 
     // 2) สร้างงาน
     const r = await client.query(
@@ -4178,15 +4142,6 @@ app.post("/public/book", async (req, res) => {
         VALUES ($1,$2,$3,$4,$5,$6)
         `,
         [job_id, it.item_id, it.item_name, it.qty, it.unit_price, it.line_total]
-      );
-    }
-
-    if (promo) {
-      await client.query(
-        `INSERT INTO public.job_promotions (job_id, promo_id, applied_discount)
-         VALUES ($1,$2,$3)
-         ON CONFLICT (job_id) DO UPDATE SET promo_id=EXCLUDED.promo_id, applied_discount=EXCLUDED.applied_discount`,
-        [job_id, promo.promo_id, Number(pricing.discount || 0)]
       );
     }
 

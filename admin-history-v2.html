@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin ประวัติงาน (v2) - CWF</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .app{padding-bottom:86px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    @media (max-width:420px){.grid2{grid-template-columns:1fr}}
+    .table-wrap{margin-top:12px;background:#fff;border:1px solid rgba(15,23,42,0.10);border-radius:18px;overflow:hidden;box-shadow:var(--shadow)}
+    table{width:100%;border-collapse:collapse}
+    th,td{padding:10px;border-bottom:1px solid rgba(15,23,42,0.08);font-size:13px;vertical-align:top}
+    th{background:#f8fafc;text-align:left;position:sticky;top:0;z-index:1}
+    .code{font-weight:900}
+    .pill{display:inline-block;padding:4px 8px;border-radius:999px;border:1px solid rgba(15,23,42,0.12);font-size:12px;background:#fff}
+    .muted2{color:rgba(15,23,42,0.72)}
+    .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:#0f172a;display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:999;border-top:1px solid rgba(255,255,255,0.08)}
+    .nav-btn{flex:1;min-height:44px;border:1px solid rgba(255,255,255,0.18);background:transparent;color:#fff;border-radius:12px;font-weight:700;font-size:13px}
+    .nav-btn.active{background:#22c55e;color:#052e16;border-color:transparent}
+  </style>
+</head>
+<body class="theme-2">
+  <div class="app">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <h2 style="margin:0">📚 ประวัติงานทั้งหมด</h2>
+      <button class="secondary" type="button" onclick="location.href='/admin.html'">เมนู</button>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <b>ตัวกรอง</b>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>ตั้งแต่วันที่</label>
+          <input id="date_from" type="date">
+        </div>
+        <div>
+          <label>ถึงวันที่</label>
+          <input id="date_to" type="date">
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>ช่าง</label>
+          <input id="technician" placeholder="username ช่าง">
+        </div>
+        <div>
+          <label>ค้นหา (ชื่อ/ที่อยู่/โซน/เลขงาน)</label>
+          <input id="q" placeholder="เช่น อ่อนนุช / CWF...">
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>จำนวนแสดงผล</label>
+          <select id="limit">
+            <option value="100">100</option>
+            <option value="200" selected>200</option>
+            <option value="500">500</option>
+          </select>
+        </div>
+        <div>
+          <label>&nbsp;</label>
+          <button id="btnLoad">โหลดประวัติ</button>
+        </div>
+      </div>
+      <div class="muted" style="margin-top:6px">กรองตามวัน/เวลา/ช่าง/สถานที่/โซน ได้ (ข้อมูลจาก /admin/jobs_v2)</div>
+    </div>
+
+    <div class="table-wrap" id="wrap" style="display:none">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:120px">เลขงาน</th>
+            <th style="width:130px">วันเวลา</th>
+            <th>ลูกค้า/งาน</th>
+            <th style="width:110px">ช่าง</th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn" type="button" onclick="location.href='/admin-add-v2.html'">➕ เพิ่มงาน</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-queue-v2.html'">🗓️ คิวช่าง</button>
+    <button class="nav-btn active" type="button" onclick="location.href='/admin-history-v2.html'">📚 ประวัติ</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-tech.html'">👷 ช่าง</button>
+  </div>
+
+  <script src="admin-v2-common.js"></script>
+  <script src="admin-history-v2.js"></script>
+</body>
+</html>

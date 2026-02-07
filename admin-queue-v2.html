@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin เช็คคิวช่าง (v2) - CWF</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .app{padding-bottom:86px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    @media (max-width:420px){.grid2{grid-template-columns:1fr}}
+    .calendar-wrap{margin-top:12px;border:1px solid rgba(15,23,42,0.10);border-radius:18px;overflow:hidden;background:#fff;box-shadow:var(--shadow)}
+    .cal-head{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px;border-bottom:1px solid rgba(15,23,42,0.08);background:#f8fafc}
+    .cal-body{display:flex;overflow:auto;max-height:70vh}
+    .time-col{min-width:72px;border-right:1px solid rgba(15,23,42,0.08);background:#fff}
+    .time-cell{height:36px;display:flex;align-items:flex-start;justify-content:center;font-size:12px;color:rgba(15,23,42,0.65);padding-top:4px;border-bottom:1px dashed rgba(15,23,42,0.06)}
+    .tech-col{min-width:220px;border-right:1px solid rgba(15,23,42,0.08)}
+    .tech-title{position:sticky;top:0;background:#fff;z-index:3;padding:10px;border-bottom:1px solid rgba(15,23,42,0.08)}
+    .tech-title b{display:block}
+    .tech-title .muted{font-size:12px}
+    .tech-lane{position:relative}
+    .lane-cell{height:36px;border-bottom:1px dashed rgba(15,23,42,0.06)}
+    .job-block{position:absolute;left:8px;right:8px;border-radius:14px;padding:8px;border:1px solid rgba(15,23,42,0.15);background:#e2e8f0;box-shadow:0 8px 18px rgba(0,0,0,0.08);overflow:hidden}
+    .job-block b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .job-block .mini{font-size:12px;color:rgba(15,23,42,0.75);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .job-block.status-urgent{background:#fde68a}
+    .job-block.status-done{background:#bbf7d0}
+    .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:#0f172a;display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:999;border-top:1px solid rgba(255,255,255,0.08)}
+    .nav-btn{flex:1;min-height:44px;border:1px solid rgba(255,255,255,0.18);background:transparent;color:#fff;border-radius:12px;font-weight:700;font-size:13px}
+    .nav-btn.active{background:#22c55e;color:#052e16;border-color:transparent}
+  </style>
+</head>
+<body class="theme-2">
+  <div class="app">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <h2 style="margin:0">🗓️ เช็คคิวช่าง (ปฏิทิน)</h2>
+      <button class="secondary" type="button" onclick="location.href='/admin.html'">เมนู</button>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <b>ตัวกรอง</b>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>วันที่</label>
+          <input id="date" type="date">
+        </div>
+        <div>
+          <label>กลุ่มช่าง</label>
+          <select id="tech_type">
+            <option value="company">ช่างบริษัท</option>
+            <option value="partner">ช่างพาร์ทเนอร์</option>
+          </select>
+        </div>
+      </div>
+      <button id="btnLoad" style="margin-top:10px">โหลดปฏิทิน</button>
+      <div class="muted" style="margin-top:6px">แสดงช่วงเวลางานแบบรวม Travel Buffer แล้ว (conservative)</div>
+    </div>
+
+    <div id="calendar" class="calendar-wrap" style="display:none">
+      <div class="cal-head">
+        <div>
+          <b id="calTitle">ปฏิทิน</b>
+          <div class="muted" id="calSub"></div>
+        </div>
+        <button class="secondary" type="button" id="btnReload">รีเฟรช</button>
+      </div>
+      <div class="cal-body" id="calBody"></div>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn" type="button" onclick="location.href='/admin-add-v2.html'">➕ เพิ่มงาน</button>
+    <button class="nav-btn active" type="button" onclick="location.href='/admin-queue-v2.html'">🗓️ คิวช่าง</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-history-v2.html'">📚 ประวัติ</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-tech.html'">👷 ช่าง</button>
+  </div>
+
+  <script src="admin-v2-common.js"></script>
+  <script src="admin-queue-v2.js"></script>
+</body>
+</html>

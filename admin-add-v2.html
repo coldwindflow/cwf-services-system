@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin เพิ่มงาน (v2) - CWF</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .app{padding-bottom:86px}
+    .section-card{margin-top:12px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    @media (max-width:420px){.grid2{grid-template-columns:1fr}}
+    .pill{display:inline-flex;gap:8px;align-items:center;border:1px solid rgba(15,23,42,0.12);border-radius:999px;padding:8px 10px;background:#fff}
+    .pill input{margin:0}
+    .line{display:flex;gap:8px;align-items:center}
+    .line .grow{flex:1}
+    .mini{font-size:12px}
+    .muted2{color:rgba(15,23,42,0.72);font-size:13px}
+    .slot-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+    @media (max-width:420px){.slot-grid{grid-template-columns:1fr}}
+    .slot-btn{min-height:44px;border-radius:14px;border:1px solid rgba(15,23,42,0.12);background:#fff;font-weight:800}
+    .slot-btn.selected{background:#22c55e;color:#052e16;border-color:transparent}
+    .slot-btn.disabled{opacity:0.45}
+    .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:#0f172a;display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:999;border-top:1px solid rgba(255,255,255,0.08)}
+    .nav-btn{flex:1;min-height:44px;border:1px solid rgba(255,255,255,0.18);background:transparent;color:#fff;border-radius:12px;font-weight:700;font-size:13px}
+    .nav-btn.active{background:#22c55e;color:#052e16;border-color:transparent}
+    .card-lite{background:#f8fafc;border:1px solid rgba(15,23,42,0.08)}
+  </style>
+</head>
+<body class="theme-2">
+  <div class="app">
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
+      <h2 style="margin:0">➕ เพิ่มงาน (Admin v2)</h2>
+      <button class="secondary" type="button" onclick="location.href='/admin.html'">เมนู</button>
+    </div>
+
+    <div class="card section-card">
+      <b>1) ข้อมูลลูกค้า</b>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>ชื่อลูกค้า *</label>
+          <input id="customer_name" placeholder="ชื่อลูกค้า">
+        </div>
+        <div>
+          <label>เบอร์โทร</label>
+          <input id="customer_phone" placeholder="0xx-xxx-xxxx">
+        </div>
+      </div>
+      <label style="margin-top:10px">ที่อยู่ *</label>
+      <textarea id="address_text" rows="2" placeholder="บ้านเลขที่/ซอย/ถนน/เขต..."></textarea>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>โซน/พื้นที่</label>
+          <input id="job_zone" placeholder="เช่น อ่อนนุช/พระโขนง">
+        </div>
+        <div>
+          <label>ลิงก์แผนที่</label>
+          <input id="maps_url" placeholder="https://maps...">
+        </div>
+      </div>
+      <label style="margin-top:10px">หมายเหตุ</label>
+      <input id="customer_note" placeholder="เช่น จอดรถ/ติดต่อก่อนถึง">
+    </div>
+
+    <div class="card section-card">
+      <b>2) รายละเอียดบริการ (Flow เหมือนลูกค้า)</b>
+      <label style="margin-top:10px">ประเภทงาน *</label>
+      <select id="job_type">
+        <option value="">-- เลือก --</option>
+        <option value="ล้าง">ล้าง</option>
+        <option value="ซ่อม">ซ่อม</option>
+        <option value="ติดตั้ง">ติดตั้ง</option>
+      </select>
+
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>ประเภทแอร์</label>
+          <select id="ac_type">
+            <option value="ผนัง">ผนัง</option>
+            <option value="สี่ทิศทาง">สี่ทิศทาง</option>
+            <option value="แขวน">แขวน</option>
+            <option value="เปลือยใต้ฝ้า">เปลือยใต้ฝ้า</option>
+          </select>
+        </div>
+        <div>
+          <label>BTU</label>
+          <select id="btu"></select>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>จำนวนเครื่อง</label>
+          <input id="machine_count" type="number" min="1" step="1" value="1">
+        </div>
+        <div>
+          <label>โหมดจอง</label>
+          <select id="booking_mode">
+            <option value="scheduled">ปกติ (นัดแน่นอน)</option>
+            <option value="urgent">ลองยิงงานด่วน (รอช่างยืนยัน)</option>
+          </select>
+        </div>
+      </div>
+
+      <div id="variant_box" style="margin-top:10px"></div>
+
+      <div class="card card-lite" style="margin-top:12px">
+        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+          <div>
+            <b>คำนวณอัตโนมัติ</b>
+            <div class="muted2 mini">ราคา/เวลา จะอัปเดตทันทีเมื่อเปลี่ยนค่า</div>
+          </div>
+          <div style="text-align:right">
+            <div><span class="muted2">เวลา:</span> <b id="pv_duration">-</b> นาที</div>
+            <div><span class="muted2">บล็อกเวลา:</span> <b id="pv_block">-</b> นาที</div>
+            <div><span class="muted2">ค่าบริการมาตรฐาน:</span> <b id="pv_price">-</b> บาท</div>
+          </div>
+        </div>
+        <div class="grid2" style="margin-top:10px">
+          <div>
+            <label>Override ราคา (บาท)</label>
+            <input id="override_price" type="number" min="0" step="1" placeholder="0 = ใช้ราคามาตรฐาน">
+          </div>
+          <div>
+            <label>Override เวลา (นาที)</label>
+            <input id="override_duration_min" type="number" min="0" step="1" placeholder="0 = คิดตามกติกา">
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card section-card">
+      <b>3) รายการเสริม (Extras) + โปรโมชัน</b>
+      <div class="muted2 mini" style="margin-top:6px">เลือกหลายรายการได้ (ราคาดึงจาก Catalog จริง) และเลือกโปรโมชันได้</div>
+
+      <div class="line" style="margin-top:10px">
+        <select id="extras_select" class="grow"></select>
+        <input id="extras_qty" type="number" min="1" step="1" value="1" style="width:84px">
+        <button class="secondary btn-mini" type="button" id="btnAddExtra">เพิ่ม</button>
+      </div>
+
+      <div id="extras_list" style="margin-top:10px"></div>
+
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>โปรโมชัน</label>
+          <select id="promotion_id"></select>
+        </div>
+        <div>
+          <label>ยอดรวมประมาณ</label>
+          <input id="total_preview" disabled value="-">
+        </div>
+      </div>
+    </div>
+
+    <div class="card section-card">
+      <b>4) เลือกคิวช่าง</b>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>วันที่</label>
+          <input id="date" type="date">
+        </div>
+        <div>
+          <label>กลุ่มช่าง</label>
+          <select id="tech_type">
+            <option value="company">ช่างบริษัท (ปกติ)</option>
+            <option value="partner">ช่างพาร์ทเนอร์</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>เลือกช่าง (ไม่เลือก = ระบบเลือกช่างว่าง)</label>
+          <input id="technician_username" placeholder="เช่น tech01">
+        </div>
+        <div>
+          <label>dispatch_mode</label>
+          <select id="dispatch_mode">
+            <option value="forced">forced (ล็อคช่าง)</option>
+            <option value="offer">offer (ยิงข้อเสนอ)</option>
+          </select>
+        </div>
+      </div>
+
+      <button class="secondary" type="button" style="margin-top:12px" id="btnLoadSlots">โหลดคิวว่าง</button>
+      <div id="slots_box" style="margin-top:10px"></div>
+
+      <input id="appointment_datetime" type="datetime-local" style="margin-top:10px" />
+      <div class="muted2 mini" style="margin-top:6px">* เมื่อเลือกสล็อต ระบบจะใส่วันเวลาให้อัตโนมัติ</div>
+
+      <button class="primary" type="button" style="margin-top:12px" id="btnSubmit">บันทึกงาน</button>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn active" type="button" onclick="location.href='/admin-add-v2.html'">➕ เพิ่มงาน</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-queue-v2.html'">🗓️ คิวช่าง</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-history-v2.html'">📚 ประวัติ</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-tech.html'">👷 ช่าง</button>
+  </div>
+
+  <script src="admin-v2-common.js"></script>
+  <script src="admin-add-v2.js"></script>
+</body>
+</html>

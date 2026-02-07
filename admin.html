@@ -4,503 +4,69 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Admin - CWF</title>
-
-  <!-- CSS หลักของระบบ -->
   <link rel="stylesheet" href="style.css">
-
   <style>
-    /* ✅ จัดหน้าให้ดูง่ายขึ้น โดยไม่กระทบโค้ดเดิม */
-    .section-card{ margin-top:12px; }
-    .section-card h3{ margin:0 0 10px; }
-
-    /* ✅ Modal (แก้ไขใบงาน) */
-    .modal-backdrop{
-      position: fixed; inset: 0;
-      background: rgba(2,6,23,0.55);
-      display:none; align-items:center; justify-content:center;
-      z-index: 2000;
-      padding: 12px;
-      padding-bottom: calc(12px + env(safe-area-inset-bottom));
-      overscroll-behavior: contain;
-    }
-    body.modal-open{ overflow:hidden; }
-    .modal-backdrop.show{ display:flex; }
-    .modal{
-      /* ✅ กว้างเท่ากรอบแอพ ลดอาการ "หลุดเฟรม" บนมือถือ/จอแคบ */
-      width: min(460px, calc(100% - 28px));
-      box-sizing: border-box;
-      background:#fff;
-      border-radius: 18px;
-      border: 1px solid rgba(15,23,42,0.12);
-      box-shadow: var(--shadow);
-      padding: 14px;
-      max-height: calc(100vh - 24px - env(safe-area-inset-bottom));
-      overflow:auto;
-      -webkit-overflow-scrolling: touch;
-      contain: layout paint;
-    }
-    .modal .modal-head{
-      display:flex; justify-content:space-between; align-items:center; gap:10px;
-      margin-bottom: 8px;
-    }
-    .modal .modal-head b{ font-size:18px; }
-    .modal .grid2{ display:grid; grid-template-columns: 1fr 1fr; gap:8px; }
-    @media (max-width:420px){
-      .modal .grid2{ grid-template-columns: 1fr; }
-    }
-    .btn-row{ display:flex; gap:10px; margin-top:12px; }
-    .btn-row button{ flex:1; }
-    .btn-mini{ width:auto; min-height:40px; padding:10px 12px; }
+    .menu-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px;}
+    .menu-grid a{display:block;text-decoration:none;}
+    .menu-card{background:#fff;border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:12px;box-shadow:var(--shadow);}
+    .menu-card b{display:block;font-size:16px;margin-bottom:4px;}
+    .menu-card .muted{font-size:13px;}
+    .top-row{display:flex;gap:10px;align-items:center;justify-content:space-between;}
+    .btn-small{min-height:42px;padding:10px 12px;}
+    /* bottom nav (เหมือนฝั่งช่าง) */
+    .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:#0f172a;display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:999;border-top:1px solid rgba(255,255,255,0.08)}
+    .nav-btn{flex:1;min-height:44px;border:1px solid rgba(255,255,255,0.18);background:transparent;color:#fff;border-radius:12px;font-weight:700;font-size:13px}
+    .nav-btn.active{background:#22c55e;color:#052e16;border-color:transparent}
+    .app{padding-bottom:86px}
   </style>
 </head>
 <body class="theme-2">
-
   <div class="app">
-    <h2>👨‍💼 Admin - CWF</h2>
-
-    <div class="row" style="margin:10px 0 6px;">
-      <button class="secondary" type="button" onclick="location.href='/admin-tech.html'">👷 จัดการช่าง / อนุมัติโปรไฟล์</button>
-      <button class="danger" type="button" onclick="logoutAdmin()">ออก</button>
+    <div class="top-row">
+      <h2 style="margin:0">👨‍💼 Admin - CWF</h2>
+      <button class="danger btn-small" type="button" id="btnLogout">ออก</button>
     </div>
 
+    <div class="muted" style="margin-top:6px;">เลือกเมนูด้านล่าง หรือกดการ์ดเพื่อเข้าใช้งาน</div>
 
-    <!-- ===============================
-         📝 ข้อมูลลูกค้า/งาน
-         ✅ หมายเหตุ: job_type ต้องตรง constraint ใน DB
-         คือ "ล้าง" | "ซ่อม" | "ติดตั้ง" เท่านั้น
-    =============================== -->
-    <div class="card section-card" id="adminBookV2">
-    <h3>🗓️ จองงาน (Admin v2) — Flow เหมือนลูกค้า 100%</h3>
-
-    <div class="muted" style="margin-top:6px;">
-      เลือกประเภทงาน → ประเภทแอร์ → BTU → จำนวนเครื่อง → ระบบคำนวณ <b>ราคา/เวลา</b> ให้ แล้วค่อยเลือกวันเวลา + ช่าง
+    <div class="menu-grid">
+      <a href="/admin-add-v2.html" class="menu-card">
+        <b>➕ เพิ่มงาน (Flow เหมือนลูกค้า)</b>
+        <div class="muted">รองรับหลายรายการ (extras) + โปรฯ + override ราคา/เวลา</div>
+      </a>
+      <a href="/admin-queue-v2.html" class="menu-card">
+        <b>🗓️ เช็คคิวช่าง (ปฏิทิน)</b>
+        <div class="muted">ดูงานแยกรายช่าง พร้อมช่วงเวลา (รวม travel buffer)</div>
+      </a>
+      <a href="/admin-history-v2.html" class="menu-card">
+        <b>📚 ประวัติงานทั้งหมด</b>
+        <div class="muted">กรองตามวัน/เวลา/ช่าง/สถานที่/โซน/สถานะ</div>
+      </a>
+      <a href="/admin-tech.html" class="menu-card">
+        <b>👷 จัดการช่าง</b>
+        <div class="muted">กำหนดช่างบริษัท/พาร์ทเนอร์ + เวลาทำงาน + อนุมัติโปรไฟล์</div>
+      </a>
+      <a href="/admin-legacy.html" class="menu-card">
+        <b>🧯 หน้าแอดมินเดิม (Fallback)</b>
+        <div class="muted">ใช้เมื่อจำเป็น เพื่อกัน regression</div>
+      </a>
     </div>
-
-    <label style="margin-top:12px;">ประเภทงาน</label>
-    <select id="v2_job_type">
-      <option value="">-- เลือกประเภทงาน --</option>
-      <option value="ล้าง">ล้าง</option>
-      <option value="ซ่อม">ซ่อม</option>
-      <option value="ติดตั้ง">ติดตั้ง</option>
-    </select>
-
-    <div class="grid2" style="margin-top:10px;">
-      <div>
-        <label>ประเภทแอร์</label>
-        <select id="v2_ac_type">
-          <option value="ผนัง">ผนัง</option>
-          <option value="สี่ทิศทาง">สี่ทิศทาง</option>
-          <option value="แขวน">แขวน</option>
-          <option value="เปลือยใต้ฝ้า">เปลือยใต้ฝ้า</option>
-        </select>
-      </div>
-      <div>
-        <label>BTU</label>
-        <input id="v2_btu" type="number" min="0" step="1000" placeholder="เช่น 12000">
-      </div>
-    </div>
-
-    <div class="grid2" style="margin-top:10px;">
-      <div>
-        <label>จำนวนเครื่อง</label>
-        <input id="v2_machine_count" type="number" min="1" step="1" value="1">
-      </div>
-      <div>
-        <label>โหมดจอง</label>
-        <select id="v2_booking_mode">
-          <option value="scheduled">ปกติ (นัดแน่นอน)</option>
-          <option value="urgent">ลองยิงงานด่วน (รอช่างยืนยัน)</option>
-        </select>
-      </div>
-    </div>
-
-    <div id="v2_variant_box" style="margin-top:10px;"></div>
-
-    <div class="card" style="margin-top:12px;background:#f8fafc;border:1px solid rgba(15,23,42,0.08);">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-        <b>💰 ราคา/เวลา (คำนวณอัตโนมัติ)</b>
-        <button type="button" class="secondary" style="width:auto;min-height:40px;padding:10px 12px;" onclick="adminV2Preview()">คำนวณ</button>
-      </div>
-      <div class="grid2" style="margin-top:10px;">
-        <div>
-          <div class="muted">ราคามาตรฐาน</div>
-          <div><b><span id="v2_price">-</span></b> บาท</div>
-        </div>
-        <div>
-          <div class="muted">เวลา (duration)</div>
-          <div><b><span id="v2_duration">-</span></b> นาที (+ buffer 30 นาที)</div>
-        </div>
-      </div>
-
-      <hr style="margin:12px 0;">
-
-      <div class="grid2">
-        <div>
-          <label>Override ราคา (แอดมิน)</label>
-          <input id="v2_override_price" type="number" min="0" step="1" placeholder="เว้นว่าง = ใช้มาตรฐาน">
-        </div>
-        <div>
-          <label>Override เวลา (นาที) (แอดมิน)</label>
-          <input id="v2_override_duration" type="number" min="0" step="5" placeholder="เว้นว่าง = ใช้ตามกติกา">
-        </div>
-      </div>
-      <div class="muted" style="margin-top:6px;">
-        * งานติดตั้ง/ซ่อมเปลี่ยนอะไหล่: ถ้าไม่ระบุ override ระบบจะไม่ให้จอง
-      </div>
-    </div>
-
-    <hr>
-
-    <h3 style="margin-top:10px;">👤 ข้อมูลลูกค้า</h3>
-    <input id="v2_customer_name" placeholder="ชื่อลูกค้า">
-    <input id="v2_customer_phone" placeholder="เบอร์โทร">
-    <input id="v2_address_text" placeholder="ที่อยู่">
-
-    <h3 style="margin-top:16px;">📍 พิกัดหน้างาน (GPS)</h3>
-    <input id="v2_maps_link" placeholder="วางลิงก์ Google Maps (ถ้ามี)">
-    <button type="button" onclick="adminV2ParseMapsLink()">แยกพิกัดจากลิงก์</button>
-    <div style="display:flex; gap:8px; margin-top:8px;">
-      <input id="v2_gps_latitude" placeholder="Latitude">
-      <input id="v2_gps_longitude" placeholder="Longitude">
-    </div>
-
-    <hr>
-
-    <h3 style="margin-top:10px;">📅 เลือกวันเวลา + ช่าง</h3>
-    <input id="v2_appointment_datetime" type="datetime-local">
-
-    <div class="grid2" style="margin-top:10px;">
-      <div>
-        <label>กลุ่มช่าง</label>
-        <select id="v2_tech_type">
-          <option value="company">ช่างบริษัท</option>
-          <option value="partner">ช่างพาร์ทเนอร์</option>
-        </select>
-      </div>
-      <div>
-        <label>รูปแบบส่งงาน</label>
-        <select id="v2_dispatch_mode">
-          <option value="forced">Forced (มอบหมายทันที)</option>
-          <option value="offer">Offer (ให้ช่างกดรับ)</option>
-        </select>
-      </div>
-    </div>
-
-    <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-      <button class="secondary" type="button" style="width:auto;" onclick="adminV2LoadSlots()">โหลดคิวว่าง (v2)</button>
-      <div class="muted" id="v2_slot_hint">คำนวณราคา/เวลา แล้วเลือกวันเวลา ก่อนโหลดคิวว่าง</div>
-    </div>
-    <div id="v2_slots" class="muted" style="margin-top:10px;">-</div>
-
-    <label style="margin-top:12px;">เลือกช่าง (ถ้าเว้นว่าง ระบบจะเลือกช่างว่างให้อัตโนมัติ)</label>
-    <select id="v2_technician_username">
-      <option value="">-- auto --</option>
-    </select>
-
-    <textarea id="v2_customer_note" rows="3" placeholder="หมายเหตุ (ถ้ามี)" style="width:100%;margin-top:10px;"></textarea>
-
-    <button style="margin-top:12px;" onclick="adminV2Book()">✅ จองงาน (Admin v2)</button>
-
-    <!-- ✅ Legacy UI ถูกซ่อนไว้ (กันงง) เปิดได้ด้วย ?legacy=1 -->
-    <div id="legacyAddJobContainer" style="display:none;margin-top:12px;">
-      <div class="card" style="background:#fff7ed;border:1px solid rgba(234,88,12,0.25);">
-        <b>🧩 โหมดเพิ่มงานแบบเก่า (legacy)</b>
-        <div class="muted" style="margin-top:6px;">* ซ่อนไว้เพื่อกันงง (เปิดด้วย ?legacy=1) — แนะนำให้ใช้ Admin v2 ด้านบน</div>
-      </div>
-
-    <input id="customer_name" placeholder="ชื่อลูกค้า">
-    <input id="customer_phone" placeholder="เบอร์โทร">
-
-    <!-- ✅ กันเพิ่มงานพัง: เปลี่ยนเป็น dropdown -->
-    <select id="job_type">
-      <option value="">-- เลือกประเภทงาน --</option>
-      <option value="ล้าง">ล้าง</option>
-      <option value="ซ่อม">ซ่อม</option>
-      <option value="ติดตั้ง">ติดตั้ง</option>
-    </select>
-
-    <!-- ใช้เวลาไทยใน UI (datetime-local) -->
-    <input id="appointment_datetime" type="datetime-local">
-
-    <input id="address_text" placeholder="ที่อยู่">
-
-    <!-- ===============================
-         📍 พิกัดหน้างาน (สำคัญสำหรับเช็คอิน GPS)
-         - ใส่ได้ 2 แบบ: วางลิงก์ Maps แล้วกดแยกพิกัด / กรอก lat,lng เอง
-         - lat,lng จะถูกบันทึกลง jobs.gps_latitude / jobs.gps_longitude
-    =============================== -->
-    <h3 style="margin-top:16px;">📍 พิกัดหน้างาน (GPS)</h3>
-
-    <input id="maps_link" placeholder="วางลิงก์ Google Maps (ถ้ามี)">
-    <button type="button" onclick="parseMapsLink()">แยกพิกัดจากลิงก์</button>
-
-    <div style="display:flex; gap:8px; margin-top:8px;">
-      <input id="gps_latitude" placeholder="Latitude เช่น 13.7051234">
-      <input id="gps_longitude" placeholder="Longitude เช่น 100.6012345">
-    </div>
-    <small>ใช้สำหรับเช็คอินหน้างาน (อนุโลมคลาดเคลื่อน ±500 เมตร)</small>
-
-    <!-- ✅ ของเดิม: ยังเก็บไว้เพื่อไม่พัง (กรณีไม่ใช้รายการ) -->
-    <input id="job_price" placeholder="ราคา (โหมดเก่า/ไม่ใส่รายการก็ได้)">
-
-    <!-- ===============================
-         👷 เลือกช่าง (สำคัญมาก)
-    =============================== -->
-    <select id="technician_username">
-      <option value="">-- เลือกช่าง --</option>
-    </select>
-
-    <!-- ===============================
-         🚦 รูปแบบส่งงานให้ช่าง
-         - offer: ช่างต้องกดรับก่อน (เดิม)
-         - forced: งานบังคับ โผล่หน้าช่างทันที (ไม่ต้องกดรับ)
-    =============================== -->
-    <select id="dispatch_mode">
-      <option value="offer">📨 Offer (ช่างกดรับ)</option>
-      <option value="forced">📌 Forced (บังคับรับงาน)</option>
-    </select>
-
-    <hr>
-
-    <!-- ===============================
-         💰 รายการสินค้า/บริการ (หลายรายการ)
-    =============================== -->
-    <h3>🧾 รายการสินค้า/บริการ</h3>
-
-    <select id="catalog_select">
-      <option value="">-- เลือกรายการ --</option>
-    </select>
-
-    <input id="item_qty" type="number" step="1" min="1" value="1" placeholder="จำนวน">
-    <button type="button" onclick="addItemToJob()">➕ เพิ่มรายการ</button>
-
-    <div id="job_items_preview" style="margin-top:10px;"></div>
-
-    <!-- ===============================
-         🎁 โปรโมชั่น (ลดทั้งบิล)
-    =============================== -->
-    <h3 style="margin-top:16px;">🎁 โปรโมชั่น (ลดทั้งบิล)</h3>
-    <select id="promotion_select">
-      <option value="">-- ไม่ใช้โปร --</option>
-    </select>
-
-    <p style="margin-top:10px;">
-      💵 <b>ยอดรวมสุทธิ:</b> <span id="grand_total">0</span> บาท
-    </p>
-
-    <!-- ===============================
-         ➕ เพิ่มงาน
-    =============================== -->
-    <button onclick="addJob()">➕ เพิ่มงาน</button>
-
-    </div><!-- /legacyAddJobContainer -->
-
-    </div> <!-- legacyAddJobContainer -->
-
-    </div>
-
-    <hr>
-
-    <!-- ===============================
-         📩 ข้อความยืนยันนัด (ก๊อปปี้ส่งลูกค้า)
-    =============================== -->
-    <details class="card section-card" open>
-      <summary style="font-weight:800;">📩 ข้อความยืนยันนัด (ก๊อปปี้ส่งลูกค้า)</summary>
-      <div style="margin-top:10px;">
-        <textarea id="summary_text" rows="12" style="width:100%;"></textarea>
-        <button type="button" onclick="copySummary()">📋 คัดลอกข้อความ</button>
-      </div>
-    </details>
-
-    <hr>
-
-    <!-- ===============================
-         ⚙️ Admin เพิ่มรายการ/ราคา + เพิ่มโปร
-    =============================== -->
-    <details class="card section-card">
-      <summary style="font-weight:800;">⚙️ ตั้งค่า (เพิ่มรายการ/ราคา + โปรโมชั่น)</summary>
-      <div style="margin-top:10px;">
-        <h3>⚙️ เพิ่มรายการ/ราคา (Admin)</h3>
-        <input id="new_item_name" placeholder="ชื่อรายการ เช่น ล้างแอร์ผนัง (ล้างปกติ)">
-        <select id="new_item_category">
-          <option value="service">service (บริการ)</option>
-          <option value="product">product (สินค้า)</option>
-        </select>
-        <input id="new_item_price" type="number" step="0.01" placeholder="ราคา">
-        <input id="new_item_unit" placeholder="หน่วย เช่น เครื่อง/ชิ้น/งาน" value="เครื่อง">
-        <button type="button" onclick="createCatalogItem()">บันทึกรายการ</button>
-
-        <h3 style="margin-top:16px;">🎁 เพิ่มโปรโมชั่น (Admin)</h3>
-        <input id="new_promo_name" placeholder="ชื่อโปร เช่น ลด 10%">
-        <input id="new_promo_value" type="number" step="0.01" placeholder="ค่าโปร เช่น 5 / 10 / 15">
-        <button type="button" onclick="createPromotion()">บันทึกโปร</button>
-      </div>
-    </details>
-
-    <hr>
-
-    <a href="/tech.html">ดูหน้าช่าง</a>
-  
-    <hr style="margin:16px 0;">
-
-    <!-- ===============================
-         📥 งานจองจากลูกค้า (ยังไม่มอบหมาย)
-         - งานที่ลูกค้าจองจะถูกสร้างเป็น job_source='customer'
-         - แอดมินต้องมอบหมายช่าง (offer/forced) ก่อน
-    =============================== -->
-    
-    <div class="card" style="margin-top:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-        <h2 style="margin:0;">🗓️ ปฏิทินคิวช่าง (v2)</h2>
-        <button type="button" class="secondary" style="width:auto;min-height:40px;padding:10px 12px;" onclick="adminLoadScheduleV2()">🔄 โหลดปฏิทิน</button>
-      </div>
-
-      <div class="grid2" style="margin-top:10px;">
-        <input id="av2_date" type="date">
-        <select id="av2_tech_type">
-          <option value="company">ช่างบริษัท</option>
-          <option value="partner">ช่างพาร์ทเนอร์</option>
-        </select>
-      </div>
-
-      <div class="muted" style="margin-top:8px;">แสดงงานที่มอบหมายแล้วแบบรายช่าง (คิด buffer 30 นาทีในช่วงบล็อก)</div>
-      <div id="admin_schedule" class="muted" style="margin-top:10px;">เลือกวันแล้วกดโหลด</div>
-
-      <details style="margin-top:12px;">
-        <summary style="font-weight:800;">ดู “คิวว่าง” แบบสล็อต (availability)</summary>
-        <div class="grid2" style="margin-top:10px;">
-          <input id="av2_duration" type="number" min="15" step="5" value="60" placeholder="duration_min">
-          <button type="button" class="secondary" onclick="adminLoadAvailabilityV2()">โหลดคิวว่าง</button>
-        </div>
-        <div id="av2_result" class="muted" style="margin-top:10px;">-</div>
-      </details>
-    </div>
-
-<div class="card">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-        <h3 style="margin:0;">📥 งานจองจากลูกค้า (รอมอบหมาย)</h3>
-        <button class="secondary" style="width:auto;min-height:40px;padding:10px 12px;" type="button" onclick="loadCustomerBookings()">🔄 รีเฟรช</button>
-      </div>
-      <div id="customerBookings" class="muted" style="margin-top:10px;">กำลังโหลด...</div>
-    </div>
-    
-    <!-- ===============================
-         📚 งานทั้งหมด (Admin)
-         - แยก: กำลังดำเนินการ / เสร็จสิ้น / ยกเลิก / เช็คอินเลท
-         - ออกใบเสร็จ/ใบเสนอราคา (ย้ายมาจากฝั่งช่าง)
-    =============================== -->
-    <div class="card" style="margin-top:14px;">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-        <h3 style="margin:0;">📚 งานทั้งหมด</h3>
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-          <select id="allJobsFilter" style="min-height:40px;">
-            <option value="running">🛠️ กำลังดำเนินการ</option>
-            <option value="done">✅ เสร็จสิ้น</option>
-            <option value="canceled">⛔ ยกเลิก</option>
-            <option value="late">⏰ เช็คอินเลท</option>
-            <option value="all">📄 ทั้งหมด</option>
-          </select>
-          <button class="secondary" style="width:auto;min-height:40px;padding:10px 12px;" type="button" onclick="loadAllJobs()">🔄 รีเฟรช</button>
-        </div>
-      </div>
-      <div id="allJobs" class="muted" style="margin-top:10px;">กำลังโหลด...</div>
-    </div>
-
-    <!-- ===============================
-         🧩 Modal: แก้ไขใบงาน (แก้ได้ทั้งหมด)
-         - มีปุ่มแยกพิกัดจาก URL Maps
-    =============================== -->
-    <div id="editModalBackdrop" class="modal-backdrop" onclick="if(event.target.id==='editModalBackdrop') closeEditModal();">
-      <div class="modal" role="dialog" aria-modal="true">
-        <div class="modal-head">
-          <div>
-            <b id="editModalTitle">✏️ แก้ไขใบงาน</b>
-            <div class="muted" id="editModalSub" style="margin-top:2px;font-size:12px;">-</div>
-          </div>
-          <button class="danger btn-mini" type="button" onclick="closeEditModal()">ปิด</button>
-        </div>
-
-        <input id="edit_customer_name" placeholder="ชื่อลูกค้า">
-        <input id="edit_customer_phone" placeholder="เบอร์โทร">
-
-        <select id="edit_job_type">
-          <option value="">-- เลือกประเภทงาน --</option>
-          <option value="ล้าง">ล้าง</option>
-          <option value="ซ่อม">ซ่อม</option>
-          <option value="ติดตั้ง">ติดตั้ง</option>
-        </select>
-
-        <input id="edit_appointment_datetime" type="datetime-local">
-        <input id="edit_address_text" placeholder="ที่อยู่">
-
-        <input id="edit_maps_url" placeholder="ลิงก์ Google Maps (ถ้ามี)">
-        <div class="row" style="margin-top:8px;">
-          <button class="secondary" type="button" style="width:auto;" onclick="parseMapsToLatLngInModal()">📍 แยกพิกัดจากลิงก์</button>
-        </div>
-
-        <div class="grid2" style="margin-top:8px;">
-          <input id="edit_gps_latitude" placeholder="Latitude (ปล่อยว่างได้)">
-          <input id="edit_gps_longitude" placeholder="Longitude (ปล่อยว่างได้)">
-        </div>
-
-        <input id="edit_job_zone" placeholder="โซนงาน (ถ้ามี)">
-        <textarea id="edit_customer_note" rows="3" placeholder="หมายเหตุลูกค้า (ถ้ามี)" style="width:100%;"></textarea>
-
-        <hr style="margin:12px 0;">
-
-        <!-- ✅ ต่อเติม: ระบบทีมช่าง (ใช้ Booking เดียวกัน) -->
-        <b>👥 ทีมช่าง (ใช้ Booking เดียวกัน)</b>
-        <div class="muted" style="margin-top:4px;">ใส่ username คั่นด้วย , เช่น <b>tech1,tech2</b> (ช่างทุกคนจะช่วยกันอัปโหลดรูปได้)</div>
-        <input id="edit_team_members" placeholder="ทีมช่าง (username,... )" style="margin-top:8px;">
-        <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" style="width:auto;" onclick="saveTeamMembersFromModal()">💾 บันทึกทีมช่าง</button>
-          <div id="edit_team_status" class="muted"></div>
-        </div>
-
-        <hr style="margin:12px 0;">
-
-        <!-- ✅ ต่อเติม: แอดมินแก้รายการ/ราคาได้ทั้งหมด -->
-        <b>🧾 รายการ/ราคา (แอดมินแก้ได้)</b>
-        <div class="muted" style="margin-top:4px;">ใช้แก้เคส “ลงงานผิด/แก้ราคา/แก้สินค้า” (ไม่ต้องรอ workflow)</div>
-
-        <div class="grid2" style="margin-top:10px;">
-          <select id="edit_catalog_select"></select>
-          <input id="edit_item_qty" type="number" min="1" step="1" placeholder="จำนวน" value="1">
-        </div>
-        <div class="grid2" style="margin-top:8px;">
-          <input id="edit_item_unit_price" type="number" min="0" step="1" placeholder="ราคา/หน่วย">
-          <button class="secondary" type="button" style="width:auto;" onclick="addEditItem()">➕ เพิ่มรายการ</button>
-        </div>
-
-        <div id="edit_items_preview" class="muted" style="margin-top:10px;">(ยังไม่มีรายการ)</div>
-
-        <select id="edit_promotion_select" style="margin-top:10px;"></select>
-        <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" style="width:auto;" onclick="saveEditItems()">💾 บันทึกรายการ/ราคา</button>
-          <div id="edit_items_status" class="muted"></div>
-        </div>
-
-        <div class="btn-row">
-          <button id="editSaveBtn" type="button" onclick="saveEditModal()">✅ บันทึก</button>
-          <button class="danger" type="button" style="width:auto;" onclick="hardDeleteJobFromModal()">🗑️ ลบถาวร</button>
-          <button class="secondary" type="button" onclick="closeEditModal()">ยกเลิก</button>
-        </div>
-      </div>
-    </div>
-
-
-</div>
-
-  <script src="admin.js"></script>
-
-<script>
-  function logoutAdmin(){
-    localStorage.removeItem("username");
-    localStorage.removeItem("role");
-    // clear cookie fallback
-    try { document.cookie = "cwf_auth=; Max-Age=0; Path=/; SameSite=Lax"; } catch(e) {}
-    location.href = "/login.html";
-  }
-</script>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn active" type="button" onclick="location.href='/admin-add-v2.html'">➕ เพิ่มงาน</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-queue-v2.html'">🗓️ คิวช่าง</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-history-v2.html'">📚 ประวัติ</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-tech.html'">👷 ช่าง</button>
+  </div>
+
+  <script>
+    // ใช้ระบบเดิม: token ใน localStorage (ไม่แตะ auth เดิม)
+    function logoutAdmin(){
+      try{ localStorage.removeItem('admin_token'); localStorage.removeItem('token'); }catch(e){}
+      location.href = '/login.html';
+    }
+    document.getElementById('btnLogout').addEventListener('click', logoutAdmin);
+  </script>
 </body>
 </html>
