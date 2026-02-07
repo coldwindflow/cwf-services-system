@@ -110,7 +110,7 @@ function renderCalendar(data){
       b.style.cursor = 'pointer';
       b.addEventListener('click', ()=>{
         if (!j.job_id) return;
-        window.location.href = `/admin-review-v2.html?open=${encodeURIComponent(String(j.job_id))}`;
+        window.location.href = `/admin-job-view-v2.html?job_id=${encodeURIComponent(String(j.job_id))}`;
       });
       lane.appendChild(b);
     }

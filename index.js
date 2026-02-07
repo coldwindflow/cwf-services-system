@@ -1470,7 +1470,7 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
     duration_min = Math.max(1, Math.floor(coerceNumber(override_duration_min, duration_min)));
   }
 
-  const standard_price = computeStandardPrice(payloadV2);
+  const standard_price = computeStandardPriceMulti(payloadV2);
 
 
 // ✅ Parse lat/lng from maps_url or address_text (fail-open)
@@ -1503,12 +1503,19 @@ console.log("[latlng_parse]", { ok: !!parsedAdminLL });
     }
 
     // resolve items
-    const computedItems = [];
-    if (coerceNumber(override_price, 0) > 0) {
-      computedItems.push({ item_id: null, item_name: `ค่าบริการ (override)`, qty: 1, unit_price: coerceNumber(override_price, 0), line_total: coerceNumber(override_price, 0) });
-    } else if (standard_price > 0) {
-      computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: Number(standard_price), line_total: Number(standard_price) });
-    }
+const computedItems = [];
+
+const serviceLineItems = (payloadV2.services && Array.isArray(payloadV2.services))
+  ? buildServiceLineItemsFromPayload(payloadV2)
+  : [];
+
+if (coerceNumber(override_price, 0) > 0) {
+  computedItems.push({ item_id: null, item_name: `ค่าบริการ (override)`, qty: 1, unit_price: coerceNumber(override_price, 0), line_total: coerceNumber(override_price, 0) });
+} else if (serviceLineItems.length) {
+  for (const it of serviceLineItems) computedItems.push(it);
+} else if (standard_price > 0) {
+  computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: Number(standard_price), line_total: Number(standard_price) });
+}
 
     if (itemIdQty.length) {
       const ids = itemIdQty.map((x) => x.item_id);
@@ -1831,6 +1838,133 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
     return res.status(500).json({ error: 'โหลดคิวงานรอตรวจสอบไม่สำเร็จ' });
   }
 });
+
+app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+  try {
+    const jr = await pool.query(
+      `SELECT *
+       FROM public.jobs
+       WHERE job_id=$1
+       LIMIT 1`,
+      [job_id]
+    );
+    const job = jr.rows[0];
+    if (!job) return res.status(404).json({ error: "ไม่พบงาน" });
+
+    const ir = await pool.query(
+      `SELECT item_id, item_name, qty, unit_price, line_total
+       FROM public.job_items
+       WHERE job_id=$1
+       ORDER BY job_item_id ASC`,
+      [job_id]
+    );
+
+    const pr = await pool.query(
+      `SELECT jp.promo_id, p.promo_name, p.promo_type, p.promo_value
+       FROM public.job_promotions jp
+       JOIN public.promotions p ON p.promo_id=jp.promo_id
+       WHERE jp.job_id=$1
+       ORDER BY jp.job_promo_id DESC
+       LIMIT 1`,
+      [job_id]
+    );
+
+    return res.json({
+      success: true,
+      job,
+      items: ir.rows || [],
+      promotion: pr.rows[0] || null,
+    });
+  } catch (e) {
+    console.error("/admin/job_v2 error:", e);
+    return res.status(500).json({ error: "โหลดใบงานไม่สำเร็จ" });
+  }
+});
+
+app.get("/admin/promotions_v2", requireAdminSoft, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT promo_id, promo_name, promo_type, promo_value, is_customer_visible, is_active, created_at
+       FROM public.promotions
+       ORDER BY created_at DESC, promo_id DESC`
+    );
+    return res.json({ success: true, promotions: r.rows });
+  } catch (e) {
+    console.error("/admin/promotions_v2 list error:", e);
+    return res.status(500).json({ error: "โหลดโปรโมชันไม่สำเร็จ" });
+  }
+});
+
+app.post("/admin/promotions_v2", requireAdminSoft, async (req, res) => {
+  const b = req.body || {};
+  const promo_name = String(b.promo_name || "").trim();
+  const promo_type = String(b.promo_type || "").trim();
+  const promo_value = Number(b.promo_value || 0);
+  const is_customer_visible = !!b.is_customer_visible;
+  const is_active = (b.is_active === undefined) ? true : !!b.is_active;
+
+  if (!promo_name || !["percent","amount"].includes(promo_type)) {
+    return res.status(400).json({ error: "ข้อมูลโปรโมชันไม่ครบ/ไม่ถูกต้อง" });
+  }
+  try {
+    const r = await pool.query(
+      `INSERT INTO public.promotions (promo_name, promo_type, promo_value, is_customer_visible, is_active)
+       VALUES ($1,$2,$3,$4,$5)
+       RETURNING promo_id`,
+      [promo_name, promo_type, promo_value, is_customer_visible, is_active]
+    );
+    return res.json({ success: true, promo_id: r.rows[0]?.promo_id });
+  } catch (e) {
+    console.error("/admin/promotions_v2 create error:", e);
+    return res.status(500).json({ error: "สร้างโปรโมชันไม่สำเร็จ" });
+  }
+});
+
+app.put("/admin/promotions_v2/:promo_id", requireAdminSoft, async (req, res) => {
+  const promo_id = Number(req.params.promo_id);
+  const b = req.body || {};
+  if (!promo_id) return res.status(400).json({ error: "promo_id ไม่ถูกต้อง" });
+
+  const fields = [];
+  const params = [];
+  let p = 1;
+
+  const setField = (name, val) => { params.push(val); fields.push(`${name}=$${p++}`); };
+
+  if (b.promo_name !== undefined) setField("promo_name", String(b.promo_name || "").trim());
+  if (b.promo_type !== undefined) setField("promo_type", String(b.promo_type || "").trim());
+  if (b.promo_value !== undefined) setField("promo_value", Number(b.promo_value || 0));
+  if (b.is_customer_visible !== undefined) setField("is_customer_visible", !!b.is_customer_visible);
+  if (b.is_active !== undefined) setField("is_active", !!b.is_active);
+
+  if (!fields.length) return res.json({ success: true });
+
+  params.push(promo_id);
+  try {
+    await pool.query(`UPDATE public.promotions SET ${fields.join(", ")} WHERE promo_id=$${p}`, params);
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("/admin/promotions_v2 update error:", e);
+    return res.status(500).json({ error: "แก้ไขโปรโมชันไม่สำเร็จ" });
+  }
+});
+
+app.delete("/admin/promotions_v2/:promo_id", requireAdminSoft, async (req, res) => {
+  const promo_id = Number(req.params.promo_id);
+  if (!promo_id) return res.status(400).json({ error: "promo_id ไม่ถูกต้อง" });
+  try {
+    await pool.query(`UPDATE public.promotions SET is_active=FALSE WHERE promo_id=$1`, [promo_id]);
+    return res.json({ success: true });
+  } catch (e) {
+    console.error("/admin/promotions_v2 delete error:", e);
+    return res.status(500).json({ error: "ลบโปรโมชันไม่สำเร็จ" });
+  }
+});
+
+
+
 
 app.get("/admin/schedule_v2", requireAdminSoft, async (req, res) => {
   try {
@@ -4092,6 +4226,67 @@ function computeStandardPrice(payload = {}) {
   return 0;
 }
 
+function normalizeServicesFromPayload(payload = {}) {
+  const services = Array.isArray(payload.services) ? payload.services : null;
+  if (!services || !services.length) return null;
+  return services
+    .map((s) => ({
+      job_type: String(s.job_type || payload.job_type || "").trim() || String(payload.job_type || "").trim(),
+      ac_type: String(s.ac_type || "").trim(),
+      btu: Number(s.btu || 0),
+      machine_count: Math.max(1, Number(s.machine_count || 1)),
+      wash_variant: String(s.wash_variant || "").trim(),
+      repair_variant: String(s.repair_variant || "").trim(),
+      admin_override_duration_min: Number(s.admin_override_duration_min || payload.admin_override_duration_min || 0),
+    }))
+    .filter((s) => s.job_type && s.ac_type && Number.isFinite(s.btu) && s.btu > 0 && Number.isFinite(s.machine_count) && s.machine_count > 0);
+}
+
+function computeDurationMinMulti(payload = {}, opts = {}) {
+  const services = normalizeServicesFromPayload(payload);
+  if (!services) return computeDurationMin(payload, opts);
+  let total = 0;
+  for (const s of services) {
+    // default wash variant for wall if missing
+    if (s.job_type === "ล้าง" && (s.ac_type === "ผนัง" || !s.ac_type) && !s.wash_variant) s.wash_variant = "ล้างธรรมดา";
+    const d = computeDurationMin(s, opts);
+    if (d <= 0) return 0;
+    total += d;
+  }
+  console.log("[computeDurationMinMulti]", { src: opts.source || "unknown", lines: services.length, total });
+  return Math.round(total);
+}
+
+function computeStandardPriceMulti(payload = {}) {
+  const services = normalizeServicesFromPayload(payload);
+  if (!services) return computeStandardPrice(payload);
+  let total = 0;
+  for (const s of services) {
+    if (s.job_type === "ล้าง" && (s.ac_type === "ผนัง" || !s.ac_type) && !s.wash_variant) s.wash_variant = "ล้างธรรมดา";
+    total += Number(computeStandardPrice(s) || 0);
+  }
+  return Number(total || 0);
+}
+
+function buildServiceLineItemsFromPayload(payload = {}) {
+  const services = normalizeServicesFromPayload(payload);
+  if (!services) return [];
+  const items = [];
+  for (const s of services) {
+    const linePrice = Number(computeStandardPrice(s) || 0);
+    const labelParts = [];
+    labelParts.push(`ล้างแอร์${s.ac_type || ""}`.trim());
+    if (s.ac_type === "ผนัง") labelParts.push(s.wash_variant || "ล้างธรรมดา");
+    labelParts.push(`${Number(s.btu || 0)} BTU`);
+    labelParts.push(`${Number(s.machine_count || 1)} เครื่อง`);
+    const item_name = labelParts.join(" • ");
+    items.push({ item_id: null, item_name, qty: 1, unit_price: linePrice, line_total: linePrice, is_service: true });
+  }
+  return items;
+}
+
+
+
 function effectiveBlockMin(durationMin) {
   return Math.max(0, Number(durationMin || 0)) + TRAVEL_BUFFER_MIN;
 }
@@ -4164,9 +4359,9 @@ async function isTechFree(username, startIso, durationMin, ignoreJobId) {
 app.post("/public/pricing_preview", async (req, res) => {
   try {
     const payload = req.body || {};
-    const duration_min = computeDurationMin(payload, { source: "pricing_preview" });
+    const duration_min = computeDurationMinMulti(payload, { source: "pricing_preview" });
     if (duration_min <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
-    const standard_price = computeStandardPrice(payload);
+    const standard_price = computeStandardPriceMulti(payload);
     res.json({
       standard_price,
       duration_min,
@@ -4331,6 +4526,7 @@ app.post("/public/book", async (req, res) => {
     machine_count,
     wash_variant,
     repair_variant,
+    services,
   } = req.body || {};
 
   if (!customer_name || !job_type || !appointment_datetime || !address_text) {
@@ -4356,9 +4552,10 @@ app.post("/public/book", async (req, res) => {
     repair_variant: (repair_variant || "").toString().trim(),
     admin_override_duration_min: 0, // ลูกค้าห้าม override
   };
-  const duration_min_v2 = computeDurationMin(payloadV2, { source: "public_book" });
+  if (Array.isArray(services) && services.length) payloadV2.services = services;
+  const duration_min_v2 = computeDurationMinMulti(payloadV2, { source: "public_book" });
   if (duration_min_v2 <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
-  const standard_price = computeStandardPrice(payloadV2);
+  const standard_price = computeStandardPriceMulti(payloadV2);
 
 // ✅ Parse lat/lng from maps_url or address_text (fail-open)
 const parsedLL = parseLatLngFromText(maps_url) || parseLatLngFromText(address_text);
@@ -4397,43 +4594,55 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
     await client.query("BEGIN");
 
     // 1) ดึงราคา base_price จาก DB
-    let computedItems = [];
-    let total = Number(standard_price || 0);
-    // STANDARD_SERVICE_LINE_V2
-    if (total > 0) {
-      computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: total, line_total: total });
-    }
+const serviceLineItems = (payloadV2.services && Array.isArray(payloadV2.services))
+  ? buildServiceLineItemsFromPayload(payloadV2)
+  : [];
 
-    if (itemIdQty.length) {
-      const ids = itemIdQty.map((x) => x.item_id);
-      const catR = await client.query(
-        `SELECT item_id, item_name, base_price
-         FROM public.catalog_items
-         WHERE is_active=TRUE AND is_customer_visible=TRUE /* CUSTOMER_CATALOG_VISIBLE_ONLY */ AND item_id = ANY($1::bigint[])`,
-        [ids]
-      );
+// fallback (single service)
+let computedItems = [];
+let total = Number(standard_price || 0);
 
-      const map = new Map(catR.rows.map((r) => [Number(r.item_id), r]));
-      computedItems = itemIdQty
-        .map((x) => {
-          const it = map.get(Number(x.item_id));
-          if (!it) return null;
-          const qty = Number(x.qty);
-          const unit_price = Number(it.base_price || 0);
-          const line_total = qty * unit_price;
-          total += line_total;
-          return {
-            item_id: Number(it.item_id),
-            item_name: it.item_name,
-            qty,
-            unit_price,
-            line_total,
-          };
-        })
-        .filter(Boolean);
-    }
+if (serviceLineItems.length) {
+  computedItems = computedItems.concat(serviceLineItems);
+  total = serviceLineItems.reduce((s,it)=> s + Number(it.line_total||0), 0);
+} else if (total > 0) {
+  computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: total, line_total: total });
+}
 
-    // 2) สร้างงาน
+// extras (customer-visible only)
+if (itemIdQty.length) {
+  const ids = itemIdQty.map((x) => x.item_id);
+  const catR = await client.query(
+    `SELECT item_id, item_name, base_price
+     FROM public.catalog_items
+     WHERE is_active=TRUE AND is_customer_visible=TRUE /* CUSTOMER_CATALOG_VISIBLE_ONLY */ AND item_id = ANY($1::bigint[])`,
+    [ids]
+  );
+
+  const map = new Map(catR.rows.map((r) => [Number(r.item_id), r]));
+  const extraLines = itemIdQty
+    .map((x) => {
+      const it = map.get(Number(x.item_id));
+      if (!it) return null;
+      const qty = Number(x.qty);
+      const unit_price = Number(it.base_price || 0);
+      const line_total = qty * unit_price;
+      total += line_total;
+      return {
+        item_id: Number(it.item_id),
+        item_name: it.item_name,
+        qty,
+        unit_price,
+        line_total,
+      };
+    })
+    .filter(Boolean);
+
+  computedItems = computedItems.concat(extraLines);
+}
+
+// 2) สร้างงาน
+
     const r = await client.query(
       `
       INSERT INTO public.jobs

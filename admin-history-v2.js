@@ -34,7 +34,7 @@ async function loadJobs(){
       tr.style.cursor = 'pointer';
       tr.addEventListener('click', ()=>{
         if (!j.job_id) return;
-        window.location.href = `/admin-review-v2.html?open=${encodeURIComponent(String(j.job_id))}`;
+        window.location.href = `/admin-job-view-v2.html?job_id=${encodeURIComponent(String(j.job_id))}`;
       });
       const code = safe(j.booking_code||j.job_id);
       const dtTxt = fmtDT(j.appointment_datetime);

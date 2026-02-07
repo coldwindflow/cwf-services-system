@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin • โปรโมชัน</title>
+  <link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+  <div class="topbar">
+    <div><b>🏷️ โปรโมชัน (Admin)</b></div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="secondary btn-small" type="button" onclick="location.href='/admin.html'">เมนู</button>
+      <button class="danger btn-small" type="button" id="btnLogout">ออก</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="card">
+      <b>เพิ่มโปรโมชัน</b>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>ชื่อโปรโมชัน</label>
+          <input id="promo_name" placeholder="เช่น ส่วนลดพิเศษ">
+        </div>
+        <div>
+          <label>ชนิด</label>
+          <select id="promo_type">
+            <option value="percent">เปอร์เซ็นต์ (%)</option>
+            <option value="amount">จำนวนเงิน (บาท)</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>ค่า</label>
+          <input id="promo_value" type="number" step="1" value="0">
+        </div>
+        <div>
+          <label>ให้ลูกค้าเห็น?</label>
+          <select id="is_customer_visible">
+            <option value="0">ไม่ให้เห็น</option>
+            <option value="1">ให้เห็น</option>
+          </select>
+        </div>
+      </div>
+
+      <button id="btnCreatePromo" class="primary" type="button" style="margin-top:12px">บันทึกโปรโมชัน</button>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <b>รายการโปรโมชัน</b>
+        <button id="btnReload" class="secondary" type="button">รีเฟรช</button>
+      </div>
+      <div id="promo_list" style="margin-top:10px"></div>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn" type="button" onclick="location.href='/admin-review-v2.html'">📥 งานจอง</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-add-v2.html'">➕ เพิ่มงาน</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-queue-v2.html'">🗓️ คิวช่าง</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-history-v2.html'">📚 ประวัติ</button>
+    <button class="nav-btn active" type="button" onclick="location.href='/admin-promotions-v2.html'">🏷️ โปรโมชัน</button>
+  </div>
+
+  <script src="/admin-v2-common.js"></script>
+  <script src="/admin-promotions-v2.js"></script>
+</body>
+</html>

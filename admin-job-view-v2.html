@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Admin • ใบงาน</title>
+  <link rel="stylesheet" href="/style.css"/>
+</head>
+<body>
+  <div class="topbar">
+    <div><b>📄 ใบงาน (Admin)</b></div>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="secondary btn-small" type="button" onclick="history.back()">ย้อนกลับ</button>
+      <button class="danger btn-small" type="button" id="btnLogout">ออก</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <div class="card" id="jobCard">กำลังโหลด...</div>
+
+    <div class="card section-card" id="summary_card" style="display:none;margin-top:12px">
+      <b>✅ ข้อความยืนยันนัด (คัดลอกส่งลูกค้า)</b>
+      <div class="muted2 mini" style="margin-top:6px">กดคัดลอก แล้วส่งใน LINE/WhatsApp ได้ทันที</div>
+      <textarea id="summary_text" rows="10" style="margin-top:10px"></textarea>
+      <button class="secondary" type="button" style="margin-top:10px" id="btnCopySummary">คัดลอกข้อความ</button>
+    </div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn" type="button" onclick="location.href='/admin-review-v2.html'">📥 งานจอง</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-add-v2.html'">➕ เพิ่มงาน</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-queue-v2.html'">🗓️ คิวช่าง</button>
+    <button class="nav-btn active" type="button" onclick="location.href='/admin-history-v2.html'">📚 ประวัติ</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-tech.html'">👷 ช่าง</button>
+  </div>
+
+  <script src="/admin-v2-common.js"></script>
+  <script src="/admin-job-view-v2.js"></script>
+</body>
+</html>

@@ -71,7 +71,7 @@
       <div class="grid2" style="margin-top:8px;">
         <!-- PATCH: จำนวนเครื่องแบบกดเลือก ไม่ต้องพิมพ์ -->
         <div>
-          <input id="machine_count" type="hidden" value="1">
+          <input id="machine_count" class="stepper-input" type="number" min="1" max="20" step="1" value="1" inputmode="numeric">
           <div class="stepper" aria-label="machine count">
             <button id="mc_minus" class="btn-round" type="button">−</button>
             <div id="mc_value" class="value">1</div>

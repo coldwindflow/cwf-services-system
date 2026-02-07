@@ -16,6 +16,7 @@ let state = {
   promo_list: [],
   catalog: [],
   selected_items: [], // {item_id, qty, item_name, base_price}
+  service_lines: [], // [{job_type, ac_type, btu, machine_count, wash_variant}]
   selected_slot_iso: "",
   available_slots: [],
 };
@@ -259,16 +260,25 @@ function buildVariantUI() {
   box.innerHTML = "";
 
   if (jt === "ล้าง") {
-    box.innerHTML = `
-      <label>ประเภทการล้าง *</label>
-      <select id="wash_variant">
-        <option value="">-- เลือก --</option>
-        <option value="ล้างธรรมดา">ล้างธรรมดา</option>
-        <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
-        <option value="ล้างแขวนคอยน์">ล้างแขวนคอยน์</option>
-        <option value="ล้างแบบตัดล้าง">ล้างแบบตัดล้าง</option>
-      </select>
-    `;
+    const ac = (el("ac_type").value || "").trim();
+    if (ac === "ผนัง" || !ac) {
+      box.innerHTML = `
+        <label>ประเภทการล้าง *</label>
+        <select id="wash_variant">
+          <option value="">-- เลือก --</option>
+          <option value="ล้างธรรมดา">ล้างธรรมดา</option>
+          <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
+          <option value="ล้างแขวนคอยน์">ล้างแขวนคอยน์</option>
+          <option value="ล้างแบบตัดล้าง">ล้างแบบตัดล้าง</option>
+        </select>
+      `;
+    } else {
+      box.innerHTML = `
+        <div class="muted2" style="margin-top:8px">
+          ประเภทแอร์ <b>${escapeHtml(ac)}</b> ใช้สูตรเวลามาตรฐาน (ไม่ต้องเลือกประเภทการล้าง)
+        </div>
+      `;
+    }
   } else if (jt === "ซ่อม") {
     box.innerHTML = `
       <label>ประเภทงานซ่อม *</label>
@@ -299,15 +309,130 @@ function getPayloadV2() {
   return { job_type, ac_type, btu, machine_count, wash_variant, repair_variant, admin_override_duration_min };
 }
 
-function validateRequiredForPreview() {
+
+
+function buildCurrentServiceLine(){
   const p = getPayloadV2();
-  if (!p.job_type) return false;
-  if (!p.ac_type) return false;
-  if (!p.btu) return false;
-  if (!p.machine_count) return false;
-  if (p.job_type === "ล้าง" && !p.wash_variant) return false;
-  if (p.job_type === "ซ่อม" && !p.repair_variant) return false;
-  return true;
+  // ใช้เฉพาะงานล้างเท่านั้นสำหรับ multi-service
+  return {
+    job_type: p.job_type,
+    ac_type: p.ac_type,
+    btu: p.btu,
+    machine_count: p.machine_count,
+    wash_variant: p.wash_variant,
+  };
+}
+
+function sameServiceLine(a,b){
+  return a && b &&
+    String(a.job_type||'')===String(b.job_type||'') &&
+    String(a.ac_type||'')===String(b.ac_type||'') &&
+    Number(a.btu||0)===Number(b.btu||0) &&
+    Number(a.machine_count||0)===Number(b.machine_count||0) &&
+    String(a.wash_variant||'')===String(b.wash_variant||'');
+}
+
+function renderServiceLines(){
+  const box = document.getElementById('multi_service_box');
+  const list = document.getElementById('service_lines');
+  const btnAdd = document.getElementById('btnAddServiceLine');
+  const jt = (el('job_type').value||'').trim();
+
+  if(!box || !list || !btnAdd) return;
+
+  // show only for wash
+  if(jt !== 'ล้าง'){
+    box.style.display = 'none';
+    state.service_lines = [];
+    return;
+  }
+  box.style.display = 'block';
+
+  const lines = Array.isArray(state.service_lines) ? state.service_lines : [];
+  const rows = lines.map((ln, idx)=>{
+    const label = `${ln.ac_type||'-'} • ${Number(ln.btu||0)} BTU • ${Number(ln.machine_count||1)} เครื่อง` + (ln.ac_type==='ผนัง' ? ` • ${ln.wash_variant||'ล้างธรรมดา'}` : '');
+    return `<div class="svc-row">
+      <div class="svc-main">
+        <div class="svc-title"><b>${escapeHtml(label)}</b></div>
+        <div class="muted2 mini">รายการบริการหลัก #${idx+1}</div>
+      </div>
+      <button type="button" class="svc-del" data-idx="${idx}">ลบ</button>
+    </div>`;
+  }).join("") || `<div class="muted2">ยังไม่มีรายการบริการเพิ่มเติม • ใช้ค่าด้านบนเป็นรายการหลักได้ หรือกด “เพิ่มรายการบริการ”</div>`;
+
+  list.innerHTML = rows;
+
+  // bind delete
+  list.querySelectorAll('.svc-del').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const i = Number(btn.getAttribute('data-idx'));
+      if(Number.isFinite(i)){
+        state.service_lines.splice(i,1);
+        renderServiceLines();
+        refreshPreviewDebounced();
+      }
+    });
+  });
+}
+
+function wireMultiService(){
+  const btnAdd = document.getElementById('btnAddServiceLine');
+  if(btnAdd){
+    btnAdd.addEventListener('click', ()=>{
+      const jt = (el('job_type').value||'').trim();
+      if(jt !== 'ล้าง'){ showToast('Multi-service ใช้ได้เฉพาะงานล้าง', 'error'); return; }
+      if(!validateRequiredForPreview()){ showToast('กรอกข้อมูลบริการให้ครบก่อนเพิ่มรายการ', 'error'); return; }
+      const ln = buildCurrentServiceLine();
+      // default wash variant for wall if empty
+      if(ln.ac_type === 'ผนัง' && !ln.wash_variant) ln.wash_variant = 'ล้างธรรมดา';
+      // avoid duplicate exact line
+      if(state.service_lines.some(x=>sameServiceLine(x,ln))){
+        showToast('รายการนี้ถูกเพิ่มแล้ว', 'info');
+        return;
+      }
+      state.service_lines.push(ln);
+      renderServiceLines();
+      showToast('เพิ่มรายการบริการแล้ว', 'success');
+      refreshPreviewDebounced();
+    });
+  }
+
+  // initial render
+  renderServiceLines();
+}
+
+function getServicesPayload(){
+  const jt = (el('job_type').value||'').trim();
+  if(jt !== 'ล้าง') return null;
+  // include current line + added lines (unique by signature)
+  const cur = buildCurrentServiceLine();
+  if(cur.ac_type==='ผนัง' && !cur.wash_variant) cur.wash_variant='ล้างธรรมดา';
+
+  const all = [];
+  const pushUnique=(ln)=>{
+    if(!ln || !ln.ac_type || !ln.btu || !ln.machine_count) return;
+    if(all.some(x=>sameServiceLine(x,ln))) return;
+    all.push(ln);
+  };
+  for(const ln of (state.service_lines||[])) pushUnique(ln);
+  pushUnique(cur);
+  return all.length ? all : null;
+}
+
+function validateRequiredForPreview() {
+const p = getPayloadV2();
+if (!p.job_type) return false;
+if (!p.ac_type) return false;
+if (!p.btu) return false;
+if (!p.machine_count) return false;
+
+if (p.job_type === "ล้าง") {
+  // ต้องเลือก wash_variant เฉพาะผนัง (ประเภทอื่นใช้สูตรมาตรฐาน)
+  if (p.ac_type === "ผนัง" && !p.wash_variant) return false;
+}
+if (p.job_type === "ซ่อม" && !p.repair_variant) return false;
+return true;
+
 }
 
 let previewTimer = null;
@@ -327,6 +452,8 @@ async function refreshPreview() {
   }
   try {
     const payload = getPayloadV2();
+    const services = getServicesPayload();
+    if (services) payload.services = services;
     const r = await apiFetch("/public/pricing_preview", { method: "POST", body: JSON.stringify(payload) });
     state.standard_price = Number(r.standard_price || 0);
     state.duration_min = Number(r.duration_min || 0);
@@ -557,23 +684,30 @@ function renderSlots() {
   box.appendChild(grid);
 }
 
-// PATCH: machine count stepper
+// PATCH: machine count stepper (premium: กดได้ + พิมพ์ได้)
 function bindMachineCountStepper(){
   const input = el('machine_count');
-  const val = el('mc_value');
   const minus = el('mc_minus');
   const plus = el('mc_plus');
-  if(!input || !val || !minus || !plus) return;
-  const set = (n)=>{
-    const v = Math.max(1, Math.min(10, Number(n)||1));
-    input.value = String(v);
-    val.textContent = String(v);
-    // trigger preview update
-    previewPricing();
+  if(!input || !minus || !plus) return;
+
+  const clamp = (n)=>{
+    const v = Math.max(1, Math.min(20, Number(n)||1));
+    return v;
   };
+
+  const set = (n, {silent} = {})=>{
+    const v = clamp(n);
+    input.value = String(v);
+    if(!silent) refreshPreviewDebounced();
+  };
+
   minus.addEventListener('click', ()=> set(Number(input.value||1)-1));
   plus.addEventListener('click', ()=> set(Number(input.value||1)+1));
-  set(input.value||1);
+  input.addEventListener('input', ()=> set(input.value, {silent:true}));
+  input.addEventListener('change', ()=> set(input.value));
+
+  set(input.value||1, {silent:true});
 }
 
 async function submitBooking() {
@@ -642,6 +776,7 @@ function wireEvents() {
   // build variant when job type changes
   el("job_type").addEventListener("change", () => {
     buildVariantUI();
+    renderServiceLines();
     refreshPreviewDebounced();
     // attach listeners for dynamic selects
     setTimeout(() => {
@@ -652,7 +787,8 @@ function wireEvents() {
     }, 0);
   });
 
-  ["ac_type","btu","machine_count"].forEach((id) => el(id).addEventListener("change", refreshPreviewDebounced));
+  ["btu","machine_count"].forEach((id) => el(id).addEventListener("change", refreshPreviewDebounced));
+  el("ac_type").addEventListener("change", ()=>{ buildVariantUI(); renderServiceLines(); refreshPreviewDebounced(); setTimeout(()=>{ const w=document.getElementById("wash_variant"); if(w) w.addEventListener("change", refreshPreviewDebounced); },0); });
   el("machine_count").addEventListener("input", refreshPreviewDebounced);
   el("override_price").addEventListener("input", () => updateTotalPreview());
   el("override_duration_min").addEventListener("input", refreshPreviewDebounced);
@@ -703,6 +839,7 @@ async function init() {
   await Promise.all([loadCatalog(), loadPromotions(), loadTechsForType()]);
   renderExtras();
   wireEvents();
+  wireMultiService();
   refreshPreviewDebounced();
 }
 
