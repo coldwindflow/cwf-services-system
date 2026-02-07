@@ -41,7 +41,7 @@
     /* Tech chips: ensure readable text even when not selected */
     .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(11,75,179,0.22);border-radius:999px;padding:8px 10px;background:#ffffff;color:#0b1b3a;font-weight:900;cursor:pointer;box-shadow:0 6px 14px rgba(2,6,23,0.06)}
     .chip:hover{transform:translateY(-1px)}
-    .chip.active{background:#ffcc00;color:#0b1b3a;border-color:rgba(11,75,179,0.28)}
+    .chip.active{background:#0b4bb3;color:#ffffff;border-color:rgba(255,204,0,0.75)}
     .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:#0b4bb3;display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:999;border-top:1px solid rgba(15,23,42,0.08)}
     .nav-btn{flex:1;min-height:46px;border:1px solid rgba(255,255,255,0.22);background:rgba(255,255,255,0.08);color:#fff;border-radius:14px;font-weight:800;font-size:13px}
     .nav-btn.active{background:#ffcc00;color:#0b1b3a;border-color:rgba(11,75,179,0.2)}
@@ -66,6 +66,41 @@
     .slot-panel .title{display:flex;align-items:center;justify-content:space-between;gap:10px}
     .slot-panel .title b{color:#0b1b3a}
     .slot-panel .chip{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:rgba(255,204,0,0.22);border:1px solid rgba(255,204,0,0.65);color:#0b1b3a;font-weight:900;font-size:12px}
+  
+    /* Button system: Yellow primary, Blue on active/pressed, Black text */
+    body.cwf-lux button{transition:transform .05s ease, background .15s ease, border-color .15s ease}
+    body.cwf-lux button:active{transform:translateY(1px)}
+    body.cwf-lux .secondary,
+    body.cwf-lux .btn-primary,
+    body.cwf-lux .btn-mini,
+    body.cwf-lux #btnLoadSlots,
+    body.cwf-lux #btnAddSpecialSlot,
+    body.cwf-lux #btnScrollAssign{
+      background:#ffcc00 !important;
+      color:#0b1b3a !important;
+      border:1px solid rgba(11,75,179,0.22) !important;
+      font-weight:900 !important;
+    }
+    body.cwf-lux .secondary:hover,
+    body.cwf-lux .btn-primary:hover,
+    body.cwf-lux .btn-mini:hover,
+    body.cwf-lux #btnLoadSlots:hover,
+    body.cwf-lux #btnAddSpecialSlot:hover,
+    body.cwf-lux #btnScrollAssign:hover{filter:brightness(0.98)}
+    body.cwf-lux .secondary:active,
+    body.cwf-lux .btn-primary:active,
+    body.cwf-lux .btn-mini:active,
+    body.cwf-lux #btnLoadSlots:active,
+    body.cwf-lux #btnAddSpecialSlot:active,
+    body.cwf-lux #btnScrollAssign:active{
+      background:#0b4bb3 !important;
+      color:#ffffff !important;
+      border-color:rgba(255,204,0,0.75) !important;
+    }
+    body.cwf-lux .bottom-nav{background:#ffffff}
+    body.cwf-lux .nav-btn{background:#ffcc00;color:#0b1b3a;border:1px solid rgba(11,75,179,0.18)}
+    body.cwf-lux .nav-btn.active{background:#0b4bb3;color:#ffffff;border-color:rgba(255,204,0,0.75)}
+
   </style>
 </head>
 <body class="theme-2 cwf-lux">
@@ -242,11 +277,21 @@
 
     <div class="card section-card">
       <b>4) เลือกคิวช่าง</b>
+
       <div class="grid2" style="margin-top:10px">
         <div>
           <label>วันที่</label>
           <input id="appt_date" type="date">
           <button class="secondary" type="button" id="btnLoadSlots" style="margin-top:8px;width:100%">โหลดคิวว่าง</button>
+
+          <!-- Slots appear directly under the load button (no scrolling confusion) -->
+          <div style="margin-top:10px">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+              <b style="color:#0b1b3a">สล็อตเวลา</b>
+              <button class="secondary" type="button" id="btnAddSpecialSlot">+ เพิ่มสลอตพิเศษ</button>
+            </div>
+            <div id="slots_box" style="margin-top:10px"></div>
+          </div>
         </div>
         <div>
           <label>กลุ่มช่าง</label>
@@ -254,54 +299,54 @@
             <option value="company">ช่างบริษัท (ปกติ)</option>
             <option value="partner">ช่างพาร์ทเนอร์</option>
           </select>
-        </div>
-      </div>
 
-      <div class="grid2" style="margin-top:10px">
-        <div>
-          <label>โหมดการเลือกช่าง</label>
-          <select id="assign_mode">
-            <option value="auto">ไม่เลือก (ระบบเลือกช่างว่าง)</option>
-            <option value="single">เลือกเดี่ยว</option>
-            <option value="team">ทีม</option>
-          </select>
-          <div class="muted2 mini" style="margin-top:6px">แนะนำ: กด “โหลดคิวว่าง” ก่อน แล้วค่อยเลือกเดี่ยว/ทีม</div>
-        </div>
-        <div>
-          <label>dispatch_mode</label>
+          <label style="margin-top:10px">dispatch_mode</label>
           <select id="dispatch_mode">
             <option value="forced">forced (ล็อคช่าง)</option>
             <option value="offer">offer (ยิงข้อเสนอ)</option>
           </select>
-          <div class="muted2 mini" id="dispatch_help" style="margin-top:6px">* โหมด “ล็อคช่าง” เพิ่มงานได้แม้ช่างยังไม่เปิดรับงาน • โหมด “ข้อเสนอ” จะส่งเฉพาะช่างที่เปิดรับงานเท่านั้น</div>
-        </div>
-      </div>
+          <div class="muted2 mini" id="dispatch_help" style="margin-top:6px">
+            * โหมด “ล็อคช่าง” เพิ่มงานได้แม้ช่างยังไม่เปิดรับงาน (เฉพาะวันทำงาน) • โหมด “ข้อเสนอ” จะยิงไปเฉพาะช่างที่เปิดรับงาน
+          </div>
 
-      <div id="assign_card" class="card card-lite" style="margin-top:10px">
-        <div class="grid2">
-          <div>
-            <label id="tech_select_label">ช่าง</label>
-            <select id="technician_username_select"></select>
-            <input id="technician_username" type="hidden">
-            <div class="muted2 mini" style="margin-top:6px" id="tech_select_help">* จะเปิดให้เลือกหลังจาก “โหลดคิวว่าง”</div>
+          <div id="assign_summary" class="pill" style="margin-top:12px;display:flex;justify-content:space-between;gap:10px">
+            <span class="muted2 mini" id="assign_summary_text">ยังไม่ได้เลือกช่าง • ระบบจะเลือกช่างว่างให้</span>
+            <span class="muted2 mini" id="assign_summary_hint">แตะสล็อตเพื่อเลือกเดี่ยว/ทีม</span>
           </div>
-          <div id="team_mode_hint" style="display:none">
-            <label>ทีมช่าง</label>
-            <div class="muted2 mini">เลือก “ทีม” เพื่อเพิ่มช่างร่วมหลายคน</div>
-          </div>
-        </div>
 
-        <div id="team_picker_wrap" style="margin-top:10px; display:none">
-          <label>ทีมช่าง (ช่างร่วม) • เลือกหลายคน</label>
-          <div class="team-help">พิมพ์ค้นหา แล้วแตะเพื่อเพิ่มเป็นทีม • ตั้ง “ช่างหลัก” ได้ด้วยป้าย Primary</div>
-          <div class="team-picker">
-            <input id="team_search" class="team-search" placeholder="ค้นหาช่างร่วม..." autocomplete="off">
-            <div class="team-suggest" id="team_suggest"></div>
-            <div class="team-divider"></div>
-            <div class="team-selected-title">เลือกแล้ว</div>
-            <div class="team-selected" id="team_selected"></div>
+          <!-- Hidden legacy fields (kept for backward compatibility) -->
+          <select id="assign_mode" style="display:none">
+            <option value="auto">ไม่เลือก (ระบบเลือกช่างว่าง)</option>
+            <option value="single">เลือกเดี่ยว</option>
+            <option value="team">ทีม</option>
+          </select>
+          <div id="assign_card" class="card card-lite" style="margin-top:10px; display:none">
+            <div class="grid2">
+              <div>
+                <label id="tech_select_label">ช่าง</label>
+                <select id="technician_username_select"></select>
+                <input id="technician_username" type="hidden">
+                <div class="muted2 mini" style="margin-top:6px" id="tech_select_help">* จะเปิดให้เลือกหลังจาก “โหลดคิวว่าง”</div>
+              </div>
+              <div id="team_mode_hint" style="display:none">
+                <label>ทีมช่าง</label>
+                <div class="muted2 mini">เลือก “ทีม” เพื่อเพิ่มช่างร่วมหลายคน</div>
+              </div>
+            </div>
+
+            <div id="team_picker_wrap" style="margin-top:10px; display:none">
+              <label>ทีมช่าง (ช่างร่วม) • เลือกหลายคน</label>
+              <div class="team-help">พิมพ์ค้นหา แล้วแตะเพื่อเพิ่มเป็นทีม • ตั้ง “ช่างหลัก” ได้ด้วยป้าย Primary</div>
+              <div class="team-picker">
+                <input id="team_search" class="team-search" placeholder="ค้นหาช่างร่วม..." autocomplete="off">
+                <div class="team-suggest" id="team_suggest"></div>
+                <div class="team-divider"></div>
+                <div class="team-selected-title">เลือกแล้ว</div>
+                <div class="team-selected" id="team_selected"></div>
+              </div>
+              <input id="team_members_csv" type="hidden" />
+            </div>
           </div>
-          <input id="team_members_csv" type="hidden" />
         </div>
       </div>
 
@@ -318,9 +363,9 @@
         </div>
       </div>
 
-      <!-- Slot Quick Pick Modal (แตะสล็อตแล้วเลือกช่างได้ทันที) -->
+      <!-- Slot Quick Pick Modal (แตะสล็อตแล้วเลือกช่าง/เดี่ยว/ทีมได้ทันที) -->
       <div id="slot_modal_overlay" class="team-sheet-overlay">
-        <div class="team-sheet" role="dialog" aria-modal="true" style="max-width:520px">
+        <div class="team-sheet" role="dialog" aria-modal="true" style="max-width:560px">
           <h3 id="slot_modal_title">เลือกช่างในสล็อต</h3>
           <p id="slot_modal_sub" class="muted2" style="margin-top:6px">-</p>
           <div id="slot_modal_body" style="margin-top:12px"></div>
@@ -329,13 +374,13 @@
           </div>
         </div>
       </div>
-      <div class="grid2" style="margin-top:12px">
-        <button class="secondary" type="button" id="btnAddSpecialSlot">+ เพิ่มสลอตพิเศษ</button>
-        <button class="secondary" type="button" id="btnScrollAssign">มอบหมายงานล้าง</button>
-      </div>
-      <div id="slots_box" style="margin-top:10px"></div>
 
-      <input id="appointment_datetime" type="datetime-local" style="margin-top:10px" />
+      <div class="grid2" style="margin-top:12px">
+        <button class="secondary" type="button" id="btnScrollAssign">กำหนดงานให้ช่าง</button>
+        <div></div>
+      </div>
+
+      <input id="appointment_datetime" type="datetime-local" style="margin-top:10px" /> type="datetime-local" style="margin-top:10px" />
       <div class="muted2 mini" style="margin-top:6px">* เมื่อเลือกสล็อต ระบบจะใส่วันเวลาให้อัตโนมัติ</div>
 
       <!-- Workload assignment (wash split) -->

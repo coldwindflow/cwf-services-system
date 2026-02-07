@@ -1076,6 +1076,8 @@ function selectSlot(startHHMM){
 
   renderSlots();
   try { renderWashAssign(); } catch(e){}
+  try { updateAssignSummary(); } catch(e){}
+
 }
 
 // =============================
@@ -1089,6 +1091,34 @@ function closeSlotModal(){
   _slotModalSlot = null;
 }
 
+function updateAssignSummary(){
+  const t = el('assign_summary_text');
+  if(!t) return;
+  const dm = (el('dispatch_mode')?.value || 'forced').toString();
+  if(dm === 'offer'){
+    t.textContent = 'โหมดข้อเสนอ • ระบบจะยิงไปช่างที่ว่างและเปิดรับงาน';
+    return;
+  }
+  const mode = (el('assign_mode')?.value || 'auto').toString();
+  if(mode === 'team'){
+    const primary = (state.teamPicker.primary || '').trim();
+    const members = Array.from(state.teamPicker.selected || []);
+    const count = members.length;
+    t.textContent = primary
+      ? `ทีม • ช่างหลัก: ${primary} • ทีมรวม ${count} คน`
+      : `ทีม • ยังไม่เลือกช่างหลัก • ทีมรวม ${count} คน`;
+    return;
+  }
+  if(mode === 'single'){
+    const u = (el('technician_username_select')?.value || el('technician_username')?.value || '').trim();
+    t.textContent = u ? `เลือกเดี่ยว • ${u}` : 'เลือกเดี่ยว • ยังไม่ได้เลือกช่าง (ระบบจะเลือกช่างว่างให้)';
+    return;
+  }
+  t.textContent = 'ยังไม่ได้เลือกช่าง • ระบบจะเลือกช่างว่างให้';
+}
+
+
+
 function openSlotModal(slot){
   const ov = el('slot_modal_overlay');
   const title = el('slot_modal_title');
@@ -1100,77 +1130,126 @@ function openSlotModal(slot){
   const date = el('appt_date')?.value || '';
   const ids = Array.isArray(slot?.available_tech_ids) ? slot.available_tech_ids : [];
   const dispatchMode = (el('dispatch_mode')?.value || 'forced').toString();
-  const mode = (el('assign_mode')?.value || 'auto').toString();
 
   if(title) title.textContent = 'เลือกช่างในสล็อตนี้';
   sub.textContent = `${date} • ${slot.start} - ${slot.end} • ว่าง ${ids.length} ช่าง`;
 
-  // Offer: do not allow picking paused techs via forced checkbox here (backend already enforces)
-  // UI: keep simple and fast
-  if(!ids.length){
-    body.innerHTML = `<div class="muted2">สล็อตนี้ไม่มีช่างว่าง</div>`;
+  // Offer mode: choose time only (no manual technician picking)
+  if(dispatchMode === 'offer'){
+    body.innerHTML = `
+      <div class="card-lite" style="padding:12px;border-radius:16px">
+        <b style="color:#0b1b3a">โหมดข้อเสนอ (offer)</b>
+        <div class="muted2 mini" style="margin-top:6px">
+          ระบบจะยิงข้อเสนอไปให้ช่างที่ “ว่างและเปิดรับงาน” • ไม่ต้องเลือกช่างเอง
+        </div>
+      </div>
+      <div style="margin-top:12px">
+        <button type="button" class="secondary" id="slotm_confirm_offer" style="width:100%">ใช้เวลานี้</button>
+      </div>
+    `;
+    setTimeout(()=>{
+      const btn = body.querySelector('#slotm_confirm_offer');
+      if(btn) btn.addEventListener('click', ()=>{
+        updateAssignSummary();
+        closeSlotModal();
+      });
+    },0);
     ov.style.display = 'flex';
     return;
   }
 
-  if(mode === 'team'){
-    const primary = (state.teamPicker.primary || '').trim();
-    const selected = new Set(Array.from(state.teamPicker.selected || []));
-    body.innerHTML = `
-      <div class="grid2">
-        <div>
-          <label>ช่างหลัก (Primary)</label>
-          <select id="slotm_primary" class="grow"></select>
-          <div class="muted2 mini" style="margin-top:6px">เลือก primary ในสล็อตนี้</div>
-        </div>
-        <div>
-          <label>ช่างร่วม</label>
-          <div id="slotm_team" style="display:flex;flex-wrap:wrap;gap:8px"></div>
-          <div class="muted2 mini" style="margin-top:6px">แตะเพื่อเลือก/ยกเลิกช่างร่วม</div>
-        </div>
+  // Forced mode: pick auto/single/team inside modal
+  const renderBody = ()=>{
+    const mode = (el('assign_mode')?.value || 'auto').toString();
+
+    const modeSeg = `
+      <div class="seg" style="margin-bottom:10px">
+        <button type="button" class="${mode==='auto'?'active':''}" data-mode="auto">ระบบเลือกช่าง</button>
+        <button type="button" class="${mode==='single'?'active':''}" data-mode="single">เลือกเดี่ยว</button>
+        <button type="button" class="${mode==='team'?'active':''}" data-mode="team">ทีม</button>
       </div>
-      <div class="muted2 mini" style="margin-top:10px">dispatch_mode: <b>${escapeHtml(dispatchMode)}</b></div>
+      <div class="muted2 mini" style="margin-top:-2px;margin-bottom:10px">
+        * เลือกโหมดและช่างได้ทันทีในหน้าต่างนี้
+      </div>
     `;
-    const selEl = body.querySelector('#slotm_primary');
-    selEl.innerHTML = `<option value="">-- เลือกช่างหลัก --</option>` + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
-    if(primary && ids.includes(primary)) selEl.value = primary;
-    const wrap = body.querySelector('#slotm_team');
-    for(const u of ids){
-      const b = document.createElement('button');
-      b.type = 'button';
-      const active = selected.has(u);
-      b.className = `chip ${active ? 'active' : ''}`;
-      b.textContent = u;
-      b.addEventListener('click', ()=>{
-        if(selected.has(u)) selected.delete(u); else selected.add(u);
+
+    if(!ids.length){
+      body.innerHTML = modeSeg + `<div class="muted2">สล็อตนี้ไม่มีช่างว่าง</div>`;
+      bindModeButtons();
+      return;
+    }
+
+    if(mode === 'team'){
+      const primary = (state.teamPicker.primary || '').trim();
+      const selected = new Set(Array.from(state.teamPicker.selected || []));
+      body.innerHTML = modeSeg + `
+        <div class="grid2">
+          <div>
+            <label>ช่างหลัก (Primary)</label>
+            <select id="slotm_primary" class="grow"></select>
+            <div class="muted2 mini" style="margin-top:6px">เลือกช่างหลักในสล็อตนี้</div>
+          </div>
+          <div>
+            <label>ช่างร่วม</label>
+            <div id="slotm_team" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+            <div class="muted2 mini" style="margin-top:6px">แตะเพื่อเลือก/ยกเลิกช่างร่วม</div>
+          </div>
+        </div>
+      `;
+      const selEl = body.querySelector('#slotm_primary');
+      selEl.innerHTML = `<option value="">-- เลือกช่างหลัก --</option>` + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
+      if(primary && ids.includes(primary)) selEl.value = primary;
+
+      const wrap = body.querySelector('#slotm_team');
+      for(const u of ids){
+        const b = document.createElement('button');
+        b.type = 'button';
+        const active = selected.has(u);
+        b.className = `chip ${active ? 'active' : ''}`;
+        b.textContent = u;
+        b.addEventListener('click', ()=>{
+          if(selected.has(u)) selected.delete(u); else selected.add(u);
+          state.teamPicker.selected = new Set(Array.from(selected));
+          // keep hidden fields synced
+          el('assign_mode').value = 'team';
+          getTeamMembersForPayload();
+          renderSlots();
+          try { renderWashAssign(); } catch(e){}
+          updateAssignSummary();
+          renderBody();
+        });
+        wrap.appendChild(b);
+      }
+
+      selEl.addEventListener('change', ()=>{
+        const p = (selEl.value||'').trim();
+        state.teamPicker.primary = p;
+        if(p) selected.add(p);
         state.teamPicker.selected = new Set(Array.from(selected));
+        el('assign_mode').value = 'team';
+        getTeamMembersForPayload();
+        renderTeamPicker(ids);
         renderSlots();
         try { renderWashAssign(); } catch(e){}
-        openSlotModal(slot);
+        updateAssignSummary();
+        renderBody();
       });
-      wrap.appendChild(b);
+
+      bindModeButtons();
+      return;
     }
-    selEl.addEventListener('change', ()=>{
-      const p = (selEl.value||'').trim();
-      state.teamPicker.primary = p;
-      if(p) selected.add(p);
-      state.teamPicker.selected = new Set(Array.from(selected));
-      getTeamMembersForPayload();
-      renderTeamPicker(ids);
-      renderSlots();
-      try { renderWashAssign(); } catch(e){}
-    });
-  } else {
+
+    // auto or single
     const cur = (el('technician_username_select')?.value || '').trim();
-    body.innerHTML = `
+    body.innerHTML = modeSeg + `
       <label>ช่าง (ว่างในสล็อตนี้)</label>
       <select id="slotm_single" class="grow"></select>
-      <div class="muted2 mini" style="margin-top:6px">ถ้าเลือกช่าง ระบบจะสลับเป็นโหมด “เลือกเดี่ยว” ให้อัตโนมัติ</div>
-      <div class="muted2 mini" style="margin-top:10px">dispatch_mode: <b>${escapeHtml(dispatchMode)}</b></div>
+      <div class="muted2 mini" style="margin-top:6px">เลือกช่าง = โหมด “เลือกเดี่ยว” • ไม่เลือก = ระบบเลือกช่างว่าง</div>
     `;
     const selEl = body.querySelector('#slotm_single');
-    selEl.innerHTML = `<option value="">-- ไม่เลือก (ให้ระบบเลือกช่างว่าง) --</option>` + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
+    selEl.innerHTML = `<option value="">-- ไม่เลือก (ระบบเลือกช่างว่าง) --</option>` + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
     if(cur && ids.includes(cur)) selEl.value = cur;
+
     selEl.addEventListener('change', ()=>{
       const v = (selEl.value||'').trim();
       if(!v){
@@ -1179,6 +1258,7 @@ function openSlotModal(slot){
         if(el('technician_username')) el('technician_username').value = '';
         renderSlots();
         try { renderWashAssign(); } catch(e){}
+        updateAssignSummary();
         return;
       }
       el('assign_mode').value = 'single';
@@ -1188,9 +1268,37 @@ function openSlotModal(slot){
       if(el('technician_username')) el('technician_username').value = v;
       renderSlots();
       try { renderWashAssign(); } catch(e){}
+      updateAssignSummary();
     });
-  }
 
+    bindModeButtons();
+  };
+
+  const bindModeButtons = ()=>{
+    body.querySelectorAll('button[data-mode]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const m = btn.getAttribute('data-mode');
+        if(!m) return;
+        el('assign_mode').value = m;
+        // clear selections when switching
+        if(m !== 'single'){
+          if(el('technician_username_select')) el('technician_username_select').value = '';
+          if(el('technician_username')) el('technician_username').value = '';
+        }
+        if(m !== 'team'){
+          state.teamPicker.selected = new Set([]);
+          state.teamPicker.primary = '';
+          getTeamMembersForPayload();
+        }
+        renderSlots();
+        try { renderWashAssign(); } catch(e){}
+        updateAssignSummary();
+        renderBody();
+      });
+    });
+  };
+
+  renderBody();
   ov.style.display = 'flex';
 }
 
