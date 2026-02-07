@@ -106,7 +106,7 @@ body{
 .badge.ok{ border-color: var(--slot-available-border); color: #15803d; }
 .badge.muted{ border-color: var(--slot-full-border); color: var(--muted); }
 
-/* Machine count stepper (ไม่ต้องพิมพ์) */
+/* Machine count stepper (กดได้ + พิมพ์ได้) */
 .stepper{
   display:flex;
   align-items:center;
@@ -116,11 +116,24 @@ body{
   width: 44px;
   height: 44px;
   border-radius: 14px;
-  border: 1px solid var(--border);
-  background: rgba(255,255,255,0.85);
+  border: 1px solid rgba(11,75,179,0.18);
+  background: linear-gradient(180deg, rgba(11,75,179,0.92), rgba(11,75,179,0.82));
+  color: #fff;
   box-shadow: var(--shadow-2);
   font-size: 20px;
   font-weight: 900;
+}
+.stepper .btn-round:active{ transform: translateY(1px); }
+.stepper .btn-round:disabled{ opacity: .5; }
+.stepper .stepper-input{
+  width: 86px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(15,23,42,0.14);
+  text-align:center;
+  font-weight: 900;
+  font-size: 18px;
+  background: rgba(255,255,255,0.92);
 }
 .stepper .value{
   min-width: 56px;
@@ -213,23 +226,50 @@ body{
   border-color: rgba(251,191,36,0.65);
   color: #7c2d12;
 }
-.team-action{
-  border: 1px solid rgba(37,99,235,0.20);
-  background: rgba(37,99,235,0.10);
-  color: #1d4ed8;
-  border-radius: 999px;
-  padding: 6px 10px;
-  font-weight: 900;
-  font-size: 11px;
+/* ซ่อนปุ่ม action เก่า (เปลี่ยนเป็น action sheet) */
+.team-action, .team-x{ display:none !important; }
+
+/* Team action sheet (premium) */
+.sheet-overlay{
+  position:fixed; inset:0; background: rgba(2,6,23,0.45);
+  display:none; align-items:flex-end; justify-content:center;
+  z-index: 9999;
 }
-.team-x{
-  border: 1px solid rgba(239,68,68,0.25);
-  background: rgba(239,68,68,0.10);
-  color: #b91c1c;
-  border-radius: 999px;
-  padding: 6px 10px;
-  font-weight: 900;
-  font-size: 11px;
+.sheet{
+  width:min(520px, 100%);
+  background: rgba(255,255,255,0.98);
+  border-top-left-radius: 22px;
+  border-top-right-radius: 22px;
+  border: 1px solid rgba(15,23,42,0.10);
+  box-shadow: 0 -20px 60px rgba(0,0,0,0.18);
+  padding: 14px;
+}
+.sheet .sheet-title{ font-weight: 900; font-size: 16px; }
+.sheet .sheet-sub{ color: var(--muted); font-weight: 700; font-size: 12px; margin-top:4px; }
+.sheet .sheet-actions{ display:flex; flex-direction:column; gap:10px; margin-top:12px; }
+.sheet .sheet-btn{
+  width:100%; min-height:46px; border-radius: 16px;
+  border: 1px solid rgba(15,23,42,0.12);
+  background: #fff; font-weight: 900;
+}
+.sheet .sheet-btn.primary{ background:#ffcc00; border-color: rgba(11,75,179,0.12); color:#0b1b3a; }
+.sheet .sheet-btn.danger{ background: rgba(239,68,68,0.10); border-color: rgba(239,68,68,0.25); color:#b91c1c; }
+.sheet .sheet-btn.ghost{ background: rgba(11,75,179,0.08); border-color: rgba(11,75,179,0.18); color:#0b4bb3; }
+
+/* Bottom nav theme (blue/yellow/white) */
+.bottom-nav{
+  background:#0b4bb3 !important;
+  border-top: 1px solid rgba(15,23,42,0.08) !important;
+}
+.nav-btn{
+  border: 1px solid rgba(255,255,255,0.22) !important;
+  background: rgba(255,255,255,0.08) !important;
+  color:#fff !important;
+}
+.nav-btn.active{
+  background:#ffcc00 !important;
+  color:#0b1b3a !important;
+  border-color: rgba(11,75,179,0.20) !important;
 }
 .team-empty{
   color: var(--muted);

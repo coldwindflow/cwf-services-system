@@ -16,14 +16,16 @@
     .line .grow{flex:1}
     .mini{font-size:12px}
     .muted2{color:rgba(15,23,42,0.72);font-size:13px}
-    .slot-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-    @media (max-width:420px){.slot-grid{grid-template-columns:1fr}}
-    .slot-btn{min-height:44px;border-radius:14px;border:1px solid rgba(15,23,42,0.12);background:#fff;font-weight:800}
+    .slot-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+    @media (max-width:720px){.slot-grid{grid-template-columns:repeat(2,1fr)}}
+    @media (max-width:420px){.slot-grid{grid-template-columns:repeat(2,1fr)}}
+    .slot-btn{min-height:56px;border-radius:16px;border:1px solid rgba(15,23,42,0.12);background:#fff;font-weight:900;line-height:1.1;padding:10px 8px}
+    .slot-btn .slot-sub{display:block;margin-top:6px;font-size:12px;font-weight:800;opacity:.85}
     .slot-btn.selected{background:#22c55e;color:#052e16;border-color:transparent}
     .slot-btn.disabled{opacity:0.45}
-    .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:#0f172a;display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:999;border-top:1px solid rgba(255,255,255,0.08)}
-    .nav-btn{flex:1;min-height:44px;border:1px solid rgba(255,255,255,0.18);background:transparent;color:#fff;border-radius:12px;font-weight:700;font-size:13px}
-    .nav-btn.active{background:#22c55e;color:#052e16;border-color:transparent}
+    .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:#0b4bb3;display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:999;border-top:1px solid rgba(15,23,42,0.08)}
+    .nav-btn{flex:1;min-height:46px;border:1px solid rgba(255,255,255,0.22);background:rgba(255,255,255,0.08);color:#fff;border-radius:14px;font-weight:800;font-size:13px}
+    .nav-btn.active{background:#ffcc00;color:#0b1b3a;border-color:rgba(11,75,179,0.2)}
     .card-lite{background:#f8fafc;border:1px solid rgba(15,23,42,0.08)}
   </style>
 </head>
@@ -99,9 +101,11 @@
         </div>
       </div>
 
+      <!-- PATCH: ล้างผนัง 4 แบบ (แสดงเฉพาะเมื่อ job=ล้าง และ ac=ผนัง) -->
+      <div id="variant_box" style="margin-top:10px"></div>
+
       <div class="grid2" style="margin-top:10px">
         <div>
-          <label>จำนวนเครื่อง</label>
           <label>จำนวนเครื่อง</label>
           <div class="stepper" aria-label="machine count">
             <button id="mc_minus" class="btn-round" type="button" title="ลด">−</button>
@@ -117,9 +121,6 @@
           </select>
         </div>
       </div>
-
-      <!-- PATCH: ล้างผนัง 4 แบบ (แสดงเฉพาะเมื่อ job=ล้าง และ ac=ผนัง) -->
-      <div id="variant_box" style="margin-top:10px"></div>
 <!-- MULTI-SERVICE (ล้างหลายประเภทในใบงานเดียว) -->
 <div id="multi_service_box" class="card card-lite" style="margin-top:12px; display:none;">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
@@ -173,7 +174,12 @@
       <div class="grid2" style="margin-top:10px">
         <div>
           <label>โปรโมชัน</label>
-          <select id="promotion_id"></select>
+          <div class="line">
+            <select id="promotion_id" class="grow"></select>
+            <button id="btnPromoManage" class="secondary btn-mini" type="button">จัดการ</button>
+            <button id="btnPromoQuickAdd" class="secondary btn-mini" type="button">+ เพิ่ม</button>
+          </div>
+          <div class="muted2 mini" style="margin-top:6px">ลูกค้าไม่เห็นโปรโมชัน • เลือก “ไม่ใช้โปรโมชัน” เพื่อเอาออก</div>
         </div>
         <div>
           <label>ยอดรวมประมาณ</label>
@@ -224,6 +230,20 @@
           </div>
           <input id="team_members_csv" type="hidden" />
         </div>
+
+        <!-- Action Sheet สำหรับทีมช่าง: ซ่อนปุ่มตั้งเป็นหลัก/ลบแบบเดิม ให้ดูพรีเมียม -->
+        <div id="team_actions" class="sheet" style="display:none">
+          <div class="sheet-backdrop" data-close="1"></div>
+          <div class="sheet-panel">
+            <div class="sheet-title">จัดการทีมช่าง</div>
+            <div class="sheet-sub" id="team_actions_name">-</div>
+            <div class="sheet-actions">
+              <button id="btnTeamSetPrimary" class="primary" type="button">ตั้งเป็นช่างหลัก</button>
+              <button id="btnTeamRemove" class="secondary" type="button">เอาออกจากทีม</button>
+              <button class="secondary" type="button" data-close="1">ปิด</button>
+            </div>
+          </div>
+        </div>
 <button class="secondary" type="button" style="margin-top:12px" id="btnLoadSlots">โหลดคิวว่าง</button>
       <div id="slots_box" style="margin-top:10px"></div>
 
@@ -240,6 +260,19 @@
       <div class="muted2 mini" style="margin-top:6px">กดปุ่มคัดลอก แล้วส่งใน LINE/WhatsApp ได้ทันที</div>
       <textarea id="summary_text" rows="10" style="margin-top:10px"></textarea>
       <button class="secondary" type="button" style="margin-top:10px" id="btnCopySummary">คัดลอกข้อความ</button>
+    </div>
+
+    <!-- Team action sheet (ซ่อนปุ่มใน chip ให้ดูพรีเมียม) -->
+    <div id="team_sheet_overlay" class="sheet-overlay">
+      <div class="sheet">
+        <div class="sheet-title" id="team_sheet_title">จัดการทีมช่าง</div>
+        <div class="sheet-sub" id="team_sheet_sub">เลือกการทำงาน</div>
+        <div class="sheet-actions">
+          <button type="button" id="team_sheet_set_primary" class="sheet-btn primary">ตั้งเป็นช่างหลัก</button>
+          <button type="button" id="team_sheet_remove" class="sheet-btn">เอาออกจากทีม</button>
+          <button type="button" id="team_sheet_close" class="sheet-btn">ปิด</button>
+        </div>
+      </div>
     </div>
 
 

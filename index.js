@@ -1840,25 +1840,31 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
 });
 
 app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
-  const job_id = Number(req.params.job_id);
-  if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+  // PATCH: รองรับทั้ง job_id (ตัวเลข) และ booking_code (เช่น CWF0000123)
+  const raw = String(req.params.job_id || "").trim();
+  const isNumeric = /^\d+$/.test(raw);
+  const job_id = isNumeric ? Number(raw) : 0;
+  const booking_code = (!isNumeric && raw) ? raw : null;
+  if (!job_id && !booking_code) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
   try {
     const jr = await pool.query(
       `SELECT *
        FROM public.jobs
-       WHERE job_id=$1
+       WHERE ${job_id ? "job_id=$1" : "booking_code=$1"}
        LIMIT 1`,
-      [job_id]
+      [job_id || booking_code]
     );
     const job = jr.rows[0];
     if (!job) return res.status(404).json({ error: "ไม่พบงาน" });
+
+    const jid = Number(job.job_id);
 
     const ir = await pool.query(
       `SELECT item_id, item_name, qty, unit_price, line_total
        FROM public.job_items
        WHERE job_id=$1
        ORDER BY job_item_id ASC`,
-      [job_id]
+      [jid]
     );
 
     const pr = await pool.query(
@@ -1868,7 +1874,7 @@ app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
        WHERE jp.job_id=$1
        ORDER BY jp.job_promo_id DESC
        LIMIT 1`,
-      [job_id]
+      [jid]
     );
 
     return res.json({
@@ -2252,7 +2258,7 @@ app.delete("/jobs/:job_id/admin-delete", async (req, res) => {
 
     const jr = await client.query(
       `SELECT booking_code FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
-      [job_id]
+      [jid]
     );
     if (!jr.rows.length) throw new Error("ไม่พบงาน");
 

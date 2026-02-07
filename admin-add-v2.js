@@ -182,21 +182,47 @@ function renderTeamPicker(allowedIds=null){
     const isPrimary = (u===state.teamPicker.primary);
     if(isPrimary){
       return `
-        <div class="team-chip team-chip-primary" data-u="${u}">
+        <div class="team-chip team-chip-primary" data-u="${u}" role="button" tabindex="0" title="แตะเพื่อจัดการ">
           <span class="team-name">${escapeHtml(u)}</span>
           <span class="team-badge">Primary</span>
         </div>`;
     }
     return `
-      <div class="team-chip" data-u="${u}">
+      <div class="team-chip" data-u="${u}" role="button" tabindex="0" title="แตะเพื่อจัดการ">
         <span class="team-name">${escapeHtml(u)}</span>
-        <button type="button" class="team-action" data-act="primary" data-u="${u}">ตั้งเป็นหลัก</button>
-        <button type="button" class="team-x" data-act="remove" data-u="${u}">✕</button>
+        <span class="team-badge">ร่วม</span>
       </div>`;
   }).join("") || `<div class="team-empty">ยังไม่ได้เลือกช่างร่วม</div>`;
 
   // sync hidden csv for payload
   getTeamMembersForPayload();
+}
+
+// Team action sheet (tap chip -> set primary / remove)
+state.teamPicker.active = "";
+function openTeamSheet(username){
+  const u = String(username||"").trim();
+  if(!u) return;
+  state.teamPicker.active = u;
+  const overlay = el("team_sheet_overlay");
+  if(!overlay) return;
+  const title = el("team_sheet_title");
+  const sub = el("team_sheet_sub");
+  if(title) title.textContent = `จัดการทีมช่าง: ${u}`;
+  if(sub){
+    sub.textContent = (u === state.teamPicker.primary)
+      ? "ช่างหลัก (แตะเพื่อเปลี่ยนช่างหลักหรือปิด)"
+      : "ช่างร่วม (ตั้งเป็นช่างหลักหรือเอาออกได้)";
+  }
+  // disable remove if primary
+  const rm = el("team_sheet_remove");
+  if(rm) rm.disabled = (u === state.teamPicker.primary);
+  overlay.style.display = "flex";
+}
+function closeTeamSheet(){
+  const overlay = el("team_sheet_overlay");
+  if(overlay) overlay.style.display = "none";
+  state.teamPicker.active = "";
 }
 
 // delegate events once
@@ -211,15 +237,32 @@ function wireTeamPickerEvents(){
       addTeamMember(btn.getAttribute("data-u"));
       return;
     }
-    const act = e.target.getAttribute("data-act");
-    if(act === "remove"){
-      removeTeamMember(e.target.getAttribute("data-u"));
+    const chip = e.target.closest(".team-chip");
+    if(chip && chip.getAttribute("data-u")){
+      openTeamSheet(chip.getAttribute("data-u"));
       return;
     }
-    if(act === "primary"){
-      setPrimary(e.target.getAttribute("data-u"));
+  });
+
+  // sheet buttons
+  el("team_sheet_close")?.addEventListener("click", closeTeamSheet);
+  el("team_sheet_overlay")?.addEventListener("click", (e)=>{
+    if(e.target && e.target.id === "team_sheet_overlay") closeTeamSheet();
+  });
+  el("team_sheet_set_primary")?.addEventListener("click", ()=>{
+    if(!state.teamPicker.active) return;
+    setPrimary(state.teamPicker.active);
+    closeTeamSheet();
+  });
+  el("team_sheet_remove")?.addEventListener("click", ()=>{
+    const u = state.teamPicker.active;
+    if(!u) return;
+    if(u === state.teamPicker.primary){
+      showToast("ต้องเปลี่ยนช่างหลักก่อน", "error");
       return;
     }
+    removeTeamMember(u);
+    closeTeamSheet();
   });
 }
 
@@ -531,7 +574,8 @@ async function loadCatalog() {
 
 async function loadPromotions() {
   try {
-    const list = await apiFetch("/promotions");
+    // Admin ต้องเห็นทั้งหมด (รวมที่ลูกค้าไม่เห็น) ใช้ v2 endpoint
+    const list = await apiFetch("/admin/promotions_v2");
     state.promo_list = Array.isArray(list) ? list : [];
     const sel = el("promotion_id");
     sel.innerHTML = "";
@@ -550,6 +594,37 @@ async function loadPromotions() {
   } catch (e) {
     console.warn(e);
   }
+}
+
+function wirePromotionControls(){
+  el("btnPromoManage")?.addEventListener("click", ()=>{
+    location.href = "/admin-promotions-v2.html";
+  });
+
+  el("btnPromoQuickAdd")?.addEventListener("click", async ()=>{
+    // Quick add: ใช้ prompt แบบปลอดภัย (ไม่พังหน้า) และสร้างใน DB จริง
+    const name = prompt("ชื่อโปรโมชัน (เช่น ลด 10%)");
+    if(!name) return;
+    const type = (prompt("ประเภทโปร: percent หรือ fixed", "percent")||"percent").trim().toLowerCase();
+    if(!["percent","fixed"].includes(type)){
+      showToast("ประเภทโปรไม่ถูกต้อง", "error");
+      return;
+    }
+    const vRaw = prompt(type==="percent" ? "จำนวนเปอร์เซ็นต์ (เช่น 10)" : "จำนวนบาท (เช่น 200)");
+    const val = Number(vRaw);
+    if(!Number.isFinite(val) || val <= 0){
+      showToast("ค่าโปรไม่ถูกต้อง", "error");
+      return;
+    }
+    try{
+      await apiFetch("/admin/promotions_v2", { method:"POST", body: JSON.stringify({ promo_name:name.trim(), promo_type:type, promo_value: val, is_active:true }) });
+      await loadPromotions();
+      showToast("เพิ่มโปรโมชันแล้ว", "success");
+    }catch(err){
+      console.warn(err);
+      showToast("เพิ่มโปรโมชันไม่สำเร็จ", "error");
+    }
+  });
 }
 
 function renderExtras() {
@@ -646,8 +721,12 @@ function renderSlots() {
   sum.style.alignItems = 'center';
   sum.style.gap = '10px';
   sum.style.flexWrap = 'wrap';
+  const teamCount = Math.max(1, Array.from(state.teamPicker.selected||[]).filter(Boolean).length || 1);
   sum.innerHTML = `
-    <div><b>สล็อตเวลา</b> <span class="muted2 mini">(ว่าง/เต็ม ชัดเจน)</span></div>
+    <div>
+      <b>สล็อตเวลา</b> <span class="muted2 mini">(ว่าง/เต็ม ชัดเจน)</span>
+      <div class="muted2 mini" style="margin-top:2px">ทีมช่างในใบงาน: <b>${teamCount}</b> คน</div>
+    </div>
     <div class="badge ${slotsAvail.length? 'ok':'muted'}">${slotsAvail.length? 'ว่าง':'เต็ม'} • ${slotsAvail.length}/${slotsAll.length} ช่วง</div>
   `;
   box.appendChild(sum);
@@ -657,7 +736,7 @@ function renderSlots() {
     const btn = document.createElement("button");
     btn.type = "button";
     const techCount = Array.isArray(s.available_tech_ids) ? s.available_tech_ids.length : 0;
-    btn.className = `slot-btn ${s.available ? 'is-available':'is-full'}`;
+    btn.className = `slot-btn ${s.available ? 'is-available':'is-full'} ${!s.available? 'disabled':''}`;
     btn.innerHTML = `
       <div class="time">${s.start} - ${s.end}</div>
       <div class="meta">${s.available ? `ว่าง • ${techCount} ช่าง` : 'เต็ม'}</div>
@@ -837,6 +916,7 @@ async function init() {
 
   el("appt_date").value = todayYMD();
   await Promise.all([loadCatalog(), loadPromotions(), loadTechsForType()]);
+  wirePromotionControls();
   renderExtras();
   wireEvents();
   wireMultiService();
