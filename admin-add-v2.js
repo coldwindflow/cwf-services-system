@@ -24,7 +24,8 @@ let state = {
 
 
 // --- PATCH: technician dropdown + team multi-select (backward compatible) ---
-state.techs = []; // [{username, employment_type, work_start, work_end}]
+state.techs = []; // [{username, full_name, display_name, employment_type, work_start, work_end}]
+state.techMap = {}; // username -> tech object
 function getSelectedMulti(id){
   const sel = document.getElementById(id);
   if(!sel) return [];
@@ -36,20 +37,34 @@ async function loadTechsForType(){
     const data = await apiFetch("/admin/technicians");
     const rows = Array.isArray(data) ? data : (data.rows||data.technicians||[]);
     const ttype = (el("tech_type")?.value || "company").toLowerCase();
-    state.techs = rows.filter(r => ((r.employment_type||"company").toLowerCase()===ttype)).map(r=>({
-      username: r.username,
-      employment_type: (r.employment_type||"company"),
-      work_start: r.work_start||"09:00",
-      work_end: r.work_end||"18:00",
-    }));
-    renderTechSelect(); 
+    state.techs = rows
+      .filter(r => ((r.employment_type||"company").toLowerCase()===ttype))
+      .map(r=>({
+        username: r.username,
+        full_name: r.full_name || "",
+        display_name: (r.full_name || r.username || "").toString().trim() || r.username,
+        employment_type: (r.employment_type||"company"),
+        work_start: r.work_start||"09:00",
+        work_end: r.work_end||"18:00",
+      }));
+    state.techMap = {};
+    for(const t of state.techs){ state.techMap[t.username] = t; }
+    renderTechSelect();
     renderTeamPicker();
   }catch(e){
     console.warn("[admin-add-v2] loadTechsForType failed", e);
     state.techs = [];
+    state.techMap = {};
     renderTechSelect();
     renderTeamPicker();
   }
+}
+
+function techDisplay(username){
+  const u = String(username||"").trim();
+  if(!u) return "";
+  const t = (state.techMap && state.techMap[u]) || (state.techs||[]).find(x=>x.username===u);
+  return (t && t.display_name) ? t.display_name : u;
 }
 
 function renderTechSelect(allowedIds=null){
@@ -65,7 +80,7 @@ function renderTechSelect(allowedIds=null){
   for(const t of list){
     const o = document.createElement("option");
     o.value = t.username;
-    o.textContent = t.username;
+    o.textContent = (t.display_name || t.full_name || t.username);
     sel.appendChild(o);
   }
   // restore if possible
@@ -220,7 +235,7 @@ function renderTeamPicker(allowedIds=null){
     .slice(0, 30);
 
   suggestBox.innerHTML = suggestions.map(t=>{
-    return `<button type="button" class="team-chip team-chip-add" data-u="${t.username}">+ ${escapeHtml(t.username)}</button>`;
+    return `<button type="button" class="team-chip team-chip-add" data-u="${t.username}">+ ${escapeHtml(t.display_name || t.full_name || t.username)}</button>`;
   }).join("") || `<div class="team-empty">ไม่พบช่าง</div>`;
 
   // Selected chips: show primary first, then others
@@ -236,13 +251,13 @@ function renderTeamPicker(allowedIds=null){
     if(isPrimary){
       return `
         <div class="team-chip team-chip-primary" data-u="${u}" role="button" tabindex="0" title="แตะเพื่อจัดการ">
-          <span class="team-name">${escapeHtml(u)}</span>
+          <span class="team-name">${escapeHtml(techDisplay(u))}</span>
           <span class="team-badge">Primary</span>
         </div>`;
     }
     return `
       <div class="team-chip" data-u="${u}" role="button" tabindex="0" title="แตะเพื่อจัดการ">
-        <span class="team-name">${escapeHtml(u)}</span>
+        <span class="team-name">${escapeHtml(techDisplay(u))}</span>
         <span class="team-badge">ร่วม</span>
       </div>`;
   }).join("") || `<div class="team-empty">ยังไม่ได้เลือกช่างร่วม</div>`;
@@ -921,7 +936,7 @@ function renderWashAssign(){
   if(together){
     table.innerHTML = `<div class="muted2 mini">โหมดทำร่วมกัน: ทีมช่างจะถูกบล็อกเวลาร่วมกันตามเวลารวมของใบงาน (ไม่แบ่งจำนวนเครื่อง)</div>`;
     hidden.value = '';
-    sub.textContent = `${state.selected_slot_iso.slice(0,10)} • ${state.selected_slot_iso.slice(11,16)} • ทีม ${techs.join(', ')}`;
+    sub.textContent = `${state.selected_slot_iso.slice(0,10)} • ${state.selected_slot_iso.slice(11,16)} • ทีม ${techs.map(techDisplay).join(', ')}`;
     return;
   }
 
@@ -983,7 +998,7 @@ function renderWashAssign(){
 
   const payload = buildSplitAssignmentsPayload();
   hidden.value = payload.length ? JSON.stringify(payload) : '';
-  sub.textContent = `${state.selected_slot_iso.slice(0,10)} • ${state.selected_slot_iso.slice(11,16)} • ทีม ${techs.join(', ')}`;
+  sub.textContent = `${state.selected_slot_iso.slice(0,10)} • ${state.selected_slot_iso.slice(11,16)} • ทีม ${techs.map(techDisplay).join(', ')}`;
 }
 
 function renderSlots() {
@@ -1008,7 +1023,7 @@ function renderSlots() {
   legend.innerHTML = `
     <div>
       <b>สล็อตเวลา</b> <span class="muted2 mini">(กดเลือกได้)</span>
-      ${constraintTechs.length ? `<div class="muted2 mini" style="margin-top:2px">ต้องว่างพร้อมกัน: <b>${constraintTechs.join(", ")}</b></div>` : `<div class="muted2 mini" style="margin-top:2px">ยังไม่เลือกช่าง • แสดงสล็อตที่มีอย่างน้อย 1 ช่างว่าง</div>`}
+      ${constraintTechs.length ? `<div class="muted2 mini" style="margin-top:2px">ต้องว่างพร้อมกัน: <b>${constraintTechs.map(techDisplay).join(", ")}</b></div>` : `<div class="muted2 mini" style="margin-top:2px">ยังไม่เลือกช่าง • แสดงสล็อตที่มีอย่างน้อย 1 ช่างว่าง</div>`}
     </div>
     <div class="badge ${slotsSelectable.length ? 'ok' : 'muted'}">${slotsSelectable.length ? 'ว่าง' : 'เต็ม'} • ${slotsSelectable.length}/${slotsAll.length} ช่วง</div>
   `;
@@ -1030,6 +1045,14 @@ function renderSlots() {
     });
     grid.appendChild(btn);
   }
+  // Special slot card inside the grid (not a top button)
+  const sp = document.createElement("button");
+  sp.type = "button";
+  sp.className = "slot-btn special";
+  sp.innerHTML = `<div class="slot-time">+ สลอตพิเศษ</div><div class="slot-sub">กำหนดเวลาเอง</div>`;
+  sp.addEventListener("click", (ev) => { ev.preventDefault(); try{ addSpecialSlotV2(); }catch(e){ console.warn('addSpecialSlotV2 failed', e); } });
+  grid.appendChild(sp);
+
   box.appendChild(grid);
 }
 
@@ -1105,13 +1128,13 @@ function updateAssignSummary(){
     const members = Array.from(state.teamPicker.selected || []);
     const count = members.length;
     t.textContent = primary
-      ? `ทีม • ช่างหลัก: ${primary} • ทีมรวม ${count} คน`
+      ? `ทีม • ช่างหลัก: ${techDisplay(primary)} • ทีมรวม ${count} คน`
       : `ทีม • ยังไม่เลือกช่างหลัก • ทีมรวม ${count} คน`;
     return;
   }
   if(mode === 'single'){
     const u = (el('technician_username_select')?.value || el('technician_username')?.value || '').trim();
-    t.textContent = u ? `เลือกเดี่ยว • ${u}` : 'เลือกเดี่ยว • ยังไม่ได้เลือกช่าง (ระบบจะเลือกช่างว่างให้)';
+    t.textContent = u ? `เลือกเดี่ยว • ${techDisplay(u)}` : 'เลือกเดี่ยว • ยังไม่ได้เลือกช่าง (ระบบจะเลือกช่างว่างให้)';
     return;
   }
   t.textContent = 'ยังไม่ได้เลือกช่าง • ระบบจะเลือกช่างว่างให้';
@@ -1197,7 +1220,7 @@ function openSlotModal(slot){
         </div>
       `;
       const selEl = body.querySelector('#slotm_primary');
-      selEl.innerHTML = `<option value="">-- เลือกช่างหลัก --</option>` + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
+      selEl.innerHTML = `<option value="">-- เลือกช่างหลัก --</option>` + ids.map(u=>`<option value="${escapeHtml(techDisplay(u))}">${escapeHtml(techDisplay(u))}</option>`).join('');
       if(primary && ids.includes(primary)) selEl.value = primary;
 
       const wrap = body.querySelector('#slotm_team');
@@ -1247,7 +1270,7 @@ function openSlotModal(slot){
       <div class="muted2 mini" style="margin-top:6px">เลือกช่าง = โหมด “เลือกเดี่ยว” • ไม่เลือก = ระบบเลือกช่างว่าง</div>
     `;
     const selEl = body.querySelector('#slotm_single');
-    selEl.innerHTML = `<option value="">-- ไม่เลือก (ระบบเลือกช่างว่าง) --</option>` + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
+    selEl.innerHTML = `<option value="">-- ไม่เลือก (ระบบเลือกช่างว่าง) --</option>` + ids.map(u=>`<option value="${escapeHtml(techDisplay(u))}">${escapeHtml(techDisplay(u))}</option>`).join('');
     if(cur && ids.includes(cur)) selEl.value = cur;
 
     selEl.addEventListener('change', ()=>{
@@ -1448,7 +1471,6 @@ function wireEvents() {
   const dmEl = el('dispatch_mode');
   if(dmEl) dmEl.addEventListener('change', async ()=>{ updateAssignUIVisibility(); if(state.slots_loaded) await loadAvailability(); });
   const btnSlots = el("btnLoadSlots"); if(btnSlots) btnSlots.addEventListener("click", loadAvailability);
-  const btnSpecial = el("btnAddSpecialSlot"); if(btnSpecial) btnSpecial.addEventListener("click", addSpecialSlotV2);
   const btnAssign = el('btnScrollAssign');
   if(btnAssign) btnAssign.addEventListener('click', ()=>{
     // ensure UI is up to date then scroll into view

@@ -38,6 +38,8 @@
     .slot-btn.full{background:#f1f5f9;color:#64748b;border-color:rgba(11,75,179,0.14);box-shadow:none}
     .slot-btn.selected{background:#0b4bb3;color:#fff;border-color:rgba(255,204,0,0.7)}
     .slot-btn.disabled{opacity:0.45}
+    .slot-btn.special{background:#ffffff;border-style:dashed;color:#0b1b3a}
+    .slot-btn.special:active{background:#0b4bb3;color:#fff}
     /* Tech chips: ensure readable text even when not selected */
     .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(11,75,179,0.22);border-radius:999px;padding:8px 10px;background:#ffffff;color:#0b1b3a;font-weight:900;cursor:pointer;box-shadow:0 6px 14px rgba(2,6,23,0.06)}
     .chip:hover{transform:translateY(-1px)}
@@ -61,7 +63,20 @@
     .seg button.active{background:#ffcc00;color:#0b1b3a;border-color:rgba(11,75,179,0.2)}
     .seg button:disabled{opacity:.5;cursor:not-allowed}
 
-    /* Inline slot tech picker */
+    
+    /* Modal assign buttons: always readable (not selected) */
+    .seg button{background:#ffffff;color:#0b1b3a;border-color:rgba(11,75,179,0.22)}
+    .seg button:not(.active){opacity:1}
+    .seg button.active{background:#ffcc00;color:#0b1b3a}
+
+    /* Compact team chips for many technicians (this page only) */
+    body.cwf-lux .team-suggest{gap:6px}
+    body.cwf-lux .team-suggest .team-chip{padding:8px 10px;border-radius:999px;min-height:auto}
+    body.cwf-lux .team-suggest .team-chip .team-badge{padding:4px 8px;font-size:11px}
+    body.cwf-lux .team-selected{gap:8px}
+    body.cwf-lux .team-selected .team-chip{padding:10px 12px;border-radius:16px}
+    body.cwf-lux .team-search{font-size:15px;padding:10px 12px;border-radius:14px}
+/* Inline slot tech picker */
     .slot-panel{margin-top:10px;border:1px solid rgba(11,75,179,0.16);border-radius:18px;padding:12px 14px;background:linear-gradient(180deg,#ffffff, #f8fbff)}
     .slot-panel .title{display:flex;align-items:center;justify-content:space-between;gap:10px}
     .slot-panel .title b{color:#0b1b3a}
@@ -280,7 +295,13 @@
 
       <div class="grid2" style="margin-top:10px">
         <div>
-          <label>วันที่</label>
+          <label>กลุ่มช่าง</label>
+          <select id="tech_type">
+            <option value="company">ช่างบริษัท (ปกติ)</option>
+            <option value="partner">ช่างพาร์ทเนอร์</option>
+          </select>
+
+          <label style="margin-top:10px">วันที่</label>
           <input id="appt_date" type="date">
           <button class="secondary" type="button" id="btnLoadSlots" style="margin-top:8px;width:100%">โหลดคิวว่าง</button>
 
@@ -288,19 +309,19 @@
           <div style="margin-top:10px">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
               <b style="color:#0b1b3a">สล็อตเวลา</b>
-              <button class="secondary" type="button" id="btnAddSpecialSlot">+ เพิ่มสลอตพิเศษ</button>
+              <span class="muted2 mini">แตะสล็อตเพื่อเลือกช่าง</span>
             </div>
             <div id="slots_box" style="margin-top:10px"></div>
+
+            <div id="dt_preview_wrap" style="margin-top:12px">
+              <label style="font-weight:900">วันเวลา (ตรวจสอบก่อนบันทึก)</label>
+              <input id="appointment_datetime" type="datetime-local" style="margin-top:6px;width:100%;font-size:16px;font-weight:900;padding:12px 14px;border-radius:16px" />
+              
+            </div>
           </div>
         </div>
         <div>
-          <label>กลุ่มช่าง</label>
-          <select id="tech_type">
-            <option value="company">ช่างบริษัท (ปกติ)</option>
-            <option value="partner">ช่างพาร์ทเนอร์</option>
-          </select>
-
-          <label style="margin-top:10px">dispatch_mode</label>
+          <label>dispatch_mode</label>
           <select id="dispatch_mode">
             <option value="forced">forced (ล็อคช่าง)</option>
             <option value="offer">offer (ยิงข้อเสนอ)</option>
@@ -350,6 +371,22 @@
         </div>
       </div>
 
+            <div id="team_picker_wrap" style="margin-top:10px; display:none">
+              <label>ทีมช่าง (ช่างร่วม) • เลือกหลายคน</label>
+              <div class="team-help">พิมพ์ค้นหา แล้วแตะเพื่อเพิ่มเป็นทีม • ตั้ง “ช่างหลัก” ได้ด้วยป้าย Primary</div>
+              <div class="team-picker">
+                <input id="team_search" class="team-search" placeholder="ค้นหาช่างร่วม..." autocomplete="off">
+                <div class="team-suggest" id="team_suggest"></div>
+                <div class="team-divider"></div>
+                <div class="team-selected-title">เลือกแล้ว</div>
+                <div class="team-selected" id="team_selected"></div>
+              </div>
+              <input id="team_members_csv" type="hidden" />
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Action Sheet สำหรับทีมช่าง (Premium) -->
       <div id="team_sheet_overlay" class="team-sheet-overlay">
         <div class="team-sheet" role="dialog" aria-modal="true">
@@ -380,8 +417,8 @@
         <div></div>
       </div>
 
-      <input id="appointment_datetime" type="datetime-local" style="margin-top:10px" /> type="datetime-local" style="margin-top:10px" />
-      <div class="muted2 mini" style="margin-top:6px">* เมื่อเลือกสล็อต ระบบจะใส่วันเวลาให้อัตโนมัติ</div>
+      
+      
 
       <!-- Workload assignment (wash split) -->
       <div id="wash_assign_card" class="card card-lite" style="margin-top:12px; display:none">
