@@ -28,6 +28,13 @@
   --shadow-2: 0 6px 18px rgba(15, 23, 42, 0.10);
 
   --tap: 46px;                 /* min touch target */
+
+  /* Slot states (calendar/availability) */
+  --slot-available-bg: rgba(34,197,94,0.14);
+  --slot-available-border: rgba(34,197,94,0.42);
+  --slot-full-bg: rgba(100,116,139,0.10);
+  --slot-full-border: rgba(100,116,139,0.30);
+  --slot-selected-ring: rgba(37,99,235,0.45);
 }
 
 *{ box-sizing:border-box; }
@@ -39,6 +46,97 @@ body{
               radial-gradient(900px 500px at 100% 10%, rgba(251, 191, 36, 0.16), transparent 55%),
               var(--page);
   color: var(--text);
+}
+
+/* =========================================================
+   Availability / Slots UI (อ่านง่าย: ว่าง/เต็ม/จำนวนช่าง)
+   - ใช้ได้ทั้ง admin-add-v2 / admin-review-v2 / customer
+   ========================================================= */
+
+.slot-grid{
+  display:grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+@media (min-width: 420px){
+  .slot-grid{ grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.slot-btn{
+  min-height: var(--tap);
+  padding: 10px 10px;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.85);
+  box-shadow: var(--shadow-2);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  gap: 2px;
+}
+.slot-btn .time{ font-weight: 800; letter-spacing: .2px; }
+.slot-btn .meta{ font-size: 12px; color: var(--muted); }
+
+.slot-btn.is-available{
+  background: linear-gradient(180deg, rgba(255,255,255,0.92), var(--slot-available-bg));
+  border-color: var(--slot-available-border);
+}
+.slot-btn.is-full{
+  background: linear-gradient(180deg, rgba(255,255,255,0.85), var(--slot-full-bg));
+  border-color: var(--slot-full-border);
+  opacity: .7;
+}
+.slot-btn.is-full{ pointer-events:none; }
+.slot-btn.selected{
+  outline: 3px solid var(--slot-selected-ring);
+  outline-offset: 2px;
+}
+
+.badge{
+  display:inline-flex;
+  align-items:center;
+  gap:6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 12px;
+  background: rgba(255,255,255,0.75);
+}
+.badge.ok{ border-color: var(--slot-available-border); color: #15803d; }
+.badge.muted{ border-color: var(--slot-full-border); color: var(--muted); }
+
+/* Machine count stepper (ไม่ต้องพิมพ์) */
+.stepper{
+  display:flex;
+  align-items:center;
+  gap:10px;
+}
+.stepper .btn-round{
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.85);
+  box-shadow: var(--shadow-2);
+  font-size: 20px;
+  font-weight: 900;
+}
+.stepper .value{
+  min-width: 56px;
+  text-align:center;
+  font-weight: 900;
+  font-size: 18px;
+}
+
+/* Team picker nicer */
+.team-help{ color: var(--muted); font-size: 12px; }
+.select-multi{
+  width:100%;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  padding: 8px;
+  background: rgba(255,255,255,0.85);
 }
 
 /* =========================================================

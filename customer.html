@@ -69,7 +69,15 @@
       </div>
 
       <div class="grid2" style="margin-top:8px;">
-        <input id="machine_count" type="number" min="1" step="1" value="1" placeholder="จำนวนเครื่อง">
+        <!-- PATCH: จำนวนเครื่องแบบกดเลือก ไม่ต้องพิมพ์ -->
+        <div>
+          <input id="machine_count" type="hidden" value="1">
+          <div class="stepper" aria-label="machine count">
+            <button id="mc_minus" class="btn-round" type="button">−</button>
+            <div id="mc_value" class="value">1</div>
+            <button id="mc_plus" class="btn-round" type="button">+</button>
+          </div>
+        </div>
         <div class="card" style="padding:10px;border:1px solid rgba(15,23,42,0.10);">
           <label style="display:flex;align-items:center;gap:10px;">
             <input id="urgent_toggle" type="checkbox" style="transform:scale(1.2);">
@@ -94,14 +102,16 @@
         <option value="ซ่อมเปลี่ยนอะไหล่">ซ่อมเปลี่ยนอะไหล่ (แอดมินกำหนด)</option>
       </select>
 
-      <div class="card" style="margin-top:12px;padding:12px;">
+      <!-- PATCH: โปรโมชั่นซ่อนจากลูกค้า (ให้แอดมินจัดการ) -->
+      <div class="card" style="margin-top:12px;padding:12px;display:none;">
         <div>💰 <b>ค่าบริการมาตรฐาน:</b> <span id="standard_price">-</span> บาท</div>
         <div class="muted" style="margin-top:4px;">⏱️ เวลาโดยประมาณ: <span id="duration_min">-</span> นาที (รวมกันชนระบบอัตโนมัติ)</div>
       </div>
 
-      <details class="card" style="margin-top:12px;padding:12px;">
+      <!-- PATCH: Extras/Promotions ฝั่งลูกค้าไม่ต้องมี (แอดมินเป็นคนเพิ่มเอง) -->
+      <details class="card" style="margin-top:12px;padding:12px;display:none;">
         <summary style="cursor:pointer;"><b>➕ เพิ่มบริการเสริม/สินค้า (ไม่บังคับ)</b></summary>
-        <div class="muted" style="margin-top:6px;">เลือกได้หลายรายการ (extras) — ระบบจะรวมราคาให้</div>
+        <div class="muted" style="margin-top:6px;">(ซ่อนสำหรับลูกค้า)</div>
         <div class="grid2" style="margin-top:10px;">
           <select id="catalog_select_customer"></select>
           <div style="display:flex;gap:8px;">
@@ -139,6 +149,26 @@ const API = window.location.origin;
 let pickedTime = null;
 let standardPrice = 0;
 let durationMin = 60;
+
+// PATCH: machine count stepper
+function bindMachineCountStepper(){
+  const input = document.getElementById('machine_count');
+  const val = document.getElementById('mc_value');
+  const minus = document.getElementById('mc_minus');
+  const plus = document.getElementById('mc_plus');
+  if(!input || !val || !minus || !plus) return;
+  const set = async (n)=>{
+    const v = Math.max(1, Math.min(10, Number(n)||1));
+    input.value = String(v);
+    val.textContent = String(v);
+    showVariantFields();
+    await refreshPricing();
+    updateLoadSlotsEnabled();
+  };
+  minus.addEventListener('click', ()=> set(Number(input.value||1)-1));
+  plus.addEventListener('click', ()=> set(Number(input.value||1)+1));
+  set(input.value||1);
+}
 
 function isBookingFormReadyForSlots() {
   const d = document.getElementById("date")?.value;
@@ -289,6 +319,12 @@ async function refreshPricing(){
 function setPicked(time){
   pickedTime = time;
   document.getElementById("picked").textContent = time || "-";
+  // toggle selected style (ไม่ต้อง reload)
+  document.querySelectorAll('#slots .slot-btn').forEach(b=>b.classList.remove('selected'));
+  if (time) {
+    const btn = Array.from(document.querySelectorAll('#slots .slot-btn')).find(b=> (b.textContent||'').includes(time));
+    if (btn) btn.classList.add('selected');
+  }
 }
 
 async function loadSlots(){
@@ -331,15 +367,25 @@ async function loadSlots(){
         return;
       }
 
-      const html = data.slots.map(s=>{
-        const disabled = s.available ? "" : "disabled";
-        const cls = s.available ? "" : "secondary";
-        return `<button type="button" class="${cls}" style="width:auto;min-height:40px;margin:4px;" ${disabled}
-                  onclick="setPicked('${s.start}')">${s.start}</button>`;
-      }).join("");
+      // PATCH: แสดงสล็อตแบบการ์ด (ว่าง/เต็ม) อ่านง่าย
+      const slotsAll = data.slots.filter(Boolean);
+      const slotsAvail = slotsAll.filter(s=>!!s.available);
+      const head = `<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;">
+        <div class="muted">โหมด: <b>${data.tech_type==='partner'?'ด่วน (รอยืนยัน)':'ปกติ'}</b> • ช่างที่พิจารณา: ${data.tech_count} คน</div>
+        <div class="badge ${slotsAvail.length? 'ok':'muted'}">${slotsAvail.length? 'ว่าง':'เต็ม'} • ${slotsAvail.length}/${slotsAll.length} ช่วง</div>
+      </div>`;
 
-      slotsBox.innerHTML = `<div class="muted">กลุ่มช่าง: <b>${data.tech_type}</b> | ช่างที่พิจารณา: ${data.tech_count} | กันชนระบบ: ${data.travel_buffer_min} นาที</div>
-                            <div style="margin-top:8px;display:flex;flex-wrap:wrap;gap:6px;">${html}</div>`;
+      const btns = slotsAll.map(s=>{
+        const techCount = Array.isArray(s.available_tech_ids) ? s.available_tech_ids.length : 0;
+        const cls = `slot-btn ${s.available? 'is-available':'is-full'} ${pickedTime===s.start? 'selected':''}`;
+        const disabled = s.available ? '' : 'disabled';
+        return `<button type="button" class="${cls}" ${disabled} onclick="setPicked('${s.start}')">
+          <div class="time">${s.start} - ${s.end}</div>
+          <div class="meta">${s.available ? `ว่าง • ${techCount} ช่าง` : 'เต็ม'}</div>
+        </button>`;
+      }).join('');
+
+      slotsBox.innerHTML = head + `<div class="slot-grid" style="margin-top:10px;">${btns}</div>`;
     })
     .catch(e=>{
       slotsBox.textContent = "❌ โหลดเวลาว่างไม่สำเร็จ";
@@ -403,7 +449,7 @@ async function book(){
 }
 
 // listeners
-["job_type","ac_type","btu","machine_count","wash_variant","repair_variant"].forEach(id=>{
+["job_type","ac_type","btu","wash_variant","repair_variant"].forEach(id=>{
   const el = document.getElementById(id);
   if(el) el.addEventListener("change", async ()=>{
     showVariantFields();
@@ -443,6 +489,7 @@ async function initCustomerCatalogAndPromos(){
 }
 
 showVariantFields();
+bindMachineCountStepper();
 initCustomerCatalogAndPromos();
 refreshPricing();
 renderItemsCustomer();

@@ -106,6 +106,12 @@ function renderCalendar(data){
         <div class="mini">${hhmmFromDate(j.start_iso)}-${hhmmFromDate(j.end_iso)} • ${j.customer_name || '-'}</div>
         <div class="mini">${(j.job_zone || '').trim() || '—'} • ${(j.job_status || '').trim() || ''}</div>
       `;
+      // PATCH: กดดูใบงานเต็มหน้า
+      b.style.cursor = 'pointer';
+      b.addEventListener('click', ()=>{
+        if (!j.job_id) return;
+        window.location.href = `/admin-review-v2.html?open=${encodeURIComponent(String(j.job_id))}`;
+      });
       lane.appendChild(b);
     }
 

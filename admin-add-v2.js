@@ -373,21 +373,40 @@ function renderSlots() {
   const box = el("slots_box");
   if(!box) return;
   box.innerHTML = "";
-  const slots = state.available_slots.filter((s) => s && s.available);
-  if (!slots.length) {
-    box.innerHTML = `<div class="muted2">ไม่พบช่วงเวลาว่าง (ลองเปลี่ยนวัน/กลุ่มช่าง)</div>`;
+  const slotsAll = Array.isArray(state.available_slots) ? state.available_slots.filter(Boolean) : [];
+  const slotsAvail = slotsAll.filter((s)=>!!s.available);
+  if (!slotsAll.length) {
+    box.innerHTML = `<div class="muted2">ไม่พบข้อมูลสล็อต (ลองเปลี่ยนวัน/กลุ่มช่าง)</div>`;
     return;
   }
+
+  // header summary
+  const sum = document.createElement('div');
+  sum.style.display = 'flex';
+  sum.style.justifyContent = 'space-between';
+  sum.style.alignItems = 'center';
+  sum.style.gap = '10px';
+  sum.style.flexWrap = 'wrap';
+  sum.innerHTML = `
+    <div><b>สล็อตเวลา</b> <span class="muted2 mini">(ว่าง/เต็ม ชัดเจน)</span></div>
+    <div class="badge ${slotsAvail.length? 'ok':'muted'}">${slotsAvail.length? 'ว่าง':'เต็ม'} • ${slotsAvail.length}/${slotsAll.length} ช่วง</div>
+  `;
+  box.appendChild(sum);
   const grid = document.createElement("div");
   grid.className = "slot-grid";
-  for (const s of slots) {
+  for (const s of slotsAll) {
     const btn = document.createElement("button");
     btn.type = "button";
-    btn.className = "slot-btn";
-    btn.textContent = `${s.start} - ${s.end}`;
+    const techCount = Array.isArray(s.available_tech_ids) ? s.available_tech_ids.length : 0;
+    btn.className = `slot-btn ${s.available ? 'is-available':'is-full'}`;
+    btn.innerHTML = `
+      <div class="time">${s.start} - ${s.end}</div>
+      <div class="meta">${s.available ? `ว่าง • ${techCount} ช่าง` : 'เต็ม'}</div>
+    `;
     const iso = `${el("appt_date").value}T${s.start}:00`;
     if (state.selected_slot_iso === iso) btn.classList.add("selected");
     btn.addEventListener("click", () => {
+      if (!s.available) return;
       state.selected_slot_iso = iso;
       // set appointment input
       const ap = el("appointment_datetime");
@@ -404,6 +423,25 @@ function renderSlots() {
     grid.appendChild(btn);
   }
   box.appendChild(grid);
+}
+
+// PATCH: machine count stepper
+function bindMachineCountStepper(){
+  const input = el('machine_count');
+  const val = el('mc_value');
+  const minus = el('mc_minus');
+  const plus = el('mc_plus');
+  if(!input || !val || !minus || !plus) return;
+  const set = (n)=>{
+    const v = Math.max(1, Math.min(10, Number(n)||1));
+    input.value = String(v);
+    val.textContent = String(v);
+    // trigger preview update
+    previewPricing();
+  };
+  minus.addEventListener('click', ()=> set(Number(input.value||1)-1));
+  plus.addEventListener('click', ()=> set(Number(input.value||1)+1));
+  set(input.value||1);
 }
 
 async function submitBooking() {
@@ -519,6 +557,7 @@ if (copyBtn) copyBtn.addEventListener("click", async () => {
 
 async function init() {
   setBtuOptions();
+  bindMachineCountStepper();
   buildVariantUI();
   // attach listeners for dynamic selects on first render
   const w0 = document.getElementById("wash_variant");

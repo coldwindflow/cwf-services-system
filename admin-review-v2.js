@@ -375,6 +375,17 @@ async function cancelJob(){
   await loadTechs();
   await loadQueue();
 
+  // PATCH: เปิดใบงานเต็มหน้า จากหน้าอื่น (?open=job_id)
+  try{
+    const sp = new URLSearchParams(window.location.search||"");
+    const openId = sp.get('open');
+    if (openId) {
+      // รอให้ queue map พร้อมก่อน
+      await new Promise(r=>setTimeout(r, 50));
+      await openJob(openId);
+    }
+  }catch(e){ console.warn('auto open job', e); }
+
   $("btnReload").addEventListener("click", loadQueue);
   $("filterStatus").addEventListener("change", loadQueue);
 

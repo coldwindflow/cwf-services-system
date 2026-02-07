@@ -102,7 +102,13 @@
       <div class="grid2" style="margin-top:10px">
         <div>
           <label>จำนวนเครื่อง</label>
-          <input id="machine_count" type="number" min="1" step="1" value="1">
+          <!-- PATCH: ไม่ต้องพิมพ์ ใช้ stepper -->
+          <input id="machine_count" type="hidden" value="1">
+          <div class="stepper" aria-label="machine count">
+            <button id="mc_minus" class="btn-round" type="button">−</button>
+            <div id="mc_value" class="value">1</div>
+            <button id="mc_plus" class="btn-round" type="button">+</button>
+          </div>
         </div>
         <div>
           <label>โหมดจอง</label>
@@ -113,6 +119,7 @@
         </div>
       </div>
 
+      <!-- PATCH: ล้างผนัง 4 แบบ (แสดงเฉพาะเมื่อ job=ล้าง และ ac=ผนัง) -->
       <div id="variant_box" style="margin-top:10px"></div>
 
       <div class="card card-lite" style="margin-top:12px">
@@ -197,8 +204,8 @@
       
         <div>
           <label>ช่างร่วม (หลายคน)</label>
-          <select id="team_members_select" multiple size="5" style="height:auto;min-height:120px"></select>
-          <div class="muted2 mini" style="margin-top:6px">* เลือกได้หลายคน (กดค้างเพื่อเลือกหลายรายการ)</div>
+          <div class="team-help">เลือกช่างร่วมได้หลายคน (กดค้างเพื่อเลือกหลายรายการ)</div>
+          <select id="team_members_select" class="select-multi" multiple size="6"></select>
           <input id="team_members_csv" type="hidden" />
         </div>
 

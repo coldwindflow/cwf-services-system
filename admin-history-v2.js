@@ -30,6 +30,12 @@ async function loadJobs(){
     tb.innerHTML = "";
     for (const j of rows){
       const tr = document.createElement("tr");
+      // PATCH: กดดูใบงานเต็มหน้า
+      tr.style.cursor = 'pointer';
+      tr.addEventListener('click', ()=>{
+        if (!j.job_id) return;
+        window.location.href = `/admin-review-v2.html?open=${encodeURIComponent(String(j.job_id))}`;
+      });
       const code = safe(j.booking_code||j.job_id);
       const dtTxt = fmtDT(j.appointment_datetime);
       const left = `${safe(j.customer_name)}\n${safe(j.customer_phone||"")}`;
