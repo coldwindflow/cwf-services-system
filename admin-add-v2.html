@@ -270,6 +270,11 @@
             <option value="forced">forced (ล็อคช่าง)</option>
             <option value="offer">offer (ยิงข้อเสนอ)</option>
           </select>
+          <div style="margin-top:8px;display:flex;align-items:center;gap:10px">
+            <input id="forced_lock" type="checkbox" checked />
+            <label for="forced_lock" style="margin:0">Forced (รวมช่างที่ยังไม่เปิดรับงาน)</label>
+          </div>
+          <div class="muted2 mini" id="forced_lock_help" style="margin-top:6px">* ใช้กับ “ล็อคช่าง” เท่านั้น • ถ้าเป็น offer จะต้องให้ช่างเปิดรับงานก่อน</div>
         </div>
       </div>
 
@@ -310,6 +315,18 @@
             <button id="team_sheet_set_primary" class="btn-primary" type="button">ตั้งเป็นช่างหลัก</button>
             <button id="team_sheet_remove" class="btn-danger" type="button">เอาออกจากทีม</button>
             <button id="team_sheet_close" class="btn-close" type="button">ปิด</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Slot Quick Pick Modal (แตะสล็อตแล้วเลือกช่างได้ทันที) -->
+      <div id="slot_modal_overlay" class="team-sheet-overlay">
+        <div class="team-sheet" role="dialog" aria-modal="true" style="max-width:520px">
+          <h3 id="slot_modal_title">เลือกช่างในสล็อต</h3>
+          <p id="slot_modal_sub" class="muted2" style="margin-top:6px">-</p>
+          <div id="slot_modal_body" style="margin-top:12px"></div>
+          <div class="sheet-actions" style="margin-top:14px">
+            <button id="slot_modal_close" class="btn-close" type="button">ปิด</button>
           </div>
         </div>
       </div>

@@ -419,6 +419,22 @@ async function ensureSchema() {
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS employment_type TEXT DEFAULT 'company'`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS work_start TEXT DEFAULT '09:00'`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS work_end TEXT DEFAULT '18:00'`);
+    // ✅ วันหยุดประจำสัปดาห์ (0=อาทิตย์ ... 6=เสาร์) เช่น '0,6'
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS weekly_off_days TEXT DEFAULT ''`);
+
+    // ✅ ตารางกำหนดวันทำงาน/วันหยุดรายวัน (override) - ช่างตั้งล่วงหน้าได้ (1 สัปดาห์)
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_workdays_v2 (
+        workday_id BIGSERIAL PRIMARY KEY,
+        technician_username TEXT NOT NULL,
+        work_date DATE NOT NULL,
+        is_off BOOLEAN DEFAULT FALSE,
+        note TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(technician_username, work_date)
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_twd_v2_user_date ON public.technician_workdays_v2(technician_username, work_date)`);
 
     // 3.5) technician special slots (admin can add extra availability windows)
     await pool.query(`
@@ -1580,6 +1596,23 @@ if (coerceNumber(override_price, 0) > 0) {
       const list = (tr.rows || []).map((r) => r.username).slice(0, 30);
       selectedTech = await pickFirstAvailableTech(list, appointment_datetime, duration_min);
     } else {
+      // ✅ Forced lock: allow even if technician hasn't opened accept_status,
+      // but still block lock on the technician's off-day.
+      if (mode === 'forced') {
+        try {
+          const pr = await client.query(
+            `SELECT username, weekly_off_days FROM public.technician_profiles WHERE username=$1 LIMIT 1`,
+            [selectedTech]
+          );
+          const techRow = { username: selectedTech, weekly_off_days: pr.rows[0]?.weekly_off_days || '' };
+          const offMap = await buildOffMapForDate(String(appointment_datetime).slice(0,10), [selectedTech]);
+          if (isTechOffOnDate(techRow, String(appointment_datetime).slice(0,10), offMap)) {
+            return res.status(409).json({ error: `ช่างวันหยุด: ${selectedTech} (ไม่สามารถล็อคงานได้)` });
+          }
+        } catch (e) {
+          console.warn('[admin_book_v2] off-day check failed (fail-open)', e.message);
+        }
+      }
       const ok = await isTechFree(selectedTech, appointment_datetime, duration_min, null);
       if (!ok) {
         return res.status(409).json({ error: "ช่างคนนี้คิวชน (รวม buffer)" });
@@ -4416,23 +4449,29 @@ function effectiveBlockMin(durationMin) {
   return Math.max(0, Number(durationMin || 0)) + TRAVEL_BUFFER_MIN;
 }
 
-async function listTechniciansByType(tech_type) {
+async function listTechniciansByType(tech_type, opts = {}) {
   const t = (tech_type || "company").toString().trim().toLowerCase();
-  let r = await pool.query(
+  const include_paused = !!opts.include_paused;
+  // NOTE:
+  // - Default behavior (include_paused=false): exclude paused technicians.
+  // - Forced lock behavior (include_paused=true): include paused technicians,
+  //   but downstream logic (offer flow) should still respect accept_status.
+  const r = await pool.query(
     `
     SELECT u.username,
            COALESCE(p.employment_type,'company') AS employment_type,
            COALESCE(p.work_start,'09:00') AS work_start,
            COALESCE(p.work_end,'18:00') AS work_end,
-           COALESCE(p.accept_status,'ready') AS accept_status
+           COALESCE(p.accept_status,'ready') AS accept_status,
+           COALESCE(p.weekly_off_days,'') AS weekly_off_days
     FROM public.users u
     LEFT JOIN public.technician_profiles p ON p.username=u.username
     WHERE u.role='technician'
-      AND COALESCE(p.accept_status,'ready') <> 'paused'
+      AND ($2::boolean IS TRUE OR COALESCE(p.accept_status,'ready') <> 'paused')
       AND COALESCE(p.employment_type,'company') = $1
     ORDER BY u.username
     `,
-    [t]
+    [t, include_paused]
   );
   // Fallback (fail-open): if filtering by employment_type yields 0 technicians,
   // return all technicians that are not paused. This prevents the UI from showing
@@ -4445,21 +4484,71 @@ async function listTechniciansByType(tech_type) {
                COALESCE(p.employment_type,'company') AS employment_type,
                COALESCE(p.work_start,'09:00') AS work_start,
                COALESCE(p.work_end,'18:00') AS work_end,
-               COALESCE(p.accept_status,'ready') AS accept_status
+               COALESCE(p.accept_status,'ready') AS accept_status,
+               COALESCE(p.weekly_off_days,'') AS weekly_off_days
         FROM public.users u
         LEFT JOIN public.technician_profiles p ON p.username=u.username
         WHERE u.role='technician'
-          AND COALESCE(p.accept_status,'ready') <> 'paused'
+          AND ($1::boolean IS TRUE OR COALESCE(p.accept_status,'ready') <> 'paused')
         ORDER BY u.username
         `
-      );
-      console.warn('[availability_v2] no technicians matched tech_type=%s -> fallback to all (%s)', t, (r2.rows||[]).length);
+      , [include_paused]);
+      console.warn('[availability_v2] no technicians matched tech_type=%s (include_paused=%s) -> fallback to all (%s)', t, include_paused, (r2.rows||[]).length);
       return r2.rows || [];
     } catch (e) {
       console.warn('[availability_v2] fallback technicians query failed', e.message);
     }
   }
   return r.rows || [];
+}
+
+function parseWeeklyOffDays(s) {
+  const raw = (s || '').toString().trim();
+  if (!raw) return new Set();
+  const parts = raw.split(',').map(x => x.trim()).filter(Boolean);
+  const out = new Set();
+  for (const p of parts) {
+    const n = Number(p);
+    if (Number.isInteger(n) && n >= 0 && n <= 6) out.add(n);
+  }
+  return out;
+}
+
+async function buildOffMapForDate(dateStr, usernames) {
+  // Returns Map(technician_username -> {is_off:boolean})
+  const out = new Map();
+  try {
+    if (!Array.isArray(usernames) || usernames.length === 0) return out;
+    const r = await pool.query(
+      `
+      SELECT technician_username, is_off
+      FROM public.technician_workdays_v2
+      WHERE work_date = $1::date
+        AND technician_username = ANY($2::text[])
+      `,
+      [dateStr, usernames]
+    );
+    for (const row of (r.rows || [])) {
+      out.set(row.technician_username, { is_off: !!row.is_off });
+    }
+  } catch (e) {
+    // fail-open
+    console.warn('[workdays_v2] overrides query failed', e.message);
+  }
+  return out;
+}
+
+function isTechOffOnDate(techRow, dateStr, offMap) {
+  // Priority: override table > weekly_off_days
+  const u = techRow?.username;
+  if (!u) return false;
+  const o = offMap?.get(u);
+  if (o && typeof o.is_off === 'boolean') return !!o.is_off;
+  const weekly = parseWeeklyOffDays(techRow?.weekly_off_days);
+  if (!weekly || weekly.size === 0) return false;
+  const d = new Date(`${String(dateStr).slice(0,10)}T00:00:00+07:00`);
+  const dow = d.getDay(); // 0..6
+  return weekly.has(dow);
 }
 
 async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
@@ -4547,11 +4636,21 @@ app.get("/public/availability_v2", async (req, res) => {
 
   const date = (req.query.date || new Date().toISOString().slice(0, 10)).toString();
   const tech_type = (req.query.tech_type || "company").toString().trim().toLowerCase();
+  // forced=1 (Admin lock): allow showing technicians even if accept_status='paused'
+  const forced = String(req.query.forced || '').trim() === '1';
   const duration_min = Math.max(15, Number(req.query.duration_min || 60));
   const slot_step_min = 30;
 
   try {
-    const techs = await listTechniciansByType(tech_type);
+    const techsAll = await listTechniciansByType(tech_type, { include_paused: forced });
+    // workday overrides (block forced lock on off-days)
+    const offMap = await buildOffMapForDate(date, techsAll.map(t => t.username));
+    const techs = techsAll.filter(t => {
+      // If forced lock mode: do NOT allow locking on off-days.
+      // Offer flow should use non-forced path.
+      if (forced && isTechOffOnDate(t, date, offMap)) return false;
+      return true;
+    });
     // special slots map (admin can extend availability)
     const specialMap = new Map();
     try {
@@ -4614,11 +4713,12 @@ app.get("/public/availability_v2", async (req, res) => {
       });
     }
 
-    console.log("[availability_v2]", { date, tech_type, duration_min, tech_count, slots: slots.length });
+    console.log("[availability_v2]", { date, tech_type, forced, duration_min, tech_count, slots: slots.length });
 
     res.json({
       date,
       tech_type,
+      forced,
       work_start,
       work_end,
       travel_buffer_min: TRAVEL_BUFFER_MIN,
