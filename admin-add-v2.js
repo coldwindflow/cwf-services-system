@@ -1250,7 +1250,8 @@ function openSlotModal(slot){
         </div>
       `;
       const selEl = body.querySelector('#slotm_primary');
-      selEl.innerHTML = `<option value="">-- เลือกช่างหลัก --</option>` + ids.map(u=>`<option value="${escapeHtml(techDisplay(u))}">${escapeHtml(techDisplay(u))}</option>`).join('');
+      // value MUST be username (stable id) — label shows real name from technician profile
+      selEl.innerHTML = `<option value="">-- เลือกช่างหลัก --</option>` + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(techDisplay(u))}</option>`).join('');
       if(primary && ids.includes(primary)) selEl.value = primary;
 
       const wrap = body.querySelector('#slotm_team');
@@ -1259,7 +1260,7 @@ function openSlotModal(slot){
         b.type = 'button';
         const active = selected.has(u);
         b.className = `chip ${active ? 'active' : ''}`;
-        b.textContent = u;
+        b.textContent = techDisplay(u);
         b.addEventListener('click', ()=>{
           if(selected.has(u)) selected.delete(u); else selected.add(u);
           state.teamPicker.selected = new Set(Array.from(selected));
@@ -1279,6 +1280,11 @@ function openSlotModal(slot){
         state.teamPicker.primary = p;
         if(p) selected.add(p);
         state.teamPicker.selected = new Set(Array.from(selected));
+        // sync legacy primary field for payload (username)
+        const leg = el('technician_username_select');
+        if(leg) leg.value = p;
+        const hid = el('technician_username');
+        if(hid) hid.value = p;
         el('assign_mode').value = 'team';
         getTeamMembersForPayload();
         renderTeamPicker(ids);
@@ -1300,7 +1306,8 @@ function openSlotModal(slot){
       <div class="muted2 mini" style="margin-top:6px">เลือกช่าง = โหมด “เลือกเดี่ยว” • ไม่เลือก = ระบบเลือกช่างว่าง</div>
     `;
     const selEl = body.querySelector('#slotm_single');
-    selEl.innerHTML = `<option value="">-- ไม่เลือก (ระบบเลือกช่างว่าง) --</option>` + ids.map(u=>`<option value="${escapeHtml(techDisplay(u))}">${escapeHtml(techDisplay(u))}</option>`).join('');
+    // value MUST be username (stable id) — label shows real name from technician profile
+    selEl.innerHTML = `<option value="">-- ไม่เลือก (ระบบเลือกช่างว่าง) --</option>` + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(techDisplay(u))}</option>`).join('');
     if(cur && ids.includes(cur)) selEl.value = cur;
 
     selEl.addEventListener('change', ()=>{
