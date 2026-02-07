@@ -3228,6 +3228,9 @@ app.get("/admin/technicians", async (req, res) => {
     const q = await pool.query(
       `SELECT u.username,
               p.full_name, p.technician_code, p.position, p.rank_level, p.rank_key, p.photo_path, p.phone,
+              COALESCE(p.employment_type,'company') AS employment_type,
+              COALESCE(p.work_start,'09:00') AS work_start,
+              COALESCE(p.work_end,'18:00') AS work_end,
               p.rating, p.grade, p.done_count,
               COALESCE(p.accept_status,'ready') AS accept_status, p.accept_status_updated_at
        FROM public.users u
@@ -3249,6 +3252,9 @@ app.put("/admin/technicians/:username", async (req, res) => {
     const full_name = (req.body.full_name || "").trim();
     const position = (req.body.position || "").trim() || null; // ✅ ไม่ส่ง = ไม่ทับ
     const phoneRaw = (req.body.phone ?? "").toString().trim();
+    const employment_type = (req.body.employment_type ?? "").toString().trim() || null;
+    const work_start = (req.body.work_start ?? "").toString().trim() || null;
+    const work_end = (req.body.work_end ?? "").toString().trim() || null;
     const newPassword = (req.body.new_password ?? "").toString();
     const confirmPassword = (req.body.confirm_password ?? "").toString();
 
@@ -3256,6 +3262,17 @@ app.put("/admin/technicians/:username", async (req, res) => {
 
     if (phoneRaw && !/^[0-9+\-()\s]{6,20}$/.test(phoneRaw)) {
       return res.status(400).json({ error: "รูปแบบเบอร์โทรไม่ถูกต้อง" });
+    }
+
+    if (employment_type && !['company','partner'].includes(String(employment_type).toLowerCase())) {
+      return res.status(400).json({ error: "employment_type ต้องเป็น company หรือ partner" });
+    }
+    const isHHMM = (s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(s||''));
+    if (work_start && !isHHMM(work_start)) {
+      return res.status(400).json({ error: "work_start ต้องเป็นรูปแบบ HH:MM เช่น 09:00" });
+    }
+    if (work_end && !isHHMM(work_end)) {
+      return res.status(400).json({ error: "work_end ต้องเป็นรูปแบบ HH:MM เช่น 18:00" });
     }
 
     // profile
@@ -3267,8 +3284,20 @@ app.put("/admin/technicians/:username", async (req, res) => {
          full_name = COALESCE(EXCLUDED.full_name, public.technician_profiles.full_name),
          position = COALESCE(EXCLUDED.position, public.technician_profiles.position),
          phone = COALESCE(EXCLUDED.phone, public.technician_profiles.phone),
+         employment_type = COALESCE($6, public.technician_profiles.employment_type),
+         work_start = COALESCE($7, public.technician_profiles.work_start),
+         work_end = COALESCE($8, public.technician_profiles.work_end),
          updated_at = CURRENT_TIMESTAMP`,
-      [username, technician_code, full_name || null, position, phoneRaw || null]
+      [
+        username,
+        technician_code,
+        full_name || null,
+        position,
+        phoneRaw || null,
+        employment_type ? String(employment_type).toLowerCase() : null,
+        work_start,
+        work_end,
+      ]
     );
 
     // password (optional)
