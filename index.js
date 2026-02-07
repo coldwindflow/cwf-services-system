@@ -38,6 +38,8 @@ const FLAG_SHOW_TECH_TEAM_ON_TRACKING = envBool("SHOW_TECH_TEAM_ON_TRACKING", tr
 const FLAG_SHOW_TECH_PHONE_ON_TRACKING = envBool("SHOW_TECH_PHONE_ON_TRACKING", true);
 
 const ENABLE_AVAILABILITY_V2 = envBool("ENABLE_AVAILABILITY_V2", true);
+// ✅ Safe toggle: urgent offer flow (public booking + offers)
+const ENABLE_URGENT_FLOW = envBool("ENABLE_URGENT_FLOW", true);
 const TRAVEL_BUFFER_MIN = Math.max(0, Number(process.env.TRAVEL_BUFFER_MIN || 30)); // นาที/งาน (Travel Buffer)
 
 
@@ -2525,7 +2527,11 @@ app.post("/offers/:offer_id/accept", async (req, res) => {
     );
     const jobInfo = jobInfoR.rows[0];
     const ok = await isTechFree(offer.technician_username, jobInfo.appointment_datetime, jobInfo.duration_min, offer.job_id);
-    if (!ok) throw new Error("เวลาชนกับงานอื่นของช่าง (รวมเวลาเดินทาง 30 นาที)");
+    if (!ok) {
+      console.log("[urgent_accept] collision", { offer_id, job_id: offer.job_id, tech: offer.technician_username });
+      throw new Error("เวลาชนกับงานอื่นของช่าง (รวมเวลาเดินทาง 30 นาที)");
+    }
+    console.log("[urgent_accept] ok", { offer_id, job_id: offer.job_id, tech: offer.technician_username });
 
 
     await client.query(`UPDATE public.job_offers SET status='accepted', responded_at=NOW() WHERE offer_id=$1`, [offer_id]);
@@ -2605,6 +2611,7 @@ app.post("/offers/:offer_id/decline", async (req, res) => {
     }
 
     await client.query(`UPDATE public.job_offers SET status='declined', responded_at=NOW() WHERE offer_id=$1`, [offer_id]);
+    console.log("[urgent_decline]", { offer_id, job_id: offer.job_id, tech: offer.technician_username });
 
     // ✅ คืนงานกลับหน้าแอดมิน (ถ้าเป็น offer และยังไม่ได้รับจริง)
     await client.query(
@@ -3867,8 +3874,10 @@ app.get("/public/availability_v2", async (req, res) => {
   try {
     const techs = await listTechniciansByType(tech_type);
     const tech_count = techs.length;
-    const work_start = (techs[0]?.work_start || "09:00").toString();
-    const work_end = (techs[0]?.work_end || "18:00").toString();
+    // ✅ Work hours: ใช้ per-tech จริง (แต่ยังคง default 09:00-18:00)
+    // สำหรับการสร้าง slot: ใช้ช่วงเวลามาตรฐานทั้งวัน แล้วคัด tech ที่อยู่ในช่วงเวลาของตัวเองอีกที
+    const work_start = "09:00";
+    const work_end = "18:00";
 
     const startMin = toMin(work_start);
     const endMin = toMin(work_end);
@@ -3882,6 +3891,11 @@ app.get("/public/availability_v2", async (req, res) => {
 
       const available_tech_ids = [];
       for (const tech of techs) {
+        // Respect per-tech working hours
+        const ts = toMin(tech.work_start || "09:00");
+        const te = toMin(tech.work_end || "18:00");
+        if (!(t >= ts && t + block <= te)) continue;
+
         const free = await isTechFree(tech.username, startIso, duration_min, null);
         if (free) available_tech_ids.push(tech.username);
       }
@@ -4011,7 +4025,8 @@ app.post("/public/book", async (req, res) => {
 
   const token = genToken(12);
   // DURATION_PRICE_V2_PUBLIC_BOOK
-  const bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
+  let bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
+  if (bm === "urgent" && !ENABLE_URGENT_FLOW) bm = "scheduled"; // safe fallback
   const payloadV2 = {
     job_type: String(job_type).trim(),
     ac_type: (ac_type || "").toString().trim(),
@@ -4024,6 +4039,30 @@ app.post("/public/book", async (req, res) => {
   const duration_min_v2 = computeDurationMin(payloadV2, { source: "public_book" });
   if (duration_min_v2 <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
   const standard_price = computeStandardPrice(payloadV2);
+
+  // ✅ Server-side validation: ต้องมีอย่างน้อย 1 ช่างว่างจริงในช่วงเวลานี้ (คิด buffer)
+  // - scheduled => company, urgent => partner
+  const requestedTechType = bm === "urgent" ? "partner" : "company";
+  try {
+    const techs = await listTechniciansByType(requestedTechType);
+    const startIso = `${String(appointment_datetime).slice(0, 16)}:00`;
+    const block = effectiveBlockMin(duration_min_v2);
+    const tMin = toMin(String(startIso).slice(11, 16));
+    let anyFree = false;
+    for (const tech of techs) {
+      const ts = toMin(tech.work_start || "09:00");
+      const te = toMin(tech.work_end || "18:00");
+      if (!(tMin >= ts && tMin + block <= te)) continue;
+      const ok = await isTechFree(tech.username, startIso, duration_min_v2, null);
+      if (ok) { anyFree = true; break; }
+    }
+    if (!anyFree) {
+      return res.status(400).json({ error: "ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาอื่น" });
+    }
+  } catch (e) {
+    // fail-open: ถ้าเช็คไม่ได้ไม่ให้จองพัง แต่ log ไว้
+    console.warn("[public_book] availability_check_fail", { bm, err: e.message });
+  }
 
 
   const client = await pool.connect();
@@ -4089,7 +4128,7 @@ app.post("/public/book", async (req, res) => {
         (customer_note || "").toString(),
         (maps_url || "").toString(),
         (job_zone || "").toString(),
-        bm === 'urgent' ? 'รอช่างยืนยัน' : 'รอดำเนินการ',
+        bm === 'urgent' ? 'รอช่างยืนยัน' : 'รอตรวจสอบ',
         duration_min_v2,
         (bm === 'urgent' ? 'urgent' : 'scheduled'),
       ]
@@ -4102,7 +4141,7 @@ app.post("/public/book", async (req, res) => {
     await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
 
     // CREATE_URGENT_OFFERS_V2
-    if (bm === "urgent") {
+    if (bm === "urgent" && ENABLE_URGENT_FLOW) {
       const partners = await client.query(
         `
         SELECT u.username
@@ -4120,8 +4159,10 @@ app.post("/public/book", async (req, res) => {
       for (const row of partners.rows || []) {
         const ok = await isTechFree(row.username, apptIso, duration_min_v2, null);
         if (ok) availablePartners.push(row.username);
+        if (availablePartners.length >= 30) break; // limit scan
       }
 
+      // ✅ safety: จำกัดไม่เกิน 30 ช่าง/ทีมที่ส่ง offer
       for (const u of availablePartners) {
         await client.query(
           `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
@@ -4147,7 +4188,7 @@ app.post("/public/book", async (req, res) => {
 
     await client.query("COMMIT");
 
-    console.log('[public_book]', { job_id, booking_code, booking_mode: bm, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2) });
+    console.log('[public_book]', { job_id, booking_code, booking_mode: bm, requested_tech_type: requestedTechType, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2) });
     res.json({ success: true, job_id, booking_code, token: r.rows[0].booking_token, booking_mode: bm, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2), travel_buffer_min: TRAVEL_BUFFER_MIN });
   } catch (e) {
     await client.query("ROLLBACK");

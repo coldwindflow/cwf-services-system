@@ -25,7 +25,7 @@
 
       <div class="grid2">
         <input id="date" type="date">
-        <button type="button" onclick="loadSlots()">🔄 โหลดเวลาว่าง</button>
+        <button id="loadSlotsBtn" type="button" onclick="loadSlots()" disabled>🔄 โหลดเวลาว่าง</button>
       </div>
 
       <div id="slots" class="muted" style="margin-top:10px;">เลือกวันที่แล้วกด “โหลดเวลาว่าง”</div>
@@ -139,6 +139,22 @@ const API = window.location.origin;
 let pickedTime = null;
 let standardPrice = 0;
 let durationMin = 60;
+
+function isBookingFormReadyForSlots() {
+  const d = document.getElementById("date")?.value;
+  const payload = getPayloadV2();
+  if (!d) return false;
+  if (!payload.job_type || !payload.ac_type || !payload.btu || !payload.machine_count) return false;
+  if (payload.job_type === "ล้าง" && !payload.wash_variant) return false;
+  if (payload.job_type === "ซ่อม" && !payload.repair_variant) return false;
+  return true;
+}
+
+function updateLoadSlotsEnabled() {
+  const btn = document.getElementById("loadSlotsBtn");
+  if (!btn) return;
+  btn.disabled = !isBookingFormReadyForSlots();
+}
 
 // extras + promo (customer)
 let catalogItemsCustomer = [];
@@ -392,9 +408,11 @@ async function book(){
   if(el) el.addEventListener("change", async ()=>{
     showVariantFields();
     await refreshPricing();
+    updateLoadSlotsEnabled();
   });
 });
 document.getElementById("urgent_toggle").addEventListener("change", ()=>{ /* slots refresh optional */ });
+document.getElementById("date").addEventListener("change", ()=>{ updateLoadSlotsEnabled(); });
 
 async function initCustomerCatalogAndPromos(){
   try{
@@ -428,6 +446,7 @@ showVariantFields();
 initCustomerCatalogAndPromos();
 refreshPricing();
 renderItemsCustomer();
+updateLoadSlotsEnabled();
 </script>
 
 </body>
