@@ -4463,16 +4463,28 @@ async function listTechniciansByType(tech_type) {
 }
 
 async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
-  const params = [username, dateStr];
+  // IMPORTANT (Timezone-safe): do NOT rely on appointment_datetime::date because
+  // Postgres session timezone can shift the date (เคสไทย +07:00).
+  // Instead, query by [startOfDayBangkok, startOfNextDayBangkok).
+  const day = String(dateStr || "").slice(0, 10);
+  const startOfDay = `${day}T00:00:00+07:00`;
+  // next day (date math in JS is OK here because we only need YYYY-MM-DD)
+  const d = new Date(`${day}T00:00:00+07:00`);
+  d.setDate(d.getDate() + 1);
+  const nextDay = d.toISOString().slice(0, 10);
+  const startOfNext = `${nextDay}T00:00:00+07:00`;
+
+  const params = [username, startOfDay, startOfNext];
   let extra = "";
-  if (ignoreJobId) { params.push(ignoreJobId); extra = ` AND j.job_id <> $3`; }
+  if (ignoreJobId) { params.push(ignoreJobId); extra = ` AND j.job_id <> $4`; }
 
   const r = await pool.query(
     `
     SELECT j.job_id, j.appointment_datetime, COALESCE(j.duration_min,60) AS duration_min
     FROM public.jobs j
     LEFT JOIN public.job_team_members m ON m.job_id=j.job_id AND m.username=$1
-    WHERE j.appointment_datetime::date = $2::date
+    WHERE j.appointment_datetime >= $2::timestamptz
+      AND j.appointment_datetime <  $3::timestamptz
       AND j.job_status <> 'ยกเลิก'
       ${extra}
       AND (j.technician_username=$1 OR j.technician_team=$1 OR m.username IS NOT NULL)
@@ -4487,8 +4499,10 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
 }
 
 async function isTechFree(username, startIso, durationMin, ignoreJobId) {
+  // startIso is built from date+HH:mm without timezone.
+  // Use the date portion directly to avoid UTC date shifting.
+  const dateStr = String(startIso).slice(0, 10);
   const start = new Date(startIso);
-  const dateStr = start.toISOString().slice(0, 10);
 
   const reqStart = start.getTime() - TRAVEL_BUFFER_MIN * 60000;
   const reqEnd = start.getTime() + (Number(durationMin || 0) + TRAVEL_BUFFER_MIN) * 60000;

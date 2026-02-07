@@ -6,6 +6,19 @@
   <title>Admin เพิ่มงาน (v2) - CWF</title>
   <link rel="stylesheet" href="style.css">
   <style>
+    /* ===============================
+       CWF Luxury Theme (Yellow/Blue/White)
+       Scope: this page only
+       =============================== */
+    body.cwf-lux{background:linear-gradient(180deg,#0b1b3a 0%, #0b4bb3 28%, #f5f7ff 28%, #ffffff 100%)!important}
+    body.cwf-lux h2{color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.25)}
+    body.cwf-lux .card{border:1px solid rgba(11,75,179,0.18);box-shadow:0 10px 28px rgba(2,6,23,0.10)}
+    body.cwf-lux .card.section-card b{color:#0b1b3a}
+    body.cwf-lux label{color:rgba(11,27,58,0.85)}
+    body.cwf-lux input, body.cwf-lux select, body.cwf-lux textarea{border:1px solid rgba(11,75,179,0.18)}
+    body.cwf-lux input:focus, body.cwf-lux select:focus, body.cwf-lux textarea:focus{outline:2px solid rgba(255,204,0,0.45);border-color:rgba(255,204,0,0.85)}
+    body.cwf-lux .secondary{border-color:rgba(255,204,0,0.65)}
+
     .app{padding-bottom:86px}
     .section-card{margin-top:12px}
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -19,17 +32,21 @@
     .slot-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
     @media (max-width:720px){.slot-grid{grid-template-columns:repeat(2,1fr)}}
     @media (max-width:420px){.slot-grid{grid-template-columns:repeat(2,1fr)}}
-    .slot-btn{min-height:56px;border-radius:16px;border:1px solid rgba(15,23,42,0.12);background:#fff;font-weight:900;line-height:1.1;padding:10px 8px}
+    /* Slots: yellow (available) / blue (selected) */
+    .slot-btn{min-height:56px;border-radius:18px;border:1px solid rgba(11,75,179,0.22);background:#ffcc00;color:#0b1b3a;font-weight:900;line-height:1.1;padding:10px 8px;box-shadow:0 8px 18px rgba(2,6,23,0.08)}
     .slot-btn .slot-sub{display:block;margin-top:6px;font-size:12px;font-weight:800;opacity:.85}
-    .slot-btn.selected{background:#22c55e;color:#052e16;border-color:transparent}
+    .slot-btn.full{background:#f1f5f9;color:#64748b;border-color:rgba(11,75,179,0.14);box-shadow:none}
+    .slot-btn.selected{background:#0b4bb3;color:#fff;border-color:rgba(255,204,0,0.7)}
     .slot-btn.disabled{opacity:0.45}
+    .chip{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(11,75,179,0.18);border-radius:999px;padding:8px 10px;background:#f8fafc;font-weight:900;cursor:pointer}
+    .chip.active{background:#ffcc00;color:#0b1b3a;border-color:rgba(11,75,179,0.22)}
     .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:#0b4bb3;display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:999;border-top:1px solid rgba(15,23,42,0.08)}
     .nav-btn{flex:1;min-height:46px;border:1px solid rgba(255,255,255,0.22);background:rgba(255,255,255,0.08);color:#fff;border-radius:14px;font-weight:800;font-size:13px}
     .nav-btn.active{background:#ffcc00;color:#0b1b3a;border-color:rgba(11,75,179,0.2)}
     .card-lite{background:#f8fafc;border:1px solid rgba(15,23,42,0.08)}
 
     /* Collapsible sections (reduce visual clutter) */
-    details.cwf-details{border:1px solid rgba(15,23,42,0.10);border-radius:16px;background:#fff;overflow:hidden}
+    details.cwf-details{border:1px solid rgba(11,75,179,0.16);border-radius:18px;background:#fff;overflow:hidden}
     details.cwf-details>summary{list-style:none;cursor:pointer;padding:12px 14px;font-weight:900;display:flex;align-items:center;justify-content:space-between;gap:10px}
     details.cwf-details>summary::-webkit-details-marker{display:none}
     details.cwf-details>summary .muted2{font-weight:800}
@@ -41,9 +58,15 @@
     .seg button{border:1px solid rgba(15,23,42,0.12);background:#fff;border-radius:999px;padding:10px 12px;font-weight:900;cursor:pointer}
     .seg button.active{background:#ffcc00;color:#0b1b3a;border-color:rgba(11,75,179,0.2)}
     .seg button:disabled{opacity:.5;cursor:not-allowed}
+
+    /* Inline slot tech picker */
+    .slot-panel{margin-top:10px;border:1px solid rgba(11,75,179,0.16);border-radius:18px;padding:12px 14px;background:linear-gradient(180deg,#ffffff, #f8fbff)}
+    .slot-panel .title{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .slot-panel .title b{color:#0b1b3a}
+    .slot-panel .chip{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:999px;background:rgba(255,204,0,0.22);border:1px solid rgba(255,204,0,0.65);color:#0b1b3a;font-weight:900;font-size:12px}
   </style>
 </head>
-<body class="theme-2">
+<body class="theme-2 cwf-lux">
   <div class="app">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
       <h2 style="margin:0">➕ เพิ่มงาน (Admin v2)</h2>
@@ -176,41 +199,44 @@
           </div>
         </div>
       </div>
-    </div>
 
-    <details class="cwf-details section-card" id="extras_promo_details">
-      <summary>
-        <span>3) รายการเสริม (Extras) + โปรโมชัน</span>
-        <span class="muted2 mini">กดเพื่อแสดง/ซ่อน</span>
-      </summary>
-      <div class="details-body">
-        <div class="muted2 mini">เลือกหลายรายการได้ (ราคาดึงจาก Catalog จริง) และเลือกโปรโมชันได้</div>
+      <!-- Extras + Promotions (integrated) -->
+      <details class="cwf-details" id="extras_promo_details" style="margin-top:12px">
+        <summary>
+          <span>รายการเสริม + โปรโมชัน</span>
+          <span class="muted2 mini">กดเพื่อแสดง/ซ่อน</span>
+        </summary>
+        <div class="details-body">
+          <div class="muted2 mini">เพิ่มรายการเสริม/อะไหล่ และเลือกโปรโมชัน • ระบบดึงราคา/ส่วนลดจากฐานข้อมูลจริง</div>
 
-        <div class="line" style="margin-top:10px">
-          <select id="extras_select" class="grow"></select>
-          <input id="extras_qty" type="number" min="1" step="1" value="1" style="width:84px">
-          <button class="secondary btn-mini" type="button" id="btnAddExtra">เพิ่ม</button>
-        </div>
-
-        <div id="extras_list" style="margin-top:10px"></div>
-
-        <div class="grid2" style="margin-top:10px">
-          <div>
-            <label>โปรโมชัน</label>
-            <div class="line">
-              <select id="promotion_id" class="grow"></select>
-              <button id="btnPromoManage" class="secondary btn-mini" type="button">จัดการ</button>
-              <button id="btnPromoQuickAdd" class="secondary btn-mini" type="button">+ เพิ่ม</button>
+          <div class="grid2" style="margin-top:10px">
+            <div>
+              <label>เพิ่มรายการเสริม</label>
+              <div class="line">
+                <select id="extras_select" class="grow"></select>
+                <input id="extras_qty" type="number" min="1" step="1" value="1" style="width:84px">
+                <button class="secondary btn-mini" type="button" id="btnAddExtra">เพิ่ม</button>
+              </div>
+              <div id="extras_list" style="margin-top:10px"></div>
             </div>
-            <div class="muted2 mini" style="margin-top:6px">ลูกค้าไม่เห็นโปรโมชัน • เลือก “ไม่ใช้โปรโมชัน” เพื่อเอาออก</div>
-          </div>
-          <div>
-            <label>ยอดรวมประมาณ</label>
-            <input id="total_preview" disabled value="-">
+            <div>
+              <label>โปรโมชัน</label>
+              <div class="line">
+                <select id="promotion_id" class="grow"></select>
+                <button id="btnPromoManage" class="secondary btn-mini" type="button">จัดการ</button>
+                <button id="btnPromoQuickAdd" class="secondary btn-mini" type="button">+ เพิ่ม</button>
+              </div>
+              <div class="muted2 mini" style="margin-top:6px">ลูกค้าไม่เห็นโปรโมชัน • เลือก “ไม่ใช้โปรโมชัน” เพื่อเอาออก</div>
+
+              <div style="margin-top:12px">
+                <label>ยอดรวมประมาณ</label>
+                <input id="total_preview" disabled value="-">
+              </div>
+            </div>
           </div>
         </div>
-      </div>
-    </details>
+      </details>
+    </div>
 
     <div class="card section-card">
       <b>4) เลือกคิวช่าง</b>
