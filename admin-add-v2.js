@@ -19,6 +19,7 @@ let state = {
   service_lines: [], // [{job_type, ac_type, btu, machine_count, wash_variant}]
   selected_slot_iso: "",
   available_slots: [],
+  slots_loaded: false,
 };
 
 
@@ -85,15 +86,48 @@ state.teamPicker = {
   primary: "",
 };
 
-function updateParallelUIVisibility(){
-  const wrap = el('parallel_wrap');
-  if(!wrap) return;
-  const team = getTeamListForAssign();
-  const show = team.length >= 2;
-  wrap.style.display = show ? 'block' : 'none';
-  if(!show){
-    const cb = el('parallel_by_tech');
-    if(cb) cb.checked = false;
+function updateAssignUIVisibility(){
+  const mode = (el('assign_mode')?.value || 'auto').toString();
+  const teamWrap = el('team_picker_wrap');
+  const hint = el('team_mode_hint');
+  const lbl = el('tech_select_label');
+  const help = el('tech_select_help');
+
+  const techSel = el('technician_username_select');
+  const allowPick = !!state.slots_loaded;
+  if(techSel) techSel.disabled = !allowPick || (mode === 'auto');
+  if(help) help.textContent = allowPick ? 'เลือกได้หลังจากกด “โหลดคิวว่าง”' : '* จะเปิดให้เลือกหลังจาก “โหลดคิวว่าง”';
+
+  if(mode === 'team'){
+    if(teamWrap) teamWrap.style.display = 'block';
+    if(hint) hint.style.display = 'none';
+    if(lbl) lbl.textContent = 'ช่างหลัก';
+  }else if(mode === 'single'){
+    if(teamWrap) teamWrap.style.display = 'none';
+    if(hint) hint.style.display = 'none';
+    if(lbl) lbl.textContent = 'เลือกเดี่ยว';
+    // single mode => clear team
+    state.teamPicker.selected = new Set();
+    state.teamPicker.primary = '';
+    if(el('team_members_csv')) el('team_members_csv').value = '';
+  }else{
+    // auto
+    if(teamWrap) teamWrap.style.display = 'none';
+    if(hint) hint.style.display = 'block';
+    if(lbl) lbl.textContent = 'ช่าง';
+    state.teamPicker.selected = new Set();
+    state.teamPicker.primary = '';
+    if(techSel) techSel.value = '';
+    if(el('technician_username')) el('technician_username').value = '';
+    if(el('team_members_csv')) el('team_members_csv').value = '';
+  }
+
+  // team picker only makes sense when allowPick
+  if(teamWrap) {
+    const disabled = !allowPick || (mode !== 'team');
+    teamWrap.style.opacity = disabled ? '0.55' : '1';
+    const inp = el('team_search');
+    if(inp) inp.disabled = disabled;
   }
 }
 
@@ -208,86 +242,6 @@ function renderTeamPicker(allowedIds=null){
 
   // sync hidden csv for payload
   getTeamMembersForPayload();
-  refreshCurrentAssignSelect();
-  updateParallelUIVisibility();
-  renderCurrentAllocationUI();
-}
-
-// Allocation UI for current service line (when machine_count>1 and team>=2)
-state.current_alloc = {}; // {username: qty}
-function renderCurrentAllocationUI(){
-  const box = el('current_alloc_box');
-  if(!box) return;
-  const team = getTeamListForAssign();
-  const mc = Math.max(1, Number(el('machine_count')?.value||1));
-  const parallel = !!(el('parallel_by_tech')?.checked);
-  const jt = (el('job_type')?.value||'').trim();
-  // only for wash flow allocation; still useful for any job but keep scope conservative
-  if(!parallel || team.length < 2 || mc < 2 || jt !== 'ล้าง'){
-    box.innerHTML = '';
-    state.current_alloc = {};
-    return;
-  }
-  // init default: put all on primary if empty
-  if(!Object.keys(state.current_alloc||{}).length){
-    const p = state.teamPicker.primary || team[0];
-    state.current_alloc = {};
-    if(p) state.current_alloc[p] = mc;
-  }
-  // ensure members exist
-  for(const u of team){ if(!(u in state.current_alloc)) state.current_alloc[u]=0; }
-
-  const total = Object.values(state.current_alloc).reduce((a,b)=>a+Number(b||0),0);
-  const warn = total !== mc;
-
-  box.innerHTML = `
-    <div class="card card-lite" style="padding:12px;border-radius:16px">
-      <b>แบ่งจำนวนเครื่องต่อช่าง (ทำพร้อมกัน)</b>
-      <div class="muted2 mini" style="margin-top:4px">รวมต้องเท่ากับ <b>${mc}</b> เครื่อง</div>
-      <div id="curAllocRows" style="margin-top:10px;display:flex;flex-direction:column;gap:8px"></div>
-      <div class="muted2 mini" style="margin-top:8px;${warn?'color:#b91c1c;font-weight:900':''}">
-        รวมตอนนี้: ${total} / ${mc} ${warn ? ' (ยังไม่ครบ)' : ''}
-      </div>
-    </div>
-  `;
-  const rowsEl = el('curAllocRows');
-  if(!rowsEl) return;
-  const clamp=(n)=>Math.max(0, Math.min(mc, n));
-  for(const u of team){
-    const row = document.createElement('div');
-    row.className='line';
-    row.innerHTML = `
-      <div class="pill" style="flex:1;justify-content:space-between">
-        <span style="font-weight:900">${escapeHtml(u)}${u===state.teamPicker.primary?' • Primary':''}</span>
-        <div class="stepper" style="gap:6px">
-          <button type="button" class="btn-round" data-act="-" data-u="${u}">−</button>
-          <input type="number" min="0" max="${mc}" step="1" value="${Number(state.current_alloc[u]||0)}" style="width:72px;text-align:center" data-u="${u}">
-          <button type="button" class="btn-round" data-act="+" data-u="${u}">+</button>
-        </div>
-      </div>
-    `;
-    rowsEl.appendChild(row);
-  }
-  rowsEl.querySelectorAll('button.btn-round').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const u=btn.getAttribute('data-u');
-      const act=btn.getAttribute('data-act');
-      if(!u) return;
-      const v = Number(state.current_alloc[u]||0);
-      state.current_alloc[u] = clamp(v + (act==='+'?1:-1));
-      renderCurrentAllocationUI();
-      refreshPreviewDebounced();
-    });
-  });
-  rowsEl.querySelectorAll('input[type="number"]').forEach(inp=>{
-    inp.addEventListener('input', ()=>{
-      const u=inp.getAttribute('data-u');
-      if(!u) return;
-      state.current_alloc[u] = clamp(Number(inp.value||0));
-      renderCurrentAllocationUI();
-      refreshPreviewDebounced();
-    });
-  });
 }
 
 function getTeamListForAssign(){
@@ -302,19 +256,7 @@ function getTeamListForAssign(){
   return out;
 }
 
-function refreshCurrentAssignSelect(){
-  const sel = el('current_line_assigned_to');
-  if(!sel) return;
-  const team = getTeamListForAssign();
-  const cur = (sel.value||'').trim() || (state.teamPicker.primary||'');
-  sel.innerHTML = '';
-  const list = team.length ? team : (state.techs||[]).map(t=>t.username);
-  for(const u of list){
-    const o=document.createElement('option'); o.value=u; o.textContent=u; sel.appendChild(o);
-  }
-  sel.value = list.includes(cur) ? cur : (list[0]||'');
-}
-
+ 
 
 // Team action sheet (tap chip -> set primary / remove)
 state.teamPicker.active = "";
@@ -474,34 +416,12 @@ function getPayloadV2() {
 
 function buildCurrentServiceLine(){
   const p = getPayloadV2();
-  // ใช้เฉพาะงานล้างเท่านั้นสำหรับ multi-service
-  const assigned_to = (el('current_line_assigned_to')?.value || '').trim();
-  const parallel = !!(el('parallel_by_tech')?.checked);
-  let allocations = null;
-  if(parallel && p.job_type==='ล้าง'){
-    // allocations ใช้เฉพาะกรณีจำนวนเครื่องมากกว่า 1
-    const mc = Math.max(1, Number(p.machine_count||1));
-    if(mc >= 2){
-      const a = state.current_alloc || {};
-      const sum = Object.values(a).reduce((x,y)=>x+Number(y||0),0);
-      if(sum === mc){
-        const cleaned = {};
-        for(const [k,v] of Object.entries(a)){
-          const q = Math.max(0, Number(v||0));
-          if(q>0) cleaned[k]=q;
-        }
-        allocations = Object.keys(cleaned).length ? cleaned : null;
-      }
-    }
-  }
   return {
     job_type: p.job_type,
     ac_type: p.ac_type,
     btu: p.btu,
     machine_count: p.machine_count,
     wash_variant: p.wash_variant,
-    assigned_to: assigned_to || (state.teamPicker.primary||'') || null,
-    allocations,
   };
 }
 
@@ -537,35 +457,12 @@ function renderServiceLines(){
       <div class="svc-main">
         <div class="svc-title"><b>${escapeHtml(label)}</b></div>
         <div class="muted2 mini">รายการบริการหลัก #${idx+1}</div>
-        <div class="muted2 mini" style="margin-top:6px"><b>มอบหมายให้:</b> <select class="svc-assign" data-idx="${idx}"></select></div>
-        <div class="svc-alloc" data-idx="${idx}"></div>
       </div>
       <button type="button" class="svc-del" data-idx="${idx}">ลบ</button>
     </div>`;
   }).join("") || `<div class="muted2">ยังไม่มีรายการบริการเพิ่มเติม • ใช้ค่าด้านบนเป็นรายการหลักได้ หรือกด “เพิ่มรายการบริการ”</div>`;
 
   list.innerHTML = rows;
-
-  // populate assignment selects (each line)
-  const team = getTeamListForAssign();
-  list.querySelectorAll('.svc-assign').forEach(sel=>{
-    const idx = Number(sel.getAttribute('data-idx'));
-    const ln = (Number.isFinite(idx) && state.service_lines[idx]) ? state.service_lines[idx] : null;
-    const curVal = (ln && ln.assigned_to) ? String(ln.assigned_to) : (state.teamPicker.primary||"");
-    sel.innerHTML = "";
-    const opts = team.length ? team : (state.techs||[]).map(t=>t.username);
-    for(const u of opts){
-      const o=document.createElement('option'); o.value=u; o.textContent=u; sel.appendChild(o);
-    }
-    sel.value = opts.includes(curVal) ? curVal : (opts[0]||"");
-    sel.addEventListener('change', ()=>{
-      if(!ln) return;
-      ln.assigned_to = (sel.value||"").trim();
-      refreshPreviewDebounced();
-      // re-render slots to reflect required techs
-      renderSlots();
-    });
-  });
 
   // bind delete
 
@@ -580,67 +477,6 @@ function renderServiceLines(){
     });
   });
 
-  // allocation per line (only when parallel, team>=2, and machine_count>=2)
-  const parallel = !!(el('parallel_by_tech')?.checked);
-  const team2 = getTeamListForAssign();
-  list.querySelectorAll('.svc-alloc').forEach(div=>{
-    const idx = Number(div.getAttribute('data-idx'));
-    const ln = (Number.isFinite(idx) && state.service_lines[idx]) ? state.service_lines[idx] : null;
-    if(!ln){ div.innerHTML=''; return; }
-    const mc = Math.max(1, Number(ln.machine_count||1));
-    if(!parallel || team2.length<2 || mc<2){ div.innerHTML=''; ln.allocations = null; return; }
-    // init allocations default -> assigned_to gets all
-    if(!ln.allocations || typeof ln.allocations!=='object'){
-      ln.allocations = {};
-      const p = (ln.assigned_to||state.teamPicker.primary||team2[0]||'').trim();
-      if(p) ln.allocations[p] = mc;
-    }
-    for(const u of team2){ if(!(u in ln.allocations)) ln.allocations[u]=0; }
-    const total = Object.values(ln.allocations).reduce((a,b)=>a+Number(b||0),0);
-    const warn = total!==mc;
-    div.innerHTML = `
-      <div class="muted2 mini" style="margin-top:8px">แบ่งจำนวนเครื่องต่อช่าง (รวม ${mc} เครื่อง)</div>
-      <div class="alloc-grid" style="display:flex;flex-direction:column;gap:6px;margin-top:6px"></div>
-      <div class="muted2 mini" style="margin-top:4px;${warn?'color:#b91c1c;font-weight:900':''}">รวม: ${total}/${mc}${warn?' (ยังไม่ครบ)':''}</div>
-    `;
-    const grid = div.querySelector('.alloc-grid');
-    if(!grid) return;
-    const clamp=(n)=>Math.max(0, Math.min(mc, n));
-    for(const u of team2){
-      const r=document.createElement('div');
-      r.className='line';
-      r.innerHTML = `
-        <div class="pill" style="flex:1;justify-content:space-between">
-          <span style="font-weight:900">${escapeHtml(u)}</span>
-          <div class="stepper" style="gap:6px">
-            <button type="button" class="btn-round" data-act="-" data-u="${u}">−</button>
-            <input type="number" min="0" max="${mc}" step="1" value="${Number(ln.allocations[u]||0)}" style="width:72px;text-align:center" data-u="${u}">
-            <button type="button" class="btn-round" data-act="+" data-u="${u}">+</button>
-          </div>
-        </div>`;
-      grid.appendChild(r);
-    }
-    grid.querySelectorAll('button.btn-round').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const u=btn.getAttribute('data-u');
-        const act=btn.getAttribute('data-act');
-        if(!u) return;
-        const v = Number(ln.allocations[u]||0);
-        ln.allocations[u] = clamp(v + (act==='+'?1:-1));
-        refreshPreviewDebounced();
-        renderServiceLines();
-      });
-    });
-    grid.querySelectorAll('input[type="number"]').forEach(inp=>{
-      inp.addEventListener('input', ()=>{
-        const u=inp.getAttribute('data-u');
-        if(!u) return;
-        ln.allocations[u] = clamp(Number(inp.value||0));
-        refreshPreviewDebounced();
-        renderServiceLines();
-      });
-    });
-  });
 }
 
 function wireMultiService(){
@@ -724,7 +560,6 @@ async function refreshPreview() {
   }
   try {
     const payload = getPayloadV2();
-    payload.parallel_by_tech = el('parallel_by_tech')?.checked ? 1 : 0;
     const services = getServicesPayload();
     if (services) payload.services = services;
     const r = await apiFetch("/public/pricing_preview", { method: "POST", body: JSON.stringify(payload) });
@@ -927,10 +762,34 @@ async function loadAvailability() {
   try {
     const r = await apiFetch(`/public/availability_v2?date=${encodeURIComponent(date)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`);
     state.available_slots = Array.isArray(r.slots) ? r.slots : [];
+    state.slots_loaded = true;
+    state.selected_slot_iso = "";
+    // After loading slots, allow picking tech/team (user requirement)
+    renderTechSelect(null);
+    renderTeamPicker(null);
+    updateAssignUIVisibility();
     renderSlots();
   } catch (e) {
     el("slots_box").innerHTML = `<div class="muted2">โหลดคิวว่างไม่สำเร็จ: ${e.message}</div>`;
   }
+}
+
+function getConstraintTechs(){
+  const mode = (el('assign_mode')?.value || 'auto').toString();
+  if(mode === 'single'){
+    const u = (el('technician_username_select')?.value || '').trim();
+    return u ? [u] : [];
+  }
+  if(mode === 'team'){
+    const out = [];
+    const p = (state.teamPicker.primary || '').trim();
+    if(p) out.push(p);
+    for(const u of getTeamListForAssign()){
+      if(u && !out.includes(u)) out.push(u);
+    }
+    return out;
+  }
+  return [];
 }
 
 function renderSlots() {
@@ -943,118 +802,38 @@ function renderSlots() {
     return;
   }
 
-  const teamAll = getTeamListForAssign();
-  const parallel = !!(el('parallel_by_tech')?.checked);
-  // required techs = techs ที่ถูกใช้งานจริง (มอบหมายในรายการล้าง) หรืออย่างน้อยช่างหลัก
-  const services = getServicesPayload() || [];
-  const requiredTechSet = new Set();
-  for (const s of services) {
-    const u = (s.assigned_to || '').trim();
-    if (u) requiredTechSet.add(u);
-  }
-  if (!requiredTechSet.size && state.teamPicker.primary) requiredTechSet.add(state.teamPicker.primary);
-
-  const requiredTechs = Array.from(requiredTechSet).filter(Boolean);
+  const constraintTechs = getConstraintTechs();
   const slotsSelectable = slotsAll.filter(s => {
-    if (!requiredTechs.length) return !!s.available;
+    if (!constraintTechs.length) return !!s.available;
     const ids = Array.isArray(s.available_tech_ids) ? s.available_tech_ids : [];
-    return requiredTechs.every(u => ids.includes(u));
+    return constraintTechs.every(u => ids.includes(u));
   });
 
-  // header legend
   const legend = document.createElement('div');
   legend.className = 'slot-legend';
-  const teamCount = Math.max(1, teamAll.length || 1);
   legend.innerHTML = `
     <div>
-      <b>สล็อตเวลา</b> <span class="muted2 mini">(ว่าง/เต็ม ชัดเจน)</span>
-      <div class="muted2 mini" style="margin-top:2px">ทีมช่างในใบงาน: <b>${teamCount}</b> คน</div>
-      ${requiredTechs.length ? `<div class="muted2 mini" style="margin-top:2px">ต้องว่างพร้อมกัน: <b>${requiredTechs.join(", ")}</b></div>` : ``}
+      <b>สล็อตเวลา</b> <span class="muted2 mini">(กดเลือกได้)</span>
+      ${constraintTechs.length ? `<div class="muted2 mini" style="margin-top:2px">ต้องว่างพร้อมกัน: <b>${constraintTechs.join(", ")}</b></div>` : `<div class="muted2 mini" style="margin-top:2px">ยังไม่เลือกช่าง • แสดงสล็อตที่มีอย่างน้อย 1 ช่างว่าง</div>`}
     </div>
     <div class="badge ${slotsSelectable.length ? 'ok' : 'muted'}">${slotsSelectable.length ? 'ว่าง' : 'เต็ม'} • ${slotsSelectable.length}/${slotsAll.length} ช่วง</div>
   `;
   box.appendChild(legend);
 
-  // If not parallel or only 1 tech: fallback to compact list
-  if (!parallel || teamAll.length <= 1) {
-    const grid = document.createElement("div");
-    grid.className = "slot-grid";
-    for (const s of slotsAll) {
-      const btn = document.createElement("button");
-      btn.type = "button";
-      const techCount = Array.isArray(s.available_tech_ids) ? s.available_tech_ids.length : 0;
-      const selectable = slotsSelectable.includes(s);
-      btn.className = `slot-btn ${selectable ? '' : 'full'} ${state.selected_slot_iso.endsWith('T'+s.start+':00') ? 'selected':''}`;
-      btn.innerHTML = `<div class="slot-time">${s.start} - ${s.end}</div><div class="slot-sub">${selectable ? `ว่าง • ${techCount} ช่าง` : 'เต็ม'}</div>`;
-      btn.disabled = !selectable;
-      btn.addEventListener("click", () => selectSlot(s.start));
-      grid.appendChild(btn);
-    }
-    box.appendChild(grid);
-    return;
+  const grid = document.createElement("div");
+  grid.className = "slot-grid";
+  for (const s of slotsAll) {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    const techCount = Array.isArray(s.available_tech_ids) ? s.available_tech_ids.length : 0;
+    const selectable = slotsSelectable.includes(s);
+    btn.className = `slot-btn ${selectable ? '' : 'full'} ${state.selected_slot_iso.endsWith('T'+s.start+':00') ? 'selected':''}`;
+    btn.innerHTML = `<div class="slot-time">${s.start} - ${s.end}</div><div class="slot-sub">${selectable ? `ว่าง • ${techCount} ช่าง` : 'เต็ม'}</div>`;
+    btn.disabled = !selectable;
+    btn.addEventListener("click", () => selectSlot(s.start));
+    grid.appendChild(btn);
   }
-
-  // Parallel view: แยก 4 แถวตามช่าง (สีไม่ชน อ่านง่าย)
-  const maxRows = 4;
-  const techRows = teamAll.slice(0, maxRows);
-  const more = teamAll.length - techRows.length;
-
-  const grid = document.createElement('div');
-  grid.className = 'slot-grid';
-
-  techRows.forEach((u, rowIdx) => {
-    const row = document.createElement('div');
-    row.className = 'tech-row';
-
-    const head = document.createElement('div');
-    head.className = 'tech-row-head';
-
-    const pill = document.createElement('div');
-    pill.className = 'tech-pill';
-    pill.textContent = u + (u === state.teamPicker.primary ? ' • Primary' : '');
-    // assign subtle tint by row index using inline rgba (no extra colors list) -> keep within blue/yellow theme
-    const tints = ['rgba(13,110,253,.10)','rgba(255,193,7,.12)','rgba(13,110,253,.06)','rgba(255,193,7,.08)'];
-    row.style.background = `linear-gradient(180deg, ${tints[rowIdx%tints.length]}, rgba(255,255,255,.98))`;
-
-    const stat = document.createElement('div');
-    stat.className = 'muted2 mini';
-    stat.textContent = requiredTechSet.has(u) ? 'ต้องใช้ช่างคนนี้' : 'ช่างร่วม';
-
-    head.appendChild(pill);
-    head.appendChild(stat);
-    row.appendChild(head);
-
-    const slotsWrap = document.createElement('div');
-    slotsWrap.className = 'tech-row-slots';
-
-    // show first 16 slots (09:00-18:00 step 30) arranged 4 columns
-    for (const s of slotsAll) {
-      const ids = Array.isArray(s.available_tech_ids) ? s.available_tech_ids : [];
-      const techFree = ids.includes(u);
-      const selectable = slotsSelectable.includes(s);
-      const btn = document.createElement('button');
-      btn.type = 'button';
-      btn.className = `slot-btn ${techFree ? '' : 'full'} ${state.selected_slot_iso.endsWith('T'+s.start+':00') ? 'selected':''}`;
-      btn.innerHTML = `<div class="slot-time">${s.start}</div><div class="slot-sub">${techFree ? 'ว่าง' : 'เต็ม'}</div>`;
-      // Click chooses common slot only if all required techs available in that slot
-      btn.disabled = !selectable;
-      btn.addEventListener('click', () => selectSlot(s.start));
-      slotsWrap.appendChild(btn);
-    }
-
-    row.appendChild(slotsWrap);
-    grid.appendChild(row);
-  });
-
   box.appendChild(grid);
-
-  if (more > 0) {
-    const note = document.createElement('div');
-    note.className = 'muted2 mini';
-    note.style.marginTop = '8px';
-    note.textContent = `มีช่างมากกว่า ${maxRows} คน • แสดงแค่ ${maxRows} แถวแรก (ยังเลือกสล็อตได้ตามปกติ)`;
-    box.appendChild(note);
-  }
 }
 
 function selectSlot(startHHMM){
@@ -1064,12 +843,40 @@ function selectSlot(startHHMM){
   state.selected_slot_iso = iso;
   const dtEl = el("appointment_datetime");
   if(dtEl) dtEl.value = iso;
+
   // Update technician selector allowlist based on selected slot
   const s = (state.available_slots||[]).find(x=>x && x.start===startHHMM);
-  if(s && Array.isArray(s.available_tech_ids)){
-    renderTechSelect(s.available_tech_ids);
-    renderTeamPicker(s.available_tech_ids);
+  const ids = (s && Array.isArray(s.available_tech_ids)) ? s.available_tech_ids : null;
+  if(ids){
+    renderTechSelect(ids);
+    renderTeamPicker(ids);
+
+    // If current selection is not available for this slot -> clear (fail-open)
+    const mode = (el('assign_mode')?.value || 'auto').toString();
+    if(mode === 'single'){
+      const u = (el('technician_username_select')?.value || '').trim();
+      if(u && !ids.includes(u)){
+        el('technician_username_select').value = '';
+        if(el('technician_username')) el('technician_username').value = '';
+        showToast('สล็อตนี้ไม่มีช่างที่เลือก • เคลียร์ให้แล้ว', 'info');
+      }
+    }
+    if(mode === 'team'){
+      const team = getTeamListForAssign();
+      const bad = team.filter(u=>u && !ids.includes(u));
+      if(bad.length){
+        // keep primary if possible, otherwise clear all
+        const p = (state.teamPicker.primary||'').trim();
+        const keepPrimary = p && ids.includes(p);
+        state.teamPicker.selected = new Set(keepPrimary ? [p] : []);
+        state.teamPicker.primary = keepPrimary ? p : '';
+        getTeamMembersForPayload();
+        renderTeamPicker(ids);
+        showToast('สล็อตนี้ไม่ว่างครบทีม • รีเซ็ตทีมให้แล้ว', 'info');
+      }
+    }
   }
+
   renderSlots();
 }
 
@@ -1127,7 +934,12 @@ async function submitBooking() {
     job_zone: (el("job_zone").value || "").trim(),
     booking_mode: (el("booking_mode").value || "scheduled").trim(),
     tech_type: (el("tech_type").value || "company").trim(),
-    technician_username: (el("technician_username_select")?.value || (el("technician_username")?.value||"")).trim(),
+    technician_username: (()=>{
+      const mode = (el('assign_mode')?.value || 'auto').toString();
+      if(mode === 'team') return (state.teamPicker.primary || '').trim();
+      if(mode === 'single') return (el("technician_username_select")?.value || (el("technician_username")?.value||"")).trim();
+      return '';
+    })(),
     dispatch_mode: (el("dispatch_mode").value || "forced").trim(),
     items: state.selected_items.map((x) => ({ item_id: x.item_id, qty: x.qty })),
     promotion_id: el("promotion_id").value || null,
@@ -1135,12 +947,15 @@ async function submitBooking() {
     override_duration_min: el("override_duration_min").value || 0,
     gps_latitude: (el("gps_latitude")?.value || "").trim() || null,
     gps_longitude: (el("gps_longitude")?.value || "").trim() || null,
-    team_members: getTeamMembersForPayload(),
+    team_members: (()=>{
+      const mode = (el('assign_mode')?.value || 'auto').toString();
+      return mode === 'team' ? getTeamMembersForPayload() : [];
+    })(),
   });
 
   const services = getServicesPayload();
   if(services) payload.services = services;
-  payload.parallel_by_tech = el('parallel_by_tech')?.checked ? 1 : 0;
+  // NOTE: per-line assignment/parallel is intentionally removed from Admin Add (v2 UI)
 
   try {
     el("btnSubmit").disabled = true;
@@ -1211,14 +1026,22 @@ if (copyBtn) copyBtn.addEventListener("click", async () => {
   catch { el("summary_text").select(); document.execCommand("copy"); showToast("คัดลอกแล้ว", "success"); }
 });
   const selTech = el("technician_username_select");
-  if(selTech) selTech.addEventListener("change", ()=>{ if(el("technician_username")) el("technician_username").value = selTech.value||""; });
-    // team picker
+  if(selTech) selTech.addEventListener("change", ()=>{
+    if(el("technician_username")) el("technician_username").value = selTech.value||"";
+    const mode = (el('assign_mode')?.value || 'auto').toString();
+    if(mode === 'team') syncPrimaryFromSelect();
+    renderSlots();
+  });
+
+  // assign mode
+  el('assign_mode')?.addEventListener('change', ()=>{
+    updateAssignUIVisibility();
+    renderSlots();
+  });
+
+  // team picker
   wireTeamPickerEvents();
-  if(selTech) selTech.addEventListener("change", syncPrimaryFromSelect);
-  syncPrimaryFromSelect();
-  refreshCurrentAssignSelect();
-  el('current_line_assigned_to')?.addEventListener('change', ()=>{ refreshPreviewDebounced(); renderSlots(); });
-  el('parallel_by_tech')?.addEventListener('change', ()=>{ refreshPreviewDebounced(); renderSlots(); });
+  updateAssignUIVisibility();
   el("btnSubmit").addEventListener("click", submitBooking);
 }
 

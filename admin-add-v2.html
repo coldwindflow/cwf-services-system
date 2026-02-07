@@ -27,6 +27,20 @@
     .nav-btn{flex:1;min-height:46px;border:1px solid rgba(255,255,255,0.22);background:rgba(255,255,255,0.08);color:#fff;border-radius:14px;font-weight:800;font-size:13px}
     .nav-btn.active{background:#ffcc00;color:#0b1b3a;border-color:rgba(11,75,179,0.2)}
     .card-lite{background:#f8fafc;border:1px solid rgba(15,23,42,0.08)}
+
+    /* Collapsible sections (reduce visual clutter) */
+    details.cwf-details{border:1px solid rgba(15,23,42,0.10);border-radius:16px;background:#fff;overflow:hidden}
+    details.cwf-details>summary{list-style:none;cursor:pointer;padding:12px 14px;font-weight:900;display:flex;align-items:center;justify-content:space-between;gap:10px}
+    details.cwf-details>summary::-webkit-details-marker{display:none}
+    details.cwf-details>summary .muted2{font-weight:800}
+    details.cwf-details[open]>summary{background:#f8fafc;border-bottom:1px solid rgba(15,23,42,0.08)}
+    .details-body{padding:12px 14px}
+
+    /* Assign mode (single/team) */
+    .seg{display:flex;gap:8px;flex-wrap:wrap}
+    .seg button{border:1px solid rgba(15,23,42,0.12);background:#fff;border-radius:999px;padding:10px 12px;font-weight:900;cursor:pointer}
+    .seg button.active{background:#ffcc00;color:#0b1b3a;border-color:rgba(11,75,179,0.2)}
+    .seg button:disabled{opacity:.5;cursor:not-allowed}
   </style>
 </head>
 <body class="theme-2">
@@ -131,17 +145,8 @@
     <button id="btnAddServiceLine" class="secondary" type="button">+ เพิ่มรายการบริการ</button>
   </div>
 
-  <div class="row" style="margin-top:10px">
-    <label>มอบหมาย “รายการหลัก” ให้ช่าง</label>
-    <select id="current_line_assigned_to"></select>
-    <div class="muted2 mini" style="margin-top:6px">ถ้าเลือกหลายช่าง ระบบจะคำนวณเวลาแบบ “ทำพร้อมกัน” (เวลาในใบงาน = งานที่ใช้เวลานานสุด)</div>
-    <div id="parallel_wrap" style="display:none">
-      <label style="display:flex;align-items:center;gap:10px;margin-top:10px">
-        <input type="checkbox" id="parallel_by_tech" checked />
-        <span><b>แบ่งงานตามช่าง (ทำพร้อมกัน)</b> • สล็อตจะโชว์แยกสีตามช่าง</span>
-      </label>
-      <div id="current_alloc_box" style="margin-top:10px"></div>
-    </div>
+  <div class="muted2 mini" style="margin-top:10px">
+    * ยัง <b>ไม่ต้องมอบหมายช่าง</b> ตอนเพิ่มรายการบริการ • ไปเลือก “เดี่ยว/ทีม” ในหัวข้อ 4 หลังจากกดโหลดคิวว่าง
   </div>
 
   <div id="service_lines" style="margin-top:10px"></div>
@@ -173,34 +178,39 @@
       </div>
     </div>
 
-    <div class="card section-card">
-      <b>3) รายการเสริม (Extras) + โปรโมชัน</b>
-      <div class="muted2 mini" style="margin-top:6px">เลือกหลายรายการได้ (ราคาดึงจาก Catalog จริง) และเลือกโปรโมชันได้</div>
+    <details class="cwf-details section-card" id="extras_promo_details">
+      <summary>
+        <span>3) รายการเสริม (Extras) + โปรโมชัน</span>
+        <span class="muted2 mini">กดเพื่อแสดง/ซ่อน</span>
+      </summary>
+      <div class="details-body">
+        <div class="muted2 mini">เลือกหลายรายการได้ (ราคาดึงจาก Catalog จริง) และเลือกโปรโมชันได้</div>
 
-      <div class="line" style="margin-top:10px">
-        <select id="extras_select" class="grow"></select>
-        <input id="extras_qty" type="number" min="1" step="1" value="1" style="width:84px">
-        <button class="secondary btn-mini" type="button" id="btnAddExtra">เพิ่ม</button>
-      </div>
+        <div class="line" style="margin-top:10px">
+          <select id="extras_select" class="grow"></select>
+          <input id="extras_qty" type="number" min="1" step="1" value="1" style="width:84px">
+          <button class="secondary btn-mini" type="button" id="btnAddExtra">เพิ่ม</button>
+        </div>
 
-      <div id="extras_list" style="margin-top:10px"></div>
+        <div id="extras_list" style="margin-top:10px"></div>
 
-      <div class="grid2" style="margin-top:10px">
-        <div>
-          <label>โปรโมชัน</label>
-          <div class="line">
-            <select id="promotion_id" class="grow"></select>
-            <button id="btnPromoManage" class="secondary btn-mini" type="button">จัดการ</button>
-            <button id="btnPromoQuickAdd" class="secondary btn-mini" type="button">+ เพิ่ม</button>
+        <div class="grid2" style="margin-top:10px">
+          <div>
+            <label>โปรโมชัน</label>
+            <div class="line">
+              <select id="promotion_id" class="grow"></select>
+              <button id="btnPromoManage" class="secondary btn-mini" type="button">จัดการ</button>
+              <button id="btnPromoQuickAdd" class="secondary btn-mini" type="button">+ เพิ่ม</button>
+            </div>
+            <div class="muted2 mini" style="margin-top:6px">ลูกค้าไม่เห็นโปรโมชัน • เลือก “ไม่ใช้โปรโมชัน” เพื่อเอาออก</div>
           </div>
-          <div class="muted2 mini" style="margin-top:6px">ลูกค้าไม่เห็นโปรโมชัน • เลือก “ไม่ใช้โปรโมชัน” เพื่อเอาออก</div>
-        </div>
-        <div>
-          <label>ยอดรวมประมาณ</label>
-          <input id="total_preview" disabled value="-">
+          <div>
+            <label>ยอดรวมประมาณ</label>
+            <input id="total_preview" disabled value="-">
+          </div>
         </div>
       </div>
-    </div>
+    </details>
 
     <div class="card section-card">
       <b>4) เลือกคิวช่าง</b>
@@ -220,9 +230,13 @@
 
       <div class="grid2" style="margin-top:10px">
         <div>
-          <label>เลือกช่าง (ไม่เลือก = ระบบเลือกช่างว่าง)</label>
-          <select id="technician_username_select"></select>
-          <input id="technician_username" type="hidden">
+          <label>โหมดการเลือกช่าง</label>
+          <select id="assign_mode">
+            <option value="auto">ไม่เลือก (ระบบเลือกช่างว่าง)</option>
+            <option value="single">เลือกเดี่ยว</option>
+            <option value="team">ทีม</option>
+          </select>
+          <div class="muted2 mini" style="margin-top:6px">แนะนำ: กด “โหลดคิวว่าง” ก่อน แล้วค่อยเลือกเดี่ยว/ทีม</div>
         </div>
         <div>
           <label>dispatch_mode</label>
@@ -232,7 +246,22 @@
           </select>
         </div>
       </div>
-        <div>
+
+      <div id="assign_card" class="card card-lite" style="margin-top:10px">
+        <div class="grid2">
+          <div>
+            <label id="tech_select_label">ช่าง</label>
+            <select id="technician_username_select"></select>
+            <input id="technician_username" type="hidden">
+            <div class="muted2 mini" style="margin-top:6px" id="tech_select_help">* จะเปิดให้เลือกหลังจาก “โหลดคิวว่าง”</div>
+          </div>
+          <div id="team_mode_hint" style="display:none">
+            <label>ทีมช่าง</label>
+            <div class="muted2 mini">เลือก “ทีม” เพื่อเพิ่มช่างร่วมหลายคน</div>
+          </div>
+        </div>
+
+        <div id="team_picker_wrap" style="margin-top:10px; display:none">
           <label>ทีมช่าง (ช่างร่วม) • เลือกหลายคน</label>
           <div class="team-help">พิมพ์ค้นหา แล้วแตะเพื่อเพิ่มเป็นทีม • ตั้ง “ช่างหลัก” ได้ด้วยป้าย Primary</div>
           <div class="team-picker">
@@ -244,20 +273,20 @@
           </div>
           <input id="team_members_csv" type="hidden" />
         </div>
+      </div>
 
-        <!-- Action Sheet สำหรับทีมช่าง (Premium) -->
-        <div id="team_sheet_overlay" class="team-sheet-overlay">
-          <div class="team-sheet" role="dialog" aria-modal="true">
-            <h3 id="team_sheet_title">จัดการทีมช่าง</h3>
-            <p id="team_sheet_sub">-</p>
-            <div class="sheet-actions">
-              <button id="team_sheet_set_primary" class="btn-primary" type="button">ตั้งเป็นช่างหลัก</button>
-              <button id="team_sheet_remove" class="btn-danger" type="button">เอาออกจากทีม</button>
-              <button id="team_sheet_close" class="btn-close" type="button">ปิด</button>
-            </div>
+      <!-- Action Sheet สำหรับทีมช่าง (Premium) -->
+      <div id="team_sheet_overlay" class="team-sheet-overlay">
+        <div class="team-sheet" role="dialog" aria-modal="true">
+          <h3 id="team_sheet_title">จัดการทีมช่าง</h3>
+          <p id="team_sheet_sub">-</p>
+          <div class="sheet-actions">
+            <button id="team_sheet_set_primary" class="btn-primary" type="button">ตั้งเป็นช่างหลัก</button>
+            <button id="team_sheet_remove" class="btn-danger" type="button">เอาออกจากทีม</button>
+            <button id="team_sheet_close" class="btn-close" type="button">ปิด</button>
           </div>
         </div>
-        </div>
+      </div>
       <div class="grid2" style="margin-top:12px">
         <button class="secondary" type="button" id="btnLoadSlots">โหลดคิวว่าง</button>
         <button class="secondary" type="button" id="btnAddSpecialSlot">+ เพิ่มสลอตพิเศษ</button>

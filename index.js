@@ -4418,7 +4418,7 @@ function effectiveBlockMin(durationMin) {
 
 async function listTechniciansByType(tech_type) {
   const t = (tech_type || "company").toString().trim().toLowerCase();
-  const r = await pool.query(
+  let r = await pool.query(
     `
     SELECT u.username,
            COALESCE(p.employment_type,'company') AS employment_type,
@@ -4434,6 +4434,31 @@ async function listTechniciansByType(tech_type) {
     `,
     [t]
   );
+  // Fallback (fail-open): if filtering by employment_type yields 0 technicians,
+  // return all technicians that are not paused. This prevents the UI from showing
+  // all slots "เต็ม" when profiles haven't been backfilled yet.
+  if ((r.rows || []).length === 0) {
+    try {
+      const r2 = await pool.query(
+        `
+        SELECT u.username,
+               COALESCE(p.employment_type,'company') AS employment_type,
+               COALESCE(p.work_start,'09:00') AS work_start,
+               COALESCE(p.work_end,'18:00') AS work_end,
+               COALESCE(p.accept_status,'ready') AS accept_status
+        FROM public.users u
+        LEFT JOIN public.technician_profiles p ON p.username=u.username
+        WHERE u.role='technician'
+          AND COALESCE(p.accept_status,'ready') <> 'paused'
+        ORDER BY u.username
+        `
+      );
+      console.warn('[availability_v2] no technicians matched tech_type=%s -> fallback to all (%s)', t, (r2.rows||[]).length);
+      return r2.rows || [];
+    } catch (e) {
+      console.warn('[availability_v2] fallback technicians query failed', e.message);
+    }
+  }
   return r.rows || [];
 }
 
