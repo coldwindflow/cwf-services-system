@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Review Queue - CWF</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    .app{padding-bottom:86px}
+    .topbar{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .pill{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#e2e8f0;font-weight:800;font-size:12px;color:#0f172a}
+    .grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px}
+    .card{background:#fff;border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:12px;box-shadow:var(--shadow)}
+    .row{display:flex;gap:10px;align-items:center;justify-content:space-between}
+    .muted{color:#64748b;font-size:13px}
+    .btn{border:none;border-radius:12px;padding:10px 12px;font-weight:800;min-height:44px}
+    .btn-primary{background:#22c55e;color:#052e16}
+    .btn-ghost{background:#e2e8f0;color:#0f172a}
+    .btn-danger{background:#ef4444;color:#fff}
+    .btn:disabled{opacity:.5}
+
+    /* bottom nav */
+    .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:#0f172a;display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:999;border-top:1px solid rgba(255,255,255,0.08)}
+    .nav-btn{flex:1;min-height:44px;border:1px solid rgba(255,255,255,0.18);background:transparent;color:#fff;border-radius:12px;font-weight:800;font-size:13px}
+    .nav-btn.active{background:#22c55e;color:#052e16;border-color:transparent}
+
+    /* modal */
+    .overlay{position:fixed;inset:0;background:rgba(2,6,23,0.6);display:none;align-items:flex-end;z-index:2000}
+    .overlay.show{display:flex}
+    .modal{background:#fff;border-radius:18px 18px 0 0;width:100%;max-height:88vh;overflow:auto;padding:14px}
+    .modal h3{margin:0 0 6px 0}
+    .form{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px}
+    .form input,.form select,.form textarea{width:100%;padding:12px;border-radius:12px;border:1px solid rgba(15,23,42,0.18);font-size:14px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    .hr{height:1px;background:rgba(15,23,42,0.10);margin:10px 0}
+    .chips{display:flex;flex-wrap:wrap;gap:8px}
+    .chip{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:999px;border:1px solid rgba(15,23,42,0.16);background:#f8fafc;font-weight:800;font-size:12px}
+    .chip input{width:18px;height:18px}
+    .slotbox{display:flex;flex-direction:column;gap:8px;margin-top:8px}
+    .slot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;border-radius:14px;border:1px solid rgba(15,23,42,0.12);background:#fff}
+    .slot small{color:#64748b;font-weight:700}
+  </style>
+</head>
+<body class="theme-2">
+  <div class="app">
+    <div class="topbar">
+      <div>
+        <h2 style="margin:0">📥 งานลูกค้าจองเข้ามา</h2>
+        <div class="muted" style="margin-top:4px">งานสถานะ “รอตรวจสอบ / ตีกลับ / ไม่พบช่างรับงาน”</div>
+      </div>
+      <div class="pill" id="pillCount">0 งาน</div>
+    </div>
+
+    <div class="card" style="margin-top:12px">
+      <div class="grid2">
+        <select id="filterStatus">
+          <option value="pending">รอตรวจสอบ</option>
+          <option value="return">ตีกลับ</option>
+          <option value="noaccept">ไม่พบช่างรับงาน</option>
+          <option value="all">ทั้งหมด</option>
+        </select>
+        <button class="btn btn-ghost" id="btnReload" type="button">🔄 โหลดใหม่</button>
+      </div>
+      <div class="muted" style="margin-top:8px">* แนะนำ: ตรวจงานแล้วกด “บันทึก & ยิงงาน” เพื่อส่งให้ช่าง (คิด travel buffer แล้ว)</div>
+    </div>
+
+    <div class="grid" id="list"></div>
+  </div>
+
+  <div class="bottom-nav">
+    <button class="nav-btn active" type="button" onclick="location.href='/admin-review-v2.html'">📥 งานจอง</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-add-v2.html'">➕ เพิ่มงาน</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-queue-v2.html'">🗓️ คิวช่าง</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-history-v2.html'">📚 ประวัติ</button>
+    <button class="nav-btn" type="button" onclick="location.href='/admin-tech.html'">👷 ช่าง</button>
+  </div>
+
+  <!-- Modal -->
+  <div class="overlay" id="overlay">
+    <div class="modal">
+      <div class="row">
+        <h3 id="mTitle">ตรวจงาน</h3>
+        <button class="btn btn-ghost" type="button" onclick="closeModal()">ปิด</button>
+      </div>
+      <div class="muted" id="mSub"></div>
+
+      <div class="hr"></div>
+
+      <div class="form">
+        <div class="grid2">
+          <input id="mCustomerName" placeholder="ชื่อลูกค้า">
+          <input id="mCustomerPhone" placeholder="เบอร์ลูกค้า">
+        </div>
+        <div class="grid2">
+          <input id="mJobType" placeholder="ประเภทงาน (ล้าง/ซ่อม/ติดตั้ง)">
+          <input id="mBookingCode" placeholder="รหัสงาน" disabled>
+        </div>
+
+        <div class="grid2">
+          <input id="mAppt" type="datetime-local">
+          <button class="btn btn-ghost" type="button" id="btnLoadSlots">⏱️ โหลดเวลาว่าง</button>
+        </div>
+        <div class="slotbox" id="slotBox" style="display:none"></div>
+
+        <textarea id="mAddress" rows="2" placeholder="ที่อยู่"></textarea>
+        <div class="grid2">
+          <input id="mMaps" placeholder="Google Maps URL">
+          <input id="mZone" placeholder="โซน (ถ้ามี)">
+        </div>
+        <textarea id="mNote" rows="2" placeholder="หมายเหตุลูกค้า/แอดมิน"></textarea>
+
+        <div class="card" style="padding:12px;background:#f8fafc;border-radius:16px;border:1px solid rgba(15,23,42,0.10)">
+          <div class="row">
+            <b>👷 เลือกกลุ่มช่าง</b>
+            <select id="mTechType">
+              <option value="company">ช่างบริษัท (scheduled)</option>
+              <option value="partner">ช่างพาร์ทเนอร์ (urgent/offer)</option>
+            </select>
+          </div>
+          <div class="grid2" style="margin-top:10px">
+            <select id="mPrimaryTech"></select>
+            <select id="mDispatchMode">
+              <option value="forced">ยิงงานให้ช่าง (forced)</option>
+              <option value="offer">ส่งเป็นข้อเสนอ (offer)</option>
+            </select>
+          </div>
+          <div class="muted" style="margin-top:8px">* ถ้าเลือกหลายคน ให้ติ๊ก “ช่างร่วม” ด้านล่าง ระบบจะเช็คชนคิวของทุกคน (รวม buffer)</div>
+          <input id="mTeamSearch" placeholder="ค้นหาชื่อช่าง..." style="margin-top:10px">
+          <div class="chips" id="mTeamChips" style="margin-top:8px"></div>
+        </div>
+
+        <div class="card" style="padding:12px;background:#fff;border-radius:16px;border:1px solid rgba(15,23,42,0.10)">
+          <div class="row"><b>💰 สรุปราคา</b><button class="btn btn-ghost" type="button" id="btnLoadPricing">รีเฟรช</button></div>
+          <div class="muted" id="mPricing" style="margin-top:8px">-</div>
+        </div>
+
+        <div class="grid2">
+          <button class="btn btn-ghost" type="button" id="btnSave">💾 บันทึกข้อมูล</button>
+          <button class="btn btn-primary" type="button" id="btnDispatch">✅ บันทึก & ยิงงาน</button>
+        </div>
+        <button class="btn btn-danger" type="button" id="btnCancel">🗑️ ยกเลิกงาน</button>
+      </div>
+
+      <div style="height:10px"></div>
+    </div>
+  </div>
+
+  <script src="admin-v2-common.js"></script>
+  <script src="admin-review-v2.js"></script>
+</body>
+</html>

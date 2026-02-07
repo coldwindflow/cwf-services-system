@@ -30,6 +30,10 @@
     <div class="muted" style="margin-top:6px;">เลือกเมนูด้านล่าง หรือกดการ์ดเพื่อเข้าใช้งาน</div>
 
     <div class="menu-grid">
+      <a href="/admin-review-v2.html" class="menu-card">
+        <b>📥 งานลูกค้าจองเข้ามา (รอตรวจสอบ)</b>
+        <div class="muted">ตรวจ/แก้/เลือกช่าง+ทีม/ยิงงานให้ช่าง</div>
+      </a>
       <a href="/admin-add-v2.html" class="menu-card">
         <b>➕ เพิ่มงาน (Flow เหมือนลูกค้า)</b>
         <div class="muted">รองรับหลายรายการ (extras) + โปรฯ + override ราคา/เวลา</div>
@@ -54,6 +58,7 @@
   </div>
 
   <div class="bottom-nav">
+    <button class="nav-btn" type="button" onclick="location.href='/admin-review-v2.html'">📥 งานจอง</button>
     <button class="nav-btn active" type="button" onclick="location.href='/admin-add-v2.html'">➕ เพิ่มงาน</button>
     <button class="nav-btn" type="button" onclick="location.href='/admin-queue-v2.html'">🗓️ คิวช่าง</button>
     <button class="nav-btn" type="button" onclick="location.href='/admin-history-v2.html'">📚 ประวัติ</button>
@@ -63,8 +68,23 @@
   <script>
     // ใช้ระบบเดิม: token ใน localStorage (ไม่แตะ auth เดิม)
     function logoutAdmin(){
-      try{ localStorage.removeItem('admin_token'); localStorage.removeItem('token'); }catch(e){}
-      location.href = '/login.html';
+      try{
+        // legacy tokens
+        localStorage.removeItem('admin_token');
+        localStorage.removeItem('token');
+        // current session keys
+        localStorage.removeItem('username');
+        localStorage.removeItem('role');
+      }catch(e){}
+
+      // clear cookie fallback (used by login.html restoreAuthFromCookie)
+      try{
+        const secure = (location.protocol === 'https:') ? '; Secure' : '';
+        document.cookie = `cwf_auth=; Max-Age=0; Path=/; SameSite=Lax${secure}`;
+      }catch(e){}
+
+      // force full reload to avoid auto-redirect loops
+      location.replace('/login.html');
     }
     document.getElementById('btnLogout').addEventListener('click', logoutAdmin);
   </script>

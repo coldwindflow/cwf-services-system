@@ -1235,6 +1235,107 @@ app.put("/jobs/:job_id/assign", async (req, res) => {
 });
 
 // =======================================
+// 🚀 ADMIN DISPATCH V2 (สำหรับ Review Queue)
+// - ไม่กระทบ endpoint เดิม (/jobs/:job_id/assign)
+// - เช็คชนคิวแบบทีม (ทุกคน) + buffer
+// - forced: ยืนยันงานให้ช่างทันที (เหมาะกับงานลูกค้าจอง scheduled)
+// - offer: ส่ง offer (ใช้กับ partner/urgent หรือกรณีพิเศษ)
+// =======================================
+app.post("/jobs/:job_id/dispatch_v2", requireAdminSoft, async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+  const technician_username = String(req.body?.technician_username || "").trim();
+  const mode = String(req.body?.mode || "forced").toLowerCase().trim();
+  const members = Array.isArray(req.body?.team_members) ? req.body.team_members : [];
+
+  if (!technician_username) return res.status(400).json({ error: "ต้องระบุ technician_username" });
+  if (!['forced','offer'].includes(mode)) return res.status(400).json({ error: "mode ต้องเป็น forced|offer" });
+
+  // team: ต้องมีช่างหลักเสมอ
+  const safeTeam = Array.from(new Set([technician_username, ...members].map(x=>String(x||"").trim()).filter(Boolean)));
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const jobR = await client.query(
+      `SELECT job_id, booking_mode, job_status, appointment_datetime, COALESCE(duration_min,60) AS duration_min
+       FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+      [job_id]
+    );
+    if (!jobR.rows.length) throw new Error('ไม่พบงาน');
+    const j = jobR.rows[0];
+
+    // collision check: ทุกคนในทีม
+    for (const u of safeTeam) {
+      const free = await isTechFree(u, j.appointment_datetime, j.duration_min, job_id);
+      if (!free) throw new Error(`เวลาชนกับงานอื่นของช่าง (${u}) (รวมเวลาเดินทาง ${TRAVEL_BUFFER_MIN} นาที)`);
+    }
+
+    // อัปเดตทีมในตารางกลางก่อน (เพื่อให้ Tracking/ช่างเห็นครบ)
+    await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
+    for (const u of safeTeam) {
+      await client.query(
+        `INSERT INTO public.job_team_members (job_id, username)
+         VALUES ($1,$2) ON CONFLICT (job_id, username) DO NOTHING`,
+        [job_id, u]
+      );
+    }
+
+    // set คนหลัก + dispatch_mode
+    await client.query(
+      `UPDATE public.jobs
+       SET technician_username=$1::text,
+           technician_team=$1::text,
+           dispatch_mode=$2::text
+       WHERE job_id=$3`,
+      [technician_username, mode === 'offer' ? 'offer' : 'forced', job_id]
+    );
+
+    let offer = null;
+    if (mode === 'offer') {
+      const ready = await isTechReady(technician_username);
+      if (!ready) throw new Error('ช่างคนนี้กดหยุดรับงานอยู่');
+
+      const offerR = await client.query(
+        `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
+         VALUES ($1,$2,'pending', NOW() + INTERVAL '10 minutes')
+         RETURNING offer_id, expires_at`,
+        [job_id, technician_username]
+      );
+      offer = offerR.rows[0] || null;
+    }
+
+    // ✅ status update: งานลูกค้าจอง (รอตรวจสอบ) เมื่อยิงแบบ forced => รอดำเนินการ
+    // - urgent/offer ให้คงสถานะเดิม (รอช่างยืนยัน)
+    const curSt = String(j.job_status || '').trim();
+    const bm = String(j.booking_mode || '').trim().toLowerCase();
+    if (mode === 'forced' && (curSt === 'รอตรวจสอบ' || curSt === 'pending_review')) {
+      await client.query(`UPDATE public.jobs SET job_status='รอดำเนินการ' WHERE job_id=$1`, [job_id]);
+    }
+    if (mode === 'offer' && bm === 'urgent' && (curSt === 'รอตรวจสอบ' || curSt === 'รอดำเนินการ')) {
+      await client.query(`UPDATE public.jobs SET job_status='รอช่างยืนยัน' WHERE job_id=$1`, [job_id]);
+    }
+
+    await client.query('COMMIT');
+
+    // notify (best effort)
+    if (mode === 'forced') notifyTechnician(technician_username, `📌 มีงานใหม่ (ยืนยันโดยแอดมิน) งาน #${job_id}`);
+    else notifyTechnician(technician_username, `📨 มีข้อเสนองานใหม่ งาน #${job_id} (กดรับภายใน 10 นาที)`);
+
+    console.log('[admin_dispatch_v2]', { job_id, mode, technician_username, team_count: safeTeam.length });
+    return res.json({ success: true, job_id, mode, offer, team_members: safeTeam });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('/jobs/:job_id/dispatch_v2 error:', e);
+    return res.status(400).json({ error: e.message || 'dispatch ไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+// =======================================
 // ✅ ADMIN V2 (ไม่ลบของเดิม / กัน regression)
 // - Flow เหมือน customer 100% แต่แอดมิน override ราคา/เวลา + เลือกกลุ่มช่างได้
 // - รองรับหลายรายการ (extras) + โปรฯ (เหมือนโหมดเดิม /jobs)
@@ -1601,6 +1702,69 @@ app.get("/admin/jobs_v2", requireAdminSoft, async (req, res) => {
   } catch (e) {
     console.error("/admin/jobs_v2 error:", e);
     return res.status(500).json({ error: "โหลดประวัติงานไม่สำเร็จ" });
+  }
+});
+
+// =======================================
+// 📥 ADMIN REVIEW QUEUE V2
+// - งานลูกค้าจองเข้ามา (รอตรวจสอบ) + งานที่ตีกลับ
+// - ใช้หน้า admin-review-v2.html
+// =======================================
+app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
+  try {
+    const status = String(req.query.status || 'รอตรวจสอบ').trim();
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit || 200)));
+    const q = String(req.query.q || '').trim();
+
+    // support: status=all (ดูทั้งหมดที่ควร review)
+    const allow = ['รอตรวจสอบ', 'pending_review', 'ตีกลับ', 'ไม่พบช่างรับงาน'];
+    const wantAll = status.toLowerCase() === 'all';
+
+    const params = [];
+    let p = 1;
+    const where = [];
+
+    // default: scheduled bookings ที่ยังไม่ยกเลิก
+    where.push(`canceled_at IS NULL`);
+    where.push(`COALESCE(booking_mode,'scheduled') IN ('scheduled','')`);
+
+    if (!wantAll) {
+      if (!allow.includes(status)) return res.status(400).json({ error: 'status ไม่ถูกต้อง' });
+      params.push(status);
+      where.push(`job_status = $${p++}`);
+    } else {
+      // include statuses ที่ต้อง review
+      where.push(`job_status = ANY($${p++}::text[])`);
+      params.push(allow);
+    }
+
+    if (q) {
+      params.push(`%${q}%`);
+      where.push(`(customer_name ILIKE $${p} OR address_text ILIKE $${p} OR booking_code ILIKE $${p} OR customer_phone ILIKE $${p})`);
+      p++;
+    }
+
+    const sqlWhere = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const r = await pool.query(
+      `
+      SELECT job_id, booking_code, customer_name, customer_phone, job_type,
+             appointment_datetime, job_status, duration_min, job_price,
+             address_text, maps_url, job_zone,
+             technician_username, dispatch_mode, booking_mode,
+             created_at
+      FROM public.jobs
+      ${sqlWhere}
+      ORDER BY created_at DESC
+      LIMIT ${limit}
+      `,
+      params
+    );
+
+    console.log('[admin_review_queue_v2]', { status, q: q ? true : false, count: (r.rows||[]).length });
+    return res.json({ success: true, rows: r.rows });
+  } catch (e) {
+    console.error('/admin/review_queue_v2 error:', e);
+    return res.status(500).json({ error: 'โหลดคิวงานรอตรวจสอบไม่สำเร็จ' });
   }
 });
 
@@ -2323,6 +2487,34 @@ app.put("/jobs/:job_id/team", async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // ✅ collision check (ทุกคน) + buffer
+    // - ปลอด regression: ถ้า job ไม่มีวันนัด จะไม่บล็อก
+    try {
+      const jr = await client.query(
+        `SELECT appointment_datetime, COALESCE(duration_min,60) AS duration_min
+         FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+        [job_id]
+      );
+      if (jr.rows.length) {
+        const appt = jr.rows[0].appointment_datetime;
+        const dur = Number(jr.rows[0].duration_min || 60);
+        if (appt) {
+          for (const u of safe) {
+            const free = await isTechFree(u, appt, dur, job_id);
+            if (!free) {
+              console.log('[team_collision]', { job_id, tech: u });
+              throw new Error(`เวลาชนกับงานอื่นของช่าง (${u}) (รวมเวลาเดินทาง ${TRAVEL_BUFFER_MIN} นาที)`);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // ถ้าเป็น error ที่เราตั้งใจ throw ให้บล็อก
+      if (String(e.message || '').includes('เวลาชนกับงานอื่น')) throw e;
+      console.warn('[team_collision] skip (non-blocking)', { job_id, err: e.message });
+    }
+
     await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
     for (const u of safe) {
       await client.query(
@@ -2455,6 +2647,32 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
 // =======================================
 // ✅ OFFERS
 // =======================================
+
+// ✅ Auto finalize urgent jobs when no one accepts
+// - Safe: ไม่กระทบงานปกติ / ไม่ล้มระบบ ถ้า query fail
+async function autoFinalizeUrgentJobs() {
+  try {
+    await pool.query(
+      `
+      UPDATE public.jobs j
+      SET job_status='ไม่พบช่างรับงาน'
+      WHERE COALESCE(j.booking_mode,'scheduled')='urgent'
+        AND j.technician_team IS NULL
+        AND j.canceled_at IS NULL
+        AND (j.job_status='รอช่างยืนยัน' OR j.job_status='pending_accept')
+        AND NOT EXISTS (
+          SELECT 1 FROM public.job_offers o
+          WHERE o.job_id=j.job_id
+            AND o.status='pending'
+            AND o.expires_at >= NOW()
+        )
+      `
+    );
+  } catch (e) {
+    console.warn('[autoFinalizeUrgentJobs] skip', e.message);
+  }
+}
+
 app.get("/offers/tech/:username", async (req, res) => {
   const { username } = req.params;
 
@@ -2467,6 +2685,9 @@ app.get("/offers/tech/:username", async (req, res) => {
       SET status='expired'
       WHERE status='pending' AND expires_at < NOW()
     `);
+
+    // ถ้า urgent ไม่มีใครรับแล้ว ให้ขึ้นสถานะลูกค้าแบบปลอดภัย
+    await autoFinalizeUrgentJobs();
 
     const r = await pool.query(
       `
@@ -2559,6 +2780,9 @@ app.post("/offers/:offer_id/accept", async (req, res) => {
     );
 
     await client.query("COMMIT");
+
+    // best effort: ถ้าเป็น urgent และไม่มี offer ค้างแล้ว ให้สรุปสถานะ
+    await autoFinalizeUrgentJobs();
     res.json({ success: true, job_id: offer.job_id });
   } catch (e) {
     await client.query("ROLLBACK");
@@ -2607,6 +2831,8 @@ app.post("/offers/:offer_id/decline", async (req, res) => {
       );
 
       await client.query("COMMIT");
+
+      await autoFinalizeUrgentJobs();
       return res.json({ success: true, status: "expired" });
     }
 
@@ -2627,6 +2853,7 @@ app.post("/offers/:offer_id/decline", async (req, res) => {
     );
 
     await client.query("COMMIT");
+    await autoFinalizeUrgentJobs();
     res.json({ success: true, status: "declined", job_id: offer.job_id });
   } catch (e) {
     await client.query("ROLLBACK");
@@ -4632,6 +4859,7 @@ function sendHtml(file) {
 app.get("/login", (req, res) => res.sendFile(sendHtml("login.html")));
 app.get("/admin", (req, res) => res.sendFile(sendHtml("admin.html")));
 app.get("/admin-add", (req, res) => res.sendFile(sendHtml("admin-add-v2.html")));
+app.get("/admin-review", (req, res) => res.sendFile(sendHtml("admin-review-v2.html")));
 app.get("/admin-queue", (req, res) => res.sendFile(sendHtml("admin-queue-v2.html")));
 app.get("/admin-history", (req, res) => res.sendFile(sendHtml("admin-history-v2.html")));
 app.get("/admin-tech", (req, res) => res.sendFile(sendHtml("admin-tech.html")));
@@ -4646,6 +4874,7 @@ app.get("/home", (req, res) => res.sendFile(sendHtml("index.html")));
 app.get("/login.html", (req, res) => res.sendFile(sendHtml("login.html")));
 app.get("/admin.html", (req, res) => res.sendFile(sendHtml("admin.html")));
 app.get("/admin-add-v2.html", (req, res) => res.sendFile(sendHtml("admin-add-v2.html")));
+app.get("/admin-review-v2.html", (req, res) => res.sendFile(sendHtml("admin-review-v2.html")));
 app.get("/admin-queue-v2.html", (req, res) => res.sendFile(sendHtml("admin-queue-v2.html")));
 app.get("/admin-history-v2.html", (req, res) => res.sendFile(sendHtml("admin-history-v2.html")));
 app.get("/admin-tech.html", (req, res) => res.sendFile(sendHtml("admin-tech.html")));

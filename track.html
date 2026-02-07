@@ -440,6 +440,9 @@ async function track(){
     // ❌ ตาม requirement: ห้ามแสดงเอกสารก่อนเสร็จ และแทนที่ใบเสร็จเดิมด้วย E-Slip ใหม่
     const receiptBtn = "";
 
+    const st = String(data.job_status || '').trim();
+    const urgentFail = st === 'ไม่พบช่างรับงาน';
+
     box.innerHTML = `
       <div class="job-card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
@@ -447,6 +450,11 @@ async function track(){
           ${statusBadge(data.job_status)}
         </div>
 
+        ${urgentFail ? `
+          <div class="alert" style="margin-top:10px;background:#fee2e2;border:1px solid rgba(239,68,68,0.35);color:#991b1b;">
+            ตอนนี้ยังไม่พบช่างรับงานด่วน ระบบกำลังให้แอดมินช่วยจัดคิวให้ใหม่ หรือคุณสามารถติดต่อเราได้ทันทีค่ะ
+          </div>
+        ` : ``}
         <p style="margin-top:10px;"><b>ชื่อลูกค้า:</b> ${data.customer_name || "-"}</p>
         <p><b>ประเภทงาน:</b> ${data.job_type || "-"}</p>
         <p><b>นัดหมาย:</b> ${dt}</p>
