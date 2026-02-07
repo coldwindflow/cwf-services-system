@@ -362,6 +362,14 @@ async function ensureSchema() {
 
     // 2.1) jobs: maps_url / job_zone / travel_started_at / started_at / finished_at / canceled_at / final_signature_*
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS maps_url TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS gps_latitude DOUBLE PRECISION`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS gps_longitude DOUBLE PRECISION`);
+    // customer booking review/dispatch v2 (admin review before dispatch)
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS approval_status TEXT DEFAULT 'approved'`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS dispatch_status TEXT DEFAULT 'dispatched'`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS requested_mode TEXT DEFAULT 'scheduled'`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS requested_tech_type TEXT DEFAULT 'company'`);
+
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS job_zone TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS travel_started_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ`);
@@ -489,7 +497,6 @@ await pool.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS ac_t
 await pool.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS btu_min INT`);
 await pool.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS btu_max INT`);
 await pool.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS is_customer_visible BOOLEAN DEFAULT FALSE`);
-    await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS is_customer_visible BOOLEAN DEFAULT FALSE`);
 
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.promotions (
@@ -501,6 +508,8 @@ await pool.query(`
     created_at TIMESTAMPTZ DEFAULT NOW()
   )
 `);
+
+await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS is_customer_visible BOOLEAN DEFAULT FALSE`);
 
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.job_items (
@@ -899,12 +908,10 @@ app.post("/catalog/items", async (req, res) => {
 // =======================================
 app.get("/promotions", async (req, res) => {
   try {
-    const customer = String(req.query.customer || "").trim() === "1";
     const r = await pool.query(`
       SELECT promo_id, promo_name, promo_type, promo_value
       FROM public.promotions
       WHERE is_active = TRUE
-        ${customer ? "AND is_customer_visible = TRUE" : ""}
       ORDER BY promo_name
     `);
     res.json(r.rows);
@@ -1336,6 +1343,27 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
     .map((x) => ({ item_id: Number(x.item_id), qty: Number(x.qty || 1) }))
     .filter((x) => Number.isFinite(x.item_id) && x.item_id > 0 && Number.isFinite(x.qty) && x.qty > 0);
 
+  
+  // GPS split (best-effort)
+  let gps_latitude_in = null;
+  let gps_longitude_in = null;
+  try {
+    const quick = extractLatLngFromText(maps_url || address_text);
+    if (quick && Number.isFinite(quick.lat) && Number.isFinite(quick.lng)) {
+      gps_latitude_in = Number(quick.lat);
+      gps_longitude_in = Number(quick.lng);
+    } else if (maps_url) {
+      const u = String(maps_url || '').trim();
+      if (u && /maps\.app\.goo\.gl|goo\.gl/i.test(u)) {
+        const r2 = await resolveMapsUrlToLatLng(u);
+        if (r2 && Number.isFinite(r2.lat) && Number.isFinite(r2.lng)) {
+          gps_latitude_in = Number(r2.lat);
+          gps_longitude_in = Number(r2.lng);
+        }
+      }
+    }
+  } catch (_) {}
+
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
@@ -1423,8 +1451,9 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
       (customer_name, customer_phone, job_type, appointment_datetime, job_price,
        address_text, technician_team, technician_username, job_status,
        booking_token, job_source, dispatch_mode, customer_note,
-       maps_url, job_zone, duration_min, booking_mode, admin_override_duration_min)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,'admin',$10,$11,$12,$13,$14,$15,$16)
+       maps_url, job_zone, gps_latitude, gps_longitude,
+       duration_min, booking_mode, admin_override_duration_min)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,'admin',$10,$11,$12,$13,$14,$15,$16,$17,$18)
       RETURNING job_id
       `,
       [
@@ -1441,6 +1470,8 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
         (customer_note || "").toString(),
         (String(maps_url || "").trim() || null),
         (String(job_zone || "").trim() || null),
+        gps_latitude_in,
+        gps_longitude_in,
         duration_min,
         (bm === "urgent" ? "urgent" : "scheduled"),
         Math.max(0, coerceNumber(override_duration_min, 0)),
@@ -1452,7 +1483,7 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
     await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
 
     // job_items
-    for (const it of lines) {
+    for (const it of computedItems) {
       await client.query(
         `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total)
          VALUES ($1,$2,$3,$4,$5,$6)`,
@@ -1590,6 +1621,436 @@ app.get("/admin/jobs_v2", requireAdminSoft, async (req, res) => {
   } catch (e) {
     console.error("/admin/jobs_v2 error:", e);
     return res.status(500).json({ error: "โหลดประวัติงานไม่สำเร็จ" });
+  }
+});
+
+
+
+// =======================================
+// ✅ Admin Review Queue (Customer bookings -> admin review -> dispatch)
+// - ลูกค้าจองคิวเข้ามา: approval_status='pending_review'
+// - แอดมินตรวจ/แก้/คำนวณใหม่ แล้วค่อยยิงงานให้ช่าง
+// =======================================
+app.get("/admin/customer_bookings_v2", requireAdminSoft, async (req, res) => {
+  try {
+    const status = (req.query.status || "pending_review").toString().trim().toLowerCase();
+    const date_from = (req.query.date_from || "").toString().trim();
+    const date_to = (req.query.date_to || "").toString().trim();
+    const q = (req.query.q || "").toString().trim();
+    const limit = Math.min(500, Math.max(1, Number(req.query.limit || 200)));
+
+    const where = ["job_source='customer'"];
+    const params = [];
+    let p = 1;
+
+    if (status) {
+      params.push(status);
+      where.push(`COALESCE(approval_status,'approved') = $${p++}`);
+    }
+    if (date_from) {
+      params.push(date_from + " 00:00:00");
+      where.push(`appointment_datetime >= $${p++}::timestamptz`);
+    }
+    if (date_to) {
+      params.push(date_to + " 23:59:59");
+      where.push(`appointment_datetime <= $${p++}::timestamptz`);
+    }
+    if (q) {
+      params.push(`%${q}%`);
+      where.push(`(customer_name ILIKE $${p} OR address_text ILIKE $${p} OR job_zone ILIKE $${p} OR booking_code ILIKE $${p})`);
+      p++;
+    }
+
+    const sqlWhere = where.length ? `WHERE ${where.join(" AND ")}` : "";
+    const r = await pool.query(
+      `
+      SELECT job_id, booking_code, customer_name, customer_phone, job_type,
+             appointment_datetime, job_status, job_price, address_text, maps_url, job_zone,
+             gps_latitude, gps_longitude,
+             duration_min, booking_mode, requested_mode, requested_tech_type,
+             approval_status, dispatch_status,
+             created_at
+      FROM public.jobs
+      ${sqlWhere}
+      ORDER BY appointment_datetime ASC, created_at ASC
+      LIMIT ${limit}
+      `,
+      params
+    );
+
+    console.log("[admin_customer_bookings_v2]", { status, date_from, date_to, q: q ? true : false, rows: r.rows.length });
+    return res.json({ success: true, rows: r.rows });
+  } catch (e) {
+    console.error("/admin/customer_bookings_v2 error:", e);
+    return res.status(500).json({ error: "โหลดงานลูกค้าจองไม่สำเร็จ" });
+  }
+});
+
+app.patch("/admin/jobs/:job_id/review_v2", requireAdminSoft, async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  if (!Number.isFinite(job_id) || job_id <= 0) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+  const {
+    customer_name,
+    customer_phone,
+    job_type,
+    appointment_datetime,
+    address_text,
+    customer_note,
+    maps_url,
+    job_zone,
+    booking_mode,
+    tech_type,
+    // v2 payload for duration/standard price
+    ac_type,
+    btu,
+    machine_count,
+    wash_variant,
+    repair_variant,
+    override_duration_min,
+    override_price,
+    items,
+    promotion_id,
+  } = req.body || {};
+
+  const bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
+  const payloadV2 = {
+    job_type: String(job_type || "").trim(),
+    ac_type: (ac_type || "").toString().trim(),
+    btu: coerceNumber(btu, 0),
+    machine_count: Math.max(1, coerceNumber(machine_count, 1)),
+    wash_variant: (wash_variant || "").toString().trim(),
+    repair_variant: (repair_variant || "").toString().trim(),
+    admin_override_duration_min: Math.max(0, coerceNumber(override_duration_min, 0)),
+  };
+
+  let duration_min = computeDurationMin(payloadV2, { source: "admin_review_v2" });
+  if (duration_min <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration_min)" });
+  if (coerceNumber(override_duration_min, 0) > 0) duration_min = Math.max(1, Math.floor(coerceNumber(override_duration_min, duration_min)));
+
+  const standard_price = computeStandardPrice(payloadV2);
+
+  // sanitize items
+  const safeItemsIn = Array.isArray(items) ? items : [];
+  const itemIdQty = safeItemsIn
+    .map((x) => ({ item_id: Number(x.item_id), qty: Number(x.qty || 1) }))
+    .filter((x) => Number.isFinite(x.item_id) && x.item_id > 0 && Number.isFinite(x.qty) && x.qty > 0);
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const jobR = await client.query(
+      `SELECT job_id, job_source, approval_status FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+      [job_id]
+    );
+    if (!jobR.rows.length) return res.status(404).json({ error: "ไม่พบงาน" });
+
+    // promo
+    let promo = null;
+    if (promotion_id) {
+      const pr = await client.query(
+        `SELECT promo_id, promo_name, promo_type, promo_value
+         FROM public.promotions
+         WHERE promo_id=$1 AND is_active=TRUE LIMIT 1`,
+        [promotion_id]
+      );
+      promo = pr.rows[0] || null;
+    }
+
+    // compute items lines
+    const computedItems = [];
+    if (coerceNumber(override_price, 0) > 0) {
+      computedItems.push({ item_id: null, item_name: `ค่าบริการ (override)`, qty: 1, unit_price: coerceNumber(override_price, 0), line_total: coerceNumber(override_price, 0) });
+    } else if (standard_price > 0) {
+      computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: Number(standard_price), line_total: Number(standard_price) });
+    }
+
+    if (itemIdQty.length) {
+      const ids = itemIdQty.map((x) => x.item_id);
+      const catR = await client.query(
+        `SELECT item_id, item_name, base_price
+         FROM public.catalog_items
+         WHERE is_active=TRUE AND item_id = ANY($1::bigint[])`,
+        [ids]
+      );
+      const map = new Map(catR.rows.map((r) => [Number(r.item_id), r]));
+      for (const x of itemIdQty) {
+        const it = map.get(Number(x.item_id));
+        if (!it) continue;
+        const qty = Number(x.qty);
+        const unit_price = Number(it.base_price || 0);
+        computedItems.push({
+          item_id: Number(it.item_id),
+          item_name: it.item_name,
+          qty,
+          unit_price,
+          line_total: qty * unit_price,
+        });
+      }
+    }
+
+    const pricing = calcPricing(computedItems, promo);
+
+    // GPS split best-effort
+    let gps_latitude_in = null;
+    let gps_longitude_in = null;
+    try {
+      const quick = extractLatLngFromText(maps_url || address_text);
+      if (quick && Number.isFinite(quick.lat) && Number.isFinite(quick.lng)) {
+        gps_latitude_in = Number(quick.lat);
+        gps_longitude_in = Number(quick.lng);
+      } else if (maps_url) {
+        const u = String(maps_url || '').trim();
+        if (u && /maps\.app\.goo\.gl|goo\.gl/i.test(u)) {
+          const r2 = await resolveMapsUrlToLatLng(u);
+          if (r2 && Number.isFinite(r2.lat) && Number.isFinite(r2.lng)) {
+            gps_latitude_in = Number(r2.lat);
+            gps_longitude_in = Number(r2.lng);
+          }
+        }
+      }
+    } catch (_) {}
+
+    // update job main fields
+    await client.query(
+      `
+      UPDATE public.jobs
+      SET customer_name = COALESCE($1, customer_name),
+          customer_phone = COALESCE($2, customer_phone),
+          job_type = COALESCE($3, job_type),
+          appointment_datetime = COALESCE($4::timestamptz, appointment_datetime),
+          address_text = COALESCE($5, address_text),
+          customer_note = COALESCE($6, customer_note),
+          maps_url = COALESCE($7, maps_url),
+          job_zone = COALESCE($8, job_zone),
+          gps_latitude = COALESCE($9, gps_latitude),
+          gps_longitude = COALESCE($10, gps_longitude),
+          duration_min = $11,
+          admin_override_duration_min = $12,
+          booking_mode = $13,
+          requested_tech_type = COALESCE($14, requested_tech_type),
+          job_price = $15
+      WHERE job_id=$16
+      `,
+      [
+        customer_name ? String(customer_name).trim() : null,
+        customer_phone != null ? String(customer_phone).trim() : null,
+        payloadV2.job_type ? payloadV2.job_type : null,
+        appointment_datetime ? normalizeAppointmentDatetime(appointment_datetime) : null,
+        address_text ? String(address_text).trim() : null,
+        customer_note != null ? String(customer_note) : null,
+        maps_url != null ? String(maps_url) : null,
+        job_zone != null ? String(job_zone) : null,
+        gps_latitude_in,
+        gps_longitude_in,
+        duration_min,
+        Math.max(0, coerceNumber(override_duration_min, 0)),
+        (bm === 'urgent' ? 'urgent' : 'scheduled'),
+        (tech_type && ['company','partner'].includes(String(tech_type).toLowerCase())) ? String(tech_type).toLowerCase() : null,
+        Number(pricing.total || 0),
+        job_id,
+      ]
+    );
+
+    // replace job_items
+    await client.query(`DELETE FROM public.job_items WHERE job_id=$1`, [job_id]);
+    for (const it of computedItems) {
+      await client.query(
+        `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [job_id, it.item_id || null, it.item_name, it.qty, it.unit_price, it.line_total]
+      );
+    }
+
+    // promotions
+    if (promo) {
+      await client.query(
+        `INSERT INTO public.job_promotions (job_id, promo_id, applied_discount)
+         VALUES ($1,$2,$3)
+         ON CONFLICT (job_id) DO UPDATE SET promo_id=EXCLUDED.promo_id, applied_discount=EXCLUDED.applied_discount`,
+        [job_id, promo.promo_id, Number(pricing.discount || 0)]
+      );
+    } else {
+      await client.query(`DELETE FROM public.job_promotions WHERE job_id=$1`, [job_id]);
+    }
+
+    await client.query("COMMIT");
+
+    console.log("[admin_review_v2]", { job_id, duration_min, total: pricing.total, promo_id: promo?.promo_id || null });
+    return res.json({
+      success: true,
+      job_id,
+      duration_min,
+      effective_block_min: effectiveBlockMin(duration_min),
+      travel_buffer_min: TRAVEL_BUFFER_MIN,
+      total: Number(pricing.total || 0),
+      discount: Number(pricing.discount || 0),
+      subtotal: Number(pricing.subtotal || 0),
+    });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("/admin/jobs/:job_id/review_v2 error:", e);
+    return res.status(500).json({ error: e.message || "review_v2 failed" });
+  } finally {
+    client.release();
+  }
+});
+
+app.post("/admin/jobs/:job_id/dispatch_v2", requireAdminSoft, async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  if (!Number.isFinite(job_id) || job_id <= 0) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+  const {
+    tech_type,           // company|partner
+    dispatch_mode,       // forced|offer
+    technician_username, // primary
+    team_usernames,      // array usernames (team members) for forced mode
+    offer_usernames,     // array usernames (candidates) for offer mode (partner)
+  } = req.body || {};
+
+  const ttype = (tech_type || "company").toString().trim().toLowerCase();
+  const mode = (dispatch_mode || "forced").toString().trim().toLowerCase();
+  if (!['company','partner'].includes(ttype)) return res.status(400).json({ error: "tech_type ต้องเป็น company|partner" });
+  if (!['forced','offer'].includes(mode)) return res.status(400).json({ error: "dispatch_mode ต้องเป็น forced|offer" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const jr = await client.query(
+      `SELECT job_id, appointment_datetime, duration_min, booking_mode, requested_mode, requested_tech_type,
+              approval_status, dispatch_status
+       FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+      [job_id]
+    );
+    if (!jr.rows.length) return res.status(404).json({ error: "ไม่พบงาน" });
+
+    const job = jr.rows[0];
+    const appt = job.appointment_datetime;
+    const duration_min = Math.max(1, Number(job.duration_min || 60));
+
+    // approve
+    await client.query(
+      `UPDATE public.jobs SET approval_status='approved' WHERE job_id=$1`,
+      [job_id]
+    );
+
+    if (mode === "offer") {
+      // offer to partner only
+      const candidatesIn = Array.isArray(offer_usernames) ? offer_usernames : [];
+      let candidates = candidatesIn.map((x) => String(x || "").trim()).filter(Boolean);
+
+      if (!candidates.length) {
+        // default: pick up to 30 partners (shuffle)
+        const partners = await client.query(
+          `
+          SELECT u.username
+          FROM public.users u
+          LEFT JOIN public.technician_profiles p ON p.username=u.username
+          WHERE u.role='technician'
+            AND COALESCE(p.accept_status,'ready') <> 'paused'
+            AND COALESCE(p.employment_type,'company') = 'partner'
+          ORDER BY u.username
+          `
+        );
+        candidates = (partners.rows || []).map((r) => r.username).sort(() => Math.random() - 0.5).slice(0, 30);
+      } else {
+        candidates = candidates.slice(0, 30);
+      }
+
+      // clear offers
+      await client.query(`DELETE FROM public.job_offers WHERE job_id=$1`, [job_id]);
+
+      const available = [];
+      for (const u of candidates) {
+        const ok = await isTechFree(u, appt, duration_min, null);
+        if (ok) available.push(u);
+      }
+
+      for (const u of available) {
+        await client.query(
+          `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
+           VALUES ($1,$2,'pending', NOW() + INTERVAL '10 minutes')`,
+          [job_id, u]
+        );
+      }
+
+      await client.query(
+        `UPDATE public.jobs
+         SET technician_username=NULL,
+             technician_team=NULL,
+             job_status='รอช่างยืนยัน',
+             dispatch_mode='offer',
+             booking_mode='urgent',
+             requested_mode='urgent',
+             requested_tech_type='partner',
+             dispatch_status='dispatched'
+         WHERE job_id=$1`,
+        [job_id]
+      );
+
+      await client.query("COMMIT");
+      console.log("[admin_dispatch_v2]", { job_id, mode: "offer", candidates: candidates.length, offered: available.length });
+      return res.json({ success: true, job_id, dispatch_mode: "offer", offered_count: available.length });
+    }
+
+    // forced assignment
+    let selectedTech = (technician_username || "").toString().trim();
+    if (!selectedTech) {
+      const tr = await client.query(
+        `
+        SELECT u.username
+        FROM public.users u
+        LEFT JOIN public.technician_profiles p ON p.username=u.username
+        WHERE u.role='technician'
+          AND COALESCE(p.accept_status,'ready') <> 'paused'
+          AND COALESCE(p.employment_type,'company') = $1
+        ORDER BY u.username
+        `,
+        [ttype]
+      );
+      const list = (tr.rows || []).map((r) => r.username).slice(0, 30);
+      selectedTech = await pickFirstAvailableTech(list, appt, duration_min);
+    } else {
+      const ok = await isTechFree(selectedTech, appt, duration_min, null);
+      if (!ok) return res.status(409).json({ error: "ช่างคนนี้คิวชน (รวม buffer)" });
+    }
+
+    if (!selectedTech) return res.status(409).json({ error: "ไม่พบช่างว่างในช่วงเวลานี้" });
+
+    // update job assignment
+    await client.query(
+      `UPDATE public.jobs
+       SET technician_username=$1,
+           technician_team=$1,
+           job_status='รอดำเนินการ',
+           dispatch_mode='forced',
+           booking_mode='scheduled',
+           dispatch_status='dispatched'
+       WHERE job_id=$2`,
+      [selectedTech, job_id]
+    );
+
+    // team members (optional)
+    const teamIn = Array.isArray(team_usernames) ? team_usernames : [];
+    const team = Array.from(new Set([selectedTech, ...teamIn.map((x) => String(x || "").trim()).filter(Boolean)])).slice(0, 30);
+
+    await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
+    for (const u of team) {
+      await client.query(`INSERT INTO public.job_team_members (job_id, username) VALUES ($1,$2) ON CONFLICT DO NOTHING`, [job_id, u]);
+    }
+
+    await client.query("COMMIT");
+
+    console.log("[admin_dispatch_v2]", { job_id, mode: "forced", tech_type: ttype, technician_username: selectedTech, team_count: team.length });
+    return res.json({ success: true, job_id, dispatch_mode: "forced", technician_username: selectedTech, team_usernames: team });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("/admin/jobs/:job_id/dispatch_v2 error:", e);
+    return res.status(500).json({ error: e.message || "dispatch_v2 failed" });
+  } finally {
+    client.release();
   }
 });
 
@@ -2126,7 +2587,7 @@ app.post("/admin/pricing-requests/:id/approve", async (req, res) => {
       const line_total = Number((qty * unit_price).toFixed(2));
       await client.query(
         `INSERT INTO public.job_items (job_id, item_name, qty, unit_price, line_total)
-         VALUES ($1,$2,$3,$4,$5)`,
+         VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7,'09:00'),COALESCE($8,'18:00'))`,
         [reqRow.job_id, name, qty, unit_price, line_total]
       );
     }
@@ -3012,13 +3473,14 @@ app.put("/technicians/:username/phone", async (req, res) => {
     const username = req.params.username;
     const phoneRaw = (req.body?.phone ?? "").toString().trim();
 
-    if (employment_type && !['company','partner'].includes(employment_type)) {
-      return res.status(400).json({ error: "employment_type ต้องเป็น company หรือ partner" });
-    }
-
     if (phoneRaw && !/^[0-9+\-()\s]{6,20}$/.test(phoneRaw)) {
       return res.status(400).json({ error: "รูปแบบเบอร์โทรไม่ถูกต้อง" });
     }
+
+    // employment_type/work hours (optional)
+    const emp = employment_type && ['company','partner'].includes(employment_type) ? employment_type : null;
+    const ws = work_start && /^\d{2}:\d{2}$/.test(work_start) ? work_start : null;
+    const we = work_end && /^\d{2}:\d{2}$/.test(work_end) ? work_end : null;
 
     await pool.query(
       `INSERT INTO public.technician_profiles (username, phone)
@@ -3215,12 +3677,9 @@ app.get("/admin/technicians", async (req, res) => {
   try {
     const q = await pool.query(
       `SELECT u.username,
-              p.full_name, p.technician_code, p.position, p.rank_level, p.rank_key, p.photo_path, p.phone,
+              p.full_name, p.technician_code, p.position, p.employment_type, p.work_start, p.work_end, p.rank_level, p.rank_key, p.photo_path, p.phone,
               p.rating, p.grade, p.done_count,
-              COALESCE(p.accept_status,'ready') AS accept_status, p.accept_status_updated_at,
-              COALESCE(p.employment_type,'company') AS employment_type,
-              COALESCE(p.work_start,'09:00') AS work_start,
-              COALESCE(p.work_end,'18:00') AS work_end
+              COALESCE(p.accept_status,'ready') AS accept_status, p.accept_status_updated_at
        FROM public.users u
        LEFT JOIN public.technician_profiles p ON p.username=u.username
        WHERE u.role='technician'
@@ -3248,10 +3707,6 @@ app.put("/admin/technicians/:username", async (req, res) => {
 
     if (!technician_code) return res.status(400).json({ error: "ต้องใส่รหัสช่าง" });
 
-    if (employment_type && !['company','partner'].includes(employment_type)) {
-      return res.status(400).json({ error: "employment_type ต้องเป็น company หรือ partner" });
-    }
-
     if (phoneRaw && !/^[0-9+\-()\s]{6,20}$/.test(phoneRaw)) {
       return res.status(400).json({ error: "รูปแบบเบอร์โทรไม่ถูกต้อง" });
     }
@@ -3259,17 +3714,17 @@ app.put("/admin/technicians/:username", async (req, res) => {
     // profile
     await pool.query(
       `INSERT INTO public.technician_profiles (username, technician_code, full_name, position, phone, employment_type, work_start, work_end)
-       VALUES ($1,$2,$3,$4,$5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''))
+       VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (username) DO UPDATE SET
          technician_code = EXCLUDED.technician_code,
          full_name = COALESCE(EXCLUDED.full_name, public.technician_profiles.full_name),
          position = COALESCE(EXCLUDED.position, public.technician_profiles.position),
          phone = COALESCE(EXCLUDED.phone, public.technician_profiles.phone),
-         employment_type = COALESCE(NULLIF(EXCLUDED.employment_type,''), public.technician_profiles.employment_type),
-         work_start = COALESCE(NULLIF(EXCLUDED.work_start,''), public.technician_profiles.work_start),
-         work_end = COALESCE(NULLIF(EXCLUDED.work_end,''), public.technician_profiles.work_end),
+         employment_type = COALESCE(EXCLUDED.employment_type, public.technician_profiles.employment_type),
+         work_start = COALESCE(EXCLUDED.work_start, public.technician_profiles.work_start),
+         work_end = COALESCE(EXCLUDED.work_end, public.technician_profiles.work_end),
          updated_at = CURRENT_TIMESTAMP`,
-      [username, technician_code, full_name || null, position, phoneRaw || null, employment_type || '', work_start || '', work_end || '']
+      [username, technician_code, full_name || null, position, phoneRaw || null, emp, ws, we]
     );
 
     // password (optional)
@@ -3988,7 +4443,7 @@ app.get("/public/availability", async (req, res) => {
 
 app.post("/public/book", async (req, res) => {
   // ✅ ลูกค้าจองคิว (ไม่บังคับกรอก lat/lng) + เลือกรายการบริการ/สินค้าได้
-  // - โปรโมชั่น: รองรับฝั่งลูกค้าได้ แต่ใช้ได้เฉพาะโปรที่ is_active=TRUE และ is_customer_visible=TRUE
+  // - งานลูกค้าจองจะเข้าคิว "รอตรวจสอบ" ให้แอดมินตรวจ/แก้ก่อนยิงงาน
   const {
     customer_name,
     customer_phone,
@@ -3999,7 +4454,6 @@ app.post("/public/book", async (req, res) => {
     maps_url,
     job_zone,
     items, // [{item_id, qty}] (extras)
-    promotion_id,
     booking_mode,
     ac_type,
     btu,
@@ -4021,6 +4475,8 @@ app.post("/public/book", async (req, res) => {
   const token = genToken(12);
   // DURATION_PRICE_V2_PUBLIC_BOOK
   const bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
+  const requested_mode = (bm === 'urgent' ? 'urgent' : 'scheduled');
+  const requested_tech_type = (bm === 'urgent' ? 'partner' : 'company');
   const payloadV2 = {
     job_type: String(job_type).trim(),
     ac_type: (ac_type || "").toString().trim(),
@@ -4039,24 +4495,12 @@ app.post("/public/book", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // promo (customer-visible only)
-    let promo = null;
-    if (promotion_id) {
-      const pr = await client.query(
-        `SELECT promo_id, promo_name, promo_type, promo_value
-         FROM public.promotions
-         WHERE promo_id=$1 AND is_active=TRUE AND is_customer_visible=TRUE
-         LIMIT 1`,
-        [promotion_id]
-      );
-      promo = pr.rows[0] || null;
-    }
-
-    // 1) ดึงราคา base_price จาก DB (standard + extras)
-    const lines = [];
-    const standard = Number(standard_price || 0);
-    if (standard > 0) {
-      lines.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'} )`, qty: 1, unit_price: standard, line_total: standard });
+    // 1) ดึงราคา base_price จาก DB
+    let computedItems = [];
+    let total = Number(standard_price || 0);
+    // STANDARD_SERVICE_LINE_V2
+    if (total > 0) {
+      computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: total, line_total: total });
     }
 
     if (itemIdQty.length) {
@@ -4069,18 +4513,24 @@ app.post("/public/book", async (req, res) => {
       );
 
       const map = new Map(catR.rows.map((r) => [Number(r.item_id), r]));
-      for (const x of itemIdQty) {
-        const it = map.get(Number(x.item_id));
-        if (!it) continue;
-        const qty = Number(x.qty);
-        const unit_price = Number(it.base_price || 0);
-        const line_total = qty * unit_price;
-        lines.push({ item_id: Number(it.item_id), item_name: it.item_name, qty, unit_price, line_total });
-      }
+      computedItems = itemIdQty
+        .map((x) => {
+          const it = map.get(Number(x.item_id));
+          if (!it) return null;
+          const qty = Number(x.qty);
+          const unit_price = Number(it.base_price || 0);
+          const line_total = qty * unit_price;
+          total += line_total;
+          return {
+            item_id: Number(it.item_id),
+            item_name: it.item_name,
+            qty,
+            unit_price,
+            line_total,
+          };
+        })
+        .filter(Boolean);
     }
-
-    const pricing = calcPricing(lines, promo);
-    const total = pricing.total;
 
     // 2) สร้างงาน
     const r = await client.query(
@@ -4089,10 +4539,12 @@ app.post("/public/book", async (req, res) => {
       (customer_name, customer_phone, job_type, appointment_datetime, job_price,
        address_text, technician_team, technician_username, job_status,
        booking_token, job_source, dispatch_mode, customer_note,
-       maps_url, job_zone, duration_min, booking_mode)
-      VALUES ($1,$2,$3,$4,$5,$6,NULL,NULL,$11,$7,'customer','offer',$8,$9,$10,$12,$13)
+       maps_url, job_zone, gps_latitude, gps_longitude,
+       duration_min, booking_mode, approval_status, dispatch_status, requested_mode, requested_tech_type)
+      VALUES ($1,$2,$3,$4,$5,$6,NULL,NULL,$11,$7,'customer','offer',$8,$9,$10,$12,$13,$14,$15,$16,$17,$18,$19)
       RETURNING job_id, booking_token
       `,
+
       [
         String(customer_name).trim(),
         (customer_phone || "").toString().trim(),
@@ -4104,10 +4556,17 @@ app.post("/public/book", async (req, res) => {
         (customer_note || "").toString(),
         (maps_url || "").toString(),
         (job_zone || "").toString(),
-        bm === 'urgent' ? 'รอช่างยืนยัน' : 'รอดำเนินการ',
+        'รอดำเนินการ',
+        gps_latitude_in,
+        gps_longitude_in,
         duration_min_v2,
-        (bm === 'urgent' ? 'urgent' : 'scheduled'),
+        requested_mode,
+        'pending_review',
+        'not_dispatched',
+        requested_mode,
+        requested_tech_type,
       ]
+
     );
 
     const job_id = r.rows[0].job_id;
@@ -4116,63 +4575,11 @@ app.post("/public/book", async (req, res) => {
 
     await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
 
-    // CREATE_URGENT_OFFERS_V2
-    if (bm === "urgent") {
-      const partners = await client.query(
-        `
-        SELECT u.username
-        FROM public.users u
-        LEFT JOIN public.technician_profiles p ON p.username=u.username
-        WHERE u.role='technician'
-          AND COALESCE(p.accept_status,'ready') <> 'paused'
-          AND COALESCE(p.employment_type,'company') = 'partner'
-        ORDER BY u.username
-        `
-      );
 
-      const apptIso = appointment_datetime;
-      const availablePartners = [];
-      for (const row of partners.rows || []) {
-        const ok = await isTechFree(row.username, apptIso, duration_min_v2, null);
-        if (ok) availablePartners.push(row.username);
-      }
+    await client.query("COMMIT");
 
-      for (const u of availablePartners) {
-        await client.query(
-          `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
-           VALUES ($1,$2,'pending', NOW() + INTERVAL '10 minutes')`,
-          [job_id, u]
-        );
-      }
-
-      console.log("[public_book] urgent_offers", { job_id, booking_code, count: availablePartners.length });
-    }
-
-
-    // 3) บันทึกรายการ (ถ้ามี)
-    for (const it of lines) {
-      await client.query(
-        `
-        INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total)
-        VALUES ($1,$2,$3,$4,$5,$6)
-        `,
-        [job_id, it.item_id, it.item_name, it.qty, it.unit_price, it.line_total]
-      );
-    }
-
-    
-
-    if (promo && pricing.discount > 0) {
-      await client.query(
-        `INSERT INTO public.job_promotions (job_id, promo_id, applied_discount)
-         VALUES ($1,$2,$3)`,
-        [job_id, promo.promo_id, pricing.discount]
-      );
-    }
-await client.query("COMMIT");
-
-    console.log('[public_book]', { job_id, booking_code, booking_mode: bm, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2) });
-    res.json({ success: true, job_id, booking_code, token: r.rows[0].booking_token, booking_mode: bm, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2), travel_buffer_min: TRAVEL_BUFFER_MIN });
+    console.log('[public_book]', { job_id, booking_code, requested_mode, approval_status: 'pending_review', dispatch_status:'not_dispatched', duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2) });
+    res.json({ success: true, job_id, booking_code, token: r.rows[0].booking_token, booking_mode: requested_mode, approval_status:'pending_review', dispatch_status:'not_dispatched', duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2), travel_buffer_min: TRAVEL_BUFFER_MIN });
   } catch (e) {
     await client.query("ROLLBACK");
     console.error(e);
@@ -4181,7 +4588,6 @@ await client.query("COMMIT");
     client.release();
   }
 });
-
 app.get("/public/track", async (req, res) => {
   const q = (req.query.q || req.query.token || req.query.booking_code || "").toString().trim();
   if (!q) return res.status(400).json({ error: "ต้องส่ง q (token หรือ booking_code)" });
@@ -4193,6 +4599,7 @@ app.get("/public/track", async (req, res) => {
         j.job_id, j.booking_code, j.booking_token,
         j.customer_name, j.customer_phone, j.job_type,
         j.appointment_datetime, j.job_status,
+        j.approval_status,
         j.address_text, j.gps_latitude, j.gps_longitude, j.maps_url, j.job_zone,
         j.technician_username, j.technician_team,
         j.travel_started_at, j.checkin_at, j.started_at, j.finished_at, j.canceled_at, j.cancel_reason,
@@ -4217,7 +4624,7 @@ app.get("/public/track", async (req, res) => {
 
     // ✅ กันลูกค้าสับสน: สถานะ "ตีกลับ" เป็นสถานะภายใน (ให้ลูกค้าเห็นเป็นรอดำเนินการ)
     const rawStatus = String(row.job_status || "").trim();
-    const publicStatus = rawStatus === "ตีกลับ" ? "รอดำเนินการ" : rawStatus;
+    const publicStatus = (String(row.approval_status||"").trim()==="pending_review") ? "รอตรวจสอบ" : (rawStatus === "ตีกลับ" ? "รอดำเนินการ" : rawStatus);
 
     let photos = [];
     if (isDone) {

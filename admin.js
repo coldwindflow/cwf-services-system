@@ -574,7 +574,7 @@ window.saveTeamMembersFromModal = saveTeamMembersFromModal;
 // =======================================
 // 👷 LOAD TECHNICIANS
 // =======================================
-fetch(`${API_BASE}/users/technicians`)
+fetch(`${API_BASE}/admin/technicians`)
   .then(res => {
     if (!res.ok) throw new Error("โหลดรายชื่อช่างไม่สำเร็จ");
     return res.json();
@@ -585,9 +585,20 @@ fetch(`${API_BASE}/users/technicians`)
     technicians.forEach(u => {
       const opt = document.createElement("option");
       opt.value = u.username;
-      opt.textContent = u.username;
+      opt.textContent = (u.full_name ? `${u.full_name} (${u.username})` : u.username);
       select.appendChild(opt);
     });
+
+    // ✅ populate Admin v2 dropdowns
+    const v2Sel = document.getElementById("v2_technician_username");
+    const v2Team = document.getElementById("v2_team_usernames");
+    if (v2Sel) {
+      v2Sel.innerHTML = '<option value="">-- auto --</option>' + technicians.map(u=>`<option value="${u.username}">${u.full_name ? `${u.full_name} (${u.username})` : u.username}</option>`).join('');
+    }
+    if (v2Team) {
+      v2Team.innerHTML = technicians.map(u=>`<option value="${u.username}">${u.full_name ? `${u.full_name} (${u.username})` : u.username}</option>`).join('');
+    }
+
   })
   .catch(err => {
     console.error(err);
@@ -1057,13 +1068,12 @@ async function loadCustomerBookings() {
   box.textContent = "กำลังโหลด...";
 
   try {
-    const res = await fetch(`${API_BASE}/jobs`);
-    const all = await res.json().catch(() => []);
+    const res = await fetch(`${API_BASE}/admin/customer_bookings_v2?status=pending_review&limit=200`);
+    const payload = await res.json().catch(() => ({}));
+    const all = payload.rows || [];
     if (!res.ok) throw new Error(all?.error || "โหลดงานไม่สำเร็จ");
 
-    const jobs = (Array.isArray(all) ? all : [])
-      .filter(j => {
-        const st = String(j.job_status || "").trim();
+    const jobs = Array.isArray(all) ? all : [];
         const isReturned = st === "ตีกลับ";
         const isCustomer = j.job_source === "customer";
         const isOfferBackToAdmin = (String(j.dispatch_mode || "").trim() === "offer") && !j.technician_team && !j.technician_username;
@@ -1076,7 +1086,10 @@ async function loadCustomerBookings() {
     }
 
     // สร้าง option ช่าง (ใช้รายการที่โหลดไว้ ถ้าไม่มีให้ fallback)
-    const techOpts = (technicians || []).map(t => `<option value="${t.username}">${t.username}</option>`).join("");
+    const techOpts = (technicians || []).map(t => {
+      const label = (t.full_name ? `${t.full_name} (${t.username})` : t.username);
+      return `<option value="${t.username}">${label}</option>`;
+    }).join("");
 
     box.innerHTML = jobs.map(j => {
       const b = j.booking_code || ("CWF" + String(j.job_id).padStart(7, "0"));
@@ -1098,7 +1111,7 @@ async function loadCustomerBookings() {
 
           <div class="grid2" style="margin-top:10px;">
             <select id="cb_tech_${j.job_id}">
-              <option value="">-- เลือกช่าง --</option>
+              <option value="">-- เลือกช่าง (ช่างหลัก) --</option>
               ${techOpts}
             </select>
 
@@ -1107,6 +1120,11 @@ async function loadCustomerBookings() {
               <option value="offer">📨 Offer (ช่างกดรับ)</option>
             </select>
           </div>
+
+          <label class="muted" style="margin-top:10px;display:block;">👥 ทีมช่างเพิ่มเติม (เลือกได้หลายคน)</label>
+          <select id="cb_team_${j.job_id}" multiple style="width:100%;min-height:92px;">
+            ${techOpts}
+          </select>
 
           <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
             <button type="button" style="width:auto;" onclick="assignCustomerBooking(${j.job_id})">✅ มอบหมายงาน</button>
@@ -1129,26 +1147,35 @@ async function assignCustomerBooking(jobId) {
   const tech = document.getElementById(`cb_tech_${jobId}`)?.value || "";
   const mode = document.getElementById(`cb_mode_${jobId}`)?.value || "forced";
   const msg = document.getElementById(`cb_msg_${jobId}`);
+  const teamSel = document.getElementById(`cb_team_${jobId}`);
+  const team = teamSel ? Array.from(teamSel.selectedOptions || []).map(o=>o.value).filter(Boolean) : [];
 
-  if (!tech) {
-    alert("เลือกช่างก่อน");
+  if (mode === "forced" && !tech) {
+    alert("เลือกช่างหลักก่อน");
     return;
   }
 
   try {
-    if (msg) msg.textContent = "กำลังมอบหมาย...";
+    if (msg) msg.textContent = "กำลังยิงงาน...";
 
-    const res = await fetch(`${API_BASE}/jobs/${jobId}/assign`, {
-      method: "PUT",
+    const payload = {
+      tech_type: (mode === "offer" ? "partner" : "company"),
+      dispatch_mode: mode,
+      technician_username: tech,
+      team_usernames: mode === "forced" ? team : [],
+      offer_usernames: [],
+    };
+
+    const res = await fetch(`${API_BASE}/admin/jobs/${jobId}/dispatch_v2`, {
+      method: "POST",
       headers: {"Content-Type":"application/json"},
-      body: JSON.stringify({ technician_username: tech, mode }),
+      body: JSON.stringify(payload),
     });
 
     const data = await res.json().catch(()=> ({}));
-    if (!res.ok) throw new Error(data.error || "มอบหมายไม่สำเร็จ");
+    if (!res.ok) throw new Error(data.error || "ยิงงานไม่สำเร็จ");
 
-    if (msg) msg.textContent = "✅ มอบหมายแล้ว";
-    // รีเฟรชรายการ (งานจะหายไปจากลิสต์)
+    if (msg) msg.textContent = "✅ ยิงงานแล้ว";
     loadCustomerBookings();
   } catch (e) {
     console.error(e);
@@ -1157,7 +1184,7 @@ async function assignCustomerBooking(jobId) {
   }
 }
 
-// โหลดทันทีเมื่อเปิดหน้า
+ // โหลดทันทีเมื่อเปิดหน้า
 
 // =======================================
 // 🛠️ ADMIN: แก้ไขใบงาน / ยกเลิกงาน
@@ -1596,7 +1623,11 @@ function adminV2PickSlot(idx){
   const sel = document.getElementById('v2_technician_username');
   const ids = Array.isArray(s.available_tech_ids) ? s.available_tech_ids : [];
   if (sel) {
-    sel.innerHTML = '<option value="">-- auto --</option>' + ids.map(u=>`<option value="${u}">${u}</option>`).join('');
+    sel.innerHTML = '<option value="">-- auto --</option>' + ids.map(u=>{
+      const t = (technicians||[]).find(x=>x.username===u);
+      const label = t && t.full_name ? `${t.full_name} (${u})` : u;
+      return `<option value="${u}">${label}</option>`;
+    }).join('');
   }
 }
 
@@ -1621,6 +1652,11 @@ async function adminV2Book(){
     tech_type: (document.getElementById('v2_tech_type')?.value || 'company').trim(),
     technician_username: (document.getElementById('v2_technician_username')?.value || '').trim(),
     dispatch_mode: (document.getElementById('v2_dispatch_mode')?.value || 'forced').trim(),
+    team_usernames: (function(){
+      const sel = document.getElementById('v2_team_usernames');
+      if (!sel) return [];
+      return Array.from(sel.selectedOptions||[]).map(o=>o.value).filter(Boolean);
+    })(),
     booking_mode: (document.getElementById('v2_booking_mode')?.value || 'scheduled').trim(),
     override_duration_min: Number(document.getElementById('v2_override_duration')?.value || 0) || 0,
     override_price: (document.getElementById('v2_override_price')?.value === '' ? undefined : Number(document.getElementById('v2_override_price')?.value || 0)),
