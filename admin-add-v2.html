@@ -55,7 +55,7 @@
         </div>
         <div>
           <label>ลิงก์แผนที่</label>
-          <input id="maps_url" placeholder="https://maps...">
+          <input id="maps_url" placeholder="https://maps..." style="overflow-wrap:anywhere;word-break:break-word;">
         </div>
       </div>
       <label style="margin-top:10px">หมายเหตุ</label>
@@ -183,7 +183,8 @@
       <div class="grid2" style="margin-top:10px">
         <div>
           <label>เลือกช่าง (ไม่เลือก = ระบบเลือกช่างว่าง)</label>
-          <input id="technician_username" placeholder="เช่น tech01">
+          <select id="technician_username_select"></select>
+          <input id="technician_username" type="hidden">
         </div>
         <div>
           <label>dispatch_mode</label>
@@ -195,8 +196,10 @@
       </div>
       
         <div>
-          <label>ช่างร่วม (หลายคน) — ใส่ username คั่นด้วย ,</label>
-          <input id="team_members_csv" placeholder="เช่น tech02,tech03">
+          <label>ช่างร่วม (หลายคน)</label>
+          <select id="team_members_select" multiple size="5" style="height:auto;min-height:120px"></select>
+          <div class="muted2 mini" style="margin-top:6px">* เลือกได้หลายคน (กดค้างเพื่อเลือกหลายรายการ)</div>
+          <input id="team_members_csv" type="hidden" />
         </div>
 
 

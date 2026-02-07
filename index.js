@@ -1084,6 +1084,21 @@ for (const u of tmList) {
 
     await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
 
+    // ✅ Team members (primary + assistants) - backward compatible
+    try {
+      const tmAll = [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
+      await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
+      for (const u of tmAll) {
+        await client.query(
+          `INSERT INTO public.job_team_members (job_id, username, is_primary)
+           VALUES ($1,$2,$3)`,
+          [job_id, u, u === selectedTech]
+        );
+      }
+    } catch (e) {
+      console.warn("[admin_book_v2] save team members failed", e);
+    }
+
     // job_items
     for (const it of safeItems) {
       const item_name = (it.item_name || "").trim();
@@ -1551,6 +1566,17 @@ console.log("[latlng_parse]", { ok: !!parsedAdminLL });
       return res.status(409).json({ error: "ไม่พบช่างว่างในช่วงเวลานี้" });
     }
 
+    // ✅ Team members collision check (including buffer) - backward compatible
+    const tmIn = Array.isArray(team_members) ? team_members : [];
+    const tmList = [...new Set(tmIn.map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
+    for (const u of tmList) {
+      if (u === selectedTech) continue;
+      const ok = await isTechFree(u, appointment_datetime, duration_min, null);
+      if (!ok) {
+        return res.status(409).json({ error: `ช่างร่วมคิวชน (รวม buffer): ${u}` });
+      }
+    }
+
     const jobStatus = bm === "urgent" ? "รอช่างยืนยัน" : "รอดำเนินการ";
     const jobInsert = await client.query(
       `
@@ -1585,6 +1611,21 @@ console.log("[latlng_parse]", { ok: !!parsedAdminLL });
     const job_id = jobInsert.rows[0].job_id;
     const booking_code = await generateUniqueBookingCode(client);
     await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
+
+    // ✅ Team members (primary + assistants) - backward compatible
+    try {
+      const tmAll = [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
+      await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
+      for (const u of tmAll) {
+        await client.query(
+          `INSERT INTO public.job_team_members (job_id, username, is_primary)
+           VALUES ($1,$2,$3)`,
+          [job_id, u, u === selectedTech]
+        );
+      }
+    } catch (e) {
+      console.warn("[admin_book_v2] save team members failed", e);
+    }
 
     // job_items
     for (const it of computedItems) {

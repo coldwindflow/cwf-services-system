@@ -21,6 +21,76 @@ let state = {
 };
 
 
+// --- PATCH: technician dropdown + team multi-select (backward compatible) ---
+state.techs = []; // [{username, employment_type, work_start, work_end}]
+function getSelectedMulti(id){
+  const sel = document.getElementById(id);
+  if(!sel) return [];
+  return Array.from(sel.options).filter(o=>o.selected).map(o=>o.value).filter(Boolean);
+}
+
+async function loadTechsForType(){
+  try{
+    const data = await apiFetch("/admin/technicians");
+    const rows = Array.isArray(data) ? data : (data.rows||data.technicians||[]);
+    const ttype = (el("tech_type")?.value || "company").toLowerCase();
+    state.techs = rows.filter(r => ((r.employment_type||"company").toLowerCase()===ttype)).map(r=>({
+      username: r.username,
+      employment_type: (r.employment_type||"company"),
+      work_start: r.work_start||"09:00",
+      work_end: r.work_end||"18:00",
+    }));
+    renderTechSelect(); 
+    renderTeamSelect();
+  }catch(e){
+    console.warn("[admin-add-v2] loadTechsForType failed", e);
+    state.techs = [];
+    renderTechSelect();
+    renderTeamSelect();
+  }
+}
+
+function renderTechSelect(allowedIds=null){
+  const sel = document.getElementById("technician_username_select");
+  if(!sel) return;
+  const current = sel.value || "";
+  sel.innerHTML = "";
+  const opt0 = document.createElement("option");
+  opt0.value = "";
+  opt0.textContent = "ไม่เลือก (ระบบเลือกช่างว่าง)";
+  sel.appendChild(opt0);
+  const list = (allowedIds && allowedIds.length) ? state.techs.filter(t=>allowedIds.includes(t.username)) : state.techs;
+  for(const t of list){
+    const o = document.createElement("option");
+    o.value = t.username;
+    o.textContent = t.username;
+    sel.appendChild(o);
+  }
+  // restore if possible
+  sel.value = list.some(t=>t.username===current) ? current : "";
+  // sync hidden input for backend compatibility
+  if(el("technician_username")) el("technician_username").value = sel.value || "";
+}
+
+function renderTeamSelect(){
+  const sel = document.getElementById("team_members_select");
+  if(!sel) return;
+  const chosen = new Set(getSelectedMulti("team_members_select"));
+  sel.innerHTML = "";
+  for(const t of state.techs){
+    const o = document.createElement("option");
+    o.value = t.username;
+    o.textContent = t.username;
+    if(chosen.has(t.username)) o.selected = true;
+    sel.appendChild(o);
+  }
+  // sync hidden csv
+  const csv = getSelectedMulti("team_members_select").join(",");
+  const csvEl = el("team_members_csv");
+  if(csvEl) csvEl.value = csv;
+}
+
+
 function parseLatLngClient(input){
   const s = String(input||'').trim();
   if(!s) return null;
@@ -119,7 +189,8 @@ async function refreshPreview() {
     el("pv_duration").textContent = "-";
     el("pv_block").textContent = "-";
     el("pv_price").textContent = "-";
-    el("pv_total").textContent = "-";
+    // pv_total removed (use total_preview)
+
     return;
   }
   try {
@@ -143,7 +214,8 @@ async function refreshPreview() {
     el("pv_duration").textContent = "-";
     el("pv_block").textContent = "-";
     el("pv_price").textContent = "-";
-    el("pv_total").textContent = "-";
+    // pv_total removed (use total_preview)
+
     showToast(e.message || "คำนวณไม่สำเร็จ", "error");
   }
 }
@@ -166,9 +238,10 @@ function updateTotalPreview() {
     if (discount > subtotal) discount = subtotal;
   }
   const total = Math.max(0, subtotal - discount);
-  el("pv_total").textContent = fmtMoney(total);
-  el("pv_discount").textContent = fmtMoney(discount);
-  el("pv_subtotal").textContent = fmtMoney(subtotal);
+  // pv_total removed (use total_preview)
+
+  const pd = el("pv_discount"); if(pd) pd.textContent = fmtMoney(discount);
+  const ps = el("pv_subtotal"); if(ps) ps.textContent = fmtMoney(subtotal);
   const tp = el("total_preview");
   if (tp) tp.value = fmtMoney(total);
 }
@@ -177,7 +250,8 @@ async function loadCatalog() {
   try {
     const items = await apiFetch("/catalog/items");
     state.catalog = Array.isArray(items) ? items : [];
-    const sel = el("extra_item_id");
+    const sel = el("extras_select");
+    if(!sel) return;
     sel.innerHTML = "";
     const opt0 = document.createElement("option");
     opt0.value = "";
@@ -255,8 +329,11 @@ function renderExtras() {
 }
 
 function addExtra() {
-  const itemId = Number(el("extra_item_id").value || 0);
-  const qty = Math.max(1, Number(el("extra_qty").value || 1));
+  const selExtra = el("extras_select");
+  const qtyEl = el("extras_qty");
+  if(!selExtra || !qtyEl) return;
+  const itemId = Number(selExtra.value || 0);
+  const qty = Math.max(1, Number(qtyEl.value || 1));
   if (!itemId) return;
   const found = state.catalog.find((x) => Number(x.item_id) === itemId);
   if (!found) return;
@@ -266,8 +343,8 @@ function addExtra() {
   } else {
     state.selected_items.push({ item_id: itemId, qty, item_name: found.item_name, base_price: Number(found.base_price || 0) });
   }
-  el("extra_item_id").value = "";
-  el("extra_qty").value = "1";
+  selExtra.value = "";
+  qtyEl.value = "1";
   renderExtras();
 }
 
@@ -277,7 +354,7 @@ function canLoadAvailability() {
 
 async function loadAvailability() {
   if (!canLoadAvailability()) {
-    el("slots").innerHTML = `<div class="muted2">กรอกข้อมูลบริการให้ครบ + เลือกวันที่ก่อน</div>`;
+    el("slots_box").innerHTML = `<div class="muted2">กรอกข้อมูลบริการให้ครบ + เลือกวันที่ก่อน</div>`;
     return;
   }
   const date = el("appt_date").value;
@@ -288,12 +365,13 @@ async function loadAvailability() {
     state.available_slots = Array.isArray(r.slots) ? r.slots : [];
     renderSlots();
   } catch (e) {
-    el("slots").innerHTML = `<div class="muted2">โหลดคิวว่างไม่สำเร็จ: ${e.message}</div>`;
+    el("slots_box").innerHTML = `<div class="muted2">โหลดคิวว่างไม่สำเร็จ: ${e.message}</div>`;
   }
 }
 
 function renderSlots() {
-  const box = el("slots");
+  const box = el("slots_box");
+  if(!box) return;
   box.innerHTML = "";
   const slots = state.available_slots.filter((s) => s && s.available);
   if (!slots.length) {
@@ -311,6 +389,15 @@ function renderSlots() {
     if (state.selected_slot_iso === iso) btn.classList.add("selected");
     btn.addEventListener("click", () => {
       state.selected_slot_iso = iso;
+      // set appointment input
+      const ap = el("appointment_datetime");
+      if(ap) ap.value = toLocalInputDatetime(new Date(iso));
+      // filter tech dropdown by available tech ids (if any)
+      if (Array.isArray(s.available_tech_ids) && s.available_tech_ids.length) {
+        renderTechSelect(s.available_tech_ids);
+      } else {
+        renderTechSelect(null);
+      }
       document.querySelectorAll(".slot-btn").forEach((b) => b.classList.remove("selected"));
       btn.classList.add("selected");
     });
@@ -347,7 +434,7 @@ async function submitBooking() {
     job_zone: (el("job_zone").value || "").trim(),
     booking_mode: (el("booking_mode").value || "scheduled").trim(),
     tech_type: (el("tech_type").value || "company").trim(),
-    technician_username: (el("technician_username").value || "").trim(),
+    technician_username: (el("technician_username_select")?.value || (el("technician_username")?.value||"")).trim(),
     dispatch_mode: (el("dispatch_mode").value || "forced").trim(),
     items: state.selected_items.map((x) => ({ item_id: x.item_id, qty: x.qty })),
     promotion_id: el("promotion_id").value || null,
@@ -355,7 +442,7 @@ async function submitBooking() {
     override_duration_min: el("override_duration_min").value || 0,
     gps_latitude: (el("gps_latitude")?.value || "").trim() || null,
     gps_longitude: (el("gps_longitude")?.value || "").trim() || null,
-    team_members: (el("team_members_csv")?.value || "").split(',').map(s=>s.trim()).filter(Boolean),
+    team_members: getSelectedMulti("team_members_select").filter(u=>u),
   });
 
   try {
@@ -400,10 +487,10 @@ function wireEvents() {
   el("override_price").addEventListener("input", () => updateTotalPreview());
   el("override_duration_min").addEventListener("input", refreshPreviewDebounced);
   el("promotion_id").addEventListener("change", () => updateTotalPreview());
-  el("extra_add").addEventListener("click", addExtra);
+  const btnEx = el("btnAddExtra"); if(btnEx) btnEx.addEventListener("click", addExtra);
   el("appt_date").addEventListener("change", loadAvailability);
-  el("tech_type").addEventListener("change", loadAvailability);
-  el("btnLoadSlots").addEventListener("click", loadAvailability);
+  el("tech_type").addEventListener("change", async ()=>{ await loadTechsForType(); await loadAvailability(); });
+  const btnSlots = el("btnLoadSlots"); if(btnSlots) btnSlots.addEventListener("click", loadAvailability);
 
 
 // auto parse lat/lng from maps url (fail-open)
@@ -423,6 +510,10 @@ if (copyBtn) copyBtn.addEventListener("click", async () => {
   try { await navigator.clipboard.writeText(txt); showToast("คัดลอกแล้ว", "success"); }
   catch { el("summary_text").select(); document.execCommand("copy"); showToast("คัดลอกแล้ว", "success"); }
 });
+  const selTech = el("technician_username_select");
+  if(selTech) selTech.addEventListener("change", ()=>{ if(el("technician_username")) el("technician_username").value = selTech.value||""; });
+  const teamSel = el("team_members_select");
+  if(teamSel) teamSel.addEventListener("change", renderTeamSelect);
   el("btnSubmit").addEventListener("click", submitBooking);
 }
 
@@ -436,7 +527,7 @@ async function init() {
   if (r0) r0.addEventListener("change", refreshPreviewDebounced);
 
   el("appt_date").value = todayYMD();
-  await Promise.all([loadCatalog(), loadPromotions()]);
+  await Promise.all([loadCatalog(), loadPromotions(), loadTechsForType()]);
   renderExtras();
   wireEvents();
   refreshPreviewDebounced();

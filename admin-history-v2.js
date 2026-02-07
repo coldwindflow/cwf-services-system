@@ -59,7 +59,9 @@ async function loadJobs(){
 function init(){
   const today = todayYMD();
   el("date_to").value = today;
-  el("date_from").value = today;
+  const d0 = new Date(); d0.setDate(d0.getDate()-30);
+  const from = `${d0.getFullYear()}-${pad2(d0.getMonth()+1)}-${pad2(d0.getDate())}`;
+  el("date_from").value = from;
   el("btnLoad").addEventListener("click", loadJobs);
   // auto load
   loadJobs();
