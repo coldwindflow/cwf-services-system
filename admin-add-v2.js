@@ -160,6 +160,20 @@ function syncPrimaryFromSelect(){
   renderTeamPicker();
 }
 
+// booking_mode (scheduled/urgent) is the single user-facing control.
+// dispatch_mode is derived automatically for backward compatibility:
+// - scheduled => forced (lock)
+// - urgent => offer
+function syncDispatchFromBookingModeUI(){
+  const bmUI = el('booking_mode_ui');
+  const bm = el('booking_mode');
+  const dm = el('dispatch_mode');
+  if(!bmUI || !bm || !dm) return;
+  const v = (bmUI.value || 'scheduled').toString();
+  bm.value = v;
+  dm.value = (v === 'urgent') ? 'offer' : 'forced';
+}
+
 function setPrimary(username){
   const u = String(username||"").trim();
   if(!u) return;
@@ -468,9 +482,13 @@ function renderServiceLines(){
   if(jt !== 'ล้าง'){
     box.style.display = 'none';
     state.service_lines = [];
+    // hide add button when not in wash
+    btnAdd.style.display = 'none';
     return;
   }
   box.style.display = 'block';
+  // show add button next to machine count
+  btnAdd.style.display = 'inline-flex';
 
   const lines = Array.isArray(state.service_lines) ? state.service_lines : [];
   const rows = lines.map((ln, idx)=>{
@@ -482,7 +500,7 @@ function renderServiceLines(){
       </div>
       <button type="button" class="svc-del" data-idx="${idx}">ลบ</button>
     </div>`;
-  }).join("") || `<div class="muted2">ยังไม่มีรายการบริการเพิ่มเติม • ใช้ค่าด้านบนเป็นรายการหลักได้ หรือกด “เพิ่มรายการบริการ”</div>`;
+  }).join("") || `<div class="muted2">ยังไม่มีรายการบริการเพิ่มเติม • ใช้ค่าด้านบนเป็นรายการหลักได้ หรือกด “เพิ่มรายการ”</div>`;
 
   list.innerHTML = rows;
 
@@ -499,6 +517,18 @@ function renderServiceLines(){
     });
   });
 
+}
+
+// booking_mode_ui (single visible control) drives both booking_mode and dispatch_mode
+function syncBookingAndDispatchModes(){
+  const ui = el('booking_mode_ui');
+  const hiddenBooking = el('booking_mode');
+  const dm = el('dispatch_mode');
+  if(!ui || !hiddenBooking || !dm) return;
+  const v = (ui.value || 'scheduled').toString();
+  hiddenBooking.value = v;
+  // derived dispatch_mode: scheduled -> forced (lock), urgent -> offer
+  dm.value = (v === 'urgent') ? 'offer' : 'forced';
 }
 
 function wireMultiService(){
@@ -1468,6 +1498,18 @@ function wireEvents() {
   const btnEx = el("btnAddExtra"); if(btnEx) btnEx.addEventListener("click", addExtra);
   el("appt_date").addEventListener("change", loadAvailability);
   el("tech_type").addEventListener("change", async ()=>{ await loadTechsForType(); await loadAvailability(); });
+  // booking_mode_ui is the only user-facing mode control.
+  const bmUI = el('booking_mode_ui');
+  if(bmUI){
+    bmUI.addEventListener('change', async ()=>{
+      syncDispatchFromBookingModeUI();
+      // refresh availability if already loaded
+      if(state.slots_loaded) await loadAvailability();
+    });
+  }
+  // ensure hidden booking_mode/dispatch_mode are in sync on first load
+  syncDispatchFromBookingModeUI();
+
   const dmEl = el('dispatch_mode');
   if(dmEl) dmEl.addEventListener('change', async ()=>{ updateAssignUIVisibility(); if(state.slots_loaded) await loadAvailability(); });
   const btnSlots = el("btnLoadSlots"); if(btnSlots) btnSlots.addEventListener("click", loadAvailability);
@@ -1476,7 +1518,12 @@ function wireEvents() {
     // ensure UI is up to date then scroll into view
     try { renderWashAssign(); } catch(e){}
     const card = el('wash_assign_card');
-    if(card){ card.style.display = (card.style.display==='none' ? 'block' : card.style.display); card.scrollIntoView({ behavior:'smooth', block:'start' }); }
+    if(card){
+      card.style.display = (card.style.display==='none' ? 'block' : card.style.display);
+      card.scrollIntoView({ behavior:'smooth', block:'start' });
+      // offset for fixed bottom nav/header spacing
+      setTimeout(()=>{ try { window.scrollBy(0, -12); } catch(e){} }, 350);
+    }
   });
   const togTogether = el('wash_all_together');
   if(togTogether) togTogether.addEventListener('change', ()=>{ try { renderWashAssign(); } catch(e){} });

@@ -19,7 +19,8 @@
     body.cwf-lux input:focus, body.cwf-lux select:focus, body.cwf-lux textarea:focus{outline:2px solid rgba(255,204,0,0.45);border-color:rgba(255,204,0,0.85)}
     body.cwf-lux .secondary{border-color:rgba(255,204,0,0.65)}
 
-    .app{padding-bottom:86px}
+    /* Extra bottom padding so fixed bottom-nav never covers last actions */
+    .app{padding-bottom:140px}
     .section-card{margin-top:12px}
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
     @media (max-width:420px){.grid2{grid-template-columns:1fr}}
@@ -116,6 +117,18 @@
     body.cwf-lux .nav-btn{background:#ffcc00;color:#0b1b3a;border:1px solid rgba(11,75,179,0.18)}
     body.cwf-lux .nav-btn.active{background:#0b4bb3;color:#ffffff;border-color:rgba(255,204,0,0.75)}
 
+    /* Stepper +/- buttons: Yellow with black text (match theme) */
+    body.cwf-lux .btn-round{background:#ffcc00;color:#0b1b3a;border:1px solid rgba(11,75,179,0.22);font-weight:900}
+    body.cwf-lux .btn-round:active{background:#0b4bb3;color:#ffffff;border-color:rgba(255,204,0,0.75)}
+
+    /* Add-line button next to machine count */
+    .mc-row{display:flex;gap:8px;align-items:center}
+    .mc-row .stepper{flex:1}
+    #btnAddServiceLineInline{min-height:44px;border-radius:14px;padding:10px 12px;white-space:nowrap}
+
+    /* Make assign section usable with fixed bottom nav */
+    #wash_assign_card{padding-bottom:110px}
+
   </style>
 </head>
 <body class="theme-2 cwf-lux">
@@ -196,18 +209,24 @@
       <div class="grid2" style="margin-top:10px">
         <div>
           <label>จำนวนเครื่อง</label>
-          <div class="stepper" aria-label="machine count">
-            <button id="mc_minus" class="btn-round" type="button" title="ลด">−</button>
-            <input id="machine_count" class="stepper-input" type="number" min="1" max="20" step="1" value="1" inputmode="numeric">
-            <button id="mc_plus" class="btn-round" type="button" title="เพิ่ม">+</button>
+          <div class="mc-row">
+            <div class="stepper" aria-label="machine count">
+              <button id="mc_minus" class="btn-round" type="button" title="ลด">−</button>
+              <input id="machine_count" class="stepper-input" type="number" min="1" max="20" step="1" value="1" inputmode="numeric">
+              <button id="mc_plus" class="btn-round" type="button" title="เพิ่ม">+</button>
+            </div>
+            <!-- Multi-service: add service line (moved next to machine count) -->
+            <button id="btnAddServiceLine" class="secondary" type="button" style="display:none" aria-label="เพิ่มรายการ">เพิ่มรายการ</button>
           </div>
         </div>
         <div>
-          <label>โหมดจอง</label>
-          <select id="booking_mode">
+          <!-- booking_mode moved to Section 4 (below tech group) to avoid duplicate/confusing dispatch controls -->
+          <label style="opacity:.6">โหมดจอง</label>
+          <select id="booking_mode" style="display:none">
             <option value="scheduled">ปกติ (นัดแน่นอน)</option>
             <option value="urgent">ลองยิงงานด่วน (รอช่างยืนยัน)</option>
           </select>
+          <div class="muted2 mini">เลือกโหมดจองในหัวข้อ 4) เลือกคิวช่าง</div>
         </div>
       </div>
 <!-- MULTI-SERVICE (ล้างหลายประเภทในใบงานเดียว) -->
@@ -217,7 +236,6 @@
       <b>หลายประเภทแอร์ในใบงานเดียว (เฉพาะงานล้าง)</b>
       <div class="muted2 mini">เพิ่ม “รายการบริการหลัก” ได้หลายบรรทัด เช่น ผนัง 1 + สี่ทิศทาง 1 + แขวน 1</div>
     </div>
-    <button id="btnAddServiceLine" class="secondary" type="button">+ เพิ่มรายการบริการ</button>
   </div>
 
   <div class="muted2 mini" style="margin-top:10px">
@@ -301,6 +319,13 @@
             <option value="partner">ช่างพาร์ทเนอร์</option>
           </select>
 
+          <label style="margin-top:10px">โหมดจอง</label>
+          <select id="booking_mode_ui">
+            <option value="scheduled">ปกติ (นัดแน่นอน)</option>
+            <option value="urgent">ลองยิงงานด่วน (รอช่างยืนยัน)</option>
+          </select>
+          <div class="muted2 mini" style="margin-top:6px">* ใช้งานจริง: ปกติ = ล็อคช่าง • ด่วน = ยิงข้อเสนอ (ต้องรอช่างยืนยัน)</div>
+
           <label style="margin-top:10px">วันที่</label>
           <input id="appt_date" type="date">
           <button class="secondary" type="button" id="btnLoadSlots" style="margin-top:8px;width:100%">โหลดคิวว่าง</button>
@@ -321,13 +346,14 @@
           </div>
         </div>
         <div>
-          <label>dispatch_mode</label>
-          <select id="dispatch_mode">
+          <!-- dispatch_mode kept hidden for backward compatibility; derived from booking_mode_ui -->
+          <select id="dispatch_mode" style="display:none">
             <option value="forced">forced (ล็อคช่าง)</option>
             <option value="offer">offer (ยิงข้อเสนอ)</option>
           </select>
-          <div class="muted2 mini" id="dispatch_help" style="margin-top:6px">
-            * โหมด “ล็อคช่าง” เพิ่มงานได้แม้ช่างยังไม่เปิดรับงาน (เฉพาะวันทำงาน) • โหมด “ข้อเสนอ” จะยิงไปเฉพาะช่างที่เปิดรับงาน
+          <div class="pill" style="margin-top:10px">
+            <b style="color:#0b1b3a">หมายเหตุ:</b>
+            <span class="muted2 mini">โหมดจองกำหนดการส่งงานอัตโนมัติ • ไม่ต้องเลือก dispatch ซ้ำ</span>
           </div>
 
           <div id="assign_summary" class="pill" style="margin-top:12px;display:flex;justify-content:space-between;gap:10px">
