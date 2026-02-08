@@ -1477,16 +1477,25 @@ async function resolveJobIdAny(db, raw) {
   }
 }
 
-async function logJobUpdate(job_id, { actor_username, actor_role, action, message, payload } = {}) {
+async function logJobUpdate(job_id, { actor_username, actor_role, action, message, payload } = {}, db = null) {
+  // db optional: pass a transaction client to avoid deadlocks/locks when called inside BEGIN/COMMIT
+  const q = (db && typeof db.query === "function") ? db.query.bind(db) : pool.query.bind(pool);
   try {
-    await pool.query(
+    await q(
       `INSERT INTO public.job_updates_v2 (job_id, actor_username, actor_role, action, message, payload_json)
        VALUES ($1,$2,$3,$4,$5,$6)`,
-      [Number(job_id), actor_username || null, actor_role || null, String(action||'').slice(0,64) || 'unknown', message || null, payload ? JSON.stringify(payload) : null]
+      [
+        Number(job_id),
+        actor_username || null,
+        actor_role || null,
+        (String(action || "").slice(0, 64) || "unknown"),
+        message || null,
+        payload ? JSON.stringify(payload) : null,
+      ]
     );
   } catch (e) {
     // fail-open (do not break production flow)
-    console.warn('logJobUpdate failed', e.message);
+    try { console.warn('logJobUpdate failed', e.message); } catch {}
   }
 }
 
@@ -1549,6 +1558,8 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
     machine_count: Math.max(1, coerceNumber(machine_count, 1)),
     wash_variant: (wash_variant || "").toString().trim(),
     repair_variant: (repair_variant || "").toString().trim(),
+    // ✅ รองรับหลายรายการบริการในใบงานเดียว (admin-add-v2 ส่งมาเป็น services[])
+    services: Array.isArray(body.services) ? body.services : (Array.isArray(body.service_lines) ? body.service_lines : null),
     admin_override_duration_min: Math.max(0, coerceNumber(override_duration_min, 0)),
   };
 
@@ -3813,7 +3824,7 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
          WHERE job_id=$2`,
         [sigPath, realId, wKind, wMonths, wEndIso]
       );
-      await logJobUpdate(realId, { actor_username: null, actor_role: 'tech', action: 'finalize_done', message: 'เสร็จแล้ว', payload: { warranty_kind: wKind || null, warranty_months: wMonths || null, warranty_end_at: wEndIso || null } });
+      await logJobUpdate(realId, { actor_username: null, actor_role: 'tech', action: 'finalize_done', message: 'เสร็จแล้ว', payload: { warranty_kind: wKind || null, warranty_months: wMonths || null, warranty_end_at: wEndIso || null } }, client);
     } else {
       await client.query(
         `UPDATE public.jobs
@@ -3826,7 +3837,7 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
          WHERE job_id=$3`,
         [note, sigPath, realId]
       );
-      await logJobUpdate(realId, { actor_username: null, actor_role: 'tech', action: 'finalize_cancel', message: note || 'ยกเลิก' });
+      await logJobUpdate(realId, { actor_username: null, actor_role: 'tech', action: 'finalize_cancel', message: note || 'ยกเลิก' }, client);
     }
 
     await client.query("COMMIT");
