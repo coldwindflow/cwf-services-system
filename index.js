@@ -1143,30 +1143,34 @@ app.post("/jobs", async (req, res) => {
     const booking_code = await generateUniqueBookingCode(client);
 
 
-// ✅ Team members (primary + assistants) - backward compatible
-const tmIn = Array.isArray(team_members) ? team_members : [];
-const tmList = [...new Set([selectedTech, ...tmIn].map(x => (x||'').toString().trim()).filter(Boolean))].slice(0, 10);
-await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
-for (const u of tmList) {
-  await client.query(
-    `INSERT INTO public.job_team_members (job_id, username, is_primary)
-     VALUES ($1,$2,$3)`,
-    [job_id, u]
-  );
-}
-
     await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
 
     // ✅ Team members (primary + assistants) - backward compatible
+    // NOTE: some production DBs may not have is_primary column yet.
     try {
-      const tmAll = [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
+      const tmIn = Array.isArray(team_members) ? team_members : [];
+      const tmAll = [...new Set([selectedTech, ...tmIn].map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
       await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
       for (const u of tmAll) {
-        await client.query(
-          `INSERT INTO public.job_team_members (job_id, username, is_primary)
-           VALUES ($1,$2,$3)`,
-          [job_id, u, u === selectedTech]
-        );
+        try {
+          await client.query(
+            `INSERT INTO public.job_team_members (job_id, username, is_primary)
+             VALUES ($1,$2,$3)`,
+            [job_id, u, u === selectedTech]
+          );
+        } catch (insErr) {
+          // fallback: column doesn't exist
+          if (insErr && String(insErr.code) === '42703') {
+            await client.query(
+              `INSERT INTO public.job_team_members (job_id, username)
+               VALUES ($1,$2)
+               ON CONFLICT (job_id, username) DO NOTHING`,
+              [job_id, u]
+            );
+          } else {
+            throw insErr;
+          }
+        }
       }
     } catch (e) {
       console.warn("[admin_book_v2] save team members failed", e);
@@ -1758,15 +1762,29 @@ if (coerceNumber(override_price, 0) > 0) {
     await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
 
     // ✅ Team members (primary + assistants) - backward compatible
+    // NOTE: some production DBs may not have is_primary column yet.
     try {
       const tmAll = [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
       await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
       for (const u of tmAll) {
-        await client.query(
-          `INSERT INTO public.job_team_members (job_id, username, is_primary)
-           VALUES ($1,$2,$3)`,
-          [job_id, u, u === selectedTech]
-        );
+        try {
+          await client.query(
+            `INSERT INTO public.job_team_members (job_id, username, is_primary)
+             VALUES ($1,$2,$3)`,
+            [job_id, u, u === selectedTech]
+          );
+        } catch (insErr) {
+          if (insErr && String(insErr.code) === '42703') {
+            await client.query(
+              `INSERT INTO public.job_team_members (job_id, username)
+               VALUES ($1,$2)
+               ON CONFLICT (job_id, username) DO NOTHING`,
+              [job_id, u]
+            );
+          } else {
+            throw insErr;
+          }
+        }
       }
     } catch (e) {
       console.warn("[admin_book_v2] save team members failed", e);
@@ -5263,6 +5281,13 @@ app.get("/public/availability_v2", async (req, res) => {
   // forced=1 (Admin lock): allow showing technicians even if accept_status='paused'
   const forced = String(req.query.forced || '').trim() === '1';
   const duration_min = Math.max(15, Number(req.query.duration_min || 60));
+  // crew_size: if a job can be shared by multiple technicians simultaneously,
+  // callers (Admin v2) can request availability based on per-tech workload time.
+  // This is backward compatible: if omitted or invalid, crew_size=1.
+  const crew_size_raw = Number(req.query.crew_size || req.query.crewSize || 1);
+  const crew_size = Math.max(1, Math.min(10, Number.isFinite(crew_size_raw) ? Math.floor(crew_size_raw) : 1));
+  // include_full=1: debug/admin usage to return even unavailable time steps.
+  const include_full = String(req.query.include_full || '').trim() === '1';
   const slot_step_min = 30;
 
   try {
@@ -5324,7 +5349,8 @@ app.get("/public/availability_v2", async (req, res) => {
 
     const startMin = globalStart;
     const endMin = globalEnd;
-    const default_effective_block_min = Math.max(15, Number(duration_min || 60)) + TRAVEL_BUFFER_MIN;
+    const effective_duration_min = Math.max(15, Math.round(duration_min / crew_size));
+    const default_effective_block_min = effective_duration_min + TRAVEL_BUFFER_MIN;
 
 
     const slots = [];
@@ -5334,7 +5360,8 @@ app.get("/public/availability_v2", async (req, res) => {
       // - Allow "end-of-day" job to omit trailing travel buffer (very common IRL)
       // - If caller mistakenly sends duration that already includes buffer,
       //   we heuristically allow fitting by dropping one travel buffer once.
-      let base = Math.max(15, Number(duration_min || 60));
+      // base = per-tech time slice when crew_size>1
+      let base = effective_duration_min;
       let block = base + TRAVEL_BUFFER_MIN;
 
       // if it doesn't fit with tail buffer but fits without, allow without tail
@@ -5373,16 +5400,22 @@ app.get("/public/availability_v2", async (req, res) => {
         if (free) available_tech_ids.push(tech.username);
       }
 
-      // record slot once per time step
-      slots.push({
+      const slotObj = {
         start: startHHMM,
         end: endHHMM,
         available: available_tech_ids.length > 0,
         available_tech_ids,
-      });
+        // capacity info for UI ("x ตามจำนวนช่าง")
+        capacity: tech_count,
+        available_count: available_tech_ids.length,
+        crew_size,
+      };
+      // By default, only return slots that have at least 1 technician available.
+      // This prevents the UI from showing many "เต็ม" slots before choosing a technician.
+      if (slotObj.available || include_full) slots.push(slotObj);
     }
 
-    console.log("[availability_v2]", { date, tech_type, forced, duration_min, tech_count, slots: slots.length });
+    console.log("[availability_v2]", { date, tech_type, forced, duration_min, crew_size, effective_duration_min, tech_count, slots: slots.length });
 
     res.json({
       date,
@@ -5391,10 +5424,11 @@ app.get("/public/availability_v2", async (req, res) => {
       work_start,
       work_end,
       travel_buffer_min: TRAVEL_BUFFER_MIN,
-      duration_min,
+      duration_min: effective_duration_min,
       effective_block_min: default_effective_block_min,
       slot_step_min,
       tech_count,
+      crew_size,
       slots,
     });
   } catch (e) {

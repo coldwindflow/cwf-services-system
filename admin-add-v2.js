@@ -888,6 +888,17 @@ async function loadAvailability() {
       tech_type,
       duration_min: String(duration_min),
     });
+
+    // If admin intends to dispatch as a team (multiple technicians in parallel),
+    // request availability based on per-tech workload time slice.
+    // Backward compatible: server defaults crew_size=1.
+    try {
+      const am = (el('assign_mode')?.value || 'auto').toString();
+      const techs = getConstraintTechs();
+      if (am === 'team' && Array.isArray(techs) && techs.length >= 2) {
+        qs.set('crew_size', String(Math.min(10, techs.length)));
+      }
+    } catch(e){}
     if (forced) qs.set('forced','1');
     const r = await apiFetch(`/public/availability_v2?${qs.toString()}`);
     state.available_slots = Array.isArray(r.slots) ? r.slots : [];
