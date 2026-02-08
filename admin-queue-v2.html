@@ -7,24 +7,45 @@
   <link rel="stylesheet" href="style.css">
   <style>
     .app{padding-bottom:86px}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     @media (max-width:420px){.grid2{grid-template-columns:1fr}}
-    .calendar-wrap{margin-top:12px;border:1px solid rgba(15,23,42,0.10);border-radius:18px;overflow:hidden;background:#fff;box-shadow:var(--shadow)}
-    .cal-head{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px;border-bottom:1px solid rgba(15,23,42,0.08);background:#f8fafc}
-    .cal-body{display:flex;overflow:auto;max-height:70vh}
-    .time-col{min-width:72px;border-right:1px solid rgba(15,23,42,0.08);background:#fff}
-    .time-cell{height:36px;display:flex;align-items:flex-start;justify-content:center;font-size:12px;color:rgba(15,23,42,0.65);padding-top:4px;border-bottom:1px dashed rgba(15,23,42,0.06)}
-    .tech-col{min-width:220px;border-right:1px solid rgba(15,23,42,0.08)}
-    .tech-title{position:sticky;top:0;background:#fff;z-index:3;padding:10px;border-bottom:1px solid rgba(15,23,42,0.08)}
-    .tech-title b{display:block}
-    .tech-title .muted{font-size:12px}
-    .tech-lane{position:relative}
-    .lane-cell{height:36px;border-bottom:1px dashed rgba(15,23,42,0.06)}
-    .job-block{position:absolute;left:8px;right:8px;border-radius:14px;padding:8px;border:1px solid rgba(15,23,42,0.15);background:#e2e8f0;box-shadow:0 8px 18px rgba(0,0,0,0.08);overflow:hidden}
-    .job-block b{display:block;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .job-block .mini{font-size:12px;color:rgba(15,23,42,0.75);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .job-block.status-urgent{background:#fde68a}
-    .job-block.status-done{background:#bbf7d0}
+
+    .month-wrap{margin-top:12px;border:1px solid rgba(15,23,42,0.10);border-radius:18px;overflow:hidden;background:#fff;box-shadow:var(--shadow)}
+    .month-head{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px;border-bottom:1px solid rgba(15,23,42,0.08);background:#f8fafc;flex-wrap:wrap}
+    .month-head .left{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .month-title{font-weight:900}
+    .month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;padding:12px}
+    .dow{font-size:12px;color:rgba(15,23,42,0.65);font-weight:800;text-align:center}
+    .day{min-height:92px;border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:6px;cursor:pointer;overflow:hidden}
+    .day.muted{opacity:0.45;cursor:default}
+    .day .d{font-weight:900}
+    .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:900;line-height:1;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .badge.full{background:#dc2626;color:#fff}
+    .badge.free{background:#16a34a;color:#fff}
+    .slots{font-size:12px;color:#fff;font-weight:800;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+    .day.free{background:#16a34a;color:#fff;border-color:rgba(255,255,255,0.22)}
+    .day.full{background:#dc2626;color:#fff;border-color:rgba(255,255,255,0.22)}
+    .day.neutral{background:#fff;color:#0f172a}
+
+    .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(15,23,42,0.12);border-radius:999px;padding:6px 10px;background:#fff}
+    .pill select,.pill input{border:none;background:transparent;padding:0;margin:0;height:auto}
+
+    /* modal */
+    .modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);display:none;align-items:flex-end;justify-content:center;z-index:2000;padding:12px;padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+    .modal{width:min(720px,100%);background:#fff;border-radius:20px;box-shadow:0 22px 70px rgba(0,0,0,0.25);overflow:hidden;max-height:85vh;display:flex;flex-direction:column}
+    .modal-h{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid rgba(15,23,42,0.10);background:#f8fafc}
+    .modal-b{padding:12px 14px;overflow:auto}
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .seg{display:flex;gap:8px;flex-wrap:wrap}
+    .seg button{min-height:38px;padding:0 12px;border-radius:12px;font-weight:900;border:1px solid rgba(15,23,42,0.14);background:#fff;color:#0f172a}
+    .seg button.active{background:#2563eb;color:#fff;border-color:transparent}
+    .list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+    .item{border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:12px;background:#fff;overflow:hidden}
+    .item b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .item .mini{font-size:12px;color:rgba(15,23,42,0.72);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .item .meta{font-size:12px;color:rgba(15,23,42,0.72);margin-top:4px;display:flex;gap:10px;flex-wrap:wrap}
+
     .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:#0f172a;display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:999;border-top:1px solid rgba(255,255,255,0.08)}
     .nav-btn{flex:1;min-height:44px;border:1px solid rgba(255,255,255,0.18);background:transparent;color:#fff;border-radius:12px;font-weight:700;font-size:13px}
     .nav-btn.active{background:#22c55e;color:#052e16;border-color:transparent}
@@ -40,31 +61,77 @@
     <div class="card" style="margin-top:12px">
       <b>ตัวกรอง</b>
       <div class="grid2" style="margin-top:10px">
+        <div class="pill">
+          <span style="font-weight:900">เดือน</span>
+          <select id="month"></select>
+        </div>
+        <div class="pill">
+          <span style="font-weight:900">ปี</span>
+          <select id="year"></select>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px">
         <div>
-          <label>วันที่</label>
-          <input id="date" type="date">
+          <label>ระยะเวลางาน (นาที)</label>
+          <input id="duration_min" type="number" min="15" step="15" value="60" />
         </div>
         <div>
-          <label>กลุ่มช่าง</label>
+          <label>ดูผลลัพธ์</label>
           <select id="tech_type">
             <option value="company">ช่างบริษัท</option>
             <option value="partner">ช่างพาร์ทเนอร์</option>
+            <option value="all" selected>รวมทั้งหมด</option>
           </select>
         </div>
       </div>
-      <button id="btnLoad" style="margin-top:10px">โหลดปฏิทิน</button>
-      <div class="muted" style="margin-top:6px">แสดงช่วงเวลางานแบบรวม Travel Buffer แล้ว (conservative)</div>
+      <button id="btnLoad" style="margin-top:10px">โหลดปฏิทินรายเดือน</button>
+      <div class="muted" style="margin-top:6px">ใช้ logic เดิม duration + travel buffer (ไม่ทำให้เพี้ยน)</div>
     </div>
 
-    <div id="calendar" class="calendar-wrap" style="display:none">
-      <div class="cal-head">
-        <div>
-          <b id="calTitle">ปฏิทิน</b>
-          <div class="muted" id="calSub"></div>
+    <div id="monthCalendar" class="month-wrap" style="display:none">
+      <div class="month-head">
+        <div class="left">
+          <button class="secondary" type="button" id="prevMonth">◀</button>
+          <div>
+            <div class="month-title" id="monthTitle">ปฏิทิน</div>
+            <div class="muted" id="monthSub"></div>
+          </div>
+          <button class="secondary" type="button" id="nextMonth">▶</button>
         </div>
         <button class="secondary" type="button" id="btnReload">รีเฟรช</button>
       </div>
-      <div class="cal-body" id="calBody"></div>
+
+      <div class="month-grid" id="monthGrid">
+        <div class="dow">อา</div><div class="dow">จ</div><div class="dow">อ</div><div class="dow">พ</div><div class="dow">พฤ</div><div class="dow">ศ</div><div class="dow">ส</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Day detail modal -->
+  <div class="modal-backdrop" id="dayModal">
+    <div class="modal">
+      <div class="modal-h">
+        <div>
+          <b id="modalTitle">รายละเอียด</b>
+          <div class="muted" id="modalSub" style="margin-top:2px"></div>
+        </div>
+        <button class="secondary btn-small" type="button" id="btnCloseModal">ปิด</button>
+      </div>
+      <div class="modal-b">
+        <div class="row" style="justify-content:space-between">
+          <div class="seg" id="segAvail">
+            <button type="button" data-mode="free" class="active">ช่างว่าง</button>
+            <button type="button" data-mode="full">ช่างเต็ม</button>
+          </div>
+          <div class="seg" id="segType">
+            <button type="button" data-type="all" class="active">ทั้งหมด</button>
+            <button type="button" data-type="company">บริษัท</button>
+            <button type="button" data-type="partner">พาร์ทเนอร์</button>
+          </div>
+        </div>
+        <div class="list" id="modalList"></div>
+      </div>
     </div>
   </div>
 

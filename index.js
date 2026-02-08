@@ -390,6 +390,13 @@ async function ensureSchema() {
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS return_reason TEXT`);
         await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS returned_by TEXT`);
 
+    // ✅ Warranty fields (v2) - backward compatible
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS warranty_kind TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS warranty_months INT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS warranty_start_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS warranty_end_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS warranty_extended_days INT DEFAULT 0`);
+
     // 2.5) jobs: การชำระเงิน (จ่ายเงิน + แนบสลิป)
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS paid_by TEXT`);
@@ -598,6 +605,21 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_photos_job_id ON public.job_photos(job_id)`);
+
+// 3.4.1) ✅ Job updates / audit log (admin + technician)
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.job_updates_v2 (
+    update_id BIGSERIAL PRIMARY KEY,
+    job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
+    actor_username TEXT,
+    actor_role TEXT,
+    action TEXT NOT NULL,
+    message TEXT,
+    payload_json JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_updates_v2_job_id ON public.job_updates_v2(job_id, created_at DESC)`);
 
 // 3.5) ✅ ทีมช่างหลายคนต่อ 1 งาน (job_team_members)
 await pool.query(`
@@ -1431,6 +1453,19 @@ function requireAdminSoft(req, res, next) {
   }
 }
 
+async function logJobUpdate(job_id, { actor_username, actor_role, action, message, payload } = {}) {
+  try {
+    await pool.query(
+      `INSERT INTO public.job_updates_v2 (job_id, actor_username, actor_role, action, message, payload_json)
+       VALUES ($1,$2,$3,$4,$5,$6)`,
+      [Number(job_id), actor_username || null, actor_role || null, String(action||'').slice(0,64) || 'unknown', message || null, payload ? JSON.stringify(payload) : null]
+    );
+  } catch (e) {
+    // fail-open (do not break production flow)
+    console.warn('logJobUpdate failed', e.message);
+  }
+}
+
 async function pickFirstAvailableTech(usernames, apptIso, durationMin) {
   for (const u of usernames) {
     const ok = await isTechFree(u, apptIso, durationMin, null);
@@ -1936,15 +1971,205 @@ app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
       [jid]
     );
 
+    // photos + updates + team (non-breaking additions)
+    const ph = await pool.query(
+      `SELECT photo_id, phase, created_at, uploaded_at, public_url
+       FROM public.job_photos WHERE job_id=$1 ORDER BY photo_id ASC`,
+      [jid]
+    );
+    const up = await pool.query(
+      `SELECT update_id, actor_username, actor_role, action, message, payload_json, created_at
+       FROM public.job_updates_v2 WHERE job_id=$1 ORDER BY created_at DESC, update_id DESC LIMIT 200`,
+      [jid]
+    );
+    const tm = await pool.query(
+      `SELECT m.username, COALESCE(p.full_name, m.username) AS full_name, p.phone
+       FROM public.job_team_members m
+       LEFT JOIN public.technician_profiles p ON p.username=m.username
+       WHERE m.job_id=$1
+       ORDER BY m.added_at ASC`,
+      [jid]
+    );
+
+    const now = new Date();
+    const wEnd = job.warranty_end_at ? new Date(job.warranty_end_at) : null;
+    const isInWarranty = !!(wEnd && wEnd.getTime() >= now.getTime());
+
     return res.json({
       success: true,
-      job,
+      job: Object.assign({}, job, { is_in_warranty: isInWarranty }),
       items: ir.rows || [],
       promotion: pr.rows[0] || null,
+      photos: ph.rows || [],
+      updates: up.rows || [],
+      team_members: tm.rows || [],
     });
   } catch (e) {
     console.error("/admin/job_v2 error:", e);
     return res.status(500).json({ error: "โหลดใบงานไม่สำเร็จ" });
+  }
+});
+
+// =======================================
+// 🛡️ WARRANTY / RETURN FOR FIX / CLONE (Admin v2)
+// - Backward compatible: new endpoints only
+// =======================================
+const ENABLE_WARRANTY_ENFORCE = (process.env.ENABLE_WARRANTY_ENFORCE || "1") === "1";
+
+function computeWarrantyEnd({ job_type, warranty_kind, warranty_months, start }) {
+  const jt = String(job_type||'').trim();
+  const kind = String(warranty_kind||'').trim();
+  const s = start instanceof Date ? start : new Date(start);
+  const end = new Date(s.getTime());
+  // Rules:
+  // - ล้าง: 30 วัน
+  // - ซ่อม: 3/6/12 เดือน
+  // - ติดตั้ง: 3 ปี
+  if (kind === 'clean' || jt.includes('ล้าง')) {
+    end.setDate(end.getDate()+30);
+    return { kind: 'clean', months: null, end };
+  }
+  if (kind === 'install' || jt.includes('ติดตั้ง')) {
+    end.setFullYear(end.getFullYear()+3);
+    return { kind: 'install', months: null, end };
+  }
+  // repair
+  const m = Number(warranty_months);
+  if (![3,6,12].includes(m)) {
+    throw new Error('งานซ่อมต้องเลือกประกัน 3/6/12 เดือน');
+  }
+  end.setMonth(end.getMonth()+m);
+  return { kind: 'repair', months: m, end };
+}
+
+app.post('/admin/jobs/:job_id/extend_warranty_v2', requireAdminSoft, async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  const days = Number(req.body?.days || 0);
+  const actor_username = String(req.body?.actor_username || '').trim() || null;
+  if (!job_id) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
+  if (!Number.isFinite(days) || days <= 0 || days > 3650) return res.status(400).json({ error: 'จำนวนวันต้องเป็นตัวเลข > 0' });
+  try {
+    const jr = await pool.query(`SELECT warranty_end_at, warranty_extended_days FROM public.jobs WHERE job_id=$1`, [job_id]);
+    if (!jr.rows.length) return res.status(404).json({ error: 'ไม่พบงาน' });
+    const current = jr.rows[0].warranty_end_at ? new Date(jr.rows[0].warranty_end_at) : null;
+    if (!current) return res.status(400).json({ error: 'งานนี้ยังไม่มีวันหมดประกัน' });
+    const newEnd = new Date(current.getTime());
+    newEnd.setDate(newEnd.getDate() + days);
+    await pool.query(
+      `UPDATE public.jobs
+       SET warranty_end_at=$1,
+           warranty_extended_days = COALESCE(warranty_extended_days,0) + $2
+       WHERE job_id=$3`,
+      [newEnd.toISOString(), days, job_id]
+    );
+    await logJobUpdate(job_id, { actor_username, actor_role: 'admin', action: 'extend_warranty', message: `extend +${days} days`, payload: { days, new_end: newEnd.toISOString() } });
+    return res.json({ success: true, warranty_end_at: newEnd.toISOString() });
+  } catch (e) {
+    console.error('extend_warranty_v2 error', e);
+    return res.status(500).json({ error: e.message || 'extend warranty ไม่สำเร็จ' });
+  }
+});
+
+app.post('/admin/jobs/:job_id/return_for_fix_v2', requireAdminSoft, async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  const reason = String(req.body?.reason || '').trim();
+  const actor_username = String(req.body?.actor_username || '').trim() || null;
+  if (!job_id) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
+  if (!reason) return res.status(400).json({ error: 'ต้องระบุปัญหา/เหตุผล' });
+  try {
+    const jr = await pool.query(`SELECT job_status, warranty_end_at, booking_code FROM public.jobs WHERE job_id=$1`, [job_id]);
+    if (!jr.rows.length) return res.status(404).json({ error: 'ไม่พบงาน' });
+    const wEnd = jr.rows[0].warranty_end_at ? new Date(jr.rows[0].warranty_end_at) : null;
+    const inWarranty = !!(wEnd && wEnd.getTime() >= Date.now());
+    if (!inWarranty) return res.status(400).json({ error: 'หมดประกันแล้ว ไม่สามารถตีกลับเป็นงานแก้ไขได้' });
+
+    await pool.query(
+      `UPDATE public.jobs
+       SET job_status='งานแก้ไข',
+           returned_at=NOW(),
+           return_reason=$1,
+           returned_by=COALESCE($2, returned_by)
+       WHERE job_id=$3`,
+      [reason, actor_username, job_id]
+    );
+    await logJobUpdate(job_id, { actor_username, actor_role: 'admin', action: 'return_for_fix', message: reason });
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('return_for_fix_v2 error', e);
+    return res.status(500).json({ error: e.message || 'ตีกลับงานแก้ไขไม่สำเร็จ' });
+  }
+});
+
+app.post('/admin/jobs/:job_id/clone_v2', requireAdminSoft, async (req, res) => {
+  const source_job_id = Number(req.params.job_id);
+  const actor_username = String(req.body?.actor_username || '').trim() || null;
+  const appointment_datetime = String(req.body?.appointment_datetime || '').trim();
+  const technician_username = (req.body?.technician_username == null) ? null : String(req.body.technician_username).trim();
+  const override_job_type = String(req.body?.job_type || '').trim() || null;
+  const keep_item_ids = Array.isArray(req.body?.keep_item_ids) ? req.body.keep_item_ids.map(n=>Number(n)).filter(n=>Number.isFinite(n)) : null;
+  if (!source_job_id) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
+  if (!appointment_datetime) return res.status(400).json({ error: 'ต้องเลือกวัน/เวลาใหม่' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const jr = await client.query(`SELECT * FROM public.jobs WHERE job_id=$1 FOR UPDATE`, [source_job_id]);
+    if (!jr.rows.length) throw new Error('ไม่พบงานต้นฉบับ');
+    const src = jr.rows[0];
+
+    // create new job (copy safe fields only)
+    const ins = await client.query(
+      `INSERT INTO public.jobs (
+         customer_name, customer_phone, job_type, appointment_datetime, job_status,
+         duration_min, address_text, maps_url, job_zone,
+         technician_username, dispatch_mode, booking_mode,
+         job_source
+       ) VALUES (
+         $1,$2,$3,$4,'รอดำเนินการ',
+         $5,$6,$7,$8,
+         $9,'forced','scheduled',
+         'admin'
+       ) RETURNING job_id`,
+      [
+        src.customer_name, src.customer_phone,
+        (override_job_type || src.job_type),
+        appointment_datetime,
+        src.duration_min,
+        src.address_text, src.maps_url, src.job_zone,
+        technician_username
+      ]
+    );
+    const new_job_id = Number(ins.rows[0].job_id);
+
+    // booking_code
+    const booking_code_new = await generateUniqueBookingCode(client);
+    await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code_new, new_job_id]);
+
+    // copy items (allow drop items for cleaning)
+    const items = await client.query(
+      `SELECT item_id, item_name, qty, unit_price, line_total
+       FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
+      [source_job_id]
+    );
+    for (const it of (items.rows||[])) {
+      if (keep_item_ids && !keep_item_ids.includes(Number(it.item_id))) continue;
+      await client.query(
+        `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total)
+         VALUES ($1,$2,$3,$4,$5,$6)`,
+        [new_job_id, it.item_id, it.item_name, it.qty, it.unit_price, it.line_total]
+      );
+    }
+
+    await client.query('COMMIT');
+    await logJobUpdate(source_job_id, { actor_username, actor_role: 'admin', action: 'clone_source', message: `cloned to #${new_job_id}`, payload: { new_job_id, booking_code_new } });
+    await logJobUpdate(new_job_id, { actor_username, actor_role: 'admin', action: 'clone_new', message: `cloned from #${source_job_id}`, payload: { source_job_id, source_booking_code: src.booking_code } });
+    return res.json({ success: true, new_job_id, booking_code: booking_code_new });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('clone_v2 error', e);
+    return res.status(500).json({ error: e.message || 'clone ไม่สำเร็จ' });
+  } finally {
+    client.release();
   }
 });
 
@@ -3318,6 +3543,8 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
   const status = String(req.body?.status || "").trim();
   const signature_data = req.body?.signature_data;
   const note = String(req.body?.note || "").trim();
+  const warranty_kind = String(req.body?.warranty_kind || "").trim();
+  const warranty_months = req.body?.warranty_months;
 
   if (!["เสร็จแล้ว", "ยกเลิก"].includes(status)) {
     return res.status(400).json({ error: "status ต้องเป็น 'เสร็จแล้ว' หรือ 'ยกเลิก'" });
@@ -3342,16 +3569,38 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
     }
 
     if (status === "เสร็จแล้ว") {
+      // ✅ Warranty enforcement (feature flag)
+      // - Allow if already set (backward compatibility)
+      const curW = await client.query(`SELECT job_type, warranty_end_at FROM public.jobs WHERE job_id=$1 FOR UPDATE`, [job_id]);
+      const cur = curW.rows[0] || {};
+      const hasWarranty = !!cur.warranty_end_at;
+      if (ENABLE_WARRANTY_ENFORCE && !hasWarranty && !warranty_kind && warranty_months == null) {
+        throw new Error('ต้องระบุประกันก่อนกดเสร็จสิ้น (Warranty)');
+      }
+      let wEndIso = null;
+      let wKind = null;
+      let wMonths = null;
+      if (!hasWarranty && (warranty_kind || warranty_months != null)) {
+        const w = computeWarrantyEnd({ job_type: cur.job_type, warranty_kind, warranty_months, start: new Date() });
+        wEndIso = w.end.toISOString();
+        wKind = w.kind;
+        wMonths = w.months;
+      }
       await client.query(
         `UPDATE public.jobs
          SET job_status='เสร็จแล้ว',
              finished_at = NOW(),
              final_signature_path = $1,
              final_signature_status = 'เสร็จแล้ว',
-             final_signature_at = NOW()
+             final_signature_at = NOW(),
+             warranty_kind = COALESCE($3, warranty_kind),
+             warranty_months = COALESCE($4, warranty_months),
+             warranty_start_at = COALESCE(warranty_start_at, NOW()),
+             warranty_end_at = COALESCE($5, warranty_end_at)
          WHERE job_id=$2`,
-        [sigPath, job_id]
+        [sigPath, job_id, wKind, wMonths, wEndIso]
       );
+      await logJobUpdate(job_id, { actor_username: null, actor_role: 'tech', action: 'finalize_done', message: 'เสร็จแล้ว', payload: { warranty_kind: wKind || null, warranty_months: wMonths || null, warranty_end_at: wEndIso || null } });
     } else {
       await client.query(
         `UPDATE public.jobs
@@ -3364,6 +3613,7 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
          WHERE job_id=$3`,
         [note, sigPath, job_id]
       );
+      await logJobUpdate(job_id, { actor_username: null, actor_role: 'tech', action: 'finalize_cancel', message: note || 'ยกเลิก' });
     }
 
     await client.query("COMMIT");

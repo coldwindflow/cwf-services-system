@@ -1,5 +1,18 @@
 /* Admin v2 - Jobs history with filters */
 
+let __TECH_MAP__ = new Map(); // username -> { full_name, employment_type }
+
+function statusPillStyle(status){
+  const s = String(status||'').trim();
+  // premium, high-contrast (yellow => black text, blue => white text)
+  if (s.includes('รอ') || s.includes('pending')) return 'background:#fbbf24;color:#000;border-color:transparent'; // yellow/black
+  if (s.includes('กำลัง') || s.includes('เริ่ม') || s.includes('working')) return 'background:#2563eb;color:#fff;border-color:transparent'; // blue/white
+  if (s.includes('เสร็จ') || s.includes('done')) return 'background:#16a34a;color:#fff;border-color:transparent';
+  if (s.includes('ยกเลิก') || s.includes('cancel')) return 'background:#ef4444;color:#fff;border-color:transparent';
+  if (s.includes('ตีกลับ') || s.includes('แก้ไข') || s.includes('return')) return 'background:#a855f7;color:#fff;border-color:transparent';
+  return 'background:#0f172a;color:#fff;border-color:transparent';
+}
+
 function fmtDT(iso){
   const d = new Date(iso);
   return `${pad2(d.getDate())}/${pad2(d.getMonth()+1)}/${d.getFullYear()} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
@@ -41,15 +54,17 @@ async function loadJobs(){
       const left = `${safe(j.customer_name)}\n${safe(j.customer_phone||"")}`;
       const mid = `${safe(j.job_type)} • ${safe(j.job_status)}`;
       const addr = safe(j.job_zone||"") || safe(j.address_text||"");
+      const techU = safe(j.technician_username||"-");
+      const techName = (__TECH_MAP__.get(techU)?.full_name) || techU;
       tr.innerHTML = `
         <td><div class="code">${code}</div><div class="muted2">#${safe(j.job_id)}</div></td>
         <td>${dtTxt}</td>
         <td>
-          <div><b>${left.replace(/\n/g,'</b><div class="muted2">')}${left.includes('\n')?'</div>':''}</div>
-          <div class="pill" style="margin-top:6px">${mid}</div>
-          <div class="muted2" style="margin-top:6px">${addr}</div>
+          <div class="job-main"><b title="${safe(j.customer_name||'')}">${safe(j.customer_name||'-')}</b><span class="muted2">${safe(j.customer_phone||'')}</span></div>
+          <div class="pill" style="margin-top:6px;${statusPillStyle(j.job_status)}" title="${safe(j.job_status||'')}">${mid}</div>
+          <div class="muted2" style="margin-top:6px" title="${addr}">${addr}</div>
         </td>
-        <td><b>${safe(j.technician_username||"-")}</b></td>
+        <td><b class="tech-name" title="${techName}">${techName}</b><div class="muted2 mini">${techU}</div></td>
       `;
       tb.appendChild(tr);
     }
@@ -62,6 +77,31 @@ async function loadJobs(){
   }
 }
 
+async function loadTechniciansForFilter(){
+  try{
+    const rows = await apiFetch('/admin/technicians');
+    __TECH_MAP__.clear();
+    const dl = el('techList');
+    if (dl) dl.innerHTML = '';
+    for (const t of (rows||[])){
+      const u = String(t.username||'').trim();
+      if (!u) continue;
+      const full = String(t.full_name||u).trim();
+      __TECH_MAP__.set(u, { full_name: full, employment_type: t.employment_type });
+      if (dl){
+        const opt = document.createElement('option');
+        opt.value = u;
+        opt.label = `${full} (${u})`;
+        // For browsers showing value only, include display in value as well (still parse username from start)
+        opt.textContent = `${full} (${u})`;
+        dl.appendChild(opt);
+      }
+    }
+  }catch(e){
+    console.warn('loadTechniciansForFilter failed', e.message);
+  }
+}
+
 function init(){
   const today = todayYMD();
   el("date_to").value = today;
@@ -70,7 +110,7 @@ function init(){
   el("date_from").value = from;
   el("btnLoad").addEventListener("click", loadJobs);
   // auto load
-  loadJobs();
+  loadTechniciansForFilter().finally(loadJobs);
 }
 
 init();

@@ -1009,6 +1009,33 @@ function buildJobCard(job, historyMode = false) {
           <hr style="margin:10px 0;" />
 
           <div>
+            <b>🛡️ ประกันงาน</b>
+            <div class="muted" style="margin-top:4px;font-size:12px;">ต้องเลือกก่อนกด “เสร็จสิ้น”</div>
+            ${(() => {
+              const jt = String(job.job_type||'');
+              let kind = '';
+              let label = '';
+              let monthSelect = '';
+              if (jt.includes('ล้าง')) { kind = 'clean'; label = 'ล้าง: 30 วัน'; }
+              else if (jt.includes('ติดตั้ง')) { kind = 'install'; label = 'ติดตั้ง: 3 ปี'; }
+              else { kind = 'repair'; label = 'ซ่อม: เลือก 3/6/12 เดือน';
+                monthSelect = `
+                  <select id="warranty-months-${jobId}" style="margin-top:6px;width:100%;">
+                    <option value="">เลือกเดือนประกัน</option>
+                    <option value="3">3 เดือน</option>
+                    <option value="6">6 เดือน</option>
+                    <option value="12">12 เดือน</option>
+                  </select>`;
+              }
+              return `
+                <input type="hidden" id="warranty-kind-${jobId}" value="${kind}">
+                <div class="pill" style="margin-top:6px;background:#eff6ff;border-color:rgba(37,99,235,0.25);color:#0f172a;">${label}</div>
+                ${monthSelect}
+              `;
+            })()}
+          </div>
+
+          <div>
             <b>📝 หมายเหตุช่าง</b>
             <textarea id="note-${jobId}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""}>${escape(job.technician_note || "")}</textarea>
 
@@ -1478,6 +1505,21 @@ function openSignatureModal(onConfirm) {
 // ✅ FINALIZE (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์
 // =======================================
 function requestFinalize(jobId, targetStatus) {
+  if (targetStatus === 'เสร็จแล้ว') {
+    // Warranty required before finishing (server also enforces via feature flag)
+    const kindEl = document.getElementById(`warranty-kind-${jobId}`);
+    const monthsEl = document.getElementById(`warranty-months-${jobId}`);
+    const kind = (kindEl?.value || '').trim();
+    const months = monthsEl ? Number(monthsEl.value || 0) : 0;
+    if (!kind) {
+      alert('ต้องระบุประกันก่อนกดเสร็จสิ้น');
+      return;
+    }
+    if (kind === 'repair' && ![3,6,12].includes(months)) {
+      alert('งานซ่อมต้องเลือกประกัน 3 / 6 / 12 เดือน');
+      return;
+    }
+  }
   // เปิดลายเซ็นต์ก่อน (ถ้ากดยกเลิกในลายเซ็นต์ จะต้องกลับไปเลือกใหม่เอง)
   openSignatureModal((signatureDataUrl) => finalizeJob(jobId, targetStatus, signatureDataUrl));
 }
@@ -1495,6 +1537,11 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
       body: JSON.stringify({ note }),
     }).catch(() => {});
 
+    const kindEl = document.getElementById(`warranty-kind-${jobId}`);
+    const monthsEl = document.getElementById(`warranty-months-${jobId}`);
+    const warranty_kind = (kindEl?.value || '').trim();
+    const warranty_months = monthsEl ? Number(monthsEl.value || 0) : null;
+
     const res = await fetch(`${API_BASE}/jobs/${jobId}/finalize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1502,6 +1549,7 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
         status: targetStatus,
         signature_data: signatureDataUrl,
         note,
+        ...(targetStatus === 'เสร็จแล้ว' ? { warranty_kind, warranty_months } : {}),
       }),
     });
 

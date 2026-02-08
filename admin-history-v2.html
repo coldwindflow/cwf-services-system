@@ -14,7 +14,11 @@
     th,td{padding:10px;border-bottom:1px solid rgba(15,23,42,0.08);font-size:13px;vertical-align:top}
     th{background:#f8fafc;text-align:left;position:sticky;top:0;z-index:1}
     .code{font-weight:900}
-    .pill{display:inline-block;padding:4px 8px;border-radius:999px;border:1px solid rgba(15,23,42,0.12);font-size:12px;background:#fff}
+    .pill{display:inline-block;padding:4px 8px;border-radius:999px;border:1px solid rgba(15,23,42,0.12);font-size:12px;background:#fff;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .tech-name{max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .job-main{min-width:220px}
+    .job-main b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .job-main .muted2{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .muted2{color:rgba(15,23,42,0.72)}
     .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:#0f172a;display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:999;border-top:1px solid rgba(255,255,255,0.08)}
     .nav-btn{flex:1;min-height:44px;border:1px solid rgba(255,255,255,0.18);background:transparent;color:#fff;border-radius:12px;font-weight:700;font-size:13px}
@@ -42,8 +46,9 @@
       </div>
       <div class="grid2" style="margin-top:10px">
         <div>
-          <label>ช่าง</label>
-          <input id="technician" placeholder="username ช่าง">
+          <label>ช่าง (พิมพ์ค้นหาได้)</label>
+          <input id="technician" list="techList" placeholder="พิมพ์ชื่อ/username">
+          <datalist id="techList"></datalist>
         </div>
         <div>
           <label>ค้นหา (ชื่อ/ที่อยู่/โซน/เลขงาน)</label>
