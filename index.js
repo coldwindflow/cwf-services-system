@@ -1250,7 +1250,7 @@ app.put("/jobs/:job_id/assign", async (req, res) => {
     // ASSIGN_COLLISION_V2
     const jobR = await client.query(
       `SELECT appointment_datetime, COALESCE(duration_min,60) AS duration_min FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
-      [job_id]
+      [realId]
     );
     if (jobR.rows.length === 0) throw new Error("ไม่พบงาน");
     const j = jobR.rows[0];
@@ -1346,7 +1346,7 @@ app.post("/jobs/:job_id/dispatch_v2", requireAdminSoft, async (req, res) => {
     const jobR = await client.query(
       `SELECT job_id, booking_mode, job_status, appointment_datetime, COALESCE(duration_min,60) AS duration_min
        FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
-      [job_id]
+      [realId]
     );
     if (!jobR.rows.length) throw new Error('ไม่พบงาน');
     const j = jobR.rows[0];
@@ -1450,6 +1450,30 @@ function requireAdminSoft(req, res, next) {
   } catch (e) {
     console.error("requireAdminSoft error:", e);
     return next();
+  }
+}
+
+// =======================================
+// 🔎 Resolve job identifier
+// - รับทั้ง job_id (ตัวเลข) และ booking_code (ตัวอักษร)
+// - ใช้เพื่อกันเคส "งานจากระบบเดิม" ที่ UI ส่ง id มาไม่ใช่เลข
+// - fail-open: ถ้า resolve ไม่เจอ → คืน NaN แล้วให้ handler ตัดสินใจเอง
+// =======================================
+async function resolveJobIdAny(db, raw) {
+  const s = String(raw || "").trim();
+  if (!s) return NaN;
+  const n = Number(s);
+  if (Number.isFinite(n) && n > 0) return n;
+  try {
+    const r = await db.query(
+      `SELECT job_id FROM public.jobs WHERE booking_code=$1 OR booking_token=$1 LIMIT 1`,
+      [s]
+    );
+    const id = Number(r.rows?.[0]?.job_id);
+    return Number.isFinite(id) && id > 0 ? id : NaN;
+  } catch (e) {
+    console.warn('resolveJobIdAny failed', e.message);
+    return NaN;
   }
 }
 
@@ -2142,7 +2166,7 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
 
     const jr = await client.query(
       `SELECT job_type, warranty_end_at, job_status FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
-      [job_id]
+      [realId]
     );
     if (!jr.rows.length) return res.status(404).json({ error: 'ไม่พบงาน' });
 
@@ -2704,6 +2728,8 @@ app.put("/jobs/:job_id/status", async (req, res) => {
   if (!allow.includes(status)) return res.status(400).json({ error: "status ไม่ถูกต้อง" });
 
   try {
+    const realId = await resolveJobIdAny(pool, job_id);
+    if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
     // ✅ เมื่อเริ่มงานครั้งแรก ให้บันทึก started_at
     if (status === 'กำลังทำ') {
       await pool.query(
@@ -2711,10 +2737,10 @@ app.put("/jobs/:job_id/status", async (req, res) => {
          SET job_status=$1,
              started_at = COALESCE(started_at, NOW())
          WHERE job_id=$2`,
-        [status, job_id]
+        [status, realId]
       );
     } else {
-      await pool.query(`UPDATE public.jobs SET job_status=$1 WHERE job_id=$2`, [status, job_id]);
+      await pool.query(`UPDATE public.jobs SET job_status=$1 WHERE job_id=$2`, [status, realId]);
     }
     res.json({ success: true });
   } catch (e) {
@@ -2730,9 +2756,11 @@ app.get("/jobs/:job_id/pricing", async (req, res) => {
   const { job_id } = req.params;
 
   try {
+    const realId = await resolveJobIdAny(pool, job_id);
+    if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
     const itemsR = await pool.query(
       `SELECT item_name, qty, unit_price, line_total FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
-      [job_id]
+      [realId]
     );
 
     const promoR = await pool.query(
@@ -2743,7 +2771,7 @@ app.get("/jobs/:job_id/pricing", async (req, res) => {
       WHERE jp.job_id=$1
       LIMIT 1
       `,
-      [job_id]
+      [realId]
     );
 
     const items = itemsR.rows.map((x) => ({
@@ -2791,7 +2819,7 @@ app.get("/jobs/:job_id/pricing", async (req, res) => {
 // - บันทึก paid_at + payment_status='paid'
 // =======================================
 app.post("/jobs/:job_id/pay", async (req, res) => {
-  const job_id = Number(req.params.job_id);
+  const job_id = await resolveJobIdAny(pool, req.params.job_id);
   const { username } = req.body || {};
   const paid_by = (username || "").toString().trim() || null;
 
@@ -3485,11 +3513,13 @@ app.post("/offers/:offer_id/decline", async (req, res) => {
 app.post("/jobs/:job_id/travel-start", async (req, res) => {
   const { job_id } = req.params;
   try {
+    const realId = await resolveJobIdAny(pool, job_id);
+    if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
     await pool.query(
       `UPDATE public.jobs
        SET travel_started_at = COALESCE(travel_started_at, NOW())
        WHERE job_id=$1`,
-      [job_id]
+      [realId]
     );
     res.json({ success: true });
   } catch (e) {
@@ -3508,7 +3538,9 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
   if (lat == null || lng == null) return res.status(400).json({ error: "พิกัด GPS ไม่ครบ" });
 
   try {
-    const r = await pool.query(`SELECT gps_latitude, gps_longitude FROM public.jobs WHERE job_id=$1`, [job_id]);
+    const realId = await resolveJobIdAny(pool, job_id);
+    if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+    const r = await pool.query(`SELECT gps_latitude, gps_longitude FROM public.jobs WHERE job_id=$1`, [realId]);
     if (r.rows.length === 0) return res.status(404).json({ error: "ไม่พบงาน" });
 
     const siteLat = Number(r.rows[0].gps_latitude);
@@ -3533,7 +3565,7 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
 
     await pool.query(
       `UPDATE public.jobs SET checkin_latitude=$1, checkin_longitude=$2, checkin_at=NOW() WHERE job_id=$3`,
-      [lat, lng, job_id]
+      [lat, lng, realId]
     );
 
     res.json({ success: true, distance: Math.round(distance) });
@@ -3557,13 +3589,15 @@ app.post("/jobs/:job_id/photos/meta", async (req, res) => {
   if (!mime_type) return res.status(400).json({ error: "mime_type ห้ามว่าง" });
 
   try {
+    const realId = await resolveJobIdAny(pool, job_id);
+    if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
     const r = await pool.query(
       `
       INSERT INTO public.job_photos (job_id, phase, mime_type, original_name, file_size, photo_type)
       VALUES ($1,$2,$3,$4,$5,NULL)
       RETURNING photo_id
       `,
-      [job_id, phase, mime_type, original_name || null, file_size || null]
+      [realId, phase, mime_type, original_name || null, file_size || null]
     );
     res.json({ success: true, photo_id: r.rows[0].photo_id });
   } catch (e) {
@@ -3599,9 +3633,11 @@ app.post("/jobs/:job_id/photos/:photo_id/upload", upload.single("photo"), async 
   if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์ photo" });
 
   try {
+    const realId = await resolveJobIdAny(pool, job_id);
+    if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
     const meta = await pool.query(
       `SELECT photo_id, mime_type FROM public.job_photos WHERE photo_id=$1 AND job_id=$2`,
-      [photo_id, job_id]
+      [photo_id, realId]
     );
     if (meta.rows.length === 0) return res.status(404).json({ error: "ไม่พบ metadata รูป" });
 
@@ -3611,7 +3647,7 @@ app.post("/jobs/:job_id/photos/:photo_id/upload", upload.single("photo"), async 
     if (mt.includes("webp")) ext = "webp";
     if (mt.includes("jpeg") || mt.includes("jpg")) ext = "jpg";
 
-    const safeName = `${job_id}_${photo_id}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${ext}`;
+    const safeName = `${realId}_${photo_id}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${ext}`;
     const diskPath = path.join(UPLOAD_DIR, safeName);
     fs.writeFileSync(diskPath, req.file.buffer);
 
@@ -3619,7 +3655,7 @@ app.post("/jobs/:job_id/photos/:photo_id/upload", upload.single("photo"), async 
 
     await pool.query(
       `UPDATE public.job_photos SET uploaded_at=NOW(), storage_path=$1, public_url=$2 WHERE photo_id=$3 AND job_id=$4`,
-      [diskPath, publicUrl, photo_id, job_id]
+      [diskPath, publicUrl, photo_id, realId]
     );
 
     res.json({ success: true, url: publicUrl });
@@ -3632,9 +3668,11 @@ app.post("/jobs/:job_id/photos/:photo_id/upload", upload.single("photo"), async 
 app.get("/jobs/:job_id/photos", async (req, res) => {
   const { job_id } = req.params;
   try {
+    const realId = await resolveJobIdAny(pool, job_id);
+    if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
     const r = await pool.query(
       `SELECT photo_id, phase, created_at, uploaded_at, public_url FROM public.job_photos WHERE job_id=$1 ORDER BY photo_id ASC`,
-      [job_id]
+      [realId]
     );
     res.json(r.rows);
   } catch (e) {
@@ -3651,9 +3689,11 @@ app.put("/jobs/:job_id/note", async (req, res) => {
   const { note } = req.body || {};
 
   try {
+    const realId = await resolveJobIdAny(pool, job_id);
+    if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
     await pool.query(
       `UPDATE public.jobs SET technician_note=$1, technician_note_at=NOW() WHERE job_id=$2`,
-      [note || "", job_id]
+      [note || "", realId]
     );
     res.json({ success: true });
   } catch (e) {
@@ -3684,14 +3724,20 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
   try {
     await client.query("BEGIN");
 
+    const realId = await resolveJobIdAny(client, job_id);
+    if (!realId) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+    }
+
     // บันทึกลายเซ็นต์เป็นไฟล์
-    const sigPath = saveDataUrlPng(signature_data, SIGNATURE_DIR, `job_${job_id}_${status}`);
+    const sigPath = saveDataUrlPng(signature_data, SIGNATURE_DIR, `job_${realId}_${status}`);
 
     // บันทึก note ล่าสุด (ถ้ามี)
     if (note) {
       await client.query(
         `UPDATE public.jobs SET technician_note=$1, technician_note_at=NOW() WHERE job_id=$2`,
-        [note, job_id]
+        [note, realId]
       );
     }
 
@@ -3700,7 +3746,7 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
       // - Allow if already set (backward compatibility)
       // - IMPORTANT (production fix): งานล้าง/ติดตั้ง ต้อง auto-lock warranty ได้แม้ client ไม่ส่งค่า
       //   เพื่อแก้เคส "งานจากระบบเดิม" ที่ UI ไม่ส่ง warranty_kind แล้วทำให้ปิดงานไม่ได้
-      const curW = await client.query(`SELECT job_type, warranty_end_at FROM public.jobs WHERE job_id=$1 FOR UPDATE`, [job_id]);
+      const curW = await client.query(`SELECT job_type, warranty_end_at FROM public.jobs WHERE job_id=$1 FOR UPDATE`, [realId]);
       const cur = curW.rows[0] || {};
       const hasWarranty = !!cur.warranty_end_at;
 
@@ -3751,9 +3797,9 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
              warranty_start_at = COALESCE(warranty_start_at, NOW()),
              warranty_end_at = COALESCE($5, warranty_end_at)
          WHERE job_id=$2`,
-        [sigPath, job_id, wKind, wMonths, wEndIso]
+        [sigPath, realId, wKind, wMonths, wEndIso]
       );
-      await logJobUpdate(job_id, { actor_username: null, actor_role: 'tech', action: 'finalize_done', message: 'เสร็จแล้ว', payload: { warranty_kind: wKind || null, warranty_months: wMonths || null, warranty_end_at: wEndIso || null } });
+      await logJobUpdate(realId, { actor_username: null, actor_role: 'tech', action: 'finalize_done', message: 'เสร็จแล้ว', payload: { warranty_kind: wKind || null, warranty_months: wMonths || null, warranty_end_at: wEndIso || null } });
     } else {
       await client.query(
         `UPDATE public.jobs
@@ -3764,13 +3810,13 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
              final_signature_status = 'ยกเลิก',
              final_signature_at = NOW()
          WHERE job_id=$3`,
-        [note, sigPath, job_id]
+        [note, sigPath, realId]
       );
-      await logJobUpdate(job_id, { actor_username: null, actor_role: 'tech', action: 'finalize_cancel', message: note || 'ยกเลิก' });
+      await logJobUpdate(realId, { actor_username: null, actor_role: 'tech', action: 'finalize_cancel', message: note || 'ยกเลิก' });
     }
 
     await client.query("COMMIT");
-    res.json({ success: true, job_id: Number(job_id), status });
+    res.json({ success: true, job_id: Number(realId), status });
   } catch (e) {
     await client.query("ROLLBACK");
     console.error(e);

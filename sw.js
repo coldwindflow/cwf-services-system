@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v12";
+const CACHE_NAME = "cwf-cache-v13";
 
 const ASSETS = [
   "/",
@@ -64,12 +64,6 @@ self.addEventListener("fetch", (e) => {
     fetch(e.request)
       .then((resp) => {
         const copy = resp.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
-        return resp;
-      })
-      .catch(() => caches.match(e.request))
-  );
-});
         caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
         return resp;
       })

@@ -881,13 +881,15 @@ window.openMaps = openMaps;
 // - เมื่อกดโทร จะบันทึก flag ในเครื่อง (localStorage) เพื่อปลดล็อกปุ่ม "เริ่มเดินทาง"
 // =======================================
 function callCustomer(jobId, phone) {
-  const id = Number(jobId);
+  // ✅ รองรับ jobId เป็นทั้งตัวเลข (job_id) และตัวอักษร (booking_code)
+  // เพื่อกันงานจากระบบเดิมที่อาจส่ง id มาเป็น string
+  const idKey = String(jobId || "").trim();
   const p = String(phone || "").trim();
-  if (!id) return alert("job_id ไม่ถูกต้อง");
+  if (!idKey) return alert("job_id ไม่ถูกต้อง");
   if (!p) return alert("ไม่มีเบอร์โทรลูกค้า");
 
   try {
-    localStorage.setItem(`cwf_called_${id}`, String(Date.now()));
+    localStorage.setItem(`cwf_called_${idKey}`, String(Date.now()));
   } catch {
     // ignore
   }
@@ -921,10 +923,15 @@ function buildJobCard(job, historyMode = false) {
       ? `<span class="badge ok">✅ เสร็จแล้ว</span>`
       : `<span class="badge bad">⛔ ยกเลิก</span>`;
 
+  // ✅ jobKey: ใช้เป็น key/พารามิเตอร์ได้ทั้ง job_id (number) และ booking_code (string)
+  const jobKey = String((job.job_id ?? job.booking_code ?? "")).trim();
   const jobId = Number(job.job_id);
-  const travelKey = `cwf_travel_${jobId}`;
+  const keyBase = jobKey || String(jobId || "");
+  const jobKeyJs = keyBase.replace(/'/g, "\\'");
+
+  const travelKey = `cwf_travel_${keyBase}`;
   const travelStarted = !!localStorage.getItem(travelKey) || !!job.travel_started_at;
-  const calledKey = `cwf_called_${jobId}`;
+  const calledKey = `cwf_called_${keyBase}`;
   const called = !!localStorage.getItem(calledKey);
   const paid = !!job.paid_at || String(job.payment_status || "").trim().toLowerCase() === "paid";
   const checkedIn = !!job.checkin_at;
@@ -939,7 +946,11 @@ function buildJobCard(job, historyMode = false) {
         ? false
         : ((!travelStarted && !called) || status === "เสร็จแล้ว" || status === "ยกเลิก"));
 
-  const workflowOnclick = historyMode ? `openESlip(${jobId})` : `workflowNext(${jobId})`;
+  // ⚠️ ใช้ keyBase ใน onclick เพื่อรองรับงานจากระบบเดิมที่อาจส่ง id มาเป็น string
+  // (ฝั่ง API รองรับทั้ง job_id และ booking_code ผ่าน encodeURIComponent)
+  const workflowOnclick = historyMode
+    ? `openESlip('${jobKeyJs}')`
+    : `workflowNext('${jobKeyJs}')`;
 
   const workflowLabel = historyMode
     ? "🧾 e-slip"
@@ -1004,7 +1015,7 @@ function buildJobCard(job, historyMode = false) {
       <div style="margin-top:10px;">
         <!-- ✅ แถวปุ่มโทร: กดได้ตลอด -->
         <div class="row" style="gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" style="width:auto;" ${telPhone ? "" : "disabled"} onclick="callCustomer(${jobId}, '${telPhone}')">📞 โทรลูกค้า</button>
+          <button class="secondary" type="button" style="width:auto;" ${telPhone ? "" : "disabled"} onclick="callCustomer('${jobKeyJs}', '${telPhone}')">📞 โทรลูกค้า</button>
         </div>
 
         <!-- ✅ แถวปุ่มแผนที่: อยู่ใต้ปุ่มโทร และกดดูได้ตลอด -->
@@ -1039,12 +1050,12 @@ function buildJobCard(job, historyMode = false) {
           <div>
             <b>📷 รูปหน้างาน</b>
             <div class="row" style="margin-top:8px;flex-wrap:wrap;gap:10px;">
-              <button onclick="pickPhotos(${jobId}, 'before')" ${!canEdit ? "disabled" : ""}>ก่อนทำ</button>
-              <button onclick="pickPhotos(${jobId}, 'after')" ${!canEdit ? "disabled" : ""}>หลังทำ</button>
-              <button onclick="pickPhotos(${jobId}, 'pressure', 4)" ${!canEdit ? "disabled" : ""}>วัดน้ำยา</button>
-              <button onclick="pickPhotos(${jobId}, 'current', 4)" ${!canEdit ? "disabled" : ""}>วัดกระแส</button>
-              <button onclick="pickPhotos(${jobId}, 'temp', 4)" ${!canEdit ? "disabled" : ""}>อุณหภูมิ</button>
-              <button onclick="pickPhotos(${jobId}, 'defect', 4)" ${!canEdit ? "disabled" : ""}>ตำหนิ</button>
+              <button onclick="pickPhotos('${jobKeyJs}', 'before')" ${!canEdit ? "disabled" : ""}>ก่อนทำ</button>
+              <button onclick="pickPhotos('${jobKeyJs}', 'after')" ${!canEdit ? "disabled" : ""}>หลังทำ</button>
+              <button onclick="pickPhotos('${jobKeyJs}', 'pressure', 4)" ${!canEdit ? "disabled" : ""}>วัดน้ำยา</button>
+              <button onclick="pickPhotos('${jobKeyJs}', 'current', 4)" ${!canEdit ? "disabled" : ""}>วัดกระแส</button>
+              <button onclick="pickPhotos('${jobKeyJs}', 'temp', 4)" ${!canEdit ? "disabled" : ""}>อุณหภูมิ</button>
+              <button onclick="pickPhotos('${jobKeyJs}', 'defect', 4)" ${!canEdit ? "disabled" : ""}>ตำหนิ</button>
             </div>
             <div id="photo-status-${jobId}" style="margin-top:8px;"></div>
           </div>
@@ -1113,14 +1124,14 @@ function buildJobCard(job, historyMode = false) {
 
           <div>
             <b>📝 หมายเหตุช่าง</b>
-            <textarea id="note-${jobId}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""}>${escape(job.technician_note || "")}</textarea>
+            <textarea id="note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""}>${escape(job.technician_note || "")}</textarea>
 
             ${historyMode ? "" : ((checkedIn || isWorking) ? `
               <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
-                <button class="secondary" type="button" style="width:auto;" onclick="saveNote(${jobId})" ${!canEdit ? "disabled" : ""}>💾 บันทึกหมายเหตุ</button>
+                <button class="secondary" type="button" style="width:auto;" onclick="saveNote('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>💾 บันทึกหมายเหตุ</button>
                 ${isWorking ? `
-                  <button type="button" style="width:auto;" onclick="requestFinalize(${jobId}, 'เสร็จแล้ว')">✅ เสร็จสิ้น</button>
-                  <button class="danger" type="button" style="width:auto;" onclick="requestFinalize(${jobId}, 'ยกเลิก')">⛔ ยกเลิก</button>
+                  <button type="button" style="width:auto;" onclick="requestFinalize('${jobKeyJs}', 'เสร็จแล้ว')">✅ เสร็จสิ้น</button>
+                  <button class="danger" type="button" style="width:auto;" onclick="requestFinalize('${jobKeyJs}', 'ยกเลิก')">⛔ ยกเลิก</button>
                 ` : ``}
               </div>
             ` : ``)}
@@ -1184,22 +1195,22 @@ function openNav(lat, lng, addressText) {
 // =======================================
 async function startTravel(jobId) {
   try {
-    const id = Number(jobId);
-    const called = !!localStorage.getItem(`cwf_called_${id}`);
+    const keyBase = String(jobId || '').trim();
+    const called = !!localStorage.getItem(`cwf_called_${keyBase}`);
     if (!called) {
       alert("ต้องกด ‘โทรลูกค้า’ ก่อน ถึงจะเริ่มเดินทางได้");
       return;
     }
 
     // ✅ บันทึกในเครื่อง เพื่อให้ปุ่มเปลี่ยนสถานะทันที
-    localStorage.setItem(`cwf_travel_${jobId}`, String(Date.now()));
+    localStorage.setItem(`cwf_travel_${keyBase}`, String(Date.now()));
 
     // เปิดแผนที่ (หลังจากกดเริ่มเดินทาง ถึงจะแสดง GPS/ปุ่มเช็คอิน)
-    const job = (window.__JOB_CACHE__ || []).find(j => Number(j.job_id) === Number(jobId));
+    const job = (window.__JOB_CACHE__ || []).find(j => String(j.job_id) === keyBase || String(j.booking_code||'') === keyBase);
     if (job) openMaps(job.gps_latitude, job.gps_longitude, job.address_text);
 
     // แจ้ง backend (optional)
-    await fetch(`${API_BASE}/jobs/${jobId}/travel-start`, { method: "POST" }).catch(() => {});
+    await fetch(`${API_BASE}/jobs/${encodeURIComponent(keyBase)}/travel-start`, { method: "POST" }).catch(() => {});
   } finally {
     loadJobs();
   }
@@ -1207,7 +1218,7 @@ async function startTravel(jobId) {
 
 async function startWork(jobId) {
   try {
-    await fetch(`${API_BASE}/jobs/${jobId}/status`, {
+    await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/status`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "กำลังทำ" }),
@@ -1234,23 +1245,26 @@ async function startWork(jobId) {
 // =======================================
 function workflowNext(jobId) {
   try {
-    const id = Number(jobId);
-    const job = (window.__JOB_CACHE__ || []).find(j => Number(j.job_id) === id);
+    const raw = String(jobId || '').trim();
+    const cache = (window.__JOB_CACHE__ || []);
+    const job = cache.find(j => String(j.job_id) === raw || String(j.booking_code||'') === raw) || null;
+    const id = job ? Number(job.job_id) : Number(raw);
+    const keyBase = raw || String(id || '');
     if (!job) {
       alert("ไม่พบข้อมูลงาน (ลองรีเฟรช)");
       return;
     }
 
     const status = normStatus(job.job_status);
-    const called = !!localStorage.getItem(`cwf_called_${id}`);
-    const travelStarted = !!localStorage.getItem(`cwf_travel_${id}`) || !!job.travel_started_at;
+    const called = !!localStorage.getItem(`cwf_called_${keyBase}`);
+    const travelStarted = !!localStorage.getItem(`cwf_travel_${keyBase}`) || !!job.travel_started_at;
     const checkedIn = !!job.checkin_at;
     const paid = !!job.paid_at || String(job.payment_status || "").trim().toLowerCase() === "paid";
     const isWorking = status === "กำลังทำ";
 
     // งานปิดแล้ว: ให้ไปดู e-slip (ถ้ามี) และจบ
     if (status === "เสร็จแล้ว" || status === "ยกเลิก") {
-      if (paid) return openESlip(id);
+      if (paid) return openESlip(keyBase);
       alert("งานนี้ปิดแล้ว");
       return;
     }
@@ -1260,23 +1274,23 @@ function workflowNext(jobId) {
         alert("ต้องกด ‘โทรลูกค้า’ ก่อน ถึงจะเริ่มเดินทางได้");
         return;
       }
-      return startTravel(id);
+      return startTravel(keyBase);
     }
 
     if (!checkedIn) {
-      return checkin(id);
+      return checkin(keyBase);
     }
 
     if (!isWorking) {
-      return startWork(id);
+      return startWork(keyBase);
     }
 
     if (!paid) {
-      return payJob(id);
+      return payJob(keyBase);
     }
 
     // จ่ายแล้ว => ดู e-slip ได้ตลอด
-    return openESlip(id);
+    return openESlip(keyBase);
   } catch (e) {
     console.error(e);
     alert("เกิดข้อผิดพลาดในการอัปเดตสถานะ");
@@ -1920,13 +1934,13 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
 
     // บันทึก note ล่าสุด (เพื่อส่งให้แอดมินตอนยกเลิก)
     const note = (document.getElementById(`note-${jobId}`)?.value || "").trim();
-    await fetch(`${API_BASE}/jobs/${jobId}/note`, {
+    await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/note`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ note }),
     }).catch(() => {});
 
-    const res = await fetch(`${API_BASE}/jobs/${jobId}/finalize`, {
+    const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/finalize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -1951,7 +1965,7 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
 // ✅ STATUS
 // =======================================
 function setStatus(jobId, status) {
-  fetch(`${API_BASE}/jobs/${jobId}/status`, {
+  fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/status`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ status }),
@@ -1969,7 +1983,7 @@ async function closeJob(jobId) {
   try {
     await uploadPendingPhotos(jobId, { failOpen: true, timeoutMs: 15000 });
 
-    const res = await fetch(`${API_BASE}/jobs/${jobId}/status`, {
+    const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/status`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ status: "เสร็จแล้ว" }),
@@ -1997,7 +2011,7 @@ function checkin(jobId) {
       const lat = pos.coords.latitude;
       const lng = pos.coords.longitude;
 
-      fetch(`${API_BASE}/jobs/${jobId}/checkin`, {
+      fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/checkin`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ lat, lng }),
@@ -2025,7 +2039,7 @@ function saveNote(jobId) {
   const el = document.getElementById(`note-${jobId}`);
   const note = (el?.value || "").trim();
 
-  fetch(`${API_BASE}/jobs/${jobId}/note`, {
+  fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/note`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ note }),
@@ -2046,7 +2060,7 @@ function saveNote(jobId) {
 // 💰 PRICING
 // =======================================
 function loadPricing(jobId) {
-  fetch(`${API_BASE}/jobs/${jobId}/pricing`)
+  fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/pricing`)
     .then((res) => res.json())
     .then((data) => {
       const box = document.getElementById(`pricing-${jobId}`);
@@ -2092,7 +2106,7 @@ function loadTeam(jobId){
   const box = document.getElementById(`team-${jobId}`);
   if (!box) return;
 
-  fetch(`${API_BASE}/jobs/${jobId}/team?details=1`, { cache: "no-store" })
+  fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/team?details=1`, { cache: "no-store" })
     .then((res) => res.json())
     .then((data) => {
       const members = Array.isArray(data?.members) ? data.members : [];
@@ -2143,7 +2157,7 @@ async function refreshPhotoStatus(jobId) {
     // ✅ นับรูปที่อัปโหลดแล้วจากเซิร์ฟเวอร์ (ให้ช่างรู้ว่าขึ้นจริง)
     let uploaded = [];
     try {
-      const rr = await fetch(`${API_BASE}/jobs/${jobId}/photos`);
+      const rr = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos`);
       if (rr.ok) uploaded = (await rr.json()) || [];
     } catch {
       // ignore
@@ -2185,7 +2199,7 @@ async function refreshPhotoStatus(jobId) {
 // ✅ แสดงรูปที่อัปโหลดแล้ว (modal ง่าย ๆ)
 async function openUploadedPhotos(jobId) {
   try {
-    const rr = await fetch(`${API_BASE}/jobs/${jobId}/photos`);
+    const rr = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos`);
     const photos = rr.ok ? (await rr.json()) : [];
     const list = Array.isArray(photos) ? photos.filter((p) => p.public_url) : [];
 
@@ -2279,7 +2293,7 @@ async function uploadPendingPhotos(jobId, opts) {
       const form = new FormData();
       form.append("photo", it.blob, it.original_name || "photo.jpg");
 
-      let res = await fetchWithTimeout(`${API_BASE}/jobs/${jobId}/photos/${it.photo_id}/upload`, {
+      let res = await fetchWithTimeout(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${it.photo_id}/upload`, {
         method: "POST",
         body: form,
       });
@@ -2287,7 +2301,7 @@ async function uploadPendingPhotos(jobId, opts) {
 
       // 2) if server lost metadata (404), recreate meta then retry once
       if (!res.ok && (res.status === 404 || String(data?.error || '').toLowerCase().includes('meta'))) {
-        const metaRes = await fetchWithTimeout(`${API_BASE}/jobs/${jobId}/photos/meta`, {
+        const metaRes = await fetchWithTimeout(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2307,7 +2321,7 @@ async function uploadPendingPhotos(jobId, opts) {
 
           const form2 = new FormData();
           form2.append("photo", it.blob, it.original_name || "photo.jpg");
-          res = await fetchWithTimeout(`${API_BASE}/jobs/${jobId}/photos/${newId}/upload`, {
+          res = await fetchWithTimeout(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${newId}/upload`, {
             method: "POST",
             body: form2,
           });
@@ -2355,7 +2369,7 @@ async function uploadFilesAsPhotos(jobId, phase, files){
   if (!selected.length) return;
 
   for (const f of selected) {
-    const metaRes = await fetch(`${API_BASE}/jobs/${jobId}/photos/meta`, {
+    const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -2373,7 +2387,7 @@ async function uploadFilesAsPhotos(jobId, phase, files){
     try {
       const formNow = new FormData();
       formNow.append("photo", f, f.name || "photo.jpg");
-      const upRes = await fetch(`${API_BASE}/jobs/${jobId}/photos/${photo_id}/upload`, {
+      const upRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${photo_id}/upload`, {
         method: "POST",
         body: formNow,
       });
@@ -2409,7 +2423,7 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
       if (!selected.length) return;
 
       for (const f of selected) {
-        const metaRes = await fetch(`${API_BASE}/jobs/${jobId}/photos/meta`, {
+        const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -2431,7 +2445,7 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
           const formNow = new FormData();
           formNow.append("photo", f, f.name || "photo.jpg");
 
-          const upRes = await fetch(`${API_BASE}/jobs/${jobId}/photos/${photo_id}/upload`, {
+          const upRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${photo_id}/upload`, {
             method: "POST",
             body: formNow,
           });
