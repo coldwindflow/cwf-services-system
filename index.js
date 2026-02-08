@@ -2050,6 +2050,8 @@ app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
 // - Backward compatible: new endpoints only
 // =======================================
 const ENABLE_WARRANTY_ENFORCE = (process.env.ENABLE_WARRANTY_ENFORCE || "1") === "1";
+// ✅ Admin force finish (safety toggle)
+const ENABLE_ADMIN_FORCE_FINISH = (process.env.ENABLE_ADMIN_FORCE_FINISH || "1") === "1";
 
 function computeWarrantyEnd({ job_type, warranty_kind, warranty_months, start }) {
   const jt = String(job_type||'').trim();
@@ -2102,6 +2104,78 @@ app.post('/admin/jobs/:job_id/extend_warranty_v2', requireAdminSoft, async (req,
   } catch (e) {
     console.error('extend_warranty_v2 error', e);
     return res.status(500).json({ error: e.message || 'extend warranty ไม่สำเร็จ' });
+  }
+});
+
+// =======================================
+// 🧯 ADMIN: FORCE FINISH (fallback when tech cannot finalize)
+// - Backward compatible: new endpoint only
+// - No signature required (admin override), logs to updates
+// =======================================
+app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, res) => {
+  if (!ENABLE_ADMIN_FORCE_FINISH) return res.status(403).json({ error: 'Feature disabled' });
+  const job_id = Number(req.params.job_id);
+  const actor_username = String(req.body?.actor_username || '').trim() || null;
+  const reason = String(req.body?.reason || '').trim();
+  if (!job_id) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
+  if (!reason) return res.status(400).json({ error: 'ต้องระบุเหตุผล' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const jr = await client.query(
+      `SELECT job_type, warranty_end_at FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+      [job_id]
+    );
+    if (!jr.rows.length) return res.status(404).json({ error: 'ไม่พบงาน' });
+    const cur = jr.rows[0] || {};
+    const hasWarranty = !!cur.warranty_end_at;
+    const jt = String(cur.job_type || '').trim();
+    let wEndIso = null, wKind = null, wMonths = null;
+    if (!hasWarranty) {
+      const isClean = jt.includes('ล้าง');
+      const isInstall = jt.includes('ติดตั้ง');
+      const kind = isClean ? 'clean' : (isInstall ? 'install' : '');
+      // For repair without input, do not auto-close (safety)
+      if (!kind && ENABLE_WARRANTY_ENFORCE) {
+        throw new Error('งานซ่อมต้องระบุประกันก่อนปิดงาน (admin override ไม่อนุญาต)');
+      }
+      if (kind) {
+        const w = computeWarrantyEnd({ job_type: jt, warranty_kind: kind, warranty_months: null, start: new Date() });
+        wEndIso = w.end.toISOString();
+        wKind = w.kind;
+        wMonths = w.months;
+      }
+    }
+
+    await client.query(
+      `UPDATE public.jobs
+       SET job_status='เสร็จแล้ว',
+           finished_at=NOW(),
+           warranty_kind = COALESCE($2, warranty_kind),
+           warranty_months = COALESCE($3, warranty_months),
+           warranty_start_at = COALESCE(warranty_start_at, NOW()),
+           warranty_end_at = COALESCE($4, warranty_end_at)
+       WHERE job_id=$1`,
+      [job_id, wKind, wMonths, wEndIso]
+    );
+
+    await logJobUpdate(job_id, {
+      actor_username,
+      actor_role: 'admin',
+      action: 'admin_force_finish_v2',
+      message: `แอดมินปิดงานแทนช่าง: ${reason}`,
+      payload: { warranty_kind: wKind || null, warranty_end_at: wEndIso || null }
+    });
+
+    await client.query('COMMIT');
+    res.json({ success: true, job_id, status: 'เสร็จแล้ว' });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error(e);
+    res.status(500).json({ error: e.message || 'ปิดงานไม่สำเร็จ' });
+  } finally {
+    client.release();
   }
 });
 
@@ -3606,17 +3680,37 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
     if (status === "เสร็จแล้ว") {
       // ✅ Warranty enforcement (feature flag)
       // - Allow if already set (backward compatibility)
+      // - IMPORTANT (production fix): งานล้าง/ติดตั้ง ต้อง auto-lock warranty ได้แม้ client ไม่ส่งค่า
+      //   เพื่อแก้เคส "งานจากระบบเดิม" ที่ UI ไม่ส่ง warranty_kind แล้วทำให้ปิดงานไม่ได้
       const curW = await client.query(`SELECT job_type, warranty_end_at FROM public.jobs WHERE job_id=$1 FOR UPDATE`, [job_id]);
       const cur = curW.rows[0] || {};
       const hasWarranty = !!cur.warranty_end_at;
-      if (ENABLE_WARRANTY_ENFORCE && !hasWarranty && !warranty_kind && warranty_months == null) {
+
+      const jt = String(cur.job_type || '').trim();
+      const isClean = jt.includes('ล้าง');
+      const isInstall = jt.includes('ติดตั้ง');
+
+      // If client didn't send warranty_kind/months, but job_type indicates clean/install, auto-derive.
+      const clientWKind = String(warranty_kind || '').trim();
+      const clientHasAnyWarrantyInput = !!clientWKind || warranty_months != null;
+      const canAutoWarranty = (isClean || isInstall);
+
+      if (ENABLE_WARRANTY_ENFORCE && !hasWarranty && !clientHasAnyWarrantyInput && !canAutoWarranty) {
         throw new Error('ต้องระบุประกันก่อนกดเสร็จสิ้น (Warranty)');
       }
+
       let wEndIso = null;
       let wKind = null;
       let wMonths = null;
-      if (!hasWarranty && (warranty_kind || warranty_months != null)) {
-        const w = computeWarrantyEnd({ job_type: cur.job_type, warranty_kind, warranty_months, start: new Date() });
+
+      if (!hasWarranty) {
+        // Use client input when present. Otherwise auto based on job_type for clean/install.
+        const w = computeWarrantyEnd({
+          job_type: jt,
+          warranty_kind: (clientWKind || (isClean ? 'clean' : (isInstall ? 'install' : ''))),
+          warranty_months,
+          start: new Date(),
+        });
         wEndIso = w.end.toISOString();
         wKind = w.kind;
         wMonths = w.months;
@@ -3718,6 +3812,115 @@ app.put("/technicians/:username/accept-status", async (req, res) => {
     res.status(500).json({ error: "อัปเดตสถานะรับงานไม่สำเร็จ" });
   } finally {
     client.release();
+  }
+});
+
+// =======================================
+// 🗓️ TECH: Weekly off-days + Workday overrides (v2)
+// - weekly_off_days: '0,6' (Sun,Sat)
+// - overrides: technician_workdays_v2 (work_date, is_off)
+// Safety: limit edit window (default 14 days ahead)
+// =======================================
+const ENABLE_TECH_WORKDAYS_V2 = (process.env.ENABLE_TECH_WORKDAYS_V2 || "1") === "1";
+const TECH_WORKDAYS_MAX_AHEAD_DAYS = Number(process.env.TECH_WORKDAYS_MAX_AHEAD_DAYS || 14);
+
+function toIsoDate(d){
+  const dt = (d instanceof Date) ? d : new Date(d);
+  if (Number.isNaN(dt.getTime())) return '';
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth()+1).padStart(2,'0');
+  const dd = String(dt.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
+}
+
+app.get('/technicians/:username/weekly-off-days', async (req, res) => {
+  const { username } = req.params;
+  try {
+    const r = await pool.query(`SELECT COALESCE(weekly_off_days,'') AS weekly_off_days FROM public.technician_profiles WHERE username=$1 LIMIT 1`, [username]);
+    const raw = r.rows[0]?.weekly_off_days || '';
+    const days = raw.split(',').map(x=>Number(String(x).trim())).filter(n=>Number.isFinite(n) && n>=0 && n<=6);
+    res.json({ success:true, weekly_off_days: raw, days });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'โหลดวันหยุดประจำสัปดาห์ไม่สำเร็จ' });
+  }
+});
+
+app.put('/technicians/:username/weekly-off-days', async (req, res) => {
+  if (!ENABLE_TECH_WORKDAYS_V2) return res.status(403).json({ error: 'Feature disabled' });
+  const { username } = req.params;
+  const days = Array.isArray(req.body?.days) ? req.body.days : [];
+  const norm = Array.from(
+    new Set(days.map(d=>Number(d)).filter(n=>Number.isFinite(n) && n>=0 && n<=6))
+  ).sort((a,b)=>a-b);
+  const raw = norm.join(',');
+  try {
+    await pool.query(
+      `INSERT INTO public.technician_profiles (username, weekly_off_days)
+       VALUES ($1,$2)
+       ON CONFLICT (username) DO UPDATE SET weekly_off_days=EXCLUDED.weekly_off_days`,
+      [username, raw]
+    );
+    res.json({ success:true, weekly_off_days: raw, days: norm });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'บันทึกวันหยุดประจำสัปดาห์ไม่สำเร็จ' });
+  }
+});
+
+app.get('/technicians/:username/workdays-v2', async (req, res) => {
+  const { username } = req.params;
+  const from = String(req.query?.from || '').trim();
+  const to = String(req.query?.to || '').trim();
+  const fromIso = from || toIsoDate(new Date());
+  const toIso = to || toIsoDate(new Date(Date.now() + 14*86400000));
+  try {
+    const r = await pool.query(
+      `SELECT work_date::date AS work_date, is_off, updated_at
+       FROM public.technician_workdays_v2
+       WHERE technician_username=$1 AND work_date::date BETWEEN $2::date AND $3::date
+       ORDER BY work_date ASC`,
+      [username, fromIso, toIso]
+    );
+    res.json({ success:true, items: r.rows.map(x=>({ work_date: toIsoDate(x.work_date), is_off: !!x.is_off, updated_at: x.updated_at })) });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'โหลดวันหยุดล่วงหน้าไม่สำเร็จ' });
+  }
+});
+
+app.put('/technicians/:username/workdays-v2', async (req, res) => {
+  if (!ENABLE_TECH_WORKDAYS_V2) return res.status(403).json({ error: 'Feature disabled' });
+  const { username } = req.params;
+  const work_date = String(req.body?.work_date || '').trim();
+  const is_off = !!req.body?.is_off;
+  if (!work_date) return res.status(400).json({ error: 'ต้องมี work_date (YYYY-MM-DD)' });
+  const iso = toIsoDate(work_date);
+  if (!iso) return res.status(400).json({ error: 'รูปแบบ work_date ไม่ถูกต้อง' });
+
+  // limit edit window
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  const max = new Date(today.getTime() + (Math.max(1, TECH_WORKDAYS_MAX_AHEAD_DAYS) * 86400000));
+  const d = new Date(iso + 'T00:00:00');
+  if (d < today || d > max) {
+    return res.status(400).json({ error: `ตั้งค่าได้เฉพาะวันนี้ถึง ${toIsoDate(max)} เท่านั้น` });
+  }
+
+  try {
+    const r = await pool.query(
+      `INSERT INTO public.technician_workdays_v2 (technician_username, work_date, is_off, updated_at)
+       VALUES ($1,$2::date,$3,NOW())
+       ON CONFLICT (technician_username, work_date)
+       DO UPDATE SET is_off=EXCLUDED.is_off, updated_at=EXCLUDED.updated_at
+       RETURNING work_date::date AS work_date, is_off, updated_at`,
+      [username, iso, is_off]
+    );
+    const row = r.rows[0];
+    res.json({ success:true, item: { work_date: toIsoDate(row.work_date), is_off: !!row.is_off, updated_at: row.updated_at } });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ error: 'บันทึกวันหยุดล่วงหน้าไม่สำเร็จ' });
   }
 });
 

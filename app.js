@@ -1698,6 +1698,205 @@ function toggleWarrantyMonths(jobId){
 window.toggleWarrantyMonths = toggleWarrantyMonths;
 
 // =======================================
+// 🗓️ TECH WORKDAYS / OFF-DAYS (v2)
+// - ตั้งวันหยุดประจำสัปดาห์ + วันหยุดล่วงหน้า (override)
+// - ใช้ backend: /technicians/:username/weekly-off-days และ /technicians/:username/workdays-v2
+// =======================================
+let __workdaysModalInited = false;
+
+function ensureWorkdaysModal(){
+  if (__workdaysModalInited) return;
+  __workdaysModalInited = true;
+
+  const wrap = document.createElement('div');
+  wrap.id = 'workdays-modal';
+  wrap.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:99999;background:rgba(0,0,0,0.45);padding:16px;';
+  wrap.innerHTML = `
+    <div class="card" style="width:min(560px,100%);max-height:90vh;overflow:auto;">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+        <div>
+          <h3 style="margin:0;">🗓️ ตั้งค่าวันหยุดของฉัน</h3>
+          <div class="muted" style="margin-top:4px;font-size:12px;">ตั้งวันหยุดประจำสัปดาห์ + ตั้งวันหยุดล่วงหน้า (วันนี้ถึง 14 วัน)</div>
+        </div>
+        <button class="secondary" type="button" id="workdays-close" style="width:auto;">ปิด</button>
+      </div>
+
+      <div style="margin-top:12px;">
+        <b>วันหยุดประจำสัปดาห์</b>
+        <div class="muted" style="margin-top:4px;font-size:12px;">เลือกวันหยุดทุกสัปดาห์ (เช่น อาทิตย์/เสาร์)</div>
+        <div id="weekly-off-grid" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px;"></div>
+        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+          <button class="warning" type="button" id="weekly-save" style="width:auto;">บันทึกวันหยุดประจำสัปดาห์</button>
+          <span class="muted" id="weekly-status" style="font-size:12px;"></span>
+        </div>
+      </div>
+
+      <hr style="margin:12px 0;"/>
+
+      <div>
+        <b>วันหยุดล่วงหน้า (Override)</b>
+        <div class="muted" style="margin-top:4px;font-size:12px;">ใช้กรณีอยากหยุดเพิ่ม/ทำงานเพิ่มเป็นรายวัน</div>
+        <div id="override-list" style="margin-top:10px;display:grid;gap:8px;"></div>
+        <div class="muted" id="override-status" style="margin-top:8px;font-size:12px;"></div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+
+  wrap.querySelector('#workdays-close').onclick = () => { wrap.style.display = 'none'; };
+}
+
+function toIsoDateLocal(d){
+  const dt = (d instanceof Date) ? d : new Date(d);
+  if (!dt || Number.isNaN(dt.getTime())) return '';
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth()+1).padStart(2,'0');
+  const dd = String(dt.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
+}
+
+async function loadWorkdaysModalData(){
+  const wrap = document.getElementById('workdays-modal');
+  if (!wrap) return;
+  const weeklyGrid = wrap.querySelector('#weekly-off-grid');
+  const weeklyStatus = wrap.querySelector('#weekly-status');
+  const overrideList = wrap.querySelector('#override-list');
+  const overrideStatus = wrap.querySelector('#override-status');
+  if (weeklyStatus) weeklyStatus.textContent = 'กำลังโหลด...';
+  if (overrideStatus) overrideStatus.textContent = '';
+  if (weeklyGrid) weeklyGrid.innerHTML = '';
+  if (overrideList) overrideList.innerHTML = '';
+
+  const dayLabels = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+
+  try{
+    // weekly
+    const wres = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/weekly-off-days`);
+    const w = await wres.json().catch(()=>({}));
+    if (!wres.ok) throw new Error(w.error || 'โหลดวันหยุดไม่สำเร็จ');
+    const days = Array.isArray(w.days) ? w.days : [];
+
+    if (weeklyGrid){
+      weeklyGrid.innerHTML = dayLabels.map((lb, idx)=>{
+        const checked = days.includes(idx);
+        return `
+          <label style="display:flex;align-items:center;gap:8px;padding:10px 10px;border-radius:14px;border:1px solid rgba(15,23,42,0.10);background:rgba(15,23,42,0.03);cursor:pointer;">
+            <input type="checkbox" data-day="${idx}" ${checked?'checked':''} style="transform:scale(1.15);"/>
+            <span style="font-weight:900;">${lb}</span>
+          </label>
+        `;
+      }).join('');
+    }
+
+    const saveBtn = wrap.querySelector('#weekly-save');
+    if (saveBtn){
+      saveBtn.onclick = async () => {
+        try{
+          const picks = Array.from(wrap.querySelectorAll('#weekly-off-grid input[type="checkbox"]'))
+            .filter(el=>el.checked)
+            .map(el=>Number(el.getAttribute('data-day')))
+            .filter(n=>Number.isFinite(n));
+          if (weeklyStatus) weeklyStatus.textContent = 'กำลังบันทึก...';
+          const pres = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/weekly-off-days`, {
+            method:'PUT',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ days: picks })
+          });
+          const pd = await pres.json().catch(()=>({}));
+          if (!pres.ok) throw new Error(pd.error || 'บันทึกไม่สำเร็จ');
+          if (weeklyStatus) weeklyStatus.textContent = '✅ บันทึกแล้ว';
+        }catch(e){
+          if (weeklyStatus) weeklyStatus.textContent = `❌ ${e.message}`;
+        }
+      };
+    }
+
+    if (weeklyStatus) weeklyStatus.textContent = '';
+
+    // overrides (today..+14)
+    const from = toIsoDateLocal(new Date());
+    const to = toIsoDateLocal(new Date(Date.now()+14*86400000));
+    const ores = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/workdays-v2?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+    const od = await ores.json().catch(()=>({}));
+    if (!ores.ok) throw new Error(od.error || 'โหลดวันหยุดล่วงหน้าไม่สำเร็จ');
+    const items = Array.isArray(od.items) ? od.items : [];
+    const byDate = new Map(items.map(it=>[String(it.work_date), !!it.is_off]));
+
+    // render 15 days
+    const daysToShow = [];
+    const base = new Date(); base.setHours(0,0,0,0);
+    for (let i=0;i<=14;i++){
+      const d = new Date(base.getTime()+i*86400000);
+      const iso = toIsoDateLocal(d);
+      const dow = d.getDay();
+      const weeklyOff = Array.isArray(days) && days.includes(dow);
+      const overrideOff = byDate.has(iso) ? byDate.get(iso) : null; // null = no override
+      daysToShow.push({ iso, d, dow, weeklyOff, overrideOff });
+    }
+
+    if (overrideList){
+      overrideList.innerHTML = daysToShow.map(x=>{
+        const label = x.d.toLocaleDateString('th-TH', { weekday:'short', year:'numeric', month:'2-digit', day:'2-digit' });
+        const effectiveOff = (x.overrideOff===null) ? x.weeklyOff : x.overrideOff;
+        const sub = (x.overrideOff===null)
+          ? (x.weeklyOff ? 'อิงวันหยุดประจำสัปดาห์' : 'อิงวันทำงานปกติ')
+          : 'ตั้งค่า override แล้ว';
+        return `
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);background:rgba(255,255,255,0.75);">
+            <div style="min-width:0;">
+              <div style="font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${label}</div>
+              <div class="muted" style="font-size:12px;margin-top:2px;">${sub}</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
+              <span class="badge ${effectiveOff?'wait':'done'}" style="min-width:74px;text-align:center;">${effectiveOff?'วันหยุด':'ทำงาน'}</span>
+              <button class="secondary" type="button" data-date="${x.iso}" style="width:auto;min-height:36px;padding:8px 10px;">${(x.overrideOff===null)?'ตั้งค่า':'เปลี่ยน'}</button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      Array.from(overrideList.querySelectorAll('button[data-date]')).forEach(btn=>{
+        btn.onclick = async () => {
+          const date = btn.getAttribute('data-date');
+          if (!date) return;
+          try{
+            const current = byDate.has(date) ? byDate.get(date) : null;
+            // Toggle: null -> true (mark off), true -> false (mark work), false -> true
+            const next = (current===null) ? true : !current;
+            if (overrideStatus) overrideStatus.textContent = `กำลังบันทึก ${date}...`;
+            const pres = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/workdays-v2`, {
+              method:'PUT',
+              headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({ work_date: date, is_off: next })
+            });
+            const pd = await pres.json().catch(()=>({}));
+            if (!pres.ok) throw new Error(pd.error || 'บันทึกไม่สำเร็จ');
+            byDate.set(date, next);
+            if (overrideStatus) overrideStatus.textContent = '✅ บันทึกแล้ว';
+            // re-render quickly
+            loadWorkdaysModalData();
+          }catch(e){
+            if (overrideStatus) overrideStatus.textContent = `❌ ${e.message}`;
+          }
+        };
+      });
+    }
+  }catch(e){
+    if (weeklyStatus) weeklyStatus.textContent = `❌ ${e.message}`;
+    if (overrideStatus) overrideStatus.textContent = '';
+  }
+}
+
+function openWorkdaysModal(){
+  ensureWorkdaysModal();
+  const wrap = document.getElementById('workdays-modal');
+  if (!wrap) return;
+  wrap.style.display = 'flex';
+  loadWorkdaysModalData();
+}
+window.openWorkdaysModal = openWorkdaysModal;
+
+// =======================================
 // ✅ FINALIZE (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์
 // =======================================
 function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
