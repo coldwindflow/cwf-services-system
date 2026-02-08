@@ -2047,6 +2047,15 @@ app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
   }
 });
 
+// Backward-compatible alias:
+// Some clients / shared links call: /admin/job_v2?id=<JOB_ID_OR_BOOKING_CODE>
+// Support that by redirecting to the canonical route /admin/job_v2/:job_id
+app.get('/admin/job_v2', requireAdminSoft, (req, res) => {
+  const id = String(req.query?.id || req.query?.job_id || req.query?.booking_code || '').trim();
+  if (!id) return res.status(400).json({ error: 'ต้องระบุ id' });
+  return res.redirect(302, `/admin/job_v2/${encodeURIComponent(id)}`);
+});
+
 // =======================================
 // 🛡️ WARRANTY / RETURN FOR FIX / CLONE (Admin v2)
 // - Backward compatible: new endpoints only
