@@ -1944,8 +1944,14 @@ function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
 
 async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
   try {
-    // อัปโหลดรูปค้างก่อน
-    await uploadPendingPhotos(jobId);
+    // อัปโหลดรูปค้างก่อน (fail-open: กันเคส meta รูปหาย/ค้าง แล้วทำให้ปิดงานไม่ได้)
+    const up = await uploadPendingPhotos(jobId, { failOpen: true, allowRecreateMeta: true });
+    if (up && up.failed > 0) {
+      const ok = confirm(`มีรูปค้าง ${up.failed} รูป ที่อัปโหลดไม่สำเร็จ (ยังอยู่ในเครื่อง)
+\n- คุณยังสามารถกด “อัปโหลดค้างในเครื่อง” ภายหลังได้
+\nต้องการ “ปิดงานต่อ” ไหม?`);
+      if (!ok) return;
+    }
 
     // บันทึก note ล่าสุด (เพื่อส่งให้แอดมินตอนยกเลิก)
     const note = (document.getElementById(`note-${jobId}`)?.value || "").trim();
@@ -2004,7 +2010,8 @@ function setStatus(jobId, status) {
 
 async function closeJob(jobId) {
   try {
-    await uploadPendingPhotos(jobId);
+    // legacy button path (keep fail-open to avoid blocking real work)
+    await uploadPendingPhotos(jobId, { failOpen: true, allowRecreateMeta: true });
 
     const res = await fetch(`${API_BASE}/jobs/${jobId}/status`, {
       method: "PUT",
@@ -2290,26 +2297,88 @@ window.forceUpload = forceUpload;
 // =======================================
 // ⬆️ UPLOAD PENDING PHOTOS
 // =======================================
-async function uploadPendingPhotos(jobId) {
-  const items = await idbGetByJob(jobId);
-  if (!items.length) return true;
+async function uploadPendingPhotos(jobId, opts) {
+  const options = Object.assign({
+    // failOpen=true จะไม่บล็อก flow หลัก (เช่น ปิดงาน) หากอัปโหลดรูปบางรูปไม่สำเร็จ
+    failOpen: false,
+    // ถ้า server หา metadata ไม่เจอ (404) ให้สร้าง meta ใหม่แล้วอัปโหลดแทน เพื่อกันรูปค้างถาวร
+    allowRecreateMeta: true,
+  }, (opts || {}));
 
-  for (const it of items) {
+  const items = await idbGetByJob(jobId);
+  if (!items.length) return { ok: true, uploaded: 0, failed: 0, errors: [] };
+
+  let uploaded = 0;
+  let failed = 0;
+  const errors = [];
+
+  const uploadOne = async (photoId, it) => {
     const form = new FormData();
     form.append("photo", it.blob, it.original_name || "photo.jpg");
-
-    const res = await fetch(`${API_BASE}/jobs/${jobId}/photos/${it.photo_id}/upload`, {
+    const res = await fetch(`${API_BASE}/jobs/${jobId}/photos/${photoId}/upload`, {
       method: "POST",
       body: form,
     });
-
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "อัปโหลดรูปไม่สำเร็จ");
+    if (!res.ok) {
+      const err = new Error(data.error || "อัปโหลดรูปไม่สำเร็จ");
+      // แนบ status เพื่อให้ logic ด้านบนตัดสินใจได้
+      err.__httpStatus = res.status;
+      throw err;
+    }
+    return true;
+  };
 
-    await idbDelete(it.photo_id);
+  for (const it of items) {
+    try {
+      // 1) ลองอัปโหลดด้วย photo_id เดิมก่อน
+      await uploadOne(it.photo_id, it);
+      await idbDelete(it.photo_id);
+      uploaded++;
+    } catch (e) {
+      // 2) ถ้า server บอกว่าไม่พบ metadata รูป → สร้าง meta ใหม่แล้วอัปโหลดแทน
+      const status = e?.__httpStatus;
+      const msg = String(e?.message || "");
+      const isMetaMissing = (status === 404) && (msg.includes("metadata") || msg.includes("ไม่พบ"));
+
+      if (isMetaMissing && options.allowRecreateMeta) {
+        try {
+          const metaRes = await fetch(`${API_BASE}/jobs/${jobId}/photos/meta`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              phase: it.phase,
+              mime_type: it.mime_type || (it.blob?.type || "image/jpeg"),
+              original_name: it.original_name || "photo.jpg",
+              file_size: it.file_size || (it.blob ? it.blob.size : null),
+            }),
+          });
+          const meta = await metaRes.json().catch(() => ({}));
+          if (!metaRes.ok) throw new Error(meta.error || "สร้าง metadata ใหม่ไม่สำเร็จ");
+
+          const newPhotoId = meta.photo_id;
+          await uploadOne(newPhotoId, it);
+
+          // ลบของเดิมที่ค้างในเครื่อง (photo_id เก่า)
+          await idbDelete(it.photo_id);
+          uploaded++;
+          continue;
+        } catch (e2) {
+          failed++;
+          errors.push({ photo_id: it.photo_id, phase: it.phase, error: String(e2?.message || e2) });
+          if (!options.failOpen) throw e2;
+          continue;
+        }
+      }
+
+      // 3) กรณีอื่น ๆ: failOpen จะเก็บไว้ค้างในเครื่อง ไม่บล็อก flow
+      failed++;
+      errors.push({ photo_id: it.photo_id, phase: it.phase, error: String(e?.message || e) });
+      if (!options.failOpen) throw e;
+    }
   }
 
-  return true;
+  return { ok: failed === 0, uploaded, failed, errors };
 }
 
 // =======================================
