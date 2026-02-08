@@ -1250,7 +1250,7 @@ app.put("/jobs/:job_id/assign", async (req, res) => {
     // ASSIGN_COLLISION_V2
     const jobR = await client.query(
       `SELECT appointment_datetime, COALESCE(duration_min,60) AS duration_min FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
-      [realId]
+	  [job_id]
     );
     if (jobR.rows.length === 0) throw new Error("ไม่พบงาน");
     const j = jobR.rows[0];
@@ -1346,7 +1346,7 @@ app.post("/jobs/:job_id/dispatch_v2", requireAdminSoft, async (req, res) => {
     const jobR = await client.query(
       `SELECT job_id, booking_mode, job_status, appointment_datetime, COALESCE(duration_min,60) AS duration_min
        FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
-      [realId]
+	  [job_id]
     );
     if (!jobR.rows.length) throw new Error('ไม่พบงาน');
     const j = jobR.rows[0];
@@ -2166,7 +2166,7 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
 
     const jr = await client.query(
       `SELECT job_type, warranty_end_at, job_status FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
-      [realId]
+	  [job_id]
     );
     if (!jr.rows.length) return res.status(404).json({ error: 'ไม่พบงาน' });
 
