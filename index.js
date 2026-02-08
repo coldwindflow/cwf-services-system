@@ -5045,7 +5045,8 @@ app.get("/admin/availability_by_tech_v2", async (req, res) => {
   const duration_min = Math.max(15, Number(req.query.duration_min || 60));
   const slot_step_min = 30;
   try {
-    const techs = await listTechniciansByType(tech_type);
+    const include_paused = String(req.query.forced || req.query.include_paused || "").trim() === "1";
+    const techs = await listTechniciansByType(tech_type, { include_paused });
     const specialMap = new Map();
     try {
       const sr = await pool.query(

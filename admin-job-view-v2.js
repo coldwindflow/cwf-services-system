@@ -20,6 +20,14 @@ function fmtDT(iso){
   return d.toLocaleString('th-TH', { year:'numeric', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit' });
 }
 
+function toLocalDatetimeInput(iso){
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  const pad = (n)=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 function statusPill(status){
   const s = String(status||'').trim();
   let st = 'background:#0f172a;color:#fff;border-color:transparent';
@@ -151,6 +159,77 @@ async function loadJob(){
 
     <hr style="margin:12px 0;" />
 
+    <details class="cwf-details" style="margin-top:0" open>
+      <summary>✏️ แก้ไขใบงาน (Admin)</summary>
+      <div class="cwf-details-body">
+        <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1;min-width:220px">
+            <label>ชื่อลูกค้า</label>
+            <input id="edit_customer_name" value="${escapeHtml(safe(job.customer_name||''))}" />
+          </div>
+          <div style="width:220px">
+            <label>เบอร์โทร</label>
+            <input id="edit_customer_phone" value="${escapeHtml(safe(job.customer_phone||''))}" />
+          </div>
+          <div style="width:220px">
+            <label>ประเภทงาน</label>
+            <select id="edit_job_type">
+              <option value="">-</option>
+              <option value="ล้าง" ${String(job.job_type||'')==='ล้าง'?'selected':''}>ล้าง</option>
+              <option value="ซ่อม" ${String(job.job_type||'')==='ซ่อม'?'selected':''}>ซ่อม</option>
+              <option value="ติดตั้ง" ${String(job.job_type||'')==='ติดตั้ง'?'selected':''}>ติดตั้ง</option>
+            </select>
+          </div>
+          <div style="width:240px">
+            <label>วัน/เวลานัด</label>
+            <input id="edit_appt" type="datetime-local" />
+          </div>
+        </div>
+
+        <div style="margin-top:10px">
+          <label>ที่อยู่</label>
+          <textarea id="edit_address" rows="2" placeholder="ที่อยู่ลูกค้า">${escapeHtml(safe(job.address_text||''))}</textarea>
+        </div>
+
+        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:flex-end">
+          <div style="flex:1;min-width:220px">
+            <label>โซน</label>
+            <input id="edit_zone" value="${escapeHtml(safe(job.job_zone||''))}" />
+          </div>
+          <div style="flex:1;min-width:220px">
+            <label>Maps URL</label>
+            <input id="edit_maps_url" value="${escapeHtml(safe(job.maps_url||''))}" />
+          </div>
+          <div style="width:160px">
+            <label>Lat</label>
+            <input id="edit_lat" value="${escapeHtml(safe(job.latitude||''))}" />
+          </div>
+          <div style="width:160px">
+            <label>Lng</label>
+            <input id="edit_lng" value="${escapeHtml(safe(job.longitude||''))}" />
+          </div>
+        </div>
+
+        <div style="margin-top:12px">
+          <b>🧾 แก้ไข/เพิ่มรายการบริการ</b>
+          <div class="muted2 mini" style="margin-top:6px">เพิ่ม/ลบ/แก้ไขได้ (เหมือนหน้าเพิ่มงานแบบย่อ)</div>
+          <div class="table-wrap" style="margin-top:10px;overflow:auto">
+            <table>
+              <thead><tr><th>รายการ</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th><th></th></tr></thead>
+              <tbody id="items_editor"></tbody>
+            </table>
+          </div>
+          <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap">
+            <button id="btnAddItem" class="secondary" type="button" style="width:auto">➕ เพิ่มรายการ</button>
+            <button id="btnSaveEdit" type="button" style="width:auto">💾 บันทึกใบงาน</button>
+          </div>
+          <div id="edit_msg" class="muted2" style="margin-top:8px"></div>
+        </div>
+      </div>
+    </details>
+
+    <hr style="margin:12px 0;" />
+
     <div>
       <b>🛡️ ประกัน / ตีกลับงานแก้ไข</b>
       <div style="margin-top:8px">${warrantyLabel(job)}</div>
@@ -241,6 +320,128 @@ async function loadJob(){
   }
 
   // wire actions
+  // --- Admin Edit (Job + Items) ---
+  try {
+    const apptInput = el('edit_appt');
+    if (apptInput) apptInput.value = toLocalDatetimeInput(job.appointment_datetime);
+
+    let editorItems = (Array.isArray(items) ? items : []).map(it=>({
+      item_id: Number(it.item_id||0) || null,
+      item_name: safe(it.item_name||''),
+      qty: Number(it.qty||1) || 1,
+      unit_price: Number(it.unit_price||0) || 0,
+    }));
+
+    const tbody = el('items_editor');
+    const renderEditor = () => {
+      if (!tbody) return;
+      if (!editorItems.length) {
+        tbody.innerHTML = `<tr><td colspan="5" class="muted2">ยังไม่มีรายการ (กด “เพิ่มรายการ”)</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = editorItems.map((it, idx)=>{
+        const line = (Number(it.qty)||0) * (Number(it.unit_price)||0);
+        return `<tr data-idx="${idx}">
+          <td style="min-width:220px">
+            <input class="it_name" value="${escapeHtml(it.item_name)}" placeholder="ชื่อรายการ" />
+          </td>
+          <td style="width:90px;text-align:right"><input class="it_qty" type="number" min="0" step="1" value="${escapeHtml(String(it.qty))}" /></td>
+          <td style="width:130px;text-align:right"><input class="it_unit" type="number" min="0" step="1" value="${escapeHtml(String(it.unit_price))}" /></td>
+          <td style="width:110px;text-align:right"><b class="it_line">${Number.isFinite(line) ? line.toLocaleString() : '0'}</b></td>
+          <td style="width:70px;text-align:right"><button type="button" class="danger btn-small it_del" style="width:auto">ลบ</button></td>
+        </tr>`;
+      }).join('');
+
+      // bind per-row
+      Array.from(tbody.querySelectorAll('tr')).forEach(tr=>{
+        const idx = Number(tr.getAttribute('data-idx'));
+        const name = tr.querySelector('.it_name');
+        const qty = tr.querySelector('.it_qty');
+        const unit = tr.querySelector('.it_unit');
+        const lineEl = tr.querySelector('.it_line');
+        const del = tr.querySelector('.it_del');
+
+        const recalc = () => {
+          const qv = Number(qty?.value||0);
+          const uv = Number(unit?.value||0);
+          const ln = (Number.isFinite(qv)?qv:0) * (Number.isFinite(uv)?uv:0);
+          if (lineEl) lineEl.textContent = (Number.isFinite(ln) ? ln : 0).toLocaleString();
+        };
+
+        if (name) name.oninput = ()=>{ editorItems[idx].item_name = name.value; };
+        if (qty) qty.oninput = ()=>{ editorItems[idx].qty = Number(qty.value||0); recalc(); };
+        if (unit) unit.oninput = ()=>{ editorItems[idx].unit_price = Number(unit.value||0); recalc(); };
+        if (del) del.onclick = ()=>{ editorItems.splice(idx,1); renderEditor(); };
+      });
+    };
+
+    renderEditor();
+
+    const btnAddItem = el('btnAddItem');
+    if (btnAddItem) {
+      btnAddItem.onclick = ()=>{
+        editorItems.push({ item_id: null, item_name: '', qty: 1, unit_price: 0 });
+        renderEditor();
+      };
+    }
+
+    const btnSave = el('btnSaveEdit');
+    const msg = el('edit_msg');
+    if (btnSave) {
+      btnSave.onclick = async ()=>{
+        try{
+          btnSave.disabled = true;
+          if (msg) msg.textContent = 'กำลังบันทึก...';
+
+          const apptRaw = String(el('edit_appt')?.value||'').trim();
+          const payload = {
+            customer_name: String(el('edit_customer_name')?.value||'').trim(),
+            customer_phone: String(el('edit_customer_phone')?.value||'').trim(),
+            job_type: String(el('edit_job_type')?.value||'').trim(),
+            address_text: String(el('edit_address')?.value||'').trim(),
+            job_zone: String(el('edit_zone')?.value||'').trim(),
+            maps_url: String(el('edit_maps_url')?.value||'').trim(),
+            latitude: String(el('edit_lat')?.value||'').trim(),
+            longitude: String(el('edit_lng')?.value||'').trim(),
+            appointment_datetime: apptRaw ? new Date(apptRaw).toISOString() : null,
+          };
+          await apiFetch(`/jobs/${encodeURIComponent(String(job.job_id))}/admin-edit`, {
+            method:'PUT',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(payload)
+          });
+
+          const cleanItems = editorItems
+            .map(it=>({
+              item_id: it.item_id ? Number(it.item_id) : null,
+              item_name: String(it.item_name||'').trim(),
+              qty: Number(it.qty||0),
+              unit_price: Number(it.unit_price||0),
+            }))
+            .filter(it=>it.item_name);
+
+          await apiFetch(`/jobs/${encodeURIComponent(String(job.job_id))}/items-admin`, {
+            method:'PUT',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ items: cleanItems })
+          });
+
+          showToast('บันทึกใบงานแล้ว', 'success');
+          if (msg) msg.textContent = '✅ บันทึกแล้ว';
+          await loadJob();
+        }catch(e){
+          console.error(e);
+          alert(e?.message || 'บันทึกไม่สำเร็จ');
+          if (msg) msg.textContent = `❌ ${e?.message||'บันทึกไม่สำเร็จ'}`;
+        }finally{
+          btnSave.disabled = false;
+        }
+      };
+    }
+  } catch (e) {
+    console.warn('admin edit init failed', e);
+  }
+
   const btnReturn = el('btnReturnFix');
   if (btnReturn) {
     btnReturn.onclick = async ()=>{

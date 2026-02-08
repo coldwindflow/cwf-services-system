@@ -137,7 +137,8 @@ function shiftMonth(delta){
 async function loadDayAvailability(date, tech_type){
   // tech_type: company|partner
   const duration_min = Math.max(15, Number(el('duration_min').value||60));
-  const data = await apiFetch(`/public/availability_v2?date=${encodeURIComponent(date)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`);
+  // Admin calendar ต้องเห็นช่างที่ "ปิดรับงาน" ด้วย หากไม่มีงานจริง (forced=1)
+  const data = await apiFetch(`/public/availability_v2?date=${encodeURIComponent(date)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}&forced=1`);
   const ranges = rangeFromSlots(data.slots || []);
   const hasAny = (data.slots || []).some(s=>s.available);
   return { hasAny, ranges, slot_step_min: data.slot_step_min, travel_buffer_min: data.travel_buffer_min };
@@ -281,7 +282,8 @@ async function renderModal(){
       // fetch per-tech availability per type
       const duration_min = state.durationMin;
       const byType = await Promise.all(types.map(async (t)=>{
-        const r = await apiFetch(`/admin/availability_by_tech_v2?date=${encodeURIComponent(date)}&tech_type=${encodeURIComponent(t)}&duration_min=${encodeURIComponent(duration_min)}`);
+        // forced=1 => รวมช่างที่ปิดรับงาน แต่ยังว่างจริง เพื่อให้แอดมินเห็นสภาพรวม
+        const r = await apiFetch(`/admin/availability_by_tech_v2?date=${encodeURIComponent(date)}&tech_type=${encodeURIComponent(t)}&duration_min=${encodeURIComponent(duration_min)}&forced=1`);
         return { t, r };
       }));
 

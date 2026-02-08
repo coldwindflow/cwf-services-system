@@ -721,6 +721,20 @@ function normStatus(s) {
   return String(s || "").trim();
 }
 
+// =======================================
+// 🛡️ WARRANTY KIND DETECTOR (robust)
+// - รองรับงานเก่าที่มีค่าหลากหลาย (ไทย/อังกฤษ)
+// - ปลอด regression: ใช้เพื่อแสดง/บังคับ UI เท่านั้น
+// =======================================
+function detectWarrantyKind(jobTypeRaw) {
+  const s = String(jobTypeRaw || "").trim().toLowerCase();
+  if (!s) return "";
+  if (s.includes("ติดตั้ง") || s.includes("install")) return "install";
+  if (s.includes("ล้าง") || s.includes("clean")) return "clean";
+  if (s.includes("ซ่อม") || s.includes("repair") || s.includes("fix")) return "repair";
+  return "";
+}
+
 function renderJobs(jobs) {
   // ✅ cache ไว้ใช้กับ popup จ่ายเงิน / เปิด e-slip
   window.__JOB_CACHE__ = Array.isArray(jobs) ? jobs : [];
@@ -1013,12 +1027,38 @@ function buildJobCard(job, historyMode = false) {
             <div class="muted" style="margin-top:4px;font-size:12px;">ต้องเลือกก่อนกด “เสร็จสิ้น”</div>
             ${(() => {
               const jt = String(job.job_type||'');
-              let kind = '';
+              let kind = detectWarrantyKind(jt);
               let label = '';
+              let kindSelect = '';
               let monthSelect = '';
-              if (jt.includes('ล้าง')) { kind = 'clean'; label = 'ล้าง: 30 วัน'; }
-              else if (jt.includes('ติดตั้ง')) { kind = 'install'; label = 'ติดตั้ง: 3 ปี'; }
-              else { kind = 'repair'; label = 'ซ่อม: เลือก 3/6/12 เดือน';
+
+              if (kind === 'clean') {
+                label = 'ล้าง: ประกัน 30 วัน';
+              } else if (kind === 'install') {
+                label = 'ติดตั้ง: ประกัน 3 ปี';
+              } else if (kind === 'repair') {
+                label = 'ซ่อม: เลือก 3/6/12 เดือน';
+              } else {
+                // งานเก่า/ค่าพิเศษ: ให้เลือกชนิดประกันเอง เพื่อไม่บล็อกการปิดงานผิดพลาด
+                label = 'โปรดเลือกประเภทประกันก่อนปิดงาน';
+                kindSelect = `
+                  <select id="warranty-kind-${jobId}" style="margin-top:6px;width:100%;" onchange="toggleWarrantyMonths(${jobId})">
+                    <option value="">เลือกประเภทประกัน</option>
+                    <option value="clean">ล้าง (30 วัน)</option>
+                    <option value="repair">ซ่อม (เลือกเดือน)</option>
+                    <option value="install">ติดตั้ง (3 ปี)</option>
+                  </select>`;
+                // ในโหมดเลือกเอง: เตรียม dropdown เดือน แต่ซ่อนไว้จนกว่าจะเลือก repair
+                monthSelect = `
+                  <select id="warranty-months-${jobId}" style="margin-top:6px;width:100%;display:none;">
+                    <option value="">เลือกเดือนประกัน</option>
+                    <option value="3">3 เดือน</option>
+                    <option value="6">6 เดือน</option>
+                    <option value="12">12 เดือน</option>
+                  </select>`;
+              }
+
+              if (kind === 'repair') {
                 monthSelect = `
                   <select id="warranty-months-${jobId}" style="margin-top:6px;width:100%;">
                     <option value="">เลือกเดือนประกัน</option>
@@ -1027,9 +1067,16 @@ function buildJobCard(job, historyMode = false) {
                     <option value="12">12 เดือน</option>
                   </select>`;
               }
+
+              // ถ้า kind มาจาก detect → เก็บเป็น hidden เพื่อ backward compatible
+              const kindHidden = (kind && !kindSelect)
+                ? `<input type="hidden" id="warranty-kind-${jobId}" value="${kind}">`
+                : '';
+
               return `
-                <input type="hidden" id="warranty-kind-${jobId}" value="${kind}">
+                ${kindHidden}
                 <div class="pill" style="margin-top:6px;background:#eff6ff;border-color:rgba(37,99,235,0.25);color:#0f172a;">${label}</div>
+                ${kindSelect}
                 ${monthSelect}
               `;
             })()}
@@ -1255,8 +1302,12 @@ function ensurePayModal() {
           <img id="pay-qr" src="" alt="QR" style="width:260px;height:260px;object-fit:contain;border-radius:16px;border:1px solid rgba(15,23,42,0.15);background:#fff;"/>
         </div>
 
+        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;justify-content:center;">
+          <button class="secondary" type="button" style="width:auto;" id="btn-refresh-qr">🔄 สร้าง QR ใหม่</button>
+        </div>
+
         <div class="muted" style="margin-top:8px;font-size:12px;">
-          * ถ้ารูป QR ไม่ขึ้น ให้เช็คสัญญาณอินเทอร์เน็ต หรือเปลี่ยนเป็นลิงก์ QR ของบริษัทในภายหลัง
+          * ถ้า QR หมดอายุ/ไม่ขึ้น ให้กด “สร้าง QR ใหม่” ได้ตลอด
         </div>
       </div>
 
@@ -1289,6 +1340,7 @@ async function payJob(jobId) {
   const tEl = document.getElementById("pay-total");
   const bEl = document.getElementById("pay-booking");
   const qrEl = document.getElementById("pay-qr");
+  const btnRefresh = document.getElementById("btn-refresh-qr");
   const msgEl = document.getElementById("pay-msg");
   const btnPaid = document.getElementById("btn-paid");
   const btnE = document.getElementById("btn-eslip");
@@ -1314,7 +1366,27 @@ async function payJob(jobId) {
   }
 
   if (tEl) tEl.textContent = `${total.toFixed(2)} บาท`;
-  if (qrEl) qrEl.src = buildPromptPayQrUrl(total);
+  const renderQr = () => {
+    if (!qrEl) return;
+    const ts = Date.now();
+    qrEl.src = `${buildPromptPayQrUrl(total)}?ts=${ts}`;
+  };
+  if (qrEl) {
+    // fallback: ถ้า promptpay.io ถูกบล็อค/ล่ม ให้ใช้ QR สำรอง (ถ้าตั้งค่าไว้)
+    qrEl.onerror = () => {
+      const fallback = window.CWF_STATIC_QR_URL || "";
+      if (fallback) {
+        qrEl.src = `${fallback}?ts=${Date.now()}`;
+      }
+    };
+  }
+  renderQr();
+  if (btnRefresh) {
+    btnRefresh.onclick = () => {
+      renderQr();
+      if (msgEl) msgEl.textContent = "🔄 สร้าง QR ใหม่แล้ว";
+    };
+  }
 
   if (btnPaid) {
     btnPaid.disabled = false;
@@ -1582,6 +1654,20 @@ function openWarrantyModal(ctx, onConfirm){
 }
 
 window.openWarrantyModal = openWarrantyModal;
+
+// Toggle months dropdown when warranty kind is user-selectable
+function toggleWarrantyMonths(jobId){
+  try{
+    const k = document.getElementById(`warranty-kind-${jobId}`);
+    const m = document.getElementById(`warranty-months-${jobId}`);
+    if (!m) return;
+    const val = (k?.value || '').trim();
+    const show = val === 'repair';
+    m.style.display = show ? '' : 'none';
+    if (!show) m.value = '';
+  }catch{}
+}
+window.toggleWarrantyMonths = toggleWarrantyMonths;
 
 // =======================================
 // ✅ FINALIZE (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์
