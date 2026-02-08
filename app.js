@@ -735,6 +735,34 @@ function detectWarrantyKind(jobTypeRaw) {
   return "";
 }
 
+// Robust job type extractor (supports legacy job payloads)
+function getJobTypeText(job){
+  if (!job || typeof job !== 'object') return '';
+  const cand = [
+    job.job_type,
+    job.jobType,
+    job.service_type,
+    job.serviceType,
+    job.work_type,
+    job.workType,
+    job.type,
+    job.category,
+    job.job_category,
+  ];
+  for (const v of cand){
+    const s = String(v || '').trim();
+    if (s) return s;
+  }
+  return '';
+}
+
+function getJobFromCache(jobId){
+  const id = Number(jobId);
+  const arr = window.__JOB_CACHE__;
+  if (!Array.isArray(arr) || !Number.isFinite(id)) return null;
+  return arr.find(j=>Number(j?.job_id)===id) || null;
+}
+
 function renderJobs(jobs) {
   // ✅ cache ไว้ใช้กับ popup จ่ายเงิน / เปิด e-slip
   window.__JOB_CACHE__ = Array.isArray(jobs) ? jobs : [];
@@ -1026,7 +1054,7 @@ function buildJobCard(job, historyMode = false) {
             <b>🛡️ ประกันงาน</b>
             <div class="muted" style="margin-top:4px;font-size:12px;">ต้องเลือกก่อนกด “เสร็จสิ้น”</div>
             ${(() => {
-              const jt = String(job.job_type||'');
+              const jt = getJobTypeText(job);
               let kind = detectWarrantyKind(jt);
               let label = '';
               let kindSelect = '';
@@ -1675,30 +1703,40 @@ window.toggleWarrantyMonths = toggleWarrantyMonths;
 function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
   if (targetStatus === 'เสร็จแล้ว') {
     // Warranty required before finishing (server also enforces via feature flag)
+    // ✅ Rule update (production):
+    // - ล้าง/ติดตั้ง => ล็อคประกันตายตัว (auto)
+    // - ซ่อม => ต้องเลือก 3/6/12 เดือนเท่านั้น
     const kindEl = document.getElementById(`warranty-kind-${jobId}`);
     const monthsEl = document.getElementById(`warranty-months-${jobId}`);
-    const kind = (kindEl?.value || '').trim();
-    const months = monthsEl ? Number(monthsEl.value || 0) : 0;
 
-    if (!kind) {
-      // fail-open UX: prompt in-modal for missing warranty
-      ensureWarrantyModal();
-      return openWarrantyModal({ jobId, kind: 'auto', months }, (pickedMonths) => {
-        if (monthsEl && pickedMonths) monthsEl.value = String(pickedMonths);
-        requestFinalize(jobId, targetStatus, true);
-      });
-    }
+    const cached = getJobFromCache(jobId);
+    const jobTypeText = getJobTypeText(cached);
+    const inferred = detectWarrantyKind(jobTypeText);
 
-    if (kind === 'repair' && ![3,6,12].includes(months)) {
-      if (_skipWarrantyPrompt) {
-        alert('งานซ่อมต้องเลือกประกัน 3 / 6 / 12 เดือน');
-        return;
+    // prefer existing value, else infer from job payload
+    let kind = (kindEl?.value || '').trim() || inferred;
+    let months = monthsEl ? Number(monthsEl.value || 0) : 0;
+
+    // Auto-lock for clean/install
+    if (kind === 'clean' || kind === 'install') {
+      if (kindEl) kindEl.value = kind;
+      // months not used
+    } else {
+      // Repair path
+      kind = kind || 'repair';
+      if (kindEl) kindEl.value = 'repair';
+
+      if (![3, 6, 12].includes(months)) {
+        if (_skipWarrantyPrompt) {
+          alert('งานซ่อมต้องเลือกประกัน 3 / 6 / 12 เดือน');
+          return;
+        }
+        ensureWarrantyModal();
+        return openWarrantyModal({ jobId, kind: 'repair', months }, (pickedMonths) => {
+          if (monthsEl && pickedMonths) monthsEl.value = String(pickedMonths);
+          requestFinalize(jobId, targetStatus, true);
+        });
       }
-      ensureWarrantyModal();
-      return openWarrantyModal({ jobId, kind, months }, (pickedMonths) => {
-        if (monthsEl && pickedMonths) monthsEl.value = String(pickedMonths);
-        requestFinalize(jobId, targetStatus, true);
-      });
     }
   }
   // เปิดลายเซ็นต์ก่อน (ถ้ากดยกเลิกในลายเซ็นต์ จะต้องกลับไปเลือกใหม่เอง)
@@ -1721,7 +1759,9 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
     const kindEl = document.getElementById(`warranty-kind-${jobId}`);
     const monthsEl = document.getElementById(`warranty-months-${jobId}`);
     const warranty_kind = (kindEl?.value || '').trim();
-    const warranty_months = monthsEl ? Number(monthsEl.value || 0) : null;
+    const warranty_months = (warranty_kind === 'repair')
+      ? (monthsEl ? Number(monthsEl.value || 0) : null)
+      : null;
 
     const res = await fetch(`${API_BASE}/jobs/${jobId}/finalize`, {
       method: "POST",

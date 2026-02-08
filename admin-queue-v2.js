@@ -94,6 +94,16 @@ function initPickers(){
 }
 
 function bindUI(){
+  // filter card toggle (same as history UX)
+  const btnToggle = document.getElementById('btnToggleFilters');
+  const filterCard = document.getElementById('filterCard');
+  if (btnToggle && filterCard) {
+    btnToggle.addEventListener('click', ()=>{
+      const show = filterCard.style.display !== 'none';
+      filterCard.style.display = show ? 'none' : 'block';
+    });
+  }
+
   el('btnLoad').addEventListener('click', ()=> loadMonth());
   el('btnReload').addEventListener('click', ()=> loadMonth());
   el('prevMonth').addEventListener('click', ()=> shiftMonth(-1));

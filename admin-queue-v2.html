@@ -16,7 +16,14 @@
     .month-title{font-weight:900}
     .month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;padding:12px}
     .dow{font-size:12px;color:rgba(15,23,42,0.65);font-weight:800;text-align:center}
-    .day{min-height:92px;border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:6px;cursor:pointer;overflow:hidden}
+    .day{border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:6px;cursor:pointer;overflow:hidden}
+    /* square cells (premium calendar) */
+    @supports (aspect-ratio: 1 / 1){
+      .day{aspect-ratio:1/1;min-height:0}
+    }
+    @supports not (aspect-ratio: 1 / 1){
+      .day{min-height:92px}
+    }
     .day.muted{opacity:0.45;cursor:default}
     .day .d{font-weight:900}
     .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:900;line-height:1;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -58,7 +65,13 @@
       <button class="secondary" type="button" onclick="location.href='/admin.html'">เมนู</button>
     </div>
 
-    <div class="card" style="margin-top:12px">
+    <!-- Filter toggle (same UX as History) -->
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;">
+      <button id="btnToggleFilters" class="warning" type="button" style="width:auto;display:flex;align-items:center;gap:8px;">🐧 ตัวกรอง</button>
+      <div class="muted" style="text-align:right;">เลือกเดือน/ปี/บริษัท-พาร์ทเนอร์</div>
+    </div>
+
+    <div class="card" id="filterCard" style="margin-top:10px;display:none">
       <b>ตัวกรอง</b>
       <div class="grid2" style="margin-top:10px">
         <div class="pill">
@@ -85,7 +98,7 @@
           </select>
         </div>
       </div>
-      <button id="btnLoad" style="margin-top:10px">โหลดปฏิทินรายเดือน</button>
+      <button id="btnLoad" class="warning" style="margin-top:10px">โหลดปฏิทินรายเดือน</button>
       <div class="muted" style="margin-top:6px">ใช้ logic เดิม duration + travel buffer (ไม่ทำให้เพี้ยน)</div>
     </div>
 

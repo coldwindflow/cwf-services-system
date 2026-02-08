@@ -4841,12 +4841,17 @@ async function buildOffMapForDate(dateStr, usernames) {
   return out;
 }
 
-function isTechOffOnDate(techRow, dateStr, offMap) {
+function isTechOffOnDate(techRow, dateStr, offMap, opts = {}) {
   // Priority: override table > weekly_off_days
   const u = techRow?.username;
   if (!u) return false;
   const o = offMap?.get(u);
   if (o && typeof o.is_off === 'boolean') return !!o.is_off;
+  // SAFETY (production): weekly_off_days บางระบบอาจถูก backfill ผิดพลาด
+  // ทำให้แอดมินเห็น "ไม่มีช่างว่าง" ทั้งเดือน. ในโหมด forced (admin view)
+  // ให้เชื่อ override table เป็นหลัก และข้าม weekly_off_days เพื่อ fail-open.
+  if (opts && opts.ignoreWeekly === true) return false;
+
   const weekly = parseWeeklyOffDays(techRow?.weekly_off_days);
   if (!weekly || weekly.size === 0) return false;
   const d = new Date(`${String(dateStr).slice(0,10)}T00:00:00+07:00`);
@@ -4949,9 +4954,10 @@ app.get("/public/availability_v2", async (req, res) => {
     // workday overrides (block forced lock on off-days)
     const offMap = await buildOffMapForDate(date, techsAll.map(t => t.username));
     const techs = techsAll.filter(t => {
-      // If forced lock mode: do NOT allow locking on off-days.
-      // Offer flow should use non-forced path.
-      if (forced && isTechOffOnDate(t, date, offMap)) return false;
+      // If forced lock mode (admin calendar): include paused technicians.
+      // Still respect explicit overrides (technician_workdays_v2) but
+      // ignore weekly_off_days to prevent bad backfill from hiding all techs.
+      if (forced && isTechOffOnDate(t, date, offMap, { ignoreWeekly: true })) return false;
       return true;
     });
     // special slots map (admin can extend availability)
@@ -5046,7 +5052,15 @@ app.get("/admin/availability_by_tech_v2", async (req, res) => {
   const slot_step_min = 30;
   try {
     const include_paused = String(req.query.forced || req.query.include_paused || "").trim() === "1";
-    const techs = await listTechniciansByType(tech_type, { include_paused });
+    const techsAll = await listTechniciansByType(tech_type, { include_paused });
+    // Same safety as /public/availability_v2:
+    // - respect explicit off override table
+    // - ignore weekly_off_days when include_paused (admin view) to avoid bad backfill hiding all techs
+    const offMap = await buildOffMapForDate(date, (techsAll || []).map(t => t.username));
+    const techs = (techsAll || []).filter(t => {
+      if (include_paused && isTechOffOnDate(t, date, offMap, { ignoreWeekly: true })) return false;
+      return true;
+    });
     const specialMap = new Map();
     try {
       const sr = await pool.query(

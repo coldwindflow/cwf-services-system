@@ -28,6 +28,17 @@ function toLocalDatetimeInput(iso){
   return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+function localDatetimeToBangkokISO(localValue){
+  // localValue from <input type="datetime-local"> (no timezone)
+  const s = String(localValue||'').trim();
+  if (!s) return '';
+  // ensure seconds
+  const hasSeconds = /\d{2}:\d{2}:\d{2}$/.test(s);
+  const base = hasSeconds ? s : `${s}:00`;
+  // treat as Bangkok (+07:00) to avoid UTC shift
+  return `${base}+07:00`;
+}
+
 function statusPill(status){
   const s = String(status||'').trim();
   let st = 'background:#0f172a;color:#fff;border-color:transparent';
@@ -484,7 +495,7 @@ async function loadJob(){
       const keep = Array.from(document.querySelectorAll('.clone-item')).filter(c=>c.checked).map(c=>Number(c.value)).filter(n=>Number.isFinite(n));
       const payload = {
         actor_username: actorName(),
-        appointment_datetime: new Date(appt).toISOString(),
+        appointment_datetime: localDatetimeToBangkokISO(appt),
         technician_username: tech || null,
         job_type: type || null,
         keep_item_ids: keep
