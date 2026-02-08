@@ -1845,7 +1845,8 @@ app.get("/admin/jobs_v2", requireAdminSoft, async (req, res) => {
     }
     if (q) {
       params.push(`%${q}%`);
-      where.push(`(customer_name ILIKE $${p} OR address_text ILIKE $${p} OR job_zone ILIKE $${p} OR booking_code ILIKE $${p})`);
+      // PATCH: allow search by customer phone as well (requested by Admin)
+      where.push(`(customer_name ILIKE $${p} OR customer_phone ILIKE $${p} OR address_text ILIKE $${p} OR job_zone ILIKE $${p} OR booking_code ILIKE $${p})`);
       p++;
     }
 
@@ -2006,7 +2007,41 @@ app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
     });
   } catch (e) {
     console.error("/admin/job_v2 error:", e);
-    return res.status(500).json({ error: "โหลดใบงานไม่สำเร็จ" });
+    // SAFE FALLBACK (Backward compatible):
+    // บางระบบ production อาจยังไม่มีตารางเสริม (job_photos/job_updates_v2/job_team_members)
+    // ให้ยังโหลดใบงานหลัก + รายการ ได้ เพื่อไม่ให้แอดมินทำงานสะดุด
+    try {
+      const jr = await pool.query(
+        `SELECT * FROM public.jobs WHERE ${job_id ? "job_id=$1" : "booking_code=$1"} LIMIT 1`,
+        [job_id || booking_code]
+      );
+      const job = jr.rows[0];
+      if (!job) return res.status(404).json({ error: "ไม่พบงาน" });
+
+      const ir = await pool.query(
+        `SELECT item_id, item_name, qty, unit_price, line_total
+         FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
+        [Number(job.job_id)]
+      );
+
+      const now = new Date();
+      const wEnd = job.warranty_end_at ? new Date(job.warranty_end_at) : null;
+      const isInWarranty = !!(wEnd && wEnd.getTime() >= now.getTime());
+
+      return res.json({
+        success: true,
+        job: Object.assign({}, job, { is_in_warranty: isInWarranty }),
+        items: ir.rows || [],
+        promotion: null,
+        photos: [],
+        updates: [],
+        team_members: [],
+        _fallback: true,
+      });
+    } catch (e2) {
+      console.error("/admin/job_v2 fallback error:", e2);
+      return res.status(500).json({ error: "โหลดใบงานไม่สำเร็จ" });
+    }
   }
 });
 

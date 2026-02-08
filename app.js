@@ -1318,37 +1318,46 @@ async function payJob(jobId) {
 
   if (btnPaid) {
     btnPaid.disabled = false;
-    btnPaid.onclick = async () => {
+    // IMPORTANT: Mobile/PWA บางรุ่นจะ "บล็อค" file picker ถ้าเรียกหลัง await
+    // แก้โดย: เปิด picker แบบ synchronous ก่อน แล้วค่อยยิง API / อัปโหลด
+    btnPaid.onclick = () => {
       try {
-        btnPaid.disabled = true;
-        if (msgEl) msgEl.textContent = "กำลังบันทึกการชำระเงิน...";
+        // 1) เปิดเลือกสลิปก่อน (ไม่ await) เพื่อให้ iOS/Android WebView อนุญาต
+        openFilePicker({ multiple: false, accept: 'image/*' }, async (files) => {
+          if (!files || !files.length) {
+            showToast('ยังไม่ได้เลือกสลิป', 'error');
+            return;
+          }
 
-        const res = await fetch(`${API_BASE}/jobs/${id}/pay`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, amount: total }),
+          btnPaid.disabled = true;
+          if (msgEl) msgEl.textContent = "กำลังบันทึกการชำระเงิน...";
+
+          // 2) บันทึกการจ่ายเงิน
+          const res = await fetch(`${API_BASE}/jobs/${id}/pay`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, amount: total }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "บันทึกการจ่ายเงินไม่สำเร็จ");
+
+          if (msgEl) msgEl.textContent = "✅ บันทึกแล้ว กำลังแนบสลิป...";
+
+          // 3) อัปโหลดสลิปแบบตรง (phase = payment_slip)
+          await uploadFilesAsPhotos(id, 'payment_slip', files);
+
+          if (msgEl) msgEl.textContent = "✅ แนบสลิปแล้ว";
+          if (btnE) {
+            btnE.style.display = "";
+            btnE.onclick = () => openESlip(id);
+          }
+
+          loadJobs();
         });
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || "บันทึกการจ่ายเงินไม่สำเร็จ");
-
-        if (msgEl) msgEl.textContent = "✅ บันทึกแล้ว กรุณาแนบรูปสลิป";
-        // แนบสลิป (phase = payment_slip) 1 รูป
-        await pickPhotos(id, "payment_slip", 1);
-
-        if (msgEl) msgEl.textContent = "✅ แนบสลิปแล้ว (ถ้าเน็ตพร้อมจะอัปโหลดทันที)";
-        if (btnE) {
-          btnE.style.display = "";
-          btnE.onclick = () => openESlip(id);
-        }
-
-        // รีเฟรชรายการ
-        loadJobs();
       } catch (e) {
         console.error(e);
         alert(`❌ ${e.message}`);
         if (msgEl) msgEl.textContent = `❌ ${e.message}`;
-      } finally {
-        btnPaid.disabled = false;
       }
     };
   }
@@ -1502,22 +1511,108 @@ function openSignatureModal(onConfirm) {
 }
 
 // =======================================
+// 🛡️ WARRANTY MODAL (กันหลุด UX)
+// - บังคับเลือกประกันก่อน "เสร็จแล้ว" (เฉพาะงานซ่อมต้องเลือก 3/6/12 เดือน)
+// - ทำเป็น fail-open: ถ้าระบบเดิมมี field อยู่แล้ว จะใช้ของเดิมเป็นฐาน
+// =======================================
+let __wModalInited = false;
+let __wOnConfirm = null;
+
+function ensureWarrantyModal(){
+  if (__wModalInited) return;
+  __wModalInited = true;
+
+  const wrap = document.createElement('div');
+  wrap.id = 'warranty-modal';
+  wrap.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.60);display:none;align-items:center;justify-content:center;z-index:9998;padding:16px;';
+  wrap.innerHTML = `
+    <div class="card" style="width:min(520px,100%);">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+        <div>
+          <h3 style="margin:0;">🛡️ ระบุประกันก่อนปิดงาน</h3>
+          <div class="muted" id="warranty-modal-sub" style="margin-top:4px;">งานซ่อมต้องเลือก 3/6/12 เดือน</div>
+        </div>
+        <button class="secondary" type="button" id="warranty-cancel" style="width:auto;">ปิด</button>
+      </div>
+
+      <div style="margin-top:12px;">
+        <label>เลือกประกัน (งานซ่อม)</label>
+        <select id="warranty-months-pick">
+          <option value="">เลือก...</option>
+          <option value="3">3 เดือน</option>
+          <option value="6">6 เดือน</option>
+          <option value="12">12 เดือน</option>
+        </select>
+        <div class="muted" style="margin-top:6px;">งานล้าง 30 วัน / งานติดตั้ง 3 ปี ระบบจะตั้งให้โดยอัตโนมัติ</div>
+      </div>
+
+      <div class="row" style="margin-top:14px;">
+        <button class="warning" type="button" id="warranty-confirm" style="width:100%;">ยืนยัน</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(wrap);
+
+  wrap.querySelector('#warranty-cancel').onclick = () => {
+    wrap.style.display = 'none';
+    __wOnConfirm = null;
+  };
+  wrap.querySelector('#warranty-confirm').onclick = () => {
+    const v = wrap.querySelector('#warranty-months-pick').value;
+    const months = Number(v || 0);
+    if (![3,6,12].includes(months)) return alert('กรุณาเลือก 3 / 6 / 12 เดือน');
+    wrap.style.display = 'none';
+    if (typeof __wOnConfirm === 'function') {
+      const fn = __wOnConfirm; __wOnConfirm = null;
+      fn(months);
+    }
+  };
+}
+
+function openWarrantyModal(ctx, onConfirm){
+  ensureWarrantyModal();
+  __wOnConfirm = onConfirm;
+  const wrap = document.getElementById('warranty-modal');
+  if (!wrap) return;
+
+  // preset
+  const pick = wrap.querySelector('#warranty-months-pick');
+  if (pick) pick.value = ([3,6,12].includes(Number(ctx?.months||0)) ? String(ctx.months) : '');
+  wrap.style.display = 'flex';
+}
+
+window.openWarrantyModal = openWarrantyModal;
+
+// =======================================
 // ✅ FINALIZE (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์
 // =======================================
-function requestFinalize(jobId, targetStatus) {
+function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
   if (targetStatus === 'เสร็จแล้ว') {
     // Warranty required before finishing (server also enforces via feature flag)
     const kindEl = document.getElementById(`warranty-kind-${jobId}`);
     const monthsEl = document.getElementById(`warranty-months-${jobId}`);
     const kind = (kindEl?.value || '').trim();
     const months = monthsEl ? Number(monthsEl.value || 0) : 0;
+
     if (!kind) {
-      alert('ต้องระบุประกันก่อนกดเสร็จสิ้น');
-      return;
+      // fail-open UX: prompt in-modal for missing warranty
+      ensureWarrantyModal();
+      return openWarrantyModal({ jobId, kind: 'auto', months }, (pickedMonths) => {
+        if (monthsEl && pickedMonths) monthsEl.value = String(pickedMonths);
+        requestFinalize(jobId, targetStatus, true);
+      });
     }
+
     if (kind === 'repair' && ![3,6,12].includes(months)) {
-      alert('งานซ่อมต้องเลือกประกัน 3 / 6 / 12 เดือน');
-      return;
+      if (_skipWarrantyPrompt) {
+        alert('งานซ่อมต้องเลือกประกัน 3 / 6 / 12 เดือน');
+        return;
+      }
+      ensureWarrantyModal();
+      return openWarrantyModal({ jobId, kind, months }, (pickedMonths) => {
+        if (monthsEl && pickedMonths) monthsEl.value = String(pickedMonths);
+        requestFinalize(jobId, targetStatus, true);
+      });
     }
   }
   // เปิดลายเซ็นต์ก่อน (ถ้ากดยกเลิกในลายเซ็นต์ จะต้องกลับไปเลือกใหม่เอง)
@@ -1895,6 +1990,70 @@ async function uploadPendingPhotos(jobId) {
 // =======================================
 // 📷 PICK PHOTOS (เข้าคิวลง IndexedDB)
 // =======================================
+// NOTE: ต้องมี helper เปิด file picker แบบ synchronous เพื่อไม่ให้ WebView บางรุ่นบล็อค
+function openFilePicker(opts, onPicked){
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = opts?.accept || 'image/*';
+  input.multiple = !!opts?.multiple;
+  input.style.position = 'fixed';
+  input.style.left = '-9999px';
+  input.onchange = () => {
+    const files = Array.from(input.files || []);
+    try { onPicked && onPicked(files); } finally { input.remove(); }
+  };
+  document.body.appendChild(input);
+  input.click();
+}
+
+// Upload a given File[] as job photos (same flow as pickPhotos)
+async function uploadFilesAsPhotos(jobId, phase, files){
+  const selected = Array.from(files || []);
+  if (!selected.length) return;
+
+  for (const f of selected) {
+    const metaRes = await fetch(`${API_BASE}/jobs/${jobId}/photos/meta`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phase,
+        mime_type: f.type,
+        original_name: f.name,
+        file_size: f.size,
+      }),
+    });
+
+    const meta = await metaRes.json().catch(() => ({}));
+    if (!metaRes.ok) throw new Error(meta.error || "สร้าง meta ไม่สำเร็จ");
+
+    const photo_id = meta.photo_id;
+    try {
+      const formNow = new FormData();
+      formNow.append("photo", f, f.name || "photo.jpg");
+      const upRes = await fetch(`${API_BASE}/jobs/${jobId}/photos/${photo_id}/upload`, {
+        method: "POST",
+        body: formNow,
+      });
+      const up = await upRes.json().catch(() => ({}));
+      if (!upRes.ok) throw new Error(up.error || "อัปโหลดรูปไม่สำเร็จ");
+    } catch (e) {
+      // fail-open: เก็บค้างในเครื่อง แล้วให้กดอัปโหลดภายหลัง
+      const buffer = await f.arrayBuffer();
+      await idbPut({
+        photo_id,
+        job_id: Number(jobId),
+        phase,
+        mime_type: f.type,
+        original_name: f.name,
+        file_size: f.size,
+        blob: new Blob([buffer], { type: f.type || 'image/jpeg' }),
+        created_at: Date.now(),
+      });
+    }
+  }
+  try { await refreshPhotoStatus(jobId); } catch {}
+}
+
 async function pickPhotos(jobId, phase, maxFiles = 20) {
   try {
     const input = document.createElement("input");

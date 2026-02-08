@@ -32,7 +32,13 @@
       <button class="secondary" type="button" onclick="location.href='/admin.html'">เมนู</button>
     </div>
 
-    <div class="card" style="margin-top:12px">
+    <!-- Filter toggle (premium UX): show icon -> expand filters -->
+    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;">
+      <button id="btnToggleFilters" class="warning" type="button" style="width:auto;display:flex;align-items:center;gap:8px;">🐧 ตัวกรอง</button>
+      <div class="muted" style="text-align:right;">ค้นหาได้จาก “เบอร์โทรลูกค้า” ด้วย</div>
+    </div>
+
+    <div class="card" id="filterCard" style="margin-top:10px;display:none">
       <b>ตัวกรอง</b>
       <div class="grid2" style="margin-top:10px">
         <div>
@@ -51,8 +57,8 @@
           <datalist id="techList"></datalist>
         </div>
         <div>
-          <label>ค้นหา (ชื่อ/ที่อยู่/โซน/เลขงาน)</label>
-          <input id="q" placeholder="เช่น อ่อนนุช / CWF...">
+          <label>ค้นหา (ชื่อ/เบอร์โทร/ที่อยู่/โซน/เลขงาน)</label>
+          <input id="q" placeholder="เช่น 080xxxxxxx / อ่อนนุช / CWF...">
         </div>
       </div>
       <div class="grid2" style="margin-top:10px">
@@ -66,7 +72,7 @@
         </div>
         <div>
           <label>&nbsp;</label>
-          <button id="btnLoad">โหลดประวัติ</button>
+          <button id="btnLoad" class="warning">โหลดประวัติ</button>
         </div>
       </div>
       <div class="muted" style="margin-top:6px">กรองตามวัน/เวลา/ช่าง/สถานที่/โซน ได้ (ข้อมูลจาก /admin/jobs_v2)</div>

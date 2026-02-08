@@ -22,6 +22,12 @@ function safe(t){
   return (t || "").toString();
 }
 
+function fmtMoney(n){
+  const v = Number(n || 0);
+  if (!isFinite(v)) return '-';
+  return v.toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 0 }) + ' บาท';
+}
+
 async function loadJobs(){
   try{
     const df = (el("date_from").value||"").trim();
@@ -54,13 +60,14 @@ async function loadJobs(){
       const left = `${safe(j.customer_name)}\n${safe(j.customer_phone||"")}`;
       const mid = `${safe(j.job_type)} • ${safe(j.job_status)}`;
       const addr = safe(j.job_zone||"") || safe(j.address_text||"");
+      const priceTxt = fmtMoney(j.job_price);
       const techU = safe(j.technician_username||"-");
       const techName = (__TECH_MAP__.get(techU)?.full_name) || techU;
       tr.innerHTML = `
         <td><div class="code">${code}</div><div class="muted2">#${safe(j.job_id)}</div></td>
         <td>${dtTxt}</td>
         <td>
-          <div class="job-main"><b title="${safe(j.customer_name||'')}">${safe(j.customer_name||'-')}</b><span class="muted2">${safe(j.customer_phone||'')}</span></div>
+          <div class="job-main"><b title="${safe(j.customer_name||'')}">${safe(j.customer_name||'-')}</b><span class="muted2">${safe(j.customer_phone||'')}</span><span class="muted2" title="ยอดที่ลูกค้าชำระ">💰 ${priceTxt}</span></div>
           <div class="pill" style="margin-top:6px;${statusPillStyle(j.job_status)}" title="${safe(j.job_status||'')}">${mid}</div>
           <div class="muted2" style="margin-top:6px" title="${addr}">${addr}</div>
         </td>
@@ -109,6 +116,14 @@ function init(){
   const from = `${d0.getFullYear()}-${pad2(d0.getMonth()+1)}-${pad2(d0.getDate())}`;
   el("date_from").value = from;
   el("btnLoad").addEventListener("click", loadJobs);
+  const btnT = document.getElementById('btnToggleFilters');
+  const card = document.getElementById('filterCard');
+  if (btnT && card) {
+    btnT.addEventListener('click', ()=>{
+      const show = card.style.display === 'none';
+      card.style.display = show ? '' : 'none';
+    });
+  }
   // auto load
   loadTechniciansForFilter().finally(loadJobs);
 }
