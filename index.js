@@ -97,6 +97,23 @@ function extractLatLngFromText(text) {
   return null;
 }
 
+// ------------------------------------------------------------------
+// Backward-compatible alias
+// Some booking/admin flows reference `parseLatLngFromText`, but the
+// actual implementation in this codebase is `extractLatLngFromText`.
+// Missing this function will crash admin book v2 & slot loading.
+// ------------------------------------------------------------------
+function parseLatLngFromText(text) {
+  const r = extractLatLngFromText(text);
+  if (!r) return null;
+  const lat = Number(r.lat);
+  const lng = Number(r.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  // Basic sanity bounds
+  if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+  return r;
+}
+
 async function fetchWithTimeout(url, ms, opts = {}) {
   const controller = new AbortController();
   const t = setTimeout(() => controller.abort(), ms);
