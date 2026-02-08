@@ -648,6 +648,7 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_team_members_user ON public.job_team_members(username)`);
+await pool.query(`ALTER TABLE IF EXISTS public.job_team_members ADD COLUMN IF NOT EXISTS is_primary BOOLEAN DEFAULT FALSE`);
 
 // 3.6) ✅ คำขอแก้ไขราคา/รายการ (ช่าง -> แอดมินอนุมัติ)
 await pool.query(`
