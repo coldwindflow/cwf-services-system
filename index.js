@@ -3695,9 +3695,11 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
       const clientHasAnyWarrantyInput = !!clientWKind || warranty_months != null;
       const canAutoWarranty = (isClean || isInstall);
 
-      if (ENABLE_WARRANTY_ENFORCE && !hasWarranty && !clientHasAnyWarrantyInput && !canAutoWarranty) {
-        throw new Error('ต้องระบุประกันก่อนกดเสร็จสิ้น (Warranty)');
-      }
+      // ✅ Production rule: finishing a job must never be blocked by warranty selection.
+      // We still keep warranty data when possible:
+      // - clean/install: auto-derive fixed warranty
+      // - repair: if client didn't send anything, default to a safe warranty (3 months)
+      // Admin can extend/adjust warranty later (with audit) without blocking the technician.
 
       let wEndIso = null;
       let wKind = null;
@@ -3705,10 +3707,15 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
 
       if (!hasWarranty) {
         // Use client input when present. Otherwise auto based on job_type for clean/install.
+        const fallbackKind = (isClean ? 'clean' : (isInstall ? 'install' : 'repair'));
+        const fallbackMonths = (!isClean && !isInstall)
+          ? (Number.isFinite(Number(warranty_months)) && [3,6,12].includes(Number(warranty_months)) ? Number(warranty_months) : 3)
+          : null;
+
         const w = computeWarrantyEnd({
           job_type: jt,
-          warranty_kind: (clientWKind || (isClean ? 'clean' : (isInstall ? 'install' : ''))),
-          warranty_months,
+          warranty_kind: (clientWKind || fallbackKind),
+          warranty_months: (clientWKind === 'repair' ? warranty_months : (fallbackKind === 'repair' ? fallbackMonths : warranty_months)),
           start: new Date(),
         });
         wEndIso = w.end.toISOString();

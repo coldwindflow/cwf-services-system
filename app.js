@@ -1900,44 +1900,11 @@ window.openWorkdaysModal = openWorkdaysModal;
 // ✅ FINALIZE (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์
 // =======================================
 function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
-  if (targetStatus === 'เสร็จแล้ว') {
-    // Warranty required before finishing (server also enforces via feature flag)
-    // ✅ Rule update (production):
-    // - ล้าง/ติดตั้ง => ล็อคประกันตายตัว (auto)
-    // - ซ่อม => ต้องเลือก 3/6/12 เดือนเท่านั้น
-    const kindEl = document.getElementById(`warranty-kind-${jobId}`);
-    const monthsEl = document.getElementById(`warranty-months-${jobId}`);
-
-    const cached = getJobFromCache(jobId);
-    const jobTypeText = getJobTypeText(cached);
-    const inferred = detectWarrantyKind(jobTypeText);
-
-    // prefer existing value, else infer from job payload
-    let kind = (kindEl?.value || '').trim() || inferred;
-    let months = monthsEl ? Number(monthsEl.value || 0) : 0;
-
-    // Auto-lock for clean/install
-    if (kind === 'clean' || kind === 'install') {
-      if (kindEl) kindEl.value = kind;
-      // months not used
-    } else {
-      // Repair path
-      kind = kind || 'repair';
-      if (kindEl) kindEl.value = 'repair';
-
-      if (![3, 6, 12].includes(months)) {
-        if (_skipWarrantyPrompt) {
-          alert('งานซ่อมต้องเลือกประกัน 3 / 6 / 12 เดือน');
-          return;
-        }
-        ensureWarrantyModal();
-        return openWarrantyModal({ jobId, kind: 'repair', months }, (pickedMonths) => {
-          if (monthsEl && pickedMonths) monthsEl.value = String(pickedMonths);
-          requestFinalize(jobId, targetStatus, true);
-        });
-      }
-    }
-  }
+  // ✅ Production hotfix: allow tech to finish work with ONLY signature.
+  // Warranty selection must NEVER block real operations.
+  // - Clean/Install: server auto-locks warranty
+  // - Repair: server will default a safe warranty when not provided
+  // (Admin can still adjust warranty later in job detail if needed.)
   // เปิดลายเซ็นต์ก่อน (ถ้ากดยกเลิกในลายเซ็นต์ จะต้องกลับไปเลือกใหม่เอง)
   openSignatureModal((signatureDataUrl) => finalizeJob(jobId, targetStatus, signatureDataUrl));
 }
@@ -1961,13 +1928,6 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
       body: JSON.stringify({ note }),
     }).catch(() => {});
 
-    const kindEl = document.getElementById(`warranty-kind-${jobId}`);
-    const monthsEl = document.getElementById(`warranty-months-${jobId}`);
-    const warranty_kind = (kindEl?.value || '').trim();
-    const warranty_months = (warranty_kind === 'repair')
-      ? (monthsEl ? Number(monthsEl.value || 0) : null)
-      : null;
-
     const res = await fetch(`${API_BASE}/jobs/${jobId}/finalize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1975,7 +1935,7 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
         status: targetStatus,
         signature_data: signatureDataUrl,
         note,
-        ...(targetStatus === 'เสร็จแล้ว' ? { warranty_kind, warranty_months } : {}),
+        // Warranty must never block finishing. Server handles auto/default.
       }),
     });
 
