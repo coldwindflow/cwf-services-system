@@ -2154,11 +2154,22 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
   // ⚠️ Still behind ENABLE_ADMIN_FORCE_FINISH (default ON) for safety.
   if (!ENABLE_ADMIN_FORCE_FINISH) return res.status(403).json({ error: 'Feature disabled' });
 
-  const job_id = Number(req.params.job_id);
+  // รองรับทั้ง job_id (ตัวเลข) และ booking_code (ตัวอักษร) เพื่อใช้กู้สถานะฉุกเฉินได้เสมอ
+  const raw = String(req.params.job_id || '').trim();
+  const job_id = (/^\d+$/.test(raw) ? Number(raw) : 0);
   const actor_username = String(req.body?.actor_username || '').trim() || null;
   const reason = String(req.body?.reason || '').trim() || 'admin force finish';
 
-  if (!job_id) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
+  let realId = job_id;
+  if (!realId) {
+    try {
+      realId = await resolveJobIdAny(pool, raw);
+    } catch {
+      realId = 0;
+    }
+  }
+  if (!realId) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
+  try { console.log('[admin_force_finish_v2] hit', { raw, job_id: Number(realId) }); } catch {}
 
   const client = await pool.connect();
   try {
@@ -2166,7 +2177,7 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
 
     const jr = await client.query(
       `SELECT job_type, warranty_end_at, job_status FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
-	  [job_id]
+	  [realId]
     );
     if (!jr.rows.length) return res.status(404).json({ error: 'ไม่พบงาน' });
 
@@ -2199,10 +2210,10 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
            warranty_start_at = COALESCE(warranty_start_at, NOW()),
            warranty_end_at = COALESCE($4, warranty_end_at)
        WHERE job_id=$1`,
-      [job_id, wKind, wMonths, wEndIso]
+      [realId, wKind, wMonths, wEndIso]
     );
 
-    await logJobUpdate(job_id, {
+    await logJobUpdate(realId, {
       actor_username,
       actor_role: 'admin',
       action: 'admin_force_finish_v2',
@@ -2211,7 +2222,7 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
     });
 
     await client.query('COMMIT');
-    res.json({ success: true, job_id, status: 'เสร็จแล้ว' });
+    res.json({ success: true, job_id: Number(realId), status: 'เสร็จแล้ว' });
   } catch (e) {
     await client.query('ROLLBACK');
     console.error(e);
@@ -3707,6 +3718,9 @@ app.put("/jobs/:job_id/note", async (req, res) => {
 // =======================================
 app.post("/jobs/:job_id/finalize", async (req, res) => {
   const { job_id } = req.params;
+  // DEBUG (production-safe): ช่วยยืนยันว่า request วิ่งถึง server จริง
+  // (กรณีช่างกดปิดงานแล้วเงียบ ไม่มี log) — log แค่ id+status ไม่ log ข้อมูลลูกค้า
+  try { console.log('[finalize] hit', { job_id: String(job_id), status: String(req.body?.status || '').trim() }); } catch {}
   const status = String(req.body?.status || "").trim();
   const signature_data = req.body?.signature_data;
   const note = String(req.body?.note || "").trim();

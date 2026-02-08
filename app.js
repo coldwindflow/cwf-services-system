@@ -508,7 +508,19 @@ const IDB_STORE = "pending_photos";
 
 function idbOpen() {
   return new Promise((resolve, reject) => {
+    // IMPORTANT (production fix): บางเครื่อง/บางเคส IndexedDB อาจ "ค้าง" (blocked)
+    // ทำให้ flow ปิดงานเงียบเพราะ await ไม่จบ (ไม่มี onsuccess/onerror)
+    // -> ใส่ onblocked + timeout เพื่อ fail-open
     const req = indexedDB.open(IDB_NAME, 2);
+
+    const HARD_TIMEOUT_MS = 2500;
+    let done = false;
+    const t = setTimeout(() => {
+      if (done) return;
+      done = true;
+      try { req?.result?.close?.(); } catch {}
+      reject(new Error('IndexedDB timeout'));
+    }, HARD_TIMEOUT_MS);
 
     req.onupgradeneeded = () => {
       const db = req.result;
@@ -528,8 +540,25 @@ function idbOpen() {
       }
     };
 
-    req.onsuccess = () => resolve(req.result);
-    req.onerror = () => reject(req.error);
+    req.onblocked = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      reject(new Error('IndexedDB blocked'));
+    };
+
+    req.onsuccess = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      resolve(req.result);
+    };
+    req.onerror = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(t);
+      reject(req.error);
+    };
   });
 }
 
@@ -2271,7 +2300,15 @@ window.forceUpload = forceUpload;
 // IMPORTANT: ต้องไม่ทำให้ "ปิดงาน" ค้าง/เงียบ (fail-open)
 async function uploadPendingPhotos(jobId, opts) {
   const options = Object.assign({ failOpen: false, timeoutMs: 15000 }, opts || {});
-  const items = await idbGetByJob(jobId);
+  let items = [];
+  try {
+    // IMPORTANT: ถ้า IndexedDB ค้าง/blocked ต้องไม่ทำให้ "ปิดงาน" ค้างเงียบ
+    items = await idbGetByJob(jobId);
+  } catch (e) {
+    console.warn('idbGetByJob failed, skip pending upload', e);
+    if (options.failOpen) return { ok: true, failedCount: 0, skipped: true };
+    throw e;
+  }
   if (!items.length) return { ok: true, failedCount: 0 };
 
   let failedCount = 0;
