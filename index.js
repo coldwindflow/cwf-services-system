@@ -5295,17 +5295,60 @@ app.get("/public/availability_v2", async (req, res) => {
       console.warn("[availability_v2] special slots query failed", e.message);
     }
     const tech_count = techs.length;
-    // ✅ Work hours: ใช้ per-tech จริง (แต่ยังคง default 09:00-18:00)
-    // สำหรับการสร้าง slot: ใช้ช่วงเวลามาตรฐานทั้งวัน แล้วคัด tech ที่อยู่ในช่วงเวลาของตัวเองอีกที
-    const work_start = "09:00";
-    const work_end = "18:00";
 
-    const startMin = toMin(work_start);
-    const endMin = toMin(work_end);
-    const block = effectiveBlockMin(duration_min);
+    // ✅ Determine global working window:
+    // - default 09:00-18:00
+    // - expand by per-tech work_start/work_end
+    // - expand by special slots
+    let globalStart = toMin("09:00");
+    let globalEnd = toMin("18:00");
+
+    for (const tech of techs) {
+      const ts = toMin(tech.work_start || "09:00");
+      const te = toMin(tech.work_end || "18:00");
+      if (Number.isFinite(ts)) globalStart = Math.min(globalStart, ts);
+      if (Number.isFinite(te)) globalEnd = Math.max(globalEnd, te);
+      const wins = specialMap.get(tech.username) || [];
+      for (const w of wins) {
+        globalStart = Math.min(globalStart, toMin(w.start));
+        globalEnd = Math.max(globalEnd, toMin(w.end));
+      }
+    }
+
+    // clamp
+    globalStart = Math.max(0, Math.min(24 * 60, globalStart));
+    globalEnd = Math.max(0, Math.min(24 * 60, globalEnd));
+
+    const work_start = minToHHMM(globalStart);
+    const work_end = minToHHMM(globalEnd);
+
+    const startMin = globalStart;
+    const endMin = globalEnd;
+    const default_effective_block_min = Math.max(15, Number(duration_min || 60)) + TRAVEL_BUFFER_MIN;
+
 
     const slots = [];
-    for (let t = startMin; t + block <= endMin; t += slot_step_min) {
+    for (let t = startMin; t < endMin; t += slot_step_min) {
+      // Slot length rules:
+      // - Normally: duration + travel buffer (block)
+      // - Allow "end-of-day" job to omit trailing travel buffer (very common IRL)
+      // - If caller mistakenly sends duration that already includes buffer,
+      //   we heuristically allow fitting by dropping one travel buffer once.
+      let base = Math.max(15, Number(duration_min || 60));
+      let block = base + TRAVEL_BUFFER_MIN;
+
+      // if it doesn't fit with tail buffer but fits without, allow without tail
+      if (t + block > endMin && t + base <= endMin) {
+        block = base;
+      }
+      // if even base doesn't fit, but dropping ONE buffer makes it fit (client may have included buffer)
+      if (t + base > endMin && t + (base - TRAVEL_BUFFER_MIN) <= endMin) {
+        base = Math.max(15, base - TRAVEL_BUFFER_MIN);
+        block = base;
+      }
+
+      if (t + block > endMin) continue;
+
       const startHHMM = minToHHMM(t);
       const endHHMM = minToHHMM(t + block);
       const startIso = `${date}T${startHHMM}:00`;
@@ -5326,11 +5369,11 @@ app.get("/public/availability_v2", async (req, res) => {
         }
         if (!within) continue;
 
-        const free = await isTechFree(tech.username, startIso, duration_min, null);
+        const free = await isTechFree(tech.username, startIso, base, null);
         if (free) available_tech_ids.push(tech.username);
       }
-
-      slots.push({
+}
+slots.push({
         start: startHHMM,
         end: endHHMM,
         available: available_tech_ids.length > 0,
@@ -5348,7 +5391,7 @@ app.get("/public/availability_v2", async (req, res) => {
       work_end,
       travel_buffer_min: TRAVEL_BUFFER_MIN,
       duration_min,
-      effective_block_min: block,
+      effective_block_min: default_effective_block_min,
       slot_step_min,
       tech_count,
       slots,
@@ -5394,18 +5437,52 @@ app.get("/admin/availability_by_tech_v2", async (req, res) => {
       console.warn("[admin_availability_by_tech_v2] special slots query failed", e.message);
     }
 
-    const work_start = "09:00";
-    const work_end = "18:00";
-    const startMin = toMin(work_start);
-    const endMin = toMin(work_end);
-    const block = effectiveBlockMin(duration_min);
+    // ✅ Determine global working window:
+let globalStart = toMin("09:00");
+let globalEnd = toMin("18:00");
 
-    const all_slots = [];
-    for (let t = startMin; t + block <= endMin; t += slot_step_min) {
-      all_slots.push({ start: minToHHMM(t), end: minToHHMM(t + block) });
-    }
+for (const tech of techs) {
+  const ts = toMin(tech.work_start || "09:00");
+  const te = toMin(tech.work_end || "18:00");
+  if (Number.isFinite(ts)) globalStart = Math.min(globalStart, ts);
+  if (Number.isFinite(te)) globalEnd = Math.max(globalEnd, te);
+  const wins = specialMap.get(tech.username) || [];
+  for (const w of wins) {
+    globalStart = Math.min(globalStart, toMin(w.start));
+    globalEnd = Math.max(globalEnd, toMin(w.end));
+  }
+}
 
-    // build per-tech availability
+globalStart = Math.max(0, Math.min(24 * 60, globalStart));
+globalEnd = Math.max(0, Math.min(24 * 60, globalEnd));
+
+const work_start = minToHHMM(globalStart);
+const work_end = minToHHMM(globalEnd);
+const startMin = globalStart;
+const endMin = globalEnd;
+
+const default_effective_block_min = Math.max(15, Number(duration_min || 60)) + TRAVEL_BUFFER_MIN;
+
+const all_slots = [];
+for (let t = startMin; t < endMin; t += slot_step_min) {
+  let base = Math.max(15, Number(duration_min || 60));
+  let block = base + TRAVEL_BUFFER_MIN;
+
+  if (t + block > endMin && t + base <= endMin) {
+    block = base;
+  }
+  if (t + base > endMin && t + (base - TRAVEL_BUFFER_MIN) <= endMin) {
+    base = Math.max(15, base - TRAVEL_BUFFER_MIN);
+    block = base;
+  }
+
+  if (t + block > endMin) continue;
+
+  all_slots.push({ start: minToHHMM(t), end: minToHHMM(t + block), service_min: base, block_min: block });
+}
+
+// build per-tech availability
+
     const techRows = [];
     for (const tech of techs) {
       const ts = toMin(tech.work_start || work_start);
@@ -5414,26 +5491,26 @@ app.get("/admin/availability_by_tech_v2", async (req, res) => {
       const slots = [];
       for (const s of all_slots) {
         const t0 = toMin(s.start);
-        let within = (t0 >= ts && t0 + block <= te);
+        let within = (t0 >= ts && t0 + (s.block_min || default_effective_block_min) <= te);
         if (!within) {
           for (const w of wins) {
             const ws = toMin(w.start);
             const we = toMin(w.end);
-            if (t0 >= ws && t0 + block <= we) { within = true; break; }
+            if (t0 >= ws && t0 + (s.block_min || default_effective_block_min) <= we) { within = true; break; }
           }
         }
         if (!within) {
           slots.push({ start: s.start, end: s.end, available: false });
           continue;
         }
-        const free = await isTechFree(tech.username, `${date}T${s.start}:00`, duration_min, null);
+        const free = await isTechFree(tech.username, `${date}T${s.start}:00`, (s.service_min || duration_min), null);
         slots.push({ start: s.start, end: s.end, available: !!free });
       }
       techRows.push({ username: tech.username, full_name: tech.full_name || null, slots });
     }
 
     console.log("[admin_availability_by_tech_v2]", { date, tech_type, duration_min, tech_count: techs.length, slots: all_slots.length });
-    res.json({ date, tech_type, work_start, work_end, duration_min, effective_block_min: block, slot_step_min, tech_count: techs.length, all_slots, techs: techRows });
+    res.json({ date, tech_type, work_start, work_end, duration_min, effective_block_min: default_effective_block_min, slot_step_min, tech_count: techs.length, all_slots, techs: techRows });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "โหลดตารางว่างไม่สำเร็จ" });
