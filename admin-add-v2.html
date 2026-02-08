@@ -224,17 +224,17 @@
         </div>
         <!-- booking_mode UI moved to Section 4 only (reduce confusion) -->
       </div>
-<!-- MULTI-SERVICE (ล้างหลายประเภทในใบงานเดียว) -->
+<!-- MULTI-SERVICE (หลายรายการในใบงานเดียว) -->
 <div id="multi_service_box" class="card card-lite" style="margin-top:12px; display:none;">
   <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
     <div>
-      <b>หลายประเภทแอร์ในใบงานเดียว (เฉพาะงานล้าง)</b>
-      <div class="muted2 mini">เพิ่ม “รายการบริการหลัก” ได้หลายบรรทัด เช่น ผนัง 1 + สี่ทิศทาง 1 + แขวน 1</div>
+      <b>หลายรายการในใบงานเดียว</b>
+      <div class="muted2 mini">เพิ่ม “รายการบริการหลัก” ได้หลายบรรทัด เช่น ผนัง 1 + สี่ทิศทาง 1 + แขวน 1 หรือ ซ่อม 2 รายการ</div>
     </div>
   </div>
 
   <div class="muted2 mini" style="margin-top:10px">
-    * ยัง <b>ไม่ต้องมอบหมายช่าง</b> ตอนเพิ่มรายการบริการ • ไปเลือก “เดี่ยว/ทีม” ในหัวข้อ 4 หลังจากกดโหลดคิวว่าง
+    * คุณสามารถเพิ่มรายการหลายบรรทัด แล้วค่อยไปเลือก “เดี่ยว/ทีม” ในหัวข้อ 4 หลังจากกดโหลดคิวว่าง
   </div>
 
   <div id="service_lines" style="margin-top:10px"></div>
@@ -259,7 +259,7 @@
             <input id="override_price" type="number" min="0" step="1" placeholder="0 = ใช้ราคามาตรฐาน">
           </div>
           <div>
-            <label>Override เวลา (นาที)</label>
+            <label id="override_duration_label">Override เวลา (นาที)</label>
             <input id="override_duration_min" type="number" min="0" step="1" placeholder="0 = คิดตามกติกา">
           </div>
         </div>

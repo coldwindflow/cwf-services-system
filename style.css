@@ -91,7 +91,9 @@ body{
 .slot-btn.selected{
   outline: 3px solid var(--slot-selected-ring);
   outline-offset: 2px;
+  color:#ffffff;
 }
+.slot-btn.selected .meta{ color: rgba(255,255,255,0.86); }
 
 .badge{
   display:inline-flex;
@@ -772,7 +774,39 @@ a:hover{ text-decoration: underline; }
 .tech-row-slots { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:10px; }
 .slot-btn { padding:12px 10px; border-radius:16px; border:1px solid rgba(0,0,0,.08); background:#f7f9ff; font-weight:900; }
 .slot-btn.full { opacity:.35; }
-.slot-btn.selected { outline: 3px solid rgba(255,193,7,.65); border-color: rgba(255,193,7,.65); background:#fff7d6; }
+.slot-btn.selected {
+  outline: 3px solid rgba(11,75,179,0.45);
+  border-color: rgba(11,75,179,0.65);
+  background:#0b4bb3;
+}
+.slot-btn.selected .slot-time{ color:#ffffff; }
+.slot-btn.selected .slot-sub{ color: rgba(255,255,255,0.86); }
+
+/* Segmented control (used in slot modal: auto/single/team)
+   Active = yellow bg + black text, Inactive = white bg + black text */
+.seg{
+  display:flex;
+  gap:10px;
+}
+.seg button{
+  flex:1;
+  min-height: 42px;
+  border-radius: 14px;
+  border: 1px solid rgba(0,0,0,.12);
+  background: #ffffff;
+  color:#0b1b3a;
+  font-weight: 900;
+  box-shadow: var(--shadow-1);
+}
+.seg button.active{
+  background: rgba(251,191,36,0.95);
+  border-color: rgba(251,191,36,0.95);
+  color:#0b1b3a;
+}
+
+/* Multi-service per-line duration input */
+.svc-extra{ display:flex; flex-direction:column; gap:6px; margin-right:10px; }
+.svc-dur{ width:110px; text-align:center; font-weight:900; border-radius:12px; border:1px solid rgba(0,0,0,.12); padding:10px; background:#ffffff; }
 .slot-time { font-size:14px; color:#0b1b33; }
 .slot-sub { font-size:12px; color:rgba(0,0,0,.55); margin-top:4px; }
 

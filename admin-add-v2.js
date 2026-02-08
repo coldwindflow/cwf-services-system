@@ -459,6 +459,8 @@ function buildCurrentServiceLine(){
     machine_count: p.machine_count,
     wash_variant: p.wash_variant,
     repair_variant: p.repair_variant,
+    // For repair/install, admin can set duration per line (server uses admin_override_duration_min)
+    admin_override_duration_min: Math.max(0, Number(p.admin_override_duration_min || 0)),
   };
 }
 
@@ -469,7 +471,8 @@ function sameServiceLine(a,b){
     Number(a.btu||0)===Number(b.btu||0) &&
     Number(a.machine_count||0)===Number(b.machine_count||0) &&
     String(a.wash_variant||'')===String(b.wash_variant||'') &&
-    String(a.repair_variant||'')===String(b.repair_variant||'');
+    String(a.repair_variant||'')===String(b.repair_variant||'') &&
+    Number(a.admin_override_duration_min||0)===Number(b.admin_override_duration_min||0);
 }
 
 function renderServiceLines(){
@@ -499,12 +502,23 @@ function renderServiceLines(){
     let extra = '';
     if(jt0 === 'ล้าง' && ln.ac_type==='ผนัง') extra = ` • ${ln.wash_variant||'ล้างธรรมดา'}`;
     if(jt0 === 'ซ่อม') extra = ` • ${ln.repair_variant||'-'}`;
+    let dur = '';
+    if(jt0 === 'ติดตั้ง' || jt0 === 'ซ่อม'){
+      const v = Math.max(0, Number(ln.admin_override_duration_min || 0));
+      dur = `
+        <div class="svc-extra">
+          <label class="mini muted2">เวลา (นาที)</label>
+          <input class="svc-dur" type="number" min="0" step="1" value="${v}" data-idx="${idx}" placeholder="0 = ใช้ค่าเริ่มต้น">
+        </div>
+      `;
+    }
     const label = `${jt0} • ${base}${extra}`;
     return `<div class="svc-row">
       <div class="svc-main">
         <div class="svc-title"><b>${escapeHtml(label)}</b></div>
         <div class="muted2 mini">รายการบริการหลัก #${idx+1}</div>
       </div>
+      ${dur}
       <button type="button" class="svc-del" data-idx="${idx}">ลบ</button>
     </div>`;
   }).join("") || `<div class="muted2">ยังไม่มีรายการบริการเพิ่มเติม • ใช้ค่าด้านบนเป็นรายการหลักได้ หรือกด “เพิ่มรายการ”</div>`;
@@ -521,6 +535,17 @@ function renderServiceLines(){
         renderServiceLines();
         refreshPreviewDebounced();
       }
+    });
+  });
+
+  // bind per-line duration (repair/install)
+  list.querySelectorAll('input.svc-dur').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const i = Number(inp.getAttribute('data-idx'));
+      if(!Number.isFinite(i) || !state.service_lines?.[i]) return;
+      const n = Math.max(0, Math.floor(Number(inp.value || 0)));
+      state.service_lines[i].admin_override_duration_min = n;
+      refreshPreviewDebounced();
     });
   });
 
@@ -575,6 +600,8 @@ function getServicesPayload(){
     if(!ln || !ln.job_type || !ln.ac_type || !ln.btu || !ln.machine_count) return;
     if(all.some(x=>sameServiceLine(x,ln))) return;
     const out = { ...ln };
+    // ensure numeric
+    out.admin_override_duration_min = Math.max(0, Number(out.admin_override_duration_min || 0));
     // Attach wash allocations (per technician) if user assigned workload in selected slot
     try {
       const dm = (el('dispatch_mode')?.value || 'forced').toString();
@@ -610,6 +637,28 @@ if (p.job_type === "ล้าง") {
   if (p.ac_type === "ผนัง" && !p.wash_variant) return false;
 }
 if (p.job_type === "ซ่อม" && !p.repair_variant) return false;
+
+// Install requires admin-set duration (per line)
+if (p.job_type === "ติดตั้ง") {
+  if (Number(p.admin_override_duration_min || 0) <= 0) return false;
+}
+
+// Repair part replacement can be admin-set duration (optional for other repair variants)
+if (p.job_type === "ซ่อม" && p.repair_variant === "ซ่อมเปลี่ยนอะไหล่") {
+  if (Number(p.admin_override_duration_min || 0) <= 0) return false;
+}
+
+// Validate existing service lines too (repair/install must have duration when required)
+try {
+  const lines = Array.isArray(state.service_lines) ? state.service_lines : [];
+  for (const ln of lines) {
+    const jt = String(ln.job_type || '').trim();
+    if (!jt) continue;
+    const dur = Number(ln.admin_override_duration_min || 0);
+    if (jt === 'ติดตั้ง' && dur <= 0) return false;
+    if (jt === 'ซ่อม' && String(ln.repair_variant || '').trim() === 'ซ่อมเปลี่ยนอะไหล่' && dur <= 0) return false;
+  }
+} catch(e){}
 return true;
 
 }
@@ -986,7 +1035,7 @@ function renderWashAssign(){
       <thead>
         <tr>
           <th style="text-align:left;padding:6px 8px;color:#0b1b3a">รายการ</th>
-          ${techs.map(t=>`<th style="text-align:center;padding:6px 8px;color:#0b1b3a">${escapeHtml(t)}</th>`).join('')}
+          ${techs.map(t=>`<th style="text-align:center;padding:6px 8px;color:#0b1b3a">${escapeHtml(techDisplay(t))}</th>`).join('')}
           <th style="text-align:center;padding:6px 8px;color:#0b1b3a">รวม</th>
         </tr>
       </thead>
@@ -1498,17 +1547,35 @@ async function submitBooking() {
 }
 
 function wireEvents() {
+  const updateOverrideDurationLabel = ()=>{
+    const lab = el('override_duration_label');
+    if(!lab) return;
+    const jt = (el('job_type')?.value || '').trim();
+    const rv = (document.getElementById('repair_variant')?.value || '').trim();
+    if(jt === 'ติดตั้ง'){
+      lab.textContent = 'เวลารายการนี้ (นาที) *จำเป็นสำหรับงานติดตั้ง';
+      return;
+    }
+    if(jt === 'ซ่อม'){
+      if(rv === 'ซ่อมเปลี่ยนอะไหล่') lab.textContent = 'เวลารายการนี้ (นาที) *จำเป็นสำหรับซ่อมเปลี่ยนอะไหล่';
+      else lab.textContent = 'เวลารายการนี้ (นาที) (ไม่ใส่ = 60 นาทีโดยประมาณ)';
+      return;
+    }
+    lab.textContent = 'Override เวลา (นาที)';
+  };
+
   // build variant when job type changes
   el("job_type").addEventListener("change", () => {
     buildVariantUI();
     renderServiceLines();
+    updateOverrideDurationLabel();
     refreshPreviewDebounced();
     // attach listeners for dynamic selects
     setTimeout(() => {
       const w = document.getElementById("wash_variant");
       const r = document.getElementById("repair_variant");
       if (w) w.addEventListener("change", refreshPreviewDebounced);
-      if (r) r.addEventListener("change", refreshPreviewDebounced);
+      if (r) r.addEventListener("change", () => { updateOverrideDurationLabel(); refreshPreviewDebounced(); });
     }, 0);
   });
 
@@ -1540,6 +1607,9 @@ function wireEvents() {
   }
   // ensure hidden booking_mode/dispatch_mode are in sync on first load
   syncDispatchFromBookingModeUI();
+
+  // initial label
+  try { updateOverrideDurationLabel(); } catch(e){}
 
   const dmEl = el('dispatch_mode');
   if(dmEl) dmEl.addEventListener('change', async ()=>{ updateAssignUIVisibility(); if(state.slots_loaded) await loadAvailability(); });
@@ -1682,6 +1752,8 @@ async function init() {
   renderExtras();
   wireEvents();
   wireMultiService();
+  // Ensure dynamic labels (repair/install duration label) are correct on first load
+  try { el("job_type").dispatchEvent(new Event("change")); } catch(e) {}
   refreshPreviewDebounced();
 }
 
