@@ -2113,33 +2113,38 @@ app.post('/admin/jobs/:job_id/extend_warranty_v2', requireAdminSoft, async (req,
 // - No signature required (admin override), logs to updates
 // =======================================
 app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, res) => {
+  // Admin override: close job even if technician cannot finalize.
+  // ✅ No signature required
+  // ✅ No warranty selection required (wash/install auto, repair can remain null)
+  // ⚠️ Still behind ENABLE_ADMIN_FORCE_FINISH (default ON) for safety.
   if (!ENABLE_ADMIN_FORCE_FINISH) return res.status(403).json({ error: 'Feature disabled' });
+
   const job_id = Number(req.params.job_id);
   const actor_username = String(req.body?.actor_username || '').trim() || null;
-  const reason = String(req.body?.reason || '').trim();
+  const reason = String(req.body?.reason || '').trim() || 'admin force finish';
+
   if (!job_id) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
-  if (!reason) return res.status(400).json({ error: 'ต้องระบุเหตุผล' });
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
+
     const jr = await client.query(
-      `SELECT job_type, warranty_end_at FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+      `SELECT job_type, warranty_end_at, job_status FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
       [job_id]
     );
     if (!jr.rows.length) return res.status(404).json({ error: 'ไม่พบงาน' });
+
     const cur = jr.rows[0] || {};
-    const hasWarranty = !!cur.warranty_end_at;
     const jt = String(cur.job_type || '').trim();
+
+    // If warranty fields are empty, set auto warranty for clean/install only.
+    // For repair: allow empty (admin override should not be blocked).
     let wEndIso = null, wKind = null, wMonths = null;
-    if (!hasWarranty) {
+    if (!cur.warranty_end_at) {
       const isClean = jt.includes('ล้าง');
       const isInstall = jt.includes('ติดตั้ง');
       const kind = isClean ? 'clean' : (isInstall ? 'install' : '');
-      // For repair without input, do not auto-close (safety)
-      if (!kind && ENABLE_WARRANTY_ENFORCE) {
-        throw new Error('งานซ่อมต้องระบุประกันก่อนปิดงาน (admin override ไม่อนุญาต)');
-      }
       if (kind) {
         const w = computeWarrantyEnd({ job_type: jt, warranty_kind: kind, warranty_months: null, start: new Date() });
         wEndIso = w.end.toISOString();
@@ -2152,6 +2157,8 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
       `UPDATE public.jobs
        SET job_status='เสร็จแล้ว',
            finished_at=NOW(),
+           canceled_at=NULL,
+           cancel_reason=NULL,
            warranty_kind = COALESCE($2, warranty_kind),
            warranty_months = COALESCE($3, warranty_months),
            warranty_start_at = COALESCE(warranty_start_at, NOW()),
@@ -2173,7 +2180,7 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
   } catch (e) {
     await client.query('ROLLBACK');
     console.error(e);
-    res.status(500).json({ error: e.message || 'ปิดงานไม่สำเร็จ' });
+    res.status(500).json({ error: e.message || 'force finish ไม่สำเร็จ' });
   } finally {
     client.release();
   }
@@ -3695,11 +3702,9 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
       const clientHasAnyWarrantyInput = !!clientWKind || warranty_months != null;
       const canAutoWarranty = (isClean || isInstall);
 
-      // ✅ Production rule: finishing a job must never be blocked by warranty selection.
-      // We still keep warranty data when possible:
-      // - clean/install: auto-derive fixed warranty
-      // - repair: if client didn't send anything, default to a safe warranty (3 months)
-      // Admin can extend/adjust warranty later (with audit) without blocking the technician.
+      if (ENABLE_WARRANTY_ENFORCE && !hasWarranty && !clientHasAnyWarrantyInput && !canAutoWarranty) {
+        throw new Error('ต้องระบุประกันก่อนกดเสร็จสิ้น (Warranty)');
+      }
 
       let wEndIso = null;
       let wKind = null;
@@ -3707,15 +3712,10 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
 
       if (!hasWarranty) {
         // Use client input when present. Otherwise auto based on job_type for clean/install.
-        const fallbackKind = (isClean ? 'clean' : (isInstall ? 'install' : 'repair'));
-        const fallbackMonths = (!isClean && !isInstall)
-          ? (Number.isFinite(Number(warranty_months)) && [3,6,12].includes(Number(warranty_months)) ? Number(warranty_months) : 3)
-          : null;
-
         const w = computeWarrantyEnd({
           job_type: jt,
-          warranty_kind: (clientWKind || fallbackKind),
-          warranty_months: (clientWKind === 'repair' ? warranty_months : (fallbackKind === 'repair' ? fallbackMonths : warranty_months)),
+          warranty_kind: (clientWKind || (isClean ? 'clean' : (isInstall ? 'install' : ''))),
+          warranty_months,
           start: new Date(),
         });
         wEndIso = w.end.toISOString();

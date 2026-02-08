@@ -239,6 +239,27 @@ async function loadJob(){
       </div>
     </details>
 
+
+    <hr style="margin:12px 0;" />
+
+    <div>
+      <b>🧯 ปิดงานแทนช่าง (Force Close)</b>
+      <div class="muted2 mini" style="margin-top:6px">ใช้เมื่อช่างกดปิดงานไม่ได้ ระบบจะปิดงานให้ทันที (ไม่สนเงื่อนไขอื่น ยกเว้น job_id ต้องถูกต้อง)</div>
+      <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <div style="flex:1;min-width:220px">
+          <label>เหตุผล (ไม่บังคับ)</label>
+          <textarea id="force_finish_reason" rows="2" placeholder="เช่น ช่างกดปิดงานไม่ได้ / ระบบค้าง / รูปค้าง"></textarea>
+        </div>
+        <button id="btnForceFinish" class="danger" type="button" style="width:auto"
+          ${(['เสร็จแล้ว','ยกเลิก'].includes(safe(job.job_status||'')) ? 'disabled' : '')}
+          title="${(['เสร็จแล้ว','ยกเลิก'].includes(safe(job.job_status||'')) ? 'งานปิดแล้ว' : 'ปิดงานแทนช่าง')}">
+          ✅ ปิดงานแทนช่าง
+        </button>
+      </div>
+    </div>
+
+
+
     <hr style="margin:12px 0;" />
 
     <div>
@@ -485,7 +506,28 @@ async function loadJob(){
     };
   }
 
-  const btnClone = el('btnClone');
+  
+  const btnForce = el('btnForceFinish');
+  if (btnForce) {
+    btnForce.onclick = async ()=> {
+      if (!confirm('ยืนยันปิดงานแทนช่าง? (งานจะถูกตั้งเป็น “เสร็จแล้ว” ทันที)')) return;
+      const reason = (el('force_finish_reason')?.value || '').trim();
+      const payload = { role:'admin', actor_username: (localStorage.getItem('admin_username')||'').trim() || null, reason };
+      const r = await apiFetch(`/admin/jobs/${encodeURIComponent(String(job.job_id))}/force_finish_v2`, {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      if (r && r.success) {
+        alert('✅ ปิดงานแทนช่างเรียบร้อย');
+        // reload page state
+        location.reload();
+      } else {
+        alert('❌ ปิดงานไม่สำเร็จ');
+      }
+    };
+  }
+
+const btnClone = el('btnClone');
   if (btnClone) {
     btnClone.onclick = async ()=>{
       const appt = String(el('clone_appt')?.value||'').trim();
