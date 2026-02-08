@@ -5372,8 +5372,9 @@ app.get("/public/availability_v2", async (req, res) => {
         const free = await isTechFree(tech.username, startIso, base, null);
         if (free) available_tech_ids.push(tech.username);
       }
-}
-slots.push({
+
+      // record slot once per time step
+      slots.push({
         start: startHHMM,
         end: endHHMM,
         available: available_tech_ids.length > 0,
