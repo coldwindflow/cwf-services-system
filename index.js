@@ -1967,7 +1967,9 @@ app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
        FROM public.job_promotions jp
        JOIN public.promotions p ON p.promo_id=jp.promo_id
        WHERE jp.job_id=$1
-       ORDER BY jp.job_promo_id DESC
+	   -- NOTE: บางฐานข้อมูลไม่มีคอลัมน์ jp.job_promo_id (เคยทำให้ /admin/job_v2 พังทั้งหน้า)
+	   -- ใช้ promo_id แทนเพื่อให้ backward compatible
+	   ORDER BY jp.promo_id DESC
        LIMIT 1`,
       [jid]
     );
@@ -3702,26 +3704,32 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
       const clientHasAnyWarrantyInput = !!clientWKind || warranty_months != null;
       const canAutoWarranty = (isClean || isInstall);
 
-      if (ENABLE_WARRANTY_ENFORCE && !hasWarranty && !clientHasAnyWarrantyInput && !canAutoWarranty) {
-        throw new Error('ต้องระบุประกันก่อนกดเสร็จสิ้น (Warranty)');
-      }
+	      // IMPORTANT (production hotfix):
+	      // ห้ามให้ประกันมาเป็นเงื่อนไขที่ทำให้ช่างปิดงานไม่ได้
+	      // - ล้าง/ติดตั้ง: auto-derive ได้
+	      // - ซ่อม: ถ้าไม่ส่งมา ให้คงค่าเดิม/ว่างไว้ได้ (admin ค่อยแก้ภายหลัง)
 
       let wEndIso = null;
       let wKind = null;
       let wMonths = null;
 
-      if (!hasWarranty) {
-        // Use client input when present. Otherwise auto based on job_type for clean/install.
-        const w = computeWarrantyEnd({
-          job_type: jt,
-          warranty_kind: (clientWKind || (isClean ? 'clean' : (isInstall ? 'install' : ''))),
-          warranty_months,
-          start: new Date(),
-        });
-        wEndIso = w.end.toISOString();
-        wKind = w.kind;
-        wMonths = w.months;
-      }
+	      if (!hasWarranty) {
+	        // Use client input when present. Otherwise auto based on job_type for clean/install.
+	        // For repair with no input: allow empty (do NOT throw) to avoid blocking finalize.
+	        const inferredKind = (clientWKind || (isClean ? 'clean' : (isInstall ? 'install' : '')));
+	        const shouldCompute = !!inferredKind && (inferredKind !== 'repair' || [3,6,12].includes(Number(warranty_months)));
+	        if (shouldCompute) {
+	          const w = computeWarrantyEnd({
+	            job_type: jt,
+	            warranty_kind: inferredKind,
+	            warranty_months,
+	            start: new Date(),
+	          });
+	          wEndIso = w.end.toISOString();
+	          wKind = w.kind;
+	          wMonths = w.months;
+	        }
+	      }
       await client.query(
         `UPDATE public.jobs
          SET job_status='เสร็จแล้ว',
@@ -6028,13 +6036,15 @@ function sendHtml(file) {
 // ✅ รองรับ Refresh/Deep-link แบบ "ไม่ต้องมี .html" (กันรีเฟรชเด้งไปหน้าแรก)
 // - ตัวอย่าง: /tech, /admin, /track, /customer
 app.get("/login", (req, res) => res.sendFile(sendHtml("login.html")));
-app.get("/admin", (req, res) => res.sendFile(sendHtml("admin.html")));
+// Admin landing: ใช้ V2 เป็นหลัก (หน้าเก่าเลิกใช้แล้ว)
+app.get("/admin", (req, res) => res.redirect(302, "/admin-review-v2.html"));
 app.get("/admin-add", (req, res) => res.sendFile(sendHtml("admin-add-v2.html")));
 app.get("/admin-review", (req, res) => res.sendFile(sendHtml("admin-review-v2.html")));
 app.get("/admin-queue", (req, res) => res.sendFile(sendHtml("admin-queue-v2.html")));
 app.get("/admin-history", (req, res) => res.sendFile(sendHtml("admin-history-v2.html")));
 app.get("/admin-tech", (req, res) => res.sendFile(sendHtml("admin-tech.html")));
-app.get("/admin-legacy", (req, res) => res.sendFile(sendHtml("admin-legacy.html")));
+// หน้า legacy เลิกใช้แล้ว ให้ redirect ไป V2
+app.get("/admin-legacy", (req, res) => res.redirect(302, "/admin-review-v2.html"));
 app.get("/edit-profile", (req, res) => res.sendFile(sendHtml("edit-profile.html")));
 app.get("/tech", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/add-job", (req, res) => res.sendFile(sendHtml("add-job.html")));
@@ -6043,13 +6053,13 @@ app.get("/track", (req, res) => res.sendFile(sendHtml("track.html")));
 app.get("/home", (req, res) => res.sendFile(sendHtml("index.html")));
 
 app.get("/login.html", (req, res) => res.sendFile(sendHtml("login.html")));
-app.get("/admin.html", (req, res) => res.sendFile(sendHtml("admin.html")));
+app.get("/admin.html", (req, res) => res.redirect(302, "/admin-review-v2.html"));
 app.get("/admin-add-v2.html", (req, res) => res.sendFile(sendHtml("admin-add-v2.html")));
 app.get("/admin-review-v2.html", (req, res) => res.sendFile(sendHtml("admin-review-v2.html")));
 app.get("/admin-queue-v2.html", (req, res) => res.sendFile(sendHtml("admin-queue-v2.html")));
 app.get("/admin-history-v2.html", (req, res) => res.sendFile(sendHtml("admin-history-v2.html")));
 app.get("/admin-tech.html", (req, res) => res.sendFile(sendHtml("admin-tech.html")));
-app.get("/admin-legacy.html", (req, res) => res.sendFile(sendHtml("admin-legacy.html")));
+app.get("/admin-legacy.html", (req, res) => res.redirect(302, "/admin-review-v2.html"));
 app.get("/edit-profile.html", (req, res) => res.sendFile(sendHtml("edit-profile.html")));
 app.get("/tech.html", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/add-job.html", (req, res) => res.sendFile(sendHtml("add-job.html")));

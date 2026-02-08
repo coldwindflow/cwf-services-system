@@ -1901,52 +1901,22 @@ window.openWorkdaysModal = openWorkdaysModal;
 // ✅ FINALIZE (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์
 // =======================================
 function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
-  if (targetStatus === 'เสร็จแล้ว') {
-    // Warranty required before finishing (server also enforces via feature flag)
-    // ✅ Rule update (production):
-    // - ล้าง/ติดตั้ง => ล็อคประกันตายตัว (auto)
-    // - ซ่อม => ต้องเลือก 3/6/12 เดือนเท่านั้น
-    const kindEl = document.getElementById(`warranty-kind-${jobId}`);
-    const monthsEl = document.getElementById(`warranty-months-${jobId}`);
-
-    const cached = getJobFromCache(jobId);
-    const jobTypeText = getJobTypeText(cached);
-    const inferred = detectWarrantyKind(jobTypeText);
-
-    // prefer existing value, else infer from job payload
-    let kind = (kindEl?.value || '').trim() || inferred;
-    let months = monthsEl ? Number(monthsEl.value || 0) : 0;
-
-    // Auto-lock for clean/install
-    if (kind === 'clean' || kind === 'install') {
-      if (kindEl) kindEl.value = kind;
-      // months not used
-    } else {
-      // Repair path
-      kind = kind || 'repair';
-      if (kindEl) kindEl.value = 'repair';
-
-      if (![3, 6, 12].includes(months)) {
-        if (_skipWarrantyPrompt) {
-          alert('งานซ่อมต้องเลือกประกัน 3 / 6 / 12 เดือน');
-          return;
-        }
-        ensureWarrantyModal();
-        return openWarrantyModal({ jobId, kind: 'repair', months }, (pickedMonths) => {
-          if (monthsEl && pickedMonths) monthsEl.value = String(pickedMonths);
-          requestFinalize(jobId, targetStatus, true);
-        });
-      }
-    }
-  }
+  // IMPORTANT (production hotfix):
+  // ปิดงานให้เหลือ "เงื่อนไขเดียว" คือ ต้องมีลายเซ็นต์เท่านั้น
+  // (ไม่บังคับเลือกประกันในฝั่งช่าง เพื่อกันงานค้าง)
   // เปิดลายเซ็นต์ก่อน (ถ้ากดยกเลิกในลายเซ็นต์ จะต้องกลับไปเลือกใหม่เอง)
   openSignatureModal((signatureDataUrl) => finalizeJob(jobId, targetStatus, signatureDataUrl));
 }
 
 async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
   try {
-    // อัปโหลดรูปค้างก่อน
-    await uploadPendingPhotos(jobId);
+    // อัปโหลดรูปค้างก่อน (แต่ห้ามล็อคการปิดงาน)
+    // เคสที่เจอบ่อย: fetch ค้าง/timeout หรือ photo_id ไม่ตรงกับ server ทำให้กดปิดงานแล้วเงียบ
+    const up = await uploadPendingPhotos(jobId, { failOpen: true, timeoutMs: 15000 });
+    if (up && up.failedCount > 0) {
+      const ok = confirm(`มีรูปค้างที่อัปโหลดไม่สำเร็จ ${up.failedCount} รูป\nต้องการปิดงานต่อเลยไหม?\n(รูปจะยังค้างในเครื่องและกดอัปโหลดทีหลังได้)`);
+      if (!ok) return;
+    }
 
     // บันทึก note ล่าสุด (เพื่อส่งให้แอดมินตอนยกเลิก)
     const note = (document.getElementById(`note-${jobId}`)?.value || "").trim();
@@ -1956,13 +1926,6 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
       body: JSON.stringify({ note }),
     }).catch(() => {});
 
-    const kindEl = document.getElementById(`warranty-kind-${jobId}`);
-    const monthsEl = document.getElementById(`warranty-months-${jobId}`);
-    const warranty_kind = (kindEl?.value || '').trim();
-    const warranty_months = (warranty_kind === 'repair')
-      ? (monthsEl ? Number(monthsEl.value || 0) : null)
-      : null;
-
     const res = await fetch(`${API_BASE}/jobs/${jobId}/finalize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1970,7 +1933,6 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
         status: targetStatus,
         signature_data: signatureDataUrl,
         note,
-        ...(targetStatus === 'เสร็จแล้ว' ? { warranty_kind, warranty_months } : {}),
       }),
     });
 
@@ -2005,7 +1967,7 @@ function setStatus(jobId, status) {
 
 async function closeJob(jobId) {
   try {
-    await uploadPendingPhotos(jobId);
+    await uploadPendingPhotos(jobId, { failOpen: true, timeoutMs: 15000 });
 
     const res = await fetch(`${API_BASE}/jobs/${jobId}/status`, {
       method: "PUT",
@@ -2291,26 +2253,81 @@ window.forceUpload = forceUpload;
 // =======================================
 // ⬆️ UPLOAD PENDING PHOTOS
 // =======================================
-async function uploadPendingPhotos(jobId) {
+// Upload photos queued in IndexedDB.
+// IMPORTANT: ต้องไม่ทำให้ "ปิดงาน" ค้าง/เงียบ (fail-open)
+async function uploadPendingPhotos(jobId, opts) {
+  const options = Object.assign({ failOpen: false, timeoutMs: 15000 }, opts || {});
   const items = await idbGetByJob(jobId);
-  if (!items.length) return true;
+  if (!items.length) return { ok: true, failedCount: 0 };
 
-  for (const it of items) {
-    const form = new FormData();
-    form.append("photo", it.blob, it.original_name || "photo.jpg");
+  let failedCount = 0;
 
-    const res = await fetch(`${API_BASE}/jobs/${jobId}/photos/${it.photo_id}/upload`, {
-      method: "POST",
-      body: form,
-    });
-
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "อัปโหลดรูปไม่สำเร็จ");
-
-    await idbDelete(it.photo_id);
+  // small helper: fetch with timeout (กัน fetch ค้างแล้วไม่มี popup)
+  async function fetchWithTimeout(url, fetchOpts) {
+    const controller = new AbortController();
+    const t = setTimeout(() => controller.abort(), Number(options.timeoutMs) || 15000);
+    try {
+      return await fetch(url, Object.assign({}, fetchOpts || {}, { signal: controller.signal }));
+    } finally {
+      clearTimeout(t);
+    }
   }
 
-  return true;
+  for (const it of items) {
+    try {
+      // 1) try upload with existing photo_id
+      const form = new FormData();
+      form.append("photo", it.blob, it.original_name || "photo.jpg");
+
+      let res = await fetchWithTimeout(`${API_BASE}/jobs/${jobId}/photos/${it.photo_id}/upload`, {
+        method: "POST",
+        body: form,
+      });
+      let data = await res.json().catch(() => ({}));
+
+      // 2) if server lost metadata (404), recreate meta then retry once
+      if (!res.ok && (res.status === 404 || String(data?.error || '').toLowerCase().includes('meta'))) {
+        const metaRes = await fetchWithTimeout(`${API_BASE}/jobs/${jobId}/photos/meta`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phase: it.phase || 'unspecified',
+            mime_type: it.mime_type || (it.blob && it.blob.type) || 'image/jpeg',
+            original_name: it.original_name || 'photo.jpg',
+            file_size: it.file_size || (it.blob ? it.blob.size : null),
+          }),
+        });
+        const meta = await metaRes.json().catch(() => ({}));
+        if (metaRes.ok && meta?.photo_id) {
+          // replace local queue id -> new photo_id (keep blob)
+          const oldId = it.photo_id;
+          const newId = meta.photo_id;
+          await idbPut(Object.assign({}, it, { photo_id: newId }));
+          await idbDelete(oldId);
+
+          const form2 = new FormData();
+          form2.append("photo", it.blob, it.original_name || "photo.jpg");
+          res = await fetchWithTimeout(`${API_BASE}/jobs/${jobId}/photos/${newId}/upload`, {
+            method: "POST",
+            body: form2,
+          });
+          data = await res.json().catch(() => ({}));
+        }
+      }
+
+      if (!res.ok) throw new Error(data.error || "อัปโหลดรูปไม่สำเร็จ");
+
+      // success -> remove from queue
+      await idbDelete(it.photo_id);
+    } catch (e) {
+      failedCount++;
+      console.error('uploadPendingPhotos item failed', e);
+      if (!options.failOpen) throw e;
+      // fail-open: keep item queued
+    }
+  }
+
+  return { ok: failedCount === 0, failedCount };
 }
 
 // =======================================
