@@ -1027,56 +1027,88 @@ function renderWashAssign(){
 
   ensureDefaultAllocations();
 
-  // Build table
-  const head = `<div class="muted2 mini">แตะช่องแล้วปรับจำนวนเครื่องให้แต่ละช่าง • รวมต่อแถวต้องเท่ากับจำนวนเครื่อง</div>`;
-  let html = head;
-  html += `<div style="overflow-x:auto;margin-top:10px">
-    <table style="width:100%;border-collapse:separate;border-spacing:0 10px">
-      <thead>
-        <tr>
-          <th style="text-align:left;padding:6px 8px;color:#0b1b3a">รายการ</th>
-          ${techs.map(t=>`<th style="text-align:center;padding:6px 8px;color:#0b1b3a">${escapeHtml(techDisplay(t))}</th>`).join('')}
-          <th style="text-align:center;padding:6px 8px;color:#0b1b3a">รวม</th>
-        </tr>
-      </thead>
-      <tbody>
+  // Premium, mobile-friendly assignment UI (no wide table)
+  const head = `
+    <div class="assign-help">แตะ + / − เพื่อแบ่งจำนวนเครื่องต่อช่าง • รวมต่อรายการต้องเท่ากับจำนวนเครื่อง</div>
   `;
+  let html = head;
+  html += `<div class="assign-grid">`;
 
   for(const s of services){
-    const label = `${s.ac_type||'-'} • ${Number(s.btu||0)} BTU • ${Number(s.machine_count||0)} เครื่อง` + (s.ac_type==='ผนัง' ? ` • ${s.wash_variant||'ล้างธรรมดา'}` : '');
+    const labelMain = `${s.ac_type||'-'} • ${Number(s.btu||0)} BTU`;
+    const labelSub = `${Number(s.machine_count||0)} เครื่อง` + (s.ac_type==='ผนัง' ? ` • ${s.wash_variant||'ล้างธรรมดา'}` : '');
     const k = serviceKey(s);
     const row = state.wash_alloc[k] || {};
     const total = Math.max(0, Number(s.machine_count||0));
     const curSum = techs.reduce((sum,t)=>sum+Math.max(0,Number(row[t]||0)),0);
     const ok = curSum === total;
-    html += `<tr>
-      <td style="padding:10px 8px;border:1px solid rgba(11,75,179,0.14);border-radius:14px;background:#ffffff">
-        <b>${escapeHtml(label)}</b>
-        <div class="muted2 mini" style="margin-top:4px">ต้องรวม = <b>${total}</b></div>
-      </td>
-      ${techs.map(t=>{
-        const v = Math.max(0,Number(row[t]||0));
-        return `<td style="padding:10px 8px;border:1px solid rgba(11,75,179,0.14);border-radius:14px;background:#ffffff;text-align:center">
-          <input data-alloc="1" data-skey="${escapeHtml(k)}" data-tech="${escapeHtml(t)}" type="number" min="0" step="1" value="${v}" style="width:82px;text-align:center;font-weight:900">
-        </td>`;
-      }).join('')}
-      <td style="padding:10px 8px;border:1px solid rgba(11,75,179,0.14);border-radius:14px;background:${ok ? '#fffbdd' : '#fff1f2'};text-align:center;font-weight:900;color:${ok ? '#0b1b3a' : '#991b1b'}">${curSum}/${total}</td>
-    </tr>`;
+
+    html += `
+      <div class="assign-item">
+        <div class="assign-item-head">
+          <div class="assign-item-title">
+            <div class="t1">${escapeHtml(labelMain)}</div>
+            <div class="t2">${escapeHtml(labelSub)}</div>
+          </div>
+          <div class="assign-badge ${ok ? 'ok' : 'bad'}">${curSum}/${total}</div>
+        </div>
+
+        <div class="assign-techs">
+          ${techs.map(t=>{
+            const v = Math.max(0,Number(row[t]||0));
+            return `
+              <div class="assign-tech" data-skey="${escapeHtml(k)}" data-tech="${escapeHtml(t)}">
+                <div class="assign-tech-name">${escapeHtml(techDisplay(t))}</div>
+                <div class="assign-stepper">
+                  <button type="button" class="step-btn" data-step="-1" aria-label="ลด">−</button>
+                  <input class="step-input" data-alloc="1" data-skey="${escapeHtml(k)}" data-tech="${escapeHtml(t)}" type="number" min="0" step="1" value="${v}" inputmode="numeric" />
+                  <button type="button" class="step-btn" data-step="1" aria-label="เพิ่ม">+</button>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+
+        <div class="assign-foot ${ok ? 'ok' : 'bad'}">
+          ${ok ? '✅ รวมครบตามจำนวนเครื่อง' : '⚠️ จำนวนรวมยังไม่ครบ/เกิน กรุณาปรับให้เท่ากับจำนวนเครื่อง'}
+        </div>
+      </div>
+    `;
   }
 
-  html += `</tbody></table></div>`;
+  html += `</div>`;
   table.innerHTML = html;
 
-  // bind inputs
+  const clampInt = (n)=> Math.max(0, Math.floor(Number(n||0)));
+  const setAlloc = (k,t,n)=>{
+    state.wash_alloc = state.wash_alloc || {};
+    if(!state.wash_alloc[k]) state.wash_alloc[k] = {};
+    state.wash_alloc[k][t] = clampInt(n);
+  };
+
+  // bind stepper buttons
+  table.querySelectorAll('.assign-tech .step-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const wrap = btn.closest('.assign-tech');
+      const k = (wrap?.getAttribute('data-skey')||'');
+      const t = (wrap?.getAttribute('data-tech')||'');
+      const inp = wrap?.querySelector('input.step-input');
+      const cur = clampInt(inp?.value);
+      const delta = Number(btn.getAttribute('data-step')||0);
+      const next = clampInt(cur + delta);
+      if(inp) inp.value = String(next);
+      setAlloc(k,t,next);
+      renderWashAssign();
+    });
+  });
+
+  // bind manual input
   table.querySelectorAll('input[data-alloc="1"]').forEach(inp=>{
     inp.addEventListener('input', ()=>{
       const k = (inp.getAttribute('data-skey')||'');
       const t = (inp.getAttribute('data-tech')||'');
-      const n = Math.max(0, Math.floor(Number(inp.value||0)));
-      state.wash_alloc = state.wash_alloc || {};
-      if(!state.wash_alloc[k]) state.wash_alloc[k] = {};
-      state.wash_alloc[k][t] = n;
-      // re-render to update sums (small table)
+      const n = clampInt(inp.value);
+      setAlloc(k,t,n);
       renderWashAssign();
     });
   });
