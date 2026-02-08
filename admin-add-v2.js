@@ -1027,9 +1027,9 @@ function renderWashAssign(){
 
   ensureDefaultAllocations();
 
-  // Premium, mobile-friendly assignment UI (no wide table)
+  // Premium assignment UI: tap into a modal per service line (supports many technicians)
   const head = `
-    <div class="assign-help">แตะ + / − เพื่อแบ่งจำนวนเครื่องต่อช่าง • รวมต่อรายการต้องเท่ากับจำนวนเครื่อง</div>
+    <div class="assign-help">แตะ “กำหนดช่าง” ในแต่ละรายการเพื่อแบ่งจำนวนเครื่องต่อช่าง • รวมต่อรายการต้องเท่ากับจำนวนเครื่อง</div>
   `;
   let html = head;
   html += `<div class="assign-grid">`;
@@ -1043,6 +1043,15 @@ function renderWashAssign(){
     const curSum = techs.reduce((sum,t)=>sum+Math.max(0,Number(row[t]||0)),0);
     const ok = curSum === total;
 
+    const parts = techs
+      .map(t=>{
+        const v = Math.max(0, Number(row[t]||0));
+        if(!v) return '';
+        return `<span class="assign-chip">${escapeHtml(techDisplay(t))} <b>${v}</b></span>`;
+      })
+      .filter(Boolean)
+      .join('');
+
     html += `
       <div class="assign-item">
         <div class="assign-item-head">
@@ -1053,24 +1062,15 @@ function renderWashAssign(){
           <div class="assign-badge ${ok ? 'ok' : 'bad'}">${curSum}/${total}</div>
         </div>
 
-        <div class="assign-techs">
-          ${techs.map(t=>{
-            const v = Math.max(0,Number(row[t]||0));
-            return `
-              <div class="assign-tech" data-skey="${escapeHtml(k)}" data-tech="${escapeHtml(t)}">
-                <div class="assign-tech-name">${escapeHtml(techDisplay(t))}</div>
-                <div class="assign-stepper">
-                  <button type="button" class="step-btn" data-step="-1" aria-label="ลด">−</button>
-                  <input class="step-input" data-alloc="1" data-skey="${escapeHtml(k)}" data-tech="${escapeHtml(t)}" type="number" min="0" step="1" value="${v}" inputmode="numeric" />
-                  <button type="button" class="step-btn" data-step="1" aria-label="เพิ่ม">+</button>
-                </div>
-              </div>
-            `;
-          }).join('')}
+        <div class="assign-summary">
+          ${parts || `<span class="muted2 mini">ยังไม่ได้กำหนดช่างในรายการนี้</span>`}
         </div>
 
-        <div class="assign-foot ${ok ? 'ok' : 'bad'}">
-          ${ok ? '✅ รวมครบตามจำนวนเครื่อง' : '⚠️ จำนวนรวมยังไม่ครบ/เกิน กรุณาปรับให้เท่ากับจำนวนเครื่อง'}
+        <div class="assign-actions">
+          <button type="button" class="btn-yellow btn-assign-open" data-skey="${escapeHtml(k)}">กำหนดช่าง</button>
+          <div class="assign-foot ${ok ? 'ok' : 'bad'}">
+            ${ok ? '✅ รวมครบตามจำนวนเครื่อง' : '⚠️ จำนวนรวมยังไม่ครบ/เกิน กรุณากำหนดให้เท่ากับจำนวนเครื่อง'}
+          </div>
         </div>
       </div>
     `;
@@ -1079,44 +1079,152 @@ function renderWashAssign(){
   html += `</div>`;
   table.innerHTML = html;
 
-  const clampInt = (n)=> Math.max(0, Math.floor(Number(n||0)));
-  const setAlloc = (k,t,n)=>{
-    state.wash_alloc = state.wash_alloc || {};
-    if(!state.wash_alloc[k]) state.wash_alloc[k] = {};
-    state.wash_alloc[k][t] = clampInt(n);
-  };
-
-  // bind stepper buttons
-  table.querySelectorAll('.assign-tech .step-btn').forEach(btn=>{
+  table.querySelectorAll('.btn-assign-open').forEach(btn=>{
     btn.addEventListener('click', ()=>{
-      const wrap = btn.closest('.assign-tech');
-      const k = (wrap?.getAttribute('data-skey')||'');
-      const t = (wrap?.getAttribute('data-tech')||'');
-      const inp = wrap?.querySelector('input.step-input');
-      const cur = clampInt(inp?.value);
-      const delta = Number(btn.getAttribute('data-step')||0);
-      const next = clampInt(cur + delta);
-      if(inp) inp.value = String(next);
-      setAlloc(k,t,next);
-      renderWashAssign();
-    });
-  });
-
-  // bind manual input
-  table.querySelectorAll('input[data-alloc="1"]').forEach(inp=>{
-    inp.addEventListener('input', ()=>{
-      const k = (inp.getAttribute('data-skey')||'');
-      const t = (inp.getAttribute('data-tech')||'');
-      const n = clampInt(inp.value);
-      setAlloc(k,t,n);
-      renderWashAssign();
+      const k = btn.getAttribute('data-skey') || '';
+      try { openAssignModal(k); } catch(e){}
     });
   });
 
   const payload = buildSplitAssignmentsPayload();
+
   hidden.value = payload.length ? JSON.stringify(payload) : '';
   sub.textContent = `${state.selected_slot_iso.slice(0,10)} • ${state.selected_slot_iso.slice(11,16)} • ทีม ${techs.map(techDisplay).join(', ')}`;
 }
+
+
+/** Assignment modal (per service line) **/
+function ensureAssignModal(){
+  if(el('assign_modal_backdrop')) return;
+  const bd = document.createElement('div');
+  bd.id = 'assign_modal_backdrop';
+  bd.className = 'cwf-modal-backdrop hidden';
+  bd.innerHTML = `
+    <div class="cwf-modal" role="dialog" aria-modal="true" aria-label="กำหนดงานให้ช่าง">
+      <div class="cwf-modal-head">
+        <div class="cwf-modal-title">กำหนดงานให้ช่าง</div>
+        <button type="button" class="cwf-modal-close" id="assign_modal_close" aria-label="ปิด">✕</button>
+      </div>
+      <div class="cwf-modal-body" id="assign_modal_body"></div>
+      <div class="cwf-modal-foot">
+        <button type="button" class="secondary" id="assign_modal_cancel">ปิด</button>
+        <button type="button" class="btn-yellow" id="assign_modal_done">บันทึก</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(bd);
+
+  const close = ()=>{
+    bd.classList.add('hidden');
+    state.assign_modal_skey = '';
+    try { renderWashAssign(); } catch(e){}
+  };
+
+  bd.addEventListener('click', (ev)=>{
+    if(ev.target === bd) close();
+  });
+  el('assign_modal_close')?.addEventListener('click', close);
+  el('assign_modal_cancel')?.addEventListener('click', close);
+  el('assign_modal_done')?.addEventListener('click', close);
+}
+
+function getServiceByKey(skey){
+  const services = getWashServicesForAssignment();
+  for(const s of services){
+    if(serviceKey(s) === skey) return s;
+  }
+  return null;
+}
+
+function clampInt(n){ return Math.max(0, Math.floor(Number(n||0))); }
+
+function setAlloc(skey, tech, n){
+  state.wash_alloc = state.wash_alloc || {};
+  if(!state.wash_alloc[skey]) state.wash_alloc[skey] = {};
+  state.wash_alloc[skey][tech] = clampInt(n);
+}
+
+function renderAssignModal(){
+  const skey = (state.assign_modal_skey || '').toString();
+  const s = getServiceByKey(skey);
+  const techs = getWorkloadTechs();
+  const body = el('assign_modal_body');
+  if(!body) return;
+  if(!s){
+    body.innerHTML = `<div class="muted2">ไม่พบรายการ</div>`;
+    return;
+  }
+
+  const row = (state.wash_alloc && state.wash_alloc[skey]) ? state.wash_alloc[skey] : {};
+  const total = Math.max(0, Number(s.machine_count||0));
+  const curSum = techs.reduce((sum,t)=>sum+clampInt(row[t]||0),0);
+  const ok = curSum === total;
+
+  const titleMain = `${s.ac_type||'-'} • ${Number(s.btu||0)} BTU`;
+  const titleSub = `${total} เครื่อง` + (s.ac_type==='ผนัง' ? ` • ${s.wash_variant||'ล้างธรรมดา'}` : '');
+
+  body.innerHTML = `
+    <div class="assign-modal-top">
+      <div class="assign-modal-title">
+        <div class="t1">${escapeHtml(titleMain)}</div>
+        <div class="t2">${escapeHtml(titleSub)}</div>
+      </div>
+      <div class="assign-badge ${ok ? 'ok' : 'bad'}">${curSum}/${total}</div>
+    </div>
+
+    <div class="assign-modal-hint ${ok ? 'ok' : 'bad'}">
+      ${ok ? '✅ รวมครบตามจำนวนเครื่อง' : '⚠️ จำนวนรวมยังไม่ครบ/เกิน กรุณาปรับให้เท่ากับจำนวนเครื่อง'}
+    </div>
+
+    <div class="assign-modal-list">
+      ${techs.map(t=>{
+        const v = clampInt(row[t]||0);
+        return `
+          <div class="assign-modal-row" data-skey="${escapeHtml(skey)}" data-tech="${escapeHtml(t)}">
+            <div class="assign-modal-name">${escapeHtml(techDisplay(t))}</div>
+            <div class="assign-modal-stepper">
+              <button type="button" class="step-mini" data-step="-1" aria-label="ลด">−</button>
+              <input class="step-mini-input" type="number" min="0" step="1" value="${v}" inputmode="numeric" />
+              <button type="button" class="step-mini" data-step="1" aria-label="เพิ่ม">+</button>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+
+    <div class="muted2 mini" style="margin-top:10px">
+      * แนะนำ: ปรับจำนวนให้ครบแล้วกด “บันทึก” เพื่อปิดหน้าต่าง
+    </div>
+  `;
+
+  body.querySelectorAll('.assign-modal-row').forEach(rowEl=>{
+    const tech = rowEl.getAttribute('data-tech') || '';
+    const inp = rowEl.querySelector('input.step-mini-input');
+    rowEl.querySelectorAll('button.step-mini').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const delta = Number(btn.getAttribute('data-step')||0);
+        const next = clampInt(clampInt(inp?.value) + delta);
+        if(inp) inp.value = String(next);
+        setAlloc(skey, tech, next);
+        renderAssignModal();
+      });
+    });
+    inp?.addEventListener('input', ()=>{
+      setAlloc(skey, tech, clampInt(inp.value));
+      renderAssignModal();
+    });
+  });
+}
+
+function openAssignModal(skey){
+  ensureDefaultAllocations();
+  ensureAssignModal();
+  state.assign_modal_skey = skey;
+  const bd = el('assign_modal_backdrop');
+  if(bd) bd.classList.remove('hidden');
+  renderAssignModal();
+}
+
 
 function renderSlots() {
   const box = el("slots_box");
