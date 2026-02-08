@@ -128,6 +128,10 @@
     /* Make assign section usable with fixed bottom nav */
     #wash_assign_card{padding-bottom:110px}
 
+    /* Save button must be blue (match menu tone) */
+    #btnSubmit{background:#0b4bb3 !important;color:#ffffff !important;border:1px solid rgba(255,204,0,0.55) !important;font-weight:900 !important}
+    #btnSubmit:active{background:#0b1b3a !important}
+
   </style>
 </head>
 <body class="theme-2 cwf-lux">
@@ -347,12 +351,13 @@
             <option value="forced">forced (ล็อคช่าง)</option>
             <option value="offer">offer (ยิงข้อเสนอ)</option>
           </select>
-          <div class="pill" style="margin-top:10px">
+          <!-- Reduced clutter (kept elements for backward compatibility with JS) -->
+          <div class="pill" style="margin-top:10px; display:none">
             <b style="color:#0b1b3a">หมายเหตุ:</b>
             <span class="muted2 mini">โหมดจองกำหนดการส่งงานอัตโนมัติ • ไม่ต้องเลือก dispatch ซ้ำ</span>
           </div>
 
-          <div id="assign_summary" class="pill" style="margin-top:12px;display:flex;justify-content:space-between;gap:10px">
+          <div id="assign_summary" class="pill" style="margin-top:12px;display:none;justify-content:space-between;gap:10px">
             <span class="muted2 mini" id="assign_summary_text">ยังไม่ได้เลือกช่าง • ระบบจะเลือกช่างว่างให้</span>
             <span class="muted2 mini" id="assign_summary_hint">แตะสล็อตเพื่อเลือกเดี่ยว/ทีม</span>
           </div>

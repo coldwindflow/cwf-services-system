@@ -4415,8 +4415,17 @@ function buildServiceLineItemsFromPayload(payload = {}) {
     const linePrice = Number(computeStandardPrice(s) || 0);
     const mc = Math.max(1, Number(s.machine_count || 1));
     const labelParts = [];
-    labelParts.push(`ล้างแอร์${s.ac_type || ""}`.trim());
-    if (s.ac_type === "ผนัง") labelParts.push(s.wash_variant || "ล้างธรรมดา");
+    // Build a user-friendly service label per job type (backward compatible)
+    if (s.job_type === "ซ่อม") {
+      labelParts.push(`ซ่อมแอร์${s.ac_type || ""}`.trim());
+      if (s.repair_variant) labelParts.push(s.repair_variant);
+    } else if (s.job_type === "ติดตั้ง") {
+      labelParts.push(`ติดตั้งแอร์${s.ac_type || ""}`.trim());
+    } else {
+      // default: wash
+      labelParts.push(`ล้างแอร์${s.ac_type || ""}`.trim());
+      if (s.ac_type === "ผนัง") labelParts.push(s.wash_variant || "ล้างธรรมดา");
+    }
     labelParts.push(`${Number(s.btu || 0)} BTU`);
     labelParts.push(`${Number(s.machine_count || 1)} เครื่อง`);
     const item_name = labelParts.join(" • ");

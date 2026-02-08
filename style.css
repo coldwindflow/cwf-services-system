@@ -665,7 +665,14 @@ a:hover{ text-decoration: underline; }
 /* Multi-service rows */
 .svc-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid rgba(15,23,42,0.10);border-radius:14px;margin-bottom:8px;background:#fff;}
 .svc-title{font-size:14px;}
-.svc-del{padding:8px 10px;border-radius:12px;border:1px solid rgba(239,68,68,0.35);background:#fff;color:#b91c1c;font-weight:800;}
+.svc-del{
+  padding:8px 10px;
+  border-radius:12px;
+  border:1px solid rgba(239,68,68,0.35);
+  background: var(--danger);
+  color:#ffffff;
+  font-weight:900;
+}
 
 
 /* TEAM_PICKER_V2 START */
@@ -739,7 +746,7 @@ a:hover{ text-decoration: underline; }
   font-weight:900;
 }
 .team-sheet .btn-primary{ background:#0d6efd; color:#fff; border-color:rgba(13,110,253,.55); }
-.team-sheet .btn-danger{ background:#fff; color:#b02a37; border-color:rgba(176,42,55,.35); }
+.team-sheet .btn-danger{ background: var(--danger); color:#fff; border-color:rgba(176,42,55,.35); }
 .team-sheet .btn-close{ background:#f7f7f7; color:#111; }
 
 /* TEAM_PICKER_V2 END */

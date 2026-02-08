@@ -458,6 +458,7 @@ function buildCurrentServiceLine(){
     btu: p.btu,
     machine_count: p.machine_count,
     wash_variant: p.wash_variant,
+    repair_variant: p.repair_variant,
   };
 }
 
@@ -467,7 +468,8 @@ function sameServiceLine(a,b){
     String(a.ac_type||'')===String(b.ac_type||'') &&
     Number(a.btu||0)===Number(b.btu||0) &&
     Number(a.machine_count||0)===Number(b.machine_count||0) &&
-    String(a.wash_variant||'')===String(b.wash_variant||'');
+    String(a.wash_variant||'')===String(b.wash_variant||'') &&
+    String(a.repair_variant||'')===String(b.repair_variant||'');
 }
 
 function renderServiceLines(){
@@ -478,21 +480,26 @@ function renderServiceLines(){
 
   if(!box || !list || !btnAdd) return;
 
-  // show only for wash
-  if(jt !== 'ล้าง'){
+  // show for all job types (wash/repair/install)
+  // - keeps backward compatibility: server already supports payload.services
+  // - fixes: ซ่อม/ติดตั้ง ไม่มีปุ่ม “เพิ่มรายการ”
+  if(!jt){
     box.style.display = 'none';
     state.service_lines = [];
-    // hide add button when not in wash
     btnAdd.style.display = 'none';
     return;
   }
   box.style.display = 'block';
-  // show add button next to machine count
   btnAdd.style.display = 'inline-flex';
 
   const lines = Array.isArray(state.service_lines) ? state.service_lines : [];
   const rows = lines.map((ln, idx)=>{
-    const label = `${ln.ac_type||'-'} • ${Number(ln.btu||0)} BTU • ${Number(ln.machine_count||1)} เครื่อง` + (ln.ac_type==='ผนัง' ? ` • ${ln.wash_variant||'ล้างธรรมดา'}` : '');
+    const jt0 = String(ln.job_type||jt||'').trim();
+    const base = `${ln.ac_type||'-'} • ${Number(ln.btu||0)} BTU • ${Number(ln.machine_count||1)} เครื่อง`;
+    let extra = '';
+    if(jt0 === 'ล้าง' && ln.ac_type==='ผนัง') extra = ` • ${ln.wash_variant||'ล้างธรรมดา'}`;
+    if(jt0 === 'ซ่อม') extra = ` • ${ln.repair_variant||'-'}`;
+    const label = `${jt0} • ${base}${extra}`;
     return `<div class="svc-row">
       <div class="svc-main">
         <div class="svc-title"><b>${escapeHtml(label)}</b></div>
@@ -536,11 +543,10 @@ function wireMultiService(){
   if(btnAdd){
     btnAdd.addEventListener('click', ()=>{
       const jt = (el('job_type').value||'').trim();
-      if(jt !== 'ล้าง'){ showToast('Multi-service ใช้ได้เฉพาะงานล้าง', 'error'); return; }
       if(!validateRequiredForPreview()){ showToast('กรอกข้อมูลบริการให้ครบก่อนเพิ่มรายการ', 'error'); return; }
       const ln = buildCurrentServiceLine();
       // default wash variant for wall if empty
-      if(ln.ac_type === 'ผนัง' && !ln.wash_variant) ln.wash_variant = 'ล้างธรรมดา';
+      if(ln.job_type === 'ล้าง' && ln.ac_type === 'ผนัง' && !ln.wash_variant) ln.wash_variant = 'ล้างธรรมดา';
       // avoid duplicate exact line
       if(state.service_lines.some(x=>sameServiceLine(x,ln))){
         showToast('รายการนี้ถูกเพิ่มแล้ว', 'info');
@@ -559,14 +565,14 @@ function wireMultiService(){
 
 function getServicesPayload(){
   const jt = (el('job_type').value||'').trim();
-  if(jt !== 'ล้าง') return null;
+  if(!jt) return null;
   // include current line + added lines (unique by signature)
   const cur = buildCurrentServiceLine();
-  if(cur.ac_type==='ผนัง' && !cur.wash_variant) cur.wash_variant='ล้างธรรมดา';
+  if(cur.job_type==='ล้าง' && cur.ac_type==='ผนัง' && !cur.wash_variant) cur.wash_variant='ล้างธรรมดา';
 
   const all = [];
   const pushUnique=(ln)=>{
-    if(!ln || !ln.ac_type || !ln.btu || !ln.machine_count) return;
+    if(!ln || !ln.job_type || !ln.ac_type || !ln.btu || !ln.machine_count) return;
     if(all.some(x=>sameServiceLine(x,ln))) return;
     const out = { ...ln };
     // Attach wash allocations (per technician) if user assigned workload in selected slot
@@ -1036,8 +1042,26 @@ function renderSlots() {
   if (!box) return;
   box.innerHTML = "";
   const slotsAll = Array.isArray(state.available_slots) ? state.available_slots.filter(Boolean) : [];
+  // If no slots returned (e.g. duration too long), still allow admin to create a special slot.
   if (!slotsAll.length) {
-    box.innerHTML = `<div class="muted2">ไม่พบข้อมูลสล็อต (ลองเปลี่ยนวัน/กลุ่มช่าง)</div>`;
+    const wrap = document.createElement('div');
+    wrap.innerHTML = `
+      <div class="muted2" style="margin-bottom:10px">
+        ไม่พบสล็อตที่รองรับเวลางานนี้ • คุณยังสามารถสร้าง <b>สลอตพิเศษ</b> หรือเพิ่มเวลาอัตโนมัติได้
+      </div>
+      <div class="grid2" style="margin-top:8px">
+        <button type="button" class="secondary" id="btnSpecialSlotEmpty">+ เพิ่มสลอตพิเศษ</button>
+        <button type="button" class="secondary" id="btnAutoSlotEmpty">+ เพิ่มเวลาอัตโนมัติ (ตามเวลางาน)</button>
+      </div>
+      <div class="muted2 mini" style="margin-top:8px">* ระบบจะเพิ่มสลอตให้ช่าง 1 คนก่อน (เลือกช่างได้) แล้วค่อยโหลดคิวใหม่</div>
+    `;
+    box.appendChild(wrap);
+    setTimeout(() => {
+      const b1 = el('btnSpecialSlotEmpty');
+      const b2 = el('btnAutoSlotEmpty');
+      if(b1) b1.addEventListener('click', (ev)=>{ ev.preventDefault(); try{ addSpecialSlotV2({ autoEnd:false }); }catch(e){} });
+      if(b2) b2.addEventListener('click', (ev)=>{ ev.preventDefault(); try{ addSpecialSlotV2({ autoEnd:true }); }catch(e){} });
+    }, 0);
     return;
   }
 
@@ -1574,19 +1598,66 @@ if (copyBtn) copyBtn.addEventListener("click", async () => {
   el("btnSubmit").addEventListener("click", submitBooking);
 }
 
-async function addSpecialSlotV2(){
+function _addMinutesToHHMM(hhmm, minutes){
+  const m = String(hhmm||"").trim().match(/^(\d{1,2}):(\d{2})$/);
+  if(!m) return null;
+  let h = Number(m[1]);
+  let mm = Number(m[2]);
+  if(!Number.isFinite(h)||!Number.isFinite(mm)) return null;
+  const total = h*60 + mm + Math.max(0, Number(minutes||0));
+  const h2 = Math.floor(total/60);
+  const m2 = total % 60;
+  const pad = (n)=>String(n).padStart(2,'0');
+  return `${pad(h2)}:${pad(m2)}`;
+}
+
+function _pickUsernameForSpecialSlot(){
+  // Prefer current team selection, otherwise fall back to loaded tech list (company/partner)
+  try{
+    const team = getTeamListForAssign();
+    const p = (state.teamPicker?.primary || '').trim();
+    if(p) return p;
+    if(team && team.length) return String(team[0]||'').trim();
+  }catch(e){}
+
+  const techs = Array.isArray(state.techs) ? state.techs.filter(t=>t && t.username) : [];
+  if(!techs.length) return null;
+
+  const top = techs.slice(0, 12);
+  const lines = top.map((t,i)=>`${i+1}) ${t.display_name || t.full_name || t.username} (${t.username})`).join("\n");
+  const pick = prompt(`เลือกช่างสำหรับสลอตพิเศษ (พิมพ์เลข)\n\n${lines}\n\nหรือพิมพ์ username ตรงๆ`, "1");
+  if(!pick) return null;
+  const n = Number(pick);
+  if(Number.isFinite(n) && n >= 1 && n <= top.length) return String(top[n-1].username).trim();
+  return String(pick).trim();
+}
+
+async function addSpecialSlotV2(opts = {}){
   try {
     const date = (el("appt_date")?.value || todayYMD()).trim();
-    const team = getTeamListForAssign();
-    if(!team.length){ showToast("ยังไม่มีรายชื่อช่างให้เพิ่มสลอต", "error"); return; }
-    const username = (state.teamPicker.primary || team[0]).trim();
+    const username = _pickUsernameForSpecialSlot();
+    if(!username){ showToast("ยังไม่มีรายชื่อช่างให้เพิ่มสลอต", "error"); return; }
+
     const st = prompt(`เพิ่มสลอตพิเศษ\nช่าง: ${username}\nวันที่: ${date}\n\nใส่เวลาเริ่ม (HH:MM)`, "18:00");
     if(!st) return;
-    const en = prompt(`ใส่เวลาสิ้นสุด (HH:MM)\nช่าง: ${username}\nวันที่: ${date}`, "19:00");
-    if(!en) return;
+
+    let en = null;
+    const autoEnd = !!opts.autoEnd;
+    if(autoEnd){
+      // Use effective block (duration + buffer) and round up to 30-minute step.
+      const block = Math.max(30, Number(state.effective_block_min || state.duration_min || 0));
+      const rounded = Math.ceil(block / 30) * 30;
+      en = _addMinutesToHHMM(st.trim(), rounded);
+      if(!en){ showToast("เวลาเริ่มไม่ถูกต้อง", "error"); return; }
+    } else {
+      en = prompt(`ใส่เวลาสิ้นสุด (HH:MM)\nช่าง: ${username}\nวันที่: ${date}`, "19:00");
+      if(!en) return;
+      en = en.trim();
+    }
+
     await apiFetch(`/admin/technicians/${encodeURIComponent(username)}/special_slots_v2`, {
       method: "POST",
-      body: JSON.stringify({ date, start_time: st.trim(), end_time: en.trim() })
+      body: JSON.stringify({ date, start_time: st.trim(), end_time: en })
     });
     showToast("เพิ่มสลอตพิเศษแล้ว", "success");
     await loadAvailability();
