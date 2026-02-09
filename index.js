@@ -732,8 +732,24 @@ function normalizeAppointmentDatetime(input) {
   const s = String(input).trim();
   if (!s) return null;
 
+  // ✅ Safety toggle (OFF by default):
+  // Some clients mistakenly send Bangkok wall-clock time with a trailing 'Z'
+  // (e.g. '2026-02-09T09:00:00.000Z') which would become 16:00 in Thailand.
+  // If enabled, we treat 'Z' (or +00:00) as *local Bangkok wall-clock*.
+  // This is risky to enable globally unless you are sure clients send wrong 'Z'.
+  const TREAT_Z_AS_BKK_LOCAL = envBool("APPT_TREAT_Z_AS_BKK_LOCAL", false);
+
   // 1) มี timezone อยู่แล้ว (Z หรือ +07:00)
-  if (/[zZ]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s)) return s;
+  if (/[zZ]$/.test(s) || /[+-]\d{2}:\d{2}$/.test(s)) {
+    if (TREAT_Z_AS_BKK_LOCAL) {
+      // Treat explicit UTC as Bangkok wall-clock (keep HH:mm)
+      // - '...Z' => '...+07:00'
+      // - '...+00:00' => '...+07:00'
+      if (/[zZ]$/.test(s)) return s.replace(/[zZ]$/, "+07:00");
+      if (/\+00:00$/.test(s)) return s.replace(/\+00:00$/, "+07:00");
+    }
+    return s;
+  }
 
   // 2) รูปแบบจาก <input type="datetime-local">: YYYY-MM-DDTHH:mm
   if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) {
@@ -5518,10 +5534,54 @@ function buildStartIntervalsForWindow(jobBlocks, windowStartMin, windowEndMin, d
   return out;
 }
 
+function buildBusyIntervalsWithConditionalBuffer(jobBlocks){
+  // jobBlocks: merged [{startMin,endMin}] sorted.
+  // Apply Q1=A: add buffer only AFTER a job when there is a NEXT job.
+  const blocks = Array.isArray(jobBlocks) ? jobBlocks.slice() : [];
+  if (!blocks.length) return [];
+  const out = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    out.push({ startMin: b.startMin, endMin: b.endMin });
+    const hasNext = i < blocks.length - 1;
+    if (hasNext) {
+      out.push({ startMin: b.endMin, endMin: b.endMin + TRAVEL_BUFFER_MIN });
+    }
+  }
+  return mergeMinIntervals(out);
+}
+
+function buildFreeIntervalsForWindow(busyIntervals, windowStartMin, windowEndMin){
+  // Returns free gaps in [windowStartMin, windowEndMin) given busy intervals (minutes)
+  const busy = mergeMinIntervals((Array.isArray(busyIntervals) ? busyIntervals : [])
+    .map(x => ({ startMin: Number(x.startMin), endMin: Number(x.endMin) }))
+    .filter(x => Number.isFinite(x.startMin) && Number.isFinite(x.endMin) && x.endMin > x.startMin));
+
+  const out = [];
+  let cursor = windowStartMin;
+  for (const b of busy) {
+    const s = Math.max(windowStartMin, b.startMin);
+    const e = Math.min(windowEndMin, b.endMin);
+    if (e <= windowStartMin || s >= windowEndMin) continue;
+    if (s > cursor) out.push({ startMin: cursor, endMin: s });
+    cursor = Math.max(cursor, e);
+  }
+  if (cursor < windowEndMin) out.push({ startMin: cursor, endMin: windowEndMin });
+  return out;
+}
+
 function normalizeBangkokIso(iso){
   const t = String(iso||'');
   // If no timezone suffix, assume Asia/Bangkok (+07:00) to avoid UTC shifting bugs.
-  if (/(Z|z|[+-]\d\d:\d\d)$/.test(t)) return t;
+  // Optional safety toggle: treat trailing 'Z' / '+00:00' as Bangkok wall-clock.
+  const TREAT_Z_AS_BKK_LOCAL = envBool("APPT_TREAT_Z_AS_BKK_LOCAL", false);
+  if (/(Z|z|[+-]\d\d:\d\d)$/.test(t)) {
+    if (TREAT_Z_AS_BKK_LOCAL) {
+      if (/[zZ]$/.test(t)) return t.replace(/[zZ]$/, "+07:00");
+      if (/\+00:00$/.test(t)) return t.replace(/\+00:00$/, "+07:00");
+    }
+    return t;
+  }
   return t + '+07:00';
 }
 
@@ -5614,6 +5674,10 @@ app.get("/public/availability_v2", async (req, res) => {
   // include_full=1: debug/admin usage to return even unavailable time steps.
   const include_full = String(req.query.include_full || '').trim() === '1';
   const slot_step_min = 30;
+  // mode:
+  // - 'start' (default): return blocks of *startable ranges* (เริ่มได้) for the given duration
+  // - 'free': return blocks of *free time* (เวลาว่างจริง) within UI window
+  const mode = String(req.query.mode || req.query.view || 'start').trim().toLowerCase();
 
   try {
     const techsAll = await listTechniciansByType(tech_type, { include_paused: forced });
@@ -5670,7 +5734,7 @@ app.get("/public/availability_v2", async (req, res) => {
     const effective_duration_min = Math.max(15, Math.round(duration_min / crew_size));
     const default_effective_block_min = effective_duration_min + TRAVEL_BUFFER_MIN;
 
-    // Build start-time intervals per tech, then sweep to produce "blocks" (non-fixed steps)
+    // Build per-tech intervals, then sweep to produce "blocks" (non-fixed steps)
     const events = new Map(); // min -> { add:[], remove:[] }
     const addEvent = (min, type, techUser) => {
       const k = Math.round(min);
@@ -5684,13 +5748,25 @@ app.get("/public/availability_v2", async (req, res) => {
 
       const jobBlocks = await listJobBlocksForTechOnDate(tech.username, date, null);
 
-      // For each availability window of the technician, compute possible START ranges.
+      // For each availability window of the technician, compute intervals.
       for (const w of techWindows) {
-        const startIntervals = buildStartIntervalsForWindow(jobBlocks, w.startMin, w.endMin, effective_duration_min);
-        for (const it of startIntervals) {
-          // inclusive end -> remove at end+1
-          addEvent(it.startMin, 'add', tech.username);
-          addEvent(it.endMin + 1, 'remove', tech.username);
+        if (mode === 'free') {
+          // Free blocks: window - busy(with conditional buffer between jobs)
+          const busy = buildBusyIntervalsWithConditionalBuffer(jobBlocks);
+          const freeIntervals = buildFreeIntervalsForWindow(busy, w.startMin, w.endMin);
+          for (const it of freeIntervals) {
+            // half-open [start, end) -> remove at end
+            addEvent(it.startMin, 'add', tech.username);
+            addEvent(it.endMin, 'remove', tech.username);
+          }
+        } else {
+          // Start ranges: minutes where a job can START (respecting buffer rules)
+          const startIntervals = buildStartIntervalsForWindow(jobBlocks, w.startMin, w.endMin, effective_duration_min);
+          for (const it of startIntervals) {
+            // Represent as half-open [start, end+1) so we can sweep cleanly in minutes.
+            addEvent(it.startMin, 'add', tech.username);
+            addEvent(it.endMin + 1, 'remove', tech.username);
+          }
         }
       }
     }
@@ -5734,8 +5810,12 @@ app.get("/public/availability_v2", async (req, res) => {
       const next = pts[i+1];
       if (next == null) continue;
       const segStart = Math.max(uiStartMin, t);
-      const segEnd = Math.min(uiEndMin, next);
-      if (segEnd <= segStart) continue;
+      // All internal segments are half-open [t, next).
+      // - start mode: we store end+1 so output should be inclusive (end = next-1)
+      // - free mode: output should stay half-open end (end = next)
+      const segEndExclusive = Math.min(uiEndMin + 1, next);
+      const segEndOut = (mode === 'free') ? Math.min(uiEndMin, segEndExclusive) : (segEndExclusive - 1);
+      if (segEndOut < segStart) continue;
 
       const ids = Array.from(active);
       const ok = ids.length >= crew_size;
@@ -5743,14 +5823,14 @@ app.get("/public/availability_v2", async (req, res) => {
 
       const slotObj = {
         start: minToHHMM(segStart),
-        end: minToHHMM(segEnd),
+        end: minToHHMM(segEndOut),
         available: ok,
         available_tech_ids: ok ? ids : [],
         capacity: tech_count,
         available_count: ids.length,
         crew_size,
-        // v2 meaning: start..end is a RANGE of start-times ("เริ่มได้")
-        slot_kind: 'start_range',
+        // v2 meaning depends on mode
+        slot_kind: (mode === 'free') ? 'free_block' : 'start_range',
       };
       slots.push(slotObj);
     }
@@ -5769,6 +5849,7 @@ app.get("/public/availability_v2", async (req, res) => {
       slot_step_min: null,
       tech_count,
       crew_size,
+      mode: (mode === 'free') ? 'free' : 'start',
       slots,
     });
   } catch (e) {
