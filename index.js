@@ -5352,6 +5352,172 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && bStart < aEnd;
 }
 
+// =======================================
+// 🕒 Availability helpers (per-tech, Bangkok-safe)
+// - Travel Buffer rule Q1=A (LOCKED SPEC)
+//   1) Buffer is applied only AFTER the previous job when there is a next job.
+//   2) Last job of the day does NOT get trailing buffer.
+// - For a NEW candidate job:
+//   * It must start AFTER (prev_job_end + buffer) if there is a previous job.
+//   * If there is a next existing job, it must finish + buffer BEFORE next start.
+// =======================================
+
+const ENABLE_AVAILABILITY_DEBUG = String(process.env.ENABLE_AVAILABILITY_DEBUG || '').trim() === '1';
+function avlog(tag, obj){
+  if(!ENABLE_AVAILABILITY_DEBUG) return;
+  try{ console.log(tag, obj); }catch{}
+}
+
+function fmtHHMMFromMin(m){
+  return minToHHMM(Math.max(0, Math.min(24*60, Math.round(m))));
+}
+
+function bangkokHMToMinFromDate(date){
+  // Extract hour/minute in Asia/Bangkok, then convert to minutes from midnight.
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'Asia/Bangkok',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date);
+  const hh = Number(parts.find(p=>p.type==='hour')?.value || 0);
+  const mm = Number(parts.find(p=>p.type==='minute')?.value || 0);
+  return hh * 60 + mm;
+}
+
+function mergeMinIntervals(intervals){
+  // intervals: [{startMin,endMin}] with startMin<=endMin
+  const arr = (Array.isArray(intervals) ? intervals : [])
+    .map(x=>({ startMin: Number(x.startMin), endMin: Number(x.endMin) }))
+    .filter(x=>Number.isFinite(x.startMin) && Number.isFinite(x.endMin))
+    .sort((a,b)=>a.startMin-b.startMin || a.endMin-b.endMin);
+  const out = [];
+  for(const it of arr){
+    if(!out.length){ out.push({ ...it }); continue; }
+    const last = out[out.length-1];
+    if(it.startMin <= last.endMin){
+      last.endMin = Math.max(last.endMin, it.endMin);
+    } else {
+      out.push({ ...it });
+    }
+  }
+  return out;
+}
+
+async function listJobBlocksForTechOnDate(username, dateStr, ignoreJobId){
+  // Returns merged job blocks in minutes-from-midnight Bangkok: [{job_id,startMin,endMin,startIso,durationMin}]
+  const jobs = await listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId);
+  const raw = [];
+  for(const j of (jobs||[])){
+    const startDate = new Date(j.appointment_datetime);
+    const startMin = bangkokHMToMinFromDate(startDate);
+    const dur = Math.max(1, Number(j.duration_min || 60));
+    const endMin = startMin + dur;
+    raw.push({
+      job_id: j.job_id,
+      startMin,
+      endMin,
+      startIso: j.appointment_datetime,
+      durationMin: dur,
+    });
+  }
+  raw.sort((a,b)=>a.startMin-b.startMin || a.endMin-b.endMin);
+
+  // Merge overlaps (OT/ลากเวลา)
+  const merged = [];
+  for(const it of raw){
+    if(!merged.length){ merged.push({ ...it }); continue; }
+    const last = merged[merged.length-1];
+    if(it.startMin <= last.endMin){
+      // merge into last block
+      last.endMin = Math.max(last.endMin, it.endMin);
+      // keep earliest start/job_id for logging
+    } else {
+      merged.push({ ...it });
+    }
+  }
+  return merged;
+}
+
+function buildTechWindowsMin(techRow, dateStr, specialMap, uiStartMin, uiEndMin){
+  // Union of per-tech work hours + special slots, intersected with UI window.
+  const wins = [];
+  const ts = toMin(techRow?.work_start || '09:00');
+  const te = toMin(techRow?.work_end || '18:00');
+  if(Number.isFinite(ts) && Number.isFinite(te) && te > ts){
+    const a = Math.max(uiStartMin, ts);
+    const b = Math.min(uiEndMin, te);
+    if(b > a) wins.push({ startMin: a, endMin: b });
+  }
+  const sp = specialMap?.get(techRow?.username) || [];
+  for(const w of sp){
+    const ws = toMin(w.start);
+    const we = toMin(w.end);
+    if(!Number.isFinite(ws) || !Number.isFinite(we) || we <= ws) continue;
+    const a = Math.max(uiStartMin, ws);
+    const b = Math.min(uiEndMin, we);
+    if(b > a) wins.push({ startMin: a, endMin: b });
+  }
+  return mergeMinIntervals(wins);
+}
+
+function buildStartIntervalsForWindow(jobBlocks, windowStartMin, windowEndMin, durationMin){
+  // Returns intervals of START times (in minutes) where a job can start within [windowStartMin, windowEndMin)
+  // respecting:
+  // - must start after prev_end + buffer (if prev exists)
+  // - must finish + buffer before next start (if next exists)
+  // - last segment uses only finish <= windowEndMin (no buffer after)
+  const d = Math.max(1, Number(durationMin||0));
+  const out = [];
+  if(windowEndMin <= windowStartMin) return out;
+  const blocks = Array.isArray(jobBlocks) ? jobBlocks : [];
+
+  // Find first job block AFTER the window end (for enforcing buffer to next job)
+  let nextAfterWindowStart = null;
+  for(const b of blocks){
+    if(b.startMin >= windowEndMin){ nextAfterWindowStart = b.startMin; break; }
+  }
+
+  let prevBlockEnd = null;
+  for(const b of blocks){
+    if(b.endMin <= windowStartMin){
+      prevBlockEnd = b.endMin;
+      continue;
+    }
+    if(b.startMin >= windowEndMin){
+      // b is the first job after window; used as next constraint in trailing gap
+      nextAfterWindowStart = (nextAfterWindowStart == null) ? b.startMin : Math.min(nextAfterWindowStart, b.startMin);
+      break;
+    }
+
+    // gap before this job block
+    const gapStart = (prevBlockEnd == null)
+      ? windowStartMin
+      : Math.max(windowStartMin, prevBlockEnd + TRAVEL_BUFFER_MIN);
+    const gapEnd = Math.min(windowEndMin, b.startMin);
+
+    // must finish + buffer before next job start
+    const latestStart = gapEnd - d - TRAVEL_BUFFER_MIN;
+    if(latestStart >= gapStart){
+      out.push({ startMin: gapStart, endMin: latestStart });
+    }
+    prevBlockEnd = Math.max(prevBlockEnd == null ? -1 : prevBlockEnd, b.endMin);
+  }
+
+  // trailing gap after last job within window
+  const gapStart = (prevBlockEnd == null)
+    ? windowStartMin
+    : Math.max(windowStartMin, prevBlockEnd + TRAVEL_BUFFER_MIN);
+  let latestStart = windowEndMin - d;
+  if(Number.isFinite(nextAfterWindowStart) && nextAfterWindowStart != null){
+    latestStart = Math.min(latestStart, Number(nextAfterWindowStart) - d - TRAVEL_BUFFER_MIN);
+  }
+  if(latestStart >= gapStart){
+    out.push({ startMin: gapStart, endMin: latestStart });
+  }
+  return out;
+}
+
 function normalizeBangkokIso(iso){
   const t = String(iso||'');
   // If no timezone suffix, assume Asia/Bangkok (+07:00) to avoid UTC shifting bugs.
@@ -5360,20 +5526,45 @@ function normalizeBangkokIso(iso){
 }
 
 async function isTechFree(username, startIso, durationMin, ignoreJobId) {
-  // startIso is built from date+HH:mm without timezone.
-  // Use the date portion directly to avoid UTC date shifting.
-  const dateStr = String(startIso).slice(0, 10);
-  const start = new Date(normalizeBangkokIso(startIso));
+  // Bangkok-safe parse (fix 09:00 -> 16:00 drift)
+  const iso = normalizeBangkokIso(startIso);
+  const dateStr = String(iso).slice(0, 10);
+  const startDate = new Date(iso);
+  if (Number.isNaN(startDate.getTime())) return false;
 
-  const reqStart = start.getTime() - TRAVEL_BUFFER_MIN * 60000;
-  const reqEnd = start.getTime() + (Number(durationMin || 0) + TRAVEL_BUFFER_MIN) * 60000;
+  const startMin = bangkokHMToMinFromDate(startDate);
+  const d = Math.max(1, Number(durationMin || 0));
+  const endMin = startMin + d;
 
-  const jobs = await listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId);
-  for (const j of jobs) {
-    const js = new Date(j.appointment_datetime).getTime() - TRAVEL_BUFFER_MIN * 60000;
-    const je = new Date(j.appointment_datetime).getTime() + (Number(j.duration_min || 60) + TRAVEL_BUFFER_MIN) * 60000;
-    if (overlaps(reqStart, reqEnd, js, je)) return false;
+  // Get merged existing job blocks for the same tech/day
+  const blocks = await listJobBlocksForTechOnDate(username, dateStr, ignoreJobId);
+  // 1) Overlap with any existing job (no buffer on either side)
+  for (const b of blocks) {
+    if (startMin < b.endMin && b.startMin < endMin) {
+      avlog('[isTechFree][overlap]', { username, date: dateStr, start: fmtHHMMFromMin(startMin), end: fmtHHMMFromMin(endMin), hit: { start: fmtHHMMFromMin(b.startMin), end: fmtHHMMFromMin(b.endMin) } });
+      return false;
+    }
   }
+
+  // 2) Must start after previous_job_end + buffer (if previous exists)
+  let prevEnd = null;
+  let nextStart = null;
+  for (const b of blocks) {
+    if (b.endMin <= startMin) prevEnd = Math.max(prevEnd == null ? -Infinity : prevEnd, b.endMin);
+    if (b.startMin >= startMin && nextStart == null) nextStart = b.startMin;
+  }
+  if (prevEnd != null && startMin < (prevEnd + TRAVEL_BUFFER_MIN)) {
+    avlog('[isTechFree][prevBuffer]', { username, date: dateStr, start: fmtHHMMFromMin(startMin), prevEnd: fmtHHMMFromMin(prevEnd), needAfterPrev: fmtHHMMFromMin(prevEnd + TRAVEL_BUFFER_MIN) });
+    return false;
+  }
+
+  // 3) If there is a next existing job, candidate must finish + buffer BEFORE next start
+  if (nextStart != null && (endMin + TRAVEL_BUFFER_MIN) > nextStart) {
+    avlog('[isTechFree][nextBuffer]', { username, date: dateStr, start: fmtHHMMFromMin(startMin), end: fmtHHMMFromMin(endMin), nextStart: fmtHHMMFromMin(nextStart), bufferedEnd: fmtHHMMFromMin(endMin + TRAVEL_BUFFER_MIN) });
+    return false;
+  }
+
+  avlog('[isTechFree][ok]', { username, date: dateStr, start: fmtHHMMFromMin(startMin), durationMin: d, end: fmtHHMMFromMin(endMin), bufferedEndIfNext: nextStart != null ? fmtHHMMFromMin(endMin + TRAVEL_BUFFER_MIN) : null });
   return true;
 }
 
@@ -5469,98 +5660,99 @@ app.get("/public/availability_v2", async (req, res) => {
       }
     }
 
-    // ✅ Determine global working window:
-    // - default 09:00-18:00
-    // - expand by per-tech work_start/work_end
-    // - expand by special slots
-    let globalStart = toMin("09:00");
-    let globalEnd = toMin("18:00");
+    // ✅ UI primary window is LOCKED to 09:00–18:00
+    const uiStartMin = toMin('09:00');
+    const uiEndMin = toMin('18:00');
+    const work_start = '09:00';
+    const work_end = '18:00';
 
-    for (const tech of techs) {
-      const ts = toMin(tech.work_start || "09:00");
-      const te = toMin(tech.work_end || "18:00");
-      if (Number.isFinite(ts)) globalStart = Math.min(globalStart, ts);
-      if (Number.isFinite(te)) globalEnd = Math.max(globalEnd, te);
-      const wins = specialMap.get(tech.username) || [];
-      for (const w of wins) {
-        globalStart = Math.min(globalStart, toMin(w.start));
-        globalEnd = Math.max(globalEnd, toMin(w.end));
-      }
-    }
-
-    // clamp
-    globalStart = Math.max(0, Math.min(24 * 60, globalStart));
-    globalEnd = Math.max(0, Math.min(24 * 60, globalEnd));
-
-    const work_start = minToHHMM(globalStart);
-    const work_end = minToHHMM(globalEnd);
-
-    const startMin = globalStart;
-    const endMin = globalEnd;
+    // For crew jobs, availability is based on per-tech workload time.
     const effective_duration_min = Math.max(15, Math.round(duration_min / crew_size));
     const default_effective_block_min = effective_duration_min + TRAVEL_BUFFER_MIN;
 
+    // Build start-time intervals per tech, then sweep to produce "blocks" (non-fixed steps)
+    const events = new Map(); // min -> { add:[], remove:[] }
+    const addEvent = (min, type, techUser) => {
+      const k = Math.round(min);
+      if (!events.has(k)) events.set(k, { add: [], remove: [] });
+      events.get(k)[type].push(techUser);
+    };
 
-    const slots = [];
-    for (let t = startMin; t < endMin; t += slot_step_min) {
-      // Slot length rules:
-      // - Normally: duration + travel buffer (block)
-      // - Allow "end-of-day" job to omit trailing travel buffer (very common IRL)
-      // - If caller mistakenly sends duration that already includes buffer,
-      //   we heuristically allow fitting by dropping one travel buffer once.
-      // base = per-tech time slice when crew_size>1
-      let base = effective_duration_min;
-      let block = base + TRAVEL_BUFFER_MIN;
+    for (const tech of techs) {
+      const techWindows = buildTechWindowsMin(tech, date, specialMap, uiStartMin, uiEndMin);
+      if (!techWindows.length) continue;
 
-      // if it doesn't fit with tail buffer but fits without, allow without tail
-      if (t + block > endMin && t + base <= endMin) {
-        block = base;
-      }
-      // if even base doesn't fit, but dropping ONE buffer makes it fit (client may have included buffer)
-      if (t + base > endMin && t + (base - TRAVEL_BUFFER_MIN) <= endMin) {
-        base = Math.max(15, base - TRAVEL_BUFFER_MIN);
-        block = base;
-      }
+      const jobBlocks = await listJobBlocksForTechOnDate(tech.username, date, null);
 
-      if (t + block > endMin) continue;
-
-      const startHHMM = minToHHMM(t);
-      const endHHMM = minToHHMM(t + block);
-      const startIso = `${date}T${startHHMM}:00+07:00`;
-
-      const available_tech_ids = [];
-      for (const tech of techs) {
-        // Respect per-tech working hours OR special windows
-        const ts = toMin(tech.work_start || "09:00");
-        const te = toMin(tech.work_end || "18:00");
-        let within = (t >= ts && t + block <= te);
-        if (!within) {
-          const wins = specialMap.get(tech.username) || [];
-          for (const w of wins) {
-            const ws = toMin(w.start);
-            const we = toMin(w.end);
-            if (t >= ws && t + block <= we) { within = true; break; }
-          }
+      // For each availability window of the technician, compute possible START ranges.
+      for (const w of techWindows) {
+        const startIntervals = buildStartIntervalsForWindow(jobBlocks, w.startMin, w.endMin, effective_duration_min);
+        for (const it of startIntervals) {
+          // inclusive end -> remove at end+1
+          addEvent(it.startMin, 'add', tech.username);
+          addEvent(it.endMin + 1, 'remove', tech.username);
         }
-        if (!within) continue;
-
-        const free = await isTechFree(tech.username, startIso, base, null);
-        if (free) available_tech_ids.push(tech.username);
       }
+    }
+
+    const points = Array.from(events.keys()).sort((a,b)=>a-b);
+    const active = new Set();
+    const slots = [];
+
+    // Ensure deterministic sweep start from uiStartMin
+    const sweepPoints = points.length ? points : [];
+    if (!sweepPoints.length) {
+      console.log("[availability_v2]", { date, tech_type, forced, duration_min, crew_size, effective_duration_min, tech_count, slots: 0 });
+      return res.json({
+        date,
+        tech_type,
+        forced,
+        work_start,
+        work_end,
+        travel_buffer_min: TRAVEL_BUFFER_MIN,
+        duration_min: effective_duration_min,
+        effective_block_min: default_effective_block_min,
+        slot_step_min: null,
+        tech_count,
+        crew_size,
+        slots: [],
+      });
+    }
+
+    // Add guard points so sweep covers the whole UI range even if first event starts after uiStartMin
+    if (!events.has(uiStartMin)) events.set(uiStartMin, { add: [], remove: [] });
+    if (!events.has(uiEndMin + 1)) events.set(uiEndMin + 1, { add: [], remove: [] });
+    const pts = Array.from(events.keys()).sort((a,b)=>a-b);
+
+    for (let i=0;i<pts.length;i++) {
+      const t = pts[i];
+      const bucket = events.get(t) || { add: [], remove: [] };
+      // Apply removes first (defensive)
+      for (const u of bucket.remove) active.delete(u);
+      for (const u of bucket.add) active.add(u);
+
+      const next = pts[i+1];
+      if (next == null) continue;
+      const segStart = Math.max(uiStartMin, t);
+      const segEnd = Math.min(uiEndMin, next);
+      if (segEnd <= segStart) continue;
+
+      const ids = Array.from(active);
+      const ok = ids.length >= crew_size;
+      if (!ok && !include_full) continue;
 
       const slotObj = {
-        start: startHHMM,
-        end: endHHMM,
-        available: available_tech_ids.length > 0,
-        available_tech_ids,
-        // capacity info for UI ("x ตามจำนวนช่าง")
+        start: minToHHMM(segStart),
+        end: minToHHMM(segEnd),
+        available: ok,
+        available_tech_ids: ok ? ids : [],
         capacity: tech_count,
-        available_count: available_tech_ids.length,
+        available_count: ids.length,
         crew_size,
+        // v2 meaning: start..end is a RANGE of start-times ("เริ่มได้")
+        slot_kind: 'start_range',
       };
-      // By default, only return slots that have at least 1 technician available.
-      // This prevents the UI from showing many "เต็ม" slots before choosing a technician.
-      if (slotObj.available || include_full) slots.push(slotObj);
+      slots.push(slotObj);
     }
 
     console.log("[availability_v2]", { date, tech_type, forced, duration_min, crew_size, effective_duration_min, tech_count, slots: slots.length });
@@ -5574,7 +5766,7 @@ app.get("/public/availability_v2", async (req, res) => {
       travel_buffer_min: TRAVEL_BUFFER_MIN,
       duration_min: effective_duration_min,
       effective_block_min: default_effective_block_min,
-      slot_step_min,
+      slot_step_min: null,
       tech_count,
       crew_size,
       slots,
