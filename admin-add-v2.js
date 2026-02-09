@@ -1350,16 +1350,43 @@ function renderSlots() {
   grid.className = "slot-grid";
   const renderAll = constraintTechs.length > 0;
   const listToRender = renderAll ? slotsAll : slotsSelectable;
+
+  // Helpers (front-end): support selecting any start time inside a returned range slot
+  const hhmmToMin = (hhmm)=>{
+    const m = String(hhmm||'').trim().match(/^(\d\d):(\d\d)$/);
+    if(!m) return NaN;
+    return Number(m[1])*60 + Number(m[2]);
+  };
+  const selectedHHMM = (()=>{
+    const iso = String(state.selected_slot_iso||'');
+    const t = iso.slice(11,16);
+    return /^(\d\d):(\d\d)$/.test(t) ? t : '';
+  })();
+  const selectedMin = selectedHHMM ? hhmmToMin(selectedHHMM) : NaN;
+
   for (const s of listToRender) {
     const btn = document.createElement("button");
     btn.type = "button";
     const techCount = Array.isArray(s.available_tech_ids) ? s.available_tech_ids.length : 0;
     const selectable = slotsSelectable.includes(s);
-    btn.className = `slot-btn ${selectable ? '' : 'full'} ${state.selected_slot_iso.endsWith('T'+s.start+':00') ? 'selected':''}`;
+
+    // Mark selected if the currently chosen start time is inside this slot range.
+    // Backward compatible: if slot is a single time, this still works.
+    let isSelected = false;
+    try{
+      const a = hhmmToMin(s.start);
+      const b = hhmmToMin(s.end);
+      if(Number.isFinite(selectedMin) && Number.isFinite(a) && Number.isFinite(b)){
+        isSelected = (selectedMin >= a && selectedMin <= b);
+      }
+    }catch(e){}
+
+    btn.className = `slot-btn ${selectable ? '' : 'full'} ${isSelected ? 'selected':''}`;
     btn.innerHTML = `<div class="slot-time">${s.start} - ${s.end}</div><div class="slot-sub">${selectable ? `ว่าง • ${techCount} ช่าง` : 'เต็ม'}</div>`;
     btn.disabled = !selectable;
     btn.addEventListener("click", () => {
-      selectSlot(s.start);
+      // Default to the earliest time in this range, but allow fine-pick inside modal.
+      selectSlot(s.start, s);
       try { openSlotModal(s); } catch(e){ console.warn('openSlotModal failed', e); }
     });
     grid.appendChild(btn);
@@ -1375,7 +1402,7 @@ function renderSlots() {
   box.appendChild(grid);
 }
 
-function selectSlot(startHHMM){
+function selectSlot(startHHMM, slotOverride){
   const date = el("appt_date")?.value;
   if(!date) return;
   const iso = `${date}T${startHHMM}:00`;
@@ -1384,7 +1411,24 @@ function selectSlot(startHHMM){
   if(dtEl) dtEl.value = iso;
 
   // Update technician selector allowlist based on selected slot
-  const s = (state.available_slots||[]).find(x=>x && x.start===startHHMM);
+  const slots = (state.available_slots||[]).filter(Boolean);
+  const hhmmToMin = (hhmm)=>{
+    const m = String(hhmm||'').trim().match(/^(\d\d):(\d\d)$/);
+    if(!m) return NaN;
+    return Number(m[1])*60 + Number(m[2]);
+  };
+  const v = hhmmToMin(startHHMM);
+  let s = slotOverride || slots.find(x=>x && x.start===startHHMM);
+  if(!s && Number.isFinite(v)){
+    // If API returns range blocks, find the block that contains this chosen start.
+    s = slots.find(x=>{
+      try{
+        const a = hhmmToMin(x.start);
+        const b = hhmmToMin(x.end);
+        return Number.isFinite(a) && Number.isFinite(b) && v >= a && v <= b;
+      }catch(e){ return false; }
+    });
+  }
   const ids = (s && Array.isArray(s.available_tech_ids)) ? s.available_tech_ids : null;
   if(ids){
     renderTechSelect(ids);
@@ -1469,16 +1513,55 @@ function openSlotModal(slot){
   if(!ov || !sub || !body) return;
   _slotModalSlot = slot;
 
+  // Helpers: allow picking any start time inside a slot range (no fixed step UI)
+  const hhmmToMin = (hhmm)=>{
+    const m = String(hhmm||'').trim().match(/^(\d\d):(\d\d)$/);
+    if(!m) return NaN;
+    return Number(m[1])*60 + Number(m[2]);
+  };
+  const clampHHMM = (hhmm, minHHMM, maxHHMM)=>{
+    const v = hhmmToMin(hhmm);
+    const a = hhmmToMin(minHHMM);
+    const b = hhmmToMin(maxHHMM);
+    if(!Number.isFinite(v) || !Number.isFinite(a) || !Number.isFinite(b)) return minHHMM;
+    if(v < a) return minHHMM;
+    if(v > b) return maxHHMM;
+    return hhmm;
+  };
+
+  const slotStart = String(slot?.start||'').trim();
+  const slotEnd = String(slot?.end||'').trim();
+  let picked = '';
+  try{
+    const iso = String(state.selected_slot_iso||'');
+    const t = iso.slice(11,16);
+    if(/^(\d\d):(\d\d)$/.test(t)) picked = t;
+  }catch(e){}
+  if(!picked) picked = slotStart;
+  picked = clampHHMM(picked, slotStart, slotEnd);
+  // Ensure state reflects the picked time immediately (so downstream UI stays consistent)
+  try{ selectSlot(picked, slot); }catch(e){}
+
   const date = el('appt_date')?.value || '';
   const ids = Array.isArray(slot?.available_tech_ids) ? slot.available_tech_ids : [];
   const dispatchMode = (el('dispatch_mode')?.value || 'forced').toString();
 
   if(title) title.textContent = 'เลือกช่างในสล็อตนี้';
-  sub.textContent = `${date} • ${slot.start} - ${slot.end} • ว่าง ${ids.length} ช่าง`;
+  sub.textContent = `${date} • เริ่ม ${picked} (ช่วง ${slotStart} - ${slotEnd}) • ว่าง ${ids.length} ช่าง`;
 
   // Offer mode: choose time only (no manual technician picking)
   if(dispatchMode === 'offer'){
     body.innerHTML = `
+      <div class="card-lite" style="padding:12px;border-radius:16px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <div>
+            <b style="color:#0b1b3a">เวลาเริ่มงาน</b>
+            <div class="muted2 mini" style="margin-top:4px">เลือกได้ภายใน ${slotStart}–${slotEnd}</div>
+          </div>
+          <input type="time" id="slotm_time" value="${picked}" min="${slotStart}" max="${slotEnd}" step="60"
+            style="padding:10px;border-radius:12px;border:1px solid rgba(0,0,0,0.15);min-width:120px" />
+        </div>
+      </div>
       <div class="card-lite" style="padding:12px;border-radius:16px">
         <b style="color:#0b1b3a">โหมดข้อเสนอ (offer)</b>
         <div class="muted2 mini" style="margin-top:6px">
@@ -1490,8 +1573,21 @@ function openSlotModal(slot){
       </div>
     `;
     setTimeout(()=>{
+      const t = body.querySelector('#slotm_time');
+      if(t){
+        t.addEventListener('change', ()=>{
+          const v = clampHHMM(t.value, slotStart, slotEnd);
+          t.value = v;
+          try{ selectSlot(v, slot); }catch(e){}
+          sub.textContent = `${date} • เริ่ม ${v} (ช่วง ${slotStart} - ${slotEnd}) • ว่าง ${ids.length} ช่าง`;
+        });
+      }
       const btn = body.querySelector('#slotm_confirm_offer');
       if(btn) btn.addEventListener('click', ()=>{
+        try{
+          const v = clampHHMM((body.querySelector('#slotm_time')?.value||picked), slotStart, slotEnd);
+          selectSlot(v, slot);
+        }catch(e){}
         updateAssignSummary();
         closeSlotModal();
       });
@@ -1504,7 +1600,20 @@ function openSlotModal(slot){
   const renderBody = ()=>{
     const mode = (el('assign_mode')?.value || 'auto').toString();
 
-      const modeSeg = `
+    const timeSeg = `
+      <div class="card-lite" style="padding:12px;border-radius:16px;margin-bottom:10px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <div>
+            <b style="color:#0b1b3a">เวลาเริ่มงาน</b>
+            <div class="muted2 mini" style="margin-top:4px">เลือกได้ภายใน ${slotStart}–${slotEnd}</div>
+          </div>
+          <input type="time" id="slotm_time" value="${clampHHMM((String(state.selected_slot_iso||'').slice(11,16)||picked), slotStart, slotEnd)}" min="${slotStart}" max="${slotEnd}" step="60"
+            style="padding:10px;border-radius:12px;border:1px solid rgba(0,0,0,0.15);min-width:120px" />
+        </div>
+      </div>
+    `;
+
+    const modeSeg = `
       <div class="seg" style="margin-bottom:10px">
         <button type="button" class="team-btn ${mode==='auto'?'active':''}" data-mode="auto">ระบบเลือกช่าง</button>
         <button type="button" class="team-btn ${mode==='single'?'active':''}" data-mode="single">เลือกเดี่ยว</button>
@@ -1516,15 +1625,16 @@ function openSlotModal(slot){
     `;
 
     if(!ids.length){
-      body.innerHTML = modeSeg + `<div class="muted2">สล็อตนี้ไม่มีช่างว่าง</div>`;
+      body.innerHTML = timeSeg + modeSeg + `<div class="muted2">สล็อตนี้ไม่มีช่างว่าง</div>`;
       bindModeButtons();
+      bindTimePicker();
       return;
     }
 
     if(mode === 'team'){
       const primary = (state.teamPicker.primary || '').trim();
       const selected = new Set(Array.from(state.teamPicker.selected || []));
-      body.innerHTML = modeSeg + `
+      body.innerHTML = timeSeg + modeSeg + `
         <div class="grid2">
           <div>
             <label>ช่างหลัก (Primary)</label>
@@ -1589,12 +1699,13 @@ function openSlotModal(slot){
       });
 
       bindModeButtons();
+      bindTimePicker();
       return;
     }
 
     // auto or single
     const cur = (el('technician_username_select')?.value || '').trim();
-    body.innerHTML = modeSeg + `
+    body.innerHTML = timeSeg + modeSeg + `
       <label>ช่าง (ว่างในสล็อตนี้)</label>
       <select id="slotm_single" class="grow"></select>
       <div class="muted2 mini" style="margin-top:6px">เลือกช่าง = โหมด “เลือกเดี่ยว” • ไม่เลือก = ระบบเลือกช่างว่าง</div>
@@ -1626,6 +1737,21 @@ function openSlotModal(slot){
     });
 
     bindModeButtons();
+    bindTimePicker();
+  };
+
+  // Bind time picker (used in forced mode body)
+  const bindTimePicker = ()=>{
+    const t = body.querySelector('#slotm_time');
+    if(!t) return;
+    t.addEventListener('change', ()=>{
+      const v = clampHHMM(t.value, slotStart, slotEnd);
+      t.value = v;
+      try{ selectSlot(v, slot); }catch(e){}
+      sub.textContent = `${date} • เริ่ม ${v} (ช่วง ${slotStart} - ${slotEnd}) • ว่าง ${ids.length} ช่าง`;
+      try { renderWashAssign(); } catch(e){}
+      try { updateAssignSummary(); } catch(e){}
+    });
   };
 
   const bindModeButtons = ()=>{
