@@ -1506,8 +1506,8 @@ function openSlotModal(slot){
 
       const modeSeg = `
       <div class="seg" style="margin-bottom:10px">
-        <button type="button" class="${mode==='auto'?'active':''}" data-mode="auto">ระบบเลือกช่าง</button>
-        <button type="button" class="${mode==='single'?'active':''}" data-mode="single">เลือกเดี่ยว</button>
+        <button type="button" class="team-btn ${mode==='auto'?'active':''}" data-mode="auto">ระบบเลือกช่าง</button>
+        <button type="button" class="team-btn ${mode==='single'?'active':''}" data-mode="single">เลือกเดี่ยว</button>
         <button type="button" class="team-btn ${mode==='team'?'active':''}" data-mode="team">ทีม</button>
       </div>
       <div class="muted2 mini" style="margin-top:-2px;margin-bottom:10px">

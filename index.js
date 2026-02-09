@@ -1567,6 +1567,12 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
     return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ (ชื่อ/ประเภทงาน/วันนัด/ที่อยู่)" });
   }
 
+  // ✅ Timezone safety (Asia/Bangkok):
+  // Frontend often sends `YYYY-MM-DDTHH:mm:ss` (no tz). In Node.js that is treated as UTC,
+  // causing +7h drift in technician view (e.g., 09:00 -> 16:00).
+  // Normalize ONCE and use the normalized value everywhere in this handler.
+  const apptIso = normalizeAppointmentDatetime(appointment_datetime);
+
   const bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
   const ttype = (tech_type || (bm === "urgent" ? "partner" : "company")).toString().trim().toLowerCase();
   const mode = (dispatch_mode || "forced").toString().trim().toLowerCase();
@@ -1686,7 +1692,7 @@ if (coerceNumber(override_price, 0) > 0) {
         [ttype]
       );
       const list = (tr.rows || []).map((r) => r.username).slice(0, 30);
-      selectedTech = await pickFirstAvailableTech(list, appointment_datetime, duration_min);
+      selectedTech = await pickFirstAvailableTech(list, apptIso, duration_min);
     } else {
       // ✅ Forced lock: allow even if technician hasn't opened accept_status,
       // but still block lock on the technician's off-day.
@@ -1697,15 +1703,16 @@ if (coerceNumber(override_price, 0) > 0) {
             [selectedTech]
           );
           const techRow = { username: selectedTech, weekly_off_days: pr.rows[0]?.weekly_off_days || '' };
-          const offMap = await buildOffMapForDate(String(appointment_datetime).slice(0,10), [selectedTech]);
-          if (isTechOffOnDate(techRow, String(appointment_datetime).slice(0,10), offMap)) {
+          const apptDate = String(apptIso).slice(0,10);
+          const offMap = await buildOffMapForDate(apptDate, [selectedTech]);
+          if (isTechOffOnDate(techRow, apptDate, offMap)) {
             return res.status(409).json({ error: `ช่างวันหยุด: ${selectedTech} (ไม่สามารถล็อคงานได้)` });
           }
         } catch (e) {
           console.warn('[admin_book_v2] off-day check failed (fail-open)', e.message);
         }
       }
-      const ok = await isTechFree(selectedTech, appointment_datetime, duration_min, null);
+      const ok = await isTechFree(selectedTech, apptIso, duration_min, null);
       if (!ok) {
         return res.status(409).json({ error: "ช่างคนนี้คิวชน (รวม buffer)" });
       }
@@ -1720,7 +1727,7 @@ if (coerceNumber(override_price, 0) > 0) {
     const tmList = [...new Set(tmIn.map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
     for (const u of tmList) {
       if (u === selectedTech) continue;
-      const ok = await isTechFree(u, appointment_datetime, duration_min, null);
+      const ok = await isTechFree(u, apptIso, duration_min, null);
       if (!ok) {
         return res.status(409).json({ error: `ช่างร่วมคิวชน (รวม buffer): ${u}` });
       }
@@ -1741,7 +1748,7 @@ if (coerceNumber(override_price, 0) > 0) {
         String(customer_name).trim(),
         (customer_phone || "").toString().trim(),
         String(job_type).trim(),
-        appointment_datetime,
+        apptIso,
         Number(pricing.total || 0),
         String(address_text).trim(),
         mode === "forced" ? selectedTech : null,
@@ -1837,7 +1844,7 @@ if (coerceNumber(override_price, 0) > 0) {
       const shuffled = list.sort(() => Math.random() - 0.5).slice(0, maxTeams);
       const available = [];
       for (const u of shuffled) {
-        const ok = await isTechFree(u, appointment_datetime, duration_min, null);
+        const ok = await isTechFree(u, apptIso, duration_min, null);
         if (ok) available.push(u);
       }
 
@@ -2342,7 +2349,7 @@ app.post('/admin/jobs/:job_id/clone_v2', requireAdminSoft, async (req, res) => {
       [
         src.customer_name, src.customer_phone,
         (override_job_type || src.job_type),
-        appointment_datetime,
+        apptIso,
         src.duration_min,
         src.address_text, src.maps_url, src.job_zone,
         technician_username
