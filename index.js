@@ -1585,7 +1585,7 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
     admin_override_duration_min: Math.max(0, coerceNumber(override_duration_min, 0)),
   };
 
-  let duration_min = computeDurationMin(payloadV2, { source: "admin_book_v2" });
+  let duration_min = computeDurationMinMulti(payloadV2, { source: "admin_book_v2" });
   if (duration_min <= 0) {
     return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration_min)" });
   }
@@ -3291,40 +3291,62 @@ app.post("/jobs/:job_id/return", async (req, res) => {
 // =======================================
 // 📩 JOB SUMMARY TEXT
 // =======================================
+
 function translateJobTypeEN(t){
   const s = (t||'').toString().trim();
-  if (s === 'ล้าง') return 'Cleaning';
-  if (s === 'ซ่อม') return 'Repair';
-  if (s === 'ติดตั้ง') return 'Installation';
+  // Be tolerant: sometimes stored with extra words/spaces
+  if (/ล้าง/.test(s)) return 'Cleaning';
+  if (/ซ่อม/.test(s)) return 'Repair';
+  if (/ติดตั้ง/.test(s)) return 'Installation';
   return s || '-';
 }
+
+
 
 function translateServiceItemNameEN(name){
   let t = (name||'').toString();
   // Normalize separators
   t = t.replace(/\s*•\s*/g, ' • ');
+
+  // Common Thai->EN mappings found in CWF item labels
   const map = [
     [/ล้างแอร์/gi, 'AC Cleaning'],
     [/ซ่อมแอร์/gi, 'AC Repair'],
     [/ติดตั้งแอร์/gi, 'AC Installation'],
+
     [/ผนัง/g, 'Wall-mounted'],
+    [/สี่ทิศทาง/g, '4-way Cassette'],
+    [/เปลือยใต้ฝ้า/g, 'Concealed Ceiling'],
     [/แขวน/g, 'Ceiling Suspended'],
-    [/คาสเซ็ท/g, 'Cassette'],
+
     [/ล้างธรรมดา/g, 'Standard Wash'],
     [/ล้างพรีเมียม/g, 'Premium Wash'],
     [/ล้างแขวนคอยน์/g, 'Ceiling Cassette Wash'],
+    [/ล้างแบบตัดล้างใหญ่/g, 'Deep Clean (Major)'],
+    [/ตัดล้างใหญ่/g, 'Deep Clean (Major)'],
     [/ล้างแบบตัดล้าง/g, 'Deep Clean (Disassemble)'],
-    [/เครื่อง/gi, 'unit'],
+    [/ตัดล้าง/g, 'Deep Clean (Disassemble)'],
+
     [/ช่าง\s*/g, 'Tech '],
   ];
   for (const [re, rep] of map) t = t.replace(re, rep);
 
+  // Units / counters
+  // "3 เครื่อง" -> "3 units"
+  t = t.replace(/(\d+)\s*เครื่อง/gi, (m,n)=>`${n} units`);
+  t = t.replace(/เครื่อง/gi, 'unit');
+
+  // If label already contains an extra "xN" or Thai remnants, clean them safely
+  t = t.replace(/\s+×\s*/g, ' x');
+
   // If still contains Thai letters, strip them but keep numbers/symbols/latin.
-  if (/[\u0E00-\u0E7F]/.test(t)) {
-    t = t.replace(/[\u0E00-\u0E7F]+/g, '').replace(/\s{2,}/g,' ').trim();
+  if (/[฀-๿]/.test(t)) {
+    t = t.replace(/[฀-๿]+/g, ' ').replace(/\s{2,}/g,' ').trim();
   }
+
   return t.trim();
 }
+
 
 app.get("/jobs/:job_id/summary", async (req, res) => {
   const { job_id } = req.params;
@@ -4949,7 +4971,8 @@ function minToHHMM(min) {
 }
 function computeDurationMin(payload = {}, opts = {}) {
   const src = opts.source || "unknown";
-  const job_type = String(payload.job_type || payload.jobType || "").trim();
+  const job_type_raw = String(payload.job_type || payload.jobType || "").trim();
+  const job_type = job_type_raw;
   const ac_type = String(payload.ac_type || payload.acType || "").trim();
   const wash_variant = String(payload.wash_variant || payload.washVariant || "").trim();
   const repair_variant = String(payload.repair_variant || payload.repairVariant || "").trim();
@@ -4958,14 +4981,24 @@ function computeDurationMin(payload = {}, opts = {}) {
 
   let duration = 0;
 
+  // Helper: step-rate for "บ้านเดียวหลายเครื่อง"
+  // duration = first + (n-1)*next
+  const step = (first, next) => {
+    const n = machine_count;
+    if (n <= 1) return first;
+    return first + (n - 1) * next;
+  };
+
   if (job_type === "ล้าง") {
+    // ✅ กติกาเวลางาน CWF (ตามที่ล็อคไว้)
     if (ac_type === "ผนัง" || !ac_type) {
-      if (wash_variant === "ล้างพรีเมียม") duration = machine_count === 1 ? 80 : 50 * machine_count;
-      else if (wash_variant === "ล้างแขวนคอยน์") duration = machine_count === 1 ? 120 : 90 * machine_count;
-      else if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่") duration = machine_count === 1 ? 180 : 120 * machine_count;
-      else duration = machine_count === 1 ? 60 : 40 * machine_count; // ล้างธรรมดา
+      if (wash_variant === "ล้างพรีเมียม") duration = step(80, 50);
+      else if (wash_variant === "ล้างแขวนคอยน์") duration = step(120, 90);
+      else if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่" || wash_variant === "ล้างแบบตัดล้างใหญ่") duration = step(180, 120);
+      else duration = step(60, 40); // ล้างธรรมดา
     } else {
-      duration = machine_count === 1 ? 120 : 90 * machine_count;
+      // แอร์สี่ทิศทาง / แขวน / เปลือยใต้ฝ้า
+      duration = step(120, 90);
     }
   } else if (job_type === "ซ่อม") {
     if (repair_variant === "ซ่อมเปลี่ยนอะไหล่") duration = admin_override > 0 ? admin_override : 0;
