@@ -1504,11 +1504,11 @@ function openSlotModal(slot){
   const renderBody = ()=>{
     const mode = (el('assign_mode')?.value || 'auto').toString();
 
-    const modeSeg = `
+      const modeSeg = `
       <div class="seg" style="margin-bottom:10px">
         <button type="button" class="${mode==='auto'?'active':''}" data-mode="auto">ระบบเลือกช่าง</button>
         <button type="button" class="${mode==='single'?'active':''}" data-mode="single">เลือกเดี่ยว</button>
-        <button type="button" class="${mode==='team'?'active':''}" data-mode="team">ทีม</button>
+        <button type="button" class="team-btn ${mode==='team'?'active':''}" data-mode="team">ทีม</button>
       </div>
       <div class="muted2 mini" style="margin-top:-2px;margin-bottom:10px">
         * เลือกโหมดและช่างได้ทันทีในหน้าต่างนี้
@@ -1539,9 +1539,14 @@ function openSlotModal(slot){
         </div>
       `;
       const selEl = body.querySelector('#slotm_primary');
-      // value MUST be username (stable id) — label shows real name from technician profile
-      selEl.innerHTML = `<option value="">-- เลือกช่างหลัก --</option>` + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(techDisplay(u))}</option>`).join('');
-      if(primary && ids.includes(primary)) selEl.value = primary;
+      // Primary should be chosen only from "selected co-tech" to avoid confusion
+      const selectedArr = Array.from(selected);
+      if(primary && !selectedArr.includes(primary)){
+        state.teamPicker.primary = '';
+      }
+      selEl.innerHTML = `<option value="">-- เลือกช่างหลัก (จากช่างร่วมที่เลือก) --</option>` +
+        selectedArr.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(techDisplay(u))}</option>`).join('');
+      if(state.teamPicker.primary && selectedArr.includes(state.teamPicker.primary)) selEl.value = state.teamPicker.primary;
 
       const wrap = body.querySelector('#slotm_team');
       for(const u of ids){

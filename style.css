@@ -783,7 +783,9 @@ a:hover{ text-decoration: underline; }
 .slot-btn.selected .slot-sub{ color: rgba(255,255,255,0.86); }
 
 /* Segmented control (used in slot modal: auto/single/team)
-   Active = yellow bg + black text, Inactive = white bg + black text */
+   Inactive = white bg + dark text
+   Team (inactive) = yellow bg + black text
+   Active (any) = blue bg + white text */
 .seg{
   display:flex;
   gap:10px;
@@ -799,6 +801,13 @@ a:hover{ text-decoration: underline; }
   box-shadow: var(--shadow-1);
 }
 .seg button.active{
+  background: #0b4bb3;
+  border-color: rgba(11,75,179,0.85);
+  color:#ffffff;
+}
+
+/* Team button should look "yellow" even when not active */
+.seg button.team-btn:not(.active){
   background: rgba(251,191,36,0.95);
   border-color: rgba(251,191,36,0.95);
   color:#0b1b3a;
