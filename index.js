@@ -3291,6 +3291,41 @@ app.post("/jobs/:job_id/return", async (req, res) => {
 // =======================================
 // 📩 JOB SUMMARY TEXT
 // =======================================
+function translateJobTypeEN(t){
+  const s = (t||'').toString().trim();
+  if (s === 'ล้าง') return 'Cleaning';
+  if (s === 'ซ่อม') return 'Repair';
+  if (s === 'ติดตั้ง') return 'Installation';
+  return s || '-';
+}
+
+function translateServiceItemNameEN(name){
+  let t = (name||'').toString();
+  // Normalize separators
+  t = t.replace(/\s*•\s*/g, ' • ');
+  const map = [
+    [/ล้างแอร์/gi, 'AC Cleaning'],
+    [/ซ่อมแอร์/gi, 'AC Repair'],
+    [/ติดตั้งแอร์/gi, 'AC Installation'],
+    [/ผนัง/g, 'Wall-mounted'],
+    [/แขวน/g, 'Ceiling Suspended'],
+    [/คาสเซ็ท/g, 'Cassette'],
+    [/ล้างธรรมดา/g, 'Standard Wash'],
+    [/ล้างพรีเมียม/g, 'Premium Wash'],
+    [/ล้างแขวนคอยน์/g, 'Ceiling Cassette Wash'],
+    [/ล้างแบบตัดล้าง/g, 'Deep Clean (Disassemble)'],
+    [/เครื่อง/gi, 'unit'],
+    [/ช่าง\s*/g, 'Tech '],
+  ];
+  for (const [re, rep] of map) t = t.replace(re, rep);
+
+  // If still contains Thai letters, strip them but keep numbers/symbols/latin.
+  if (/[\u0E00-\u0E7F]/.test(t)) {
+    t = t.replace(/[\u0E00-\u0E7F]+/g, '').replace(/\s{2,}/g,' ').trim();
+  }
+  return t.trim();
+}
+
 app.get("/jobs/:job_id/summary", async (req, res) => {
   const { job_id } = req.params;
   const lang = String(req.query.lang || 'th').toLowerCase();
@@ -3332,7 +3367,7 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
         const qty = Number(it.qty);
         const up = Number(it.unit_price);
         const lt = Number(it.line_total);
-        return `- ${it.item_name} x${qty} @ ${up} THB = ${lt} THB`;
+        return `- ${translateServiceItemNameEN(it.item_name)} x${qty} @ ${up} THB = ${lt} THB`;
       });
       text =
         `Service Appointment Confirmation\n\n` +
@@ -3343,7 +3378,7 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
         `📍 Customer: ${job.customer_name || "-"}\n` +
         `📞 Phone: ${job.customer_phone || "-"}\n` +
         `📅 Appointment: ${ddEN} ${ttEN}\n` +
-        `🧾 Job Type: ${job.job_type || "-"}\n` +
+        `🧾 Job Type: ${translateJobTypeEN(job.job_type)}\n` +
         `🏠 Address: ${job.address_text || "-"}\n\n` +
         `🧾 Items:\n${lineEN.length ? lineEN.join("\n") : "- (no items)"}\n\n` +
         `💰 Net Total: ${Number(job.job_price || 0).toFixed(2)} THB\n\n` +
@@ -5277,11 +5312,18 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
   return aStart < bEnd && bStart < aEnd;
 }
 
+function normalizeBangkokIso(iso){
+  const t = String(iso||'');
+  // If no timezone suffix, assume Asia/Bangkok (+07:00) to avoid UTC shifting bugs.
+  if (/(Z|z|[+-]\d\d:\d\d)$/.test(t)) return t;
+  return t + '+07:00';
+}
+
 async function isTechFree(username, startIso, durationMin, ignoreJobId) {
   // startIso is built from date+HH:mm without timezone.
   // Use the date portion directly to avoid UTC date shifting.
   const dateStr = String(startIso).slice(0, 10);
-  const start = new Date(startIso);
+  const start = new Date(normalizeBangkokIso(startIso));
 
   const reqStart = start.getTime() - TRAVEL_BUFFER_MIN * 60000;
   const reqEnd = start.getTime() + (Number(durationMin || 0) + TRAVEL_BUFFER_MIN) * 60000;
@@ -5444,7 +5486,7 @@ app.get("/public/availability_v2", async (req, res) => {
 
       const startHHMM = minToHHMM(t);
       const endHHMM = minToHHMM(t + block);
-      const startIso = `${date}T${startHHMM}:00`;
+      const startIso = `${date}T${startHHMM}:00+07:00`;
 
       const available_tech_ids = [];
       for (const tech of techs) {
