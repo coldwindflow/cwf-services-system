@@ -22,6 +22,38 @@ let state = {
   slots_loaded: false,
 };
 
+// --- Success Summary Modal (after save) ---
+function openSummaryModal({ title, sub, text }){
+  const ov = el('summary_modal_overlay');
+  if(!ov) return;
+  if(el('summary_modal_title')) el('summary_modal_title').textContent = title || '✅ บันทึกงานสำเร็จ';
+  if(el('summary_modal_sub')) el('summary_modal_sub').textContent = sub || 'คัดลอกข้อความยืนยันนัดแล้วส่งให้ลูกค้าได้ทันที';
+  if(el('summary_modal_text')) el('summary_modal_text').value = text || '';
+  ov.style.display = 'flex';
+  // prevent background scroll on mobile
+  try { document.body.style.overflow = 'hidden'; } catch(e){}
+  setTimeout(()=>{
+    try { el('btnCopySummaryModal')?.focus(); } catch(e){}
+  }, 0);
+}
+
+function closeSummaryModal(){
+  const ov = el('summary_modal_overlay');
+  if(!ov) return;
+  ov.style.display = 'none';
+  try { document.body.style.overflow = ''; } catch(e){}
+}
+
+async function copySummaryFromModal(){
+  const txt = el('summary_modal_text')?.value || '';
+  if(!txt) return;
+  try { await navigator.clipboard.writeText(txt); showToast('คัดลอกแล้ว', 'success'); }
+  catch {
+    try { el('summary_modal_text').select(); document.execCommand('copy'); showToast('คัดลอกแล้ว', 'success'); }
+    catch(e){ showToast('คัดลอกไม่สำเร็จ', 'error'); }
+  }
+}
+
 
 // --- PATCH: technician dropdown + team multi-select (backward compatible) ---
 state.techs = []; // [{username, full_name, display_name, employment_type, work_start, work_end}]
@@ -1689,6 +1721,12 @@ async function submitBooking() {
       if (s && s.text) {
         el('summary_card').style.display = 'block';
         el('summary_text').value = s.text;
+        // Show modal for premium UX + avoid overflow / hidden copy button
+        openSummaryModal({
+          title: `✅ บันทึกงานสำเร็จ (#${r.booking_code || r.job_id || ''})`,
+          sub: 'คัดลอกข้อความยืนยันนัด แล้วส่งให้ลูกค้าได้ทันที',
+          text: s.text,
+        });
       }
     } catch (e) {
       console.warn('summary load fail', e);
@@ -1748,6 +1786,19 @@ function wireEvents() {
     if(closeBtn) closeBtn.addEventListener('click', closeSlotModal);
     const ov = el('slot_modal_overlay');
     if(ov) ov.addEventListener('click', (ev)=>{ if(ev.target === ov) closeSlotModal(); });
+  } catch(e){}
+
+  // Success summary modal
+  try {
+    const c1 = el('btnCloseSummaryModal');
+    if(c1) c1.addEventListener('click', closeSummaryModal);
+    const c2 = el('btnCopySummaryModal');
+    if(c2) c2.addEventListener('click', copySummaryFromModal);
+    const ov2 = el('summary_modal_overlay');
+    if(ov2) ov2.addEventListener('click', (ev)=>{ if(ev.target === ov2) closeSummaryModal(); });
+    document.addEventListener('keydown', (ev)=>{
+      if(ev.key === 'Escape') closeSummaryModal();
+    });
   } catch(e){}
   el("promotion_id").addEventListener("change", () => updateTotalPreview());
   const btnEx = el("btnAddExtra"); if(btnEx) btnEx.addEventListener("click", addExtra);

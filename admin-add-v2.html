@@ -452,11 +452,24 @@
   </div>
 
 
-    <div class="card section-card" id="summary_card" style="display:none">
+    <div class="card section-card" id="summary_card" style="display:none; margin-bottom:90px">
       <b>✅ ข้อความยืนยันนัด (คัดลอกส่งลูกค้า)</b>
       <div class="muted2 mini" style="margin-top:6px">กดปุ่มคัดลอก แล้วส่งใน LINE/WhatsApp ได้ทันที</div>
       <textarea id="summary_text" rows="10" style="margin-top:10px"></textarea>
       <button class="secondary" type="button" style="margin-top:10px" id="btnCopySummary">คัดลอกข้อความ</button>
+    </div>
+
+    <!-- Success Modal: แสดงข้อความยืนยันนัดหลังบันทึกสำเร็จ (กันหลุดเฟรม/ไม่เห็นปุ่มคัดลอก) -->
+    <div id="summary_modal_overlay" class="team-sheet-overlay" style="display:none">
+      <div class="team-sheet" role="dialog" aria-modal="true" style="max-width:720px">
+        <h3 id="summary_modal_title">✅ บันทึกงานสำเร็จ</h3>
+        <p id="summary_modal_sub" class="muted2" style="margin-top:6px">คัดลอกข้อความยืนยันนัดแล้วส่งให้ลูกค้าได้ทันที</p>
+        <textarea id="summary_modal_text" rows="10" style="margin-top:12px; width:100%; min-height:220px; max-height:52vh; resize:vertical;"></textarea>
+        <div class="sheet-actions" style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
+          <button id="btnCopySummaryModal" class="btn-primary" type="button">คัดลอกข้อความ</button>
+          <button id="btnCloseSummaryModal" class="btn-close" type="button">ปิด</button>
+        </div>
+      </div>
     </div>
 
   <div class="bottom-nav">
