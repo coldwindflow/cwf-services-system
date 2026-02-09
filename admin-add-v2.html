@@ -128,6 +128,43 @@
     /* Make assign section usable with fixed bottom nav */
     #wash_assign_card{padding-bottom:110px}
 
+    /* ===============================
+       Confirmation message (non-modal)
+       Fix: prevent bottom-nav overlap + nicer layout
+       =============================== */
+    #summary_card{
+      padding:14px 14px 16px;
+      border-radius:22px;
+      margin-bottom:calc(140px + env(safe-area-inset-bottom));
+    }
+    #summary_card textarea{
+      width:100%;
+      min-height:220px;
+      max-height:52vh;
+      resize:vertical;
+      border-radius:16px;
+      padding:12px;
+      background:#ffffff;
+    }
+    #summary_card .summary-actions{
+      position:sticky;
+      bottom:calc(68px + env(safe-area-inset-bottom));
+      background:linear-gradient(180deg, rgba(255,255,255,0.0) 0%, rgba(255,255,255,0.92) 22%, rgba(255,255,255,1) 100%);
+      padding-top:10px;
+      margin-top:6px;
+    }
+    #btnCopySummary{width:100%;}
+
+    /* Modal close button: red bg + white text (requested) */
+    #btnCloseSummaryModal{
+      background:#ef4444 !important;
+      color:#ffffff !important;
+      border:1px solid rgba(239,68,68,0.75) !important;
+      font-weight:900 !important;
+    }
+    #btnCloseSummaryModal:hover{filter:brightness(0.98)}
+    #btnCloseSummaryModal:active{filter:brightness(0.95)}
+
     /* Save button must be blue (match menu tone) */
     #btnSubmit{background:#0b4bb3 !important;color:#ffffff !important;border:1px solid rgba(255,204,0,0.55) !important;font-weight:900 !important}
     #btnSubmit:active{background:#0b1b3a !important}
@@ -452,11 +489,13 @@
   </div>
 
 
-    <div class="card section-card" id="summary_card" style="display:none; margin-bottom:90px">
+    <div class="card section-card" id="summary_card" style="display:none">
       <b>✅ ข้อความยืนยันนัด (คัดลอกส่งลูกค้า)</b>
       <div class="muted2 mini" style="margin-top:6px">กดปุ่มคัดลอก แล้วส่งใน LINE/WhatsApp ได้ทันที</div>
       <textarea id="summary_text" rows="10" style="margin-top:10px"></textarea>
-      <button class="secondary" type="button" style="margin-top:10px" id="btnCopySummary">คัดลอกข้อความ</button>
+      <div class="summary-actions">
+        <button class="secondary" type="button" style="margin-top:10px" id="btnCopySummary">คัดลอกข้อความ</button>
+      </div>
     </div>
 
     <!-- Success Modal: แสดงข้อความยืนยันนัดหลังบันทึกสำเร็จ (กันหลุดเฟรม/ไม่เห็นปุ่มคัดลอก) -->
