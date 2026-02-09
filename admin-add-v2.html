@@ -135,8 +135,12 @@
     #summary_card{
       padding:14px 14px 16px;
       border-radius:22px;
-      margin-bottom:calc(140px + env(safe-area-inset-bottom));
+      margin-bottom:calc(110px + env(safe-area-inset-bottom));
     }
+    .summary-head{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .lang-toggle{display:flex;gap:8px;align-items:center}
+    .lang-btn{border:1px solid rgba(11,75,179,0.18);background:#ffffff;border-radius:999px;padding:8px 10px;font-weight:900;color:#0b1b3a;cursor:pointer;min-height:38px}
+    .lang-btn.active{background:#0b4bb3;color:#ffffff;border-color:rgba(255,204,0,0.75)}
     #summary_card textarea{
       width:100%;
       min-height:220px;
@@ -148,12 +152,13 @@
     }
     #summary_card .summary-actions{
       position:sticky;
-      bottom:calc(68px + env(safe-area-inset-bottom));
+      /* keep above fixed bottom-nav */
+      bottom:calc(92px + env(safe-area-inset-bottom));
       background:linear-gradient(180deg, rgba(255,255,255,0.0) 0%, rgba(255,255,255,0.92) 22%, rgba(255,255,255,1) 100%);
       padding-top:10px;
       margin-top:6px;
     }
-    #btnCopySummary{width:100%;}
+    #btnCopySummary{width:100%;margin-top:8px}
 
     /* Modal close button: red bg + white text (requested) */
     #btnCloseSummaryModal{
@@ -486,24 +491,37 @@
 
       <button class="primary" type="button" style="margin-top:12px" id="btnSubmit">บันทึกงาน</button>
     </div>
-  </div>
-
-
+    <!-- Confirmation message (non-modal) - keep inside .app so spacing/padding works with fixed bottom nav -->
     <div class="card section-card" id="summary_card" style="display:none">
-      <b>✅ ข้อความยืนยันนัด (คัดลอกส่งลูกค้า)</b>
-      <div class="muted2 mini" style="margin-top:6px">กดปุ่มคัดลอก แล้วส่งใน LINE/WhatsApp ได้ทันที</div>
-      <textarea id="summary_text" rows="10" style="margin-top:10px"></textarea>
+      <div class="summary-head">
+        <b>✅ ข้อความยืนยันนัด (คัดลอกส่งลูกค้า)</b>
+        <div class="lang-toggle" role="tablist" aria-label="ภาษา">
+          <button type="button" class="lang-btn active" id="btnLangTH" aria-selected="true">ไทย</button>
+          <button type="button" class="lang-btn" id="btnLangEN" aria-selected="false">English</button>
+        </div>
+      </div>
+      <div class="muted2 mini" style="margin-top:6px">เลือกภาษา แล้วกดคัดลอกส่งใน LINE/WhatsApp ได้ทันที</div>
+      <textarea id="summary_text" rows="10" style="margin-top:10px" readonly></textarea>
       <div class="summary-actions">
-        <button class="secondary" type="button" style="margin-top:10px" id="btnCopySummary">คัดลอกข้อความ</button>
+        <button class="secondary" type="button" id="btnCopySummary">คัดลอกข้อความ</button>
       </div>
     </div>
+
+  </div>
 
     <!-- Success Modal: แสดงข้อความยืนยันนัดหลังบันทึกสำเร็จ (กันหลุดเฟรม/ไม่เห็นปุ่มคัดลอก) -->
     <div id="summary_modal_overlay" class="team-sheet-overlay" style="display:none">
       <div class="team-sheet" role="dialog" aria-modal="true" style="max-width:720px">
         <h3 id="summary_modal_title">✅ บันทึกงานสำเร็จ</h3>
         <p id="summary_modal_sub" class="muted2" style="margin-top:6px">คัดลอกข้อความยืนยันนัดแล้วส่งให้ลูกค้าได้ทันที</p>
-        <textarea id="summary_modal_text" rows="10" style="margin-top:12px; width:100%; min-height:220px; max-height:52vh; resize:vertical;"></textarea>
+        <div class="summary-head" style="margin-top:10px">
+          <div></div>
+          <div class="lang-toggle" role="tablist" aria-label="ภาษา">
+            <button type="button" class="lang-btn active" id="btnLangTHModal" aria-selected="true">ไทย</button>
+            <button type="button" class="lang-btn" id="btnLangENModal" aria-selected="false">English</button>
+          </div>
+        </div>
+        <textarea id="summary_modal_text" rows="10" style="margin-top:12px; width:100%; min-height:220px; max-height:52vh; resize:vertical;" readonly></textarea>
         <div class="sheet-actions" style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end;">
           <button id="btnCopySummaryModal" class="btn-primary" type="button">คัดลอกข้อความ</button>
           <button id="btnCloseSummaryModal" class="btn-close" type="button">ปิด</button>

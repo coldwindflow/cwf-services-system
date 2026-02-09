@@ -3293,6 +3293,7 @@ app.post("/jobs/:job_id/return", async (req, res) => {
 // =======================================
 app.get("/jobs/:job_id/summary", async (req, res) => {
   const { job_id } = req.params;
+  const lang = String(req.query.lang || 'th').toLowerCase();
 
   try {
     const jobR = await pool.query(
@@ -3313,8 +3314,10 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
     );
 
     const dt = new Date(job.appointment_datetime);
-    const dd = dt.toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" });
-    const tt = dt.toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" });
+    const ddTH = dt.toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" });
+    const ttTH = dt.toLocaleTimeString("th-TH", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" });
+    const ddEN = dt.toLocaleDateString("en-GB", { timeZone: "Asia/Bangkok" });
+    const ttEN = dt.toLocaleTimeString("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" });
 
     const lines = itemsR.rows.map((it) => {
       const qty = Number(it.qty);
@@ -3323,20 +3326,43 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
       return `- ${it.item_name} x${qty} @ ${up} บาท = ${lt} บาท`;
     });
 
-    const text =
-      `ยืนยันนัดหมายบริการแอร์\n\n` +
-      `Coldwindflow Air Services\n` +
-      `แอดมินฝ่ายบริการลูกค้า ขอเรียนยืนยันนัดหมายดังนี้ค่ะ\n\n` +
-      `🔎 เลขงาน: ${job.booking_code || "#" + job.job_id}\n🔗 ติดตามงาน: ${origin}/track.html?q=${encodeURIComponent(job.booking_code || String(job.job_id))}
-` +
-      `📍 ชื่อลูกค้า: ${job.customer_name || "-"}\n` +
-      `📞 เบอร์: ${job.customer_phone || "-"}\n` +
-      `📅 วันที่นัด: ${dd} เวลา ${tt} น.\n` +
-      `🧾 ประเภทงาน: ${job.job_type || "-"}\n` +
-      `🏠 ที่อยู่: ${job.address_text || "-"}\n\n` +
-      `🧾 รายการ:\n${lines.length ? lines.join("\n") : "- (ไม่มีรายการ)"}\n\n` +
-      `💰 ยอดชำระสุทธิ: ${Number(job.job_price || 0).toFixed(2)} บาท\n\n` +
-      `ขอบคุณค่ะ\nLINE OA: @cwfair\nโทร: 098-877-7321`;
+    let text = '';
+    if(lang === 'en'){
+      const lineEN = itemsR.rows.map((it) => {
+        const qty = Number(it.qty);
+        const up = Number(it.unit_price);
+        const lt = Number(it.line_total);
+        return `- ${it.item_name} x${qty} @ ${up} THB = ${lt} THB`;
+      });
+      text =
+        `Service Appointment Confirmation\n\n` +
+        `Coldwindflow Air Services\n` +
+        `Our admin team would like to confirm your appointment details:\n\n` +
+        `🔎 Job No.: ${job.booking_code || "#" + job.job_id}\n` +
+        `🔗 Track: ${origin}/track.html?q=${encodeURIComponent(job.booking_code || String(job.job_id))}\n` +
+        `📍 Customer: ${job.customer_name || "-"}\n` +
+        `📞 Phone: ${job.customer_phone || "-"}\n` +
+        `📅 Appointment: ${ddEN} ${ttEN}\n` +
+        `🧾 Job Type: ${job.job_type || "-"}\n` +
+        `🏠 Address: ${job.address_text || "-"}\n\n` +
+        `🧾 Items:\n${lineEN.length ? lineEN.join("\n") : "- (no items)"}\n\n` +
+        `💰 Net Total: ${Number(job.job_price || 0).toFixed(2)} THB\n\n` +
+        `Thank you.\nLINE OA: @cwfair\nCall: 098-877-7321`;
+    } else {
+      text =
+        `ยืนยันนัดหมายบริการแอร์\n\n` +
+        `Coldwindflow Air Services\n` +
+        `แอดมินฝ่ายบริการลูกค้า ขอเรียนยืนยันนัดหมายดังนี้ค่ะ\n\n` +
+        `🔎 เลขงาน: ${job.booking_code || "#" + job.job_id}\n🔗 ติดตามงาน: ${origin}/track.html?q=${encodeURIComponent(job.booking_code || String(job.job_id))}\n` +
+        `📍 ชื่อลูกค้า: ${job.customer_name || "-"}\n` +
+        `📞 เบอร์: ${job.customer_phone || "-"}\n` +
+        `📅 วันที่นัด: ${ddTH} เวลา ${ttTH} น.\n` +
+        `🧾 ประเภทงาน: ${job.job_type || "-"}\n` +
+        `🏠 ที่อยู่: ${job.address_text || "-"}\n\n` +
+        `🧾 รายการ:\n${lines.length ? lines.join("\n") : "- (ไม่มีรายการ)"}\n\n` +
+        `💰 ยอดชำระสุทธิ: ${Number(job.job_price || 0).toFixed(2)} บาท\n\n` +
+        `ขอบคุณค่ะ\nLINE OA: @cwfair\nโทร: 098-877-7321`;
+    }
 
     res.json({ text });
   } catch (e) {

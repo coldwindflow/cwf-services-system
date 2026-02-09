@@ -20,15 +20,42 @@ let state = {
   selected_slot_iso: "",
   available_slots: [],
   slots_loaded: false,
+  // confirmation summary texts (TH/EN)
+  summary_texts: { th: "", en: "", lang: "th" },
 };
 
+function applyLangButtons({ thBtnId, enBtnId, active }){
+  const thBtn = el(thBtnId);
+  const enBtn = el(enBtnId);
+  if(!thBtn || !enBtn) return;
+  const isEN = active === 'en';
+  thBtn.classList.toggle('active', !isEN);
+  enBtn.classList.toggle('active', isEN);
+  thBtn.setAttribute('aria-selected', (!isEN).toString());
+  enBtn.setAttribute('aria-selected', (isEN).toString());
+}
+
+function setSummaryLang(lang, where){
+  const L = (lang === 'en' ? 'en' : 'th');
+  state.summary_texts.lang = L;
+  const txt = state.summary_texts[L] || state.summary_texts.th || state.summary_texts.en || '';
+  if(where === 'modal'){
+    if(el('summary_modal_text')) el('summary_modal_text').value = txt;
+    applyLangButtons({ thBtnId:'btnLangTHModal', enBtnId:'btnLangENModal', active:L });
+    return;
+  }
+  if(el('summary_text')) el('summary_text').value = txt;
+  applyLangButtons({ thBtnId:'btnLangTH', enBtnId:'btnLangEN', active:L });
+}
+
 // --- Success Summary Modal (after save) ---
-function openSummaryModal({ title, sub, text }){
+function openSummaryModal({ title, sub }){
   const ov = el('summary_modal_overlay');
   if(!ov) return;
   if(el('summary_modal_title')) el('summary_modal_title').textContent = title || '✅ บันทึกงานสำเร็จ';
   if(el('summary_modal_sub')) el('summary_modal_sub').textContent = sub || 'คัดลอกข้อความยืนยันนัดแล้วส่งให้ลูกค้าได้ทันที';
-  if(el('summary_modal_text')) el('summary_modal_text').value = text || '';
+  // render current language
+  setSummaryLang(state.summary_texts.lang || 'th', 'modal');
   ov.style.display = 'flex';
   // prevent background scroll on mobile
   try { document.body.style.overflow = 'hidden'; } catch(e){}
@@ -1717,15 +1744,25 @@ async function submitBooking() {
     const r = await apiFetch("/admin/book_v2", { method: "POST", body: JSON.stringify(payload) });
     showToast(`บันทึกงานสำเร็จ: ${r.booking_code}`, "success");
     try {
-      const s = await apiFetch(`/jobs/${r.job_id}/summary`);
-      if (s && s.text) {
+      // Load both languages (fail-open). EN is optional and backward compatible.
+      const [sTH, sEN] = await Promise.all([
+        apiFetch(`/jobs/${r.job_id}/summary`),
+        apiFetch(`/jobs/${r.job_id}/summary?lang=en`).catch(()=>null),
+      ]);
+      const thText = (sTH && sTH.text) ? String(sTH.text) : '';
+      const enText = (sEN && sEN.text) ? String(sEN.text) : '';
+      if (thText || enText) {
+        state.summary_texts.th = thText;
+        state.summary_texts.en = enText;
+        state.summary_texts.lang = 'th';
+
         el('summary_card').style.display = 'block';
-        el('summary_text').value = s.text;
+        setSummaryLang('th', 'card');
+
         // Show modal for premium UX + avoid overflow / hidden copy button
         openSummaryModal({
           title: `✅ บันทึกงานสำเร็จ (#${r.booking_code || r.job_id || ''})`,
           sub: 'คัดลอกข้อความยืนยันนัด แล้วส่งให้ลูกค้าได้ทันที',
-          text: s.text,
         });
       }
     } catch (e) {
@@ -1798,6 +1835,20 @@ function wireEvents() {
     if(ov2) ov2.addEventListener('click', (ev)=>{ if(ev.target === ov2) closeSummaryModal(); });
     document.addEventListener('keydown', (ev)=>{
       if(ev.key === 'Escape') closeSummaryModal();
+    });
+  } catch(e){}
+
+  // Summary language toggles (card + modal)
+  try {
+    el('btnLangTH')?.addEventListener('click', ()=> setSummaryLang('th','card'));
+    el('btnLangEN')?.addEventListener('click', ()=>{
+      if(!state.summary_texts.en){ showToast('English version not available', 'error'); return; }
+      setSummaryLang('en','card');
+    });
+    el('btnLangTHModal')?.addEventListener('click', ()=> setSummaryLang('th','modal'));
+    el('btnLangENModal')?.addEventListener('click', ()=>{
+      if(!state.summary_texts.en){ showToast('English version not available', 'error'); return; }
+      setSummaryLang('en','modal');
     });
   } catch(e){}
   el("promotion_id").addEventListener("change", () => updateTotalPreview());
