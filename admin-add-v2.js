@@ -889,6 +889,10 @@ async function loadAvailability() {
       duration_min: String(duration_min),
     });
 
+    // Admin v2: enable safe auto crew sizing for very long jobs
+    // (preview only; does not change booking logic)
+    qs.set('auto_crew', '1');
+
     // If admin intends to dispatch as a team (multiple technicians in parallel),
     // request availability based on per-tech workload time slice.
     // Backward compatible: server defaults crew_size=1.
@@ -1285,7 +1289,9 @@ function renderSlots() {
 
   const grid = document.createElement("div");
   grid.className = "slot-grid";
-  for (const s of slotsAll) {
+  const renderAll = constraintTechs.length > 0;
+  const listToRender = renderAll ? slotsAll : slotsSelectable;
+  for (const s of listToRender) {
     const btn = document.createElement("button");
     btn.type = "button";
     const techCount = Array.isArray(s.available_tech_ids) ? s.available_tech_ids.length : 0;
@@ -1870,6 +1876,20 @@ async function addSpecialSlotV2(opts = {}){
       const rounded = Math.ceil(block / 30) * 30;
       en = _addMinutesToHHMM(st.trim(), rounded);
       if(!en){ showToast("เวลาเริ่มไม่ถูกต้อง", "error"); return; }
+
+      // Guard: do not allow auto-generated end time beyond 24:00.
+      // If the workload is too long for a day, ask admin to use Team mode / reduce workload.
+      try{
+        const m = String(en).match(/^(\d{1,2}):(\d{2})$/);
+        if(m){
+          const hh = Number(m[1]);
+          const mm = Number(m[2]);
+          if(hh > 24 || (hh === 24 && mm > 0)) {
+            en = '24:00';
+            showToast('เวลางานยาวมาก (เกิน 24:00) • แนะนำเลือกโหมดทีม/เพิ่มช่าง แล้วโหลดคิวใหม่', 'info');
+          }
+        }
+      }catch(e){}
     } else {
       en = prompt(`ใส่เวลาสิ้นสุด (HH:MM)\nช่าง: ${username}\nวันที่: ${date}`, "19:00");
       if(!en) return;

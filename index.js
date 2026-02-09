@@ -4450,9 +4450,31 @@ app.post("/admin/technicians/:username/special_slots_v2", async (req, res) => {
   try {
     const username = (req.params.username || "").toString();
     const slot_date = (req.body.date || req.body.slot_date || new Date().toISOString().slice(0,10)).toString();
-    const start_time = (req.body.start_time || "").toString();
-    const end_time = (req.body.end_time || "").toString();
-    if (!/^\d{2}:\d{2}$/.test(start_time) || !/^\d{2}:\d{2}$/.test(end_time)) {
+    const start_time_raw = (req.body.start_time || "").toString();
+    const end_time_raw = (req.body.end_time || "").toString();
+    if (!/^\d{1,2}:\d{2}$/.test(start_time_raw) || !/^\d{1,2}:\d{2}$/.test(end_time_raw)) {
+      return res.status(400).json({ error: "เวลาไม่ถูกต้อง (HH:MM)" });
+    }
+    // Normalize HH:MM (end_time is clamped at 24:00 to avoid invalid JS Date parsing)
+    const norm = (hhmm, allow24) => {
+      const m = String(hhmm).match(/^([0-9]{1,2}):([0-9]{2})$/);
+      if (!m) return null;
+      let h = Number(m[1]);
+      let mm = Number(m[2]);
+      if (!Number.isFinite(h) || !Number.isFinite(mm)) return null;
+      if (mm < 0 || mm > 59) return null;
+      if (allow24) {
+        if (h > 24) { h = 24; mm = 0; }
+        if (h === 24 && mm > 0) { mm = 0; }
+      } else {
+        if (h < 0 || h > 23) return null;
+      }
+      const pad = (n)=>String(n).padStart(2,'0');
+      return `${pad(h)}:${pad(mm)}`;
+    };
+    const start_time = norm(start_time_raw, false);
+    const end_time = norm(end_time_raw, true);
+    if (!start_time || !end_time) {
       return res.status(400).json({ error: "เวลาไม่ถูกต้อง (HH:MM)" });
     }
     if (toMin(end_time) <= toMin(start_time)) {
@@ -5285,7 +5307,11 @@ app.get("/public/availability_v2", async (req, res) => {
   // callers (Admin v2) can request availability based on per-tech workload time.
   // This is backward compatible: if omitted or invalid, crew_size=1.
   const crew_size_raw = Number(req.query.crew_size || req.query.crewSize || 1);
-  const crew_size = Math.max(1, Math.min(10, Number.isFinite(crew_size_raw) ? Math.floor(crew_size_raw) : 1));
+  let crew_size = Math.max(1, Math.min(10, Number.isFinite(crew_size_raw) ? Math.floor(crew_size_raw) : 1));
+  // auto_crew=1 (admin add v2): if duration is very long and no crew_size provided,
+  // suggest a minimal crew size so the admin can still see available slots.
+  // Backward compatible: default disabled.
+  const auto_crew = String(req.query.auto_crew || '').trim() === '1';
   // include_full=1: debug/admin usage to return even unavailable time steps.
   const include_full = String(req.query.include_full || '').trim() === '1';
   const slot_step_min = 30;
@@ -5320,6 +5346,20 @@ app.get("/public/availability_v2", async (req, res) => {
       console.warn("[availability_v2] special slots query failed", e.message);
     }
     const tech_count = techs.length;
+
+    // Auto crew sizing (admin add v2 safety):
+    // If the job duration is very long and the caller didn't specify a crew_size,
+    // suggest a minimal team size so at least some slots can appear.
+    // This does NOT change booking behavior; it only affects the availability preview.
+    if (auto_crew && crew_size === 1 && tech_count > 1) {
+      const d = Number(duration_min || 0);
+      // Heuristic target per-tech <= 240 min (4h). Cap to tech_count.
+      if (d >= 300) {
+        const suggested = Math.max(2, Math.min(tech_count, Math.ceil(d / 240)));
+        crew_size = suggested;
+        console.log('[availability_v2] auto_crew applied', { duration_min: d, tech_count, crew_size });
+      }
+    }
 
     // ✅ Determine global working window:
     // - default 09:00-18:00
