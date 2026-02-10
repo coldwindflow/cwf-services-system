@@ -1592,6 +1592,7 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
     tech_type,
     technician_username,
     team_members: team_members_raw,
+    assign_mode: assign_mode_raw,
     dispatch_mode,
     // v2 payload
     ac_type,
@@ -1605,6 +1606,17 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
     override_price,
     override_duration_min,
   } = body;
+
+  // ✅ assign_mode (auto|single|team)
+  // Backward compatible: infer if missing.
+  const assign_mode = (() => {
+    const v = (assign_mode_raw || '').toString().trim().toLowerCase();
+    if (v === 'auto' || v === 'single' || v === 'team') return v;
+    const hasTeam = Array.isArray(team_members_raw) && team_members_raw.some(Boolean);
+    if (hasTeam) return 'team';
+    const hasTech = (technician_username || '').toString().trim().length > 0;
+    return hasTech ? 'single' : 'auto';
+  })();
 
   if (!customer_name || !job_type || !appointment_datetime || !address_text) {
     return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ (ชื่อ/ประเภทงาน/วันนัด/ที่อยู่)" });
@@ -1621,6 +1633,22 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
   const mode = (dispatch_mode || "forced").toString().trim().toLowerCase();
   if (!['company','partner'].includes(ttype)) return res.status(400).json({ error: "tech_type ต้องเป็น company หรือ partner" });
   if (!['forced','offer'].includes(mode)) return res.status(400).json({ error: "dispatch_mode ต้องเป็น forced หรือ offer" });
+
+  // ✅ Enforce assign_mode contract (R2)
+  // - single: technician_username required, team_members must be empty
+  // - auto: technician_username optional, team_members must be empty
+  // - team: technician_username required, team_members allowed
+  const tmRawArr = Array.isArray(team_members_raw) ? team_members_raw : [];
+  const tmAny = tmRawArr.some(x => (x||'').toString().trim());
+  const techProvided = (technician_username || '').toString().trim().length > 0;
+  if (assign_mode === 'single') {
+    if (!techProvided) return res.status(400).json({ error: 'โหมด single ต้องระบุ technician_username' });
+    if (tmAny) return res.status(400).json({ error: 'โหมด single ห้ามส่ง team_members' });
+  } else if (assign_mode === 'auto') {
+    if (tmAny) return res.status(400).json({ error: 'โหมด auto ห้ามส่ง team_members' });
+  } else if (assign_mode === 'team') {
+    if (!techProvided) return res.status(400).json({ error: 'โหมด team ต้องระบุ technician_username (ช่างหลัก)' });
+  }
 
   const payloadV2 = {
     job_type: String(job_type).trim(),
@@ -5786,6 +5814,47 @@ function buildStartIntervalsForWindow(busyBlocks, windowStartMin, windowEndMin, 
   return out;
 }
 
+// ✅ Spec: allow starting within UI window (09:00–18:00) even if the job ends after 18:00.
+// Compute startable ranges by checking collision against conservative busy intervals (including buffer)
+// across the whole day, not just within the UI window.
+function buildStartIntervalsByCollision(busyBlocks, uiStartMin, uiEndMin, durationMin) {
+  const d = Math.max(1, Number(durationMin || 0));
+  if (uiEndMin <= uiStartMin) return [];
+  const blockLen = d + TRAVEL_BUFFER_MIN;
+
+  // Convert to conservative busy intervals [start, busyEnd)
+  const busy = buildBusyIntervalsConservative(busyBlocks);
+
+  // Forbidden start ranges derived from overlap condition:
+  // newStart < oldEnd && oldStart < newEnd  where newEnd = newStart + blockLen
+  // => newStart in (oldStart - blockLen, oldEnd)
+  const forbidden = [];
+  for (const b of busy) {
+    const s = Math.floor(b.startMin - blockLen);
+    const e = Math.ceil(b.endMin);
+    forbidden.push({ startMin: s, endMin: e });
+  }
+  const forb = mergeMinIntervals(forbidden);
+
+  // Allowed = [uiStartMin, uiEndMin) \ forbidden
+  const allowed = [];
+  let cursor = uiStartMin;
+  for (const f of forb) {
+    const s = Math.max(uiStartMin, f.startMin);
+    const e = Math.min(uiEndMin, f.endMin);
+    if (e <= uiStartMin || s >= uiEndMin) continue;
+    if (s > cursor) allowed.push({ startMin: cursor, endMin: s });
+    cursor = Math.max(cursor, e);
+  }
+  if (cursor < uiEndMin) allowed.push({ startMin: cursor, endMin: uiEndMin });
+
+  // Convert allowed half-open intervals to inclusive output blocks like the existing sweep expects.
+  // We'll output [start, end] inclusive minutes for 'start' mode.
+  return allowed
+    .map(a => ({ startMin: a.startMin, endMin: Math.max(a.startMin, a.endMin - 1) }))
+    .filter(a => a.endMin >= a.startMin);
+}
+
 function normalizeBangkokIso(iso){
   const t = String(iso||'');
   // If no timezone suffix, assume Asia/Bangkok (+07:00) to avoid UTC shifting bugs.
@@ -6009,7 +6078,7 @@ app.get("/public/availability_v2", async (req, res) => {
           }
         } else {
           // Start ranges: minutes where a job can START (respecting buffer rules)
-          const startIntervals = buildStartIntervalsForWindow(busyBlocks, w.startMin, w.endMin, effective_duration_min);
+          const startIntervals = buildStartIntervalsByCollision(busyBlocks, w.startMin, w.endMin, effective_duration_min);
         if (debugFlag) {
           const busy = buildBusyIntervalsConservative(busyBlocks);
           const free = buildFreeIntervalsForWindow(busy, w.startMin, w.endMin);
