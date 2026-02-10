@@ -1137,21 +1137,43 @@ app.post("/jobs", async (req, res) => {
       ? calcPricing(safeItems, promo)
       : { subtotal: Number(job_price || 0), discount: 0, total: Number(job_price || 0) };
 
-    
-// ✅ Hard Validation: กันชนคิวที่ backend (Source of Truth)
-// /jobs legacy create ใช้ duration_min อย่างน้อย 60 นาที (ถ้าไม่มีข้อมูล)
-const conflict = await checkTechCollision(technician_username, appointment_dt, 60, null);
-if (conflict) return http409Conflict(res, conflict);
+	    // ✅ Duration Source of Truth (CWF Spec)
+	    // Backward compatible:
+	    // - if client sends services[] (multi service lines), compute duration via computeDurationMinMulti
+	    // - else if client sends duration_min, use it
+	    // - else fallback 60
+	    let duration_min = 0;
+	    try {
+	      const servicesIn = Array.isArray(req.body?.services) ? req.body.services : (Array.isArray(req.body?.service_lines) ? req.body.service_lines : null);
+	      if (servicesIn && servicesIn.length) {
+	        const payloadV2 = { job_type: String(job_type).trim(), services: servicesIn, admin_override_duration_min: 0 };
+	        duration_min = computeDurationMinMulti(payloadV2, { source: 'jobs_legacy', conservative: true });
+	      }
+	    } catch (e) {
+	      // fail-open
+	      duration_min = 0;
+	    }
+	    if (!(duration_min > 0)) {
+	      const n = Number(req.body?.duration_min || 0);
+	      duration_min = Number.isFinite(n) && n > 0 ? Math.floor(n) : 60;
+	    }
 
-const jobInsert = await client.query(
+	    // ✅ Hard Validation: กันชนคิวที่ backend (Source of Truth)
+	    // Forced: allow override as per existing system behavior.
+	    if (mode !== 'forced') {
+	      const conflict = await checkTechCollision(technician_username, appointment_dt, duration_min, null);
+	      if (conflict) return http409Conflict(res, conflict);
+	    }
+
+	    const jobInsert = await client.query(
       `
       INSERT INTO public.jobs
       (customer_name, customer_phone, job_type, appointment_datetime, job_price, address_text,
        maps_url, job_zone,
        gps_latitude, gps_longitude,
        technician_team, technician_username, job_status,
-       job_source, dispatch_mode)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'admin',$14)
+	       job_source, dispatch_mode, duration_min)
+	      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'admin',$14,$15)
       RETURNING job_id
       `,
       [
@@ -1171,6 +1193,7 @@ const jobInsert = await client.query(
         technician_username,
         "รอดำเนินการ",
         mode,
+	        duration_min,
       ]
     );
 
@@ -5659,10 +5682,47 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
 // =======================================
 
 const ENABLE_AVAILABILITY_DEBUG = String(process.env.ENABLE_AVAILABILITY_DEBUG || '').trim() === '1';
+// Runtime toggle for admin debug logging (no deploy needed). Default OFF.
+// This is intentionally in-memory to avoid DB migrations and any production risk.
+let RUNTIME_AVAILABILITY_DEBUG = false;
 function avlog(tag, obj){
-  if(!ENABLE_AVAILABILITY_DEBUG) return;
+  if(!(ENABLE_AVAILABILITY_DEBUG || RUNTIME_AVAILABILITY_DEBUG)) return;
   try{ console.log(tag, obj); }catch{}
 }
+
+// Admin Debug Controls (availability logging)
+// - GET  /admin/debug/status
+// - POST /admin/debug/toggle  { enabled: true|false }
+// Backward compatible + safe: only affects console logging when enabled.
+app.get('/admin/debug/status', requireAdminSoft, async (req, res) => {
+  try {
+    return res.json({
+      success: true,
+      availability_debug_env: ENABLE_AVAILABILITY_DEBUG,
+      availability_debug_runtime: !!RUNTIME_AVAILABILITY_DEBUG,
+      tz: process.env.TZ || null,
+    });
+  } catch (e) {
+    return res.status(500).json({ error: 'debug status failed' });
+  }
+});
+
+app.post('/admin/debug/toggle', requireAdminSoft, async (req, res) => {
+  try {
+    const enabled = String(req.body?.enabled ?? '').trim();
+    if (enabled === '1' || enabled === 'true') {
+      RUNTIME_AVAILABILITY_DEBUG = true;
+    } else if (enabled === '0' || enabled === 'false') {
+      RUNTIME_AVAILABILITY_DEBUG = false;
+    } else {
+      // toggle if invalid/empty
+      RUNTIME_AVAILABILITY_DEBUG = !RUNTIME_AVAILABILITY_DEBUG;
+    }
+    return res.json({ success: true, availability_debug_runtime: !!RUNTIME_AVAILABILITY_DEBUG });
+  } catch (e) {
+    return res.status(500).json({ error: 'debug toggle failed' });
+  }
+});
 
 function fmtHHMMFromMin(m){
   return minToHHMM(Math.max(0, Math.min(24*60, Math.round(m))));
@@ -6426,14 +6486,13 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
   const requestedTechType = bm === "urgent" ? "partner" : "company";
   try {
     const techs = await listTechniciansByType(requestedTechType);
-    const startIso = `${String(appointment_datetime).slice(0, 16)}:00`;
-    const block = effectiveBlockMin(duration_min_v2);
+    // Timezone-safe: normalize appointment datetime once (Asia/Bangkok)
+    const startIso = normalizeAppointmentDatetime(appointment_datetime);
     const tMin = toMin(String(startIso).slice(11, 16));
     let anyFree = false;
     for (const tech of techs) {
-      const ts = toMin(tech.work_start || "09:00");
-      const te = toMin(tech.work_end || "18:00");
-      if (!(tMin >= ts && tMin + block <= te)) continue;
+      // CWF Spec: UI start window is LOCKED 09:00–18:00 (startable time only)
+      if (!(tMin >= toMin('09:00') && tMin < toMin('18:00'))) continue;
       const ok = await isTechFree(tech.username, startIso, duration_min_v2, null);
       if (ok) { anyFree = true; break; }
     }

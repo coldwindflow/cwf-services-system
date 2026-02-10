@@ -88,6 +88,31 @@ function dbgBind(){
     DBG.lastReq = DBG.lastRes = DBG.intervals = DBG.conflict = null;
     dbgRender();
   });
+
+  // Backend logging toggle (admin only)
+  const statusEl = el('dbg_backend_status');
+  const btnToggle = el('dbg_backend_toggle');
+  const refreshStatus = async () => {
+    try {
+      const r = await apiFetch('/admin/debug/status');
+      const on = !!r?.availability_debug_runtime || !!r?.availability_debug_env;
+      if (statusEl) statusEl.textContent = on ? `ON` : `OFF`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = 'error';
+    }
+  };
+  btnToggle?.addEventListener('click', async () => {
+    try {
+      await apiFetch('/admin/debug/toggle', { method: 'POST', body: JSON.stringify({ enabled: 'toggle' }) });
+      await refreshStatus();
+      showToast('สลับ Backend logging แล้ว', 'success');
+    } catch (e) {
+      showToast('สลับ Backend logging ไม่สำเร็จ', 'error');
+    }
+  });
+  // Initial status
+  refreshStatus();
+
   dbgRender();
 }
 

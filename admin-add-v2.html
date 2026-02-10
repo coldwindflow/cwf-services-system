@@ -521,6 +521,11 @@
   <details id="debug_panel" class="cwf-details card-lite" style="display:none;margin:12px 12px 0">
     <summary>🧪 Debug Panel <span class="muted2" id="debug_panel_hint">off</span></summary>
     <div class="details-body">
+      <div class="line" style="flex-wrap:wrap;gap:8px;align-items:center">
+        <button type="button" class="secondary" id="dbg_backend_toggle">Toggle Backend Logging</button>
+        <span class="mini muted2">Backend logging:</span>
+        <b class="mini" id="dbg_backend_status">unknown</b>
+      </div>
       <div class="line" style="flex-wrap:wrap;gap:8px">
         <button type="button" class="secondary" id="dbg_copy_req">Copy Request</button>
         <button type="button" class="secondary" id="dbg_copy_res">Copy Response</button>
