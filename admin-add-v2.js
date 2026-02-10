@@ -24,6 +24,66 @@ let state = {
   summary_texts: { th: "", en: "", lang: "th" },
 };
 
+// =============================
+// Debug Panel (admin only)
+// Enable via ?debug=1 or localStorage.cwf_debug=1
+// =============================
+const DEBUG_ENABLED = (() => {
+  try {
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('debug') === '1') {
+      localStorage.setItem('cwf_debug', '1');
+      return true;
+    }
+    return localStorage.getItem('cwf_debug') === '1';
+  } catch (e) { return false; }
+})();
+
+const DBG = {
+  lastReq: null,
+  lastRes: null,
+  intervals: null,
+  conflict: null,
+};
+
+function maskPII(obj){
+  try {
+    const j = JSON.parse(JSON.stringify(obj || {}));
+    if (j.customer_phone) j.customer_phone = String(j.customer_phone).replace(/\d(?=\d{4})/g, '*');
+    if (j.address_text) j.address_text = String(j.address_text).slice(0, 16) + '…';
+    if (j.maps_url) j.maps_url = String(j.maps_url).slice(0, 28) + '…';
+    return j;
+  } catch (e) { return obj; }
+}
+
+function dbgRender(){
+  if (!DEBUG_ENABLED) return;
+  const panel = el('debug_panel');
+  if (!panel) return;
+  panel.style.display = 'block';
+  const hint = el('debug_panel_hint');
+  if (hint) hint.textContent = 'on';
+  el('dbg_req').textContent = DBG.lastReq ? JSON.stringify(DBG.lastReq, null, 2) : '';
+  el('dbg_res').textContent = DBG.lastRes ? JSON.stringify(DBG.lastRes, null, 2) : '';
+  el('dbg_intervals').textContent = DBG.intervals ? JSON.stringify(DBG.intervals, null, 2) : '';
+  el('dbg_conflict').textContent = DBG.conflict ? JSON.stringify(DBG.conflict, null, 2) : '';
+}
+
+function dbgBind(){
+  if (!DEBUG_ENABLED) return;
+  const copy = async (text) => {
+    try { await navigator.clipboard.writeText(text || ''); showToast('คัดลอกแล้ว', 'success'); } catch(e){ showToast('คัดลอกไม่สำเร็จ', 'error'); }
+  };
+  el('dbg_copy_req')?.addEventListener('click', () => copy(el('dbg_req')?.textContent || ''));
+  el('dbg_copy_res')?.addEventListener('click', () => copy(el('dbg_res')?.textContent || ''));
+  el('dbg_copy_conflict')?.addEventListener('click', () => copy(el('dbg_conflict')?.textContent || ''));
+  el('dbg_clear')?.addEventListener('click', () => {
+    DBG.lastReq = DBG.lastRes = DBG.intervals = DBG.conflict = null;
+    dbgRender();
+  });
+  dbgRender();
+}
+
 function applyLangButtons({ thBtnId, enBtnId, active }){
   const thBtn = el(thBtnId);
   const enBtn = el(enBtnId);
@@ -963,7 +1023,22 @@ async function loadAvailability() {
       }
     } catch(e){}
     if (forced) qs.set('forced','1');
+
+    if (DEBUG_ENABLED) qs.set('debug','1');
+    if (DEBUG_ENABLED) {
+      DBG.lastReq = maskPII({ endpoint: '/public/availability_v2', query: Object.fromEntries(qs.entries()) });
+      DBG.conflict = null;
+      DBG.intervals = null;
+      DBG.lastRes = null;
+      dbgRender();
+    }
     const r = await apiFetch(`/public/availability_v2?${qs.toString()}`);
+
+    if (DEBUG_ENABLED) {
+      DBG.lastRes = r;
+      DBG.intervals = r && r.debug ? r.debug : null;
+      dbgRender();
+    }
     state.available_slots = Array.isArray(r.slots) ? r.slots : [];
     state.slots_loaded = true;
     state.selected_slot_iso = "";
@@ -973,6 +1048,11 @@ async function loadAvailability() {
     updateAssignUIVisibility();
     renderSlots();
   } catch (e) {
+    if (DEBUG_ENABLED) {
+      DBG.lastRes = e.data || { error: e.message, status: e.status };
+      DBG.conflict = (e.data && e.data.conflict) ? e.data.conflict : null;
+      dbgRender();
+    }
     el("slots_box").innerHTML = `<div class="muted2">โหลดคิวว่างไม่สำเร็จ: ${e.message}</div>`;
   }
 }
@@ -1836,6 +1916,7 @@ async function submitBooking() {
     job_zone: (el("job_zone").value || "").trim(),
     booking_mode: (el("booking_mode").value || "scheduled").trim(),
     tech_type: (el("tech_type").value || "company").trim(),
+    assign_mode: (el('assign_mode')?.value || 'auto').toString(),
     technician_username: (()=>{
       const mode = (el('assign_mode')?.value || 'auto').toString();
       if(mode === 'team') return (state.teamPicker.primary || '').trim();
@@ -1872,7 +1953,17 @@ async function submitBooking() {
 
   try {
     el("btnSubmit").disabled = true;
+    if (DEBUG_ENABLED) {
+      DBG.lastReq = maskPII({ endpoint: '/admin/book_v2', payload: payload });
+      DBG.conflict = null;
+      // keep DBG.lastRes/intervals from last availability call
+      dbgRender();
+    }
     const r = await apiFetch("/admin/book_v2", { method: "POST", body: JSON.stringify(payload) });
+    if (DEBUG_ENABLED) {
+      DBG.lastRes = r;
+      dbgRender();
+    }
     showToast(`บันทึกงานสำเร็จ: ${r.booking_code}`, "success");
     try {
       // Load both languages (fail-open). EN is optional and backward compatible.
@@ -1903,6 +1994,13 @@ async function submitBooking() {
     state.selected_slot_iso = "";
     el("technician_username").value = "";
   } catch (e) {
+    if (DEBUG_ENABLED) {
+      DBG.lastRes = e?.data || { error: e?.message || 'error' };
+      if (e?.status === 409) {
+        DBG.conflict = e?.data?.conflict || e?.data || null;
+      }
+      dbgRender();
+    }
     showToast(e.message || "บันทึกไม่สำเร็จ", "error");
   } finally {
     el("btnSubmit").disabled = false;
@@ -2141,6 +2239,7 @@ async function addSpecialSlotV2(opts = {}){
 }
 
 async function init() {
+  dbgBind();
   setBtuOptions();
   bindMachineCountStepper();
   buildVariantUI();

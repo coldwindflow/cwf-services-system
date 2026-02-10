@@ -1948,6 +1948,32 @@ function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
   // ปิดงานให้เหลือ "เงื่อนไขเดียว" คือ ต้องมีลายเซ็นต์เท่านั้น
   // (ไม่บังคับเลือกประกันในฝั่งช่าง เพื่อกันงานค้าง)
   // เปิดลายเซ็นต์ก่อน (ถ้ากดยกเลิกในลายเซ็นต์ จะต้องกลับไปเลือกใหม่เอง)
+  // งานทีม: ช่างแต่ละคนกดเสร็จเฉพาะของตัวเองก่อน
+  if (targetStatus === 'เสร็จแล้ว') {
+    (async () => {
+      try {
+        // fail-open: ถ้า endpoint ไม่มี ให้ fallback ไป flow เดิม
+        const r = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/assignment-done`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ technician_username: (typeof username === 'string' ? username : '') || '' }),
+        });
+        const data = await r.json().catch(() => ({}));
+        if (r.ok && data && data.all_done === false) {
+          alert('✅ บันทึกเสร็จของคุณแล้ว\nรอช่างคนอื่นในทีมทำงานต่อ');
+          // รีเฟรชรายการงาน -> งานจะหายเฉพาะช่างคนนี้
+          loadJobs();
+          return;
+        }
+      } catch (e) {
+        // fail-open
+        console.warn('[assignment-done] fail-open', e);
+      }
+      openSignatureModal((signatureDataUrl) => finalizeJob(jobId, targetStatus, signatureDataUrl));
+    })();
+    return;
+  }
+
   openSignatureModal((signatureDataUrl) => finalizeJob(jobId, targetStatus, signatureDataUrl));
 }
 
@@ -2346,6 +2372,7 @@ async function uploadPendingPhotos(jobId, opts) {
             mime_type: it.mime_type || (it.blob && it.blob.type) || 'image/jpeg',
             original_name: it.original_name || 'photo.jpg',
             file_size: it.file_size || (it.blob ? it.blob.size : null),
+            uploaded_by: (typeof username === 'string' ? username : '') || null,
           }),
         });
         const meta = await metaRes.json().catch(() => ({}));
@@ -2468,6 +2495,7 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
             mime_type: f.type,
             original_name: f.name,
             file_size: f.size,
+            uploaded_by: (typeof username === 'string' ? username : '') || null,
           }),
         });
 

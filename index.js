@@ -649,6 +649,22 @@ await pool.query(`
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_team_members_user ON public.job_team_members(username)`);
 await pool.query(`ALTER TABLE IF EXISTS public.job_team_members ADD COLUMN IF NOT EXISTS is_primary BOOLEAN DEFAULT FALSE`);
+// 3.5.1) ✅ งานทีม: สถานะรายช่าง (job_assignments) - Source of Truth สำหรับ "ช่างคนไหนเสร็จแล้ว"
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.job_assignments (
+    job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
+    technician_username TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'in_progress' CHECK (status IN ('in_progress','done')),
+    done_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (job_id, technician_username)
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_assignments_user ON public.job_assignments(technician_username, status)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_assignments_job ON public.job_assignments(job_id)`);
+
+// 3.4.2) job_photos: ผู้ที่อัปโหลด (uploaded_by) เพื่อกันรูปหาย/สับสนในงานทีม
+await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS uploaded_by TEXT`);
 
 // 3.6) ✅ คำขอแก้ไขราคา/รายการ (ช่าง -> แอดมินอนุมัติ)
 await pool.query(`
@@ -1121,7 +1137,13 @@ app.post("/jobs", async (req, res) => {
       ? calcPricing(safeItems, promo)
       : { subtotal: Number(job_price || 0), discount: 0, total: Number(job_price || 0) };
 
-    const jobInsert = await client.query(
+    
+// ✅ Hard Validation: กันชนคิวที่ backend (Source of Truth)
+// /jobs legacy create ใช้ duration_min อย่างน้อย 60 นาที (ถ้าไม่มีข้อมูล)
+const conflict = await checkTechCollision(technician_username, appointment_dt, 60, null);
+if (conflict) return http409Conflict(res, conflict);
+
+const jobInsert = await client.query(
       `
       INSERT INTO public.jobs
       (customer_name, customer_phone, job_type, appointment_datetime, job_price, address_text,
@@ -1161,38 +1183,23 @@ app.post("/jobs", async (req, res) => {
 
     await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
 
-    // ✅ Team members (primary + assistants) - backward compatible
-    // NOTE: some production DBs may not have is_primary column yet.
-    try {
-      const tmIn = Array.isArray(team_members) ? team_members : [];
-      const tmAll = [...new Set([selectedTech, ...tmIn].map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
-      await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
-      for (const u of tmAll) {
-        try {
-          await client.query(
-            `INSERT INTO public.job_team_members (job_id, username, is_primary)
-             VALUES ($1,$2,$3)`,
-            [job_id, u, u === selectedTech]
-          );
-        } catch (insErr) {
-          // fallback: column doesn't exist
-          if (insErr && String(insErr.code) === '42703') {
-            await client.query(
-              `INSERT INTO public.job_team_members (job_id, username)
-               VALUES ($1,$2)
-               ON CONFLICT (job_id, username) DO NOTHING`,
-              [job_id, u]
-            );
-          } else {
-            throw insErr;
-          }
-        }
-      }
-    } catch (e) {
-      console.warn("[admin_book_v2] save team members failed", e);
-    }
+    
+// ✅ job_assignments upsert (single tech) - ทำให้ระบบทีม/เสร็จรายคนทำงานได้แม้เป็นงานเดี่ยว
+try {
+  await client.query(
+    `
+    INSERT INTO public.job_assignments (job_id, technician_username, status)
+    VALUES ($1,$2,'in_progress')
+    ON CONFLICT (job_id, technician_username) DO UPDATE SET status=EXCLUDED.status
+    `,
+    [job_id, technician_username]
+  );
+} catch (e) {
+  // fail-open
+  console.warn("[jobs] upsert job_assignments failed (fail-open)", e.message);
+}
 
-    // job_items
+// job_items
     for (const it of safeItems) {
       const item_name = (it.item_name || "").trim();
       if (!item_name) continue;
@@ -1391,8 +1398,11 @@ app.post("/jobs/:job_id/dispatch_v2", requireAdminSoft, async (req, res) => {
 
     // collision check: ทุกคนในทีม
     for (const u of safeTeam) {
-      const free = await isTechFree(u, j.appointment_datetime, j.duration_min, job_id);
-      if (!free) throw new Error(`เวลาชนกับงานอื่นของช่าง (${u}) (รวมเวลาเดินทาง ${TRAVEL_BUFFER_MIN} นาที)`);
+      const conflict = await checkTechCollision(u, j.appointment_datetime, j.duration_min, job_id);
+      if (conflict) {
+        await client.query('ROLLBACK');
+        return http409Conflict(res, conflict);
+      }
     }
 
     // อัปเดตทีมในตารางกลางก่อน (เพื่อให้ Tracking/ช่างเห็นครบ)
@@ -1439,6 +1449,23 @@ app.post("/jobs/:job_id/dispatch_v2", requireAdminSoft, async (req, res) => {
     if (mode === 'offer' && bm === 'urgent' && (curSt === 'รอตรวจสอบ' || curSt === 'รอดำเนินการ')) {
       await client.query(`UPDATE public.jobs SET job_status='รอช่างยืนยัน' WHERE job_id=$1`, [job_id]);
     }
+
+
+// ✅ sync job_assignments (team status per technician)
+try {
+  for (const u of safeTeam) {
+    await client.query(
+      `
+      INSERT INTO public.job_assignments (job_id, technician_username, status)
+      VALUES ($1,$2,'in_progress')
+      ON CONFLICT (job_id, technician_username) DO UPDATE SET status=EXCLUDED.status
+      `,
+      [job_id, u]
+    );
+  }
+} catch (e) {
+  console.warn("[dispatch_v2] upsert job_assignments failed (fail-open)", e.message);
+}
 
     await client.query('COMMIT');
 
@@ -1564,7 +1591,7 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
     booking_mode,
     tech_type,
     technician_username,
-    team_members,
+    team_members: team_members_raw,
     dispatch_mode,
     // v2 payload
     ac_type,
@@ -1728,9 +1755,9 @@ if (coerceNumber(override_price, 0) > 0) {
           console.warn('[admin_book_v2] off-day check failed (fail-open)', e.message);
         }
       }
-      const ok = await isTechFree(selectedTech, apptIso, duration_min, null);
-      if (!ok) {
-        return res.status(409).json({ error: "ช่างคนนี้คิวชน (รวม buffer)" });
+      const conflict = await checkTechCollision(selectedTech, apptIso, duration_min, null);
+      if (conflict) {
+        return http409Conflict(res, conflict);
       }
     }
 
@@ -1739,13 +1766,13 @@ if (coerceNumber(override_price, 0) > 0) {
     }
 
     // ✅ Team members collision check (including buffer) - backward compatible
-    const tmIn = Array.isArray(team_members) ? team_members : [];
+    const tmIn = (assign_mode === 'team') ? (Array.isArray(team_members_raw) ? team_members_raw : []) : [];
     const tmList = [...new Set(tmIn.map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
     for (const u of tmList) {
       if (u === selectedTech) continue;
-      const ok = await isTechFree(u, apptIso, duration_min, null);
-      if (!ok) {
-        return res.status(409).json({ error: `ช่างร่วมคิวชน (รวม buffer): ${u}` });
+      const conflict = await checkTechCollision(u, apptIso, duration_min, null);
+      if (conflict) {
+        return http409Conflict(res, conflict);
       }
     }
 
@@ -1811,6 +1838,23 @@ if (coerceNumber(override_price, 0) > 0) {
       }
     } catch (e) {
       console.warn("[admin_book_v2] save team members failed", e);
+    }
+
+    // ✅ job_assignments upsert (team status per technician)
+    try {
+      const tmAll = [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
+      for (const u of tmAll) {
+        await client.query(
+          `
+          INSERT INTO public.job_assignments (job_id, technician_username, status)
+          VALUES ($1,$2,'in_progress')
+          ON CONFLICT (job_id, technician_username) DO UPDATE SET status=EXCLUDED.status
+          `,
+          [job_id, u]
+        );
+      }
+    } catch (e) {
+      console.warn("[admin_book_v2] upsert job_assignments failed (fail-open)", e.message);
     }
 
     // job_items
@@ -2584,12 +2628,33 @@ app.get("/jobs/tech/:username", async (req, res) => {
         checkin_latitude, checkin_longitude, checkin_at,
         technician_note, technician_note_at
       FROM public.jobs
-      WHERE technician_team=$1
-         OR EXISTS (
-            SELECT 1 FROM public.job_team_members tm
-            WHERE tm.job_id = public.jobs.job_id AND tm.username=$1
-         )
-         OR (technician_username=$1 AND COALESCE(dispatch_mode,'') <> 'offer')
+      WHERE
+  (
+    -- New (team assignments): show only if this technician is assigned AND not marked done yet
+    EXISTS (
+      SELECT 1 FROM public.job_assignments ja
+      WHERE ja.job_id = public.jobs.job_id
+        AND ja.technician_username=$1
+        AND COALESCE(ja.status,'in_progress') <> 'done'
+    )
+    OR
+    -- Legacy fallback: show jobs from old logic, but hide them if this tech already marked done in job_assignments
+    (
+      (technician_team=$1
+        OR EXISTS (
+          SELECT 1 FROM public.job_team_members tm
+          WHERE tm.job_id = public.jobs.job_id AND tm.username=$1
+        )
+        OR (technician_username=$1 AND COALESCE(dispatch_mode,'') <> 'offer')
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM public.job_assignments ja2
+        WHERE ja2.job_id = public.jobs.job_id
+          AND ja2.technician_username=$1
+          AND COALESCE(ja2.status,'') = 'done'
+      )
+    )
+  )
 ORDER BY appointment_datetime ASC
       `,
       [username]
@@ -2628,7 +2693,41 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
       ? null
       : normalizeAppointmentDatetime(appointment_datetime);
 
-  try {
+  
+try {
+    // ✅ Hard Validation: ถ้าแก้เวลา ต้องกันชนคิวที่ backend เสมอ (R1)
+    const curR = await pool.query(
+      `SELECT appointment_datetime, COALESCE(duration_min,60) AS duration_min, technician_username
+       FROM public.jobs WHERE job_id=$1`,
+      [job_id]
+    );
+    if (!curR.rows.length) return res.status(404).json({ error: "ไม่พบงาน" });
+
+    const cur = curR.rows[0];
+    const apptToUse = appointment_dt || cur.appointment_datetime;
+    const durToUse = Number(cur.duration_min || 60);
+
+    if (apptToUse) {
+      // collect technicians assigned to this job (legacy + team + assignments)
+      const techSet = new Set();
+      if (cur.technician_username) techSet.add(String(cur.technician_username).trim());
+
+      try {
+        const tmR = await pool.query(`SELECT username FROM public.job_team_members WHERE job_id=$1`, [job_id]);
+        for (const r of tmR.rows || []) techSet.add(String(r.username || '').trim());
+      } catch {}
+
+      try {
+        const jaR = await pool.query(`SELECT technician_username FROM public.job_assignments WHERE job_id=$1`, [job_id]);
+        for (const r of jaR.rows || []) techSet.add(String(r.technician_username || '').trim());
+      } catch {}
+
+      for (const u of [...techSet].filter(Boolean)) {
+        const conflict = await checkTechCollision(u, apptToUse, durToUse, job_id);
+        if (conflict) return http409Conflict(res, conflict);
+      }
+    }
+
     await pool.query(
       `
       UPDATE public.jobs
@@ -2811,6 +2910,32 @@ app.put("/jobs/:job_id/status", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
+    if (uploaded_by) {
+      try {
+        const u = String(uploaded_by || '').trim();
+        if (u) {
+          const okR = await pool.query(
+            `
+            SELECT 1
+            FROM public.jobs j
+            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
+            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
+            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
+            LIMIT 1
+            `,
+            [realId, u]
+          );
+          if (!okR.rows.length) {
+            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
+          }
+        }
+      } catch (e) {
+        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
+        console.warn('[photos/meta] uploaded_by validate failed', e.message);
+      }
+    }
     // ✅ เมื่อเริ่มงานครั้งแรก ให้บันทึก started_at
     if (status === 'กำลังทำ') {
       await pool.query(
@@ -2839,6 +2964,32 @@ app.get("/jobs/:job_id/pricing", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
+    if (uploaded_by) {
+      try {
+        const u = String(uploaded_by || '').trim();
+        if (u) {
+          const okR = await pool.query(
+            `
+            SELECT 1
+            FROM public.jobs j
+            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
+            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
+            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
+            LIMIT 1
+            `,
+            [realId, u]
+          );
+          if (!okR.rows.length) {
+            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
+          }
+        }
+      } catch (e) {
+        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
+        console.warn('[photos/meta] uploaded_by validate failed', e.message);
+      }
+    }
     const itemsR = await pool.query(
       `SELECT item_name, qty, unit_price, line_total FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
       [realId]
@@ -3225,10 +3376,11 @@ app.put("/jobs/:job_id/team", async (req, res) => {
         const dur = Number(jr.rows[0].duration_min || 60);
         if (appt) {
           for (const u of safe) {
-            const free = await isTechFree(u, appt, dur, job_id);
-            if (!free) {
-              console.log('[team_collision]', { job_id, tech: u });
-              throw new Error(`เวลาชนกับงานอื่นของช่าง (${u}) (รวมเวลาเดินทาง ${TRAVEL_BUFFER_MIN} นาที)`);
+            const conflict = await checkTechCollision(u, appt, dur, job_id);
+            if (conflict) {
+              console.log('[team_collision]', { job_id, tech: u, conflict });
+              await client.query("ROLLBACK");
+              return http409Conflict(res, conflict);
             }
           }
         }
@@ -3247,6 +3399,23 @@ app.put("/jobs/:job_id/team", async (req, res) => {
         [job_id, u]
       );
     }
+
+// ✅ sync job_assignments for team (in_progress) - backward compatible
+try {
+  for (const u of safe) {
+    await client.query(
+      `
+      INSERT INTO public.job_assignments (job_id, technician_username, status)
+      VALUES ($1,$2,'in_progress')
+      ON CONFLICT (job_id, technician_username) DO UPDATE SET status=EXCLUDED.status
+      `,
+      [job_id, u]
+    );
+  }
+} catch (e) {
+  console.warn("[team] upsert job_assignments failed (fail-open)", e.message);
+}
+
     await client.query("COMMIT");
     res.json({ success: true, members: safe });
   } catch (e) {
@@ -3679,6 +3848,32 @@ app.post("/jobs/:job_id/travel-start", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
+    if (uploaded_by) {
+      try {
+        const u = String(uploaded_by || '').trim();
+        if (u) {
+          const okR = await pool.query(
+            `
+            SELECT 1
+            FROM public.jobs j
+            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
+            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
+            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
+            LIMIT 1
+            `,
+            [realId, u]
+          );
+          if (!okR.rows.length) {
+            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
+          }
+        }
+      } catch (e) {
+        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
+        console.warn('[photos/meta] uploaded_by validate failed', e.message);
+      }
+    }
     await pool.query(
       `UPDATE public.jobs
        SET travel_started_at = COALESCE(travel_started_at, NOW())
@@ -3704,6 +3899,32 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
+    if (uploaded_by) {
+      try {
+        const u = String(uploaded_by || '').trim();
+        if (u) {
+          const okR = await pool.query(
+            `
+            SELECT 1
+            FROM public.jobs j
+            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
+            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
+            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
+            LIMIT 1
+            `,
+            [realId, u]
+          );
+          if (!okR.rows.length) {
+            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
+          }
+        }
+      } catch (e) {
+        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
+        console.warn('[photos/meta] uploaded_by validate failed', e.message);
+      }
+    }
     const r = await pool.query(`SELECT gps_latitude, gps_longitude FROM public.jobs WHERE job_id=$1`, [realId]);
     if (r.rows.length === 0) return res.status(404).json({ error: "ไม่พบงาน" });
 
@@ -3744,7 +3965,7 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
 // =======================================
 app.post("/jobs/:job_id/photos/meta", async (req, res) => {
   const { job_id } = req.params;
-  const { phase, mime_type, original_name, file_size } = req.body || {};
+  const { phase, mime_type, original_name, file_size, uploaded_by } = req.body || {};
 
   const allowedPhases = ["before", "after", "pressure", "current", "temp", "defect", "payment_slip"];
   if (!allowedPhases.includes(String(phase))) {
@@ -3755,13 +3976,39 @@ app.post("/jobs/:job_id/photos/meta", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
+    if (uploaded_by) {
+      try {
+        const u = String(uploaded_by || '').trim();
+        if (u) {
+          const okR = await pool.query(
+            `
+            SELECT 1
+            FROM public.jobs j
+            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
+            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
+            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
+            LIMIT 1
+            `,
+            [realId, u]
+          );
+          if (!okR.rows.length) {
+            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
+          }
+        }
+      } catch (e) {
+        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
+        console.warn('[photos/meta] uploaded_by validate failed', e.message);
+      }
+    }
     const r = await pool.query(
       `
-      INSERT INTO public.job_photos (job_id, phase, mime_type, original_name, file_size, photo_type)
-      VALUES ($1,$2,$3,$4,$5,NULL)
+      INSERT INTO public.job_photos (job_id, phase, mime_type, original_name, file_size, photo_type, uploaded_by)
+      VALUES ($1,$2,$3,$4,$5,NULL,$6)
       RETURNING photo_id
       `,
-      [realId, phase, mime_type, original_name || null, file_size || null]
+      [realId, phase, mime_type, original_name || null, file_size || null, uploaded_by || null]
     );
     res.json({ success: true, photo_id: r.rows[0].photo_id });
   } catch (e) {
@@ -3799,6 +4046,32 @@ app.post("/jobs/:job_id/photos/:photo_id/upload", upload.single("photo"), async 
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
+    if (uploaded_by) {
+      try {
+        const u = String(uploaded_by || '').trim();
+        if (u) {
+          const okR = await pool.query(
+            `
+            SELECT 1
+            FROM public.jobs j
+            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
+            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
+            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
+            LIMIT 1
+            `,
+            [realId, u]
+          );
+          if (!okR.rows.length) {
+            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
+          }
+        }
+      } catch (e) {
+        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
+        console.warn('[photos/meta] uploaded_by validate failed', e.message);
+      }
+    }
     const meta = await pool.query(
       `SELECT photo_id, mime_type FROM public.job_photos WHERE photo_id=$1 AND job_id=$2`,
       [photo_id, realId]
@@ -3834,6 +4107,32 @@ app.get("/jobs/:job_id/photos", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
+    if (uploaded_by) {
+      try {
+        const u = String(uploaded_by || '').trim();
+        if (u) {
+          const okR = await pool.query(
+            `
+            SELECT 1
+            FROM public.jobs j
+            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
+            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
+            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
+            LIMIT 1
+            `,
+            [realId, u]
+          );
+          if (!okR.rows.length) {
+            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
+          }
+        }
+      } catch (e) {
+        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
+        console.warn('[photos/meta] uploaded_by validate failed', e.message);
+      }
+    }
     const r = await pool.query(
       `SELECT photo_id, phase, created_at, uploaded_at, public_url FROM public.job_photos WHERE job_id=$1 ORDER BY photo_id ASC`,
       [realId]
@@ -3855,6 +4154,32 @@ app.put("/jobs/:job_id/note", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+
+    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
+    if (uploaded_by) {
+      try {
+        const u = String(uploaded_by || '').trim();
+        if (u) {
+          const okR = await pool.query(
+            `
+            SELECT 1
+            FROM public.jobs j
+            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
+            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
+            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
+            LIMIT 1
+            `,
+            [realId, u]
+          );
+          if (!okR.rows.length) {
+            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
+          }
+        }
+      } catch (e) {
+        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
+        console.warn('[photos/meta] uploaded_by validate failed', e.message);
+      }
+    }
     await pool.query(
       `UPDATE public.jobs SET technician_note=$1, technician_note_at=NOW() WHERE job_id=$2`,
       [note || "", realId]
@@ -3896,6 +4221,27 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
     }
+// ✅ งานทีม: กัน finalize ก่อนที่ทุกคนกดเสร็จของตัวเอง
+if (status === "เสร็จแล้ว") {
+  try {
+    const a = await client.query(
+      `SELECT COUNT(*)::int AS total,
+              SUM(CASE WHEN status='done' THEN 1 ELSE 0 END)::int AS done
+       FROM public.job_assignments
+       WHERE job_id=$1`,
+      [realId]
+    );
+    const total = Number(a.rows?.[0]?.total || 0);
+    const done = Number(a.rows?.[0]?.done || 0);
+    if (total > 0 && done < total) {
+      await client.query("ROLLBACK");
+      return res.status(409).json({ error: "ยังมีช่างในทีมที่ยังไม่กดเสร็จ" , assignments: { total, done } });
+    }
+  } catch (e) {
+    // fail-open: ถ้าตารางยังไม่มี/เช็คไม่ได้ อย่าบล็อคการปิดงาน (backward compatible)
+    console.warn("[finalize] assignment guard check failed", e.message);
+  }
+}
 
     // บันทึกลายเซ็นต์เป็นไฟล์
     const sigPath = saveDataUrlPng(signature_data, SIGNATURE_DIR, `job_${realId}_${status}`);
@@ -3988,6 +4334,76 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
     await client.query("ROLLBACK");
     console.error(e);
     res.status(500).json({ error: e.message || "ปิดงาน/ยกเลิกไม่สำเร็จ" });
+  } finally {
+    client.release();
+  }
+});
+
+// =======================================
+// ✅ TEAM ASSIGNMENT: mark done per technician
+// - POST /jobs/:job_id/assignment-done { technician_username }
+// - returns { success, all_done, assignments:{total,done} }
+// =======================================
+app.post("/jobs/:job_id/assignment-done", async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  const technician_username = String(req.body?.technician_username || "").trim();
+  if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+  if (!technician_username) return res.status(400).json({ error: "ต้องระบุ technician_username" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const realId = await resolveJobIdAny(client, job_id);
+    if (!realId) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+    }
+
+    // Ensure this tech is actually part of the job
+    const ok = await client.query(
+      `
+      SELECT 1
+      FROM public.jobs j
+      LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
+      LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
+      WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
+      LIMIT 1
+      `,
+      [realId, technician_username]
+    );
+    if (!ok.rows.length) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "ช่างคนนี้ไม่ได้อยู่ในทีมของงานนี้" });
+    }
+
+    // Upsert to done (idempotent)
+    await client.query(
+      `
+      INSERT INTO public.job_assignments (job_id, technician_username, status, done_at)
+      VALUES ($1,$2,'done',NOW())
+      ON CONFLICT (job_id, technician_username)
+      DO UPDATE SET status='done', done_at=NOW()
+      `,
+      [realId, technician_username]
+    );
+
+    const a = await client.query(
+      `SELECT COUNT(*)::int AS total,
+              SUM(CASE WHEN status='done' THEN 1 ELSE 0 END)::int AS done
+       FROM public.job_assignments
+       WHERE job_id=$1`,
+      [realId]
+    );
+    const total = Number(a.rows?.[0]?.total || 0);
+    const done = Number(a.rows?.[0]?.done || 0);
+    const all_done = total > 0 ? done >= total : true;
+
+    await client.query("COMMIT");
+    return res.json({ success: true, job_id: Number(realId), all_done, assignments: { total, done } });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error(e);
+    return res.status(500).json({ error: e.message || "บันทึกสถานะงานไม่สำเร็จ" });
   } finally {
     client.release();
   }
@@ -5353,11 +5769,12 @@ async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
     SELECT j.job_id, j.appointment_datetime, COALESCE(j.duration_min,60) AS duration_min
     FROM public.jobs j
     LEFT JOIN public.job_team_members m ON m.job_id=j.job_id AND m.username=$1
+    LEFT JOIN public.job_assignments a ON a.job_id=j.job_id AND a.technician_username=$1
     WHERE j.appointment_datetime >= $2::timestamptz
       AND j.appointment_datetime <  $3::timestamptz
       AND j.job_status <> 'ยกเลิก'
       ${extra}
-      AND (j.technician_username=$1 OR j.technician_team=$1 OR m.username IS NOT NULL)
+      AND (j.technician_username=$1 OR j.technician_team=$1 OR m.username IS NOT NULL OR a.technician_username IS NOT NULL)
     `,
     params
   );
@@ -5370,12 +5787,11 @@ function overlaps(aStart, aEnd, bStart, bEnd) {
 
 // =======================================
 // 🕒 Availability helpers (per-tech, Bangkok-safe)
-// - Travel Buffer rule Q1=A (LOCKED SPEC)
-//   1) Buffer is applied only AFTER the previous job when there is a next job.
-//   2) Last job of the day does NOT get trailing buffer.
-// - For a NEW candidate job:
-//   * It must start AFTER (prev_job_end + buffer) if there is a previous job.
-//   * If there is a next existing job, it must finish + buffer BEFORE next start.
+// - Travel Buffer rule (LOCKED SPEC)
+//   ✅ Buffer +30 นาที "ต่อ 1 ใบงาน" แบบ conservative (รวมงานสุดท้ายของวัน)
+//   ✅ Busy interval ต่อใบงาน = [start, start+duration+30)  (half-open)
+// - Overlap check (Hard Validation):
+//   if new_start < old_busy_end && old_start < new_busy_end => ชนคิว
 // =======================================
 
 const ENABLE_AVAILABILITY_DEBUG = String(process.env.ENABLE_AVAILABILITY_DEBUG || '').trim() === '1';
@@ -5405,7 +5821,7 @@ function mergeMinIntervals(intervals){
   // intervals: [{startMin,endMin}] with startMin<=endMin
   const arr = (Array.isArray(intervals) ? intervals : [])
     .map(x=>({ startMin: Number(x.startMin), endMin: Number(x.endMin) }))
-    .filter(x=>Number.isFinite(x.startMin) && Number.isFinite(x.endMin))
+    .filter(x=>Number.isFinite(x.startMin) && Number.isFinite(x.endMin) && x.endMin > x.startMin)
     .sort((a,b)=>a.startMin-b.startMin || a.endMin-b.endMin);
   const out = [];
   for(const it of arr){
@@ -5421,7 +5837,7 @@ function mergeMinIntervals(intervals){
 }
 
 async function listJobBlocksForTechOnDate(username, dateStr, ignoreJobId){
-  // Returns merged job blocks in minutes-from-midnight Bangkok: [{job_id,startMin,endMin,startIso,durationMin}]
+  // Returns merged RAW job blocks (no buffer) in Bangkok minutes: [{job_id,startMin,endMin,startIso,durationMin}]
   const jobs = await listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId);
   const raw = [];
   for(const j of (jobs||[])){
@@ -5437,17 +5853,42 @@ async function listJobBlocksForTechOnDate(username, dateStr, ignoreJobId){
       durationMin: dur,
     });
   }
-  raw.sort((a,b)=>a.startMin-b.startMin || a.endMin-b.endMin);
+  return mergeMinIntervals(raw);
+}
 
-  // Merge overlaps (OT/ลากเวลา)
+async function listBusyBlocksForTechOnDate(username, dateStr, ignoreJobId){
+  // Returns merged BUSY blocks (with conservative buffer) in Bangkok minutes:
+  // [{job_id,startMin,busyEndMin,startIso,durationMin}]
+  const jobs = await listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId);
+  const raw = [];
+  for(const j of (jobs||[])){
+    const startDate = new Date(j.appointment_datetime);
+    const startMin = bangkokHMToMinFromDate(startDate);
+    const dur = Math.max(1, Number(j.duration_min || 60));
+    const busyEndMin = startMin + dur + TRAVEL_BUFFER_MIN;
+    raw.push({
+      job_id: j.job_id,
+      startMin,
+      endMin: startMin + dur, // raw end (no buffer)
+      busyEndMin,
+      startIso: j.appointment_datetime,
+      durationMin: dur,
+    });
+  }
+  // merge using busyEndMin
   const merged = [];
-  for(const it of raw){
+  const sorted = raw
+    .filter(x=>Number.isFinite(x.startMin) && Number.isFinite(x.busyEndMin) && x.busyEndMin > x.startMin)
+    .sort((a,b)=>a.startMin-b.startMin || a.busyEndMin-b.busyEndMin);
+
+  for(const it of sorted){
     if(!merged.length){ merged.push({ ...it }); continue; }
     const last = merged[merged.length-1];
-    if(it.startMin <= last.endMin){
-      // merge into last block
+    if(it.startMin < last.busyEndMin){
+      // overlap -> extend
+      last.busyEndMin = Math.max(last.busyEndMin, it.busyEndMin);
       last.endMin = Math.max(last.endMin, it.endMin);
-      // keep earliest start/job_id for logging
+      // keep earliest job_id/startIso for debug
     } else {
       merged.push({ ...it });
     }
@@ -5477,78 +5918,10 @@ function buildTechWindowsMin(techRow, dateStr, specialMap, uiStartMin, uiEndMin)
   return mergeMinIntervals(wins);
 }
 
-function buildStartIntervalsForWindow(jobBlocks, windowStartMin, windowEndMin, durationMin){
-  // Returns intervals of START times (in minutes) where a job can start within [windowStartMin, windowEndMin)
-  // respecting:
-  // - must start after prev_end + buffer (if prev exists)
-  // - must finish + buffer before next start (if next exists)
-  // - last segment uses only finish <= windowEndMin (no buffer after)
-  const d = Math.max(1, Number(durationMin||0));
-  const out = [];
-  if(windowEndMin <= windowStartMin) return out;
-  const blocks = Array.isArray(jobBlocks) ? jobBlocks : [];
-
-  // Find first job block AFTER the window end (for enforcing buffer to next job)
-  let nextAfterWindowStart = null;
-  for(const b of blocks){
-    if(b.startMin >= windowEndMin){ nextAfterWindowStart = b.startMin; break; }
-  }
-
-  let prevBlockEnd = null;
-  for(const b of blocks){
-    if(b.endMin <= windowStartMin){
-      prevBlockEnd = b.endMin;
-      continue;
-    }
-    if(b.startMin >= windowEndMin){
-      // b is the first job after window; used as next constraint in trailing gap
-      nextAfterWindowStart = (nextAfterWindowStart == null) ? b.startMin : Math.min(nextAfterWindowStart, b.startMin);
-      break;
-    }
-
-    // gap before this job block
-    const gapStart = (prevBlockEnd == null)
-      ? windowStartMin
-      : Math.max(windowStartMin, prevBlockEnd + TRAVEL_BUFFER_MIN);
-    const gapEnd = Math.min(windowEndMin, b.startMin);
-
-    // must finish + buffer before next job start
-    const latestStart = gapEnd - d - TRAVEL_BUFFER_MIN;
-    if(latestStart >= gapStart){
-      out.push({ startMin: gapStart, endMin: latestStart });
-    }
-    prevBlockEnd = Math.max(prevBlockEnd == null ? -1 : prevBlockEnd, b.endMin);
-  }
-
-  // trailing gap after last job within window
-  const gapStart = (prevBlockEnd == null)
-    ? windowStartMin
-    : Math.max(windowStartMin, prevBlockEnd + TRAVEL_BUFFER_MIN);
-  let latestStart = windowEndMin - d;
-  if(Number.isFinite(nextAfterWindowStart) && nextAfterWindowStart != null){
-    latestStart = Math.min(latestStart, Number(nextAfterWindowStart) - d - TRAVEL_BUFFER_MIN);
-  }
-  if(latestStart >= gapStart){
-    out.push({ startMin: gapStart, endMin: latestStart });
-  }
-  return out;
-}
-
-function buildBusyIntervalsWithConditionalBuffer(jobBlocks){
-  // jobBlocks: merged [{startMin,endMin}] sorted.
-  // Apply Q1=A: add buffer only AFTER a job when there is a NEXT job.
-  const blocks = Array.isArray(jobBlocks) ? jobBlocks.slice() : [];
-  if (!blocks.length) return [];
-  const out = [];
-  for (let i = 0; i < blocks.length; i++) {
-    const b = blocks[i];
-    out.push({ startMin: b.startMin, endMin: b.endMin });
-    const hasNext = i < blocks.length - 1;
-    if (hasNext) {
-      out.push({ startMin: b.endMin, endMin: b.endMin + TRAVEL_BUFFER_MIN });
-    }
-  }
-  return mergeMinIntervals(out);
+function buildBusyIntervalsConservative(busyBlocks){
+  // Convert busyBlocks -> [{startMin,endMin}] using busyEndMin.
+  const blocks = Array.isArray(busyBlocks) ? busyBlocks : [];
+  return mergeMinIntervals(blocks.map(b => ({ startMin: b.startMin, endMin: b.busyEndMin })));
 }
 
 function buildFreeIntervalsForWindow(busyIntervals, windowStartMin, windowEndMin){
@@ -5570,6 +5943,24 @@ function buildFreeIntervalsForWindow(busyIntervals, windowStartMin, windowEndMin
   return out;
 }
 
+function buildStartIntervalsForWindow(busyBlocks, windowStartMin, windowEndMin, durationMin){
+  // Returns intervals of START times (minutes) where a job can start, using conservative busy blocks.
+  const d = Math.max(1, Number(durationMin||0));
+  if(windowEndMin <= windowStartMin) return [];
+
+  const busy = buildBusyIntervalsConservative(busyBlocks);
+  const free = buildFreeIntervalsForWindow(busy, windowStartMin, windowEndMin);
+
+  const out = [];
+  for(const f of free){
+    const latest = f.endMin - d;
+    if(latest >= f.startMin){
+      out.push({ startMin: f.startMin, endMin: latest });
+    }
+  }
+  return out;
+}
+
 function normalizeBangkokIso(iso){
   const t = String(iso||'');
   // If no timezone suffix, assume Asia/Bangkok (+07:00) to avoid UTC shifting bugs.
@@ -5585,49 +5976,48 @@ function normalizeBangkokIso(iso){
   return t + '+07:00';
 }
 
-async function isTechFree(username, startIso, durationMin, ignoreJobId) {
-  // Bangkok-safe parse (fix 09:00 -> 16:00 drift)
+async function checkTechCollision(username, startIso, durationMin, ignoreJobId) {
+  // Returns null if free, else returns conflict detail
   const iso = normalizeBangkokIso(startIso);
   const dateStr = String(iso).slice(0, 10);
   const startDate = new Date(iso);
-  if (Number.isNaN(startDate.getTime())) return false;
+  if (Number.isNaN(startDate.getTime())) return { error: 'invalid_datetime' };
 
   const startMin = bangkokHMToMinFromDate(startDate);
   const d = Math.max(1, Number(durationMin || 0));
-  const endMin = startMin + d;
+  const busyEndMin = startMin + d + TRAVEL_BUFFER_MIN;
 
-  // Get merged existing job blocks for the same tech/day
-  const blocks = await listJobBlocksForTechOnDate(username, dateStr, ignoreJobId);
-  // 1) Overlap with any existing job (no buffer on either side)
+  const blocks = await listBusyBlocksForTechOnDate(username, dateStr, ignoreJobId);
+
   for (const b of blocks) {
-    if (startMin < b.endMin && b.startMin < endMin) {
-      avlog('[isTechFree][overlap]', { username, date: dateStr, start: fmtHHMMFromMin(startMin), end: fmtHHMMFromMin(endMin), hit: { start: fmtHHMMFromMin(b.startMin), end: fmtHHMMFromMin(b.endMin) } });
-      return false;
+    const oldStart = b.startMin;
+    const oldBusyEnd = b.busyEndMin;
+    if (startMin < oldBusyEnd && oldStart < busyEndMin) {
+      const detail = {
+        conflict_job_id: b.job_id,
+        username,
+        date: dateStr,
+        new_range: { start: fmtHHMMFromMin(startMin), busy_end: fmtHHMMFromMin(busyEndMin) },
+        old_range: { start: fmtHHMMFromMin(oldStart), busy_end: fmtHHMMFromMin(oldBusyEnd) },
+      };
+      avlog('[collision]', detail);
+      return detail;
     }
   }
-
-  // 2) Must start after previous_job_end + buffer (if previous exists)
-  let prevEnd = null;
-  let nextStart = null;
-  for (const b of blocks) {
-    if (b.endMin <= startMin) prevEnd = Math.max(prevEnd == null ? -Infinity : prevEnd, b.endMin);
-    if (b.startMin >= startMin && nextStart == null) nextStart = b.startMin;
-  }
-  if (prevEnd != null && startMin < (prevEnd + TRAVEL_BUFFER_MIN)) {
-    avlog('[isTechFree][prevBuffer]', { username, date: dateStr, start: fmtHHMMFromMin(startMin), prevEnd: fmtHHMMFromMin(prevEnd), needAfterPrev: fmtHHMMFromMin(prevEnd + TRAVEL_BUFFER_MIN) });
-    return false;
-  }
-
-  // 3) If there is a next existing job, candidate must finish + buffer BEFORE next start
-  if (nextStart != null && (endMin + TRAVEL_BUFFER_MIN) > nextStart) {
-    avlog('[isTechFree][nextBuffer]', { username, date: dateStr, start: fmtHHMMFromMin(startMin), end: fmtHHMMFromMin(endMin), nextStart: fmtHHMMFromMin(nextStart), bufferedEnd: fmtHHMMFromMin(endMin + TRAVEL_BUFFER_MIN) });
-    return false;
-  }
-
-  avlog('[isTechFree][ok]', { username, date: dateStr, start: fmtHHMMFromMin(startMin), durationMin: d, end: fmtHHMMFromMin(endMin), bufferedEndIfNext: nextStart != null ? fmtHHMMFromMin(endMin + TRAVEL_BUFFER_MIN) : null });
-  return true;
+  return null;
 }
 
+async function isTechFree(username, startIso, durationMin, ignoreJobId) {
+  const conflict = await checkTechCollision(username, startIso, durationMin, ignoreJobId);
+  return !conflict;
+}
+
+function http409Conflict(res, conflict){
+  return res.status(409).json({
+    error: "ช่างไม่ว่างช่วงเวลานี้",
+    conflict: conflict || null,
+  });
+}
 
 // =======================================
 // 💰 Pricing + Duration Preview (public)
@@ -5746,14 +6136,21 @@ app.get("/public/availability_v2", async (req, res) => {
       const techWindows = buildTechWindowsMin(tech, date, specialMap, uiStartMin, uiEndMin);
       if (!techWindows.length) continue;
 
-      const jobBlocks = await listJobBlocksForTechOnDate(tech.username, date, null);
+      const busyBlocks = await listBusyBlocksForTechOnDate(tech.username, date, null);
+
+      // DEBUG: raw job blocks (no buffer) if needed
+      const jobBlocks = null;
 
       // For each availability window of the technician, compute intervals.
       for (const w of techWindows) {
         if (mode === 'free') {
           // Free blocks: window - busy(with conditional buffer between jobs)
-          const busy = buildBusyIntervalsWithConditionalBuffer(jobBlocks);
+          const busy = buildBusyIntervalsConservative(busyBlocks);
           const freeIntervals = buildFreeIntervalsForWindow(busy, w.startMin, w.endMin);
+          if (debugFlag) {
+            debugBusy[tech.username] = (debugBusy[tech.username] || []).concat(busy.map(b=>({ start: fmtHHMMFromMin(b.startMin), end: fmtHHMMFromMin(b.endMin) })));
+            debugFree[tech.username] = (debugFree[tech.username] || []).concat(freeIntervals.map(f=>({ start: fmtHHMMFromMin(f.startMin), end: fmtHHMMFromMin(f.endMin) })));
+          }
           for (const it of freeIntervals) {
             // half-open [start, end) -> remove at end
             addEvent(it.startMin, 'add', tech.username);
@@ -5761,7 +6158,13 @@ app.get("/public/availability_v2", async (req, res) => {
           }
         } else {
           // Start ranges: minutes where a job can START (respecting buffer rules)
-          const startIntervals = buildStartIntervalsForWindow(jobBlocks, w.startMin, w.endMin, effective_duration_min);
+          const startIntervals = buildStartIntervalsForWindow(busyBlocks, w.startMin, w.endMin, effective_duration_min);
+        if (debugFlag) {
+          const busy = buildBusyIntervalsConservative(busyBlocks);
+          const free = buildFreeIntervalsForWindow(busy, w.startMin, w.endMin);
+          debugBusy[tech.username] = (debugBusy[tech.username] || []).concat(busy.map(b=>({ start: fmtHHMMFromMin(b.startMin), end: fmtHHMMFromMin(b.endMin) })));
+          debugFree[tech.username] = (debugFree[tech.username] || []).concat(free.map(f=>({ start: fmtHHMMFromMin(f.startMin), end: fmtHHMMFromMin(f.endMin) })));
+        }
           for (const it of startIntervals) {
             // Represent as half-open [start, end+1) so we can sweep cleanly in minutes.
             addEvent(it.startMin, 'add', tech.username);
