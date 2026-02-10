@@ -359,12 +359,21 @@
             <option value="partner">ช่างพาร์ทเนอร์</option>
           </select>
 
-          <label style="margin-top:10px">โหมดจอง</label>
-          <select id="booking_mode_ui">
-            <option value="scheduled">ปกติ (นัดแน่นอน)</option>
-            <option value="urgent">ลองยิงงานด่วน (รอช่างยืนยัน)</option>
+          <label style="margin-top:10px">โหมดส่งงาน *</label>
+          <select id="dispatch_mode_ui">
+            <option value="normal">Normal (งานปกติ)</option>
+            <option value="forced">Forced (บังคับให้รับ)</option>
+            <option value="urgent">Urgent (ยิงด่วน/ข้อเสนอ)</option>
           </select>
-          <div class="muted2 mini" style="margin-top:6px">ปกติ = นัดแน่นอน • ด่วน = ยิงข้อเสนอ (รอช่างยืนยัน)</div>
+          <div class="muted2 mini" style="margin-top:6px" id="dispatch_ui_help">Normal = ช่างต้องเปิดรับงาน • Forced = เลือกช่างได้แม้หยุดรับงาน แต่ห้ามชนคิว • Urgent = ยิงข้อเสนอ (ไม่เลือกช่างรายคน)</div>
+
+          <label style="margin-top:10px">รูปแบบมอบหมาย *</label>
+          <select id="assign_mode_ui">
+            <option value="auto">auto (ระบบเลือก)</option>
+            <option value="single">single (เลือกช่างคนเดียว)</option>
+            <option value="team">team (เลือกทีม)</option>
+          </select>
+          <div class="muted2 mini" style="margin-top:6px">ทีม = เลือกช่างร่วมหลายคน (validation ยังห้ามชนคิวเหมือนเดิม)</div>
 
           <label style="margin-top:10px">วันที่</label>
           <input id="appt_date" type="date">

@@ -1653,9 +1653,9 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
 
   const bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
   const ttype = (tech_type || (bm === "urgent" ? "partner" : "company")).toString().trim().toLowerCase();
-  const mode = (dispatch_mode || "forced").toString().trim().toLowerCase();
-  if (!['company','partner'].includes(ttype)) return res.status(400).json({ error: "tech_type ต้องเป็น company หรือ partner" });
-  if (!['forced','offer'].includes(mode)) return res.status(400).json({ error: "dispatch_mode ต้องเป็น forced หรือ offer" });
+  const mode = (dispatch_mode || "normal").toString().trim().toLowerCase();
+  if (!['company','partner','all'].includes(ttype)) return res.status(400).json({ error: "tech_type ต้องเป็น company|partner|all" });
+  if (!['normal','forced','offer'].includes(mode)) return res.status(400).json({ error: "dispatch_mode ต้องเป็น normal|forced|offer" });
 
   // ✅ Enforce assign_mode contract (R2)
   // - single: technician_username required, team_members must be empty
@@ -1781,7 +1781,7 @@ if (coerceNumber(override_price, 0) > 0) {
         LEFT JOIN public.technician_profiles p ON p.username=u.username
         WHERE u.role='technician'
           AND COALESCE(p.accept_status,'ready') <> 'paused'
-          AND COALESCE(p.employment_type,'company') = $1
+          AND ($3::boolean IS TRUE OR COALESCE(p.employment_type,'company') = $1)
         ORDER BY u.username
         `,
         [ttype]
@@ -1805,6 +1805,22 @@ if (coerceNumber(override_price, 0) > 0) {
           }
         } catch (e) {
           console.warn('[admin_book_v2] off-day check failed (fail-open)', e.message);
+        }
+      }
+
+      // ✅ Normal mode: ห้ามเลือกช่างที่หยุดรับงาน (accept_status=paused)
+      if (mode === 'normal') {
+        try {
+          const pr2 = await client.query(
+            `SELECT COALESCE(accept_status,'ready') AS accept_status FROM public.technician_profiles WHERE username=$1 LIMIT 1`,
+            [selectedTech]
+          );
+          const st = (pr2.rows[0]?.accept_status || 'ready').toString().trim().toLowerCase();
+          if (st === 'paused') {
+            return res.status(409).json({ error: `ช่างหยุดรับงาน: ${selectedTech} (Normal ห้ามส่ง)` });
+          }
+        } catch (e) {
+          console.warn('[admin_book_v2] normal accept_status check failed (fail-open)', e.message);
         }
       }
       const conflict = await checkTechCollision(selectedTech, apptIso, duration_min, null);
@@ -2600,7 +2616,7 @@ app.get("/admin/schedule_v2", requireAdminSoft, async (req, res) => {
       FROM public.users u
       LEFT JOIN public.technician_profiles p ON p.username=u.username
       WHERE u.role='technician'
-        AND COALESCE(p.employment_type,'company') = $1
+        AND ($3::boolean IS TRUE OR COALESCE(p.employment_type,'company') = $1)
       ORDER BY u.username
       `,
       [tech_type]
@@ -5531,6 +5547,8 @@ function effectiveBlockMin(durationMin) {
 async function listTechniciansByType(tech_type, opts = {}) {
   const t = (tech_type || "company").toString().trim().toLowerCase();
   const include_paused = !!opts.include_paused;
+  // Support tech_type=all (company+partner)
+  const isAll = t === 'all';
   // NOTE:
   // - Default behavior (include_paused=false): exclude paused technicians.
   // - Forced lock behavior (include_paused=true): include paused technicians,
@@ -5547,10 +5565,10 @@ async function listTechniciansByType(tech_type, opts = {}) {
     LEFT JOIN public.technician_profiles p ON p.username=u.username
     WHERE u.role='technician'
       AND ($2::boolean IS TRUE OR COALESCE(p.accept_status,'ready') <> 'paused')
-      AND COALESCE(p.employment_type,'company') = $1
+      AND ($3::boolean IS TRUE OR COALESCE(p.employment_type,'company') = $1)
     ORDER BY u.username
     `,
-    [t, include_paused]
+    [t, include_paused, isAll]
   );
   // Fallback (fail-open): if filtering by employment_type yields 0 technicians,
   // return all technicians that are not paused. This prevents the UI from showing

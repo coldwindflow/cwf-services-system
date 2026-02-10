@@ -527,6 +527,34 @@ async function loadJob(){
     };
   }
 
+  const btnDel = el('btn_delete_job');
+  if (btnDel) {
+    btnDel.onclick = async ()=> {
+      const code = String(job.booking_code||'').trim();
+      const t1 = `ยืนยันลบงานนี้?\n\njob_id: ${job.job_id}\nbooking_code: ${code}\nช่าง: ${job.technician_username||'-'}\nวันเวลา: ${job.appointment_datetime||job.appointment_datetime_th||'-'}`;
+      if (!confirm(t1)) return;
+      const t2 = prompt(`พิมพ์ DELETE หรือ ${code} เพื่อยืนยันการลบถาวร`, '');
+      if (!t2) return;
+      const v = String(t2).trim();
+      if (!(v === 'DELETE' || (code && v === code))) {
+        alert('คำยืนยันไม่ถูกต้อง ยกเลิกการลบ');
+        return;
+      }
+      try {
+        btnDel.disabled = true;
+        await apiFetch(`/admin/jobs/${encodeURIComponent(String(job.job_id))}`, { method: 'DELETE' });
+        showToast('ลบงานเรียบร้อย', 'success');
+        // go back to queue/history page (fail-open)
+        setTimeout(()=>{ location.href = '/admin-queue-v2.html'; }, 600);
+      } catch (e) {
+        btnDel.disabled = false;
+        alert(`ลบงานไม่สำเร็จ: ${e?.data?.error || e.message || 'error'}`);
+      }
+    };
+  }
+
+
+
 const btnClone = el('btnClone');
   if (btnClone) {
     btnClone.onclick = async ()=>{
