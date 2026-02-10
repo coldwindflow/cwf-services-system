@@ -288,7 +288,7 @@ function updateAssignUIVisibility(){
   const techSel = el('technician_username_select');
   const allowPick = !!state.slots_loaded;
   if(techSel) techSel.disabled = !allowPick || (mode === 'auto');
-  if(help) help.textContent = allowPick ? 'เลือกได้หลังจากกด “โหลดคิวว่าง”' : '* จะเปิดให้เลือกหลังจาก “โหลดคิวว่าง”';
+  if(help) help.innerHTML = (uiMode==='urgent') ? 'Urgent: ยิงข้อเสนอไปช่างที่ว่างและเปิดรับงาน' : 'นัดงาน: แอดมินสั่งงานได้ทันที (ไม่สนเปิดรับงาน) แต่ห้ามชนคิว';
 
   if(mode === 'team'){
     if(teamWrap) teamWrap.style.display = 'block';
@@ -324,7 +324,7 @@ function updateAssignUIVisibility(){
 
   // dispatch_mode help only (no checkbox)
   try {
-    const dm = (el('dispatch_mode')?.value || 'forced').toString();
+    const dm = (el('dispatch_mode')?.value || 'normal').toString();
     const help2 = el('dispatch_help');
     if(help2) help2.style.opacity = (dm !== 'forced') ? 0.85 : 1;
   } catch(e){}
@@ -716,7 +716,7 @@ function renderServiceLines(){
 
 // UI controls: dispatch_mode_ui + assign_mode_ui (Source of Truth for admin-add-v2)
 function updateFlowUI(){
-  const uiMode = (el('dispatch_mode_ui')?.value || 'normal').toString();
+  const uiMode = (el('dispatch_mode_ui')?.value || 'assign').toString();
   const btnLoad = el('btnLoadSlots');
   const slotsBox = el('slots_box');
   const assignCard = el('assign_card');
@@ -733,10 +733,10 @@ function updateFlowUI(){
     const appt = el('appointment_datetime'); if(appt) appt.setAttribute('readonly','readonly');
     // assign card จะเปิดเมื่อโหลดสล็อตแล้ว
   }
-  // Forced/Normal: workload assignment only in forced
+  // Admin assign: workload assignment (per technician) available after slot selection
   try { updateWashAssignmentUI(); } catch(e){}
   if(help){
-    help.textContent = (uiMode==='urgent') ? 'Urgent: ยิงข้อเสนอไปช่างที่ว่างและเปิดรับงาน' : (uiMode==='forced') ? 'Forced: แอดมินสั่งงานได้ (ไม่สนเปิดรับงาน) แต่ห้ามชนคิว' : 'Normal: แอดมินสั่งงานได้ (ไม่สนเปิดรับงาน) แต่ห้ามชนคิว';
+    help.textContent = (uiMode==='urgent') ? 'Urgent: ยิงข้อเสนอไปช่างที่ว่างและเปิดรับงาน' : 'นัดงาน: แอดมินสั่งงานได้ทันที (ไม่สนเปิดรับงาน) แต่ห้ามชนคิว';
   }
 }
 
@@ -747,14 +747,14 @@ function syncModesFromUI(){
   const dispatch = el('dispatch_mode');
   const assign = el('assign_mode');
   if(!dmUI || !booking || !dispatch) return;
-  const uiMode = (dmUI.value || 'normal').toString();
+  const uiMode = (dmUI.value || 'assign').toString();
   const uiAssign = (amUI?.value || 'auto').toString();
 
   // booking_mode (legacy): urgent vs scheduled
   booking.value = (uiMode === 'urgent') ? 'urgent' : 'scheduled';
 
   // dispatch_mode (backend v2): normal/forced/offer
-  dispatch.value = (uiMode === 'urgent') ? 'offer' : uiMode;
+  dispatch.value = (uiMode === 'urgent') ? 'offer' : 'normal';
 
   // assign_mode (backend v2): auto/single/team
   if(assign) assign.value = uiAssign;
@@ -803,10 +803,10 @@ function getServicesPayload(){
     out.admin_override_duration_min = Math.max(0, Number(out.admin_override_duration_min || 0));
     // Attach wash allocations (per technician) if user assigned workload in selected slot
     try {
-      const dm = (el('dispatch_mode')?.value || 'forced').toString();
+      const dm = (el('dispatch_mode')?.value || 'normal').toString();
       const hasSlot = !!state.selected_slot_iso;
       const together = !!el('wash_all_together')?.checked;
-      if(dm === 'forced' && hasSlot && !together){
+      if(dm !== 'offer' && hasSlot && !together){
         const k = `${out.ac_type||''}|${Number(out.btu||0)}|${Number(out.machine_count||0)}|${out.wash_variant||''}`;
         const row = state.wash_alloc && state.wash_alloc[k];
         if(row && typeof row === 'object' && Object.keys(row).length){
@@ -1201,7 +1201,7 @@ function getConstraintTechs(){
 
 function getWorkloadTechs(){
   // Workload assignment is for lock mode only (forced). Offer flow should not show this.
-  const dm = (el('dispatch_mode')?.value || 'forced').toString();
+  const dm = (el('dispatch_mode')?.value || 'normal').toString();
   if(dm !== 'forced') return []; // workload allocation only for forced
   return getConstraintTechs();
 }
@@ -1275,7 +1275,7 @@ function renderWashAssign(){
   const hidden = el('split_assignments_json');
   if(!card || !table || !sub || !tog || !hidden) return;
 
-  const dm = (el('dispatch_mode')?.value || 'forced').toString();
+  const dm = (el('dispatch_mode')?.value || 'normal').toString();
   const jt = (el('job_type')?.value || '').trim();
   const techs = getWorkloadTechs();
   const services = getWashServicesForAssignment();
@@ -1530,6 +1530,20 @@ function renderSlots() {
     return Number.isFinite(v) ? v : null;
   };
 
+  const minToHHMM = (min)=>{
+    const v = Number(min);
+    if(!Number.isFinite(v)) return '00:00';
+    let m = Math.round(v);
+    if (m < 0) m = 0;
+    // keep within day range for display
+    m = m % (24*60);
+    const hh = String(Math.floor(m/60)).padStart(2,'0');
+    const mm = String(m%60).padStart(2,'0');
+    return `${hh}:${mm}`;
+  };
+
+
+
   for (const s of slotsAllRaw) {
     // Backend may return either {start_min,end_min} or {start,end}.
     // We normalize so UI can always expand wide ranges into 30-min selectable slots.
@@ -1733,7 +1747,7 @@ function closeSlotModal(){
 function updateAssignSummary(){
   const t = el('assign_summary_text');
   if(!t) return;
-  const dm = (el('dispatch_mode')?.value || 'forced').toString();
+  const dm = (el('dispatch_mode')?.value || 'normal').toString();
   if(dm === 'offer'){
     t.textContent = 'โหมดข้อเสนอ • ระบบจะยิงไปช่างที่ว่างและเปิดรับงาน';
     return;
@@ -2133,7 +2147,7 @@ async function submitBooking() {
     // wash split assignment (optional, lock mode only)
     split_assignments: (()=>{
       try {
-        const dm = (el('dispatch_mode')?.value || 'forced').toString();
+        const dm = (el('dispatch_mode')?.value || 'normal').toString();
         if(dm !== 'forced') return null;
         const raw = (el('split_assignments_json')?.value || '').trim();
         if(!raw) return null;

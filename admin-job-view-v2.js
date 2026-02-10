@@ -260,7 +260,18 @@ async function loadJob(){
 
 
 
+    
     <hr style="margin:12px 0;" />
+
+    <div>
+      <b>🗑️ ลบงานถาวร (ลบจากฐานข้อมูลจริง)</b>
+      <div class="muted2 mini" style="margin-top:6px">ระวัง: ลบแล้วกู้คืนไม่ได้ • ต้องยืนยัน 2 ชั้น</div>
+      <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:flex-end">
+        <button id="btn_delete_job" class="danger" type="button" style="width:auto">🗑️ ลบงานนี้</button>
+      </div>
+    </div>
+
+<hr style="margin:12px 0;" />
 
     <div>
       <b>🛡️ ประกัน / ตีกลับงานแก้ไข</b>

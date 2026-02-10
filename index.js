@@ -2402,6 +2402,53 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
   }
 });
 
+
+// ✅ Admin-only: Delete job permanently (DBจริง) + cleanup related tables
+app.delete('/admin/jobs/:job_id', requireAdminSoft, async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  if (!Number.isFinite(job_id) || job_id <= 0) {
+    return res.status(400).json({ ok:false, error:'invalid job_id' });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+
+    const chk = await client.query(
+      `SELECT job_id, booking_code, technician_username, appointment_datetime
+         FROM public.jobs WHERE job_id=$1`,
+      [job_id]
+    );
+    if (!chk.rows || !chk.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ ok:false, error:'job not found' });
+    }
+
+    // child tables (fail-safe: some DB might miss tables in older deploys)
+    const safeDel = async (sql, params) => {
+      try { await client.query(sql, params); } catch(e){ console.warn('[admin_delete_job] ignore', e.message); }
+    };
+
+    await safeDel(`DELETE FROM public.job_photos WHERE job_id=$1`, [job_id]);
+    await safeDel(`DELETE FROM public.job_updates_v2 WHERE job_id=$1`, [job_id]);
+    await safeDel(`DELETE FROM public.job_offers WHERE job_id=$1`, [job_id]);
+    await safeDel(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
+    await safeDel(`DELETE FROM public.job_assignments WHERE job_id=$1`, [job_id]);
+    await safeDel(`DELETE FROM public.job_promotions WHERE job_id=$1`, [job_id]);
+    await safeDel(`DELETE FROM public.job_items WHERE job_id=$1`, [job_id]);
+
+    await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [job_id]);
+
+    await client.query('COMMIT');
+    return res.json({ ok:true });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch(_){}
+    console.error('[admin_delete_job] error', e);
+    return res.status(500).json({ ok:false, error:'delete failed' });
+  } finally {
+    client.release();
+  }
+});
+
 app.post('/admin/jobs/:job_id/return_for_fix_v2', requireAdminSoft, async (req, res) => {
   const job_id = Number(req.params.job_id);
   const reason = String(req.body?.reason || '').trim();
