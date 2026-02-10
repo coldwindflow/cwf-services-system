@@ -2025,12 +2025,14 @@ app.get("/admin/jobs_v2", requireAdminSoft, async (req, res) => {
     const params = [];
     let p = 1;
 
+    // IMPORTANT: Force Bangkok boundary for date filters.
+    // If we pass naive timestamps while the runtime or DB uses UTC, results can appear "missing".
     if (date_from) {
-      params.push(date_from + " 00:00:00");
+      params.push(date_from + " 00:00:00+07:00");
       where.push(`appointment_datetime >= $${p++}::timestamptz`);
     }
     if (date_to) {
-      params.push(date_to + " 23:59:59");
+      params.push(date_to + " 23:59:59+07:00");
       where.push(`appointment_datetime <= $${p++}::timestamptz`);
     }
     if (technician) {

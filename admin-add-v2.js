@@ -52,6 +52,26 @@ const DBG = {
   conflict: null,
 };
 
+// ---- Timezone (Asia/Bangkok) helpers ----
+// NOTE: All scheduling/appointment datetimes are treated as Bangkok time (+07:00)
+// to prevent the classic 09:00 -> 16:00/18:00 shift when the server runs in UTC.
+function localDatetimeToBangkokISO(localValue){
+  // localValue from <input type="datetime-local"> (no timezone)
+  const s = String(localValue||'').trim();
+  if(!s) return '';
+  const hasSeconds = /\d{2}:\d{2}:\d{2}$/.test(s);
+  const base = hasSeconds ? s : `${s}:00`;
+  return `${base}+07:00`;
+}
+
+function naiveIsoToBangkokISO(naiveIso){
+  // naiveIso like 2026-02-22T09:00:00 (no timezone)
+  const s = String(naiveIso||'').trim();
+  if(!s) return '';
+  if(/[zZ]|[\+\-]\d{2}:\d{2}$/.test(s)) return s; // already tz-aware
+  return `${s}+07:00`;
+}
+
 function maskPII(obj){
   try {
     const j = JSON.parse(JSON.stringify(obj || {}));
@@ -1928,20 +1948,14 @@ function openSlotModal(slot){
       </div>
     `;
 
-    const modeSeg = `
-      <div class="seg" style="margin-bottom:10px">
-        <button type="button" class="team-btn ${mode==='auto'?'active':''}" data-mode="auto">ระบบเลือกช่าง</button>
-        <button type="button" class="team-btn ${mode==='single'?'active':''}" data-mode="single">เลือกเดี่ยว</button>
-        <button type="button" class="team-btn ${mode==='team'?'active':''}" data-mode="team">ทีม</button>
-      </div>
-      <div class="muted2 mini" style="margin-top:-2px;margin-bottom:10px">
-        * เลือกโหมดและช่างได้ทันทีในหน้าต่างนี้
+    const modeInfo = `
+      <div class="card-lite" style="padding:10px 12px;border-radius:16px;margin-bottom:10px">
+        <div class="muted2 mini">โหมดมอบหมาย: <b>${mode==='auto'?'ระบบเลือกช่าง':(mode==='single'?'เลือกเดี่ยว':'ทีม')}</b> <span class="muted2">(เปลี่ยนได้ที่หัวข้อ “รูปแบบมอบหมาย” ด้านบน)</span></div>
       </div>
     `;
 
     if(!ids.length){
-      body.innerHTML = timeSeg + modeSeg + `<div class="muted2">สล็อตนี้ไม่มีช่างว่าง</div>`;
-      bindModeButtons();
+      body.innerHTML = timeSeg + modeInfo + `<div class="muted2">สล็อตนี้ไม่มีช่างว่าง</div>`;
       bindTimePicker();
       return;
     }
@@ -1949,7 +1963,7 @@ function openSlotModal(slot){
     if(mode === 'team'){
       const primary = (state.teamPicker.primary || '').trim();
       const selected = new Set(Array.from(state.teamPicker.selected || []));
-      body.innerHTML = timeSeg + modeSeg + `
+      body.innerHTML = timeSeg + modeInfo + `
         <div class="grid2">
           <div>
             <label>ช่างหลัก (Primary)</label>
@@ -2013,14 +2027,13 @@ function openSlotModal(slot){
         renderBody();
       });
 
-      bindModeButtons();
       bindTimePicker();
       return;
     }
 
     // auto or single
     const cur = (el('technician_username_select')?.value || '').trim();
-    body.innerHTML = timeSeg + modeSeg + `
+    body.innerHTML = timeSeg + modeInfo + `
       <label>ช่าง (ว่างในสล็อตนี้)</label>
       <select id="slotm_single" class="grow"></select>
       <div class="muted2 mini" style="margin-top:6px">เลือกช่าง = โหมด “เลือกเดี่ยว” • ไม่เลือก = ระบบเลือกช่างว่าง</div>
@@ -2152,7 +2165,11 @@ async function submitBooking() {
     customer_name: name,
     customer_phone: (el("customer_phone").value || "").trim(),
     job_type,
-    appointment_datetime: (uiMode === 'urgent' ? localDatetimeToBangkokISO((el('appointment_datetime')?.value||'').trim()) : state.selected_slot_iso),
+    // Always send a Bangkok-offset ISO string to the backend (avoid UTC shift).
+    appointment_datetime: (uiMode === 'urgent'
+      ? localDatetimeToBangkokISO((el('appointment_datetime')?.value||'').trim())
+      : localDatetimeToBangkokISO((state.selected_slot_iso||'').slice(0,16))
+    ),
     address_text,
     customer_note: (el("customer_note").value || "").trim(),
     maps_url: (el("maps_url").value || "").trim(),
@@ -2425,6 +2442,21 @@ if (copyBtn) copyBtn.addEventListener("click", async () => {
   if(selTech) selTech.addEventListener("change", ()=>{
     if(el("technician_username")) el("technician_username").value = selTech.value||"";
     const mode = (el('assign_mode')?.value || 'auto').toString();
+    // If admin is in single mode, selecting a tech should be enough (fail-open) —
+    // still compatible with the explicit "ยืนยันเลือกช่างคนนี้" button.
+    if(mode === 'single'){
+      const v = (selTech.value||'').trim();
+      if(v){
+        const opt = selTech.selectedOptions && selTech.selectedOptions[0];
+        const label = opt ? (opt.textContent||v) : v;
+        state.confirmed_tech_username = v;
+        state.confirmed_tech_label = label;
+        try { renderSlots(); } catch(e){}
+      } else {
+        state.confirmed_tech_username = '';
+        state.confirmed_tech_label = '';
+      }
+    }
     if(mode === 'team') syncPrimaryFromSelect();
     renderSlots();
     try { renderWashAssign(); } catch(e){}
