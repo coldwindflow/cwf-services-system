@@ -87,15 +87,17 @@ async function loadJobs(){
             ev.stopPropagation();
             const jid = Number(btn.getAttribute('data-del-job'));
             if(!jid) return;
-            const ok1 = confirm(`ต้องการลบงาน #${jid} ใช่ไหม?\n\n*ลบถาวร (ย้อนกลับไม่ได้)`);
+            const bookingCode = String(j.booking_code||j.job_id||'').trim();
+            const ok1 = confirm(`ยืนยันลบงานนี้?\n\nJob ID: #${jid}\nBooking: ${bookingCode || '-'}\nช่าง: ${safe(j.technician_username||'-')}\nเวลา: ${fmtDT(j.appointment_datetime)}\n\n*ลบถาวร (ย้อนกลับไม่ได้)`);
             if(!ok1) return;
-            const code = prompt('พิมพ์ DELETE เพื่อยืนยันการลบงาน');
-            if(String(code||'').trim().toUpperCase() !== 'DELETE'){
-              showToast('ยกเลิกการลบ (ไม่ได้พิมพ์ DELETE)', 'info');
+            const t2 = prompt(`พิมพ์ DELETE หรือ ${bookingCode} เพื่อยืนยันการลบถาวร`, '');
+            const v = String(t2||'').trim().toUpperCase();
+            if (!(v === 'DELETE' || (bookingCode && v === String(bookingCode).toUpperCase()))) {
+              showToast('ยกเลิกการลบ (ยืนยันไม่ถูกต้อง)', 'info');
               return;
             }
             try {
-              await apiFetch(`/jobs/${jid}/admin-delete`, { method: 'DELETE', body: JSON.stringify({ confirm_code: 'DELETE' }) });
+              await apiFetch(`/admin/jobs/${encodeURIComponent(String(jid))}`, { method: 'DELETE' });
               showToast('ลบงานแล้ว', 'success');
               // remove row from table immediately
               tr.remove();

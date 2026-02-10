@@ -64,8 +64,40 @@ function maskPII(obj){
 
 function dbgRender(){
   if (!DEBUG_ENABLED) return;
-  const panel = el('debug_panel');
-  if (!panel) return;
+  let panel = el('debug_panel');
+  // Some deployments may have older HTML without the debug panel markup.
+  // Create a minimal panel on-the-fly so Debug: On is always usable.
+  if (!panel) {
+    const mount = el('debug_panel_mount') || document.body;
+    panel = document.createElement('details');
+    panel.id = 'debug_panel';
+    panel.className = 'cwf-details card-lite';
+    panel.style.display = 'none';
+    panel.style.margin = '12px 12px 0';
+    panel.innerHTML = `
+      <summary style="font-weight:900">Debug Panel <span id="debug_panel_hint" class="muted2 mini">off</span></summary>
+      <div style="padding:10px 0">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <button type="button" class="secondary" id="dbg_copy_req">Copy Req</button>
+          <button type="button" class="secondary" id="dbg_copy_res">Copy Res</button>
+          <button type="button" class="secondary" id="dbg_copy_intervals">Copy Busy/Free</button>
+          <button type="button" class="secondary" id="dbg_copy_conflict">Copy Conflict</button>
+          <button type="button" class="secondary" id="dbg_clear">Clear</button>
+        </div>
+        <div class="grid2">
+          <div><div class="muted2 mini">Request</div><pre id="dbg_req" style="white-space:pre-wrap;word-break:break-word;min-height:60px"></pre></div>
+          <div><div class="muted2 mini">Response</div><pre id="dbg_res" style="white-space:pre-wrap;word-break:break-word;min-height:60px"></pre></div>
+          <div><div class="muted2 mini">Busy/Free</div><pre id="dbg_intervals" style="white-space:pre-wrap;word-break:break-word;min-height:60px"></pre></div>
+          <div><div class="muted2 mini">Conflict</div><pre id="dbg_conflict" style="white-space:pre-wrap;word-break:break-word;min-height:60px"></pre></div>
+        </div>
+        <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          <button type="button" class="secondary" id="dbg_backend_toggle">Toggle Backend Logging</button>
+          <span class="muted2 mini">Backend: <b id="dbg_backend_status">?</b></span>
+        </div>
+      </div>
+    `;
+    mount.appendChild(panel);
+  }
   panel.style.display = 'block';
   const hint = el('debug_panel_hint');
   if (hint) hint.textContent = 'on';
@@ -77,6 +109,8 @@ function dbgRender(){
 
 function dbgBind(){
   if (!DEBUG_ENABLED) return;
+  // Ensure the panel exists before binding buttons (older HTML may not have it).
+  try { dbgRender(); } catch(e) {}
   const copy = async (text) => {
     try { await navigator.clipboard.writeText(text || ''); showToast('คัดลอกแล้ว', 'success'); } catch(e){ showToast('คัดลอกไม่สำเร็จ', 'error'); }
   };
@@ -279,6 +313,8 @@ state.teamPicker = {
 };
 
 function updateAssignUIVisibility(){
+  // Read UI mode locally (assign vs urgent). Avoid referencing undeclared globals.
+  const uiMode = (el('dispatch_mode_ui')?.value || 'assign').toString();
   const mode = (el('assign_mode')?.value || 'auto').toString();
   const teamWrap = el('team_picker_wrap');
   const hint = el('team_mode_hint');

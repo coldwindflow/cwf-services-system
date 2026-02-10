@@ -2066,6 +2066,57 @@ app.get("/admin/jobs_v2", requireAdminSoft, async (req, res) => {
 });
 
 // =======================================
+// 🗑️ ADMIN HARD DELETE JOB (DB)
+// DELETE /admin/jobs/:job_id
+// - admin only (use existing auth style)
+// - delete related rows (best-effort, fail-safe)
+// =======================================
+app.delete("/admin/jobs/:job_id", requireAdminSoft, async (req, res) => {
+  const jobId = Number(req.params.job_id);
+  if (!Number.isFinite(jobId) || jobId <= 0) {
+    return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+  }
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const jr = await client.query(
+      `SELECT job_id, booking_code FROM public.jobs WHERE job_id=$1 LIMIT 1`,
+      [jobId]
+    );
+    if (!jr.rows?.length) {
+      await client.query("ROLLBACK");
+      return res.status(404).json({ error: "ไม่พบงาน" });
+    }
+
+    // delete related tables (best-effort) — do not crash if a table doesn't exist
+    const deleteFrom = async (sql, params) => {
+      try { await client.query(sql, params); } catch (e) {
+        console.warn("[admin_delete_job] skip", e.message);
+      }
+    };
+
+    await deleteFrom(`DELETE FROM public.job_photos WHERE job_id=$1`, [jobId]);
+    await deleteFrom(`DELETE FROM public.job_photo_metadata WHERE job_id=$1`, [jobId]);
+    await deleteFrom(`DELETE FROM public.job_updates_v2 WHERE job_id=$1`, [jobId]);
+    await deleteFrom(`DELETE FROM public.job_team_members WHERE job_id=$1`, [jobId]);
+    await deleteFrom(`DELETE FROM public.job_assignments WHERE job_id=$1`, [jobId]);
+    await deleteFrom(`DELETE FROM public.job_offers WHERE job_id=$1`, [jobId]);
+    await deleteFrom(`DELETE FROM public.job_offer_recipients WHERE job_id=$1`, [jobId]);
+
+    const dr = await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [jobId]);
+    await client.query("COMMIT");
+    return res.json({ ok: true, deleted: dr.rowCount || 0 });
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch(_e) {}
+    console.error("/admin/jobs/:job_id delete error:", e);
+    return res.status(500).json({ error: e.message || "ลบงานไม่สำเร็จ" });
+  } finally {
+    client.release();
+  }
+});
+
+// =======================================
 // 📥 ADMIN REVIEW QUEUE V2
 // - งานลูกค้าจองเข้ามา (รอตรวจสอบ) + งานที่ตีกลับ
 // - ใช้หน้า admin-review-v2.html
