@@ -72,8 +72,40 @@ async function loadJobs(){
           <div class="muted2" style="margin-top:6px" title="${addr}">${addr}</div>
         </td>
         <td><b class="tech-name" title="${techName}">${techName}</b><div class="muted2 mini">${techU}</div></td>
+        <td>
+          <button type="button" class="danger" data-del-job="${safe(j.job_id)}" style="width:100%;min-height:36px">ลบ</button>
+        </td>
       `;
       tb.appendChild(tr);
+
+      // Bind delete (admin hard delete) — confirm 2 ชั้น
+      try {
+        const btn = tr.querySelector('button[data-del-job]');
+        if(btn){
+          btn.addEventListener('click', async (ev)=>{
+            ev.preventDefault();
+            ev.stopPropagation();
+            const jid = Number(btn.getAttribute('data-del-job'));
+            if(!jid) return;
+            const ok1 = confirm(`ต้องการลบงาน #${jid} ใช่ไหม?\n\n*ลบถาวร (ย้อนกลับไม่ได้)`);
+            if(!ok1) return;
+            const code = prompt('พิมพ์ DELETE เพื่อยืนยันการลบงาน');
+            if(String(code||'').trim().toUpperCase() !== 'DELETE'){
+              showToast('ยกเลิกการลบ (ไม่ได้พิมพ์ DELETE)', 'info');
+              return;
+            }
+            try {
+              await apiFetch(`/jobs/${jid}/admin-delete`, { method: 'DELETE', body: JSON.stringify({ confirm_code: 'DELETE' }) });
+              showToast('ลบงานแล้ว', 'success');
+              // remove row from table immediately
+              tr.remove();
+            } catch (e) {
+              console.error(e);
+              showToast(e.message || 'ลบงานไม่สำเร็จ', 'error');
+            }
+          });
+        }
+      } catch(e){}
     }
 
     el("wrap").style.display = "block";

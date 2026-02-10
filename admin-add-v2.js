@@ -18,8 +18,14 @@ let state = {
   selected_items: [], // {item_id, qty, item_name, base_price}
   service_lines: [], // [{job_type, ac_type, btu, machine_count, wash_variant}]
   selected_slot_iso: "",
+  selected_slot_key: "",
+  selected_slot: null,
   available_slots: [],
   slots_loaded: false,
+  available_techs_for_slot: [],
+  confirmed_tech_username: "",
+  confirmed_tech_label: "",
+  team_members: [],
   // confirmation summary texts (TH/EN)
   summary_texts: { th: "", en: "", lang: "th" },
 };
@@ -76,6 +82,7 @@ function dbgBind(){
   };
   el('dbg_copy_req')?.addEventListener('click', () => copy(el('dbg_req')?.textContent || ''));
   el('dbg_copy_res')?.addEventListener('click', () => copy(el('dbg_res')?.textContent || ''));
+  el('dbg_copy_intervals')?.addEventListener('click', () => copy(el('dbg_intervals')?.textContent || ''));
   el('dbg_copy_conflict')?.addEventListener('click', () => copy(el('dbg_conflict')?.textContent || ''));
   el('dbg_clear')?.addEventListener('click', () => {
     DBG.lastReq = DBG.lastRes = DBG.intervals = DBG.conflict = null;
@@ -1403,6 +1410,23 @@ function openAssignModal(skey){
   renderAssignModal();
 }
 
+function resetScheduleStateForNewDate(){
+  // Prevent stale day/slot being reused when date changes (T2)
+  state.selected_slot_iso = '';
+  state.selected_slot_key = '';
+  state.selected_slot = null;
+  state.available_slots = [];
+  state.slots_loaded = false;
+  state.available_techs_for_slot = [];
+  // lock selections
+  state.confirmed_tech_username = '';
+  state.confirmed_tech_label = '';
+  state.team_members = [];
+  // UI clean
+  try{ el('assign_summary') && (el('assign_summary').textContent = ''); }catch(e){}
+  try{ el('selected_slot_label') && (el('selected_slot_label').textContent = ''); }catch(e){}
+}
+
 
 function renderSlots() {
   const box = el("slots_box");
@@ -1412,9 +1436,18 @@ function renderSlots() {
   // UX: บางวัน backend จะคืนสล็อตเป็น “ช่วงกว้าง” เช่น 09:00-17:59 (คือเลือกเริ่มได้หลายเวลา)
   // เพื่อให้ใช้งานจริง (เลือกหลังบ่าย/เย็นได้ง่าย) เราแตกเป็นสลอตย่อยทุก 30 นาที
   const slotsAll = [];
+  const hhmmToMin2 = (hhmm)=>{
+    const m = String(hhmm||'').trim().match(/^(\d\d):(\d\d)$/);
+    if(!m) return null;
+    const v = Number(m[1]) * 60 + Number(m[2]);
+    return Number.isFinite(v) ? v : null;
+  };
+
   for (const s of slotsAllRaw) {
-    const startMin = typeof s.start_min === 'number' ? s.start_min : null;
-    const endMin = typeof s.end_min === 'number' ? s.end_min : null;
+    // Backend may return either {start_min,end_min} or {start,end}.
+    // We normalize so UI can always expand wide ranges into 30-min selectable slots.
+    const startMin = (typeof s.start_min === 'number') ? s.start_min : hhmmToMin2(s.start);
+    const endMin = (typeof s.end_min === 'number') ? s.end_min : hhmmToMin2(s.end);
     const selectable = !s.special;
     if (selectable && startMin !== null && endMin !== null && endMin > startMin) {
       for (let t = startMin; t <= endMin; t += 30) {
@@ -1629,8 +1662,8 @@ function updateAssignSummary(){
     return;
   }
   if(mode === 'single'){
-    const u = (el('technician_username_select')?.value || el('technician_username')?.value || '').trim();
-    t.textContent = u ? `เลือกเดี่ยว • ${techDisplay(u)}` : 'เลือกเดี่ยว • ยังไม่ได้เลือกช่าง (ระบบจะเลือกช่างว่างให้)';
+    const u = (state.confirmed_tech_username || (el('technician_username_select')?.value || el('technician_username')?.value || '')).trim();
+    t.textContent = u ? `เลือกเดี่ยว • ${techDisplay(u)} • username: ${u}` : 'เลือกเดี่ยว • ต้องกด “ยืนยันเลือกช่างคนนี้” ก่อนบันทึก';
     return;
   }
   t.textContent = 'ยังไม่ได้เลือกช่าง • ระบบจะเลือกช่างว่างให้';
@@ -1981,18 +2014,12 @@ async function submitBooking() {
     job_zone: (el("job_zone").value || "").trim(),
     booking_mode: (el("booking_mode").value || "scheduled").trim(),
     tech_type: (el("tech_type").value || "company").trim(),
-    assign_mode: (function(){
-      const m = (el('assign_mode')?.value || 'auto').toString();
-      const techVal = (el("technician_username_select")?.value || (el("technician_username")?.value||"" )).trim();
-      if(m === 'single' && !techVal) return 'auto';
-      if(m === 'team') return 'team';
-      if(m === 'auto') return 'auto';
-      return m;
-    })(),
+    // CWF Spec: do not silently fallback single->auto; backend is the source of truth.
+    assign_mode: (el('assign_mode')?.value || 'auto').toString(),
     technician_username: (()=>{
       const mode = (el('assign_mode')?.value || 'auto').toString();
       if(mode === 'team') return (state.teamPicker.primary || '').trim();
-      if(mode === 'single') return (el("technician_username_select")?.value || (el("technician_username")?.value||"")).trim();
+      if(mode === 'single') return (state.confirmed_tech_username || (el("technician_username_select")?.value || (el("technician_username")?.value||""))).trim();
       return '';
     })(),
     dispatch_mode: (el("dispatch_mode").value || "forced").trim(),
@@ -2024,10 +2051,10 @@ async function submitBooking() {
   // NOTE: split_assignments is optional and backward compatible
 
 
-  // Client-side guard (UX): single mode requires technician. If missing, auto-fallback already applied above.
+  // Client-side guard (UX): single mode requires confirmed technician.
   const amNow = (payload.assign_mode || 'auto').toString();
-  if (amNow === 'single' && !(payload.technician_username || '').trim()) {
-    showToast('โหมดเดี่ยวต้องเลือกช่างก่อนบันทึก', 'error');
+  if (amNow === 'single' && !(state.confirmed_tech_username || '').trim()) {
+    showToast('โหมดเดี่ยว: กรุณาเลือกช่าง แล้วกด “ยืนยันเลือกช่างคนนี้” ก่อนบันทึก', 'error');
     el("btnSubmit").disabled = false;
     return;
   }
@@ -2133,13 +2160,22 @@ function wireEvents() {
     const confirmBtn = el('slot_modal_confirm');
     if(closeBtn) closeBtn.addEventListener('click', closeSlotModal);
     if(confirmBtn) confirmBtn.addEventListener('click', () => {
-      // ถ้าอยู่โหมดเดี่ยวแต่ยังไม่เลือกช่าง ให้ fallback เป็น auto
       const am = (el('assign_mode')?.value || 'auto');
       const tech = (el('technician_username_select')?.value || '').trim();
-      if(am === 'single' && !tech) {
-        el('assign_mode').value = 'auto';
-        updatePreviewText?.();
+      // CWF Spec: single = must lock selected tech 100% (no silent fallback)
+      if(am === 'single'){
+        if(!tech){
+          showToast('โหมดเดี่ยว: กรุณาเลือกช่าง แล้วกด “ยืนยันเลือกช่างคนนี้”', 'error');
+          return;
+        }
+        state.confirmed_tech_username = tech;
+        state.confirmed_tech_label = techDisplay(tech);
+      } else {
+        // auto/team
+        state.confirmed_tech_username = '';
+        state.confirmed_tech_label = '';
       }
+      try{ updateAssignSummary(); }catch(e){}
       closeSlotModal();
     });
     const ov = el('slot_modal_overlay');
@@ -2174,7 +2210,10 @@ function wireEvents() {
   } catch(e){}
   el("promotion_id").addEventListener("change", () => updateTotalPreview());
   const btnEx = el("btnAddExtra"); if(btnEx) btnEx.addEventListener("click", addExtra);
-  el("appt_date").addEventListener("change", loadAvailability);
+  el("appt_date").addEventListener("change", async ()=>{
+    resetScheduleStateForNewDate();
+    await loadAvailability();
+  });
   el("tech_type").addEventListener("change", async ()=>{ await loadTechsForType(); await loadAvailability(); });
   // booking_mode_ui is the only user-facing mode control.
   const bmUI = el('booking_mode_ui');

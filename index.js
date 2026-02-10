@@ -1662,7 +1662,8 @@ app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
     admin_override_duration_min: Math.max(0, coerceNumber(override_duration_min, 0)),
   };
 
-  let duration_min = computeDurationMinMulti(payloadV2, { source: "admin_book_v2" });
+  // CWF Spec: Always use conservative duration for booking/collision (no parallel/team reduction)
+  let duration_min = computeDurationMinMulti(payloadV2, { source: "admin_book_v2", conservative: true });
   if (duration_min <= 0) {
     return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration_min)" });
   }
@@ -2889,7 +2890,7 @@ app.post("/jobs/:job_id/admin-cancel", async (req, res) => {
 // - ใช้กับงานทดสอบ/งานลงผิด (ลบจะหายทุกหน้าทันที)
 // - ต้องส่ง confirm_code = booking_code หรือคำว่า "DELETE"
 // =======================================
-app.delete("/jobs/:job_id/admin-delete", async (req, res) => {
+app.delete("/jobs/:job_id/admin-delete", requireAdminSoft, async (req, res) => {
   const job_id = Number(req.params.job_id);
   const confirm_code = (req.body?.confirm_code || "").toString().trim().toUpperCase();
 
@@ -2901,7 +2902,7 @@ app.delete("/jobs/:job_id/admin-delete", async (req, res) => {
 
     const jr = await client.query(
       `SELECT booking_code FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
-      [jid]
+      [job_id]
     );
     if (!jr.rows.length) throw new Error("ไม่พบงาน");
 
@@ -2913,6 +2914,12 @@ app.delete("/jobs/:job_id/admin-delete", async (req, res) => {
     }
 
     await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [job_id]);
+
+    // server log (at least)
+    try {
+      const who = (req.headers["x-admin-username"] || req.headers["x-user"] || req.headers["x-forwarded-for"] || req.ip || "").toString();
+      console.log("[admin_delete_job]", { job_id, who, ok: true });
+    } catch (e) {}
 
     await client.query("COMMIT");
     res.json({ success: true });
@@ -5385,7 +5392,11 @@ function computeDurationMinMulti(payload = {}, opts = {}) {
 
   // If services are assigned to multiple technicians and parallel mode is on,
   // compute duration as max(total duration per tech) to reflect "ทำพร้อมกัน".
-  const parallel = payload && (payload.parallel_by_tech === true || payload.parallel_by_tech === "true" || payload.parallel_by_tech === 1 || payload.parallel_by_tech === "1");
+  // IMPORTANT (CWF Spec): Availability/Collision must be conservative.
+  // - Do NOT reduce duration by team/crew/parallel tricks when deciding "ว่างจริง".
+  // - We still keep parallel_by_tech for legacy UI preview, but callers can force conservative.
+  const conservative = opts && opts.conservative === true;
+  const parallel = !conservative && payload && (payload.parallel_by_tech === true || payload.parallel_by_tech === "true" || payload.parallel_by_tech === 1 || payload.parallel_by_tech === "1");
   const byTech = new Map();
   let total = 0;
 
@@ -5419,7 +5430,7 @@ function computeDurationMinMulti(payload = {}, opts = {}) {
     return Math.round(mx);
   }
 
-  console.log("[computeDurationMinMulti]", { src: opts.source || "unknown", lines: services.length, parallel: false, total });
+  console.log("[computeDurationMinMulti]", { src: opts.source || "unknown", lines: services.length, parallel: false, conservative, total });
   return Math.round(total);
 }
 
@@ -5919,7 +5930,8 @@ function http409Conflict(res, conflict){
 app.post("/public/pricing_preview", async (req, res) => {
   try {
     const payload = req.body || {};
-    const duration_min = computeDurationMinMulti(payload, { source: "pricing_preview" });
+    // CWF Spec: pricing preview should match conservative schedule duration
+    const duration_min = computeDurationMinMulti(payload, { source: "pricing_preview", conservative: true });
     if (duration_min <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
     const standard_price = computeStandardPriceMulti(payload);
     res.json({
@@ -6397,7 +6409,8 @@ app.post("/public/book", async (req, res) => {
     admin_override_duration_min: 0, // ลูกค้าห้าม override
   };
   if (Array.isArray(services) && services.length) payloadV2.services = services;
-  const duration_min_v2 = computeDurationMinMulti(payloadV2, { source: "public_book" });
+  // CWF Spec: conservative duration for schedule/collision
+  const duration_min_v2 = computeDurationMinMulti(payloadV2, { source: "public_book", conservative: true });
   if (duration_min_v2 <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
   const standard_price = computeStandardPriceMulti(payloadV2);
 
