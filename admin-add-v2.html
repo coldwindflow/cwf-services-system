@@ -369,6 +369,10 @@
           <label style="margin-top:10px">วันที่</label>
           <input id="appt_date" type="date">
           <button class="secondary" type="button" id="btnLoadSlots" style="margin-top:8px;width:100%">โหลดคิวว่าง</button>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
+            <button class="secondary" type="button" id="btnToggleDebug" style="padding:10px 12px;border-radius:14px">🧪 Debug: Off</button>
+            <span class="muted2 mini">เปิดดู request/response/busy/free</span>
+          </div>
 
           <!-- Slots appear directly under the load button (no scrolling confusion) -->
           <div style="margin-top:10px">

@@ -84,6 +84,30 @@ function dbgBind(){
   dbgRender();
 }
 
+function bindDebugToggle(){
+  const btn = el('btnToggleDebug');
+  if(!btn) return;
+  try{
+    btn.textContent = DEBUG_ENABLED ? '🧪 Debug: On' : '🧪 Debug: Off';
+  }catch(e){}
+  btn.addEventListener('click', () => {
+    try {
+      const qs = new URLSearchParams(location.search);
+      if (DEBUG_ENABLED) {
+        localStorage.removeItem('cwf_debug');
+        qs.delete('debug');
+      } else {
+        localStorage.setItem('cwf_debug', '1');
+        qs.set('debug','1');
+      }
+      const q = qs.toString();
+      location.href = location.pathname + (q ? ('?' + q) : '');
+    } catch(e){
+      showToast('สลับ Debug ไม่สำเร็จ', 'error');
+    }
+  });
+}
+
 function applyLangButtons({ thBtnId, enBtnId, active }){
   const thBtn = el(thBtnId);
   const enBtn = el(enBtnId);
@@ -1397,7 +1421,14 @@ function renderSlots() {
         <button type="button" class="secondary" id="btnAutoSlotEmpty">+ เพิ่มเวลาอัตโนมัติ (ตามเวลางาน)</button>
       </div>
       <div class="muted2 mini" style="margin-top:8px">* ระบบจะเพิ่มสลอตให้ช่าง 1 คนก่อน (เลือกช่างได้) แล้วค่อยโหลดคิวใหม่</div>
-    `;
+    
+      ${DEBUG_ENABLED && DBG.intervals && Array.isArray(DBG.intervals.reasons) && DBG.intervals.reasons.length ? `
+      <div class="muted2 mini" style="margin-top:10px">เหตุผล (debug):</div>
+      <ul class="muted2 mini" style="margin-top:6px;padding-left:18px">
+        ${DBG.intervals.reasons.map(r=>`<li><b>${String(r.code||'')}</b>: ${String(r.message||'')}</li>`).join('')}
+      </ul>
+      ` : '' }
+`;
     box.appendChild(wrap);
     setTimeout(() => {
       const b1 = el('btnSpecialSlotEmpty');
@@ -1652,6 +1683,17 @@ function openSlotModal(slot){
         <button type="button" class="secondary" id="slotm_confirm_offer" style="width:100%">ใช้เวลานี้</button>
       </div>
     `;
+    // If debug enabled, show reasons from backend in the empty-state UI
+    try{
+      const reasons = (DBG && DBG.intervals && Array.isArray(DBG.intervals.reasons)) ? DBG.intervals.reasons : [];
+      if (DEBUG_ENABLED && reasons.length) {
+        const reasonDiv = document.createElement('div');
+        reasonDiv.className = 'muted2 mini';
+        reasonDiv.style.marginTop = '10px';
+        reasonDiv.innerHTML = '<b>เหตุผล (Debug)</b>:<br>' + reasons.map(r=>`• ${String(r.code||'')}: ${String(r.message||'')}`).join('<br>');
+        wrap.appendChild(reasonDiv);
+      }
+    }catch(e){}
     setTimeout(()=>{
       const t = body.querySelector('#slotm_time');
       if(t){
@@ -2239,6 +2281,7 @@ async function addSpecialSlotV2(opts = {}){
 }
 
 async function init() {
+  bindDebugToggle();
   dbgBind();
   setBtuOptions();
   bindMachineCountStepper();

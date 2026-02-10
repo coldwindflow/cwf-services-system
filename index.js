@@ -2911,31 +2911,6 @@ app.put("/jobs/:job_id/status", async (req, res) => {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
-    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
-    if (uploaded_by) {
-      try {
-        const u = String(uploaded_by || '').trim();
-        if (u) {
-          const okR = await pool.query(
-            `
-            SELECT 1
-            FROM public.jobs j
-            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
-            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
-            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
-            LIMIT 1
-            `,
-            [realId, u]
-          );
-          if (!okR.rows.length) {
-            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
-          }
-        }
-      } catch (e) {
-        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
-        console.warn('[photos/meta] uploaded_by validate failed', e.message);
-      }
-    }
     // ✅ เมื่อเริ่มงานครั้งแรก ให้บันทึก started_at
     if (status === 'กำลังทำ') {
       await pool.query(
@@ -2965,31 +2940,6 @@ app.get("/jobs/:job_id/pricing", async (req, res) => {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
-    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
-    if (uploaded_by) {
-      try {
-        const u = String(uploaded_by || '').trim();
-        if (u) {
-          const okR = await pool.query(
-            `
-            SELECT 1
-            FROM public.jobs j
-            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
-            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
-            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
-            LIMIT 1
-            `,
-            [realId, u]
-          );
-          if (!okR.rows.length) {
-            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
-          }
-        }
-      } catch (e) {
-        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
-        console.warn('[photos/meta] uploaded_by validate failed', e.message);
-      }
-    }
     const itemsR = await pool.query(
       `SELECT item_name, qty, unit_price, line_total FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
       [realId]
@@ -3849,31 +3799,6 @@ app.post("/jobs/:job_id/travel-start", async (req, res) => {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
-    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
-    if (uploaded_by) {
-      try {
-        const u = String(uploaded_by || '').trim();
-        if (u) {
-          const okR = await pool.query(
-            `
-            SELECT 1
-            FROM public.jobs j
-            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
-            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
-            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
-            LIMIT 1
-            `,
-            [realId, u]
-          );
-          if (!okR.rows.length) {
-            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
-          }
-        }
-      } catch (e) {
-        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
-        console.warn('[photos/meta] uploaded_by validate failed', e.message);
-      }
-    }
     await pool.query(
       `UPDATE public.jobs
        SET travel_started_at = COALESCE(travel_started_at, NOW())
@@ -3900,31 +3825,6 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
-    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
-    if (uploaded_by) {
-      try {
-        const u = String(uploaded_by || '').trim();
-        if (u) {
-          const okR = await pool.query(
-            `
-            SELECT 1
-            FROM public.jobs j
-            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
-            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
-            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
-            LIMIT 1
-            `,
-            [realId, u]
-          );
-          if (!okR.rows.length) {
-            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
-          }
-        }
-      } catch (e) {
-        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
-        console.warn('[photos/meta] uploaded_by validate failed', e.message);
-      }
-    }
     const r = await pool.query(`SELECT gps_latitude, gps_longitude FROM public.jobs WHERE job_id=$1`, [realId]);
     if (r.rows.length === 0) return res.status(404).json({ error: "ไม่พบงาน" });
 
@@ -4047,31 +3947,6 @@ app.post("/jobs/:job_id/photos/:photo_id/upload", upload.single("photo"), async 
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
-    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
-    if (uploaded_by) {
-      try {
-        const u = String(uploaded_by || '').trim();
-        if (u) {
-          const okR = await pool.query(
-            `
-            SELECT 1
-            FROM public.jobs j
-            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
-            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
-            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
-            LIMIT 1
-            `,
-            [realId, u]
-          );
-          if (!okR.rows.length) {
-            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
-          }
-        }
-      } catch (e) {
-        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
-        console.warn('[photos/meta] uploaded_by validate failed', e.message);
-      }
-    }
     const meta = await pool.query(
       `SELECT photo_id, mime_type FROM public.job_photos WHERE photo_id=$1 AND job_id=$2`,
       [photo_id, realId]
@@ -4108,31 +3983,6 @@ app.get("/jobs/:job_id/photos", async (req, res) => {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
-    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
-    if (uploaded_by) {
-      try {
-        const u = String(uploaded_by || '').trim();
-        if (u) {
-          const okR = await pool.query(
-            `
-            SELECT 1
-            FROM public.jobs j
-            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
-            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
-            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
-            LIMIT 1
-            `,
-            [realId, u]
-          );
-          if (!okR.rows.length) {
-            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
-          }
-        }
-      } catch (e) {
-        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
-        console.warn('[photos/meta] uploaded_by validate failed', e.message);
-      }
-    }
     const r = await pool.query(
       `SELECT photo_id, phase, created_at, uploaded_at, public_url FROM public.job_photos WHERE job_id=$1 ORDER BY photo_id ASC`,
       [realId]
@@ -4155,31 +4005,6 @@ app.put("/jobs/:job_id/note", async (req, res) => {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
-    // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
-    if (uploaded_by) {
-      try {
-        const u = String(uploaded_by || '').trim();
-        if (u) {
-          const okR = await pool.query(
-            `
-            SELECT 1
-            FROM public.jobs j
-            LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
-            LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
-            WHERE j.job_id=$1 AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
-            LIMIT 1
-            `,
-            [realId, u]
-          );
-          if (!okR.rows.length) {
-            return res.status(400).json({ error: "uploaded_by ไม่ถูกต้อง (ไม่ได้อยู่ในทีมของงาน)" });
-          }
-        }
-      } catch (e) {
-        // fail-open: ถ้าเช็คไม่สำเร็จ ไม่บล็อคการอัปโหลด แต่จะเก็บ null
-        console.warn('[photos/meta] uploaded_by validate failed', e.message);
-      }
-    }
     await pool.query(
       `UPDATE public.jobs SET technician_note=$1, technician_note_at=NOW() WHERE job_id=$2`,
       [note || "", realId]
@@ -6069,6 +5894,13 @@ app.get("/public/availability_v2", async (req, res) => {
   // - 'free': return blocks of *free time* (เวลาว่างจริง) within UI window
   const mode = String(req.query.mode || req.query.view || 'start').trim().toLowerCase();
 
+  // debug=1 (admin/dev): include backend busy/free + reasons in response
+  const debugFlag = String(req.query.debug || '').trim() === '1';
+  const debugBusy = {};
+  const debugFree = {};
+  const debugReasons = [];
+  const debugInfo = { busy_by_tech: debugBusy, free_by_tech: debugFree, reasons: debugReasons };
+
   try {
     const techsAll = await listTechniciansByType(tech_type, { include_paused: forced });
     // workday overrides (block forced lock on off-days)
@@ -6100,6 +5932,10 @@ app.get("/public/availability_v2", async (req, res) => {
     }
     const tech_count = techs.length;
 
+    if (debugFlag && tech_count === 0) {
+      debugReasons.push({ code: 'NO_TECH', message: 'ไม่มีช่างที่ตรงเงื่อนไข (tech_type/forced/วันหยุด) — ตรวจที่หน้า ช่าง/วันหยุด/accept_status' });
+    }
+
     // Auto crew sizing (admin add v2 safety):
     // If the job duration is very long and the caller didn't specify a crew_size,
     // suggest a minimal team size so at least some slots can appear.
@@ -6123,6 +5959,21 @@ app.get("/public/availability_v2", async (req, res) => {
     // For crew jobs, availability is based on per-tech workload time.
     const effective_duration_min = Math.max(15, Math.round(duration_min / crew_size));
     const default_effective_block_min = effective_duration_min + TRAVEL_BUFFER_MIN;
+
+    // Reason hint: duration longer than UI window (09:00–18:00)
+    if (debugFlag) {
+      const uiWindowMin = (uiEndMin - uiStartMin);
+      if (effective_duration_min > uiWindowMin) {
+        debugReasons.push({ code: 'DURATION_TOO_LONG', message: `duration_min=${effective_duration_min} นาที ยาวเกินหน้าต่าง 09:00–18:00 (\${uiWindowMin} นาที) — จะไม่พบช่วงเริ่มงานใน UI window` });
+      }
+    }
+
+    if (debugFlag) {
+      const uiWindowMin = toMin('18:00') - toMin('09:00');
+      if (effective_duration_min > uiWindowMin) {
+        debugReasons.push({ code: 'TOO_LONG', message: `งานยาว ${effective_duration_min} นาที มากกว่าช่วงเวลา 09:00–18:00 (${uiWindowMin} นาที) จึงไม่มีช่วงเริ่มงานในหน้าต่างนี้` });
+      }
+    }
 
     // Build per-tech intervals, then sweep to produce "blocks" (non-fixed steps)
     const events = new Map(); // min -> { add:[], remove:[] }
@@ -6181,7 +6032,8 @@ app.get("/public/availability_v2", async (req, res) => {
     // Ensure deterministic sweep start from uiStartMin
     const sweepPoints = points.length ? points : [];
     if (!sweepPoints.length) {
-      console.log("[availability_v2]", { date, tech_type, forced, duration_min, crew_size, effective_duration_min, tech_count, slots: 0 });
+      if (debugFlag) debugReasons.push({ code: 'NO_EVENTS', message: 'ไม่มีช่วงเวลาว่าง/ช่วงเริ่มงานในหน้าต่าง 09:00–18:00 (อาจเกิดจากวันหยุด/ไม่มี special slot/หรือถูก busy block ทั้งหมด)' });
+      console.log("[availability_v2]", { date, tech_type, forced, duration_min, crew_size, effective_duration_min, tech_count, slots: 0, reason: debugReasons.map(r=>r.code).join(',') });
       return res.json({
         date,
         tech_type,
@@ -6195,6 +6047,7 @@ app.get("/public/availability_v2", async (req, res) => {
         tech_count,
         crew_size,
         slots: [],
+        debug: debugFlag ? debugInfo : undefined,
       });
     }
 
@@ -6238,7 +6091,11 @@ app.get("/public/availability_v2", async (req, res) => {
       slots.push(slotObj);
     }
 
-    console.log("[availability_v2]", { date, tech_type, forced, duration_min, crew_size, effective_duration_min, tech_count, slots: slots.length });
+    if (debugFlag && slots.length === 0 && tech_count > 0) {
+      debugReasons.push({ code: 'BLOCKED', message: 'พบช่างแต่ไม่มีช่วงที่เริ่มงานได้ (ถูก block จาก busy+buffer หรือ duration ยาวเกินช่วงว่าง)' });
+    }
+
+    console.log("[availability_v2]", { date, tech_type, forced, duration_min, crew_size, effective_duration_min, tech_count, slots: slots.length, reason: (debugFlag? debugReasons.map(r=>r.code).join(','): undefined) });
 
     res.json({
       date,
@@ -6254,6 +6111,7 @@ app.get("/public/availability_v2", async (req, res) => {
       crew_size,
       mode: (mode === 'free') ? 'free' : 'start',
       slots,
+      debug: debugFlag ? debugInfo : undefined,
     });
   } catch (e) {
     console.error(e);
