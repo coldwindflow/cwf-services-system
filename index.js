@@ -1774,19 +1774,23 @@ if (coerceNumber(override_price, 0) > 0) {
     let selectedTech = (technician_username || "").toString().trim();
     if (!selectedTech) {
       // list group techs
+      
+      // list group techs (Admin assign ignores accept_status; Offer must respect paused)
+      const isAll = (ttype === 'all');
+      const offerOnly = (mode === 'offer'); // offer flow must respect accept_status
       const tr = await client.query(
         `
         SELECT u.username
         FROM public.users u
         LEFT JOIN public.technician_profiles p ON p.username=u.username
         WHERE u.role='technician'
-          AND COALESCE(p.accept_status,'ready') <> 'paused'
+          AND ($2::boolean IS TRUE OR COALESCE(p.accept_status,'ready') <> 'paused')
           AND ($3::boolean IS TRUE OR COALESCE(p.employment_type,'company') = $1)
         ORDER BY u.username
         `,
-        [ttype]
+        [ttype === 'all' ? 'company' : ttype, !offerOnly, isAll]
       );
-      const list = (tr.rows || []).map((r) => r.username).slice(0, 30);
+      const list = (tr.rows || []).map((r) => r.username).slice(0, 60);
       selectedTech = await pickFirstAvailableTech(list, apptIso, duration_min);
     } else {
       // ✅ Forced lock: allow even if technician hasn't opened accept_status,
@@ -1805,22 +1809,6 @@ if (coerceNumber(override_price, 0) > 0) {
           }
         } catch (e) {
           console.warn('[admin_book_v2] off-day check failed (fail-open)', e.message);
-        }
-      }
-
-      // ✅ Normal mode: ห้ามเลือกช่างที่หยุดรับงาน (accept_status=paused)
-      if (mode === 'normal') {
-        try {
-          const pr2 = await client.query(
-            `SELECT COALESCE(accept_status,'ready') AS accept_status FROM public.technician_profiles WHERE username=$1 LIMIT 1`,
-            [selectedTech]
-          );
-          const st = (pr2.rows[0]?.accept_status || 'ready').toString().trim().toLowerCase();
-          if (st === 'paused') {
-            return res.status(409).json({ error: `ช่างหยุดรับงาน: ${selectedTech} (Normal ห้ามส่ง)` });
-          }
-        } catch (e) {
-          console.warn('[admin_book_v2] normal accept_status check failed (fail-open)', e.message);
         }
       }
       const conflict = await checkTechCollision(selectedTech, apptIso, duration_min, null);

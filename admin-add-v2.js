@@ -213,7 +213,7 @@ async function loadTechsForType(){
     const rows = Array.isArray(data) ? data : (data.rows||data.technicians||[]);
     const ttype = (el("tech_type")?.value || "company").toLowerCase();
     state.techs = rows
-      .filter(r => ((r.employment_type||"company").toLowerCase()===ttype))
+      .filter(r => (ttype === 'all') ? true : (((r.employment_type||"company").toLowerCase()===ttype)))
       .map(r=>({
         username: r.username,
         full_name: r.full_name || "",
@@ -736,7 +736,7 @@ function updateFlowUI(){
   // Forced/Normal: workload assignment only in forced
   try { updateWashAssignmentUI(); } catch(e){}
   if(help){
-    help.textContent = (uiMode==='normal') ? 'Normal: ช่างต้องเปิดรับงาน • ห้ามชนคิว' : (uiMode==='forced') ? 'Forced: เลือกช่างได้แม้หยุดรับงาน แต่ห้ามชนคิว' : 'Urgent: ยิงข้อเสนอไปช่างที่ว่างและเปิดรับงาน';
+    help.textContent = (uiMode==='urgent') ? 'Urgent: ยิงข้อเสนอไปช่างที่ว่างและเปิดรับงาน' : (uiMode==='forced') ? 'Forced: แอดมินสั่งงานได้ (ไม่สนเปิดรับงาน) แต่ห้ามชนคิว' : 'Normal: แอดมินสั่งงานได้ (ไม่สนเปิดรับงาน) แต่ห้ามชนคิว';
   }
 }
 
@@ -1121,7 +1121,7 @@ async function loadAvailability() {
     syncModesFromUI();
     const dispatchMode = (el('dispatch_mode')?.value || 'normal').toString();
     // No UI toggle: forced is implied by dispatch_mode=forced (lock)
-    const forced = (dispatchMode === 'forced'); // normal => false
+    const forced = true; // Admin assign: ignore accept_status (include paused). Collision still enforced.
     const qs = new URLSearchParams({
       date,
       tech_type,
