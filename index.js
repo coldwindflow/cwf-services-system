@@ -6027,7 +6027,6 @@ app.get("/public/availability_v2", async (req, res) => {
     // ✅ Duration for collision is ALWAYS the real duration_total (no crew division)
     const effective_duration_min = Math.max(1, Number(duration_min || 0));
     const default_effective_block_min = effective_duration_min + TRAVEL_BUFFER_MIN;
-    }
 
     // Build per-tech intervals, then sweep to produce "blocks" (non-fixed steps)
     const events = new Map(); // min -> { add:[], remove:[] }
