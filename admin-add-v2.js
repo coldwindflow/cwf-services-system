@@ -223,7 +223,9 @@ function renderTechSelect(allowedIds=null){
   for(const t of list){
     const o = document.createElement("option");
     o.value = t.username;
-    o.textContent = (t.display_name || t.full_name || t.username);
+    // แสดงทั้งชื่อจริง + username เพื่อกันความสับสน/เลือกผิดคน
+    const name = (t.display_name || t.full_name || t.username);
+    o.textContent = `${name} (${t.username})`;
     sel.appendChild(o);
   }
   // restore if possible
@@ -1406,7 +1408,29 @@ function renderSlots() {
   const box = el("slots_box");
   if (!box) return;
   box.innerHTML = "";
-  const slotsAll = Array.isArray(state.available_slots) ? state.available_slots.filter(Boolean) : [];
+  const slotsAllRaw = Array.isArray(state.available_slots) ? state.available_slots.filter(Boolean) : [];
+  // UX: บางวัน backend จะคืนสล็อตเป็น “ช่วงกว้าง” เช่น 09:00-17:59 (คือเลือกเริ่มได้หลายเวลา)
+  // เพื่อให้ใช้งานจริง (เลือกหลังบ่าย/เย็นได้ง่าย) เราแตกเป็นสลอตย่อยทุก 30 นาที
+  const slotsAll = [];
+  for (const s of slotsAllRaw) {
+    const startMin = typeof s.start_min === 'number' ? s.start_min : null;
+    const endMin = typeof s.end_min === 'number' ? s.end_min : null;
+    const selectable = !s.special;
+    if (selectable && startMin !== null && endMin !== null && endMin > startMin) {
+      for (let t = startMin; t <= endMin; t += 30) {
+        slotsAll.push({
+          ...s,
+          start_min: t,
+          end_min: t,
+          start: minToHHMM(t),
+          end: minToHHMM(t),
+          _expanded_from_range: true,
+        });
+      }
+    } else {
+      slotsAll.push(s);
+    }
+  }
   // If no slots returned (e.g. duration too long), still allow admin to create a special slot.
   if (!slotsAll.length) {
     const wrap = document.createElement('div');
@@ -1832,7 +1856,8 @@ function openSlotModal(slot){
     `;
     const selEl = body.querySelector('#slotm_single');
     // value MUST be username (stable id) — label shows real name from technician profile
-    selEl.innerHTML = `<option value="">-- ไม่เลือก (ระบบเลือกช่างว่าง) --</option>` + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(techDisplay(u))}</option>`).join('');
+    selEl.innerHTML = `<option value="">-- ไม่เลือก (ระบบเลือกช่างว่าง) --</option>`
+      + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(techDisplay(u))} (${escapeHtml(u)})</option>`).join('');
     if(cur && ids.includes(cur)) selEl.value = cur;
 
     selEl.addEventListener('change', ()=>{
@@ -2105,7 +2130,18 @@ function wireEvents() {
   // Slot modal
   try {
     const closeBtn = el('slot_modal_close');
+    const confirmBtn = el('slot_modal_confirm');
     if(closeBtn) closeBtn.addEventListener('click', closeSlotModal);
+    if(confirmBtn) confirmBtn.addEventListener('click', () => {
+      // ถ้าอยู่โหมดเดี่ยวแต่ยังไม่เลือกช่าง ให้ fallback เป็น auto
+      const am = (el('assign_mode')?.value || 'auto');
+      const tech = (el('technician_username_select')?.value || '').trim();
+      if(am === 'single' && !tech) {
+        el('assign_mode').value = 'auto';
+        updatePreviewText?.();
+      }
+      closeSlotModal();
+    });
     const ov = el('slot_modal_overlay');
     if(ov) ov.addEventListener('click', (ev)=>{ if(ev.target === ov) closeSlotModal(); });
   } catch(e){}
