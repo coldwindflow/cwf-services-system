@@ -1032,20 +1032,18 @@ async function loadAvailability() {
       duration_min: String(duration_min),
     });
 
-    // Admin v2: enable safe auto crew sizing for very long jobs
-    // (preview only; does not change booking logic)
-    qs.set('auto_crew', '1');
-
-    // If admin intends to dispatch as a team (multiple technicians in parallel),
-    // request availability based on per-tech workload time slice.
-    // Backward compatible: server defaults crew_size=1.
+    // Team preview ONLY (do not change hard collision rules).
+    // Backend will ignore crew_size unless preview_team=1 & assign_mode=team.
     try {
       const am = (el('assign_mode')?.value || 'auto').toString();
       const techs = getConstraintTechs();
       if (am === 'team' && Array.isArray(techs) && techs.length >= 2) {
+        qs.set('assign_mode', 'team');
+        qs.set('preview_team', '1');
         qs.set('crew_size', String(Math.min(10, techs.length)));
       }
     } catch(e){}
+
     if (forced) qs.set('forced','1');
 
     if (DEBUG_ENABLED) qs.set('debug','1');
@@ -1958,7 +1956,14 @@ async function submitBooking() {
     job_zone: (el("job_zone").value || "").trim(),
     booking_mode: (el("booking_mode").value || "scheduled").trim(),
     tech_type: (el("tech_type").value || "company").trim(),
-    assign_mode: (el('assign_mode')?.value || 'auto').toString(),
+    assign_mode: (function(){
+      const m = (el('assign_mode')?.value || 'auto').toString();
+      const techVal = (el("technician_username_select")?.value || (el("technician_username")?.value||"" )).trim();
+      if(m === 'single' && !techVal) return 'auto';
+      if(m === 'team') return 'team';
+      if(m === 'auto') return 'auto';
+      return m;
+    })(),
     technician_username: (()=>{
       const mode = (el('assign_mode')?.value || 'auto').toString();
       if(mode === 'team') return (state.teamPicker.primary || '').trim();
@@ -1992,6 +1997,15 @@ async function submitBooking() {
   const services = getServicesPayload();
   if(services) payload.services = services;
   // NOTE: split_assignments is optional and backward compatible
+
+
+  // Client-side guard (UX): single mode requires technician. If missing, auto-fallback already applied above.
+  const amNow = (payload.assign_mode || 'auto').toString();
+  if (amNow === 'single' && !(payload.technician_username || '').trim()) {
+    showToast('โหมดเดี่ยวต้องเลือกช่างก่อนบันทึก', 'error');
+    el("btnSubmit").disabled = false;
+    return;
+  }
 
   try {
     el("btnSubmit").disabled = true;

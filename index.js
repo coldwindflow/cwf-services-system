@@ -5951,10 +5951,8 @@ app.get("/public/availability_v2", async (req, res) => {
   // This is backward compatible: if omitted or invalid, crew_size=1.
   const crew_size_raw = Number(req.query.crew_size || req.query.crewSize || 1);
   let crew_size = Math.max(1, Math.min(10, Number.isFinite(crew_size_raw) ? Math.floor(crew_size_raw) : 1));
-  // auto_crew=1 (admin add v2): if duration is very long and no crew_size provided,
-  // suggest a minimal crew size so the admin can still see available slots.
-  // Backward compatible: default disabled.
-  const auto_crew = String(req.query.auto_crew || '').trim() === '1';
+  // auto_crew (deprecated): ignored by spec (ห้ามหารเวลา/auto crew)
+  const auto_crew = false;
   // include_full=1: debug/admin usage to return even unavailable time steps.
   const include_full = String(req.query.include_full || '').trim() === '1';
   const slot_step_min = 30;
@@ -6004,19 +6002,20 @@ app.get("/public/availability_v2", async (req, res) => {
     if (debugFlag && tech_count === 0) {
       debugReasons.push({ code: 'NO_TECH', message: 'ไม่มีช่างที่ตรงเงื่อนไข (tech_type/forced/วันหยุด) — ตรวจที่หน้า ช่าง/วันหยุด/accept_status' });
     }
+    // ✅ Crew sizing / parallel work preview
+    // ตามสเปก CWF:
+    // - ห้ามเอา crew_size ไปหารเวลาในโหมด auto/single
+    // - อนุญาตเฉพาะ "preview" โหมด team (เพื่อแสดงข้อมูลเท่านั้น)
+    // ดังนั้น availability จะใช้ duration_min จริงเสมอ (ไม่ divide) เว้นแต่ caller ระบุ preview_team=1 และ assign_mode=team
+    const assign_mode_q = String(req.query.assign_mode || req.query.assignMode || '').trim().toLowerCase();
+    const preview_team = String(req.query.preview_team || req.query.previewTeam || '').trim() === '1';
+    const allowPreviewParallel = preview_team && assign_mode_q === 'team';
 
-    // Auto crew sizing (admin add v2 safety):
-    // If the job duration is very long and the caller didn't specify a crew_size,
-    // suggest a minimal team size so at least some slots can appear.
-    // This does NOT change booking behavior; it only affects the availability preview.
-    if (auto_crew && crew_size === 1 && tech_count > 1) {
-      const d = Number(duration_min || 0);
-      // Heuristic target per-tech <= 240 min (4h). Cap to tech_count.
-      if (d >= 300) {
-        const suggested = Math.max(2, Math.min(tech_count, Math.ceil(d / 240)));
-        crew_size = suggested;
-        console.log('[availability_v2] auto_crew applied', { duration_min: d, tech_count, crew_size });
-      }
+    if (!allowPreviewParallel) {
+      crew_size = 1;
+    } else {
+      // preview only: clamp crew_size to [1, tech_count]
+      crew_size = Math.max(1, Math.min(tech_count || 1, Number(crew_size || 1) || 1));
     }
 
     // ✅ UI primary window is LOCKED to 09:00–18:00
@@ -6025,23 +6024,9 @@ app.get("/public/availability_v2", async (req, res) => {
     const work_start = '09:00';
     const work_end = '18:00';
 
-    // For crew jobs, availability is based on per-tech workload time.
-    const effective_duration_min = Math.max(15, Math.round(duration_min / crew_size));
+    // ✅ Duration for collision is ALWAYS the real duration_total (no crew division)
+    const effective_duration_min = Math.max(1, Number(duration_min || 0));
     const default_effective_block_min = effective_duration_min + TRAVEL_BUFFER_MIN;
-
-    // Reason hint: duration longer than UI window (09:00–18:00)
-    if (debugFlag) {
-      const uiWindowMin = (uiEndMin - uiStartMin);
-      if (effective_duration_min > uiWindowMin) {
-        debugReasons.push({ code: 'DURATION_TOO_LONG', message: `duration_min=${effective_duration_min} นาที ยาวเกินหน้าต่าง 09:00–18:00 (\${uiWindowMin} นาที) — จะไม่พบช่วงเริ่มงานใน UI window` });
-      }
-    }
-
-    if (debugFlag) {
-      const uiWindowMin = toMin('18:00') - toMin('09:00');
-      if (effective_duration_min > uiWindowMin) {
-        debugReasons.push({ code: 'TOO_LONG', message: `งานยาว ${effective_duration_min} นาที มากกว่าช่วงเวลา 09:00–18:00 (${uiWindowMin} นาที) จึงไม่มีช่วงเริ่มงานในหน้าต่างนี้` });
-      }
     }
 
     // Build per-tech intervals, then sweep to produce "blocks" (non-fixed steps)
@@ -6164,7 +6149,7 @@ app.get("/public/availability_v2", async (req, res) => {
       debugReasons.push({ code: 'BLOCKED', message: 'พบช่างแต่ไม่มีช่วงที่เริ่มงานได้ (ถูก block จาก busy+buffer หรือ duration ยาวเกินช่วงว่าง)' });
     }
 
-    console.log("[availability_v2]", { date, tech_type, forced, duration_min, crew_size, effective_duration_min, tech_count, slots: slots.length, reason: (debugFlag? debugReasons.map(r=>r.code).join(','): undefined) });
+    console.log("[availability_v2]", { date, tech_type, forced, duration_min, crew_size, effective_duration_min, tech_count, slots: slots.length, reason: (debugReasons.length ? debugReasons.map(r=>r.code).join(',') : undefined) });
 
     res.json({
       date,
