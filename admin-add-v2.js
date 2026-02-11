@@ -215,8 +215,7 @@ function dbgBind(){
 const btnReset = el('dbg_reset_jobs');
 btnReset?.addEventListener('click', async () => {
   try {
-    const ok1 = confirm('ยืนยันล้างงานทดสอบทั้งหมด?
-(จะลบ jobs + ตารางที่เกี่ยวข้อง)');
+    const ok1 = confirm(`ยืนยันล้างงานทดสอบทั้งหมด?\n(จะลบ jobs + ตารางที่เกี่ยวข้อง)`);
     if (!ok1) return;
     const token = prompt('พิมพ์คำว่า RESET เพื่อยืนยันการล้างงานทดสอบ');
     if ((token || '').trim().toUpperCase() !== 'RESET') {
