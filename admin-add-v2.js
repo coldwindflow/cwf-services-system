@@ -34,7 +34,7 @@ let state = {
 // Debug Panel (admin only)
 // Enable via ?debug=1 or localStorage.cwf_debug=1
 // =============================
-const DEBUG_ENABLED = (() => {
+let DEBUG_ENABLED = (() => {
   try {
     const qs = new URLSearchParams(location.search);
     if (qs.get('debug') === '1') {
@@ -108,8 +108,17 @@ function dbgRender(){
     panel = document.createElement('details');
     panel.id = 'debug_panel';
     panel.className = 'cwf-details card-lite';
-    panel.style.display = 'none';
-    panel.style.margin = '12px 12px 0';
+    // Make it always visible when enabled (no need to scroll to find it)
+    panel.style.display = 'block';
+    panel.style.margin = '0';
+    panel.style.position = 'fixed';
+    panel.style.right = '12px';
+    panel.style.bottom = '12px';
+    panel.style.zIndex = '9999';
+    panel.style.maxWidth = '520px';
+    panel.style.width = 'min(520px, calc(100vw - 24px))';
+    panel.style.maxHeight = '60vh';
+    panel.style.overflow = 'auto';
     panel.innerHTML = `
       <summary style="font-weight:900">Debug Panel <span id="debug_panel_hint" class="muted2 mini">off</span></summary>
       <div style="padding:10px 0">
@@ -147,6 +156,23 @@ function dbgBind(){
   if (!DEBUG_ENABLED) return;
   // Ensure the panel exists before binding buttons (older HTML may not have it).
   try { dbgRender(); } catch(e) {}
+  // Force visibility & fixed placement for both generated and HTML-embedded panels.
+  try {
+    const p = el('debug_panel');
+    if (p) {
+      p.style.display = 'block';
+      p.style.position = 'fixed';
+      p.style.right = '12px';
+      p.style.bottom = '12px';
+      p.style.zIndex = '9999';
+      p.style.maxWidth = p.style.maxWidth || '520px';
+      p.style.width = p.style.width || 'min(520px, calc(100vw - 24px))';
+      p.style.maxHeight = p.style.maxHeight || '60vh';
+      p.style.overflow = p.style.overflow || 'auto';
+      // Auto-open once so admin immediately sees logs
+      if (typeof p.open === 'boolean') p.open = true;
+    }
+  } catch(e) {}
   const copy = async (text) => {
     try { await navigator.clipboard.writeText(text || ''); showToast('คัดลอกแล้ว', 'success'); } catch(e){ showToast('คัดลอกไม่สำเร็จ', 'error'); }
   };
@@ -220,16 +246,20 @@ function bindDebugToggle(){
   }catch(e){}
   btn.addEventListener('click', () => {
     try {
-      const qs = new URLSearchParams(location.search);
-      if (DEBUG_ENABLED) {
-        localStorage.removeItem('cwf_debug');
-        qs.delete('debug');
-      } else {
-        localStorage.setItem('cwf_debug', '1');
-        qs.set('debug','1');
+      // Runtime toggle (no reload) — prevents “กดแล้วไม่เห็นอะไร” บนมือถือ
+      DEBUG_ENABLED = !DEBUG_ENABLED;
+      if (DEBUG_ENABLED) localStorage.setItem('cwf_debug', '1');
+      else localStorage.removeItem('cwf_debug');
+      btn.textContent = DEBUG_ENABLED ? '🧪 Debug: On' : '🧪 Debug: Off';
+      // Ensure panel becomes visible immediately
+      const panel = el('debug_panel');
+      if (panel) {
+        panel.style.display = DEBUG_ENABLED ? 'block' : 'none';
+        if (DEBUG_ENABLED) {
+          try { panel.open = true; } catch(e) {}
+        }
       }
-      const q = qs.toString();
-      location.href = location.pathname + (q ? ('?' + q) : '');
+      dbgRender();
     } catch(e){
       showToast('สลับ Debug ไม่สำเร็จ', 'error');
     }
@@ -851,8 +881,9 @@ function syncModesFromUI(){
   // booking_mode (legacy): urgent vs scheduled
   booking.value = (uiMode === 'urgent') ? 'urgent' : 'scheduled';
 
-  // dispatch_mode (backend v2): normal/forced/offer
-  dispatch.value = (uiMode === 'urgent') ? 'offer' : 'normal';
+  // dispatch_mode (backend v2): forced/offer
+  // NOTE: “นัดงาน (แอดมินสั่งงาน)” ต้อง ignore open_to_work เสมอ => ใช้ forced เป็นค่าเดียว
+  dispatch.value = (uiMode === 'urgent') ? 'offer' : 'forced';
 
   // assign_mode (backend v2): auto/single/team
   if(assign) assign.value = uiAssign;
@@ -1719,7 +1750,7 @@ function renderSlots() {
   // When viewing today's date, do not show past start-times.
   // This is purely a UI filter; backend validation still prevents overlaps.
   try {
-    const dInput = el('date')?.value || el('booking_date')?.value || '';
+    const dInput = el('appt_date')?.value || el('date')?.value || el('booking_date')?.value || '';
     const ymdSel = String(dInput).slice(0,10);
     const now = bangkokNowParts();
     if (ymdSel && now.ymd && ymdSel === now.ymd && Number.isFinite(now.minutes)) {
@@ -2053,8 +2084,7 @@ function openSlotModal(slot){
         b.addEventListener('click', ()=>{
           if(selected.has(u)) selected.delete(u); else selected.add(u);
           state.teamPicker.selected = new Set(Array.from(selected));
-          // keep hidden fields synced
-          el('assign_mode').value = 'team';
+          // keep hidden fields synced (do not change assign_mode here; it is chosen in the main form)
           getTeamMembersForPayload();
           renderSlots();
           try { renderWashAssign(); } catch(e){}
@@ -2074,7 +2104,7 @@ function openSlotModal(slot){
         if(leg) leg.value = p;
         const hid = el('technician_username');
         if(hid) hid.value = p;
-        el('assign_mode').value = 'team';
+        // do not change assign_mode here
         getTeamMembersForPayload();
         renderTeamPicker(ids);
         renderSlots();
@@ -2103,15 +2133,16 @@ function openSlotModal(slot){
     selEl.addEventListener('change', ()=>{
       const v = (selEl.value||'').trim();
       if(!v){
-        el('assign_mode').value = 'auto';
         if(el('technician_username_select')) el('technician_username_select').value = '';
         if(el('technician_username')) el('technician_username').value = '';
+        state.confirmed_tech_username = '';
+        state.confirmed_tech_label = '';
         renderSlots();
         try { renderWashAssign(); } catch(e){}
         updateAssignSummary();
         return;
       }
-      el('assign_mode').value = 'single';
+      // do not change assign_mode here (เลือกมาจาก “รูปแบบมอบหมาย” ด้านบน)
       enableAssignControls(true);
       renderTechSelect(ids);
       if(el('technician_username_select')) el('technician_username_select').value = v;
@@ -2146,29 +2177,9 @@ function openSlotModal(slot){
     });
   };
 
-  const bindModeButtons = ()=>{
-    body.querySelectorAll('button[data-mode]').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const m = btn.getAttribute('data-mode');
-        if(!m) return;
-        el('assign_mode').value = m;
-        // clear selections when switching
-        if(m !== 'single'){
-          if(el('technician_username_select')) el('technician_username_select').value = '';
-          if(el('technician_username')) el('technician_username').value = '';
-        }
-        if(m !== 'team'){
-          state.teamPicker.selected = new Set([]);
-          state.teamPicker.primary = '';
-          getTeamMembersForPayload();
-        }
-        renderSlots();
-        try { renderWashAssign(); } catch(e){}
-        updateAssignSummary();
-        renderBody();
-      });
-    });
-  };
+  // assign_mode is chosen in the main form, not in the slot modal.
+  // Keep a no-op binder for backward compatibility if older HTML had modal mode buttons.
+  const bindModeButtons = ()=>{};
 
   renderBody();
   ov.style.display = 'flex';
@@ -2282,6 +2293,13 @@ async function submitBooking() {
   const amNow = (payload.assign_mode || 'auto').toString();
   if (uiMode !== 'urgent' && amNow === 'single' && !(state.confirmed_tech_username || '').trim()) {
     showToast('โหมดเดี่ยว: กรุณาเลือกช่าง แล้วกด “ยืนยันเลือกช่างคนนี้” ก่อนบันทึก', 'error');
+    el("btnSubmit").disabled = false;
+    return;
+  }
+
+  // Client-side guard (UX): team mode requires primary technician.
+  if (uiMode !== 'urgent' && amNow === 'team' && !String(payload.technician_username||'').trim()) {
+    showToast('โหมดทีม: กรุณาเลือก “ช่างหลัก” ก่อนบันทึก', 'error');
     el("btnSubmit").disabled = false;
     return;
   }
