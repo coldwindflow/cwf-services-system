@@ -385,7 +385,34 @@
           </div>
 
           <!-- Debug Panel mount (keeps panel visible on mobile; avoids being appended outside scroll container) -->
-          <div id="debug_panel_mount" style="margin-top:10px"></div>
+          <div id="debug_panel_mount" style="margin-top:10px">
+            <!-- Debug Panel (admin only) : enable with ?debug=1 or localStorage.cwf_debug=1 -->
+            <details id="debug_panel" class="cwf-details card-lite" style="display:none;margin:12px 0 0">
+              <summary>🧪 Debug Panel <span class="muted2" id="debug_panel_hint">off</span></summary>
+              <div class="details-body">
+                <div class="line" style="flex-wrap:wrap;gap:8px;align-items:center">
+                  <button type="button" class="secondary" id="dbg_backend_toggle">Toggle Backend Logging</button>
+                  <span class="mini muted2">Backend logging:</span>
+                  <b class="mini" id="dbg_backend_status">unknown</b>
+                </div>
+                <div class="line" style="flex-wrap:wrap;gap:8px">
+                  <button type="button" class="secondary" id="dbg_copy_req">Copy Request</button>
+                  <button type="button" class="secondary" id="dbg_copy_res">Copy Response</button>
+                  <button type="button" class="secondary" id="dbg_copy_intervals">Copy Busy/Free</button>
+                  <button type="button" class="secondary" id="dbg_copy_conflict">Copy Conflict</button>
+                  <button type="button" class="secondary" id="dbg_clear">Clear</button>
+                </div>
+                <div class="mini muted2" style="margin-top:10px">Request (masked)</div>
+                <pre id="dbg_req" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:220px;overflow:auto"></pre>
+                <div class="mini muted2" style="margin-top:10px">Response (raw)</div>
+                <pre id="dbg_res" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:220px;overflow:auto"></pre>
+                <div class="mini muted2" style="margin-top:10px">Busy / Free (backend)</div>
+                <pre id="dbg_intervals" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:260px;overflow:auto"></pre>
+                <div class="mini muted2" style="margin-top:10px">Conflict detail (409)</div>
+                <pre id="dbg_conflict" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:220px;overflow:auto"></pre>
+              </div>
+            </details>
+          </div>
 
           <!-- Slots appear directly under the load button (no scrolling confusion) -->
           <div style="margin-top:10px">
@@ -529,33 +556,6 @@
     </div>
 
   </div>
-
-  <!-- Debug Panel (admin only) : enable with ?debug=1 or localStorage.cwf_debug=1 -->
-  <details id="debug_panel" class="cwf-details card-lite" style="display:none;margin:12px 12px 0">
-    <summary>🧪 Debug Panel <span class="muted2" id="debug_panel_hint">off</span></summary>
-    <div class="details-body">
-      <div class="line" style="flex-wrap:wrap;gap:8px;align-items:center">
-        <button type="button" class="secondary" id="dbg_backend_toggle">Toggle Backend Logging</button>
-        <span class="mini muted2">Backend logging:</span>
-        <b class="mini" id="dbg_backend_status">unknown</b>
-      </div>
-      <div class="line" style="flex-wrap:wrap;gap:8px">
-        <button type="button" class="secondary" id="dbg_copy_req">Copy Request</button>
-        <button type="button" class="secondary" id="dbg_copy_res">Copy Response</button>
-        <button type="button" class="secondary" id="dbg_copy_intervals">Copy Busy/Free</button>
-        <button type="button" class="secondary" id="dbg_copy_conflict">Copy Conflict</button>
-        <button type="button" class="secondary" id="dbg_clear">Clear</button>
-      </div>
-      <div class="mini muted2" style="margin-top:10px">Request (masked)</div>
-      <pre id="dbg_req" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:220px;overflow:auto"></pre>
-      <div class="mini muted2" style="margin-top:10px">Response (raw)</div>
-      <pre id="dbg_res" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:220px;overflow:auto"></pre>
-      <div class="mini muted2" style="margin-top:10px">Busy / Free (backend)</div>
-      <pre id="dbg_intervals" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:260px;overflow:auto"></pre>
-      <div class="mini muted2" style="margin-top:10px">Conflict detail (409)</div>
-      <pre id="dbg_conflict" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:220px;overflow:auto"></pre>
-    </div>
-  </details>
 
     <!-- Success Modal: แสดงข้อความยืนยันนัดหลังบันทึกสำเร็จ (กันหลุดเฟรม/ไม่เห็นปุ่มคัดลอก) -->
     <div id="summary_modal_overlay" class="team-sheet-overlay" style="display:none">

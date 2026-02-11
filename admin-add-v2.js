@@ -72,6 +72,22 @@ function naiveIsoToBangkokISO(naiveIso){
   return `${s}+07:00`;
 }
 
+function bangkokNowParts(){
+  // Returns { ymd: 'YYYY-MM-DD', minutes: number } in Asia/Bangkok
+  try {
+    const s = new Date().toLocaleString('sv-SE', {
+      timeZone: 'Asia/Bangkok',
+      hour12: false,
+    });
+    // 'YYYY-MM-DD HH:MM:SS'
+    const m = String(s).match(/^(\d{4}-\d{2}-\d{2})\s+(\d{2}):(\d{2})/);
+    if (!m) return { ymd: '', minutes: NaN };
+    return { ymd: m[1], minutes: Number(m[2]) * 60 + Number(m[3]) };
+  } catch (e) {
+    return { ymd: '', minutes: NaN };
+  }
+}
+
 function maskPII(obj){
   try {
     const j = JSON.parse(JSON.stringify(obj || {}));
@@ -1672,7 +1688,21 @@ function renderSlots() {
   const grid = document.createElement("div");
   grid.className = "slot-grid";
   const renderAll = constraintTechs.length > 0;
-  const listToRender = renderAll ? slotsAll : slotsSelectable;
+  let listToRender = renderAll ? slotsAll : slotsSelectable;
+
+  // When viewing today's date, do not show past start-times.
+  // This is purely a UI filter; backend validation still prevents overlaps.
+  try {
+    const dInput = el('date')?.value || el('booking_date')?.value || '';
+    const ymdSel = String(dInput).slice(0,10);
+    const now = bangkokNowParts();
+    if (ymdSel && now.ymd && ymdSel === now.ymd && Number.isFinite(now.minutes)) {
+      listToRender = listToRender.filter((s)=>{
+        const st = (typeof s.start_min === 'number') ? s.start_min : hhmmToMin2(String(s.start||'').slice(0,5));
+        return Number.isFinite(st) ? st >= now.minutes : true;
+      });
+    }
+  } catch (e) {}
 
   // Helpers (front-end): support selecting any start time inside a returned range slot
   const hhmmToMin = (hhmm)=>{
@@ -2060,6 +2090,13 @@ function openSlotModal(slot){
       renderTechSelect(ids);
       if(el('technician_username_select')) el('technician_username_select').value = v;
       if(el('technician_username')) el('technician_username').value = v;
+
+      // UX + safety: selecting a technician inside the slot modal should immediately
+      // confirm the chosen username, so the admin can save without hunting for another
+      // confirmation button (prevents "ยังขึ้นสีแดง" / missing-confirm issues).
+      state.confirmed_tech_username = v;
+      state.confirmed_tech_label = techDisplay(v);
+
       renderSlots();
       try { renderWashAssign(); } catch(e){}
       updateAssignSummary();
