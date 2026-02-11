@@ -5444,6 +5444,33 @@ function minToHHMM(min) {
   const m = min % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
 }
+
+function getNowBangkokParts() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(new Date());
+
+  const map = {};
+  for (const p of parts) {
+    if (p.type !== 'literal') map[p.type] = p.value;
+  }
+  return {
+    dateStr: `${map.year}-${map.month}-${map.day}`,
+    hour: Number(map.hour || 0),
+    minute: Number(map.minute || 0),
+  };
+}
+
+function getNowBangkokMin() {
+  const p = getNowBangkokParts();
+  return p.hour * 60 + p.minute;
+}
 function computeDurationMin(payload = {}, opts = {}) {
   const src = opts.source || "unknown";
   const job_type_raw = String(payload.job_type || payload.jobType || "").trim();
@@ -5814,7 +5841,7 @@ async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
     LEFT JOIN public.job_assignments a ON a.job_id=j.job_id AND a.technician_username=$1
     WHERE j.appointment_datetime >= $2::timestamptz
       AND j.appointment_datetime <  $3::timestamptz
-      AND j.job_status <> 'ยกเลิก'
+      AND COALESCE(j.job_status,'') <> 'ยกเลิก'
       ${extra}
       AND (j.technician_username=$1 OR j.technician_team=$1 OR m.username IS NOT NULL OR a.technician_username IS NOT NULL)
     `,
@@ -6246,10 +6273,26 @@ app.get("/public/availability_v2", async (req, res) => {
     }
 
     // ✅ UI primary window is LOCKED to 09:00–18:00
-    const uiStartMin = toMin('09:00');
+    let uiStartMin = toMin('09:00');
     const uiEndMin = toMin('18:00');
     const work_start = '09:00';
     const work_end = '18:00';
+
+    // ✅ If checking "today" in Bangkok time, do not show slots in the past.
+    // Only applies to start-mode slot display; free-mode still shows full-day free/busy ranges.
+    try {
+      const nowBkk = getNowBangkokParts();
+      const todayBkk = `${nowBkk.Y}-${nowBkk.M}-${nowBkk.D}`;
+      if (mode === 'start' && date === todayBkk) {
+        const nowMin = nowBkk.hh * 60 + nowBkk.mm;
+        // round up to slot boundary
+        const step = slot_step_min;
+        const rounded = Math.ceil(nowMin / step) * step;
+        uiStartMin = Math.max(uiStartMin, Math.min(rounded, uiEndMin));
+      }
+    } catch (e) {
+      // ignore timeZone failures
+    }
 
     // ✅ Duration for collision is ALWAYS the real duration_total (no crew division)
     const effective_duration_min = Math.max(1, Number(duration_min || 0));
@@ -6323,7 +6366,7 @@ app.get("/public/availability_v2", async (req, res) => {
         travel_buffer_min: TRAVEL_BUFFER_MIN,
         duration_min: effective_duration_min,
         effective_block_min: default_effective_block_min,
-        slot_step_min: null,
+        slot_step_min,
         tech_count,
         crew_size,
         slots: [],
@@ -6357,18 +6400,34 @@ app.get("/public/availability_v2", async (req, res) => {
       const ok = ids.length >= crew_size;
       if (!ok && !include_full) continue;
 
-      const slotObj = {
-        start: minToHHMM(segStart),
-        end: minToHHMM(segEndOut),
-        available: ok,
-        available_tech_ids: ok ? ids : [],
-        capacity: tech_count,
-        available_count: ids.length,
-        crew_size,
-        // v2 meaning depends on mode
-        slot_kind: (mode === 'free') ? 'free_block' : 'start_range',
-      };
-      slots.push(slotObj);
+      if (mode === 'start') {
+        // explode "start_range" into fixed step slots so UI shows 09:00-09:30, 09:30-10:00, ...
+        const lastStart = Math.min(segEndOut, uiEndMin - slot_step_min);
+        for (let s = segStart; s <= lastStart; s += slot_step_min) {
+          const e = Math.min(uiEndMin, s + slot_step_min);
+          slots.push({
+            start: minToHHMM(s),
+            end: minToHHMM(e),
+            available: ok,
+            available_tech_ids: ok ? ids : [],
+            capacity: tech_count,
+            available_count: ids.length,
+            crew_size,
+            slot_kind: 'start_step',
+          });
+        }
+      } else {
+        slots.push({
+          start: minToHHMM(segStart),
+          end: minToHHMM(segEndOut),
+          available: ok,
+          available_tech_ids: ok ? ids : [],
+          capacity: tech_count,
+          available_count: ids.length,
+          crew_size,
+          slot_kind: 'free_block',
+        });
+      }
     }
 
     if (debugFlag && slots.length === 0 && tech_count > 0) {
@@ -6386,7 +6445,7 @@ app.get("/public/availability_v2", async (req, res) => {
       travel_buffer_min: TRAVEL_BUFFER_MIN,
       duration_min: effective_duration_min,
       effective_block_min: default_effective_block_min,
-      slot_step_min: null,
+      slot_step_min,
       tech_count,
       crew_size,
       mode: (mode === 'free') ? 'free' : 'start',
@@ -6534,7 +6593,7 @@ app.get("/public/availability", async (req, res) => {
       `SELECT appointment_datetime, COALESCE(duration_min,60) AS duration_min
        FROM public.jobs
        WHERE appointment_datetime::date = $1::date
-         AND job_status <> 'ยกเลิก'`,
+         AND COALESCE(job_status,'') <> 'ยกเลิก'`,
       [date]
     );
 
