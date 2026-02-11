@@ -5866,13 +5866,27 @@ function isTechOffOnDate(techRow, dateStr, offMap, opts = {}) {
 }
 
 async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
-  // Timezone-robust filter: supports both timestamp and timestamptz in DB
-  // by converting appointment_datetime to Bangkok local date inside SQL.
+  // ✅ Timezone-robust filter (source of truth: Asia/Bangkok)
+  // ปัญหาที่เจอจริง: การกรองด้วย to_char(... AT TIME ZONE ...) บาง deployment
+  // อาจไม่แมตช์งานเดิมเพราะชนิดคอลัมน์/การ cast ทำให้ "วัน" คลาดเคลื่อน
+  // ทางออก: กรองด้วยช่วงเวลา [dayStart, dayEnd) แบบ Bangkok offset แล้ว cast เป็น timestamptz เสมอ
+  // โดยเราได้บังคับ timezone ของ session ที่ db.js แล้ว (options: -c timezone=Asia/Bangkok)
   const day = String(dateStr || "").slice(0, 10);
+  const addDays = (ymd, n) => {
+    const [y, m, d] = ymd.split('-').map(Number);
+    const dt = new Date(Date.UTC(y, (m || 1) - 1, d || 1));
+    dt.setUTCDate(dt.getUTCDate() + Number(n || 0));
+    const yy = String(dt.getUTCFullYear()).padStart(4, '0');
+    const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getUTCDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
+  };
+  const dayStart = `${day}T00:00:00+07:00`;
+  const dayEnd = `${addDays(day, 1)}T00:00:00+07:00`;
 
-  const params = [username, day];
+  const params = [username, dayStart, dayEnd];
   let extra = "";
-  if (ignoreJobId) { params.push(ignoreJobId); extra = ` AND j.job_id <> $3`; }
+  if (ignoreJobId) { params.push(ignoreJobId); extra = ` AND j.job_id <> $4`; }
 
   const r = await pool.query(
     `
@@ -5880,7 +5894,8 @@ async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
     FROM public.jobs j
     LEFT JOIN public.job_team_members m ON m.job_id=j.job_id AND m.username=$1
     LEFT JOIN public.job_assignments a ON a.job_id=j.job_id AND a.technician_username=$1
-    WHERE to_char(j.appointment_datetime AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') = $2
+    WHERE (j.appointment_datetime::timestamptz) >= $2
+      AND (j.appointment_datetime::timestamptz) <  $3
       AND COALESCE(j.job_status,'') <> 'ยกเลิก'
       ${extra}
       AND (j.technician_username=$1 OR j.technician_team=$1 OR m.username IS NOT NULL OR a.technician_username IS NOT NULL)

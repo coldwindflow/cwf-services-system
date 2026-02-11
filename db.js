@@ -10,6 +10,11 @@ const pool = new Pool({
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
 
+  // ✅ บังคับ timezone ทุก session ให้ตรงกับธุรกิจที่ใช้ในไทย
+  // ทำให้การ cast / เปรียบเทียบ timestamp (รวมถึงการกันชนคิว) ไปในทางเดียวกันทั้งระบบ
+  // หมายเหตุ: pg รองรับ options แบบ libpq
+  options: "-c timezone=Asia/Bangkok",
+
   // ⭐ จำเป็นมากสำหรับ Render
   ssl: {
     rejectUnauthorized: false,

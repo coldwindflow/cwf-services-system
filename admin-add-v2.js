@@ -1748,7 +1748,7 @@ function renderSlots() {
           start_min: t,
           end_min: t + Math.max(0, Number(state.duration_min || 0)),
           start: minToHHMM(t),
-          end: minToHHMM(t),
+          end: minToHHMM(t + Math.max(0, Number(state.duration_min || 0))),
           _expanded_from_range: true,
         });
       }
