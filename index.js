@@ -252,76 +252,196 @@ function parseCwfAuth(req) {
   }
 }
 
-function setLogoutCookie(res) {
-  // Clear cookie in the most compatible way (with and without Secure)
+
+function setAuthCookies(res, { cwf_auth_base64 = null, session_token = null, max_age_sec = 7 * 24 * 60 * 60 } = {}) {
   try {
-    const base = "cwf_auth=; Max-Age=0; Path=/; SameSite=Lax";
-    res.setHeader("Set-Cookie", [
-      base,
-      base + "; Secure",
+    const secure = (process.env.FORCE_SECURE_COOKIE === '1') ? '; Secure' : '';
+    const cookies = [];
+    if (cwf_auth_base64 !== null) {
+      cookies.push(`cwf_auth=${cwf_auth_base64}; Max-Age=${max_age_sec}; Path=/; SameSite=Lax${secure}`);
+    }
+    if (session_token !== null) {
+      cookies.push(`cwf_session=${session_token}; Max-Age=${max_age_sec}; Path=/; SameSite=Lax; HttpOnly${secure}`);
+    }
+    if (cookies.length) res.setHeader('Set-Cookie', cookies);
+  } catch (_) {}
+}
+
+function clearAuthCookies(res) {
+  // Clear cookies in the most compatible way (with and without Secure)
+  try {
+    const base1 = 'cwf_auth=; Max-Age=0; Path=/; SameSite=Lax';
+    const base2 = 'cwf_session=; Max-Age=0; Path=/; SameSite=Lax';
+    res.setHeader('Set-Cookie', [
+      base1, base1 + '; Secure',
+      base2, base2 + '; Secure'
     ]);
   } catch (_) {}
 }
 
-async function requireAdminSession(req, res, next) {
+function parseCwfSessionToken(req) {
   try {
-    const auth = parseCwfAuth(req);
-    if (!auth) {
-      // HTML pages: redirect. APIs: JSON 401.
-      const accept = String(req.headers?.accept || "").toLowerCase();
-      if (accept.includes("text/html")) return res.redirect(302, "/login.html");
-      return res.status(401).json({ error: "UNAUTHORIZED" });
-    }
-
-    // Verify role from DB (trust DB, not cookie)
-    const q = await pool.query(
-      `SELECT username, role FROM public.users WHERE username=$1 LIMIT 1`,
-      [auth.username]
-    );
-    if ((q.rows || []).length === 0) {
-      setLogoutCookie(res);
-      const accept = String(req.headers?.accept || "").toLowerCase();
-      if (accept.includes("text/html")) return res.redirect(302, "/login.html");
-      return res.status(401).json({ error: "UNAUTHORIZED" });
-    }
-    const dbRole = String(q.rows[0].role || "");
-    if (dbRole !== "admin" && dbRole !== "super_admin") {
-      const accept = String(req.headers?.accept || "").toLowerCase();
-      if (accept.includes("text/html")) return res.redirect(302, "/login.html");
-      return res.status(403).json({ error: "FORBIDDEN" });
-    }
-
-    req.auth = { username: auth.username, role: dbRole };
-    return next();
-  } catch (e) {
-    console.error("requireAdminSession error:", e);
-    return res.status(500).json({ error: "AUTH_FAILED" });
+    const cookies = parseCookies(req.headers?.cookie || '');
+    let token = cookies.cwf_session;
+    if (!token) return null;
+    token = token.replace(/^"|"$/g, '');
+    try { token = decodeURIComponent(token); } catch (_) {}
+    if (!token) return null;
+    return String(token);
+  } catch (_) {
+    return null;
   }
 }
 
-// Session check for frontend guards
-app.get("/api/auth/me", async (req, res) => {
-  try {
-    const auth = parseCwfAuth(req);
-    if (!auth) return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
-    const q = await pool.query(
-      `SELECT username, role FROM public.users WHERE username=$1 LIMIT 1`,
-      [auth.username]
+async function ensureSessionForUser(res, username) {
+  const maxAgeSec = 7 * 24 * 60 * 60;
+  const token = crypto.randomBytes(24).toString('hex');
+  const exp = new Date(Date.now() + maxAgeSec * 1000);
+  // role from DB
+  const q = await pool.query('SELECT role FROM public.users WHERE username=$1 LIMIT 1', [username]);
+  const role = String(q.rows?.[0]?.role || '');
+  await pool.query(
+    `INSERT INTO public.auth_sessions(session_token, username, role, expires_at)
+     VALUES($1,$2,$3,$4)
+     ON CONFLICT (session_token) DO NOTHING`,
+    [token, username, role, exp]
+  );
+  setAuthCookies(res, { session_token: token, max_age_sec: maxAgeSec });
+  return { token, role };
+}
+
+async function getAuthContext(req, res) {
+  // Returns: { ok, actor:{username,role}, effective:{username,role}, impersonating:boolean, session_token }
+  // Priority: cwf_session (server-side) -> cwf_auth (legacy)
+  const sessionToken = parseCwfSessionToken(req);
+  if (sessionToken) {
+    const s = await pool.query(
+      `SELECT session_token, username, role, expires_at, impersonated_username, impersonated_role
+       FROM public.auth_sessions
+       WHERE session_token=$1 LIMIT 1`,
+      [sessionToken]
     );
-    if ((q.rows || []).length === 0) return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
-    return res.json({ ok: true, username: q.rows[0].username, role: q.rows[0].role });
+    if ((s.rows || []).length === 0) return { ok: false };
+    const row = s.rows[0];
+    if (row.expires_at && Date.now() > new Date(row.expires_at).getTime()) return { ok: false };
+
+    // refresh last_seen (best-effort)
+    pool.query('UPDATE public.auth_sessions SET last_seen_at=NOW() WHERE session_token=$1', [sessionToken]).catch(()=>{});
+
+    // actor role must be trusted from DB (not from session row)
+    const uq = await pool.query('SELECT username, role FROM public.users WHERE username=$1 LIMIT 1', [row.username]);
+    if ((uq.rows || []).length === 0) return { ok: false };
+    const actor = { username: String(uq.rows[0].username), role: String(uq.rows[0].role) };
+
+    let effective = actor;
+    let impersonating = false;
+    if (row.impersonated_username) {
+      const iq = await pool.query('SELECT username, role FROM public.users WHERE username=$1 LIMIT 1', [row.impersonated_username]);
+      if ((iq.rows || []).length) {
+        effective = { username: String(iq.rows[0].username), role: String(iq.rows[0].role) };
+        impersonating = true;
+      }
+    }
+
+    return { ok: true, actor, effective, impersonating, session_token: sessionToken };
+  }
+
+  // legacy cookie
+  const auth = parseCwfAuth(req);
+  if (!auth) return { ok: false };
+  const uq = await pool.query('SELECT username, role FROM public.users WHERE username=$1 LIMIT 1', [auth.username]);
+  if ((uq.rows || []).length === 0) return { ok: false };
+  const actor = { username: String(uq.rows[0].username), role: String(uq.rows[0].role) };
+  return { ok: true, actor, effective: actor, impersonating: false, session_token: null };
+}
+
+async function requireAdminSession(req, res, next) {
+  try {
+    const ctx = await getAuthContext(req, res);
+    if (!ctx.ok) {
+      const accept = String(req.headers?.accept || '').toLowerCase();
+      if (accept.includes('text/html')) return res.redirect(302, '/login.html');
+      return res.status(401).json({ error: 'UNAUTHORIZED' });
+    }
+
+    // Admin pages/APIs are allowed if ACTOR is admin/super_admin
+    if (ctx.actor.role !== 'admin' && ctx.actor.role !== 'super_admin') {
+      const accept = String(req.headers?.accept || '').toLowerCase();
+      if (accept.includes('text/html')) return res.redirect(302, '/login.html');
+      return res.status(403).json({ error: 'FORBIDDEN' });
+    }
+
+    req.actor = ctx.actor;
+    req.effective = ctx.effective;
+    req.auth = ctx.effective;
+    req.impersonating = !!ctx.impersonating;
+    req.session_token = ctx.session_token;
+    return next();
   } catch (e) {
-    console.error("/api/auth/me error:", e);
-    return res.status(500).json({ ok: false, error: "AUTH_FAILED" });
+    console.error('requireAdminSession error:', e);
+    return res.status(500).json({ error: 'AUTH_FAILED' });
+  }
+}
+
+async function requireSuperAdmin(req, res, next) {
+  try {
+    const ctx = await getAuthContext(req, res);
+    if (!ctx.ok) return res.status(401).json({ error: 'UNAUTHORIZED' });
+    if (ctx.actor.role !== 'super_admin') return res.status(403).json({ error: 'FORBIDDEN' });
+    req.actor = ctx.actor;
+    req.effective = ctx.effective;
+    req.auth = ctx.effective;
+    req.impersonating = !!ctx.impersonating;
+    req.session_token = ctx.session_token;
+    return next();
+  } catch (e) {
+    console.error('requireSuperAdmin error:', e);
+    return res.status(500).json({ error: 'AUTH_FAILED' });
+  }
+}
+
+async function auditLog(req, { action, target_username = null, target_role = null, meta = null }) {
+  try {
+    const actor = req.actor || null;
+    await pool.query(
+      `INSERT INTO public.admin_audit_log(actor_username, actor_role, action, target_role, target_username, meta_json)
+       VALUES($1,$2,$3,$4,$5,$6)`,
+      [actor?.username || null, actor?.role || null, action, target_role, target_username, meta]
+    );
+  } catch (e) {
+    console.warn('auditLog failed:', e.message);
+  }
+}
+
+// Session check for frontend guards (returns actor + effective + impersonation)
+app.get('/api/auth/me', async (req, res) => {
+  try {
+    const ctx = await getAuthContext(req, res);
+    if (!ctx.ok) return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+    return res.json({
+      ok: true,
+      username: ctx.effective.username,
+      role: ctx.effective.role,
+      actor: ctx.actor,
+      impersonating: ctx.impersonating
+    });
+  } catch (e) {
+    console.error('/api/auth/me error:', e);
+    return res.status(500).json({ ok: false, error: 'AUTH_FAILED' });
   }
 });
 
-// Logout endpoint (clears cookie server-side)
-app.post("/api/logout", (req, res) => {
-  setLogoutCookie(res);
+// Logout endpoint (clears cookies + deletes session)
+app.post('/api/logout', async (req, res) => {
+  try {
+    const token = parseCwfSessionToken(req);
+    if (token) {
+      await pool.query('DELETE FROM public.auth_sessions WHERE session_token=$1', [token]);
+    }
+  } catch (_) {}
+  clearAuthCookies(res);
   return res.json({ ok: true });
 });
-
 // Protect ALL /admin/* endpoints with server-side session validation
 // (prevents bypassing by faking x-user-role header)
 app.use("/admin", requireAdminSession);
@@ -526,6 +646,212 @@ app.post("/admin/profile_v2/me/photo", requireAdminSession, upload.single("photo
   }
 });
 
+
+
+// =======================================
+// 🛡️ ADMIN SUPER V2 (Phase 5)
+// - Role: super_admin (UI label must show "Super Admin")
+// - Impersonate admin/technician with audit log
+// - Manage Admin IDs, commission, duration rules
+// =======================================
+
+// List users (admins/technicians)
+app.get('/admin/super/users', requireSuperAdmin, async (req, res) => {
+  try {
+    const role = String(req.query.role || '').trim();
+    const q = role ?
+      await pool.query(
+        `SELECT username, role, COALESCE(full_name,'') AS full_name, COALESCE(photo_url,'') AS photo_url, COALESCE(commission_rate_percent,0) AS commission_rate_percent
+         FROM public.users WHERE role=$1 ORDER BY username ASC`,
+        [role]
+      ) :
+      await pool.query(
+        `SELECT username, role, COALESCE(full_name,'') AS full_name, COALESCE(photo_url,'') AS photo_url, COALESCE(commission_rate_percent,0) AS commission_rate_percent
+         FROM public.users ORDER BY role ASC, username ASC`
+      );
+    return res.json({ ok: true, users: q.rows || [] });
+  } catch (e) {
+    console.error('GET /admin/super/users', e);
+    return res.status(500).json({ error: 'โหลดรายชื่อไม่สำเร็จ' });
+  }
+});
+
+// Create Admin (admin or super_admin)
+app.post('/admin/super/admins', requireSuperAdmin, async (req, res) => {
+  try {
+    const username = String(req.body?.username || '').trim();
+    const password = String(req.body?.password || '').trim();
+    const role = String(req.body?.role || 'admin').trim();
+    const full_name = String(req.body?.full_name || '').trim();
+    if (!username || !password) return res.status(400).json({ error: 'ต้องมี username และ password' });
+    if (role !== 'admin' && role !== 'super_admin') return res.status(400).json({ error: 'role ไม่ถูกต้อง' });
+
+    await pool.query(
+      `INSERT INTO public.users(username, password, role, full_name) VALUES($1,$2,$3,$4)`,
+      [username, password, role, full_name]
+    );
+
+    await auditLog(req, { action: 'ADMIN_CREATE', target_username: username, target_role: role, meta: { full_name } });
+    return res.json({ ok: true });
+  } catch (e) {
+    const msg = String(e?.message || '');
+    if (msg.includes('duplicate') || msg.includes('unique')) return res.status(409).json({ error: 'username ซ้ำ' });
+    console.error('POST /admin/super/admins', e);
+    return res.status(500).json({ error: 'สร้างแอดมินไม่สำเร็จ' });
+  }
+});
+
+// Update Admin (role/full_name/password/commission)
+app.put('/admin/super/admins/:username', requireSuperAdmin, async (req, res) => {
+  try {
+    const username = String(req.params.username || '').trim();
+    const role = (req.body?.role !== undefined) ? String(req.body.role).trim() : null;
+    const full_name = (req.body?.full_name !== undefined) ? String(req.body.full_name).trim() : null;
+    const password = (req.body?.password !== undefined) ? String(req.body.password).trim() : null;
+    const commission = (req.body?.commission_rate_percent !== undefined) ? Number(req.body.commission_rate_percent) : null;
+
+    const fields = [];
+    const vals = [];
+    let i = 1;
+    if (role !== null) {
+      if (role !== 'admin' && role !== 'super_admin') return res.status(400).json({ error: 'role ไม่ถูกต้อง' });
+      fields.push(`role=$${i++}`); vals.push(role);
+    }
+    if (full_name !== null) { fields.push(`full_name=$${i++}`); vals.push(full_name); }
+    if (password !== null && password !== '') { fields.push(`password=$${i++}`); vals.push(password); }
+    if (commission !== null && Number.isFinite(commission)) { fields.push(`commission_rate_percent=$${i++}`); vals.push(commission); }
+
+    if (!fields.length) return res.json({ ok: true });
+    vals.push(username);
+    await pool.query(`UPDATE public.users SET ${fields.join(', ')} WHERE username=$${i}`, vals);
+
+    await auditLog(req, { action: 'ADMIN_UPDATE', target_username: username, target_role: role || null, meta: { role, full_name, changed_password: !!password, commission_rate_percent: commission } });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('PUT /admin/super/admins/:username', e);
+    return res.status(500).json({ error: 'อัปเดตแอดมินไม่สำเร็จ' });
+  }
+});
+
+// Impersonate
+app.post('/admin/super/impersonate', requireSuperAdmin, async (req, res) => {
+  try {
+    const target = String(req.body?.target_username || '').trim();
+    if (!target) return res.status(400).json({ error: 'ต้องมี target_username' });
+
+    const q = await pool.query(`SELECT username, role FROM public.users WHERE username=$1 LIMIT 1`, [target]);
+    if ((q.rows || []).length === 0) return res.status(404).json({ error: 'ไม่พบผู้ใช้' });
+    const targetRole = String(q.rows[0].role);
+
+    // Ensure session exists (so impersonation is server-tracked)
+    let token = req.session_token;
+    if (!token) {
+      const created = await ensureSessionForUser(res, req.actor.username);
+      token = created.token;
+    }
+
+    await pool.query(
+      `UPDATE public.auth_sessions
+       SET impersonated_username=$1, impersonated_role=$2, impersonated_started_at=NOW(), last_seen_at=NOW()
+       WHERE session_token=$3`,
+      [target, targetRole, token]
+    );
+
+    await auditLog(req, { action: 'IMPERSONATE_START', target_username: target, target_role: targetRole, meta: { session_token: token } });
+    return res.json({ ok: true, actor: req.actor, impersonated: { username: target, role: targetRole } });
+  } catch (e) {
+    console.error('POST /admin/super/impersonate', e);
+    return res.status(500).json({ error: 'สวมสิทธิไม่สำเร็จ' });
+  }
+});
+
+// Stop impersonation
+app.post('/admin/super/impersonate/stop', requireSuperAdmin, async (req, res) => {
+  try {
+    const token = req.session_token;
+    if (token) {
+      await pool.query(
+        `UPDATE public.auth_sessions
+         SET impersonated_username=NULL, impersonated_role=NULL, impersonated_started_at=NULL, last_seen_at=NOW()
+         WHERE session_token=$1`,
+        [token]
+      );
+    }
+    await auditLog(req, { action: 'IMPERSONATE_STOP', target_username: null, target_role: null, meta: { session_token: token || null } });
+    return res.json({ ok: true, actor: req.actor });
+  } catch (e) {
+    console.error('POST /admin/super/impersonate/stop', e);
+    return res.status(500).json({ error: 'หยุดสวมสิทธิไม่สำเร็จ' });
+  }
+});
+
+// Audit log list
+app.get('/admin/super/audit', requireSuperAdmin, async (req, res) => {
+  try {
+    const limit = Math.max(10, Math.min(500, Number(req.query.limit || 200)));
+    const q = await pool.query(
+      `SELECT log_id, actor_username, actor_role, action, target_role, target_username, meta_json, created_at
+       FROM public.admin_audit_log
+       ORDER BY created_at DESC
+       LIMIT $1`,
+      [limit]
+    );
+    return res.json({ ok: true, rows: q.rows || [] });
+  } catch (e) {
+    console.error('GET /admin/super/audit', e);
+    return res.status(500).json({ error: 'โหลด audit log ไม่สำเร็จ' });
+  }
+});
+
+// Duration rules CRUD
+app.get('/admin/super/durations', requireSuperAdmin, async (req, res) => {
+  try {
+    const q = await pool.query(
+      `SELECT service_key, duration_min, COALESCE(updated_by,'') AS updated_by, updated_at
+       FROM public.service_duration_rules
+       ORDER BY service_key ASC`
+    );
+    return res.json({ ok: true, rows: q.rows || [] });
+  } catch (e) {
+    console.error('GET /admin/super/durations', e);
+    return res.status(500).json({ error: 'โหลด duration ไม่สำเร็จ' });
+  }
+});
+
+app.post('/admin/super/durations', requireSuperAdmin, async (req, res) => {
+  try {
+    const service_key = String(req.body?.service_key || '').trim();
+    const duration_min = Number(req.body?.duration_min);
+    if (!service_key || !Number.isFinite(duration_min) || duration_min <= 0) {
+      return res.status(400).json({ error: 'ข้อมูลไม่ครบ' });
+    }
+    await pool.query(
+      `INSERT INTO public.service_duration_rules(service_key, duration_min, updated_by, updated_at)
+       VALUES($1,$2,$3,NOW())
+       ON CONFLICT (service_key)
+       DO UPDATE SET duration_min=EXCLUDED.duration_min, updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
+      [service_key, duration_min, req.actor.username]
+    );
+    await auditLog(req, { action: 'DURATION_UPSERT', target_username: null, target_role: null, meta: { service_key, duration_min } });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /admin/super/durations', e);
+    return res.status(500).json({ error: 'บันทึก duration ไม่สำเร็จ' });
+  }
+});
+
+app.delete('/admin/super/durations/:service_key', requireSuperAdmin, async (req, res) => {
+  try {
+    const key = String(req.params.service_key || '').trim();
+    if (!key) return res.status(400).json({ error: 'ข้อมูลไม่ครบ' });
+    await pool.query('DELETE FROM public.service_duration_rules WHERE service_key=$1', [key]);
+    await auditLog(req, { action: 'DURATION_DELETE', meta: { service_key: key } });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('DELETE /admin/super/durations', e);
+    return res.status(500).json({ error: 'ลบ duration ไม่สำเร็จ' });
+  }
+});
 async function requireAdminForRank(req, res, next) {
   try {
     const auth = parseCwfAuth(req);
@@ -729,6 +1055,33 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created ON public.admin_audit_log(created_at DESC)`);
+
+
+// 5) auth sessions (server-side) - for Super Admin impersonation & real logout
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.auth_sessions (
+    session_token TEXT PRIMARY KEY,
+    username TEXT NOT NULL,
+    role TEXT NOT NULL,
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    last_seen_at TIMESTAMPTZ DEFAULT NOW(),
+    impersonated_username TEXT,
+    impersonated_role TEXT,
+    impersonated_started_at TIMESTAMPTZ
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON public.auth_sessions(username)`);
+
+// 6) duration rules (managed by Super Admin)
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.service_duration_rules (
+    service_key TEXT PRIMARY KEY,
+    duration_min INT NOT NULL,
+    updated_by TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
 
 
     await pool.query(
@@ -1203,6 +1556,7 @@ app.get("/test-db", async (req, res) => {
 // =======================================
 // 🔐 LOGIN
 // =======================================
+
 app.post("/login", async (req, res) => {
   const { username, password } = req.body || {};
   try {
@@ -1211,10 +1565,29 @@ app.post("/login", async (req, res) => {
       [username, password]
     );
     if (r.rows.length === 0) return res.status(401).json({ error: "ชื่อผู้ใช้หรือรหัสผ่านผิด" });
-    res.json({ username: r.rows[0].username, role: r.rows[0].role });
+
+    const u = String(r.rows[0].username);
+    const role = String(r.rows[0].role);
+
+    // ✅ Create server-side session cookie (HttpOnly) for real logout + impersonation
+    try {
+      const maxAgeSec = 7 * 24 * 60 * 60;
+      const token = crypto.randomBytes(24).toString('hex');
+      const exp = new Date(Date.now() + maxAgeSec * 1000);
+      await pool.query(
+        `INSERT INTO public.auth_sessions(session_token, username, role, expires_at)
+         VALUES($1,$2,$3,$4)`,
+        [token, u, role, exp]
+      );
+      setAuthCookies(res, { session_token: token, max_age_sec: maxAgeSec });
+    } catch (e) {
+      console.warn('create session failed:', e.message);
+    }
+
+    return res.json({ username: u, role });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "server error" });
+    return res.status(500).json({ error: "server error" });
   }
 });
 

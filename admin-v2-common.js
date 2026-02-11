@@ -218,6 +218,7 @@ function injectAdminMenu(){
       <div>
         <b>เมนู Admin</b>
         <div class="muted" style="margin-top:2px">รวมปุ่มด้านบนทั้งหมดไว้ที่นี่</div>
+        <div id="cwfWhoLine" class="muted" style="margin-top:6px"></div>
       </div>
       <button class="secondary btn-mini" type="button" id="cwfCloseMenu" style="width:auto">ปิด</button>
     </div>
@@ -246,18 +247,58 @@ function injectAdminMenu(){
           <div class="cwf-link" data-href="/admin-dashboard-v2.html">📊 Dashboard <small>Admin</small></div>
           <div class="cwf-link" data-href="/admin-profile-v2.html">👤 Profile Admin <small>รูป + ชื่อ</small></div>
           <div class="cwf-link" data-href="/admin-technicians-v2.html">🧰 จัดการช่าง <small>ID/อนุมัติ</small></div>
+          <div class="cwf-link" id="cwfSuperAdminLink" data-href="/admin-super-v2.html" style="display:none">🛡️ Super Admin <small>จัดการทั้งหมด</small></div>
         </div>
       </div>
 
       <div class="cwf-group">
         <div class="t">ระบบ</div>
         <div class="i">
+          <div class="cwf-link" id="cwfStopImpBtn" style="display:none" data-action="stop-impersonate">หยุดสวมสิทธิ <small>Stop</small></div>
           <div class="cwf-link danger" id="cwfLogoutBtn">ออกจากระบบ <small>Logout</small></div>
         </div>
       </div>
     </div>
   `;
   document.body.appendChild(drawer);
+
+async function syncAuthMe(){
+  try{
+    const r = await fetch('/api/auth/me', { credentials:'include' });
+    if(!r.ok) throw new Error('unauth');
+    const d = await r.json().catch(()=>null);
+    if(!d || !d.ok) throw new Error('unauth');
+    window.__CWF_AUTH_ME = d;
+
+    const who = document.getElementById('cwfWhoLine');
+    if (who) {
+      const actorRoleLabel = (d.actor && d.actor.role === 'super_admin') ? 'Super Admin' : (d.actor ? d.actor.role : d.role);
+      const actorLabel = d.actor ? `${d.actor.username} (${actorRoleLabel})` : `${d.username} (${d.role})`;
+      if (d.impersonating && d.actor) {
+        who.textContent = `กำลังสวมสิทธิ: ${d.username} (${d.role}) • โดย ${actorLabel}`;
+      } else {
+        who.textContent = `ผู้ใช้: ${actorLabel}`;
+      }
+    }
+
+    const superL = document.getElementById('cwfSuperAdminLink');
+    if (superL) {
+      const isSuper = (d.actor && d.actor.role === 'super_admin') || (d.role === 'super_admin');
+      superL.style.display = isSuper ? 'flex' : 'none';
+    }
+
+    const stopBtn = document.getElementById('cwfStopImpBtn');
+    if (stopBtn) {
+      stopBtn.style.display = d.impersonating ? 'flex' : 'none';
+    }
+  } catch (e) {
+    // ignore here; guard will handle
+  }
+}
+
+// run once
+syncAuthMe();
+
 
   const open = ()=>{ backdrop.style.display='block'; drawer.style.display='block'; };
   const close = ()=>{ backdrop.style.display='none'; drawer.style.display='none'; };
@@ -271,6 +312,25 @@ function injectAdminMenu(){
     if(t.id === 'cwfLogoutBtn'){
       close();
       doLogout();
+      return;
+    }
+    if(t.id === 'cwfStopImpBtn' || t.getAttribute('data-action')==='stop-impersonate'){
+      close();
+      (async()=>{
+        try{
+          await fetch('/admin/super/impersonate/stop', { method:'POST', credentials:'include' });
+          const d = window.__CWF_AUTH_ME;
+          const a = (d && d.actor) ? d.actor : { username: localStorage.getItem('username'), role: localStorage.getItem('role') };
+          try{
+            if (a && a.username) localStorage.setItem('username', String(a.username));
+            if (a && a.role) localStorage.setItem('role', String(a.role));
+            ['cwf_impersonate','cwf_impersonate_by','cwf_impersonate_since'].forEach(k=>localStorage.removeItem(k));
+          }catch(e){}
+          try{ location.replace('/admin-super-v2.html'); }catch(e){ location.href = '/admin-super-v2.html'; }
+        }catch(e){
+          showToast('หยุดสวมสิทธิไม่สำเร็จ','error');
+        }
+      })();
       return;
     }
     const href = t.getAttribute('data-href');
