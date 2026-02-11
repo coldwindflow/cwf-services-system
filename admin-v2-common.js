@@ -160,12 +160,11 @@ function showToast(msg, type = "info") {
 // UI Injection
 // ----------------------
 function injectAdminMenu(){
-  if (isAdminAddV2Page()) return;
   if (document.getElementById('cwfMenuBtn')) return;
 
   const style = document.createElement('style');
   style.textContent = `
-    .cwf-fab{position:fixed;top:12px;right:12px;z-index:2500;display:flex;gap:8px;align-items:center}
+    .cwf-fab{position:fixed;top:calc(12px + env(safe-area-inset-top));right:12px;z-index:2500;display:flex;gap:8px;align-items:center}
     .cwf-iconbtn{width:46px;height:46px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;
       border:1px solid rgba(15,23,42,0.14);background:rgba(255,255,255,0.72);backdrop-filter: blur(10px);
       box-shadow: 0 12px 34px rgba(0,0,0,0.14);cursor:pointer;user-select:none}
@@ -173,14 +172,16 @@ function injectAdminMenu(){
     .cwf-iconbtn svg{width:22px;height:22px;fill:#0f172a}
 
     .cwf-drawer-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2499;display:none}
-    .cwf-drawer{position:fixed;top:12px;right:12px;left:12px;z-index:2600;display:none;
+    .cwf-drawer{position:fixed;top:calc(12px + env(safe-area-inset-top));right:12px;left:12px;
+      bottom:calc(12px + env(safe-area-inset-bottom));z-index:2600;display:none;
       max-width:520px;margin-left:auto;background:rgba(255,255,255,0.92);backdrop-filter: blur(14px);
-      border:1px solid rgba(15,23,42,0.12);border-radius:20px;box-shadow: 0 22px 70px rgba(0,0,0,0.22);
-      overflow:hidden}
+      border:1px solid rgba(15,23,42,0.12);border-radius:22px;box-shadow: 0 22px 70px rgba(0,0,0,0.22);
+      overflow:hidden;display:none;flex-direction:column}
     .cwf-drawer .h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px;
       border-bottom:1px solid rgba(15,23,42,0.10);background:#f8fafc}
     .cwf-drawer .h b{font-size:14px}
-    .cwf-drawer .b{padding:12px;display:flex;flex-direction:column;gap:10px}
+    .cwf-drawer .b{padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto;flex:1;
+      padding-bottom:calc(12px + 92px + env(safe-area-inset-bottom))}
     .cwf-group{border:1px solid rgba(15,23,42,0.10);border-radius:18px;background:#fff;overflow:hidden}
     .cwf-group .t{padding:10px 12px;background:#f8fafc;font-weight:900;font-size:12px;color:#0f172a;
       border-bottom:1px solid rgba(15,23,42,0.08)}
@@ -262,6 +263,20 @@ function injectAdminMenu(){
   `;
   document.body.appendChild(drawer);
 
+  // Re-position the floating menu button to avoid overlapping page badges (e.g., topbar pill count)
+  const positionFab = ()=>{
+    try{
+      const tb = document.querySelector('.topbar');
+      if(tb){
+        const r = tb.getBoundingClientRect();
+        const top = Math.max(12, Math.round(r.bottom + 10));
+        fab.style.top = top + 'px';
+      }
+    }catch(e){}
+  };
+  positionFab();
+  window.addEventListener('resize', positionFab);
+
 async function syncAuthMe(){
   try{
     const r = await fetch('/api/auth/me', { credentials:'include' });
@@ -300,7 +315,7 @@ async function syncAuthMe(){
 syncAuthMe();
 
 
-  const open = ()=>{ backdrop.style.display='block'; drawer.style.display='block'; };
+  const open = ()=>{ backdrop.style.display='block'; drawer.style.display='flex'; };
   const close = ()=>{ backdrop.style.display='none'; drawer.style.display='none'; };
 
   document.getElementById('cwfMenuBtn').addEventListener('click', open);
@@ -339,21 +354,31 @@ syncAuthMe();
       location.href = href;
     }
   });
+
+  // Position the floating menu button so it doesn't overlap page headers (e.g. .topbar pill)
+  const placeFab = ()=>{
+    try{
+      const topbar = document.querySelector('.topbar') || document.querySelector('header') || null;
+      const base = 12 + (window.visualViewport ? Math.max(0, window.visualViewport.offsetTop||0) : 0);
+      if (!topbar) return; // keep default
+      const r = topbar.getBoundingClientRect();
+      const y = Math.max(base, Math.ceil(r.bottom + 10));
+      fab.style.top = `calc(${y}px + env(safe-area-inset-top))`;
+    }catch(e){}
+  };
+  placeFab();
+  window.addEventListener('resize', placeFab);
+  window.addEventListener('orientationchange', placeFab);
 }
 
 function injectFloatingDebug(){
-  if (isAdminAddV2Page()) return;
-  if (document.getElementById('cwfBugBtn')) return;
+  // Debug must NOT be inside the menu. We'll hide it behind a long-press on the menu icon (and still require PIN).
+  if (document.getElementById('cwfDebugPanel')) return;
   // If a page already has its own bug button/panel, skip
   if (document.getElementById('btnBug') || document.getElementById('debugFloat')) return;
 
   const css = document.createElement('style');
   css.textContent = `
-    #cwfBugBtn{position:fixed;right:12px;bottom:calc(90px + env(safe-area-inset-bottom));z-index:2500;
-      width:44px;height:44px;border-radius:16px;border:1px solid rgba(15,23,42,0.14);
-      background:rgba(255,255,255,0.72);backdrop-filter: blur(10px);
-      box-shadow: 0 12px 34px rgba(0,0,0,0.14);display:flex;align-items:center;justify-content:center;
-      font-size:20px;cursor:pointer}
     #cwfDebugPanel{position:fixed;right:12px;bottom:calc(140px + env(safe-area-inset-bottom));z-index:2600;
       width:min(520px,calc(100vw - 24px));max-height:65vh;overflow:auto;
       border:1px solid rgba(15,23,42,0.12);border-radius:18px;background:rgba(255,255,255,0.94);
@@ -365,14 +390,6 @@ function injectFloatingDebug(){
       border-radius:14px;padding:10px;font-size:12px;overflow:auto}
   `;
   document.head.appendChild(css);
-
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.id = 'cwfBugBtn';
-  btn.setAttribute('aria-label','Debug');
-  btn.title = 'Debug';
-  btn.textContent = '🐞';
-  document.body.appendChild(btn);
 
   const panel = document.createElement('div');
   panel.id = 'cwfDebugPanel';
@@ -438,19 +455,45 @@ function injectFloatingDebug(){
     box.textContent = JSON.stringify(payload, null, 2);
   };
 
-  btn.addEventListener('click', ()=>{
-    if(panel.style.display === 'block'){
-      panel.style.display = 'none';
-      return;
-    }
-    // panel can be opened only if already unlocked or correct pin
-    if(!isDbgOn()){
-      if(!requirePin()) return;
-      try{ localStorage.setItem('cwf_debug','1'); }catch(e){}
-    }
-    panel.style.display = 'block';
-    refresh();
-  });
+
+  // Open debug via LONG PRESS on menu button (hidden by default)
+  const bindLongPress = ()=>{
+    const menuBtn = document.getElementById('cwfMenuBtn');
+    if(!menuBtn) return false;
+    if(menuBtn.__cwf_lp_bound) return true;
+    menuBtn.__cwf_lp_bound = true;
+
+    let tmr = null;
+    const start = ()=>{
+      if (tmr) clearTimeout(tmr);
+      tmr = setTimeout(()=>{
+        tmr = null;
+        // unlock + open panel
+        if(!isDbgOn()){
+          if(!requirePin()) return;
+          try{ localStorage.setItem('cwf_debug','1'); }catch(e){}
+        }
+        panel.style.display = 'block';
+        refresh();
+      }, 850);
+    };
+    const cancel = ()=>{ if(tmr){ clearTimeout(tmr); tmr=null; } };
+    menuBtn.addEventListener('touchstart', start, {passive:true});
+    menuBtn.addEventListener('touchend', cancel, {passive:true});
+    menuBtn.addEventListener('touchmove', cancel, {passive:true});
+    menuBtn.addEventListener('mousedown', start);
+    menuBtn.addEventListener('mouseup', cancel);
+    menuBtn.addEventListener('mouseleave', cancel);
+    return true;
+  };
+
+  // Try bind now and later (menu inject may run before debug)
+  if(!bindLongPress()){
+    const itv = setInterval(()=>{
+      if(bindLongPress()) clearInterval(itv);
+    }, 250);
+    setTimeout(()=>clearInterval(itv), 6000);
+  }
 
   document.getElementById('cwfDbgClose').addEventListener('click', ()=>{ panel.style.display='none'; });
   document.getElementById('cwfDbgRefresh').addEventListener('click', refresh);
@@ -473,7 +516,6 @@ function injectFloatingDebug(){
 }
 
 function basicAdminGuard(){
-  if (isAdminAddV2Page()) return;
   const localCheck = ()=>{
     try{
       const role = localStorage.getItem('role');
