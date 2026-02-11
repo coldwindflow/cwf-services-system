@@ -805,6 +805,29 @@ function formatBangkokDateTime(input) {
   }
 }
 
+// ✅ Helper: convert Date -> Bangkok ISO (+07:00) (wall-clock, no UTC shift)
+function dateToBangkokISO(d) {
+  try {
+    const dt = d instanceof Date ? d : new Date(d);
+    if (Number.isNaN(dt.getTime())) return null;
+    // sv-SE gives stable 'YYYY-MM-DD HH:mm:ss'
+    const s = dt.toLocaleString('sv-SE', {
+      timeZone: 'Asia/Bangkok',
+      hour12: false,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
+    return s.replace(' ', 'T') + '+07:00';
+  } catch {
+    return null;
+  }
+}
+
+
 // =======================================
 // 🔢 Booking code / token / accept-status helpers
 // =======================================
@@ -2788,8 +2811,8 @@ app.get("/admin/schedule_v2", requireAdminSoft, async (req, res) => {
         customer_name: j.customer_name,
         job_type: j.job_type,
         job_status: j.job_status,
-        start_iso: start.toISOString(),
-        end_iso: end.toISOString(),
+        start_iso: dateToBangkokISO(start) || start.toISOString(),
+        end_iso: dateToBangkokISO(end) || end.toISOString(),
         duration_min: Number(j.duration_min || 60),
         effective_block_min: Number(j.duration_min || 60) + TRAVEL_BUFFER_MIN,
         job_zone: j.job_zone,
