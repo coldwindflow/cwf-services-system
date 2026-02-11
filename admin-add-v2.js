@@ -183,6 +183,32 @@ function dbgBind(){
   // Initial status
   refreshStatus();
 
+
+
+// Reset jobs (danger) — only visible when DEBUG_ENABLED
+const btnReset = el('dbg_reset_jobs');
+btnReset?.addEventListener('click', async () => {
+  try {
+    const ok1 = confirm('ยืนยันล้างงานทดสอบทั้งหมด?
+(จะลบ jobs + ตารางที่เกี่ยวข้อง)');
+    if (!ok1) return;
+    const token = prompt('พิมพ์คำว่า RESET เพื่อยืนยันการล้างงานทดสอบ');
+    if ((token || '').trim().toUpperCase() !== 'RESET') {
+      showToast('ยกเลิก: คำยืนยันไม่ถูกต้อง', 'error');
+      return;
+    }
+    const r = await apiFetch('/admin/reset_jobs_v2', {
+      method: 'POST',
+      body: JSON.stringify({ confirm: 'RESET' })
+    });
+    showToast(`ล้างงานแล้ว (${r?.deleted_jobs ?? 0} งาน)`, 'success');
+    // best-effort refresh: clear UI caches / reload
+    setTimeout(() => location.reload(), 600);
+  } catch (e) {
+    showToast('ล้างงานไม่สำเร็จ', 'error');
+  }
+});
+
   dbgRender();
 }
 

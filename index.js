@@ -2119,6 +2119,55 @@ app.delete("/admin/jobs/:job_id", requireAdminSoft, async (req, res) => {
 });
 
 // =======================================
+
+
+// =======================================
+// 🧨 ADMIN RESET JOB TABLES (TEST CLEANUP)
+// POST /admin/reset_jobs_v2
+// - admin only
+// - deletes job-related data (NOT technicians/users/prices/promotions)
+// - requires confirm token in body: { confirm: "RESET" }
+// =======================================
+app.post("/admin/reset_jobs_v2", requireAdminSoft, async (req, res) => {
+  const confirmToken = String(req.body?.confirm || "").trim().toUpperCase();
+  if (confirmToken !== "RESET") {
+    return res.status(400).json({ error: "ต้องยืนยันด้วยคำว่า RESET" });
+  }
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // delete children first (best-effort for older DBs)
+    const safe = async (sql) => {
+      try { await client.query(sql); } catch (e) { console.warn("[reset_jobs_v2] skip", e.message); }
+    };
+
+    await safe(`DELETE FROM public.job_photo_metadata`);
+    await safe(`DELETE FROM public.job_photos`);
+    await safe(`DELETE FROM public.job_updates_v2`);
+    await safe(`DELETE FROM public.job_offer_recipients`);
+    await safe(`DELETE FROM public.job_offers`);
+    await safe(`DELETE FROM public.job_team_members`);
+    await safe(`DELETE FROM public.job_assignments`);
+    await safe(`DELETE FROM public.job_promotions`);
+    await safe(`DELETE FROM public.job_items`);
+    await safe(`DELETE FROM public.job_pricing_requests`);
+
+    // finally jobs
+    const dr = await client.query(`DELETE FROM public.jobs`);
+
+    await client.query("COMMIT");
+    return res.json({ ok: true, deleted_jobs: dr.rowCount || 0 });
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch(_e) {}
+    console.error("[reset_jobs_v2] error", e);
+    return res.status(500).json({ error: e.message || "reset ไม่สำเร็จ" });
+  } finally {
+    client.release();
+  }
+});
+
 // 📥 ADMIN REVIEW QUEUE V2
 // - งานลูกค้าจองเข้ามา (รอตรวจสอบ) + งานที่ตีกลับ
 // - ใช้หน้า admin-review-v2.html
