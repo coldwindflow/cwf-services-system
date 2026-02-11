@@ -181,6 +181,20 @@ app.use(cors());
 app.use(express.json());
 
 // =======================================
+// 📷 UPLOADS CONFIG (ต้องอยู่ก่อน route ที่ใช้ upload)
+// - แก้ Deploy crash: "Cannot access 'upload' before initialization"
+// =======================================
+const UPLOAD_DIR = path.join(__dirname, "uploads");
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
+});
+
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
+
+// =======================================
 // 🔐 AUTH (session cookie) for Admin pages/APIs
 // - cookie: cwf_auth (base64 JSON: {u,r,exp})
 // - validate exp and verify role against DB
@@ -619,19 +633,6 @@ async function notifyTechnician(username, text) {
     // ignore
   }
 }
-
-// =======================================
-// 📷 UPLOADS CONFIG
-// =======================================
-const UPLOAD_DIR = path.join(__dirname, "uploads");
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
-
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB
-});
-
-app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 // =======================================
 // 🧱 DB SCHEMA ENSURE (AUTO)
@@ -3651,7 +3652,7 @@ app.post("/jobs/:job_id/pricing-request", async (req, res) => {
   }
 });
 
-app.get("/admin/pricing-requests", async (req, res) => {
+app.get("/admin/pricing-requests", requireAdminSession, async (req, res) => {
   try {
     const r = await pool.query(
       `SELECT pr.request_id, pr.job_id, pr.requested_by, pr.payload_json, pr.status, pr.created_at,
@@ -3668,7 +3669,7 @@ app.get("/admin/pricing-requests", async (req, res) => {
   }
 });
 
-app.post("/admin/pricing-requests/:id/approve", async (req, res) => {
+app.post("/admin/pricing-requests/:id/approve", requireAdminSession, async (req, res) => {
   const request_id = Number(req.params.id);
   const decided_by = (req.body.decided_by || "admin").toString().trim();
 
@@ -3727,7 +3728,7 @@ app.post("/admin/pricing-requests/:id/approve", async (req, res) => {
   }
 });
 
-app.post("/admin/pricing-requests/:id/decline", async (req, res) => {
+app.post("/admin/pricing-requests/:id/decline", requireAdminSession, async (req, res) => {
   const request_id = Number(req.params.id);
   const decided_by = (req.body.decided_by || "admin").toString().trim();
   const admin_note = (req.body.admin_note || "").toString().trim() || null;
@@ -5107,7 +5108,7 @@ app.post("/profile/request", upload.single("photo"), async (req, res) => {
 });
 
 // admin list pending requests
-app.get("/admin/profile/requests", async (req, res) => {
+app.get("/admin/profile/requests", requireAdminSession, async (req, res) => {
   try {
     const q = await pool.query(
       `SELECT r.id, r.username, r.full_name, r.photo_temp_path, r.requested_at,
@@ -5124,7 +5125,7 @@ app.get("/admin/profile/requests", async (req, res) => {
   }
 });
 
-app.post("/admin/profile/requests/:id/approve", async (req, res) => {
+app.post("/admin/profile/requests/:id/approve", requireAdminSession, async (req, res) => {
   const client = await pool.connect();
   try {
     const id = Number(req.params.id);
@@ -5197,7 +5198,7 @@ app.post("/admin/profile/requests/:id/approve", async (req, res) => {
   }
 });
 
-app.post("/admin/profile/requests/:id/reject", async (req, res) => {
+app.post("/admin/profile/requests/:id/reject", requireAdminSession, async (req, res) => {
   try {
     const id = Number(req.params.id);
     if (!id) return res.status(400).json({ error: "id ไม่ถูกต้อง" });
@@ -5219,8 +5220,8 @@ app.post("/admin/profile/requests/:id/reject", async (req, res) => {
 // =======================================
 // 🧑‍🔧 ADMIN: create technician user
 // =======================================
-app.post("/admin/technicians/create", async (req, res) => {
-  const { username, password, full_name, technician_code, position } = req.body || {};
+app.post("/admin/technicians/create", requireAdminSession, async (req, res) => {
+  const { username, password, full_name, technician_code, position, phone, employment_type } = req.body || {};
   const u = (username || "").toString().trim();
   const p = (password || "").toString().trim();
   if (!u || !p) return res.status(400).json({ error: "ต้องมี username และ password" });
@@ -5238,10 +5239,17 @@ app.post("/admin/technicians/create", async (req, res) => {
     );
 
     await client.query(
-      `INSERT INTO public.technician_profiles (username, full_name, technician_code, position, rating, grade, done_count)
-       VALUES ($1,$2,$3,$4, 5, 'A', 0)
+      `INSERT INTO public.technician_profiles (username, full_name, technician_code, position, phone, employment_type, rating, grade, done_count)
+       VALUES ($1,$2,$3,$4,$5,$6, 5, 'A', 0)
        ON CONFLICT (username) DO NOTHING`,
-      [u, (full_name || u).toString().trim(), code, pos]
+      [
+        u,
+        (full_name || u).toString().trim(),
+        code,
+        pos,
+        (phone || '').toString().trim() || null,
+        (employment_type || '').toString().trim() || null,
+      ]
     );
 
     await client.query("COMMIT");
@@ -5255,7 +5263,7 @@ app.post("/admin/technicians/create", async (req, res) => {
   }
 });
 
-app.get("/admin/technicians", async (req, res) => {
+app.get("/admin/technicians", requireAdminSession, async (req, res) => {
   try {
     const q = await pool.query(
       `SELECT u.username,
@@ -5277,7 +5285,7 @@ app.get("/admin/technicians", async (req, res) => {
   }
 });
 
-app.put("/admin/technicians/:username", async (req, res) => {
+app.put("/admin/technicians/:username", requireAdminSession, async (req, res) => {
   try {
     const username = req.params.username;
     const technician_code = (req.body.technician_code || "").trim();
@@ -5351,7 +5359,7 @@ app.put("/admin/technicians/:username", async (req, res) => {
 });
 
 // Admin: add/list special availability slots per technician (v2)
-app.get("/admin/technicians/:username/special_slots_v2", async (req, res) => {
+app.get("/admin/technicians/:username/special_slots_v2", requireAdminSession, async (req, res) => {
   try {
     const username = (req.params.username || "").toString();
     const date = (req.query.date || new Date().toISOString().slice(0,10)).toString();
@@ -5369,7 +5377,7 @@ app.get("/admin/technicians/:username/special_slots_v2", async (req, res) => {
   }
 });
 
-app.post("/admin/technicians/:username/special_slots_v2", async (req, res) => {
+app.post("/admin/technicians/:username/special_slots_v2", requireAdminSession, async (req, res) => {
   try {
     const username = (req.params.username || "").toString();
     const slot_date = (req.body.date || req.body.slot_date || new Date().toISOString().slice(0,10)).toString();
@@ -5459,7 +5467,7 @@ app.put("/admin/technicians/:username/rank", requireAdminForRank, async (req, re
 });
 
 
-app.post("/admin/technicians/:username/photo", upload.single("photo"), async (req, res) => {
+app.post("/admin/technicians/:username/photo", requireAdminSession, upload.single("photo"), async (req, res) => {
   try {
     const username = req.params.username;
     if (!req.file) return res.status(400).json({ error: "ไม่มีไฟล์รูป" });

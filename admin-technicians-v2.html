@@ -72,6 +72,19 @@
           <input id="newPhone" placeholder="เบอร์โทร">
         </div>
       </div>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <div class="muted">รหัสช่าง (Technician Code)</div>
+          <input id="newTechCode" placeholder="เช่น CWF-001">
+        </div>
+        <div>
+          <div class="muted">ประเภท</div>
+          <select id="newEmployment">
+            <option value="company">บริษัท</option>
+            <option value="partner">พาร์ทเนอร์</option>
+          </select>
+        </div>
+      </div>
       <div style="margin-top:10px;display:flex;gap:8px;flex-wrap:wrap">
         <button class="btn yellow" id="btnCreate">สร้าง ID</button>
       </div>
@@ -84,6 +97,80 @@
       <div style="height:12px"></div>
       <div class="muted">คำขอแก้ไขโปรไฟล์ (จากช่าง)</div>
       <div class="list" id="profileReqList"></div>
+    </div>
+
+    <!-- Edit Technician Modal (Phase 4) -->
+    <div id="editModal" style="display:none;position:fixed;inset:0;background:rgba(2,6,23,.55);backdrop-filter:blur(6px);z-index:9998;align-items:flex-end;justify-content:center;padding:12px">
+      <div class="card" style="width:100%;max-width:980px;max-height:85vh;overflow:auto;border-radius:24px">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px">
+          <div>
+            <div class="muted">แก้ไขช่าง</div>
+            <div style="font-weight:1000;font-size:18px" id="editTitle">—</div>
+          </div>
+          <button class="btn gray" id="btnCloseEdit" type="button">ปิด</button>
+        </div>
+
+        <div class="grid2" style="margin-top:12px">
+          <div>
+            <div class="muted">ชื่อจริง</div>
+            <input id="editFullName" placeholder="ชื่อช่าง">
+          </div>
+          <div>
+            <div class="muted">รหัสช่าง (Technician Code)</div>
+            <input id="editTechCode" placeholder="เช่น CWF-001">
+          </div>
+        </div>
+
+        <div class="grid2" style="margin-top:10px">
+          <div>
+            <div class="muted">เบอร์โทร</div>
+            <input id="editPhone" placeholder="08xxxxxxxx">
+          </div>
+          <div>
+            <div class="muted">ประเภท</div>
+            <select id="editEmployment">
+              <option value="company">บริษัท</option>
+              <option value="partner">พาร์ทเนอร์</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="grid2" style="margin-top:10px">
+          <div>
+            <div class="muted">เวลาเริ่มงาน</div>
+            <input id="editWorkStart" placeholder="09:00">
+          </div>
+          <div>
+            <div class="muted">เวลาเลิกงาน</div>
+            <input id="editWorkEnd" placeholder="18:00">
+          </div>
+        </div>
+
+        <div class="grid2" style="margin-top:10px">
+          <div>
+            <div class="muted">ตั้งรหัสผ่านใหม่</div>
+            <input id="editNewPass" placeholder="(ไม่บังคับ)" type="password">
+          </div>
+          <div>
+            <div class="muted">ยืนยันรหัสผ่านใหม่</div>
+            <input id="editConfirmPass" placeholder="(ไม่บังคับ)" type="password">
+          </div>
+        </div>
+
+        <div style="margin-top:12px">
+          <div class="muted">รูปโปรไฟล์ช่าง</div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <input id="editPhoto" type="file" accept="image/*" style="max-width:260px">
+            <button class="btn gray" id="btnUploadPhoto" type="button">อัปโหลดรูป</button>
+            <span class="muted" id="photoStatus">—</span>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn yellow" id="btnSaveEdit" type="button">บันทึก</button>
+          <button class="btn blue" id="btnOpenSpecial" type="button">จัดการเวลาพิเศษ</button>
+        </div>
+      </div>
     </div>
 
   </div>

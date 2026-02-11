@@ -1,6 +1,7 @@
 /* Admin Technicians v2 (Phase 3 minimal usable) */
 (function(){
   const $ = (id)=>document.getElementById(id);
+  let currentTech = null;
 
   function setTab(name){
     document.querySelectorAll('.tab').forEach(b=>{
@@ -27,17 +28,23 @@
   }
 
   function openEdit(t){
-    const full_name = prompt('ชื่อจริง', t.full_name || '') ?? null;
-    if (full_name === null) return;
-    const phone = prompt('เบอร์', t.phone || '') ?? null;
-    if (phone === null) return;
-    apiFetch(`/admin/technicians/${encodeURIComponent(t.username)}`,{
-      method:'PUT',
-      body: JSON.stringify({ full_name: String(full_name).trim(), phone: String(phone).trim() })
-    }).then(()=>{
-      showToast('บันทึกแล้ว','success');
-      loadTechs();
-    }).catch(e=>showToast(e.message||'บันทึกไม่สำเร็จ','error'));
+    currentTech = t;
+    $('editTitle').textContent = `${t.full_name || t.username} (${t.username})`;
+    $('editFullName').value = t.full_name || '';
+    $('editTechCode').value = t.technician_code || '';
+    $('editPhone').value = t.phone || '';
+    $('editEmployment').value = (t.employment_type || 'company');
+    $('editWorkStart').value = t.work_start || '09:00';
+    $('editWorkEnd').value = t.work_end || '18:00';
+    $('editNewPass').value = '';
+    $('editConfirmPass').value = '';
+    $('photoStatus').textContent = '—';
+    $('editModal').style.display = 'flex';
+  }
+
+  function closeEdit(){
+    $('editModal').style.display = 'none';
+    currentTech = null;
   }
 
   async function loadTechs(){
@@ -65,13 +72,16 @@
     const password = String($('newPassword').value||'').trim();
     const full_name = String($('newFullName').value||'').trim();
     const phone = String($('newPhone').value||'').trim();
+    const technician_code = String($('newTechCode').value||'').trim();
+    const employment_type = String($('newEmployment').value||'company').trim();
     $('createStatus').textContent = 'กำลังสร้าง...';
     const r = await apiFetch('/admin/technicians/create',{
       method:'POST',
-      body: JSON.stringify({ username, password, full_name, phone })
+      body: JSON.stringify({ username, password, full_name, phone, technician_code, employment_type })
     });
     $('createStatus').textContent = `สร้างแล้ว: ${r.username}`;
     $('newPassword').value = '';
+    $('newUsername').value = '';
     showToast('สร้าง ID ช่างแล้ว','success');
   }
 
@@ -144,13 +154,55 @@
             }},
             {text:'ปฏิเสธ',kind:'gray',onClick: async ()=>{
               const admin_note = prompt('เหตุผล (optional)','') || '';
-              await apiFetch(`/admin/profile/requests/${r.request_id}/decline`,{method:'POST',body:JSON.stringify({reviewed_by:decided_by, admin_note})});
+              await apiFetch(`/admin/profile/requests/${r.request_id}/reject`,{method:'POST',body:JSON.stringify({reviewed_by:decided_by, admin_note})});
               showToast('ปฏิเสธแล้ว','success'); loadApprovals();
             }},
           ]
         ));
       }
     }
+  }
+
+  async function saveEdit(){
+    if (!currentTech) return;
+    const payload = {
+      full_name: String($('editFullName').value||'').trim(),
+      technician_code: String($('editTechCode').value||'').trim(),
+      phone: String($('editPhone').value||'').trim(),
+      employment_type: String($('editEmployment').value||'company').trim(),
+      work_start: String($('editWorkStart').value||'').trim(),
+      work_end: String($('editWorkEnd').value||'').trim(),
+      new_password: String($('editNewPass').value||''),
+      confirm_password: String($('editConfirmPass').value||''),
+    };
+
+    await apiFetch(`/admin/technicians/${encodeURIComponent(currentTech.username)}`,{
+      method:'PUT',
+      body: JSON.stringify(payload)
+    });
+    showToast('บันทึกแล้ว','success');
+    closeEdit();
+    loadTechs();
+  }
+
+  async function uploadTechPhoto(){
+    if (!currentTech) return;
+    const f = $('editPhoto').files?.[0];
+    if (!f) return showToast('เลือกรูปก่อน','error');
+    $('photoStatus').textContent = 'กำลังอัปโหลด...';
+    const fd = new FormData();
+    fd.append('photo', f);
+    const resp = await fetch(`/admin/technicians/${encodeURIComponent(currentTech.username)}/photo`,{
+      method:'POST',
+      body: fd,
+      credentials: 'include'
+    });
+    const json = await resp.json().catch(()=>({}));
+    if (!resp.ok) throw new Error(json?.error || 'อัปโหลดไม่สำเร็จ');
+    $('photoStatus').textContent = 'อัปโหลดแล้ว';
+    showToast('อัปโหลดรูปแล้ว','success');
+    // refresh current list
+    loadTechs().catch(()=>{});
   }
 
   document.querySelectorAll('.tab').forEach(b=>{
@@ -165,6 +217,16 @@
   $('btnReload').addEventListener('click', ()=> loadTechs().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')));
   $('q').addEventListener('input', ()=> loadTechs().catch(()=>{}));
   $('btnCreate').addEventListener('click', ()=> createTech().catch(e=>showToast(e.message||'สร้างไม่สำเร็จ','error')));
+
+  // modal
+  $('btnCloseEdit').addEventListener('click', closeEdit);
+  $('editModal').addEventListener('click', (e)=>{ if (e.target && e.target.id==='editModal') closeEdit(); });
+  $('btnSaveEdit').addEventListener('click', ()=> saveEdit().catch(e=>showToast(e.message||'บันทึกไม่สำเร็จ','error')));
+  $('btnUploadPhoto').addEventListener('click', ()=> uploadTechPhoto().catch(e=>showToast(e.message||'อัปโหลดไม่สำเร็จ','error')));
+  $('btnOpenSpecial').addEventListener('click', ()=>{
+    if (!currentTech) return;
+    window.open(`/admin-queue-v2.html?tech=${encodeURIComponent(currentTech.username)}`,'_blank');
+  });
 
   // initial
   loadTechs().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error'));
