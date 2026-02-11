@@ -316,6 +316,202 @@ app.use("/admin", requireAdminSession);
 // NOTE: This does not touch UI; only blocks access when not logged in.
 app.get(/^\/admin-[^\s]+\.html$/i, requireAdminSession, (req, res, next) => next());
 
+
+// =======================================
+// 📊 ADMIN DASHBOARD V2 (Phase 3)
+// - Personal revenue/commission (created_by_admin OR approved_by_admin)
+// - Company revenue series (day/week/month/year) + pending/active jobs
+// =======================================
+app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
+  try {
+    const me = req.auth;
+    const from = String(req.query.from || "").trim();
+    const to = String(req.query.to || "").trim();
+
+    const safeFrom = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : null;
+    const safeTo = /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : null;
+
+    // default: last 30 days
+    const rangeSql = `
+      WITH bounds AS (
+        SELECT 
+          COALESCE($2::date, (CURRENT_DATE - INTERVAL '29 days')::date) AS d_from,
+          COALESCE($3::date, CURRENT_DATE::date) AS d_to
+      )
+      SELECT d_from, d_to FROM bounds
+    `;
+    const b = await pool.query(rangeSql, [me.username, safeFrom, safeTo]);
+    const d_from = b.rows[0].d_from;
+    const d_to = b.rows[0].d_to;
+
+    const meRow = await pool.query(
+      `SELECT username, role, COALESCE(full_name,'') AS full_name, COALESCE(photo_url,'') AS photo_url,
+              COALESCE(commission_rate_percent,0) AS commission_rate_percent
+       FROM public.users WHERE username=$1 LIMIT 1`,
+      [me.username]
+    );
+    const meInfo = meRow.rows[0] || { username: me.username, role: me.role, full_name: "", photo_url: "", commission_rate_percent: 0 };
+
+    const personal = await pool.query(
+      `SELECT COUNT(*)::int AS job_count,
+              COALESCE(SUM(COALESCE(job_price,0)),0)::double precision AS revenue_total
+       FROM public.jobs
+       WHERE (created_by_admin=$1 OR approved_by_admin=$1)
+         AND (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $2::date AND $3::date
+         AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
+      [me.username, d_from, d_to]
+    );
+    const pRow = personal.rows[0] || { job_count: 0, revenue_total: 0 };
+    const commissionRate = Number(meInfo.commission_rate_percent || 0);
+    const commissionTotal = (Number(pRow.revenue_total || 0) * commissionRate) / 100;
+
+    const company = await pool.query(
+      `SELECT COUNT(*)::int AS job_count,
+              COALESCE(SUM(COALESCE(job_price,0)),0)::double precision AS revenue_total
+       FROM public.jobs
+       WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
+         AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
+      [d_from, d_to]
+    );
+    const cRow = company.rows[0] || { job_count: 0, revenue_total: 0 };
+
+    const pending = await pool.query(
+      `SELECT job_id, booking_code, customer_name, job_type, appointment_datetime, job_status, duration_min, job_price
+       FROM public.jobs
+       WHERE COALESCE(job_status,'') IN ('รอตรวจสอบ','pending_review')
+       ORDER BY appointment_datetime ASC
+       LIMIT 12`
+    );
+
+    const active = await pool.query(
+      `SELECT job_id, booking_code, customer_name, job_type, appointment_datetime, job_status, duration_min, job_price
+       FROM public.jobs
+       WHERE COALESCE(job_status,'') IN ('รอดำเนินการ','กำลังทำ','ตีกลับ','รอช่างยืนยัน')
+       ORDER BY appointment_datetime ASC
+       LIMIT 12`
+    );
+
+    const counts = await pool.query(
+      `WITH now_bkk AS (
+         SELECT (NOW() AT TIME ZONE 'Asia/Bangkok')::date AS today,
+                DATE_TRUNC('month', (NOW() AT TIME ZONE 'Asia/Bangkok'))::date AS m0,
+                DATE_TRUNC('year', (NOW() AT TIME ZONE 'Asia/Bangkok'))::date AS y0
+       )
+       SELECT
+         (SELECT COUNT(*) FROM public.jobs j, now_bkk n WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date = n.today)::int AS today,
+         (SELECT COUNT(*) FROM public.jobs j, now_bkk n WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date >= n.m0)::int AS month,
+         (SELECT COUNT(*) FROM public.jobs j, now_bkk n WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date >= n.y0)::int AS year`
+    );
+
+    async function series(kind){
+      const map = {
+        day:  "DATE_TRUNC('day', appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
+        week: "DATE_TRUNC('week', appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
+        month: "DATE_TRUNC('month', appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
+        year: "DATE_TRUNC('year', appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
+      };
+      const trunc = map[kind] || map.day;
+      const r = await pool.query(
+        `SELECT ${trunc} AS bucket,
+                COALESCE(SUM(COALESCE(job_price,0)),0)::double precision AS total
+         FROM public.jobs
+         WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
+           AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
+         GROUP BY 1
+         ORDER BY 1 ASC`,
+        [d_from, d_to]
+      );
+      return (r.rows||[]).map(x=>{
+        const d = new Date(x.bucket);
+        const label = kind==='day'
+          ? d.toLocaleDateString('th-TH',{month:'2-digit',day:'2-digit'})
+          : kind==='week'
+            ? d.toLocaleDateString('th-TH',{month:'2-digit',day:'2-digit'})
+            : kind==='month'
+              ? d.toLocaleDateString('th-TH',{year:'2-digit',month:'2-digit'})
+              : d.toLocaleDateString('th-TH',{year:'2-digit'});
+        return { label, total: Number(x.total||0) };
+      });
+    }
+
+    const payload = {
+      me: meInfo,
+      range: { from: d_from, to: d_to },
+      personal: { job_count: pRow.job_count, revenue_total: Number(pRow.revenue_total||0), commission_total: commissionTotal },
+      company: { job_count: cRow.job_count, revenue_total: Number(cRow.revenue_total||0), series: {
+        day: await series('day'),
+        week: await series('week'),
+        month: await series('month'),
+        year: await series('year')
+      }},
+      pending: { count: (pending.rows||[]).length, rows: pending.rows||[] },
+      active: { rows: active.rows||[] },
+      counts: counts.rows[0] || { today: 0, month: 0, year: 0 }
+    };
+    return res.json(payload);
+  } catch (e) {
+    console.error('dashboard_v2 error', e);
+    return res.status(500).json({ error: 'โหลด Dashboard ไม่สำเร็จ' });
+  }
+});
+
+// =======================================
+// 👤 ADMIN PROFILE V2 (Phase 3)
+// =======================================
+app.get("/admin/profile_v2/me", requireAdminSession, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT username, role, COALESCE(full_name,'') AS full_name, COALESCE(photo_url,'') AS photo_url,
+              COALESCE(commission_rate_percent,0) AS commission_rate_percent
+       FROM public.users WHERE username=$1 LIMIT 1`,
+      [req.auth.username]
+    );
+    return res.json({ me: r.rows[0] || { username: req.auth.username, role: req.auth.role, full_name: '', photo_url: '', commission_rate_percent: 0 } });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'โหลดโปรไฟล์ไม่สำเร็จ' });
+  }
+});
+
+app.put("/admin/profile_v2/me", requireAdminSession, async (req, res) => {
+  try {
+    const full_name = String(req.body?.full_name || '').trim();
+    await pool.query(`UPDATE public.users SET full_name=$1 WHERE username=$2`, [full_name, req.auth.username]);
+    const r = await pool.query(
+      `SELECT username, role, COALESCE(full_name,'') AS full_name, COALESCE(photo_url,'') AS photo_url,
+              COALESCE(commission_rate_percent,0) AS commission_rate_percent
+       FROM public.users WHERE username=$1 LIMIT 1`,
+      [req.auth.username]
+    );
+    return res.json({ me: r.rows[0] });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'บันทึกชื่อไม่สำเร็จ' });
+  }
+});
+
+app.post("/admin/profile_v2/me/photo", requireAdminSession, upload.single("photo"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "ไม่พบไฟล์รูป" });
+    const ext = (req.file.mimetype || '').includes('png') ? 'png' : 'jpg';
+    const filename = `admin_${req.auth.username}_${Date.now()}.${ext}`;
+    const filepath = path.join(UPLOAD_DIR, filename);
+    fs.writeFileSync(filepath, req.file.buffer);
+    const photo_url = `/uploads/${filename}`;
+    await pool.query(`UPDATE public.users SET photo_url=$1 WHERE username=$2`, [photo_url, req.auth.username]);
+    const r = await pool.query(
+      `SELECT username, role, COALESCE(full_name,'') AS full_name, COALESCE(photo_url,'') AS photo_url,
+              COALESCE(commission_rate_percent,0) AS commission_rate_percent
+       FROM public.users WHERE username=$1 LIMIT 1`,
+      [req.auth.username]
+    );
+    return res.json({ me: r.rows[0] });
+  } catch (e) {
+    console.error(e);
+    return res.status(500).json({ error: 'อัปโหลดรูปไม่สำเร็จ' });
+  }
+});
+
 async function requireAdminForRank(req, res, next) {
   try {
     const auth = parseCwfAuth(req);
@@ -466,6 +662,12 @@ async function ensureSchema() {
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS booking_mode TEXT DEFAULT 'scheduled'`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS admin_override_duration_min INT`);
 
+
+// 2.0) jobs: admin attribution (dashboard/commission) - backward compatible
+await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS created_by_admin TEXT`);
+await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS approved_by_admin TEXT`);
+await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ`);
+
     // 2.1) jobs: maps_url / job_zone / travel_started_at / started_at / finished_at / canceled_at / final_signature_*
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS maps_url TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS job_zone TEXT`);
@@ -505,6 +707,27 @@ async function ensureSchema() {
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS paid_by TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'unpaid'`);
+
+
+// 3) users: admin profile + commission rate (dashboard)
+await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS full_name TEXT`);
+await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS photo_url TEXT`);
+await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS commission_rate_percent DOUBLE PRECISION DEFAULT 0`);
+
+// 4) audit logs (reserved for Super Admin impersonation - Phase 5)
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.admin_audit_log (
+    log_id BIGSERIAL PRIMARY KEY,
+    actor_username TEXT,
+    actor_role TEXT,
+    action TEXT,
+    target_role TEXT,
+    target_username TEXT,
+    meta_json JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created ON public.admin_audit_log(created_at DESC)`);
 
 
     await pool.query(
@@ -1283,8 +1506,9 @@ app.post("/jobs", async (req, res) => {
        maps_url, job_zone,
        gps_latitude, gps_longitude,
        technician_team, technician_username, job_status,
-	       job_source, dispatch_mode, duration_min)
-	      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'admin',$14,$15)
+       job_source, dispatch_mode, duration_min,
+       created_by_admin)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,'admin',$14,$15,$16)
       RETURNING job_id
       `,
       [
@@ -1305,6 +1529,7 @@ app.post("/jobs", async (req, res) => {
         "รอดำเนินการ",
         mode,
 	        duration_min,
+        (req.auth && req.auth.username) ? req.auth.username : (parseCwfAuth(req)?.username || null),
       ]
     );
 
@@ -1578,7 +1803,10 @@ app.post("/jobs/:job_id/dispatch_v2", requireAdminSoft, async (req, res) => {
     const curSt = String(j.job_status || '').trim();
     const bm = String(j.booking_mode || '').trim().toLowerCase();
     if (mode === 'forced' && (curSt === 'รอตรวจสอบ' || curSt === 'pending_review')) {
-      await client.query(`UPDATE public.jobs SET job_status='รอดำเนินการ' WHERE job_id=$1`, [job_id]);
+      await client.query(
+        `UPDATE public.jobs SET job_status='รอดำเนินการ', approved_by_admin=COALESCE(approved_by_admin,$2), approved_at=COALESCE(approved_at,NOW()) WHERE job_id=$1`,
+        [job_id, (req.auth && req.auth.username) ? req.auth.username : (parseCwfAuth(req)?.username || null)]
+      );
     }
     if (mode === 'offer' && bm === 'urgent' && (curSt === 'รอตรวจสอบ' || curSt === 'รอดำเนินการ')) {
       await client.query(`UPDATE public.jobs SET job_status='รอช่างยืนยัน' WHERE job_id=$1`, [job_id]);

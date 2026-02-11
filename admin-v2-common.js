@@ -241,11 +241,11 @@ function injectAdminMenu(){
       </div>
 
       <div class="cwf-group">
-        <div class="t">หน้าใหม่ (จะเสร็จในเฟสถัดไป)</div>
+        <div class="t">ศูนย์กลาง</div>
         <div class="i">
-          <div class="cwf-link" data-href="/admin-dashboard.html">📊 Dashboard <small>Admin</small></div>
-          <div class="cwf-link" data-href="/admin-profile.html">👤 Profile Admin <small>รูป + ชื่อ</small></div>
-          <div class="cwf-link" data-href="/admin-technicians.html">🧰 จัดการช่าง <small>ID/อนุมัติ</small></div>
+          <div class="cwf-link" data-href="/admin-dashboard-v2.html">📊 Dashboard <small>Admin</small></div>
+          <div class="cwf-link" data-href="/admin-profile-v2.html">👤 Profile Admin <small>รูป + ชื่อ</small></div>
+          <div class="cwf-link" data-href="/admin-technicians-v2.html">🧰 จัดการช่าง <small>ID/อนุมัติ</small></div>
         </div>
       </div>
 
