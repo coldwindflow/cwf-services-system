@@ -48,7 +48,13 @@ function clearAuthStorage(){
 }
 
 function doLogout(){
+  // Best effort: clear server cookie as well
+  try{
+    fetch('/api/logout', { method:'POST', headers:{'Content-Type':'application/json'} }).catch(()=>{});
+  }catch(e){}
   clearAuthStorage();
+  // prevent back to cached admin pages
+  try{ sessionStorage.setItem('cwf_logged_out','1'); }catch(e){}
   try{ location.replace('/login.html'); }catch(e){ location.href = '/login.html'; }
 }
 
@@ -408,12 +414,54 @@ function injectFloatingDebug(){
 
 function basicAdminGuard(){
   if (isAdminAddV2Page()) return;
-  try{
-    const role = localStorage.getItem('role');
-    if (role !== 'admin') {
-      location.replace('/login.html');
+  const localCheck = ()=>{
+    try{
+      const role = localStorage.getItem('role');
+      const u = localStorage.getItem('username');
+      if (!u || (role !== 'admin' && role !== 'super_admin')) {
+        return false;
+      }
+      // if explicitly logged out in this tab/session, block immediately
+      if (sessionStorage.getItem('cwf_logged_out') === '1') return false;
+      return true;
+    }catch(e){ return false; }
+  };
+
+  const hardRedirect = ()=>{
+    try{ location.replace('/login.html'); }catch(e){ location.href = '/login.html'; }
+  };
+
+  if (!localCheck()) {
+    hardRedirect();
+    return;
+  }
+
+  // Server-side check to prevent back-navigation into protected pages
+  const serverCheck = async ()=>{
+    try{
+      const res = await fetch('/api/auth/me', { credentials:'include' });
+      if (!res.ok) throw new Error('UNAUTHORIZED');
+      const data = await res.json().catch(()=>null);
+      if (!data || !data.ok) throw new Error('UNAUTHORIZED');
+      if (data.role !== 'admin' && data.role !== 'super_admin') throw new Error('FORBIDDEN');
+      // keep localStorage in sync with DB role
+      try{ localStorage.setItem('role', String(data.role)); }catch(e){}
+      return true;
+    }catch(e){
+      doLogout();
+      return false;
     }
-  }catch(e){}
+  };
+
+  // run once on load (async)
+  serverCheck();
+
+  // bfcache / back-button: re-check when page is shown again
+  window.addEventListener('pageshow', ()=>{ serverCheck(); });
+  // re-check when tab becomes visible again
+  document.addEventListener('visibilitychange', ()=>{
+    if (document.visibilityState === 'visible') serverCheck();
+  });
 }
 
 // Auto-init on Admin v2 pages

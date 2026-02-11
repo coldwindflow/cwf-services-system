@@ -180,6 +180,15 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// =======================================
+// 🔐 AUTH (session cookie) for Admin pages/APIs
+// - cookie: cwf_auth (base64 JSON: {u,r,exp})
+// - validate exp and verify role against DB
+// - used for:
+//   1) protect admin HTML (prevent back/cached access after logout)
+//   2) protect /admin/* APIs
+// =======================================
+
 
 // =======================================
 // 🔐 AUTH (minimal) for admin-only rank update
@@ -228,6 +237,84 @@ function parseCwfAuth(req) {
     return null;
   }
 }
+
+function setLogoutCookie(res) {
+  // Clear cookie in the most compatible way (with and without Secure)
+  try {
+    const base = "cwf_auth=; Max-Age=0; Path=/; SameSite=Lax";
+    res.setHeader("Set-Cookie", [
+      base,
+      base + "; Secure",
+    ]);
+  } catch (_) {}
+}
+
+async function requireAdminSession(req, res, next) {
+  try {
+    const auth = parseCwfAuth(req);
+    if (!auth) {
+      // HTML pages: redirect. APIs: JSON 401.
+      const accept = String(req.headers?.accept || "").toLowerCase();
+      if (accept.includes("text/html")) return res.redirect(302, "/login.html");
+      return res.status(401).json({ error: "UNAUTHORIZED" });
+    }
+
+    // Verify role from DB (trust DB, not cookie)
+    const q = await pool.query(
+      `SELECT username, role FROM public.users WHERE username=$1 LIMIT 1`,
+      [auth.username]
+    );
+    if ((q.rows || []).length === 0) {
+      setLogoutCookie(res);
+      const accept = String(req.headers?.accept || "").toLowerCase();
+      if (accept.includes("text/html")) return res.redirect(302, "/login.html");
+      return res.status(401).json({ error: "UNAUTHORIZED" });
+    }
+    const dbRole = String(q.rows[0].role || "");
+    if (dbRole !== "admin" && dbRole !== "super_admin") {
+      const accept = String(req.headers?.accept || "").toLowerCase();
+      if (accept.includes("text/html")) return res.redirect(302, "/login.html");
+      return res.status(403).json({ error: "FORBIDDEN" });
+    }
+
+    req.auth = { username: auth.username, role: dbRole };
+    return next();
+  } catch (e) {
+    console.error("requireAdminSession error:", e);
+    return res.status(500).json({ error: "AUTH_FAILED" });
+  }
+}
+
+// Session check for frontend guards
+app.get("/api/auth/me", async (req, res) => {
+  try {
+    const auth = parseCwfAuth(req);
+    if (!auth) return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+    const q = await pool.query(
+      `SELECT username, role FROM public.users WHERE username=$1 LIMIT 1`,
+      [auth.username]
+    );
+    if ((q.rows || []).length === 0) return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+    return res.json({ ok: true, username: q.rows[0].username, role: q.rows[0].role });
+  } catch (e) {
+    console.error("/api/auth/me error:", e);
+    return res.status(500).json({ ok: false, error: "AUTH_FAILED" });
+  }
+});
+
+// Logout endpoint (clears cookie server-side)
+app.post("/api/logout", (req, res) => {
+  setLogoutCookie(res);
+  return res.json({ ok: true });
+});
+
+// Protect ALL /admin/* endpoints with server-side session validation
+// (prevents bypassing by faking x-user-role header)
+app.use("/admin", requireAdminSession);
+
+// Protect Admin HTML pages (static files) as well
+// NOTE: This does not touch UI; only blocks access when not logged in.
+app.get(/^\/admin-[^\s]+\.html$/i, requireAdminSession, (req, res, next) => next());
 
 async function requireAdminForRank(req, res, next) {
   try {
