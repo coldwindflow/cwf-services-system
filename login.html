@@ -74,7 +74,7 @@
   }
   function redirectIfAlreadyLoggedIn(){
     const role = localStorage.getItem("role");
-    if (role === "admin") location.replace("/admin.html");
+    if (role === "admin") location.replace("/admin-review-v2.html");
     if (role === "technician") location.replace("/tech.html");
   }
   restoreAuthFromCookie();
@@ -110,7 +110,7 @@
       // ส่งผลให้ API ที่ต้องอ่าน cookie (เช่น admin-only rank update) ถูก 401/403
       // จึงลบส่วนที่ clear cookie ออก และคง cookie ไว้ตาม Max-Age ที่กำหนด
 
-      if (d.role === "admin") location.href = "/admin.html";
+      if (d.role === "admin") location.href = "/admin-review-v2.html";
       if (d.role === "technician") location.href = "/tech.html";
       if (!d.role) alert("Login ผ่าน แต่ไม่มี role ในระบบ");
     } catch (err) {
