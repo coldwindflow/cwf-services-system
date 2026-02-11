@@ -2175,32 +2175,34 @@ app.post("/admin/reset_jobs_v2", requireAdminSoft, async (req, res) => {
     await client.query("BEGIN");
 
     
-// delete children first (best-effort for older DBs)
-// IMPORTANT: every statement must be wrapped in SAVEPOINT to avoid 25P02
-let _sp_r = 0;
-const safe = async (sql) => {
-  const sp = `sp_reset_${++_sp_r}`;
-  try {
-    await client.query(`SAVEPOINT ${sp}`);
-    await client.query(sql);
-    await client.query(`RELEASE SAVEPOINT ${sp}`);
-  } catch (e) {
-    try { await client.query(`ROLLBACK TO SAVEPOINT ${sp}`); } catch(_e) {}
-    try { await client.query(`RELEASE SAVEPOINT ${sp}`); } catch(_e) {}
-    console.warn("[reset_jobs_v2] skip", e.message);
-  }
-};
+    // delete children first (best-effort for older DBs)
+    // IMPORTANT: use DO block to ignore undefined_table without breaking transaction
+    const safeDelete = async (tableName) => {
+      const tn = String(tableName || '').trim();
+      if(!tn) return;
+      const sql = `DO $$
+BEGIN
+  EXECUTE 'DELETE FROM ${tn}';
+EXCEPTION WHEN undefined_table THEN
+  RAISE NOTICE 'skip relation % does not exist', '${tn}';
+END $$;`;
+      try {
+        await client.query(sql);
+      } catch (e) {
+        console.warn("[reset_jobs_v2] skip", tn, e.message);
+      }
+    };
 
-await safe(`DELETE FROM public.job_photo_metadata`);
-await safe(`DELETE FROM public.job_photos`);
-await safe(`DELETE FROM public.job_updates_v2`);
-await safe(`DELETE FROM public.job_offer_recipients`);
-await safe(`DELETE FROM public.job_offers`);
-await safe(`DELETE FROM public.job_team_members`);
-await safe(`DELETE FROM public.job_assignments`);
-await safe(`DELETE FROM public.job_promotions`);
-await safe(`DELETE FROM public.job_items`);
-await safe(`DELETE FROM public.job_pricing_requests`);
+    await safeDelete('public.job_photo_metadata');
+    await safeDelete('public.job_photos');
+    await safeDelete('public.job_updates_v2');
+    await safeDelete('public.job_offer_recipients');
+    await safeDelete('public.job_offers');
+    await safeDelete('public.job_team_members');
+    await safeDelete('public.job_assignments');
+    await safeDelete('public.job_promotions');
+    await safeDelete('public.job_items');
+    await safeDelete('public.job_pricing_requests');
 
     // finally jobs
     const dr = await client.query(`DELETE FROM public.jobs`);
@@ -6188,6 +6190,95 @@ async function checkTechCollision(username, startIso, durationMin, ignoreJobId) 
   const startMin = bangkokHMToMinFromDate(startDate);
   const d = Math.max(1, Number(durationMin || 0));
   const busyEndMin = startMin + d + TRAVEL_BUFFER_MIN;
+
+  // Primary check (SQL overlap) — more robust than day-window joins and avoids timezone edge cases
+  try {
+    const newStartTs = iso;
+    const newBusyEndTs = new Date(startDate.getTime() + (d + TRAVEL_BUFFER_MIN) * 60000).toISOString();
+    const buf = Number(TRAVEL_BUFFER_MIN || 30);
+    const params = [username, newStartTs, newBusyEndTs, buf];
+    let sql = `
+      SELECT id, appointment_datetime::timestamptz AS appt, COALESCE(duration_min,0) AS dur
+      FROM public.jobs
+      WHERE (technician_username = $1 OR technician_team = $1)
+        AND appointment_datetime IS NOT NULL
+        AND appointment_datetime::timestamptz < $3::timestamptz
+        AND (appointment_datetime::timestamptz + make_interval(mins => (COALESCE(duration_min,0) + $4))) > $2::timestamptz
+    `;
+    if (ignoreJobId !== null && ignoreJobId !== undefined) {
+      params.push(String(ignoreJobId));
+      sql += ` AND id::text <> $5`;
+    }
+    sql += ` ORDER BY appointment_datetime::timestamptz ASC LIMIT 1`;
+    const r = await pool.query(sql, params);
+    if (r.rows && r.rows.length) {
+      const row = r.rows[0];
+      const oldStartDate = new Date(row.appt);
+      const oldStartMin = bangkokHMToMinFromDate(oldStartDate);
+      const oldBusyEndMin = oldStartMin + Number(row.dur || 0) + TRAVEL_BUFFER_MIN;
+      const detail = {
+        conflict_job_id: String(row.id),
+        username,
+        date: dateStr,
+        new_range: { start: fmtHHMMFromMin(startMin), busy_end: fmtHHMMFromMin(busyEndMin) },
+        old_range: { start: fmtHHMMFromMin(oldStartMin), busy_end: fmtHHMMFromMin(oldBusyEndMin) },
+      };
+      avlog('[collision_sql]', detail);
+      return detail;
+    }
+  } catch (e) {
+    console.warn('[collision_sql] fallback', e.message || e);
+  }
+
+  // Primary (DB) overlap check — more robust than relying on derived daily blocks.
+  // NOTE: Always block overlaps even in forced mode (forced overrides open_to_work only).
+  try {
+    const newStartTs = startDate;
+    const newBusyEndTs = new Date(startDate.getTime() + (d + TRAVEL_BUFFER_MIN) * 60 * 1000);
+    const args = [
+      username,
+      newBusyEndTs.toISOString(),
+      newStartTs.toISOString(),
+      TRAVEL_BUFFER_MIN,
+    ];
+    // ignoreJobId is optional
+    let sql = `
+      SELECT id::text AS job_id,
+             appointment_datetime::timestamptz AS appt,
+             COALESCE(duration_min, 0)::int AS dur
+      FROM jobs
+      WHERE (technician_username = $1 OR technician_team = $1)
+        AND job_status IS DISTINCT FROM 'ยกเลิก'
+        AND appointment_datetime IS NOT NULL
+        AND appointment_datetime::timestamptz < $2::timestamptz
+        AND (appointment_datetime::timestamptz + make_interval(mins => (COALESCE(duration_min,0)::int + $4))) > $3::timestamptz
+    `;
+    if (ignoreJobId) {
+      args.push(String(ignoreJobId));
+      sql += ` AND id::text <> $5 `;
+    }
+    sql += ` ORDER BY appointment_datetime::timestamptz ASC LIMIT 1`;
+    const r = await pool.query(sql, args);
+    if (r.rows && r.rows[0]) {
+      const row = r.rows[0];
+      // Derive old range in Bangkok minutes for debug UI
+      const oldStartDate = new Date(row.appt);
+      const oldStartMin = bangkokHMToMinFromDate(oldStartDate);
+      const oldBusyEndMin = oldStartMin + Number(row.dur || 0) + TRAVEL_BUFFER_MIN;
+      const detail = {
+        conflict_job_id: row.job_id,
+        username,
+        date: dateStr,
+        new_range: { start: fmtHHMMFromMin(startMin), busy_end: fmtHHMMFromMin(busyEndMin) },
+        old_range: { start: fmtHHMMFromMin(oldStartMin), busy_end: fmtHHMMFromMin(oldBusyEndMin) },
+      };
+      avlog('[collision_sql]', detail);
+      return detail;
+    }
+  } catch (e) {
+    // Fall back to derived blocks if query fails for any reason
+    avlog('[collision_sql] fallback', { err: e?.message });
+  }
 
   const blocks = await listBusyBlocksForTechOnDate(username, dateStr, ignoreJobId);
 

@@ -41,14 +41,13 @@ let DEBUG_ENABLED = (() => {
   try {
     const qs = new URLSearchParams(location.search);
     const ls = window.localStorage;
-    // Query param always wins and persists.
+    // Preserve legacy ability to set flag via querystring, but DO NOT auto-open without PIN.
     if (qs.get('debug') === '1') {
       try { ls.setItem('cwf_debug', '1'); } catch(e) {}
-      try { ls.setItem('cwf_debug', '1'); } catch(e) {}
-      return true;
     }
-    // Accept either key.
-    return (ls.getItem('cwf_debug') === '1') || (ls.getItem('cwf_debug') === '1');
+    const want = (ls.getItem('cwf_debug') === '1');
+    const unlocked = (ls.getItem('cwf_debug_unlocked') === '1');
+    return want && unlocked;
   } catch (e) { return false; }
 })();
 
@@ -289,18 +288,28 @@ btnReset?.addEventListener('click', async () => {
 }
 
 function bindDebugToggle(){
-  const btn = el('btnToggleDebug');
+  const btn = el('btnBug');
   if(!btn) return;
-  try{
-    btn.textContent = DEBUG_ENABLED ? '🧪 Debug: On' : '🧪 Debug: Off';
-  }catch(e){}
+  // keep icon stable, show state via tooltip
+  try{ btn.title = DEBUG_ENABLED ? 'Debug: On' : 'Debug: Off'; }catch(e){}
   btn.addEventListener('click', () => {
     try {
-      // Runtime toggle (no reload) — prevents “กดแล้วไม่เห็นอะไร” บนมือถือ
-      DEBUG_ENABLED = !DEBUG_ENABLED;
-      if (DEBUG_ENABLED) localStorage.setItem('cwf_debug', '1');
-      else localStorage.removeItem('cwf_debug');
-      btn.textContent = DEBUG_ENABLED ? '🧪 Debug: On' : '🧪 Debug: Off';
+      // Require PIN (1549) whenever turning ON (prevents accidental open)
+      if (!DEBUG_ENABLED) {
+        const pin = (prompt('ใส่รหัสเพื่อเปิด Debug Panel') || '').trim();
+        if (pin !== '1549') {
+          showToast('รหัสไม่ถูกต้อง', 'error');
+          return;
+        }
+        try { localStorage.setItem('cwf_debug_unlocked', '1'); } catch(e) {}
+        try { localStorage.setItem('cwf_debug', '1'); } catch(e) {}
+        DEBUG_ENABLED = true;
+      } else {
+        // Turning off does not require PIN
+        DEBUG_ENABLED = false;
+        try { localStorage.removeItem('cwf_debug'); } catch(e) {}
+      }
+      try{ btn.title = DEBUG_ENABLED ? 'Debug: On' : 'Debug: Off'; }catch(e){}
       // Ensure panel becomes visible immediately
       const panel = el('debug_panel');
       if (panel) {
@@ -2784,6 +2793,12 @@ async function addSpecialSlotV2(opts = {}){
 }
 
 async function init() {
+  // Logout
+  try {
+    const btnLogout = el('btnLogout');
+    if (btnLogout) btnLogout.onclick = ()=>{ location.href='/logout'; };
+  } catch(e) {}
+
   bindDebugToggle();
   dbgBind();
   setBtuOptions();

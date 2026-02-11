@@ -178,7 +178,12 @@
     #btnSubmit:active{background:#0b1b3a !important}
 
     /* Prevent debug UI overlapping slot modal on mobile */
-    body.cwf-modal-open #btnToggleDebug{display:none !important}
+    body.cwf-modal-open #btnBug{display:none !important}
+
+    /* Small bug icon + logout (avoid covering content) */
+    .top-actions{display:flex;align-items:center;gap:8px}
+    #btnBug{width:42px;height:42px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center}
+    #btnLogout{height:42px;border-radius:14px;font-weight:900}
     body.cwf-modal-open #debug_panel_mount{display:none !important}
   </style>
 </head>
@@ -186,7 +191,11 @@
   <div class="app">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
       <h2 style="margin:0">➕ เพิ่มงาน (Admin v2)</h2>
-      <button class="secondary" type="button" onclick="location.href='/admin-review-v2.html'">เมนู</button>
+      <div class="top-actions">
+        <button id="btnBug" class="secondary" type="button" title="Debug" aria-label="Debug">🐞</button>
+        <button id="btnLogout" class="secondary" type="button" title="ออกจากระบบ" aria-label="ออกจากระบบ" style="background:#ef4444 !important;color:#ffffff !important;border-color:rgba(239,68,68,0.75) !important;">Log out</button>
+        <button class="secondary" type="button" onclick="location.href='/admin-review-v2.html'">เมนู</button>
+      </div>
     </div>
 
     <div class="card section-card">
@@ -382,10 +391,7 @@
           <label style="margin-top:10px">วันที่</label>
           <input id="appt_date" type="date">
           <button class="secondary" type="button" id="btnLoadSlots" style="margin-top:8px;width:100%">โหลดคิวว่าง</button>
-          <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
-            <button class="secondary" type="button" id="btnToggleDebug" style="padding:10px 12px;border-radius:14px;margin-top:10px">🧪 Debug: Off</button>
-            <span class="muted2 mini">เปิดดู request/response/busy/free</span>
-          </div>
+          <div class="muted2 mini" style="margin-top:8px">🐞 Debug = ไอคอนมุมขวาบน (ใส่รหัสก่อนเปิด)</div>
 
           <!-- Debug Panel mount (keeps panel visible on mobile; avoids being appended outside scroll container) -->
           <div id="debug_panel_mount" style="margin-top:10px">
