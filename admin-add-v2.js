@@ -33,15 +33,22 @@ let state = {
 // =============================
 // Debug Panel (admin only)
 // Enable via ?debug=1 or localStorage.cwf_debug=1
+// Backward-compatible keys:
+// - localStorage.cwf_debug = '1' (spec)
+// - localStorage.cwf_debug = '1' (legacy)
 // =============================
 let DEBUG_ENABLED = (() => {
   try {
     const qs = new URLSearchParams(location.search);
+    const ls = window.localStorage;
+    // Query param always wins and persists.
     if (qs.get('debug') === '1') {
-      localStorage.setItem('cwf_debug', '1');
+      try { ls.setItem('cwf_debug', '1'); } catch(e) {}
+      try { ls.setItem('cwf_debug', '1'); } catch(e) {}
       return true;
     }
-    return localStorage.getItem('cwf_debug') === '1';
+    // Accept either key.
+    return (ls.getItem('cwf_debug') === '1') || (ls.getItem('cwf_debug') === '1');
   } catch (e) { return false; }
 })();
 
@@ -123,6 +130,7 @@ function dbgRender(){
       <summary style="font-weight:900">Debug Panel <span id="debug_panel_hint" class="muted2 mini">off</span></summary>
       <div style="padding:10px 0">
         <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+          <button type="button" class="secondary" id="dbg_copy_all">Copy All</button>
           <button type="button" class="secondary" id="dbg_copy_req">Copy Req</button>
           <button type="button" class="secondary" id="dbg_copy_res">Copy Res</button>
           <button type="button" class="secondary" id="dbg_copy_intervals">Copy Busy/Free</button>
@@ -176,6 +184,16 @@ function dbgBind(){
   const copy = async (text) => {
     try { await navigator.clipboard.writeText(text || ''); showToast('คัดลอกแล้ว', 'success'); } catch(e){ showToast('คัดลอกไม่สำเร็จ', 'error'); }
   };
+  el('dbg_copy_all')?.addEventListener('click', () => {
+    const payload = {
+      ts: new Date().toISOString(),
+      req: DBG.lastReq || null,
+      res: DBG.lastRes || null,
+      intervals: DBG.intervals || null,
+      conflict: DBG.conflict || null,
+    };
+    copy(JSON.stringify(payload, null, 2));
+  });
   el('dbg_copy_req')?.addEventListener('click', () => copy(el('dbg_req')?.textContent || ''));
   el('dbg_copy_res')?.addEventListener('click', () => copy(el('dbg_res')?.textContent || ''));
   el('dbg_copy_intervals')?.addEventListener('click', () => copy(el('dbg_intervals')?.textContent || ''));
@@ -258,7 +276,12 @@ function bindDebugToggle(){
           try { panel.open = true; } catch(e) {}
         }
       }
-      dbgRender();
+      if (DEBUG_ENABLED) {
+        // Bind full controls (copy/reset/toggles) when enabling at runtime.
+        try { dbgBind(); } catch(e) { try{ dbgRender(); }catch(_){} }
+      } else {
+        dbgRender();
+      }
     } catch(e){
       showToast('สลับ Debug ไม่สำเร็จ', 'error');
     }
@@ -389,6 +412,13 @@ function renderTechSelect(allowedIds=null){
   sel.value = list.some(t=>t.username===current) ? current : "";
   // sync hidden input for backend compatibility
   if(el("technician_username")) el("technician_username").value = sel.value || "";
+  // If admin is in single mode, treat the outside technician picker as the confirmation.
+  try {
+    const am = (el('assign_mode')?.value || 'auto').toString();
+    if (am === 'single' && sel.value) {
+      state.confirmed_tech_username = String(sel.value).trim();
+    }
+  } catch(e) {}
 }
 
 
@@ -2224,6 +2254,19 @@ async function submitBooking() {
   }
   syncModesFromUI();
   const uiMode = (el('dispatch_mode_ui')?.value || 'normal').toString();
+  // Single mode must have a technician selected (admin adds work directly)
+  if (uiMode !== 'urgent') {
+    const mode = (el('assign_mode')?.value || 'auto').toString();
+    if (mode === 'single') {
+      const chosen = (state.confirmed_tech_username || (el('technician_username')?.value||'') || (el('technician_username_select')?.value||''))
+        .toString().trim();
+      if (!chosen) {
+        showToast('โหมดเดี่ยว: กรุณาเลือกช่างก่อนบันทึก', 'error');
+        return;
+      }
+      state.confirmed_tech_username = chosen;
+    }
+  }
   // Normal/Forced ต้องเลือกสล็อตก่อน; Urgent ใช้วัน/เวลาใน input และยิงข้อเสนอ
   if (uiMode !== 'urgent' && !state.selected_slot_iso) {
     showToast("เลือกเวลานัดจากคิวว่างก่อน", "error");
@@ -2255,7 +2298,13 @@ async function submitBooking() {
       if(uiMode === 'urgent') return '';
       const mode = (el('assign_mode')?.value || 'auto').toString();
       if(mode === 'team') return (state.teamPicker.primary || '').trim();
-      if(mode === 'single') return (state.confirmed_tech_username || (el("technician_username_select")?.value || (el("technician_username")?.value||""))).trim();
+      if(mode === 'single') {
+        const chosen = (state.confirmed_tech_username || (el("technician_username")?.value||"") || (el("technician_username_select")?.value||""))
+          .toString().trim();
+        // Make single-mode behave like "เลือกช่างด้านนอกแล้วจบ" (no extra confirm step)
+        if (chosen) state.confirmed_tech_username = chosen;
+        return chosen;
+      }
       return '';
     })(),
     dispatch_mode: (el("dispatch_mode").value || "forced").trim(),
