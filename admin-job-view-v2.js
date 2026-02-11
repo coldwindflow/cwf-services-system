@@ -446,7 +446,10 @@ async function loadJob(){
             maps_url: String(el('edit_maps_url')?.value||'').trim(),
             latitude: String(el('edit_lat')?.value||'').trim(),
             longitude: String(el('edit_lng')?.value||'').trim(),
-            appointment_datetime: apptRaw ? new Date(apptRaw).toISOString() : null,
+            // IMPORTANT (Timezone): <input type="datetime-local"> has no timezone.
+            // Using Date(...).toISOString() will convert to UTC ("Z") and cause 09:00 -> 16:00/18:00 shifts.
+            // Treat the picked wall-clock time as Bangkok (+07:00).
+            appointment_datetime: apptRaw ? localDatetimeToBangkokISO(apptRaw) : null,
           };
           await apiFetch(`/jobs/${encodeURIComponent(String(job.job_id))}/admin-edit`, {
             method:'PUT',

@@ -1158,12 +1158,13 @@ app.post("/jobs", async (req, res) => {
 	      duration_min = Number.isFinite(n) && n > 0 ? Math.floor(n) : 60;
 	    }
 
+
 	    // ✅ Hard Validation: กันชนคิวที่ backend (Source of Truth)
-	    // Forced: allow override as per existing system behavior.
-	    if (mode !== 'forced') {
-	      const conflict = await checkTechCollision(technician_username, appointment_dt, duration_min, null);
-	      if (conflict) return http409Conflict(res, conflict);
-	    }
+	    // IMPORTANT (Production spec): ห้ามลงงานทับเวลาช่างคนเดิมทุกกรณี
+	    // - Forced ใช้เพื่อ “ล็อคช่าง/ข้าม accept_status” เท่านั้น ไม่ใช่เพื่อให้ซ้อนเวลาได้
+	    // - ถ้าต้องการ override จริง ๆ ให้เพิ่ม flow เฉพาะในอนาคต (เช่น allow_overlap=true พร้อมสิทธิ์)
+	    const conflict = await checkTechCollision(technician_username, appointment_dt, duration_min, null);
+	    if (conflict) return http409Conflict(res, conflict);
 
 	    const jobInsert = await client.query(
       `
