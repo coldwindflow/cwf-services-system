@@ -1186,9 +1186,7 @@ app.post("/jobs", async (req, res) => {
 	    // IMPORTANT (Production spec): ห้ามลงงานทับเวลาช่างคนเดิมทุกกรณี
 	    // - Forced ใช้เพื่อ “ล็อคช่าง/ข้าม accept_status” เท่านั้น ไม่ใช่เพื่อให้ซ้อนเวลาได้
 	    // - ถ้าต้องการ override จริง ๆ ให้เพิ่ม flow เฉพาะในอนาคต (เช่น allow_overlap=true พร้อมสิทธิ์)
-	    const apptDate = String(normalizeBangkokIso(appointment_dt)).slice(0,10);
-	    await lockTechDate(client, technician_username, apptDate);
-	    const conflict = await checkTechCollision_client(client, technician_username, appointment_dt, duration_min, null);
+	    const conflict = await checkTechCollision(technician_username, appointment_dt, duration_min, null);
 	    if (conflict) return http409Conflict(res, conflict);
 
 	    const jobInsert = await client.query(
@@ -1837,8 +1835,7 @@ if (coerceNumber(override_price, 0) > 0) {
           console.warn('[admin_book_v2] off-day check failed (fail-open)', e.message);
         }
       }
-      await lockTechDate(client, selectedTech, apptDate);
-      const conflict = await checkTechCollision_client(client, selectedTech, apptIso, duration_min, null);
+      const conflict = await checkTechCollision(selectedTech, apptIso, duration_min, null);
       if (conflict) {
         return http409Conflict(res, conflict);
       }
@@ -1853,7 +1850,7 @@ if (coerceNumber(override_price, 0) > 0) {
     const tmList = [...new Set(tmIn.map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
     for (const u of tmList) {
       if (u === selectedTech) continue;
-      const conflict = await checkTechCollision_client(client, u, apptIso, duration_min, null);
+      const conflict = await checkTechCollision(u, apptIso, duration_min, null);
       if (conflict) {
         return http409Conflict(res, conflict);
       }
@@ -2118,22 +2115,34 @@ app.delete("/admin/jobs/:job_id", requireAdminSoft, async (req, res) => {
       return res.status(404).json({ error: "ไม่พบงาน" });
     }
 
-    // delete related tables (best-effort) — do not crash if a table doesn't exist
-    const deleteFrom = async (sql, params) => {
-      try { await client.query(sql, params); } catch (e) {
-        console.warn("[admin_delete_job] skip", e.message);
-      }
-    };
+    
+// delete related tables (best-effort)
+// IMPORTANT: In Postgres, any error inside a transaction aborts the whole transaction.
+// So we MUST wrap each best-effort delete with SAVEPOINT.
+let _sp_i = 0;
+const deleteFrom = async (sql, params) => {
+  const sp = `sp_del_${++_sp_i}`;
+  try {
+    await client.query(`SAVEPOINT ${sp}`);
+    await client.query(sql, params);
+    await client.query(`RELEASE SAVEPOINT ${sp}`);
+  } catch (e) {
+    try { await client.query(`ROLLBACK TO SAVEPOINT ${sp}`); } catch(_e) {}
+    try { await client.query(`RELEASE SAVEPOINT ${sp}`); } catch(_e) {}
+    console.warn("[admin_delete_job] skip", e.message);
+  }
+};
 
-    await deleteFrom(`DELETE FROM public.job_photos WHERE job_id=$1`, [jobId]);
-    await deleteFrom(`DELETE FROM public.job_photo_metadata WHERE job_id=$1`, [jobId]);
-    await deleteFrom(`DELETE FROM public.job_updates_v2 WHERE job_id=$1`, [jobId]);
-    await deleteFrom(`DELETE FROM public.job_team_members WHERE job_id=$1`, [jobId]);
-    await deleteFrom(`DELETE FROM public.job_assignments WHERE job_id=$1`, [jobId]);
-    await deleteFrom(`DELETE FROM public.job_offers WHERE job_id=$1`, [jobId]);
-    await deleteFrom(`DELETE FROM public.job_offer_recipients WHERE job_id=$1`, [jobId]);
+// delete children first (FK-safe)
+await deleteFrom(`DELETE FROM public.job_photo_metadata WHERE job_id=$1`, [jobId]);
+await deleteFrom(`DELETE FROM public.job_photos WHERE job_id=$1`, [jobId]);
+await deleteFrom(`DELETE FROM public.job_updates_v2 WHERE job_id=$1`, [jobId]);
+await deleteFrom(`DELETE FROM public.job_team_members WHERE job_id=$1`, [jobId]);
+await deleteFrom(`DELETE FROM public.job_assignments WHERE job_id=$1`, [jobId]);
+await deleteFrom(`DELETE FROM public.job_offer_recipients WHERE job_id=$1`, [jobId]);
+await deleteFrom(`DELETE FROM public.job_offers WHERE job_id=$1`, [jobId]);
 
-    const dr = await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [jobId]);
+const dr = await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [jobId]);
     await client.query("COMMIT");
     return res.json({ ok: true, deleted: dr.rowCount || 0 });
   } catch (e) {
@@ -2165,21 +2174,33 @@ app.post("/admin/reset_jobs_v2", requireAdminSoft, async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // delete children first (best-effort for older DBs)
-    const safe = async (sql) => {
-      try { await client.query(sql); } catch (e) { console.warn("[reset_jobs_v2] skip", e.message); }
-    };
+    
+// delete children first (best-effort for older DBs)
+// IMPORTANT: every statement must be wrapped in SAVEPOINT to avoid 25P02
+let _sp_r = 0;
+const safe = async (sql) => {
+  const sp = `sp_reset_${++_sp_r}`;
+  try {
+    await client.query(`SAVEPOINT ${sp}`);
+    await client.query(sql);
+    await client.query(`RELEASE SAVEPOINT ${sp}`);
+  } catch (e) {
+    try { await client.query(`ROLLBACK TO SAVEPOINT ${sp}`); } catch(_e) {}
+    try { await client.query(`RELEASE SAVEPOINT ${sp}`); } catch(_e) {}
+    console.warn("[reset_jobs_v2] skip", e.message);
+  }
+};
 
-    await safe(`DELETE FROM public.job_photo_metadata`);
-    await safe(`DELETE FROM public.job_photos`);
-    await safe(`DELETE FROM public.job_updates_v2`);
-    await safe(`DELETE FROM public.job_offer_recipients`);
-    await safe(`DELETE FROM public.job_offers`);
-    await safe(`DELETE FROM public.job_team_members`);
-    await safe(`DELETE FROM public.job_assignments`);
-    await safe(`DELETE FROM public.job_promotions`);
-    await safe(`DELETE FROM public.job_items`);
-    await safe(`DELETE FROM public.job_pricing_requests`);
+await safe(`DELETE FROM public.job_photo_metadata`);
+await safe(`DELETE FROM public.job_photos`);
+await safe(`DELETE FROM public.job_updates_v2`);
+await safe(`DELETE FROM public.job_offer_recipients`);
+await safe(`DELETE FROM public.job_offers`);
+await safe(`DELETE FROM public.job_team_members`);
+await safe(`DELETE FROM public.job_assignments`);
+await safe(`DELETE FROM public.job_promotions`);
+await safe(`DELETE FROM public.job_items`);
+await safe(`DELETE FROM public.job_pricing_requests`);
 
     // finally jobs
     const dr = await client.query(`DELETE FROM public.jobs`);
@@ -5845,20 +5866,13 @@ function isTechOffOnDate(techRow, dateStr, offMap, opts = {}) {
 }
 
 async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
-  // IMPORTANT (Timezone-safe): do NOT rely on appointment_datetime::date because
-  // Postgres session timezone can shift the date (เคสไทย +07:00).
-  // Instead, query by [startOfDayBangkok, startOfNextDayBangkok).
+  // Timezone-robust filter: supports both timestamp and timestamptz in DB
+  // by converting appointment_datetime to Bangkok local date inside SQL.
   const day = String(dateStr || "").slice(0, 10);
-  const startOfDay = `${day}T00:00:00+07:00`;
-  // next day (date math in JS is OK here because we only need YYYY-MM-DD)
-  const d = new Date(`${day}T00:00:00+07:00`);
-  d.setDate(d.getDate() + 1);
-  const nextDay = d.toISOString().slice(0, 10);
-  const startOfNext = `${nextDay}T00:00:00+07:00`;
 
-  const params = [username, startOfDay, startOfNext];
+  const params = [username, day];
   let extra = "";
-  if (ignoreJobId) { params.push(ignoreJobId); extra = ` AND j.job_id <> $4`; }
+  if (ignoreJobId) { params.push(ignoreJobId); extra = ` AND j.job_id <> $3`; }
 
   const r = await pool.query(
     `
@@ -5866,8 +5880,7 @@ async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
     FROM public.jobs j
     LEFT JOIN public.job_team_members m ON m.job_id=j.job_id AND m.username=$1
     LEFT JOIN public.job_assignments a ON a.job_id=j.job_id AND a.technician_username=$1
-    WHERE j.appointment_datetime >= $2::timestamptz
-      AND j.appointment_datetime <  $3::timestamptz
+    WHERE to_char(j.appointment_datetime AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD') = $2
       AND COALESCE(j.job_status,'') <> 'ยกเลิก'
       ${extra}
       AND (j.technician_username=$1 OR j.technician_team=$1 OR m.username IS NOT NULL OR a.technician_username IS NOT NULL)
@@ -5875,103 +5888,6 @@ async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
     params
   );
   return r.rows || [];
-}
-
-// ✅ Advisory-lock safe variants (use the SAME DB connection/session)
-// This prevents race conditions where 2 requests pass the "free" check at the same time then both insert.
-// Lock key = (technician_username, dateStr) within the current transaction.
-async function lockTechDate(client, username, dateStr){
-  try{
-    const day = String(dateStr||"").slice(0,10);
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [String(username||""), day]);
-  }catch(e){
-    // fail-open to avoid blocking production; but we still keep normal collision checks.
-    console.warn('[lockTechDate] failed (fail-open)', e.message);
-  }
-}
-
-async function listAssignedJobsForTechOnDate_client(client, username, dateStr, ignoreJobId){
-  const day = String(dateStr || "").slice(0, 10);
-  const startOfDay = `${day}T00:00:00+07:00`;
-  const d = new Date(`${day}T00:00:00+07:00`);
-  d.setDate(d.getDate() + 1);
-  const nextDay = d.toISOString().slice(0, 10);
-  const startOfNext = `${nextDay}T00:00:00+07:00`;
-
-  const params = [username, startOfDay, startOfNext];
-  let extra = "";
-  if (ignoreJobId) { params.push(ignoreJobId); extra = ` AND j.job_id <> $4`; }
-
-  const r = await client.query(
-    `
-    SELECT j.job_id, j.appointment_datetime, COALESCE(j.duration_min,60) AS duration_min
-    FROM public.jobs j
-    LEFT JOIN public.job_team_members m ON m.job_id=j.job_id AND m.username=$1
-    LEFT JOIN public.job_assignments a ON a.job_id=j.job_id AND a.technician_username=$1
-    WHERE j.appointment_datetime >= $2::timestamptz
-      AND j.appointment_datetime <  $3::timestamptz
-      AND COALESCE(j.job_status,'') <> 'ยกเลิก'
-      ${extra}
-      AND (j.technician_username=$1 OR j.technician_team=$1 OR m.username IS NOT NULL OR a.technician_username IS NOT NULL)
-    `,
-    params
-  );
-  return r.rows || [];
-}
-
-async function listBusyBlocksForTechOnDate_client(client, username, dateStr, ignoreJobId){
-  const jobs = await listAssignedJobsForTechOnDate_client(client, username, dateStr, ignoreJobId);
-  const raw = [];
-  for(const j of (jobs||[])){
-    const startDate = new Date(j.appointment_datetime);
-    const startMin = bangkokHMToMinFromDate(startDate);
-    const dur = Math.max(1, Number(j.duration_min || 60));
-    const busyEndMin = startMin + dur + TRAVEL_BUFFER_MIN;
-    raw.push({ job_id: j.job_id, startMin, endMin: startMin + dur, busyEndMin, startIso: j.appointment_datetime, durationMin: dur });
-  }
-  const merged = [];
-  const sorted = raw
-    .filter(x=>Number.isFinite(x.startMin) && Number.isFinite(x.busyEndMin) && x.busyEndMin > x.startMin)
-    .sort((a,b)=>a.startMin-b.startMin || a.busyEndMin-b.busyEndMin);
-
-  for(const it of sorted){
-    if(!merged.length){ merged.push({ ...it }); continue; }
-    const last = merged[merged.length-1];
-    if(it.startMin < last.busyEndMin){
-      last.busyEndMin = Math.max(last.busyEndMin, it.busyEndMin);
-      last.endMin = Math.max(last.endMin, it.endMin);
-    } else {
-      merged.push({ ...it });
-    }
-  }
-  return merged;
-}
-
-async function checkTechCollision_client(client, username, startIso, durationMin, ignoreJobId){
-  const iso = normalizeBangkokIso(startIso);
-  const dateStr = String(iso).slice(0, 10);
-  const startDate = new Date(iso);
-  if (Number.isNaN(startDate.getTime())) return { error: 'invalid_datetime' };
-
-  const startMin = bangkokHMToMinFromDate(startDate);
-  const d = Math.max(1, Number(durationMin || 0));
-  const busyEndMin = startMin + d + TRAVEL_BUFFER_MIN;
-
-  const blocks = await listBusyBlocksForTechOnDate_client(client, username, dateStr, ignoreJobId);
-  for (const b of blocks) {
-    if (startMin < b.busyEndMin && b.startMin < busyEndMin) {
-      const detail = {
-        conflict_job_id: b.job_id,
-        username,
-        date: dateStr,
-        new_range: { start: fmtHHMMFromMin(startMin), busy_end: fmtHHMMFromMin(busyEndMin) },
-        old_range: { start: fmtHHMMFromMin(b.startMin), busy_end: fmtHHMMFromMin(b.busyEndMin) },
-      };
-      avlog('[collision_client]', detail);
-      return detail;
-    }
-  }
-  return null;
 }
 
 function overlaps(aStart, aEnd, bStart, bEnd) {

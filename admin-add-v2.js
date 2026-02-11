@@ -1746,7 +1746,7 @@ function renderSlots() {
         slotsAll.push({
           ...s,
           start_min: t,
-          end_min: t,
+          end_min: t + Math.max(0, Number(state.duration_min || 0)),
           start: minToHHMM(t),
           end: minToHHMM(t),
           _expanded_from_range: true,
