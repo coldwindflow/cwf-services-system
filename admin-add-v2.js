@@ -95,6 +95,22 @@ function bangkokNowParts(){
   }
 }
 
+// Accept both "YYYY-MM-DD" and "DD/MM/YYYY" (and "DD-MM-YYYY") and normalize to YMD.
+function toYMD(input){
+  const s = (input || '').toString().trim();
+  if(!s) return '';
+  if(/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if(/^\d{2}\/\d{2}\/\d{4}$/.test(s)){
+    const [d,m,y] = s.split('/');
+    return `${y}-${m}-${d}`;
+  }
+  if(/^\d{2}-\d{2}-\d{4}$/.test(s)){
+    const [d,m,y] = s.split('-');
+    return `${y}-${m}-${d}`;
+  }
+  return s.slice(0,10);
+}
+
 function maskPII(obj){
   try {
     const j = JSON.parse(JSON.stringify(obj || {}));
@@ -164,20 +180,19 @@ function dbgBind(){
   if (!DEBUG_ENABLED) return;
   // Ensure the panel exists before binding buttons (older HTML may not have it).
   try { dbgRender(); } catch(e) {}
-  // Force visibility & fixed placement for both generated and HTML-embedded panels.
+  // Keep panel in normal flow (no floating overlay). Auto-open so admin sees logs immediately.
   try {
     const p = el('debug_panel');
     if (p) {
       p.style.display = 'block';
-      p.style.position = 'fixed';
-      p.style.right = '12px';
-      p.style.bottom = '12px';
-      p.style.zIndex = '9999';
-      p.style.maxWidth = p.style.maxWidth || '520px';
-      p.style.width = p.style.width || 'min(520px, calc(100vw - 24px))';
-      p.style.maxHeight = p.style.maxHeight || '60vh';
-      p.style.overflow = p.style.overflow || 'auto';
-      // Auto-open once so admin immediately sees logs
+      p.style.position = 'static';
+      p.style.right = '';
+      p.style.bottom = '';
+      p.style.zIndex = '';
+      p.style.maxWidth = '';
+      p.style.width = '';
+      p.style.maxHeight = '';
+      p.style.overflow = '';
       if (typeof p.open === 'boolean') p.open = true;
     }
   } catch(e) {}
@@ -1272,7 +1287,7 @@ async function loadAvailability() {
     el("slots_box").innerHTML = `<div class="muted2">กรอกข้อมูลบริการให้ครบ + เลือกวันที่ก่อน</div>`;
     return;
   }
-  const date = el("appt_date").value;
+  const date = toYMD(el("appt_date").value);
   const tech_type = (el("tech_type").value || "company").trim().toLowerCase();
   const duration_min = state.duration_min;
   try {
@@ -1780,7 +1795,7 @@ function renderSlots() {
   // This is purely a UI filter; backend validation still prevents overlaps.
   try {
     const dInput = el('appt_date')?.value || el('date')?.value || el('booking_date')?.value || '';
-    const ymdSel = String(dInput).slice(0,10);
+    const ymdSel = toYMD(dInput);
     const now = bangkokNowParts();
     if (ymdSel && now.ymd && ymdSel === now.ymd && Number.isFinite(now.minutes)) {
       listToRender = listToRender.filter((s)=>{
@@ -1914,6 +1929,7 @@ function closeSlotModal(){
   const ov = el('slot_modal_overlay');
   if(ov) ov.style.display = 'none';
   _slotModalSlot = null;
+  try { document.body.classList.remove('cwf-modal-open'); } catch(e) {}
 }
 
 function updateAssignSummary(){
@@ -2044,6 +2060,7 @@ function openSlotModal(slot){
       });
     },0);
     ov.style.display = 'flex';
+    try { document.body.classList.add('cwf-modal-open'); } catch(e) {}
     return;
   }
 
@@ -2146,47 +2163,58 @@ function openSlotModal(slot){
       return;
     }
 
-    // auto or single
     const cur = (el('technician_username_select')?.value || '').trim();
-    body.innerHTML = timeSeg + modeInfo + `
-      <label>ช่าง (ว่างในสล็อตนี้)</label>
-      <select id="slotm_single" class="grow"></select>
-      <div class="muted2 mini" style="margin-top:6px">เลือกช่าง = โหมด “เลือกเดี่ยว” • ไม่เลือก = ระบบเลือกช่างว่าง</div>
-    `;
-    const selEl = body.querySelector('#slotm_single');
-    // value MUST be username (stable id) — label shows real name from technician profile
-    selEl.innerHTML = `<option value="">-- ไม่เลือก (ระบบเลือกช่างว่าง) --</option>`
-      + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(techDisplay(u))} (${escapeHtml(u)})</option>`).join('');
-    if(cur && ids.includes(cur)) selEl.value = cur;
-
-    selEl.addEventListener('change', ()=>{
-      const v = (selEl.value||'').trim();
-      if(!v){
-        if(el('technician_username_select')) el('technician_username_select').value = '';
-        if(el('technician_username')) el('technician_username').value = '';
-        state.confirmed_tech_username = '';
-        state.confirmed_tech_label = '';
+    // In real production use, the admin chooses assignment mode/technician in the main form.
+    // The slot modal should only be for picking the start time (and showing who is free),
+    // not forcing a second technician selection step.
+    if(mode === 'auto'){
+      body.innerHTML = timeSeg + modeInfo + `
+        <label>ช่าง (ว่างในสล็อตนี้)</label>
+        <select id="slotm_single" class="grow"></select>
+        <div class="muted2 mini" style="margin-top:6px">ไม่เลือก = ระบบเลือกช่างว่าง</div>
+      `;
+      const selEl = body.querySelector('#slotm_single');
+      selEl.innerHTML = `<option value="">-- ไม่เลือก (ระบบเลือกช่างว่าง) --</option>`
+        + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(techDisplay(u))} (${escapeHtml(u)})</option>`).join('');
+      if(cur && ids.includes(cur)) selEl.value = cur;
+      selEl.addEventListener('change', ()=>{
+        const v = (selEl.value||'').trim();
+        if(!v){
+          if(el('technician_username_select')) el('technician_username_select').value = '';
+          if(el('technician_username')) el('technician_username').value = '';
+          state.confirmed_tech_username = '';
+          state.confirmed_tech_label = '';
+        }else{
+          enableAssignControls(true);
+          renderTechSelect(ids);
+          if(el('technician_username_select')) el('technician_username_select').value = v;
+          if(el('technician_username')) el('technician_username').value = v;
+          state.confirmed_tech_username = v;
+          state.confirmed_tech_label = techDisplay(v);
+        }
         renderSlots();
         try { renderWashAssign(); } catch(e){}
         updateAssignSummary();
-        return;
+      });
+    } else if(mode === 'single'){
+      const ok = !!cur && ids.includes(cur);
+      if(ok){
+        state.confirmed_tech_username = cur;
+        state.confirmed_tech_label = techDisplay(cur);
       }
-      // do not change assign_mode here (เลือกมาจาก “รูปแบบมอบหมาย” ด้านบน)
-      enableAssignControls(true);
-      renderTechSelect(ids);
-      if(el('technician_username_select')) el('technician_username_select').value = v;
-      if(el('technician_username')) el('technician_username').value = v;
-
-      // UX + safety: selecting a technician inside the slot modal should immediately
-      // confirm the chosen username, so the admin can save without hunting for another
-      // confirmation button (prevents "ยังขึ้นสีแดง" / missing-confirm issues).
-      state.confirmed_tech_username = v;
-      state.confirmed_tech_label = techDisplay(v);
-
-      renderSlots();
-      try { renderWashAssign(); } catch(e){}
-      updateAssignSummary();
-    });
+      body.innerHTML = timeSeg + modeInfo + `
+        <div class="muted2 mini" style="margin-top:2px">ช่างที่เลือกจากหน้าหลัก:</div>
+        <div style="margin-top:8px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:14px;background:#fff">
+          <b>${ok ? escapeHtml(techDisplay(cur)) : 'ยังไม่ได้เลือกช่าง'}</b>
+          <div class="muted2 mini" style="margin-top:2px">${ok ? '('+escapeHtml(cur)+')' : 'กรุณาเลือกช่างที่หัวข้อ “รูปแบบมอบหมาย” ด้านบน'}</div>
+        </div>
+      `;
+    } else {
+      // team: the team selection happens in the main form; modal is only for time picking.
+      body.innerHTML = timeSeg + modeInfo + `
+        <div class="muted2 mini" style="margin-top:2px">โหมดทีม: เลือกทีมได้ที่หน้าหลัก (ไม่ต้องเลือกซ้ำในสล็อต)</div>
+      `;
+    }
 
     bindModeButtons();
     bindTimePicker();
@@ -2212,6 +2240,7 @@ function openSlotModal(slot){
 
   renderBody();
   ov.style.display = 'flex';
+  try { document.body.classList.add('cwf-modal-open'); } catch(e) {}
 }
 
 // PATCH: machine count stepper (premium: กดได้ + พิมพ์ได้)
@@ -2467,7 +2496,7 @@ function wireEvents() {
       // CWF Spec: single = must lock selected tech 100% (no silent fallback)
       if(am === 'single'){
         if(!tech){
-          showToast('โหมดเดี่ยว: กรุณาเลือกช่าง แล้วกด “ยืนยันเลือกช่างคนนี้”', 'error');
+          showToast('โหมดเลือกเดี่ยว: กรุณาเลือกช่างในหัวข้อด้านบนก่อน', 'error');
           return;
         }
         state.confirmed_tech_username = tech;

@@ -177,6 +177,9 @@
     #btnSubmit{background:#0b4bb3 !important;color:#ffffff !important;border:1px solid rgba(255,204,0,0.55) !important;font-weight:900 !important}
     #btnSubmit:active{background:#0b1b3a !important}
 
+    /* Prevent debug UI overlapping slot modal on mobile */
+    body.cwf-modal-open #btnToggleDebug{display:none !important}
+    body.cwf-modal-open #debug_panel_mount{display:none !important}
   </style>
 </head>
 <body class="theme-2 cwf-lux">
@@ -380,7 +383,7 @@
           <input id="appt_date" type="date">
           <button class="secondary" type="button" id="btnLoadSlots" style="margin-top:8px;width:100%">โหลดคิวว่าง</button>
           <div style="display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap">
-            <button class="secondary" type="button" id="btnToggleDebug" style="padding:10px 12px;border-radius:14px;position:fixed;left:12px;bottom:12px;z-index:10000;box-shadow:0 10px 25px rgba(0,0,0,.18)">🧪 Debug: Off</button>
+            <button class="secondary" type="button" id="btnToggleDebug" style="padding:10px 12px;border-radius:14px;margin-top:10px">🧪 Debug: Off</button>
             <span class="muted2 mini">เปิดดู request/response/busy/free</span>
           </div>
 
