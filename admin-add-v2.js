@@ -140,83 +140,40 @@ function maskPII(obj){
 
 function dbgRender(){
   if (!DEBUG_ENABLED) return;
-  let panel = el('debug_panel');
-  // Some deployments may have older HTML without the debug panel markup.
-  // Create a minimal panel on-the-fly so Debug: On is always usable.
-  if (!panel) {
-    const mount = el('debug_panel_mount') || document.body;
-    panel = document.createElement('details');
-    panel.id = 'debug_panel';
-    panel.className = 'cwf-details card-lite';
-    // Render in normal page flow (no floating overlay that can cover modal/buttons)
-    panel.style.display = 'block';
-    panel.style.margin = '12px 0 0 0';
-    panel.style.position = 'static';
-    panel.style.right = '';
-    panel.style.bottom = '';
-    panel.style.zIndex = '';
-    panel.style.maxWidth = '100%';
-    panel.style.width = '100%';
-    panel.style.maxHeight = '60vh';
-    panel.style.overflow = 'auto';
-    panel.innerHTML = `
-      <summary style="font-weight:900">Debug Panel <span id="debug_panel_hint" class="muted2 mini">off</span></summary>
-      <div style="padding:10px 0">
-        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
-          <button type="button" class="secondary" id="dbg_copy_all">Copy All</button>
-          <button type="button" class="secondary" id="dbg_copy_req">Copy Req</button>
-          <button type="button" class="secondary" id="dbg_copy_res">Copy Res</button>
-          <button type="button" class="secondary" id="dbg_copy_intervals">Copy Busy/Free</button>
-          <button type="button" class="secondary" id="dbg_copy_conflict">Copy Conflict</button>
-          <button type="button" class="secondary" id="dbg_clear">Clear</button>
-        </div>
-        <div class="grid2">
-          <div><div class="muted2 mini">Request</div><pre id="dbg_req" style="white-space:pre-wrap;word-break:break-word;min-height:60px"></pre></div>
-          <div><div class="muted2 mini">Response</div><pre id="dbg_res" style="white-space:pre-wrap;word-break:break-word;min-height:60px"></pre></div>
-          <div><div class="muted2 mini">Busy/Free</div><pre id="dbg_intervals" style="white-space:pre-wrap;word-break:break-word;min-height:60px"></pre></div>
-          <div><div class="muted2 mini">Conflict</div><pre id="dbg_conflict" style="white-space:pre-wrap;word-break:break-word;min-height:60px"></pre></div>
-        </div>
-        <div style="margin-top:10px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          <button type="button" class="secondary" id="dbg_backend_toggle">Toggle Backend Logging</button>
-          <span class="muted2 mini">Backend: <b id="dbg_backend_status">?</b></span>
-        </div>
-      </div>
-    `;
-    mount.appendChild(panel);
-  }
+  // Use the floating debug panel in admin-add-v2.html
+  const panel = el('debugFloat');
+  if(!panel) return;
+
+  // Ensure panel is visible when debug is enabled
   panel.style.display = 'block';
+
+  // Hint
   const hint = el('debug_panel_hint');
   if (hint) hint.textContent = 'on';
-  el('dbg_req').textContent = DBG.lastReq ? JSON.stringify(DBG.lastReq, null, 2) : '';
-  el('dbg_res').textContent = DBG.lastRes ? JSON.stringify(DBG.lastRes, null, 2) : '';
-  el('dbg_intervals').textContent = DBG.intervals ? JSON.stringify(DBG.intervals, null, 2) : '';
-  el('dbg_conflict').textContent = DBG.conflict ? JSON.stringify(DBG.conflict, null, 2) : '';
+
+  // Content
+  const setPre = (id, obj) => {
+    const p = el(id);
+    if (!p) return;
+    p.textContent = obj ? JSON.stringify(obj, null, 2) : '';
+  };
+  setPre('dbg_req_pre', DBG.lastReq);
+  setPre('dbg_res_pre', DBG.lastRes);
+  setPre('dbg_intervals_pre', DBG.intervals);
+  setPre('dbg_conflict_pre', DBG.conflict);
 }
 
+let __dbgBound = false;
 function dbgBind(){
-  if (!DEBUG_ENABLED) return;
-  // Ensure the panel exists before binding buttons (older HTML may not have it).
-  try { dbgRender(); } catch(e) {}
-  // Keep panel in normal flow (no floating overlay). Auto-open so admin sees logs immediately.
-  try {
-    const p = el('debug_panel');
-    if (p) {
-      p.style.display = 'block';
-      p.style.position = 'static';
-      p.style.right = '';
-      p.style.bottom = '';
-      p.style.zIndex = '';
-      p.style.maxWidth = '';
-      p.style.width = '';
-      p.style.maxHeight = '';
-      p.style.overflow = '';
-      if (typeof p.open === 'boolean') p.open = true;
-    }
-  } catch(e) {}
+  if (__dbgBound) return;
+  __dbgBound = true;
+
   const copy = async (text) => {
-    try { await navigator.clipboard.writeText(text || ''); showToast('คัดลอกแล้ว', 'success'); } catch(e){ showToast('คัดลอกไม่สำเร็จ', 'error'); }
+    try { await navigator.clipboard.writeText(text || ''); showToast('คัดลอกแล้ว', 'success'); }
+    catch(e){ showToast('คัดลอกไม่สำเร็จ', 'error'); }
   };
-  el('dbg_copy_all')?.addEventListener('click', () => {
+
+  el('dbgCopyAll')?.addEventListener('click', () => {
     const payload = {
       ts: new Date().toISOString(),
       req: DBG.lastReq || null,
@@ -226,67 +183,49 @@ function dbgBind(){
     };
     copy(JSON.stringify(payload, null, 2));
   });
-  el('dbg_copy_req')?.addEventListener('click', () => copy(el('dbg_req')?.textContent || ''));
-  el('dbg_copy_res')?.addEventListener('click', () => copy(el('dbg_res')?.textContent || ''));
-  el('dbg_copy_intervals')?.addEventListener('click', () => copy(el('dbg_intervals')?.textContent || ''));
-  el('dbg_copy_conflict')?.addEventListener('click', () => copy(el('dbg_conflict')?.textContent || ''));
-  el('dbg_clear')?.addEventListener('click', () => {
-    DBG.lastReq = DBG.lastRes = DBG.intervals = DBG.conflict = null;
+  el('dbgCopyReq')?.addEventListener('click', () => copy(el('dbg_req_pre')?.textContent || ''));
+  el('dbgCopyRes')?.addEventListener('click', () => copy(el('dbg_res_pre')?.textContent || ''));
+  el('dbgCopyIntervals')?.addEventListener('click', () => copy(el('dbg_intervals_pre')?.textContent || ''));
+  el('dbgCopyConflict')?.addEventListener('click', () => copy(el('dbg_conflict_pre')?.textContent || ''));
+  el('dbgClear')?.addEventListener('click', () => {
+    DBG.lastReq = null; DBG.lastRes = null; DBG.intervals = null; DBG.conflict = null;
     dbgRender();
   });
 
-  // Backend logging toggle (admin only)
-  const statusEl = el('dbg_backend_status');
-  const btnToggle = el('dbg_backend_toggle');
-  const refreshStatus = async () => {
+  // Reset jobs (Debug)
+  el('btnResetJobs')?.addEventListener('click', async () => {
     try {
-      const r = await apiFetch('/admin/debug/status');
-      const on = !!r?.availability_debug_runtime || !!r?.availability_debug_env;
-      if (statusEl) statusEl.textContent = on ? `ON` : `OFF`;
-    } catch (e) {
-      if (statusEl) statusEl.textContent = 'error';
-    }
-  };
-  btnToggle?.addEventListener('click', async () => {
-    try {
-      await apiFetch('/admin/debug/toggle', { method: 'POST', body: JSON.stringify({ enabled: 'toggle' }) });
-      await refreshStatus();
-      showToast('สลับ Backend logging แล้ว', 'success');
-    } catch (e) {
-      showToast('สลับ Backend logging ไม่สำเร็จ', 'error');
+      const ok = confirm('ลบงานทดสอบทั้งหมด? (ใช้กับงานเทสเท่านั้น)');
+      if(!ok) return;
+      const pi = prompt('พิมพ์ 1549 เพื่อยืนยัน');
+      if(pi !== '1549') { showToast('ยกเลิก', 'error'); return; }
+      const r = await apiFetch('/admin/reset_jobs_v2', { method:'POST', body: JSON.stringify({ confirm:true }) });
+      if(r && r.ok) showToast('ล้างงานเรียบร้อย', 'success');
+      else showToast('ล้างงานไม่สำเร็จ', 'error');
+    } catch(e){
+      showToast('ล้างงานไม่สำเร็จ', 'error');
     }
   });
-  // Initial status
-  refreshStatus();
 
-
-
-// Reset jobs (danger) — only visible when DEBUG_ENABLED
-const btnReset = el('dbg_reset_jobs');
-btnReset?.addEventListener('click', async () => {
-  try {
-    const ok1 = confirm(`ยืนยันล้างงานทดสอบทั้งหมด?\n(จะลบ jobs + ตารางที่เกี่ยวข้อง)`);
-    if (!ok1) return;
-    const token = prompt('พิมพ์คำว่า RESET เพื่อยืนยันการล้างงานทดสอบ');
-    if ((token || '').trim().toUpperCase() !== 'RESET') {
-      showToast('ยกเลิก: คำยืนยันไม่ถูกต้อง', 'error');
-      return;
+  // Backend log toggle
+  el('dbgBackendToggle')?.addEventListener('change', async (ev) => {
+    try {
+      const enabled = !!ev.target.checked;
+      const r = await apiFetch('/admin/debug_toggle_backend', { method:'POST', body: JSON.stringify({ enable: enabled ? '1':'0' }) });
+      const st = el('dbg_backend_status');
+      if(st) st.textContent = (r && r.enabled) ? 'ON' : 'OFF';
+      showToast('ตั้งค่า Logging แล้ว', 'success');
+    } catch(e){
+      showToast('ตั้งค่า Logging ไม่สำเร็จ', 'error');
     }
-    const r = await apiFetch('/admin/reset_jobs_v2', {
-      method: 'POST',
-      body: JSON.stringify({ confirm: 'RESET' })
-    });
-    showToast(`ล้างงานแล้ว (${r?.deleted_jobs ?? 0} งาน)`, 'success');
-    // best-effort refresh: clear UI caches / reload
-    setTimeout(() => location.reload(), 600);
-  } catch (e) {
-    showToast('ล้างงานไม่สำเร็จ', 'error');
-  }
-});
+  });
 
-  dbgRender();
+  // Init status label (best-effort)
+  try {
+    const st = el('dbg_backend_status');
+    if (st) st.textContent = 'OFF';
+  } catch(e) {}
 }
-
 function bindDebugToggle(){
   const btn = el('btnBug');
   if(!btn) return;
@@ -294,30 +233,23 @@ function bindDebugToggle(){
   try{ btn.title = DEBUG_ENABLED ? 'Debug: On' : 'Debug: Off'; }catch(e){}
   btn.addEventListener('click', () => {
     try {
-      // Require PIN (1549) whenever turning ON (prevents accidental open)
-      if (!DEBUG_ENABLED) {
+      // Require PIN 1549 whenever opening the panel (prevents accidental tap)
+      const panel = el('debugFloat');
+      const isOpen = !!(panel && panel.style.display !== 'none' && panel.style.display !== '');
+      if (!DEBUG_ENABLED || !isOpen) {
         const pin = (prompt('ใส่รหัสเพื่อเปิด Debug Panel') || '').trim();
-        if (pin !== '1549') {
-          showToast('รหัสไม่ถูกต้อง', 'error');
-          return;
-        }
+        if (pin !== '1549') { showToast('รหัสไม่ถูกต้อง', 'error'); return; }
         try { localStorage.setItem('cwf_debug_unlocked', '1'); } catch(e) {}
         try { localStorage.setItem('cwf_debug', '1'); } catch(e) {}
         DEBUG_ENABLED = true;
       } else {
-        // Turning off does not require PIN
+        // Closing panel does not require PIN; also turn off debug to avoid noisy logs
         DEBUG_ENABLED = false;
         try { localStorage.removeItem('cwf_debug'); } catch(e) {}
       }
       try{ btn.title = DEBUG_ENABLED ? 'Debug: On' : 'Debug: Off'; }catch(e){}
-      // Ensure panel becomes visible immediately
-      const panel = el('debug_panel');
-      if (panel) {
-        panel.style.display = DEBUG_ENABLED ? 'block' : 'none';
-        if (DEBUG_ENABLED) {
-          try { panel.open = true; } catch(e) {}
-        }
-      }
+      // Ensure floating panel becomes visible immediately
+      if (panel) panel.style.display = DEBUG_ENABLED ? 'block' : 'none';
       if (DEBUG_ENABLED) {
         // Bind full controls (copy/reset/toggles) when enabling at runtime.
         try { dbgBind(); } catch(e) { try{ dbgRender(); }catch(_){} }
@@ -327,6 +259,19 @@ function bindDebugToggle(){
     } catch(e){
       showToast('สลับ Debug ไม่สำเร็จ', 'error');
     }
+  });
+}
+
+// Collapse button for floating debug panel (does not change DEBUG_ENABLED)
+function bindDebugCollapse(){
+  const btn = el('btnDbgCollapse');
+  const body = el('debugFloatBody');
+  const panel = el('debugFloat');
+  if(!btn || !body || !panel) return;
+  btn.addEventListener('click', ()=>{
+    const isHidden = body.style.display === 'none';
+    body.style.display = isHidden ? 'block' : 'none';
+    btn.textContent = isHidden ? '▾' : '▸';
   });
 }
 
@@ -1315,6 +1260,17 @@ async function loadAvailability() {
     return;
   }
   const date = toYMD(el("appt_date").value);
+  // Guard: do not allow booking in past dates (full-date backdating)
+  try {
+    const today = todayYMD();
+    if (date && today && date < today) {
+      state.slots = [];
+      renderSlots();
+      el("slots_box").innerHTML = `<div class="muted2">ไม่สามารถจองย้อนหลังได้</div>`;
+      showToast('ไม่สามารถจองย้อนหลังได้', 'error');
+      return;
+    }
+  } catch(e) {}
   const tech_type = (el("tech_type").value || "company").trim().toLowerCase();
   const duration_min = state.duration_min;
   try {
@@ -2800,6 +2756,7 @@ async function init() {
   } catch(e) {}
 
   bindDebugToggle();
+  bindDebugCollapse();
   dbgBind();
   setBtuOptions();
   bindMachineCountStepper();

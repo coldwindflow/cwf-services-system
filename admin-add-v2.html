@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Admin เพิ่มงาน (v2) - CWF</title>
+  <title>เพิ่มงาน - CWF</title>
   <link rel="stylesheet" href="style.css">
   <style>
     /* ===============================
@@ -180,21 +180,92 @@
     /* Prevent debug UI overlapping slot modal on mobile */
     body.cwf-modal-open #btnBug{display:none !important}
 
-    /* Small bug icon + logout (avoid covering content) */
+    /* Small bug icon + logout */
     .top-actions{display:flex;align-items:center;gap:8px}
-    #btnBug{width:42px;height:42px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center}
-    #btnLogout{height:42px;border-radius:14px;font-weight:900}
-    body.cwf-modal-open #debug_panel_mount{display:none !important}
+    #btnBug{width:40px;height:40px;border-radius:14px;display:inline-flex;align-items:center;justify-content:center}
+    #btnLogout{
+      height:40px;
+      border-radius:14px;
+      font-weight:900;
+      background:#ef4444 !important;
+      color:#ffffff !important;
+      border:1px solid rgba(239,68,68,0.75) !important;
+      padding:0 12px;
+    }
+    #btnLogout:hover{filter:brightness(0.98)}
+    #btnLogout:active{filter:brightness(0.95)}
+
+    /* Floating Debug Panel (not inside page flow) */
+    #debugFloat{
+      position:fixed;
+      top:72px;
+      right:12px;
+      width:min(420px, calc(100vw - 24px));
+      z-index:2000;
+      display:none;
+      border-radius:18px;
+      box-shadow:0 18px 40px rgba(0,0,0,0.18);
+      overflow:hidden;
+      background:#ffffff;
+      border:1px solid rgba(11,27,58,0.12);
+    }
+    body.cwf-modal-open #debugFloat{display:none !important}
+    #debugFloat .df-head{
+      display:flex;align-items:center;justify-content:space-between;gap:10px;
+      padding:10px 12px;
+      background:linear-gradient(180deg, rgba(11,27,58,0.06) 0%, rgba(11,27,58,0.02) 100%);
+    }
+    #debugFloat .df-title{font-weight:900;color:#0b1b3a}
+    #debugFloat .df-actions{display:flex;gap:8px;align-items:center}
+    #debugFloat .df-body{padding:12px;max-height:70vh;overflow:auto}
+    #btnDbgCollapse{width:40px;height:40px;border-radius:14px}
   </style>
 </head>
 <body class="theme-2 cwf-lux">
   <div class="app">
     <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-      <h2 style="margin:0">➕ เพิ่มงาน (Admin v2)</h2>
+      <h2 style="margin:0">➕ เพิ่มงาน</h2>
       <div class="top-actions">
         <button id="btnBug" class="secondary" type="button" title="Debug" aria-label="Debug">🐞</button>
-        <button id="btnLogout" class="secondary" type="button" title="ออกจากระบบ" aria-label="ออกจากระบบ" style="background:#ef4444 !important;color:#ffffff !important;border-color:rgba(239,68,68,0.75) !important;">Log out</button>
+        <button id="btnLogout" class="secondary" type="button" title="ออกจากระบบ" aria-label="ออกจากระบบ">⎋ ออกจากระบบ</button>
         <button class="secondary" type="button" onclick="location.href='/admin-review-v2.html'">เมนู</button>
+      </div>
+    </div>
+
+    <!-- Floating Debug Panel (opens via 🐞 + PIN 1549; safe for mobile) -->
+    <div id="debugFloat" aria-label="Debug Panel">
+      <div class="df-head">
+        <div class="df-title">🐞 Debug Panel <span class="muted2" id="debug_panel_hint">off</span></div>
+        <div class="df-actions">
+          <button id="btnDbgCollapse" class="secondary" type="button" title="พับ/ขยาย" aria-label="พับ/ขยาย">▾</button>
+        </div>
+      </div>
+      <div class="df-body" id="debugFloatBody">
+        <div class="line" style="flex-wrap:wrap;gap:8px;align-items:center">
+          <button type="button" class="secondary" id="dbg_backend_toggle">Toggle Backend Logging</button>
+          <span class="mini muted2">Backend logging:</span>
+          <b class="mini" id="dbg_backend_status">unknown</b>
+        </div>
+        <div class="line" style="flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px">
+          <button type="button" id="dbg_reset_jobs" style="background:#e53935;color:#fff;border:none;padding:10px 12px;border-radius:14px;font-weight:900">🧨 ล้างงานทดสอบ (Reset Jobs)</button>
+          <span class="mini muted2">ลบ “ตารางงาน/คิว/รูป” ทั้งหมด (ต้องยืนยัน 2 ชั้น)</span>
+        </div>
+        <div class="line" style="flex-wrap:wrap;gap:8px;margin-top:10px">
+          <button type="button" class="secondary" id="dbg_copy_req">Copy Request</button>
+          <button type="button" class="secondary" id="dbg_copy_res">Copy Response</button>
+          <button type="button" class="secondary" id="dbg_copy_intervals">Copy Busy/Free</button>
+          <button type="button" class="secondary" id="dbg_copy_conflict">Copy Conflict</button>
+          <button type="button" class="secondary" id="dbg_copy_all">Copy All</button>
+          <button type="button" class="secondary" id="dbg_clear">Clear</button>
+        </div>
+        <div class="mini muted2" style="margin-top:10px">Request (masked)</div>
+        <pre id="dbg_req" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:220px;overflow:auto"></pre>
+        <div class="mini muted2" style="margin-top:10px">Response (raw)</div>
+        <pre id="dbg_res" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:220px;overflow:auto"></pre>
+        <div class="mini muted2" style="margin-top:10px">Busy / Free (backend)</div>
+        <pre id="dbg_intervals" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:260px;overflow:auto"></pre>
+        <div class="mini muted2" style="margin-top:10px">Conflict detail (409)</div>
+        <pre id="dbg_conflict" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:220px;overflow:auto"></pre>
       </div>
     </div>
 
@@ -391,44 +462,7 @@
           <label style="margin-top:10px">วันที่</label>
           <input id="appt_date" type="date">
           <button class="secondary" type="button" id="btnLoadSlots" style="margin-top:8px;width:100%">โหลดคิวว่าง</button>
-          <div class="muted2 mini" style="margin-top:8px">🐞 Debug = ไอคอนมุมขวาบน (ใส่รหัสก่อนเปิด)</div>
-
-          <!-- Debug Panel mount (keeps panel visible on mobile; avoids being appended outside scroll container) -->
-          <div id="debug_panel_mount" style="margin-top:10px">
-            <!-- Debug Panel (admin only) : enable with ?debug=1 or localStorage.cwf_debug=1 -->
-            <details id="debug_panel" class="cwf-details card-lite" style="display:none;margin:12px 0 0">
-              <summary>🧪 Debug Panel <span class="muted2" id="debug_panel_hint">off</span></summary>
-              <div class="details-body">
-                <div class="line" style="flex-wrap:wrap;gap:8px;align-items:center">
-                  <button type="button" class="secondary" id="dbg_backend_toggle">Toggle Backend Logging</button>
-                  <span class="mini muted2">Backend logging:</span>
-                  <b class="mini" id="dbg_backend_status">unknown</b>
-                
-
-<div class="line" style="flex-wrap:wrap;gap:8px;align-items:center;margin-top:6px">
-  <button type="button" id="dbg_reset_jobs" style="background:#e53935;color:#fff;border:none;padding:10px 12px;border-radius:14px;font-weight:900">🧨 ล้างงานทดสอบ (Reset Jobs)</button>
-  <span class="mini muted2">ลบ “ตารางงาน/คิว/รูป” ทั้งหมด (ต้องยืนยัน 2 ชั้น)</span>
-</div>
-                </div>
-                <div class="line" style="flex-wrap:wrap;gap:8px">
-                  <button type="button" class="secondary" id="dbg_copy_req">Copy Request</button>
-                  <button type="button" class="secondary" id="dbg_copy_res">Copy Response</button>
-                  <button type="button" class="secondary" id="dbg_copy_intervals">Copy Busy/Free</button>
-                  <button type="button" class="secondary" id="dbg_copy_conflict">Copy Conflict</button>
-                  <button type="button" class="secondary" id="dbg_copy_all">Copy All</button>
-                  <button type="button" class="secondary" id="dbg_clear">Clear</button>
-                </div>
-                <div class="mini muted2" style="margin-top:10px">Request (masked)</div>
-                <pre id="dbg_req" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:220px;overflow:auto"></pre>
-                <div class="mini muted2" style="margin-top:10px">Response (raw)</div>
-                <pre id="dbg_res" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:220px;overflow:auto"></pre>
-                <div class="mini muted2" style="margin-top:10px">Busy / Free (backend)</div>
-                <pre id="dbg_intervals" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:260px;overflow:auto"></pre>
-                <div class="mini muted2" style="margin-top:10px">Conflict detail (409)</div>
-                <pre id="dbg_conflict" style="white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;max-height:220px;overflow:auto"></pre>
-              </div>
-            </details>
-          </div>
+          <div class="muted2 mini" style="margin-top:8px">🐞 Debug = มุมขวาบน (ใส่รหัสก่อนเปิด) • ไม่แสดงในหน้าเพื่อไม่รก</div>
 
           <!-- Slots appear directly under the load button (no scrolling confusion) -->
           <div style="margin-top:10px">
