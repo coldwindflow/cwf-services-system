@@ -91,8 +91,26 @@ function bangkokNowParts(){
     if (!m) return { ymd: '', minutes: NaN };
     return { ymd: m[1], minutes: Number(m[2]) * 60 + Number(m[3]) };
   } catch (e) {
-    return { ymd: '', minutes: NaN };
+    // Fallback: treat device local time as Bangkok (app runs in TH production)
+    try {
+      const d = new Date();
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return { ymd: `${y}-${m}-${day}`, minutes: d.getHours() * 60 + d.getMinutes() };
+    } catch (_e) {
+      return { ymd: '', minutes: NaN };
+    }
   }
+}
+
+// Show/enable assignment UI after slots loaded (legacy callers expect this)
+function enableAssignControls(){
+  const assignCard = el('assign_card');
+  const teamCard = el('team_card');
+  const mode = (el('assign_mode_ui')?.value || 'auto').toLowerCase();
+  if (assignCard) assignCard.style.display = (mode === 'single' || mode === 'team') ? '' : 'none';
+  if (teamCard) teamCard.style.display = (mode === 'team') ? '' : 'none';
 }
 
 // Accept both "YYYY-MM-DD" and "DD/MM/YYYY" (and "DD-MM-YYYY") and normalize to YMD.
@@ -131,15 +149,15 @@ function dbgRender(){
     panel = document.createElement('details');
     panel.id = 'debug_panel';
     panel.className = 'cwf-details card-lite';
-    // Make it always visible when enabled (no need to scroll to find it)
+    // Render in normal page flow (no floating overlay that can cover modal/buttons)
     panel.style.display = 'block';
-    panel.style.margin = '0';
-    panel.style.position = 'fixed';
-    panel.style.right = '12px';
-    panel.style.bottom = '12px';
-    panel.style.zIndex = '9999';
-    panel.style.maxWidth = '520px';
-    panel.style.width = 'min(520px, calc(100vw - 24px))';
+    panel.style.margin = '12px 0 0 0';
+    panel.style.position = 'static';
+    panel.style.right = '';
+    panel.style.bottom = '';
+    panel.style.zIndex = '';
+    panel.style.maxWidth = '100%';
+    panel.style.width = '100%';
     panel.style.maxHeight = '60vh';
     panel.style.overflow = 'auto';
     panel.innerHTML = `
@@ -2197,18 +2215,30 @@ function openSlotModal(slot){
         updateAssignSummary();
       });
     } else if(mode === 'single'){
+      // Production UX: allow selecting the technician right inside the slot modal.
+      // This avoids relying on a hidden/empty main dropdown and prevents "เลือกช่าง A แต่ไปลง B".
       const ok = !!cur && ids.includes(cur);
-      if(ok){
-        state.confirmed_tech_username = cur;
-        state.confirmed_tech_label = techDisplay(cur);
-      }
       body.innerHTML = timeSeg + modeInfo + `
-        <div class="muted2 mini" style="margin-top:2px">ช่างที่เลือกจากหน้าหลัก:</div>
-        <div style="margin-top:8px;padding:10px 12px;border:1px solid #e5e7eb;border-radius:14px;background:#fff">
-          <b>${ok ? escapeHtml(techDisplay(cur)) : 'ยังไม่ได้เลือกช่าง'}</b>
-          <div class="muted2 mini" style="margin-top:2px">${ok ? '('+escapeHtml(cur)+')' : 'กรุณาเลือกช่างที่หัวข้อ “รูปแบบมอบหมาย” ด้านบน'}</div>
+        <label>ช่าง (ว่างในสล็อตนี้)</label>
+        <select id="slotm_single" class="grow"></select>
+        <div id="slotm_single_hint" class="muted2 mini" style="margin-top:6px">โหมดเดี่ยว: ต้องเลือกช่าง 1 คน แล้วกด “ยืนยัน”</div>
+        <div id="slotm_single_warn" style="display:none;margin-top:10px;padding:10px 12px;border-radius:14px;background:#fee2e2;color:#7f1d1d;font-weight:700">
+          โหมดเดี่ยว: กรุณาเลือกช่าง แล้วกด “ยืนยัน”
         </div>
       `;
+      const selEl = body.querySelector('#slotm_single');
+      selEl.innerHTML = `<option value="">-- เลือกช่าง --</option>`
+        + ids.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(techDisplay(u))} (${escapeHtml(u)})</option>`).join('');
+      if(ok) selEl.value = cur;
+      // keep main fields in sync for payload
+      selEl.addEventListener('change', ()=>{
+        const v = (selEl.value||'').trim();
+        if(el('technician_username_select')) el('technician_username_select').value = v;
+        if(el('technician_username')) el('technician_username').value = v;
+        state.confirmed_tech_username = '';
+        state.confirmed_tech_label = '';
+        body.querySelector('#slotm_single_warn').style.display = v ? 'none' : 'block';
+      });
     } else {
       // team: the team selection happens in the main form; modal is only for time picking.
       body.innerHTML = timeSeg + modeInfo + `
@@ -2234,8 +2264,46 @@ function openSlotModal(slot){
     });
   };
 
-  // assign_mode is chosen in the main form, not in the slot modal.
-  // Keep a no-op binder for backward compatibility if older HTML had modal mode buttons.
+  // Confirm button lives in the modal footer.
+  const btnConfirm = el('slot_modal_confirm');
+  if(btnConfirm){
+    btnConfirm.onclick = ()=>{
+      const mode = (el('assign_mode')?.value || 'auto').toString();
+      if(mode === 'single'){
+        const sel = body.querySelector('#slotm_single');
+        const v = (sel?.value || '').trim();
+        if(!v){
+          const w = body.querySelector('#slotm_single_warn');
+          if(w) w.style.display = 'block';
+          return;
+        }
+        state.confirmed_tech_username = v;
+        state.confirmed_tech_label = techDisplay(v);
+        if(el('technician_username_select')) el('technician_username_select').value = v;
+        if(el('technician_username')) el('technician_username').value = v;
+      } else if(mode === 'auto'){
+        const sel = body.querySelector('#slotm_single');
+        const v = (sel?.value || '').trim();
+        // optional: admin can preselect a tech in auto mode
+        if(v){
+          state.confirmed_tech_username = v;
+          state.confirmed_tech_label = techDisplay(v);
+          if(el('technician_username_select')) el('technician_username_select').value = v;
+          if(el('technician_username')) el('technician_username').value = v;
+        } else {
+          state.confirmed_tech_username = '';
+          state.confirmed_tech_label = '';
+          if(el('technician_username_select')) el('technician_username_select').value = '';
+          if(el('technician_username')) el('technician_username').value = '';
+        }
+      }
+      try { updateAssignSummary(); } catch(e){}
+      ov.style.display = 'none';
+      try { document.body.classList.remove('cwf-modal-open'); } catch(e){}
+    };
+  }
+
+  // assign_mode is chosen in the main form; keep a no-op binder for backward compatibility.
   const bindModeButtons = ()=>{};
 
   renderBody();
