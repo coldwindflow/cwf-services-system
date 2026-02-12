@@ -4944,22 +4944,28 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
 
     const siteLat = Number(r.rows[0].gps_latitude);
     const siteLng = Number(r.rows[0].gps_longitude);
-    if (!siteLat || !siteLng) return res.status(400).json({ error: "งานนี้ไม่มีพิกัดหน้างาน" });
 
-    const toRad = (v) => (v * Math.PI) / 180;
-    const R = 6371000;
-    const dLat = toRad(Number(lat) - siteLat);
-    const dLng = toRad(Number(lng) - siteLng);
+    // ✅ ISSUE-1: ถ้างานไม่มีพิกัด (เช่น admin ใส่ URL จาก Google Maps ที่แยก lat/lng ไม่ได้)
+    // ให้ช่างเช็คอินได้ตามปกติ (บันทึกพิกัดช่าง) แต่ถ้ามีพิกัดจริง -> บังคับระยะ 500m เหมือนเดิม
+    const hasSiteLatLng = Number.isFinite(siteLat) && Number.isFinite(siteLng);
 
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(toRad(siteLat)) * Math.cos(toRad(Number(lat))) * Math.sin(dLng / 2) ** 2;
+    let distance = null;
+    if (hasSiteLatLng) {
+      const toRad = (v) => (v * Math.PI) / 180;
+      const R = 6371000;
+      const dLat = toRad(Number(lat) - siteLat);
+      const dLng = toRad(Number(lng) - siteLng);
 
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-    const distance = R * c;
+      const a =
+        Math.sin(dLat / 2) ** 2 +
+        Math.cos(toRad(siteLat)) * Math.cos(toRad(Number(lat))) * Math.sin(dLng / 2) ** 2;
 
-    if (distance > 500) {
-      return res.status(400).json({ error: "อยู่นอกพื้นที่หน้างาน", distance: Math.round(distance) });
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      distance = R * c;
+
+      if (distance > 500) {
+        return res.status(400).json({ error: "อยู่นอกพื้นที่หน้างาน", distance: Math.round(distance) });
+      }
     }
 
     await pool.query(
@@ -4967,7 +4973,7 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
       [lat, lng, realId]
     );
 
-    res.json({ success: true, distance: Math.round(distance) });
+    res.json({ success: true, distance: distance == null ? null : Math.round(distance), site_required: hasSiteLatLng });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "เช็คอินไม่สำเร็จ" });

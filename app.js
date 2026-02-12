@@ -602,6 +602,16 @@ loadJobs();
 setInterval(() => loadOffers(), 15000);
 setInterval(() => loadJobs(), 20000); // keep active/history in sync (admin force close etc.)
 
+// ✅ มือถือ: กดโทรแล้วกลับมา/สลับแอพ -> รีเฟรชสถานะทันที
+window.addEventListener("focus", () => {
+  try { loadJobs(); } catch(e) {}
+});
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") {
+    try { loadJobs(); } catch(e) {}
+  }
+});
+
 // =======================================
 // 📨 LOAD OFFERS
 // =======================================
@@ -749,6 +759,60 @@ function loadJobs() {
 // =======================================
 function normStatus(s) {
   return String(s || "").trim();
+}
+
+// =======================================
+// 🔧 DOM HELPERS (กันต้องรีเฟรชทั้งหน้า)
+// =======================================
+function escapeAttr(s) {
+  return String(s || "")
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function cssEscapeCompat(value) {
+  const s = String(value || "");
+  if (typeof CSS !== "undefined" && CSS && typeof CSS.escape === "function") return CSS.escape(s);
+  // fallback: escape quotes/backslashes for querySelector
+  return s.replace(/\\/g, "\\\\").replace(/"/g, "\\\"").replace(/'/g, "\\'");
+}
+
+// ✅ เปิดปุ่ม “เริ่มเดินทาง” ทันทีหลังโทร (ไม่ต้องรอ fetch/polling)
+function unlockTravelImmediately(jobKey) {
+  const key = String(jobKey || "").trim();
+  if (!key) return;
+
+  // อัปเดตจาก local cache ก่อน (ช่วยคำนวณขั้นตอน)
+  const cache = (window.__JOB_CACHE__ || []);
+  const job = cache.find(j => String(j.job_id) === key || String(j.booking_code || "") === key) || null;
+  const jobId = job ? Number(job.job_id) : NaN;
+
+  // อัปเดตเฉพาะใบงานใน DOM
+  const sel = `.job-card[data-jobkey="${cssEscapeCompat(key)}"]`;
+  const card = document.querySelector(sel);
+  if (!card) return;
+
+  // ถ้างานยังไม่เริ่มเดินทาง และยังไม่จ่าย/ปิดงาน => ปลด disabled
+  const status = job ? normStatus(job.job_status) : "";
+  const paid = !!(job && job.paid_at) || String(job?.payment_status || "").trim().toLowerCase() === "paid";
+  const travelStarted = !!localStorage.getItem(`cwf_travel_${key}`) || !!(job && job.travel_started_at);
+
+  const btn = card.querySelector('button[data-role="workflow"]');
+  if (btn && !paid && !travelStarted && status !== "เสร็จแล้ว" && status !== "ยกเลิก") {
+    btn.disabled = false;
+    // ถ้าป้ายยังไม่ทันอัปเดต ให้ยังคงแสดง “เริ่มเดินทาง”
+    if (!btn.textContent || !btn.textContent.includes("เดินทาง")) {
+      btn.textContent = "🚗 เริ่มเดินทาง";
+    }
+  }
+
+  // ปรับข้อความแนะนำ (ถ้ามี)
+  if (Number.isFinite(jobId)) {
+    const hint = document.getElementById(`travel-hint-${jobId}`);
+    if (hint) hint.textContent = "กด “เริ่มเดินทาง” เพื่อปลดล็อกแผนที่และเช็คอิน";
+  }
 }
 
 // =======================================
@@ -923,6 +987,22 @@ function callCustomer(jobId, phone) {
     // ignore
   }
 
+  // ✅ ปลดล็อกปุ่ม “เริ่มเดินทาง” ทันที (ไม่ต้องรอรีเฟรช/รอ polling)
+  try {
+    unlockTravelImmediately(idKey);
+  } catch {
+    // ignore
+  }
+
+  // ✅ กันเคสมือถือสลับไปแอพโทรแล้วกลับมา: รีเฟรชสถานะอีกรอบแบบเร็ว
+  try {
+    setTimeout(() => {
+      try { loadJobs(); } catch(e) {}
+    }, 120);
+  } catch {
+    // ignore
+  }
+
   // มือถือจะเด้งไปที่แอพโทร
   window.location.href = `tel:${p}`;
 }
@@ -940,6 +1020,11 @@ window.callCustomer = callCustomer;
 function buildJobCard(job, historyMode = false) {
   const div = document.createElement("div");
   div.className = "job-card";
+
+  // ✅ metadata ไว้ให้ update DOM แบบเฉพาะใบงาน (กันต้องรีเฟรชทั้งหน้า)
+  const jobKeyForDom = String((job && (job.job_id ?? job.booking_code)) || "").trim();
+  if (jobKeyForDom) div.setAttribute("data-jobkey", jobKeyForDom);
+  if (job && job.job_id != null) div.setAttribute("data-jobid", String(job.job_id));
 
   const status = normStatus(job.job_status) || "รอดำเนินการ";
 
@@ -1054,7 +1139,7 @@ function buildJobCard(job, historyMode = false) {
 
         <!-- ✅ ปุ่มอัปเดตสถานะ / e-slip (ปุ่มเดียว) -->
         <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-          <button type="button" style="width:100%;" ${workflowDisabled ? "disabled" : ""} onclick="${workflowOnclick}">
+          <button type="button" style="width:100%;" data-role="workflow" data-jobkey="${escapeAttr(keyBase)}" ${workflowDisabled ? "disabled" : ""} onclick="${workflowOnclick}">
             ${workflowLabel}
           </button>
         </div>
@@ -1236,7 +1321,8 @@ async function startTravel(jobId) {
 
     // เปิดแผนที่ (หลังจากกดเริ่มเดินทาง ถึงจะแสดง GPS/ปุ่มเช็คอิน)
     const job = (window.__JOB_CACHE__ || []).find(j => String(j.job_id) === keyBase || String(j.booking_code||'') === keyBase);
-    if (job) openMaps(job.gps_latitude, job.gps_longitude, job.address_text);
+    // ✅ ใช้ maps_url เดียวกับปุ่ม “แผนที่” เพื่อกันนำทางเพี้ยนเมื่อแอดมินใส่ URL ที่ถูกต้องอยู่แล้ว
+    if (job) openMaps(job.gps_latitude, job.gps_longitude, job.address_text, job.maps_url);
 
     // แจ้ง backend (optional)
     await fetch(`${API_BASE}/jobs/${encodeURIComponent(keyBase)}/travel-start`, { method: "POST" }).catch(() => {});
