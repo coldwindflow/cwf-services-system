@@ -496,13 +496,22 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
     );
     const meInfo = meRow.rows[0] || { username: me.username, role: me.role, full_name: "", photo_url: "", commission_rate_percent: 0 };
 
+    // Effective revenue (backward compatible):
+    // - prefer jobs.job_price when present
+    // - fallback to SUM(job_items.line_total) for older/clone flows that didn't persist job_price
     const personal = await pool.query(
       `SELECT COUNT(*)::int AS job_count,
-              COALESCE(SUM(COALESCE(NULLIF(job_price::text,''),'0')::numeric),0)::double precision AS revenue_total
-       FROM public.jobs
-       WHERE (created_by_admin=$1 OR approved_by_admin=$1)
-         AND (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $2::date AND $3::date
-         AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
+              COALESCE(SUM(
+                COALESCE(
+                  NULLIF(job_price::text,'')::numeric,
+                  (SELECT COALESCE(SUM(COALESCE(ji.line_total,0)),0) FROM public.job_items ji WHERE ji.job_id=j.job_id),
+                  0
+                )
+              ),0)::double precision AS revenue_total
+       FROM public.jobs j
+       WHERE (j.created_by_admin=$1 OR j.approved_by_admin=$1)
+         AND (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $2::date AND $3::date
+         AND COALESCE(j.job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
       [me.username, d_from, d_to]
     );
     const pRow = personal.rows[0] || { job_count: 0, revenue_total: 0 };
@@ -511,10 +520,16 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
 
     const company = await pool.query(
       `SELECT COUNT(*)::int AS job_count,
-              COALESCE(SUM(COALESCE(NULLIF(job_price::text,''),'0')::numeric),0)::double precision AS revenue_total
-       FROM public.jobs
-       WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
-         AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
+              COALESCE(SUM(
+                COALESCE(
+                  NULLIF(job_price::text,'')::numeric,
+                  (SELECT COALESCE(SUM(COALESCE(ji.line_total,0)),0) FROM public.job_items ji WHERE ji.job_id=j.job_id),
+                  0
+                )
+              ),0)::double precision AS revenue_total
+       FROM public.jobs j
+       WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
+         AND COALESCE(j.job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
       [d_from, d_to]
     );
     const cRow = company.rows[0] || { job_count: 0, revenue_total: 0 };
@@ -522,25 +537,41 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
     // Company totals (all-time) – used to show “รายได้รวมทั้งหมดจริงๆ”
     const companyAll = await pool.query(
       `SELECT COUNT(*)::int AS job_count,
-              COALESCE(SUM(COALESCE(NULLIF(job_price::text,''),'0')::numeric),0)::double precision AS revenue_total
-       FROM public.jobs
-       WHERE COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`
+              COALESCE(SUM(
+                COALESCE(
+                  NULLIF(job_price::text,'')::numeric,
+                  (SELECT COALESCE(SUM(COALESCE(ji.line_total,0)),0) FROM public.job_items ji WHERE ji.job_id=j.job_id),
+                  0
+                )
+              ),0)::double precision AS revenue_total
+       FROM public.jobs j
+       WHERE COALESCE(j.job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`
     );
     const cAll = companyAll.rows[0] || { job_count: 0, revenue_total: 0 };
 
     const pending = await pool.query(
-      `SELECT job_id, booking_code, customer_name, job_type, appointment_datetime, job_status, duration_min, job_price
-       FROM public.jobs
-       WHERE COALESCE(job_status,'') IN ('รอตรวจสอบ','pending_review')
-       ORDER BY appointment_datetime ASC
+      `SELECT j.job_id, j.booking_code, j.customer_name, j.job_type, j.appointment_datetime, j.job_status, j.duration_min,
+              COALESCE(
+                NULLIF(j.job_price::text,'')::numeric,
+                (SELECT COALESCE(SUM(COALESCE(ji.line_total,0)),0) FROM public.job_items ji WHERE ji.job_id=j.job_id),
+                0
+              )::double precision AS job_price
+       FROM public.jobs j
+       WHERE COALESCE(j.job_status,'') IN ('รอตรวจสอบ','pending_review')
+       ORDER BY j.appointment_datetime ASC
        LIMIT 12`
     );
 
     const active = await pool.query(
-      `SELECT job_id, booking_code, customer_name, job_type, appointment_datetime, job_status, duration_min, job_price
-       FROM public.jobs
-       WHERE COALESCE(job_status,'') IN ('รอดำเนินการ','กำลังทำ','ตีกลับ','รอช่างยืนยัน')
-       ORDER BY appointment_datetime ASC
+      `SELECT j.job_id, j.booking_code, j.customer_name, j.job_type, j.appointment_datetime, j.job_status, j.duration_min,
+              COALESCE(
+                NULLIF(j.job_price::text,'')::numeric,
+                (SELECT COALESCE(SUM(COALESCE(ji.line_total,0)),0) FROM public.job_items ji WHERE ji.job_id=j.job_id),
+                0
+              )::double precision AS job_price
+       FROM public.jobs j
+       WHERE COALESCE(j.job_status,'') IN ('รอดำเนินการ','กำลังทำ','ตีกลับ','รอช่างยืนยัน')
+       ORDER BY j.appointment_datetime ASC
        LIMIT 12`
     );
 
@@ -588,18 +619,24 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
 
     async function series(kind){
       const map = {
-        day:  "DATE_TRUNC('day', appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
-        week: "DATE_TRUNC('week', appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
-        month: "DATE_TRUNC('month', appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
-        year: "DATE_TRUNC('year', appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
+        day:  "DATE_TRUNC('day', j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
+        week: "DATE_TRUNC('week', j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
+        month: "DATE_TRUNC('month', j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
+        year: "DATE_TRUNC('year', j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
       };
       const trunc = map[kind] || map.day;
       const r = await pool.query(
         `SELECT ${trunc} AS bucket,
-                COALESCE(SUM(COALESCE(NULLIF(job_price::text,''),'0')::numeric),0)::double precision AS total
-         FROM public.jobs
-         WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
-           AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
+                COALESCE(SUM(
+                  COALESCE(
+                    NULLIF(j.job_price::text,'')::numeric,
+                    (SELECT COALESCE(SUM(COALESCE(ji.line_total,0)),0) FROM public.job_items ji WHERE ji.job_id=j.job_id),
+                    0
+                  )
+                ),0)::double precision AS total
+         FROM public.jobs j
+         WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
+           AND COALESCE(j.job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
          GROUP BY 1
          ORDER BY 1 ASC`,
         [d_from, d_to]

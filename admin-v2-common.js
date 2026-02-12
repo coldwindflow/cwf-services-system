@@ -160,7 +160,7 @@ function showToast(msg, type = "info") {
   box.style.right = "12px";
   box.style.bottom = "90px";
   // Keep below drawer/debug overlays to avoid covering menu items
-  box.style.zIndex = "2400";
+  box.style.zIndex = "2000";
   box.style.padding = "12px";
   box.style.borderRadius = "14px";
   box.style.fontWeight = "700";
@@ -206,7 +206,7 @@ function injectAdminMenu(){
     #cwfDrawer{position:fixed;inset:0;z-index:2700;
       display:none;
       /* Extra bottom padding to prevent overlap with bottom nav on mobile */
-      padding:12px 12px calc(12px + env(safe-area-inset-bottom) + 170px);
+      padding:12px 12px calc(12px + env(safe-area-inset-bottom) + 240px);
       overflow:auto;}
     #cwfDrawer .panel{max-width:560px;margin:0 auto;background:rgba(255,255,255,0.94);
       backdrop-filter: blur(16px);border:1px solid rgba(15,23,42,0.12);border-radius:22px;
@@ -225,10 +225,22 @@ function injectAdminMenu(){
     .cwf-group .t{padding:10px 12px;background:#f8fafc;font-weight:900;font-size:12px;color:var(--cwf-ink);
       border-bottom:1px solid rgba(15,23,42,0.08)}
     .cwf-group .i{display:flex;flex-direction:column;gap:8px;padding:10px 12px}
-    .cwf-link{display:flex;align-items:center;justify-content:space-between;gap:10px;
-      border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:10px 12px;background:#fff;
-      font-weight:900;color:var(--cwf-ink);cursor:pointer}
-    .cwf-link small{font-weight:800;color:rgba(15,23,42,0.60)}
+    .cwf-link{display:flex;align-items:center;justify-content:space-between;gap:12px;
+      border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:12px 12px;background:#fff;
+      font-weight:900;color:var(--cwf-ink);cursor:pointer;min-height:52px}
+    .cwf-link .left{min-width:0;display:flex;align-items:center;gap:10px}
+    .cwf-link .ic{width:28px;height:28px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+      background:rgba(15,23,42,0.06);flex:0 0 auto}
+    .cwf-link.primary .ic{background:rgba(255,255,255,0.18)}
+    .cwf-link.warning .ic{background:rgba(17,24,39,0.10)}
+    .cwf-link.danger .ic{background:rgba(255,255,255,0.18)}
+    .cwf-link .txt{min-width:0;display:flex;flex-direction:column;gap:2px}
+    .cwf-link .txt b{font-size:14px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .cwf-link .txt span{font-size:12px;font-weight:800;color:rgba(15,23,42,0.62)}
+    .cwf-link.primary .txt span, .cwf-link.danger .txt span{color:rgba(255,255,255,0.78)}
+    .cwf-link .right{flex:0 0 auto;font-weight:900;color:rgba(15,23,42,0.55)}
+    .cwf-link.primary .right{color:rgba(255,255,255,0.85)}
+    .cwf-link.danger .right{color:rgba(255,255,255,0.85)}
     .cwf-link.primary{background:var(--cwf-blue); color:#fff; border-color: transparent}
     .cwf-link.warning{background:var(--cwf-yellow); color:#111827; border-color: transparent}
     .cwf-link.danger{background:#ef4444; color:#fff; border-color: transparent}
@@ -306,31 +318,70 @@ function injectAdminMenu(){
         <div class="cwf-group">
           <div class="t">ศูนย์กลาง</div>
           <div class="i">
-            <div class="cwf-link primary" data-href="/admin-dashboard-v2.html">📊 Dashboard <small>Admin</small></div>
-            <div class="cwf-link" data-href="/admin-profile-v2.html">👤 Profile Admin <small>รูป + ชื่อ</small></div>
-            <div class="cwf-link" data-href="/admin-technicians-v2.html">🧰 จัดการช่าง <small>ID/อนุมัติ</small></div>
-            <div class="cwf-link" id="cwfSuperAdminLink" data-href="/admin-super-v2.html" style="display:none">🛡️ Super Admin <small>จัดการทั้งหมด</small></div>
+            <div class="cwf-link primary" data-href="/admin-dashboard-v2.html">
+              <div class="left"><div class="ic">📊</div><div class="txt"><b>Dashboard</b><span>ภาพรวมรายได้/งาน</span></div></div>
+              <div class="right">Admin</div>
+            </div>
+            <div class="cwf-link" data-href="/admin-profile-v2.html">
+              <div class="left"><div class="ic">👤</div><div class="txt"><b>Profile Admin</b><span>รูป + ชื่อ</span></div></div>
+              <div class="right">โปรไฟล์</div>
+            </div>
+            <div class="cwf-link" data-href="/admin-technicians-v2.html">
+              <div class="left"><div class="ic">🧰</div><div class="txt"><b>จัดการช่าง</b><span>สร้าง/แก้ไข + อนุมัติ</span></div></div>
+              <div class="right">ID/อนุมัติ</div>
+            </div>
+            <div class="cwf-link" id="cwfSuperAdminLink" data-href="/admin-super-v2.html" style="display:none">
+              <div class="left"><div class="ic">🛡️</div><div class="txt"><b>Super Admin</b><span>จัดการทั้งหมด</span></div></div>
+              <div class="right">สิทธิ์สูงสุด</div>
+            </div>
           </div>
         </div>
 
         <div class="cwf-group">
           <div class="t">หน้า Admin ทั้งหมด</div>
           <div class="i">
-            <div class="cwf-link warning" data-href="/admin-add-v2.html">➕ เพิ่มงาน <small>Booking</small></div>
-            <div class="cwf-link" data-href="/admin-queue-v2.html">🗓️ คิวช่าง <small>Queue</small></div>
-            <div class="cwf-link" data-href="/admin-history-v2.html">🧾 ประวัติงาน <small>History</small></div>
-            <div class="cwf-link" data-href="/admin-review-v2.html">✅ อนุมัติงาน/รีวิว <small>Approvals</small></div>
-            <div class="cwf-link" data-href="/admin-promotions-v2.html">🏷️ โปรโมชั่น/ราคา <small>Promotions</small></div>
-            <div class="cwf-link" data-href="/admin-job-view-v2.html">🔎 ดูงาน <small>Job View</small></div>
+            <div class="cwf-link warning" data-href="/admin-add-v2.html">
+              <div class="left"><div class="ic">➕</div><div class="txt"><b>เพิ่มงาน</b><span>Booking</span></div></div>
+              <div class="right">สร้างงาน</div>
+            </div>
+            <div class="cwf-link" data-href="/admin-queue-v2.html">
+              <div class="left"><div class="ic">🗓️</div><div class="txt"><b>คิวช่าง</b><span>Queue</span></div></div>
+              <div class="right">ตาราง</div>
+            </div>
+            <div class="cwf-link" data-href="/admin-history-v2.html">
+              <div class="left"><div class="ic">🧾</div><div class="txt"><b>ประวัติงาน</b><span>History</span></div></div>
+              <div class="right">ย้อนหลัง</div>
+            </div>
+            <div class="cwf-link" data-href="/admin-review-v2.html">
+              <div class="left"><div class="ic">✅</div><div class="txt"><b>อนุมัติงาน/รีวิว</b><span>Approvals</span></div></div>
+              <div class="right">ตรวจ</div>
+            </div>
+            <div class="cwf-link" data-href="/admin-promotions-v2.html">
+              <div class="left"><div class="ic">🏷️</div><div class="txt"><b>โปรโมชั่น/ราคา</b><span>Promotions</span></div></div>
+              <div class="right">จัดการ</div>
+            </div>
+            <div class="cwf-link" data-href="/admin-job-view-v2.html">
+              <div class="left"><div class="ic">🔎</div><div class="txt"><b>ดูงาน</b><span>Job View</span></div></div>
+              <div class="right">ค้นหา</div>
+            </div>
           </div>
         </div>
 
         <div class="cwf-group">
           <div class="t">ระบบ</div>
           <div class="i">
-            <div class="cwf-link" id="cwfStopImpBtn" style="display:none" data-action="stop-impersonate">หยุดสวมสิทธิ <small>Stop</small></div>
-            <div class="cwf-link" id="cwfDebugLink" data-action="debug">🐞 Debug Panel <small>ใส่รหัสก่อนเปิด</small></div>
-            <div class="cwf-link danger" id="cwfLogoutBtn">ออกจากระบบ <small>Logout</small></div>
+            <div class="cwf-link" id="cwfStopImpBtn" style="display:none" data-action="stop-impersonate">
+              <div class="left"><div class="ic">🛑</div><div class="txt"><b>หยุดสวมสิทธิ</b><span>กลับบัญชีจริง</span></div></div>
+              <div class="right">Stop</div>
+            </div>
+            <div class="cwf-link" id="cwfDebugLink" data-action="debug">
+              <div class="left"><div class="ic">🐞</div><div class="txt"><b>Debug Panel</b><span>ใส่รหัสก่อนเปิด</span></div></div>
+              <div class="right">Tools</div>
+            </div>
+            <div class="cwf-link danger" id="cwfLogoutBtn">
+              <div class="left"><div class="ic">⎋</div><div class="txt"><b>ออกจากระบบ</b><span>Logout</span></div></div>
+              <div class="right">ออก</div>
+            </div>
           </div>
         </div>
       </div>
