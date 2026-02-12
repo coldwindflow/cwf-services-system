@@ -174,7 +174,7 @@ function showToast(msg, type = "info") {
 // UI Injection
 // ----------------------
 function injectAdminMenu(){
-  if (document.getElementById('cwfTopNav')) return;
+  if (document.getElementById('cwfMenuBtn')) return;
 
   const css = document.createElement('style');
   css.textContent = `
@@ -183,7 +183,8 @@ function injectAdminMenu(){
       --cwf-yellow:#ffcc00;
       --cwf-ink:#0f172a;
     }
-    #cwfTopNav{position:fixed;left:0;right:0;top:0;z-index:2600;
+    /* Sticky top bar to avoid covering page content */
+    #cwfTopNav{position:sticky;left:0;right:0;top:0;z-index:2600;
       padding-top:env(safe-area-inset-top);
       background:linear-gradient(180deg, rgba(11,27,58,0.98) 0%, rgba(11,75,179,0.98) 100%);
       border-bottom:1px solid rgba(255,255,255,0.10);
@@ -199,19 +200,19 @@ function injectAdminMenu(){
       box-shadow:0 10px 26px rgba(0,0,0,0.18);cursor:pointer;user-select:none}
     .cwf-icbtn:active{transform: translateY(1px) scale(0.99)}
     .cwf-icbtn svg{width:22px;height:22px;fill:#ffffff}
-    #cwfTopNavSpacer{height:74px}
-    @media (max-width:420px){#cwfTopNavSpacer{height:72px}}
+    /* no spacer (sticky is in-flow) */
     #cwfDrawerBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2690;display:none}
     #cwfDrawer{position:fixed;inset:0;z-index:2700;
-      display:none;padding:12px 12px calc(12px + env(safe-area-inset-bottom));
+      display:none;padding:12px 12px calc(12px + env(safe-area-inset-bottom) + 110px);
       overflow:auto;}
     #cwfDrawer .panel{max-width:560px;margin:0 auto;background:rgba(255,255,255,0.94);
       backdrop-filter: blur(16px);border:1px solid rgba(15,23,42,0.12);border-radius:22px;
-      box-shadow:0 22px 70px rgba(0,0,0,0.22);overflow:hidden}
+      box-shadow:0 22px 70px rgba(0,0,0,0.22);overflow:hidden;
+      max-height:calc(100vh - 24px - env(safe-area-inset-bottom));display:flex;flex-direction:column}
     #cwfDrawer .h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px;
       border-bottom:1px solid rgba(15,23,42,0.10);background:#f8fafc}
     #cwfDrawer .h b{font-size:14px;color:var(--cwf-ink)}
-    #cwfDrawer .b{padding:12px;display:flex;flex-direction:column;gap:10px}
+    #cwfDrawer .b{padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto}
     .cwf-group{border:1px solid rgba(15,23,42,0.10);border-radius:18px;background:#fff;overflow:hidden}
     .cwf-group .t{padding:10px 12px;background:#f8fafc;font-weight:900;font-size:12px;color:var(--cwf-ink);
       border-bottom:1px solid rgba(15,23,42,0.08)}
@@ -248,27 +249,35 @@ function injectAdminMenu(){
     return t || 'Admin';
   })();
 
-  const nav = document.createElement('div');
-  nav.id = 'cwfTopNav';
-  nav.innerHTML = `
-    <div class="in">
-      <div class="ttl">
-        <b>CWF Admin</b>
-        <span>${pageTitle}</span>
-      </div>
-      <div class="btns">
-        <div id="cwfMenuBtn" class="cwf-icbtn" title="เมนู" aria-label="เมนู">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Z"/></svg>
-        </div>
-      </div>
-    </div>
-  `;
-  document.body.insertBefore(nav, document.body.firstChild);
+  // Mount menu button on existing page topbar if present (prevents UI overlap)
+  let menuBtn = document.createElement('div');
+  menuBtn.id = 'cwfMenuBtn';
+  menuBtn.className = 'cwf-icbtn';
+  menuBtn.title = 'เมนู';
+  menuBtn.setAttribute('aria-label','เมนู');
+  menuBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Z"/></svg>`;
 
-  // Spacer to prevent the fixed bar from covering page content
-  const sp = document.createElement('div');
-  sp.id = 'cwfTopNavSpacer';
-  document.body.insertBefore(sp, nav.nextSibling);
+  const existingTopbar = document.querySelector('.topbar');
+  const actionsMount = document.getElementById('cwfTopbarActions');
+  if (actionsMount){
+    actionsMount.appendChild(menuBtn);
+  } else if (existingTopbar){
+    existingTopbar.appendChild(menuBtn);
+  } else {
+    const nav = document.createElement('div');
+    nav.id = 'cwfTopNav';
+    nav.innerHTML = `
+      <div class="in">
+        <div class="ttl">
+          <b>CWF Admin</b>
+          <span>${pageTitle}</span>
+        </div>
+        <div class="btns"></div>
+      </div>
+    `;
+    document.body.insertBefore(nav, document.body.firstChild);
+    nav.querySelector('.btns').appendChild(menuBtn);
+  }
 
   const backdrop = document.createElement('div');
   backdrop.id = 'cwfDrawerBackdrop';

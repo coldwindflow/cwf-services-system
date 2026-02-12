@@ -547,6 +547,36 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
          (SELECT COUNT(*) FROM public.jobs j, now_bkk n WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date >= n.y0)::int AS year`
     );
 
+    // Status breakdown for donut widget (kept lightweight)
+    const normStatus = (s)=>{
+      const t = String(s||'').trim();
+      if(!t) return 'อื่นๆ';
+      const lo = t.toLowerCase();
+      if (lo.includes('รอตรวจสอบ') || lo.includes('pending')) return 'รอตรวจสอบ';
+      if (lo.includes('รอช่างยืนยัน')) return 'รอช่างยืนยัน';
+      if (lo.includes('รอดำเนินการ')) return 'รอดำเนินการ';
+      if (lo.includes('กำลังทำ') || lo.includes('in_progress') || lo.includes('active')) return 'กำลังทำ';
+      if (lo.includes('เสร็จ') || lo.includes('done') || lo.includes('completed')) return 'เสร็จสิ้น';
+      if (lo.includes('ยกเลิก') || lo.includes('cancel')) return 'ยกเลิก';
+      if (lo.includes('ตีกลับ') || lo.includes('reject')) return 'ตีกลับ';
+      return t;
+    };
+
+    const statusRaw = await pool.query(
+      `SELECT COALESCE(job_status,'') AS job_status, COUNT(*)::int AS c
+       FROM public.jobs
+       WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
+       GROUP BY 1`,
+      [d_from, d_to]
+    );
+    const statusMap = new Map();
+    for (const r of (statusRaw.rows||[])){
+      const k = normStatus(r.job_status);
+      statusMap.set(k, (statusMap.get(k)||0) + Number(r.c||0));
+    }
+    const status_breakdown = [...statusMap.entries()].map(([label,count])=>({ label, count }))
+      .sort((a,b)=>b.count-a.count);
+
     async function series(kind){
       const map = {
         day:  "DATE_TRUNC('day', appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
@@ -590,7 +620,8 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
       }},
       pending: { count: (pending.rows||[]).length, rows: pending.rows||[] },
       active: { rows: active.rows||[] },
-      counts: counts.rows[0] || { today: 0, month: 0, year: 0 }
+      counts: counts.rows[0] || { today: 0, month: 0, year: 0 },
+      status_breakdown
     };
     return res.json(payload);
   } catch (e) {
