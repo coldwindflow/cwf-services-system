@@ -25,8 +25,8 @@
     /* container */
     .wrap{max-width:460px;margin:0 auto;padding:14px 14px 140px;}
 
-    /* title inside blue area (under fixed topbar) */
-    .heroTitle{color:#fff;font-weight:1000;font-size:22px;letter-spacing:.2px;text-shadow:0 10px 26px rgba(0,0,0,.22);margin:6px 0 8px;}
+    /* title removed (ใช้โปรไฟล์แอดมินแทน) */
+    .heroTitle{display:none;}
 
     /* cards */
     .card{background:var(--card);border:1px solid rgba(11,75,179,.14);border-radius:22px;box-shadow:var(--shadow);}
@@ -109,43 +109,46 @@
     .pill.gray{background:#eef2ff;color:#0b1b3a}
 
     /* avatar */
-    .meRow{display:flex;align-items:center;gap:10px;margin-top:8px}
+    .meRow{display:flex;align-items:center;gap:12px;margin-top:6px}
     .avatar{width:44px;height:44px;border-radius:16px;object-fit:cover;border:1px solid rgba(255,255,255,.22);
       box-shadow:0 10px 26px rgba(0,0,0,.18);background:rgba(255,255,255,.12)}
-    .who{color:rgba(255,255,255,.92);font-weight:1100}
-    .role{color:rgba(255,255,255,.72);font-weight:1000;font-size:12px}
+    .who{color:#ffffff;font-weight:1200;font-size:16px;letter-spacing:.2px}
+    .role{color:rgba(255,255,255,.78);font-weight:1000;font-size:12px}
+
+    /* tech filter */
+    .techSeg{margin-top:12px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border-radius:18px;overflow:hidden;border:1px solid rgba(15,23,42,.10);background:#fff;}
+    .techSeg button{padding:11px 10px;border:0;background:transparent;font-weight:1100;font-size:13px;color:rgba(15,23,42,.72);cursor:pointer}
+    .techSeg button.active{background:var(--blue1);color:#fff;}
+    .techSeg button:not(.active){background:rgba(255,255,255,.92)}
+
+    .kpiYellow{background:linear-gradient(135deg, rgba(255,204,0,.98) 0%, rgba(255,214,55,.92) 100%);border:1px solid rgba(255,204,0,.55)}
+    .kpiYellow .t,.kpiYellow .v,.kpiYellow .h{color:#0b1b3a}
 
   </style>
 </head>
 <body>
   <div class="wrap">
-    <div class="heroTitle">Dashboard</div>
-
     <div class="meRow">
       <img id="meAvatar" class="avatar" alt="Admin" />
       <div style="min-width:0">
         <div class="who" id="whoBox">—</div>
         <div class="role" id="roleBox">—</div>
       </div>
-      <div style="margin-left:auto;text-align:right">
-        <div class="role">อัปเดต</div>
-        <div class="who" id="updatedAt" style="font-size:12px">—</div>
-      </div>
     </div>
 
     <div class="shortcutRow">
-      <div class="shortcut" id="goDashboard">
-        <div class="ico">🧩</div>
+      <div class="shortcut" id="goAddJob">
+        <div class="ico">➕</div>
         <div>
-          <b>Dashboard</b>
-          <span>ภาพรวมทั้งหมด</span>
+          <b>เพิ่มงาน</b>
+          <span>ไปหน้าเพิ่มงาน</span>
         </div>
       </div>
-      <div class="shortcut" id="goProfile">
-        <div class="ico">👤</div>
+      <div class="shortcut" id="goHistory">
+        <div class="ico">📚</div>
         <div>
-          <b>Profile Admin</b>
-          <span>รูป/ข้อมูลแอดมิน</span>
+          <b>ประวัติงาน</b>
+          <span>รายการงานย้อนหลัง</span>
         </div>
       </div>
     </div>
@@ -158,14 +161,50 @@
 
     <div class="kpiRow2">
       <div class="kpi kpiBlue">
-        <div class="t">รายได้ส่วนตัว</div>
-        <div class="v" id="meRevenue">—</div>
-        <div class="h" id="meRevenueHint">—</div>
+        <div class="t">งานที่ขายได้</div>
+        <div class="v" id="meSold">—</div>
+        <div class="h" id="meSoldHint">—</div>
       </div>
       <div class="kpi kpiBlue" style="background:linear-gradient(135deg,#0b4bb3 0%, #134e4a 100%)">
         <div class="t">คอมมิชชั่นส่วนตัว</div>
         <div class="v" id="meCommission">—</div>
         <div class="h" id="meCommissionHint">—</div>
+      </div>
+    </div>
+
+    <div class="card p14" style="margin-top:12px">
+      <div class="titleRow">
+        <h3>สถานะช่าง</h3>
+        <div class="muted" id="techHint">—</div>
+      </div>
+      <div class="seg" style="margin-top:10px" id="techSeg">
+        <button id="techAll" type="button" class="active">รวม</button>
+        <button id="techCompany" type="button">ช่างบริษัท</button>
+        <button id="techPartner" type="button">พาร์ทเนอร์</button>
+      </div>
+      <div class="kpiRow2" style="margin-top:12px">
+        <div class="kpi kpiSoft">
+          <div class="t">ช่างเปิดรับงาน</div>
+          <div class="v" id="techOpen">—</div>
+          <div class="h">ยอดรวมช่างที่เปิดรับงาน</div>
+        </div>
+        <div class="kpi kpiSoft">
+          <div class="t">ช่างปิดรับงาน</div>
+          <div class="v" id="techClosed">—</div>
+          <div class="h">ยอดรวมช่างที่ปิดรับงาน</div>
+        </div>
+      </div>
+      <div class="kpiRow2" style="margin-top:10px">
+        <div class="kpi kpiBlue" style="background:linear-gradient(135deg,#0b4bb3 0%, #0b1b3a 100%)">
+          <div class="t">จำนวนช่างทั้งหมด</div>
+          <div class="v" id="techTotal">—</div>
+          <div class="h">รวมตามตัวเลือกด้านบน</div>
+        </div>
+        <div class="kpi kpiBlue" style="background:linear-gradient(135deg,#ffcc00 0%, #ffd84d 100%); color:#0b1b3a">
+          <div class="t" style="color:#0b1b3a">อัตราเปิดรับงาน</div>
+          <div class="v" id="techOpenRate" style="color:#0b1b3a">—</div>
+          <div class="h" style="color:rgba(11,27,58,.72)">เปิด / ทั้งหมด</div>
+        </div>
       </div>
     </div>
 

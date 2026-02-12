@@ -354,8 +354,7 @@
     const rb = $('roleBox');
     if (rb) rb.textContent = roleLabel;
     setAvatar(meObj.photo_url || '');
-    const ver = (data && data.api_version) ? `v${data.api_version}` : '';
-    $('updatedAt').textContent = `${new Date().toLocaleString('th-TH')} ${ver}`;
+    // ไม่แสดงเวลา/เวอร์ชัน (ตามสเปก UI)
 
     const personal = safeGet(data,'personal',{ job_count:0, revenue_total:0, commission_total:0 });
     const company = safeGet(data,'company',{ job_count:0, revenue_total:0, series:{day:[],week:[],month:[],year:[]}, donut:null, candles:[] });
@@ -363,8 +362,9 @@
     const pending = safeGet(data,'pending',{ count:0, rows:[] });
     const active = safeGet(data,'active',{ rows:[] });
 
-    $('meRevenue').textContent = `${fmtMoney(Number(personal.revenue_total||0))} ฿`;
-    $('meRevenueHint').textContent = `${Number(personal.job_count||0)} งาน (created/approved โดยคุณ)`;
+    // งานที่ขายได้ = จำนวนงานที่ created/approved โดยแอดมินคนนี้ในช่วงที่เลือก
+    $('meSold').textContent = `${Number(personal.job_count||0)}`;
+    $('meSoldHint').textContent = `รวมมูลค่า ${fmtMoney(Number(personal.revenue_total||0))} ฿ (created/approved โดยคุณ)`;
 
     $('meCommission').textContent = `${fmtMoney(Number(personal.commission_total||0))} ฿`;
     $('meCommissionHint').textContent = `rate ${Number(meObj.commission_rate_percent||0).toFixed(2)}%`;
@@ -387,6 +387,62 @@
     const series = safeGet(company,`series.${currentGroup}`,[]) || [];
     $('seriesHint').textContent = `รวม ${series.length} จุดข้อมูล`;
     drawChart(series);
+  }
+
+  // ---------- Technician stats ----------
+  let techFilter = 'all'; // all | company | partner
+
+  function isClosedStatus(s){
+    const v = String(s||'').toLowerCase().trim();
+    if (!v) return false;
+    return ['closed','close','off','pause','paused','หยุด','ปิด','stop'].some(k=>v.includes(k));
+  }
+
+  async function loadTechStats(){
+    const hint = $('techHint');
+    if (hint) hint.textContent = 'กำลังโหลด...';
+
+    // Prefer dashboard-provided stats if present, else fallback to /admin/technicians
+    try{
+      if (lastData && lastData.tech_stats && typeof lastData.tech_stats === 'object'){
+        const t = lastData.tech_stats;
+        const key = techFilter;
+        const s = t[key] || t.all || null;
+        if (s){
+          applyTechStats(s);
+          if (hint) hint.textContent = 'จาก dashboard_v2';
+          return;
+        }
+      }
+    }catch(_){ /* ignore */ }
+
+    try{
+      const rows = await apiFetch('/admin/technicians');
+      const filtered = (rows||[]).filter(r=>{
+        if (techFilter==='company') return String(r.employment_type||'company').toLowerCase()==='company';
+        if (techFilter==='partner') return String(r.employment_type||'').toLowerCase()==='partner';
+        return true;
+      });
+
+      const closed = filtered.filter(r=> isClosedStatus(r.accept_status));
+      const open = filtered.filter(r=> !isClosedStatus(r.accept_status));
+      const total = filtered.length;
+      applyTechStats({ open: open.length, closed: closed.length, total });
+      if (hint) hint.textContent = 'อัปเดตจากรายชื่อช่าง';
+    }catch(e){
+      if (hint) hint.textContent = 'โหลดสถานะช่างไม่สำเร็จ';
+    }
+  }
+
+  function applyTechStats(s){
+    const open = Number(s.open||0);
+    const closed = Number(s.closed||0);
+    const total = Number(s.total|| (open+closed) || 0);
+    const rate = total ? Math.round((open/total)*100) : 0;
+    if ($('techOpen')) $('techOpen').textContent = `${open}`;
+    if ($('techClosed')) $('techClosed').textContent = `${closed}`;
+    if ($('techTotal')) $('techTotal').textContent = `${total}`;
+    if ($('techOpenRate')) $('techOpenRate').textContent = `${rate}%`;
   }
 
   function setRange(days){
@@ -441,10 +497,21 @@
     }
 
     // shortcut cards
-    const goDash = $('goDashboard');
-    if (goDash) goDash.addEventListener('click', ()=>{ location.href = '/admin-dashboard-v2.html'; });
-    const goProfile = $('goProfile');
-    if (goProfile) goProfile.addEventListener('click', ()=>{ location.href = '/admin-profile-v2.html'; });
+    const goAddJob = $('goAddJob');
+    if (goAddJob) goAddJob.addEventListener('click', ()=>{ location.href = '/admin-add-v2.html'; });
+    const goHistory = $('goHistory');
+    if (goHistory) goHistory.addEventListener('click', ()=>{ location.href = '/admin-history-v2.html'; });
+
+    // tech filter
+    function setTechActive(id){
+      ['techAll','techCompany','techPartner'].forEach(x=>{ const b=$(x); if(b) b.classList.toggle('active', x===id); });
+    }
+    const ta = $('techAll');
+    const tc = $('techCompany');
+    const tp = $('techPartner');
+    if (ta) ta.addEventListener('click', ()=>{ techFilter='all'; setTechActive('techAll'); loadTechStats(); });
+    if (tc) tc.addEventListener('click', ()=>{ techFilter='company'; setTechActive('techCompany'); loadTechStats(); });
+    if (tp) tp.addEventListener('click', ()=>{ techFilter='partner'; setTechActive('techPartner'); loadTechStats(); });
 
     $('quickToday').addEventListener('click', ()=>{ setRange(1); updateFilterSummary(); setQuickActive('quickToday'); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
     $('quick7').addEventListener('click', ()=>{ setRange(7); updateFilterSummary(); setQuickActive('quick7'); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
@@ -491,7 +558,7 @@
       }catch(_){ /* ignore */ }
     })();
 
-    load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error'));
+    load().then(loadTechStats).catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error'));
   }
 
   init();
