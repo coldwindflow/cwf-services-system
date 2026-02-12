@@ -159,7 +159,8 @@ function showToast(msg, type = "info") {
   box.style.left = "12px";
   box.style.right = "12px";
   box.style.bottom = "90px";
-  box.style.zIndex = "9999";
+  // Keep below drawer/debug overlays to avoid covering menu items
+  box.style.zIndex = "2400";
   box.style.padding = "12px";
   box.style.borderRadius = "14px";
   box.style.fontWeight = "700";
@@ -203,16 +204,23 @@ function injectAdminMenu(){
     /* no spacer (sticky is in-flow) */
     #cwfDrawerBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2690;display:none}
     #cwfDrawer{position:fixed;inset:0;z-index:2700;
-      display:none;padding:12px 12px calc(12px + env(safe-area-inset-bottom) + 110px);
+      display:none;
+      /* Extra bottom padding to prevent overlap with bottom nav on mobile */
+      padding:12px 12px calc(12px + env(safe-area-inset-bottom) + 170px);
       overflow:auto;}
     #cwfDrawer .panel{max-width:560px;margin:0 auto;background:rgba(255,255,255,0.94);
       backdrop-filter: blur(16px);border:1px solid rgba(15,23,42,0.12);border-radius:22px;
       box-shadow:0 22px 70px rgba(0,0,0,0.22);overflow:hidden;
-      max-height:calc(100vh - 24px - env(safe-area-inset-bottom));display:flex;flex-direction:column}
+      max-height:calc(100vh - 24px - env(safe-area-inset-bottom) - env(safe-area-inset-top));
+      display:flex;flex-direction:column}
     #cwfDrawer .h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px;
       border-bottom:1px solid rgba(15,23,42,0.10);background:#f8fafc}
     #cwfDrawer .h b{font-size:14px;color:var(--cwf-ink)}
-    #cwfDrawer .b{padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto}
+    #cwfDrawer .b{padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto;
+      -webkit-overflow-scrolling: touch; padding-bottom: 20px;}
+
+    /* When drawer open: hide bottom nav to prevent visual overlap */
+    body.cwf-menu-open .bottom-nav{visibility:hidden;pointer-events:none}
     .cwf-group{border:1px solid rgba(15,23,42,0.10);border-radius:18px;background:#fff;overflow:hidden}
     .cwf-group .t{padding:10px 12px;background:#f8fafc;font-weight:900;font-size:12px;color:var(--cwf-ink);
       border-bottom:1px solid rgba(15,23,42,0.08)}
@@ -435,8 +443,16 @@ function injectAdminMenu(){
     }catch(e){ showToast('ล้างงานไม่สำเร็จ','error'); }
   });
 
-  const open = ()=>{ backdrop.style.display='block'; drawer.style.display='block'; };
-  const close = ()=>{ backdrop.style.display='none'; drawer.style.display='none'; };
+  const open = ()=>{
+    document.body.classList.add('cwf-menu-open');
+    backdrop.style.display='block';
+    drawer.style.display='block';
+  };
+  const close = ()=>{
+    document.body.classList.remove('cwf-menu-open');
+    backdrop.style.display='none';
+    drawer.style.display='none';
+  };
 
   document.getElementById('cwfMenuBtn').addEventListener('click', open);
   document.getElementById('cwfCloseMenu').addEventListener('click', close);

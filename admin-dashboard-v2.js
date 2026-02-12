@@ -180,7 +180,9 @@
     // KPIs
     $('meRevenue').textContent = `${fmtMoney(data.personal && data.personal.revenue_total)} ฿`;
     $('meCommission').textContent = `${fmtMoney(data.personal && data.personal.commission_total)} ฿`;
-    $('coRevenue').textContent = `${fmtMoney(data.company && data.company.revenue_total)} ฿`;
+    const all = (data.company && data.company.all_time) ? data.company.all_time : { revenue_total: 0 };
+    $('coRevenueAll').textContent = `${fmtMoney(all.revenue_total)} ฿`;
+    $('coRevenueRange').textContent = `ช่วงที่เลือก: ${fmtMoney(data.company && data.company.revenue_total)} ฿`;
     $('counts').innerHTML = `${(data.counts?data.counts.today:0)} / ${(data.counts?data.counts.month:0)} / ${(data.counts?data.counts.year:0)} <small>Asia/Bangkok</small>`;
 
     // lists
