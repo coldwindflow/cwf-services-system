@@ -547,6 +547,70 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
          (SELECT COUNT(*) FROM public.jobs j, now_bkk n WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date >= n.y0)::int AS year`
     );
 
+    // Status donut (bucketed)
+    const statusRows = await pool.query(
+      `SELECT COALESCE(job_status,'') AS status, COUNT(*)::int AS count
+       FROM public.jobs
+       WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
+         AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
+       GROUP BY 1`,
+      [d_from, d_to]
+    );
+
+    const STATUS_BUCKETS = {
+      pending: new Set(['รอตรวจสอบ','pending_review']),
+      active: new Set(['รอดำเนินการ','กำลังทำ','ตีกลับ','รอช่างยืนยัน']),
+      done: new Set(['เสร็จสิ้น','ปิดงาน','completed','done']),
+    };
+    const donut = { pending: 0, active: 0, done: 0, other: 0, total: 0 };
+    for (const r of (statusRows.rows||[])){
+      const st = String(r.status||'').trim();
+      const n = Number(r.count||0);
+      donut.total += n;
+      if (STATUS_BUCKETS.pending.has(st)) donut.pending += n;
+      else if (STATUS_BUCKETS.active.has(st)) donut.active += n;
+      else if (STATUS_BUCKETS.done.has(st)) donut.done += n;
+      else donut.other += n;
+    }
+
+    // Candlestick (daily OHLC from job_price)
+    const ohlcQ = await pool.query(
+      `WITH base AS (
+         SELECT
+           (DATE_TRUNC('day', appointment_datetime AT TIME ZONE 'Asia/Bangkok'))::date AS d,
+           appointment_datetime AT TIME ZONE 'Asia/Bangkok' AS t,
+           COALESCE(job_price,0)::double precision AS p
+         FROM public.jobs
+         WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
+           AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
+       )
+       SELECT
+         d,
+         MIN(p)::double precision AS low,
+         MAX(p)::double precision AS high,
+         (ARRAY_AGG(p ORDER BY t ASC))[1]::double precision AS open,
+         (ARRAY_AGG(p ORDER BY t ASC))[ARRAY_LENGTH(ARRAY_AGG(p ORDER BY t ASC),1)]::double precision AS close,
+         SUM(p)::double precision AS total,
+         COUNT(*)::int AS count
+       FROM base
+       GROUP BY d
+       ORDER BY d ASC`,
+      [d_from, d_to]
+    );
+    const candles = (ohlcQ.rows||[]).map(x=>{
+      const d = new Date(x.d);
+      return {
+        date: String(x.d),
+        label: d.toLocaleDateString('th-TH',{month:'2-digit',day:'2-digit'}),
+        open: Number(x.open||0),
+        high: Number(x.high||0),
+        low: Number(x.low||0),
+        close: Number(x.close||0),
+        total: Number(x.total||0),
+        count: Number(x.count||0),
+      };
+    });
+
     async function series(kind){
       const map = {
         day:  "DATE_TRUNC('day', appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
@@ -587,7 +651,10 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
         week: await series('week'),
         month: await series('month'),
         year: await series('year')
-      }},
+      },
+      donut,
+      candles
+      },
       pending: { count: (pending.rows||[]).length, rows: pending.rows||[] },
       active: { rows: active.rows||[] },
       counts: counts.rows[0] || { today: 0, month: 0, year: 0 }
