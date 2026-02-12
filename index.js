@@ -63,30 +63,59 @@ function extractLatLngFromText(text) {
   if (!text) return null;
   const s = String(text);
 
-  // 1) @lat,lng
-  {
-    const m = s.match(/@\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
-    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "@" };
-  }
+  // Prefer place-pin coordinates for Google Maps URLs.
+  // Many Google Maps URLs contain both viewport coords (@lat,lng) and place coords (!3dlat!4dlng).
+  // For check-in / navigation we must prefer the place coords to be precise.
 
-  // 2) q=lat,lng | query=lat,lng | ll=lat,lng
-  {
-    const m = s.match(/[?&](?:q|query|ll)=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
-    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "q" };
-  }
-
-  // 3) !3dlat!4dlng
+  // 0) !3dlat!4dlng (place pin)
   {
     const m = s.match(/!3d(-?\d{1,3}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/);
     if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "3d4d" };
   }
 
-  // 4) center=lat%2Clng (อาจถูก encode)
+  // try decode once (handles %2C etc.)
+  let decoded = null;
   try {
-    const decoded = decodeURIComponent(s);
-    const m = decoded.match(/[?&]center=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
+    decoded = decodeURIComponent(s);
+  } catch (_) {
+    decoded = null;
+  }
+
+  if (decoded && decoded !== s) {
+    // 0.1) !3dlat!4dlng in decoded
+    const m = decoded.match(/!3d(-?\d{1,3}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "3d4d" };
+  }
+
+  // 1) q=lat,lng | query=lat,lng | ll=lat,lng
+  {
+    const m = s.match(/[?&](?:q|query|ll)=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "q" };
+    if (decoded) {
+      const md = decoded.match(/[?&](?:q|query|ll)=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
+      if (md) return { lat: Number(md[1]), lng: Number(md[2]), via: "q" };
+    }
+  }
+
+  // 2) center=lat,lng
+  {
+    const m = s.match(/[?&]center=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
     if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "center" };
-  } catch (_) {}
+    if (decoded) {
+      const md = decoded.match(/[?&]center=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
+      if (md) return { lat: Number(md[1]), lng: Number(md[2]), via: "center" };
+    }
+  }
+
+  // 3) @lat,lng (viewport)
+  {
+    const m = s.match(/@\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
+    if (m) return { lat: Number(m[1]), lng: Number(m[2]), via: "@" };
+    if (decoded) {
+      const md = decoded.match(/@\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/);
+      if (md) return { lat: Number(md[1]), lng: Number(md[2]), via: "@" };
+    }
+  }
 
   // 5) JSON-ish "lat":..,"lng":..
   {
@@ -2582,6 +2611,25 @@ const parsed_lat = parsedAdminLL ? parsedAdminLL.lat : null;
 const parsed_lng = parsedAdminLL ? parsedAdminLL.lng : null;
 console.log("[latlng_parse]", { ok: !!parsedAdminLL });
 
+  // ✅ Best-effort resolve short Google Maps links to precise lat/lng (fail-open)
+  // - ensures check-in / navigation uses correct pin coordinates
+  let final_lat = Number.isFinite(Number(parsed_lat)) ? Number(parsed_lat) : null;
+  let final_lng = Number.isFinite(Number(parsed_lng)) ? Number(parsed_lng) : null;
+  if ((final_lat == null || final_lng == null) && maps_url) {
+    const m = String(maps_url || '').trim();
+    if (m && /maps\.app\.goo\.gl|goo\.gl/i.test(m)) {
+      try {
+        const rr = await resolveMapsUrlToLatLng(m);
+        if (rr && Number.isFinite(Number(rr.lat)) && Number.isFinite(Number(rr.lng))) {
+          final_lat = Number(rr.lat);
+          final_lng = Number(rr.lng);
+        }
+      } catch (e) {
+        // fail-open
+      }
+    }
+  }
+
 
   // sanitize items
   const safeItemsIn = Array.isArray(items) ? items : [];
@@ -2716,8 +2764,9 @@ if (coerceNumber(override_price, 0) > 0) {
       (customer_name, customer_phone, job_type, appointment_datetime, job_price,
        address_text, technician_team, technician_username, job_status,
        booking_token, job_source, dispatch_mode, customer_note,
-       maps_url, job_zone, duration_min, booking_mode, admin_override_duration_min)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,'admin',$10,$11,$12,$13,$14,$15,$16)
+       maps_url, job_zone, duration_min, booking_mode, admin_override_duration_min,
+       gps_latitude, gps_longitude)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,'admin',$10,$11,$12,$13,$14,$15,$16,$17,$18)
       RETURNING job_id
       `,
       [
@@ -2737,6 +2786,8 @@ if (coerceNumber(override_price, 0) > 0) {
         duration_min,
         (bm === "urgent" ? "urgent" : "scheduled"),
         Math.max(0, coerceNumber(override_duration_min, 0)),
+        final_lat,
+        final_lng,
       ]
     );
 
@@ -4939,15 +4990,46 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
-    const r = await pool.query(`SELECT gps_latitude, gps_longitude FROM public.jobs WHERE job_id=$1`, [realId]);
+    const r = await pool.query(
+      `SELECT gps_latitude, gps_longitude, maps_url FROM public.jobs WHERE job_id=$1`,
+      [realId]
+    );
     if (r.rows.length === 0) return res.status(404).json({ error: "ไม่พบงาน" });
 
-    const siteLat = Number(r.rows[0].gps_latitude);
-    const siteLng = Number(r.rows[0].gps_longitude);
+    const mapsUrl = String(r.rows[0].maps_url || "").trim();
+    let siteLat = Number(r.rows[0].gps_latitude);
+    let siteLng = Number(r.rows[0].gps_longitude);
 
     // ✅ ISSUE-1: ถ้างานไม่มีพิกัด (เช่น admin ใส่ URL จาก Google Maps ที่แยก lat/lng ไม่ได้)
     // ให้ช่างเช็คอินได้ตามปกติ (บันทึกพิกัดช่าง) แต่ถ้ามีพิกัดจริง -> บังคับระยะ 500m เหมือนเดิม
-    const hasSiteLatLng = Number.isFinite(siteLat) && Number.isFinite(siteLng);
+    let hasSiteLatLng = Number.isFinite(siteLat) && Number.isFinite(siteLng);
+
+    // ✅ If no stored site lat/lng, try to derive from maps_url (fail-open)
+    // - This fixes: admin saved a Google Maps URL but DB has null coords
+    // - Also fixes: short links maps.app.goo.gl (best-effort resolve with timeout)
+    if (!hasSiteLatLng && mapsUrl) {
+      let derived = parseLatLngFromText(mapsUrl);
+      if (!derived && /maps\.app\.goo\.gl|goo\.gl/i.test(mapsUrl)) {
+        try {
+          const rr = await resolveMapsUrlToLatLng(mapsUrl);
+          if (rr && Number.isFinite(rr.lat) && Number.isFinite(rr.lng)) derived = { lat: rr.lat, lng: rr.lng, via: rr.via || 'resolver' };
+        } catch (e) {
+          // fail-open
+        }
+      }
+      if (derived && Number.isFinite(derived.lat) && Number.isFinite(derived.lng)) {
+        siteLat = Number(derived.lat);
+        siteLng = Number(derived.lng);
+        hasSiteLatLng = true;
+        // cache (best-effort) so next time no need to resolve
+        try {
+          await pool.query(
+            `UPDATE public.jobs SET gps_latitude=$1, gps_longitude=$2 WHERE job_id=$3 AND (gps_latitude IS NULL OR gps_longitude IS NULL)`,
+            [siteLat, siteLng, realId]
+          );
+        } catch (_) {}
+      }
+    }
 
     let distance = null;
     if (hasSiteLatLng) {
@@ -4964,7 +5046,40 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
       distance = R * c;
 
       if (distance > 500) {
-        return res.status(400).json({ error: "อยู่นอกพื้นที่หน้างาน", distance: Math.round(distance) });
+        // ✅ Precision recovery: if stored coords are wrong but maps_url is correct,
+        // re-derive coords from maps_url and re-check once (fail-open except for true-outside)
+        if (mapsUrl) {
+          try {
+            let derived = parseLatLngFromText(mapsUrl);
+            if (!derived && /maps\.app\.goo\.gl|goo\.gl/i.test(mapsUrl)) {
+              const rr = await resolveMapsUrlToLatLng(mapsUrl);
+              if (rr && Number.isFinite(rr.lat) && Number.isFinite(rr.lng)) derived = { lat: rr.lat, lng: rr.lng, via: rr.via || 'resolver' };
+            }
+            if (derived && Number.isFinite(derived.lat) && Number.isFinite(derived.lng)) {
+              const dLat2 = toRad(Number(lat) - Number(derived.lat));
+              const dLng2 = toRad(Number(lng) - Number(derived.lng));
+              const a2 =
+                Math.sin(dLat2 / 2) ** 2 +
+                Math.cos(toRad(Number(derived.lat))) * Math.cos(toRad(Number(lat))) * Math.sin(dLng2 / 2) ** 2;
+              const c2 = 2 * Math.atan2(Math.sqrt(a2), Math.sqrt(1 - a2));
+              const dist2 = R * c2;
+
+              if (dist2 <= 500) {
+                // cache corrected coords (best-effort)
+                try {
+                  await pool.query(`UPDATE public.jobs SET gps_latitude=$1, gps_longitude=$2 WHERE job_id=$3`, [Number(derived.lat), Number(derived.lng), realId]);
+                } catch (_) {}
+                distance = dist2;
+              }
+            }
+          } catch (_) {
+            // ignore and keep original distance
+          }
+        }
+
+        if (distance > 500) {
+          return res.status(400).json({ error: "อยู่นอกพื้นที่หน้างาน", distance: Math.round(distance) });
+        }
       }
     }
 

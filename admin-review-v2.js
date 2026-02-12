@@ -17,12 +17,26 @@ function pad2(x){ return String(x).padStart(2,'0'); }
 function parseLatLngClient(input){
   const s = String(input||'').trim();
   if(!s) return null;
-  const m = s.match(/@(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/) ||
-            s.match(/[?&]q=(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/) ||
-            s.match(/[?&]ll=(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/) ||
-            s.match(/(-?\d{1,2}\.\d+),\s*(-?\d{1,3}\.\d+)/);
-  if(!m) return null;
-  const lat = Number(m[1]); const lng = Number(m[2]);
+  let decoded = null;
+  try { decoded = decodeURIComponent(s); } catch(e){ decoded = null; }
+
+  // ✅ Prefer precise pin coords from Google Maps: !3dlat!4dlng
+  const m3d = s.match(/!3d(-?\d{1,3}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/) ||
+              (decoded ? decoded.match(/!3d(-?\d{1,3}(?:\.\d+)?)!4d(-?\d{1,3}(?:\.\d+)?)/) : null);
+  let lat = null, lng = null;
+  if(m3d){ lat = Number(m3d[1]); lng = Number(m3d[2]); }
+  else {
+    const mq = s.match(/[?&](?:q|query|ll|center)=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/) ||
+               (decoded ? decoded.match(/[?&](?:q|query|ll|center)=\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/) : null);
+    if(mq){ lat = Number(mq[1]); lng = Number(mq[2]); }
+    else {
+      const ma = s.match(/@\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/) ||
+                 (decoded ? decoded.match(/@\s*(-?\d{1,3}(?:\.\d+)?),\s*(-?\d{1,3}(?:\.\d+)?)/) : null);
+      if(ma){ lat = Number(ma[1]); lng = Number(ma[2]); }
+    }
+  }
+
+  if(lat == null || lng == null) return null;
   if(!Number.isFinite(lat)||!Number.isFinite(lng)) return null;
   if(Math.abs(lat)>90 || Math.abs(lng)>180) return null;
   return {lat,lng};
