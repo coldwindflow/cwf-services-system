@@ -182,6 +182,7 @@ function injectAdminMenu(){
       --cwf-blue:#0b4bb3;
       --cwf-yellow:#ffcc00;
       --cwf-ink:#0f172a;
+      --cwf-top-h:74px;
     }
     #cwfTopNav{position:fixed;left:0;right:0;top:0;z-index:2600;
       padding-top:env(safe-area-inset-top);
@@ -199,8 +200,20 @@ function injectAdminMenu(){
       box-shadow:0 10px 26px rgba(0,0,0,0.18);cursor:pointer;user-select:none}
     .cwf-icbtn:active{transform: translateY(1px) scale(0.99)}
     .cwf-icbtn svg{width:22px;height:22px;fill:#ffffff}
-    #cwfTopNavSpacer{height:74px}
-    @media (max-width:420px){#cwfTopNavSpacer{height:72px}}
+    #cwfTopNavSpacer{height:var(--cwf-top-h)}
+    @media (max-width:420px){:root{--cwf-top-h:72px}}
+
+    /* Optional subbar (avatar + name) — used by Dashboard */
+    #cwfTopSubbar{display:none;border-top:1px solid rgba(255,255,255,0.10);
+      background:linear-gradient(180deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.02) 100%);
+    }
+    #cwfTopSubbar .subin{max-width:980px;margin:0 auto;display:flex;align-items:center;justify-content:flex-start;
+      gap:10px;padding:10px 12px;}
+    #cwfTopSubbar img{width:40px;height:40px;border-radius:16px;object-fit:cover;flex:0 0 auto;
+      border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.10);box-shadow:0 10px 26px rgba(0,0,0,0.18)}
+    #cwfTopSubbar .name{min-width:0;display:flex;flex-direction:column;gap:2px}
+    #cwfTopSubbar .name b{font-size:13px;line-height:1.1;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70vw}
+    #cwfTopSubbar .name span{font-size:12px;font-weight:900;color:rgba(255,255,255,0.76);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:70vw}
     #cwfDrawerBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2690;display:none}
     #cwfDrawer{position:fixed;inset:0;z-index:2700;
       display:none;padding:12px 12px calc(12px + env(safe-area-inset-bottom));
@@ -262,6 +275,16 @@ function injectAdminMenu(){
         </div>
       </div>
     </div>
+
+    <div id="cwfTopSubbar" aria-label="Admin identity bar">
+      <div class="subin">
+        <img id="cwfNavAvatar" alt="Admin" />
+        <div class="name">
+          <b id="cwfNavName">—</b>
+          <span id="cwfNavRole">—</span>
+        </div>
+      </div>
+    </div>
   `;
   document.body.insertBefore(nav, document.body.firstChild);
 
@@ -269,6 +292,37 @@ function injectAdminMenu(){
   const sp = document.createElement('div');
   sp.id = 'cwfTopNavSpacer';
   document.body.insertBefore(sp, nav.nextSibling);
+
+  function updateTopSpacer(){
+    try{
+      const h = Math.ceil(nav.getBoundingClientRect().height || 74);
+      document.documentElement.style.setProperty('--cwf-top-h', `${h}px`);
+    }catch(_){/* ignore */}
+  }
+  updateTopSpacer();
+  window.addEventListener('resize', ()=>{ try{ updateTopSpacer(); }catch(_){ } });
+
+  // Public helper: allow pages to place admin identity into the blue subbar
+  window.setTopSubbarIdentity = function(opts){
+    try{
+      const o = opts || {};
+      const sub = document.getElementById('cwfTopSubbar');
+      if (!sub) return;
+      const nameEl = document.getElementById('cwfNavName');
+      const roleEl = document.getElementById('cwfNavRole');
+      const avEl = document.getElementById('cwfNavAvatar');
+      if (nameEl) nameEl.textContent = String(o.name || '—');
+      if (roleEl) roleEl.textContent = String(o.role || '');
+      if (avEl){
+        if (o.avatarUrl) avEl.src = o.avatarUrl;
+        else avEl.removeAttribute('src');
+      }
+      sub.style.display = 'block';
+      updateTopSpacer();
+    }catch(_){/* ignore */}
+  };
+
+  // NOTE: window.setTopSubbarIdentity is defined above (uses measured height for spacer)
 
   const backdrop = document.createElement('div');
   backdrop.id = 'cwfDrawerBackdrop';

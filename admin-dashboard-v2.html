@@ -37,25 +37,26 @@
       -webkit-backdrop-filter: blur(10px);
     }
 
-    /* avatar row */
+    /* NOTE: Avatar/name moved to the blue top subbar (in admin-v2-common.js)
+       Keep legacy styles in case of fallback, but dashboard no longer renders the identity row here. */
     .meRow{display:flex;align-items:center;gap:12px;min-width:0;}
     .avatar{width:44px;height:44px;border-radius:16px;object-fit:cover;border:1px solid rgba(255,255,255,.22);box-shadow:0 10px 26px rgba(0,0,0,.18);background:rgba(255,255,255,.12);flex:0 0 auto}
     .who{color:rgba(255,255,255,.96);font-weight:1100;font-size:15px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px}
     .role{color:rgba(255,255,255,.72);font-weight:1000;font-size:12px;margin-top:2px}
 
-    /* shortcut row (2 yellow buttons) */
+    /* shortcut row (2 blue buttons) */
     .shortcutRow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;}
     .shortcut{
       display:flex;align-items:center;gap:10px;padding:12px;border-radius:18px;cursor:pointer;user-select:none;
-      background:linear-gradient(135deg, #ffd633 0%, var(--yellow) 60%, #ffbf00 100%);
-      border:1px solid rgba(11,27,58,.10);
-      box-shadow:0 16px 40px rgba(2,6,23,.18);
-      color:#0b1b3a;
+      background:linear-gradient(135deg, rgba(11,75,179,1) 0%, rgba(30,58,138,1) 55%, rgba(11,27,58,1) 100%);
+      border:1px solid rgba(255,255,255,.10);
+      box-shadow:0 16px 42px rgba(2,6,23,.22);
+      color:#ffffff;
     }
     .shortcut .ico{width:40px;height:40px;border-radius:14px;display:flex;align-items:center;justify-content:center;
-      background:rgba(255,255,255,.52);border:1px solid rgba(11,27,58,.10)}
-    .shortcut b{font-size:13px;font-weight:1100}
-    .shortcut span{display:block;font-size:11px;font-weight:900;opacity:.78}
+      background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18)}
+    .shortcut b{font-size:13px;font-weight:1100;color:#fff}
+    .shortcut span{display:block;font-size:11px;font-weight:900;opacity:.86;color:rgba(255,255,255,.92)}
 
     /* segmented (Today/7/30) */
     .seg{margin-top:12px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border-radius:18px;overflow:hidden;border:1px solid rgba(15,23,42,.10);background:#fff;}
@@ -150,14 +151,13 @@
 <body>
   <div class="wrap">
 
-    <!-- HERO: Admin Identity -->
+    <!-- HERO: Quick actions (identity moved to top blue subbar) -->
     <div class="hero">
-      <div class="meRow">
+      <!-- keep hidden identity elements for JS compatibility (values are pushed to top subbar) -->
+      <div style="display:none">
         <img id="meAvatar" class="avatar" alt="Admin" />
-        <div style="min-width:0">
-          <div class="who" id="whoBox">—</div>
-          <div class="role" id="roleBox">—</div>
-        </div>
+        <div id="whoBox">—</div>
+        <div id="roleBox">—</div>
       </div>
 
       <!-- 2 top buttons (yellow / black text) -->
