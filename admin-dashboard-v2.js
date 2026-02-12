@@ -57,11 +57,8 @@
     console[(kind==='error')?'error':'log']('[dashboard]', msg);
   }
 
-  // IMPORTANT: Use shared apiFetch (adds admin role + session cookie / token)
-  // This fixes missing dashboard/tech stats when endpoints are protected by requireAdminSession.
   async function apiFetch(url){
-    if (typeof window.apiFetch === 'function') return await window.apiFetch(url);
-    const res = await fetch(url, { headers: { 'Content-Type':'application/json' }, credentials:'include' });
+    const res = await fetch(url, { headers: { 'Content-Type':'application/json' }});
     if(!res.ok){
       const t = await res.text().catch(()=> '');
       throw new Error(`HTTP ${res.status} ${t}`);
@@ -431,23 +428,11 @@
     }
 
     const meObj = safeGet(data,'me',{});
-    const displayName = `${meObj.full_name || meObj.username || '-'}`;
-    $('whoBox').textContent = displayName;
+    $('whoBox').textContent = `${meObj.full_name || meObj.username || '-'}`;
     const roleLabel = (meObj.role==='super_admin') ? 'Super Admin' : 'Admin';
     const rb = $('roleBox');
     if (rb) rb.textContent = roleLabel;
     setAvatar(meObj.photo_url || '');
-
-    // Push identity into the blue top subbar (below menu)
-    try{
-      if (typeof window.setTopSubbarIdentity === 'function'){
-        window.setTopSubbarIdentity({
-          name: displayName,
-          role: roleLabel,
-          avatarUrl: (meObj.photo_url || '')
-        });
-      }
-    }catch(_){/* ignore */}
 
     const personal = safeGet(data,'personal',{ job_count:0, revenue_total:0, commission_total:0 });
     const company = safeGet(data,'company',{ job_count:0, revenue_total:0, series:{day:[],week:[],month:[],year:[]}, donut:null, candles:[] });
