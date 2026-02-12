@@ -22,8 +22,7 @@
     ['quickToday','quick7','quick30'].forEach(id=>{
       const b = $(id);
       if(!b) return;
-      b.classList.remove('yellow','gray');
-      b.classList.add(id===activeId ? 'yellow' : 'gray');
+      b.classList.toggle('active', id===activeId);
     });
   }
 
@@ -37,8 +36,13 @@
 
   function setActiveGroup(btn){
     document.querySelectorAll('[data-group]').forEach(b=>{
-      b.classList.remove('blue'); b.classList.add('gray');
-      if (b === btn){ b.classList.remove('gray'); b.classList.add('yellow'); }
+      // active = yellow, inactive = ghost (matches dashboard premium UI)
+      b.classList.remove('yellow');
+      b.classList.add('ghost');
+      if (b === btn){
+        b.classList.remove('ghost');
+        b.classList.add('yellow');
+      }
     });
   }
 
@@ -61,21 +65,34 @@
 
   function drawDonut(data){
     const canvas = $('donut');
-    const legend = $('donutLegend');
     const hint = $('donutHint');
+    const totalEl = $('jobTotal');
+    const stPending = $('stPending');
+    const stActive = $('stActive');
+    const stDone = $('stDone');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
 
     const d = data || { pending:0, active:0, done:0, other:0, total:0 };
+    const pendingV = Number(d.pending||0);
+    const activeV = Number(d.active||0);
+    const doneV = Number(d.done||0);
+    const otherV = Number(d.other||0);
+
+    if (stPending) stPending.textContent = String(pendingV);
+    if (stActive) stActive.textContent = String(activeV);
+    if (stDone) stDone.textContent = String(doneV);
+
     const parts = [
-      { key:'pending', label:'รอตรวจสอบ', value:Number(d.pending||0), color:'#ffcc00', text:'#0b1b3a' },
-      { key:'active', label:'กำลังทำ/รอดำเนินการ', value:Number(d.active||0), color:'#0b4bb3', text:'#ffffff' },
-      { key:'done', label:'เสร็จสิ้น', value:Number(d.done||0), color:'#16a34a', text:'#ffffff' },
-      { key:'other', label:'อื่นๆ', value:Number(d.other||0), color:'#94a3b8', text:'#0b1b3a' },
+      { key:'pending', value: pendingV, color:'#ffcc00' },
+      { key:'active', value: activeV, color:'#0b4bb3' },
+      { key:'done', value: doneV, color:'#16a34a' },
+      { key:'other', value: otherV, color:'#94a3b8' },
     ].filter(x=>x.value>0);
 
     const total = parts.reduce((s,x)=>s+x.value,0);
     if (hint) hint.textContent = total ? `ทั้งหมด ${total} งาน` : '—';
+    if (totalEl) totalEl.textContent = total ? String(total) : '—';
 
     // size
     const dpr = window.devicePixelRatio || 1;
@@ -105,7 +122,6 @@
       ctx.globalAlpha = 0.75;
       ctx.fillText('ไม่มีข้อมูล', cx-32, cy+4);
       ctx.globalAlpha = 1;
-      if (legend) legend.innerHTML = '';
       return;
     }
 
@@ -139,20 +155,7 @@
     ctx.globalAlpha = 1;
     ctx.textAlign = 'start';
 
-    if (legend){
-      legend.innerHTML = '';
-      for (const p of [
-        { key:'pending', label:'รอตรวจสอบ', value:Number(d.pending||0), color:'#ffcc00' },
-        { key:'active', label:'กำลังทำ', value:Number(d.active||0), color:'#0b4bb3' },
-        { key:'done', label:'เสร็จสิ้น', value:Number(d.done||0), color:'#16a34a' },
-        { key:'other', label:'อื่นๆ', value:Number(d.other||0), color:'#94a3b8' },
-      ]){
-        const el = document.createElement('div');
-        el.className = 'leg';
-        el.innerHTML = `<span class="dot" style="background:${p.color}"></span>${p.label} • ${p.value}`;
-        legend.appendChild(el);
-      }
-    }
+    // Legend is rendered in HTML (stPending/stActive/stDone)
   }
 
   function drawCandles(rows){
@@ -405,9 +408,9 @@
   }
 
   function setFiltersCollapsed(collapsed){
-    const panel = $('filterPanel');
-    if (!panel) return;
-    panel.classList.toggle('collapsed', !!collapsed);
+    const card = $('filtersCard');
+    if (!card) return;
+    card.classList.toggle('open', !collapsed);
     try{ localStorage.setItem('dash_filters_collapsed', collapsed ? '1' : '0'); }catch(_){ /* ignore */ }
   }
 
@@ -431,11 +434,17 @@
       toggle.addEventListener('click', (ev)=>{
         // allow clicking mini apply without toggling
         if (ev && ev.target && (ev.target.id === 'btnApplyMini')) return;
-        const panel = $('filterPanel');
-        const isCollapsed = panel ? panel.classList.contains('collapsed') : false;
-        setFiltersCollapsed(!isCollapsed);
+        const card = $('filtersCard');
+        const isOpen = card ? card.classList.contains('open') : false;
+        setFiltersCollapsed(isOpen); // if open -> collapse
       });
     }
+
+    // shortcut cards
+    const goDash = $('goDashboard');
+    if (goDash) goDash.addEventListener('click', ()=>{ location.href = '/admin-dashboard-v2.html'; });
+    const goProfile = $('goProfile');
+    if (goProfile) goProfile.addEventListener('click', ()=>{ location.href = '/admin-profile-v2.html'; });
 
     $('quickToday').addEventListener('click', ()=>{ setRange(1); updateFilterSummary(); setQuickActive('quickToday'); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
     $('quick7').addEventListener('click', ()=>{ setRange(7); updateFilterSummary(); setQuickActive('quick7'); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
@@ -454,9 +463,9 @@
     document.querySelectorAll('[data-group]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         currentGroup = btn.getAttribute('data-group');
-        // button styles
-        document.querySelectorAll('[data-group]').forEach(b=>{ b.classList.remove('yellow'); b.classList.add('gray'); });
-        btn.classList.remove('gray'); btn.classList.add('yellow');
+        // button styles (yellow active)
+        document.querySelectorAll('[data-group]').forEach(b=>{ b.classList.remove('yellow'); b.classList.add('ghost'); });
+        btn.classList.remove('ghost'); btn.classList.add('yellow');
         if (lastData){
           const series = safeGet(lastData, `company.series.${currentGroup}`, []) || [];
           $('seriesHint').textContent = `รวม ${series.length} จุดข้อมูล`;
@@ -467,7 +476,7 @@
 
     // highlight default group
     const first = document.querySelector('[data-group="day"]');
-    if (first){ first.classList.remove('gray'); first.classList.add('yellow'); }
+    if (first){ first.classList.remove('ghost'); first.classList.add('yellow'); }
 
     // Load profile (photo/name) quickly; dashboard endpoint will update again
     (async()=>{

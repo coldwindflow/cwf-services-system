@@ -6,214 +6,276 @@
   <title>Dashboard Admin - CWF</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    body.cwf-lux{background:linear-gradient(180deg,#0b1b3a 0%, #0b4bb3 28%, #f5f7ff 28%, #ffffff 100%)!important}
-    body.cwf-lux h2{color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.25)}
-    body.cwf-lux .card{border:1px solid rgba(11,75,179,0.18);box-shadow:0 14px 34px rgba(2,6,23,0.12)}
-    .app{max-width:980px;margin:0 auto;padding:14px 14px 140px}
-    .top{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
-    .top .sub{color:rgba(255,255,255,0.82);font-weight:800}
-    .me{display:flex;align-items:center;gap:10px;margin-top:6px}
-    .avatar{width:44px;height:44px;border-radius:16px;object-fit:cover;border:1px solid rgba(255,255,255,0.22);
-      box-shadow:0 10px 26px rgba(0,0,0,0.18);background:rgba(255,255,255,0.12)}
-    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
-    @media (max-width:920px){.grid{grid-template-columns:repeat(2,1fr)}}
-    @media (max-width:420px){.grid{grid-template-columns:1fr}}
-    .kpi{padding:12px 12px;border-radius:18px;background:#fff}
-    .kpi .label{color:rgba(15,23,42,.62);font-weight:900;font-size:12px}
-    .kpi .val{margin-top:6px;font-size:20px;font-weight:1000;color:#0b1b3a}
-    .kpi .hint{margin-top:6px;color:rgba(15,23,42,.55);font-weight:800;font-size:12px}
+    :root{
+      --blue1:#0b4bb3;
+      --blue2:#0b1b3a;
+      --yellow:#ffcc00;
+      --card:#ffffff;
+      --muted:rgba(15,23,42,.62);
+      --line:rgba(15,23,42,.10);
+      --shadow:0 18px 42px rgba(2,6,23,.12);
+    }
+    body{
+      background:
+        radial-gradient(900px 420px at 50% -40px, rgba(255,204,0,.22), transparent 55%),
+        radial-gradient(900px 420px at 80% 0px, rgba(11,75,179,.18), transparent 55%),
+        linear-gradient(180deg, rgba(11,27,58,.92) 0%, rgba(11,75,179,.92) 130px, #f6f8ff 130px, #ffffff 100%);
+    }
 
-    /* KPI premium palettes (rule: yellow text black, blue text white) */
-    .kpiBlue{background:linear-gradient(135deg,#0b4bb3 0%, #0b1b3a 100%)}
-    .kpiBlue .label,.kpiBlue .val,.kpiBlue .hint{color:#fff}
-    .kpiBlue .label{opacity:.92}
+    /* container */
+    .wrap{max-width:460px;margin:0 auto;padding:14px 14px 140px;}
 
-    .kpiIndigo{background:linear-gradient(135deg,rgba(11,75,179,0.18) 0%, rgba(11,27,58,0.06) 100%)}
-    .kpiIndigo .val{color:#0b1b3a}
+    /* title inside blue area (under fixed topbar) */
+    .heroTitle{color:#fff;font-weight:1000;font-size:22px;letter-spacing:.2px;text-shadow:0 10px 26px rgba(0,0,0,.22);margin:6px 0 8px;}
 
-    .kpiYellow{background:linear-gradient(135deg,#ffcc00 0%, #ffe066 100%)}
-    .kpiYellow .label,.kpiYellow .val,.kpiYellow .hint{color:#0b1b3a}
+    /* cards */
+    .card{background:var(--card);border:1px solid rgba(11,75,179,.14);border-radius:22px;box-shadow:var(--shadow);}
+    .card.p0{padding:0;overflow:hidden;}
+    .card.p14{padding:14px;}
+    .card.p12{padding:12px;}
+    .muted{color:var(--muted);font-weight:900;font-size:12px}
 
-    .kpiGlass{background:rgba(255,255,255,0.92);backdrop-filter: blur(10px);-webkit-backdrop-filter: blur(10px)}
-    .row2{display:grid;grid-template-columns:1.2fr 0.8fr;gap:10px;margin-top:12px}
-    @media (max-width:920px){.row2{grid-template-columns:1fr}}
-    .row3{display:grid;grid-template-columns:0.9fr 1.1fr;gap:10px;margin-top:12px}
-    @media (max-width:920px){.row3{grid-template-columns:1fr}}
-    .card{background:#fff;border-radius:22px;padding:14px}
-    .card h3{margin:0 0 8px 0;color:#0b1b3a;font-size:15px}
-    .muted{color:rgba(15,23,42,0.65);font-weight:700;font-size:13px}
-    .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-    .filters input[type="date"]{padding:10px;border-radius:14px;border:1px solid rgba(11,75,179,0.18);font-weight:900}
-    .iconbtn{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:16px;
-      border:1px solid rgba(15,23,42,0.12);background:#fff;font-weight:1000;cursor:pointer}
-    .iconbtn.yellow{background:#ffcc00;color:#0b1b3a;border-color:#ffcc00}
-    .iconbtn.blue{background:#0b4bb3;color:#fff;border-color:#0b4bb3}
-    .iconbtn.gray{background:#fff;color:#0b1b3a}
-    .filterbox{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-    .filterlabel{display:flex;align-items:center;gap:8px}
-    .btn{border-radius:14px;border:1px solid rgba(15,23,42,0.12);padding:10px 12px;font-weight:900;cursor:pointer}
-    .btn.yellow{background:#ffcc00;color:#0b1b3a;border-color:#ffcc00}
-    .btn.blue{background:#0b4bb3;color:#fff;border-color:#0b4bb3}
-    .btn.gray{background:#fff;color:#0b1b3a}
-    .list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
-    .item{border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:10px 12px;background:#fff;display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
-    .item b{color:#0b1b3a}
-    .pill{display:inline-flex;gap:6px;align-items:center;border-radius:999px;padding:5px 10px;font-weight:900;font-size:12px}
-    .pill.yellow{background:#ffcc00;color:#0b1b3a}
-    .pill.blue{background:#0b4bb3;color:#fff}
-    .pill.gray{background:#f1f5f9;color:#0b1b3a}
+    /* shortcut row (Dashboard / Profile) */
+    .shortcutRow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
+    .shortcut{display:flex;align-items:center;gap:10px;padding:12px;border-radius:18px;cursor:pointer;user-select:none;border:1px solid rgba(255,255,255,.14);
+      background:linear-gradient(135deg, rgba(255,255,255,.10) 0%, rgba(255,255,255,.06) 100%);
+      box-shadow:0 16px 40px rgba(0,0,0,.14);
+      color:#fff;
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+    }
+    .shortcut .ico{width:40px;height:40px;border-radius:14px;display:flex;align-items:center;justify-content:center;
+      background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.16)}
+    .shortcut b{font-size:13px;font-weight:1000}
+    .shortcut span{display:block;font-size:11px;font-weight:900;opacity:.82}
+
+    /* segmented (Today/7/30) */
+    .seg{margin-top:12px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:0;border-radius:18px;overflow:hidden;border:1px solid rgba(15,23,42,.10);background:#fff;}
+    .seg button{padding:12px 10px;border:0;background:transparent;font-weight:1000;font-size:13px;color:rgba(15,23,42,.72);cursor:pointer}
+    .seg button.active{background:var(--yellow);color:#0b1b3a;}
+    .seg button:not(.active){background:rgba(255,255,255,.92)}
+
+    /* kpi blocks */
+    .kpiRow2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;}
+    .kpiBlue{color:#fff;background:linear-gradient(135deg,var(--blue1) 0%, var(--blue2) 100%);border:1px solid rgba(255,255,255,.12)}
+    .kpiSoft{background:linear-gradient(135deg, rgba(11,75,179,.08) 0%, rgba(15,23,42,.04) 100%)}
+    .kpi{border-radius:20px;padding:12px;box-shadow:0 16px 42px rgba(2,6,23,.10)}
+    .kpi .t{font-weight:1000;font-size:12px;opacity:.92}
+    .kpi .v{margin-top:6px;font-weight:1100;font-size:22px;letter-spacing:.2px}
+    .kpi .h{margin-top:2px;font-weight:900;font-size:11px;opacity:.78}
+    .kpiBlue .t,.kpiBlue .v,.kpiBlue .h{color:#fff}
+    .kpiSoft .t{color:rgba(15,23,42,.65)}
+    .kpiSoft .v{color:#0b1b3a}
+    .kpiSoft .h{color:rgba(15,23,42,.55)}
+
+    /* donut big card */
+    .donutGrid{display:grid;grid-template-columns:0.55fr 0.45fr;gap:10px;align-items:center;}
+    .bigNum{font-size:40px;font-weight:1200;color:#0b1b3a;line-height:1}
+    .miniLegend{display:flex;flex-direction:column;gap:8px;margin-top:10px}
+    .miniLegend .li{display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:1000}
+    .miniLegend .left{display:flex;align-items:center;gap:10px}
+    .dot{width:10px;height:10px;border-radius:999px}
+    .li .count{font-weight:1100;color:#0b1b3a}
+
+    /* collapsible filters */
+    .filtersCard{margin-top:12px}
+    .foldHead{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;user-select:none}
+    .foldHead b{font-weight:1100;color:#0b1b3a}
+    .chev{width:36px;height:36px;border-radius:14px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;background:#fff}
+    .foldBody{margin-top:10px;display:none}
+    .filtersCard.open .foldBody{display:block}
+    .filtersCard.open .chev{transform:rotate(180deg)}
+    .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+    input[type="date"]{padding:10px 12px;border-radius:14px;border:1px solid rgba(11,75,179,.18);font-weight:1000}
+    .btn{border-radius:14px;border:1px solid rgba(15,23,42,.12);padding:10px 12px;font-weight:1000;cursor:pointer}
+    .btn.yellow{background:var(--yellow);color:#0b1b3a;border-color:var(--yellow)}
+    .btn.blue{background:var(--blue1);color:#fff;border-color:var(--blue1)}
+    .btn.ghost{background:#fff;color:#0b1b3a}
+
+    /* chart cards */
+    .titleRow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .titleRow h3{margin:0;font-size:15px;font-weight:1100;color:#0b1b3a}
     canvas{max-width:100%}
-    .legend{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-    .leg{display:flex;align-items:center;gap:8px;border:1px solid rgba(15,23,42,0.10);border-radius:999px;padding:7px 10px;font-weight:900;background:#fff}
-    .dot{width:10px;height:10px;border-radius:999px;display:inline-block}
-    .chartTitle{display:flex;align-items:center;justify-content:space-between;gap:10px}
 
-    /* premium filter panel */
-    .filterPanel{margin-top:12px;background:rgba(255,255,255,0.92);backdrop-filter: blur(10px);-webkit-backdrop-filter: blur(10px)}
-    .filterHead{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;user-select:none}
-    .filterHead .left{display:flex;align-items:center;gap:10px;min-width:0}
-    .filterBadge{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:7px 10px;font-weight:1000;background:rgba(11,75,179,0.10);color:#0b1b3a;border:1px solid rgba(11,75,179,0.18)}
-    .filterSummary{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(15,23,42,0.70);font-weight:900}
-    .chev{width:36px;height:36px;border-radius:14px;border:1px solid rgba(15,23,42,0.10);display:flex;align-items:center;justify-content:center;background:#fff}
-    .filterBody{margin-top:10px;display:flex;flex-direction:column;gap:10px}
-    .filterPanel.collapsed .filterBody{display:none}
-    .filterPanel.collapsed .filterDivider{display:none}
-    .filterPanel.collapsed .chev{transform: rotate(-90deg)}
-    .filterDivider{height:1px;background:rgba(15,23,42,0.08);margin-top:10px}
+    /* lists */
+    .list{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+    .item{border:1px solid rgba(15,23,42,.10);border-radius:18px;padding:10px 12px;background:#fff;display:flex;justify-content:space-between;gap:12px;align-items:center}
+    .item .l{min-width:0}
+    .item b{display:block;color:#0b1b3a;font-weight:1100;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .item .s{margin-top:2px;color:rgba(15,23,42,.60);font-weight:900;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:6px 10px;font-weight:1000;font-size:12px;white-space:nowrap}
+    .pill.yellow{background:var(--yellow);color:#0b1b3a}
+    .pill.blue{background:var(--blue1);color:#fff}
+    .pill.gray{background:#eef2ff;color:#0b1b3a}
 
-    /* subtle color accents */
-    .accentTop{position:relative;overflow:hidden}
-    .accentTop:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(135deg,rgba(255,204,0,0.16),rgba(11,75,179,0.10),rgba(22,163,74,0.06));opacity:1}
-    .accentTop > *{position:relative}
-    .cardTitleRow{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    /* avatar */
+    .meRow{display:flex;align-items:center;gap:10px;margin-top:8px}
+    .avatar{width:44px;height:44px;border-radius:16px;object-fit:cover;border:1px solid rgba(255,255,255,.22);
+      box-shadow:0 10px 26px rgba(0,0,0,.18);background:rgba(255,255,255,.12)}
+    .who{color:rgba(255,255,255,.92);font-weight:1100}
+    .role{color:rgba(255,255,255,.72);font-weight:1000;font-size:12px}
+
   </style>
 </head>
-<body class="cwf-lux">
-  <div class="app">
-    <div class="top">
-      <div>
-        <h2 style="margin:0">Dashboard</h2>
-        <div class="me">
-          <img id="meAvatar" class="avatar" alt="Admin" />
-          <div>
-            <div class="sub" id="whoBox">—</div>
-            <div class="sub" id="roleBox" style="font-weight:900;color:rgba(255,255,255,0.72)">—</div>
-          </div>
-        </div>
+<body>
+  <div class="wrap">
+    <div class="heroTitle">Dashboard</div>
+
+    <div class="meRow">
+      <img id="meAvatar" class="avatar" alt="Admin" />
+      <div style="min-width:0">
+        <div class="who" id="whoBox">—</div>
+        <div class="role" id="roleBox">—</div>
       </div>
-      <div style="text-align:right">
-        <div class="sub">อัปเดตล่าสุด</div>
-        <div class="sub" id="updatedAt">—</div>
+      <div style="margin-left:auto;text-align:right">
+        <div class="role">อัปเดต</div>
+        <div class="who" id="updatedAt" style="font-size:12px">—</div>
       </div>
     </div>
 
-    <div class="card filterPanel collapsed" id="filterPanel">
-      <div class="filterHead" id="filterToggle" role="button" aria-label="พับ/ขยายตัวกรอง">
-        <div class="left" style="min-width:0">
-          <div class="filterBadge">🔎 ตัวกรอง</div>
-          <div class="filterSummary" id="filterSummary">—</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <button class="iconbtn blue" id="btnApplyMini" title="โหลด" aria-label="โหลด">⟳</button>
-        <div style="display:flex;align-items:center;gap:8px">
-          <button class="iconbtn blue" id="btnApplyMini" title="โหลด" aria-label="โหลด">⟳</button>
-          <div class="chev" id="filterChev">▾</div>
-        </div>
+    <div class="shortcutRow">
+      <div class="shortcut" id="goDashboard">
+        <div class="ico">🧩</div>
+        <div>
+          <b>Dashboard</b>
+          <span>ภาพรวมทั้งหมด</span>
         </div>
       </div>
-      <div class="filterDivider"></div>
-      <div class="filterBody" id="filterBody">
-        <div class="filters">
-          <div class="filterbox">
-            <button class="iconbtn yellow" id="quickToday" title="วันนี้" aria-label="วันนี้">📅</button>
-            <button class="iconbtn gray" id="quick7" title="7 วัน" aria-label="7 วัน">⏱️</button>
-            <button class="iconbtn gray" id="quick30" title="30 วัน" aria-label="30 วัน">🗓️</button>
-          </div>
-          <div class="filterbox">
-            <div class="filterlabel">
-              <span class="muted" style="font-weight:900">ช่วง</span>
-              <span class="muted">🗓️</span>
+      <div class="shortcut" id="goProfile">
+        <div class="ico">👤</div>
+        <div>
+          <b>Profile Admin</b>
+          <span>รูป/ข้อมูลแอดมิน</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="seg" style="margin-top:12px">
+      <button id="quickToday" type="button" class="active">วันนี้</button>
+      <button id="quick7" type="button">7 วัน</button>
+      <button id="quick30" type="button">30 วัน</button>
+    </div>
+
+    <div class="kpiRow2">
+      <div class="kpi kpiBlue">
+        <div class="t">รายได้ส่วนตัว</div>
+        <div class="v" id="meRevenue">—</div>
+        <div class="h" id="meRevenueHint">—</div>
+      </div>
+      <div class="kpi kpiBlue" style="background:linear-gradient(135deg,#0b4bb3 0%, #134e4a 100%)">
+        <div class="t">คอมมิชชั่นส่วนตัว</div>
+        <div class="v" id="meCommission">—</div>
+        <div class="h" id="meCommissionHint">—</div>
+      </div>
+    </div>
+
+    <div class="kpiRow2">
+      <div class="kpi kpiSoft">
+        <div class="t">รายได้รวมบริษัท</div>
+        <div class="v" id="coRevenue">—</div>
+        <div class="h" id="coRevenueHint">—</div>
+      </div>
+      <div class="kpi kpiSoft">
+        <div class="t">จำนวนงาน (วันนี้/เดือน/ปี)</div>
+        <div class="v" id="counts">—</div>
+        <div class="h">อ้างอิงเวลา Asia/Bangkok</div>
+      </div>
+    </div>
+
+    <div class="card p14" style="margin-top:12px">
+      <div class="titleRow">
+        <h3>จำนวนงานทั้งหมด</h3>
+        <div class="muted" id="donutHint">—</div>
+      </div>
+      <div class="donutGrid" style="margin-top:8px">
+        <div>
+          <div class="bigNum" id="jobTotal">—</div>
+          <div class="muted">งานในช่วงที่เลือก</div>
+          <div class="miniLegend">
+            <div class="li">
+              <div class="left"><span class="dot" style="background:var(--yellow)"></span>รอตรวจสอบ</div>
+              <div class="count" id="stPending">—</div>
             </div>
-            <input type="date" id="fromDate" title="จากวันที่">
-            <span class="muted">→</span>
-            <input type="date" id="toDate" title="ถึงวันที่">
-            <button class="iconbtn blue" id="btnApply" title="โหลด" aria-label="โหลด">⟳</button>
+            <div class="li">
+              <div class="left"><span class="dot" style="background:var(--blue1)"></span>กำลังทำ</div>
+              <div class="count" id="stActive">—</div>
+            </div>
+            <div class="li">
+              <div class="left"><span class="dot" style="background:#16a34a"></span>เสร็จสิ้น</div>
+              <div class="count" id="stDone">—</div>
+            </div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <div class="grid">
-      <div class="kpi card kpiBlue">
-        <div class="label">💼 รายได้ส่วนตัว (ช่วงที่เลือก)</div>
-        <div class="val" id="meRevenue">—</div>
-        <div class="hint" id="meRevenueHint">—</div>
-      </div>
-      <div class="kpi card kpiYellow">
-        <div class="label">💰 คอมมิชชั่นส่วนตัว</div>
-        <div class="val" id="meCommission">—</div>
-        <div class="hint" id="meCommissionHint">—</div>
-      </div>
-      <div class="kpi card kpiIndigo">
-        <div class="label">🏢 รายได้รวมบริษัท (ช่วงที่เลือก)</div>
-        <div class="val" id="coRevenue">—</div>
-        <div class="hint" id="coRevenueHint">—</div>
-      </div>
-      <div class="kpi card kpiGlass">
-        <div class="label">📊 จำนวนงาน (วันนี้/เดือน/ปี)</div>
-        <div class="val" id="counts">—</div>
-        <div class="hint">อ้างอิงเวลา Asia/Bangkok</div>
-      </div>
-    </div>
-
-    <div class="row3">
-      <div class="card accentTop">
-        <div class="chartTitle">
-          <h3 style="margin:0">สถานะงาน (โดนัท)</h3>
-          <div class="muted" id="donutHint">—</div>
+        <div>
+          <canvas id="donut" height="170"></canvas>
         </div>
-        <canvas id="donut" height="170"></canvas>
-        <div class="legend" id="donutLegend"></div>
-      </div>
-      <div class="card accentTop">
-        <div class="chartTitle">
-          <h3 style="margin:0">กราฟแท่งเทียน (รายวัน)</h3>
-          <div class="muted" id="candleHint">—</div>
-        </div>
-        <canvas id="candles" height="190"></canvas>
-        <div class="muted" style="margin-top:8px">* ใช้ราคางาน (job_price) ทำ OHLC ต่อวัน เพื่อดูการกระจายรายได้</div>
       </div>
     </div>
 
-    <div class="row2">
-      <div class="card accentTop">
+    <div class="card p14 filtersCard" id="filtersCard" style="margin-top:12px">
+      <div class="foldHead" id="filterToggle" role="button" aria-label="พับ/ขยายตัวกรอง">
+        <div>
+          <b>🔎 ตัวกรองเพิ่มเติม</b>
+          <div class="muted" id="filterSummary">—</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn blue" id="btnApplyMini" type="button" title="โหลด">⟳ โหลด</button>
+          <div class="chev">▾</div>
+        </div>
+      </div>
+      <div class="foldBody" id="filterBody">
+        <div class="row" style="margin-top:10px">
+          <input type="date" id="fromDate" title="จากวันที่">
+          <span class="muted">→</span>
+          <input type="date" id="toDate" title="ถึงวันที่">
+          <button class="btn yellow" id="btnApply" type="button">โหลดข้อมูล</button>
+        </div>
+        <div class="muted" style="margin-top:10px">* ถ้าพับไว้ จะไม่รกหน้า (กดขยายได้)</div>
+      </div>
+    </div>
+
+    <div class="card p14" style="margin-top:12px">
+      <div class="titleRow">
+        <h3>กราฟแท่งเทียน (รายวัน)</h3>
+        <div class="muted" id="candleHint">—</div>
+      </div>
+      <canvas id="candles" height="190" style="margin-top:8px"></canvas>
+      <div class="muted" style="margin-top:8px">* ใช้ราคางาน (job_price) ทำ OHLC ต่อวัน</div>
+    </div>
+
+    <div class="card p14" style="margin-top:12px">
+      <div class="titleRow">
+        <h3>รายได้รวมบริษัท (แยกตามช่วง)</h3>
+        <div class="muted" id="seriesHint">—</div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn yellow" data-group="day" type="button">วัน</button>
+        <button class="btn ghost" data-group="week" type="button">สัปดาห์</button>
+        <button class="btn ghost" data-group="month" type="button">เดือน</button>
+        <button class="btn ghost" data-group="year" type="button">ปี</button>
+      </div>
+      <canvas id="chart" height="160" style="margin-top:10px"></canvas>
+    </div>
+
+    <div class="card p14" style="margin-top:12px">
+      <div class="titleRow">
         <h3>งานลูกค้าจองเข้ามา (รอตรวจสอบ)</h3>
         <div class="muted" id="pendingHint">—</div>
-        <div class="list" id="pendingList"></div>
       </div>
-      <div class="card accentTop">
-        <h3>งานทั้งหมด + สถานะกำลังทำ</h3>
-        <div class="muted" id="activeHint">—</div>
-        <div class="list" id="activeList"></div>
-      </div>
+      <div class="list" id="pendingList"></div>
     </div>
 
-    <div class="card" style="margin-top:12px">
-      <h3>รายได้รวมบริษัท (แยกตามช่วง)</h3>
-      <div class="filters" style="margin-top:0">
-        <button class="btn yellow" data-group="day">วัน</button>
-        <button class="btn gray" data-group="week">สัปดาห์</button>
-        <button class="btn gray" data-group="month">เดือน</button>
-        <button class="btn gray" data-group="year">ปี</button>
+    <div class="card p14" style="margin-top:12px">
+      <div class="titleRow">
+        <h3>งานทั้งหมด + กำลังทำ</h3>
+        <div class="muted" id="activeHint">—</div>
       </div>
-      <div class="muted" id="seriesHint" style="margin-top:8px">—</div>
-      <canvas id="chart" height="160"></canvas>
+      <div class="list" id="activeList"></div>
     </div>
 
   </div>
 
-  <!-- cache-bust for PWA/service-worker hard cache -->
-  <script src="admin-v2-common.js?v=20260212_3"></script>
-  <script src="admin-dashboard-v2.js?v=20260212_3"></script>
+  <script src="admin-v2-common.js?v=20260212_dash_ui"></script>
+  <script src="admin-dashboard-v2.js?v=20260212_dash_ui"></script>
 </body>
 </html>
