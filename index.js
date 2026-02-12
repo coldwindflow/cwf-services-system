@@ -467,6 +467,8 @@ app.get(/^\/admin-[^\s]+\.html$/i, requireAdminSession, (req, res, next) => next
 // - Company revenue series (day/week/month/year) + pending/active jobs
 // =======================================
 app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
+  // NOTE: Endpoint must be resilient. Even if some queries fail, return a stable JSON shape
+  // so the dashboard UI never renders blank.
   try {
     const me = req.auth;
     const from = String(req.query.from || "").trim();
@@ -474,6 +476,16 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
 
     const safeFrom = /^\d{4}-\d{2}-\d{2}$/.test(from) ? from : null;
     const safeTo = /^\d{4}-\d{2}-\d{2}$/.test(to) ? to : null;
+
+    const softErrors = [];
+    async function safeQuery(sql, params = [], fallbackRows = []) {
+      try {
+        return await pool.query(sql, params);
+      } catch (e) {
+        softErrors.push(String(e?.message || e));
+        return { rows: fallbackRows };
+      }
+    }
 
     // default: last 30 days
     const rangeSql = `
@@ -488,74 +500,118 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
     const d_from = b.rows[0].d_from;
     const d_to = b.rows[0].d_to;
 
-    const meRow = await pool.query(
-      `SELECT username, role, COALESCE(full_name,'') AS full_name, COALESCE(photo_url,'') AS photo_url,
-              COALESCE(commission_rate_percent,0) AS commission_rate_percent
-       FROM public.users WHERE username=$1 LIMIT 1`,
-      [me.username]
-    );
-    const meInfo = meRow.rows[0] || { username: me.username, role: me.role, full_name: "", photo_url: "", commission_rate_percent: 0 };
+    const debug = { partial: false, notes: [] };
 
-    const personal = await pool.query(
-      `SELECT COUNT(*)::int AS job_count,
-              COALESCE(SUM(COALESCE(job_price,0)),0)::double precision AS revenue_total
-       FROM public.jobs
-       WHERE (created_by_admin=$1 OR approved_by_admin=$1)
-         AND (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $2::date AND $3::date
-         AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
-      [me.username, d_from, d_to]
-    );
-    const pRow = personal.rows[0] || { job_count: 0, revenue_total: 0 };
+    let meInfo = { username: me.username, role: me.role, full_name: "", photo_url: "", commission_rate_percent: 0 };
+    try {
+      const meRow = await pool.query(
+        `SELECT username, role, COALESCE(full_name,'') AS full_name, COALESCE(photo_url,'') AS photo_url,
+                COALESCE(commission_rate_percent,0) AS commission_rate_percent
+         FROM public.users WHERE username=$1 LIMIT 1`,
+        [me.username]
+      );
+      if (meRow.rows && meRow.rows[0]) meInfo = meRow.rows[0];
+    } catch (e) {
+      debug.partial = true;
+      debug.notes.push('users query failed');
+    }
+
+    let pRow = { job_count: 0, revenue_total: 0 };
+    try {
+      const personal = await pool.query(
+        `SELECT COUNT(*)::int AS job_count,
+                COALESCE(SUM(COALESCE(job_price,0)),0)::double precision AS revenue_total
+         FROM public.jobs
+         WHERE (created_by_admin=$1 OR approved_by_admin=$1)
+           AND (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $2::date AND $3::date
+           AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
+        [me.username, d_from, d_to]
+      );
+      if (personal.rows && personal.rows[0]) pRow = personal.rows[0];
+    } catch (e) {
+      debug.partial = true;
+      debug.notes.push('personal stats query failed');
+    }
     const commissionRate = Number(meInfo.commission_rate_percent || 0);
     const commissionTotal = (Number(pRow.revenue_total || 0) * commissionRate) / 100;
 
-    const company = await pool.query(
-      `SELECT COUNT(*)::int AS job_count,
-              COALESCE(SUM(COALESCE(job_price,0)),0)::double precision AS revenue_total
-       FROM public.jobs
-       WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
-         AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
-      [d_from, d_to]
-    );
-    const cRow = company.rows[0] || { job_count: 0, revenue_total: 0 };
+    let cRow = { job_count: 0, revenue_total: 0 };
+    try {
+      const company = await pool.query(
+        `SELECT COUNT(*)::int AS job_count,
+                COALESCE(SUM(COALESCE(job_price,0)),0)::double precision AS revenue_total
+         FROM public.jobs
+         WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
+           AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
+        [d_from, d_to]
+      );
+      if (company.rows && company.rows[0]) cRow = company.rows[0];
+    } catch (e) {
+      debug.partial = true;
+      debug.notes.push('company stats query failed');
+    }
 
-    const pending = await pool.query(
-      `SELECT job_id, booking_code, customer_name, job_type, appointment_datetime, job_status, duration_min, job_price
-       FROM public.jobs
-       WHERE COALESCE(job_status,'') IN ('รอตรวจสอบ','pending_review')
-       ORDER BY appointment_datetime ASC
-       LIMIT 12`
-    );
+    let pending = { rows: [] };
+    try {
+      pending = await pool.query(
+        `SELECT job_id, booking_code, customer_name, job_type, appointment_datetime, job_status, duration_min, job_price
+         FROM public.jobs
+         WHERE COALESCE(job_status,'') IN ('รอตรวจสอบ','pending_review')
+         ORDER BY appointment_datetime ASC
+         LIMIT 12`
+      );
+    } catch (e) {
+      debug.partial = true;
+      debug.notes.push('pending list query failed');
+    }
 
-    const active = await pool.query(
-      `SELECT job_id, booking_code, customer_name, job_type, appointment_datetime, job_status, duration_min, job_price
-       FROM public.jobs
-       WHERE COALESCE(job_status,'') IN ('รอดำเนินการ','กำลังทำ','ตีกลับ','รอช่างยืนยัน')
-       ORDER BY appointment_datetime ASC
-       LIMIT 12`
-    );
+    let active = { rows: [] };
+    try {
+      active = await pool.query(
+        `SELECT job_id, booking_code, customer_name, job_type, appointment_datetime, job_status, duration_min, job_price
+         FROM public.jobs
+         WHERE COALESCE(job_status,'') IN ('รอดำเนินการ','กำลังทำ','ตีกลับ','รอช่างยืนยัน')
+         ORDER BY appointment_datetime ASC
+         LIMIT 12`
+      );
+    } catch (e) {
+      debug.partial = true;
+      debug.notes.push('active list query failed');
+    }
 
-    const counts = await pool.query(
-      `WITH now_bkk AS (
-         SELECT (NOW() AT TIME ZONE 'Asia/Bangkok')::date AS today,
-                DATE_TRUNC('month', (NOW() AT TIME ZONE 'Asia/Bangkok'))::date AS m0,
-                DATE_TRUNC('year', (NOW() AT TIME ZONE 'Asia/Bangkok'))::date AS y0
-       )
-       SELECT
-         (SELECT COUNT(*) FROM public.jobs j, now_bkk n WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date = n.today)::int AS today,
-         (SELECT COUNT(*) FROM public.jobs j, now_bkk n WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date >= n.m0)::int AS month,
-         (SELECT COUNT(*) FROM public.jobs j, now_bkk n WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date >= n.y0)::int AS year`
-    );
+    let counts = { rows: [{ today: 0, month: 0, year: 0 }] };
+    try {
+      counts = await pool.query(
+        `WITH now_bkk AS (
+           SELECT (NOW() AT TIME ZONE 'Asia/Bangkok')::date AS today,
+                  DATE_TRUNC('month', (NOW() AT TIME ZONE 'Asia/Bangkok'))::date AS m0,
+                  DATE_TRUNC('year', (NOW() AT TIME ZONE 'Asia/Bangkok'))::date AS y0
+         )
+         SELECT
+           (SELECT COUNT(*) FROM public.jobs j, now_bkk n WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date = n.today)::int AS today,
+           (SELECT COUNT(*) FROM public.jobs j, now_bkk n WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date >= n.m0)::int AS month,
+           (SELECT COUNT(*) FROM public.jobs j, now_bkk n WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date >= n.y0)::int AS year`
+      );
+    } catch (e) {
+      debug.partial = true;
+      debug.notes.push('counts query failed');
+    }
 
     // Status donut (bucketed)
-    const statusRows = await pool.query(
+    let statusRows = { rows: [] };
+    try {
+      statusRows = await pool.query(
       `SELECT COALESCE(job_status,'') AS status, COUNT(*)::int AS count
        FROM public.jobs
        WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
          AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
        GROUP BY 1`,
       [d_from, d_to]
-    );
+      );
+    } catch (e) {
+      debug.partial = true;
+      debug.notes.push('donut status query failed');
+    }
 
     const STATUS_BUCKETS = {
       pending: new Set(['รอตรวจสอบ','pending_review']),
@@ -574,7 +630,9 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
     }
 
     // Candlestick (daily OHLC from job_price)
-    const ohlcQ = await pool.query(
+    let ohlcQ = { rows: [] };
+    try {
+      ohlcQ = await pool.query(
       `WITH base AS (
          SELECT
            (DATE_TRUNC('day', appointment_datetime AT TIME ZONE 'Asia/Bangkok'))::date AS d,
@@ -596,7 +654,11 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
        GROUP BY d
        ORDER BY d ASC`,
       [d_from, d_to]
-    );
+      );
+    } catch (e) {
+      debug.partial = true;
+      debug.notes.push('candles query failed');
+    }
     const candles = (ohlcQ.rows||[]).map(x=>{
       const d = new Date(x.d);
       return {
@@ -619,7 +681,8 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
         year: "DATE_TRUNC('year', appointment_datetime AT TIME ZONE 'Asia/Bangkok')",
       };
       const trunc = map[kind] || map.day;
-      const r = await pool.query(
+      try {
+        const r = await pool.query(
         `SELECT ${trunc} AS bucket,
                 COALESCE(SUM(COALESCE(job_price,0)),0)::double precision AS total
          FROM public.jobs
@@ -628,8 +691,8 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
          GROUP BY 1
          ORDER BY 1 ASC`,
         [d_from, d_to]
-      );
-      return (r.rows||[]).map(x=>{
+        );
+        return (r.rows||[]).map(x=>{
         const d = new Date(x.bucket);
         const label = kind==='day'
           ? d.toLocaleDateString('th-TH',{month:'2-digit',day:'2-digit'})
@@ -639,26 +702,37 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
               ? d.toLocaleDateString('th-TH',{year:'2-digit',month:'2-digit'})
               : d.toLocaleDateString('th-TH',{year:'2-digit'});
         return { label, total: Number(x.total||0) };
-      });
+        });
+      } catch (e) {
+        debug.partial = true;
+        debug.notes.push(`series(${kind}) query failed`);
+        return [];
+      }
     }
 
     const payload = {
+      api_version: 2,
       me: meInfo,
       range: { from: d_from, to: d_to },
       personal: { job_count: pRow.job_count, revenue_total: Number(pRow.revenue_total||0), commission_total: commissionTotal },
-      company: { job_count: cRow.job_count, revenue_total: Number(cRow.revenue_total||0), series: {
-        day: await series('day'),
-        week: await series('week'),
-        month: await series('month'),
-        year: await series('year')
-      },
-      donut,
-      candles
+      company: {
+        job_count: cRow.job_count,
+        revenue_total: Number(cRow.revenue_total||0),
+        series: {
+          day: await series('day'),
+          week: await series('week'),
+          month: await series('month'),
+          year: await series('year')
+        },
+        donut,
+        candles
       },
       pending: { count: (pending.rows||[]).length, rows: pending.rows||[] },
       active: { rows: active.rows||[] },
-      counts: counts.rows[0] || { today: 0, month: 0, year: 0 }
+      counts: counts.rows[0] || { today: 0, month: 0, year: 0 },
+      debug
     };
+    res.set('Cache-Control', 'no-store');
     return res.json(payload);
   } catch (e) {
     console.error('dashboard_v2 error', e);

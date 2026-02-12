@@ -336,13 +336,22 @@
     const data = await apiFetch(`/admin/dashboard_v2?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
     lastData = data;
 
+    // If backend is old or partially failing, show a clear hint (avoid blank dashboard)
+    if (!data || typeof data !== 'object' || !('company' in data)){
+      showToast('Dashboard backend ยังไม่อัปเดต (ได้แค่ me) — โปรดอัปเดต backend แล้ว refresh ใหม่', 'error');
+    }
+    if (data && data.debug && data.debug.partial){
+      showToast('Dashboard โหลดได้บางส่วน (บาง query ล้มเหลว) — ดูรายละเอียดใน debug', 'error');
+    }
+
     const meObj = safeGet(data,'me',{});
     $('whoBox').textContent = `${meObj.full_name || meObj.username || '-'}`;
     const roleLabel = (meObj.role==='super_admin') ? 'Super Admin' : 'Admin';
     const rb = $('roleBox');
     if (rb) rb.textContent = roleLabel;
     setAvatar(meObj.photo_url || '');
-    $('updatedAt').textContent = new Date().toLocaleString('th-TH');
+    const ver = (data && data.api_version) ? `v${data.api_version}` : '';
+    $('updatedAt').textContent = `${new Date().toLocaleString('th-TH')} ${ver}`;
 
     const personal = safeGet(data,'personal',{ job_count:0, revenue_total:0, commission_total:0 });
     const company = safeGet(data,'company',{ job_count:0, revenue_total:0, series:{day:[],week:[],month:[],year:[]}, donut:null, candles:[] });
