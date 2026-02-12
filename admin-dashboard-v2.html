@@ -8,7 +8,7 @@
   <style>
     body.cwf-lux{background:linear-gradient(180deg,#0b1b3a 0%, #0b4bb3 28%, #f5f7ff 28%, #ffffff 100%)!important}
     body.cwf-lux h2{color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.25)}
-    body.cwf-lux .card{border:1px solid rgba(11,75,179,0.18);box-shadow:0 10px 28px rgba(2,6,23,0.10)}
+    body.cwf-lux .card{border:1px solid rgba(11,75,179,0.18);box-shadow:0 14px 34px rgba(2,6,23,0.12)}
     .app{max-width:980px;margin:0 auto;padding:14px 14px 140px}
     .top{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
     .top .sub{color:rgba(255,255,255,0.82);font-weight:800}
@@ -22,14 +22,27 @@
     .kpi .label{color:rgba(15,23,42,.62);font-weight:900;font-size:12px}
     .kpi .val{margin-top:6px;font-size:20px;font-weight:1000;color:#0b1b3a}
     .kpi .hint{margin-top:6px;color:rgba(15,23,42,.55);font-weight:800;font-size:12px}
+
+    /* KPI premium palettes (rule: yellow text black, blue text white) */
+    .kpiBlue{background:linear-gradient(135deg,#0b4bb3 0%, #0b1b3a 100%)}
+    .kpiBlue .label,.kpiBlue .val,.kpiBlue .hint{color:#fff}
+    .kpiBlue .label{opacity:.92}
+
+    .kpiIndigo{background:linear-gradient(135deg,rgba(11,75,179,0.18) 0%, rgba(11,27,58,0.06) 100%)}
+    .kpiIndigo .val{color:#0b1b3a}
+
+    .kpiYellow{background:linear-gradient(135deg,#ffcc00 0%, #ffe066 100%)}
+    .kpiYellow .label,.kpiYellow .val,.kpiYellow .hint{color:#0b1b3a}
+
+    .kpiGlass{background:rgba(255,255,255,0.92);backdrop-filter: blur(10px);-webkit-backdrop-filter: blur(10px)}
     .row2{display:grid;grid-template-columns:1.2fr 0.8fr;gap:10px;margin-top:12px}
     @media (max-width:920px){.row2{grid-template-columns:1fr}}
     .row3{display:grid;grid-template-columns:0.9fr 1.1fr;gap:10px;margin-top:12px}
     @media (max-width:920px){.row3{grid-template-columns:1fr}}
-    .card{background:#fff;border-radius:20px;padding:12px}
+    .card{background:#fff;border-radius:22px;padding:14px}
     .card h3{margin:0 0 8px 0;color:#0b1b3a;font-size:15px}
     .muted{color:rgba(15,23,42,0.65);font-weight:700;font-size:13px}
-    .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+    .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
     .filters input[type="date"]{padding:10px;border-radius:14px;border:1px solid rgba(11,75,179,0.18);font-weight:900}
     .iconbtn{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:16px;
       border:1px solid rgba(15,23,42,0.12);background:#fff;font-weight:1000;cursor:pointer}
@@ -54,6 +67,25 @@
     .leg{display:flex;align-items:center;gap:8px;border:1px solid rgba(15,23,42,0.10);border-radius:999px;padding:7px 10px;font-weight:900;background:#fff}
     .dot{width:10px;height:10px;border-radius:999px;display:inline-block}
     .chartTitle{display:flex;align-items:center;justify-content:space-between;gap:10px}
+
+    /* premium filter panel */
+    .filterPanel{margin-top:12px;background:rgba(255,255,255,0.92);backdrop-filter: blur(10px);-webkit-backdrop-filter: blur(10px)}
+    .filterHead{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;user-select:none}
+    .filterHead .left{display:flex;align-items:center;gap:10px;min-width:0}
+    .filterBadge{display:inline-flex;align-items:center;gap:8px;border-radius:999px;padding:7px 10px;font-weight:1000;background:rgba(11,75,179,0.10);color:#0b1b3a;border:1px solid rgba(11,75,179,0.18)}
+    .filterSummary{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:rgba(15,23,42,0.70);font-weight:900}
+    .chev{width:36px;height:36px;border-radius:14px;border:1px solid rgba(15,23,42,0.10);display:flex;align-items:center;justify-content:center;background:#fff}
+    .filterBody{margin-top:10px;display:flex;flex-direction:column;gap:10px}
+    .filterPanel.collapsed .filterBody{display:none}
+    .filterPanel.collapsed .filterDivider{display:none}
+    .filterPanel.collapsed .chev{transform: rotate(-90deg)}
+    .filterDivider{height:1px;background:rgba(15,23,42,0.08);margin-top:10px}
+
+    /* subtle color accents */
+    .accentTop{position:relative;overflow:hidden}
+    .accentTop:before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(135deg,rgba(255,204,0,0.16),rgba(11,75,179,0.10),rgba(22,163,74,0.06));opacity:1}
+    .accentTop > *{position:relative}
+    .cardTitleRow{display:flex;align-items:center;justify-content:space-between;gap:10px}
   </style>
 </head>
 <body class="cwf-lux">
@@ -75,49 +107,67 @@
       </div>
     </div>
 
-    <div class="filters">
-      <div class="filterbox">
-        <button class="iconbtn yellow" id="quickToday" title="วันนี้" aria-label="วันนี้">📅</button>
-        <button class="iconbtn gray" id="quick7" title="7 วัน" aria-label="7 วัน">⏱️</button>
-        <button class="iconbtn gray" id="quick30" title="30 วัน" aria-label="30 วัน">🗓️</button>
-      </div>
-      <div class="filterbox">
-        <div class="filterlabel">
-          <span class="muted" style="font-weight:900">ช่วง</span>
-          <span class="muted">🗓️</span>
+    <div class="card filterPanel collapsed" id="filterPanel">
+      <div class="filterHead" id="filterToggle" role="button" aria-label="พับ/ขยายตัวกรอง">
+        <div class="left" style="min-width:0">
+          <div class="filterBadge">🔎 ตัวกรอง</div>
+          <div class="filterSummary" id="filterSummary">—</div>
         </div>
-        <input type="date" id="fromDate" title="จากวันที่">
-        <span class="muted">→</span>
-        <input type="date" id="toDate" title="ถึงวันที่">
-        <button class="iconbtn blue" id="btnApply" title="โหลด" aria-label="โหลด">⟳</button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="iconbtn blue" id="btnApplyMini" title="โหลด" aria-label="โหลด">⟳</button>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="iconbtn blue" id="btnApplyMini" title="โหลด" aria-label="โหลด">⟳</button>
+          <div class="chev" id="filterChev">▾</div>
+        </div>
+        </div>
+      </div>
+      <div class="filterDivider"></div>
+      <div class="filterBody" id="filterBody">
+        <div class="filters">
+          <div class="filterbox">
+            <button class="iconbtn yellow" id="quickToday" title="วันนี้" aria-label="วันนี้">📅</button>
+            <button class="iconbtn gray" id="quick7" title="7 วัน" aria-label="7 วัน">⏱️</button>
+            <button class="iconbtn gray" id="quick30" title="30 วัน" aria-label="30 วัน">🗓️</button>
+          </div>
+          <div class="filterbox">
+            <div class="filterlabel">
+              <span class="muted" style="font-weight:900">ช่วง</span>
+              <span class="muted">🗓️</span>
+            </div>
+            <input type="date" id="fromDate" title="จากวันที่">
+            <span class="muted">→</span>
+            <input type="date" id="toDate" title="ถึงวันที่">
+            <button class="iconbtn blue" id="btnApply" title="โหลด" aria-label="โหลด">⟳</button>
+          </div>
+        </div>
       </div>
     </div>
 
     <div class="grid">
-      <div class="kpi card">
-        <div class="label">รายได้ส่วนตัว (ช่วงที่เลือก)</div>
+      <div class="kpi card kpiBlue">
+        <div class="label">💼 รายได้ส่วนตัว (ช่วงที่เลือก)</div>
         <div class="val" id="meRevenue">—</div>
         <div class="hint" id="meRevenueHint">—</div>
       </div>
-      <div class="kpi card">
-        <div class="label">คอมมิชชั่นส่วนตัว</div>
+      <div class="kpi card kpiYellow">
+        <div class="label">💰 คอมมิชชั่นส่วนตัว</div>
         <div class="val" id="meCommission">—</div>
         <div class="hint" id="meCommissionHint">—</div>
       </div>
-      <div class="kpi card">
-        <div class="label">รายได้รวมบริษัท (ช่วงที่เลือก)</div>
+      <div class="kpi card kpiIndigo">
+        <div class="label">🏢 รายได้รวมบริษัท (ช่วงที่เลือก)</div>
         <div class="val" id="coRevenue">—</div>
         <div class="hint" id="coRevenueHint">—</div>
       </div>
-      <div class="kpi card">
-        <div class="label">จำนวนงาน (วันนี้/เดือน/ปี)</div>
+      <div class="kpi card kpiGlass">
+        <div class="label">📊 จำนวนงาน (วันนี้/เดือน/ปี)</div>
         <div class="val" id="counts">—</div>
         <div class="hint">อ้างอิงเวลา Asia/Bangkok</div>
       </div>
     </div>
 
     <div class="row3">
-      <div class="card">
+      <div class="card accentTop">
         <div class="chartTitle">
           <h3 style="margin:0">สถานะงาน (โดนัท)</h3>
           <div class="muted" id="donutHint">—</div>
@@ -125,7 +175,7 @@
         <canvas id="donut" height="170"></canvas>
         <div class="legend" id="donutLegend"></div>
       </div>
-      <div class="card">
+      <div class="card accentTop">
         <div class="chartTitle">
           <h3 style="margin:0">กราฟแท่งเทียน (รายวัน)</h3>
           <div class="muted" id="candleHint">—</div>
@@ -136,12 +186,12 @@
     </div>
 
     <div class="row2">
-      <div class="card">
+      <div class="card accentTop">
         <h3>งานลูกค้าจองเข้ามา (รอตรวจสอบ)</h3>
         <div class="muted" id="pendingHint">—</div>
         <div class="list" id="pendingList"></div>
       </div>
-      <div class="card">
+      <div class="card accentTop">
         <h3>งานทั้งหมด + สถานะกำลังทำ</h3>
         <div class="muted" id="activeHint">—</div>
         <div class="list" id="activeList"></div>
@@ -163,7 +213,7 @@
   </div>
 
   <!-- cache-bust for PWA/service-worker hard cache -->
-  <script src="admin-v2-common.js?v=20260212_2"></script>
-  <script src="admin-dashboard-v2.js?v=20260212_2"></script>
+  <script src="admin-v2-common.js?v=20260212_3"></script>
+  <script src="admin-dashboard-v2.js?v=20260212_3"></script>
 </body>
 </html>

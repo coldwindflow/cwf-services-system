@@ -302,7 +302,7 @@
     ctx.fillRect(padL, canvas.clientHeight-padB, canvas.clientWidth-padL-padR, 1);
     ctx.globalAlpha = 1;
 
-    // bars (no fixed colors; use stroke only)
+    // bars (premium palette)
     for (let i=0;i<items.length;i++){
       const v = values[i];
       const bh = (canvas.clientHeight - padT - padB) * (v / max);
@@ -310,10 +310,11 @@
       const y = (canvas.clientHeight - padB) - bh;
       const ww = Math.max(6, bw - 12);
 
-      ctx.globalAlpha = 0.18;
-      ctx.fillRect(x, y, ww, bh);
-      ctx.globalAlpha = 1;
+      // fill + stroke
+      ctx.fillStyle = 'rgba(11,75,179,0.22)';
+      ctx.strokeStyle = 'rgba(11,75,179,0.90)';
       ctx.lineWidth = 1;
+      ctx.fillRect(x, y, ww, bh);
       ctx.strokeRect(x, y, ww, bh);
 
       // labels (sparse)
@@ -393,15 +394,62 @@
     $('toDate').value = ymd(to);
   }
 
+  function updateFilterSummary(){
+    const from = $('fromDate')?.value || '';
+    const to = $('toDate')?.value || '';
+    const sum = $('filterSummary');
+    if (!sum) return;
+    if (from && to) sum.textContent = `${from} → ${to}`;
+    else if (from) sum.textContent = `${from} → ...`;
+    else sum.textContent = '—';
+  }
+
+  function setFiltersCollapsed(collapsed){
+    const panel = $('filterPanel');
+    if (!panel) return;
+    panel.classList.toggle('collapsed', !!collapsed);
+    try{ localStorage.setItem('dash_filters_collapsed', collapsed ? '1' : '0'); }catch(_){ /* ignore */ }
+  }
+
   function init(){
     // default 30 days
     setRange(30);
     setQuickActive('quick30');
 
-    $('quickToday').addEventListener('click', ()=>{ setRange(1); setQuickActive('quickToday'); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
-    $('quick7').addEventListener('click', ()=>{ setRange(7); setQuickActive('quick7'); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
-    $('quick30').addEventListener('click', ()=>{ setRange(30); setQuickActive('quick30'); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
-    $('btnApply').addEventListener('click', ()=>{ load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
+    updateFilterSummary();
+
+    // default: collapse filters to reduce clutter (user can expand)
+    try{
+      const v = localStorage.getItem('dash_filters_collapsed');
+      setFiltersCollapsed(v === null ? true : (v === '1'));
+    }catch(_){
+      setFiltersCollapsed(true);
+    }
+
+    const toggle = $('filterToggle');
+    if (toggle){
+      toggle.addEventListener('click', (ev)=>{
+        // allow clicking mini apply without toggling
+        if (ev && ev.target && (ev.target.id === 'btnApplyMini')) return;
+        const panel = $('filterPanel');
+        const isCollapsed = panel ? panel.classList.contains('collapsed') : false;
+        setFiltersCollapsed(!isCollapsed);
+      });
+    }
+
+    $('quickToday').addEventListener('click', ()=>{ setRange(1); updateFilterSummary(); setQuickActive('quickToday'); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
+    $('quick7').addEventListener('click', ()=>{ setRange(7); updateFilterSummary(); setQuickActive('quick7'); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
+    $('quick30').addEventListener('click', ()=>{ setRange(30); updateFilterSummary(); setQuickActive('quick30'); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
+    const apply = ()=>{ updateFilterSummary(); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); };
+    const btnApply = $('btnApply');
+    if (btnApply) btnApply.addEventListener('click', apply);
+    const btnApplyMini = $('btnApplyMini');
+    if (btnApplyMini) btnApplyMini.addEventListener('click', (e)=>{ e.stopPropagation(); apply(); });
+
+    const fromIn = $('fromDate');
+    const toIn = $('toDate');
+    if (fromIn) fromIn.addEventListener('change', updateFilterSummary);
+    if (toIn) toIn.addEventListener('change', updateFilterSummary);
 
     document.querySelectorAll('[data-group]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
