@@ -2,6 +2,31 @@
 (function(){
   const $ = (id)=>document.getElementById(id);
 
+  function setAvatar(url){
+    const img = $('meAvatar');
+    if(!img) return;
+    if (url) {
+      img.src = url;
+      return;
+    }
+    img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" width="88" height="88">
+        <rect width="100%" height="100%" rx="18" fill="#ffffff" fill-opacity="0.10"/>
+        <circle cx="44" cy="34" r="16" fill="#ffffff" fill-opacity="0.55"/>
+        <rect x="18" y="52" width="52" height="26" rx="13" fill="#ffffff" fill-opacity="0.55"/>
+      </svg>`
+    );
+  }
+
+  function setQuickActive(activeId){
+    ['quickToday','quick7','quick30'].forEach(id=>{
+      const b = $(id);
+      if(!b) return;
+      b.classList.remove('yellow','gray');
+      b.classList.add(id===activeId ? 'yellow' : 'gray');
+    });
+  }
+
   function ymd(d){
     const dt = (d instanceof Date) ? d : new Date(d);
     const y = dt.getFullYear();
@@ -114,7 +139,11 @@
     const data = await apiFetch(`/admin/dashboard_v2?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
     lastData = data;
 
-    $('whoBox').textContent = `${data.me.full_name || data.me.username} • ${data.me.role==='super_admin' ? 'Super Admin' : 'Admin'}`;
+    $('whoBox').textContent = `${data.me.full_name || data.me.username || '-'}`;
+    const roleLabel = (data.me.role==='super_admin') ? 'Super Admin' : 'Admin';
+    const rb = $('roleBox');
+    if (rb) rb.textContent = roleLabel;
+    setAvatar(data.me.photo_url || '');
     $('updatedAt').textContent = new Date().toLocaleString('th-TH');
 
     $('meRevenue').textContent = `${fmtMoney(data.personal.revenue_total)} ฿`;
@@ -151,10 +180,11 @@
   function init(){
     // default 30 days
     setRange(30);
+    setQuickActive('quick30');
 
-    $('quickToday').addEventListener('click', ()=>{ setRange(1); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
-    $('quick7').addEventListener('click', ()=>{ setRange(7); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
-    $('quick30').addEventListener('click', ()=>{ setRange(30); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
+    $('quickToday').addEventListener('click', ()=>{ setRange(1); setQuickActive('quickToday'); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
+    $('quick7').addEventListener('click', ()=>{ setRange(7); setQuickActive('quick7'); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
+    $('quick30').addEventListener('click', ()=>{ setRange(30); setQuickActive('quick30'); load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
     $('btnApply').addEventListener('click', ()=>{ load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error')); });
 
     document.querySelectorAll('[data-group]').forEach(btn=>{
@@ -174,6 +204,19 @@
     // highlight default group
     const first = document.querySelector('[data-group="day"]');
     if (first){ first.classList.remove('gray'); first.classList.add('yellow'); }
+
+    // Load profile (photo/name) quickly; dashboard endpoint will update again
+    (async()=>{
+      try{
+        const p = await apiFetch('/admin/profile_v2/me');
+        if (p && p.me){
+          $('whoBox').textContent = `${p.me.full_name || p.me.username || '-'}`;
+          const rb = $('roleBox');
+          if (rb) rb.textContent = (p.me.role==='super_admin') ? 'Super Admin' : 'Admin';
+          setAvatar(p.me.photo_url || '');
+        }
+      }catch(_){ /* ignore */ }
+    })();
 
     load().catch(e=>showToast(e.message||'โหลดไม่สำเร็จ','error'));
   }

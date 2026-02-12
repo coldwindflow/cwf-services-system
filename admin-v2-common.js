@@ -1,10 +1,9 @@
 // Shared helpers for Admin v2 pages (no framework, safe for production)
 
 // ============================================================
-// Admin v2 Shell (Menu Icon + Floating Debug + Basic Auth Guard)
-// - DO NOT affect admin-add-v2 page (it has its own header/debug)
-// - Keep UI consistent with "เพิ่มงาน" (premium, clean)
-// - Phase 1 scope: UI only (Menu + Debug). Logout will be fully hardened in Phase 2.
+// Admin v2 Shell (Top Fixed Menu Bar + Drawer Menu + Debug in Menu + Auth Guard)
+// - ใช้เมนูแบบเดียวกันทุกหน้า (รวมหน้าเพิ่มงาน)
+// - Debug Panel อยู่ในเมนู (กันพลาดด้วยรหัส)
 // ============================================================
 
 function isAdminAddV2Page(){
@@ -184,22 +183,24 @@ function injectAdminMenu(){
       --cwf-yellow:#ffcc00;
       --cwf-ink:#0f172a;
     }
-    #cwfTopNav{position:sticky;left:0;right:0;top:0;z-index:2600;
+    #cwfTopNav{position:fixed;left:0;right:0;top:0;z-index:2600;
       padding-top:env(safe-area-inset-top);
-      background:rgba(255,255,255,0.86);backdrop-filter: blur(14px);
-      border-bottom:1px solid rgba(15,23,42,0.10);
-      box-shadow:0 10px 30px rgba(2,6,23,0.10);}
+      background:linear-gradient(180deg, rgba(11,27,58,0.98) 0%, rgba(11,75,179,0.98) 100%);
+      border-bottom:1px solid rgba(255,255,255,0.10);
+      box-shadow:0 14px 40px rgba(2,6,23,0.22);} 
     #cwfTopNav .in{max-width:980px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;
       gap:10px;padding:10px 12px;}
     #cwfTopNav .ttl{min-width:0;display:flex;flex-direction:column;gap:2px}
-    #cwfTopNav .ttl b{font-size:14px;line-height:1.1;color:var(--cwf-ink)}
-    #cwfTopNav .ttl span{font-size:12px;font-weight:800;color:rgba(15,23,42,0.58);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #cwfTopNav .ttl b{font-size:14px;line-height:1.1;color:#fff}
+    #cwfTopNav .ttl span{font-size:12px;font-weight:900;color:rgba(255,255,255,0.80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #cwfTopNav .btns{display:flex;align-items:center;gap:8px}
     .cwf-icbtn{width:44px;height:44px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;
-      border:1px solid rgba(15,23,42,0.14);background:rgba(255,255,255,0.78);
-      box-shadow:0 10px 26px rgba(0,0,0,0.12);cursor:pointer;user-select:none}
+      border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.12);
+      box-shadow:0 10px 26px rgba(0,0,0,0.18);cursor:pointer;user-select:none}
     .cwf-icbtn:active{transform: translateY(1px) scale(0.99)}
-    .cwf-icbtn svg{width:22px;height:22px;fill:var(--cwf-ink)}
+    .cwf-icbtn svg{width:22px;height:22px;fill:#ffffff}
+    #cwfTopNavSpacer{height:74px}
+    @media (max-width:420px){#cwfTopNavSpacer{height:72px}}
     #cwfDrawerBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2690;display:none}
     #cwfDrawer{position:fixed;inset:0;z-index:2700;
       display:none;padding:12px 12px calc(12px + env(safe-area-inset-bottom));
@@ -222,6 +223,23 @@ function injectAdminMenu(){
     .cwf-link.primary{background:var(--cwf-blue); color:#fff; border-color: transparent}
     .cwf-link.warning{background:var(--cwf-yellow); color:#111827; border-color: transparent}
     .cwf-link.danger{background:#ef4444; color:#fff; border-color: transparent}
+
+    /* Debug modal (inside menu flow, but renders as overlay for readability) */
+    #cwfDebugModalBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.62);z-index:2990;display:none}
+    #cwfDebugModal{position:fixed;inset:0;z-index:3000;display:none;overflow:auto;
+      padding:12px 12px calc(12px + env(safe-area-inset-bottom));}
+    #cwfDebugModal .panel{max-width:980px;margin:0 auto;background:rgba(255,255,255,0.96);
+      border:1px solid rgba(15,23,42,0.12);border-radius:22px;box-shadow:0 22px 70px rgba(0,0,0,0.24);overflow:hidden}
+    #cwfDebugModal .h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;
+      background:#0b4bb3;color:#fff}
+    #cwfDebugModal .h b{font-size:14px}
+    #cwfDebugModal .b{padding:12px;display:flex;flex-direction:column;gap:10px}
+    #cwfDebugModal .row{display:flex;flex-wrap:wrap;gap:8px}
+    #cwfDebugModal .pillbtn{border-radius:14px;border:1px solid rgba(15,23,42,0.12);padding:10px 12px;font-weight:900;cursor:pointer;background:#fff;color:#0b1b3a}
+    #cwfDebugModal .pillbtn.yellow{background:var(--cwf-yellow);border-color:var(--cwf-yellow);color:#111827}
+    #cwfDebugModal .pillbtn.blue{background:var(--cwf-blue);border-color:var(--cwf-blue);color:#fff}
+    #cwfDebugModal pre{margin:0;border-radius:16px;border:1px solid rgba(15,23,42,0.10);background:#0b1020;color:#e5e7eb;
+      padding:10px;overflow:auto;max-height:240px;font-size:12px;line-height:1.35}
   `;
   document.head.appendChild(css);
 
@@ -246,6 +264,11 @@ function injectAdminMenu(){
     </div>
   `;
   document.body.insertBefore(nav, document.body.firstChild);
+
+  // Spacer to prevent the fixed bar from covering page content
+  const sp = document.createElement('div');
+  sp.id = 'cwfTopNavSpacer';
+  document.body.insertBefore(sp, nav.nextSibling);
 
   const backdrop = document.createElement('div');
   backdrop.id = 'cwfDrawerBackdrop';
@@ -289,7 +312,7 @@ function injectAdminMenu(){
           <div class="t">ระบบ</div>
           <div class="i">
             <div class="cwf-link" id="cwfStopImpBtn" style="display:none" data-action="stop-impersonate">หยุดสวมสิทธิ <small>Stop</small></div>
-            <div class="cwf-link" id="cwfDebugLink" data-action="debug" style="display:none">🐞 Debug Panel <small>ใส่รหัสก่อนเปิด</small></div>
+            <div class="cwf-link" id="cwfDebugLink" data-action="debug">🐞 Debug Panel <small>ใส่รหัสก่อนเปิด</small></div>
             <div class="cwf-link danger" id="cwfLogoutBtn">ออกจากระบบ <small>Logout</small></div>
           </div>
         </div>
@@ -297,6 +320,111 @@ function injectAdminMenu(){
     </div>
   `;
   document.body.appendChild(drawer);
+
+  // Debug modal overlay
+  const dbgBackdrop = document.createElement('div');
+  dbgBackdrop.id = 'cwfDebugModalBackdrop';
+  document.body.appendChild(dbgBackdrop);
+
+  const dbgModal = document.createElement('div');
+  dbgModal.id = 'cwfDebugModal';
+  dbgModal.innerHTML = `
+    <div class="panel">
+      <div class="h">
+        <b>🐞 Debug Panel</b>
+        <button class="pillbtn yellow" type="button" id="cwfDbgClose">ปิด</button>
+      </div>
+      <div class="b">
+        <div class="row">
+          <button class="pillbtn blue" type="button" id="cwfDbgCopyAll">คัดลอกทั้งหมด</button>
+          <button class="pillbtn" type="button" id="cwfDbgClear">ล้าง</button>
+          <button class="pillbtn" type="button" id="cwfDbgRefresh">รีเฟรช</button>
+          <button class="pillbtn" type="button" id="cwfDbgResetJobs">Reset Jobs (เทส)</button>
+        </div>
+        <div class="muted" id="cwfDbgHint">—</div>
+        <div>
+          <div style="font-weight:1000;color:#0b1b3a;margin:4px 0">Last Request</div>
+          <pre id="cwfDbgReq">—</pre>
+        </div>
+        <div>
+          <div style="font-weight:1000;color:#0b1b3a;margin:4px 0">Last Response</div>
+          <pre id="cwfDbgRes">—</pre>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dbgModal);
+
+  const isDebugUnlocked = ()=>{
+    try{
+      const until = Number(localStorage.getItem('cwf_debug_unlock_until') || '0');
+      const unlocked = (localStorage.getItem('cwf_debug_unlocked') === '1');
+      return unlocked && (until === 0 || Date.now() < until);
+    }catch(e){ return false; }
+  };
+
+  const ensureDebugUnlocked = ()=>{
+    if (isDebugUnlocked()) return true;
+    const pin = (prompt('ใส่รหัสเพื่อเปิด Debug Panel')||'').trim();
+    if (pin !== '1549') return false;
+    try{
+      localStorage.setItem('cwf_debug','1');
+      localStorage.setItem('cwf_debug_unlocked','1');
+      localStorage.setItem('cwf_debug_unlock_until', String(Date.now() + 8*60*60*1000));
+    }catch(_){ }
+    return true;
+  };
+
+  const renderDebug = ()=>{
+    const dbg = window.__CWF_DBG || {};
+    const req = document.getElementById('cwfDbgReq');
+    const res = document.getElementById('cwfDbgRes');
+    const hint = document.getElementById('cwfDbgHint');
+    if (hint) hint.textContent = `อัปเดต: ${new Date().toLocaleString('th-TH')} • Debug ${isDebugUnlocked() ? 'ON' : 'OFF'}`;
+    if (req) req.textContent = dbg.lastReq ? JSON.stringify(dbg.lastReq, null, 2) : '—';
+    if (res) res.textContent = dbg.lastRes ? JSON.stringify(dbg.lastRes, null, 2) : '—';
+  };
+
+  const openDebugModal = ()=>{
+    if (!ensureDebugUnlocked()) { showToast('รหัสไม่ถูกต้อง','error'); return; }
+    dbgBackdrop.style.display = 'block';
+    dbgModal.style.display = 'block';
+    renderDebug();
+  };
+
+  const closeDebugModal = ()=>{
+    dbgBackdrop.style.display = 'none';
+    dbgModal.style.display = 'none';
+  };
+
+  // bind debug modal actions
+  document.getElementById('cwfDbgClose').addEventListener('click', closeDebugModal);
+  dbgBackdrop.addEventListener('click', closeDebugModal);
+  document.getElementById('cwfDbgRefresh').addEventListener('click', renderDebug);
+  document.getElementById('cwfDbgClear').addEventListener('click', ()=>{
+    const dbg = window.__CWF_DBG || (window.__CWF_DBG = {});
+    dbg.lastReq = null; dbg.lastRes = null;
+    renderDebug();
+  });
+  document.getElementById('cwfDbgCopyAll').addEventListener('click', async ()=>{
+    try{
+      const dbg = window.__CWF_DBG || {};
+      const payload = { ts: new Date().toISOString(), lastReq: dbg.lastReq||null, lastRes: dbg.lastRes||null };
+      await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+      showToast('คัดลอกแล้ว','success');
+    }catch(e){ showToast('คัดลอกไม่สำเร็จ','error'); }
+  });
+  document.getElementById('cwfDbgResetJobs').addEventListener('click', async ()=>{
+    try{
+      const ok = confirm('ลบงานทดสอบทั้งหมด? (ใช้กับงานเทสเท่านั้น)');
+      if(!ok) return;
+      const pin = (prompt('พิมพ์ 1549 เพื่อยืนยัน')||'').trim();
+      if (pin !== '1549') return showToast('ยกเลิก','error');
+      const r = await apiFetch('/admin/reset_jobs_v2', { method:'POST', body: JSON.stringify({ confirm:true }) });
+      if(r && r.ok) showToast('ล้างงานเรียบร้อย','success');
+      else showToast('ล้างงานไม่สำเร็จ','error');
+    }catch(e){ showToast('ล้างงานไม่สำเร็จ','error'); }
+  });
 
   const open = ()=>{ backdrop.style.display='block'; drawer.style.display='block'; };
   const close = ()=>{ backdrop.style.display='none'; drawer.style.display='none'; };
@@ -310,14 +438,8 @@ function injectAdminMenu(){
     if(!t) return;
     if(t.id === 'cwfDebugLink' || t.getAttribute('data-action')==='debug'){
       e.preventDefault();
-      const pin = (prompt('ใส่รหัสเพื่อเปิด Debug Panel')||'').trim();
-      if(pin !== '1549'){ showToast('รหัสไม่ถูกต้อง','error'); return; }
-      try{
-        localStorage.setItem('cwf_debug','1');
-        localStorage.setItem('cwf_debug_unlocked','1');
-        localStorage.setItem('cwf_debug_unlock_until', String(Date.now() + 8*60*60*1000));
-      }catch(_){ }
-      showToast('เปิด Debug แล้ว','success');
+      close();
+      openDebugModal();
       return;
     }
     if(t.id === 'cwfLogoutBtn'){ close(); doLogout(); return; }

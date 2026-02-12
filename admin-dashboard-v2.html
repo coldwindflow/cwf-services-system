@@ -12,6 +12,9 @@
     .app{max-width:980px;margin:0 auto;padding:14px 14px 140px}
     .top{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
     .top .sub{color:rgba(255,255,255,0.82);font-weight:800}
+    .me{display:flex;align-items:center;gap:10px;margin-top:6px}
+    .avatar{width:44px;height:44px;border-radius:16px;object-fit:cover;border:1px solid rgba(255,255,255,0.22);
+      box-shadow:0 10px 26px rgba(0,0,0,0.18);background:rgba(255,255,255,0.12)}
     .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
     @media (max-width:920px){.grid{grid-template-columns:repeat(2,1fr)}}
     @media (max-width:420px){.grid{grid-template-columns:1fr}}
@@ -24,8 +27,15 @@
     .card{background:#fff;border-radius:20px;padding:12px}
     .card h3{margin:0 0 8px 0;color:#0b1b3a;font-size:15px}
     .muted{color:rgba(15,23,42,0.65);font-weight:700;font-size:13px}
-    .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:10px}
-    .filters input[type="date"]{padding:10px;border-radius:14px;border:1px solid rgba(11,75,179,0.18);font-weight:800}
+    .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+    .filters input[type="date"]{padding:10px;border-radius:14px;border:1px solid rgba(11,75,179,0.18);font-weight:900}
+    .iconbtn{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:16px;
+      border:1px solid rgba(15,23,42,0.12);background:#fff;font-weight:1000;cursor:pointer}
+    .iconbtn.yellow{background:#ffcc00;color:#0b1b3a;border-color:#ffcc00}
+    .iconbtn.blue{background:#0b4bb3;color:#fff;border-color:#0b4bb3}
+    .iconbtn.gray{background:#fff;color:#0b1b3a}
+    .filterbox{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .filterlabel{display:flex;align-items:center;gap:8px}
     .btn{border-radius:14px;border:1px solid rgba(15,23,42,0.12);padding:10px 12px;font-weight:900;cursor:pointer}
     .btn.yellow{background:#ffcc00;color:#0b1b3a;border-color:#ffcc00}
     .btn.blue{background:#0b4bb3;color:#fff;border-color:#0b4bb3}
@@ -45,7 +55,13 @@
     <div class="top">
       <div>
         <h2 style="margin:0">Dashboard</h2>
-        <div class="sub" id="whoBox">—</div>
+        <div class="me">
+          <img id="meAvatar" class="avatar" alt="Admin" />
+          <div>
+            <div class="sub" id="whoBox">—</div>
+            <div class="sub" id="roleBox" style="font-weight:900;color:rgba(255,255,255,0.72)">—</div>
+          </div>
+        </div>
       </div>
       <div style="text-align:right">
         <div class="sub">อัปเดตล่าสุด</div>
@@ -54,14 +70,21 @@
     </div>
 
     <div class="filters">
-      <button class="btn yellow" id="quickToday">วันนี้</button>
-      <button class="btn gray" id="quick7">7 วัน</button>
-      <button class="btn gray" id="quick30">30 วัน</button>
-      <span class="muted">ช่วงเวลา:</span>
-      <input type="date" id="fromDate">
-      <span class="muted">ถึง</span>
-      <input type="date" id="toDate">
-      <button class="btn blue" id="btnApply">โหลด</button>
+      <div class="filterbox">
+        <button class="iconbtn yellow" id="quickToday" title="วันนี้" aria-label="วันนี้">📅</button>
+        <button class="iconbtn gray" id="quick7" title="7 วัน" aria-label="7 วัน">⏱️</button>
+        <button class="iconbtn gray" id="quick30" title="30 วัน" aria-label="30 วัน">🗓️</button>
+      </div>
+      <div class="filterbox">
+        <div class="filterlabel">
+          <span class="muted" style="font-weight:900">ช่วง</span>
+          <span class="muted">🗓️</span>
+        </div>
+        <input type="date" id="fromDate" title="จากวันที่">
+        <span class="muted">→</span>
+        <input type="date" id="toDate" title="ถึงวันที่">
+        <button class="iconbtn blue" id="btnApply" title="โหลด" aria-label="โหลด">⟳</button>
+      </div>
     </div>
 
     <div class="grid">
