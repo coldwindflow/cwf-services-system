@@ -168,6 +168,11 @@ async function loadJob(){
       <div style="margin-top:6px"><b>ทีมช่าง:</b> <span title="${escapeHtml(teamText)}">${escapeHtml(teamText)}</span></div>
     </div>
 
+    <div class="row" style="margin-top:12px;gap:10px;flex-wrap:wrap">
+      <button id="btnDocQuote" class="secondary" type="button" style="width:auto">🧾 ใบเสนอราคา (เต็ม)</button>
+      <button id="btnDocReceipt" class="secondary" type="button" style="width:auto">🧾 บิล/ใบเสร็จ (เต็ม)</button>
+    </div>
+
     <hr style="margin:12px 0;" />
 
     <details class="cwf-details" style="margin-top:0" open>
@@ -342,6 +347,26 @@ async function loadJob(){
       <div class="cwf-details-body">${updRows}</div>
     </details>
   `;
+
+  // --- Full docs (Quote / Receipt) ---
+  try {
+    const btnQ = el('btnDocQuote');
+    if (btnQ) {
+      btnQ.onclick = () => {
+        const url = `${location.origin}/docs/quote/${encodeURIComponent(String(job.job_id))}`;
+        window.open(url, '_blank', 'noopener');
+      };
+    }
+    const btnR = el('btnDocReceipt');
+    if (btnR) {
+      btnR.onclick = () => {
+        const url = `${location.origin}/docs/receipt/${encodeURIComponent(String(job.job_id))}`;
+        window.open(url, '_blank', 'noopener');
+      };
+    }
+  } catch (e) {
+    console.warn('doc buttons init failed', e);
+  }
 
   // clone item selector
   const cloneItems = el('clone_items');

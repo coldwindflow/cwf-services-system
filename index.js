@@ -3844,7 +3844,22 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
     job_zone,
     gps_latitude,
     gps_longitude,
+    // backward-compatible: some frontend versions send latitude/longitude
+    latitude,
+    longitude,
   } = req.body || {};
+
+  // Backward-compatible mapping (do not break existing callers)
+  const toFiniteOrNull = (v) => {
+    if (v === null || v === undefined) return null;
+    const s = typeof v === 'string' ? v.trim() : v;
+    if (s === '') return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  };
+
+  const gpsLat = gps_latitude !== undefined ? toFiniteOrNull(gps_latitude) : toFiniteOrNull(latitude);
+  const gpsLng = gps_longitude !== undefined ? toFiniteOrNull(gps_longitude) : toFiniteOrNull(longitude);
 
   // ✅ FIX TIMEZONE: ถ้ามีการแก้วันนัด ให้ normalize เป็นเวลาไทยก่อนบันทึก
   const appointment_dt =
@@ -3911,8 +3926,8 @@ try {
         customer_note ?? null,
         maps_url ?? null,
         job_zone ?? null,
-        gps_latitude ?? null,
-        gps_longitude ?? null,
+        gpsLat,
+        gpsLng,
         job_id,
       ]
     );
@@ -4390,7 +4405,8 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
       await client.query(
         `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        [job_id, it.item_id, it.item_name, it.qty, it.unit_price, line_total]
+        // keep backward-compatible columns with safe defaults
+        [job_id, it.item_id, it.item_name, it.qty, it.unit_price, line_total, null, true]
       );
     }
 
@@ -4997,8 +5013,20 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
     if (r.rows.length === 0) return res.status(404).json({ error: "ไม่พบงาน" });
 
     const mapsUrl = String(r.rows[0].maps_url || "").trim();
-    let siteLat = Number(r.rows[0].gps_latitude);
-    let siteLng = Number(r.rows[0].gps_longitude);
+
+    // ⚠️ IMPORTANT:
+    // Number(null) === 0 which would incorrectly force check-in against (0,0).
+    // Use a safe converter so NULL/empty stays NaN.
+    const toFiniteOrNaN = (v) => {
+      if (v === null || v === undefined) return NaN;
+      const s = typeof v === 'string' ? v.trim() : v;
+      if (s === '') return NaN;
+      const n = Number(s);
+      return Number.isFinite(n) ? n : NaN;
+    };
+
+    let siteLat = toFiniteOrNaN(r.rows[0].gps_latitude);
+    let siteLng = toFiniteOrNaN(r.rows[0].gps_longitude);
 
     // ✅ ISSUE-1: ถ้างานไม่มีพิกัด (เช่น admin ใส่ URL จาก Google Maps ที่แยก lat/lng ไม่ได้)
     // ให้ช่างเช็คอินได้ตามปกติ (บันทึกพิกัดช่าง) แต่ถ้ามีพิกัดจริง -> บังคับระยะ 500m เหมือนเดิม
