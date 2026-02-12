@@ -5038,10 +5038,18 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
       return true;
     };
 
-    // ✅ ISSUE-1 (ตาม requirement ล่าสุด):
-    // - ถ้า "maps_url" แปลงพิกัดได้จริง -> บังคับ 500m (ใช้พิกัดที่แปลงจาก URL เป็นหลัก)
-    // - ถ้า "maps_url" แปลงพิกัดไม่ได้ -> ไม่บังคับ 500m และเช็คอินได้ปกติ
+    // ✅ ISSUE-1 (ตาม requirement ล่าสุด / แก้ให้ตรงแบบเป๊ะ):
+    // - ถ้า "maps_url" แปลงพิกัดได้ "แบบเป๊ะ" -> บังคับ 500m (ใช้พิกัดจาก URL เป็นหลัก)
+    // - ถ้า "maps_url" แปลงพิกัดไม่ได้ หรือได้แค่ viewport (@/center) -> ไม่บังคับ 500m และเช็คอินได้ปกติ
     // - ถ้าไม่มี maps_url เลย -> fallback ใช้ gps_latitude/gps_longitude ที่เก็บไว้ (backward-compatible)
+    // หมายเหตุ: Google Maps URL บางแบบมี @lat,lng ซึ่งเป็น "viewport" ไม่ใช่พิกัด pin จริง
+    // ถ้าเราเอา viewport ไปบังคับ 500m จะทำให้เช็คอินพัง (ตรงกับอาการที่รายงาน)
+    const isEnforcementQualityVia = (via) => {
+      // enforce เฉพาะพิกัดที่มีโอกาสเป็น "pin" จริง
+      // - 3d4d = !3d..!4d.. (แม่นสุด)
+      // - q    = q=query=ll=lat,lng (มักเป็นตำแหน่งที่ตั้งจริง)
+      return via === "3d4d" || via === "q";
+    };
     let hasSiteLatLng = false;
 
     // Try to derive from maps_url first (authoritative for enforcement)
@@ -5059,7 +5067,12 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
         }
       }
 
-      if (derivedFromUrl && isValidSiteLatLng(Number(derivedFromUrl.lat), Number(derivedFromUrl.lng))) {
+      // ถ้าได้พิกัดจาก URL แต่เป็น viewport (@/center) ให้ถือว่า "ไม่รองรับ" เพื่อปล่อยเช็คอินได้
+      if (
+        derivedFromUrl &&
+        isValidSiteLatLng(Number(derivedFromUrl.lat), Number(derivedFromUrl.lng)) &&
+        isEnforcementQualityVia(String(derivedFromUrl.via || ""))
+      ) {
         siteLat = Number(derivedFromUrl.lat);
         siteLng = Number(derivedFromUrl.lng);
         hasSiteLatLng = true;
@@ -5104,7 +5117,12 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
               const rr = await resolveMapsUrlToLatLng(mapsUrl);
               if (rr && Number.isFinite(rr.lat) && Number.isFinite(rr.lng)) derived = { lat: rr.lat, lng: rr.lng, via: rr.via || 'resolver' };
             }
-            if (derived && isValidSiteLatLng(Number(derived.lat), Number(derived.lng))) {
+            // re-check เฉพาะพิกัดที่เป็น "pin" จริงเท่านั้น
+            if (
+              derived &&
+              isValidSiteLatLng(Number(derived.lat), Number(derived.lng)) &&
+              isEnforcementQualityVia(String(derived.via || ""))
+            ) {
               const dLat2 = toRad(Number(lat) - Number(derived.lat));
               const dLng2 = toRad(Number(lng) - Number(derived.lng));
               const a2 =
