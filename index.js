@@ -1379,6 +1379,17 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_technician_reviews_tech ON publ
       ADD CONSTRAINT technician_profiles_position_check
       CHECK (position = ANY (ARRAY['junior'::text,'senior'::text,'lead'::text,'founder_ceo'::text]))
     `);
+
+    // ✅ Seed Super Admin (required)
+    // Username: S-arm  Password: 1549  Role label must be "Super Admin"
+    // NOTE: keep plaintext password for backward-compatibility with existing auth logic in this project.
+    await pool.query(
+      `INSERT INTO public.users(username, password, role, full_name)
+       VALUES($1,$2,$3,$4)
+       ON CONFLICT (username)
+       DO UPDATE SET password=EXCLUDED.password, role=EXCLUDED.role`,
+      ['S-arm', '1549', 'super_admin', 'Super Admin']
+    );
   } catch (e) {
     console.warn("⚠️ ensureSchema warning:", e.message);
   }

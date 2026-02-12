@@ -79,7 +79,26 @@
     if (role === "technician") location.replace("/tech.html");
   }
   restoreAuthFromCookie();
-  redirectIfAlreadyLoggedIn();
+
+  // ✅ Prevent login bounce loop:
+  // If localStorage/cookie says logged in but server session is gone, clear and stay on login.
+  (async function validateAndRedirect(){
+    try{
+      const role = localStorage.getItem('role');
+      if (!role) return;
+      const r = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' });
+      if (!r.ok) throw new Error('UNAUTHORIZED');
+      const d = await r.json().catch(()=>null);
+      if (!d || !d.ok) throw new Error('UNAUTHORIZED');
+      // sync role/username from server (supports impersonation-safe)
+      localStorage.setItem('username', d.username);
+      localStorage.setItem('role', d.role);
+      redirectIfAlreadyLoggedIn();
+    }catch(_){
+      try{ localStorage.removeItem('username'); localStorage.removeItem('role'); }catch(e){}
+      try{ sessionStorage.removeItem('cwf_logged_out'); }catch(e){}
+    }
+  })();
 
   async function login() {
     try {
