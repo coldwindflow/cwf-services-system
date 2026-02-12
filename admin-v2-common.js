@@ -1,9 +1,9 @@
 // Shared helpers for Admin v2 pages (no framework, safe for production)
 
 // ============================================================
-// Admin v2 Shell (Top Fixed Menu Bar + Drawer Menu + Debug in Menu + Auth Guard)
+// Admin v2 Shell (Top Fixed Menu Bar + Drawer Menu + Floating Debug + Auth Guard)
 // - ใช้เมนูแบบเดียวกันทุกหน้า (รวมหน้าเพิ่มงาน)
-// - Debug Panel อยู่ในเมนู (กันพลาดด้วยรหัส)
+// - Debug Panel เป็นไอคอนเล็กแบบลอย/พับได้ (กันพลาดด้วยรหัส) — ห้ามอยู่ในเมนู
 // ============================================================
 
 function isAdminAddV2Page(){
@@ -253,6 +253,22 @@ function injectAdminMenu(){
     #cwfDebugModal .pillbtn.blue{background:var(--cwf-blue);border-color:var(--cwf-blue);color:#fff}
     #cwfDebugModal pre{margin:0;border-radius:16px;border:1px solid rgba(15,23,42,0.10);background:#0b1020;color:#e5e7eb;
       padding:10px;overflow:auto;max-height:240px;font-size:12px;line-height:1.35}
+
+
+    /* Floating Debug (NOT in menu) */
+    #cwfDebugFloat{position:fixed;right:12px;bottom:12px;z-index:2980;display:none;
+      padding:8px;border-radius:999px;background:rgba(255,255,255,0.14);
+      border:1px solid rgba(255,255,255,0.16);backdrop-filter: blur(10px);-webkit-backdrop-filter: blur(10px);
+      box-shadow:0 18px 46px rgba(0,0,0,0.22)}
+    #cwfDebugFloat .fab{width:46px;height:46px;border-radius:18px;display:flex;align-items:center;justify-content:center;
+      background:rgba(255,255,255,0.14);border:1px solid rgba(255,255,255,0.18);cursor:pointer;user-select:none}
+    #cwfDebugFloat .fab svg{width:22px;height:22px;fill:#ffffff}
+    #cwfDebugFloat .tog{margin-left:8px;width:40px;height:46px;border-radius:18px;display:flex;align-items:center;justify-content:center;
+      background:rgba(255,255,255,0.10);border:1px solid rgba(255,255,255,0.14);cursor:pointer;user-select:none}
+    #cwfDebugFloat .tog svg{width:18px;height:18px;fill:#ffffff;opacity:.92}
+    #cwfDebugFloat.collapsed{padding:8px}
+    #cwfDebugFloat.collapsed .tog{display:none}
+    @media (max-width:420px){#cwfDebugFloat{right:10px;bottom:10px}}
   `;
   document.head.appendChild(css);
 
@@ -366,7 +382,6 @@ function injectAdminMenu(){
           <div class="t">ระบบ</div>
           <div class="i">
             <div class="cwf-link" id="cwfStopImpBtn" style="display:none" data-action="stop-impersonate">หยุดสวมสิทธิ <small>Stop</small></div>
-            <div class="cwf-link" id="cwfDebugLink" data-action="debug">🐞 Debug Panel <small>ใส่รหัสก่อนเปิด</small></div>
             <div class="cwf-link danger" id="cwfLogoutBtn">ออกจากระบบ <small>Logout</small></div>
           </div>
         </div>
@@ -408,6 +423,21 @@ function injectAdminMenu(){
     </div>
   `;
   document.body.appendChild(dbgModal);
+
+  // Floating debug button (visible when ?debug=1 or debug already enabled)
+  const dbgFloat = document.createElement('div');
+  dbgFloat.id = 'cwfDebugFloat';
+  dbgFloat.innerHTML = `
+    <div style="display:flex;align-items:center;">
+      <div class="fab" id="cwfDbgFab" title="Debug Panel" aria-label="Debug Panel">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 7h-4V5h4v2Zm-1 12h-2v-2h2v2Zm6.5-7.5h-2.05a5.99 5.99 0 0 0-.8-2l1.45-1.45-1.4-1.4L15.3 8.1c-.6-.34-1.26-.6-1.96-.76V5.5A1.5 1.5 0 0 0 11.84 4h.32A1.5 1.5 0 0 0 10.66 5.5v1.84c-.7.16-1.36.42-1.96.76L7.3 6.65l-1.4 1.4L7.35 9.5c-.34.6-.62 1.26-.8 2H4.5v2h2.05c.18.74.46 1.4.8 2l-1.45 1.45 1.4 1.4L8.7 16.9c.6.34 1.26.6 1.96.76v1.84A1.5 1.5 0 0 0 12.16 21h-.32A1.5 1.5 0 0 0 13.34 19.5v-1.84c.7-.16 1.36-.42 1.96-.76l1.4 1.45 1.4-1.4-1.45-1.45c.34-.6.62-1.26.8-2H19.5v-2ZM12 16a4 4 0 1 1 0-8 4 4 0 0 1 0 8Z"/></svg>
+      </div>
+      <div class="tog" id="cwfDbgFold" title="พับ/แสดง" aria-label="พับ/แสดง">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 10l5 5 5-5H7z"/></svg>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(dbgFloat);
 
   const isDebugUnlocked = ()=>{
     try{
@@ -451,6 +481,46 @@ function injectAdminMenu(){
     dbgModal.style.display = 'none';
   };
 
+
+  // floating toggle
+  const shouldShowDbgFloat = ()=>{
+    try{
+      const qs = new URLSearchParams(location.search||'');
+      if (qs.get('debug') === '1') return true;
+      return (localStorage.getItem('cwf_debug') === '1');
+    }catch(e){ return false; }
+  };
+
+  const loadDbgFloatState = ()=>{
+    try{
+      const c = localStorage.getItem('cwf_debug_float_collapsed') === '1';
+      dbgFloat.classList.toggle('collapsed', c);
+    }catch(_){ }
+  };
+  const showDbgFloat = ()=>{
+    dbgFloat.style.display = shouldShowDbgFloat() ? 'block' : 'none';
+    loadDbgFloatState();
+  };
+  showDbgFloat();
+
+  document.getElementById('cwfDbgFab').addEventListener('click', ()=>{
+    openDebugModal();
+  });
+  document.getElementById('cwfDbgFold').addEventListener('click', ()=>{
+    const next = !dbgFloat.classList.contains('collapsed');
+    dbgFloat.classList.toggle('collapsed', next);
+    try{ localStorage.setItem('cwf_debug_float_collapsed', next ? '1' : '0'); }catch(_){ }
+  });
+
+  // when debug gets unlocked, ensure float is visible
+  const _origEnsure = ensureDebugUnlocked;
+  // keep behavior but show float if debug enabled by PIN
+  ensureDebugUnlocked = ()=>{
+    const ok = _origEnsure();
+    if (ok) { try{ localStorage.setItem('cwf_debug','1'); }catch(_){ } showDbgFloat(); }
+    return ok;
+  };
+
   // bind debug modal actions
   document.getElementById('cwfDbgClose').addEventListener('click', closeDebugModal);
   dbgBackdrop.addEventListener('click', closeDebugModal);
@@ -490,12 +560,6 @@ function injectAdminMenu(){
   drawer.addEventListener('click', (e)=>{
     const t = e.target.closest('.cwf-link');
     if(!t) return;
-    if(t.id === 'cwfDebugLink' || t.getAttribute('data-action')==='debug'){
-      e.preventDefault();
-      close();
-      openDebugModal();
-      return;
-    }
     if(t.id === 'cwfLogoutBtn'){ close(); doLogout(); return; }
     if(t.id === 'cwfStopImpBtn' || t.getAttribute('data-action')==='stop-impersonate'){
       close();
@@ -541,9 +605,6 @@ function injectAdminMenu(){
 
       const stopBtn = document.getElementById('cwfStopImpBtn');
       if (stopBtn) stopBtn.style.display = d.impersonating ? 'flex' : 'none';
-
-      const dbgL = document.getElementById('cwfDebugLink');
-      if (dbgL) dbgL.style.display = 'flex';
     }catch(_){ }
   })();
 }
