@@ -488,15 +488,17 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
     }
 
     // default: last 30 days
+    // IMPORTANT: Postgres parameters must be contiguous ($1..$n). Referencing $2/$3 without $1
+    // throws: "could not determine data type of parameter $1" (42P18).
     const rangeSql = `
       WITH bounds AS (
         SELECT 
-          COALESCE($2::date, (CURRENT_DATE - INTERVAL '29 days')::date) AS d_from,
-          COALESCE($3::date, CURRENT_DATE::date) AS d_to
+          COALESCE($1::date, (CURRENT_DATE - INTERVAL '29 days')::date) AS d_from,
+          COALESCE($2::date, CURRENT_DATE::date) AS d_to
       )
       SELECT d_from, d_to FROM bounds
     `;
-    const b = await pool.query(rangeSql, [me.username, safeFrom, safeTo]);
+    const b = await pool.query(rangeSql, [safeFrom, safeTo]);
     const d_from = b.rows[0].d_from;
     const d_to = b.rows[0].d_to;
 
