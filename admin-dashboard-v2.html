@@ -3,150 +3,138 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Dashboard - CWF</title>
+  <title>Dashboard Admin - CWF</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    :root{ --cwf-blue:#0b4bb3; --cwf-yellow:#ffcc00; --cwf-ink:#0b1b3a; }
-    body.theme-yellowblue{background:linear-gradient(180deg,#0b1b3a 0%, #0b4bb3 26%, #f6f7ff 26%, #ffffff 100%)!important}
-    .app{max-width:980px;margin:0 auto;padding:14px 14px 120px}
-    .heroTitle{color:#fff;font-weight:1000;font-size:22px;letter-spacing:.2px}
-    .heroSub{color:rgba(255,255,255,.78);font-weight:900;margin-top:2px}
-
-    /* preset buttons (เหมือน mock แบบกลาง) */
-    .presetStack{display:flex;flex-direction:column;gap:10px;margin-top:12px}
-    .presetBtn{width:100%;border-radius:20px;padding:16px 14px;border:1px solid rgba(15,23,42,0.14);
-      background:#fff;font-weight:1000;font-size:18px;box-shadow:0 16px 36px rgba(2,6,23,0.10);cursor:pointer}
-    .presetBtn.primary{background:var(--cwf-yellow);border-color:var(--cwf-yellow);color:#111827}
-
-    .rangeCard{margin-top:12px}
-    .rangeGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
-    @media (max-width:520px){.rangeGrid{grid-template-columns:1fr}}
-    .field{display:flex;flex-direction:column;gap:6px}
-    .field label{font-weight:1000;color:rgba(15,23,42,.75)}
-    .field input[type="date"]{padding:12px 12px;border-radius:16px;border:1px solid rgba(11,75,179,0.18);font-weight:1000;background:#fff}
-    .btnFull{width:100%;padding:14px 14px;border-radius:18px;border:1px solid var(--cwf-blue);background:var(--cwf-blue);color:#fff;font-weight:1000;font-size:18px;cursor:pointer}
-
-    .kpiList{display:flex;flex-direction:column;gap:10px;margin-top:12px}
-    .kpiRow{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid rgba(15,23,42,0.10);
-      border-radius:18px;padding:14px 14px;background:#fff;box-shadow:0 14px 34px rgba(2,6,23,0.08)}
-    .kpiRow .l{font-weight:1000;color:rgba(15,23,42,0.70)}
-    .kpiRow .v{font-weight:1100;color:var(--cwf-ink);font-size:18px}
-    .kpiRow .v small{font-size:12px;font-weight:1000;color:rgba(15,23,42,0.50)}
-
-    .split{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
-    @media (max-width:920px){.split{grid-template-columns:1fr}}
-
+    body.cwf-lux{background:linear-gradient(180deg,#0b1b3a 0%, #0b4bb3 28%, #f5f7ff 28%, #ffffff 100%)!important}
+    body.cwf-lux h2{color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.25)}
+    body.cwf-lux .card{border:1px solid rgba(11,75,179,0.18);box-shadow:0 10px 28px rgba(2,6,23,0.10)}
+    .app{max-width:980px;margin:0 auto;padding:14px 14px 140px}
+    .top{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
+    .top .sub{color:rgba(255,255,255,0.82);font-weight:800}
+    .me{display:flex;align-items:center;gap:10px;margin-top:6px}
+    .avatar{width:44px;height:44px;border-radius:16px;object-fit:cover;border:1px solid rgba(255,255,255,0.22);
+      box-shadow:0 10px 26px rgba(0,0,0,0.18);background:rgba(255,255,255,0.12)}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:12px}
+    @media (max-width:920px){.grid{grid-template-columns:repeat(2,1fr)}}
+    @media (max-width:420px){.grid{grid-template-columns:1fr}}
+    .kpi{padding:12px 12px;border-radius:18px;background:#fff}
+    .kpi .label{color:rgba(15,23,42,.62);font-weight:900;font-size:12px}
+    .kpi .val{margin-top:6px;font-size:20px;font-weight:1000;color:#0b1b3a}
+    .kpi .hint{margin-top:6px;color:rgba(15,23,42,.55);font-weight:800;font-size:12px}
+    .row2{display:grid;grid-template-columns:1.2fr 0.8fr;gap:10px;margin-top:12px}
+    @media (max-width:920px){.row2{grid-template-columns:1fr}}
+    .card{background:#fff;border-radius:20px;padding:12px}
+    .card h3{margin:0 0 8px 0;color:#0b1b3a;font-size:15px}
+    .muted{color:rgba(15,23,42,0.65);font-weight:700;font-size:13px}
+    .filters{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:12px}
+    .filters input[type="date"]{padding:10px;border-radius:14px;border:1px solid rgba(11,75,179,0.18);font-weight:900}
+    .iconbtn{width:44px;height:44px;display:inline-flex;align-items:center;justify-content:center;border-radius:16px;
+      border:1px solid rgba(15,23,42,0.12);background:#fff;font-weight:1000;cursor:pointer}
+    .iconbtn.yellow{background:#ffcc00;color:#0b1b3a;border-color:#ffcc00}
+    .iconbtn.blue{background:#0b4bb3;color:#fff;border-color:#0b4bb3}
+    .iconbtn.gray{background:#fff;color:#0b1b3a}
+    .filterbox{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .filterlabel{display:flex;align-items:center;gap:8px}
+    .btn{border-radius:14px;border:1px solid rgba(15,23,42,0.12);padding:10px 12px;font-weight:900;cursor:pointer}
+    .btn.yellow{background:#ffcc00;color:#0b1b3a;border-color:#ffcc00}
+    .btn.blue{background:#0b4bb3;color:#fff;border-color:#0b4bb3}
+    .btn.gray{background:#fff;color:#0b1b3a}
     .list{display:flex;flex-direction:column;gap:8px;margin-top:8px}
-    .item{border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:10px 12px;background:#fff;display:flex;justify-content:space-between;gap:10px;align-items:flex-start;cursor:pointer}
-    .item b{color:var(--cwf-ink)}
-    .muted2{color:rgba(15,23,42,0.62);font-weight:900;font-size:12px}
-    .pill{display:inline-flex;gap:6px;align-items:center;border-radius:999px;padding:6px 10px;font-weight:1000;font-size:12px;white-space:nowrap}
-    .pill.yellow{background:var(--cwf-yellow);color:#111827}
-    .pill.blue{background:var(--cwf-blue);color:#fff}
+    .item{border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:10px 12px;background:#fff;display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
+    .item b{color:#0b1b3a}
+    .pill{display:inline-flex;gap:6px;align-items:center;border-radius:999px;padding:5px 10px;font-weight:900;font-size:12px}
+    .pill.yellow{background:#ffcc00;color:#0b1b3a}
+    .pill.blue{background:#0b4bb3;color:#fff}
     .pill.gray{background:#f1f5f9;color:#0b1b3a}
-    .pill.green{background:#16a34a;color:#fff}
-    .pill.red{background:#ef4444;color:#fff}
-
-    /* donut */
-    .donutWrap{display:grid;grid-template-columns:170px 1fr;gap:12px;align-items:center;margin-top:8px}
-    @media (max-width:520px){.donutWrap{grid-template-columns:1fr;justify-items:center}}
-    .donutBox{width:170px;height:170px;position:relative}
-    .donutCenter{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
-    .donutCenter b{font-size:20px;color:var(--cwf-ink)}
-    .donutCenter span{font-size:12px;font-weight:1000;color:rgba(15,23,42,0.60)}
-    .legend{display:flex;flex-direction:column;gap:8px}
-    .legRow{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid rgba(15,23,42,0.10);
-      border-radius:16px;padding:10px 12px;background:#fff}
-    .dot{width:10px;height:10px;border-radius:999px}
-    .legLeft{display:flex;align-items:center;gap:10px;font-weight:1000;color:rgba(15,23,42,0.75)}
-    .legVal{font-weight:1100;color:var(--cwf-ink)}
+    canvas{max-width:100%}
   </style>
 </head>
-
-<body class="theme-yellowblue" data-theme-lock="yellowblue">
+<body class="cwf-lux">
   <div class="app">
-    <div class="topbar" style="background:rgba(255,255,255,0.12);border-color:rgba(255,255,255,0.18);color:#fff">
-      <div class="brand">
-        <img id="meAvatar" src="/logo.png" alt="CWF">
-        <div class="title">
-          <b class="heroTitle" style="font-size:18px">Dashboard</b>
-          <span class="heroSub" id="whoBox">—</span>
+    <div class="top">
+      <div>
+        <h2 style="margin:0">Dashboard</h2>
+        <div class="me">
+          <img id="meAvatar" class="avatar" alt="Admin" />
+          <div>
+            <div class="sub" id="whoBox">—</div>
+            <div class="sub" id="roleBox" style="font-weight:900;color:rgba(255,255,255,0.72)">—</div>
+          </div>
         </div>
       </div>
-      <div id="cwfTopbarActions" style="display:flex;align-items:center;gap:10px">
-        <span class="badge wait" id="updatedAt" style="background:rgba(255,255,255,0.14);border-color:rgba(255,255,255,0.18);color:#fff">—</span>
+      <div style="text-align:right">
+        <div class="sub">อัปเดตล่าสุด</div>
+        <div class="sub" id="updatedAt">—</div>
       </div>
     </div>
 
-    <div class="presetStack" aria-label="ช่วงเวลา">
-      <button class="presetBtn primary" id="quickToday">วันนี้</button>
-      <button class="presetBtn" id="quick7">7 วัน</button>
-      <button class="presetBtn" id="quick30">30 วัน</button>
-    </div>
-
-    <div class="card rangeCard">
-      <div style="font-weight:1100;color:var(--cwf-ink)">ช่วงเวลา:</div>
-      <div class="rangeGrid">
-        <div class="field">
-          <label for="fromDate">จาก</label>
-          <input type="date" id="fromDate">
+    <div class="filters">
+      <div class="filterbox">
+        <button class="iconbtn yellow" id="quickToday" title="วันนี้" aria-label="วันนี้">📅</button>
+        <button class="iconbtn gray" id="quick7" title="7 วัน" aria-label="7 วัน">⏱️</button>
+        <button class="iconbtn gray" id="quick30" title="30 วัน" aria-label="30 วัน">🗓️</button>
+      </div>
+      <div class="filterbox">
+        <div class="filterlabel">
+          <span class="muted" style="font-weight:900">ช่วง</span>
+          <span class="muted">🗓️</span>
         </div>
-        <div class="field">
-          <label for="toDate">ถึง</label>
-          <input type="date" id="toDate">
-        </div>
-      </div>
-      <div style="margin-top:10px">
-        <button class="btnFull" id="btnApply">โหลด</button>
+        <input type="date" id="fromDate" title="จากวันที่">
+        <span class="muted">→</span>
+        <input type="date" id="toDate" title="ถึงวันที่">
+        <button class="iconbtn blue" id="btnApply" title="โหลด" aria-label="โหลด">⟳</button>
       </div>
     </div>
 
-    <div class="kpiList" aria-label="สรุป">
-      <div class="kpiRow"><div class="l">รายได้ส่วนตัว (ช่วงที่เลือก)</div><div class="v" id="meRevenue">—</div></div>
-      <div class="kpiRow"><div class="l">คอมมิชชั่นส่วนตัว</div><div class="v" id="meCommission">—</div></div>
-      <div class="kpiRow">
-        <div class="l">รายได้รวมบริษัท (ทั้งหมด)</div>
-        <div class="v"><span id="coRevenueAll">—</span><br><small id="coRevenueRange">ช่วงที่เลือก: —</small></div>
+    <div class="grid">
+      <div class="kpi card">
+        <div class="label">รายได้ส่วนตัว (ช่วงที่เลือก)</div>
+        <div class="val" id="meRevenue">—</div>
+        <div class="hint" id="meRevenueHint">—</div>
       </div>
-      <div class="kpiRow"><div class="l">จำนวนงาน (วันนี้/เดือน/ปี)</div><div class="v" id="counts">— <small style="font-weight:1000;color:rgba(15,23,42,0.55)">Asia/Bangkok</small></div></div>
+      <div class="kpi card">
+        <div class="label">คอมมิชชั่นส่วนตัว</div>
+        <div class="val" id="meCommission">—</div>
+        <div class="hint" id="meCommissionHint">—</div>
+      </div>
+      <div class="kpi card">
+        <div class="label">รายได้รวมบริษัท (ช่วงที่เลือก)</div>
+        <div class="val" id="coRevenue">—</div>
+        <div class="hint" id="coRevenueHint">—</div>
+      </div>
+      <div class="kpi card">
+        <div class="label">จำนวนงาน (วันนี้/เดือน/ปี)</div>
+        <div class="val" id="counts">—</div>
+        <div class="hint">อ้างอิงเวลา Asia/Bangkok</div>
+      </div>
     </div>
 
-    <div class="split">
+    <div class="row2">
       <div class="card">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-          <div style="font-weight:1100;color:var(--cwf-ink)">งานลูกค้าจองเข้ามา</div>
-          <span class="pill yellow" id="pendingCount">0 งาน</span>
-        </div>
-        <div class="muted2" style="margin-top:6px">งานสถานะ “รอตรวจสอบ / ตีกลับ / ไม่พบช่างรับงาน”</div>
+        <h3>งานลูกค้าจองเข้ามา (รอตรวจสอบ)</h3>
+        <div class="muted" id="pendingHint">—</div>
         <div class="list" id="pendingList"></div>
       </div>
-
       <div class="card">
-        <div style="font-weight:1100;color:var(--cwf-ink)">สัดส่วนสถานะงาน (ช่วงที่เลือก)</div>
-        <div class="muted2" id="donutHint" style="margin-top:6px">—</div>
-        <div class="donutWrap">
-          <div class="donutBox">
-            <svg id="donutSvg" viewBox="0 0 120 120" width="170" height="170" aria-label="donut">
-              <circle cx="60" cy="60" r="44" fill="none" stroke="#e5e7eb" stroke-width="14" />
-              <!-- segments injected by JS -->
-            </svg>
-            <div class="donutCenter">
-              <b id="donutTotal">—</b>
-              <span>งานทั้งหมด</span>
-            </div>
-          </div>
-          <div class="legend" id="donutLegend"></div>
-        </div>
+        <h3>งานทั้งหมด + สถานะกำลังทำ</h3>
+        <div class="muted" id="activeHint">—</div>
+        <div class="list" id="activeList"></div>
       </div>
     </div>
 
     <div class="card" style="margin-top:12px">
-      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-        <div style="font-weight:1100;color:var(--cwf-ink)">งานทั้งหมด + สถานะกำลังทำ</div>
-        <span class="pill blue" id="activeCount">—</span>
+      <h3>รายได้รวมบริษัท (แยกตามช่วง)</h3>
+      <div class="filters" style="margin-top:0">
+        <button class="btn yellow" data-group="day">วัน</button>
+        <button class="btn gray" data-group="week">สัปดาห์</button>
+        <button class="btn gray" data-group="month">เดือน</button>
+        <button class="btn gray" data-group="year">ปี</button>
       </div>
-      <div class="list" id="activeList"></div>
+      <div class="muted" id="seriesHint" style="margin-top:8px">—</div>
+      <canvas id="chart" height="160"></canvas>
     </div>
+
   </div>
 
   <script src="admin-v2-common.js"></script>

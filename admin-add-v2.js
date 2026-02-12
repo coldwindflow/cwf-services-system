@@ -1751,30 +1751,6 @@ function renderSlots() {
     return;
   }
 
-  // Dedupe/merge slots by time-range BEFORE we compute selectable slots and render badge.
-  // Without this, duplicated slots will render twice and the badge count will be wrong.
-  try {
-    const merged = new Map();
-    for (const s of slotsAll) {
-      const key = `${String(s.start || '')}|${String(s.end || '')}`;
-      const prev = merged.get(key);
-      if (!prev) {
-        merged.set(key, { ...s });
-        continue;
-      }
-      const aIds = Array.isArray(prev.available_tech_ids) ? prev.available_tech_ids : [];
-      const bIds = Array.isArray(s.available_tech_ids) ? s.available_tech_ids : [];
-      const union = Array.from(new Set([...aIds, ...bIds]));
-      prev.available = !!(prev.available || s.available);
-      prev.available_tech_ids = union;
-      prev.available_count = union.length;
-      prev.capacity = Math.max(Number(prev.capacity || 0), Number(s.capacity || 0), union.length);
-      prev.tech_count = Math.max(Number(prev.tech_count || 0), Number(s.tech_count || 0), union.length);
-      merged.set(key, prev);
-    }
-    slotsAll = Array.from(merged.values());
-  } catch (e) {}
-
   const constraintTechs = getConstraintTechs();
   const slotsSelectable = slotsAll.filter(s => {
     if (!constraintTechs.length) return !!s.available;
@@ -1810,42 +1786,6 @@ function renderSlots() {
         return Number.isFinite(st) ? st >= now.minutes : true;
       });
     }
-  } catch (e) {}
-
-  // Dedupe/merge slots by time-range.
-  // Some deployments may return the same slot range twice (e.g. merged sources or double fetch).
-  // If we render raw, UI will show duplicate buttons.
-  try {
-    const merged = new Map();
-    for (const s of listToRender || []) {
-      const startKey = (s.start_min != null) ? String(s.start_min) : String(s.start || '');
-      const endKey = (s.end_min != null) ? String(s.end_min) : String(s.end || '');
-      const key = `${startKey}|${endKey}`;
-      const prev = merged.get(key);
-      if (!prev) {
-        // clone shallow
-        merged.set(key, { ...s, available_tech_ids: Array.isArray(s.available_tech_ids) ? [...s.available_tech_ids] : [] });
-        continue;
-      }
-      // Merge availability + tech ids
-      prev.available = Boolean(prev.available) || Boolean(s.available);
-      const a = new Set(Array.isArray(prev.available_tech_ids) ? prev.available_tech_ids : []);
-      for (const id of (Array.isArray(s.available_tech_ids) ? s.available_tech_ids : [])) a.add(id);
-      prev.available_tech_ids = Array.from(a);
-      // Capacity/available_count recompute from union when possible
-      prev.capacity = Math.max(Number(prev.capacity || 0), Number(s.capacity || 0), prev.available_tech_ids.length);
-      prev.available_count = prev.available_tech_ids.length;
-    }
-    const _hhmmToMin = (hhmm)=>{
-      const m = String(hhmm||'').trim().match(/^(\d\d):(\d\d)$/);
-      if(!m) return NaN;
-      return Number(m[1])*60 + Number(m[2]);
-    };
-    listToRender = Array.from(merged.values()).sort((a, b) => {
-      const am = (a.start_min != null) ? Number(a.start_min) : _hhmmToMin(String(a.start || '00:00'));
-      const bm = (b.start_min != null) ? Number(b.start_min) : _hhmmToMin(String(b.start || '00:00'));
-      return am - bm;
-    });
   } catch (e) {}
 
   // Helpers (front-end): support selecting any start time inside a returned range slot
