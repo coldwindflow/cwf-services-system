@@ -1314,6 +1314,8 @@ async function loadAvailability() {
       dbgRender();
     }
     state.available_slots = Array.isArray(r.slots) ? r.slots : [];
+    // Backend returns slot_step_min; keep it so UI can render without duplicating slots.
+    state.slot_step_min = Math.max(5, Number(r.slot_step_min || 30));
     state.slots_loaded = true;
     state.selected_slot_iso = "";
     // After loading slots, allow picking tech/team (user requirement)
@@ -1677,7 +1679,9 @@ function renderSlots() {
   box.innerHTML = "";
   const slotsAllRaw = Array.isArray(state.available_slots) ? state.available_slots.filter(Boolean) : [];
   // UX: บางวัน backend จะคืนสล็อตเป็น “ช่วงกว้าง” เช่น 09:00-17:59 (คือเลือกเริ่มได้หลายเวลา)
-  // เพื่อให้ใช้งานจริง (เลือกหลังบ่าย/เย็นได้ง่าย) เราแตกเป็นสลอตย่อยทุก 30 นาที
+  // Normalize slots to display "start -> start+duration" and avoid duplicated rendering.
+  // NOTE: Backend v2 returns start steps (slot_kind=start_step) with end as the step window.
+  // UI must NOT expand each step again (otherwise it will duplicate the same start times).
   const slotsAll = [];
   const hhmmToMin2 = (hhmm)=>{
     const m = String(hhmm||'').trim().match(/^(\d\d):(\d\d)$/);
@@ -1698,29 +1702,75 @@ function renderSlots() {
     return `${hh}:${mm}`;
   };
 
-
+  const stepMin = Math.max(5, Number(state.slot_step_min || 30));
+  const durMin = Math.max(0, Number(state.duration_min || 0));
 
   for (const s of slotsAllRaw) {
     // Backend may return either {start_min,end_min} or {start,end}.
-    // We normalize so UI can always expand wide ranges into 30-min selectable slots.
     const startMin = (typeof s.start_min === 'number') ? s.start_min : hhmmToMin2(s.start);
     const endMin = (typeof s.end_min === 'number') ? s.end_min : hhmmToMin2(s.end);
-    const selectable = !s.special;
-    if (selectable && startMin !== null && endMin !== null && endMin > startMin) {
-      for (let t = startMin; t <= endMin; t += 30) {
+    const isSpecial = !!s.special;
+
+    // Case A) start-step slots (most common in /public/availability_v2):
+    // Treat each item as ONE start candidate and display end = start + duration.
+    const looksLikeStartStep = (
+      String(s.slot_kind || '') === 'start_step' ||
+      (startMin !== null && endMin !== null && (endMin - startMin) <= (stepMin + 1))
+    );
+    if (!isSpecial && looksLikeStartStep && startMin !== null) {
+      slotsAll.push({
+        ...s,
+        start_min: startMin,
+        end_min: startMin + durMin,
+        start: minToHHMM(startMin),
+        end: minToHHMM(startMin + durMin),
+        _ui_normalized_start_step: true,
+      });
+      continue;
+    }
+
+    // Case B) range slots (legacy/alt): expand into selectable starts.
+    if (!isSpecial && startMin !== null && endMin !== null && endMin > startMin) {
+      // Only allow start times where the job can finish within the range.
+      for (let t = startMin; (t + durMin) <= endMin; t += stepMin) {
         slotsAll.push({
           ...s,
           start_min: t,
-          end_min: t + Math.max(0, Number(state.duration_min || 0)),
+          end_min: t + durMin,
           start: minToHHMM(t),
-          end: minToHHMM(t + Math.max(0, Number(state.duration_min || 0))),
+          end: minToHHMM(t + durMin),
           _expanded_from_range: true,
         });
       }
-    } else {
-      slotsAll.push(s);
+      continue;
     }
+
+    // Fallback: keep as-is
+    slotsAll.push(s);
   }
+
+  // De-dup by start_min (or start/end) to prevent UI showing the same card twice.
+  try {
+    const byKey = new Map();
+    for (const s of slotsAll) {
+      const k = (typeof s.start_min === 'number') ? `m:${s.start_min}` : `t:${String(s.start||'')}-${String(s.end||'')}`;
+      const prev = byKey.get(k);
+      if (!prev) {
+        byKey.set(k, s);
+      } else {
+        // keep the one with higher available_count (or tech ids length)
+        const a1 = Number(prev.available_count || (Array.isArray(prev.available_tech_ids) ? prev.available_tech_ids.length : 0) || 0);
+        const a2 = Number(s.available_count || (Array.isArray(s.available_tech_ids) ? s.available_tech_ids.length : 0) || 0);
+        if (a2 > a1) byKey.set(k, s);
+      }
+    }
+    slotsAll.length = 0;
+    slotsAll.push(...Array.from(byKey.values()).sort((a,b)=>{
+      const x = (typeof a.start_min === 'number') ? a.start_min : hhmmToMin2(a.start) || 0;
+      const y = (typeof b.start_min === 'number') ? b.start_min : hhmmToMin2(b.start) || 0;
+      return x - y;
+    }));
+  } catch(e) {}
   // If no slots returned (e.g. duration too long), still allow admin to create a special slot.
   if (!slotsAll.length) {
     const wrap = document.createElement('div');
