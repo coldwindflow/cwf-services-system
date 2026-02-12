@@ -26,6 +26,17 @@ function getToken() {
   );
 }
 
+// Normalize role strings from DB/legacy UI to stable internal values
+// (fixes login bounce when DB has "Super Admin"/"super admin" etc.)
+function normalizeRole(role){
+  const r = String(role || '').trim().toLowerCase();
+  if (!r) return '';
+  if (r === 'super_admin' || r === 'super-admin' || r === 'super admin' || r === 'superadmin') return 'super_admin';
+  if (r === 'admin' || r === 'administrator') return 'admin';
+  if (r === 'technician' || r === 'tech' || r === 'ช่าง') return 'technician';
+  return r;
+}
+
 function clearCookie(name){
   try{
     const secure = (location.protocol === 'https:') ? '; Secure' : '';
@@ -160,175 +171,141 @@ function showToast(msg, type = "info") {
 // UI Injection
 // ----------------------
 function injectAdminMenu(){
-  if (document.getElementById('cwfMenuBtn')) return;
+  // Admin-add-v2 has its own header/menu; do not touch it
+  if (isAdminAddV2Page()) return;
+  if (document.getElementById('cwfTopNav')) return;
 
-  const style = document.createElement('style');
-  style.textContent = `
-    .cwf-fab{position:fixed;top:calc(12px + env(safe-area-inset-top));right:12px;z-index:2500;display:flex;gap:8px;align-items:center}
-    .cwf-iconbtn{width:46px;height:46px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;
-      border:1px solid rgba(15,23,42,0.14);background:rgba(255,255,255,0.72);backdrop-filter: blur(10px);
-      box-shadow: 0 12px 34px rgba(0,0,0,0.14);cursor:pointer;user-select:none}
-    .cwf-iconbtn:active{transform: translateY(1px) scale(0.99)}
-    .cwf-iconbtn svg{width:22px;height:22px;fill:#0f172a}
-
-    .cwf-drawer-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2499;display:none}
-    .cwf-drawer{position:fixed;top:calc(12px + env(safe-area-inset-top));right:12px;left:12px;
-      bottom:calc(12px + env(safe-area-inset-bottom));z-index:2600;display:none;
-      max-width:520px;margin-left:auto;background:rgba(255,255,255,0.92);backdrop-filter: blur(14px);
-      border:1px solid rgba(15,23,42,0.12);border-radius:22px;box-shadow: 0 22px 70px rgba(0,0,0,0.22);
-      overflow:hidden;display:none;flex-direction:column}
-    .cwf-drawer .h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px;
+  const css = document.createElement('style');
+  css.textContent = `
+    :root{
+      --cwf-blue:#0b4bb3;
+      --cwf-yellow:#ffcc00;
+      --cwf-ink:#0f172a;
+    }
+    body{padding-top:calc(60px + env(safe-area-inset-top)) !important;}
+    #cwfTopNav{position:fixed;left:0;right:0;top:0;z-index:2600;
+      padding-top:env(safe-area-inset-top);
+      background:rgba(255,255,255,0.86);backdrop-filter: blur(14px);
+      border-bottom:1px solid rgba(15,23,42,0.10);
+      box-shadow:0 10px 30px rgba(2,6,23,0.10);}
+    #cwfTopNav .in{max-width:980px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;
+      gap:10px;padding:10px 12px;}
+    #cwfTopNav .ttl{min-width:0;display:flex;flex-direction:column;gap:2px}
+    #cwfTopNav .ttl b{font-size:14px;line-height:1.1;color:var(--cwf-ink)}
+    #cwfTopNav .ttl span{font-size:12px;font-weight:800;color:rgba(15,23,42,0.58);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #cwfTopNav .btns{display:flex;align-items:center;gap:8px}
+    .cwf-icbtn{width:44px;height:44px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;
+      border:1px solid rgba(15,23,42,0.14);background:rgba(255,255,255,0.78);
+      box-shadow:0 10px 26px rgba(0,0,0,0.12);cursor:pointer;user-select:none}
+    .cwf-icbtn:active{transform: translateY(1px) scale(0.99)}
+    .cwf-icbtn svg{width:22px;height:22px;fill:var(--cwf-ink)}
+    #cwfDrawerBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2599;display:none}
+    #cwfDrawer{position:fixed;left:0;right:0;top:calc(60px + env(safe-area-inset-top));bottom:0;z-index:2700;
+      display:none;padding:12px;overflow:auto;}
+    #cwfDrawer .panel{max-width:560px;margin:0 auto;background:rgba(255,255,255,0.94);
+      backdrop-filter: blur(16px);border:1px solid rgba(15,23,42,0.12);border-radius:22px;
+      box-shadow:0 22px 70px rgba(0,0,0,0.22);overflow:hidden}
+    #cwfDrawer .h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px;
       border-bottom:1px solid rgba(15,23,42,0.10);background:#f8fafc}
-    .cwf-drawer .h b{font-size:14px}
-    .cwf-drawer .b{padding:12px;display:flex;flex-direction:column;gap:10px;overflow:auto;flex:1;
-      padding-bottom:calc(12px + 92px + env(safe-area-inset-bottom))}
+    #cwfDrawer .h b{font-size:14px;color:var(--cwf-ink)}
+    #cwfDrawer .b{padding:12px;display:flex;flex-direction:column;gap:10px}
     .cwf-group{border:1px solid rgba(15,23,42,0.10);border-radius:18px;background:#fff;overflow:hidden}
-    .cwf-group .t{padding:10px 12px;background:#f8fafc;font-weight:900;font-size:12px;color:#0f172a;
+    .cwf-group .t{padding:10px 12px;background:#f8fafc;font-weight:900;font-size:12px;color:var(--cwf-ink);
       border-bottom:1px solid rgba(15,23,42,0.08)}
     .cwf-group .i{display:flex;flex-direction:column;gap:8px;padding:10px 12px}
     .cwf-link{display:flex;align-items:center;justify-content:space-between;gap:10px;
       border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:10px 12px;background:#fff;
-      font-weight:900;color:#0f172a;cursor:pointer}
+      font-weight:900;color:var(--cwf-ink);cursor:pointer}
     .cwf-link small{font-weight:800;color:rgba(15,23,42,0.60)}
-    .cwf-link:hover{filter:brightness(1.02)}
-    .cwf-link.primary{background: linear-gradient(135deg, var(--primary), var(--primary-2)); color:#fff; border-color: transparent}
-    .cwf-link.warning{background: linear-gradient(135deg, var(--accent), #f59e0b); color:#111827; border-color: transparent}
-    .cwf-link.danger{background: linear-gradient(135deg, #fb7185, var(--danger)); color:#fff; border-color: transparent}
+    .cwf-link.primary{background:var(--cwf-blue); color:#fff; border-color: transparent}
+    .cwf-link.warning{background:var(--cwf-yellow); color:#111827; border-color: transparent}
+    .cwf-link.danger{background:#ef4444; color:#fff; border-color: transparent}
   `;
-  document.head.appendChild(style);
+  document.head.appendChild(css);
 
-  const fab = document.createElement('div');
-  fab.className = 'cwf-fab';
-  fab.innerHTML = `
-    <div id="cwfMenuBtn" class="cwf-iconbtn" title="เมนู" aria-label="เมนู">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Z"/></svg>
+  const pageTitle = (()=>{
+    const t = String(document.title || 'Admin').replace(/\s*-\s*CWF.*$/i,'').trim();
+    return t || 'Admin';
+  })();
+
+  const nav = document.createElement('div');
+  nav.id = 'cwfTopNav';
+  nav.innerHTML = `
+    <div class="in">
+      <div class="ttl">
+        <b>CWF Admin</b>
+        <span>${pageTitle}</span>
+      </div>
+      <div class="btns">
+        <div id="cwfMenuBtn" class="cwf-icbtn" title="เมนู" aria-label="เมนู">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Z"/></svg>
+        </div>
+      </div>
     </div>
   `;
-  document.body.appendChild(fab);
+  document.body.insertBefore(nav, document.body.firstChild);
 
   const backdrop = document.createElement('div');
   backdrop.id = 'cwfDrawerBackdrop';
-  backdrop.className = 'cwf-drawer-backdrop';
   document.body.appendChild(backdrop);
 
   const drawer = document.createElement('div');
   drawer.id = 'cwfDrawer';
-  drawer.className = 'cwf-drawer';
   drawer.innerHTML = `
-    <div class="h">
-      <div>
-        <b>เมนู Admin</b>
-        <div class="muted" style="margin-top:2px">รวมปุ่มด้านบนทั้งหมดไว้ที่นี่</div>
-        <div id="cwfWhoLine" class="muted" style="margin-top:6px"></div>
-      </div>
-      <button class="secondary btn-mini" type="button" id="cwfCloseMenu" style="width:auto">ปิด</button>
-    </div>
-    <div class="b">
-      <div class="cwf-group">
-        <div class="t">ทางลัด</div>
-        <div class="i">
-          <div class="cwf-link primary" data-href="/admin-review-v2.html">📥 งานลูกค้าจอง <small>Review</small></div>
-          <div class="cwf-link" data-href="/admin-queue-v2.html">🗓️ เช็คคิวช่าง <small>Calendar</small></div>
-          <div class="cwf-link warning" data-href="/admin-add-v2.html">➕ เพิ่มงาน <small>New job</small></div>
-          <div class="cwf-link" data-href="/admin-history-v2.html">📚 ประวัติงาน <small>History</small></div>
+    <div class="panel">
+      <div class="h">
+        <div>
+          <b>เมนู</b>
+          <div class="muted" id="cwfWhoLine" style="margin-top:4px">—</div>
         </div>
+        <button class="secondary btn-mini" type="button" id="cwfCloseMenu" style="width:auto">ปิด</button>
       </div>
-
-      <div class="cwf-group">
-        <div class="t">หน้า Admin ทั้งหมด</div>
-        <div class="i">
-          <div class="cwf-link" data-href="/admin-promotions-v2.html">🏷️ โปรโมชั่น/ราคา <small>Promotions</small></div>
-          <div class="cwf-link" data-href="/admin-job-view-v2.html">🔎 ดูงาน (เปิดจากรายการ) <small>Job View</small></div>
+      <div class="b">
+        <div class="cwf-group">
+          <div class="t">ศูนย์กลาง</div>
+          <div class="i">
+            <div class="cwf-link primary" data-href="/admin-dashboard-v2.html">📊 Dashboard <small>Admin</small></div>
+            <div class="cwf-link" data-href="/admin-profile-v2.html">👤 Profile Admin <small>รูป + ชื่อ</small></div>
+            <div class="cwf-link" data-href="/admin-technicians-v2.html">🧰 จัดการช่าง <small>ID/อนุมัติ</small></div>
+            <div class="cwf-link" id="cwfSuperAdminLink" data-href="/admin-super-v2.html" style="display:none">🛡️ Super Admin <small>จัดการทั้งหมด</small></div>
+          </div>
         </div>
-      </div>
 
-      <div class="cwf-group">
-        <div class="t">ศูนย์กลาง</div>
-        <div class="i">
-          <div class="cwf-link" data-href="/admin-dashboard-v2.html">📊 Dashboard <small>Admin</small></div>
-          <div class="cwf-link" data-href="/admin-profile-v2.html">👤 Profile Admin <small>รูป + ชื่อ</small></div>
-          <div class="cwf-link" data-href="/admin-technicians-v2.html">🧰 จัดการช่าง <small>ID/อนุมัติ</small></div>
-          <div class="cwf-link" id="cwfSuperAdminLink" data-href="/admin-super-v2.html" style="display:none">🛡️ Super Admin <small>จัดการทั้งหมด</small></div>
+        <div class="cwf-group">
+          <div class="t">หน้า Admin ทั้งหมด</div>
+          <div class="i">
+            <div class="cwf-link warning" data-href="/admin-add-v2.html">➕ เพิ่มงาน <small>Booking</small></div>
+            <div class="cwf-link" data-href="/admin-queue-v2.html">🗓️ คิวช่าง <small>Queue</small></div>
+            <div class="cwf-link" data-href="/admin-history-v2.html">🧾 ประวัติงาน <small>History</small></div>
+            <div class="cwf-link" data-href="/admin-review-v2.html">✅ อนุมัติงาน/รีวิว <small>Approvals</small></div>
+            <div class="cwf-link" data-href="/admin-promotions-v2.html">🏷️ โปรโมชั่น/ราคา <small>Promotions</small></div>
+            <div class="cwf-link" data-href="/admin-job-view-v2.html">🔎 ดูงาน <small>Job View</small></div>
+          </div>
         </div>
-      </div>
 
-      <div class="cwf-group">
-        <div class="t">ระบบ</div>
-        <div class="i">
-          <div class="cwf-link" id="cwfStopImpBtn" style="display:none" data-action="stop-impersonate">หยุดสวมสิทธิ <small>Stop</small></div>
-          <div class="cwf-link danger" id="cwfLogoutBtn">ออกจากระบบ <small>Logout</small></div>
+        <div class="cwf-group">
+          <div class="t">ระบบ</div>
+          <div class="i">
+            <div class="cwf-link" id="cwfStopImpBtn" style="display:none" data-action="stop-impersonate">หยุดสวมสิทธิ <small>Stop</small></div>
+            <div class="cwf-link danger" id="cwfLogoutBtn">ออกจากระบบ <small>Logout</small></div>
+          </div>
         </div>
       </div>
     </div>
   `;
   document.body.appendChild(drawer);
 
-  // Re-position the floating menu button to avoid overlapping page badges (e.g., topbar pill count)
-  const positionFab = ()=>{
-    try{
-      const tb = document.querySelector('.topbar');
-      if(tb){
-        const r = tb.getBoundingClientRect();
-        const top = Math.max(12, Math.round(r.bottom + 10));
-        fab.style.top = top + 'px';
-      }
-    }catch(e){}
-  };
-  positionFab();
-  window.addEventListener('resize', positionFab);
-
-async function syncAuthMe(){
-  try{
-    const r = await fetch('/api/auth/me', { credentials:'include' });
-    if(!r.ok) throw new Error('unauth');
-    const d = await r.json().catch(()=>null);
-    if(!d || !d.ok) throw new Error('unauth');
-    window.__CWF_AUTH_ME = d;
-
-    const who = document.getElementById('cwfWhoLine');
-    if (who) {
-      const actorRoleLabel = (d.actor && d.actor.role === 'super_admin') ? 'Super Admin' : (d.actor ? d.actor.role : d.role);
-      const actorLabel = d.actor ? `${d.actor.username} (${actorRoleLabel})` : `${d.username} (${d.role})`;
-      if (d.impersonating && d.actor) {
-        who.textContent = `กำลังสวมสิทธิ: ${d.username} (${d.role}) • โดย ${actorLabel}`;
-      } else {
-        who.textContent = `ผู้ใช้: ${actorLabel}`;
-      }
-    }
-
-    const superL = document.getElementById('cwfSuperAdminLink');
-    if (superL) {
-      const isSuper = (d.actor && d.actor.role === 'super_admin') || (d.role === 'super_admin');
-      superL.style.display = isSuper ? 'flex' : 'none';
-    }
-
-    const stopBtn = document.getElementById('cwfStopImpBtn');
-    if (stopBtn) {
-      stopBtn.style.display = d.impersonating ? 'flex' : 'none';
-    }
-  } catch (e) {
-    // ignore here; guard will handle
-  }
-}
-
-// run once
-syncAuthMe();
-
-
-  const open = ()=>{ backdrop.style.display='block'; drawer.style.display='flex'; };
+  const open = ()=>{ backdrop.style.display='block'; drawer.style.display='block'; };
   const close = ()=>{ backdrop.style.display='none'; drawer.style.display='none'; };
 
   document.getElementById('cwfMenuBtn').addEventListener('click', open);
   document.getElementById('cwfCloseMenu').addEventListener('click', close);
   backdrop.addEventListener('click', close);
+
   drawer.addEventListener('click', (e)=>{
     const t = e.target.closest('.cwf-link');
     if(!t) return;
-    if(t.id === 'cwfLogoutBtn'){
-      close();
-      doLogout();
-      return;
-    }
+    if(t.id === 'cwfLogoutBtn'){ close(); doLogout(); return; }
     if(t.id === 'cwfStopImpBtn' || t.getAttribute('data-action')==='stop-impersonate'){
       close();
       (async()=>{
@@ -338,48 +315,62 @@ syncAuthMe();
           const a = (d && d.actor) ? d.actor : { username: localStorage.getItem('username'), role: localStorage.getItem('role') };
           try{
             if (a && a.username) localStorage.setItem('username', String(a.username));
-            if (a && a.role) localStorage.setItem('role', String(a.role));
+            if (a && a.role) localStorage.setItem('role', normalizeRole(a.role));
             ['cwf_impersonate','cwf_impersonate_by','cwf_impersonate_since'].forEach(k=>localStorage.removeItem(k));
           }catch(e){}
           try{ location.replace('/admin-super-v2.html'); }catch(e){ location.href = '/admin-super-v2.html'; }
-        }catch(e){
-          showToast('หยุดสวมสิทธิไม่สำเร็จ','error');
-        }
+        }catch(e){ showToast('หยุดสวมสิทธิไม่สำเร็จ','error'); }
       })();
       return;
     }
     const href = t.getAttribute('data-href');
-    if(href){
-      close();
-      location.href = href;
-    }
+    if(href){ close(); location.href = href; }
   });
 
-  // Position the floating menu button so it doesn't overlap page headers (e.g. .topbar pill)
-  const placeFab = ()=>{
+  (async function syncAuthMe(){
     try{
-      const topbar = document.querySelector('.topbar') || document.querySelector('header') || null;
-      const base = 12 + (window.visualViewport ? Math.max(0, window.visualViewport.offsetTop||0) : 0);
-      if (!topbar) return; // keep default
-      const r = topbar.getBoundingClientRect();
-      const y = Math.max(base, Math.ceil(r.bottom + 10));
-      fab.style.top = `calc(${y}px + env(safe-area-inset-top))`;
-    }catch(e){}
-  };
-  placeFab();
-  window.addEventListener('resize', placeFab);
-  window.addEventListener('orientationchange', placeFab);
+      const r = await fetch('/api/auth/me', { credentials:'include' });
+      if(!r.ok) throw new Error('unauth');
+      const d = await r.json().catch(()=>null);
+      if(!d || !d.ok) throw new Error('unauth');
+      window.__CWF_AUTH_ME = d;
+
+      const who = document.getElementById('cwfWhoLine');
+      if (who) {
+        const actorRoleLabel = (d.actor && normalizeRole(d.actor.role) === 'super_admin') ? 'Super Admin' : (d.actor ? normalizeRole(d.actor.role) : normalizeRole(d.role));
+        const actorLabel = d.actor ? `${d.actor.username} (${actorRoleLabel})` : `${d.username} (${normalizeRole(d.role)})`;
+        who.textContent = d.impersonating ? `กำลังสวมสิทธิ: ${d.username} (${normalizeRole(d.role)}) • โดย ${actorLabel}` : `ผู้ใช้: ${actorLabel}`;
+      }
+
+      const superL = document.getElementById('cwfSuperAdminLink');
+      if (superL) {
+        const isSuper = (d.actor && normalizeRole(d.actor.role) === 'super_admin') || (normalizeRole(d.role) === 'super_admin');
+        superL.style.display = isSuper ? 'flex' : 'none';
+      }
+
+      const stopBtn = document.getElementById('cwfStopImpBtn');
+      if (stopBtn) stopBtn.style.display = d.impersonating ? 'flex' : 'none';
+    }catch(_){ }
+  })();
 }
 
+
 function injectFloatingDebug(){
-  // Debug must NOT be inside the menu. We'll hide it behind a long-press on the menu icon (and still require PIN).
+  // Debug must NOT be inside the menu. Provide a small floating bug icon + PIN gate.
   if (document.getElementById('cwfDebugPanel')) return;
   // If a page already has its own bug button/panel, skip
   if (document.getElementById('btnBug') || document.getElementById('debugFloat')) return;
 
   const css = document.createElement('style');
   css.textContent = `
-    #cwfDebugPanel{position:fixed;right:12px;bottom:calc(140px + env(safe-area-inset-bottom));z-index:2600;
+    #cwfDbgBtn{position:fixed;right:12px;bottom:calc(12px + env(safe-area-inset-bottom));z-index:2750;
+      width:46px;height:46px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;
+      border:1px solid rgba(15,23,42,0.14);background:rgba(255,255,255,0.78);backdrop-filter: blur(12px);
+      box-shadow:0 12px 34px rgba(0,0,0,0.14);cursor:pointer;user-select:none}
+    #cwfDbgBtn:active{transform: translateY(1px) scale(0.99)}
+    #cwfDbgBtn svg{width:22px;height:22px;fill:#0f172a}
+
+    #cwfDebugPanel{position:fixed;right:12px;bottom:calc(68px + env(safe-area-inset-bottom));z-index:2740;
       width:min(520px,calc(100vw - 24px));max-height:65vh;overflow:auto;
       border:1px solid rgba(15,23,42,0.12);border-radius:18px;background:rgba(255,255,255,0.94);
       backdrop-filter: blur(14px);box-shadow: 0 22px 70px rgba(0,0,0,0.22);display:none}
@@ -390,6 +381,13 @@ function injectFloatingDebug(){
       border-radius:14px;padding:10px;font-size:12px;overflow:auto}
   `;
   document.head.appendChild(css);
+
+  const btn = document.createElement('div');
+  btn.id = 'cwfDbgBtn';
+  btn.title = 'Debug Panel';
+  btn.setAttribute('aria-label','Debug Panel');
+  btn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 7h-4V5h4v2Zm6 3h-2.07c-.2-.72-.5-1.39-.9-2H20V6h-2.8c-.54-.62-1.18-1.13-1.9-1.5L16 3h-2l-.5 1h-3L10 3H8l.7 1.5c-.72.37-1.36.88-1.9 1.5H4v2h2.97c-.4.61-.7 1.28-.9 2H4v2h2.07c.06.67.22 1.31.46 1.91L5 16.5 6.5 18l1.58-1.53c.58.46 1.24.82 1.97 1.05V20h4v-2.48c.73-.23 1.39-.59 1.97-1.05L17.5 18 19 16.5l-1.53-1.59c.24-.6.4-1.24.46-1.91H20v-2Zm-8 6a4 4 0 1 1 0-8 4 4 0 0 1 0 8Z"/></svg>`;
+  document.body.appendChild(btn);
 
   const panel = document.createElement('div');
   panel.id = 'cwfDebugPanel';
@@ -429,6 +427,22 @@ function injectFloatingDebug(){
     return true;
   };
 
+  const unlocked = ()=>{
+    try{
+      const until = Number(localStorage.getItem('cwf_debug_unlock_until')||'0');
+      const ok = (localStorage.getItem('cwf_debug_unlocked')==='1') && (until===0 || Date.now()<until);
+      return ok;
+    }catch(e){ return false; }
+  };
+
+  // small floating button toggles panel (PIN-gated)
+  btn.addEventListener('click', ()=>{
+    if (!unlocked()){
+      if (!requirePin()) return;
+    }
+    panel.style.display = (panel.style.display === 'block') ? 'none' : 'block';
+  });
+
   const isDbgOn = ()=>{
     try{
       const want = (localStorage.getItem('cwf_debug') === '1');
@@ -454,47 +468,6 @@ function injectFloatingDebug(){
     };
     box.textContent = JSON.stringify(payload, null, 2);
   };
-
-
-  // Open debug via LONG PRESS on menu button (hidden by default)
-  const bindLongPress = ()=>{
-    const menuBtn = document.getElementById('cwfMenuBtn');
-    if(!menuBtn) return false;
-    if(menuBtn.__cwf_lp_bound) return true;
-    menuBtn.__cwf_lp_bound = true;
-
-    let tmr = null;
-    const start = ()=>{
-      if (tmr) clearTimeout(tmr);
-      tmr = setTimeout(()=>{
-        tmr = null;
-        // unlock + open panel
-        if(!isDbgOn()){
-          if(!requirePin()) return;
-          try{ localStorage.setItem('cwf_debug','1'); }catch(e){}
-        }
-        panel.style.display = 'block';
-        refresh();
-      }, 850);
-    };
-    const cancel = ()=>{ if(tmr){ clearTimeout(tmr); tmr=null; } };
-    menuBtn.addEventListener('touchstart', start, {passive:true});
-    menuBtn.addEventListener('touchend', cancel, {passive:true});
-    menuBtn.addEventListener('touchmove', cancel, {passive:true});
-    menuBtn.addEventListener('mousedown', start);
-    menuBtn.addEventListener('mouseup', cancel);
-    menuBtn.addEventListener('mouseleave', cancel);
-    return true;
-  };
-
-  // Try bind now and later (menu inject may run before debug)
-  if(!bindLongPress()){
-    const itv = setInterval(()=>{
-      if(bindLongPress()) clearInterval(itv);
-    }, 250);
-    setTimeout(()=>clearInterval(itv), 6000);
-  }
-
   document.getElementById('cwfDbgClose').addEventListener('click', ()=>{ panel.style.display='none'; });
   document.getElementById('cwfDbgRefresh').addEventListener('click', refresh);
   document.getElementById('cwfDbgToggle').addEventListener('click', ()=>{
@@ -518,11 +491,13 @@ function injectFloatingDebug(){
 function basicAdminGuard(){
   const localCheck = ()=>{
     try{
-      const role = localStorage.getItem('role');
+      const role = normalizeRole(localStorage.getItem('role'));
       const u = localStorage.getItem('username');
       if (!u || (role !== 'admin' && role !== 'super_admin')) {
         return false;
       }
+      // keep normalized role in storage (prevents redirect loop)
+      try{ localStorage.setItem('role', role); }catch(e){}
       // if explicitly logged out in this tab/session, block immediately
       if (sessionStorage.getItem('cwf_logged_out') === '1') return false;
       return true;

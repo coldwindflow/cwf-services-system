@@ -310,6 +310,16 @@ async function ensureSessionForUser(res, username) {
   return { token, role };
 }
 
+// Normalize legacy/DB role strings to stable internal roles
+function normalizeRole(role) {
+  const r = String(role || "").trim().toLowerCase();
+  if (!r) return "";
+  if (["super_admin", "super-admin", "super admin", "superadmin"].includes(r)) return "super_admin";
+  if (["admin", "administrator"].includes(r)) return "admin";
+  if (["technician", "tech", "ช่าง"].includes(r)) return "technician";
+  return r;
+}
+
 async function getAuthContext(req, res) {
   // Returns: { ok, actor:{username,role}, effective:{username,role}, impersonating:boolean, session_token }
   // Priority: cwf_session (server-side) -> cwf_auth (legacy)
@@ -331,14 +341,14 @@ async function getAuthContext(req, res) {
     // actor role must be trusted from DB (not from session row)
     const uq = await pool.query('SELECT username, role FROM public.users WHERE username=$1 LIMIT 1', [row.username]);
     if ((uq.rows || []).length === 0) return { ok: false };
-    const actor = { username: String(uq.rows[0].username), role: String(uq.rows[0].role) };
+    const actor = { username: String(uq.rows[0].username), role: normalizeRole(uq.rows[0].role) };
 
     let effective = actor;
     let impersonating = false;
     if (row.impersonated_username) {
       const iq = await pool.query('SELECT username, role FROM public.users WHERE username=$1 LIMIT 1', [row.impersonated_username]);
       if ((iq.rows || []).length) {
-        effective = { username: String(iq.rows[0].username), role: String(iq.rows[0].role) };
+        effective = { username: String(iq.rows[0].username), role: normalizeRole(iq.rows[0].role) };
         impersonating = true;
       }
     }
@@ -351,7 +361,7 @@ async function getAuthContext(req, res) {
   if (!auth) return { ok: false };
   const uq = await pool.query('SELECT username, role FROM public.users WHERE username=$1 LIMIT 1', [auth.username]);
   if ((uq.rows || []).length === 0) return { ok: false };
-  const actor = { username: String(uq.rows[0].username), role: String(uq.rows[0].role) };
+  const actor = { username: String(uq.rows[0].username), role: normalizeRole(uq.rows[0].role) };
   return { ok: true, actor, effective: actor, impersonating: false, session_token: null };
 }
 
@@ -1567,7 +1577,7 @@ app.post("/login", async (req, res) => {
     if (r.rows.length === 0) return res.status(401).json({ error: "ชื่อผู้ใช้หรือรหัสผ่านผิด" });
 
     const u = String(r.rows[0].username);
-    const role = String(r.rows[0].role);
+    const role = normalizeRole(r.rows[0].role);
 
     // ✅ Create server-side session cookie (HttpOnly) for real logout + impersonation
     try {
