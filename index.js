@@ -5028,35 +5028,56 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
     let siteLat = toFiniteOrNaN(r.rows[0].gps_latitude);
     let siteLng = toFiniteOrNaN(r.rows[0].gps_longitude);
 
-    // ✅ ISSUE-1: ถ้างานไม่มีพิกัด (เช่น admin ใส่ URL จาก Google Maps ที่แยก lat/lng ไม่ได้)
-    // ให้ช่างเช็คอินได้ตามปกติ (บันทึกพิกัดช่าง) แต่ถ้ามีพิกัดจริง -> บังคับระยะ 500m เหมือนเดิม
-    let hasSiteLatLng = Number.isFinite(siteLat) && Number.isFinite(siteLng);
+    // Treat (0,0) and out-of-bounds as invalid sentinel.
+    // Some older records accidentally stored 0/0 when parsing failed.
+    const isValidSiteLatLng = (la, lo) => {
+      if (!Number.isFinite(la) || !Number.isFinite(lo)) return false;
+      if (la < -90 || la > 90 || lo < -180 || lo > 180) return false;
+      // (0,0) is almost always a bad value for Thailand jobs
+      if (Math.abs(la) < 1e-9 && Math.abs(lo) < 1e-9) return false;
+      return true;
+    };
 
-    // ✅ If no stored site lat/lng, try to derive from maps_url (fail-open)
-    // - This fixes: admin saved a Google Maps URL but DB has null coords
-    // - Also fixes: short links maps.app.goo.gl (best-effort resolve with timeout)
-    if (!hasSiteLatLng && mapsUrl) {
-      let derived = parseLatLngFromText(mapsUrl);
-      if (!derived && /maps\.app\.goo\.gl|goo\.gl/i.test(mapsUrl)) {
+    // ✅ ISSUE-1 (ตาม requirement ล่าสุด):
+    // - ถ้า "maps_url" แปลงพิกัดได้จริง -> บังคับ 500m (ใช้พิกัดที่แปลงจาก URL เป็นหลัก)
+    // - ถ้า "maps_url" แปลงพิกัดไม่ได้ -> ไม่บังคับ 500m และเช็คอินได้ปกติ
+    // - ถ้าไม่มี maps_url เลย -> fallback ใช้ gps_latitude/gps_longitude ที่เก็บไว้ (backward-compatible)
+    let hasSiteLatLng = false;
+
+    // Try to derive from maps_url first (authoritative for enforcement)
+    let derivedFromUrl = null;
+    if (mapsUrl) {
+      derivedFromUrl = parseLatLngFromText(mapsUrl);
+      if (!derivedFromUrl && /maps\.app\.goo\.gl|goo\.gl/i.test(mapsUrl)) {
         try {
           const rr = await resolveMapsUrlToLatLng(mapsUrl);
-          if (rr && Number.isFinite(rr.lat) && Number.isFinite(rr.lng)) derived = { lat: rr.lat, lng: rr.lng, via: rr.via || 'resolver' };
-        } catch (e) {
+          if (rr && Number.isFinite(rr.lat) && Number.isFinite(rr.lng)) {
+            derivedFromUrl = { lat: rr.lat, lng: rr.lng, via: rr.via || 'resolver' };
+          }
+        } catch (_) {
           // fail-open
         }
       }
-      if (derived && Number.isFinite(derived.lat) && Number.isFinite(derived.lng)) {
-        siteLat = Number(derived.lat);
-        siteLng = Number(derived.lng);
+
+      if (derivedFromUrl && isValidSiteLatLng(Number(derivedFromUrl.lat), Number(derivedFromUrl.lng))) {
+        siteLat = Number(derivedFromUrl.lat);
+        siteLng = Number(derivedFromUrl.lng);
         hasSiteLatLng = true;
+
         // cache (best-effort) so next time no need to resolve
         try {
           await pool.query(
-            `UPDATE public.jobs SET gps_latitude=$1, gps_longitude=$2 WHERE job_id=$3 AND (gps_latitude IS NULL OR gps_longitude IS NULL)`,
+            `UPDATE public.jobs SET gps_latitude=$1, gps_longitude=$2 WHERE job_id=$3 AND (gps_latitude IS NULL OR gps_longitude IS NULL OR (gps_latitude=0 AND gps_longitude=0))`,
             [siteLat, siteLng, realId]
           );
         } catch (_) {}
+      } else {
+        // maps_url exists but cannot be parsed -> allow check-in (no site enforcement)
+        hasSiteLatLng = false;
       }
+    } else {
+      // No maps_url -> fallback to stored coords for legacy jobs
+      hasSiteLatLng = isValidSiteLatLng(siteLat, siteLng);
     }
 
     let distance = null;
@@ -5083,7 +5104,7 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
               const rr = await resolveMapsUrlToLatLng(mapsUrl);
               if (rr && Number.isFinite(rr.lat) && Number.isFinite(rr.lng)) derived = { lat: rr.lat, lng: rr.lng, via: rr.via || 'resolver' };
             }
-            if (derived && Number.isFinite(derived.lat) && Number.isFinite(derived.lng)) {
+            if (derived && isValidSiteLatLng(Number(derived.lat), Number(derived.lng))) {
               const dLat2 = toRad(Number(lat) - Number(derived.lat));
               const dLng2 = toRad(Number(lng) - Number(derived.lng));
               const a2 =
@@ -5106,6 +5127,10 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
         }
 
         if (distance > 500) {
+          // ✅ Requirement: if we cannot confidently obtain a valid site coordinate (URL not parseable)
+          // then do not block check-in.
+          // Here, if the only coordinates were invalid/sentinel and we couldn't derive a valid one,
+          // `hasSiteLatLng` would be false and we wouldn't be inside this block.
           return res.status(400).json({ error: "อยู่นอกพื้นที่หน้างาน", distance: Math.round(distance) });
         }
       }
