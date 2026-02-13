@@ -108,6 +108,169 @@ body{
 .badge.ok{ border-color: var(--slot-available-border); color: #15803d; }
 .badge.muted{ border-color: var(--slot-full-border); color: var(--muted); }
 
+/* =========================================================
+   Customer Booking – Slot chips + filter + loading skeleton
+   (Scoped to .customer-page only to avoid admin regression)
+   ========================================================= */
+
+.customer-page .slot-controls{ margin-top:10px; }
+.customer-page .chip-group{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  flex-wrap:wrap;
+}
+.customer-page .chip{
+  appearance:none;
+  border: 1px solid rgba(15,23,42,0.14);
+  background: rgba(255,255,255,0.88);
+  border-radius: 999px;
+  padding: 10px 12px;
+  font-weight: 900;
+  font-size: 13px;
+  min-height: 40px;
+  box-shadow: 0 6px 18px rgba(15,23,42,0.08);
+}
+.customer-page .chip.active{
+  border-color: rgba(37,99,235,0.35);
+  background: linear-gradient(180deg, rgba(37,99,235,0.14), rgba(255,255,255,0.92));
+}
+
+.customer-page .slot-head{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+  align-items:center;
+}
+
+.customer-page .slot-chip-wrap{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+}
+.customer-page .slot-chip{
+  min-height: 46px;
+  border-radius: 999px;
+  border: 1px solid rgba(15,23,42,0.12);
+  background: rgba(255,255,255,0.92);
+  box-shadow: var(--shadow-2);
+  padding: 10px 12px;
+  display:inline-flex;
+  align-items:center;
+  gap:10px;
+  cursor:pointer;
+}
+.customer-page .slot-chip .t{ font-weight: 950; letter-spacing:.2px; }
+.customer-page .slot-chip .m{ font-size: 12px; color: var(--muted); }
+
+.customer-page .slot-chip.is-available{
+  border-color: var(--slot-available-border);
+  background: linear-gradient(180deg, rgba(255,255,255,0.94), var(--slot-available-bg));
+}
+.customer-page .slot-chip.is-full{
+  border-color: var(--slot-full-border);
+  background: linear-gradient(180deg, rgba(255,255,255,0.88), var(--slot-full-bg));
+  opacity: .65;
+}
+.customer-page .slot-chip.is-full .m{ color: #475569; font-weight:900; }
+.customer-page .slot-chip:disabled{ cursor:not-allowed; }
+.customer-page .slot-chip.selected{
+  outline: 3px solid var(--slot-selected-ring);
+  outline-offset: 2px;
+  background: linear-gradient(180deg, rgba(37,99,235,0.92), rgba(37,99,235,0.78));
+  border-color: rgba(37,99,235,0.55);
+  color: #fff;
+}
+.customer-page .slot-chip.selected .m{ color: rgba(255,255,255,0.90); }
+
+/* Loading skeleton */
+.slot-skeleton .sk-line{
+  height: 12px;
+  width: 100%;
+  border-radius: 999px;
+  background: rgba(148,163,184,0.35);
+}
+.slot-skeleton .sk-chips{
+  margin-top: 10px;
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+}
+.slot-skeleton .sk-chip{
+  height: 46px;
+  width: 120px;
+  border-radius: 999px;
+  background: rgba(148,163,184,0.25);
+  position: relative;
+  overflow:hidden;
+}
+.slot-skeleton .sk-chip::after{
+  content:"";
+  position:absolute;
+  inset:0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.55), transparent);
+  animation: shimmer 1.05s infinite;
+}
+@keyframes shimmer{
+  100%{ transform: translateX(100%); }
+}
+
+/* Summary card */
+.summary-card{
+  border: 1px solid rgba(15,23,42,0.12);
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,0.96));
+  border-radius: 18px;
+  box-shadow: var(--shadow-2);
+  padding: 12px;
+}
+.summary-title{ font-weight: 950; margin-bottom: 10px; }
+.summary-grid{
+  display:grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+@media (min-width: 520px){
+  .summary-grid{ grid-template-columns: 1fr 1fr; }
+}
+.summary-item{ padding: 10px; border-radius: 14px; border: 1px solid rgba(15,23,42,0.08); background: rgba(255,255,255,0.85); }
+.summary-item .k{ font-size: 12px; color: var(--muted); font-weight: 900; }
+.summary-item .v{ margin-top: 4px; font-weight: 800; line-height: 1.25; }
+.summary-item a{ color: var(--primary); text-decoration:none; font-weight: 950; }
+
+/* Success card + actions */
+.success-card{
+  margin-top: 10px;
+  border: 1px solid rgba(34,197,94,0.28);
+  background: linear-gradient(180deg, rgba(34,197,94,0.10), rgba(255,255,255,0.96));
+  border-radius: 18px;
+  padding: 12px;
+  box-shadow: var(--shadow-2);
+}
+.success-title{ font-weight: 950; margin-bottom: 10px; }
+.success-row{ display:flex; justify-content:space-between; gap:10px; align-items:flex-start; padding: 6px 0; }
+.success-row .k{ color: var(--muted); font-weight: 900; font-size: 12px; }
+.success-row .v{ font-weight: 850; text-align:right; }
+.success-actions{ display:flex; gap:8px; flex-wrap:wrap; margin-top: 10px; }
+
+/* Toast */
+.toast{
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%) translateY(10px);
+  opacity: 0;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(15,23,42,0.92);
+  color: #fff;
+  font-weight: 900;
+  z-index: 9999;
+  transition: all .22s ease;
+}
+.toast.show{ opacity: 1; transform: translateX(-50%) translateY(0); }
+
 /* Machine count stepper (กดได้ + พิมพ์ได้) */
 .stepper{
   display:flex;

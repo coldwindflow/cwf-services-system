@@ -6,7 +6,7 @@
   <title>CWF - จองคิวงาน</title>
   <link rel="stylesheet" href="style.css">
 </head>
-<body class="theme-2">
+<body class="theme-2 customer-page">
   <div class="app">
     <div class="topbar">
       <div class="brand">
@@ -36,6 +36,14 @@
       <div class="grid2">
         <input id="date" type="date">
         <button id="loadSlotsBtn" type="button" onclick="loadSlots()" disabled>🔄 โหลดเวลาว่าง</button>
+      </div>
+
+      <div id="slot_controls" class="slot-controls" style="margin-top:10px;display:none;">
+        <div class="chip-group" role="tablist" aria-label="slot filter">
+          <button id="filter_avail" type="button" class="chip active" aria-selected="true">ว่างเท่านั้น</button>
+          <button id="filter_all" type="button" class="chip" aria-selected="false">ทั้งหมด</button>
+        </div>
+        <div class="muted" style="font-size:12px;margin-top:6px;">* เลือก “ทั้งหมด” เพื่อดูช่วงที่เต็มด้วย</div>
       </div>
 
       <div id="slots" class="muted" style="margin-top:10px;">เลือกวันที่แล้วกด “โหลดเวลาว่าง”</div>
@@ -146,7 +154,30 @@
 <hr style="margin:14px 0;">
 <p style="margin-top:6px;">💵 <b>ยอดรวมประมาณ:</b> <span id="grand_total">0</span> บาท</p>
 
-      <button type="button" onclick="book()" style="margin-top:10px;">✅ ยืนยันจอง</button>
+      <!-- Summary card before confirm -->
+      <div id="confirm_summary" class="summary-card" style="margin-top:12px;">
+        <div class="summary-title">สรุปก่อนยืนยัน</div>
+        <div class="summary-grid">
+          <div class="summary-item">
+            <div class="k">วันที่/เวลา</div>
+            <div class="v" id="sum_datetime">-</div>
+          </div>
+          <div class="summary-item">
+            <div class="k">บริการ</div>
+            <div class="v" id="sum_service">-</div>
+          </div>
+          <div class="summary-item">
+            <div class="k">ราคาประมาณการ</div>
+            <div class="v" id="sum_price">ประมาณการ</div>
+          </div>
+          <div class="summary-item">
+            <div class="k">ที่อยู่/แผนที่</div>
+            <div class="v" id="sum_location">-</div>
+          </div>
+        </div>
+      </div>
+
+      <button id="confirm_btn" type="button" onclick="book()" style="margin-top:10px;">✅ ยืนยันจอง</button>
 
       <div id="result" class="muted" style="margin-top:10px;"></div>
     </div>
@@ -203,6 +234,10 @@ function showTopNoticeFromUrl(){
 let pickedTime = null;
 let standardPrice = 0;
 let durationMin = 60;
+
+// Slot filter (default: available only)
+let slotFilterMode = 'avail'; // 'avail' | 'all'
+let lastSlotsResp = null;     // cache last availability response
 
 // PATCH: machine count stepper
 function bindMachineCountStepper(){
@@ -266,6 +301,53 @@ function recomputeGrandTotal() {
   const total = Math.max(0, subtotal - discount);
   const totalBox = document.getElementById("grand_total");
   if (totalBox) totalBox.textContent = total.toFixed(0);
+
+  // keep summary always up-to-date
+  updateConfirmSummary();
+}
+
+function updateConfirmSummary(){
+  const d = document.getElementById('date')?.value || '';
+  const time = pickedTime || '';
+  const dt = document.getElementById('sum_datetime');
+  if(dt) dt.textContent = (d && time) ? `${d} • ${time}` : '-';
+
+  const payload = getPayloadV2();
+  const parts = [];
+  if(payload.job_type) parts.push(payload.job_type);
+  if(payload.ac_type) parts.push(payload.ac_type);
+  if(payload.btu) parts.push(`${payload.btu.toLocaleString('th-TH')} BTU`);
+  if(payload.machine_count) parts.push(`${payload.machine_count} เครื่อง`);
+  if(payload.job_type === 'ล้าง' && payload.wash_variant) parts.push(payload.wash_variant);
+  if(payload.job_type === 'ซ่อม' && payload.repair_variant) parts.push(payload.repair_variant);
+  const svc = document.getElementById('sum_service');
+  if(svc) svc.textContent = parts.length ? parts.join(' • ') : '-';
+
+  const price = document.getElementById('sum_price');
+  const gt = document.getElementById('grand_total')?.textContent || '0';
+  if(price){
+    const n = Number(gt || 0);
+    price.textContent = n > 0 ? `${n.toFixed(0)} บาท (ประมาณการ)` : 'ประมาณการ';
+  }
+
+  const addr = (document.getElementById('address_text')?.value || '').trim();
+  const map = (document.getElementById('maps_url')?.value || '').trim();
+  const loc = document.getElementById('sum_location');
+  if(loc){
+    if(!addr && !map) loc.textContent = '-';
+    else {
+      const a = addr ? addr : '';
+      const m = map ? 'มีลิงก์แผนที่' : '';
+      loc.innerHTML = `${escapeHtml(a)}${(a && m) ? '<br>' : ''}${m ? `<a href="${escapeAttr(map)}" target="_blank" rel="noopener">📍 เปิดแผนที่</a>` : ''}`;
+    }
+  }
+}
+
+function escapeHtml(s){
+  return String(s||'').replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;' }[c]));
+}
+function escapeAttr(s){
+  return String(s||'').replace(/"/g,'&quot;');
 }
 
 function renderItemsCustomer() {
@@ -374,11 +456,62 @@ function setPicked(time){
   pickedTime = time;
   document.getElementById("picked").textContent = time || "-";
   // toggle selected style (ไม่ต้อง reload)
-  document.querySelectorAll('#slots .slot-btn').forEach(b=>b.classList.remove('selected'));
+  document.querySelectorAll('#slots .slot-chip').forEach(b=>b.classList.remove('selected'));
   if (time) {
-    const btn = Array.from(document.querySelectorAll('#slots .slot-btn')).find(b=> (b.textContent||'').includes(time));
+    const btn = Array.from(document.querySelectorAll('#slots .slot-chip')).find(b=> String(b.dataset.start||'') === String(time));
     if (btn) btn.classList.add('selected');
   }
+  updateConfirmSummary();
+}
+
+function setSlotFilterMode(mode){
+  slotFilterMode = (mode === 'all') ? 'all' : 'avail';
+  const a = document.getElementById('filter_avail');
+  const b = document.getElementById('filter_all');
+  if(a && b){
+    const isAvail = slotFilterMode === 'avail';
+    a.classList.toggle('active', isAvail);
+    b.classList.toggle('active', !isAvail);
+    a.setAttribute('aria-selected', isAvail ? 'true' : 'false');
+    b.setAttribute('aria-selected', !isAvail ? 'true' : 'false');
+  }
+  if(lastSlotsResp) renderSlotsFromCache();
+}
+
+function renderSlotsFromCache(){
+  const slotsBox = document.getElementById('slots');
+  if(!slotsBox || !lastSlotsResp) return;
+  const data = lastSlotsResp;
+  const slotsAll = (data.slots || []).filter(Boolean);
+  const slotsAvail = slotsAll.filter(s=>!!s.available);
+  const list = (slotFilterMode === 'all') ? slotsAll : slotsAvail;
+
+  // if current picked time is filtered out → reset
+  if(pickedTime && !list.some(s=>String(s.start)===String(pickedTime))) setPicked(null);
+
+  const head = `<div class="slot-head">
+    <div class="muted">โหมด: <b>${data.tech_type==='partner'?'ด่วน (รอยืนยัน)':'ปกติ'}</b> • ช่างที่พิจารณา: ${data.tech_count} คน</div>
+    <div class="badge ${slotsAvail.length? 'ok':'muted'}">${slotsAvail.length? 'ว่าง':'เต็ม'} • ${slotsAvail.length}/${slotsAll.length}</div>
+  </div>`;
+
+  if(!list.length){
+    slotsBox.innerHTML = head + `<div class="muted" style="margin-top:10px;">${slotFilterMode==='avail' ? 'ไม่มีช่วงที่ว่างในวันนี้' : 'ไม่พบช่วงเวลา'}</div>`;
+    return;
+  }
+
+  const chips = list.map(s=>{
+    const techCount = Array.isArray(s.available_tech_ids) ? s.available_tech_ids.length : 0;
+    const full = !s.available;
+    const cls = `slot-chip ${s.available? 'is-available':'is-full'} ${pickedTime===s.start? 'selected':''}`;
+    const disabled = full ? 'disabled' : '';
+    const meta = s.available ? `ว่าง • ${techCount} ช่าง` : 'เต็ม';
+    return `<button type="button" class="${cls}" data-start="${s.start}" ${disabled} onclick="setPicked('${s.start}')">
+      <span class="t">${s.start}</span>
+      <span class="m">${meta}</span>
+    </button>`;
+  }).join('');
+
+  slotsBox.innerHTML = head + `<div class="slot-chip-wrap" style="margin-top:10px;">${chips}</div>`;
 }
 
 async function loadSlots(){
@@ -387,7 +520,14 @@ async function loadSlots(){
   setPicked(null);
 
   const slotsBox = document.getElementById("slots");
-  slotsBox.textContent = "กำลังโหลด...";
+  const controls = document.getElementById('slot_controls');
+  if(controls) controls.style.display = 'none';
+  slotsBox.innerHTML = `<div class="slot-skeleton">
+    <div class="sk-line"></div>
+    <div class="sk-chips">
+      ${Array.from({length:10}).map(()=>'<div class="sk-chip"></div>').join('')}
+    </div>
+  </div>`;
 
   const payload = getPayloadV2();
   // ✅ ให้ลูกค้าเลือกข้อมูลบริการให้ครบก่อนค่อยโหลดคิวว่าง
@@ -421,25 +561,10 @@ async function loadSlots(){
         return;
       }
 
-      // PATCH: แสดงสล็อตแบบการ์ด (ว่าง/เต็ม) อ่านง่าย
-      const slotsAll = data.slots.filter(Boolean);
-      const slotsAvail = slotsAll.filter(s=>!!s.available);
-      const head = `<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;">
-        <div class="muted">โหมด: <b>${data.tech_type==='partner'?'ด่วน (รอยืนยัน)':'ปกติ'}</b> • ช่างที่พิจารณา: ${data.tech_count} คน</div>
-        <div class="badge ${slotsAvail.length? 'ok':'muted'}">${slotsAvail.length? 'ว่าง':'เต็ม'} • ${slotsAvail.length}/${slotsAll.length} ช่วง</div>
-      </div>`;
-
-      const btns = slotsAll.map(s=>{
-        const techCount = Array.isArray(s.available_tech_ids) ? s.available_tech_ids.length : 0;
-        const cls = `slot-btn ${s.available? 'is-available':'is-full'} ${pickedTime===s.start? 'selected':''}`;
-        const disabled = s.available ? '' : 'disabled';
-        return `<button type="button" class="${cls}" ${disabled} onclick="setPicked('${s.start}')">
-          <div class="time">${s.start} - ${s.end}</div>
-          <div class="meta">${s.available ? `ว่าง • ${techCount} ช่าง` : 'เต็ม'}</div>
-        </button>`;
-      }).join('');
-
-      slotsBox.innerHTML = head + `<div class="slot-grid" style="margin-top:10px;">${btns}</div>`;
+      // cache + render with filter
+      lastSlotsResp = data;
+      if(controls) controls.style.display = 'block';
+      renderSlotsFromCache();
     })
     .catch(e=>{
       slotsBox.textContent = "❌ โหลดเวลาว่างไม่สำเร็จ";
@@ -477,6 +602,9 @@ async function book(){
     ...payload
   };
 
+  const confirmBtn = document.getElementById('confirm_btn');
+  if(confirmBtn){ confirmBtn.disabled = true; confirmBtn.textContent = '⏳ กำลังจอง...'; }
+
   fetch(`${API}/public/book`, {
     method: "POST",
     headers: {"Content-Type":"application/json"},
@@ -490,16 +618,52 @@ async function book(){
   .then(data=>{
     const box = document.getElementById("result");
     const token = data.token;
-    box.innerHTML = `✅ จองสำเร็จ!<br>
-      <b>เลข Booking:</b> <span style="font-size:18px;">${data.booking_code || '-'}</span><br>
-      <b>สถานะ:</b> <span>${data.booking_mode==='urgent' ? 'รอช่างยืนยัน' : 'รอดำเนินการ'}</span><br>
-      <b>เวลาโดยประมาณ:</b> ${data.duration_min || '-'} นาที<br>
-      <button type="button" class="secondary" style="width:auto;min-height:40px;margin-top:8px;"
-        onclick="location.href='/track.html?q=${encodeURIComponent(data.booking_code || token)}'">🔎 ไปหน้าติดตามงาน</button>`;
+    const code = data.booking_code || token || '';
+    box.innerHTML = `<div class="success-card">
+      <div class="success-title">✅ จองสำเร็จ</div>
+      <div class="success-row"><span class="k">เลข Booking/Tracking</span><span class="v"><b style="font-size:18px;">${code || '-'}</b></span></div>
+      <div class="success-row"><span class="k">สถานะ</span><span class="v">${data.booking_mode==='urgent' ? 'รอช่างยืนยัน' : 'รอดำเนินการ'}</span></div>
+      <div class="success-row"><span class="k">เวลาโดยประมาณ</span><span class="v">${data.duration_min || '-'} นาที</span></div>
+      <div class="success-actions">
+        <button type="button" class="secondary" style="width:auto;min-height:40px;" onclick="copyText('${code.replace(/'/g,"\\'")}')">📋 คัดลอกเลข</button>
+        <button type="button" class="secondary" style="width:auto;min-height:40px;" onclick="location.href='/track.html?q=${encodeURIComponent(code)}'">🔎 ไปหน้าติดตามงาน</button>
+      </div>
+    </div>`;
   })
   .catch(e=>{
     alert(`❌ ${e.message}`);
+  })
+  .finally(()=>{
+    if(confirmBtn){ confirmBtn.disabled = false; confirmBtn.textContent = '✅ ยืนยันจอง'; }
   });
+}
+
+async function copyText(t){
+  try{
+    if(!t) return;
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      await navigator.clipboard.writeText(String(t));
+    } else {
+      const ta = document.createElement('textarea');
+      ta.value = String(t);
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      ta.remove();
+    }
+    toast('คัดลอกแล้ว ✅');
+  }catch(_){
+    toast('คัดลอกไม่สำเร็จ');
+  }
+}
+
+function toast(msg){
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.textContent = msg;
+  document.body.appendChild(el);
+  setTimeout(()=> el.classList.add('show'), 10);
+  setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=> el.remove(), 250); }, 1600);
 }
 
 // listeners
@@ -548,6 +712,19 @@ initCustomerCatalogAndPromos();
 refreshPricing();
 renderItemsCustomer();
 updateLoadSlotsEnabled();
+
+// slot filter controls
+document.getElementById('filter_avail')?.addEventListener('click', ()=> setSlotFilterMode('avail'));
+document.getElementById('filter_all')?.addEventListener('click', ()=> setSlotFilterMode('all'));
+setSlotFilterMode('avail');
+
+// keep summary fresh when user types
+['date','customer_name','customer_phone','address_text','maps_url','customer_note'].forEach(id=>{
+  const el = document.getElementById(id);
+  if(el) el.addEventListener('input', ()=> updateConfirmSummary());
+});
+updateConfirmSummary();
+
 loadMe();
 showTopNoticeFromUrl();
 </script>
