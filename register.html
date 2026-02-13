@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CWF - Register</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="theme-2">
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <img src="/logo.png" alt="CWF">
+        <div class="title">
+          <b>📝 Register (บันทึกข้อมูลลูกค้า)</b>
+          <span class="muted">Coldwindflow air services</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
+        <div id="me_badge" style="display:none;align-items:center;gap:8px;">
+          <img id="me_pic" alt="" style="width:28px;height:28px;border-radius:999px;object-fit:cover;border:1px solid rgba(15,23,42,0.15);">
+          <b id="me_name" style="font-size:14px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></b>
+        </div>
+        <a class="secondary" style="width:auto;min-height:40px;padding:10px 12px;display:inline-flex;align-items:center;gap:8px;text-decoration:none;" href="/customer.html">⬅️ กลับหน้าจอง</a>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>กรอกข้อมูลพื้นฐาน</h2>
+      <div class="muted" style="margin-top:-6px;">ข้อมูลนี้ไว้ใช้ครั้งหน้า (แก้ไขได้ตลอด)</div>
+
+      <div style="margin-top:12px;">
+        <label class="muted" for="phone">เบอร์โทร</label>
+        <input id="phone" placeholder="เช่น 0988777321" inputmode="tel" autocomplete="tel">
+      </div>
+
+      <div style="margin-top:10px;">
+        <label class="muted" for="address">ที่อยู่</label>
+        <textarea id="address" placeholder="บ้านเลขที่/คอนโด/ซอย/เขต ฯลฯ" rows="3" style="width:100%;"></textarea>
+      </div>
+
+      <div style="margin-top:10px;">
+        <label class="muted" for="maps_url">ลิงก์ Google Maps (ไม่บังคับ)</label>
+        <input id="maps_url" placeholder="https://maps.app.goo.gl/..." inputmode="url">
+      </div>
+
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
+        <button id="saveBtn" type="button">💾 บันทึก</button>
+        <button class="secondary" type="button" onclick="location.href='/customer.html'">ยกเลิก</button>
+      </div>
+
+      <div id="status" class="muted" style="margin-top:10px;"></div>
+    </div>
+  </div>
+
+<script>
+const API = window.location.origin;
+
+async function loadMe(){
+  try{
+    const r = await fetch(`${API}/public/me`, { credentials: 'include' });
+    const j = await r.json().catch(()=>({logged_in:false}));
+    if(!j || !j.logged_in){
+      location.href = '/customer.html?register=need_login';
+      return;
+    }
+    const badge = document.getElementById('me_badge');
+    const pic = document.getElementById('me_pic');
+    const name = document.getElementById('me_name');
+    if(badge) badge.style.display = 'inline-flex';
+    if(name) name.textContent = (j.user && j.user.name) ? j.user.name : 'Logged in';
+    if(pic){
+      const u = (j.user && j.user.picture) ? j.user.picture : '';
+      if(u){ pic.src = u; pic.style.display='block'; }
+      else { pic.style.display='none'; }
+    }
+  }catch(_){
+    location.href = '/customer.html?register=need_login';
+  }
+}
+
+function setStatus(msg, isError=false){
+  const el = document.getElementById('status');
+  if(!el) return;
+  el.textContent = msg || '';
+  el.style.color = isError ? 'var(--danger, #b91c1c)' : '';
+}
+
+async function submitRegister(){
+  const btn = document.getElementById('saveBtn');
+  if(btn){ btn.disabled = true; btn.textContent = '⏳ กำลังบันทึก...'; }
+  setStatus('');
+
+  const phone = String(document.getElementById('phone')?.value || '').trim();
+  const address = String(document.getElementById('address')?.value || '').trim();
+  const maps_url = String(document.getElementById('maps_url')?.value || '').trim();
+
+  try{
+    const r = await fetch(`${API}/public/register`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ phone, address, maps_url })
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok){
+      const code = String(j?.error || '');
+      if(code === 'NOT_LOGGED_IN') {
+        location.href = '/customer.html?register=need_login';
+        return;
+      }
+      if(code === 'INVALID_PHONE') return setStatus('เบอร์โทรไม่ถูกต้อง (อย่างน้อย 9 ตัวเลข)', true);
+      if(code === 'INVALID_ADDRESS') return setStatus('ที่อยู่สั้นเกินไป', true);
+      if(code === 'INVALID_MAPS_URL') return setStatus('ลิงก์แผนที่ยาวเกินไป', true);
+      return setStatus('บันทึกไม่สำเร็จ กรุณาลองใหม่', true);
+    }
+    location.href = '/customer.html?register=success';
+  }catch(_){
+    setStatus('บันทึกไม่สำเร็จ กรุณาลองใหม่', true);
+  }finally{
+    if(btn){ btn.disabled = false; btn.textContent = '💾 บันทึก'; }
+  }
+}
+
+document.getElementById('saveBtn')?.addEventListener('click', submitRegister);
+loadMe();
+</script>
+</body>
+</html>

@@ -19,6 +19,7 @@
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
         <div id="auth_box" style="display:flex;align-items:center;gap:10px;">
           <a id="line_login_btn" class="secondary" style="width:auto;min-height:40px;padding:10px 12px;display:inline-flex;align-items:center;gap:8px;text-decoration:none;" href="/auth/line">✅ Login ด้วย LINE</a>
+          <a id="register_btn" class="secondary" style="width:auto;min-height:40px;padding:10px 12px;display:none;align-items:center;gap:8px;text-decoration:none;" href="/register">📝 Register</a>
           <div id="me_badge" style="display:none;align-items:center;gap:8px;">
             <img id="me_pic" alt="" style="width:28px;height:28px;border-radius:999px;object-fit:cover;border:1px solid rgba(15,23,42,0.15);">
             <b id="me_name" style="font-size:14px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></b>
@@ -160,11 +161,13 @@ async function loadMe(){
     const r = await fetch(`${API}/public/me`, { credentials: 'include' });
     const j = await r.json().catch(()=>({logged_in:false}));
     const loginBtn = document.getElementById('line_login_btn');
+    const regBtn = document.getElementById('register_btn');
     const badge = document.getElementById('me_badge');
     const pic = document.getElementById('me_pic');
     const name = document.getElementById('me_name');
     if(j && j.logged_in){
       if(loginBtn) loginBtn.style.display = 'none';
+      if(regBtn) regBtn.style.display = 'inline-flex';
       if(badge) badge.style.display = 'inline-flex';
       if(name) name.textContent = (j.user && j.user.name) ? j.user.name : 'Logged in';
       if(pic) {
@@ -174,11 +177,27 @@ async function loadMe(){
       }
     }else{
       if(loginBtn) loginBtn.style.display = 'inline-flex';
+      if(regBtn) regBtn.style.display = 'none';
       if(badge) badge.style.display = 'none';
     }
   }catch(_){
     // ignore
   }
+}
+
+function showTopNoticeFromUrl(){
+  try{
+    const p = new URLSearchParams(location.search || '');
+    const v = String(p.get('register') || '').trim();
+    if(!v) return;
+    const el = document.getElementById('result');
+    if(!el) return;
+    if(v === 'success') {
+      el.innerHTML = '<div class="card" style="padding:12px;border:1px solid rgba(15,23,42,0.12);">✅ <b>บันทึกข้อมูลสำเร็จ</b><div class="muted" style="margin-top:4px;">ระบบจะใช้ข้อมูลนี้ในครั้งถัดไป</div></div>';
+    } else if(v === 'need_login') {
+      el.innerHTML = '<div class="card" style="padding:12px;border:1px solid rgba(15,23,42,0.12);">⚠️ <b>ต้อง Login ก่อน</b><div class="muted" style="margin-top:4px;">กรุณากด Login ด้วย LINE แล้วค่อยกด Register</div></div>';
+    }
+  } catch(_) {}
 }
 
 let pickedTime = null;
@@ -530,6 +549,7 @@ refreshPricing();
 renderItemsCustomer();
 updateLoadSlotsEnabled();
 loadMe();
+showTopNoticeFromUrl();
 </script>
 
 </body>

@@ -326,6 +326,22 @@ function getJwtSecret() {
   return String(process.env.CWF_JWT_SECRET || process.env.JWT_SECRET || '').trim();
 }
 
+// 🔐 Customer JWT (LINE) helper (cookie: cwf_token)
+function requireCustomerJwt(req, res, next) {
+  try {
+    const jwtSecret = getJwtSecret();
+    if (!jwtSecret) return res.status(401).json({ error: 'NOT_LOGGED_IN' });
+    const token = parseCookieValue(req, 'cwf_token');
+    if (!token) return res.status(401).json({ error: 'NOT_LOGGED_IN' });
+    const payload = jwtVerify(token, jwtSecret);
+    if (!payload) return res.status(401).json({ error: 'NOT_LOGGED_IN' });
+    req.customer = payload;
+    return next();
+  } catch (_) {
+    return res.status(401).json({ error: 'NOT_LOGGED_IN' });
+  }
+}
+
 app.get('/auth/line', (req, res) => {
   const clientId = String(process.env.LINE_CHANNEL_ID || '').trim();
   const callback = String(process.env.LINE_CALLBACK_URL || '').trim() || `${getReqBaseUrl(req)}/auth/line/callback`;
@@ -429,6 +445,51 @@ app.get('/public/me', (req, res) => {
     });
   } catch (_) {
     return res.json({ logged_in: false });
+  }
+});
+
+// =======================================
+// 📝 Customer Register (minimal)
+// - ต้อง login (LINE JWT)
+// - เก็บข้อมูลพื้นฐานไว้ใช้ครั้งหน้า
+// =======================================
+app.post('/public/register', requireCustomerJwt, async (req, res) => {
+  try {
+    const phone = String(req.body?.phone || '').trim();
+    const address = String(req.body?.address || '').trim();
+    const maps_url = String(req.body?.maps_url || '').trim();
+
+    // ✅ validate เบอร์โทรขั้นต่ำ (ไม่ strict เกินไป)
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 9) return res.status(400).json({ error: 'INVALID_PHONE' });
+    if (address.length < 5) return res.status(400).json({ error: 'INVALID_ADDRESS' });
+    if (maps_url && maps_url.length > 600) return res.status(400).json({ error: 'INVALID_MAPS_URL' });
+
+    const sub = String(req.customer?.sub || '').trim();
+    const provider = String(req.customer?.provider || 'line').trim();
+    const name = String(req.customer?.name || '').trim();
+    const picture = String(req.customer?.picture || '').trim();
+    if (!sub) return res.status(401).json({ error: 'NOT_LOGGED_IN' });
+
+    await pool.query(
+      `INSERT INTO public.customer_profiles (sub, provider, display_name, picture_url, phone, address, maps_url, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+       ON CONFLICT (sub)
+       DO UPDATE SET
+         provider=EXCLUDED.provider,
+         display_name=EXCLUDED.display_name,
+         picture_url=EXCLUDED.picture_url,
+         phone=EXCLUDED.phone,
+         address=EXCLUDED.address,
+         maps_url=EXCLUDED.maps_url,
+         updated_at=NOW()`,
+      [sub, provider, name, picture, phone, address, maps_url || null]
+    );
+
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('POST /public/register', e);
+    return res.status(500).json({ error: 'REGISTER_FAILED' });
   }
 });
 
@@ -1445,6 +1506,22 @@ await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS approved_at T
 await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS full_name TEXT`);
 await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS photo_url TEXT`);
 await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS commission_rate_percent DOUBLE PRECISION DEFAULT 0`);
+
+// 3.1) customer_profiles: เก็บข้อมูลลูกค้าที่ Login ด้วย LINE แล้วกด Register (minimal, ไม่ยุ่ง users เดิม)
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.customer_profiles (
+    sub TEXT PRIMARY KEY,
+    provider TEXT DEFAULT 'line',
+    display_name TEXT,
+    picture_url TEXT,
+    phone TEXT,
+    address TEXT,
+    maps_url TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_profiles_phone ON public.customer_profiles(phone)`);
 
 // 4) audit logs (reserved for Super Admin impersonation - Phase 5)
 await pool.query(`
@@ -8701,6 +8778,7 @@ app.get("/edit-profile", (req, res) => res.sendFile(sendHtml("edit-profile.html"
 app.get("/tech", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/add-job", (req, res) => res.redirect(302, "/admin-add-v2.html"));
 app.get("/customer", (req, res) => res.sendFile(sendHtml("customer.html")));
+app.get("/register", (req, res) => res.sendFile(sendHtml("register.html")));
 app.get("/track", (req, res) => res.sendFile(sendHtml("track.html")));
 app.get("/home", (req, res) => res.sendFile(sendHtml("index.html")));
 
@@ -8715,6 +8793,7 @@ app.get("/admin-legacy.html", (req, res) => res.redirect(302, "/admin-review-v2.
 app.get("/edit-profile.html", (req, res) => res.sendFile(sendHtml("edit-profile.html")));
 app.get("/tech.html", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/add-job.html", (req, res) => res.redirect(302, "/admin-add-v2.html"));
+app.get("/register.html", (req, res) => res.sendFile(sendHtml("register.html")));
 app.get("/index.html", (req, res) => res.sendFile(sendHtml("index.html")));
 app.get("/", (req, res) => res.sendFile(sendHtml("login.html")));
 
