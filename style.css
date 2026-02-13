@@ -1306,3 +1306,16 @@ a:hover{ text-decoration: underline; }
 /* WORKLOAD_ASSIGN_PREMIUM END */
 
 /* SLOT_GRID_TEAM END */
+
+/* ===== PWA update toast (minimal / no regression) ===== */
+.sw-toast{position:fixed;left:12px;right:12px;bottom:12px;z-index:9999;display:none;}
+.sw-toast.show{display:block;}
+.sw-toast-card{background:rgba(10,30,60,.92);color:#fff;border:1px solid rgba(255,255,255,.18);border-radius:16px;padding:12px 12px;box-shadow:0 14px 30px rgba(0,0,0,.25);display:flex;align-items:center;gap:10px;}
+.sw-toast-text{flex:1;min-width:0;line-height:1.2;}
+.sw-toast-text strong{display:block;font-size:14px;}
+.sw-toast-text span{display:block;font-size:12px;opacity:.9;margin-top:2px;}
+.sw-toast-actions{display:flex;gap:8px;}
+.sw-toast-btn{border:0;border-radius:12px;padding:10px 12px;font-weight:900;cursor:pointer;}
+.sw-toast-btn.primary{background:#ffd54a;color:#111;box-shadow:0 8px 18px rgba(255,213,74,.25);}
+.sw-toast-btn.ghost{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.18);}
+

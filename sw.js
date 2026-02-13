@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v14";
+const CACHE_NAME = "cwf-cache-v15";
 
 const ASSETS = [
   "/",
@@ -50,6 +50,14 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// ✅ ให้หน้าเว็บส่งคำสั่งมาได้ (เช่นให้ SW ใหม่ข้าม waiting)
+self.addEventListener("message", (event) => {
+  if (!event.data) return;
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
+});
+
 // ดึงจาก network ก่อน ถ้าไม่ได้ค่อยใช้ cache (กันไฟล์เก่าค้าง)
 self.addEventListener("fetch", (e) => {
   // ✅ อย่าแตะ request แบบ POST/PUT/DELETE
@@ -75,6 +83,22 @@ self.addEventListener("fetch", (e) => {
         caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
         return resp;
       })
-      .catch(() => caches.match(e.request))
+      .catch(async () => {
+        // Offline fallback (โดยเฉพาะตอนเปิดหน้าแบบ navigate)
+        const cached = await caches.match(e.request);
+        if (cached) return cached;
+
+        if (e.request.mode === "navigate") {
+          // พยายาม fallback ไปหน้าใช้งานหลักที่ถูก cache ไว้
+          return (
+            (await caches.match(url.pathname)) ||
+            (await caches.match("/customer.html")) ||
+            (await caches.match("/track.html")) ||
+            (await caches.match("/login.html")) ||
+            (await caches.match("/index.html"))
+          );
+        }
+        return cached;
+      })
   );
 });

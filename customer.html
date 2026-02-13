@@ -941,13 +941,60 @@ updateConfirmSummary();
 loadMe();
 showTopNoticeFromUrl();
 
+// PWA update toast (ให้ลูกค้ากดรีเฟรชเมื่อมีอัปเดต)
+function showSwToast(onUpdate){
+  const wrap = document.getElementById('sw_toast');
+  if(!wrap) return;
+  wrap.classList.add('show');
+  const btn = document.getElementById('sw_toast_reload');
+  const close = document.getElementById('sw_toast_close');
+  if(btn){ btn.onclick = ()=>{ try{ onUpdate(); }catch(e){} }; }
+  if(close){ close.onclick = ()=> wrap.classList.remove('show'); }
+}
+
 // PWA: register service worker (HTTPS only)
 if('serviceWorker' in navigator){
   window.addEventListener('load', ()=>{
-    navigator.serviceWorker.register('/sw.js').catch(()=>{});
+    navigator.serviceWorker.register('/sw.js').then((reg)=>{
+      // ถ้ามี worker ใหม่รอ activate → แจ้งเตือนให้รีเฟรช
+      function promptUpdate(worker){
+        if(!worker) return;
+        showSwToast(()=>{
+          try{ worker.postMessage({type:'SKIP_WAITING'}); }catch(e){}
+          // รีเฟรชหลังจาก SW ใหม่ activate แล้ว
+          setTimeout(()=>location.reload(), 400);
+        });
+      }
+
+      if(reg.waiting){
+        promptUpdate(reg.waiting);
+      }
+      reg.addEventListener('updatefound', ()=>{
+        const newWorker = reg.installing;
+        if(!newWorker) return;
+        newWorker.addEventListener('statechange', ()=>{
+          if(newWorker.state === 'installed' && navigator.serviceWorker.controller){
+            promptUpdate(newWorker);
+          }
+        });
+      });
+    }).catch(()=>{});
   });
 }
 </script>
+
+<div id="sw_toast" class="sw-toast" aria-live="polite">
+  <div class="sw-toast-card">
+    <div class="sw-toast-text">
+      <strong>มีอัปเดตใหม่</strong>
+      <span>กดรีเฟรชเพื่อใช้งานเวอร์ชันล่าสุด</span>
+    </div>
+    <div class="sw-toast-actions">
+      <button id="sw_toast_reload" class="sw-toast-btn primary" type="button">รีเฟรช</button>
+      <button id="sw_toast_close" class="sw-toast-btn ghost" type="button">ปิด</button>
+    </div>
+  </div>
+</div>
 
 </body>
 </html>
