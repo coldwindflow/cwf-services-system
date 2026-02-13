@@ -50,7 +50,7 @@
 
       <div class="grid2">
         <input id="date" type="date">
-        <button id="loadSlotsBtn" type="button" onclick="loadSlots()" disabled>🔄 โหลดเวลาว่าง</button>
+        <button id="loadSlotsBtn" type="button" onclick="loadSlots()">🔄 โหลดเวลาว่าง</button>
       </div>
 
       <div id="slot_controls" class="slot-controls" style="margin-top:10px;display:none;">
@@ -293,14 +293,11 @@ function bindMachineCountStepper(){
   set(input.value||1);
 }
 
+// โหลดสลอต: ให้กดได้ทันทีหลัง "เลือกวันที่" (UX จริงบนมือถือ)
+// หมายเหตุ: การตรวจว่ากรอกบริการครบหรือไม่ จะไปทำใน loadSlots() พร้อมข้อความสุภาพ
 function isBookingFormReadyForSlots() {
   const d = document.getElementById("date")?.value;
-  const payload = getPayloadV2();
-  if (!d) return false;
-  if (!payload.job_type || !payload.ac_type || !payload.btu || !payload.machine_count) return false;
-  if (payload.job_type === "ล้าง" && !payload.wash_variant) return false;
-  if (payload.job_type === "ซ่อม" && !payload.repair_variant) return false;
-  return true;
+  return !!d;
 }
 
 function updateLoadSlotsEnabled() {

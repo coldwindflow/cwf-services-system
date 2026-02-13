@@ -8271,6 +8271,11 @@ if (itemIdQty.length) {
 
 // 2) สร้างงาน
 
+    // ✅ dispatch_mode:
+    // - scheduled (ลูกค้าจองปกติ) => normal (ให้เข้าแอดมิน/คิวตามปกติ)
+    // - urgent (ยิงงานด่วน)      => offer  (ไป flow offer)
+    const dispatchMode = (bm === 'urgent') ? 'offer' : 'normal';
+
     const r = await client.query(
       `
       INSERT INTO public.jobs
@@ -8278,7 +8283,7 @@ if (itemIdQty.length) {
        address_text, technician_team, technician_username, job_status,
        booking_token, job_source, dispatch_mode, customer_note,
        maps_url, job_zone, duration_min, booking_mode)
-      VALUES ($1,$2,$3,$4,$5,$6,NULL,NULL,$11,$7,'customer','offer',$8,$9,$10,$12,$13)
+      VALUES ($1,$2,$3,$4,$5,$6,NULL,NULL,$11,$7,'customer',$14,$8,$9,$10,$12,$13)
       RETURNING job_id, booking_token
       `,
       [
@@ -8295,6 +8300,7 @@ if (itemIdQty.length) {
         bm === 'urgent' ? 'รอช่างยืนยัน' : 'รอตรวจสอบ',
         duration_min_v2,
         (bm === 'urgent' ? 'urgent' : 'scheduled'),
+        dispatchMode,
       ]
     );
 

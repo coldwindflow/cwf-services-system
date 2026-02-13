@@ -80,6 +80,15 @@ body{
 .customer-page .top-actions{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
 .customer-page .auth-box{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 
+/* Mobile: prevent any overlap by stacking actions neatly */
+@media (max-width: 560px){
+  .customer-page .topbar{ gap: 10px; }
+  .customer-page .top-actions{ width: 100%; justify-content: stretch; }
+  .customer-page .auth-box{ width: 100%; }
+  .customer-page .auth-box > *{ flex: 1 1 auto; }
+  .customer-page .top-track{ flex: 1 1 100%; }
+}
+
 /* Make <a class="secondary"> look like a button (customer only) */
 .customer-page a.secondary.link-btn{
   display:inline-flex;
@@ -89,13 +98,14 @@ body{
   min-height: 42px;
   padding: 10px 12px;
   border-radius: 14px;
-  border: 1px solid rgba(37, 99, 235, 0.22);
-  background: rgba(37, 99, 235, 0.10);
-  color: var(--primary);
+  border: 1px solid rgba(37, 99, 235, 0.28);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.16), rgba(6, 182, 212, 0.14));
+  color: #0b3aa6;
   font-weight: 900;
   text-decoration:none;
   white-space: nowrap;
 }
+.customer-page a.secondary.link-btn:hover{ filter: brightness(1.03); box-shadow: 0 12px 26px rgba(37,99,235,0.14); }
 .customer-page a.secondary.link-btn:active{ transform: translateY(1px) scale(0.99); }
 
 .customer-page .me-badge{ display:inline-flex; align-items:center; gap:8px; max-width: 220px; }
@@ -103,6 +113,12 @@ body{
 .customer-page .me-name{ font-size: 13px; max-width: 170px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .customer-page .top-track{ width:auto; min-height: 42px; padding: 10px 12px; font-weight: 900; }
+
+/* Make secondary buttons pop a bit more (customer only) */
+.customer-page button.secondary,
+.customer-page .trust-btn{
+  box-shadow: 0 12px 26px rgba(15,23,42,0.10);
+}
 
 .customer-page .primary-cta{
   font-size: 16px;
