@@ -271,6 +271,46 @@ body{
 }
 .muted.warn{ color: #b45309 !important; font-weight: 900; }
 
+/* OPTIONAL-6: Trust signals bar (customer) */
+.trust-bar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  flex-wrap:wrap;
+  margin:12px 0;
+  padding:10px 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(15,23,42,0.10);
+  background: rgba(255,255,255,0.92);
+  box-shadow: var(--shadow-2);
+}
+.trust-pills{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+.trust-pill{
+  font-size: 12px;
+  font-weight: 900;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(15,23,42,0.10);
+  background: rgba(59,130,246,0.06);
+  color: rgba(15,23,42,0.92);
+}
+.trust-actions{ display:flex; gap:8px; flex-wrap:wrap; }
+.trust-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(15,23,42,0.12);
+  background: rgba(255,255,255,0.98);
+  text-decoration:none;
+  font-weight: 950;
+  color: rgba(15,23,42,0.92);
+}
+.trust-btn:hover{ filter: brightness(0.99); }
+
 /* Success card + actions */
 .success-card{
   margin-top: 10px;

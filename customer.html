@@ -32,6 +32,20 @@
       </div>
     </div>
 
+    <!-- OPTIONAL-6: Trust signals (minimal + no regression) -->
+    <div class="trust-bar">
+      <div class="trust-pills">
+        <span class="trust-pill">✅ จดทะเบียนถูกต้อง</span>
+        <span class="trust-pill">🛡️ รับประกันงาน</span>
+        <span class="trust-pill">🧾 ใบเสร็จได้</span>
+        <span class="trust-pill">💬 ติดต่อ LINE OA</span>
+      </div>
+      <div class="trust-actions">
+        <a class="trust-btn" href="tel:0988777321">📞 โทรเลย</a>
+        <a class="trust-btn" href="https://line.me/R/ti/p/@cwfair" target="_blank" rel="noopener">💬 แชทไลน์</a>
+      </div>
+    </div>
+
     <div class="card">
       <h2>1) เลือกวัน/เวลา</h2>
 
@@ -879,6 +893,49 @@ document.addEventListener('click', (e)=>{
   if(pop.style.display !== 'none' && !pop.contains(e.target) && !btn.contains(e.target)) pop.style.display = 'none';
 });
 updateMapsPreview();
+updateConfirmSummary();
+
+// OPTIONAL-7: remember me (safe draft) — only basic fields, no impact on booking flow
+const CWF_FORM_DRAFT_KEY = 'cwf_customer_form_draft_v1';
+function loadFormDraft(){
+  try{
+    const raw = localStorage.getItem(CWF_FORM_DRAFT_KEY);
+    if(!raw) return;
+    const d = JSON.parse(raw);
+    const ids = ['customer_name','customer_phone','address_text','maps_url','customer_note'];
+    ids.forEach(id=>{
+      const el = document.getElementById(id);
+      if(!el) return;
+      // เติมเฉพาะตอนช่องว่าง เพื่อไม่ไปทับสิ่งที่ user กำลังกรอก
+      if(!String(el.value||'').trim() && typeof d[id] === 'string') el.value = d[id];
+    });
+  }catch(e){ /* ignore */ }
+}
+let _draftTimer = null;
+function saveFormDraft(){
+  try{
+    const d = {};
+    ['customer_name','customer_phone','address_text','maps_url','customer_note'].forEach(id=>{
+      const el = document.getElementById(id);
+      if(el) d[id] = String(el.value||'');
+    });
+    localStorage.setItem(CWF_FORM_DRAFT_KEY, JSON.stringify(d));
+  }catch(e){ /* ignore */ }
+}
+function scheduleSaveDraft(){
+  clearTimeout(_draftTimer);
+  _draftTimer = setTimeout(saveFormDraft, 350);
+}
+['customer_name','customer_phone','address_text','maps_url','customer_note'].forEach(id=>{
+  const el = document.getElementById(id);
+  if(el){
+    el.addEventListener('input', scheduleSaveDraft);
+    el.addEventListener('change', scheduleSaveDraft);
+  }
+});
+window.addEventListener('beforeunload', ()=>{ try{ saveFormDraft(); }catch(e){} });
+loadFormDraft();
+updateMapsPreview(); // refresh preview after autofill
 updateConfirmSummary();
 
 loadMe();
