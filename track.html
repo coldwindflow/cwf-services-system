@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CWF - ติดตามสถานะงาน</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="/mainfest.json">
+  <meta name="theme-color" content="#0b4bb3">
 
   <style>
     /* =====================================================
@@ -568,6 +570,13 @@ const q0 = qs("q") || qs("token") || "";
 if(q0){
   document.getElementById("q").value = q0;
   track();
+}
+
+// PWA: register service worker (HTTPS only)
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  });
 }
 </script>
 </body>

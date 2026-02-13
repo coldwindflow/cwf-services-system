@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CWF - จองคิวงาน</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="/mainfest.json">
+  <meta name="theme-color" content="#0b4bb3">
 </head>
 <body class="theme-2 customer-page">
   <div class="app">
@@ -149,7 +151,20 @@
       </div>
 
       <input id="address_text" placeholder="ที่อยู่ (สำคัญ)">
-      <input id="maps_url" type="url" placeholder="ลิงก์ Google Maps (ถ้ามี) — แนะนำ: ปักหมุดแล้วแชร์ลิงก์มาวาง">
+      <div class="maps-field">
+        <input id="maps_url" type="url" placeholder="ลิงก์ Google Maps (ถ้ามี) — แนะนำ: ปักหมุดแล้วแชร์ลิงก์มาวาง" autocomplete="off">
+        <div class="maps-helper-row">
+          <button id="maps_help_btn" class="linkish" type="button">วิธีแชร์ลิงก์แผนที่</button>
+          <div id="maps_hint" class="muted" style="font-size:12px;">รองรับ maps.app.goo.gl และ google.com/maps</div>
+        </div>
+        <div id="maps_pop" class="maps-pop" style="display:none;">
+          <b>วิธีแชร์ลิงก์แผนที่</b>
+          <div class="muted" style="margin-top:4px;">
+            เปิด Google Maps → ปักหมุด/เลือกสถานที่ → กด “แชร์” → คัดลอกลิงก์ → วางที่ช่องนี้
+          </div>
+        </div>
+        <div id="maps_preview" class="maps-preview" style="display:none;"></div>
+      </div>
       <textarea id="customer_note" rows="3" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"></textarea>
 <hr style="margin:14px 0;">
 <p style="margin-top:6px;">💵 <b>ยอดรวมประมาณ:</b> <span id="grand_total">0</span> บาท</p>
@@ -348,6 +363,47 @@ function escapeHtml(s){
 }
 function escapeAttr(s){
   return String(s||'').replace(/"/g,'&quot;');
+}
+
+function isValidMapsUrl(u){
+  if(!u) return false;
+  try{
+    const url = new URL(u);
+    const h = (url.hostname||'').toLowerCase();
+    const p = (url.pathname||'');
+    // ✅ รองรับลิงก์หลักที่ลูกค้าใช้จริง
+    if(h === 'maps.app.goo.gl' || h.endsWith('.app.goo.gl')) return true;
+    if(h === 'www.google.com' || h === 'google.com'){
+      return p.startsWith('/maps') || url.searchParams.has('q') || url.searchParams.has('query');
+    }
+    if(h === 'goo.gl' && p.includes('maps')) return true;
+    return false;
+  }catch(_){
+    return false;
+  }
+}
+
+function updateMapsPreview(){
+  const el = document.getElementById('maps_url');
+  const box = document.getElementById('maps_preview');
+  const hint = document.getElementById('maps_hint');
+  if(!el || !box) return;
+  const v = (el.value||'').trim();
+  if(!v){
+    box.style.display = 'none';
+    box.innerHTML = '';
+    if(hint){ hint.textContent = 'รองรับ maps.app.goo.gl และ google.com/maps'; hint.classList.remove('warn'); }
+    return;
+  }
+  const ok = isValidMapsUrl(v);
+  if(hint){
+    hint.textContent = ok ? 'ลิงก์แผนที่ดูโอเค ✅' : 'ลิงก์นี้อาจไม่ใช่ Google Maps (ยังจองได้)';
+    hint.classList.toggle('warn', !ok);
+  }
+  box.style.display = 'block';
+  box.innerHTML = ok
+    ? `<a class="secondary" style="width:auto;min-height:40px;padding:10px 12px;display:inline-flex;align-items:center;gap:8px;text-decoration:none;" href="${escapeAttr(v)}" target="_blank" rel="noopener">📍 เปิดแผนที่</a>`
+    : `<div class="inline-warn">แนะนำให้แชร์ลิงก์จาก Google Maps โดยตรง เพื่อให้ช่างเปิดได้ถูกจุด</div>`;
 }
 
 function renderItemsCustomer() {
@@ -584,6 +640,11 @@ async function book(){
   const maps_url = document.getElementById("maps_url").value.trim();
   const customer_note = document.getElementById("customer_note").value.trim();
 
+  // ✅ เตือนสุภาพ ถ้าลิงก์แผนที่ไม่ใช่ Google Maps (ไม่บล็อกการจอง)
+  if(maps_url && !isValidMapsUrl(maps_url)){
+    toast('ลิงก์แผนที่อาจไม่ใช่ Google Maps (ยังจองได้)');
+  }
+
   if(!customer_name || !job_type || !address_text){
     return alert("กรอกข้อมูลให้ครบ (ชื่อ/ประเภทงาน/ที่อยู่)");
   }
@@ -619,6 +680,7 @@ async function book(){
     const box = document.getElementById("result");
     const token = data.token;
     const code = data.booking_code || token || '';
+    const trackUrl = `${API}/track.html?q=${encodeURIComponent(code)}`;
     box.innerHTML = `<div class="success-card">
       <div class="success-title">✅ จองสำเร็จ</div>
       <div class="success-row"><span class="k">เลข Booking/Tracking</span><span class="v"><b style="font-size:18px;">${code || '-'}</b></span></div>
@@ -626,9 +688,22 @@ async function book(){
       <div class="success-row"><span class="k">เวลาโดยประมาณ</span><span class="v">${data.duration_min || '-'} นาที</span></div>
       <div class="success-actions">
         <button type="button" class="secondary" style="width:auto;min-height:40px;" onclick="copyText('${code.replace(/'/g,"\\'")}')">📋 คัดลอกเลข</button>
-        <button type="button" class="secondary" style="width:auto;min-height:40px;" onclick="location.href='/track.html?q=${encodeURIComponent(code)}'">🔎 ไปหน้าติดตามงาน</button>
+        <button type="button" class="secondary" style="width:auto;min-height:40px;" onclick="shareLine('${code.replace(/'/g,"\\'")}')">💬 ส่งเข้า LINE</button>
+        <button type="button" class="secondary" style="width:auto;min-height:40px;" onclick="downloadIcsForBooking()">📅 เพิ่มเข้าปฏิทิน</button>
+        <button type="button" class="secondary" style="width:auto;min-height:40px;" onclick="location.href='${trackUrl}'">🔎 ไปหน้าติดตามงาน</button>
       </div>
     </div>`;
+
+    // stash for calendar button (ไม่กระทบ flow เดิม)
+    window.__lastBookingForIcs = {
+      code,
+      date: document.getElementById('date')?.value || '',
+      time: pickedTime || '',
+      duration_min: Number(data.duration_min || durationMin || 60),
+      address: (document.getElementById('address_text')?.value || '').trim(),
+      maps_url: (document.getElementById('maps_url')?.value || '').trim(),
+      track_url: trackUrl
+    };
   })
   .catch(e=>{
     alert(`❌ ${e.message}`);
@@ -664,6 +739,72 @@ function toast(msg){
   document.body.appendChild(el);
   setTimeout(()=> el.classList.add('show'), 10);
   setTimeout(()=>{ el.classList.remove('show'); setTimeout(()=> el.remove(), 250); }, 1600);
+}
+
+function shareLine(code){
+  try{
+    const c = String(code||'').trim();
+    if(!c) return;
+    const trackUrl = `${API}/track.html?q=${encodeURIComponent(c)}`;
+    const msg = `เลข Booking: ${c}\nติดตามงาน: ${trackUrl}`;
+    // ใช้ได้ดีบนมือถือ (LINE app จะรับต่อ)
+    const u = `https://line.me/R/msg/text/?${encodeURIComponent(msg)}`;
+    window.open(u, '_blank', 'noopener');
+  }catch(_){
+    toast('แชร์เข้า LINE ไม่สำเร็จ');
+  }
+}
+
+function toIcsDate(dt){
+  // dt = Date object (local). format: YYYYMMDDTHHMMSS
+  const pad = (n)=> String(n).padStart(2,'0');
+  return `${dt.getFullYear()}${pad(dt.getMonth()+1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}${pad(dt.getSeconds())}`;
+}
+
+function downloadIcsForBooking(){
+  try{
+    const b = window.__lastBookingForIcs;
+    if(!b || !b.date || !b.time){
+      toast('ยังไม่มีข้อมูลนัดหมาย');
+      return;
+    }
+    const [hh, mm] = String(b.time).split(':').map(x=>Number(x||0));
+    const start = new Date(`${b.date}T${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}:00`);
+    const end = new Date(start.getTime() + (Number(b.duration_min||60) * 60000));
+    const uid = `CWF-${String(b.code||'').replace(/\s+/g,'')}-${Date.now()}@cwf-air.com`;
+    const title = `CWF นัดบริการ (${b.code||'Booking'})`;
+    const loc = (b.address||'') + (b.maps_url ? ` (${b.maps_url})` : '');
+    const desc = `เลข Booking: ${b.code||''}\nติดตามงาน: ${b.track_url||''}`;
+    const ics = [
+      'BEGIN:VCALENDAR',
+      'VERSION:2.0',
+      'PRODID:-//CWF//Booking//TH',
+      'CALSCALE:GREGORIAN',
+      'METHOD:PUBLISH',
+      'BEGIN:VEVENT',
+      `UID:${uid}`,
+      `DTSTAMP:${toIcsDate(new Date())}`,
+      `DTSTART:${toIcsDate(start)}`,
+      `DTEND:${toIcsDate(end)}`,
+      `SUMMARY:${title}`,
+      `LOCATION:${loc.replace(/\n/g,' ')}`,
+      `DESCRIPTION:${desc.replace(/\n/g,'\\n')}`,
+      'END:VEVENT',
+      'END:VCALENDAR'
+    ].join('\r\n');
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `CWF-${String(b.code||'booking')}.ics`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=> URL.revokeObjectURL(url), 1500);
+    toast('ดาวน์โหลดไฟล์ปฏิทินแล้ว ✅');
+  }catch(_){
+    toast('เพิ่มเข้าปฏิทินไม่สำเร็จ');
+  }
 }
 
 // listeners
@@ -723,10 +864,32 @@ setSlotFilterMode('avail');
   const el = document.getElementById(id);
   if(el) el.addEventListener('input', ()=> updateConfirmSummary());
 });
+
+// maps helper + preview
+document.getElementById('maps_help_btn')?.addEventListener('click', ()=>{
+  const pop = document.getElementById('maps_pop');
+  if(!pop) return;
+  pop.style.display = (pop.style.display === 'none' || !pop.style.display) ? 'block' : 'none';
+});
+document.getElementById('maps_url')?.addEventListener('input', ()=> updateMapsPreview());
+document.addEventListener('click', (e)=>{
+  const pop = document.getElementById('maps_pop');
+  const btn = document.getElementById('maps_help_btn');
+  if(!pop || !btn) return;
+  if(pop.style.display !== 'none' && !pop.contains(e.target) && !btn.contains(e.target)) pop.style.display = 'none';
+});
+updateMapsPreview();
 updateConfirmSummary();
 
 loadMe();
 showTopNoticeFromUrl();
+
+// PWA: register service worker (HTTPS only)
+if('serviceWorker' in navigator){
+  window.addEventListener('load', ()=>{
+    navigator.serviceWorker.register('/sw.js').catch(()=>{});
+  });
+}
 </script>
 
 </body>
