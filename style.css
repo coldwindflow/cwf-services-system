@@ -49,6 +49,133 @@ body{
 }
 
 /* =========================================================
+   Customer page premium layout polish (scoped)
+   - Fix overlapping buttons
+   - Better spacing + color pop
+   ========================================================= */
+
+.customer-page .app{ max-width: 980px; margin: 0 auto; padding: 14px 14px 28px; }
+
+.customer-page .topbar{
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: rgba(255,255,255,0.72);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(15,23,42,0.10);
+  border-radius: 22px;
+  padding: 12px 12px;
+  box-shadow: 0 10px 26px rgba(15,23,42,0.08);
+  display:flex;
+  align-items:center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.customer-page .topbar .brand{ display:flex; align-items:center; gap:10px; flex: 1; min-width: 220px; }
+.customer-page .topbar .brand img{ width: 44px; height: 44px; border-radius: 14px; box-shadow: 0 10px 22px rgba(15,23,42,0.12); }
+.customer-page .topbar .title b{ font-size: 14px; }
+.customer-page .topbar .title .muted{ display:block; margin-top:2px; font-size: 12px; }
+
+.customer-page .top-actions{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+.customer-page .auth-box{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+
+/* Make <a class="secondary"> look like a button (customer only) */
+.customer-page a.secondary.link-btn{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(37, 99, 235, 0.22);
+  background: rgba(37, 99, 235, 0.10);
+  color: var(--primary);
+  font-weight: 900;
+  text-decoration:none;
+  white-space: nowrap;
+}
+.customer-page a.secondary.link-btn:active{ transform: translateY(1px) scale(0.99); }
+
+.customer-page .me-badge{ display:inline-flex; align-items:center; gap:8px; max-width: 220px; }
+.customer-page .me-pic{ width: 28px; height: 28px; border-radius: 999px; object-fit: cover; border: 1px solid rgba(15,23,42,0.15); }
+.customer-page .me-name{ font-size: 13px; max-width: 170px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+.customer-page .top-track{ width:auto; min-height: 42px; padding: 10px 12px; font-weight: 900; }
+
+.customer-page .primary-cta{
+  font-size: 16px;
+  font-weight: 950;
+  border-radius: 18px;
+  box-shadow: 0 18px 44px rgba(37,99,235,0.22);
+  background: linear-gradient(135deg, #2563eb, #06b6d4);
+}
+.customer-page .primary-cta:hover{ filter: brightness(1.03); }
+
+.customer-page .card h2{
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 950;
+  letter-spacing: .2px;
+}
+
+.customer-page .card{
+  border-radius: 22px;
+  border: 1px solid rgba(15,23,42,0.10);
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,250,252,0.96));
+}
+
+.customer-page .chip{
+  transition: transform .06s ease, filter .15s ease, box-shadow .15s ease;
+}
+.customer-page .chip:hover{ filter: brightness(1.02); }
+.customer-page .chip.active{
+  background: linear-gradient(135deg, rgba(37,99,235,0.18), rgba(6,182,212,0.14));
+  box-shadow: 0 10px 24px rgba(37,99,235,0.16);
+}
+
+.customer-page .slot-chip{ transition: transform .06s ease, filter .15s ease, box-shadow .15s ease; }
+.customer-page .slot-chip:hover{ filter: brightness(1.02); }
+.customer-page .slot-chip:active{ transform: translateY(1px); }
+
+/* Total row (premium) */
+.customer-page .total-row{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding: 12px;
+  border-radius: 18px;
+  border: 1px solid rgba(37,99,235,0.18);
+  background: linear-gradient(135deg, rgba(37,99,235,0.12), rgba(251,191,36,0.10));
+  box-shadow: var(--shadow-2);
+}
+.customer-page .total-row b{ font-size: 14px; }
+.customer-page .total-row .total-amt{ font-size: 20px; font-weight: 950; letter-spacing: .2px; }
+
+/* Success actions: prevent overlap */
+.success-actions{ display:grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+@media (min-width: 640px){
+  .success-actions{ grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.success-actions .action-btn{ width: 100%; min-height: 42px; }
+
+/* Stepper input selector fix (was nested selector only) */
+.stepper-input{
+  width: 86px;
+  height: 44px;
+  border-radius: 14px;
+  border: 1px solid rgba(15,23,42,0.14);
+  text-align:center;
+  font-weight: 900;
+  font-size: 18px;
+  background: rgba(255,255,255,0.92);
+  padding: 10px 10px;
+}
+.stepper{ margin-top: 6px; }
+
+/* =========================================================
    Availability / Slots UI (อ่านง่าย: ว่าง/เต็ม/จำนวนช่าง)
    - ใช้ได้ทั้ง admin-add-v2 / admin-review-v2 / customer
    ========================================================= */
@@ -310,6 +437,17 @@ body{
   color: rgba(15,23,42,0.92);
 }
 .trust-btn:hover{ filter: brightness(0.99); }
+
+.trust-btn.phone{
+  background: linear-gradient(135deg, rgba(251,191,36,0.95), rgba(245,158,11,0.92));
+  border-color: rgba(245,158,11,0.28);
+  color: #111827;
+}
+.trust-btn.line{
+  background: linear-gradient(135deg, rgba(34,197,94,0.22), rgba(255,255,255,0.98));
+  border-color: rgba(34,197,94,0.28);
+  color: #065f46;
+}
 
 /* Success card + actions */
 .success-card{

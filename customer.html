@@ -18,17 +18,16 @@
           <span class="muted">Coldwindflow air services</span>
         </div>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;">
-        <div id="auth_box" style="display:flex;align-items:center;gap:10px;">
-          <a id="line_login_btn" class="secondary" style="width:auto;min-height:40px;padding:10px 12px;display:inline-flex;align-items:center;gap:8px;text-decoration:none;" href="/auth/line">✅ Login ด้วย LINE</a>
-          <a id="register_btn" class="secondary" style="width:auto;min-height:40px;padding:10px 12px;display:none;align-items:center;gap:8px;text-decoration:none;" href="/register">📝 Register</a>
-          <div id="me_badge" style="display:none;align-items:center;gap:8px;">
-            <img id="me_pic" alt="" style="width:28px;height:28px;border-radius:999px;object-fit:cover;border:1px solid rgba(15,23,42,0.15);">
-            <b id="me_name" style="font-size:14px;max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></b>
+      <div class="top-actions">
+        <div id="auth_box" class="auth-box">
+          <a id="line_login_btn" class="secondary link-btn" href="/auth/line">✅ Login ด้วย LINE</a>
+          <a id="register_btn" class="secondary link-btn" style="display:none;" href="/register">📝 Register</a>
+          <div id="me_badge" class="me-badge" style="display:none;">
+            <img id="me_pic" alt="" class="me-pic">
+            <b id="me_name" class="me-name"></b>
           </div>
         </div>
-        <button class="secondary" style="width:auto;min-height:40px;padding:10px 12px;" type="button"
-          onclick="location.href='/track.html'">🔎 ติดตามงาน</button>
+        <button class="secondary top-track" type="button" onclick="location.href='/track.html'">🔎 ติดตามงาน</button>
       </div>
     </div>
 
@@ -41,8 +40,8 @@
         <span class="trust-pill">💬 ติดต่อ LINE OA</span>
       </div>
       <div class="trust-actions">
-        <a class="trust-btn" href="tel:0988777321">📞 โทรเลย</a>
-        <a class="trust-btn" href="https://line.me/R/ti/p/@cwfair" target="_blank" rel="noopener">💬 แชทไลน์</a>
+        <a class="trust-btn phone" href="tel:0988777321">📞 โทรเลย</a>
+        <a class="trust-btn line" href="https://line.me/R/ti/p/@cwfair" target="_blank" rel="noopener">💬 แชทไลน์</a>
       </div>
     </div>
 
@@ -180,8 +179,14 @@
         <div id="maps_preview" class="maps-preview" style="display:none;"></div>
       </div>
       <textarea id="customer_note" rows="3" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"></textarea>
-<hr style="margin:14px 0;">
-<p style="margin-top:6px;">💵 <b>ยอดรวมประมาณ:</b> <span id="grand_total">0</span> บาท</p>
+      <hr style="margin:14px 0;">
+      <div class="total-row">
+        <div>
+          💵 <b>ยอดรวมประมาณ</b>
+          <div class="muted" style="margin-top:2px;">(ราคานี้เป็น “ประมาณการ” อาจปรับตามหน้างาน)</div>
+        </div>
+        <div class="total-amt"><span id="grand_total">0</span> บาท</div>
+      </div>
 
       <!-- Summary card before confirm -->
       <div id="confirm_summary" class="summary-card" style="margin-top:12px;">
@@ -206,7 +211,7 @@
         </div>
       </div>
 
-      <button id="confirm_btn" type="button" onclick="book()" style="margin-top:10px;">✅ ยืนยันจอง</button>
+      <button id="confirm_btn" type="button" class="primary-cta" onclick="book()" style="margin-top:12px;">✅ ยืนยันจอง</button>
 
       <div id="result" class="muted" style="margin-top:10px;"></div>
     </div>
@@ -701,10 +706,10 @@ async function book(){
       <div class="success-row"><span class="k">สถานะ</span><span class="v">${data.booking_mode==='urgent' ? 'รอช่างยืนยัน' : 'รอดำเนินการ'}</span></div>
       <div class="success-row"><span class="k">เวลาโดยประมาณ</span><span class="v">${data.duration_min || '-'} นาที</span></div>
       <div class="success-actions">
-        <button type="button" class="secondary" style="width:auto;min-height:40px;" onclick="copyText('${code.replace(/'/g,"\\'")}')">📋 คัดลอกเลข</button>
-        <button type="button" class="secondary" style="width:auto;min-height:40px;" onclick="shareLine('${code.replace(/'/g,"\\'")}')">💬 ส่งเข้า LINE</button>
-        <button type="button" class="secondary" style="width:auto;min-height:40px;" onclick="downloadIcsForBooking()">📅 เพิ่มเข้าปฏิทิน</button>
-        <button type="button" class="secondary" style="width:auto;min-height:40px;" onclick="location.href='${trackUrl}'">🔎 ไปหน้าติดตามงาน</button>
+        <button type="button" class="secondary action-btn" onclick="copyText('${code.replace(/'/g,"\\'")}')">📋 คัดลอกเลข</button>
+        <button type="button" class="secondary action-btn" onclick="shareLine('${code.replace(/'/g,"\\'")}')">💬 ส่งเข้า LINE</button>
+        <button type="button" class="secondary action-btn" onclick="downloadIcsForBooking()">📅 เพิ่มเข้าปฏิทิน</button>
+        <button type="button" class="secondary action-btn" onclick="location.href='${trackUrl}'">🔎 ไปหน้าติดตามงาน</button>
       </div>
     </div>`;
 
