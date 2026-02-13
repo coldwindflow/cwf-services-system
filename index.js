@@ -206,8 +206,231 @@ const multer = require("multer");
 const pool = require("./db");
 
 const app = express();
+// Render/Reverse-proxy: allow req.protocol to reflect X-Forwarded-Proto
+app.set('trust proxy', 1);
 app.use(cors());
 app.use(express.json());
+
+// =======================================
+// 🔐 Public Login (LINE OAuth) - Production-ready (Minimal / No regression)
+// - Cookie: cwf_token (HttpOnly)
+// - CSRF protection via state stored in HttpOnly cookie
+// - Routes:
+//   GET /auth/line
+//   GET /auth/line/callback
+//   GET /public/me
+// =======================================
+
+function b64urlEncode(input) {
+  const b = Buffer.isBuffer(input) ? input : Buffer.from(String(input));
+  return b.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+}
+
+function b64urlDecodeToBuffer(str) {
+  const s = String(str || '').replace(/-/g, '+').replace(/_/g, '/');
+  const pad = s.length % 4 ? '='.repeat(4 - (s.length % 4)) : '';
+  return Buffer.from(s + pad, 'base64');
+}
+
+function jwtSign(payload, secret) {
+  const header = { alg: 'HS256', typ: 'JWT' };
+  const h = b64urlEncode(JSON.stringify(header));
+  const p = b64urlEncode(JSON.stringify(payload));
+  const data = `${h}.${p}`;
+  const sig = crypto.createHmac('sha256', String(secret)).update(data).digest();
+  return `${data}.${b64urlEncode(sig)}`;
+}
+
+function jwtVerify(token, secret) {
+  const t = String(token || '').trim();
+  const parts = t.split('.');
+  if (parts.length !== 3) return null;
+  const [h, p, s] = parts;
+  const data = `${h}.${p}`;
+  const expected = crypto.createHmac('sha256', String(secret)).update(data).digest();
+  const got = b64urlDecodeToBuffer(s);
+  // timing safe compare
+  if (got.length !== expected.length) return null;
+  if (!crypto.timingSafeEqual(got, expected)) return null;
+  let payload;
+  try {
+    payload = JSON.parse(b64urlDecodeToBuffer(p).toString('utf8'));
+  } catch (_) {
+    return null;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (payload && payload.exp && now > Number(payload.exp)) return null;
+  return payload || null;
+}
+
+function appendSetCookie(res, cookieStr) {
+  try {
+    const prev = res.getHeader('Set-Cookie');
+    if (!prev) {
+      res.setHeader('Set-Cookie', cookieStr);
+      return;
+    }
+    if (Array.isArray(prev)) {
+      res.setHeader('Set-Cookie', [...prev, cookieStr]);
+      return;
+    }
+    res.setHeader('Set-Cookie', [prev, cookieStr]);
+  } catch (_) {}
+}
+
+function setHttpOnlyCookie(res, name, value, opts = {}) {
+  const maxAgeSec = Number(opts.maxAgeSec || 7 * 24 * 60 * 60);
+  const sameSite = opts.sameSite || 'Lax';
+  const pathVal = opts.path || '/';
+  const httpOnly = opts.httpOnly !== false;
+  const secure = !!opts.secure;
+  const encoded = encodeURIComponent(String(value));
+  let c = `${name}=${encoded}; Max-Age=${maxAgeSec}; Path=${pathVal}; SameSite=${sameSite}`;
+  if (httpOnly) c += '; HttpOnly';
+  if (secure) c += '; Secure';
+  appendSetCookie(res, c);
+}
+
+function clearCookie(res, name) {
+  // Clear both with/without Secure for max compatibility
+  appendSetCookie(res, `${name}=; Max-Age=0; Path=/; SameSite=Lax`);
+  appendSetCookie(res, `${name}=; Max-Age=0; Path=/; SameSite=Lax; Secure`);
+}
+
+function getReqBaseUrl(req) {
+  const xfProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  const proto = xfProto || req.protocol || 'http';
+  const host = req.get('host');
+  return `${proto}://${host}`;
+}
+
+function isHttpsReq(req) {
+  const xfProto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  return (xfProto ? xfProto === 'https' : req.protocol === 'https');
+}
+
+function parseCookieValue(req, name) {
+  try {
+    const cookies = parseCookies(req.headers?.cookie || '');
+    let v = cookies?.[name];
+    if (!v) return null;
+    v = v.replace(/^"|"$/g, '');
+    try { v = decodeURIComponent(v); } catch (_) {}
+    return v || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function getJwtSecret() {
+  return String(process.env.CWF_JWT_SECRET || process.env.JWT_SECRET || '').trim();
+}
+
+app.get('/auth/line', (req, res) => {
+  const clientId = String(process.env.LINE_CHANNEL_ID || '').trim();
+  const callback = String(process.env.LINE_CALLBACK_URL || '').trim() || `${getReqBaseUrl(req)}/auth/line/callback`;
+  if (!clientId) {
+    return res.status(500).send('LINE_CHANNEL_ID is not set');
+  }
+  const state = crypto.randomBytes(18).toString('hex');
+  // store state in HttpOnly cookie to prevent CSRF
+  setHttpOnlyCookie(res, 'cwf_line_state', state, { maxAgeSec: 10 * 60, secure: isHttpsReq(req) });
+  const authorize = new URL('https://access.line.me/oauth2/v2.1/authorize');
+  authorize.searchParams.set('response_type', 'code');
+  authorize.searchParams.set('client_id', clientId);
+  authorize.searchParams.set('redirect_uri', callback);
+  authorize.searchParams.set('state', state);
+  authorize.searchParams.set('scope', 'profile');
+  res.redirect(authorize.toString());
+});
+
+app.get('/auth/line/callback', async (req, res) => {
+  try {
+    const code = String(req.query?.code || '').trim();
+    const state = String(req.query?.state || '').trim();
+    const stateCookie = parseCookieValue(req, 'cwf_line_state');
+
+    // always clear state cookie
+    clearCookie(res, 'cwf_line_state');
+
+    if (!code) return res.redirect('/customer.html?login=failed&reason=no_code');
+    if (!state || !stateCookie || state !== stateCookie) {
+      return res.redirect('/customer.html?login=failed&reason=bad_state');
+    }
+
+    const clientId = String(process.env.LINE_CHANNEL_ID || '').trim();
+    const clientSecret = String(process.env.LINE_CHANNEL_SECRET || '').trim();
+    const callback = String(process.env.LINE_CALLBACK_URL || '').trim() || `${getReqBaseUrl(req)}/auth/line/callback`;
+    const jwtSecret = getJwtSecret();
+    if (!clientId || !clientSecret) return res.redirect('/customer.html?login=failed&reason=misconfig');
+    if (!jwtSecret) return res.redirect('/customer.html?login=failed&reason=no_jwt_secret');
+
+    // Exchange code for access token
+    const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        code,
+        redirect_uri: callback,
+        client_id: clientId,
+        client_secret: clientSecret,
+      }),
+    });
+
+    const tokenJson = await tokenRes.json().catch(() => ({}));
+    const accessToken = String(tokenJson?.access_token || '').trim();
+    if (!accessToken) return res.redirect('/customer.html?login=failed&reason=no_access_token');
+
+    // Fetch profile
+    const profRes = await fetch('https://api.line.me/v2/profile', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    const prof = await profRes.json().catch(() => ({}));
+    const userId = String(prof?.userId || '').trim();
+    const name = String(prof?.displayName || '').trim();
+    const picture = String(prof?.pictureUrl || '').trim();
+    if (!userId) return res.redirect('/customer.html?login=failed&reason=no_user');
+
+    // Issue JWT
+    const now = Math.floor(Date.now() / 1000);
+    const payload = {
+      sub: `line:${userId}`,
+      provider: 'line',
+      name: name || 'LINE User',
+      picture: picture || '',
+      iat: now,
+      exp: now + (7 * 24 * 60 * 60),
+    };
+    const token = jwtSign(payload, jwtSecret);
+    setHttpOnlyCookie(res, 'cwf_token', token, { maxAgeSec: 7 * 24 * 60 * 60, secure: isHttpsReq(req) });
+    return res.redirect('/customer.html?login=success');
+  } catch (e) {
+    console.error('[LINE_CALLBACK_ERROR]', e);
+    return res.redirect('/customer.html?login=failed&reason=server');
+  }
+});
+
+app.get('/public/me', (req, res) => {
+  try {
+    const jwtSecret = getJwtSecret();
+    if (!jwtSecret) return res.json({ logged_in: false });
+    const token = parseCookieValue(req, 'cwf_token');
+    if (!token) return res.json({ logged_in: false });
+    const payload = jwtVerify(token, jwtSecret);
+    if (!payload) return res.json({ logged_in: false });
+    return res.json({
+      logged_in: true,
+      user: {
+        name: String(payload.name || ''),
+        picture: String(payload.picture || ''),
+        provider: String(payload.provider || 'line'),
+      }
+    });
+  } catch (_) {
+    return res.json({ logged_in: false });
+  }
+});
 
 // =======================================
 // 📷 UPLOADS CONFIG (ต้องอยู่ก่อน route ที่ใช้ upload)
