@@ -19,7 +19,7 @@
       --iq-primary2:#2f7cff;
       --iq-shadow:0 12px 34px rgba(2,6,23,.10);
     }
-    .iq-wrap{max-width:980px;margin:0 auto;padding:14px 14px 92px;}
+    .iq-wrap{max-width:980px;margin:0 auto;padding:14px 14px 140px;}
     .iq-steps{display:flex;flex-direction:column;gap:12px;}
     .iq-step{border:1px solid var(--iq-border); box-shadow: var(--iq-shadow);}
     .iq-step h2{margin:0 0 10px 0;font-size:18px;color:var(--iq-text);}
@@ -100,10 +100,10 @@
     .iq-sub{opacity:1;}
     .iq-note{background:rgba(255,196,0,.16);}
     .iq-stickybar{
-      position:fixed; left:12px; right:12px; bottom:12px;
+      position:fixed; left:12px; right:12px; bottom:calc(12px + env(safe-area-inset-bottom));
       z-index:50;
       display:flex; gap:10px; align-items:center; justify-content:space-between;
-      padding:10px 12px; border-radius:16px;
+      padding:8px 10px; border-radius:16px;
       background:rgba(255,255,255,.85);
       border:1px solid var(--iq-border);
       box-shadow:0 16px 38px rgba(2,6,23,.14);
@@ -127,7 +127,24 @@
       .iq-hero h1{font-size:22px;}
       .iq-stickybar{left:calc(50% - 490px); right:calc(50% - 490px);}
     }
-</style>
+
+    .iq-stickybar .toggle{
+      border:1px solid var(--iq-border);
+      background:rgba(255,255,255,.7);
+      color:var(--iq-text);
+      width:34px;height:34px;border-radius:12px;
+      display:grid;place-items:center;
+      box-shadow:0 10px 24px rgba(2,6,23,.08);
+      cursor:pointer;
+    }
+    .iq-stickybar.collapsed .sum .line:nth-child(2){display:none;}
+    .iq-stickybar.collapsed{padding:8px 10px;}
+    @media (max-width:420px){
+      .iq-stickybar .sum .line:nth-child(2){display:none;}
+      .iq-stickybar .btns button{padding:10px 12px; font-size:13px;}
+    }
+    
+  </style>
 </head>
 <body class="theme-2">
   <div class="app">
@@ -418,9 +435,26 @@
 
         <div class="card iq-step">
           <h2>เงื่อนไขสำคัญ</h2>
-          <ul style="margin:0;padding-left:18px;line-height:1.6;color:var(--iq-text);">
+          <div class="iq-sub" style="margin-bottom:10px;color:var(--iq-text);font-weight:800;">รายละเอียดและเงื่อนไขการติดตั้งเครื่องปรับอากาศ 🔧</div>
+          <div class="iq-note" style="padding:12px;border-radius:16px;border:1px solid var(--iq-border);">
+            <div style="font-weight:900;color:var(--iq-text);margin-bottom:6px;">อุปกรณ์ติดตั้งชุดมาตรฐาน (รวมแล้ว/เครื่อง)</div>
+            <ul style="margin:0;padding-left:18px;line-height:1.7;color:var(--iq-text);">
+              <li>ท่อน้ำยาแอร์ ความยาว 4 เมตร</li>
+              <li>สายไฟ ความยาว 8 เมตร</li>
+              <li>ท่อน้ำทิ้ง ความยาว 8 เมตร</li>
+              <li>เบรกเกอร์ 1 ชุด</li>
+              <li>รางครอบท่อ ความยาว 4 เมตร</li>
+              <li>ขายางรอง และขาเหล็กชุดมาตรฐาน</li>
+            </ul>
+          </div>
+          <div style="height:10px"></div>
+          <div style="font-weight:900;color:var(--iq-text);margin-bottom:6px;">เงื่อนไขการติดตั้ง</div>
+          <ul style="margin:0;padding-left:18px;line-height:1.7;color:var(--iq-text);">
+            <li>การเดินท่อน้ำยา ท่อน้ำทิ้ง และสายไฟ เป็นการเดินลอย (มาตรฐาน)</li>
+            <li>กรณีต้องกรีดผนังเพื่อฝังท่อ คิดค่าบริการเพิ่ม เมตรละ 300 บาท</li>
+            <li>กรณีเดินท่อขึ้นฝ้า คิดค่าบริการเพิ่ม เมตรละ 300 บาท</li>
+            <li>งานเดินสายไฟเป็นการเดินไฟ จากคอยล์ร้อนไปยังคอยล์เย็นเท่านั้น (ไม่รวมงานเดินไฟเมนจากตู้ไฟหลัก)</li>
             <li>อุปกรณ์ที่เหลือจากงานติดตั้ง ไม่สามารถเปลี่ยน ตัดทอน หรือขอคืนเป็นเงินสด สินค้า หรือส่วนลดได้</li>
-            <li>งานเดินสายไฟเป็นการเดินจากคอยล์ร้อนไปคอยล์เย็นเท่านั้น (ไม่รวมงานเดินไฟเมนจากตู้ไฟหลัก)</li>
             <li>กรณีไม่สามารถเปลี่ยนท่อน้ำยาเดิมได้ และจำเป็นต้องล้างระบบด้วยน้ำยา ขอสงวนสิทธิ์ไม่ส่งมอบอุปกรณ์ที่ไม่ได้ใช้งานคืน</li>
           </ul>
         </div>
@@ -428,10 +462,11 @@
     </div>
   </div>
 
-  <div class="iq-stickybar" role="region" aria-label="สรุปราคาแบบย่อ">
+  <div id="iq_sticky" class="iq-stickybar" role="region" aria-label="สรุปราคาแบบย่อ">
+    <button id="sticky_toggle" class="toggle" type="button" aria-label="ย่อ/ขยายสรุป">▾</button>
     <div class="sum">
       <div class="line">รวม/เครื่อง: <b id="sticky_per">-</b> • รวมทั้งหมด: <b id="sticky_grand">-</b></div>
-      <div class="line">BTU: <b id="sticky_btu">-</b> • เครื่อง: <b id="sticky_count">1</b></div>
+      <div class="line">BTU(คิด): <b id="sticky_btu">-</b> • เครื่อง: <b id="sticky_count">1</b></div>
     </div>
     <div class="btns">
       <button id="sticky_reset" class="secondary" type="button">รีเซ็ต</button>
