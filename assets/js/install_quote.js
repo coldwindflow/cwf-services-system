@@ -86,9 +86,11 @@
     const machine_count = clamp(toNumber(input.machine_count, { min: 1, max: 50, decimals: 0 }) || 1, 1, 50);
     const ac_type = String(input.ac_type || "").trim();
 
-    const btu = toNumber(input.btu, { min: 0, max: 200_000, decimals: 0 });
-    const labor = getBaseLaborStd(btu);
-    const rates = getRatesByBtu(btu);
+    const btu_input = toNumber(input.btu, { min: 0, max: 200_000, decimals: 0 });
+    // Always use normalized BTU for pricing to avoid spec range gaps and keep behavior predictable.
+    const btu_used = btu_input ? (normalizeBtu(btu_input) || btu_input) : 0;
+    const labor = getBaseLaborStd(btu_used);
+    const rates = getRatesByBtu(btu_used);
 
     const len_ref = toNumber(input.len_ref, { min: 0, max: 200, decimals: 2 });
     const len_power = toNumber(input.len_power, { min: 0, max: 500, decimals: 2 });
@@ -185,7 +187,7 @@
     }
 
     if (specials.siphon === "auto") {
-      const siphon_cost = btu && btu <= 24000 ? 2500 : 4000;
+      const siphon_cost = btu_used && btu_used <= 24000 ? 2500 : 4000;
       const label = siphon_cost === 2500 ? "กาลักน้ำ (9,000–24,000 BTU)" : "กาลักน้ำ (30,000–60,000 BTU+)";
       specials_lines.push({ key: "siphon", label, qty: 1, unit: "ชุด", rate: siphon_cost, cost: siphon_cost });
     }
@@ -201,7 +203,8 @@
       meta: {
         ac_type,
         machine_count,
-        btu,
+        btu_input,
+        btu_used,
         rates,
         included: STD_INCLUDED,
       },
@@ -241,7 +244,12 @@
     lines.push("🧊 CWF | สรุปราคาประมาณงานติดตั้งแอร์");
     lines.push("--------------------------------");
     if (b?.meta?.ac_type) lines.push(`ประเภทแอร์: ${b.meta.ac_type}`);
-    if (b?.meta?.btu) lines.push(`BTU: ${formatMoney(b.meta.btu)}`);
+    if (b?.meta?.btu_used) {
+      lines.push(`BTU (ใช้คำนวณ): ${formatMoney(b.meta.btu_used)}`);
+      if (b?.meta?.btu_input && b.meta.btu_input !== b.meta.btu_used) {
+        lines.push(`BTU ที่กรอก: ${formatMoney(b.meta.btu_input)} (ปัดขึ้นตามมาตรฐาน)`);
+      }
+    }
     lines.push(`จำนวนเครื่อง: ${formatMoney(b.meta.machine_count)}`);
     lines.push("");
 
