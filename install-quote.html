@@ -9,34 +9,68 @@
   <meta name="theme-color" content="#0b4bb3">
   <style>
     /* page-local premium tweaks (no regression to other pages) */
+    :root{
+      --iq-text:#0f172a;
+      --iq-muted:#475569;
+      --iq-border:rgba(15,23,42,.10);
+      --iq-surface:rgba(255,255,255,.86);
+      --iq-surface2:rgba(255,255,255,.70);
+      --iq-primary:#0b4bb3;
+      --iq-primary2:#2f7cff;
+      --iq-shadow:0 12px 34px rgba(2,6,23,.10);
+    }
     .iq-wrap{max-width:980px;margin:0 auto;}
     .iq-steps{display:flex;flex-direction:column;gap:12px;}
-    .iq-step{border:1px solid rgba(255,255,255,.08);}
-    .iq-step h2{margin:0 0 10px 0;font-size:18px;}
+    .iq-step{border:1px solid var(--iq-border); box-shadow: var(--iq-shadow);}
+    .iq-step h2{margin:0 0 10px 0;font-size:18px;color:var(--iq-text);}
     .iq-grid{display:grid;grid-template-columns:1fr;gap:10px;}
     .iq-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
     .iq-chiprow{display:flex;flex-wrap:wrap;gap:8px;}
-    .iq-chip{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#fff;padding:10px 12px;border-radius:999px;font-weight:700;font-size:14px;cursor:pointer;user-select:none;}
-    .iq-chip[aria-pressed="true"]{background:rgba(11,75,179,.35);border-color:rgba(58,140,255,.65);box-shadow:0 8px 22px rgba(0,0,0,.18) inset;}
-    .iq-sub{color:rgba(255,255,255,.78);font-size:12px;line-height:1.35;}
-    .iq-badge{display:inline-flex;gap:8px;align-items:center;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);}
-    .iq-badge b{font-size:14px;}
+    .iq-chip{
+      border:1px solid var(--iq-border);
+      background:var(--iq-surface2);
+      color:var(--iq-text);
+      padding:10px 12px;
+      border-radius:999px;
+      font-weight:800;
+      font-size:14px;
+      cursor:pointer;
+      user-select:none;
+      box-shadow:0 8px 22px rgba(2,6,23,.06);
+    }
+    .iq-chip[aria-pressed="true"]{
+      background:linear-gradient(180deg, rgba(11,75,179,.14), rgba(47,124,255,.10));
+      border-color:rgba(47,124,255,.40);
+      color:var(--iq-text);
+      box-shadow:0 10px 24px rgba(11,75,179,.16);
+    }
+    .iq-sub{color:var(--iq-muted);font-size:12px;line-height:1.35;}
+    .iq-badge{display:inline-flex;gap:8px;align-items:center;padding:8px 10px;border-radius:12px;background:var(--iq-surface2);border:1px solid var(--iq-border);}
+    .iq-badge b{font-size:14px;color:var(--iq-text);}
     .iq-kpi{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-    .iq-kpi .k{padding:12px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);}
-    .iq-kpi .k .t{font-size:12px;color:rgba(255,255,255,.72)}
-    .iq-kpi .k .v{margin-top:6px;font-size:18px;font-weight:900}
+    .iq-kpi .k{padding:12px;border-radius:14px;background:var(--iq-surface);border:1px solid var(--iq-border);}
+    .iq-kpi .k .t{font-size:12px;color:var(--iq-muted)}
+    .iq-kpi .k .v{margin-top:6px;font-size:18px;font-weight:950;color:var(--iq-text)}
     .iq-table{width:100%;border-collapse:collapse;}
-    .iq-table td{padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top;}
-    .iq-table td:last-child{text-align:right;font-weight:800}
-    .iq-hr{height:1px;background:rgba(255,255,255,.10);margin:10px 0;}
+    .iq-table td{padding:8px 6px;border-bottom:1px solid var(--iq-border);vertical-align:top;color:var(--iq-text)}
+    .iq-table td:last-child{text-align:right;font-weight:900}
+    .iq-hr{height:1px;background:var(--iq-border);margin:10px 0;}
     .iq-actions{display:flex;gap:10px;flex-wrap:wrap;}
     .iq-actions .primary{flex:1;min-width:180px;}
     .iq-actions .secondary{flex:1;min-width:180px;}
-    .iq-note{padding:12px;border-radius:14px;background:rgba(255,196,0,.12);border:1px solid rgba(255,196,0,.22);}
-    .iq-note b{color:#ffe38a;}
-    .iq-error{display:none;margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,59,59,.12);border:1px solid rgba(255,59,59,.25);}
+    .iq-note{padding:12px;border-radius:14px;background:rgba(255,196,0,.18);border:1px solid rgba(255,196,0,.28);}
+    .iq-note b{color:#7c5a00;}
+    .iq-error{display:none;margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,59,59,.12);border:1px solid rgba(255,59,59,.25);color:var(--iq-text)}
     .iq-error.show{display:block;}
-    .iq-muted{color:rgba(255,255,255,.72)}
+    .iq-muted{color:var(--iq-muted)}
+    /* improve default form contrast inside theme-2 */
+    .iq-step .label{color:var(--iq-text)}
+    .iq-step input, .iq-step select{background:rgba(255,255,255,.92); color:var(--iq-text); border:1px solid var(--iq-border);}
+    .iq-step input::placeholder{color:rgba(71,85,105,.75)}
+    .iq-step .primary{background:linear-gradient(180deg, #0b4bb3, #0a3f97); border:0;}
+    .iq-step .secondary{background:rgba(255,255,255,.80); color:var(--iq-text); border:1px solid var(--iq-border);}
+    .iq-step .secondary:hover{filter:brightness(.98)}
+    .iq-step .primary:hover{filter:brightness(1.02)}
     @media (min-width: 860px){
       .iq-grid2{grid-template-columns:1fr 1fr;}
       .iq-kpi{grid-template-columns:1fr 1fr 1fr 1fr;}
@@ -88,7 +122,9 @@
           <div class="iq-chiprow" role="group" aria-label="ac type">
             <button class="iq-chip" type="button" data-ac-type="ติดผนัง" aria-pressed="true">ติดผนัง</button>
             <button class="iq-chip" type="button" data-ac-type="ตั้งแขวน" aria-pressed="false">ตั้งแขวน</button>
+            <button class="iq-chip" type="button" data-ac-type="4ทิศทาง" aria-pressed="false">4 ทิศทาง</button>
           </div>
+          <div class="iq-sub" style="margin-top:8px;">* ประเภทแอร์มีผลต่อ “ข้อความสรุป” (การคิดราคายึดตาม BTU และเงื่อนไขมาตรฐาน)</div>
         </div>
 
         <div class="card iq-step">
@@ -132,11 +168,28 @@
             </div>
 
             <div id="btu_room_box" class="iq-grid" style="display:none;margin-top:6px;">
-              <div class="iq-grid2">
-                <div>
+              <div class="iq-chiprow" role="group" aria-label="room input mode" style="margin-top:2px;">
+                <button class="iq-chip" type="button" data-room-mode="area" aria-pressed="true">กรอกตร.ม.</button>
+                <button class="iq-chip" type="button" data-room-mode="wh" aria-pressed="false">กรอกกว้าง × ยาว</button>
+              </div>
+
+              <div class="iq-grid2" style="margin-top:6px;">
+                <div id="room_area_box">
                   <div class="label">ขนาดห้อง (ตร.ม.)</div>
                   <input id="room_area" inputmode="decimal" placeholder="เช่น 20" />
+                  <div class="iq-sub" style="margin-top:6px;">* ถ้ารู้เป็น “กว้าง×ยาว” ให้เลือกโหมดด้านบน</div>
                 </div>
+
+                <div id="room_wh_box" style="display:none;">
+                  <div class="label">กว้าง × ยาว (เมตร)</div>
+                  <div class="iq-grid2" style="gap:8px;">
+                    <input id="room_w" inputmode="decimal" placeholder="กว้าง" />
+                    <input id="room_l" inputmode="decimal" placeholder="ยาว" />
+                  </div>
+                  <div class="iq-sub" style="margin-top:6px;">ระบบจะคำนวณเป็นพื้นที่ให้อัตโนมัติ</div>
+                  <div class="iq-badge" style="margin-top:8px;"><span class="iq-muted">พื้นที่:</span><b id="room_area_calc">-</b></div>
+                </div>
+
                 <div>
                   <div class="label">ลักษณะห้อง</div>
                   <select id="room_factor">
@@ -295,7 +348,7 @@
 
         <div class="card iq-step">
           <h2>เงื่อนไขสำคัญ</h2>
-          <ul style="margin:0;padding-left:18px;line-height:1.6;color:rgba(255,255,255,.9);">
+          <ul style="margin:0;padding-left:18px;line-height:1.6;color:var(--iq-text);">
             <li>อุปกรณ์ที่เหลือจากงานติดตั้ง ไม่สามารถเปลี่ยน ตัดทอน หรือขอคืนเป็นเงินสด สินค้า หรือส่วนลดได้</li>
             <li>งานเดินสายไฟเป็นการเดินจากคอยล์ร้อนไปคอยล์เย็นเท่านั้น (ไม่รวมงานเดินไฟเมนจากตู้ไฟหลัก)</li>
             <li>กรณีไม่สามารถเปลี่ยนท่อน้ำยาเดิมได้ และจำเป็นต้องล้างระบบด้วยน้ำยา ขอสงวนสิทธิ์ไม่ส่งมอบอุปกรณ์ที่ไม่ได้ใช้งานคืน</li>
@@ -325,6 +378,7 @@
         ac_type: 'ติดผนัง',
         btu_mode: 'manual',
         btu: 0,
+        room_mode: 'area',
       };
 
       // chips
@@ -348,6 +402,30 @@
           recalc();
         });
       });
+
+      // room input mode chips (ตร.ม. / กว้าง×ยาว)
+      const setRoomMode = (mode)=>{
+        state.room_mode = mode;
+        document.querySelectorAll('[data-room-mode]').forEach(b=>b.setAttribute('aria-pressed', String(b.getAttribute('data-room-mode')===mode)));
+        $('room_area_box').style.display = (mode==='area') ? '' : 'none';
+        $('room_wh_box').style.display = (mode==='wh') ? '' : 'none';
+        updateRoomAreaCalc();
+        recalc();
+      };
+      document.querySelectorAll('[data-room-mode]').forEach(btn=>{
+        btn.addEventListener('click', ()=> setRoomMode(btn.getAttribute('data-room-mode')));
+      });
+
+      function updateRoomAreaCalc(){
+        if(state.room_mode !== 'wh'){
+          $('room_area_calc').textContent = '-';
+          return;
+        }
+        const w = InstallQuote._util.toNumber($('room_w').value, {min:0,max:200,decimals:2});
+        const l = InstallQuote._util.toNumber($('room_l').value, {min:0,max:200,decimals:2});
+        const area = w && l ? (w*l) : 0;
+        $('room_area_calc').textContent = area ? (area.toFixed(2).replace(/\.00$/,'').replace(/(\.[1-9])0$/,'$1') + ' ตร.ม.') : '-';
+      }
 
       // machine count stepper
       const setCount = (n)=>{
@@ -395,7 +473,7 @@
       syncInsulation();
 
       // standard inputs
-      ['btu_input','len_ref','len_power','len_drain','len_trunk','room_area'].forEach(id=>$(id).addEventListener('input', recalc));
+      ['btu_input','len_ref','len_power','len_drain','len_trunk','room_area','room_w','room_l'].forEach(id=>$(id).addEventListener('input', ()=>{ if(id==='room_w' || id==='room_l') updateRoomAreaCalc(); recalc(); }));
       $('room_factor').addEventListener('change', recalc);
       ['scaffold','grill','siphon'].forEach(id=>$(id).addEventListener('change', recalc));
 
@@ -416,7 +494,7 @@
       });
 
       $('use_room_btu').addEventListener('click', ()=>{
-        const area = InstallQuote._util.toNumber($('room_area').value, {min:0,max:1000,decimals:2});
+        const area = getRoomAreaForCalc();
         const factor = InstallQuote._util.toNumber($('room_factor').value, {min:700,max:900,decimals:0});
         const r = InstallQuote.calcBtuFromRoom(area, factor);
         if(r.normalized_btu){
@@ -515,11 +593,20 @@
         const norm = InstallQuote.normalizeBtu(raw);
         $('btu_norm_badge').textContent = norm ? fmt(norm) : '-';
 
-        const area = InstallQuote._util.toNumber($('room_area').value, {min:0,max:1000,decimals:2});
+        const area = getRoomAreaForCalc();
         const factor = InstallQuote._util.toNumber($('room_factor').value, {min:700,max:900,decimals:0});
         const r = InstallQuote.calcBtuFromRoom(area, factor);
         $('btu_raw').textContent = r.raw_btu ? fmt(r.raw_btu) : '-';
         $('btu_norm').textContent = r.normalized_btu ? fmt(r.normalized_btu) : '-';
+      }
+
+      function getRoomAreaForCalc(){
+        if(state.room_mode === 'wh'){
+          const w = InstallQuote._util.toNumber($('room_w').value, {min:0,max:200,decimals:2});
+          const l = InstallQuote._util.toNumber($('room_l').value, {min:0,max:200,decimals:2});
+          return w && l ? (w*l) : 0;
+        }
+        return InstallQuote._util.toNumber($('room_area').value, {min:0,max:1000,decimals:2});
       }
 
       let lastBreakdown = null;
@@ -592,15 +679,20 @@
         state.ac_type = 'ติดผนัง';
         state.btu_mode = 'manual';
         state.btu = 0;
+        state.room_mode = 'area';
 
         // chips reset
         document.querySelectorAll('[data-ac-type]').forEach(b=>b.setAttribute('aria-pressed', String(b.getAttribute('data-ac-type')==='ติดผนัง')));
         document.querySelectorAll('[data-btu-mode]').forEach(b=>b.setAttribute('aria-pressed', String(b.getAttribute('data-btu-mode')==='manual')));
+        document.querySelectorAll('[data-room-mode]').forEach(b=>b.setAttribute('aria-pressed', String(b.getAttribute('data-room-mode')==='area')));
         $('btu_manual_box').style.display='';
         $('btu_room_box').style.display='none';
+        $('room_area_box').style.display='';
+        $('room_wh_box').style.display='none';
         setCount(1);
 
-        ['btu_input','len_ref','len_power','len_drain','len_trunk','room_area','wall_chase_m','ceiling_run_m','thick_insulation_m','misc_parts_qty','wire_tray_m','pvc_m'].forEach(id=>{ $(id).value=''; });
+        ['btu_input','len_ref','len_power','len_drain','len_trunk','room_area','room_w','room_l','wall_chase_m','ceiling_run_m','thick_insulation_m','misc_parts_qty','wire_tray_m','pvc_m'].forEach(id=>{ $(id).value=''; });
+        updateRoomAreaCalc();
         ['chk_wall_chase','chk_ceiling_run','chk_thick_insulation','chk_misc_parts','chk_wire_tray','chk_pvc'].forEach(id=>{ $(id).checked=false; });
         ['scaffold','grill','siphon'].forEach(id=>{ $(id).value='none'; });
         ['wall_chase_m','ceiling_run_m','thick_insulation_m','misc_parts_qty','wire_tray_m','pvc_m'].forEach(id=>{ $(id).disabled=true; });
