@@ -12,6 +12,10 @@
     breaker_set: 1,
   };
 
+  // ท่อน้ำทิ้งส่วนเกิน: โดยทั่วไป 30–50 บาท/เมตร (ใช้ค่า STD เพื่อคำนวณจริง)
+  const DRAIN_RATE_RANGE_LABEL = "30–50";
+  const DRAIN_RATE_STD = 40;
+
   const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
   const roundTo = (n, d) => {
     const f = Math.pow(10, d);
@@ -106,7 +110,7 @@
     const extra_ref_cost = Math.round(extra_ref_m * rates.ref_per_m);
     const extra_power_cost = Math.round(extra_power_m * rates.power_per_m);
     const extra_trunk_cost = Math.round(extra_trunk_m * 300);
-    const extra_drain_cost = 0; // spec: no rate yet
+    const extra_drain_cost = Math.round(extra_drain_m * DRAIN_RATE_STD); // approx 30–50/m, STD used for exact calc
 
     const extras_lines = [];
     extras_lines.push({
@@ -125,11 +129,11 @@
     });
     extras_lines.push({
       key: "drain",
-      label: `ท่อน้ำทิ้ง (รวม ${STD_INCLUDED.drain_m}m)` ,
+      label: `ท่อน้ำทิ้ง (รวม ${STD_INCLUDED.drain_m}m)`,
       extra_m: extra_drain_m,
-      rate: 0,
+      rate: DRAIN_RATE_STD,
       cost: extra_drain_cost,
-      note: "เกินไม่คิดเพิ่ม (ยังไม่มีเรท)",
+      note: `เรทโดยทั่วไป ${DRAIN_RATE_RANGE_LABEL} บาท/เมตร (คิดจริง ${DRAIN_RATE_STD}/เมตร)`,
     });
     extras_lines.push({
       key: "trunk",
