@@ -312,6 +312,14 @@
       const $ = (id)=>document.getElementById(id);
       const fmt = (n)=> (Number.isFinite(Number(n)) ? Number(n).toLocaleString('th-TH') : '-');
       const money = (n)=> (Number.isFinite(Number(n)) ? Math.round(Number(n)).toLocaleString('th-TH') : '-');
+      const qty = (n)=>{
+        try{
+          if(window.InstallQuote && InstallQuote._fmt && typeof InstallQuote._fmt.formatQty==='function'){
+            return InstallQuote._fmt.formatQty(n,'m');
+          }
+          return String(n||0);
+        }catch(e){ return String(n||0); }
+      };
 
       let state = {
         ac_type: 'ติดผนัง',
@@ -427,15 +435,24 @@
 
         const extrasRows = b.extras.lines.map(x=>{
           if(x.key==='drain'){
-            const extraTxt = x.extra_m>0 ? `เกิน ${x.extra_m}m` : 'ไม่เกิน';
+            const extraTxt = x.extra_m>0 ? `เกิน ${qty(x.extra_m)}m` : 'ไม่เกิน';
             return `<tr><td>${x.label}<div class="iq-sub">${extraTxt} • ${x.note}</div></td><td>${money(0)} ฿</td></tr>`;
           }
-          const extraTxt = x.extra_m>0 ? `เกิน ${x.extra_m}m x ${money(x.rate)}/m` : 'ไม่เกิน (0 บาท)';
+          const extraTxt = x.extra_m>0 ? `เกิน ${qty(x.extra_m)}m x ${money(x.rate)}/m` : 'ไม่เกิน (0 บาท)';
           return `<tr><td>${x.label}<div class="iq-sub">${extraTxt}</div></td><td>${money(x.cost)} ฿</td></tr>`;
         }).join('');
 
+        const fmtQtyUnit = (v,u)=>{
+          try{
+            if(window.InstallQuote && InstallQuote._fmt && typeof InstallQuote._fmt.formatQty==='function'){
+              return InstallQuote._fmt.formatQty(v,u);
+            }
+            return String(v||0);
+          }catch(e){ return String(v||0); }
+        };
+
         const specialsRows = (b.specials.lines.length?
-          b.specials.lines.map(s=>`<tr><td>${s.label}<div class="iq-sub">${s.qty}${s.unit} x ${money(s.rate)}</div></td><td>${money(s.cost)} ฿</td></tr>`).join('')
+          b.specials.lines.map(s=>`<tr><td>${s.label}<div class="iq-sub">${fmtQtyUnit(s.qty,s.unit)}${s.unit} x ${money(s.rate)}</div></td><td>${money(s.cost)} ฿</td></tr>`).join('')
           : `<tr><td class="iq-muted">ไม่มี</td><td>${money(0)} ฿</td></tr>`
         );
 
