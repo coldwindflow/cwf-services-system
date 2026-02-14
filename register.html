@@ -3,16 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>CWF - Register</title>
+  <title>CWF - เพิ่มที่อยู่</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="/mainfest.json">
+  <meta name="theme-color" content="#0b4bb3">
 </head>
-<body class="theme-2">
+<body class="theme-2 customer-page">
   <div class="app">
     <div class="topbar">
       <div class="brand">
         <img src="/logo.png" alt="CWF">
         <div class="title">
-          <b>📝 Register (บันทึกข้อมูลลูกค้า)</b>
+          <b>📍 เพิ่มที่อยู่ (บันทึกไว้ใช้ครั้งถัดไป)</b>
           <span class="muted">Coldwindflow air services</span>
         </div>
       </div>
@@ -26,7 +28,7 @@
     </div>
 
     <div class="card">
-      <h2>กรอกข้อมูลพื้นฐาน</h2>
+      <h2>บันทึกที่อยู่สำหรับครั้งถัดไป</h2>
       <div class="muted" style="margin-top:-6px;">ข้อมูลนี้ไว้ใช้ครั้งหน้า (แก้ไขได้ตลอด)</div>
 
       <div style="margin-top:12px;">
@@ -45,7 +47,7 @@
       </div>
 
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:14px;">
-        <button id="saveBtn" type="button">💾 บันทึก</button>
+        <button id="saveBtn" type="button">💾 บันทึกที่อยู่</button>
         <button class="secondary" type="button" onclick="location.href='/customer.html'">ยกเลิก</button>
       </div>
 
@@ -118,7 +120,7 @@ async function submitRegister(){
   }catch(_){
     setStatus('บันทึกไม่สำเร็จ กรุณาลองใหม่', true);
   }finally{
-    if(btn){ btn.disabled = false; btn.textContent = '💾 บันทึก'; }
+    if(btn){ btn.disabled = false; btn.textContent = '💾 บันทึกที่อยู่'; }
   }
 }
 

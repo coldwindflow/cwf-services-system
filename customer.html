@@ -21,7 +21,7 @@
       <div class="top-actions">
         <div id="auth_box" class="auth-box">
           <a id="line_login_btn" class="secondary link-btn" href="/auth/line">✅ Login ด้วย LINE</a>
-          <a id="register_btn" class="secondary link-btn" style="display:none;" href="/register">📝 Register</a>
+          <a id="register_btn" class="secondary link-btn" style="display:none;" href="/register">📍 เพิ่มที่อยู่</a>
           <div id="me_badge" class="me-badge" style="display:none;">
             <img id="me_pic" alt="" class="me-pic">
             <b id="me_name" class="me-name"></b>
@@ -45,129 +45,137 @@
       </div>
     </div>
 
-    <div class="card">
-      <h2>1) เลือกวัน/เวลา</h2>
+    
+    <div class="card service-card">
+      <h2>1) เลือกบริการ</h2>
+
+      <div class="service-grid">
+        <select id="job_type">
+          <option value="">-- เลือกประเภทงาน --</option>
+          <option value="ล้าง">ล้าง</option>
+          <option value="ซ่อม">ซ่อม</option>
+          <option value="ติดตั้ง">ติดตั้ง</option>
+        </select>
+
+        <div class="grid2">
+          <select id="ac_type">
+            <option value="">-- ประเภทแอร์ --</option>
+            <option value="ผนัง">ผนัง (Wall Type)</option>
+            <option value="สี่ทิศทาง">สี่ทิศทาง</option>
+            <option value="แขวน">แขวน</option>
+            <option value="เปลือยใต้ฝ้า">เปลือยใต้ฝ้า</option>
+          </select>
+          <select id="btu">
+            <option value="">เลือก BTU</option>
+            <option value="9000">9,000</option>
+            <option value="12000">12,000</option>
+            <option value="15000">15,000</option>
+            <option value="18000">18,000</option>
+            <option value="24000">24,000</option>
+            <option value="30000">30,000</option>
+            <option value="36000">36,000</option>
+            <option value="48000">48,000</option>
+            <option value="60000">60,000</option>
+          </select>
+        </div>
+
+        <div class="grid2" style="align-items:start;">
+          <div class="machine-box">
+            <div class="label">จำนวนเครื่อง</div>
+            <input id="machine_count" type="hidden" value="1">
+            <div class="stepper" aria-label="machine count" style="margin-top:8px;">
+              <button id="mc_minus" class="btn-round" type="button" aria-label="ลดจำนวน">−</button>
+              <div id="mc_value" class="value">1</div>
+              <button id="mc_plus" class="btn-round" type="button" aria-label="เพิ่มจำนวน">+</button>
+            </div>
+            <div class="muted" style="font-size:12px;margin-top:6px;">* เลือกจำนวนเครื่องเพื่อคำนวณราคา/เวลาโดยประมาณ</div>
+          </div>
+
+          <div class="urgent-card">
+            <label style="display:flex;align-items:flex-start;gap:10px;">
+              <input id="urgent_toggle" type="checkbox" style="transform:scale(1.2);margin-top:2px;">
+              <div>
+                <b>โหมดงานด่วน</b>
+                <div class="muted" style="margin-top:2px;">ยิงงานให้ช่างรับ (อาจรับหรือไม่รับก็ได้)</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <select id="wash_variant" style="margin-top:8px;display:none;">
+          <option value="ล้างธรรมดา">ล้างธรรมดา</option>
+          <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
+          <option value="ล้างแขวนคอยน์">ล้างแบบแขวนคอยล์</option>
+          <option value="ล้างแบบตัดล้าง">ตัดล้างใหญ่</option>
+        </select>
+
+        <select id="repair_variant" style="margin-top:8px;display:none;">
+          <option value="ตรวจเช็ค">ตรวจเช็ค (500)</option>
+          <option value="ตรวจเช็ครั่ว">ตรวจเช็ครั่ว (1000)</option>
+          <option value="ซ่อมเปลี่ยนอะไหล่">ซ่อมเปลี่ยนอะไหล่ (แอดมินกำหนด)</option>
+        </select>
+
+        <div class="estimate-bar">
+          <div class="estimate-left">
+            <div class="estimate-title">💵 ยอดรวมประมาณ</div>
+            <div class="estimate-sub muted">* เป็น “ประมาณการ” อาจปรับตามหน้างาน</div>
+          </div>
+          <div class="estimate-right">
+            <div class="estimate-amt"><span id="grand_total">0</span> บาท</div>
+            <div class="estimate-duration">⏱️ ระยะเวลาในการทำงาน: <b><span id="duration_min">-</span></b> นาที</div>
+          </div>
+        </div>
+
+        <!-- keep these ids for existing logic (hidden but used) -->
+        <div style="display:none;">
+          <span id="standard_price">-</span>
+        </div>
+
+        <div class="promo-card">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+            <b>🎁 โปรโมชั่น</b>
+            <select id="promotion_select_customer" style="width:auto;min-width:220px;"></select>
+          </div>
+          <div class="muted" style="margin-top:6px;">* โปรโมชั่นที่ลูกค้าเห็นได้ จะถูกกำหนดโดยแอดมิน</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:12px;">
+      <h2>2) เลือกวัน/เวลา</h2>
 
       <div class="grid2">
         <input id="date" type="date">
         <button id="loadSlotsBtn" type="button" onclick="loadSlots()">🔄 โหลดเวลาว่าง</button>
       </div>
 
-      <div id="slot_controls" class="slot-controls" style="margin-top:10px;display:none;">
+      <div id="slot_controls" class="slot-controls" style="margin-top:12px;display:none;">
         <div class="chip-group" role="tablist" aria-label="slot filter">
-          <button id="filter_avail" type="button" class="chip active" aria-selected="true">ว่างเท่านั้น</button>
-          <button id="filter_all" type="button" class="chip" aria-selected="false">ทั้งหมด</button>
+          <button id="filter_avail" type="button" class="chip active" aria-selected="true">✅ ว่างเท่านั้น</button>
+          <button id="filter_all" type="button" class="chip" aria-selected="false">📅 ทั้งหมด</button>
         </div>
         <div class="muted" style="font-size:12px;margin-top:6px;">* เลือก “ทั้งหมด” เพื่อดูช่วงที่เต็มด้วย</div>
       </div>
 
-      <div id="slots" class="muted" style="margin-top:10px;">เลือกวันที่แล้วกด “โหลดเวลาว่าง”</div>
+      <div id="slots" class="muted" style="margin-top:12px;">เลือกวันที่แล้วกด “โหลดเวลาว่าง”</div>
 
-      <div class="muted" style="margin-top:8px;">เวลาที่เลือก: <b id="picked">-</b></div>
-    </div>
+      <div class="picked-row">เวลาที่เลือก: <b id="picked">-</b></div>
 
-    <div class="card" style="margin-top:12px;">
-      <h2>2) กรอกข้อมูล</h2>
+      <div class="divider"></div>
 
-      <input id="customer_name" placeholder="ชื่อ-นามสกุล">
-      <input id="customer_phone" placeholder="เบอร์โทร (ถ้ามี)">
+      <h2 style="margin-top:0;">3) ข้อมูลติดต่อ/ที่อยู่</h2>
 
-      <select id="job_type">
-        <option value="">-- เลือกประเภทงาน --</option>
-        <option value="ล้าง">ล้าง</option>
-        <option value="ซ่อม">ซ่อม</option>
-        <option value="ติดตั้ง">ติดตั้ง</option>
-      </select>
-
-      <div class="grid2" style="margin-top:8px;">
-        <select id="ac_type">
-          <option value="">-- ประเภทแอร์ --</option>
-          <option value="ผนัง">ผนัง (Wall Type)</option>
-          <option value="สี่ทิศทาง">สี่ทิศทาง</option>
-          <option value="แขวน">แขวน</option>
-          <option value="เปลือยใต้ฝ้า">เปลือยใต้ฝ้า</option>
-        </select>
-        <select id="btu">
-          <option value="">เลือก BTU</option>
-          <option value="9000">9,000</option>
-          <option value="12000">12,000</option>
-          <option value="15000">15,000</option>
-          <option value="18000">18,000</option>
-          <option value="24000">24,000</option>
-          <option value="30000">30,000</option>
-          <option value="36000">36,000</option>
-          <option value="48000">48,000</option>
-          <option value="60000">60,000</option>
-        </select>
-      </div>
-
-      <div class="grid2" style="margin-top:8px;">
-        <!-- PATCH: จำนวนเครื่องแบบกดเลือก ไม่ต้องพิมพ์ -->
-        <div>
-          <input id="machine_count" class="stepper-input" type="number" min="1" max="20" step="1" value="1" inputmode="numeric">
-          <div class="stepper" aria-label="machine count">
-            <button id="mc_minus" class="btn-round" type="button">−</button>
-            <div id="mc_value" class="value">1</div>
-            <button id="mc_plus" class="btn-round" type="button">+</button>
-          </div>
-        </div>
-        <div class="card" style="padding:10px;border:1px solid rgba(15,23,42,0.10);">
-          <label style="display:flex;align-items:center;gap:10px;">
-            <input id="urgent_toggle" type="checkbox" style="transform:scale(1.2);">
-            <div>
-              <b>ลองยิงงานด่วน</b>
-              <div class="muted" style="margin-top:2px;">(ต้องรอช่างรับงาน — อาจรับหรือไม่รับก็ได้)</div>
-            </div>
-          </label>
-        </div>
-      </div>
-
-      <select id="wash_variant" style="margin-top:8px;display:none;">
-        <option value="ล้างธรรมดา">ล้างธรรมดา</option>
-        <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
-        <option value="ล้างแขวนคอยน์">ล้างแบบแขวนคอยล์</option>
-        <option value="ล้างแบบตัดล้าง">ตัดล้างใหญ่</option>
-      </select>
-
-      <select id="repair_variant" style="margin-top:8px;display:none;">
-        <option value="ตรวจเช็ค">ตรวจเช็ค (500)</option>
-        <option value="ตรวจเช็ครั่ว">ตรวจเช็ครั่ว (1000)</option>
-        <option value="ซ่อมเปลี่ยนอะไหล่">ซ่อมเปลี่ยนอะไหล่ (แอดมินกำหนด)</option>
-      </select>
-
-      <!-- PATCH: โปรโมชั่นซ่อนจากลูกค้า (ให้แอดมินจัดการ) -->
-      <div class="card" style="margin-top:12px;padding:12px;display:none;">
-        <div>💰 <b>ค่าบริการมาตรฐาน:</b> <span id="standard_price">-</span> บาท</div>
-        <div class="muted" style="margin-top:4px;">⏱️ เวลาโดยประมาณ: <span id="duration_min">-</span> นาที (รวมกันชนระบบอัตโนมัติ)</div>
-      </div>
-
-      <!-- PATCH: Extras/Promotions ฝั่งลูกค้าไม่ต้องมี (แอดมินเป็นคนเพิ่มเอง) -->
-      <details class="card" style="margin-top:12px;padding:12px;display:none;">
-        <summary style="cursor:pointer;"><b>➕ เพิ่มบริการเสริม/สินค้า (ไม่บังคับ)</b></summary>
-        <div class="muted" style="margin-top:6px;">(ซ่อนสำหรับลูกค้า)</div>
-        <div class="grid2" style="margin-top:10px;">
-          <select id="catalog_select_customer"></select>
-          <div style="display:flex;gap:8px;">
-            <input id="item_qty_customer" type="number" min="1" step="1" value="1" style="flex:1;" placeholder="จำนวน">
-            <button type="button" class="secondary" style="width:auto;min-height:44px;" onclick="addItemCustomer()">เพิ่ม</button>
-          </div>
-        </div>
-        <div id="items_preview_customer" style="margin-top:10px;" class="muted">ยังไม่มีรายการ</div>
-      </details>
-
-      <div class="card" style="margin-top:12px;padding:12px;">
-        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
-          <b>🎁 โปรโมชั่น</b>
-          <select id="promotion_select_customer" style="width:auto;min-width:220px;"></select>
-        </div>
-        <div class="muted" style="margin-top:6px;">* โปรโมชั่นที่ลูกค้าเห็นได้ จะถูกกำหนดโดยแอดมิน</div>
+      <div class="grid2">
+        <input id="customer_name" placeholder="ชื่อ-นามสกุล">
+        <input id="customer_phone" placeholder="เบอร์โทร (ถ้ามี)">
       </div>
 
       <input id="address_text" placeholder="ที่อยู่ (สำคัญ)">
+
       <div class="maps-field">
         <input id="maps_url" type="url" placeholder="ลิงก์ Google Maps (ถ้ามี) — แนะนำ: ปักหมุดแล้วแชร์ลิงก์มาวาง" autocomplete="off">
         <div class="maps-helper-row">
-          <button id="maps_help_btn" class="linkish" type="button">วิธีแชร์ลิงก์แผนที่</button>
+          <button id="maps_help_btn" class="linkish" type="button">🗺️ วิธีแชร์ลิงก์แผนที่</button>
           <div id="maps_hint" class="muted" style="font-size:12px;">รองรับ maps.app.goo.gl และ google.com/maps</div>
         </div>
         <div id="maps_pop" class="maps-pop" style="display:none;">
@@ -178,15 +186,8 @@
         </div>
         <div id="maps_preview" class="maps-preview" style="display:none;"></div>
       </div>
+
       <textarea id="customer_note" rows="3" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)"></textarea>
-      <hr style="margin:14px 0;">
-      <div class="total-row">
-        <div>
-          💵 <b>ยอดรวมประมาณ</b>
-          <div class="muted" style="margin-top:2px;">(ราคานี้เป็น “ประมาณการ” อาจปรับตามหน้างาน)</div>
-        </div>
-        <div class="total-amt"><span id="grand_total">0</span> บาท</div>
-      </div>
 
       <!-- Summary card before confirm -->
       <div id="confirm_summary" class="summary-card" style="margin-top:12px;">
@@ -215,6 +216,7 @@
 
       <div id="result" class="muted" style="margin-top:10px;"></div>
     </div>
+
   </div>
 
 

@@ -1473,3 +1473,88 @@ a:hover{ text-decoration: underline; }
 .sw-toast-btn.primary{background:#ffd54a;color:#111;box-shadow:0 8px 18px rgba(255,213,74,.25);}
 .sw-toast-btn.ghost{background:rgba(255,255,255,.12);color:#fff;border:1px solid rgba(255,255,255,.18);}
 
+
+
+/* =========================================================
+   Premium layout polish for Customer booking (Phase UI)
+   - Scoped: .customer-page only (no admin regression)
+   ========================================================= */
+
+.customer-page .service-card .service-grid{ display:flex; flex-direction:column; gap:10px; }
+.customer-page .machine-box .label{ font-weight:950; letter-spacing:.2px; }
+.customer-page .urgent-card{ padding:12px; border-radius:18px; border:1px solid rgba(15,23,42,0.12); background: rgba(255,255,255,0.86); box-shadow: var(--shadow-2); }
+
+.customer-page .estimate-bar{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding: 12px 14px; border-radius: 18px;
+  border: 1px solid rgba(37,99,235,0.22);
+  background: linear-gradient(135deg, rgba(37,99,235,0.14), rgba(6,182,212,0.12), rgba(251,191,36,0.10));
+  box-shadow: 0 14px 40px rgba(2,6,23,0.10);
+  flex-wrap:wrap;
+}
+.customer-page .estimate-title{ font-weight:950; }
+.customer-page .estimate-amt{ font-size:22px; font-weight:950; letter-spacing:.2px; }
+.customer-page .estimate-duration{ font-size:12px; margin-top:4px; color: rgba(2,6,23,0.72); }
+
+.customer-page .promo-card{
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(15,23,42,0.12);
+  background: rgba(255,255,255,0.88);
+  box-shadow: var(--shadow-2);
+}
+
+.customer-page .divider{ height:1px; background: rgba(15,23,42,0.10); margin: 14px 0; }
+.customer-page .picked-row{ margin-top: 10px; padding: 10px 12px; border-radius: 16px; border: 1px dashed rgba(37,99,235,0.28); background: rgba(255,255,255,0.72); font-weight: 900; }
+
+/* Filter chips: stronger contrast */
+.customer-page .chip{
+  color: #0b1b33;
+  background: rgba(255,255,255,0.94);
+  border: 1px solid rgba(15,23,42,0.16);
+}
+.customer-page .chip.active{
+  color: #ffffff;
+  border-color: rgba(37,99,235,0.55);
+  background: linear-gradient(135deg, #2563eb, #06b6d4);
+  box-shadow: 0 12px 28px rgba(37,99,235,0.24);
+}
+
+/* Slot chips: readable text + premium look */
+.customer-page .slot-chip{
+  background: rgba(255,255,255,0.96);
+  border: 1px solid rgba(15,23,42,0.14);
+}
+.customer-page .slot-chip .t{ color: #0b1b33; }
+.customer-page .slot-chip .m{ color: rgba(2,6,23,0.65); }
+
+.customer-page .slot-chip.is-available{
+  border-color: rgba(34,197,94,0.55);
+  background: linear-gradient(180deg, rgba(255,255,255,0.98), rgba(34,197,94,0.16));
+}
+.customer-page .slot-chip.is-available .m{ color: rgba(6,95,70,0.92); font-weight: 900; }
+
+.customer-page .slot-chip.is-full{
+  opacity: .72;
+  border-color: rgba(100,116,139,0.38);
+  background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(100,116,139,0.12));
+}
+.customer-page .slot-chip.is-full .t{ color: rgba(2,6,23,0.78); }
+.customer-page .slot-chip.is-full .m{ color: rgba(71,85,105,0.92); }
+
+.customer-page .slot-chip.selected{
+  background: linear-gradient(135deg, #2563eb, #06b6d4);
+  border-color: rgba(255,255,255,0.10);
+}
+.customer-page .slot-chip.selected .t{ color: #ffffff; }
+.customer-page .slot-chip.selected .m{ color: rgba(255,255,255,0.92); }
+
+/* Top auth actions: prevent overlap on mobile */
+.customer-page .top-actions{ gap: 10px; }
+.customer-page .auth-box{ display:flex; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+.customer-page .link-btn{ min-width: 140px; justify-content:center; }
+@media (max-width: 520px){
+  .customer-page .top-actions{ flex-direction:column; align-items:stretch; }
+  .customer-page .auth-box{ justify-content:stretch; }
+  .customer-page .link-btn, .customer-page .top-track{ width:100%; }
+}
