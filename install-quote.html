@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CWF - คำนวณค่าติดตั้งแอร์</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="manifest" href="/mainfest.json">
+  <meta name="theme-color" content="#0b4bb3">
+  <style>
+    /* page-local premium tweaks (no regression to other pages) */
+    .iq-wrap{max-width:980px;margin:0 auto;}
+    .iq-steps{display:flex;flex-direction:column;gap:12px;}
+    .iq-step{border:1px solid rgba(255,255,255,.08);}
+    .iq-step h2{margin:0 0 10px 0;font-size:18px;}
+    .iq-grid{display:grid;grid-template-columns:1fr;gap:10px;}
+    .iq-grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    .iq-chiprow{display:flex;flex-wrap:wrap;gap:8px;}
+    .iq-chip{border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.06);color:#fff;padding:10px 12px;border-radius:999px;font-weight:700;font-size:14px;cursor:pointer;user-select:none;}
+    .iq-chip[aria-pressed="true"]{background:rgba(11,75,179,.35);border-color:rgba(58,140,255,.65);box-shadow:0 8px 22px rgba(0,0,0,.18) inset;}
+    .iq-sub{color:rgba(255,255,255,.78);font-size:12px;line-height:1.35;}
+    .iq-badge{display:inline-flex;gap:8px;align-items:center;padding:8px 10px;border-radius:12px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);}
+    .iq-badge b{font-size:14px;}
+    .iq-kpi{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    .iq-kpi .k{padding:12px;border-radius:14px;background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);}
+    .iq-kpi .k .t{font-size:12px;color:rgba(255,255,255,.72)}
+    .iq-kpi .k .v{margin-top:6px;font-size:18px;font-weight:900}
+    .iq-table{width:100%;border-collapse:collapse;}
+    .iq-table td{padding:8px 6px;border-bottom:1px solid rgba(255,255,255,.08);vertical-align:top;}
+    .iq-table td:last-child{text-align:right;font-weight:800}
+    .iq-hr{height:1px;background:rgba(255,255,255,.10);margin:10px 0;}
+    .iq-actions{display:flex;gap:10px;flex-wrap:wrap;}
+    .iq-actions .primary{flex:1;min-width:180px;}
+    .iq-actions .secondary{flex:1;min-width:180px;}
+    .iq-note{padding:12px;border-radius:14px;background:rgba(255,196,0,.12);border:1px solid rgba(255,196,0,.22);}
+    .iq-note b{color:#ffe38a;}
+    .iq-error{display:none;margin-top:10px;padding:10px 12px;border-radius:12px;background:rgba(255,59,59,.12);border:1px solid rgba(255,59,59,.25);}
+    .iq-error.show{display:block;}
+    .iq-muted{color:rgba(255,255,255,.72)}
+    @media (min-width: 860px){
+      .iq-grid2{grid-template-columns:1fr 1fr;}
+      .iq-kpi{grid-template-columns:1fr 1fr 1fr 1fr;}
+    }
+  </style>
+</head>
+<body class="theme-2">
+  <div class="app">
+    <div class="topbar">
+      <div class="brand">
+        <img src="/logo.png" alt="CWF">
+        <div class="title">
+          <b>🧮 คำนวณค่าติดตั้งแอร์ (ลูกค้า)</b>
+          <span class="muted">Coldwindflow air services</span>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="secondary" type="button" onclick="location.href='/customer.html'">← กลับหน้าจองคิว</button>
+        <button class="secondary top-track" type="button" onclick="location.href='/track.html'">🔎 ติดตามงาน</button>
+      </div>
+    </div>
+
+    <div class="iq-wrap" style="padding:14px 14px 28px;">
+      <div class="card iq-step">
+        <div class="iq-kpi">
+          <div class="k">
+            <div class="t">รวมต่อเครื่อง</div>
+            <div id="kpi_per" class="v">-</div>
+          </div>
+          <div class="k">
+            <div class="t">รวมทั้งหมด</div>
+            <div id="kpi_grand" class="v">-</div>
+          </div>
+          <div class="k">
+            <div class="t">BTU ที่ใช้คำนวณ</div>
+            <div id="kpi_btu" class="v">-</div>
+          </div>
+          <div class="k">
+            <div class="t">จำนวนเครื่อง</div>
+            <div id="kpi_count" class="v">1</div>
+          </div>
+        </div>
+        <div class="iq-sub" style="margin-top:10px;">* เป็น “ราคาประมาณ” ตามข้อมูลมาตรฐาน หากหน้างานมีเงื่อนไขพิเศษ แอดมินจะยืนยันอีกครั้ง</div>
+      </div>
+
+      <div class="iq-steps">
+        <div class="card iq-step">
+          <h2>Step 1: ประเภทแอร์</h2>
+          <div class="iq-chiprow" role="group" aria-label="ac type">
+            <button class="iq-chip" type="button" data-ac-type="ติดผนัง" aria-pressed="true">ติดผนัง</button>
+            <button class="iq-chip" type="button" data-ac-type="ตั้งแขวน" aria-pressed="false">ตั้งแขวน</button>
+          </div>
+        </div>
+
+        <div class="card iq-step">
+          <h2>Step 2: จำนวนเครื่อง</h2>
+          <div class="iq-grid" style="align-items:start;">
+            <div class="machine-box" style="max-width:360px;">
+              <div class="label">จำนวนเครื่อง</div>
+              <input id="machine_count" type="hidden" value="1">
+              <div class="stepper" aria-label="machine count" style="margin-top:8px;">
+                <button id="mc_minus" class="btn-round" type="button" aria-label="ลดจำนวน">−</button>
+                <div id="mc_value" class="value">1</div>
+                <button id="mc_plus" class="btn-round" type="button" aria-label="เพิ่มจำนวน">+</button>
+              </div>
+              <div class="iq-sub" style="margin-top:8px;">* ระบบจะคูณ “รวมต่อเครื่อง” เป็น “รวมทั้งหมด” อัตโนมัติ</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card iq-step">
+          <h2>Step 3: BTU</h2>
+          <div class="iq-grid">
+            <div class="iq-chiprow" role="group" aria-label="btu mode">
+              <button class="iq-chip" type="button" data-btu-mode="manual" aria-pressed="true">กรอก BTU เอง</button>
+              <button class="iq-chip" type="button" data-btu-mode="room" aria-pressed="false">คำนวณจากขนาดห้อง</button>
+            </div>
+
+            <div id="btu_manual_box" class="iq-grid2" style="margin-top:6px;">
+              <div>
+                <div class="label">BTU</div>
+                <input id="btu_input" inputmode="numeric" placeholder="เช่น 12000" />
+                <div class="iq-sub" style="margin-top:6px;">* ระบบจะใช้ BTU นี้เพื่อเลือกค่าแรงและเรทส่วนเกิน</div>
+              </div>
+              <div>
+                <div class="label">ปัดขึ้นเป็น BTU มาตรฐาน</div>
+                <div class="iq-badge" style="margin-top:8px;">
+                  <span class="iq-muted">แนะนำ:</span>
+                  <b id="btu_norm_badge">-</b>
+                </div>
+                <button id="use_norm_btu" class="secondary" type="button" style="margin-top:10px;">ใช้ค่า BTU นี้</button>
+              </div>
+            </div>
+
+            <div id="btu_room_box" class="iq-grid" style="display:none;margin-top:6px;">
+              <div class="iq-grid2">
+                <div>
+                  <div class="label">ขนาดห้อง (ตร.ม.)</div>
+                  <input id="room_area" inputmode="decimal" placeholder="เช่น 20" />
+                </div>
+                <div>
+                  <div class="label">ลักษณะห้อง</div>
+                  <select id="room_factor">
+                    <option value="700">ปกติ</option>
+                    <option value="800">โดนแดด/ห้องร้อน</option>
+                    <option value="900">เพดานสูง/คนเยอะ</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="iq-note" style="margin-top:8px;">
+                <div><b>BTU แนะนำ</b> (คำนวณจากพื้นที่ × ปัจจัย)</div>
+                <div style="margin-top:8px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
+                  <div class="iq-badge"><span class="iq-muted">คำนวณได้:</span><b id="btu_raw">-</b></div>
+                  <div class="iq-badge"><span class="iq-muted">ปัดเป็น:</span><b id="btu_norm">-</b></div>
+                  <button id="use_room_btu" class="primary" type="button">ใช้ค่า BTU นี้</button>
+                </div>
+              </div>
+            </div>
+
+            <div id="btu_warn" class="iq-error">กรุณาใส่ BTU (หรือคำนวณจากขนาดห้องแล้วกด “ใช้ค่า BTU นี้”)</div>
+          </div>
+        </div>
+
+        <div class="card iq-step">
+          <h2>Step 4: ระยะเดินท่อโดยประมาณ (ต่อเครื่อง)</h2>
+          <div class="iq-sub">ระบบจะคิดเฉพาะ “ส่วนที่เกินจากมาตรฐาน” (ท่อน้ำยา 4m / สายไฟ 8m / ท่อน้ำทิ้ง 8m / รางครอบท่อ 4m)</div>
+          <div class="iq-grid2" style="margin-top:10px;">
+            <div>
+              <div class="label">ท่อน้ำยา (m)</div>
+              <input id="len_ref" inputmode="decimal" placeholder="เช่น 6" />
+            </div>
+            <div>
+              <div class="label">สายไฟ (m)</div>
+              <input id="len_power" inputmode="decimal" placeholder="เช่น 12" />
+            </div>
+            <div>
+              <div class="label">ท่อน้ำทิ้ง (m)</div>
+              <input id="len_drain" inputmode="decimal" placeholder="เช่น 10" />
+              <div class="iq-sub" style="margin-top:6px;">* เกินมาตรฐาน “ไม่คิดเพิ่ม” (ยังไม่มีเรท)</div>
+            </div>
+            <div>
+              <div class="label">รางครอบท่อ (m)</div>
+              <input id="len_trunk" inputmode="decimal" placeholder="เช่น 6" />
+            </div>
+          </div>
+        </div>
+
+        <div class="card iq-step">
+          <h2>Step 5: งานพิเศษ/อุปกรณ์เพิ่ม (ต่อเครื่อง)</h2>
+          <div class="iq-grid">
+            <div class="iq-grid2">
+              <div>
+                <label style="display:flex;gap:10px;align-items:center;">
+                  <input id="chk_wall_chase" type="checkbox" style="transform:scale(1.2);">
+                  <b>กรีดผนังฝังท่อ</b>
+                </label>
+                <input id="wall_chase_m" inputmode="decimal" placeholder="เมตร" disabled>
+                <div class="iq-sub">300 บาท/เมตร</div>
+              </div>
+
+              <div>
+                <label style="display:flex;gap:10px;align-items:center;">
+                  <input id="chk_ceiling_run" type="checkbox" style="transform:scale(1.2);">
+                  <b>เดินท่อขึ้นฝ้า</b>
+                </label>
+                <input id="ceiling_run_m" inputmode="decimal" placeholder="เมตร" disabled>
+                <div class="iq-sub">300 บาท/เมตร</div>
+              </div>
+            </div>
+
+            <div class="iq-grid2">
+              <div>
+                <label style="display:flex;gap:10px;align-items:center;">
+                  <input id="chk_thick_insulation" type="checkbox" style="transform:scale(1.2);" disabled>
+                  <b>ฉนวนหนาพิเศษ (เฉพาะขึ้นฝ้า)</b>
+                </label>
+                <input id="thick_insulation_m" inputmode="decimal" placeholder="เมตร" disabled>
+                <div class="iq-sub">200 บาท/เมตร</div>
+              </div>
+
+              <div>
+                <label style="display:flex;gap:10px;align-items:center;">
+                  <input id="chk_misc_parts" type="checkbox" style="transform:scale(1.2);">
+                  <b>ข้อต่อ/อุปกรณ์เสริม</b>
+                </label>
+                <input id="misc_parts_qty" inputmode="numeric" placeholder="จำนวนชิ้น" disabled>
+                <div class="iq-sub">100 บาท/ชิ้น</div>
+              </div>
+            </div>
+
+            <div class="iq-grid2">
+              <div>
+                <label style="display:flex;gap:10px;align-items:center;">
+                  <input id="chk_wire_tray" type="checkbox" style="transform:scale(1.2);">
+                  <b>รางครอบสายไฟ</b>
+                </label>
+                <input id="wire_tray_m" inputmode="decimal" placeholder="เมตร" disabled>
+                <div class="iq-sub">50 บาท/เมตร</div>
+              </div>
+              <div>
+                <label style="display:flex;gap:10px;align-items:center;">
+                  <input id="chk_pvc" type="checkbox" style="transform:scale(1.2);">
+                  <b>ท่อ PVC สีขาว</b>
+                </label>
+                <input id="pvc_m" inputmode="decimal" placeholder="เมตร" disabled>
+                <div class="iq-sub">70 บาท/เมตร</div>
+              </div>
+            </div>
+
+            <div class="iq-grid2">
+              <div>
+                <div class="label">ตั้งนั่งร้าน</div>
+                <select id="scaffold">
+                  <option value="none">ไม่ใช้</option>
+                  <option value="3-5">สูง 3–5 เมตร (1,000)</option>
+                  <option value="6-8">สูง 6–8 เมตร (2,000)</option>
+                </select>
+              </div>
+              <div>
+                <div class="label">กริวปรับทิศทางลม</div>
+                <select id="grill">
+                  <option value="none">ไม่ใช้</option>
+                  <option value="small">เล็ก (1,200)</option>
+                  <option value="medium">กลาง (1,500)</option>
+                  <option value="large1800">ใหญ่ (1,800)</option>
+                  <option value="large2000">ใหญ่ (2,000)</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="iq-grid2">
+              <div>
+                <div class="label">กาลักน้ำ</div>
+                <select id="siphon">
+                  <option value="none">ไม่ใช้</option>
+                  <option value="auto">ตาม BTU</option>
+                </select>
+                <div class="iq-sub">9,000–24,000 = 2,500 | 30,000–60,000 = 4,000</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card iq-step">
+          <h2>Result: Breakdown</h2>
+          <div id="result_box">
+            <div class="iq-sub">กรอกข้อมูลให้ครบ แล้วระบบจะแสดงผลทันที</div>
+          </div>
+          <div class="iq-actions" style="margin-top:12px;">
+            <button id="btn_copy" class="primary" type="button">📋 คัดลอกสรุป</button>
+            <button id="btn_reset" class="secondary" type="button">🔄 เริ่มคำนวณใหม่</button>
+          </div>
+          <div id="copy_status" class="iq-sub" style="margin-top:10px;display:none;"></div>
+        </div>
+
+        <div class="card iq-step">
+          <h2>เงื่อนไขสำคัญ</h2>
+          <ul style="margin:0;padding-left:18px;line-height:1.6;color:rgba(255,255,255,.9);">
+            <li>อุปกรณ์ที่เหลือจากงานติดตั้ง ไม่สามารถเปลี่ยน ตัดทอน หรือขอคืนเป็นเงินสด สินค้า หรือส่วนลดได้</li>
+            <li>งานเดินสายไฟเป็นการเดินจากคอยล์ร้อนไปคอยล์เย็นเท่านั้น (ไม่รวมงานเดินไฟเมนจากตู้ไฟหลัก)</li>
+            <li>กรณีไม่สามารถเปลี่ยนท่อน้ำยาเดิมได้ และจำเป็นต้องล้างระบบด้วยน้ำยา ขอสงวนสิทธิ์ไม่ส่งมอบอุปกรณ์ที่ไม่ได้ใช้งานคืน</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/assets/js/install_quote.js"></script>
+  <script>
+    (function(){
+      "use strict";
+      const $ = (id)=>document.getElementById(id);
+      const fmt = (n)=> (Number.isFinite(Number(n)) ? Number(n).toLocaleString('th-TH') : '-');
+      const money = (n)=> (Number.isFinite(Number(n)) ? Math.round(Number(n)).toLocaleString('th-TH') : '-');
+
+      let state = {
+        ac_type: 'ติดผนัง',
+        btu_mode: 'manual',
+        btu: 0,
+      };
+
+      // chips
+      document.querySelectorAll('[data-ac-type]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const v = btn.getAttribute('data-ac-type');
+          state.ac_type = v;
+          document.querySelectorAll('[data-ac-type]').forEach(b=>b.setAttribute('aria-pressed', String(b===btn)));
+          recalc();
+        });
+      });
+
+      document.querySelectorAll('[data-btu-mode]').forEach(btn=>{
+        btn.addEventListener('click', ()=>{
+          const v = btn.getAttribute('data-btu-mode');
+          state.btu_mode = v;
+          document.querySelectorAll('[data-btu-mode]').forEach(b=>b.setAttribute('aria-pressed', String(b===btn)));
+          $('btu_manual_box').style.display = (v==='manual') ? '' : 'none';
+          $('btu_room_box').style.display = (v==='room') ? '' : 'none';
+          $('btu_warn').classList.remove('show');
+          recalc();
+        });
+      });
+
+      // machine count stepper
+      const setCount = (n)=>{
+        const v = Math.max(1, Math.min(50, parseInt(n||'1',10)||1));
+        $('machine_count').value = String(v);
+        $('mc_value').textContent = String(v);
+        $('kpi_count').textContent = String(v);
+        recalc();
+      };
+      $('mc_minus').addEventListener('click', ()=> setCount((parseInt($('machine_count').value,10)||1)-1));
+      $('mc_plus').addEventListener('click', ()=> setCount((parseInt($('machine_count').value,10)||1)+1));
+
+      // special toggles
+      const bindToggle = (chkId, inputId)=>{
+        const chk = $(chkId);
+        const inp = $(inputId);
+        chk.addEventListener('change', ()=>{
+          inp.disabled = !chk.checked;
+          if(!chk.checked) inp.value = '';
+          recalc();
+        });
+        inp.addEventListener('input', recalc);
+      };
+      bindToggle('chk_wall_chase','wall_chase_m');
+      bindToggle('chk_ceiling_run','ceiling_run_m');
+      bindToggle('chk_misc_parts','misc_parts_qty');
+      bindToggle('chk_wire_tray','wire_tray_m');
+      bindToggle('chk_pvc','pvc_m');
+
+      // thick insulation depends on ceiling run
+      const syncInsulation = ()=>{
+        const ceilingOn = $('chk_ceiling_run').checked;
+        $('chk_thick_insulation').disabled = !ceilingOn;
+        if(!ceilingOn){
+          $('chk_thick_insulation').checked = false;
+          $('thick_insulation_m').value = '';
+          $('thick_insulation_m').disabled = true;
+        } else {
+          $('thick_insulation_m').disabled = !$('chk_thick_insulation').checked;
+        }
+      };
+      $('chk_ceiling_run').addEventListener('change', ()=>{ syncInsulation(); recalc(); });
+      $('chk_thick_insulation').addEventListener('change', ()=>{ $('thick_insulation_m').disabled = !$('chk_thick_insulation').checked; if(!$('chk_thick_insulation').checked) $('thick_insulation_m').value=''; recalc(); });
+      $('thick_insulation_m').addEventListener('input', recalc);
+      syncInsulation();
+
+      // standard inputs
+      ['btu_input','len_ref','len_power','len_drain','len_trunk','room_area'].forEach(id=>$(id).addEventListener('input', recalc));
+      $('room_factor').addEventListener('change', recalc);
+      ['scaffold','grill','siphon'].forEach(id=>$(id).addEventListener('change', recalc));
+
+      // btu normalize helpers
+      function setBtuValue(btu){
+        const v = Math.max(0, Math.min(200000, parseInt(btu||'0',10)||0));
+        state.btu = v;
+        $('kpi_btu').textContent = v ? fmt(v) : '-';
+      }
+
+      $('use_norm_btu').addEventListener('click', ()=>{
+        const raw = InstallQuote._util.toNumber($('btu_input').value, {min:0,max:200000,decimals:0});
+        const norm = InstallQuote.normalizeBtu(raw);
+        $('btu_input').value = norm ? String(norm) : '';
+        setBtuValue(norm);
+        $('btu_warn').classList.remove('show');
+        recalc();
+      });
+
+      $('use_room_btu').addEventListener('click', ()=>{
+        const area = InstallQuote._util.toNumber($('room_area').value, {min:0,max:1000,decimals:2});
+        const factor = InstallQuote._util.toNumber($('room_factor').value, {min:700,max:900,decimals:0});
+        const r = InstallQuote.calcBtuFromRoom(area, factor);
+        if(r.normalized_btu){
+          $('btu_input').value = String(r.normalized_btu);
+          setBtuValue(r.normalized_btu);
+          $('btu_warn').classList.remove('show');
+        }
+        recalc();
+      });
+
+      function buildBreakdownHtml(b){
+        const per = money(b.totals.per_machine);
+        const grand = money(b.totals.grand);
+        $('kpi_per').textContent = per==='-'? '-' : per + ' ฿';
+        $('kpi_grand').textContent = grand==='-'? '-' : grand + ' ฿';
+
+        const extrasRows = b.extras.lines.map(x=>{
+          if(x.key==='drain'){
+            const extraTxt = x.extra_m>0 ? `เกิน ${x.extra_m}m` : 'ไม่เกิน';
+            return `<tr><td>${x.label}<div class="iq-sub">${extraTxt} • ${x.note}</div></td><td>${money(0)} ฿</td></tr>`;
+          }
+          const extraTxt = x.extra_m>0 ? `เกิน ${x.extra_m}m x ${money(x.rate)}/m` : 'ไม่เกิน (0 บาท)';
+          return `<tr><td>${x.label}<div class="iq-sub">${extraTxt}</div></td><td>${money(x.cost)} ฿</td></tr>`;
+        }).join('');
+
+        const specialsRows = (b.specials.lines.length?
+          b.specials.lines.map(s=>`<tr><td>${s.label}<div class="iq-sub">${s.qty}${s.unit} x ${money(s.rate)}</div></td><td>${money(s.cost)} ฿</td></tr>`).join('')
+          : `<tr><td class="iq-muted">ไม่มี</td><td>${money(0)} ฿</td></tr>`
+        );
+
+        return `
+          <div class="iq-grid" style="gap:8px;">
+            <div class="iq-badge"><span class="iq-muted">เรทท่อน้ำยา/สายไฟตาม BTU:</span><b>ท่อน้ำยา ${money(b.meta.rates.ref_per_m)}/m • สายไฟ ${money(b.meta.rates.power_per_m)}/m</b></div>
+            <div class="iq-hr"></div>
+            <div><b>1) ค่าแรงติดตั้งมาตรฐาน</b><div class="iq-sub">ช่วงราคา ${b.base_labor.range_label} บาท • ใช้ STD = <b>${money(b.base_labor.std)}</b> บาท/เครื่อง</div></div>
+            <table class="iq-table"><tr><td>ค่าแรง (STD)</td><td>${money(b.base_labor.std)} ฿</td></tr></table>
+
+            <div class="iq-hr"></div>
+            <div><b>2) อุปกรณ์มาตรฐานที่รวมแล้ว/เครื่อง</b>
+              <div class="iq-sub">ท่อน้ำยา 4m • สายไฟ 8m • ท่อน้ำทิ้ง 8m • เบรกเกอร์ 1 ชุด • รางครอบท่อ 4m • ขายางรอง/ขาเหล็กมาตรฐาน</div>
+            </div>
+
+            <div class="iq-hr"></div>
+            <div><b>3) ค่าส่วนเกินจากมาตรฐาน</b></div>
+            <table class="iq-table">${extrasRows}<tr><td><b>รวมส่วนเกิน</b></td><td><b>${money(b.extras.total)} ฿</b></td></tr></table>
+
+            <div class="iq-hr"></div>
+            <div><b>4) งานพิเศษ/อุปกรณ์เพิ่ม</b></div>
+            <table class="iq-table">${specialsRows}<tr><td><b>รวมงานพิเศษ</b></td><td><b>${money(b.specials.total)} ฿</b></td></tr></table>
+
+            <div class="iq-hr"></div>
+            <table class="iq-table">
+              <tr><td><b>5) รวมต่อเครื่อง</b></td><td><b>${money(b.totals.per_machine)} ฿</b></td></tr>
+              <tr><td><b>รวมทั้งหมด (${fmt(b.meta.machine_count)} เครื่อง)</b></td><td><b>${money(b.totals.grand)} ฿</b></td></tr>
+            </table>
+          </div>
+        `;
+      }
+
+      function gather(){
+        const machine_count = parseInt($('machine_count').value,10)||1;
+        const btuManual = InstallQuote._util.toNumber($('btu_input').value, {min:0,max:200000,decimals:0});
+        setBtuValue(btuManual);
+
+        return {
+          ac_type: state.ac_type,
+          machine_count,
+          btu: state.btu,
+          len_ref: $('len_ref').value,
+          len_power: $('len_power').value,
+          len_drain: $('len_drain').value,
+          len_trunk: $('len_trunk').value,
+          wall_chase_m: $('chk_wall_chase').checked ? $('wall_chase_m').value : 0,
+          ceiling_run_m: $('chk_ceiling_run').checked ? $('ceiling_run_m').value : 0,
+          thick_insulation_m: ($('chk_ceiling_run').checked && $('chk_thick_insulation').checked) ? $('thick_insulation_m').value : 0,
+          misc_parts_qty: $('chk_misc_parts').checked ? $('misc_parts_qty').value : 0,
+          wire_tray_m: $('chk_wire_tray').checked ? $('wire_tray_m').value : 0,
+          pvc_m: $('chk_pvc').checked ? $('pvc_m').value : 0,
+          scaffold: $('scaffold').value,
+          grill: $('grill').value,
+          siphon: $('siphon').value,
+        };
+      }
+
+      function updateBtuBadges(){
+        const raw = InstallQuote._util.toNumber($('btu_input').value, {min:0,max:200000,decimals:0});
+        const norm = InstallQuote.normalizeBtu(raw);
+        $('btu_norm_badge').textContent = norm ? fmt(norm) : '-';
+
+        const area = InstallQuote._util.toNumber($('room_area').value, {min:0,max:1000,decimals:2});
+        const factor = InstallQuote._util.toNumber($('room_factor').value, {min:700,max:900,decimals:0});
+        const r = InstallQuote.calcBtuFromRoom(area, factor);
+        $('btu_raw').textContent = r.raw_btu ? fmt(r.raw_btu) : '-';
+        $('btu_norm').textContent = r.normalized_btu ? fmt(r.normalized_btu) : '-';
+      }
+
+      let lastBreakdown = null;
+
+      function recalc(){
+        updateBtuBadges();
+        const input = gather();
+        $('kpi_btu').textContent = input.btu ? fmt(input.btu) : '-';
+
+        // validation
+        if(!input.btu){
+          $('btu_warn').classList.add('show');
+          $('result_box').innerHTML = '<div class="iq-sub">กรุณาใส่ BTU เพื่อคำนวณราคา</div>';
+          $('kpi_per').textContent = '-';
+          $('kpi_grand').textContent = '-';
+          lastBreakdown = null;
+          return;
+        }
+        $('btu_warn').classList.remove('show');
+
+        const b = InstallQuote.calcQuote(input);
+        lastBreakdown = b;
+        $('result_box').innerHTML = buildBreakdownHtml(b);
+      }
+
+      async function copyText(text){
+        // robust clipboard with fallback
+        try{
+          if(navigator.clipboard && window.isSecureContext){
+            await navigator.clipboard.writeText(text);
+            return true;
+          }
+        }catch(e){/* fall through */}
+        try{
+          const ta = document.createElement('textarea');
+          ta.value = text;
+          ta.setAttribute('readonly','');
+          ta.style.position='fixed';
+          ta.style.top='-9999px';
+          document.body.appendChild(ta);
+          ta.select();
+          const ok = document.execCommand('copy');
+          document.body.removeChild(ta);
+          return !!ok;
+        }catch(e){
+          return false;
+        }
+      }
+
+      $('btn_copy').addEventListener('click', async ()=>{
+        const box = $('copy_status');
+        if(!lastBreakdown){
+          box.style.display='block';
+          box.textContent='⚠️ ยังไม่มีผลลัพธ์ให้คัดลอก (กรุณากรอก BTU และข้อมูลที่ต้องการ)';
+          return;
+        }
+        const text = InstallQuote.formatQuoteForCopy(lastBreakdown);
+        const ok = await copyText(text);
+        box.style.display='block';
+        box.textContent = ok ? '✅ คัดลอกแล้ว (นำไปวางในแชท/ไลน์ได้เลย)' : '❌ คัดลอกไม่สำเร็จ (ลองกดค้างแล้วเลือกคัดลอก)';
+      });
+
+      $('btn_reset').addEventListener('click', ()=>{
+        // keep safe: only reset fields in this page
+        state.ac_type = 'ติดผนัง';
+        state.btu_mode = 'manual';
+        state.btu = 0;
+
+        // chips reset
+        document.querySelectorAll('[data-ac-type]').forEach(b=>b.setAttribute('aria-pressed', String(b.getAttribute('data-ac-type')==='ติดผนัง')));
+        document.querySelectorAll('[data-btu-mode]').forEach(b=>b.setAttribute('aria-pressed', String(b.getAttribute('data-btu-mode')==='manual')));
+        $('btu_manual_box').style.display='';
+        $('btu_room_box').style.display='none';
+        setCount(1);
+
+        ['btu_input','len_ref','len_power','len_drain','len_trunk','room_area','wall_chase_m','ceiling_run_m','thick_insulation_m','misc_parts_qty','wire_tray_m','pvc_m'].forEach(id=>{ $(id).value=''; });
+        ['chk_wall_chase','chk_ceiling_run','chk_thick_insulation','chk_misc_parts','chk_wire_tray','chk_pvc'].forEach(id=>{ $(id).checked=false; });
+        ['scaffold','grill','siphon'].forEach(id=>{ $(id).value='none'; });
+        ['wall_chase_m','ceiling_run_m','thick_insulation_m','misc_parts_qty','wire_tray_m','pvc_m'].forEach(id=>{ $(id).disabled=true; });
+        syncInsulation();
+        $('copy_status').style.display='none';
+        $('btu_warn').classList.remove('show');
+        recalc();
+      });
+
+      // initial paint
+      setCount(1);
+      recalc();
+    })();
+  </script>
+</body>
+</html>
