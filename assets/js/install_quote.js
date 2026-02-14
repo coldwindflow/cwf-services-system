@@ -13,6 +13,10 @@
   };
 
   const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
+  const roundTo = (n, d) => {
+    const f = Math.pow(10, d);
+    return Math.round(n * f) / f;
+  };
 
   function toNumber(v, { min = 0, max = 1_000_000, decimals = 2 } = {}) {
     if (v === null || v === undefined) return 0;
@@ -91,10 +95,11 @@
     const len_drain = toNumber(input.len_drain, { min: 0, max: 500, decimals: 2 });
     const len_trunk = toNumber(input.len_trunk, { min: 0, max: 300, decimals: 2 });
 
-    const extra_ref_m = Math.max(0, len_ref - STD_INCLUDED.refrigerant_m);
-    const extra_power_m = Math.max(0, len_power - STD_INCLUDED.power_m);
-    const extra_drain_m = Math.max(0, len_drain - STD_INCLUDED.drain_m);
-    const extra_trunk_m = Math.max(0, len_trunk - STD_INCLUDED.trunking_m);
+    // Round meters to 2 decimals for stable UI + copy text
+    const extra_ref_m = roundTo(Math.max(0, len_ref - STD_INCLUDED.refrigerant_m), 2);
+    const extra_power_m = roundTo(Math.max(0, len_power - STD_INCLUDED.power_m), 2);
+    const extra_drain_m = roundTo(Math.max(0, len_drain - STD_INCLUDED.drain_m), 2);
+    const extra_trunk_m = roundTo(Math.max(0, len_trunk - STD_INCLUDED.trunking_m), 2);
 
     const extra_ref_cost = Math.round(extra_ref_m * rates.ref_per_m);
     const extra_power_cost = Math.round(extra_power_m * rates.power_per_m);
@@ -151,7 +156,9 @@
 
     const addLine = (key, label, qty, unit, rate, cost) => {
       if (!qty) return;
-      specials_lines.push({ key, label, qty, unit, rate, cost });
+      // keep qty stable for display
+      const stableQty = typeof qty === "number" ? roundTo(qty, unit === "m" ? 2 : 0) : qty;
+      specials_lines.push({ key, label, qty: stableQty, unit, rate, cost });
     };
 
     addLine("wall_chase", "กรีดผนังฝังท่อ", specials.wall_chase_m, "m", 300, Math.round(specials.wall_chase_m * 300));
@@ -221,6 +228,13 @@
     return v.toLocaleString("th-TH");
   }
 
+  function formatQty(qty, unit) {
+    const n = toNumber(qty, { min: 0, max: 1_000_000, decimals: unit === "m" ? 2 : 0 });
+    if (!n) return "0";
+    const s = unit === "m" ? n.toFixed(2) : String(n);
+    return s.replace(/\.00$/, "").replace(/(\.[1-9])0$/, "$1");
+  }
+
   function formatQuoteForCopy(breakdown) {
     const b = breakdown;
     const lines = [];
@@ -247,10 +261,10 @@
     lines.push("3) ค่าส่วนเกินจากมาตรฐาน (คิดเฉพาะส่วนที่เกิน)");
     for (const x of b.extras.lines) {
       if (x.key === "drain") {
-        const extraTxt = x.extra_m > 0 ? `เกิน ${x.extra_m}m` : "ไม่เกิน";
+        const extraTxt = x.extra_m > 0 ? `เกิน ${formatQty(x.extra_m, "m")}m` : "ไม่เกิน";
         lines.push(`- ${x.label}: ${extraTxt} → ${x.note}`);
       } else {
-        const extraTxt = x.extra_m > 0 ? `เกิน ${x.extra_m}m x ${formatMoney(x.rate)}/m = ${formatMoney(x.cost)} บาท` : "ไม่เกิน (0 บาท)";
+        const extraTxt = x.extra_m > 0 ? `เกิน ${formatQty(x.extra_m, "m")}m x ${formatMoney(x.rate)}/m = ${formatMoney(x.cost)} บาท` : "ไม่เกิน (0 บาท)";
         lines.push(`- ${x.label}: ${extraTxt}`);
       }
     }
@@ -261,7 +275,7 @@
       lines.push("- ไม่มี");
     } else {
       for (const s of b.specials.lines) {
-        lines.push(`- ${s.label}: ${s.qty}${s.unit} x ${formatMoney(s.rate)} = ${formatMoney(s.cost)} บาท`);
+        lines.push(`- ${s.label}: ${formatQty(s.qty, s.unit)}${s.unit} x ${formatMoney(s.rate)} = ${formatMoney(s.cost)} บาท`);
       }
     }
     lines.push("");
@@ -285,5 +299,6 @@
     calcQuote,
     formatQuoteForCopy,
     _util: { toNumber },
+    _fmt: { formatMoney, formatQty },
   };
 })(window);
