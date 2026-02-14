@@ -116,7 +116,8 @@
     .iq-stickybar button{border-radius:14px;padding:10px 12px;font-weight:950;}
     .iq-stickybar .secondary{min-width:92px;}
     .iq-stickybar .primary{min-width:138px;}
-    .iq-wrap{padding-bottom:92px;} /* room for stickybar */
+    /* room for stickybar (set dynamically by JS to avoid blocking content) */
+    .iq-wrap{padding-bottom: calc(var(--iq-sticky-h, 140px) + 24px);} 
     .iq-minihelp{margin-top:12px;padding:12px;border-radius:16px;background:rgba(11,75,179,.06);border:1px solid rgba(11,75,179,.16);}
     .iq-minihelp b{color:var(--iq-text);}
     .iq-checklist{margin:10px 0 0 0;padding:0;list-style:none;display:grid;gap:8px;}
@@ -137,8 +138,8 @@
       box-shadow:0 10px 24px rgba(2,6,23,.08);
       cursor:pointer;
     }
-    .iq-stickybar.collapsed .sum .line:nth-child(2){display:none;}
-    .iq-stickybar.collapsed{padding:8px 10px;}
+    .iq-stickybar.is-collapsed .sum .line:nth-child(2){display:none;}
+    .iq-stickybar.is-collapsed{padding:8px 10px;}
     @media (max-width:420px){
       .iq-stickybar .sum .line:nth-child(2){display:none;}
       .iq-stickybar .btns button{padding:10px 12px; font-size:13px;}
@@ -501,18 +502,35 @@
       // sticky collapse (กันบังหน้าจอ)
       const stickyBar = document.querySelector('.iq-stickybar');
       const stickyToggle = $('sticky_toggle');
+
+      // dynamic bottom spacer so sticky never blocks content (mobile safe)
+      const applyStickySpacer = ()=>{
+        try{
+          if(!stickyBar) return;
+          const h = stickyBar.getBoundingClientRect().height || stickyBar.offsetHeight || 0;
+          const safe = 12;
+          document.documentElement.style.setProperty('--iq-sticky-h', Math.ceil(h + safe) + 'px');
+        }catch(e){}
+      };
+
       const setStickyCollapsed = (collapsed)=>{
         if(!stickyBar) return;
         stickyBar.classList.toggle('is-collapsed', !!collapsed);
-        stickyToggle.textContent = collapsed ? '▸' : '▾';
-        stickyToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        if(stickyToggle){
+          stickyToggle.textContent = collapsed ? '▸' : '▾';
+          stickyToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        }
         try{ localStorage.setItem('iq_sticky_collapsed', collapsed ? '1':'0'); }catch(e){}
+        // recalc spacer after height changes
+        requestAnimationFrame(applyStickySpacer);
       };
       let initCollapsed = false;
       try{ initCollapsed = (localStorage.getItem('iq_sticky_collapsed')==='1'); }catch(e){}
       if(window.innerHeight && window.innerHeight < 720) initCollapsed = true;
       if(window.innerWidth && window.innerWidth < 390) initCollapsed = true;
       setStickyCollapsed(initCollapsed);
+      // initial spacer
+      requestAnimationFrame(applyStickySpacer);
 
       if(stickyToggle){
         stickyToggle.addEventListener('click', ()=>{
@@ -520,6 +538,15 @@
           setStickyCollapsed(!now);
         });
       }
+
+      // keep spacer correct on resize/orientation
+      let _stickyT;
+      window.addEventListener('resize', ()=>{
+        clearTimeout(_stickyT);
+        _stickyT = setTimeout(()=>{
+          applyStickySpacer();
+        }, 120);
+      }, {passive:true});
 
   // chips
       document.querySelectorAll('[data-ac-type]').forEach(btn=>{
