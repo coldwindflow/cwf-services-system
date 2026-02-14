@@ -170,7 +170,7 @@
         <div class="iq-pillrow" aria-label="trust pills">
           <div class="iq-pill"><span class="dot"></span>คัดลอกสรุปส่งแอดมินได้ทันที</div>
           <div class="iq-pill">คิดเฉพาะ “ส่วนเกิน” จากมาตรฐาน</div>
-          <div class="iq-pill">ท่อน้ำทิ้งเกิน: <b>ไม่คิดเพิ่ม</b></div>
+          <div class="iq-pill">ช่างมีใบเซอร์งานติดตั้ง และใบรับรองผ่านการอบรมทดสอบมาตรฐานจากกรมพัฒนาฝีมือแรงงาน</div>
         </div>
 
         <div class="iq-kpi">
@@ -316,7 +316,7 @@
             <div>
               <div class="label">ท่อน้ำทิ้ง (m)</div>
               <input id="len_drain" inputmode="decimal" placeholder="เช่น 10" />
-              <div class="iq-sub" style="margin-top:6px;">* เกินมาตรฐาน “ไม่คิดเพิ่ม” (ยังไม่มีเรท)</div>
+              <div class="iq-sub" style="margin-top:6px;">* ส่วนเกินคิดเพิ่ม (ช่วง 30–50 บาท/ม.) — คิดจริงด้วย STD 40 บาท/ม.</div>
             </div>
             <div>
               <div class="label">รางครอบท่อ (m)</div>
@@ -497,7 +497,31 @@
         room_mode: 'area',
       };
 
-      // chips
+    
+      // sticky collapse (กันบังหน้าจอ)
+      const stickyBar = document.querySelector('.iq-stickybar');
+      const stickyToggle = $('sticky_toggle');
+      const setStickyCollapsed = (collapsed)=>{
+        if(!stickyBar) return;
+        stickyBar.classList.toggle('is-collapsed', !!collapsed);
+        stickyToggle.textContent = collapsed ? '▸' : '▾';
+        stickyToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        try{ localStorage.setItem('iq_sticky_collapsed', collapsed ? '1':'0'); }catch(e){}
+      };
+      let initCollapsed = false;
+      try{ initCollapsed = (localStorage.getItem('iq_sticky_collapsed')==='1'); }catch(e){}
+      if(window.innerHeight && window.innerHeight < 720) initCollapsed = true;
+      if(window.innerWidth && window.innerWidth < 390) initCollapsed = true;
+      setStickyCollapsed(initCollapsed);
+
+      if(stickyToggle){
+        stickyToggle.addEventListener('click', ()=>{
+          const now = stickyBar.classList.contains('is-collapsed');
+          setStickyCollapsed(!now);
+        });
+      }
+
+  // chips
       document.querySelectorAll('[data-ac-type]').forEach(btn=>{
         btn.addEventListener('click', ()=>{
           const v = btn.getAttribute('data-ac-type');
@@ -805,7 +829,31 @@
         state.btu = 0;
         state.room_mode = 'area';
 
-        // chips reset
+      
+      // sticky collapse (กันบังหน้าจอ)
+      const stickyBar = document.querySelector('.iq-stickybar');
+      const stickyToggle = $('sticky_toggle');
+      const setStickyCollapsed = (collapsed)=>{
+        if(!stickyBar) return;
+        stickyBar.classList.toggle('is-collapsed', !!collapsed);
+        stickyToggle.textContent = collapsed ? '▸' : '▾';
+        stickyToggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+        try{ localStorage.setItem('iq_sticky_collapsed', collapsed ? '1':'0'); }catch(e){}
+      };
+      let initCollapsed = false;
+      try{ initCollapsed = (localStorage.getItem('iq_sticky_collapsed')==='1'); }catch(e){}
+      if(window.innerHeight && window.innerHeight < 720) initCollapsed = true;
+      if(window.innerWidth && window.innerWidth < 390) initCollapsed = true;
+      setStickyCollapsed(initCollapsed);
+
+      if(stickyToggle){
+        stickyToggle.addEventListener('click', ()=>{
+          const now = stickyBar.classList.contains('is-collapsed');
+          setStickyCollapsed(!now);
+        });
+      }
+
+  // chips reset
         document.querySelectorAll('[data-ac-type]').forEach(b=>b.setAttribute('aria-pressed', String(b.getAttribute('data-ac-type')==='ติดผนัง')));
         document.querySelectorAll('[data-btu-mode]').forEach(b=>b.setAttribute('aria-pressed', String(b.getAttribute('data-btu-mode')==='manual')));
         document.querySelectorAll('[data-room-mode]').forEach(b=>b.setAttribute('aria-pressed', String(b.getAttribute('data-room-mode')==='area')));
