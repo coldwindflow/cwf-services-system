@@ -8786,6 +8786,8 @@ app.get("/add-job", (req, res) => res.redirect(302, "/admin-add-v2.html"));
 app.get("/customer", (req, res) => res.sendFile(sendHtml("customer.html")));
 // ✅ หน้าใหม่: คำนวณราคาติดตั้งแอร์ (ลูกค้า)
 app.get("/install-quote", (req, res) => res.sendFile(sendHtml("install-quote.html")));
+// Canonical path: keep short URL, redirect direct-file access
+app.get("/install-quote.html", (req, res) => res.redirect(302, "/install-quote"));
 app.get("/register", (req, res) => res.sendFile(sendHtml("register.html")));
 app.get("/track", (req, res) => res.sendFile(sendHtml("track.html")));
 app.get("/home", (req, res) => res.sendFile(sendHtml("index.html")));
