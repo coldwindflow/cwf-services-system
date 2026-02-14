@@ -527,6 +527,7 @@
       function recalc(){
         updateBtuBadges();
         const input = gather();
+        // KPI BTU will be updated again after calcQuote() (uses normalized BTU for pricing)
         $('kpi_btu').textContent = input.btu ? fmt(input.btu) : '-';
 
         // validation
@@ -542,6 +543,10 @@
 
         const b = InstallQuote.calcQuote(input);
         lastBreakdown = b;
+        // Show BTU that is actually used for calculation (normalized)
+        if (b && b.meta && b.meta.btu_used) {
+          $('kpi_btu').textContent = fmt(b.meta.btu_used);
+        }
         $('result_box').innerHTML = buildBreakdownHtml(b);
       }
 
