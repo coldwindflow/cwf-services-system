@@ -19,7 +19,7 @@
       --iq-primary2:#2f7cff;
       --iq-shadow:0 12px 34px rgba(2,6,23,.10);
     }
-    .iq-wrap{max-width:980px;margin:0 auto;}
+    .iq-wrap{max-width:980px;margin:0 auto;padding:14px 14px 92px;}
     .iq-steps{display:flex;flex-direction:column;gap:12px;}
     .iq-step{border:1px solid var(--iq-border); box-shadow: var(--iq-shadow);}
     .iq-step h2{margin:0 0 10px 0;font-size:18px;color:var(--iq-text);}
@@ -75,7 +75,59 @@
       .iq-grid2{grid-template-columns:1fr 1fr;}
       .iq-kpi{grid-template-columns:1fr 1fr 1fr 1fr;}
     }
-  </style>
+  
+    /* Phase 7 premium: stronger readability + wow */
+    body.theme-2{background: radial-gradient(1200px 800px at 20% -10%, rgba(47,124,255,.22), transparent 55%),
+                          radial-gradient(900px 700px at 90% 0%, rgba(255,196,0,.16), transparent 50%),
+                          linear-gradient(180deg, rgba(248,250,252,1), rgba(241,245,249,1));}
+    .topbar{backdrop-filter:saturate(140%) blur(10px); background:rgba(255,255,255,.72); border-bottom:1px solid var(--iq-border);}
+    .topbar .title b{color:var(--iq-text);}
+    .topbar .title .muted{color:var(--iq-muted); opacity:1;}
+    .iq-hero{padding:14px 14px 12px;}
+    .iq-hero h1{margin:0;font-size:20px;letter-spacing:-.2px;color:var(--iq-text);}
+    .iq-hero p{margin:6px 0 0 0;color:var(--iq-muted);font-size:13px;line-height:1.45;}
+    .iq-pillrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;}
+    .iq-pill{display:inline-flex;align-items:center;gap:8px;padding:8px 10px;border-radius:999px;background:rgba(255,255,255,.80);border:1px solid var(--iq-border);color:var(--iq-text);font-weight:800;font-size:12px;}
+    .iq-pill b{font-weight:950;}
+    .iq-pill .dot{width:8px;height:8px;border-radius:999px;background:rgba(34,197,94,.9);box-shadow:0 0 0 3px rgba(34,197,94,.18);}
+    .iq-kpi{margin-top:12px;grid-template-columns:repeat(2,1fr);}
+    .iq-kpi .k{box-shadow:0 10px 24px rgba(2,6,23,.06);}
+    .iq-kpi .k .t{color:var(--iq-muted);opacity:1;font-weight:800;}
+    .iq-kpi .k .v{font-size:20px;}
+    .iq-step{overflow:hidden;}
+    .iq-step h2{display:flex;align-items:center;gap:10px;}
+    .iq-step h2:before{content:"";width:10px;height:10px;border-radius:6px;background:linear-gradient(180deg,var(--iq-primary2),var(--iq-primary));box-shadow:0 8px 18px rgba(11,75,179,.25);}
+    .iq-sub{opacity:1;}
+    .iq-note{background:rgba(255,196,0,.16);}
+    .iq-stickybar{
+      position:fixed; left:12px; right:12px; bottom:12px;
+      z-index:50;
+      display:flex; gap:10px; align-items:center; justify-content:space-between;
+      padding:10px 12px; border-radius:16px;
+      background:rgba(255,255,255,.85);
+      border:1px solid var(--iq-border);
+      box-shadow:0 16px 38px rgba(2,6,23,.14);
+      backdrop-filter:saturate(140%) blur(10px);
+    }
+    .iq-stickybar .sum{display:flex;flex-direction:column;gap:2px;min-width:0;}
+    .iq-stickybar .sum .line{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline;color:var(--iq-muted);font-size:12px;}
+    .iq-stickybar .sum b{color:var(--iq-text);font-size:16px;letter-spacing:-.2px;}
+    .iq-stickybar .btns{display:flex;gap:8px;flex:0 0 auto;}
+    .iq-stickybar button{border-radius:14px;padding:10px 12px;font-weight:950;}
+    .iq-stickybar .secondary{min-width:92px;}
+    .iq-stickybar .primary{min-width:138px;}
+    .iq-wrap{padding-bottom:92px;} /* room for stickybar */
+    .iq-minihelp{margin-top:12px;padding:12px;border-radius:16px;background:rgba(11,75,179,.06);border:1px solid rgba(11,75,179,.16);}
+    .iq-minihelp b{color:var(--iq-text);}
+    .iq-checklist{margin:10px 0 0 0;padding:0;list-style:none;display:grid;gap:8px;}
+    .iq-checklist li{display:flex;gap:10px;align-items:flex-start;color:var(--iq-text);}
+    .iq-checklist .tick{width:18px;height:18px;border-radius:6px;background:rgba(34,197,94,.14);border:1px solid rgba(34,197,94,.25);display:flex;align-items:center;justify-content:center;color:rgba(22,101,52,1);font-weight:950;flex:0 0 auto;}
+    @media (min-width: 860px){
+      .iq-kpi{grid-template-columns:repeat(4,1fr);}
+      .iq-hero h1{font-size:22px;}
+      .iq-stickybar{left:calc(50% - 490px); right:calc(50% - 490px);}
+    }
+</style>
 </head>
 <body class="theme-2">
   <div class="app">
@@ -93,8 +145,17 @@
       </div>
     </div>
 
-    <div class="iq-wrap" style="padding:14px 14px 28px;">
-      <div class="card iq-step">
+    <div class="iq-wrap">
+      
+      <div class="card iq-step iq-hero">
+        <h1>คำนวณค่าติดตั้งแอร์แบบ “โปร่งใส”</h1>
+        <p>ใส่ข้อมูลคร่าว ๆ ระบบจะแยกราคาให้เห็นชัด: ค่าแรงมาตรฐาน + ส่วนเกินจากมาตรฐาน + งานพิเศษ (คิดเฉพาะที่เลือก/เกินจริง)</p>
+        <div class="iq-pillrow" aria-label="trust pills">
+          <div class="iq-pill"><span class="dot"></span>คัดลอกสรุปส่งแอดมินได้ทันที</div>
+          <div class="iq-pill">คิดเฉพาะ “ส่วนเกิน” จากมาตรฐาน</div>
+          <div class="iq-pill">ท่อน้ำทิ้งเกิน: <b>ไม่คิดเพิ่ม</b></div>
+        </div>
+
         <div class="iq-kpi">
           <div class="k">
             <div class="t">รวมต่อเครื่อง</div>
@@ -113,8 +174,17 @@
             <div id="kpi_count" class="v">1</div>
           </div>
         </div>
-        <div class="iq-sub" style="margin-top:10px;">* เป็น “ราคาประมาณ” ตามข้อมูลมาตรฐาน หากหน้างานมีเงื่อนไขพิเศษ แอดมินจะยืนยันอีกครั้ง</div>
+
+        <div class="iq-minihelp">
+          <b>มาตรฐานที่ “รวมแล้ว” ต่อ 1 เครื่อง</b>
+          <ul class="iq-checklist">
+            <li><span class="tick">✓</span><span>ท่อน้ำยา 4 เมตร • สายไฟ 8 เมตร • ท่อน้ำทิ้ง 8 เมตร • รางครอบท่อ 4 เมตร</span></li>
+            <li><span class="tick">✓</span><span>เบรกเกอร์ 1 ชุด • ขายางรอง และขาเหล็กชุดมาตรฐาน</span></li>
+          </ul>
+          <div class="iq-sub" style="margin-top:8px;">* เป็น “ราคาประมาณ” ตามข้อมูลมาตรฐาน หากหน้างานมีเงื่อนไขพิเศษ แอดมินจะยืนยันอีกครั้ง</div>
+        </div>
       </div>
+
 
       <div class="iq-steps">
         <div class="card iq-step">
@@ -358,6 +428,17 @@
     </div>
   </div>
 
+  <div class="iq-stickybar" role="region" aria-label="สรุปราคาแบบย่อ">
+    <div class="sum">
+      <div class="line">รวม/เครื่อง: <b id="sticky_per">-</b> • รวมทั้งหมด: <b id="sticky_grand">-</b></div>
+      <div class="line">BTU: <b id="sticky_btu">-</b> • เครื่อง: <b id="sticky_count">1</b></div>
+    </div>
+    <div class="btns">
+      <button id="sticky_reset" class="secondary" type="button">รีเซ็ต</button>
+      <button id="sticky_copy" class="primary" type="button">📋 คัดลอกสรุป</button>
+    </div>
+  </div>
+
   <script src="/assets/js/install_quote.js"></script>
   <script>
     (function(){
@@ -433,6 +514,7 @@
         $('machine_count').value = String(v);
         $('mc_value').textContent = String(v);
         $('kpi_count').textContent = String(v);
+        $('sticky_count').textContent = String(v);
         recalc();
       };
       $('mc_minus').addEventListener('click', ()=> setCount((parseInt($('machine_count').value,10)||1)-1));
@@ -481,7 +563,9 @@
       function setBtuValue(btu){
         const v = Math.max(0, Math.min(200000, parseInt(btu||'0',10)||0));
         state.btu = v;
-        $('kpi_btu').textContent = v ? fmt(v) : '-';
+        const txt = v ? fmt(v) : '-';
+        $('kpi_btu').textContent = txt;
+        $('sticky_btu').textContent = txt;
       }
 
       $('use_norm_btu').addEventListener('click', ()=>{
@@ -510,6 +594,11 @@
         const grand = money(b.totals.grand);
         $('kpi_per').textContent = per==='-'? '-' : per + ' ฿';
         $('kpi_grand').textContent = grand==='-'? '-' : grand + ' ฿';
+        // sticky summary
+        $('sticky_per').textContent = per==='-'? '-' : per + ' ฿';
+        $('sticky_grand').textContent = grand==='-'? '-' : grand + ' ฿';
+        $('sticky_btu').textContent = $('kpi_btu').textContent || '-';
+        $('sticky_count').textContent = $('kpi_count').textContent || '1';
 
         const extrasRows = b.extras.lines.map(x=>{
           if(x.key==='drain'){
@@ -692,7 +781,11 @@
         setCount(1);
 
         ['btu_input','len_ref','len_power','len_drain','len_trunk','room_area','room_w','room_l','wall_chase_m','ceiling_run_m','thick_insulation_m','misc_parts_qty','wire_tray_m','pvc_m'].forEach(id=>{ $(id).value=''; });
-        updateRoomAreaCalc();
+        
+      // stickybar actions
+      $('sticky_copy').addEventListener('click', ()=> $('btn_copy').click());
+      $('sticky_reset').addEventListener('click', ()=> $('btn_reset').click());
+updateRoomAreaCalc();
         ['chk_wall_chase','chk_ceiling_run','chk_thick_insulation','chk_misc_parts','chk_wire_tray','chk_pvc'].forEach(id=>{ $(id).checked=false; });
         ['scaffold','grill','siphon'].forEach(id=>{ $(id).value='none'; });
         ['wall_chase_m','ceiling_run_m','thick_insulation_m','misc_parts_qty','wire_tray_m','pvc_m'].forEach(id=>{ $(id).disabled=true; });
@@ -707,5 +800,6 @@
       recalc();
     })();
   </script>
+
 </body>
 </html>
