@@ -3908,12 +3908,65 @@ app.post('/admin/jobs/:job_id/clone_v2', requireAdminSoft, async (req, res) => {
   }
 });
 
-app.get("/admin/promotions_v2", requireAdminSoft, async (req, res) => {
+
+// =======================================
+// ✅ Promotions v2 (Admin manage) - backward compatible with legacy DB
+// =======================================
+
+function normalizePromoType(raw) {
+  const t = String(raw || "").trim().toLowerCase();
+  if (!t) return "";
+  // english variants
+  if (["percent", "percentage", "%", "pct"].includes(t)) return "percent";
+  if (["amount", "fixed", "baht", "thb", "฿"].includes(t)) return "amount";
+  // thai variants
+  if (t.includes("เปอร์") || t.includes("percent") || t === "เปอร์เซ็นต์" || t === "เปอร์เซนต์") return "percent";
+  if (t.includes("บาท") || t.includes("จำนวนเงิน")) return "amount";
+  return t;
+}
+
+const __promoColsCache = { ts: 0, cols: null };
+async function getPromotionColumns() {
+  const now = Date.now();
+  if (__promoColsCache.cols && (now - __promoColsCache.ts) < 5 * 60 * 1000) return __promoColsCache.cols;
   try {
     const r = await pool.query(
-      `SELECT promo_id, promo_name, promo_type, promo_value, is_customer_visible, is_active, created_at
+      `SELECT column_name
+       FROM information_schema.columns
+       WHERE table_schema='public' AND table_name='promotions'`
+    );
+    const cols = new Set((r.rows || []).map(x => String(x.column_name)));
+    __promoColsCache.ts = now;
+    __promoColsCache.cols = cols;
+    return cols;
+  } catch (e) {
+    // fail-open (assume modern schema)
+    const cols = new Set(["promo_id","promo_name","promo_type","promo_value","is_customer_visible","is_active","created_at"]);
+    __promoColsCache.ts = now;
+    __promoColsCache.cols = cols;
+    return cols;
+  }
+}
+
+app.get("/admin/promotions_v2", requireAdminSoft, async (req, res) => {
+  try {
+    const cols = await getPromotionColumns();
+
+    // build SELECT safely for legacy DBs
+    const select = [
+      `promo_id`,
+      `promo_name`,
+      `promo_type`,
+      `promo_value`,
+      cols.has("is_customer_visible") ? `is_customer_visible` : `FALSE AS is_customer_visible`,
+      cols.has("is_active") ? `is_active` : `TRUE AS is_active`,
+      cols.has("created_at") ? `created_at` : `NOW() AS created_at`,
+    ].join(", ");
+
+    const r = await pool.query(
+      `SELECT ${select}
        FROM public.promotions
-       ORDER BY created_at DESC, promo_id DESC`
+       ORDER BY ${cols.has("created_at") ? "created_at DESC," : ""} promo_id DESC`
     );
     return res.json({ success: true, promotions: r.rows });
   } catch (e) {
@@ -3925,20 +3978,29 @@ app.get("/admin/promotions_v2", requireAdminSoft, async (req, res) => {
 app.post("/admin/promotions_v2", requireAdminSoft, async (req, res) => {
   const b = req.body || {};
   const promo_name = String(b.promo_name || "").trim();
-  const promo_type = String(b.promo_type || "").trim();
-  const promo_value = Number(b.promo_value || 0);
+  const promo_type = normalizePromoType(b.promo_type);
+  const promo_value = Number(b.promo_value ?? 0);
   const is_customer_visible = !!b.is_customer_visible;
   const is_active = (b.is_active === undefined) ? true : !!b.is_active;
 
-  if (!promo_name || !["percent","amount"].includes(promo_type)) {
-    return res.status(400).json({ error: "ข้อมูลโปรโมชันไม่ครบ/ไม่ถูกต้อง" });
-  }
+  if (!promo_name) return res.status(400).json({ error: "กรอกชื่อโปรโมชัน" });
+  if (!["percent","amount"].includes(promo_type)) return res.status(400).json({ error: "promo_type ต้องเป็น percent หรือ amount" });
+  if (!Number.isFinite(promo_value) || promo_value < 0) return res.status(400).json({ error: "promo_value ไม่ถูกต้อง" });
+
   try {
+    const cols = await getPromotionColumns();
+
+    const colNames = ["promo_name","promo_type","promo_value"];
+    const vals = [promo_name, promo_type, promo_value];
+    if (cols.has("is_customer_visible")) { colNames.push("is_customer_visible"); vals.push(is_customer_visible); }
+    if (cols.has("is_active")) { colNames.push("is_active"); vals.push(is_active); }
+
+    const placeholders = colNames.map((_, i) => `$${i+1}`).join(",");
     const r = await pool.query(
-      `INSERT INTO public.promotions (promo_name, promo_type, promo_value, is_customer_visible, is_active)
-       VALUES ($1,$2,$3,$4,$5)
+      `INSERT INTO public.promotions (${colNames.join(",")})
+       VALUES (${placeholders})
        RETURNING promo_id`,
-      [promo_name, promo_type, promo_value, is_customer_visible, is_active]
+      vals
     );
     return res.json({ success: true, promo_id: r.rows[0]?.promo_id });
   } catch (e) {
@@ -3952,22 +4014,31 @@ app.put("/admin/promotions_v2/:promo_id", requireAdminSoft, async (req, res) => 
   const b = req.body || {};
   if (!promo_id) return res.status(400).json({ error: "promo_id ไม่ถูกต้อง" });
 
-  const fields = [];
-  const params = [];
-  let p = 1;
-
-  const setField = (name, val) => { params.push(val); fields.push(`${name}=$${p++}`); };
-
-  if (b.promo_name !== undefined) setField("promo_name", String(b.promo_name || "").trim());
-  if (b.promo_type !== undefined) setField("promo_type", String(b.promo_type || "").trim());
-  if (b.promo_value !== undefined) setField("promo_value", Number(b.promo_value || 0));
-  if (b.is_customer_visible !== undefined) setField("is_customer_visible", !!b.is_customer_visible);
-  if (b.is_active !== undefined) setField("is_active", !!b.is_active);
-
-  if (!fields.length) return res.json({ success: true });
-
-  params.push(promo_id);
   try {
+    const cols = await getPromotionColumns();
+
+    const fields = [];
+    const params = [];
+    let p = 1;
+    const setField = (name, val) => { params.push(val); fields.push(`${name}=$${p++}`); };
+
+    if (b.promo_name !== undefined && cols.has("promo_name")) setField("promo_name", String(b.promo_name || "").trim());
+    if (b.promo_type !== undefined && cols.has("promo_type")) {
+      const t = normalizePromoType(b.promo_type);
+      if (!["percent","amount"].includes(t)) return res.status(400).json({ error: "promo_type ต้องเป็น percent หรือ amount" });
+      setField("promo_type", t);
+    }
+    if (b.promo_value !== undefined && cols.has("promo_value")) {
+      const v = Number(b.promo_value ?? 0);
+      if (!Number.isFinite(v) || v < 0) return res.status(400).json({ error: "promo_value ไม่ถูกต้อง" });
+      setField("promo_value", v);
+    }
+    if (b.is_customer_visible !== undefined && cols.has("is_customer_visible")) setField("is_customer_visible", !!b.is_customer_visible);
+    if (b.is_active !== undefined && cols.has("is_active")) setField("is_active", !!b.is_active);
+
+    if (!fields.length) return res.json({ success: true });
+
+    params.push(promo_id);
     await pool.query(`UPDATE public.promotions SET ${fields.join(", ")} WHERE promo_id=$${p}`, params);
     return res.json({ success: true });
   } catch (e) {
@@ -3980,16 +4051,18 @@ app.delete("/admin/promotions_v2/:promo_id", requireAdminSoft, async (req, res) 
   const promo_id = Number(req.params.promo_id);
   if (!promo_id) return res.status(400).json({ error: "promo_id ไม่ถูกต้อง" });
   try {
-    await pool.query(`UPDATE public.promotions SET is_active=FALSE WHERE promo_id=$1`, [promo_id]);
+    const cols = await getPromotionColumns();
+    if (cols.has("is_active")) {
+      await pool.query(`UPDATE public.promotions SET is_active=FALSE WHERE promo_id=$1`, [promo_id]);
+    } else {
+      await pool.query(`DELETE FROM public.promotions WHERE promo_id=$1`, [promo_id]);
+    }
     return res.json({ success: true });
   } catch (e) {
     console.error("/admin/promotions_v2 delete error:", e);
     return res.status(500).json({ error: "ลบโปรโมชันไม่สำเร็จ" });
   }
 });
-
-
-
 
 app.get("/admin/schedule_v2", requireAdminSoft, async (req, res) => {
   try {
