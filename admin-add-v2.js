@@ -1120,7 +1120,9 @@ async function loadCatalog() {
 async function loadPromotions() {
   try {
     // Admin ต้องเห็นทั้งหมด (รวมที่ลูกค้าไม่เห็น) ใช้ v2 endpoint
-    const list = await apiFetch("/admin/promotions_v2");
+    const resp = await apiFetch("/admin/promotions_v2");
+    // backend บางเวอร์ชันคืน { success:true, promotions:[...] }
+    const list = (resp && Array.isArray(resp.promotions)) ? resp.promotions : resp;
     state.promo_list = Array.isArray(list) ? list : [];
     const sel = el("promotion_id");
     sel.innerHTML = "";
@@ -1150,8 +1152,9 @@ function wirePromotionControls(){
     // Quick add: ใช้ prompt แบบปลอดภัย (ไม่พังหน้า) และสร้างใน DB จริง
     const name = prompt("ชื่อโปรโมชัน (เช่น ลด 10%)");
     if(!name) return;
-    const type = (prompt("ประเภทโปร: percent หรือ fixed", "percent")||"percent").trim().toLowerCase();
-    if(!["percent","fixed"].includes(type)){
+    const typeRaw = (prompt("ประเภทโปร: percent หรือ amount", "percent")||"percent").trim().toLowerCase();
+    const type = (typeRaw === "fixed" || typeRaw === "baht" || typeRaw === "บาท") ? "amount" : typeRaw;
+    if(!["percent","amount"].includes(type)){
       showToast("ประเภทโปรไม่ถูกต้อง", "error");
       return;
     }
