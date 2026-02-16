@@ -59,6 +59,97 @@ function escapeHtml(str){
     .replace(/'/g, '&#39;');
 }
 
+// --- Team editor (minimal UI; backward compatible) ---
+const teamEdit = {
+  techs: [],
+  techMap: {},
+  loaded: false,
+};
+
+async function loadAllTechsOnce(){
+  if (teamEdit.loaded) return;
+  teamEdit.loaded = true;
+  try {
+    const data = await apiFetch('/admin/technicians');
+    const rows = Array.isArray(data) ? data : (data.rows || data.technicians || []);
+    teamEdit.techs = (rows || []).map(r=>({
+      username: String(r.username||'').trim(),
+      display: (String(r.full_name||'').trim() || String(r.username||'').trim() || '').trim(),
+    })).filter(t=>t.username);
+    teamEdit.techMap = {};
+    for (const t of teamEdit.techs) teamEdit.techMap[t.username] = t;
+  } catch (e) {
+    console.warn('[admin-job-view] load techs failed', e);
+    teamEdit.techs = [];
+    teamEdit.techMap = {};
+  }
+}
+
+function techDisplayName(u){
+  const key = String(u||'').trim();
+  if (!key) return '';
+  return (teamEdit.techMap[key]?.display) || key;
+}
+
+function renderTeamEditor(primaryUsername, currentTeamUsernames){
+  const primary = String(primaryUsername||'').trim();
+  const selected = new Set((Array.isArray(currentTeamUsernames)?currentTeamUsernames:[]).map(x=>String(x||'').trim()).filter(Boolean));
+  if (primary) selected.add(primary);
+
+  const sel = el('edit_team_members');
+  const search = el('edit_team_search');
+  const hint = el('edit_team_hint');
+  if (!sel) return;
+
+  const q = String(search?.value||'').trim().toLowerCase();
+
+  // preserve selection from UI if already rendered
+  const uiSelected = new Set(Array.from(sel.options||[]).filter(o=>o.selected).map(o=>o.value).filter(Boolean));
+  if (uiSelected.size) {
+    selected.clear();
+    for (const u of uiSelected) selected.add(u);
+    if (primary) selected.add(primary);
+  }
+
+  sel.innerHTML = '';
+  const makeOpt = (u, isPrimary=false) => {
+    const o = document.createElement('option');
+    o.value = u;
+    o.textContent = isPrimary ? `⭐ ${techDisplayName(u)} (${u})` : `${techDisplayName(u)} (${u})`;
+    o.selected = selected.has(u);
+    if (isPrimary) {
+      o.disabled = true;
+      o.selected = true;
+    }
+    return o;
+  };
+
+  // primary on top
+  if (primary) sel.appendChild(makeOpt(primary, true));
+
+  const list = (teamEdit.techs || [])
+    .filter(t=>t.username && t.username !== primary)
+    .filter(t=>{
+      if (!q) return true;
+      const hay = `${t.username} ${t.display}`.toLowerCase();
+      return hay.includes(q);
+    })
+    .sort((a,b)=>a.username.localeCompare(b.username));
+
+  for (const t of list) sel.appendChild(makeOpt(t.username, false));
+
+  // update hint + hidden json
+  const finalMembers = Array.from(new Set([primary, ...Array.from(selected)])).filter(Boolean);
+  if (hint) {
+    const extras = finalMembers.filter(u=>u && u !== primary);
+    hint.innerHTML = extras.length
+      ? `เลือกช่างร่วมแล้ว: <b>${escapeHtml(extras.map(u=>techDisplayName(u)).join(', '))}</b>`
+      : `ยังไม่ได้เลือกช่างร่วม (ถ้าต้องเพิ่มทีม ให้เลือกในรายการด้านบน)`;
+  }
+  const hid = el('edit_team_members_json');
+  if (hid) hid.value = JSON.stringify(finalMembers);
+}
+
 function actorName(){
   return localStorage.getItem('username') || localStorage.getItem('admin_username') || 'admin';
 }
@@ -143,6 +234,9 @@ async function loadJob(){
     ? team.map(m=>`${safe(m.full_name||m.username)}${m.phone ? ` (${safe(m.phone)})` : ''}`).join(', ')
     : '-';
 
+  const teamUsernames = team.map(m=>String(m.username||'').trim()).filter(Boolean);
+  const teamInitMembers = Array.from(new Set([String(job.technician_username||'').trim(), ...teamUsernames])).filter(Boolean);
+
   const wOk = inWarranty(job);
 
   el('jobCard').innerHTML = `
@@ -224,6 +318,23 @@ async function loadJob(){
             <label>Lng</label>
             <input id="edit_lng" value="${escapeHtml(safe(job.longitude||''))}" />
           </div>
+        </div>
+
+        <div style="margin-top:12px">
+          <b>👥 ทีมช่าง (เพิ่มช่างร่วม)</b>
+          <div class="muted2 mini" style="margin-top:6px">ช่างหลัก: <b>${escapeHtml(safe(job.technician_username||'-'))}</b> • เลือกช่างร่วมได้หลายคน</div>
+          <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <div style="flex:1;min-width:220px">
+              <label>ค้นหาช่าง (ชื่อ/username)</label>
+              <input id="edit_team_search" placeholder="พิมพ์เพื่อค้นหา" />
+            </div>
+            <div style="flex:1;min-width:260px">
+              <label>เลือกช่างร่วม (กด Ctrl/Command เพื่อเลือกหลายคน)</label>
+              <select id="edit_team_members" multiple size="6" style="width:100%"></select>
+            </div>
+          </div>
+          <div id="edit_team_hint" class="muted2" style="margin-top:8px"></div>
+          <input id="edit_team_members_json" type="hidden" value="${escapeHtml(JSON.stringify(teamInitMembers))}" />
         </div>
 
         <div style="margin-top:12px">
@@ -453,6 +564,21 @@ async function loadJob(){
       };
     }
 
+    // --- Team editor init ---
+    try {
+      await loadAllTechsOnce();
+      const primaryU = String(job.technician_username||'').trim();
+      const curTeamUsers = teamUsernames; // from loadJob scope
+      // initial render
+      renderTeamEditor(primaryU, curTeamUsers);
+      const searchEl = el('edit_team_search');
+      const selEl = el('edit_team_members');
+      if (searchEl) searchEl.oninput = ()=>renderTeamEditor(primaryU, curTeamUsers);
+      if (selEl) selEl.onchange = ()=>renderTeamEditor(primaryU, curTeamUsers);
+    } catch (e) {
+      console.warn('team editor init failed', e);
+    }
+
     const btnSave = el('btnSaveEdit');
     const msg = el('edit_msg');
     if (btnSave) {
@@ -496,6 +622,38 @@ async function loadJob(){
             headers:{'Content-Type':'application/json'},
             body: JSON.stringify({ items: cleanItems })
           });
+
+          // --- Save team members (if changed) ---
+          try {
+            const hid = el('edit_team_members_json');
+            const primaryU = String(job.technician_username||'').trim();
+            let desired = [];
+            if (hid && hid.value) {
+              try { desired = JSON.parse(hid.value); } catch {}
+            }
+            if (!Array.isArray(desired)) desired = [];
+            desired = desired.map(x=>String(x||'').trim()).filter(Boolean);
+            if (primaryU && !desired.includes(primaryU)) desired.unshift(primaryU);
+            desired = Array.from(new Set(desired));
+
+            const cur = Array.from(new Set([primaryU, ...teamUsernames.map(x=>String(x||'').trim())].filter(Boolean)));
+            const same = (a,b)=>{
+              if (a.length !== b.length) return false;
+              const sa = new Set(a);
+              for (const x of b) if (!sa.has(x)) return false;
+              return true;
+            };
+            if (desired.length && !same(cur, desired)) {
+              await apiFetch(`/jobs/${encodeURIComponent(String(job.job_id))}/team`, {
+                method:'PUT',
+                headers:{'Content-Type':'application/json'},
+                body: JSON.stringify({ members: desired })
+              });
+            }
+          } catch (e) {
+            console.warn('save team failed', e);
+            // fail-open: do not block saving job/items
+          }
 
           showToast('บันทึกใบงานแล้ว', 'success');
           if (msg) msg.textContent = '✅ บันทึกแล้ว';
