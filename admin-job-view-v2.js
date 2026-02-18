@@ -192,10 +192,10 @@ async function loadJob(){
         const qty = Number(it.qty||0);
         const unit = Number(it.unit_price||0);
         const line = Number(it.line_total|| (qty*unit));
-        const asg = safe(it.assigned_technician_username || '');
+        const asg = safe(it.assigned_technician_username||'');
         return `<tr>
           <td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(safe(it.item_name))}">${escapeHtml(safe(it.item_name))}</td>
-          <td style="width:120px">${asg ? `<span class="pill" title="${escapeHtml(asg)}">👤 ${escapeHtml(asg)}</span>` : `<span class="muted2">-</span>`}</td>
+          <td style="width:140px">${asg ? escapeHtml(asg) : '<span class="muted2">-</span>'}</td>
           <td style="width:70px;text-align:right">${qty}</td>
           <td style="width:90px;text-align:right">${unit.toLocaleString()}</td>
           <td style="width:110px;text-align:right"><b>${line.toLocaleString()}</b></td>
@@ -511,23 +511,10 @@ async function loadJob(){
       item_name: safe(it.item_name||''),
       qty: Number(it.qty||1) || 1,
       unit_price: Number(it.unit_price||0) || 0,
-      assigned_technician_username: safe(it.assigned_technician_username||'') || null,
+      assigned_technician_username: String(it.assigned_technician_username||'').trim() || null,
     }));
 
     const tbody = el('items_editor');
-    const getCurrentTeamForAssign = () => {
-      const primaryU = String(job.technician_username||'').trim();
-      let desired = [];
-      const hid = el('edit_team_members_json');
-      if (hid && hid.value) {
-        try { desired = JSON.parse(hid.value); } catch {}
-      }
-      if (!Array.isArray(desired)) desired = [];
-      desired = desired.map(x=>String(x||'').trim()).filter(Boolean);
-      if (primaryU && !desired.includes(primaryU)) desired.unshift(primaryU);
-      return Array.from(new Set(desired));
-    };
-
     const renderEditor = () => {
       if (!tbody) return;
       if (!editorItems.length) {
@@ -535,18 +522,17 @@ async function loadJob(){
         return;
       }
 
-      const assignMembers = getCurrentTeamForAssign();
-      const optHtml = (selected)=>{
-        const sel = String(selected||'').trim();
-        const opts = [`<option value="">- ไม่ระบุ -</option>`].concat(
-          assignMembers.map(u=>{
-            const label = escapeHtml(displayTech(u));
-            const val = escapeHtml(u);
-            const s = (u === sel) ? 'selected' : '';
-            return `<option value="${val}" ${s}>${label}</option>`;
-          })
-        );
-        return opts.join('');
+      const teamList = Array.from(new Set((teamInitMembers || []).map(x=>String(x||'').trim()).filter(Boolean)));
+      const optionHtml = (cur)=>{
+        const curU = String(cur||'').trim();
+        const extra = curU && !teamList.includes(curU) ? [curU] : [];
+        const all = [''].concat(teamList).concat(extra);
+        return all.map(u=>{
+          const val = String(u||'');
+          const label = val ? displayOf(val) : '— ไม่ระบุ —';
+          const sel = (val && val===curU) ? 'selected' : (!val && !curU ? 'selected' : '');
+          return `<option value="${escapeHtml(val)}" ${sel}>${escapeHtml(label)}</option>`;
+        }).join('');
       };
 
       tbody.innerHTML = editorItems.map((it, idx)=>{
@@ -555,8 +541,8 @@ async function loadJob(){
           <td style="min-width:220px">
             <input class="it_name" value="${escapeHtml(it.item_name)}" placeholder="ชื่อรายการ" />
           </td>
-          <td style="width:170px">
-            <select class="it_asg" style="width:100%">${optHtml(it.assigned_technician_username)}</select>
+          <td style="min-width:170px">
+            <select class="it_asg" style="width:100%">${optionHtml(it.assigned_technician_username)}</select>
           </td>
           <td style="width:90px;text-align:right"><input class="it_qty" type="number" min="0" step="1" value="${escapeHtml(String(it.qty))}" /></td>
           <td style="width:130px;text-align:right"><input class="it_unit" type="number" min="0" step="1" value="${escapeHtml(String(it.unit_price))}" /></td>
@@ -585,7 +571,7 @@ async function loadJob(){
         if (name) name.oninput = ()=>{ editorItems[idx].item_name = name.value; };
         if (asg) asg.onchange = ()=>{
           const v = String(asg.value||'').trim();
-          editorItems[idx].assigned_technician_username = v ? v : null;
+          editorItems[idx].assigned_technician_username = v || null;
         };
         if (qty) qty.oninput = ()=>{ editorItems[idx].qty = Number(qty.value||0); recalc(); };
         if (unit) unit.oninput = ()=>{ editorItems[idx].unit_price = Number(unit.value||0); recalc(); };
@@ -598,7 +584,7 @@ async function loadJob(){
     const btnAddItem = el('btnAddItem');
     if (btnAddItem) {
       btnAddItem.onclick = ()=>{
-        editorItems.push({ item_id: null, item_name: '', qty: 1, unit_price: 0 });
+        editorItems.push({ item_id: null, item_name: '', qty: 1, unit_price: 0, assigned_technician_username: null });
         renderEditor();
       };
     }
@@ -606,6 +592,8 @@ async function loadJob(){
     // --- Team editor init ---
     try {
       await loadAllTechsOnce();
+      // refresh editor (option labels may depend on techMap display names)
+      try { renderEditor(); } catch {}
       const primaryU = String(job.technician_username||'').trim();
       const curTeamUsers = teamUsernames; // from loadJob scope
       // initial render
@@ -613,13 +601,7 @@ async function loadJob(){
       const searchEl = el('edit_team_search');
       const selEl = el('edit_team_members');
       if (searchEl) searchEl.oninput = ()=>renderTeamEditor(primaryU, curTeamUsers);
-      if (selEl) selEl.onchange = ()=>{ renderTeamEditor(primaryU, curTeamUsers); renderEditor(); };
-
-      // mobile checkbox list (if exists) should also trigger re-render
-      const box = el('edit_team_members_box');
-      if (box) {
-        box.addEventListener('change', ()=>{ renderEditor(); });
-      }
+      if (selEl) selEl.onchange = ()=>renderTeamEditor(primaryU, curTeamUsers);
     } catch (e) {
       console.warn('team editor init failed', e);
     }
@@ -659,7 +641,7 @@ async function loadJob(){
               item_name: String(it.item_name||'').trim(),
               qty: Number(it.qty||0),
               unit_price: Number(it.unit_price||0),
-              assigned_technician_username: (it.assigned_technician_username ? String(it.assigned_technician_username).trim() : null),
+              assigned_technician_username: String(it.assigned_technician_username||'').trim() || null,
             }))
             .filter(it=>it.item_name);
 
