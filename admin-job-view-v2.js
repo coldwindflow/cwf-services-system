@@ -91,41 +91,48 @@ function techDisplayName(u){
   return (teamEdit.techMap[key]?.display) || key;
 }
 
+function isCoarsePointer(){
+  try {
+    return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window);
+  } catch (e) {
+    return ('ontouchstart' in window);
+  }
+}
+
 function renderTeamEditor(primaryUsername, currentTeamUsernames){
   const primary = String(primaryUsername||'').trim();
   const selected = new Set((Array.isArray(currentTeamUsernames)?currentTeamUsernames:[]).map(x=>String(x||'').trim()).filter(Boolean));
   if (primary) selected.add(primary);
 
   const sel = el('edit_team_members');
+  const box = el('edit_team_members_box');
   const search = el('edit_team_search');
   const hint = el('edit_team_hint');
-  if (!sel) return;
+  // Note: mobile UX - <select multiple> is hard to use on Android/iOS.
+  // We keep select for desktop, and render checkboxes for coarse pointer devices.
+  if (!sel && !box) return;
 
   const q = String(search?.value||'').trim().toLowerCase();
 
   // preserve selection from UI if already rendered
-  const uiSelected = new Set(Array.from(sel.options||[]).filter(o=>o.selected).map(o=>o.value).filter(Boolean));
-  if (uiSelected.size) {
-    selected.clear();
-    for (const u of uiSelected) selected.add(u);
-    if (primary) selected.add(primary);
-  }
-
-  sel.innerHTML = '';
-  const makeOpt = (u, isPrimary=false) => {
-    const o = document.createElement('option');
-    o.value = u;
-    o.textContent = isPrimary ? `⭐ ${techDisplayName(u)} (${u})` : `${techDisplayName(u)} (${u})`;
-    o.selected = selected.has(u);
-    if (isPrimary) {
-      o.disabled = true;
-      o.selected = true;
+  if (isCoarsePointer()) {
+    const uiSelected = new Set(Array.from((box?.querySelectorAll('input[type="checkbox"]')||[]))
+      .filter(cb=>cb.checked)
+      .map(cb=>cb.getAttribute('data-u'))
+      .filter(Boolean));
+    if (uiSelected.size) {
+      selected.clear();
+      for (const u of uiSelected) selected.add(u);
+      if (primary) selected.add(primary);
     }
-    return o;
-  };
-
-  // primary on top
-  if (primary) sel.appendChild(makeOpt(primary, true));
+  } else {
+    const uiSelected = new Set(Array.from(sel?.options||[]).filter(o=>o.selected).map(o=>o.value).filter(Boolean));
+    if (uiSelected.size) {
+      selected.clear();
+      for (const u of uiSelected) selected.add(u);
+      if (primary) selected.add(primary);
+    }
+  }
 
   const list = (teamEdit.techs || [])
     .filter(t=>t.username && t.username !== primary)
@@ -136,7 +143,50 @@ function renderTeamEditor(primaryUsername, currentTeamUsernames){
     })
     .sort((a,b)=>a.username.localeCompare(b.username));
 
-  for (const t of list) sel.appendChild(makeOpt(t.username, false));
+  if (isCoarsePointer()) {
+    // Mobile-friendly checkbox list
+    if (sel) sel.style.display = 'none';
+    if (box) box.style.display = 'block';
+    if (box) {
+      const row = (u, isPrimary=false)=>{
+        const checked = selected.has(u) || isPrimary;
+        const dis = isPrimary ? 'disabled' : '';
+        const title = isPrimary ? 'ช่างหลัก (แก้ไม่ได้ในหน้านี้)' : 'แตะเพื่อเลือก/ยกเลิก';
+        return `
+          <label style="display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid rgba(148,163,184,.35);border-radius:10px;margin-bottom:8px;background:#0b1220" title="${escapeHtml(title)}">
+            <input type="checkbox" ${checked?'checked':''} ${dis} data-u="${escapeHtml(u)}" style="width:18px;height:18px" />
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(techDisplayName(u))}</div>
+              <div class="muted2" style="font-size:12px">${escapeHtml(u)}${isPrimary?' • Primary':''}</div>
+            </div>
+          </label>
+        `;
+      };
+      box.innerHTML = '';
+      if (primary) box.innerHTML += row(primary, true);
+      box.innerHTML += (list.map(t=>row(t.username,false)).join('') || `<div class="muted2">ไม่พบช่าง</div>`);
+    }
+  } else {
+    // Desktop select-multiple
+    if (sel) sel.style.display = 'block';
+    if (box) box.style.display = 'none';
+    if (sel) {
+      sel.innerHTML = '';
+      const makeOpt = (u, isPrimary=false) => {
+        const o = document.createElement('option');
+        o.value = u;
+        o.textContent = isPrimary ? `⭐ ${techDisplayName(u)} (${u})` : `${techDisplayName(u)} (${u})`;
+        o.selected = selected.has(u);
+        if (isPrimary) {
+          o.disabled = true;
+          o.selected = true;
+        }
+        return o;
+      };
+      if (primary) sel.appendChild(makeOpt(primary, true));
+      for (const t of list) sel.appendChild(makeOpt(t.username, false));
+    }
+  }
 
   // update hint + hidden json
   const finalMembers = Array.from(new Set([primary, ...Array.from(selected)])).filter(Boolean);
@@ -331,6 +381,7 @@ async function loadJob(){
             <div style="flex:1;min-width:260px">
               <label>เลือกช่างร่วม (กด Ctrl/Command เพื่อเลือกหลายคน)</label>
               <select id="edit_team_members" multiple size="6" style="width:100%"></select>
+              <div id="edit_team_members_box" style="display:none;margin-top:8px"></div>
             </div>
           </div>
           <div id="edit_team_hint" class="muted2" style="margin-top:8px"></div>
@@ -573,8 +624,17 @@ async function loadJob(){
       renderTeamEditor(primaryU, curTeamUsers);
       const searchEl = el('edit_team_search');
       const selEl = el('edit_team_members');
+      const boxEl = el('edit_team_members_box');
       if (searchEl) searchEl.oninput = ()=>renderTeamEditor(primaryU, curTeamUsers);
       if (selEl) selEl.onchange = ()=>renderTeamEditor(primaryU, curTeamUsers);
+      if (boxEl) {
+        boxEl.onchange = (e)=>{
+          const t = e?.target;
+          if (t && t.matches && t.matches('input[type="checkbox"][data-u]')) {
+            renderTeamEditor(primaryU, curTeamUsers);
+          }
+        };
+      }
     } catch (e) {
       console.warn('team editor init failed', e);
     }
