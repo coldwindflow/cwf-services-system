@@ -3504,13 +3504,25 @@ app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
 
     const jid = Number(job.job_id);
 
-    const ir = await pool.query(
-      `SELECT item_id, item_name, qty, unit_price, line_total
-       FROM public.job_items
-       WHERE job_id=$1
-       ORDER BY job_item_id ASC`,
-      [jid]
-    );
+    let ir;
+    try {
+      ir = await pool.query(
+        `SELECT item_id, item_name, qty, unit_price, line_total, assigned_technician_username
+         FROM public.job_items
+         WHERE job_id=$1
+         ORDER BY job_item_id ASC`,
+        [jid]
+      );
+    } catch (e) {
+      // backward compatible: older schema without assigned_technician_username
+      ir = await pool.query(
+        `SELECT item_id, item_name, qty, unit_price, line_total
+         FROM public.job_items
+         WHERE job_id=$1
+         ORDER BY job_item_id ASC`,
+        [jid]
+      );
+    }
 
     const pr = await pool.query(
       `SELECT jp.promo_id, p.promo_name, p.promo_type, p.promo_value
@@ -3570,11 +3582,20 @@ app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
       const job = jr.rows[0];
       if (!job) return res.status(404).json({ error: "ไม่พบงาน" });
 
-      const ir = await pool.query(
-        `SELECT item_id, item_name, qty, unit_price, line_total
-         FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
-        [Number(job.job_id)]
-      );
+      let ir;
+      try {
+        ir = await pool.query(
+          `SELECT item_id, item_name, qty, unit_price, line_total, assigned_technician_username
+           FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
+          [Number(job.job_id)]
+        );
+      } catch (e) {
+        ir = await pool.query(
+          `SELECT item_id, item_name, qty, unit_price, line_total
+           FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
+          [Number(job.job_id)]
+        );
+      }
 
       const now = new Date();
       const wEnd = job.warranty_end_at ? new Date(job.warranty_end_at) : null;
@@ -4755,13 +4776,38 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
     }
 
     // คำนวณราคา (subtotal/discount/total)
+    // Allowed assignee set: primary technician + (optional) team members
+    let allowedAssignees = new Set();
+    try {
+      const jr = await client.query(`SELECT technician_username FROM public.jobs WHERE job_id=$1 LIMIT 1`, [job_id]);
+      const primaryU = String(jr.rows?.[0]?.technician_username || "").trim();
+      if (primaryU) allowedAssignees.add(primaryU);
+      try {
+        const tr = await client.query(`SELECT username FROM public.job_team_members WHERE job_id=$1`, [job_id]);
+        for (const r of (tr.rows || [])) {
+          const u = String(r.username || "").trim();
+          if (u) allowedAssignees.add(u);
+        }
+      } catch (e) {
+        // backward compatible: some DB may not have job_team_members
+      }
+    } catch (e) {
+      // fail-open: if cannot load, still accept null assignees
+      allowedAssignees = new Set();
+    }
+
     const safeItems = items
-      .map((it) => ({
-        item_id: it.item_id || null,
-        item_name: String(it.item_name || "").trim(),
-        qty: Math.max(0, Number(it.qty || 0)),
-        unit_price: Math.max(0, Number(it.unit_price || 0)),
-      }))
+      .map((it) => {
+        const rawAssignee = String(it.assigned_technician_username || "").trim();
+        const assignee = rawAssignee && (allowedAssignees.size === 0 || allowedAssignees.has(rawAssignee)) ? rawAssignee : null;
+        return {
+          item_id: it.item_id || null,
+          item_name: String(it.item_name || "").trim(),
+          qty: Math.max(0, Number(it.qty || 0)),
+          unit_price: Math.max(0, Number(it.unit_price || 0)),
+          assigned_technician_username: assignee,
+        };
+      })
       .filter((it) => it.item_name);
 
     const pricing = safeItems.length
@@ -4775,12 +4821,24 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
     // ใส่รายการใหม่
     for (const it of safeItems) {
       const line_total = Number(it.qty) * Number(it.unit_price);
-      await client.query(
-        `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-        // keep backward-compatible columns with safe defaults
-        [job_id, it.item_id, it.item_name, it.qty, it.unit_price, line_total, null, true]
-      );
+      try {
+        await client.query(
+          `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+          [job_id, it.item_id, it.item_name, it.qty, it.unit_price, line_total, it.assigned_technician_username || null, true]
+        );
+      } catch (e) {
+        // Backward compatible: older schema without assigned_technician_username
+        if (String(e?.message || "").includes("assigned_technician_username")) {
+          await client.query(
+            `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total, is_service)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            [job_id, it.item_id, it.item_name, it.qty, it.unit_price, line_total, true]
+          );
+        } else {
+          throw e;
+        }
+      }
     }
 
     // ใส่โปร (ถ้ามี)

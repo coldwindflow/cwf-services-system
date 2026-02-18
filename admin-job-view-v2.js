@@ -66,14 +66,6 @@ const teamEdit = {
   loaded: false,
 };
 
-function isCoarsePointer(){
-  try{
-    return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
-  }catch(e){
-    return false;
-  }
-}
-
 async function loadAllTechsOnce(){
   if (teamEdit.loaded) return;
   teamEdit.loaded = true;
@@ -105,47 +97,20 @@ function renderTeamEditor(primaryUsername, currentTeamUsernames){
   if (primary) selected.add(primary);
 
   const sel = el('edit_team_members');
-  const box = el('edit_team_members_box');
   const search = el('edit_team_search');
   const hint = el('edit_team_hint');
   if (!sel) return;
 
-  const useBox = !!box && isCoarsePointer(); // mobile/touch friendly
-  if (useBox) {
-    sel.style.display = 'none';
-  } else {
-    sel.style.display = '';
-  }
-
   const q = String(search?.value||'').trim().toLowerCase();
 
   // preserve selection from UI if already rendered
-  let uiSelected = new Set();
-  if (useBox) {
-    uiSelected = new Set(Array.from(box.querySelectorAll('input[type="checkbox"][data-u="1"]')||[])
-      .filter(i=>i.checked)
-      .map(i=>String(i.value||'').trim())
-      .filter(Boolean));
-  } else {
-    uiSelected = new Set(Array.from(sel.options||[]).filter(o=>o.selected).map(o=>o.value).filter(Boolean));
-  }
+  const uiSelected = new Set(Array.from(sel.options||[]).filter(o=>o.selected).map(o=>o.value).filter(Boolean));
   if (uiSelected.size) {
     selected.clear();
     for (const u of uiSelected) selected.add(u);
     if (primary) selected.add(primary);
   }
 
-  // build list
-  const list = (teamEdit.techs || [])
-    .filter(t=>t.username && t.username !== primary)
-    .filter(t=>{
-      if (!q) return true;
-      const hay = `${t.username} ${t.display}`.toLowerCase();
-      return hay.includes(q);
-    })
-    .sort((a,b)=>a.username.localeCompare(b.username));
-
-  // render UI
   sel.innerHTML = '';
   const makeOpt = (u, isPrimary=false) => {
     const o = document.createElement('option');
@@ -159,79 +124,19 @@ function renderTeamEditor(primaryUsername, currentTeamUsernames){
     return o;
   };
 
-  // always keep select options in sync (for desktop + hidden state)
+  // primary on top
   if (primary) sel.appendChild(makeOpt(primary, true));
+
+  const list = (teamEdit.techs || [])
+    .filter(t=>t.username && t.username !== primary)
+    .filter(t=>{
+      if (!q) return true;
+      const hay = `${t.username} ${t.display}`.toLowerCase();
+      return hay.includes(q);
+    })
+    .sort((a,b)=>a.username.localeCompare(b.username));
+
   for (const t of list) sel.appendChild(makeOpt(t.username, false));
-
-  if (useBox) {
-    box.innerHTML = '';
-    const mkRow = (u, label, disabled=false, checked=false) => {
-      const id = `tm_${u.replace(/[^a-zA-Z0-9_-]/g,'_')}_${Math.random().toString(16).slice(2)}`;
-      const wrap = document.createElement('label');
-      wrap.setAttribute('for', id);
-      wrap.style.display = 'flex';
-      wrap.style.alignItems = 'center';
-      wrap.style.gap = '10px';
-      wrap.style.padding = '10px 8px';
-      wrap.style.borderRadius = '12px';
-      wrap.style.border = '1px solid #eef2ff';
-      wrap.style.marginBottom = '8px';
-      wrap.style.userSelect = 'none';
-
-      const cb = document.createElement('input');
-      cb.type = 'checkbox';
-      cb.id = id;
-      cb.value = u;
-      cb.checked = !!checked;
-      cb.disabled = !!disabled;
-      cb.setAttribute('data-u','1');
-
-      const txt = document.createElement('div');
-      txt.style.display = 'flex';
-      txt.style.flexDirection = 'column';
-      const t1 = document.createElement('div');
-      t1.textContent = label;
-      t1.style.fontWeight = '700';
-      const t2 = document.createElement('div');
-      t2.textContent = u;
-      t2.style.fontSize = '12px';
-      t2.style.opacity = '0.7';
-      txt.appendChild(t1);
-      txt.appendChild(t2);
-
-      wrap.appendChild(cb);
-      wrap.appendChild(txt);
-
-      cb.onchange = ()=>renderTeamEditor(primary, Array.from(selected));
-      box.appendChild(wrap);
-    };
-
-    if (primary) mkRow(primary, `⭐ ${techDisplayName(primary)}`, true, true);
-
-    if (!list.length) {
-      const empty = document.createElement('div');
-      empty.className = 'muted2';
-      empty.style.padding = '8px 2px';
-      empty.textContent = teamEdit.techs.length ? 'ไม่พบช่างตามคำค้นหา' : 'ยังโหลดรายชื่อช่างไม่สำเร็จ';
-      box.appendChild(empty);
-
-      if (!teamEdit.techs.length) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'secondary btn-small';
-        btn.style.marginTop = '8px';
-        btn.textContent = 'ลองโหลดรายชื่อช่างอีกครั้ง';
-        btn.onclick = async ()=>{
-          teamEdit.loaded = false;
-          await loadAllTechsOnce();
-          renderTeamEditor(primary, Array.from(selected));
-        };
-        box.appendChild(btn);
-      }
-    } else {
-      for (const t of list) mkRow(t.username, techDisplayName(t.username), false, selected.has(t.username));
-    }
-  }
 
   // update hint + hidden json
   const finalMembers = Array.from(new Set([primary, ...Array.from(selected)])).filter(Boolean);
@@ -424,10 +329,8 @@ async function loadJob(){
               <input id="edit_team_search" placeholder="พิมพ์เพื่อค้นหา" />
             </div>
             <div style="flex:1;min-width:260px">
-              <label>เลือกช่างร่วม</label>
-              <div id="edit_team_members_box" class="team-members-box" style="border:1px solid #dbeafe;border-radius:14px;padding:10px;max-height:220px;overflow:auto;background:#fff"></div>
+              <label>เลือกช่างร่วม (กด Ctrl/Command เพื่อเลือกหลายคน)</label>
               <select id="edit_team_members" multiple size="6" style="width:100%"></select>
-              <div class="muted2 mini" style="margin-top:6px">* บนมือถือ: ใช้การติ๊ก checkbox ในกล่องด้านบน (ไม่ต้องกด Ctrl)</div>
             </div>
           </div>
           <div id="edit_team_hint" class="muted2" style="margin-top:8px"></div>
@@ -439,7 +342,7 @@ async function loadJob(){
           <div class="muted2 mini" style="margin-top:6px">เพิ่ม/ลบ/แก้ไขได้ (เหมือนหน้าเพิ่มงานแบบย่อ)</div>
           <div class="table-wrap" style="margin-top:10px;overflow:auto">
             <table>
-              <thead><tr><th>รายการ</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th><th></th></tr></thead>
+              <thead><tr><th>รายการ</th><th style="text-align:right">มอบหมายให้</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th><th></th></tr></thead>
               <tbody id="items_editor"></tbody>
             </table>
           </div>
@@ -606,20 +509,48 @@ async function loadJob(){
       item_name: safe(it.item_name||''),
       qty: Number(it.qty||1) || 1,
       unit_price: Number(it.unit_price||0) || 0,
+      assigned_technician_username: String(it.assigned_technician_username||'').trim() || null,
     }));
 
     const tbody = el('items_editor');
+
+    const getCurrentTeamMembers = () => {
+      // Prefer current UI selection (hidden json). Fallback to initial team members.
+      const primaryU = String(job.technician_username||'').trim();
+      let members = [];
+      try {
+        const hid = el('edit_team_members_json');
+        if (hid && hid.value) members = JSON.parse(hid.value);
+      } catch {}
+      if (!Array.isArray(members)) members = [];
+      members = members.map(x=>String(x||'').trim()).filter(Boolean);
+      if (primaryU && !members.includes(primaryU)) members.unshift(primaryU);
+      return Array.from(new Set(members));
+    };
+
     const renderEditor = () => {
       if (!tbody) return;
       if (!editorItems.length) {
-        tbody.innerHTML = `<tr><td colspan="5" class="muted2">ยังไม่มีรายการ (กด “เพิ่มรายการ”)</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="muted2">ยังไม่มีรายการ (กด “เพิ่มรายการ”)</td></tr>`;
         return;
       }
+      const teamMembers = getCurrentTeamMembers();
       tbody.innerHTML = editorItems.map((it, idx)=>{
         const line = (Number(it.qty)||0) * (Number(it.unit_price)||0);
+        const curAssignee = String(it.assigned_technician_username||'').trim();
+        const assigneeOpts = [''].concat(teamMembers).map(u=>{
+          const val = String(u||'').trim();
+          if (!val) return `<option value="">-</option>`;
+          const label = `${techDisplayName(val)} (${val})`;
+          const sel = curAssignee && curAssignee === val ? 'selected' : '';
+          return `<option value="${escapeHtml(val)}" ${sel}>${escapeHtml(label)}</option>`;
+        }).join('');
         return `<tr data-idx="${idx}">
           <td style="min-width:220px">
             <input class="it_name" value="${escapeHtml(it.item_name)}" placeholder="ชื่อรายการ" />
+          </td>
+          <td style="width:210px">
+            <select class="it_assignee" style="width:100%">${assigneeOpts}</select>
           </td>
           <td style="width:90px;text-align:right"><input class="it_qty" type="number" min="0" step="1" value="${escapeHtml(String(it.qty))}" /></td>
           <td style="width:130px;text-align:right"><input class="it_unit" type="number" min="0" step="1" value="${escapeHtml(String(it.unit_price))}" /></td>
@@ -632,6 +563,7 @@ async function loadJob(){
       Array.from(tbody.querySelectorAll('tr')).forEach(tr=>{
         const idx = Number(tr.getAttribute('data-idx'));
         const name = tr.querySelector('.it_name');
+        const assignee = tr.querySelector('.it_assignee');
         const qty = tr.querySelector('.it_qty');
         const unit = tr.querySelector('.it_unit');
         const lineEl = tr.querySelector('.it_line');
@@ -645,6 +577,10 @@ async function loadJob(){
         };
 
         if (name) name.oninput = ()=>{ editorItems[idx].item_name = name.value; };
+        if (assignee) assignee.onchange = ()=>{
+          const v = String(assignee.value||'').trim();
+          editorItems[idx].assigned_technician_username = v || null;
+        };
         if (qty) qty.oninput = ()=>{ editorItems[idx].qty = Number(qty.value||0); recalc(); };
         if (unit) unit.oninput = ()=>{ editorItems[idx].unit_price = Number(unit.value||0); recalc(); };
         if (del) del.onclick = ()=>{ editorItems.splice(idx,1); renderEditor(); };
@@ -671,7 +607,7 @@ async function loadJob(){
       const searchEl = el('edit_team_search');
       const selEl = el('edit_team_members');
       if (searchEl) searchEl.oninput = ()=>renderTeamEditor(primaryU, curTeamUsers);
-      if (selEl) selEl.onchange = ()=>renderTeamEditor(primaryU, curTeamUsers);
+      if (selEl) selEl.onchange = ()=>{ renderTeamEditor(primaryU, curTeamUsers); renderEditor(); };
     } catch (e) {
       console.warn('team editor init failed', e);
     }
@@ -711,6 +647,7 @@ async function loadJob(){
               item_name: String(it.item_name||'').trim(),
               qty: Number(it.qty||0),
               unit_price: Number(it.unit_price||0),
+              assigned_technician_username: String(it.assigned_technician_username||'').trim() || null,
             }))
             .filter(it=>it.item_name);
 
