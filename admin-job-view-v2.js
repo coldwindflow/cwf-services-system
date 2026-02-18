@@ -91,48 +91,41 @@ function techDisplayName(u){
   return (teamEdit.techMap[key]?.display) || key;
 }
 
-function isCoarsePointer(){
-  try {
-    return (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) || ('ontouchstart' in window);
-  } catch (e) {
-    return ('ontouchstart' in window);
-  }
-}
-
 function renderTeamEditor(primaryUsername, currentTeamUsernames){
   const primary = String(primaryUsername||'').trim();
   const selected = new Set((Array.isArray(currentTeamUsernames)?currentTeamUsernames:[]).map(x=>String(x||'').trim()).filter(Boolean));
   if (primary) selected.add(primary);
 
   const sel = el('edit_team_members');
-  const box = el('edit_team_members_box');
   const search = el('edit_team_search');
   const hint = el('edit_team_hint');
-  // Note: mobile UX - <select multiple> is hard to use on Android/iOS.
-  // We keep select for desktop, and render checkboxes for coarse pointer devices.
-  if (!sel && !box) return;
+  if (!sel) return;
 
   const q = String(search?.value||'').trim().toLowerCase();
 
   // preserve selection from UI if already rendered
-  if (isCoarsePointer()) {
-    const uiSelected = new Set(Array.from((box?.querySelectorAll('input[type="checkbox"]')||[]))
-      .filter(cb=>cb.checked)
-      .map(cb=>cb.getAttribute('data-u'))
-      .filter(Boolean));
-    if (uiSelected.size) {
-      selected.clear();
-      for (const u of uiSelected) selected.add(u);
-      if (primary) selected.add(primary);
-    }
-  } else {
-    const uiSelected = new Set(Array.from(sel?.options||[]).filter(o=>o.selected).map(o=>o.value).filter(Boolean));
-    if (uiSelected.size) {
-      selected.clear();
-      for (const u of uiSelected) selected.add(u);
-      if (primary) selected.add(primary);
-    }
+  const uiSelected = new Set(Array.from(sel.options||[]).filter(o=>o.selected).map(o=>o.value).filter(Boolean));
+  if (uiSelected.size) {
+    selected.clear();
+    for (const u of uiSelected) selected.add(u);
+    if (primary) selected.add(primary);
   }
+
+  sel.innerHTML = '';
+  const makeOpt = (u, isPrimary=false) => {
+    const o = document.createElement('option');
+    o.value = u;
+    o.textContent = isPrimary ? `⭐ ${techDisplayName(u)} (${u})` : `${techDisplayName(u)} (${u})`;
+    o.selected = selected.has(u);
+    if (isPrimary) {
+      o.disabled = true;
+      o.selected = true;
+    }
+    return o;
+  };
+
+  // primary on top
+  if (primary) sel.appendChild(makeOpt(primary, true));
 
   const list = (teamEdit.techs || [])
     .filter(t=>t.username && t.username !== primary)
@@ -143,50 +136,7 @@ function renderTeamEditor(primaryUsername, currentTeamUsernames){
     })
     .sort((a,b)=>a.username.localeCompare(b.username));
 
-  if (isCoarsePointer()) {
-    // Mobile-friendly checkbox list
-    if (sel) sel.style.display = 'none';
-    if (box) box.style.display = 'block';
-    if (box) {
-      const row = (u, isPrimary=false)=>{
-        const checked = selected.has(u) || isPrimary;
-        const dis = isPrimary ? 'disabled' : '';
-        const title = isPrimary ? 'ช่างหลัก (แก้ไม่ได้ในหน้านี้)' : 'แตะเพื่อเลือก/ยกเลิก';
-        return `
-          <label style="display:flex;gap:10px;align-items:center;padding:8px 10px;border:1px solid rgba(148,163,184,.35);border-radius:10px;margin-bottom:8px;background:#0b1220" title="${escapeHtml(title)}">
-            <input type="checkbox" ${checked?'checked':''} ${dis} data-u="${escapeHtml(u)}" style="width:18px;height:18px" />
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escapeHtml(techDisplayName(u))}</div>
-              <div class="muted2" style="font-size:12px">${escapeHtml(u)}${isPrimary?' • Primary':''}</div>
-            </div>
-          </label>
-        `;
-      };
-      box.innerHTML = '';
-      if (primary) box.innerHTML += row(primary, true);
-      box.innerHTML += (list.map(t=>row(t.username,false)).join('') || `<div class="muted2">ไม่พบช่าง</div>`);
-    }
-  } else {
-    // Desktop select-multiple
-    if (sel) sel.style.display = 'block';
-    if (box) box.style.display = 'none';
-    if (sel) {
-      sel.innerHTML = '';
-      const makeOpt = (u, isPrimary=false) => {
-        const o = document.createElement('option');
-        o.value = u;
-        o.textContent = isPrimary ? `⭐ ${techDisplayName(u)} (${u})` : `${techDisplayName(u)} (${u})`;
-        o.selected = selected.has(u);
-        if (isPrimary) {
-          o.disabled = true;
-          o.selected = true;
-        }
-        return o;
-      };
-      if (primary) sel.appendChild(makeOpt(primary, true));
-      for (const t of list) sel.appendChild(makeOpt(t.username, false));
-    }
-  }
+  for (const t of list) sel.appendChild(makeOpt(t.username, false));
 
   // update hint + hidden json
   const finalMembers = Array.from(new Set([primary, ...Array.from(selected)])).filter(Boolean);
@@ -242,14 +192,16 @@ async function loadJob(){
         const qty = Number(it.qty||0);
         const unit = Number(it.unit_price||0);
         const line = Number(it.line_total|| (qty*unit));
+        const asg = safe(it.assigned_technician_username || '');
         return `<tr>
           <td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(safe(it.item_name))}">${escapeHtml(safe(it.item_name))}</td>
+          <td style="width:120px">${asg ? `<span class="pill" title="${escapeHtml(asg)}">👤 ${escapeHtml(asg)}</span>` : `<span class="muted2">-</span>`}</td>
           <td style="width:70px;text-align:right">${qty}</td>
           <td style="width:90px;text-align:right">${unit.toLocaleString()}</td>
           <td style="width:110px;text-align:right"><b>${line.toLocaleString()}</b></td>
         </tr>`;
       }).join('')
-    : `<tr><td colspan="4" class="muted2">ไม่มีรายการ</td></tr>`;
+    : `<tr><td colspan="5" class="muted2">ไม่มีรายการ</td></tr>`;
 
   const photoRows = photos.length
     ? photos.map(p=>{
@@ -381,7 +333,6 @@ async function loadJob(){
             <div style="flex:1;min-width:260px">
               <label>เลือกช่างร่วม (กด Ctrl/Command เพื่อเลือกหลายคน)</label>
               <select id="edit_team_members" multiple size="6" style="width:100%"></select>
-              <div id="edit_team_members_box" style="display:none;margin-top:8px"></div>
             </div>
           </div>
           <div id="edit_team_hint" class="muted2" style="margin-top:8px"></div>
@@ -393,7 +344,7 @@ async function loadJob(){
           <div class="muted2 mini" style="margin-top:6px">เพิ่ม/ลบ/แก้ไขได้ (เหมือนหน้าเพิ่มงานแบบย่อ)</div>
           <div class="table-wrap" style="margin-top:10px;overflow:auto">
             <table>
-              <thead><tr><th>รายการ</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th><th></th></tr></thead>
+              <thead><tr><th>รายการ</th><th>มอบหมายให้</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th><th></th></tr></thead>
               <tbody id="items_editor"></tbody>
             </table>
           </div>
@@ -465,7 +416,7 @@ async function loadJob(){
       <b>🧾 รายการบริการ</b>
       <div class="table-wrap" style="margin-top:10px;overflow:auto">
         <table>
-          <thead><tr><th>รายการ</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th></tr></thead>
+          <thead><tr><th>รายการ</th><th>มอบหมายให้</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th></tr></thead>
           <tbody>${itemRows}</tbody>
         </table>
       </div>
@@ -560,20 +511,52 @@ async function loadJob(){
       item_name: safe(it.item_name||''),
       qty: Number(it.qty||1) || 1,
       unit_price: Number(it.unit_price||0) || 0,
+      assigned_technician_username: safe(it.assigned_technician_username||'') || null,
     }));
 
     const tbody = el('items_editor');
+    const getCurrentTeamForAssign = () => {
+      const primaryU = String(job.technician_username||'').trim();
+      let desired = [];
+      const hid = el('edit_team_members_json');
+      if (hid && hid.value) {
+        try { desired = JSON.parse(hid.value); } catch {}
+      }
+      if (!Array.isArray(desired)) desired = [];
+      desired = desired.map(x=>String(x||'').trim()).filter(Boolean);
+      if (primaryU && !desired.includes(primaryU)) desired.unshift(primaryU);
+      return Array.from(new Set(desired));
+    };
+
     const renderEditor = () => {
       if (!tbody) return;
       if (!editorItems.length) {
-        tbody.innerHTML = `<tr><td colspan="5" class="muted2">ยังไม่มีรายการ (กด “เพิ่มรายการ”)</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="muted2">ยังไม่มีรายการ (กด “เพิ่มรายการ”)</td></tr>`;
         return;
       }
+
+      const assignMembers = getCurrentTeamForAssign();
+      const optHtml = (selected)=>{
+        const sel = String(selected||'').trim();
+        const opts = [`<option value="">- ไม่ระบุ -</option>`].concat(
+          assignMembers.map(u=>{
+            const label = escapeHtml(displayTech(u));
+            const val = escapeHtml(u);
+            const s = (u === sel) ? 'selected' : '';
+            return `<option value="${val}" ${s}>${label}</option>`;
+          })
+        );
+        return opts.join('');
+      };
+
       tbody.innerHTML = editorItems.map((it, idx)=>{
         const line = (Number(it.qty)||0) * (Number(it.unit_price)||0);
         return `<tr data-idx="${idx}">
           <td style="min-width:220px">
             <input class="it_name" value="${escapeHtml(it.item_name)}" placeholder="ชื่อรายการ" />
+          </td>
+          <td style="width:170px">
+            <select class="it_asg" style="width:100%">${optHtml(it.assigned_technician_username)}</select>
           </td>
           <td style="width:90px;text-align:right"><input class="it_qty" type="number" min="0" step="1" value="${escapeHtml(String(it.qty))}" /></td>
           <td style="width:130px;text-align:right"><input class="it_unit" type="number" min="0" step="1" value="${escapeHtml(String(it.unit_price))}" /></td>
@@ -586,6 +569,7 @@ async function loadJob(){
       Array.from(tbody.querySelectorAll('tr')).forEach(tr=>{
         const idx = Number(tr.getAttribute('data-idx'));
         const name = tr.querySelector('.it_name');
+        const asg = tr.querySelector('.it_asg');
         const qty = tr.querySelector('.it_qty');
         const unit = tr.querySelector('.it_unit');
         const lineEl = tr.querySelector('.it_line');
@@ -599,6 +583,10 @@ async function loadJob(){
         };
 
         if (name) name.oninput = ()=>{ editorItems[idx].item_name = name.value; };
+        if (asg) asg.onchange = ()=>{
+          const v = String(asg.value||'').trim();
+          editorItems[idx].assigned_technician_username = v ? v : null;
+        };
         if (qty) qty.oninput = ()=>{ editorItems[idx].qty = Number(qty.value||0); recalc(); };
         if (unit) unit.oninput = ()=>{ editorItems[idx].unit_price = Number(unit.value||0); recalc(); };
         if (del) del.onclick = ()=>{ editorItems.splice(idx,1); renderEditor(); };
@@ -624,16 +612,13 @@ async function loadJob(){
       renderTeamEditor(primaryU, curTeamUsers);
       const searchEl = el('edit_team_search');
       const selEl = el('edit_team_members');
-      const boxEl = el('edit_team_members_box');
       if (searchEl) searchEl.oninput = ()=>renderTeamEditor(primaryU, curTeamUsers);
-      if (selEl) selEl.onchange = ()=>renderTeamEditor(primaryU, curTeamUsers);
-      if (boxEl) {
-        boxEl.onchange = (e)=>{
-          const t = e?.target;
-          if (t && t.matches && t.matches('input[type="checkbox"][data-u]')) {
-            renderTeamEditor(primaryU, curTeamUsers);
-          }
-        };
+      if (selEl) selEl.onchange = ()=>{ renderTeamEditor(primaryU, curTeamUsers); renderEditor(); };
+
+      // mobile checkbox list (if exists) should also trigger re-render
+      const box = el('edit_team_members_box');
+      if (box) {
+        box.addEventListener('change', ()=>{ renderEditor(); });
       }
     } catch (e) {
       console.warn('team editor init failed', e);
@@ -674,6 +659,7 @@ async function loadJob(){
               item_name: String(it.item_name||'').trim(),
               qty: Number(it.qty||0),
               unit_price: Number(it.unit_price||0),
+              assigned_technician_username: (it.assigned_technician_username ? String(it.assigned_technician_username).trim() : null),
             }))
             .filter(it=>it.item_name);
 
