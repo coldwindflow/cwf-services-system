@@ -4764,71 +4764,6 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
   try {
     await client.query("BEGIN");
 
-    // Helper: parse legacy item_name -> service payload (minimal + backward compatible)
-    // Supports labels like:
-    // - "ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU • 3 เครื่อง"
-    // - "ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU •" (legacy)
-    const parseServiceFromItemName = (nameRaw, jobTypeFallback, qtyFallback, assignee) => {
-      const name = String(nameRaw || "").trim();
-      if (!name) return null;
-      const parts = name.split("•").map((x) => String(x || "").trim()).filter(Boolean);
-
-      // job_type
-      let job_type = jobTypeFallback ? String(jobTypeFallback).trim() : "";
-      if (!job_type) {
-        if (name.includes("ล้าง")) job_type = "ล้าง";
-        else if (name.includes("ซ่อม")) job_type = "ซ่อม";
-        else if (name.includes("ติดตั้ง")) job_type = "ติดตั้ง";
-      }
-      if (!job_type) return null;
-
-      // ac_type + variant
-      let ac_type = "";
-      let wash_variant = "";
-      let repair_variant = "";
-
-      // part[0] often like "ล้างแอร์ผนัง" / "ซ่อมแอร์ผนัง"
-      const p0 = parts[0] || "";
-      const acCandidates = ["ผนัง", "สี่ทิศทาง", "แขวน", "เปลือยใต้ฝ้า"];
-      for (const c of acCandidates) {
-        if (p0.includes(c)) {
-          ac_type = c;
-          break;
-        }
-      }
-      if (!ac_type && job_type === "ล้าง") ac_type = "ผนัง"; // legacy default
-
-      // part[1] often variant
-      const p1 = parts[1] || "";
-      if (job_type === "ล้าง") {
-        if (p1) wash_variant = p1;
-        if (!wash_variant) wash_variant = "ล้างธรรมดา";
-      }
-      if (job_type === "ซ่อม" && p1) repair_variant = p1;
-
-      // btu
-      let btu = 0;
-      const btuMatch = name.match(/(\d{4,6})\s*BTU/i);
-      if (btuMatch) btu = Number(btuMatch[1] || 0);
-      if (!Number.isFinite(btu) || btu <= 0) btu = 12000; // safe default for legacy labels
-
-      // machine_count
-      const q = Number(qtyFallback || 0);
-      const machine_count = Number.isFinite(q) && q > 0 ? Math.max(1, Math.floor(q)) : 1;
-
-      // Build service payload for computeDurationMinMulti
-      const svc = {
-        job_type,
-        ac_type,
-        btu,
-        machine_count,
-        wash_variant,
-        repair_variant,
-        assigned_to: assignee ? String(assignee).trim() : null,
-      };
-      return svc;
-    };
-
     // โหลดโปร (ถ้าเลือก)
     let promo = null;
     if (promotion_id) {
@@ -4844,11 +4779,7 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
     // Allowed assignee set: primary technician + (optional) team members
     let allowedAssignees = new Set();
     try {
-      const jr = await client.query(
-        `SELECT technician_username, job_type, COALESCE(duration_min,60) AS duration_min, COALESCE(admin_override_duration_min,0) AS admin_override_duration_min
-         FROM public.jobs WHERE job_id=$1 LIMIT 1`,
-        [job_id]
-      );
+      const jr = await client.query(`SELECT technician_username FROM public.jobs WHERE job_id=$1 LIMIT 1`, [job_id]);
       const primaryU = String(jr.rows?.[0]?.technician_username || "").trim();
       if (primaryU) allowedAssignees.add(primaryU);
       try {
@@ -4921,47 +4852,6 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
 
     // อัปเดตราคารวมใน jobs
     await client.query(`UPDATE public.jobs SET job_price=$1 WHERE job_id=$2`, [pricing.total, job_id]);
-
-    // ✅ Recompute duration_min based on item assignments (parallel-by-tech)
-    // Goal: When admin splits machines among technicians, total job time should reduce to the maximum workload per tech.
-    // - Only do this when:
-    //   (1) override duration is NOT set (admin_override_duration_min=0)
-    //   (2) we can parse all service items into duration rules
-    // - Backward compatible: if parsing fails, do not change duration.
-    try {
-      const jr2 = await client.query(
-        `SELECT job_type, COALESCE(duration_min,60) AS duration_min, COALESCE(admin_override_duration_min,0) AS admin_override_duration_min
-         FROM public.jobs WHERE job_id=$1 LIMIT 1`,
-        [job_id]
-      );
-      const jobRow = jr2.rows?.[0] || {};
-      const overrideMin = Number(jobRow.admin_override_duration_min || 0);
-      const jobType = String(jobRow.job_type || "").trim();
-
-      if (!(overrideMin > 0) && safeItems.length) {
-        const services = [];
-        for (const it of safeItems) {
-          if (!(Number(it.qty) > 0)) continue;
-          const svc = parseServiceFromItemName(it.item_name, jobType, it.qty, it.assigned_technician_username);
-          if (!svc) {
-            services.length = 0;
-            break;
-          }
-          services.push(svc);
-        }
-
-        if (services.length) {
-          const payloadV2 = { job_type: jobType, services, parallel_by_tech: true, admin_override_duration_min: 0 };
-          const newDur = computeDurationMinMulti(payloadV2, { source: "items_admin", conservative: false });
-          if (Number.isFinite(newDur) && newDur > 0 && newDur <= 24 * 60) {
-            await client.query(`UPDATE public.jobs SET duration_min=$1 WHERE job_id=$2`, [Math.floor(newDur), job_id]);
-          }
-        }
-      }
-    } catch (e) {
-      // fail-open: do not block saving items
-      console.warn("duration recompute failed", e);
-    }
 
     await client.query("COMMIT");
     res.json({ success: true, pricing });
@@ -7462,9 +7352,7 @@ function isTechOffOnDate(techRow, dateStr, offMap, opts = {}) {
 
 async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
   // ✅ Timezone-robust filter (source of truth: Asia/Bangkok)
-  // ปัญหาที่เจอจริง: การกรองด้วย to_char(... AT TIME ZONE ...) บาง deployment
-  // อาจไม่แมตช์งานเดิมเพราะชนิดคอลัมน์/การ cast ทำให้ "วัน" คลาดเคลื่อน
-  // ทางออก: กรองด้วยช่วงเวลา [dayStart, dayEnd) แบบ Bangkok offset แล้ว cast เป็น timestamptz เสมอ
+  // กรองด้วยช่วงเวลา [dayStart, dayEnd) แบบ Bangkok offset แล้ว cast เป็น timestamptz เสมอ
   // โดยเราได้บังคับ timezone ของ session ที่ db.js แล้ว (options: -c timezone=Asia/Bangkok)
   const day = String(dateStr || "").slice(0, 10);
   const addDays = (ymd, n) => {
@@ -7483,21 +7371,134 @@ async function listAssignedJobsForTechOnDate(username, dateStr, ignoreJobId) {
   let extra = "";
   if (ignoreJobId) { params.push(ignoreJobId); extra = ` AND j.job_id <> $4`; }
 
+  // IMPORTANT (ISSUE): ช่างที่เสร็จก่อน ต้องรับงานใหม่ได้
+  // - งานเดียวกันอาจแบ่งรายการให้หลายช่าง (job_items.assigned_technician_username)
+  // - duration_min ของ jobs เป็น “รวมใบงาน/หัวหน้าทีม” จึงห้ามเอาไปล็อกคิวทุกคน
+  // ทางแก้: คืน assigned_items เฉพาะของช่างคนนั้น แล้วคำนวณ duration ต่อคน (per-tech) ตอนทำ availability/collision
   const r = await pool.query(
     `
-    SELECT j.job_id, j.appointment_datetime, COALESCE(j.duration_min,60) AS duration_min
+    SELECT
+      j.job_id,
+      j.appointment_datetime,
+      COALESCE(j.duration_min,60) AS duration_min,
+      COALESCE(j.job_type,'') AS job_type,
+      COALESCE(
+        json_agg(DISTINCT jsonb_build_object('item_name', it.item_name, 'qty', it.qty))
+          FILTER (WHERE it.job_id IS NOT NULL),
+        '[]'::json
+      ) AS assigned_items
     FROM public.jobs j
-    LEFT JOIN public.job_team_members m ON m.job_id=j.job_id AND m.username=$1
-    LEFT JOIN public.job_assignments a ON a.job_id=j.job_id AND a.technician_username=$1
+    LEFT JOIN public.job_items it
+      ON it.job_id = j.job_id
+     AND it.assigned_technician_username = $1
+     AND COALESCE(it.is_service, true) = true
     WHERE (j.appointment_datetime::timestamptz) >= $2
       AND (j.appointment_datetime::timestamptz) <  $3
       AND COALESCE(j.job_status,'') <> 'ยกเลิก'
       ${extra}
-      AND (j.technician_username=$1 OR j.technician_team=$1 OR m.username IS NOT NULL OR a.technician_username IS NOT NULL)
+      AND (
+        j.technician_username=$1
+        OR j.technician_team=$1
+        OR EXISTS (SELECT 1 FROM public.job_team_members m WHERE m.job_id=j.job_id AND m.username=$1)
+        OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$1)
+        OR EXISTS (SELECT 1 FROM public.job_items it2 WHERE it2.job_id=j.job_id AND it2.assigned_technician_username=$1)
+      )
+    GROUP BY j.job_id, j.appointment_datetime, j.duration_min, j.job_type
     `,
     params
   );
   return r.rows || [];
+}
+
+// ================================
+// 🔧 Per-tech duration helpers
+// - ใช้สำหรับ Availability/Collision เท่านั้น
+// - Fail-open: ถ้า parse ไม่ได้ ให้ fallback เป็น jobs.duration_min เดิม (กัน regression)
+// ================================
+function parseServiceFromJobItemRow(itemName, qty, jobTypeFallback){
+  const name = String(itemName || '').trim();
+  const qn = Number(qty || 0);
+  if (!name) return null;
+
+  // Split by bullets (legacy label format)
+  const parts = name.split('•').map(s => String(s || '').trim()).filter(Boolean);
+
+  // Detect job type (we only parse "ล้าง" reliably here; others fallback)
+  let job_type = String(jobTypeFallback || '').trim();
+  if (!job_type) {
+    if (name.includes('ล้างแอร์')) job_type = 'ล้าง';
+    else if (name.includes('ซ่อม')) job_type = 'ซ่อม';
+    else if (name.includes('ติดตั้ง')) job_type = 'ติดตั้ง';
+  }
+  if (job_type !== 'ล้าง') return null;
+
+  // ac_type from first token like "ล้างแอร์ผนัง"
+  let ac_type = null;
+  if (parts.length) {
+    const p0 = parts[0];
+    if (p0.startsWith('ล้างแอร์')) {
+      ac_type = p0.replace('ล้างแอร์', '').trim() || null;
+    }
+  }
+
+  // wash_variant
+  let wash_variant = null;
+  for (const p of parts) {
+    if (p.includes('ล้าง') && !p.includes('ล้างแอร์') && !p.includes('BTU') && !p.includes('เครื่อง')) {
+      wash_variant = p.trim();
+      break;
+    }
+  }
+
+  // btu
+  let btu = 0;
+  for (const p of parts) {
+    if (p.toUpperCase().includes('BTU')) {
+      const n = Number(String(p).replace(/[^0-9]/g, ''));
+      if (Number.isFinite(n) && n > 0) { btu = Math.floor(n); break; }
+    }
+  }
+
+  // machine_count: prefer qty from row, else try parse "... เครื่อง"
+  let machine_count = 0;
+  if (Number.isFinite(qn) && qn > 0) machine_count = qn;
+  if (!(machine_count > 0)) {
+    for (const p of parts) {
+      if (p.includes('เครื่อง')) {
+        const n = Number(String(p).replace(/[^0-9]/g, ''));
+        if (Number.isFinite(n) && n > 0) { machine_count = Math.floor(n); break; }
+      }
+    }
+  }
+  if (!(machine_count > 0)) machine_count = 1;
+
+  return {
+    job_type: 'ล้าง',
+    ac_type: ac_type || 'ผนัง',
+    wash_variant: wash_variant || 'ล้างธรรมดา',
+    btu: btu || 12000,
+    machine_count,
+    assigned_technician_username: null,
+  };
+}
+
+function computePerTechDurationFromAssignedItems(jobType, assignedItems){
+  try {
+    const arr = Array.isArray(assignedItems) ? assignedItems : [];
+    if (!arr.length) return 0;
+    const services = [];
+    for (const it of arr) {
+      const s = parseServiceFromJobItemRow(it?.item_name, it?.qty, jobType);
+      if (s) services.push(s);
+    }
+    if (!services.length) return 0;
+    // conservative=true just makes sure we don't apply any parallel shortening
+    const payload = { job_type: String(jobType || 'ล้าง').trim() || 'ล้าง', services };
+    const d = computeDurationMinMulti(payload, { source: 'per_tech_items', conservative: true });
+    return Math.max(1, Number(d || 0));
+  } catch (e) {
+    return 0;
+  }
 }
 
 function overlaps(aStart, aEnd, bStart, bEnd) {
@@ -7599,7 +7600,8 @@ async function listJobBlocksForTechOnDate(username, dateStr, ignoreJobId){
   for(const j of (jobs||[])){
     const startDate = new Date(j.appointment_datetime);
     const startMin = bangkokHMToMinFromDate(startDate);
-    const dur = Math.max(1, Number(j.duration_min || 60));
+    const perTechDur = computePerTechDurationFromAssignedItems(j.job_type, j.assigned_items);
+    const dur = perTechDur > 0 ? perTechDur : Math.max(1, Number(j.duration_min || 60));
     const endMin = startMin + dur;
     raw.push({
       job_id: j.job_id,
@@ -7620,7 +7622,8 @@ async function listBusyBlocksForTechOnDate(username, dateStr, ignoreJobId){
   for(const j of (jobs||[])){
     const startDate = new Date(j.appointment_datetime);
     const startMin = bangkokHMToMinFromDate(startDate);
-    const dur = Math.max(1, Number(j.duration_min || 60));
+    const perTechDur = computePerTechDurationFromAssignedItems(j.job_type, j.assigned_items);
+    const dur = perTechDur > 0 ? perTechDur : Math.max(1, Number(j.duration_min || 60));
     const busyEndMin = startMin + dur + TRAVEL_BUFFER_MIN;
     raw.push({
       job_id: j.job_id,
@@ -7784,95 +7787,8 @@ async function checkTechCollision(username, startIso, durationMin, ignoreJobId) 
   const d = Math.max(1, Number(durationMin || 0));
   const busyEndMin = startMin + d + TRAVEL_BUFFER_MIN;
 
-  // Primary check (SQL overlap) — more robust than day-window joins and avoids timezone edge cases
-  try {
-    const newStartTs = iso;
-    const newBusyEndTs = new Date(startDate.getTime() + (d + TRAVEL_BUFFER_MIN) * 60000).toISOString();
-    const buf = Number(TRAVEL_BUFFER_MIN || 30);
-    const params = [username, newStartTs, newBusyEndTs, buf];
-    let sql = `
-      SELECT id, appointment_datetime::timestamptz AS appt, COALESCE(duration_min,0) AS dur
-      FROM public.jobs
-      WHERE (technician_username = $1 OR technician_team = $1)
-        AND appointment_datetime IS NOT NULL
-        AND appointment_datetime::timestamptz < $3::timestamptz
-        AND (appointment_datetime::timestamptz + make_interval(mins => (COALESCE(duration_min,0) + $4))) > $2::timestamptz
-    `;
-    if (ignoreJobId !== null && ignoreJobId !== undefined) {
-      params.push(String(ignoreJobId));
-      sql += ` AND id::text <> $5`;
-    }
-    sql += ` ORDER BY appointment_datetime::timestamptz ASC LIMIT 1`;
-    const r = await pool.query(sql, params);
-    if (r.rows && r.rows.length) {
-      const row = r.rows[0];
-      const oldStartDate = new Date(row.appt);
-      const oldStartMin = bangkokHMToMinFromDate(oldStartDate);
-      const oldBusyEndMin = oldStartMin + Number(row.dur || 0) + TRAVEL_BUFFER_MIN;
-      const detail = {
-        conflict_job_id: String(row.id),
-        username,
-        date: dateStr,
-        new_range: { start: fmtHHMMFromMin(startMin), busy_end: fmtHHMMFromMin(busyEndMin) },
-        old_range: { start: fmtHHMMFromMin(oldStartMin), busy_end: fmtHHMMFromMin(oldBusyEndMin) },
-      };
-      avlog('[collision_sql]', detail);
-      return detail;
-    }
-  } catch (e) {
-    console.warn('[collision_sql] fallback', e.message || e);
-  }
-
-  // Primary (DB) overlap check — more robust than relying on derived daily blocks.
-  // NOTE: Always block overlaps even in forced mode (forced overrides open_to_work only).
-  try {
-    const newStartTs = startDate;
-    const newBusyEndTs = new Date(startDate.getTime() + (d + TRAVEL_BUFFER_MIN) * 60 * 1000);
-    const args = [
-      username,
-      newBusyEndTs.toISOString(),
-      newStartTs.toISOString(),
-      TRAVEL_BUFFER_MIN,
-    ];
-    // ignoreJobId is optional
-    let sql = `
-      SELECT id::text AS job_id,
-             appointment_datetime::timestamptz AS appt,
-             COALESCE(duration_min, 0)::int AS dur
-      FROM jobs
-      WHERE (technician_username = $1 OR technician_team = $1)
-        AND job_status IS DISTINCT FROM 'ยกเลิก'
-        AND appointment_datetime IS NOT NULL
-        AND appointment_datetime::timestamptz < $2::timestamptz
-        AND (appointment_datetime::timestamptz + make_interval(mins => (COALESCE(duration_min,0)::int + $4))) > $3::timestamptz
-    `;
-    if (ignoreJobId) {
-      args.push(String(ignoreJobId));
-      sql += ` AND id::text <> $5 `;
-    }
-    sql += ` ORDER BY appointment_datetime::timestamptz ASC LIMIT 1`;
-    const r = await pool.query(sql, args);
-    if (r.rows && r.rows[0]) {
-      const row = r.rows[0];
-      // Derive old range in Bangkok minutes for debug UI
-      const oldStartDate = new Date(row.appt);
-      const oldStartMin = bangkokHMToMinFromDate(oldStartDate);
-      const oldBusyEndMin = oldStartMin + Number(row.dur || 0) + TRAVEL_BUFFER_MIN;
-      const detail = {
-        conflict_job_id: row.job_id,
-        username,
-        date: dateStr,
-        new_range: { start: fmtHHMMFromMin(startMin), busy_end: fmtHHMMFromMin(busyEndMin) },
-        old_range: { start: fmtHHMMFromMin(oldStartMin), busy_end: fmtHHMMFromMin(oldBusyEndMin) },
-      };
-      avlog('[collision_sql]', detail);
-      return detail;
-    }
-  } catch (e) {
-    // Fall back to derived blocks if query fails for any reason
-    avlog('[collision_sql] fallback', { err: e?.message });
-  }
-
+  // IMPORTANT (ISSUE): collision ต้องยึด duration ต่อคน (per-tech) จาก job_items ที่ assign ให้ช่างคนนั้น
+  // เลยต้องใช้ listBusyBlocksForTechOnDate() ซึ่งคำนวณ per-tech duration แบบ fail-open แล้ว
   const blocks = await listBusyBlocksForTechOnDate(username, dateStr, ignoreJobId);
 
   for (const b of blocks) {
