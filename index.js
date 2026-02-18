@@ -4764,6 +4764,71 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
   try {
     await client.query("BEGIN");
 
+    // Helper: parse legacy item_name -> service payload (minimal + backward compatible)
+    // Supports labels like:
+    // - "ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU • 3 เครื่อง"
+    // - "ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU •" (legacy)
+    const parseServiceFromItemName = (nameRaw, jobTypeFallback, qtyFallback, assignee) => {
+      const name = String(nameRaw || "").trim();
+      if (!name) return null;
+      const parts = name.split("•").map((x) => String(x || "").trim()).filter(Boolean);
+
+      // job_type
+      let job_type = jobTypeFallback ? String(jobTypeFallback).trim() : "";
+      if (!job_type) {
+        if (name.includes("ล้าง")) job_type = "ล้าง";
+        else if (name.includes("ซ่อม")) job_type = "ซ่อม";
+        else if (name.includes("ติดตั้ง")) job_type = "ติดตั้ง";
+      }
+      if (!job_type) return null;
+
+      // ac_type + variant
+      let ac_type = "";
+      let wash_variant = "";
+      let repair_variant = "";
+
+      // part[0] often like "ล้างแอร์ผนัง" / "ซ่อมแอร์ผนัง"
+      const p0 = parts[0] || "";
+      const acCandidates = ["ผนัง", "สี่ทิศทาง", "แขวน", "เปลือยใต้ฝ้า"];
+      for (const c of acCandidates) {
+        if (p0.includes(c)) {
+          ac_type = c;
+          break;
+        }
+      }
+      if (!ac_type && job_type === "ล้าง") ac_type = "ผนัง"; // legacy default
+
+      // part[1] often variant
+      const p1 = parts[1] || "";
+      if (job_type === "ล้าง") {
+        if (p1) wash_variant = p1;
+        if (!wash_variant) wash_variant = "ล้างธรรมดา";
+      }
+      if (job_type === "ซ่อม" && p1) repair_variant = p1;
+
+      // btu
+      let btu = 0;
+      const btuMatch = name.match(/(\d{4,6})\s*BTU/i);
+      if (btuMatch) btu = Number(btuMatch[1] || 0);
+      if (!Number.isFinite(btu) || btu <= 0) btu = 12000; // safe default for legacy labels
+
+      // machine_count
+      const q = Number(qtyFallback || 0);
+      const machine_count = Number.isFinite(q) && q > 0 ? Math.max(1, Math.floor(q)) : 1;
+
+      // Build service payload for computeDurationMinMulti
+      const svc = {
+        job_type,
+        ac_type,
+        btu,
+        machine_count,
+        wash_variant,
+        repair_variant,
+        assigned_to: assignee ? String(assignee).trim() : null,
+      };
+      return svc;
+    };
+
     // โหลดโปร (ถ้าเลือก)
     let promo = null;
     if (promotion_id) {
@@ -4779,7 +4844,11 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
     // Allowed assignee set: primary technician + (optional) team members
     let allowedAssignees = new Set();
     try {
-      const jr = await client.query(`SELECT technician_username FROM public.jobs WHERE job_id=$1 LIMIT 1`, [job_id]);
+      const jr = await client.query(
+        `SELECT technician_username, job_type, COALESCE(duration_min,60) AS duration_min, COALESCE(admin_override_duration_min,0) AS admin_override_duration_min
+         FROM public.jobs WHERE job_id=$1 LIMIT 1`,
+        [job_id]
+      );
       const primaryU = String(jr.rows?.[0]?.technician_username || "").trim();
       if (primaryU) allowedAssignees.add(primaryU);
       try {
@@ -4852,6 +4921,47 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
 
     // อัปเดตราคารวมใน jobs
     await client.query(`UPDATE public.jobs SET job_price=$1 WHERE job_id=$2`, [pricing.total, job_id]);
+
+    // ✅ Recompute duration_min based on item assignments (parallel-by-tech)
+    // Goal: When admin splits machines among technicians, total job time should reduce to the maximum workload per tech.
+    // - Only do this when:
+    //   (1) override duration is NOT set (admin_override_duration_min=0)
+    //   (2) we can parse all service items into duration rules
+    // - Backward compatible: if parsing fails, do not change duration.
+    try {
+      const jr2 = await client.query(
+        `SELECT job_type, COALESCE(duration_min,60) AS duration_min, COALESCE(admin_override_duration_min,0) AS admin_override_duration_min
+         FROM public.jobs WHERE job_id=$1 LIMIT 1`,
+        [job_id]
+      );
+      const jobRow = jr2.rows?.[0] || {};
+      const overrideMin = Number(jobRow.admin_override_duration_min || 0);
+      const jobType = String(jobRow.job_type || "").trim();
+
+      if (!(overrideMin > 0) && safeItems.length) {
+        const services = [];
+        for (const it of safeItems) {
+          if (!(Number(it.qty) > 0)) continue;
+          const svc = parseServiceFromItemName(it.item_name, jobType, it.qty, it.assigned_technician_username);
+          if (!svc) {
+            services.length = 0;
+            break;
+          }
+          services.push(svc);
+        }
+
+        if (services.length) {
+          const payloadV2 = { job_type: jobType, services, parallel_by_tech: true, admin_override_duration_min: 0 };
+          const newDur = computeDurationMinMulti(payloadV2, { source: "items_admin", conservative: false });
+          if (Number.isFinite(newDur) && newDur > 0 && newDur <= 24 * 60) {
+            await client.query(`UPDATE public.jobs SET duration_min=$1 WHERE job_id=$2`, [Math.floor(newDur), job_id]);
+          }
+        }
+      }
+    } catch (e) {
+      // fail-open: do not block saving items
+      console.warn("duration recompute failed", e);
+    }
 
     await client.query("COMMIT");
     res.json({ success: true, pricing });
