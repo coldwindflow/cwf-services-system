@@ -66,6 +66,14 @@ const teamEdit = {
   loaded: false,
 };
 
+function isCoarsePointer(){
+  try{
+    return !!(window.matchMedia && window.matchMedia('(pointer: coarse)').matches);
+  }catch(e){
+    return false;
+  }
+}
+
 async function loadAllTechsOnce(){
   if (teamEdit.loaded) return;
   teamEdit.loaded = true;
@@ -97,20 +105,47 @@ function renderTeamEditor(primaryUsername, currentTeamUsernames){
   if (primary) selected.add(primary);
 
   const sel = el('edit_team_members');
+  const box = el('edit_team_members_box');
   const search = el('edit_team_search');
   const hint = el('edit_team_hint');
   if (!sel) return;
 
+  const useBox = !!box && isCoarsePointer(); // mobile/touch friendly
+  if (useBox) {
+    sel.style.display = 'none';
+  } else {
+    sel.style.display = '';
+  }
+
   const q = String(search?.value||'').trim().toLowerCase();
 
   // preserve selection from UI if already rendered
-  const uiSelected = new Set(Array.from(sel.options||[]).filter(o=>o.selected).map(o=>o.value).filter(Boolean));
+  let uiSelected = new Set();
+  if (useBox) {
+    uiSelected = new Set(Array.from(box.querySelectorAll('input[type="checkbox"][data-u="1"]')||[])
+      .filter(i=>i.checked)
+      .map(i=>String(i.value||'').trim())
+      .filter(Boolean));
+  } else {
+    uiSelected = new Set(Array.from(sel.options||[]).filter(o=>o.selected).map(o=>o.value).filter(Boolean));
+  }
   if (uiSelected.size) {
     selected.clear();
     for (const u of uiSelected) selected.add(u);
     if (primary) selected.add(primary);
   }
 
+  // build list
+  const list = (teamEdit.techs || [])
+    .filter(t=>t.username && t.username !== primary)
+    .filter(t=>{
+      if (!q) return true;
+      const hay = `${t.username} ${t.display}`.toLowerCase();
+      return hay.includes(q);
+    })
+    .sort((a,b)=>a.username.localeCompare(b.username));
+
+  // render UI
   sel.innerHTML = '';
   const makeOpt = (u, isPrimary=false) => {
     const o = document.createElement('option');
@@ -124,19 +159,79 @@ function renderTeamEditor(primaryUsername, currentTeamUsernames){
     return o;
   };
 
-  // primary on top
+  // always keep select options in sync (for desktop + hidden state)
   if (primary) sel.appendChild(makeOpt(primary, true));
-
-  const list = (teamEdit.techs || [])
-    .filter(t=>t.username && t.username !== primary)
-    .filter(t=>{
-      if (!q) return true;
-      const hay = `${t.username} ${t.display}`.toLowerCase();
-      return hay.includes(q);
-    })
-    .sort((a,b)=>a.username.localeCompare(b.username));
-
   for (const t of list) sel.appendChild(makeOpt(t.username, false));
+
+  if (useBox) {
+    box.innerHTML = '';
+    const mkRow = (u, label, disabled=false, checked=false) => {
+      const id = `tm_${u.replace(/[^a-zA-Z0-9_-]/g,'_')}_${Math.random().toString(16).slice(2)}`;
+      const wrap = document.createElement('label');
+      wrap.setAttribute('for', id);
+      wrap.style.display = 'flex';
+      wrap.style.alignItems = 'center';
+      wrap.style.gap = '10px';
+      wrap.style.padding = '10px 8px';
+      wrap.style.borderRadius = '12px';
+      wrap.style.border = '1px solid #eef2ff';
+      wrap.style.marginBottom = '8px';
+      wrap.style.userSelect = 'none';
+
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.id = id;
+      cb.value = u;
+      cb.checked = !!checked;
+      cb.disabled = !!disabled;
+      cb.setAttribute('data-u','1');
+
+      const txt = document.createElement('div');
+      txt.style.display = 'flex';
+      txt.style.flexDirection = 'column';
+      const t1 = document.createElement('div');
+      t1.textContent = label;
+      t1.style.fontWeight = '700';
+      const t2 = document.createElement('div');
+      t2.textContent = u;
+      t2.style.fontSize = '12px';
+      t2.style.opacity = '0.7';
+      txt.appendChild(t1);
+      txt.appendChild(t2);
+
+      wrap.appendChild(cb);
+      wrap.appendChild(txt);
+
+      cb.onchange = ()=>renderTeamEditor(primary, Array.from(selected));
+      box.appendChild(wrap);
+    };
+
+    if (primary) mkRow(primary, `⭐ ${techDisplayName(primary)}`, true, true);
+
+    if (!list.length) {
+      const empty = document.createElement('div');
+      empty.className = 'muted2';
+      empty.style.padding = '8px 2px';
+      empty.textContent = teamEdit.techs.length ? 'ไม่พบช่างตามคำค้นหา' : 'ยังโหลดรายชื่อช่างไม่สำเร็จ';
+      box.appendChild(empty);
+
+      if (!teamEdit.techs.length) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'secondary btn-small';
+        btn.style.marginTop = '8px';
+        btn.textContent = 'ลองโหลดรายชื่อช่างอีกครั้ง';
+        btn.onclick = async ()=>{
+          teamEdit.loaded = false;
+          await loadAllTechsOnce();
+          renderTeamEditor(primary, Array.from(selected));
+        };
+        box.appendChild(btn);
+      }
+    } else {
+      for (const t of list) mkRow(t.username, techDisplayName(t.username), false, selected.has(t.username));
+    }
+  }
 
   // update hint + hidden json
   const finalMembers = Array.from(new Set([primary, ...Array.from(selected)])).filter(Boolean);
@@ -192,16 +287,14 @@ async function loadJob(){
         const qty = Number(it.qty||0);
         const unit = Number(it.unit_price||0);
         const line = Number(it.line_total|| (qty*unit));
-        const asg = safe(it.assigned_technician_username||'');
         return `<tr>
           <td style="max-width:220px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escapeHtml(safe(it.item_name))}">${escapeHtml(safe(it.item_name))}</td>
-          <td style="width:140px">${asg ? escapeHtml(asg) : '<span class="muted2">-</span>'}</td>
           <td style="width:70px;text-align:right">${qty}</td>
           <td style="width:90px;text-align:right">${unit.toLocaleString()}</td>
           <td style="width:110px;text-align:right"><b>${line.toLocaleString()}</b></td>
         </tr>`;
       }).join('')
-    : `<tr><td colspan="5" class="muted2">ไม่มีรายการ</td></tr>`;
+    : `<tr><td colspan="4" class="muted2">ไม่มีรายการ</td></tr>`;
 
   const photoRows = photos.length
     ? photos.map(p=>{
@@ -331,8 +424,10 @@ async function loadJob(){
               <input id="edit_team_search" placeholder="พิมพ์เพื่อค้นหา" />
             </div>
             <div style="flex:1;min-width:260px">
-              <label>เลือกช่างร่วม (กด Ctrl/Command เพื่อเลือกหลายคน)</label>
+              <label>เลือกช่างร่วม</label>
+              <div id="edit_team_members_box" class="team-members-box" style="border:1px solid #dbeafe;border-radius:14px;padding:10px;max-height:220px;overflow:auto;background:#fff"></div>
               <select id="edit_team_members" multiple size="6" style="width:100%"></select>
+              <div class="muted2 mini" style="margin-top:6px">* บนมือถือ: ใช้การติ๊ก checkbox ในกล่องด้านบน (ไม่ต้องกด Ctrl)</div>
             </div>
           </div>
           <div id="edit_team_hint" class="muted2" style="margin-top:8px"></div>
@@ -344,7 +439,7 @@ async function loadJob(){
           <div class="muted2 mini" style="margin-top:6px">เพิ่ม/ลบ/แก้ไขได้ (เหมือนหน้าเพิ่มงานแบบย่อ)</div>
           <div class="table-wrap" style="margin-top:10px;overflow:auto">
             <table>
-              <thead><tr><th>รายการ</th><th>มอบหมายให้</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th><th></th></tr></thead>
+              <thead><tr><th>รายการ</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th><th></th></tr></thead>
               <tbody id="items_editor"></tbody>
             </table>
           </div>
@@ -416,7 +511,7 @@ async function loadJob(){
       <b>🧾 รายการบริการ</b>
       <div class="table-wrap" style="margin-top:10px;overflow:auto">
         <table>
-          <thead><tr><th>รายการ</th><th>มอบหมายให้</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th></tr></thead>
+          <thead><tr><th>รายการ</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th></tr></thead>
           <tbody>${itemRows}</tbody>
         </table>
       </div>
@@ -511,38 +606,20 @@ async function loadJob(){
       item_name: safe(it.item_name||''),
       qty: Number(it.qty||1) || 1,
       unit_price: Number(it.unit_price||0) || 0,
-      assigned_technician_username: String(it.assigned_technician_username||'').trim() || null,
     }));
 
     const tbody = el('items_editor');
     const renderEditor = () => {
       if (!tbody) return;
       if (!editorItems.length) {
-        tbody.innerHTML = `<tr><td colspan="6" class="muted2">ยังไม่มีรายการ (กด “เพิ่มรายการ”)</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="5" class="muted2">ยังไม่มีรายการ (กด “เพิ่มรายการ”)</td></tr>`;
         return;
       }
-
-      const teamList = Array.from(new Set((teamInitMembers || []).map(x=>String(x||'').trim()).filter(Boolean)));
-      const optionHtml = (cur)=>{
-        const curU = String(cur||'').trim();
-        const extra = curU && !teamList.includes(curU) ? [curU] : [];
-        const all = [''].concat(teamList).concat(extra);
-        return all.map(u=>{
-          const val = String(u||'');
-          const label = val ? displayOf(val) : '— ไม่ระบุ —';
-          const sel = (val && val===curU) ? 'selected' : (!val && !curU ? 'selected' : '');
-          return `<option value="${escapeHtml(val)}" ${sel}>${escapeHtml(label)}</option>`;
-        }).join('');
-      };
-
       tbody.innerHTML = editorItems.map((it, idx)=>{
         const line = (Number(it.qty)||0) * (Number(it.unit_price)||0);
         return `<tr data-idx="${idx}">
           <td style="min-width:220px">
             <input class="it_name" value="${escapeHtml(it.item_name)}" placeholder="ชื่อรายการ" />
-          </td>
-          <td style="min-width:170px">
-            <select class="it_asg" style="width:100%">${optionHtml(it.assigned_technician_username)}</select>
           </td>
           <td style="width:90px;text-align:right"><input class="it_qty" type="number" min="0" step="1" value="${escapeHtml(String(it.qty))}" /></td>
           <td style="width:130px;text-align:right"><input class="it_unit" type="number" min="0" step="1" value="${escapeHtml(String(it.unit_price))}" /></td>
@@ -555,7 +632,6 @@ async function loadJob(){
       Array.from(tbody.querySelectorAll('tr')).forEach(tr=>{
         const idx = Number(tr.getAttribute('data-idx'));
         const name = tr.querySelector('.it_name');
-        const asg = tr.querySelector('.it_asg');
         const qty = tr.querySelector('.it_qty');
         const unit = tr.querySelector('.it_unit');
         const lineEl = tr.querySelector('.it_line');
@@ -569,10 +645,6 @@ async function loadJob(){
         };
 
         if (name) name.oninput = ()=>{ editorItems[idx].item_name = name.value; };
-        if (asg) asg.onchange = ()=>{
-          const v = String(asg.value||'').trim();
-          editorItems[idx].assigned_technician_username = v || null;
-        };
         if (qty) qty.oninput = ()=>{ editorItems[idx].qty = Number(qty.value||0); recalc(); };
         if (unit) unit.oninput = ()=>{ editorItems[idx].unit_price = Number(unit.value||0); recalc(); };
         if (del) del.onclick = ()=>{ editorItems.splice(idx,1); renderEditor(); };
@@ -584,7 +656,7 @@ async function loadJob(){
     const btnAddItem = el('btnAddItem');
     if (btnAddItem) {
       btnAddItem.onclick = ()=>{
-        editorItems.push({ item_id: null, item_name: '', qty: 1, unit_price: 0, assigned_technician_username: null });
+        editorItems.push({ item_id: null, item_name: '', qty: 1, unit_price: 0 });
         renderEditor();
       };
     }
@@ -592,8 +664,6 @@ async function loadJob(){
     // --- Team editor init ---
     try {
       await loadAllTechsOnce();
-      // refresh editor (option labels may depend on techMap display names)
-      try { renderEditor(); } catch {}
       const primaryU = String(job.technician_username||'').trim();
       const curTeamUsers = teamUsernames; // from loadJob scope
       // initial render
@@ -641,7 +711,6 @@ async function loadJob(){
               item_name: String(it.item_name||'').trim(),
               qty: Number(it.qty||0),
               unit_price: Number(it.unit_price||0),
-              assigned_technician_username: String(it.assigned_technician_username||'').trim() || null,
             }))
             .filter(it=>it.item_name);
 
