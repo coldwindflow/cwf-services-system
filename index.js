@@ -3353,6 +3353,51 @@ await deleteFrom(`DELETE FROM public.job_pricing_requests WHERE job_id=$1`, [job
 // reviews can reference job_id as well
 await deleteFrom(`DELETE FROM public.technician_reviews WHERE job_id=$1`, [jobId]);
 
+// -----------------------------------------------------------------
+// Dynamic cleanup (no regression):
+// Some production DBs may have extra tables referencing jobs(job_id).
+// If we miss one FK, deleting from jobs will fail with 23503.
+// So we proactively scan FK references and best-effort delete rows.
+// -----------------------------------------------------------------
+const quoteIdent = (s) => {
+  const v = String(s || '');
+  return '"' + v.replace(/"/g, '""') + '"';
+};
+
+try {
+  const fk = await client.query(
+    `
+    SELECT
+      con.conrelid::regclass::text AS rel,
+      att.attname AS col
+    FROM pg_constraint con
+    JOIN pg_class rel ON rel.oid = con.conrelid
+    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+    JOIN unnest(con.conkey) WITH ORDINALITY AS ck(attnum, ord) ON TRUE
+    JOIN pg_attribute att ON att.attrelid = con.conrelid AND att.attnum = ck.attnum
+    WHERE con.contype = 'f'
+      AND con.confrelid = 'public.jobs'::regclass
+      AND nsp.nspname = 'public'
+      AND att.attname = 'job_id'
+    GROUP BY con.conrelid, att.attname
+    ORDER BY rel;
+    `
+  );
+  for (const row of (fk.rows || [])) {
+    const rel = String(row.rel || '').trim();
+    if (!rel) continue;
+    // rel is already schema-qualified text (e.g. public.some_table)
+    const parts = rel.split('.');
+    if (parts.length !== 2) continue;
+    const tbl = `${quoteIdent(parts[0])}.${quoteIdent(parts[1])}`;
+    // skip the parent table
+    if (parts[1] === 'jobs') continue;
+    await deleteFrom(`DELETE FROM ${tbl} WHERE job_id=$1`, [jobId]);
+  }
+} catch (e) {
+  console.warn('[admin_delete_job] fk scan skipped', e.message);
+}
+
 const dr = await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [jobId]);
     await client.query("COMMIT");
     return res.json({ ok: true, deleted: dr.rowCount || 0 });

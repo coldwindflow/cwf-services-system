@@ -521,22 +521,48 @@ function basicAdminGuard(){
 
   // Server-side check to prevent back-navigation into protected pages
   const serverCheck = async ()=>{
+    // prevent concurrent checks causing "logout bounce" (race)
+    if (window.__CWF_GUARD_INFLIGHT) return window.__CWF_GUARD_INFLIGHT;
+
+    const run = async ()=>{
     try{
       const res = await fetch('/api/auth/me', { credentials:'include' });
-      if (!res.ok) throw new Error('UNAUTHORIZED');
+      // Only hard logout on auth errors.
+      // If it's a transient/network/5xx, don't force logout (prevents login/admin flicker).
+      if (!res.ok) {
+        const st = res.status || 0;
+        if (st === 401 || st === 403) throw Object.assign(new Error('UNAUTHORIZED'), { __auth: true, status: st });
+        throw Object.assign(new Error('SERVER_ERROR'), { __transient: true, status: st });
+      }
       const data = await res.json().catch(()=>null);
       if (!data || !data.ok) throw new Error('UNAUTHORIZED');
-      if (data.role !== 'admin' && data.role !== 'super_admin') throw new Error('FORBIDDEN');
+      const roleN = normalizeRole(data.role);
+      if (roleN !== 'admin' && roleN !== 'super_admin') throw Object.assign(new Error('FORBIDDEN'), { __auth: true, status: 403 });
       // keep localStorage in sync with DB (prevents login bounce)
       try{
         if (data.username) localStorage.setItem('username', String(data.username));
-        if (data.role) localStorage.setItem('role', normalizeRole(data.role));
+        if (data.role) localStorage.setItem('role', roleN);
       }catch(e){}
       return true;
     }catch(e){
-      doLogout();
-      return false;
+      // Only logout on real auth problems (401/403 or forbidden)
+      if (e && (e.__auth || e.status === 401 || e.status === 403 || String(e.message||'').includes('UNAUTHORIZED') || String(e.message||'').includes('FORBIDDEN'))) {
+        doLogout();
+        return false;
+      }
+      // transient: keep user on page, and re-check later
+      try {
+        if (Date.now() - Number(window.__CWF_GUARD_LAST_TOAST||0) > 15000) {
+          window.__CWF_GUARD_LAST_TOAST = Date.now();
+          showToast('เชื่อมต่อช้า/หลุดชั่วคราว กำลังลองใหม่…', 'info');
+        }
+      } catch(_e) {}
+      return true;
     }
+    };
+
+    window.__CWF_GUARD_INFLIGHT = run().finally(()=>{ window.__CWF_GUARD_INFLIGHT = null; });
+    return window.__CWF_GUARD_INFLIGHT;
   };
 
   // run once on load (async)
