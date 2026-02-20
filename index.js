@@ -6347,6 +6347,26 @@ function saveUploadedFile(file, folder, prefix) {
   return `/uploads${rel.startsWith("/") ? "" : "/"}${rel}`;
 }
 
+// ✅ Cloudinary helper (for technician profile photos)
+// - Returns { url, public_id }
+async function uploadTechProfileToCloudinary(file, { username, folderSuffix }) {
+  if (!file) return null;
+  if (!CLOUDINARY_ENABLED) return null;
+  const safeUser = safeFilename(String(username || 'unknown'));
+  const stamp = Date.now();
+  const publicId = `${safeUser}_${stamp}`;
+  const folder = `cwf/tech_profiles${folderSuffix ? `/${folderSuffix}` : ''}`;
+  const transformation = 'c_limit,w_800,q_auto,f_auto';
+  const r = await cloudinaryUploadBuffer({
+    buffer: file.buffer,
+    mimetype: file.mimetype,
+    folder,
+    publicId,
+    transformation,
+  });
+  return { url: r.secure_url, public_id: r.public_id };
+}
+
 app.get("/technicians/:username/profile", async (req, res) => {
   try {
     const username = req.params.username;
@@ -6414,7 +6434,15 @@ app.post("/profile/request", upload.single("photo"), async (req, res) => {
     const full_name = (req.body.full_name || "").trim();
     if (!username) return res.status(400).json({ error: "username หาย" });
 
-    const photo_temp_path = saveUploadedFile(req.file, PROFILE_REQ_DIR, username);
+    // ✅ IMPORTANT: profile request photos must NOT be stored on local disk (Render ephemeral)
+    // Prefer Cloudinary. If Cloudinary not configured, fallback to local disk to keep backward compatibility.
+    let photo_temp_path = null;
+    if (req.file && CLOUDINARY_ENABLED) {
+      const up = await uploadTechProfileToCloudinary(req.file, { username, folderSuffix: 'requests' });
+      photo_temp_path = up?.url || null;
+    } else {
+      photo_temp_path = saveUploadedFile(req.file, PROFILE_REQ_DIR, username);
+    }
 
     if (!full_name && !photo_temp_path) {
       return res.status(400).json({ error: "ต้องส่งชื่อใหม่ หรือรูป อย่างน้อย 1 อย่าง" });
@@ -6481,15 +6509,22 @@ app.post("/admin/profile/requests/:id/approve", requireAdminSession, async (req,
 
     let finalPhotoPath = null;
     if (reqRow.photo_temp_path) {
-      const tempAbs = path.join(__dirname, reqRow.photo_temp_path.replace("/uploads/", "uploads/"));
-      if (fs.existsSync(tempAbs)) {
-        const ext = path.extname(tempAbs) || ".jpg";
-        const finalName = safeFilename(`${reqRow.username}_${Date.now()}${ext}`);
-        const finalAbs = path.join(TECH_PROFILE_DIR, finalName);
-        fs.renameSync(tempAbs, finalAbs);
+      const p = String(reqRow.photo_temp_path);
+      // ✅ If request photo already stored on Cloudinary, keep it as-is
+      if (/^https?:\/\//i.test(p) && p.includes('res.cloudinary.com')) {
+        finalPhotoPath = p;
+      } else {
+        // Backward compatible: local temp file -> move to tech_profiles
+        const tempAbs = path.join(__dirname, p.replace("/uploads/", "uploads/"));
+        if (fs.existsSync(tempAbs)) {
+          const ext = path.extname(tempAbs) || ".jpg";
+          const finalName = safeFilename(`${reqRow.username}_${Date.now()}${ext}`);
+          const finalAbs = path.join(TECH_PROFILE_DIR, finalName);
+          fs.renameSync(tempAbs, finalAbs);
 
-        const rel = finalAbs.replace(UPLOAD_DIR, "").replace(/\\/g, "/");
-        finalPhotoPath = `/uploads${rel.startsWith("/") ? "" : "/"}${rel}`;
+          const rel = finalAbs.replace(UPLOAD_DIR, "").replace(/\\/g, "/");
+          finalPhotoPath = `/uploads${rel.startsWith("/") ? "" : "/"}${rel}`;
+        }
       }
     }
 
@@ -6798,7 +6833,14 @@ app.post("/admin/technicians/:username/photo", requireAdminSession, upload.singl
     const username = req.params.username;
     if (!req.file) return res.status(400).json({ error: "ไม่มีไฟล์รูป" });
 
-    const photo_path = saveUploadedFile(req.file, TECH_PROFILE_DIR, username);
+    // ✅ Store technician profile photo on Cloudinary to prevent loss after deploy
+    let photo_path = null;
+    if (CLOUDINARY_ENABLED) {
+      const up = await uploadTechProfileToCloudinary(req.file, { username, folderSuffix: 'profiles' });
+      photo_path = up?.url || null;
+    } else {
+      photo_path = saveUploadedFile(req.file, TECH_PROFILE_DIR, username);
+    }
     await pool.query(
       `UPDATE public.technician_profiles SET photo_path=$2, updated_at=CURRENT_TIMESTAMP WHERE username=$1`,
       [username, photo_path]
