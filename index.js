@@ -3346,6 +3346,13 @@ await deleteFrom(`DELETE FROM public.job_assignments WHERE job_id=$1`, [jobId]);
 await deleteFrom(`DELETE FROM public.job_offer_recipients WHERE job_id=$1`, [jobId]);
 await deleteFrom(`DELETE FROM public.job_offers WHERE job_id=$1`, [jobId]);
 
+// v2 pricing/items/promotions (some deployments have these tables + FK to jobs)
+await deleteFrom(`DELETE FROM public.job_items WHERE job_id=$1`, [jobId]);
+await deleteFrom(`DELETE FROM public.job_promotions WHERE job_id=$1`, [jobId]);
+await deleteFrom(`DELETE FROM public.job_pricing_requests WHERE job_id=$1`, [jobId]);
+// reviews can reference job_id as well
+await deleteFrom(`DELETE FROM public.technician_reviews WHERE job_id=$1`, [jobId]);
+
 const dr = await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [jobId]);
     await client.query("COMMIT");
     return res.json({ ok: true, deleted: dr.rowCount || 0 });

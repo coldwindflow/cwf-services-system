@@ -89,9 +89,20 @@ async function apiFetch(url, options = {}) {
     }catch(e){ return false; }
   })();
 
+  // Debug panel (avoid race condition between concurrent requests)
+  // - ensure lastRes always corresponds to lastReq (same id)
+  const __dbgId = (()=>{
+    if (!wantDbg) return null;
+    try {
+      dbg.__seq = (Number(dbg.__seq || 0) + 1);
+      return dbg.__seq;
+    } catch(e) { return null; }
+  })();
+
   if (wantDbg) {
     try {
       dbg.lastReq = {
+        id: __dbgId,
         ts: new Date().toISOString(),
         url,
         method: (options.method || 'GET').toUpperCase(),
@@ -122,11 +133,15 @@ async function apiFetch(url, options = {}) {
 
   if (wantDbg) {
     try {
-      dbg.lastRes = {
-        ts: new Date().toISOString(),
-        status: res.status,
-        data,
-      };
+      // Only attach response if it belongs to the latest request.
+      if (dbg.lastReq && dbg.lastReq.id === __dbgId) {
+        dbg.lastRes = {
+          id: __dbgId,
+          ts: new Date().toISOString(),
+          status: res.status,
+          data,
+        };
+      }
     } catch(e) {}
   }
   return data;
