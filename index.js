@@ -22,6 +22,8 @@ process.env.TZ = process.env.TZ || "Asia/Bangkok";
 const express = require("express");
 const cors = require("cors");
 const path = require("path");
+const crypto = require("crypto");
+const fs = require("fs");
 
 // =======================================
 // 🚩 FEATURE FLAGS (safe / backward compatible)
@@ -41,6 +43,63 @@ const ENABLE_AVAILABILITY_V2 = envBool("ENABLE_AVAILABILITY_V2", true);
 // ✅ Safe toggle: urgent offer flow (public booking + offers)
 const ENABLE_URGENT_FLOW = envBool("ENABLE_URGENT_FLOW", true);
 const TRAVEL_BUFFER_MIN = Math.max(0, Number(process.env.TRAVEL_BUFFER_MIN || 30)); // นาที/งาน (Travel Buffer)
+
+// =======================================
+// ☁️ CLOUDINARY (optional / backward compatible)
+// - หากตั้ง ENV ครบ จะอัปโหลดรูปขึ้น Cloudinary แล้วเก็บ public_url เป็น https://...
+// - ถ้าไม่ตั้ง จะ fallback เซฟลงดิสก์เดิม (/uploads)
+// =======================================
+const CLOUDINARY_CLOUD_NAME = String(process.env.CLOUDINARY_CLOUD_NAME || '').trim();
+const CLOUDINARY_API_KEY = String(process.env.CLOUDINARY_API_KEY || '').trim();
+const CLOUDINARY_API_SECRET = String(process.env.CLOUDINARY_API_SECRET || '').trim();
+const CLOUDINARY_ENABLED = Boolean(CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET);
+
+function cloudinarySignParams(params) {
+  // signature = sha1( sort(params) as key=value&... + api_secret )
+  const pairs = Object.keys(params)
+    .filter((k) => params[k] !== undefined && params[k] !== null && String(params[k]).length)
+    .sort()
+    .map((k) => `${k}=${params[k]}`)
+    .join('&');
+  const toSign = pairs + CLOUDINARY_API_SECRET;
+  return crypto.createHash('sha1').update(toSign).digest('hex');
+}
+
+async function cloudinaryUploadBuffer({ buffer, mimetype, folder, publicId, transformation }) {
+  if (!CLOUDINARY_ENABLED) throw new Error('CLOUDINARY_NOT_CONFIGURED');
+  const ts = Math.floor(Date.now() / 1000);
+  const params = {
+    timestamp: ts,
+    folder: folder || undefined,
+    public_id: publicId || undefined,
+    transformation: transformation || undefined,
+  };
+  const signature = cloudinarySignParams(params);
+
+  // ใช้ data URI เพื่อลด dependency (ไม่ต้องใช้ SDK/FormData)
+  const dataUri = `data:${mimetype || 'image/jpeg'};base64,${Buffer.from(buffer).toString('base64')}`;
+  const body = new URLSearchParams({
+    ...Object.fromEntries(Object.entries(params).filter(([_, v]) => v !== undefined && v !== null && String(v).length)),
+    api_key: CLOUDINARY_API_KEY,
+    signature,
+    file: dataUri,
+  });
+
+  const url = `https://api.cloudinary.com/v1_1/${encodeURIComponent(CLOUDINARY_CLOUD_NAME)}/image/upload`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok || !json || !json.secure_url) {
+    const msg = json?.error?.message || `Cloudinary upload failed (${resp.status})`;
+    const err = new Error(msg);
+    err._cloudinary = json;
+    throw err;
+  }
+  return json; // {secure_url, public_id, bytes, width, height, ...}
+}
 
 
 // ==============================
@@ -198,9 +257,7 @@ async function resolveMapsUrlToLatLng(inputUrl) {
 
   return { lat: null, lng: null, via: "not_found", resolvedUrl: finalUrl };
 }
-const fs = require("fs");
 const https = require("https");
-const crypto = require("crypto");
 const multer = require("multer");
 
 const pool = require("./db");
@@ -1811,6 +1868,8 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_assignments_job ON public.j
 
 // 3.4.2) job_photos: ผู้ที่อัปโหลด (uploaded_by) เพื่อกันรูปหาย/สับสนในงานทีม
 await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS uploaded_by TEXT`);
+// 3.4.3) job_photos: เก็บ public_id ของ Cloudinary (เผื่อลบ/จัดการภายหลัง)
+await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS cloud_public_id TEXT`);
 
 // 3.6) ✅ คำขอแก้ไขราคา/รายการ (ช่าง -> แอดมินอนุมัติ)
 await pool.query(`
@@ -5763,10 +5822,12 @@ app.post("/jobs/:job_id/photos/:photo_id/upload", upload.single("photo"), async 
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
     const meta = await pool.query(
-      `SELECT photo_id, mime_type FROM public.job_photos WHERE photo_id=$1 AND job_id=$2`,
+      `SELECT photo_id, phase, mime_type FROM public.job_photos WHERE photo_id=$1 AND job_id=$2`,
       [photo_id, realId]
     );
     if (meta.rows.length === 0) return res.status(404).json({ error: "ไม่พบ metadata รูป" });
+
+    const phase = String(meta.rows[0].phase || 'job');
 
     let ext = "jpg";
     const mt = String(req.file.mimetype || "").toLowerCase();
@@ -5774,18 +5835,45 @@ app.post("/jobs/:job_id/photos/:photo_id/upload", upload.single("photo"), async 
     if (mt.includes("webp")) ext = "webp";
     if (mt.includes("jpeg") || mt.includes("jpg")) ext = "jpg";
 
+    // ✅ Prefer Cloudinary if configured (no local disk dependency)
+    if (CLOUDINARY_ENABLED) {
+      const publicId = `${realId}_${photo_id}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
+      const folder = `cwf/jobs/${realId}/${phase}`;
+      // Cloudinary transformation string
+      // - limit width to 1600
+      // - auto quality & format
+      const transformation = 'c_limit,w_1600/q_auto/f_auto';
+
+      const up = await cloudinaryUploadBuffer({
+        buffer: req.file.buffer,
+        mimetype: req.file.mimetype || meta.rows[0].mime_type || 'image/jpeg',
+        folder,
+        publicId,
+        transformation,
+      });
+
+      await pool.query(
+        `UPDATE public.job_photos
+         SET uploaded_at=NOW(), storage_path=$1, public_url=$2, cloud_public_id=$3
+         WHERE photo_id=$4 AND job_id=$5`,
+        [up.public_id || publicId, up.secure_url, up.public_id || publicId, photo_id, realId]
+      );
+
+      return res.json({ success: true, url: up.secure_url, public_id: up.public_id || publicId });
+    }
+
+    // Fallback: local disk (/uploads)
     const safeName = `${realId}_${photo_id}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${ext}`;
     const diskPath = path.join(UPLOAD_DIR, safeName);
     fs.writeFileSync(diskPath, req.file.buffer);
-
     const publicUrl = `/uploads/${safeName}`;
 
     await pool.query(
-      `UPDATE public.job_photos SET uploaded_at=NOW(), storage_path=$1, public_url=$2 WHERE photo_id=$3 AND job_id=$4`,
+      `UPDATE public.job_photos SET uploaded_at=NOW(), storage_path=$1, public_url=$2, cloud_public_id=NULL WHERE photo_id=$3 AND job_id=$4`,
       [diskPath, publicUrl, photo_id, realId]
     );
 
-    res.json({ success: true, url: publicUrl });
+    return res.json({ success: true, url: publicUrl });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "อัปโหลดรูปไม่สำเร็จ" });
