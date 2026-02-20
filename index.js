@@ -4272,7 +4272,10 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
 try {
     // ✅ Hard Validation: ถ้าแก้เวลา ต้องกันชนคิวที่ backend เสมอ (R1)
     const curR = await pool.query(
-      `SELECT appointment_datetime, COALESCE(duration_min,60) AS duration_min, technician_username
+      `SELECT appointment_datetime,
+              COALESCE(duration_min,60) AS duration_min,
+              technician_username,
+              job_type
        FROM public.jobs WHERE job_id=$1`,
       [job_id]
     );
@@ -4281,6 +4284,28 @@ try {
     const cur = curR.rows[0];
     const apptToUse = appointment_dt || cur.appointment_datetime;
     const durToUse = Number(cur.duration_min || 60);
+    const jobTypeToUse = (job_type ?? cur.job_type);
+
+    // ✅ IMPORTANT: งานเดียวกันอาจแบ่งรายการให้หลายช่าง (job_items.assigned_technician_username)
+    // ต้องตรวจชนคิวแบบ per-tech duration เพื่อไม่ให้ช่างที่รับแค่บางส่วน (เช่น 1 เครื่อง)
+    // โดนล็อกด้วย duration รวมทั้งใบงาน (false conflict)
+    const getPerTechDurationForJob = async (jobId, techUsername) => {
+      try {
+        const r = await pool.query(
+          `SELECT item_name, qty
+           FROM public.job_items
+           WHERE job_id=$1 AND assigned_technician_username=$2
+           ORDER BY job_item_id ASC`,
+          [jobId, techUsername]
+        );
+        const items = r.rows || [];
+        if (!items.length) return durToUse; // fail-open (backward-compatible)
+        const d = computePerTechDurationFromAssignedItems(jobTypeToUse, items);
+        return d > 0 ? d : durToUse;
+      } catch {
+        return durToUse; // fail-open
+      }
+    };
 
     if (apptToUse) {
       // collect technicians assigned to this job (legacy + team + assignments)
@@ -4298,7 +4323,8 @@ try {
       } catch {}
 
       for (const u of [...techSet].filter(Boolean)) {
-        const conflict = await checkTechCollision(u, apptToUse, durToUse, job_id);
+        const perDur = await getPerTechDurationForJob(job_id, u);
+        const conflict = await checkTechCollision(u, apptToUse, perDur, job_id);
         if (conflict) return http409Conflict(res, conflict);
       }
     }
