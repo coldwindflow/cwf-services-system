@@ -1836,8 +1836,10 @@ app.get('/tech/income_summary', requireTechnicianSession, async (req, res) => {
     let computed = 0;
 
     // Safety cap (กันระบบตันถ้ามีงานเยอะผิดปกติ)
-    const HARD_CAP = 2000;
-    const slice = jobs.slice(0, HARD_CAP);
+    // NOTE: "สะสมทั้งหมด" ต้องคิดจากงานที่เสร็จสิ้นทั้งหมด
+    // ตั้ง cap สูงมากเพื่อใช้งานจริง และยังกันเคสผิดปกติแบบสุดโต่ง
+    const HARD_CAP = 50000;
+    const slice = jobs.length > HARD_CAP ? jobs.slice(0, HARD_CAP) : jobs;
 
     for (const row of slice) {
       const job_id = Number(row.job_id);
