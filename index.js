@@ -1420,6 +1420,295 @@ app.delete('/admin/super/durations/:service_key', requireSuperAdmin, async (req,
     return res.status(500).json({ error: 'ลบ duration ไม่สำเร็จ' });
   }
 });
+
+// =======================================
+// 💰 Super Admin: Technician Income Settings (ISSUE-2/3)
+// - Defaults per income_type
+// - Overrides per username
+// - Calc income per job (based on job_items + team)
+// =======================================
+
+const ALLOWED_INCOME_TYPES = new Set(['company','partner','custom','special_only']);
+
+function normalizeIncomeType(v) {
+  const s = String(v || '').trim().toLowerCase();
+  return ALLOWED_INCOME_TYPES.has(s) ? s : null;
+}
+
+function normalizeIncomeConfig(income_type, cfg) {
+  const t = normalizeIncomeType(income_type);
+  if (!t) return { ok: false, error: 'INVALID_INCOME_TYPE' };
+  const o = (cfg && typeof cfg === 'object') ? cfg : {};
+
+  if (t === 'company') {
+    const commission_percent = Number(o.commission_percent ?? o.commission_rate_percent ?? 0);
+    return { ok: true, config: { commission_percent: Math.max(0, Math.min(100, Number.isFinite(commission_percent) ? commission_percent : 0)) } };
+  }
+  if (t === 'partner') {
+    const company_cut_percent = Number(o.company_cut_percent ?? 0);
+    return { ok: true, config: { company_cut_percent: Math.max(0, Math.min(100, Number.isFinite(company_cut_percent) ? company_cut_percent : 0)) } };
+  }
+  if (t === 'custom') {
+    const mode = String(o.mode || 'percent').toLowerCase();
+    if (mode === 'fixed') {
+      const fixed_amount = Number(o.fixed_amount ?? 0);
+      return { ok: true, config: { mode: 'fixed', fixed_amount: Number.isFinite(fixed_amount) ? fixed_amount : 0 } };
+    }
+    const percent = Number(o.percent ?? 0);
+    return { ok: true, config: { mode: 'percent', percent: Math.max(0, Math.min(100, Number.isFinite(percent) ? percent : 0)) } };
+  }
+  // special_only
+  return { ok: true, config: {} };
+}
+
+async function getIncomeRuleForUser(username) {
+  const u = String(username || '').trim();
+  if (!u) return { income_type: 'company', config_json: { commission_percent: 0 }, via: 'fallback' };
+
+  const ov = await pool.query(
+    `SELECT income_type, config_json FROM public.technician_income_overrides WHERE username=$1 LIMIT 1`,
+    [u]
+  );
+  if ((ov.rows || []).length) {
+    const t = normalizeIncomeType(ov.rows[0].income_type) || 'company';
+    const cfg = ov.rows[0].config_json || {};
+    return { income_type: t, config_json: cfg, via: 'override' };
+  }
+
+  // default by technician_profiles.employment_type (or company)
+  const pr = await pool.query(
+    `SELECT COALESCE(employment_type,'company') AS employment_type FROM public.technician_profiles WHERE username=$1 LIMIT 1`,
+    [u]
+  );
+  const emp = normalizeIncomeType(pr.rows?.[0]?.employment_type) || 'company';
+  const def = await pool.query(
+    `SELECT config_json FROM public.technician_income_defaults WHERE income_type=$1 LIMIT 1`,
+    [emp]
+  );
+  if ((def.rows || []).length) {
+    return { income_type: emp, config_json: def.rows[0].config_json || {}, via: 'default' };
+  }
+  // fallback defaults
+  if (emp === 'company') return { income_type: 'company', config_json: { commission_percent: 0 }, via: 'fallback' };
+  if (emp === 'partner') return { income_type: 'partner', config_json: { company_cut_percent: 0 }, via: 'fallback' };
+  if (emp === 'custom') return { income_type: 'custom', config_json: { mode: 'percent', percent: 0 }, via: 'fallback' };
+  return { income_type: 'special_only', config_json: {}, via: 'fallback' };
+}
+
+// Defaults
+app.get('/admin/super/tech_income/defaults', requireSuperAdmin, async (req, res) => {
+  try {
+    const q = await pool.query(
+      `SELECT income_type, config_json, COALESCE(updated_by,'') AS updated_by, updated_at
+       FROM public.technician_income_defaults
+       ORDER BY income_type ASC`
+    );
+    return res.json({ ok: true, rows: q.rows || [] });
+  } catch (e) {
+    console.error('GET /admin/super/tech_income/defaults', e);
+    return res.status(500).json({ error: 'LOAD_DEFAULTS_FAILED' });
+  }
+});
+
+app.put('/admin/super/tech_income/defaults/:income_type', requireSuperAdmin, async (req, res) => {
+  try {
+    const income_type = normalizeIncomeType(req.params.income_type);
+    if (!income_type) return res.status(400).json({ error: 'INVALID_INCOME_TYPE' });
+    const normalized = normalizeIncomeConfig(income_type, req.body?.config_json);
+    if (!normalized.ok) return res.status(400).json({ error: normalized.error });
+
+    await pool.query(
+      `INSERT INTO public.technician_income_defaults(income_type, config_json, updated_by, updated_at)
+       VALUES($1,$2,$3,NOW())
+       ON CONFLICT (income_type)
+       DO UPDATE SET config_json=EXCLUDED.config_json, updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
+      [income_type, normalized.config, req.actor.username]
+    );
+    await auditLog(req, { action: 'INCOME_DEFAULT_UPSERT', meta: { income_type, config_json: normalized.config } });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('PUT /admin/super/tech_income/defaults/:income_type', e);
+    return res.status(500).json({ error: 'SAVE_DEFAULT_FAILED' });
+  }
+});
+
+// Overrides
+app.get('/admin/super/tech_income/overrides', requireSuperAdmin, async (req, res) => {
+  try {
+    const q = await pool.query(
+      `SELECT username, income_type, config_json, COALESCE(updated_by,'') AS updated_by, updated_at
+       FROM public.technician_income_overrides
+       ORDER BY username ASC`
+    );
+    return res.json({ ok: true, rows: q.rows || [] });
+  } catch (e) {
+    console.error('GET /admin/super/tech_income/overrides', e);
+    return res.status(500).json({ error: 'LOAD_OVERRIDES_FAILED' });
+  }
+});
+
+app.put('/admin/super/tech_income/overrides/:username', requireSuperAdmin, async (req, res) => {
+  try {
+    const username = String(req.params.username || '').trim();
+    const income_type = normalizeIncomeType(req.body?.income_type);
+    if (!username) return res.status(400).json({ error: 'MISSING_USERNAME' });
+    if (!income_type) return res.status(400).json({ error: 'INVALID_INCOME_TYPE' });
+    const normalized = normalizeIncomeConfig(income_type, req.body?.config_json);
+    if (!normalized.ok) return res.status(400).json({ error: normalized.error });
+
+    await pool.query(
+      `INSERT INTO public.technician_income_overrides(username, income_type, config_json, updated_by, updated_at)
+       VALUES($1,$2,$3,$4,NOW())
+       ON CONFLICT (username)
+       DO UPDATE SET income_type=EXCLUDED.income_type, config_json=EXCLUDED.config_json, updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
+      [username, income_type, normalized.config, req.actor.username]
+    );
+    await auditLog(req, { action: 'INCOME_OVERRIDE_UPSERT', target_username: username, meta: { income_type, config_json: normalized.config } });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('PUT /admin/super/tech_income/overrides/:username', e);
+    return res.status(500).json({ error: 'SAVE_OVERRIDE_FAILED' });
+  }
+});
+
+app.delete('/admin/super/tech_income/overrides/:username', requireSuperAdmin, async (req, res) => {
+  try {
+    const username = String(req.params.username || '').trim();
+    if (!username) return res.status(400).json({ error: 'MISSING_USERNAME' });
+    await pool.query(`DELETE FROM public.technician_income_overrides WHERE username=$1`, [username]);
+    await auditLog(req, { action: 'INCOME_OVERRIDE_DELETE', target_username: username });
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('DELETE /admin/super/tech_income/overrides/:username', e);
+    return res.status(500).json({ error: 'DELETE_OVERRIDE_FAILED' });
+  }
+});
+
+async function getJobTeam(job_id) {
+  const id = Number(job_id);
+  if (!id) return [];
+  const q = await pool.query(
+    `SELECT technician_username AS username FROM public.job_assignments WHERE job_id=$1
+     UNION
+     SELECT username FROM public.job_team_members WHERE job_id=$1
+     UNION
+     SELECT technician_username AS username FROM public.jobs WHERE job_id=$1 AND technician_username IS NOT NULL
+    `,
+    [id]
+  );
+  const set = new Set((q.rows || []).map(r=>String(r.username||'').trim()).filter(Boolean));
+  return Array.from(set).sort();
+}
+
+function applyIncomeFormula(income_type, cfg, service_share) {
+  const base = Number(service_share || 0);
+  const t = normalizeIncomeType(income_type) || 'company';
+  const c = (cfg && typeof cfg === 'object') ? cfg : {};
+  if (t === 'special_only') return { service_income: 0, detail: { rule: 'special_only' } };
+  if (t === 'company') {
+    const pct = Math.max(0, Math.min(100, Number(c.commission_percent ?? 0)));
+    return { service_income: base * (pct/100), detail: { rule: 'company', commission_percent: pct } };
+  }
+  if (t === 'partner') {
+    const cut = Math.max(0, Math.min(100, Number(c.company_cut_percent ?? 0)));
+    return { service_income: base * (1 - (cut/100)), detail: { rule: 'partner', company_cut_percent: cut } };
+  }
+  // custom
+  const mode = String(c.mode || 'percent').toLowerCase();
+  if (mode === 'fixed') {
+    const fixed_amount = Number(c.fixed_amount ?? 0);
+    return { service_income: Number.isFinite(fixed_amount) ? fixed_amount : 0, detail: { rule: 'custom', mode:'fixed', fixed_amount: Number.isFinite(fixed_amount) ? fixed_amount : 0 } };
+  }
+  const pct = Math.max(0, Math.min(100, Number(c.percent ?? 0)));
+  return { service_income: base * (pct/100), detail: { rule: 'custom', mode:'percent', percent: pct } };
+}
+
+// Calc income per job
+app.get('/admin/super/tech_income/calc/job/:job_id', requireSuperAdmin, async (req, res) => {
+  try {
+    const job_id = Number(req.params.job_id);
+    if (!job_id) return res.status(400).json({ error: 'INVALID_JOB_ID' });
+
+    const itemsQ = await pool.query(
+      `SELECT job_item_id, item_name, COALESCE(is_service,false) AS is_service,
+              COALESCE(line_total,0) AS line_total,
+              COALESCE(assigned_technician_username,'') AS assigned_technician_username
+       FROM public.job_items
+       WHERE job_id=$1
+       ORDER BY job_item_id ASC`,
+      [job_id]
+    );
+    const items = itemsQ.rows || [];
+
+    const team = await getJobTeam(job_id);
+    if (!team.length) return res.status(409).json({ error: 'EMPTY_TEAM' });
+
+    const assignQ = await pool.query(
+      `SELECT technician_username, COALESCE(special_bonus_amount,0) AS special_bonus_amount
+       FROM public.job_assignments WHERE job_id=$1`,
+      [job_id]
+    );
+    const bonusMap = new Map((assignQ.rows || []).map(r=>[String(r.technician_username), Number(r.special_bonus_amount||0)]));
+
+    const service_total = items.filter(x=>x.is_service).reduce((s,x)=>s+Number(x.line_total||0),0);
+    const special_total = items.filter(x=>!x.is_service).reduce((s,x)=>s+Number(x.line_total||0),0);
+
+    const anyAssignedService = items.some(x=>x.is_service && String(x.assigned_technician_username||'').trim());
+    const unassignedServiceExists = items.some(x=>x.is_service && !String(x.assigned_technician_username||'').trim());
+
+    let mode = 'assigned';
+    if (!anyAssignedService) mode = 'split_team_no_assign';
+    else if (team.length > 1 && unassignedServiceExists) mode = 'split_team_coop';
+
+    const serviceShare = new Map(team.map(u=>[u,0]));
+    if (mode === 'assigned') {
+      for (const it of items) {
+        if (!it.is_service) continue;
+        const a = String(it.assigned_technician_username||'').trim();
+        if (a && serviceShare.has(a)) serviceShare.set(a, serviceShare.get(a) + Number(it.line_total||0));
+      }
+    } else {
+      const each = service_total / team.length;
+      for (const u of team) serviceShare.set(u, each);
+    }
+
+    const specialShare = new Map(team.map(u=>[u,0]));
+    for (const it of items) {
+      if (it.is_service) continue;
+      const a = String(it.assigned_technician_username||'').trim();
+      if (a && specialShare.has(a)) specialShare.set(a, specialShare.get(a) + Number(it.line_total||0));
+    }
+    // add job_assignments special bonus
+    for (const u of team) {
+      const b = bonusMap.get(u) || 0;
+      if (b) specialShare.set(u, specialShare.get(u) + b);
+    }
+
+    const rows = [];
+    for (const u of team) {
+      const rule = await getIncomeRuleForUser(u);
+      const share = Number(serviceShare.get(u) || 0);
+      const special_income = Number(specialShare.get(u) || 0);
+      const f = applyIncomeFormula(rule.income_type, rule.config_json, share);
+      const service_income = Number(f.service_income || 0);
+      rows.push({
+        username: u,
+        income_type: rule.income_type,
+        service_share: share,
+        service_income,
+        special_income,
+        total_income: service_income + special_income,
+        detail: Object.assign({}, f.detail, { via: rule.via, config_json: rule.config_json })
+      });
+    }
+
+    await auditLog(req, { action: 'INCOME_CALC_JOB', meta: { job_id, mode, team } });
+    return res.json({ ok: true, meta: { job_id, team, mode, service_total, special_total }, rows });
+  } catch (e) {
+    console.error('GET /admin/super/tech_income/calc/job/:job_id', e);
+    return res.status(500).json({ error: 'CALC_FAILED' });
+  }
+});
 async function requireAdminForRank(req, res, next) {
   try {
     const auth = parseCwfAuth(req);
@@ -1910,6 +2199,29 @@ await pool.query(`
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_assignments_user ON public.job_assignments(technician_username, status)`);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_assignments_job ON public.job_assignments(job_id)`);
+
+// 3.5.2) ✅ เงินพิเศษก้อน (แยกจาก job_items) ต่อช่างในงานทีม
+await pool.query(`ALTER TABLE public.job_assignments ADD COLUMN IF NOT EXISTS special_bonus_amount NUMERIC(12,2) DEFAULT 0`);
+
+// 3.8) ✅ ตั้งค่ารายได้ช่าง (Defaults + Overrides) - Super Admin เท่านั้น
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.technician_income_defaults (
+    income_type TEXT PRIMARY KEY,
+    config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_by TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.technician_income_overrides (
+    username TEXT PRIMARY KEY,
+    income_type TEXT NOT NULL,
+    config_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_by TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_income_overrides_type ON public.technician_income_overrides(income_type)`);
 
 // 3.4.2) job_photos: ผู้ที่อัปโหลด (uploaded_by) เพื่อกันรูปหาย/สับสนในงานทีม
 await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS uploaded_by TEXT`);
@@ -3120,7 +3432,13 @@ if (coerceNumber(override_price, 0) > 0) {
         LEFT JOIN public.technician_profiles p ON p.username=u.username
         WHERE u.role='technician'
           AND ($2::boolean IS TRUE OR COALESCE(p.accept_status,'ready') <> 'paused')
-          AND ($3::boolean IS TRUE OR COALESCE(p.employment_type,'company') = $1)
+          AND (
+            $3::boolean IS TRUE
+            OR (
+              ($1 = 'company' AND COALESCE(p.employment_type,'company') = ANY(ARRAY['company','custom','special_only']))
+              OR COALESCE(p.employment_type,'company') = $1
+            )
+          )
         ORDER BY u.username
         `,
         [ttype === 'all' ? 'company' : ttype, !offerOnly, isAll]
@@ -4263,7 +4581,13 @@ app.get("/admin/schedule_v2", requireAdminSoft, async (req, res) => {
       FROM public.users u
       LEFT JOIN public.technician_profiles p ON p.username=u.username
       WHERE u.role='technician'
-        AND ($3::boolean IS TRUE OR COALESCE(p.employment_type,'company') = $1)
+        AND (
+          $3::boolean IS TRUE
+          OR (
+            ($1 = 'company' AND COALESCE(p.employment_type,'company') = ANY(ARRAY['company','custom','special_only']))
+            OR COALESCE(p.employment_type,'company') = $1
+          )
+        )
       ORDER BY u.username
       `,
       [tech_type]
@@ -6705,6 +7029,10 @@ app.post("/admin/technicians/create", requireAdminSession, async (req, res) => {
 
   const code = (technician_code || "").toString().trim() || null;
   const pos = (position || "junior").toString().trim();
+  const emp = (employment_type || '').toString().trim();
+  if (emp && !['company','partner','custom','special_only'].includes(emp.toLowerCase())) {
+    return res.status(400).json({ error: "employment_type ต้องเป็น company/partner/custom/special_only" });
+  }
 
   const client = await pool.connect();
   try {
@@ -6725,7 +7053,7 @@ app.post("/admin/technicians/create", requireAdminSession, async (req, res) => {
         code,
         pos,
         (phone || '').toString().trim() || null,
-        (employment_type || '').toString().trim() || null,
+        emp || null,
       ]
     );
 
@@ -6781,8 +7109,9 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
       return res.status(400).json({ error: "รูปแบบเบอร์โทรไม่ถูกต้อง" });
     }
 
-    if (employment_type && !['company','partner'].includes(String(employment_type).toLowerCase())) {
-      return res.status(400).json({ error: "employment_type ต้องเป็น company หรือ partner" });
+    // รองรับประเภทช่างสำหรับระบบรายได้ (ISSUE-2)
+    if (employment_type && !['company','partner','custom','special_only'].includes(String(employment_type).toLowerCase())) {
+      return res.status(400).json({ error: "employment_type ต้องเป็น company/partner/custom/special_only" });
     }
     const isHHMM = (s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(s||''));
     if (work_start && !isHHMM(work_start)) {
@@ -7586,7 +7915,13 @@ async function listTechniciansByType(tech_type, opts = {}) {
     LEFT JOIN public.technician_profiles p ON p.username=u.username
     WHERE u.role='technician'
       AND ($2::boolean IS TRUE OR COALESCE(p.accept_status,'ready') <> 'paused')
-      AND ($3::boolean IS TRUE OR COALESCE(p.employment_type,'company') = $1)
+      AND (
+        $3::boolean IS TRUE
+        OR (
+          ($1 = 'company' AND COALESCE(p.employment_type,'company') = ANY(ARRAY['company','custom','special_only']))
+          OR COALESCE(p.employment_type,'company') = $1
+        )
+      )
     ORDER BY u.username
     `,
     [t, include_paused, isAll]
