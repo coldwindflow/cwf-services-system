@@ -91,6 +91,12 @@ function techDisplayName(u){
   return (teamEdit.techMap[key]?.display) || key;
 }
 
+function getPrimaryTechFromUI(fallback){
+  const v = String(el('edit_primary_tech')?.value || '').trim();
+  if (v) return v;
+  return String(fallback||'').trim();
+}
+
 function renderTeamEditor(primaryUsername, currentTeamUsernames){
   const primary = String(primaryUsername||'').trim();
   const selected = new Set((Array.isArray(currentTeamUsernames)?currentTeamUsernames:[]).map(x=>String(x||'').trim()).filter(Boolean));
@@ -143,8 +149,8 @@ function renderTeamEditor(primaryUsername, currentTeamUsernames){
   if (hint) {
     const extras = finalMembers.filter(u=>u && u !== primary);
     hint.innerHTML = extras.length
-      ? `เลือกช่างร่วมแล้ว: <b>${escapeHtml(extras.map(u=>techDisplayName(u)).join(', '))}</b>`
-      : `ยังไม่ได้เลือกช่างร่วม (ถ้าต้องเพิ่มทีม ให้เลือกในรายการด้านบน)`;
+      ? `หัวหน้างาน: <b>${escapeHtml(techDisplayName(primary))}</b> • ช่างร่วม: <b>${escapeHtml(extras.map(u=>techDisplayName(u)).join(', '))}</b>`
+      : `หัวหน้างาน: <b>${escapeHtml(primary ? techDisplayName(primary) : '-')}</b> • ยังไม่ได้เลือกช่างร่วม (ถ้าต้องเพิ่มทีม ให้เลือกในรายการด้านบน)`;
   }
   const hid = el('edit_team_members_json');
   if (hid) hid.value = JSON.stringify(finalMembers);
@@ -321,8 +327,14 @@ async function loadJob(){
         </div>
 
         <div style="margin-top:12px">
-          <b>👥 ทีมช่าง (เพิ่มช่างร่วม)</b>
-          <div class="muted2 mini" style="margin-top:6px">ช่างหลัก: <b>${escapeHtml(safe(job.technician_username||'-'))}</b> • เลือกช่างร่วมได้หลายคน</div>
+          <b>👥 ทีมช่าง</b>
+          <div class="muted2 mini" style="margin-top:6px">เลือกหัวหน้างาน (ช่างหลัก) และเลือกช่างร่วมได้หลายคน • สามารถเปลี่ยนหัวหน้างานและเอาคนเดิมออกจากทีมได้</div>
+          <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <div style="flex:1;min-width:260px">
+              <label>หัวหน้างาน / ช่างหลัก</label>
+              <select id="edit_primary_tech" style="width:100%"></select>
+            </div>
+          </div>
           <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:flex-end">
             <div style="flex:1;min-width:220px">
               <label>ค้นหาช่าง (ชื่อ/username)</label>
@@ -516,7 +528,7 @@ async function loadJob(){
 
     const getCurrentTeamMembers = () => {
       // Prefer current UI selection (hidden json). Fallback to initial team members.
-      const primaryU = String(job.technician_username||'').trim();
+      const primaryU = getPrimaryTechFromUI(String(job.technician_username||'').trim());
       let members = [];
       try {
         const hid = el('edit_team_members_json');
@@ -602,12 +614,34 @@ async function loadJob(){
       await loadAllTechsOnce();
       const primaryU = String(job.technician_username||'').trim();
       const curTeamUsers = teamUsernames; // from loadJob scope
+
+      // primary dropdown (allow change lead)
+      const primarySel = el('edit_primary_tech');
+      if (primarySel) {
+        const all = (teamEdit.techs || []).slice().sort((a,b)=>a.username.localeCompare(b.username));
+        primarySel.innerHTML = `<option value="">- ไม่ระบุ -</option>` + all.map(t=>{
+          const u = String(t.username||'').trim();
+          const label = `${techDisplayName(u)} (${u})`;
+          const sel = (u && u === primaryU) ? 'selected' : '';
+          return `<option value="${escapeHtml(u)}" ${sel}>${escapeHtml(label)}</option>`;
+        }).join('');
+        // if job has primary not in list (legacy), still show it
+        if (primaryU && !all.some(t=>t.username===primaryU)) {
+          const opt = document.createElement('option');
+          opt.value = primaryU;
+          opt.textContent = `${techDisplayName(primaryU)} (${primaryU})`;
+          opt.selected = true;
+          primarySel.insertBefore(opt, primarySel.children[1] || null);
+        }
+      }
+
       // initial render
-      renderTeamEditor(primaryU, curTeamUsers);
+      renderTeamEditor(getPrimaryTechFromUI(primaryU), curTeamUsers);
       const searchEl = el('edit_team_search');
       const selEl = el('edit_team_members');
-      if (searchEl) searchEl.oninput = ()=>renderTeamEditor(primaryU, curTeamUsers);
-      if (selEl) selEl.onchange = ()=>{ renderTeamEditor(primaryU, curTeamUsers); renderEditor(); };
+      if (searchEl) searchEl.oninput = ()=>renderTeamEditor(getPrimaryTechFromUI(primaryU), curTeamUsers);
+      if (selEl) selEl.onchange = ()=>{ renderTeamEditor(getPrimaryTechFromUI(primaryU), curTeamUsers); renderEditor(); };
+      if (primarySel) primarySel.onchange = ()=>{ renderTeamEditor(getPrimaryTechFromUI(primaryU), curTeamUsers); renderEditor(); };
     } catch (e) {
       console.warn('team editor init failed', e);
     }
@@ -621,6 +655,7 @@ async function loadJob(){
           if (msg) msg.textContent = 'กำลังบันทึก...';
 
           const apptRaw = String(el('edit_appt')?.value||'').trim();
+          const primaryU = getPrimaryTechFromUI(String(job.technician_username||'').trim()) || null;
           const payload = {
             customer_name: String(el('edit_customer_name')?.value||'').trim(),
             customer_phone: String(el('edit_customer_phone')?.value||'').trim(),
@@ -634,6 +669,8 @@ async function loadJob(){
             // Using Date(...).toISOString() will convert to UTC ("Z") and cause 09:00 -> 16:00/18:00 shifts.
             // Treat the picked wall-clock time as Bangkok (+07:00).
             appointment_datetime: apptRaw ? localDatetimeToBangkokISO(apptRaw) : null,
+            // allow change lead / primary technician (backward-compatible)
+            technician_username: primaryU,
           };
           await apiFetch(`/jobs/${encodeURIComponent(String(job.job_id))}/admin-edit`, {
             method:'PUT',
@@ -660,7 +697,7 @@ async function loadJob(){
           // --- Save team members (if changed) ---
           try {
             const hid = el('edit_team_members_json');
-            const primaryU = String(job.technician_username||'').trim();
+            const primaryU = getPrimaryTechFromUI(String(job.technician_username||'').trim());
             let desired = [];
             if (hid && hid.value) {
               try { desired = JSON.parse(hid.value); } catch {}
@@ -670,7 +707,7 @@ async function loadJob(){
             if (primaryU && !desired.includes(primaryU)) desired.unshift(primaryU);
             desired = Array.from(new Set(desired));
 
-            const cur = Array.from(new Set([primaryU, ...teamUsernames.map(x=>String(x||'').trim())].filter(Boolean)));
+            const cur = Array.from(new Set([String(job.technician_username||'').trim(), ...teamUsernames.map(x=>String(x||'').trim())].filter(Boolean)));
             const same = (a,b)=>{
               if (a.length !== b.length) return false;
               const sa = new Set(a);

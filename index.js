@@ -4352,7 +4352,16 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
     // backward-compatible: some frontend versions send latitude/longitude
     latitude,
     longitude,
+    // allow admin to change primary technician (lead)
+    technician_username,
   } = req.body || {};
+
+  const hasTechField = Object.prototype.hasOwnProperty.call((req.body || {}), "technician_username");
+  const techToSet = !hasTechField
+    ? undefined
+    : (technician_username === null || technician_username === undefined || String(technician_username).trim() === ""
+        ? null
+        : String(technician_username).trim());
 
   // Backward-compatible mapping (do not break existing callers)
   const toFiniteOrNull = (v) => {
@@ -4414,7 +4423,12 @@ try {
     if (apptToUse) {
       // collect technicians assigned to this job (legacy + team + assignments)
       const techSet = new Set();
-      if (cur.technician_username) techSet.add(String(cur.technician_username).trim());
+      // if admin explicitly changes/clears primary tech, use that for collision set
+      if (hasTechField) {
+        if (techToSet) techSet.add(String(techToSet).trim());
+      } else {
+        if (cur.technician_username) techSet.add(String(cur.technician_username).trim());
+      }
 
       try {
         const tmR = await pool.query(`SELECT username FROM public.job_team_members WHERE job_id=$1`, [job_id]);
@@ -4445,8 +4459,9 @@ try {
           maps_url = COALESCE(NULLIF($7, ''), maps_url),
           job_zone = COALESCE(NULLIF($8, ''), job_zone),
           gps_latitude = COALESCE($9, gps_latitude),
-          gps_longitude = COALESCE($10, gps_longitude)
-      WHERE job_id=$11
+          gps_longitude = COALESCE($10, gps_longitude),
+          technician_username = CASE WHEN $11 THEN $12 ELSE technician_username END
+      WHERE job_id=$13
       `,
       [
         customer_name ?? null,
@@ -4459,9 +4474,27 @@ try {
         job_zone ?? null,
         gpsLat,
         gpsLng,
+        !!hasTechField,
+        (techToSet === undefined ? null : techToSet),
         job_id,
       ]
     );
+
+    // keep job_assignments consistent for the new primary tech (fail-open)
+    try {
+      if (hasTechField && techToSet) {
+        await pool.query(
+          `
+          INSERT INTO public.job_assignments (job_id, technician_username, status)
+          VALUES ($1,$2,'in_progress')
+          ON CONFLICT (job_id, technician_username) DO UPDATE SET status=EXCLUDED.status
+          `,
+          [job_id, techToSet]
+        );
+      }
+    } catch (e) {
+      console.warn('[admin-edit] upsert job_assignments for primary tech failed (fail-open)', e.message);
+    }
     res.json({ success: true });
   } catch (e) {
     console.error(e);
