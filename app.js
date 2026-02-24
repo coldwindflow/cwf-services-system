@@ -467,11 +467,17 @@ async function loadProfile() {
     if (profileRankLabelEl) profileRankLabelEl.textContent = `Rank: Lv.${ri.level} ${ri.label}`;
 
     // Grade / stats
-    const done = Number(data.done_count ?? 0);
-    const grade = data.grade || calcGradeFromDone(done);
+    const doneAllTime = Number(data.done_count ?? 0);
+    const grade = data.grade || calcGradeFromDone(doneAllTime);
     if (profileGradeEl) profileGradeEl.textContent = `เกรด: ${grade}`;
     if (ratingEl) ratingEl.textContent = (data.rating ?? 0).toString();
-    if (doneCountEl) doneCountEl.textContent = done.toString();
+    // ✅ งานสะสมบนหน้า (ขอให้เป็น “จำนวนงานที่ทำแล้วภายในเดือนปัจจุบัน”)
+    // - ถ้า renderJobs คำนวณไว้แล้ว ให้ใช้ค่านั้น (กันโดน profile endpoint overwrite)
+    // - ถ้ายังไม่มี ให้ fallback เป็น all-time เพื่อไม่ให้ว่าง
+    const monthDone = (typeof window !== 'undefined' && Number.isFinite(window.__CWF_MONTH_DONE__))
+      ? Number(window.__CWF_MONTH_DONE__)
+      : doneAllTime;
+    if (doneCountEl) doneCountEl.textContent = String(monthDone);
 
     // Photo (serve from /uploads)
     const photo = data.photo_path || "/logo.png";
@@ -508,7 +514,15 @@ async function loadProfile() {
     if (profileRankLabelEl) profileRankLabelEl.textContent = "Rank: -";
     if (profileGradeEl) profileGradeEl.textContent = "เกรด: -";
     if (ratingEl) ratingEl.textContent = "0.0";
-    if (doneCountEl) doneCountEl.textContent = "0";
+    // fail-open: ถ้าคำนวณงานสะสมเดือนนี้ไว้แล้ว ให้คงไว้
+    try{
+      const monthDone = (typeof window !== 'undefined' && Number.isFinite(window.__CWF_MONTH_DONE__))
+        ? Number(window.__CWF_MONTH_DONE__)
+        : 0;
+      if (doneCountEl) doneCountEl.textContent = String(monthDone);
+    }catch(e2){
+      if (doneCountEl) doneCountEl.textContent = "0";
+    }
     if (profilePhotoEl) profilePhotoEl.src = "/logo.png";
     try{ if (typeof window !== 'undefined' && typeof window.__cwfSyncTechMore === 'function') window.__cwfSyncTechMore(); }catch(e){}
   }
@@ -1027,9 +1041,20 @@ function renderJobs(jobs) {
     // ignore
   }
 
-  const done = historyAll.filter((j) => normStatus(j.job_status) === "เสร็จแล้ว").length;
-  if (doneCountEl) doneCountEl.textContent = String(done);
-  renderProfile(done);
+  // ✅ งานสะสม: แสดง “จำนวนงานที่ทำแล้วภายในเดือนปัจจุบัน” เสมอ
+  // - ไม่ผูกกับ history filter (วัน/เดือน/ทั้งหมด)
+  // - นับเฉพาะงานที่ถือว่า done (ไม่รวมยกเลิก)
+  const monthKey2 = todayYMD.slice(0,7);
+  const monthDone = jobs.filter((j)=>{
+    const st = normStatus(j.job_status);
+    if (!DONE_STATUSES.has(st)) return false;
+    const y = ymdBkkFromISO(j.appointment_datetime);
+    return y && y.slice(0,7) === monthKey2;
+  }).length;
+
+  try{ if (typeof window !== 'undefined') window.__CWF_MONTH_DONE__ = monthDone; }catch(e){}
+  if (doneCountEl) doneCountEl.textContent = String(monthDone);
+  renderProfile(monthDone);
 }
 
 

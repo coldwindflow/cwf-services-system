@@ -161,6 +161,10 @@
       border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.12);
       box-shadow:0 10px 26px rgba(0,0,0,0.18);cursor:pointer;user-select:none}
     .tech-icbtn:active{transform: translateY(1px) scale(0.99)}
+    /* ISSUE: hamburger icon มองไม่เห็น/กลืนกับพื้นหลัง => ทำให้เป็นสีน้ำเงิน */
+    #techMenuBtn{background:rgba(255,255,255,0.92);border-color:rgba(37,99,235,0.30);color:#2563eb;font-size:22px;font-weight:1200;}
+    /* ปุ่มปิดเมนูใน drawer ให้มองชัดบนพื้นหลังขาว */
+    #techMenuCloseBtn{background:rgba(37,99,235,0.10);border-color:rgba(37,99,235,0.25);color:#2563eb;}
     #techTopSpacer{height:74px}
     @media (max-width:420px){#techTopSpacer{height:72px}}
 
@@ -184,22 +188,26 @@
       width:100%;
       min-height:46px;
       border-radius:16px;
-      border:1px solid rgba(15,23,42,0.10);
-      background:#fff;
+      border:1px solid rgba(37,99,235,0.22);
+      background:#2563eb;
+      color:#fff;
       font-weight:1000;
       display:flex;align-items:center;justify-content:space-between;
       padding: 10px 12px;
       cursor:pointer;
     }
     .techMenuBtn .left{display:flex;align-items:center;gap:10px}
-    .techMenuBtn .sub{font-size:12px;font-weight:900;color:rgba(15,23,42,0.60)}
-    .techMenuDanger{border-color:rgba(239,68,68,0.25);background:rgba(239,68,68,0.08)}
+    .techMenuBtn .sub{font-size:12px;font-weight:900;color:rgba(255,255,255,0.85)}
+    /* ISSUE: ปุ่มออกจากระบบ ให้แดงชัด + ตัวหนังสือขาว */
+    .techMenuDanger{border-color:rgba(239,68,68,0.35);background:#ef4444;color:#fff}
+    .techMenuDanger .sub{color:rgba(255,255,255,0.90)}
     .techMenuSmall{font-size:12px;font-weight:900;color:rgba(15,23,42,0.70)}
 
     /* Profile compact (ISSUE-2) */
     .profile-compact{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
     .profile-compact .left{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 240px;}
     .profile-compact .meta{min-width:0}
+    .profile-compact .meta .name{font-size:16px;font-weight:1200;line-height:1.15;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;}
     .profile-compact .meta .code{font-size:13px;font-weight:1000;color:rgba(15,23,42,0.70)}
     .profile-compact .chips{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;flex:1 1 100%;}
     .chipStat{border-radius:16px;border:1px solid rgba(15,23,42,0.10);background:rgba(255,255,255,0.80);padding:10px;display:flex;flex-direction:column;gap:4px;}
@@ -395,10 +403,10 @@
         <div class="left">
           <img id="profile-photo" class="tech-avatar" src="/logo.png" alt="photo">
           <div class="meta">
+            <div class="name" id="profile-name">-</div>
             <div class="code" id="profile-code">รหัสช่าง: -</div>
             <!-- ซ่อนข้อมูลเยอะ ๆ ตามสเปค แต่ยังคง id ไว้ให้ app.js เติมค่า -->
             <div style="display:none">
-              <b id="profile-name">-</b>
               <div id="profile-rank" style="display:flex;align-items:center;gap:8px;">
                 <img id="profile-rank-badge" src="/assets/ranks/rank_lv1_128.png" alt="rank" style="width:44px;height:auto;display:block;">
                 <div class="muted" id="profile-rank-label">Rank: -</div>
