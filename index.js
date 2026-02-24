@@ -4352,16 +4352,7 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
     // backward-compatible: some frontend versions send latitude/longitude
     latitude,
     longitude,
-    // allow admin to change primary technician (lead)
-    technician_username,
   } = req.body || {};
-
-  const hasTechField = Object.prototype.hasOwnProperty.call((req.body || {}), "technician_username");
-  const techToSet = !hasTechField
-    ? undefined
-    : (technician_username === null || technician_username === undefined || String(technician_username).trim() === ""
-        ? null
-        : String(technician_username).trim());
 
   // Backward-compatible mapping (do not break existing callers)
   const toFiniteOrNull = (v) => {
@@ -4423,12 +4414,7 @@ try {
     if (apptToUse) {
       // collect technicians assigned to this job (legacy + team + assignments)
       const techSet = new Set();
-      // if admin explicitly changes/clears primary tech, use that for collision set
-      if (hasTechField) {
-        if (techToSet) techSet.add(String(techToSet).trim());
-      } else {
-        if (cur.technician_username) techSet.add(String(cur.technician_username).trim());
-      }
+      if (cur.technician_username) techSet.add(String(cur.technician_username).trim());
 
       try {
         const tmR = await pool.query(`SELECT username FROM public.job_team_members WHERE job_id=$1`, [job_id]);
@@ -4459,9 +4445,8 @@ try {
           maps_url = COALESCE(NULLIF($7, ''), maps_url),
           job_zone = COALESCE(NULLIF($8, ''), job_zone),
           gps_latitude = COALESCE($9, gps_latitude),
-          gps_longitude = COALESCE($10, gps_longitude),
-          technician_username = CASE WHEN $11 THEN $12 ELSE technician_username END
-      WHERE job_id=$13
+          gps_longitude = COALESCE($10, gps_longitude)
+      WHERE job_id=$11
       `,
       [
         customer_name ?? null,
@@ -4474,27 +4459,9 @@ try {
         job_zone ?? null,
         gpsLat,
         gpsLng,
-        !!hasTechField,
-        (techToSet === undefined ? null : techToSet),
         job_id,
       ]
     );
-
-    // keep job_assignments consistent for the new primary tech (fail-open)
-    try {
-      if (hasTechField && techToSet) {
-        await pool.query(
-          `
-          INSERT INTO public.job_assignments (job_id, technician_username, status)
-          VALUES ($1,$2,'in_progress')
-          ON CONFLICT (job_id, technician_username) DO UPDATE SET status=EXCLUDED.status
-          `,
-          [job_id, techToSet]
-        );
-      }
-    } catch (e) {
-      console.warn('[admin-edit] upsert job_assignments for primary tech failed (fail-open)', e.message);
-    }
     res.json({ success: true });
   } catch (e) {
     console.error(e);
@@ -5087,6 +5054,8 @@ app.get("/jobs/:job_id/team", async (req, res) => {
 app.put("/jobs/:job_id/team", async (req, res) => {
   const job_id = Number(req.params.job_id);
   const members = Array.isArray(req.body?.members) ? req.body.members : [];
+  // optional: allow frontend to explicitly pick primary/leader
+  const primaryFromBody = (req.body?.primary_username || req.body?.primary || "").toString().trim();
   if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
   const safe = [...new Set(members.map((x) => String(x || "").trim()).filter(Boolean))];
@@ -5094,6 +5063,25 @@ app.put("/jobs/:job_id/team", async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // lock job row (for consistent updates)
+    const jobRow = await client.query(
+      `SELECT technician_username, technician_team
+       FROM public.jobs
+       WHERE job_id=$1
+       FOR UPDATE`,
+      [job_id]
+    );
+    const curJob = jobRow.rows?.[0] || {};
+
+    // decide primary/leader for this job (backward-compatible)
+    const pickPrimary = () => {
+      if (primaryFromBody && safe.includes(primaryFromBody)) return primaryFromBody;
+      const curPrimary = String(curJob.technician_username || '').trim();
+      if (curPrimary && safe.includes(curPrimary)) return curPrimary;
+      return safe[0] || null;
+    };
+    const primary = pickPrimary();
 
     // ✅ collision check (ทุกคน) + buffer
     // - ปลอด regression: ถ้า job ไม่มีวันนัด จะไม่บล็อก
@@ -5132,39 +5120,65 @@ app.put("/jobs/:job_id/team", async (req, res) => {
       );
     }
 
-// ✅ sync job_assignments for team (in_progress) - backward compatible
-// - IMPORTANT: ต้องลบช่างที่ถูกเอาออก ไม่งั้นช่างคนนั้นจะยังเห็นงานค้างอยู่
-try {
-  // remove in_progress assignments not in current team
-  if (safe.length) {
-    await client.query(
-      `DELETE FROM public.job_assignments
-       WHERE job_id=$1
-         AND status='in_progress'
-         AND technician_username <> ALL($2::text[])`,
-      [job_id, safe]
-    );
-  } else {
-    await client.query(
-      `DELETE FROM public.job_assignments
-       WHERE job_id=$1 AND status='in_progress'`,
-      [job_id]
-    );
-  }
+    // mark primary in job_team_members (best-effort)
+    try {
+      if (primary) {
+        await client.query(
+          `UPDATE public.job_team_members
+           SET is_primary = (username = $2)
+           WHERE job_id = $1`,
+          [job_id, primary]
+        );
+      }
+    } catch (e) {
+      console.warn('[team] set is_primary failed (fail-open)', e.message);
+    }
 
-  for (const u of safe) {
-    await client.query(
-      `
-      INSERT INTO public.job_assignments (job_id, technician_username, status)
-      VALUES ($1,$2,'in_progress')
-      ON CONFLICT (job_id, technician_username) DO UPDATE SET status=EXCLUDED.status
-      `,
-      [job_id, u]
-    );
-  }
-} catch (e) {
-  console.warn("[team] sync job_assignments failed (fail-open)", e.message);
-}
+    // ✅ IMPORTANT: keep legacy fields in jobs consistent
+    // Many parts of the system still rely on jobs.technician_team (fallback) to show jobs for technicians.
+    // If team has changed, ensure removed tech does NOT keep seeing this job.
+    try {
+      if (primary) {
+        await client.query(
+          `UPDATE public.jobs
+           SET technician_username = COALESCE(NULLIF($2,''), technician_username),
+               technician_team = COALESCE(NULLIF($2,''), technician_team)
+           WHERE job_id=$1`,
+          [job_id, primary]
+        );
+      }
+    } catch (e) {
+      console.warn('[team] sync jobs.tech fields failed (fail-open)', e.message);
+    }
+
+    // ✅ sync job_assignments for team (in_progress) - backward compatible
+    // - upsert for current members
+    // - delete for removed members (so removed tech won't see this job in current jobs)
+    try {
+      if (safe.length) {
+        await client.query(
+          `DELETE FROM public.job_assignments
+           WHERE job_id=$1
+             AND technician_username <> ALL($2::text[])`,
+          [job_id, safe]
+        );
+      } else {
+        // if safe is empty, do not delete anything (avoid regression)
+      }
+
+      for (const u of safe) {
+        await client.query(
+          `
+          INSERT INTO public.job_assignments (job_id, technician_username, status)
+          VALUES ($1,$2,'in_progress')
+          ON CONFLICT (job_id, technician_username) DO UPDATE SET status=EXCLUDED.status
+          `,
+          [job_id, u]
+        );
+      }
+    } catch (e) {
+      console.warn("[team] sync job_assignments failed (fail-open)", e.message);
+    }
 
     await client.query("COMMIT");
     res.json({ success: true, members: safe });
