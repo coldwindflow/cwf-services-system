@@ -1931,6 +1931,25 @@ await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS full_name TE
 await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS photo_url TEXT`);
 await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS commission_rate_percent DOUBLE PRECISION DEFAULT 0`);
 
+
+
+// 3.0) Bootstrap default Super Admin user (only if missing) - keeps DB role constraint safe
+// - Username: Super
+// - Password: 1549 (can override via SUPER_ADMIN_DEFAULT_PASSWORD)
+// NOTE: Super Admin privilege is still whitelist-based (isSuperAdmin), not DB role.
+try {
+  const superUser = 'Super';
+  const superPass = String(process.env.SUPER_ADMIN_DEFAULT_PASSWORD || '1549').trim() || '1549';
+  const chk = await pool.query('SELECT username FROM public.users WHERE username=$1 LIMIT 1', [superUser]);
+  if (!chk.rows || chk.rows.length === 0) {
+    await pool.query(
+      `INSERT INTO public.users(username, password, role, full_name) VALUES($1,$2,$3,$4)`,
+      [superUser, superPass, 'admin', 'Super Admin']
+    );
+  }
+} catch (e) {
+  console.warn('bootstrap Super user skipped:', e.message);
+}
 // 3.1) customer_profiles: เก็บข้อมูลลูกค้าที่ Login ด้วย LINE แล้วกด Register (minimal, ไม่ยุ่ง users เดิม)
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.customer_profiles (

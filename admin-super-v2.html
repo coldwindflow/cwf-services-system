@@ -7,274 +7,303 @@
   <link rel="stylesheet" href="style.css">
   <style>
     body.cwf-lux{background:linear-gradient(180deg,#0b1b3a 0%, #0b4bb3 28%, #f5f7ff 28%, #ffffff 100%)!important}
-    body.cwf-lux h2{color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.25)}
-    .app{max-width:1080px;margin:0 auto;padding:14px 14px 140px}
-    .top{display:flex;align-items:flex-end;justify-content:space-between;gap:10px}
-    .top .sub{color:rgba(255,255,255,0.82);font-weight:900}
-    .card{background:#fff;border-radius:20px;padding:12px;border:1px solid rgba(11,75,179,0.18);box-shadow:0 10px 28px rgba(2,6,23,0.10)}
+    .app{max-width:1100px;margin:0 auto;padding:14px 14px 140px}
+    .top{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    h2{margin:0;color:#fff;text-shadow:0 2px 10px rgba(0,0,0,.25)}
+    .sub{color:rgba(255,255,255,0.86);font-weight:900}
+    .card{background:#fff;border-radius:20px;padding:12px;border:1px solid rgba(11,75,179,0.18);box-shadow:0 10px 28px rgba(2,6,23,0.10);margin-top:12px}
     .muted{color:rgba(15,23,42,0.65);font-weight:800;font-size:13px}
-    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+    .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
     @media (max-width:920px){.grid{grid-template-columns:1fr}}
+    input,select,textarea{padding:10px;border-radius:14px;border:1px solid rgba(11,75,179,0.18);font-weight:900}
     .btn{border-radius:14px;border:1px solid rgba(15,23,42,0.12);padding:10px 12px;font-weight:1000;cursor:pointer}
     .btn.yellow{background:#ffcc00;color:#0b1b3a;border-color:#ffcc00}
     .btn.blue{background:#0b4bb3;color:#fff;border-color:#0b4bb3}
     .btn.gray{background:#fff;color:#0b1b3a}
-    .row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
-    input,select,textarea{padding:10px;border-radius:14px;border:1px solid rgba(11,75,179,0.18);font-weight:900}
+    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
+    table{width:100%;border-collapse:separate;border-spacing:0 8px}
+    .tr{background:#fff;border:1px solid rgba(15,23,42,0.10);border-radius:16px;box-shadow:0 10px 22px rgba(2,6,23,0.06)}
+    .tr td{padding:10px;vertical-align:top}
     .pill{display:inline-flex;gap:6px;align-items:center;border-radius:999px;padding:5px 10px;font-weight:1000;font-size:12px}
     .pill.blue{background:#0b4bb3;color:#fff}
     .pill.yellow{background:#ffcc00;color:#0b1b3a}
-    .pill.gray{background:#f1f5f9;color:#0b1b3a}
-    .mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace}
-    .split{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
-
-    /* Tabs */
-    .tabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
-    .tab{border-radius:999px;padding:10px 12px;font-weight:1000;cursor:pointer;border:1px solid rgba(255,255,255,0.35);color:#fff;background:rgba(255,255,255,0.10)}
-    .tab.active{background:#ffcc00;color:#0b1b3a;border-color:#ffcc00}
-    .panel{display:none;margin-top:12px}
-    .panel.active{display:block}
-
-    /* List cards */
-    .rowitem{display:flex;gap:10px;align-items:flex-start;justify-content:space-between;border:1px solid rgba(15,23,42,0.10);border-radius:18px;padding:10px;background:#fff;box-shadow:0 10px 22px rgba(2,6,23,0.06);margin-bottom:10px}
-    .audititem{border:1px solid rgba(15,23,42,0.10);border-radius:18px;padding:10px;background:#fff;box-shadow:0 10px 22px rgba(2,6,23,0.06);margin-bottom:10px}
+    .sectionTitle{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;flex-wrap:wrap}
+    .sectionTitle b{color:#0b1b3a}
     pre{white-space:pre-wrap;word-break:break-word;background:#0b1b3a;color:#e5e7eb;border-radius:14px;padding:10px;overflow:auto}
-
-    .kpi{display:flex;gap:10px;flex-wrap:wrap}
-    .kpi .k{flex:1;min-width:220px;border:1px solid rgba(15,23,42,0.10);border-radius:18px;padding:10px;background:#fff}
+    details{background:#fff;border:1px solid rgba(15,23,42,0.10);border-radius:18px;padding:10px;margin-top:12px;box-shadow:0 10px 22px rgba(2,6,23,0.06)}
+    summary{cursor:pointer;font-weight:1000;color:#0b1b3a}
   </style>
 </head>
 <body class="cwf-lux">
   <div class="app">
     <div class="top">
       <div>
-        <h2 style="margin:0">Super Admin</h2>
-        <div class="sub">สิทธิ์แบบ Whitelist • รายได้ช่าง • ทีมงานหาร • Audit</div>
+        <h2>Super Admin</h2>
+        <div class="sub">ทำให้ใช้ได้จริง: ใส่ตัวเลขได้เลย • ไม่ต้องกรอก JSON</div>
       </div>
-      <div class="muted" id="who">กำลังโหลด...</div>
+      <div class="muted" id="meBox">กำลังโหลด...</div>
     </div>
 
-    <div class="tabs">
-      <button class="tab active" data-tab="users">👥 ผู้ใช้/สวมสิทธิ</button>
-      <button class="tab" data-tab="admins">🛡️ Admin IDs</button>
-      <button class="tab" data-tab="income">💰 รายได้ช่าง</button>
-      <button class="tab" data-tab="duration">⏱️ Duration</button>
-      <button class="tab" data-tab="audit">🧾 Audit</button>
+    <div class="card">
+      <b style="color:#0b1b3a">วิธีใช้ (สั้น ๆ)</b>
+      <div class="muted" style="margin-top:6px;line-height:1.45">
+        1) <b>Admin IDs</b>: สร้าง/แก้ไขแอดมิน, เปลี่ยนคอมมิชชั่น(ตัวเลข), เปลี่ยนรหัสผ่าน<br/>
+        2) <b>สวมสิทธิ</b>: เลือกผู้ใช้แล้วกดสวมสิทธิ (มีบันทึก Audit) / หยุดสวมสิทธิ<br/>
+        3) <b>Duration</b>: กำหนดเวลาต่อ service_key (นาที)<br/>
+        4) <b>รายได้ช่าง</b>: ตั้ง Defaults/Override แล้วใช้ “คำนวณตาม Job” เพื่อตรวจผล
+      </div>
     </div>
 
-    <!-- USERS / IMPERSONATE -->
-    <section class="panel active" data-panel="users">
-      <div class="grid">
-        <div class="card">
-          <div class="split">
-            <div>
-              <b style="color:#0b1b3a">รายชื่อผู้ใช้</b>
-              <div class="muted" style="margin-top:4px">ใช้สำหรับสวมสิทธิ (มี audit log)</div>
+    <details open>
+      <summary>🛡️ Admin IDs (สร้าง/แก้ไข/คอมมิชชั่น/รหัส)</summary>
+      <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
+        <div class="grid">
+          <div class="card">
+            <div class="sectionTitle">
+              <div>
+                <b>สร้าง Admin</b>
+                <div class="muted" style="margin-top:4px">หมายเหตุ: role ใน DB จะเป็น admin เสมอ • Super Admin = Whitelist เท่านั้น</div>
+              </div>
+              <button class="btn blue" id="btnReloadAdmins">รีเฟรช</button>
             </div>
-            <div class="row">
-              <select id="filterRole">
-                <option value="">ทั้งหมด</option>
-                <option value="super_admin">Super Admin</option>
-                <option value="admin">Admin</option>
-                <option value="technician">Technician</option>
-              </select>
+
+            <div class="row" style="margin-top:10px">
+              <input id="a_username" placeholder="username" />
+              <input id="a_password" placeholder="password" />
+              <input id="a_fullname" placeholder="ชื่อแอดมิน" style="flex:1;min-width:180px" />
+              <button class="btn yellow" id="btnCreateAdmin">สร้าง</button>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="sectionTitle">
+              <div>
+                <b>รายการ Admin / Super Admin</b>
+                <div class="muted" style="margin-top:4px">แก้ไขชื่อ/คอมมิชชั่น/รหัสผ่านได้ทันที</div>
+              </div>
+            </div>
+
+            <div style="overflow:auto;margin-top:8px">
+              <table>
+                <thead>
+                  <tr class="muted">
+                    <td>username</td>
+                    <td>ประเภท</td>
+                    <td>ชื่อ</td>
+                    <td>คอมฯ %</td>
+                    <td>บันทึก</td>
+                  </tr>
+                </thead>
+                <tbody id="adminsTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>👥 ผู้ใช้ / สวมสิทธิ (Impersonate)</summary>
+      <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
+        <div class="grid">
+          <div class="card">
+            <div class="sectionTitle">
+              <div>
+                <b>สวมสิทธิเป็นผู้ใช้อื่น</b>
+                <div class="muted" style="margin-top:4px">เลือกผู้ใช้แล้วกดสวมสิทธิ (ระบบจะบันทึก Audit)</div>
+              </div>
               <button class="btn blue" id="btnReloadUsers">รีเฟรช</button>
             </div>
-          </div>
-          <div class="muted" style="margin-top:10px">Tip: ถ้าจะสวมสิทธิเป็นช่าง จะเด้งไปหน้า Tech อัตโนมัติ</div>
-          <div id="usersBox" style="margin-top:10px"></div>
-        </div>
 
-        <div class="card">
-          <div class="split">
-            <div>
-              <b style="color:#0b1b3a">สถานะการสวมสิทธิ</b>
-              <div class="muted" style="margin-top:4px">หยุดสวมสิทธิแล้วจะกลับเป็น Super Admin</div>
+            <div class="row" style="margin-top:10px">
+              <select id="impTarget" style="flex:1;min-width:240px"></select>
+              <button class="btn yellow" id="btnImp">สวมสิทธิ</button>
+              <button class="btn blue" id="btnStopImp">หยุดสวมสิทธิ</button>
             </div>
-            <button class="btn blue" id="btnStopImp">หยุดสวมสิทธิ</button>
+            <div class="muted" id="impState" style="margin-top:10px">-</div>
           </div>
-          <div class="kpi" style="margin-top:10px">
-            <div class="k">
-              <div class="muted">Actor (คนจริง)</div>
-              <div class="mono" id="kpiActor">-</div>
+
+          <div class="card">
+            <div class="sectionTitle">
+              <div>
+                <b>หมายเหตุ</b>
+                <div class="muted" style="margin-top:4px">กันยกระดับสิทธิ์: เช็ค Super Admin จาก “actor” เท่านั้น</div>
+              </div>
             </div>
-            <div class="k">
-              <div class="muted">Effective (กำลังใช้งาน)</div>
-              <div class="mono" id="kpiEffective">-</div>
+            <div class="muted" style="margin-top:10px;line-height:1.45">
+              - ถ้าสวมสิทธิเป็นช่าง ระบบจะพาไปหน้า <span class="mono">tech.html</span> อัตโนมัติ<br/>
+              - หยุดสวมสิทธิ จะกลับมาที่หน้า Super Admin
             </div>
-          </div>
-          <div class="muted" id="impHint" style="margin-top:10px">-</div>
-        </div>
-      </div>
-    </section>
-
-    <!-- ADMINS -->
-    <section class="panel" data-panel="admins">
-      <div class="grid">
-        <div class="card">
-          <div class="split">
-            <div>
-              <b style="color:#0b1b3a">สร้าง Admin</b>
-              <div class="muted" style="margin-top:4px">หมายเหตุ: role ใน DB จะเป็น admin เสมอ • Super Admin = Whitelist เท่านั้น</div>
-            </div>
-            <button class="btn blue" id="btnReloadAdmins">รีเฟรช</button>
-          </div>
-          <div class="row" style="margin-top:10px">
-            <input id="newAdminUser" placeholder="username" />
-            <input id="newAdminPass" placeholder="password" />
-            <input id="newAdminName" placeholder="ชื่อแอดมิน" style="flex:1;min-width:160px" />
-            <select id="newAdminRole" disabled>
-              <option value="admin">Admin</option>
-            </select>
-            <button class="btn yellow" id="btnCreateAdmin">สร้าง</button>
-          </div>
-          <div class="muted" style="margin-top:10px">* ถ้าจะให้เป็น Super Admin ให้เพิ่มชื่อใน ENV SUPER_ADMIN_USERNAMES (หรือใช้ default Super)</div>
-        </div>
-
-        <div class="card">
-          <b style="color:#0b1b3a">รายการ Admin</b>
-          <div class="muted" style="margin-top:4px">แก้ไขชื่อ/คอมมิชชั่น/รหัสผ่าน</div>
-          <div id="adminsBox" style="margin-top:10px"></div>
-        </div>
-      </div>
-
-      <dialog id="editModal" style="border:none;border-radius:18px;max-width:520px;width:calc(100% - 40px)">
-        <div class="card" style="box-shadow:none;border:none">
-          <div class="split">
-            <b style="color:#0b1b3a">แก้ไข Admin</b>
-            <button class="btn gray" onclick="document.getElementById('editModal').close()">ปิด</button>
-          </div>
-          <div class="row" style="margin-top:10px">
-            <input id="editUser" disabled style="flex:1;min-width:200px" />
-            <select id="editRole" disabled>
-              <option value="admin">Admin</option>
-            </select>
-          </div>
-          <div class="row" style="margin-top:10px">
-            <input id="editName" placeholder="ชื่อ" style="flex:1;min-width:220px" />
-            <input id="editCommission" type="number" placeholder="commission %" style="width:160px" />
-          </div>
-          <div class="row" style="margin-top:10px">
-            <input id="editPass" placeholder="ตั้งรหัสใหม่ (ไม่ใส่=ไม่เปลี่ยน)" style="flex:1;min-width:220px" />
-            <button class="btn yellow" id="btnSaveEdit">บันทึก</button>
-          </div>
-        </div>
-      </dialog>
-    </section>
-
-    <!-- INCOME -->
-    <section class="panel" data-panel="income">
-      <div class="grid">
-        <div class="card">
-          <div class="split">
-            <div>
-              <b style="color:#0b1b3a">ค่าเริ่มต้นรายได้ (Defaults)</b>
-              <div class="muted" style="margin-top:4px">กำหนดสูตรตามประเภทช่าง: company / partner / custom / special_only</div>
-            </div>
-            <button class="btn blue" id="btnReloadIncomeDefaults">รีเฟรช</button>
-          </div>
-
-          <div class="muted" style="margin-top:10px">company: คอมฯเป็น % • partner: ได้หลังหัก %เข้าบริษัท • custom: สูตรเฉพาะ • special_only: ได้เฉพาะเงินพิเศษ</div>
-
-          <div class="row" style="margin-top:10px">
-            <select id="defType">
-              <option value="company">company</option>
-              <option value="partner">partner</option>
-              <option value="custom">custom</option>
-              <option value="special_only">special_only</option>
-            </select>
-            <textarea id="defJson" rows="4" style="flex:1;min-width:240px" placeholder='ตัวอย่าง company: {"commission_percent": 60}\npartner: {"company_cut_percent": 30}\ncustom: {"mode":"percent","percent":70}\nspecial_only: {}'></textarea>
-            <button class="btn yellow" id="btnSaveIncomeDefault">บันทึก</button>
-          </div>
-          <div class="muted" id="incomeDefaultsHint" style="margin-top:10px">-</div>
-        </div>
-
-        <div class="card">
-          <div class="split">
-            <div>
-              <b style="color:#0b1b3a">รายบุคคล (Overrides)</b>
-              <div class="muted" style="margin-top:4px">ตั้งสูตรให้ช่างบางคนเป็นพิเศษ</div>
-            </div>
-            <button class="btn blue" id="btnReloadIncomeOverrides">รีเฟรช</button>
-          </div>
-          <div class="row" style="margin-top:10px">
-            <input id="ovUser" placeholder="username ช่าง" />
-            <select id="ovType">
-              <option value="company">company</option>
-              <option value="partner">partner</option>
-              <option value="custom">custom</option>
-              <option value="special_only">special_only</option>
-            </select>
-            <textarea id="ovJson" rows="4" style="flex:1;min-width:240px" placeholder='config_json ตามประเภท'></textarea>
-            <button class="btn yellow" id="btnSaveIncomeOverride">บันทึก</button>
-          </div>
-          <div id="incomeOverridesBox" style="margin-top:10px"></div>
-        </div>
-
-        <div class="card" style="grid-column:1/-1">
-          <div class="split">
-            <div>
-              <b style="color:#0b1b3a">คำนวณรายได้ตาม Job</b>
-              <div class="muted" style="margin-top:4px">คิดจาก job_items (ราคาก่อนส่วนลด) + assigned_technician_username + ทีมงาน</div>
-            </div>
-          </div>
-          <div class="row" style="margin-top:10px">
-            <input id="calcJobId" placeholder="job_id" type="number" style="width:160px" />
-            <button class="btn yellow" id="btnCalcIncome">คำนวณ</button>
-          </div>
-          <div id="incomeCalcBox" style="margin-top:10px"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- DURATION -->
-    <section class="panel" data-panel="duration">
-      <div class="grid">
-        <div class="card">
-          <div class="split">
-            <div>
-              <b style="color:#0b1b3a">Duration Rules</b>
-              <div class="muted" style="margin-top:4px">บันทึกไว้สำหรับอ้างอิง/ปรับสูตรในอนาคต (ไม่กระทบหน้าเพิ่มงาน)</div>
-            </div>
-            <button class="btn blue" id="btnReloadDur">รีเฟรช</button>
-          </div>
-          <div class="row" style="margin-top:10px">
-            <input id="durKey" placeholder="service_key เช่น wall_normal" style="flex:1;min-width:200px" />
-            <input id="durMin" placeholder="duration_min" type="number" style="width:160px" />
-            <button class="btn yellow" id="btnSaveDuration">บันทึก</button>
-          </div>
-          <div id="durationsBox" style="margin-top:10px"></div>
-        </div>
-
-        <div class="card">
-          <b style="color:#0b1b3a">ลิงก์จัดการระบบอื่น</b>
-          <div class="muted" style="margin-top:4px">ใช้ของเดิมทั้งหมด</div>
-          <div class="row" style="margin-top:10px">
-            <button class="btn yellow" onclick="location.href='/admin-dashboard-v2.html'">ไป Dashboard</button>
-            <button class="btn blue" onclick="location.href='/admin-promotions-v2.html'">ราคา/โปรโมชัน</button>
-            <button class="btn gray" onclick="location.href='/admin-technicians-v2.html'">จัดการช่าง</button>
           </div>
         </div>
       </div>
-    </section>
+    </details>
 
-    <!-- AUDIT -->
-    <section class="panel" data-panel="audit">
-      <div class="card">
-        <div class="split">
-          <div>
-            <b style="color:#0b1b3a">Audit Log</b>
-            <div class="muted" style="margin-top:4px">บันทึกการสวมสิทธิ + การแก้ไข Admin + Duration + รายได้ช่าง</div>
+    <details>
+      <summary>⏱️ Duration (กำหนดเวลางาน/รายการบริการ)</summary>
+      <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
+        <div class="grid">
+          <div class="card">
+            <div class="sectionTitle">
+              <div>
+                <b>เพิ่ม/แก้ไข Duration</b>
+                <div class="muted" style="margin-top:4px">กรอก <span class="mono">service_key</span> และ <b>นาที</b> แล้วกดบันทึก</div>
+              </div>
+              <button class="btn blue" id="btnReloadDur">รีเฟรช</button>
+            </div>
+
+            <div class="row" style="margin-top:10px">
+              <input id="d_key" placeholder="service_key เช่น wall_clean" style="flex:1;min-width:220px" />
+              <input id="d_min" type="number" placeholder="นาที" style="width:140px" />
+              <button class="btn yellow" id="btnUpsertDur">บันทึก</button>
+            </div>
           </div>
-          <button class="btn blue" id="btnReloadAudit">รีเฟรช</button>
+
+          <div class="card">
+            <b style="color:#0b1b3a">รายการ Duration</b>
+            <div class="muted" style="margin-top:4px">กด “แก้ไข” เพื่อดึงค่ามาใส่ช่องด้านซ้าย</div>
+            <div style="overflow:auto;margin-top:8px">
+              <table>
+                <thead>
+                  <tr class="muted">
+                    <td>service_key</td><td>นาที</td><td>แก้ไขโดย</td><td>เวลา</td><td>จัดการ</td>
+                  </tr>
+                </thead>
+                <tbody id="durTbody"></tbody>
+              </table>
+            </div>
+          </div>
         </div>
-        <div id="auditBox" style="margin-top:10px"></div>
       </div>
-    </section>
+    </details>
+
+    <details open>
+      <summary>💰 รายได้ช่าง (Defaults / Override / คำนวณตาม Job)</summary>
+      <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
+        <div class="card">
+          <div class="sectionTitle">
+            <div>
+              <b>Defaults (ใส่ตัวเลขได้เลย)</b>
+              <div class="muted" style="margin-top:4px">
+                company=คอมฯ% • partner=หักเข้าบริษัท% • custom=สูตรเฉพาะ% • special_only=ได้เงินพิเศษอย่างเดียว
+              </div>
+            </div>
+            <div class="row">
+              <button class="btn blue" id="btnReloadIncome">รีเฟรช</button>
+              <button class="btn yellow" id="btnSaveIncomeDefaults">บันทึก Defaults</button>
+            </div>
+          </div>
+
+          <div class="grid" style="margin-top:10px">
+            <div class="card" style="margin-top:0">
+              <b style="color:#0b1b3a">company</b>
+              <div class="muted" style="margin-top:4px">คอมมิชชั่นช่าง (% ของเรทรายการ ก่อนส่วนลด)</div>
+              <div class="row" style="margin-top:10px">
+                <input id="defCompanyPct" type="number" placeholder="เช่น 60" style="width:160px" />
+                <span class="muted">%</span>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:0">
+              <b style="color:#0b1b3a">partner</b>
+              <div class="muted" style="margin-top:4px">หัก % เข้าบริษัท (ช่างได้หลังหัก)</div>
+              <div class="row" style="margin-top:10px">
+                <input id="defPartnerCut" type="number" placeholder="เช่น 30" style="width:160px" />
+                <span class="muted">%</span>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:0">
+              <b style="color:#0b1b3a">custom</b>
+              <div class="muted" style="margin-top:4px">สูตรเฉพาะ (ตอนนี้ใช้แบบ %)</div>
+              <div class="row" style="margin-top:10px">
+                <input id="defCustomPct" type="number" placeholder="เช่น 70" style="width:160px" />
+                <span class="muted">%</span>
+              </div>
+            </div>
+
+            <div class="card" style="margin-top:0">
+              <b style="color:#0b1b3a">special_only</b>
+              <div class="muted" style="margin-top:4px">ไม่ได้เงินจากเรทรายการ ได้เฉพาะเงินพิเศษ</div>
+              <div class="muted" style="margin-top:10px">* บันทึก Defaults จะตั้งค่านี้ให้เอง</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid">
+          <div class="card">
+            <div class="sectionTitle">
+              <div>
+                <b>Override รายบุคคล</b>
+                <div class="muted" style="margin-top:4px">เลือกช่าง → เลือกประเภท → ใส่ตัวเลข → บันทึก</div>
+              </div>
+              <div class="row">
+                <button class="btn gray" id="btnClearOverride">ล้าง Override</button>
+              </div>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <select id="ovTech" style="flex:1;min-width:220px"></select>
+              <select id="ovType" style="width:180px">
+                <option value="company">company</option>
+                <option value="partner">partner</option>
+                <option value="custom">custom</option>
+                <option value="special_only">special_only</option>
+              </select>
+              <input id="ovValue" type="number" placeholder="ตัวเลข (%, แล้วแต่ประเภท)" style="width:220px" />
+              <button class="btn yellow" id="btnSaveOverride">บันทึก Override</button>
+            </div>
+            <div class="muted" style="margin-top:10px;line-height:1.45">
+              - company/custom: ใส่เป็น % ที่ช่างได้จาก “เรทรายการ”<br/>
+              - partner: ใส่ % ที่หักเข้าบริษัท (ช่างได้หลังหัก)<br/>
+              - special_only: ไม่ต้องใส่ตัวเลข (จะถูกมองข้าม)
+            </div>
+          </div>
+
+          <div class="card">
+            <b style="color:#0b1b3a">คำนวณตาม Job (ตรวจผลจริง)</b>
+            <div class="muted" style="margin-top:4px">
+              ใช้ <span class="mono">job_items.assigned_technician_username</span> และเรทรายการก่อนส่วนลด • ถ้าไม่ assign จะหารตามทีม
+            </div>
+            <div class="row" style="margin-top:10px">
+              <input id="calcJobId" placeholder="job_id เช่น 133" style="flex:1;min-width:180px" />
+              <button class="btn blue" id="btnCalcJob">คำนวณ</button>
+            </div>
+            <div class="muted" id="calcNote" style="margin-top:10px">-</div>
+            <pre id="calcOut" style="margin-top:10px;max-height:320px">-</pre>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details>
+      <summary>🧾 Audit Log</summary>
+      <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
+        <div class="card">
+          <div class="sectionTitle">
+            <div>
+              <b>บันทึกการกระทำ (Audit)</b>
+              <div class="muted" style="margin-top:4px">ใช้ตรวจว่าใครทำอะไร/สวมสิทธิเมื่อไหร่</div>
+            </div>
+            <button class="btn blue" id="btnReloadAudit">รีเฟรช</button>
+          </div>
+
+          <div style="overflow:auto;margin-top:8px">
+            <table>
+              <thead>
+                <tr class="muted">
+                  <td>เวลา</td><td>actor</td><td>action</td><td>target</td><td>meta</td>
+                </tr>
+              </thead>
+              <tbody id="auditTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </details>
 
   </div>
 
-  <script src="admin-v2-common.js"></script>
   <script src="admin-super-v2.js"></script>
 </body>
 </html>
