@@ -800,6 +800,43 @@ async function requireSuperAdmin(req, res, next) {
   }
 }
 
+// =======================================
+// 🧑‍🔧 Technician Session Guard (for technician-only APIs)
+// - allow admin actor when impersonating technician (effective role)
+// =======================================
+function isTechnicianRole(role) {
+  const r = String(role || '').trim().toLowerCase();
+  return ['technician', 'tech', 'ช่าง', 'senior_technician', 'lead_technician'].includes(r);
+}
+
+async function requireTechnicianSession(req, res, next) {
+  try {
+    const ctx = await getAuthContext(req, res);
+    if (!ctx.ok) {
+      const accept = String(req.headers?.accept || '').toLowerCase();
+      if (accept.includes('text/html')) return res.redirect(302, '/login.html');
+      return res.status(401).json({ error: 'UNAUTHORIZED' });
+    }
+
+    // Allow if effective is technician-like (supports admin impersonation)
+    if (!isTechnicianRole(ctx.effective.role)) {
+      const accept = String(req.headers?.accept || '').toLowerCase();
+      if (accept.includes('text/html')) return res.redirect(302, '/login.html');
+      return res.status(403).json({ error: 'FORBIDDEN' });
+    }
+
+    req.actor = ctx.actor;
+    req.effective = ctx.effective;
+    req.auth = ctx.effective;
+    req.impersonating = !!ctx.impersonating;
+    req.session_token = ctx.session_token;
+    return next();
+  } catch (e) {
+    console.error('requireTechnicianSession error:', e);
+    return res.status(500).json({ error: 'AUTH_FAILED' });
+  }
+}
+
 async function auditLog(req, { action, target_username = null, target_role = null, meta = null }) {
   try {
     const actor = req.actor || null;
@@ -1622,123 +1659,220 @@ async function getTeamForJob(job_id) {
   return Array.from(set).filter(Boolean);
 }
 
+// Reusable payout calculator (used by Super Admin preview + Technician income summary)
+async function computeJobPayout(job_id) {
+  const itemsQ = await pool.query(
+    `SELECT job_item_id, item_name, qty, unit_price, line_total, COALESCE(assigned_technician_username,'') AS assigned_technician_username,
+            COALESCE(is_service,false) AS is_service
+     FROM public.job_items
+     WHERE job_id=$1
+     ORDER BY job_item_id ASC`,
+    [job_id]
+  );
+  const items = itemsQ.rows || [];
+
+  const team = await getTeamForJob(job_id);
+  if (!team.length) {
+    const err = new Error('EMPTY_TEAM');
+    err.code = 'EMPTY_TEAM';
+    throw err;
+  }
+
+  const serviceAssigned = items.filter(it => it.is_service && String(it.assigned_technician_username || '').trim());
+  const serviceUnassigned = items.filter(it => it.is_service && !String(it.assigned_technician_username || '').trim());
+  const hasAnyServiceAssign = serviceAssigned.length > 0;
+  const coopMode = team.length > 1 && serviceUnassigned.length > 0;
+
+  const baseServiceTotal = sumServiceLines(items);
+
+  const baseServicePerTech = {};
+  team.forEach(u => baseServicePerTech[u] = 0);
+
+  let note = '';
+  if (!hasAnyServiceAssign || coopMode) {
+    const each = team.length ? (baseServiceTotal / team.length) : 0;
+    team.forEach(u => baseServicePerTech[u] = each);
+    note = !hasAnyServiceAssign
+      ? 'ไม่มีการ assign service เลย → หารเท่ากันตามทีม'
+      : 'โหมดทำร่วมกัน (ทีม>1 + มี service ที่ไม่ assign) → หารเท่ากันตามทีม';
+  } else {
+    for (const it of serviceAssigned) {
+      const a = String(it.assigned_technician_username || '').trim();
+      if (!a) continue;
+      baseServicePerTech[a] = (baseServicePerTech[a] || 0) + Number(it.line_total || 0);
+    }
+    note = 'มีการ assign service → แบ่งตาม assigned_technician_username';
+  }
+
+  const bonusQ = await pool.query(
+    `SELECT technician_username, COALESCE(special_bonus_amount,0) AS special_bonus_amount
+     FROM public.job_assignments WHERE job_id=$1`,
+    [job_id]
+  );
+  const bonusMap = {};
+  (bonusQ.rows || []).forEach(r => { bonusMap[String(r.technician_username)] = Number(r.special_bonus_amount || 0); });
+
+  const profQ = await pool.query(
+    `SELECT username, COALESCE(employment_type,'company') AS employment_type
+     FROM public.technician_profiles
+     WHERE username = ANY($1::text[])`,
+    [team]
+  );
+  const empMap = {};
+  (profQ.rows || []).forEach(r => { empMap[String(r.username)] = String(r.employment_type || 'company'); });
+
+  const payouts = [];
+  for (const u of team) {
+    const employment_type = empMap[u] || 'company';
+    const setting = await getIncomeSettingForTech(u, employment_type);
+    const base_service = Number(baseServicePerTech[u] || 0);
+    let service_income = 0;
+
+    if (setting.income_type === 'special_only') {
+      service_income = 0;
+    } else if (setting.income_type === 'company') {
+      const pct = Number(setting.config?.commission_percent || 0);
+      service_income = base_service * (pct / 100);
+    } else if (setting.income_type === 'partner') {
+      const cut = Number(setting.config?.company_cut_percent || 0);
+      service_income = base_service * (1 - (cut / 100));
+    } else if (setting.income_type === 'custom') {
+      const mode = String(setting.config?.mode || 'percent');
+      if (mode === 'fixed') {
+        service_income = Number(setting.config?.amount || 0);
+      } else {
+        const pct = Number(setting.config?.percent || 0);
+        service_income = base_service * (pct / 100);
+      }
+    }
+
+    const special_income = sumSpecialLinesForTech(items, u);
+    const special_bonus = Number(bonusMap[u] || 0);
+
+    payouts.push({
+      username: u,
+      employment_type,
+      setting,
+      base_service,
+      service_income,
+      special_income,
+      special_bonus,
+      total_income: service_income + special_income + special_bonus
+    });
+  }
+
+  return { job_id, note, team, base_service_total: baseServiceTotal, items, payouts };
+}
+
 app.get('/admin/super/tech_income/calc/job/:job_id', requireSuperAdmin, async (req, res) => {
   try {
     const job_id = Number(req.params.job_id);
     if (!Number.isFinite(job_id) || job_id <= 0) return res.status(400).json({ error: 'INVALID_JOB' });
 
-    const itemsQ = await pool.query(
-      `SELECT job_item_id, item_name, qty, unit_price, line_total, COALESCE(assigned_technician_username,'') AS assigned_technician_username,
-              COALESCE(is_service,false) AS is_service
-       FROM public.job_items
-       WHERE job_id=$1
-       ORDER BY job_item_id ASC`,
-      [job_id]
+    const r = await computeJobPayout(job_id);
+    return res.json({ ok: true, ...r });
+  } catch (e) {
+    console.error('GET /admin/super/tech_income/calc/job/:job_id', e);
+    if (String(e.code || '') === 'EMPTY_TEAM') return res.status(409).json({ error: 'EMPTY_TEAM' });
+    return res.status(500).json({ error: 'คำนวณไม่สำเร็จ' });
+  }
+});
+
+// =======================================
+// 💰 Technician Income Summary (for technician UI)
+// - รายได้วันนี้ / เดือนนี้ / สะสมทั้งหมด
+// - ใช้ finished_at + payout engine เดียวกับ Super Admin calc
+// =======================================
+
+function toBangkokDateKey(d) {
+  try {
+    // Asia/Bangkok = UTC+7 (no DST)
+    const dt = new Date(d);
+    if (Number.isNaN(dt.getTime())) return '';
+    const ms = dt.getTime() + (7 * 60 * 60 * 1000);
+    const b = new Date(ms);
+    const y = b.getUTCFullYear();
+    const m = String(b.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(b.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  } catch { return ''; }
+}
+
+function parseDateYMD(s) {
+  const x = String(s || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(x)) return '';
+  return x;
+}
+
+app.get('/tech/income_summary', requireTechnicianSession, async (req, res) => {
+  try {
+    const tech = String(req.effective?.username || '').trim();
+    if (!tech) return res.status(400).json({ error: 'INVALID_USER' });
+
+    const qDate = parseDateYMD(req.query.date);
+    const todayKey = toBangkokDateKey(new Date());
+    const dateKey = qDate || todayKey;
+    const ymKey = dateKey.slice(0, 7); // YYYY-MM
+
+    // Fetch finished jobs where technician is in the job team/assignments
+    const jobsQ = await pool.query(
+      `SELECT j.job_id, j.finished_at
+       FROM public.jobs j
+       WHERE j.job_status='เสร็จแล้ว'
+         AND j.finished_at IS NOT NULL
+         AND (
+           j.technician_username = $1
+           OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$1)
+           OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$1)
+         )
+       ORDER BY j.finished_at DESC`,
+      [tech]
     );
-    const items = itemsQ.rows || [];
+    const jobs = jobsQ.rows || [];
 
-    const team = await getTeamForJob(job_id);
-    if (!team.length) return res.status(409).json({ error: 'EMPTY_TEAM' });
+    let day_total = 0;
+    let month_total = 0;
+    let all_total = 0;
+    let computed = 0;
 
-    const serviceAssigned = items.filter(it => it.is_service && String(it.assigned_technician_username || '').trim());
-    const serviceUnassigned = items.filter(it => it.is_service && !String(it.assigned_technician_username || '').trim());
-    const hasAnyServiceAssign = serviceAssigned.length > 0;
-    const coopMode = team.length > 1 && serviceUnassigned.length > 0;
+    // Safety cap (กันระบบตันถ้ามีงานเยอะผิดปกติ)
+    const HARD_CAP = 2000;
+    const slice = jobs.slice(0, HARD_CAP);
 
-    const baseServiceTotal = sumServiceLines(items);
-
-    // decide base service split per tech
-    const baseServicePerTech = {};
-    team.forEach(u => baseServicePerTech[u] = 0);
-
-    let note = '';
-    if (!hasAnyServiceAssign || coopMode) {
-      // split equally
-      const each = team.length ? (baseServiceTotal / team.length) : 0;
-      team.forEach(u => baseServicePerTech[u] = each);
-      note = !hasAnyServiceAssign ? 'ไม่มีการ assign service เลย → หารเท่ากันตามทีม' : 'โหมดทำร่วมกัน (ทีม>1 + มี service ที่ไม่ assign) → หารเท่ากันตามทีม';
-    } else {
-      // split by assigned line totals
-      for (const it of serviceAssigned) {
-        const a = String(it.assigned_technician_username || '').trim();
-        if (!a) continue;
-        baseServicePerTech[a] = (baseServicePerTech[a] || 0) + Number(it.line_total || 0);
+    for (const row of slice) {
+      const job_id = Number(row.job_id);
+      const fKey = toBangkokDateKey(row.finished_at);
+      const fYm = fKey ? fKey.slice(0, 7) : '';
+      let payout;
+      try {
+        payout = await computeJobPayout(job_id);
+      } catch (e) {
+        // skip empty team jobs (should not happen in normal flow)
+        continue;
       }
-      note = 'มีการ assign service → แบ่งตาม assigned_technician_username';
-    }
-
-    // special bonuses (lump sum) per tech
-    const bonusQ = await pool.query(
-      `SELECT technician_username, COALESCE(special_bonus_amount,0) AS special_bonus_amount
-       FROM public.job_assignments WHERE job_id=$1`,
-      [job_id]
-    );
-    const bonusMap = {};
-    (bonusQ.rows || []).forEach(r => { bonusMap[String(r.technician_username)] = Number(r.special_bonus_amount || 0); });
-
-    // tech employment types
-    const profQ = await pool.query(
-      `SELECT username, COALESCE(employment_type,'company') AS employment_type
-       FROM public.technician_profiles
-       WHERE username = ANY($1::text[])`,
-      [team]
-    );
-    const empMap = {};
-    (profQ.rows || []).forEach(r => { empMap[String(r.username)] = String(r.employment_type || 'company'); });
-
-    const out = [];
-    for (const u of team) {
-      const employment_type = empMap[u] || 'company';
-      const setting = await getIncomeSettingForTech(u, employment_type);
-
-      const base_service = Number(baseServicePerTech[u] || 0);
-      let service_income = 0;
-
-      if (setting.income_type === 'special_only') {
-        service_income = 0;
-      } else if (setting.income_type === 'company') {
-        const pct = Number(setting.config?.commission_percent || 0);
-        service_income = base_service * (pct / 100);
-      } else if (setting.income_type === 'partner') {
-        const cut = Number(setting.config?.company_cut_percent || 0);
-        service_income = base_service * (1 - (cut / 100));
-      } else if (setting.income_type === 'custom') {
-        const mode = String(setting.config?.mode || 'percent');
-        if (mode === 'fixed') {
-          service_income = Number(setting.config?.amount || 0);
-        } else {
-          const pct = Number(setting.config?.percent || 0);
-          service_income = base_service * (pct / 100);
-        }
-      }
-
-      const special_income = sumSpecialLinesForTech(items, u);
-      const special_bonus = Number(bonusMap[u] || 0);
-
-      out.push({
-        username: u,
-        employment_type,
-        setting,
-        base_service,
-        service_income,
-        special_income,
-        special_bonus,
-        total_income: service_income + special_income + special_bonus
-      });
+      const me = (payout.payouts || []).find(x => String(x.username) === tech);
+      const inc = Number(me?.total_income || 0);
+      all_total += inc;
+      if (fYm === ymKey) month_total += inc;
+      if (fKey === dateKey) day_total += inc;
+      computed++;
     }
 
     return res.json({
       ok: true,
-      job_id,
-      note,
-      team,
-      base_service_total: baseServiceTotal,
-      items,
-      payouts: out
+      username: tech,
+      date: dateKey,
+      month: ymKey,
+      day_total,
+      month_total,
+      all_total,
+      jobs_count: jobs.length,
+      computed_jobs: computed,
+      capped: jobs.length > HARD_CAP
     });
   } catch (e) {
-    console.error('GET /admin/super/tech_income/calc/job/:job_id', e);
-    return res.status(500).json({ error: 'คำนวณไม่สำเร็จ' });
+    console.error('GET /tech/income_summary', e);
+    return res.status(500).json({ error: 'LOAD_FAILED' });
   }
 });
 

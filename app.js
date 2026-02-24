@@ -28,6 +28,11 @@ const profileRankBadgeEl = document.getElementById("profile-rank-badge");
 const profileRankLabelEl = document.getElementById("profile-rank-label");
 const profileHintEl = document.getElementById("profile-hint");
 
+// ✅ รายได้ (Technician)
+const incomeDailyEl = document.getElementById("incomeDaily");
+const incomeMonthEl = document.getElementById("incomeMonth");
+const incomeAllEl = document.getElementById("incomeAll");
+
 // ✅ แถบควบคุมช่าง (dropdown)
 const acceptStatusSelect = document.getElementById("acceptStatusSelect");
 const zoneSelect = document.getElementById("zoneSelect");
@@ -495,6 +500,38 @@ async function loadProfile() {
   }
 }
 
+// =======================================
+// 💰 INCOME SUMMARY (Technician)
+// - แสดง: วันนี้ / เดือนนี้ / สะสมทั้งหมด
+// =======================================
+function formatBaht(n) {
+  const x = Number(n || 0);
+  if (!Number.isFinite(x)) return "0";
+  try {
+    return x.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + " ฿";
+  } catch {
+    return String(Math.round(x)) + " ฿";
+  }
+}
+
+async function loadIncomeSummary() {
+  if (!incomeDailyEl && !incomeMonthEl && !incomeAllEl) return; // UI ไม่ได้มีส่วนนี้
+  try {
+    const res = await fetch(`${API_BASE}/tech/income_summary`, { credentials: 'include' });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
+
+    if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(data.day_total);
+    if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(data.month_total);
+    if (incomeAllEl) incomeAllEl.textContent = formatBaht(data.all_total);
+  } catch (e) {
+    // fail-open (ไม่ให้หน้า tech พัง)
+    if (incomeDailyEl) incomeDailyEl.textContent = "-";
+    if (incomeMonthEl) incomeMonthEl.textContent = "-";
+    if (incomeAllEl) incomeAllEl.textContent = "-";
+  }
+}
+
 function renderProfile(doneCount = 0) {
   // ✅ คงชื่อฟังก์ชันเดิมไว้เพื่อไม่ให้ส่วนอื่นพัง
   loadProfile();
@@ -597,18 +634,22 @@ async function idbDelete(photoId) {
 // 🔁 REFRESH LOOP
 // =======================================
 loadProfile();
+loadIncomeSummary();
 loadOffers();
 loadJobs();
 setInterval(() => loadOffers(), 15000);
 setInterval(() => loadJobs(), 20000); // keep active/history in sync (admin force close etc.)
+setInterval(() => loadIncomeSummary(), 60000);
 
 // ✅ มือถือ: กดโทรแล้วกลับมา/สลับแอพ -> รีเฟรชสถานะทันที
 window.addEventListener("focus", () => {
   try { loadJobs(); } catch(e) {}
+  try { loadIncomeSummary(); } catch(e) {}
 });
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     try { loadJobs(); } catch(e) {}
+    try { loadIncomeSummary(); } catch(e) {}
   }
 });
 
