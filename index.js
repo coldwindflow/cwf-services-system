@@ -4858,7 +4858,23 @@ app.get("/jobs/tech/:username", async (req, res) => {
         AND ja.technician_username=$1
         AND COALESCE(ja.status,'in_progress') <> 'done'
     )
+
     OR
+
+    -- ✅ IMPORTANT: keep completed/canceled jobs visible in technician history
+    -- even if this technician already marked assignment as done
+    (
+      EXISTS (
+        SELECT 1 FROM public.job_assignments ja_done
+        WHERE ja_done.job_id = public.jobs.job_id
+          AND ja_done.technician_username=$1
+          AND COALESCE(ja_done.status,'') = 'done'
+      )
+      AND COALESCE(public.jobs.job_status,'') IN ('เสร็จแล้ว','ยกเลิก')
+    )
+
+    OR
+
     -- Legacy fallback: show jobs from old logic, but hide them if this tech already marked done in job_assignments
     (
       (technician_team=$1
@@ -4868,11 +4884,14 @@ app.get("/jobs/tech/:username", async (req, res) => {
         )
         OR (technician_username=$1 AND COALESCE(dispatch_mode,'') <> 'offer')
       )
-      AND NOT EXISTS (
-        SELECT 1 FROM public.job_assignments ja2
-        WHERE ja2.job_id = public.jobs.job_id
-          AND ja2.technician_username=$1
-          AND COALESCE(ja2.status,'') = 'done'
+      AND (
+        NOT EXISTS (
+          SELECT 1 FROM public.job_assignments ja2
+          WHERE ja2.job_id = public.jobs.job_id
+            AND ja2.technician_username=$1
+            AND COALESCE(ja2.status,'') = 'done'
+        )
+        OR COALESCE(public.jobs.job_status,'') IN ('เสร็จแล้ว','ยกเลิก')
       )
     )
   )

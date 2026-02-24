@@ -1,3 +1,13 @@
+
+
+// ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
+const activeUpcomingJobsEl = document.getElementById("active-upcoming-list");
+
+// ✅ ฟิลเตอร์ประวัติงาน (วัน/เดือน/ทั้งหมด)
+const historyTabDayEl = document.getElementById("tab-his-day");
+const historyTabMonthEl = document.getElementById("tab-his-month");
+const historyTabAllEl = document.getElementById("tab-his-all");
+const historyFilterHintEl = document.getElementById("history-filter-hint");
 // =======================================
 // 🔧 CONFIG
 // =======================================
@@ -803,6 +813,47 @@ function normStatus(s) {
 }
 
 // =======================================
+// 🗓️ DATE HELPERS (Asia/Bangkok) + History Filter
+// =======================================
+const __DTF_BKK_YMD__ = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Bangkok", year: "numeric", month: "2-digit", day: "2-digit" });
+function ymdBkkFromISO(iso){
+  try {
+    const d = new Date(iso);
+    if (!isFinite(d.getTime())) return "";
+    return __DTF_BKK_YMD__.format(d); // YYYY-MM-DD
+  } catch { return ""; }
+}
+function todayYmdBkk(){
+  return __DTF_BKK_YMD__.format(new Date());
+}
+
+const LS_HISTORY_FILTER = "cwf_tech_history_filter";
+let __HISTORY_FILTER__ = (()=>{
+  try { return localStorage.getItem(LS_HISTORY_FILTER) || "month"; } catch(e){ return "month"; }
+})();
+
+function setHistoryFilter(f){
+  const v = (f === "day" || f === "all") ? f : "month";
+  __HISTORY_FILTER__ = v;
+  try { localStorage.setItem(LS_HISTORY_FILTER, v); } catch(e) {}
+  if (typeof historyTabDayEl !== "undefined" && historyTabDayEl) historyTabDayEl.classList.toggle("active", v === "day");
+  if (typeof historyTabMonthEl !== "undefined" && historyTabMonthEl) historyTabMonthEl.classList.toggle("active", v === "month");
+  if (typeof historyTabAllEl !== "undefined" && historyTabAllEl) historyTabAllEl.classList.toggle("active", v === "all");
+  if (typeof historyFilterHintEl !== "undefined" && historyFilterHintEl) {
+    historyFilterHintEl.textContent = (v === "day") ? "แสดงงานปิดแล้ว: วันนี้" : (v === "month") ? "แสดงงานปิดแล้ว: เดือนนี้" : "แสดงงานปิดแล้ว: ทั้งหมด";
+  }
+  // re-render from cache (ไม่เรียก API ซ้ำ)
+  try { renderJobs(window.__JOB_CACHE__ || []); } catch(e) {}
+}
+window.setHistoryFilter = setHistoryFilter;
+
+// init filter UI (ถ้ามีปุ่ม)
+try {
+  if (typeof historyTabDayEl !== "undefined" && historyTabDayEl) setHistoryFilter(__HISTORY_FILTER__);
+} catch(e) {}
+
+
+// =======================================
 // 🔧 DOM HELPERS (กันต้องรีเฟรชทั้งหน้า)
 // =======================================
 function escapeAttr(s) {
@@ -903,47 +954,80 @@ function renderJobs(jobs) {
   window.__JOB_CACHE__ = Array.isArray(jobs) ? jobs : [];
 
   if (activeJobsEl) activeJobsEl.innerHTML = "";
+  if (activeUpcomingJobsEl) activeUpcomingJobsEl.innerHTML = "";
   if (historyJobsEl) historyJobsEl.innerHTML = "";
 
   if (!Array.isArray(jobs) || jobs.length === 0) {
-    if (activeJobsEl) activeJobsEl.innerHTML = "<p>✅ ไม่มีงานค้างตอนนี้</p>";
+    if (activeJobsEl) activeJobsEl.innerHTML = "<p>✅ วันนี้ยังไม่มีงาน</p>";
+    if (activeUpcomingJobsEl) activeUpcomingJobsEl.innerHTML = "<p>ยังไม่มีงานล่วงหน้า</p>";
     if (historyJobsEl) historyJobsEl.innerHTML = "<p>ยังไม่มีประวัติงาน</p>";
     if (doneCountEl) doneCountEl.textContent = "0";
     renderProfile(0);
     return;
   }
 
-  const active = jobs.filter((j) => {
-    const st = normStatus(j.job_status);
-    return st === "รอดำเนินการ" || st === "กำลังทำ";
+  // ✅ สถานะที่ถือว่าเป็น ‘งานกำลังดำเนินการ’
+  const ACTIVE_STATUSES = new Set(["รอดำเนินการ","กำลังทำ","ตีกลับ","รอช่างยืนยัน"]);
+  const DONE_STATUSES = new Set(["เสร็จแล้ว","เสร็จสิ้น","ปิดงาน","done","completed"]);
+  const CANCEL_STATUSES = new Set(["ยกเลิก","cancelled","canceled","cancel"]);
+
+  const todayYMD = todayYmdBkk();
+
+  const activeAll = jobs.filter((j) => ACTIVE_STATUSES.has(normStatus(j.job_status)));
+  // งานปัจจุบัน = เฉพาะงานใน “วันนี้”
+  const activeToday = activeAll.filter((j)=> ymdBkkFromISO(j.appointment_datetime) === todayYMD);
+  // งานล่วงหน้า = งานที่นัดวันมากกว่าวันนี้
+  const activeUpcoming = activeAll.filter((j)=>{
+    const y = ymdBkkFromISO(j.appointment_datetime);
+    return y && y > todayYMD;
   });
 
-  const history = jobs.filter((j) => {
+  let historyAll = jobs.filter((j) => {
     const st = normStatus(j.job_status);
-    return st === "เสร็จแล้ว" || st === "ยกเลิก";
+    return DONE_STATUSES.has(st) || CANCEL_STATUSES.has(st) || st === "ยกเลิก";
   });
+
+  // ✅ ฟิลเตอร์ประวัติ: วัน/เดือน/ทั้งหมด (อิง Asia/Bangkok)
+  const monthKey = todayYMD.slice(0,7);
+  if (__HISTORY_FILTER__ === "day") {
+    historyAll = historyAll.filter(j => ymdBkkFromISO(j.appointment_datetime) === todayYMD);
+  } else if (__HISTORY_FILTER__ === "month") {
+    historyAll = historyAll.filter(j => {
+      const y = ymdBkkFromISO(j.appointment_datetime);
+      return y && y.slice(0,7) === monthKey;
+    });
+  }
 
   if (activeJobsEl) {
-    if (!active.length) activeJobsEl.innerHTML = "<p>✅ ไม่มีงานค้างตอนนี้</p>";
-    active.forEach((job) => activeJobsEl.appendChild(buildJobCard(job, false)));
+    if (!activeToday.length) activeJobsEl.innerHTML = "<p>✅ วันนี้ยังไม่มีงาน</p>";
+    activeToday.forEach((job) => activeJobsEl.appendChild(buildJobCard(job, false)));
+  }
+
+  if (activeUpcomingJobsEl) {
+    if (!activeUpcoming.length) activeUpcomingJobsEl.innerHTML = "<p>ยังไม่มีงานล่วงหน้า</p>";
+    activeUpcoming.forEach((job) => activeUpcomingJobsEl.appendChild(buildJobCard(job, false)));
   }
 
   if (historyJobsEl) {
-    if (!history.length) historyJobsEl.innerHTML = "<p>ยังไม่มีงานที่ปิดแล้ว</p>";
-    history.forEach((job) => historyJobsEl.appendChild(buildJobCard(job, true)));
+    if (!historyAll.length) {
+      historyJobsEl.innerHTML = "<p>ยังไม่มีงานที่ปิดแล้ว</p>";
+    } else {
+      historyAll.forEach((job) => historyJobsEl.appendChild(buildHistorySummary(job)));
+    }
   }
 
-  // 🔔 เตือนก่อนถึงเวลานัด 30 นาที (เฉพาะงานที่รับแล้ว)
+  // 🔔 เตือนก่อนถึงเวลานัด 30 นาที (เฉพาะงานวันนี้)
   try {
-    check30mReminder(active);
+    check30mReminder(activeToday);
   } catch {
     // ignore
   }
 
-  const done = history.filter((j) => normStatus(j.job_status) === "เสร็จแล้ว").length;
+  const done = historyAll.filter((j) => normStatus(j.job_status) === "เสร็จแล้ว").length;
   if (doneCountEl) doneCountEl.textContent = String(done);
   renderProfile(done);
 }
+
 
 // =======================================
 // ⏰ Reminder: งานที่รับแล้ว ใกล้ถึงเวลานัด (30 นาที)
@@ -1307,6 +1391,68 @@ function buildJobCard(job, historyMode = false) {
 
   return div;
 }
+
+
+// =======================================
+// 📚 HISTORY (compact summary + expandable details)
+// - แสดงรายการงานแบบย่อ ตามที่สั่ง
+// - ยังดูรายละเอียดเต็ม (เดิม) ได้ (ไม่ regression)
+// =======================================
+function buildHistorySummary(job){
+  const div = document.createElement('div');
+  div.className = 'job-card';
+
+  const st = normStatus(job?.job_status);
+  const bookingCode = job?.booking_code || (job?.job_id != null ? ("CWF" + String(job.job_id).padStart(7,'0')) : '-');
+  const apYmd = ymdBkkFromISO(job?.appointment_datetime);
+  const apTxt = job?.appointment_datetime ? new Date(job.appointment_datetime).toLocaleString('th-TH') : '-';
+  const price = Number(job?.job_price || 0);
+  const priceTxt = isFinite(price) ? price.toLocaleString('th-TH') + ' บาท' : '-';
+
+  const badge = (st === 'เสร็จแล้ว' || st === 'เสร็จสิ้น' || st === 'ปิดงาน' || st === 'done' || st === 'completed')
+    ? '<span class="badge ok">✅ เสร็จแล้ว</span>'
+    : '<span class="badge bad">⛔ ยกเลิก</span>';
+
+  const esc = (s)=> String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const cust = esc(job?.customer_name || '-');
+  const type = esc(job?.job_type || '-');
+
+  div.innerHTML = `
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+      <div style="min-width:0;">
+        <b>📌 ${esc(bookingCode)}</b>
+        <div class="muted" style="font-size:12px;margin-top:2px;">${apTxt}</div>
+      </div>
+      ${badge}
+    </div>
+    <div class="muted" style="margin-top:8px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+      <span><b>ลูกค้า:</b> ${cust}</span>
+      <span title="ยอดที่ลูกค้าชำระ">💰 ${priceTxt}</span>
+    </div>
+    <div class="muted" style="margin-top:4px;"><b>ประเภท:</b> ${type}</div>
+
+    <details class="cwf-details" style="margin-top:10px;">
+      <summary>ดูรายละเอียด</summary>
+      <div class="cwf-details-body" data-role="history-full"></div>
+    </details>
+  `;
+
+  // lazy render full card inside details
+  const det = div.querySelector('details');
+  const box = div.querySelector('[data-role="history-full"]');
+  let mounted = false;
+  if (det && box){
+    det.addEventListener('toggle', ()=>{
+      if (det.open && !mounted){
+        try { box.appendChild(buildJobCard(job, true)); } catch(e) {}
+        mounted = true;
+      }
+    });
+  }
+
+  return div;
+}
+
 
 window.startTravel = startTravel;
 window.startWork = startWork;

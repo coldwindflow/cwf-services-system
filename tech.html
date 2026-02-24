@@ -343,14 +343,38 @@
 
     <div class="card section" id="sec-active">
       <h2>🧰 งานปัจจุบัน</h2>
-      <!-- ✅ ต้องตรงกับ app.js -->
-      <div id="active-list"></div>
+
+      <!-- ✅ Sub-tab: วันนี้ / งานล่วงหน้า (ไม่กระทบของเดิม: ยังใช้ #active-list เป็น Today) -->
+      <div class="tabs" style="margin-top:10px;gap:10px;">
+        <button class="tab-btn active" id="tab-active-today" type="button" onclick="switchActiveSubTab('today')">วันนี้</button>
+        <button class="tab-btn" id="tab-active-upcoming" type="button" onclick="switchActiveSubTab('upcoming')">งานล่วงหน้า</button>
+      </div>
+
+      <div class="section active" id="sec-active-today" style="margin-top:10px;">
+        <!-- ✅ ต้องตรงกับ app.js (Today) -->
+        <div id="active-list"></div>
+      </div>
+
+      <div class="section" id="sec-active-upcoming" style="margin-top:10px;">
+        <div class="muted" style="margin-bottom:6px;">งานที่ถูกเพิ่มล่วงหน้า (เมื่อถึงวันทำงานจะย้ายมาอยู่ใน “วันนี้” อัตโนมัติ)</div>
+        <!-- ✅ Upcoming -->
+        <div id="active-upcoming-list"></div>
+      </div>
     </div>
 
     <div class="card section" id="sec-history">
       <h2>📚 ประวัติงาน</h2>
+
+      <!-- ✅ ฟิลเตอร์เร็ว: วัน / เดือน / ทั้งหมด -->
+      <div class="tabs" style="margin-top:10px;gap:10px;">
+        <button class="tab-btn" id="tab-his-day" type="button" onclick="setHistoryFilter('day')">วัน</button>
+        <button class="tab-btn active" id="tab-his-month" type="button" onclick="setHistoryFilter('month')">เดือน</button>
+        <button class="tab-btn" id="tab-his-all" type="button" onclick="setHistoryFilter('all')">ทั้งหมด</button>
+      </div>
+      <div class="muted" id="history-filter-hint" style="margin-top:8px;">แสดงงานที่ปิดแล้วแบบย่อ</div>
+
       <!-- ✅ ต้องตรงกับ app.js -->
-      <div id="history-list"></div>
+      <div id="history-list" style="margin-top:10px;"></div>
     </div>
   </div>
 
@@ -394,6 +418,28 @@ function logout(){
         try { location.hash = k0; } catch(e) {}
       }
     }
+
+    // ✅ Sub-tab ใน “งานปัจจุบัน”: วันนี้ / งานล่วงหน้า
+    function switchActiveSubTab(which){
+      const w = (which === 'upcoming') ? 'upcoming' : 'today';
+      const secT = document.getElementById('sec-active-today');
+      const secU = document.getElementById('sec-active-upcoming');
+      const btnT = document.getElementById('tab-active-today');
+      const btnU = document.getElementById('tab-active-upcoming');
+      if (secT) secT.classList.toggle('active', w==='today');
+      if (secU) secU.classList.toggle('active', w==='upcoming');
+      if (btnT) btnT.classList.toggle('active', w==='today');
+      if (btnU) btnU.classList.toggle('active', w==='upcoming');
+      try { localStorage.setItem('cwf_tech_active_subtab', w); } catch(e) {}
+    }
+    window.switchActiveSubTab = switchActiveSubTab;
+
+    // init subtab (default today)
+    document.addEventListener('DOMContentLoaded', ()=>{
+      let w = 'today';
+      try { const s = localStorage.getItem('cwf_tech_active_subtab'); if (s) w = s; } catch(e) {}
+      switchActiveSubTab(w);
+    });
 
     // ✅ รีเฟรชแล้วอยู่แท็บเดิม (งานปัจจุบัน/ประวัติงาน)
     document.addEventListener("DOMContentLoaded", () => {
