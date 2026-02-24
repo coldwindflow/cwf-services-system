@@ -708,7 +708,12 @@ async function loadJob(){
           // --- Save team members (if changed) ---
           try {
             const hid = el('edit_team_members_json');
-            const primaryU = getPrimaryTechFromUI(String(job.technician_username||'').trim());
+            // IMPORTANT: use the CURRENT selected primary from UI, not the stale `job` object.
+            // Otherwise, when admin changes leader and removes the old one, we may accidentally
+            // re-add the old leader and skip calling /team (causing removed tech to still see the job).
+            const primaryU = getPrimaryTechFromUI(String(el('edit_primary_tech')?.value || '').trim())
+              || getPrimaryTechFromUI(String(job.technician_username||'').trim())
+              || null;
             let desired = [];
             if (hid && hid.value) {
               try { desired = JSON.parse(hid.value); } catch {}
@@ -718,20 +723,15 @@ async function loadJob(){
             if (primaryU && !desired.includes(primaryU)) desired.unshift(primaryU);
             desired = Array.from(new Set(desired));
 
-            const cur = Array.from(new Set([String(job.technician_username||'').trim(), ...teamUsernames.map(x=>String(x||'').trim())].filter(Boolean)));
-            const same = (a,b)=>{
-              if (a.length !== b.length) return false;
-              const sa = new Set(a);
-              for (const x of b) if (!sa.has(x)) return false;
-              return true;
-            };
-            if (!same(cur, desired)) {
-              await apiFetch(`/jobs/${encodeURIComponent(String(job.job_id))}/team`, {
-                method:'PUT',
-                headers:{'Content-Type':'application/json'},
-                body: JSON.stringify({ members: desired })
-              });
-            }
+            // Always sync team to backend when saving (fail-open).
+            // Rationale: admin-edit above may change the leader, but this page still holds
+            // initial job/team snapshots. Skipping /team can leave legacy fields / assignments stale,
+            // so removed tech still sees the job.
+            await apiFetch(`/jobs/${encodeURIComponent(String(job.job_id))}/team`, {
+              method:'PUT',
+              headers:{'Content-Type':'application/json'},
+              body: JSON.stringify({ members: desired, primary_username: primaryU })
+            });
           } catch (e) {
             console.warn('save team failed', e);
             // fail-open: do not block saving job/items
