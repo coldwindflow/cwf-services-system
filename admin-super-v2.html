@@ -153,7 +153,63 @@
         </div>
       </div>
 
+      
       <div class="card" style="grid-column:1/-1">
+        <div class="split">
+          <div>
+            <b style="color:#0b1b3a">Technician Income Settings</b>
+            <div class="muted" style="margin-top:4px">ตั้งค่ารายได้ช่าง (เฉพาะ Super Admin) • company / partner / custom / special_only</div>
+          </div>
+          <div class="row">
+            <button class="btn blue" id="btnReloadIncome">รีเฟรช</button>
+            <button class="btn yellow" id="btnSaveIncomeDefaults">บันทึก Defaults</button>
+          </div>
+        </div>
+
+        <div class="grid" style="margin-top:10px">
+          <div class="card" style="border-radius:16px">
+            <b>Defaults</b>
+            <div class="row" style="margin-top:10px">
+              <label class="muted">company คอมฯ %</label>
+              <input id="defCompanyPct" type="number" style="width:140px" />
+              <label class="muted">partner หักเข้าบริษัท %</label>
+              <input id="defPartnerCut" type="number" style="width:160px" />
+              <label class="muted">custom %</label>
+              <input id="defCustomPct" type="number" style="width:120px" />
+            </div>
+            <div class="muted" style="margin-top:8px">หมายเหตุ: คิดจาก “ราคาก่อนส่วนลด” (job_items.line_total) เท่านั้น</div>
+          </div>
+
+          <div class="card" style="border-radius:16px">
+            <b>Override รายบุคคล</b>
+            <div class="row" style="margin-top:10px">
+              <select id="ovTech" style="flex:1;min-width:220px"></select>
+              <select id="ovType" style="width:170px">
+                <option value="company">company</option>
+                <option value="partner">partner</option>
+                <option value="custom">custom</option>
+                <option value="special_only">special_only</option>
+              </select>
+              <input id="ovValue" type="number" placeholder="% (หรือ amount ถ้า fixed)" style="width:170px" />
+              <button class="btn yellow" id="btnSaveOverride">บันทึก Override</button>
+              <button class="btn gray" id="btnClearOverride">ล้าง Override</button>
+            </div>
+            <div class="muted" style="margin-top:8px">กติกา: company/custom ใช้ค่า % • partner ใช้ค่า “หักเข้าบริษัท %” • special_only ไม่รับรายได้จากเรทรายการ</div>
+          </div>
+        </div>
+
+        <hr style="border:none;border-top:1px solid rgba(15,23,42,0.10);margin:12px 0">
+
+        <b style="color:#0b1b3a">คำนวณรายได้ตาม Job</b>
+        <div class="row" style="margin-top:10px">
+          <input id="calcJobId" placeholder="job_id" type="number" style="width:160px" />
+          <button class="btn blue" id="btnCalcJob">คำนวณ</button>
+          <span class="muted" id="calcNote">-</span>
+        </div>
+        <pre id="calcOut" style="white-space:pre-wrap;background:#0b1b3a;color:#fff;padding:10px;border-radius:14px;margin-top:10px;max-height:260px;overflow:auto">-</pre>
+      </div>
+
+<div class="card" style="grid-column:1/-1">
         <b style="color:#0b1b3a">ลิงก์จัดการระบบอื่น</b>
         <div class="muted" style="margin-top:4px">ราคา/สินค้า/โปรโมชั่น และหน้า Dashboard ใช้ของเดิม (ไม่ยุ่งหน้าเพิ่มงาน)</div>
         <div class="row" style="margin-top:10px">
