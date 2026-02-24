@@ -5133,7 +5133,25 @@ app.put("/jobs/:job_id/team", async (req, res) => {
     }
 
 // ✅ sync job_assignments for team (in_progress) - backward compatible
+// - IMPORTANT: ต้องลบช่างที่ถูกเอาออก ไม่งั้นช่างคนนั้นจะยังเห็นงานค้างอยู่
 try {
+  // remove in_progress assignments not in current team
+  if (safe.length) {
+    await client.query(
+      `DELETE FROM public.job_assignments
+       WHERE job_id=$1
+         AND status='in_progress'
+         AND technician_username <> ALL($2::text[])`,
+      [job_id, safe]
+    );
+  } else {
+    await client.query(
+      `DELETE FROM public.job_assignments
+       WHERE job_id=$1 AND status='in_progress'`,
+      [job_id]
+    );
+  }
+
   for (const u of safe) {
     await client.query(
       `
@@ -5145,7 +5163,7 @@ try {
     );
   }
 } catch (e) {
-  console.warn("[team] upsert job_assignments failed (fail-open)", e.message);
+  console.warn("[team] sync job_assignments failed (fail-open)", e.message);
 }
 
     await client.query("COMMIT");

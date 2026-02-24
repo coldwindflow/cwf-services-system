@@ -328,6 +328,15 @@ async function loadJob(){
 
         <div style="margin-top:12px">
           <b>👥 ทีมช่าง</b>
+          <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;align-items:flex-end">
+            <div style="width:220px">
+              <label>รูปแบบการทำงาน</label>
+              <select id="edit_team_mode">
+                <option value="single">เดี่ยว (ช่างคนเดียว)</option>
+                <option value="team">ทีม (หลายคน)</option>
+              </select>
+            </div>
+          </div>
           <div class="muted2 mini" style="margin-top:6px">เลือกหัวหน้างาน (ช่างหลัก) และเลือกช่างร่วมได้หลายคน • สามารถเปลี่ยนหัวหน้างานและเอาคนเดิมออกจากทีมได้</div>
           <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:flex-end">
             <div style="flex:1;min-width:260px">
@@ -335,6 +344,7 @@ async function loadJob(){
               <select id="edit_primary_tech" style="width:100%"></select>
             </div>
           </div>
+          <div id="edit_team_multi_wrap">
           <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:flex-end">
             <div style="flex:1;min-width:220px">
               <label>ค้นหาช่าง (ชื่อ/username)</label>
@@ -344,6 +354,7 @@ async function loadJob(){
               <label>เลือกช่างร่วม (กด Ctrl/Command เพื่อเลือกหลายคน)</label>
               <select id="edit_team_members" multiple size="6" style="width:100%"></select>
             </div>
+          </div>
           </div>
           <div id="edit_team_hint" class="muted2" style="margin-top:8px"></div>
           <input id="edit_team_members_json" type="hidden" value="${escapeHtml(JSON.stringify(teamInitMembers))}" />
@@ -714,7 +725,7 @@ async function loadJob(){
               for (const x of b) if (!sa.has(x)) return false;
               return true;
             };
-            if (desired.length && !same(cur, desired)) {
+            if (!same(cur, desired)) {
               await apiFetch(`/jobs/${encodeURIComponent(String(job.job_id))}/team`, {
                 method:'PUT',
                 headers:{'Content-Type':'application/json'},
