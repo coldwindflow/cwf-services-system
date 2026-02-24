@@ -142,43 +142,142 @@
       .profile-right{ min-width: 0; flex: 1 1 100%; }
       .profile-stats{ width: 100%; }
     }
+  
+    /* ===== Tech UI v2 (Menu Drawer + Clean Profile) ===== */
+    .tech-top-tabs{ display:none !important; } /* ISSUE-1: hide duplicated top tabs (keep bottom only) */
+
+    /* Fixed top nav (admin-like) */
+    #techTopNav{position:fixed;left:0;right:0;top:0;z-index:2600;
+      padding-top:env(safe-area-inset-top);
+      background:linear-gradient(180deg, rgba(11,27,58,0.98) 0%, rgba(11,75,179,0.98) 100%);
+      border-bottom:1px solid rgba(255,255,255,0.10);
+      box-shadow:0 14px 40px rgba(2,6,23,0.22);} 
+    #techTopNav .in{max-width:460px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;
+      gap:10px;padding:10px 12px;}
+    #techTopNav .ttl{min-width:0;display:flex;flex-direction:column;gap:2px}
+    #techTopNav .ttl b{font-size:14px;line-height:1.1;color:#fff}
+    #techTopNav .ttl span{font-size:12px;font-weight:900;color:rgba(255,255,255,0.80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .tech-icbtn{width:44px;height:44px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;
+      border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.12);
+      box-shadow:0 10px 26px rgba(0,0,0,0.18);cursor:pointer;user-select:none}
+    .tech-icbtn:active{transform: translateY(1px) scale(0.99)}
+    #techTopSpacer{height:74px}
+    @media (max-width:420px){#techTopSpacer{height:72px}}
+
+    #techDrawerBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2690;display:none}
+    #techDrawer{position:fixed;inset:0;z-index:2700;display:none}
+    #techDrawer .panel{
+      position:absolute;right:0;top:0;bottom:0;width:min(360px, 92vw);
+      background:rgba(255,255,255,0.98);
+      backdrop-filter: blur(10px);
+      border-left:1px solid rgba(15,23,42,0.12);
+      box-shadow:-18px 0 50px rgba(2,6,23,0.25);
+      padding: 12px;
+      display:flex;flex-direction:column;gap:10px;
+      padding-top: calc(12px + env(safe-area-inset-top));
+      padding-bottom: calc(12px + env(safe-area-inset-bottom));
+    }
+    .techMenuHead{display:flex;align-items:center;justify-content:space-between;gap:10px}
+    .techMenuHead b{font-size:14px;font-weight:1100;color:#0f172a}
+    .techMenuList{display:flex;flex-direction:column;gap:8px;margin-top:6px}
+    .techMenuBtn{
+      width:100%;
+      min-height:46px;
+      border-radius:16px;
+      border:1px solid rgba(15,23,42,0.10);
+      background:#fff;
+      font-weight:1000;
+      display:flex;align-items:center;justify-content:space-between;
+      padding: 10px 12px;
+      cursor:pointer;
+    }
+    .techMenuBtn .left{display:flex;align-items:center;gap:10px}
+    .techMenuBtn .sub{font-size:12px;font-weight:900;color:rgba(15,23,42,0.60)}
+    .techMenuDanger{border-color:rgba(239,68,68,0.25);background:rgba(239,68,68,0.08)}
+    .techMenuSmall{font-size:12px;font-weight:900;color:rgba(15,23,42,0.70)}
+
+    /* Profile compact (ISSUE-2) */
+    .profile-compact{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
+    .profile-compact .left{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 240px;}
+    .profile-compact .meta{min-width:0}
+    .profile-compact .meta .code{font-size:13px;font-weight:1000;color:rgba(15,23,42,0.70)}
+    .profile-compact .chips{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;flex:1 1 100%;}
+    .chipStat{border-radius:16px;border:1px solid rgba(15,23,42,0.10);background:rgba(255,255,255,0.80);padding:10px;display:flex;flex-direction:column;gap:4px;}
+    .chipStat .k{font-size:11px;font-weight:1000;color:rgba(15,23,42,0.60)}
+    .chipStat .v{font-size:16px;font-weight:1200;color:#0f172a}
+    details.tech-more{margin-top:10px}
+    details.tech-more summary{list-style:none;cursor:pointer;user-select:none;border-radius:14px;border:1px solid rgba(15,23,42,0.10);background:rgba(15,23,42,0.04);padding:10px 12px;font-weight:1000;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    details.tech-more summary::-webkit-details-marker{display:none}
+    .tech-more .moreBox{margin-top:10px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);background:rgba(255,255,255,0.85);padding:12px;}
+    .tech-more .row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:8px}
+    .tech-more .row:first-child{margin-top:0}
+    .tech-more .row .k{font-size:12px;font-weight:1000;color:rgba(15,23,42,0.60)}
+    .tech-more .row .v{font-size:13px;font-weight:1100;color:#0f172a}
   </style>
 </head>
 
 <body>
   <div class="app">
-    <div class="topbar">
-      <div class="brand">
-        <!-- ✅ ใช้ absolute path -->
-        <img src="/logo.png" alt="CWF">
-        <div class="title">
+        <!-- ✅ Tech Top Nav (admin-like) -->
+    <div id="techTopNav">
+      <div class="in">
+        <div class="ttl">
           <b>CWF – Technician</b>
           <span id="me">ผู้ใช้: -</span>
         </div>
+        <button class="tech-icbtn" type="button" id="techMenuBtn" aria-label="เมนู">☰</button>
       </div>
+    </div>
+    <div id="techTopSpacer"></div>
 
-      <div style="display:flex;align-items:center;gap:10px;">
-        <!-- 🎨 ปุ่มสลับธีม (ไอคอน) - ต่อเติม ไม่กระทบของเดิม -->
-        <button id="themeToggleBtn" class="btn" type="button"
-          title="สลับธีม"
-          style="width:44px;min-width:44px;min-height:44px;padding:0;border-radius:14px;display:flex;align-items:center;justify-content:center;">
-          🎨
-        </button>
+    <!-- ✅ Drawer Menu -->
+    <div id="techDrawerBackdrop"></div>
+    <div id="techDrawer">
+      <div class="panel">
+        <div class="techMenuHead">
+          <b>เมนูช่าง</b>
+          <button class="tech-icbtn" type="button" id="techMenuCloseBtn" aria-label="ปิด">✕</button>
+        </div>
 
-        <!-- 🔔 ปุ่มเปิดแจ้งเตือน/เสียงเตือน (ช่าง) -->
-        <button id="notifyBtn" class="btn" type="button"
-          title="เปิดแจ้งเตือน"
-          style="width:44px;min-width:44px;min-height:44px;padding:0;border-radius:14px;display:flex;align-items:center;justify-content:center;">
-          🔔
-        </button>
+        <div class="techMenuList">
+          <!-- keep ids for app.js bindings -->
+          <button class="techMenuBtn" type="button" id="notifyBtn">
+            <span class="left">🔔 <span>แจ้งเตือน/เสียงเตือน</span></span>
+            <span class="sub" id="notifyStateText">-</span>
+          </button>
 
-        <button class="danger" style="width:auto;min-height:44px;padding:10px 12px;"
-          type="button" onclick="logout()">ออก</button>
+          <button class="techMenuBtn" type="button" id="themeToggleBtn">
+            <span class="left">🎨 <span>สลับธีม</span></span>
+            <span class="sub">Theme</span>
+          </button>
+
+          <button class="techMenuBtn" type="button" onclick="goEditProfile()">
+            <span class="left">✏️ <span>แก้ไขโปรไฟล์</span></span>
+            <span class="sub">ข้อมูลช่าง</span>
+          </button>
+
+          <button class="techMenuBtn" type="button" onclick="goChangePassword()">
+            <span class="left">🔑 <span>เปลี่ยนรหัสผ่าน</span></span>
+            <span class="sub">ความปลอดภัย</span>
+          </button>
+
+          <button class="techMenuBtn" type="button" onclick="openWorkdaysModal()">
+            <span class="left">🗓️ <span>วันหยุด/วันทำงาน</span></span>
+            <span class="sub">ตั้งค่า</span>
+          </button>
+
+          <div class="techMenuSmall" style="margin-top:4px;padding:0 2px;">อื่นๆ</div>
+
+          <button class="techMenuBtn techMenuDanger" type="button" onclick="logout()">
+            <span class="left">🚪 <span>ออกจากระบบ</span></span>
+            <span class="sub">Logout</span>
+          </button>
+        </div>
       </div>
     </div>
 
-    
-        <!-- ===============================
+
+    <!-- ===============================
          🎛️ แถบควบคุมช่าง (สั้น ชัด ใช้งานจริง)
          - ปุ่มเดียว สีเขียว/แดง สลับรับงาน/หยุดรับงาน
          - โซนรับงาน: dropdown (กว้างเท่าปุ่ม) อยู่แถวเดียวกัน
@@ -282,7 +381,7 @@
       <div id="att-status" style="display:none;"></div>
     </div>
 
-<div class="tabs">
+<div class="tabs tech-top-tabs">
       <button class="tab-btn active" id="tab-new" onclick="switchTab('new')">รับงานใหม่</button>
       <button class="tab-btn" id="tab-active" onclick="switchTab('active')">งานปัจจุบัน</button>
       <button class="tab-btn" id="tab-history" onclick="switchTab('history')">ประวัติงาน</button>
@@ -291,50 +390,56 @@
     <div class="card section active" id="sec-new">
       <h2>🧑‍🔧 โปรไฟล์ช่าง</h2>
 
-      <!-- ✅ เพิ่มชื่อ/เกรด/รูปช่าง -->
-      <div class="profile-box">
-        <div class="profile-left">
-          <div style="display:flex;flex-direction:column;align-items:center;gap:8px;">
-            <img id="profile-photo" class="tech-avatar" src="/logo.png" alt="photo">
-            <!-- ✅ ปุ่มเล็กใต้รูป (ไม่รก) -->
-            <div style="display:flex;flex-direction:column;gap:8px;align-items:stretch;">
-              <button class="secondary btn-mini" type="button" onclick="goEditProfile()" style="min-height:32px;padding:6px 10px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;">✏️ <span>แก้โปรไฟล์</span></button>
-              <button class="secondary btn-mini" type="button" onclick="goChangePassword()" style="min-height:32px;padding:6px 10px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;">🔑 <span>เปลี่ยนรหัสผ่าน</span></button>
-              <button class="secondary btn-mini" type="button" onclick="openWorkdaysModal()" title="ตั้งค่าวันหยุด/วันทำงาน" style="min-height:32px;padding:6px 10px;font-size:12px;display:flex;align-items:center;justify-content:center;gap:6px;white-space:nowrap;">🗓️ <span>วันหยุด</span></button>
+      <!-- ✅ โปรไฟล์ช่าง (แสดงเฉพาะ: รูป / รหัส / รายได้วันนี้ / งานสะสม / คะแนน) -->
+      <div class="profile-compact">
+        <div class="left">
+          <img id="profile-photo" class="tech-avatar" src="/logo.png" alt="photo">
+          <div class="meta">
+            <div class="code" id="profile-code">รหัสช่าง: -</div>
+            <!-- ซ่อนข้อมูลเยอะ ๆ ตามสเปค แต่ยังคง id ไว้ให้ app.js เติมค่า -->
+            <div style="display:none">
+              <b id="profile-name">-</b>
+              <div id="profile-rank" style="display:flex;align-items:center;gap:8px;">
+                <img id="profile-rank-badge" src="/assets/ranks/rank_lv1_128.png" alt="rank" style="width:44px;height:auto;display:block;">
+                <div class="muted" id="profile-rank-label">Rank: -</div>
+              </div>
+              <div class="stat-line" id="profile-grade">เกรด: -</div>
+              <div class="muted" id="profile-hint"></div>
             </div>
-          </div>
-
-          <div class="profile-meta">
-            <b id="profile-name">-</b>
-            <!-- ✅ รหัสช่างอยู่ใต้ชื่อ (อ่านง่าย) -->
-            <div class="muted" id="profile-code">รหัสช่าง: -</div>
-            <!-- ตำแหน่งเดิมยกเลิกใช้แล้ว (ใช้ Premium Rank แทน) -->
-            <div id="profile-rank" style="margin-top:6px;display:flex;align-items:center;gap:8px;">
-              <!-- 🏅 Rank badge (PNG สัดส่วนไม่ใช่สี่เหลี่ยมจัตุรัส) → ใช้ height:auto กันรูปบี้ -->
-              <img id="profile-rank-badge" src="/assets/ranks/rank_lv1_128.png" alt="rank" style="width:44px;height:auto;display:block;">
-              <div class="muted" id="profile-rank-label">Rank: -</div>
-            </div>
-            <!-- (ย้ายเกรดไปอยู่ในกล่องสถิติฝั่งขวา) -->
-            <!-- ✅ ใช้โชว์สถานะคำขอโปรไฟล์ -->
-            <div class="muted" id="profile-hint" style="margin-top:4px;"></div>
           </div>
         </div>
 
-        <div class="profile-right">
-          <div class="profile-stats">
-            <div class="stat-line" id="profile-grade">เกรด: -</div>
-            <div class="stat"><span>⭐ คะแนน</span><b id="rating">-</b></div>
-            <div class="stat"><span>✅ งานสะสม</span><b id="doneCount">-</b></div>
-            <div style="height:1px;background:rgba(15,23,42,0.08);margin:6px 0;"></div>
-            <div class="stat-line">💰 รายได้</div>
-            <div class="stat"><span>วันนี้</span><b id="incomeDaily">-</b></div>
-            <div class="stat"><span>เดือนนี้</span><b id="incomeMonth">-</b></div>
-            <div class="stat"><span>สะสมทั้งหมด</span><b id="incomeAll">-</b></div>
+        <div class="chips">
+          <div class="chipStat">
+            <div class="k">💰 รายได้วันนี้</div>
+            <div class="v" id="incomeDaily">-</div>
+          </div>
+          <div class="chipStat">
+            <div class="k">✅ งานสะสม</div>
+            <div class="v" id="doneCount">-</div>
+          </div>
+          <div class="chipStat">
+            <div class="k">⭐ คะแนน</div>
+            <div class="v" id="rating">-</div>
           </div>
         </div>
       </div>
 
-      <hr>
+      <details class="tech-more">
+        <summary>
+          <span>ดูข้อมูลเพิ่มเติม</span>
+          <span>▾</span>
+        </summary>
+        <div class="moreBox">
+          <div class="row"><span class="k">ชื่อช่าง</span><span class="v" id="profile-name-more">-</span></div>
+          <div class="row"><span class="k">Rank</span><span class="v" id="profile-rank-more">-</span></div>
+          <div class="row"><span class="k">เกรด</span><span class="v" id="profile-grade-more">-</span></div>
+          <div class="row"><span class="k">รายได้เดือนนี้</span><span class="v" id="incomeMonth">-</span></div>
+          <div class="row"><span class="k">สะสมทั้งหมด</span><span class="v" id="incomeAll">-</span></div>
+        </div>
+      </details>
+
+<hr>
 
       <!-- ✅ กันหัวข้อซ้อน ให้เหลืออันเดียว -->
       <h2 style="margin-top:6px;">📨 งานที่แนะนำ (รับภายใน 10 นาที)</h2>
@@ -389,6 +494,54 @@
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
         function goChangePassword(){ location.href = '/change-password.html'; }
+
+        function syncTechMore(){
+          try{
+            const nm = document.getElementById('profile-name');
+            const rk = document.getElementById('profile-rank-label');
+            const gd = document.getElementById('profile-grade');
+            const nm2 = document.getElementById('profile-name-more');
+            const rk2 = document.getElementById('profile-rank-more');
+            const gd2 = document.getElementById('profile-grade-more');
+            if (nm && nm2) nm2.textContent = nm.textContent || '-';
+            if (rk && rk2) rk2.textContent = rk.textContent || '-';
+            if (gd && gd2) gd2.textContent = gd.textContent || '-';
+          }catch(e){}
+          try{
+            const st = (localStorage.getItem('cwf_notify_enabled') === '1') ? 'เปิด' : 'ปิด';
+            const el = document.getElementById('notifyStateText');
+            if (el) el.textContent = st;
+          }catch(e){}
+        }
+
+        function openTechMenu(){
+          const bd = document.getElementById('techDrawerBackdrop');
+          const dr = document.getElementById('techDrawer');
+          if (bd) bd.style.display = 'block';
+          if (dr) dr.style.display = 'block';
+          syncTechMore();
+        }
+        function closeTechMenu(){
+          const bd = document.getElementById('techDrawerBackdrop');
+          const dr = document.getElementById('techDrawer');
+          if (bd) bd.style.display = 'none';
+          if (dr) dr.style.display = 'none';
+        }
+
+        document.addEventListener('DOMContentLoaded', ()=>{
+          const btn = document.getElementById('techMenuBtn');
+          const cls = document.getElementById('techMenuCloseBtn');
+          const bd = document.getElementById('techDrawerBackdrop');
+          if (btn) btn.addEventListener('click', openTechMenu);
+          if (cls) cls.addEventListener('click', closeTechMenu);
+          if (bd) bd.addEventListener('click', closeTechMenu);
+          document.addEventListener('keydown', (e)=>{ if (e.key === 'Escape') closeTechMenu(); });
+          setTimeout(syncTechMore, 300);
+          setTimeout(syncTechMore, 1200);
+        });
+
+        window.__cwfSyncTechMore = syncTechMore;
+
 
 function logout(){
       localStorage.removeItem("username");

@@ -477,6 +477,9 @@ async function loadProfile() {
     const photo = data.photo_path || "/logo.png";
     if (profilePhotoEl) profilePhotoEl.src = photo;
 
+    // ✅ sync technician compact profile "more" fields (safe no-op if not present)
+    try{ if (typeof window !== 'undefined' && typeof window.__cwfSyncTechMore === 'function') window.__cwfSyncTechMore(); }catch(e){}
+
     // ✅ โซนรับงาน (แอดมิน/ช่างตั้งไว้)
     const pz = String(data.preferred_zone || "").trim();
     if (zoneSelect) {
@@ -507,6 +510,7 @@ async function loadProfile() {
     if (ratingEl) ratingEl.textContent = "0.0";
     if (doneCountEl) doneCountEl.textContent = "0";
     if (profilePhotoEl) profilePhotoEl.src = "/logo.png";
+    try{ if (typeof window !== 'undefined' && typeof window.__cwfSyncTechMore === 'function') window.__cwfSyncTechMore(); }catch(e){}
   }
 }
 
