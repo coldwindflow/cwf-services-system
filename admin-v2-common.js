@@ -489,14 +489,14 @@ function injectAdminMenu(){
 
       const who = document.getElementById('cwfWhoLine');
       if (who) {
-        const actorRoleLabel = (d.actor && (d.actor.is_super_admin || normalizeRole(d.actor.role) === 'super_admin')) ? 'Super Admin' : (d.actor ? normalizeRole(d.actor.role) : normalizeRole(d.role));
+        const actorRoleLabel = (d.actor && d.actor.is_super_admin) ? 'Super Admin' : (d.actor ? normalizeRole(d.actor.role) : normalizeRole(d.role));
         const actorLabel = d.actor ? `${d.actor.username} (${actorRoleLabel})` : `${d.username} (${normalizeRole(d.role)})`;
         who.textContent = d.impersonating ? `กำลังสวมสิทธิ: ${d.username} (${normalizeRole(d.role)}) • โดย ${actorLabel}` : `ผู้ใช้: ${actorLabel}`;
       }
 
       const superL = document.getElementById('cwfSuperAdminLink');
       if (superL) {
-        const isSuper = (d.actor && (d.actor.is_super_admin || normalizeRole(d.actor.role) === 'super_admin')) || (d.is_super_admin || normalizeRole(d.role) === 'super_admin');
+        const isSuper = !!(d.actor && d.actor.is_super_admin) || !!d.is_super_admin;
         superL.style.display = isSuper ? 'flex' : 'none';
       }
 

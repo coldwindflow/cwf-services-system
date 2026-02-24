@@ -688,30 +688,25 @@ function normalizeRole(role) {
   if (["admin", "administrator"].includes(r)) return "admin";
   if (["technician", "tech", "ช่าง"].includes(r)) return "technician";
   return r;
+}
 
-// Super Admin whitelist helper (ENV-based, fallback default)
-// SUPER_ADMIN_USERNAMES=USER1,USER2,...
-const __SUPER_ADMIN_DEFAULTS = ['Super']; // fallback when env not set
-function getSuperAdminWhitelist() {
+// =======================================
+// 🛡️ Super Admin (Whitelist)
+// - นิยาม Super Admin จาก ENV: SUPER_ADMIN_USERNAMES=USER1,USER2
+// - ถ้า ENV ว่าง/ไม่ได้ตั้ง: fallback เป็น ['Super','S-arm'] เพื่อไม่ให้ระบบตัน
+// =======================================
+function getSuperAdminWhitelistSet() {
   const raw = String(process.env.SUPER_ADMIN_USERNAMES || '').trim();
-  const arr = raw
+  const list = raw
     ? raw.split(',').map(s => String(s || '').trim()).filter(Boolean)
-    : __SUPER_ADMIN_DEFAULTS.slice();
-  // case-insensitive set
-  const set = new Set(arr.map(s => s.toLowerCase()));
-  return set;
+    : ['Super', 'S-arm'];
+  return new Set(list.map(x => x.toLowerCase()));
 }
+
 function isSuperAdmin(username) {
-  if (!username) return false;
-  try {
-    const set = getSuperAdminWhitelist();
-    return set.has(String(username).trim().toLowerCase());
-  } catch (_) {
-    return false;
-  }
-}
-
-
+  const u = String(username || '').trim().toLowerCase();
+  if (!u) return false;
+  return getSuperAdminWhitelistSet().has(u);
 }
 
 async function getAuthContext(req, res) {
@@ -768,8 +763,8 @@ async function requireAdminSession(req, res, next) {
       return res.status(401).json({ error: 'UNAUTHORIZED' });
     }
 
-    // Admin pages/APIs are allowed if ACTOR is admin OR isSuperAdmin whitelist
-    if (ctx.actor.role !== 'admin' && ctx.actor.role !== 'super_admin' && !isSuperAdmin(ctx.actor.username)) {
+    // Admin pages/APIs are allowed if ACTOR is admin/super_admin
+    if (ctx.actor.role !== 'admin' && ctx.actor.role !== 'super_admin') {
       const accept = String(req.headers?.accept || '').toLowerCase();
       if (accept.includes('text/html')) return res.redirect(302, '/login.html');
       return res.status(403).json({ error: 'FORBIDDEN' });
@@ -791,7 +786,8 @@ async function requireSuperAdmin(req, res, next) {
   try {
     const ctx = await getAuthContext(req, res);
     if (!ctx.ok) return res.status(401).json({ error: 'UNAUTHORIZED' });
-    if (!isSuperAdmin(ctx.actor.username) && ctx.actor.role !== 'super_admin') return res.status(403).json({ error: 'FORBIDDEN' });
+    // IMPORTANT: เช็คจาก actor (ไม่ใช่ effective) เพื่อกันยกระดับสิทธิ์ผ่าน impersonation
+    if (!isSuperAdmin(ctx.actor.username)) return res.status(403).json({ error: 'FORBIDDEN' });
     req.actor = ctx.actor;
     req.effective = ctx.effective;
     req.auth = ctx.effective;
@@ -823,25 +819,24 @@ app.get('/api/auth/me', async (req, res) => {
     const ctx = await getAuthContext(req, res);
     if (!ctx.ok) return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
 
-    const actorIsSuper = (ctx.actor && (ctx.actor.role === 'super_admin' || isSuperAdmin(ctx.actor.username))) ? true : false;
-    const effectiveIsSuper = (ctx.effective && (ctx.effective.role === 'super_admin' || isSuperAdmin(ctx.effective.username))) ? true : false;
-
-    // keep legacy shape, add is_super_admin flags for UI/guards
-    const actorOut = ctx.actor ? { ...ctx.actor, is_super_admin: actorIsSuper } : null;
+    // annotate super admin flags (whitelist-based)
+    const actor = Object.assign({}, ctx.actor, { is_super_admin: isSuperAdmin(ctx.actor?.username) });
+    const effectiveIsSuper = isSuperAdmin(ctx.effective?.username);
 
     return res.json({
       ok: true,
       username: ctx.effective.username,
       role: ctx.effective.role,
-      is_super_admin: effectiveIsSuper,
-      actor: actorOut,
-      impersonating: ctx.impersonating
+      actor,
+      impersonating: ctx.impersonating,
+      is_super_admin: effectiveIsSuper
     });
   } catch (e) {
     console.error('/api/auth/me error:', e);
     return res.status(500).json({ ok: false, error: 'AUTH_FAILED' });
   }
 });
+
 // Logout endpoint (clears cookies + deletes session)
 app.post('/api/logout', async (req, res) => {
   try {
@@ -1213,17 +1208,40 @@ app.post("/admin/profile_v2/me/photo", requireAdminSession, upload.single("photo
 app.get('/admin/super/users', requireSuperAdmin, async (req, res) => {
   try {
     const role = String(req.query.role || '').trim();
-    const q = role ?
-      await pool.query(
+
+    let rows = [];
+    // role filter: if 'super_admin' -> filter by whitelist usernames
+    if (role && normalizeRole(role) === 'super_admin') {
+      const all = await pool.query(
+        `SELECT username, role, COALESCE(full_name,'') AS full_name, COALESCE(photo_url,'') AS photo_url, COALESCE(commission_rate_percent,0) AS commission_rate_percent
+         FROM public.users ORDER BY username ASC`
+      );
+      rows = (all.rows || []).filter(u => isSuperAdmin(u.username));
+    } else if (role) {
+      const q = await pool.query(
         `SELECT username, role, COALESCE(full_name,'') AS full_name, COALESCE(photo_url,'') AS photo_url, COALESCE(commission_rate_percent,0) AS commission_rate_percent
          FROM public.users WHERE role=$1 ORDER BY username ASC`,
         [role]
-      ) :
-      await pool.query(
+      );
+      rows = q.rows || [];
+    } else {
+      const q = await pool.query(
         `SELECT username, role, COALESCE(full_name,'') AS full_name, COALESCE(photo_url,'') AS photo_url, COALESCE(commission_rate_percent,0) AS commission_rate_percent
          FROM public.users ORDER BY role ASC, username ASC`
       );
-    return res.json({ ok: true, users: q.rows || [] });
+      rows = q.rows || [];
+    }
+
+    const out = (rows || []).map(u => {
+      const baseRole = normalizeRole(u.role);
+      const sup = isSuperAdmin(u.username);
+      return Object.assign({}, u, {
+        role: baseRole,
+        is_super_admin: sup,
+        display_role: sup ? 'super_admin' : baseRole
+      });
+    });
+    return res.json({ ok: true, users: out });
   } catch (e) {
     console.error('GET /admin/super/users', e);
     return res.status(500).json({ error: 'โหลดรายชื่อไม่สำเร็จ' });
@@ -1235,10 +1253,9 @@ app.post('/admin/super/admins', requireSuperAdmin, async (req, res) => {
   try {
     const username = String(req.body?.username || '').trim();
     const password = String(req.body?.password || '').trim();
-    const role = String(req.body?.role || 'admin').trim();
+    const role = 'admin'; // locked: no super_admin role in DB
     const full_name = String(req.body?.full_name || '').trim();
     if (!username || !password) return res.status(400).json({ error: 'ต้องมี username และ password' });
-    if (role !== 'admin' && role !== 'super_admin') return res.status(400).json({ error: 'role ไม่ถูกต้อง' });
 
     await pool.query(
       `INSERT INTO public.users(username, password, role, full_name) VALUES($1,$2,$3,$4)`,
@@ -1259,7 +1276,7 @@ app.post('/admin/super/admins', requireSuperAdmin, async (req, res) => {
 app.put('/admin/super/admins/:username', requireSuperAdmin, async (req, res) => {
   try {
     const username = String(req.params.username || '').trim();
-    const role = (req.body?.role !== undefined) ? String(req.body.role).trim() : null;
+    const role = null; // locked: no super_admin role in DB
     const full_name = (req.body?.full_name !== undefined) ? String(req.body.full_name).trim() : null;
     const password = (req.body?.password !== undefined) ? String(req.body.password).trim() : null;
     const commission = (req.body?.commission_rate_percent !== undefined) ? Number(req.body.commission_rate_percent) : null;
@@ -1267,10 +1284,7 @@ app.put('/admin/super/admins/:username', requireSuperAdmin, async (req, res) => 
     const fields = [];
     const vals = [];
     let i = 1;
-    if (role !== null) {
-      if (role !== 'admin' && role !== 'super_admin') return res.status(400).json({ error: 'role ไม่ถูกต้อง' });
-      fields.push(`role=$${i++}`); vals.push(role);
-    }
+    // role is intentionally not updatable
     if (full_name !== null) { fields.push(`full_name=$${i++}`); vals.push(full_name); }
     if (password !== null && password !== '') { fields.push(`password=$${i++}`); vals.push(password); }
     if (commission !== null && Number.isFinite(commission)) { fields.push(`commission_rate_percent=$${i++}`); vals.push(commission); }
@@ -1942,16 +1956,22 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_technician_reviews_tech ON publ
       CHECK (position = ANY (ARRAY['junior'::text,'senior'::text,'lead'::text,'founder_ceo'::text]))
     `);
 
-    // ✅ Seed Super Admin (required)
-    // Username: S-arm  Password: 1549  Role label must be "Super Admin"
-    // NOTE: keep plaintext password for backward-compatibility with existing auth logic in this project.
-    await pool.query(
-      `INSERT INTO public.users(username, password, role, full_name)
-       VALUES($1,$2,$3,$4)
-       ON CONFLICT (username)
-       DO UPDATE SET password=EXCLUDED.password, role=EXCLUDED.role`,
-      ['S-arm', '1549', 'super_admin', 'Super Admin']
-    );
+    // ✅ Seed Super Admin Accounts (Whitelist-based)
+    // NOTE: ห้ามใช้ role=super_admin เพราะ DB มี constraint users_role_check
+    // Super Admin จะตัดสินจาก isSuperAdmin(username) เท่านั้น
+    const seedSupers = [
+      { username: 'Super', password: '1549', full_name: 'Super Admin' },
+      { username: 'S-arm', password: '1549', full_name: 'Super Admin' },
+    ];
+    for (const s of seedSupers) {
+      await pool.query(
+        `INSERT INTO public.users(username, password, role, full_name)
+         VALUES($1,$2,'admin',$3)
+         ON CONFLICT (username)
+         DO UPDATE SET password=EXCLUDED.password, role='admin', full_name=EXCLUDED.full_name`,
+        [s.username, s.password, s.full_name]
+      );
+    }
   } catch (e) {
     console.warn("⚠️ ensureSchema warning:", e.message);
   }
