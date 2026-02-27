@@ -101,8 +101,10 @@ body{
   gap: 10px;
   padding: 10px 12px;
 }
-.customer-page #custTopNav .brand{ display:flex; align-items:center; gap:10px; min-width:0; }
-.customer-page #custTopNav .brand img{ width:42px; height:42px; border-radius:14px; box-shadow: 0 10px 22px rgba(0,0,0,0.18); background:#fff; }
+.customer-page #custTopNav .brand{ display:flex; align-items:center; gap:10px; min-width:0; flex: 1 1 auto; }
+.customer-page #custTopNav .brand .brand-avatar{ width:44px; height:44px; border-radius:16px; box-shadow: 0 10px 22px rgba(0,0,0,0.18); background: rgba(255,255,255,0.92); border: 1px solid rgba(255,255,255,0.18); padding:0; display:inline-flex; align-items:center; justify-content:center; overflow:hidden; cursor:pointer; }
+.customer-page #custTopNav .brand .brand-avatar img{ width:100%; height:100%; object-fit:cover; display:block; }
+.customer-page #custTopNav .brand .brand-avatar .ph{ font-size:20px; line-height:1; color:#2563eb; font-weight:1200; }
 .customer-page #custTopNav .title{ min-width:0; display:flex; flex-direction:column; gap:2px; }
 .customer-page #custTopNav .title b{ font-size:14px; line-height:1.1; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .customer-page #custTopNav .title span{ font-size:12px; font-weight:900; color: rgba(255,255,255,0.82); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
@@ -227,6 +229,18 @@ body{
 .customer-page .custMenuBtn .left{ display:flex; align-items:center; gap:10px; }
 .customer-page .custMenuBtn .sub{ font-size:12px; font-weight:900; color: rgba(255,255,255,0.85); }
 .customer-page .custMenuSmall{ font-size:12px; font-weight:900; color: rgba(15,23,42,0.70); margin-top:auto; }
+
+/* Customer modal (address view/edit) */
+.customer-page .cust-modal{ position: fixed; inset: 0; z-index: 2800; }
+.customer-page .cust-modal .backdrop{ position:absolute; inset:0; background: rgba(15,23,42,0.55); }
+.customer-page .cust-modal .dialog{ position:relative; width: min(520px, calc(100vw - 28px)); margin: 90px auto 0; background:#fff; border-radius: 18px; box-shadow: 0 22px 60px rgba(0,0,0,0.35); overflow:hidden; }
+.customer-page .cust-modal .hd{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding: 14px 14px; background: linear-gradient(180deg, rgba(37,99,235,0.10), rgba(37,99,235,0.03)); border-bottom: 1px solid rgba(15,23,42,0.10); }
+.customer-page .cust-modal .bd{ padding: 14px 14px 16px; }
+.customer-page .cust-modal .addr-text{ font-size: 14px; font-weight: 900; color:#0f172a; white-space: pre-wrap; line-height: 1.35; }
+.customer-page .custMiniBtn{ border-radius: 14px; border: 1px solid rgba(37,99,235,0.22); background: rgba(37,99,235,0.10); color:#0b4bb3; padding: 10px 12px; font-weight: 1000; cursor:pointer; display:inline-flex; align-items:center; gap:8px; text-decoration:none; }
+.customer-page .custMiniBtn.primary{ background: rgba(37,99,235,0.92); border-color: rgba(37,99,235,0.35); color:#fff; }
+.customer-page .custMiniBtn:hover{ filter: brightness(1.03); }
+.customer-page .custMiniBtn:active{ transform: translateY(1px) scale(0.99); }
 
 /* Hamburger + Drawer (customer only) */
 .customer-page .hamburger{

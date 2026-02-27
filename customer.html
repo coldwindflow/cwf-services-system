@@ -14,21 +14,19 @@
     <div id="custTopNav">
       <div class="in">
         <div class="brand">
-          <img src="/logo.png" alt="CWF">
+          <!-- Customer profile (replaces app logo) -->
+          <button id="brand_avatar_btn" class="brand-avatar" type="button" aria-label="ที่อยู่ลูกค้า" title="ดู/แก้ไขที่อยู่">
+            <img id="brand_avatar_img" alt="" style="display:none;" />
+            <span id="brand_avatar_ph" class="ph" aria-hidden="true">👤</span>
+          </button>
           <div class="title">
-            <!-- Header text switches to customer address when logged in -->
             <b id="cust_header_primary">📅 จองคิวงาน (ลูกค้า)</b>
             <span id="cust_header_secondary">Coldwindflow air services</span>
           </div>
         </div>
         <div class="custTopRight">
-          <!-- default: hamburger (not logged in) -->
+          <!-- menu + logout (no overlap) -->
           <button id="menu_btn" class="cust-icbtn" type="button" aria-label="เมนู" aria-expanded="false">☰</button>
-
-          <!-- logged-in: customer avatar + logout -->
-          <button id="avatar_btn" class="cust-avatarbtn" type="button" aria-label="โปรไฟล์" aria-expanded="false" style="display:none;">
-            <img id="avatar_img" alt="" />
-          </button>
           <button id="logout_btn" class="cust-logoutbtn" type="button" aria-label="ออกจากระบบ" title="ออกจากระบบ" style="display:none;">⎋</button>
         </div>
       </div>
@@ -74,6 +72,40 @@
         </div>
 
         <div class="custMenuSmall">Coldwindflow air services</div>
+      </div>
+    </div>
+
+    <!-- Address modal (view/edit) -->
+    <div id="addr_modal" class="cust-modal" style="display:none;" aria-hidden="true">
+      <div class="backdrop" id="addr_modal_backdrop"></div>
+      <div class="dialog" role="dialog" aria-modal="true" aria-labelledby="addr_modal_title">
+        <div class="hd">
+          <b id="addr_modal_title">📍 ที่อยู่ลูกค้า</b>
+          <button id="addr_modal_close" class="cust-icbtn close" type="button" aria-label="ปิด">✕</button>
+        </div>
+        <div class="bd">
+          <div id="addr_view">
+            <div class="muted" style="margin-bottom:6px;">ที่อยู่</div>
+            <div id="addr_text" class="addr-text">-</div>
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+              <a id="addr_maps_open" class="custMiniBtn" href="#" target="_blank" rel="noopener" style="display:none;">🗺️ เปิดแผนที่</a>
+              <button id="addr_edit_btn" class="custMiniBtn" type="button">✏️ แก้ไขที่อยู่</button>
+            </div>
+            <div class="muted" style="margin-top:10px;font-size:12px;">* ถ้ายังไม่มีที่อยู่ ระบบจะพาไปหน้าเพิ่มที่อยู่ได้</div>
+          </div>
+
+          <div id="addr_edit" style="display:none;">
+            <label class="muted" style="display:block;margin-bottom:6px;">ที่อยู่</label>
+            <textarea id="addr_input" rows="4" style="width:100%;"></textarea>
+            <label class="muted" style="display:block;margin:10px 0 6px;">ลิงก์แผนที่ (ถ้ามี)</label>
+            <input id="maps_input" type="text" placeholder="https://maps.app.goo.gl/..." style="width:100%;">
+            <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px;">
+              <button id="addr_save_btn" class="custMiniBtn primary" type="button">✅ บันทึก</button>
+              <button id="addr_cancel_btn" class="custMiniBtn" type="button">ยกเลิก</button>
+            </div>
+            <div id="addr_save_result" class="muted" style="margin-top:10px;"></div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -276,18 +308,24 @@ async function loadMe(){
     const name = document.getElementById('me_name');
 
     const menuBtn = document.getElementById('menu_btn');
-    const avatarBtn = document.getElementById('avatar_btn');
-    const avatarImg = document.getElementById('avatar_img');
     const logoutBtn = document.getElementById('logout_btn');
     const drawerLogoutBtn = document.getElementById('drawer_logout_btn');
 
-    // header (address / add-address)
+    const brandAvatarBtn = document.getElementById('brand_avatar_btn');
+    const brandAvatarImg = document.getElementById('brand_avatar_img');
+    const brandAvatarPh = document.getElementById('brand_avatar_ph');
     const headerPrimary = document.getElementById('cust_header_primary');
     const headerSecondary = document.getElementById('cust_header_secondary');
 
+    // profile fields
+    const profile = (j && j.profile) ? j.profile : null;
+    const addr = profile && profile.address ? String(profile.address || '').trim() : '';
+    const mapsUrl = profile && profile.maps_url ? String(profile.maps_url || '').trim() : '';
+
     if(j && j.logged_in){
       if(loginBtn) loginBtn.style.display = 'none';
-      if(regBtn) regBtn.style.display = 'inline-flex';
+      // show register when missing address
+      if(regBtn) regBtn.style.display = addr ? 'none' : 'inline-flex';
       if(badge) badge.style.display = 'inline-flex';
       if(name) name.textContent = (j.user && j.user.name) ? j.user.name : 'Logged in';
       if(pic) {
@@ -296,43 +334,40 @@ async function loadMe(){
         else { pic.style.display='none'; }
       }
 
-      // top-right: switch hamburger -> avatar + logout
-      if(menuBtn) menuBtn.style.display = 'none';
-      if(avatarBtn) avatarBtn.style.display = 'inline-flex';
+      // top-right: keep menu, show logout
+      if(menuBtn) menuBtn.style.display = 'inline-flex';
       if(logoutBtn) logoutBtn.style.display = 'inline-flex';
       if(drawerLogoutBtn) drawerLogoutBtn.style.display = 'inline-flex';
+
+      // brand avatar replaces app logo
       const u2 = (j.user && j.user.picture) ? String(j.user.picture || '') : '';
-      if(avatarImg){
-        if(u2){ avatarImg.src = u2; avatarImg.style.display='block'; }
-        else { avatarImg.removeAttribute('src'); avatarImg.style.display='none'; }
+      if(brandAvatarImg){
+        if(u2){ brandAvatarImg.src = u2; brandAvatarImg.style.display='block'; }
+        else { brandAvatarImg.removeAttribute('src'); brandAvatarImg.style.display='none'; }
       }
-      if(avatarBtn){
-        // fallback icon when no picture
-        avatarBtn.classList.toggle('no-pic', !u2);
-      }
+      if(brandAvatarPh){ brandAvatarPh.style.display = u2 ? 'none' : 'inline'; }
 
-      // header shows customer address; if missing allow click to add address
-      const addr = String(j.profile?.address || '').trim();
+      // header: address (primary) + name (secondary)
       if(headerPrimary){
-        headerPrimary.classList.remove('cust-header-link');
-        headerPrimary.removeAttribute('role');
-        headerPrimary.removeAttribute('tabindex');
-        headerPrimary.onclick = null;
-
-        if(addr){
-          headerPrimary.textContent = addr;
-        }else{
-          headerPrimary.textContent = '📍 เพิ่มที่อยู่';
-          headerPrimary.classList.add('cust-header-link');
-          headerPrimary.setAttribute('role','button');
-          headerPrimary.setAttribute('tabindex','0');
-          headerPrimary.onclick = () => { location.href = '/register?from=header'; };
-          headerPrimary.onkeydown = (e) => { if(e.key==='Enter' || e.key===' ') { e.preventDefault(); location.href='/register?from=header'; } };
-        }
+        headerPrimary.textContent = addr ? addr : '📍 เพิ่มที่อยู่';
+        headerPrimary.classList.toggle('cust-header-link', true);
       }
       if(headerSecondary){
-        const who = String((j.user && j.user.name) ? j.user.name : '').trim();
-        headerSecondary.textContent = who ? who : 'Coldwindflow air services';
+        headerSecondary.textContent = (j.user && j.user.name) ? String(j.user.name || '') : 'ลูกค้า';
+      }
+
+      // clicking avatar / header opens modal (if has address) else goes to register
+      if(brandAvatarBtn){
+        brandAvatarBtn.onclick = () => {
+          if(addr) openAddressModal({ address: addr, maps_url: mapsUrl });
+          else location.href = '/register?from=header';
+        };
+      }
+      if(headerPrimary){
+        headerPrimary.onclick = () => {
+          if(addr) openAddressModal({ address: addr, maps_url: mapsUrl });
+          else location.href = '/register?from=header';
+        };
       }
     }else{
       if(loginBtn) loginBtn.style.display = 'inline-flex';
@@ -340,21 +375,15 @@ async function loadMe(){
       if(badge) badge.style.display = 'none';
 
       if(menuBtn) menuBtn.style.display = 'inline-flex';
-      if(avatarBtn) avatarBtn.style.display = 'none';
       if(logoutBtn) logoutBtn.style.display = 'none';
       if(drawerLogoutBtn) drawerLogoutBtn.style.display = 'none';
 
-      // reset header
-      if(headerPrimary){
-        headerPrimary.classList.remove('cust-header-link');
-        headerPrimary.removeAttribute('role');
-        headerPrimary.removeAttribute('tabindex');
-        headerPrimary.onclick = null;
-        headerPrimary.textContent = '📅 จองคิวงาน (ลูกค้า)';
-      }
-      if(headerSecondary){
-        headerSecondary.textContent = 'Coldwindflow air services';
-      }
+      // brand avatar placeholder
+      if(brandAvatarImg){ brandAvatarImg.removeAttribute('src'); brandAvatarImg.style.display='none'; }
+      if(brandAvatarPh){ brandAvatarPh.style.display='inline'; }
+      if(headerPrimary){ headerPrimary.textContent = '📅 จองคิวงาน (ลูกค้า)'; headerPrimary.classList.remove('cust-header-link'); headerPrimary.onclick = null; }
+      if(headerSecondary){ headerSecondary.textContent = 'Coldwindflow air services'; }
+      if(brandAvatarBtn){ brandAvatarBtn.onclick = null; }
     }
   }catch(_){
     // ignore
@@ -369,6 +398,86 @@ async function customerLogout(){
     try{ location.href = '/public/logout'; return; }catch(e){}
   }
   try{ location.href = '/customer.html?logout=1'; }catch(_){ location.reload(); }
+}
+
+// Address modal (view/edit)
+function openAddressModal(p){
+  const modal = document.getElementById('addr_modal');
+  const addrView = document.getElementById('addr_view');
+  const addrEdit = document.getElementById('addr_edit');
+  const addrText = document.getElementById('addr_text');
+  const mapsOpen = document.getElementById('addr_maps_open');
+  const addrInput = document.getElementById('addr_input');
+  const mapsInput = document.getElementById('maps_input');
+  const saveRes = document.getElementById('addr_save_result');
+  if(!modal) return;
+
+  const address = String(p?.address || '').trim();
+  const mapsUrl = String(p?.maps_url || '').trim();
+  if(addrText) addrText.textContent = address || '-';
+  if(mapsOpen){
+    if(mapsUrl){ mapsOpen.href = mapsUrl; mapsOpen.style.display = 'inline-flex'; }
+    else { mapsOpen.href = '#'; mapsOpen.style.display = 'none'; }
+  }
+  if(addrInput) addrInput.value = address;
+  if(mapsInput) mapsInput.value = mapsUrl;
+  if(saveRes) saveRes.textContent = '';
+
+  if(addrView) addrView.style.display = 'block';
+  if(addrEdit) addrEdit.style.display = 'none';
+  modal.style.display = 'block';
+  modal.setAttribute('aria-hidden','false');
+}
+
+function closeAddressModal(){
+  const modal = document.getElementById('addr_modal');
+  if(!modal) return;
+  modal.style.display = 'none';
+  modal.setAttribute('aria-hidden','true');
+}
+
+async function saveAddressFromModal(){
+  const addrInput = document.getElementById('addr_input');
+  const mapsInput = document.getElementById('maps_input');
+  const saveRes = document.getElementById('addr_save_result');
+  const address = String(addrInput?.value || '').trim();
+  const maps_url = String(mapsInput?.value || '').trim();
+  if(address.length < 5){
+    if(saveRes) saveRes.textContent = '⚠️ ที่อยู่สั้นเกินไป';
+    return;
+  }
+  try{
+    const r = await fetch(`${API}/public/profile/address`, {
+      method: 'PATCH',
+      credentials: 'include',
+      headers: { 'Content-Type':'application/json' },
+      body: JSON.stringify({ address, maps_url })
+    });
+    const j = await r.json().catch(()=>({}));
+    if(!r.ok){
+      const msg = j?.error ? String(j.error) : 'SAVE_FAILED';
+      if(saveRes) saveRes.textContent = '❌ บันทึกไม่สำเร็จ: ' + msg;
+      return;
+    }
+    if(saveRes) saveRes.textContent = '✅ บันทึกสำเร็จ';
+    // refresh header state
+    await loadMe();
+    // update view
+    const addrText = document.getElementById('addr_text');
+    const mapsOpen = document.getElementById('addr_maps_open');
+    if(addrText) addrText.textContent = address;
+    if(mapsOpen){
+      if(maps_url){ mapsOpen.href = maps_url; mapsOpen.style.display = 'inline-flex'; }
+      else { mapsOpen.href = '#'; mapsOpen.style.display = 'none'; }
+    }
+    // switch to view
+    const addrView = document.getElementById('addr_view');
+    const addrEdit = document.getElementById('addr_edit');
+    if(addrView) addrView.style.display = 'block';
+    if(addrEdit) addrEdit.style.display = 'none';
+  }catch(e){
+    if(saveRes) saveRes.textContent = '❌ บันทึกไม่สำเร็จ';
+  }
 }
 
 function showTopNoticeFromUrl(){
@@ -1163,22 +1272,18 @@ function openCustomerMenu(){
   const ov = document.getElementById('menu_overlay');
   const dr = document.getElementById('menu_drawer');
   const btn = document.getElementById('menu_btn');
-  const avatar = document.getElementById('avatar_btn');
   if(ov) ov.style.display = 'block';
   if(dr){ dr.style.display = 'block'; dr.setAttribute('aria-hidden','false'); }
   if(btn) btn.setAttribute('aria-expanded','true');
-  if(avatar) avatar.setAttribute('aria-expanded','true');
   document.body.style.overflow = 'hidden';
 }
 function closeCustomerMenu(){
   const ov = document.getElementById('menu_overlay');
   const dr = document.getElementById('menu_drawer');
   const btn = document.getElementById('menu_btn');
-  const avatar = document.getElementById('avatar_btn');
   if(ov) ov.style.display = 'none';
   if(dr){ dr.style.display = 'none'; dr.setAttribute('aria-hidden','true'); }
   if(btn) btn.setAttribute('aria-expanded','false');
-  if(avatar) avatar.setAttribute('aria-expanded','false');
   document.body.style.overflow = '';
 }
 document.getElementById('menu_btn')?.addEventListener('click', ()=>{
@@ -1186,17 +1291,35 @@ document.getElementById('menu_btn')?.addEventListener('click', ()=>{
   const isOpen = dr && dr.style.display === 'block';
   isOpen ? closeCustomerMenu() : openCustomerMenu();
 });
-document.getElementById('avatar_btn')?.addEventListener('click', ()=>{
-  const dr = document.getElementById('menu_drawer');
-  const isOpen = dr && dr.style.display === 'block';
-  isOpen ? closeCustomerMenu() : openCustomerMenu();
-});
 document.getElementById('menu_overlay')?.addEventListener('click', closeCustomerMenu);
 document.getElementById('menu_close')?.addEventListener('click', closeCustomerMenu);
-document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeCustomerMenu(); });
+document.addEventListener('keydown', (e)=>{
+  if(e.key !== 'Escape') return;
+  try{ closeAddressModal(); }catch(_){}
+  closeCustomerMenu();
+});
 
 document.getElementById('logout_btn')?.addEventListener('click', customerLogout);
 document.getElementById('drawer_logout_btn')?.addEventListener('click', ()=>{ closeCustomerMenu(); customerLogout(); });
+
+// Address modal events
+document.getElementById('addr_modal_close')?.addEventListener('click', closeAddressModal);
+document.getElementById('addr_modal_backdrop')?.addEventListener('click', closeAddressModal);
+document.getElementById('addr_edit_btn')?.addEventListener('click', ()=>{
+  const v = document.getElementById('addr_view');
+  const e = document.getElementById('addr_edit');
+  const res = document.getElementById('addr_save_result');
+  if(res) res.textContent = '';
+  if(v) v.style.display='none';
+  if(e) e.style.display='block';
+});
+document.getElementById('addr_cancel_btn')?.addEventListener('click', ()=>{
+  const v = document.getElementById('addr_view');
+  const e = document.getElementById('addr_edit');
+  if(v) v.style.display='block';
+  if(e) e.style.display='none';
+});
+document.getElementById('addr_save_btn')?.addEventListener('click', saveAddressFromModal);
 
 loadMe();
 showTopNoticeFromUrl();

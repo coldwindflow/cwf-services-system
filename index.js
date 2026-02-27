@@ -484,7 +484,7 @@ app.get('/auth/line/callback', async (req, res) => {
   }
 });
 
-app.get('/public/me', async (req, res) => {
+app.get('/public/me', (req, res) => {
   try {
     const jwtSecret = getJwtSecret();
     if (!jwtSecret) return res.json({ logged_in: false });
@@ -492,41 +492,69 @@ app.get('/public/me', async (req, res) => {
     if (!token) return res.json({ logged_in: false });
     const payload = jwtVerify(token, jwtSecret);
     if (!payload) return res.json({ logged_in: false });
+    // attach customer profile (address/phone/maps) if exists
+    const sub = String(payload.sub || '').trim();
+    const user = {
+      name: String(payload.name || ''),
+      picture: String(payload.picture || ''),
+      provider: String(payload.provider || 'line'),
+    };
+    if (!sub) return res.json({ logged_in: true, user, profile: null });
 
-    // include registered customer profile (address) if exists
-    let profile = null;
-    try {
-      const sub = String(payload.sub || '').trim();
-      if (sub) {
-        const q = await pool.query(
-          'SELECT phone, address, maps_url, updated_at FROM public.customer_profiles WHERE sub=$1 LIMIT 1',
-          [sub]
-        );
-        if (q && q.rows && q.rows[0]) {
-          profile = {
-            phone: q.rows[0].phone || '',
-            address: q.rows[0].address || '',
-            maps_url: q.rows[0].maps_url || '',
-            updated_at: q.rows[0].updated_at || null,
-          };
-        }
-      }
-    } catch (_) {
-      // ignore profile fetch errors (no regression)
-      profile = null;
-    }
-
-    return res.json({
-      logged_in: true,
-      user: {
-        name: String(payload.name || ''),
-        picture: String(payload.picture || ''),
-        provider: String(payload.provider || 'line'),
-      },
-      profile
+    pool.query(
+      `SELECT phone, address, maps_url FROM public.customer_profiles WHERE sub=$1 LIMIT 1`,
+      [sub]
+    ).then((r) => {
+      const row = r.rows && r.rows[0] ? r.rows[0] : null;
+      return res.json({
+        logged_in: true,
+        user,
+        profile: row ? {
+          phone: row.phone || '',
+          address: row.address || '',
+          maps_url: row.maps_url || ''
+        } : null
+      });
+    }).catch(() => {
+      return res.json({ logged_in: true, user, profile: null });
     });
+    return;
   } catch (_) {
     return res.json({ logged_in: false });
+  }
+});
+
+// Update customer address (modal edit) - backward compatible
+app.patch('/public/profile/address', requireCustomerJwt, async (req, res) => {
+  try {
+    const address = String(req.body?.address || '').trim();
+    const maps_url = String(req.body?.maps_url || '').trim();
+    if (address.length < 5) return res.status(400).json({ error: 'INVALID_ADDRESS' });
+    if (maps_url && maps_url.length > 600) return res.status(400).json({ error: 'INVALID_MAPS_URL' });
+
+    const sub = String(req.customer?.sub || '').trim();
+    const provider = String(req.customer?.provider || 'line').trim();
+    const name = String(req.customer?.name || '').trim();
+    const picture = String(req.customer?.picture || '').trim();
+    if (!sub) return res.status(401).json({ error: 'NOT_LOGGED_IN' });
+
+    await pool.query(
+      `INSERT INTO public.customer_profiles (sub, provider, display_name, picture_url, address, maps_url, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,NOW())
+       ON CONFLICT (sub)
+       DO UPDATE SET
+         provider=EXCLUDED.provider,
+         display_name=EXCLUDED.display_name,
+         picture_url=EXCLUDED.picture_url,
+         address=EXCLUDED.address,
+         maps_url=EXCLUDED.maps_url,
+         updated_at=NOW()`,
+      [sub, provider, name, picture, address, maps_url || null]
+    );
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('PATCH /public/profile/address', e);
+    return res.status(500).json({ error: 'SAVE_FAILED' });
   }
 });
 
