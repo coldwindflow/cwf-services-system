@@ -524,6 +524,31 @@ app.get('/public/me', (req, res) => {
   }
 });
 
+// ✅ Public LINE config (debug only - no secrets)
+// ใช้ในหน้า customer debug panel เพื่อเช็คว่า ENV/callback ถูกต้องหรือไม่
+app.get('/public/line_config', (req, res) => {
+  try {
+    const hasChannelId = !!String(process.env.LINE_CHANNEL_ID || '').trim();
+    const hasChannelSecret = !!String(process.env.LINE_CHANNEL_SECRET || '').trim();
+    const hasJwtSecret = !!String(process.env.CWF_JWT_SECRET || process.env.JWT_SECRET || '').trim();
+    const callbackUrl = String(process.env.LINE_CALLBACK_URL || '').trim() || `${getReqBaseUrl(req)}/auth/line/callback`;
+
+    return res.json({
+      ok: true,
+      env: {
+        LINE_CHANNEL_ID: hasChannelId,
+        LINE_CHANNEL_SECRET: hasChannelSecret,
+        JWT_SECRET: hasJwtSecret,
+        LINE_CALLBACK_URL: !!String(process.env.LINE_CALLBACK_URL || '').trim(),
+      },
+      callback_url: callbackUrl,
+      base_url: getReqBaseUrl(req),
+    });
+  } catch (e) {
+    return res.status(500).json({ ok: false, error: 'LINE_CONFIG_FAILED' });
+  }
+});
+
 // Update customer address (modal edit) - backward compatible
 app.patch('/public/profile/address', requireCustomerJwt, async (req, res) => {
   try {
@@ -9223,18 +9248,19 @@ app.get("/public/availability_v2", async (req, res) => {
         const mx = matrixMap.get(u) || null;
         return techMatchesAllCriteriaStrict(mx, criteriaList || null);
       });
-      // IMPORTANT (Production safety):
-      // หากถูกกรองจนเหลือ 0 (เพราะ matrix ยังไม่ได้ตั้งค่า) จะทำให้ลูกค้าจองคิวไม่ได้ทั้งระบบ
-      // ดังนั้นให้ fallback กลับไปใช้รายชื่อช่างทั้งหมดที่ customer_slot_visible != false
-      // แล้วใส่ reason เพื่อช่วย debug ได้จากหน้า booking
-      if (matrixOk && techsFiltered.length === 0 && techs.length > 0) {
-        techsFiltered = techs.filter(t => !(t && t.customer_slot_visible === false));
-        debugReasons.push({
-          code: 'FALLBACK_MATRIX_EMPTY',
-          message: 'ถูกกรองด้วย service matrix แล้วเหลือ 0 → fallback แสดงช่างทั้งหมดที่เปิดให้ลูกค้าเห็น (customer_slot_visible) เพื่อไม่ให้ระบบจองล่ม'
-        });
-      } else if (debugFlag && techsFiltered.length === 0 && techs.length > 0) {
+      if (debugFlag && techsFiltered.length === 0 && techs.length > 0) {
         debugReasons.push({ code: 'NO_MATCH_MATRIX', message: 'ไม่มีช่างที่เข้าเงื่อนไขตามสิทธิ์งานที่ตั้งไว้ (service matrix)' });
+      }
+
+      // ✅ Fail-safe for production usability:
+      // ถ้า matrix strict กรองจนเหลือ 0 ทั้งระบบ (เช่นยังไม่ได้ตั้งค่า matrix ใน DB)
+      // ให้ fallback ไปใช้ช่างที่แสดงใน customer slot ได้ (customer_slot_visible != false)
+      // เพื่อให้ “หน้าจองคิวลูกค้า” ไม่ล่มทั้งระบบ
+      if (matrixOk && techsFiltered.length === 0 && techs.length > 0) {
+        techsFiltered = techs.filter(t => (t && t.customer_slot_visible === false) ? false : true);
+        if (debugFlag) {
+          debugReasons.push({ code: 'FALLBACK_MATRIX_EMPTY', message: 'fallback: ไม่มี matrix ตรงเงื่อนไข จึงใช้ช่างทั้งหมดที่อนุญาตให้แสดงในสลอตลูกค้า' });
+        }
       }
     }
     // special slots map (admin can extend availability)
@@ -9467,29 +9493,6 @@ app.get("/public/availability_v2", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "โหลดตารางว่างไม่สำเร็จ" });
-  }
-});
-
-// ===== Customer debug helpers (safe, no secrets) =====
-// Use in customer booking debug panel.
-app.get('/public/line_config', (req, res) => {
-  try {
-    const clientId = String(process.env.LINE_CHANNEL_ID || '').trim();
-    const clientSecret = String(process.env.LINE_CHANNEL_SECRET || '').trim();
-    const callbackEnv = String(process.env.LINE_CALLBACK_URL || '').trim();
-    const callback = callbackEnv || `${getReqBaseUrl(req)}/auth/line/callback`;
-    return res.json({
-      ok: true,
-      https_detected: isHttpsReq(req),
-      base_url: getReqBaseUrl(req),
-      callback_url: callback,
-      callback_from_env: !!callbackEnv,
-      line_channel_id_set: !!clientId,
-      line_channel_secret_set: !!clientSecret,
-      jwt_secret_set: !!getJwtSecret(),
-    });
-  } catch (e) {
-    return res.json({ ok: false, error: 'LINE_CONFIG_ERROR' });
   }
 });
 

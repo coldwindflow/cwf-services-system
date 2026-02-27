@@ -4,11 +4,106 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CWF - จองคิวงาน</title>
-  <link rel="stylesheet" href="style.css">
+  <!-- cache-bust: ensure latest css in PWA/Android webview -->
+  <link rel="stylesheet" href="style.css?v=17">
   <link rel="manifest" href="/mainfest.json">
   <meta name="theme-color" content="#0b4bb3">
 </head>
 <body class="theme-2 customer-page">
+  <!-- ===== Customer Debug FAB + Panel (เหมือนหน้าแอดมิน) ===== -->
+  <button id="cust_debug_fab" class="cust-debug-fab" type="button" aria-label="Debug" onclick="window.__cwfDbg && window.__cwfDbg.toggle()">🐞</button>
+  <div id="cust_debug_panel" class="cust-debug-panel" style="display:none;" aria-hidden="true">
+    <div class="hd">
+      <b>Debug Panel</b>
+      <div class="actions">
+        <button type="button" class="mini" onclick="window.__cwfDbg && window.__cwfDbg.clear()">ล้าง</button>
+        <button type="button" class="mini" onclick="window.__cwfDbg && window.__cwfDbg.copy()">คัดลอก</button>
+        <button type="button" class="mini" onclick="window.__cwfDbg && window.__cwfDbg.close()">ปิด</button>
+      </div>
+    </div>
+    <div class="bd">
+      <div class="row">
+        <button type="button" class="mini primary" onclick="window.__cwfDbg && window.__cwfDbg.refreshLine()">Refresh LINE Config</button>
+        <button type="button" class="mini" onclick="window.__cwfDbg && window.__cwfDbg.testSlots()">Test Slots (debug=1)</button>
+      </div>
+      <div class="muted2 mini" style="margin-top:8px;">* เปิด Debug Panel แล้วกด Test Slots จะโชว์ URL/สถานะ/เหตุผลที่ backend ส่งกลับ</div>
+      <pre id="cust_debug_log" class="cust-debug-log"></pre>
+    </div>
+  </div>
+
+  <script>
+    // ===== Minimal early debug logger (must be before other scripts) =====
+    (function(){
+      const panel = () => document.getElementById('cust_debug_panel');
+      const logEl = () => document.getElementById('cust_debug_log');
+      const ts = () => new Date().toISOString();
+      const safeStr = (v) => {
+        try { return (typeof v === 'string') ? v : JSON.stringify(v, null, 2); }
+        catch(_) { return String(v); }
+      };
+      const append = (msg, obj) => {
+        const el = logEl();
+        if(!el) return;
+        const line = `[${ts()}] ${msg}` + (obj !== undefined ? `\n${safeStr(obj)}` : '') + `\n`;
+        el.textContent += line;
+        el.scrollTop = el.scrollHeight;
+      };
+
+      window.__cwfDbg = {
+        open(){ const p=panel(); if(p){ p.style.display='block'; p.setAttribute('aria-hidden','false'); } },
+        close(){ const p=panel(); if(p){ p.style.display='none'; p.setAttribute('aria-hidden','true'); } },
+        toggle(){ const p=panel(); if(!p) return; const on = p.style.display !== 'none'; on ? this.close() : this.open(); },
+        clear(){ const el=logEl(); if(el) el.textContent=''; },
+        copy(){
+          const el=logEl();
+          const txt = el ? el.textContent : '';
+          try{ navigator.clipboard.writeText(txt||''); append('✅ copied'); }catch(e){ append('❌ copy failed', e?.message||e); }
+        },
+        log: append,
+        async refreshLine(){
+          append('→ GET /public/line_config');
+          try{
+            const r = await fetch(`${window.location.origin}/public/line_config`, { credentials:'include' });
+            const t = await r.text();
+            let j=null; try{ j=JSON.parse(t);}catch(_){ }
+            append(`← status ${r.status}`, j || t);
+          }catch(e){ append('❌ line_config error', e?.message||e); }
+        },
+        async testSlots(){
+          try{
+            const d = document.getElementById('date')?.value || '';
+            const dur = (window.durationMin || 60);
+            const urgent = document.getElementById('urgent_toggle')?.checked;
+            const tech_type = urgent ? 'partner' : 'company';
+            if(!d){ append('❌ no date selected'); return; }
+            let url = `${window.location.origin}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(dur)}&debug=1&include_full=1`;
+            try{
+              const payload = (typeof window.getPayloadV2 === 'function') ? window.getPayloadV2() : null;
+              if(payload){
+                if(payload.services && Array.isArray(payload.services) && payload.services.length){
+                  url += `&services=${encodeURIComponent(JSON.stringify(payload.services))}`;
+                } else {
+                  url += `&job_type=${encodeURIComponent(payload.job_type||'')}&ac_type=${encodeURIComponent(payload.ac_type||'')}&wash_variant=${encodeURIComponent(payload.wash_variant||'')}&repair_variant=${encodeURIComponent(payload.repair_variant||'')}`;
+                }
+              }
+            }catch(_){ }
+            append('→ ' + url);
+            const r = await fetch(url, { credentials:'include' });
+            const t = await r.text();
+            let j=null; try{ j=JSON.parse(t);}catch(_){ }
+            append(`← status ${r.status}`, j || t);
+          }catch(e){ append('❌ testSlots error', e?.message||e); }
+        }
+      };
+
+      window.addEventListener('error', (ev) => {
+        append('💥 window.error', { message: ev?.message, filename: ev?.filename, lineno: ev?.lineno, colno: ev?.colno });
+      });
+      window.addEventListener('unhandledrejection', (ev) => {
+        append('💥 unhandledrejection', { reason: safeStr(ev?.reason) });
+      });
+    })();
+  </script>
   <div class="app">
     <!-- Top nav (admin/tech-like) with customer theme -->
     <div id="custTopNav">
@@ -319,27 +414,6 @@
       <button id="confirm_btn" type="button" class="primary-cta" onclick="book()" style="margin-top:12px;">✅ ยืนยันจอง</button>
 
       <div id="result" class="muted" style="margin-top:10px;"></div>
-
-      <!-- Debug Panel (เฉพาะช่วยหาสาเหตุ / ไม่กระทบ flow จองจริง) -->
-      <details id="debug_panel" style="display:none; margin-top:12px;" class="debug-panel">
-        <summary style="cursor:pointer; font-weight:900;">🧰 Debug Panel (แสดงเพื่อช่วยหาสาเหตุ)</summary>
-        <div class="dbg-grid">
-          <div class="dbg-row"><span class="k">Page</span><span class="v" id="dbg_page">-</span></div>
-          <div class="dbg-row"><span class="k">API</span><span class="v" id="dbg_api">-</span></div>
-          <div class="dbg-row"><span class="k">Date</span><span class="v" id="dbg_date">-</span></div>
-          <div class="dbg-row"><span class="k">Duration</span><span class="v" id="dbg_duration">-</span></div>
-          <div class="dbg-row"><span class="k">Tech Type</span><span class="v" id="dbg_techtype">-</span></div>
-          <div class="dbg-row"><span class="k">LINE Config</span><span class="v" id="dbg_line">-</span></div>
-          <div class="dbg-row"><span class="k">Last Slots URL</span><span class="v" id="dbg_slots_url">-</span></div>
-          <div class="dbg-row"><span class="k">Last Slots Result</span><span class="v" id="dbg_slots_result">-</span></div>
-        </div>
-        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
-          <button type="button" class="secondary" onclick="debugRefreshLineConfig()">🔄 Refresh LINE Config</button>
-          <button type="button" class="secondary" onclick="debugTestSlots()">🧪 Test Slots (debug=1)</button>
-          <button type="button" class="secondary" onclick="debugCopy()">📋 Copy Debug</button>
-        </div>
-        <pre id="dbg_raw" class="dbg-raw"></pre>
-      </details>
     </div>
 
   </div>
@@ -347,7 +421,6 @@
 
 <script>
 const API = window.location.origin;
-let __dbg = { lastSlotsUrl: '', lastSlotsOk: null, lastSlotsMsg: '', lastSlotsJson: null, lineConfig: null };
 
 // ===== Menu fallback (ต้องอยู่ก่อนโค้ดอื่น) =====
 // ป้องกันเคส JS error ก่อน bind listener → เมนู/ปุ่มกดไม่ได้
@@ -489,115 +562,6 @@ async function loadMe(){
   }
 }
 
-// ===== Debug helpers (customer booking) =====
-function debugEnabled(){
-  try{
-    const usp = new URLSearchParams(location.search);
-    if(usp.get('debug') === '1') return true;
-    return localStorage.getItem('cwf_debug_panel') === '1';
-  }catch(_){ return false; }
-}
-
-function debugInit(){
-  const panel = document.getElementById('debug_panel');
-  if(!panel) return;
-  if(!debugEnabled()) return;
-  panel.style.display = 'block';
-  try{
-    document.getElementById('dbg_page').textContent = location.pathname + location.search;
-    document.getElementById('dbg_api').textContent = API;
-  }catch(_){ }
-  debugUpdateBasics();
-  debugRefreshLineConfig();
-}
-
-function debugUpdateBasics(){
-  try{
-    const d = document.getElementById('date')?.value || '';
-    const urgent = !!document.getElementById('urgent_toggle')?.checked;
-    document.getElementById('dbg_date').textContent = d || '-';
-    document.getElementById('dbg_duration').textContent = String(Number(durationMin || 60)) + ' min';
-    document.getElementById('dbg_techtype').textContent = urgent ? 'partner' : 'company';
-    document.getElementById('dbg_slots_url').textContent = __dbg.lastSlotsUrl || '-';
-    document.getElementById('dbg_slots_result').textContent = (__dbg.lastSlotsOk === null)
-      ? '-' : (__dbg.lastSlotsOk ? `OK (${__dbg.lastSlotsMsg||''})` : `FAIL (${__dbg.lastSlotsMsg||''})`);
-    if(__dbg.lineConfig){
-      const lc = __dbg.lineConfig;
-      document.getElementById('dbg_line').textContent = `id:${lc.line_channel_id_set?'Y':'N'} secret:${lc.line_channel_secret_set?'Y':'N'} jwt:${lc.jwt_secret_set?'Y':'N'} callback:${lc.callback_url}`;
-    }
-  }catch(_){ }
-}
-
-async function debugRefreshLineConfig(){
-  try{
-    const r = await fetch(`${API}/public/line_config`, { credentials:'include' });
-    const j = await r.json().catch(()=>({}));
-    __dbg.lineConfig = j;
-    debugUpdateBasics();
-    const raw = document.getElementById('dbg_raw');
-    if(raw) raw.textContent = JSON.stringify({ line_config: j }, null, 2);
-  }catch(e){
-    __dbg.lineConfig = { ok:false, error: String(e?.message||e) };
-    debugUpdateBasics();
-  }
-}
-
-async function debugTestSlots(){
-  try{
-    const d = document.getElementById('date')?.value || '';
-    if(!d) return alert('เลือกวันที่ก่อน');
-    await refreshPricing();
-    const duration_min = Number(durationMin || 60);
-    const urgent = !!document.getElementById('urgent_toggle')?.checked;
-    const tech_type = urgent ? 'partner' : 'company';
-    const payload = getPayloadV2();
-    let url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}&debug=1&include_full=1`;
-    if(payload.services && Array.isArray(payload.services) && payload.services.length){
-      url += `&services=${encodeURIComponent(JSON.stringify(payload.services))}`;
-    }else{
-      url += `&job_type=${encodeURIComponent(payload.job_type||'')}`
-        + `&ac_type=${encodeURIComponent(payload.ac_type||'')}`
-        + `&wash_variant=${encodeURIComponent(payload.wash_variant||'')}`
-        + `&repair_variant=${encodeURIComponent(payload.repair_variant||'')}`;
-    }
-    __dbg.lastSlotsUrl = url;
-    debugUpdateBasics();
-    const r = await fetch(url, { credentials:'include' });
-    const j = await r.json().catch(()=>null);
-    __dbg.lastSlotsJson = j;
-    __dbg.lastSlotsOk = r.ok && !!j;
-    const reasons = (j && j.debug && Array.isArray(j.debug.reasons)) ? j.debug.reasons.map(x=>x.code).join(',') : '';
-    __dbg.lastSlotsMsg = r.ok ? `slots:${(j?.slots||[]).length}${reasons?` reasons:${reasons}`:''}` : (j?.error || `HTTP ${r.status}`);
-    debugUpdateBasics();
-    const raw = document.getElementById('dbg_raw');
-    if(raw) raw.textContent = JSON.stringify({ slots_debug: j }, null, 2);
-  }catch(e){
-    __dbg.lastSlotsOk = false;
-    __dbg.lastSlotsMsg = String(e?.message||e);
-    debugUpdateBasics();
-  }
-}
-
-function debugCopy(){
-  try{
-    const d = {
-      page: location.pathname + location.search,
-      api: API,
-      date: document.getElementById('date')?.value || '',
-      durationMin: Number(durationMin || 60),
-      urgent: !!document.getElementById('urgent_toggle')?.checked,
-      payload: (()=>{ try{return getPayloadV2();}catch(_){return null;} })(),
-      lastSlotsUrl: __dbg.lastSlotsUrl,
-      lastSlotsOk: __dbg.lastSlotsOk,
-      lastSlotsMsg: __dbg.lastSlotsMsg,
-      lineConfig: __dbg.lineConfig,
-      lastSlotsJson: __dbg.lastSlotsJson
-    };
-    copyText(JSON.stringify(d, null, 2));
-    toast('คัดลอก Debug แล้ว');
-  }catch(_){ alert('Copy ไม่สำเร็จ'); }
-}
-
 async function customerLogout(){
   try{
     await fetch(`${API}/public/logout`, { method:'POST', credentials:'include' });
@@ -701,10 +665,29 @@ async function saveAddressFromModal(){
 function showTopNoticeFromUrl(){
   try{
     const p = new URLSearchParams(location.search || '');
-    const v = String(p.get('register') || '').trim();
-    if(!v) return;
     const el = document.getElementById('result');
-    if(!el) return;
+
+    // ---- login/logout notice (toast + debug) ----
+    const login = String(p.get('login') || '').trim();
+    const reason = String(p.get('reason') || '').trim();
+    const logout = String(p.get('logout') || '').trim();
+    if (logout === '1') {
+      try{ toast('ออกจากระบบแล้ว'); }catch(_){ }
+      try{ window.__cwfDbg && window.__cwfDbg.log('logout=1'); }catch(_){ }
+    }
+    if (login === 'success') {
+      try{ toast('Login สำเร็จ ✅'); }catch(_){ }
+      try{ window.__cwfDbg && window.__cwfDbg.log('login=success'); }catch(_){ }
+    }
+    if (login === 'failed') {
+      const msg = reason ? `Login ไม่สำเร็จ (${reason})` : 'Login ไม่สำเร็จ';
+      try{ toast(msg); }catch(_){ }
+      try{ window.__cwfDbg && window.__cwfDbg.open(); window.__cwfDbg.log('login=failed', { reason }); }catch(_){ }
+    }
+
+    // ---- register notice (existing behavior) ----
+    const v = String(p.get('register') || '').trim();
+    if(!v || !el) return;
     if(v === 'success') {
       el.innerHTML = '<div class="card" style="padding:12px;border:1px solid rgba(15,23,42,0.12);">✅ <b>บันทึกข้อมูลสำเร็จ</b><div class="muted" style="margin-top:4px;">ระบบจะใช้ข้อมูลนี้ในครั้งถัดไป</div></div>';
     } else if(v === 'need_login') {
@@ -1079,6 +1062,8 @@ function renderSlotsFromCache(){
 }
 
 async function loadSlots(){
+  // log action in debug panel (if available)
+  try{ window.__cwfDbg && window.__cwfDbg.log('loadSlots() clicked'); }catch(_){ }
   const d = document.getElementById("date").value;
   if(!d) return alert("เลือกวันที่ก่อน");
   setPicked(null);
@@ -1137,6 +1122,11 @@ async function loadSlots(){
 
   // ส่ง criteria ไปให้ server filter ตาม service matrix (Option B)
   let url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`;
+  // ถ้าเปิด Debug Panel อยู่ → ขอ debug reasons จาก backend
+  try{
+    const dbgOpen = (document.getElementById('cust_debug_panel')?.style.display === 'block');
+    if(dbgOpen) url += '&debug=1&include_full=1';
+  }catch(_){ }
   if(payload.services && Array.isArray(payload.services) && payload.services.length){
     url += `&services=${encodeURIComponent(JSON.stringify(payload.services))}`;
   }else{
@@ -1147,6 +1137,7 @@ async function loadSlots(){
   }
 
   try{
+    try{ window.__cwfDbg && window.__cwfDbg.log('→ fetch availability_v2', { url }); }catch(_){ }
     const r = await fetch(url, { credentials: 'include' });
     const ct = (r.headers.get('content-type')||'').toLowerCase();
     const isJson = ct.includes('application/json') || ct.includes('+json');
@@ -1159,16 +1150,22 @@ async function loadSlots(){
     if(!data || typeof data !== 'object') throw new Error('รูปแบบข้อมูลไม่ถูกต้อง');
     if(data.error) throw new Error(data.error);
     if(!data.slots || !data.slots.length){
-      slotsBox.textContent = "ไม่พบช่วงเวลา";
+      const reason = (data && data.debug && data.debug.reasons && data.debug.reasons.length)
+        ? (' | reason=' + data.debug.reasons.map(x=>x.code).join(','))
+        : '';
+      slotsBox.textContent = "ไม่พบช่วงเวลา" + reason;
+      try{ window.__cwfDbg && window.__cwfDbg.log('← no slots', data); }catch(_){ }
       return;
     }
     lastSlotsResp = data;
     if(controls) controls.style.display = 'block';
     renderSlotsFromCache();
+    try{ window.__cwfDbg && window.__cwfDbg.log('← slots ok', { count: (data.slots||[]).length }); }catch(_){ }
   }catch(e){
     const msg = (e && e.message) ? String(e.message) : 'Unknown error';
     slotsBox.textContent = `❌ โหลดเวลาว่างไม่สำเร็จ: ${msg}`;
     console.error(e);
+    try{ window.__cwfDbg && window.__cwfDbg.log('❌ loadSlots error', msg); }catch(_){ }
   }
 }
 
@@ -1360,8 +1357,8 @@ function downloadIcsForBooking(){
 });
 
 // (menu handlers are defined at the end of file)
-document.getElementById("urgent_toggle").addEventListener("change", ()=>{ /* slots refresh optional */ });
-document.getElementById("date").addEventListener("change", ()=>{ updateLoadSlotsEnabled(); });
+document.getElementById("urgent_toggle")?.addEventListener("change", ()=>{ /* slots refresh optional */ });
+document.getElementById("date")?.addEventListener("change", ()=>{ updateLoadSlotsEnabled(); });
 
 async function initCustomerCatalogAndPromos(){
   try{
@@ -1524,12 +1521,6 @@ document.getElementById('addr_save_btn')?.addEventListener('click', saveAddressF
 
 loadMe();
 showTopNoticeFromUrl();
-debugInit();
-
-// keep debug basic info fresh
-document.getElementById('date')?.addEventListener('change', debugUpdateBasics);
-document.getElementById('date')?.addEventListener('input', debugUpdateBasics);
-document.getElementById('urgent_toggle')?.addEventListener('change', debugUpdateBasics);
 
 // PWA update toast (ให้ลูกค้ากดรีเฟรชเมื่อมีอัปเดต)
 function showSwToast(onUpdate){
