@@ -2,12 +2,14 @@
 (function(){
   const $ = (id)=>document.getElementById(id);
   let currentTech = null;
+  let currentMatrix = {};
 
   function setCap(id, v){ const el = $(id); if(el) el.checked = !!v; }
   function getCap(id){ const el = $(id); return !!(el && el.checked); }
 
   function applyMatrixToUI(mx){
     mx = (mx && typeof mx === 'object') ? mx : {};
+    currentMatrix = mx;
     const jt = mx.job_types || {};
     const at = mx.ac_types || {};
     const wv = mx.wash_wall_variants || {};
@@ -22,6 +24,31 @@
     setCap('cap_wash_premium', wv.premium);
     setCap('cap_wash_coil', wv.coil);
     setCap('cap_wash_overhaul', wv.overhaul);
+    updateMatrixSummary();
+  }
+
+  function summarize(mx){
+    mx = (mx && typeof mx === 'object') ? mx : {};
+    const jt = mx.job_types || {};
+    const at = mx.ac_types || {};
+    const wv = mx.wash_wall_variants || {};
+    const pick = (obj, map) => Object.keys(map).filter(k=>obj && obj[k]).map(k=>map[k]);
+    const jobs = pick(jt, {install:'ติดตั้ง', wash:'ล้าง', repair:'ซ่อม'});
+    const acs = pick(at, {wall:'ผนัง', fourway:'สี่ทิศทาง', hanging:'แขวน', ceiling:'ใต้ฝ้า/เปลือย'});
+    const wss = pick(wv, {normal:'ธรรมดา', premium:'พรีเมียม', coil:'แขวนคอยล์', overhaul:'ตัดล้าง'});
+    const any = jobs.length || acs.length || wss.length;
+    if (!any) return 'ยังไม่ได้เลือกงานที่รับได้ (จะไม่แสดงในสลอตลูกค้า)';
+    const parts = [];
+    if (jobs.length) parts.push(`งาน: ${jobs.join(', ')}`);
+    if (acs.length) parts.push(`แอร์: ${acs.join(', ')}`);
+    if (wss.length) parts.push(`ล้างผนัง: ${wss.join(', ')}`);
+    return parts.join(' • ');
+  }
+
+  function updateMatrixSummary(){
+    const el = $('matrixSummary');
+    if (!el) return;
+    el.textContent = summarize(collectMatrixFromUI());
   }
 
   function collectMatrixFromUI(){
@@ -43,10 +70,22 @@
       overhaul: getCap('cap_wash_overhaul'),
     };
 
-    // If admin didn't tick anything at all, keep matrix empty => allow all (backward compatible)
-    const any = Object.values(jt).some(Boolean) || Object.values(at).some(Boolean) || Object.values(wv).some(Boolean);
-    if (!any) return {};
+    // ✅ Spec: If not tick anything => DO NOT show in customer slots
     return { job_types: jt, ac_types: at, wash_wall_variants: wv };
+  }
+
+  function openMatrix(){
+    if (!$('matrixModal')) return;
+    $('matrixModal').style.display = 'flex';
+    updateMatrixSummary();
+  }
+  function closeMatrix(){
+    if ($('matrixModal')) $('matrixModal').style.display = 'none';
+  }
+  function clearMatrix(){
+    ['cap_job_install','cap_job_wash','cap_job_repair','cap_ac_wall','cap_ac_fourway','cap_ac_hanging','cap_ac_ceiling','cap_wash_normal','cap_wash_premium','cap_wash_coil','cap_wash_overhaul']
+      .forEach(id=>{ const el=$(id); if(el) el.checked=false; });
+    updateMatrixSummary();
   }
 
   function setTab(name){
@@ -82,6 +121,9 @@
     $('editEmployment').value = (t.employment_type || 'company');
     $('editWorkStart').value = t.work_start || '09:00';
     $('editWorkEnd').value = t.work_end || '18:00';
+    // slot visibility (default true)
+    const sv = (t.customer_slot_visible === false) ? false : true;
+    if ($('editCustomerSlotVisible')) $('editCustomerSlotVisible').checked = !!sv;
     $('editNewPass').value = '';
     $('editConfirmPass').value = '';
     $('photoStatus').textContent = '—';
@@ -225,6 +267,7 @@
       work_end: String($('editWorkEnd').value||'').trim(),
       new_password: String($('editNewPass').value||''),
       confirm_password: String($('editConfirmPass').value||''),
+      customer_slot_visible: !!($('editCustomerSlotVisible') && $('editCustomerSlotVisible').checked),
     };
 
     await apiFetch(`/admin/technicians/${encodeURIComponent(currentTech.username)}`,{
@@ -232,7 +275,7 @@
       body: JSON.stringify(payload)
     });
 
-    // save service matrix (Option B)
+    // save service matrix (Option B - strict)
     const matrix_json = collectMatrixFromUI();
     await apiFetch(`/admin/technicians/${encodeURIComponent(currentTech.username)}/service-matrix`,{
       method:'PUT',
@@ -280,6 +323,16 @@
   $('btnCloseEdit').addEventListener('click', closeEdit);
   $('editModal').addEventListener('click', (e)=>{ if (e.target && e.target.id==='editModal') closeEdit(); });
   $('btnSaveEdit').addEventListener('click', ()=> saveEdit().catch(e=>showToast(e.message||'บันทึกไม่สำเร็จ','error')));
+  // matrix modal
+  if ($('btnOpenMatrix')) $('btnOpenMatrix').addEventListener('click', openMatrix);
+  if ($('btnCloseMatrix')) $('btnCloseMatrix').addEventListener('click', closeMatrix);
+  if ($('matrixModal')) $('matrixModal').addEventListener('click', (e)=>{ if (e.target && e.target.id==='matrixModal') closeMatrix(); });
+  if ($('btnApplyMatrix')) $('btnApplyMatrix').addEventListener('click', ()=>{ updateMatrixSummary(); closeMatrix(); });
+  if ($('btnClearMatrix')) $('btnClearMatrix').addEventListener('click', clearMatrix);
+
+  // update summary when toggling caps
+  ['cap_job_install','cap_job_wash','cap_job_repair','cap_ac_wall','cap_ac_fourway','cap_ac_hanging','cap_ac_ceiling','cap_wash_normal','cap_wash_premium','cap_wash_coil','cap_wash_overhaul']
+    .forEach(id=>{ const el=$(id); if(el) el.addEventListener('change', updateMatrixSummary); });
   $('btnUploadPhoto').addEventListener('click', ()=> uploadTechPhoto().catch(e=>showToast(e.message||'อัปโหลดไม่สำเร็จ','error')));
   $('btnOpenSpecial').addEventListener('click', ()=>{
     if (!currentTech) return;

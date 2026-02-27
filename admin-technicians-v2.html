@@ -167,31 +167,17 @@
         </div>
 
         <div style="margin-top:14px">
-          <div class="muted">สิทธิ์รับงานของช่าง (หน้า ลูกค้า)</div>
+          <div class="muted">การแสดงในสลอตหน้าลูกค้า</div>
           <div style="border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:12px;background:#f8fafc">
-            <div class="muted" style="margin-bottom:8px">ประเภทงาน</div>
-            <div class="grid2">
-              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_job_wash" type="checkbox" style="width:18px;height:18px"> ล้าง</label>
-              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_job_repair" type="checkbox" style="width:18px;height:18px"> ซ่อม</label>
-              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_job_install" type="checkbox" style="width:18px;height:18px"> ติดตั้ง</label>
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
+              <label class="pill" style="gap:10px;justify-content:flex-start">
+                <input id="editCustomerSlotVisible" type="checkbox" style="width:18px;height:18px">
+                แสดงช่างคนนี้ในสลอตลูกค้า
+              </label>
+              <button class="btn gray" id="btnOpenMatrix" type="button">ตั้งค่างานที่รับได้</button>
             </div>
-
-            <div class="muted" style="margin:12px 0 8px 0">ประเภทแอร์</div>
-            <div class="grid2">
-              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_ac_wall" type="checkbox" style="width:18px;height:18px"> ผนัง</label>
-              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_ac_fourway" type="checkbox" style="width:18px;height:18px"> สี่ทิศทาง</label>
-              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_ac_hanging" type="checkbox" style="width:18px;height:18px"> แขวน</label>
-              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_ac_ceiling" type="checkbox" style="width:18px;height:18px"> ใต้ฝ้า/เปลือย</label>
-            </div>
-
-            <div class="muted" style="margin:12px 0 8px 0">วิธีล้างแอร์ผนัง</div>
-            <div class="grid2">
-              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_wash_normal" type="checkbox" style="width:18px;height:18px"> ธรรมดา</label>
-              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_wash_premium" type="checkbox" style="width:18px;height:18px"> พรีเมียม</label>
-              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_wash_coil" type="checkbox" style="width:18px;height:18px"> แขวนคอยล์</label>
-              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_wash_overhaul" type="checkbox" style="width:18px;height:18px"> ตัดล้าง</label>
-            </div>
-            <div class="muted" style="margin-top:10px">* ถ้าไม่ติ๊กอะไรเลย จะถือว่า “รับได้ทั้งหมด” (กันระบบเดิมพัง)</div>
+            <div class="muted" id="matrixSummary" style="margin-top:10px">—</div>
+            <div class="muted" style="margin-top:8px">* ถ้าไม่ติ๊กเลือกงานที่รับได้เลย = “ไม่แสดงสลอตลูกค้า”</div>
           </div>
         </div>
 
@@ -202,6 +188,49 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- Service Matrix Modal (clean UI) -->
+  <div class="modal" id="matrixModal" style="display:none">
+    <div class="modal-inner" style="max-width:720px">
+      <div class="modal-head">
+        <b>ตั้งค่างานที่รับได้ (สำหรับสลอตหน้าลูกค้า)</b>
+        <button class="btn gray" id="btnCloseMatrix" type="button">ปิด</button>
+      </div>
+      <div class="modal-body">
+        <div class="muted" style="margin-bottom:10px">ติ๊กเฉพาะที่ช่างคนนี้ “รับได้จริง” (ถ้าไม่ติ๊กเลย = ไม่แสดงสลอตลูกค้า)</div>
+
+        <div style="border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:12px;background:#fff">
+          <div class="muted" style="margin-bottom:8px">ประเภทงาน</div>
+          <div class="grid2">
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_job_wash" type="checkbox" style="width:18px;height:18px"> ล้าง</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_job_repair" type="checkbox" style="width:18px;height:18px"> ซ่อม</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_job_install" type="checkbox" style="width:18px;height:18px"> ติดตั้ง</label>
+          </div>
+
+          <div class="muted" style="margin:12px 0 8px 0">ประเภทแอร์</div>
+          <div class="grid2">
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_ac_wall" type="checkbox" style="width:18px;height:18px"> ผนัง</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_ac_fourway" type="checkbox" style="width:18px;height:18px"> สี่ทิศทาง</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_ac_hanging" type="checkbox" style="width:18px;height:18px"> แขวน</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_ac_ceiling" type="checkbox" style="width:18px;height:18px"> ใต้ฝ้า/เปลือย</label>
+          </div>
+
+          <div class="muted" style="margin:12px 0 8px 0">วิธีล้างแอร์ผนัง</div>
+          <div class="grid2">
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_wash_normal" type="checkbox" style="width:18px;height:18px"> ธรรมดา</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_wash_premium" type="checkbox" style="width:18px;height:18px"> พรีเมียม</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_wash_coil" type="checkbox" style="width:18px;height:18px"> แขวนคอยล์</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="cap_wash_overhaul" type="checkbox" style="width:18px;height:18px"> ตัดล้าง</label>
+          </div>
+        </div>
+
+        <div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn yellow" id="btnApplyMatrix" type="button">ใช้ค่าที่เลือก</button>
+          <button class="btn gray" id="btnClearMatrix" type="button">ล้างทั้งหมด</button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="admin-v2-common.js"></script>

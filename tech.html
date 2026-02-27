@@ -274,12 +274,59 @@
             <span class="sub">ตั้งค่า</span>
           </button>
 
+          <button class="techMenuBtn" type="button" id="techMatrixBtn">
+            <span class="left">🧩 <span>งานที่รับได้ (สลอตลูกค้า)</span></span>
+            <span class="sub">ตั้งค่า</span>
+          </button>
+
           <div class="techMenuSmall" style="margin-top:4px;padding:0 2px;">อื่นๆ</div>
 
           <button class="techMenuBtn techMenuDanger" type="button" onclick="logout()">
             <span class="left">🚪 <span>ออกจากระบบ</span></span>
             <span class="sub">Logout</span>
           </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ✅ Modal: Technician Service Matrix (self-config) -->
+    <div id="techMatrixModal" style="display:none;position:fixed;inset:0;z-index:4000;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,0.55)">
+      <div style="width:min(720px, 100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:18px;border:1px solid rgba(15,23,42,0.12);box-shadow:0 28px 80px rgba(2,6,23,0.35);padding:12px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
+          <b style="font-size:14px">งานที่รับได้ (สำหรับสลอตหน้าลูกค้า)</b>
+          <button class="tech-icbtn" type="button" id="techMatrixCloseBtn" aria-label="ปิด" style="background:rgba(37,99,235,0.10);border-color:rgba(37,99,235,0.25);color:#2563eb">✕</button>
+        </div>
+        <div class="muted" style="margin-top:8px">ติ๊กเฉพาะที่รับได้จริง • ถ้าไม่ติ๊กเลย = ไม่แสดงสลอตลูกค้า</div>
+
+        <div style="margin-top:10px;border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:12px;background:#f8fafc">
+          <div class="muted" style="margin-bottom:8px">ประเภทงาน</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_job_wash" type="checkbox" style="width:18px;height:18px"> ล้าง</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_job_repair" type="checkbox" style="width:18px;height:18px"> ซ่อม</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_job_install" type="checkbox" style="width:18px;height:18px"> ติดตั้ง</label>
+          </div>
+
+          <div class="muted" style="margin:12px 0 8px 0">ประเภทแอร์</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_wall" type="checkbox" style="width:18px;height:18px"> ผนัง</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_fourway" type="checkbox" style="width:18px;height:18px"> สี่ทิศทาง</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_hanging" type="checkbox" style="width:18px;height:18px"> แขวน</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_ceiling" type="checkbox" style="width:18px;height:18px"> ใต้ฝ้า/เปลือย</label>
+          </div>
+
+          <div class="muted" style="margin:12px 0 8px 0">วิธีล้างแอร์ผนัง</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_normal" type="checkbox" style="width:18px;height:18px"> ธรรมดา</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_premium" type="checkbox" style="width:18px;height:18px"> พรีเมียม</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_coil" type="checkbox" style="width:18px;height:18px"> แขวนคอยล์</label>
+            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_overhaul" type="checkbox" style="width:18px;height:18px"> ตัดล้าง</label>
+          </div>
+        </div>
+
+        <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn" type="button" id="techMatrixSaveBtn" style="background:linear-gradient(135deg, #2563eb, #06b6d4);color:#fff;border:none;border-radius:16px;min-height:46px;font-weight:1000;padding:10px 14px">บันทึก</button>
+          <button class="btn" type="button" id="techMatrixClearBtn" style="background:rgba(15,23,42,0.06);color:#0f172a;border:1px solid rgba(15,23,42,0.12);border-radius:16px;min-height:46px;font-weight:1000;padding:10px 14px">ล้างทั้งหมด</button>
+          <span class="muted" id="techMatrixStatus" style="align-self:center">—</span>
         </div>
       </div>
     </div>
@@ -549,6 +596,101 @@
         });
 
         window.__cwfSyncTechMore = syncTechMore;
+
+        // ===== Technician Service Matrix (self-config) =====
+        function t$(id){ return document.getElementById(id); }
+        function tSet(id, v){ const el=t$(id); if(el) el.checked=!!v; }
+        function tGet(id){ const el=t$(id); return !!(el && el.checked); }
+
+        function techMatrixCollect(){
+          return {
+            job_types: {
+              install: tGet('t_cap_job_install'),
+              wash: tGet('t_cap_job_wash'),
+              repair: tGet('t_cap_job_repair'),
+            },
+            ac_types: {
+              wall: tGet('t_cap_ac_wall'),
+              fourway: tGet('t_cap_ac_fourway'),
+              hanging: tGet('t_cap_ac_hanging'),
+              ceiling: tGet('t_cap_ac_ceiling'),
+            },
+            wash_wall_variants: {
+              normal: tGet('t_cap_wash_normal'),
+              premium: tGet('t_cap_wash_premium'),
+              coil: tGet('t_cap_wash_coil'),
+              overhaul: tGet('t_cap_wash_overhaul'),
+            }
+          };
+        }
+        function techMatrixApply(mx){
+          mx = (mx && typeof mx === 'object') ? mx : {};
+          const jt = mx.job_types || {};
+          const at = mx.ac_types || {};
+          const wv = mx.wash_wall_variants || {};
+          tSet('t_cap_job_install', jt.install);
+          tSet('t_cap_job_wash', jt.wash);
+          tSet('t_cap_job_repair', jt.repair);
+          tSet('t_cap_ac_wall', at.wall);
+          tSet('t_cap_ac_fourway', at.fourway);
+          tSet('t_cap_ac_hanging', at.hanging);
+          tSet('t_cap_ac_ceiling', at.ceiling);
+          tSet('t_cap_wash_normal', wv.normal);
+          tSet('t_cap_wash_premium', wv.premium);
+          tSet('t_cap_wash_coil', wv.coil);
+          tSet('t_cap_wash_overhaul', wv.overhaul);
+        }
+
+        async function openTechMatrixModal(){
+          try{ closeTechMenu(); }catch(e){}
+          const m = t$('techMatrixModal');
+          if (!m) return;
+          m.style.display = 'flex';
+          const st = t$('techMatrixStatus');
+          if (st) st.textContent = 'กำลังโหลด...';
+          const resp = await fetch('/tech/service-matrix', { credentials: 'include' });
+          const json = await resp.json().catch(()=>({}));
+          if (!resp.ok) throw new Error(json?.error || 'โหลดไม่สำเร็จ');
+          techMatrixApply(json.matrix_json || {});
+          if (st) st.textContent = '—';
+        };
+        function closeTechMatrixModal(){
+          const m = t$('techMatrixModal');
+          if (m) m.style.display = 'none';
+        }
+        async function saveTechMatrix(){
+          const st = t$('techMatrixStatus');
+          if (st) st.textContent = 'กำลังบันทึก...';
+          const body = { matrix_json: techMatrixCollect() };
+          const resp = await fetch('/tech/service-matrix', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+            credentials: 'include'
+          });
+          const json = await resp.json().catch(()=>({}));
+          if (!resp.ok) throw new Error(json?.error || 'บันทึกไม่สำเร็จ');
+          if (st) st.textContent = 'บันทึกแล้ว';
+          setTimeout(()=>{ try{ if(st) st.textContent='—'; }catch(e){} }, 1200);
+          closeTechMatrixModal();
+        }
+        function clearTechMatrix(){
+          ['t_cap_job_install','t_cap_job_wash','t_cap_job_repair','t_cap_ac_wall','t_cap_ac_fourway','t_cap_ac_hanging','t_cap_ac_ceiling','t_cap_wash_normal','t_cap_wash_premium','t_cap_wash_coil','t_cap_wash_overhaul']
+            .forEach(id=>{ const el=t$(id); if(el) el.checked=false; });
+        }
+
+        document.addEventListener('DOMContentLoaded', ()=>{
+          const btn = t$('techMatrixBtn');
+          const cls = t$('techMatrixCloseBtn');
+          const mod = t$('techMatrixModal');
+          const save = t$('techMatrixSaveBtn');
+          const clr = t$('techMatrixClearBtn');
+          if (btn) btn.addEventListener('click', openTechMatrixModal);
+          if (cls) cls.addEventListener('click', closeTechMatrixModal);
+          if (save) save.addEventListener('click', ()=> saveTechMatrix().catch(e=>{ const st=t$('techMatrixStatus'); if(st) st.textContent = (e.message||'บันทึกไม่สำเร็จ'); }));
+          if (clr) clr.addEventListener('click', clearTechMatrix);
+          if (mod) mod.addEventListener('click', (e)=>{ if(e.target && e.target.id==='techMatrixModal') closeTechMatrixModal(); });
+        });
 
 
 function logout(){

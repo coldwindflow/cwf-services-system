@@ -2261,6 +2261,9 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_income_overrides_type ON p
     // 3.3) technician_profiles: เบอร์โทร (ใช้แสดงให้ลูกค้า "หลังเริ่มเดินทาง" เท่านั้น)
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS phone TEXT`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS employment_type TEXT DEFAULT 'company'`);
+    // ✅ customer_slot_visible: ช่างบางคนเป็นลูกมือ/ฝึกงาน ไม่ต้องแสดงในสลอตหน้าลูกค้า
+    // - ใช้เฉพาะการคำนวณสลอตฝั่งลูกค้าเท่านั้น (แอดมินเพิ่มงาน/จัดทีมยังเลือกได้ตามปกติ)
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS customer_slot_visible BOOLEAN DEFAULT TRUE`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS work_start TEXT DEFAULT '09:00'`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS work_end TEXT DEFAULT '18:00'`);
     // ✅ วันหยุดประจำสัปดาห์ (0=อาทิตย์ ... 6=เสาร์) เช่น '0,6'
@@ -7504,6 +7507,7 @@ app.get("/admin/technicians", requireAdminSession, async (req, res) => {
               COALESCE(p.employment_type,'company') AS employment_type,
               COALESCE(p.work_start,'09:00') AS work_start,
               COALESCE(p.work_end,'18:00') AS work_end,
+              COALESCE(p.customer_slot_visible, TRUE) AS customer_slot_visible,
               p.rating, p.grade, p.done_count,
               COALESCE(p.accept_status,'ready') AS accept_status, p.accept_status_updated_at
        FROM public.users u
@@ -7528,6 +7532,10 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
     const employment_type = (req.body.employment_type ?? "").toString().trim() || null;
     const work_start = (req.body.work_start ?? "").toString().trim() || null;
     const work_end = (req.body.work_end ?? "").toString().trim() || null;
+    // customer_slot_visible: optional
+    const customer_slot_visible_in = (req.body.customer_slot_visible);
+    const hasCustomerSlotVisible = (customer_slot_visible_in === true || customer_slot_visible_in === false || customer_slot_visible_in === 'true' || customer_slot_visible_in === 'false' || customer_slot_visible_in === 1 || customer_slot_visible_in === 0 || customer_slot_visible_in === '1' || customer_slot_visible_in === '0');
+    const customer_slot_visible = hasCustomerSlotVisible ? (String(customer_slot_visible_in).trim() === '1' || String(customer_slot_visible_in).trim().toLowerCase() === 'true') : null;
     const newPassword = (req.body.new_password ?? "").toString();
     const confirmPassword = (req.body.confirm_password ?? "").toString();
 
@@ -7560,6 +7568,7 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
          employment_type = COALESCE($6, public.technician_profiles.employment_type),
          work_start = COALESCE($7, public.technician_profiles.work_start),
          work_end = COALESCE($8, public.technician_profiles.work_end),
+         customer_slot_visible = COALESCE($9, public.technician_profiles.customer_slot_visible),
          updated_at = CURRENT_TIMESTAMP`,
       [
         username,
@@ -7570,6 +7579,7 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
         employment_type ? String(employment_type).toLowerCase() : null,
         work_start,
         work_end,
+        hasCustomerSlotVisible ? customer_slot_visible : null,
       ]
     );
 
@@ -7637,6 +7647,50 @@ app.put("/admin/technicians/:username/service-matrix", requireAdminSession, asyn
   } catch (e) {
     console.error('PUT service-matrix error:', e);
     return res.status(500).json({ error: 'บันทึกสิทธิ์งานของช่างไม่สำเร็จ' });
+  }
+});
+
+// =======================================
+// 🧑‍🔧 TECH: Service Matrix (Self-Config)
+// - ช่างสามารถเลือกเองได้ว่า รับงานอะไร/แอร์ประเภทไหน/วิธีล้างอะไร (ใช้คัดกรองสลอตหน้าลูกค้า)
+// - ถ้าไม่ติ๊กอะไรเลย => ไม่แสดงสลอตหน้าลูกค้า (ตามสเปก)
+// =======================================
+app.get('/tech/service-matrix', requireTechnicianSession, async (req, res) => {
+  try {
+    const username = req.effective?.username;
+    const r = await pool.query(
+      `SELECT matrix_json FROM public.technician_service_matrix WHERE username=$1 LIMIT 1`,
+      [username]
+    );
+    const row = (r.rows || [])[0] || null;
+    return res.json({ ok: true, username, matrix_json: row?.matrix_json || {} });
+  } catch (e) {
+    console.error('GET tech service-matrix error:', e);
+    return res.status(500).json({ error: 'โหลดไม่สำเร็จ' });
+  }
+});
+
+app.put('/tech/service-matrix', requireTechnicianSession, async (req, res) => {
+  try {
+    const username = req.effective?.username;
+    const matrix_json = (req.body && req.body.matrix_json) ? req.body.matrix_json : {};
+    // minimal validation (shape)
+    const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
+    if (!isObj(matrix_json)) return res.status(400).json({ error: 'matrix_json ต้องเป็น object' });
+
+    await pool.query(
+      `INSERT INTO public.technician_service_matrix (username, matrix_json, updated_by)
+       VALUES ($1,$2,$3)
+       ON CONFLICT (username) DO UPDATE SET
+         matrix_json = EXCLUDED.matrix_json,
+         updated_by = EXCLUDED.updated_by,
+         updated_at = CURRENT_TIMESTAMP`,
+      [username, matrix_json, username]
+    );
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('PUT tech service-matrix error:', e);
+    return res.status(500).json({ error: 'บันทึกไม่สำเร็จ' });
   }
 });
 
@@ -8386,7 +8440,8 @@ async function listTechniciansByType(tech_type, opts = {}) {
            COALESCE(p.work_start,'09:00') AS work_start,
            COALESCE(p.work_end,'18:00') AS work_end,
            COALESCE(p.accept_status,'ready') AS accept_status,
-           COALESCE(p.weekly_off_days,'') AS weekly_off_days
+           COALESCE(p.weekly_off_days,'') AS weekly_off_days,
+           COALESCE(p.customer_slot_visible, TRUE) AS customer_slot_visible
     FROM public.users u
     LEFT JOIN public.technician_profiles p ON p.username=u.username
     WHERE u.role='technician'
@@ -8411,7 +8466,8 @@ async function listTechniciansByType(tech_type, opts = {}) {
                COALESCE(p.work_start,'09:00') AS work_start,
                COALESCE(p.work_end,'18:00') AS work_end,
                COALESCE(p.accept_status,'ready') AS accept_status,
-               COALESCE(p.weekly_off_days,'') AS weekly_off_days
+               COALESCE(p.weekly_off_days,'') AS weekly_off_days,
+               COALESCE(p.customer_slot_visible, TRUE) AS customer_slot_visible
         FROM public.users u
         LEFT JOIN public.technician_profiles p ON p.username=u.username
         WHERE u.role='technician'
@@ -9067,6 +9123,9 @@ app.get("/public/availability_v2", async (req, res) => {
   const hasCriteria = Boolean(criteria.job || criteria.ac || criteria.wash || criteria.repair_variant);
 
   async function loadServiceMatrixMap(usernames) {
+    // NOTE: For customer booking we want strict filtering (no record => not eligible).
+    // But if DB query fails, we fail-open by skipping matrix filtering entirely.
+    loadServiceMatrixMap._ok = true;
     try {
       if (!usernames || !usernames.length) return new Map();
       const r = await pool.query(
@@ -9078,31 +9137,24 @@ app.get("/public/availability_v2", async (req, res) => {
       return m;
     } catch (e) {
       // fail-open
+      loadServiceMatrixMap._ok = false;
       console.warn('[availability_v2] loadServiceMatrixMap failed:', e.message);
       return new Map();
     }
   }
 
-  function techMatchesMatrix(matrix, c) {
-    // Backward compatible: missing matrix or missing keys => allow
-    if (!matrix || typeof matrix !== 'object') return true;
-
-    const allowByObj = (obj, key) => {
+  function techMatchesMatrixStrict(matrix, c) {
+    // Strict: missing matrix or missing keys => NOT eligible for customer slots
+    if (!matrix || typeof matrix !== 'object') return false;
+    const mustTrue = (obj, key) => {
       if (!key) return true;
-      if (!obj || typeof obj !== 'object') return true;
-      if (!(key in obj)) return true;
+      if (!obj || typeof obj !== 'object') return false;
       return Boolean(obj[key]);
     };
-
-    // job type
-    if (!allowByObj(matrix.job_types, c.job)) return false;
-
-    // ac type (only meaningful for wash/install/repair that depends on ac)
-    if (!allowByObj(matrix.ac_types, c.ac)) return false;
-
-    // wash variants (only enforce for wall wash if provided)
+    if (!mustTrue(matrix.job_types, c.job)) return false;
+    if (!mustTrue(matrix.ac_types, c.ac)) return false;
     if (c.job === 'wash' && c.ac === 'wall') {
-      if (!allowByObj(matrix.wash_wall_variants, c.wash)) return false;
+      if (!mustTrue(matrix.wash_wall_variants, c.wash)) return false;
     }
     return true;
   }
@@ -9119,15 +9171,26 @@ app.get("/public/availability_v2", async (req, res) => {
       return true;
     });
 
-    // Option B: filter technicians by admin-configured service matrix (customer booking only)
+    // Option B: filter technicians by service matrix + slot visibility (customer booking only)
     // - Do NOT apply when forced=1 (admin lock) to avoid hiding technicians in admin calendar.
-    // - Fail-open when matrix missing.
+    // - Strict rule (as requested):
+    //   1) ถ้า "ไม่ติ๊กเลือกอะไรเลย" => ไม่แสดงในสลอตลูกค้า
+    //   2) ถ้าไม่มี record matrix => ไม่แสดงในสลอตลูกค้า
+    //   3) customer_slot_visible=false (ลูกมือ/ฝึกงาน) => ไม่แสดงในสลอตลูกค้า
+    // - If DB loading matrices fails => skip matrix filtering (fail-open) to avoid total outage.
     let techsFiltered = techs;
     if (!forced && hasCriteria) {
       const matrixMap = await loadServiceMatrixMap(techs.map(t => t.username));
+      const matrixOk = (loadServiceMatrixMap._ok !== false);
       techsFiltered = techs.filter(t => {
-        const mx = matrixMap.get(String(t.username)) || null;
-        return techMatchesMatrix(mx, criteria);
+        // hide trainees/assistants from customer slot list
+        if (t && t.customer_slot_visible === false) return false;
+        // If DB read failed -> do not apply strict filter
+        if (!matrixOk) return true;
+        const u = String(t.username);
+        if (!matrixMap.has(u)) return false;
+        const mx = matrixMap.get(u) || null;
+        return techMatchesMatrixStrict(mx, criteria);
       });
       if (debugFlag && techsFiltered.length === 0 && techs.length > 0) {
         debugReasons.push({ code: 'NO_MATCH_MATRIX', message: 'ไม่มีช่างที่เข้าเงื่อนไขตามสิทธิ์งานที่ตั้งไว้ (service matrix)' });
