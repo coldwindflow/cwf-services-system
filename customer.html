@@ -19,16 +19,42 @@
         </div>
       </div>
       <div class="top-actions">
-        <div id="auth_box" class="auth-box">
-          <a id="line_login_btn" class="secondary link-btn" href="/auth/line">✅ Login ด้วย LINE</a>
-          <a id="register_btn" class="secondary link-btn" style="display:none;" href="/register">📍 เพิ่มที่อยู่</a>
+        <button id="menu_btn" class="hamburger" type="button" aria-label="เมนู" aria-expanded="false">
+          <span class="hb-line"></span>
+          <span class="hb-line"></span>
+          <span class="hb-line"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Premium hamburger menu (mobile friendly) -->
+    <div id="menu_overlay" class="menu-overlay" style="display:none;"></div>
+    <div id="menu_drawer" class="menu-drawer" style="display:none;" aria-hidden="true">
+      <div class="menu-head">
+        <div class="menu-head-left">
+          <img src="/logo.png" alt="CWF" class="menu-logo">
+          <div>
+            <div class="menu-title"><b>CWF Menu</b></div>
+            <div class="muted" style="font-size:12px;">Coldwindflow air services</div>
+          </div>
+        </div>
+        <button id="menu_close" class="icon-btn" type="button" aria-label="ปิดเมนู">✕</button>
+      </div>
+
+      <div class="menu-section">
+        <div id="auth_box" class="auth-box" style="margin:0;">
+          <a id="line_login_btn" class="menu-btn" href="/auth/line">✅ Login ด้วย LINE</a>
+          <a id="register_btn" class="menu-btn" style="display:none;" href="/register">📍 เพิ่มที่อยู่</a>
           <div id="me_badge" class="me-badge" style="display:none;">
             <img id="me_pic" alt="" class="me-pic">
             <b id="me_name" class="me-name"></b>
           </div>
         </div>
-        <button class="secondary" type="button" onclick="location.href='/install-quote'">🧮 คำนวณติดตั้ง</button>
-        <button class="secondary top-track" type="button" onclick="location.href='/track.html'">🔎 ติดตามงาน</button>
+      </div>
+
+      <div class="menu-section">
+        <button class="menu-btn" type="button" onclick="location.href='/install-quote'">🧮 คำนวณติดตั้ง</button>
+        <button class="menu-btn" type="button" onclick="location.href='/track.html'">🔎 ติดตามงาน</button>
       </div>
     </div>
 
@@ -80,6 +106,20 @@
           </select>
         </div>
 
+        <!-- move wash/repair variant right under BTU (above machine count) -->
+        <select id="wash_variant" style="margin-top:8px;display:none;">
+          <option value="ล้างธรรมดา">ล้างธรรมดา</option>
+          <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
+          <option value="ล้างแขวนคอยน์">ล้างแบบแขวนคอยล์</option>
+          <option value="ล้างแบบตัดล้าง">ตัดล้างใหญ่</option>
+        </select>
+
+        <select id="repair_variant" style="margin-top:8px;display:none;">
+          <option value="ตรวจเช็ค">ตรวจเช็ค (500)</option>
+          <option value="ตรวจเช็ครั่ว">ตรวจเช็ครั่ว (1000)</option>
+          <option value="ซ่อมเปลี่ยนอะไหล่">ซ่อมเปลี่ยนอะไหล่ (แอดมินกำหนด)</option>
+        </select>
+
         <div class="grid2" style="align-items:start;">
           <div class="machine-box">
             <div class="label">จำนวนเครื่อง</div>
@@ -103,19 +143,6 @@
           </div>
         </div>
 
-        <select id="wash_variant" style="margin-top:8px;display:none;">
-          <option value="ล้างธรรมดา">ล้างธรรมดา</option>
-          <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
-          <option value="ล้างแขวนคอยน์">ล้างแบบแขวนคอยล์</option>
-          <option value="ล้างแบบตัดล้าง">ตัดล้างใหญ่</option>
-        </select>
-
-        <select id="repair_variant" style="margin-top:8px;display:none;">
-          <option value="ตรวจเช็ค">ตรวจเช็ค (500)</option>
-          <option value="ตรวจเช็ครั่ว">ตรวจเช็ครั่ว (1000)</option>
-          <option value="ซ่อมเปลี่ยนอะไหล่">ซ่อมเปลี่ยนอะไหล่ (แอดมินกำหนด)</option>
-        </select>
-
         <div class="estimate-bar">
           <div class="estimate-left">
             <div class="estimate-title">💵 ยอดรวมประมาณ</div>
@@ -137,7 +164,7 @@
             <b>🎁 โปรโมชั่น</b>
             <select id="promotion_select_customer" style="width:auto;min-width:220px;"></select>
           </div>
-          <div class="muted" style="margin-top:6px;">* โปรโมชั่นที่ลูกค้าเห็นได้ จะถูกกำหนดโดยแอดมิน</div>
+          <div class="muted" style="margin-top:6px;">* ระบบเลือกโปรโมชั่นให้อัตโนมัติตามเงื่อนไข (จำนวนเครื่อง/BTU/ประเภทแอร์/วิธีการล้าง)</div>
         </div>
       </div>
     </div>
@@ -325,6 +352,61 @@ function calcDiscount(subtotal, promo) {
 function getSelectedPromoCustomer() {
   const promoId = document.getElementById("promotion_select_customer")?.value || "";
   return promotionsCustomer.find(p => String(p.promo_id) === String(promoId)) || null;
+}
+
+function promoMatchesPayloadCustomer(promo, payload){
+  if(!promo) return false;
+  const isBlank = (v)=> v === undefined || v === null || String(v).trim()==='';
+
+  if(!isBlank(promo.job_type) && String(promo.job_type).trim() !== String(payload.job_type||'').trim()) return false;
+  if(!isBlank(promo.ac_type) && String(promo.ac_type).trim() !== String(payload.ac_type||'').trim()) return false;
+
+  const btu = Number(payload.btu || 0);
+  const bmin = isBlank(promo.btu_min) ? null : Number(promo.btu_min);
+  const bmax = isBlank(promo.btu_max) ? null : Number(promo.btu_max);
+  if(Number.isFinite(bmin) && bmin !== null && btu && btu < bmin) return false;
+  if(Number.isFinite(bmax) && bmax !== null && btu && btu > bmax) return false;
+
+  const mc = Number(payload.machine_count || 1);
+  const mmin = isBlank(promo.machine_min) ? null : Number(promo.machine_min);
+  const mmax = isBlank(promo.machine_max) ? null : Number(promo.machine_max);
+  if(Number.isFinite(mmin) && mmin !== null && mc < mmin) return false;
+  if(Number.isFinite(mmax) && mmax !== null && mc > mmax) return false;
+
+  if(String(payload.job_type||'').trim()==='ล้าง'){
+    if(!isBlank(promo.wash_variant) && String(promo.wash_variant).trim() !== String(payload.wash_variant||'').trim()) return false;
+  }
+
+  return true;
+}
+
+function autoPickPromotionCustomer(){
+  const ps = document.getElementById('promotion_select_customer');
+  if(!ps) return;
+  const payload = getPayloadV2();
+
+  if(!payload.job_type || !payload.ac_type || !payload.btu || !payload.machine_count){
+    ps.value = '';
+    return;
+  }
+  if(payload.job_type === 'ล้าง' && !payload.wash_variant){
+    ps.value = '';
+    return;
+  }
+
+  const extrasSubtotal = selectedItemsCustomer.reduce((sum, it) => sum + (Number(it.qty) * Number(it.unit_price)), 0);
+  const subtotal = Number(standardPrice || 0) + extrasSubtotal;
+  const candidates = (promotionsCustomer||[]).filter(p => promoMatchesPayloadCustomer(p, payload));
+  if(!candidates.length){
+    ps.value = '';
+    return;
+  }
+
+  const best = candidates
+    .map(p => ({ p, discount: Math.min(subtotal, calcDiscount(subtotal, p)), prio: Number(p.priority || 0), id: Number(p.promo_id||0) }))
+    .sort((a,b)=> (b.discount-a.discount) || (b.prio-a.prio) || (b.id-a.id))[0];
+
+  ps.value = best?.p ? String(best.p.promo_id) : '';
 }
 
 function recomputeGrandTotal() {
@@ -523,6 +605,8 @@ async function refreshPricing(){
     dm.textContent = "-";
     console.warn(e);
   } finally {
+    // promo auto-pick (customer cannot choose)
+    autoPickPromotionCustomer();
     recomputeGrandTotal();
   }
 }
@@ -859,8 +943,13 @@ async function initCustomerCatalogAndPromos(){
           const label = p.promo_type === "percent" ? `-${Number(p.promo_value)}%` : `-${Number(p.promo_value)} บาท`;
           return `<option value="${p.promo_id}">${p.promo_name} (${label})</option>`;
         }).join("");
-      ps.addEventListener("change", ()=> recomputeGrandTotal());
+      // ลูกค้าเลือกไม่ได้: ระบบเลือกให้อัตโนมัติ
+      ps.disabled = true;
+      ps.style.pointerEvents = 'none';
     }
+
+    autoPickPromotionCustomer();
+    recomputeGrandTotal();
   }catch(e){
     console.warn("initCustomerCatalogAndPromos", e);
   }
@@ -942,6 +1031,30 @@ window.addEventListener('beforeunload', ()=>{ try{ saveFormDraft(); }catch(e){} 
 loadFormDraft();
 updateMapsPreview(); // refresh preview after autofill
 updateConfirmSummary();
+
+// Hamburger menu (customer)
+function openCustomerMenu(){
+  const ov = document.getElementById('menu_overlay');
+  const dr = document.getElementById('menu_drawer');
+  const btn = document.getElementById('menu_btn');
+  if(ov) ov.style.display = 'block';
+  if(dr){ dr.style.display = 'block'; dr.setAttribute('aria-hidden','false'); }
+  if(btn) btn.setAttribute('aria-expanded','true');
+  document.body.style.overflow = 'hidden';
+}
+function closeCustomerMenu(){
+  const ov = document.getElementById('menu_overlay');
+  const dr = document.getElementById('menu_drawer');
+  const btn = document.getElementById('menu_btn');
+  if(ov) ov.style.display = 'none';
+  if(dr){ dr.style.display = 'none'; dr.setAttribute('aria-hidden','true'); }
+  if(btn) btn.setAttribute('aria-expanded','false');
+  document.body.style.overflow = '';
+}
+document.getElementById('menu_btn')?.addEventListener('click', openCustomerMenu);
+document.getElementById('menu_overlay')?.addEventListener('click', closeCustomerMenu);
+document.getElementById('menu_close')?.addEventListener('click', closeCustomerMenu);
+document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeCustomerMenu(); });
 
 loadMe();
 showTopNoticeFromUrl();

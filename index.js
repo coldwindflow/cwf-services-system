@@ -2296,6 +2296,15 @@ await pool.query(`
     promo_name TEXT NOT NULL,
     promo_type TEXT NOT NULL CHECK (promo_type IN ('percent','amount')),
     promo_value NUMERIC(12,2) DEFAULT 0,
+    -- optional targeting rules (super admin can set)
+    job_type TEXT,
+    ac_type TEXT,
+    wash_variant TEXT,
+    btu_min INT,
+    btu_max INT,
+    machine_min INT,
+    machine_max INT,
+    priority INT DEFAULT 0,
     is_customer_visible BOOLEAN DEFAULT FALSE,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW()
@@ -2304,6 +2313,16 @@ await pool.query(`
 
 // backward compatible
 await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS is_customer_visible BOOLEAN DEFAULT FALSE`);
+
+// targeting rules (backward compatible)
+await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS job_type TEXT`);
+await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS ac_type TEXT`);
+await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS wash_variant TEXT`);
+await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS btu_min INT`);
+await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS btu_max INT`);
+await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS machine_min INT`);
+await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS machine_max INT`);
+await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS priority INT DEFAULT 0`);
 
 // Backward compatible for existing DBs
 await pool.query(`ALTER TABLE public.promotions ADD COLUMN IF NOT EXISTS is_customer_visible BOOLEAN DEFAULT FALSE`);
@@ -2823,14 +2842,27 @@ app.post("/catalog/items", async (req, res) => {
 app.get("/promotions", async (req, res) => {
   try {
     const isCustomer = String(req.query.customer || "").trim() === "1";
+    const cols = await getPromotionColumns();
+    const select = [
+      'promo_id','promo_name','promo_type','promo_value',
+      cols.has('is_customer_visible') ? 'is_customer_visible' : 'FALSE AS is_customer_visible',
+      cols.has('job_type') ? 'job_type' : 'NULL::text AS job_type',
+      cols.has('ac_type') ? 'ac_type' : 'NULL::text AS ac_type',
+      cols.has('wash_variant') ? 'wash_variant' : 'NULL::text AS wash_variant',
+      cols.has('btu_min') ? 'btu_min' : 'NULL::int AS btu_min',
+      cols.has('btu_max') ? 'btu_max' : 'NULL::int AS btu_max',
+      cols.has('machine_min') ? 'machine_min' : 'NULL::int AS machine_min',
+      cols.has('machine_max') ? 'machine_max' : 'NULL::int AS machine_max',
+      cols.has('priority') ? 'priority' : '0::int AS priority',
+      cols.has('created_at') ? 'created_at' : 'NOW() AS created_at'
+    ].join(', ');
+
     const r = await pool.query(
-      `
-      SELECT promo_id, promo_name, promo_type, promo_value, is_customer_visible
-      FROM public.promotions
-      WHERE is_active = TRUE
-        AND ($1::boolean = FALSE OR is_customer_visible = TRUE)
-      ORDER BY promo_name
-      `,
+      `SELECT ${select}
+       FROM public.promotions
+       WHERE is_active = TRUE
+         AND ($1::boolean = FALSE OR is_customer_visible = TRUE)
+       ORDER BY ${(cols.has('priority') ? 'priority DESC,' : '')} ${(cols.has('created_at') ? 'created_at DESC,' : '')} promo_id DESC`,
       [isCustomer]
     );
     res.json(r.rows);
@@ -4634,6 +4666,82 @@ async function getPromotionColumns() {
   }
 }
 
+function __isBlank(v){
+  return v === undefined || v === null || String(v).trim() === '';
+}
+
+function promoMatchesPayloadV2(promo, payload){
+  if(!promo || !payload) return false;
+
+  if(!__isBlank(promo.job_type) && String(promo.job_type).trim() !== String(payload.job_type||'').trim()) return false;
+  if(!__isBlank(promo.ac_type) && String(promo.ac_type).trim() !== String(payload.ac_type||'').trim()) return false;
+
+  const btu = Number(payload.btu || 0);
+  const bmin = __isBlank(promo.btu_min) ? null : Number(promo.btu_min);
+  const bmax = __isBlank(promo.btu_max) ? null : Number(promo.btu_max);
+  if(Number.isFinite(bmin) && bmin !== null && btu && btu < bmin) return false;
+  if(Number.isFinite(bmax) && bmax !== null && btu && btu > bmax) return false;
+
+  const mc = Math.max(1, Number(payload.machine_count || 1));
+  const mmin = __isBlank(promo.machine_min) ? null : Number(promo.machine_min);
+  const mmax = __isBlank(promo.machine_max) ? null : Number(promo.machine_max);
+  if(Number.isFinite(mmin) && mmin !== null && mc < mmin) return false;
+  if(Number.isFinite(mmax) && mmax !== null && mc > mmax) return false;
+
+  if(String(payload.job_type||'').trim()==='ล้าง'){
+    if(!__isBlank(promo.wash_variant) && String(promo.wash_variant).trim() !== String(payload.wash_variant||'').trim()) return false;
+  }
+
+  return true;
+}
+
+function calcDiscountServer(subtotal, promo){
+  if(!promo) return 0;
+  const v = Number(promo.promo_value || 0);
+  if (promo.promo_type === 'percent') return subtotal * (Math.max(0, v) / 100);
+  if (promo.promo_type === 'amount') return Math.max(0, v);
+  return 0;
+}
+
+async function findBestCustomerPromotion(payloadV2, subtotal, clientOrPool){
+  try{
+    const cols = await getPromotionColumns();
+    const select = [
+      'promo_id','promo_name','promo_type','promo_value',
+      cols.has('job_type') ? 'job_type' : 'NULL::text AS job_type',
+      cols.has('ac_type') ? 'ac_type' : 'NULL::text AS ac_type',
+      cols.has('wash_variant') ? 'wash_variant' : 'NULL::text AS wash_variant',
+      cols.has('btu_min') ? 'btu_min' : 'NULL::int AS btu_min',
+      cols.has('btu_max') ? 'btu_max' : 'NULL::int AS btu_max',
+      cols.has('machine_min') ? 'machine_min' : 'NULL::int AS machine_min',
+      cols.has('machine_max') ? 'machine_max' : 'NULL::int AS machine_max',
+      cols.has('priority') ? 'priority' : '0::int AS priority',
+      cols.has('created_at') ? 'created_at' : 'NOW() AS created_at'
+    ].join(', ');
+
+    const c = clientOrPool || pool;
+    const r = await c.query(
+      `SELECT ${select}
+       FROM public.promotions
+       WHERE is_active=TRUE AND is_customer_visible=TRUE
+       ORDER BY ${(cols.has('priority') ? 'priority DESC,' : '')} ${(cols.has('created_at') ? 'created_at DESC,' : '')} promo_id DESC`
+    );
+    const promos = Array.isArray(r.rows) ? r.rows : [];
+    const matches = promos.filter(p => promoMatchesPayloadV2(p, payloadV2));
+    if(!matches.length) return { promo: null, discount: 0 };
+
+    const best = matches
+      .map(p => ({ p, discount: Math.min(Number(subtotal||0), calcDiscountServer(Number(subtotal||0), p)), prio: Number(p.priority||0), id: Number(p.promo_id||0) }))
+      .sort((a,b)=> (b.discount-a.discount) || (b.prio-a.prio) || (b.id-a.id))[0];
+    if(!best || !best.p) return { promo: null, discount: 0 };
+    return { promo: best.p, discount: Number(best.discount||0) };
+  }catch(e){
+    // fail-open: never break booking/pricing
+    console.warn('[promo] findBestCustomerPromotion failed', e.message);
+    return { promo: null, discount: 0 };
+  }
+}
+
 app.get("/admin/promotions_v2", requireAdminSoft, async (req, res) => {
   try {
     const cols = await getPromotionColumns();
@@ -4644,6 +4752,14 @@ app.get("/admin/promotions_v2", requireAdminSoft, async (req, res) => {
       `promo_name`,
       `promo_type`,
       `promo_value`,
+      cols.has("job_type") ? `job_type` : `NULL::text AS job_type`,
+      cols.has("ac_type") ? `ac_type` : `NULL::text AS ac_type`,
+      cols.has("wash_variant") ? `wash_variant` : `NULL::text AS wash_variant`,
+      cols.has("btu_min") ? `btu_min` : `NULL::int AS btu_min`,
+      cols.has("btu_max") ? `btu_max` : `NULL::int AS btu_max`,
+      cols.has("machine_min") ? `machine_min` : `NULL::int AS machine_min`,
+      cols.has("machine_max") ? `machine_max` : `NULL::int AS machine_max`,
+      cols.has("priority") ? `priority` : `0::int AS priority`,
       cols.has("is_customer_visible") ? `is_customer_visible` : `FALSE AS is_customer_visible`,
       cols.has("is_active") ? `is_active` : `TRUE AS is_active`,
       cols.has("created_at") ? `created_at` : `NOW() AS created_at`,
@@ -4669,6 +4785,15 @@ app.post("/admin/promotions_v2", requireAdminSoft, async (req, res) => {
   const is_customer_visible = !!b.is_customer_visible;
   const is_active = (b.is_active === undefined) ? true : !!b.is_active;
 
+  const job_type = __isBlank(b.job_type) ? null : String(b.job_type || '').trim();
+  const ac_type = __isBlank(b.ac_type) ? null : String(b.ac_type || '').trim();
+  const wash_variant = __isBlank(b.wash_variant) ? null : String(b.wash_variant || '').trim();
+  const btu_min = (__isBlank(b.btu_min) ? null : Number(b.btu_min));
+  const btu_max = (__isBlank(b.btu_max) ? null : Number(b.btu_max));
+  const machine_min = (__isBlank(b.machine_min) ? null : Number(b.machine_min));
+  const machine_max = (__isBlank(b.machine_max) ? null : Number(b.machine_max));
+  const priority = (__isBlank(b.priority) ? 0 : Number(b.priority));
+
   if (!promo_name) return res.status(400).json({ error: "กรอกชื่อโปรโมชัน" });
   if (!["percent","amount"].includes(promo_type)) return res.status(400).json({ error: "promo_type ต้องเป็น percent หรือ amount" });
   if (!Number.isFinite(promo_value) || promo_value < 0) return res.status(400).json({ error: "promo_value ไม่ถูกต้อง" });
@@ -4678,6 +4803,14 @@ app.post("/admin/promotions_v2", requireAdminSoft, async (req, res) => {
 
     const colNames = ["promo_name","promo_type","promo_value"];
     const vals = [promo_name, promo_type, promo_value];
+    if (cols.has("job_type")) { colNames.push("job_type"); vals.push(job_type); }
+    if (cols.has("ac_type")) { colNames.push("ac_type"); vals.push(ac_type); }
+    if (cols.has("wash_variant")) { colNames.push("wash_variant"); vals.push(wash_variant); }
+    if (cols.has("btu_min")) { colNames.push("btu_min"); vals.push(Number.isFinite(btu_min) ? btu_min : null); }
+    if (cols.has("btu_max")) { colNames.push("btu_max"); vals.push(Number.isFinite(btu_max) ? btu_max : null); }
+    if (cols.has("machine_min")) { colNames.push("machine_min"); vals.push(Number.isFinite(machine_min) ? machine_min : null); }
+    if (cols.has("machine_max")) { colNames.push("machine_max"); vals.push(Number.isFinite(machine_max) ? machine_max : null); }
+    if (cols.has("priority")) { colNames.push("priority"); vals.push(Number.isFinite(priority) ? priority : 0); }
     if (cols.has("is_customer_visible")) { colNames.push("is_customer_visible"); vals.push(is_customer_visible); }
     if (cols.has("is_active")) { colNames.push("is_active"); vals.push(is_active); }
 
@@ -4718,6 +4851,29 @@ app.put("/admin/promotions_v2/:promo_id", requireAdminSoft, async (req, res) => 
       const v = Number(b.promo_value ?? 0);
       if (!Number.isFinite(v) || v < 0) return res.status(400).json({ error: "promo_value ไม่ถูกต้อง" });
       setField("promo_value", v);
+    }
+    if (b.job_type !== undefined && cols.has("job_type")) setField("job_type", __isBlank(b.job_type) ? null : String(b.job_type || '').trim());
+    if (b.ac_type !== undefined && cols.has("ac_type")) setField("ac_type", __isBlank(b.ac_type) ? null : String(b.ac_type || '').trim());
+    if (b.wash_variant !== undefined && cols.has("wash_variant")) setField("wash_variant", __isBlank(b.wash_variant) ? null : String(b.wash_variant || '').trim());
+    if (b.btu_min !== undefined && cols.has("btu_min")) {
+      const v = __isBlank(b.btu_min) ? null : Number(b.btu_min);
+      setField("btu_min", (v === null || Number.isFinite(v)) ? v : null);
+    }
+    if (b.btu_max !== undefined && cols.has("btu_max")) {
+      const v = __isBlank(b.btu_max) ? null : Number(b.btu_max);
+      setField("btu_max", (v === null || Number.isFinite(v)) ? v : null);
+    }
+    if (b.machine_min !== undefined && cols.has("machine_min")) {
+      const v = __isBlank(b.machine_min) ? null : Number(b.machine_min);
+      setField("machine_min", (v === null || Number.isFinite(v)) ? v : null);
+    }
+    if (b.machine_max !== undefined && cols.has("machine_max")) {
+      const v = __isBlank(b.machine_max) ? null : Number(b.machine_max);
+      setField("machine_max", (v === null || Number.isFinite(v)) ? v : null);
+    }
+    if (b.priority !== undefined && cols.has("priority")) {
+      const v = __isBlank(b.priority) ? 0 : Number(b.priority);
+      setField("priority", Number.isFinite(v) ? v : 0);
     }
     if (b.is_customer_visible !== undefined && cols.has("is_customer_visible")) setField("is_customer_visible", !!b.is_customer_visible);
     if (b.is_active !== undefined && cols.has("is_active")) setField("is_active", !!b.is_active);
@@ -8683,8 +8839,22 @@ app.post("/public/pricing_preview", async (req, res) => {
     const duration_min = computeDurationMinMulti(payload, { source: "pricing_preview", conservative: true });
     if (duration_min <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
     const standard_price = computeStandardPriceMulti(payload);
+
+    // customer promo auto-apply (preview)
+    const promoPick = await findBestCustomerPromotion(payload, standard_price, pool);
+    const promo = promoPick?.promo || null;
+    const promo_discount = Number(promoPick?.discount || 0);
+    const total_after_discount = Math.max(0, Number(standard_price || 0) - Math.min(Number(standard_price || 0), promo_discount));
     res.json({
       standard_price,
+      promo: promo ? {
+        promo_id: promo.promo_id,
+        promo_name: promo.promo_name,
+        promo_type: promo.promo_type,
+        promo_value: promo.promo_value,
+        discount: promo_discount,
+        total_after_discount,
+      } : null,
       duration_min,
       travel_buffer_min: TRAVEL_BUFFER_MIN,
       effective_block_min: effectiveBlockMin(duration_min),
@@ -9280,6 +9450,14 @@ if (itemIdQty.length) {
 
 // 2) สร้างงาน
 
+    // ✅ โปรโมชั่นฝั่งลูกค้า: ระบบเลือกให้อัตโนมัติตามเงื่อนไข (super admin ตั้งค่า)
+    const promoPick = await findBestCustomerPromotion(payloadV2, total, client);
+    const appliedPromo = promoPick?.promo || null;
+    const appliedDiscount = Math.min(Number(total || 0), Number(promoPick?.discount || 0));
+    if(appliedPromo && appliedDiscount > 0){
+      total = Math.max(0, Number(total || 0) - appliedDiscount);
+    }
+
     // ✅ dispatch_mode:
     // - scheduled (ลูกค้าจองปกติ) => normal (ให้เข้าแอดมิน/คิวตามปกติ)
     // - urgent (ยิงงานด่วน)      => offer  (ไป flow offer)
@@ -9312,6 +9490,21 @@ if (itemIdQty.length) {
         dispatchMode,
       ]
     );
+
+    // attach promo to job (if any)
+    if(appliedPromo && appliedDiscount > 0){
+      try{
+        await client.query(
+          `INSERT INTO public.job_promotions (job_id, promo_id, applied_discount)
+           VALUES ($1,$2,$3)
+           ON CONFLICT (job_id) DO UPDATE SET promo_id=EXCLUDED.promo_id, applied_discount=EXCLUDED.applied_discount`,
+          [r.rows[0].job_id, Number(appliedPromo.promo_id), Number(appliedDiscount)]
+        );
+      }catch(e){
+        // fail-open: don't break booking
+        console.warn('[public_book] promo attach failed', e.message);
+      }
+    }
 
     const job_id = r.rows[0].job_id;
     // ✅ booking_code (สุ่ม ไม่เรียง)
@@ -9368,7 +9561,23 @@ if (itemIdQty.length) {
     await client.query("COMMIT");
 
     console.log('[public_book]', { job_id, booking_code, booking_mode: bm, requested_tech_type: requestedTechType, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2) });
-    res.json({ success: true, job_id, booking_code, token: r.rows[0].booking_token, booking_mode: bm, duration_min: duration_min_v2, effective_block_min: effectiveBlockMin(duration_min_v2), travel_buffer_min: TRAVEL_BUFFER_MIN });
+    res.json({
+      success: true,
+      job_id,
+      booking_code,
+      token: r.rows[0].booking_token,
+      booking_mode: bm,
+      duration_min: duration_min_v2,
+      effective_block_min: effectiveBlockMin(duration_min_v2),
+      travel_buffer_min: TRAVEL_BUFFER_MIN,
+      applied_promo: (appliedPromo && appliedDiscount > 0) ? {
+        promo_id: appliedPromo.promo_id,
+        promo_name: appliedPromo.promo_name,
+        promo_type: appliedPromo.promo_type,
+        promo_value: appliedPromo.promo_value,
+        discount: appliedDiscount,
+      } : null,
+    });
   } catch (e) {
     await client.query("ROLLBACK");
     console.error(e);

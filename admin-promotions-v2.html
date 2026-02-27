@@ -41,6 +41,71 @@
         </div>
       </div>
 
+      <div class="divider" style="margin:12px 0;"></div>
+      <b>เงื่อนไข (สำหรับซุปเปอร์แอดมิน)</b>
+      <div class="muted2" style="margin-top:6px;">ถ้าไม่ใส่ = ใช้ได้กับทุกกรณี • ระบบจะเลือกให้อัตโนมัติฝั่งลูกค้า</div>
+
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>ประเภทงาน</label>
+          <select id="cond_job_type">
+            <option value="">(ทั้งหมด)</option>
+            <option value="ล้าง">ล้าง</option>
+            <option value="ซ่อม">ซ่อม</option>
+            <option value="ติดตั้ง">ติดตั้ง</option>
+          </select>
+        </div>
+        <div>
+          <label>ประเภทแอร์</label>
+          <select id="cond_ac_type">
+            <option value="">(ทั้งหมด)</option>
+            <option value="ผนัง">ผนัง</option>
+            <option value="สี่ทิศทาง">สี่ทิศทาง</option>
+            <option value="แขวน">แขวน</option>
+            <option value="เปลือยใต้ฝ้า">เปลือยใต้ฝ้า</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>BTU ขั้นต่ำ</label>
+          <input id="cond_btu_min" type="number" step="1000" placeholder="เช่น 9000">
+        </div>
+        <div>
+          <label>BTU ขั้นสูง</label>
+          <input id="cond_btu_max" type="number" step="1000" placeholder="เช่น 24000">
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>จำนวนเครื่องขั้นต่ำ</label>
+          <input id="cond_machine_min" type="number" step="1" placeholder="เช่น 2">
+        </div>
+        <div>
+          <label>จำนวนเครื่องขั้นสูง</label>
+          <input id="cond_machine_max" type="number" step="1" placeholder="เช่น 5">
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>วิธีการล้าง (ใช้เมื่อประเภทงาน=ล้าง)</label>
+          <select id="cond_wash_variant">
+            <option value="">(ทั้งหมด)</option>
+            <option value="ล้างธรรมดา">ล้างธรรมดา</option>
+            <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
+            <option value="ล้างแขวนคอยน์">ล้างแบบแขวนคอยล์</option>
+            <option value="ล้างแบบตัดล้าง">ตัดล้างใหญ่</option>
+          </select>
+        </div>
+        <div>
+          <label>Priority (ยิ่งมากยิ่งถูกเลือกก่อน)</label>
+          <input id="cond_priority" type="number" step="1" value="0">
+        </div>
+      </div>
+
       <button id="btnCreatePromo" class="primary" type="button" style="margin-top:12px">บันทึกโปรโมชัน</button>
     </div>
 
