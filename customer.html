@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CWF - จองคิวงาน</title>
   <!-- cache-bust: ensure latest css in PWA/Android webview -->
-  <link rel="stylesheet" href="style.css?v=17">
+  <link rel="stylesheet" href="style.css?v=18">
   <link rel="manifest" href="/mainfest.json">
   <meta name="theme-color" content="#0b4bb3">
 </head>
@@ -434,19 +434,21 @@ const API = window.location.origin;
     const ov = document.getElementById('menu_overlay');
     const dr = document.getElementById('menu_drawer');
     const btn = document.getElementById('menu_btn');
-    if(ov){ ov.style.display = 'block'; ov.style.pointerEvents='auto'; }
+    if(ov){ ov.style.display = 'block'; ov.style.pointerEvents = 'auto'; }
     if(dr){ dr.style.display = 'block'; dr.setAttribute('aria-hidden','false'); }
     if(btn) btn.setAttribute('aria-expanded','true');
-    try{ document.body.style.overflow = 'hidden'; document.body.classList.add('menu-open'); }catch(_){ }
+    try{ document.body.style.overflow = 'hidden'; }catch(_){ }
+    try{ document.body.classList.add('menu-open'); }catch(_){ }
   }
   function closeCustomerMenu(){
     const ov = document.getElementById('menu_overlay');
     const dr = document.getElementById('menu_drawer');
     const btn = document.getElementById('menu_btn');
-    if(ov){ ov.style.display = 'none'; ov.style.pointerEvents='none'; }
+    if(ov){ ov.style.display = 'none'; ov.style.pointerEvents = 'none'; }
     if(dr){ dr.style.display = 'none'; dr.setAttribute('aria-hidden','true'); }
     if(btn) btn.setAttribute('aria-expanded','false');
-    try{ document.body.style.overflow = ''; document.body.classList.remove('menu-open'); }catch(_){ }
+    try{ document.body.style.overflow = ''; }catch(_){ }
+    try{ document.body.classList.remove('menu-open'); }catch(_){ }
   }
   window.__cwfToggleMenu = function(){
     const dr = document.getElementById('menu_drawer');
@@ -455,39 +457,22 @@ const API = window.location.origin;
   };
   // เผื่อ overlay/close ถูกกด แต่ listener ปกติไม่ถูก bind
   window.__cwfCloseMenu = closeCustomerMenu;
+
+  // Panic unfreeze: กันเคส overlay/modal ค้างหลังกลับมาจาก LINE in-app browser หรือ cache แปลกๆ
+  window.__cwfPanicUnfreeze = function(){
+    try{ closeCustomerMenu(); }catch(_){ }
+    try{
+      const m = document.getElementById('addr_modal');
+      if(m){ m.style.display='none'; m.setAttribute('aria-hidden','true'); }
+    }catch(_){ }
+    try{
+      const pop = document.getElementById('maps_pop');
+      if(pop) pop.style.display='none';
+    }catch(_){ }
+  };
 })();
 
 // ------------------------------
-// ===== Panic Unfreeze (กันเคส overlay/modal ค้างแล้วกดอะไรไม่ได้) =====
-function __cwfPanicUnfreeze(){
-  try{
-    const ov = document.getElementById('menu_overlay');
-    const dr = document.getElementById('menu_drawer');
-    const md = document.getElementById('addr_modal');
-    if(ov){ ov.style.display='none'; ov.style.pointerEvents='none'; }
-    if(dr){ dr.style.display='none'; dr.setAttribute('aria-hidden','true'); }
-    if(md){ md.style.display='none'; md.setAttribute('aria-hidden','true'); md.style.pointerEvents='none'; }
-    document.body.classList.remove('menu-open');
-    document.body.style.overflow='';
-  }catch(_){ }
-}
-// run once after DOM ready (บางเครื่องโหลดช้า/โดน restore state)
-document.addEventListener('DOMContentLoaded', ()=>{ setTimeout(__cwfPanicUnfreeze, 0); });
-
-// ถ้า drawer เปิดอยู่ แล้ว user แตะตรงไหนก็ให้ปิดทันที (กันค้าง)
-document.addEventListener('click', (ev)=>{
-  try{
-    const dr = document.getElementById('menu_drawer');
-    if(!dr || dr.style.display!=='block') return;
-    const panel = dr.querySelector('.panel');
-    const btn = document.getElementById('menu_btn');
-    if(panel && panel.contains(ev.target)) return;
-    if(btn && btn.contains(ev.target)) return;
-    if(window.__cwfCloseMenu) window.__cwfCloseMenu();
-  }catch(_){ }
-}, true);
-
-
 // Defensive helpers (must NOT throw)
 // ป้องกันกรณีฟังก์ชันอ้างอิงแต่ยังไม่ถูกประกาศ → ทำให้หน้าไม่ล่มทั้งหน้า
 // ------------------------------
@@ -1583,7 +1568,7 @@ function openCustomerMenu(){
   const ov = document.getElementById('menu_overlay');
   const dr = document.getElementById('menu_drawer');
   const btn = document.getElementById('menu_btn');
-  if(ov){ ov.style.display = 'block'; ov.style.pointerEvents='auto'; }
+  if(ov) ov.style.display = 'block';
   if(dr){ dr.style.display = 'block'; dr.setAttribute('aria-hidden','false'); }
   if(btn) btn.setAttribute('aria-expanded','true');
   document.body.style.overflow = 'hidden';
@@ -1592,7 +1577,7 @@ function closeCustomerMenu(){
   const ov = document.getElementById('menu_overlay');
   const dr = document.getElementById('menu_drawer');
   const btn = document.getElementById('menu_btn');
-  if(ov){ ov.style.display = 'none'; ov.style.pointerEvents='none'; }
+  if(ov) ov.style.display = 'none';
   if(dr){ dr.style.display = 'none'; dr.setAttribute('aria-hidden','true'); }
   if(btn) btn.setAttribute('aria-expanded','false');
   document.body.style.overflow = '';
@@ -1634,6 +1619,15 @@ document.getElementById('addr_save_btn')?.addEventListener('click', saveAddressF
 
 loadMe();
 showTopNoticeFromUrl();
+
+// กันเคส overlay/เมนูค้างหลังกลับมาจาก LINE หรือ BFCache
+try{ window.__cwfPanicUnfreeze && window.__cwfPanicUnfreeze(); }catch(_){ }
+window.addEventListener('pageshow', ()=>{ try{ window.__cwfPanicUnfreeze && window.__cwfPanicUnfreeze(); }catch(_){ } });
+document.addEventListener('visibilitychange', ()=>{
+  if(document.visibilityState === 'visible'){
+    try{ window.__cwfPanicUnfreeze && window.__cwfPanicUnfreeze(); }catch(_){ }
+  }
+});
 
 // PWA update toast (ให้ลูกค้ากดรีเฟรชเมื่อมีอัปเดต)
 function showSwToast(onUpdate){

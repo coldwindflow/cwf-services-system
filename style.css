@@ -250,21 +250,22 @@ body{
 .customer-page #custTopSpacer{ height: 74px; }
 @media (max-width:420px){ .customer-page #custTopSpacer{ height: 72px; } }
 
-
-/* When drawer is open, keep top nav clickable above backdrop */
-.customer-page.menu-open #custTopNav{ z-index: 3000 !important; }
-.customer-page.menu-open #menu_btn{ z-index: 3001 !important; }
 .customer-page .cust-drawer-backdrop{
   position: fixed;
   inset: 0;
   background: rgba(2,6,23,0.55);
-  z-index: 2690;
+  /* ต้องอยู่ใต้ TopNav เพื่อให้กดปุ่มเมนูปิดได้เสมอ แม้ backdrop ค้าง */
+  z-index: 2590;
 }
 .customer-page .cust-drawer{
   position: fixed;
   inset: 0;
   z-index: 2700;
 }
+
+/* เมื่อเมนูเปิด ให้ TopNav อยู่เหนือ backdrop แน่นอน (กันเคสค้าง/คลิกไม่ได้) */
+body.customer-page.menu-open #custTopNav{ z-index: 3000; }
+body.customer-page.menu-open #menu_btn{ z-index: 3001; }
 .customer-page .cust-drawer .panel{
   position: absolute;
   right: 0;
