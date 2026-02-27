@@ -434,19 +434,19 @@ const API = window.location.origin;
     const ov = document.getElementById('menu_overlay');
     const dr = document.getElementById('menu_drawer');
     const btn = document.getElementById('menu_btn');
-    if(ov) ov.style.display = 'block';
+    if(ov){ ov.style.display = 'block'; ov.style.pointerEvents='auto'; }
     if(dr){ dr.style.display = 'block'; dr.setAttribute('aria-hidden','false'); }
     if(btn) btn.setAttribute('aria-expanded','true');
-    try{ document.body.style.overflow = 'hidden'; }catch(_){ }
+    try{ document.body.style.overflow = 'hidden'; document.body.classList.add('menu-open'); }catch(_){ }
   }
   function closeCustomerMenu(){
     const ov = document.getElementById('menu_overlay');
     const dr = document.getElementById('menu_drawer');
     const btn = document.getElementById('menu_btn');
-    if(ov) ov.style.display = 'none';
+    if(ov){ ov.style.display = 'none'; ov.style.pointerEvents='none'; }
     if(dr){ dr.style.display = 'none'; dr.setAttribute('aria-hidden','true'); }
     if(btn) btn.setAttribute('aria-expanded','false');
-    try{ document.body.style.overflow = ''; }catch(_){ }
+    try{ document.body.style.overflow = ''; document.body.classList.remove('menu-open'); }catch(_){ }
   }
   window.__cwfToggleMenu = function(){
     const dr = document.getElementById('menu_drawer');
@@ -458,6 +458,36 @@ const API = window.location.origin;
 })();
 
 // ------------------------------
+// ===== Panic Unfreeze (กันเคส overlay/modal ค้างแล้วกดอะไรไม่ได้) =====
+function __cwfPanicUnfreeze(){
+  try{
+    const ov = document.getElementById('menu_overlay');
+    const dr = document.getElementById('menu_drawer');
+    const md = document.getElementById('addr_modal');
+    if(ov){ ov.style.display='none'; ov.style.pointerEvents='none'; }
+    if(dr){ dr.style.display='none'; dr.setAttribute('aria-hidden','true'); }
+    if(md){ md.style.display='none'; md.setAttribute('aria-hidden','true'); md.style.pointerEvents='none'; }
+    document.body.classList.remove('menu-open');
+    document.body.style.overflow='';
+  }catch(_){ }
+}
+// run once after DOM ready (บางเครื่องโหลดช้า/โดน restore state)
+document.addEventListener('DOMContentLoaded', ()=>{ setTimeout(__cwfPanicUnfreeze, 0); });
+
+// ถ้า drawer เปิดอยู่ แล้ว user แตะตรงไหนก็ให้ปิดทันที (กันค้าง)
+document.addEventListener('click', (ev)=>{
+  try{
+    const dr = document.getElementById('menu_drawer');
+    if(!dr || dr.style.display!=='block') return;
+    const panel = dr.querySelector('.panel');
+    const btn = document.getElementById('menu_btn');
+    if(panel && panel.contains(ev.target)) return;
+    if(btn && btn.contains(ev.target)) return;
+    if(window.__cwfCloseMenu) window.__cwfCloseMenu();
+  }catch(_){ }
+}, true);
+
+
 // Defensive helpers (must NOT throw)
 // ป้องกันกรณีฟังก์ชันอ้างอิงแต่ยังไม่ถูกประกาศ → ทำให้หน้าไม่ล่มทั้งหน้า
 // ------------------------------
@@ -1553,7 +1583,7 @@ function openCustomerMenu(){
   const ov = document.getElementById('menu_overlay');
   const dr = document.getElementById('menu_drawer');
   const btn = document.getElementById('menu_btn');
-  if(ov) ov.style.display = 'block';
+  if(ov){ ov.style.display = 'block'; ov.style.pointerEvents='auto'; }
   if(dr){ dr.style.display = 'block'; dr.setAttribute('aria-hidden','false'); }
   if(btn) btn.setAttribute('aria-expanded','true');
   document.body.style.overflow = 'hidden';
@@ -1562,7 +1592,7 @@ function closeCustomerMenu(){
   const ov = document.getElementById('menu_overlay');
   const dr = document.getElementById('menu_drawer');
   const btn = document.getElementById('menu_btn');
-  if(ov) ov.style.display = 'none';
+  if(ov){ ov.style.display = 'none'; ov.style.pointerEvents='none'; }
   if(dr){ dr.style.display = 'none'; dr.setAttribute('aria-hidden','true'); }
   if(btn) btn.setAttribute('aria-expanded','false');
   document.body.style.overflow = '';

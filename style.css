@@ -250,6 +250,10 @@ body{
 .customer-page #custTopSpacer{ height: 74px; }
 @media (max-width:420px){ .customer-page #custTopSpacer{ height: 72px; } }
 
+
+/* When drawer is open, keep top nav clickable above backdrop */
+.customer-page.menu-open #custTopNav{ z-index: 3000 !important; }
+.customer-page.menu-open #menu_btn{ z-index: 3001 !important; }
 .customer-page .cust-drawer-backdrop{
   position: fixed;
   inset: 0;

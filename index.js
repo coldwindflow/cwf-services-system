@@ -407,7 +407,8 @@ app.get('/auth/line', (req, res) => {
   }
   const state = crypto.randomBytes(18).toString('hex');
   // store state in HttpOnly cookie to prevent CSRF
-  setHttpOnlyCookie(res, 'cwf_line_state', state, { maxAgeSec: 10 * 60, secure: isHttpsReq(req) });
+  const secureCookie = callback.startsWith('https://');
+  setHttpOnlyCookie(res, 'cwf_line_state', state, { maxAgeSec: 10 * 60, secure: secureCookie });
   const authorize = new URL('https://access.line.me/oauth2/v2.1/authorize');
   authorize.searchParams.set('response_type', 'code');
   authorize.searchParams.set('client_id', clientId);
@@ -451,7 +452,13 @@ app.get('/auth/line/callback', async (req, res) => {
       }),
     });
 
-    const tokenJson = await tokenRes.json().catch(() => ({}));
+    const tokenText = await tokenRes.text().catch(()=> '');
+    let tokenJson = {};
+    try{ tokenJson = tokenText ? JSON.parse(tokenText) : {}; }catch(_){ tokenJson = {}; }
+    if (!tokenRes.ok) {
+      console.error('[LINE_TOKEN_HTTP]', tokenRes.status, tokenText);
+      return res.redirect(`/customer.html?login=failed&reason=token_http_${tokenRes.status}`);
+    }
     const accessToken = String(tokenJson?.access_token || '').trim();
     if (!accessToken) return res.redirect('/customer.html?login=failed&reason=no_access_token');
 
@@ -459,7 +466,13 @@ app.get('/auth/line/callback', async (req, res) => {
     const profRes = await fetch('https://api.line.me/v2/profile', {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
-    const prof = await profRes.json().catch(() => ({}));
+    const profText = await profRes.text().catch(()=> '');
+    let prof = {};
+    try{ prof = profText ? JSON.parse(profText) : {}; }catch(_){ prof = {}; }
+    if (!profRes.ok) {
+      console.error('[LINE_PROFILE_HTTP]', profRes.status, profText);
+      return res.redirect(`/customer.html?login=failed&reason=profile_http_${profRes.status}`);
+    }
     const userId = String(prof?.userId || '').trim();
     const name = String(prof?.displayName || '').trim();
     const picture = String(prof?.pictureUrl || '').trim();
@@ -476,7 +489,8 @@ app.get('/auth/line/callback', async (req, res) => {
       exp: now + (7 * 24 * 60 * 60),
     };
     const token = jwtSign(payload, jwtSecret);
-    setHttpOnlyCookie(res, 'cwf_token', token, { maxAgeSec: 7 * 24 * 60 * 60, secure: isHttpsReq(req) });
+    const secureCookie2 = callback.startsWith('https://');
+    setHttpOnlyCookie(res, 'cwf_token', token, { maxAgeSec: 7 * 24 * 60 * 60, secure: secureCookie2 });
     return res.redirect('/customer.html?login=success');
   } catch (e) {
     console.error('[LINE_CALLBACK_ERROR]', e);
