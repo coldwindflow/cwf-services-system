@@ -319,6 +319,27 @@
       <button id="confirm_btn" type="button" class="primary-cta" onclick="book()" style="margin-top:12px;">✅ ยืนยันจอง</button>
 
       <div id="result" class="muted" style="margin-top:10px;"></div>
+
+      <!-- Debug Panel (เฉพาะช่วยหาสาเหตุ / ไม่กระทบ flow จองจริง) -->
+      <details id="debug_panel" style="display:none; margin-top:12px;" class="debug-panel">
+        <summary style="cursor:pointer; font-weight:900;">🧰 Debug Panel (แสดงเพื่อช่วยหาสาเหตุ)</summary>
+        <div class="dbg-grid">
+          <div class="dbg-row"><span class="k">Page</span><span class="v" id="dbg_page">-</span></div>
+          <div class="dbg-row"><span class="k">API</span><span class="v" id="dbg_api">-</span></div>
+          <div class="dbg-row"><span class="k">Date</span><span class="v" id="dbg_date">-</span></div>
+          <div class="dbg-row"><span class="k">Duration</span><span class="v" id="dbg_duration">-</span></div>
+          <div class="dbg-row"><span class="k">Tech Type</span><span class="v" id="dbg_techtype">-</span></div>
+          <div class="dbg-row"><span class="k">LINE Config</span><span class="v" id="dbg_line">-</span></div>
+          <div class="dbg-row"><span class="k">Last Slots URL</span><span class="v" id="dbg_slots_url">-</span></div>
+          <div class="dbg-row"><span class="k">Last Slots Result</span><span class="v" id="dbg_slots_result">-</span></div>
+        </div>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+          <button type="button" class="secondary" onclick="debugRefreshLineConfig()">🔄 Refresh LINE Config</button>
+          <button type="button" class="secondary" onclick="debugTestSlots()">🧪 Test Slots (debug=1)</button>
+          <button type="button" class="secondary" onclick="debugCopy()">📋 Copy Debug</button>
+        </div>
+        <pre id="dbg_raw" class="dbg-raw"></pre>
+      </details>
     </div>
 
   </div>
@@ -326,6 +347,7 @@
 
 <script>
 const API = window.location.origin;
+let __dbg = { lastSlotsUrl: '', lastSlotsOk: null, lastSlotsMsg: '', lastSlotsJson: null, lineConfig: null };
 
 // ===== Menu fallback (ต้องอยู่ก่อนโค้ดอื่น) =====
 // ป้องกันเคส JS error ก่อน bind listener → เมนู/ปุ่มกดไม่ได้
@@ -465,6 +487,115 @@ async function loadMe(){
   }catch(_){
     // ignore
   }
+}
+
+// ===== Debug helpers (customer booking) =====
+function debugEnabled(){
+  try{
+    const usp = new URLSearchParams(location.search);
+    if(usp.get('debug') === '1') return true;
+    return localStorage.getItem('cwf_debug_panel') === '1';
+  }catch(_){ return false; }
+}
+
+function debugInit(){
+  const panel = document.getElementById('debug_panel');
+  if(!panel) return;
+  if(!debugEnabled()) return;
+  panel.style.display = 'block';
+  try{
+    document.getElementById('dbg_page').textContent = location.pathname + location.search;
+    document.getElementById('dbg_api').textContent = API;
+  }catch(_){ }
+  debugUpdateBasics();
+  debugRefreshLineConfig();
+}
+
+function debugUpdateBasics(){
+  try{
+    const d = document.getElementById('date')?.value || '';
+    const urgent = !!document.getElementById('urgent_toggle')?.checked;
+    document.getElementById('dbg_date').textContent = d || '-';
+    document.getElementById('dbg_duration').textContent = String(Number(durationMin || 60)) + ' min';
+    document.getElementById('dbg_techtype').textContent = urgent ? 'partner' : 'company';
+    document.getElementById('dbg_slots_url').textContent = __dbg.lastSlotsUrl || '-';
+    document.getElementById('dbg_slots_result').textContent = (__dbg.lastSlotsOk === null)
+      ? '-' : (__dbg.lastSlotsOk ? `OK (${__dbg.lastSlotsMsg||''})` : `FAIL (${__dbg.lastSlotsMsg||''})`);
+    if(__dbg.lineConfig){
+      const lc = __dbg.lineConfig;
+      document.getElementById('dbg_line').textContent = `id:${lc.line_channel_id_set?'Y':'N'} secret:${lc.line_channel_secret_set?'Y':'N'} jwt:${lc.jwt_secret_set?'Y':'N'} callback:${lc.callback_url}`;
+    }
+  }catch(_){ }
+}
+
+async function debugRefreshLineConfig(){
+  try{
+    const r = await fetch(`${API}/public/line_config`, { credentials:'include' });
+    const j = await r.json().catch(()=>({}));
+    __dbg.lineConfig = j;
+    debugUpdateBasics();
+    const raw = document.getElementById('dbg_raw');
+    if(raw) raw.textContent = JSON.stringify({ line_config: j }, null, 2);
+  }catch(e){
+    __dbg.lineConfig = { ok:false, error: String(e?.message||e) };
+    debugUpdateBasics();
+  }
+}
+
+async function debugTestSlots(){
+  try{
+    const d = document.getElementById('date')?.value || '';
+    if(!d) return alert('เลือกวันที่ก่อน');
+    await refreshPricing();
+    const duration_min = Number(durationMin || 60);
+    const urgent = !!document.getElementById('urgent_toggle')?.checked;
+    const tech_type = urgent ? 'partner' : 'company';
+    const payload = getPayloadV2();
+    let url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}&debug=1&include_full=1`;
+    if(payload.services && Array.isArray(payload.services) && payload.services.length){
+      url += `&services=${encodeURIComponent(JSON.stringify(payload.services))}`;
+    }else{
+      url += `&job_type=${encodeURIComponent(payload.job_type||'')}`
+        + `&ac_type=${encodeURIComponent(payload.ac_type||'')}`
+        + `&wash_variant=${encodeURIComponent(payload.wash_variant||'')}`
+        + `&repair_variant=${encodeURIComponent(payload.repair_variant||'')}`;
+    }
+    __dbg.lastSlotsUrl = url;
+    debugUpdateBasics();
+    const r = await fetch(url, { credentials:'include' });
+    const j = await r.json().catch(()=>null);
+    __dbg.lastSlotsJson = j;
+    __dbg.lastSlotsOk = r.ok && !!j;
+    const reasons = (j && j.debug && Array.isArray(j.debug.reasons)) ? j.debug.reasons.map(x=>x.code).join(',') : '';
+    __dbg.lastSlotsMsg = r.ok ? `slots:${(j?.slots||[]).length}${reasons?` reasons:${reasons}`:''}` : (j?.error || `HTTP ${r.status}`);
+    debugUpdateBasics();
+    const raw = document.getElementById('dbg_raw');
+    if(raw) raw.textContent = JSON.stringify({ slots_debug: j }, null, 2);
+  }catch(e){
+    __dbg.lastSlotsOk = false;
+    __dbg.lastSlotsMsg = String(e?.message||e);
+    debugUpdateBasics();
+  }
+}
+
+function debugCopy(){
+  try{
+    const d = {
+      page: location.pathname + location.search,
+      api: API,
+      date: document.getElementById('date')?.value || '',
+      durationMin: Number(durationMin || 60),
+      urgent: !!document.getElementById('urgent_toggle')?.checked,
+      payload: (()=>{ try{return getPayloadV2();}catch(_){return null;} })(),
+      lastSlotsUrl: __dbg.lastSlotsUrl,
+      lastSlotsOk: __dbg.lastSlotsOk,
+      lastSlotsMsg: __dbg.lastSlotsMsg,
+      lineConfig: __dbg.lineConfig,
+      lastSlotsJson: __dbg.lastSlotsJson
+    };
+    copyText(JSON.stringify(d, null, 2));
+    toast('คัดลอก Debug แล้ว');
+  }catch(_){ alert('Copy ไม่สำเร็จ'); }
 }
 
 async function customerLogout(){
@@ -1393,6 +1524,12 @@ document.getElementById('addr_save_btn')?.addEventListener('click', saveAddressF
 
 loadMe();
 showTopNoticeFromUrl();
+debugInit();
+
+// keep debug basic info fresh
+document.getElementById('date')?.addEventListener('change', debugUpdateBasics);
+document.getElementById('date')?.addEventListener('input', debugUpdateBasics);
+document.getElementById('urgent_toggle')?.addEventListener('change', debugUpdateBasics);
 
 // PWA update toast (ให้ลูกค้ากดรีเฟรชเมื่อมีอัปเดต)
 function showSwToast(onUpdate){
