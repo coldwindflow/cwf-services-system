@@ -412,8 +412,11 @@ function recomputeGrandTotal() {
   const extrasSubtotal = selectedItemsCustomer.reduce((sum, it) => sum + (Number(it.qty) * Number(it.unit_price)), 0);
   const subtotal = Number(standardPrice || 0) + extrasSubtotal;
   const promo = getSelectedPromoCustomer();
-  const discount = Math.min(subtotal, calcDiscount(subtotal, promo));
-  const total = Math.max(0, subtotal - discount);
+  // IMPORTANT: ตามคำสั่งล่าสุด "ห้ามเปลี่ยนราคา" → ยอดรวมที่แสดงต้องเป็นราคาพื้นฐานเดิม
+  // โปรโมชั่นยังคงถูก "เลือกให้อัตโนมัติ" เพื่อแสดง/บันทึก แต่ไม่หักราคาในหน้านี้
+  // (ส่วนลดถูกบันทึกแยกในระบบ)
+  // const discount = Math.min(subtotal, calcDiscount(subtotal, promo));
+  const total = Math.max(0, subtotal);
   const totalBox = document.getElementById("grand_total");
   if (totalBox) totalBox.textContent = total.toFixed(0);
 

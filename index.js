@@ -9451,12 +9451,13 @@ if (itemIdQty.length) {
 // 2) สร้างงาน
 
     // ✅ โปรโมชั่นฝั่งลูกค้า: ระบบเลือกให้อัตโนมัติตามเงื่อนไข (super admin ตั้งค่า)
-    const promoPick = await findBestCustomerPromotion(payloadV2, total, client);
+    // IMPORTANT: "ราคา" ของงานต้องเป็นราคาพื้นฐานเดิม (ห้ามเปลี่ยนราคา)
+    // - jobs.job_price เก็บ base_total เท่านั้น
+    // - ส่วนลดบันทึกแยกที่ job_promotions.applied_discount
+    const base_total = Number(total || 0);
+    const promoPick = await findBestCustomerPromotion(payloadV2, base_total, client);
     const appliedPromo = promoPick?.promo || null;
-    const appliedDiscount = Math.min(Number(total || 0), Number(promoPick?.discount || 0));
-    if(appliedPromo && appliedDiscount > 0){
-      total = Math.max(0, Number(total || 0) - appliedDiscount);
-    }
+    const appliedDiscount = Math.min(Number(base_total || 0), Number(promoPick?.discount || 0));
 
     // ✅ dispatch_mode:
     // - scheduled (ลูกค้าจองปกติ) => normal (ให้เข้าแอดมิน/คิวตามปกติ)
@@ -9478,7 +9479,7 @@ if (itemIdQty.length) {
         (customer_phone || "").toString().trim(),
         String(job_type).trim(),
         appointment_datetime,
-        Number(total || 0),
+        Number(base_total || 0),
         String(address_text).trim(),
         token,
         (customer_note || "").toString(),
@@ -9577,6 +9578,7 @@ if (itemIdQty.length) {
         promo_value: appliedPromo.promo_value,
         discount: appliedDiscount,
       } : null,
+      base_total: Number(base_total || 0),
     });
   } catch (e) {
     await client.query("ROLLBACK");
