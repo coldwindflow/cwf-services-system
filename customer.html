@@ -588,7 +588,12 @@ function isBookingFormReadyForSlots() {
 function updateLoadSlotsEnabled() {
   const btn = document.getElementById("loadSlotsBtn");
   if (!btn) return;
-  btn.disabled = !isBookingFormReadyForSlots();
+  // ไม่ disable ปุ่มจริง (บางเครื่อง/บางเบราว์เซอร์ event change ของ date อาจไม่ยิง)
+  // ให้กดได้เสมอ แล้วไป validate ใน loadSlots() แทน (กันเคส "กดโหลดสลอตไม่ได้")
+  const ready = isBookingFormReadyForSlots();
+  btn.disabled = false;
+  btn.setAttribute('aria-disabled', ready ? 'false' : 'true');
+  btn.style.opacity = ready ? '1' : '0.7';
 }
 
 // promos (customer)
@@ -984,7 +989,8 @@ async function loadSlots(){
       renderSlotsFromCache();
     })
     .catch(e=>{
-      slotsBox.textContent = "❌ โหลดเวลาว่างไม่สำเร็จ";
+	      const msg = (e && e.message) ? String(e.message) : '';
+	      slotsBox.textContent = "❌ โหลดเวลาว่างไม่สำเร็จ" + (msg ? `: ${msg}` : "");
       console.error(e);
     });
 }
@@ -1176,9 +1182,11 @@ function downloadIcsForBooking(){
   });
 });
 
-// (menu handlers are defined at the end of file)
-document.getElementById("urgent_toggle").addEventListener("change", ()=>{ /* slots refresh optional */ });
-document.getElementById("date").addEventListener("change", ()=>{ updateLoadSlotsEnabled(); });
+	// (menu handlers are defined at the end of file)
+	// Guard: อย่าให้ script พังจนเมนู/ปุ่มกดไม่ได้
+	document.getElementById("urgent_toggle")?.addEventListener("change", ()=>{ /* slots refresh optional */ });
+	document.getElementById("date")?.addEventListener("change", ()=>{ updateLoadSlotsEnabled(); });
+	document.getElementById("date")?.addEventListener("input", ()=>{ updateLoadSlotsEnabled(); });
 
 async function initCustomerCatalogAndPromos(){
   try{
