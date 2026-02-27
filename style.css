@@ -88,9 +88,10 @@ body{
   top: 0;
   z-index: 2600;
   padding-top: env(safe-area-inset-top);
-  background: linear-gradient(180deg, rgba(10, 35, 88, 0.98) 0%, rgba(11, 75, 179, 0.98) 100%);
-  border-bottom: 1px solid rgba(255,255,255,0.10);
-  box-shadow: 0 14px 40px rgba(2,6,23,0.22);
+  /* Use the same premium tone as the whole customer page/cards */
+  background: linear-gradient(135deg, rgba(37,99,235,0.14), rgba(6,182,212,0.12), rgba(251,191,36,0.10));
+  border-bottom: 1px solid rgba(15,23,42,0.10);
+  box-shadow: 0 14px 40px rgba(2,6,23,0.10);
 }
 .customer-page #custTopNav .in{
   max-width: 460px;
@@ -106,10 +107,10 @@ body{
 .customer-page #custTopNav .brand .brand-avatar img{ width:100%; height:100%; object-fit:cover; display:block; }
 .customer-page #custTopNav .brand .brand-avatar .ph{ font-size:20px; line-height:1; color:#2563eb; font-weight:1200; }
 .customer-page #custTopNav .title{ min-width:0; display:flex; flex-direction:column; gap:2px; }
-.customer-page #custTopNav .title b{ font-size:14px; line-height:1.1; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.customer-page #custTopNav .title span{ font-size:12px; font-weight:900; color: rgba(255,255,255,0.82); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.customer-page #custTopNav .title b{ font-size:14px; line-height:1.1; color:#0f172a; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.customer-page #custTopNav .title span{ font-size:12px; font-weight:900; color: rgba(15,23,42,0.70); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .customer-page #custTopNav .title b.cust-header-link{ cursor:pointer; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
-.customer-page .custTopRight{ display:flex; align-items:center; gap:10px; }
+.customer-page .custTopRight{ display:flex; align-items:center; gap:10px; flex: 0 0 auto; }
 .customer-page .cust-icbtn{
   width:44px;
   height:44px;
@@ -1789,6 +1790,14 @@ a:hover{ text-decoration: underline; }
 .customer-page .estimate-duration{ font-size:12px; margin-top:4px; color: rgba(2,6,23,0.72); }
 
 .customer-page .promo-card{
+  padding: 12px 14px;
+  border-radius: 18px;
+  border: 1px solid rgba(15,23,42,0.12);
+  background: rgba(255,255,255,0.88);
+  box-shadow: var(--shadow-2);
+}
+
+.customer-page .extras-card{
   padding: 12px 14px;
   border-radius: 18px;
   border: 1px solid rgba(15,23,42,0.12);

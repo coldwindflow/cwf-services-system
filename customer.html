@@ -212,6 +212,27 @@
           </div>
           <div class="muted" style="margin-top:6px;">* ระบบเลือกโปรโมชั่นให้อัตโนมัติตามเงื่อนไข (จำนวนเครื่อง/BTU/ประเภทแอร์/วิธีการล้าง)</div>
         </div>
+
+        <div class="extras-card">
+          <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+            <b>🧾 บริการเสริม / สินค้า</b>
+            <div class="muted" style="font-size:12px;">* เลือกได้มากกว่า 1 รายการ</div>
+          </div>
+          <div class="grid2" style="margin-top:10px;align-items:end;">
+            <div>
+              <div class="muted" style="margin-bottom:6px;">รายการ</div>
+              <select id="catalog_select_customer"></select>
+            </div>
+            <div>
+              <div class="muted" style="margin-bottom:6px;">จำนวน</div>
+              <input id="item_qty_customer" type="number" min="1" step="1" value="1" style="width:100%;">
+            </div>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
+            <button type="button" class="custMiniBtn primary" onclick="addItemCustomer()">➕ เพิ่มรายการ</button>
+          </div>
+          <div id="items_preview_customer" class="muted" style="margin-top:10px;">ยังไม่มีรายการ</div>
+        </div>
       </div>
     </div>
 
@@ -321,6 +342,7 @@ async function loadMe(){
     const profile = (j && j.profile) ? j.profile : null;
     const addr = profile && profile.address ? String(profile.address || '').trim() : '';
     const mapsUrl = profile && profile.maps_url ? String(profile.maps_url || '').trim() : '';
+    const phoneFromProfile = profile && profile.phone ? String(profile.phone || '').trim() : '';
 
     if(j && j.logged_in){
       if(loginBtn) loginBtn.style.display = 'none';
@@ -355,6 +377,22 @@ async function loadMe(){
       if(headerSecondary){
         headerSecondary.textContent = (j.user && j.user.name) ? String(j.user.name || '') : 'ลูกค้า';
       }
+
+      // Autofill booking form (only fill empty fields)
+      try{
+        const nameEl = document.getElementById('customer_name');
+        const phoneEl = document.getElementById('customer_phone');
+        const addrEl = document.getElementById('address_text');
+        const mapsEl = document.getElementById('maps_url');
+        const lineName = (j.user && j.user.name) ? String(j.user.name || '').trim() : '';
+
+        if(nameEl && !String(nameEl.value||'').trim() && lineName) nameEl.value = lineName;
+        if(phoneEl && !String(phoneEl.value||'').trim() && phoneFromProfile) phoneEl.value = phoneFromProfile;
+        if(addrEl && !String(addrEl.value||'').trim() && addr) addrEl.value = addr;
+        if(mapsEl && !String(mapsEl.value||'').trim() && mapsUrl) mapsEl.value = mapsUrl;
+        updateMapsPreview();
+        updateConfirmSummary();
+      }catch(_){ /* ignore */ }
 
       // clicking avatar / header opens modal (if has address) else goes to register
       if(brandAvatarBtn){
@@ -462,6 +500,16 @@ async function saveAddressFromModal(){
     if(saveRes) saveRes.textContent = '✅ บันทึกสำเร็จ';
     // refresh header state
     await loadMe();
+
+    // also fill booking form address fields (so customer doesn't need to retype)
+    try{
+      const addrEl = document.getElementById('address_text');
+      const mapsEl = document.getElementById('maps_url');
+      if(addrEl) addrEl.value = address;
+      if(mapsEl) mapsEl.value = maps_url;
+      updateMapsPreview();
+      updateConfirmSummary();
+    }catch(_){ /* ignore */ }
     // update view
     const addrText = document.getElementById('addr_text');
     const mapsOpen = document.getElementById('addr_maps_open');
@@ -787,13 +835,14 @@ function updateWashOptionsByAcType(){
     return;
   }
 
-  // Non-wall types: keep choices visible
+  // Non-wall types: use recognized keys (so pricing/duration/promo/matrix work)
+  // Price for non-wall is based on ac_type+BTU (wash_variant is informational), so keep only 2 choices.
   wash.innerHTML = `
-    <option value="ล้างมาตรฐาน">ล้างมาตรฐาน (เหมาะกับแอร์ประเภทนี้)</option>
-    <option value="ล้างลึก">ล้างลึก (ทำความสะอาดเชิงลึก)</option>
+    <option value="ล้างธรรมดา">ล้างมาตรฐาน</option>
+    <option value="ล้างพรีเมียม">ล้างลึก</option>
   `.trim();
   if(prev && Array.from(wash.options).some(o=>o.value===prev)) wash.value = prev;
-  else wash.value = 'ล้างมาตรฐาน';
+  else wash.value = 'ล้างธรรมดา';
 }
 
 function showVariantFields(){
@@ -1188,6 +1237,7 @@ async function initCustomerCatalogAndPromos(){
     }
 
     autoPickPromotionCustomer();
+    renderItemsCustomer();
     recomputeGrandTotal();
   }catch(e){
     console.warn("initCustomerCatalogAndPromos", e);
