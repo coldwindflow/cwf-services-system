@@ -1859,3 +1859,25 @@ a:hover{ text-decoration: underline; }
   .customer-page .auth-box{ justify-content:stretch; }
   .customer-page .link-btn, .customer-page .top-track{ width:100%; }
 }
+
+/* Customer: Multi-service lines (like admin add) */
+.customer-page .multi-service-card{
+  background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,251,255,0.96));
+  border: 1px solid rgba(11,75,179,0.14);
+  border-radius: 18px;
+  padding: 12px 12px;
+}
+.customer-page .svc-line{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  padding:10px 10px;
+  border:1px solid rgba(15,23,42,0.10);
+  border-radius:14px;
+  background:#fff;
+  margin-bottom:10px;
+}
+.customer-page .svc-line-main{ flex:1; min-width: 0; }
+.customer-page .svc-line-main b{ display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.customer-page .svc-line-del{ width:auto; min-height:40px; padding:10px 12px; border-radius:12px; }

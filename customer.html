@@ -176,6 +176,7 @@
               <button id="mc_plus" class="btn-round" type="button" aria-label="เพิ่มจำนวน">+</button>
             </div>
             <div class="muted" style="font-size:12px;margin-top:6px;">* เลือกจำนวนเครื่องเพื่อคำนวณราคา/เวลาโดยประมาณ</div>
+            <button id="btnAddServiceLineCustomer" type="button" class="custMiniBtn primary" style="margin-top:10px;width:100%;">➕ เพิ่มบริการนี้</button>
           </div>
 
           <div class="urgent-card">
@@ -210,29 +211,21 @@
             <b>🎁 โปรโมชั่น</b>
             <select id="promotion_select_customer" style="width:auto;min-width:220px;"></select>
           </div>
-          <div class="muted" style="margin-top:6px;">* ระบบเลือกโปรโมชั่นให้อัตโนมัติตามเงื่อนไข (จำนวนเครื่อง/BTU/ประเภทแอร์/วิธีการล้าง)</div>
+          
+
+<div id="multi_service_box_customer" class="multi-service-card" style="margin-top:12px;display:none;">
+  <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+    <b>🧩 รายการบริการ (หลายรายการ)</b>
+    <button id="btnClearServiceLinesCustomer" type="button" class="custMiniBtn" style="width:auto;">ล้างทั้งหมด</button>
+  </div>
+  <div class="muted" style="margin-top:6px;">* กด “เพิ่มบริการนี้” เพื่อรวมหลายประเภทในงานเดียว เช่น ผนัง 1 + สี่ทิศทาง 1 + แขวน 1</div>
+  <div id="service_lines_customer" style="margin-top:10px;"></div>
+</div>
+
+<div class="muted" style="margin-top:6px;">* ระบบเลือกโปรโมชั่นให้อัตโนมัติตามเงื่อนไข (จำนวนเครื่อง/BTU/ประเภทแอร์/วิธีการล้าง)</div>
         </div>
 
-        <div class="extras-card">
-          <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
-            <b>🧾 บริการเสริม / สินค้า</b>
-            <div class="muted" style="font-size:12px;">* เลือกได้มากกว่า 1 รายการ</div>
-          </div>
-          <div class="grid2" style="margin-top:10px;align-items:end;">
-            <div>
-              <div class="muted" style="margin-bottom:6px;">รายการ</div>
-              <select id="catalog_select_customer"></select>
-            </div>
-            <div>
-              <div class="muted" style="margin-bottom:6px;">จำนวน</div>
-              <input id="item_qty_customer" type="number" min="1" step="1" value="1" style="width:100%;">
-            </div>
-          </div>
-          <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;">
-            <button type="button" class="custMiniBtn primary" onclick="addItemCustomer()">➕ เพิ่มรายการ</button>
-          </div>
-          <div id="items_preview_customer" class="muted" style="margin-top:10px;">ยังไม่มีรายการ</div>
-        </div>
+        
       </div>
     </div>
 
@@ -584,108 +577,8 @@ function updateLoadSlotsEnabled() {
   btn.disabled = !isBookingFormReadyForSlots();
 }
 
-// extras + promo (customer)
-let catalogItemsCustomer = [];
+// promos (customer)
 let promotionsCustomer = [];
-let selectedItemsCustomer = []; // {item_id,item_name,qty,unit_price}
-
-// Multi-service lines (core requirement): customer can book multiple service lines in 1 job
-// Example: wall 1 + fourway 1 + hanging 1
-let selectedServicesCustomer = []; // [{job_type, ac_type, btu, machine_count, wash_variant, repair_variant}]
-
-function normalizeLineJobType(v){
-  const s = String(v||'').trim();
-  if(!s) return '';
-  if(s.includes('ติดตั้ง')) return 'ติดตั้ง';
-  if(s.includes('ซ่อม')) return 'ซ่อม';
-  if(s.includes('ล้าง')) return 'ล้าง';
-  return s;
-}
-
-function lineLabel(s){
-  if(!s) return '-';
-  const jt = normalizeLineJobType(s.job_type);
-  const parts = [];
-  parts.push(jt);
-  parts.push(String(s.ac_type||'-'));
-  if(jt==='ล้าง' && String(s.ac_type||'')==='ผนัง') parts.push(String(s.wash_variant||'ล้างธรรมดา'));
-  if(jt==='ซ่อม' && s.repair_variant) parts.push(String(s.repair_variant));
-  parts.push(`${Number(s.btu||0)} BTU`);
-  parts.push(`${Number(s.machine_count||1)} เครื่อง`);
-  return parts.join(' • ');
-}
-
-function renderServicesPreview(){
-  const box = document.getElementById('services_preview');
-  if(!box) return;
-  if(!selectedServicesCustomer.length){
-    box.classList.add('muted');
-    box.textContent = 'ยังไม่มีรายการ';
-    return;
-  }
-  box.classList.remove('muted');
-  const rows = selectedServicesCustomer.map((s, idx)=>{
-    return `
-      <div class="item-row" style="display:flex;justify-content:space-between;gap:10px;align-items:center;padding:10px 12px;border:1px solid rgba(255,255,255,0.18);border-radius:12px;margin-bottom:8px;">
-        <div style="min-width:0;">
-          <div style="font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${lineLabel(s)}</div>
-        </div>
-        <button type="button" class="custMiniBtn" onclick="removeServiceLine(${idx})" style="white-space:nowrap;">ลบ</button>
-      </div>
-    `;
-  }).join('');
-  box.innerHTML = rows;
-}
-
-function removeServiceLine(idx){
-  const i = Number(idx);
-  if(!Number.isFinite(i) || i<0) return;
-  selectedServicesCustomer.splice(i, 1);
-  renderServicesPreview();
-  refreshPricing();
-  updateLoadSlotsEnabled();
-}
-
-function currentLineFromForm(){
-  const jt = normalizeLineJobType(document.getElementById('job_type')?.value);
-  const ac = String(document.getElementById('ac_type')?.value||'').trim();
-  const btu = Number(document.getElementById('btu')?.value||0);
-  const mc = Number(document.getElementById('machine_count')?.value||1);
-  const wash = String(document.getElementById('wash_variant')?.value||'').trim();
-  const rep = String(document.getElementById('repair_variant')?.value||'').trim();
-  return { job_type: jt, ac_type: ac, btu, machine_count: Math.max(1, mc), wash_variant: wash, repair_variant: rep };
-}
-
-function addServiceLineFromCurrent(){
-  const s = currentLineFromForm();
-  if(!s.job_type || !s.ac_type || !Number.isFinite(s.btu) || s.btu<=0){
-    alert('กรุณาเลือกประเภทงาน / ประเภทแอร์ / BTU ก่อน');
-    return;
-  }
-  if(s.job_type==='ล้าง' && s.ac_type==='ผนัง' && !s.wash_variant) s.wash_variant = 'ล้างธรรมดา';
-  selectedServicesCustomer.push(s);
-  renderServicesPreview();
-  refreshPricing();
-  updateLoadSlotsEnabled();
-}
-
-function computeAggregateFromServices(services){
-  const arr = Array.isArray(services) ? services : [];
-  if(!arr.length) return null;
-  const job_type = normalizeLineJobType(arr[0].job_type);
-  const totalMc = arr.reduce((s,x)=> s + Math.max(1, Number(x.machine_count||1)), 0);
-  const maxBtu = arr.reduce((m,x)=> Math.max(m, Number(x.btu||0)), 0);
-  const allSameAc = arr.every(x => String(x.ac_type||'') === String(arr[0].ac_type||''));
-  const allWall = arr.every(x => String(x.ac_type||'') === 'ผนัง');
-  const allSameWash = allWall && arr.every(x => String(x.wash_variant||'') === String(arr[0].wash_variant||''));
-  return {
-    job_type,
-    ac_type: allSameAc ? String(arr[0].ac_type||'').trim() : '',
-    btu: maxBtu,
-    machine_count: totalMc,
-    wash_variant: allSameWash ? String(arr[0].wash_variant||'').trim() : ''
-  };
-}
 
 function calcDiscount(subtotal, promo) {
   if (!promo) return 0;
@@ -726,6 +619,105 @@ function promoMatchesPayloadCustomer(promo, payload){
   return true;
 }
 
+// ============================
+// Multi-service lines (customer)
+// ============================
+let serviceLinesCustomer = []; // each: { job_type, ac_type, btu, machine_count, wash_variant, repair_variant }
+
+function getSingleServiceSelection(){
+  const job_type = document.getElementById("job_type").value.trim();
+  const ac_type = document.getElementById("ac_type").value.trim();
+  const btu = Number(document.getElementById("btu").value || 0);
+  const machine_count = Math.max(1, Number(document.getElementById("machine_count").value || 1));
+  const wash_variant = document.getElementById("wash_variant").value.trim();
+  const repair_variant = document.getElementById("repair_variant").value.trim();
+  return { job_type, ac_type, btu, machine_count, wash_variant, repair_variant };
+}
+
+function aggFromServices(services){
+  const norm = (s)=> String(s||'').trim();
+  const allSame = (arr)=> arr.length && arr.every(v=>v===arr[0]);
+  const job_types = services.map(s=>norm(s.job_type));
+  const ac_types = services.map(s=>norm(s.ac_type));
+  const wash_vars = services.map(s=>norm(s.wash_variant));
+  const rep_vars = services.map(s=>norm(s.repair_variant));
+  const btus = services.map(s=>Number(s.btu||0)).filter(n=>n>0);
+  const mcs = services.map(s=>Number(s.machine_count||1));
+
+  const job_type = allSame(job_types) ? job_types[0] : "";
+  const ac_type = allSame(ac_types) ? ac_types[0] : "";
+  const wash_variant = allSame(wash_vars) ? wash_vars[0] : "";
+  const repair_variant = allSame(rep_vars) ? rep_vars[0] : "";
+  const btu = btus.length && btus.every(v=>v===btus[0]) ? btus[0] : (btus.length ? Math.max(...btus) : 0);
+  const machine_count = mcs.reduce((a,b)=>a+Math.max(1,Number(b||1)),0);
+
+  return { job_type, ac_type, btu, machine_count, wash_variant, repair_variant };
+}
+
+function renderServiceLinesCustomer(){
+  const box = document.getElementById('service_lines_customer');
+  const wrap = document.getElementById('multi_service_box_customer');
+  if(!box || !wrap) return;
+
+  wrap.style.display = serviceLinesCustomer.length ? 'block' : 'none';
+  if(!serviceLinesCustomer.length){
+    box.innerHTML = '<div class="muted">ยังไม่มีรายการ — เลือกบริการแล้วกด “เพิ่มบริการนี้”</div>';
+    return;
+  }
+
+  box.innerHTML = serviceLinesCustomer.map((s, idx)=>{
+    const parts = [];
+    if(s.job_type) parts.push(s.job_type);
+    if(s.ac_type) parts.push(s.ac_type);
+    if(s.btu) parts.push(`${Number(s.btu).toLocaleString('th-TH')} BTU`);
+    parts.push(`${Number(s.machine_count||1)} เครื่อง`);
+    if(String(s.job_type).trim()==='ล้าง' && s.wash_variant) parts.push(s.wash_variant);
+    if(String(s.job_type).trim()==='ซ่อม' && s.repair_variant) parts.push(s.repair_variant);
+
+    return `
+      <div class="svc-line">
+        <div class="svc-line-main">
+          <b>${parts.join(' • ')}</b>
+          <div class="muted" style="font-size:12px;margin-top:2px;">รายการที่ ${idx+1}</div>
+        </div>
+        <button type="button" class="danger svc-line-del" onclick="removeServiceLineCustomer(${idx})">ลบ</button>
+      </div>
+    `;
+  }).join('');
+}
+
+function removeServiceLineCustomer(idx){
+  serviceLinesCustomer.splice(idx, 1);
+  renderServiceLinesCustomer();
+  refreshPricing();
+}
+
+function clearServiceLinesCustomer(){
+  serviceLinesCustomer = [];
+  renderServiceLinesCustomer();
+  refreshPricing();
+}
+
+function addServiceLineCustomerFromCurrent(){
+  const cur = getSingleServiceSelection();
+  if(serviceLinesCustomer.length){
+    const jt0 = String(serviceLinesCustomer[0].job_type||'').trim();
+    const jt = String(cur.job_type||'').trim();
+    if(jt0 && jt && jt0 !== jt){
+      return alert('ต้องเลือกประเภทงานให้เหมือนกัน (รวมหลายรายการได้เฉพาะงานประเภทเดียว)');
+    }
+  }
+  if(!cur.job_type) return alert('เลือกประเภทงานก่อน');
+  if(!cur.ac_type) return alert('เลือกประเภทแอร์ก่อน');
+  if(!cur.btu) return alert('เลือก BTU ก่อน');
+  if(cur.job_type==='ล้าง' && !cur.wash_variant) return alert('เลือกวิธีการล้างก่อน');
+  if(cur.job_type==='ซ่อม' && !cur.repair_variant) return alert('เลือกประเภทซ่อมก่อน');
+
+  serviceLinesCustomer.push(cur);
+  renderServiceLinesCustomer();
+  refreshPricing();
+}
+
 function autoPickPromotionCustomer(){
   const ps = document.getElementById('promotion_select_customer');
   if(!ps) return;
@@ -740,8 +732,7 @@ function autoPickPromotionCustomer(){
     return;
   }
 
-  const extrasSubtotal = selectedItemsCustomer.reduce((sum, it) => sum + (Number(it.qty) * Number(it.unit_price)), 0);
-  const subtotal = Number(standardPrice || 0) + extrasSubtotal;
+  const subtotal = Number(standardPrice || 0);
   const candidates = (promotionsCustomer||[]).filter(p => promoMatchesPayloadCustomer(p, payload));
   if(!candidates.length){
     ps.value = '';
@@ -756,177 +747,20 @@ function autoPickPromotionCustomer(){
 }
 
 function recomputeGrandTotal() {
-  const extrasSubtotal = selectedItemsCustomer.reduce((sum, it) => sum + (Number(it.qty) * Number(it.unit_price)), 0);
-  const subtotal = Number(standardPrice || 0) + extrasSubtotal;
-  const promo = getSelectedPromoCustomer();
-  // IMPORTANT: ตามคำสั่งล่าสุด "ห้ามเปลี่ยนราคา" → ยอดรวมที่แสดงต้องเป็นราคาพื้นฐานเดิม
-  // โปรโมชั่นยังคงถูก "เลือกให้อัตโนมัติ" เพื่อแสดง/บันทึก แต่ไม่หักราคาในหน้านี้
-  // (ส่วนลดถูกบันทึกแยกในระบบ)
-  // const discount = Math.min(subtotal, calcDiscount(subtotal, promo));
+  const subtotal = Number(standardPrice || 0);
   const total = Math.max(0, subtotal);
   const totalBox = document.getElementById("grand_total");
   if (totalBox) totalBox.textContent = total.toFixed(0);
 
-  // keep summary always up-to-date
   updateConfirmSummary();
 }
 
-function updateConfirmSummary(){
-  const d = document.getElementById('date')?.value || '';
-  const time = pickedTime || '';
-  const dt = document.getElementById('sum_datetime');
-  if(dt) dt.textContent = (d && time) ? `${d} • ${time}` : '-';
-
-  const payload = getPayloadV2();
-  const parts = [];
-  if(payload.job_type) parts.push(payload.job_type);
-  if(payload.ac_type) parts.push(payload.ac_type);
-  if(payload.btu) parts.push(`${payload.btu.toLocaleString('th-TH')} BTU`);
-  if(payload.machine_count) parts.push(`${payload.machine_count} เครื่อง`);
-  if(payload.job_type === 'ล้าง' && payload.wash_variant) parts.push(payload.wash_variant);
-  if(payload.job_type === 'ซ่อม' && payload.repair_variant) parts.push(payload.repair_variant);
-  const svc = document.getElementById('sum_service');
-  if(svc) svc.textContent = parts.length ? parts.join(' • ') : '-';
-
-  const price = document.getElementById('sum_price');
-  const gt = document.getElementById('grand_total')?.textContent || '0';
-  if(price){
-    const n = Number(gt || 0);
-    price.textContent = n > 0 ? `${n.toFixed(0)} บาท (ประมาณการ)` : 'ประมาณการ';
-  }
-
-  const addr = (document.getElementById('address_text')?.value || '').trim();
-  const map = (document.getElementById('maps_url')?.value || '').trim();
-  const loc = document.getElementById('sum_location');
-  if(loc){
-    if(!addr && !map) loc.textContent = '-';
-    else {
-      const a = addr ? addr : '';
-      const m = map ? 'มีลิงก์แผนที่' : '';
-      loc.innerHTML = `${escapeHtml(a)}${(a && m) ? '<br>' : ''}${m ? `<a href="${escapeAttr(map)}" target="_blank" rel="noopener">📍 เปิดแผนที่</a>` : ''}`;
-    }
-  }
-}
-
-function escapeHtml(s){
-  return String(s||'').replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;','\'':'&#39;' }[c]));
-}
-function escapeAttr(s){
-  return String(s||'').replace(/"/g,'&quot;');
-}
-
-function isValidMapsUrl(u){
-  if(!u) return false;
-  try{
-    const url = new URL(u);
-    const h = (url.hostname||'').toLowerCase();
-    const p = (url.pathname||'');
-    // ✅ รองรับลิงก์หลักที่ลูกค้าใช้จริง
-    if(h === 'maps.app.goo.gl' || h.endsWith('.app.goo.gl')) return true;
-    if(h === 'www.google.com' || h === 'google.com'){
-      return p.startsWith('/maps') || url.searchParams.has('q') || url.searchParams.has('query');
-    }
-    if(h === 'goo.gl' && p.includes('maps')) return true;
-    return false;
-  }catch(_){
-    return false;
-  }
-}
-
-function updateMapsPreview(){
-  const el = document.getElementById('maps_url');
-  const box = document.getElementById('maps_preview');
-  const hint = document.getElementById('maps_hint');
-  if(!el || !box) return;
-  const v = (el.value||'').trim();
-  if(!v){
-    box.style.display = 'none';
-    box.innerHTML = '';
-    if(hint){ hint.textContent = 'รองรับ maps.app.goo.gl และ google.com/maps'; hint.classList.remove('warn'); }
-    return;
-  }
-  const ok = isValidMapsUrl(v);
-  if(hint){
-    hint.textContent = ok ? 'ลิงก์แผนที่ดูโอเค ✅' : 'ลิงก์นี้อาจไม่ใช่ Google Maps (ยังจองได้)';
-    hint.classList.toggle('warn', !ok);
-  }
-  box.style.display = 'block';
-  box.innerHTML = ok
-    ? `<a class="secondary" style="width:auto;min-height:40px;padding:10px 12px;display:inline-flex;align-items:center;gap:8px;text-decoration:none;" href="${escapeAttr(v)}" target="_blank" rel="noopener">📍 เปิดแผนที่</a>`
-    : `<div class="inline-warn">แนะนำให้แชร์ลิงก์จาก Google Maps โดยตรง เพื่อให้ช่างเปิดได้ถูกจุด</div>`;
-}
-
-function renderItemsCustomer() {
-  const box = document.getElementById("items_preview_customer");
-  if (!box) return;
-  if (!selectedItemsCustomer.length) {
-    box.textContent = "ยังไม่มีรายการ";
-    recomputeGrandTotal();
-    return;
-  }
-  const rows = selectedItemsCustomer.map((it, idx) => {
-    const line = Number(it.qty) * Number(it.unit_price);
-    return `
-      <div style="padding:8px;border:1px solid rgba(15,23,42,0.10);border-radius:10px;margin-bottom:8px;">
-        <b>${it.item_name}</b><div class="muted">รวม: ${line.toFixed(0)} บาท</div>
-        <div style="display:flex;gap:8px;align-items:center;margin-top:6px;flex-wrap:wrap;">
-          <label class="muted">จำนวน</label>
-          <input type="number" min="1" step="1" value="${it.qty}" style="width:90px;" onchange="updateQtyCustomer(${idx}, this.value)">
-          <button type="button" class="danger" style="width:auto;min-height:40px;" onclick="removeItemCustomer(${idx})">ลบ</button>
-        </div>
-      </div>
-    `;
-  }).join("");
-  box.innerHTML = rows;
-  recomputeGrandTotal();
-}
-
-function addItemCustomer() {
-  const sel = document.getElementById("catalog_select_customer");
-  const qtyEl = document.getElementById("item_qty_customer");
-  const id = Number(sel?.value || 0);
-  const qty = Math.max(1, Number(qtyEl?.value || 1));
-  if (!id) return alert("เลือกรายการก่อน");
-  const found = catalogItemsCustomer.find(x => Number(x.item_id) === id);
-  if (!found) return alert("ไม่พบรายการ");
-  const existed = selectedItemsCustomer.find(x => Number(x.item_id) === id);
-  if (existed) existed.qty += qty;
-  else selectedItemsCustomer.push({ item_id: found.item_id, item_name: found.item_name, qty, unit_price: Number(found.base_price || 0) });
-  renderItemsCustomer();
-}
-function updateQtyCustomer(idx, val) {
-  selectedItemsCustomer[idx].qty = Math.max(1, Number(val || 1));
-  renderItemsCustomer();
-}
-function removeItemCustomer(idx) {
-  selectedItemsCustomer.splice(idx, 1);
-  renderItemsCustomer();
-}
-
 function getPayloadV2(){
-  // If customer added multiple service lines, use services[] for pricing/booking.
-  if(Array.isArray(selectedServicesCustomer) && selectedServicesCustomer.length){
-    const services = selectedServicesCustomer.map(s => ({
-      job_type: normalizeLineJobType(s.job_type),
-      ac_type: String(s.ac_type||'').trim(),
-      btu: Number(s.btu||0),
-      machine_count: Math.max(1, Number(s.machine_count||1)),
-      wash_variant: String(s.wash_variant||'').trim(),
-      repair_variant: String(s.repair_variant||'').trim(),
-    })).filter(s => s.job_type && s.ac_type && Number(s.btu)>0 && Number(s.machine_count)>0);
-    const agg = computeAggregateFromServices(services);
-    // Fallback safe
-    if(!agg) return currentLineFromForm();
-    return { ...agg, repair_variant: '', services };
+  if (Array.isArray(serviceLinesCustomer) && serviceLinesCustomer.length){
+    const agg = aggFromServices(serviceLinesCustomer);
+    return { services: serviceLinesCustomer, ...agg };
   }
-
-  const job_type = document.getElementById("job_type").value.trim();
-  const ac_type = document.getElementById("ac_type").value.trim();
-  const btu = Number(document.getElementById("btu").value || 0);
-  const machine_count = Math.max(1, Number(document.getElementById("machine_count").value || 1));
-  const wash_variant = document.getElementById("wash_variant").value.trim();
-  const repair_variant = document.getElementById("repair_variant").value.trim();
-  return { job_type, ac_type, btu, machine_count, wash_variant, repair_variant };
+  return getSingleServiceSelection();
 }
 
 function updateWashOptionsByAcType(){
@@ -973,8 +807,8 @@ async function refreshPricing(){
   const sp = document.getElementById("standard_price");
   const dm = document.getElementById("duration_min");
 
-  // ถ้ายังไม่เลือกประเภทงาน → reset
-  if(!payload.job_type){
+  // ถ้ายังไม่เลือกบริการ → reset
+  if(!payload.job_type && !(payload.services && payload.services.length)){
     standardPrice = 0; durationMin = 60;
     sp.textContent = "-"; dm.textContent = "-";
     return;
@@ -1085,25 +919,17 @@ async function loadSlots(){
 
   const payload = getPayloadV2();
   // ✅ ให้ลูกค้าเลือกข้อมูลบริการให้ครบก่อนค่อยโหลดคิวว่าง
-  const hasMulti = Array.isArray(payload.services) && payload.services.length;
-  if(hasMulti){
-    if(!payload.job_type || !payload.machine_count || !payload.btu){
-      slotsBox.textContent = "กรุณาเพิ่มรายการบริการอย่างน้อย 1 รายการ";
-      return;
-    }
-  }else{
-    if (!payload.job_type || !payload.ac_type || !payload.btu || !payload.machine_count) {
-      slotsBox.textContent = "กรุณาเลือก: ประเภทงาน / ประเภทแอร์ / BTU / จำนวนเครื่อง ก่อน";
-      return;
-    }
-    if (payload.job_type === "ล้าง" && !payload.wash_variant) {
-      slotsBox.textContent = "กรุณาเลือกประเภทการล้างก่อน";
-      return;
-    }
-    if (payload.job_type === "ซ่อม" && !payload.repair_variant) {
-      slotsBox.textContent = "กรุณาเลือกประเภทงานซ่อมก่อน";
-      return;
-    }
+  if (!payload.job_type || !payload.ac_type || !payload.btu || !payload.machine_count) {
+    slotsBox.textContent = "กรุณาเลือก: ประเภทงาน / ประเภทแอร์ / BTU / จำนวนเครื่อง ก่อน";
+    return;
+  }
+  if (payload.job_type === "ล้าง" && !payload.wash_variant) {
+    slotsBox.textContent = "กรุณาเลือกประเภทการล้างก่อน";
+    return;
+  }
+  if (payload.job_type === "ซ่อม" && !payload.repair_variant) {
+    slotsBox.textContent = "กรุณาเลือกประเภทงานซ่อมก่อน";
+    return;
   }
 
   await refreshPricing(); // อัปเดต durationMin ก่อน
@@ -1113,14 +939,11 @@ async function loadSlots(){
   const tech_type = urgent ? "partner" : "company";
 
   // ส่ง criteria ไปให้ server filter ตาม service matrix (Option B)
-  let url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`
+  const url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`
     + `&job_type=${encodeURIComponent(payload.job_type||'')}`
     + `&ac_type=${encodeURIComponent(payload.ac_type||'')}`
     + `&wash_variant=${encodeURIComponent(payload.wash_variant||'')}`
     + `&repair_variant=${encodeURIComponent(payload.repair_variant||'')}`;
-  if(hasMulti){
-    try{ url += `&services=${encodeURIComponent(JSON.stringify(payload.services))}`; }catch(e){}
-  }
 
   fetch(url)
     .then(r=>r.json())
@@ -1171,9 +994,7 @@ async function book(){
   const body = {
     customer_name, customer_phone, job_type,
     appointment_datetime, address_text, maps_url, customer_note,
-    booking_mode: urgent ? "urgent" : "scheduled",
-    items: selectedItemsCustomer.map(x => ({ item_id: x.item_id, qty: x.qty })),
-    promotion_id: (document.getElementById("promotion_select_customer")?.value || null) || null,
+    booking_mode: urgent ? "urgent" : "scheduled",promotion_id: (document.getElementById("promotion_select_customer")?.value || null) || null,
     ...payload
   };
 
@@ -1337,18 +1158,9 @@ document.getElementById("date").addEventListener("change", ()=>{ updateLoadSlots
 
 async function initCustomerCatalogAndPromos(){
   try{
-    const [catR, proR] = await Promise.all([
-      fetch(`${API}/catalog/items?customer=1`).then(r=>r.json()).catch(()=>[]),
-      fetch(`${API}/promotions?customer=1`).then(r=>r.json()).catch(()=>[]),
-    ]);
-    catalogItemsCustomer = Array.isArray(catR) ? catR : (catR.items || []);
+    const proR = await fetch(`${API}/promotions?customer=1`).then(r=>r.json()).catch(()=>[]);
     promotionsCustomer = Array.isArray(proR) ? proR : (proR.promotions || []);
 
-    const sel = document.getElementById("catalog_select_customer");
-    if (sel) {
-      sel.innerHTML = `<option value="">-- เลือกบริการเสริม/สินค้า --</option>` +
-        catalogItemsCustomer.map(it => `<option value="${it.item_id}">${it.item_name} (${Number(it.base_price||0)} บาท)</option>`).join("");
-    }
     const ps = document.getElementById("promotion_select_customer");
     if (ps) {
       ps.innerHTML = `<option value="">-- ไม่ใช้โปร --</option>` +
@@ -1356,13 +1168,11 @@ async function initCustomerCatalogAndPromos(){
           const label = p.promo_type === "percent" ? `-${Number(p.promo_value)}%` : `-${Number(p.promo_value)} บาท`;
           return `<option value="${p.promo_id}">${p.promo_name} (${label})</option>`;
         }).join("");
-      // ลูกค้าเลือกไม่ได้: ระบบเลือกให้อัตโนมัติ
       ps.disabled = true;
       ps.style.pointerEvents = 'none';
     }
 
     autoPickPromotionCustomer();
-    renderItemsCustomer();
     recomputeGrandTotal();
   }catch(e){
     console.warn("initCustomerCatalogAndPromos", e);
@@ -1371,10 +1181,14 @@ async function initCustomerCatalogAndPromos(){
 
 showVariantFields();
 bindMachineCountStepper();
-renderServicesPreview();
+
+// multi-service buttons
+document.getElementById('btnAddServiceLineCustomer')?.addEventListener('click', ()=> addServiceLineCustomerFromCurrent());
+document.getElementById('btnClearServiceLinesCustomer')?.addEventListener('click', ()=> clearServiceLinesCustomer());
+
+renderServiceLinesCustomer();
 initCustomerCatalogAndPromos();
 refreshPricing();
-renderItemsCustomer();
 updateLoadSlotsEnabled();
 
 // slot filter controls
