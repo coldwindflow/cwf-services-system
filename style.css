@@ -86,17 +86,14 @@ body{
   left: 0;
   right: 0;
   top: 0;
-  z-index: 2600;
+  /* IMPORTANT: keep above any overlay/backdrop to prevent "tap stuck" */
+  z-index: 5000;
   padding-top: env(safe-area-inset-top);
   /* Use the same premium tone as the whole customer page/cards */
   background: linear-gradient(135deg, rgba(37,99,235,0.14), rgba(6,182,212,0.12), rgba(251,191,36,0.10));
   border-bottom: 1px solid rgba(15,23,42,0.10);
   box-shadow: 0 14px 40px rgba(2,6,23,0.10);
 }
-
-/* กันเคส drawer/backdrop ค้างบังทั้งหน้า: ให้ topnav อยู่เหนือ backdrop ตอนเปิดเมนู */
-body.customer-page.menu-open #custTopNav{ z-index: 3000; }
-body.customer-page.menu-open #menu_btn{ z-index: 3001; position: relative; }
 
 /* ===== Customer Debug Panel (เหมือนหน้าแอดมิน) ===== */
 .customer-page .cust-debug-fab{
@@ -258,14 +255,14 @@ body.customer-page.menu-open #menu_btn{ z-index: 3001; position: relative; }
   position: fixed;
   inset: 0;
   background: rgba(2,6,23,0.55);
-  z-index: 2590;
-  pointer-events: none;
+  /* keep below top nav so hamburger is always tappable */
+  z-index: 4800;
+  pointer-events: auto;
 }
-body.customer-page.menu-open .cust-drawer-backdrop{ pointer-events: auto; }
 .customer-page .cust-drawer{
   position: fixed;
   inset: 0;
-  z-index: 2700;
+  z-index: 4900;
 }
 .customer-page .cust-drawer .panel{
   position: absolute;

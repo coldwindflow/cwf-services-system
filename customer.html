@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CWF - จองคิวงาน</title>
   <!-- cache-bust: ensure latest css in PWA/Android webview -->
-  <link rel="stylesheet" href="style.css?v=17">
+  <link rel="stylesheet" href="style.css?v=19">
   <link rel="manifest" href="/mainfest.json">
   <meta name="theme-color" content="#0b4bb3">
 </head>
@@ -48,6 +48,9 @@
         el.textContent += line;
         el.scrollTop = el.scrollHeight;
       };
+
+      // allow other parts (menu fallback, etc.) to log safely
+      window.__cwfDbgAppend = append;
 
       window.__cwfDbg = {
         open(){ const p=panel(); if(p){ p.style.display='block'; p.setAttribute('aria-hidden','false'); } },
@@ -434,8 +437,7 @@ const API = window.location.origin;
     const ov = document.getElementById('menu_overlay');
     const dr = document.getElementById('menu_drawer');
     const btn = document.getElementById('menu_btn');
-    try{ document.body.classList.add('menu-open'); }catch(_){ }
-    if(ov){ ov.style.display = 'block'; ov.style.pointerEvents = 'auto'; }
+    if(ov) ov.style.display = 'block';
     if(dr){ dr.style.display = 'block'; dr.setAttribute('aria-hidden','false'); }
     if(btn) btn.setAttribute('aria-expanded','true');
     try{ document.body.style.overflow = 'hidden'; }catch(_){ }
@@ -444,8 +446,7 @@ const API = window.location.origin;
     const ov = document.getElementById('menu_overlay');
     const dr = document.getElementById('menu_drawer');
     const btn = document.getElementById('menu_btn');
-    try{ document.body.classList.remove('menu-open'); }catch(_){ }
-    if(ov){ ov.style.display = 'none'; ov.style.pointerEvents = 'none'; }
+    if(ov) ov.style.display = 'none';
     if(dr){ dr.style.display = 'none'; dr.setAttribute('aria-hidden','true'); }
     if(btn) btn.setAttribute('aria-expanded','false');
     try{ document.body.style.overflow = ''; }catch(_){ }
@@ -457,40 +458,25 @@ const API = window.location.origin;
   };
   // เผื่อ overlay/close ถูกกด แต่ listener ปกติไม่ถูก bind
   window.__cwfCloseMenu = closeCustomerMenu;
-})();
 
-// ===== Panic Unfreeze (กันเคส overlay/menu/modal ค้างบังทั้งหน้า) =====
-// ใช้ตอนกลับจาก LINE / BFCache / หรือโดน error ทำให้ state ค้าง
-(function(){
-  function hide(id){
-    const el = document.getElementById(id);
-    if(!el) return;
-    try{ el.style.display = 'none'; }catch(_){ }
-    try{ el.setAttribute('aria-hidden','true'); }catch(_){ }
-    try{ el.style.pointerEvents = 'none'; }catch(_){ }
-  }
-  window.__cwfPanicUnfreeze = function(){
-    try{ document.body.classList.remove('menu-open'); }catch(_){ }
-    hide('menu_overlay');
-    hide('menu_drawer');
-    hide('addr_modal');
-    hide('addr_overlay');
-    try{ document.body.style.overflow = ''; }catch(_){ }
-  };
-
-  // เรียกทันทีหลัง DOM พร้อม (กันเคสค้างตั้งแต่เปิดหน้า)
-  document.addEventListener('DOMContentLoaded', function(){
-    try{ window.__cwfPanicUnfreeze(); }catch(_){ }
-  });
-  // กัน BFCache (มือถือ/LINE in-app) กลับมาหน้าเดิมแล้ว overlay ยังอยู่
-  window.addEventListener('pageshow', function(){
-    try{ window.__cwfPanicUnfreeze(); }catch(_){ }
-  });
-  document.addEventListener('visibilitychange', function(){
-    if(document.visibilityState === 'visible'){
-      try{ window.__cwfPanicUnfreeze(); }catch(_){ }
-    }
-  });
+  // HARD-FALLBACK: บางเครื่องมี overlay/stacking แปลก ทำให้กดปุ่ม ☰ ไม่ติด
+  // ใช้ capture listener เช็คพิกัดบริเวณปุ่มเมนู แล้ว toggle ให้เสมอ (ไม่กระทบหน้าอื่น)
+  document.addEventListener('click', (ev)=>{
+    try{
+      const btn = document.getElementById('menu_btn');
+      if(!btn) return;
+      const r = btn.getBoundingClientRect();
+      const x = ev?.clientX ?? -1;
+      const y = ev?.clientY ?? -1;
+      const hit = (x >= r.left-6 && x <= r.right+6 && y >= r.top-6 && y <= r.bottom+6);
+      if(!hit) return;
+      // ถ้าคลิกโดนบริเวณปุ่มเมนู → toggle ทันที
+      ev.preventDefault();
+      ev.stopPropagation();
+      window.__cwfToggleMenu();
+      try{ window.__cwfDbgAppend && window.__cwfDbgAppend('🍔 menu hit (capture)'); }catch(_){ }
+    }catch(_){ }
+  }, true);
 })();
 
 // ------------------------------
