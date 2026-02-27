@@ -629,7 +629,11 @@ function getSingleServiceSelection(){
   const ac_type = document.getElementById("ac_type").value.trim();
   const btu = Number(document.getElementById("btu").value || 0);
   const machine_count = Math.max(1, Number(document.getElementById("machine_count").value || 1));
-  const wash_variant = document.getElementById("wash_variant").value.trim();
+  // IMPORTANT:
+  // - Wash variants are ONLY applicable to wall-type AC (ผนัง)
+  // - For non-wall AC types, do NOT send wash_variant (keep empty) per requirement
+  const wash_variant_raw = document.getElementById("wash_variant").value.trim();
+  const wash_variant = (job_type === 'ล้าง' && ac_type === 'ผนัง') ? wash_variant_raw : '';
   const repair_variant = document.getElementById("repair_variant").value.trim();
   return { job_type, ac_type, btu, machine_count, wash_variant, repair_variant };
 }
@@ -700,17 +704,10 @@ function clearServiceLinesCustomer(){
 
 function addServiceLineCustomerFromCurrent(){
   const cur = getSingleServiceSelection();
-  if(serviceLinesCustomer.length){
-    const jt0 = String(serviceLinesCustomer[0].job_type||'').trim();
-    const jt = String(cur.job_type||'').trim();
-    if(jt0 && jt && jt0 !== jt){
-      return alert('ต้องเลือกประเภทงานให้เหมือนกัน (รวมหลายรายการได้เฉพาะงานประเภทเดียว)');
-    }
-  }
   if(!cur.job_type) return alert('เลือกประเภทงานก่อน');
   if(!cur.ac_type) return alert('เลือกประเภทแอร์ก่อน');
   if(!cur.btu) return alert('เลือก BTU ก่อน');
-  if(cur.job_type==='ล้าง' && !cur.wash_variant) return alert('เลือกวิธีการล้างก่อน');
+  if(cur.job_type==='ล้าง' && cur.ac_type==='ผนัง' && !cur.wash_variant) return alert('เลือกวิธีการล้างก่อน');
   if(cur.job_type==='ซ่อม' && !cur.repair_variant) return alert('เลือกประเภทซ่อมก่อน');
 
   serviceLinesCustomer.push(cur);
@@ -770,8 +767,8 @@ function updateWashOptionsByAcType(){
 
   const prev = (wash.value || '').trim();
 
-  // Wall type: full options
-  if(!ac_type || ac_type === 'ผนัง'){
+  // Wall type: full options (ONLY type that can choose wash variants)
+  if(ac_type === 'ผนัง'){
     wash.innerHTML = `
       <option value="ล้างธรรมดา">ล้างธรรมดา</option>
       <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
@@ -783,22 +780,22 @@ function updateWashOptionsByAcType(){
     return;
   }
 
-  // Non-wall types: use recognized keys (so pricing/duration/promo/matrix work)
-  // Price for non-wall is based on ac_type+BTU (wash_variant is informational), so keep only 2 choices.
-  wash.innerHTML = `
-    <option value="ล้างธรรมดา">ล้างมาตรฐาน</option>
-    <option value="ล้างพรีเมียม">ล้างลึก</option>
-  `.trim();
-  if(prev && Array.from(wash.options).some(o=>o.value===prev)) wash.value = prev;
-  else wash.value = 'ล้างธรรมดา';
+  // Non-wall types: do NOT provide wash variant choices (per requirement)
+  wash.innerHTML = '';
+  wash.value = '';
 }
 
 function showVariantFields(){
   const job_type = document.getElementById("job_type").value.trim();
+  const ac_type = document.getElementById("ac_type").value.trim();
   const wash = document.getElementById("wash_variant");
   const rep = document.getElementById("repair_variant");
   updateWashOptionsByAcType();
-  wash.style.display = job_type === "ล้าง" ? "block" : "none";
+  // Wash variants are shown ONLY when job_type=ล้าง and ac_type=ผนัง
+  wash.style.display = (job_type === "ล้าง" && ac_type === "ผนัง") ? "block" : "none";
+  if(wash.style.display === 'none') {
+    wash.value = '';
+  }
   rep.style.display = job_type === "ซ่อม" ? "block" : "none";
 }
 
@@ -918,18 +915,42 @@ async function loadSlots(){
   </div>`;
 
   const payload = getPayloadV2();
-  // ✅ ให้ลูกค้าเลือกข้อมูลบริการให้ครบก่อนค่อยโหลดคิวว่าง
-  if (!payload.job_type || !payload.ac_type || !payload.btu || !payload.machine_count) {
-    slotsBox.textContent = "กรุณาเลือก: ประเภทงาน / ประเภทแอร์ / BTU / จำนวนเครื่อง ก่อน";
-    return;
-  }
-  if (payload.job_type === "ล้าง" && !payload.wash_variant) {
-    slotsBox.textContent = "กรุณาเลือกประเภทการล้างก่อน";
-    return;
-  }
-  if (payload.job_type === "ซ่อม" && !payload.repair_variant) {
-    slotsBox.textContent = "กรุณาเลือกประเภทงานซ่อมก่อน";
-    return;
+
+  // ✅ Validate service selection before loading slots
+  const hasLines = Array.isArray(serviceLinesCustomer) && serviceLinesCustomer.length > 0;
+  if (hasLines) {
+    for (const s of serviceLinesCustomer) {
+      const jt = String(s?.job_type || '').trim();
+      const ac = String(s?.ac_type || '').trim();
+      const btu = Number(s?.btu || 0);
+      const mc = Number(s?.machine_count || 0);
+      if (!jt || !ac || !btu || !mc) {
+        slotsBox.textContent = "กรุณาเพิ่มรายการบริการให้ครบ (ประเภทงาน/ประเภทแอร์/BTU/จำนวนเครื่อง)";
+        return;
+      }
+      if (jt === 'ล้าง' && ac === 'ผนัง' && !String(s?.wash_variant || '').trim()) {
+        slotsBox.textContent = "กรุณาเลือกประเภทการล้าง (เฉพาะแอร์ผนัง)";
+        return;
+      }
+      if (jt === 'ซ่อม' && !String(s?.repair_variant || '').trim()) {
+        slotsBox.textContent = "กรุณาเลือกประเภทงานซ่อมก่อน";
+        return;
+      }
+    }
+  } else {
+    // single selection mode
+    if (!payload.job_type || !payload.ac_type || !payload.btu || !payload.machine_count) {
+      slotsBox.textContent = "กรุณาเลือก: ประเภทงาน / ประเภทแอร์ / BTU / จำนวนเครื่อง ก่อน";
+      return;
+    }
+    if (payload.job_type === "ล้าง" && payload.ac_type === 'ผนัง' && !payload.wash_variant) {
+      slotsBox.textContent = "กรุณาเลือกประเภทการล้าง (เฉพาะแอร์ผนัง)";
+      return;
+    }
+    if (payload.job_type === "ซ่อม" && !payload.repair_variant) {
+      slotsBox.textContent = "กรุณาเลือกประเภทงานซ่อมก่อน";
+      return;
+    }
   }
 
   await refreshPricing(); // อัปเดต durationMin ก่อน
@@ -939,11 +960,16 @@ async function loadSlots(){
   const tech_type = urgent ? "partner" : "company";
 
   // ส่ง criteria ไปให้ server filter ตาม service matrix (Option B)
-  const url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`
-    + `&job_type=${encodeURIComponent(payload.job_type||'')}`
-    + `&ac_type=${encodeURIComponent(payload.ac_type||'')}`
-    + `&wash_variant=${encodeURIComponent(payload.wash_variant||'')}`
-    + `&repair_variant=${encodeURIComponent(payload.repair_variant||'')}`;
+  // - If multi-service lines exist, pass services=<JSON>
+  let url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`;
+  if (hasLines) {
+    url += `&services=${encodeURIComponent(JSON.stringify(serviceLinesCustomer))}`;
+  } else {
+    url += `&job_type=${encodeURIComponent(payload.job_type||'')}`
+      + `&ac_type=${encodeURIComponent(payload.ac_type||'')}`
+      + `&wash_variant=${encodeURIComponent(payload.wash_variant||'')}`
+      + `&repair_variant=${encodeURIComponent(payload.repair_variant||'')}`;
+  }
 
   fetch(url)
     .then(r=>r.json())
