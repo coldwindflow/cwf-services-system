@@ -9216,7 +9216,11 @@ app.get("/public/availability_v2", async (req, res) => {
   }
 
   try {
-    const techsAll = await listTechniciansByType(tech_type, { include_paused: forced });
+    // Customer booking must NOT depend on technician "open/close accept jobs" status.
+    // The accept_status (paused/ready) is reserved for the "urgent push" flow only.
+    // Therefore, availability should always include paused technicians.
+    // (Admin lock forced=1 remains meaningful for other rules like weekly off-days handling.)
+    const techsAll = await listTechniciansByType(tech_type, { include_paused: true });
     // workday overrides (block forced lock on off-days)
     const offMap = await buildOffMapForDate(date, techsAll.map(t => t.username));
     const techs = techsAll.filter(t => {
@@ -9284,7 +9288,7 @@ app.get("/public/availability_v2", async (req, res) => {
     const tech_count = techsFiltered.length;
 
     if (debugFlag && tech_count === 0) {
-      debugReasons.push({ code: 'NO_TECH', message: 'ไม่มีช่างที่ตรงเงื่อนไข (tech_type/forced/วันหยุด) — ตรวจที่หน้า ช่าง/วันหยุด/accept_status' });
+      debugReasons.push({ code: 'NO_TECH', message: 'ไม่มีช่างที่ตรงเงื่อนไข (tech_type/วันหยุด/สิทธิ์งาน) — หมายเหตุ: โหมดเปิด/ปิดรับงาน (accept_status) ไม่ถูกนำมาใช้กับการจองของลูกค้า' });
     }
     // ✅ Crew sizing / parallel work preview
     // ตามสเปก CWF:
@@ -9618,12 +9622,13 @@ app.get("/public/availability", async (req, res) => {
   const slotMin = Math.max(15, Math.min(120, Number(req.query.slot_min || 30)));
 
   try {
+    // Customer booking availability must NOT depend on technician open/close status.
+    // accept_status is reserved for urgent push offer flow only.
     const techR = await pool.query(`
       SELECT COUNT(*)::int AS cnt
       FROM public.users u
       LEFT JOIN public.technician_profiles p ON p.username=u.username
       WHERE u.role='technician'
-        AND COALESCE(p.accept_status,'ready') <> 'paused'
     `);
     const techCount = techR.rows[0]?.cnt || 0;
 
