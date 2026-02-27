@@ -10,51 +10,55 @@
 </head>
 <body class="theme-2 customer-page">
   <div class="app">
-    <div class="topbar">
-      <div class="brand">
-        <img src="/logo.png" alt="CWF">
-        <div class="title">
-          <b>📅 จองคิวงาน (ลูกค้า)</b>
-          <span class="muted">Coldwindflow air services</span>
-        </div>
-      </div>
-      <div class="top-actions">
-        <button id="menu_btn" class="hamburger" type="button" aria-label="เมนู" aria-expanded="false">
-          <span class="hb-line"></span>
-          <span class="hb-line"></span>
-          <span class="hb-line"></span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Premium hamburger menu (mobile friendly) -->
-    <div id="menu_overlay" class="menu-overlay" style="display:none;"></div>
-    <div id="menu_drawer" class="menu-drawer" style="display:none;" aria-hidden="true">
-      <div class="menu-head">
-        <div class="menu-head-left">
-          <img src="/logo.png" alt="CWF" class="menu-logo">
-          <div>
-            <div class="menu-title"><b>CWF Menu</b></div>
-            <div class="muted" style="font-size:12px;">Coldwindflow air services</div>
+    <!-- Top nav (admin/tech-like) with customer theme -->
+    <div id="custTopNav">
+      <div class="in">
+        <div class="brand">
+          <img src="/logo.png" alt="CWF">
+          <div class="title">
+            <b>📅 จองคิวงาน (ลูกค้า)</b>
+            <span>Coldwindflow air services</span>
           </div>
         </div>
-        <button id="menu_close" class="icon-btn" type="button" aria-label="ปิดเมนู">✕</button>
+        <button id="menu_btn" class="cust-icbtn" type="button" aria-label="เมนู" aria-expanded="false">☰</button>
       </div>
+    </div>
+    <div id="custTopSpacer" aria-hidden="true"></div>
 
-      <div class="menu-section">
-        <div id="auth_box" class="auth-box" style="margin:0;">
-          <a id="line_login_btn" class="menu-btn" href="/auth/line">✅ Login ด้วย LINE</a>
-          <a id="register_btn" class="menu-btn" style="display:none;" href="/register">📍 เพิ่มที่อยู่</a>
-          <div id="me_badge" class="me-badge" style="display:none;">
+    <!-- Drawer menu (admin/tech-like) -->
+    <div id="menu_overlay" class="cust-drawer-backdrop" style="display:none;"></div>
+    <div id="menu_drawer" class="cust-drawer" style="display:none;" aria-hidden="true">
+      <div class="panel">
+        <div class="custMenuHead">
+          <b>เมนู</b>
+          <button id="menu_close" class="cust-icbtn close" type="button" aria-label="ปิดเมนู">✕</button>
+        </div>
+
+        <div class="custMenuList">
+          <a id="line_login_btn" class="custMenuBtn" href="/auth/line">
+            <span class="left">✅ Login ด้วย LINE</span>
+            <span class="sub">เข้าสู่ระบบ</span>
+          </a>
+          <a id="register_btn" class="custMenuBtn" style="display:none;" href="/register">
+            <span class="left">📍 เพิ่มที่อยู่</span>
+            <span class="sub">บันทึกข้อมูล</span>
+          </a>
+          <div id="me_badge" class="me-badge" style="display:none;margin-top:6px;">
             <img id="me_pic" alt="" class="me-pic">
             <b id="me_name" class="me-name"></b>
           </div>
-        </div>
-      </div>
 
-      <div class="menu-section">
-        <button class="menu-btn" type="button" onclick="location.href='/install-quote'">🧮 คำนวณติดตั้ง</button>
-        <button class="menu-btn" type="button" onclick="location.href='/track.html'">🔎 ติดตามงาน</button>
+          <button class="custMenuBtn" type="button" onclick="location.href='/install-quote'">
+            <span class="left">🧮 คำนวณติดตั้ง</span>
+            <span class="sub">เช็คราคา</span>
+          </button>
+          <button class="custMenuBtn" type="button" onclick="location.href='/track.html'">
+            <span class="left">🔎 ติดตามงาน</span>
+            <span class="sub">เช็คสถานะ</span>
+          </button>
+        </div>
+
+        <div class="custMenuSmall">Coldwindflow air services</div>
       </div>
     </div>
 
@@ -107,12 +111,7 @@
         </div>
 
         <!-- move wash/repair variant right under BTU (above machine count) -->
-        <select id="wash_variant" style="margin-top:8px;display:none;">
-          <option value="ล้างธรรมดา">ล้างธรรมดา</option>
-          <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
-          <option value="ล้างแขวนคอยน์">ล้างแบบแขวนคอยล์</option>
-          <option value="ล้างแบบตัดล้าง">ตัดล้างใหญ่</option>
-        </select>
+        <select id="wash_variant" style="margin-top:8px;display:none;"></select>
 
         <select id="repair_variant" style="margin-top:8px;display:none;">
           <option value="ตรวจเช็ค">ตรวจเช็ค (500)</option>
@@ -564,10 +563,40 @@ function getPayloadV2(){
   return { job_type, ac_type, btu, machine_count, wash_variant, repair_variant };
 }
 
+function updateWashOptionsByAcType(){
+  const ac_type = document.getElementById("ac_type").value.trim();
+  const wash = document.getElementById("wash_variant");
+  if(!wash) return;
+
+  const prev = (wash.value || '').trim();
+
+  // Wall type: full options
+  if(!ac_type || ac_type === 'ผนัง'){
+    wash.innerHTML = `
+      <option value="ล้างธรรมดา">ล้างธรรมดา</option>
+      <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
+      <option value="ล้างแขวนคอยน์">ล้างแบบแขวนคอยล์</option>
+      <option value="ล้างแบบตัดล้าง">ตัดล้างใหญ่</option>
+    `.trim();
+    if(prev && Array.from(wash.options).some(o=>o.value===prev)) wash.value = prev;
+    else wash.value = 'ล้างธรรมดา';
+    return;
+  }
+
+  // Non-wall types: keep choices visible
+  wash.innerHTML = `
+    <option value="ล้างมาตรฐาน">ล้างมาตรฐาน (เหมาะกับแอร์ประเภทนี้)</option>
+    <option value="ล้างลึก">ล้างลึก (ทำความสะอาดเชิงลึก)</option>
+  `.trim();
+  if(prev && Array.from(wash.options).some(o=>o.value===prev)) wash.value = prev;
+  else wash.value = 'ล้างมาตรฐาน';
+}
+
 function showVariantFields(){
   const job_type = document.getElementById("job_type").value.trim();
   const wash = document.getElementById("wash_variant");
   const rep = document.getElementById("repair_variant");
+  updateWashOptionsByAcType();
   wash.style.display = job_type === "ล้าง" ? "block" : "none";
   rep.style.display = job_type === "ซ่อม" ? "block" : "none";
 }
@@ -919,6 +948,8 @@ function downloadIcsForBooking(){
     updateLoadSlotsEnabled();
   });
 });
+
+// (menu handlers are defined at the end of file)
 document.getElementById("urgent_toggle").addEventListener("change", ()=>{ /* slots refresh optional */ });
 document.getElementById("date").addEventListener("change", ()=>{ updateLoadSlotsEnabled(); });
 
@@ -1032,7 +1063,7 @@ loadFormDraft();
 updateMapsPreview(); // refresh preview after autofill
 updateConfirmSummary();
 
-// Hamburger menu (customer)
+// Drawer menu (customer)
 function openCustomerMenu(){
   const ov = document.getElementById('menu_overlay');
   const dr = document.getElementById('menu_drawer');
@@ -1051,7 +1082,11 @@ function closeCustomerMenu(){
   if(btn) btn.setAttribute('aria-expanded','false');
   document.body.style.overflow = '';
 }
-document.getElementById('menu_btn')?.addEventListener('click', openCustomerMenu);
+document.getElementById('menu_btn')?.addEventListener('click', ()=>{
+  const dr = document.getElementById('menu_drawer');
+  const isOpen = dr && dr.style.display === 'block';
+  isOpen ? closeCustomerMenu() : openCustomerMenu();
+});
 document.getElementById('menu_overlay')?.addEventListener('click', closeCustomerMenu);
 document.getElementById('menu_close')?.addEventListener('click', closeCustomerMenu);
 document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeCustomerMenu(); });
