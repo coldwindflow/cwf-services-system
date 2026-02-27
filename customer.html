@@ -127,15 +127,21 @@
     <div class="card service-card">
       <h2>1) เลือกบริการ</h2>
 
-      <div class="service-grid">
-        <select id="job_type">
-          <option value="">-- เลือกประเภทงาน --</option>
-          <option value="ล้าง">ล้าง</option>
-          <option value="ซ่อม">ซ่อม</option>
-          <option value="ติดตั้ง">ติดตั้ง</option>
-        </select>
+      <!-- ทำ layout ให้เหมือนหน้าแอดมินเพิ่มงาน (แต่ใช้โทนลูกค้า) -->
+      <div class="muted2 mini">เพิ่ม “รายการบริการหลัก” ได้หลายบรรทัด เช่น ล้างผนัง 1 + ล้างสี่ทิศทาง 1 + ติดตั้ง 1 ในใบงานเดียว</div>
 
-        <div class="grid2">
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>ประเภทงาน</label>
+          <select id="job_type">
+            <option value="">-- เลือกประเภทงาน --</option>
+            <option value="ล้าง">ล้าง</option>
+            <option value="ซ่อม">ซ่อม</option>
+            <option value="ติดตั้ง">ติดตั้ง</option>
+          </select>
+        </div>
+        <div>
+          <label>ประเภทแอร์</label>
           <select id="ac_type">
             <option value="">-- ประเภทแอร์ --</option>
             <option value="ผนัง">ผนัง (Wall Type)</option>
@@ -143,6 +149,12 @@
             <option value="แขวน">แขวน</option>
             <option value="เปลือยใต้ฝ้า">เปลือยใต้ฝ้า</option>
           </select>
+        </div>
+      </div>
+
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>BTU</label>
           <select id="btu">
             <option value="">เลือก BTU</option>
             <option value="9000">9,000</option>
@@ -156,76 +168,79 @@
             <option value="60000">60,000</option>
           </select>
         </div>
+        <div>
+          <label>โหมดงานด่วน</label>
+          <label class="cwf-switch" style="margin-top:8px;">
+            <input id="urgent_toggle" type="checkbox">
+            <span class="cwf-slider"></span>
+            <span class="muted2 mini" style="margin-left:10px;">ยิงงานให้ช่างรับ (อาจรับหรือไม่รับก็ได้)</span>
+          </label>
+        </div>
+      </div>
 
-        <!-- move wash/repair variant right under BTU (above machine count) -->
-        <select id="wash_variant" style="margin-top:8px;display:none;"></select>
+      <!-- PATCH: วิธีการล้าง (แสดงเฉพาะเมื่อ job=ล้าง และ ac=ผนัง) -->
+      <div id="variant_box_customer" style="margin-top:10px; display:none;">
+        <label>ประเภทการล้าง (เฉพาะแอร์ผนัง)</label>
+        <select id="wash_variant"></select>
+      </div>
 
-        <select id="repair_variant" style="margin-top:8px;display:none;">
+      <!-- ประเภทงานซ่อม (แสดงเฉพาะ job=ซ่อม) -->
+      <div id="repair_box_customer" style="margin-top:10px; display:none;">
+        <label>ประเภทงานซ่อม</label>
+        <select id="repair_variant">
           <option value="ตรวจเช็ค">ตรวจเช็ค (500)</option>
           <option value="ตรวจเช็ครั่ว">ตรวจเช็ครั่ว (1000)</option>
           <option value="ซ่อมเปลี่ยนอะไหล่">ซ่อมเปลี่ยนอะไหล่ (แอดมินกำหนด)</option>
         </select>
+      </div>
 
-        <div class="grid2" style="align-items:start;">
-          <div class="machine-box">
-            <div class="label">จำนวนเครื่อง</div>
-            <input id="machine_count" type="hidden" value="1">
-            <div class="stepper" aria-label="machine count" style="margin-top:8px;">
-              <button id="mc_minus" class="btn-round" type="button" aria-label="ลดจำนวน">−</button>
-              <div id="mc_value" class="value">1</div>
-              <button id="mc_plus" class="btn-round" type="button" aria-label="เพิ่มจำนวน">+</button>
+      <div class="grid2" style="margin-top:10px; align-items:start;">
+        <div>
+          <label>จำนวนเครื่อง</label>
+          <div class="mc-row">
+            <div class="stepper" aria-label="machine count">
+              <button id="mc_minus" class="btn-round" type="button" title="ลด">−</button>
+              <input id="machine_count" class="stepper-input" type="number" min="1" max="20" step="1" value="1" inputmode="numeric">
+              <button id="mc_plus" class="btn-round" type="button" title="เพิ่ม">+</button>
             </div>
-            <div class="muted" style="font-size:12px;margin-top:6px;">* เลือกจำนวนเครื่องเพื่อคำนวณราคา/เวลาโดยประมาณ</div>
-            <button id="btnAddServiceLineCustomer" type="button" class="custMiniBtn primary" style="margin-top:10px;width:100%;">➕ เพิ่มบริการนี้</button>
+            <button id="btnAddServiceLineCustomer" class="secondary" type="button" aria-label="เพิ่มรายการ">เพิ่มรายการ</button>
           </div>
-
-          <div class="urgent-card">
-            <label style="display:flex;align-items:flex-start;gap:10px;">
-              <input id="urgent_toggle" type="checkbox" style="transform:scale(1.2);margin-top:2px;">
-              <div>
-                <b>โหมดงานด่วน</b>
-                <div class="muted" style="margin-top:2px;">ยิงงานให้ช่างรับ (อาจรับหรือไม่รับก็ได้)</div>
-              </div>
-            </label>
-          </div>
+          <div class="muted2 mini" style="margin-top:6px;">* เพิ่มหลายรายการแล้วค่อยไปโหลดคิวว่างในหัวข้อ 2</div>
         </div>
 
-        <div class="estimate-bar">
-          <div class="estimate-left">
-            <div class="estimate-title">💵 ยอดรวมประมาณ</div>
-            <div class="estimate-sub muted">* เป็น “ประมาณการ” อาจปรับตามหน้างาน</div>
-          </div>
-          <div class="estimate-right">
-            <div class="estimate-amt"><span id="grand_total">0</span> บาท</div>
-            <div class="estimate-duration">⏱️ ระยะเวลาในการทำงาน: <b><span id="duration_min">-</span></b> นาที</div>
+        <div class="card card-lite" style="margin-top:0;">
+          <b>คำนวณอัตโนมัติ</b>
+          <div class="muted2 mini">ราคา/เวลา จะอัปเดตทันทีเมื่อเปลี่ยนค่า</div>
+          <div style="margin-top:10px">
+            <div><span class="muted2">ยอดรวมประมาณ:</span> <b><span id="grand_total">0</span></b> บาท</div>
+            <div><span class="muted2">ระยะเวลา:</span> <b><span id="duration_min">-</span></b> นาที</div>
           </div>
         </div>
+      </div>
 
-        <!-- keep these ids for existing logic (hidden but used) -->
-        <div style="display:none;">
-          <span id="standard_price">-</span>
+      <!-- keep these ids for existing logic (hidden but used) -->
+      <div style="display:none;">
+        <span id="standard_price">-</span>
+      </div>
+
+      <div class="promo-card" style="margin-top:12px;">
+        <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
+          <b>🎁 โปรโมชั่น</b>
+          <select id="promotion_select_customer" style="width:auto;min-width:220px;"></select>
         </div>
 
-        <div class="promo-card">
+        <div id="multi_service_box_customer" class="card card-lite" style="margin-top:12px;display:none;">
           <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
-            <b>🎁 โปรโมชั่น</b>
-            <select id="promotion_select_customer" style="width:auto;min-width:220px;"></select>
+            <div>
+              <b>หลายรายการในใบงานเดียว</b>
+              <div class="muted2 mini">เพิ่ม “รายการบริการหลัก” ได้หลายบรรทัดเหมือนหน้าแอดมิน</div>
+            </div>
+            <button id="btnClearServiceLinesCustomer" type="button" class="secondary" style="width:auto;">ล้างทั้งหมด</button>
           </div>
-          
-
-<div id="multi_service_box_customer" class="multi-service-card" style="margin-top:12px;display:none;">
-  <div style="display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap;">
-    <b>🧩 รายการบริการ (หลายรายการ)</b>
-    <button id="btnClearServiceLinesCustomer" type="button" class="custMiniBtn" style="width:auto;">ล้างทั้งหมด</button>
-  </div>
-  <div class="muted" style="margin-top:6px;">* กด “เพิ่มบริการนี้” เพื่อรวมหลายประเภทในงานเดียว เช่น ผนัง 1 + สี่ทิศทาง 1 + แขวน 1</div>
-  <div id="service_lines_customer" style="margin-top:10px;"></div>
-</div>
-
-<div class="muted" style="margin-top:6px;">* ระบบเลือกโปรโมชั่นให้อัตโนมัติตามเงื่อนไข (จำนวนเครื่อง/BTU/ประเภทแอร์/วิธีการล้าง)</div>
+          <div id="service_lines_customer" style="margin-top:10px;"></div>
         </div>
 
-        
+        <div class="muted2 mini" style="margin-top:6px;">* ระบบเลือกโปรโมชั่นให้อัตโนมัติตามเงื่อนไข (จำนวนเครื่อง/BTU/ประเภทแอร์/วิธีการล้าง)</div>
       </div>
     </div>
 
@@ -547,20 +562,19 @@ let lastSlotsResp = null;     // cache last availability response
 // PATCH: machine count stepper
 function bindMachineCountStepper(){
   const input = document.getElementById('machine_count');
-  const val = document.getElementById('mc_value');
   const minus = document.getElementById('mc_minus');
   const plus = document.getElementById('mc_plus');
-  if(!input || !val || !minus || !plus) return;
+  if(!input || !minus || !plus) return;
   const set = async (n)=>{
-    const v = Math.max(1, Math.min(10, Number(n)||1));
+    const v = Math.max(1, Math.min(20, Number(n)||1));
     input.value = String(v);
-    val.textContent = String(v);
     showVariantFields();
     await refreshPricing();
     updateLoadSlotsEnabled();
   };
   minus.addEventListener('click', ()=> set(Number(input.value||1)-1));
   plus.addEventListener('click', ()=> set(Number(input.value||1)+1));
+  input.addEventListener('change', ()=> set(Number(input.value||1)));
   set(input.value||1);
 }
 
@@ -629,11 +643,7 @@ function getSingleServiceSelection(){
   const ac_type = document.getElementById("ac_type").value.trim();
   const btu = Number(document.getElementById("btu").value || 0);
   const machine_count = Math.max(1, Number(document.getElementById("machine_count").value || 1));
-  // IMPORTANT:
-  // - Wash variants are ONLY applicable to wall-type AC (ผนัง)
-  // - For non-wall AC types, do NOT send wash_variant (keep empty) per requirement
-  const wash_variant_raw = document.getElementById("wash_variant").value.trim();
-  const wash_variant = (job_type === 'ล้าง' && ac_type === 'ผนัง') ? wash_variant_raw : '';
+  const wash_variant = document.getElementById("wash_variant").value.trim();
   const repair_variant = document.getElementById("repair_variant").value.trim();
   return { job_type, ac_type, btu, machine_count, wash_variant, repair_variant };
 }
@@ -707,7 +717,7 @@ function addServiceLineCustomerFromCurrent(){
   if(!cur.job_type) return alert('เลือกประเภทงานก่อน');
   if(!cur.ac_type) return alert('เลือกประเภทแอร์ก่อน');
   if(!cur.btu) return alert('เลือก BTU ก่อน');
-  if(cur.job_type==='ล้าง' && cur.ac_type==='ผนัง' && !cur.wash_variant) return alert('เลือกวิธีการล้างก่อน');
+  if(cur.job_type==='ล้าง' && cur.ac_type==='ผนัง' && !cur.wash_variant) return alert('เลือกประเภทการล้างก่อน');
   if(cur.job_type==='ซ่อม' && !cur.repair_variant) return alert('เลือกประเภทซ่อมก่อน');
 
   serviceLinesCustomer.push(cur);
@@ -724,7 +734,7 @@ function autoPickPromotionCustomer(){
     ps.value = '';
     return;
   }
-  if(payload.job_type === 'ล้าง' && !payload.wash_variant){
+  if(payload.job_type === 'ล้าง' && payload.ac_type === 'ผนัง' && !payload.wash_variant){
     ps.value = '';
     return;
   }
@@ -767,8 +777,8 @@ function updateWashOptionsByAcType(){
 
   const prev = (wash.value || '').trim();
 
-  // Wall type: full options (ONLY type that can choose wash variants)
-  if(ac_type === 'ผนัง'){
+  // Wall type: full options (4 แบบ)
+  if(!ac_type || ac_type === 'ผนัง'){
     wash.innerHTML = `
       <option value="ล้างธรรมดา">ล้างธรรมดา</option>
       <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
@@ -780,7 +790,7 @@ function updateWashOptionsByAcType(){
     return;
   }
 
-  // Non-wall types: do NOT provide wash variant choices (per requirement)
+  // Non-wall types: ไม่ต้องให้เลือกประเภทการล้าง
   wash.innerHTML = '';
   wash.value = '';
 }
@@ -790,13 +800,20 @@ function showVariantFields(){
   const ac_type = document.getElementById("ac_type").value.trim();
   const wash = document.getElementById("wash_variant");
   const rep = document.getElementById("repair_variant");
+  const vb = document.getElementById('variant_box_customer');
+  const rb = document.getElementById('repair_box_customer');
+
   updateWashOptionsByAcType();
-  // Wash variants are shown ONLY when job_type=ล้าง and ac_type=ผนัง
-  wash.style.display = (job_type === "ล้าง" && ac_type === "ผนัง") ? "block" : "none";
-  if(wash.style.display === 'none') {
-    wash.value = '';
-  }
-  rep.style.display = job_type === "ซ่อม" ? "block" : "none";
+
+  // แสดง “ประเภทการล้าง” เฉพาะ (ล้าง + ผนัง)
+  const showWash = (job_type === 'ล้าง' && ac_type === 'ผนัง');
+  if(vb) vb.style.display = showWash ? 'block' : 'none';
+  if(!showWash && wash){ wash.value = ''; }
+
+  // ซ่อม: แสดง repair box
+  const showRepair = (job_type === 'ซ่อม');
+  if(rb) rb.style.display = showRepair ? 'block' : 'none';
+  if(rep) rep.style.display = showRepair ? 'block' : 'none';
 }
 
 async function refreshPricing(){
@@ -915,40 +932,22 @@ async function loadSlots(){
   </div>`;
 
   const payload = getPayloadV2();
+  // ✅ ให้ลูกค้าเลือกข้อมูลบริการให้ครบก่อนค่อยโหลดคิวว่าง
+  const validateOne = (p)=>{
+    if (!p.job_type || !p.ac_type || !p.btu || !p.machine_count) return false;
+    if (p.job_type === 'ล้าง' && p.ac_type === 'ผนัง' && !p.wash_variant) return false;
+    if (p.job_type === 'ซ่อม' && !p.repair_variant) return false;
+    return true;
+  };
 
-  // ✅ Validate service selection before loading slots
-  const hasLines = Array.isArray(serviceLinesCustomer) && serviceLinesCustomer.length > 0;
-  if (hasLines) {
-    for (const s of serviceLinesCustomer) {
-      const jt = String(s?.job_type || '').trim();
-      const ac = String(s?.ac_type || '').trim();
-      const btu = Number(s?.btu || 0);
-      const mc = Number(s?.machine_count || 0);
-      if (!jt || !ac || !btu || !mc) {
-        slotsBox.textContent = "กรุณาเพิ่มรายการบริการให้ครบ (ประเภทงาน/ประเภทแอร์/BTU/จำนวนเครื่อง)";
-        return;
-      }
-      if (jt === 'ล้าง' && ac === 'ผนัง' && !String(s?.wash_variant || '').trim()) {
-        slotsBox.textContent = "กรุณาเลือกประเภทการล้าง (เฉพาะแอร์ผนัง)";
-        return;
-      }
-      if (jt === 'ซ่อม' && !String(s?.repair_variant || '').trim()) {
-        slotsBox.textContent = "กรุณาเลือกประเภทงานซ่อมก่อน";
-        return;
-      }
-    }
-  } else {
-    // single selection mode
-    if (!payload.job_type || !payload.ac_type || !payload.btu || !payload.machine_count) {
-      slotsBox.textContent = "กรุณาเลือก: ประเภทงาน / ประเภทแอร์ / BTU / จำนวนเครื่อง ก่อน";
+  if(payload.services && Array.isArray(payload.services) && payload.services.length){
+    if(!payload.services.every(validateOne)){
+      slotsBox.textContent = "กรุณาเลือกข้อมูลให้ครบทุกบรรทัด (ประเภทงาน/ประเภทแอร์/BTU/จำนวนเครื่อง และกรณีล้างผนังต้องเลือกประเภทการล้าง)";
       return;
     }
-    if (payload.job_type === "ล้าง" && payload.ac_type === 'ผนัง' && !payload.wash_variant) {
-      slotsBox.textContent = "กรุณาเลือกประเภทการล้าง (เฉพาะแอร์ผนัง)";
-      return;
-    }
-    if (payload.job_type === "ซ่อม" && !payload.repair_variant) {
-      slotsBox.textContent = "กรุณาเลือกประเภทงานซ่อมก่อน";
+  }else{
+    if(!validateOne(payload)){
+      slotsBox.textContent = "กรุณาเลือกข้อมูลให้ครบก่อน (ประเภทงาน/ประเภทแอร์/BTU/จำนวนเครื่อง และกรณีล้างผนังต้องเลือกประเภทการล้าง)";
       return;
     }
   }
@@ -960,11 +959,10 @@ async function loadSlots(){
   const tech_type = urgent ? "partner" : "company";
 
   // ส่ง criteria ไปให้ server filter ตาม service matrix (Option B)
-  // - If multi-service lines exist, pass services=<JSON>
   let url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`;
-  if (hasLines) {
-    url += `&services=${encodeURIComponent(JSON.stringify(serviceLinesCustomer))}`;
-  } else {
+  if(payload.services && Array.isArray(payload.services) && payload.services.length){
+    url += `&services=${encodeURIComponent(JSON.stringify(payload.services))}`;
+  }else{
     url += `&job_type=${encodeURIComponent(payload.job_type||'')}`
       + `&ac_type=${encodeURIComponent(payload.ac_type||'')}`
       + `&wash_variant=${encodeURIComponent(payload.wash_variant||'')}`

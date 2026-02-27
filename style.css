@@ -1843,6 +1843,29 @@ a:hover{ text-decoration: underline; }
 .customer-page .slot-chip.is-full .t{ color: rgba(2,6,23,0.78); }
 .customer-page .slot-chip.is-full .m{ color: rgba(71,85,105,0.92); }
 
+/* Admin-like UI helpers for customer (match admin-add-v2 layout) */
+.customer-page .muted2{color:rgba(15,23,42,0.72);font-size:13px}
+.customer-page .mini{font-size:12px}
+.customer-page label{display:block;font-weight:900;margin:0 0 6px;color:#0f172a}
+.customer-page .grid2{display:grid;grid-template-columns:1fr;gap:10px}
+@media (min-width: 720px){
+  .customer-page .grid2{grid-template-columns:1fr 1fr}
+}
+.customer-page .card-lite{border:1px solid rgba(15,23,42,0.10);background:rgba(255,255,255,0.86);box-shadow:0 10px 22px rgba(2,6,23,0.08)}
+.customer-page .mc-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.customer-page .stepper{display:flex;align-items:center;gap:8px}
+.customer-page .stepper-input{width:86px;height:40px;border-radius:14px;border:1px solid rgba(0,0,0,.12);text-align:center;font-weight:1100;background:#fff}
+.customer-page button.secondary{border:1px solid rgba(15,23,42,0.16);background:rgba(255,255,255,0.92);border-radius:14px;padding:10px 12px;font-weight:950;cursor:pointer}
+.customer-page button.secondary:active{transform:translateY(1px)}
+
+/* Toggle switch (reuse) */
+.customer-page .cwf-switch{display:flex;align-items:center;gap:10px;user-select:none}
+.customer-page .cwf-switch input{display:none}
+.customer-page .cwf-slider{width:46px;height:28px;border-radius:999px;background:rgba(15,23,42,0.18);position:relative;box-shadow:inset 0 0 0 1px rgba(15,23,42,0.18)}
+.customer-page .cwf-slider:after{content:'';position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#fff;box-shadow:0 8px 16px rgba(0,0,0,.18);transition:all .18s ease}
+.customer-page .cwf-switch input:checked + .cwf-slider{background:linear-gradient(135deg,#22c55e,#16a34a)}
+.customer-page .cwf-switch input:checked + .cwf-slider:after{left:21px}
+
 .customer-page .slot-chip.selected{
   background: linear-gradient(135deg, #2563eb, #06b6d4);
   border-color: rgba(255,255,255,0.10);
