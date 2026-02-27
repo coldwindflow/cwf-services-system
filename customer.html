@@ -20,7 +20,16 @@
             <span>Coldwindflow air services</span>
           </div>
         </div>
-        <button id="menu_btn" class="cust-icbtn" type="button" aria-label="เมนู" aria-expanded="false">☰</button>
+        <div class="custTopRight">
+          <!-- default: hamburger (not logged in) -->
+          <button id="menu_btn" class="cust-icbtn" type="button" aria-label="เมนู" aria-expanded="false">☰</button>
+
+          <!-- logged-in: customer avatar + logout -->
+          <button id="avatar_btn" class="cust-avatarbtn" type="button" aria-label="โปรไฟล์" aria-expanded="false" style="display:none;">
+            <img id="avatar_img" alt="" />
+          </button>
+          <button id="logout_btn" class="cust-logoutbtn" type="button" aria-label="ออกจากระบบ" title="ออกจากระบบ" style="display:none;">⎋</button>
+        </div>
       </div>
     </div>
     <div id="custTopSpacer" aria-hidden="true"></div>
@@ -55,6 +64,11 @@
           <button class="custMenuBtn" type="button" onclick="location.href='/track.html'">
             <span class="left">🔎 ติดตามงาน</span>
             <span class="sub">เช็คสถานะ</span>
+          </button>
+
+          <button id="drawer_logout_btn" class="custMenuBtn danger" type="button" style="display:none;">
+            <span class="left">⎋ ออกจากระบบ</span>
+            <span class="sub">Logout</span>
           </button>
         </div>
 
@@ -259,6 +273,13 @@ async function loadMe(){
     const badge = document.getElementById('me_badge');
     const pic = document.getElementById('me_pic');
     const name = document.getElementById('me_name');
+
+    const menuBtn = document.getElementById('menu_btn');
+    const avatarBtn = document.getElementById('avatar_btn');
+    const avatarImg = document.getElementById('avatar_img');
+    const logoutBtn = document.getElementById('logout_btn');
+    const drawerLogoutBtn = document.getElementById('drawer_logout_btn');
+
     if(j && j.logged_in){
       if(loginBtn) loginBtn.style.display = 'none';
       if(regBtn) regBtn.style.display = 'inline-flex';
@@ -269,14 +290,44 @@ async function loadMe(){
         if(u){ pic.src = u; pic.style.display='block'; }
         else { pic.style.display='none'; }
       }
+
+      // top-right: switch hamburger -> avatar + logout
+      if(menuBtn) menuBtn.style.display = 'none';
+      if(avatarBtn) avatarBtn.style.display = 'inline-flex';
+      if(logoutBtn) logoutBtn.style.display = 'inline-flex';
+      if(drawerLogoutBtn) drawerLogoutBtn.style.display = 'inline-flex';
+      const u2 = (j.user && j.user.picture) ? String(j.user.picture || '') : '';
+      if(avatarImg){
+        if(u2){ avatarImg.src = u2; avatarImg.style.display='block'; }
+        else { avatarImg.removeAttribute('src'); avatarImg.style.display='none'; }
+      }
+      if(avatarBtn){
+        // fallback icon when no picture
+        avatarBtn.classList.toggle('no-pic', !u2);
+      }
     }else{
       if(loginBtn) loginBtn.style.display = 'inline-flex';
       if(regBtn) regBtn.style.display = 'none';
       if(badge) badge.style.display = 'none';
+
+      if(menuBtn) menuBtn.style.display = 'inline-flex';
+      if(avatarBtn) avatarBtn.style.display = 'none';
+      if(logoutBtn) logoutBtn.style.display = 'none';
+      if(drawerLogoutBtn) drawerLogoutBtn.style.display = 'none';
     }
   }catch(_){
     // ignore
   }
+}
+
+async function customerLogout(){
+  try{
+    await fetch(`${API}/public/logout`, { method:'POST', credentials:'include' });
+  }catch(_){
+    // fallback
+    try{ location.href = '/public/logout'; return; }catch(e){}
+  }
+  try{ location.href = '/customer.html?logout=1'; }catch(_){ location.reload(); }
 }
 
 function showTopNoticeFromUrl(){
@@ -1071,18 +1122,22 @@ function openCustomerMenu(){
   const ov = document.getElementById('menu_overlay');
   const dr = document.getElementById('menu_drawer');
   const btn = document.getElementById('menu_btn');
+  const avatar = document.getElementById('avatar_btn');
   if(ov) ov.style.display = 'block';
   if(dr){ dr.style.display = 'block'; dr.setAttribute('aria-hidden','false'); }
   if(btn) btn.setAttribute('aria-expanded','true');
+  if(avatar) avatar.setAttribute('aria-expanded','true');
   document.body.style.overflow = 'hidden';
 }
 function closeCustomerMenu(){
   const ov = document.getElementById('menu_overlay');
   const dr = document.getElementById('menu_drawer');
   const btn = document.getElementById('menu_btn');
+  const avatar = document.getElementById('avatar_btn');
   if(ov) ov.style.display = 'none';
   if(dr){ dr.style.display = 'none'; dr.setAttribute('aria-hidden','true'); }
   if(btn) btn.setAttribute('aria-expanded','false');
+  if(avatar) avatar.setAttribute('aria-expanded','false');
   document.body.style.overflow = '';
 }
 document.getElementById('menu_btn')?.addEventListener('click', ()=>{
@@ -1090,9 +1145,17 @@ document.getElementById('menu_btn')?.addEventListener('click', ()=>{
   const isOpen = dr && dr.style.display === 'block';
   isOpen ? closeCustomerMenu() : openCustomerMenu();
 });
+document.getElementById('avatar_btn')?.addEventListener('click', ()=>{
+  const dr = document.getElementById('menu_drawer');
+  const isOpen = dr && dr.style.display === 'block';
+  isOpen ? closeCustomerMenu() : openCustomerMenu();
+});
 document.getElementById('menu_overlay')?.addEventListener('click', closeCustomerMenu);
 document.getElementById('menu_close')?.addEventListener('click', closeCustomerMenu);
 document.addEventListener('keydown', (e)=>{ if(e.key==='Escape') closeCustomerMenu(); });
+
+document.getElementById('logout_btn')?.addEventListener('click', customerLogout);
+document.getElementById('drawer_logout_btn')?.addEventListener('click', ()=>{ closeCustomerMenu(); customerLogout(); });
 
 loadMe();
 showTopNoticeFromUrl();

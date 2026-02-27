@@ -505,6 +505,16 @@ app.get('/public/me', (req, res) => {
   }
 });
 
+// Customer logout (clears LINE JWT cookie)
+app.get('/public/logout', (req, res) => {
+  try { clearCookie(res, 'cwf_token'); } catch (_) {}
+  return res.redirect('/customer.html?logout=1');
+});
+app.post('/public/logout', (req, res) => {
+  try { clearCookie(res, 'cwf_token'); } catch (_) {}
+  return res.json({ ok: true });
+});
+
 // =======================================
 // 📝 Customer Register (minimal)
 // - ต้อง login (LINE JWT)
