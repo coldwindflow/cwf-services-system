@@ -9120,7 +9120,30 @@ app.get("/public/availability_v2", async (req, res) => {
     repair_variant: q_repair_variant || null,
   };
 
-  const hasCriteria = Boolean(criteria.job || criteria.ac || criteria.wash || criteria.repair_variant);
+  // Multi-service criteria (customer booking can include multiple AC types in one job)
+  // Query param: services=<JSON.stringify([{job_type,ac_type,wash_variant}...])>
+  let criteriaList = null;
+  try {
+    const sRaw = req.query.services;
+    if (sRaw) {
+      const parsed = JSON.parse(String(sRaw));
+      if (Array.isArray(parsed) && parsed.length) {
+        criteriaList = parsed
+          .map((s) => ({
+            job: normalizeJobKey(s.job_type || q_job_type),
+            ac: normalizeAcKey(s.ac_type),
+            wash: normalizeWashKey(s.wash_variant),
+            repair_variant: String(s.repair_variant || '').trim() || null,
+          }))
+          .filter((c) => c.job && c.ac);
+        if (!criteriaList.length) criteriaList = null;
+      }
+    }
+  } catch (e) {
+    criteriaList = null;
+  }
+
+  const hasCriteria = Boolean(criteriaList?.length || criteria.job || criteria.ac || criteria.wash || criteria.repair_variant);
 
   async function loadServiceMatrixMap(usernames) {
     // NOTE: For customer booking we want strict filtering (no record => not eligible).
@@ -9159,6 +9182,14 @@ app.get("/public/availability_v2", async (req, res) => {
     return true;
   }
 
+  function techMatchesAllCriteriaStrict(matrix, list) {
+    if (!Array.isArray(list) || !list.length) return techMatchesMatrixStrict(matrix, criteria);
+    for (const c of list) {
+      if (!techMatchesMatrixStrict(matrix, c)) return false;
+    }
+    return true;
+  }
+
   try {
     const techsAll = await listTechniciansByType(tech_type, { include_paused: forced });
     // workday overrides (block forced lock on off-days)
@@ -9190,7 +9221,7 @@ app.get("/public/availability_v2", async (req, res) => {
         const u = String(t.username);
         if (!matrixMap.has(u)) return false;
         const mx = matrixMap.get(u) || null;
-        return techMatchesMatrixStrict(mx, criteria);
+        return techMatchesAllCriteriaStrict(mx, criteriaList || null);
       });
       if (debugFlag && techsFiltered.length === 0 && techs.length > 0) {
         debugReasons.push({ code: 'NO_MATCH_MATRIX', message: 'ไม่มีช่างที่เข้าเงื่อนไขตามสิทธิ์งานที่ตั้งไว้ (service matrix)' });
@@ -9670,7 +9701,82 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
   // - scheduled => company, urgent => partner
   const requestedTechType = bm === "urgent" ? "partner" : "company";
   try {
-    const techs = await listTechniciansByType(requestedTechType);
+    let techs = await listTechniciansByType(requestedTechType);
+
+    // Option B strict matrix filter for customer booking (supports multi-services)
+    // - If matrix DB read fails, skip filtering (fail-open) to avoid total outage.
+    // - Enforce customer_slot_visible=true (hide trainees/assistants from customer booking slots).
+    techs = techs.filter(t => t && t.customer_slot_visible !== false);
+    if (Array.isArray(payloadV2.services) && payloadV2.services.length) {
+      const normalizeJobKey = (s) => {
+        const v = String(s || '').toLowerCase();
+        if (!v) return null;
+        if (v.includes('ติดตั้ง')) return 'install';
+        if (v.includes('ซ่อม')) return 'repair';
+        if (v.includes('ล้าง')) return 'wash';
+        return null;
+      };
+      const normalizeAcKey = (s) => {
+        const v = String(s || '').toLowerCase();
+        if (!v) return null;
+        if (v.includes('ผนัง') || v.includes('wall')) return 'wall';
+        if (v.includes('สี่ทิศ') || v.includes('4') || v.includes('four')) return 'fourway';
+        if (v.includes('แขวน')) return 'hanging';
+        if (v.includes('ใต้ฝ้า') || v.includes('เปลือย') || v.includes('ฝัง')) return 'ceiling';
+        return null;
+      };
+      const normalizeWashKey = (s) => {
+        const v = String(s || '').toLowerCase();
+        if (!v) return null;
+        if (v.includes('ธรรมดา') || v.includes('normal')) return 'normal';
+        if (v.includes('พรีเมียม') || v.includes('premium')) return 'premium';
+        if (v.includes('แขวนคอย') || v.includes('coil')) return 'coil';
+        if (v.includes('ตัดล้าง') || v.includes('overhaul') || v.includes('ใหญ่')) return 'overhaul';
+        return null;
+      };
+      const listCriteria = payloadV2.services
+        .map(s => ({ job: normalizeJobKey(s.job_type || payloadV2.job_type), ac: normalizeAcKey(s.ac_type), wash: normalizeWashKey(s.wash_variant), repair_variant: (s.repair_variant || null) }))
+        .filter(c => c.job && c.ac);
+
+      const mustTrue = (obj, key) => {
+        if (!key) return true;
+        if (!obj || typeof obj !== 'object') return false;
+        return Boolean(obj[key]);
+      };
+      const techMatches = (mx, c) => {
+        if (!mx || typeof mx !== 'object') return false;
+        if (!mustTrue(mx.job_types, c.job)) return false;
+        if (!mustTrue(mx.ac_types, c.ac)) return false;
+        if (c.job === 'wash' && c.ac === 'wall') {
+          if (!mustTrue(mx.wash_wall_variants, c.wash)) return false;
+        }
+        return true;
+      };
+
+      // batch load matrices
+      let matrixOk = true;
+      const usernames = techs.map(t => String(t.username));
+      const matrixMap = new Map();
+      try {
+        const rMx = await pool.query(
+          `SELECT username, matrix_json FROM public.technician_service_matrix WHERE username = ANY($1::text[])`,
+          [usernames]
+        );
+        for (const row of (rMx.rows || [])) matrixMap.set(String(row.username), row.matrix_json || {});
+      } catch (e) {
+        matrixOk = false;
+        console.warn('[public_book] loadServiceMatrixMap failed:', e.message);
+      }
+
+      if (matrixOk && listCriteria.length) {
+        techs = techs.filter(t => {
+          const u = String(t.username);
+          if (!matrixMap.has(u)) return false; // strict
+          const mx = matrixMap.get(u) || null;
+          return listCriteria.every(c => techMatches(mx, c));
+        });
+      }
+    }
     // Timezone-safe: normalize appointment datetime once (Asia/Bangkok)
     const startIso = normalizeAppointmentDatetime(appointment_datetime);
     const tMin = toMin(String(startIso).slice(11, 16));
