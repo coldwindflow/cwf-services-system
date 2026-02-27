@@ -88,9 +88,11 @@ body{
   top: 0;
   z-index: 2600;
   padding-top: env(safe-area-inset-top);
-  background: linear-gradient(180deg, rgba(10, 35, 88, 0.98) 0%, rgba(11, 75, 179, 0.98) 100%);
-  border-bottom: 1px solid rgba(255,255,255,0.10);
-  box-shadow: 0 14px 40px rgba(2,6,23,0.22);
+  /* Keep the menu bar color consistent (single-tone premium blue) */
+  background: rgba(11, 75, 179, 0.98);
+  background: linear-gradient(180deg, rgba(11, 75, 179, 0.98) 0%, rgba(11, 75, 179, 0.98) 100%);
+  border-bottom: 1px solid rgba(255,255,255,0.12);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 14px 40px rgba(2,6,23,0.22);
 }
 .customer-page #custTopNav .in{
   max-width: 460px;
