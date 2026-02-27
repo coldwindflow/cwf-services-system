@@ -93,6 +93,11 @@ body{
   border-bottom: 1px solid rgba(15,23,42,0.10);
   box-shadow: 0 14px 40px rgba(2,6,23,0.10);
 }
+.customer-page #custTopNav,
+.customer-page #custTopNav *{
+  /* กันกรณี element อื่นทับแล้วทำให้กดเมนูไม่ได้ */
+  pointer-events: auto;
+}
 .customer-page #custTopNav .in{
   max-width: 460px;
   margin: 0 auto;

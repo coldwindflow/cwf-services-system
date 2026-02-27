@@ -26,9 +26,8 @@
         </div>
         <div class="custTopRight">
           <!-- menu + logout (no overlap) -->
-          <!-- Inline fallback: ensure menu is clickable even if JS init crashes -->
-          <button id="menu_btn" class="cust-icbtn" type="button" aria-label="เมนู" aria-expanded="false"
-            onclick="(function(){var dr=document.getElementById('menu_drawer'); if(dr && dr.style.display==='block'){ try{closeCustomerMenu();}catch(e){} } else { try{openCustomerMenu();}catch(e){} } })()">☰</button>
+          <!-- inline onclick fallback: กันกรณี JS init ส่วนอื่น crash แล้วเมนูกดไม่ได้ -->
+          <button id="menu_btn" class="cust-icbtn" type="button" aria-label="เมนู" aria-expanded="false" onclick="window.__cwfToggleMenu && window.__cwfToggleMenu()">☰</button>
           <button id="logout_btn" class="cust-logoutbtn" type="button" aria-label="ออกจากระบบ" title="ออกจากระบบ" style="display:none;">⎋</button>
         </div>
       </div>
@@ -36,12 +35,12 @@
     <div id="custTopSpacer" aria-hidden="true"></div>
 
     <!-- Drawer menu (admin/tech-like) -->
-    <div id="menu_overlay" class="cust-drawer-backdrop" style="display:none;" onclick="try{closeCustomerMenu();}catch(e){}"></div>
+    <div id="menu_overlay" class="cust-drawer-backdrop" style="display:none;" onclick="window.__cwfCloseMenu && window.__cwfCloseMenu()"></div>
     <div id="menu_drawer" class="cust-drawer" style="display:none;" aria-hidden="true">
       <div class="panel">
         <div class="custMenuHead">
           <b>เมนู</b>
-          <button id="menu_close" class="cust-icbtn close" type="button" aria-label="ปิดเมนู" onclick="try{closeCustomerMenu();}catch(e){}">✕</button>
+          <button id="menu_close" class="cust-icbtn close" type="button" aria-label="ปิดเมนู" onclick="window.__cwfCloseMenu && window.__cwfCloseMenu()">✕</button>
         </div>
 
         <div class="custMenuList">
@@ -328,6 +327,36 @@
 <script>
 const API = window.location.origin;
 
+// ===== Menu fallback (ต้องอยู่ก่อนโค้ดอื่น) =====
+// ป้องกันเคส JS error ก่อน bind listener → เมนู/ปุ่มกดไม่ได้
+(function(){
+  function openCustomerMenu(){
+    const ov = document.getElementById('menu_overlay');
+    const dr = document.getElementById('menu_drawer');
+    const btn = document.getElementById('menu_btn');
+    if(ov) ov.style.display = 'block';
+    if(dr){ dr.style.display = 'block'; dr.setAttribute('aria-hidden','false'); }
+    if(btn) btn.setAttribute('aria-expanded','true');
+    try{ document.body.style.overflow = 'hidden'; }catch(_){ }
+  }
+  function closeCustomerMenu(){
+    const ov = document.getElementById('menu_overlay');
+    const dr = document.getElementById('menu_drawer');
+    const btn = document.getElementById('menu_btn');
+    if(ov) ov.style.display = 'none';
+    if(dr){ dr.style.display = 'none'; dr.setAttribute('aria-hidden','true'); }
+    if(btn) btn.setAttribute('aria-expanded','false');
+    try{ document.body.style.overflow = ''; }catch(_){ }
+  }
+  window.__cwfToggleMenu = function(){
+    const dr = document.getElementById('menu_drawer');
+    const isOpen = !!(dr && dr.style.display === 'block');
+    isOpen ? closeCustomerMenu() : openCustomerMenu();
+  };
+  // เผื่อ overlay/close ถูกกด แต่ listener ปกติไม่ถูก bind
+  window.__cwfCloseMenu = closeCustomerMenu;
+})();
+
 async function loadMe(){
   try{
     const r = await fetch(`${API}/public/me`, { credentials: 'include' });
@@ -590,11 +619,7 @@ function isBookingFormReadyForSlots() {
 function updateLoadSlotsEnabled() {
   const btn = document.getElementById("loadSlotsBtn");
   if (!btn) return;
-  // UX: never hard-disable this button (mobile browsers can be flaky with date change events).
-  // We validate inside loadSlots() and show friendly messages instead.
-  btn.disabled = false;
-  btn.removeAttribute('disabled');
-  btn.setAttribute('aria-disabled', isBookingFormReadyForSlots() ? 'false' : 'true');
+  btn.disabled = !isBookingFormReadyForSlots();
 }
 
 // promos (customer)
@@ -923,78 +948,95 @@ function renderSlotsFromCache(){
 }
 
 async function loadSlots(){
+  const d = document.getElementById("date").value;
+  if(!d) return alert("เลือกวันที่ก่อน");
+  setPicked(null);
+
   const slotsBox = document.getElementById("slots");
   const controls = document.getElementById('slot_controls');
-  try{
-    const d = document.getElementById("date")?.value;
-    if(!d) return alert("เลือกวันที่ก่อน");
-    setPicked(null);
+  if(controls) controls.style.display = 'none';
+  slotsBox.innerHTML = `<div class="slot-skeleton">
+    <div class="sk-line"></div>
+    <div class="sk-chips">
+      ${Array.from({length:10}).map(()=>'<div class="sk-chip"></div>').join('')}
+    </div>
+  </div>`;
 
-    if(controls) controls.style.display = 'none';
-    if(slotsBox){
-      slotsBox.innerHTML = `<div class="slot-skeleton">
-        <div class="sk-line"></div>
-        <div class="sk-chips">
-          ${Array.from({length:10}).map(()=>'<div class="sk-chip"></div>').join('')}
-        </div>
-      </div>`;
-    }
+  const payload = getPayloadV2();
+  // ✅ ให้ลูกค้าเลือกข้อมูลบริการให้ครบก่อนค่อยโหลดคิวว่าง
+  const validateOne = (p)=>{
+    if (!p.job_type || !p.ac_type || !p.btu || !p.machine_count) return false;
+    if (p.job_type === 'ล้าง' && p.ac_type === 'ผนัง' && !p.wash_variant) return false;
+    if (p.job_type === 'ซ่อม' && !p.repair_variant) return false;
+    return true;
+  };
 
-    const payload = getPayloadV2();
-    // ✅ ให้ลูกค้าเลือกข้อมูลบริการให้ครบก่อนค่อยโหลดคิวว่าง
-    const validateOne = (p)=>{
-      if (!p.job_type || !p.ac_type || !p.btu || !p.machine_count) return false;
-      if (p.job_type === 'ล้าง' && p.ac_type === 'ผนัง' && !p.wash_variant) return false;
-      if (p.job_type === 'ซ่อม' && !p.repair_variant) return false;
-      return true;
-    };
+  // helper: บอกว่าขาดอะไร (เพื่อไม่ให้ user งงว่า “กดแล้วไม่ขึ้น”) 
+  const missingFields = (p)=>{
+    const miss = [];
+    if(!p.job_type) miss.push('ประเภทงาน');
+    if(!p.ac_type) miss.push('ประเภทแอร์');
+    if(!p.btu) miss.push('BTU');
+    if(!p.machine_count) miss.push('จำนวนเครื่อง');
+    if(p.job_type === 'ล้าง' && p.ac_type === 'ผนัง' && !p.wash_variant) miss.push('ประเภทการล้าง');
+    if(p.job_type === 'ซ่อม' && !p.repair_variant) miss.push('ประเภทงานซ่อม');
+    return miss;
+  };
 
-    if(payload.services && Array.isArray(payload.services) && payload.services.length){
-      if(!payload.services.every(validateOne)){
-        if(slotsBox) slotsBox.textContent = "กรุณาเลือกข้อมูลให้ครบทุกบรรทัด (ประเภทงาน/ประเภทแอร์/BTU/จำนวนเครื่อง และกรณีล้างผนังต้องเลือกประเภทการล้าง)";
-        return;
-      }
-    }else{
-      if(!validateOne(payload)){
-        if(slotsBox) slotsBox.textContent = "กรุณาเลือกข้อมูลให้ครบก่อน (ประเภทงาน/ประเภทแอร์/BTU/จำนวนเครื่อง และกรณีล้างผนังต้องเลือกประเภทการล้าง)";
-        return;
-      }
-    }
-
-    await refreshPricing(); // อัปเดต durationMin ก่อน
-
-    const duration_min = Number(durationMin || 60);
-    const urgent = !!document.getElementById("urgent_toggle")?.checked;
-    const tech_type = urgent ? "partner" : "company";
-
-    // ส่ง criteria ไปให้ server filter ตาม service matrix (Option B)
-    let url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`;
-    if(payload.services && Array.isArray(payload.services) && payload.services.length){
-      url += `&services=${encodeURIComponent(JSON.stringify(payload.services))}`;
-    }else{
-      url += `&job_type=${encodeURIComponent(payload.job_type||'')}`
-        + `&ac_type=${encodeURIComponent(payload.ac_type||'')}`
-        + `&wash_variant=${encodeURIComponent(payload.wash_variant||'')}`
-        + `&repair_variant=${encodeURIComponent(payload.repair_variant||'')}`;
-    }
-
-    const r = await fetch(url);
-    const data = await r.json().catch(()=> ({}));
-    if(!r.ok) throw new Error(data?.error || `HTTP_${r.status}`);
-    if(data.error) throw new Error(data.error);
-
-    if(!data.slots || !data.slots.length){
-      if(slotsBox) slotsBox.textContent = "ไม่พบช่วงเวลา";
+  if(payload.services && Array.isArray(payload.services) && payload.services.length){
+    const badIdx = payload.services.findIndex(p=>!validateOne(p));
+    if(badIdx !== -1){
+      const miss = missingFields(payload.services[badIdx] || {});
+      slotsBox.textContent = `กรุณาเลือกข้อมูลให้ครบ “บรรทัดที่ ${badIdx+1}” (${miss.join('/') || 'ข้อมูลไม่ครบ'}) ก่อนโหลดเวลาว่าง`;
       return;
     }
+  }else{
+    if(!validateOne(payload)){
+      const miss = missingFields(payload);
+      slotsBox.textContent = `กรุณาเลือกข้อมูลให้ครบก่อน (${miss.join('/') || 'ข้อมูลไม่ครบ'})`;
+      return;
+    }
+  }
 
-    // cache + render with filter
+  await refreshPricing(); // อัปเดต durationMin ก่อน
+
+  const duration_min = Number(durationMin || 60);
+  const urgent = document.getElementById("urgent_toggle").checked;
+  const tech_type = urgent ? "partner" : "company";
+
+  // ส่ง criteria ไปให้ server filter ตาม service matrix (Option B)
+  let url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`;
+  if(payload.services && Array.isArray(payload.services) && payload.services.length){
+    url += `&services=${encodeURIComponent(JSON.stringify(payload.services))}`;
+  }else{
+    url += `&job_type=${encodeURIComponent(payload.job_type||'')}`
+      + `&ac_type=${encodeURIComponent(payload.ac_type||'')}`
+      + `&wash_variant=${encodeURIComponent(payload.wash_variant||'')}`
+      + `&repair_variant=${encodeURIComponent(payload.repair_variant||'')}`;
+  }
+
+  try{
+    const r = await fetch(url, { credentials: 'include' });
+    const ct = (r.headers.get('content-type')||'').toLowerCase();
+    const isJson = ct.includes('application/json') || ct.includes('+json');
+    const raw = await r.text();
+    const data = isJson ? (JSON.parse(raw||'{}')) : null;
+    if(!r.ok){
+      const msg = (data && data.error) ? data.error : (raw || `HTTP ${r.status}`);
+      throw new Error(msg);
+    }
+    if(!data || typeof data !== 'object') throw new Error('รูปแบบข้อมูลไม่ถูกต้อง');
+    if(data.error) throw new Error(data.error);
+    if(!data.slots || !data.slots.length){
+      slotsBox.textContent = "ไม่พบช่วงเวลา";
+      return;
+    }
     lastSlotsResp = data;
     if(controls) controls.style.display = 'block';
     renderSlotsFromCache();
   }catch(e){
-    const msg = (e && e.message) ? String(e.message) : 'UNKNOWN_ERROR';
-    if(slotsBox) slotsBox.textContent = "❌ โหลดเวลาว่างไม่สำเร็จ: " + msg;
+    const msg = (e && e.message) ? String(e.message) : 'Unknown error';
+    slotsBox.textContent = `❌ โหลดเวลาว่างไม่สำเร็จ: ${msg}`;
     console.error(e);
   }
 }
@@ -1187,10 +1229,8 @@ function downloadIcsForBooking(){
 });
 
 // (menu handlers are defined at the end of file)
-document.getElementById("urgent_toggle")?.addEventListener("change", ()=>{ /* slots refresh optional */ });
-document.getElementById("date")?.addEventListener("change", ()=>{ updateLoadSlotsEnabled(); });
-// mobile date picker: some devices fire input instead of change
-document.getElementById("date")?.addEventListener("input", ()=>{ updateLoadSlotsEnabled(); });
+document.getElementById("urgent_toggle").addEventListener("change", ()=>{ /* slots refresh optional */ });
+document.getElementById("date").addEventListener("change", ()=>{ updateLoadSlotsEnabled(); });
 
 async function initCustomerCatalogAndPromos(){
   try{
