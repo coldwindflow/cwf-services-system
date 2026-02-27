@@ -104,8 +104,9 @@ body{
 .customer-page #custTopNav .brand{ display:flex; align-items:center; gap:10px; min-width:0; }
 .customer-page #custTopNav .brand img{ width:42px; height:42px; border-radius:14px; box-shadow: 0 10px 22px rgba(0,0,0,0.18); background:#fff; }
 .customer-page #custTopNav .title{ min-width:0; display:flex; flex-direction:column; gap:2px; }
-.customer-page #custTopNav .title b{ font-size:14px; line-height:1.1; color:#fff; }
+.customer-page #custTopNav .title b{ font-size:14px; line-height:1.1; color:#fff; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .customer-page #custTopNav .title span{ font-size:12px; font-weight:900; color: rgba(255,255,255,0.82); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.customer-page #custTopNav .title b.cust-header-link{ cursor:pointer; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .customer-page .custTopRight{ display:flex; align-items:center; gap:10px; }
 .customer-page .cust-icbtn{
   width:44px;

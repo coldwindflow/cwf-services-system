@@ -484,7 +484,7 @@ app.get('/auth/line/callback', async (req, res) => {
   }
 });
 
-app.get('/public/me', (req, res) => {
+app.get('/public/me', async (req, res) => {
   try {
     const jwtSecret = getJwtSecret();
     if (!jwtSecret) return res.json({ logged_in: false });
@@ -492,13 +492,38 @@ app.get('/public/me', (req, res) => {
     if (!token) return res.json({ logged_in: false });
     const payload = jwtVerify(token, jwtSecret);
     if (!payload) return res.json({ logged_in: false });
+
+    // include registered customer profile (address) if exists
+    let profile = null;
+    try {
+      const sub = String(payload.sub || '').trim();
+      if (sub) {
+        const q = await pool.query(
+          'SELECT phone, address, maps_url, updated_at FROM public.customer_profiles WHERE sub=$1 LIMIT 1',
+          [sub]
+        );
+        if (q && q.rows && q.rows[0]) {
+          profile = {
+            phone: q.rows[0].phone || '',
+            address: q.rows[0].address || '',
+            maps_url: q.rows[0].maps_url || '',
+            updated_at: q.rows[0].updated_at || null,
+          };
+        }
+      }
+    } catch (_) {
+      // ignore profile fetch errors (no regression)
+      profile = null;
+    }
+
     return res.json({
       logged_in: true,
       user: {
         name: String(payload.name || ''),
         picture: String(payload.picture || ''),
         provider: String(payload.provider || 'line'),
-      }
+      },
+      profile
     });
   } catch (_) {
     return res.json({ logged_in: false });

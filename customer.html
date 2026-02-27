@@ -16,8 +16,9 @@
         <div class="brand">
           <img src="/logo.png" alt="CWF">
           <div class="title">
-            <b>📅 จองคิวงาน (ลูกค้า)</b>
-            <span>Coldwindflow air services</span>
+            <!-- Header text switches to customer address when logged in -->
+            <b id="cust_header_primary">📅 จองคิวงาน (ลูกค้า)</b>
+            <span id="cust_header_secondary">Coldwindflow air services</span>
           </div>
         </div>
         <div class="custTopRight">
@@ -280,6 +281,10 @@ async function loadMe(){
     const logoutBtn = document.getElementById('logout_btn');
     const drawerLogoutBtn = document.getElementById('drawer_logout_btn');
 
+    // header (address / add-address)
+    const headerPrimary = document.getElementById('cust_header_primary');
+    const headerSecondary = document.getElementById('cust_header_secondary');
+
     if(j && j.logged_in){
       if(loginBtn) loginBtn.style.display = 'none';
       if(regBtn) regBtn.style.display = 'inline-flex';
@@ -305,6 +310,30 @@ async function loadMe(){
         // fallback icon when no picture
         avatarBtn.classList.toggle('no-pic', !u2);
       }
+
+      // header shows customer address; if missing allow click to add address
+      const addr = String(j.profile?.address || '').trim();
+      if(headerPrimary){
+        headerPrimary.classList.remove('cust-header-link');
+        headerPrimary.removeAttribute('role');
+        headerPrimary.removeAttribute('tabindex');
+        headerPrimary.onclick = null;
+
+        if(addr){
+          headerPrimary.textContent = addr;
+        }else{
+          headerPrimary.textContent = '📍 เพิ่มที่อยู่';
+          headerPrimary.classList.add('cust-header-link');
+          headerPrimary.setAttribute('role','button');
+          headerPrimary.setAttribute('tabindex','0');
+          headerPrimary.onclick = () => { location.href = '/register?from=header'; };
+          headerPrimary.onkeydown = (e) => { if(e.key==='Enter' || e.key===' ') { e.preventDefault(); location.href='/register?from=header'; } };
+        }
+      }
+      if(headerSecondary){
+        const who = String((j.user && j.user.name) ? j.user.name : '').trim();
+        headerSecondary.textContent = who ? who : 'Coldwindflow air services';
+      }
     }else{
       if(loginBtn) loginBtn.style.display = 'inline-flex';
       if(regBtn) regBtn.style.display = 'none';
@@ -314,6 +343,18 @@ async function loadMe(){
       if(avatarBtn) avatarBtn.style.display = 'none';
       if(logoutBtn) logoutBtn.style.display = 'none';
       if(drawerLogoutBtn) drawerLogoutBtn.style.display = 'none';
+
+      // reset header
+      if(headerPrimary){
+        headerPrimary.classList.remove('cust-header-link');
+        headerPrimary.removeAttribute('role');
+        headerPrimary.removeAttribute('tabindex');
+        headerPrimary.onclick = null;
+        headerPrimary.textContent = '📅 จองคิวงาน (ลูกค้า)';
+      }
+      if(headerSecondary){
+        headerSecondary.textContent = 'Coldwindflow air services';
+      }
     }
   }catch(_){
     // ignore
