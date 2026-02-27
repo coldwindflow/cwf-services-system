@@ -161,6 +161,11 @@
             <span class="sub">เช็คสถานะ</span>
           </button>
 
+          <button class="custMenuBtn" type="button" onclick="try{window.__cwfDbg&&window.__cwfDbg.toggle();}catch(_){}; try{window.__cwfCloseMenu&&window.__cwfCloseMenu();}catch(_){ }">
+            <span class="left">🐞 Debug Panel</span>
+            <span class="sub">แสดง log / ตรวจสอบ API</span>
+          </button>
+
           <button id="drawer_logout_btn" class="custMenuBtn danger" type="button" style="display:none;">
             <span class="left">⎋ ออกจากระบบ</span>
             <span class="sub">Logout</span>
@@ -451,6 +456,79 @@ const API = window.location.origin;
   // เผื่อ overlay/close ถูกกด แต่ listener ปกติไม่ถูก bind
   window.__cwfCloseMenu = closeCustomerMenu;
 })();
+
+// ------------------------------
+// Defensive helpers (must NOT throw)
+// ป้องกันกรณีฟังก์ชันอ้างอิงแต่ยังไม่ถูกประกาศ → ทำให้หน้าไม่ล่มทั้งหน้า
+// ------------------------------
+function __cwfSafeText(v){ return String(v ?? '').trim(); }
+
+// NOTE: customer.html มีการเรียก updateMapsPreview()/updateConfirmSummary() หลายจุด
+// แต่ไฟล์เดิมไม่มีการประกาศฟังก์ชัน ทำให้เกิด ReferenceError แล้ว JS หยุด → เมนู/โหลดสลอตพัง
+function updateMapsPreview(){
+  try{
+    const mapsInput = document.getElementById('maps_url');
+    const box = document.getElementById('maps_preview');
+    if(!box) return;
+    const url = __cwfSafeText(mapsInput?.value || '');
+    if(!url){ box.style.display='none'; box.innerHTML=''; return; }
+    const ok = (typeof isValidMapsUrl === 'function') ? isValidMapsUrl(url) : true;
+    const label = ok ? 'เปิดแผนที่' : 'เปิดลิงก์ (ตรวจสอบอีกครั้ง)';
+    box.innerHTML = `<a href="${url.replace(/\"/g,'&quot;')}" target="_blank" rel="noopener" class="maps-open-btn">📍 ${label}</a>`;
+    box.style.display = 'block';
+  }catch(_){ /* ignore */ }
+}
+
+function updateConfirmSummary(){
+  try{
+    const d = __cwfSafeText(document.getElementById('date')?.value || '');
+    const t = __cwfSafeText(window.pickedTime || '');
+    const sumDt = document.getElementById('sum_datetime');
+    if(sumDt) sumDt.textContent = (d && t) ? `${d} ${t}` : (d ? d : '-');
+
+    // service summary
+    const sumSvc = document.getElementById('sum_service');
+    try{
+      const payload = (typeof getPayloadV2 === 'function') ? getPayloadV2() : {};
+      const services = (Array.isArray(payload?.services) && payload.services.length) ? payload.services : [payload];
+      const parts = services.map((s)=>{
+        const jt = __cwfSafeText(s?.job_type);
+        const ac = __cwfSafeText(s?.ac_type);
+        const wc = __cwfSafeText(s?.wash_variant);
+        const rc = __cwfSafeText(s?.repair_variant);
+        const mc = Number(s?.machine_count || 0) || 0;
+        const base = [jt, ac].filter(Boolean).join(' ');
+        const extra = [wc || rc].filter(Boolean).join('');
+        const cnt = mc ? `×${mc}` : '';
+        return [base, extra, cnt].filter(Boolean).join(' ');
+      }).filter(Boolean);
+      if(sumSvc) sumSvc.textContent = parts.length ? parts.join(' | ') : '-';
+    }catch(_){ if(sumSvc) sumSvc.textContent = '-'; }
+
+    // price (best-effort)
+    const sumPrice = document.getElementById('sum_price');
+    try{
+      const v = (typeof window.pricingPreviewText === 'string') ? window.pricingPreviewText.trim() : '';
+      if(sumPrice) sumPrice.textContent = v || 'ประมาณการ';
+    }catch(_){ if(sumPrice) sumPrice.textContent = 'ประมาณการ'; }
+
+    // location
+    const addr = __cwfSafeText(document.getElementById('address_text')?.value || '');
+    const maps = __cwfSafeText(document.getElementById('maps_url')?.value || '');
+    const sumLoc = document.getElementById('sum_location');
+    if(sumLoc){
+      if(addr && maps){
+        sumLoc.innerHTML = `${addr}<br><a href="${maps.replace(/\"/g,'&quot;')}" target="_blank" rel="noopener">แผนที่</a>`;
+      }else if(addr){
+        sumLoc.textContent = addr;
+      }else if(maps){
+        sumLoc.innerHTML = `<a href="${maps.replace(/\"/g,'&quot;')}" target="_blank" rel="noopener">แผนที่</a>`;
+      }else{
+        sumLoc.textContent = '-';
+      }
+    }
+  }catch(_){ /* ignore */ }
+}
 
 async function loadMe(){
   try{
@@ -1114,7 +1192,12 @@ async function loadSlots(){
     }
   }
 
-  await refreshPricing(); // อัปเดต durationMin ก่อน
+  // อัปเดต durationMin ก่อน (ต้องไม่ทำให้ loadSlots ล่ม)
+  try{
+    await refreshPricing();
+  }catch(e){
+    try{ window.__cwfDbg && window.__cwfDbg.log('⚠️ refreshPricing failed (ignored)', String(e?.message||e)); }catch(_){ }
+  }
 
   const duration_min = Number(durationMin || 60);
   const urgent = document.getElementById("urgent_toggle").checked;
