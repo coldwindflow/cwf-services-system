@@ -26,7 +26,9 @@
         </div>
         <div class="custTopRight">
           <!-- menu + logout (no overlap) -->
-          <button id="menu_btn" class="cust-icbtn" type="button" aria-label="เมนู" aria-expanded="false">☰</button>
+          <!-- Inline fallback: ensure menu is clickable even if JS init crashes -->
+          <button id="menu_btn" class="cust-icbtn" type="button" aria-label="เมนู" aria-expanded="false"
+            onclick="(function(){var dr=document.getElementById('menu_drawer'); if(dr && dr.style.display==='block'){ try{closeCustomerMenu();}catch(e){} } else { try{openCustomerMenu();}catch(e){} } })()">☰</button>
           <button id="logout_btn" class="cust-logoutbtn" type="button" aria-label="ออกจากระบบ" title="ออกจากระบบ" style="display:none;">⎋</button>
         </div>
       </div>
@@ -34,12 +36,12 @@
     <div id="custTopSpacer" aria-hidden="true"></div>
 
     <!-- Drawer menu (admin/tech-like) -->
-    <div id="menu_overlay" class="cust-drawer-backdrop" style="display:none;"></div>
+    <div id="menu_overlay" class="cust-drawer-backdrop" style="display:none;" onclick="try{closeCustomerMenu();}catch(e){}"></div>
     <div id="menu_drawer" class="cust-drawer" style="display:none;" aria-hidden="true">
       <div class="panel">
         <div class="custMenuHead">
           <b>เมนู</b>
-          <button id="menu_close" class="cust-icbtn close" type="button" aria-label="ปิดเมนู">✕</button>
+          <button id="menu_close" class="cust-icbtn close" type="button" aria-label="ปิดเมนู" onclick="try{closeCustomerMenu();}catch(e){}">✕</button>
         </div>
 
         <div class="custMenuList">
@@ -588,12 +590,11 @@ function isBookingFormReadyForSlots() {
 function updateLoadSlotsEnabled() {
   const btn = document.getElementById("loadSlotsBtn");
   if (!btn) return;
-  // ไม่ disable ปุ่มจริง (บางเครื่อง/บางเบราว์เซอร์ event change ของ date อาจไม่ยิง)
-  // ให้กดได้เสมอ แล้วไป validate ใน loadSlots() แทน (กันเคส "กดโหลดสลอตไม่ได้")
-  const ready = isBookingFormReadyForSlots();
+  // UX: never hard-disable this button (mobile browsers can be flaky with date change events).
+  // We validate inside loadSlots() and show friendly messages instead.
   btn.disabled = false;
-  btn.setAttribute('aria-disabled', ready ? 'false' : 'true');
-  btn.style.opacity = ready ? '1' : '0.7';
+  btn.removeAttribute('disabled');
+  btn.setAttribute('aria-disabled', isBookingFormReadyForSlots() ? 'false' : 'true');
 }
 
 // promos (customer)
@@ -922,77 +923,80 @@ function renderSlotsFromCache(){
 }
 
 async function loadSlots(){
-  const d = document.getElementById("date").value;
-  if(!d) return alert("เลือกวันที่ก่อน");
-  setPicked(null);
-
   const slotsBox = document.getElementById("slots");
   const controls = document.getElementById('slot_controls');
-  if(controls) controls.style.display = 'none';
-  slotsBox.innerHTML = `<div class="slot-skeleton">
-    <div class="sk-line"></div>
-    <div class="sk-chips">
-      ${Array.from({length:10}).map(()=>'<div class="sk-chip"></div>').join('')}
-    </div>
-  </div>`;
+  try{
+    const d = document.getElementById("date")?.value;
+    if(!d) return alert("เลือกวันที่ก่อน");
+    setPicked(null);
 
-  const payload = getPayloadV2();
-  // ✅ ให้ลูกค้าเลือกข้อมูลบริการให้ครบก่อนค่อยโหลดคิวว่าง
-  const validateOne = (p)=>{
-    if (!p.job_type || !p.ac_type || !p.btu || !p.machine_count) return false;
-    if (p.job_type === 'ล้าง' && p.ac_type === 'ผนัง' && !p.wash_variant) return false;
-    if (p.job_type === 'ซ่อม' && !p.repair_variant) return false;
-    return true;
-  };
-
-  if(payload.services && Array.isArray(payload.services) && payload.services.length){
-    if(!payload.services.every(validateOne)){
-      slotsBox.textContent = "กรุณาเลือกข้อมูลให้ครบทุกบรรทัด (ประเภทงาน/ประเภทแอร์/BTU/จำนวนเครื่อง และกรณีล้างผนังต้องเลือกประเภทการล้าง)";
-      return;
+    if(controls) controls.style.display = 'none';
+    if(slotsBox){
+      slotsBox.innerHTML = `<div class="slot-skeleton">
+        <div class="sk-line"></div>
+        <div class="sk-chips">
+          ${Array.from({length:10}).map(()=>'<div class="sk-chip"></div>').join('')}
+        </div>
+      </div>`;
     }
-  }else{
-    if(!validateOne(payload)){
-      slotsBox.textContent = "กรุณาเลือกข้อมูลให้ครบก่อน (ประเภทงาน/ประเภทแอร์/BTU/จำนวนเครื่อง และกรณีล้างผนังต้องเลือกประเภทการล้าง)";
-      return;
-    }
-  }
 
-  await refreshPricing(); // อัปเดต durationMin ก่อน
+    const payload = getPayloadV2();
+    // ✅ ให้ลูกค้าเลือกข้อมูลบริการให้ครบก่อนค่อยโหลดคิวว่าง
+    const validateOne = (p)=>{
+      if (!p.job_type || !p.ac_type || !p.btu || !p.machine_count) return false;
+      if (p.job_type === 'ล้าง' && p.ac_type === 'ผนัง' && !p.wash_variant) return false;
+      if (p.job_type === 'ซ่อม' && !p.repair_variant) return false;
+      return true;
+    };
 
-  const duration_min = Number(durationMin || 60);
-  const urgent = document.getElementById("urgent_toggle").checked;
-  const tech_type = urgent ? "partner" : "company";
-
-  // ส่ง criteria ไปให้ server filter ตาม service matrix (Option B)
-  let url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`;
-  if(payload.services && Array.isArray(payload.services) && payload.services.length){
-    url += `&services=${encodeURIComponent(JSON.stringify(payload.services))}`;
-  }else{
-    url += `&job_type=${encodeURIComponent(payload.job_type||'')}`
-      + `&ac_type=${encodeURIComponent(payload.ac_type||'')}`
-      + `&wash_variant=${encodeURIComponent(payload.wash_variant||'')}`
-      + `&repair_variant=${encodeURIComponent(payload.repair_variant||'')}`;
-  }
-
-  fetch(url)
-    .then(r=>r.json())
-    .then(data=>{
-      if(data.error) throw new Error(data.error);
-      if(!data.slots || !data.slots.length){
-        slotsBox.textContent = "ไม่พบช่วงเวลา";
+    if(payload.services && Array.isArray(payload.services) && payload.services.length){
+      if(!payload.services.every(validateOne)){
+        if(slotsBox) slotsBox.textContent = "กรุณาเลือกข้อมูลให้ครบทุกบรรทัด (ประเภทงาน/ประเภทแอร์/BTU/จำนวนเครื่อง และกรณีล้างผนังต้องเลือกประเภทการล้าง)";
         return;
       }
+    }else{
+      if(!validateOne(payload)){
+        if(slotsBox) slotsBox.textContent = "กรุณาเลือกข้อมูลให้ครบก่อน (ประเภทงาน/ประเภทแอร์/BTU/จำนวนเครื่อง และกรณีล้างผนังต้องเลือกประเภทการล้าง)";
+        return;
+      }
+    }
 
-      // cache + render with filter
-      lastSlotsResp = data;
-      if(controls) controls.style.display = 'block';
-      renderSlotsFromCache();
-    })
-    .catch(e=>{
-	      const msg = (e && e.message) ? String(e.message) : '';
-	      slotsBox.textContent = "❌ โหลดเวลาว่างไม่สำเร็จ" + (msg ? `: ${msg}` : "");
-      console.error(e);
-    });
+    await refreshPricing(); // อัปเดต durationMin ก่อน
+
+    const duration_min = Number(durationMin || 60);
+    const urgent = !!document.getElementById("urgent_toggle")?.checked;
+    const tech_type = urgent ? "partner" : "company";
+
+    // ส่ง criteria ไปให้ server filter ตาม service matrix (Option B)
+    let url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`;
+    if(payload.services && Array.isArray(payload.services) && payload.services.length){
+      url += `&services=${encodeURIComponent(JSON.stringify(payload.services))}`;
+    }else{
+      url += `&job_type=${encodeURIComponent(payload.job_type||'')}`
+        + `&ac_type=${encodeURIComponent(payload.ac_type||'')}`
+        + `&wash_variant=${encodeURIComponent(payload.wash_variant||'')}`
+        + `&repair_variant=${encodeURIComponent(payload.repair_variant||'')}`;
+    }
+
+    const r = await fetch(url);
+    const data = await r.json().catch(()=> ({}));
+    if(!r.ok) throw new Error(data?.error || `HTTP_${r.status}`);
+    if(data.error) throw new Error(data.error);
+
+    if(!data.slots || !data.slots.length){
+      if(slotsBox) slotsBox.textContent = "ไม่พบช่วงเวลา";
+      return;
+    }
+
+    // cache + render with filter
+    lastSlotsResp = data;
+    if(controls) controls.style.display = 'block';
+    renderSlotsFromCache();
+  }catch(e){
+    const msg = (e && e.message) ? String(e.message) : 'UNKNOWN_ERROR';
+    if(slotsBox) slotsBox.textContent = "❌ โหลดเวลาว่างไม่สำเร็จ: " + msg;
+    console.error(e);
+  }
 }
 
 async function book(){
@@ -1182,11 +1186,11 @@ function downloadIcsForBooking(){
   });
 });
 
-	// (menu handlers are defined at the end of file)
-	// Guard: อย่าให้ script พังจนเมนู/ปุ่มกดไม่ได้
-	document.getElementById("urgent_toggle")?.addEventListener("change", ()=>{ /* slots refresh optional */ });
-	document.getElementById("date")?.addEventListener("change", ()=>{ updateLoadSlotsEnabled(); });
-	document.getElementById("date")?.addEventListener("input", ()=>{ updateLoadSlotsEnabled(); });
+// (menu handlers are defined at the end of file)
+document.getElementById("urgent_toggle")?.addEventListener("change", ()=>{ /* slots refresh optional */ });
+document.getElementById("date")?.addEventListener("change", ()=>{ updateLoadSlotsEnabled(); });
+// mobile date picker: some devices fire input instead of change
+document.getElementById("date")?.addEventListener("input", ()=>{ updateLoadSlotsEnabled(); });
 
 async function initCustomerCatalogAndPromos(){
   try{
