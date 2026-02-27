@@ -88,11 +88,9 @@ body{
   top: 0;
   z-index: 2600;
   padding-top: env(safe-area-inset-top);
-  /* Keep the menu bar color consistent (single-tone premium blue) */
-  background: rgba(11, 75, 179, 0.98);
-  background: linear-gradient(180deg, rgba(11, 75, 179, 0.98) 0%, rgba(11, 75, 179, 0.98) 100%);
-  border-bottom: 1px solid rgba(255,255,255,0.12);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.10), 0 14px 40px rgba(2,6,23,0.22);
+  background: linear-gradient(180deg, rgba(10, 35, 88, 0.98) 0%, rgba(11, 75, 179, 0.98) 100%);
+  border-bottom: 1px solid rgba(255,255,255,0.10);
+  box-shadow: 0 14px 40px rgba(2,6,23,0.22);
 }
 .customer-page #custTopNav .in{
   max-width: 460px;
@@ -212,9 +210,9 @@ body{
   width:100%;
   min-height:46px;
   border-radius:16px;
-  border:1px solid rgba(37,99,235,0.22);
-  background: #2563eb;
-  color:#fff;
+  border: 1px solid rgba(37,99,235,0.20);
+  background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(34,211,238,0.14));
+  color: #0f172a;
   font-weight:1000;
   display:flex;
   align-items:center;
@@ -222,14 +220,17 @@ body{
   padding: 10px 12px;
   cursor:pointer;
   text-decoration:none;
+  box-shadow: 0 12px 26px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.72);
 }
 
 .customer-page .custMenuBtn.danger{
   background: rgba(220,38,38,0.95);
   border-color: rgba(220,38,38,0.35);
+  color:#fff;
 }
 .customer-page .custMenuBtn .left{ display:flex; align-items:center; gap:10px; }
-.customer-page .custMenuBtn .sub{ font-size:12px; font-weight:900; color: rgba(255,255,255,0.85); }
+.customer-page .custMenuBtn .sub{ font-size:12px; font-weight:900; color: rgba(15,23,42,0.70); }
+.customer-page .custMenuBtn.danger .sub{ color: rgba(255,255,255,0.88); }
 .customer-page .custMenuSmall{ font-size:12px; font-weight:900; color: rgba(15,23,42,0.70); margin-top:auto; }
 
 /* Customer modal (address view/edit) */
@@ -239,8 +240,8 @@ body{
 .customer-page .cust-modal .hd{ display:flex; align-items:center; justify-content:space-between; gap:10px; padding: 14px 14px; background: linear-gradient(180deg, rgba(37,99,235,0.10), rgba(37,99,235,0.03)); border-bottom: 1px solid rgba(15,23,42,0.10); }
 .customer-page .cust-modal .bd{ padding: 14px 14px 16px; }
 .customer-page .cust-modal .addr-text{ font-size: 14px; font-weight: 900; color:#0f172a; white-space: pre-wrap; line-height: 1.35; }
-.customer-page .custMiniBtn{ border-radius: 14px; border: 1px solid rgba(37,99,235,0.22); background: rgba(37,99,235,0.10); color:#0b4bb3; padding: 10px 12px; font-weight: 1000; cursor:pointer; display:inline-flex; align-items:center; gap:8px; text-decoration:none; }
-.customer-page .custMiniBtn.primary{ background: rgba(37,99,235,0.92); border-color: rgba(37,99,235,0.35); color:#fff; }
+.customer-page .custMiniBtn{ border-radius: 14px; border: 1px solid rgba(37,99,235,0.20); background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(34,211,238,0.14)); color:#0f172a; padding: 10px 12px; font-weight: 1000; cursor:pointer; display:inline-flex; align-items:center; gap:8px; text-decoration:none; box-shadow: 0 10px 22px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.70); }
+.customer-page .custMiniBtn.primary{ background: linear-gradient(135deg, rgba(59,130,246,0.30), rgba(34,211,238,0.22)); border-color: rgba(37,99,235,0.22); color:#0f172a; }
 .customer-page .custMiniBtn:hover{ filter: brightness(1.03); }
 .customer-page .custMiniBtn:active{ transform: translateY(1px) scale(0.99); }
 
@@ -360,6 +361,22 @@ body{
 .customer-page .trust-btn{
   box-shadow: 0 12px 26px rgba(15,23,42,0.10);
 }
+
+/* Customer: unified premium-light button tone (matches estimate card) */
+.customer-page .trust-btn,
+.customer-page a.secondary.link-btn,
+.customer-page button.secondary{
+  border: 1px solid rgba(37,99,235,0.20) !important;
+  background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(34,211,238,0.14)) !important;
+  color: #0f172a !important;
+  box-shadow: 0 12px 26px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.72) !important;
+}
+.customer-page .trust-btn:hover,
+.customer-page a.secondary.link-btn:hover,
+.customer-page button.secondary:hover{ filter: brightness(1.03); }
+.customer-page .trust-btn:active,
+.customer-page a.secondary.link-btn:active,
+.customer-page button.secondary:active{ transform: translateY(1px) scale(0.99); }
 
 .customer-page .primary-cta{
   font-size: 16px;
@@ -754,6 +771,14 @@ body{
   box-shadow: var(--shadow-2);
   font-size: 20px;
   font-weight: 900;
+}
+
+/* Customer: make stepper buttons use the same light tone */
+.customer-page .stepper .btn-round{
+  border-color: rgba(37,99,235,0.20);
+  background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(34,211,238,0.14));
+  color: #0f172a;
+  box-shadow: 0 12px 26px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.72);
 }
 .stepper .btn-round:active{ transform: translateY(1px); }
 .stepper .btn-round:disabled{ opacity: .5; }
