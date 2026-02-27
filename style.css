@@ -94,6 +94,10 @@ body{
   box-shadow: 0 14px 40px rgba(2,6,23,0.10);
 }
 
+/* กันเคส drawer/backdrop ค้างบังทั้งหน้า: ให้ topnav อยู่เหนือ backdrop ตอนเปิดเมนู */
+body.customer-page.menu-open #custTopNav{ z-index: 3000; }
+body.customer-page.menu-open #menu_btn{ z-index: 3001; position: relative; }
+
 /* ===== Customer Debug Panel (เหมือนหน้าแอดมิน) ===== */
 .customer-page .cust-debug-fab{
   position: fixed;
@@ -254,18 +258,15 @@ body{
   position: fixed;
   inset: 0;
   background: rgba(2,6,23,0.55);
-  /* ต้องอยู่ใต้ TopNav เพื่อให้กดปุ่มเมนูปิดได้เสมอ แม้ backdrop ค้าง */
   z-index: 2590;
+  pointer-events: none;
 }
+body.customer-page.menu-open .cust-drawer-backdrop{ pointer-events: auto; }
 .customer-page .cust-drawer{
   position: fixed;
   inset: 0;
   z-index: 2700;
 }
-
-/* เมื่อเมนูเปิด ให้ TopNav อยู่เหนือ backdrop แน่นอน (กันเคสค้าง/คลิกไม่ได้) */
-body.customer-page.menu-open #custTopNav{ z-index: 3000; }
-body.customer-page.menu-open #menu_btn{ z-index: 3001; }
 .customer-page .cust-drawer .panel{
   position: absolute;
   right: 0;

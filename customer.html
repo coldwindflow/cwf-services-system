@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>CWF - จองคิวงาน</title>
   <!-- cache-bust: ensure latest css in PWA/Android webview -->
-  <link rel="stylesheet" href="style.css?v=18">
+  <link rel="stylesheet" href="style.css?v=17">
   <link rel="manifest" href="/mainfest.json">
   <meta name="theme-color" content="#0b4bb3">
 </head>
@@ -434,21 +434,21 @@ const API = window.location.origin;
     const ov = document.getElementById('menu_overlay');
     const dr = document.getElementById('menu_drawer');
     const btn = document.getElementById('menu_btn');
+    try{ document.body.classList.add('menu-open'); }catch(_){ }
     if(ov){ ov.style.display = 'block'; ov.style.pointerEvents = 'auto'; }
     if(dr){ dr.style.display = 'block'; dr.setAttribute('aria-hidden','false'); }
     if(btn) btn.setAttribute('aria-expanded','true');
     try{ document.body.style.overflow = 'hidden'; }catch(_){ }
-    try{ document.body.classList.add('menu-open'); }catch(_){ }
   }
   function closeCustomerMenu(){
     const ov = document.getElementById('menu_overlay');
     const dr = document.getElementById('menu_drawer');
     const btn = document.getElementById('menu_btn');
+    try{ document.body.classList.remove('menu-open'); }catch(_){ }
     if(ov){ ov.style.display = 'none'; ov.style.pointerEvents = 'none'; }
     if(dr){ dr.style.display = 'none'; dr.setAttribute('aria-hidden','true'); }
     if(btn) btn.setAttribute('aria-expanded','false');
     try{ document.body.style.overflow = ''; }catch(_){ }
-    try{ document.body.classList.remove('menu-open'); }catch(_){ }
   }
   window.__cwfToggleMenu = function(){
     const dr = document.getElementById('menu_drawer');
@@ -457,19 +457,40 @@ const API = window.location.origin;
   };
   // เผื่อ overlay/close ถูกกด แต่ listener ปกติไม่ถูก bind
   window.__cwfCloseMenu = closeCustomerMenu;
+})();
 
-  // Panic unfreeze: กันเคส overlay/modal ค้างหลังกลับมาจาก LINE in-app browser หรือ cache แปลกๆ
+// ===== Panic Unfreeze (กันเคส overlay/menu/modal ค้างบังทั้งหน้า) =====
+// ใช้ตอนกลับจาก LINE / BFCache / หรือโดน error ทำให้ state ค้าง
+(function(){
+  function hide(id){
+    const el = document.getElementById(id);
+    if(!el) return;
+    try{ el.style.display = 'none'; }catch(_){ }
+    try{ el.setAttribute('aria-hidden','true'); }catch(_){ }
+    try{ el.style.pointerEvents = 'none'; }catch(_){ }
+  }
   window.__cwfPanicUnfreeze = function(){
-    try{ closeCustomerMenu(); }catch(_){ }
-    try{
-      const m = document.getElementById('addr_modal');
-      if(m){ m.style.display='none'; m.setAttribute('aria-hidden','true'); }
-    }catch(_){ }
-    try{
-      const pop = document.getElementById('maps_pop');
-      if(pop) pop.style.display='none';
-    }catch(_){ }
+    try{ document.body.classList.remove('menu-open'); }catch(_){ }
+    hide('menu_overlay');
+    hide('menu_drawer');
+    hide('addr_modal');
+    hide('addr_overlay');
+    try{ document.body.style.overflow = ''; }catch(_){ }
   };
+
+  // เรียกทันทีหลัง DOM พร้อม (กันเคสค้างตั้งแต่เปิดหน้า)
+  document.addEventListener('DOMContentLoaded', function(){
+    try{ window.__cwfPanicUnfreeze(); }catch(_){ }
+  });
+  // กัน BFCache (มือถือ/LINE in-app) กลับมาหน้าเดิมแล้ว overlay ยังอยู่
+  window.addEventListener('pageshow', function(){
+    try{ window.__cwfPanicUnfreeze(); }catch(_){ }
+  });
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible'){
+      try{ window.__cwfPanicUnfreeze(); }catch(_){ }
+    }
+  });
 })();
 
 // ------------------------------
@@ -1619,15 +1640,6 @@ document.getElementById('addr_save_btn')?.addEventListener('click', saveAddressF
 
 loadMe();
 showTopNoticeFromUrl();
-
-// กันเคส overlay/เมนูค้างหลังกลับมาจาก LINE หรือ BFCache
-try{ window.__cwfPanicUnfreeze && window.__cwfPanicUnfreeze(); }catch(_){ }
-window.addEventListener('pageshow', ()=>{ try{ window.__cwfPanicUnfreeze && window.__cwfPanicUnfreeze(); }catch(_){ } });
-document.addEventListener('visibilitychange', ()=>{
-  if(document.visibilityState === 'visible'){
-    try{ window.__cwfPanicUnfreeze && window.__cwfPanicUnfreeze(); }catch(_){ }
-  }
-});
 
 // PWA update toast (ให้ลูกค้ากดรีเฟรชเมื่อมีอัปเดต)
 function showSwToast(onUpdate){
