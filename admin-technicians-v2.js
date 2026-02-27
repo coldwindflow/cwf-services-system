@@ -3,6 +3,52 @@
   const $ = (id)=>document.getElementById(id);
   let currentTech = null;
 
+  function setCap(id, v){ const el = $(id); if(el) el.checked = !!v; }
+  function getCap(id){ const el = $(id); return !!(el && el.checked); }
+
+  function applyMatrixToUI(mx){
+    mx = (mx && typeof mx === 'object') ? mx : {};
+    const jt = mx.job_types || {};
+    const at = mx.ac_types || {};
+    const wv = mx.wash_wall_variants || {};
+    setCap('cap_job_install', jt.install);
+    setCap('cap_job_wash', jt.wash);
+    setCap('cap_job_repair', jt.repair);
+    setCap('cap_ac_wall', at.wall);
+    setCap('cap_ac_fourway', at.fourway);
+    setCap('cap_ac_hanging', at.hanging);
+    setCap('cap_ac_ceiling', at.ceiling);
+    setCap('cap_wash_normal', wv.normal);
+    setCap('cap_wash_premium', wv.premium);
+    setCap('cap_wash_coil', wv.coil);
+    setCap('cap_wash_overhaul', wv.overhaul);
+  }
+
+  function collectMatrixFromUI(){
+    const jt = {
+      install: getCap('cap_job_install'),
+      wash: getCap('cap_job_wash'),
+      repair: getCap('cap_job_repair'),
+    };
+    const at = {
+      wall: getCap('cap_ac_wall'),
+      fourway: getCap('cap_ac_fourway'),
+      hanging: getCap('cap_ac_hanging'),
+      ceiling: getCap('cap_ac_ceiling'),
+    };
+    const wv = {
+      normal: getCap('cap_wash_normal'),
+      premium: getCap('cap_wash_premium'),
+      coil: getCap('cap_wash_coil'),
+      overhaul: getCap('cap_wash_overhaul'),
+    };
+
+    // If admin didn't tick anything at all, keep matrix empty => allow all (backward compatible)
+    const any = Object.values(jt).some(Boolean) || Object.values(at).some(Boolean) || Object.values(wv).some(Boolean);
+    if (!any) return {};
+    return { job_types: jt, ac_types: at, wash_wall_variants: wv };
+  }
+
   function setTab(name){
     document.querySelectorAll('.tab').forEach(b=>{
       b.classList.toggle('active', b.getAttribute('data-tab')===name);
@@ -39,6 +85,11 @@
     $('editNewPass').value = '';
     $('editConfirmPass').value = '';
     $('photoStatus').textContent = '—';
+    // load service matrix
+    applyMatrixToUI({});
+    apiFetch(`/admin/technicians/${encodeURIComponent(t.username)}/service-matrix`)
+      .then(r=> applyMatrixToUI(r.matrix_json || r.matrix || {}))
+      .catch(()=> applyMatrixToUI({}));
     $('editModal').style.display = 'flex';
   }
 
@@ -179,6 +230,13 @@
     await apiFetch(`/admin/technicians/${encodeURIComponent(currentTech.username)}`,{
       method:'PUT',
       body: JSON.stringify(payload)
+    });
+
+    // save service matrix (Option B)
+    const matrix_json = collectMatrixFromUI();
+    await apiFetch(`/admin/technicians/${encodeURIComponent(currentTech.username)}/service-matrix`,{
+      method:'PUT',
+      body: JSON.stringify({ matrix_json })
     });
     showToast('บันทึกแล้ว','success');
     closeEdit();

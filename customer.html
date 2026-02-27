@@ -882,7 +882,7 @@ function renderSlotsFromCache(){
   if(pickedTime && !list.some(s=>String(s.start)===String(pickedTime))) setPicked(null);
 
   const head = `<div class="slot-head">
-    <div class="muted">โหมด: <b>${data.tech_type==='partner'?'ด่วน (รอยืนยัน)':'ปกติ'}</b> • ช่างที่พิจารณา: ${data.tech_count} คน</div>
+    <div class="muted">โหมด: <b>${data.tech_type==='partner'?'ด่วน (รอยืนยัน)':'ปกติ'}</b></div>
     <div class="badge ${slotsAvail.length? 'ok':'muted'}">${slotsAvail.length? 'ว่าง':'เต็ม'} • ${slotsAvail.length}/${slotsAll.length}</div>
   </div>`;
 
@@ -892,11 +892,10 @@ function renderSlotsFromCache(){
   }
 
   const chips = list.map(s=>{
-    const techCount = Array.isArray(s.available_tech_ids) ? s.available_tech_ids.length : 0;
     const full = !s.available;
     const cls = `slot-chip ${s.available? 'is-available':'is-full'} ${pickedTime===s.start? 'selected':''}`;
     const disabled = full ? 'disabled' : '';
-    const meta = s.available ? `ว่าง • ${techCount} ช่าง` : 'เต็ม';
+    const meta = s.available ? `ว่าง` : 'เต็ม';
     return `<button type="button" class="${cls}" data-start="${s.start}" ${disabled} onclick="setPicked('${s.start}')">
       <span class="t">${s.start}</span>
       <span class="m">${meta}</span>
@@ -942,7 +941,12 @@ async function loadSlots(){
   const urgent = document.getElementById("urgent_toggle").checked;
   const tech_type = urgent ? "partner" : "company";
 
-  const url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`;
+  // ส่ง criteria ไปให้ server filter ตาม service matrix (Option B)
+  const url = `${API}/public/availability_v2?date=${encodeURIComponent(d)}&tech_type=${encodeURIComponent(tech_type)}&duration_min=${encodeURIComponent(duration_min)}`
+    + `&job_type=${encodeURIComponent(payload.job_type||'')}`
+    + `&ac_type=${encodeURIComponent(payload.ac_type||'')}`
+    + `&wash_variant=${encodeURIComponent(payload.wash_variant||'')}`
+    + `&repair_variant=${encodeURIComponent(payload.repair_variant||'')}`;
 
   fetch(url)
     .then(r=>r.json())

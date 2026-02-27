@@ -2165,6 +2165,18 @@ await pool.query(`
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_profiles_phone ON public.customer_profiles(phone)`);
 
+// 3.2) technician_service_matrix: กำหนดว่าช่างคนไหนรับงานประเภทไหน/แอร์ประเภทไหน/วิธีล้างไหนได้บ้าง
+// - ใช้กับหน้าจองลูกค้า (ไม่กระทบงานเดิม: ถ้าไม่มี record -> allow all)
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.technician_service_matrix (
+    username TEXT PRIMARY KEY,
+    matrix_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    updated_by TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_technician_service_matrix_updated ON public.technician_service_matrix(updated_at DESC)`);
+
 // 4) audit logs (reserved for Super Admin impersonation - Phase 5)
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.admin_audit_log (
@@ -7579,6 +7591,55 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
   }
 });
 
+// =======================================
+// 🧩 ADMIN: Technician Service Matrix (Option B)
+// - กำหนดว่า ช่างคนไหนรับงานประเภทไหน/แอร์ประเภทไหน/วิธีล้างอะไรได้บ้าง
+// - Default (no record): allow all (backward compatible)
+// =======================================
+app.get("/admin/technicians/:username/service-matrix", requireAdminSession, async (req, res) => {
+  try {
+    const username = String(req.params.username || '').trim();
+    const r = await pool.query(
+      `SELECT username, matrix_json, updated_by, updated_at
+       FROM public.technician_service_matrix
+       WHERE username=$1`,
+      [username]
+    );
+    if (!r.rows || !r.rows.length) {
+      return res.json({ username, matrix_json: {}, updated_by: null, updated_at: null });
+    }
+    return res.json(r.rows[0]);
+  } catch (e) {
+    console.error('GET service-matrix error:', e);
+    return res.status(500).json({ error: 'โหลดสิทธิ์งานของช่างไม่สำเร็จ' });
+  }
+});
+
+app.put("/admin/technicians/:username/service-matrix", requireAdminSession, async (req, res) => {
+  try {
+    const username = String(req.params.username || '').trim();
+    const matrix_json = req.body?.matrix_json ?? req.body?.matrix ?? {};
+    // Minimal validation (fail-open): accept object only
+    if (matrix_json == null || typeof matrix_json !== 'object' || Array.isArray(matrix_json)) {
+      return res.status(400).json({ error: 'matrix_json ต้องเป็น Object' });
+    }
+    const updated_by = String(req?.actor?.username || req?.auth?.username || 'admin').trim();
+    await pool.query(
+      `INSERT INTO public.technician_service_matrix(username, matrix_json, updated_by, updated_at)
+       VALUES ($1, $2::jsonb, $3, NOW())
+       ON CONFLICT (username) DO UPDATE SET
+         matrix_json = EXCLUDED.matrix_json,
+         updated_by = EXCLUDED.updated_by,
+         updated_at = NOW()`,
+      [username, JSON.stringify(matrix_json), updated_by]
+    );
+    return res.json({ ok: true });
+  } catch (e) {
+    console.error('PUT service-matrix error:', e);
+    return res.status(500).json({ error: 'บันทึกสิทธิ์งานของช่างไม่สำเร็จ' });
+  }
+});
+
 // Admin: add/list special availability slots per technician (v2)
 app.get("/admin/technicians/:username/special_slots_v2", requireAdminSession, async (req, res) => {
   try {
@@ -8962,6 +9023,90 @@ app.get("/public/availability_v2", async (req, res) => {
   const debugReasons = [];
   const debugInfo = { busy_by_tech: debugBusy, free_by_tech: debugFree, reasons: debugReasons };
 
+  // ===== Service Matrix (Option B) =====
+  // criteria from customer booking page (Thai values)
+  const q_job_type = String(req.query.job_type || req.query.jobType || '').trim();
+  const q_ac_type = String(req.query.ac_type || req.query.acType || '').trim();
+  const q_wash_variant = String(req.query.wash_variant || req.query.washVariant || '').trim();
+  const q_repair_variant = String(req.query.repair_variant || req.query.repairVariant || '').trim();
+
+  const normalizeJobKey = (s) => {
+    const v = String(s || '').toLowerCase();
+    if (!v) return null;
+    if (v.includes('ติดตั้ง')) return 'install';
+    if (v.includes('ซ่อม')) return 'repair';
+    if (v.includes('ล้าง')) return 'wash';
+    return null;
+  };
+  const normalizeAcKey = (s) => {
+    const v = String(s || '').toLowerCase();
+    if (!v) return null;
+    if (v.includes('ผนัง') || v.includes('wall')) return 'wall';
+    if (v.includes('สี่ทิศ') || v.includes('4') || v.includes('four')) return 'fourway';
+    if (v.includes('แขวน')) return 'hanging';
+    if (v.includes('ใต้ฝ้า') || v.includes('เปลือย') || v.includes('ฝัง')) return 'ceiling';
+    return null;
+  };
+  const normalizeWashKey = (s) => {
+    const v = String(s || '').toLowerCase();
+    if (!v) return null;
+    if (v.includes('ธรรมดา') || v.includes('normal')) return 'normal';
+    if (v.includes('พรีเมียม') || v.includes('premium')) return 'premium';
+    if (v.includes('แขวนคอย') || v.includes('coil')) return 'coil';
+    if (v.includes('ตัดล้าง') || v.includes('overhaul') || v.includes('ใหญ่')) return 'overhaul';
+    return null;
+  };
+
+  const criteria = {
+    job: normalizeJobKey(q_job_type),
+    ac: normalizeAcKey(q_ac_type),
+    wash: normalizeWashKey(q_wash_variant),
+    repair_variant: q_repair_variant || null,
+  };
+
+  const hasCriteria = Boolean(criteria.job || criteria.ac || criteria.wash || criteria.repair_variant);
+
+  async function loadServiceMatrixMap(usernames) {
+    try {
+      if (!usernames || !usernames.length) return new Map();
+      const r = await pool.query(
+        `SELECT username, matrix_json FROM public.technician_service_matrix WHERE username = ANY($1::text[])`,
+        [usernames]
+      );
+      const m = new Map();
+      for (const row of (r.rows || [])) m.set(String(row.username), row.matrix_json || {});
+      return m;
+    } catch (e) {
+      // fail-open
+      console.warn('[availability_v2] loadServiceMatrixMap failed:', e.message);
+      return new Map();
+    }
+  }
+
+  function techMatchesMatrix(matrix, c) {
+    // Backward compatible: missing matrix or missing keys => allow
+    if (!matrix || typeof matrix !== 'object') return true;
+
+    const allowByObj = (obj, key) => {
+      if (!key) return true;
+      if (!obj || typeof obj !== 'object') return true;
+      if (!(key in obj)) return true;
+      return Boolean(obj[key]);
+    };
+
+    // job type
+    if (!allowByObj(matrix.job_types, c.job)) return false;
+
+    // ac type (only meaningful for wash/install/repair that depends on ac)
+    if (!allowByObj(matrix.ac_types, c.ac)) return false;
+
+    // wash variants (only enforce for wall wash if provided)
+    if (c.job === 'wash' && c.ac === 'wall') {
+      if (!allowByObj(matrix.wash_wall_variants, c.wash)) return false;
+    }
+    return true;
+  }
+
   try {
     const techsAll = await listTechniciansByType(tech_type, { include_paused: forced });
     // workday overrides (block forced lock on off-days)
@@ -8973,6 +9118,21 @@ app.get("/public/availability_v2", async (req, res) => {
       if (forced && isTechOffOnDate(t, date, offMap, { ignoreWeekly: true })) return false;
       return true;
     });
+
+    // Option B: filter technicians by admin-configured service matrix (customer booking only)
+    // - Do NOT apply when forced=1 (admin lock) to avoid hiding technicians in admin calendar.
+    // - Fail-open when matrix missing.
+    let techsFiltered = techs;
+    if (!forced && hasCriteria) {
+      const matrixMap = await loadServiceMatrixMap(techs.map(t => t.username));
+      techsFiltered = techs.filter(t => {
+        const mx = matrixMap.get(String(t.username)) || null;
+        return techMatchesMatrix(mx, criteria);
+      });
+      if (debugFlag && techsFiltered.length === 0 && techs.length > 0) {
+        debugReasons.push({ code: 'NO_MATCH_MATRIX', message: 'ไม่มีช่างที่เข้าเงื่อนไขตามสิทธิ์งานที่ตั้งไว้ (service matrix)' });
+      }
+    }
     // special slots map (admin can extend availability)
     const specialMap = new Map();
     try {
@@ -8991,7 +9151,7 @@ app.get("/public/availability_v2", async (req, res) => {
       // fail-open: do not break availability
       console.warn("[availability_v2] special slots query failed", e.message);
     }
-    const tech_count = techs.length;
+    const tech_count = techsFiltered.length;
 
     if (debugFlag && tech_count === 0) {
       debugReasons.push({ code: 'NO_TECH', message: 'ไม่มีช่างที่ตรงเงื่อนไข (tech_type/forced/วันหยุด) — ตรวจที่หน้า ช่าง/วันหยุด/accept_status' });
@@ -9046,7 +9206,7 @@ app.get("/public/availability_v2", async (req, res) => {
       events.get(k)[type].push(techUser);
     };
 
-    for (const tech of techs) {
+    for (const tech of techsFiltered) {
       const techWindows = buildTechWindowsMin(tech, date, specialMap, uiStartMin, uiEndMin);
       if (!techWindows.length) continue;
 
@@ -9097,6 +9257,8 @@ app.get("/public/availability_v2", async (req, res) => {
     if (!sweepPoints.length) {
       if (debugFlag) debugReasons.push({ code: 'NO_EVENTS', message: 'ไม่มีช่วงเวลาว่าง/ช่วงเริ่มงานในหน้าต่าง 09:00–18:00 (อาจเกิดจากวันหยุด/ไม่มี special slot/หรือถูก busy block ทั้งหมด)' });
       console.log("[availability_v2]", { date, tech_type, forced, duration_min, crew_size, effective_duration_min, tech_count, slots: 0, reason: debugReasons.map(r=>r.code).join(',') });
+      // Public customer response should not reveal technician counts.
+      const isPublicCustomer = !forced && !debugFlag;
       return res.json({
         date,
         tech_type,
@@ -9107,8 +9269,8 @@ app.get("/public/availability_v2", async (req, res) => {
         duration_min: effective_duration_min,
         effective_block_min: default_effective_block_min,
         slot_step_min,
-        tech_count,
-        crew_size,
+        tech_count: isPublicCustomer ? undefined : tech_count,
+        crew_size: isPublicCustomer ? undefined : crew_size,
         slots: [],
         debug: debugFlag ? debugInfo : undefined,
       });
@@ -9176,6 +9338,12 @@ app.get("/public/availability_v2", async (req, res) => {
 
     console.log("[availability_v2]", { date, tech_type, forced, duration_min, crew_size, effective_duration_min, tech_count, slots: slots.length, reason: (debugReasons.length ? debugReasons.map(r=>r.code).join(',') : undefined) });
 
+    // Public customer response should not reveal technician counts or available tech IDs.
+    const isPublicCustomer = !forced && !debugFlag;
+    const outSlots = isPublicCustomer
+      ? (slots || []).map(s => ({ start: s.start, end: s.end, available: !!s.available }))
+      : slots;
+
     res.json({
       date,
       tech_type,
@@ -9186,10 +9354,10 @@ app.get("/public/availability_v2", async (req, res) => {
       duration_min: effective_duration_min,
       effective_block_min: default_effective_block_min,
       slot_step_min,
-      tech_count,
-      crew_size,
+      tech_count: isPublicCustomer ? undefined : tech_count,
+      crew_size: isPublicCustomer ? undefined : crew_size,
       mode: (mode === 'free') ? 'free' : 'start',
-      slots,
+      slots: outSlots,
       debug: debugFlag ? debugInfo : undefined,
     });
   } catch (e) {
