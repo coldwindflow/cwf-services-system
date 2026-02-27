@@ -117,10 +117,11 @@ body{
   display:inline-flex;
   align-items:center;
   justify-content:center;
-  border:1px solid rgba(255,255,255,0.18);
-  background: rgba(255,255,255,0.92);
-  color:#2563eb;
-  box-shadow: 0 10px 26px rgba(0,0,0,0.18);
+  /* align tone with customer "estimate" card style */
+  border: 1px solid rgba(37,99,235,0.20);
+  background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(34,211,238,0.14));
+  color:#0f172a;
+  box-shadow: 0 12px 26px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.72);
   cursor:pointer;
   user-select:none;
   font-size:22px;
@@ -382,10 +383,35 @@ body{
   font-size: 16px;
   font-weight: 950;
   border-radius: 18px;
-  box-shadow: 0 18px 44px rgba(37,99,235,0.22);
-  background: linear-gradient(135deg, #2563eb, #06b6d4);
+  border: 1px solid rgba(37,99,235,0.20);
+  box-shadow: 0 12px 26px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.72);
+  background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(34,211,238,0.14));
+  color: #0f172a;
 }
 .customer-page .primary-cta:hover{ filter: brightness(1.03); }
+
+/* Customer: Load availability button should match same tone */
+.customer-page #loadSlotsBtn{
+  min-height: 42px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(37,99,235,0.20);
+  background: linear-gradient(135deg, rgba(59,130,246,0.18), rgba(34,211,238,0.14));
+  color: #0f172a;
+  font-weight: 950;
+  box-shadow: 0 12px 26px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.72);
+}
+.customer-page #loadSlotsBtn:hover{ filter: brightness(1.03); }
+.customer-page #loadSlotsBtn:active{ transform: translateY(1px) scale(0.99); }
+
+/* Customer: LINE chat must be green (as requested) */
+.customer-page .trust-btn.line{
+  border: 1px solid rgba(34,197,94,0.35) !important;
+  background: linear-gradient(135deg, rgba(34,197,94,0.22), rgba(16,185,129,0.18)) !important;
+  color: #052e16 !important;
+  box-shadow: 0 12px 26px rgba(15,23,42,0.10), inset 0 1px 0 rgba(255,255,255,0.70) !important;
+}
+.customer-page .trust-btn.line:hover{ filter: brightness(1.03); }
 
 .customer-page .card h2{
   margin: 0 0 10px;
