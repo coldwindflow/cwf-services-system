@@ -688,6 +688,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
   let PAYOUTS = [];
   let ACTIVE_PAYOUT = '';
   let ACTIVE_TECH = '';
+  let BULK_SELECTED_TECHS = new Set();
 
   function fmtBaht(n){
     const x = Number(n||0);
@@ -845,11 +846,45 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
     const arr = Array.isArray(techs)?techs:[];
     if (!arr.length) { box.innerHTML = `<div class="muted">ไม่มีบรรทัดในงวดนี้</div>`; return; }
 
+    // totals
+    const totalNet = arr.reduce((a,t)=>a+_safeNum(t.net_amount||t.total_amount||0),0);
+    const totalPaid = arr.reduce((a,t)=>a+_safeNum(t.paid_amount||0),0);
+    const totalRem = arr.reduce((a,t)=>a+_safeNum(t.remaining_amount||0),0);
+
+    // keep selection only for existing techs
+    const allUsers = arr.map(t=>String(t.technician_username||'').trim()).filter(Boolean);
+    const allSet = new Set(allUsers);
+    BULK_SELECTED_TECHS = new Set(Array.from(BULK_SELECTED_TECHS).filter(u=>allSet.has(u)));
+    const isAllSelected = allUsers.length>0 && allUsers.every(u=>BULK_SELECTED_TECHS.has(u));
+
     box.innerHTML = `
+      <div class="card" style="padding:12px;margin-bottom:10px">
+        <div class="row" style="justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap">
+          <div>
+            <b>สรุปงวด</b>
+            <div class="muted" style="margin-top:4px">ยอดสุทธิรวม: <b>${fmtBaht(totalNet)}</b> • จ่ายแล้วรวม: <b>${fmtBaht(totalPaid)}</b> • คงเหลือรวม: <b>${fmtBaht(totalRem)}</b></div>
+          </div>
+          <label class="row" style="gap:8px;align-items:center">
+            <input type="checkbox" id="chkSelectAllTech" ${isAllSelected?'checked':''} />
+            <span class="muted">เลือกทั้งหมด</span>
+          </label>
+        </div>
+        <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px;align-items:center">
+          <input id="bulkSlipUrl" placeholder="ลิงก์สลิป (ใช้ร่วมกันได้ / ว่างได้)" style="flex:1;min-width:240px" />
+          <input id="bulkNote" placeholder="โน้ต (ใช้ร่วมกันได้ / ว่างได้)" style="flex:1;min-width:200px" />
+          <button class="btn blue" id="btnPaySelectedFull">จ่ายครบที่เลือก</button>
+          <button class="btn red" id="btnPayAllFull">จ่ายครบทั้งหมด</button>
+        </div>
+        <div class="muted" style="margin-top:8px;line-height:1.4">
+          - ปุ่ม “จ่ายครบ” จะตั้งยอดจ่าย = ยอดสุทธิของช่างอัตโนมัติ (gross + adjustment)<br/>
+          - ถ้าต้องจ่ายบางส่วน ให้ใช้ปุ่ม “จ่าย” รายคนในตาราง
+        </div>
+      </div>
       <div style="overflow:auto">
         <table>
           <thead>
             <tr class="muted">
+              <td style="width:44px">เลือก</td>
               <td>ช่าง</td>
               <td>ยอดสุทธิ</td>
               <td>จ่ายแล้ว</td>
@@ -867,7 +902,9 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
               const rem = fmtBaht(t.remaining_amount||0);
               const st = esc(t.paid_status||'unpaid');
               const pillClass = (st==='paid') ? 'green' : (st==='partial' ? 'yellow' : 'gray');
+              const checked = BULK_SELECTED_TECHS.has(String(t.technician_username||'')) ? 'checked' : '';
               return `<tr class="tr">
+                <td><input type="checkbox" data-act="sel" data-u="${u}" ${checked} /></td>
                 <td class="mono">${u}</td>
                 <td><b>${net}</b></td>
                 <td>${paid}</td>
@@ -886,6 +923,74 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
       </div>
       <div class="muted" style="margin-top:8px">หมายเหตุ: “ปรับยอด” จะถูกเก็บเป็น audit trail และจะไปอยู่ในสลิปงวด</div>
     `;
+
+    // wire selection
+    const selAll = $('chkSelectAllTech');
+    if (selAll){
+      selAll.onchange = ()=>{
+        if (selAll.checked) {
+          allUsers.forEach(u=>BULK_SELECTED_TECHS.add(u));
+        } else {
+          BULK_SELECTED_TECHS = new Set();
+        }
+        renderPayoutTechs(arr);
+      };
+    }
+    box.querySelectorAll('input[data-act="sel"]').forEach(chk=>{
+      chk.addEventListener('change', ()=>{
+        const u = String(chk.getAttribute('data-u')||'').trim();
+        if (!u) return;
+        if (chk.checked) BULK_SELECTED_TECHS.add(u);
+        else BULK_SELECTED_TECHS.delete(u);
+      });
+    });
+
+    // wire bulk pay
+    const btnSel = $('btnPaySelectedFull');
+    if (btnSel){
+      btnSel.onclick = async ()=>{
+        if (!ACTIVE_PAYOUT) return;
+        const targets = Array.from(BULK_SELECTED_TECHS);
+        if (!targets.length) return alert('ยังไม่ได้เลือกช่าง');
+        if (!confirm(`จ่ายครบให้ช่างที่เลือก ${targets.length} คน ในงวด ${ACTIVE_PAYOUT} ?\n\nระบบจะตั้งยอดจ่าย = ยอดสุทธิอัตโนมัติ`)) return;
+        const slip_url = String(($('bulkSlipUrl')?.value||'')).trim();
+        const note = String(($('bulkNote')?.value||'')).trim();
+        try{
+          await api(`/admin/super/payouts/${encodeURIComponent(ACTIVE_PAYOUT)}/pay_bulk`, {
+            method:'POST',
+            body: JSON.stringify({ mode:'selected', technicians: targets, slip_url, note })
+          });
+          toast('บันทึกการจ่ายแล้ว');
+          await openPayout(ACTIVE_PAYOUT);
+          if (ACTIVE_TECH) await openPayoutTech(ACTIVE_TECH);
+          await loadAudit();
+        }catch(e){
+          alert(`จ่ายไม่สำเร็จ: ${e.message}`);
+        }
+      };
+    }
+    const btnAll = $('btnPayAllFull');
+    if (btnAll){
+      btnAll.onclick = async ()=>{
+        if (!ACTIVE_PAYOUT) return;
+        if (!confirm(`จ่ายครบทั้งหมดในงวด ${ACTIVE_PAYOUT} ?\n\nระบบจะตั้งยอดจ่าย = ยอดสุทธิอัตโนมัติ`)) return;
+        const slip_url = String(($('bulkSlipUrl')?.value||'')).trim();
+        const note = String(($('bulkNote')?.value||'')).trim();
+        try{
+          await api(`/admin/super/payouts/${encodeURIComponent(ACTIVE_PAYOUT)}/pay_bulk`, {
+            method:'POST',
+            body: JSON.stringify({ mode:'all', slip_url, note })
+          });
+          toast('บันทึกการจ่ายแล้ว');
+          BULK_SELECTED_TECHS = new Set(allUsers);
+          await openPayout(ACTIVE_PAYOUT);
+          if (ACTIVE_TECH) await openPayoutTech(ACTIVE_TECH);
+          await loadAudit();
+        }catch(e){
+          alert(`จ่ายไม่สำเร็จ: ${e.message}`);
+        }
+      };
+    }
 
     box.querySelectorAll('button[data-act="tech"]').forEach(btn=>{
       btn.addEventListener('click', ()=> openPayoutTech(btn.getAttribute('data-u')));

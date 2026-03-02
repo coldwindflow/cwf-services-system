@@ -3213,6 +3213,141 @@ app.post('/admin/super/payouts/:payout_id/pay', requireSuperAdmin, async (req, r
   }
 });
 
+// ---- Super Admin: pay bulk (Phase 6)
+// ใช้สำหรับ “จ่ายครบหลายช่าง/ทั้งงวด” ให้ใช้ง่ายขึ้น
+// body:
+//   { mode: 'selected'|'all', technicians?: [username], slip_url?: string, note?: string }
+// behavior:
+//   - ตั้ง paid_amount = net_amount (gross + adjustments) ให้แต่ละช่าง
+//   - idempotent (upsert)
+//   - auto-lock งวดถ้ายัง draft
+//   - ถ้าจ่ายครบทุกคน -> status=paid
+app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const payout_id = String(req.params.payout_id || '').trim();
+    const b = req.body || {};
+    const mode = String(b.mode || 'selected').trim();
+    const list = Array.isArray(b.technicians) ? b.technicians.map(x=>String(x||'').trim()).filter(Boolean) : [];
+    const slip_url = String(b.slip_url || '').trim() || null;
+    const note = String(b.note || '').trim() || null;
+    if (!payout_id) return res.status(400).json({ ok:false, error:'MISSING_PAYOUT_ID' });
+
+    const period = await _getPayoutPeriod(payout_id);
+    if (!period) return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
+    if (String(period.status) === 'paid') return res.status(409).json({ ok:false, error:'PAYOUT_ALREADY_PAID' });
+
+    // Load net amounts for all techs in this payout
+    const techsQ = await pool.query(
+      `
+      WITH gross AS (
+        SELECT technician_username,
+               COALESCE(SUM(earn_amount),0) AS gross_amount
+          FROM public.technician_payout_lines
+         WHERE payout_id=$1
+         GROUP BY technician_username
+      ),
+      adj AS (
+        SELECT technician_username,
+               COALESCE(SUM(adj_amount),0) AS adj_total
+          FROM public.technician_payout_adjustments
+         WHERE payout_id=$1
+         GROUP BY technician_username
+      )
+      SELECT g.technician_username,
+             (g.gross_amount + COALESCE(a.adj_total,0)) AS net_amount
+        FROM gross g
+        LEFT JOIN adj a ON a.technician_username=g.technician_username
+      ORDER BY g.technician_username ASC
+      `,
+      [payout_id]
+    );
+    const rows = techsQ.rows || [];
+    if (!rows.length) return res.json({ ok:true, payout_id, updated:0, status: period.status });
+    const netMap = new Map(rows.map(r=>[String(r.technician_username), _money(r.net_amount)]));
+
+    let targets = [];
+    if (mode === 'all') {
+      targets = rows.map(r=>String(r.technician_username));
+    } else {
+      targets = list.filter(u=>netMap.has(u));
+    }
+    if (!targets.length) return res.status(400).json({ ok:false, error:'NO_TECH_SELECTED' });
+
+    await client.query('BEGIN');
+
+    // auto-lock if draft
+    if (String(period.status) === 'draft') {
+      await client.query(`UPDATE public.technician_payout_periods SET status='locked' WHERE payout_id=$1 AND status='draft'`, [payout_id]);
+    }
+
+    const actor = req.actor?.username || null;
+    let updated = 0;
+    for (const tech of targets) {
+      const net = _money(netMap.get(tech));
+      const paid_amount = net;
+      const paid_status = 'paid';
+      await client.query(
+        `INSERT INTO public.technician_payout_payments(
+           payout_id, technician_username, paid_amount, paid_status, paid_at, paid_by, slip_url, note, updated_at
+         ) VALUES($1,$2,$3,$4,NOW(),$5,$6,$7,NOW())
+         ON CONFLICT (payout_id, technician_username)
+         DO UPDATE SET
+           paid_amount=EXCLUDED.paid_amount,
+           paid_status=EXCLUDED.paid_status,
+           paid_at=NOW(),
+           paid_by=EXCLUDED.paid_by,
+           slip_url=COALESCE(EXCLUDED.slip_url, public.technician_payout_payments.slip_url),
+           note=COALESCE(EXCLUDED.note, public.technician_payout_payments.note),
+           updated_at=NOW()`,
+        [payout_id, tech, paid_amount, paid_status, actor, slip_url, note]
+      );
+      updated++;
+    }
+
+    // Mark paid if all techs are paid now
+    const paidCheck = await client.query(
+      `
+      WITH gross AS (
+        SELECT technician_username,
+               COALESCE(SUM(earn_amount),0) AS gross_amount
+          FROM public.technician_payout_lines
+         WHERE payout_id=$1
+         GROUP BY technician_username
+      ),
+      adj AS (
+        SELECT technician_username,
+               COALESCE(SUM(adj_amount),0) AS adj_total
+          FROM public.technician_payout_adjustments
+         WHERE payout_id=$1
+         GROUP BY technician_username
+      )
+      SELECT g.technician_username,
+             (g.gross_amount + COALESCE(a.adj_total,0)) AS net_amount,
+             COALESCE(p.paid_amount,0) AS paid_amount
+        FROM gross g
+        LEFT JOIN adj a ON a.technician_username=g.technician_username
+        LEFT JOIN public.technician_payout_payments p ON p.payout_id=$1 AND p.technician_username=g.technician_username
+      `,
+      [payout_id]
+    );
+    const allPaid = (paidCheck.rows || []).length > 0 && (paidCheck.rows || []).every(r => _paidStatus(r.net_amount, r.paid_amount) === 'paid');
+    if (allPaid) {
+      await client.query(`UPDATE public.technician_payout_periods SET status='paid' WHERE payout_id=$1`, [payout_id]);
+    }
+
+    await client.query('COMMIT');
+    const after = await _getPayoutPeriod(payout_id);
+    return res.json({ ok:true, payout_id, updated, status: after?.status || period.status, mode, targets });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('POST /admin/super/payouts/:payout_id/pay_bulk', e);
+    return res.status(500).json({ ok:false, error:'PAY_BULK_FAILED' });
+  } finally {
+    client.release();
+  }
+});
+
 // ---- Super Admin: adjust (create / delete)
 app.post('/admin/super/payouts/:payout_id/adjust', requireSuperAdmin, async (req, res) => {
   try {
