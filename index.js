@@ -8427,14 +8427,17 @@ function buildServiceLineItemsFromPayload(payload = {}) {
     const item_name = labelParts.join(" • ");
     const allocations = s && (s.allocations || s.allocation || null);
     if (allocations && typeof allocations === "object") {
+      // Split by technician (per-machine), but keep the base item_name stable.
+      // The assignee is stored in `assigned_technician_username` (so admin edit UI can show it clearly).
       const perMachine = (mc > 0) ? (linePrice / mc) : linePrice;
       for (const [tech, qty] of Object.entries(allocations)) {
         const q = Math.max(0, Number(qty || 0));
         if (!tech || q <= 0) continue;
-        const unit = Math.round(perMachine);
+        // Keep numeric precision (do not over-round; NUMERIC column supports decimals).
+        const unit = Number((Number(perMachine) || 0).toFixed(2));
         items.push({
           item_id: null,
-          item_name: `${item_name} • ช่าง ${tech}`,
+          item_name,
           qty: q,
           unit_price: unit,
           line_total: unit * q,

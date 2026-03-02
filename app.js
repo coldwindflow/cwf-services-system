@@ -1099,12 +1099,45 @@ function check30mReminder(activeJobs) {
 // =======================================
 // 🧭 GPS NAVIGATION (เปิด Google Maps)
 // =======================================
+function _safeOpenUrl(url){
+  const u = String(url || '').trim();
+  if (!u) return;
+  try {
+    const w = window.open(u, '_blank');
+    // Some PWA/webview contexts block popups; fall back to same-tab navigation.
+    if (!w) window.location.href = u;
+  } catch (e) {
+    try { window.location.href = u; } catch(_) {}
+  }
+}
+
+function _normalizeMapsUrl(input){
+  let s = String(input || '').trim();
+  if (!s) return '';
+
+  // If already a geo: URL or has protocol -> keep
+  if (/^geo:/i.test(s) || /^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return s;
+
+  // Common cases without scheme
+  if (/^(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps)/i.test(s)) {
+    return `https://${s}`;
+  }
+
+  // If user pasted a short host without protocol
+  if (/^(maps\.app\.goo\.gl|goo\.gl)\//i.test(s)) {
+    return `https://${s}`;
+  }
+
+  // Otherwise treat as a query/address
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s)}`;
+}
+
 function openMaps(lat, lng, address, mapsUrl) {
   try {
     let url = "";
-    const direct = String(mapsUrl || "").trim();
-    if (direct) {
-      window.open(direct, "_blank");
+    const directRaw = String(mapsUrl || "").trim();
+    if (directRaw) {
+      _safeOpenUrl(_normalizeMapsUrl(directRaw));
       return;
     }
 
@@ -1116,12 +1149,40 @@ function openMaps(lat, lng, address, mapsUrl) {
     } else {
       return alert("ไม่มีพิกัด/ที่อยู่สำหรับนำทาง");
     }
-    window.open(url, "_blank");
+    _safeOpenUrl(url);
   } catch (e) {
     alert("เปิดแผนที่ไม่สำเร็จ");
   }
 }
 window.openMaps = openMaps;
+
+// =======================================
+// 📝 NOTE DRAFT (กันข้อความหายตอน auto-refresh)
+// =======================================
+const NOTE_DRAFT_PREFIX = 'cwf_note_draft_';
+function getNoteDraft(jobKey){
+  const k = String(jobKey || '').trim();
+  if (!k) return '';
+  try { return String(localStorage.getItem(NOTE_DRAFT_PREFIX + k) || ''); } catch { return ''; }
+}
+function setNoteDraft(jobKey, val){
+  const k = String(jobKey || '').trim();
+  if (!k) return;
+  try { localStorage.setItem(NOTE_DRAFT_PREFIX + k, String(val || '')); } catch {}
+}
+function clearNoteDraft(jobKey){
+  const k = String(jobKey || '').trim();
+  if (!k) return;
+  try { localStorage.removeItem(NOTE_DRAFT_PREFIX + k); } catch {}
+}
+function noteDraftChanged(jobKey){
+  const k = String(jobKey || '').trim();
+  if (!k) return;
+  const el = document.getElementById(`note-${k}`);
+  if (!el) return;
+  setNoteDraft(k, el.value || '');
+}
+window.noteDraftChanged = noteDraftChanged;
 
 // =======================================
 // 📞 CALL CUSTOMER (บังคับให้กดโทรก่อนเริ่มเดินทาง)
@@ -1392,7 +1453,7 @@ function buildJobCard(job, historyMode = false) {
 
           <div>
             <b>📝 หมายเหตุช่าง</b>
-            <textarea id="note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""}>${escape(job.technician_note || "")}</textarea>
+            <textarea id="note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""} oninput="noteDraftChanged('${jobKeyJs}')">${escape(getNoteDraft(keyBase) || job.technician_note || "")}</textarea>
 
             ${historyMode ? "" : ((checkedIn || isWorking) ? `
               <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
@@ -2409,6 +2470,8 @@ function saveNote(jobId) {
     .then(() => {
       const box = document.getElementById(`note-status-${jobId}`);
       if (box) box.innerHTML = "✅ บันทึกแล้ว";
+      // clear local draft after successful save
+      try { clearNoteDraft(jobId); } catch(e) {}
     })
     .catch((e) => alert(`❌ ${e.message}`));
 }
