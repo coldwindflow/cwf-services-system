@@ -47,6 +47,18 @@ const incomeAllEl = document.getElementById("incomeAll");
 const incomeDaily2El = document.getElementById("incomeDaily2");
 const incomeMonth2El = document.getElementById("incomeMonth2");
 const incomeAll2El = document.getElementById("incomeAll2");
+
+// ✅ รายได้ (Phase 4 UX - การ์ดหลัก)
+const incomeTodayValEl = document.getElementById('incomeTodayVal');
+const incomePeriodEstValEl = document.getElementById('incomePeriodEstVal');
+const incomeOutstandingValEl = document.getElementById('incomeOutstandingVal');
+const incomePeriodRangeEl = document.getElementById('incomePeriodRange');
+const btnReloadIncomeOverviewEl = document.getElementById('btnReloadIncomeOverview');
+const btnIncomeQuickTodayEl = document.getElementById('btnIncomeQuickToday');
+const btnIncomeQuickYesterdayEl = document.getElementById('btnIncomeQuickYesterday');
+const btnIncomeQuick7El = document.getElementById('btnIncomeQuick7');
+const techIncomeLast7WrapEl = document.getElementById('techIncomeLast7Wrap');
+const techIncomeLast7ListEl = document.getElementById('techIncomeLast7List');
 const techPayoutPeriodsEl = document.getElementById('techPayoutPeriods');
 const techPayoutLinesEl = document.getElementById('techPayoutLines');
 const techPayoutDetailHintEl = document.getElementById('techPayoutDetailHint');
@@ -565,6 +577,13 @@ function _bkkYmdNow(){
   }catch{ return new Date().toISOString().slice(0,10); }
 }
 
+function _bkkYmdOffset(deltaDays){
+  try{
+    const ms = Date.now() + (7*60*60*1000) + (Number(deltaDays||0) * 24*60*60*1000);
+    return new Date(ms).toISOString().slice(0,10);
+  }catch{ return _bkkYmdNow(); }
+}
+
 function _bestEffortUsername() {
   // Backward-compatible: some clients lose the global `username` or cookies.
   // Try common storage keys used across versions.
@@ -632,6 +651,113 @@ async function loadIncomeSummary() {
 }
 
 // =======================================
+// 💰 INCOME OVERVIEW (Phase 4 UX)
+// - Today (fast)
+// - Next period estimate (fast)
+// - Outstanding (all_total - paid_total)
+// - Last 7 days summary
+// =======================================
+
+async function loadIncomeTodayMonthFast(){
+  // ถ้าไม่มีการ์ดใหม่ ให้ fail-open (ไม่พังหน้า)
+  if (!incomeTodayValEl && !incomeDaily2El && !incomeMonth2El) return;
+  try{
+    const u = _bestEffortUsername();
+    const url = `${API_BASE}/tech/income_today_month${u ? `?username=${encodeURIComponent(u)}` : ''}`;
+    const res = await fetch(url, { credentials:'include' });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
+    if (incomeTodayValEl) incomeTodayValEl.textContent = formatBaht(data.day_total||0);
+    // sync legacy hidden ids
+    if (incomeDaily2El) incomeDaily2El.textContent = formatBaht(data.day_total||0);
+    if (incomeMonth2El) incomeMonth2El.textContent = formatBaht(data.month_total||0);
+  }catch(e){
+    if (incomeTodayValEl) incomeTodayValEl.textContent = '-';
+  }
+}
+
+async function loadNextPeriodEstimate(){
+  if (!incomePeriodEstValEl && !incomePeriodRangeEl) return;
+  try{
+    const res = await fetch(`${API_BASE}/tech/income_next_period_estimate`, { credentials:'include' });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
+    if (incomePeriodEstValEl) incomePeriodEstValEl.textContent = formatBaht(data.estimate_total||0);
+    if (incomePeriodRangeEl) incomePeriodRangeEl.textContent = `งวด ${data.period_type} • ${data.period_start_th} - ${data.period_end_th}`;
+  }catch(e){
+    if (incomePeriodEstValEl) incomePeriodEstValEl.textContent = '-';
+    if (incomePeriodRangeEl) incomePeriodRangeEl.textContent = '-';
+  }
+}
+
+async function loadOutstandingTotal(){
+  if (!incomeOutstandingValEl) return;
+  try{
+    // ใช้ cache จาก income_summary (authoritative) เพื่อไม่ต้องยิง compute ซ้ำ
+    const cache = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache__')||'null');}catch{return null;} })();
+    if (!cache || typeof cache !== 'object') {
+      await loadIncomeSummary();
+    }
+    const c = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache__')||'null');}catch{return null;} })();
+    const allTotal = Number(c?.all_total || 0);
+
+    const res = await fetch(`${API_BASE}/tech/payments_total`, { credentials:'include' });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
+    const paid = Number(data.paid_total || 0);
+    incomeOutstandingValEl.textContent = formatBaht(allTotal - paid);
+  }catch(e){
+    incomeOutstandingValEl.textContent = '-';
+  }
+}
+
+function renderLastDaysSummary(payload){
+  if (!techIncomeLast7WrapEl || !techIncomeLast7ListEl) return;
+  const days = Array.isArray(payload?.days) ? payload.days : [];
+  if (!days.length) {
+    techIncomeLast7WrapEl.style.display = 'none';
+    return;
+  }
+  techIncomeLast7WrapEl.style.display = 'block';
+  techIncomeLast7ListEl.innerHTML = days.map(d=>{
+    const ymd = String(d.date||'');
+    const total = formatBaht(d.total||0);
+    const count = Number(d.jobs||0);
+    return `
+      <div style="padding:10px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px" onclick="(function(){ try{ var el=document.getElementById('incomeDatePicker'); if(el){ el.value='${ymd}'; } }catch(e){} try{ loadIncomeDayDetail('${ymd}'); }catch(e){} })()">
+        <div class="row" style="justify-content:space-between;gap:10px">
+          <div>
+            <b>${ymd}</b>
+            <div class="muted" style="margin-top:4px">${count} งาน</div>
+          </div>
+          <div style="text-align:right"><b style="font-size:18px">${total}</b></div>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+async function loadLastDays(days = 7){
+  if (!techIncomeLast7WrapEl || !techIncomeLast7ListEl) return;
+  try{
+    const res = await fetch(`${API_BASE}/tech/income_last_days?days=${encodeURIComponent(days)}`, { credentials:'include' });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
+    renderLastDaysSummary(data);
+  }catch(e){
+    techIncomeLast7WrapEl.style.display = 'none';
+  }
+}
+
+async function loadIncomeOverview(){
+  await Promise.allSettled([
+    loadIncomeTodayMonthFast(),
+    loadNextPeriodEstimate(),
+    loadOutstandingTotal()
+  ]);
+}
+
+// =======================================
 // 📆 INCOME DAY DETAIL (Technician)
 // - แสดงรายการงาน + รายได้ต่อใบงาน ของวันที่เลือก
 // =======================================
@@ -657,6 +783,19 @@ function renderIncomeDayDetail(payload){
     return;
   }
 
+  function esc(s){
+    return String(s ?? '').replace(/[&<>"']/g, (c)=>({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
+  function fmtPct(v){
+    if (v==null || v==='') return '-';
+    const n = Number(v);
+    if (!Number.isFinite(n)) return String(v);
+    return `${n}%`;
+  }
+
   const html = items.map(it=>{
     const d = it.detail_json || {};
     const jobId = String(it.job_id||'-');
@@ -665,8 +804,25 @@ function renderIncomeDayDetail(payload){
     const acType = _keyLabel(d.ac_type, d.ac_type_key);
     const wash = _keyLabel(d.wash_variant, '');
     const mc = Number(it.machine_count_for_tech||0);
-    const pct = (it.percent_final==null) ? '-' : `${Number(it.percent_final)}%`;
+    const pct = fmtPct(it.percent_final);
     const earn = formatBaht(it.earn_amount||0);
+
+    // Trace (สั้นๆ ให้ช่าง/แอดมินอ่านรู้เรื่อง)
+    const mode = _keyLabel(d.split_mode, d.mode);
+    const base = formatBaht(it.base_amount||0);
+    const rule = _keyLabel(it.step_rule_key, d.step_rule_key);
+    const howMc = _keyLabel(d.how_machine_count_for_tech, '');
+    const howPct = _keyLabel(d.how_percent_selected, '');
+    const howSplit = _keyLabel(d.how_split_applied, '');
+    const relItems = Array.isArray(d.related_items) ? d.related_items : [];
+    const relHtml = relItems.slice(0, 25).map(x=>{
+      const nm = esc(_keyLabel(x.item_name, x.name));
+      const qty = Number(x.qty||0);
+      const asg = esc(_keyLabel(x.assigned_technician_username, 'ร่วม/ไม่ระบุ'));
+      const lt = formatBaht(x.line_total||0);
+      return `<div class="muted" style="margin-top:4px">• ${nm} (x${qty}) • ${asg} • ${lt}</div>`;
+    }).join('');
+    const traceId = `trace_${jobId}_${String(it.line_id||'v')}`.replace(/[^a-zA-Z0-9_]/g,'_');
     return `
       <div style="padding:10px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px">
         <div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start">
@@ -675,10 +831,21 @@ function renderIncomeDayDetail(payload){
             <div class="muted" style="margin-top:4px">${finished}</div>
             <div class="muted" style="margin-top:6px">${jobType} • ${acType}${wash?` • ${wash}`:''}</div>
             <div class="muted" style="margin-top:4px">เครื่องของช่าง: <b>${mc}</b> • % ที่ใช้: <b>${pct}</b></div>
+            <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+              <button class="btn" type="button" onclick="(function(){var el=document.getElementById('${traceId}'); if(!el) return; el.style.display = (el.style.display==='none' || !el.style.display) ? 'block' : 'none';})()">ดูสูตร</button>
+            </div>
           </div>
           <div style="text-align:right">
             <b style="font-size:18px">${earn}</b>
           </div>
+        </div>
+
+        <div id="${traceId}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(15,23,42,0.15)">
+          <div class="muted">ฐานก่อน %: <b>${base}</b> • rule: <b>${esc(rule)}</b> • โหมดแบ่ง: <b>${esc(mode)}</b></div>
+          ${howMc ? `<div class="muted" style="margin-top:6px">นับเครื่อง: ${esc(howMc)}</div>` : ''}
+          ${howPct ? `<div class="muted" style="margin-top:6px">เลือก %: ${esc(howPct)}</div>` : ''}
+          ${howSplit ? `<div class="muted" style="margin-top:6px">กระจายรายได้: ${esc(howSplit)}</div>` : ''}
+          ${relHtml ? `<div style="margin-top:8px"><b style="color:#0b1b3a">รายการที่เกี่ยวข้อง</b>${relHtml}</div>` : ''}
         </div>
       </div>
     `;
@@ -1017,6 +1184,7 @@ async function idbDelete(photoId) {
 // =======================================
 loadProfile();
 loadIncomeSummary();
+loadIncomeOverview();
 
 // ✅ รายละเอียดรายวัน (วันนี้ทำอะไรไป)
 try{
@@ -1024,6 +1192,29 @@ try{
   if (btnLoadIncomeDayEl) btnLoadIncomeDayEl.addEventListener('click', ()=> loadIncomeDayDetail(incomeDatePickerEl?.value || _bkkYmdNow()));
   // โหลดของวันนี้อัตโนมัติครั้งแรก (กันช่างต้องกดหลายที)
   if (techIncomeDayListEl) loadIncomeDayDetail(_bkkYmdNow());
+
+  if (btnReloadIncomeOverviewEl) btnReloadIncomeOverviewEl.addEventListener('click', async ()=>{
+    await loadIncomeOverview();
+    await loadLastDays(7);
+  });
+  if (btnIncomeQuickTodayEl) btnIncomeQuickTodayEl.addEventListener('click', ()=>{
+    const d = _bkkYmdNow();
+    try{ if (incomeDatePickerEl) incomeDatePickerEl.value = d; }catch(e){}
+    if (techIncomeLast7WrapEl) techIncomeLast7WrapEl.style.display = 'none';
+    loadIncomeDayDetail(d);
+  });
+  if (btnIncomeQuickYesterdayEl) btnIncomeQuickYesterdayEl.addEventListener('click', ()=>{
+    const d = _bkkYmdOffset(-1);
+    try{ if (incomeDatePickerEl) incomeDatePickerEl.value = d; }catch(e){}
+    if (techIncomeLast7WrapEl) techIncomeLast7WrapEl.style.display = 'none';
+    loadIncomeDayDetail(d);
+  });
+  if (btnIncomeQuick7El) btnIncomeQuick7El.addEventListener('click', async ()=>{
+    await loadLastDays(7);
+  });
+
+  // preload last 7 days summary (fail-open)
+  loadLastDays(7);
 }catch(e){}
 
 loadOffers();
@@ -1031,16 +1222,19 @@ loadJobs();
 setInterval(() => loadOffers(), 15000);
 setInterval(() => loadJobs(), 20000); // keep active/history in sync (admin force close etc.)
 setInterval(() => loadIncomeSummary(), 60000);
+setInterval(() => loadIncomeOverview(), 90000);
 
 // ✅ มือถือ: กดโทรแล้วกลับมา/สลับแอพ -> รีเฟรชสถานะทันที
 window.addEventListener("focus", () => {
   try { loadJobs(); } catch(e) {}
   try { loadIncomeSummary(); } catch(e) {}
+  try { loadIncomeOverview(); } catch(e) {}
 });
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     try { loadJobs(); } catch(e) {}
     try { loadIncomeSummary(); } catch(e) {}
+    try { loadIncomeOverview(); } catch(e) {}
   }
 });
 

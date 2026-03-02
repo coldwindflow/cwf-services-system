@@ -3334,6 +3334,248 @@ all_total += inc;
     console.error('GET /tech/income_summary', e);
     return res.status(500).json({ error: 'LOAD_FAILED' });
   }
+});
+
+/**
+ * (Phase 4 UX) สรุปเร็ว: วันนี้ + เดือนนี้ (fast) เพื่อโชว์บนการ์ดหลัก
+ * - ไม่ต้องไล่งานทั้งหมดเหมือน /tech/income_summary
+ * - ยังใช้ engine เดียวกับงวด (step ladder) ผ่าน _buildPayoutLinesForJob
+ * GET /tech/income_today_month
+ */
+app.get('/tech/income_today_month', async (req, res) => {
+  try {
+    // fail-open like /tech/income_summary (some PWA lose cookie)
+    let tech = String(req.effective?.username || '').trim();
+    if (!tech) {
+      const qUser = String(req.query.username || '').trim();
+      if (!qUser) return res.status(401).json({ ok:false, error: 'UNAUTHORIZED' });
+      const vr = await pool.query(
+        `SELECT username FROM public.technician_profiles WHERE username=$1 LIMIT 1`,
+        [qUser]
+      );
+      if (!vr.rows || !vr.rows.length) return res.status(403).json({ ok:false, error: 'FORBIDDEN' });
+      tech = qUser;
+    }
+
+    const nowBkk = _bkkNow();
+    const { y, m, d } = _bkkYmd(nowBkk);
+    const todayStart = _bangkokMidnightUTC(y, m, d);
+    const tomorrowStart = _bangkokMidnightUTC(y, m, d + 1);
+
+    // month range
+    const monthStart = _bangkokMidnightUTC(y, m, 1);
+    let ny = y, nm = m + 1;
+    if (nm > 12) { nm = 1; ny = y + 1; }
+    const nextMonthStart = _bangkokMidnightUTC(ny, nm, 1);
+
+    const jobsQ = await pool.query(
+      `SELECT j.job_id, j.finished_at
+         FROM public.jobs j
+        WHERE j.job_status='เสร็จแล้ว'
+          AND j.finished_at IS NOT NULL
+          AND j.finished_at >= $1 AND j.finished_at < $2
+          AND (
+            j.technician_username = $3
+            OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$3)
+            OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$3)
+          )
+        ORDER BY j.finished_at DESC`,
+      [monthStart.toISOString(), nextMonthStart.toISOString(), tech]
+    );
+    const rows = jobsQ.rows || [];
+
+    let day_total = 0;
+    let month_total = 0;
+    let computed = 0;
+
+    // cap เฉพาะเดือน (กันเคสผิดปกติ)
+    const HARD_CAP = 2000;
+    const slice = rows.length > HARD_CAP ? rows.slice(0, HARD_CAP) : rows;
+
+    for (const row of slice) {
+      const job_id = Number(row.job_id);
+      let inc = 0;
+      try {
+        const lines = await _buildPayoutLinesForJob(job_id);
+        const meLine = (lines || []).find(x => String(x.technician_username) === tech);
+        inc = Number(meLine?.earn_amount || 0);
+      } catch (e) {
+        continue;
+      }
+      month_total += inc;
+      computed++;
+      const finishedAt = row.finished_at ? new Date(row.finished_at) : null;
+      if (finishedAt && finishedAt >= todayStart && finishedAt < tomorrowStart) {
+        day_total += inc;
+      }
+    }
+
+    return res.json({ ok:true, username: tech, day_total, month_total, jobs_count: rows.length, computed_jobs: computed, capped: rows.length > HARD_CAP });
+  } catch (e) {
+    console.error('GET /tech/income_today_month', e);
+    return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
+  }
+});
+
+/**
+ * (Phase 4 UX) งวดถัดไปที่ระบบโชว์บนการ์ด: "คาดว่าจะได้งวดถัดไป"
+ * - ถ้าวันที่ 1-10: งวด 25 ของเดือนนี้ (11-25) (ยังไม่เริ่ม => 0)
+ * - 11-25: งวด 25 ของเดือนนี้ (ongoing)
+ * - 26-สิ้นเดือน: งวด 10 ของเดือนหน้า (26-สิ้นเดือนนี้) (ongoing)
+ */
+app.get('/tech/income_next_period_estimate', requireTechnicianSession, async (req, res) => {
+  try {
+    const tech = String(req.auth?.username || '').trim();
+    const nowBkk = _bkkNow();
+    const { y, m, d } = _bkkYmd(nowBkk);
+
+    let bounds;
+    if (d <= 25) {
+      bounds = _periodBoundsForYm('25', y, m);
+    } else {
+      // 26..end => งวด 10 ของเดือนหน้า
+      let ny = y, nm = m + 1;
+      if (nm > 12) { nm = 1; ny = y + 1; }
+      bounds = _periodBoundsForYm('10', ny, nm);
+    }
+
+    const start = bounds.start;
+    const endEx = bounds.endEx;
+    const nowUtc = new Date();
+    const effectiveEnd = nowUtc < endEx ? nowUtc : endEx;
+
+    // ยังไม่ถึงช่วงงวด -> estimate = 0
+    if (effectiveEnd <= start) {
+      const fmtStart = (new Date(start.getTime() + 7*60*60*1000)).toISOString().slice(0,10);
+      const fmtEnd = (new Date(endEx.getTime() + 7*60*60*1000 - 1)).toISOString().slice(0,10);
+      return res.json({ ok:true, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: 0 });
+    }
+
+    const jobsQ = await pool.query(
+      `SELECT j.job_id
+         FROM public.jobs j
+        WHERE j.job_status='เสร็จแล้ว'
+          AND j.finished_at IS NOT NULL
+          AND j.finished_at >= $1 AND j.finished_at < $2
+          AND (
+            j.technician_username = $3
+            OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$3)
+            OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$3)
+          )
+        ORDER BY j.finished_at DESC`,
+      [start.toISOString(), effectiveEnd.toISOString(), tech]
+    );
+    const rows = jobsQ.rows || [];
+
+    let total = 0;
+    let computed = 0;
+    const HARD_CAP = 2000;
+    const slice = rows.length > HARD_CAP ? rows.slice(0, HARD_CAP) : rows;
+    for (const row of slice) {
+      const job_id = Number(row.job_id);
+      try {
+        const lines = await _buildPayoutLinesForJob(job_id);
+        const meLine = (lines || []).find(x => String(x.technician_username) === tech);
+        total += Number(meLine?.earn_amount || 0);
+        computed++;
+      } catch (e) {
+        continue;
+      }
+    }
+
+    const fmtStart = (new Date(start.getTime() + 7*60*60*1000)).toISOString().slice(0,10);
+    const fmtEnd = (new Date(endEx.getTime() + 7*60*60*1000 - 1)).toISOString().slice(0,10);
+    return res.json({ ok:true, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: total, jobs_count: rows.length, computed_jobs: computed, capped: rows.length > HARD_CAP });
+  } catch (e) {
+    console.error('GET /tech/income_next_period_estimate', e);
+    return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
+  }
+});
+
+/**
+ * (Phase 4 UX) สรุป N วันล่าสุด (default 7)
+ * GET /tech/income_last_days?days=7
+ */
+app.get('/tech/income_last_days', requireTechnicianSession, async (req, res) => {
+  try {
+    const tech = String(req.auth?.username || '').trim();
+    const days = Math.min(Math.max(Number(req.query.days || 7), 1), 31);
+
+    const nowBkk = _bkkNow();
+    const { y, m, d } = _bkkYmd(nowBkk);
+    const todayStart = _bangkokMidnightUTC(y, m, d);
+    const start = new Date(todayStart.getTime() - (days - 1) * 24*60*60*1000);
+    const endEx = _bangkokMidnightUTC(y, m, d + 1);
+
+    const jobsQ = await pool.query(
+      `SELECT j.job_id, j.finished_at
+         FROM public.jobs j
+        WHERE j.job_status='เสร็จแล้ว'
+          AND j.finished_at IS NOT NULL
+          AND j.finished_at >= $1 AND j.finished_at < $2
+          AND (
+            j.technician_username = $3
+            OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$3)
+            OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$3)
+          )
+        ORDER BY j.finished_at DESC`,
+      [start.toISOString(), endEx.toISOString(), tech]
+    );
+    const rows = jobsQ.rows || [];
+
+    const byDay = new Map();
+    for (let i=0;i<days;i++) {
+      const dt = new Date(start.getTime() + i*24*60*60*1000);
+      const ymd = toBangkokDateKey(dt);
+      byDay.set(ymd, { date: ymd, total: 0, jobs: 0 });
+    }
+
+    const HARD_CAP = 2000;
+    const slice = rows.length > HARD_CAP ? rows.slice(0, HARD_CAP) : rows;
+    for (const row of slice) {
+      const job_id = Number(row.job_id);
+      const dayKey = toBangkokDateKey(row.finished_at);
+      if (!byDay.has(dayKey)) continue;
+      try {
+        const lines = await _buildPayoutLinesForJob(job_id);
+        const meLine = (lines || []).find(x => String(x.technician_username) === tech);
+        const inc = Number(meLine?.earn_amount || 0);
+        const o = byDay.get(dayKey);
+        o.total += inc;
+        o.jobs += 1;
+      } catch (e) {
+        continue;
+      }
+    }
+
+    const out = Array.from(byDay.values()).sort((a,b)=> String(b.date).localeCompare(String(a.date)));
+    return res.json({ ok:true, username: tech, days: out, range_start: toBangkokDateKey(start), range_end: toBangkokDateKey(new Date(endEx.getTime()-1)) });
+  } catch (e) {
+    console.error('GET /tech/income_last_days', e);
+    return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
+  }
+});
+
+/**
+ * (Phase 4 UX) รวมยอดจ่ายแล้วทั้งหมดของช่าง
+ * GET /tech/payments_total
+ */
+app.get('/tech/payments_total', requireTechnicianSession, async (req, res) => {
+  try {
+    const tech = String(req.auth?.username || '').trim();
+    const q = await pool.query(
+      `SELECT COALESCE(SUM(paid_amount),0) AS paid_total
+         FROM public.technician_payout_payments
+        WHERE technician_username=$1`,
+      [tech]
+    );
+    const paid_total = Number(q.rows?.[0]?.paid_total || 0);
+    return res.json({ ok:true, username: tech, paid_total });
+  } catch (e) {
+    console.error('GET /tech/payments_total', e);
+    return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
+  }
+});
 
 /**
  * รายละเอียดรายได้รายวัน (เพื่อให้ช่างเห็นว่า "วันนี้ทำอะไร ได้เท่าไหร่" แบบไม่ต้องสร้างงวด)
@@ -3394,7 +3636,7 @@ app.get('/tech/income_day_detail', requireTechnicianSession, async (req, res) =>
     return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
   }
 });
-});
+
 
 async function requireAdminForRank(req, res, next) {
   try {

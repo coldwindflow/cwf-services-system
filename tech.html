@@ -540,21 +540,74 @@
 
     <div class="card section" id="sec-income">
       <h2>💰 รายได้</h2>
-      <div class="muted" style="margin-top:6px">สรุปเร็ว + งวดเงินเดือน (10 / 25)</div>
+      <div class="muted" style="margin-top:6px">เห็นยอดแบบเข้าใจทันที + ดูรายละเอียดรายวัน + งวดเงินเดือน</div>
 
       <div class="grid" style="margin-top:12px">
         <div class="card" style="margin-top:0">
-          <b style="color:#0b1b3a">สรุป</b>
-          <div class="muted" style="margin-top:6px">อิงจากงานที่เสร็จแล้ว (engine เดิม)</div>
-          <div class="row" style="margin-top:10px;justify-content:space-between"><span class="muted">วันนี้</span><b id="incomeDaily2">-</b></div>
-          <div class="row" style="margin-top:8px;justify-content:space-between"><span class="muted">เดือนนี้</span><b id="incomeMonth2">-</b></div>
-          <div class="row" style="margin-top:8px;justify-content:space-between"><span class="muted">สะสมทั้งหมด</span><b id="incomeAll2">-</b></div>
-          <button class="btn" style="margin-top:10px" id="btnReloadIncomePeriods">รีเฟรชงวด</button>
+          <b style="color:#0b1b3a">ภาพรวม</b>
+          <div class="muted" style="margin-top:6px">ยอดหลักที่ช่างถามบ่อย: วันนี้ / งวดถัดไป / ค้างรับ</div>
 
-          <!-- ✅ รายละเอียดรายวัน (ไม่ต้องสร้างงวด) -->
+          <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px">
+            <div style="padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10);background:rgba(37,99,235,0.05)">
+              <div class="row" style="justify-content:space-between;align-items:flex-end">
+                <div>
+                  <b>วันนี้ได้</b>
+                  <div class="muted" style="margin-top:4px">รวมจากงานที่ปิดวันนี้</div>
+                </div>
+                <div style="font-size:20px;font-weight:800" id="incomeTodayVal">-</div>
+              </div>
+            </div>
+
+            <div style="padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10)">
+              <div class="row" style="justify-content:space-between;align-items:flex-end">
+                <div>
+                  <b>คาดว่าจะได้งวดถัดไป</b>
+                  <div class="muted" style="margin-top:4px" id="incomePeriodRange">-</div>
+                </div>
+                <div style="font-size:20px;font-weight:800" id="incomePeriodEstVal">-</div>
+              </div>
+            </div>
+
+            <div style="padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10);background:rgba(16,185,129,0.06)">
+              <div class="row" style="justify-content:space-between;align-items:flex-end">
+                <div>
+                  <b>ค้างรับทั้งหมด</b>
+                  <div class="muted" style="margin-top:4px">สะสมทั้งหมด - จ่ายแล้ว</div>
+                </div>
+                <div style="font-size:20px;font-weight:800" id="incomeOutstandingVal">-</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- keep legacy summary ids for backward compatibility (hidden) -->
+          <div style="display:none">
+            <span id="incomeDaily2">-</span>
+            <span id="incomeMonth2">-</span>
+            <span id="incomeAll2">-</span>
+          </div>
+
+          <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap">
+            <button class="btn" id="btnReloadIncomePeriods">รีเฟรชงวด</button>
+            <button class="btn blue" id="btnReloadIncomeOverview">รีเฟรชยอด</button>
+          </div>
+
+          <!-- ✅ รายละเอียดรายวัน (statement) -->
           <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(15,23,42,0.08)">
-            <b style="color:#0b1b3a">วันนี้ทำอะไรไป</b>
-            <div class="muted" style="margin-top:6px">ดูรายได้ “ต่อใบงาน” แบบละเอียด</div>
+            <b style="color:#0b1b3a">สเตทเมนต์รายวัน</b>
+            <div class="muted" style="margin-top:6px">เลือกวันแล้วดูว่า “ทำอะไร ได้เท่าไหร่” พร้อมสูตรสั้น ๆ</div>
+
+            <div class="row" style="margin-top:10px;gap:8px;flex-wrap:wrap">
+              <button class="btn" id="btnIncomeQuickToday">วันนี้</button>
+              <button class="btn" id="btnIncomeQuickYesterday">เมื่อวาน</button>
+              <button class="btn" id="btnIncomeQuick7">7 วันล่าสุด</button>
+            </div>
+
+            <div id="techIncomeLast7Wrap" style="margin-top:10px;display:none">
+              <div class="muted">สรุป 7 วันล่าสุด</div>
+              <div id="techIncomeLast7List" style="margin-top:8px"></div>
+              <div style="height:10px"></div>
+            </div>
+
             <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap">
               <input id="incomeDatePicker" type="date" style="flex:1;min-width:180px" />
               <button class="btn blue" id="btnLoadIncomeDay">ดูรายละเอียด</button>
