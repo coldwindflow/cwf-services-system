@@ -160,6 +160,35 @@ function actorName(){
   return localStorage.getItem('username') || localStorage.getItem('admin_username') || 'admin';
 }
 
+function inferMachineCountFromName(name){
+  try{
+    const s = String(name||'');
+    const m = s.match(/(\d+)\s*เครื่อง/);
+    const n = m ? Number(m[1]) : 0;
+    return (Number.isFinite(n) && n > 1) ? n : 0;
+  }catch(e){ return 0; }
+}
+
+function normalizeLegacyQtyUnit(it){
+  // Backward-compatible: old jobs sometimes stored machine_count incorrectly in unit_price/qty.
+  // If we can infer "X เครื่อง" from item_name, reconstruct qty + unit_price from line_total.
+  try{
+    const mc = inferMachineCountFromName(it?.item_name);
+    const qty = Number(it?.qty||0);
+    const unit = Number(it?.unit_price||0);
+    const line = Number(it?.line_total|| (qty*unit));
+    if (mc && (qty <= 1 || qty !== mc) && Number.isFinite(line) && line > 0) {
+      // Heuristic trigger: very small unit_price (e.g., 35) or qty=1 while name says many machines.
+      if (unit < 100 || qty <= 1) {
+        it.qty = mc;
+        it.unit_price = Number((line / mc).toFixed(2));
+        it.line_total = Number((it.unit_price * mc).toFixed(2));
+      }
+    }
+  }catch(e){/* fail-open */}
+  return it;
+}
+
 function inWarranty(job){
   if (job?.is_in_warranty != null) return !!job.is_in_warranty;
   if (!job?.warranty_end_at) return false;
@@ -188,7 +217,7 @@ async function loadJob(){
 
   const r = await apiFetch(`/admin/job_v2/${encodeURIComponent(jobId)}`);
   const job = r.job || {};
-  const items = Array.isArray(r.items) ? r.items : [];
+  const items = Array.isArray(r.items) ? r.items.map(x=>normalizeLegacyQtyUnit(Object.assign({}, x))) : [];
   const photos = Array.isArray(r.photos) ? r.photos : [];
   const updates = Array.isArray(r.updates) ? r.updates : [];
   const team = Array.isArray(r.team_members) ? r.team_members : [];

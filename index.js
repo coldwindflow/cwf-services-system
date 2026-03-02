@@ -1726,11 +1726,34 @@ async function getIncomeSettingForTech(username, employment_type) {
   return { income_type: type || 'company', config: defs[type || 'company'] || {} };
 }
 
+function inferIsServiceLine(it) {
+  // Backward-compatible inference for older DB rows where `is_service` column didn't exist.
+  // Heuristic: service lines usually contain key phrases / BTU / เครื่อง.
+  // Keep conservative: only mark as service when confident.
+  try {
+    const name = String(it?.item_name || '').trim();
+    if (!name) return false;
+    if (/\bBTU\b/i.test(name)) return true;
+    if (/\b\d+\s*เครื่อง\b/.test(name)) return true;
+    if (name.includes('ล้างแอร์') || name.includes('ซ่อมแอร์') || name.includes('ติดตั้งแอร์')) return true;
+    // legacy compact labels
+    if (name.includes('ล้าง') && (name.includes('ผนัง') || name.includes('สี่ทิศ') || name.includes('แขวน') || name.includes('เปลือย'))) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 function sumServiceLines(items) {
   // service lines = is_service true; use line_total (before discount)
+  // backward-compatible: if `is_service` missing/false for all, infer from item_name.
+  const arr = (items || []);
+  const anyMarked = arr.some(it => it && it.is_service);
   let total = 0;
-  for (const it of (items || [])) {
-    if (it && it.is_service) total += Number(it.line_total || 0);
+  for (const it of arr) {
+    if (!it) continue;
+    const isSvc = it.is_service || (!anyMarked && inferIsServiceLine(it));
+    if (isSvc) total += Number(it.line_total || 0);
   }
   return total;
 }
@@ -1780,8 +1803,12 @@ async function computeJobPayout(job_id) {
     throw err;
   }
 
-  const serviceAssigned = items.filter(it => it.is_service && String(it.assigned_technician_username || '').trim());
-  const serviceUnassigned = items.filter(it => it.is_service && !String(it.assigned_technician_username || '').trim());
+  // Backward-compatible: old rows may not have is_service=true at all.
+  const anyMarked = items.some(it => it && it.is_service);
+  const isSvc = (it) => (it && (it.is_service || (!anyMarked && inferIsServiceLine(it))));
+
+  const serviceAssigned = items.filter(it => isSvc(it) && String(it.assigned_technician_username || '').trim());
+  const serviceUnassigned = items.filter(it => isSvc(it) && !String(it.assigned_technician_username || '').trim());
   const hasAnyServiceAssign = serviceAssigned.length > 0;
   const coopMode = team.length > 1 && serviceUnassigned.length > 0;
 

@@ -542,21 +542,57 @@ function formatBaht(n) {
   }
 }
 
+function _bestEffortUsername() {
+  // Backward-compatible: some clients lose the global `username` or cookies.
+  // Try common storage keys used across versions.
+  try {
+    const u1 = (typeof username === 'string' ? username : '') || '';
+    if (u1) return u1;
+  } catch {}
+  try {
+    const keys = ['username','tech_username','cwf_username','user','me','admin_username'];
+    for (const k of keys) {
+      const v = (localStorage.getItem(k) || '').trim();
+      if (v) return v;
+    }
+  } catch {}
+  return '';
+}
+
 async function loadIncomeSummary() {
   if (!incomeDailyEl && !incomeMonthEl && !incomeAllEl) return; // UI ไม่ได้มีส่วนนี้
   try {
     // Fail-open for PWA/webview that loses cookies: also send ?username=
-    const u = (typeof username === 'string' ? username : '') || '';
+    const u = _bestEffortUsername();
     const url = `${API_BASE}/tech/income_summary${u ? `?username=${encodeURIComponent(u)}` : ''}`;
     const res = await fetch(url, { credentials: 'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
 
+    // cache last good values (so UI won't look "empty" when temporary failures happen)
+    try {
+      localStorage.setItem('__cwf_income_cache__', JSON.stringify({
+        ts: Date.now(),
+        day_total: Number(data.day_total||0),
+        month_total: Number(data.month_total||0),
+        all_total: Number(data.all_total||0)
+      }));
+    } catch {}
+
     if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(data.day_total);
     if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(data.month_total);
     if (incomeAllEl) incomeAllEl.textContent = formatBaht(data.all_total);
   } catch (e) {
-    // fail-open (ไม่ให้หน้า tech พัง)
+    // fail-open (ไม่ให้หน้า tech พัง) + show cached value if available
+    try {
+      const c = JSON.parse(localStorage.getItem('__cwf_income_cache__') || 'null');
+      if (c && typeof c === 'object') {
+        if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(c.day_total);
+        if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(c.month_total);
+        if (incomeAllEl) incomeAllEl.textContent = formatBaht(c.all_total);
+        return;
+      }
+    } catch {}
     if (incomeDailyEl) incomeDailyEl.textContent = "-";
     if (incomeMonthEl) incomeMonthEl.textContent = "-";
     if (incomeAllEl) incomeAllEl.textContent = "-";
@@ -1103,21 +1139,27 @@ function check30mReminder(activeJobs) {
 // 🧭 GPS NAVIGATION (เปิด Google Maps)
 // =======================================
 function _safeOpenUrl(url){
-  const u = String(url || '').trim();
+  let u = String(url || '').trim();
   if (!u) return;
+  // sanitize invisible chars + whitespace that breaks navigation on mobile
+  u = u.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+  if (/(maps\.app\.goo\.gl|goo\.gl|google\.com\/maps|www\.google\.com\/maps)/i.test(u)) {
+    u = u.replace(/\s+/g, '');
+  }
   try {
     // 1) try window.open (works on most browsers)
-    const w = window.open(u, '_blank');
-    if (w) return;
+    const w = window.open(u, '_blank', 'noopener');
+    if (w) { try{ w.opener=null; }catch{} return; }
 
     // 2) fallback: create an anchor and click (works on some Android webviews)
     const a = document.createElement('a');
     a.href = u;
     a.target = '_blank';
     a.rel = 'noopener noreferrer';
+    a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
-    document.body.removeChild(a);
+    setTimeout(()=>{ try{ a.remove(); }catch{} }, 0);
 
     // 3) last resort: same-tab navigation
     window.location.href = u;
@@ -1145,6 +1187,12 @@ function _normalizeMapsUrl(input){
   if (/^(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps)/i.test(s)) {
     return `https://${s}`;
   }
+
+  // Some users paste "maps.google.com/?q=..." without scheme
+  if (/^maps\.google\.com\//i.test(s)) return `https://${s}`;
+
+  // If it still looks like a URL host/path, add https
+  if (/^\w+[\w.-]*\.[a-z]{2,}\//i.test(s)) return `https://${s}`;
 
   // If user pasted a short host without protocol
   if (/^(maps\.app\.goo\.gl|goo\.gl)\//i.test(s)) {
