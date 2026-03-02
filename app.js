@@ -680,7 +680,9 @@ function renderTechPayoutPeriods(list){
     const type = _safeText(p.period_type);
     const st = _fmtDateTH(p.period_start);
     const en = _fmtDateTH(p.period_end);
-    const total = formatBaht(p.total_amount);
+    const total = formatBaht(p.net_amount||p.total_amount||0);
+    const rem = formatBaht(p.remaining_amount||0);
+    const paySt = _safeText(p.paid_status||'unpaid');
     const status = _safeText(p.status||'draft');
     const active = (__cwfPayoutActiveId===p.payout_id);
     return `
@@ -692,7 +694,7 @@ function renderTechPayoutPeriods(list){
           </div>
           <div style="text-align:right">
             <b>${total}</b>
-            <div class="muted" style="margin-top:4px">สถานะ: ${status}</div>
+            <div class="muted" style="margin-top:4px">สถานะงวด: ${status} • จ่าย: ${paySt} • คงเหลือ: ${rem}</div>
           </div>
         </div>
       </div>
@@ -709,19 +711,29 @@ async function openTechPayoutDetail(payout_id){
   if (techPayoutDetailHintEl) techPayoutDetailHintEl.textContent = `กำลังโหลดรายละเอียดงวด: ${id}`;
   if (techPayoutLinesEl) techPayoutLinesEl.innerHTML = `<div class="muted">กำลังโหลดรายการงาน...</div>`;
   if (techPayoutTotalPillEl) { techPayoutTotalPillEl.style.display='none'; techPayoutTotalPillEl.textContent=''; }
+  const btnSlipTop = document.getElementById('btnOpenSlip');
+  if (btnSlipTop){ btnSlipTop.style.display='none'; btnSlipTop.onclick=null; }
 
   try{
     const res = await fetch(`${API_BASE}/tech/payouts/${encodeURIComponent(id)}`, { credentials:'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
-    const total = formatBaht(data.total_amount||0);
+    const total = formatBaht(data.net_amount||data.total_amount||0);
+    const paid = formatBaht(data.paid_amount||0);
+    const rem = formatBaht(data.remaining_amount||0);
+    const paySt = _safeText(data.paid_status||'unpaid');
     if (techPayoutDetailHintEl) techPayoutDetailHintEl.textContent = `รายการงานในงวด (${(data.lines||[]).length} งาน)`;
     if (techPayoutTotalPillEl) {
       techPayoutTotalPillEl.style.display='inline-flex';
       techPayoutTotalPillEl.className = 'pill blue';
-      techPayoutTotalPillEl.textContent = `ยอดรวมงวด: ${total}`;
+      techPayoutTotalPillEl.textContent = `ยอดสุทธิ: ${total} • จ่ายแล้ว: ${paid} • คงเหลือ: ${rem} (${paySt})`;
     }
-    renderTechPayoutLines(data.lines||[], data.total_amount||0);
+    const btnSlipTop = document.getElementById('btnOpenSlip');
+    if (btnSlipTop){
+      btnSlipTop.style.display = 'inline-flex';
+      btnSlipTop.onclick = ()=>{ window.open(`/tech/payouts/${encodeURIComponent(id)}/slip`, '_blank'); };
+    }
+    renderTechPayoutLines(data.lines||[], data.net_amount||data.total_amount||0, data.adjustments||[], data.payment||null, id);
   }catch(e){
     if (techPayoutDetailHintEl) techPayoutDetailHintEl.textContent = 'โหลดรายละเอียดไม่สำเร็จ';
     if (techPayoutLinesEl) techPayoutLinesEl.innerHTML = `<div class="muted">โหลดรายการไม่สำเร็จ</div>`;
@@ -729,7 +741,7 @@ async function openTechPayoutDetail(payout_id){
 }
 window.openTechPayoutDetail = openTechPayoutDetail;
 
-function renderTechPayoutLines(lines, total){
+function renderTechPayoutLines(lines, total, adjustments, payment, payoutId){
   if (!techPayoutLinesEl) return;
   const arr = Array.isArray(lines) ? lines : [];
   if (!arr.length) {
@@ -738,6 +750,10 @@ function renderTechPayoutLines(lines, total){
   }
 
   const PAGE = 40;
+
+  const adjArr = Array.isArray(adjustments)?adjustments:[];
+  const pay = payment || null;
+
   let shown = Math.min(PAGE, arr.length);
 
   const renderSlice = ()=>{
@@ -786,7 +802,26 @@ function renderTechPayoutLines(lines, total){
       ? `<button class="btn" id="btnMorePayoutLines" style="width:100%;margin-top:6px">โหลดเพิ่ม (${shown}/${arr.length})</button>`
       : `<div class="muted" style="text-align:center;margin-top:6px">ครบแล้ว (${arr.length} งาน)</div>`;
 
-    techPayoutLinesEl.innerHTML = html + moreBtn;
+    const adjHtml = adjArr.length ? adjArr.map(a=>{
+      const j = a.job_id ? `#${_safeText(a.job_id)}` : '-';
+      const amt = formatBaht(a.adj_amount||0);
+      const dt = _fmtDateTH(a.created_at);
+      return `<div class="muted">• ${dt} ${j} : ${_safeText(a.reason)} (${amt})</div>`;
+    }).join('') : `<div class="muted">-</div>`;
+
+    const slipBtn = `<button class="btn" id="btnSlip" style="width:100%;margin:8px 0">เปิดสลิปงวดนี้</button>`;
+
+    techPayoutLinesEl.innerHTML = `
+      <div class="card" style="margin-top:0">
+        <b>Adjustment (Audit)</b>
+        <div class="muted" style="margin-top:4px">การปรับยอดจะถูกแสดงในสลิปงวด</div>
+        <div style="margin-top:8px">${adjHtml}</div>
+      </div>
+      ${slipBtn}
+    ` + html + moreBtn;
+
+    const bSlip = document.getElementById('btnSlip');
+    if (bSlip) bSlip.onclick = ()=>{ if (!payoutId) return; window.open(`/tech/payouts/${encodeURIComponent(payoutId)}/slip`, '_blank'); };
     const btn = document.getElementById('btnMorePayoutLines');
     if (btn) btn.onclick = ()=>{ shown = Math.min(shown + PAGE, arr.length); renderSlice(); };
   };

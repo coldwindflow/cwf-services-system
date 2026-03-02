@@ -507,6 +507,8 @@
     if (!Number.isFinite(x)) return '0 ฿';
     try{ return x.toLocaleString('th-TH',{ maximumFractionDigits:0 }) + ' ฿'; }catch{ return String(Math.round(x))+' ฿'; }
   }
+  function _safeNum(n){ const x=Number(n||0); return Number.isFinite(x)?x:0; }
+
   function fmtDate(iso){
     try{ const d=new Date(iso); if (Number.isNaN(d.getTime())) return '-'; return d.toLocaleDateString('th-TH',{ year:'numeric', month:'short', day:'numeric' }); }catch{ return '-'; }
   }
@@ -569,6 +571,36 @@
     if (!id) return;
     ACTIVE_PAYOUT = id;
     ACTIVE_TECH = '';
+
+    // Phase 2 header actions
+    try{
+      const meta = (Array.isArray(PAYOUTS)?PAYOUTS:[]).find(x=>String(x.payout_id)===String(id)) || {};
+      const st = String(meta.status||'draft');
+      const pill = $('payoutStatusPill');
+      if (pill){
+        pill.style.display = 'inline-flex';
+        pill.className = 'pill ' + (st==='paid' ? 'green' : (st==='locked' ? 'yellow' : 'blue'));
+        pill.textContent = `status: ${st}`;
+      }
+      const lockBtn = $('btnLockPayout');
+      if (lockBtn){
+        lockBtn.disabled = (st !== 'draft');
+        lockBtn.onclick = async ()=>{
+          if (!confirm(`ล็อกงวด ${id} ?
+หลังล็อกจะกันความผิดพลาดที่ทำให้ยอดเปลี่ยน`)) return;
+          try{
+            await api(`/admin/super/payouts/${encodeURIComponent(id)}/lock`, { method:'POST' });
+            toast('ล็อกงวดแล้ว');
+            await loadPayouts();
+            await openPayout(id);
+            await loadAudit();
+          }catch(e){
+            alert(`ล็อกไม่สำเร็จ: ${e.message}`);
+          }
+        };
+      }
+    }catch(e){}
+
     $('payoutDetailHint').textContent = `กำลังโหลดรายช่างของงวด: ${id}`;
     $('payoutTechsBox').innerHTML = `<div class="muted">กำลังโหลด...</div>`;
     $('payoutLinesBox').innerHTML = '';
@@ -587,25 +619,102 @@
     if (!box) return;
     const arr = Array.isArray(techs)?techs:[];
     if (!arr.length) { box.innerHTML = `<div class="muted">ไม่มีบรรทัดในงวดนี้</div>`; return; }
+
     box.innerHTML = `
       <div style="overflow:auto">
         <table>
           <thead>
-            <tr class="muted"><td>ช่าง</td><td>ยอดรวม</td><td>จำนวนงาน</td><td>ดู</td></tr>
+            <tr class="muted">
+              <td>ช่าง</td>
+              <td>ยอดสุทธิ</td>
+              <td>จ่ายแล้ว</td>
+              <td>คงเหลือ</td>
+              <td>สถานะ</td>
+              <td>จำนวนงาน</td>
+              <td>จัดการ</td>
+            </tr>
           </thead>
           <tbody>
-            ${arr.map(t=>`<tr class="tr">
-              <td class="mono">${esc(t.technician_username)}</td>
-              <td><b>${fmtBaht(t.total_amount)}</b></td>
-              <td>${Number(t.jobs_count||0)}</td>
-              <td><button class="btn gray" data-act="tech" data-u="${esc(t.technician_username)}">ดูงาน</button></td>
-            </tr>`).join('')}
+            ${arr.map(t=>{
+              const u = esc(t.technician_username);
+              const net = fmtBaht(t.net_amount||t.total_amount||0);
+              const paid = fmtBaht(t.paid_amount||0);
+              const rem = fmtBaht(t.remaining_amount||0);
+              const st = esc(t.paid_status||'unpaid');
+              const pillClass = (st==='paid') ? 'green' : (st==='partial' ? 'yellow' : 'gray');
+              return `<tr class="tr">
+                <td class="mono">${u}</td>
+                <td><b>${net}</b></td>
+                <td>${paid}</td>
+                <td><b>${rem}</b></td>
+                <td><span class="pill ${pillClass}">${st}</span></td>
+                <td>${Number(t.jobs_count||0)}</td>
+                <td class="row" style="gap:8px;flex-wrap:wrap">
+                  <button class="btn gray" data-act="tech" data-u="${u}">ดูงาน</button>
+                  <button class="btn blue" data-act="pay" data-u="${u}" data-net="${_safeNum(t.net_amount)}">จ่าย</button>
+                  <button class="btn yellow" data-act="adj" data-u="${u}">ปรับยอด</button>
+                </td>
+              </tr>`;
+            }).join('')}
           </tbody>
         </table>
       </div>
+      <div class="muted" style="margin-top:8px">หมายเหตุ: “ปรับยอด” จะถูกเก็บเป็น audit trail และจะไปอยู่ในสลิปงวด</div>
     `;
+
     box.querySelectorAll('button[data-act="tech"]').forEach(btn=>{
       btn.addEventListener('click', ()=> openPayoutTech(btn.getAttribute('data-u')));
+    });
+    box.querySelectorAll('button[data-act="pay"]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const u = String(btn.getAttribute('data-u')||'').trim();
+        if (!ACTIVE_PAYOUT || !u) return;
+        const amtStr = prompt(`ใส่ยอด "จ่ายแล้ว" (บาท) สำหรับ ${u}
+(ใส่ยอดรวมที่จ่ายแล้วทั้งหมด ไม่ใช่เพิ่มทีละงวด)`, '');
+        if (amtStr==null) return;
+        const paid_amount = Number(String(amtStr).replace(/[, ]/g,''));
+        if (!Number.isFinite(paid_amount) || paid_amount < 0) { alert('ยอดไม่ถูกต้อง'); return; }
+        const slip_url = prompt('แนบลิงก์สลิป (ว่างได้)', '') || '';
+        const note = prompt('โน้ต (ว่างได้)', '') || '';
+        try{
+          await api(`/admin/super/payouts/${encodeURIComponent(ACTIVE_PAYOUT)}/pay`, {
+            method:'POST',
+            body: JSON.stringify({ technician_username: u, paid_amount, slip_url, note })
+          });
+          toast('บันทึกการจ่ายแล้ว');
+          await openPayout(ACTIVE_PAYOUT);
+          if (ACTIVE_TECH === u) await openPayoutTech(u);
+          await loadAudit();
+        }catch(e){
+          alert(`บันทึกไม่สำเร็จ: ${e.message}`);
+        }
+      });
+    });
+    box.querySelectorAll('button[data-act="adj"]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const u = String(btn.getAttribute('data-u')||'').trim();
+        if (!ACTIVE_PAYOUT || !u) return;
+        const amtStr = prompt(`ปรับยอดสำหรับ ${u} (ใส่ + หรือ - ได้)
+ตัวอย่าง: -200 หรือ 150`, '');
+        if (amtStr==null) return;
+        const adj_amount = Number(String(amtStr).replace(/[, ]/g,''));
+        if (!Number.isFinite(adj_amount) || adj_amount === 0) { alert('จำนวนไม่ถูกต้อง'); return; }
+        const reason = prompt('เหตุผล (ต้องกรอก)', '');
+        if (!reason || !String(reason).trim()) { alert('ต้องกรอกเหตุผล'); return; }
+        const job_id = prompt('ผูกกับงาน #job_id (ว่างได้)', '') || '';
+        try{
+          await api(`/admin/super/payouts/${encodeURIComponent(ACTIVE_PAYOUT)}/adjust`, {
+            method:'POST',
+            body: JSON.stringify({ technician_username: u, adj_amount, reason, job_id })
+          });
+          toast('บันทึกปรับยอดแล้ว');
+          await openPayout(ACTIVE_PAYOUT);
+          if (ACTIVE_TECH === u) await openPayoutTech(u);
+          await loadAudit();
+        }catch(e){
+          alert(`ปรับยอดไม่สำเร็จ: ${e.message}`);
+        }
+      });
     });
   }
 
@@ -616,20 +725,67 @@
     $('payoutLinesBox').innerHTML = `<div class="muted">กำลังโหลดรายการงานของ ${esc(u)}...</div>`;
     try{
       const r = await api(`/admin/super/payouts/${encodeURIComponent(ACTIVE_PAYOUT)}/tech/${encodeURIComponent(u)}`);
-      renderPayoutLines(r.lines||[], r.total_amount||0, u);
+      renderPayoutLines(r, u);
     }catch(e){
       $('payoutLinesBox').innerHTML = `<div class="muted">โหลดไม่สำเร็จ</div>`;
     }
   }
 
-  function renderPayoutLines(lines, total, username){
+  function renderPayoutLines(payload, username){
     const box = $('payoutLinesBox');
     if (!box) return;
-    const arr = Array.isArray(lines)?lines:[];
-    if (!arr.length) { box.innerHTML = `<div class="muted">ไม่มีรายการ</div>`; return; }
-    const head = `<div class="row" style="justify-content:space-between;align-items:flex-end">
-      <div><b>รายการงานของ ${esc(username)}</b><div class="muted" style="margin-top:4px">ยอดรวม: ${fmtBaht(total)}</div></div>
-    </div>`;
+
+    const arr = Array.isArray(payload?.lines)?payload.lines:[];
+    const gross = Number(payload?.gross_amount||0);
+    const adjTotal = Number(payload?.adj_total||0);
+    const net = Number(payload?.net_amount||payload?.total_amount||0);
+    const paid = Number(payload?.paid_amount||0);
+    const rem = Number(payload?.remaining_amount||0);
+    const paidStatus = String(payload?.paid_status||payload?.payment?.paid_status||'unpaid');
+    const adjustments = Array.isArray(payload?.adjustments)?payload.adjustments:[];
+
+    const head = `
+      <div class="row" style="justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px">
+        <div>
+          <b>รายการงานของ ${esc(username)}</b>
+          <div class="muted" style="margin-top:4px">
+            ยอดก่อนปรับ: <b>${fmtBaht(gross)}</b> • ปรับยอด: <b>${fmtBaht(adjTotal)}</b> • ยอดสุทธิ: <b>${fmtBaht(net)}</b>
+          </div>
+          <div class="muted" style="margin-top:4px">
+            จ่ายแล้ว: <b>${fmtBaht(paid)}</b> • คงเหลือ: <b>${fmtBaht(rem)}</b> • สถานะ: <b>${esc(paidStatus)}</b>
+          </div>
+        </div>
+        <div class="row" style="gap:8px">
+          <button class="btn blue" id="btnPayThisTech">จ่าย/แก้ยอดจ่าย</button>
+          <button class="btn yellow" id="btnAdjThisTech">ปรับยอด</button>
+          <button class="btn gray" id="btnOpenSlipAdmin">เปิดสลิป (ช่าง)</button>
+        </div>
+      </div>
+    `;
+
+    const adjBox = `
+      <div class="card" style="margin-top:10px">
+        <b>Adjustment (Audit)</b>
+        <div class="muted" style="margin-top:4px">ปรับยอดแบบมีเหตุผล • ลบได้เฉพาะ Super Admin</div>
+        <div style="overflow:auto;margin-top:8px">
+          <table>
+            <thead><tr class="muted"><td>เวลา</td><td>ผูกงาน</td><td>เหตุผล</td><td>จำนวน</td><td>ลบ</td></tr></thead>
+            <tbody>
+              ${adjustments.length ? adjustments.map(a=>`
+                <tr class="tr">
+                  <td class="muted">${fmtDate(a.created_at)}</td>
+                  <td class="mono">${a.job_id?('#'+esc(a.job_id)):'-'}</td>
+                  <td>${esc(a.reason||'')}</td>
+                  <td><b>${fmtBaht(a.adj_amount||0)}</b></td>
+                  <td><button class="btn red" data-act="delAdj" data-id="${Number(a.adj_id||0)}">ลบ</button></td>
+                </tr>
+              `).join('') : `<tr class="tr"><td colspan="5" class="muted">-</td></tr>`}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
     const rows = arr.map(ln=>{
       const d = ln.detail_json || {};
       const jt = esc(d.job_type||'-');
@@ -666,7 +822,79 @@
         </details>
       `;
     }).join('');
-    box.innerHTML = head + `<div style="margin-top:10px">${rows}</div>`;
+
+    box.innerHTML = head + adjBox + `<div style="margin-top:10px">${rows || '<div class="muted">ไม่มีรายการ</div>'}</div>`;
+
+    const slipBtn = document.getElementById('btnOpenSlipAdmin');
+    if (slipBtn){
+      slipBtn.onclick = ()=>{
+        if (!ACTIVE_PAYOUT || !ACTIVE_TECH) return;
+        window.open(`/tech/payouts/${encodeURIComponent(ACTIVE_PAYOUT)}/slip`, '_blank');
+      };
+    }
+
+    const payBtn = document.getElementById('btnPayThisTech');
+    if (payBtn){
+      payBtn.onclick = async ()=>{
+        const u = ACTIVE_TECH;
+        const amtStr = prompt(`ใส่ยอด "จ่ายแล้ว" (บาท) สำหรับ ${u}
+(ใส่ยอดรวมที่จ่ายแล้วทั้งหมด)`, String(Math.round(paid||0)));
+        if (amtStr==null) return;
+        const paid_amount = Number(String(amtStr).replace(/[, ]/g,''));
+        if (!Number.isFinite(paid_amount) || paid_amount < 0) { alert('ยอดไม่ถูกต้อง'); return; }
+        const slip_url = prompt('แนบลิงก์สลิป (ว่างได้)', String(payload?.payment?.slip_url||'')) || '';
+        const note = prompt('โน้ต (ว่างได้)', String(payload?.payment?.note||'')) || '';
+        try{
+          await api(`/admin/super/payouts/${encodeURIComponent(ACTIVE_PAYOUT)}/pay`, { method:'POST', body: JSON.stringify({ technician_username:u, paid_amount, slip_url, note }) });
+          toast('บันทึกการจ่ายแล้ว');
+          await openPayout(ACTIVE_PAYOUT);
+          await openPayoutTech(u);
+          await loadAudit();
+        }catch(e){
+          alert(`บันทึกไม่สำเร็จ: ${e.message}`);
+        }
+      };
+    }
+
+    const adjBtn = document.getElementById('btnAdjThisTech');
+    if (adjBtn){
+      adjBtn.onclick = async ()=>{
+        const u = ACTIVE_TECH;
+        const amtStr = prompt(`ปรับยอดสำหรับ ${u} (ใส่ + หรือ - ได้)`, '');
+        if (amtStr==null) return;
+        const adj_amount = Number(String(amtStr).replace(/[, ]/g,''));
+        if (!Number.isFinite(adj_amount) || adj_amount === 0) { alert('จำนวนไม่ถูกต้อง'); return; }
+        const reason = prompt('เหตุผล (ต้องกรอก)', '');
+        if (!reason || !String(reason).trim()) { alert('ต้องกรอกเหตุผล'); return; }
+        const job_id = prompt('ผูกกับงาน #job_id (ว่างได้)', '') || '';
+        try{
+          await api(`/admin/super/payouts/${encodeURIComponent(ACTIVE_PAYOUT)}/adjust`, { method:'POST', body: JSON.stringify({ technician_username:u, adj_amount, reason, job_id }) });
+          toast('บันทึกปรับยอดแล้ว');
+          await openPayout(ACTIVE_PAYOUT);
+          await openPayoutTech(u);
+          await loadAudit();
+        }catch(e){
+          alert(`ปรับยอดไม่สำเร็จ: ${e.message}`);
+        }
+      };
+    }
+
+    box.querySelectorAll('button[data-act="delAdj"]').forEach(btn=>{
+      btn.addEventListener('click', async ()=>{
+        const adj_id = Number(btn.getAttribute('data-id')||0);
+        if (!ACTIVE_PAYOUT || !ACTIVE_TECH || !Number.isFinite(adj_id) || adj_id<=0) return;
+        if (!confirm(`ลบ adjustment #${adj_id}?`)) return;
+        try{
+          await api(`/admin/super/payouts/${encodeURIComponent(ACTIVE_PAYOUT)}/adjust`, { method:'POST', body: JSON.stringify({ technician_username: ACTIVE_TECH, action:'delete', adj_id }) });
+          toast('ลบแล้ว');
+          await openPayout(ACTIVE_PAYOUT);
+          await openPayoutTech(ACTIVE_TECH);
+          await loadAudit();
+        }catch(e){
+          alert(`ลบไม่สำเร็จ: ${e.message}`);
+        }
+      });
+    });
   }
 
   if ($('btnGenP10')) $('btnGenP10').addEventListener('click', ()=> generatePayout('10'));

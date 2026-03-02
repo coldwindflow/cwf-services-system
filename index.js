@@ -2454,14 +2454,38 @@ app.get('/admin/super/payouts/:payout_id/techs', requireSuperAdmin, async (req, 
   try {
     const payout_id = String(req.params.payout_id || '').trim();
     if (!payout_id) return res.status(400).json({ ok: false, error: 'MISSING_PAYOUT_ID' });
+
     const r = await pool.query(
-      `SELECT technician_username,
-              COALESCE(SUM(earn_amount),0) AS total_amount,
-              COUNT(*)::int AS jobs_count
-         FROM public.technician_payout_lines
-        WHERE payout_id=$1
-        GROUP BY technician_username
-        ORDER BY total_amount DESC, technician_username ASC`,
+      `
+      WITH gross AS (
+        SELECT technician_username,
+               COALESCE(SUM(earn_amount),0) AS gross_amount,
+               COUNT(*)::int AS jobs_count
+          FROM public.technician_payout_lines
+         WHERE payout_id=$1
+         GROUP BY technician_username
+      ),
+      adj AS (
+        SELECT technician_username,
+               COALESCE(SUM(adj_amount),0) AS adj_total
+          FROM public.technician_payout_adjustments
+         WHERE payout_id=$1
+         GROUP BY technician_username
+      )
+      SELECT g.technician_username,
+             g.gross_amount,
+             COALESCE(a.adj_total,0) AS adj_total,
+             (g.gross_amount + COALESCE(a.adj_total,0)) AS net_amount,
+             COALESCE(p.paid_amount,0) AS paid_amount,
+             COALESCE(p.paid_status,'unpaid') AS paid_status,
+             ((g.gross_amount + COALESCE(a.adj_total,0)) - COALESCE(p.paid_amount,0)) AS remaining_amount,
+             g.jobs_count
+        FROM gross g
+        LEFT JOIN adj a ON a.technician_username=g.technician_username
+        LEFT JOIN public.technician_payout_payments p
+          ON p.payout_id=$1 AND p.technician_username=g.technician_username
+       ORDER BY net_amount DESC, g.technician_username ASC
+      `,
       [payout_id]
     );
     return res.json({ ok: true, payout_id, techs: r.rows || [] });
@@ -2476,7 +2500,8 @@ app.get('/admin/super/payouts/:payout_id/tech/:username', requireSuperAdmin, asy
     const payout_id = String(req.params.payout_id || '').trim();
     const username = String(req.params.username || '').trim();
     if (!payout_id || !username) return res.status(400).json({ ok: false, error: 'MISSING_PARAMS' });
-    const r = await pool.query(
+
+    const linesQ = await pool.query(
       `SELECT line_id, job_id, finished_at, earn_amount, base_amount, percent_final, machine_count_for_tech, step_rule_key,
               detail_json, setting_snapshot
          FROM public.technician_payout_lines
@@ -2484,10 +2509,402 @@ app.get('/admin/super/payouts/:payout_id/tech/:username', requireSuperAdmin, asy
         ORDER BY finished_at ASC, line_id ASC`,
       [payout_id, username]
     );
-    const sum = r.rows.reduce((a, it) => a + Number(it.earn_amount || 0), 0);
-    return res.json({ ok: true, payout_id, technician_username: username, total_amount: sum, lines: r.rows || [] });
+
+    const adjQ = await pool.query(
+      `SELECT adj_id, job_id, adj_amount, reason, created_at, created_by
+         FROM public.technician_payout_adjustments
+        WHERE payout_id=$1 AND technician_username=$2
+        ORDER BY created_at ASC, adj_id ASC`,
+      [payout_id, username]
+    );
+
+    const payQ = await pool.query(
+      `SELECT paid_amount, paid_status, paid_at, paid_by, slip_url, note
+         FROM public.technician_payout_payments
+        WHERE payout_id=$1 AND technician_username=$2
+        LIMIT 1`,
+      [payout_id, username]
+    );
+
+    const gross = (linesQ.rows || []).reduce((a, it) => a + Number(it.earn_amount || 0), 0);
+    const adj_total = (adjQ.rows || []).reduce((a, it) => a + Number(it.adj_amount || 0), 0);
+    const net = gross + adj_total;
+    const payment = payQ.rows[0] || null;
+    const paid_amount = Number(payment?.paid_amount || 0);
+    const remaining = net - paid_amount;
+
+    return res.json({
+      ok: true,
+      payout_id,
+      technician_username: username,
+      gross_amount: gross,
+      adj_total,
+      net_amount: net,
+      paid_amount,
+      paid_status: payment?.paid_status || (paid_amount > 0 ? 'partial' : 'unpaid'),
+      remaining_amount: remaining,
+      payment,
+      adjustments: adjQ.rows || [],
+      lines: linesQ.rows || []
+    });
   } catch (e) {
-    console.error('GET /admin/super/payouts/:payout_id/tech/:username', e);
+    console.error('GET /admin/super/payouts/:payout_id/t
+// =======================================
+// 🧾 Payout Lock / Pay / Adjust / Slip (Phase 2)
+// - Lock งวด: กันเลขเปลี่ยน
+// - Payments: เก็บยอดจ่ายจริง + สลิป
+// - Adjustments: ปรับยอดแบบมีเหตุผล (audit trail)
+// =======================================
+
+function _money(n){ const x = Number(n||0); return Number.isFinite(x) ? x : 0; }
+function _paidStatus(netAmount, paidAmount){
+  const net = _money(netAmount);
+  const paid = _money(paidAmount);
+  const EPS = 0.01;
+  if (paid <= EPS) return 'unpaid';
+  if (paid + EPS >= net) return 'paid';
+  return 'partial';
+}
+
+async function _getPayoutPeriod(payout_id){
+  const r = await pool.query(
+    `SELECT payout_id, status, period_type, period_start, period_end
+       FROM public.technician_payout_periods
+      WHERE payout_id=$1
+      LIMIT 1`,
+    [payout_id]
+  );
+  return r.rows[0] || null;
+}
+
+async function _getTechGrossAdjNet(payout_id, tech){
+  const g = await pool.query(
+    `SELECT COALESCE(SUM(earn_amount),0) AS gross_amount
+       FROM public.technician_payout_lines
+      WHERE payout_id=$1 AND technician_username=$2`,
+    [payout_id, tech]
+  );
+  const a = await pool.query(
+    `SELECT COALESCE(SUM(adj_amount),0) AS adj_total
+       FROM public.technician_payout_adjustments
+      WHERE payout_id=$1 AND technician_username=$2`,
+    [payout_id, tech]
+  );
+  const gross = _money(g.rows[0]?.gross_amount || 0);
+  const adj = _money(a.rows[0]?.adj_total || 0);
+  return { gross_amount: gross, adj_total: adj, net_amount: gross + adj };
+}
+
+async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip_url, note, actor){
+  const period = await _getPayoutPeriod(payout_id);
+  if (!period) {
+    const err = new Error('PAYOUT_NOT_FOUND'); err.code='PAYOUT_NOT_FOUND'; throw err;
+  }
+  if (String(period.status) === 'paid') {
+    const err = new Error('PAYOUT_ALREADY_PAID'); err.code='PAYOUT_ALREADY_PAID'; throw err;
+  }
+
+  const { net_amount } = await _getTechGrossAdjNet(payout_id, tech);
+  const paid_status = _paidStatus(net_amount, paid_amount);
+
+  await pool.query(
+    `INSERT INTO public.technician_payout_payments(
+       payout_id, technician_username, paid_amount, paid_status, paid_at, paid_by, slip_url, note, updated_at
+     ) VALUES($1,$2,$3,$4,NOW(),$5,$6,$7,NOW())
+     ON CONFLICT (payout_id, technician_username)
+     DO UPDATE SET
+       paid_amount=EXCLUDED.paid_amount,
+       paid_status=EXCLUDED.paid_status,
+       paid_at=NOW(),
+       paid_by=EXCLUDED.paid_by,
+       slip_url=EXCLUDED.slip_url,
+       note=EXCLUDED.note,
+       updated_at=NOW()`,
+    [payout_id, tech, _money(paid_amount), paid_status, actor || null, slip_url || null, note || null]
+  );
+
+  // auto-lock if still draft
+  if (String(period.status) === 'draft') {
+    await pool.query(`UPDATE public.technician_payout_periods SET status='locked' WHERE payout_id=$1 AND status='draft'`, [payout_id]);
+  }
+
+  // if all techs paid -> mark payout as paid
+  const techsQ = await pool.query(
+    `
+    WITH gross AS (
+      SELECT technician_username,
+             COALESCE(SUM(earn_amount),0) AS gross_amount
+        FROM public.technician_payout_lines
+       WHERE payout_id=$1
+       GROUP BY technician_username
+    ),
+    adj AS (
+      SELECT technician_username,
+             COALESCE(SUM(adj_amount),0) AS adj_total
+        FROM public.technician_payout_adjustments
+       WHERE payout_id=$1
+       GROUP BY technician_username
+    )
+    SELECT g.technician_username,
+           (g.gross_amount + COALESCE(a.adj_total,0)) AS net_amount,
+           COALESCE(p.paid_amount,0) AS paid_amount
+      FROM gross g
+      LEFT JOIN adj a ON a.technician_username=g.technician_username
+      LEFT JOIN public.technician_payout_payments p ON p.payout_id=$1 AND p.technician_username=g.technician_username
+    `,
+    [payout_id]
+  );
+
+  const allPaid = (techsQ.rows || []).length > 0 && (techsQ.rows || []).every(r => _paidStatus(r.net_amount, r.paid_amount) === 'paid');
+  if (allPaid) {
+    await pool.query(`UPDATE public.technician_payout_periods SET status='paid' WHERE payout_id=$1`, [payout_id]);
+  }
+
+  return { paid_status, net_amount };
+}
+
+// ---- Super Admin: lock payout
+app.post('/admin/super/payouts/:payout_id/lock', requireSuperAdmin, async (req, res) => {
+  try {
+    const payout_id = String(req.params.payout_id || '').trim();
+    if (!payout_id) return res.status(400).json({ ok:false, error:'MISSING_PAYOUT_ID' });
+
+    const p = await _getPayoutPeriod(payout_id);
+    if (!p) return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
+    if (String(p.status) === 'paid') return res.json({ ok:true, payout_id, status:'paid', already:true });
+
+    await pool.query(`UPDATE public.technician_payout_periods SET status='locked' WHERE payout_id=$1 AND status='draft'`, [payout_id]);
+    const p2 = await _getPayoutPeriod(payout_id);
+    return res.json({ ok:true, payout_id, status: p2?.status || 'locked' });
+  } catch (e) {
+    console.error('POST /admin/super/payouts/:payout_id/lock', e);
+    return res.status(500).json({ ok:false, error:'LOCK_FAILED' });
+  }
+});
+
+// ---- Super Admin: pay (upsert per tech)
+app.post('/admin/super/payouts/:payout_id/pay', requireSuperAdmin, async (req, res) => {
+  try {
+    const payout_id = String(req.params.payout_id || '').trim();
+    const b = req.body || {};
+    const tech = String(b.technician_username || '').trim();
+    const paid_amount = _money(b.paid_amount);
+    const slip_url = String(b.slip_url || '').trim() || null;
+    const note = String(b.note || '').trim() || null;
+
+    if (!payout_id || !tech) return res.status(400).json({ ok:false, error:'MISSING_PARAMS' });
+
+    const r = await _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip_url, note, req.actor?.username || null);
+    return res.json({ ok:true, payout_id, technician_username: tech, paid_amount, paid_status: r.paid_status, net_amount: r.net_amount });
+  } catch (e) {
+    console.error('POST /admin/super/payouts/:payout_id/pay', e);
+    if (String(e.code||'') === 'PAYOUT_NOT_FOUND') return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
+    if (String(e.code||'') === 'PAYOUT_ALREADY_PAID') return res.status(409).json({ ok:false, error:'PAYOUT_ALREADY_PAID' });
+    return res.status(500).json({ ok:false, error:'PAY_FAILED' });
+  }
+});
+
+// ---- Super Admin: adjust (create / delete)
+app.post('/admin/super/payouts/:payout_id/adjust', requireSuperAdmin, async (req, res) => {
+  try {
+    const payout_id = String(req.params.payout_id || '').trim();
+    const b = req.body || {};
+    const tech = String(b.technician_username || '').trim();
+    const action = String(b.action || 'create').trim();
+    if (!payout_id || !tech) return res.status(400).json({ ok:false, error:'MISSING_PARAMS' });
+
+    const period = await _getPayoutPeriod(payout_id);
+    if (!period) return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
+    if (String(period.status) === 'paid') return res.status(409).json({ ok:false, error:'PAYOUT_ALREADY_PAID' });
+
+    if (action === 'delete') {
+      const adj_id = Number(b.adj_id);
+      if (!Number.isFinite(adj_id) || adj_id <= 0) return res.status(400).json({ ok:false, error:'INVALID_ADJ_ID' });
+      await pool.query(
+        `DELETE FROM public.technician_payout_adjustments WHERE adj_id=$1 AND payout_id=$2 AND technician_username=$3`,
+        [adj_id, payout_id, tech]
+      );
+    } else {
+      const adj_amount = _money(b.adj_amount);
+      const reason = String(b.reason || '').trim();
+      const job_id = (b.job_id==null || String(b.job_id).trim()==='') ? null : String(b.job_id).trim();
+      if (!reason) return res.status(400).json({ ok:false, error:'MISSING_REASON' });
+      if (!Number.isFinite(adj_amount) || adj_amount === 0) return res.status(400).json({ ok:false, error:'INVALID_AMOUNT' });
+
+      await pool.query(
+        `INSERT INTO public.technician_payout_adjustments(payout_id, technician_username, job_id, adj_amount, reason, created_by)
+         VALUES($1,$2,$3,$4,$5,$6)`,
+        [payout_id, tech, job_id, adj_amount, reason, req.actor?.username || null]
+      );
+    }
+
+    // Recompute payment status if payment exists
+    const payQ = await pool.query(
+      `SELECT paid_amount FROM public.technician_payout_payments WHERE payout_id=$1 AND technician_username=$2 LIMIT 1`,
+      [payout_id, tech]
+    );
+    if ((payQ.rows || []).length) {
+      const paid_amount = _money(payQ.rows[0].paid_amount || 0);
+      const { net_amount } = await _getTechGrossAdjNet(payout_id, tech);
+      const paid_status = _paidStatus(net_amount, paid_amount);
+      await pool.query(
+        `UPDATE public.technician_payout_payments
+            SET paid_status=$3, updated_at=NOW()
+          WHERE payout_id=$1 AND technician_username=$2`,
+        [payout_id, tech, paid_status]
+      );
+    }
+
+    // keep payout locked if draft (adjust means numbers matter)
+    if (String(period.status) === 'draft') {
+      await pool.query(`UPDATE public.technician_payout_periods SET status='locked' WHERE payout_id=$1 AND status='draft'`, [payout_id]);
+    }
+
+    return res.json({ ok:true, payout_id, technician_username: tech });
+  } catch (e) {
+    console.error('POST /admin/super/payouts/:payout_id/adjust', e);
+    if (String(e.code||'') === 'PAYOUT_NOT_FOUND') return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
+    return res.status(500).json({ ok:false, error:'ADJUST_FAILED' });
+  }
+});
+
+// ---- Technician: payroll slip (HTML)
+app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, res) => {
+  try {
+    const tech = String(req.auth?.username || '').trim();
+    const payout_id = String(req.params.payout_id || '').trim();
+    if (!payout_id) return res.status(400).send('MISSING_PAYOUT_ID');
+
+    const period = await _getPayoutPeriod(payout_id);
+    if (!period) return res.status(404).send('PAYOUT_NOT_FOUND');
+
+    const dataQ = await pool.query(
+      `SELECT job_id, finished_at, earn_amount, detail_json
+         FROM public.technician_payout_lines
+        WHERE payout_id=$1 AND technician_username=$2
+        ORDER BY finished_at ASC, line_id ASC`,
+      [payout_id, tech]
+    );
+
+    const adjQ = await pool.query(
+      `SELECT adj_id, job_id, adj_amount, reason, created_at
+         FROM public.technician_payout_adjustments
+        WHERE payout_id=$1 AND technician_username=$2
+        ORDER BY created_at ASC, adj_id ASC`,
+      [payout_id, tech]
+    );
+
+    const payQ = await pool.query(
+      `SELECT paid_amount, paid_status, paid_at, slip_url, note
+         FROM public.technician_payout_payments
+        WHERE payout_id=$1 AND technician_username=$2
+        LIMIT 1`,
+      [payout_id, tech]
+    );
+
+    const gross = (dataQ.rows || []).reduce((a, it) => a + _money(it.earn_amount || 0), 0);
+    const adj_total = (adjQ.rows || []).reduce((a, it) => a + _money(it.adj_amount || 0), 0);
+    const net = gross + adj_total;
+
+    const payment = payQ.rows[0] || null;
+    const paid_amount = _money(payment?.paid_amount || 0);
+    const remaining = net - paid_amount;
+
+    let tpl = '';
+    try{
+      tpl = fs.readFileSync(path.join(__dirname, 'payroll-slip.html'), 'utf-8');
+    }catch(e){
+      tpl = '<html><head><meta charset="utf-8"><title>Payroll Slip</title></head><body>{{BODY}}</body></html>';
+    }
+
+    const esc = (s)=>String(s||'').replace(/[&<>"]/g,(c)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;' }[c]));
+    const fmtBaht = (n)=> {
+      const x = _money(n);
+      try { return x.toLocaleString('th-TH', { minimumFractionDigits:0, maximumFractionDigits:0 }) + ' ฿'; } catch { return String(Math.round(x))+' ฿'; }
+    };
+    const fmtDate = (d)=>{ try{ const x=new Date(d); if (Number.isNaN(x.getTime())) return '-'; return x.toLocaleDateString('th-TH',{year:'numeric',month:'short',day:'numeric'});}catch{return '-';} };
+
+    const rowsHtml = (dataQ.rows||[]).map(r=>{
+      const dj = r.detail_json || {};
+      const jt = esc(dj.job_type||'');
+      const ac = esc(dj.ac_type||'');
+      const wv = esc(dj.wash_variant||'');
+      const desc = [jt, ac, wv].filter(Boolean).join(' • ');
+      return `<tr>
+        <td class="mono">#${esc(r.job_id)}</td>
+        <td>${esc(fmtDate(r.finished_at))}</td>
+        <td>${desc||'-'}</td>
+        <td class="right">${esc(fmtBaht(r.earn_amount))}</td>
+      </tr>`;
+    }).join('');
+
+    const adjHtml = (adjQ.rows||[]).map(a=>{
+      const j = a.job_id ? `#${esc(a.job_id)}` : '-';
+      return `<tr>
+        <td class="mono">${esc(j)}</td>
+        <td>${esc(fmtDate(a.created_at))}</td>
+        <td>${esc(a.reason)}</td>
+        <td class="right">${esc(fmtBaht(a.adj_amount))}</td>
+      </tr>`;
+    }).join('');
+
+    const body = `
+      <div class="wrap">
+        <div class="top">
+          <div>
+            <div class="brand">Coldwindflow (CWF)</div>
+            <div class="muted">สลิปงวดช่าง</div>
+          </div>
+          <div class="right">
+            <div><b>${esc(payout_id)}</b></div>
+            <div class="muted">งวด ${esc(period.period_type)} • ${esc(fmtDate(period.period_start))} - ${esc(fmtDate(period.period_end))}</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="row"><span class="muted">ช่าง</span><b class="mono">${esc(tech)}</b></div>
+          <div class="row"><span class="muted">ยอดงวด (ก่อนปรับ)</span><b>${esc(fmtBaht(gross))}</b></div>
+          <div class="row"><span class="muted">ปรับยอด (รวม)</span><b>${esc(fmtBaht(adj_total))}</b></div>
+          <div class="row"><span class="muted">ยอดสุทธิ</span><b>${esc(fmtBaht(net))}</b></div>
+          <div class="row"><span class="muted">จ่ายแล้ว</span><b>${esc(fmtBaht(paid_amount))}</b></div>
+          <div class="row"><span class="muted">คงเหลือ</span><b>${esc(fmtBaht(remaining))}</b></div>
+          <div class="row"><span class="muted">สถานะ</span><b>${esc(payment?.paid_status || _paidStatus(net, paid_amount))}</b></div>
+        </div>
+
+        <h3>รายการงาน</h3>
+        <table>
+          <thead><tr><th>งาน</th><th>วันที่เสร็จ</th><th>รายละเอียด</th><th class="right">รายได้</th></tr></thead>
+          <tbody>${rowsHtml || '<tr><td colspan="4" class="muted">-</td></tr>'}</tbody>
+        </table>
+
+        <h3 style="margin-top:18px">รายการปรับยอด (Audit)</h3>
+        <table>
+          <thead><tr><th>งาน</th><th>วันที่</th><th>เหตุผล</th><th class="right">จำนวน</th></tr></thead>
+          <tbody>${adjHtml || '<tr><td colspan="4" class="muted">-</td></tr>'}</tbody>
+        </table>
+
+        <div class="foot muted">
+          ออกเอกสารเมื่อ: ${esc(new Date().toISOString())}
+          ${payment?.slip_url ? `<div>สลิปแนบ: ${esc(payment.slip_url)}</div>` : ''}
+        </div>
+
+        <div class="printbar">
+          <button onclick="window.print()">พิมพ์ / Save PDF</button>
+        </div>
+      </div>
+    `;
+
+    const html = tpl.replace('{{BODY}}', body)
+                    .replace('{{TITLE}}', esc(`Slip ${payout_id} ${tech}`));
+    res.setHeader('Content-Type','text/html; charset=utf-8');
+    return res.send(html);
+  } catch (e) {
+    console.error('GET /tech/payouts/:payout_id/slip', e);
+    return res.status(500).send('SLIP_FAILED');
+  }
+});
+
+ech/:username', e);
     return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
   }
 });
@@ -2499,15 +2916,44 @@ app.get('/admin/super/payouts/:payout_id/tech/:username', requireSuperAdmin, asy
 app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
   try {
     const tech = String(req.auth?.username || '').trim();
+
     const r = await pool.query(
-      `SELECT p.payout_id, p.period_type, p.period_start, p.period_end, p.status,
-              COALESCE(SUM(l.earn_amount),0) AS total_amount,
-              COUNT(l.*) AS lines_count
-         FROM public.technician_payout_periods p
-         LEFT JOIN public.technician_payout_lines l
-           ON l.payout_id=p.payout_id AND l.technician_username=$1
-        GROUP BY p.payout_id
-        ORDER BY p.period_start DESC, p.payout_id DESC`,
+      `
+      WITH gross AS (
+        SELECT p.payout_id, p.period_type, p.period_start, p.period_end, p.status,
+               COALESCE(SUM(l.earn_amount),0) AS gross_amount,
+               COUNT(l.*) AS lines_count
+          FROM public.technician_payout_periods p
+          LEFT JOIN public.technician_payout_lines l
+            ON l.payout_id=p.payout_id AND l.technician_username=$1
+         GROUP BY p.payout_id
+      ),
+      adj AS (
+        SELECT payout_id, COALESCE(SUM(adj_amount),0) AS adj_total
+          FROM public.technician_payout_adjustments
+         WHERE technician_username=$1
+         GROUP BY payout_id
+      ),
+      pay AS (
+        SELECT payout_id, paid_amount, paid_status, paid_at, slip_url
+          FROM public.technician_payout_payments
+         WHERE technician_username=$1
+      )
+      SELECT g.payout_id, g.period_type, g.period_start, g.period_end, g.status,
+             g.gross_amount,
+             COALESCE(a.adj_total,0) AS adj_total,
+             (g.gross_amount + COALESCE(a.adj_total,0)) AS net_amount,
+             COALESCE(p.paid_amount,0) AS paid_amount,
+             COALESCE(p.paid_status,'unpaid') AS paid_status,
+             ((g.gross_amount + COALESCE(a.adj_total,0)) - COALESCE(p.paid_amount,0)) AS remaining_amount,
+             g.lines_count,
+             p.paid_at,
+             p.slip_url
+        FROM gross g
+        LEFT JOIN adj a ON a.payout_id=g.payout_id
+        LEFT JOIN pay p ON p.payout_id=g.payout_id
+       ORDER BY g.period_start DESC, g.payout_id DESC
+      `,
       [tech]
     );
     return res.json({ ok: true, username: tech, payouts: r.rows || [] });
@@ -2522,7 +2968,8 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
     const tech = String(req.auth?.username || '').trim();
     const payout_id = String(req.params.payout_id || '').trim();
     if (!payout_id) return res.status(400).json({ ok: false, error: 'MISSING_PAYOUT_ID' });
-    const r = await pool.query(
+
+    const linesQ = await pool.query(
       `SELECT line_id, job_id, finished_at, earn_amount, base_amount, percent_final, machine_count_for_tech, step_rule_key,
               detail_json
          FROM public.technician_payout_lines
@@ -2530,8 +2977,45 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
         ORDER BY finished_at ASC, line_id ASC`,
       [payout_id, tech]
     );
-    const sum = r.rows.reduce((a, it) => a + Number(it.earn_amount || 0), 0);
-    return res.json({ ok: true, payout_id, username: tech, total_amount: sum, lines: r.rows || [] });
+
+    const adjQ = await pool.query(
+      `SELECT adj_id, job_id, adj_amount, reason, created_at
+         FROM public.technician_payout_adjustments
+        WHERE payout_id=$1 AND technician_username=$2
+        ORDER BY created_at ASC, adj_id ASC`,
+      [payout_id, tech]
+    );
+
+    const payQ = await pool.query(
+      `SELECT paid_amount, paid_status, paid_at, slip_url, note
+         FROM public.technician_payout_payments
+        WHERE payout_id=$1 AND technician_username=$2
+        LIMIT 1`,
+      [payout_id, tech]
+    );
+
+    const gross = (linesQ.rows || []).reduce((a, it) => a + Number(it.earn_amount || 0), 0);
+    const adj_total = (adjQ.rows || []).reduce((a, it) => a + Number(it.adj_amount || 0), 0);
+    const net = gross + adj_total;
+    const payment = payQ.rows[0] || null;
+    const paid_amount = Number(payment?.paid_amount || 0);
+    const remaining = net - paid_amount;
+
+    return res.json({
+      ok: true,
+      payout_id,
+      username: tech,
+      gross_amount: gross,
+      adj_total,
+      net_amount: net,
+      paid_amount,
+      paid_status: payment?.paid_status || (paid_amount > 0 ? 'partial' : 'unpaid'),
+      remaining_amount: remaining,
+      payment,
+      adjustments: adjQ.rows || [],
+      total_amount: net,
+      lines: linesQ.rows || []
+    });
   } catch (e) {
     console.error('GET /tech/payouts/:payout_id', e);
     return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
@@ -3334,6 +3818,43 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_technician_reviews_tech ON publ
     }
 
 
+
+    // =======================================
+    // 💸 Technician Payout Payments + Adjustments (Phase 2)
+    // - payments: เก็บยอดจ่ายจริง/สลิป/โน้ต ต่อ งวด-ช่าง (1 แถว)
+    // - adjustments: ปรับยอดแบบมีเหตุผล/audit (หลายแถว)
+    // =======================================
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_payout_payments (
+        payment_id BIGSERIAL PRIMARY KEY,
+        payout_id TEXT NOT NULL REFERENCES public.technician_payout_periods(payout_id) ON DELETE CASCADE,
+        technician_username TEXT NOT NULL,
+        paid_amount NUMERIC(12,2) DEFAULT 0,
+        paid_status TEXT NOT NULL DEFAULT 'unpaid' CHECK (paid_status IN ('unpaid','partial','paid')),
+        paid_at TIMESTAMPTZ,
+        paid_by TEXT,
+        slip_url TEXT,
+        note TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(payout_id, technician_username)
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_payout_payments_pid_tech ON public.technician_payout_payments(payout_id, technician_username)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_payout_adjustments (
+        adj_id BIGSERIAL PRIMARY KEY,
+        payout_id TEXT NOT NULL REFERENCES public.technician_payout_periods(payout_id) ON DELETE CASCADE,
+        technician_username TEXT NOT NULL,
+        job_id TEXT,
+        adj_amount NUMERIC(12,2) NOT NULL,
+        reason TEXT NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        created_by TEXT
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_payout_adjustments_pid_tech ON public.technician_payout_adjustments(payout_id, technician_username, created_at DESC)`);
     // 4) position check constraint: เพิ่ม founder_ceo
     await pool.query(`ALTER TABLE public.technician_profiles DROP CONSTRAINT IF EXISTS technician_profiles_position_check`);
     await pool.query(`
