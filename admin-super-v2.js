@@ -487,6 +487,7 @@
       $('stepRuleStatus').textContent = 'บันทึกแล้ว';
       toast('บันทึกแล้ว');
       await loadStepRules();
+  await loadOverrides();
       await loadAudit();
     }catch(e){
       $('stepRuleStatus').textContent = 'บันทึกไม่สำเร็จ';
@@ -494,7 +495,103 @@
     }
   });
 
-  // =======================================
+  
+// =======================================
+// 👤 Technician Step Overrides
+// =======================================
+
+let OVERRIDES = [];
+
+async function loadOverrides(){
+  if (!$('overridesTbody')) return;
+  try{
+    const r = await api('/admin/super/income_step_overrides');
+    OVERRIDES = r.overrides || [];
+    renderOverrides();
+  }catch(e){
+    $('overridesTbody').innerHTML = `<tr class="tr"><td colspan="10" class="muted">โหลดไม่สำเร็จ</td></tr>`;
+  }
+}
+
+function renderOverrides(){
+  const tb = $('overridesTbody');
+  if (!tb) return;
+  if (!OVERRIDES.length) {
+    tb.innerHTML = `<tr class="tr"><td colspan="10" class="muted">ยังไม่มี override</td></tr>`;
+    return;
+  }
+  tb.innerHTML = OVERRIDES.map(r=>{
+    const match = [r.job_type?`job=${esc(r.job_type)}`:'', r.ac_type?`ac=${esc(r.ac_type)}`:'', r.wash_variant?`wash=${esc(r.wash_variant)}`:'']
+      .filter(Boolean).join(' • ') || 'any';
+    return `
+      <tr class="tr">
+        <td class="mono">${esc(r.override_id)}</td>
+        <td class="mono">${esc(r.technician_username)}</td>
+        <td class="muted">${match}</td>
+        <td>${fmtPct(r.step_1_percent)}</td>
+        <td>${fmtPct(r.step_2_percent)}</td>
+        <td>${fmtPct(r.step_3_percent)}</td>
+        <td>${fmtPct(r.step_4p_percent)}</td>
+        <td>${Number(r.priority||0)}</td>
+        <td>${r.enabled ? '<span class="pill blue">on</span>' : '<span class="pill">off</span>'}</td>
+        <td><button class="btn gray" data-act="edit_ov" data-id="${esc(r.override_id)}">แก้ไข</button></td>
+      </tr>
+    `;
+  }).join('');
+
+  tb.querySelectorAll('button[data-act="edit_ov"]').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      const id = btn.getAttribute('data-id');
+      const it = OVERRIDES.find(x=>String(x.override_id)===String(id));
+      if (!it) return;
+      $('or_override_id').value = it.override_id || '';
+      $('or_tech').value = it.technician_username || '';
+      $('or_priority').value = Number(it.priority||0);
+      $('or_enabled').value = it.enabled ? 'true' : 'false';
+      $('or_job_type').value = it.job_type || '';
+      $('or_ac_type').value = it.ac_type || '';
+      $('or_wash_variant').value = it.wash_variant || '';
+      $('or_s1').value = fmtPct(it.step_1_percent);
+      $('or_s2').value = fmtPct(it.step_2_percent);
+      $('or_s3').value = fmtPct(it.step_3_percent);
+      $('or_s4').value = fmtPct(it.step_4p_percent);
+      toast('ดึงค่า override เข้าแบบฟอร์มแล้ว');
+    });
+  });
+}
+
+if ($('btnReloadOverrides')) $('btnReloadOverrides').addEventListener('click', loadOverrides);
+if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', async ()=>{
+  try{
+    const payload = {
+      override_id: String($('or_override_id').value||'').trim(),
+      technician_username: String($('or_tech').value||'').trim(),
+      priority: Number($('or_priority').value||0),
+      enabled: String($('or_enabled').value||'true') !== 'false',
+      job_type: String($('or_job_type').value||'').trim() || null,
+      ac_type: String($('or_ac_type').value||'').trim() || null,
+      wash_variant: String($('or_wash_variant').value||'').trim() || null,
+      step_1_percent: Number($('or_s1').value||0),
+      step_2_percent: Number($('or_s2').value||0),
+      step_3_percent: Number($('or_s3').value||0),
+      step_4p_percent: Number($('or_s4').value||0),
+      scope_type: 'combined'
+    };
+    if (!payload.override_id) { alert('กรอก override_id'); return; }
+    if (!payload.technician_username) { alert('กรอก username ช่าง'); return; }
+    $('overrideStatus').textContent = 'กำลังบันทึก...';
+    await api('/admin/super/income_step_overrides/upsert', { method:'POST', body: JSON.stringify(payload) });
+    $('overrideStatus').textContent = 'บันทึกแล้ว';
+    toast('บันทึกแล้ว');
+    await loadOverrides();
+    await loadAudit();
+  }catch(e){
+    $('overrideStatus').textContent = 'บันทึกไม่สำเร็จ';
+    alert(`บันทึกไม่สำเร็จ: ${e.message}`);
+  }
+});
+
+// =======================================
   // 🗓️ Payout Periods (Phase 1)
   // =======================================
 

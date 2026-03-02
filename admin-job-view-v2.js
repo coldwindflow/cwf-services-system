@@ -393,6 +393,14 @@ async function loadJob(){
           <b>🧾 แก้ไข/เพิ่มรายการบริการ</b>
           <div class="muted2 mini" style="margin-top:6px">เพิ่ม/ลบ/แก้ไขได้ (เหมือนหน้าเพิ่มงานแบบย่อ)</div>
           <div class="table-wrap" style="margin-top:10px;overflow:auto">
+            <div class="row" style="gap:10px;flex-wrap:wrap;margin-bottom:8px">
+              <select id="edit_split_mode" style="width:220px">
+                <option value="mixed">แบ่งตามที่กำหนด (assign + ร่วม)</option>
+                <option value="coop_equal">ทำร่วมกันทั้งหมด (หารเท่ากัน)</option>
+              </select>
+              <button id="btnApplySplitMode" class="secondary" type="button" style="width:auto">ใช้โหมดนี้กับทุกรายการ</button>
+              <button id="btnNormalizeItems" class="secondary" type="button" style="width:auto">แปลงจำนวนเครื่องอัตโนมัติ</button>
+            </div>
             <table>
               <thead><tr><th>รายการ</th><th style="text-align:right">มอบหมายให้</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th><th></th></tr></thead>
               <tbody id="items_editor"></tbody>
@@ -653,6 +661,7 @@ async function loadJob(){
         const idx = Number(tr.getAttribute('data-idx'));
         const name = tr.querySelector('.it_name');
         const assignee = tr.querySelector('.it_assignee');
+        const splitMode = String(el('edit_split_mode')?.value || 'mixed');
         const qty = tr.querySelector('.it_qty');
         const unit = tr.querySelector('.it_unit');
         const lineEl = tr.querySelector('.it_line');
@@ -666,10 +675,13 @@ async function loadJob(){
         };
 
         if (name) name.oninput = ()=>{ editorItems[idx].item_name = name.value; };
-        if (assignee) assignee.onchange = ()=>{
+        if (assignee) {
+          if (splitMode === 'coop_equal') { assignee.value = ''; assignee.disabled = true; }
+          assignee.onchange = ()=>{
           const v = String(assignee.value||'').trim();
           editorItems[idx].assigned_technician_username = v || null;
         };
+        }
         if (qty) qty.oninput = ()=>{ editorItems[idx].qty = Number(qty.value||0); recalc(); };
         if (unit) unit.oninput = ()=>{ editorItems[idx].unit_price = Number(unit.value||0); recalc(); };
         if (del) del.onclick = ()=>{ editorItems.splice(idx,1); renderEditor(); };

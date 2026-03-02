@@ -2164,6 +2164,62 @@ async function _pickStepRule({ job_type_key, ac_key, wash_key }) {
   }
   return best;
 }
+async function _pickTechOverrideRule({ technician_username, job_type_key, ac_key, wash_key }) {
+  const tu = String(technician_username || '').trim();
+  if (!tu) return null;
+
+  const r = await pool.query(
+    `SELECT override_id, technician_username, job_type, ac_type, wash_variant,
+            step_1_percent, step_2_percent, step_3_percent, step_4p_percent,
+            priority, enabled
+       FROM public.technician_income_tech_step_overrides
+      WHERE enabled=true AND technician_username=$1
+      ORDER BY priority DESC, override_id ASC`,
+    [tu]
+  );
+  const rules = r.rows || [];
+  const cand = [];
+  for (const it of rules) {
+    const rj = it.job_type ? String(it.job_type) : null;
+    const ra = it.ac_type ? String(it.ac_type) : null;
+    const rw = it.wash_variant ? String(it.wash_variant) : null;
+    if (rj && job_type_key && rj !== job_type_key) continue;
+    if (ra && ac_key && ra !== ac_key) continue;
+    if (rw && wash_key && rw !== wash_key) continue;
+    if (rj && !job_type_key) continue;
+    if (ra && !ac_key) continue;
+    if (rw && !wash_key) continue;
+    const spec = (rw ? 3 : 0) + (ra ? 2 : 0) + (rj ? 1 : 0);
+    cand.push({ ...it, _spec: spec });
+  }
+  if (!cand.length) return null;
+
+  let best = cand[0];
+  for (const c of cand) {
+    if (c._spec > best._spec) best = c;
+    else if (c._spec === best._spec) {
+      const p1 = Number(c.priority || 0), p2 = Number(best.priority || 0);
+      if (p1 > p2) best = c;
+      else if (p1 === p2 && String(c.override_id) < String(best.override_id)) best = c;
+    }
+  }
+  return best;
+}
+
+async function _pickStepRuleForTech({ technician_username, job_type_key, ac_key, wash_key }) {
+  // Priority: tech override first (more specific), then base step rules.
+  try {
+    const ov = await _pickTechOverrideRule({ technician_username, job_type_key, ac_key, wash_key });
+    if (ov) return { ...ov, _source: 'tech_override', rule_id: `tech:${ov.override_id}` };
+  } catch (e) {
+    // fail-open
+  }
+  const base = await _pickStepRule({ job_type_key, ac_key, wash_key });
+  if (!base) return null;
+  return { ...base, _source: 'base_rule', rule_id: `base:${base.rule_id}` };
+}
+
+
 
 function _ladderPercent(rule, machineCount) {
   if (!rule) return null;
@@ -2225,7 +2281,7 @@ async function _buildPayoutLinesForJob(job_id){
   // wash_variant only meaningful for wall wash
   if (pick_ac !== 'wall') pick_wash = null;
 
-  const rule = await _pickStepRule({ job_type_key, ac_key: pick_ac, wash_key: pick_wash });
+  const base_rule = await _pickStepRule({ job_type_key, ac_key: pick_ac, wash_key: pick_wash });
 
   const lines = [];
   for (const p of (payout.payouts || [])) {
@@ -2252,6 +2308,8 @@ async function _buildPayoutLinesForJob(job_id){
       how_machine = `assigned: machine_count_for_tech = assigned(${assignedMachine})`;
     }
 
+    const rulePicked = await _pickStepRuleForTech({ technician_username: tech, job_type_key, ac_key: pick_ac, wash_key: pick_wash }) || base_rule;
+
     // step percent: prefer ladder rule for percent-based settings
     let percent_final = null;
     let service_income_after = Number(p.service_income || 0);
@@ -2259,13 +2317,13 @@ async function _buildPayoutLinesForJob(job_id){
     let used_rule = null;
 
     // only apply ladder when base_amount > 0 and rule exists
-    if (base_amount > 0 && rule) {
-      const pct = _ladderPercent(rule, machine_count_for_tech);
+    if (base_amount > 0 && rulePicked) {
+      const pct = _ladderPercent(rulePicked, machine_count_for_tech);
       if (Number.isFinite(pct) && pct > 0) {
         percent_final = pct;
         service_income_after = base_amount * (pct / 100);
-        how_percent = `step_ladder: ${machine_count_for_tech} เครื่อง -> ${pct}% (rule_id=${rule.rule_id})`;
-        used_rule = rule;
+        how_percent = `step_ladder: ${machine_count_for_tech} เครื่อง -> ${pct}% (rule_id=${rulePicked.rule_id})`;
+        used_rule = rulePicked;
       }
     }
 
@@ -2479,6 +2537,84 @@ app.post('/admin/super/income_step_rules/upsert', requireSuperAdmin, async (req,
     return res.status(500).json({ ok: false, error: 'UPSERT_FAILED' });
   }
 });
+
+app.get('/admin/super/income_step_overrides', requireSuperAdmin, async (req, res) => {
+  try{
+    const q = await pool.query(
+      `SELECT override_id, technician_username, job_type, ac_type, wash_variant,
+              step_1_percent, step_2_percent, step_3_percent, step_4p_percent,
+              priority, enabled, updated_at, updated_by
+         FROM public.technician_income_tech_step_overrides
+        ORDER BY technician_username ASC, priority DESC, override_id ASC`
+    );
+    res.json({ ok:true, overrides: q.rows || [] });
+  }catch(e){
+    console.error('GET /admin/super/income_step_overrides', e);
+    res.status(500).json({ ok:false, error: e.message || String(e) });
+  }
+});
+
+app.post('/admin/super/income_step_overrides/upsert', requireSuperAdmin, async (req, res) => {
+  try{
+    const b = req.body || {};
+    const override_id = String(b.override_id || '').trim();
+    const technician_username = String(b.technician_username || '').trim();
+    if (!override_id) return res.status(400).json({ ok:false, error:'missing override_id' });
+    if (!technician_username) return res.status(400).json({ ok:false, error:'missing technician_username' });
+
+    const payload = {
+      override_id,
+      technician_username,
+      scope_type: String(b.scope_type || 'combined'),
+      job_type: (b.job_type == null ? null : String(b.job_type || '').trim() || null),
+      ac_type: (b.ac_type == null ? null : String(b.ac_type || '').trim() || null),
+      wash_variant: (b.wash_variant == null ? null : String(b.wash_variant || '').trim() || null),
+      step_1_percent: Number(b.step_1_percent || 0),
+      step_2_percent: Number(b.step_2_percent || 0),
+      step_3_percent: Number(b.step_3_percent || 0),
+      step_4p_percent: Number(b.step_4p_percent || 0),
+      priority: Number(b.priority || 0),
+      enabled: (b.enabled === false) ? false : (String(b.enabled) !== 'false'),
+      updated_by: (req.user?.username || req.headers['x-user'] || 'super')
+    };
+
+    await pool.query(
+      `INSERT INTO public.technician_income_tech_step_overrides(
+         override_id, technician_username, scope_type, job_type, ac_type, wash_variant,
+         step_1_percent, step_2_percent, step_3_percent, step_4p_percent,
+         priority, enabled, updated_at, updated_by
+       ) VALUES (
+         $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),$13
+       )
+       ON CONFLICT (override_id) DO UPDATE SET
+         technician_username=EXCLUDED.technician_username,
+         scope_type=EXCLUDED.scope_type,
+         job_type=EXCLUDED.job_type,
+         ac_type=EXCLUDED.ac_type,
+         wash_variant=EXCLUDED.wash_variant,
+         step_1_percent=EXCLUDED.step_1_percent,
+         step_2_percent=EXCLUDED.step_2_percent,
+         step_3_percent=EXCLUDED.step_3_percent,
+         step_4p_percent=EXCLUDED.step_4p_percent,
+         priority=EXCLUDED.priority,
+         enabled=EXCLUDED.enabled,
+         updated_at=NOW(),
+         updated_by=EXCLUDED.updated_by`,
+      [
+        payload.override_id, payload.technician_username, payload.scope_type, payload.job_type, payload.ac_type, payload.wash_variant,
+        payload.step_1_percent, payload.step_2_percent, payload.step_3_percent, payload.step_4p_percent,
+        payload.priority, payload.enabled, payload.updated_by
+      ]
+    );
+
+    try { await auditLog(req, 'income_step_override_upsert', override_id, { technician_username }); } catch {}
+    res.json({ ok:true });
+  }catch(e){
+    console.error('POST /admin/super/income_step_overrides/upsert', e);
+    res.status(500).json({ ok:false, error: e.message || String(e) });
+  }
+});
+
 
 // =======================================
 // 🧾 Payout Periods (Super Admin) - Phase 1
@@ -4598,6 +4734,27 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_technician_reviews_tech ON publ
       )
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_step_rules_enabled ON public.technician_income_step_rules(enabled, priority DESC)`);
+
+// Technician-specific step ladder overrides (special rate per tech)
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.technician_income_tech_step_overrides (
+    override_id TEXT PRIMARY KEY,
+    technician_username TEXT NOT NULL,
+    scope_type TEXT,
+    job_type TEXT,
+    ac_type TEXT,
+    wash_variant TEXT,
+    step_1_percent NUMERIC(12,4) DEFAULT 0,
+    step_2_percent NUMERIC(12,4) DEFAULT 0,
+    step_3_percent NUMERIC(12,4) DEFAULT 0,
+    step_4p_percent NUMERIC(12,4) DEFAULT 0,
+    priority INT DEFAULT 0,
+    enabled BOOLEAN DEFAULT TRUE,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_by TEXT
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled ON public.technician_income_tech_step_overrides(technician_username, enabled, priority DESC)`);
 
     // ensure at least 1 default rule (fallback)
     try {
@@ -7880,11 +8037,27 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
         // - ไม่งั้น infer จากชื่อรายการ (heuristic เดียวกับ computeJobPayout)
         const explicitIsService = (typeof it.is_service === 'boolean') ? it.is_service : null;
         const inferredIsService = inferIsServiceLine({ item_name: String(it.item_name || '').trim() });
-        return {
-          item_id: it.item_id || null,
-          item_name: String(it.item_name || "").trim(),
-          qty: Math.max(0, Number(it.qty || 0)),
-          unit_price: Math.max(0, Number(it.unit_price || 0)),
+        const nameForNorm = String(it.item_name || "").trim();
+let qtyN = Math.max(0, Number(it.qty || 0));
+let unitN = Math.max(0, Number(it.unit_price || 0));
+// Normalize legacy: "... 5 เครื่อง" but stored as qty=1, unit_price=2500(total)
+try{
+  const mm = nameForNorm.match(/(\d+)\s*เครื่อง/);
+  const mc = mm ? Number(mm[1]) : 0;
+  if (Number.isFinite(mc) && mc > 1 && (qtyN <= 1) && Number.isFinite(unitN) && unitN >= (mc * 100)) {
+    const per = unitN / mc;
+    if (Number.isFinite(per) && per > 0) {
+      unitN = Number(per.toFixed(2));
+      qtyN = mc;
+    }
+  }
+}catch(e){}
+
+return {
+  item_id: it.item_id || null,
+  item_name: nameForNorm,
+  qty: qtyN,
+  unit_price: unitN,
           assigned_technician_username: assignee,
           is_service: (explicitIsService != null) ? explicitIsService : inferredIsService,
         };

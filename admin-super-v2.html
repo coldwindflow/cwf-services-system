@@ -398,7 +398,87 @@
           </div>
         </div>
       </div>
-    </details>
+    
+
+<details>
+  <summary>👤 % พิเศษรายช่าง (Override)</summary>
+  <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
+    <div class="grid2">
+      <div class="card">
+        <div class="sectionTitle">
+          <div>
+            <b>ตั้งค่า % พิเศษรายช่าง</b>
+            <div class="muted" style="margin-top:4px">ใช้เมื่อ “ช่างบางคนหักไม่เท่าคนอื่น” (ระบบจะเลือก override ก่อน rule ปกติ)</div>
+          </div>
+          <button class="btn blue" id="btnReloadOverrides">รีเฟรช</button>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <input id="or_override_id" placeholder="override_id เช่น arm_special_wash" style="flex:1;min-width:220px" />
+          <input id="or_tech" placeholder="tech username เช่น arm" style="width:220px" />
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <input id="or_priority" type="number" placeholder="priority" style="width:140px" />
+          <select id="or_enabled" style="width:160px">
+            <option value="true">enabled</option>
+            <option value="false">disabled</option>
+          </select>
+          <select id="or_job_type" style="flex:1;min-width:180px">
+            <option value="">(job_type: any)</option>
+            <option value="wash">wash</option>
+            <option value="repair">repair</option>
+            <option value="install">install</option>
+          </select>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <select id="or_ac_type" style="flex:1;min-width:180px">
+            <option value="">(ac_type: any)</option>
+            <option value="wall">wall</option>
+            <option value="fourway">fourway</option>
+            <option value="hanging">hanging</option>
+            <option value="ceiling">ceiling</option>
+          </select>
+          <select id="or_wash_variant" style="flex:1;min-width:200px">
+            <option value="">(wash_variant: any)</option>
+            <option value="normal">normal</option>
+            <option value="premium">premium</option>
+            <option value="coil">coil</option>
+            <option value="overhaul">overhaul</option>
+          </select>
+        </div>
+
+        <div class="row" style="margin-top:10px">
+          <input id="or_s1" type="number" placeholder="1 เครื่อง %" style="width:140px" />
+          <input id="or_s2" type="number" placeholder="2 เครื่อง %" style="width:140px" />
+          <input id="or_s3" type="number" placeholder="3 เครื่อง %" style="width:140px" />
+          <input id="or_s4" type="number" placeholder="4+ เครื่อง %" style="width:140px" />
+          <button class="btn yellow" id="btnUpsertOverride">บันทึก</button>
+        </div>
+
+        <div class="muted" id="overrideStatus" style="margin-top:10px">-</div>
+      </div>
+
+      <div class="card">
+        <b style="color:#0b1b3a">รายการ Override รายช่าง</b>
+        <div class="muted" style="margin-top:4px">กด “แก้ไข” เพื่อดึงค่ามาใส่ฟอร์ม</div>
+        <div style="overflow:auto;margin-top:8px">
+          <table>
+            <thead>
+              <tr class="muted">
+                <td>override_id</td><td>tech</td><td>match</td><td>1</td><td>2</td><td>3</td><td>4+</td><td>priority</td><td>enabled</td><td>จัดการ</td>
+              </tr>
+            </thead>
+            <tbody id="overridesTbody"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</details>
+
+</details>
 
     <details>
       <summary>🧾 Audit Log</summary>
