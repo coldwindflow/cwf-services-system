@@ -186,6 +186,33 @@
       </div>
     </div>
 
+    <!-- Technician Payouts (Admin read-only) -->
+    <div class="card p14" style="margin-top:12px">
+      <div class="titleRow">
+        <h3>งวดจ่ายช่าง (ดูอย่างเดียว)</h3>
+        <button class="btn blue" id="btnReloadPayouts" type="button" style="width:auto">รีเฟรช</button>
+      </div>
+      <div class="muted" style="margin-top:6px">เลือกงวด แล้วดูรายช่าง: ยอดสุทธิ / จ่ายแล้ว / คงเหลือ / สถานะ</div>
+      <div class="row" style="margin-top:10px">
+        <select id="payoutSelect" style="flex:1;min-width:220px"></select>
+        <button class="btn yellow" id="btnLoadPayoutTechs" type="button" style="width:auto">ดูรายช่าง</button>
+      </div>
+      <div style="overflow:auto;margin-top:10px">
+        <table style="width:100%;border-collapse:separate;border-spacing:0 8px">
+          <thead>
+            <tr class="muted">
+              <td>ช่าง</td>
+              <td style="text-align:right">สุทธิ</td>
+              <td style="text-align:right">จ่ายแล้ว</td>
+              <td style="text-align:right">คงเหลือ</td>
+              <td>สถานะ</td>
+            </tr>
+          </thead>
+          <tbody id="payoutTechsTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
     <!-- Personal performance -->
     <div class="kpiRow2">
       <div class="kpi kpiBlue">

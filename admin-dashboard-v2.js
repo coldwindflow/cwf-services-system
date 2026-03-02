@@ -411,6 +411,80 @@
     if (hint) hint.textContent = techScope==='all' ? 'รวมทั้งหมด' : (techScope==='company' ? 'เฉพาะช่างบริษัท' : 'เฉพาะพาร์ทเนอร์');
   }
 
+  // =======================================
+  // Payout viewer (Admin read-only)
+  // =======================================
+  let _payoutCache = [];
+  async function loadPayoutsList(){
+    const sel = $('payoutSelect');
+    if (!sel) return;
+    try{
+      const r = await apiFetch('/admin/payouts');
+      const rows = Array.isArray(r.payouts) ? r.payouts : [];
+      _payoutCache = rows;
+      sel.innerHTML = '';
+      if (!rows.length){
+        const opt = document.createElement('option');
+        opt.value = '';
+        opt.textContent = '— ยังไม่มีงวด —';
+        sel.appendChild(opt);
+        return;
+      }
+      for (const p of rows.slice(0, 20)){
+        const id = String(p.payout_id||'').trim();
+        const st = String(p.status||'draft');
+        const pt = String(p.period_type||'');
+        const s = String(p.period_start||'').slice(0,10);
+        const e = String(p.period_end||'').slice(0,10);
+        const opt = document.createElement('option');
+        opt.value = id;
+        opt.textContent = `${pt} | ${s} → ${e} | ${st}`;
+        sel.appendChild(opt);
+      }
+    }catch(e){
+      showToast('โหลดงวดช่างไม่สำเร็จ', 'error');
+    }
+  }
+
+  function renderPayoutTechs(rows){
+    const tb = $('payoutTechsTbody');
+    if (!tb) return;
+    const list = Array.isArray(rows) ? rows : [];
+    if (!list.length){
+      tb.innerHTML = `<tr><td colspan="5" class="muted">— ยังไม่มีข้อมูล —</td></tr>`;
+      return;
+    }
+    tb.innerHTML = list.map(r=>{
+      const u = String(r.technician_username||'');
+      const net = Number(r.net_amount||0);
+      const paid = Number(r.paid_amount||0);
+      const rem = Number(r.remaining_amount||0);
+      const st = String(r.paid_status||'unpaid');
+      const pill = st==='paid' ? 'pill blue' : (st==='partial' ? 'pill yellow' : 'pill gray');
+      const stLabel = st==='paid' ? 'paid' : (st==='partial' ? 'partial' : 'unpaid');
+      return `<tr class="tr">
+        <td><b>${u}</b></td>
+        <td style="text-align:right"><b>${fmtMoney(net)}</b></td>
+        <td style="text-align:right">${fmtMoney(paid)}</td>
+        <td style="text-align:right">${fmtMoney(rem)}</td>
+        <td><span class="${pill}">${stLabel}</span></td>
+      </tr>`;
+    }).join('');
+  }
+
+  async function loadPayoutTechs(){
+    const sel = $('payoutSelect');
+    const payout_id = String(sel?.value||'').trim();
+    if (!payout_id) return renderPayoutTechs([]);
+    try{
+      const r = await apiFetch(`/admin/payouts/${encodeURIComponent(payout_id)}/techs`);
+      renderPayoutTechs(r.techs || []);
+    }catch(e){
+      showToast('โหลดรายช่างไม่สำเร็จ', 'error');
+      renderPayoutTechs([]);
+    }
+  }
+
   async function load(){
     const from = $('fromDate').value;
     const to = $('toDate').value;
@@ -530,6 +604,11 @@
 
     // initial load
     load().catch(e=>showToast(String(e), 'error'));
+
+    // payout viewer
+    $('btnReloadPayouts')?.addEventListener('click', ()=>{ loadPayoutsList().then(()=>loadPayoutTechs()); });
+    $('btnLoadPayoutTechs')?.addEventListener('click', ()=>{ loadPayoutTechs(); });
+    loadPayoutsList().then(()=>loadPayoutTechs());
   }
 
   document.addEventListener('DOMContentLoaded', init);

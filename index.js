@@ -1153,7 +1153,8 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
     const STATUS_BUCKETS = {
       pending: new Set(['รอตรวจสอบ','pending_review']),
       active: new Set(['รอดำเนินการ','กำลังทำ','ตีกลับ','รอช่างยืนยัน']),
-      done: new Set(['เสร็จสิ้น','ปิดงาน','completed','done']),
+      // NOTE: backend จริงใช้หลายคำ (กัน "งานหาย")
+      done: new Set(['เสร็จแล้ว','เสร็จสิ้น','ปิดงาน','completed','done']),
     };
     const donut = { pending: 0, active: 0, done: 0, other: 0, total: 0 };
     for (const r of (statusRows.rows||[])){
@@ -1938,6 +1939,19 @@ function _bkkNow() {
   return new Date(now.getTime() + 7 * 60 * 60 * 1000);
 }
 
+// =======================================
+// ✅ Done-status predicate (Bangkok production)
+// - หลายหน้าฝั่ง PWA ใช้หลายคำ เช่น "เสร็จแล้ว/เสร็จสิ้น/ปิดงาน/done/completed"
+// - ถ้า backend filter แค่ "เสร็จแล้ว" จะทำให้ "งานหาย" และยอดไม่ตรง
+// - ใช้ predicate เดียวกันทุกที่ที่ต้องดึงงานที่ปิดแล้ว
+// =======================================
+function _sqlDonePredicate(alias = 'j') {
+  // NOTE: ใช้ ILIKE '%เสร็จ%' เพื่อครอบคลุม "เสร็จสิ้น" "เสร็จแล้ว" และคำที่มีเสร็จอยู่
+  // พร้อม fallback สำหรับคีย์อังกฤษ
+  const a = String(alias || 'j');
+  return `(COALESCE(${a}.job_status,'') ILIKE '%เสร็จ%' OR COALESCE(${a}.job_status,'') IN ('ปิดงาน','done','completed'))`;
+}
+
 function _bkkYmd(d) {
   const b = d || _bkkNow();
   return { y: b.getUTCFullYear(), m: b.getUTCMonth() + 1, d: b.getUTCDate() };
@@ -2032,10 +2046,11 @@ function _recentPeriods(countPairs = 6, nowBkk) {
 
 async function _computeTechLinesInRange(tech, start, endEx) {
   // คำนวณสดเฉพาะช่วงนั้น (กันช้า): ดึงเฉพาะงานที่ tech เกี่ยวข้อง แล้วใช้ _buildPayoutLinesForJob
+  const donePred = _sqlDonePredicate('j');
   const jobsQ = await pool.query(
     `SELECT j.job_id, j.finished_at
        FROM public.jobs j
-      WHERE j.job_status='เสร็จแล้ว'
+      WHERE ${donePred}
         AND j.finished_at IS NOT NULL
         AND j.finished_at >= $1 AND j.finished_at < $2
         AND (
@@ -2495,14 +2510,15 @@ app.post('/admin/super/payouts/generate', requireSuperAdmin, async (req, res) =>
     }
 
     // pick jobs within range
+    const donePred = _sqlDonePredicate('j');
     const jobsQ = await pool.query(
-      `SELECT job_id
-         FROM public.jobs
-        WHERE job_status='เสร็จแล้ว'
-          AND finished_at IS NOT NULL
-          AND finished_at >= $1
-          AND finished_at < $2
-        ORDER BY finished_at ASC`,
+      `SELECT j.job_id
+         FROM public.jobs j
+        WHERE ${donePred}
+          AND j.finished_at IS NOT NULL
+          AND j.finished_at >= $1
+          AND j.finished_at < $2
+        ORDER BY j.finished_at ASC`,
       [start.toISOString(), endEx.toISOString()]
     );
     const jobs = (jobsQ.rows || []).map(r => Number(r.job_id)).filter(x => Number.isFinite(x) && x > 0);
@@ -2615,6 +2631,132 @@ app.get('/admin/super/payouts/:payout_id/techs', requireSuperAdmin, async (req, 
   } catch (e) {
     console.error('GET /admin/super/payouts/:payout_id/tech/:username', e);
     return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
+  }
+});
+
+// =======================================
+// 👀 Admin (ปกติ) ดูรายได้ช่าง/สถานะจ่าย (READ-ONLY)
+// - ตาม requirement: แอดมินทั่วไปต้องดูได้ว่า "จ่ายแล้ว/ยัง" โดยไม่ต้องเป็น Super
+// - ปลอด regression: เป็น endpoint เพิ่ม ไม่กระทบของเดิม
+// =======================================
+app.get('/admin/payouts', requireAdminSession, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT p.payout_id, p.period_type, p.period_start, p.period_end, p.status, p.created_at, p.created_by,
+              COALESCE(SUM(l.earn_amount),0) AS total_amount,
+              COUNT(l.*) AS lines_count,
+              COUNT(DISTINCT l.technician_username) AS techs_count
+         FROM public.technician_payout_periods p
+         LEFT JOIN public.technician_payout_lines l ON l.payout_id=p.payout_id
+        GROUP BY p.payout_id
+        ORDER BY p.period_start DESC, p.payout_id DESC`
+    );
+    return res.json({ ok: true, payouts: r.rows || [] });
+  } catch (e) {
+    console.error('GET /admin/payouts', e);
+    return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
+  }
+});
+
+app.get('/admin/payouts/:payout_id/techs', requireAdminSession, async (req, res) => {
+  try {
+    const payout_id = String(req.params.payout_id || '').trim();
+    if (!payout_id) return res.status(400).json({ ok: false, error: 'MISSING_PAYOUT_ID' });
+
+    const r = await pool.query(
+      `
+      WITH gross AS (
+        SELECT technician_username,
+               COALESCE(SUM(earn_amount),0) AS gross_amount,
+               COUNT(*)::int AS jobs_count
+          FROM public.technician_payout_lines
+         WHERE payout_id=$1
+         GROUP BY technician_username
+      ),
+      adj AS (
+        SELECT technician_username,
+               COALESCE(SUM(adj_amount),0) AS adj_total
+          FROM public.technician_payout_adjustments
+         WHERE payout_id=$1
+         GROUP BY technician_username
+      )
+      SELECT g.technician_username,
+             g.gross_amount,
+             COALESCE(a.adj_total,0) AS adj_total,
+             (g.gross_amount + COALESCE(a.adj_total,0)) AS net_amount,
+             COALESCE(p.paid_amount,0) AS paid_amount,
+             COALESCE(p.paid_status,'unpaid') AS paid_status,
+             ((g.gross_amount + COALESCE(a.adj_total,0)) - COALESCE(p.paid_amount,0)) AS remaining_amount,
+             g.jobs_count
+        FROM gross g
+        LEFT JOIN adj a ON a.technician_username=g.technician_username
+        LEFT JOIN public.technician_payout_payments p
+          ON p.payout_id=$1 AND p.technician_username=g.technician_username
+       ORDER BY net_amount DESC, g.technician_username ASC
+      `,
+      [payout_id]
+    );
+    return res.json({ ok: true, payout_id, techs: r.rows || [] });
+  } catch (e) {
+    console.error('GET /admin/payouts/:payout_id/techs', e);
+    return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
+  }
+});
+
+app.get('/admin/payouts/:payout_id/tech/:username', requireAdminSession, async (req, res) => {
+  try {
+    const payout_id = String(req.params.payout_id || '').trim();
+    const username = String(req.params.username || '').trim();
+    if (!payout_id || !username) return res.status(400).json({ ok:false, error:'MISSING_PARAMS' });
+
+    const linesR = await pool.query(
+      `SELECT line_id, payout_id, technician_username, job_id::text AS job_id, finished_at,
+              earn_amount, base_amount, percent_final, machine_count_for_tech, step_rule_key,
+              detail_json, setting_snapshot
+         FROM public.technician_payout_lines
+        WHERE payout_id=$1 AND technician_username=$2
+        ORDER BY finished_at ASC, job_id ASC`,
+      [payout_id, username]
+    );
+
+    const adjR = await pool.query(
+      `SELECT adj_id, payout_id, technician_username, job_id::text AS job_id, adj_amount, reason, created_at, created_by
+         FROM public.technician_payout_adjustments
+        WHERE payout_id=$1 AND technician_username=$2
+        ORDER BY created_at ASC, adj_id ASC`,
+      [payout_id, username]
+    );
+
+    const payR = await pool.query(
+      `SELECT payment_id, payout_id, technician_username, paid_amount, paid_status, paid_at, paid_by, slip_url, note
+         FROM public.technician_payout_payments
+        WHERE payout_id=$1 AND technician_username=$2
+        LIMIT 1`,
+      [payout_id, username]
+    );
+
+    const gross = (linesR.rows||[]).reduce((s,x)=>s+Number(x.earn_amount||0),0);
+    const adj_total = (adjR.rows||[]).reduce((s,x)=>s+Number(x.adj_amount||0),0);
+    const net = gross + adj_total;
+    const paid_amount = Number(payR.rows?.[0]?.paid_amount || 0);
+    const remaining = net - paid_amount;
+    return res.json({
+      ok:true,
+      payout_id,
+      technician_username: username,
+      gross_amount: gross,
+      adj_total,
+      net_amount: net,
+      paid_amount,
+      remaining_amount: remaining,
+      paid_status: String(payR.rows?.[0]?.paid_status || 'unpaid'),
+      payment: payR.rows?.[0] || null,
+      adjustments: adjR.rows || [],
+      lines: linesR.rows || [],
+    });
+  } catch (e) {
+    console.error('GET /admin/payouts/:payout_id/tech/:username', e);
+    return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
   }
 });
 
@@ -3425,10 +3567,11 @@ app.get('/tech/income_summary', async (req, res) => {
     const ymKey = dateKey.slice(0, 7); // YYYY-MM
 
     // Fetch finished jobs where technician is in the job team/assignments
+    const donePred = _sqlDonePredicate('j');
     const jobsQ = await pool.query(
       `SELECT j.job_id, j.finished_at
        FROM public.jobs j
-       WHERE j.job_status='เสร็จแล้ว'
+       WHERE ${donePred}
          AND j.finished_at IS NOT NULL
          AND (
            j.technician_username = $1
@@ -3520,10 +3663,11 @@ app.get('/tech/income_today_month', async (req, res) => {
     if (nm > 12) { nm = 1; ny = y + 1; }
     const nextMonthStart = _bangkokMidnightUTC(ny, nm, 1);
 
+    const donePred = _sqlDonePredicate('j');
     const jobsQ = await pool.query(
       `SELECT j.job_id, j.finished_at
          FROM public.jobs j
-        WHERE j.job_status='เสร็จแล้ว'
+        WHERE ${donePred}
           AND j.finished_at IS NOT NULL
           AND j.finished_at >= $1 AND j.finished_at < $2
           AND (
@@ -3603,10 +3747,11 @@ app.get('/tech/income_next_period_estimate', requireTechnicianSession, async (re
       return res.json({ ok:true, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: 0 });
     }
 
+    const donePred = _sqlDonePredicate('j');
     const jobsQ = await pool.query(
       `SELECT j.job_id
          FROM public.jobs j
-        WHERE j.job_status='เสร็จแล้ว'
+        WHERE ${donePred}
           AND j.finished_at IS NOT NULL
           AND j.finished_at >= $1 AND j.finished_at < $2
           AND (
@@ -3659,10 +3804,11 @@ app.get('/tech/income_last_days', requireTechnicianSession, async (req, res) => 
     const start = new Date(todayStart.getTime() - (days - 1) * 24*60*60*1000);
     const endEx = _bangkokMidnightUTC(y, m, d + 1);
 
+    const donePred = _sqlDonePredicate('j');
     const jobsQ = await pool.query(
       `SELECT j.job_id, j.finished_at
          FROM public.jobs j
-        WHERE j.job_status='เสร็จแล้ว'
+        WHERE ${donePred}
           AND j.finished_at IS NOT NULL
           AND j.finished_at >= $1 AND j.finished_at < $2
           AND (
@@ -3745,10 +3891,11 @@ app.get('/tech/income_day_detail', requireTechnicianSession, async (req, res) =>
     const start = _bangkokMidnightUTC(yy, mm, dd);
     const endEx = _bangkokMidnightUTC(yy, mm, dd + 1);
 
+    const donePred = _sqlDonePredicate('j');
     const jobsQ = await pool.query(
       `SELECT j.job_id, j.finished_at
          FROM public.jobs j
-        WHERE j.job_status='เสร็จแล้ว'
+        WHERE ${donePred}
           AND j.finished_at IS NOT NULL
           AND j.finished_at >= $1 AND j.finished_at < $2
           AND (
@@ -7728,12 +7875,18 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
       .map((it) => {
         const rawAssignee = String(it.assigned_technician_username || "").trim();
         const assignee = rawAssignee && (allowedAssignees.size === 0 || allowedAssignees.has(rawAssignee)) ? rawAssignee : null;
+        // IMPORTANT: admin edit ต้องไม่ทำให้สินค้า/บริการเสริมกลายเป็น service โดยไม่ตั้งใจ
+        // - ถ้า is_service ถูกส่งมาชัดเจน ให้ใช้ตามนั้น
+        // - ไม่งั้น infer จากชื่อรายการ (heuristic เดียวกับ computeJobPayout)
+        const explicitIsService = (typeof it.is_service === 'boolean') ? it.is_service : null;
+        const inferredIsService = inferIsServiceLine({ item_name: String(it.item_name || '').trim() });
         return {
           item_id: it.item_id || null,
           item_name: String(it.item_name || "").trim(),
           qty: Math.max(0, Number(it.qty || 0)),
           unit_price: Math.max(0, Number(it.unit_price || 0)),
           assigned_technician_username: assignee,
+          is_service: (explicitIsService != null) ? explicitIsService : inferredIsService,
         };
       })
       .filter((it) => it.item_name);
@@ -7753,7 +7906,7 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
         await client.query(
           `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-          [job_id, it.item_id, it.item_name, it.qty, it.unit_price, line_total, it.assigned_technician_username || null, true]
+          [job_id, it.item_id, it.item_name, it.qty, it.unit_price, line_total, it.assigned_technician_username || null, !!it.is_service]
         );
       } catch (e) {
         // Backward compatible: older schema without assigned_technician_username
@@ -7761,7 +7914,7 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
           await client.query(
             `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total, is_service)
              VALUES ($1,$2,$3,$4,$5,$6,$7)`,
-            [job_id, it.item_id, it.item_name, it.qty, it.unit_price, line_total, true]
+            [job_id, it.item_id, it.item_name, it.qty, it.unit_price, line_total, !!it.is_service]
           );
         } else {
           throw e;

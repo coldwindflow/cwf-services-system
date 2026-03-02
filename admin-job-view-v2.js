@@ -565,13 +565,38 @@ async function loadJob(){
       return null;
     };
 
+    // Auto-normalize legacy service rows:
+    // - บางงานเก่าถูกเก็บเป็น qty=1 แต่ชื่อมี "... 5 เครื่อง" และ unit_price=ยอดรวม
+    // - ทำให้แอดมินเห็น "จำนวน 1 ราคา 2500" (งง) ทั้งที่ควรเป็น qty=5 unit=500
+    const parseMachineCountFromName = (name) => {
+      const s = String(name || '');
+      const m = s.match(/(\d+)\s*เครื่อง/);
+      if (!m) return 0;
+      const n = Number(m[1]);
+      return Number.isFinite(n) ? n : 0;
+    };
+    const normalizeLegacyServiceRow = (row) => {
+      try {
+        const nm = String(row.item_name || '');
+        const mc = parseMachineCountFromName(nm);
+        const q = Number(row.qty || 0);
+        const u = Number(row.unit_price || 0);
+        const total = (Number.isFinite(q) ? q : 0) * (Number.isFinite(u) ? u : 0);
+        if (mc >= 2 && q === 1 && total > 0) {
+          row.qty = mc;
+          row.unit_price = Number((total / mc).toFixed(2));
+        }
+      } catch(_e) {}
+      return row;
+    };
+
     let editorItems = (Array.isArray(items) ? items : []).map(it=>({
       item_id: Number(it.item_id||0) || null,
       item_name: safe(it.item_name||''),
       qty: Number(it.qty||1) || 1,
       unit_price: Number(it.unit_price||0) || 0,
       assigned_technician_username: (String(it.assigned_technician_username||'').trim() || inferAssigneeFromItemName(it.item_name) || null),
-    }));
+    })).map(normalizeLegacyServiceRow);
 
     const tbody = el('items_editor');
 
