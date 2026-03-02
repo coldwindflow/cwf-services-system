@@ -276,6 +276,119 @@
       </div>
     </details>
 
+    <details open>
+      <summary>🗓️ งวดจ่ายช่าง (Phase 1)</summary>
+      <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
+        <div class="grid">
+          <div class="card">
+            <div class="sectionTitle">
+              <div>
+                <b>สร้างงวด</b>
+                <div class="muted" style="margin-top:4px">ระบบจะคำนวณแล้วเก็บบรรทัดใน DB (กดซ้ำไม่ซ้ำ)</div>
+              </div>
+              <div class="row">
+                <button class="btn yellow" id="btnGenP10">สร้างงวดวันที่ 10</button>
+                <button class="btn yellow" id="btnGenP25">สร้างงวดวันที่ 25</button>
+                <button class="btn blue" id="btnReloadPayouts">รีเฟรช</button>
+              </div>
+            </div>
+            <div class="muted" id="payoutGenStatus" style="margin-top:10px">-</div>
+            <div style="overflow:auto;margin-top:10px">
+              <table>
+                <thead>
+                  <tr class="muted">
+                    <td>payout_id</td><td>งวด</td><td>ช่วง</td><td>ยอดรวม</td><td>ช่าง</td><td>บรรทัด</td><td>สถานะ</td><td>ดู</td>
+                  </tr>
+                </thead>
+                <tbody id="payoutsTbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="sectionTitle">
+              <div>
+                <b>รายละเอียดงวด</b>
+                <div class="muted" id="payoutDetailHint" style="margin-top:4px">เลือกงวดจากตาราง</div>
+              </div>
+            </div>
+            <div id="payoutTechsBox" style="margin-top:10px"></div>
+            <div id="payoutLinesBox" style="margin-top:10px"></div>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <details open>
+      <summary>🪜 ตั้งค่า % ขั้นบันได (Phase 1)</summary>
+      <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
+        <div class="grid">
+          <div class="card">
+            <div class="sectionTitle">
+              <div>
+                <b>เพิ่ม/แก้ไข Rule</b>
+                <div class="muted" style="margin-top:4px">ใช้ key: job_type=wash/repair/install • ac_type=wall/fourway/hanging/ceiling • wash_variant=normal/premium/coil/overhaul</div>
+              </div>
+              <button class="btn blue" id="btnReloadStepRules">รีเฟรช</button>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <input id="sr_rule_id" placeholder="rule_id เช่น wash_wall_premium" style="flex:1;min-width:220px" />
+              <input id="sr_priority" type="number" placeholder="priority" style="width:140px" />
+              <select id="sr_enabled" style="width:160px">
+                <option value="true">enabled</option>
+                <option value="false">disabled</option>
+              </select>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <select id="sr_job_type" style="flex:1;min-width:180px">
+                <option value="">(job_type: any)</option>
+                <option value="wash">wash</option>
+                <option value="repair">repair</option>
+                <option value="install">install</option>
+              </select>
+              <select id="sr_ac_type" style="flex:1;min-width:180px">
+                <option value="">(ac_type: any)</option>
+                <option value="wall">wall</option>
+                <option value="fourway">fourway</option>
+                <option value="hanging">hanging</option>
+                <option value="ceiling">ceiling</option>
+              </select>
+              <select id="sr_wash_variant" style="flex:1;min-width:200px">
+                <option value="">(wash_variant: any)</option>
+                <option value="normal">normal</option>
+                <option value="premium">premium</option>
+                <option value="coil">coil</option>
+                <option value="overhaul">overhaul</option>
+              </select>
+            </div>
+            <div class="row" style="margin-top:10px">
+              <input id="sr_s1" type="number" placeholder="1 เครื่อง %" style="width:140px" />
+              <input id="sr_s2" type="number" placeholder="2 เครื่อง %" style="width:140px" />
+              <input id="sr_s3" type="number" placeholder="3 เครื่อง %" style="width:140px" />
+              <input id="sr_s4" type="number" placeholder="4+ เครื่อง %" style="width:140px" />
+              <button class="btn yellow" id="btnUpsertStepRule">บันทึก</button>
+            </div>
+            <div class="muted" id="stepRuleStatus" style="margin-top:10px">-</div>
+          </div>
+
+          <div class="card">
+            <b style="color:#0b1b3a">รายการ Step Rules</b>
+            <div class="muted" style="margin-top:4px">กด “แก้ไข” เพื่อดึงค่ามาใส่ฟอร์ม</div>
+            <div style="overflow:auto;margin-top:8px">
+              <table>
+                <thead>
+                  <tr class="muted">
+                    <td>rule_id</td><td>match</td><td>1</td><td>2</td><td>3</td><td>4+</td><td>priority</td><td>enabled</td><td>จัดการ</td>
+                  </tr>
+                </thead>
+                <tbody id="stepRulesTbody"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
     <details>
       <summary>🧾 Audit Log</summary>
       <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">

@@ -43,6 +43,16 @@ const incomeDailyEl = document.getElementById("incomeDaily");
 const incomeMonthEl = document.getElementById("incomeMonth");
 const incomeAllEl = document.getElementById("incomeAll");
 
+// ✅ รายได้หน้าใหม่ (แท็บรายได้)
+const incomeDaily2El = document.getElementById("incomeDaily2");
+const incomeMonth2El = document.getElementById("incomeMonth2");
+const incomeAll2El = document.getElementById("incomeAll2");
+const techPayoutPeriodsEl = document.getElementById('techPayoutPeriods');
+const techPayoutLinesEl = document.getElementById('techPayoutLines');
+const techPayoutDetailHintEl = document.getElementById('techPayoutDetailHint');
+const techPayoutTotalPillEl = document.getElementById('techPayoutTotalPill');
+const btnReloadIncomePeriodsEl = document.getElementById('btnReloadIncomePeriods');
+
 // ✅ แถบควบคุมช่าง (dropdown)
 const acceptStatusSelect = document.getElementById("acceptStatusSelect");
 const zoneSelect = document.getElementById("zoneSelect");
@@ -560,7 +570,7 @@ function _bestEffortUsername() {
 }
 
 async function loadIncomeSummary() {
-  if (!incomeDailyEl && !incomeMonthEl && !incomeAllEl) return; // UI ไม่ได้มีส่วนนี้
+  if (!incomeDailyEl && !incomeMonthEl && !incomeAllEl && !incomeDaily2El && !incomeMonth2El && !incomeAll2El) return; // UI ไม่ได้มีส่วนนี้
   try {
     // Fail-open for PWA/webview that loses cookies: also send ?username=
     const u = _bestEffortUsername();
@@ -582,6 +592,9 @@ async function loadIncomeSummary() {
     if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(data.day_total);
     if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(data.month_total);
     if (incomeAllEl) incomeAllEl.textContent = formatBaht(data.all_total);
+    if (incomeDaily2El) incomeDaily2El.textContent = formatBaht(data.day_total);
+    if (incomeMonth2El) incomeMonth2El.textContent = formatBaht(data.month_total);
+    if (incomeAll2El) incomeAll2El.textContent = formatBaht(data.all_total);
   } catch (e) {
     // fail-open (ไม่ให้หน้า tech พัง) + show cached value if available
     try {
@@ -590,18 +603,199 @@ async function loadIncomeSummary() {
         if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(c.day_total);
         if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(c.month_total);
         if (incomeAllEl) incomeAllEl.textContent = formatBaht(c.all_total);
+        if (incomeDaily2El) incomeDaily2El.textContent = formatBaht(c.day_total);
+        if (incomeMonth2El) incomeMonth2El.textContent = formatBaht(c.month_total);
+        if (incomeAll2El) incomeAll2El.textContent = formatBaht(c.all_total);
         return;
       }
     } catch {}
     if (incomeDailyEl) incomeDailyEl.textContent = "-";
     if (incomeMonthEl) incomeMonthEl.textContent = "-";
     if (incomeAllEl) incomeAllEl.textContent = "-";
+    if (incomeDaily2El) incomeDaily2El.textContent = "-";
+    if (incomeMonth2El) incomeMonth2El.textContent = "-";
+    if (incomeAll2El) incomeAll2El.textContent = "-";
   }
 }
 
 function renderProfile(doneCount = 0) {
   // ✅ คงชื่อฟังก์ชันเดิมไว้เพื่อไม่ให้ส่วนอื่นพัง
   loadProfile();
+}
+
+// =======================================
+// 🧾 Payout Periods UI (Technician) - Phase 1
+// - fast list + lazy detail
+// =======================================
+
+let __cwfPayoutCache = { ts: 0, payouts: [], byId: {} };
+let __cwfPayoutActiveId = '';
+
+function _fmtDateTH(iso){
+  try{
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '-';
+    return d.toLocaleDateString('th-TH', { year:'numeric', month:'short', day:'numeric' });
+  }catch{ return '-'; }
+}
+
+function _pill(text){
+  return `<span class="pill" style="background:#0b4bb3;color:#fff">${text}</span>`;
+}
+
+function _safeText(s){
+  return String(s||'').replace(/[&<>"']/g, (c)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+}
+
+async function loadTechPayoutPeriods(force=false){
+  if (!techPayoutPeriodsEl) return;
+  const now = Date.now();
+  if (!force && __cwfPayoutCache.payouts.length && (now-__cwfPayoutCache.ts)<15000) {
+    // render from cache
+    renderTechPayoutPeriods(__cwfPayoutCache.payouts);
+    return;
+  }
+  techPayoutPeriodsEl.innerHTML = `<div class="muted">กำลังโหลดงวด...</div>`;
+  try{
+    const res = await fetch(`${API_BASE}/tech/payouts`, { credentials: 'include' });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
+    __cwfPayoutCache = { ts: now, payouts: data.payouts||[], byId: {} };
+    renderTechPayoutPeriods(__cwfPayoutCache.payouts);
+  }catch(e){
+    techPayoutPeriodsEl.innerHTML = `<div class="muted">โหลดงวดไม่สำเร็จ</div>`;
+  }
+}
+window.loadTechPayoutPeriods = loadTechPayoutPeriods;
+
+function renderTechPayoutPeriods(list){
+  if (!techPayoutPeriodsEl) return;
+  const arr = Array.isArray(list) ? list : [];
+  if (!arr.length) {
+    techPayoutPeriodsEl.innerHTML = `<div class="muted">ยังไม่มีงวดที่สร้าง</div>`;
+    return;
+  }
+  const rows = arr.map(p=>{
+    const id = _safeText(p.payout_id);
+    const type = _safeText(p.period_type);
+    const st = _fmtDateTH(p.period_start);
+    const en = _fmtDateTH(p.period_end);
+    const total = formatBaht(p.total_amount);
+    const status = _safeText(p.status||'draft');
+    const active = (__cwfPayoutActiveId===p.payout_id);
+    return `
+      <div class="tr" style="padding:10px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px;cursor:pointer;${active?'outline:2px solid rgba(11,75,179,0.35)':''}" onclick="window.openTechPayoutDetail('${id}')">
+        <div class="row" style="justify-content:space-between;gap:10px">
+          <div>
+            <b>งวด ${type}</b>
+            <div class="muted" style="margin-top:4px">${st} - ${en}</div>
+          </div>
+          <div style="text-align:right">
+            <b>${total}</b>
+            <div class="muted" style="margin-top:4px">สถานะ: ${status}</div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+  techPayoutPeriodsEl.innerHTML = rows;
+}
+
+async function openTechPayoutDetail(payout_id){
+  const id = String(payout_id||'').trim();
+  if (!id) return;
+  __cwfPayoutActiveId = id;
+  try { renderTechPayoutPeriods(__cwfPayoutCache.payouts); } catch(e) {}
+  if (techPayoutDetailHintEl) techPayoutDetailHintEl.textContent = `กำลังโหลดรายละเอียดงวด: ${id}`;
+  if (techPayoutLinesEl) techPayoutLinesEl.innerHTML = `<div class="muted">กำลังโหลดรายการงาน...</div>`;
+  if (techPayoutTotalPillEl) { techPayoutTotalPillEl.style.display='none'; techPayoutTotalPillEl.textContent=''; }
+
+  try{
+    const res = await fetch(`${API_BASE}/tech/payouts/${encodeURIComponent(id)}`, { credentials:'include' });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
+    const total = formatBaht(data.total_amount||0);
+    if (techPayoutDetailHintEl) techPayoutDetailHintEl.textContent = `รายการงานในงวด (${(data.lines||[]).length} งาน)`;
+    if (techPayoutTotalPillEl) {
+      techPayoutTotalPillEl.style.display='inline-flex';
+      techPayoutTotalPillEl.className = 'pill blue';
+      techPayoutTotalPillEl.textContent = `ยอดรวมงวด: ${total}`;
+    }
+    renderTechPayoutLines(data.lines||[], data.total_amount||0);
+  }catch(e){
+    if (techPayoutDetailHintEl) techPayoutDetailHintEl.textContent = 'โหลดรายละเอียดไม่สำเร็จ';
+    if (techPayoutLinesEl) techPayoutLinesEl.innerHTML = `<div class="muted">โหลดรายการไม่สำเร็จ</div>`;
+  }
+}
+window.openTechPayoutDetail = openTechPayoutDetail;
+
+function renderTechPayoutLines(lines, total){
+  if (!techPayoutLinesEl) return;
+  const arr = Array.isArray(lines) ? lines : [];
+  if (!arr.length) {
+    techPayoutLinesEl.innerHTML = `<div class="muted">ไม่มีรายการงานในงวดนี้</div>`;
+    return;
+  }
+
+  const PAGE = 40;
+  let shown = Math.min(PAGE, arr.length);
+
+  const renderSlice = ()=>{
+    const slice = arr.slice(0, shown);
+    const html = slice.map(ln=>{
+      const d = ln.detail_json || {};
+      const jobId = _safeText(ln.job_id);
+      const fin = _fmtDateTH(ln.finished_at);
+      const jt = _safeText(d.job_type || '-');
+      const ac = _safeText(d.ac_type || '-');
+      const wash = _safeText(d.wash_variant || '-');
+      const mc = Number(ln.machine_count_for_tech || d.machine_count_for_tech || 0);
+      const pct = (ln.percent_final==null || ln.percent_final===undefined) ? '-' : (Number(ln.percent_final)||0).toFixed(2)+'%';
+      const earn = formatBaht(ln.earn_amount||0);
+      const mode = _safeText(d.mode || '-');
+      const items = Array.isArray(d.items) ? d.items : [];
+      const itemsHtml = items.slice(0, 6).map(it=>{
+        const a = it.assigned_technician_username ? ` • assign: ${_safeText(it.assigned_technician_username)}` : '';
+        return `<div class="muted">- ${_safeText(it.item_name)} × ${Number(it.qty||0)}${a}</div>`;
+      }).join('');
+      return `
+        <details class="tr" style="border-radius:16px;padding:10px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px">
+          <summary style="cursor:pointer">
+            <div class="row" style="justify-content:space-between;gap:10px">
+              <div>
+                <b>งาน #${jobId}</b> <span class="muted">(${fin})</span>
+                <div class="muted" style="margin-top:4px">${jt} • ${ac}${wash && wash!=='-' ? ` • ${wash}`:''} • โหมด: ${mode}</div>
+              </div>
+              <div style="text-align:right">
+                <b>${earn}</b>
+                <div class="muted" style="margin-top:4px">เครื่อง: ${mc} • %: ${pct}</div>
+              </div>
+            </div>
+          </summary>
+          <div style="margin-top:8px">
+            <div class="muted"><b>สูตร</b>: ${_safeText(d.how_percent_selected || '-')}</div>
+            <div class="muted"><b>นับเครื่อง</b>: ${_safeText(d.how_machine_count_for_tech || '-')}</div>
+            <div class="muted" style="margin-top:6px"><b>รายการที่เกี่ยวข้อง</b>:</div>
+            ${itemsHtml || '<div class="muted">-</div>'}
+          </div>
+        </details>
+      `;
+    }).join('');
+
+    const moreBtn = (shown < arr.length)
+      ? `<button class="btn" id="btnMorePayoutLines" style="width:100%;margin-top:6px">โหลดเพิ่ม (${shown}/${arr.length})</button>`
+      : `<div class="muted" style="text-align:center;margin-top:6px">ครบแล้ว (${arr.length} งาน)</div>`;
+
+    techPayoutLinesEl.innerHTML = html + moreBtn;
+    const btn = document.getElementById('btnMorePayoutLines');
+    if (btn) btn.onclick = ()=>{ shown = Math.min(shown + PAGE, arr.length); renderSlice(); };
+  };
+  renderSlice();
+}
+
+// Hook reload button
+if (btnReloadIncomePeriodsEl) {
+  btnReloadIncomePeriodsEl.addEventListener('click', ()=> loadTechPayoutPeriods(true));
 }
 
 // =======================================

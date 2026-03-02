@@ -1817,7 +1817,8 @@ async function computeJobPayout(job_id) {
   const serviceAssigned = items.filter(it => isSvc(it) && String(it.assigned_technician_username || '').trim());
   const serviceUnassigned = items.filter(it => isSvc(it) && !String(it.assigned_technician_username || '').trim());
   const hasAnyServiceAssign = serviceAssigned.length > 0;
-  const coopMode = team.length > 1 && serviceUnassigned.length > 0;
+  const hasUnassigned = serviceUnassigned.length > 0;
+  const coopMode = team.length > 1 && hasUnassigned;
 
   const baseServiceTotal = sumServiceLines(items);
 
@@ -1825,19 +1826,41 @@ async function computeJobPayout(job_id) {
   team.forEach(u => baseServicePerTech[u] = 0);
 
   let note = '';
-  if (!hasAnyServiceAssign || coopMode) {
+  // ✅ Phase 1 requirement: support 3 modes
+  // 1) assigned only
+  // 2) coop_equal (no assign)
+  // 3) mixed (some assigned + some unassigned -> assigned lines stay with assignee, unassigned split equally)
+  if (!hasAnyServiceAssign && coopMode) {
+    // coop_equal (no assign)
     const each = team.length ? (baseServiceTotal / team.length) : 0;
     team.forEach(u => baseServicePerTech[u] = each);
-    note = !hasAnyServiceAssign
-      ? 'ไม่มีการ assign service เลย → หารเท่ากันตามทีม'
-      : 'โหมดทำร่วมกัน (ทีม>1 + มี service ที่ไม่ assign) → หารเท่ากันตามทีม';
-  } else {
+    note = 'coop_equal: ไม่มีการ assign service เลย → หารเท่ากันตามทีม';
+  } else if (hasAnyServiceAssign && coopMode) {
+    // mixed
+    const unassignedTotal = serviceUnassigned.reduce((a, it) => a + Number(it.line_total || 0), 0);
+    const each = team.length ? (unassignedTotal / team.length) : 0;
+    // assigned part
     for (const it of serviceAssigned) {
       const a = String(it.assigned_technician_username || '').trim();
       if (!a) continue;
       baseServicePerTech[a] = (baseServicePerTech[a] || 0) + Number(it.line_total || 0);
     }
-    note = 'มีการ assign service → แบ่งตาม assigned_technician_username';
+    // coop part
+    team.forEach(u => baseServicePerTech[u] = Number(baseServicePerTech[u] || 0) + each);
+    note = 'mixed: มีบางรายการ assign + มีบางรายการทำร่วม → assign ตามคน + ส่วนร่วมหารเท่ากัน';
+  } else if (!hasAnyServiceAssign) {
+    // single tech or no assign (safe)
+    const each = team.length ? (baseServiceTotal / team.length) : 0;
+    team.forEach(u => baseServicePerTech[u] = each);
+    note = 'ไม่มีการ assign service → หารเท่ากันตามทีม';
+  } else {
+    // assigned only
+    for (const it of serviceAssigned) {
+      const a = String(it.assigned_technician_username || '').trim();
+      if (!a) continue;
+      baseServicePerTech[a] = (baseServicePerTech[a] || 0) + Number(it.line_total || 0);
+    }
+    note = 'assigned: มีการ assign service → แบ่งตาม assigned_technician_username';
   }
 
   const bonusQ = await pool.query(
@@ -1897,7 +1920,331 @@ async function computeJobPayout(job_id) {
     });
   }
 
-  return { job_id, note, team, base_service_total: baseServiceTotal, items, payouts };
+  // include mode hints for downstream (phase 1 payout periods)
+  const payout_mode = (!hasAnyServiceAssign && coopMode) ? 'coop_equal' : (hasAnyServiceAssign && coopMode ? 'mixed' : (hasAnyServiceAssign ? 'assigned' : 'assigned'));
+  return { job_id, note, payout_mode, team, base_service_total: baseServiceTotal, items, payouts };
+}
+
+// =======================================
+// 🧾 Technician Payout Periods (Phase 1)
+// - Periods: 10 / 25 (Asia/Bangkok)
+// - Lines cached in DB (idempotent)
+// - Step ladder % per job per tech (rule-based)
+// =======================================
+
+function _bkkNow() {
+  // Asia/Bangkok UTC+7 no DST
+  const now = new Date();
+  return new Date(now.getTime() + 7 * 60 * 60 * 1000);
+}
+
+function _bkkYmd(d) {
+  const b = d || _bkkNow();
+  return { y: b.getUTCFullYear(), m: b.getUTCMonth() + 1, d: b.getUTCDate() };
+}
+
+function _bangkokMidnightUTC(y, m, d) {
+  // returns Date in UTC corresponding to Bangkok local midnight of y-m-d
+  const utcMs = Date.UTC(y, m - 1, d, 0, 0, 0, 0) - (7 * 60 * 60 * 1000);
+  return new Date(utcMs);
+}
+
+function _periodBoundsBangkok(type, nowBkk) {
+  const t = String(type || '').trim();
+  const n = nowBkk || _bkkNow();
+  const { y, m } = _bkkYmd(n);
+  if (t === '10') {
+    // finished_at in [prevMonth 26 00:00, thisMonth 1 00:00)
+    let py = y, pm = m - 1;
+    if (pm <= 0) { pm = 12; py = y - 1; }
+    const start = _bangkokMidnightUTC(py, pm, 26);
+    const endEx = _bangkokMidnightUTC(y, m, 1);
+    return { period_type: '10', start, endEx, label_ym: `${y}-${String(m).padStart(2, '0')}` };
+  }
+  if (t === '25') {
+    // finished_at in [thisMonth 11 00:00, thisMonth 26 00:00)
+    const start = _bangkokMidnightUTC(y, m, 11);
+    const endEx = _bangkokMidnightUTC(y, m, 26);
+    return { period_type: '25', start, endEx, label_ym: `${y}-${String(m).padStart(2, '0')}` };
+  }
+  const err = new Error('INVALID_PERIOD_TYPE');
+  err.code = 'INVALID_PERIOD_TYPE';
+  throw err;
+}
+
+function _normJobKey(s) {
+  const v = String(s || '').toLowerCase();
+  if (!v) return null;
+  if (v.includes('ติดตั้ง') || v.includes('install')) return 'install';
+  if (v.includes('ซ่อม') || v.includes('repair')) return 'repair';
+  if (v.includes('ล้าง') || v.includes('wash') || v.includes('clean')) return 'wash';
+  return null;
+}
+function _normAcKey(s) {
+  const v = String(s || '').toLowerCase();
+  if (!v) return null;
+  if (v.includes('ผนัง') || v.includes('wall')) return 'wall';
+  if (v.includes('สี่ทิศ') || v.includes('four') || v.includes('4')) return 'fourway';
+  if (v.includes('แขวน')) return 'hanging';
+  if (v.includes('ใต้ฝ้า') || v.includes('เปลือย') || v.includes('ฝัง') || v.includes('ceiling')) return 'ceiling';
+  return null;
+}
+function _normWashKey(s) {
+  const v = String(s || '').toLowerCase();
+  if (!v) return null;
+  if (v.includes('ธรรมดา') || v.includes('normal')) return 'normal';
+  if (v.includes('พรีเมียม') || v.includes('premium')) return 'premium';
+  if (v.includes('แขวนคอย') || v.includes('coil')) return 'coil';
+  if (v.includes('ตัดล้าง') || v.includes('overhaul') || v.includes('ใหญ่')) return 'overhaul';
+  return null;
+}
+
+function _thaiLabelJob(k){
+  if (k==='wash') return 'ล้าง';
+  if (k==='repair') return 'ซ่อม';
+  if (k==='install') return 'ติดตั้ง';
+  return '';
+}
+function _thaiLabelAc(k){
+  if (k==='wall') return 'ผนัง';
+  if (k==='fourway') return 'สี่ทิศทาง';
+  if (k==='hanging') return 'แขวน';
+  if (k==='ceiling') return 'เปลือยใต้ฝ้า';
+  return '';
+}
+function _thaiLabelWash(k){
+  if (k==='normal') return 'ธรรมดา';
+  if (k==='premium') return 'พรีเมียม';
+  if (k==='coil') return 'แขวนคอยน์';
+  if (k==='overhaul') return 'ตัดล้าง';
+  return '';
+}
+
+async function _pickStepRule({ job_type_key, ac_key, wash_key }) {
+  // deterministic:
+  // - match: (job_type, ac_type, wash_variant)
+  // - specificity: wash > ac > job > default
+  // - tie: higher priority, then rule_id
+  const r = await pool.query(
+    `SELECT rule_id, job_type, ac_type, wash_variant,
+            step_1_percent, step_2_percent, step_3_percent, step_4p_percent,
+            priority, enabled
+     FROM public.technician_income_step_rules
+     WHERE enabled=true
+     ORDER BY priority DESC, rule_id ASC`
+  );
+  const rules = r.rows || [];
+  const cand = [];
+  for (const it of rules) {
+    const rj = it.job_type ? String(it.job_type) : null;
+    const ra = it.ac_type ? String(it.ac_type) : null;
+    const rw = it.wash_variant ? String(it.wash_variant) : null;
+    if (rj && job_type_key && rj !== job_type_key) continue;
+    if (ra && ac_key && ra !== ac_key) continue;
+    if (rw && wash_key && rw !== wash_key) continue;
+    if (rj && !job_type_key) continue;
+    if (ra && !ac_key) continue;
+    if (rw && !wash_key) continue;
+    const spec = (rw ? 3 : 0) + (ra ? 2 : 0) + (rj ? 1 : 0);
+    cand.push({ ...it, _spec: spec });
+  }
+  if (!cand.length) return null;
+  let best = cand[0];
+  for (const c of cand) {
+    if (c._spec > best._spec) best = c;
+    else if (c._spec === best._spec) {
+      const p1 = Number(c.priority || 0), p2 = Number(best.priority || 0);
+      if (p1 > p2) best = c;
+      else if (p1 === p2 && String(c.rule_id) < String(best.rule_id)) best = c;
+    }
+  }
+  return best;
+}
+
+function _ladderPercent(rule, machineCount) {
+  if (!rule) return null;
+  const mc = Number(machineCount || 0);
+  if (!Number.isFinite(mc) || mc <= 0) return null;
+  if (mc >= 4) return Number(rule.step_4p_percent || 0);
+  if (mc === 3) return Number(rule.step_3_percent || 0);
+  if (mc === 2) return Number(rule.step_2_percent || 0);
+  return Number(rule.step_1_percent || 0);
+}
+
+async function _loadJobMeta(job_id){
+  const r = await pool.query(
+    `SELECT job_id, job_type, finished_at
+     FROM public.jobs
+     WHERE job_id=$1 LIMIT 1`,
+    [job_id]
+  );
+  return r.rows[0] || null;
+}
+
+async function _buildPayoutLinesForJob(job_id){
+  const meta = await _loadJobMeta(job_id);
+  if (!meta || !meta.finished_at) return [];
+
+  const payout = await computeJobPayout(job_id);
+  const items = payout.items || [];
+  const mode = payout.payout_mode || 'assigned';
+
+  // infer service items and dimensions
+  const anyMarked = items.some(it => it && it.is_service);
+  const isSvc = (it) => (it && (it.is_service || (!anyMarked && inferIsServiceLine(it))));
+  const svcItems = items.filter(isSvc);
+
+  // best-effort dimension detection from service lines
+  const dimsFromItem = (it) => {
+    const nm = String(it?.item_name || '');
+    const ac = _normAcKey(nm);
+    const wash = _normWashKey(nm);
+    return { ac_key: ac, wash_key: wash };
+  };
+
+  const totalMachine = svcItems.reduce((a, it) => a + Number(it.qty || 0), 0);
+  const unassignedSvc = svcItems.filter(it => !String(it.assigned_technician_username||'').trim());
+  const assignedSvc = svcItems.filter(it => String(it.assigned_technician_username||'').trim());
+  const unassignedMachine = unassignedSvc.reduce((a, it) => a + Number(it.qty||0), 0);
+
+  const job_type_key = _normJobKey(meta.job_type);
+
+  // determine overall dims for rule matching: pick the most specific non-null present
+  let pick_ac = null;
+  let pick_wash = null;
+  for (const it of svcItems) {
+    const d = dimsFromItem(it);
+    if (!pick_ac && d.ac_key) pick_ac = d.ac_key;
+    if (!pick_wash && d.wash_key) pick_wash = d.wash_key;
+    if (pick_ac && pick_wash) break;
+  }
+  // wash_variant only meaningful for wall wash
+  if (pick_ac !== 'wall') pick_wash = null;
+
+  const rule = await _pickStepRule({ job_type_key, ac_key: pick_ac, wash_key: pick_wash });
+
+  const lines = [];
+  for (const p of (payout.payouts || [])) {
+    const tech = String(p.username);
+    const base_amount = Number(p.base_service || 0);
+    const special_income = Number(p.special_income || 0);
+    const special_bonus = Number(p.special_bonus || 0);
+
+    // machine_count_for_tech (per spec)
+    const assignedMachine = assignedSvc
+      .filter(it => String(it.assigned_technician_username||'').trim() === tech)
+      .reduce((a, it) => a + Number(it.qty || 0), 0);
+
+    let machine_count_for_tech = 0;
+    let how_machine = '';
+    if (mode === 'coop_equal') {
+      machine_count_for_tech = Math.round(totalMachine);
+      how_machine = `coop_equal: machine_count_for_tech = machine_count_total(${totalMachine})`;
+    } else if (mode === 'mixed') {
+      machine_count_for_tech = Math.round(assignedMachine + unassignedMachine);
+      how_machine = `mixed: assigned(${assignedMachine}) + coop_part(${unassignedMachine})`;
+    } else {
+      machine_count_for_tech = Math.round(assignedMachine);
+      how_machine = `assigned: machine_count_for_tech = assigned(${assignedMachine})`;
+    }
+
+    // step percent: prefer ladder rule for percent-based settings
+    let percent_final = null;
+    let service_income_after = Number(p.service_income || 0);
+    let how_percent = 'fallback: engine setting';
+    let used_rule = null;
+
+    // only apply ladder when base_amount > 0 and rule exists
+    if (base_amount > 0 && rule) {
+      const pct = _ladderPercent(rule, machine_count_for_tech);
+      if (Number.isFinite(pct) && pct > 0) {
+        percent_final = pct;
+        service_income_after = base_amount * (pct / 100);
+        how_percent = `step_ladder: ${machine_count_for_tech} เครื่อง -> ${pct}% (rule_id=${rule.rule_id})`;
+        used_rule = rule;
+      }
+    }
+
+    const earn_amount = Number(service_income_after || 0) + special_income + special_bonus;
+
+    // include only meaningful lines
+    if (Math.abs(earn_amount) < 0.0001 && Math.abs(base_amount) < 0.0001 && Math.abs(special_income) < 0.0001 && Math.abs(special_bonus) < 0.0001) {
+      continue;
+    }
+
+    const relatedItems = svcItems
+      .filter(it => {
+        const a = String(it.assigned_technician_username || '').trim();
+        if (mode === 'coop_equal') return true;
+        if (mode === 'mixed') return !a || a === tech;
+        return a === tech;
+      })
+      .map(it => ({
+        job_item_id: it.job_item_id,
+        item_name: it.item_name,
+        qty: Number(it.qty || 0),
+        line_total: Number(it.line_total || 0),
+        assigned_technician_username: String(it.assigned_technician_username || '').trim() || null,
+      }));
+
+    const detail_json = {
+      job_type: _thaiLabelJob(job_type_key) || String(meta.job_type || '').trim(),
+      job_type_key,
+      ac_type: _thaiLabelAc(pick_ac) || '',
+      ac_type_key: pick_ac,
+      wash_variant: _thaiLabelWash(pick_wash) || '',
+      wash_variant_key: pick_wash,
+      btu: null,
+      machine_count_total: Math.round(totalMachine),
+      machine_count_for_tech: Math.round(machine_count_for_tech),
+      mode,
+      how_machine_count_for_tech: how_machine,
+      how_percent_selected: how_percent,
+      how_split_applied: payout.note || '',
+      items: relatedItems,
+      base_service_total: Number(payout.base_service_total || 0),
+      base_amount,
+      service_income_engine: Number(p.service_income || 0),
+      service_income_after_step: Number(service_income_after || 0),
+      special_income,
+      special_bonus,
+      total_income: earn_amount,
+    };
+
+    const setting_snapshot = {
+      income_setting: p.setting || null,
+      employment_type: p.employment_type || null,
+      step_rule: used_rule ? {
+        rule_id: used_rule.rule_id,
+        job_type: used_rule.job_type,
+        ac_type: used_rule.ac_type,
+        wash_variant: used_rule.wash_variant,
+        step_1_percent: Number(used_rule.step_1_percent||0),
+        step_2_percent: Number(used_rule.step_2_percent||0),
+        step_3_percent: Number(used_rule.step_3_percent||0),
+        step_4p_percent: Number(used_rule.step_4p_percent||0),
+        priority: Number(used_rule.priority||0),
+      } : null,
+      machine_count_for_tech: Math.round(machine_count_for_tech),
+      percent_final,
+      computed_at: new Date().toISOString(),
+    };
+
+    lines.push({
+      technician_username: tech,
+      job_id: String(job_id),
+      finished_at: meta.finished_at,
+      earn_amount,
+      base_amount,
+      percent_final,
+      machine_count_for_tech: Math.round(machine_count_for_tech),
+      step_rule_key: used_rule ? String(used_rule.rule_id) : null,
+      detail_json,
+      setting_snapshot,
+    });
+  }
+
+  return lines;
 }
 
 app.get('/admin/super/tech_income/calc/job/:job_id', requireSuperAdmin, async (req, res) => {
@@ -1911,6 +2258,283 @@ app.get('/admin/super/tech_income/calc/job/:job_id', requireSuperAdmin, async (r
     console.error('GET /admin/super/tech_income/calc/job/:job_id', e);
     if (String(e.code || '') === 'EMPTY_TEAM') return res.status(409).json({ error: 'EMPTY_TEAM' });
     return res.status(500).json({ error: 'คำนวณไม่สำเร็จ' });
+  }
+});
+
+// =======================================
+// 🪜 Step Ladder Rules (Super Admin) - Phase 1
+// =======================================
+
+app.get('/admin/super/income_step_rules', requireSuperAdmin, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT rule_id, scope_type, job_type, ac_type, wash_variant,
+              step_1_percent, step_2_percent, step_3_percent, step_4p_percent,
+              priority, enabled, updated_at, updated_by
+       FROM public.technician_income_step_rules
+       ORDER BY enabled DESC, priority DESC, rule_id ASC`
+    );
+    return res.json({ ok: true, rules: r.rows || [] });
+  } catch (e) {
+    console.error('GET /admin/super/income_step_rules', e);
+    return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
+  }
+});
+
+app.post('/admin/super/income_step_rules/upsert', requireSuperAdmin, async (req, res) => {
+  try {
+    const b = req.body || {};
+    const rule_id = String(b.rule_id || '').trim() || null;
+    if (!rule_id) return res.status(400).json({ ok: false, error: 'MISSING_RULE_ID' });
+
+    // accept Thai or key; normalize to keys in DB
+    const job_type = _normJobKey(b.job_type) || (String(b.job_type||'').trim() || null);
+    const ac_type = _normAcKey(b.ac_type) || (String(b.ac_type||'').trim() || null);
+    const wash_variant = _normWashKey(b.wash_variant) || (String(b.wash_variant||'').trim() || null);
+
+    const scope_type = String(b.scope_type || 'combined').trim();
+    const step_1_percent = Number(b.step_1_percent || 0);
+    const step_2_percent = Number(b.step_2_percent || 0);
+    const step_3_percent = Number(b.step_3_percent || 0);
+    const step_4p_percent = Number(b.step_4p_percent || 0);
+    const priority = Number.isFinite(Number(b.priority)) ? Number(b.priority) : 0;
+    const enabled = (b.enabled === false || String(b.enabled||'').toLowerCase()==='false') ? false : true;
+
+    await pool.query(
+      `INSERT INTO public.technician_income_step_rules(
+         rule_id, scope_type, job_type, ac_type, wash_variant,
+         step_1_percent, step_2_percent, step_3_percent, step_4p_percent,
+         priority, enabled, updated_at, updated_by
+       ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12)
+       ON CONFLICT (rule_id) DO UPDATE SET
+         scope_type=EXCLUDED.scope_type,
+         job_type=EXCLUDED.job_type,
+         ac_type=EXCLUDED.ac_type,
+         wash_variant=EXCLUDED.wash_variant,
+         step_1_percent=EXCLUDED.step_1_percent,
+         step_2_percent=EXCLUDED.step_2_percent,
+         step_3_percent=EXCLUDED.step_3_percent,
+         step_4p_percent=EXCLUDED.step_4p_percent,
+         priority=EXCLUDED.priority,
+         enabled=EXCLUDED.enabled,
+         updated_at=NOW(),
+         updated_by=EXCLUDED.updated_by`,
+      [
+        rule_id,
+        scope_type,
+        job_type,
+        ac_type,
+        wash_variant,
+        step_1_percent,
+        step_2_percent,
+        step_3_percent,
+        step_4p_percent,
+        priority,
+        enabled,
+        req.actor?.username || null,
+      ]
+    );
+
+    return res.json({ ok: true, rule_id });
+  } catch (e) {
+    console.error('POST /admin/super/income_step_rules/upsert', e);
+    return res.status(500).json({ ok: false, error: 'UPSERT_FAILED' });
+  }
+});
+
+// =======================================
+// 🧾 Payout Periods (Super Admin) - Phase 1
+// =======================================
+
+app.post('/admin/super/payouts/generate', requireSuperAdmin, async (req, res) => {
+  try {
+    const type = String(req.query.type || '').trim();
+    const bkkNow = _bkkNow();
+    const { period_type, start, endEx, label_ym } = _periodBoundsBangkok(type, bkkNow);
+    const payout_id = `payout_${label_ym}_${period_type}`;
+
+    // create period if missing
+    await pool.query(
+      `INSERT INTO public.technician_payout_periods(payout_id, period_type, period_start, period_end, status, created_by)
+       VALUES($1,$2,$3,$4,'draft',$5)
+       ON CONFLICT (payout_id) DO NOTHING`,
+      [payout_id, period_type, start.toISOString(), endEx.toISOString(), req.actor?.username || null]
+    );
+
+    // idempotent: if lines exist, do not recompute
+    const chk = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM public.technician_payout_lines WHERE payout_id=$1`,
+      [payout_id]
+    );
+    const existing = Number(chk.rows[0]?.c || 0);
+    if (existing > 0) {
+      return res.json({ ok: true, payout_id, period_type, period_start: start, period_end_exclusive: endEx, already_generated: true, lines: existing });
+    }
+
+    // pick jobs within range
+    const jobsQ = await pool.query(
+      `SELECT job_id
+         FROM public.jobs
+        WHERE job_status='เสร็จแล้ว'
+          AND finished_at IS NOT NULL
+          AND finished_at >= $1
+          AND finished_at < $2
+        ORDER BY finished_at ASC`,
+      [start.toISOString(), endEx.toISOString()]
+    );
+    const jobs = (jobsQ.rows || []).map(r => Number(r.job_id)).filter(x => Number.isFinite(x) && x > 0);
+
+    let inserted = 0;
+    for (const job_id of jobs) {
+      let lines = [];
+      try {
+        lines = await _buildPayoutLinesForJob(job_id);
+      } catch (e) {
+        console.warn('[payout_generate] skip job', job_id, e.message);
+        continue;
+      }
+      for (const ln of lines) {
+        try {
+          const r = await pool.query(
+            `INSERT INTO public.technician_payout_lines(
+               payout_id, technician_username, job_id, finished_at,
+               earn_amount, base_amount, percent_final, machine_count_for_tech, step_rule_key,
+               detail_json, setting_snapshot
+             ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+             ON CONFLICT (payout_id, technician_username, job_id) DO NOTHING`,
+            [
+              payout_id,
+              ln.technician_username,
+              ln.job_id,
+              ln.finished_at,
+              ln.earn_amount,
+              ln.base_amount,
+              ln.percent_final,
+              ln.machine_count_for_tech,
+              ln.step_rule_key,
+              ln.detail_json,
+              ln.setting_snapshot,
+            ]
+          );
+          inserted += (r.rowCount || 0);
+        } catch (e) {
+          console.warn('[payout_generate] insert line failed', payout_id, ln.technician_username, ln.job_id, e.message);
+        }
+      }
+    }
+
+    return res.json({ ok: true, payout_id, period_type, period_start: start, period_end_exclusive: endEx, jobs: jobs.length, lines_inserted: inserted });
+  } catch (e) {
+    console.error('POST /admin/super/payouts/generate', e);
+    if (String(e.code || '') === 'INVALID_PERIOD_TYPE') return res.status(400).json({ ok: false, error: 'INVALID_TYPE' });
+    return res.status(500).json({ ok: false, error: 'GENERATE_FAILED' });
+  }
+});
+
+app.get('/admin/super/payouts', requireSuperAdmin, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT p.payout_id, p.period_type, p.period_start, p.period_end, p.status, p.created_at, p.created_by,
+              COALESCE(SUM(l.earn_amount),0) AS total_amount,
+              COUNT(l.*) AS lines_count,
+              COUNT(DISTINCT l.technician_username) AS techs_count
+         FROM public.technician_payout_periods p
+         LEFT JOIN public.technician_payout_lines l ON l.payout_id=p.payout_id
+        GROUP BY p.payout_id
+        ORDER BY p.period_start DESC, p.payout_id DESC`
+    );
+    return res.json({ ok: true, payouts: r.rows || [] });
+  } catch (e) {
+    console.error('GET /admin/super/payouts', e);
+    return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
+  }
+});
+
+app.get('/admin/super/payouts/:payout_id/techs', requireSuperAdmin, async (req, res) => {
+  try {
+    const payout_id = String(req.params.payout_id || '').trim();
+    if (!payout_id) return res.status(400).json({ ok: false, error: 'MISSING_PAYOUT_ID' });
+    const r = await pool.query(
+      `SELECT technician_username,
+              COALESCE(SUM(earn_amount),0) AS total_amount,
+              COUNT(*)::int AS jobs_count
+         FROM public.technician_payout_lines
+        WHERE payout_id=$1
+        GROUP BY technician_username
+        ORDER BY total_amount DESC, technician_username ASC`,
+      [payout_id]
+    );
+    return res.json({ ok: true, payout_id, techs: r.rows || [] });
+  } catch (e) {
+    console.error('GET /admin/super/payouts/:payout_id/techs', e);
+    return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
+  }
+});
+
+app.get('/admin/super/payouts/:payout_id/tech/:username', requireSuperAdmin, async (req, res) => {
+  try {
+    const payout_id = String(req.params.payout_id || '').trim();
+    const username = String(req.params.username || '').trim();
+    if (!payout_id || !username) return res.status(400).json({ ok: false, error: 'MISSING_PARAMS' });
+    const r = await pool.query(
+      `SELECT line_id, job_id, finished_at, earn_amount, base_amount, percent_final, machine_count_for_tech, step_rule_key,
+              detail_json, setting_snapshot
+         FROM public.technician_payout_lines
+        WHERE payout_id=$1 AND technician_username=$2
+        ORDER BY finished_at ASC, line_id ASC`,
+      [payout_id, username]
+    );
+    const sum = r.rows.reduce((a, it) => a + Number(it.earn_amount || 0), 0);
+    return res.json({ ok: true, payout_id, technician_username: username, total_amount: sum, lines: r.rows || [] });
+  } catch (e) {
+    console.error('GET /admin/super/payouts/:payout_id/tech/:username', e);
+    return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
+  }
+});
+
+// =======================================
+// 🧑‍🔧 Payout Periods (Technician) - Phase 1
+// =======================================
+
+app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
+  try {
+    const tech = String(req.auth?.username || '').trim();
+    const r = await pool.query(
+      `SELECT p.payout_id, p.period_type, p.period_start, p.period_end, p.status,
+              COALESCE(SUM(l.earn_amount),0) AS total_amount,
+              COUNT(l.*) AS lines_count
+         FROM public.technician_payout_periods p
+         LEFT JOIN public.technician_payout_lines l
+           ON l.payout_id=p.payout_id AND l.technician_username=$1
+        GROUP BY p.payout_id
+        ORDER BY p.period_start DESC, p.payout_id DESC`,
+      [tech]
+    );
+    return res.json({ ok: true, username: tech, payouts: r.rows || [] });
+  } catch (e) {
+    console.error('GET /tech/payouts', e);
+    return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
+  }
+});
+
+app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) => {
+  try {
+    const tech = String(req.auth?.username || '').trim();
+    const payout_id = String(req.params.payout_id || '').trim();
+    if (!payout_id) return res.status(400).json({ ok: false, error: 'MISSING_PAYOUT_ID' });
+    const r = await pool.query(
+      `SELECT line_id, job_id, finished_at, earn_amount, base_amount, percent_final, machine_count_for_tech, step_rule_key,
+              detail_json
+         FROM public.technician_payout_lines
+        WHERE payout_id=$1 AND technician_username=$2
+        ORDER BY finished_at ASC, line_id ASC`,
+      [payout_id, tech]
+    );
+    const sum = r.rows.reduce((a, it) => a + Number(it.earn_amount || 0), 0);
+    return res.json({ ok: true, payout_id, username: tech, total_amount: sum, lines: r.rows || [] });
+  } catch (e) {
+    console.error('GET /tech/payouts/:payout_id', e);
+    return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
   }
 });
 
@@ -2631,6 +3255,83 @@ await pool.query(`
 `);
 await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_technician_reviews_job_unique ON public.technician_reviews(job_id)`);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_technician_reviews_tech ON public.technician_reviews(technician_username, created_at DESC)`);
+
+
+    // =======================================
+    // 💰 Technician Payout Periods + Step Ladder Rules (Phase 1)
+    // - Cached payout lines per period (10/25)
+    // - Deterministic step rule matching + snapshot
+    // =======================================
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_payout_periods (
+        payout_id TEXT PRIMARY KEY,
+        period_type TEXT NOT NULL CHECK (period_type IN ('10','25')),
+        period_start TIMESTAMPTZ NOT NULL,
+        period_end TIMESTAMPTZ NOT NULL,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','locked','paid')),
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        created_by TEXT
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_payout_periods_type_start ON public.technician_payout_periods(period_type, period_start DESC)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_payout_lines (
+        line_id BIGSERIAL PRIMARY KEY,
+        payout_id TEXT NOT NULL REFERENCES public.technician_payout_periods(payout_id) ON DELETE CASCADE,
+        technician_username TEXT NOT NULL,
+        job_id TEXT NOT NULL,
+        finished_at TIMESTAMPTZ,
+        earn_amount NUMERIC(12,2) DEFAULT 0,
+        base_amount NUMERIC(12,2) DEFAULT 0,
+        percent_final NUMERIC(12,4),
+        machine_count_for_tech INT DEFAULT 0,
+        step_rule_key TEXT,
+        detail_json JSONB,
+        setting_snapshot JSONB,
+        UNIQUE(payout_id, technician_username, job_id)
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_payout_lines_pid_tech ON public.technician_payout_lines(payout_id, technician_username)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_payout_lines_job ON public.technician_payout_lines(job_id)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_income_step_rules (
+        rule_id TEXT PRIMARY KEY,
+        scope_type TEXT,
+        job_type TEXT,
+        ac_type TEXT,
+        wash_variant TEXT,
+        step_1_percent NUMERIC(12,4) DEFAULT 0,
+        step_2_percent NUMERIC(12,4) DEFAULT 0,
+        step_3_percent NUMERIC(12,4) DEFAULT 0,
+        step_4p_percent NUMERIC(12,4) DEFAULT 0,
+        priority INT DEFAULT 0,
+        enabled BOOLEAN DEFAULT TRUE,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_by TEXT
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_step_rules_enabled ON public.technician_income_step_rules(enabled, priority DESC)`);
+
+    // ensure at least 1 default rule (fallback)
+    try {
+      const chk = await pool.query(`SELECT rule_id FROM public.technician_income_step_rules LIMIT 1`);
+      if (!chk.rows || chk.rows.length === 0) {
+        await pool.query(
+          `INSERT INTO public.technician_income_step_rules(
+             rule_id, scope_type, job_type, ac_type, wash_variant,
+             step_1_percent, step_2_percent, step_3_percent, step_4p_percent,
+             priority, enabled, updated_by
+           ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+           ON CONFLICT (rule_id) DO NOTHING`,
+          ['default', 'default', null, null, null, 60, 60, 60, 60, 0, true, 'system']
+        );
+      }
+    } catch(e){
+      console.warn('[ensureSchema] seed default step rule failed', e.message);
+    }
 
 
     // 4) position check constraint: เพิ่ม founder_ceo

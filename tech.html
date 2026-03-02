@@ -440,6 +440,7 @@
       <button class="tab-btn active" id="tab-new" onclick="switchTab('new')">รับงานใหม่</button>
       <button class="tab-btn" id="tab-active" onclick="switchTab('active')">งานปัจจุบัน</button>
       <button class="tab-btn" id="tab-history" onclick="switchTab('history')">ประวัติงาน</button>
+      <button class="tab-btn" id="tab-income" onclick="switchTab('income')">รายได้</button>
     </div>
 
     <div class="card section active" id="sec-new">
@@ -536,6 +537,43 @@
       <!-- ✅ ต้องตรงกับ app.js -->
       <div id="history-list" style="margin-top:10px;"></div>
     </div>
+
+    <div class="card section" id="sec-income">
+      <h2>💰 รายได้</h2>
+      <div class="muted" style="margin-top:6px">สรุปเร็ว + งวดเงินเดือน (10 / 25)</div>
+
+      <div class="grid" style="margin-top:12px">
+        <div class="card" style="margin-top:0">
+          <b style="color:#0b1b3a">สรุป</b>
+          <div class="muted" style="margin-top:6px">อิงจากงานที่เสร็จแล้ว (engine เดิม)</div>
+          <div class="row" style="margin-top:10px;justify-content:space-between"><span class="muted">วันนี้</span><b id="incomeDaily2">-</b></div>
+          <div class="row" style="margin-top:8px;justify-content:space-between"><span class="muted">เดือนนี้</span><b id="incomeMonth2">-</b></div>
+          <div class="row" style="margin-top:8px;justify-content:space-between"><span class="muted">สะสมทั้งหมด</span><b id="incomeAll2">-</b></div>
+          <button class="btn" style="margin-top:10px" id="btnReloadIncomePeriods">รีเฟรชงวด</button>
+        </div>
+
+        <div class="card" style="margin-top:0">
+          <div class="sectionTitle">
+            <div>
+              <b>งวดเงินเดือน</b>
+              <div class="muted" style="margin-top:4px">แตะที่งวดเพื่อดูรายการงาน</div>
+            </div>
+          </div>
+          <div id="techPayoutPeriods" style="margin-top:10px"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="sectionTitle">
+          <div>
+            <b>รายละเอียดงวด</b>
+            <div class="muted" id="techPayoutDetailHint" style="margin-top:4px">เลือกงวดด้านบน</div>
+          </div>
+          <div class="pill" id="techPayoutTotalPill" style="display:none"></div>
+        </div>
+        <div id="techPayoutLines" style="margin-top:10px"></div>
+      </div>
+    </div>
   </div>
 
   <!-- ✅ bottom nav ล็อค -->
@@ -543,6 +581,7 @@
     <button class="nav-btn active" id="nav-new" onclick="switchTab('new')">🏠 รับงานใหม่</button>
     <button class="nav-btn" id="nav-active" onclick="switchTab('active')">🧰 งานปัจจุบัน</button>
     <button class="nav-btn" id="nav-history" onclick="switchTab('history')">📚 ประวัติงาน</button>
+    <button class="nav-btn" id="nav-income" onclick="switchTab('income')">💰 รายได้</button>
   </div>
 
   <script src="app.js"></script>
@@ -703,18 +742,23 @@ function logout(){
     const TECH_TAB_KEY = "cwf_tech_active_tab";
 
     function safeKey(k){
-      return ["new","active","history"].includes(k) ? k : "new";
+      return ["new","active","history","income"].includes(k) ? k : "new";
     }
 
     function switchTab(key, opts){
       const k0 = safeKey(key);
       const persist = (opts && opts.persist === false) ? false : true;
 
-      ["new","active","history"].forEach(k=>{
+      ["new","active","history","income"].forEach(k=>{
         document.getElementById("sec-"+k).classList.toggle("active", k===k0);
         document.getElementById("tab-"+k).classList.toggle("active", k===k0);
         document.getElementById("nav-"+k).classList.toggle("active", k===k0);
       });
+
+      // lazy load income periods
+      if (k0 === 'income') {
+        try { if (typeof window.loadTechPayoutPeriods === 'function') window.loadTechPayoutPeriods(); } catch(e) {}
+      }
 
       if (persist) {
         try { localStorage.setItem(TECH_TAB_KEY, k0); } catch(e) {}

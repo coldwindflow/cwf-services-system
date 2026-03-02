@@ -398,6 +398,281 @@
     }
   });
 
+  // =======================================
+  // 🪜 Step Ladder Rules (Phase 1)
+  // =======================================
+
+  let STEP_RULES = [];
+  function fmtPct(x){
+    const n = Number(x||0);
+    if (!Number.isFinite(n)) return '0';
+    return (Math.round(n*100)/100).toString();
+  }
+
+  async function loadStepRules(){
+    if (!$('stepRulesTbody')) return;
+    try{
+      const r = await api('/admin/super/income_step_rules');
+      STEP_RULES = r.rules || [];
+      renderStepRules();
+    }catch(e){
+      $('stepRulesTbody').innerHTML = `<tr class="tr"><td colspan="9" class="muted">โหลดไม่สำเร็จ</td></tr>`;
+    }
+  }
+
+  function renderStepRules(){
+    const tb = $('stepRulesTbody');
+    if (!tb) return;
+    if (!STEP_RULES.length) {
+      tb.innerHTML = `<tr class="tr"><td colspan="9" class="muted">ยังไม่มี rule</td></tr>`;
+      return;
+    }
+    tb.innerHTML = STEP_RULES.map(r=>{
+      const match = [r.job_type?`job=${esc(r.job_type)}`:'', r.ac_type?`ac=${esc(r.ac_type)}`:'', r.wash_variant?`wash=${esc(r.wash_variant)}`:'']
+        .filter(Boolean).join(' • ') || 'default';
+      return `
+        <tr class="tr">
+          <td class="mono">${esc(r.rule_id)}</td>
+          <td class="muted">${match}</td>
+          <td>${fmtPct(r.step_1_percent)}</td>
+          <td>${fmtPct(r.step_2_percent)}</td>
+          <td>${fmtPct(r.step_3_percent)}</td>
+          <td>${fmtPct(r.step_4p_percent)}</td>
+          <td>${Number(r.priority||0)}</td>
+          <td>${r.enabled ? '<span class="pill blue">on</span>' : '<span class="pill">off</span>'}</td>
+          <td><button class="btn gray" data-act="edit" data-id="${esc(r.rule_id)}">แก้ไข</button></td>
+        </tr>
+      `;
+    }).join('');
+
+    tb.querySelectorAll('button[data-act="edit"]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const id = btn.getAttribute('data-id');
+        const it = STEP_RULES.find(x=>String(x.rule_id)===String(id));
+        if (!it) return;
+        $('sr_rule_id').value = it.rule_id || '';
+        $('sr_priority').value = Number(it.priority||0);
+        $('sr_enabled').value = it.enabled ? 'true' : 'false';
+        $('sr_job_type').value = it.job_type || '';
+        $('sr_ac_type').value = it.ac_type || '';
+        $('sr_wash_variant').value = it.wash_variant || '';
+        $('sr_s1').value = fmtPct(it.step_1_percent);
+        $('sr_s2').value = fmtPct(it.step_2_percent);
+        $('sr_s3').value = fmtPct(it.step_3_percent);
+        $('sr_s4').value = fmtPct(it.step_4p_percent);
+        toast('ดึงค่าเข้าแบบฟอร์มแล้ว');
+      });
+    });
+  }
+
+  if ($('btnReloadStepRules')) $('btnReloadStepRules').addEventListener('click', loadStepRules);
+  if ($('btnUpsertStepRule')) $('btnUpsertStepRule').addEventListener('click', async ()=>{
+    try{
+      const payload = {
+        rule_id: String($('sr_rule_id').value||'').trim(),
+        priority: Number($('sr_priority').value||0),
+        enabled: String($('sr_enabled').value||'true') !== 'false',
+        job_type: String($('sr_job_type').value||'').trim() || null,
+        ac_type: String($('sr_ac_type').value||'').trim() || null,
+        wash_variant: String($('sr_wash_variant').value||'').trim() || null,
+        step_1_percent: Number($('sr_s1').value||0),
+        step_2_percent: Number($('sr_s2').value||0),
+        step_3_percent: Number($('sr_s3').value||0),
+        step_4p_percent: Number($('sr_s4').value||0),
+        scope_type: 'combined'
+      };
+      if (!payload.rule_id) { alert('กรอก rule_id'); return; }
+      $('stepRuleStatus').textContent = 'กำลังบันทึก...';
+      await api('/admin/super/income_step_rules/upsert', { method:'POST', body: JSON.stringify(payload) });
+      $('stepRuleStatus').textContent = 'บันทึกแล้ว';
+      toast('บันทึกแล้ว');
+      await loadStepRules();
+      await loadAudit();
+    }catch(e){
+      $('stepRuleStatus').textContent = 'บันทึกไม่สำเร็จ';
+      alert(`บันทึกไม่สำเร็จ: ${e.message}`);
+    }
+  });
+
+  // =======================================
+  // 🗓️ Payout Periods (Phase 1)
+  // =======================================
+
+  let PAYOUTS = [];
+  let ACTIVE_PAYOUT = '';
+  let ACTIVE_TECH = '';
+
+  function fmtBaht(n){
+    const x = Number(n||0);
+    if (!Number.isFinite(x)) return '0 ฿';
+    try{ return x.toLocaleString('th-TH',{ maximumFractionDigits:0 }) + ' ฿'; }catch{ return String(Math.round(x))+' ฿'; }
+  }
+  function fmtDate(iso){
+    try{ const d=new Date(iso); if (Number.isNaN(d.getTime())) return '-'; return d.toLocaleDateString('th-TH',{ year:'numeric', month:'short', day:'numeric' }); }catch{ return '-'; }
+  }
+
+  async function loadPayouts(){
+    if (!$('payoutsTbody')) return;
+    try{
+      const r = await api('/admin/super/payouts');
+      PAYOUTS = r.payouts || [];
+      renderPayouts();
+    }catch(e){
+      $('payoutsTbody').innerHTML = `<tr class="tr"><td colspan="8" class="muted">โหลดไม่สำเร็จ</td></tr>`;
+    }
+  }
+
+  function renderPayouts(){
+    const tb = $('payoutsTbody');
+    if (!tb) return;
+    if (!PAYOUTS.length) {
+      tb.innerHTML = `<tr class="tr"><td colspan="8" class="muted">ยังไม่มีงวด</td></tr>`;
+      return;
+    }
+    tb.innerHTML = PAYOUTS.map(p=>{
+      const range = `${fmtDate(p.period_start)} - ${fmtDate(p.period_end)}`;
+      return `
+        <tr class="tr">
+          <td class="mono">${esc(p.payout_id)}</td>
+          <td><span class="pill blue">${esc(p.period_type)}</span></td>
+          <td class="muted">${esc(range)}</td>
+          <td><b>${fmtBaht(p.total_amount)}</b></td>
+          <td>${Number(p.techs_count||0)}</td>
+          <td>${Number(p.lines_count||0)}</td>
+          <td>${esc(p.status||'draft')}</td>
+          <td><button class="btn gray" data-act="view" data-id="${esc(p.payout_id)}">ดู</button></td>
+        </tr>
+      `;
+    }).join('');
+    tb.querySelectorAll('button[data-act="view"]').forEach(btn=>{
+      btn.addEventListener('click', ()=> openPayout(btn.getAttribute('data-id')));
+    });
+  }
+
+  async function generatePayout(type){
+    const t = String(type||'').trim();
+    $('payoutGenStatus').textContent = 'กำลังสร้างงวด...';
+    try{
+      const r = await api(`/admin/super/payouts/generate?type=${encodeURIComponent(t)}`, { method:'POST' });
+      $('payoutGenStatus').textContent = r.already_generated ? `งวดนี้ถูกสร้างแล้ว (${r.payout_id})` : `สร้างสำเร็จ (${r.payout_id})`;
+      toast('สำเร็จ');
+      await loadPayouts();
+      await loadAudit();
+    }catch(e){
+      $('payoutGenStatus').textContent = 'สร้างไม่สำเร็จ';
+      alert(`สร้างไม่สำเร็จ: ${e.message}`);
+    }
+  }
+
+  async function openPayout(payout_id){
+    const id = String(payout_id||'').trim();
+    if (!id) return;
+    ACTIVE_PAYOUT = id;
+    ACTIVE_TECH = '';
+    $('payoutDetailHint').textContent = `กำลังโหลดรายช่างของงวด: ${id}`;
+    $('payoutTechsBox').innerHTML = `<div class="muted">กำลังโหลด...</div>`;
+    $('payoutLinesBox').innerHTML = '';
+    try{
+      const r = await api(`/admin/super/payouts/${encodeURIComponent(id)}/techs`);
+      renderPayoutTechs(r.techs||[]);
+      $('payoutDetailHint').textContent = `รายช่างในงวด (${(r.techs||[]).length} คน)`;
+    }catch(e){
+      $('payoutDetailHint').textContent = 'โหลดไม่สำเร็จ';
+      $('payoutTechsBox').innerHTML = `<div class="muted">โหลดไม่สำเร็จ</div>`;
+    }
+  }
+
+  function renderPayoutTechs(techs){
+    const box = $('payoutTechsBox');
+    if (!box) return;
+    const arr = Array.isArray(techs)?techs:[];
+    if (!arr.length) { box.innerHTML = `<div class="muted">ไม่มีบรรทัดในงวดนี้</div>`; return; }
+    box.innerHTML = `
+      <div style="overflow:auto">
+        <table>
+          <thead>
+            <tr class="muted"><td>ช่าง</td><td>ยอดรวม</td><td>จำนวนงาน</td><td>ดู</td></tr>
+          </thead>
+          <tbody>
+            ${arr.map(t=>`<tr class="tr">
+              <td class="mono">${esc(t.technician_username)}</td>
+              <td><b>${fmtBaht(t.total_amount)}</b></td>
+              <td>${Number(t.jobs_count||0)}</td>
+              <td><button class="btn gray" data-act="tech" data-u="${esc(t.technician_username)}">ดูงาน</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+    box.querySelectorAll('button[data-act="tech"]').forEach(btn=>{
+      btn.addEventListener('click', ()=> openPayoutTech(btn.getAttribute('data-u')));
+    });
+  }
+
+  async function openPayoutTech(username){
+    const u = String(username||'').trim();
+    if (!ACTIVE_PAYOUT || !u) return;
+    ACTIVE_TECH = u;
+    $('payoutLinesBox').innerHTML = `<div class="muted">กำลังโหลดรายการงานของ ${esc(u)}...</div>`;
+    try{
+      const r = await api(`/admin/super/payouts/${encodeURIComponent(ACTIVE_PAYOUT)}/tech/${encodeURIComponent(u)}`);
+      renderPayoutLines(r.lines||[], r.total_amount||0, u);
+    }catch(e){
+      $('payoutLinesBox').innerHTML = `<div class="muted">โหลดไม่สำเร็จ</div>`;
+    }
+  }
+
+  function renderPayoutLines(lines, total, username){
+    const box = $('payoutLinesBox');
+    if (!box) return;
+    const arr = Array.isArray(lines)?lines:[];
+    if (!arr.length) { box.innerHTML = `<div class="muted">ไม่มีรายการ</div>`; return; }
+    const head = `<div class="row" style="justify-content:space-between;align-items:flex-end">
+      <div><b>รายการงานของ ${esc(username)}</b><div class="muted" style="margin-top:4px">ยอดรวม: ${fmtBaht(total)}</div></div>
+    </div>`;
+    const rows = arr.map(ln=>{
+      const d = ln.detail_json || {};
+      const jt = esc(d.job_type||'-');
+      const ac = esc(d.ac_type||'-');
+      const wash = esc(d.wash_variant||'-');
+      const mc = Number(ln.machine_count_for_tech||0);
+      const pct = (ln.percent_final==null||ln.percent_final===undefined) ? '-' : (Number(ln.percent_final)||0).toFixed(2)+'%';
+      const fin = fmtDate(ln.finished_at);
+      const earn = fmtBaht(ln.earn_amount);
+      const mode = esc(d.mode||'-');
+      return `
+        <details class="tr" style="margin-bottom:8px">
+          <summary style="cursor:pointer">
+            <div class="row" style="justify-content:space-between;gap:10px">
+              <div>
+                <b>งาน #${esc(ln.job_id)}</b> <span class="muted">(${esc(fin)})</span>
+                <div class="muted" style="margin-top:4px">${jt} • ${ac}${wash && wash!=='-' ? ` • ${wash}`:''} • โหมด: ${mode}</div>
+              </div>
+              <div style="text-align:right">
+                <b>${earn}</b>
+                <div class="muted" style="margin-top:4px">เครื่อง: ${mc} • %: ${pct}</div>
+              </div>
+            </div>
+          </summary>
+          <div style="margin-top:8px">
+            <div class="muted"><b>สูตร</b>: ${esc(d.how_percent_selected||'-')}</div>
+            <div class="muted"><b>นับเครื่อง</b>: ${esc(d.how_machine_count_for_tech||'-')}</div>
+            <div class="muted" style="margin-top:6px"><b>รายการ</b>:</div>
+            ${(Array.isArray(d.items)?d.items:[]).slice(0,8).map(it=>{
+              const a = it.assigned_technician_username ? ` • assign: ${esc(it.assigned_technician_username)}` : '';
+              return `<div class="muted">- ${esc(it.item_name)} × ${Number(it.qty||0)}${a}</div>`;
+            }).join('') || '<div class="muted">-</div>'}
+          </div>
+        </details>
+      `;
+    }).join('');
+    box.innerHTML = head + `<div style="margin-top:10px">${rows}</div>`;
+  }
+
+  if ($('btnGenP10')) $('btnGenP10').addEventListener('click', ()=> generatePayout('10'));
+  if ($('btnGenP25')) $('btnGenP25').addEventListener('click', ()=> generatePayout('25'));
+  if ($('btnReloadPayouts')) $('btnReloadPayouts').addEventListener('click', loadPayouts);
+
   // ===== Init =====
   await loadAdmins();
   await loadUsersForImpersonate();
@@ -405,4 +680,6 @@
   await loadDurations();
   await loadAudit();
   await loadIncomeDefaultsAndOverrides();
+  await loadPayouts();
+  await loadStepRules();
 })();
