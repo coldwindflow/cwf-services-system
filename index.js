@@ -1738,6 +1738,13 @@ function inferIsServiceLine(it) {
     if (name.includes('ล้างแอร์') || name.includes('ซ่อมแอร์') || name.includes('ติดตั้งแอร์')) return true;
     // legacy compact labels
     if (name.includes('ล้าง') && (name.includes('ผนัง') || name.includes('สี่ทิศ') || name.includes('แขวน') || name.includes('เปลือย'))) return true;
+
+    // Ultra-legacy labels from older UI (often missing the word "ล้างแอร์")
+    // Examples seen in production: "ธรรมดา • 1200", "พรีเมียม • 1500", "แขวนคอยน์", "ตัดล้าง"
+    // Keep focused to avoid misclassifying random products.
+    if (/(ธรรมดา|พรีเมียม|แขวนคอยน์|แขวนคอยล์|ตัดล้าง|สี่ทิศทาง|เปลือยใต้ฝ้า)/.test(name)) return true;
+    // bullet/price format commonly used for service type label
+    if (/•\s*\d{3,}/.test(name) && /(ธรรมดา|พรีเมียม|แขวน|ตัดล้าง|สี่ทิศ|เปลือย)/.test(name)) return true;
     return false;
   } catch {
     return false;
