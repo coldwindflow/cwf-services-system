@@ -407,54 +407,84 @@
       <div class="card">
         <div class="sectionTitle">
           <div>
-            <b>ตั้งค่า % พิเศษรายช่าง</b>
-            <div class="muted" style="margin-top:4px">ใช้เมื่อ “ช่างบางคนหักไม่เท่าคนอื่น” (ระบบจะเลือก override ก่อน rule ปกติ)</div>
+            <b>% พิเศษรายช่าง (Override)</b>
+            <div class="muted" style="margin-top:4px">ตั้งครั้งเดียวแล้วจบ: เลือกช่าง → เลือกเงื่อนไข (ถ้ามี) → ใส่ % 1/2/3/4+ (ระบบจะเลือก override ก่อน rule ปกติ)</div>
           </div>
           <button class="btn blue" id="btnReloadOverrides">รีเฟรช</button>
         </div>
 
-        <div class="row" style="margin-top:10px">
-          <input id="or_override_id" placeholder="override_id เช่น arm_special_wash" style="flex:1;min-width:220px" />
-          <input id="or_tech" placeholder="tech username เช่น arm" style="width:220px" />
+        <div class="row" style="margin-top:10px;flex-wrap:wrap">
+          <div style="flex:1;min-width:240px">
+            <div class="muted" style="margin-bottom:4px">เลือกช่าง</div>
+            <select id="or_tech" style="width:100%"></select>
+          </div>
+          <div style="width:180px">
+            <div class="muted" style="margin-bottom:4px">สถานะ</div>
+            <select id="or_enabled" style="width:100%">
+              <option value="true">ใช้งาน</option>
+              <option value="false">ปิด</option>
+            </select>
+          </div>
+          <div style="width:180px">
+            <div class="muted" style="margin-bottom:4px">ลำดับความสำคัญ</div>
+            <input id="or_priority" type="number" placeholder="100" style="width:100%" />
+          </div>
         </div>
 
-        <div class="row" style="margin-top:10px">
-          <input id="or_priority" type="number" placeholder="priority" style="width:140px" />
-          <select id="or_enabled" style="width:160px">
-            <option value="true">enabled</option>
-            <option value="false">disabled</option>
-          </select>
-          <select id="or_job_type" style="flex:1;min-width:180px">
-            <option value="">(job_type: any)</option>
-            <option value="wash">wash</option>
-            <option value="repair">repair</option>
-            <option value="install">install</option>
-          </select>
+        <div class="row" style="margin-top:10px;flex-wrap:wrap">
+          <div style="flex:1;min-width:200px">
+            <div class="muted" style="margin-bottom:4px">ประเภทงาน</div>
+            <select id="or_job_type" style="width:100%">
+              <option value="">ทั้งหมด</option>
+              <option value="wash">ล้าง</option>
+              <option value="repair">ซ่อม</option>
+              <option value="install">ติดตั้ง</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:200px">
+            <div class="muted" style="margin-bottom:4px">ประเภทแอร์</div>
+            <select id="or_ac_type" style="width:100%">
+              <option value="">ทั้งหมด</option>
+              <option value="wall">ผนัง</option>
+              <option value="fourway">สี่ทิศทาง</option>
+              <option value="hanging">แขวน</option>
+              <option value="ceiling">เปลือยใต้ฝ้า</option>
+            </select>
+          </div>
+          <div style="flex:1;min-width:220px">
+            <div class="muted" style="margin-bottom:4px">ประเภทการล้าง (เฉพาะล้างผนัง)</div>
+            <select id="or_wash_variant" style="width:100%">
+              <option value="">ทั้งหมด</option>
+              <option value="normal">ธรรมดา</option>
+              <option value="premium">พรีเมียม</option>
+              <option value="coil">แขวนคอยน์</option>
+              <option value="overhaul">ตัดล้าง</option>
+            </select>
+          </div>
         </div>
 
-        <div class="row" style="margin-top:10px">
-          <select id="or_ac_type" style="flex:1;min-width:180px">
-            <option value="">(ac_type: any)</option>
-            <option value="wall">wall</option>
-            <option value="fourway">fourway</option>
-            <option value="hanging">hanging</option>
-            <option value="ceiling">ceiling</option>
-          </select>
-          <select id="or_wash_variant" style="flex:1;min-width:200px">
-            <option value="">(wash_variant: any)</option>
-            <option value="normal">normal</option>
-            <option value="premium">premium</option>
-            <option value="coil">coil</option>
-            <option value="overhaul">overhaul</option>
-          </select>
-        </div>
-
-        <div class="row" style="margin-top:10px">
-          <input id="or_s1" type="number" placeholder="1 เครื่อง %" style="width:140px" />
-          <input id="or_s2" type="number" placeholder="2 เครื่อง %" style="width:140px" />
-          <input id="or_s3" type="number" placeholder="3 เครื่อง %" style="width:140px" />
-          <input id="or_s4" type="number" placeholder="4+ เครื่อง %" style="width:140px" />
-          <button class="btn yellow" id="btnUpsertOverride">บันทึก</button>
+        <div class="row" style="margin-top:10px;flex-wrap:wrap">
+          <div style="width:140px">
+            <div class="muted" style="margin-bottom:4px">1 เครื่อง %</div>
+            <input id="or_s1" type="number" placeholder="เช่น 0.4" style="width:100%" />
+          </div>
+          <div style="width:140px">
+            <div class="muted" style="margin-bottom:4px">2 เครื่อง %</div>
+            <input id="or_s2" type="number" placeholder="เช่น 0.45" style="width:100%" />
+          </div>
+          <div style="width:140px">
+            <div class="muted" style="margin-bottom:4px">3 เครื่อง %</div>
+            <input id="or_s3" type="number" placeholder="เช่น 0.5" style="width:100%" />
+          </div>
+          <div style="width:140px">
+            <div class="muted" style="margin-bottom:4px">4+ เครื่อง %</div>
+            <input id="or_s4" type="number" placeholder="เช่น 0.55" style="width:100%" />
+          </div>
+          <div style="flex:1;min-width:220px">
+            <div class="muted" style="margin-bottom:4px">รหัส (ระบบสร้างให้)</div>
+            <input id="or_override_id" readonly style="width:100%;opacity:0.85" />
+          </div>
+          <button class="btn yellow" id="btnUpsertOverride" style="height:44px;margin-top:22px">บันทึก</button>
         </div>
 
         <div class="muted" id="overrideStatus" style="margin-top:10px">-</div>

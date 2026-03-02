@@ -501,10 +501,76 @@
 // =======================================
 
 let OVERRIDES = [];
+let TECH_OPTIONS = [];
+
+function _slug(s){
+  return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+}
+
+function _buildOverrideId(){
+  const tech = String($('or_tech')?.value||'').trim();
+  const job = String($('or_job_type')?.value||'').trim() || 'any';
+  const ac  = String($('or_ac_type')?.value||'').trim() || 'any';
+  let wash  = String($('or_wash_variant')?.value||'').trim() || 'any';
+  // wash_variant is only meaningful for wash+wall
+  if (!(job==='wash' && ac==='wall')) wash = 'any';
+  if (!tech) return '';
+  return `ov_${_slug(tech)}__${_slug(job)}__${_slug(ac)}__${_slug(wash)}`;
+}
+
+function _updateOverrideIdPreview(){
+  const id = _buildOverrideId();
+  if ($('or_override_id')) $('or_override_id').value = id;
+}
+
+function _updateWashVariantEnabled(){
+  const job = String($('or_job_type')?.value||'').trim();
+  const ac  = String($('or_ac_type')?.value||'').trim();
+  const el = $('or_wash_variant');
+  if (!el) return;
+  const enabled = (job==='wash' && ac==='wall');
+  el.disabled = !enabled;
+  if (!enabled) el.value = '';
+}
+
+async function loadTechnicianOptions(){
+  const sel = $('or_tech');
+  if (!sel) return;
+  try{
+    // use existing admin technicians endpoint (works for super too)
+    const r = await api('/admin/technicians');
+    const list = (r.technicians || r.items || r.rows || []).map(t=>({
+      username: t.username || t.tech_username || t.technician_username || t.id || '',
+      name: t.name || t.full_name || t.display_name || ''
+    })).filter(x=>x.username);
+    TECH_OPTIONS = list;
+  }catch(e){
+    TECH_OPTIONS = [];
+  }
+  // render dropdown
+  sel.innerHTML = '';
+  const opt0 = document.createElement('option');
+  opt0.value = '';
+  opt0.textContent = '— เลือกช่าง —';
+  sel.appendChild(opt0);
+  TECH_OPTIONS.forEach(t=>{
+    const o = document.createElement('option');
+    o.value = t.username;
+    o.textContent = t.name ? `${t.username} (${t.name})` : t.username;
+    sel.appendChild(o);
+  });
+}
 
 async function loadOverrides(){
   if (!$('overridesTbody')) return;
   try{
+    // populate dropdown once
+    if ($('or_tech') && (!$('or_tech').options || $('or_tech').options.length<=1)) {
+      await loadTechnicianOptions();
+      if ($('or_priority') && !$('or_priority').value) $('or_priority').value = '100';
+      _updateWashVariantEnabled();
+      _updateOverrideIdPreview();
+    }
     const r = await api('/admin/super/income_step_overrides');
     OVERRIDES = r.overrides || [];
     renderOverrides();
@@ -544,17 +610,24 @@ function renderOverrides(){
       const id = btn.getAttribute('data-id');
       const it = OVERRIDES.find(x=>String(x.override_id)===String(id));
       if (!it) return;
-      $('or_override_id').value = it.override_id || '';
-      $('or_tech').value = it.technician_username || '';
-      $('or_priority').value = Number(it.priority||0);
+      // ensure dropdown is loaded
+      if ($('or_tech') && (!$('or_tech').options || $('or_tech').options.length<=1)) {
+        loadTechnicianOptions().then(()=>{ $('or_tech').value = it.technician_username || ''; _updateOverrideIdPreview(); });
+      } else {
+        $('or_tech').value = it.technician_username || '';
+      }
+      $('or_priority').value = String(Number(it.priority||100));
       $('or_enabled').value = it.enabled ? 'true' : 'false';
       $('or_job_type').value = it.job_type || '';
       $('or_ac_type').value = it.ac_type || '';
+      _updateWashVariantEnabled();
       $('or_wash_variant').value = it.wash_variant || '';
       $('or_s1').value = fmtPct(it.step_1_percent);
       $('or_s2').value = fmtPct(it.step_2_percent);
       $('or_s3').value = fmtPct(it.step_3_percent);
       $('or_s4').value = fmtPct(it.step_4p_percent);
+      // show system-generated id preview (should match stored)
+      $('or_override_id').value = it.override_id || _buildOverrideId();
       toast('ดึงค่า override เข้าแบบฟอร์มแล้ว');
     });
   });
@@ -563,10 +636,12 @@ function renderOverrides(){
 if ($('btnReloadOverrides')) $('btnReloadOverrides').addEventListener('click', loadOverrides);
 if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', async ()=>{
   try{
+    _updateWashVariantEnabled();
+    _updateOverrideIdPreview();
     const payload = {
       override_id: String($('or_override_id').value||'').trim(),
       technician_username: String($('or_tech').value||'').trim(),
-      priority: Number($('or_priority').value||0),
+      priority: Number($('or_priority').value||100),
       enabled: String($('or_enabled').value||'true') !== 'false',
       job_type: String($('or_job_type').value||'').trim() || null,
       ac_type: String($('or_ac_type').value||'').trim() || null,
@@ -577,8 +652,13 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
       step_4p_percent: Number($('or_s4').value||0),
       scope_type: 'combined'
     };
-    if (!payload.override_id) { alert('กรอก override_id'); return; }
-    if (!payload.technician_username) { alert('กรอก username ช่าง'); return; }
+    if (!payload.technician_username) { alert('เลือกช่าง'); return; }
+    if (!payload.override_id) {
+      payload.override_id = _buildOverrideId();
+      $('or_override_id').value = payload.override_id;
+    }
+    // wash_variant only for wash+wall
+    if (!(payload.job_type==='wash' && payload.ac_type==='wall')) payload.wash_variant = null;
     $('overrideStatus').textContent = 'กำลังบันทึก...';
     await api('/admin/super/income_step_overrides/upsert', { method:'POST', body: JSON.stringify(payload) });
     $('overrideStatus').textContent = 'บันทึกแล้ว';
@@ -589,6 +669,16 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
     $('overrideStatus').textContent = 'บันทึกไม่สำเร็จ';
     alert(`บันทึกไม่สำเร็จ: ${e.message}`);
   }
+});
+
+// wire up live preview for override
+['or_tech','or_job_type','or_ac_type','or_wash_variant'].forEach(id=>{
+  const el = $(id);
+  if (!el) return;
+  el.addEventListener('change', ()=>{
+    _updateWashVariantEnabled();
+    _updateOverrideIdPreview();
+  });
 });
 
 // =======================================
