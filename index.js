@@ -2490,65 +2490,11 @@ app.get('/admin/super/payouts/:payout_id/techs', requireSuperAdmin, async (req, 
     );
     return res.json({ ok: true, payout_id, techs: r.rows || [] });
   } catch (e) {
-    console.error('GET /admin/super/payouts/:payout_id/techs', e);
+    console.error('GET /admin/super/payouts/:payout_id/tech/:username', e);
     return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
   }
 });
 
-app.get('/admin/super/payouts/:payout_id/tech/:username', requireSuperAdmin, async (req, res) => {
-  try {
-    const payout_id = String(req.params.payout_id || '').trim();
-    const username = String(req.params.username || '').trim();
-    if (!payout_id || !username) return res.status(400).json({ ok: false, error: 'MISSING_PARAMS' });
-
-    const linesQ = await pool.query(
-      `SELECT line_id, job_id, finished_at, earn_amount, base_amount, percent_final, machine_count_for_tech, step_rule_key,
-              detail_json, setting_snapshot
-         FROM public.technician_payout_lines
-        WHERE payout_id=$1 AND technician_username=$2
-        ORDER BY finished_at ASC, line_id ASC`,
-      [payout_id, username]
-    );
-
-    const adjQ = await pool.query(
-      `SELECT adj_id, job_id, adj_amount, reason, created_at, created_by
-         FROM public.technician_payout_adjustments
-        WHERE payout_id=$1 AND technician_username=$2
-        ORDER BY created_at ASC, adj_id ASC`,
-      [payout_id, username]
-    );
-
-    const payQ = await pool.query(
-      `SELECT paid_amount, paid_status, paid_at, paid_by, slip_url, note
-         FROM public.technician_payout_payments
-        WHERE payout_id=$1 AND technician_username=$2
-        LIMIT 1`,
-      [payout_id, username]
-    );
-
-    const gross = (linesQ.rows || []).reduce((a, it) => a + Number(it.earn_amount || 0), 0);
-    const adj_total = (adjQ.rows || []).reduce((a, it) => a + Number(it.adj_amount || 0), 0);
-    const net = gross + adj_total;
-    const payment = payQ.rows[0] || null;
-    const paid_amount = Number(payment?.paid_amount || 0);
-    const remaining = net - paid_amount;
-
-    return res.json({
-      ok: true,
-      payout_id,
-      technician_username: username,
-      gross_amount: gross,
-      adj_total,
-      net_amount: net,
-      paid_amount,
-      paid_status: payment?.paid_status || (paid_amount > 0 ? 'partial' : 'unpaid'),
-      remaining_amount: remaining,
-      payment,
-      adjustments: adjQ.rows || [],
-      lines: linesQ.rows || []
-    });
-  } catch (e) {
-    console.error('GET /admin/super/payouts/:payout_id/t
 // =======================================
 // 🧾 Payout Lock / Pay / Adjust / Slip (Phase 2)
 // - Lock งวด: กันเลขเปลี่ยน
@@ -2901,11 +2847,6 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
   } catch (e) {
     console.error('GET /tech/payouts/:payout_id/slip', e);
     return res.status(500).send('SLIP_FAILED');
-  }
-});
-
-ech/:username', e);
-    return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
   }
 });
 
