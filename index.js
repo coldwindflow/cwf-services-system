@@ -1906,28 +1906,24 @@ function parseDateYMD(s) {
   return x;
 }
 
+// NOTE: some tech clients may lose cookie/session in PWA webview.
+// Fail-open by allowing ?username= for technicians only (validated against DB).
 app.get('/tech/income_summary', async (req, res) => {
   try {
-    // Backward compatible auth:
-    // - Preferred: cookie session (technician or admin impersonation)
-    // - Fallback: username query param (legacy tech UI uses localStorage only)
-    let tech = '';
-    try {
-      const ctx = await getAuthContext(req, res);
-      if (ctx && ctx.ok && isTechnicianRole(ctx.effective.role)) {
-        tech = String(ctx.effective?.username || '').trim();
-      }
-    } catch {}
-
+    let tech = String(req.effective?.username || '').trim();
     if (!tech) {
-      tech = String(req.query.username || req.query.u || '').trim();
-      if (!tech) return res.status(400).json({ error: 'INVALID_USER' });
-      // Validate that this username is a technician (fail-closed if not found)
-      const chk = await pool.query(
-        `SELECT username FROM public.users WHERE username=$1 AND role='technician' LIMIT 1`,
-        [tech]
+      const qUser = String(req.query.username || '').trim();
+      if (!qUser) return res.status(401).json({ error: 'UNAUTHORIZED' });
+      // Validate that this username is a real technician account (fail-closed).
+      const vr = await pool.query(
+        `SELECT username
+         FROM public.technician_profiles
+         WHERE username=$1
+         LIMIT 1`,
+        [qUser]
       );
-      if ((chk.rows || []).length === 0) return res.status(403).json({ error: 'FORBIDDEN' });
+      if (!vr.rows || !vr.rows.length) return res.status(403).json({ error: 'FORBIDDEN' });
+      tech = qUser;
     }
 
     const qDate = parseDateYMD(req.query.date);
@@ -8359,6 +8355,12 @@ function normalizeServicesFromPayload(payload = {}) {
       repair_variant: String(s.repair_variant || "").trim(),
       admin_override_duration_min: Number(s.admin_override_duration_min || payload.admin_override_duration_min || 0),
       assigned_to: (s.assigned_to || s.assigned_technician_username || null) ? String(s.assigned_to || s.assigned_technician_username).trim() : null,
+      // IMPORTANT: keep allocations from admin-add-v2.js so server can split job_items per technician.
+      // Backward-compatible: accept both `allocations` and legacy `allocation`.
+      allocations: (() => {
+        const a = s && (s.allocations || s.allocation || null);
+        return (a && typeof a === 'object') ? a : null;
+      })(),
     }))
     .filter((s) => s.job_type && s.ac_type && Number.isFinite(s.btu) && s.btu > 0 && Number.isFinite(s.machine_count) && s.machine_count > 0);
 }
@@ -8465,12 +8467,16 @@ function buildServiceLineItemsFromPayload(payload = {}) {
         });
       }
     } else {
+      // Single assignee or unallocated line: store per-machine pricing for clarity in admin edit/history.
+      // This ensures qty reflects machine_count and total remains correct.
+      const perMachine = (mc > 0) ? (linePrice / mc) : linePrice;
+      const unit = Number((Number(perMachine) || 0).toFixed(2));
       items.push({
         item_id: null,
         item_name,
-        qty: 1,
-        unit_price: linePrice,
-        line_total: linePrice,
+        qty: mc,
+        unit_price: unit,
+        line_total: unit * mc,
         is_service: true,
         assigned_technician_username: (s.assigned_to || s.assigned_technician_username || null),
       });

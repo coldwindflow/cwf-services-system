@@ -545,10 +545,10 @@ function formatBaht(n) {
 async function loadIncomeSummary() {
   if (!incomeDailyEl && !incomeMonthEl && !incomeAllEl) return; // UI ไม่ได้มีส่วนนี้
   try {
-    // Backward compatible:
-    // - Some deployments rely on localStorage auth (no cookie session).
-    // - Provide username as a query param so backend can fail-open.
-    const res = await fetch(`${API_BASE}/tech/income_summary?username=${encodeURIComponent(username || '')}`, { credentials: 'include' });
+    // Fail-open for PWA/webview that loses cookies: also send ?username=
+    const u = (typeof username === 'string' ? username : '') || '';
+    const url = `${API_BASE}/tech/income_summary${u ? `?username=${encodeURIComponent(u)}` : ''}`;
+    const res = await fetch(url, { credentials: 'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
 
@@ -1106,26 +1106,20 @@ function _safeOpenUrl(url){
   const u = String(url || '').trim();
   if (!u) return;
   try {
-    // 1) Try window.open
-    const w = window.open(u, '_blank', 'noopener');
+    // 1) try window.open (works on most browsers)
+    const w = window.open(u, '_blank');
     if (w) return;
 
-    // 2) Popup blocked (common on Android PWA/WebView) -> try anchor click
-    try {
-      const a = document.createElement('a');
-      a.href = u;
-      a.target = '_blank';
-      a.rel = 'noopener';
-      a.style.display = 'none';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      return;
-    } catch (e2) {
-      // ignore
-    }
+    // 2) fallback: create an anchor and click (works on some Android webviews)
+    const a = document.createElement('a');
+    a.href = u;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
 
-    // 3) Final fallback: same-tab navigation
+    // 3) last resort: same-tab navigation
     window.location.href = u;
   } catch (e) {
     try { window.location.href = u; } catch(_) {}
@@ -1136,15 +1130,16 @@ function _normalizeMapsUrl(input){
   let s = String(input || '').trim();
   if (!s) return '';
 
-  // If already a geo: URL or has protocol -> keep
-  if (/^geo:/i.test(s) || /^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
-    // sanitize accidental spaces/newlines in pasted URLs
-    try {
-      return encodeURI(s);
-    } catch {
-      return s;
-    }
+  // sanitize invisible whitespace/newlines that break navigation on mobile
+  s = s.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+
+  // If it looks like a URL host/path, remove inner whitespace (copy/paste issue)
+  if (/(maps\.app\.goo\.gl|goo\.gl|google\.com\/maps|www\.google\.com\/maps)/i.test(s)) {
+    s = s.replace(/\s+/g, '');
   }
+
+  // If already a geo: URL or has protocol -> keep
+  if (/^geo:/i.test(s) || /^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return s;
 
   // Common cases without scheme
   if (/^(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps)/i.test(s)) {
