@@ -527,6 +527,34 @@ async function loadJob(){
     const apptInput = el('edit_appt');
     if (apptInput) apptInput.value = toLocalDatetimeInput(job.appointment_datetime);
 
+    // Legacy support:
+    // - Some historical jobs stored assignee info inside item_name (no assigned_technician_username)
+    // - Some jobs have assignees not present in current team_members snapshot
+    // Goal: when admin opens history and clicks edit, they can still see who was assigned.
+    const inferAssigneeFromName = (name, candidates) => {
+      const s = String(name || '');
+      if (!s) return null;
+      const list = Array.isArray(candidates)
+        ? candidates.map(x => String(x || '').trim()).filter(Boolean)
+        : [];
+      if (!list.length) return null;
+      const lower = s.toLowerCase();
+      for (const u of list) {
+        if (!u) continue;
+        const ul = u.toLowerCase();
+        // common patterns: (USERNAME) / @USERNAME / - USERNAME / ช่าง... (USERNAME)
+        if (
+          lower.includes(`(${ul})`) ||
+          lower.includes(`@${ul}`) ||
+          lower.includes(` ${ul}`) ||
+          lower.includes(`-${ul}`)
+        ) {
+          return u;
+        }
+      }
+      return null;
+    };
+
     let editorItems = (Array.isArray(items) ? items : []).map(it=>({
       item_id: Number(it.item_id||0) || null,
       item_name: safe(it.item_name||''),
@@ -534,6 +562,18 @@ async function loadJob(){
       unit_price: Number(it.unit_price||0) || 0,
       assigned_technician_username: String(it.assigned_technician_username||'').trim() || null,
     }));
+
+    // Fill legacy assignee (best-effort) from item_name
+    try {
+      const primaryU0 = String(job.technician_username || '').trim();
+      const candidates0 = Array.from(new Set([primaryU0].concat(teamUsernames || []))).filter(Boolean);
+      editorItems = editorItems.map(it => {
+        if (it.assigned_technician_username) return it;
+        const inferred = inferAssigneeFromName(it.item_name, candidates0);
+        if (inferred) it.assigned_technician_username = inferred;
+        return it;
+      });
+    } catch {}
 
     const tbody = el('items_editor');
 
@@ -557,7 +597,14 @@ async function loadJob(){
         tbody.innerHTML = `<tr><td colspan="6" class="muted2">ยังไม่มีรายการ (กด “เพิ่มรายการ”)</td></tr>`;
         return;
       }
-      const teamMembers = getCurrentTeamMembers();
+      // Ensure assignee options include any currently assigned usernames (even if not in team members snapshot)
+      const teamMembers = (() => {
+        const base = getCurrentTeamMembers();
+        const extra = (editorItems || [])
+          .map(x => String(x.assigned_technician_username || '').trim())
+          .filter(Boolean);
+        return Array.from(new Set(base.concat(extra)));
+      })();
       tbody.innerHTML = editorItems.map((it, idx)=>{
         const line = (Number(it.qty)||0) * (Number(it.unit_price)||0);
         const curAssignee = String(it.assigned_technician_username||'').trim();

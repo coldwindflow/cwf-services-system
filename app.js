@@ -545,7 +545,10 @@ function formatBaht(n) {
 async function loadIncomeSummary() {
   if (!incomeDailyEl && !incomeMonthEl && !incomeAllEl) return; // UI ไม่ได้มีส่วนนี้
   try {
-    const res = await fetch(`${API_BASE}/tech/income_summary`, { credentials: 'include' });
+    // Backward compatible:
+    // - Some deployments rely on localStorage auth (no cookie session).
+    // - Provide username as a query param so backend can fail-open.
+    const res = await fetch(`${API_BASE}/tech/income_summary?username=${encodeURIComponent(username || '')}`, { credentials: 'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
 
@@ -1103,9 +1106,27 @@ function _safeOpenUrl(url){
   const u = String(url || '').trim();
   if (!u) return;
   try {
-    const w = window.open(u, '_blank');
-    // Some PWA/webview contexts block popups; fall back to same-tab navigation.
-    if (!w) window.location.href = u;
+    // 1) Try window.open
+    const w = window.open(u, '_blank', 'noopener');
+    if (w) return;
+
+    // 2) Popup blocked (common on Android PWA/WebView) -> try anchor click
+    try {
+      const a = document.createElement('a');
+      a.href = u;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      return;
+    } catch (e2) {
+      // ignore
+    }
+
+    // 3) Final fallback: same-tab navigation
+    window.location.href = u;
   } catch (e) {
     try { window.location.href = u; } catch(_) {}
   }
@@ -1116,7 +1137,14 @@ function _normalizeMapsUrl(input){
   if (!s) return '';
 
   // If already a geo: URL or has protocol -> keep
-  if (/^geo:/i.test(s) || /^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return s;
+  if (/^geo:/i.test(s) || /^[a-z][a-z0-9+.-]*:\/\//i.test(s)) {
+    // sanitize accidental spaces/newlines in pasted URLs
+    try {
+      return encodeURI(s);
+    } catch {
+      return s;
+    }
+  }
 
   // Common cases without scheme
   if (/^(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps)/i.test(s)) {

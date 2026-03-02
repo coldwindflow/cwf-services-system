@@ -1906,10 +1906,29 @@ function parseDateYMD(s) {
   return x;
 }
 
-app.get('/tech/income_summary', requireTechnicianSession, async (req, res) => {
+app.get('/tech/income_summary', async (req, res) => {
   try {
-    const tech = String(req.effective?.username || '').trim();
-    if (!tech) return res.status(400).json({ error: 'INVALID_USER' });
+    // Backward compatible auth:
+    // - Preferred: cookie session (technician or admin impersonation)
+    // - Fallback: username query param (legacy tech UI uses localStorage only)
+    let tech = '';
+    try {
+      const ctx = await getAuthContext(req, res);
+      if (ctx && ctx.ok && isTechnicianRole(ctx.effective.role)) {
+        tech = String(ctx.effective?.username || '').trim();
+      }
+    } catch {}
+
+    if (!tech) {
+      tech = String(req.query.username || req.query.u || '').trim();
+      if (!tech) return res.status(400).json({ error: 'INVALID_USER' });
+      // Validate that this username is a technician (fail-closed if not found)
+      const chk = await pool.query(
+        `SELECT username FROM public.users WHERE username=$1 AND role='technician' LIMIT 1`,
+        [tech]
+      );
+      if ((chk.rows || []).length === 0) return res.status(403).json({ error: 'FORBIDDEN' });
+    }
 
     const qDate = parseDateYMD(req.query.date);
     const todayKey = toBangkokDateKey(new Date());
