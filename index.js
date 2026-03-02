@@ -2336,6 +2336,40 @@ async function _buildPayoutLinesForJob(job_id){
   return lines;
 }
 
+// =======================================
+// 🔒 Phase 5 Guard: prevent retroactive payout changes
+// - If a job's finished_at falls inside a locked/paid payout period,
+//   disallow edits that would change income. Use adjustment instead.
+// =======================================
+async function _findLockedOrPaidPeriodByFinishedAt(client, finishedAtIso){
+  if (!finishedAtIso) return null;
+  const r = await client.query(
+    `SELECT payout_id, status, period_start, period_end
+       FROM public.technician_payout_periods
+      WHERE status IN ('locked','paid')
+        AND $1::timestamptz >= period_start
+        AND $1::timestamptz <  period_end
+      ORDER BY period_start DESC
+      LIMIT 1`,
+    [finishedAtIso]
+  );
+  return r.rows[0] || null;
+}
+
+async function _assertJobMutableForPayout(client, job_id, ctx){
+  const jr = await client.query(`SELECT job_id, finished_at FROM public.jobs WHERE job_id=$1 LIMIT 1`, [job_id]);
+  const j = jr.rows[0];
+  if (!j || !j.finished_at) return; // not finished => not in any payout window
+  const period = await _findLockedOrPaidPeriodByFinishedAt(client, j.finished_at);
+  if (!period) return;
+  const msg = `งาน #${job_id} อยู่ในงวดที่ล็อก/จ่ายแล้ว (${period.payout_id}) แก้ย้อนหลังไม่ได้ ให้ใช้ Adjustment ในงวดแทน`;
+  const err = new Error(msg);
+  err.statusCode = 409;
+  err.payout_id = period.payout_id;
+  try { console.warn('[payout_freeze] blocked', { job_id, payout_id: period.payout_id, status: period.status, ctx }); } catch {}
+  throw err;
+}
+
 app.get('/admin/super/tech_income/calc/job/:job_id', requireSuperAdmin, async (req, res) => {
   try {
     const job_id = Number(req.params.job_id);
@@ -2585,6 +2619,124 @@ app.get('/admin/super/payouts/:payout_id/techs', requireSuperAdmin, async (req, 
 });
 
 // =======================================
+// ✅ Phase 5: Reconciliation check
+// - Compare stored payout_lines with current recompute results
+// - Detect jobs changed after generate (via job_updates_v2)
+// =======================================
+app.get('/admin/super/payouts/:payout_id/reconcile', requireSuperAdmin, async (req, res) => {
+  const payout_id = String(req.params.payout_id || '').trim();
+  if (!payout_id) return res.status(400).json({ ok:false, error:'MISSING_PAYOUT_ID' });
+  try {
+    const period = await _getPayoutPeriod(payout_id);
+    if (!period) return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
+
+    // jobs in period
+    const jr = await pool.query(
+      `SELECT job_id
+         FROM public.jobs
+        WHERE finished_at IS NOT NULL
+          AND finished_at >= $1::timestamptz
+          AND finished_at <  $2::timestamptz
+        ORDER BY job_id ASC`,
+      [period.period_start, period.period_end]
+    );
+    const jobIds = (jr.rows||[]).map(r => String(r.job_id));
+
+    const storedR = await pool.query(
+      `SELECT job_id::text AS job_id, technician_username, earn_amount, base_amount, percent_final, machine_count_for_tech, detail_json
+         FROM public.technician_payout_lines
+        WHERE payout_id=$1`,
+      [payout_id]
+    );
+    const stored = storedR.rows || [];
+    const storedMap = new Map();
+    for (const s of stored) storedMap.set(`${s.job_id}::${s.technician_username}`, s);
+
+    const mismatches = [];
+    const missingNow = [];
+    const newExpected = [];
+
+    for (const job_id of jobIds) {
+      let expected = [];
+      try {
+        expected = await _buildPayoutLinesForJob(job_id);
+      } catch (e) {
+        mismatches.push({ job_id, technician_username:null, issue:'recompute_failed', message: e.message || 'recompute failed' });
+        continue;
+      }
+
+      const expMap = new Map();
+      for (const e of expected) expMap.set(`${String(e.job_id)}::${String(e.technician_username)}`, e);
+
+      // compare stored -> expected
+      for (const [k, s] of Array.from(storedMap.entries())) {
+        const [sj, st] = k.split('::');
+        if (sj !== String(job_id)) continue;
+        const ex = expMap.get(k);
+        if (!ex) {
+          missingNow.push({ job_id: sj, technician_username: st, stored_earn: Number(s.earn_amount||0) });
+          continue;
+        }
+        const se = Number(s.earn_amount||0);
+        const ee = Number(ex.earn_amount||0);
+        const delta = Number((ee - se).toFixed(2));
+        if (Math.abs(delta) >= 0.01) {
+          // detect changed after generate
+          let changed_after_generate = false;
+          try {
+            const ur = await pool.query(
+              `SELECT MAX(created_at) AS last_update_at FROM public.job_updates_v2 WHERE job_id=$1`,
+              [Number(job_id)]
+            );
+            const last = ur.rows[0]?.last_update_at ? new Date(ur.rows[0].last_update_at) : null;
+            const genAt = period.created_at ? new Date(period.created_at) : null;
+            if (last && genAt && last.getTime() > genAt.getTime()) changed_after_generate = true;
+          } catch {}
+
+          mismatches.push({
+            job_id: String(job_id),
+            technician_username: String(st),
+            issue: 'amount_changed',
+            stored_earn: se,
+            expected_earn: ee,
+            delta,
+            stored_percent: Number(s.percent_final||0) || null,
+            expected_percent: Number(ex.percent_final||0) || null,
+            stored_machine: Number(s.machine_count_for_tech||0) || null,
+            expected_machine: Number(ex.machine_count_for_tech||0) || null,
+            changed_after_generate,
+          });
+        }
+      }
+
+      // compare expected -> stored (new lines)
+      for (const [k, ex] of Array.from(expMap.entries())) {
+        if (!storedMap.has(k)) {
+          const parts = k.split('::');
+          newExpected.push({ job_id: parts[0], technician_username: parts[1], expected_earn: Number(ex.earn_amount||0) });
+        }
+      }
+    }
+
+    return res.json({
+      ok:true,
+      payout_id,
+      status: period.status,
+      period_start: period.period_start,
+      period_end: period.period_end,
+      jobs: jobIds.length,
+      stored_lines: stored.length,
+      mismatches,
+      missing_now: missingNow,
+      new_expected: newExpected,
+    });
+  } catch (e) {
+    console.error('GET /admin/super/payouts/:payout_id/reconcile', e);
+    return res.status(500).json({ ok:false, error:'RECONCILE_FAILED' });
+  }
+});
+
+// =======================================
 // 🧾 Payout Lock / Pay / Adjust / Slip (Phase 2)
 // - Lock งวด: กันเลขเปลี่ยน
 // - Payments: เก็บยอดจ่ายจริง + สลิป
@@ -2603,7 +2755,7 @@ function _paidStatus(netAmount, paidAmount){
 
 async function _getPayoutPeriod(payout_id){
   const r = await pool.query(
-    `SELECT payout_id, status, period_type, period_start, period_end
+    `SELECT payout_id, status, period_type, period_start, period_end, created_at
        FROM public.technician_payout_periods
       WHERE payout_id=$1
       LIMIT 1`,
@@ -6314,6 +6466,9 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
     );
     if (!jr.rows.length) return res.status(404).json({ error: 'ไม่พบงาน' });
 
+    // 🔒 Phase 5: block retroactive income change for locked/paid periods
+    await _assertJobMutableForPayout(client, realId, 'force_finish_v2');
+
     const cur = jr.rows[0] || {};
     const jt = String(cur.job_type || '').trim();
 
@@ -6386,6 +6541,9 @@ app.delete('/admin/jobs/:job_id', requireAdminSoft, async (req, res) => {
       return res.status(404).json({ ok:false, error:'job not found' });
     }
 
+    // 🔒 Phase 5: do not allow delete if job affects locked/paid payout
+    await _assertJobMutableForPayout(client, job_id, 'admin_delete_job');
+
     // child tables (fail-safe: some DB might miss tables in older deploys)
     const safeDel = async (sql, params) => {
       try { await client.query(sql, params); } catch(e){ console.warn('[admin_delete_job] ignore', e.message); }
@@ -6418,14 +6576,18 @@ app.post('/admin/jobs/:job_id/return_for_fix_v2', requireAdminSoft, async (req, 
   const actor_username = String(req.body?.actor_username || '').trim() || null;
   if (!job_id) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
   if (!reason) return res.status(400).json({ error: 'ต้องระบุปัญหา/เหตุผล' });
+  const client = await pool.connect();
   try {
-    const jr = await pool.query(`SELECT job_status, warranty_end_at, booking_code FROM public.jobs WHERE job_id=$1`, [job_id]);
+    // 🔒 Phase 5: block retroactive income change for locked/paid periods
+    await _assertJobMutableForPayout(client, job_id, 'return_for_fix_v2');
+
+    const jr = await client.query(`SELECT job_status, warranty_end_at, booking_code FROM public.jobs WHERE job_id=$1`, [job_id]);
     if (!jr.rows.length) return res.status(404).json({ error: 'ไม่พบงาน' });
     const wEnd = jr.rows[0].warranty_end_at ? new Date(jr.rows[0].warranty_end_at) : null;
     const inWarranty = !!(wEnd && wEnd.getTime() >= Date.now());
     if (!inWarranty) return res.status(400).json({ error: 'หมดประกันแล้ว ไม่สามารถตีกลับเป็นงานแก้ไขได้' });
 
-    await pool.query(
+    await client.query(
       `UPDATE public.jobs
        SET job_status='งานแก้ไข',
            returned_at=NOW(),
@@ -6439,6 +6601,8 @@ app.post('/admin/jobs/:job_id/return_for_fix_v2', requireAdminSoft, async (req, 
   } catch (e) {
     console.error('return_for_fix_v2 error', e);
     return res.status(500).json({ error: e.message || 'ตีกลับงานแก้ไขไม่สำเร็จ' });
+  } finally {
+    try { client.release(); } catch {}
   }
 });
 
@@ -7443,6 +7607,9 @@ app.post("/admin/pricing-requests/:id/approve", requireAdminSession, async (req,
     const reqRow = rr.rows[0];
     if (reqRow.status !== "pending") throw new Error("คำขอนี้ถูกตัดสินไปแล้ว");
 
+    // 🔒 Phase 5: block retroactive income change for locked/paid periods
+    await _assertJobMutableForPayout(client, reqRow.job_id, 'pricing-request-approve');
+
     const payload = reqRow.payload_json || {};
     const items = Array.isArray(payload.items) ? payload.items : [];
 
@@ -7521,6 +7688,9 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // 🔒 Phase 5: block retroactive income change for locked/paid periods
+    await _assertJobMutableForPayout(client, job_id, 'items-admin');
 
     // โหลดโปร (ถ้าเลือก)
     let promo = null;

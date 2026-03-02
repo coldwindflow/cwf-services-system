@@ -576,6 +576,7 @@
     try{
       const meta = (Array.isArray(PAYOUTS)?PAYOUTS:[]).find(x=>String(x.payout_id)===String(id)) || {};
       const st = String(meta.status||'draft');
+      if ($('payoutReconcileBox')) $('payoutReconcileBox').innerHTML = '';
       const pill = $('payoutStatusPill');
       if (pill){
         pill.style.display = 'inline-flex';
@@ -618,6 +619,21 @@
             await loadAudit();
           }catch(e){
             alert(`ลบไม่สำเร็จ: ${e.message}`);
+          }
+        };
+      }
+
+      // ✅ Phase 5: ตรวจสอบงวด (reconcile)
+      const recBtn = $('btnReconcilePayout');
+      if (recBtn){
+        recBtn.disabled = false;
+        recBtn.onclick = async ()=>{
+          if ($('payoutReconcileBox')) $('payoutReconcileBox').innerHTML = '<div class="muted">กำลังตรวจสอบงวด...</div>';
+          try{
+            const rr = await api(`/admin/super/payouts/${encodeURIComponent(id)}/reconcile`);
+            renderPayoutReconcile(rr);
+          }catch(e){
+            if ($('payoutReconcileBox')) $('payoutReconcileBox').innerHTML = `<div class="muted">ตรวจสอบไม่สำเร็จ: ${esc(e.message||'error')}</div>`;
           }
         };
       }
@@ -738,6 +754,55 @@
         }
       });
     });
+  }
+
+  function renderPayoutReconcile(rr){
+    const box = $('payoutReconcileBox');
+    if (!box) return;
+    const mism = Array.isArray(rr?.mismatches) ? rr.mismatches : [];
+    const miss = Array.isArray(rr?.missing_now) ? rr.missing_now : [];
+    const news = Array.isArray(rr?.new_expected) ? rr.new_expected : [];
+
+    const badge = (txt)=>`<span class="pill blue" style="margin-left:6px">${esc(txt)}</span>`;
+    let html = `<div class="card" style="padding:10px">
+      <div class="row" style="justify-content:space-between;align-items:center">
+        <div><b>ตรวจสอบงวด</b>${badge(`mismatch ${mism.length}`)}${badge(`missing ${miss.length}`)}${badge(`new ${news.length}`)}</div>
+        <div class="muted mono">${esc(rr?.payout_id||'')}</div>
+      </div>
+      <div class="muted" style="margin-top:6px">ถ้ามี mismatch แปลว่า job/รายการ/การมอบหมาย ถูกแก้หลัง generate หรือ rule เปลี่ยน (งวด locked/paid ให้ใช้ Adjustment เท่านั้น)</div>
+    `;
+
+    const rows = [];
+    for (const m of mism.slice(0, 50)) {
+      rows.push(`<tr>
+        <td class="mono">${esc(m.job_id)}</td>
+        <td class="mono">${esc(m.technician_username||'-')}</td>
+        <td class="mono">${esc((m.stored_earn??'-'))}</td>
+        <td class="mono">${esc((m.expected_earn??'-'))}</td>
+        <td class="mono">${esc((m.delta??'-'))}</td>
+        <td class="muted">${m.changed_after_generate ? 'แก้หลังสร้างงวด' : ''}</td>
+      </tr>`);
+    }
+    if (rows.length) {
+      html += `<div style="overflow:auto;margin-top:10px">
+        <table>
+          <thead><tr class="muted"><td>job</td><td>tech</td><td>stored</td><td>expected</td><td>delta</td><td>hint</td></tr></thead>
+          <tbody>${rows.join('')}</tbody>
+        </table>
+      </div>`;
+    } else {
+      html += `<div class="muted" style="margin-top:10px">ไม่พบ mismatch</div>`;
+    }
+
+    if (miss.length) {
+      html += `<div class="muted" style="margin-top:10px">มีบรรทัดที่เคยอยู่ในงวด แต่คำนวณปัจจุบันไม่เจอ (มักเกิดจากการแก้ assign/ลบรายการ): ${esc(miss.length)} รายการ</div>`;
+    }
+    if (news.length) {
+      html += `<div class="muted" style="margin-top:6px">มีบรรทัดใหม่ที่คำนวณปัจจุบันควรมี แต่ใน DB ไม่มี: ${esc(news.length)} รายการ</div>`;
+    }
+
+    html += `</div>`;
+    box.innerHTML = html;
   }
 
   async function openPayoutTech(username){
