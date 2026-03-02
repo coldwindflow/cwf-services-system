@@ -53,6 +53,12 @@ const techPayoutDetailHintEl = document.getElementById('techPayoutDetailHint');
 const techPayoutTotalPillEl = document.getElementById('techPayoutTotalPill');
 const btnReloadIncomePeriodsEl = document.getElementById('btnReloadIncomePeriods');
 
+// ✅ รายละเอียดรายวัน (วันนี้ทำอะไรไป)
+const incomeDatePickerEl = document.getElementById('incomeDatePicker');
+const btnLoadIncomeDayEl = document.getElementById('btnLoadIncomeDay');
+const techIncomeDayListEl = document.getElementById('techIncomeDayList');
+const techIncomeDayHintEl = document.getElementById('techIncomeDayHint');
+
 // ✅ แถบควบคุมช่าง (dropdown)
 const acceptStatusSelect = document.getElementById("acceptStatusSelect");
 const zoneSelect = document.getElementById("zoneSelect");
@@ -552,6 +558,13 @@ function formatBaht(n) {
   }
 }
 
+function _bkkYmdNow(){
+  try{
+    const ms = Date.now() + (7*60*60*1000);
+    return new Date(ms).toISOString().slice(0,10);
+  }catch{ return new Date().toISOString().slice(0,10); }
+}
+
 function _bestEffortUsername() {
   // Backward-compatible: some clients lose the global `username` or cookies.
   // Try common storage keys used across versions.
@@ -615,6 +628,79 @@ async function loadIncomeSummary() {
     if (incomeDaily2El) incomeDaily2El.textContent = "-";
     if (incomeMonth2El) incomeMonth2El.textContent = "-";
     if (incomeAll2El) incomeAll2El.textContent = "-";
+  }
+}
+
+// =======================================
+// 📆 INCOME DAY DETAIL (Technician)
+// - แสดงรายการงาน + รายได้ต่อใบงาน ของวันที่เลือก
+// =======================================
+
+function _fmtDateTimeTH(iso){
+  try{
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '-';
+    return d.toLocaleString('th-TH', { year:'numeric', month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' });
+  }catch{ return '-'; }
+}
+
+function _keyLabel(k, fallback){
+  const s = String(k||'').trim();
+  return s || String(fallback||'').trim() || '-';
+}
+
+function renderIncomeDayDetail(payload){
+  if (!techIncomeDayListEl) return;
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) {
+    techIncomeDayListEl.innerHTML = `<div class="muted">ไม่มีงานที่ปิดในวันนี้</div>`;
+    return;
+  }
+
+  const html = items.map(it=>{
+    const d = it.detail_json || {};
+    const jobId = String(it.job_id||'-');
+    const finished = _fmtDateTimeTH(it.finished_at);
+    const jobType = _keyLabel(d.job_type, d.job_type_key);
+    const acType = _keyLabel(d.ac_type, d.ac_type_key);
+    const wash = _keyLabel(d.wash_variant, '');
+    const mc = Number(it.machine_count_for_tech||0);
+    const pct = (it.percent_final==null) ? '-' : `${Number(it.percent_final)}%`;
+    const earn = formatBaht(it.earn_amount||0);
+    return `
+      <div style="padding:10px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px">
+        <div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start">
+          <div>
+            <b>งาน #${jobId}</b>
+            <div class="muted" style="margin-top:4px">${finished}</div>
+            <div class="muted" style="margin-top:6px">${jobType} • ${acType}${wash?` • ${wash}`:''}</div>
+            <div class="muted" style="margin-top:4px">เครื่องของช่าง: <b>${mc}</b> • % ที่ใช้: <b>${pct}</b></div>
+          </div>
+          <div style="text-align:right">
+            <b style="font-size:18px">${earn}</b>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  techIncomeDayListEl.innerHTML = html;
+}
+
+async function loadIncomeDayDetail(dateYmd){
+  if (!techIncomeDayListEl) return;
+  const d = String(dateYmd||'').trim() || _bkkYmdNow();
+  if (techIncomeDayHintEl) techIncomeDayHintEl.textContent = `กำลังโหลดรายการของ ${d}...`;
+  techIncomeDayListEl.innerHTML = `<div class="muted">กำลังโหลด...</div>`;
+  try{
+    const res = await fetch(`${API_BASE}/tech/income_day_detail?date=${encodeURIComponent(d)}`, { credentials:'include' });
+    const data = await res.json();
+    if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
+    if (techIncomeDayHintEl) techIncomeDayHintEl.textContent = `รวมวันนี้: ${formatBaht(data.total_amount||0)}`;
+    renderIncomeDayDetail(data);
+  }catch(e){
+    if (techIncomeDayHintEl) techIncomeDayHintEl.textContent = 'โหลดไม่สำเร็จ';
+    techIncomeDayListEl.innerHTML = `<div class="muted">โหลดไม่สำเร็จ</div>`;
   }
 }
 
@@ -931,6 +1017,15 @@ async function idbDelete(photoId) {
 // =======================================
 loadProfile();
 loadIncomeSummary();
+
+// ✅ รายละเอียดรายวัน (วันนี้ทำอะไรไป)
+try{
+  if (incomeDatePickerEl) incomeDatePickerEl.value = _bkkYmdNow();
+  if (btnLoadIncomeDayEl) btnLoadIncomeDayEl.addEventListener('click', ()=> loadIncomeDayDetail(incomeDatePickerEl?.value || _bkkYmdNow()));
+  // โหลดของวันนี้อัตโนมัติครั้งแรก (กันช่างต้องกดหลายที)
+  if (techIncomeDayListEl) loadIncomeDayDetail(_bkkYmdNow());
+}catch(e){}
+
 loadOffers();
 loadJobs();
 setInterval(() => loadOffers(), 15000);

@@ -599,6 +599,28 @@
           }
         };
       }
+
+      // ✅ ลบงวด (เฉพาะ draft และต้องไม่มี payment/adjustment)
+      const delBtn = $('btnDeletePayout');
+      if (delBtn){
+        delBtn.disabled = (st !== 'draft');
+        delBtn.onclick = async ()=>{
+          if (!confirm(`ลบงวด ${id} ?\n\nเงื่อนไข: ต้องเป็น draft และยังไม่มีการจ่าย/ปรับยอด`)) return;
+          try{
+            await api(`/admin/super/payouts/${encodeURIComponent(id)}`, { method:'DELETE' });
+            toast('ลบงวดแล้ว');
+            ACTIVE_PAYOUT = '';
+            ACTIVE_TECH = '';
+            $('payoutDetailHint').textContent = 'เลือกงวดจากตาราง';
+            $('payoutTechsBox').innerHTML = '';
+            $('payoutLinesBox').innerHTML = '';
+            await loadPayouts();
+            await loadAudit();
+          }catch(e){
+            alert(`ลบไม่สำเร็จ: ${e.message}`);
+          }
+        };
+      }
     }catch(e){}
 
     $('payoutDetailHint').textContent = `กำลังโหลดรายช่างของงวด: ${id}`;

@@ -550,6 +550,18 @@
           <div class="row" style="margin-top:8px;justify-content:space-between"><span class="muted">เดือนนี้</span><b id="incomeMonth2">-</b></div>
           <div class="row" style="margin-top:8px;justify-content:space-between"><span class="muted">สะสมทั้งหมด</span><b id="incomeAll2">-</b></div>
           <button class="btn" style="margin-top:10px" id="btnReloadIncomePeriods">รีเฟรชงวด</button>
+
+          <!-- ✅ รายละเอียดรายวัน (ไม่ต้องสร้างงวด) -->
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(15,23,42,0.08)">
+            <b style="color:#0b1b3a">วันนี้ทำอะไรไป</b>
+            <div class="muted" style="margin-top:6px">ดูรายได้ “ต่อใบงาน” แบบละเอียด</div>
+            <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap">
+              <input id="incomeDatePicker" type="date" style="flex:1;min-width:180px" />
+              <button class="btn blue" id="btnLoadIncomeDay">ดูรายละเอียด</button>
+            </div>
+            <div id="techIncomeDayHint" class="muted" style="margin-top:8px">เลือกวันที่แล้วกดดูรายละเอียด</div>
+            <div id="techIncomeDayList" style="margin-top:10px"></div>
+          </div>
         </div>
 
         <div class="card" style="margin-top:0">
