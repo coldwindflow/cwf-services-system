@@ -137,6 +137,24 @@
 
         <div class="grid2" style="margin-top:10px">
           <div>
+            <div class="muted">รูปแบบรายได้</div>
+            <select id="editCompMode">
+              <option value="commission">รายงาน (ตามงาน)</option>
+              <option value="daily">ผู้ช่วย (รายวัน)</option>
+              <option value="salary">ผู้ช่วย (เงินเดือน)</option>
+            </select>
+            <div class="muted" style="margin-top:6px;font-size:12px">* ผู้ช่วยจะไม่คิดรายได้ต่องาน แต่จะคำนวณจากวันทำงาน/เงินเดือนแทน</div>
+          </div>
+          <div>
+            <div class="muted">ค่าแรงรายวัน (บาท)</div>
+            <input id="editDailyWage" placeholder="เช่น 500">
+            <div class="muted" style="margin-top:8px">เงินเดือน/เดือน (บาท)</div>
+            <input id="editMonthlySalary" placeholder="เช่น 15000">
+          </div>
+        </div>
+
+        <div class="grid2" style="margin-top:10px">
+          <div>
             <div class="muted">เวลาเริ่มงาน</div>
             <input id="editWorkStart" placeholder="09:00">
           </div>

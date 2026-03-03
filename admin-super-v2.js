@@ -965,7 +965,12 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
           if (ACTIVE_TECH) await openPayoutTech(ACTIVE_TECH);
           await loadAudit();
         }catch(e){
-          alert(`จ่ายไม่สำเร็จ: ${e.message}`);
+          const msg = String(e.message||'');
+          if (msg.includes('WITHDRAW_REQUIRED')) {
+            alert('จ่ายไม่สำเร็จ: พาร์ทเนอร์ต้องกด "ขอถอนเงิน" ก่อน ถึงจะจ่ายได้');
+          } else {
+            alert(`จ่ายไม่สำเร็จ: ${msg}`);
+          }
         }
       };
     }
@@ -1016,7 +1021,12 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
           if (ACTIVE_TECH === u) await openPayoutTech(u);
           await loadAudit();
         }catch(e){
-          alert(`บันทึกไม่สำเร็จ: ${e.message}`);
+          const msg = String(e.message||'');
+          if (msg.includes('WITHDRAW_REQUIRED')) {
+            alert('บันทึกไม่สำเร็จ: พาร์ทเนอร์ต้องกด "ขอถอนเงิน" ก่อน ถึงจะจ่ายได้');
+          } else {
+            alert(`บันทึกไม่สำเร็จ: ${msg}`);
+          }
         }
       });
     });

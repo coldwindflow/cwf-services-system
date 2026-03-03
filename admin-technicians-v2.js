@@ -119,6 +119,9 @@
     $('editTechCode').value = t.technician_code || '';
     $('editPhone').value = t.phone || '';
     $('editEmployment').value = (t.employment_type || 'company');
+    if ($('editCompMode')) $('editCompMode').value = (t.compensation_mode || 'commission');
+    if ($('editDailyWage')) $('editDailyWage').value = (t.daily_wage_amount!=null ? String(t.daily_wage_amount) : '');
+    if ($('editMonthlySalary')) $('editMonthlySalary').value = (t.monthly_salary_amount!=null ? String(t.monthly_salary_amount) : '');
     $('editWorkStart').value = t.work_start || '09:00';
     $('editWorkEnd').value = t.work_end || '18:00';
     // slot visibility (default true)
@@ -263,6 +266,9 @@
       technician_code: String($('editTechCode').value||'').trim(),
       phone: String($('editPhone').value||'').trim(),
       employment_type: String($('editEmployment').value||'company').trim(),
+      compensation_mode: String(($('editCompMode')?.value)||'commission').trim(),
+      daily_wage_amount: String(($('editDailyWage')?.value)||'').trim(),
+      monthly_salary_amount: String(($('editMonthlySalary')?.value)||'').trim(),
       work_start: String($('editWorkStart').value||'').trim(),
       work_end: String($('editWorkEnd').value||'').trim(),
       new_password: String($('editNewPass').value||''),

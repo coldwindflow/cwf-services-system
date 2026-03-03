@@ -966,6 +966,8 @@ async function openTechPayoutDetail(payout_id){
   if (techPayoutTotalPillEl) { techPayoutTotalPillEl.style.display='none'; techPayoutTotalPillEl.textContent=''; }
   const btnSlipTop = document.getElementById('btnOpenSlip');
   if (btnSlipTop){ btnSlipTop.style.display='none'; btnSlipTop.onclick=null; }
+  const btnWithdraw = document.getElementById('btnWithdraw');
+  if (btnWithdraw){ btnWithdraw.style.display='none'; btnWithdraw.onclick=null; btnWithdraw.disabled=false; btnWithdraw.textContent='ขอถอนเงิน'; }
 
   try{
     const res = await fetch(`${API_BASE}/tech/payouts/${encodeURIComponent(id)}`, { credentials:'include' });
@@ -986,6 +988,48 @@ async function openTechPayoutDetail(payout_id){
       btnSlipTop.style.display = 'inline-flex';
       btnSlipTop.onclick = ()=>{ window.open(`/tech/payouts/${encodeURIComponent(id)}/slip`, '_blank'); };
     }
+
+    // ✅ partner withdraw flow
+    const btnWithdraw = document.getElementById('btnWithdraw');
+    try{
+      const prof = data.profile || null;
+      const et = String(prof?.employment_type || '').toLowerCase();
+      const remainingNum = Number(data.remaining_amount||0);
+      const wr = data.withdraw_request || null;
+      if (btnWithdraw && et === 'partner' && remainingNum > 0.0001) {
+        btnWithdraw.style.display = 'inline-flex';
+        if (wr && (wr.status==='requested' || wr.status==='approved')) {
+          btnWithdraw.disabled = true;
+          btnWithdraw.textContent = `รออนุมัติถอน (${wr.status})`;
+        } else if (wr && wr.status==='paid') {
+          btnWithdraw.disabled = true;
+          btnWithdraw.textContent = 'ถอนแล้ว';
+        } else {
+          btnWithdraw.disabled = false;
+          btnWithdraw.textContent = 'ขอถอนเงิน';
+          btnWithdraw.onclick = async ()=>{
+            btnWithdraw.disabled = true;
+            btnWithdraw.textContent = 'กำลังส่งคำขอ...';
+            try{
+              const r = await fetch(`${API_BASE}/tech/withdraw_requests`, {
+                method:'POST',
+                credentials:'include',
+                headers:{ 'Content-Type':'application/json' },
+                body: JSON.stringify({ payout_id: id })
+              });
+              const j = await r.json();
+              if (!j || !j.ok) throw new Error(j?.error||'REQUEST_FAILED');
+              showToast('ส่งคำขอถอนเงินแล้ว', 'success');
+              await openTechPayoutDetail(id);
+            } catch(e){
+              showToast('ส่งคำขอไม่สำเร็จ', 'error');
+              btnWithdraw.disabled = false;
+              btnWithdraw.textContent = 'ขอถอนเงิน';
+            }
+          };
+        }
+      }
+    }catch(e){ /* ignore */ }
     renderTechPayoutLines(data.lines||[], data.net_amount||data.total_amount||0, data.adjustments||[], data.payment||null, id);
   }catch(e){
     if (techPayoutDetailHintEl) techPayoutDetailHintEl.textContent = 'โหลดรายละเอียดไม่สำเร็จ';

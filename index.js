@@ -2044,8 +2044,237 @@ function _recentPeriods(countPairs = 6, nowBkk) {
   return out;
 }
 
-async function _computeTechLinesInRange(tech, start, endEx) {
-  // คำนวณสดเฉพาะช่วงนั้น (กันช้า): ดึงเฉพาะงานที่ tech เกี่ยวข้อง แล้วใช้ _buildPayoutLinesForJob
+// =======================================
+// ✅ Technician compensation helpers
+// - commission: per job (เดิม)
+// - daily: daily_wage_amount * workdays
+// - salary: monthly_salary_amount/2 ต่อ 1 งวด (10/25)
+// =======================================
+function _normCompMode(mode) {
+  const m = String(mode || '').toLowerCase().trim();
+  if (m === 'daily' || m === 'daily_wage' || m === 'day') return 'daily';
+  if (m === 'salary' || m === 'monthly') return 'salary';
+  return 'commission';
+}
+
+async function _getTechProfile(username) {
+  if (!username) return null;
+  try {
+    const q = await pool.query(
+      `SELECT username,
+              COALESCE(employment_type,'company') AS employment_type,
+              COALESCE(compensation_mode,'commission') AS compensation_mode,
+              COALESCE(daily_wage_amount,0)::numeric AS daily_wage_amount,
+              COALESCE(monthly_salary_amount,0)::numeric AS monthly_salary_amount
+       FROM public.technician_profiles
+       WHERE username=$1`,
+      [username]
+    );
+    return q.rows[0] || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+async function _countWorkDays(username, startIso, endIso) {
+  const q = await pool.query(
+    `SELECT COUNT(*)::int AS days
+     FROM (
+       SELECT DISTINCT (j.finished_at AT TIME ZONE 'Asia/Bangkok')::date AS d
+       FROM public.jobs j
+       LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$1
+       WHERE j.finished_at >= $2::timestamptz
+         AND j.finished_at <  $3::timestamptz
+         AND (
+           tm.username IS NOT NULL
+           OR j.technician_username = $1
+         )
+         AND (${_sqlDonePredicate('j')})
+     ) x`,
+    [username, startIso, endIso]
+  );
+  return q.rows?.[0]?.days || 0;
+}
+
+async function _listWorkDayDates(username, startIso, endIso) {
+  const q = await pool.query(
+    `SELECT DISTINCT (j.finished_at AT TIME ZONE 'Asia/Bangkok')::date AS d
+     FROM public.jobs j
+     LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$1
+     WHERE j.finished_at >= $2::timestamptz
+       AND j.finished_at <  $3::timestamptz
+       AND (
+         tm.username IS NOT NULL
+         OR j.technician_username = $1
+       )
+       AND (${_sqlDonePredicate('j')})
+     ORDER BY d ASC`,
+    [username, startIso, endIso]
+  );
+  return (q.rows || []).map(r => {
+    const d = r.d;
+    if (!d) return null;
+    // pg returns Date; keep yyyy-mm-dd
+    const dt = new Date(d);
+    const y = dt.getUTCFullYear();
+    const m = String(dt.getUTCMonth() + 1).padStart(2, '0');
+    const dd = String(dt.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${dd}`;
+  }).filter(Boolean);
+}
+
+async function _buildNonCommissionLinesForPeriod({ payout_id, period_type, label_ym, start, endEx }) {
+  // สร้างบรรทัดให้ช่างที่เป็น daily/salary (ผู้ช่วย) และไม่คิดรายได้ต่อ job
+  const out = [];
+  const tq = await pool.query(
+    `SELECT u.username,
+            COALESCE(p.employment_type,'company') AS employment_type,
+            COALESCE(p.compensation_mode,'commission') AS compensation_mode,
+            COALESCE(p.daily_wage_amount,0)::numeric AS daily_wage_amount,
+            COALESCE(p.monthly_salary_amount,0)::numeric AS monthly_salary_amount
+     FROM public.users u
+     LEFT JOIN public.technician_profiles p ON p.username=u.username
+     WHERE u.role='technician'
+     ORDER BY u.username ASC`
+  );
+
+  const startIso = new Date(start).toISOString();
+  const endIso = new Date(endEx).toISOString();
+  const endForFinish = new Date(new Date(endEx).getTime() - 1000).toISOString();
+
+  for (const r of (tq.rows || [])) {
+    const username = String(r.username || '').trim();
+    if (!username) continue;
+    const cm = _normCompMode(r.compensation_mode);
+    if (cm === 'commission') continue;
+
+    if (cm === 'daily') {
+      const wage = Number(r.daily_wage_amount || 0);
+      if (!(wage > 0)) continue;
+      const days = await _listWorkDayDates(username, startIso, endIso);
+      for (const ymd of days) {
+        out.push(
+          _buildNonCommissionLine({
+            payout_id,
+            username,
+            finished_at: `${ymd}T12:00:00.000Z`,
+            earn_amount: wage,
+            label: `ค่าแรงรายวัน (${ymd})`,
+            key: ymd,
+            mode: 'daily',
+            snapshot: { non_commission: { mode: 'daily', daily_wage_amount: wage, counted_day: ymd } },
+          })
+        );
+      }
+    }
+
+    if (cm === 'salary') {
+      const sal = Number(r.monthly_salary_amount || 0);
+      if (!(sal > 0)) continue;
+      const half = sal / 2;
+      const key = label_ym;
+      const lbl = `เงินเดือน (${label_ym}) ${period_type === '25' ? 'งวด 25' : 'งวด 10'}`;
+      out.push(
+        _buildNonCommissionLine({
+          payout_id,
+          username,
+          finished_at: endForFinish,
+          earn_amount: half,
+          label: lbl,
+          key,
+          mode: 'salary',
+          snapshot: { non_commission: { mode: 'salary', monthly_salary_amount: sal, period_type } },
+        })
+      );
+    }
+  }
+  return out;
+}
+
+function _pseudoJobId(prefix, key) {
+  return `${String(prefix || 'X').toUpperCase()}:${key}`;
+}
+
+function _buildNonCommissionLine({ payout_id, username, finished_at, earn_amount, label, key, mode, snapshot }) {
+  return {
+    payout_id,
+    technician_username: username,
+    job_id: _pseudoJobId(mode, key),
+    finished_at,
+    earn_amount,
+    base_amount: earn_amount,
+    percent_final: null,
+    machine_count_for_tech: 0,
+    step_rule_key: `non_commission:${mode}`,
+    detail_json: {
+      kind: mode,
+      label,
+      job_type: null,
+      ac_type: null,
+      wash_variant: null,
+      machine_count_total: 0,
+      machine_count_for_tech: 0,
+      items: [],
+      mode: 'non_commission',
+      how_machine_count_for_tech: 'N/A',
+      how_percent_selected: 'N/A',
+      how_split_applied: 'N/A',
+    },
+    setting_snapshot: snapshot || { non_commission: { mode } },
+  };
+}
+
+async function _computeTechLinesInRange(tech, start, endEx, opts = null) {
+  // คำนวณสดเฉพาะช่วงนั้น (กันช้า)
+  // - commission: ดึงเฉพาะงานที่ tech เกี่ยวข้อง แล้วใช้ _buildPayoutLinesForJob
+  // - daily/salary (ผู้ช่วย): สร้างบรรทัดแบบ non-commission
+  const prof = await _getTechProfile(tech);
+  const cm = _normCompMode(prof?.compensation_mode);
+  if (cm !== 'commission') {
+    const out = [];
+    const startIso = start.toISOString();
+    const endIso = endEx.toISOString();
+    if (cm === 'daily') {
+      const wage = Number(prof?.daily_wage_amount || 0);
+      if (wage > 0) {
+        const days = await _listWorkDayDates(tech, startIso, endIso);
+        for (const ymd of days) {
+          out.push(
+            _buildNonCommissionLine({
+              payout_id: opts?.payout_id || 'virtual',
+              username: tech,
+              finished_at: `${ymd}T12:00:00.000Z`,
+              earn_amount: wage,
+              label: `ค่าแรงรายวัน (${ymd})`,
+              key: ymd,
+              mode: 'daily',
+              snapshot: { non_commission: { mode: 'daily', daily_wage_amount: wage, counted_day: ymd } },
+            })
+          );
+        }
+      }
+    }
+    if (cm === 'salary') {
+      const sal = Number(prof?.monthly_salary_amount || 0);
+      if (sal > 0 && opts?.period_type && opts?.label_ym) {
+        const half = sal / 2;
+        out.push(
+          _buildNonCommissionLine({
+            payout_id: opts?.payout_id || 'virtual',
+            username: tech,
+            finished_at: new Date(endEx.getTime() - 1000).toISOString(),
+            earn_amount: half,
+            label: `เงินเดือน (${opts.label_ym}) ${String(opts.period_type) === '25' ? 'งวด 25' : 'งวด 10'}`,
+            key: opts.label_ym,
+            mode: 'salary',
+            snapshot: { non_commission: { mode: 'salary', monthly_salary_amount: sal, period_type: opts.period_type } },
+          })
+        );
+      }
+    }
+    return out;
+  }
+
   const donePred = _sqlDonePredicate('j');
   const jobsQ = await pool.query(
     `SELECT j.job_id, j.finished_at
@@ -2286,6 +2515,15 @@ async function _buildPayoutLinesForJob(job_id){
   const lines = [];
   for (const p of (payout.payouts || [])) {
     const tech = String(p.username);
+
+    // ✅ ผู้ช่วยช่าง/เงินเดือน: ไม่คิดรายได้แบบต่อ job
+    // แต่ยังนับเป็น "วันทำงาน" สำหรับโหมด daily/salary
+    const prof = await _getTechProfile(tech);
+    const cm = _normCompMode(prof?.compensation_mode);
+    if (cm !== 'commission') {
+      continue;
+    }
+
     const base_amount = Number(p.base_service || 0);
     const special_income = Number(p.special_income || 0);
     const special_bonus = Number(p.special_bonus || 0);
@@ -2698,6 +2936,41 @@ app.post('/admin/super/payouts/generate', requireSuperAdmin, async (req, res) =>
       }
     }
 
+    // ✅ เพิ่มบรรทัดสำหรับช่างผู้ช่วย (daily/salary) ในงวดนี้
+    try {
+      const extraLines = await _buildNonCommissionLinesForPeriod({ payout_id, period_type, label_ym, start, endEx });
+      for (const ln of extraLines) {
+        try {
+          const r = await pool.query(
+            `INSERT INTO public.technician_payout_lines(
+               payout_id, technician_username, job_id, finished_at,
+               earn_amount, base_amount, percent_final, machine_count_for_tech, step_rule_key,
+               detail_json, setting_snapshot
+             ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+             ON CONFLICT (payout_id, technician_username, job_id) DO NOTHING`,
+            [
+              payout_id,
+              ln.technician_username,
+              ln.job_id,
+              ln.finished_at,
+              ln.earn_amount,
+              ln.base_amount,
+              ln.percent_final,
+              ln.machine_count_for_tech,
+              ln.step_rule_key,
+              ln.detail_json,
+              ln.setting_snapshot,
+            ]
+          );
+          inserted += (r.rowCount || 0);
+        } catch (e) {
+          console.warn('[payout_generate] insert non-commission line failed', payout_id, ln.technician_username, ln.job_id, e.message);
+        }
+      }
+    } catch (e) {
+      console.warn('[payout_generate] non-commission lines warn', e?.message || e);
+    }
+
     return res.json({ ok: true, payout_id, period_type, period_start: start, period_end_exclusive: endEx, jobs: jobs.length, lines_inserted: inserted });
   } catch (e) {
     console.error('POST /admin/super/payouts/generate', e);
@@ -3060,6 +3333,45 @@ async function _getTechGrossAdjNet(payout_id, tech){
   return { gross_amount: gross, adj_total: adj, net_amount: gross + adj };
 }
 
+async function _requireWithdrawIfPartner(payout_id, tech, actor){
+  // พาร์ทเนอร์ต้องมี withdraw request ก่อนจ่าย (requested/approved)
+  const prof = await _getTechProfile(tech);
+  const et = String(prof?.employment_type || 'company').toLowerCase();
+  if (et !== 'partner') return null;
+  const q = await pool.query(
+    `SELECT request_id, status
+       FROM public.technician_withdraw_requests
+      WHERE payout_id=$1 AND technician_username=$2
+      ORDER BY created_at DESC, request_id DESC
+      LIMIT 1`,
+    [payout_id, tech]
+  );
+  const r = q.rows[0] || null;
+  if (!r || !String(r.status || '')) {
+    const err = new Error('WITHDRAW_REQUIRED');
+    err.code = 'WITHDRAW_REQUIRED';
+    throw err;
+  }
+  const st = String(r.status);
+  if (st === 'rejected') {
+    const err = new Error('WITHDRAW_REJECTED');
+    err.code = 'WITHDRAW_REJECTED';
+    throw err;
+  }
+  if (st === 'paid') return r.request_id;
+  // requested/approved ok
+  if (st === 'requested') {
+    // auto-approve on first payment attempt (audit)
+    await pool.query(
+      `UPDATE public.technician_withdraw_requests
+          SET status='approved', approved_at=NOW(), approved_by=$4
+        WHERE request_id=$1 AND payout_id=$2 AND technician_username=$3 AND status='requested'`,
+      [r.request_id, payout_id, tech, actor || null]
+    );
+  }
+  return r.request_id;
+}
+
 async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip_url, note, actor){
   const period = await _getPayoutPeriod(payout_id);
   if (!period) {
@@ -3068,6 +3380,9 @@ async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip
   if (String(period.status) === 'paid') {
     const err = new Error('PAYOUT_ALREADY_PAID'); err.code='PAYOUT_ALREADY_PAID'; throw err;
   }
+
+  // ✅ partner ต้องกดถอนก่อนจ่าย
+  const withdrawReqId = await _requireWithdrawIfPartner(payout_id, tech, actor);
 
   const { net_amount } = await _getTechGrossAdjNet(payout_id, tech);
   const paid_status = _paidStatus(net_amount, paid_amount);
@@ -3091,6 +3406,16 @@ async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip
   // auto-lock if still draft
   if (String(period.status) === 'draft') {
     await pool.query(`UPDATE public.technician_payout_periods SET status='locked' WHERE payout_id=$1 AND status='draft'`, [payout_id]);
+  }
+
+  // ✅ mark withdraw request paid when fully paid
+  if (withdrawReqId && String(paid_status) === 'paid') {
+    await pool.query(
+      `UPDATE public.technician_withdraw_requests
+          SET status='paid', paid_at=NOW(), paid_by=$2
+        WHERE request_id=$1`,
+      [withdrawReqId, actor || null]
+    );
   }
 
   // if all techs paid -> mark payout as paid
@@ -3209,6 +3534,8 @@ app.post('/admin/super/payouts/:payout_id/pay', requireSuperAdmin, async (req, r
     console.error('POST /admin/super/payouts/:payout_id/pay', e);
     if (String(e.code||'') === 'PAYOUT_NOT_FOUND') return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
     if (String(e.code||'') === 'PAYOUT_ALREADY_PAID') return res.status(409).json({ ok:false, error:'PAYOUT_ALREADY_PAID' });
+    if (String(e.code||'') === 'WITHDRAW_REQUIRED') return res.status(409).json({ ok:false, error:'WITHDRAW_REQUIRED' });
+    if (String(e.code||'') === 'WITHDRAW_REJECTED') return res.status(409).json({ ok:false, error:'WITHDRAW_REJECTED' });
     return res.status(500).json({ ok:false, error:'PAY_FAILED' });
   }
 });
@@ -3274,6 +3601,23 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
     }
     if (!targets.length) return res.status(400).json({ ok:false, error:'NO_TECH_SELECTED' });
 
+    // ✅ partner ต้องกดถอนก่อนจ่าย (bulk)
+    const actor = req.actor?.username || null;
+    const notRequested = [];
+    for (const t of targets) {
+      try {
+        await _requireWithdrawIfPartner(payout_id, t, actor);
+      } catch (e) {
+        const code = String(e.code || '');
+        if (code === 'WITHDRAW_REQUIRED' || code === 'WITHDRAW_REJECTED') {
+          notRequested.push({ technician_username: t, error: code });
+        }
+      }
+    }
+    if (notRequested.length) {
+      return res.status(409).json({ ok:false, error:'WITHDRAW_REQUIRED', notRequested });
+    }
+
     await client.query('BEGIN');
 
     // auto-lock if draft
@@ -3281,7 +3625,6 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
       await client.query(`UPDATE public.technician_payout_periods SET status='locked' WHERE payout_id=$1 AND status='draft'`, [payout_id]);
     }
 
-    const actor = req.actor?.username || null;
     let updated = 0;
     for (const tech of targets) {
       const net = _money(netMap.get(tech));
@@ -3303,6 +3646,19 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
         [payout_id, tech, paid_amount, paid_status, actor, slip_url, note]
       );
       updated++;
+
+      // ✅ mark withdraw request paid for partner
+      try {
+        const prof = await _getTechProfile(tech);
+        if (String(prof?.employment_type || '').toLowerCase() === 'partner') {
+          await client.query(
+            `UPDATE public.technician_withdraw_requests
+                SET status='paid', paid_at=NOW(), paid_by=$3
+              WHERE payout_id=$1 AND technician_username=$2 AND status IN ('approved','requested')`,
+            [payout_id, tech, actor]
+          );
+        }
+      } catch {}
     }
 
     // Mark paid if all techs are paid now
@@ -3451,7 +3807,7 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
 
     let rows = dataQ.rows || [];
     if (!rows.length && bounds) {
-      const calc = await _computeTechLinesInRange(tech, bounds.start, bounds.endEx);
+      const calc = await _computeTechLinesInRange(tech, bounds.start, bounds.endEx, { payout_id, period_type: bounds.period_type, label_ym: bounds.label_ym });
       rows = (calc || []).map(x => ({
         job_id: x.job_id,
         finished_at: x.finished_at,
@@ -3626,7 +3982,7 @@ app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
         gross_amount = Number(g.rows[0]?.gross_amount || 0);
         lines_count = Number(g.rows[0]?.lines_count || 0);
       } else {
-        const calcLines = await _computeTechLinesInRange(tech, p.start, p.endEx);
+        const calcLines = await _computeTechLinesInRange(tech, p.start, p.endEx, { payout_id: p.payout_id, period_type: p.period_type, label_ym: p.label_ym });
         gross_amount = calcLines.reduce((a, it) => a + Number(it.earn_amount || 0), 0);
         lines_count = calcLines.length;
       }
@@ -3724,7 +4080,7 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
       );
       lines = linesQ.rows || [];
     } else {
-      const calc = await _computeTechLinesInRange(tech, bounds.start, bounds.endEx);
+      const calc = await _computeTechLinesInRange(tech, bounds.start, bounds.endEx, { payout_id, period_type: bounds.period_type, label_ym: bounds.label_ym });
       // normalize shape similar to DB rows for UI
       lines = (calc || []).map((x, idx) => ({
         line_id: -1 * (idx + 1),
@@ -3762,10 +4118,27 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
     const paid_amount = Number(payment?.paid_amount || 0);
     const remaining = net - paid_amount;
 
+    const profile = await _getTechProfile(tech);
+    const wrQ = await pool.query(
+      `SELECT request_id, amount_requested, status, note, created_at, approved_at, approved_by, paid_at
+         FROM public.technician_withdraw_requests
+        WHERE payout_id=$1 AND technician_username=$2
+        ORDER BY created_at DESC, request_id DESC
+        LIMIT 1`,
+      [payout_id, tech]
+    );
+    const withdraw_request = wrQ.rows[0] || null;
+
     return res.json({
       ok: true,
       payout_id,
       username: tech,
+      profile: profile ? {
+        employment_type: profile.employment_type,
+        compensation_mode: profile.compensation_mode,
+        daily_wage_amount: Number(profile.daily_wage_amount || 0),
+        monthly_salary_amount: Number(profile.monthly_salary_amount || 0),
+      } : null,
       status,
       period_type: parsed.type,
       period_start: meta?.period_start || bounds.start.toISOString(),
@@ -3777,6 +4150,7 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
       paid_status: payment?.paid_status || (paid_amount > 0 ? 'partial' : 'unpaid'),
       remaining_amount: remaining,
       payment,
+      withdraw_request,
       adjustments: adjQ.rows || [],
       total_amount: net,
       lines
@@ -3784,6 +4158,163 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
   } catch (e) {
     console.error('GET /tech/payouts/:payout_id', e);
     return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
+  }
+});
+
+// =======================================
+// 💳 Withdraw Requests (Partner)
+// - Partner ต้องกดขอถอนก่อนจ่าย
+// =======================================
+app.post('/tech/withdraw_requests', requireTechnicianSession, async (req, res) => {
+  try {
+    const tech = String(req.auth?.username || '').trim();
+    const b = req.body || {};
+    const payout_id = String(b.payout_id || '').trim();
+    if (!payout_id) return res.status(400).json({ ok:false, error:'MISSING_PAYOUT_ID' });
+    const parsed = _parsePayoutId(payout_id);
+    if (!parsed) return res.status(400).json({ ok:false, error:'INVALID_PAYOUT_ID' });
+
+    const prof = await _getTechProfile(tech);
+    if (String(prof?.employment_type || 'company').toLowerCase() !== 'partner') {
+      return res.status(409).json({ ok:false, error:'NOT_PARTNER' });
+    }
+
+    // compute remaining
+    const bounds = _periodBoundsForYm(parsed.type, parsed.y, parsed.m);
+    const hasLinesQ = await pool.query(
+      `SELECT COUNT(*)::int AS c FROM public.technician_payout_lines WHERE payout_id=$1 AND technician_username=$2`,
+      [payout_id, tech]
+    );
+    const hasLines = Number(hasLinesQ.rows[0]?.c || 0) > 0;
+    let gross = 0;
+    if (hasLines) {
+      const g = await pool.query(
+        `SELECT COALESCE(SUM(earn_amount),0) AS gross_amount FROM public.technician_payout_lines WHERE payout_id=$1 AND technician_username=$2`,
+        [payout_id, tech]
+      );
+      gross = Number(g.rows[0]?.gross_amount || 0);
+    } else {
+      const calc = await _computeTechLinesInRange(tech, bounds.start, bounds.endEx, { payout_id, period_type: bounds.period_type, label_ym: bounds.label_ym });
+      gross = (calc || []).reduce((a, it) => a + Number(it.earn_amount || 0), 0);
+    }
+    const adjQ = await pool.query(
+      `SELECT COALESCE(SUM(adj_amount),0) AS adj_total FROM public.technician_payout_adjustments WHERE payout_id=$1 AND technician_username=$2`,
+      [payout_id, tech]
+    );
+    const adj_total = Number(adjQ.rows[0]?.adj_total || 0);
+    const net = gross + adj_total;
+    const payQ = await pool.query(
+      `SELECT COALESCE(paid_amount,0) AS paid_amount FROM public.technician_payout_payments WHERE payout_id=$1 AND technician_username=$2 LIMIT 1`,
+      [payout_id, tech]
+    );
+    const paid_amount = Number(payQ.rows[0]?.paid_amount || 0);
+    const remaining = net - paid_amount;
+
+    const reqAmount = (b.amount_requested == null || String(b.amount_requested).trim()==='') ? remaining : _money(b.amount_requested);
+    if (!Number.isFinite(reqAmount) || reqAmount <= 0) return res.status(400).json({ ok:false, error:'INVALID_AMOUNT' });
+
+    // prevent duplicates: if there is already requested/approved
+    const existQ = await pool.query(
+      `SELECT request_id, status
+         FROM public.technician_withdraw_requests
+        WHERE payout_id=$1 AND technician_username=$2
+          AND status IN ('requested','approved')
+        ORDER BY created_at DESC, request_id DESC
+        LIMIT 1`,
+      [payout_id, tech]
+    );
+    if ((existQ.rows || []).length) {
+      return res.json({ ok:true, payout_id, request_id: existQ.rows[0].request_id, status: existQ.rows[0].status, already_exists: true });
+    }
+
+    const note = String(b.note || '').trim() || null;
+    const ins = await pool.query(
+      `INSERT INTO public.technician_withdraw_requests(payout_id, technician_username, amount_requested, status, note)
+       VALUES($1,$2,$3,'requested',$4)
+       RETURNING request_id, status, created_at`,
+      [payout_id, tech, _money(reqAmount), note]
+    );
+    return res.json({ ok:true, payout_id, request: ins.rows[0] });
+  } catch (e) {
+    console.error('POST /tech/withdraw_requests', e);
+    return res.status(500).json({ ok:false, error:'WITHDRAW_REQUEST_FAILED' });
+  }
+});
+
+app.get('/tech/withdraw_requests', requireTechnicianSession, async (req, res) => {
+  try {
+    const tech = String(req.auth?.username || '').trim();
+    const payout_id = String(req.query.payout_id || '').trim() || null;
+    const q = await pool.query(
+      `SELECT request_id, payout_id, amount_requested, status, note, created_at, approved_at, approved_by, decided_note, paid_at
+         FROM public.technician_withdraw_requests
+        WHERE technician_username=$1
+          AND ($2::text IS NULL OR payout_id=$2)
+        ORDER BY created_at DESC, request_id DESC
+        LIMIT 50`,
+      [tech, payout_id]
+    );
+    res.json({ ok:true, requests: q.rows || [] });
+  } catch (e) {
+    console.error('GET /tech/withdraw_requests', e);
+    res.status(500).json({ ok:false, error:'LOAD_FAILED' });
+  }
+});
+
+app.get('/admin/super/withdraw_requests', requireSuperAdmin, async (req, res) => {
+  try {
+    const payout_id = String(req.query.payout_id || '').trim() || null;
+    const st = String(req.query.status || '').trim() || null;
+    const q = await pool.query(
+      `SELECT request_id, payout_id, technician_username, amount_requested, status, note, created_at, approved_at, approved_by, decided_note, paid_at, paid_by
+         FROM public.technician_withdraw_requests
+        WHERE ($1::text IS NULL OR payout_id=$1)
+          AND ($2::text IS NULL OR status=$2)
+        ORDER BY created_at DESC, request_id DESC
+        LIMIT 200`,
+      [payout_id, st]
+    );
+    res.json({ ok:true, requests: q.rows || [] });
+  } catch (e) {
+    console.error('GET /admin/super/withdraw_requests', e);
+    res.status(500).json({ ok:false, error:'LOAD_FAILED' });
+  }
+});
+
+app.post('/admin/super/withdraw_requests/:request_id/approve', requireSuperAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.request_id);
+    const note = String((req.body||{}).note || '').trim() || null;
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok:false, error:'INVALID_REQUEST_ID' });
+    await pool.query(
+      `UPDATE public.technician_withdraw_requests
+          SET status='approved', approved_at=NOW(), approved_by=$2, decided_note=$3
+        WHERE request_id=$1 AND status='requested'`,
+      [id, req.actor?.username || null, note]
+    );
+    res.json({ ok:true });
+  } catch (e) {
+    console.error('POST /admin/super/withdraw_requests/:id/approve', e);
+    res.status(500).json({ ok:false, error:'APPROVE_FAILED' });
+  }
+});
+
+app.post('/admin/super/withdraw_requests/:request_id/reject', requireSuperAdmin, async (req, res) => {
+  try {
+    const id = Number(req.params.request_id);
+    const note = String((req.body||{}).note || '').trim();
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok:false, error:'INVALID_REQUEST_ID' });
+    if (!note) return res.status(400).json({ ok:false, error:'MISSING_REASON' });
+    await pool.query(
+      `UPDATE public.technician_withdraw_requests
+          SET status='rejected', approved_at=NOW(), approved_by=$2, decided_note=$3
+        WHERE request_id=$1 AND status IN ('requested','approved')`,
+      [id, req.actor?.username || null, note]
+    );
+    res.json({ ok:true });
+  } catch (e) {
+    console.error('POST /admin/super/withdraw_requests/:id/reject', e);
+    res.status(500).json({ ok:false, error:'REJECT_FAILED' });
   }
 });
 
@@ -4528,6 +5059,14 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_income_overrides_type ON p
     // 3.3) technician_profiles: เบอร์โทร (ใช้แสดงให้ลูกค้า "หลังเริ่มเดินทาง" เท่านั้น)
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS phone TEXT`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS employment_type TEXT DEFAULT 'company'`);
+
+    // 3.35) technician_profiles: ✅ รูปแบบค่าตอบแทน (ผู้ช่วยช่าง/เงินเดือน)
+    // - commission (default): คิดรายได้ต่อ job ตาม step rules
+    // - daily: ได้รายวันตามจำนวนวันทำงาน (มีงานเสร็จในวันนั้น)
+    // - salary: ได้เงินเดือน (จ่ายแบ่งงวด 10/25 = ครึ่งเดือน)
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS compensation_mode TEXT DEFAULT 'commission'`);
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS daily_wage_amount NUMERIC DEFAULT 0`);
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS monthly_salary_amount NUMERIC DEFAULT 0`);
     // ✅ customer_slot_visible: ช่างบางคนเป็นลูกมือ/ฝึกงาน ไม่ต้องแสดงในสลอตหน้าลูกค้า
     // - ใช้เฉพาะการคำนวณสลอตฝั่งลูกค้าเท่านั้น (แอดมินเพิ่มงาน/จัดทีมยังเลือกได้ตามปกติ)
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS customer_slot_visible BOOLEAN DEFAULT TRUE`);
@@ -4947,6 +5486,29 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
       )
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_payout_adjustments_pid_tech ON public.technician_payout_adjustments(payout_id, technician_username, created_at DESC)`);
+
+    // =======================================
+    // 💳 Technician Withdraw Requests (Partners)
+    // - พาร์ทเนอร์ต้องกด "ขอถอน" ก่อน Super Admin จ่าย
+    // =======================================
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_withdraw_requests (
+        request_id BIGSERIAL PRIMARY KEY,
+        payout_id TEXT NOT NULL,
+        technician_username TEXT NOT NULL,
+        amount_requested NUMERIC(12,2) NOT NULL DEFAULT 0,
+        status TEXT NOT NULL DEFAULT 'requested' CHECK (status IN ('requested','approved','rejected','paid')),
+        note TEXT,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        approved_at TIMESTAMPTZ,
+        approved_by TEXT,
+        decided_note TEXT,
+        paid_at TIMESTAMPTZ,
+        paid_by TEXT
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_withdraw_requests_pid ON public.technician_withdraw_requests(payout_id, created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_withdraw_requests_user ON public.technician_withdraw_requests(technician_username, created_at DESC)`);
     // 4) position check constraint: เพิ่ม founder_ceo
     await pool.query(`ALTER TABLE public.technician_profiles DROP CONSTRAINT IF EXISTS technician_profiles_position_check`);
     await pool.query(`
@@ -9947,6 +10509,9 @@ app.get("/admin/technicians", requireAdminSession, async (req, res) => {
       `SELECT u.username,
               p.full_name, p.technician_code, p.position, p.rank_level, p.rank_key, p.photo_path, p.phone,
               COALESCE(p.employment_type,'company') AS employment_type,
+              COALESCE(p.compensation_mode,'commission') AS compensation_mode,
+              COALESCE(p.daily_wage_amount,0)::numeric AS daily_wage_amount,
+              COALESCE(p.monthly_salary_amount,0)::numeric AS monthly_salary_amount,
               COALESCE(p.work_start,'09:00') AS work_start,
               COALESCE(p.work_end,'18:00') AS work_end,
               COALESCE(p.customer_slot_visible, TRUE) AS customer_slot_visible,
@@ -9972,6 +10537,9 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
     const position = (req.body.position || "").trim() || null; // ✅ ไม่ส่ง = ไม่ทับ
     const phoneRaw = (req.body.phone ?? "").toString().trim();
     const employment_type = (req.body.employment_type ?? "").toString().trim() || null;
+    const compensation_mode_in = (req.body.compensation_mode ?? "").toString().trim() || null;
+    const daily_wage_amount_in = req.body.daily_wage_amount;
+    const monthly_salary_amount_in = req.body.monthly_salary_amount;
     const work_start = (req.body.work_start ?? "").toString().trim() || null;
     const work_end = (req.body.work_end ?? "").toString().trim() || null;
     // customer_slot_visible: optional
@@ -9990,6 +10558,10 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
     if (employment_type && !['company','partner','custom','special_only'].includes(String(employment_type).toLowerCase())) {
       return res.status(400).json({ error: "employment_type ต้องเป็น company / partner / custom / special_only" });
     }
+
+    const compensation_mode = compensation_mode_in ? _normCompMode(compensation_mode_in) : null;
+    const daily_wage_amount = (daily_wage_amount_in==null || String(daily_wage_amount_in).trim()==='') ? null : _money(daily_wage_amount_in);
+    const monthly_salary_amount = (monthly_salary_amount_in==null || String(monthly_salary_amount_in).trim()==='') ? null : _money(monthly_salary_amount_in);
     const isHHMM = (s) => /^([01]\d|2[0-3]):[0-5]\d$/.test(String(s||''));
     if (work_start && !isHHMM(work_start)) {
       return res.status(400).json({ error: "work_start ต้องเป็นรูปแบบ HH:MM เช่น 09:00" });
@@ -10011,6 +10583,9 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
          work_start = COALESCE($7, public.technician_profiles.work_start),
          work_end = COALESCE($8, public.technician_profiles.work_end),
          customer_slot_visible = COALESCE($9, public.technician_profiles.customer_slot_visible),
+         compensation_mode = COALESCE($10, public.technician_profiles.compensation_mode),
+         daily_wage_amount = COALESCE($11, public.technician_profiles.daily_wage_amount),
+         monthly_salary_amount = COALESCE($12, public.technician_profiles.monthly_salary_amount),
          updated_at = CURRENT_TIMESTAMP`,
       [
         username,
@@ -10022,6 +10597,9 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
         work_start,
         work_end,
         hasCustomerSlotVisible ? customer_slot_visible : null,
+        compensation_mode,
+        daily_wage_amount,
+        monthly_salary_amount,
       ]
     );
 
