@@ -856,17 +856,58 @@ async function getAuthContext(req, res) {
   return { ok: true, actor, effective: actor, impersonating: false, session_token: null };
 }
 
+function getInternalApiKeyCandidates() {
+  return [
+    process.env.INTERNAL_API_KEY,
+    process.env.INTERNAL_API_KEYS,
+    process.env.CWF_INTERNAL_API_KEY,
+    process.env.CWF_INTERNAL_API_KEYS,
+  ]
+    .flatMap(v => String(v || '').split(','))
+    .map(v => v.trim())
+    .filter(Boolean);
+}
+
+function getInternalApiKeyFromRequest(req) {
+  const direct = String(req.headers['x-internal-api-key'] || req.headers['x-api-key'] || '').trim();
+  if (direct) return direct;
+  const auth = String(req.headers.authorization || '').trim();
+  const m = auth.match(/^Internal\s+(.+)$/i);
+  return m ? String(m[1] || '').trim() : '';
+}
+
+async function getAdminAccessContext(req, res) {
+  const suppliedKey = getInternalApiKeyFromRequest(req);
+  if (suppliedKey) {
+    const validKeys = getInternalApiKeyCandidates();
+    if (validKeys.length > 0 && validKeys.includes(suppliedKey)) {
+      const actor = { username: 'internal_automation', role: 'admin' };
+      return {
+        ok: true,
+        actor,
+        effective: actor,
+        impersonating: false,
+        session_token: null,
+        internal_api_key: true,
+      };
+    }
+    return { ok: false, invalid_internal_api_key: true };
+  }
+  return getAuthContext(req, res);
+}
+
 async function requireAdminSession(req, res, next) {
   try {
-    const ctx = await getAuthContext(req, res);
+    const ctx = await getAdminAccessContext(req, res);
     if (!ctx.ok) {
       const accept = String(req.headers?.accept || '').toLowerCase();
+      if (ctx.invalid_internal_api_key) return res.status(401).json({ error: 'INVALID_INTERNAL_API_KEY' });
       if (accept.includes('text/html')) return res.redirect(302, '/login.html');
       return res.status(401).json({ error: 'UNAUTHORIZED' });
     }
 
-    // Admin pages/APIs are allowed if ACTOR is admin/super_admin
-    if (ctx.actor.role !== 'admin' && ctx.actor.role !== 'super_admin') {
+    // Admin pages/APIs are allowed if ACTOR is admin/super_admin or trusted internal automation.
+    if (!ctx.internal_api_key && ctx.actor.role !== 'admin' && ctx.actor.role !== 'super_admin') {
       const accept = String(req.headers?.accept || '').toLowerCase();
       if (accept.includes('text/html')) return res.redirect(302, '/login.html');
       return res.status(403).json({ error: 'FORBIDDEN' });
@@ -877,6 +918,7 @@ async function requireAdminSession(req, res, next) {
     req.auth = ctx.effective;
     req.impersonating = !!ctx.impersonating;
     req.session_token = ctx.session_token;
+    req.internal_api_key = !!ctx.internal_api_key;
     return next();
   } catch (e) {
     console.error('requireAdminSession error:', e);
@@ -5853,7 +5895,7 @@ app.get("/catalog/items", async (req, res) => {
 });
 
 
-app.post("/catalog/items", async (req, res) => {
+app.post("/catalog/items", requireAdminSession, async (req, res) => {
   const { item_name, item_category, base_price, unit_label } = req.body || {};
   if (!item_name) return res.status(400).json({ error: "กรอกชื่อรายการ" });
 
@@ -5914,7 +5956,7 @@ app.get("/promotions", async (req, res) => {
   }
 });
 
-app.post("/promotions", async (req, res) => {
+app.post("/promotions", requireAdminSession, async (req, res) => {
   const { promo_name, promo_type, promo_value } = req.body || {};
   if (!promo_name) return res.status(400).json({ error: "กรอกชื่อโปร" });
 
@@ -5969,7 +6011,7 @@ app.get("/jobs", async (req, res) => {
 // =======================================
 // ➕ ADD JOB (admin)
 // =======================================
-app.post("/jobs", async (req, res) => {
+app.post("/jobs", requireAdminSession, async (req, res) => {
   const {
     customer_name,
     customer_phone,
@@ -6190,7 +6232,7 @@ try {
 // =======================================
 // 🧲 ASSIGN JOB (admin) - offer / forced
 // =======================================
-app.put("/jobs/:job_id/assign", async (req, res) => {
+app.put("/jobs/:job_id/assign", requireAdminSession, async (req, res) => {
   const job_id = Number(req.params.job_id);
   const { technician_username, mode } = req.body || {};
   const m = (mode || "offer").toString().toLowerCase().trim();
@@ -6280,7 +6322,7 @@ app.put("/jobs/:job_id/assign", async (req, res) => {
 // - forced: ยืนยันงานให้ช่างทันที (เหมาะกับงานลูกค้าจอง scheduled)
 // - offer: ส่ง offer (ใช้กับ partner/urgent หรือกรณีพิเศษ)
 // =======================================
-app.post("/jobs/:job_id/dispatch_v2", requireAdminSoft, async (req, res) => {
+app.post("/jobs/:job_id/dispatch_v2", requireAdminSession, async (req, res) => {
   const job_id = Number(req.params.job_id);
   if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
@@ -6490,7 +6532,7 @@ function coerceNumber(v, def = 0) {
   return Number.isFinite(n) ? n : def;
 }
 
-app.post("/admin/book_v2", requireAdminSoft, async (req, res) => {
+app.post("/admin/book_v2", requireAdminSession, async (req, res) => {
   const body = req.body || {};
   const {
     customer_name,
@@ -6988,7 +7030,7 @@ app.get("/admin/jobs_v2", requireAdminSoft, async (req, res) => {
 // - admin only (use existing auth style)
 // - delete related rows (best-effort, fail-safe)
 // =======================================
-app.delete("/admin/jobs/:job_id", requireAdminSoft, async (req, res) => {
+app.delete("/admin/jobs/:job_id", requireAdminSession, async (req, res) => {
   const jobId = Number(req.params.job_id);
   if (!Number.isFinite(jobId) || jobId <= 0) {
     return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
@@ -7107,7 +7149,7 @@ const dr = await client.query(`DELETE FROM public.jobs WHERE job_id=$1`, [jobId]
 // - deletes job-related data (NOT technicians/users/prices/promotions)
 // - requires confirm token in body: { confirm: "RESET" }
 // =======================================
-app.post("/admin/reset_jobs_v2", requireAdminSoft, async (req, res) => {
+app.post("/admin/reset_jobs_v2", requireAdminSession, async (req, res) => {
   const confirmToken = String(req.body?.confirm || "").trim().toUpperCase();
   if (confirmToken !== "RESET") {
     return res.status(400).json({ error: "ต้องยืนยันด้วยคำว่า RESET" });
@@ -7400,7 +7442,7 @@ function computeWarrantyEnd({ job_type, warranty_kind, warranty_months, start })
   return { kind: 'repair', months: m, end };
 }
 
-app.post('/admin/jobs/:job_id/extend_warranty_v2', requireAdminSoft, async (req, res) => {
+app.post('/admin/jobs/:job_id/extend_warranty_v2', requireAdminSession, async (req, res) => {
   const job_id = Number(req.params.job_id);
   const days = Number(req.body?.days || 0);
   const actor_username = String(req.body?.actor_username || '').trim() || null;
@@ -7433,7 +7475,7 @@ app.post('/admin/jobs/:job_id/extend_warranty_v2', requireAdminSoft, async (req,
 // - Backward compatible: new endpoint only
 // - No signature required (admin override), logs to updates
 // =======================================
-app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, res) => {
+app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSession, async (req, res) => {
   // Admin override: close job even if technician cannot finalize.
   // ✅ No signature required
   // ✅ No warranty selection required (wash/install auto, repair can remain null)
@@ -7523,7 +7565,7 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
 
 
 // ✅ Admin-only: Delete job permanently (DBจริง) + cleanup related tables
-app.delete('/admin/jobs/:job_id', requireAdminSoft, async (req, res) => {
+app.delete('/admin/jobs/:job_id', requireAdminSession, async (req, res) => {
   const job_id = Number(req.params.job_id);
   if (!Number.isFinite(job_id) || job_id <= 0) {
     return res.status(400).json({ ok:false, error:'invalid job_id' });
@@ -7571,7 +7613,7 @@ app.delete('/admin/jobs/:job_id', requireAdminSoft, async (req, res) => {
   }
 });
 
-app.post('/admin/jobs/:job_id/return_for_fix_v2', requireAdminSoft, async (req, res) => {
+app.post('/admin/jobs/:job_id/return_for_fix_v2', requireAdminSession, async (req, res) => {
   const job_id = Number(req.params.job_id);
   const reason = String(req.body?.reason || '').trim();
   const actor_username = String(req.body?.actor_username || '').trim() || null;
@@ -7607,7 +7649,7 @@ app.post('/admin/jobs/:job_id/return_for_fix_v2', requireAdminSoft, async (req, 
   }
 });
 
-app.post('/admin/jobs/:job_id/clone_v2', requireAdminSoft, async (req, res) => {
+app.post('/admin/jobs/:job_id/clone_v2', requireAdminSession, async (req, res) => {
   const source_job_id = Number(req.params.job_id);
   const actor_username = String(req.body?.actor_username || '').trim() || null;
   const appointment_datetime = String(req.body?.appointment_datetime || '').trim();
@@ -7831,7 +7873,7 @@ app.get("/admin/promotions_v2", requireAdminSoft, async (req, res) => {
   }
 });
 
-app.post("/admin/promotions_v2", requireAdminSoft, async (req, res) => {
+app.post("/admin/promotions_v2", requireAdminSession, async (req, res) => {
   const b = req.body || {};
   const promo_name = String(b.promo_name || "").trim();
   const promo_type = normalizePromoType(b.promo_type);
@@ -7882,7 +7924,7 @@ app.post("/admin/promotions_v2", requireAdminSoft, async (req, res) => {
   }
 });
 
-app.put("/admin/promotions_v2/:promo_id", requireAdminSoft, async (req, res) => {
+app.put("/admin/promotions_v2/:promo_id", requireAdminSession, async (req, res) => {
   const promo_id = Number(req.params.promo_id);
   const b = req.body || {};
   if (!promo_id) return res.status(400).json({ error: "promo_id ไม่ถูกต้อง" });
@@ -7943,7 +7985,7 @@ app.put("/admin/promotions_v2/:promo_id", requireAdminSoft, async (req, res) => 
   }
 });
 
-app.delete("/admin/promotions_v2/:promo_id", requireAdminSoft, async (req, res) => {
+app.delete("/admin/promotions_v2/:promo_id", requireAdminSession, async (req, res) => {
   const promo_id = Number(req.params.promo_id);
   if (!promo_id) return res.status(400).json({ error: "promo_id ไม่ถูกต้อง" });
   try {
@@ -8120,7 +8162,7 @@ ORDER BY appointment_datetime ASC
 // 🛠️ ADMIN: EDIT JOB (แก้ไขข้อมูลใบงาน) + CANCEL JOB
 // - ใช้ตอนลูกค้ากรอกข้อมูลไม่ตรงรูปแบบ / แอดมินอยากแก้ไข
 // =======================================
-app.put("/jobs/:job_id/admin-edit", async (req, res) => {
+app.put("/jobs/:job_id/admin-edit", requireAdminSession, async (req, res) => {
   const job_id = Number(req.params.job_id);
   if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
@@ -8261,7 +8303,7 @@ try {
 // 🎁 ADMIN: SET/CLEAR PROMOTION (เพิ่ม/ลบโปร เฉพาะแอดมิน)
 // - promo_id: ส่งเป็นเลขโปร หรือส่ง null/"" เพื่อ "ลบโปร"
 // =======================================
-app.post("/jobs/:job_id/admin-set-promo", async (req, res) => {
+app.post("/jobs/:job_id/admin-set-promo", requireAdminSession, async (req, res) => {
   const job_id = Number(req.params.job_id);
   if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
@@ -8305,7 +8347,7 @@ app.post("/jobs/:job_id/admin-set-promo", async (req, res) => {
   }
 });
 
-app.post("/jobs/:job_id/admin-cancel", async (req, res) => {
+app.post("/jobs/:job_id/admin-cancel", requireAdminSession, async (req, res) => {
   const job_id = Number(req.params.job_id);
   if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
@@ -8352,7 +8394,7 @@ app.post("/jobs/:job_id/admin-cancel", async (req, res) => {
 // - ใช้กับงานทดสอบ/งานลงผิด (ลบจะหายทุกหน้าทันที)
 // - ต้องส่ง confirm_code = booking_code หรือคำว่า "DELETE"
 // =======================================
-app.delete("/jobs/:job_id/admin-delete", requireAdminSoft, async (req, res) => {
+app.delete("/jobs/:job_id/admin-delete", requireAdminSession, async (req, res) => {
   const job_id = Number(req.params.job_id);
   const confirm_code = (req.body?.confirm_code || "").toString().trim().toUpperCase();
 
@@ -8679,7 +8721,7 @@ app.post("/admin/pricing-requests/:id/decline", requireAdminSession, async (req,
 // - แอดมินแก้ได้เลย ไม่ต้องผ่าน workflow (ใช้กับงานลงผิด/แก้หน้างาน)
 // - ไม่กระทบของเดิม: เป็น endpoint เพิ่มเติม
 // =======================================
-app.put("/jobs/:job_id/items-admin", async (req, res) => {
+app.put("/jobs/:job_id/items-admin", requireAdminSession, async (req, res) => {
   const job_id = Number(req.params.job_id);
   const items = Array.isArray(req.body?.items) ? req.body.items : [];
   const promotion_id = req.body?.promotion_id ? Number(req.body.promotion_id) : null;
@@ -8865,7 +8907,7 @@ app.get("/jobs/:job_id/team", async (req, res) => {
 });
 
 
-app.put("/jobs/:job_id/team", async (req, res) => {
+app.put("/jobs/:job_id/team", requireAdminSession, async (req, res) => {
   const job_id = Number(req.params.job_id);
   const members = Array.isArray(req.body?.members) ? req.body.members : [];
   // optional: allow frontend to explicitly pick primary/leader
@@ -11761,7 +11803,7 @@ app.get('/admin/debug/status', requireAdminSoft, async (req, res) => {
   }
 });
 
-app.post('/admin/debug/toggle', requireAdminSoft, async (req, res) => {
+app.post('/admin/debug/toggle', requireAdminSession, async (req, res) => {
   try {
     const enabled = String(req.body?.enabled ?? '').trim();
     if (enabled === '1' || enabled === 'true') {
