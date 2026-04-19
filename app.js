@@ -1593,13 +1593,14 @@ function renderJobs(jobs) {
   const todayYMD = todayYmdBkk();
 
   const activeAll = jobs.filter((j) => ACTIVE_STATUSES.has(normStatus(j.job_status)));
-  // งานปัจจุบัน = งาน active ที่นัดวันนี้ + งาน active ค้างจากวันก่อน
-  // โดยเฉพาะงาน "งานแก้ไข" ที่ตีกลับจากใบงานเก่า ซึ่ง appointment_datetime เดิมอาจอยู่ในอดีต
-  const activeToday = activeAll.filter((j)=> {
+  // งานปัจจุบัน = งาน active ทั้ง "วันนี้" และงานค้างจากวันก่อนหน้า
+  // โดยเฉพาะงาน "งานแก้ไข" ที่ถูก return_for_fix_v2 หลังวันนัดเดิมผ่านไปแล้ว
+  // ต้องยังเห็นใน current/active flow ของช่าง ไม่งั้นงานจะหายจากหน้าจอ
+  const activeToday = activeAll.filter((j)=>{
     const y = ymdBkkFromISO(j.appointment_datetime);
     return !y || y <= todayYMD;
   });
-  // งานล่วงหน้า = งาน active ที่นัดวันมากกว่าวันนี้
+  // งานล่วงหน้า = งานที่นัดวันมากกว่าวันนี้
   const activeUpcoming = activeAll.filter((j)=>{
     const y = ymdBkkFromISO(j.appointment_datetime);
     return y && y > todayYMD;
