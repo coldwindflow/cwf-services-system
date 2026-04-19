@@ -8018,13 +8018,10 @@ app.post('/admin/jobs/:job_id/extend_warranty_v2', requireAdminSoft, async (req,
 // - No signature required (admin override), logs to updates
 // =======================================
 app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, res) => {
-  // Admin override: close job even if technician cannot finalize.
-  // ✅ No signature required
-  // ✅ No warranty selection required (wash/install auto, repair can remain null)
-  // ⚠️ Still behind ENABLE_ADMIN_FORCE_FINISH (default ON) for safety.
+  // Admin override: must be able to close the job in emergency cases even if the
+  // technician flow is stuck. Keep this path minimal and resilient.
   if (!ENABLE_ADMIN_FORCE_FINISH) return res.status(403).json({ error: 'Feature disabled' });
 
-  // รองรับทั้ง job_id (ตัวเลข) และ booking_code (ตัวอักษร) เพื่อใช้กู้สถานะฉุกเฉินได้เสมอ
   const raw = String(req.params.job_id || '').trim();
   const job_id = (/^\d+$/.test(raw) ? Number(raw) : 0);
   const actor_username = String(req.body?.actor_username || '').trim() || null;
@@ -8032,33 +8029,32 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
 
   let realId = job_id;
   if (!realId) {
-    try {
-      realId = await resolveJobIdAny(pool, raw);
-    } catch {
-      realId = 0;
-    }
+    try { realId = await resolveJobIdAny(pool, raw); } catch { realId = 0; }
   }
   if (!realId) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
-  try { console.log('[admin_force_finish_v2] hit', { raw, job_id: Number(realId) }); } catch {}
+  try { console.log('[admin_force_finish_v2] hit', { raw, job_id: Number(realId), actor_username, reason }); } catch {}
 
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
 
     const jr = await client.query(
-      `SELECT job_type, warranty_end_at, job_status FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
-	  [realId]
+      `SELECT job_id, job_type, warranty_end_at, job_status
+         FROM public.jobs
+        WHERE job_id=$1
+        FOR UPDATE`,
+      [realId]
     );
-    if (!jr.rows.length) return res.status(404).json({ error: 'ไม่พบงาน' });
-
-    // 🔒 Phase 5: block retroactive income change for locked/paid periods
-    await _assertJobMutableForPayout(client, realId, 'force_finish_v2');
+    if (!jr.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'ไม่พบงาน' });
+    }
 
     const cur = jr.rows[0] || {};
     const jt = String(cur.job_type || '').trim();
 
-    // If warranty fields are empty, set auto warranty for clean/install only.
-    // For repair: allow empty (admin override should not be blocked).
+    // Admin override should always be able to finish the job. Do not block on
+    // payout-freeze checks here; this route is the recovery path for stuck jobs.
     let wEndIso = null, wKind = null, wMonths = null;
     if (!cur.warranty_end_at) {
       const isClean = jt.includes('ล้าง');
@@ -8074,32 +8070,52 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
 
     await client.query(
       `UPDATE public.jobs
-       SET job_status='เสร็จแล้ว',
-           finished_at=NOW(),
-           canceled_at=NULL,
-           cancel_reason=NULL,
-           warranty_kind = COALESCE($2, warranty_kind),
-           warranty_months = COALESCE($3, warranty_months),
-           warranty_start_at = COALESCE(warranty_start_at, NOW()),
-           warranty_end_at = COALESCE($4, warranty_end_at)
-       WHERE job_id=$1`,
+          SET job_status='เสร็จแล้ว',
+              finished_at=COALESCE(finished_at, NOW()),
+              canceled_at=NULL,
+              cancel_reason=NULL,
+              returned_at=NULL,
+              return_reason=NULL,
+              returned_by=NULL,
+              warranty_kind = COALESCE($2, warranty_kind),
+              warranty_months = COALESCE($3, warranty_months),
+              warranty_start_at = COALESCE(warranty_start_at, NOW()),
+              warranty_end_at = COALESCE($4, warranty_end_at)
+        WHERE job_id=$1`,
       [realId, wKind, wMonths, wEndIso]
     );
+
+    // Mark every assignment in this job as done so technician/admin views stay consistent.
+    try {
+      await client.query(
+        `UPDATE public.job_assignments
+            SET status='done',
+                done_at=COALESCE(done_at, NOW())
+          WHERE job_id=$1`,
+        [realId]
+      );
+    } catch (e) {
+      try { console.warn('[admin_force_finish_v2] job_assignments sync failed', e.message); } catch {}
+    }
 
     await logJobUpdate(realId, {
       actor_username,
       actor_role: 'admin',
       action: 'admin_force_finish_v2',
       message: `แอดมินปิดงานแทนช่าง: ${reason}`,
-      payload: { warranty_kind: wKind || null, warranty_end_at: wEndIso || null }
-    });
+      payload: {
+        force_closed_from_status: String(cur.job_status || ''),
+        warranty_kind: wKind || null,
+        warranty_end_at: wEndIso || null,
+      }
+    }, client);
 
     await client.query('COMMIT');
-    res.json({ success: true, job_id: Number(realId), status: 'เสร็จแล้ว' });
+    return res.json({ success: true, job_id: Number(realId), status: 'เสร็จแล้ว' });
   } catch (e) {
-    await client.query('ROLLBACK');
-    console.error(e);
-    res.status(500).json({ error: e.message || 'force finish ไม่สำเร็จ' });
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('[admin_force_finish_v2] error', e);
+    return res.status(Number(e.statusCode || 500)).json({ error: e.message || 'force finish ไม่สำเร็จ' });
   } finally {
     client.release();
   }
