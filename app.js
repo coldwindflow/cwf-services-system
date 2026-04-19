@@ -1622,9 +1622,21 @@ function renderJobs(jobs) {
     });
   }
 
+  const prioritizedActiveToday = [...activeToday].sort((a, b) => {
+    const aRevisit = isRevisitJob(a) ? 1 : 0;
+    const bRevisit = isRevisitJob(b) ? 1 : 0;
+    if (aRevisit !== bRevisit) return bRevisit - aRevisit;
+    const ad = a?.returned_at ? new Date(a.returned_at).getTime() : 0;
+    const bd = b?.returned_at ? new Date(b.returned_at).getTime() : 0;
+    if (ad !== bd) return bd - ad;
+    const aa = a?.appointment_datetime ? new Date(a.appointment_datetime).getTime() : 0;
+    const ba = b?.appointment_datetime ? new Date(b.appointment_datetime).getTime() : 0;
+    return aa - ba;
+  });
+
   if (activeJobsEl) {
-    if (!activeToday.length) activeJobsEl.innerHTML = "<p>✅ วันนี้ยังไม่มีงาน</p>";
-    activeToday.forEach((job) => activeJobsEl.appendChild(buildJobCard(job, false)));
+    if (!prioritizedActiveToday.length) activeJobsEl.innerHTML = "<p>✅ วันนี้ยังไม่มีงาน</p>";
+    prioritizedActiveToday.forEach((job) => activeJobsEl.appendChild(buildJobCard(job, false)));
   }
 
   if (activeUpcomingJobsEl) {
@@ -1938,14 +1950,18 @@ function buildJobCard(job, historyMode = false) {
   const revisitFlow = isRevisitJob(job);
   const revisitReason = String(job.return_reason || "").trim();
   const canEdit = !historyMode && (status === "รอดำเนินการ" || status === "กำลังทำ" || status === "งานแก้ไข");
+  const paymentSettled = revisitFlow ? false : paid;
 
   // ✅ ปุ่มอัปเดตสถานะ (ปุ่มเดียว) + e-slip (ขั้นตอนสุดท้าย)
   // - งานประวัติ: ปุ่มนี้จะกลายเป็น "🧾 e-slip" อย่างเดียว (ดูได้ตลอดถ้าจ่ายแล้ว)
+  // - งานแก้ไข: อย่าให้สถานะ paid เดิมจากงานรอบแรก มาบัง flow การกลับไปแก้
   const workflowDisabled = historyMode
     ? !paid
-    : (paid
-        ? false
-        : ((!travelStarted && !called) || status === "เสร็จแล้ว" || status === "ยกเลิก"));
+    : (revisitFlow && isWorking
+        ? true
+        : (paymentSettled
+            ? false
+            : ((!travelStarted && !called) || status === "เสร็จแล้ว" || status === "ยกเลิก")));
 
   // ⚠️ ใช้ keyBase ใน onclick เพื่อรองรับงานจากระบบเดิมที่อาจส่ง id มาเป็น string
   // (ฝั่ง API รองรับทั้ง job_id และ booking_code ผ่าน encodeURIComponent)
@@ -1955,13 +1971,15 @@ function buildJobCard(job, historyMode = false) {
 
   const workflowLabel = historyMode
     ? "🧾 e-slip"
-    : (paid
-        ? "🧾 e-slip"
-        : (!travelStarted
-            ? "🚗 เริ่มเดินทาง"
-            : (!checkedIn
-                ? "📍 เช็คอิน"
-                : (!isWorking ? "▶️ เริ่มทำงาน" : "💳 จ่ายเงิน"))));
+    : (revisitFlow && isWorking
+        ? "📝 ปิดงานแก้ไขด้านล่าง"
+        : (paymentSettled
+            ? "🧾 e-slip"
+            : (!travelStarted
+                ? "🚗 เริ่มเดินทาง"
+                : (!checkedIn
+                    ? "📍 เช็คอิน"
+                    : (!isWorking ? "▶️ เริ่มทำงาน" : "💳 จ่ายเงิน")))));
 
 
   // ✅ ปุ่มสถานะจะแสดงเป็น 4 ปุ่มเรียงลำดับ (เริ่มเดินทาง → เช็คอิน → เริ่มทำงาน → จ่ายเงิน)
@@ -2354,6 +2372,8 @@ function workflowNext(jobId) {
     const checkedIn = !!job.checkin_at;
     const paid = !!job.paid_at || String(job.payment_status || "").trim().toLowerCase() === "paid";
     const isWorking = status === "กำลังทำ";
+    const revisitFlow = isRevisitJob(job);
+    const paymentSettled = revisitFlow ? false : paid;
 
     // งานปิดแล้ว: ให้ไปดู e-slip (ถ้ามี) และจบ
     if (status === "เสร็จแล้ว" || status === "ยกเลิก") {
@@ -2378,7 +2398,12 @@ function workflowNext(jobId) {
       return startWork(keyBase);
     }
 
-    if (!paid) {
+    if (revisitFlow && isWorking) {
+      alert("งานแก้ไข: ให้ใช้ส่วน รูป / หมายเหตุ / ปิดงาน ด้านล่าง เพื่อบันทึกผลและกด เสร็จสิ้น");
+      return;
+    }
+
+    if (!paymentSettled) {
       return payJob(keyBase);
     }
 

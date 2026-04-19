@@ -8177,9 +8177,30 @@ app.post('/admin/jobs/:job_id/return_for_fix_v2', requireAdminSoft, async (req, 
        SET job_status='งานแก้ไข',
            returned_at=NOW(),
            return_reason=$1,
-           returned_by=COALESCE($2, returned_by)
+           returned_by=COALESCE($2, returned_by),
+           travel_started_at=NULL,
+           started_at=NULL,
+           checkin_at=NULL,
+           checkin_latitude=NULL,
+           checkin_longitude=NULL,
+           finished_at=NULL,
+           canceled_at=NULL,
+           cancel_reason=NULL,
+           final_signature_path=NULL,
+           final_signature_status=NULL,
+           final_signature_at=NULL
        WHERE job_id=$3`,
       [reason, actor_username, job_id]
+    );
+
+    // งานแก้ไขต้องกลับมาเห็นในแอปช่างอีกครั้ง
+    // ถ้ารอบก่อนช่างถูก mark done ไปแล้ว ให้ reset กลับเป็น in_progress
+    await client.query(
+      `UPDATE public.job_assignments
+       SET status='in_progress',
+           done_at=NULL
+       WHERE job_id=$1`,
+      [job_id]
     );
     await logJobUpdate(job_id, { actor_username, actor_role: 'admin', action: 'return_for_fix', message: reason });
     return res.json({ success: true });
