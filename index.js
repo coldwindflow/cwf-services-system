@@ -11784,7 +11784,7 @@ function computeStandardPrice(payload = {}) {
 
   if (job_type === "ซ่อม") {
     if (repair_variant === "ตรวจเช็ครั่ว") return 1000;
-    return 500;
+    return 700;
   }
 
   if (job_type !== "ล้าง") return 0;
