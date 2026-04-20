@@ -382,6 +382,30 @@ function reviewHTML(d){
   `;
 }
 
+
+function warrantyHTML(){
+  const excluded = [
+    'ไฟตก ไฟเกิน ไฟกระชาก ฟ้าผ่า',
+    'น้ำท่วม ไฟไหม้ ภัยธรรมชาติ',
+    'หนู มด แมลง หรือสัตว์อื่นทำความเสียหาย',
+    'การใช้งานผิดวิธี หรือขาดการดูแลรักษา',
+    'มีการรื้อถอน ดัดแปลง หรือให้บุคคลอื่นแก้ไขภายหลัง',
+    'อาการเสียใหม่ หรือเสียคนละจุดจากงานเดิม',
+  ];
+  return `
+    <div class="card tight" style="margin-top:10px;">
+      <b>📘 เงื่อนไขการรับประกัน</b>
+      <div class="muted" style="margin-top:8px;line-height:1.65;">รับประกันเฉพาะงานล้างหรืองานซ่อมที่ทางร้านดำเนินการ</div>
+      <div style="margin-top:10px;line-height:1.65;"><b>ไม่รับประกันกรณีดังต่อไปนี้</b></div>
+      <ul style="margin:8px 0 0 18px;padding:0;line-height:1.65;">
+        ${excluded.map(item => `<li style="margin:6px 0;">${item}</li>`).join('')}
+      </ul>
+      <div class="muted" style="margin-top:10px;line-height:1.65;">กรุณาแจ้งปัญหาภายในระยะเวลารับประกัน พร้อมส่งรูปหรือวิดีโอเพื่อให้ทางร้านตรวจสอบก่อนเข้าบริการ</div>
+      <div class="muted" style="margin-top:8px;line-height:1.65;">ทางร้านขอสงวนสิทธิ์พิจารณาการรับประกันตามข้อเท็จจริงหน้างาน</div>
+    </div>
+  `;
+}
+
 // ✅ ส่งรีวิว (หลังงานเสร็จเท่านั้น)
 async function submitReview(key){
   const status = document.getElementById('review_status');
@@ -510,6 +534,8 @@ async function track(){
         ${photosHTML(data)}
 
         ${reviewHTML(data)}
+
+        ${warrantyHTML()}
 
         <!-- ✅ E-Slip แสดงเฉพาะเมื่อสถานะงาน = 'เสร็จสิ้น' (job_status = 'เสร็จแล้ว') -->
         <div id="docMount"></div>

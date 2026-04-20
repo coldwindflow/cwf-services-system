@@ -11773,7 +11773,8 @@ function computeDurationMin(payload = {}, opts = {}) {
 
 function computeStandardPrice(payload = {}) {
   const job_type = String(payload.job_type || "").trim();
-  const ac_type = String(payload.ac_type || "").trim();
+  const ac_type_raw = String(payload.ac_type || "").trim();
+  const ac_type = (ac_type_raw === "ใต้ฝ้า") ? "เปลือยใต้ฝ้า" : ac_type_raw;
   const wash_variant = String(payload.wash_variant || "").trim();
   const repair_variant = String(payload.repair_variant || "").trim();
   const machine_count = Math.max(1, Number(payload.machine_count || 1));
@@ -11791,33 +11792,29 @@ function computeStandardPrice(payload = {}) {
   const qty = machine_count;
 
   if (ac_type === "ผนัง" || !ac_type) {
-    const tier18000 = Number.isFinite(btu) && btu > 12000;
+    const tier18000 = Number.isFinite(btu) && btu >= 18000;
     if (!tier18000) {
-      if (wash_variant === "ล้างพรีเมียม") return 800 * qty;
-      if (wash_variant === "ล้างแขวนคอยน์") return 1250 * qty;
-      if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่") return 1800 * qty;
-      return 500 * qty;
-    } else {
-      if (wash_variant === "ล้างพรีเมียม") return 1000 * qty;
-      if (wash_variant === "ล้างแขวนคอยน์") return 1500 * qty;
+      if (wash_variant === "ล้างพรีเมียม") return 900 * qty;
+      if (wash_variant === "ล้างแขวนคอยน์") return 1400 * qty;
       if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่") return 2000 * qty;
-      return 650 * qty;
+      return 600 * qty;
+    } else {
+      if (wash_variant === "ล้างพรีเมียม") return 1100 * qty;
+      if (wash_variant === "ล้างแขวนคอยน์") return 1700 * qty;
+      if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่") return 2300 * qty;
+      return 750 * qty;
     }
   }
 
   if (ac_type === "สี่ทิศทาง") {
-    if (Number.isFinite(btu) && btu > 48000) return 1700 * qty;
     return 1500 * qty;
   }
 
   if (ac_type === "แขวน") {
-    if (Number.isFinite(btu) && btu >= 38000) return 1500 * qty;
-    if (Number.isFinite(btu) && btu <= 18000) return 800 * qty;
     return 1200 * qty;
   }
 
   if (ac_type === "เปลือยใต้ฝ้า") {
-    if (Number.isFinite(btu) && btu >= 40000) return 1500 * qty;
     return 1200 * qty;
   }
 
