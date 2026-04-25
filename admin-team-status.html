@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Team Status Forge - CWF</title>
+  <link rel="stylesheet" href="style.css">
+  <style>
+    :root{--blue:#0b4bb3;--navy:#071a3a;--yellow:#ffcc00;--ink:#0f172a;--muted:#64748b;--line:#dbe4f0;--bg:#f5f7fb;}
+    body{margin:0;background:linear-gradient(180deg,#071a3a 0%,#0b4bb3 240px,#f5f7fb 240px,#fff 100%);color:var(--ink);font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;}
+    .wrap{max-width:1180px;margin:0 auto;padding:16px 12px 42px;}
+    .hero{color:#fff;padding:14px 0 18px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;}
+    .hero h1{margin:0;font-size:clamp(26px,6vw,46px);letter-spacing:-.04em;line-height:1;}
+    .hero h1 span{color:var(--yellow)}
+    .hero p{margin:8px 0 0;color:rgba(255,255,255,.84);font-weight:800;line-height:1.45}
+    .badge{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.18);border-radius:18px;padding:10px 12px;color:#fff;font-weight:900;white-space:nowrap}
+    .card{background:rgba(255,255,255,.96);border:1px solid rgba(15,23,42,.10);border-radius:24px;box-shadow:0 18px 54px rgba(15,23,42,.13);padding:14px;margin-bottom:14px;}
+    .toolbar{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}.toolbar input,.toolbar select{min-height:44px;border-radius:14px;border:1px solid var(--line);padding:0 12px;font-weight:800;background:#fff}.toolbar input{flex:1;min-width:220px}.btn{border:0;border-radius:15px;padding:12px 14px;font-weight:1000;cursor:pointer}.btn.blue{background:var(--blue);color:#fff}.btn.yellow{background:var(--yellow);color:#111827}.btn.gray{background:#e2e8f0;color:#0f172a}.btn.red{background:#fee2e2;color:#991b1b}.muted{color:var(--muted);font-weight:800;font-size:13px}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:12px}.person{display:flex;gap:12px;align-items:flex-start;border:1px solid var(--line);border-radius:22px;background:#fff;padding:12px}.avatar{width:62px;height:62px;border-radius:18px;object-fit:cover;background:#dbeafe;border:2px solid #fff;box-shadow:0 8px 20px rgba(15,23,42,.16)}.pbody{min-width:0;flex:1}.name{font-weight:1000;font-size:17px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.mini{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.pill{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;background:#eef2ff;color:#0b1b3a;font-weight:1000;font-size:12px}.pill.rank{background:#111827;color:#fff}.pill.yellow{background:var(--yellow);color:#111827}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.split{display:grid;grid-template-columns:minmax(280px,380px) 1fr;gap:14px}@media(max-width:860px){.split{grid-template-columns:1fr}.hero{flex-direction:column}.badge{white-space:normal}.modalPanel{width:100%!important;max-height:95vh!important;border-radius:24px 24px 0 0!important}}
+    .statRow{display:grid;grid-template-columns:92px 1fr 42px;gap:10px;align-items:center;margin:9px 0}.bar{height:12px;border-radius:999px;background:#e2e8f0;overflow:hidden}.bar i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#0b4bb3,#38bdf8)}.sectionTitle{font-weight:1000;font-size:18px;margin:4px 0 10px;display:flex;gap:8px;align-items:center}.sectionTitle:before{content:"";width:10px;height:24px;border-radius:99px;background:var(--yellow)}.formGrid{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:720px){.formGrid{grid-template-columns:1fr}.statRow{grid-template-columns:82px 1fr 38px}.wrap{padding-left:10px;padding-right:10px}}label{display:block;font-weight:1000;margin-bottom:6px}textarea,input,select{font:inherit}.field{margin-bottom:10px}.field input,.field textarea,.field select{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:15px;padding:10px 12px;background:#fff;font-weight:800}.field textarea{min-height:76px;resize:vertical}.checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:8px}.check{border:1px solid var(--line);border-radius:15px;background:#fff;padding:10px;font-weight:900;display:flex;gap:8px}.check input{width:auto}.resultHead{display:flex;gap:12px;align-items:center}.resultHead .avatar{width:82px;height:82px;border-radius:24px}.rankBox{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.listLine{border-left:4px solid var(--yellow);padding:7px 10px;margin:7px 0;background:#f8fafc;border-radius:10px;font-weight:850}.disclaimer{background:#fff7d6;border:1px solid #fde68a;color:#713f12;padding:12px;border-radius:18px;font-weight:900}.modal{position:fixed;inset:0;background:rgba(2,6,23,.62);display:none;z-index:2800;align-items:flex-end;justify-content:center;padding:12px}.modalPanel{background:#fff;border-radius:26px;width:min(100%,1050px);max-height:90vh;overflow:auto;box-shadow:0 25px 80px rgba(0,0,0,.28);padding:14px}.topLine{display:flex;justify-content:space-between;align-items:center;gap:8px;position:sticky;top:0;background:#fff;z-index:2;padding-bottom:10px;border-bottom:1px solid var(--line)}.hr{height:1px;background:var(--line);margin:14px 0}.promptBox{white-space:pre-wrap;background:#071a3a;color:#e5e7eb;border-radius:18px;padding:12px;font-size:12px;line-height:1.45;max-height:240px;overflow:auto}.empty{padding:24px;text-align:center;color:var(--muted);font-weight:900}.score{max-width:180px}.score select{font-size:13px}.twoBtns{display:flex;gap:8px;flex-wrap:wrap}.smallLogo{height:44px;border-radius:12px;background:#fff;padding:4px;object-fit:contain}.resultGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}@media(max-width:780px){.resultGrid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body class="cwf-lux">
+  <div class="wrap">
+    <div class="hero">
+      <div><h1>Team Status <span>Forge</span></h1><p>วัด Base Status ช่างก่อนเริ่มงานด้วยหลักฐานจริง แล้วค่อยปรับจากผลงานจริงภายหลัง</p></div>
+      <div class="badge">Decision Support Only<br><span style="color:#ffcc00">ไม่ใช่คำตัดสินอัตโนมัติ</span></div>
+    </div>
+
+    <div class="card disclaimer">Base Status เป็นการประเมินเบื้องต้นจากคำตอบและหลักฐานก่อนเริ่มงาน คะแนนจริงต้องปรับด้วยผลงานจริงหลังเริ่มงาน และใช้เพื่อประกอบการตัดสินใจ ไม่ใช่คำตัดสินอัตโนมัติจากระบบ</div>
+
+    <div class="card toolbar">
+      <input id="searchBox" placeholder="ค้นหาชื่อ / username / เบอร์">
+      <select id="rankFilter"><option value="">ทุก Rank</option><option>S</option><option>A+</option><option>A</option><option>B</option><option>C</option><option value="none">ยังไม่ประเมิน</option></select>
+      <button class="btn blue" id="btnReload">รีเฟรช</button>
+    </div>
+
+    <div class="card">
+      <div class="sectionTitle">รายชื่อช่าง</div>
+      <div id="peopleGrid" class="grid"></div>
+    </div>
+  </div>
+
+  <div class="modal" id="assessmentModal">
+    <div class="modalPanel">
+      <div class="topLine"><div><b id="modalTitle">Technician Base Status</b><div class="muted" id="modalSub">—</div></div><button class="btn gray" id="btnCloseModal">ปิด</button></div>
+      <form id="assessmentForm">
+        <div class="hr"></div>
+        <div class="sectionTitle">Section 1: ประสบการณ์จริง</div>
+        <div class="formGrid">
+          <div class="field"><label>Q1. เคยทำงานแอร์มากี่ปี?</label><select name="experience_years"><option value="lt1">ยังไม่ถึง 1 ปี</option><option value="1-2">1–2 ปี</option><option value="3-5">3–5 ปี</option><option value="5-10">5–10 ปี</option><option value="10plus">10 ปีขึ้นไป</option></select></div>
+          <div class="field"><label>Q13. คุณชอบทำงานแบบไหน?</label><select name="q13_work_style"><option value="solo">ทำคนเดียว</option><option value="pair">ทำเป็นคู่</option><option value="team">ทำเป็นทีม</option><option value="all">ทำได้หมด</option><option value="depends">แล้วแต่งาน</option></select></div>
+        </div>
+        <div class="field"><label>Q2. งานที่ทำได้ด้วยตัวเองโดยไม่ต้องมีคนคุม</label><div class="checks" id="capabilityChecks"></div></div>
+        <div class="formGrid"><div class="field"><label>Q3. งานที่มั่นใจที่สุด</label><textarea name="q3_confident_job" placeholder="งานอะไร / ทำมากี่ครั้ง / เคยเจอปัญหาอะไร / แก้ยังไง"></textarea></div><div class="field"><label>Q4. งานที่ยังไม่มั่นใจ</label><textarea name="q4_unconfident_job" placeholder="ไม่มั่นใจเรื่องอะไร / กลัวพลาดตรงไหน / ต้องการให้สอนอะไรเพิ่ม"></textarea></div></div>
+
+        <div class="hr"></div><div class="sectionTitle">Section 2: หลักฐานงานยาก</div>
+        <div id="evidenceFields"></div>
+
+        <div class="hr"></div><div class="sectionTitle">Section 3: วินัยและระบบ</div>
+        <div class="formGrid"><div class="field"><label>Q7. ถ่ายรูปก่อน-หลังทุกงาน ทำได้แค่ไหน?</label><select name="q7_photo_discipline"><option value="always">ทำได้ทุกครั้งโดยไม่ต้องเตือน</option><option value="sometimes_forget">ทำได้ แต่บางทีลืม</option><option value="need_reminder">ต้องมีคนเตือน</option><option value="dislike">ไม่ถนัด ไม่ชอบถ่าย</option><option value="dont_understand">ไม่เข้าใจว่าทำไมต้องทำ</option></select></div><div class="field"><label>Q8. กดอัปเดตสถานะในแอพ รับได้ไหม?</label><select name="q8_app_updates"><option value="full">รับได้เต็มที่</option><option value="need_training">รับได้ แต่ต้องฝึก</option><option value="if_easy">ทำได้ถ้าระบบใช้ง่าย</option><option value="dislike_app">ไม่ชอบกดแอพ</option><option value="refuse">ไม่อยากทำ</option></select></div></div>
+
+        <div class="hr"></div><div class="sectionTitle">Section 4: การสื่อสาร</div>
+        <div class="formGrid"><div class="field"><label>Q9. เจอปัญหาหน้างานที่อาจต้องเพิ่มราคา</label><select name="q9_price_issue"><option value="A">A. บอกลูกค้าเองเลยแล้วคิดราคาเพิ่ม</option><option value="B">B. โทรแจ้งแอดมิน/เจ้าของก่อน แล้วรออนุมัติ</option><option value="C">C. ทำไปก่อน เดี๋ยวค่อยบอก</option><option value="D">D. ไม่บอก กลัวลูกค้าไม่พอใจ</option></select></div><div class="field"><label>Q14. ถ้าหัวหน้า/เพื่อนสั่งวิธีที่ไม่เห็นด้วย</label><select name="q14_disagree"><option value="A">A. ทำตามไปก่อน ไม่พูดอะไร</option><option value="B">B. เถียงทันที</option><option value="C">C. ถามเหตุผล แล้วเสนอวิธีที่ดีกว่าด้วยความสุภาพ</option><option value="D">D. ไม่ทำ</option></select></div></div>
+        <div class="field"><label>Q10. ถ้าลูกค้าถามเยอะหรือจุกจิก จะรับมือยังไง?</label><textarea name="q10_customer_handling" placeholder="จะพูดกับลูกค้าว่าอะไร / เคยเจอไหม / สุดท้ายจบยังไง"></textarea></div>
+        <div class="field score"><label>คะแนนหลักฐาน Q10</label><select name="evidence_q10"></select></div>
+
+        <div class="hr"></div><div class="sectionTitle">Section 5: ความรับผิดชอบ</div>
+        <div class="formGrid"><div class="field"><label>Q11. รู้ว่างานหนักมาก แต่รับงานไปแล้ว</label><select name="q11_heavy_day"><option value="A">A. ทำให้จบตามมาตรฐาน</option><option value="B">B. รีบทำให้เสร็จ ๆ ไป</option><option value="C">C. ขอเลื่อนถ้าไม่ไหว</option><option value="D">D. หาย / ไม่รับสาย</option></select></div><div class="field"><label>Q12. ไม่มีหัวหน้าดู ยังทำละเอียดเท่าเดิมไหม?</label><textarea name="q12_no_supervision" placeholder="งานไหนที่ทำเต็ม ทั้งที่ไม่มีใครเห็น / ทำไมถึงทำ / ถ้าทำลวก ลูกค้าจะรู้ไหม"></textarea></div></div>
+        <div class="field score"><label>คะแนนหลักฐาน Q12</label><select name="evidence_q12"></select></div>
+
+        <div class="hr"></div><div class="sectionTitle">Section 7: ความเติบโต</div>
+        <div class="formGrid"><div class="field"><label>Q15. อยากเก่งขึ้นด้านไหนใน 3 เดือน</label><textarea name="q15_growth_plan" placeholder="งานช่าง / วิธีสื่อสาร / ระบบหรือแอพ / เป้าหมายรายได้หรือบทบาท"></textarea></div><div class="field"><label>Q16. ถ้าบริษัทให้โอกาส อยากโตไปเป็นอะไร?</label><select name="q16_growth_role"><option value="stable">ช่างประจำที่มั่นคง</option><option value="hard_jobs">ช่างงานยาก</option><option value="team_lead">หัวหน้าทีม</option><option value="main_partner">พาร์ทเนอร์หลัก</option><option value="subcontractor">ผู้รับเหมาย่อย</option><option value="unsure">ยังไม่แน่ใจ</option></select></div></div>
+
+        <div class="hr"></div><div class="twoBtns"><button class="btn yellow" type="submit">คำนวณและบันทึก Base Status</button><button class="btn gray" type="button" id="btnFillDemo">เติมตัวอย่างทดสอบ</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal" id="resultModal"><div class="modalPanel"><div class="topLine"><div><b>Technician Status Result</b><div class="muted" id="resultSub">—</div></div><button class="btn gray" id="btnCloseResult">ปิด</button></div><div id="resultBody" style="margin-top:12px"></div></div></div>
+
+  <script src="admin-v2-common.js"></script>
+  <script src="admin-team-status.js"></script>
+</body>
+</html>
