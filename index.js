@@ -5037,6 +5037,11 @@ await pool.query(`
     id BIGSERIAL PRIMARY KEY,
     technician_username TEXT NOT NULL,
     assessed_by TEXT,
+    assessment_source TEXT NOT NULL DEFAULT 'admin',
+    review_status TEXT NOT NULL DEFAULT 'verified',
+    reviewed_by TEXT,
+    reviewed_at TIMESTAMPTZ,
+    review_notes TEXT,
     answers_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     stats_json JSONB NOT NULL DEFAULT '{}'::jsonb,
     level INT NOT NULL DEFAULT 0,
@@ -5052,6 +5057,12 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_base_status_tech_created ON public.technician_base_status_assessments(technician_username, created_at DESC)`);
+await pool.query(`ALTER TABLE public.technician_base_status_assessments ADD COLUMN IF NOT EXISTS assessment_source TEXT NOT NULL DEFAULT 'admin'`);
+await pool.query(`ALTER TABLE public.technician_base_status_assessments ADD COLUMN IF NOT EXISTS review_status TEXT NOT NULL DEFAULT 'verified'`);
+await pool.query(`ALTER TABLE public.technician_base_status_assessments ADD COLUMN IF NOT EXISTS reviewed_by TEXT`);
+await pool.query(`ALTER TABLE public.technician_base_status_assessments ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`);
+await pool.query(`ALTER TABLE public.technician_base_status_assessments ADD COLUMN IF NOT EXISTS review_notes TEXT`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_base_status_review ON public.technician_base_status_assessments(technician_username, review_status, created_at DESC)`);
 
 // 4) audit logs (reserved for Super Admin impersonation - Phase 5)
 await pool.query(`
@@ -11205,13 +11216,19 @@ async function getTechnicianForStatus(username) {
   return (r.rows || [])[0] || null;
 }
 
-async function getLatestBaseStatus(username) {
+async function getLatestBaseStatus(username, opts = {}) {
+  const values = [username];
+  let where = `technician_username=$1`;
+  if (opts.review_status) {
+    values.push(String(opts.review_status));
+    where += ` AND COALESCE(review_status,'verified')=$${values.length}`;
+  }
   const r = await pool.query(
     `SELECT * FROM public.technician_base_status_assessments
-     WHERE technician_username=$1
+     WHERE ${where}
      ORDER BY created_at DESC
      LIMIT 1`,
-    [username]
+    values
   );
   return (r.rows || [])[0] || null;
 }
@@ -11234,12 +11251,25 @@ app.get('/admin/api/team-status', requireAdminSession, async (req, res) => {
     const latest = await pool.query(
       `SELECT DISTINCT ON (technician_username)
           id, technician_username, level, rank, stats_json, suitable_jobs_json, restricted_jobs_json,
-          strengths_json, risk_points_json, development_plan_json, created_at
+          strengths_json, risk_points_json, development_plan_json, generated_prompt,
+          COALESCE(assessment_source,'admin') AS assessment_source,
+          COALESCE(review_status,'verified') AS review_status,
+          assessed_by, reviewed_by, reviewed_at, created_at
        FROM public.technician_base_status_assessments
        ORDER BY technician_username, created_at DESC`
     );
+    const pending = await pool.query(
+      `SELECT DISTINCT ON (technician_username)
+          id, technician_username, level, rank, created_at,
+          COALESCE(assessment_source,'self') AS assessment_source,
+          COALESCE(review_status,'pending_review') AS review_status
+       FROM public.technician_base_status_assessments
+       WHERE COALESCE(review_status,'verified')='pending_review'
+       ORDER BY technician_username, created_at DESC`
+    );
     const map = new Map((latest.rows || []).map(r => [String(r.technician_username), r]));
-    const people = (techs.rows || []).map(t => ({ ...t, latest_status: map.get(String(t.username)) || null }));
+    const pendingMap = new Map((pending.rows || []).map(r => [String(r.technician_username), r]));
+    const people = (techs.rows || []).map(t => ({ ...t, latest_status: map.get(String(t.username)) || null, pending_status: pendingMap.get(String(t.username)) || null }));
     return res.json({ ok: true, people });
   } catch (e) {
     console.error('GET team-status error:', e);
@@ -11270,9 +11300,9 @@ app.post('/admin/api/technicians/:username/base-status', requireAdminSession, as
     const assessedBy = String(req.actor?.username || req.auth?.username || 'admin');
     const saved = await pool.query(
       `INSERT INTO public.technician_base_status_assessments
-        (technician_username, assessed_by, answers_json, stats_json, level, rank,
+        (technician_username, assessed_by, assessment_source, review_status, reviewed_by, reviewed_at, answers_json, stats_json, level, rank,
          suitable_jobs_json, restricted_jobs_json, strengths_json, risk_points_json, development_plan_json, generated_prompt, updated_at)
-       VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12,NOW())
+       VALUES ($1,$2,'admin','verified',$2,NOW(),$3::jsonb,$4::jsonb,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12,NOW())
        RETURNING *`,
       [
         username,
@@ -11306,6 +11336,65 @@ app.get('/admin/api/technicians/:username/status', requireAdminSession, async (r
   } catch (e) {
     console.error('GET tech status error:', e);
     return res.status(500).json({ error: 'โหลด Status ไม่สำเร็จ' });
+  }
+});
+
+// Technician Self Assessment entrypoint (Phase 1.1)
+// - ช่างทำแบบประเมินเองได้จากเมนูช่าง
+// - บันทึกเป็น pending_review เพื่อให้ Admin/Super Admin ตรวจต่อ ไม่ใช่คะแนน official อัตโนมัติ
+app.get('/tech/base-status', requireTechnicianSession, (req, res) => res.sendFile(sendHtml('tech-base-status.html')));
+app.get('/tech/base-status.html', requireTechnicianSession, (req, res) => res.redirect(302, '/tech/base-status'));
+
+app.get('/tech/api/base-status', requireTechnicianSession, async (req, res) => {
+  try {
+    const username = String(req.auth?.username || req.effective?.username || '').trim();
+    const technician = await getTechnicianForStatus(username);
+    if (!technician) return res.status(404).json({ error: 'ไม่พบข้อมูลช่างของคุณ' });
+    const latest = await getLatestBaseStatus(username);
+    const latest_self = await getLatestBaseStatus(username, { review_status: 'pending_review' });
+    const latest_verified = await getLatestBaseStatus(username, { review_status: 'verified' });
+    return res.json({ ok: true, technician, latest, latest_self, latest_verified });
+  } catch (e) {
+    console.error('GET tech self base-status error:', e);
+    return res.status(500).json({ error: 'โหลดแบบประเมินของช่างไม่สำเร็จ' });
+  }
+});
+
+app.post('/tech/api/base-status', requireTechnicianSession, async (req, res) => {
+  try {
+    const username = String(req.auth?.username || req.effective?.username || '').trim();
+    const technician = await getTechnicianForStatus(username);
+    if (!technician) return res.status(404).json({ error: 'ไม่พบข้อมูลช่างของคุณ' });
+    const answers = (req.body && typeof req.body.answers === 'object' && !Array.isArray(req.body.answers)) ? req.body.answers : {};
+    answers.__self_assessment = true;
+    answers.__submitted_by = username;
+    answers.__submitted_at = new Date().toISOString();
+    const result = calculateTechnicianBaseStatus(answers, technician);
+    const saved = await pool.query(
+      `INSERT INTO public.technician_base_status_assessments
+        (technician_username, assessed_by, assessment_source, review_status, answers_json, stats_json, level, rank,
+         suitable_jobs_json, restricted_jobs_json, strengths_json, risk_points_json, development_plan_json, generated_prompt, updated_at)
+       VALUES ($1,$2,'self','pending_review',$3::jsonb,$4::jsonb,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11::jsonb,$12,NOW())
+       RETURNING *`,
+      [
+        username,
+        username,
+        JSON.stringify(answers),
+        JSON.stringify(result.stats),
+        result.level,
+        result.rank,
+        JSON.stringify(result.suitable_jobs),
+        JSON.stringify(result.restricted_jobs),
+        JSON.stringify(result.strengths),
+        JSON.stringify(result.risk_points),
+        JSON.stringify(result.development_plan),
+        result.generated_prompt,
+      ]
+    );
+    return res.json({ ok: true, technician, assessment: saved.rows[0], pending_review: true });
+  } catch (e) {
+    console.error('POST tech self base-status error:', e);
+    return res.status(500).json({ error: 'ส่งแบบประเมินไม่สำเร็จ' });
   }
 });
 app.put("/admin/technicians/:username", requireAdminSession, async (req, res) => {

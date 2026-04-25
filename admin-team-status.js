@@ -64,7 +64,7 @@
       <div class="pbody">
         <div class="name">${escapeHtml(t.full_name || t.username)}</div>
         <div class="muted">${escapeHtml(t.username)} • ${escapeHtml(t.employment_type || '-')} • ${escapeHtml(t.phone || '-')}</div>
-        <div class="mini"><span class="pill rank">Rank ${escapeHtml(latestRank(t))}</span><span class="pill yellow">Lv. ${escapeHtml(latestLevel(t))}</span><span class="pill">${st ? 'ประเมินแล้ว' : 'ยังไม่มี Base Status'}</span></div>
+        <div class="mini"><span class="pill rank">Rank ${escapeHtml(latestRank(t))}</span><span class="pill yellow">Lv. ${escapeHtml(latestLevel(t))}</span><span class="pill">${st ? 'ประเมินแล้ว' : 'ยังไม่มี Base Status'}</span>${t.pending_status ? '<span class="pill yellow">ช่างส่งเอง: รอตรวจ</span>' : ''}</div>
         ${strengths.length ? `<div class="muted">เด่น: ${strengths.map(escapeHtml).join(' • ')}</div>` : ''}
         ${risks.length ? `<div class="muted">ต้องระวัง: ${risks.map(escapeHtml).join(' • ')}</div>` : ''}
         <div class="actions"><button class="btn yellow" data-action="assess" data-username="${escapeHtml(t.username)}">ประเมิน</button><button class="btn blue" data-action="view" data-username="${escapeHtml(t.username)}">ดู Status</button></div>
@@ -182,7 +182,7 @@
     const stats = st.stats_json || st.stats || {};
     $('resultSub').textContent = `${tech.username} • Last: ${st.created_at ? new Date(st.created_at).toLocaleString('th-TH') : '-'}`;
     $('resultBody').innerHTML = `
-      <div class="resultHead"><img class="avatar" src="${escapeHtml(imgSrc(tech.photo_path))}" onerror="this.src='logo.png'"><div><h2 style="margin:0">${escapeHtml(tech.full_name||tech.username)}</h2><div class="muted">${escapeHtml(tech.username)} • ${escapeHtml(tech.employment_type||'-')}</div><div class="rankBox"><span class="pill rank">Rank ${escapeHtml(st.rank)}</span><span class="pill yellow">Base Lv. ${escapeHtml(st.level)}</span><span class="pill">Decision Support</span></div></div></div>
+      <div class="resultHead"><img class="avatar" src="${escapeHtml(imgSrc(tech.photo_path))}" onerror="this.src='logo.png'"><div><h2 style="margin:0">${escapeHtml(tech.full_name||tech.username)}</h2><div class="muted">${escapeHtml(tech.username)} • ${escapeHtml(tech.employment_type||'-')}</div><div class="rankBox"><span class="pill rank">Rank ${escapeHtml(st.rank)}</span><span class="pill yellow">Base Lv. ${escapeHtml(st.level)}</span><span class="pill">Decision Support</span><span class="pill ${String(st.review_status||'')==='pending_review' ? 'yellow' : ''}">${escapeHtml(String(st.review_status||'verified')==='pending_review' ? 'ช่างส่งเอง / รอตรวจ' : 'Verified')}</span></div></div></div>
       <div class="hr"></div>
       <div class="resultGrid"><div class="card" style="box-shadow:none"><div class="sectionTitle">Status Bars</div>${statRows(stats)}</div><div>${list('เหมาะกับงาน', st.suitable_jobs_json || st.suitable_jobs)}${list('ข้อจำกัด / ความเสี่ยง', st.restricted_jobs_json || st.risk_points_json)}</div></div>
       <div class="resultGrid">${list('จุดแข็ง', st.strengths_json)}${list('แผนพัฒนา 30 วัน', st.development_plan_json)}</div>
