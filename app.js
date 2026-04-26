@@ -584,6 +584,8 @@ function _bkkYmdOffset(deltaDays){
   }catch{ return _bkkYmdNow(); }
 }
 
+const CWF_INCOME_CACHE_VERSION = 'contract_v5_no_customer_price_leak';
+
 function _bestEffortUsername() {
   // Backward-compatible: some clients lose the global `username` or cookies.
   // Try common storage keys used across versions.
@@ -615,6 +617,7 @@ async function loadIncomeSummary() {
     try {
       localStorage.setItem('__cwf_income_cache__', JSON.stringify({
         ts: Date.now(),
+        version: CWF_INCOME_CACHE_VERSION,
         day_total: Number(data.day_total||0),
         month_total: Number(data.month_total||0),
         all_total: Number(data.all_total||0)
@@ -631,7 +634,7 @@ async function loadIncomeSummary() {
     // fail-open (ไม่ให้หน้า tech พัง) + show cached value if available
     try {
       const c = JSON.parse(localStorage.getItem('__cwf_income_cache__') || 'null');
-      if (c && typeof c === 'object') {
+      if (c && typeof c === 'object' && c.version === CWF_INCOME_CACHE_VERSION) {
         if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(c.day_total);
         if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(c.month_total);
         if (incomeAllEl) incomeAllEl.textContent = formatBaht(c.all_total);
@@ -695,11 +698,11 @@ async function loadOutstandingTotal(){
   try{
     // ใช้ cache จาก income_summary (authoritative) เพื่อไม่ต้องยิง compute ซ้ำ
     const cache = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache__')||'null');}catch{return null;} })();
-    if (!cache || typeof cache !== 'object') {
+    if (!cache || typeof cache !== 'object' || cache.version !== CWF_INCOME_CACHE_VERSION) {
       await loadIncomeSummary();
     }
     const c = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache__')||'null');}catch{return null;} })();
-    const allTotal = Number(c?.all_total || 0);
+    const allTotal = (c && c.version === CWF_INCOME_CACHE_VERSION) ? Number(c?.all_total || 0) : 0;
 
     const res = await fetch(`${API_BASE}/tech/payments_total`, { credentials:'include' });
     const data = await res.json();
