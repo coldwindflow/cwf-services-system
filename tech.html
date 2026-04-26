@@ -221,6 +221,31 @@
     .tech-more .row:first-child{margin-top:0}
     .tech-more .row .k{font-size:12px;font-weight:1000;color:rgba(15,23,42,0.60)}
     .tech-more .row .v{font-size:13px;font-weight:1100;color:#0f172a}
+
+
+    /* ===== Technician UI Cleanup v10.3 ===== */
+    :root{--cwf-navy:#061b49;--cwf-blue:#0b4bb3;--cwf-sky:#06b6d4;--cwf-yellow:#fffd01;--cwf-soft:#f5f8ff}
+    body{background:linear-gradient(180deg,#061b49 0%,#0b4bb3 26%,#f5f8ff 26%,#fff 100%)}
+    #techTopNav{background:linear-gradient(135deg,#061b49,#0b4bb3 70%,#08a4ff);border-bottom:1px solid rgba(255,255,255,.18)}
+    #techTopNav .ttl b{font-size:15px;letter-spacing:.2px}#techTopNav .ttl span{color:rgba(255,255,255,.86)}
+    #techMenuBtn{background:#fffd01!important;color:#061b49!important;border-color:rgba(255,255,255,.24)!important;box-shadow:0 10px 24px rgba(255,253,1,.18)}
+    .bottom-nav{background:linear-gradient(135deg,#061b49,#0b4bb3);border-color:rgba(255,255,255,.14);box-shadow:0 -12px 34px rgba(2,6,23,.28);gap:8px}
+    .nav-btn{background:rgba(255,255,255,.10);color:rgba(255,255,255,.78);border-color:rgba(255,255,255,.14);font-weight:1000}
+    .nav-btn.active{background:#fffd01;color:#061b49;border-color:#fffd01;box-shadow:0 10px 24px rgba(255,253,1,.18)}
+    .card{border-radius:24px;border:1px solid rgba(11,75,179,.13);box-shadow:0 14px 34px rgba(2,6,23,.10)}
+    .card.section>h2{color:#061b49;font-size:22px}.muted{color:rgba(15,23,42,.62)}
+    .profile-compact{background:linear-gradient(135deg,#fff,#eef6ff);border-radius:24px;padding:12px;border:1px solid rgba(11,75,179,.12)}
+    .tech-avatar{border-color:#fffd01;box-shadow:0 8px 22px rgba(2,6,23,.16)}
+    .chipStat{background:#fff;border-color:rgba(11,75,179,.14);box-shadow:0 8px 18px rgba(2,6,23,.06)}
+    .chipStat .v{color:#0b4bb3}.tabs .tab-btn{border-radius:16px;background:#eef6ff;color:#0b4bb3}.tabs .tab-btn.active{background:linear-gradient(135deg,#061b49,#0b4bb3);box-shadow:0 10px 24px rgba(11,75,179,.22)}
+    #sec-income{background:linear-gradient(180deg,#ffffff,#f8fbff)}
+    #sec-income>.muted{font-weight:900}
+    .income-hero{background:linear-gradient(135deg,#061b49,#0b4bb3 66%,#06b6d4);color:#fff;border:none!important;border-radius:26px!important;box-shadow:0 18px 42px rgba(2,6,23,.20)!important}
+    .income-hero b,.income-hero .muted{color:#fff!important}.income-hero .muted{opacity:.85}
+    .income-stat{padding:14px;border-radius:22px;border:1px solid rgba(255,255,255,.18);background:rgba(255,255,255,.12);backdrop-filter:blur(6px)}
+    .income-stat .amount{font-size:24px;font-weight:1200;color:#fffd01}.income-mini-card{padding:12px;border-radius:20px;border:1px solid rgba(11,75,179,.13);background:#fff;box-shadow:0 10px 24px rgba(2,6,23,.06)}
+    .techMenuBtn{background:#0b4bb3}.techMenuDanger{background:#dc2626}
+    @media(max-width:420px){.bottom-nav{width:100%;border-radius:18px 18px 0 0;left:0;transform:none}.nav-btn{font-size:11px;padding:9px 4px}.profile-compact .chips{grid-template-columns:1fr 1fr}.card{border-radius:22px}}
   </style>
 </head>
 
@@ -548,38 +573,38 @@
       <div class="muted" style="margin-top:6px">เห็นยอดแบบเข้าใจทันที + ดูรายละเอียดรายวัน + งวดเงินเดือน</div>
 
       <div class="grid" style="margin-top:12px">
-        <div class="card" style="margin-top:0">
-          <b style="color:#0b1b3a">ภาพรวม</b>
+        <div class="card income-hero" style="margin-top:0">
+          <b style="font-size:18px">ภาพรวมรายได้</b>
           <div class="muted" style="margin-top:6px">ยอดหลักที่ช่างถามบ่อย: วันนี้ / งวดถัดไป / ค้างรับ</div>
 
           <div style="display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px">
-            <div style="padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10);background:rgba(37,99,235,0.05)">
+            <div class="income-stat">
               <div class="row" style="justify-content:space-between;align-items:flex-end">
                 <div>
                   <b>วันนี้ได้</b>
                   <div class="muted" style="margin-top:4px">รวมจากงานที่ปิดวันนี้</div>
                 </div>
-                <div style="font-size:20px;font-weight:800" id="incomeTodayVal">-</div>
+                <div class="amount" id="incomeTodayVal">-</div>
               </div>
             </div>
 
-            <div style="padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10)">
+            <div class="income-stat">
               <div class="row" style="justify-content:space-between;align-items:flex-end">
                 <div>
                   <b>คาดว่าจะได้งวดถัดไป</b>
                   <div class="muted" style="margin-top:4px" id="incomePeriodRange">-</div>
                 </div>
-                <div style="font-size:20px;font-weight:800" id="incomePeriodEstVal">-</div>
+                <div class="amount" id="incomePeriodEstVal">-</div>
               </div>
             </div>
 
-            <div style="padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10);background:rgba(16,185,129,0.06)">
+            <div class="income-stat">
               <div class="row" style="justify-content:space-between;align-items:flex-end">
                 <div>
                   <b>ค้างรับทั้งหมด</b>
                   <div class="muted" style="margin-top:4px">สะสมทั้งหมด - จ่ายแล้ว</div>
                 </div>
-                <div style="font-size:20px;font-weight:800" id="incomeOutstandingVal">-</div>
+                <div class="amount" id="incomeOutstandingVal">-</div>
               </div>
             </div>
           </div>
@@ -658,7 +683,7 @@
     <button class="nav-btn" id="nav-income" onclick="switchTab('income')">💰 รายได้</button>
   </div>
 
-  <script src="app.js?v=contract-payroll-v9"></script>
+  <script src="app.js?v=contract-payroll-v10-3-payroll-ui"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
         function goChangePassword(){ location.href = '/change-password.html'; }
