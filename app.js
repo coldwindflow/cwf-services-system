@@ -790,7 +790,7 @@ function renderIncomeDayDetail(payload){
   }
 
   function fmtPct(v){
-    if (v==null || v==='') return '-';
+    if (v==null || v==='') return 'เรทสัญญา';
     const n = Number(v);
     if (!Number.isFinite(n)) return String(v);
     return `${n}%`;
@@ -830,7 +830,7 @@ function renderIncomeDayDetail(payload){
             <b>งาน #${jobId}</b>
             <div class="muted" style="margin-top:4px">${finished}</div>
             <div class="muted" style="margin-top:6px">${jobType} • ${acType}${wash?` • ${wash}`:''}</div>
-            <div class="muted" style="margin-top:4px">เครื่องของช่าง: <b>${mc}</b> • % ที่ใช้: <b>${pct}</b></div>
+            <div class="muted" style="margin-top:4px">เครื่องของช่าง: <b>${mc}</b> • วิธีคิด: <b>${pct}</b></div>
             <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
               <button class="btn" type="button" onclick="(function(){var el=document.getElementById('${traceId}'); if(!el) return; el.style.display = (el.style.display==='none' || !el.style.display) ? 'block' : 'none';})()">ดูสูตร</button>
             </div>
@@ -1063,7 +1063,7 @@ function renderTechPayoutLines(lines, total, adjustments, payment, payoutId){
       const ac = _safeText(d.ac_type || '-');
       const wash = _safeText(d.wash_variant || '-');
       const mc = Number(ln.machine_count_for_tech || d.machine_count_for_tech || 0);
-      const pct = (ln.percent_final==null || ln.percent_final===undefined) ? '-' : (Number(ln.percent_final)||0).toFixed(2)+'%';
+      const pct = (ln.percent_final==null || ln.percent_final===undefined) ? 'เรทสัญญา' : (Number(ln.percent_final)||0).toFixed(2)+'%';
       const earn = formatBaht(ln.earn_amount||0);
       const mode = _safeText(d.mode || '-');
       const items = Array.isArray(d.items) ? d.items : [];
@@ -1081,7 +1081,7 @@ function renderTechPayoutLines(lines, total, adjustments, payment, payoutId){
               </div>
               <div style="text-align:right">
                 <b>${earn}</b>
-                <div class="muted" style="margin-top:4px">เครื่อง: ${mc} • %: ${pct}</div>
+                <div class="muted" style="margin-top:4px">เครื่อง: ${mc} • วิธีคิด: ${pct}</div>
               </div>
             </div>
           </summary>

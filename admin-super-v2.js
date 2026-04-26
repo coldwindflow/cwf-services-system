@@ -1181,7 +1181,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
       const ac = esc(d.ac_type||'-');
       const wash = esc(d.wash_variant||'-');
       const mc = Number(ln.machine_count_for_tech||0);
-      const pct = (ln.percent_final==null||ln.percent_final===undefined) ? '-' : (Number(ln.percent_final)||0).toFixed(2)+'%';
+      const pct = (ln.percent_final==null||ln.percent_final===undefined) ? 'เรทสัญญา' : (Number(ln.percent_final)||0).toFixed(2)+'%';
       const fin = fmtDate(ln.finished_at);
       const earn = fmtBaht(ln.earn_amount);
       const mode = esc(d.mode||'-');
@@ -1195,7 +1195,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
               </div>
               <div style="text-align:right">
                 <b>${earn}</b>
-                <div class="muted" style="margin-top:4px">เครื่อง: ${mc} • %: ${pct}</div>
+                <div class="muted" style="margin-top:4px">เครื่อง: ${mc} • วิธีคิด: ${pct}</div>
               </div>
             </div>
           </summary>

@@ -2408,6 +2408,74 @@ function _thaiLabelWash(k){
   return '';
 }
 
+
+// =======================================
+// 💰 CWF Contract Payroll Engine (2026)
+// - Uses fixed per-machine ladder rates from the attached CWF technician contracts.
+// - Replaces the old percent-based technician income calculation for completed jobs.
+// =======================================
+const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_fixed_ladder_v1';
+const CWF_CONTRACT_PAYROLL_RATES = Object.freeze({
+  company: Object.freeze({
+    normal:   Object.freeze({ small: [80, 70, 70, 60],    large: [100, 85, 85, 70] }),
+    premium:  Object.freeze({ small: [130, 110, 110, 90],  large: [160, 140, 140, 120] }),
+    coil:     Object.freeze({ small: [220, 190, 190, 160],  large: [280, 240, 240, 210] }),
+    overhaul: Object.freeze({ small: [320, 280, 280, 240],  large: [400, 350, 350, 300] }),
+  }),
+  partner: Object.freeze({
+    normal:   Object.freeze({ small: [400, 350, 350, 320],     large: [450, 400, 400, 350] }),
+    premium:  Object.freeze({ small: [550, 500, 500, 450],     large: [700, 650, 650, 600] }),
+    coil:     Object.freeze({ small: [850, 800, 800, 750],     large: [1050, 1000, 1000, 950] }),
+    overhaul: Object.freeze({ small: [1200, 1100, 1100, 1000], large: [1450, 1350, 1350, 1250] }),
+  }),
+});
+
+function _contractTechType(employmentType, incomeType){
+  const it = normalizeIncomeType(incomeType);
+  if (it === 'special_only') return 'special_only';
+  if (it === 'partner') return 'partner';
+  if (it === 'company') return 'company';
+  const e = normalizeIncomeType(employmentType);
+  if (e === 'special_only') return 'special_only';
+  if (e === 'partner') return 'partner';
+  return 'company';
+}
+function _contractBtuTierFromText(text){
+  const v = String(text || '');
+  const m = v.match(/([0-9][0-9,\.]{2,})\s*BTU/i);
+  const btu = m ? Number(String(m[1]).replace(/[,]/g,'')) : 0;
+  return { btu: Number.isFinite(btu) ? btu : 0, btu_tier: (Number.isFinite(btu) && btu >= 18000) ? 'large' : 'small' };
+}
+function _contractRateAt(techType, washKey, btuTier, machineIndex){
+  const t = techType === 'partner' ? 'partner' : 'company';
+  const w = ['normal','premium','coil','overhaul'].includes(washKey) ? washKey : 'normal';
+  const tier = btuTier === 'large' ? 'large' : 'small';
+  const arr = CWF_CONTRACT_PAYROLL_RATES[t]?.[w]?.[tier] || [];
+  const idx = Math.max(1, Number(machineIndex || 1));
+  return Number(arr[idx >= 4 ? 3 : idx - 1] || 0);
+}
+function _contractServiceKeyFromItem(it){
+  const nm = String(it?.item_name || '');
+  const ac_key = _normAcKey(nm) || 'wall';
+  let wash_key = _normWashKey(nm);
+  if (!wash_key) wash_key = 'normal';
+  if (!['normal','premium','coil','overhaul'].includes(wash_key)) wash_key = 'normal';
+  const { btu, btu_tier } = _contractBtuTierFromText(nm);
+  return { ac_key, wash_key, btu, btu_tier, group_key: `${wash_key}|${btu_tier}` };
+}
+function _contractMachineRates(washKey, btuTier, startIndex, qty, techType){
+  const out = [];
+  const n = Math.max(0, Math.round(Number(qty || 0)));
+  for (let i = 0; i < n; i++) {
+    const machine_index = Number(startIndex || 1) + i;
+    out.push({ machine_index, rate: _contractRateAt(techType, washKey, btuTier, machine_index) });
+  }
+  return out;
+}
+function _sumContractMachineRates(washKey, btuTier, startIndex, qty, techType){
+  return _contractMachineRates(washKey, btuTier, startIndex, qty, techType).reduce((a,x)=>a+Number(x.rate||0),0);
+}
+
 async function _pickStepRule({ job_type_key, ac_key, wash_key }) {
   // deterministic:
   // - match: (job_type, ac_type, wash_variant)
@@ -2741,8 +2809,16 @@ app.get('/admin/super/tech_income/calc/job/:job_id', requireSuperAdmin, async (r
     const job_id = Number(req.params.job_id);
     if (!Number.isFinite(job_id) || job_id <= 0) return res.status(400).json({ error: 'INVALID_JOB' });
 
-    const r = await computeJobPayout(job_id);
-    return res.json({ ok: true, ...r });
+    const lines = await _buildPayoutLinesForJob(job_id);
+    const gross_amount = (lines || []).reduce((a, it) => a + Number(it.earn_amount || 0), 0);
+    return res.json({
+      ok: true,
+      job_id,
+      payroll_version: CWF_CONTRACT_PAYROLL_VERSION,
+      note: 'ใช้เรทบาท/เครื่องแบบขั้นบันไดตามสัญญา CWF 2026 (ไม่ใช้เปอร์เซ็นต์รายได้เดิม)',
+      gross_amount,
+      lines,
+    });
   } catch (e) {
     console.error('GET /admin/super/tech_income/calc/job/:job_id', e);
     if (String(e.code || '') === 'EMPTY_TEAM') return res.status(409).json({ error: 'EMPTY_TEAM' });
