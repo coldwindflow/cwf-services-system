@@ -606,15 +606,15 @@ async function loadIncomeSummary() {
   try {
     // Fail-open for PWA/webview that loses cookies: also send ?username=
     const u = _bestEffortUsername();
-    const url = `${API_BASE}/tech/income_summary${u ? `?username=${encodeURIComponent(u)}&` : '?'}v=contract-v10-3`;
-    try { localStorage.removeItem('__cwf_income_cache__'); localStorage.removeItem('__cwf_income_cache_v9__'); localStorage.removeItem('__cwf_income_cache_v10_3__'); localStorage.removeItem('__cwf_income_cache_v10__'); localStorage.removeItem('__cwf_income_cache_v10_2__'); } catch {}
+    const url = `${API_BASE}/tech/income_summary${u ? `?username=${encodeURIComponent(u)}&` : '?'}v=contract-v10-4`;
+    try { localStorage.removeItem('__cwf_income_cache__'); localStorage.removeItem('__cwf_income_cache_v9__'); localStorage.removeItem('__cwf_income_cache_v10_4__'); localStorage.removeItem('__cwf_income_cache_v10__'); localStorage.removeItem('__cwf_income_cache_v10_3__'); } catch {}
     const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
 
     // cache last good values (so UI won't look "empty" when temporary failures happen)
     try {
-      localStorage.setItem('__cwf_income_cache_v10_3__', JSON.stringify({
+      localStorage.setItem('__cwf_income_cache_v10_4__', JSON.stringify({
         ts: Date.now(),
         day_total: Number(data.day_total||0),
         month_total: Number(data.month_total||0),
@@ -631,7 +631,7 @@ async function loadIncomeSummary() {
   } catch (e) {
     // fail-open (ไม่ให้หน้า tech พัง) + show cached value if available
     try {
-      const c = JSON.parse(localStorage.getItem('__cwf_income_cache_v10_3__') || 'null');
+      const c = JSON.parse(localStorage.getItem('__cwf_income_cache_v10_4__') || 'null');
       if (c && typeof c === 'object') {
         if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(c.day_total);
         if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(c.month_total);
@@ -664,7 +664,7 @@ async function loadIncomeTodayMonthFast(){
   if (!incomeTodayValEl && !incomeDaily2El && !incomeMonth2El) return;
   try{
     const u = _bestEffortUsername();
-    const url = `${API_BASE}/tech/income_today_month${u ? `?username=${encodeURIComponent(u)}&` : '?'}v=contract-v10-3`;
+    const url = `${API_BASE}/tech/income_today_month${u ? `?username=${encodeURIComponent(u)}&` : '?'}v=contract-v10-4`;
     const res = await fetch(url, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
@@ -680,7 +680,7 @@ async function loadIncomeTodayMonthFast(){
 async function loadNextPeriodEstimate(){
   if (!incomePeriodEstValEl && !incomePeriodRangeEl) return;
   try{
-    const res = await fetch(`${API_BASE}/tech/income_next_period_estimate?v=contract-v10-3`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/income_next_period_estimate?v=contract-v10-4`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     if (incomePeriodEstValEl) incomePeriodEstValEl.textContent = formatBaht(data.estimate_total||0);
@@ -695,14 +695,14 @@ async function loadOutstandingTotal(){
   if (!incomeOutstandingValEl) return;
   try{
     // ใช้ cache จาก income_summary (authoritative) เพื่อไม่ต้องยิง compute ซ้ำ
-    const cache = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache_v10_3__')||'null');}catch{return null;} })();
+    const cache = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache_v10_4__')||'null');}catch{return null;} })();
     if (!cache || typeof cache !== 'object') {
       await loadIncomeSummary();
     }
-    const c = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache_v10_3__')||'null');}catch{return null;} })();
+    const c = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache_v10_4__')||'null');}catch{return null;} })();
     const allTotal = Number(c?.all_total || 0);
 
-    const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v10-3`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v10-4`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     const paid = Number(data.paid_total || 0);
@@ -725,13 +725,10 @@ function renderLastDaysSummary(payload){
     const total = formatBaht(d.total||0);
     const count = Number(d.jobs||0);
     return `
-      <div style="padding:10px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px" onclick="(function(){ try{ var el=document.getElementById('incomeDatePicker'); if(el){ el.value='${ymd}'; } }catch(e){} try{ loadIncomeDayDetail('${ymd}'); }catch(e){} })()">
-        <div class="row" style="justify-content:space-between;gap:10px">
-          <div>
-            <b>${ymd}</b>
-            <div class="muted" style="margin-top:4px">${count} งาน</div>
-          </div>
-          <div style="text-align:right"><b style="font-size:18px">${total}</b></div>
+      <div class="income-day-card" onclick="(function(){ try{ var el=document.getElementById('incomeDatePicker'); if(el){ el.value='${ymd}'; } }catch(e){} try{ loadIncomeDayDetail('${ymd}'); }catch(e){} })()">
+        <div class="row" style="justify-content:space-between;gap:10px;align-items:center">
+          <div><div class="date">${ymd}</div><div class="income-job-meta">${count} งาน</div></div>
+          <div class="amount">${total}</div>
         </div>
       </div>
     `;
@@ -780,7 +777,7 @@ function renderIncomeDayDetail(payload){
   if (!techIncomeDayListEl) return;
   const items = Array.isArray(payload?.items) ? payload.items : [];
   if (!items.length) {
-    techIncomeDayListEl.innerHTML = `<div class="muted">ไม่มีงานที่ปิดในวันนี้</div>`;
+    techIncomeDayListEl.innerHTML = `<div class="income-empty">วันนี้ยังไม่มีงานที่คิดรายได้</div>`;
     return;
   }
 
@@ -831,23 +828,19 @@ function renderIncomeDayDetail(payload){
     }).join('');
     const traceId = `trace_${jobId}_${String(it.line_id||'v')}`.replace(/[^a-zA-Z0-9_]/g,'_');
     return `
-      <div style="padding:10px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px">
+      <div class="income-job-card">
         <div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start">
-          <div>
-            <b>งาน #${jobId}</b>
-            <div class="muted" style="margin-top:4px">${finished}</div>
-            <div class="muted" style="margin-top:6px">${jobType} • ${acType}${wash?` • ${wash}`:''}</div>
-            <div class="muted" style="margin-top:4px">เครื่องที่คิดเงินให้ช่าง: <b>${mc}</b> • วิธีคิด: <b>${pct}</b></div>
-            <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
-              <button class="btn" type="button" onclick="(function(){var el=document.getElementById('${traceId}'); if(!el) return; el.style.display = (el.style.display==='none' || !el.style.display) ? 'block' : 'none';})()">ดูสูตร</button>
-            </div>
+          <div style="min-width:0;flex:1 1 180px">
+            <div class="title">งาน #${jobId}</div>
+            <div class="income-job-meta">${finished}</div>
+            <div class="income-job-meta">${jobType} • ${acType}${wash?` • ${wash}`:''}</div>
+            <div class="income-job-meta">จำนวนที่คิดรายได้: <b>${mc}</b> เครื่อง • <b>${pct}</b></div>
+            <button class="btn" type="button" style="margin-top:9px;border-radius:16px;min-width:auto" onclick="(function(){var el=document.getElementById('${traceId}'); if(!el) return; el.style.display = (el.style.display==='none' || !el.style.display) ? 'block' : 'none';})()">ดูสูตร</button>
           </div>
-          <div style="text-align:right">
-            <b style="font-size:18px">${earn}</b>
-          </div>
+          <div class="amount">${earn}</div>
         </div>
 
-        <div id="${traceId}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(15,23,42,0.15)">
+        <div id="${traceId}" class="income-formula-box">
           <div class="muted">ค่าจ้างตามสัญญา: <b>${base}</b> • engine: <b>${esc(rule)}</b> • โหมดแบ่ง: <b>${esc(mode)}</b></div>
           ${howMc ? `<div class="muted" style="margin-top:6px">นับเครื่อง: ${esc(howMc)}</div>` : ''}
           ${howPct ? `<div class="muted" style="margin-top:6px">สูตรเรท: ${esc(howPct)}</div>` : ''}
@@ -947,16 +940,10 @@ function renderTechPayoutPeriods(list){
     const status = _safeText(p.status||'draft');
     const active = (__cwfPayoutActiveId===p.payout_id);
     return `
-      <div class="tr" style="padding:10px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px;cursor:pointer;${active?'outline:2px solid rgba(11,75,179,0.35)':''}" onclick="window.openTechPayoutDetail('${id}')">
-        <div class="row" style="justify-content:space-between;gap:10px">
-          <div>
-            <b>งวด ${type}</b>
-            <div class="muted" style="margin-top:4px">${st} - ${en}</div>
-          </div>
-          <div style="text-align:right">
-            <b>${total}</b>
-            <div class="muted" style="margin-top:4px">สถานะงวด: ${status} • จ่าย: ${paySt} • คงเหลือ: ${rem}</div>
-          </div>
+      <div class="income-period-card" style="cursor:pointer;${active?'outline:2px solid rgba(17,85,204,.22)':''}" onclick="window.openTechPayoutDetail('${id}')">
+        <div class="row" style="justify-content:space-between;gap:10px;align-items:center">
+          <div><div class="title">งวด ${type}</div><div class="income-job-meta">${st} - ${en}</div><div class="income-job-meta">สถานะ: ${status} • จ่าย: ${paySt}</div></div>
+          <div style="text-align:right"><div class="amount">${total}</div><div class="income-job-meta">คงเหลือ ${rem}</div></div>
         </div>
       </div>
     `;
@@ -1080,16 +1067,16 @@ function renderTechPayoutLines(lines, total, adjustments, payment, payoutId){
         return `<div class="muted">- ${_safeText(it.item_name)} × ${Number(it.qty||0)}${a}</div>`;
       }).join('');
       return `
-        <details class="tr" style="border-radius:16px;padding:10px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px">
+        <details class="income-job-card">
           <summary style="cursor:pointer">
             <div class="row" style="justify-content:space-between;gap:10px">
               <div>
-                <b>งาน #${jobId}</b> <span class="muted">(${fin})</span>
-                <div class="muted" style="margin-top:4px">${jt} • ${ac}${wash && wash!=='-' ? ` • ${wash}`:''} • โหมด: ${mode}</div>
+                <span class="title">งาน #${jobId}</span> <span class="muted">(${fin})</span>
+                <div class="income-job-meta">${jt} • ${ac}${wash && wash!=='-' ? ` • ${wash}`:''} • โหมด: ${mode}</div>
               </div>
               <div style="text-align:right">
-                <b>${earn}</b>
-                <div class="muted" style="margin-top:4px">เครื่อง: ${mc} • วิธีคิด: ${pct}</div>
+                <div class="amount">${earn}</div>
+                <div class="income-job-meta">เครื่อง: ${mc} • วิธีคิด: ${pct}</div>
               </div>
             </div>
           </summary>
