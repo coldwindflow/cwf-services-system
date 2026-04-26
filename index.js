@@ -1783,24 +1783,22 @@ async function getIncomeSettingForTech(username, employment_type) {
 }
 
 function inferIsServiceLine(it) {
-  // Backward-compatible inference for older DB rows where `is_service` column didn't exist.
-  // Heuristic: service lines usually contain key phrases / BTU / เครื่อง.
-  // Keep conservative: only mark as service when confident.
+  // Contract payroll strict service detector.
+  // IMPORTANT: Old DB rows may have is_service=false even for real service lines.
+  // A real service line must NEVER be treated as a special/extra item, otherwise the
+  // technician receives the customer price (for example 1,400) instead of the contract rate.
   try {
     const name = String(it?.item_name || '').trim();
     if (!name) return false;
+    const n = name.toLowerCase();
+    const qty = Number(it?.qty || 0);
     if (/\bBTU\b/i.test(name)) return true;
-    if (/\b\d+\s*เครื่อง\b/.test(name)) return true;
-    if (name.includes('ล้างแอร์') || name.includes('ซ่อมแอร์') || name.includes('ติดตั้งแอร์')) return true;
-    // legacy compact labels
-    if (name.includes('ล้าง') && (name.includes('ผนัง') || name.includes('สี่ทิศ') || name.includes('แขวน') || name.includes('เปลือย'))) return true;
-
-    // Ultra-legacy labels from older UI (often missing the word "ล้างแอร์")
-    // Examples seen in production: "ธรรมดา • 1200", "พรีเมียม • 1500", "แขวนคอยน์", "ตัดล้าง"
-    // Keep focused to avoid misclassifying random products.
-    if (/(ธรรมดา|พรีเมียม|แขวนคอยน์|แขวนคอยล์|ตัดล้าง|สี่ทิศทาง|เปลือยใต้ฝ้า)/.test(name)) return true;
-    // bullet/price format commonly used for service type label
-    if (/•\s*\d{3,}/.test(name) && /(ธรรมดา|พรีเมียม|แขวน|ตัดล้าง|สี่ทิศ|เปลือย)/.test(name)) return true;
+    if (/\d+\s*เครื่อง/.test(name)) return true;
+    if (n.includes('ล้างแอร์') || n.includes('ซ่อมแอร์') || n.includes('ติดตั้งแอร์')) return true;
+    if (name.includes('ล้าง') && (name.includes('ผนัง') || name.includes('สี่ทิศ') || name.includes('แขวน') || name.includes('เปลือย') || name.includes('คอย'))) return true;
+    if (/(ธรรมดา|ปกติ|normal|พรีเมียม|premium|แขวนคอย|แขวนคอยน์|แขวนคอยล์|ตัดล้าง|ล้างใหญ่|overhaul|สี่ทิศทาง|เปลือยใต้ฝ้า)/i.test(name)) return true;
+    if (/•\s*\d{3,}/.test(name) && /(ธรรมดา|ปกติ|พรีเมียม|แขวน|คอย|ตัดล้าง|ล้างใหญ่|สี่ทิศ|เปลือย)/.test(name)) return true;
+    if (qty > 0 && /(ล้าง|ซ่อม|ติดตั้ง|แอร์|คอยล์|คอยน์)/.test(name)) return true;
     return false;
   } catch {
     return false;
@@ -1811,11 +1809,10 @@ function sumServiceLines(items) {
   // service lines = is_service true; use line_total (before discount)
   // backward-compatible: if `is_service` missing/false for all, infer from item_name.
   const arr = (items || []);
-  const anyMarked = arr.some(it => it && it.is_service);
   let total = 0;
   for (const it of arr) {
     if (!it) continue;
-    const isSvc = it.is_service || (!anyMarked && inferIsServiceLine(it));
+    const isSvc = Boolean(it.is_service) || inferIsServiceLine(it);
     if (isSvc) total += Number(it.line_total || 0);
   }
   return total;
@@ -1826,7 +1823,7 @@ function sumSpecialLinesForTech(items, username) {
   let total = 0;
   for (const it of (items || [])) {
     if (!it) continue;
-    if (it.is_service) continue;
+    if (Boolean(it.is_service) || inferIsServiceLine(it)) continue;
     const a = String(it.assigned_technician_username || '').trim();
     if (a && a === username) total += Number(it.line_total || 0);
   }
@@ -1866,9 +1863,8 @@ async function computeJobPayout(job_id) {
     throw err;
   }
 
-  // Backward-compatible: old rows may not have is_service=true at all.
-  const anyMarked = items.some(it => it && it.is_service);
-  const isSvc = (it) => (it && (it.is_service || (!anyMarked && inferIsServiceLine(it))));
+  // Contract-only: classify every service-like row as service even when legacy is_service=false.
+  const isSvc = (it) => (it && (Boolean(it.is_service) || inferIsServiceLine(it)));
 
   const serviceAssigned = items.filter(it => isSvc(it) && String(it.assigned_technician_username || '').trim());
   const serviceUnassigned = items.filter(it => isSvc(it) && !String(it.assigned_technician_username || '').trim());
@@ -2414,7 +2410,7 @@ function _thaiLabelWash(k){
 // - Uses fixed per-machine ladder rates from the attached CWF technician contracts.
 // - Replaces the old percent-based technician income calculation for completed jobs.
 // =======================================
-const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_fixed_ladder_v2_contract_only';
+const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_fixed_ladder_v4_strict_service_detection';
 const CWF_CONTRACT_PAYROLL_RATES = Object.freeze({
   company: Object.freeze({
     normal:   Object.freeze({ small: [80, 70, 70, 60],    large: [100, 85, 85, 70] }),
@@ -2607,8 +2603,8 @@ async function _buildPayoutLinesForJob(job_id){
     [job_id]
   );
   const items = itemsQ.rows || [];
-  const anyMarked = items.some(it => it && it.is_service);
-  const isSvc = (it) => (it && (it.is_service || (!anyMarked && inferIsServiceLine(it))));
+  // Contract-only: classify every service-like row as service even when legacy is_service=false.
+  const isSvc = (it) => (it && (Boolean(it.is_service) || inferIsServiceLine(it)));
   const svcItems = items.filter(isSvc);
   const specialItems = items.filter(it => it && !isSvc(it));
 
@@ -2665,7 +2661,7 @@ async function _buildPayoutLinesForJob(job_id){
   };
   const techTypeOf = (tech) => {
     const prof = profileMap.get(String(tech)) || {};
-    return _contractTechType(prof.employment_type, prof.employment_type);
+    return _contractTechType(prof.employment_type, prof.compensation_mode);
   };
 
   const cursor = new Map();
