@@ -1,4 +1,4 @@
-/**
+﻿/**
  * CWF Backend (Express) - FIXED
  * - รวมทุก route ให้ถูกต้อง (แก้ syntax/วงเล็บหลุด/โค้ดแทรกกลางบรรทัด)
  * - รองรับ: booking_code CWF+7, public booking/track, forced/offer, accept_status, attendance,
@@ -2410,7 +2410,7 @@ function _thaiLabelWash(k){
 // - Uses fixed per-machine ladder rates from the attached CWF technician contracts.
 // - Replaces the old percent-based technician income calculation for completed jobs.
 // =======================================
-const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_fixed_ladder_v6_contract_only_no_cached_draft';
+const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_fixed_ladder_v7_no_customer_price_cache';
 const CWF_CONTRACT_PAYROLL_RATES = Object.freeze({
   company: Object.freeze({
     normal:   Object.freeze({ small: [80, 70, 70, 60],    large: [100, 85, 85, 70] }),
@@ -2436,35 +2436,43 @@ function _contractTechType(employmentType, incomeType){
   if (e === 'partner') return 'partner';
   return 'company';
 }
-function _contractPriceHintFromAmount(amount){
-  const n = Math.round(Number(amount || 0));
-  // Recognize current + legacy customer prices only as a service hint, never as technician income.
-  const map = new Map([
-    [500,'normal'], [600,'normal'], [650,'normal'], [700,'normal'], [750,'normal'], [850,'normal'],
-    [800,'premium'], [900,'premium'], [1000,'premium'], [1100,'premium'], [1250,'premium'],
-    [1400,'coil'], [1500,'coil'], [1600,'coil'], [1700,'coil'], [1900,'coil'],
-    [1800,'overhaul'], [2000,'overhaul'], [2200,'overhaul'], [2300,'overhaul'], [2500,'overhaul'],
-  ]);
-  return map.get(n) || null;
-}
-function _contractMetaText(meta){
-  if (!meta) return '';
-  const parts = [];
-  for (const k of ['job_type','service_type','ac_type','wash_variant','repair_variant','btu','machine_count','description','customer_note','job_note','note']) {
-    if (meta[k] !== undefined && meta[k] !== null) parts.push(String(meta[k]));
-  }
-  return parts.join(' ');
-}
 function _contractBtuTierFromText(text){
   const v = String(text || '');
   const m = v.match(/([0-9][0-9,\.]{2,})\s*BTU/i);
   const btu = m ? Number(String(m[1]).replace(/[,]/g,'')) : 0;
   return { btu: Number.isFinite(btu) ? btu : 0, btu_tier: (Number.isFinite(btu) && btu >= 18000) ? 'large' : 'small' };
 }
-function _contractBtuTierFromMeta(meta, fallbackText){
-  const direct = Number(meta?.btu || meta?.btu_size || meta?.btu_value || 0);
-  if (Number.isFinite(direct) && direct > 0) return { btu: direct, btu_tier: direct >= 18000 ? 'large' : 'small' };
-  return _contractBtuTierFromText(fallbackText || _contractMetaText(meta));
+
+function _contractPriceToServiceSpec(it, meta){
+  const jobKey = _normJobKey(meta?.job_type || '');
+  if (jobKey && jobKey !== 'wash') return null;
+  const qty = Math.max(1, Number(it?.qty || 1));
+  const unit = Number(it?.unit_price || 0) > 0 ? Number(it.unit_price) : (Number(it?.line_total || 0) / qty);
+  const price = Math.round(Number(unit || 0));
+  if (!Number.isFinite(price) || price <= 0) return null;
+  const map = new Map([
+    [500,{wash_key:'normal',btu_tier:'small',btu:12000}], [600,{wash_key:'normal',btu_tier:'small',btu:12000}], [700,{wash_key:'normal',btu_tier:'small',btu:12000}],
+    [650,{wash_key:'normal',btu_tier:'large',btu:18000}], [750,{wash_key:'normal',btu_tier:'large',btu:18000}], [850,{wash_key:'normal',btu_tier:'large',btu:18000}],
+    [800,{wash_key:'premium',btu_tier:'small',btu:12000}], [900,{wash_key:'premium',btu_tier:'small',btu:12000}], [1000,{wash_key:'premium',btu_tier:'small',btu:12000}],
+    [1100,{wash_key:'premium',btu_tier:'large',btu:18000}], [1250,{wash_key:'premium',btu_tier:'large',btu:18000}],
+    [1400,{wash_key:'coil',btu_tier:'small',btu:12000}], [1600,{wash_key:'coil',btu_tier:'small',btu:12000}],
+    [1500,{wash_key:'coil',btu_tier:'large',btu:18000}], [1700,{wash_key:'coil',btu_tier:'large',btu:18000}], [1900,{wash_key:'coil',btu_tier:'large',btu:18000}],
+    [1800,{wash_key:'overhaul',btu_tier:'small',btu:12000}], [2200,{wash_key:'overhaul',btu_tier:'small',btu:12000}],
+    [2300,{wash_key:'overhaul',btu_tier:'large',btu:18000}], [2500,{wash_key:'overhaul',btu_tier:'large',btu:18000}],
+  ]);
+  if (price === 2000) {
+    const b = _contractBtuTierFromText(String(it?.item_name || ''));
+    return { wash_key:'overhaul', btu_tier: b.btu_tier || 'small', btu: b.btu || (b.btu_tier === 'large' ? 18000 : 12000), inferred_from:'customer_price_2000', customer_unit_price: price };
+  }
+  const hit = map.get(price);
+  return hit ? { ...hit, inferred_from:'customer_price_menu', customer_unit_price: price } : null;
+}
+
+function _contractIsPriceOnlyServiceLine(it, meta){
+  if (!it) return false;
+  const name = String(it.item_name || '').trim().toLowerCase();
+  const generic = !name || /(ค่าบริการ|บริการ|มาตรฐาน|override|ราคาเหมา|เหมารวม|รายการหลัก|service|standard)/i.test(name);
+  return generic && !!_contractPriceToServiceSpec(it, meta);
 }
 function _contractRateAt(techType, washKey, btuTier, machineIndex){
   const t = techType === 'partner' ? 'partner' : 'company';
@@ -2475,29 +2483,17 @@ function _contractRateAt(techType, washKey, btuTier, machineIndex){
   return Number(arr[idx >= 4 ? 3 : idx - 1] || 0);
 }
 function _contractServiceKeyFromItem(it, meta){
-  const itemText = String(it?.item_name || '');
-  const allText = [itemText, _contractMetaText(meta)].filter(Boolean).join(' ');
-  const ac_key = _normAcKey(allText) || 'wall';
-  let wash_key = _normWashKey(allText);
-  const hint = _contractPriceHintFromAmount(Number(it?.line_total || it?.unit_price || 0));
-  if (!wash_key && hint) wash_key = hint;
-  if (!wash_key) wash_key = _normWashKey(_contractMetaText(meta));
+  const nm = String(it?.item_name || '');
+  const priceSpec = _contractPriceToServiceSpec(it, meta);
+  const ac_key = _normAcKey(nm) || 'wall';
+  let wash_key = _normWashKey(nm);
+  if (!wash_key && priceSpec?.wash_key) wash_key = priceSpec.wash_key;
   if (!wash_key) wash_key = 'normal';
   if (!['normal','premium','coil','overhaul'].includes(wash_key)) wash_key = 'normal';
-  const { btu, btu_tier } = _contractBtuTierFromMeta(meta, allText);
-  return { ac_key, wash_key, btu, btu_tier, group_key: `${wash_key}|${btu_tier}` };
-}
-function _contractItemLooksLikeService(it, meta, hasExplicitService){
-  if (!it) return false;
-  if (Boolean(it.is_service) || inferIsServiceLine(it)) return true;
-  const nm = String(it.item_name || '').trim();
-  const text = [nm, _contractMetaText(meta)].join(' ');
-  const jobKey = _normJobKey(text);
-  const genericServiceName = /(ค่าบริการ|บริการ|service|มาตรฐาน|standard|override|ราคาเหมา|เหมาจ่าย)/i.test(nm);
-  const knownPrice = !!_contractPriceHintFromAmount(Number(it.line_total || it.unit_price || 0));
-  if (jobKey && (genericServiceName || knownPrice)) return true;
-  if (!hasExplicitService && jobKey && Number(it.line_total || it.unit_price || 0) > 0) return true;
-  return false;
+  const parsedBtu = _contractBtuTierFromText(nm);
+  const btu = parsedBtu.btu || priceSpec?.btu || 0;
+  const btu_tier = parsedBtu.btu ? parsedBtu.btu_tier : (priceSpec?.btu_tier || 'small');
+  return { ac_key, wash_key, btu, btu_tier, group_key: `${wash_key}|${btu_tier}`, inferred_from: priceSpec?.inferred_from || null };
 }
 function _contractMachineRates(washKey, btuTier, startIndex, qty, techType){
   const out = [];
@@ -2620,12 +2616,10 @@ function _ladderPercent(rule, machineCount) {
 }
 
 async function _loadJobMeta(job_id){
-  // SELECT * is intentional: payroll needs backward-compatible context (ac_type/btu/wash_variant/machine_count if present).
   const r = await pool.query(
-    `SELECT *
-       FROM public.jobs
-      WHERE job_id=$1
-      LIMIT 1`,
+    `SELECT job_id, job_type, finished_at, job_price, duration_min
+     FROM public.jobs
+     WHERE job_id=$1 LIMIT 1`,
     [job_id]
   );
   return r.rows[0] || null;
@@ -2645,27 +2639,19 @@ async function _buildPayoutLinesForJob(job_id){
     [job_id]
   );
   const items = itemsQ.rows || [];
-  // Contract-only: classify service rows defensively. Old DB rows may store actual service as
-  // is_service=false + generic item_name (e.g. "ค่าบริการ") + customer price (e.g. 1,400).
-  // Those rows must use contract rate, not line_total.
-  const explicitServiceCount = items.filter(it => it && (Boolean(it.is_service) || inferIsServiceLine(it))).length;
-  const isSvc = (it) => _contractItemLooksLikeService(it, meta, explicitServiceCount > 0);
+  // Contract-only: classify every service-like row as service even when legacy is_service=false.
+  // Catch legacy price-only rows such as item_name='ค่าบริการ', line_total=1400.
+  let isSvc = (it) => (it && (Boolean(it.is_service) || inferIsServiceLine(it) || _contractIsPriceOnlyServiceLine(it, meta)));
   let svcItems = items.filter(isSvc);
-  let specialItems = items.filter(it => it && !isSvc(it));
-
-  // Last-resort fallback for old jobs with no job_items service line at all. Build a synthetic service line from jobs.*.
-  if (!svcItems.length && _normJobKey(_contractMetaText(meta))) {
-    const qty = Math.max(1, Math.round(Number(meta.machine_count || meta.qty || meta.quantity || 1)));
-    svcItems = [{
-      job_item_id: `synthetic:${job_id}`,
-      item_name: [_thaiLabelJob(_normJobKey(meta.job_type)) || meta.job_type, meta.ac_type, meta.wash_variant, meta.btu ? `${meta.btu} BTU` : ''].filter(Boolean).join(' • ') || 'ค่าบริการ',
-      qty,
-      unit_price: 0,
-      line_total: 0,
-      assigned_technician_username: '',
-      is_service: true,
-    }];
+  // Last-resort protection: old wash job with a single positive line must not become special_income.
+  if (!svcItems.length && _normJobKey(meta.job_type) === 'wash') {
+    const priced = items.filter(it => Number(it?.line_total || 0) > 0 || Number(it?.unit_price || 0) > 0);
+    if (priced.length === 1) {
+      isSvc = (it) => it && it.job_item_id === priced[0].job_item_id;
+      svcItems = priced;
+    }
   }
+  const specialItems = items.filter(it => it && !isSvc(it));
 
   const team = await getTeamForJob(job_id);
   for (const it of svcItems) {
@@ -3136,22 +3122,14 @@ app.post('/admin/super/payouts/generate', requireSuperAdmin, async (req, res) =>
       [payout_id, period_type, start.toISOString(), endEx.toISOString(), req.actor?.username || null]
     );
 
-    // Contract-only V6: draft periods are regenerated so old percent/customer-price lines (e.g. 1,400) cannot stay cached.
+    // idempotent: if lines exist, do not recompute
     const chk = await pool.query(
-      `SELECT p.status, COUNT(l.line_id)::int AS c
-         FROM public.technician_payout_periods p
-         LEFT JOIN public.technician_payout_lines l ON l.payout_id=p.payout_id
-        WHERE p.payout_id=$1
-        GROUP BY p.status`,
+      `SELECT COUNT(*)::int AS c FROM public.technician_payout_lines WHERE payout_id=$1`,
       [payout_id]
     );
     const existing = Number(chk.rows[0]?.c || 0);
-    const periodStatus = String(chk.rows[0]?.status || 'draft');
-    if (existing > 0 && (periodStatus === 'locked' || periodStatus === 'paid')) {
-      return res.json({ ok: true, payout_id, period_type, period_start: start, period_end_exclusive: endEx, already_generated: true, locked_or_paid: true, lines: existing });
-    }
     if (existing > 0) {
-      await pool.query(`DELETE FROM public.technician_payout_lines WHERE payout_id=$1`, [payout_id]);
+      return res.json({ ok: true, payout_id, period_type, period_start: start, period_end_exclusive: endEx, already_generated: true, lines: existing });
     }
 
     // pick jobs within range
@@ -4076,7 +4054,7 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
       [payout_id, tech]
     );
 
-    let rows = ((period.status === 'locked' || period.status === 'paid') ? (dataQ.rows || []) : []);
+    let rows = dataQ.rows || [];
     if (!rows.length && bounds) {
       const calc = await _computeTechLinesInRange(tech, bounds.start, bounds.endEx, { payout_id, period_type: bounds.period_type, label_ym: bounds.label_ym });
       rows = (calc || []).map(x => ({
@@ -4238,7 +4216,7 @@ app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
           WHERE payout_id=$1 AND technician_username=$2`,
         [p.payout_id, tech]
       );
-      const hasLines = (status === 'locked' || status === 'paid') && Number(hasLinesQ.rows[0]?.c || 0) > 0;
+      const hasLines = Number(hasLinesQ.rows[0]?.c || 0) > 0;
 
       let gross_amount = 0;
       let lines_count = 0;
@@ -4337,7 +4315,7 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
         WHERE payout_id=$1 AND technician_username=$2`,
       [payout_id, tech]
     );
-    const hasLines = (status === 'locked' || status === 'paid') && Number(hasLinesQ.rows[0]?.c || 0) > 0;
+    const hasLines = Number(hasLinesQ.rows[0]?.c || 0) > 0;
 
     let lines = [];
     if (hasLines) {

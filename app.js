@@ -1,4 +1,4 @@
-
+﻿
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
 const activeUpcomingJobsEl = document.getElementById("active-upcoming-list");
@@ -13,6 +13,13 @@ const historyFilterHintEl = document.getElementById("history-filter-hint");
 // =======================================
 // ใช้ origin เดียวกับเว็บที่เปิดอยู่ (เสถียรสุด ไม่ต้องแก้ IP)
 const API_BASE = window.location.origin;
+const CWF_INCOME_UI_VERSION = 'contract-payroll-v7-no-customer-price';
+try {
+  if (localStorage.getItem('__cwf_income_ui_version__') !== CWF_INCOME_UI_VERSION) {
+    localStorage.removeItem('__cwf_income_cache__');
+    localStorage.setItem('__cwf_income_ui_version__', CWF_INCOME_UI_VERSION);
+  }
+} catch {}
 
 // =======================================
 // 📦 DOM (ต้องตรงกับ tech.html)
@@ -39,10 +46,6 @@ const profileRankLabelEl = document.getElementById("profile-rank-label");
 const profileHintEl = document.getElementById("profile-hint");
 
 // ✅ รายได้ (Technician)
-
-// Contract payroll V6: prevent old 1,400 customer-price cache from staying on technician UI.
-const __CWF_PAYROLL_CACHE_BUST_V6 = true;
-try { localStorage.removeItem('__cwf_income_cache__'); } catch {}
 const incomeDailyEl = document.getElementById("incomeDaily");
 const incomeMonthEl = document.getElementById("incomeMonth");
 const incomeAllEl = document.getElementById("incomeAll");
@@ -612,10 +615,10 @@ async function loadIncomeSummary() {
     const u = _bestEffortUsername();
     const qs = new URLSearchParams();
     if (u) qs.set('username', u);
-    qs.set('_payroll_v', 'contract_v6');
-    qs.set('_ts', String(Date.now()));
+    qs.set('_v', CWF_INCOME_UI_VERSION);
+    qs.set('t', String(Date.now()));
     const url = `${API_BASE}/tech/income_summary?${qs.toString()}`;
-    const res = await fetch(url, { credentials: 'include' });
+    const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
 
@@ -673,10 +676,10 @@ async function loadIncomeTodayMonthFast(){
     const u = _bestEffortUsername();
     const qs = new URLSearchParams();
     if (u) qs.set('username', u);
-    qs.set('_payroll_v', 'contract_v6');
-    qs.set('_ts', String(Date.now()));
+    qs.set('_v', CWF_INCOME_UI_VERSION);
+    qs.set('t', String(Date.now()));
     const url = `${API_BASE}/tech/income_today_month?${qs.toString()}`;
-    const res = await fetch(url, { credentials:'include' });
+    const res = await fetch(url, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     if (incomeTodayValEl) incomeTodayValEl.textContent = formatBaht(data.day_total||0);
@@ -691,7 +694,7 @@ async function loadIncomeTodayMonthFast(){
 async function loadNextPeriodEstimate(){
   if (!incomePeriodEstValEl && !incomePeriodRangeEl) return;
   try{
-    const res = await fetch(`${API_BASE}/tech/income_next_period_estimate?_payroll_v=contract_v6&_ts=${Date.now()}`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/income_next_period_estimate?_v=${encodeURIComponent(CWF_INCOME_UI_VERSION)}&t=${Date.now()}`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     if (incomePeriodEstValEl) incomePeriodEstValEl.textContent = formatBaht(data.estimate_total||0);
@@ -713,7 +716,7 @@ async function loadOutstandingTotal(){
     const c = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache__')||'null');}catch{return null;} })();
     const allTotal = Number(c?.all_total || 0);
 
-    const res = await fetch(`${API_BASE}/tech/payments_total?_payroll_v=contract_v6&_ts=${Date.now()}`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/payments_total?_v=${encodeURIComponent(CWF_INCOME_UI_VERSION)}&t=${Date.now()}`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     const paid = Number(data.paid_total || 0);
@@ -752,7 +755,7 @@ function renderLastDaysSummary(payload){
 async function loadLastDays(days = 7){
   if (!techIncomeLast7WrapEl || !techIncomeLast7ListEl) return;
   try{
-    const res = await fetch(`${API_BASE}/tech/income_last_days?days=${encodeURIComponent(days)}`, { credentials:'include' });
+    const res = await fetch(`${API_BASE}/tech/income_last_days?days=${encodeURIComponent(days)}&_v=${encodeURIComponent(CWF_INCOME_UI_VERSION)}&t=${Date.now()}`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     renderLastDaysSummary(data);
@@ -879,7 +882,7 @@ async function loadIncomeDayDetail(dateYmd){
   if (techIncomeDayHintEl) techIncomeDayHintEl.textContent = `กำลังโหลดรายการของ ${d}...`;
   techIncomeDayListEl.innerHTML = `<div class="muted">กำลังโหลด...</div>`;
   try{
-    const res = await fetch(`${API_BASE}/tech/income_day_detail?date=${encodeURIComponent(d)}`, { credentials:'include' });
+    const res = await fetch(`${API_BASE}/tech/income_day_detail?date=${encodeURIComponent(d)}&_v=${encodeURIComponent(CWF_INCOME_UI_VERSION)}&t=${Date.now()}`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
     if (techIncomeDayHintEl) techIncomeDayHintEl.textContent = `รวมวันนี้: ${formatBaht(data.total_amount||0)}`;
@@ -929,7 +932,7 @@ async function loadTechPayoutPeriods(force=false){
   }
   techPayoutPeriodsEl.innerHTML = `<div class="muted">กำลังโหลดงวด...</div>`;
   try{
-    const res = await fetch(`${API_BASE}/tech/payouts?_payroll_v=contract_v6&_ts=${Date.now()}`, { credentials: 'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/payouts`, { credentials: 'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
     __cwfPayoutCache = { ts: now, payouts: data.payouts||[], byId: {} };
@@ -989,7 +992,7 @@ async function openTechPayoutDetail(payout_id){
   if (btnWithdraw){ btnWithdraw.style.display='none'; btnWithdraw.onclick=null; btnWithdraw.disabled=false; btnWithdraw.textContent='ขอถอนเงิน'; }
 
   try{
-    const res = await fetch(`${API_BASE}/tech/payouts/${encodeURIComponent(id)}?_payroll_v=contract_v6&_ts=${Date.now()}`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/payouts/${encodeURIComponent(id)}`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
     const total = formatBaht(data.net_amount||data.total_amount||0);
