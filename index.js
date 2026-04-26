@@ -3211,6 +3211,21 @@ app.post('/admin/super/income_step_overrides/upsert', requireSuperAdmin, async (
 });
 
 
+
+// v10.1: payout line machine_count can be fractional when an unassigned team job is split equally.
+// Older DBs created this column as INT, which breaks regenerate with values like 1.5.
+async function _ensurePayoutLinesMachineCountNumeric(db = pool) {
+  await db.query(`
+    ALTER TABLE IF EXISTS public.technician_payout_lines
+    ALTER COLUMN machine_count_for_tech TYPE NUMERIC(12,2)
+    USING COALESCE(machine_count_for_tech, 0)::numeric
+  `);
+}
+function _payoutMachineCountValue(v) {
+  const n = Number(v || 0);
+  return Number.isFinite(n) ? Number(n.toFixed(2)) : 0;
+}
+
 // =======================================
 // 🧾 Payout Periods (Super Admin) - Phase 1
 // =======================================
@@ -3252,6 +3267,8 @@ app.post('/admin/super/payouts/generate', requireSuperAdmin, async (req, res) =>
       });
     }
 
+    await _ensurePayoutLinesMachineCountNumeric(pool);
+
     // pick jobs within range
     const donePred = _sqlDonePredicate('j');
     const jobsQ = await pool.query(
@@ -3292,7 +3309,7 @@ app.post('/admin/super/payouts/generate', requireSuperAdmin, async (req, res) =>
               ln.earn_amount,
               ln.base_amount,
               ln.percent_final,
-              ln.machine_count_for_tech,
+              _payoutMachineCountValue(ln.machine_count_for_tech),
               ln.step_rule_key,
               ln.detail_json,
               ln.setting_snapshot,
@@ -3325,7 +3342,7 @@ app.post('/admin/super/payouts/generate', requireSuperAdmin, async (req, res) =>
               ln.earn_amount,
               ln.base_amount,
               ln.percent_final,
-              ln.machine_count_for_tech,
+              _payoutMachineCountValue(ln.machine_count_for_tech),
               ln.step_rule_key,
               ln.detail_json,
               ln.setting_snapshot,
@@ -3548,6 +3565,8 @@ async function _regenerateDraftPayoutContractLines({ client, payout_id, actor_us
     include_non_commission: true,
   });
 
+  await _ensurePayoutLinesMachineCountNumeric(client);
+
   await client.query(`DELETE FROM public.technician_payout_lines WHERE payout_id=$1`, [payout_id]);
 
   let inserted = 0;
@@ -3577,7 +3596,7 @@ async function _regenerateDraftPayoutContractLines({ client, payout_id, actor_us
         ln.earn_amount,
         ln.base_amount,
         ln.percent_final,
-        ln.machine_count_for_tech,
+        _payoutMachineCountValue(ln.machine_count_for_tech),
         ln.step_rule_key,
         ln.detail_json,
         ln.setting_snapshot,
@@ -5869,6 +5888,7 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_technician_reviews_tech ON publ
         UNIQUE(payout_id, technician_username, job_id)
       )
     `);
+    await _ensurePayoutLinesMachineCountNumeric(pool);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_payout_lines_pid_tech ON public.technician_payout_lines(payout_id, technician_username)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_payout_lines_job ON public.technician_payout_lines(job_id)`);
 
