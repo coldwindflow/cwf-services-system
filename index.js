@@ -2250,6 +2250,186 @@ async function _computeTechLinesInRange(tech, start, endEx, opts = null) {
   return lines;
 }
 
+async function _computePayoutLinesForPeriod(start, endEx, opts = {}) {
+  const donePred = _sqlDonePredicate('j');
+  const jobsQ = await pool.query(
+    `SELECT j.job_id
+       FROM public.jobs j
+      WHERE ${donePred}
+        AND j.finished_at IS NOT NULL
+        AND j.finished_at >= $1 AND j.finished_at < $2
+      ORDER BY j.finished_at ASC, j.job_id ASC`,
+    [start.toISOString(), endEx.toISOString()]
+  );
+  const out = [];
+  const errors = [];
+  for (const r of (jobsQ.rows || [])) {
+    const job_id = Number(r.job_id);
+    if (!Number.isFinite(job_id) || job_id <= 0) continue;
+    try {
+      const lines = await _buildPayoutLinesForJob(job_id);
+      for (const ln of (lines || [])) {
+        out.push({
+          ...ln,
+          payout_id: opts.payout_id || ln.payout_id || 'virtual',
+        });
+      }
+    } catch (e) {
+      errors.push({ job_id: String(job_id), error: String(e?.code || e?.message || 'compute_failed') });
+    }
+  }
+  if (opts.include_non_commission) {
+    try {
+      const extra = await _buildNonCommissionLinesForPeriod({
+        payout_id: opts.payout_id || 'virtual',
+        period_type: opts.period_type,
+        label_ym: opts.label_ym,
+        start,
+        endEx,
+      });
+      out.push(...(extra || []));
+    } catch (e) {
+      errors.push({ job_id: null, error: String(e?.message || 'non_commission_failed') });
+    }
+  }
+  return { lines: out, errors };
+}
+
+async function _computePayoutTechSummaryLive({ payout_id, start, endEx, period_type, label_ym }) {
+  const { lines, errors } = await _computePayoutLinesForPeriod(start, endEx, {
+    payout_id,
+    period_type,
+    label_ym,
+    include_non_commission: true,
+  });
+  const map = new Map();
+  for (const ln of (lines || [])) {
+    const u = String(ln.technician_username || '').trim();
+    if (!u) continue;
+    if (!map.has(u)) map.set(u, { technician_username: u, gross_amount: 0, jobs_count: 0 });
+    const o = map.get(u);
+    o.gross_amount += Number(ln.earn_amount || 0);
+    o.jobs_count += 1;
+  }
+  return { rows: Array.from(map.values()), lines, errors };
+}
+
+function _payoutCanUseStoredLines(status){
+  return ['locked','paid'].includes(String(status || '').trim());
+}
+
+async function _loadPayoutLinesForTech({ payout_id, tech, status, start, endEx, period_type, label_ym }) {
+  if (_payoutCanUseStoredLines(status)) {
+    const linesQ = await pool.query(
+      `SELECT line_id, job_id, finished_at, earn_amount, base_amount, percent_final, machine_count_for_tech, step_rule_key,
+              detail_json
+         FROM public.technician_payout_lines
+        WHERE payout_id=$1 AND technician_username=$2
+        ORDER BY finished_at ASC, line_id ASC`,
+      [payout_id, tech]
+    );
+    return { source: 'stored_locked_or_paid', lines: linesQ.rows || [] };
+  }
+  const calc = await _computeTechLinesInRange(tech, start, endEx, { payout_id, period_type, label_ym });
+  return {
+    source: 'live_contract_recompute_draft',
+    lines: (calc || []).map((x, idx) => ({
+      line_id: -1 * (idx + 1),
+      job_id: x.job_id,
+      finished_at: x.finished_at,
+      earn_amount: x.earn_amount,
+      base_amount: x.base_amount,
+      percent_final: x.percent_final,
+      machine_count_for_tech: x.machine_count_for_tech,
+      step_rule_key: x.step_rule_key,
+      detail_json: x.detail_json,
+    }))
+  };
+}
+
+async function _buildPayoutTechSummaryRows(payout_id){
+  const parsed = _parsePayoutId(payout_id);
+  let period = await _getPayoutPeriod(payout_id);
+  let bounds = null;
+  if (period) {
+    bounds = {
+      period_type: period.period_type,
+      start: new Date(period.period_start),
+      endEx: new Date(period.period_end),
+      label_ym: String(period.period_start || '').slice(0,7),
+    };
+  } else {
+    if (!parsed) return { period: null, source: 'invalid', techs: [] };
+    bounds = _periodBoundsForYm(parsed.type, parsed.y, parsed.m);
+    period = {
+      payout_id,
+      status: 'draft',
+      period_type: bounds.period_type,
+      period_start: bounds.start.toISOString(),
+      period_end: bounds.endEx.toISOString(),
+    };
+  }
+  const status = String(period.status || 'draft');
+  let baseRows = [];
+  let source = 'live_contract_recompute_draft';
+  if (_payoutCanUseStoredLines(status)) {
+    const stored = await pool.query(
+      `SELECT technician_username, COALESCE(SUM(earn_amount),0) AS gross_amount, COUNT(*)::int AS jobs_count
+         FROM public.technician_payout_lines
+        WHERE payout_id=$1
+        GROUP BY technician_username`,
+      [payout_id]
+    );
+    baseRows = stored.rows || [];
+    source = 'stored_locked_or_paid';
+  } else {
+    const live = await _computePayoutTechSummaryLive({
+      payout_id,
+      start: bounds.start,
+      endEx: bounds.endEx,
+      period_type: bounds.period_type,
+      label_ym: bounds.label_ym || (parsed ? `${parsed.y}-${String(parsed.m).padStart(2,'0')}` : ''),
+    });
+    baseRows = live.rows || [];
+  }
+
+  const out = [];
+  for (const r of baseRows) {
+    const tech = String(r.technician_username || '').trim();
+    if (!tech) continue;
+    const adjQ = await pool.query(
+      `SELECT COALESCE(SUM(adj_amount),0) AS adj_total
+         FROM public.technician_payout_adjustments
+        WHERE payout_id=$1 AND technician_username=$2`,
+      [payout_id, tech]
+    );
+    const payQ = await pool.query(
+      `SELECT COALESCE(paid_amount,0) AS paid_amount, COALESCE(paid_status,'unpaid') AS paid_status
+         FROM public.technician_payout_payments
+        WHERE payout_id=$1 AND technician_username=$2
+        LIMIT 1`,
+      [payout_id, tech]
+    );
+    const gross_amount = Number(r.gross_amount || 0);
+    const adj_total = Number(adjQ.rows?.[0]?.adj_total || 0);
+    const paid_amount = Number(payQ.rows?.[0]?.paid_amount || 0);
+    const net_amount = gross_amount + adj_total;
+    out.push({
+      technician_username: tech,
+      gross_amount,
+      adj_total,
+      net_amount,
+      paid_amount,
+      paid_status: String(payQ.rows?.[0]?.paid_status || 'unpaid'),
+      remaining_amount: net_amount - paid_amount,
+      jobs_count: Number(r.jobs_count || 0),
+      source,
+    });
+  }
+  out.sort((a,b)=> Number(b.net_amount||0)-Number(a.net_amount||0) || String(a.technician_username).localeCompare(String(b.technician_username)));
+  return { period, source, techs: out };
+}
+
 function _normJobKey(s) {
   const v = String(s || '').toLowerCase();
   if (!v) return null;
@@ -2304,7 +2484,7 @@ function _thaiLabelWash(k){
 // - Uses fixed per-machine ladder rates from the attached CWF technician contracts.
 // - Replaces the old percent-based technician income calculation for completed jobs.
 // =======================================
-const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_v9_contract_only_ignore_assignment_bonus';
+const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_v10_contract_engine_no_legacy_price_no_draft_cache';
 const CWF_CONTRACT_PAYROLL_RATES = Object.freeze({
   company: Object.freeze({
     normal:   Object.freeze({ small: [80, 70, 70, 60],    large: [100, 85, 85, 70] }),
@@ -2364,64 +2544,22 @@ function _contractIsVagueServiceItem(it){
 }
 
 function _contractLegacyStandardPriceSpec(amount){
-  const a = Number(amount || 0);
-  if (!Number.isFinite(a) || a <= 0) return null;
-  const candidates = [
-    { price: 600, wash_key: 'normal', btu_tier: 'small', btu: 12000 },
-    { price: 700, wash_key: 'normal', btu_tier: 'small', btu: 12000 },
-    { price: 500, wash_key: 'normal', btu_tier: 'small', btu: 12000 },
-    { price: 750, wash_key: 'normal', btu_tier: 'large', btu: 18000 },
-    { price: 850, wash_key: 'normal', btu_tier: 'large', btu: 18000 },
-    { price: 650, wash_key: 'normal', btu_tier: 'large', btu: 18000 },
-    { price: 900, wash_key: 'premium', btu_tier: 'small', btu: 12000 },
-    { price: 1000, wash_key: 'premium', btu_tier: 'small', btu: 12000 },
-    { price: 800, wash_key: 'premium', btu_tier: 'small', btu: 12000 },
-    { price: 1100, wash_key: 'premium', btu_tier: 'large', btu: 18000 },
-    { price: 1250, wash_key: 'premium', btu_tier: 'large', btu: 18000 },
-    { price: 1400, wash_key: 'coil', btu_tier: 'small', btu: 12000 },
-    { price: 1600, wash_key: 'coil', btu_tier: 'small', btu: 12000 },
-    { price: 1250, wash_key: 'coil', btu_tier: 'small', btu: 12000 },
-    { price: 1700, wash_key: 'coil', btu_tier: 'large', btu: 18000 },
-    { price: 1900, wash_key: 'coil', btu_tier: 'large', btu: 18000 },
-    { price: 1500, wash_key: 'coil', btu_tier: 'large', btu: 18000 },
-    { price: 2000, wash_key: 'overhaul', btu_tier: 'small', btu: 12000 },
-    { price: 2200, wash_key: 'overhaul', btu_tier: 'small', btu: 12000 },
-    { price: 1800, wash_key: 'overhaul', btu_tier: 'small', btu: 12000 },
-    { price: 2300, wash_key: 'overhaul', btu_tier: 'large', btu: 18000 },
-    { price: 2500, wash_key: 'overhaul', btu_tier: 'large', btu: 18000 },
-    { price: 2000, wash_key: 'overhaul', btu_tier: 'large', btu: 18000 },
-  ];
-  for (const c of candidates) {
-    if (Math.abs(a - c.price) < 0.01) return { ...c, qty: 1 };
-  }
-  for (const c of candidates) {
-    const q = Math.round(a / c.price);
-    if (q >= 1 && q <= 30 && Math.abs(a - (c.price * q)) < 0.01) return { ...c, qty: q };
-  }
+  // Disabled by contract-payroll v10.
+  // Customer selling prices (line_total/unit_price/final_price/etc.) must never be used
+  // to infer or calculate technician income. Keep this stub only so older internal
+  // references fail safely without throwing.
+  void amount;
   return null;
 }
 
 function _contractInferItemFromLegacyPrice(meta, it){
-  const jobKey = _normJobKey(meta?.job_type);
-  if (jobKey && jobKey !== 'wash') return null;
-  const amount = Number(it?.line_total || it?.unit_price || 0);
-  const spec = _contractLegacyStandardPriceSpec(amount);
-  if (!spec) return null;
-  const qtyFromRow = Math.max(0, Math.round(Number(it?.qty || 0)));
-  const qty = qtyFromRow > 1 ? qtyFromRow : spec.qty;
-  const label = `ล้างแอร์ผนัง • ${_thaiLabelWash(spec.wash_key)} • ${spec.btu} BTU • ${qty} เครื่อง`;
-  return {
-    job_item_id: it?.job_item_id || null,
-    item_name: label,
-    qty,
-    unit_price: spec.price,
-    line_total: Number(spec.price || 0) * qty,
-    assigned_technician_username: String(it?.assigned_technician_username || '').trim(),
-    is_service: true,
-    _contract_inferred_from_legacy_price: true,
-    _legacy_item_name: String(it?.item_name || ''),
-    _legacy_line_total: Number(it?.line_total || 0),
-  };
+  // Disabled by contract-payroll v10.
+  // If old job_items are vague (ค่าบริการ/ราคาเหมา/override), the engine will infer
+  // from job-level service fields only. If those are not enough, it returns no service
+  // line / audit note instead of paying from customer price.
+  void meta;
+  void it;
+  return null;
 }
 
 function _contractTopLevelItemFromPayloadLike(meta){
@@ -2455,9 +2593,17 @@ function _contractNormalizeServiceItems(meta, items){
       service.push(it);
       continue;
     }
-    const inferred = _contractInferItemFromLegacyPrice(meta, it);
-    if (inferred) service.push(inferred);
-    else if (realService || _contractIsVagueServiceItem(it)) ignoredLegacyItems.push(it);
+
+    // v10 hard rule: never infer from line_total/unit_price/customer price.
+    // Keep vague legacy rows only as audit evidence, then infer from job meta below.
+    if (realService || _contractIsVagueServiceItem(it)) ignoredLegacyItems.push({
+      job_item_id: it?.job_item_id || null,
+      item_name: String(it?.item_name || ''),
+      qty: Number(it?.qty || 0),
+      assigned_technician_username: String(it?.assigned_technician_username || '').trim() || null,
+      ignored_reason: 'vague_legacy_item_not_used_for_income',
+      ignored_legacy_fields: ['line_total','unit_price','total_price','paid_amount','final_price','special_bonus_amount','percentage','company_cut_percent','commission_percent'],
+    });
   }
   if (!service.length) {
     const top = _contractTopLevelItemFromPayloadLike(meta);
@@ -2612,7 +2758,8 @@ async function _buildPayoutLinesForJob(job_id){
   // Contract-only rebuild: never pay customer selling price as technician income.
   // Convert legacy/generic rows (e.g. 1,400 "ค่าบริการ") into service specs first.
   const { serviceItems: svcItems, ignoredLegacyItems } = _contractNormalizeServiceItems(meta, items);
-  // Old special income is intentionally disabled here. Manual bonuses must be entered via job_assignments.special_bonus_amount.
+  // Old special income is intentionally disabled here. Manual bonuses/หักเงิน must be entered
+  // only via technician_payout_adjustments, never via job_items.line_total or job_assignments.special_bonus_amount.
   const specialItems = [];
 
   const team = await getTeamForJob(job_id);
@@ -2807,6 +2954,9 @@ async function _buildPayoutLinesForJob(job_id){
       contract_rate_rows: rateRows,
       related_items,
       ignored_legacy_items: ignoredLegacyItems || [],
+      ignored_legacy_fields: ['line_total','unit_price','total_price','paid_amount','final_price','special_bonus_amount','percentage','company_cut_percent','commission_percent'],
+      rate_source: 'contract',
+      audit_note: rateRows.length ? 'คำนวณจากเรทสัญญาเท่านั้น' : 'ต้องตรวจสอบ: ไม่พบ service line ที่ infer ได้จากข้อมูลใบงานโดยไม่ใช้ราคาขายลูกค้า',
       items: related_items,
       base_service_total: svcItems.reduce((a, it) => a + Number(it.line_total || 0), 0),
       base_amount,
@@ -3080,14 +3230,26 @@ app.post('/admin/super/payouts/generate', requireSuperAdmin, async (req, res) =>
       [payout_id, period_type, start.toISOString(), endEx.toISOString(), req.actor?.username || null]
     );
 
-    // idempotent: if lines exist, do not recompute
+    // v10: draft payout lines are only a cache. Regenerate them from the contract engine
+    // every time generate is called so old wrong 350/1400 rows cannot survive.
+    const pstate = await pool.query(
+      `SELECT status FROM public.technician_payout_periods WHERE payout_id=$1 LIMIT 1`,
+      [payout_id]
+    );
+    const payoutStatus = String(pstate.rows?.[0]?.status || 'draft');
     const chk = await pool.query(
       `SELECT COUNT(*)::int AS c FROM public.technician_payout_lines WHERE payout_id=$1`,
       [payout_id]
     );
     const existing = Number(chk.rows[0]?.c || 0);
-    if (existing > 0) {
-      return res.json({ ok: true, payout_id, period_type, period_start: start, period_end_exclusive: endEx, already_generated: true, lines: existing });
+    if (existing > 0 && !_payoutCanUseStoredLines(payoutStatus)) {
+      await pool.query(`DELETE FROM public.technician_payout_lines WHERE payout_id=$1`, [payout_id]);
+    } else if (existing > 0) {
+      return res.json({
+        ok: true, payout_id, period_type, period_start: start, period_end_exclusive: endEx,
+        already_generated: true, locked_or_paid: true, status: payoutStatus, lines: existing,
+        note: 'งวด locked/paid แล้ว จึงไม่ regenerate แบบเงียบ ให้ใช้ adjustment หากต้องแก้ยอด'
+      });
     }
 
     // pick jobs within range
@@ -3209,43 +3371,10 @@ app.get('/admin/super/payouts/:payout_id/techs', requireSuperAdmin, async (req, 
   try {
     const payout_id = String(req.params.payout_id || '').trim();
     if (!payout_id) return res.status(400).json({ ok: false, error: 'MISSING_PAYOUT_ID' });
-
-    const r = await pool.query(
-      `
-      WITH gross AS (
-        SELECT technician_username,
-               COALESCE(SUM(earn_amount),0) AS gross_amount,
-               COUNT(*)::int AS jobs_count
-          FROM public.technician_payout_lines
-         WHERE payout_id=$1
-         GROUP BY technician_username
-      ),
-      adj AS (
-        SELECT technician_username,
-               COALESCE(SUM(adj_amount),0) AS adj_total
-          FROM public.technician_payout_adjustments
-         WHERE payout_id=$1
-         GROUP BY technician_username
-      )
-      SELECT g.technician_username,
-             g.gross_amount,
-             COALESCE(a.adj_total,0) AS adj_total,
-             (g.gross_amount + COALESCE(a.adj_total,0)) AS net_amount,
-             COALESCE(p.paid_amount,0) AS paid_amount,
-             COALESCE(p.paid_status,'unpaid') AS paid_status,
-             ((g.gross_amount + COALESCE(a.adj_total,0)) - COALESCE(p.paid_amount,0)) AS remaining_amount,
-             g.jobs_count
-        FROM gross g
-        LEFT JOIN adj a ON a.technician_username=g.technician_username
-        LEFT JOIN public.technician_payout_payments p
-          ON p.payout_id=$1 AND p.technician_username=g.technician_username
-       ORDER BY net_amount DESC, g.technician_username ASC
-      `,
-      [payout_id]
-    );
-    return res.json({ ok: true, payout_id, techs: r.rows || [] });
+    const payload = await _buildPayoutTechSummaryRows(payout_id);
+    return res.json({ ok: true, payout_id, status: payload.period?.status || 'draft', source: payload.source, techs: payload.techs || [] });
   } catch (e) {
-    console.error('GET /admin/super/payouts/:payout_id/tech/:username', e);
+    console.error('GET /admin/super/payouts/:payout_id/techs', e);
     return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
   }
 });
@@ -3278,41 +3407,8 @@ app.get('/admin/payouts/:payout_id/techs', requireAdminSession, async (req, res)
   try {
     const payout_id = String(req.params.payout_id || '').trim();
     if (!payout_id) return res.status(400).json({ ok: false, error: 'MISSING_PAYOUT_ID' });
-
-    const r = await pool.query(
-      `
-      WITH gross AS (
-        SELECT technician_username,
-               COALESCE(SUM(earn_amount),0) AS gross_amount,
-               COUNT(*)::int AS jobs_count
-          FROM public.technician_payout_lines
-         WHERE payout_id=$1
-         GROUP BY technician_username
-      ),
-      adj AS (
-        SELECT technician_username,
-               COALESCE(SUM(adj_amount),0) AS adj_total
-          FROM public.technician_payout_adjustments
-         WHERE payout_id=$1
-         GROUP BY technician_username
-      )
-      SELECT g.technician_username,
-             g.gross_amount,
-             COALESCE(a.adj_total,0) AS adj_total,
-             (g.gross_amount + COALESCE(a.adj_total,0)) AS net_amount,
-             COALESCE(p.paid_amount,0) AS paid_amount,
-             COALESCE(p.paid_status,'unpaid') AS paid_status,
-             ((g.gross_amount + COALESCE(a.adj_total,0)) - COALESCE(p.paid_amount,0)) AS remaining_amount,
-             g.jobs_count
-        FROM gross g
-        LEFT JOIN adj a ON a.technician_username=g.technician_username
-        LEFT JOIN public.technician_payout_payments p
-          ON p.payout_id=$1 AND p.technician_username=g.technician_username
-       ORDER BY net_amount DESC, g.technician_username ASC
-      `,
-      [payout_id]
-    );
-    return res.json({ ok: true, payout_id, techs: r.rows || [] });
+    const payload = await _buildPayoutTechSummaryRows(payout_id);
+    return res.json({ ok: true, payout_id, status: payload.period?.status || 'draft', source: payload.source, techs: payload.techs || [] });
   } catch (e) {
     console.error('GET /admin/payouts/:payout_id/techs', e);
     return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
@@ -4179,7 +4275,7 @@ app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
       let gross_amount = 0;
       let lines_count = 0;
 
-      if (hasLines) {
+      if (hasLines && _payoutCanUseStoredLines(status)) {
         const g = await pool.query(
           `SELECT COALESCE(SUM(earn_amount),0) AS gross_amount, COUNT(*)::int AS lines_count
              FROM public.technician_payout_lines
@@ -4266,41 +4362,18 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
     const meta = metaQ.rows[0] || null;
     const status = meta?.status || 'draft';
 
-    // lines: ใช้ DB ถ้ามี ไม่งั้นคำนวณสดเฉพาะงวดนั้น
-    const hasLinesQ = await pool.query(
-      `SELECT COUNT(*)::int AS c
-         FROM public.technician_payout_lines
-        WHERE payout_id=$1 AND technician_username=$2`,
-      [payout_id, tech]
-    );
-    const hasLines = Number(hasLinesQ.rows[0]?.c || 0) > 0;
-
-    let lines = [];
-    if (hasLines) {
-      const linesQ = await pool.query(
-        `SELECT line_id, job_id, finished_at, earn_amount, base_amount, percent_final, machine_count_for_tech, step_rule_key,
-                detail_json
-           FROM public.technician_payout_lines
-          WHERE payout_id=$1 AND technician_username=$2
-          ORDER BY finished_at ASC, line_id ASC`,
-        [payout_id, tech]
-      );
-      lines = linesQ.rows || [];
-    } else {
-      const calc = await _computeTechLinesInRange(tech, bounds.start, bounds.endEx, { payout_id, period_type: bounds.period_type, label_ym: bounds.label_ym });
-      // normalize shape similar to DB rows for UI
-      lines = (calc || []).map((x, idx) => ({
-        line_id: -1 * (idx + 1),
-        job_id: x.job_id,
-        finished_at: x.finished_at,
-        earn_amount: x.earn_amount,
-        base_amount: x.base_amount,
-        percent_final: x.percent_final,
-        machine_count_for_tech: x.machine_count_for_tech,
-        step_rule_key: x.step_rule_key,
-        detail_json: x.detail_json,
-      }));
-    }
+    // v10: draft/unpaid period detail must recompute live from contract engine.
+    // Stored payout_lines are trusted only after locked/paid to avoid showing old 350/1400 rows.
+    const loadedLines = await _loadPayoutLinesForTech({
+      payout_id,
+      tech,
+      status,
+      start: bounds.start,
+      endEx: bounds.endEx,
+      period_type: bounds.period_type,
+      label_ym: bounds.label_ym,
+    });
+    let lines = loadedLines.lines || [];
 
     const adjQ = await pool.query(
       `SELECT adj_id, job_id, adj_amount, reason, created_at
@@ -4347,6 +4420,7 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
         monthly_salary_amount: Number(profile.monthly_salary_amount || 0),
       } : null,
       status,
+      source: loadedLines.source,
       period_type: parsed.type,
       period_start: meta?.period_start || bounds.start.toISOString(),
       period_end: meta?.period_end || bounds.endEx.toISOString(),
