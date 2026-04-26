@@ -742,7 +742,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
           <td><b>${fmtBaht(p.total_amount)}</b></td>
           <td>${Number(p.techs_count||0)}</td>
           <td>${Number(p.lines_count||0)}</td>
-          <td>${esc(p.status||'draft')}</td>
+          <td>${esc(p.status||'draft')}<div class="muted" style="font-size:11px;margin-top:3px">${esc(p.source==='live_contract_recompute_draft'?'สด/สูตรสัญญา':'stored')}</div></td>
           <td><button class="btn gray" data-act="view" data-id="${esc(p.payout_id)}">ดู</button></td>
         </tr>
       `;
@@ -750,6 +750,25 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
     tb.querySelectorAll('button[data-act="view"]').forEach(btn=>{
       btn.addEventListener('click', ()=> openPayout(btn.getAttribute('data-id')));
     });
+  }
+
+  async function purgeDraftLegacyPayoutLines(){
+    if (!confirm('ล้างยอดเก่า draft ทั้งหมด?\n\nระบบจะลบเฉพาะ payout_lines ของงวด draft ที่ยังไม่มี payment เท่านั้น\nไม่แตะ locked/paid และไม่แตะ adjustment')) return;
+    const btn = $('btnPurgeDraftLegacy');
+    const old = btn ? btn.textContent : '';
+    try{
+      if (btn){ btn.disabled = true; btn.textContent = 'กำลังล้าง...'; }
+      const r = await api('/admin/super/payouts/purge_draft_legacy', { method:'POST' });
+      $('payoutGenStatus').textContent = 'ล้างยอดเก่า draft สำเร็จ: ' + Number(r.deleted_lines||0) + ' บรรทัด — จากนี้ draft จะแสดงยอดสดจากสูตรสัญญา';
+      toast('ล้างยอดเก่าแล้ว');
+      await loadPayouts();
+      if (ACTIVE_PAYOUT) await openPayout(ACTIVE_PAYOUT);
+      await loadAudit();
+    }catch(e){
+      alert('ล้างยอดเก่าไม่สำเร็จ: ' + (e.message||'error'));
+    }finally{
+      if (btn){ btn.disabled = false; btn.textContent = old || 'ล้างยอดเก่า draft'; }
+    }
   }
 
   async function generatePayout(type){
@@ -1347,6 +1366,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
   if ($('btnGenP10')) $('btnGenP10').addEventListener('click', ()=> generatePayout('10'));
   if ($('btnGenP25')) $('btnGenP25').addEventListener('click', ()=> generatePayout('25'));
   if ($('btnReloadPayouts')) $('btnReloadPayouts').addEventListener('click', loadPayouts);
+    if ($('btnPurgeDraftLegacy')) $('btnPurgeDraftLegacy').addEventListener('click', purgeDraftLegacyPayoutLines);
 
   // ===== Init =====
   await loadAdmins();

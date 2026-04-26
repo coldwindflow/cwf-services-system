@@ -2484,7 +2484,7 @@ function _thaiLabelWash(k){
 // - Uses fixed per-machine ladder rates from the attached CWF technician contracts.
 // - Replaces the old percent-based technician income calculation for completed jobs.
 // =======================================
-const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_v10_contract_engine_no_legacy_price_no_draft_cache';
+const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_v10_2_contract_engine_live_draft_purge';
 const CWF_CONTRACT_PAYROLL_RATES = Object.freeze({
   company: Object.freeze({
     normal:   Object.freeze({ small: [80, 70, 70, 60],    large: [100, 85, 85, 70] }),
@@ -3365,19 +3365,71 @@ app.post('/admin/super/payouts/generate', requireSuperAdmin, async (req, res) =>
   }
 });
 
+async function _listPayoutPeriodsLiveAware({ limit = 24 } = {}) {
+  // v10.2: draft payout_lines are disposable cache only.
+  // Super Admin list must never show old 350/1400 stored rows for draft periods.
+  const q = await pool.query(
+    `SELECT p.payout_id, p.period_type, p.period_start, p.period_end, p.status, p.created_at, p.created_by
+       FROM public.technician_payout_periods p
+      ORDER BY p.period_start DESC, p.payout_id DESC
+      LIMIT $1`,
+    [Math.min(Math.max(Number(limit || 24), 1), 60)]
+  );
+  const rows = [];
+  for (const p of (q.rows || [])) {
+    const status = String(p.status || 'draft');
+    let total_amount = 0;
+    let lines_count = 0;
+    let techs_count = 0;
+    let source = 'live_contract_recompute_draft';
+    if (_payoutCanUseStoredLines(status)) {
+      const stored = await pool.query(
+        `SELECT COALESCE(SUM(earn_amount),0)::numeric AS total_amount,
+                COUNT(*)::int AS lines_count,
+                COUNT(DISTINCT technician_username)::int AS techs_count
+           FROM public.technician_payout_lines
+          WHERE payout_id=$1`,
+        [p.payout_id]
+      );
+      total_amount = Number(stored.rows?.[0]?.total_amount || 0);
+      lines_count = Number(stored.rows?.[0]?.lines_count || 0);
+      techs_count = Number(stored.rows?.[0]?.techs_count || 0);
+      source = 'stored_locked_or_paid';
+    } else {
+      const live = await _computePayoutTechSummaryLive({
+        payout_id: p.payout_id,
+        start: new Date(p.period_start),
+        endEx: new Date(p.period_end),
+        period_type: String(p.period_type || ''),
+        label_ym: String(p.period_start || '').slice(0,7),
+      });
+      const techSet = new Set();
+      for (const ln of (live.lines || [])) {
+        total_amount += Number(ln.earn_amount || 0);
+        lines_count += 1;
+        const u = String(ln.technician_username || '').trim();
+        if (u) techSet.add(u);
+      }
+      techs_count = techSet.size;
+    }
+    rows.push({
+      ...p,
+      total_amount: Number(total_amount.toFixed ? total_amount.toFixed(2) : total_amount),
+      lines_count,
+      techs_count,
+      source,
+      cache_note: source === 'live_contract_recompute_draft'
+        ? 'draft uses live contract engine; stored legacy lines ignored'
+        : 'locked/paid uses stored lines',
+    });
+  }
+  return rows;
+}
+
 app.get('/admin/super/payouts', requireSuperAdmin, async (req, res) => {
   try {
-    const r = await pool.query(
-      `SELECT p.payout_id, p.period_type, p.period_start, p.period_end, p.status, p.created_at, p.created_by,
-              COALESCE(SUM(l.earn_amount),0) AS total_amount,
-              COUNT(l.*) AS lines_count,
-              COUNT(DISTINCT l.technician_username) AS techs_count
-         FROM public.technician_payout_periods p
-         LEFT JOIN public.technician_payout_lines l ON l.payout_id=p.payout_id
-        GROUP BY p.payout_id
-        ORDER BY p.period_start DESC, p.payout_id DESC`
-    );
-    return res.json({ ok: true, payouts: r.rows || [] });
+    const payouts = await _listPayoutPeriodsLiveAware({ limit: req.query.limit || 24 });
+    return res.json({ ok: true, payouts });
   } catch (e) {
     console.error('GET /admin/super/payouts', e);
     return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
@@ -3403,17 +3455,8 @@ app.get('/admin/super/payouts/:payout_id/techs', requireSuperAdmin, async (req, 
 // =======================================
 app.get('/admin/payouts', requireAdminSession, async (req, res) => {
   try {
-    const r = await pool.query(
-      `SELECT p.payout_id, p.period_type, p.period_start, p.period_end, p.status, p.created_at, p.created_by,
-              COALESCE(SUM(l.earn_amount),0) AS total_amount,
-              COUNT(l.*) AS lines_count,
-              COUNT(DISTINCT l.technician_username) AS techs_count
-         FROM public.technician_payout_periods p
-         LEFT JOIN public.technician_payout_lines l ON l.payout_id=p.payout_id
-        GROUP BY p.payout_id
-        ORDER BY p.period_start DESC, p.payout_id DESC`
-    );
-    return res.json({ ok: true, payouts: r.rows || [] });
+    const payouts = await _listPayoutPeriodsLiveAware({ limit: req.query.limit || 24 });
+    return res.json({ ok: true, payouts });
   } catch (e) {
     console.error('GET /admin/payouts', e);
     return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
@@ -3432,21 +3475,43 @@ app.get('/admin/payouts/:payout_id/techs', requireAdminSession, async (req, res)
   }
 });
 
-app.get('/admin/payouts/:payout_id/tech/:username', requireAdminSession, async (req, res) => {
+app.get('/admin/super/payouts/:payout_id/tech/:username', requireSuperAdmin, async (req, res) => {
   try {
     const payout_id = String(req.params.payout_id || '').trim();
     const username = String(req.params.username || '').trim();
     if (!payout_id || !username) return res.status(400).json({ ok:false, error:'MISSING_PARAMS' });
 
-    const linesR = await pool.query(
-      `SELECT line_id, payout_id, technician_username, job_id::text AS job_id, finished_at,
-              earn_amount, base_amount, percent_final, machine_count_for_tech, step_rule_key,
-              detail_json, setting_snapshot
-         FROM public.technician_payout_lines
-        WHERE payout_id=$1 AND technician_username=$2
-        ORDER BY finished_at ASC, job_id ASC`,
-      [payout_id, username]
-    );
+    const parsed = _parsePayoutId(payout_id);
+    const period = await _getPayoutPeriod(payout_id);
+    if (!period && !parsed) return res.status(400).json({ ok:false, error:'INVALID_PAYOUT_ID' });
+    const bounds = period
+      ? { period_type: period.period_type, start: new Date(period.period_start), endEx: new Date(period.period_end), label_ym: String(period.period_start || '').slice(0,7) }
+      : _periodBoundsForYm(parsed.type, parsed.y, parsed.m);
+    const status = String(period?.status || 'draft');
+
+    const loaded = await _loadPayoutLinesForTech({
+      payout_id,
+      tech: username,
+      status,
+      start: bounds.start,
+      endEx: bounds.endEx,
+      period_type: bounds.period_type,
+      label_ym: bounds.label_ym || (parsed ? (parsed.y + '-' + String(parsed.m).padStart(2,'0')) : ''),
+    });
+    const lines = (loaded.lines || []).map(x => ({
+      line_id: x.line_id || null,
+      payout_id,
+      technician_username: username,
+      job_id: x.job_id == null ? null : String(x.job_id),
+      finished_at: x.finished_at,
+      earn_amount: Number(x.earn_amount || 0),
+      base_amount: Number(x.base_amount || 0),
+      percent_final: x.percent_final,
+      machine_count_for_tech: Number(x.machine_count_for_tech || 0),
+      step_rule_key: x.step_rule_key,
+      detail_json: x.detail_json || {},
+      source: loaded.source,
+    }));
 
     const adjR = await pool.query(
       `SELECT adj_id, payout_id, technician_username, job_id::text AS job_id, adj_amount, reason, created_at, created_by
@@ -3464,7 +3529,7 @@ app.get('/admin/payouts/:payout_id/tech/:username', requireAdminSession, async (
       [payout_id, username]
     );
 
-    const gross = (linesR.rows||[]).reduce((s,x)=>s+Number(x.earn_amount||0),0);
+    const gross = lines.reduce((s,x)=>s+Number(x.earn_amount||0),0);
     const adj_total = (adjR.rows||[]).reduce((s,x)=>s+Number(x.adj_amount||0),0);
     const net = gross + adj_total;
     const paid_amount = Number(payR.rows?.[0]?.paid_amount || 0);
@@ -3473,6 +3538,8 @@ app.get('/admin/payouts/:payout_id/tech/:username', requireAdminSession, async (
       ok:true,
       payout_id,
       technician_username: username,
+      status,
+      source: loaded.source,
       gross_amount: gross,
       adj_total,
       net_amount: net,
@@ -3481,8 +3548,72 @@ app.get('/admin/payouts/:payout_id/tech/:username', requireAdminSession, async (
       paid_status: String(payR.rows?.[0]?.paid_status || 'unpaid'),
       payment: payR.rows?.[0] || null,
       adjustments: adjR.rows || [],
-      lines: linesR.rows || [],
+      lines,
+      audit_note: status === 'draft'
+        ? 'draft detail recomputed live from contract engine; stored legacy payout_lines ignored'
+        : 'locked/paid detail uses stored payout_lines',
     });
+  } catch (e) {
+    console.error('GET /admin/super/payouts/:payout_id/tech/:username', e);
+    return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
+  }
+});
+
+app.get('/admin/payouts/:payout_id/tech/:username', requireAdminSession, async (req, res) => {
+  try {
+    const payout_id = String(req.params.payout_id || '').trim();
+    const username = String(req.params.username || '').trim();
+    if (!payout_id || !username) return res.status(400).json({ ok:false, error:'MISSING_PARAMS' });
+
+    const parsed = _parsePayoutId(payout_id);
+    const period = await _getPayoutPeriod(payout_id);
+    if (!period && !parsed) return res.status(400).json({ ok:false, error:'INVALID_PAYOUT_ID' });
+    const bounds = period
+      ? { period_type: period.period_type, start: new Date(period.period_start), endEx: new Date(period.period_end), label_ym: String(period.period_start || '').slice(0,7) }
+      : _periodBoundsForYm(parsed.type, parsed.y, parsed.m);
+    const status = String(period?.status || 'draft');
+    const loaded = await _loadPayoutLinesForTech({
+      payout_id,
+      tech: username,
+      status,
+      start: bounds.start,
+      endEx: bounds.endEx,
+      period_type: bounds.period_type,
+      label_ym: bounds.label_ym || (parsed ? (parsed.y + '-' + String(parsed.m).padStart(2,'0')) : ''),
+    });
+    const lines = (loaded.lines || []).map(x => ({
+      line_id: x.line_id || null,
+      payout_id,
+      technician_username: username,
+      job_id: x.job_id == null ? null : String(x.job_id),
+      finished_at: x.finished_at,
+      earn_amount: Number(x.earn_amount || 0),
+      base_amount: Number(x.base_amount || 0),
+      percent_final: x.percent_final,
+      machine_count_for_tech: Number(x.machine_count_for_tech || 0),
+      step_rule_key: x.step_rule_key,
+      detail_json: x.detail_json || {},
+      source: loaded.source,
+    }));
+    const adjR = await pool.query(
+      `SELECT adj_id, payout_id, technician_username, job_id::text AS job_id, adj_amount, reason, created_at, created_by
+         FROM public.technician_payout_adjustments
+        WHERE payout_id=$1 AND technician_username=$2
+        ORDER BY created_at ASC, adj_id ASC`,
+      [payout_id, username]
+    );
+    const payR = await pool.query(
+      `SELECT payment_id, payout_id, technician_username, paid_amount, paid_status, paid_at, paid_by, slip_url, note
+         FROM public.technician_payout_payments
+        WHERE payout_id=$1 AND technician_username=$2
+        LIMIT 1`,
+      [payout_id, username]
+    );
+    const gross = lines.reduce((s,x)=>s+Number(x.earn_amount||0),0);
+    const adj_total = (adjR.rows||[]).reduce((s,x)=>s+Number(x.adj_amount||0),0);
+    const net = gross + adj_total;
+    const paid_amount = Number(payR.rows?.[0]?.paid_amount || 0);
+    return res.json({ ok:true, payout_id, technician_username: username, status, source: loaded.source, gross_amount: gross, adj_total, net_amount: net, paid_amount, remaining_amount: net-paid_amount, paid_status: String(payR.rows?.[0]?.paid_status || 'unpaid'), payment: payR.rows?.[0] || null, adjustments: adjR.rows || [], lines });
   } catch (e) {
     console.error('GET /admin/payouts/:payout_id/tech/:username', e);
     return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
@@ -3495,6 +3626,28 @@ app.get('/admin/payouts/:payout_id/tech/:username', requireAdminSession, async (
 // - Detect jobs changed after generate (via job_updates_v2)
 // =======================================
 
+
+// 🧹 Clear old cached payout_lines for all draft periods.
+// Does not touch locked/paid periods, payments, or adjustments.
+app.post('/admin/super/payouts/purge_draft_legacy', requireSuperAdmin, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `DELETE FROM public.technician_payout_lines l
+        USING public.technician_payout_periods p
+        WHERE l.payout_id = p.payout_id
+          AND COALESCE(p.status,'draft') = 'draft'
+          AND NOT EXISTS (
+            SELECT 1 FROM public.technician_payout_payments pay
+             WHERE pay.payout_id = p.payout_id
+          )`
+    );
+    try { await auditLog(req, { action: 'PAYOUT_DRAFT_LEGACY_PURGE', meta: { deleted_lines: r.rowCount || 0, engine: CWF_CONTRACT_PAYROLL_VERSION } }); } catch {}
+    return res.json({ ok:true, deleted_lines: r.rowCount || 0, note:'Deleted only cached payout_lines in draft periods. Locked/paid and payments/adjustments untouched.' });
+  } catch (e) {
+    console.error('POST /admin/super/payouts/purge_draft_legacy', e);
+    return res.status(500).json({ ok:false, error:'PURGE_FAILED' });
+  }
+});
 
 // 🔁 Regenerate a single draft payout from the contract engine only.
 // Safety:
