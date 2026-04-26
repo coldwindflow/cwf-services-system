@@ -7779,6 +7779,12 @@ async function saveJobItemsAdminWithClient(client, job_id, items, options = {}) 
   }
 
   let allowedAssignees = new Set();
+  const optionAssignees = Array.isArray(options.allowedAssignees)
+    ? options.allowedAssignees.map((x) => String(x || "").trim()).filter(Boolean)
+    : null;
+  if (optionAssignees) {
+    allowedAssignees = new Set(optionAssignees);
+  } else {
   try {
     const jr = await client.query(`SELECT technician_username FROM public.jobs WHERE job_id=$1 LIMIT 1`, [job_id]);
     const primaryU = String(jr.rows?.[0]?.technician_username || "").trim();
@@ -7792,6 +7798,8 @@ async function saveJobItemsAdminWithClient(client, job_id, items, options = {}) 
     } catch (_) {}
   } catch (_) {
     allowedAssignees = new Set();
+  }
+
   }
 
   const safeItems = (Array.isArray(items) ? items : [])
@@ -8869,6 +8877,14 @@ try {
         }
       }
 
+      // When this request also saves team_members/primary_username, do not update
+      // jobs.technician_username in the header step first. saveJobTeamWithClient()
+      // performs the stale-team check against base_team_snapshot and then syncs
+      // jobs.technician_username + technician_team in the same transaction.
+      // Updating the primary here first makes the later stale check see our own
+      // change as an external team edit, blocking legitimate technician swaps.
+      const headerPrimaryToSave = wantsTeamSave ? null : desiredPrimaryFromBody;
+
       await client.query(
       `
       UPDATE public.jobs
@@ -8897,7 +8913,7 @@ try {
         job_zone ?? null,
         gpsLat,
         gpsLng,
-        desiredPrimaryFromBody,
+        headerPrimaryToSave,
         job_id,
       ]
     );
@@ -8914,6 +8930,7 @@ try {
           hasPromotionId,
           promotion_id,
           baseItemsSnapshot: base_items_snapshot,
+          allowedAssignees: nextTeamSnapshot.members,
         });
         pricing = itemResult.pricing;
       }
