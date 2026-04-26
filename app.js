@@ -606,14 +606,15 @@ async function loadIncomeSummary() {
   try {
     // Fail-open for PWA/webview that loses cookies: also send ?username=
     const u = _bestEffortUsername();
-    const url = `${API_BASE}/tech/income_summary${u ? `?username=${encodeURIComponent(u)}` : ''}`;
-    const res = await fetch(url, { credentials: 'include' });
+    const url = `${API_BASE}/tech/income_summary${u ? `?username=${encodeURIComponent(u)}&` : '?'}v=contract-v9`;
+    try { localStorage.removeItem('__cwf_income_cache__'); localStorage.removeItem('__cwf_income_cache_v9__'); } catch {}
+    const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
 
     // cache last good values (so UI won't look "empty" when temporary failures happen)
     try {
-      localStorage.setItem('__cwf_income_cache__', JSON.stringify({
+      localStorage.setItem('__cwf_income_cache_v9__', JSON.stringify({
         ts: Date.now(),
         day_total: Number(data.day_total||0),
         month_total: Number(data.month_total||0),
@@ -630,7 +631,7 @@ async function loadIncomeSummary() {
   } catch (e) {
     // fail-open (ไม่ให้หน้า tech พัง) + show cached value if available
     try {
-      const c = JSON.parse(localStorage.getItem('__cwf_income_cache__') || 'null');
+      const c = JSON.parse(localStorage.getItem('__cwf_income_cache_v9__') || 'null');
       if (c && typeof c === 'object') {
         if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(c.day_total);
         if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(c.month_total);
@@ -663,8 +664,8 @@ async function loadIncomeTodayMonthFast(){
   if (!incomeTodayValEl && !incomeDaily2El && !incomeMonth2El) return;
   try{
     const u = _bestEffortUsername();
-    const url = `${API_BASE}/tech/income_today_month${u ? `?username=${encodeURIComponent(u)}` : ''}`;
-    const res = await fetch(url, { credentials:'include' });
+    const url = `${API_BASE}/tech/income_today_month${u ? `?username=${encodeURIComponent(u)}&` : '?'}v=contract-v9`;
+    const res = await fetch(url, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     if (incomeTodayValEl) incomeTodayValEl.textContent = formatBaht(data.day_total||0);
@@ -679,7 +680,7 @@ async function loadIncomeTodayMonthFast(){
 async function loadNextPeriodEstimate(){
   if (!incomePeriodEstValEl && !incomePeriodRangeEl) return;
   try{
-    const res = await fetch(`${API_BASE}/tech/income_next_period_estimate`, { credentials:'include' });
+    const res = await fetch(`${API_BASE}/tech/income_next_period_estimate?v=contract-v9`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     if (incomePeriodEstValEl) incomePeriodEstValEl.textContent = formatBaht(data.estimate_total||0);
@@ -694,14 +695,14 @@ async function loadOutstandingTotal(){
   if (!incomeOutstandingValEl) return;
   try{
     // ใช้ cache จาก income_summary (authoritative) เพื่อไม่ต้องยิง compute ซ้ำ
-    const cache = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache__')||'null');}catch{return null;} })();
+    const cache = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache_v9__')||'null');}catch{return null;} })();
     if (!cache || typeof cache !== 'object') {
       await loadIncomeSummary();
     }
-    const c = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache__')||'null');}catch{return null;} })();
+    const c = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache_v9__')||'null');}catch{return null;} })();
     const allTotal = Number(c?.all_total || 0);
 
-    const res = await fetch(`${API_BASE}/tech/payments_total`, { credentials:'include' });
+    const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v9`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     const paid = Number(data.paid_total || 0);

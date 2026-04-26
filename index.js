@@ -2304,7 +2304,7 @@ function _thaiLabelWash(k){
 // - Uses fixed per-machine ladder rates from the attached CWF technician contracts.
 // - Replaces the old percent-based technician income calculation for completed jobs.
 // =======================================
-const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_contract_only_rebuild_v8_no_legacy_income';
+const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_v9_contract_only_ignore_assignment_bonus';
 const CWF_CONTRACT_PAYROLL_RATES = Object.freeze({
   company: Object.freeze({
     normal:   Object.freeze({ small: [80, 70, 70, 60],    large: [100, 85, 85, 70] }),
@@ -2637,14 +2637,11 @@ async function _buildPayoutLinesForJob(job_id){
   const profileMap = new Map();
   (profQ.rows || []).forEach(r => profileMap.set(String(r.username), r));
 
-  const bonusQ = await pool.query(
-    `SELECT technician_username, COALESCE(special_bonus_amount,0) AS special_bonus_amount
-       FROM public.job_assignments
-      WHERE job_id=$1`,
-    [job_id]
-  );
+  // V9 hard reset: ignore legacy job_assignments.special_bonus_amount.
+  // This column belongs to the old income system and can leak old top-ups into technician income
+  // (example: company 220 + old 130 = 350, partner 850 + old 550 = 1,400).
+  // Manual extra pay must be recorded as technician_payout_adjustments after payout generation.
   const bonusMap = new Map();
-  (bonusQ.rows || []).forEach(r => bonusMap.set(String(r.technician_username), Number(r.special_bonus_amount || 0)));
 
   const assignedSvc = svcItems.filter(it => String(it.assigned_technician_username || '').trim());
   const unassignedSvc = svcItems.filter(it => !String(it.assigned_technician_username || '').trim());
@@ -2778,7 +2775,7 @@ async function _buildPayoutLinesForJob(job_id){
 
     const base_amount = Number(serviceAmountByTech.get(tech) || 0);
     const special_income = Number(specialByTech.get(tech) || 0);
-    const special_bonus = Number(bonusMap.get(tech) || 0);
+    const special_bonus = 0; // V9: assignment bonus disabled; use payout adjustments only
     const earn_amount = base_amount + special_income + special_bonus;
     const machine_count_for_tech = Number(machineCountByTech.get(tech) || 0);
     const rateRows = contractRowsByTech.get(tech) || [];
