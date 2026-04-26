@@ -2414,7 +2414,7 @@ function _thaiLabelWash(k){
 // - Uses fixed per-machine ladder rates from the attached CWF technician contracts.
 // - Replaces the old percent-based technician income calculation for completed jobs.
 // =======================================
-const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_fixed_ladder_v1';
+const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_fixed_ladder_v2_contract_only';
 const CWF_CONTRACT_PAYROLL_RATES = Object.freeze({
   company: Object.freeze({
     normal:   Object.freeze({ small: [80, 70, 70, 60],    large: [100, 85, 85, 70] }),
@@ -2597,160 +2597,237 @@ async function _buildPayoutLinesForJob(job_id){
   const meta = await _loadJobMeta(job_id);
   if (!meta || !meta.finished_at) return [];
 
-  const payout = await computeJobPayout(job_id);
-  const items = payout.items || [];
-  const mode = payout.payout_mode || 'assigned';
-
-  // infer service items and dimensions
+  const itemsQ = await pool.query(
+    `SELECT job_item_id, item_name, qty, unit_price, line_total,
+            COALESCE(assigned_technician_username,'') AS assigned_technician_username,
+            COALESCE(is_service,false) AS is_service
+       FROM public.job_items
+      WHERE job_id=$1
+      ORDER BY job_item_id ASC`,
+    [job_id]
+  );
+  const items = itemsQ.rows || [];
   const anyMarked = items.some(it => it && it.is_service);
   const isSvc = (it) => (it && (it.is_service || (!anyMarked && inferIsServiceLine(it))));
   const svcItems = items.filter(isSvc);
+  const specialItems = items.filter(it => it && !isSvc(it));
 
-  // best-effort dimension detection from service lines
-  const dimsFromItem = (it) => {
-    const nm = String(it?.item_name || '');
-    const ac = _normAcKey(nm);
-    const wash = _normWashKey(nm);
-    return { ac_key: ac, wash_key: wash };
+  const team = await getTeamForJob(job_id);
+  for (const it of svcItems) {
+    const assignedTech = String(it.assigned_technician_username || '').trim();
+    if (assignedTech && !team.includes(assignedTech)) team.push(assignedTech);
+  }
+  if (!team.length) {
+    const err = new Error('EMPTY_TEAM');
+    err.code = 'EMPTY_TEAM';
+    throw err;
+  }
+
+  const profQ = await pool.query(
+    `SELECT username,
+            COALESCE(employment_type,'company') AS employment_type,
+            COALESCE(compensation_mode,'commission') AS compensation_mode
+       FROM public.technician_profiles
+      WHERE username = ANY($1::text[])`,
+    [team]
+  );
+  const profileMap = new Map();
+  (profQ.rows || []).forEach(r => profileMap.set(String(r.username), r));
+
+  const bonusQ = await pool.query(
+    `SELECT technician_username, COALESCE(special_bonus_amount,0) AS special_bonus_amount
+       FROM public.job_assignments
+      WHERE job_id=$1`,
+    [job_id]
+  );
+  const bonusMap = new Map();
+  (bonusQ.rows || []).forEach(r => bonusMap.set(String(r.technician_username), Number(r.special_bonus_amount || 0)));
+
+  const assignedSvc = svcItems.filter(it => String(it.assigned_technician_username || '').trim());
+  const unassignedSvc = svcItems.filter(it => !String(it.assigned_technician_username || '').trim());
+  const hasAssigned = assignedSvc.length > 0;
+  const mode = (!hasAssigned && team.length > 1) ? 'coop_equal' : (hasAssigned && unassignedSvc.length ? 'mixed' : 'assigned');
+
+  const relatedByTech = new Map(team.map(u => [u, []]));
+  const contractRowsByTech = new Map(team.map(u => [u, []]));
+  const serviceAmountByTech = new Map(team.map(u => [u, 0]));
+  const machineCountByTech = new Map(team.map(u => [u, 0]));
+
+  const addAmount = (tech, amount) => serviceAmountByTech.set(tech, Number(serviceAmountByTech.get(tech) || 0) + Number(amount || 0));
+  const addMachine = (tech, qty) => machineCountByTech.set(tech, Number(machineCountByTech.get(tech) || 0) + Number(qty || 0));
+  const addRelated = (tech, obj) => {
+    if (!relatedByTech.has(tech)) relatedByTech.set(tech, []);
+    relatedByTech.get(tech).push(obj);
+  };
+  const addRateRows = (tech, rows) => {
+    if (!contractRowsByTech.has(tech)) contractRowsByTech.set(tech, []);
+    contractRowsByTech.get(tech).push(...rows);
+  };
+  const techTypeOf = (tech) => {
+    const prof = profileMap.get(String(tech)) || {};
+    return _contractTechType(prof.employment_type, prof.employment_type);
   };
 
-  const totalMachine = svcItems.reduce((a, it) => a + Number(it.qty || 0), 0);
-  const unassignedSvc = svcItems.filter(it => !String(it.assigned_technician_username||'').trim());
-  const assignedSvc = svcItems.filter(it => String(it.assigned_technician_username||'').trim());
-  const unassignedMachine = unassignedSvc.reduce((a, it) => a + Number(it.qty||0), 0);
+  const cursor = new Map();
+  const nextStartIndex = (tech, groupKey, qty) => {
+    const key = `${tech}|${groupKey}`;
+    const start = Number(cursor.get(key) || 0) + 1;
+    cursor.set(key, Number(cursor.get(key) || 0) + Math.max(0, Math.round(Number(qty || 0))));
+    return start;
+  };
 
-  const job_type_key = _normJobKey(meta.job_type);
-
-  // determine overall dims for rule matching: pick the most specific non-null present
-  let pick_ac = null;
-  let pick_wash = null;
-  for (const it of svcItems) {
-    const d = dimsFromItem(it);
-    if (!pick_ac && d.ac_key) pick_ac = d.ac_key;
-    if (!pick_wash && d.wash_key) pick_wash = d.wash_key;
-    if (pick_ac && pick_wash) break;
+  function applyWholeItemToTech(it, tech, reason){
+    const qty = Math.max(0, Math.round(Number(it.qty || 0)));
+    if (!qty || !tech) return;
+    const spec = _contractServiceKeyFromItem(it);
+    const techType = techTypeOf(tech);
+    if (techType === 'special_only') return;
+    const startIdx = nextStartIndex(tech, spec.group_key, qty);
+    const rates = _contractMachineRates(spec.wash_key, spec.btu_tier, startIdx, qty, techType);
+    const amount = rates.reduce((a, x) => a + Number(x.rate || 0), 0);
+    addAmount(tech, amount);
+    addMachine(tech, qty);
+    addRelated(tech, {
+      job_item_id: it.job_item_id,
+      item_name: it.item_name,
+      qty,
+      line_total: Number(it.line_total || 0),
+      assigned_technician_username: String(it.assigned_technician_username || '').trim() || null,
+      contract_reason: reason,
+    });
+    addRateRows(tech, rates.map(x => ({
+      item_name: it.item_name,
+      wash_key: spec.wash_key,
+      wash_label: _thaiLabelWash(spec.wash_key) || spec.wash_key,
+      btu_tier: spec.btu_tier,
+      btu: spec.btu || null,
+      tech_type: techType,
+      machine_index: x.machine_index,
+      rate: Number(x.rate || 0),
+      share: 1,
+      paid_rate: Number(x.rate || 0),
+      reason,
+    })));
   }
-  // wash_variant only meaningful for wall wash
-  if (pick_ac !== 'wall') pick_wash = null;
 
-  const base_rule = await _pickStepRule({ job_type_key, ac_key: pick_ac, wash_key: pick_wash });
-
-  const lines = [];
-  for (const p of (payout.payouts || [])) {
-    const tech = String(p.username);
-
-    // ✅ ผู้ช่วยช่าง/เงินเดือน: ไม่คิดรายได้แบบต่อ job
-    // แต่ยังนับเป็น "วันทำงาน" สำหรับโหมด daily/salary
-    const prof = await _getTechProfile(tech);
-    const cm = _normCompMode(prof?.compensation_mode);
-    if (cm !== 'commission') {
-      continue;
-    }
-
-    const base_amount = Number(p.base_service || 0);
-    const special_income = Number(p.special_income || 0);
-    const special_bonus = Number(p.special_bonus || 0);
-
-    // machine_count_for_tech (per spec)
-    const assignedMachine = assignedSvc
-      .filter(it => String(it.assigned_technician_username||'').trim() === tech)
-      .reduce((a, it) => a + Number(it.qty || 0), 0);
-
-    let machine_count_for_tech = 0;
-    let how_machine = '';
-    if (mode === 'coop_equal') {
-      machine_count_for_tech = Math.round(totalMachine);
-      how_machine = `coop_equal: machine_count_for_tech = machine_count_total(${totalMachine})`;
-    } else if (mode === 'mixed') {
-      machine_count_for_tech = Math.round(assignedMachine + unassignedMachine);
-      how_machine = `mixed: assigned(${assignedMachine}) + coop_part(${unassignedMachine})`;
-    } else {
-      machine_count_for_tech = Math.round(assignedMachine);
-      how_machine = `assigned: machine_count_for_tech = assigned(${assignedMachine})`;
-    }
-
-    const rulePicked = await _pickStepRuleForTech({ technician_username: tech, job_type_key, ac_key: pick_ac, wash_key: pick_wash }) || base_rule;
-
-    // step percent: prefer ladder rule for percent-based settings
-    let percent_final = null;
-    let service_income_after = Number(p.service_income || 0);
-    let how_percent = 'fallback: engine setting';
-    let used_rule = null;
-
-    // only apply ladder when base_amount > 0 and rule exists
-    if (base_amount > 0 && rulePicked) {
-      const pct = _ladderPercent(rulePicked, machine_count_for_tech);
-      if (Number.isFinite(pct) && pct > 0) {
-        percent_final = pct;
-        service_income_after = base_amount * (pct / 100);
-        how_percent = `step_ladder: ${machine_count_for_tech} เครื่อง -> ${pct}% (rule_id=${rulePicked.rule_id})`;
-        used_rule = rulePicked;
-      }
-    }
-
-    const earn_amount = Number(service_income_after || 0) + special_income + special_bonus;
-
-    // include only meaningful lines
-    if (Math.abs(earn_amount) < 0.0001 && Math.abs(base_amount) < 0.0001 && Math.abs(special_income) < 0.0001 && Math.abs(special_bonus) < 0.0001) {
-      continue;
-    }
-
-    const relatedItems = svcItems
-      .filter(it => {
-        const a = String(it.assigned_technician_username || '').trim();
-        if (mode === 'coop_equal') return true;
-        if (mode === 'mixed') return !a || a === tech;
-        return a === tech;
-      })
-      .map(it => ({
+  function applySharedItemToTeam(it, reason){
+    const qty = Math.max(0, Math.round(Number(it.qty || 0)));
+    if (!qty || !team.length) return;
+    const spec = _contractServiceKeyFromItem(it);
+    const divisor = team.length;
+    for (const tech of team) {
+      const techType = techTypeOf(tech);
+      if (techType === 'special_only') continue;
+      const startIdx = nextStartIndex(tech, spec.group_key, qty);
+      const rates = _contractMachineRates(spec.wash_key, spec.btu_tier, startIdx, qty, techType);
+      const amount = rates.reduce((a, x) => a + (Number(x.rate || 0) / divisor), 0);
+      addAmount(tech, amount);
+      addMachine(tech, qty / divisor);
+      addRelated(tech, {
         job_item_id: it.job_item_id,
         item_name: it.item_name,
-        qty: Number(it.qty || 0),
+        qty: qty / divisor,
+        original_qty: qty,
         line_total: Number(it.line_total || 0),
-        assigned_technician_username: String(it.assigned_technician_username || '').trim() || null,
-      }));
+        assigned_technician_username: null,
+        contract_reason: reason,
+      });
+      addRateRows(tech, rates.map(x => ({
+        item_name: it.item_name,
+        wash_key: spec.wash_key,
+        wash_label: _thaiLabelWash(spec.wash_key) || spec.wash_key,
+        btu_tier: spec.btu_tier,
+        btu: spec.btu || null,
+        tech_type: techType,
+        machine_index: x.machine_index,
+        rate: Number(x.rate || 0),
+        share: 1 / divisor,
+        paid_rate: Number(x.rate || 0) / divisor,
+        reason,
+      })));
+    }
+  }
+
+  for (const it of assignedSvc) {
+    const tech = String(it.assigned_technician_username || '').trim();
+    if (!team.includes(tech)) team.push(tech);
+    applyWholeItemToTech(it, tech, 'assigned_item');
+  }
+  for (const it of unassignedSvc) {
+    if (team.length === 1) applyWholeItemToTech(it, team[0], 'single_or_unassigned_item');
+    else applySharedItemToTeam(it, hasAssigned ? 'mixed_unassigned_shared' : 'coop_equal_shared');
+  }
+
+  const specialByTech = new Map(team.map(u => [u, 0]));
+  for (const it of specialItems) {
+    const tech = String(it.assigned_technician_username || '').trim();
+    if (!tech) continue;
+    specialByTech.set(tech, Number(specialByTech.get(tech) || 0) + Number(it.line_total || 0));
+  }
+
+  const totalMachine = svcItems.reduce((a, it) => a + Math.max(0, Number(it.qty || 0)), 0);
+  const lines = [];
+  for (const tech of team) {
+    const prof = profileMap.get(String(tech)) || {};
+    const cm = _normCompMode(prof.compensation_mode);
+    if (cm !== 'commission') continue;
+
+    const techType = techTypeOf(tech);
+    if (techType === 'special_only') continue;
+
+    const base_amount = Number(serviceAmountByTech.get(tech) || 0);
+    const special_income = Number(specialByTech.get(tech) || 0);
+    const special_bonus = Number(bonusMap.get(tech) || 0);
+    const earn_amount = base_amount + special_income + special_bonus;
+    const machine_count_for_tech = Number(machineCountByTech.get(tech) || 0);
+    const rateRows = contractRowsByTech.get(tech) || [];
+    const related_items = relatedByTech.get(tech) || [];
+
+    if (Math.abs(earn_amount) < 0.0001 && !rateRows.length) continue;
 
     const detail_json = {
-      job_type: _thaiLabelJob(job_type_key) || String(meta.job_type || '').trim(),
-      job_type_key,
-      ac_type: _thaiLabelAc(pick_ac) || '',
-      ac_type_key: pick_ac,
-      wash_variant: _thaiLabelWash(pick_wash) || '',
-      wash_variant_key: pick_wash,
-      btu: null,
-      machine_count_total: Math.round(totalMachine),
-      machine_count_for_tech: Math.round(machine_count_for_tech),
+      payroll_version: CWF_CONTRACT_PAYROLL_VERSION,
+      contract_only: true,
+      job_type: _thaiLabelJob(_normJobKey(meta.job_type)) || String(meta.job_type || '').trim(),
+      job_type_key: _normJobKey(meta.job_type),
+      ac_type: '',
+      ac_type_key: null,
+      wash_variant: rateRows.length ? Array.from(new Set(rateRows.map(r => r.wash_label).filter(Boolean))).join(' + ') : '',
+      wash_variant_key: rateRows.length ? Array.from(new Set(rateRows.map(r => r.wash_key).filter(Boolean))).join('+') : null,
+      machine_count_total: totalMachine,
+      machine_count_for_tech,
       mode,
-      how_machine_count_for_tech: how_machine,
-      how_percent_selected: how_percent,
-      how_split_applied: payout.note || '',
-      items: relatedItems,
-      base_service_total: Number(payout.base_service_total || 0),
+      split_mode: mode,
+      technician_type: techType,
+      how_machine_count_for_tech: mode === 'assigned'
+        ? 'คิดเฉพาะรายการที่ assign ให้ช่าง หรือรายการที่ไม่มี assign ในงานช่างเดี่ยว'
+        : 'รายการที่ไม่ assign ในงานทีมถูกหารเท่ากันตามจำนวนช่างในทีม',
+      how_percent_selected: 'ไม่ใช้เปอร์เซ็นต์แล้ว: ใช้เรทบาท/เครื่องตามสัญญา CWF 2026 เท่านั้น',
+      how_split_applied: mode === 'mixed'
+        ? 'รายการที่ assign คิดเต็มให้เจ้าของรายการ + รายการไม่ assign หารเท่ากัน'
+        : (mode === 'coop_equal' ? 'ไม่มี assign รายการ: หารเรทสัญญาเท่ากันตามทีม' : 'คิดตามรายการที่ช่างรับผิดชอบ'),
+      contract_rate_rows: rateRows,
+      related_items,
+      items: related_items,
+      base_service_total: svcItems.reduce((a, it) => a + Number(it.line_total || 0), 0),
       base_amount,
-      service_income_engine: Number(p.service_income || 0),
-      service_income_after_step: Number(service_income_after || 0),
+      contract_service_income: base_amount,
+      service_income_engine: 0,
+      service_income_after_step: base_amount,
       special_income,
       special_bonus,
       total_income: earn_amount,
     };
 
     const setting_snapshot = {
-      income_setting: p.setting || null,
-      employment_type: p.employment_type || null,
-      step_rule: used_rule ? {
-        rule_id: used_rule.rule_id,
-        job_type: used_rule.job_type,
-        ac_type: used_rule.ac_type,
-        wash_variant: used_rule.wash_variant,
-        step_1_percent: Number(used_rule.step_1_percent||0),
-        step_2_percent: Number(used_rule.step_2_percent||0),
-        step_3_percent: Number(used_rule.step_3_percent||0),
-        step_4p_percent: Number(used_rule.step_4p_percent||0),
-        priority: Number(used_rule.priority||0),
-      } : null,
-      machine_count_for_tech: Math.round(machine_count_for_tech),
-      percent_final,
+      payroll_version: CWF_CONTRACT_PAYROLL_VERSION,
+      contract_only: true,
+      old_percent_defaults_ignored: true,
+      employment_type: String(prof.employment_type || 'company'),
+      technician_type: techType,
+      machine_count_for_tech,
       computed_at: new Date().toISOString(),
+      contract_rates: rateRows,
     };
 
     lines.push({
@@ -2759,9 +2836,9 @@ async function _buildPayoutLinesForJob(job_id){
       finished_at: meta.finished_at,
       earn_amount,
       base_amount,
-      percent_final,
-      machine_count_for_tech: Math.round(machine_count_for_tech),
-      step_rule_key: used_rule ? String(used_rule.rule_id) : null,
+      percent_final: null,
+      machine_count_for_tech,
+      step_rule_key: `contract:${techType}`,
       detail_json,
       setting_snapshot,
     });

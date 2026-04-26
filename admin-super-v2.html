@@ -179,103 +179,56 @@
     </details>
 
     <details>
-      <summary>💰 รายได้ช่าง (ระบบเดิม: Defaults / Override / คำนวณตาม Job)</summary>
+      <summary>💰 รายได้ช่าง — สูตรใหม่ตามสัญญาเท่านั้น</summary>
       <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
-        <div class="muted" style="margin:0 0 10px 0;line-height:1.45">
-          หมายเหตุ: ถ้าจะใช้ <b>% ขั้นบันไดตามจำนวนเครื่อง</b> ให้ไปตั้งที่เมนู “ตั้งค่า % ขั้นบันได” และใช้ “งวดจ่ายช่าง” เป็นตัวเลขจริง<br/>
-          เมนูนี้เอาไว้สำหรับระบบเดิม/กรณีเฉพาะเท่านั้น (กันงง)
-        </div>
-        <div class="card">
+        <div class="card" style="background:linear-gradient(135deg,#061b49,#0b4bb3);color:white;border:none">
           <div class="sectionTitle">
             <div>
-              <b>Defaults (ใส่ตัวเลขได้เลย)</b>
-              <div class="muted" style="margin-top:4px">
-                company=คอมฯ% • partner=หักเข้าบริษัท% • custom=สูตรเฉพาะ% • special_only=ได้เงินพิเศษอย่างเดียว
+              <b style="font-size:18px">Contract Payroll Engine v2</b>
+              <div style="opacity:.88;margin-top:6px;line-height:1.5">
+                ระบบนี้ปิดการคิดแบบ % เดิมแล้ว ใช้เฉพาะเรทบาท/เครื่องตามสัญญา CWF 2026 หลังช่างกดจบงาน
               </div>
             </div>
-            <div class="row">
-              <button class="btn blue" id="btnReloadIncome">รีเฟรช</button>
-              <button class="btn yellow" id="btnSaveIncomeDefaults">บันทึก Defaults</button>
-            </div>
-          </div>
-
-          <div class="grid" style="margin-top:10px">
-            <div class="card" style="margin-top:0">
-              <b style="color:#0b1b3a">company</b>
-              <div class="muted" style="margin-top:4px">คอมมิชชั่นช่าง (% ของเรทรายการ ก่อนส่วนลด)</div>
-              <div class="row" style="margin-top:10px">
-                <input id="defCompanyPct" type="number" placeholder="เช่น 60" style="width:160px" />
-                <span class="muted">%</span>
-              </div>
-            </div>
-
-            <div class="card" style="margin-top:0">
-              <b style="color:#0b1b3a">partner</b>
-              <div class="muted" style="margin-top:4px">หัก % เข้าบริษัท (ช่างได้หลังหัก)</div>
-              <div class="row" style="margin-top:10px">
-                <input id="defPartnerCut" type="number" placeholder="เช่น 30" style="width:160px" />
-                <span class="muted">%</span>
-              </div>
-            </div>
-
-            <div class="card" style="margin-top:0">
-              <b style="color:#0b1b3a">custom</b>
-              <div class="muted" style="margin-top:4px">สูตรเฉพาะ (ตอนนี้ใช้แบบ %)</div>
-              <div class="row" style="margin-top:10px">
-                <input id="defCustomPct" type="number" placeholder="เช่น 70" style="width:160px" />
-                <span class="muted">%</span>
-              </div>
-            </div>
-
-            <div class="card" style="margin-top:0">
-              <b style="color:#0b1b3a">special_only</b>
-              <div class="muted" style="margin-top:4px">ไม่ได้เงินจากเรทรายการ ได้เฉพาะเงินพิเศษ</div>
-              <div class="muted" style="margin-top:10px">* บันทึก Defaults จะตั้งค่านี้ให้เอง</div>
-            </div>
+            <span class="pill" style="background:#fffd01;color:#111827">CONTRACT ONLY</span>
           </div>
         </div>
 
-        <div class="grid">
-          <div class="card">
-            <div class="sectionTitle">
-              <div>
-                <b>Override รายบุคคล</b>
-                <div class="muted" style="margin-top:4px">เลือกช่าง → เลือกประเภท → ใส่ตัวเลข → บันทึก</div>
-              </div>
-              <div class="row">
-                <button class="btn gray" id="btnClearOverride">ล้าง Override</button>
-              </div>
-            </div>
-            <div class="row" style="margin-top:10px">
-              <select id="ovTech" style="flex:1;min-width:220px"></select>
-              <select id="ovType" style="width:180px">
-                <option value="company">company</option>
-                <option value="partner">partner</option>
-                <option value="custom">custom</option>
-                <option value="special_only">special_only</option>
-              </select>
-              <input id="ovValue" type="number" placeholder="ตัวเลข (%, แล้วแต่ประเภท)" style="width:220px" />
-              <button class="btn yellow" id="btnSaveOverride">บันทึก Override</button>
-            </div>
-            <div class="muted" style="margin-top:10px;line-height:1.45">
-              - company/custom: ใส่เป็น % ที่ช่างได้จาก “เรทรายการ”<br/>
-              - partner: ใส่ % ที่หักเข้าบริษัท (ช่างได้หลังหัก)<br/>
-              - special_only: ไม่ต้องใส่ตัวเลข (จะถูกมองข้าม)
-            </div>
+        <div class="grid" style="margin-top:12px">
+          <div class="card" style="margin-top:0">
+            <b style="color:#0b1b3a">พนักงานประจำ</b>
+            <div class="muted" style="margin-top:6px">ตัวอย่างเรทล้างแขวนคอยล์: ≤12,000 BTU = 220 / 190 / 190 / 160 • 18,000+ = 280 / 240 / 240 / 210</div>
           </div>
+          <div class="card" style="margin-top:0">
+            <b style="color:#0b1b3a">พาร์ทเนอร์</b>
+            <div class="muted" style="margin-top:6px">ตัวอย่างเรทล้างแขวนคอยล์: ≤12,000 BTU = 850 / 800 / 800 / 750 • 18,000+ = 1,050 / 1,000 / 1,000 / 950</div>
+          </div>
+        </div>
 
-          <div class="card">
-            <b style="color:#0b1b3a">คำนวณตาม Job (ตรวจผลจริง)</b>
-            <div class="muted" style="margin-top:4px">
-              ใช้ <span class="mono">job_items.assigned_technician_username</span> และเรทรายการก่อนส่วนลด • ถ้าไม่ assign จะหารตามทีม
-            </div>
-            <div class="row" style="margin-top:10px">
-              <input id="calcJobId" placeholder="job_id เช่น 133" style="flex:1;min-width:180px" />
-              <button class="btn blue" id="btnCalcJob">คำนวณ</button>
-            </div>
-            <div class="muted" id="calcNote" style="margin-top:10px">-</div>
-            <pre id="calcOut" style="margin-top:10px;max-height:320px">-</pre>
+        <div class="card" style="margin-top:12px">
+          <b style="color:#0b1b3a">ตรวจผลตาม Job จริง</b>
+          <div class="muted" style="margin-top:4px;line-height:1.5">
+            ใช้ข้อมูลจาก <span class="mono">job_items</span>, <span class="mono">assigned_technician_username</span>, ประเภทช่างในโปรไฟล์ และเรทสัญญาเท่านั้น<br/>
+            ไม่อ่านค่า Defaults / Override / Percent เดิม เพื่อกันยอดเพี้ยน เช่นเคสแขวนคอยล์ 1 เครื่องต้องไม่ออก 1,804 อีก
           </div>
+          <div class="row" style="margin-top:10px">
+            <input id="calcJobId" placeholder="job_id เช่น 232" style="flex:1;min-width:180px" />
+            <button class="btn blue" id="btnCalcJob">คำนวณตามสัญญา</button>
+          </div>
+          <div class="muted" id="calcNote" style="margin-top:10px">-</div>
+          <pre id="calcOut" style="margin-top:10px;max-height:360px">-</pre>
+        </div>
+
+        <div style="display:none">
+          <input id="defCompanyPct" value="0" />
+          <input id="defPartnerCut" value="0" />
+          <input id="defCustomPct" value="0" />
+          <button id="btnReloadIncome" type="button"></button>
+          <button id="btnSaveIncomeDefaults" type="button"></button>
+          <select id="ovTech"></select>
+          <select id="ovType"><option value="company">company</option></select>
+          <input id="ovValue" value="0" />
+          <button id="btnSaveOverride" type="button"></button>
+          <button id="btnClearOverride" type="button"></button>
         </div>
       </div>
     </details>
@@ -330,77 +283,24 @@
       </div>
     </details>
 
-    <details open>
-      <summary>🪜 ตั้งค่า % ขั้นบันได (Phase 1)</summary>
-      <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
-        <div class="grid">
-          <div class="card">
-            <div class="sectionTitle">
-              <div>
-                <b>เพิ่ม/แก้ไข Rule</b>
-                <div class="muted" style="margin-top:4px">ใช้ key: job_type=wash/repair/install • ac_type=wall/fourway/hanging/ceiling • wash_variant=normal/premium/coil/overhaul</div>
-              </div>
-              <button class="btn blue" id="btnReloadStepRules">รีเฟรช</button>
-            </div>
-            <div class="row" style="margin-top:10px">
-              <input id="sr_rule_id" placeholder="rule_id เช่น wash_wall_premium" style="flex:1;min-width:220px" />
-              <input id="sr_priority" type="number" placeholder="priority" style="width:140px" />
-              <select id="sr_enabled" style="width:160px">
-                <option value="true">enabled</option>
-                <option value="false">disabled</option>
-              </select>
-            </div>
-            <div class="row" style="margin-top:10px">
-              <select id="sr_job_type" style="flex:1;min-width:180px">
-                <option value="">(job_type: any)</option>
-                <option value="wash">wash</option>
-                <option value="repair">repair</option>
-                <option value="install">install</option>
-              </select>
-              <select id="sr_ac_type" style="flex:1;min-width:180px">
-                <option value="">(ac_type: any)</option>
-                <option value="wall">wall</option>
-                <option value="fourway">fourway</option>
-                <option value="hanging">hanging</option>
-                <option value="ceiling">ceiling</option>
-              </select>
-              <select id="sr_wash_variant" style="flex:1;min-width:200px">
-                <option value="">(wash_variant: any)</option>
-                <option value="normal">normal</option>
-                <option value="premium">premium</option>
-                <option value="coil">coil</option>
-                <option value="overhaul">overhaul</option>
-              </select>
-            </div>
-            <div class="row" style="margin-top:10px">
-              <input id="sr_s1" type="number" placeholder="1 เครื่อง %" style="width:140px" />
-              <input id="sr_s2" type="number" placeholder="2 เครื่อง %" style="width:140px" />
-              <input id="sr_s3" type="number" placeholder="3 เครื่อง %" style="width:140px" />
-              <input id="sr_s4" type="number" placeholder="4+ เครื่อง %" style="width:140px" />
-              <button class="btn yellow" id="btnUpsertStepRule">บันทึก</button>
-            </div>
-            <div class="muted" id="stepRuleStatus" style="margin-top:10px">-</div>
-          </div>
+    <div style="display:none" aria-hidden="true">
+      <button id="btnReloadStepRules" type="button"></button>
+      <input id="sr_rule_id" value="" />
+      <input id="sr_priority" value="0" />
+      <select id="sr_enabled"><option value="false">disabled</option></select>
+      <input id="sr_job_type" value="" />
+      <input id="sr_ac_type" value="" />
+      <input id="sr_wash_variant" value="" />
+      <input id="sr_s1" value="0" />
+      <input id="sr_s2" value="0" />
+      <input id="sr_s3" value="0" />
+      <input id="sr_s4" value="0" />
+      <button id="btnUpsertStepRule" type="button"></button>
+      <div id="stepRuleStatus"></div>
+      <table><tbody id="stepRulesTbody"></tbody></table>
+    </div>
 
-          <div class="card">
-            <b style="color:#0b1b3a">รายการ Step Rules</b>
-            <div class="muted" style="margin-top:4px">กด “แก้ไข” เพื่อดึงค่ามาใส่ฟอร์ม</div>
-            <div style="overflow:auto;margin-top:8px">
-              <table>
-                <thead>
-                  <tr class="muted">
-                    <td>rule_id</td><td>match</td><td>1</td><td>2</td><td>3</td><td>4+</td><td>priority</td><td>enabled</td><td>จัดการ</td>
-                  </tr>
-                </thead>
-                <tbody id="stepRulesTbody"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
-    
-
-<details>
+    <details>
   <summary>👤 % พิเศษรายช่าง (Override)</summary>
   <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
     <div class="grid2">

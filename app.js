@@ -790,7 +790,7 @@ function renderIncomeDayDetail(payload){
   }
 
   function fmtPct(v){
-    if (v==null || v==='') return 'เรทสัญญา';
+    if (v==null || v==='') return 'บาท/เครื่องตามสัญญา';
     const n = Number(v);
     if (!Number.isFinite(n)) return String(v);
     return `${n}%`;
@@ -815,6 +815,12 @@ function renderIncomeDayDetail(payload){
     const howPct = _keyLabel(d.how_percent_selected, '');
     const howSplit = _keyLabel(d.how_split_applied, '');
     const relItems = Array.isArray(d.related_items) ? d.related_items : [];
+    const rateRows = Array.isArray(d.contract_rate_rows) ? d.contract_rate_rows : [];
+    const rateHtml = rateRows.slice(0, 40).map(r=>{
+      const share = Number(r.share || 1);
+      const shareTxt = share !== 1 ? ` × ${share.toFixed(2)}` : '';
+      return `<div class="muted" style="margin-top:4px">• ${esc(r.wash_label || r.wash_key || 'บริการ')} ${esc(r.btu_tier === 'large' ? '18,000 BTU+' : '≤12,000 BTU')} เครื่องที่ ${esc(r.machine_index || '-')} = <b>${formatBaht(r.paid_rate ?? r.rate ?? 0)}</b>${shareTxt}</div>`;
+    }).join('');
     const relHtml = relItems.slice(0, 25).map(x=>{
       const nm = esc(_keyLabel(x.item_name, x.name));
       const qty = Number(x.qty||0);
@@ -830,7 +836,7 @@ function renderIncomeDayDetail(payload){
             <b>งาน #${jobId}</b>
             <div class="muted" style="margin-top:4px">${finished}</div>
             <div class="muted" style="margin-top:6px">${jobType} • ${acType}${wash?` • ${wash}`:''}</div>
-            <div class="muted" style="margin-top:4px">เครื่องของช่าง: <b>${mc}</b> • วิธีคิด: <b>${pct}</b></div>
+            <div class="muted" style="margin-top:4px">เครื่องที่คิดเงินให้ช่าง: <b>${mc}</b> • วิธีคิด: <b>${pct}</b></div>
             <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
               <button class="btn" type="button" onclick="(function(){var el=document.getElementById('${traceId}'); if(!el) return; el.style.display = (el.style.display==='none' || !el.style.display) ? 'block' : 'none';})()">ดูสูตร</button>
             </div>
@@ -841,10 +847,11 @@ function renderIncomeDayDetail(payload){
         </div>
 
         <div id="${traceId}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(15,23,42,0.15)">
-          <div class="muted">ฐานก่อน %: <b>${base}</b> • rule: <b>${esc(rule)}</b> • โหมดแบ่ง: <b>${esc(mode)}</b></div>
+          <div class="muted">ค่าจ้างตามสัญญา: <b>${base}</b> • engine: <b>${esc(rule)}</b> • โหมดแบ่ง: <b>${esc(mode)}</b></div>
           ${howMc ? `<div class="muted" style="margin-top:6px">นับเครื่อง: ${esc(howMc)}</div>` : ''}
-          ${howPct ? `<div class="muted" style="margin-top:6px">เลือก %: ${esc(howPct)}</div>` : ''}
+          ${howPct ? `<div class="muted" style="margin-top:6px">สูตรเรท: ${esc(howPct)}</div>` : ''}
           ${howSplit ? `<div class="muted" style="margin-top:6px">กระจายรายได้: ${esc(howSplit)}</div>` : ''}
+          ${rateHtml ? `<div style="margin-top:8px"><b style="color:#0b1b3a">เรทตามสัญญา</b>${rateHtml}</div>` : ''}
           ${relHtml ? `<div style="margin-top:8px"><b style="color:#0b1b3a">รายการที่เกี่ยวข้อง</b>${relHtml}</div>` : ''}
         </div>
       </div>

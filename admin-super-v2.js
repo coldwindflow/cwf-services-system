@@ -390,8 +390,21 @@
     $('calcNote').textContent = 'รอสักครู่';
     try {
       const r = await api(`/admin/super/tech_income/calc/job/${encodeURIComponent(job_id)}`);
-      $('calcNote').textContent = r.note || '-';
-      $('calcOut').textContent = JSON.stringify(r, null, 2);
+      $('calcNote').textContent = r.note || 'Contract-only payroll';
+      const lines = Array.isArray(r.lines) ? r.lines : [];
+      const summary = lines.map(x => {
+        const d = x.detail_json || {};
+        const rows = Array.isArray(d.contract_rate_rows) ? d.contract_rate_rows : [];
+        const rateText = rows.map(rr => `${rr.wash_label || rr.wash_key || 'บริการ'} ${rr.btu_tier === 'large' ? '18,000+' : '≤12,000'} เครื่องที่ ${rr.machine_index}: ${Number(rr.paid_rate ?? rr.rate ?? 0).toLocaleString('th-TH')}฿`).join('\n  - ');
+        return [
+          `ช่าง: ${x.technician_username}`,
+          `ประเภท: ${d.technician_type || '-'} | โหมด: ${d.split_mode || d.mode || '-'}`,
+          `จำนวนเครื่องที่คิด: ${Number(x.machine_count_for_tech || 0)}`,
+          `รายได้: ${Number(x.earn_amount || 0).toLocaleString('th-TH')} ฿`,
+          rateText ? `เรท:\n  - ${rateText}` : 'เรท: -',
+        ].join('\n');
+      }).join('\n\n--------------------\n\n');
+      $('calcOut').textContent = `JOB #${r.job_id}\nรวมทั้งงาน: ${Number(r.gross_amount || 0).toLocaleString('th-TH')} ฿\nPayroll: ${r.payroll_version || '-'}\n\n${summary || '(ไม่มี line รายได้)'}`;
     } catch (e) {
       $('calcNote').textContent = '-';
       $('calcOut').textContent = `ERROR: ${e.message}`;
