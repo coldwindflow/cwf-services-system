@@ -824,6 +824,51 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
         };
       }
 
+      // 🔁 Regenerate งวด draft จากสูตรสัญญาเท่านั้น (ไม่แตะ locked/paid)
+      const regenBtn = $('btnRegeneratePayout');
+      if (regenBtn){
+        regenBtn.disabled = (st !== 'draft');
+        regenBtn.onclick = async ()=>{
+          if (st !== 'draft') {
+            alert('งวดนี้ locked/paid แล้ว ห้าม regenerate แบบเงียบ ให้ใช้ Adjustment แยกต่างหาก');
+            return;
+          }
+          if (!confirm(`Regenerate งวด ${id} จากสูตรสัญญาใหม่?\n\nระบบจะลบบรรทัดรายได้เดิมของงวด draft นี้ แล้วสร้างใหม่จาก Contract Engine เท่านั้น\n- ไม่แตะ locked/paid\n- ไม่เอา line_total/unit_price/special_bonus_amount มาเป็นรายได้\n- adjustment เดิมยังอยู่แยกต่างหาก`)) return;
+          regenBtn.disabled = true;
+          const oldText = regenBtn.textContent;
+          regenBtn.textContent = 'กำลัง Regenerate...';
+          if ($('payoutReconcileBox')) $('payoutReconcileBox').innerHTML = '<div class="muted">กำลัง regenerate จากสูตรสัญญา...</div>';
+          try{
+            const rr = await api(`/admin/super/payouts/${encodeURIComponent(id)}/regenerate_contract`, { method:'POST' });
+            const msg = `Regenerate สำเร็จ: ลบ/แทนที่ ${Number(rr.old_lines||0)} บรรทัดเดิม → ${Number(rr.new_lines||0)} บรรทัดใหม่ | ยอดใหม่ ${fmtBaht(rr.new_total)}`;
+            $('payoutGenStatus').textContent = msg;
+            if ($('payoutReconcileBox')) {
+              const errs = Array.isArray(rr.errors) && rr.errors.length ? `<div class="muted" style="margin-top:6px;color:#b45309">มีรายการต้องตรวจสอบ ${rr.errors.length} รายการ</div>` : '';
+              $('payoutReconcileBox').innerHTML = `
+                <div class="card" style="background:#f0fdf4;border-color:#bbf7d0">
+                  <b style="color:#166534">Regenerate ตามสัญญาสำเร็จ</b>
+                  <div class="muted" style="margin-top:6px">old lines: ${Number(rr.old_lines||0)} / old total: ${fmtBaht(rr.old_total)}</div>
+                  <div class="muted">new lines: ${Number(rr.new_lines||0)} / new total: <b>${fmtBaht(rr.new_total)}</b></div>
+                  <div class="muted">adjustments ที่แยกไว้: ${Number(rr.adjustments_count||0)} รายการ (${fmtBaht(rr.adjustments_total)})</div>
+                  <div class="muted mono" style="margin-top:6px">rate_source=contract | ignored=line_total, unit_price, special_bonus_amount, percentage</div>
+                  ${errs}
+                </div>
+              `;
+            }
+            toast('Regenerate สำเร็จ');
+            await loadPayouts();
+            await openPayout(id);
+            await loadAudit();
+          }catch(e){
+            if ($('payoutReconcileBox')) $('payoutReconcileBox').innerHTML = `<div class="muted">Regenerate ไม่สำเร็จ: ${esc(e.message||'error')}</div>`;
+            alert(`Regenerate ไม่สำเร็จ: ${e.message}`);
+          }finally{
+            regenBtn.textContent = oldText;
+            regenBtn.disabled = (st !== 'draft');
+          }
+        };
+      }
+
       // ✅ Phase 5: ตรวจสอบงวด (reconcile)
       const recBtn = $('btnReconcilePayout');
       if (recBtn){

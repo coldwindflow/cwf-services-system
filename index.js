@@ -3477,6 +3477,173 @@ app.get('/admin/payouts/:payout_id/tech/:username', requireAdminSession, async (
 // - Compare stored payout_lines with current recompute results
 // - Detect jobs changed after generate (via job_updates_v2)
 // =======================================
+
+
+// 🔁 Regenerate a single draft payout from the contract engine only.
+// Safety:
+// - draft only; locked/paid are never changed silently
+// - payout payments block regeneration
+// - adjustments are preserved separately and are not mixed into job income
+async function _regenerateDraftPayoutContractLines({ client, payout_id, actor_username, req }) {
+  const metaQ = await client.query(
+    `SELECT payout_id, period_type, period_start, period_end, status
+       FROM public.technician_payout_periods
+      WHERE payout_id=$1
+      LIMIT 1`,
+    [payout_id]
+  );
+  const meta = metaQ.rows?.[0] || null;
+  if (!meta) {
+    const err = new Error('PAYOUT_NOT_FOUND');
+    err.statusCode = 404;
+    throw err;
+  }
+  const status = String(meta.status || 'draft').trim() || 'draft';
+  if (status !== 'draft') {
+    const err = new Error('CANNOT_REGENERATE_LOCKED_OR_PAID');
+    err.statusCode = 409;
+    err.details = { status };
+    throw err;
+  }
+
+  const payC = await client.query(
+    `SELECT COUNT(*)::int AS c FROM public.technician_payout_payments WHERE payout_id=$1`,
+    [payout_id]
+  );
+  const paymentsCount = Number(payC.rows?.[0]?.c || 0);
+  if (paymentsCount > 0) {
+    const err = new Error('CANNOT_REGENERATE_HAS_PAYMENTS');
+    err.statusCode = 409;
+    err.details = { payments_count: paymentsCount };
+    throw err;
+  }
+
+  const beforeQ = await client.query(
+    `SELECT COUNT(*)::int AS c, COALESCE(SUM(earn_amount),0)::numeric AS total
+       FROM public.technician_payout_lines
+      WHERE payout_id=$1`,
+    [payout_id]
+  );
+  const oldLines = Number(beforeQ.rows?.[0]?.c || 0);
+  const oldTotal = Number(beforeQ.rows?.[0]?.total || 0);
+
+  const adjC = await client.query(
+    `SELECT COUNT(*)::int AS c, COALESCE(SUM(adj_amount),0)::numeric AS total
+       FROM public.technician_payout_adjustments
+      WHERE payout_id=$1`,
+    [payout_id]
+  );
+  const adjustmentsCount = Number(adjC.rows?.[0]?.c || 0);
+  const adjustmentsTotal = Number(adjC.rows?.[0]?.total || 0);
+
+  const start = new Date(meta.period_start);
+  const endEx = new Date(meta.period_end);
+  const period_type = String(meta.period_type || _parsePayoutId(payout_id)?.type || '').trim();
+  const label_ym = String(meta.period_start || '').slice(0, 7);
+
+  const computed = await _computePayoutLinesForPeriod(start, endEx, {
+    payout_id,
+    period_type,
+    label_ym,
+    include_non_commission: true,
+  });
+
+  await client.query(`DELETE FROM public.technician_payout_lines WHERE payout_id=$1`, [payout_id]);
+
+  let inserted = 0;
+  let newTotal = 0;
+  for (const ln of (computed.lines || [])) {
+    if (!ln || !ln.technician_username) continue;
+    const r = await client.query(
+      `INSERT INTO public.technician_payout_lines(
+         payout_id, technician_username, job_id, finished_at,
+         earn_amount, base_amount, percent_final, machine_count_for_tech, step_rule_key,
+         detail_json, setting_snapshot
+       ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (payout_id, technician_username, job_id) DO UPDATE SET
+         finished_at=EXCLUDED.finished_at,
+         earn_amount=EXCLUDED.earn_amount,
+         base_amount=EXCLUDED.base_amount,
+         percent_final=EXCLUDED.percent_final,
+         machine_count_for_tech=EXCLUDED.machine_count_for_tech,
+         step_rule_key=EXCLUDED.step_rule_key,
+         detail_json=EXCLUDED.detail_json,
+         setting_snapshot=EXCLUDED.setting_snapshot`,
+      [
+        payout_id,
+        ln.technician_username,
+        ln.job_id,
+        ln.finished_at,
+        ln.earn_amount,
+        ln.base_amount,
+        ln.percent_final,
+        ln.machine_count_for_tech,
+        ln.step_rule_key,
+        ln.detail_json,
+        ln.setting_snapshot,
+      ]
+    );
+    inserted += (r.rowCount || 0);
+    newTotal += Number(ln.earn_amount || 0);
+  }
+
+  try {
+    await auditLog(req || { actor: { username: actor_username || 'super_admin', role: 'super_admin' } }, { action: 'PAYOUT_CONTRACT_REGENERATE', target_username: null, target_role: null, meta: {
+      payout_id,
+      status,
+      old_lines: oldLines,
+      old_total: oldTotal,
+      new_lines: inserted,
+      new_total: Number(newTotal.toFixed(2)),
+      adjustments_count: adjustmentsCount,
+      adjustments_total: adjustmentsTotal,
+      errors: computed.errors || [],
+      engine: 'contract-v10-app-button',
+      ignored_legacy_fields: ['line_total','unit_price','total_price','paid_amount','final_price','special_bonus_amount','percentage','company_cut_percent','commission_percent'],
+    } });
+  } catch {}
+
+  return {
+    ok: true,
+    payout_id,
+    status,
+    old_lines: oldLines,
+    old_total: Number(oldTotal || 0),
+    new_lines: inserted,
+    new_total: Number(newTotal.toFixed(2)),
+    adjustments_count: adjustmentsCount,
+    adjustments_total: Number(adjustmentsTotal || 0),
+    errors: computed.errors || [],
+    note: 'Regenerated draft payout lines from contract engine only. Adjustments are preserved separately. Locked/paid periods are not changed.',
+  };
+}
+
+app.post('/admin/super/payouts/:payout_id/regenerate_contract', requireSuperAdmin, async (req, res) => {
+  const payout_id = String(req.params.payout_id || '').trim();
+  if (!payout_id) return res.status(400).json({ ok:false, error:'MISSING_PAYOUT_ID' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const result = await _regenerateDraftPayoutContractLines({
+      client,
+      payout_id,
+      actor_username: req.actor?.username || null,
+      req,
+    });
+    await client.query('COMMIT');
+    return res.json(result);
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    const code = Number(e.statusCode || 500);
+    const payload = { ok:false, error: e.message || 'REGENERATE_FAILED' };
+    if (e.details) payload.details = e.details;
+    console.error('POST /admin/super/payouts/:payout_id/regenerate_contract', e);
+    return res.status(code).json(payload);
+  } finally {
+    client.release();
+  }
+});
+
 app.get('/admin/super/payouts/:payout_id/reconcile', requireSuperAdmin, async (req, res) => {
   const payout_id = String(req.params.payout_id || '').trim();
   if (!payout_id) return res.status(400).json({ ok:false, error:'MISSING_PAYOUT_ID' });

@@ -241,7 +241,7 @@
             <div class="sectionTitle">
               <div>
                 <b>สร้างงวด</b>
-                <div class="muted" style="margin-top:4px">ระบบจะคำนวณแล้วเก็บบรรทัดใน DB (กดซ้ำไม่ซ้ำ)</div>
+                <div class="muted" style="margin-top:4px">ระบบจะคำนวณจาก Contract Engine เท่านั้น และสามารถกด Regenerate งวด draft ได้จากแอพ</div>
               </div>
               <div class="row">
                 <button class="btn yellow" id="btnGenP10">สร้างงวดวันที่ 10</button>
@@ -272,6 +272,7 @@
                 <span class="pill" id="payoutStatusPill" style="display:none"></span>
                 <button class="btn gray" id="btnDeletePayout" disabled>ลบงวด</button>
                 <button class="btn blue" id="btnReconcilePayout" disabled>ตรวจสอบงวด</button>
+                <button class="btn yellow" id="btnRegeneratePayout" disabled>Regenerate ตามสัญญา</button>
                 <button class="btn red" id="btnLockPayout" disabled>ล็อกงวด</button>
               </div>
             </div>
@@ -438,6 +439,6 @@
 
   </div>
 
-  <script src="admin-super-v2.js"></script>
+  <script src="admin-super-v2.js?v=contract-payroll-v10-app-regen"></script>
 </body>
 </html>

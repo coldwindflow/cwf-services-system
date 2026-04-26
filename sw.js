@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v22-contract-payroll-v10";
+const CACHE_NAME = "cwf-cache-v23-contract-payroll-v10-app-regen";
 
 const ASSETS = [
   "/",
@@ -9,7 +9,7 @@ const ASSETS = [
   "/index.html",
   "/tech.html",
   "/style.css",
-  "/app.js?v=contract-payroll-v10",
+  "/app.js?v=contract-payroll-v10-app-regen",
   "/logo.png",
   "/icon-180.png",
   "/icon-192.png",
