@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v26-contract-payroll-v10-4-tech-premium-income";
+const CACHE_NAME = "cwf-cache-v25-tech-premium-v10-5-upcoming-filter";
 
 const ASSETS = [
   "/",
@@ -9,7 +9,7 @@ const ASSETS = [
   "/index.html",
   "/tech.html",
   "/style.css",
-  "/app.js?v=contract-payroll-v10-4-tech-premium-income",
+  "/app.js?v=tech-premium-v10-5",
   "/logo.png",
   "/icon-180.png",
   "/icon-192.png",

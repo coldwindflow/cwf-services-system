@@ -2,12 +2,20 @@
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
 const activeUpcomingJobsEl = document.getElementById("active-upcoming-list");
+const activeUpcomingHintEl = document.getElementById("activeUpcomingHint");
+const activeUpcomingDateQuickEl = document.getElementById("activeUpcomingDateQuick");
+const activeUpcomingDatePickerEl = document.getElementById("activeUpcomingDatePicker");
+const btnUpcomingApplyEl = document.getElementById("btnUpcomingApply");
+const btnUpcomingClearEl = document.getElementById("btnUpcomingClear");
 
 // ✅ ฟิลเตอร์ประวัติงาน (วัน/เดือน/ทั้งหมด)
 const historyTabDayEl = document.getElementById("tab-his-day");
 const historyTabMonthEl = document.getElementById("tab-his-month");
 const historyTabAllEl = document.getElementById("tab-his-all");
 const historyFilterHintEl = document.getElementById("history-filter-hint");
+
+const ACTIVE_UPCOMING_FILTER_KEY = "cwf_tech_upcoming_filter";
+let __ACTIVE_UPCOMING_FILTER__ = "";
 // =======================================
 // 🔧 CONFIG
 // =======================================
@@ -606,15 +614,15 @@ async function loadIncomeSummary() {
   try {
     // Fail-open for PWA/webview that loses cookies: also send ?username=
     const u = _bestEffortUsername();
-    const url = `${API_BASE}/tech/income_summary${u ? `?username=${encodeURIComponent(u)}&` : '?'}v=contract-v10-4`;
-    try { localStorage.removeItem('__cwf_income_cache__'); localStorage.removeItem('__cwf_income_cache_v9__'); localStorage.removeItem('__cwf_income_cache_v10_4__'); localStorage.removeItem('__cwf_income_cache_v10__'); localStorage.removeItem('__cwf_income_cache_v10_3__'); } catch {}
+    const url = `${API_BASE}/tech/income_summary${u ? `?username=${encodeURIComponent(u)}&` : '?'}v=contract-v10-2`;
+    try { localStorage.removeItem('__cwf_income_cache__'); localStorage.removeItem('__cwf_income_cache_v9__'); localStorage.removeItem('__cwf_income_cache_v10_2__'); localStorage.removeItem('__cwf_income_cache_v10__'); } catch {}
     const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
 
     // cache last good values (so UI won't look "empty" when temporary failures happen)
     try {
-      localStorage.setItem('__cwf_income_cache_v10_4__', JSON.stringify({
+      localStorage.setItem('__cwf_income_cache_v10_2__', JSON.stringify({
         ts: Date.now(),
         day_total: Number(data.day_total||0),
         month_total: Number(data.month_total||0),
@@ -631,7 +639,7 @@ async function loadIncomeSummary() {
   } catch (e) {
     // fail-open (ไม่ให้หน้า tech พัง) + show cached value if available
     try {
-      const c = JSON.parse(localStorage.getItem('__cwf_income_cache_v10_4__') || 'null');
+      const c = JSON.parse(localStorage.getItem('__cwf_income_cache_v10_2__') || 'null');
       if (c && typeof c === 'object') {
         if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(c.day_total);
         if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(c.month_total);
@@ -664,7 +672,7 @@ async function loadIncomeTodayMonthFast(){
   if (!incomeTodayValEl && !incomeDaily2El && !incomeMonth2El) return;
   try{
     const u = _bestEffortUsername();
-    const url = `${API_BASE}/tech/income_today_month${u ? `?username=${encodeURIComponent(u)}&` : '?'}v=contract-v10-4`;
+    const url = `${API_BASE}/tech/income_today_month${u ? `?username=${encodeURIComponent(u)}&` : '?'}v=contract-v10-2`;
     const res = await fetch(url, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
@@ -680,7 +688,7 @@ async function loadIncomeTodayMonthFast(){
 async function loadNextPeriodEstimate(){
   if (!incomePeriodEstValEl && !incomePeriodRangeEl) return;
   try{
-    const res = await fetch(`${API_BASE}/tech/income_next_period_estimate?v=contract-v10-4`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/income_next_period_estimate?v=contract-v10-2`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     if (incomePeriodEstValEl) incomePeriodEstValEl.textContent = formatBaht(data.estimate_total||0);
@@ -695,14 +703,14 @@ async function loadOutstandingTotal(){
   if (!incomeOutstandingValEl) return;
   try{
     // ใช้ cache จาก income_summary (authoritative) เพื่อไม่ต้องยิง compute ซ้ำ
-    const cache = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache_v10_4__')||'null');}catch{return null;} })();
+    const cache = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache_v10_2__')||'null');}catch{return null;} })();
     if (!cache || typeof cache !== 'object') {
       await loadIncomeSummary();
     }
-    const c = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache_v10_4__')||'null');}catch{return null;} })();
+    const c = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache_v10_2__')||'null');}catch{return null;} })();
     const allTotal = Number(c?.all_total || 0);
 
-    const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v10-4`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v10-2`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     const paid = Number(data.paid_total || 0);
@@ -725,10 +733,13 @@ function renderLastDaysSummary(payload){
     const total = formatBaht(d.total||0);
     const count = Number(d.jobs||0);
     return `
-      <div class="income-day-card" onclick="(function(){ try{ var el=document.getElementById('incomeDatePicker'); if(el){ el.value='${ymd}'; } }catch(e){} try{ loadIncomeDayDetail('${ymd}'); }catch(e){} })()">
-        <div class="row" style="justify-content:space-between;gap:10px;align-items:center">
-          <div><div class="date">${ymd}</div><div class="income-job-meta">${count} งาน</div></div>
-          <div class="amount">${total}</div>
+      <div style="padding:10px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px" onclick="(function(){ try{ var el=document.getElementById('incomeDatePicker'); if(el){ el.value='${ymd}'; } }catch(e){} try{ loadIncomeDayDetail('${ymd}'); }catch(e){} })()">
+        <div class="row" style="justify-content:space-between;gap:10px">
+          <div>
+            <b>${ymd}</b>
+            <div class="muted" style="margin-top:4px">${count} งาน</div>
+          </div>
+          <div style="text-align:right"><b style="font-size:18px">${total}</b></div>
         </div>
       </div>
     `;
@@ -777,7 +788,7 @@ function renderIncomeDayDetail(payload){
   if (!techIncomeDayListEl) return;
   const items = Array.isArray(payload?.items) ? payload.items : [];
   if (!items.length) {
-    techIncomeDayListEl.innerHTML = `<div class="income-empty">วันนี้ยังไม่มีงานที่คิดรายได้</div>`;
+    techIncomeDayListEl.innerHTML = `<div class="muted">ไม่มีงานที่ปิดในวันนี้</div>`;
     return;
   }
 
@@ -828,19 +839,23 @@ function renderIncomeDayDetail(payload){
     }).join('');
     const traceId = `trace_${jobId}_${String(it.line_id||'v')}`.replace(/[^a-zA-Z0-9_]/g,'_');
     return `
-      <div class="income-job-card">
+      <div style="padding:10px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px">
         <div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start">
-          <div style="min-width:0;flex:1 1 180px">
-            <div class="title">งาน #${jobId}</div>
-            <div class="income-job-meta">${finished}</div>
-            <div class="income-job-meta">${jobType} • ${acType}${wash?` • ${wash}`:''}</div>
-            <div class="income-job-meta">จำนวนที่คิดรายได้: <b>${mc}</b> เครื่อง • <b>${pct}</b></div>
-            <button class="btn" type="button" style="margin-top:9px;border-radius:16px;min-width:auto" onclick="(function(){var el=document.getElementById('${traceId}'); if(!el) return; el.style.display = (el.style.display==='none' || !el.style.display) ? 'block' : 'none';})()">ดูสูตร</button>
+          <div>
+            <b>งาน #${jobId}</b>
+            <div class="muted" style="margin-top:4px">${finished}</div>
+            <div class="muted" style="margin-top:6px">${jobType} • ${acType}${wash?` • ${wash}`:''}</div>
+            <div class="muted" style="margin-top:4px">เครื่องที่คิดเงินให้ช่าง: <b>${mc}</b> • วิธีคิด: <b>${pct}</b></div>
+            <div class="row" style="gap:8px;margin-top:8px;flex-wrap:wrap">
+              <button class="btn" type="button" onclick="(function(){var el=document.getElementById('${traceId}'); if(!el) return; el.style.display = (el.style.display==='none' || !el.style.display) ? 'block' : 'none';})()">ดูสูตร</button>
+            </div>
           </div>
-          <div class="amount">${earn}</div>
+          <div style="text-align:right">
+            <b style="font-size:18px">${earn}</b>
+          </div>
         </div>
 
-        <div id="${traceId}" class="income-formula-box">
+        <div id="${traceId}" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(15,23,42,0.15)">
           <div class="muted">ค่าจ้างตามสัญญา: <b>${base}</b> • engine: <b>${esc(rule)}</b> • โหมดแบ่ง: <b>${esc(mode)}</b></div>
           ${howMc ? `<div class="muted" style="margin-top:6px">นับเครื่อง: ${esc(howMc)}</div>` : ''}
           ${howPct ? `<div class="muted" style="margin-top:6px">สูตรเรท: ${esc(howPct)}</div>` : ''}
@@ -940,10 +955,16 @@ function renderTechPayoutPeriods(list){
     const status = _safeText(p.status||'draft');
     const active = (__cwfPayoutActiveId===p.payout_id);
     return `
-      <div class="income-period-card" style="cursor:pointer;${active?'outline:2px solid rgba(17,85,204,.22)':''}" onclick="window.openTechPayoutDetail('${id}')">
-        <div class="row" style="justify-content:space-between;gap:10px;align-items:center">
-          <div><div class="title">งวด ${type}</div><div class="income-job-meta">${st} - ${en}</div><div class="income-job-meta">สถานะ: ${status} • จ่าย: ${paySt}</div></div>
-          <div style="text-align:right"><div class="amount">${total}</div><div class="income-job-meta">คงเหลือ ${rem}</div></div>
+      <div class="tr" style="padding:10px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px;cursor:pointer;${active?'outline:2px solid rgba(11,75,179,0.35)':''}" onclick="window.openTechPayoutDetail('${id}')">
+        <div class="row" style="justify-content:space-between;gap:10px">
+          <div>
+            <b>งวด ${type}</b>
+            <div class="muted" style="margin-top:4px">${st} - ${en}</div>
+          </div>
+          <div style="text-align:right">
+            <b>${total}</b>
+            <div class="muted" style="margin-top:4px">สถานะงวด: ${status} • จ่าย: ${paySt} • คงเหลือ: ${rem}</div>
+          </div>
         </div>
       </div>
     `;
@@ -1067,16 +1088,16 @@ function renderTechPayoutLines(lines, total, adjustments, payment, payoutId){
         return `<div class="muted">- ${_safeText(it.item_name)} × ${Number(it.qty||0)}${a}</div>`;
       }).join('');
       return `
-        <details class="income-job-card">
+        <details class="tr" style="border-radius:16px;padding:10px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px">
           <summary style="cursor:pointer">
             <div class="row" style="justify-content:space-between;gap:10px">
               <div>
-                <span class="title">งาน #${jobId}</span> <span class="muted">(${fin})</span>
-                <div class="income-job-meta">${jt} • ${ac}${wash && wash!=='-' ? ` • ${wash}`:''} • โหมด: ${mode}</div>
+                <b>งาน #${jobId}</b> <span class="muted">(${fin})</span>
+                <div class="muted" style="margin-top:4px">${jt} • ${ac}${wash && wash!=='-' ? ` • ${wash}`:''} • โหมด: ${mode}</div>
               </div>
               <div style="text-align:right">
-                <div class="amount">${earn}</div>
-                <div class="income-job-meta">เครื่อง: ${mc} • วิธีคิด: ${pct}</div>
+                <b>${earn}</b>
+                <div class="muted" style="margin-top:4px">เครื่อง: ${mc} • วิธีคิด: ${pct}</div>
               </div>
             </div>
           </summary>
@@ -1229,6 +1250,19 @@ loadIncomeOverview();
 try{
   if (incomeDatePickerEl) incomeDatePickerEl.value = _bkkYmdNow();
   if (btnLoadIncomeDayEl) btnLoadIncomeDayEl.addEventListener('click', ()=> loadIncomeDayDetail(incomeDatePickerEl?.value || _bkkYmdNow()));
+  try {
+    const savedUpcomingFilter = localStorage.getItem(ACTIVE_UPCOMING_FILTER_KEY) || "";
+    if (_isYmd(savedUpcomingFilter)) setUpcomingFilter(savedUpcomingFilter, { skipRender:true });
+    else if (activeUpcomingDatePickerEl) activeUpcomingDatePickerEl.value = "";
+  } catch(_){ }
+  if (btnUpcomingApplyEl) btnUpcomingApplyEl.addEventListener('click', ()=> setUpcomingFilter(activeUpcomingDatePickerEl?.value || ""));
+  if (btnUpcomingClearEl) btnUpcomingClearEl.addEventListener('click', ()=> setUpcomingFilter(""));
+  if (activeUpcomingDatePickerEl) {
+    activeUpcomingDatePickerEl.addEventListener('change', ()=>{
+      const v = activeUpcomingDatePickerEl.value || "";
+      if (!v) setUpcomingFilter("");
+    });
+  }
   // โหลดของวันนี้อัตโนมัติครั้งแรก (กันช่างต้องกดหลายที)
   if (techIncomeDayListEl) loadIncomeDayDetail(_bkkYmdNow());
 
@@ -1563,6 +1597,69 @@ function getJobFromCache(jobId){
   return arr.find(j=>Number(j?.job_id)===id) || null;
 }
 
+function _isYmd(v){
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(v || "").trim());
+}
+
+function formatThaiDateShort(ymd){
+  if (!_isYmd(ymd)) return "-";
+  try{
+    const dt = new Date(`${ymd}T12:00:00+07:00`);
+    return dt.toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok", weekday:"short", day:"numeric", month:"short", year:"numeric" });
+  }catch(_){
+    return ymd;
+  }
+}
+
+function setUpcomingFilter(dateYmd, opts){
+  const normalized = _isYmd(dateYmd) ? String(dateYmd) : "";
+  __ACTIVE_UPCOMING_FILTER__ = normalized;
+  try{
+    if (normalized) localStorage.setItem(ACTIVE_UPCOMING_FILTER_KEY, normalized);
+    else localStorage.removeItem(ACTIVE_UPCOMING_FILTER_KEY);
+  }catch(_){ }
+  if (activeUpcomingDatePickerEl) activeUpcomingDatePickerEl.value = normalized;
+  if (!(opts && opts.skipRender)) {
+    try { renderJobs(window.__JOB_CACHE__ || []); } catch(_) {}
+  }
+}
+window.setUpcomingFilter = setUpcomingFilter;
+
+function renderUpcomingQuickDates(dateList){
+  if (!activeUpcomingDateQuickEl) return;
+  const dates = Array.isArray(dateList) ? dateList.filter(_isYmd) : [];
+  activeUpcomingDateQuickEl.innerHTML = "";
+  if (!dates.length) return;
+  dates.slice(0, 10).forEach((ymd)=>{
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = `premium-chip${__ACTIVE_UPCOMING_FILTER__ === ymd ? ' active' : ''}`;
+    btn.textContent = formatThaiDateShort(ymd);
+    btn.addEventListener("click", ()=> setUpcomingFilter(ymd));
+    activeUpcomingDateQuickEl.appendChild(btn);
+  });
+  if (dates.length > 10) {
+    const more = document.createElement("div");
+    more.className = "muted";
+    more.style.alignSelf = "center";
+    more.textContent = `+ อีก ${dates.length - 10} วัน`;
+    activeUpcomingDateQuickEl.appendChild(more);
+  }
+}
+
+function renderUpcomingHint(filteredCount, totalCount){
+  if (!activeUpcomingHintEl) return;
+  if (!totalCount) {
+    activeUpcomingHintEl.textContent = "ยังไม่มีงานล่วงหน้า";
+    return;
+  }
+  if (__ACTIVE_UPCOMING_FILTER__) {
+    activeUpcomingHintEl.textContent = `กำลังแสดง ${filteredCount} งาน ของวันที่ ${formatThaiDateShort(__ACTIVE_UPCOMING_FILTER__)} • กด “ดูทั้งหมด” เพื่อกลับไปดูทุกวัน`;
+    return;
+  }
+  activeUpcomingHintEl.textContent = `มีงานล่วงหน้าทั้งหมด ${totalCount} งาน • เลือกดูทีละวันได้เพื่อลดความสับสน`;
+}
+
 function renderJobs(jobs) {
   // ✅ cache ไว้ใช้กับ popup จ่ายเงิน / เปิด e-slip
   window.__JOB_CACHE__ = Array.isArray(jobs) ? jobs : [];
@@ -1599,6 +1696,10 @@ function renderJobs(jobs) {
   const activeUpcoming = activeAll.filter((j)=>{
     const y = ymdBkkFromISO(j.appointment_datetime);
     return y && y > todayYMD;
+  }).sort((a,b)=>{
+    const aa = a?.appointment_datetime ? new Date(a.appointment_datetime).getTime() : 0;
+    const bb = b?.appointment_datetime ? new Date(b.appointment_datetime).getTime() : 0;
+    return aa - bb;
   });
 
   let historyAll = jobs.filter((j) => {
@@ -1634,9 +1735,20 @@ function renderJobs(jobs) {
     prioritizedActiveToday.forEach((job) => activeJobsEl.appendChild(buildJobCard(job, false)));
   }
 
+  const upcomingDates = [...new Set(activeUpcoming.map((j)=> ymdBkkFromISO(j.appointment_datetime)).filter(Boolean))].sort();
+  renderUpcomingQuickDates(upcomingDates);
+  const filteredUpcoming = __ACTIVE_UPCOMING_FILTER__
+    ? activeUpcoming.filter((j)=> ymdBkkFromISO(j.appointment_datetime) === __ACTIVE_UPCOMING_FILTER__)
+    : activeUpcoming;
+  renderUpcomingHint(filteredUpcoming.length, activeUpcoming.length);
+
   if (activeUpcomingJobsEl) {
-    if (!activeUpcoming.length) activeUpcomingJobsEl.innerHTML = "<p>ยังไม่มีงานล่วงหน้า</p>";
-    activeUpcoming.forEach((job) => activeUpcomingJobsEl.appendChild(buildJobCard(job, false)));
+    if (!filteredUpcoming.length) {
+      activeUpcomingJobsEl.innerHTML = __ACTIVE_UPCOMING_FILTER__
+        ? `<p>ไม่มีงานล่วงหน้าในวันที่ ${formatThaiDateShort(__ACTIVE_UPCOMING_FILTER__)}</p>`
+        : "<p>ยังไม่มีงานล่วงหน้า</p>";
+    }
+    filteredUpcoming.forEach((job) => activeUpcomingJobsEl.appendChild(buildJobCard(job, false)));
   }
 
   if (historyJobsEl) {

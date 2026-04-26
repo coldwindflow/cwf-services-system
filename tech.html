@@ -7,54 +7,85 @@
   <link rel="stylesheet" href="style.css">
 
   <style>
-    .tabs { display:flex; gap:10px; }
+    :root{
+      --tech-navy:#0B2E6D;
+      --tech-navy-2:#174EA6;
+      --tech-blue-soft:#EEF4FF;
+      --tech-yellow:#F4C400;
+      --tech-yellow-soft:#FFF6CC;
+      --tech-text:#0F172A;
+      --tech-muted:#64748B;
+      --tech-border:#D7E0EE;
+      --tech-surface:#FFFFFF;
+      --tech-page:#F5F7FB;
+      --tech-shadow:0 16px 36px rgba(11,46,109,0.12);
+      --tech-shadow-soft:0 10px 24px rgba(11,46,109,0.08);
+      --tech-radius:18px;
+    }
+    body{ background:linear-gradient(180deg, #0B2E6D 0 156px, var(--tech-page) 156px 100%) !important; color:var(--tech-text); }
+    .app{ max-width:460px; margin:0 auto; padding:0 14px 122px; }
+    .card{ border-radius:22px !important; border:1px solid var(--tech-border) !important; box-shadow:var(--tech-shadow-soft) !important; background:var(--tech-surface) !important; }
+    .card.tight{ padding:16px !important; }
+    h2{ color:var(--tech-navy); font-size:28px; line-height:1.18; margin:0; }
+    hr{ border:none; height:1px; background:rgba(11,46,109,0.10); margin:18px 0; }
+    .muted{ color:var(--tech-muted) !important; }
+    .row{ gap:10px; }
+    .tabs{ display:flex; gap:10px; }
     .tab-btn{
-      flex:1; min-height: 44px; border-radius: 14px;
-      border: 1px solid rgba(15,23,42,0.10);
-      background: rgba(37,99,235,0.08);
-      color: #2563eb; font-weight: 800; box-shadow: none;
+      flex:1; min-height: 46px; border-radius: 16px;
+      border: 1px solid var(--tech-border);
+      background: #fff;
+      color: var(--tech-navy); font-weight: 900; box-shadow: none;
+      padding: 10px 12px;
     }
     .tab-btn.active{
-      background: linear-gradient(135deg, #2563eb, #06b6d4);
-      color: #fff; border: none; box-shadow: var(--shadow-2);
+      background: var(--tech-yellow);
+      color: #111827; border-color: rgba(244,196,0,0.9); box-shadow: none;
     }
 
     .section{ display:none; }
     .section.active{ display:block; }
 
-    /* ✅ bottom bar ล็อคติดขอบล่างจอมือถือ */
     .bottom-nav{
       position: fixed;
       left: 50%;
       transform: translateX(-50%);
       bottom: 0;
-      width: min(460px, calc(100% - 28px));
+      width: min(460px, calc(100% - 20px));
       z-index: 999;
       display:flex;
       gap:10px;
-      padding: 10px;
-      border-radius: 18px 18px 0 0;
-      border: 1px solid rgba(15,23,42,0.10);
-      background: rgba(255,255,255,0.92);
-      backdrop-filter: blur(10px);
-      box-shadow: var(--shadow);
+      padding: 12px 12px calc(12px + env(safe-area-inset-bottom));
+      border-radius: 24px 24px 0 0;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: linear-gradient(180deg, rgba(11,46,109,0.98), rgba(23,78,166,0.98));
+      box-shadow: 0 -10px 28px rgba(11,46,109,0.22);
     }
-
-    /* ✅ กัน content โดนเมนูทับ */
-    .app{ padding-bottom: 110px; }
 
     .nav-btn{
-      flex:1; min-height: 44px; border-radius: 14px;
-      border: 1px solid rgba(15,23,42,0.10);
-      background: rgba(15,23,42,0.04);
-      color: #0f172a; font-weight: 800; box-shadow:none;
-      padding: 10px 8px; font-size: 12px;
+      flex:1; min-height: 52px; border-radius: 18px;
+      border: 1px solid rgba(255,255,255,0.18);
+      background: rgba(255,255,255,0.08);
+      color: #fff; font-weight: 900; box-shadow:none;
+      padding: 10px 8px; font-size: 12px; line-height:1.2;
     }
     .nav-btn.active{
-      background: rgba(37,99,235,0.12);
-      color: #2563eb;
-      border-color: rgba(37,99,235,0.25);
+      background: var(--tech-yellow);
+      color: #111827;
+      border-color: rgba(244,196,0,0.9);
     }
+
+    .tech-label{ display:inline-flex; align-items:center; gap:8px; font-size:14px; font-weight:900; color:var(--tech-navy); }
+    .premium-chip{ display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:10px 14px; border-radius:999px; border:1px solid var(--tech-border); background:#fff; color:var(--tech-navy); font-weight:900; }
+    .premium-chip.active{ background:var(--tech-yellow); color:#111827; border-color:rgba(244,196,0,0.9); }
+    .premium-filter-row{ display:flex; gap:8px; flex-wrap:wrap; }
+    .premium-filter-row .btn, .premium-filter-row .tab-btn, .premium-filter-row .premium-chip{ flex:0 0 auto; }
+    .premium-input, input[type="date"].premium-input{
+      min-height:46px; border-radius:16px; border:1px solid var(--tech-border); background:#fff; color:var(--tech-navy); padding:10px 14px; font-weight:800;
+    }
+    .premium-panel{ border:1px solid var(--tech-border); background:#fff; border-radius:20px; padding:14px; box-shadow:var(--tech-shadow-soft); }
+    .premium-panel.soft{ background:linear-gradient(180deg, #fff, #F9FBFF); }
+    .premium-section-title{ display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
 
     /* ✅ โปรไฟล์ช่าง: รูป + ชื่อ + (สถิติ)
        - align-items:flex-start กันชื่อ/แรงค์ดูต่ำเวลามีปุ่มใต้รูป
@@ -149,30 +180,30 @@
     /* Fixed top nav (admin-like) */
     #techTopNav{position:fixed;left:0;right:0;top:0;z-index:2600;
       padding-top:env(safe-area-inset-top);
-      background:linear-gradient(180deg, rgba(11,27,58,0.98) 0%, rgba(11,75,179,0.98) 100%);
-      border-bottom:1px solid rgba(255,255,255,0.10);
-      box-shadow:0 14px 40px rgba(2,6,23,0.22);} 
+      background:linear-gradient(180deg, rgba(11,46,109,0.99) 0%, rgba(23,78,166,0.99) 100%);
+      border-bottom:1px solid rgba(255,255,255,0.12);
+      box-shadow:0 16px 40px rgba(11,46,109,0.24);} 
     #techTopNav .in{max-width:460px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;
-      gap:10px;padding:10px 12px;}
+      gap:10px;padding:12px 14px;}
     #techTopNav .ttl{min-width:0;display:flex;flex-direction:column;gap:2px}
-    #techTopNav .ttl b{font-size:14px;line-height:1.1;color:#fff}
-    #techTopNav .ttl span{font-size:12px;font-weight:900;color:rgba(255,255,255,0.80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .tech-icbtn{width:44px;height:44px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;
+    #techTopNav .ttl b{font-size:15px;line-height:1.1;color:#fff}
+    #techTopNav .ttl span{font-size:12px;font-weight:900;color:rgba(255,255,255,0.86);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .tech-icbtn{width:46px;height:46px;border-radius:18px;display:inline-flex;align-items:center;justify-content:center;
       border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.12);
       box-shadow:0 10px 26px rgba(0,0,0,0.18);cursor:pointer;user-select:none}
     .tech-icbtn:active{transform: translateY(1px) scale(0.99)}
     /* ISSUE: hamburger icon มองไม่เห็น/กลืนกับพื้นหลัง => ทำให้เป็นสีน้ำเงิน */
-    #techMenuBtn{background:rgba(255,255,255,0.92);border-color:rgba(37,99,235,0.30);color:#2563eb;font-size:22px;font-weight:1200;}
+    #techMenuBtn{background:var(--tech-yellow);border-color:rgba(244,196,0,0.9);color:#111827;font-size:22px;font-weight:1200;}
     /* ปุ่มปิดเมนูใน drawer ให้มองชัดบนพื้นหลังขาว */
-    #techMenuCloseBtn{background:rgba(37,99,235,0.10);border-color:rgba(37,99,235,0.25);color:#2563eb;}
-    #techTopSpacer{height:74px}
-    @media (max-width:420px){#techTopSpacer{height:72px}}
+    #techMenuCloseBtn{background:var(--tech-yellow-soft);border-color:rgba(244,196,0,0.45);color:#111827;}
+    #techTopSpacer{height:82px}
+    @media (max-width:420px){#techTopSpacer{height:80px}}
 
-    #techDrawerBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2690;display:none}
+    #techDrawerBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.48);z-index:2690;display:none}
     #techDrawer{position:fixed;inset:0;z-index:2700;display:none}
     #techDrawer .panel{
       position:absolute;right:0;top:0;bottom:0;width:min(360px, 92vw);
-      background:rgba(255,255,255,0.98);
+      background:#fff;
       backdrop-filter: blur(10px);
       border-left:1px solid rgba(15,23,42,0.12);
       box-shadow:-18px 0 50px rgba(2,6,23,0.25);
@@ -182,25 +213,26 @@
       padding-bottom: calc(12px + env(safe-area-inset-bottom));
     }
     .techMenuHead{display:flex;align-items:center;justify-content:space-between;gap:10px}
-    .techMenuHead b{font-size:14px;font-weight:1100;color:#0f172a}
+    .techMenuHead b{font-size:16px;font-weight:1100;color:var(--tech-navy)}
     .techMenuList{display:flex;flex-direction:column;gap:8px;margin-top:6px}
     .techMenuBtn{
       width:100%;
-      min-height:46px;
-      border-radius:16px;
-      border:1px solid rgba(37,99,235,0.22);
-      background:#2563eb;
-      color:#fff;
+      min-height:62px;
+      border-radius:18px;
+      border:1px solid var(--tech-border);
+      background:#fff;
+      color:var(--tech-navy);
       font-weight:1000;
       display:flex;align-items:center;justify-content:space-between;
-      padding: 10px 12px;
+      padding: 12px 14px;
       cursor:pointer;
+      box-shadow:var(--tech-shadow-soft);
     }
-    .techMenuBtn .left{display:flex;align-items:center;gap:10px}
-    .techMenuBtn .sub{font-size:12px;font-weight:900;color:rgba(255,255,255,0.85)}
+    .techMenuBtn .left{display:flex;align-items:center;gap:12px}
+    .techMenuBtn .sub{font-size:12px;font-weight:900;color:var(--tech-muted)}
     /* ISSUE: ปุ่มออกจากระบบ ให้แดงชัด + ตัวหนังสือขาว */
-    .techMenuDanger{border-color:rgba(239,68,68,0.35);background:#ef4444;color:#fff}
-    .techMenuDanger .sub{color:rgba(255,255,255,0.90)}
+    .techMenuDanger{border-color:rgba(239,68,68,0.28);background:#fff5f5;color:#b91c1c}
+    .techMenuDanger .sub{color:#dc2626}
     .techMenuSmall{font-size:12px;font-weight:900;color:rgba(15,23,42,0.70)}
 
     /* Profile compact (ISSUE-2) */
@@ -222,23 +254,46 @@
     .tech-more .row .k{font-size:12px;font-weight:1000;color:rgba(15,23,42,0.60)}
     .tech-more .row .v{font-size:13px;font-weight:1100;color:#0f172a}
 
-
-    /* =========================================================
-       Tech Premium UI v10.4 - scoped, mobile first
-       ========================================================= */
-    :root{--cwf-navy:#071b45;--cwf-blue:#1155cc;--cwf-sky:#1bb7e8;--cwf-gold:#ffd21f;--cwf-ink:#081b3a;--cwf-muted:#64748b;--cwf-line:rgba(8,27,58,.10);--cwf-soft:#f5f8ff;--cwf-card:#ffffff;}
-    body{background:radial-gradient(800px 420px at 50% -120px, rgba(17,85,204,.18), transparent 58%),linear-gradient(180deg,#f7faff 0%,#ffffff 44%,#f7faff 100%) !important;color:var(--cwf-ink);}
-    .app{max-width:460px;padding:0 14px 104px;gap:12px;}
-    #techTopNav{background:rgba(255,255,255,.88) !important;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border-bottom:1px solid rgba(8,27,58,.08) !important;box-shadow:0 10px 30px rgba(8,27,58,.08) !important;}
-    #techTopNav .in{padding:12px 14px;}#techTopNav .ttl b{font-size:16px;color:var(--cwf-navy);letter-spacing:.1px;}#techTopNav .ttl span{font-size:12px;color:rgba(8,27,58,.68);}
-    #techMenuBtn{width:52px;height:52px;border-radius:20px;background:linear-gradient(135deg,var(--cwf-navy),var(--cwf-blue)) !important;color:#fff !important;border:0 !important;box-shadow:0 14px 30px rgba(17,85,204,.24) !important;font-size:24px;}#techTopSpacer{height:84px;}
-    .card{background:rgba(255,255,255,.94) !important;border:1px solid var(--cwf-line) !important;border-radius:28px !important;box-shadow:0 16px 38px rgba(8,27,58,.08) !important;}.card.tight{padding:14px !important;}
-    #techDrawerBackdrop{background:rgba(8,27,58,.42) !important;backdrop-filter:blur(5px);}#techDrawer .panel{width:min(340px,88vw) !important;background:linear-gradient(180deg,#ffffff 0%,#f6f9ff 100%) !important;border-left:1px solid rgba(8,27,58,.10) !important;box-shadow:-24px 0 70px rgba(8,27,58,.25) !important;padding:18px 16px !important;gap:14px !important;}.techMenuHead b{font-size:18px;color:var(--cwf-navy);}#techMenuCloseBtn{width:48px;height:48px;border-radius:18px;background:#fff !important;color:var(--cwf-navy) !important;border:1px solid rgba(8,27,58,.12) !important;box-shadow:0 8px 22px rgba(8,27,58,.08) !important;}.techMenuList{gap:10px !important;}
-    .techMenuBtn{min-height:56px !important;border-radius:20px !important;background:#fff !important;color:var(--cwf-navy) !important;border:1px solid rgba(8,27,58,.09) !important;box-shadow:0 10px 26px rgba(8,27,58,.07) !important;padding:12px 14px !important;font-weight:900 !important;}.techMenuBtn .left{font-size:15px;gap:12px;}.techMenuBtn .sub{color:rgba(8,27,58,.52) !important;background:#f2f6ff;border-radius:999px;padding:5px 9px;font-size:11px;}.techMenuDanger{background:#fff5f5 !important;color:#b91c1c !important;border-color:rgba(239,68,68,.18) !important;}.techMenuDanger .sub{background:#fee2e2;color:#b91c1c !important;}.techMenuSmall{font-size:12px;color:rgba(8,27,58,.58) !important;padding-top:4px;}
-    .bottom-nav{width:min(460px, calc(100% - 22px)) !important;bottom:10px !important;border-radius:26px !important;padding:8px !important;gap:7px !important;background:rgba(255,255,255,.92) !important;backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);border:1px solid rgba(8,27,58,.10) !important;box-shadow:0 18px 45px rgba(8,27,58,.14) !important;}.nav-btn{min-height:58px !important;border-radius:20px !important;background:transparent !important;color:rgba(8,27,58,.58) !important;border:0 !important;box-shadow:none !important;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font-size:11px !important;line-height:1.15;padding:8px 5px !important;}.nav-btn.active{background:linear-gradient(135deg,var(--cwf-navy),var(--cwf-blue)) !important;color:#fff !important;box-shadow:0 12px 24px rgba(17,85,204,.22) !important;}
-    .accept-btn,.zone-select{border-radius:18px !important;min-height:52px !important;font-size:14px !important;}.accept-btn.ready{background:#eafaf0 !important;border-color:#bbf7d0 !important;color:#166534 !important;}.accept-btn.paused{background:#fff1f2 !important;border-color:#fecdd3 !important;color:#be123c !important;}.accept-hint{font-size:13px;color:var(--cwf-muted) !important;}.profile-compact .meta .name{font-size:18px;color:var(--cwf-navy);}.tech-avatar{border-color:var(--cwf-gold) !important;box-shadow:0 10px 24px rgba(8,27,58,.10);}.chipStat{border-radius:20px !important;background:#fff !important;box-shadow:0 8px 20px rgba(8,27,58,.06);}.chipStat .k{color:rgba(8,27,58,.54) !important;}.chipStat .v{color:var(--cwf-blue) !important;}
-    #sec-income{background:transparent !important;border:0 !important;box-shadow:none !important;padding:0 !important;}.income-page-title{background:linear-gradient(135deg,var(--cwf-navy),var(--cwf-blue));color:#fff;border-radius:30px;padding:20px 18px;box-shadow:0 18px 42px rgba(17,85,204,.22);margin-bottom:12px;}.income-page-title h2{font-size:23px;margin:0 0 5px;}.income-page-title .muted{color:rgba(255,255,255,.78) !important;font-weight:700;}.income-main-card{padding:16px !important;}.income-summary-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:12px;}.income-metric{border-radius:24px;border:1px solid rgba(8,27,58,.09);background:#fff;padding:14px 14px;box-shadow:0 10px 24px rgba(8,27,58,.06);display:flex;align-items:center;justify-content:space-between;gap:12px;}.income-metric.primary{background:linear-gradient(135deg,#fff8d8,#ffffff);border-color:rgba(255,210,31,.45);}.income-metric .label{font-size:13px;font-weight:900;color:rgba(8,27,58,.62);}.income-metric .hint{font-size:12px;color:rgba(8,27,58,.48);margin-top:3px;font-weight:700;}.income-metric .amount{font-size:24px;font-weight:1000;color:var(--cwf-navy);white-space:nowrap;}.income-actions{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-top:12px;}.income-actions .btn{min-width:0;border-radius:18px !important;background:#f2f6ff !important;color:var(--cwf-navy) !important;border:1px solid rgba(8,27,58,.08) !important;font-weight:900;}.income-actions .btn.active,.income-actions .btn.blue{background:linear-gradient(135deg,var(--cwf-navy),var(--cwf-blue)) !important;color:#fff !important;}.income-section-card{margin-top:12px !important;padding:15px !important;}.income-section-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px;}.income-section-head b{font-size:17px;color:var(--cwf-navy);}.income-date-row{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:10px;}.income-date-row input{border-radius:18px !important;min-height:48px;border:1px solid rgba(8,27,58,.10);padding:10px 12px;font-weight:800;background:#fff;}.income-day-card,.income-job-card,.income-period-card{border-radius:24px !important;border:1px solid rgba(8,27,58,.09) !important;background:#fff !important;padding:14px !important;margin-bottom:10px !important;box-shadow:0 10px 26px rgba(8,27,58,.06) !important;}.income-day-card{cursor:pointer;}.income-day-card .date,.income-job-card .title,.income-period-card .title{font-size:16px;font-weight:1000;color:var(--cwf-navy);}.income-day-card .amount,.income-job-card .amount,.income-period-card .amount{font-size:22px;font-weight:1000;color:var(--cwf-blue);white-space:nowrap;}.income-job-meta{font-size:13px;color:rgba(8,27,58,.58);font-weight:700;line-height:1.55;margin-top:5px;}.income-formula-box{display:none;margin-top:10px;padding:12px;border-radius:18px;background:#f7faff;border:1px dashed rgba(17,85,204,.20);}.income-empty{border-radius:22px;background:#fff;border:1px dashed rgba(8,27,58,.18);padding:18px;text-align:center;color:var(--cwf-muted);font-weight:800;}#techPayoutTotalPill{white-space:normal;line-height:1.4;}@media(max-width:380px){.income-metric .amount{font-size:21px}.income-actions{grid-template-columns:1fr}.income-date-row{grid-template-columns:1fr}.bottom-nav{width:calc(100% - 14px) !important}.nav-btn{font-size:10.5px !important}}
-
+    .techMenuBtn .menuIcon{width:38px;height:38px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:var(--tech-yellow-soft);color:#111827;font-size:18px;flex:0 0 38px;}
+    .techMenuBtn .menuText{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;}
+    .techMenuBtn .menuText strong{font-size:14px;line-height:1.2;white-space:normal;text-align:left;}
+    .techMenuBtn .menuArrow{font-size:18px;color:var(--tech-navy-2)}
+    .techMenuDanger .menuIcon{background:#FEE2E2;color:#b91c1c;}
+    .profile-compact{gap:14px}
+    .profile-compact .meta .name{font-size:18px;color:var(--tech-navy);}
+    .profile-compact .meta .code{color:var(--tech-muted)}
+    .tech-avatar{width:68px;height:68px;border:4px solid var(--tech-yellow); box-shadow:0 8px 18px rgba(11,46,109,0.16);}
+    .chipStat{border-radius:18px;border:1px solid var(--tech-border);background:#fff;padding:12px;box-shadow:none;}
+    .chipStat .k{font-size:11px;font-weight:1000;color:var(--tech-muted)}
+    .chipStat .v{font-size:18px;font-weight:1200;color:var(--tech-navy)}
+    details.tech-more summary{border-radius:16px;border:1px solid var(--tech-border);background:#fff;padding:12px 14px;font-weight:1000;color:var(--tech-navy)}
+    .tech-more .moreBox{border-radius:18px;border:1px solid var(--tech-border);background:#fff;padding:12px;}
+    .accept-btn{min-height:48px;border-radius:16px;border:1px solid var(--tech-border);font-weight:1000;}
+    .accept-btn.ready{background:var(--tech-yellow); color:#111827; border-color:rgba(244,196,0,0.9);}
+    .accept-btn.paused{background:#fff; color:#B91C1C; border-color:rgba(239,68,68,0.26);}
+    .zone-select{min-height:48px;border-radius:16px;border:1px solid var(--tech-border);color:var(--tech-navy);font-weight:900;background:#fff;}
+    .accept-hint{margin-top:10px;font-size:12px;color:var(--tech-muted)}
+    #sec-income .grid{gap:12px;}
+    .income-stack{display:grid; gap:12px; margin-top:12px;}
+    .income-summary-card{padding:14px 16px;border-radius:20px;border:1px solid var(--tech-border);background:#fff;box-shadow:none;}
+    .income-summary-card .title{font-size:13px;font-weight:900;color:var(--tech-muted);}
+    .income-summary-card .desc{margin-top:4px;font-size:12px;color:var(--tech-muted);}
+    .income-summary-card .value{margin-top:10px;font-size:28px;font-weight:1100;color:var(--tech-navy);line-height:1.05;}
+    .income-summary-card.primary{background:linear-gradient(180deg,#FFFFFF 0%, #EEF4FF 100%);border-color:#C7D8FB;}
+    .income-summary-card.highlight{background:linear-gradient(180deg,#FFFDF5 0%, #FFF6CC 100%);border-color:#F4C400;}
+    .income-toolbar{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
+    .btn, button.btn{border-radius:16px !important; min-height:44px; padding:10px 14px; border:1px solid var(--tech-border); background:#fff; color:var(--tech-navy); font-weight:900; box-shadow:none !important;}
+    .btn.blue, button.btn.blue{background:var(--tech-navy); color:#fff; border-color:var(--tech-navy);}
+    #techIncomeLast7List > div, #techIncomeDayList > div, #techPayoutPeriods > div, #techPayoutLines > div{border-radius:18px !important; border:1px solid var(--tech-border) !important; background:#fff !important; box-shadow:none !important;}
+    .upcoming-filter-box{margin-top:12px;padding:14px;border-radius:18px;border:1px solid var(--tech-border);background:linear-gradient(180deg,#fff 0%, #F9FBFF 100%);}
+    .upcoming-filter-box .hint{font-size:12px;color:var(--tech-muted);margin-top:6px;}
+    .upcoming-list-wrap{margin-top:10px;}
+    @media (max-width:420px){
+      h2{font-size:22px;}
+      .app{padding-left:12px;padding-right:12px;}
+      .nav-btn{font-size:11px;}
+      .premium-input, input[type="date"].premium-input{width:100%; min-width:0;}
+    }
   </style>
 </head>
 
@@ -268,45 +323,45 @@
         <div class="techMenuList">
           <!-- keep ids for app.js bindings -->
           <button class="techMenuBtn" type="button" id="notifyBtn">
-            <span class="left">🔔 <span>แจ้งเตือน/เสียงเตือน</span></span>
-            <span class="sub" id="notifyStateText">-</span>
+            <span class="left"><span class="menuIcon">🔔</span><span class="menuText"><strong>แจ้งเตือน / เสียงเตือน</strong><span class="sub" id="notifyStateText">-</span></span></span>
+            <span class="menuArrow">›</span>
           </button>
 
           <button class="techMenuBtn" type="button" id="themeToggleBtn">
-            <span class="left">🎨 <span>สลับธีม</span></span>
-            <span class="sub">Theme</span>
+            <span class="left"><span class="menuIcon">🎨</span><span class="menuText"><strong>สลับธีม</strong><span class="sub">โหมดสีหน้าช่าง</span></span></span>
+            <span class="menuArrow">›</span>
           </button>
 
           <button class="techMenuBtn" type="button" onclick="goEditProfile()">
-            <span class="left">✏️ <span>แก้ไขโปรไฟล์</span></span>
-            <span class="sub">ข้อมูลช่าง</span>
+            <span class="left"><span class="menuIcon">✏️</span><span class="menuText"><strong>แก้ไขโปรไฟล์</strong><span class="sub">ข้อมูลช่าง</span></span></span>
+            <span class="menuArrow">›</span>
           </button>
 
           <button class="techMenuBtn" type="button" onclick="location.href='/tech/base-status'">
-            <span class="left">🧬 <span>แบบประเมิน Base Status</span></span>
-            <span class="sub">ค่าสเตตัสช่าง</span>
+            <span class="left"><span class="menuIcon">🧬</span><span class="menuText"><strong>แบบประเมิน Base Status</strong><span class="sub">ค่าสเตตัสช่าง</span></span></span>
+            <span class="menuArrow">›</span>
           </button>
 
           <button class="techMenuBtn" type="button" onclick="goChangePassword()">
-            <span class="left">🔑 <span>เปลี่ยนรหัสผ่าน</span></span>
-            <span class="sub">ความปลอดภัย</span>
+            <span class="left"><span class="menuIcon">🔑</span><span class="menuText"><strong>เปลี่ยนรหัสผ่าน</strong><span class="sub">ความปลอดภัย</span></span></span>
+            <span class="menuArrow">›</span>
           </button>
 
           <button class="techMenuBtn" type="button" onclick="openWorkdaysModal()">
-            <span class="left">🗓️ <span>วันหยุด/วันทำงาน</span></span>
-            <span class="sub">ตั้งค่า</span>
+            <span class="left"><span class="menuIcon">🗓️</span><span class="menuText"><strong>วันหยุด / วันทำงาน</strong><span class="sub">ตั้งค่า</span></span></span>
+            <span class="menuArrow">›</span>
           </button>
 
           <button class="techMenuBtn" type="button" id="techMatrixBtn">
-            <span class="left">🧩 <span>งานที่รับได้ (สลอตลูกค้า)</span></span>
-            <span class="sub">ตั้งค่า</span>
+            <span class="left"><span class="menuIcon">🧩</span><span class="menuText"><strong>งานที่รับได้</strong><span class="sub">ตั้งค่าสลอตลูกค้า</span></span></span>
+            <span class="menuArrow">›</span>
           </button>
 
           <div class="techMenuSmall" style="margin-top:4px;padding:0 2px;">อื่นๆ</div>
 
           <button class="techMenuBtn techMenuDanger" type="button" onclick="logout()">
-            <span class="left">🚪 <span>ออกจากระบบ</span></span>
-            <span class="sub">Logout</span>
+            <span class="left"><span class="menuIcon">🚪</span><span class="menuText"><strong>ออกจากระบบ</strong><span class="sub">Logout</span></span></span>
+            <span class="menuArrow">›</span>
           </button>
         </div>
       </div>
@@ -467,7 +522,7 @@
     </div>
 
     <div class="card section active" id="sec-new">
-      <h2>🧑‍🔧 โปรไฟล์ช่าง</h2>
+      <h2>โปรไฟล์ช่าง</h2>
 
       <!-- ✅ โปรไฟล์ช่าง (แสดงเฉพาะ: รูป / รหัส / รายได้วันนี้ / งานสะสม / คะแนน) -->
       <div class="profile-compact">
@@ -521,17 +576,17 @@
 <hr>
 
       <!-- ✅ กันหัวข้อซ้อน ให้เหลืออันเดียว -->
-      <h2 style="margin-top:6px;">📨 งานที่แนะนำ (รับภายใน 10 นาที)</h2>
+      <h2 style="margin-top:6px;">งานที่แนะนำ (รับภายใน 10 นาที)</h2>
       <div id="offer-list"></div>
     </div>
 
     <div class="card section" id="sec-active">
-      <h2>🧰 งานปัจจุบัน</h2>
+      <h2>งานของฉัน</h2>
 
       <!-- ✅ Sub-tab: วันนี้ / งานล่วงหน้า (ไม่กระทบของเดิม: ยังใช้ #active-list เป็น Today) -->
       <div class="tabs" style="margin-top:10px;gap:10px;">
-        <button class="tab-btn active" id="tab-active-today" type="button" onclick="switchActiveSubTab('today')">วันนี้</button>
-        <button class="tab-btn" id="tab-active-upcoming" type="button" onclick="switchActiveSubTab('upcoming')">งานล่วงหน้า</button>
+        <button class="tab-btn active" id="tab-active-today" type="button" onclick="switchActiveSubTab('today')">งานวันนี้</button>
+        <button class="tab-btn" id="tab-active-upcoming" type="button" onclick="switchActiveSubTab('upcoming')">ตารางล่วงหน้า</button>
       </div>
 
       <div class="section active" id="sec-active-today" style="margin-top:10px;">
@@ -540,14 +595,29 @@
       </div>
 
       <div class="section" id="sec-active-upcoming" style="margin-top:10px;">
-        <div class="muted" style="margin-bottom:6px;">งานที่ถูกเพิ่มล่วงหน้า (เมื่อถึงวันทำงานจะย้ายมาอยู่ใน “วันนี้” อัตโนมัติ)</div>
-        <!-- ✅ Upcoming -->
-        <div id="active-upcoming-list"></div>
+        <div class="upcoming-filter-box">
+          <div class="premium-section-title">
+            <div>
+              <div class="tech-label">🗓️ ตารางล่วงหน้า</div>
+              <div class="hint">งานที่เพิ่มไว้ล่วงหน้า • เมื่อถึงวันนัด งานจะย้ายไปอยู่ใน “งานวันนี้” อัตโนมัติ</div>
+            </div>
+          </div>
+          <div class="premium-filter-row" style="margin-top:10px;align-items:center;">
+            <input id="activeUpcomingDatePicker" class="premium-input" type="date" />
+            <button class="btn blue" type="button" id="btnUpcomingApply">ดูวันที่เลือก</button>
+            <button class="btn" type="button" id="btnUpcomingClear">ดูทั้งหมด</button>
+          </div>
+          <div id="activeUpcomingHint" class="hint">เลือกดูเฉพาะแต่ละวันได้ เพื่อลดความสับสน</div>
+          <div id="activeUpcomingDateQuick" class="premium-filter-row" style="margin-top:10px;"></div>
+        </div>
+        <div class="upcoming-list-wrap">
+          <div id="active-upcoming-list"></div>
+        </div>
       </div>
     </div>
 
     <div class="card section" id="sec-history">
-      <h2>📚 ประวัติงาน</h2>
+      <h2>ประวัติงาน</h2>
 
       <!-- ✅ ฟิลเตอร์เร็ว: วัน / เดือน / ทั้งหมด -->
       <div class="tabs" style="margin-top:10px;gap:10px;">
@@ -561,47 +631,97 @@
       <div id="history-list" style="margin-top:10px;"></div>
     </div>
 
-    <div class="section" id="sec-income">
-      <div class="income-page-title">
-        <h2>💰 รายได้ช่าง</h2>
-        <div class="muted">ดูยอดแบบง่าย: วันนี้ / งวดนี้ / ค้างรับ และกดดูรายละเอียดงานได้ทันที</div>
-      </div>
+    <div class="card section" id="sec-income">
+      <h2>รายได้ของฉัน</h2>
+      <div class="muted" style="margin-top:6px">สรุปยอดให้อ่านง่ายก่อน แล้วค่อยกดดูรายละเอียดรายวัน/งวด</div>
 
-      <div class="card income-main-card">
-        <div class="income-section-head">
-          <div><b>ภาพรวมรายได้</b><div class="muted" style="margin-top:4px">ตัวเลขหลักที่ต้องรู้ ไม่ปนข้อมูลระบบ</div></div>
-          <button class="btn" id="btnReloadIncomeOverview" type="button" style="border-radius:16px;min-width:auto">รีเฟรช</button>
+      <div class="grid" style="margin-top:12px">
+        <div class="card" style="margin-top:0">
+          <b style="color:#0b1b3a">ภาพรวม</b>
+          <div class="muted" style="margin-top:6px">ยอดหลักที่ช่างถามบ่อย: วันนี้ / งวดถัดไป / ค้างรับ</div>
+
+          <div class="income-stack">
+            <div class="income-summary-card primary">
+              <div class="title">วันนี้ได้</div>
+              <div class="desc">รวมจากงานที่ปิดวันนี้</div>
+              <div class="value" id="incomeTodayVal">-</div>
+            </div>
+
+            <div class="income-summary-card">
+              <div class="title">คาดว่าจะได้งวดถัดไป</div>
+              <div class="desc" id="incomePeriodRange">-</div>
+              <div class="value" id="incomePeriodEstVal">-</div>
+            </div>
+
+            <div class="income-summary-card highlight">
+              <div class="title">ค้างรับทั้งหมด</div>
+              <div class="desc">สะสมทั้งหมด - จ่ายแล้ว</div>
+              <div class="value" id="incomeOutstandingVal">-</div>
+            </div>
+          </div>
+
+          <!-- keep legacy summary ids for backward compatibility (hidden) -->
+          <div style="display:none">
+            <span id="incomeDaily2">-</span>
+            <span id="incomeMonth2">-</span>
+            <span id="incomeAll2">-</span>
+          </div>
+
+          <div class="income-toolbar">
+            <button class="btn" id="btnReloadIncomePeriods">รีเฟรชงวดเงิน</button>
+            <button class="btn blue" id="btnReloadIncomeOverview">รีเฟรชภาพรวม</button>
+          </div>
+
+          <!-- ✅ รายละเอียดรายวัน (statement) -->
+          <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(15,23,42,0.08)">
+            <b style="color:#0b1b3a">สเตทเมนต์รายวัน</b>
+            <div class="muted" style="margin-top:6px">เลือกวันแล้วดูว่าแต่ละงานได้เท่าไหร่แบบอ่านเป็นขั้นตอน</div>
+
+            <div class="premium-filter-row" style="margin-top:10px;">
+              <button class="btn" id="btnIncomeQuickToday">วันนี้</button>
+              <button class="btn" id="btnIncomeQuickYesterday">เมื่อวาน</button>
+              <button class="btn" id="btnIncomeQuick7">7 วันล่าสุด</button>
+            </div>
+
+            <div id="techIncomeLast7Wrap" style="margin-top:10px;display:none">
+              <div class="muted">สรุป 7 วันล่าสุด</div>
+              <div id="techIncomeLast7List" style="margin-top:8px"></div>
+              <div style="height:10px"></div>
+            </div>
+
+            <div class="premium-filter-row" style="margin-top:10px;align-items:center;">
+              <input id="incomeDatePicker" class="premium-input" type="date" style="flex:1;min-width:180px" />
+              <button class="btn blue" id="btnLoadIncomeDay">ดูรายละเอียด</button>
+            </div>
+            <div id="techIncomeDayHint" class="muted" style="margin-top:8px">เลือกวันที่แล้วกดดูรายละเอียด</div>
+            <div id="techIncomeDayList" style="margin-top:10px"></div>
+          </div>
         </div>
-        <div class="income-summary-grid">
-          <div class="income-metric primary"><div><div class="label">วันนี้ได้</div><div class="hint">รวมจากงานที่ปิดวันนี้</div></div><div class="amount" id="incomeTodayVal">-</div></div>
-          <div class="income-metric"><div><div class="label">งวดถัดไป</div><div class="hint" id="incomePeriodRange">-</div></div><div class="amount" id="incomePeriodEstVal">-</div></div>
-          <div class="income-metric"><div><div class="label">ค้างรับทั้งหมด</div><div class="hint">สะสมทั้งหมด - จ่ายแล้ว</div></div><div class="amount" id="incomeOutstandingVal">-</div></div>
+
+        <div class="card" style="margin-top:0">
+          <div class="sectionTitle">
+            <div>
+              <b>งวดเงินเดือน</b>
+              <div class="muted" style="margin-top:4px">แตะที่งวดเพื่อดูรายการงาน</div>
+            </div>
+          </div>
+          <div id="techPayoutPeriods" style="margin-top:10px"></div>
         </div>
-        <div style="display:none"><span id="incomeDaily2">-</span><span id="incomeMonth2">-</span><span id="incomeAll2">-</span></div>
       </div>
 
-      <div class="card income-section-card">
-        <div class="income-section-head"><div><b>สเตทเมนต์รายวัน</b><div class="muted" style="margin-top:4px">เลือกวันเพื่อดูว่าแต่ละงานได้เท่าไหร่</div></div></div>
-        <div class="income-actions">
-          <button class="btn active" id="btnIncomeQuickToday" type="button">วันนี้</button>
-          <button class="btn" id="btnIncomeQuickYesterday" type="button">เมื่อวาน</button>
-          <button class="btn" id="btnIncomeQuick7" type="button">7 วัน</button>
+      <div class="card" style="margin-top:12px">
+        <div class="sectionTitle">
+          <div>
+            <b>รายละเอียดงวด</b>
+            <div class="muted" id="techPayoutDetailHint" style="margin-top:4px">เลือกงวดด้านบน</div>
+          </div>
+          <div class="row" style="gap:8px;align-items:center">
+            <div class="pill" id="techPayoutTotalPill" style="display:none"></div>
+            <button class="btn" id="btnOpenSlip" style="display:none">เปิดสลิป</button>
+            <button class="btn" id="btnWithdraw" style="display:none;background:#0b4bb3;color:#fff">ขอถอนเงิน</button>
+          </div>
         </div>
-        <div id="techIncomeLast7Wrap" style="margin-top:12px;display:none"><div class="muted" style="margin-bottom:8px">สรุป 7 วันล่าสุด</div><div id="techIncomeLast7List"></div></div>
-        <div class="income-date-row"><input id="incomeDatePicker" type="date" /><button class="btn blue" id="btnLoadIncomeDay" type="button" style="border-radius:18px;min-width:118px">ดูงาน</button></div>
-        <div id="techIncomeDayHint" class="muted" style="margin-top:10px">เลือกวันที่แล้วกดดูงาน</div>
-        <div id="techIncomeDayList" style="margin-top:10px"></div>
-      </div>
-
-      <div class="card income-section-card">
-        <div class="income-section-head"><div><b>งวดจ่ายเงิน</b><div class="muted" style="margin-top:4px">เลือกงวดเพื่อดูรายการงานในงวดนั้น</div></div><button class="btn" id="btnReloadIncomePeriods" type="button" style="border-radius:16px;min-width:auto">รีเฟรชงวด</button></div>
-        <div id="techPayoutPeriods"></div>
-      </div>
-
-      <div class="card income-section-card">
-        <div class="income-section-head"><div><b>รายละเอียดงวด</b><div class="muted" id="techPayoutDetailHint" style="margin-top:4px">เลือกงวดด้านบน</div></div></div>
-        <div class="row" style="gap:8px;align-items:center;margin-bottom:8px"><div class="pill" id="techPayoutTotalPill" style="display:none"></div><button class="btn" id="btnOpenSlip" style="display:none">เปิดสลิป</button><button class="btn" id="btnWithdraw" style="display:none;background:#0b4bb3;color:#fff">ขอถอนเงิน</button></div>
-        <div id="techPayoutLines"></div>
+        <div id="techPayoutLines" style="margin-top:10px"></div>
       </div>
     </div>
   </div>
@@ -614,7 +734,7 @@
     <button class="nav-btn" id="nav-income" onclick="switchTab('income')">💰 รายได้</button>
   </div>
 
-  <script src="app.js?v=contract-payroll-v10-4-tech-premium-income"></script>
+  <script src="app.js?v=tech-premium-v10-5"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
         function goChangePassword(){ location.href = '/change-password.html'; }
