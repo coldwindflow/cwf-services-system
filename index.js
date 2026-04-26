@@ -1846,135 +1846,29 @@ async function getTeamForJob(job_id) {
 
 // Reusable payout calculator (used by Super Admin preview + Technician income summary)
 async function computeJobPayout(job_id) {
-  const itemsQ = await pool.query(
-    `SELECT job_item_id, item_name, qty, unit_price, line_total, COALESCE(assigned_technician_username,'') AS assigned_technician_username,
-            COALESCE(is_service,false) AS is_service
-     FROM public.job_items
-     WHERE job_id=$1
-     ORDER BY job_item_id ASC`,
-    [job_id]
-  );
-  const items = itemsQ.rows || [];
-
-  const team = await getTeamForJob(job_id);
-  if (!team.length) {
-    const err = new Error('EMPTY_TEAM');
-    err.code = 'EMPTY_TEAM';
-    throw err;
-  }
-
-  // Contract-only: classify every service-like row as service even when legacy is_service=false.
-  const isSvc = (it) => (it && (Boolean(it.is_service) || inferIsServiceLine(it)));
-
-  const serviceAssigned = items.filter(it => isSvc(it) && String(it.assigned_technician_username || '').trim());
-  const serviceUnassigned = items.filter(it => isSvc(it) && !String(it.assigned_technician_username || '').trim());
-  const hasAnyServiceAssign = serviceAssigned.length > 0;
-  const hasUnassigned = serviceUnassigned.length > 0;
-  const coopMode = team.length > 1 && hasUnassigned;
-
-  const baseServiceTotal = sumServiceLines(items);
-
-  const baseServicePerTech = {};
-  team.forEach(u => baseServicePerTech[u] = 0);
-
-  let note = '';
-  // ✅ Phase 1 requirement: support 3 modes
-  // 1) assigned only
-  // 2) coop_equal (no assign)
-  // 3) mixed (some assigned + some unassigned -> assigned lines stay with assignee, unassigned split equally)
-  if (!hasAnyServiceAssign && coopMode) {
-    // coop_equal (no assign)
-    const each = team.length ? (baseServiceTotal / team.length) : 0;
-    team.forEach(u => baseServicePerTech[u] = each);
-    note = 'coop_equal: ไม่มีการ assign service เลย → หารเท่ากันตามทีม';
-  } else if (hasAnyServiceAssign && coopMode) {
-    // mixed
-    const unassignedTotal = serviceUnassigned.reduce((a, it) => a + Number(it.line_total || 0), 0);
-    const each = team.length ? (unassignedTotal / team.length) : 0;
-    // assigned part
-    for (const it of serviceAssigned) {
-      const a = String(it.assigned_technician_username || '').trim();
-      if (!a) continue;
-      baseServicePerTech[a] = (baseServicePerTech[a] || 0) + Number(it.line_total || 0);
-    }
-    // coop part
-    team.forEach(u => baseServicePerTech[u] = Number(baseServicePerTech[u] || 0) + each);
-    note = 'mixed: มีบางรายการ assign + มีบางรายการทำร่วม → assign ตามคน + ส่วนร่วมหารเท่ากัน';
-  } else if (!hasAnyServiceAssign) {
-    // single tech or no assign (safe)
-    const each = team.length ? (baseServiceTotal / team.length) : 0;
-    team.forEach(u => baseServicePerTech[u] = each);
-    note = 'ไม่มีการ assign service → หารเท่ากันตามทีม';
-  } else {
-    // assigned only
-    for (const it of serviceAssigned) {
-      const a = String(it.assigned_technician_username || '').trim();
-      if (!a) continue;
-      baseServicePerTech[a] = (baseServicePerTech[a] || 0) + Number(it.line_total || 0);
-    }
-    note = 'assigned: มีการ assign service → แบ่งตาม assigned_technician_username';
-  }
-
-  const bonusQ = await pool.query(
-    `SELECT technician_username, COALESCE(special_bonus_amount,0) AS special_bonus_amount
-     FROM public.job_assignments WHERE job_id=$1`,
-    [job_id]
-  );
-  const bonusMap = {};
-  (bonusQ.rows || []).forEach(r => { bonusMap[String(r.technician_username)] = Number(r.special_bonus_amount || 0); });
-
-  const profQ = await pool.query(
-    `SELECT username, COALESCE(employment_type,'company') AS employment_type
-     FROM public.technician_profiles
-     WHERE username = ANY($1::text[])`,
-    [team]
-  );
-  const empMap = {};
-  (profQ.rows || []).forEach(r => { empMap[String(r.username)] = String(r.employment_type || 'company'); });
-
-  const payouts = [];
-  for (const u of team) {
-    const employment_type = empMap[u] || 'company';
-    const setting = await getIncomeSettingForTech(u, employment_type);
-    const base_service = Number(baseServicePerTech[u] || 0);
-    let service_income = 0;
-
-    if (setting.income_type === 'special_only') {
-      service_income = 0;
-    } else if (setting.income_type === 'company') {
-      const pct = Number(setting.config?.commission_percent || 0);
-      service_income = base_service * (pct / 100);
-    } else if (setting.income_type === 'partner') {
-      const cut = Number(setting.config?.company_cut_percent || 0);
-      service_income = base_service * (1 - (cut / 100));
-    } else if (setting.income_type === 'custom') {
-      const mode = String(setting.config?.mode || 'percent');
-      if (mode === 'fixed') {
-        service_income = Number(setting.config?.amount || 0);
-      } else {
-        const pct = Number(setting.config?.percent || 0);
-        service_income = base_service * (pct / 100);
-      }
-    }
-
-    const special_income = sumSpecialLinesForTech(items, u);
-    const special_bonus = Number(bonusMap[u] || 0);
-
-    payouts.push({
-      username: u,
-      employment_type,
-      setting,
-      base_service,
-      service_income,
-      special_income,
-      special_bonus,
-      total_income: service_income + special_income + special_bonus
-    });
-  }
-
-  // include mode hints for downstream (phase 1 payout periods)
-  const payout_mode = (!hasAnyServiceAssign && coopMode) ? 'coop_equal' : (hasAnyServiceAssign && coopMode ? 'mixed' : (hasAnyServiceAssign ? 'assigned' : 'assigned'));
-  return { job_id, note, payout_mode, team, base_service_total: baseServiceTotal, items, payouts };
+  // Contract-only compatibility wrapper. The old percent/cut engine is removed from runtime.
+  // Any legacy caller now receives results derived from _buildPayoutLinesForJob only.
+  const lines = await _buildPayoutLinesForJob(job_id);
+  const team = Array.from(new Set((lines || []).map(x => String(x.technician_username || '').trim()).filter(Boolean)));
+  return {
+    job_id,
+    note: 'contract_only: ใช้เรทบาท/เครื่องตามสัญญาเท่านั้น ไม่ใช้เปอร์เซ็นต์/ราคาขายลูกค้า',
+    payout_mode: 'contract_only',
+    team,
+    base_service_total: (lines || []).reduce((a,x)=>a+Number(x.base_amount||0),0),
+    items: [],
+    payouts: (lines || []).map(x => ({
+      username: x.technician_username,
+      employment_type: x?.setting_snapshot?.employment_type || x?.detail_json?.technician_type || 'company',
+      setting: { income_type: 'contract_only', config: { payroll_version: CWF_CONTRACT_PAYROLL_VERSION } },
+      base_service: Number(x.base_amount || 0),
+      service_income: Number(x.base_amount || 0),
+      special_income: Number(x.detail_json?.special_income || 0),
+      special_bonus: Number(x.detail_json?.special_bonus || 0),
+      total_income: Number(x.earn_amount || 0),
+      detail_json: x.detail_json || {},
+    })),
+  };
 }
 
 // =======================================
@@ -2410,7 +2304,7 @@ function _thaiLabelWash(k){
 // - Uses fixed per-machine ladder rates from the attached CWF technician contracts.
 // - Replaces the old percent-based technician income calculation for completed jobs.
 // =======================================
-const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_fixed_ladder_v7_no_customer_price_cache';
+const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_contract_only_rebuild_v8_no_legacy_income';
 const CWF_CONTRACT_PAYROLL_RATES = Object.freeze({
   company: Object.freeze({
     normal:   Object.freeze({ small: [80, 70, 70, 60],    large: [100, 85, 85, 70] }),
@@ -2442,38 +2336,6 @@ function _contractBtuTierFromText(text){
   const btu = m ? Number(String(m[1]).replace(/[,]/g,'')) : 0;
   return { btu: Number.isFinite(btu) ? btu : 0, btu_tier: (Number.isFinite(btu) && btu >= 18000) ? 'large' : 'small' };
 }
-
-function _contractPriceToServiceSpec(it, meta){
-  const jobKey = _normJobKey(meta?.job_type || '');
-  if (jobKey && jobKey !== 'wash') return null;
-  const qty = Math.max(1, Number(it?.qty || 1));
-  const unit = Number(it?.unit_price || 0) > 0 ? Number(it.unit_price) : (Number(it?.line_total || 0) / qty);
-  const price = Math.round(Number(unit || 0));
-  if (!Number.isFinite(price) || price <= 0) return null;
-  const map = new Map([
-    [500,{wash_key:'normal',btu_tier:'small',btu:12000}], [600,{wash_key:'normal',btu_tier:'small',btu:12000}], [700,{wash_key:'normal',btu_tier:'small',btu:12000}],
-    [650,{wash_key:'normal',btu_tier:'large',btu:18000}], [750,{wash_key:'normal',btu_tier:'large',btu:18000}], [850,{wash_key:'normal',btu_tier:'large',btu:18000}],
-    [800,{wash_key:'premium',btu_tier:'small',btu:12000}], [900,{wash_key:'premium',btu_tier:'small',btu:12000}], [1000,{wash_key:'premium',btu_tier:'small',btu:12000}],
-    [1100,{wash_key:'premium',btu_tier:'large',btu:18000}], [1250,{wash_key:'premium',btu_tier:'large',btu:18000}],
-    [1400,{wash_key:'coil',btu_tier:'small',btu:12000}], [1600,{wash_key:'coil',btu_tier:'small',btu:12000}],
-    [1500,{wash_key:'coil',btu_tier:'large',btu:18000}], [1700,{wash_key:'coil',btu_tier:'large',btu:18000}], [1900,{wash_key:'coil',btu_tier:'large',btu:18000}],
-    [1800,{wash_key:'overhaul',btu_tier:'small',btu:12000}], [2200,{wash_key:'overhaul',btu_tier:'small',btu:12000}],
-    [2300,{wash_key:'overhaul',btu_tier:'large',btu:18000}], [2500,{wash_key:'overhaul',btu_tier:'large',btu:18000}],
-  ]);
-  if (price === 2000) {
-    const b = _contractBtuTierFromText(String(it?.item_name || ''));
-    return { wash_key:'overhaul', btu_tier: b.btu_tier || 'small', btu: b.btu || (b.btu_tier === 'large' ? 18000 : 12000), inferred_from:'customer_price_2000', customer_unit_price: price };
-  }
-  const hit = map.get(price);
-  return hit ? { ...hit, inferred_from:'customer_price_menu', customer_unit_price: price } : null;
-}
-
-function _contractIsPriceOnlyServiceLine(it, meta){
-  if (!it) return false;
-  const name = String(it.item_name || '').trim().toLowerCase();
-  const generic = !name || /(ค่าบริการ|บริการ|มาตรฐาน|override|ราคาเหมา|เหมารวม|รายการหลัก|service|standard)/i.test(name);
-  return generic && !!_contractPriceToServiceSpec(it, meta);
-}
 function _contractRateAt(techType, washKey, btuTier, machineIndex){
   const t = techType === 'partner' ? 'partner' : 'company';
   const w = ['normal','premium','coil','overhaul'].includes(washKey) ? washKey : 'normal';
@@ -2482,18 +2344,126 @@ function _contractRateAt(techType, washKey, btuTier, machineIndex){
   const idx = Math.max(1, Number(machineIndex || 1));
   return Number(arr[idx >= 4 ? 3 : idx - 1] || 0);
 }
-function _contractServiceKeyFromItem(it, meta){
+function _contractServiceKeyFromItem(it){
   const nm = String(it?.item_name || '');
-  const priceSpec = _contractPriceToServiceSpec(it, meta);
   const ac_key = _normAcKey(nm) || 'wall';
   let wash_key = _normWashKey(nm);
-  if (!wash_key && priceSpec?.wash_key) wash_key = priceSpec.wash_key;
   if (!wash_key) wash_key = 'normal';
   if (!['normal','premium','coil','overhaul'].includes(wash_key)) wash_key = 'normal';
-  const parsedBtu = _contractBtuTierFromText(nm);
-  const btu = parsedBtu.btu || priceSpec?.btu || 0;
-  const btu_tier = parsedBtu.btu ? parsedBtu.btu_tier : (priceSpec?.btu_tier || 'small');
-  return { ac_key, wash_key, btu, btu_tier, group_key: `${wash_key}|${btu_tier}`, inferred_from: priceSpec?.inferred_from || null };
+  const { btu, btu_tier } = _contractBtuTierFromText(nm);
+  return { ac_key, wash_key, btu, btu_tier, group_key: `${wash_key}|${btu_tier}` };
+}
+
+function _contractIsVagueServiceItem(it){
+  const name = String(it?.item_name || '').trim();
+  if (!name) return true;
+  const n = name.toLowerCase();
+  const hasSpecific = /(ล้างธรรมดา|ล้างปกติ|พรีเมียม|premium|แขวนคอย|แขวนคอยน์|แขวนคอยล์|ตัดล้าง|ล้างใหญ่|overhaul|BTU|เครื่อง|สี่ทิศ|เปลือย|ผนัง)/i.test(name);
+  if (hasSpecific) return false;
+  return /(ค่าบริการ|มาตรฐาน|override|ราคาเหมา|เหมารวม|service)/i.test(n);
+}
+
+function _contractLegacyStandardPriceSpec(amount){
+  const a = Number(amount || 0);
+  if (!Number.isFinite(a) || a <= 0) return null;
+  const candidates = [
+    { price: 600, wash_key: 'normal', btu_tier: 'small', btu: 12000 },
+    { price: 700, wash_key: 'normal', btu_tier: 'small', btu: 12000 },
+    { price: 500, wash_key: 'normal', btu_tier: 'small', btu: 12000 },
+    { price: 750, wash_key: 'normal', btu_tier: 'large', btu: 18000 },
+    { price: 850, wash_key: 'normal', btu_tier: 'large', btu: 18000 },
+    { price: 650, wash_key: 'normal', btu_tier: 'large', btu: 18000 },
+    { price: 900, wash_key: 'premium', btu_tier: 'small', btu: 12000 },
+    { price: 1000, wash_key: 'premium', btu_tier: 'small', btu: 12000 },
+    { price: 800, wash_key: 'premium', btu_tier: 'small', btu: 12000 },
+    { price: 1100, wash_key: 'premium', btu_tier: 'large', btu: 18000 },
+    { price: 1250, wash_key: 'premium', btu_tier: 'large', btu: 18000 },
+    { price: 1400, wash_key: 'coil', btu_tier: 'small', btu: 12000 },
+    { price: 1600, wash_key: 'coil', btu_tier: 'small', btu: 12000 },
+    { price: 1250, wash_key: 'coil', btu_tier: 'small', btu: 12000 },
+    { price: 1700, wash_key: 'coil', btu_tier: 'large', btu: 18000 },
+    { price: 1900, wash_key: 'coil', btu_tier: 'large', btu: 18000 },
+    { price: 1500, wash_key: 'coil', btu_tier: 'large', btu: 18000 },
+    { price: 2000, wash_key: 'overhaul', btu_tier: 'small', btu: 12000 },
+    { price: 2200, wash_key: 'overhaul', btu_tier: 'small', btu: 12000 },
+    { price: 1800, wash_key: 'overhaul', btu_tier: 'small', btu: 12000 },
+    { price: 2300, wash_key: 'overhaul', btu_tier: 'large', btu: 18000 },
+    { price: 2500, wash_key: 'overhaul', btu_tier: 'large', btu: 18000 },
+    { price: 2000, wash_key: 'overhaul', btu_tier: 'large', btu: 18000 },
+  ];
+  for (const c of candidates) {
+    if (Math.abs(a - c.price) < 0.01) return { ...c, qty: 1 };
+  }
+  for (const c of candidates) {
+    const q = Math.round(a / c.price);
+    if (q >= 1 && q <= 30 && Math.abs(a - (c.price * q)) < 0.01) return { ...c, qty: q };
+  }
+  return null;
+}
+
+function _contractInferItemFromLegacyPrice(meta, it){
+  const jobKey = _normJobKey(meta?.job_type);
+  if (jobKey && jobKey !== 'wash') return null;
+  const amount = Number(it?.line_total || it?.unit_price || 0);
+  const spec = _contractLegacyStandardPriceSpec(amount);
+  if (!spec) return null;
+  const qtyFromRow = Math.max(0, Math.round(Number(it?.qty || 0)));
+  const qty = qtyFromRow > 1 ? qtyFromRow : spec.qty;
+  const label = `ล้างแอร์ผนัง • ${_thaiLabelWash(spec.wash_key)} • ${spec.btu} BTU • ${qty} เครื่อง`;
+  return {
+    job_item_id: it?.job_item_id || null,
+    item_name: label,
+    qty,
+    unit_price: spec.price,
+    line_total: Number(spec.price || 0) * qty,
+    assigned_technician_username: String(it?.assigned_technician_username || '').trim(),
+    is_service: true,
+    _contract_inferred_from_legacy_price: true,
+    _legacy_item_name: String(it?.item_name || ''),
+    _legacy_line_total: Number(it?.line_total || 0),
+  };
+}
+
+function _contractTopLevelItemFromPayloadLike(meta){
+  const jobKey = _normJobKey(meta?.job_type);
+  if (jobKey && jobKey !== 'wash') return null;
+  const text = [meta?.job_type, meta?.ac_type, meta?.wash_variant, meta?.customer_note].filter(Boolean).join(' ');
+  const wash_key = _normWashKey(text) || null;
+  if (!wash_key) return null;
+  const btu = Number(meta?.btu || 0) || (_contractBtuTierFromText(text).btu || 12000);
+  const btu_tier = btu >= 18000 ? 'large' : 'small';
+  const qty = Math.max(1, Math.round(Number(meta?.machine_count || 1)));
+  return {
+    job_item_id: null,
+    item_name: `ล้างแอร์ผนัง • ${_thaiLabelWash(wash_key)} • ${btu_tier === 'large' ? 18000 : 12000} BTU • ${qty} เครื่อง`,
+    qty,
+    unit_price: 0,
+    line_total: 0,
+    assigned_technician_username: '',
+    is_service: true,
+    _contract_inferred_from_job_meta: true,
+  };
+}
+
+function _contractNormalizeServiceItems(meta, items){
+  const arr = Array.isArray(items) ? items : [];
+  const service = [];
+  const ignoredLegacyItems = [];
+  for (const it of arr) {
+    const realService = Boolean(it?.is_service) || inferIsServiceLine(it);
+    if (realService && !_contractIsVagueServiceItem(it)) {
+      service.push(it);
+      continue;
+    }
+    const inferred = _contractInferItemFromLegacyPrice(meta, it);
+    if (inferred) service.push(inferred);
+    else if (realService || _contractIsVagueServiceItem(it)) ignoredLegacyItems.push(it);
+  }
+  if (!service.length) {
+    const top = _contractTopLevelItemFromPayloadLike(meta);
+    if (top) service.push(top);
+  }
+  return { serviceItems: service, ignoredLegacyItems };
 }
 function _contractMachineRates(washKey, btuTier, startIndex, qty, techType){
   const out = [];
@@ -2617,7 +2587,7 @@ function _ladderPercent(rule, machineCount) {
 
 async function _loadJobMeta(job_id){
   const r = await pool.query(
-    `SELECT job_id, job_type, finished_at, job_price, duration_min
+    `SELECT *
      FROM public.jobs
      WHERE job_id=$1 LIMIT 1`,
     [job_id]
@@ -2639,19 +2609,11 @@ async function _buildPayoutLinesForJob(job_id){
     [job_id]
   );
   const items = itemsQ.rows || [];
-  // Contract-only: classify every service-like row as service even when legacy is_service=false.
-  // Catch legacy price-only rows such as item_name='ค่าบริการ', line_total=1400.
-  let isSvc = (it) => (it && (Boolean(it.is_service) || inferIsServiceLine(it) || _contractIsPriceOnlyServiceLine(it, meta)));
-  let svcItems = items.filter(isSvc);
-  // Last-resort protection: old wash job with a single positive line must not become special_income.
-  if (!svcItems.length && _normJobKey(meta.job_type) === 'wash') {
-    const priced = items.filter(it => Number(it?.line_total || 0) > 0 || Number(it?.unit_price || 0) > 0);
-    if (priced.length === 1) {
-      isSvc = (it) => it && it.job_item_id === priced[0].job_item_id;
-      svcItems = priced;
-    }
-  }
-  const specialItems = items.filter(it => it && !isSvc(it));
+  // Contract-only rebuild: never pay customer selling price as technician income.
+  // Convert legacy/generic rows (e.g. 1,400 "ค่าบริการ") into service specs first.
+  const { serviceItems: svcItems, ignoredLegacyItems } = _contractNormalizeServiceItems(meta, items);
+  // Old special income is intentionally disabled here. Manual bonuses must be entered via job_assignments.special_bonus_amount.
+  const specialItems = [];
 
   const team = await getTeamForJob(job_id);
   for (const it of svcItems) {
@@ -2720,7 +2682,7 @@ async function _buildPayoutLinesForJob(job_id){
   function applyWholeItemToTech(it, tech, reason){
     const qty = Math.max(0, Math.round(Number(it.qty || 0)));
     if (!qty || !tech) return;
-    const spec = _contractServiceKeyFromItem(it, meta);
+    const spec = _contractServiceKeyFromItem(it);
     const techType = techTypeOf(tech);
     if (techType === 'special_only') return;
     const startIdx = nextStartIndex(tech, spec.group_key, qty);
@@ -2754,7 +2716,7 @@ async function _buildPayoutLinesForJob(job_id){
   function applySharedItemToTeam(it, reason){
     const qty = Math.max(0, Math.round(Number(it.qty || 0)));
     if (!qty || !team.length) return;
-    const spec = _contractServiceKeyFromItem(it, meta);
+    const spec = _contractServiceKeyFromItem(it);
     const divisor = team.length;
     for (const tech of team) {
       const techType = techTypeOf(tech);
@@ -2800,11 +2762,9 @@ async function _buildPayoutLinesForJob(job_id){
   }
 
   const specialByTech = new Map(team.map(u => [u, 0]));
-  for (const it of specialItems) {
-    const tech = String(it.assigned_technician_username || '').trim();
-    if (!tech) continue;
-    specialByTech.set(tech, Number(specialByTech.get(tech) || 0) + Number(it.line_total || 0));
-  }
+  // Contract-only rebuild: do not convert legacy job_items line_total into technician income.
+  // This is the root fix for the 1,400 customer-price leak.
+  void specialItems;
 
   const totalMachine = svcItems.reduce((a, it) => a + Math.max(0, Number(it.qty || 0)), 0);
   const lines = [];
@@ -2849,6 +2809,7 @@ async function _buildPayoutLinesForJob(job_id){
         : (mode === 'coop_equal' ? 'ไม่มี assign รายการ: หารเรทสัญญาเท่ากันตามทีม' : 'คิดตามรายการที่ช่างรับผิดชอบ'),
       contract_rate_rows: rateRows,
       related_items,
+      ignored_legacy_items: ignoredLegacyItems || [],
       items: related_items,
       base_service_total: svcItems.reduce((a, it) => a + Number(it.line_total || 0), 0),
       base_amount,
@@ -6989,16 +6950,27 @@ console.log("[latlng_parse]", { ok: !!parsedAdminLL });
     // resolve items
 const computedItems = [];
 
-const serviceLineItems = (payloadV2.services && Array.isArray(payloadV2.services))
-  ? buildServiceLineItemsFromPayload(payloadV2)
-  : [];
+const serviceLineItems = buildServiceLineItemsFromPayload(
+  (payloadV2.services && Array.isArray(payloadV2.services))
+    ? payloadV2
+    : { ...payloadV2, services: [{
+        job_type: payloadV2.job_type,
+        ac_type: payloadV2.ac_type,
+        btu: payloadV2.btu,
+        machine_count: payloadV2.machine_count,
+        wash_variant: payloadV2.wash_variant,
+        repair_variant: payloadV2.repair_variant,
+        assigned_to: (technician_username || null),
+      }] }
+);
 
 if (coerceNumber(override_price, 0) > 0) {
-  computedItems.push({ item_id: null, item_name: `ค่าบริการ (override)`, qty: 1, unit_price: coerceNumber(override_price, 0), line_total: coerceNumber(override_price, 0) });
+  // Customer override price only. Payroll must never use this as technician income.
+  computedItems.push({ item_id: null, item_name: `ค่าบริการ (override)`, qty: 1, unit_price: coerceNumber(override_price, 0), line_total: coerceNumber(override_price, 0), is_service: false });
 } else if (serviceLineItems.length) {
   for (const it of serviceLineItems) computedItems.push(it);
 } else if (standard_price > 0) {
-  computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: Number(standard_price), line_total: Number(standard_price) });
+  computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: Number(standard_price), line_total: Number(standard_price), is_service: false });
 }
 
     if (itemIdQty.length) {
@@ -13938,9 +13910,18 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
     await client.query("BEGIN");
 
     // 1) ดึงราคา base_price จาก DB
-const serviceLineItems = (payloadV2.services && Array.isArray(payloadV2.services))
-  ? buildServiceLineItemsFromPayload(payloadV2)
-  : [];
+const serviceLineItems = buildServiceLineItemsFromPayload(
+  (payloadV2.services && Array.isArray(payloadV2.services))
+    ? payloadV2
+    : { ...payloadV2, services: [{
+        job_type: payloadV2.job_type,
+        ac_type: payloadV2.ac_type,
+        btu: payloadV2.btu,
+        machine_count: payloadV2.machine_count,
+        wash_variant: payloadV2.wash_variant,
+        repair_variant: payloadV2.repair_variant,
+      }] }
+);
 
 // fallback (single service)
 let computedItems = [];
@@ -13950,7 +13931,8 @@ if (serviceLineItems.length) {
   computedItems = computedItems.concat(serviceLineItems);
   total = serviceLineItems.reduce((s,it)=> s + Number(it.line_total||0), 0);
 } else if (total > 0) {
-  computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: total, line_total: total });
+  // customer price fallback only; payroll will not treat this as technician income
+  computedItems.push({ item_id: null, item_name: `ค่าบริการมาตรฐาน (${payloadV2.job_type || '-'})`, qty: 1, unit_price: total, line_total: total, is_service: false });
 }
 
 // extras (customer-visible only)

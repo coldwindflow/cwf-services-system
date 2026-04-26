@@ -13,13 +13,6 @@ const historyFilterHintEl = document.getElementById("history-filter-hint");
 // =======================================
 // ใช้ origin เดียวกับเว็บที่เปิดอยู่ (เสถียรสุด ไม่ต้องแก้ IP)
 const API_BASE = window.location.origin;
-const CWF_INCOME_UI_VERSION = 'contract-payroll-v7-no-customer-price';
-try {
-  if (localStorage.getItem('__cwf_income_ui_version__') !== CWF_INCOME_UI_VERSION) {
-    localStorage.removeItem('__cwf_income_cache__');
-    localStorage.setItem('__cwf_income_ui_version__', CWF_INCOME_UI_VERSION);
-  }
-} catch {}
 
 // =======================================
 // 📦 DOM (ต้องตรงกับ tech.html)
@@ -613,12 +606,8 @@ async function loadIncomeSummary() {
   try {
     // Fail-open for PWA/webview that loses cookies: also send ?username=
     const u = _bestEffortUsername();
-    const qs = new URLSearchParams();
-    if (u) qs.set('username', u);
-    qs.set('_v', CWF_INCOME_UI_VERSION);
-    qs.set('t', String(Date.now()));
-    const url = `${API_BASE}/tech/income_summary?${qs.toString()}`;
-    const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
+    const url = `${API_BASE}/tech/income_summary${u ? `?username=${encodeURIComponent(u)}` : ''}`;
+    const res = await fetch(url, { credentials: 'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
 
@@ -674,12 +663,8 @@ async function loadIncomeTodayMonthFast(){
   if (!incomeTodayValEl && !incomeDaily2El && !incomeMonth2El) return;
   try{
     const u = _bestEffortUsername();
-    const qs = new URLSearchParams();
-    if (u) qs.set('username', u);
-    qs.set('_v', CWF_INCOME_UI_VERSION);
-    qs.set('t', String(Date.now()));
-    const url = `${API_BASE}/tech/income_today_month?${qs.toString()}`;
-    const res = await fetch(url, { credentials:'include', cache:'no-store' });
+    const url = `${API_BASE}/tech/income_today_month${u ? `?username=${encodeURIComponent(u)}` : ''}`;
+    const res = await fetch(url, { credentials:'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     if (incomeTodayValEl) incomeTodayValEl.textContent = formatBaht(data.day_total||0);
@@ -694,7 +679,7 @@ async function loadIncomeTodayMonthFast(){
 async function loadNextPeriodEstimate(){
   if (!incomePeriodEstValEl && !incomePeriodRangeEl) return;
   try{
-    const res = await fetch(`${API_BASE}/tech/income_next_period_estimate?_v=${encodeURIComponent(CWF_INCOME_UI_VERSION)}&t=${Date.now()}`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/income_next_period_estimate`, { credentials:'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     if (incomePeriodEstValEl) incomePeriodEstValEl.textContent = formatBaht(data.estimate_total||0);
@@ -716,7 +701,7 @@ async function loadOutstandingTotal(){
     const c = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache__')||'null');}catch{return null;} })();
     const allTotal = Number(c?.all_total || 0);
 
-    const res = await fetch(`${API_BASE}/tech/payments_total?_v=${encodeURIComponent(CWF_INCOME_UI_VERSION)}&t=${Date.now()}`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/payments_total`, { credentials:'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     const paid = Number(data.paid_total || 0);
@@ -755,7 +740,7 @@ function renderLastDaysSummary(payload){
 async function loadLastDays(days = 7){
   if (!techIncomeLast7WrapEl || !techIncomeLast7ListEl) return;
   try{
-    const res = await fetch(`${API_BASE}/tech/income_last_days?days=${encodeURIComponent(days)}&_v=${encodeURIComponent(CWF_INCOME_UI_VERSION)}&t=${Date.now()}`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/income_last_days?days=${encodeURIComponent(days)}`, { credentials:'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     renderLastDaysSummary(data);
@@ -882,7 +867,7 @@ async function loadIncomeDayDetail(dateYmd){
   if (techIncomeDayHintEl) techIncomeDayHintEl.textContent = `กำลังโหลดรายการของ ${d}...`;
   techIncomeDayListEl.innerHTML = `<div class="muted">กำลังโหลด...</div>`;
   try{
-    const res = await fetch(`${API_BASE}/tech/income_day_detail?date=${encodeURIComponent(d)}&_v=${encodeURIComponent(CWF_INCOME_UI_VERSION)}&t=${Date.now()}`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/income_day_detail?date=${encodeURIComponent(d)}`, { credentials:'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
     if (techIncomeDayHintEl) techIncomeDayHintEl.textContent = `รวมวันนี้: ${formatBaht(data.total_amount||0)}`;
@@ -992,7 +977,7 @@ async function openTechPayoutDetail(payout_id){
   if (btnWithdraw){ btnWithdraw.style.display='none'; btnWithdraw.onclick=null; btnWithdraw.disabled=false; btnWithdraw.textContent='ขอถอนเงิน'; }
 
   try{
-    const res = await fetch(`${API_BASE}/tech/payouts/${encodeURIComponent(id)}`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/payouts/${encodeURIComponent(id)}`, { credentials:'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
     const total = formatBaht(data.net_amount||data.total_amount||0);
