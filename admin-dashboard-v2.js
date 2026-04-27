@@ -57,42 +57,34 @@
     console[(kind==='error')?'error':'log']('[dashboard]', msg);
   }
 
-  async function apiFetch(url, options = {}){
-    // Prefer the shared Admin v2 fetcher when present: it adds role header, bearer token, cookies, and debug panel support.
-    try{
-      if (typeof window.apiFetch === 'function' && window.apiFetch !== apiFetch) {
-        return await window.apiFetch(url, options);
-      }
-    }catch(e){ throw e; }
-
-    const headers = Object.assign({ 'Content-Type':'application/json', 'x-user-role':'admin' }, options.headers || {});
-    try{
-      const token = localStorage.getItem('admin_token') || localStorage.getItem('token') || '';
-      if (token) headers.Authorization = `Bearer ${token}`;
-    }catch(_){/* ignore */}
-    const res = await fetch(url, Object.assign({}, options, { headers, credentials:'include' }));
-    const ct = String(res.headers.get('content-type') || '').toLowerCase();
-    const data = ct.includes('application/json') ? await res.json().catch(()=>null) : await res.text().catch(()=> '');
+  async function apiFetch(url){
+    if (window.apiFetch && window.apiFetch !== apiFetch) return window.apiFetch(url);
+    const res = await fetch(url, { credentials:'include', headers: { 'Content-Type':'application/json', 'x-user-role':'admin' }});
     if(!res.ok){
-      const msg = (data && data.error) ? data.error : (typeof data === 'string' ? data : `HTTP ${res.status}`);
-      const err = new Error(msg);
-      err.status = res.status;
-      throw err;
+      const t = await res.text().catch(()=> '');
+      throw new Error(`HTTP ${res.status} ${t}`);
     }
-    return data;
+    return await res.json();
   }
 
   function escapeHtml(v){
-    return String(v == null ? '' : v).replace(/[&<>\"']/g, (c)=>({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '\"':'&quot;', "'":'&#39;' }[c]));
+    return String(v == null ? '' : v)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;')
+      .replace(/'/g,'&#39;');
   }
 
-  function statusClass(st){
-    const x = String(st||'').trim().toLowerCase();
-    if (x === 'รอตรวจสอบ' || x === 'pending_review') return 'yellow';
-    if (x === 'กำลังทำ' || x === 'รอดำเนินการ' || x === 'รอช่างยืนยัน' || x === 'งานแก้ไข') return 'blue';
-    if (x === 'เสร็จแล้ว' || x === 'เสร็จสิ้น' || x === 'completed' || x === 'done') return 'green';
-    if (x === 'ตีกลับ') return 'red';
-    return 'gray';
+  function formatBangkokDateTime(value){
+    if (!value) return '-';
+    const dt = new Date(value);
+    if (Number.isNaN(dt.getTime())) return '-';
+    return dt.toLocaleString('th-TH',{
+      timeZone:'Asia/Bangkok',
+      hour:'2-digit', minute:'2-digit',
+      day:'2-digit', month:'2-digit', year:'2-digit'
+    });
   }
 
   function renderList(elId, rows){
@@ -102,35 +94,36 @@
     const list = Array.isArray(rows) ? rows : [];
     if (!list.length){
       const empty = document.createElement('div');
-      empty.className = 'softNote';
-      empty.innerHTML = '<span>✅</span><span>ไม่มีรายการในกลุ่มนี้</span>';
+      empty.className = 'muted';
+      empty.style.padding = '6px 2px';
+      empty.textContent = '— ไม่มีรายการ —';
       el.appendChild(empty);
       return;
     }
 
-    for (const r of list.slice(0,12)){
-      const rawDate = r.appointment_datetime || r.booking_time || r.created_at || '';
-      const dt = rawDate ? new Date(rawDate) : null;
-      const when = (dt && !Number.isNaN(dt.getTime()))
-        ? dt.toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit',timeZone:'Asia/Bangkok'})
-        : '-';
-      const code = r.booking_code || `#${r.job_id}`;
+    for (const r of list.slice(0,10)){
+      const when = formatBangkokDateTime(r.appointment_datetime || r.booking_time || r.created_at);
+      const jobId = Number(r.job_id || 0);
+      const code = r.booking_code || (jobId ? `#${jobId}` : '-');
+      const customerName = r.customer_name || '-';
+      const jobType = r.job_type || '-';
       const st = String(r.job_status||'').trim();
-      const pillClass = statusClass(st);
-      const price = fmtMoney(r.job_price||0);
-      const jobId = r.job_id || '';
+      const pillClass = (st==='รอตรวจสอบ'||st==='pending_review') ? 'yellow' : (st==='กำลังทำ' ? 'blue' : 'gray');
       const item = document.createElement('div');
       item.className = 'item';
       item.innerHTML = `
         <div class="l">
-          <b>${escapeHtml(code)} • ${escapeHtml(r.customer_name || '-')}</b>
-          <div class="s">${escapeHtml(when)} • ${escapeHtml(r.job_type || '-')} • ${escapeHtml(price)} ฿</div>
+          <b>${escapeHtml(code)} • ${escapeHtml(customerName)}</b>
+          <div class="s">${escapeHtml(when)} • ${escapeHtml(jobType)} • ${escapeHtml(fmtMoney(r.job_price||0))} ฿</div>
         </div>
         <div class="pill ${pillClass}">${escapeHtml(st || '-')}</div>
       `;
-      item.addEventListener('click', ()=>{
-        if (jobId) location.href = `/admin-job-view-v2.html?job_id=${encodeURIComponent(String(jobId))}`;
-      });
+      if (jobId) {
+        item.style.cursor = 'pointer';
+        item.addEventListener('click', ()=>{
+          location.href = `/admin-job-view-v2.html?job_id=${encodeURIComponent(jobId)}`;
+        });
+      }
       el.appendChild(item);
     }
   }
@@ -560,8 +553,6 @@
     $('coRevenueHint').textContent = `${Number(company.job_count||0).toLocaleString('th-TH')} งาน ในช่วงที่เลือก`;
 
     $('countToday').textContent = String(Number(counts.today||0));
-    const countTodayDup = $('countTodayDup');
-    if (countTodayDup) countTodayDup.textContent = String(Number(counts.today||0));
     $('countMonth').textContent = String(Number(counts.month||0));
     $('countYear').textContent = String(Number(counts.year||0));
 
@@ -582,6 +573,7 @@
   }
 
   function init(){
+    setAvatar('');
     // shortcuts
     const addBtn = $('goAddJob');
     if (addBtn) addBtn.addEventListener('click', ()=> location.href = '/admin-add-v2.html');

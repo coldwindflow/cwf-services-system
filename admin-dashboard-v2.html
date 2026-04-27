@@ -11,29 +11,469 @@
   <title>Admin Dashboard - CWF</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    :root{--cwf-blue:#0b4bb3;--cwf-blue-2:#081a3a;--cwf-yellow:#ffcc00;--cwf-ink:#0f172a;--cwf-muted:rgba(15,23,42,.62);--cwf-line:rgba(15,23,42,.10);--cwf-card:rgba(255,255,255,.92);--cwf-shadow:0 22px 60px rgba(2,6,23,.14);--cwf-radius:26px}
-    *{box-sizing:border-box} html{scroll-behavior:smooth} body{min-height:100vh;color:var(--cwf-ink);background:radial-gradient(980px 520px at 8% -80px,rgba(255,204,0,.38),transparent 58%),radial-gradient(900px 480px at 96% 0,rgba(59,130,246,.30),transparent 54%),linear-gradient(180deg,#071735 0%,#0b4bb3 190px,#eef4ff 190px,#fff 100%)} button,input,select{font:inherit} button{touch-action:manipulation}
-    .wrap{width:min(1180px,100%);margin:0 auto;padding:92px 16px 140px;display:grid;gap:14px}.hero{position:relative;overflow:hidden;border-radius:30px;padding:18px;border:1px solid rgba(255,255,255,.18);background:linear-gradient(135deg,rgba(255,255,255,.18),rgba(255,255,255,.06) 45%,rgba(255,204,0,.10));box-shadow:0 28px 80px rgba(0,0,0,.20);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}.hero:before{content:"";position:absolute;inset:-120px -80px auto auto;width:280px;height:280px;border-radius:999px;background:rgba(255,204,0,.24);filter:blur(10px)}.heroTop{position:relative;display:flex;justify-content:space-between;align-items:flex-start;gap:14px;flex-wrap:wrap}.meRow{display:flex;align-items:center;gap:12px;min-width:0}.avatar{width:54px;height:54px;border-radius:18px;object-fit:cover;border:1px solid rgba(255,255,255,.26);box-shadow:0 14px 34px rgba(0,0,0,.24);background:rgba(255,255,255,.14);flex:0 0 auto}.who{color:#fff;font-weight:1000;font-size:18px;line-height:1.15;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:min(520px,70vw)}.role{color:rgba(255,255,255,.78);font-weight:900;font-size:12px;margin-top:4px}.heroBadge{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border-radius:999px;background:rgba(255,255,255,.14);border:1px solid rgba(255,255,255,.18);color:#fff;font-weight:1000;font-size:12px;white-space:nowrap}
-    .shortcutRow{position:relative;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:16px}.shortcut{display:flex;align-items:center;gap:10px;padding:13px;border-radius:20px;cursor:pointer;user-select:none;background:linear-gradient(135deg,#ffdd3b 0%,var(--cwf-yellow) 62%,#f7b900 100%);border:1px solid rgba(11,27,58,.12);box-shadow:0 16px 44px rgba(0,0,0,.18);color:#0b1b3a;transition:transform .16s ease,box-shadow .16s ease}.shortcut:hover{transform:translateY(-1px);box-shadow:0 20px 50px rgba(0,0,0,.20)}.shortcut:active{transform:translateY(1px)}.shortcut .ico{width:42px;height:42px;border-radius:16px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.56);border:1px solid rgba(11,27,58,.10);font-size:20px;flex:0 0 auto}.shortcut b{display:block;font-size:13px;font-weight:1000}.shortcut span{display:block;font-size:11px;font-weight:900;opacity:.76;margin-top:1px}
-    .seg{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding:6px;border-radius:20px;background:rgba(255,255,255,.92);border:1px solid rgba(15,23,42,.10);box-shadow:0 12px 34px rgba(2,6,23,.08)}.seg button{border:0;border-radius:15px;padding:12px 10px;background:transparent;color:rgba(15,23,42,.66);font-weight:1000;cursor:pointer}.seg button.active{background:var(--cwf-yellow);color:#0b1b3a;box-shadow:0 8px 20px rgba(255,204,0,.28)}.toolbar{display:grid;grid-template-columns:minmax(260px,1fr) minmax(280px,420px);gap:12px;align-items:stretch}
-    .card{background:var(--cwf-card);border:1px solid rgba(11,75,179,.13);border-radius:var(--cwf-radius);box-shadow:var(--cwf-shadow);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}.card.p14{padding:16px}.muted{color:var(--cwf-muted);font-weight:850;font-size:12px}.titleRow{display:flex;align-items:center;justify-content:space-between;gap:10px}.titleRow h3{margin:0;font-size:16px;font-weight:1000;color:#0b1b3a}.titleRow small{color:var(--cwf-muted);font-weight:900}.kpiRow2{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.kpi{position:relative;overflow:hidden;border-radius:24px;padding:16px;box-shadow:0 18px 48px rgba(2,6,23,.12);min-height:118px}.kpi:after{content:"";position:absolute;right:-40px;top:-45px;width:120px;height:120px;border-radius:999px;background:rgba(255,255,255,.14)}.kpi .t{font-weight:1000;font-size:12px;opacity:.90}.kpi .v{margin-top:8px;font-weight:1000;font-size:28px;letter-spacing:-.02em;line-height:1}.kpi .h{margin-top:8px;font-weight:850;font-size:11px;opacity:.76}.kpiBlue{color:#fff;background:linear-gradient(135deg,var(--cwf-blue) 0%,#123f93 48%,var(--cwf-blue-2) 100%);border:1px solid rgba(255,255,255,.12)}.kpiBlue .t,.kpiBlue .v,.kpiBlue .h{color:#fff}.kpiYellow{background:linear-gradient(135deg,#ffe16a 0%,var(--cwf-yellow) 58%,#f2b400 100%);border:1px solid rgba(11,27,58,.10);color:#0b1b3a}
-    .bigCard{position:relative;overflow:hidden;border-radius:28px;padding:18px;box-shadow:var(--cwf-shadow);border:1px solid rgba(15,23,42,.10);background:linear-gradient(135deg,rgba(255,255,255,.98) 0%,rgba(255,204,0,.16) 52%,rgba(11,75,179,.10) 100%)}.countsGrid{margin-top:14px;display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.miniStat{border-radius:20px;padding:12px;border:1px solid rgba(15,23,42,.10);background:rgba(255,255,255,.86)}.miniStat .k{font-size:11px;font-weight:1000;color:rgba(15,23,42,.58)}.miniStat .n{margin-top:5px;font-size:24px;font-weight:1000;color:#0b1b3a}.dashboardGrid{display:grid;grid-template-columns:1.05fr .95fr;gap:14px;align-items:start}.stack{display:grid;gap:14px}.techTabs,.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.techTabs{margin-top:12px}.chip{border-radius:999px;padding:8px 13px;font-weight:1000;font-size:12px;border:1px solid rgba(15,23,42,.12);background:#fff;color:#0b1b3a;cursor:pointer}.chip.active{background:var(--cwf-yellow);border-color:var(--cwf-yellow);box-shadow:0 8px 18px rgba(255,204,0,.24)}.techRow{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.techCard{border-radius:24px;padding:14px;border:1px solid rgba(255,255,255,.14);box-shadow:0 18px 44px rgba(2,6,23,.12);color:#fff;min-height:112px}.techCard .t{font-weight:1000;font-size:12px;opacity:.95}.techCard .v{margin-top:8px;font-weight:1000;font-size:32px;letter-spacing:-.02em}.techCard .h{margin-top:4px;font-weight:850;font-size:11px;opacity:.80}.techOpen{background:linear-gradient(135deg,#16a34a 0%,#22c55e 45%,#064e3b 100%)}.techClosed{background:linear-gradient(135deg,#dc2626 0%,#ef4444 45%,#7f1d1d 100%)}
-    .donutGrid{display:grid;grid-template-columns:minmax(0,.9fr) minmax(180px,.8fr);gap:10px;align-items:center}.bigNum{font-size:52px;font-weight:1000;color:#0b1b3a;line-height:1;letter-spacing:-.05em}.miniLegend{display:flex;flex-direction:column;gap:9px;margin-top:12px}.miniLegend .li{display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:1000}.miniLegend .left{display:flex;align-items:center;gap:10px}.dot{width:10px;height:10px;border-radius:999px}.li .count{font-weight:1000;color:#0b1b3a}.filtersCard{margin:0}.foldHead{display:flex;align-items:center;justify-content:space-between;gap:10px;cursor:pointer;user-select:none}.foldHead b{font-weight:1000;color:#0b1b3a}.chev{width:38px;height:38px;border-radius:15px;border:1px solid var(--cwf-line);display:flex;align-items:center;justify-content:center;background:#fff;transition:transform .16s ease}.foldBody{margin-top:10px;display:none}.filtersCard.open .foldBody{display:block}.filtersCard.open .chev{transform:rotate(180deg)}
-    input[type="date"],select{padding:11px 12px;border-radius:16px;border:1px solid rgba(11,75,179,.18);font-weight:900;background:#fff;min-height:42px}.btn{border-radius:16px;border:1px solid rgba(15,23,42,.12);padding:11px 13px;font-weight:1000;cursor:pointer;background:#fff}.btn.yellow{background:var(--cwf-yellow);color:#0b1b3a;border-color:var(--cwf-yellow)}.btn.blue{background:var(--cwf-blue);color:#fff;border-color:var(--cwf-blue)}.btn.ghost{background:#fff;color:#0b1b3a}.btn:hover,.chip:hover{filter:brightness(.98)}canvas{max-width:100%}.list{display:flex;flex-direction:column;gap:10px;margin-top:12px}.item{border:1px solid rgba(15,23,42,.10);border-radius:20px;padding:12px;background:#fff;display:flex;justify-content:space-between;gap:12px;align-items:center;cursor:pointer;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}.item:hover{transform:translateY(-1px);box-shadow:0 14px 34px rgba(2,6,23,.10);border-color:rgba(11,75,179,.22)}.item .l{min-width:0}.item b{display:block;color:#0b1b3a;font-weight:1000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.item .s{margin-top:3px;color:rgba(15,23,42,.60);font-weight:850;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:7px 10px;font-weight:1000;font-size:12px;white-space:nowrap}.pill.yellow{background:var(--cwf-yellow);color:#0b1b3a}.pill.blue{background:var(--cwf-blue);color:#fff}.pill.green{background:#16a34a;color:#fff}.pill.red{background:#fee2e2;color:#991b1b}.pill.gray{background:#eef2ff;color:#0b1b3a}.tableWrap{overflow:auto;margin-top:12px;border-radius:20px}.miniTable{width:100%;border-collapse:separate;border-spacing:0 8px}.miniTable td{padding:10px;background:#fff;border-top:1px solid rgba(15,23,42,.08);border-bottom:1px solid rgba(15,23,42,.08)}.miniTable td:first-child{border-left:1px solid rgba(15,23,42,.08);border-radius:15px 0 0 15px}.miniTable td:last-child{border-right:1px solid rgba(15,23,42,.08);border-radius:0 15px 15px 0}.tr b{font-weight:1000;color:#0b1b3a}.softNote{display:flex;align-items:flex-start;gap:10px;padding:12px;border-radius:20px;background:rgba(255,204,0,.14);border:1px solid rgba(255,204,0,.28);color:#0b1b3a;font-weight:850;font-size:12px}
-    @media (max-width:900px){.toolbar,.dashboardGrid{grid-template-columns:1fr}.shortcutRow{grid-template-columns:repeat(2,1fr)}.kpiRow2{grid-template-columns:repeat(2,1fr)}}@media (max-width:520px){.wrap{padding:84px 12px 132px}.hero{border-radius:26px;padding:14px}.who{font-size:16px;max-width:260px}.heroBadge{display:none}.shortcutRow{grid-template-columns:1fr 1fr}.shortcut{padding:11px}.shortcut .ico{width:38px;height:38px}.kpiRow2,.techRow,.countsGrid{grid-template-columns:1fr 1fr}.bigNum{font-size:44px}.donutGrid{grid-template-columns:1fr}.row input[type="date"]{flex:1;min-width:132px}.item{align-items:flex-start}.miniTable{min-width:560px}}
-  </style>
+    :root{
+      --blue1:#0b4bb3;
+      --blue2:#081a3a;
+      --blue3:#2563eb;
+      --yellow:#ffcc00;
+      --yellow-soft:#fff4bf;
+      --card:#ffffff;
+      --card-soft:rgba(255,255,255,.84);
+      --muted:rgba(15,23,42,.62);
+      --line:rgba(15,23,42,.10);
+      --shadow:0 18px 42px rgba(2,6,23,.12);
+      --shadow-strong:0 24px 60px rgba(2,6,23,.16);
+      --radius:24px;
+    }
+
+    *{box-sizing:border-box}
+    html,body{max-width:100%;overflow-x:hidden}
+    body{
+      background:
+        radial-gradient(920px 420px at 10% -80px, rgba(255,204,0,.22), transparent 55%),
+        radial-gradient(880px 420px at 100% -40px, rgba(37,99,235,.20), transparent 55%),
+        linear-gradient(180deg, rgba(8,26,58,.96) 0%, rgba(11,75,179,.94) 165px, #f6f8ff 165px, #ffffff 100%);
+    }
+
+    .wrap{
+      width:min(1180px, calc(100vw - 24px));
+      margin:0 auto;
+      padding:88px 0 140px;
+    }
+
+    .hero{
+      position:relative;
+      overflow:hidden;
+      background:linear-gradient(135deg, rgba(255,255,255,.18) 0%, rgba(255,255,255,.10) 38%, rgba(255,255,255,.04) 100%);
+      border:1px solid rgba(255,255,255,.18);
+      border-radius:28px;
+      padding:18px;
+      box-shadow:0 26px 60px rgba(0,0,0,.18);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      isolation:isolate;
+    }
+    .hero::before,
+    .hero::after{
+      content:"";
+      position:absolute;
+      border-radius:999px;
+      pointer-events:none;
+      z-index:-1;
+    }
+    .hero::before{
+      width:280px;height:280px;right:-110px;top:-110px;
+      background:radial-gradient(circle, rgba(255,204,0,.34) 0%, rgba(255,204,0,.08) 50%, transparent 70%);
+    }
+    .hero::after{
+      width:240px;height:240px;left:-120px;bottom:-130px;
+      background:radial-gradient(circle, rgba(37,99,235,.20) 0%, rgba(37,99,235,.06) 55%, transparent 74%);
+    }
+
+    .meRow{display:flex;align-items:center;gap:14px;min-width:0;}
+    .avatar{
+      width:56px;height:56px;border-radius:18px;object-fit:cover;display:block;
+      border:1px solid rgba(255,255,255,.22);
+      box-shadow:0 12px 28px rgba(0,0,0,.18);
+      background:rgba(255,255,255,.14);
+      flex:0 0 auto;
+    }
+    .who{color:rgba(255,255,255,.98);font-weight:1100;font-size:22px;line-height:1.1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+    .role{color:rgba(255,255,255,.76);font-weight:1000;font-size:13px;margin-top:3px;letter-spacing:.2px}
+
+    .shortcutRow{display:grid;grid-template-columns:repeat(auto-fit, minmax(210px, 1fr));gap:12px;margin-top:16px;}
+    .shortcut{
+      min-width:0;
+      display:flex;align-items:center;gap:12px;padding:14px 15px;border-radius:20px;cursor:pointer;user-select:none;
+      background:linear-gradient(135deg, #ffe37a 0%, var(--yellow) 58%, #ffbf00 100%);
+      border:1px solid rgba(11,27,58,.10);
+      box-shadow:0 16px 38px rgba(2,6,23,.16);
+      color:#0b1b3a;
+      transition:transform .15s ease, box-shadow .15s ease;
+    }
+    .shortcut:active{transform:translateY(1px) scale(.995)}
+    .shortcut .ico{
+      width:46px;height:46px;border-radius:16px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;
+      background:rgba(255,255,255,.56);border:1px solid rgba(11,27,58,.10);font-size:20px;
+      box-shadow:0 8px 18px rgba(11,27,58,.08);
+    }
+    .shortcut > div:last-child{min-width:0}
+    .shortcut b{display:block;font-size:15px;font-weight:1100;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .shortcut span{display:block;font-size:12px;font-weight:900;opacity:.78;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+    .seg{margin-top:14px;display:grid;grid-template-columns:repeat(3, minmax(0, 1fr));gap:0;border-radius:18px;overflow:hidden;border:1px solid rgba(15,23,42,.10);background:#fff;box-shadow:0 12px 24px rgba(2,6,23,.07);}
+    .seg button{min-width:0;padding:13px 10px;border:0;background:transparent;font-weight:1100;font-size:13px;color:rgba(15,23,42,.72);cursor:pointer}
+    .seg button.active{background:var(--yellow);color:#0b1b3a;}
+    .seg button:not(.active){background:rgba(255,255,255,.92)}
+
+    .card{background:var(--card);border:1px solid rgba(11,75,179,.12);border-radius:var(--radius);box-shadow:var(--shadow);min-width:0;overflow:hidden}
+    .card.p14{padding:16px;}
+    .muted{color:var(--muted);font-weight:900;font-size:12px}
+    .titleRow{display:flex;align-items:center;justify-content:space-between;gap:10px;min-width:0}
+    .titleRow h3{margin:0;font-size:15px;font-weight:1100;color:#0b1b3a;min-width:0}
+    .titleRow > *{min-width:0}
+
+    .kpiRow2{display:grid;grid-template-columns:repeat(auto-fit, minmax(250px, 1fr));gap:12px;margin-top:12px;}
+    .kpi{min-width:0;border-radius:22px;padding:15px 16px;box-shadow:0 16px 42px rgba(2,6,23,.10)}
+    .kpi .t{font-weight:1100;font-size:12px;opacity:.92}
+    .kpi .v{margin-top:8px;font-weight:1200;font-size:28px;letter-spacing:.2px;line-height:1.04;overflow-wrap:anywhere}
+    .kpi .h{margin-top:4px;font-weight:900;font-size:11px;opacity:.78}
+    .kpiBlue{color:#fff;background:linear-gradient(135deg,var(--blue1) 0%, #173e8c 48%, var(--blue2) 100%);border:1px solid rgba(255,255,255,.10)}
+    .kpiBlue .t,.kpiBlue .v,.kpiBlue .h{color:#fff}
+    .kpiYellow{background:linear-gradient(135deg, #ffe37a 0%, var(--yellow) 58%, #ffbf00 100%);border:1px solid rgba(11,27,58,.10)}
+    .kpiYellow .t,.kpiYellow .v,.kpiYellow .h{color:#0b1b3a}
+
+    .bigBlock{margin-top:12px;display:grid;grid-template-columns:1fr;gap:12px;}
+    .bigCard{
+      position:relative;
+      overflow:hidden;
+      border-radius:24px;padding:18px;box-shadow:var(--shadow-strong);
+      border:1px solid rgba(15,23,42,.10);
+      background:linear-gradient(135deg, #0b4bb3 0%, #11337b 46%, #091a38 100%);
+      color:#fff;
+    }
+    .bigCard::after{
+      content:"";position:absolute;right:-70px;top:-70px;width:220px;height:220px;border-radius:999px;
+      background:radial-gradient(circle, rgba(255,255,255,.20) 0%, rgba(255,255,255,.06) 48%, transparent 72%);
+      pointer-events:none;
+    }
+    .bigCard .head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;position:relative;z-index:1}
+    .bigCard h3{margin:0;font-size:13px;font-weight:1100;color:#fff}
+    .bigCard .muted{color:rgba(255,255,255,.80)}
+    .bigCard .value{margin-top:10px;font-size:38px;font-weight:1200;color:#fff;line-height:1.02;position:relative;z-index:1;overflow-wrap:anywhere}
+    .countsGrid{margin-top:14px;display:grid;grid-template-columns:repeat(auto-fit, minmax(150px, 1fr));gap:10px;position:relative;z-index:1}
+    .miniStat{min-width:0;border-radius:18px;padding:12px;border:1px solid rgba(255,255,255,.14);background:rgba(255,255,255,.12);backdrop-filter:blur(8px)}
+    .miniStat .k{font-size:11px;font-weight:1000;color:rgba(255,255,255,.84)}
+    .miniStat .n{margin-top:6px;font-size:22px;font-weight:1200;color:#fff;line-height:1.04}
+
+    .techSection{margin-top:12px}
+    .techTabs{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+    .chip{border-radius:999px;padding:9px 14px;font-weight:1100;font-size:12px;border:1px solid rgba(15,23,42,.12);background:#fff;color:#0b1b3a;cursor:pointer;box-shadow:0 6px 16px rgba(2,6,23,.06)}
+    .chip.active{background:var(--yellow);border-color:var(--yellow);color:#0b1b3a}
+    .techRow{display:grid;grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));gap:12px;margin-top:12px;}
+    .techCard{min-width:0;border-radius:22px;padding:14px;border:1px solid rgba(255,255,255,.14);box-shadow:0 18px 44px rgba(2,6,23,.12);color:#fff}
+    .techCard .t{font-weight:1100;font-size:12px;opacity:.95}
+    .techCard .v{margin-top:8px;font-weight:1200;font-size:30px;letter-spacing:.2px;line-height:1.02}
+    .techCard .h{margin-top:4px;font-weight:900;font-size:11px;opacity:.80}
+    .techOpen{background:linear-gradient(135deg,#16a34a 0%, #22c55e 45%, #064e3b 100%)}
+    .techClosed{background:linear-gradient(135deg,#dc2626 0%, #ef4444 45%, #7f1d1d 100%)}
+
+    .donutGrid{display:grid;grid-template-columns:minmax(0, 1.15fr) minmax(260px, .85fr);gap:14px;align-items:center;}
+    .bigNum{font-size:48px;font-weight:1200;color:#0b1b3a;line-height:1}
+    .miniLegend{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+    .miniLegend .li{display:flex;align-items:center;justify-content:space-between;gap:10px;font-weight:1100}
+    .miniLegend .left{display:flex;align-items:center;gap:10px;min-width:0}
+    .dot{width:10px;height:10px;border-radius:999px;flex:0 0 auto}
+    .li .count{font-weight:1200;color:#0b1b3a}
+
+    .filtersCard{margin-top:12px}
+    .foldHead{display:flex;align-items:center;justify-content:space-between;gap:12px;cursor:pointer;user-select:none}
+    .foldHead b{font-weight:1200;color:#0b1b3a}
+    .chev{width:38px;height:38px;border-radius:14px;border:1px solid var(--line);display:flex;align-items:center;justify-content:center;background:#fff;transition:transform .15s ease}
+    .foldBody{margin-top:12px;display:none}
+    .filtersCard.open .foldBody{display:block}
+    .filtersCard.open .chev{transform:rotate(180deg)}
+
+    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+    .row > *{flex:1 1 160px;min-width:0}
+    input[type="date"], select{
+      width:100%;
+      min-height:44px;
+      padding:10px 12px;border-radius:14px;border:1px solid rgba(11,75,179,.18);
+      font-weight:1100;background:#fff;color:#0f172a;
+      box-shadow:0 6px 16px rgba(2,6,23,.04);
+    }
+    .btn{display:inline-flex;align-items:center;justify-content:center;border-radius:14px;border:1px solid rgba(15,23,42,.12);padding:10px 12px;font-weight:1100;cursor:pointer;min-height:44px;white-space:nowrap}
+    .btn.yellow{background:var(--yellow);color:#0b1b3a;border-color:var(--yellow)}
+    .btn.blue{background:var(--blue1);color:#fff;border-color:var(--blue1)}
+    .btn.ghost{background:#fff;color:#0b1b3a}
+
+    canvas{display:block;max-width:100%}
+    .list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
+    .item{
+      min-width:0;
+      border:1px solid rgba(15,23,42,.10);border-radius:18px;padding:12px 14px;background:#fff;
+      display:flex;justify-content:space-between;gap:12px;align-items:center;
+      box-shadow:0 8px 20px rgba(2,6,23,.05);
+    }
+    .item .l{min-width:0;flex:1 1 auto}
+    .item b{display:block;color:#0b1b3a;font-weight:1100;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .item .s{margin-top:3px;color:rgba(15,23,42,.60);font-weight:900;font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .pill{display:inline-flex;align-items:center;justify-content:center;gap:6px;border-radius:999px;padding:7px 12px;font-weight:1100;font-size:12px;white-space:nowrap;flex:0 0 auto}
+    .pill.yellow{background:var(--yellow);color:#0b1b3a}
+    .pill.blue{background:var(--blue1);color:#fff}
+    .pill.gray{background:#eef2ff;color:#0b1b3a}
+
+    table td{padding:8px 6px;vertical-align:middle}
+    #payoutTechsTbody tr{background:#fff;border-radius:16px;box-shadow:0 8px 20px rgba(2,6,23,.05)}
+
+    @media (max-width: 860px){
+      .wrap{width:min(100%, calc(100vw - 20px));padding:84px 0 132px}
+      .donutGrid{grid-template-columns:1fr}
+      .bigNum{font-size:40px}
+    }
+    @media (max-width: 640px){
+      .wrap{width:min(100%, calc(100vw - 16px));padding:82px 0 126px}
+      .hero{padding:16px}
+      .who{font-size:18px}
+      .shortcutRow{grid-template-columns:1fr}
+      .kpiRow2,
+      .techRow,
+      .countsGrid{grid-template-columns:1fr}
+      .bigCard .value{font-size:32px}
+      .item{flex-direction:column;align-items:flex-start}
+      .item .pill{align-self:flex-start}
+      .foldHead{align-items:flex-start}
+      .foldHead > div:last-child{width:100%;justify-content:flex-end}
+      .row > *{flex:1 1 100%}
+      .seg button{font-size:12px;padding:12px 8px}
+    }
+    @media (min-width: 1024px){
+      .wrap{padding-top:94px}
+      .shortcutRow{grid-template-columns:repeat(2, minmax(0, 1fr))}
+    }
+</style>
   <script defer src="/cwf-pwa.js?v=company-logo-icon-v32"></script>
 </head>
 <body>
   <div class="wrap">
-    <section class="hero"><div class="heroTop"><div class="meRow"><img id="meAvatar" class="avatar" alt="Admin" /><div style="min-width:0"><div class="who" id="whoBox">กำลังโหลด...</div><div class="role" id="roleBox">Admin Dashboard</div></div></div><div class="heroBadge">CWF Command Center • Asia/Bangkok</div></div><div class="shortcutRow"><div class="shortcut" id="goAddJob"><div class="ico">➕</div><div><b>เพิ่มงาน</b><span>สร้างใบงานใหม่</span></div></div><div class="shortcut" id="goHistory"><div class="ico">🗂️</div><div><b>ประวัติงาน</b><span>ค้นหา/แก้ไขงาน</span></div></div><div class="shortcut" onclick="location.href='/admin-queue-v2.html'"><div class="ico">📅</div><div><b>คิวช่าง</b><span>ดูสลอตและตาราง</span></div></div><div class="shortcut" onclick="location.href='/admin-review-v2.html'"><div class="ico">✅</div><div><b>ตรวจงาน</b><span>งานรออนุมัติ</span></div></div></div></section>
-    <section class="toolbar"><div class="seg" aria-label="ช่วงวันที่ด่วน"><button id="quickToday" type="button">วันนี้</button><button id="quick7" type="button">7 วัน</button><button id="quick30" type="button" class="active">30 วัน</button></div><div class="card p14 filtersCard" id="filtersCard"><div class="foldHead" id="filterToggle" role="button" aria-label="พับ/ขยายตัวกรอง"><div><b>🔎 ตัวกรองข้อมูล</b><div class="muted" id="filterSummary">—</div></div><div style="display:flex;align-items:center;gap:8px"><button class="btn blue" id="btnApplyMini" type="button">⟳ โหลด</button><div class="chev">▾</div></div></div><div class="foldBody" id="filterBody"><div class="row" style="margin-top:10px"><input type="date" id="fromDate" title="จากวันที่"><span class="muted">→</span><input type="date" id="toDate" title="ถึงวันที่"><button class="btn yellow" id="btnApply" type="button">โหลดข้อมูล</button></div></div></div></section>
-    <section class="kpiRow2"><div class="kpi kpiBlue"><div class="t">รายได้รวมบริษัท</div><div class="v" id="coRevenue">—</div><div class="h" id="coRevenueHint">—</div></div><div class="kpi kpiBlue" style="background:linear-gradient(135deg,#0b4bb3 0%,#2563eb 48%,#081a3a 100%)"><div class="t">งานที่ขายได้</div><div class="v" id="meSoldJobs">—</div><div class="h" id="meSoldJobsHint">—</div></div><div class="kpi kpiYellow"><div class="t">คอมมิชชั่นส่วนตัว</div><div class="v" id="meCommission">—</div><div class="h" id="meCommissionHint">—</div></div><div class="kpi" style="background:linear-gradient(135deg,#fff 0%,rgba(255,204,0,.20) 52%,rgba(11,75,179,.12) 100%);border:1px solid rgba(15,23,42,.10)"><div class="t" style="color:#0b1b3a">งานวันนี้</div><div class="v" style="color:#0b1b3a" id="countToday">—</div><div class="h" style="color:rgba(15,23,42,.62)">นับตามเวลานัดหมาย</div></div></section>
-    <section class="bigCard"><div class="titleRow"><h3>ภาพรวมงาน CWF</h3><div class="muted">เดือน/ปีปัจจุบัน</div></div><div class="countsGrid"><div class="miniStat"><div class="k">จำนวนงานวันนี้</div><div class="n" id="countTodayDup">—</div></div><div class="miniStat"><div class="k">จำนวนงานเดือนนี้</div><div class="n" id="countMonth">—</div></div><div class="miniStat"><div class="k">จำนวนงานปีนี้</div><div class="n" id="countYear">—</div></div></div></section>
-    <section class="dashboardGrid"><div class="stack"><div class="card p14"><div class="titleRow"><h3>สถานะงาน</h3><div class="muted" id="donutHint">—</div></div><div class="donutGrid" style="margin-top:10px"><div><div class="bigNum" id="jobTotal">—</div><div class="muted">งานในช่วงที่เลือก</div><div class="miniLegend"><div class="li"><div class="left"><span class="dot" style="background:var(--cwf-yellow)"></span>รอตรวจสอบ</div><div class="count" id="stPending">—</div></div><div class="li"><div class="left"><span class="dot" style="background:var(--cwf-blue)"></span>กำลังทำ</div><div class="count" id="stActive">—</div></div><div class="li"><div class="left"><span class="dot" style="background:#16a34a"></span>เสร็จสิ้น</div><div class="count" id="stDone">—</div></div></div></div><canvas id="donut" height="190"></canvas></div></div><div class="card p14"><div class="titleRow"><h3>รายได้รวมบริษัท (แยกตามช่วง)</h3><div class="muted" id="seriesHint">—</div></div><div class="row" style="margin-top:12px"><button class="btn yellow" data-group="day" type="button">วัน</button><button class="btn ghost" data-group="week" type="button">สัปดาห์</button><button class="btn ghost" data-group="month" type="button">เดือน</button><button class="btn ghost" data-group="year" type="button">ปี</button></div><canvas id="chart" height="180" style="margin-top:12px"></canvas></div><div class="card p14"><div class="titleRow"><h3>กราฟแท่งเทียนรายวัน</h3><div class="muted" id="candleHint">—</div></div><div class="softNote" style="margin-top:10px"><span>💡</span><span>ใช้ดูการแกว่งของราคางานต่อวัน: ต่ำสุด / สูงสุด / งานแรก / งานสุดท้าย</span></div><canvas id="candles" height="210" style="margin-top:10px"></canvas></div></div>
-      <div class="stack"><div class="card p14 techSection"><div class="titleRow"><h3>สถานะช่าง</h3><div class="muted" id="techHint">—</div></div><div class="techTabs"><button class="chip active" data-techscope="all" type="button">รวม</button><button class="chip" data-techscope="company" type="button">ช่างบริษัท</button><button class="chip" data-techscope="partner" type="button">พาร์ทเนอร์</button></div><div class="techRow"><div class="techCard techOpen"><div class="t">ช่างเปิดรับงาน</div><div class="v" id="techOpen">—</div><div class="h">accept_status = ready</div></div><div class="techCard techClosed"><div class="t">ช่างปิดรับงาน</div><div class="v" id="techClosed">—</div><div class="h">paused / ไม่พร้อมรับงาน</div></div></div><div class="kpiRow2" style="margin-top:10px;grid-template-columns:1fr 1fr"><div class="kpi kpiYellow"><div class="t">จำนวนช่างทั้งหมด</div><div class="v" id="techTotal">—</div><div class="h">ตามฟิลเตอร์</div></div><div class="kpi" style="background:linear-gradient(135deg,rgba(11,75,179,.10) 0%,rgba(255,204,0,.14) 60%,#fff 100%);border:1px solid rgba(15,23,42,.10)"><div class="t" style="color:#0b1b3a">อัตราเปิดรับงาน</div><div class="v" style="color:#0b1b3a" id="techOpenRate">—</div><div class="h" style="color:rgba(15,23,42,.62)">เปิดรับ/ทั้งหมด</div></div></div></div><div class="card p14"><div class="titleRow"><h3>งานลูกค้าจองเข้ามา</h3><div class="muted" id="pendingHint">—</div></div><div class="list" id="pendingList"></div></div><div class="card p14"><div class="titleRow"><h3>งานที่ต้องติดตาม</h3><div class="muted" id="activeHint">—</div></div><div class="list" id="activeList"></div></div><div class="card p14"><div class="titleRow"><h3>งวดจ่ายช่าง</h3><button class="btn blue" id="btnReloadPayouts" type="button">รีเฟรช</button></div><div class="muted" style="margin-top:6px">ดูยอดสุทธิ / จ่ายแล้ว / คงเหลือ / สถานะ</div><div class="row" style="margin-top:10px"><select id="payoutSelect" style="flex:1;min-width:220px"></select><button class="btn yellow" id="btnLoadPayoutTechs" type="button">ดูรายช่าง</button></div><div class="tableWrap"><table class="miniTable"><thead><tr class="muted"><td>ช่าง</td><td style="text-align:right">สุทธิ</td><td style="text-align:right">จ่ายแล้ว</td><td style="text-align:right">คงเหลือ</td><td>สถานะ</td></tr></thead><tbody id="payoutTechsTbody"></tbody></table></div></div></div></section>
+
+    <!-- HERO: Admin Identity -->
+    <div class="hero">
+      <div class="meRow">
+        <img id="meAvatar" class="avatar" alt="Admin" />
+        <div style="min-width:0">
+          <div class="who" id="whoBox">—</div>
+          <div class="role" id="roleBox">—</div>
+        </div>
+      </div>
+
+      <!-- 2 top buttons (yellow / black text) -->
+      <div class="shortcutRow">
+        <div class="shortcut" id="goAddJob">
+          <div class="ico">➕</div>
+          <div>
+            <b>เพิ่มงาน</b>
+            <span>ไปหน้าเพิ่มงาน</span>
+          </div>
+        </div>
+        <div class="shortcut" id="goHistory">
+          <div class="ico">🗂️</div>
+          <div>
+            <b>ประวัติงาน</b>
+            <span>ดูงานย้อนหลัง</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick range -->
+      <div class="seg">
+        <button id="quickToday" type="button" class="active">วันนี้</button>
+        <button id="quick7" type="button">7 วัน</button>
+        <button id="quick30" type="button">30 วัน</button>
+      </div>
+    </div>
+
+    <!-- Technician Payouts (Admin read-only) -->
+    <div class="card p14" style="margin-top:12px">
+      <div class="titleRow">
+        <h3>งวดจ่ายช่าง (ดูอย่างเดียว)</h3>
+        <button class="btn blue" id="btnReloadPayouts" type="button" style="width:auto">รีเฟรช</button>
+      </div>
+      <div class="muted" style="margin-top:6px">เลือกงวด แล้วดูรายช่าง: ยอดสุทธิ / จ่ายแล้ว / คงเหลือ / สถานะ</div>
+      <div class="row" style="margin-top:10px">
+        <select id="payoutSelect" style="flex:1;min-width:220px"></select>
+        <button class="btn yellow" id="btnLoadPayoutTechs" type="button" style="width:auto">ดูรายช่าง</button>
+      </div>
+      <div style="overflow:auto;margin-top:10px">
+        <table style="width:100%;border-collapse:separate;border-spacing:0 8px">
+          <thead>
+            <tr class="muted">
+              <td>ช่าง</td>
+              <td style="text-align:right">สุทธิ</td>
+              <td style="text-align:right">จ่ายแล้ว</td>
+              <td style="text-align:right">คงเหลือ</td>
+              <td>สถานะ</td>
+            </tr>
+          </thead>
+          <tbody id="payoutTechsTbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Personal performance -->
+    <div class="kpiRow2">
+      <div class="kpi kpiBlue">
+        <div class="t">งานที่ขายได้</div>
+        <div class="v" id="meSoldJobs">—</div>
+        <div class="h" id="meSoldJobsHint">—</div>
+      </div>
+      <div class="kpi kpiBlue" style="background:linear-gradient(135deg,#0b4bb3 0%, #1e3a8a 50%, #0b1b3a 100%)">
+        <div class="t">รายได้/คอมมิชชั่นส่วนตัว</div>
+        <div class="v" id="meCommission">—</div>
+        <div class="h" id="meCommissionHint">—</div>
+      </div>
+    </div>
+
+    <!-- Company Revenue + Counts -->
+    <div class="bigBlock">
+      <div class="bigCard">
+        <div class="head">
+          <h3>รายได้รวมบริษัท (ช่วงที่เลือก)</h3>
+          <div class="muted" id="coRevenueHint">—</div>
+        </div>
+        <div class="value" id="coRevenue">—</div>
+
+        <div class="countsGrid">
+          <div class="miniStat">
+            <div class="k">จำนวนงานวันนี้</div>
+            <div class="n" id="countToday">—</div>
+          </div>
+          <div class="miniStat">
+            <div class="k">จำนวนงานเดือนนี้</div>
+            <div class="n" id="countMonth">—</div>
+          </div>
+          <div class="miniStat">
+            <div class="k">จำนวนงานปีนี้</div>
+            <div class="n" id="countYear">—</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tech stats -->
+    <div class="card p14 techSection">
+      <div class="titleRow">
+        <h3>สถานะช่าง</h3>
+        <div class="muted" id="techHint">—</div>
+      </div>
+
+      <div class="techTabs">
+        <button class="chip active" data-techscope="all" type="button">รวม</button>
+        <button class="chip" data-techscope="company" type="button">ช่างบริษัท</button>
+        <button class="chip" data-techscope="partner" type="button">พาร์ทเนอร์</button>
+      </div>
+
+      <div class="techRow">
+        <div class="techCard techOpen">
+          <div class="t">ช่างเปิดรับงาน</div>
+          <div class="v" id="techOpen">—</div>
+          <div class="h">พร้อมรับงาน</div>
+        </div>
+        <div class="techCard techClosed">
+          <div class="t">ช่างปิดรับงาน</div>
+          <div class="v" id="techClosed">—</div>
+          <div class="h">พัก/ปิดรับงาน</div>
+        </div>
+      </div>
+      <div class="kpiRow2" style="margin-top:10px">
+        <div class="kpi kpiYellow">
+          <div class="t">จำนวนช่างทั้งหมด</div>
+          <div class="v" id="techTotal">—</div>
+          <div class="h">ตามฟิลเตอร์ที่เลือก</div>
+        </div>
+        <div class="kpi" style="background:linear-gradient(135deg, rgba(11,75,179,.10) 0%, rgba(255,204,0,.12) 55%, #fff 100%); border:1px solid rgba(15,23,42,.10)">
+          <div class="t" style="font-weight:1100;color:#0b1b3a">อัตราเปิดรับงาน</div>
+          <div class="v" style="color:#0b1b3a" id="techOpenRate">—</div>
+          <div class="h" style="color:rgba(15,23,42,.60)">เปิดรับ/ทั้งหมด</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Donut: job status -->
+    <div class="card p14" style="margin-top:12px">
+      <div class="titleRow">
+        <h3>สถานะงาน</h3>
+        <div class="muted" id="donutHint">—</div>
+      </div>
+      <div class="donutGrid" style="margin-top:8px">
+        <div>
+          <div class="bigNum" id="jobTotal">—</div>
+          <div class="muted">งานในช่วงที่เลือก</div>
+          <div class="miniLegend">
+            <div class="li">
+              <div class="left"><span class="dot" style="background:var(--yellow)"></span>รอตรวจสอบ</div>
+              <div class="count" id="stPending">—</div>
+            </div>
+            <div class="li">
+              <div class="left"><span class="dot" style="background:var(--blue1)"></span>กำลังทำ</div>
+              <div class="count" id="stActive">—</div>
+            </div>
+            <div class="li">
+              <div class="left"><span class="dot" style="background:#16a34a"></span>เสร็จสิ้น</div>
+              <div class="count" id="stDone">—</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <canvas id="donut" height="170"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Collapsible filters (default collapsed) -->
+    <div class="card p14 filtersCard" id="filtersCard">
+      <div class="foldHead" id="filterToggle" role="button" aria-label="พับ/ขยายตัวกรอง">
+        <div>
+          <b>🔎 ตัวกรองเพิ่มเติม</b>
+          <div class="muted" id="filterSummary">—</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn blue" id="btnApplyMini" type="button" title="โหลด">⟳ โหลด</button>
+          <div class="chev">▾</div>
+        </div>
+      </div>
+      <div class="foldBody" id="filterBody">
+        <div class="row" style="margin-top:10px">
+          <input type="date" id="fromDate" title="จากวันที่">
+          <span class="muted">→</span>
+          <input type="date" id="toDate" title="ถึงวันที่">
+          <button class="btn yellow" id="btnApply" type="button">โหลดข้อมูล</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card p14" style="margin-top:12px">
+      <div class="titleRow">
+        <h3>กราฟแท่งเทียน (รายวัน)</h3>
+        <div class="muted" id="candleHint">—</div>
+      </div>
+      <canvas id="candles" height="190" style="margin-top:8px"></canvas>
+    </div>
+
+    <div class="card p14" style="margin-top:12px">
+      <div class="titleRow">
+        <h3>รายได้รวมบริษัท (แยกตามช่วง)</h3>
+        <div class="muted" id="seriesHint">—</div>
+      </div>
+      <div class="row" style="margin-top:10px">
+        <button class="btn yellow" data-group="day" type="button">วัน</button>
+        <button class="btn ghost" data-group="week" type="button">สัปดาห์</button>
+        <button class="btn ghost" data-group="month" type="button">เดือน</button>
+        <button class="btn ghost" data-group="year" type="button">ปี</button>
+      </div>
+      <canvas id="chart" height="160" style="margin-top:10px"></canvas>
+    </div>
+
+    <div class="card p14" style="margin-top:12px">
+      <div class="titleRow">
+        <h3>งานลูกค้าจองเข้ามา (รอตรวจสอบ)</h3>
+        <div class="muted" id="pendingHint">—</div>
+      </div>
+      <div class="list" id="pendingList"></div>
+    </div>
+
+    <div class="card p14" style="margin-top:12px">
+      <div class="titleRow">
+        <h3>งานทั้งหมด + กำลังทำ</h3>
+        <div class="muted" id="activeHint">—</div>
+      </div>
+      <div class="list" id="activeList"></div>
+    </div>
+
   </div>
-  <script src="admin-v2-common.js?v=20260427_dash_premium"></script>
-  <script src="admin-dashboard-v2.js?v=20260427_dash_premium"></script>
+
+  <script src="admin-v2-common.js?v=20260212_dash_ui2"></script>
+  <script src="admin-dashboard-v2.js?v=20260212_dash_ui2"></script>
 </body>
 </html>
