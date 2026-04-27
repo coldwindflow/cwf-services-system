@@ -1164,6 +1164,7 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
     //   revenue_total = full selling price of sold jobs
     //   technician_cost_total = fresh technician payout from contract rules
     //   net_profit_total = revenue_total - technician_cost_total (VAT not included)
+    // NOTE: cost is calculated for all non-cancelled sold jobs in range, not only finished jobs.
     let technicianCostTotal = 0;
     try {
       const costJobs = await pool.query(
@@ -1171,14 +1172,15 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
          FROM public.jobs
          WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
            AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
-           AND (finished_at IS NOT NULL OR COALESCE(job_status,'') IN ('เสร็จแล้ว','เสร็จสิ้น','ปิดงาน','completed','done'))
          ORDER BY appointment_datetime ASC
-         LIMIT 1000`,
+         LIMIT 5000`,
         [d_from, d_to]
       );
       for (const row of (costJobs.rows || [])) {
         try {
-          const lines = await _buildPayoutLinesForJob(row.job_id);
+          // Dashboard shows management profit for sold jobs in the selected range.
+          // It must subtract the technician contract cost even before payout rows are generated.
+          const lines = await _buildPayoutLinesForJob(row.job_id, { includeUnfinished: true });
           technicianCostTotal += (lines || []).reduce((sum, ln) => sum + Number(ln.earn_amount || 0), 0);
         } catch (lineErr) {
           debug.partial = true;
@@ -2835,9 +2837,10 @@ async function _loadJobMeta(job_id){
   return r.rows[0] || null;
 }
 
-async function _buildPayoutLinesForJob(job_id){
+async function _buildPayoutLinesForJob(job_id, opts = {}){
   const meta = await _loadJobMeta(job_id);
-  if (!meta || !meta.finished_at) return [];
+  const includeUnfinished = Boolean(opts && opts.includeUnfinished);
+  if (!meta || (!meta.finished_at && !includeUnfinished)) return [];
 
   const itemsQ = await pool.query(
     `SELECT job_item_id, item_name, qty, unit_price, line_total,
