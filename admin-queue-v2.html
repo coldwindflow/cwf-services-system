@@ -60,8 +60,8 @@
     .icon-btn{width:42px;height:42px;border:none;border-radius:14px;background:#fff;color:#1d4ed8;font-size:18px;font-weight:900;cursor:pointer;box-shadow:0 6px 14px rgba(15,23,42,.08)}
     .month-badge{display:inline-flex;align-items:center;gap:8px;min-height:42px;padding:0 14px;border-radius:999px;background:linear-gradient(135deg,rgba(37,99,235,.12),rgba(56,189,248,.08));border:1px solid rgba(37,99,235,.14);font-size:14px;font-weight:1000;color:#1d4ed8}
 
-    .month-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-    .day-cell{position:relative;display:flex;flex-direction:column;gap:12px;min-width:0;min-height:176px;padding:14px;border-radius:24px;border:1px solid rgba(15,23,42,.08);background:linear-gradient(180deg,#ffffff,#f9fcff);box-shadow:0 10px 22px rgba(15,23,42,.06);cursor:pointer;overflow:hidden;transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease}
+    .month-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+    .day-cell{position:relative;display:flex;flex-direction:column;gap:8px;min-width:0;min-height:138px;padding:10px;border-radius:20px;border:1px solid rgba(15,23,42,.08);background:linear-gradient(180deg,#ffffff,#f9fcff);box-shadow:0 10px 22px rgba(15,23,42,.06);cursor:pointer;overflow:hidden;transition:transform .15s ease, box-shadow .15s ease, border-color .15s ease}
     .day-cell:hover{transform:translateY(-1px);box-shadow:0 16px 30px rgba(15,23,42,.10)}
     .day-cell.free{background:linear-gradient(180deg,rgba(240,253,244,.98),#ffffff)}
     .day-cell.full{background:linear-gradient(180deg,rgba(254,242,242,.98),#ffffff)}
@@ -70,13 +70,13 @@
     .day-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
     .day-date{display:flex;flex-direction:column;gap:6px;min-width:0}
     .day-number-row{display:flex;align-items:center;gap:8px}
-    .day-number{width:40px;height:40px;border-radius:14px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:1000;color:#0f172a;flex:0 0 auto}
+    .day-number{width:36px;height:36px;border-radius:13px;background:#f1f5f9;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:1000;color:#0f172a;flex:0 0 auto}
     .day-cell.free .day-number{background:rgba(22,163,74,.14);color:#15803d}
     .day-cell.full .day-number{background:rgba(220,38,38,.14);color:#b91c1c}
     .day-week{font-size:13px;font-weight:900;color:#64748b}
     .day-date-full{font-size:11px;color:#94a3b8;font-weight:800}
     .status-stack{display:flex;flex-direction:column;gap:6px;align-items:flex-end}
-    .status-chip{display:inline-flex;align-items:center;gap:8px;min-height:34px;padding:0 12px;border-radius:999px;font-size:12px;font-weight:1000;white-space:nowrap}
+    .status-chip{display:inline-flex;align-items:center;gap:6px;min-height:30px;padding:0 9px;border-radius:999px;font-size:11px;font-weight:1000;white-space:nowrap}
     .status-chip.main.free{background:rgba(22,163,74,.14);color:#15803d}
     .status-chip.main.full{background:rgba(220,38,38,.14);color:#b91c1c}
     .status-chip.today{background:rgba(250,204,21,.22);color:#8a6200}
@@ -85,13 +85,13 @@
     .status-chip.main.full .dot{background:#dc2626}
 
     .day-body{display:flex;flex-direction:column;gap:8px;min-height:0;flex:1}
-    .availability-list{display:flex;flex-direction:column;gap:8px}
-    .availability-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:10px;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.92);border:1px solid rgba(15,23,42,.08)}
-    .availability-row .name{font-size:13px;font-weight:900;color:#334155;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .pill-state{display:inline-flex;align-items:center;justify-content:center;min-width:54px;min-height:28px;padding:0 10px;border-radius:999px;font-size:11px;font-weight:1000;border:1px solid rgba(15,23,42,.08)}
+    .availability-list{display:grid;grid-template-columns:1fr;gap:6px}
+    .availability-row{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:6px;padding:7px 8px;border-radius:14px;background:rgba(255,255,255,.92);border:1px solid rgba(15,23,42,.08)}
+    .availability-row .name{font-size:12px;font-weight:900;color:#334155;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .pill-state{display:inline-flex;align-items:center;justify-content:center;min-width:42px;min-height:26px;padding:0 8px;border-radius:999px;font-size:10px;font-weight:1000;border:1px solid rgba(15,23,42,.08)}
     .pill-state.ok{background:rgba(22,163,74,.12);color:#15803d}
     .pill-state.full{background:rgba(220,38,38,.12);color:#b91c1c}
-    .slot-preview{margin-top:auto;padding-top:2px;font-size:12px;line-height:1.45;color:#64748b}
+    .slot-preview{margin-top:auto;padding-top:0;font-size:11px;line-height:1.45;color:#64748b}
     .slot-preview strong{color:#1d4ed8}
 
     .empty-state{padding:26px 16px;border-radius:20px;border:1px dashed rgba(15,23,42,.14);background:#f8fafc;text-align:center;color:#64748b;font-weight:800}
@@ -143,24 +143,44 @@
     .nav-btn.active{background:linear-gradient(135deg,#fde047,#facc15);color:#1f2937;border-color:transparent;box-shadow:0 12px 24px rgba(250,204,21,.28)}
 
     @media (max-width:980px){
-      .summary-strip,.stats-grid,.month-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .summary-strip,.stats-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .month-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
     }
     @media (max-width:680px){
-      .app.queue-page{padding-left:10px;padding-right:10px}
-      .hero-title{font-size:24px}
-      .calendar-title{font-size:24px}
+      .app.queue-page{padding-left:8px;padding-right:8px}
+      .hero-card{padding:14px;border-radius:24px}
+      .hero-title{font-size:22px}
+      .calendar-title{font-size:22px}
       .summary-strip,.stats-grid,.filter-grid{grid-template-columns:1fr}
-      .month-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-      .day-cell{min-height:188px;padding:12px;border-radius:20px}
-      .status-stack{align-items:flex-start}
+      .calendar-card{padding:10px;border-radius:22px}
+      .month-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+      .day-cell{min-height:116px;padding:7px;border-radius:16px;gap:6px}
+      .day-head{gap:4px}
+      .day-number{width:30px;height:30px;border-radius:11px;font-size:16px}
+      .day-week{font-size:11px}
+      .day-date-full{display:none}
+      .status-stack{align-items:flex-end;gap:4px}
+      .status-chip{min-height:26px;padding:0 7px;font-size:10px;gap:5px}
+      .status-chip .dot{width:8px;height:8px}
+      .status-chip.today{display:none}
+      .availability-list{gap:4px}
+      .availability-row{padding:5px 6px;border-radius:11px;gap:4px}
+      .availability-row .name{font-size:10px}
+      .pill-state{min-width:34px;min-height:22px;font-size:9px;padding:0 5px}
+      .slot-preview{font-size:9.5px;line-height:1.25;display:-webkit-box;-webkit-line-clamp:1;-webkit-box-orient:vertical;overflow:hidden}
       .time-search-wrap{grid-template-columns:1fr}
       .hero-actions{width:100%}
       .hero-actions .control-btn{flex:1}
     }
     @media (max-width:430px){
-      .month-grid{grid-template-columns:1fr}
-      .day-cell{min-height:160px}
-      .availability-row{padding:8px 10px}
+      .month-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+      .day-cell{min-height:108px;padding:6px;border-radius:15px}
+      .day-number{width:28px;height:28px;font-size:15px}
+      .status-chip.main{font-size:0;width:26px;min-width:26px;padding:0;justify-content:center}
+      .status-chip.main .dot{margin:0}
+      .availability-row{grid-template-columns:1fr;justify-items:center;text-align:center;padding:4px 3px}
+      .availability-row .name{font-size:9px;line-height:1.05}
+      .pill-state{min-width:32px;min-height:20px;font-size:9px}
       .bottom-nav{left:8px;right:8px}
       .nav-btn{font-size:12px;gap:4px}
     }
