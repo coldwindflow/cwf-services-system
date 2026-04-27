@@ -1189,6 +1189,38 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
       debug.notes.push('counts query failed');
     }
 
+    // Technician readiness snapshot for Dashboard UI.
+    // Backward-compatible: if technician_profiles columns are missing/old, the dashboard still loads with zero stats.
+    let techStats = {
+      all: { open: 0, closed: 0, total: 0 },
+      company: { open: 0, closed: 0, total: 0 },
+      partner: { open: 0, closed: 0, total: 0 }
+    };
+    try {
+      const tq = await pool.query(
+        `SELECT
+           CASE WHEN LOWER(COALESCE(p.employment_type,'company')) IN ('partner','พาร์ทเนอร์') THEN 'partner' ELSE 'company' END AS tech_type,
+           CASE WHEN LOWER(COALESCE(p.accept_status,'ready')) IN ('ready','open','available','รับงาน') THEN 'open' ELSE 'closed' END AS bucket,
+           COUNT(*)::int AS count
+         FROM public.users u
+         LEFT JOIN public.technician_profiles p ON p.username = u.username
+         WHERE u.role='technician'
+         GROUP BY 1,2`
+      );
+      for (const r of (tq.rows || [])) {
+        const type = (r.tech_type === 'partner') ? 'partner' : 'company';
+        const bucket = (r.bucket === 'open') ? 'open' : 'closed';
+        const n = Number(r.count || 0);
+        techStats[type][bucket] += n;
+        techStats[type].total += n;
+        techStats.all[bucket] += n;
+        techStats.all.total += n;
+      }
+    } catch (e) {
+      debug.partial = true;
+      debug.notes.push('tech stats query failed');
+    }
+
     // Status donut (bucketed)
     let statusRows = { rows: [] };
     try {
@@ -1323,6 +1355,7 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
       pending: { count: (pending.rows||[]).length, rows: pending.rows||[] },
       active: { rows: active.rows||[] },
       counts: counts.rows[0] || { today: 0, month: 0, year: 0 },
+      tech_stats: techStats,
       debug
     };
     res.set('Cache-Control', 'no-store');

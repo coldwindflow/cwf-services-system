@@ -57,13 +57,42 @@
     console[(kind==='error')?'error':'log']('[dashboard]', msg);
   }
 
-  async function apiFetch(url){
-    const res = await fetch(url, { headers: { 'Content-Type':'application/json' }});
+  async function apiFetch(url, options = {}){
+    // Prefer the shared Admin v2 fetcher when present: it adds role header, bearer token, cookies, and debug panel support.
+    try{
+      if (typeof window.apiFetch === 'function' && window.apiFetch !== apiFetch) {
+        return await window.apiFetch(url, options);
+      }
+    }catch(e){ throw e; }
+
+    const headers = Object.assign({ 'Content-Type':'application/json', 'x-user-role':'admin' }, options.headers || {});
+    try{
+      const token = localStorage.getItem('admin_token') || localStorage.getItem('token') || '';
+      if (token) headers.Authorization = `Bearer ${token}`;
+    }catch(_){/* ignore */}
+    const res = await fetch(url, Object.assign({}, options, { headers, credentials:'include' }));
+    const ct = String(res.headers.get('content-type') || '').toLowerCase();
+    const data = ct.includes('application/json') ? await res.json().catch(()=>null) : await res.text().catch(()=> '');
     if(!res.ok){
-      const t = await res.text().catch(()=> '');
-      throw new Error(`HTTP ${res.status} ${t}`);
+      const msg = (data && data.error) ? data.error : (typeof data === 'string' ? data : `HTTP ${res.status}`);
+      const err = new Error(msg);
+      err.status = res.status;
+      throw err;
     }
-    return await res.json();
+    return data;
+  }
+
+  function escapeHtml(v){
+    return String(v == null ? '' : v).replace(/[&<>\"']/g, (c)=>({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '\"':'&quot;', "'":'&#39;' }[c]));
+  }
+
+  function statusClass(st){
+    const x = String(st||'').trim().toLowerCase();
+    if (x === 'รอตรวจสอบ' || x === 'pending_review') return 'yellow';
+    if (x === 'กำลังทำ' || x === 'รอดำเนินการ' || x === 'รอช่างยืนยัน' || x === 'งานแก้ไข') return 'blue';
+    if (x === 'เสร็จแล้ว' || x === 'เสร็จสิ้น' || x === 'completed' || x === 'done') return 'green';
+    if (x === 'ตีกลับ') return 'red';
+    return 'gray';
   }
 
   function renderList(elId, rows){
@@ -73,30 +102,34 @@
     const list = Array.isArray(rows) ? rows : [];
     if (!list.length){
       const empty = document.createElement('div');
-      empty.className = 'muted';
-      empty.style.padding = '6px 2px';
-      empty.textContent = '— ไม่มีรายการ —';
+      empty.className = 'softNote';
+      empty.innerHTML = '<span>✅</span><span>ไม่มีรายการในกลุ่มนี้</span>';
       el.appendChild(empty);
       return;
     }
 
-    for (const r of list.slice(0,10)){
-      const dt = r.booking_time ? new Date(r.booking_time) : null;
-      const when = dt ? dt.toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit'}) : '-';
+    for (const r of list.slice(0,12)){
+      const rawDate = r.appointment_datetime || r.booking_time || r.created_at || '';
+      const dt = rawDate ? new Date(rawDate) : null;
+      const when = (dt && !Number.isNaN(dt.getTime()))
+        ? dt.toLocaleString('th-TH',{hour:'2-digit',minute:'2-digit',day:'2-digit',month:'2-digit',timeZone:'Asia/Bangkok'})
+        : '-';
       const code = r.booking_code || `#${r.job_id}`;
       const st = String(r.job_status||'').trim();
-      const pillClass = (st==='รอตรวจสอบ'||st==='pending_review') ? 'yellow' : (st==='กำลังทำ' ? 'blue' : 'gray');
+      const pillClass = statusClass(st);
+      const price = fmtMoney(r.job_price||0);
+      const jobId = r.job_id || '';
       const item = document.createElement('div');
       item.className = 'item';
       item.innerHTML = `
-        <div style="min-width:0">
-          <b>${code} • ${r.customer_name || '-'}</b>
-          <div class="s">${when} • ${r.job_type || '-'} • ${fmtMoney(r.job_price||0)} ฿</div>
+        <div class="l">
+          <b>${escapeHtml(code)} • ${escapeHtml(r.customer_name || '-')}</b>
+          <div class="s">${escapeHtml(when)} • ${escapeHtml(r.job_type || '-')} • ${escapeHtml(price)} ฿</div>
         </div>
-        <div class="pill ${pillClass}">${st || '-'}</div>
+        <div class="pill ${pillClass}">${escapeHtml(st || '-')}</div>
       `;
       item.addEventListener('click', ()=>{
-        location.href = `/admin-job-view-v2.html?job=${encodeURIComponent(code)}`;
+        if (jobId) location.href = `/admin-job-view-v2.html?job_id=${encodeURIComponent(String(jobId))}`;
       });
       el.appendChild(item);
     }
@@ -527,6 +560,8 @@
     $('coRevenueHint').textContent = `${Number(company.job_count||0).toLocaleString('th-TH')} งาน ในช่วงที่เลือก`;
 
     $('countToday').textContent = String(Number(counts.today||0));
+    const countTodayDup = $('countTodayDup');
+    if (countTodayDup) countTodayDup.textContent = String(Number(counts.today||0));
     $('countMonth').textContent = String(Number(counts.month||0));
     $('countYear').textContent = String(Number(counts.year||0));
 
