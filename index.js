@@ -1111,18 +1111,25 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
     let pRow = { job_count: 0, revenue_total: 0 };
     try {
       const personal = await pool.query(
-        `SELECT COUNT(*)::int AS job_count,
-                COALESCE(SUM(COALESCE(job_price,0)),0)::double precision AS revenue_total
-         FROM public.jobs
-         WHERE (created_by_admin=$1 OR approved_by_admin=$1)
-           AND (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $2::date AND $3::date
-           AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
+        `WITH gross AS (
+           SELECT j.job_id,
+                  COALESCE(NULLIF(SUM(COALESCE(ji.line_total,0)),0), COALESCE(j.job_price,0), 0)::double precision AS gross_total
+           FROM public.jobs j
+           LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
+           WHERE (j.created_by_admin=$1 OR j.approved_by_admin=$1)
+             AND (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $2::date AND $3::date
+             AND COALESCE(j.job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
+           GROUP BY j.job_id, j.job_price
+         )
+         SELECT COUNT(*)::int AS job_count,
+                COALESCE(SUM(gross_total),0)::double precision AS revenue_total
+         FROM gross`,
         [me.username, d_from, d_to]
       );
       if (personal.rows && personal.rows[0]) pRow = personal.rows[0];
     } catch (e) {
       debug.partial = true;
-      debug.notes.push('personal stats query failed');
+      debug.notes.push('personal stats gross query failed');
     }
     const commissionRate = Number(meInfo.commission_rate_percent || 0);
     const commissionTotal = (Number(pRow.revenue_total || 0) * commissionRate) / 100;
@@ -1130,50 +1137,60 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
     let cRow = { job_count: 0, revenue_total: 0 };
     try {
       const company = await pool.query(
-        `SELECT COUNT(*)::int AS job_count,
-                COALESCE(SUM(COALESCE(job_price,0)),0)::double precision AS revenue_total
-         FROM public.jobs
-         WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
-           AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
+        `WITH gross AS (
+           SELECT j.job_id,
+                  COALESCE(NULLIF(SUM(COALESCE(ji.line_total,0)),0), COALESCE(j.job_price,0), 0)::double precision AS gross_total
+           FROM public.jobs j
+           LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
+           WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
+             AND COALESCE(j.job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
+           GROUP BY j.job_id, j.job_price
+         )
+         SELECT COUNT(*)::int AS job_count,
+                COALESCE(SUM(gross_total),0)::double precision AS revenue_total
+         FROM gross`,
         [d_from, d_to]
       );
       if (company.rows && company.rows[0]) cRow = company.rows[0];
     } catch (e) {
       debug.partial = true;
-      debug.notes.push('company stats query failed');
+      debug.notes.push('company gross stats query failed');
     }
 
-    // Company net profit for dashboard display (before VAT/tax).
-    // Meaning: company revenue in selected range - technician payout cost computed from the active contract engine.
-    // Do NOT use stale/draft technician_payout_lines here because they can be missing or out of date until Super Admin regenerates a period.
+    // Dashboard profit must be calculated from the current CWF contract engine, not from
+    // technician_payout_lines. payout_lines is a cache and may contain old/incorrect rows
+    // (for example premium wash 900 showing partner cost 850, leaving only 50 profit).
+    // Correct definition:
+    //   revenue_total = full selling price of sold jobs
+    //   technician_cost_total = fresh technician payout from contract rules
+    //   net_profit_total = revenue_total - technician_cost_total (VAT not included)
     let technicianCostTotal = 0;
     try {
-      function _dashboardYmd(v) {
-        if (typeof v === 'string') return v.slice(0, 10);
-        const d = new Date(v);
-        if (!Number.isFinite(d.getTime())) return String(v || '').slice(0, 10);
-        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-      }
-      const fromYmd = _dashboardYmd(d_from);
-      const toYmd = _dashboardYmd(d_to);
-      const payoutStart = new Date(`${fromYmd}T00:00:00+07:00`);
-      const payoutEndEx = new Date(`${toYmd}T00:00:00+07:00`);
-      payoutEndEx.setUTCDate(payoutEndEx.getUTCDate() + 1);
-      const liveCost = await _computePayoutLinesForPeriod(payoutStart, payoutEndEx, {
-        payout_id: 'dashboard_virtual',
-        include_non_commission: true,
-      });
-      technicianCostTotal = (liveCost.lines || []).reduce((sum, ln) => sum + Number(ln.earn_amount || 0), 0);
-      if (Array.isArray(liveCost.errors) && liveCost.errors.length) {
-        debug.partial = true;
-        debug.notes.push(`technician cost live compute skipped ${liveCost.errors.length} job(s)`);
+      const costJobs = await pool.query(
+        `SELECT job_id
+         FROM public.jobs
+         WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
+           AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
+           AND (finished_at IS NOT NULL OR COALESCE(job_status,'') IN ('เสร็จแล้ว','เสร็จสิ้น','ปิดงาน','completed','done'))
+         ORDER BY appointment_datetime ASC
+         LIMIT 1000`,
+        [d_from, d_to]
+      );
+      for (const row of (costJobs.rows || [])) {
+        try {
+          const lines = await _buildPayoutLinesForJob(row.job_id);
+          technicianCostTotal += (lines || []).reduce((sum, ln) => sum + Number(ln.earn_amount || 0), 0);
+        } catch (lineErr) {
+          debug.partial = true;
+          debug.notes.push(`technician cost live skip job ${row.job_id}: ${lineErr?.message || lineErr}`);
+        }
       }
     } catch (e) {
       debug.partial = true;
-      debug.notes.push('technician cost live compute failed');
+      debug.notes.push('technician cost live query failed');
       technicianCostTotal = 0;
     }
-    const companyNetProfitTotal = Number(cRow.revenue_total || 0) - technicianCostTotal;
+    const companyNetProfitTotal = Number(cRow.revenue_total || 0) - Number(technicianCostTotal || 0);
 
     let pending = { rows: [] };
     try {
@@ -1292,12 +1309,14 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
       ohlcQ = await pool.query(
       `WITH base AS (
          SELECT
-           (DATE_TRUNC('day', appointment_datetime AT TIME ZONE 'Asia/Bangkok'))::date AS d,
-           appointment_datetime AT TIME ZONE 'Asia/Bangkok' AS t,
-           COALESCE(job_price,0)::double precision AS p
-         FROM public.jobs
-         WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
-           AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
+           (DATE_TRUNC('day', j.appointment_datetime AT TIME ZONE 'Asia/Bangkok'))::date AS d,
+           j.appointment_datetime AT TIME ZONE 'Asia/Bangkok' AS t,
+           COALESCE(NULLIF(SUM(COALESCE(ji.line_total,0)),0), COALESCE(j.job_price,0), 0)::double precision AS p
+         FROM public.jobs j
+         LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
+         WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
+           AND COALESCE(j.job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
+         GROUP BY j.job_id, j.appointment_datetime, j.job_price
        )
        SELECT
          d,
@@ -1340,11 +1359,19 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
       const trunc = map[kind] || map.day;
       try {
         const r = await pool.query(
-        `SELECT ${trunc} AS bucket,
-                COALESCE(SUM(COALESCE(job_price,0)),0)::double precision AS total
-         FROM public.jobs
-         WHERE (appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
-           AND COALESCE(job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
+        `WITH gross AS (
+           SELECT j.job_id,
+                  ${trunc.replace('appointment_datetime', 'j.appointment_datetime')} AS bucket,
+                  COALESCE(NULLIF(SUM(COALESCE(ji.line_total,0)),0), COALESCE(j.job_price,0), 0)::double precision AS gross_total
+           FROM public.jobs j
+           LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
+           WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
+             AND COALESCE(j.job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')
+           GROUP BY j.job_id, j.appointment_datetime, j.job_price
+         )
+         SELECT bucket,
+                COALESCE(SUM(gross_total),0)::double precision AS total
+         FROM gross
          GROUP BY 1
          ORDER BY 1 ASC`,
         [d_from, d_to]
