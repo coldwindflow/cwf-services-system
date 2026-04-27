@@ -581,7 +581,7 @@
     setText('coRevenueHint', `${Number(company.job_count||0).toLocaleString('th-TH')} งาน ในช่วงที่เลือก`);
     const hasNetProfit = company.net_profit_total !== undefined && company.net_profit_total !== null;
     setText('coNetProfit', hasNetProfit ? `${fmtMoney(Number(company.net_profit_total||0))} ฿` : '—');
-    setText('coNetProfitHint', hasNetProfit ? `หลังหักค่าช่าง ${fmtMoney(Number(company.technician_cost_total||0))} ฿` : 'รอข้อมูลค่าช่างจากระบบ');
+    setText('coNetProfitHint', hasNetProfit ? `หลังหักจ่ายช่าง ${fmtMoney(Number(company.technician_cost_total||0))} ฿ • ยังไม่รวม VAT` : 'รอข้อมูลค่าช่างจากระบบ');
     setText('countToday', String(Number(counts.today||0)));
     setText('countMonth', String(Number(counts.month||0)));
     setText('countYear', String(Number(counts.year||0)));

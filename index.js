@@ -1143,23 +1143,34 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
       debug.notes.push('company stats query failed');
     }
 
-    // Estimated company net profit for dashboard display.
-    // Backward-compatible: if payout_lines table is empty/missing, keep technician_cost_total = 0
-    // and return revenue as net profit instead of breaking the dashboard.
+    // Company net profit for dashboard display (before VAT/tax).
+    // Meaning: company revenue in selected range - technician payout cost computed from the active contract engine.
+    // Do NOT use stale/draft technician_payout_lines here because they can be missing or out of date until Super Admin regenerates a period.
     let technicianCostTotal = 0;
     try {
-      const cost = await pool.query(
-        `SELECT COALESCE(SUM(COALESCE(l.earn_amount,0)),0)::double precision AS technician_cost_total
-         FROM public.technician_payout_lines l
-         INNER JOIN public.jobs j ON CAST(j.job_id AS TEXT) = CAST(l.job_id AS TEXT)
-         WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
-           AND COALESCE(j.job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
-        [d_from, d_to]
-      );
-      technicianCostTotal = Number(cost.rows?.[0]?.technician_cost_total || 0);
+      function _dashboardYmd(v) {
+        if (typeof v === 'string') return v.slice(0, 10);
+        const d = new Date(v);
+        if (!Number.isFinite(d.getTime())) return String(v || '').slice(0, 10);
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
+      }
+      const fromYmd = _dashboardYmd(d_from);
+      const toYmd = _dashboardYmd(d_to);
+      const payoutStart = new Date(`${fromYmd}T00:00:00+07:00`);
+      const payoutEndEx = new Date(`${toYmd}T00:00:00+07:00`);
+      payoutEndEx.setUTCDate(payoutEndEx.getUTCDate() + 1);
+      const liveCost = await _computePayoutLinesForPeriod(payoutStart, payoutEndEx, {
+        payout_id: 'dashboard_virtual',
+        include_non_commission: true,
+      });
+      technicianCostTotal = (liveCost.lines || []).reduce((sum, ln) => sum + Number(ln.earn_amount || 0), 0);
+      if (Array.isArray(liveCost.errors) && liveCost.errors.length) {
+        debug.partial = true;
+        debug.notes.push(`technician cost live compute skipped ${liveCost.errors.length} job(s)`);
+      }
     } catch (e) {
       debug.partial = true;
-      debug.notes.push('technician cost query failed');
+      debug.notes.push('technician cost live compute failed');
       technicianCostTotal = 0;
     }
     const companyNetProfitTotal = Number(cRow.revenue_total || 0) - technicianCostTotal;
