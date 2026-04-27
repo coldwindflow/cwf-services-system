@@ -231,8 +231,11 @@
     }
 
     const dpr = window.devicePixelRatio || 1;
-    const cssW = canvas.clientWidth || 280;
-    const cssH = Number(canvas.getAttribute('height') || 150);
+    const rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
+    const attrW = Number(canvas.getAttribute('width') || 132);
+    const attrH = Number(canvas.getAttribute('height') || 132);
+    const cssW = Math.max(96, Math.round((rect && rect.width) || canvas.clientWidth || attrW));
+    const cssH = Math.max(96, Math.round((rect && rect.height) || canvas.clientHeight || attrH));
     canvas.width = Math.floor(cssW * dpr);
     canvas.height = Math.floor(cssH * dpr);
     ctx.setTransform(dpr,0,0,dpr,0,0);

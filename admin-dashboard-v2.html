@@ -293,6 +293,62 @@
     .actionCard span{display:block;margin-top:5px;font-size:11px;font-weight:850;color:var(--ink-soft);line-height:1.28;position:relative;z-index:1}
     .actionCard .go{margin-top:12px;display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:14px;background:linear-gradient(135deg,var(--blue-700),#4f8bff);color:#fff;font-weight:1200;box-shadow:0 12px 24px rgba(21,88,214,.22);position:relative;z-index:1}
     .softDivider{height:1px;background:linear-gradient(90deg, transparent, rgba(15,23,42,.10), transparent);margin:14px 0}
+
+
+    /* Dashboard repair layer: restore dark revenue card, donut visibility, and readable text after shared admin shell */
+    body.cwf-admin-v2-shell .wrap{padding-top:58px !important}
+    body.cwf-admin-v2-shell .card.surfaceDark{
+      background:
+        radial-gradient(360px 220px at 86% 4%, rgba(72,151,255,.34), transparent 62%),
+        radial-gradient(280px 210px at 12% 100%, rgba(255,204,0,.12), transparent 66%),
+        linear-gradient(135deg, #07163b 0%, #0b2e76 46%, #1558d6 100%) !important;
+      color:#fff !important;
+      border-color:rgba(255,255,255,.16) !important;
+      box-shadow:0 22px 58px rgba(6,22,61,.24) !important;
+    }
+    body.cwf-admin-v2-shell .surfaceDark h1,
+    body.cwf-admin-v2-shell .surfaceDark h2,
+    body.cwf-admin-v2-shell .surfaceDark h3,
+    body.cwf-admin-v2-shell .surfaceDark .revenueValue,
+    body.cwf-admin-v2-shell .surfaceDark .metricValue,
+    body.cwf-admin-v2-shell .surfaceDark .miniPill .n{color:#fff !important}
+    body.cwf-admin-v2-shell .surfaceDark .muted,
+    body.cwf-admin-v2-shell .surfaceDark .metricLabel,
+    body.cwf-admin-v2-shell .surfaceDark .metricHint,
+    body.cwf-admin-v2-shell .surfaceDark .miniPill .k{color:rgba(255,255,255,.78) !important}
+    body.cwf-admin-v2-shell .surfaceDark .profitStrip{
+      background:linear-gradient(135deg, rgba(16,185,129,.22), rgba(255,255,255,.08)) !important;
+      border-color:rgba(134,239,172,.28) !important;
+    }
+    body.cwf-admin-v2-shell .surfaceDark .profitStrip strong{color:#bfffd1 !important}
+    body.cwf-admin-v2-shell .surfaceDark .revenueBadge{color:#ffe985 !important}
+    body.cwf-admin-v2-shell .card:not(.surfaceDark){color:var(--ink) !important}
+    body.cwf-admin-v2-shell .card:not(.surfaceDark) h1,
+    body.cwf-admin-v2-shell .card:not(.surfaceDark) h2,
+    body.cwf-admin-v2-shell .card:not(.surfaceDark) h3,
+    body.cwf-admin-v2-shell .card:not(.surfaceDark) .bigNum,
+    body.cwf-admin-v2-shell .card:not(.surfaceDark) .metricValue,
+    body.cwf-admin-v2-shell .card:not(.surfaceDark) .statusCount,
+    body.cwf-admin-v2-shell .card:not(.surfaceDark) .statusMeta{color:var(--ink) !important}
+    body.cwf-admin-v2-shell .card:not(.surfaceDark) .muted,
+    body.cwf-admin-v2-shell .card:not(.surfaceDark) .metricLabel,
+    body.cwf-admin-v2-shell .card:not(.surfaceDark) .metricHint{color:var(--ink-soft) !important}
+
+    .statusCard{min-height:0 !important;padding:17px !important;overflow:hidden}
+    .statusCard::before{width:170px;height:170px;right:-56px;bottom:-70px}
+    .statusCard .titleRow{align-items:flex-start}
+    .statusLayout{grid-template-columns:minmax(120px, .76fr) minmax(0, 1.24fr);align-items:center;gap:14px;margin-top:12px;min-height:0}
+    .statusVisual{display:grid;grid-template-columns:132px minmax(0,1fr);align-items:center;gap:12px;min-width:0}
+    #donut{display:block;width:132px !important;height:132px !important;max-width:132px !important;margin:0 auto !important;flex:0 0 auto}
+    .statusList{gap:8px;min-width:0}
+    .statusItem{grid-template-columns:minmax(0,1fr) auto;gap:8px;padding:0;min-width:0}
+    .statusMeta{font-size:12px;line-height:1.25;overflow:hidden;text-overflow:ellipsis;white-space:normal}
+    .statusCount{font-size:12px;white-space:nowrap}
+    .progressBar{height:7px;background:#eaf0fb}
+    .statusSummary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
+    .tinyCard{padding:10px;border-radius:15px}
+    .tinyCard .metricValue{font-size:22px;line-height:1.05}
+
     @media (max-width: 1040px){.opsPulse{grid-template-columns:1fr}}
     @media (max-width: 640px){.actionGrid{grid-template-columns:1fr 1fr}.priorityItem{grid-template-columns:auto minmax(0,1fr)}.priorityNum{grid-column:2}.priorityPill{white-space:normal;text-align:center}}
 
@@ -344,6 +400,21 @@
       .profitStrip{grid-template-columns:1fr;align-items:start}
       .profitStrip strong{font-size:26px}
     }
+
+    @media (max-width: 640px){
+      body.cwf-admin-v2-shell .wrap{padding-top:54px !important}
+      .statusLayout{grid-template-columns:1fr;gap:12px}
+      .statusVisual{grid-template-columns:124px minmax(0,1fr);gap:10px}
+      #donut{width:124px !important;height:124px !important;max-width:124px !important}
+      .statusCard{padding:16px !important;border-radius:28px}
+      .statusCard .bigNum{font-size:38px}
+    }
+    @media (max-width: 390px){
+      .statusVisual{grid-template-columns:112px minmax(0,1fr)}
+      #donut{width:112px !important;height:112px !important;max-width:112px !important}
+      .statusMeta,.statusCount{font-size:11px}
+    }
+
   </style>
   <script defer src="/cwf-pwa.js?v=company-logo-icon-v32"></script>
 </head>
@@ -492,7 +563,7 @@
     </section>
 
     <section class="section grid2">
-      <div class="card">
+      <div class="card statusCard">
         <div class="titleRow">
           <div>
             <h3>สรุปสถานะใบงาน</h3>
@@ -509,8 +580,8 @@
               <div class="tinyCard"><div class="metricLabel">งานที่ต้องติดตาม</div><div class="metricValue" id="followupCount">—</div></div>
             </div>
           </div>
-          <div>
-            <canvas id="donut" height="150"></canvas>
+          <div class="statusVisual">
+            <canvas id="donut" width="132" height="132"></canvas>
             <div class="statusList" id="statusBreakdown"></div>
           </div>
         </div>
@@ -668,7 +739,7 @@
     </div>
   </div>
 
-  <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="admin-dashboard-v2.js?v=20260428_dash_ui8"></script>
+  <script src="admin-v2-common.js?v=20260428_dashboard_repair1"></script>
+  <script src="admin-dashboard-v2.js?v=20260428_dashboard_repair1"></script>
 </body>
 </html>

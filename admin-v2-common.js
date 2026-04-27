@@ -268,7 +268,7 @@ function injectAdminMenu(){
       border:1px solid rgba(11,75,179,.12);
       box-shadow:0 18px 42px rgba(2,6,23,.10);
     }
-    body.cwf-admin-v2-shell .card,
+    body.cwf-admin-v2-shell .card:not(.surfaceDark):not(.darkCard),
     body.cwf-admin-v2-shell details,
     body.cwf-admin-v2-shell .box{
       background:linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,251,255,.96));
