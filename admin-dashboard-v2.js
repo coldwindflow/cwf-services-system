@@ -397,6 +397,42 @@
     });
   }
 
+
+  function renderPriority(data){
+    const listEl = $('priorityList');
+    if (!listEl) return;
+    const company = safeGet(data,'company',{});
+    const donut = company.donut || {};
+    const pending = Number(donut.pending || safeGet(data,'pending.count',0) || 0);
+    const active = Number(donut.active || 0);
+    const done = Number(donut.done || 0);
+    const total = pending + active + done + Number(donut.other || 0);
+    const stats = safeGet(data,'tech_stats.all', null);
+    const techOpen = stats ? Number(stats.open || 0) : 0;
+    const techClosed = stats ? Number(stats.closed || 0) : 0;
+    const completion = total ? Math.round((done/total)*100) : 0;
+
+    let level = 'ปกติ';
+    if (pending > 0 || active > 0) level = 'ต้องติดตาม';
+    if (pending >= 5 || active >= 8 || techOpen <= 0) level = 'เร่งด่วน';
+    setText('priorityLevel', level);
+    setText('priorityHint', total ? `ปิดงานแล้ว ${completion}% • งานต้องติดตาม ${pending + active} งาน` : 'ยังไม่มีข้อมูลในช่วงนี้');
+
+    const items = [
+      { icon:'✅', title:'งานรอตรวจสอบ', desc:'ควรตรวจและยืนยันก่อนเพื่อไม่ให้ลูกค้ารอนาน', value:pending },
+      { icon:'🛠️', title:'งานกำลังดำเนินการ', desc:'ติดตามสถานะหน้างานและการปิดงาน', value:active },
+      { icon:'👷', title:'ช่างพร้อมรับงาน', desc:'กำลังคนที่เปิดรับงานอยู่ตอนนี้', value:techOpen },
+      { icon:'🌙', title:'ช่างหยุด/ปิดรับงาน', desc:'ใช้ดูความพร้อมทีมและความเสี่ยงคิวเต็ม', value:techClosed },
+    ];
+    listEl.innerHTML = items.map(x=>`
+      <div class="priorityItem">
+        <div class="priorityIcon">${x.icon}</div>
+        <div class="priorityText"><b>${escapeHtml(x.title)}</b><span>${escapeHtml(x.desc)}</span></div>
+        <div class="priorityNum">${Number(x.value||0).toLocaleString('th-TH')}</div>
+      </div>
+    `).join('');
+  }
+
   function renderTechStats(data){
     const stats = safeGet(data,'tech_stats', null);
     const bucket = stats ? (stats[techScope] || stats.all || null) : null;
@@ -536,6 +572,7 @@
     drawTrend(company.candles || []);
     drawSeries(safeGet(company,`series.${currentGroup}`,[]) || []);
     renderTechStats(data);
+    renderPriority(data);
   }
 
   function init(){
@@ -546,6 +583,10 @@
     $('goAddJob')?.addEventListener('click', ()=> location.href = '/admin-add-v2.html');
     $('goQueue')?.addEventListener('click', ()=> location.href = '/admin-queue-v2.html');
     $('goHistory')?.addEventListener('click', ()=> location.href = '/admin-history-v2.html');
+    $('goReview')?.addEventListener('click', ()=> location.href = '/admin-review-v2.html');
+    $('goTechs')?.addEventListener('click', ()=> location.href = '/admin-technicians-v2.html');
+    $('goPromos')?.addEventListener('click', ()=> location.href = '/admin-promotions-v2.html');
+    $('goTeamStatus')?.addEventListener('click', ()=> location.href = '/admin-team-status.html');
 
     $('quickToday')?.addEventListener('click', ()=>{ setRange(1); setQuickActive('quickToday'); load().catch(e=>showToast(String(e), 'error')); });
     $('quick7')?.addEventListener('click', ()=>{ setRange(7); setQuickActive('quick7'); load().catch(e=>showToast(String(e), 'error')); });

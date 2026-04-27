@@ -235,6 +235,34 @@
 
     .footerSpacer{height:8px}
 
+
+    .opsPulse{
+      display:grid;grid-template-columns:1.1fr .9fr;gap:14px;align-items:stretch;margin-top:14px
+    }
+    .alertCard{
+      border-radius:28px;padding:18px;border:1px solid rgba(255,204,0,.32);
+      background:linear-gradient(135deg, #fff9da 0%, #ffffff 58%, #eef4ff 100%);
+      box-shadow:var(--shadow);position:relative;overflow:hidden
+    }
+    .alertCard::after{content:"";position:absolute;right:-60px;top:-70px;width:190px;height:190px;border-radius:999px;background:radial-gradient(circle, rgba(255,204,0,.22), transparent 70%)}
+    .alertTitle{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;position:relative;z-index:1}
+    .alertTitle h3{margin:0;font-size:16px;font-weight:1200;color:var(--ink)}
+    .priorityPill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:8px 12px;background:var(--ink);color:#fff;font-size:12px;font-weight:1100;white-space:nowrap}
+    .priorityList{display:grid;gap:10px;margin-top:14px;position:relative;z-index:1}
+    .priorityItem{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px;border-radius:18px;background:rgba(255,255,255,.78);border:1px solid rgba(15,23,42,.08)}
+    .priorityIcon{width:38px;height:38px;border-radius:14px;display:flex;align-items:center;justify-content:center;background:#eef4ff;font-size:18px}
+    .priorityText b{display:block;font-size:13px;font-weight:1150;color:var(--ink)}
+    .priorityText span{display:block;margin-top:2px;font-size:12px;font-weight:850;color:var(--ink-soft);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .priorityNum{font-size:22px;font-weight:1200;color:var(--ink)}
+    .actionGrid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+    .actionCard{min-width:0;padding:16px;border-radius:24px;background:#fff;border:1px solid rgba(15,23,42,.08);box-shadow:var(--shadow-soft);cursor:pointer}
+    .actionCard b{display:block;font-size:14px;font-weight:1200;color:var(--ink)}
+    .actionCard span{display:block;margin-top:5px;font-size:12px;font-weight:850;color:var(--ink-soft)}
+    .actionCard .go{margin-top:12px;display:inline-flex;align-items:center;justify-content:center;width:34px;height:34px;border-radius:12px;background:var(--blue-100);color:var(--blue-700);font-weight:1200}
+    .softDivider{height:1px;background:linear-gradient(90deg, transparent, rgba(15,23,42,.10), transparent);margin:14px 0}
+    @media (max-width: 1040px){.opsPulse{grid-template-columns:1fr}}
+    @media (max-width: 640px){.actionGrid{grid-template-columns:1fr}.priorityItem{grid-template-columns:auto minmax(0,1fr)}.priorityNum{grid-column:2}.priorityPill{white-space:normal;text-align:center}}
+
     @media (max-width: 1040px){
       .grid2{grid-template-columns:1fr}
       .statusLayout{grid-template-columns:1fr}
@@ -396,6 +424,33 @@
           <input type="date" id="fromDate" title="จากวันที่">
           <input type="date" id="toDate" title="ถึงวันที่">
           <button class="btn yellow" id="btnApply" type="button">อัปเดต Dashboard</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="section opsPulse">
+      <div class="alertCard">
+        <div class="alertTitle">
+          <div>
+            <h3>วันนี้ควรจัดการอะไรก่อน</h3>
+            <div class="muted" id="priorityHint">สรุปจากสถานะงานและทีมช่าง</div>
+          </div>
+          <div class="priorityPill" id="priorityLevel">—</div>
+        </div>
+        <div class="priorityList" id="priorityList"></div>
+      </div>
+      <div class="card">
+        <div class="titleRow">
+          <div>
+            <h3>ทางลัดผู้จัดการ</h3>
+            <div class="muted">ปุ่มที่ต้องใช้บ่อยบน Dashboard</div>
+          </div>
+        </div>
+        <div class="actionGrid" style="margin-top:14px">
+          <div class="actionCard" id="goReview"><b>ตรวจงานรออนุมัติ</b><span>ดูงานที่ลูกค้าจองหรือรอตรวจ</span><div class="go">→</div></div>
+          <div class="actionCard" id="goTechs"><b>จัดการทีมช่าง</b><span>เช็กโปรไฟล์ / เปิดรับงาน</span><div class="go">→</div></div>
+          <div class="actionCard" id="goPromos"><b>ราคา/โปรโมชั่น</b><span>ดูบริการ ราคา และโปรโมชัน</span><div class="go">→</div></div>
+          <div class="actionCard" id="goTeamStatus"><b>สถานะทีม</b><span>ดู base status ของช่าง</span><div class="go">→</div></div>
         </div>
       </div>
     </section>
