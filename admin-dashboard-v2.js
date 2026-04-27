@@ -1,6 +1,10 @@
-/* Admin Dashboard v2 (Production) */
+/* Admin Dashboard v2 (Production-safe UI refresh) */
 (function(){
   const $ = (id)=>document.getElementById(id);
+  let lastData = null;
+  let currentGroup = 'day';
+  let techScope = 'all';
+  let _payoutCache = [];
 
   function setAvatar(url){
     const img = $('meAvatar');
@@ -8,9 +12,10 @@
     if (url) { img.src = url; return; }
     img.src = 'data:image/svg+xml;utf8,' + encodeURIComponent(
       `<svg xmlns="http://www.w3.org/2000/svg" width="88" height="88">
-        <rect width="100%" height="100%" rx="18" fill="#ffffff" fill-opacity="0.12"/>
-        <circle cx="44" cy="34" r="16" fill="#ffffff" fill-opacity="0.55"/>
-        <rect x="18" y="52" width="52" height="26" rx="13" fill="#ffffff" fill-opacity="0.55"/>
+        <defs><linearGradient id="g" x1="0" x2="1"><stop stop-color="#0d2f7a"/><stop offset="1" stop-color="#2563eb"/></linearGradient></defs>
+        <rect width="100%" height="100%" rx="18" fill="url(#g)"/>
+        <circle cx="44" cy="32" r="14" fill="#ffffff" fill-opacity="0.92"/>
+        <rect x="20" y="50" width="48" height="22" rx="11" fill="#ffffff" fill-opacity="0.92"/>
       </svg>`
     );
   }
@@ -51,9 +56,7 @@
   }
 
   function showToast(msg, kind){
-    try{
-      if (window.showToast) return window.showToast(msg, kind);
-    }catch(_){/* ignore */}
+    try{ if (window.showToast) return window.showToast(msg, kind); }catch(_){ }
     console[(kind==='error')?'error':'log']('[dashboard]', msg);
   }
 
@@ -87,6 +90,11 @@
     });
   }
 
+  function setText(id, value){
+    const el = $(id);
+    if (el) el.textContent = value;
+  }
+
   function renderList(elId, rows){
     const el = $(elId);
     if (!el) return;
@@ -100,7 +108,6 @@
       el.appendChild(empty);
       return;
     }
-
     for (const r of list.slice(0,10)){
       const when = formatBangkokDateTime(r.appointment_datetime || r.booking_time || r.created_at);
       const jobId = Number(r.job_id || 0);
@@ -128,185 +135,241 @@
     }
   }
 
-  function drawDonut(donut){
-    const canvas = $('donut');
-    const hint = $('donutHint');
-    const totalEl = $('jobTotal');
-    const stPending = $('stPending');
-    const stActive = $('stActive');
-    const stDone = $('stDone');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-
-    const d = donut || { pending:0, active:0, done:0, other:0, total:0 };
-    const pendingV = Number(d.pending||0);
-    const activeV = Number(d.active||0);
-    const doneV = Number(d.done||0);
-    const otherV = Number(d.other||0);
-
-    if (stPending) stPending.textContent = String(pendingV);
-    if (stActive) stActive.textContent = String(activeV);
-    if (stDone) stDone.textContent = String(doneV);
-
-    const parts = [
-      { value: pendingV, color:'#ffcc00' },
-      { value: activeV, color:'#0b4bb3' },
-      { value: doneV, color:'#16a34a' },
-      { value: otherV, color:'#94a3b8' },
-    ].filter(x=>x.value>0);
-
-    const total = parts.reduce((s,x)=>s+x.value,0);
-    if (hint) hint.textContent = total ? `ทั้งหมด ${total} งาน` : '—';
-    if (totalEl) totalEl.textContent = total ? String(total) : '—';
-
-    const dpr = window.devicePixelRatio || 1;
-    const cssW = canvas.clientWidth || 260;
-    const cssH = 170;
-    canvas.width = Math.floor(cssW * dpr);
-    canvas.height = Math.floor(cssH * dpr);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    ctx.clearRect(0,0,cssW,cssH);
-
-    const cx = cssW/2;
-    const cy = cssH/2;
-    const r = Math.min(cssW, cssH) * 0.36;
-    const rInner = r * 0.62;
-
-    ctx.globalAlpha = 0.08;
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI*2);
-    ctx.strokeStyle = '#0b1b3a';
-    ctx.lineWidth = 18;
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-
-    if (!total){
-      ctx.font = '14px sans-serif';
-      ctx.globalAlpha = 0.75;
-      ctx.fillStyle = '#0b1b3a';
-      ctx.fillText('ไม่มีข้อมูล', cx-32, cy+4);
-      ctx.globalAlpha = 1;
-      return;
-    }
-
-    let a = -Math.PI/2;
-    for (const p of parts){
-      const ang = (p.value/total) * Math.PI*2;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, a, a+ang);
-      ctx.strokeStyle = p.color;
-      ctx.lineWidth = 18;
-      ctx.lineCap = 'round';
-      ctx.stroke();
-      a += ang;
-    }
-
-    ctx.beginPath();
-    ctx.arc(cx, cy, rInner, 0, Math.PI*2);
-    ctx.fillStyle = '#ffffff';
-    ctx.globalAlpha = 0.92;
-    ctx.fill();
-    ctx.globalAlpha = 1;
-
-    ctx.fillStyle = '#0b1b3a';
-    ctx.font = '900 18px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(String(total), cx, cy+6);
-    ctx.font = '12px sans-serif';
-    ctx.globalAlpha = 0.7;
-    ctx.fillText('งาน', cx, cy+26);
-    ctx.globalAlpha = 1;
-    ctx.textAlign = 'start';
+  function syncHeroRange(){
+    const from = $('fromDate')?.value || '';
+    const to = $('toDate')?.value || '';
+    const label = from && to ? `${from} → ${to}` : '—';
+    setText('heroRangeLabel', label);
   }
 
-  function drawCandles(rows){
-    const canvas = $('candles');
-    const hint = $('candleHint');
+  function updateFilterSummary(){
+    const from = $('fromDate')?.value || '';
+    const to = $('toDate')?.value || '';
+    const sum = $('filterSummary');
+    if (!sum) return;
+    if (from && to) sum.textContent = `${from} → ${to}`;
+    else if (from) sum.textContent = `${from} → ...`;
+    else sum.textContent = '—';
+    syncHeroRange();
+  }
+
+  function setFiltersCollapsed(collapsed){
+    const card = $('filtersCard');
+    if (!card) return;
+    card.classList.toggle('open', !collapsed);
+    try{ localStorage.setItem('dash_filters_collapsed', collapsed ? '1' : '0'); }catch(_){ }
+  }
+
+  function setRange(days){
+    const to = new Date();
+    const from = new Date();
+    from.setDate(from.getDate() - (days-1));
+    $('fromDate').value = ymd(from);
+    $('toDate').value = ymd(to);
+    updateFilterSummary();
+    setText('heroQuickLabel', days === 1 ? 'วันนี้' : `${days} วัน`);
+  }
+
+  function drawDonut(donut){
+    const canvas = $('donut');
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
+    const d = donut || { pending:0, active:0, done:0, other:0 };
+    const parts = [
+      { key:'pending', label:'รอตรวจสอบ', value:Number(d.pending||0), color:'#ffcc00' },
+      { key:'active', label:'กำลังทำ', value:Number(d.active||0), color:'#1558d6' },
+      { key:'done', label:'เสร็จแล้ว', value:Number(d.done||0), color:'#16a34a' },
+      { key:'other', label:'อื่นๆ', value:Number(d.other||0), color:'#94a3b8' },
+    ];
+    const total = parts.reduce((s,x)=>s+x.value,0);
+    const done = Number(d.done||0);
+    const followup = Number(d.pending||0) + Number(d.active||0) + Number(d.other||0);
+    const completionRate = total ? Math.round((done/total)*100) : 0;
 
-    const items = (rows || []).slice(-18);
-    if (hint) hint.textContent = items.length ? `แสดง ${items.length} วัน` : '—';
+    setText('jobTotal', total ? String(total) : '—');
+    setText('donutHint', total ? `ทั้งหมด ${total} งาน` : '—');
+    setText('completionHint', total ? `ปิดงานแล้ว ${done} งาน` : '—');
+    setText('completionRate', total ? `${completionRate}%` : '—');
+    setText('followupCount', String(followup));
+    setText('ovJobsTotal', total ? String(total) : '—');
+    setText('ovDone', String(done));
+    setText('ovActive', String(Number(d.active||0)));
+    setText('ovPending', String(Number(d.pending||0)));
+    setText('ovDoneHint', total ? `${completionRate}% ของงานทั้งหมด` : '—');
+
+    const statusBreakdown = $('statusBreakdown');
+    if (statusBreakdown){
+      statusBreakdown.innerHTML = parts.filter(x=>x.value > 0 || x.key !== 'other').map(p=>{
+        const pct = total ? Math.round((p.value / total) * 100) : 0;
+        return `
+          <div class="statusItem">
+            <div class="statusMeta"><span class="dot" style="background:${p.color}"></span>${p.label}</div>
+            <div class="statusCount">${p.value} งาน • ${pct}%</div>
+            <div class="progressBar"><span style="width:${pct}%;background:${p.color}"></span></div>
+          </div>
+        `;
+      }).join('');
+    }
 
     const dpr = window.devicePixelRatio || 1;
-    const cssW = canvas.clientWidth || 420;
+    const cssW = canvas.clientWidth || 280;
     const cssH = 190;
     canvas.width = Math.floor(cssW * dpr);
     canvas.height = Math.floor(cssH * dpr);
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.clearRect(0,0,cssW,cssH);
 
-    if (!items.length){
-      ctx.font = '14px sans-serif';
-      ctx.globalAlpha = 0.75;
-      ctx.fillStyle = '#0b1b3a';
-      ctx.fillText('ไม่มีข้อมูล', 10, 24);
-      ctx.globalAlpha = 1;
+    const visible = parts.filter(x=>x.value > 0);
+    const cx = cssW/2;
+    const cy = cssH/2 - 4;
+    const r = Math.min(cssW, cssH) * 0.36;
+    const lineW = Math.max(14, Math.round(r * 0.20));
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI*2);
+    ctx.strokeStyle = 'rgba(21, 88, 214, 0.08)';
+    ctx.lineWidth = lineW;
+    ctx.stroke();
+
+    if (!total){
+      ctx.fillStyle = '#64748b';
+      ctx.font = '700 14px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText('ไม่มีข้อมูล', cx, cy + 5);
+      ctx.textAlign = 'start';
       return;
     }
 
-    const max = Math.max(1, ...items.map(x=>Number(x.high||0)));
-    const padL = 10, padR = 10, padT = 10, padB = 30;
+    let a = -Math.PI/2;
+    for (const p of visible){
+      const ang = (p.value/total) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(cx, cy, r, a, a+ang);
+      ctx.strokeStyle = p.color;
+      ctx.lineWidth = lineW;
+      ctx.lineCap = 'round';
+      ctx.stroke();
+      a += ang;
+    }
+
+    ctx.fillStyle = '#09152f';
+    ctx.textAlign = 'center';
+    ctx.font = '900 24px sans-serif';
+    ctx.fillText(String(total), cx, cy + 5);
+    ctx.font = '700 12px sans-serif';
+    ctx.fillStyle = '#64748b';
+    ctx.fillText('งานทั้งหมด', cx, cy + 24);
+    ctx.textAlign = 'start';
+  }
+
+  function drawLineChart(canvasId, rows, options = {}){
+    const canvas = $(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const items = Array.isArray(rows) ? rows.slice(-Math.min(options.maxPoints || 18, rows.length || 0)) : [];
+
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = canvas.clientWidth || 420;
+    const cssH = Number(options.height || canvas.getAttribute('height') || 220);
+    canvas.width = Math.floor(cssW * dpr);
+    canvas.height = Math.floor(cssH * dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,cssW,cssH);
+
+    if (!items.length){
+      ctx.fillStyle = '#64748b';
+      ctx.font = '700 14px sans-serif';
+      ctx.fillText('ไม่มีข้อมูลในช่วงที่เลือก', 12, 24);
+      return;
+    }
+
+    const values = items.map(x=>Number(options.getValue ? options.getValue(x) : (x.total||x.close||0)));
+    const max = Math.max(1, ...values);
+    const min = Math.min(0, ...values);
+    const padL = 12, padR = 10, padT = 16, padB = 34;
     const w = cssW - padL - padR;
     const h = cssH - padT - padB;
-    const step = w / items.length;
-    const bodyW = Math.max(6, step*0.46);
+    const step = items.length > 1 ? w / (items.length - 1) : 0;
 
-    ctx.globalAlpha = 0.10;
-    ctx.fillStyle = '#0b1b3a';
-    ctx.fillRect(padL, padT, w, 1);
-    ctx.fillRect(padL, padT+h, w, 1);
-    ctx.globalAlpha = 1;
+    const y = (v)=> padT + h - ((v - min) / (max - min || 1)) * h;
 
-    function y(v){
-      return padT + h - (h * (Number(v||0)/max));
+    for (let i=0;i<4;i++){
+      const yy = padT + (h/3) * i;
+      ctx.strokeStyle = 'rgba(15,23,42,0.08)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(padL, yy);
+      ctx.lineTo(padL + w, yy);
+      ctx.stroke();
     }
 
-    for (let i=0;i<items.length;i++){
-      const it = items[i];
-      const open = Number(it.open||0);
-      const close = Number(it.close||0);
-      const high = Number(it.high||0);
-      const low = Number(it.low||0);
+    const points = items.map((item, idx)=>({ x: padL + step * idx, y: y(values[idx]), label: item.label || '' }));
 
-      const xCenter = padL + i*step + step/2;
-      const yHigh = y(high);
-      const yLow = y(low);
-      const yOpen = y(open);
-      const yClose = y(close);
+    const gradient = ctx.createLinearGradient(0, padT, 0, padT + h);
+    gradient.addColorStop(0, options.fillTop || 'rgba(37,99,235,0.28)');
+    gradient.addColorStop(1, options.fillBottom || 'rgba(37,99,235,0.02)');
 
-      const up = close >= open;
-      const stroke = up ? '#0b4bb3' : '#dc2626';
-      const fill = up ? 'rgba(11,75,179,0.24)' : 'rgba(220,38,38,0.18)';
+    ctx.beginPath();
+    points.forEach((p, i)=>{
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else {
+        const prev = points[i-1];
+        const cx = (prev.x + p.x) / 2;
+        ctx.quadraticCurveTo(prev.x, prev.y, cx, (prev.y + p.y)/2);
+      }
+    });
+    const last = points[points.length-1];
+    ctx.lineTo(last.x, last.y);
+    ctx.lineTo(padL + w, padT + h);
+    ctx.lineTo(padL, padT + h);
+    ctx.closePath();
+    ctx.fillStyle = gradient;
+    ctx.fill();
 
-      // wick
+    ctx.beginPath();
+    points.forEach((p, i)=>{
+      if (i === 0) ctx.moveTo(p.x, p.y);
+      else {
+        const prev = points[i-1];
+        const cx = (prev.x + p.x) / 2;
+        ctx.quadraticCurveTo(prev.x, prev.y, cx, (prev.y + p.y)/2);
+      }
+    });
+    ctx.strokeStyle = options.lineColor || '#1558d6';
+    ctx.lineWidth = 3;
+    ctx.stroke();
+
+    points.forEach((p, i)=>{
+      const show = items.length <= 8 || i === 0 || i === points.length - 1 || i % Math.ceil(items.length / 5) === 0;
       ctx.beginPath();
-      ctx.moveTo(xCenter, yHigh);
-      ctx.lineTo(xCenter, yLow);
-      ctx.strokeStyle = stroke;
-      ctx.globalAlpha = 0.8;
+      ctx.arc(p.x, p.y, 4.5, 0, Math.PI*2);
+      ctx.fillStyle = options.pointColor || '#1558d6';
+      ctx.fill();
+      ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 2;
       ctx.stroke();
-      ctx.globalAlpha = 1;
-
-      // body
-      const top = Math.min(yOpen, yClose);
-      const bot = Math.max(yOpen, yClose);
-      const x = xCenter - bodyW/2;
-      const bh = Math.max(3, bot - top);
-      ctx.fillStyle = fill;
-      ctx.strokeStyle = stroke;
-      ctx.lineWidth = 2;
-      ctx.fillRect(x, top, bodyW, bh);
-      ctx.strokeRect(x, top, bodyW, bh);
-
-      // label sparse
-      if (items.length <= 8 || i === 0 || i === items.length-1 || (i%4===0)){
-        ctx.font = '11px sans-serif';
-        ctx.fillStyle = 'rgba(15,23,42,0.62)';
-        ctx.fillText(it.label || '', x, cssH - 10);
+      if (show){
+        ctx.fillStyle = '#64748b';
+        ctx.font = '700 11px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(items[i].label || '', p.x, cssH - 10);
       }
-    }
+    });
+    ctx.textAlign = 'start';
+  }
+
+  function drawTrend(rows){
+    const list = (rows || []).slice(-18);
+    setText('candleHint', list.length ? `แสดง ${list.length} วันล่าสุด` : '—');
+    drawLineChart('candles', list, {
+      maxPoints: 18,
+      getValue: (x)=> Number(x.close || x.high || 0),
+      lineColor: '#1558d6',
+      pointColor: '#1558d6',
+      fillTop: 'rgba(37,99,235,0.24)',
+      fillBottom: 'rgba(37,99,235,0.02)',
+      height: 220
+    });
   }
 
   function setActiveGroup(btn){
@@ -320,127 +383,43 @@
     });
   }
 
-  function drawChart(series){
-    const canvas = $('chart');
-    if(!canvas) return;
-    const ctx = canvas.getContext('2d');
-
+  function drawSeries(series){
     const items = (series || []).slice(-18);
-
-    // setup retina
-    const dpr = window.devicePixelRatio || 1;
-    const cssW = canvas.clientWidth || 420;
-    const cssH = 160;
-    canvas.width = Math.floor(cssW * dpr);
-    canvas.height = Math.floor(cssH * dpr);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    ctx.clearRect(0,0,cssW,cssH);
-
-    if (!items.length){
-      ctx.font = '14px sans-serif';
-      ctx.fillStyle = 'rgba(15,23,42,0.70)';
-      ctx.fillText('ไม่มีข้อมูลในช่วงที่เลือก', 10, 24);
-      return;
-    }
-
-    const values = items.map(x=>Number(x.total||0));
-    const max = Math.max(1, ...values);
-    const padL = 8, padR = 8, padT = 12, padB = 28;
-    const bw = (cssW - padL - padR) / items.length;
-
-    ctx.globalAlpha = 0.12;
-    ctx.fillStyle = '#0b1b3a';
-    ctx.fillRect(padL, padT, cssW-padL-padR, 1);
-    ctx.fillRect(padL, cssH-padB, cssW-padL-padR, 1);
-    ctx.globalAlpha = 1;
-
-    for (let i=0;i<items.length;i++){
-      const v = values[i];
-      const bh = (cssH - padT - padB) * (v / max);
-      const x = padL + i*bw + 6;
-      const y = (cssH - padB) - bh;
-      const ww = Math.max(6, bw - 12);
-
-      ctx.fillStyle = 'rgba(11,75,179,0.22)';
-      ctx.strokeStyle = 'rgba(11,75,179,0.90)';
-      ctx.lineWidth = 1;
-      ctx.fillRect(x, y, ww, bh);
-      ctx.strokeRect(x, y, ww, bh);
-
-      if (items.length <= 8 || i === 0 || i === items.length-1 || (i%4===0)){
-        ctx.font = '11px sans-serif';
-        ctx.globalAlpha = 0.65;
-        ctx.fillStyle = '#0b1b3a';
-        ctx.fillText(items[i].label || '', x, cssH - 10);
-        ctx.globalAlpha = 1;
-      }
-    }
-  }
-
-  let lastData = null;
-  let currentGroup = 'day';
-  let techScope = 'all';
-
-  function setRange(days){
-    const to = new Date();
-    const from = new Date();
-    from.setDate(from.getDate() - (days-1));
-    $('fromDate').value = ymd(from);
-    $('toDate').value = ymd(to);
-  }
-
-  function updateFilterSummary(){
-    const from = $('fromDate')?.value || '';
-    const to = $('toDate')?.value || '';
-    const sum = $('filterSummary');
-    if (!sum) return;
-    if (from && to) sum.textContent = `${from} → ${to}`;
-    else if (from) sum.textContent = `${from} → ...`;
-    else sum.textContent = '—';
-  }
-
-  function setFiltersCollapsed(collapsed){
-    const card = $('filtersCard');
-    if (!card) return;
-    card.classList.toggle('open', !collapsed);
-    try{ localStorage.setItem('dash_filters_collapsed', collapsed ? '1' : '0'); }catch(_){/* ignore */}
+    setText('seriesHint', items.length ? `รวม ${items.length} จุดข้อมูล` : '—');
+    drawLineChart('chart', items, {
+      maxPoints: 18,
+      getValue: (x)=> Number(x.total || 0),
+      lineColor: '#0d2f7a',
+      pointColor: '#0d2f7a',
+      fillTop: 'rgba(13,47,122,0.22)',
+      fillBottom: 'rgba(13,47,122,0.02)',
+      height: 220
+    });
   }
 
   function renderTechStats(data){
-    const hint = $('techHint');
-    const openEl = $('techOpen');
-    const closedEl = $('techClosed');
-    const totalEl = $('techTotal');
-    const rateEl = $('techOpenRate');
-
     const stats = safeGet(data,'tech_stats', null);
     const bucket = stats ? (stats[techScope] || stats.all || null) : null;
-
     if (!bucket){
-      if (openEl) openEl.textContent = '—';
-      if (closedEl) closedEl.textContent = '—';
-      if (totalEl) totalEl.textContent = '—';
-      if (rateEl) rateEl.textContent = '—';
-      if (hint) hint.textContent = '—';
+      ['techOpen','techClosed','techTotal','techOpenRate','ovTechOpen','ovTechClosed'].forEach(id=>setText(id,'—'));
+      setText('techHint', '—');
+      setText('operationsHint', '—');
       return;
     }
-
     const open = Number(bucket.open||0);
     const closed = Number(bucket.closed||0);
     const total = Number(bucket.total|| (open+closed) || 0);
     const rate = total ? Math.round((open/total)*100) : 0;
-
-    if (openEl) openEl.textContent = String(open);
-    if (closedEl) closedEl.textContent = String(closed);
-    if (totalEl) totalEl.textContent = String(total);
-    if (rateEl) rateEl.textContent = total ? `${rate}%` : '—';
-    if (hint) hint.textContent = techScope==='all' ? 'รวมทั้งหมด' : (techScope==='company' ? 'เฉพาะช่างบริษัท' : 'เฉพาะพาร์ทเนอร์');
+    setText('techOpen', String(open));
+    setText('techClosed', String(closed));
+    setText('techTotal', String(total));
+    setText('techOpenRate', total ? `${rate}%` : '—');
+    setText('ovTechOpen', String(open));
+    setText('ovTechClosed', String(closed));
+    setText('techHint', techScope==='all' ? 'รวมทุกทีม' : (techScope==='company' ? 'เฉพาะช่างบริษัท' : 'เฉพาะพาร์ทเนอร์'));
+    setText('operationsHint', `ช่างพร้อม ${open} • หยุด/ปิดรับ ${closed}`);
   }
 
-  // =======================================
-  // Payout viewer (Admin read-only)
-  // =======================================
-  let _payoutCache = [];
   async function loadPayoutsList(){
     const sel = $('payoutSelect');
     if (!sel) return;
@@ -481,14 +460,14 @@
       return;
     }
     tb.innerHTML = list.map(r=>{
-      const u = String(r.technician_username||'');
+      const u = escapeHtml(String(r.technician_username||''));
       const net = Number(r.net_amount||0);
       const paid = Number(r.paid_amount||0);
       const rem = Number(r.remaining_amount||0);
       const st = String(r.paid_status||'unpaid');
       const pill = st==='paid' ? 'pill blue' : (st==='partial' ? 'pill yellow' : 'pill gray');
       const stLabel = st==='paid' ? 'paid' : (st==='partial' ? 'partial' : 'unpaid');
-      return `<tr class="tr">
+      return `<tr>
         <td><b>${u}</b></td>
         <td style="text-align:right"><b>${fmtMoney(net)}</b></td>
         <td style="text-align:right">${fmtMoney(paid)}</td>
@@ -499,8 +478,7 @@
   }
 
   async function loadPayoutTechs(){
-    const sel = $('payoutSelect');
-    const payout_id = String(sel?.value||'').trim();
+    const payout_id = String($('payoutSelect')?.value||'').trim();
     if (!payout_id) return renderPayoutTechs([]);
     try{
       const r = await apiFetch(`/admin/payouts/${encodeURIComponent(payout_id)}/techs`);
@@ -514,11 +492,9 @@
   async function load(){
     const from = $('fromDate').value;
     const to = $('toDate').value;
-
-    $('pendingHint').textContent = 'กำลังโหลด...';
-    $('activeHint').textContent = 'กำลังโหลด...';
-    $('seriesHint').textContent = 'กำลังโหลด...';
-
+    setText('pendingHint', 'กำลังโหลด...');
+    setText('activeHint', 'กำลังโหลด...');
+    setText('seriesHint', 'กำลังโหลด...');
     const data = await apiFetch(`/admin/dashboard_v2?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
     lastData = data;
 
@@ -528,10 +504,8 @@
     }
 
     const meObj = safeGet(data,'me',{});
-    $('whoBox').textContent = `${meObj.full_name || meObj.username || '-'}`;
-    const roleLabel = (meObj.role==='super_admin') ? 'Super Admin' : 'Admin';
-    const rb = $('roleBox');
-    if (rb) rb.textContent = roleLabel;
+    setText('whoBox', `${meObj.full_name || meObj.username || '-'}`);
+    setText('roleBox', (meObj.role==='super_admin') ? 'Super Admin • ผู้ดูแลระบบ' : 'Admin • ผู้ดูแลระบบ');
     setAvatar(meObj.photo_url || '');
 
     const personal = safeGet(data,'personal',{ job_count:0, revenue_total:0, commission_total:0 });
@@ -540,56 +514,49 @@
     const pending = safeGet(data,'pending',{ count:0, rows:[] });
     const active = safeGet(data,'active',{ rows:[] });
 
-    // งานที่ขายได้ (ใช้ personal.job_count)
-    const sold = Number(personal.job_count||0);
-    $('meSoldJobs').textContent = `${sold.toLocaleString('th-TH')} งาน`;
-    $('meSoldJobsHint').textContent = 'ในช่วงที่เลือก';
+    setText('meSoldJobs', `${Number(personal.job_count||0).toLocaleString('th-TH')} งาน`);
+    setText('meSoldJobsHint', 'ในช่วงที่เลือก');
+    setText('meCommission', `${fmtMoney(Number(personal.commission_total||0))} ฿`);
+    setText('meCommissionHint', `rate ${Number(meObj.commission_rate_percent||0).toFixed(2)}%`);
 
-    // คอมมิชชั่นส่วนตัว (ยังมีประโยชน์)
-    $('meCommission').textContent = `${fmtMoney(Number(personal.commission_total||0))} ฿`;
-    $('meCommissionHint').textContent = `rate ${Number(meObj.commission_rate_percent||0).toFixed(2)}%`;
+    setText('coRevenue', `${fmtMoney(Number(company.revenue_total||0))} ฿`);
+    setText('coRevenueHint', `${Number(company.job_count||0).toLocaleString('th-TH')} งาน ในช่วงที่เลือก`);
+    setText('countToday', String(Number(counts.today||0)));
+    setText('countMonth', String(Number(counts.month||0)));
+    setText('countYear', String(Number(counts.year||0)));
 
-    $('coRevenue').textContent = `${fmtMoney(Number(company.revenue_total||0))} ฿`;
-    $('coRevenueHint').textContent = `${Number(company.job_count||0).toLocaleString('th-TH')} งาน ในช่วงที่เลือก`;
-
-    $('countToday').textContent = String(Number(counts.today||0));
-    $('countMonth').textContent = String(Number(counts.month||0));
-    $('countYear').textContent = String(Number(counts.year||0));
-
-    $('pendingHint').textContent = `ทั้งหมด ${Number(pending.count||0)} งาน`;
+    setText('pendingHint', `ทั้งหมด ${Number(pending.count||0)} งาน`);
     renderList('pendingList', pending.rows);
 
-    $('activeHint').textContent = `แสดง ${Number((active.rows||[]).length||0)} งาน`;
+    const activeCount = Number((active.rows||[]).length||0);
+    setText('activeHint', `แสดง ${activeCount} งาน`);
     renderList('activeList', active.rows);
 
     drawDonut(company.donut || null);
-    drawCandles(company.candles || []);
-
-    const series = safeGet(company,`series.${currentGroup}`,[]) || [];
-    $('seriesHint').textContent = `รวม ${series.length} จุดข้อมูล`;
-    drawChart(series);
-
+    drawTrend(company.candles || []);
+    drawSeries(safeGet(company,`series.${currentGroup}`,[]) || []);
     renderTechStats(data);
   }
 
   function init(){
     setAvatar('');
-    // shortcuts
-    const addBtn = $('goAddJob');
-    if (addBtn) addBtn.addEventListener('click', ()=> location.href = '/admin-add-v2.html');
-    const histBtn = $('goHistory');
-    if (histBtn) histBtn.addEventListener('click', ()=> location.href = '/admin-history-v2.html');
-
-    // quick ranges
     setRange(30);
     setQuickActive('quick30');
-    updateFilterSummary();
 
-    $('quickToday')?.addEventListener('click', ()=>{ setRange(1); setQuickActive('quickToday'); updateFilterSummary(); load().catch(e=>showToast(String(e), 'error')); });
-    $('quick7')?.addEventListener('click', ()=>{ setRange(7); setQuickActive('quick7'); updateFilterSummary(); load().catch(e=>showToast(String(e), 'error')); });
-    $('quick30')?.addEventListener('click', ()=>{ setRange(30); setQuickActive('quick30'); updateFilterSummary(); load().catch(e=>showToast(String(e), 'error')); });
+    $('goAddJob')?.addEventListener('click', ()=> location.href = '/admin-add-v2.html');
+    $('goQueue')?.addEventListener('click', ()=> location.href = '/admin-queue-v2.html');
+    $('goHistory')?.addEventListener('click', ()=> location.href = '/admin-history-v2.html');
 
-    // filters collapse default
+    $('quickToday')?.addEventListener('click', ()=>{ setRange(1); setQuickActive('quickToday'); load().catch(e=>showToast(String(e), 'error')); });
+    $('quick7')?.addEventListener('click', ()=>{ setRange(7); setQuickActive('quick7'); load().catch(e=>showToast(String(e), 'error')); });
+    $('quick30')?.addEventListener('click', ()=>{ setRange(30); setQuickActive('quick30'); load().catch(e=>showToast(String(e), 'error')); });
+    $('quickFilters')?.addEventListener('click', ()=>{
+      const card = $('filtersCard');
+      const isOpen = card ? card.classList.contains('open') : false;
+      setFiltersCollapsed(isOpen);
+      if (card && !isOpen) card.scrollIntoView({ behavior:'smooth', block:'start' });
+    });
+
     try{
       const v = localStorage.getItem('dash_filters_collapsed');
       setFiltersCollapsed(v === null ? true : (v === '1'));
@@ -601,25 +568,20 @@
       const isOpen = card ? card.classList.contains('open') : false;
       setFiltersCollapsed(isOpen);
     });
-
     $('btnApplyMini')?.addEventListener('click', ()=>{ load().catch(e=>showToast(String(e), 'error')); });
     $('btnApply')?.addEventListener('click', ()=>{ updateFilterSummary(); load().catch(e=>showToast(String(e), 'error')); });
     $('fromDate')?.addEventListener('change', updateFilterSummary);
     $('toDate')?.addEventListener('change', updateFilterSummary);
 
-    // series group
     document.querySelectorAll('[data-group]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         currentGroup = btn.getAttribute('data-group') || 'day';
         setActiveGroup(btn);
         const company = safeGet(lastData,'company',{});
-        const series = safeGet(company,`series.${currentGroup}`,[]) || [];
-        $('seriesHint').textContent = `รวม ${series.length} จุดข้อมูล`;
-        drawChart(series);
+        drawSeries(safeGet(company,`series.${currentGroup}`,[]) || []);
       });
     });
 
-    // tech scope tabs
     document.querySelectorAll('[data-techscope]').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         document.querySelectorAll('[data-techscope]').forEach(b=>b.classList.remove('active'));
@@ -629,13 +591,18 @@
       });
     });
 
-    // initial load
-    load().catch(e=>showToast(String(e), 'error'));
-
-    // payout viewer
     $('btnReloadPayouts')?.addEventListener('click', ()=>{ loadPayoutsList().then(()=>loadPayoutTechs()); });
     $('btnLoadPayoutTechs')?.addEventListener('click', ()=>{ loadPayoutTechs(); });
+
+    load().catch(e=>showToast(String(e), 'error'));
     loadPayoutsList().then(()=>loadPayoutTechs());
+    window.addEventListener('resize', ()=>{
+      if (!lastData) return;
+      const company = safeGet(lastData,'company',{});
+      drawDonut(company.donut || null);
+      drawTrend(company.candles || []);
+      drawSeries(safeGet(company,`series.${currentGroup}`,[]) || []);
+    });
   }
 
   document.addEventListener('DOMContentLoaded', init);

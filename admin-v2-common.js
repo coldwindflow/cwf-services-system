@@ -194,59 +194,61 @@ function injectAdminMenu(){
   const css = document.createElement('style');
   css.textContent = `
     :root{
-      --cwf-blue:#0b4bb3;
+      --cwf-blue:#1558d6;
+      --cwf-blue-dark:#081c4b;
       --cwf-yellow:#ffcc00;
-      --cwf-ink:#0f172a;
+      --cwf-ink:#09152f;
     }
     #cwfTopNav{position:fixed;left:0;right:0;top:0;z-index:2600;
       padding-top:env(safe-area-inset-top);
-      background:linear-gradient(180deg, rgba(11,27,58,0.98) 0%, rgba(11,75,179,0.98) 100%);
-      border-bottom:1px solid rgba(255,255,255,0.10);
-      box-shadow:0 14px 40px rgba(2,6,23,0.22);} 
-    #cwfTopNav .in{max-width:980px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;
-      gap:10px;padding:10px 12px;}
-    #cwfTopNav .ttl{min-width:0;display:flex;flex-direction:column;gap:2px}
-    #cwfTopNav .ttl b{font-size:14px;line-height:1.1;color:#fff}
-    #cwfTopNav .ttl span{font-size:12px;font-weight:900;color:rgba(255,255,255,0.80);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      background:linear-gradient(180deg, rgba(7,19,50,0.92) 0%, rgba(13,47,122,0.84) 100%);
+      backdrop-filter:blur(16px);
+      -webkit-backdrop-filter:blur(16px);
+      border-bottom:1px solid rgba(255,255,255,0.08);
+      box-shadow:0 18px 44px rgba(2,6,23,0.22);} 
+    #cwfTopNav .in{max-width:1220px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;
+      gap:12px;padding:12px 14px;}
+    #cwfTopNav .ttl{min-width:0;display:flex;flex-direction:column;gap:3px}
+    #cwfTopNav .ttl b{font-size:15px;line-height:1.1;color:#fff;font-weight:1000;letter-spacing:.2px}
+    #cwfTopNav .ttl span{font-size:12px;font-weight:850;color:rgba(255,255,255,0.78);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #cwfTopNav .btns{display:flex;align-items:center;gap:8px}
-    .cwf-icbtn{width:44px;height:44px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;
-      border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.12);
-      box-shadow:0 10px 26px rgba(0,0,0,0.18);cursor:pointer;user-select:none}
+    .cwf-icbtn{width:48px;height:48px;border-radius:18px;display:inline-flex;align-items:center;justify-content:center;
+      border:1px solid rgba(255,255,255,0.14);background:rgba(255,255,255,0.10);
+      box-shadow:0 12px 30px rgba(0,0,0,0.16);cursor:pointer;user-select:none}
     .cwf-icbtn:active{transform: translateY(1px) scale(0.99)}
-    .cwf-icbtn svg{width:22px;height:22px;fill:#ffffff}
-    #cwfTopNavSpacer{height:74px}
-    @media (max-width:420px){#cwfTopNavSpacer{height:72px}}
+    .cwf-icbtn svg{width:23px;height:23px;fill:#ffffff}
+    #cwfTopNavSpacer{height:80px}
+    @media (max-width:420px){#cwfTopNavSpacer{height:78px}}
     #cwfDrawerBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2690;display:none}
     #cwfDrawer{position:fixed;inset:0;z-index:2700;
       display:none;padding:12px 12px calc(12px + env(safe-area-inset-bottom));
       overflow:auto;}
-    #cwfDrawer .panel{max-width:560px;margin:0 auto;background:rgba(255,255,255,0.94);
-      backdrop-filter: blur(16px);border:1px solid rgba(15,23,42,0.12);border-radius:22px;
-      box-shadow:0 22px 70px rgba(0,0,0,0.22);overflow:hidden}
-    #cwfDrawer .h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 12px;
-      border-bottom:1px solid rgba(15,23,42,0.10);background:#f8fafc}
+    #cwfDrawer .panel{max-width:560px;margin:0 auto;background:rgba(255,255,255,0.96);
+      backdrop-filter: blur(16px);border:1px solid rgba(15,23,42,0.10);border-radius:24px;
+      box-shadow:0 24px 70px rgba(0,0,0,0.22);overflow:hidden}
+    #cwfDrawer .h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 14px;
+      border-bottom:1px solid rgba(15,23,42,0.08);background:#f8fbff}
     #cwfDrawer .h b{font-size:14px;color:var(--cwf-ink)}
     #cwfDrawer .b{padding:12px;display:flex;flex-direction:column;gap:10px}
-    .cwf-group{border:1px solid rgba(15,23,42,0.10);border-radius:18px;background:#fff;overflow:hidden}
-    .cwf-group .t{padding:10px 12px;background:#f8fafc;font-weight:900;font-size:12px;color:var(--cwf-ink);
-      border-bottom:1px solid rgba(15,23,42,0.08)}
+    .cwf-group{border:1px solid rgba(15,23,42,0.08);border-radius:18px;background:#fff;overflow:hidden}
+    .cwf-group .t{padding:10px 12px;background:#f8fbff;font-weight:900;font-size:12px;color:var(--cwf-ink);
+      border-bottom:1px solid rgba(15,23,42,0.06)}
     .cwf-group .i{display:flex;flex-direction:column;gap:8px;padding:10px 12px}
     .cwf-link{display:flex;align-items:center;justify-content:space-between;gap:10px;
-      border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:10px 12px;background:#fff;
+      border:1px solid rgba(15,23,42,0.08);border-radius:16px;padding:11px 12px;background:#fff;
       font-weight:900;color:var(--cwf-ink);cursor:pointer}
-    .cwf-link small{font-weight:800;color:rgba(15,23,42,0.60)}
-    .cwf-link.primary{background:var(--cwf-blue); color:#fff; border-color: transparent}
+    .cwf-link small{font-weight:800;color:rgba(15,23,42,0.58)}
+    .cwf-link.primary{background:linear-gradient(135deg, var(--cwf-blue-dark), var(--cwf-blue)); color:#fff; border-color: transparent}
     .cwf-link.warning{background:var(--cwf-yellow); color:#111827; border-color: transparent}
     .cwf-link.danger{background:#ef4444; color:#fff; border-color: transparent}
 
-    /* Debug modal (inside menu flow, but renders as overlay for readability) */
     #cwfDebugModalBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.62);z-index:2990;display:none}
     #cwfDebugModal{position:fixed;inset:0;z-index:3000;display:none;overflow:auto;
       padding:12px 12px calc(12px + env(safe-area-inset-bottom));}
     #cwfDebugModal .panel{max-width:980px;margin:0 auto;background:rgba(255,255,255,0.96);
       border:1px solid rgba(15,23,42,0.12);border-radius:22px;box-shadow:0 22px 70px rgba(0,0,0,0.24);overflow:hidden}
     #cwfDebugModal .h{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px;
-      background:#0b4bb3;color:#fff}
+      background:#1558d6;color:#fff}
     #cwfDebugModal .h b{font-size:14px}
     #cwfDebugModal .b{padding:12px;display:flex;flex-direction:column;gap:10px}
     #cwfDebugModal .row{display:flex;flex-wrap:wrap;gap:8px}
