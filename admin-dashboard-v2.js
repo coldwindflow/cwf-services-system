@@ -303,6 +303,46 @@
       ctx.stroke();
     }
 
+    if (options.mode === 'candle'){
+      const barGap = items.length > 1 ? Math.max(8, Math.min(18, step * .38)) : 18;
+      const barW = items.length > 1 ? Math.max(8, Math.min(20, step - barGap)) : 26;
+      items.forEach((item, idx)=>{
+        const x = padL + (items.length > 1 ? step * idx : w/2);
+        const close = Number(item.close || item.total || item.revenue || 0);
+        const high = Math.max(close, Number(item.high || close));
+        const low = Math.min(close, Number(item.low || close));
+        const open = Number(item.open || Math.max(low, close * .82));
+        const yHigh = y(high), yLow = y(low), yOpen = y(open), yClose = y(close);
+        ctx.strokeStyle = 'rgba(255,204,0,.78)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, yHigh);
+        ctx.lineTo(x, yLow);
+        ctx.stroke();
+        const top = Math.min(yOpen, yClose);
+        const bodyH = Math.max(5, Math.abs(yClose - yOpen));
+        const grad = ctx.createLinearGradient(0, top, 0, top + bodyH);
+        grad.addColorStop(0, '#ffde4d');
+        grad.addColorStop(1, '#1558d6');
+        ctx.fillStyle = grad;
+        ctx.strokeStyle = 'rgba(255,255,255,.78)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect(x - barW/2, top, barW, bodyH, 5);
+        ctx.fill();
+        ctx.stroke();
+        const show = items.length <= 8 || idx === 0 || idx === items.length - 1 || idx % Math.ceil(items.length / 5) === 0;
+        if (show){
+          ctx.fillStyle = '#64748b';
+          ctx.font = '700 11px sans-serif';
+          ctx.textAlign = 'center';
+          ctx.fillText(item.label || '', x, cssH - 10);
+        }
+      });
+      ctx.textAlign = 'start';
+      return;
+    }
+
     const points = items.map((item, idx)=>({ x: padL + step * idx, y: y(values[idx]), label: item.label || '' }));
 
     const gradient = ctx.createLinearGradient(0, padT, 0, padT + h);
@@ -363,12 +403,9 @@
     setText('candleHint', list.length ? `แสดง ${list.length} วันล่าสุด` : '—');
     drawLineChart('candles', list, {
       maxPoints: 18,
-      getValue: (x)=> Number(x.close || x.high || 0),
-      lineColor: '#1558d6',
-      pointColor: '#1558d6',
-      fillTop: 'rgba(37,99,235,0.24)',
-      fillBottom: 'rgba(37,99,235,0.02)',
-      height: 220
+      getValue: (x)=> Number(x.high || x.close || 0),
+      mode: 'candle',
+      height: 170
     });
   }
 

@@ -44,7 +44,7 @@
         radial-gradient(620px 340px at 10% -40px, rgba(255,204,0,.26), transparent 58%),
         radial-gradient(760px 420px at 96% 0%, rgba(77,139,255,.24), transparent 56%),
         linear-gradient(145deg, rgba(255,255,255,.025) 25%, transparent 25%) 0 0/28px 28px,
-        linear-gradient(180deg, #06163d 0px, #0b2e76 170px, #1358d9 292px, #f4f8ff 292px, #eef4ff 100%);
+        linear-gradient(180deg, #06163d 0px, #0b2e76 132px, #1358d9 214px, #f4f8ff 214px, #eef4ff 100%);
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     }
     body::before{
@@ -57,7 +57,7 @@
     .wrap{
       width:min(1240px, calc(100vw - 24px));
       margin:0 auto;
-      padding:74px 0 112px;
+      padding:14px 0 112px;
     }
     .hero{
       position:relative;
@@ -106,10 +106,10 @@
       color:#fff;font-size:12px;font-weight:1000;text-align:right;
     }
     .rangeBadge small{display:block;font-size:11px;font-weight:800;color:rgba(255,255,255,.70)}
-    .quickRow{display:grid;grid-template-columns:1.18fr .91fr .91fr;gap:10px;margin-top:16px;position:relative;z-index:1}
+    .quickRow{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:16px;position:relative;z-index:1}
     .shortcut{
-      min-width:0;display:flex;align-items:center;gap:10px;padding:12px;border-radius:20px;cursor:pointer;
-      background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.14);box-shadow:0 16px 30px rgba(0,0,0,.12);backdrop-filter:blur(10px);transition:transform .16s ease, box-shadow .16s ease
+      min-width:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:8px;padding:12px 8px;border-radius:22px;cursor:pointer;
+      background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.14);box-shadow:inset 0 1px 0 rgba(255,255,255,.14),0 16px 30px rgba(0,0,0,.12);backdrop-filter:blur(10px);transition:transform .16s ease, box-shadow .16s ease
     }
     .shortcut:hover{transform:translateY(-1px);box-shadow:0 20px 34px rgba(0,0,0,.16)}
     .shortcut.primary{
@@ -118,13 +118,13 @@
     }
     .shortcut.secondary{color:#fff}
     .shortcut .ico{
-      width:42px;height:42px;border-radius:15px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;
+      width:48px;height:48px;border-radius:17px;display:flex;align-items:center;justify-content:center;flex:0 0 auto;
       font-size:20px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.16)
     }
     .shortcut.primary .ico{background:rgba(255,255,255,.56);border-color:rgba(9,21,47,.08)}
     .shortcut > div:last-child{min-width:0}
-    .shortcut b{display:block;font-size:14px;font-weight:1150;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .shortcut span{display:block;font-size:11px;font-weight:850;opacity:.82;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .shortcut b{display:block;font-size:14px;font-weight:1150;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.18}
+    .shortcut span{display:block;font-size:10.5px;font-weight:850;opacity:.82;white-space:normal;overflow:visible;text-overflow:clip;line-height:1.2}
     .seg{
       display:grid;grid-template-columns:repeat(4, minmax(0,1fr));gap:8px;margin-top:16px;position:relative;z-index:1;
       padding:6px;border-radius:20px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.14)
@@ -156,9 +156,9 @@
     .surfaceDark .titleRow h2,.surfaceDark .titleRow h3{color:#fff}
     .muted{color:var(--ink-soft);font-size:12px;font-weight:850;line-height:1.4}
     .surfaceDark .muted{color:rgba(255,255,255,.72)}
-    .revenueHero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:end;margin-top:12px}
-    .revenueValue{font-size:44px;line-height:.95;font-weight:1200;letter-spacing:.2px;overflow-wrap:anywhere;text-shadow:0 16px 32px rgba(0,0,0,.22)}
-    .revenueBadge{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:9px 12px;background:rgba(255,204,0,.16);border:1px solid rgba(255,204,0,.34);color:#ffe985;font-size:11px;font-weight:1100;white-space:nowrap}
+    .revenueHero{display:flex;flex-direction:column;gap:12px;align-items:flex-start;margin-top:12px}
+    .revenueValue{font-size:46px;line-height:.95;font-weight:1200;letter-spacing:.2px;overflow-wrap:anywhere;text-shadow:0 16px 32px rgba(0,0,0,.22)}
+    .revenueBadge{display:inline-flex;align-items:center;justify-content:center;gap:7px;width:100%;border-radius:999px;padding:10px 12px;background:linear-gradient(90deg,rgba(255,204,0,.22),rgba(255,255,255,.08));border:1px solid rgba(255,204,0,.40);color:#fff2a8;font-size:12px;font-weight:1100;white-space:nowrap}
     .statInline{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px}
     .miniPill{display:flex;flex-direction:column;gap:4px;padding:12px 12px;border-radius:18px;background:linear-gradient(180deg,rgba(255,255,255,.16),rgba(255,255,255,.07));border:1px solid rgba(255,255,255,.14);min-width:0}
     .miniPill .k{font-size:11px;font-weight:850;color:rgba(255,255,255,.76)}
@@ -207,7 +207,7 @@
       background:#fdfefe;color:var(--ink);font-size:14px;font-weight:1000;box-shadow:inset 0 1px 0 rgba(255,255,255,.7)
     }
 
-    .statusLayout{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;align-items:center;margin-top:14px}
+    .statusLayout{display:grid;grid-template-columns:120px minmax(0,1fr);gap:12px;align-items:center;margin-top:12px;min-height:0}
     .bigNum{font-size:44px;font-weight:1200;line-height:1;color:var(--ink)}
     .statusList{display:grid;gap:10px}
     .statusItem{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center}
@@ -280,15 +280,15 @@
       .grid2{grid-template-columns:1fr}
     }
     @media (max-width: 820px){
-      .wrap{width:min(100%, calc(100vw - 18px));padding:74px 0 108px}
-      .quickRow{grid-template-columns:1.15fr .92fr .92fr}
+      .wrap{width:min(100%, calc(100vw - 18px));padding:14px 0 108px}
+      .quickRow{grid-template-columns:repeat(3,minmax(0,1fr))}
       .seg{grid-template-columns:repeat(4, minmax(0,1fr))}
       .heroTop{flex-direction:column;align-items:flex-start}
       .heroRange{align-items:flex-start;width:100%}
       .rangeBadge{width:100%;justify-content:space-between;text-align:left}
     }
     @media (max-width: 640px){
-      .wrap{width:min(100%, calc(100vw - 14px));padding:72px 0 104px}
+      .wrap{width:min(100%, calc(100vw - 14px));padding:12px 0 104px}
       .hero{padding:16px;border-radius:28px}
       .who{font-size:21px;white-space:normal}
       .overviewGrid,.personGrid{grid-template-columns:1fr 1fr}
@@ -314,7 +314,7 @@
       .statInline{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
       .miniPill{padding:10px 8px;border-radius:16px}
       .miniPill .n{font-size:20px}
-      .revenueHero{grid-template-columns:1fr}
+      
       .revenueValue{font-size:38px}
       .actionCard{min-height:104px;padding:12px}
     }
@@ -360,7 +360,103 @@
       </div>
     </section>
 
-    <section class="section grid2">
+<section class="section grid2">
+      <div class="card">
+        <div class="titleRow">
+          <div>
+            <h3>สรุปสถานะใบงาน</h3>
+            <div class="muted" id="donutHint">—</div>
+          </div>
+          <div class="muted" id="completionHint">—</div>
+        </div>
+        <div class="statusLayout">
+          <div>
+            <div class="bigNum" id="jobTotal">—</div>
+            <div class="muted">งานทั้งหมดในช่วงที่เลือก</div>
+            <div class="statusSummary">
+              <div class="tinyCard"><div class="metricLabel">อัตราปิดงาน</div><div class="metricValue" id="completionRate">—</div></div>
+              <div class="tinyCard"><div class="metricLabel">งานที่ต้องติดตาม</div><div class="metricValue" id="followupCount">—</div></div>
+            </div>
+          </div>
+          <div>
+            <canvas id="donut" height="128"></canvas>
+            <div class="statusList" id="statusBreakdown"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="titleRow">
+          <div>
+            <h3>สถานะทีมช่าง</h3>
+            <div class="muted" id="techHint">—</div>
+          </div>
+          <div class="muted">สลับมุมมองได้</div>
+        </div>
+        <div class="chipRow techTabs">
+          <button class="chip active" data-techscope="all" type="button">รวม</button>
+          <button class="chip" data-techscope="company" type="button">ช่างบริษัท</button>
+          <button class="chip" data-techscope="partner" type="button">พาร์ทเนอร์</button>
+        </div>
+        <div class="overviewGrid">
+          <div class="metricCard tintGreen">
+            <div class="metricLabel">ช่างพร้อมรับงาน</div>
+            <div class="metricValue" id="techOpen">—</div>
+            <div class="metricHint">พร้อมลงงาน</div>
+          </div>
+          <div class="metricCard tintRed">
+            <div class="metricLabel">ช่างหยุด/ปิดรับงาน</div>
+            <div class="metricValue" id="techClosed">—</div>
+            <div class="metricHint">พัก / ปิดรับ</div>
+          </div>
+          <div class="metricCard tintBlue">
+            <div class="metricLabel">ช่างทั้งหมด</div>
+            <div class="metricValue" id="techTotal">—</div>
+            <div class="metricHint">ตามฟิลเตอร์ที่เลือก</div>
+          </div>
+          <div class="metricCard tintYellow">
+            <div class="metricLabel">อัตราพร้อมรับงาน</div>
+            <div class="metricValue" id="techOpenRate">—</div>
+            <div class="metricHint">พร้อมรับ / ทั้งหมด</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+<section class="section grid2">
+      <div class="card chartCard">
+        <div class="titleRow">
+          <div>
+            <h3>แนวโน้มรายได้รายวัน</h3>
+            <div class="muted" id="candleHint">—</div>
+          </div>
+          <div class="muted">ดูภาพรวมง่ายขึ้น</div>
+        </div>
+        <canvas id="candles" height="170"></canvas>
+        <div class="chartNote">
+          <div class="muted"><span class="legendDot" style="background:#1558d6"></span>เส้นรายได้รายวัน</div>
+          <div class="muted"><span class="legendDot" style="background:#7aa7ff"></span>พื้นที่ใต้กราฟช่วยดูแนวโน้ม</div>
+        </div>
+      </div>
+
+      <div class="card chartCard">
+        <div class="titleRow">
+          <div>
+            <h3>รายได้รวมบริษัท</h3>
+            <div class="muted" id="seriesHint">—</div>
+          </div>
+        </div>
+        <div class="chipRow">
+          <button class="groupBtn yellow" data-group="day" type="button">วัน</button>
+          <button class="groupBtn ghost" data-group="week" type="button">สัปดาห์</button>
+          <button class="groupBtn ghost" data-group="month" type="button">เดือน</button>
+          <button class="groupBtn ghost" data-group="year" type="button">ปี</button>
+        </div>
+        <canvas id="chart" height="180"></canvas>
+      </div>
+    </section>
+
+<section class="section grid2">
       <div class="card surfaceDark">
         <div class="titleRow">
           <div>
@@ -434,27 +530,7 @@
       </div>
     </section>
 
-    <section class="section card filtersCard" id="filtersCard">
-      <div class="foldHead" id="filterToggle" role="button" aria-label="พับ/ขยายตัวกรอง">
-        <div>
-          <b>ตัวกรอง Dashboard</b>
-          <div class="muted" id="filterSummary">—</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <button class="btn blue" id="btnApplyMini" type="button" title="โหลด">โหลดข้อมูล</button>
-          <div class="chev">▾</div>
-        </div>
-      </div>
-      <div class="foldBody" id="filterBody">
-        <div class="row">
-          <input type="date" id="fromDate" title="จากวันที่">
-          <input type="date" id="toDate" title="ถึงวันที่">
-          <button class="btn yellow" id="btnApply" type="button">อัปเดต Dashboard</button>
-        </div>
-      </div>
-    </section>
-
-    <section class="section opsPulse">
+<section class="section opsPulse">
       <div class="alertCard">
         <div class="alertTitle">
           <div>
@@ -481,103 +557,27 @@
       </div>
     </section>
 
-    <section class="section grid2">
-      <div class="card">
-        <div class="titleRow">
-          <div>
-            <h3>สรุปสถานะใบงาน</h3>
-            <div class="muted" id="donutHint">—</div>
-          </div>
-          <div class="muted" id="completionHint">—</div>
+<section class="section card filtersCard" id="filtersCard">
+      <div class="foldHead" id="filterToggle" role="button" aria-label="พับ/ขยายตัวกรอง">
+        <div>
+          <b>ตัวกรอง Dashboard</b>
+          <div class="muted" id="filterSummary">—</div>
         </div>
-        <div class="statusLayout">
-          <div>
-            <div class="bigNum" id="jobTotal">—</div>
-            <div class="muted">งานทั้งหมดในช่วงที่เลือก</div>
-            <div class="statusSummary">
-              <div class="tinyCard"><div class="metricLabel">อัตราปิดงาน</div><div class="metricValue" id="completionRate">—</div></div>
-              <div class="tinyCard"><div class="metricLabel">งานที่ต้องติดตาม</div><div class="metricValue" id="followupCount">—</div></div>
-            </div>
-          </div>
-          <div>
-            <canvas id="donut" height="150"></canvas>
-            <div class="statusList" id="statusBreakdown"></div>
-          </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <button class="btn blue" id="btnApplyMini" type="button" title="โหลด">โหลดข้อมูล</button>
+          <div class="chev">▾</div>
         </div>
       </div>
-
-      <div class="card">
-        <div class="titleRow">
-          <div>
-            <h3>สถานะทีมช่าง</h3>
-            <div class="muted" id="techHint">—</div>
-          </div>
-          <div class="muted">สลับมุมมองได้</div>
-        </div>
-        <div class="chipRow techTabs">
-          <button class="chip active" data-techscope="all" type="button">รวม</button>
-          <button class="chip" data-techscope="company" type="button">ช่างบริษัท</button>
-          <button class="chip" data-techscope="partner" type="button">พาร์ทเนอร์</button>
-        </div>
-        <div class="overviewGrid">
-          <div class="metricCard tintGreen">
-            <div class="metricLabel">ช่างพร้อมรับงาน</div>
-            <div class="metricValue" id="techOpen">—</div>
-            <div class="metricHint">พร้อมลงงาน</div>
-          </div>
-          <div class="metricCard tintRed">
-            <div class="metricLabel">ช่างหยุด/ปิดรับงาน</div>
-            <div class="metricValue" id="techClosed">—</div>
-            <div class="metricHint">พัก / ปิดรับ</div>
-          </div>
-          <div class="metricCard tintBlue">
-            <div class="metricLabel">ช่างทั้งหมด</div>
-            <div class="metricValue" id="techTotal">—</div>
-            <div class="metricHint">ตามฟิลเตอร์ที่เลือก</div>
-          </div>
-          <div class="metricCard tintYellow">
-            <div class="metricLabel">อัตราพร้อมรับงาน</div>
-            <div class="metricValue" id="techOpenRate">—</div>
-            <div class="metricHint">พร้อมรับ / ทั้งหมด</div>
-          </div>
+      <div class="foldBody" id="filterBody">
+        <div class="row">
+          <input type="date" id="fromDate" title="จากวันที่">
+          <input type="date" id="toDate" title="ถึงวันที่">
+          <button class="btn yellow" id="btnApply" type="button">อัปเดต Dashboard</button>
         </div>
       </div>
     </section>
 
-    <section class="section grid2">
-      <div class="card chartCard">
-        <div class="titleRow">
-          <div>
-            <h3>แนวโน้มรายได้รายวัน</h3>
-            <div class="muted" id="candleHint">—</div>
-          </div>
-          <div class="muted">ดูภาพรวมง่ายขึ้น</div>
-        </div>
-        <canvas id="candles" height="220"></canvas>
-        <div class="chartNote">
-          <div class="muted"><span class="legendDot" style="background:#1558d6"></span>เส้นรายได้รายวัน</div>
-          <div class="muted"><span class="legendDot" style="background:#7aa7ff"></span>พื้นที่ใต้กราฟช่วยดูแนวโน้ม</div>
-        </div>
-      </div>
-
-      <div class="card chartCard">
-        <div class="titleRow">
-          <div>
-            <h3>รายได้รวมบริษัท</h3>
-            <div class="muted" id="seriesHint">—</div>
-          </div>
-        </div>
-        <div class="chipRow">
-          <button class="groupBtn yellow" data-group="day" type="button">วัน</button>
-          <button class="groupBtn ghost" data-group="week" type="button">สัปดาห์</button>
-          <button class="groupBtn ghost" data-group="month" type="button">เดือน</button>
-          <button class="groupBtn ghost" data-group="year" type="button">ปี</button>
-        </div>
-        <canvas id="chart" height="220"></canvas>
-      </div>
-    </section>
-
-    <section class="section grid2">
+<section class="section grid2">
       <div class="card">
         <div class="titleRow">
           <div>
@@ -600,7 +600,7 @@
       </div>
     </section>
 
-    <section class="section card" id="payoutCard">
+<section class="section card" id="payoutCard">
       <div class="titleRow">
         <div>
           <h3>งวดจ่ายช่าง (ดูอย่างเดียว)</h3>
@@ -630,7 +630,7 @@
     <div class="footerSpacer"></div>
   </div>
 
-  <script src="admin-v2-common.js?v=20260428_dash_ui5"></script>
-  <script src="admin-dashboard-v2.js?v=20260428_dash_ui5"></script>
+  <script src="admin-v2-common.js?v=20260428_dash_ui6"></script>
+  <script src="admin-dashboard-v2.js?v=20260428_dash_ui6"></script>
 </body>
 </html>
