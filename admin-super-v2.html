@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
+  <meta name="theme-color" content="#0B2E6D">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Super Admin - CWF</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/cwf-loader.css?v=lite-loader-v1">
   <style>
     body.cwf-lux{background:linear-gradient(180deg,#0b1b3a 0%, #0b4bb3 28%, #f5f7ff 28%, #ffffff 100%)!important}
     .app{max-width:1100px;margin:0 auto;padding:14px 14px 140px}
@@ -71,8 +73,7 @@
     .soft-hide-table{display:none!important}
     @media(max-width:920px){.payroll-shell,.payroll-cards{grid-template-columns:1fr}.payroll-actions{grid-template-columns:1fr}.payout-card-item .topline{flex-direction:column}.payroll-focus > summary{font-size:15px}.grid{grid-template-columns:1fr}}
   </style>
-  <link rel="stylesheet" href="/cwf-splash.css?v=round2-visual">
-  <script defer src="/cwf-splash.js?v=round2-visual"></script>
+  <link rel="manifest" href="/mainfest.json">
 </head>
 <body class="cwf-lux">
   <div class="app">
@@ -490,5 +491,6 @@
   </div>
 
   <script src="admin-super-v2.js?v=contract-payroll-v10-3-payroll-ui"></script>
+  <script src="/cwf-loader.js?v=lite-loader-v1"></script>
 </body>
 </html>

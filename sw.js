@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v26-premium-splash-round2";
+const CACHE_NAME = "cwf-cache-v27-lite-loader-no-video";
 
 const ASSETS = [
   "/",
@@ -9,11 +9,10 @@ const ASSETS = [
   "/index.html",
   "/tech.html",
   "/style.css",
-  "/app.js?v=round2-visual",
+  "/cwf-loader.css?v=lite-loader-v1",
+  "/cwf-loader.js?v=lite-loader-v1",
+  "/app.js?v=tech-premium-v10-5",
   "/logo.png",
-  "/cwf-splash.mp4",
-  "/cwf-splash.js",
-  "/cwf-splash.css",
   "/icon-180.png",
   "/icon-192.png",
   "/icon-512.png",

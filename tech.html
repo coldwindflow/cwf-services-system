@@ -1,10 +1,12 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
+  <meta name="theme-color" content="#0B2E6D">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>หน้าช่าง - CWF</title>
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="/cwf-loader.css?v=lite-loader-v1">
 
   <style>
     :root{
@@ -295,8 +297,7 @@
       .premium-input, input[type="date"].premium-input{width:100%; min-width:0;}
     }
   </style>
-  <link rel="stylesheet" href="/cwf-splash.css?v=round2-visual">
-  <script defer src="/cwf-splash.js?v=round2-visual"></script>
+  <link rel="manifest" href="/mainfest.json">
 </head>
 
 <body>
@@ -958,5 +959,6 @@ function logout(){
       switchTab(initial, { persist: false });
     });
   </script>
+  <script src="/cwf-loader.js?v=lite-loader-v1"></script>
 </body>
 </html>
