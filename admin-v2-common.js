@@ -201,24 +201,27 @@ function injectAdminMenu(){
     }
     #cwfTopNav{position:fixed;left:0;right:0;top:0;z-index:2600;
       padding-top:env(safe-area-inset-top);
-      background:linear-gradient(180deg, rgba(7,19,50,0.92) 0%, rgba(13,47,122,0.84) 100%);
-      backdrop-filter:blur(16px);
-      -webkit-backdrop-filter:blur(16px);
-      border-bottom:1px solid rgba(255,255,255,0.08);
-      box-shadow:0 18px 44px rgba(2,6,23,0.22);} 
+      background:
+        radial-gradient(360px 140px at 88% -35px, rgba(255,204,0,.20), transparent 66%),
+        linear-gradient(180deg, rgba(3,13,38,.96) 0%, rgba(8,30,82,.94) 58%, rgba(11,46,118,.92) 100%);
+      backdrop-filter:blur(20px) saturate(1.15);
+      -webkit-backdrop-filter:blur(20px) saturate(1.15);
+      border-bottom:1px solid rgba(255,204,0,0.18);
+      box-shadow:0 14px 38px rgba(2,6,23,0.32);} 
+    #cwfTopNav:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,transparent,rgba(255,204,0,.72),rgba(71,139,255,.55),transparent);pointer-events:none}
     #cwfTopNav .in{max-width:1220px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;
-      gap:10px;padding:8px 14px;}
-    #cwfTopNav .ttl{min-width:0;display:flex;flex-direction:column;gap:3px}
-    #cwfTopNav .ttl b{font-size:15px;line-height:1.1;color:#fff;font-weight:1000;letter-spacing:.2px}
-    #cwfTopNav .ttl span{font-size:12px;font-weight:850;color:rgba(255,255,255,0.78);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      gap:12px;padding:9px 14px 10px;}
+    #cwfTopNav .ttl{min-width:0;display:flex;flex-direction:column;gap:2px;padding-left:2px}
+    #cwfTopNav .ttl b{font-size:15px;line-height:1.08;color:#fff;font-weight:1050;letter-spacing:.15px;text-shadow:0 8px 18px rgba(0,0,0,.28)}
+    #cwfTopNav .ttl span{font-size:11px;font-weight:850;color:rgba(255,255,255,0.74);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #cwfTopNav .btns{display:flex;align-items:center;gap:8px}
-    .cwf-icbtn{width:42px;height:42px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;
-      border:1px solid rgba(255,255,255,0.14);background:rgba(255,255,255,0.10);
-      box-shadow:0 12px 30px rgba(0,0,0,0.16);cursor:pointer;user-select:none}
+    .cwf-icbtn{width:46px;height:46px;border-radius:18px;display:inline-flex;align-items:center;justify-content:center;
+      border:1px solid rgba(255,255,255,0.18);background:linear-gradient(145deg, rgba(255,255,255,0.18), rgba(255,255,255,0.07));
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 14px 30px rgba(0,0,0,0.20);cursor:pointer;user-select:none}
     .cwf-icbtn:active{transform: translateY(1px) scale(0.99)}
-    .cwf-icbtn svg{width:21px;height:21px;fill:#ffffff}
-    #cwfTopNavSpacer{height:66px}
-    @media (max-width:420px){#cwfTopNavSpacer{height:64px}}
+    .cwf-icbtn svg{width:22px;height:22px;fill:#ffffff}
+    #cwfTopNavSpacer{height:68px}
+    @media (max-width:420px){#cwfTopNavSpacer{height:66px}#cwfTopNav .in{padding:8px 14px 9px}.cwf-icbtn{width:44px;height:44px}}
     #cwfDrawerBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2690;display:none}
     #cwfDrawer{position:fixed;inset:0;z-index:2700;
       display:none;padding:12px 12px calc(12px + env(safe-area-inset-bottom));
