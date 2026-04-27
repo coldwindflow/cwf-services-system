@@ -207,18 +207,18 @@ function injectAdminMenu(){
       border-bottom:1px solid rgba(255,255,255,0.08);
       box-shadow:0 18px 44px rgba(2,6,23,0.22);} 
     #cwfTopNav .in{max-width:1220px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;
-      gap:12px;padding:12px 14px;}
+      gap:10px;padding:8px 14px;}
     #cwfTopNav .ttl{min-width:0;display:flex;flex-direction:column;gap:3px}
     #cwfTopNav .ttl b{font-size:15px;line-height:1.1;color:#fff;font-weight:1000;letter-spacing:.2px}
     #cwfTopNav .ttl span{font-size:12px;font-weight:850;color:rgba(255,255,255,0.78);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #cwfTopNav .btns{display:flex;align-items:center;gap:8px}
-    .cwf-icbtn{width:48px;height:48px;border-radius:18px;display:inline-flex;align-items:center;justify-content:center;
+    .cwf-icbtn{width:42px;height:42px;border-radius:16px;display:inline-flex;align-items:center;justify-content:center;
       border:1px solid rgba(255,255,255,0.14);background:rgba(255,255,255,0.10);
       box-shadow:0 12px 30px rgba(0,0,0,0.16);cursor:pointer;user-select:none}
     .cwf-icbtn:active{transform: translateY(1px) scale(0.99)}
-    .cwf-icbtn svg{width:23px;height:23px;fill:#ffffff}
-    #cwfTopNavSpacer{height:80px}
-    @media (max-width:420px){#cwfTopNavSpacer{height:78px}}
+    .cwf-icbtn svg{width:21px;height:21px;fill:#ffffff}
+    #cwfTopNavSpacer{height:66px}
+    @media (max-width:420px){#cwfTopNavSpacer{height:64px}}
     #cwfDrawerBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2690;display:none}
     #cwfDrawer{position:fixed;inset:0;z-index:2700;
       display:none;padding:12px 12px calc(12px + env(safe-area-inset-bottom));

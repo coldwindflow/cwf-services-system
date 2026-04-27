@@ -196,6 +196,9 @@
     setText('ovActive', String(Number(d.active||0)));
     setText('ovPending', String(Number(d.pending||0)));
     setText('ovDoneHint', total ? `${completionRate}% ของงานทั้งหมด` : '—');
+    setText('ovJobsTotalCompact', total ? String(total) : '—');
+    setText('ovCompletionCompact', total ? `${completionRate}%` : '—');
+    setText('ovCompletionCompactHint', total ? `ปิดงานแล้ว ${done} งาน` : '—');
 
     const statusBreakdown = $('statusBreakdown');
     if (statusBreakdown){
@@ -211,55 +214,62 @@
       }).join('');
     }
 
-    const dpr = window.devicePixelRatio || 1;
-    const cssW = canvas.clientWidth || 280;
-    const cssH = 190;
-    canvas.width = Math.floor(cssW * dpr);
-    canvas.height = Math.floor(cssH * dpr);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    ctx.clearRect(0,0,cssW,cssH);
+    function paintDonut(targetCanvas, height, compact){
+      if (!targetCanvas) return;
+      const targetCtx = targetCanvas.getContext('2d');
+      const dpr = window.devicePixelRatio || 1;
+      const cssW = targetCanvas.clientWidth || (compact ? 160 : 280);
+      const cssH = height || (compact ? 146 : 190);
+      targetCanvas.width = Math.floor(cssW * dpr);
+      targetCanvas.height = Math.floor(cssH * dpr);
+      targetCtx.setTransform(dpr,0,0,dpr,0,0);
+      targetCtx.clearRect(0,0,cssW,cssH);
 
-    const visible = parts.filter(x=>x.value > 0);
-    const cx = cssW/2;
-    const cy = cssH/2 - 4;
-    const r = Math.min(cssW, cssH) * 0.36;
-    const lineW = Math.max(14, Math.round(r * 0.20));
+      const visible = parts.filter(x=>x.value > 0);
+      const cx = cssW/2;
+      const cy = cssH/2 - (compact ? 1 : 4);
+      const r = Math.min(cssW, cssH) * (compact ? 0.34 : 0.36);
+      const lineW = Math.max(compact ? 11 : 14, Math.round(r * 0.20));
 
-    ctx.beginPath();
-    ctx.arc(cx, cy, r, 0, Math.PI*2);
-    ctx.strokeStyle = 'rgba(21, 88, 214, 0.08)';
-    ctx.lineWidth = lineW;
-    ctx.stroke();
+      targetCtx.beginPath();
+      targetCtx.arc(cx, cy, r, 0, Math.PI*2);
+      targetCtx.strokeStyle = 'rgba(21, 88, 214, 0.08)';
+      targetCtx.lineWidth = lineW;
+      targetCtx.stroke();
 
-    if (!total){
-      ctx.fillStyle = '#64748b';
-      ctx.font = '700 14px sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('ไม่มีข้อมูล', cx, cy + 5);
-      ctx.textAlign = 'start';
-      return;
+      if (!total){
+        targetCtx.fillStyle = '#64748b';
+        targetCtx.font = '700 13px sans-serif';
+        targetCtx.textAlign = 'center';
+        targetCtx.fillText('ไม่มีข้อมูล', cx, cy + 5);
+        targetCtx.textAlign = 'start';
+        return;
+      }
+
+      let a = -Math.PI/2;
+      for (const p of visible){
+        const ang = (p.value/total) * Math.PI * 2;
+        targetCtx.beginPath();
+        targetCtx.arc(cx, cy, r, a, a+ang);
+        targetCtx.strokeStyle = p.color;
+        targetCtx.lineWidth = lineW;
+        targetCtx.lineCap = 'round';
+        targetCtx.stroke();
+        a += ang;
+      }
+
+      targetCtx.fillStyle = '#09152f';
+      targetCtx.textAlign = 'center';
+      targetCtx.font = compact ? '900 22px sans-serif' : '900 24px sans-serif';
+      targetCtx.fillText(String(total), cx, cy + (compact ? 4 : 5));
+      targetCtx.font = compact ? '700 11px sans-serif' : '700 12px sans-serif';
+      targetCtx.fillStyle = '#64748b';
+      targetCtx.fillText('งานทั้งหมด', cx, cy + (compact ? 22 : 24));
+      targetCtx.textAlign = 'start';
     }
 
-    let a = -Math.PI/2;
-    for (const p of visible){
-      const ang = (p.value/total) * Math.PI * 2;
-      ctx.beginPath();
-      ctx.arc(cx, cy, r, a, a+ang);
-      ctx.strokeStyle = p.color;
-      ctx.lineWidth = lineW;
-      ctx.lineCap = 'round';
-      ctx.stroke();
-      a += ang;
-    }
-
-    ctx.fillStyle = '#09152f';
-    ctx.textAlign = 'center';
-    ctx.font = '900 24px sans-serif';
-    ctx.fillText(String(total), cx, cy + 5);
-    ctx.font = '700 12px sans-serif';
-    ctx.fillStyle = '#64748b';
-    ctx.fillText('งานทั้งหมด', cx, cy + 24);
-    ctx.textAlign = 'start';
+    paintDonut(canvas, 190, false);
+    paintDonut($('overviewDonut'), 146, true);
   }
 
   function drawLineChart(canvasId, rows, options = {}){
