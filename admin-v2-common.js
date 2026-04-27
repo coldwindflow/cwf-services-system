@@ -190,6 +190,7 @@ function showToast(msg, type = "info") {
 // ----------------------
 function injectAdminMenu(){
   if (document.getElementById('cwfTopNav')) return;
+  try{ document.body.classList.add('cwf-admin-v2-shell'); }catch(_e){}
 
   const css = document.createElement('style');
   css.textContent = `
@@ -202,27 +203,156 @@ function injectAdminMenu(){
     #cwfTopNav{position:fixed;left:0;right:0;top:0;z-index:2600;
       padding-top:env(safe-area-inset-top);
       background:
-        radial-gradient(300px 120px at 90% -30px, rgba(255,204,0,.26), transparent 68%),
-        linear-gradient(180deg, rgba(2,10,30,.98) 0%, rgba(6,24,64,.96) 55%, rgba(10,43,108,.95) 100%);
-      backdrop-filter:blur(20px) saturate(1.15);
-      -webkit-backdrop-filter:blur(20px) saturate(1.15);
-      border-bottom:1px solid rgba(255,204,0,0.18);
-      box-shadow:0 10px 28px rgba(2,6,23,0.30);} 
+        radial-gradient(360px 130px at 88% -36px, rgba(255,204,0,.32), transparent 66%),
+        radial-gradient(520px 170px at 12% -44px, rgba(59,130,246,.28), transparent 70%),
+        linear-gradient(180deg, rgba(3,10,28,.99) 0%, rgba(7,25,66,.985) 50%, rgba(9,45,116,.98) 100%);
+      backdrop-filter:blur(22px) saturate(1.18);
+      -webkit-backdrop-filter:blur(22px) saturate(1.18);
+      border-bottom:1px solid rgba(255,204,0,0.22);
+      box-shadow:0 12px 32px rgba(2,6,23,0.34);} 
     #cwfTopNav:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,transparent,rgba(255,204,0,.72),rgba(71,139,255,.55),transparent);pointer-events:none}
     #cwfTopNav .in{max-width:1220px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;
-      gap:12px;padding:7px 14px 8px;}
+      gap:12px;padding:8px 18px 9px;}
     #cwfTopNav .ttl{min-width:0;display:flex;flex-direction:column;gap:2px;padding-left:2px}
-    #cwfTopNav .ttl b{font-size:15px;line-height:1.05;color:#fff;font-weight:1050;letter-spacing:.15px;text-shadow:0 8px 18px rgba(0,0,0,.28)}
-    #cwfTopNav .ttl span{font-size:10.5px;font-weight:850;color:rgba(255,255,255,0.74);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    #cwfTopNav .ttl b{font-size:16px;line-height:1.05;color:#fff;font-weight:1050;letter-spacing:.15px;text-shadow:0 8px 18px rgba(0,0,0,.28)}
+    #cwfTopNav .ttl span{font-size:11px;font-weight:850;color:rgba(255,255,255,0.76);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #cwfTopNav .btns{display:flex;align-items:center;gap:8px}
-    .cwf-icbtn{width:44px;height:44px;border-radius:18px;display:inline-flex;align-items:center;justify-content:center;
-      border:1px solid rgba(255,255,255,0.18);background:linear-gradient(145deg, rgba(255,255,255,0.18), rgba(255,255,255,0.07));
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.12),0 14px 30px rgba(0,0,0,0.20);cursor:pointer;user-select:none}
+    .cwf-icbtn{width:48px;height:48px;border-radius:20px;display:inline-flex;align-items:center;justify-content:center;
+      border:1px solid rgba(255,255,255,0.22);background:linear-gradient(145deg, rgba(255,255,255,0.22), rgba(255,255,255,0.08));
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 16px 34px rgba(0,0,0,0.24);cursor:pointer;user-select:none}
     .cwf-icbtn:active{transform: translateY(1px) scale(0.99)}
     .cwf-icbtn svg{width:22px;height:22px;fill:#ffffff}
-    #cwfTopNavSpacer{height:56px}
-    @media (max-width:420px){#cwfTopNavSpacer{height:54px}#cwfTopNav .in{padding:7px 14px 8px}.cwf-icbtn{width:42px;height:42px;border-radius:17px}}
-    #cwfDrawerBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2690;display:none}
+    #cwfTopNavSpacer{height:62px}
+    @media (max-width:420px){#cwfTopNavSpacer{height:60px}#cwfTopNav .in{padding:8px 16px 9px}.cwf-icbtn{width:46px;height:46px;border-radius:19px}}
+
+
+    /* ===== CWF Admin v2 Shared Premium Visual Layer =====
+       ใช้กับทุกหน้า Admin ที่โหลด admin-v2-common.js เท่านั้น
+       ไม่แตะ logic / endpoint / form value */
+    body.cwf-admin-v2-shell{
+      min-height:100vh;
+      background:
+        radial-gradient(680px 320px at 50% -90px, rgba(58,135,255,.42), transparent 72%),
+        linear-gradient(135deg, rgba(8,28,76,.96) 0 18%, rgba(14,72,175,.88) 18% 33%, #f4f8ff 33% 100%) !important;
+      color:#08152f;
+      text-rendering:optimizeLegibility;
+    }
+    body.cwf-admin-v2-shell:before{
+      content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
+      background:
+        linear-gradient(135deg, rgba(255,255,255,.055) 0 10px, transparent 10px 22px),
+        radial-gradient(circle at 20% 8%, rgba(255,204,0,.12), transparent 20%),
+        radial-gradient(circle at 92% 16%, rgba(59,130,246,.18), transparent 24%);
+      background-size:32px 32px, auto, auto;
+      opacity:.9;
+    }
+    body.cwf-admin-v2-shell .app,
+    body.cwf-admin-v2-shell .wrap,
+    body.cwf-admin-v2-shell .container,
+    body.cwf-admin-v2-shell main{
+      box-sizing:border-box;
+    }
+    body.cwf-admin-v2-shell .app,
+    body.cwf-admin-v2-shell .wrap,
+    body.cwf-admin-v2-shell .container{
+      max-width:min(1120px, 100%);
+    }
+    body.cwf-admin-v2-shell .card,
+    body.cwf-admin-v2-shell .panel,
+    body.cwf-admin-v2-shell details,
+    body.cwf-admin-v2-shell .box,
+    body.cwf-admin-v2-shell .job-card,
+    body.cwf-admin-v2-shell .tech-card,
+    body.cwf-admin-v2-shell .summary-card{
+      border-radius:24px;
+      border:1px solid rgba(11,75,179,.12);
+      box-shadow:0 18px 42px rgba(2,6,23,.10);
+    }
+    body.cwf-admin-v2-shell .card,
+    body.cwf-admin-v2-shell details,
+    body.cwf-admin-v2-shell .box{
+      background:linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,251,255,.96));
+    }
+    body.cwf-admin-v2-shell h1,
+    body.cwf-admin-v2-shell h2,
+    body.cwf-admin-v2-shell h3,
+    body.cwf-admin-v2-shell .title{
+      letter-spacing:-.02em;
+    }
+    body.cwf-admin-v2-shell button,
+    body.cwf-admin-v2-shell .btn,
+    body.cwf-admin-v2-shell .nav-btn,
+    body.cwf-admin-v2-shell input,
+    body.cwf-admin-v2-shell select,
+    body.cwf-admin-v2-shell textarea{
+      -webkit-tap-highlight-color:transparent;
+    }
+    body.cwf-admin-v2-shell input,
+    body.cwf-admin-v2-shell select,
+    body.cwf-admin-v2-shell textarea{
+      border-radius:16px;
+      border:1px solid rgba(11,75,179,.16);
+      background:rgba(255,255,255,.96);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.8), 0 8px 20px rgba(2,6,23,.04);
+    }
+    body.cwf-admin-v2-shell .btn,
+    body.cwf-admin-v2-shell button:not(.cwf-icbtn):not(.nav-btn):not(.pillbtn):not(.secondary){
+      border-radius:16px;
+      font-weight:1000;
+    }
+    body.cwf-admin-v2-shell .btn.blue,
+    body.cwf-admin-v2-shell button.primary,
+    body.cwf-admin-v2-shell .primary.btn{
+      background:linear-gradient(135deg,#06245c,#1558d6 68%,#1e7bff) !important;
+      color:#fff !important;
+      border-color:rgba(255,255,255,.12) !important;
+      box-shadow:0 16px 32px rgba(21,88,214,.24);
+    }
+    body.cwf-admin-v2-shell .btn.yellow,
+    body.cwf-admin-v2-shell button.yellow,
+    body.cwf-admin-v2-shell .warning.btn{
+      background:linear-gradient(135deg,#ffe875,#ffcc00 70%,#f6b900) !important;
+      color:#09152f !important;
+      border-color:rgba(120,83,0,.16) !important;
+      box-shadow:0 14px 28px rgba(255,204,0,.22);
+    }
+    body.cwf-admin-v2-shell .bottom-nav{
+      left:10px !important;right:10px !important;bottom:10px !important;
+      width:auto !important;max-width:720px;margin:0 auto;
+      background:rgba(4,18,52,.88) !important;
+      backdrop-filter:blur(18px) saturate(1.12);
+      -webkit-backdrop-filter:blur(18px) saturate(1.12);
+      border:1px solid rgba(255,255,255,.16) !important;
+      border-radius:24px !important;
+      box-shadow:0 20px 48px rgba(2,6,23,.30) !important;
+      padding:8px !important;
+      padding-bottom:calc(8px + env(safe-area-inset-bottom)) !important;
+      gap:7px !important;
+    }
+    body.cwf-admin-v2-shell .nav-btn{
+      min-height:44px !important;
+      border-radius:18px !important;
+      border:1px solid rgba(255,255,255,.13) !important;
+      background:rgba(255,255,255,.08) !important;
+      color:#fff !important;
+      font-weight:1000 !important;
+      font-size:12px !important;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.08);
+    }
+    body.cwf-admin-v2-shell .nav-btn.active{
+      background:linear-gradient(135deg,#ffe875,#ffcc00) !important;
+      color:#08152f !important;
+      border-color:rgba(255,255,255,.3) !important;
+    }
+    @media(max-width:520px){
+      body.cwf-admin-v2-shell .app,
+      body.cwf-admin-v2-shell .wrap,
+      body.cwf-admin-v2-shell .container{padding-left:14px;padding-right:14px;}
+      body.cwf-admin-v2-shell .bottom-nav{left:8px !important;right:8px !important;bottom:8px !important;border-radius:22px !important;}
+      body.cwf-admin-v2-shell .nav-btn{font-size:11.5px !important;padding-left:6px !important;padding-right:6px !important;}
+    }
+
+        #cwfDrawerBackdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);z-index:2690;display:none}
     #cwfDrawer{position:fixed;inset:0;z-index:2700;
       display:none;padding:12px 12px calc(12px + env(safe-area-inset-bottom));
       overflow:auto;}
