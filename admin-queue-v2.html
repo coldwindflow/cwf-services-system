@@ -184,6 +184,99 @@
       .bottom-nav{left:8px;right:8px}
       .nav-btn{font-size:12px;gap:4px}
     }
+
+
+    /* ===== Queue compact premium overrides: 3 columns + readable free time ===== */
+    .calendar-card{
+      background:linear-gradient(180deg,rgba(255,255,255,.98),rgba(248,251,255,.98));
+    }
+    .calendar-head{
+      justify-content:center;
+      text-align:center;
+      padding:4px 4px 14px;
+      border-bottom:1px solid rgba(15,23,42,.06);
+      margin-bottom:12px;
+    }
+    .calendar-head > div:first-child{width:100%}
+    .calendar-tools{width:100%;justify-content:center}
+    .month-nav{
+      width:min(470px,100%);
+      justify-content:space-between;
+      padding:8px;
+      border-radius:24px;
+      background:linear-gradient(180deg,#f8fbff,#eef5ff);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.82),0 10px 24px rgba(15,23,42,.08);
+    }
+    .month-badge{
+      flex:1;
+      justify-content:center;
+      min-height:46px;
+      border-radius:20px;
+      font-size:18px;
+      background:linear-gradient(180deg,#ffffff,#edf5ff);
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.9);
+    }
+    .icon-btn{flex:0 0 48px;width:48px;height:48px;border-radius:18px}
+    .day-head{align-items:center}
+    .status-stack{align-items:flex-end;min-width:0}
+    .status-chip.main{min-height:30px;padding:0 10px;font-size:11px;line-height:1;background:#dcfce7;color:#15803d}
+    .status-chip.main.full{background:#fee2e2;color:#b91c1c}
+    .status-chip.main .dot{display:none}
+    .availability-row{box-shadow:inset 0 1px 0 rgba(255,255,255,.7)}
+    .slot-preview{
+      display:block;
+      overflow:visible;
+      -webkit-line-clamp:unset;
+      font-size:12px;
+      line-height:1.25;
+      color:#475569;
+      white-space:normal;
+    }
+    .slot-preview strong{display:inline;color:#1558d6}
+
+    @media (max-width:680px){
+      .hero-card{padding:12px;border-radius:22px}
+      .hero-title{font-size:20px;line-height:1.2}
+      .hero-sub{display:none}
+      .summary-strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+      .summary-pill{padding:10px;border-radius:16px}
+      .summary-pill .value{font-size:13px}
+      .stats-grid{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+      .stats-card{padding:10px 12px;border-radius:18px}
+      .stats-card .value{font-size:23px}
+      .stats-card .sub{font-size:10px}
+      .legend-bar{display:none}
+      .calendar-card{margin-top:12px;padding:10px;border-radius:24px}
+      .calendar-title{display:none}
+      .calendar-sub{font-size:12px;margin-top:0}
+      .month-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+      .day-cell{min-height:148px;padding:8px;border-radius:18px;gap:7px}
+      .day-number{width:32px;height:32px;border-radius:12px;font-size:17px}
+      .day-week{font-size:12px;line-height:1;font-weight:1000;color:#334155}
+      .status-chip.main{min-height:26px;padding:0 8px;font-size:10px}
+      .availability-list{gap:5px}
+      .availability-row{grid-template-columns:1fr;justify-items:center;text-align:center;padding:6px 5px;border-radius:12px;gap:4px}
+      .availability-row .name{font-size:10px;line-height:1.05;white-space:nowrap}
+      .pill-state{min-width:38px;min-height:22px;font-size:9.5px;padding:0 6px}
+      .slot-preview{font-size:10px;line-height:1.2;text-align:center}
+      .time-search-wrap{grid-template-columns:1fr}
+    }
+    @media (max-width:430px){
+      .month-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+      .day-cell{min-height:142px;padding:7px;border-radius:17px}
+      .day-number{width:30px;height:30px;font-size:16px}
+      .status-chip.main{font-size:10px;width:auto;min-width:42px;padding:0 7px;justify-content:center}
+      .status-chip.main .dot{display:none}
+      .slot-preview{font-size:9.8px;line-height:1.2}
+    }
+    @media (max-width:360px){
+      .month-grid{gap:6px}
+      .day-cell{min-height:136px;padding:6px}
+      .day-week{font-size:11px}
+      .availability-row .name{font-size:9px}
+      .pill-state{min-width:34px;font-size:9px}
+    }
+
   </style>
 </head>
 <body class="theme-2">
@@ -380,6 +473,6 @@
   </div>
 
   <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="admin-queue-v2.js?v=20260428_window30_cleanlayout2"></script>
+  <script src="admin-queue-v2.js?v=20260428_3cols_readable_time_premium1"></script>
 </body>
 </html>

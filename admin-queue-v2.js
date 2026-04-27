@@ -404,7 +404,7 @@ function renderMonth(){
         </div>
         <div class="status-stack">
           ${isToday ? '<div class="status-chip today">📍 วันนี้</div>' : ''}
-          <div class="status-chip main ${view.hasAny ? 'free' : 'full'}"><span class="dot"></span>${view.hasAny ? 'ว่าง' : 'เต็ม'}</div>
+          <div class="status-chip main ${view.hasAny ? 'free' : 'full'}">${view.hasAny ? 'ว่าง' : 'เต็ม'}</div>
         </div>
       </div>
       <div class="day-body">
