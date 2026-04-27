@@ -9313,10 +9313,10 @@ app.get("/admin/schedule_v2", requireAdminSoft, async (req, res) => {
       FROM public.users u
       LEFT JOIN public.technician_profiles p ON p.username=u.username
       WHERE u.role='technician'
-        AND ($3::boolean IS TRUE OR (
+        AND (
               ($1='company' AND COALESCE(p.employment_type,'company') IN ('company','custom','special_only'))
            OR ($1<>'company' AND COALESCE(p.employment_type,'company') = $1)
-        ))
+        )
       ORDER BY u.username
       `,
       [tech_type]
@@ -14197,7 +14197,24 @@ for (let t = startMin; t < endMin; t += slot_step_min) {
     }
 
     console.log("[admin_availability_by_tech_v2]", { date, tech_type, duration_min, tech_count: techs.length, slots: all_slots.length });
-    res.json({ date, tech_type, work_start, work_end, duration_min, effective_block_min: default_effective_block_min, slot_step_min, tech_count: techs.length, all_slots, techs: techRows });
+    res.json({
+      date,
+      tech_type,
+      work_start,
+      work_end,
+      duration_min,
+      effective_block_min: default_effective_block_min,
+      slot_step_min,
+      tech_count: techs.length,
+      all_slots,
+      techs: techRows,
+      // backward-compatible alias for older/newer Admin Queue clients
+      technicians: techRows,
+      slots_by_tech: techRows.reduce((acc, t) => {
+        acc[t.username] = t.slots || [];
+        return acc;
+      }, {})
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "โหลดตารางว่างไม่สำเร็จ" });

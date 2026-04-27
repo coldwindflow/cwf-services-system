@@ -6,52 +6,14 @@
   <title>Admin เช็คคิวช่าง (v2) - CWF</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    .app{padding-bottom:86px}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-    @media (max-width:420px){.grid2{grid-template-columns:1fr}}
+    .app{padding-bottom:86px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:420px){.grid2{grid-template-columns:1fr}}
+    .queue-hero{position:relative;overflow:hidden;border-radius:24px;padding:18px;background:linear-gradient(135deg,#0f172a 0%,#1d4ed8 52%,#facc15 135%);color:#fff;box-shadow:0 18px 45px rgba(15,23,42,.22);margin-bottom:14px}.queue-hero:after{content:"";position:absolute;right:-44px;top:-52px;width:170px;height:170px;border-radius:999px;background:rgba(255,255,255,.12)}.queue-hero h2{margin:0;font-size:23px;letter-spacing:-.02em}.queue-hero p{margin:6px 0 0;color:rgba(255,255,255,.82);font-size:13px}.hero-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.hero-actions button{width:auto;min-height:40px;border-radius:999px;padding:0 14px;border:1px solid rgba(255,255,255,.25);font-weight:900}.hero-primary{background:#facc15!important;color:#111827!important}.hero-secondary{background:rgba(255,255,255,.12)!important;color:#fff!important}
+    .quick-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:12px 0}.stat-card{border:1px solid rgba(15,23,42,.08);border-radius:18px;background:#fff;padding:12px;box-shadow:0 10px 28px rgba(15,23,42,.07)}.stat-card .k{font-size:12px;font-weight:900;color:#64748b}.stat-card .v{font-size:24px;font-weight:1000;color:#0f172a;margin-top:3px}.stat-card.good .v{color:#16a34a}.stat-card.bad .v{color:#dc2626}.stat-card.info .v{color:#2563eb}@media(max-width:460px){.quick-stats{grid-template-columns:1fr 1fr}.stat-card.info{grid-column:1/-1}}
+    .filter-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px}.filter-toolbar .hint{font-size:12px;text-align:right;color:#64748b}.filter-card{border-radius:22px;border:1px solid rgba(15,23,42,.08);box-shadow:0 12px 34px rgba(15,23,42,.08)}
+    .month-wrap{margin-top:12px;border:1px solid rgba(15,23,42,0.10);border-radius:24px;overflow:hidden;background:#fff;box-shadow:0 18px 45px rgba(15,23,42,.10)}.month-head{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:14px;border-bottom:1px solid rgba(15,23,42,0.08);background:linear-gradient(180deg,#fff,#f8fafc);flex-wrap:wrap}.month-head .left{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.month-title{font-weight:1000;font-size:18px;color:#0f172a}.month-sub{font-size:12px;color:#64748b}.legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px}.legend span{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(15,23,42,.08);border-radius:999px;padding:5px 9px;background:#fff;font-size:11px;font-weight:900;color:#334155}.dot{width:8px;height:8px;border-radius:99px;display:inline-block}.dot.free{background:#16a34a}.dot.full{background:#dc2626}.dot.today{background:#facc15}.dot.job{background:#2563eb}.month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;padding:12px;background:#f8fafc}.dow{font-size:12px;color:rgba(15,23,42,0.65);font-weight:900;text-align:center;padding:4px 0}
+    .day{border:1px solid rgba(15,23,42,0.09);border-radius:18px;padding:9px;display:flex;flex-direction:column;gap:7px;cursor:pointer;overflow:hidden;transition:.15s ease;position:relative;background:#fff}.day:hover{transform:translateY(-2px);box-shadow:0 12px 22px rgba(15,23,42,.12)}.day.today{outline:3px solid rgba(250,204,21,.85);outline-offset:-3px}.day.today:before{content:"วันนี้";position:absolute;top:7px;right:7px;background:#facc15;color:#111827;border-radius:999px;padding:3px 7px;font-size:10px;font-weight:1000}.day.today .day-top{padding-right:46px}@supports(aspect-ratio:1/1){.day{aspect-ratio:1/1;min-height:0}}@supports not (aspect-ratio:1/1){.day{min-height:96px}}.day.muted{opacity:.42;cursor:default}.day.muted:hover{transform:none;box-shadow:none}.day .d{font-weight:1000;font-size:18px}.day-top{display:flex;justify-content:space-between;align-items:flex-start;gap:6px}.badge{display:inline-flex;align-items:center;gap:4px;padding:5px 9px;border-radius:999px;font-size:11px;font-weight:1000;line-height:1;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.badge.full{background:#dc2626;color:#fff}.badge.free{background:#16a34a;color:#fff}.badge.busy{background:#2563eb;color:#fff}.slots{font-size:11px;color:inherit;font-weight:900;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.day-meta{margin-top:auto;display:flex;gap:5px;flex-wrap:wrap}.mini-chip{font-size:10px;font-weight:900;padding:4px 6px;border-radius:999px;background:rgba(255,255,255,.20);border:1px solid rgba(255,255,255,.22);white-space:nowrap}.day.free{background:linear-gradient(160deg,#16a34a,#15803d);color:#fff;border-color:rgba(255,255,255,0.22)}.day.full{background:linear-gradient(160deg,#dc2626,#991b1b);color:#fff;border-color:rgba(255,255,255,0.22)}.day.neutral{background:#fff;color:#0f172a}
+    .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(15,23,42,0.12);border-radius:999px;padding:7px 11px;background:#fff}.pill select,.pill input{border:none;background:transparent;padding:0;margin:0;height:auto}.modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.62);display:none;align-items:flex-end;justify-content:center;z-index:2000;padding:12px;padding-bottom:calc(12px + env(safe-area-inset-bottom));backdrop-filter:blur(8px)}.modal{width:min(820px,100%);background:#fff;border-radius:24px;box-shadow:0 22px 70px rgba(0,0,0,0.28);overflow:hidden;max-height:88vh;display:flex;flex-direction:column}.modal-h{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:15px 16px;border-bottom:1px solid rgba(15,23,42,0.10);background:linear-gradient(135deg,#0f172a,#1d4ed8);color:#fff}.modal-h .muted{color:rgba(255,255,255,.75)!important}.modal-b{padding:13px 14px;overflow:auto;background:#f8fafc}.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}.seg{display:flex;gap:8px;flex-wrap:wrap}.seg button{min-height:38px;padding:0 12px;border-radius:999px;font-weight:1000;border:1px solid rgba(15,23,42,0.14);background:#fff;color:#0f172a}.seg button.active{background:#2563eb;color:#fff;border-color:transparent}.list{display:flex;flex-direction:column;gap:10px;margin-top:12px}.item{border:1px solid rgba(15,23,42,0.09);border-radius:18px;padding:12px;background:#fff;overflow:hidden;box-shadow:0 8px 22px rgba(15,23,42,.06)}.item b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.item .mini{font-size:12px;color:rgba(15,23,42,0.72);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.item .meta{font-size:12px;color:rgba(15,23,42,0.72);margin-top:6px;display:flex;gap:10px;flex-wrap:wrap}.item-line{display:flex;align-items:center;justify-content:space-between;gap:8px}.status-pill{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:1000}.status-done{background:#dcfce7;color:#166534}.status-active{background:#dbeafe;color:#1d4ed8}.status-wait{background:#fef3c7;color:#92400e}.status-risk{background:#fee2e2;color:#991b1b}
 
-    .month-wrap{margin-top:12px;border:1px solid rgba(15,23,42,0.10);border-radius:18px;overflow:hidden;background:#fff;box-shadow:var(--shadow)}
-    .month-head{display:flex;gap:10px;align-items:center;justify-content:space-between;padding:12px;border-bottom:1px solid rgba(15,23,42,0.08);background:#f8fafc;flex-wrap:wrap}
-    .month-head .left{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
-    .month-title{font-weight:900}
-    .month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;padding:12px}
-    .dow{font-size:12px;color:rgba(15,23,42,0.65);font-weight:800;text-align:center}
-    .day{border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:10px;display:flex;flex-direction:column;gap:6px;cursor:pointer;overflow:hidden}
-    /* square cells (premium calendar) */
-    @supports (aspect-ratio: 1 / 1){
-      .day{aspect-ratio:1/1;min-height:0}
-    }
-    @supports not (aspect-ratio: 1 / 1){
-      .day{min-height:92px}
-    }
-    .day.muted{opacity:0.45;cursor:default}
-    .day .d{font-weight:900}
-    .badge{display:inline-block;padding:4px 10px;border-radius:999px;font-size:12px;font-weight:900;line-height:1;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .badge.full{background:#dc2626;color:#fff}
-    .badge.free{background:#16a34a;color:#fff}
-    .slots{font-size:12px;color:#fff;font-weight:800;line-height:1.35;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-
-    .day.free{background:#16a34a;color:#fff;border-color:rgba(255,255,255,0.22)}
-    .day.full{background:#dc2626;color:#fff;border-color:rgba(255,255,255,0.22)}
-    .day.neutral{background:#fff;color:#0f172a}
-
-    .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(15,23,42,0.12);border-radius:999px;padding:6px 10px;background:#fff}
-    .pill select,.pill input{border:none;background:transparent;padding:0;margin:0;height:auto}
-
-    /* modal */
-    .modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,0.55);display:none;align-items:flex-end;justify-content:center;z-index:2000;padding:12px;padding-bottom:calc(12px + env(safe-area-inset-bottom))}
-    .modal{width:min(720px,100%);background:#fff;border-radius:20px;box-shadow:0 22px 70px rgba(0,0,0,0.25);overflow:hidden;max-height:85vh;display:flex;flex-direction:column}
-    .modal-h{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:12px 14px;border-bottom:1px solid rgba(15,23,42,0.10);background:#f8fafc}
-    .modal-b{padding:12px 14px;overflow:auto}
-    .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-    .seg{display:flex;gap:8px;flex-wrap:wrap}
-    .seg button{min-height:38px;padding:0 12px;border-radius:12px;font-weight:900;border:1px solid rgba(15,23,42,0.14);background:#fff;color:#0f172a}
-    .seg button.active{background:#2563eb;color:#fff;border-color:transparent}
-    .list{display:flex;flex-direction:column;gap:10px;margin-top:12px}
-    .item{border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:12px;background:#fff;overflow:hidden}
-    .item b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .item .mini{font-size:12px;color:rgba(15,23,42,0.72);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .item .meta{font-size:12px;color:rgba(15,23,42,0.72);margin-top:4px;display:flex;gap:10px;flex-wrap:wrap}
 
     .bottom-nav{position:fixed;left:0;right:0;bottom:0;background:#0f172a;display:flex;gap:6px;padding:8px;padding-bottom:calc(8px + env(safe-area-inset-bottom));z-index:999;border-top:1px solid rgba(255,255,255,0.08)}
     .nav-btn{flex:1;min-height:44px;border:1px solid rgba(255,255,255,0.18);background:transparent;color:#fff;border-radius:12px;font-weight:700;font-size:13px}
@@ -60,17 +22,28 @@
 </head>
 <body class="theme-2">
   <div class="app">
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;">
-      <h2 style="margin:0">🗓️ เช็คคิวช่าง (ปฏิทิน)</h2>
+    <section class="queue-hero">
+      <h2>🗓️ คิวช่าง Admin</h2>
+      <p>ดูสถานะรายเดือนแบบปฏิทิน แยกช่างว่าง / ช่างเต็ม / งานในวันนั้น เพื่อให้แอดมินลงงานได้เร็วขึ้น</p>
+      <div class="hero-actions">
+        <button id="btnToday" class="hero-primary" type="button">วันนี้</button>
+        <button id="btnToggleFilters" class="hero-secondary" type="button">ตัวกรอง</button>
+        <button id="btnLoad" class="hero-secondary" type="button">รีเฟรชปฏิทิน</button>
+      </div>
+    </section>
+
+    <div class="quick-stats" id="quickStats" style="display:none">
+      <div class="stat-card good"><div class="k">วันที่มีคิวว่าง</div><div class="v" id="statFreeDays">0</div></div>
+      <div class="stat-card bad"><div class="k">วันที่เต็ม</div><div class="v" id="statFullDays">0</div></div>
+      <div class="stat-card info"><div class="k">เดือนที่ดู</div><div class="v" id="statMonth">—</div></div>
     </div>
 
-    <!-- Filter toggle (same UX as History) -->
-    <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:12px;">
-      <button id="btnToggleFilters" class="warning" type="button" style="width:auto;display:flex;align-items:center;gap:8px;">🐧 ตัวกรอง</button>
-      <div class="muted" style="text-align:right;">เลือกเดือน/ปี/บริษัท-พาร์ทเนอร์</div>
+    <div class="filter-toolbar">
+      <div style="font-weight:1000;color:#0f172a;">มุมมองปฏิทิน</div>
+      <div class="hint">เลือกเดือน/ปี/บริษัท-พาร์ทเนอร์</div>
     </div>
 
-    <div class="card" id="filterCard" style="margin-top:10px;display:none">
+    <div class="card filter-card" id="filterCard" style="margin-top:10px;display:none">
       <b>ตัวกรอง</b>
       <div class="grid2" style="margin-top:10px">
         <div class="pill">
@@ -97,8 +70,7 @@
           </select>
         </div>
       </div>
-      <button id="btnLoad" class="warning" style="margin-top:10px">โหลดปฏิทินรายเดือน</button>
-      <div class="muted" style="margin-top:6px">ใช้ logic เดิม duration + travel buffer (ไม่ทำให้เพี้ยน)</div>
+      <div class="muted" style="margin-top:10px">ใช้ logic เดิม duration + travel buffer ฝั่ง server ไม่แก้สูตรคิวเดิม</div>
     </div>
 
     <div id="monthCalendar" class="month-wrap" style="display:none">
@@ -107,7 +79,8 @@
           <button class="secondary" type="button" id="prevMonth">◀</button>
           <div>
             <div class="month-title" id="monthTitle">ปฏิทิน</div>
-            <div class="muted" id="monthSub"></div>
+            <div class="month-sub" id="monthSub"></div>
+            <div class="legend"><span><i class="dot free"></i>มีช่างว่าง</span><span><i class="dot full"></i>เต็ม</span><span><i class="dot today"></i>วันนี้</span><span><i class="dot job"></i>แตะเพื่อดูรายละเอียด</span></div>
           </div>
           <button class="secondary" type="button" id="nextMonth">▶</button>
         </div>
