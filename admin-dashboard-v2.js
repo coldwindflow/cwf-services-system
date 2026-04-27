@@ -212,8 +212,8 @@
     }
 
     const dpr = window.devicePixelRatio || 1;
-    const cssW = canvas.clientWidth || 280;
-    const cssH = Number(canvas.getAttribute('height') || 150);
+    const cssW = Math.max(150, Math.round(canvas.clientWidth || canvas.parentElement?.clientWidth || 280));
+    const cssH = Math.max(150, Math.round(canvas.clientHeight || Number(canvas.getAttribute('height') || 172)));
     canvas.width = Math.floor(cssW * dpr);
     canvas.height = Math.floor(cssH * dpr);
     ctx.setTransform(dpr,0,0,dpr,0,0);
@@ -221,8 +221,8 @@
 
     const visible = parts.filter(x=>x.value > 0);
     const cx = cssW/2;
-    const cy = cssH/2 - 4;
-    const r = Math.min(cssW, cssH) * 0.36;
+    const cy = cssH/2 - 2;
+    const r = Math.min(cssW, cssH) * 0.34;
     const lineW = Math.max(14, Math.round(r * 0.20));
 
     ctx.beginPath();
@@ -303,46 +303,6 @@
       ctx.stroke();
     }
 
-    if (options.mode === 'candle'){
-      const barGap = items.length > 1 ? Math.max(8, Math.min(18, step * .38)) : 18;
-      const barW = items.length > 1 ? Math.max(8, Math.min(20, step - barGap)) : 26;
-      items.forEach((item, idx)=>{
-        const x = padL + (items.length > 1 ? step * idx : w/2);
-        const close = Number(item.close || item.total || item.revenue || 0);
-        const high = Math.max(close, Number(item.high || close));
-        const low = Math.min(close, Number(item.low || close));
-        const open = Number(item.open || Math.max(low, close * .82));
-        const yHigh = y(high), yLow = y(low), yOpen = y(open), yClose = y(close);
-        ctx.strokeStyle = 'rgba(255,204,0,.78)';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(x, yHigh);
-        ctx.lineTo(x, yLow);
-        ctx.stroke();
-        const top = Math.min(yOpen, yClose);
-        const bodyH = Math.max(5, Math.abs(yClose - yOpen));
-        const grad = ctx.createLinearGradient(0, top, 0, top + bodyH);
-        grad.addColorStop(0, '#ffde4d');
-        grad.addColorStop(1, '#1558d6');
-        ctx.fillStyle = grad;
-        ctx.strokeStyle = 'rgba(255,255,255,.78)';
-        ctx.lineWidth = 1;
-        ctx.beginPath();
-        ctx.roundRect(x - barW/2, top, barW, bodyH, 5);
-        ctx.fill();
-        ctx.stroke();
-        const show = items.length <= 8 || idx === 0 || idx === items.length - 1 || idx % Math.ceil(items.length / 5) === 0;
-        if (show){
-          ctx.fillStyle = '#64748b';
-          ctx.font = '700 11px sans-serif';
-          ctx.textAlign = 'center';
-          ctx.fillText(item.label || '', x, cssH - 10);
-        }
-      });
-      ctx.textAlign = 'start';
-      return;
-    }
-
     const points = items.map((item, idx)=>({ x: padL + step * idx, y: y(values[idx]), label: item.label || '' }));
 
     const gradient = ctx.createLinearGradient(0, padT, 0, padT + h);
@@ -398,15 +358,101 @@
     ctx.textAlign = 'start';
   }
 
-  function drawTrend(rows){
-    const list = (rows || []).slice(-18);
-    setText('candleHint', list.length ? `แสดง ${list.length} วันล่าสุด` : '—');
-    drawLineChart('candles', list, {
-      maxPoints: 18,
-      getValue: (x)=> Number(x.high || x.close || 0),
-      mode: 'candle',
-      height: 170
+  function drawCandleChart(canvasId, rows, options = {}){
+    const canvas = $(canvasId);
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    const items = Array.isArray(rows) ? rows.slice(-Math.min(options.maxPoints || 14, rows.length || 0)) : [];
+    const dpr = window.devicePixelRatio || 1;
+    const cssW = Math.max(260, Math.round(canvas.clientWidth || canvas.parentElement?.clientWidth || 420));
+    const cssH = Number(options.height || canvas.getAttribute('height') || 220);
+    canvas.width = Math.floor(cssW * dpr);
+    canvas.height = Math.floor(cssH * dpr);
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,cssW,cssH);
+
+    if (!items.length){
+      ctx.fillStyle = '#64748b';
+      ctx.font = '700 14px sans-serif';
+      ctx.fillText('ไม่มีข้อมูลในช่วงที่เลือก', 12, 24);
+      return;
+    }
+
+    const getNum = (x, keys, fallback=0)=>{
+      for (const k of keys){
+        const n = Number(x && x[k]);
+        if (Number.isFinite(n) && n > 0) return n;
+      }
+      return Number(fallback || 0);
+    };
+    const candles = items.map((x, i)=>{
+      const close = getNum(x, ['close','total','revenue_total','amount'], 0);
+      const open = getNum(x, ['open'], i ? getNum(items[i-1], ['close','total','revenue_total','amount'], close) : close * 0.82);
+      const high = Math.max(open, close, getNum(x, ['high'], close));
+      const low = Math.min(open, close, getNum(x, ['low'], Math.min(open, close) * 0.88));
+      return { label: x.label || x.date || '', open, close, high, low };
     });
+    const max = Math.max(1, ...candles.map(x=>x.high));
+    const min = Math.min(0, ...candles.map(x=>x.low));
+    const padL = 12, padR = 10, padT = 16, padB = 32;
+    const w = cssW - padL - padR;
+    const h = cssH - padT - padB;
+    const step = candles.length > 1 ? w / (candles.length - 1) : w;
+    const bodyW = Math.max(8, Math.min(22, step * 0.48));
+    const y = (v)=> padT + h - ((v - min) / (max - min || 1)) * h;
+
+    for (let i=0;i<4;i++){
+      const yy = padT + (h/3) * i;
+      ctx.strokeStyle = 'rgba(15,23,42,0.08)';
+      ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(padL + w, yy); ctx.stroke();
+    }
+
+    candles.forEach((c, i)=>{
+      const x = padL + (candles.length === 1 ? w/2 : step * i);
+      const up = c.close >= c.open;
+      const color = up ? '#16a34a' : '#ef4444';
+      const yHigh = y(c.high), yLow = y(c.low), yOpen = y(c.open), yClose = y(c.close);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x, yHigh); ctx.lineTo(x, yLow); ctx.stroke();
+      const top = Math.min(yOpen, yClose);
+      const bh = Math.max(8, Math.abs(yClose - yOpen));
+      const grad = ctx.createLinearGradient(0, top, 0, top + bh);
+      grad.addColorStop(0, up ? '#22c55e' : '#f87171');
+      grad.addColorStop(1, color);
+      ctx.fillStyle = grad;
+      ctx.strokeStyle = 'rgba(255,255,255,.82)';
+      ctx.lineWidth = 1;
+      const r = 5;
+      const left = x - bodyW/2;
+      ctx.beginPath();
+      ctx.moveTo(left+r, top);
+      ctx.lineTo(left+bodyW-r, top);
+      ctx.quadraticCurveTo(left+bodyW, top, left+bodyW, top+r);
+      ctx.lineTo(left+bodyW, top+bh-r);
+      ctx.quadraticCurveTo(left+bodyW, top+bh, left+bodyW-r, top+bh);
+      ctx.lineTo(left+r, top+bh);
+      ctx.quadraticCurveTo(left, top+bh, left, top+bh-r);
+      ctx.lineTo(left, top+r);
+      ctx.quadraticCurveTo(left, top, left+r, top);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      const show = candles.length <= 8 || i === 0 || i === candles.length - 1 || i % Math.ceil(candles.length / 5) === 0;
+      if (show){
+        ctx.fillStyle = '#64748b';
+        ctx.font = '700 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(String(c.label).slice(0,5), x, cssH - 10);
+      }
+    });
+    ctx.textAlign = 'start';
+  }
+
+  function drawTrend(rows){
+    const list = (rows || []).slice(-14);
+    setText('candleHint', list.length ? `แท่งรายได้ ${list.length} วันล่าสุด` : '—');
+    drawCandleChart('candles', list, { maxPoints: 14, height: 220 });
   }
 
   function setActiveGroup(btn){
