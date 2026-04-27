@@ -14197,23 +14197,9 @@ for (let t = startMin; t < endMin; t += slot_step_min) {
     }
 
     console.log("[admin_availability_by_tech_v2]", { date, tech_type, duration_min, tech_count: techs.length, slots: all_slots.length });
-    res.json({
-      date,
-      tech_type,
-      work_start,
-      work_end,
-      duration_min,
-      effective_block_min: default_effective_block_min,
-      slot_step_min,
-      tech_count: techs.length,
-      all_slots,
-      techs: techRows,
-      // backward-compatible alias for older/newer Admin Queue clients
-      technicians: techRows,
-      slots_by_tech: techRows.reduce((acc, t) => {
-        acc[t.username] = t.slots || [];
-        return acc;
-      }, {})
+    res.json({ date, tech_type, work_start, work_end, duration_min, effective_block_min: default_effective_block_min, slot_step_min, tech_count: techs.length, all_slots, techs: techRows, // aliases for older admin UI code
+      technicians: techs.map(t => ({ username: t.username, full_name: t.full_name || t.username })),
+      slots_by_tech: Object.fromEntries((techRows||[]).map(tr => [tr.username, tr.slots || []]))
     });
   } catch (e) {
     console.error(e);
