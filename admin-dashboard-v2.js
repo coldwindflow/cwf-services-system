@@ -21,7 +21,7 @@
   }
 
   function setQuickActive(activeId){
-    ['quickToday','quick7','quick30'].forEach(id=>{
+    ['quickToday','quick7','quick30','quickFilters'].forEach(id=>{
       const b = $(id);
       if(!b) return;
       b.classList.toggle('active', id===activeId);
@@ -153,21 +153,40 @@
     syncHeroRange();
   }
 
-  function setFiltersCollapsed(collapsed){
-    const card = $('filtersCard');
-    if (!card) return;
-    card.classList.toggle('open', !collapsed);
-    try{ localStorage.setItem('dash_filters_collapsed', collapsed ? '1' : '0'); }catch(_){ }
+  function setFilterModalOpen(open){
+    const modal = $('filterModal');
+    if (!modal) return;
+    modal.classList.toggle('open', !!open);
+    modal.setAttribute('aria-hidden', open ? 'false' : 'true');
+    document.body.classList.toggle('modalOpen', !!open);
   }
 
-  function setRange(days){
+  function setModalRangeActive(id){
+    ['quickTodayModal','quick7Modal','quick30Modal','quickQuarter','quick6m','quick12m'].forEach(x=>{
+      const b = $(x);
+      if (b) b.classList.toggle('active', x === id);
+    });
+  }
+
+  function setRange(days, label){
     const to = new Date();
     const from = new Date();
     from.setDate(from.getDate() - (days-1));
     $('fromDate').value = ymd(from);
     $('toDate').value = ymd(to);
     updateFilterSummary();
-    setText('heroQuickLabel', days === 1 ? 'วันนี้' : `${days} วัน`);
+    setText('heroQuickLabel', label || (days === 1 ? 'วันนี้' : `${days} วัน`));
+  }
+
+  function setRangeMonths(months, label){
+    const to = new Date();
+    const from = new Date();
+    const days = Number(months || 1) >= 12 ? 365 : Number(months || 1) * 30;
+    from.setDate(from.getDate() - (days - 1));
+    $('fromDate').value = ymd(from);
+    $('toDate').value = ymd(to);
+    updateFilterSummary();
+    setText('heroQuickLabel', label || `${months} เดือน`);
   }
 
   function drawDonut(donut){
@@ -212,8 +231,8 @@
     }
 
     const dpr = window.devicePixelRatio || 1;
-    const cssW = Math.max(150, Math.round(canvas.clientWidth || canvas.parentElement?.clientWidth || 280));
-    const cssH = Math.max(150, Math.round(canvas.clientHeight || Number(canvas.getAttribute('height') || 172)));
+    const cssW = canvas.clientWidth || 280;
+    const cssH = Number(canvas.getAttribute('height') || 150);
     canvas.width = Math.floor(cssW * dpr);
     canvas.height = Math.floor(cssH * dpr);
     ctx.setTransform(dpr,0,0,dpr,0,0);
@@ -221,8 +240,8 @@
 
     const visible = parts.filter(x=>x.value > 0);
     const cx = cssW/2;
-    const cy = cssH/2 - 2;
-    const r = Math.min(cssW, cssH) * 0.34;
+    const cy = cssH/2 - 4;
+    const r = Math.min(cssW, cssH) * 0.36;
     const lineW = Math.max(14, Math.round(r * 0.20));
 
     ctx.beginPath();
@@ -358,101 +377,18 @@
     ctx.textAlign = 'start';
   }
 
-  function drawCandleChart(canvasId, rows, options = {}){
-    const canvas = $(canvasId);
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    const items = Array.isArray(rows) ? rows.slice(-Math.min(options.maxPoints || 14, rows.length || 0)) : [];
-    const dpr = window.devicePixelRatio || 1;
-    const cssW = Math.max(260, Math.round(canvas.clientWidth || canvas.parentElement?.clientWidth || 420));
-    const cssH = Number(options.height || canvas.getAttribute('height') || 220);
-    canvas.width = Math.floor(cssW * dpr);
-    canvas.height = Math.floor(cssH * dpr);
-    ctx.setTransform(dpr,0,0,dpr,0,0);
-    ctx.clearRect(0,0,cssW,cssH);
-
-    if (!items.length){
-      ctx.fillStyle = '#64748b';
-      ctx.font = '700 14px sans-serif';
-      ctx.fillText('ไม่มีข้อมูลในช่วงที่เลือก', 12, 24);
-      return;
-    }
-
-    const getNum = (x, keys, fallback=0)=>{
-      for (const k of keys){
-        const n = Number(x && x[k]);
-        if (Number.isFinite(n) && n > 0) return n;
-      }
-      return Number(fallback || 0);
-    };
-    const candles = items.map((x, i)=>{
-      const close = getNum(x, ['close','total','revenue_total','amount'], 0);
-      const open = getNum(x, ['open'], i ? getNum(items[i-1], ['close','total','revenue_total','amount'], close) : close * 0.82);
-      const high = Math.max(open, close, getNum(x, ['high'], close));
-      const low = Math.min(open, close, getNum(x, ['low'], Math.min(open, close) * 0.88));
-      return { label: x.label || x.date || '', open, close, high, low };
-    });
-    const max = Math.max(1, ...candles.map(x=>x.high));
-    const min = Math.min(0, ...candles.map(x=>x.low));
-    const padL = 12, padR = 10, padT = 16, padB = 32;
-    const w = cssW - padL - padR;
-    const h = cssH - padT - padB;
-    const step = candles.length > 1 ? w / (candles.length - 1) : w;
-    const bodyW = Math.max(8, Math.min(22, step * 0.48));
-    const y = (v)=> padT + h - ((v - min) / (max - min || 1)) * h;
-
-    for (let i=0;i<4;i++){
-      const yy = padT + (h/3) * i;
-      ctx.strokeStyle = 'rgba(15,23,42,0.08)';
-      ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(padL + w, yy); ctx.stroke();
-    }
-
-    candles.forEach((c, i)=>{
-      const x = padL + (candles.length === 1 ? w/2 : step * i);
-      const up = c.close >= c.open;
-      const color = up ? '#16a34a' : '#ef4444';
-      const yHigh = y(c.high), yLow = y(c.low), yOpen = y(c.open), yClose = y(c.close);
-      ctx.strokeStyle = color;
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.moveTo(x, yHigh); ctx.lineTo(x, yLow); ctx.stroke();
-      const top = Math.min(yOpen, yClose);
-      const bh = Math.max(8, Math.abs(yClose - yOpen));
-      const grad = ctx.createLinearGradient(0, top, 0, top + bh);
-      grad.addColorStop(0, up ? '#22c55e' : '#f87171');
-      grad.addColorStop(1, color);
-      ctx.fillStyle = grad;
-      ctx.strokeStyle = 'rgba(255,255,255,.82)';
-      ctx.lineWidth = 1;
-      const r = 5;
-      const left = x - bodyW/2;
-      ctx.beginPath();
-      ctx.moveTo(left+r, top);
-      ctx.lineTo(left+bodyW-r, top);
-      ctx.quadraticCurveTo(left+bodyW, top, left+bodyW, top+r);
-      ctx.lineTo(left+bodyW, top+bh-r);
-      ctx.quadraticCurveTo(left+bodyW, top+bh, left+bodyW-r, top+bh);
-      ctx.lineTo(left+r, top+bh);
-      ctx.quadraticCurveTo(left, top+bh, left, top+bh-r);
-      ctx.lineTo(left, top+r);
-      ctx.quadraticCurveTo(left, top, left+r, top);
-      ctx.closePath();
-      ctx.fill(); ctx.stroke();
-      const show = candles.length <= 8 || i === 0 || i === candles.length - 1 || i % Math.ceil(candles.length / 5) === 0;
-      if (show){
-        ctx.fillStyle = '#64748b';
-        ctx.font = '700 10px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(String(c.label).slice(0,5), x, cssH - 10);
-      }
-    });
-    ctx.textAlign = 'start';
-  }
-
   function drawTrend(rows){
-    const list = (rows || []).slice(-14);
-    setText('candleHint', list.length ? `แท่งรายได้ ${list.length} วันล่าสุด` : '—');
-    drawCandleChart('candles', list, { maxPoints: 14, height: 220 });
+    const list = (rows || []).slice(-18);
+    setText('candleHint', list.length ? `แสดง ${list.length} วันล่าสุด` : '—');
+    drawLineChart('candles', list, {
+      maxPoints: 18,
+      getValue: (x)=> Number(x.close || x.high || 0),
+      lineColor: '#1558d6',
+      pointColor: '#1558d6',
+      fillTop: 'rgba(37,99,235,0.24)',
+      fillBottom: 'rgba(37,99,235,0.02)',
+      height: 220
+    });
   }
 
   function setActiveGroup(btn){
@@ -640,6 +576,9 @@
 
     setText('coRevenue', `${fmtMoney(Number(company.revenue_total||0))} ฿`);
     setText('coRevenueHint', `${Number(company.job_count||0).toLocaleString('th-TH')} งาน ในช่วงที่เลือก`);
+    const hasNetProfit = company.net_profit_total !== undefined && company.net_profit_total !== null;
+    setText('coNetProfit', hasNetProfit ? `${fmtMoney(Number(company.net_profit_total||0))} ฿` : '—');
+    setText('coNetProfitHint', hasNetProfit ? `หลังหักค่าช่าง ${fmtMoney(Number(company.technician_cost_total||0))} ฿` : 'รอข้อมูลค่าช่างจากระบบ');
     setText('countToday', String(Number(counts.today||0)));
     setText('countMonth', String(Number(counts.month||0)));
     setText('countYear', String(Number(counts.year||0)));
@@ -671,31 +610,25 @@
     $('goPromos')?.addEventListener('click', ()=> location.href = '/admin-promotions-v2.html');
     $('goTeamStatus')?.addEventListener('click', ()=> location.href = '/admin-team-status.html');
 
-    $('quickToday')?.addEventListener('click', ()=>{ setRange(1); setQuickActive('quickToday'); load().catch(e=>showToast(String(e), 'error')); });
-    $('quick7')?.addEventListener('click', ()=>{ setRange(7); setQuickActive('quick7'); load().catch(e=>showToast(String(e), 'error')); });
-    $('quick30')?.addEventListener('click', ()=>{ setRange(30); setQuickActive('quick30'); load().catch(e=>showToast(String(e), 'error')); });
-    $('quickFilters')?.addEventListener('click', ()=>{
-      const card = $('filtersCard');
-      const isOpen = card ? card.classList.contains('open') : false;
-      setFiltersCollapsed(isOpen);
-      if (card && !isOpen) card.scrollIntoView({ behavior:'smooth', block:'start' });
-    });
+    $('quickToday')?.addEventListener('click', ()=>{ setRange(1, 'วันนี้'); setModalRangeActive('quickTodayModal'); setQuickActive('quickToday'); load().catch(e=>showToast(String(e), 'error')); });
+    $('quick7')?.addEventListener('click', ()=>{ setRange(7, '7 วัน'); setModalRangeActive('quick7Modal'); setQuickActive('quick7'); load().catch(e=>showToast(String(e), 'error')); });
+    $('quick30')?.addEventListener('click', ()=>{ setRange(30, '30 วัน'); setModalRangeActive('quick30Modal'); setQuickActive('quick30'); load().catch(e=>showToast(String(e), 'error')); });
+    $('quickFilters')?.addEventListener('click', ()=> setFilterModalOpen(true));
+    $('filterClose')?.addEventListener('click', ()=> setFilterModalOpen(false));
+    $('filterCancel')?.addEventListener('click', ()=> setFilterModalOpen(false));
+    $('filterModal')?.addEventListener('click', (ev)=>{ if (ev.target === $('filterModal')) setFilterModalOpen(false); });
+    document.addEventListener('keydown', (ev)=>{ if (ev.key === 'Escape') setFilterModalOpen(false); });
 
-    try{
-      const v = localStorage.getItem('dash_filters_collapsed');
-      setFiltersCollapsed(v === null ? true : (v === '1'));
-    }catch(_){ setFiltersCollapsed(true); }
+    $('quickTodayModal')?.addEventListener('click', ()=>{ setRange(1, 'วันนี้'); setModalRangeActive('quickTodayModal'); setQuickActive('quickToday'); });
+    $('quick7Modal')?.addEventListener('click', ()=>{ setRange(7, '7 วัน'); setModalRangeActive('quick7Modal'); setQuickActive('quick7'); });
+    $('quick30Modal')?.addEventListener('click', ()=>{ setRange(30, '30 วัน'); setModalRangeActive('quick30Modal'); setQuickActive('quick30'); });
+    $('quickQuarter')?.addEventListener('click', ()=>{ setRangeMonths(3, 'ไตรมาส'); setModalRangeActive('quickQuarter'); setQuickActive('quickFilters'); });
+    $('quick6m')?.addEventListener('click', ()=>{ setRangeMonths(6, '6 เดือน'); setModalRangeActive('quick6m'); setQuickActive('quickFilters'); });
+    $('quick12m')?.addEventListener('click', ()=>{ setRangeMonths(12, '12 เดือน'); setModalRangeActive('quick12m'); setQuickActive('quickFilters'); });
 
-    $('filterToggle')?.addEventListener('click', (ev)=>{
-      if (ev && ev.target && (ev.target.id === 'btnApplyMini')) return;
-      const card = $('filtersCard');
-      const isOpen = card ? card.classList.contains('open') : false;
-      setFiltersCollapsed(isOpen);
-    });
-    $('btnApplyMini')?.addEventListener('click', ()=>{ load().catch(e=>showToast(String(e), 'error')); });
-    $('btnApply')?.addEventListener('click', ()=>{ updateFilterSummary(); load().catch(e=>showToast(String(e), 'error')); });
-    $('fromDate')?.addEventListener('change', updateFilterSummary);
-    $('toDate')?.addEventListener('change', updateFilterSummary);
+    $('btnApply')?.addEventListener('click', ()=>{ updateFilterSummary(); setFilterModalOpen(false); load().catch(e=>showToast(String(e), 'error')); });
+    $('fromDate')?.addEventListener('change', ()=>{ updateFilterSummary(); setQuickActive('quickFilters'); });
+    $('toDate')?.addEventListener('change', ()=>{ updateFilterSummary(); setQuickActive('quickFilters'); });
 
     document.querySelectorAll('[data-group]').forEach(btn=>{
       btn.addEventListener('click', ()=>{

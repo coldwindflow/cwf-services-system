@@ -207,6 +207,26 @@
       background:#fdfefe;color:var(--ink);font-size:14px;font-weight:1000;box-shadow:inset 0 1px 0 rgba(255,255,255,.7)
     }
 
+
+    .profitStrip{margin-top:12px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 14px;border-radius:20px;background:linear-gradient(135deg, rgba(22,163,74,.18), rgba(255,255,255,.08));border:1px solid rgba(134,239,172,.24)}
+    .profitStrip b{display:block;color:#fff;font-size:12px;font-weight:1100;line-height:1.15}
+    .profitStrip span{display:block;margin-top:3px;color:rgba(255,255,255,.68);font-size:11px;font-weight:800}
+    .profitStrip strong{color:#bfffd1;font-size:24px;font-weight:1200;white-space:nowrap;text-shadow:0 12px 24px rgba(0,0,0,.2)}
+    .filterModal{position:fixed;inset:0;z-index:3200;display:none;align-items:flex-end;justify-content:center;background:rgba(2,6,23,.52);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:16px}
+    .filterModal.open{display:flex}
+    .filterPanel{width:min(720px,100%);max-height:min(86vh,720px);overflow:auto;border-radius:30px;background:linear-gradient(180deg,#ffffff 0%,#f4f8ff 100%);border:1px solid rgba(255,255,255,.75);box-shadow:0 30px 90px rgba(2,6,23,.38);padding:18px}
+    .filterPanelHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:14px}
+    .filterPanelHead h3{margin:0;font-size:20px;font-weight:1200;color:var(--ink)}
+    .filterPanelHead .muted{margin-top:2px}
+    .modalClose{width:44px;height:44px;border:0;border-radius:16px;background:#eef4ff;color:var(--ink);font-size:22px;font-weight:1000;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(15,23,42,.08)}
+    .rangeQuickGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:12px 0 14px}
+    .rangeQuickGrid button{min-height:48px;border:0;border-radius:18px;background:#eaf2ff;color:var(--ink);font-size:13px;font-weight:1100;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(21,88,214,.10)}
+    .rangeQuickGrid button.active{background:linear-gradient(135deg,#fff0a6,var(--yellow));box-shadow:0 12px 24px rgba(246,184,0,.20)}
+    .filterDates{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+    .filterDates input{width:100%;height:54px;border-radius:18px;border:1px solid rgba(15,23,42,.12);padding:0 14px;font-weight:1000;color:var(--ink);background:#fff}
+    .filterActions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+    body.modalOpen{overflow:hidden}
+
     .statusLayout{display:grid;grid-template-columns:150px minmax(0,1fr);gap:14px;align-items:center;margin-top:14px}
     .bigNum{font-size:44px;font-weight:1200;line-height:1;color:var(--ink)}
     .statusList{display:grid;gap:10px}
@@ -317,81 +337,13 @@
       .revenueHero{grid-template-columns:1fr}
       .revenueValue{font-size:38px}
       .actionCard{min-height:104px;padding:12px}
+      .rangeQuickGrid{grid-template-columns:1fr 1fr}
+      .filterDates,.filterActions{grid-template-columns:1fr}
+      .filterModal{padding:10px;align-items:flex-end}
+      .filterPanel{border-radius:26px 26px 22px 22px;padding:16px}
+      .profitStrip{grid-template-columns:1fr;align-items:start}
+      .profitStrip strong{font-size:26px}
     }
-
-
-    /* CWF dashboard v7: compact premium first-screen layout */
-    body{
-      background:
-        radial-gradient(520px 230px at 88% 8%, rgba(255,204,0,.26), transparent 62%),
-        radial-gradient(640px 320px at 8% 5%, rgba(70,132,255,.26), transparent 62%),
-        linear-gradient(135deg, rgba(255,255,255,.045) 0 10%, transparent 10% 20%, rgba(255,255,255,.03) 20% 30%, transparent 30% 100%) 0 0/34px 34px,
-        linear-gradient(180deg, #061332 0px, #0a2a68 132px, #0f56d5 248px, #eef5ff 248px, #f7fbff 100%) !important;
-    }
-    body::before{opacity:.92 !important;background:radial-gradient(420px 220px at 50% 86px, rgba(255,255,255,.12), transparent 68%) !important;}
-    .wrap{padding:52px 0 104px !important;}
-    .hero{padding:14px !important;border-radius:28px !important;box-shadow:0 24px 60px rgba(2,6,23,.22) !important;}
-    .heroTop{gap:12px !important;}
-    .avatar{width:54px !important;height:54px !important;border-radius:18px !important;}
-    .eyebrow{padding:5px 10px !important;font-size:10px !important;}
-    .who{margin-top:8px !important;font-size:24px !important;}
-    .role{font-size:12px !important;}
-    .heroHint{margin-top:7px !important;font-size:12px !important;line-height:1.32 !important;}
-    .rangeBadge{padding:9px 12px !important;border-radius:15px !important;}
-    .quickRow{grid-template-columns:repeat(3,minmax(0,1fr)) !important;gap:9px !important;margin-top:12px !important;}
-    .shortcut{flex-direction:column !important;align-items:flex-start !important;justify-content:center !important;min-height:84px !important;padding:10px !important;border-radius:22px !important;}
-    .shortcut .ico{width:40px !important;height:40px !important;border-radius:15px !important;}
-    .shortcut b{font-size:13px !important;line-height:1.1 !important;white-space:normal !important;overflow:visible !important;text-overflow:clip !important;}
-    .shortcut span{font-size:10px !important;white-space:normal !important;line-height:1.15 !important;}
-    .seg{margin-top:12px !important;}
-    .section{margin-top:12px !important;}
-    .dashboardTopGrid{display:grid;grid-template-columns:1.04fr .96fr;gap:12px;align-items:stretch;}
-    .revenueCard{border-radius:28px !important;padding:18px !important;}
-    .revenueHero{display:flex !important;align-items:flex-end !important;justify-content:space-between !important;gap:12px !important;margin-top:10px !important;}
-    .revenueValue{font-size:42px !important;letter-spacing:.3px !important;}
-    .revenueBadge{background:linear-gradient(135deg, rgba(255,237,128,.22), rgba(255,204,0,.10)) !important;border-color:rgba(255,204,0,.38) !important;}
-    .statInline{grid-template-columns:repeat(3,minmax(0,1fr)) !important;gap:9px !important;margin-top:12px !important;}
-    .miniPill{padding:11px 10px !important;border-radius:17px !important;}
-    .miniPill .n{font-size:20px !important;}
-    .statusCard{padding:18px !important;min-height:0 !important;}
-    .statusCard .statusLayout{display:grid !important;grid-template-columns:minmax(0,1fr) 156px !important;gap:12px !important;align-items:center !important;margin-top:12px !important;min-height:0 !important;}
-    .statusKpiRow{display:grid !important;grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:10px !important;margin-top:10px !important;}
-    .statusCard #donut{width:156px !important;height:156px !important;display:block !important;max-width:156px !important;margin:0 auto !important;}
-    .statusList{gap:8px !important;margin-top:10px !important;}
-    .statusItem{grid-template-columns:minmax(0,1fr) auto !important;gap:8px !important;}
-    .statusMeta{font-size:12px !important;}
-    .statusCount{font-size:12px !important;}
-    .bigNum{font-size:46px !important;}
-    .chartCard canvas{margin-top:10px !important;}
-    .managerCard .actionGrid{grid-template-columns:repeat(4,minmax(0,1fr)) !important;}
-    .actionCard{min-height:96px !important;padding:12px !important;border-radius:20px !important;}
-    @media (max-width: 1040px){.dashboardTopGrid{grid-template-columns:1fr}.managerCard .actionGrid{grid-template-columns:repeat(2,minmax(0,1fr)) !important;}}
-    @media (max-width: 640px){
-      .wrap{width:min(100%, calc(100vw - 14px)) !important;padding-top:46px !important;}
-      .hero{padding:14px !important;}
-      .who{font-size:22px !important;}
-      .dashboardTopGrid{gap:10px !important;}
-      .revenueCard{padding:16px !important;}
-      .revenueValue{font-size:37px !important;}
-      .revenueHero{align-items:flex-start !important;flex-direction:column !important;}
-      .statusCard .statusLayout{grid-template-columns:1fr !important;gap:10px !important;}
-      .statusCard #donut{width:172px !important;height:172px !important;max-width:172px !important;order:-1;}
-      .statusSummary{display:none !important;}
-      .statusKpiRow{grid-template-columns:repeat(2,minmax(0,1fr)) !important;}
-      .managerCard .actionGrid{grid-template-columns:repeat(2,minmax(0,1fr)) !important;}
-      .actionCard{min-height:92px !important;}
-    }
-    @media (max-width: 420px){
-      .quickRow{gap:8px !important;}
-      .shortcut{min-height:78px !important;padding:9px !important;}
-      .shortcut .ico{width:36px !important;height:36px !important;font-size:17px !important;}
-      .shortcut b{font-size:12px !important;}
-      .shortcut span{display:block !important;font-size:9.5px !important;}
-      .statInline{gap:8px !important;}
-      .miniPill .k{font-size:10px !important;}
-      .miniPill .n{font-size:19px !important;}
-    }
-
   </style>
   <script defer src="/cwf-pwa.js?v=company-logo-icon-v32"></script>
 </head>
@@ -434,8 +386,8 @@
       </div>
     </section>
 
-    <section class="section dashboardTopGrid" id="dashboardTopGrid">
-      <div class="card surfaceDark revenueCard">
+    <section class="section grid2">
+      <div class="card surfaceDark">
         <div class="titleRow">
           <div>
             <h2>รายได้รวมบริษัท</h2>
@@ -446,6 +398,10 @@
         <div class="revenueHero">
           <div class="revenueValue" id="coRevenue">—</div>
           <div class="revenueBadge">💰 รายรับรวม</div>
+        </div>
+        <div class="profitStrip">
+          <div><b>กำไรสุทธิของบริษัท</b><span id="coNetProfitHint">หลังหักค่าช่างตามข้อมูลในระบบ</span></div>
+          <strong id="coNetProfit">—</strong>
         </div>
         <div class="statInline">
           <div class="miniPill"><div class="k">งานวันนี้</div><div class="n" id="countToday">—</div></div>
@@ -466,67 +422,6 @@
         </div>
       </div>
 
-      <div class="card statusCard">
-        <div class="titleRow">
-          <div>
-            <h3>สถานะใบงาน</h3>
-            <div class="muted" id="donutHint">—</div>
-          </div>
-          <div class="muted" id="completionHint">—</div>
-        </div>
-        <div class="statusLayout">
-          <div>
-            <div class="bigNum" id="jobTotal">—</div>
-            <div class="muted">งานทั้งหมดในช่วงที่เลือก</div>
-            <div class="statusSummary statusKpiRow">
-              <div class="tinyCard"><div class="metricLabel">อัตราปิดงาน</div><div class="metricValue" id="completionRate">—</div></div>
-              <div class="tinyCard"><div class="metricLabel">งานที่ต้องติดตาม</div><div class="metricValue" id="followupCount">—</div></div>
-            </div>
-          </div>
-          <div>
-            <canvas id="donut" height="172" aria-label="กราฟโดนัทสถานะใบงาน"></canvas>
-            <div class="statusList" id="statusBreakdown"></div>
-          </div>
-        </div>
-      </div>
-
-    </section>
-
-    <section class="section grid2">
-      <div class="card chartCard">
-        <div class="titleRow">
-          <div>
-            <h3>กราฟแท่งรายได้รายวัน</h3>
-            <div class="muted" id="candleHint">—</div>
-          </div>
-          <div class="muted">ดูภาพรวมง่ายขึ้น</div>
-        </div>
-        <canvas id="candles" height="220"></canvas>
-        <div class="chartNote">
-          <div class="muted"><span class="legendDot" style="background:#1558d6"></span>แท่งรายได้รายวัน</div>
-          <div class="muted"><span class="legendDot" style="background:#7aa7ff"></span>เส้นบางแสดงแนวโน้มรวม</div>
-        </div>
-      </div>
-
-      <div class="card chartCard">
-        <div class="titleRow">
-          <div>
-            <h3>กราฟรายได้รวมบริษัท</h3>
-            <div class="muted" id="seriesHint">—</div>
-          </div>
-        </div>
-        <div class="chipRow">
-          <button class="groupBtn yellow" data-group="day" type="button">วัน</button>
-          <button class="groupBtn ghost" data-group="week" type="button">สัปดาห์</button>
-          <button class="groupBtn ghost" data-group="month" type="button">เดือน</button>
-          <button class="groupBtn ghost" data-group="year" type="button">ปี</button>
-        </div>
-        <canvas id="chart" height="220"></canvas>
-      </div>
-    </section>
-
-
-    <section class="section">
       <div class="card">
         <div class="titleRow">
           <div>
@@ -569,26 +464,6 @@
       </div>
     </section>
 
-    <section class="section card filtersCard" id="filtersCard">
-      <div class="foldHead" id="filterToggle" role="button" aria-label="พับ/ขยายตัวกรอง">
-        <div>
-          <b>ตัวกรอง Dashboard</b>
-          <div class="muted" id="filterSummary">—</div>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px">
-          <button class="btn blue" id="btnApplyMini" type="button" title="โหลด">โหลดข้อมูล</button>
-          <div class="chev">▾</div>
-        </div>
-      </div>
-      <div class="foldBody" id="filterBody">
-        <div class="row">
-          <input type="date" id="fromDate" title="จากวันที่">
-          <input type="date" id="toDate" title="ถึงวันที่">
-          <button class="btn yellow" id="btnApply" type="button">อัปเดต Dashboard</button>
-        </div>
-      </div>
-    </section>
-
     <section class="section opsPulse">
       <div class="alertCard">
         <div class="alertTitle">
@@ -616,7 +491,31 @@
       </div>
     </section>
 
-    <section class="section">
+    <section class="section grid2">
+      <div class="card">
+        <div class="titleRow">
+          <div>
+            <h3>สรุปสถานะใบงาน</h3>
+            <div class="muted" id="donutHint">—</div>
+          </div>
+          <div class="muted" id="completionHint">—</div>
+        </div>
+        <div class="statusLayout">
+          <div>
+            <div class="bigNum" id="jobTotal">—</div>
+            <div class="muted">งานทั้งหมดในช่วงที่เลือก</div>
+            <div class="statusSummary">
+              <div class="tinyCard"><div class="metricLabel">อัตราปิดงาน</div><div class="metricValue" id="completionRate">—</div></div>
+              <div class="tinyCard"><div class="metricLabel">งานที่ต้องติดตาม</div><div class="metricValue" id="followupCount">—</div></div>
+            </div>
+          </div>
+          <div>
+            <canvas id="donut" height="150"></canvas>
+            <div class="statusList" id="statusBreakdown"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="titleRow">
           <div>
@@ -655,7 +554,38 @@
       </div>
     </section>
 
+    <section class="section grid2">
+      <div class="card chartCard">
+        <div class="titleRow">
+          <div>
+            <h3>แนวโน้มรายได้รายวัน</h3>
+            <div class="muted" id="candleHint">—</div>
+          </div>
+          <div class="muted">ดูภาพรวมง่ายขึ้น</div>
+        </div>
+        <canvas id="candles" height="220"></canvas>
+        <div class="chartNote">
+          <div class="muted"><span class="legendDot" style="background:#1558d6"></span>เส้นรายได้รายวัน</div>
+          <div class="muted"><span class="legendDot" style="background:#7aa7ff"></span>พื้นที่ใต้กราฟช่วยดูแนวโน้ม</div>
+        </div>
+      </div>
 
+      <div class="card chartCard">
+        <div class="titleRow">
+          <div>
+            <h3>รายได้รวมบริษัท</h3>
+            <div class="muted" id="seriesHint">—</div>
+          </div>
+        </div>
+        <div class="chipRow">
+          <button class="groupBtn yellow" data-group="day" type="button">วัน</button>
+          <button class="groupBtn ghost" data-group="week" type="button">สัปดาห์</button>
+          <button class="groupBtn ghost" data-group="month" type="button">เดือน</button>
+          <button class="groupBtn ghost" data-group="year" type="button">ปี</button>
+        </div>
+        <canvas id="chart" height="220"></canvas>
+      </div>
+    </section>
 
     <section class="section grid2">
       <div class="card">
@@ -710,7 +640,35 @@
     <div class="footerSpacer"></div>
   </div>
 
-  <script src="admin-v2-common.js?v=20260428_dash_ui7"></script>
-  <script src="admin-dashboard-v2.js?v=20260428_dash_ui7"></script>
+  <div class="filterModal" id="filterModal" aria-hidden="true">
+    <div class="filterPanel" role="dialog" aria-modal="true" aria-labelledby="filterModalTitle">
+      <div class="filterPanelHead">
+        <div>
+          <h3 id="filterModalTitle">ตัวกรอง Dashboard</h3>
+          <div class="muted" id="filterSummary">—</div>
+        </div>
+        <button class="modalClose" id="filterClose" type="button" aria-label="ปิดตัวกรอง">×</button>
+      </div>
+      <div class="rangeQuickGrid">
+        <button id="quickTodayModal" type="button">วันนี้</button>
+        <button id="quick7Modal" type="button">7 วัน</button>
+        <button id="quick30Modal" type="button" class="active">30 วัน</button>
+        <button id="quickQuarter" type="button">ไตรมาส / 3 เดือน</button>
+        <button id="quick6m" type="button">6 เดือน</button>
+        <button id="quick12m" type="button">12 เดือน</button>
+      </div>
+      <div class="filterDates">
+        <input type="date" id="fromDate" title="จากวันที่">
+        <input type="date" id="toDate" title="ถึงวันที่">
+      </div>
+      <div class="filterActions">
+        <button class="btn ghost" id="filterCancel" type="button">ยกเลิก</button>
+        <button class="btn yellow" id="btnApply" type="button">อัปเดต Dashboard</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="admin-v2-common.js?v=20260428_dash_ui8"></script>
+  <script src="admin-dashboard-v2.js?v=20260428_dash_ui8"></script>
 </body>
 </html>

@@ -1143,6 +1143,27 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
       debug.notes.push('company stats query failed');
     }
 
+    // Estimated company net profit for dashboard display.
+    // Backward-compatible: if payout_lines table is empty/missing, keep technician_cost_total = 0
+    // and return revenue as net profit instead of breaking the dashboard.
+    let technicianCostTotal = 0;
+    try {
+      const cost = await pool.query(
+        `SELECT COALESCE(SUM(COALESCE(l.earn_amount,0)),0)::double precision AS technician_cost_total
+         FROM public.technician_payout_lines l
+         INNER JOIN public.jobs j ON CAST(j.job_id AS TEXT) = CAST(l.job_id AS TEXT)
+         WHERE (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $1::date AND $2::date
+           AND COALESCE(j.job_status,'') NOT IN ('ยกเลิก','cancelled','canceled')`,
+        [d_from, d_to]
+      );
+      technicianCostTotal = Number(cost.rows?.[0]?.technician_cost_total || 0);
+    } catch (e) {
+      debug.partial = true;
+      debug.notes.push('technician cost query failed');
+      technicianCostTotal = 0;
+    }
+    const companyNetProfitTotal = Number(cRow.revenue_total || 0) - technicianCostTotal;
+
     let pending = { rows: [] };
     try {
       pending = await pool.query(
@@ -1343,6 +1364,8 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
       company: {
         job_count: cRow.job_count,
         revenue_total: Number(cRow.revenue_total||0),
+        technician_cost_total: technicianCostTotal,
+        net_profit_total: companyNetProfitTotal,
         series: {
           day: await series('day'),
           week: await series('week'),
