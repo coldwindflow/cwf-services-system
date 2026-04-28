@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CWF Partner Academy</title>
+  <style>
+    :root{--navy:#071b4d;--blue:#0b4bb3;--yellow:#ffcc00;--ink:#0f172a;--muted:#64748b;--line:#dbe7ff;--bg:#f6f8fc;--ok:#166534;--bad:#b91c1c}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:linear-gradient(180deg,var(--navy),var(--blue) 260px,var(--bg) 260px);color:var(--ink)}
+    .wrap{max-width:1040px;margin:0 auto;padding:28px 14px 64px}
+    .brand{color:#fff;margin:8px 0 18px}.brand h1{margin:0;font-size:28px}.brand p{margin:6px 0 0;color:rgba(255,255,255,.82);font-weight:800}
+    .panel{background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 14px 34px rgba(2,6,23,.12);padding:16px;margin-bottom:14px}
+    .row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}
+    .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.lesson,.question{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fff}
+    label{display:block;font-size:12px;font-weight:900;color:#334155;margin-bottom:6px}
+    input{width:100%;border:1px solid #c9d7f2;border-radius:8px;padding:11px 12px;font:inherit;font-weight:700;background:#fff}
+    button{border:0;border-radius:8px;padding:10px 13px;font-weight:1000;cursor:pointer}.primary{background:var(--yellow);color:var(--navy)}.secondary{background:var(--blue);color:#fff}.ghost{background:#eef4ff;color:var(--navy)}
+    .muted{color:var(--muted);font-weight:800}.badge{display:inline-flex;border-radius:999px;padding:5px 10px;font-weight:1000;font-size:12px;background:#e2e8f0}.badge.ok{background:#dcfce7;color:var(--ok)}.badge.bad{background:#fee2e2;color:var(--bad)}
+    .top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.choices{display:grid;gap:8px;margin-top:8px}.choice{display:flex;gap:8px;align-items:flex-start;font-weight:800}.choice input{width:auto;margin-top:3px}
+    .hidden{display:none}.msg{font-weight:900;margin-top:10px}.msg.err{color:var(--bad)}.msg.ok{color:var(--ok)}
+    @media(max-width:760px){.row,.grid{grid-template-columns:1fr}.brand h1{font-size:23px}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="brand">
+      <h1>CWF Partner Academy</h1>
+      <p>อบรมพื้นฐาน ทำบทเรียน และสอบ Basic Partner</p>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <div>
+          <label for="applicationCode">รหัสใบสมัคร</label>
+          <input id="applicationCode" autocomplete="off" placeholder="เช่น CWF-P20260428-XXXXXXXX">
+        </div>
+        <button class="secondary" id="btnLoad" type="button">โหลด Academy</button>
+      </div>
+      <div id="message" class="msg"></div>
+    </section>
+
+    <section class="panel hidden" id="academyPanel">
+      <div class="top">
+        <div>
+          <h2 id="courseTitle" style="margin:0">-</h2>
+          <div class="muted" id="applicantName">-</div>
+        </div>
+        <span class="badge" id="progressBadge">0%</span>
+      </div>
+      <div class="grid" id="lessons" style="margin-top:12px"></div>
+    </section>
+
+    <section class="panel hidden" id="examPanel">
+      <div class="top">
+        <div>
+          <h2 style="margin:0">แบบทดสอบ</h2>
+          <div class="muted" id="examMeta">ผ่านที่ 80%</div>
+        </div>
+        <button class="primary" id="btnSubmitExam" type="button">ส่งข้อสอบ</button>
+      </div>
+      <div id="questions" style="display:grid;gap:10px;margin-top:12px"></div>
+    </section>
+  </main>
+  <script src="/partner-academy.js"></script>
+</body>
+</html>

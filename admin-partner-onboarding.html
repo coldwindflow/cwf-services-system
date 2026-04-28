@@ -34,8 +34,11 @@
     .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
     .doc{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff;margin-top:8px}
     .docTop{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+    .miniGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+    .miniCard{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fbfdff}
+    .miniCard b{display:block;margin-bottom:4px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
     .timeline{display:flex;flex-direction:column;gap:8px}.event{border-left:3px solid #bdd2ff;padding:4px 0 4px 10px;font-size:13px}
-    @media(max-width:860px){.toolbar,.list,.grid2,.grid3{grid-template-columns:1fr}.app{padding-top:82px}.hero h1{font-size:22px}}
+    @media(max-width:860px){.toolbar,.list,.grid2,.grid3,.miniGrid{grid-template-columns:1fr}.app{padding-top:82px}.hero h1{font-size:22px}}
   </style>
 </head>
 <body>
@@ -105,6 +108,26 @@
 
       <h3>เอกสาร</h3>
       <div id="documents"></div>
+
+      <h3>Onboarding</h3>
+      <div class="miniGrid" id="onboardingSummary"></div>
+
+      <h3>Certifications</h3>
+      <div class="grid2">
+        <div id="certifications"></div>
+        <div>
+          <label>สร้าง Trial Job สำหรับ Certification</label>
+          <select id="trialCertification"></select>
+          <label style="margin-top:8px">Job ID (ถ้ามี)</label>
+          <input id="trialJobId" placeholder="เว้นว่างได้">
+          <label style="margin-top:8px">หมายเหตุ Trial</label>
+          <textarea id="trialNote"></textarea>
+          <button class="secondary" id="btnCreateTrial" type="button" style="margin-top:8px">อนุมัติ Trial</button>
+        </div>
+      </div>
+
+      <h3>Trial Jobs</h3>
+      <div id="trialJobs"></div>
 
       <h3>Timeline</h3>
       <div class="timeline" id="events"></div>
