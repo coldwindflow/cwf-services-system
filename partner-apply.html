@@ -69,14 +69,6 @@
     .ghost{background:#edf3ff;color:var(--navy)}
     button:disabled{opacity:.72;cursor:wait}
 
-
-    .terms-box{background:#f8fbff;border:1px solid var(--line);border-radius:20px;padding:16px;margin-bottom:14px;color:#233a5f}
-    .terms-box h4{margin:0 0 10px;color:var(--navy);font-size:18px}
-    .terms-box ul{margin:0;padding-left:20px;line-height:1.75;font-weight:800}
-    .terms-box li{margin:3px 0}
-    .terms-link{display:inline-flex;margin-top:12px;font-weight:1000;color:var(--blue);text-decoration:none}
-    .terms-note{margin-top:10px;color:var(--muted);font-size:13px;font-weight:800;line-height:1.55}
-
     .result{display:none;margin-top:18px;background:var(--navy);color:#fff;border-radius:22px;padding:18px}
     .result h4{margin:0 0 10px;font-size:21px}
     .result strong{color:var(--yellow)}
@@ -249,7 +241,7 @@
             <div class="grid3">
               <div><label for="bank_account_name">ชื่อบัญชี *</label><input id="bank_account_name"></div>
               <div><label for="bank_name">ธนาคาร *</label><input id="bank_name"></div>
-              <div><label for="bank_account_last4">เลขบัญชี 4 ตัวท้าย *</label><input id="bank_account_last4" maxlength="4" inputmode="numeric"></div>
+              <div><label for="bank_account_number">เลขบัญชีเต็ม *</label><input id="bank_account_number" inputmode="numeric" autocomplete="off" placeholder="เช่น 1234567890" maxlength="15"><span class="hint">กรอกตัวเลขบัญชีจริงให้ครบ ไม่ต้องใส่ขีดหรือเว้นวรรค</span></div>
             </div>
             <div style="margin-top:14px"><label for="notes">หมายเหตุเพิ่มเติม</label><textarea id="notes"></textarea></div>
           </section>
@@ -258,27 +250,13 @@
             <div class="section-title">
               <div class="section-no">7</div>
               <div>
-                <h3>อ่านและยืนยันเงื่อนไข</h3>
-                <p>อ่านเงื่อนไขเบื้องต้นก่อนส่งใบสมัคร</p>
+                <h3>ยืนยันเงื่อนไข</h3>
+                <p>จำเป็นต้องยอมรับก่อนส่งใบสมัคร</p>
               </div>
             </div>
-
-            <div class="terms-box">
-              <h4>เงื่อนไขเบื้องต้นสำหรับผู้สมัครพาร์ทเนอร์ช่าง CWF</h4>
-              <ul>
-                <li>ข้อมูลที่กรอกต้องเป็นความจริง และ CWF สามารถใช้ข้อมูลนี้เพื่อตรวจสอบใบสมัคร เอกสาร และความพร้อมในการรับงานได้</li>
-                <li>หลังสมัครแล้วสามารถเข้าแอพช่างได้ แต่ยังรับงานจริงไม่ได้จนกว่าจะผ่านการตรวจเอกสาร อบรม/สอบ และได้รับอนุมัติจากแอดมิน</li>
-                <li>การรับงานแต่ละประเภทขึ้นอยู่กับ certification ที่ผ่านและสถานะอนุมัติรายประเภท</li>
-                <li>ต้องปฏิบัติตามมาตรฐานงานบริการของ CWF ห้ามเปลี่ยนราคาเอง ห้ามรับเงินนอกระบบ และต้องอัปเดตสถานะงานตามระบบ</li>
-                <li>เอกสารและสัญญาฉบับเต็มจะต้องอ่านและยืนยันในขั้นตอนถัดไปก่อนเริ่มรับงานจริง</li>
-              </ul>
-              <a class="terms-link" href="/partner-agreement.html" target="_blank" rel="noopener">อ่านหน้าสัญญาพาร์ทเนอร์ฉบับเต็ม</a>
-              <div class="terms-note">หมายเหตุ: การส่งใบสมัครนี้เป็นขั้นตอนคัดกรองเบื้องต้น ยังไม่ถือว่าได้รับสิทธิ์รับงานทันที</div>
-            </div>
-
             <div class="choice-grid">
-              <label class="chip"><input id="consent_pdpa" type="checkbox"><span>ยินยอมให้ CWF ใช้ข้อมูลเพื่อพิจารณาใบสมัคร ตรวจเอกสาร และดำเนินการ onboarding *</span></label>
-              <label class="chip"><input id="consent_terms" type="checkbox"><span>ข้าพเจ้าอ่านและยอมรับเงื่อนไขเบื้องต้นสำหรับการสมัครเป็นพาร์ทเนอร์ช่าง CWF *</span></label>
+              <label class="chip"><input id="consent_pdpa" type="checkbox"><span>ยินยอมให้ CWF ใช้ข้อมูลเพื่อพิจารณาใบสมัครและ onboarding *</span></label>
+              <label class="chip"><input id="consent_terms" type="checkbox"><span>ยอมรับเงื่อนไขการสมัครเป็นพาร์ทเนอร์ *</span></label>
             </div>
             <div class="actions">
               <button class="primary" type="submit" id="submitBtn"><span id="submitBtnText">ส่งใบสมัครและสร้างบัญชี</span></button>
@@ -301,6 +279,6 @@
       </div>
     </main>
   </div>
-  <script src="/partner-apply.js?v=20260428-terms-final"></script>
+  <script src="/partner-apply.js?v=20260428-bank-submit-final"></script>
 </body>
 </html>
