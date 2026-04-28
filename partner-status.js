@@ -1,55 +1,25 @@
 (function(){
   const DOCS = [
-    ['id_card','บัตรประชาชน','🪪','จำเป็น','JPG, PNG, WEBP หรือ PDF'],
-    ['profile_photo','รูปโปรไฟล์','👤','จำเป็น','JPG, PNG หรือ WEBP'],
-    ['bank_book','สมุดบัญชี','📗','จำเป็น','JPG, PNG, WEBP หรือ PDF'],
-    ['tools_photo','รูปเครื่องมือ','🧰','แนะนำ','JPG, PNG หรือ WEBP'],
-    ['vehicle_photo','รูปยานพาหนะ','🛵','ถ้ามี','JPG, PNG หรือ WEBP'],
-    ['certificate_or_portfolio','ใบรับรอง / ผลงาน','📄','ถ้ามี','JPG, PNG, WEBP หรือ PDF'],
-    ['other','เอกสารเพิ่มเติม','📎','ถ้ามี','JPG, PNG, WEBP หรือ PDF']
+    ['id_card','บัตรประชาชน','🪪','ใช้รูปชัดเจน เห็นข้อมูลครบ ไม่สะท้อนแสง'],
+    ['profile_photo','รูปโปรไฟล์','👤','รูปหน้าตรง สุภาพ เห็นใบหน้าชัดเจน'],
+    ['bank_book','หน้าสมุดบัญชี','📗','ใช้สำหรับยืนยันบัญชีรับเงินของผู้สมัคร'],
+    ['tools_photo','รูปเครื่องมือ','🧰','ถ่ายเครื่องมือหลักที่พร้อมใช้งาน'],
+    ['vehicle_photo','รูปยานพาหนะ','🚗','ถ้ามีรถ/มอเตอร์ไซค์สำหรับรับงาน'],
+    ['certificate_or_portfolio','ใบรับรอง/ผลงาน','📜','ถ้ามีใบรับรองหรือผลงานเดิม'],
+    ['other','เอกสารอื่น','📄','เอกสารเพิ่มเติมตามที่แอดมินขอ']
   ];
-  const STATUS = {uploaded:'รอตรวจ',approved:'ผ่านแล้ว',rejected:'ไม่ผ่าน',need_reupload:'ขออัปโหลดใหม่'};
-  const $ = id => document.getElementById(id);
-  let current = null;
-  function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-  function badge(text, cls){ return `<span class="badge ${cls||''}">${esc(text)}</span>`; }
-  async function api(url, opts){ const res = await fetch(url, {credentials:'include', ...(opts||{})}); const data = await res.json().catch(()=>null); if(!res.ok) throw new Error(data?.error || 'Request failed'); return data; }
-  function params(){ const u = new URL(location.href); return { code:u.searchParams.get('code')||u.searchParams.get('application_code')||'', phone:u.searchParams.get('phone')||'' }; }
-  function saveRef(app){ try{ sessionStorage.setItem('cwf_partner_ref', JSON.stringify({code:app.application_code, phone:app.phone})); }catch(_){} }
-  function getStoredRef(){ try{ return JSON.parse(sessionStorage.getItem('cwf_partner_ref')||'{}'); }catch(_){ return {}; } }
-  async function resolveStatus(){
-    let {code, phone} = params();
-    if(!code || !phone){ const s = getStoredRef(); code = code || s.code || ''; phone = phone || s.phone || ''; }
-    if(code && phone) return api(`/partner/status?application_code=${encodeURIComponent(code)}&phone=${encodeURIComponent(phone)}`);
-    const tech = await api('/tech/partner-onboarding');
-    if(!tech.partner) throw new Error('ไม่พบข้อมูลพาร์ทเนอร์ของบัญชีนี้');
-    return {ok:true, ...tech.partner};
-  }
-  function render(data){
-    current = data;
-    const app = data.application || {};
-    saveRef(app);
-    $('appName').textContent = app.full_name || 'พาร์ทเนอร์ CWF';
-    $('appMeta').textContent = `${app.phone || ''} • ${app.status || 'submitted'}`;
-    const latest = new Map((app.documents || []).map(d => [d.document_type, d]));
-    $('documentCards').innerHTML = DOCS.map(([type,label,icon,required,hint])=>{
-      const d = latest.get(type);
-      const cls = d?.status === 'approved' ? 'ok' : d?.status === 'rejected' ? 'bad' : 'warn';
-      return `<article class="doc"><div class="icon">${icon}</div><div><h3>${esc(label)}</h3><div style="margin:8px 0">${badge(d ? (STATUS[d.status]||d.status) : 'ยังไม่ได้อัปโหลด', d?cls:'warn')} ${badge(required)}</div><div class="tips">ไฟล์: ${esc(hint)}<br>เลือกไฟล์ให้ชัดเจน อ่านง่าย ไม่เบลอ และเห็นข้อมูลครบ</div><form class="upload" data-type="${esc(type)}"><input type="file" name="document" accept="image/jpeg,image/png,image/webp,application/pdf" required><button type="submit">อัปโหลด ${esc(label)}</button></form></div></article>`;
-    }).join('');
-    $('documentCards').querySelectorAll('form').forEach(form=>{
-      form.addEventListener('submit', async e=>{
-        e.preventDefault();
-        const file = form.querySelector('input[type=file]').files[0];
-        if(!file) return alert('กรุณาเลือกไฟล์');
-        const fd = new FormData(); fd.append('document_type', form.dataset.type); fd.append('document', file);
-        const btn = form.querySelector('button'); const old = btn.textContent; btn.disabled = true; btn.textContent = 'กำลังอัปโหลด...';
-        try{ await api(`/partner/application/${encodeURIComponent(app.application_code)}/documents`, {method:'POST', body:fd}); alert('อัปโหลดสำเร็จ'); await load(); }
-        catch(err){ alert(err.message || 'อัปโหลดไม่สำเร็จ'); }
-        finally{ btn.disabled = false; btn.textContent = old; }
-      });
-    });
-  }
-  async function load(){ try{ $('message').textContent=''; render(await resolveStatus()); }catch(e){ $('appName').textContent='โหลดข้อมูลไม่สำเร็จ'; $('message').textContent=e.message; $('message').className='msg err'; } }
-  load();
+  const STATUS = {uploaded:'อัปโหลดแล้ว',approved:'ผ่านแล้ว',rejected:'ไม่ผ่าน',need_reupload:'ขออัปโหลดใหม่',submitted:'ส่งใบสมัครแล้ว',under_review:'กำลังตรวจ',need_more_documents:'ขอเอกสารเพิ่ม',approved_for_training:'อนุมัติเข้าอบรม'};
+  const $ = id => document.getElementById(id); let current=null;
+  function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+  function badge(status){const label=STATUS[status]||status||'ยังไม่อัปโหลด';const cls=status==='approved'?'ok':status==='rejected'?'bad':'warn';return `<span class="badge ${cls}">${esc(label)}</span>`;}
+  function msg(t){$('message').textContent=t||'';}
+  async function json(url, opts){const res=await fetch(url,{credentials:'include',...(opts||{})});const data=await res.json().catch(()=>null);if(!res.ok)throw new Error(data?.error||'Request failed');return data;}
+  function getRef(){const qs=new URLSearchParams(location.search);let ss={};try{ss=JSON.parse(sessionStorage.getItem('cwf_partner_ref')||'{}')}catch(_){}return {code:qs.get('code')||qs.get('application_code')||ss.code||'',phone:qs.get('phone')||ss.phone||''};}
+  async function load(){let ref=getRef();if(ref.code&&ref.phone)return json(`/partner/status?application_code=${encodeURIComponent(ref.code)}&phone=${encodeURIComponent(ref.phone)}`);const t=await json('/tech/partner-onboarding');if(t.partner)return {ok:true,...t.partner};throw new Error('ไม่พบข้อมูลใบสมัคร กรุณาเข้าใหม่จากหน้าแอพช่าง');}
+  function render(data){current=data;const app=data.application||{};$('profilePanel').classList.remove('hidden');$('appName').textContent=app.full_name||'-';$('appMeta').textContent=`${app.phone||''} · ${app.application_code||''}`;$('appStatus').textContent=STATUS[app.status]||app.status||'รอตรวจ';try{sessionStorage.setItem('cwf_partner_ref',JSON.stringify({code:app.application_code,phone:app.phone}))}catch(_){}
+    const latest=new Map((app.documents||[]).map(d=>[d.document_type,d]));
+    $('documentCards').innerHTML=DOCS.map(([type,label,icon,hint])=>{const d=latest.get(type);return `<article class="doc"><div class="doc-icon">${icon}</div><div><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><h3>${esc(label)}</h3>${d?badge(d.status):badge('')}</div><p>${esc(hint)}</p><p>รองรับ JPG, PNG, WEBP หรือ PDF · ไม่เกิน 8MB</p>${d?.original_filename?`<p><b>ไฟล์ล่าสุด:</b> ${esc(d.original_filename)}</p>`:''}${d?.admin_note?`<p><b>หมายเหตุแอดมิน:</b> ${esc(d.admin_note)}</p>`:''}<div class="upload-row"><label class="file"><input type="file" data-doc="${type}" accept="image/jpeg,image/png,image/webp,application/pdf,.jpg,.jpeg,.png,.webp,.pdf"></label><button class="upload-btn" data-upload="${type}" type="button">อัปโหลด${d?'ใหม่':''}</button></div></div></article>`}).join('');}
+  async function upload(type){if(!current)throw new Error('ยังไม่พบข้อมูลใบสมัคร');const input=document.querySelector(`input[data-doc="${CSS.escape(type)}"]`);const file=input?.files?.[0];if(!file)throw new Error('กรุณาเลือกไฟล์ก่อนอัปโหลด');const fd=new FormData();fd.append('document_type',type);fd.append('document',file);const res=await fetch(`/partner/application/${encodeURIComponent(current.application.application_code)}/documents`,{method:'POST',body:fd});const data=await res.json().catch(()=>null);if(!res.ok)throw new Error(data?.error||'อัปโหลดไม่สำเร็จ');msg('อัปโหลดสำเร็จ');render(await load());}
+  document.addEventListener('click',e=>{const btn=e.target.closest('[data-upload]');if(btn)upload(btn.dataset.upload).catch(err=>alert(err.message));});
+  document.addEventListener('DOMContentLoaded',()=>load().then(render).catch(e=>msg(e.message)));
 })();

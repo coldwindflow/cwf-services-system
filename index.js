@@ -1162,126 +1162,84 @@ const BASIC_PARTNER_LESSON_BODIES = [
   'งานทดลองใช้วัดมาตรฐานจริง ทั้งเวลา เครื่องแบบ การสื่อสาร รูปถ่าย คุณภาพงาน และความรับผิดชอบ ผ่านงานทดลองแล้วแอดมินยังต้องอนุมัติ certification รายประเภทก่อนรับงานจริง',
 ];
 
-const CWF_PARTNER_CONTRACT_REAL_HTML = `
-<section class="contract-v2">
-  <div class="contract-section">
-    <h3>1. คู่สัญญาและสถานะการร่วมงาน</h3>
-    <p><strong>Coldwindflow Air Services</strong> โดยนายสุทธิพงษ์ ศรีวารินทร์ เป็นผู้ว่าจ้าง/ผู้จัดการงานบริการ และผู้สมัครตามข้อมูลในระบบเป็น <strong>พาร์ทเนอร์ช่างแอร์อิสระ</strong> ไม่ใช่พนักงานประจำ เว้นแต่มีสัญญาอื่นระบุไว้เป็นลายลักษณ์อักษร</p>
-    <ul>
-      <li>บริษัทเป็นผู้จัดหาลูกค้า ประสานงาน แจ้งรายละเอียดงาน กำหนดมาตรฐาน และตรวจสอบคุณภาพก่อนจ่ายค่าตอบแทน</li>
-      <li>พาร์ทเนอร์ต้องรับผิดชอบเครื่องมือ ค่าเดินทาง ค่าใช้จ่ายส่วนตัว ภาษี และค่าใช้จ่ายอื่นของตนเอง เว้นแต่บริษัทตกลงเป็นรายงาน</li>
-    </ul>
-  </div>
-  <div class="contract-section">
-    <h3>2. ขอบเขตงานที่รับ</h3>
-    <p>พาร์ทเนอร์รับงานล้างแอร์ ซ่อมแอร์ ติดตั้งแอร์ หรืองานบริการอื่นที่บริษัทมอบหมายผ่านระบบ CWF เท่านั้น</p>
-    <ul>
-      <li>ต้องตรวจสอบเวลา สถานที่ จำนวนเครื่อง ประเภทงาน เงื่อนไขหน้างาน และค่าตอบแทนก่อนยืนยันรับงาน</li>
-      <li>เมื่อยืนยันรับงานแล้ว ต้องเข้าหน้างานตามนัด หากมีเหตุจำเป็นต้องแจ้งบริษัททันที</li>
-      <li>หากข้อมูลหน้างานจริงไม่ตรงกับงานที่ได้รับ ต้องแจ้งบริษัทก่อนเริ่มงานหรือก่อนเสนอค่าใช้จ่ายเพิ่มกับลูกค้า</li>
-    </ul>
-  </div>
-  <div class="contract-section">
-    <h3>3. เรทค่าตอบแทนพาร์ทเนอร์แบบขั้นบันได</h3>
-    <p>เรทนี้เป็นเรทพาร์ทเนอร์เท่านั้น ไม่ใช่เรทช่างบริษัท ตัวเลขทั้งหมดเป็นเงินบาทต่อเครื่อง ใช้กับงานในสถานที่เดียวกันและวันเดียวกัน</p>
-    <div class="rate-table-wrap">
-      <table class="rate-table">
-        <thead><tr><th>ประเภทงาน</th><th>BTU</th><th>เครื่องที่ 1</th><th>เครื่องที่ 2-3</th><th>เครื่องที่ 4+</th></tr></thead>
-        <tbody>
-          <tr><td>ล้างปกติ</td><td>ไม่เกิน 12,000</td><td>400</td><td>350</td><td>320</td></tr>
-          <tr><td>ล้างปกติ</td><td>18,000 ขึ้นไป</td><td>450</td><td>400</td><td>350</td></tr>
-          <tr><td>ล้างพรีเมียม</td><td>ไม่เกิน 12,000</td><td>550</td><td>500</td><td>450</td></tr>
-          <tr><td>ล้างพรีเมียม</td><td>18,000 ขึ้นไป</td><td>700</td><td>650</td><td>600</td></tr>
-          <tr><td>แขวนคอยล์</td><td>ไม่เกิน 12,000</td><td>850</td><td>800</td><td>750</td></tr>
-          <tr><td>แขวนคอยล์</td><td>18,000 ขึ้นไป</td><td>1,050</td><td>1,000</td><td>950</td></tr>
-          <tr><td>ตัดล้างใหญ่</td><td>ไม่เกิน 12,000</td><td>1,200</td><td>1,100</td><td>1,000</td></tr>
-          <tr><td>ตัดล้างใหญ่</td><td>18,000 ขึ้นไป</td><td>1,450</td><td>1,350</td><td>1,250</td></tr>
-        </tbody>
-      </table>
-    </div>
-    <p class="note">เครื่องที่ 1 จ่ายเต็มเพราะมีต้นทุนเปิดงาน เดินทาง ยกของ ตั้งเครื่องมือ ตรวจหน้างาน และสื่อสารกับลูกค้า เครื่องที่ 2-3 และ 4+ เป็นเรทงานต่อเนื่องในหน้างานเดียวกัน</p>
-  </div>
-  <div class="contract-section">
-    <h3>4. รอบจ่ายเงิน ภาษี และเอกสารรับเงิน</h3>
-    <ul>
-      <li>บริษัทจ่ายค่าตอบแทนตามรอบที่กำหนด เช่น วันที่ 10 และ 25 ของเดือน หรือรอบอื่นที่แจ้งเป็นลายลักษณ์อักษร</li>
-      <li>จ่ายเฉพาะงานที่ปิดสมบูรณ์ในระบบ มีรูปครบ สถานะครบ ข้อมูลครบ และผ่านการตรวจสอบแล้ว</li>
-      <li>ค่าตอบแทนเป็นยอดก่อนหักภาษี ณ ที่จ่าย หากกฎหมายกำหนด บริษัทมีสิทธิหักภาษี เช่น 3% และออกหนังสือรับรองให้</li>
-      <li>กรณีพาร์ทเนอร์จด VAT ต้องแจ้งบริษัทล่วงหน้าและออกเอกสารให้ถูกต้องก่อนรับเงิน</li>
-    </ul>
-  </div>
-  <div class="contract-section">
-    <h3>5. เงินประกันความเสียหาย</h3>
-    <ul>
-      <li>เงินประกันความเสียหาย 5,000 บาท หักจากค่าตอบแทนรายเดือนเดือนละ 1,000 บาท เป็นเวลา 5 เดือน หรือแบ่งจ่ายตามที่ตกลง</li>
-      <li>ใช้เป็นหลักประกันกรณีทิ้งงาน งานเสียหาย ทรัพย์สินลูกค้าเสียหาย รับเงินนอกระบบ หนี้ค้าง อุปกรณ์ค้าง หรือความเสียหายอื่นจากพาร์ทเนอร์</li>
-      <li>เมื่อสิ้นสุดการร่วมงานและไม่มีงานค้าง ข้อพิพาท อุปกรณ์ค้าง หรืองานรับประกันค้าง บริษัทจะคืนภายใน 60-90 วันหลังตรวจสอบครบถ้วน</li>
-    </ul>
-  </div>
-  <div class="contract-section">
-    <h3>6. มาตรฐานงานและความปลอดภัย</h3>
-    <ul>
-      <li>ต้องถ่ายรูปก่อนงาน ระหว่างงาน และหลังงานให้ครบตามที่ระบบกำหนด</li>
-      <li>ต้องอัปเดตสถานะ เช่น เดินทางถึง เริ่มงาน ปิดงาน และแนบข้อมูลจำเป็นในระบบ</li>
-      <li>ต้องรักษาความสะอาดหน้างาน สื่อสารสุภาพ และแจ้งบริษัทก่อนเปลี่ยนราคา เพิ่มงาน หรือเปลี่ยนเงื่อนไขกับลูกค้า</li>
-      <li>หากพบความเสี่ยง เช่น ไฟฟ้ารั่ว น้ำรั่ว จุดปีนสูง ฝ้าเปราะ หรือท่อเสียหาย ต้องแจ้งบริษัทและลูกค้าก่อนดำเนินการ</li>
-    </ul>
-  </div>
-  <div class="contract-section">
-    <h3>7. การยกเลิกงาน เลื่อนงาน และทิ้งงาน</h3>
-    <p>เมื่อพาร์ทเนอร์ยืนยันรับงานแล้ว ถือว่ารับผิดชอบงานนั้นโดยสมบูรณ์ หากต้องยกเลิกหรือเลื่อนต้องแจ้งบริษัทเร็วที่สุด โดยมาตรฐานควรแจ้งอย่างน้อย 72 ชั่วโมงก่อนเวลานัด</p>
-    <ul>
-      <li>แจ้งมากกว่า 72 ชั่วโมง: โดยทั่วไปไม่หัก หากไม่ได้เกิดซ้ำบ่อย</li>
-      <li>แจ้ง 48-72 ชั่วโมง: อาจหัก 0-300 บาท/งาน ตามผลกระทบ</li>
-      <li>แจ้ง 24-48 ชั่วโมง: อาจหัก 300-500 บาท/งาน</li>
-      <li>แจ้ง 6-24 ชั่วโมง: อาจหัก 500-1,000 บาท/งาน หรือค่าเสียหายจริง</li>
-      <li>วันงาน/น้อยกว่า 6 ชั่วโมง: อาจหัก 1,000-1,500 บาท/งาน หรือค่าเสียหายจริง</li>
-      <li>ไม่ไปหน้างาน ติดต่อไม่ได้ หรือทิ้งงาน: อาจหัก 1,500-3,000 บาท/งาน + ค่าเสียหายจริง + อาจงดจ่ายงานนั้น</li>
-    </ul>
-  </div>
-  <div class="contract-section">
-    <h3>8. ข้อห้ามเรื่องลูกค้า เงินสด และข้อมูลภายใน</h3>
-    <ul>
-      <li>ห้ามรับเงินจากลูกค้าเอง เว้นแต่บริษัทอนุญาตเป็นรายงานและต้องส่งหลักฐานครบ</li>
-      <li>ห้ามเสนอราคาใหม่ เพิ่มงาน ลดราคา หรือเปลี่ยนเงื่อนไขกับลูกค้าเองโดยไม่ผ่านบริษัท</li>
-      <li>ห้ามรับงานต่อโดยตรงจากลูกค้าที่บริษัทจัดหาให้ ระหว่างร่วมงานและภายใน 12 เดือนหลังสิ้นสุดการร่วมงาน เว้นแต่ได้รับอนุญาตเป็นลายลักษณ์อักษร</li>
-      <li>ห้ามนำเบอร์ลูกค้า ข้อมูลลูกค้า ราคา เอกสาร รูปภาพ หรือข้อมูลในระบบของบริษัทไปใช้ส่วนตัวหรือส่งต่อ</li>
-    </ul>
-  </div>
-  <div class="contract-section">
-    <h3>9. ทรัพย์สินบริษัท ยูนิฟอร์ม และการใช้ชื่อบริษัท</h3>
-    <ul>
-      <li>ทรัพย์สิน อุปกรณ์ เสื้อยูนิฟอร์ม บัตรช่าง เอกสาร หรือสิ่งของที่บริษัทมอบให้ยังเป็นกรรมสิทธิ์ของบริษัท</li>
-      <li>เมื่อสิ้นสุดการร่วมงานต้องคืนทรัพย์สิน หากสูญหายหรือเสียหายจากความประมาท บริษัทมีสิทธิหักค่าเสียหายตามจริง</li>
-      <li>หลังสิ้นสุดการร่วมงาน ไม่มีสิทธิใช้ชื่อ โลโก้ รูปภาพ ยูนิฟอร์ม ช่องทางติดต่อ หรือข้อมูลของ Coldwindflow Air Services เพื่อรับงานส่วนตัว</li>
-    </ul>
-  </div>
-  <div class="contract-section">
-    <h3>10. การรับประกันงานและการกลับไปแก้งาน</h3>
-    <ul>
-      <li>หากปัญหาเกิดจากความผิดพลาดในการทำงานของพาร์ทเนอร์ ต้องให้ความร่วมมือในการตรวจสอบและแก้ไข</li>
-      <li>กรณีต้องกลับไปแก้งานจากความผิดของพาร์ทเนอร์ บริษัทอาจให้กลับไปแก้โดยไม่มีค่าตอบแทนเพิ่ม หรือหักค่าเดินทาง/ค่าแรงทีมที่แก้แทนตามจริง</li>
-      <li>ต้องไม่ปฏิเสธการตรวจสอบงาน หากบริษัทมีหลักฐานว่าปัญหาเกี่ยวข้องกับงานที่พาร์ทเนอร์ทำ</li>
-    </ul>
-  </div>
-  <div class="contract-section">
-    <h3>11. รายการหักหรือปรับลดค่าตอบแทน</h3>
-    <ul>
-      <li>ไม่ถ่ายรูปงานให้ครบ: อาจหัก 50-100 บาท/เครื่อง หรือพิจารณาตามหลักฐานจริง</li>
-      <li>ไม่อัปเดตสถานะงานในระบบ: อาจหัก 50 บาท/ครั้ง หรือชะลอจ่ายจนกว่าข้อมูลครบ</li>
-      <li>เข้างานสายโดยไม่แจ้ง: อาจหัก 100-300 บาท/ครั้ง ตามผลกระทบต่อลูกค้า</li>
-      <li>งานต้องกลับไปแก้จากความผิดของช่าง: อาจหักค่าเดินทาง/ค่าแรงแก้งาน หรือให้กลับไปแก้โดยไม่มีค่าตอบแทนเพิ่ม</li>
-      <li>รับเงินนอกระบบหรือดึงลูกค้าออกนอกระบบ: อาจงดจ่ายงานนั้น เรียกค่าเสียหาย และยุติการร่วมงานทันที</li>
-    </ul>
-  </div>
-  <div class="contract-section">
-    <h3>12. ระยะเวลาสัญญาและการยุติการร่วมงาน</h3>
-    <ul>
-      <li>สัญญานี้เริ่มมีผลตั้งแต่วันที่ลงนามและมีผลต่อเนื่องจนกว่าฝ่ายใดฝ่ายหนึ่งแจ้งยุติเป็นลายลักษณ์อักษร</li>
-      <li>หากพาร์ทเนอร์ต้องการยุติการร่วมงาน ควรแจ้งล่วงหน้าอย่างน้อย 15 วัน และเคลียร์งานค้าง งานรับประกัน อุปกรณ์ หรือยอดเงินค้างทั้งหมดก่อน</li>
-      <li>บริษัทมีสิทธิยุติสัญญาทันที หากทิ้งงาน รับเงินนอกระบบ ทำให้ลูกค้าหรือบริษัทเสียหาย เปิดเผยข้อมูลภายใน แอบอ้างชื่อบริษัท หรือผิดเงื่อนไขสำคัญ</li>
-    </ul>
-  </div>
+
+const CWF_PARTNER_CONTRACT_PLACEHOLDER_HTML = `
+<section class="cwf-contract-template" data-contract="partner-v2">
+  <h2>สัญญาพาร์ทเนอร์ช่างแอร์ Coldwindflow Air Services</h2>
+  <p><strong>ฉบับใช้งานจริงสำหรับงานล้าง / ซ่อม / ติดตั้งแอร์แบบพาร์ทเนอร์</strong></p>
+  <p>สัญญานี้ใช้สำหรับการร่วมงานระหว่าง Coldwindflow Air Services และพาร์ทเนอร์ช่างแอร์ โดยมีผลเมื่อผู้สมัครอ่าน ยืนยัน และลงลายมือชื่ออิเล็กทรอนิกส์เรียบร้อยแล้ว</p>
+
+  <h3>1. คู่สัญญา</h3>
+  <p><strong>ฝ่ายผู้ว่าจ้าง / บริษัท:</strong> Coldwindflow Air Services โดยนาย สุทธิพงษ์ ศรีวารินทร์ ที่อยู่ 23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260 โทร 098-877-7321</p>
+  <p><strong>ฝ่ายพาร์ทเนอร์ช่าง:</strong> ข้อมูลตามใบสมัครในระบบ CWF ได้แก่ ชื่อ-นามสกุล เบอร์โทร ที่อยู่ พื้นที่รับงาน เอกสารยืนยันตัวตน และข้อมูลอื่นที่ผู้สมัครส่งเข้าระบบ</p>
+
+  <h3>2. ลักษณะการร่วมงาน</h3>
+  <ul>
+    <li>พาร์ทเนอร์ช่างมีสถานะเป็นผู้รับงานบริการอิสระ ไม่ใช่พนักงานประจำของบริษัท เว้นแต่มีสัญญาอื่นระบุเป็นลายลักษณ์อักษร</li>
+    <li>บริษัทเป็นผู้จัดหาลูกค้า ประสานงาน แจ้งรายละเอียดงาน กำหนดมาตรฐานงาน และตรวจสอบคุณภาพก่อนจ่ายค่าตอบแทน</li>
+    <li>พาร์ทเนอร์ต้องรับผิดชอบเครื่องมือ ค่าเดินทาง ค่าใช้จ่ายส่วนตัว ภาษี และค่าใช้จ่ายอื่นของตนเอง เว้นแต่บริษัทตกลงรับผิดชอบเป็นรายงาน</li>
+  </ul>
+
+  <h3>3. ขอบเขตงานที่รับ</h3>
+  <p>ครอบคลุมงานล้างแอร์ปกติ ล้างพรีเมียม ล้างแบบแขวนคอยล์ ตัดล้างใหญ่ งานซ่อม งานติดตั้ง หรือบริการอื่นที่บริษัทมอบหมายเป็นรายงาน พาร์ทเนอร์ต้องตรวจสอบรายละเอียดงาน เวลา สถานที่ จำนวนเครื่อง ประเภทงาน และค่าตอบแทนก่อนยืนยันรับงาน</p>
+
+  <h3>4. เรทค่าตอบแทนพาร์ทเนอร์แบบขั้นบันได</h3>
+  <table class="contract-rate-table"><thead><tr><th>ประเภทงาน</th><th>ขนาด BTU</th><th>เครื่องที่ 1</th><th>เครื่องที่ 2-3</th><th>เครื่องที่ 4+</th></tr></thead><tbody>
+    <tr><td>ล้างปกติ</td><td>ไม่เกิน 12,000</td><td>400</td><td>350</td><td>320</td></tr>
+    <tr><td>ล้างปกติ</td><td>18,000 ขึ้นไป</td><td>450</td><td>400</td><td>350</td></tr>
+    <tr><td>ล้างพรีเมียม</td><td>ไม่เกิน 12,000</td><td>550</td><td>500</td><td>450</td></tr>
+    <tr><td>ล้างพรีเมียม</td><td>18,000 ขึ้นไป</td><td>700</td><td>650</td><td>600</td></tr>
+    <tr><td>แขวนคอยล์</td><td>ไม่เกิน 12,000</td><td>850</td><td>800</td><td>750</td></tr>
+    <tr><td>แขวนคอยล์</td><td>18,000 ขึ้นไป</td><td>1,050</td><td>1,000</td><td>950</td></tr>
+    <tr><td>ตัดล้างใหญ่</td><td>ไม่เกิน 12,000</td><td>1,200</td><td>1,100</td><td>1,000</td></tr>
+    <tr><td>ตัดล้างใหญ่</td><td>18,000 ขึ้นไป</td><td>1,450</td><td>1,350</td><td>1,250</td></tr>
+  </tbody></table>
+  <p>หมายเหตุ: ตัวเลขทั้งหมดเป็นเงินบาทต่อเครื่อง ใช้กับงานบ้านเดียว / คอนโดเดียว / ร้านเดียว / หน้างานเดียวกัน และทำในวันเดียวกันเท่านั้น</p>
+
+  <h3>5. เงื่อนไขการใช้เรทขั้นบันได</h3>
+  <ul>
+    <li>เครื่องที่ 1 จ่ายเต็ม เพราะมีต้นทุนเปิดงาน เดินทาง ยกของ ตั้งเครื่องมือ ตรวจหน้างาน และสื่อสารกับลูกค้า</li>
+    <li>เครื่องที่ 2-3 เป็นเรทงานต่อเนื่อง เพราะอยู่ในสถานที่เดียวกันและประหยัดเวลาบางส่วน</li>
+    <li>เครื่องที่ 4 ขึ้นไปเป็นเรทเหมาหลายเครื่อง เพื่อให้บริษัทและพาร์ทเนอร์ทำงานร่วมกันได้ระยะยาว</li>
+    <li>หากคนละบ้าน คนละอาคาร คนละโลเคชัน หรือคนละนัดหมาย ให้คิดเป็นงานแยก ไม่รวมขั้นบันได</li>
+  </ul>
+
+  <h3>6. รอบจ่ายเงิน ภาษี และเอกสารการจ่าย</h3>
+  <ul>
+    <li>บริษัทจะจ่ายค่าตอบแทนตามรอบที่กำหนด เช่น วันที่ 10 และ 25 ของเดือน หรือรอบอื่นที่ตกลงกันเป็นลายลักษณ์อักษร</li>
+    <li>ค่าตอบแทนจ่ายเฉพาะงานที่ปิดสมบูรณ์ในระบบ มีรูปครบ สถานะครบ ข้อมูลครบ และผ่านการตรวจสอบจากบริษัทแล้ว</li>
+    <li>ค่าตอบแทนถือเป็นยอดก่อนหักภาษี ณ ที่จ่าย เว้นแต่บริษัทแจ้งเป็นอย่างอื่น</li>
+    <li>หากกฎหมายกำหนด บริษัทมีสิทธิหักภาษี ณ ที่จ่าย เช่น 3% สำหรับค่าบริการหรือค่าจ้างทำของ และออกหนังสือรับรองให้พาร์ทเนอร์</li>
+  </ul>
+
+  <h3>7. เงินประกันความเสียหาย</h3>
+  <p>เงินประกันความเสียหายจำนวน 5,000 บาท แบ่งหักจากค่าตอบแทนรายเดือน เดือนละ 1,000 บาท เป็นเวลา 5 เดือน หรือแบ่งจ่ายตามยอดที่ตกลง ใช้เป็นหลักประกันกรณีทิ้งงาน งานเสียหาย รับเงินนอกระบบ หนี้ค้าง อุปกรณ์ค้าง หรือความเสียหายอื่นจากการกระทำของพาร์ทเนอร์</p>
+  <p>เมื่อสิ้นสุดการร่วมงานและไม่มีงานค้าง ไม่มีอุปกรณ์ค้าง ไม่มีข้อพิพาท และพ้นช่วงรับประกันงานลูกค้าแล้ว บริษัทจะคืนเงินประกันภายใน 60 - 90 วัน หลังตรวจสอบครบถ้วน</p>
+
+  <h3>8. มาตรฐานงานและความปลอดภัย</h3>
+  <ul>
+    <li>ถ่ายรูปก่อนงาน ระหว่างงาน และหลังงานให้ครบตามที่บริษัทกำหนด</li>
+    <li>อัปเดตสถานะในระบบ เช่น เดินทางถึง เริ่มงาน ปิดงาน และแนบรายละเอียดที่จำเป็น</li>
+    <li>รักษาความสะอาดหน้างาน สื่อสารกับลูกค้าสุภาพ และแจ้งบริษัทก่อนตัดสินใจเพิ่มงานหรือเปลี่ยนราคา</li>
+    <li>หากเกิดความเสียหายจากความประมาท พาร์ทเนอร์ต้องรับผิดชอบตามความเสียหายจริง</li>
+  </ul>
+
+  <h3>9. การยกเลิกงาน เลื่อนงาน และการทิ้งงาน</h3>
+  <p>เมื่อพาร์ทเนอร์ยืนยันรับงานแล้ว ถือว่ารับผิดชอบงานนั้น หากต้องยกเลิกหรือเลื่อนงาน ต้องแจ้งบริษัทล่วงหน้าให้เร็วที่สุด โดยมาตรฐานควรแจ้งอย่างน้อย 72 ชั่วโมงก่อนเวลานัด เพื่อให้บริษัทจัดทีมทดแทนและดูแลลูกค้าได้ทันเวลา</p>
+  <p>กรณีไม่แจ้งล่วงหน้า ทิ้งงาน หรือทำให้ลูกค้าเสียหาย บริษัทมีสิทธิพิจารณาหักค่าเสียหาย ระงับสิทธิ์ หรือยกเลิกการร่วมงานตามความเหมาะสม</p>
+
+  <h3>10. ข้อห้ามสำคัญ</h3>
+  <ul>
+    <li>ห้ามรับเงินนอกระบบ ห้ามเปลี่ยนราคาเอง และห้ามนำลูกค้าออกนอกระบบ CWF</li>
+    <li>ห้ามเปิดเผยข้อมูลลูกค้า ข้อมูลงาน ราคา เอกสาร หรือข้อมูลภายในของบริษัทโดยไม่ได้รับอนุญาต</li>
+    <li>ห้ามให้ผู้อื่นรับงานแทนหรือใช้บัญชีของตนเองโดยไม่ได้รับอนุญาตจากบริษัท</li>
+  </ul>
+
+  <h3>11. งานรับประกันและการตรวจสอบ</h3>
+  <p>หากมีปัญหาหลังบริการ พาร์ทเนอร์ต้องให้ความร่วมมือกับบริษัทในการตรวจสอบและแก้ไขตามนโยบายรับประกันของบริษัท ห้ามปฏิเสธลูกค้าเองหรือปิดการสื่อสารกับบริษัท</p>
+
+  <h3>12. การระงับสิทธิ์และการยุติสัญญา</h3>
+  <p>บริษัทมีสิทธิระงับหรือยกเลิกสิทธิ์การรับงานบางประเภทหรือทั้งหมด หากพบการผิดเงื่อนไข งานไม่ได้มาตรฐาน ทุจริต รับเงินนอกระบบ ทำให้ลูกค้าเสียหาย หรือมีเหตุจำเป็นทางธุรกิจ</p>
 </section>
 `;
 
@@ -2327,8 +2285,12 @@ app.post('/partner/agreement/:application_code/sign', async (req, res) => {
   const applicationCode = sanitizePartnerApplicationCode(req.params.application_code);
   const signer = String(req.body?.signer_full_name || '').trim();
   const consent = req.body?.consent === true || req.body?.consent === 'true' || req.body?.consent === 1 || req.body?.consent === '1';
+  const signatureDataUrl = String(req.body?.signature_data_url || '').trim();
   if (!signer) return res.status(400).json({ error: 'กรุณาพิมพ์ชื่อ-นามสกุลเพื่อเซ็นสัญญา' });
   if (!consent) return res.status(400).json({ error: 'กรุณายืนยันการยอมรับสัญญา' });
+  if (!signatureDataUrl || !signatureDataUrl.startsWith('data:image/png;base64,') || signatureDataUrl.length < 800) {
+    return res.status(400).json({ error: 'กรุณาเซ็นลายเซ็นบนหน้าจอก่อนยืนยันสัญญา' });
+  }
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -2348,10 +2310,10 @@ app.post('/partner/agreement/:application_code/sign', async (req, res) => {
     }
     const sig = await client.query(
       `INSERT INTO public.agreement_signatures
-        (application_id, template_id, template_version, signer_full_name, consent_terms, signed_ip, signed_user_agent, signed_at)
-       VALUES ($1,$2,$3,$4,TRUE,$5,$6,NOW())
+        (application_id, template_id, template_version, signer_full_name, consent_terms, signature_data_url, signed_ip, signed_user_agent, signed_at)
+       VALUES ($1,$2,$3,$4,TRUE,$5,$6,$7,NOW())
        RETURNING id, template_id, template_version, signer_full_name, signed_at`,
-      [appR.rows[0].id, tpl.id, tpl.version, signer, req.ip || null, String(req.headers['user-agent'] || '').slice(0, 500)]
+      [appR.rows[0].id, tpl.id, tpl.version, signer, signatureDataUrl, req.ip || null, String(req.headers['user-agent'] || '').slice(0, 500)]
     );
     await logPartnerOnboardingEvent(client, {
       application_id: appR.rows[0].id,
@@ -2408,14 +2370,19 @@ app.post('/partner/academy/:application_code/lessons/:lesson_id/complete', async
       await client.query('ROLLBACK');
       return res.status(400).json({ error: 'lesson_id ไม่ถูกต้อง' });
     }
-    const lessonR = await client.query(`SELECT id, course_id, lesson_title FROM public.academy_lessons WHERE id=$1 AND is_active=TRUE LIMIT 1`, [lessonId]);
+    const lessonR = await client.query(`SELECT id, course_id, lesson_title, COALESCE(min_watch_seconds,60)::int AS min_watch_seconds FROM public.academy_lessons WHERE id=$1 AND is_active=TRUE LIMIT 1`, [lessonId]);
     if (!lessonR.rows.length) throw new Error('ไม่พบบทเรียน');
+    const watchedSeconds = Math.max(0, Math.round(Number(req.body?.watched_seconds || 0)));
+    if (watchedSeconds < Number(lessonR.rows[0].min_watch_seconds || 60)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: `ต้องดูบทเรียนอย่างน้อย ${lessonR.rows[0].min_watch_seconds} วินาทีก่อนยืนยัน`, min_watch_seconds: lessonR.rows[0].min_watch_seconds });
+    }
     const saved = await client.query(
-      `INSERT INTO public.academy_progress(application_id, course_id, lesson_id, completed, completed_at, updated_at)
-       VALUES($1,$2,$3,TRUE,NOW(),NOW())
-       ON CONFLICT(application_id, lesson_id) DO UPDATE SET completed=TRUE, completed_at=COALESCE(public.academy_progress.completed_at,NOW()), updated_at=NOW()
+      `INSERT INTO public.academy_progress(application_id, course_id, lesson_id, completed, completed_at, updated_at, watched_seconds)
+       VALUES($1,$2,$3,TRUE,NOW(),NOW(),$4)
+       ON CONFLICT(application_id, lesson_id) DO UPDATE SET completed=TRUE, watched_seconds=GREATEST(COALESCE(public.academy_progress.watched_seconds,0), EXCLUDED.watched_seconds), completed_at=COALESCE(public.academy_progress.completed_at,NOW()), updated_at=NOW()
        RETURNING *`,
-      [appRow.id, lessonR.rows[0].course_id, lessonId]
+      [appRow.id, lessonR.rows[0].course_id, lessonId, watchedSeconds]
     );
     await logPartnerOnboardingEvent(client, {
       application_id: appRow.id,
@@ -2439,6 +2406,17 @@ app.get('/partner/academy/:application_code/exam', async (req, res) => {
   try {
     const appRow = await getPartnerApplicationByCode(req.params.application_code);
     if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    const completeR = await pool.query(`
+      SELECT COUNT(l.id)::int AS total, COUNT(p.id) FILTER (WHERE COALESCE(p.completed,FALSE))::int AS completed
+      FROM public.academy_courses c
+      JOIN public.academy_lessons l ON l.course_id=c.id AND l.is_active=TRUE
+      LEFT JOIN public.academy_progress p ON p.lesson_id=l.id AND p.application_id=$1
+      WHERE c.course_code='cwf_basic_partner'`, [appRow.id]);
+    const totalLessons = Number(completeR.rows[0]?.total || 0);
+    const completedLessons = Number(completeR.rows[0]?.completed || 0);
+    if (totalLessons > 0 && completedLessons < totalLessons) {
+      return res.status(403).json({ error: 'ต้องดูบทเรียนให้ครบก่อนทำข้อสอบ', total_lessons: totalLessons, completed_lessons: completedLessons });
+    }
     const examR = await pool.query(
       `SELECT e.* FROM public.academy_exams e JOIN public.academy_courses c ON c.id=e.course_id WHERE c.course_code='cwf_basic_partner' AND e.is_active=TRUE ORDER BY e.id DESC LIMIT 1`
     );
@@ -2463,6 +2441,19 @@ app.post('/partner/academy/:application_code/exam/submit', async (req, res) => {
     if (!appRow) {
       await client.query('ROLLBACK');
       return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    }
+
+    const completeR = await client.query(`
+      SELECT COUNT(l.id)::int AS total, COUNT(p.id) FILTER (WHERE COALESCE(p.completed,FALSE))::int AS completed
+      FROM public.academy_courses c
+      JOIN public.academy_lessons l ON l.course_id=c.id AND l.is_active=TRUE
+      LEFT JOIN public.academy_progress p ON p.lesson_id=l.id AND p.application_id=$1
+      WHERE c.course_code='cwf_basic_partner'`, [appRow.id]);
+    const totalLessons = Number(completeR.rows[0]?.total || 0);
+    const completedLessons = Number(completeR.rows[0]?.completed || 0);
+    if (totalLessons > 0 && completedLessons < totalLessons) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'ต้องดูบทเรียนให้ครบก่อนส่งข้อสอบ', total_lessons: totalLessons, completed_lessons: completedLessons });
     }
     const examR = await client.query(
       `SELECT e.* FROM public.academy_exams e JOIN public.academy_courses c ON c.id=e.course_id WHERE c.course_code='cwf_basic_partner' AND e.is_active=TRUE ORDER BY e.id DESC LIMIT 1`
@@ -7702,6 +7693,7 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_agreement_signatures_application ON public.agreement_signatures(application_id, signed_at DESC)`);
+await pool.query(`ALTER TABLE public.agreement_signatures ADD COLUMN IF NOT EXISTS signature_data_url TEXT`);
 
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.academy_courses (
@@ -7740,6 +7732,9 @@ await pool.query(`
     UNIQUE(application_id, lesson_id)
   )
 `);
+await pool.query(`ALTER TABLE public.academy_lessons ADD COLUMN IF NOT EXISTS video_url TEXT`);
+await pool.query(`ALTER TABLE public.academy_lessons ADD COLUMN IF NOT EXISTS min_watch_seconds INT NOT NULL DEFAULT 60`);
+await pool.query(`ALTER TABLE public.academy_progress ADD COLUMN IF NOT EXISTS watched_seconds INT NOT NULL DEFAULT 0`);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_academy_progress_application ON public.academy_progress(application_id, course_id)`);
 
 await pool.query(`
@@ -7852,18 +7847,19 @@ await pool.query(`
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_incidents_application ON public.partner_incidents(application_id, created_at DESC)`);
 
 try {
-  await pool.query(`UPDATE public.agreement_templates SET is_active=FALSE WHERE template_code='partner_standard' AND version < 2`);
   await pool.query(
     `INSERT INTO public.agreement_templates(template_code, version, title, body_text, content_html, source_note, is_active)
-     VALUES('partner_standard', 2, 'CWF สัญญาพาร์ทเนอร์ช่างแอร์ ฉบับใช้งานจริง', $1, $1, 'IMPORTED_FROM_CWF_PARTNER_CONTRACT_PDF_V2', TRUE)
+     VALUES('partner_standard', 2, 'CWF สัญญาพาร์ทเนอร์ช่างแอร์ ฉบับใช้งานจริง', $1, $2, $3, TRUE)
      ON CONFLICT(template_code, version) DO UPDATE SET
        title=EXCLUDED.title,
-       body_text=EXCLUDED.body_text,
-       content_html=EXCLUDED.content_html,
-       source_note=EXCLUDED.source_note,
-       is_active=TRUE,
+       content_html=COALESCE(public.agreement_templates.content_html, EXCLUDED.content_html),
+       source_note=COALESCE(public.agreement_templates.source_note, EXCLUDED.source_note),
        updated_at=NOW()`,
-    [CWF_PARTNER_CONTRACT_REAL_HTML]
+    [
+      'CWF สัญญาพาร์ทเนอร์ช่างแอร์ ฉบับใช้งานจริง - จัดรูปแบบจากเอกสาร PDF สำหรับใช้ในระบบ',
+      CWF_PARTNER_CONTRACT_PLACEHOLDER_HTML,
+      'IMPORTED_FROM_CWF_PARTNER_CONTRACT_PDF_STRUCTURED_V2',
+    ]
   );
   const courseR = await pool.query(
     `INSERT INTO public.academy_courses(course_code, title, description, is_active)
@@ -7875,9 +7871,9 @@ try {
   if (courseId) {
     for (let i = 0; i < BASIC_PARTNER_LESSONS.length; i++) {
       await pool.query(
-        `INSERT INTO public.academy_lessons(course_id, lesson_title, body_text, sort_order, is_active)
-         VALUES($1,$2,$3,$4,TRUE)
-         ON CONFLICT(course_id, sort_order) DO UPDATE SET lesson_title=EXCLUDED.lesson_title, body_text=EXCLUDED.body_text, is_active=TRUE`,
+        `INSERT INTO public.academy_lessons(course_id, lesson_title, body_text, sort_order, is_active, min_watch_seconds)
+         VALUES($1,$2,$3,$4,TRUE,60)
+         ON CONFLICT(course_id, sort_order) DO UPDATE SET lesson_title=EXCLUDED.lesson_title, body_text=EXCLUDED.body_text, is_active=TRUE, min_watch_seconds=COALESCE(public.academy_lessons.min_watch_seconds,60)`,
         [courseId, BASIC_PARTNER_LESSONS[i], BASIC_PARTNER_LESSON_BODIES[i] || BASIC_PARTNER_LESSONS[i], i + 1]
       );
     }
