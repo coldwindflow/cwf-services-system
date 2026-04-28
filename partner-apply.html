@@ -69,6 +69,21 @@
     .ghost{background:#edf3ff;color:var(--navy)}
     button:disabled{opacity:.72;cursor:wait}
 
+
+    .terms-card{background:#f8fbff;border:1px solid var(--line);border-radius:20px;padding:14px 16px;margin-bottom:14px;color:#203957}
+    .terms-card details{border:1px solid #dbe7ff;border-radius:16px;background:#fff;overflow:hidden}
+    .terms-card summary{cursor:pointer;list-style:none;padding:14px 15px;font-weight:1000;color:var(--navy);display:flex;justify-content:space-between;gap:10px;align-items:center}
+    .terms-card summary::-webkit-details-marker{display:none}
+    .terms-card summary:after{content:'เปิดอ่าน';font-size:12px;background:var(--yellow);color:var(--navy);border-radius:999px;padding:6px 10px;white-space:nowrap}
+    .terms-card details[open] summary:after{content:'ปิด'}
+    .terms-content{border-top:1px solid #dbe7ff;padding:14px 16px;line-height:1.75;font-weight:800;color:#243b5d}
+    .terms-content h4{margin:0 0 8px;color:var(--navy);font-size:17px}
+    .terms-content ol{margin:0;padding-left:22px}
+    .terms-content li{margin:6px 0}
+    .terms-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:12px}
+    .terms-actions a{font-weight:1000;color:var(--blue);text-decoration:none;background:#eef4ff;border-radius:999px;padding:9px 12px}
+    .terms-note{margin-top:10px;color:var(--muted);font-size:13px;font-weight:800}
+
     .result{display:none;margin-top:18px;background:var(--navy);color:#fff;border-radius:22px;padding:18px}
     .result h4{margin:0 0 10px;font-size:21px}
     .result strong{color:var(--yellow)}
@@ -250,13 +265,38 @@
             <div class="section-title">
               <div class="section-no">7</div>
               <div>
-                <h3>ยืนยันเงื่อนไข</h3>
-                <p>จำเป็นต้องยอมรับก่อนส่งใบสมัคร</p>
+                <h3>อ่านและยืนยันเงื่อนไข</h3>
+                <p>กดอ่านเงื่อนไขก่อนติ๊กยอมรับและส่งใบสมัคร</p>
               </div>
             </div>
+
+            <div class="terms-card">
+              <details id="termsDetails">
+                <summary>เงื่อนไขเบื้องต้นสำหรับผู้สมัครพาร์ทเนอร์ช่าง CWF</summary>
+                <div class="terms-content">
+                  <h4>เงื่อนไขการสมัครและการเริ่มรับงาน</h4>
+                  <ol>
+                    <li>ผู้สมัครยืนยันว่าข้อมูลที่กรอกในใบสมัครเป็นข้อมูลจริง ถูกต้อง และสามารถให้ CWF ตรวจสอบได้</li>
+                    <li>การส่งใบสมัครเป็นเพียงขั้นตอนคัดกรองเบื้องต้น ยังไม่ถือว่าได้รับสิทธิ์รับงานทันที</li>
+                    <li>หลังสมัครสำเร็จ ผู้สมัครสามารถเข้าสู่ระบบแอพช่างด้วยเบอร์โทรและรหัสผ่านที่ตั้งไว้ แต่สถานะจะยังไม่สามารถรับงานจริงได้</li>
+                    <li>ผู้สมัครต้องอัปโหลดเอกสารที่กำหนด เช่น บัตรประชาชน รูปโปรไฟล์ ข้อมูลบัญชีรับเงิน และเอกสารประกอบอื่น ๆ เพื่อให้แอดมินตรวจสอบ</li>
+                    <li>ผู้สมัครต้องอ่านและยอมรับสัญญาพาร์ทเนอร์ช่าง CWF ฉบับเต็มในขั้นตอนถัดไป ก่อนเริ่มรับงานจริง</li>
+                    <li>สิทธิ์รับงานแต่ละประเภทขึ้นอยู่กับการอบรม การสอบ และการอนุมัติ certification รายประเภทจากแอดมินเท่านั้น</li>
+                    <li>ผู้สมัครต้องปฏิบัติตามมาตรฐานบริการของ CWF แต่งกายสุภาพ สื่อสารกับลูกค้าอย่างเหมาะสม เช็กอิน อัปเดตสถานะ และส่งรูปงานตามที่ระบบกำหนด</li>
+                    <li>ห้ามเปลี่ยนราคาเอง ห้ามรับเงินนอกระบบ ห้ามนำข้อมูลงานหรือลูกค้าไปใช้ส่วนตัว และห้ามกระทำการที่ทำให้บริษัทหรือลูกค้าเสียหาย</li>
+                    <li>CWF มีสิทธิ์อนุมัติ ระงับ หรือยกเลิกสิทธิ์การรับงานบางประเภทหรือทั้งหมด หากพบว่าไม่เป็นไปตามมาตรฐาน เงื่อนไข หรือสัญญาที่กำหนด</li>
+                  </ol>
+                  <div class="terms-actions">
+                    <a href="/partner-agreement.html" target="_blank" rel="noopener">เปิดอ่านสัญญาพาร์ทเนอร์ฉบับเต็ม</a>
+                  </div>
+                  <div class="terms-note">หมายเหตุ: หน้านี้เป็นเงื่อนไขเบื้องต้นสำหรับการสมัคร ส่วนสัญญาฉบับเต็มต้องอ่านและยืนยันในขั้นตอนถัดไป</div>
+                </div>
+              </details>
+            </div>
+
             <div class="choice-grid">
-              <label class="chip"><input id="consent_pdpa" type="checkbox"><span>ยินยอมให้ CWF ใช้ข้อมูลเพื่อพิจารณาใบสมัครและ onboarding *</span></label>
-              <label class="chip"><input id="consent_terms" type="checkbox"><span>ยอมรับเงื่อนไขการสมัครเป็นพาร์ทเนอร์ *</span></label>
+              <label class="chip"><input id="consent_pdpa" type="checkbox"><span>ยินยอมให้ CWF ใช้ข้อมูลเพื่อพิจารณาใบสมัคร ตรวจเอกสาร และดำเนินการ onboarding *</span></label>
+              <label class="chip"><input id="consent_terms" type="checkbox"><span>ข้าพเจ้าอ่านและยอมรับเงื่อนไขเบื้องต้นสำหรับการสมัครเป็นพาร์ทเนอร์ช่าง CWF *</span></label>
             </div>
             <div class="actions">
               <button class="primary" type="submit" id="submitBtn"><span id="submitBtnText">ส่งใบสมัครและสร้างบัญชี</span></button>
