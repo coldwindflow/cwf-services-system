@@ -3,278 +3,271 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>สมัครพาร์ทเนอร์ช่าง - CWF</title>
+  <title>สมัครพาร์ทเนอร์ช่าง CWF</title>
   <style>
     :root{
-      --navy:#071b49;--blue:#0b4bb3;--yellow:#ffd233;--ink:#0f172a;--muted:#64748b;--line:#dbe7ff;--bg:#f4f7fc;--card:#ffffff;
-      --shadow:0 18px 40px rgba(6,24,68,.10);--radius:24px;
+      --navy:#071b49;
+      --blue:#0d56c9;
+      --blue-soft:#eef4ff;
+      --yellow:#ffd233;
+      --text:#14213d;
+      --muted:#5f6f89;
+      --line:#d8e4fb;
+      --bg:#f4f7fc;
+      --card:#ffffff;
+      --shadow:0 14px 34px rgba(7,27,73,.08);
+      --radius:24px;
     }
     *{box-sizing:border-box}
-    body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:linear-gradient(180deg,#06173f 0,#0b4bb3 320px,#f4f7fc 320px);color:var(--ink)}
-    .wrap{max-width:1120px;margin:0 auto;padding:20px 14px 64px}
-    .hero{color:#fff;padding:8px 0 18px}
-    .brand{display:flex;align-items:center;gap:14px;margin-bottom:18px}
-    .brand img{width:62px;height:62px;border-radius:18px;background:#fff;padding:8px;object-fit:contain}
-    .hero h1{margin:0;font-size:42px;line-height:1.1}
-    .hero p{margin:8px 0 0;font-size:20px;color:rgba(255,255,255,.86);font-weight:700}
-    .hero-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px;align-items:stretch}
-    .hero-card,.steps-card,.panel{background:rgba(255,255,255,.08);backdrop-filter:blur(6px);border:1px solid rgba(255,255,255,.14);border-radius:28px;box-shadow:var(--shadow)}
-    .hero-card{padding:22px}
-    .hero-badges{display:flex;flex-wrap:wrap;gap:10px;margin-top:16px}
-    .hero-badge{padding:10px 14px;border-radius:999px;background:rgba(255,255,255,.12);font-weight:800;border:1px solid rgba(255,255,255,.12)}
-    .steps-card{padding:18px}
-    .steps-title{font-size:18px;font-weight:900;margin:0 0 14px;color:#fff}
-    .step-list{display:grid;gap:10px}
-    .step-item{display:flex;align-items:flex-start;gap:12px;padding:13px 14px;border-radius:18px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.16)}
-    .step-no{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--yellow);color:var(--navy);font-weight:1000;flex:0 0 auto}
-    .step-item strong{display:block;color:#fff;font-size:15px}
-    .step-item span{display:block;color:rgba(255,255,255,.82);font-size:13px;font-weight:700;margin-top:3px}
-    .main-card{background:#fff;border:1px solid #dbe7ff;border-radius:32px;box-shadow:var(--shadow);overflow:hidden;margin-top:18px}
-    .main-head{padding:24px 24px 16px;border-bottom:1px solid var(--line)}
-    .main-head h2{margin:0;font-size:40px;color:var(--navy);line-height:1.15}
-    .main-head p{margin:8px 0 0;font-size:20px;font-weight:800;color:#5f6f89}
-    .form-wrap{padding:22px}
-    .notice{display:flex;gap:12px;align-items:flex-start;background:#fff9e5;border:1px solid #ffe18a;border-left:6px solid var(--yellow);border-radius:20px;padding:14px 16px;margin-bottom:18px;color:#5c4a00}
-    .notice strong{display:block;font-size:16px;margin-bottom:2px}
-    .section{border:1px solid var(--line);border-radius:26px;padding:18px;background:#fff;margin-bottom:16px}
-    .section-head{display:flex;align-items:flex-start;gap:14px;margin-bottom:14px}
-    .section-no{width:44px;height:44px;border-radius:50%;background:var(--yellow);display:flex;align-items:center;justify-content:center;font-weight:1000;color:var(--navy);font-size:22px;flex:0 0 auto}
-    .section-head h3{margin:0;color:var(--navy);font-size:24px;line-height:1.15}
-    .section-head p{margin:4px 0 0;color:#66758d;font-size:15px;font-weight:800}
+    body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:linear-gradient(180deg,var(--navy) 0,var(--blue) 260px,var(--bg) 260px);color:var(--text)}
+    .wrap{max-width:1100px;margin:0 auto;padding:18px 14px 64px}
+    .hero{display:flex;align-items:center;gap:14px;color:#fff;padding:8px 0 18px}
+    .hero img{width:58px;height:58px;border-radius:16px;background:#fff;padding:8px;object-fit:contain}
+    .hero h1{margin:0;font-size:32px;line-height:1.15}
+    .hero p{margin:6px 0 0;color:rgba(255,255,255,.9);font-size:16px;font-weight:700}
+
+    .stepbar{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.16);border-radius:22px;padding:10px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;box-shadow:var(--shadow);backdrop-filter:blur(6px);overflow:auto}
+    .step{display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:16px;background:rgba(255,255,255,.08);min-width:170px}
+    .step .num{width:32px;height:32px;display:flex;align-items:center;justify-content:center;border-radius:50%;font-weight:1000;background:rgba(255,255,255,.18);color:#fff;flex:0 0 auto}
+    .step .txt{color:#fff;font-size:13px;font-weight:900;line-height:1.35}
+    .step.active{background:#fff;border:1px solid #dbe6ff}
+    .step.active .num{background:var(--yellow);color:var(--navy)}
+    .step.active .txt{color:var(--navy)}
+
+    .card{margin-top:16px;background:var(--card);border:1px solid var(--line);border-radius:30px;box-shadow:var(--shadow);overflow:hidden}
+    .card-head{padding:24px 24px 18px;border-bottom:1px solid var(--line)}
+    .card-head h2{margin:0;font-size:34px;line-height:1.15;color:var(--navy)}
+    .card-head p{margin:8px 0 0;color:var(--muted);font-size:18px;font-weight:800}
+    .card-body{padding:20px}
+    .notice{display:flex;gap:12px;align-items:flex-start;background:#fff9e8;border:1px solid #ffe39d;border-left:5px solid var(--yellow);border-radius:18px;padding:14px 16px;margin-bottom:18px;color:#5b4a02}
+    .notice strong{display:block;font-size:15px;margin-bottom:2px}
+
+    .section{background:#fff;border:1px solid var(--line);border-radius:24px;padding:18px;margin-bottom:16px}
+    .section-title{display:flex;gap:12px;align-items:flex-start;margin-bottom:14px}
+    .section-no{width:42px;height:42px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--yellow);color:var(--navy);font-weight:1000;font-size:22px;flex:0 0 auto}
+    .section-title h3{margin:0;color:var(--navy);font-size:23px;line-height:1.15}
+    .section-title p{margin:4px 0 0;color:var(--muted);font-size:14px;font-weight:800}
+
     .grid2,.grid3{display:grid;gap:14px}
     .grid2{grid-template-columns:repeat(2,minmax(0,1fr))}
     .grid3{grid-template-columns:repeat(3,minmax(0,1fr))}
-    .field label,.sub-label{display:block;font-size:14px;font-weight:900;color:#31435e;margin:0 0 8px}
-    input,textarea,select{width:100%;border:2px solid #d4e0f6;border-radius:18px;padding:15px 16px;font:inherit;color:var(--ink);background:#fff;outline:none;transition:.18s ease}
-    input:focus,textarea:focus,select:focus{border-color:#7aa8ff;box-shadow:0 0 0 4px rgba(11,75,179,.08)}
+    label{display:block;margin:0 0 8px;font-size:14px;font-weight:900;color:#30435f}
+    input,textarea,select{width:100%;border:2px solid #d6e2fa;border-radius:18px;padding:14px 15px;background:#fff;color:var(--text);font:inherit;outline:none;transition:.18s ease}
+    input:focus,textarea:focus,select:focus{border-color:#7ea9ff;box-shadow:0 0 0 4px rgba(13,86,201,.08)}
     textarea{min-height:96px;resize:vertical}
-    .hint{display:block;margin-top:6px;color:#73839c;font-size:12px;font-weight:700}
-    .choice-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
-    .radio-card,.check-card{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:2px solid #dbe7ff;border-radius:20px;background:#f8fbff;font-weight:900;color:#1f3559;cursor:pointer}
-    .radio-card input,.check-card input{width:22px;height:22px;flex:0 0 auto;margin-top:1px}
-    .chip-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-    .chip{display:flex;gap:10px;align-items:flex-start;padding:13px 14px;border:2px solid #dbe7ff;border-radius:18px;background:#f8fbff;font-weight:900;color:#1f3559;cursor:pointer;transition:.18s ease}
-    .chip input{width:22px;height:22px;flex:0 0 auto;margin-top:1px}
-    .chip.active{border-color:#0b4bb3;background:#eef4ff;box-shadow:0 8px 18px rgba(11,75,179,.10)}
-    .helper-box{margin-top:12px}
+    .hint{display:block;margin-top:6px;color:#7a8aa4;font-size:12px;font-weight:700}
+
+    .choice-grid,.chip-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+    .chip{display:flex;gap:10px;align-items:flex-start;padding:13px 14px;border:2px solid #dbe7ff;border-radius:18px;background:#f8fbff;cursor:pointer;transition:.18s ease;color:#223a63;font-weight:900}
+    .chip input{width:20px;height:20px;flex:0 0 auto;margin-top:1px}
+    .chip.active{background:#eef4ff;border-color:#0d56c9;box-shadow:0 8px 18px rgba(13,86,201,.08)}
+    .helper-wrap{display:none;margin-top:12px}
     .actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
-    button,.btn{border:0;border-radius:18px;padding:16px 18px;font-weight:1000;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;min-height:56px}
-    .primary{background:var(--yellow);color:var(--navy);box-shadow:0 12px 24px rgba(255,210,51,.24)}
-    .ghost{background:#edf3ff;color:var(--navy)}
+    button,.btn{border:0;border-radius:18px;padding:15px 18px;min-height:56px;font-weight:1000;cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}
+    .primary{background:var(--yellow);color:var(--navy)}
     .secondary{background:var(--blue);color:#fff}
-    button:disabled{opacity:.7;cursor:wait}
-    .result{display:none;margin-top:18px;background:#081c4b;color:#fff;border-radius:24px;padding:18px}
-    .result h4{margin:0 0 10px;font-size:20px}
+    .ghost{background:#edf3ff;color:var(--navy)}
+    button:disabled{opacity:.72;cursor:wait}
+
+    .result{display:none;margin-top:18px;background:var(--navy);color:#fff;border-radius:22px;padding:18px}
+    .result h4{margin:0 0 10px;font-size:21px}
     .result strong{color:var(--yellow)}
-    .result .actions{margin-top:14px}
-    .foot-note{margin-top:12px;color:#5f6f89;font-weight:800}
-    @media (max-width: 900px){
-      .hero-grid,.grid2,.grid3,.choice-grid,.chip-grid{grid-template-columns:1fr}
-      .hero h1{font-size:34px}
-      .main-head h2{font-size:30px}
-      .main-head p{font-size:18px}
-      .form-wrap{padding:16px}
-      .section{padding:16px}
-    }
-    @media (max-width: 640px){
-      .wrap{padding:16px 12px 48px}
-      .brand img{width:54px;height:54px}
+
+    @media (max-width:900px){
+      .grid2,.grid3,.choice-grid,.chip-grid{grid-template-columns:1fr}
+      .card-head h2{font-size:28px}
+      .card-head p{font-size:16px}
       .hero h1{font-size:28px}
-      .hero p{font-size:17px}
-      .main-head{padding:18px 18px 14px}
-      .main-head h2{font-size:24px}
-      .main-head p{font-size:16px}
-      .section-head h3{font-size:21px}
-      .section-head p{font-size:14px}
-      input,textarea,select,.chip,.radio-card,.check-card{border-radius:16px}
-      button,.btn{width:100%}
+    }
+    @media (max-width:640px){
+      .wrap{padding:16px 12px 48px}
+      .hero{align-items:flex-start}
+      .hero img{width:52px;height:52px}
+      .hero h1{font-size:24px}
+      .hero p{font-size:14px}
+      .card-head{padding:18px 18px 14px}
+      .card-body{padding:16px}
+      .section{padding:16px}
+      .section-title h3{font-size:20px}
+      .section-title p{font-size:13px}
       .actions{flex-direction:column}
+      button,.btn{width:100%}
+      .stepbar{display:flex}
+      .step{flex:1 0 180px}
     }
   </style>
 </head>
 <body>
   <div class="wrap">
-    <section class="hero">
-      <div class="brand">
-        <img src="/logo.png" alt="CWF logo">
-        <div>
-          <h1>สมัครพาร์ทเนอร์ช่าง CWF</h1>
-          <p>กรอกครั้งเดียว สร้างบัญชีช่างทันที แล้วค่อยอัปเอกสาร อ่านสัญญา อบรม และรออนุมัติ</p>
-        </div>
+    <div class="hero">
+      <img src="/logo.png" alt="CWF logo">
+      <div>
+        <h1>สมัครพาร์ทเนอร์ช่าง CWF</h1>
+        <p>กรอกข้อมูลเพื่อสมัครและสร้างบัญชีเข้าแอพช่าง</p>
       </div>
-      <div class="hero-grid">
-        <div class="hero-card">
-          <div style="font-size:18px;font-weight:1000;color:#fff">ระบบสมัครแบบใช้งานจริง</div>
-          <div style="margin-top:8px;color:rgba(255,255,255,.88);font-size:15px;font-weight:700;line-height:1.7">
-            หลังสมัคร คุณจะได้บัญชีช่างสำหรับเข้าแอพทันที แต่ยังจะยังรับงานไม่ได้จนกว่าจะผ่านการตรวจเอกสาร เซ็นสัญญา อบรม/สอบ และแอดมินอนุมัติสิทธิ์งานให้ครบ
-          </div>
-          <div class="hero-badges">
-            <div class="hero-badge">ใช้เบอร์โทรเป็น Username</div>
-            <div class="hero-badge">แยกหน้าอัปโหลดเอกสาร</div>
-            <div class="hero-badge">รองรับคัดกรองพื้นที่ / อุปกรณ์ / ความพร้อม</div>
-          </div>
-        </div>
-        <aside class="steps-card">
-          <div class="steps-title">ขั้นตอนหลังสมัคร</div>
-          <div class="step-list">
-            <div class="step-item"><div class="step-no">1</div><div><strong>สมัครและสร้างบัญชี</strong><span>ใช้เบอร์โทรและรหัสผ่านเข้าแอพช่าง</span></div></div>
-            <div class="step-item"><div class="step-no">2</div><div><strong>อัปโหลดเอกสาร</strong><span>ส่งบัตรประชาชน รูปโปรไฟล์ สมุดบัญชี และเอกสารเพิ่มเติม</span></div></div>
-            <div class="step-item"><div class="step-no">3</div><div><strong>อ่านและเซ็นสัญญา</strong><span>ยอมรับเงื่อนไขและลงนามในระบบ</span></div></div>
-            <div class="step-item"><div class="step-no">4</div><div><strong>อบรม / สอบ / ปลดล็อก</strong><span>เรียน Academy ตามประเภทงานที่ต้องการรับ</span></div></div>
-            <div class="step-item"><div class="step-no">5</div><div><strong>รอแอดมินอนุมัติ</strong><span>อนุมัติแล้วค่อยเปิดสิทธิ์รับงานที่ผ่านอบรม</span></div></div>
-          </div>
-        </aside>
-      </div>
-    </section>
+    </div>
 
-    <main class="main-card">
-      <div class="main-head">
+    <div class="stepbar" aria-label="ขั้นตอนสมัคร">
+      <div class="step active"><div class="num">1</div><div class="txt">สมัคร</div></div>
+      <div class="step"><div class="num">2</div><div class="txt">อัปเอกสาร</div></div>
+      <div class="step"><div class="num">3</div><div class="txt">เซ็นสัญญา</div></div>
+      <div class="step"><div class="num">4</div><div class="txt">อบรม / สอบ</div></div>
+      <div class="step"><div class="num">5</div><div class="txt">รออนุมัติ</div></div>
+    </div>
+
+    <main class="card">
+      <div class="card-head">
         <h2>ใบสมัครพาร์ทเนอร์ช่าง</h2>
-        <p>ใช้ข้อมูลนี้เพื่อคัดกรองช่างจริง ทั้งพื้นที่รับงาน ประเภทงานที่สนใจ อุปกรณ์ ความพร้อม และบัญชีเข้าแอพ</p>
+        <p>กรอกข้อมูลให้ครบเพื่อให้ทีมงานตรวจสอบและเปิดขั้นตอนถัดไป</p>
       </div>
-      <div class="form-wrap">
+      <div class="card-body">
         <div class="notice">
-          <div style="font-size:22px">⚡</div>
+          <div style="font-size:20px">ℹ️</div>
           <div>
-            <strong>หลังส่งใบสมัคร ระบบจะสร้างบัญชีช่างให้ทันที</strong>
-            ใช้เบอร์โทรและรหัสผ่านที่ตั้งไว้เพื่อเข้า <b>/login.html</b> ได้เลย แต่ยังต้องผ่านเอกสาร สัญญา Academy และการอนุมัติจากแอดมินก่อนจึงจะรับงานจริงได้
+            <strong>หลังสมัครสำเร็จ ระบบจะสร้างบัญชีช่างให้ทันที</strong>
+            ใช้เบอร์โทรและรหัสผ่านที่ตั้งไว้เข้าสู่ระบบได้ จากนั้นค่อยอัปโหลดเอกสาร อ่านสัญญา และเข้าอบรมต่อ
           </div>
         </div>
 
         <form id="applyForm">
           <section class="section">
-            <div class="section-head">
+            <div class="section-title">
               <div class="section-no">1</div>
               <div>
-                <h3>ข้อมูลบัญชีเข้าแอพช่าง</h3>
-                <p>ใช้เบอร์โทรเป็น username สำหรับเข้าสู่ระบบหลังสมัคร</p>
+                <h3>บัญชีเข้าแอพช่าง</h3>
+                <p>ใช้เบอร์โทรเป็นชื่อเข้าใช้งาน</p>
               </div>
             </div>
             <div class="grid2">
-              <div class="field"><label for="full_name">ชื่อ-นามสกุล *</label><input id="full_name" autocomplete="name" required></div>
-              <div class="field"><label for="phone">เบอร์โทรศัพท์ *</label><input id="phone" inputmode="tel" placeholder="08xxxxxxxx" autocomplete="tel" required><span class="hint">ระบบจะใช้เบอร์นี้เป็น username</span></div>
-              <div class="field"><label for="password">ตั้งรหัสผ่าน *</label><input id="password" type="password" minlength="6" autocomplete="new-password" required></div>
-              <div class="field"><label for="confirm_password">ยืนยันรหัสผ่าน *</label><input id="confirm_password" type="password" minlength="6" autocomplete="new-password" required></div>
-              <div class="field"><label for="line_id">LINE ID</label><input id="line_id"></div>
-              <div class="field"><label for="email">อีเมล</label><input id="email" type="email" autocomplete="email"></div>
+              <div><label for="full_name">ชื่อ-นามสกุล *</label><input id="full_name" required></div>
+              <div><label for="phone">เบอร์โทรศัพท์ *</label><input id="phone" required inputmode="tel" placeholder="08xxxxxxxx"><span class="hint">ใช้เบอร์นี้เข้าสู่ระบบ</span></div>
+              <div><label for="password">รหัสผ่าน *</label><input id="password" type="password" required minlength="6"></div>
+              <div><label for="confirm_password">ยืนยันรหัสผ่าน *</label><input id="confirm_password" type="password" required minlength="6"></div>
+              <div><label for="line_id">LINE ID</label><input id="line_id"></div>
+              <div><label for="email">อีเมล</label><input id="email" type="email"></div>
             </div>
           </section>
 
           <section class="section">
-            <div class="section-head">
+            <div class="section-title">
               <div class="section-no">2</div>
               <div>
-                <h3>พื้นที่รับงานและความตั้งใจในการทำงาน</h3>
-                <p>ใช้เพื่อคัดกรองพื้นที่ให้ตรงกับงานจริงและช่วยแอดมินจัดคิวได้เหมาะสม</p>
+                <h3>พื้นที่และรูปแบบการทำงาน</h3>
+                <p>ระบุพื้นที่รับงานและความพร้อมในการรับงาน</p>
               </div>
             </div>
             <div class="grid2">
-              <div class="field"><label for="province">จังหวัดที่รับงานหลัก *</label><select id="province" required></select></div>
-              <div class="field"><label for="district">เขต / อำเภอ ที่รับงานหลัก *</label><select id="district" required disabled></select></div>
-              <div class="field"><label for="work_intent">ลักษณะการทำงาน *</label><select id="work_intent" required></select></div>
-              <div class="field"><label for="service_radius_km">รัศมีที่รับงานโดยประมาณ (กม.)</label><input id="service_radius_km" type="number" min="0" step="1"></div>
-              <div class="field" style="grid-column:1/-1"><label for="address_text">ที่อยู่ปัจจุบัน / พื้นที่พักอาศัย</label><textarea id="address_text" placeholder="เช่น อ่อนนุช 44 แขวงสวนหลวง กรุงเทพฯ"></textarea></div>
+              <div><label for="province">จังหวัด *</label><select id="province" required></select></div>
+              <div><label for="district">เขต / อำเภอ *</label><select id="district" required disabled></select></div>
+            </div>
+            <div class="grid2" style="margin-top:14px">
+              <div><label for="address_text">ที่อยู่ปัจจุบัน</label><textarea id="address_text" placeholder="เช่น อ่อนนุช 44 แขวงสวนหลวง กรุงเทพฯ"></textarea></div>
+              <div>
+                <label for="work_intent">ลักษณะการทำงาน *</label>
+                <select id="work_intent" required></select>
+                <div class="hint">เช่น ทำเป็นงานหลัก หรือรับเสริม</div>
+              </div>
             </div>
           </section>
 
           <section class="section">
-            <div class="section-head">
+            <div class="section-title">
               <div class="section-no">3</div>
               <div>
                 <h3>ความพร้อมรับงาน</h3>
-                <p>บอกจำนวนวันที่สะดวกรับงาน ความสามารถต่อวัน และรูปแบบการทำงาน</p>
+                <p>ระบุจำนวนวันที่รับงานได้ และกำลังงานต่อวัน</p>
               </div>
             </div>
             <div class="grid3">
-              <div class="field"><label for="available_days_per_week">รับงานได้กี่วัน / สัปดาห์</label><input id="available_days_per_week" type="number" min="0" max="7"></div>
-              <div class="field"><label for="max_jobs_per_day">รับได้กี่งาน / วัน</label><input id="max_jobs_per_day" type="number" min="0"></div>
-              <div class="field"><label for="max_units_per_day">ทำได้กี่เครื่อง / วัน</label><input id="max_units_per_day" type="number" min="0"></div>
-              <div class="field"><label for="travel_method">วิธีเดินทางหลัก</label><select id="travel_method"></select></div>
-              <div class="field"><label for="experience_years">ประสบการณ์งานแอร์ (ปี)</label><input id="experience_years" type="number" min="0" step="0.5"></div>
+              <div><label for="available_days_per_week">รับงานได้กี่วัน / สัปดาห์</label><input id="available_days_per_week" type="number" min="0" max="7"></div>
+              <div><label for="max_jobs_per_day">รับได้กี่งาน / วัน</label><input id="max_jobs_per_day" type="number" min="0"></div>
+              <div><label for="max_units_per_day">ทำได้กี่เครื่อง / วัน</label><input id="max_units_per_day" type="number" min="0"></div>
+              <div><label for="service_radius_km">รัศมีรับงาน (กม.)</label><input id="service_radius_km" type="number" min="0"></div>
+              <div><label for="travel_method">การเดินทางหลัก</label><select id="travel_method"></select></div>
+              <div><label for="experience_years">ประสบการณ์ (ปี)</label><input id="experience_years" type="number" min="0" step="0.5"></div>
             </div>
-            <div class="field" style="margin-top:14px">
-              <div class="sub-label">วันที่สะดวกรับงาน</div>
+            <div style="margin-top:14px">
+              <label>วันที่สะดวกรับงาน</label>
               <div class="chip-grid" id="workDays"></div>
             </div>
-            <div class="field" style="margin-top:14px">
-              <div class="sub-label">รูปแบบการทำงาน</div>
+            <div style="margin-top:14px">
+              <label>รูปแบบการทำงาน</label>
               <div class="choice-grid">
-                <label class="radio-card"><input type="radio" name="crew_mode" id="crew_mode_solo" checked><span>ทำงานคนเดียว</span></label>
-                <label class="radio-card"><input type="radio" name="crew_mode" id="crew_mode_helpers"><span>มีลูกมือ / ผู้ช่วย</span></label>
+                <label class="chip"><input type="radio" name="crew_mode" id="crew_mode_solo" checked><span>ทำงานคนเดียว</span></label>
+                <label class="chip"><input type="radio" name="crew_mode" id="crew_mode_helpers"><span>มีลูกมือ / ผู้ช่วย</span></label>
               </div>
-              <div class="helper-box" id="helperCountWrap" style="display:none">
-                <label for="helper_count" class="sub-label">มีลูกมือกี่คน</label>
+              <div class="helper-wrap" id="helperCountWrap">
+                <label for="helper_count">มีลูกมือกี่คน</label>
                 <input id="helper_count" type="number" min="0" step="1" placeholder="เช่น 1 หรือ 2">
               </div>
             </div>
             <div class="choice-grid" style="margin-top:14px">
-              <label class="check-card"><input id="can_accept_urgent_jobs" type="checkbox"><span>รับงานด่วนได้</span></label>
-              <label class="check-card"><input id="can_work_condo" type="checkbox"><span>เข้าคอนโด / ติดต่ออาคารได้</span></label>
+              <label class="chip"><input id="can_accept_urgent_jobs" type="checkbox"><span>รับงานด่วนได้</span></label>
+              <label class="chip"><input id="can_work_condo" type="checkbox"><span>เข้าคอนโด / ติดต่ออาคารได้</span></label>
             </div>
           </section>
 
           <section class="section">
-            <div class="section-head">
+            <div class="section-title">
               <div class="section-no">4</div>
               <div>
                 <h3>ประเภทงานที่สนใจ</h3>
-                <p>แอดมินจะอนุมัติสิทธิ์งานจริงแยกตามประเภทหลังผ่านอบรม / สอบ</p>
+                <p>เลือกงานที่ต้องการสมัครไว้ก่อน แอดมินจะอนุมัติตามที่ผ่านอบรม</p>
               </div>
             </div>
             <div class="chip-grid" id="jobInterests"></div>
           </section>
 
           <section class="section">
-            <div class="section-head">
+            <div class="section-title">
               <div class="section-no">5</div>
               <div>
                 <h3>เครื่องมือ / อุปกรณ์ที่มี</h3>
-                <p>เลือกเฉพาะที่มีจริง เพื่อช่วยประเมินความพร้อมก่อนอนุมัติรับงาน</p>
+                <p>เลือกเฉพาะที่มีจริงเพื่อประเมินความพร้อม</p>
               </div>
             </div>
             <div class="chip-grid" id="equipmentList"></div>
-            <div class="field" style="margin-top:14px"><label for="equipment_notes">รายละเอียดเพิ่มเติมเกี่ยวกับอุปกรณ์</label><textarea id="equipment_notes" placeholder="เช่น มีปั๊มแรงดัน, ชุดเกจ์, แวคคั่ม, เครื่องเชื่อม พร้อมใช้งาน"></textarea></div>
+            <div style="margin-top:14px"><label for="equipment_notes">รายละเอียดเพิ่มเติม</label><textarea id="equipment_notes" placeholder="ถ้ามีอุปกรณ์เพิ่มเติมหรืออยากอธิบายเพิ่มเติม ใส่ได้ที่นี่"></textarea></div>
           </section>
 
           <section class="section">
-            <div class="section-head">
+            <div class="section-title">
               <div class="section-no">6</div>
               <div>
-                <h3>ข้อมูลบัญชีรับเงินและหมายเหตุ</h3>
-                <p>ใช้สำหรับจ่ายค่าจ้างเมื่อผ่านการอนุมัติและเริ่มรับงาน</p>
+                <h3>ข้อมูลรับเงิน</h3>
+                <p>ใช้สำหรับตรวจสอบข้อมูลและจ่ายค่าจ้างภายหลัง</p>
               </div>
             </div>
             <div class="grid3">
-              <div class="field"><label for="bank_account_name">ชื่อบัญชี *</label><input id="bank_account_name"></div>
-              <div class="field"><label for="bank_name">ธนาคาร *</label><input id="bank_name"></div>
-              <div class="field"><label for="bank_account_last4">เลขบัญชี 4 ตัวท้าย *</label><input id="bank_account_last4" maxlength="4" inputmode="numeric"></div>
+              <div><label for="bank_account_name">ชื่อบัญชี *</label><input id="bank_account_name"></div>
+              <div><label for="bank_name">ธนาคาร *</label><input id="bank_name"></div>
+              <div><label for="bank_account_last4">เลขบัญชี 4 ตัวท้าย *</label><input id="bank_account_last4" maxlength="4" inputmode="numeric"></div>
             </div>
-            <div class="field" style="margin-top:14px"><label for="notes">หมายเหตุเพิ่มเติม</label><textarea id="notes" placeholder="เช่น มีช่วงเวลางานประจำ, มีความถนัดงานซ่อมหรือถอดล้าง, พื้นที่ที่สะดวกเป็นพิเศษ"></textarea></div>
+            <div style="margin-top:14px"><label for="notes">หมายเหตุเพิ่มเติม</label><textarea id="notes"></textarea></div>
           </section>
 
           <section class="section">
-            <div class="section-head">
+            <div class="section-title">
               <div class="section-no">7</div>
               <div>
                 <h3>ยืนยันเงื่อนไข</h3>
-                <p>ต้องยอมรับเงื่อนไขเพื่อสมัครและเข้าสู่ขั้นตอน onboarding ต่อไป</p>
+                <p>จำเป็นต้องยอมรับก่อนส่งใบสมัคร</p>
               </div>
             </div>
             <div class="choice-grid">
-              <label class="check-card"><input id="consent_pdpa" type="checkbox"><span>ยินยอมให้ CWF ใช้ข้อมูลเพื่อพิจารณา ตรวจเอกสาร อบรม และ onboarding *</span></label>
-              <label class="check-card"><input id="consent_terms" type="checkbox"><span>ยอมรับเงื่อนไขการสมัครเป็นพาร์ทเนอร์และการตรวจสอบข้อมูล *</span></label>
+              <label class="chip"><input id="consent_pdpa" type="checkbox"><span>ยินยอมให้ CWF ใช้ข้อมูลเพื่อพิจารณาใบสมัครและ onboarding *</span></label>
+              <label class="chip"><input id="consent_terms" type="checkbox"><span>ยอมรับเงื่อนไขการสมัครเป็นพาร์ทเนอร์ *</span></label>
             </div>
             <div class="actions">
               <button class="primary" type="submit" id="submitBtn"><span id="submitBtnText">ส่งใบสมัครและสร้างบัญชี</span></button>
               <button class="ghost" type="button" id="btnReset">ล้างฟอร์ม</button>
             </div>
-            <div class="foot-note">ถ้าส่งไม่สำเร็จ ระบบจะแสดงสาเหตุจากฝั่งหน้าเว็บหรือเซิร์ฟเวอร์ให้ทันที</div>
           </section>
         </form>
 
         <div class="result" id="resultBox">
           <h4>ส่งใบสมัครสำเร็จ</h4>
-          <div>รหัสอ้างอิงใบสมัคร: <strong id="applicationCode">-</strong></div>
+          <div>รหัสอ้างอิง: <strong id="applicationCode">-</strong></div>
           <div id="loginGuidance" style="margin-top:8px;line-height:1.7"></div>
           <div class="actions">
             <a class="btn primary" id="statusLink" href="/partner-status">ไปหน้าอัปโหลดเอกสาร</a>
