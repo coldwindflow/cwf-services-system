@@ -1206,6 +1206,25 @@ function partnerPhoneDigits(phone) {
   return String(phone || '').replace(/\D/g, '');
 }
 
+function getPhoneVariants(phone) {
+  const normalized = normalizePartnerPhone(phone);
+  const digits = partnerPhoneDigits(phone);
+  const variants = new Set();
+  if (normalized) variants.add(normalized);
+  if (digits) variants.add(digits);
+  if (digits.length === 10 && digits.startsWith('0')) {
+    variants.add(digits);
+    variants.add(`66${digits.slice(1)}`);
+    variants.add(`+66${digits.slice(1)}`);
+  }
+  if (digits.length === 11 && digits.startsWith('66')) {
+    variants.add(`0${digits.slice(2)}`);
+    variants.add(digits);
+    variants.add(`+${digits}`);
+  }
+  return Array.from(variants).filter(Boolean);
+}
+
 function makePartnerUsernameFromPhone(phone, fallbackCode = '') {
   const digits = partnerPhoneDigits(phone);
   if (digits.length >= 6) return normalizePartnerPhone(phone);
@@ -1625,8 +1644,6 @@ app.post('/partner/apply', async (req, res) => {
     const has_vehicle = body.has_vehicle === true || body.has_vehicle === 'true' || body.has_vehicle === 1 || body.has_vehicle === '1';
     const work_intent = PARTNER_WORK_INTENTS.has(String(body.work_intent || '')) ? String(body.work_intent) : null;
     const travel_method = PARTNER_TRAVEL_METHODS.has(String(body.travel_method || '')) ? String(body.travel_method) : null;
-    const bankAccountNumber = String(body.bank_account_number || body.bank_account_last4 || '').replace(/\D/g, '').slice(0, 20);
-    const bankAccountLast4 = bankAccountNumber ? bankAccountNumber.slice(-4) : null;
     const account = await ensurePartnerTechnicianAccount(client, {
       phone,
       password,
@@ -1639,12 +1656,12 @@ app.post('/partner/apply', async (req, res) => {
       `INSERT INTO public.partner_applications
         (application_code, user_id, technician_username, full_name, phone, line_id, email, address_text,
          service_zones, preferred_job_types, experience_years, has_vehicle, vehicle_type, equipment_notes,
-         bank_account_name, bank_name, bank_account_last4, bank_account_number, notes, consent_pdpa, consent_terms, status, submitted_at, updated_at,
+         bank_account_name, bank_name, bank_account_last4, notes, consent_pdpa, consent_terms, status, submitted_at, updated_at,
          province, district, work_intent, available_days_per_week, preferred_work_days, max_jobs_per_day, max_units_per_day,
          can_accept_urgent_jobs, can_work_condo, can_issue_tax_invoice, has_helper_team, team_size, travel_method,
          service_radius_km, equipment_json, line_user_id, account_created_at, account_note)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,'submitted',NOW(),NOW(),
-         $22,$23,$24,$25,$26::jsonb,$27,$28,$29,$30,$31,$32,$33,$34,$35,$36::jsonb,$37,NOW(),$38)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'submitted',NOW(),NOW(),
+         $21,$22,$23,$24,$25::jsonb,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35::jsonb,$36,NOW(),$37)
        RETURNING *`,
       [
         application_code,
@@ -1663,8 +1680,7 @@ app.post('/partner/apply', async (req, res) => {
         body.equipment_notes ? String(body.equipment_notes).trim() : null,
         body.bank_account_name ? String(body.bank_account_name).trim() : null,
         body.bank_name ? String(body.bank_name).trim() : null,
-        bankAccountLast4,
-        bankAccountNumber || null,
+        body.bank_account_last4 ? String(body.bank_account_last4).trim().slice(-4) : null,
         body.notes ? String(body.notes).trim() : null,
         consent_pdpa,
         consent_terms,
@@ -1700,16 +1716,8 @@ app.post('/partner/apply', async (req, res) => {
     return res.json({ ok: true, application: partnerApplicationPublicShape(appRow) });
   } catch (e) {
     await client.query('ROLLBACK');
-    const supportId = `PARTNER_APPLY_${Date.now().toString(36).toUpperCase()}`;
-    console.error('POST /partner/apply error:', supportId, e);
-    const msg = String(e?.message || '');
-    let userError = 'ส่งใบสมัครไม่สำเร็จ';
-    if (/column .* does not exist/i.test(msg) || /relation .* does not exist/i.test(msg)) {
-      userError = 'ระบบฐานข้อมูลยังไม่พร้อม กรุณาแจ้งแอดมินให้กด Deploy/รัน migration ล่าสุด';
-    } else if (/duplicate key/i.test(msg)) {
-      userError = 'มีข้อมูลซ้ำในระบบ กรุณาตรวจสอบเบอร์โทรหรือแจ้งแอดมิน';
-    }
-    return res.status(500).json({ error: userError, support_id: supportId });
+    console.error('POST /partner/apply error:', e);
+    return res.status(500).json({ error: 'ส่งใบสมัครไม่สำเร็จ' });
   } finally {
     client.release();
   }
@@ -7455,7 +7463,6 @@ await pool.query(`
     bank_account_name TEXT,
     bank_name TEXT,
     bank_account_last4 TEXT,
-    bank_account_number TEXT,
     notes TEXT,
     consent_pdpa BOOLEAN NOT NULL DEFAULT FALSE,
     consent_terms BOOLEAN NOT NULL DEFAULT FALSE,
@@ -7470,7 +7477,6 @@ await pool.query(`
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_applications_status_created ON public.partner_applications(status, created_at DESC)`);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_applications_phone ON public.partner_applications(phone)`);
-await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS bank_account_number TEXT`);
 await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS province TEXT`);
 await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS district TEXT`);
 await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS work_intent TEXT`);
