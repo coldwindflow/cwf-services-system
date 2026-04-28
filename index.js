@@ -1074,6 +1074,8 @@ const PARTNER_WORK_INTENTS = new Set([
   'full_time_with_cwf',
   'part_time_extra_income',
   'has_regular_job_accept_extra',
+  'team_partner',
+  'company_subcontractor',
 ]);
 
 const PARTNER_TRAVEL_METHODS = new Set([
@@ -1623,6 +1625,11 @@ app.post('/partner/apply', async (req, res) => {
     const has_vehicle = body.has_vehicle === true || body.has_vehicle === 'true' || body.has_vehicle === 1 || body.has_vehicle === '1';
     const work_intent = PARTNER_WORK_INTENTS.has(String(body.work_intent || '')) ? String(body.work_intent) : null;
     const travel_method = PARTNER_TRAVEL_METHODS.has(String(body.travel_method || '')) ? String(body.travel_method) : null;
+    const helperCountRaw = body.helper_count === '' || body.helper_count == null ? body.team_size : body.helper_count;
+    const helper_count = normalizePartnerInt(helperCountRaw);
+    const has_helper_team = helper_count > 0 || normalizePartnerBool(body.has_helper_team);
+    const team_size = helper_count > 0 ? helper_count : normalizePartnerInt(body.team_size);
+    const can_issue_tax_invoice = normalizePartnerBool(body.can_issue_tax_invoice);
     const account = await ensurePartnerTechnicianAccount(client, {
       phone,
       password,
@@ -1672,9 +1679,9 @@ app.post('/partner/apply', async (req, res) => {
         normalizePartnerInt(body.max_units_per_day),
         normalizePartnerBool(body.can_accept_urgent_jobs),
         normalizePartnerBool(body.can_work_condo),
-        normalizePartnerBool(body.can_issue_tax_invoice),
-        normalizePartnerBool(body.has_helper_team),
-        normalizePartnerInt(body.team_size),
+        can_issue_tax_invoice,
+        has_helper_team,
+        team_size,
         travel_method,
         normalizePartnerNumber(body.service_radius_km),
         JSON.stringify(equipment_json),
@@ -1696,11 +1703,7 @@ app.post('/partner/apply', async (req, res) => {
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('POST /partner/apply error:', e);
-    const detail = String(e?.message || '');
-    if (/column .*updated_at/i.test(detail)) return res.status(500).json({ error: 'ส่งใบสมัครไม่สำเร็จ: ระบบยังไม่ได้อัปเดตคอลัมน์ช่าง กรุณา redeploy อีกครั้ง' });
-    if (/relation .*partner_applications/i.test(detail) || /does not exist/i.test(detail)) return res.status(500).json({ error: 'ส่งใบสมัครไม่สำเร็จ: ฐานข้อมูล onboarding ยังไม่พร้อม กรุณา redeploy/ตรวจ schema' });
-    if (/duplicate key/i.test(detail)) return res.status(409).json({ error: 'เบอร์นี้มีบัญชี/ใบสมัครอยู่แล้ว กรุณาเข้าสู่ระบบหรือติดต่อแอดมิน' });
-    return res.status(500).json({ error: 'ส่งใบสมัครไม่สำเร็จ: กรุณาตรวจข้อมูลและลองใหม่' });
+    return res.status(500).json({ error: 'ส่งใบสมัครไม่สำเร็จ' });
   } finally {
     client.release();
   }
