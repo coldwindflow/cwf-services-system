@@ -1,33 +1,3 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CWF Partner Agreement</title>
-  <style>
-    :root{--navy:#071b49;--blue:#0b56c8;--yellow:#ffd233;--ink:#101828;--muted:#667085;--line:#dbe7ff;--bg:#f4f7fc;--ok:#15803d;--bad:#b91c1c}
-    *{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:linear-gradient(180deg,var(--navy),var(--blue) 260px,var(--bg) 260px);color:var(--ink)}
-    .wrap{max-width:940px;margin:0 auto;padding:28px 14px 72px}.brand{color:#fff;margin:8px 0 18px}.brand h1{margin:0;font-size:31px}.brand p{margin:7px 0 0;color:rgba(255,255,255,.84);font-weight:800}
-    .panel{background:#fff;border:1px solid var(--line);border-radius:24px;box-shadow:0 14px 34px rgba(2,6,23,.10);padding:18px;margin-bottom:14px}.muted{color:var(--muted);font-weight:800;line-height:1.5}.badge{display:inline-flex;border-radius:999px;padding:7px 12px;font-weight:1000;font-size:13px;background:#e2e8f0}.badge.ok{background:#dcfce7;color:var(--ok)}.badge.warn{background:#fef3c7;color:#92400e}
-    .contract{line-height:1.75;border:1px solid var(--line);border-radius:18px;padding:16px;background:#fbfdff;max-height:56vh;overflow:auto}.check{display:flex;gap:10px;align-items:flex-start;margin:14px 0;font-weight:900}.check input{width:22px;height:22px;margin-top:2px}input{width:100%;border:1px solid #c9d7f2;border-radius:14px;padding:12px;font:inherit;font-weight:800}button,.btn{border:0;border-radius:16px;padding:13px 15px;font-weight:1000;cursor:pointer;text-decoration:none;display:inline-flex;justify-content:center}.primary{background:var(--yellow);color:var(--navy)}.ghost{background:#eef4ff;color:var(--navy)}.hidden{display:none}.msg{font-weight:900;margin-top:10px}.msg.err{color:var(--bad)}.msg.ok{color:var(--ok)}
-    @media(max-width:720px){.brand h1{font-size:26px}.panel{border-radius:22px}.contract{max-height:58vh}button,.btn{width:100%}}
-  </style>
-</head>
-<body>
-  <main class="wrap">
-    <section class="brand"><h1>CWF Partner Agreement</h1><p>อ่านสัญญาพาร์ทเนอร์และยืนยันลายเซ็น</p></section>
-    <section class="panel" id="loadingPanel"><b>กำลังโหลดสัญญา...</b><div class="muted" id="message" style="margin-top:8px">ระบบจะเชื่อมกับใบสมัครของคุณจากแอพช่างหรือหน้าสถานะ</div></section>
-    <section class="panel hidden" id="agreementPanel">
-      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap"><div><h2 id="templateTitle" style="margin:0 0 4px">-</h2><div class="muted" id="applicantName">-</div></div><span class="badge" id="signatureBadge">ยังไม่เซ็น</span></div>
-      <div class="contract" id="contractBody" style="margin-top:12px"></div>
-      <div id="signatureForm">
-        <label class="check"><input id="consent" type="checkbox"><span>ข้าพเจ้าอ่านและยอมรับเงื่อนไขในสัญญาพาร์ทเนอร์ของ CWF</span></label>
-        <label for="signerName" style="font-weight:1000;color:var(--navy)">พิมพ์ชื่อ-นามสกุลเป็นลายเซ็น</label>
-        <input id="signerName" autocomplete="name" placeholder="ชื่อ-นามสกุลตรงกับใบสมัคร">
-        <button class="primary" id="btnSign" type="button" style="margin-top:12px">เซ็นสัญญา</button>
-      </div>
-    </section>
-  </main>
-  <script src="/partner-agreement.js?v=partner-flow-final"></script>
-</body>
-</html>
+<!DOCTYPE html><html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>สัญญาพาร์ทเนอร์ช่าง CWF</title><style>
+:root{--navy:#071b49;--blue:#0b4bb3;--yellow:#ffd233;--ink:#0f172a;--muted:#64748b;--line:#dbe7ff;--bg:#f5f8fd;--ok:#166534;--bad:#991b1b}*{box-sizing:border-box}body{margin:0;font-family:Arial,'Noto Sans Thai',sans-serif;background:linear-gradient(180deg,var(--navy),var(--blue) 250px,var(--bg) 250px);color:var(--ink)}.wrap{max-width:920px;margin:0 auto;padding:24px 14px 80px}.hero{color:#fff;margin:6px 0 18px}.hero h1{margin:0;font-size:30px}.hero p{margin:8px 0 0;color:rgba(255,255,255,.86);font-weight:800;line-height:1.55}.panel{background:#fff;border:1px solid var(--line);border-radius:26px;box-shadow:0 16px 36px rgba(7,27,73,.10);padding:18px;margin-bottom:14px}.profile-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.info{background:#f8fbff;border:1px solid var(--line);border-radius:18px;padding:13px}.info small{display:block;color:var(--muted);font-weight:900}.info b{display:block;margin-top:4px;color:var(--navy)}.contract-title{margin:0 0 12px;color:var(--navy);font-size:25px}.contract-section{border:1px solid var(--line);border-radius:20px;padding:15px;margin:12px 0;background:#fff}.contract-section h3{margin:0 0 8px;color:var(--blue);font-size:19px}.contract-section p,.contract-section li{font-weight:800;line-height:1.7;color:#263b5c}.contract-section ul{margin:8px 0 0;padding-left:20px}.note{background:#fff9e8;border:1px solid #ffe39d;border-radius:16px;padding:12px;color:#713f12;font-weight:850}.rate-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px}.rate-table{width:100%;border-collapse:collapse;min-width:620px}.rate-table th{background:#eef4ff;color:var(--navy)}.rate-table th,.rate-table td{border-bottom:1px solid var(--line);padding:10px;text-align:left;font-weight:800}.check{display:flex;gap:10px;align-items:flex-start;margin:12px 0;font-weight:900}.check input{width:22px;height:22px;flex:0 0 auto}.sig-input{width:100%;border:2px solid var(--line);border-radius:18px;padding:14px;font:inherit;font-weight:800}button{border:0;border-radius:18px;padding:15px 18px;background:var(--yellow);color:var(--navy);font-weight:1000;width:100%;font-size:17px}.badge{display:inline-flex;border-radius:999px;padding:6px 10px;font-weight:1000;font-size:12px;background:#e2e8f0}.badge.ok{background:#dcfce7;color:var(--ok)}.msg{font-weight:900;margin-top:10px}.err{color:var(--bad)}.hidden{display:none}@media(max-width:700px){.profile-grid{grid-template-columns:1fr}.hero h1{font-size:25px}.contract-title{font-size:22px}.panel{border-radius:22px}}
+</style></head><body><main class="wrap"><section class="hero"><h1>สัญญาพาร์ทเนอร์ช่าง CWF</h1><p>อ่านรายละเอียดสัญญา ตรวจข้อมูลผู้สมัคร และยืนยันลายเซ็น</p></section><section class="panel" id="profilePanel"><h2 class="contract-title">ข้อมูลผู้สมัคร</h2><div class="profile-grid" id="profileGrid"></div><div id="message" class="msg"></div></section><section class="panel hidden" id="agreementPanel"><h2 class="contract-title" id="templateTitle">สัญญาพาร์ทเนอร์ช่าง CWF</h2><div id="contractBody"></div></section><section class="panel hidden" id="signaturePanel"><div id="signatureStatus"></div><form id="signatureForm"><label class="check"><input id="consent" type="checkbox"><span>ข้าพเจ้าได้อ่าน เข้าใจ และยอมรับเงื่อนไขทั้งหมดในสัญญานี้แล้ว</span></label><label for="signerName" style="font-weight:1000;color:var(--navy)">พิมพ์ชื่อ-นามสกุลเพื่อเซ็นสัญญา</label><input class="sig-input" id="signerName" placeholder="ชื่อ-นามสกุล"><div style="margin-top:12px"><button type="submit">ยืนยันและเซ็นสัญญา</button></div></form></section></main><script src="/partner-agreement.js?v=real-flow-final"></script></body></html>

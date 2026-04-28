@@ -1,31 +1,5 @@
 <!DOCTYPE html>
-<html lang="th">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>สถานะพาร์ทเนอร์ CWF</title>
-  <style>
-    :root{--navy:#071b49;--blue:#0b56c8;--yellow:#ffd233;--ink:#101828;--muted:#667085;--line:#dbe7ff;--bg:#f4f7fc;--ok:#15803d;--warn:#a16207;--bad:#b91c1c}
-    *{box-sizing:border-box}body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:linear-gradient(180deg,var(--navy),var(--blue) 250px,var(--bg) 250px);color:var(--ink)}
-    .wrap{max-width:1000px;margin:0 auto;padding:26px 14px 72px}.hero{color:#fff;margin-bottom:16px}.hero h1{margin:0;font-size:30px;line-height:1.15}.hero p{margin:8px 0 0;color:rgba(255,255,255,.86);font-weight:800;font-size:16px}
-    .panel{background:#fff;border:1px solid var(--line);border-radius:24px;box-shadow:0 14px 34px rgba(2,6,23,.10);padding:18px;margin-bottom:14px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.doc,.stage{border:1px solid var(--line);border-radius:18px;padding:14px;background:#fbfdff}.hidden{display:none}.muted{color:var(--muted);font-weight:800;line-height:1.5}
-    .badge{display:inline-flex;border-radius:999px;padding:7px 12px;font-weight:1000;font-size:13px;background:#e2e8f0}.ok{background:#dcfce7;color:var(--ok)}.warn{background:#fef3c7;color:var(--warn)}.bad{background:#fee2e2;color:var(--bad)}
-    .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.btn,button{border:0;border-radius:16px;padding:13px 15px;font-weight:1000;text-decoration:none;display:inline-flex;justify-content:center;align-items:center;cursor:pointer}.primary{background:var(--yellow);color:var(--navy)}.secondary{background:var(--blue);color:#fff}.ghost{background:#eef4ff;color:var(--navy)}
-    input{width:100%;border:1px solid #c9d7f2;border-radius:14px;padding:11px 12px;font:inherit;font-weight:800;background:#fff;margin-top:8px}h2{margin:0;color:var(--navy);font-size:26px}.section-title{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start;margin-bottom:12px}
-    @media(max-width:760px){.grid{grid-template-columns:1fr}.hero h1{font-size:25px}.panel{border-radius:22px}.actions{flex-direction:column}.btn,button{width:100%}}
-  </style>
-</head>
-<body>
-  <main class="wrap">
-    <section class="hero"><h1>สถานะ Partner Onboarding</h1><p>อัปโหลดเอกสาร ตรวจสถานะ และไปขั้นตอนถัดไป</p></section>
-    <section class="panel" id="loadingPanel"><b>กำลังโหลดข้อมูลพาร์ทเนอร์...</b><div class="muted" id="message" style="margin-top:8px">ระบบจะดึงข้อมูลจากบัญชีที่เข้าสู่ระบบ หรือจากลิงก์ที่เปิดมาจากแอพช่าง</div></section>
-    <section class="panel hidden" id="statusPanel">
-      <div class="section-title"><div><h2 id="appName">-</h2><div class="muted" id="appMeta">-</div></div><span class="badge" id="appStatus">-</span></div>
-      <div class="grid" id="stageGrid"></div>
-      <div class="actions"><a class="btn secondary" id="agreementLink">อ่านและเซ็นสัญญา</a><a class="btn primary" id="academyLink">เข้า Academy</a><a class="btn ghost" href="/tech.html">กลับเข้าแอพช่าง</a></div>
-    </section>
-    <section class="panel hidden" id="docsPanel"><div class="section-title"><h2>เอกสารยืนยันตัวตน</h2><span class="badge warn">อัปโหลดไฟล์ JPG, PNG, WEBP หรือ PDF</span></div><div class="grid" id="documentCards"></div></section>
-  </main>
-  <script src="/partner-status.js?v=partner-flow-final"></script>
-</body>
-</html>
+<html lang="th"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>อัปโหลดเอกสารพาร์ทเนอร์ CWF</title>
+<style>
+:root{--navy:#071b49;--blue:#0b4bb3;--yellow:#ffd233;--ink:#0f172a;--muted:#64748b;--line:#dbe7ff;--bg:#f5f8fd;--ok:#166534;--warn:#92400e;--bad:#991b1b}*{box-sizing:border-box}body{margin:0;font-family:Arial,'Noto Sans Thai',sans-serif;background:linear-gradient(180deg,var(--navy),var(--blue) 245px,var(--bg) 245px);color:var(--ink)}.wrap{max-width:860px;margin:0 auto;padding:24px 14px 70px}.hero{color:#fff;margin:6px 0 18px}.hero h1{margin:0;font-size:30px}.hero p{margin:8px 0 0;color:rgba(255,255,255,.86);font-weight:800;line-height:1.55}.panel{background:#fff;border:1px solid var(--line);border-radius:26px;box-shadow:0 16px 36px rgba(7,27,73,.10);padding:18px;margin-bottom:14px}.profile h2{margin:0;font-size:24px;color:var(--navy)}.muted{color:var(--muted);font-weight:800}.badge{display:inline-flex;border-radius:999px;padding:6px 10px;font-weight:1000;font-size:12px;background:#e2e8f0}.ok{background:#dcfce7;color:var(--ok)}.warn{background:#fef3c7;color:var(--warn)}.bad{background:#fee2e2;color:var(--bad)}.doc{display:grid;grid-template-columns:54px 1fr;gap:13px;border:1px solid var(--line);border-radius:22px;background:#fff;padding:16px;margin:12px 0;box-shadow:0 10px 24px rgba(7,27,73,.05)}.icon{width:54px;height:54px;border-radius:18px;display:grid;place-items:center;background:#eef4ff;font-size:26px}.doc h3{margin:0;color:var(--navy);font-size:20px}.tips{margin:8px 0;color:var(--muted);font-weight:800;line-height:1.55}.upload{margin-top:10px;display:grid;gap:10px}.upload input{width:100%;border:1px solid var(--line);border-radius:14px;padding:11px;background:#f8fbff;font-weight:800}button{border:0;border-radius:16px;padding:13px 16px;background:var(--blue);color:#fff;font-weight:1000;font-size:16px;cursor:pointer}.note{background:#eef7ff;border:1px solid #cce5ff;border-radius:20px;padding:14px;color:#24466d;font-weight:850;line-height:1.6}.hidden{display:none}.msg{font-weight:900;margin-top:10px}.msg.err{color:var(--bad)}@media(max-width:640px){.hero h1{font-size:25px}.doc{grid-template-columns:1fr}.icon{width:48px;height:48px}.panel{border-radius:22px}}
+</style></head><body><main class="wrap"><section class="hero"><h1>อัปโหลดเอกสาร</h1><p>ส่งเอกสารให้ครบเพื่อใช้ตรวจสอบตัวตนและปลดล็อกขั้นตอนถัดไป</p></section><section class="panel profile" id="profilePanel"><h2 id="appName">กำลังโหลดข้อมูล...</h2><div class="muted" id="appMeta"></div><div id="message" class="msg"></div></section><section class="panel"><div class="note">เอกสารที่อัปโหลดใช้สำหรับตรวจสอบภายใน CWF เท่านั้น รองรับ JPG, PNG, WEBP และ PDF ขนาดไม่เกินที่ระบบกำหนด</div><div id="documentCards"></div></section></main><script src="/partner-status.js?v=real-flow-final"></script></body></html>
