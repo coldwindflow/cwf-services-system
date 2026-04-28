@@ -1074,8 +1074,6 @@ const PARTNER_WORK_INTENTS = new Set([
   'full_time_with_cwf',
   'part_time_extra_income',
   'has_regular_job_accept_extra',
-  'team_partner',
-  'company_subcontractor',
 ]);
 
 const PARTNER_TRAVEL_METHODS = new Set([
@@ -1698,7 +1696,11 @@ app.post('/partner/apply', async (req, res) => {
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('POST /partner/apply error:', e);
-    return res.status(500).json({ error: 'ส่งใบสมัครไม่สำเร็จ' });
+    const detail = String(e?.message || '');
+    if (/column .*updated_at/i.test(detail)) return res.status(500).json({ error: 'ส่งใบสมัครไม่สำเร็จ: ระบบยังไม่ได้อัปเดตคอลัมน์ช่าง กรุณา redeploy อีกครั้ง' });
+    if (/relation .*partner_applications/i.test(detail) || /does not exist/i.test(detail)) return res.status(500).json({ error: 'ส่งใบสมัครไม่สำเร็จ: ฐานข้อมูล onboarding ยังไม่พร้อม กรุณา redeploy/ตรวจ schema' });
+    if (/duplicate key/i.test(detail)) return res.status(409).json({ error: 'เบอร์นี้มีบัญชี/ใบสมัครอยู่แล้ว กรุณาเข้าสู่ระบบหรือติดต่อแอดมิน' });
+    return res.status(500).json({ error: 'ส่งใบสมัครไม่สำเร็จ: กรุณาตรวจข้อมูลและลองใหม่' });
   } finally {
     client.release();
   }
@@ -7478,6 +7480,7 @@ await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXIS
 await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS account_note TEXT`);
 await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS partner_status TEXT`);
 await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS line_id TEXT`);
+await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
 
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.partner_application_documents (
