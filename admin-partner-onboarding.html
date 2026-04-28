@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Partner Onboarding - CWF Admin</title>
+  <script src="/admin-v2-common.js"></script>
+  <style>
+    :root{--navy:#081c4b;--blue:#0b4bb3;--yellow:#ffcc00;--ink:#0f172a;--muted:#64748b;--line:#dbe7ff;--bg:#f6f8fc}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:linear-gradient(180deg,var(--navy),var(--blue) 260px,var(--bg) 260px);color:var(--ink)}
+    .app{max-width:1200px;margin:0 auto;padding:86px 14px 64px}
+    .hero{color:#fff;margin-bottom:14px}
+    .hero h1{margin:0;font-size:26px}.hero p{margin:6px 0 0;color:rgba(255,255,255,.8);font-weight:800}
+    .panel{background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 14px 34px rgba(2,6,23,.12);padding:14px}
+    .toolbar{display:grid;grid-template-columns:180px 1fr auto;gap:10px;align-items:end}
+    label{display:block;font-size:12px;font-weight:900;color:#334155;margin-bottom:5px}
+    input,select,textarea{width:100%;border:1px solid #c9d7f2;border-radius:8px;padding:10px 12px;font:inherit;font-weight:700;background:#fff}
+    textarea{min-height:78px;resize:vertical}
+    button{border:0;border-radius:8px;padding:10px 13px;font-weight:1000;cursor:pointer}
+    .primary{background:var(--yellow);color:var(--navy)}.secondary{background:var(--blue);color:#fff}.ghost{background:#eef4ff;color:var(--navy)}
+    .list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+    .item{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fff;cursor:pointer}
+    .item:hover{border-color:#7da8ff;background:#fbfdff}
+    .itemTop{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+    .muted{color:var(--muted);font-weight:800;font-size:13px}
+    .status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:1000;background:#e2e8f0;color:#0f172a;white-space:nowrap}
+    .status.submitted{background:#dbeafe;color:#1d4ed8}.status.under_review{background:#fef3c7;color:#92400e}.status.need_more_documents{background:#ffe4e6;color:#be123c}.status.rejected{background:#fee2e2;color:#991b1b}.status.approved_for_training{background:#dcfce7;color:#166534}
+    .status.approved{background:#dcfce7;color:#166534}.status.uploaded{background:#dbeafe;color:#1d4ed8}.status.need_reupload{background:#fef3c7;color:#92400e}
+    .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.chip{border-radius:999px;background:#f1f5f9;padding:4px 8px;font-size:12px;font-weight:900}
+    .drawer{position:fixed;inset:0;background:rgba(2,6,23,.55);z-index:3200;display:none;padding:12px;align-items:flex-end;justify-content:center}
+    .drawer.open{display:flex}.sheet{background:#fff;border-radius:8px;max-width:1040px;width:100%;max-height:86vh;overflow:auto;padding:14px;border:1px solid var(--line)}
+    .sheetHead{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;border-bottom:1px solid var(--line);padding-bottom:10px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+    .doc{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff;margin-top:8px}
+    .docTop{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+    .timeline{display:flex;flex-direction:column;gap:8px}.event{border-left:3px solid #bdd2ff;padding:4px 0 4px 10px;font-size:13px}
+    @media(max-width:860px){.toolbar,.list,.grid2,.grid3{grid-template-columns:1fr}.app{padding-top:82px}.hero h1{font-size:22px}}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <section class="hero">
+      <h1>Partner Onboarding</h1>
+      <p>ตรวจใบสมัคร เอกสาร และสถานะ Phase 1A</p>
+    </section>
+
+    <section class="panel">
+      <div class="toolbar">
+        <div>
+          <label>สถานะ</label>
+          <select id="statusFilter">
+            <option value="">ทั้งหมด</option>
+            <option value="submitted">ส่งใบสมัครแล้ว</option>
+            <option value="under_review">กำลังตรวจสอบ</option>
+            <option value="need_more_documents">ขอเอกสารเพิ่ม</option>
+            <option value="rejected">ไม่ผ่าน</option>
+            <option value="approved_for_training">อนุมัติเข้าอบรม</option>
+          </select>
+        </div>
+        <div>
+          <label>ค้นหา</label>
+          <input id="searchInput" placeholder="ชื่อ / เบอร์ / รหัสใบสมัคร">
+        </div>
+        <button class="secondary" id="btnReload" type="button">โหลดรายการ</button>
+      </div>
+      <div class="list" id="applicationList"></div>
+    </section>
+  </div>
+
+  <div class="drawer" id="detailDrawer">
+    <div class="sheet">
+      <div class="sheetHead">
+        <div>
+          <div class="muted" id="detailCode">-</div>
+          <h2 id="detailName" style="margin:4px 0 0">-</h2>
+        </div>
+        <button class="ghost" id="btnClose" type="button">ปิด</button>
+      </div>
+
+      <div style="height:12px"></div>
+      <div class="grid2">
+        <div>
+          <h3>ข้อมูลใบสมัคร</h3>
+          <div id="detailInfo"></div>
+        </div>
+        <div>
+          <h3>อัปเดตสถานะ</h3>
+          <label>สถานะใบสมัคร</label>
+          <select id="applicationStatus">
+            <option value="draft">ร่าง</option>
+            <option value="submitted">ส่งใบสมัครแล้ว</option>
+            <option value="under_review">กำลังตรวจสอบ</option>
+            <option value="need_more_documents">ขอเอกสารเพิ่ม</option>
+            <option value="rejected">ไม่ผ่าน</option>
+            <option value="approved_for_training">อนุมัติเข้าอบรม</option>
+          </select>
+          <label style="margin-top:8px">หมายเหตุแอดมิน</label>
+          <textarea id="applicationNote"></textarea>
+          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
+            <button class="primary" id="btnSaveStatus" type="button">บันทึกสถานะ</button>
+          </div>
+        </div>
+      </div>
+
+      <h3>เอกสาร</h3>
+      <div id="documents"></div>
+
+      <h3>Timeline</h3>
+      <div class="timeline" id="events"></div>
+    </div>
+  </div>
+
+  <script src="/admin-partner-onboarding.js"></script>
+</body>
+</html>

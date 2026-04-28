@@ -1,4 +1,4 @@
-﻿/**
+/**
  * CWF Backend (Express) - FIXED
  * - รวมทุก route ให้ถูกต้อง (แก้ syntax/วงเล็บหลุด/โค้ดแทรกกลางบรรทัด)
  * - รองรับ: booking_code CWF+7, public booking/track, forced/offer, accept_status, attendance,
@@ -680,6 +680,9 @@ const upload = multer({
 
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
+const PARTNER_APPLICATION_UPLOAD_DIR = path.join(UPLOAD_DIR, "partner_applications");
+if (!fs.existsSync(PARTNER_APPLICATION_UPLOAD_DIR)) fs.mkdirSync(PARTNER_APPLICATION_UPLOAD_DIR, { recursive: true });
+
 // =======================================
 // 🔐 AUTH (session cookie) for Admin pages/APIs
 // - cookie: cwf_auth (base64 JSON: {u,r,exp})
@@ -1006,6 +1009,537 @@ async function auditLog(req, { action, target_username = null, target_role = nul
     console.warn('auditLog failed:', e.message);
   }
 }
+
+const PARTNER_APPLICATION_STATUSES = new Set([
+  'draft',
+  'submitted',
+  'under_review',
+  'need_more_documents',
+  'rejected',
+  'approved_for_training',
+]);
+
+const PARTNER_DOCUMENT_TYPES = new Set([
+  'id_card',
+  'profile_photo',
+  'bank_book',
+  'tools_photo',
+  'vehicle_photo',
+  'certificate_or_portfolio',
+  'other',
+]);
+
+const PARTNER_DOCUMENT_STATUSES = new Set([
+  'uploaded',
+  'approved',
+  'rejected',
+  'need_reupload',
+]);
+
+function normalizeJsonArrayInput(value) {
+  if (Array.isArray(value)) return value.map(v => String(v || '').trim()).filter(Boolean);
+  const raw = String(value || '').trim();
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) return parsed.map(v => String(v || '').trim()).filter(Boolean);
+  } catch (_) {}
+  return raw.split(',').map(v => v.trim()).filter(Boolean);
+}
+
+function normalizePartnerPhone(phone) {
+  return String(phone || '').trim().replace(/\s+/g, '');
+}
+
+function sanitizePartnerApplicationCode(code) {
+  return String(code || '').trim().toUpperCase();
+}
+
+function makePartnerApplicationCode() {
+  const day = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: 'Asia/Bangkok',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date()).replace(/-/g, '');
+  return `CWF-P${day}-${crypto.randomBytes(16).toString('hex').toUpperCase()}`;
+}
+
+async function generateUniquePartnerApplicationCode(client = pool) {
+  for (let i = 0; i < 12; i++) {
+    const code = makePartnerApplicationCode();
+    const r = await client.query(
+      `SELECT 1 FROM public.partner_applications WHERE application_code=$1 LIMIT 1`,
+      [code]
+    );
+    if (!r.rows.length) return code;
+  }
+  return `CWF-P${Date.now()}-${crypto.randomBytes(16).toString('hex').toUpperCase()}`;
+}
+
+async function logPartnerOnboardingEvent(client, {
+  application_id,
+  actor_type = 'system',
+  actor_username = null,
+  event_type,
+  from_status = null,
+  to_status = null,
+  note = null,
+  metadata = null,
+}) {
+  const db = client || pool;
+  await db.query(
+    `INSERT INTO public.partner_onboarding_events
+      (application_id, actor_type, actor_username, event_type, from_status, to_status, note, metadata_json)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb)`,
+    [
+      application_id,
+      actor_type,
+      actor_username,
+      event_type,
+      from_status,
+      to_status,
+      note,
+      metadata ? JSON.stringify(metadata) : null,
+    ]
+  );
+}
+
+const PARTNER_ALLOWED_DOCUMENT_MIME_TYPES = new Set([
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'application/pdf',
+]);
+
+const PARTNER_ALLOWED_DOCUMENT_EXTENSIONS = new Set([
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+  '.pdf',
+]);
+
+function validatePartnerDocumentFile(file) {
+  if (!file) return 'ไม่พบไฟล์เอกสาร';
+  const mimetype = String(file.mimetype || '').toLowerCase().trim();
+  if (!PARTNER_ALLOWED_DOCUMENT_MIME_TYPES.has(mimetype)) {
+    return 'รองรับเฉพาะไฟล์ JPG, PNG, WEBP หรือ PDF เท่านั้น';
+  }
+  const ext = path.extname(file.originalname || '').toLowerCase();
+  if (!ext || !PARTNER_ALLOWED_DOCUMENT_EXTENSIONS.has(ext)) {
+    return 'นามสกุลไฟล์ต้องเป็น .jpg, .jpeg, .png, .webp หรือ .pdf เท่านั้น';
+  }
+  return null;
+}
+
+async function uploadPartnerDocumentFile(file, applicationCode, documentType) {
+  if (!file) throw new Error('ไม่พบไฟล์เอกสาร');
+  const safeCode = safeFilename(sanitizePartnerApplicationCode(applicationCode) || 'partner_application');
+  const safeType = safeFilename(documentType || 'document');
+  const ext = (() => {
+    const fromName = path.extname(file.originalname || '').toLowerCase();
+    if (fromName && fromName.length <= 8) return fromName;
+    const mt = String(file.mimetype || '').toLowerCase();
+    if (mt.includes('png')) return '.png';
+    if (mt.includes('webp')) return '.webp';
+    if (mt.includes('pdf')) return '.pdf';
+    return '.jpg';
+  })();
+
+  if (CLOUDINARY_ENABLED && String(file.mimetype || '').toLowerCase().startsWith('image/')) {
+    const publicId = `${safeCode}_${safeType}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
+    const up = await cloudinaryUploadBuffer({
+      buffer: file.buffer,
+      mimetype: file.mimetype || 'image/jpeg',
+      folder: `cwf/partner_applications/${safeCode}/${safeType}`,
+      publicId,
+      transformation: 'c_limit,w_1600/q_auto/f_auto',
+    });
+    return {
+      public_url: up.secure_url,
+      storage_path: up.public_id || publicId,
+      cloud_public_id: up.public_id || publicId,
+    };
+  }
+
+  const dir = path.join(PARTNER_APPLICATION_UPLOAD_DIR, safeCode);
+  fs.mkdirSync(dir, { recursive: true });
+  const filename = safeFilename(`${safeType}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}${ext}`);
+  const diskPath = path.join(dir, filename);
+  fs.writeFileSync(diskPath, file.buffer);
+  const rel = diskPath.replace(UPLOAD_DIR, '').replace(/\\/g, '/');
+  return {
+    public_url: `/uploads${rel.startsWith('/') ? '' : '/'}${rel}`,
+    storage_path: diskPath,
+    cloud_public_id: null,
+  };
+}
+
+function partnerApplicationPublicShape(row, docs = [], events = []) {
+  return {
+    id: row.id,
+    application_code: row.application_code,
+    full_name: row.full_name,
+    phone: row.phone,
+    line_id: row.line_id,
+    email: row.email,
+    address_text: row.address_text,
+    service_zones: row.service_zones || [],
+    preferred_job_types: row.preferred_job_types || [],
+    experience_years: row.experience_years == null ? null : Number(row.experience_years),
+    has_vehicle: !!row.has_vehicle,
+    vehicle_type: row.vehicle_type,
+    equipment_notes: row.equipment_notes,
+    notes: row.notes,
+    status: row.status,
+    admin_note: row.admin_note,
+    submitted_at: row.submitted_at,
+    reviewed_at: row.reviewed_at,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    documents: docs,
+    events,
+  };
+}
+
+// =======================================
+// 🤝 Partner Onboarding Phase 1A
+// - Temporary public lookup token: application_code
+// - Phase 1B should bind this to LINE/customer/technician session before deeper onboarding.
+// =======================================
+app.post('/partner/apply', async (req, res) => {
+  const body = req.body || {};
+  const full_name = String(body.full_name || '').trim();
+  const phone = normalizePartnerPhone(body.phone);
+  const consent_pdpa = body.consent_pdpa === true || body.consent_pdpa === 'true' || body.consent_pdpa === 1 || body.consent_pdpa === '1';
+  const consent_terms = body.consent_terms === true || body.consent_terms === 'true' || body.consent_terms === 1 || body.consent_terms === '1';
+
+  if (!full_name) return res.status(400).json({ error: 'กรุณากรอกชื่อ-นามสกุล' });
+  if (!phone) return res.status(400).json({ error: 'กรุณากรอกเบอร์โทร' });
+  if (!consent_pdpa || !consent_terms) return res.status(400).json({ error: 'กรุณายอมรับ PDPA และเงื่อนไขการสมัคร' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const application_code = await generateUniquePartnerApplicationCode(client);
+    const service_zones = normalizeJsonArrayInput(body.service_zones);
+    const preferred_job_types = normalizeJsonArrayInput(body.preferred_job_types);
+    const experienceRaw = body.experience_years === '' || body.experience_years == null ? null : Number(body.experience_years);
+    const experience_years = Number.isFinite(experienceRaw) ? Math.max(0, experienceRaw) : null;
+    const has_vehicle = body.has_vehicle === true || body.has_vehicle === 'true' || body.has_vehicle === 1 || body.has_vehicle === '1';
+
+    const r = await client.query(
+      `INSERT INTO public.partner_applications
+        (application_code, user_id, technician_username, full_name, phone, line_id, email, address_text,
+         service_zones, preferred_job_types, experience_years, has_vehicle, vehicle_type, equipment_notes,
+         bank_account_name, bank_name, bank_account_last4, notes, consent_pdpa, consent_terms, status, submitted_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'submitted',NOW(),NOW())
+       RETURNING *`,
+      [
+        application_code,
+        body.user_id ? String(body.user_id).trim() : null,
+        body.technician_username ? String(body.technician_username).trim() : null,
+        full_name,
+        phone,
+        body.line_id ? String(body.line_id).trim() : null,
+        body.email ? String(body.email).trim() : null,
+        body.address_text ? String(body.address_text).trim() : null,
+        JSON.stringify(service_zones),
+        JSON.stringify(preferred_job_types),
+        experience_years,
+        has_vehicle,
+        body.vehicle_type ? String(body.vehicle_type).trim() : null,
+        body.equipment_notes ? String(body.equipment_notes).trim() : null,
+        body.bank_account_name ? String(body.bank_account_name).trim() : null,
+        body.bank_name ? String(body.bank_name).trim() : null,
+        body.bank_account_last4 ? String(body.bank_account_last4).trim().slice(-4) : null,
+        body.notes ? String(body.notes).trim() : null,
+        consent_pdpa,
+        consent_terms,
+      ]
+    );
+    const appRow = r.rows[0];
+    await logPartnerOnboardingEvent(client, {
+      application_id: appRow.id,
+      actor_type: 'applicant',
+      event_type: 'application_submitted',
+      to_status: 'submitted',
+      note: 'Partner application submitted',
+      metadata: { application_code },
+    });
+    await client.query('COMMIT');
+    return res.json({ ok: true, application: partnerApplicationPublicShape(appRow) });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('POST /partner/apply error:', e);
+    return res.status(500).json({ error: 'ส่งใบสมัครไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/partner/application/:application_code', async (req, res) => {
+  try {
+    const application_code = sanitizePartnerApplicationCode(req.params.application_code);
+    if (!application_code) return res.status(400).json({ error: 'ต้องมี application_code' });
+    const appR = await pool.query(`SELECT * FROM public.partner_applications WHERE application_code=$1 LIMIT 1`, [application_code]);
+    if (!appR.rows.length) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    const appRow = appR.rows[0];
+    const docsR = await pool.query(
+      `SELECT id, document_type, original_filename, mime_type, file_size, status, admin_note, uploaded_at, reviewed_at
+       FROM public.partner_application_documents
+       WHERE application_id=$1
+       ORDER BY created_at DESC, id DESC`,
+      [appRow.id]
+    );
+    const eventsR = await pool.query(
+      `SELECT id, actor_type, actor_username, event_type, from_status, to_status, note, metadata_json, created_at
+       FROM public.partner_onboarding_events
+       WHERE application_id=$1
+       ORDER BY created_at DESC, id DESC
+       LIMIT 50`,
+      [appRow.id]
+    );
+    return res.json({ ok: true, application: partnerApplicationPublicShape(appRow, docsR.rows, eventsR.rows) });
+  } catch (e) {
+    console.error('GET /partner/application error:', e);
+    return res.status(500).json({ error: 'โหลดใบสมัครไม่สำเร็จ' });
+  }
+});
+
+app.post('/partner/application/:application_code/documents', upload.single('document'), async (req, res) => {
+  const application_code = sanitizePartnerApplicationCode(req.params.application_code);
+  const document_type = String(req.body?.document_type || '').trim();
+  if (!application_code) return res.status(400).json({ error: 'ต้องมี application_code' });
+  if (!PARTNER_DOCUMENT_TYPES.has(document_type)) return res.status(400).json({ error: 'document_type ไม่ถูกต้อง' });
+  if (!req.file) return res.status(400).json({ error: 'กรุณาแนบไฟล์เอกสาร' });
+  const fileError = validatePartnerDocumentFile(req.file);
+  if (fileError) return res.status(400).json({ error: fileError });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const appR = await client.query(
+      `SELECT id, application_code FROM public.partner_applications WHERE application_code=$1 FOR UPDATE`,
+      [application_code]
+    );
+    if (!appR.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    }
+    const appRow = appR.rows[0];
+    const stored = await uploadPartnerDocumentFile(req.file, application_code, document_type);
+    const docR = await client.query(
+      `INSERT INTO public.partner_application_documents
+        (application_id, document_type, original_filename, mime_type, file_size, public_url, storage_path, cloud_public_id, status, uploaded_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'uploaded',NOW(),NOW())
+       RETURNING id, document_type, original_filename, mime_type, file_size, status, uploaded_at, created_at`,
+      [
+        appRow.id,
+        document_type,
+        req.file.originalname || null,
+        req.file.mimetype || null,
+        req.file.size || null,
+        stored.public_url,
+        stored.storage_path,
+        stored.cloud_public_id,
+      ]
+    );
+    await logPartnerOnboardingEvent(client, {
+      application_id: appRow.id,
+      actor_type: 'applicant',
+      event_type: 'document_uploaded',
+      note: document_type,
+      metadata: { document_id: docR.rows[0].id, document_type },
+    });
+    await client.query('COMMIT');
+    return res.json({ ok: true, document: docR.rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('POST partner document error:', e);
+    const msg = e && e.code === 'LIMIT_FILE_SIZE' ? 'ไฟล์ใหญ่เกิน 8MB' : 'อัปโหลดเอกสารไม่สำเร็จ';
+    return res.status(500).json({ error: msg });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/admin/partners/applications', requireAdminSession, async (req, res) => {
+  try {
+    const status = String(req.query.status || '').trim();
+    const q = String(req.query.q || '').trim();
+    if (status && !PARTNER_APPLICATION_STATUSES.has(status)) return res.status(400).json({ error: 'status ไม่ถูกต้อง' });
+    const params = [];
+    const where = [];
+    if (status) {
+      params.push(status);
+      where.push(`a.status=$${params.length}`);
+    }
+    if (q) {
+      params.push(`%${q.toLowerCase()}%`);
+      where.push(`(LOWER(a.application_code) LIKE $${params.length} OR LOWER(a.full_name) LIKE $${params.length} OR LOWER(a.phone) LIKE $${params.length})`);
+    }
+    const sql = `
+      SELECT a.id, a.application_code, a.full_name, a.phone, a.line_id, a.email,
+             a.service_zones, a.preferred_job_types, a.status, a.admin_note,
+             a.submitted_at, a.reviewed_by, a.reviewed_at, a.created_at, a.updated_at,
+             COUNT(d.id)::int AS document_count,
+             COUNT(d.id) FILTER (WHERE d.status='approved')::int AS approved_document_count,
+             COUNT(d.id) FILTER (WHERE d.status IN ('rejected','need_reupload'))::int AS problem_document_count
+      FROM public.partner_applications a
+      LEFT JOIN public.partner_application_documents d ON d.application_id=a.id
+      ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+      GROUP BY a.id
+      ORDER BY a.created_at DESC
+      LIMIT 200`;
+    const r = await pool.query(sql, params);
+    return res.json({ ok: true, applications: r.rows });
+  } catch (e) {
+    console.error('GET admin partner applications error:', e);
+    return res.status(500).json({ error: 'โหลดใบสมัครพาร์ทเนอร์ไม่สำเร็จ' });
+  }
+});
+
+app.get('/admin/partners/applications/:id', requireAdminSession, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'id ไม่ถูกต้อง' });
+    const appR = await pool.query(`SELECT * FROM public.partner_applications WHERE id=$1 LIMIT 1`, [id]);
+    if (!appR.rows.length) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    const docsR = await pool.query(
+      `SELECT id, application_id, document_type, original_filename, mime_type, file_size, public_url, status, admin_note,
+              uploaded_at, reviewed_by, reviewed_at, created_at, updated_at
+       FROM public.partner_application_documents
+       WHERE application_id=$1
+       ORDER BY created_at DESC, id DESC`,
+      [id]
+    );
+    const eventsR = await pool.query(
+      `SELECT id, actor_type, actor_username, event_type, from_status, to_status, note, metadata_json, created_at
+       FROM public.partner_onboarding_events
+       WHERE application_id=$1
+       ORDER BY created_at DESC, id DESC`,
+      [id]
+    );
+    return res.json({ ok: true, application: appR.rows[0], documents: docsR.rows, events: eventsR.rows });
+  } catch (e) {
+    console.error('GET admin partner application detail error:', e);
+    return res.status(500).json({ error: 'โหลดรายละเอียดใบสมัครไม่สำเร็จ' });
+  }
+});
+
+app.put('/admin/partners/applications/:id/status', requireAdminSession, async (req, res) => {
+  const id = Number(req.params.id);
+  const status = String(req.body?.status || '').trim();
+  const admin_note = req.body?.admin_note == null ? null : String(req.body.admin_note || '').trim();
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ error: 'id ไม่ถูกต้อง' });
+  if (!PARTNER_APPLICATION_STATUSES.has(status)) return res.status(400).json({ error: 'status ไม่ถูกต้อง' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const cur = await client.query(`SELECT id, application_code, status FROM public.partner_applications WHERE id=$1 FOR UPDATE`, [id]);
+    if (!cur.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    }
+    const from_status = cur.rows[0].status;
+    const actor = req.actor?.username || req.auth?.username || null;
+    const upd = await client.query(
+      `UPDATE public.partner_applications
+       SET status=$1, admin_note=$2, reviewed_by=$3, reviewed_at=NOW(), updated_at=NOW()
+       WHERE id=$4
+       RETURNING *`,
+      [status, admin_note || null, actor, id]
+    );
+    await logPartnerOnboardingEvent(client, {
+      application_id: id,
+      actor_type: 'admin',
+      actor_username: actor,
+      event_type: 'application_status_changed',
+      from_status,
+      to_status: status,
+      note: admin_note || null,
+      metadata: { application_code: cur.rows[0].application_code },
+    });
+    await client.query('COMMIT');
+    await auditLog(req, {
+      action: 'PARTNER_APPLICATION_STATUS_UPDATE',
+      target_username: cur.rows[0].application_code,
+      target_role: 'partner_application',
+      meta: { application_id: id, from_status, to_status: status, admin_note },
+    });
+    return res.json({ ok: true, application: upd.rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('PUT partner application status error:', e);
+    return res.status(500).json({ error: 'อัปเดตสถานะใบสมัครไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.put('/admin/partners/applications/:id/documents/:document_id/status', requireAdminSession, async (req, res) => {
+  const id = Number(req.params.id);
+  const document_id = Number(req.params.document_id);
+  const status = String(req.body?.status || '').trim();
+  const admin_note = req.body?.admin_note == null ? null : String(req.body.admin_note || '').trim();
+  if (!Number.isFinite(id) || id <= 0 || !Number.isFinite(document_id) || document_id <= 0) {
+    return res.status(400).json({ error: 'id เอกสารไม่ถูกต้อง' });
+  }
+  if (!PARTNER_DOCUMENT_STATUSES.has(status)) return res.status(400).json({ error: 'document status ไม่ถูกต้อง' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const cur = await client.query(
+      `SELECT d.id, d.application_id, d.document_type, d.status, a.application_code
+       FROM public.partner_application_documents d
+       JOIN public.partner_applications a ON a.id=d.application_id
+       WHERE d.id=$1 AND d.application_id=$2
+       FOR UPDATE`,
+      [document_id, id]
+    );
+    if (!cur.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'ไม่พบเอกสาร' });
+    }
+    const row = cur.rows[0];
+    const actor = req.actor?.username || req.auth?.username || null;
+    const upd = await client.query(
+      `UPDATE public.partner_application_documents
+       SET status=$1, admin_note=$2, reviewed_by=$3, reviewed_at=NOW(), updated_at=NOW()
+       WHERE id=$4 AND application_id=$5
+       RETURNING id, document_type, original_filename, mime_type, file_size, public_url, status, admin_note, uploaded_at, reviewed_by, reviewed_at, created_at, updated_at`,
+      [status, admin_note || null, actor, document_id, id]
+    );
+    await logPartnerOnboardingEvent(client, {
+      application_id: id,
+      actor_type: 'admin',
+      actor_username: actor,
+      event_type: 'document_status_changed',
+      from_status: row.status,
+      to_status: status,
+      note: admin_note || row.document_type,
+      metadata: { document_id, document_type: row.document_type },
+    });
+    await client.query('COMMIT');
+    await auditLog(req, {
+      action: 'PARTNER_DOCUMENT_STATUS_UPDATE',
+      target_username: row.application_code,
+      target_role: 'partner_application',
+      meta: { application_id: id, document_id, document_type: row.document_type, from_status: row.status, to_status: status, admin_note },
+    });
+    return res.json({ ok: true, document: upd.rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('PUT partner document status error:', e);
+    return res.status(500).json({ error: 'อัปเดตสถานะเอกสารไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
 
 // Session check for frontend guards (returns actor + effective + impersonation)
 app.get('/api/auth/me', async (req, res) => {
@@ -5740,6 +6274,82 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_admin_audit_log_created ON public.admin_audit_log(created_at DESC)`);
+
+
+// 4.1) Partner Onboarding Phase 1A: application + documents + event timeline
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.partner_applications (
+    id BIGSERIAL PRIMARY KEY,
+    application_code TEXT NOT NULL UNIQUE,
+    user_id TEXT,
+    technician_username TEXT,
+    full_name TEXT NOT NULL,
+    phone TEXT NOT NULL,
+    line_id TEXT,
+    email TEXT,
+    address_text TEXT,
+    service_zones JSONB NOT NULL DEFAULT '[]'::jsonb,
+    preferred_job_types JSONB NOT NULL DEFAULT '[]'::jsonb,
+    experience_years NUMERIC(6,2),
+    has_vehicle BOOLEAN NOT NULL DEFAULT FALSE,
+    vehicle_type TEXT,
+    equipment_notes TEXT,
+    bank_account_name TEXT,
+    bank_name TEXT,
+    bank_account_last4 TEXT,
+    notes TEXT,
+    consent_pdpa BOOLEAN NOT NULL DEFAULT FALSE,
+    consent_terms BOOLEAN NOT NULL DEFAULT FALSE,
+    status TEXT NOT NULL DEFAULT 'submitted' CHECK (status IN ('draft','submitted','under_review','need_more_documents','rejected','approved_for_training')),
+    admin_note TEXT,
+    submitted_at TIMESTAMPTZ,
+    reviewed_by TEXT,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_applications_status_created ON public.partner_applications(status, created_at DESC)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_applications_phone ON public.partner_applications(phone)`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.partner_application_documents (
+    id BIGSERIAL PRIMARY KEY,
+    application_id BIGINT NOT NULL REFERENCES public.partner_applications(id) ON DELETE CASCADE,
+    document_type TEXT NOT NULL CHECK (document_type IN ('id_card','profile_photo','bank_book','tools_photo','vehicle_photo','certificate_or_portfolio','other')),
+    original_filename TEXT,
+    mime_type TEXT,
+    file_size BIGINT,
+    public_url TEXT,
+    storage_path TEXT,
+    cloud_public_id TEXT,
+    status TEXT NOT NULL DEFAULT 'uploaded' CHECK (status IN ('uploaded','approved','rejected','need_reupload')),
+    admin_note TEXT,
+    uploaded_at TIMESTAMPTZ DEFAULT NOW(),
+    reviewed_by TEXT,
+    reviewed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_docs_application ON public.partner_application_documents(application_id, created_at DESC)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_docs_status ON public.partner_application_documents(status, created_at DESC)`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.partner_onboarding_events (
+    id BIGSERIAL PRIMARY KEY,
+    application_id BIGINT NOT NULL REFERENCES public.partner_applications(id) ON DELETE CASCADE,
+    actor_type TEXT,
+    actor_username TEXT,
+    event_type TEXT NOT NULL,
+    from_status TEXT,
+    to_status TEXT,
+    note TEXT,
+    metadata_json JSONB,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_events_application_created ON public.partner_onboarding_events(application_id, created_at DESC)`);
 
 
 // 5) auth sessions (server-side) - for Super Admin impersonation & real logout
@@ -15009,14 +15619,19 @@ app.get("/admin/attendance/today", async (req, res) => {
 const FRONTEND_DIR = path.join(__dirname, "frontend");
 const ROOT_DIR = __dirname;
 
-if (fs.existsSync(FRONTEND_DIR)) app.use(express.static(FRONTEND_DIR));
-app.use(express.static(ROOT_DIR));
-
 function sendHtml(file) {
   const p1 = path.join(FRONTEND_DIR, file);
   const p2 = path.join(ROOT_DIR, file);
   return fs.existsSync(p1) ? p1 : p2;
 }
+
+// Protected admin pages that also exist as root static files must be registered
+// before express.static(ROOT_DIR), otherwise static serving can bypass auth.
+app.get("/admin-partner-onboarding", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-partner-onboarding.html")));
+app.get("/admin-partner-onboarding.html", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-partner-onboarding.html")));
+
+if (fs.existsSync(FRONTEND_DIR)) app.use(express.static(FRONTEND_DIR));
+app.use(express.static(ROOT_DIR));
 
 // ✅ รองรับ Refresh/Deep-link แบบ "ไม่ต้องมี .html" (กันรีเฟรชเด้งไปหน้าแรก)
 // - ตัวอย่าง: /tech, /admin, /track, /customer
@@ -15034,6 +15649,7 @@ app.get("/edit-profile", (req, res) => res.sendFile(sendHtml("edit-profile.html"
 app.get("/tech", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/add-job", (req, res) => res.redirect(302, "/admin-add-v2.html"));
 app.get("/customer", (req, res) => res.sendFile(sendHtml("customer.html")));
+app.get("/partner-apply", (req, res) => res.sendFile(sendHtml("partner-apply.html")));
 // ✅ หน้าใหม่: คำนวณราคาติดตั้งแอร์ (ลูกค้า)
 app.get("/install-quote", (req, res) => res.sendFile(sendHtml("install-quote.html")));
 // Canonical path: keep short URL, redirect direct-file access
@@ -15054,6 +15670,7 @@ app.get("/edit-profile.html", (req, res) => res.sendFile(sendHtml("edit-profile.
 app.get("/tech.html", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/add-job.html", (req, res) => res.redirect(302, "/admin-add-v2.html"));
 app.get("/register.html", (req, res) => res.sendFile(sendHtml("register.html")));
+app.get("/partner-apply.html", (req, res) => res.sendFile(sendHtml("partner-apply.html")));
 app.get("/index.html", (req, res) => res.sendFile(sendHtml("index.html")));
 app.get("/", (req, res) => res.sendFile(sendHtml("login.html")));
 
