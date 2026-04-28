@@ -1036,6 +1036,60 @@ const PARTNER_DOCUMENT_STATUSES = new Set([
   'need_reupload',
 ]);
 
+const PARTNER_CERTIFICATION_CODES = [
+  'cwf_basic_partner',
+  'clean_wall_normal',
+  'clean_wall_premium',
+  'clean_wall_hanging_coil',
+  'clean_wall_overhaul',
+  'clean_ceiling_suspended',
+  'clean_cassette_4way',
+  'clean_duct_type',
+  'repair_diagnosis_basic',
+  'repair_water_leak',
+  'repair_electrical_basic',
+  'repair_refrigerant_basic',
+  'repair_parts_replacement',
+  'install_wall_standard',
+  'install_condo',
+  'install_relocation',
+];
+
+const PARTNER_CERTIFICATION_STATUSES = new Set([
+  'not_started',
+  'in_training',
+  'exam_ready',
+  'exam_failed',
+  'exam_passed',
+  'trial_unlocked',
+  'approved',
+  'suspended',
+  'revoked',
+]);
+
+const PARTNER_TRIAL_RESULTS = new Set(['passed', 'failed', 'needs_more_trial']);
+
+const BASIC_PARTNER_LESSONS = [
+  'มาตรฐานแบรนด์ CWF',
+  'การแต่งกายและมารยาทหน้างาน',
+  'การสื่อสารกับลูกค้า',
+  'การเช็กอิน',
+  'การถ่ายรูปก่อนและหลังงาน',
+  'ห้ามเปลี่ยนราคาเอง',
+  'ห้ามรับเงินนอกระบบ',
+  'วิธีปิดงาน',
+  'ความรับผิดชอบงานรับประกัน',
+  'กติกางานทดลอง',
+];
+
+const BASIC_PARTNER_EXAM_QUESTIONS = [
+  { q: 'เมื่อถึงหน้างานควรทำอะไรเป็นอันดับแรก', choices: ['เช็กอินและทักทายลูกค้า', 'เริ่มงานทันทีโดยไม่แจ้ง', 'ขอเงินก่อนเริ่มงาน'], answer: 0 },
+  { q: 'หากต้องเปลี่ยนราคา ควรทำอย่างไร', choices: ['แจ้งแอดมินเพื่ออนุมัติก่อน', 'ตกลงกับลูกค้าเอง', 'เก็บเงินสดเพิ่มทันที'], answer: 0 },
+  { q: 'รูปก่อนและหลังงานมีไว้เพื่ออะไร', choices: ['เป็นหลักฐานคุณภาพงาน', 'ใช้แทนการปิดงานได้ทั้งหมด', 'ไม่จำเป็นต้องถ่าย'], answer: 0 },
+  { q: 'การรับเงินนอกระบบ CWF ทำได้หรือไม่', choices: ['ไม่ได้', 'ได้ถ้าลูกค้าสะดวก', 'ได้เฉพาะงานด่วน'], answer: 0 },
+  { q: 'งานทดลองผ่านแล้วจะรับงานจริงได้ทันทีหรือไม่', choices: ['ต้องรอแอดมินอนุมัติสิทธิ์', 'ได้ทันทีทุกประเภท', 'ได้เฉพาะถ้าไม่มีเอกสาร'], answer: 0 },
+];
+
 function normalizeJsonArrayInput(value) {
   if (Array.isArray(value)) return value.map(v => String(v || '').trim()).filter(Boolean);
   const raw = String(value || '').trim();
@@ -1201,6 +1255,81 @@ function partnerApplicationPublicShape(row, docs = [], events = []) {
     documents: docs,
     events,
   };
+}
+
+function getPartnerOnboardingEnabled() {
+  return envBool('PARTNER_ONBOARDING_ENABLED', true);
+}
+
+function getCertificationEnforcementMode() {
+  const mode = String(process.env.CERTIFICATION_ENFORCEMENT || 'off').trim().toLowerCase();
+  return ['off', 'partner_soft', 'partner_strict', 'all_strict'].includes(mode) ? mode : 'off';
+}
+
+function getRequiredCertificationCodesForJob(payload = {}) {
+  const jobType = String(payload.job_type || payload.jobType || '').trim();
+  const acType = String(payload.ac_type || payload.acType || payload.air_type || '').trim();
+  const washVariant = String(payload.wash_variant || payload.washVariant || '').trim();
+  const repairVariant = String(payload.repair_variant || payload.repairVariant || '').trim();
+  const installVariant = String(payload.install_variant || payload.installVariant || '').trim();
+  const out = new Set();
+
+  if (jobType === 'ล้าง') {
+    if (acType.includes('สี่ทิศ')) out.add('clean_cassette_4way');
+    else if (acType.includes('ท่อลม')) out.add('clean_duct_type');
+    else if (acType.includes('แขวน') || acType.includes('ใต้ฝ้า') || acType.includes('เปลือย')) out.add('clean_ceiling_suspended');
+    else if (washVariant.includes('พรีเมียม')) out.add('clean_wall_premium');
+    else if (washVariant.includes('แขวนคอย')) out.add('clean_wall_hanging_coil');
+    else if (washVariant.includes('ตัดล้าง') || washVariant.includes('ใหญ่')) out.add('clean_wall_overhaul');
+    else out.add('clean_wall_normal');
+  }
+  if (jobType === 'ซ่อม') {
+    if (repairVariant.includes('น้ำรั่ว')) out.add('repair_water_leak');
+    else if (repairVariant.includes('ไฟ')) out.add('repair_electrical_basic');
+    else if (repairVariant.includes('น้ำยา')) out.add('repair_refrigerant_basic');
+    else if (repairVariant.includes('อะไหล่')) out.add('repair_parts_replacement');
+    else out.add('repair_diagnosis_basic');
+  }
+  if (jobType === 'ติดตั้ง') {
+    out.add('install_wall_standard');
+    if (installVariant.includes('คอนโด') || acType.includes('คอนโด')) out.add('install_condo');
+  }
+  if (jobType === 'ย้าย') out.add('install_relocation');
+  return Array.from(out);
+}
+
+async function technicianHasRequiredCertifications(username, requiredCodes = [], opts = {}) {
+  const codes = (requiredCodes || []).filter(Boolean);
+  if (!codes.length) return { ok: true, missing: [], blocked: [] };
+  const r = await pool.query(
+    `SELECT certification_code, status
+     FROM public.technician_certifications
+     WHERE technician_username=$1 AND certification_code = ANY($2::text[])`,
+    [username, codes]
+  );
+  const statusMap = new Map((r.rows || []).map(x => [String(x.certification_code), String(x.status || '')]));
+  const missing = codes.filter(code => statusMap.get(code) !== 'approved');
+  const blocked = codes.filter(code => ['suspended', 'revoked'].includes(statusMap.get(code)));
+  return { ok: missing.length === 0 && blocked.length === 0, missing, blocked, statuses: Object.fromEntries(statusMap) };
+}
+
+function explainCertificationBlockReason({ mode, username, required = [], missing = [], blocked = [] } = {}) {
+  if (!missing.length && !blocked.length) return '';
+  return `CERTIFICATION_BLOCK mode=${mode || 'off'} tech=${username || '-'} required=${required.join(',')} missing=${missing.join(',')} blocked=${blocked.join(',')}`;
+}
+
+async function getPartnerApplicationByCode(applicationCode, client = pool) {
+  const code = sanitizePartnerApplicationCode(applicationCode);
+  if (!code) return null;
+  const r = await client.query(`SELECT * FROM public.partner_applications WHERE application_code=$1 LIMIT 1`, [code]);
+  return r.rows[0] || null;
+}
+
+async function getPartnerApplicationById(id, client = pool) {
+  const n = Number(id);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  const r = await client.query(`SELECT * FROM public.partner_applications WHERE id=$1 LIMIT 1`, [n]);
+  return r.rows[0] || null;
 }
 
 // =======================================
@@ -1536,6 +1665,440 @@ app.put('/admin/partners/applications/:id/documents/:document_id/status', requir
     await client.query('ROLLBACK');
     console.error('PUT partner document status error:', e);
     return res.status(500).json({ error: 'อัปเดตสถานะเอกสารไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+// =======================================
+// Partner Agreement / Academy / Exam / Certification / Trial
+// Enforcement helpers are available above, but job-blocking remains OFF by default.
+// =======================================
+app.get('/partner/agreement/:application_code', async (req, res) => {
+  try {
+    const appRow = await getPartnerApplicationByCode(req.params.application_code);
+    if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    const tpl = await pool.query(
+      `SELECT * FROM public.agreement_templates WHERE template_code='partner_standard' AND is_active=TRUE ORDER BY version DESC LIMIT 1`
+    );
+    const sig = await pool.query(
+      `SELECT id, template_id, template_version, signer_full_name, signed_at
+       FROM public.agreement_signatures
+       WHERE application_id=$1
+       ORDER BY signed_at DESC LIMIT 1`,
+      [appRow.id]
+    );
+    return res.json({ ok: true, application: partnerApplicationPublicShape(appRow), template: tpl.rows[0] || null, signature: sig.rows[0] || null });
+  } catch (e) {
+    console.error('GET partner agreement error:', e);
+    return res.status(500).json({ error: 'โหลดสัญญาไม่สำเร็จ' });
+  }
+});
+
+app.post('/partner/agreement/:application_code/sign', async (req, res) => {
+  const applicationCode = sanitizePartnerApplicationCode(req.params.application_code);
+  const signer = String(req.body?.signer_full_name || '').trim();
+  const consent = req.body?.consent === true || req.body?.consent === 'true' || req.body?.consent === 1 || req.body?.consent === '1';
+  if (!signer) return res.status(400).json({ error: 'กรุณาพิมพ์ชื่อ-นามสกุลเพื่อเซ็นสัญญา' });
+  if (!consent) return res.status(400).json({ error: 'กรุณายืนยันการยอมรับสัญญา' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const appR = await client.query(`SELECT * FROM public.partner_applications WHERE application_code=$1 FOR UPDATE`, [applicationCode]);
+    if (!appR.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    }
+    const tplR = await client.query(
+      `SELECT * FROM public.agreement_templates WHERE template_code='partner_standard' AND is_active=TRUE ORDER BY version DESC LIMIT 1`
+    );
+    if (!tplR.rows.length) throw new Error('ไม่พบ template สัญญาที่เปิดใช้งาน');
+    const tpl = tplR.rows[0];
+    const sig = await client.query(
+      `INSERT INTO public.agreement_signatures
+        (application_id, template_id, template_version, signer_full_name, consent_terms, signed_ip, signed_user_agent, signed_at)
+       VALUES ($1,$2,$3,$4,TRUE,$5,$6,NOW())
+       RETURNING id, template_id, template_version, signer_full_name, signed_at`,
+      [appR.rows[0].id, tpl.id, tpl.version, signer, req.ip || null, String(req.headers['user-agent'] || '').slice(0, 500)]
+    );
+    await logPartnerOnboardingEvent(client, {
+      application_id: appR.rows[0].id,
+      actor_type: 'applicant',
+      event_type: 'agreement_signed',
+      note: `version ${tpl.version}`,
+      metadata: { signature_id: sig.rows[0].id, template_code: tpl.template_code },
+    });
+    await client.query('COMMIT');
+    return res.json({ ok: true, signature: sig.rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('POST partner agreement sign error:', e);
+    return res.status(500).json({ error: e.message || 'เซ็นสัญญาไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/partner/academy/:application_code', async (req, res) => {
+  try {
+    const appRow = await getPartnerApplicationByCode(req.params.application_code);
+    if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    const courseR = await pool.query(`SELECT * FROM public.academy_courses WHERE course_code='cwf_basic_partner' LIMIT 1`);
+    const course = courseR.rows[0] || null;
+    const lessonsR = course
+      ? await pool.query(
+          `SELECT l.*, COALESCE(p.completed,FALSE) AS completed, p.completed_at
+           FROM public.academy_lessons l
+           LEFT JOIN public.academy_progress p ON p.lesson_id=l.id AND p.application_id=$2
+           WHERE l.course_id=$1 AND l.is_active=TRUE
+           ORDER BY l.sort_order ASC, l.id ASC`,
+          [course.id, appRow.id]
+        )
+      : { rows: [] };
+    return res.json({ ok: true, application: partnerApplicationPublicShape(appRow), course, lessons: lessonsR.rows });
+  } catch (e) {
+    console.error('GET partner academy error:', e);
+    return res.status(500).json({ error: 'โหลด Academy ไม่สำเร็จ' });
+  }
+});
+
+app.post('/partner/academy/:application_code/lessons/:lesson_id/complete', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const appRow = await getPartnerApplicationByCode(req.params.application_code, client);
+    if (!appRow) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    }
+    const lessonId = Number(req.params.lesson_id);
+    if (!Number.isFinite(lessonId) || lessonId <= 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'lesson_id ไม่ถูกต้อง' });
+    }
+    const lessonR = await client.query(`SELECT id, course_id, lesson_title FROM public.academy_lessons WHERE id=$1 AND is_active=TRUE LIMIT 1`, [lessonId]);
+    if (!lessonR.rows.length) throw new Error('ไม่พบบทเรียน');
+    const saved = await client.query(
+      `INSERT INTO public.academy_progress(application_id, course_id, lesson_id, completed, completed_at, updated_at)
+       VALUES($1,$2,$3,TRUE,NOW(),NOW())
+       ON CONFLICT(application_id, lesson_id) DO UPDATE SET completed=TRUE, completed_at=COALESCE(public.academy_progress.completed_at,NOW()), updated_at=NOW()
+       RETURNING *`,
+      [appRow.id, lessonR.rows[0].course_id, lessonId]
+    );
+    await logPartnerOnboardingEvent(client, {
+      application_id: appRow.id,
+      actor_type: 'applicant',
+      event_type: 'academy_lesson_completed',
+      note: lessonR.rows[0].lesson_title,
+      metadata: { lesson_id: lessonId },
+    });
+    await client.query('COMMIT');
+    return res.json({ ok: true, progress: saved.rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('POST lesson complete error:', e);
+    return res.status(500).json({ error: e.message || 'บันทึกบทเรียนไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/partner/academy/:application_code/exam', async (req, res) => {
+  try {
+    const appRow = await getPartnerApplicationByCode(req.params.application_code);
+    if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    const examR = await pool.query(
+      `SELECT e.* FROM public.academy_exams e JOIN public.academy_courses c ON c.id=e.course_id WHERE c.course_code='cwf_basic_partner' AND e.is_active=TRUE ORDER BY e.id DESC LIMIT 1`
+    );
+    if (!examR.rows.length) return res.status(404).json({ error: 'ไม่พบข้อสอบ' });
+    const qR = await pool.query(
+      `SELECT id, question_text, choices_json, sort_order FROM public.academy_exam_questions WHERE exam_id=$1 ORDER BY sort_order ASC, id ASC`,
+      [examR.rows[0].id]
+    );
+    return res.json({ ok: true, exam: examR.rows[0], questions: qR.rows.map(q => ({ id: q.id, question_text: q.question_text, choices_json: q.choices_json, sort_order: q.sort_order })) });
+  } catch (e) {
+    console.error('GET partner exam error:', e);
+    return res.status(500).json({ error: 'โหลดข้อสอบไม่สำเร็จ' });
+  }
+});
+
+app.post('/partner/academy/:application_code/exam/submit', async (req, res) => {
+  const answers = (req.body && typeof req.body.answers === 'object' && !Array.isArray(req.body.answers)) ? req.body.answers : {};
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const appRow = await getPartnerApplicationByCode(req.params.application_code, client);
+    if (!appRow) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    }
+    const examR = await client.query(
+      `SELECT e.* FROM public.academy_exams e JOIN public.academy_courses c ON c.id=e.course_id WHERE c.course_code='cwf_basic_partner' AND e.is_active=TRUE ORDER BY e.id DESC LIMIT 1`
+    );
+    if (!examR.rows.length) throw new Error('ไม่พบข้อสอบ');
+    const questions = await client.query(`SELECT id, correct_choice_index FROM public.academy_exam_questions WHERE exam_id=$1`, [examR.rows[0].id]);
+    const total = questions.rows.length;
+    const correct = questions.rows.reduce((sum, q) => sum + (Number(answers[String(q.id)]) === Number(q.correct_choice_index) ? 1 : 0), 0);
+    const score = total ? Math.round((correct / total) * 10000) / 100 : 0;
+    const passed = score >= Number(examR.rows[0].passing_score_percent || 80);
+    const saved = await client.query(
+      `INSERT INTO public.academy_exam_attempts(application_id, exam_id, answers_json, score_percent, passed, submitted_at)
+       VALUES($1,$2,$3::jsonb,$4,$5,NOW())
+       RETURNING *`,
+      [appRow.id, examR.rows[0].id, JSON.stringify(answers), score, passed]
+    );
+    await client.query(
+      `INSERT INTO public.technician_certifications(application_id, technician_username, certification_code, status, updated_by, updated_at)
+       VALUES($1,$2,'cwf_basic_partner',$3,'exam',NOW())
+       ON CONFLICT(application_id, certification_code) DO UPDATE SET status=EXCLUDED.status, updated_by='exam', updated_at=NOW()`,
+      [appRow.id, appRow.technician_username || null, passed ? 'exam_passed' : 'exam_failed']
+    );
+    await logPartnerOnboardingEvent(client, {
+      application_id: appRow.id,
+      actor_type: 'applicant',
+      event_type: 'exam_submitted',
+      note: `${score}% ${passed ? 'passed' : 'failed'}`,
+      metadata: { attempt_id: saved.rows[0].id, passed, score },
+    });
+    await client.query('COMMIT');
+    return res.json({ ok: true, attempt: saved.rows[0], passed });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('POST exam submit error:', e);
+    return res.status(500).json({ error: e.message || 'ส่งข้อสอบไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/admin/partners/applications/:id/agreement', requireAdminSession, async (req, res) => {
+  try {
+    const appRow = await getPartnerApplicationById(req.params.id);
+    if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    const sig = await pool.query(
+      `SELECT s.id, s.template_version, s.signer_full_name, s.signed_ip, s.signed_user_agent, s.signed_at, t.template_code, t.title
+       FROM public.agreement_signatures s
+       JOIN public.agreement_templates t ON t.id=s.template_id
+       WHERE s.application_id=$1
+       ORDER BY s.signed_at DESC`,
+      [appRow.id]
+    );
+    return res.json({ ok: true, signatures: sig.rows });
+  } catch (e) {
+    console.error('GET admin agreement error:', e);
+    return res.status(500).json({ error: 'โหลดสถานะสัญญาไม่สำเร็จ' });
+  }
+});
+
+app.get('/admin/partners/applications/:id/academy', requireAdminSession, async (req, res) => {
+  try {
+    const appRow = await getPartnerApplicationById(req.params.id);
+    if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    const r = await pool.query(
+      `SELECT c.course_code, c.title, COUNT(l.id)::int AS lesson_count,
+              COUNT(p.lesson_id) FILTER (WHERE p.completed=TRUE)::int AS completed_count
+       FROM public.academy_courses c
+       LEFT JOIN public.academy_lessons l ON l.course_id=c.id AND l.is_active=TRUE
+       LEFT JOIN public.academy_progress p ON p.lesson_id=l.id AND p.application_id=$1
+       WHERE c.course_code='cwf_basic_partner'
+       GROUP BY c.id`,
+      [appRow.id]
+    );
+    return res.json({ ok: true, academy: r.rows[0] || null });
+  } catch (e) {
+    console.error('GET admin academy error:', e);
+    return res.status(500).json({ error: 'โหลด Academy ไม่สำเร็จ' });
+  }
+});
+
+app.get('/admin/partners/applications/:id/exams', requireAdminSession, async (req, res) => {
+  try {
+    const appRow = await getPartnerApplicationById(req.params.id);
+    if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    const r = await pool.query(
+      `SELECT a.*, e.exam_code, e.title FROM public.academy_exam_attempts a JOIN public.academy_exams e ON e.id=a.exam_id WHERE a.application_id=$1 ORDER BY a.submitted_at DESC`,
+      [appRow.id]
+    );
+    return res.json({ ok: true, attempts: r.rows });
+  } catch (e) {
+    console.error('GET admin exams error:', e);
+    return res.status(500).json({ error: 'โหลดผลสอบไม่สำเร็จ' });
+  }
+});
+
+app.get('/admin/partners/applications/:id/certifications', requireAdminSession, async (req, res) => {
+  try {
+    const appRow = await getPartnerApplicationById(req.params.id);
+    if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    const r = await pool.query(
+      `SELECT certification_code, status, approved_by, approved_at, expires_at, admin_note, updated_by, updated_at
+       FROM public.technician_certifications
+       WHERE application_id=$1
+       ORDER BY certification_code ASC`,
+      [appRow.id]
+    );
+    const map = new Map((r.rows || []).map(x => [x.certification_code, x]));
+    return res.json({ ok: true, certifications: PARTNER_CERTIFICATION_CODES.map(code => map.get(code) || { certification_code: code, status: 'not_started' }) });
+  } catch (e) {
+    console.error('GET admin certifications error:', e);
+    return res.status(500).json({ error: 'โหลด Certification ไม่สำเร็จ' });
+  }
+});
+
+app.put('/admin/partners/applications/:id/certifications/:certification_code/status', requireAdminSession, async (req, res) => {
+  const appId = Number(req.params.id);
+  const code = String(req.params.certification_code || '').trim();
+  const status = String(req.body?.status || '').trim();
+  const admin_note = req.body?.admin_note == null ? null : String(req.body.admin_note || '').trim();
+  if (!PARTNER_CERTIFICATION_CODES.includes(code)) return res.status(400).json({ error: 'certification_code ไม่ถูกต้อง' });
+  if (!PARTNER_CERTIFICATION_STATUSES.has(status)) return res.status(400).json({ error: 'status ไม่ถูกต้อง' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const appRow = await getPartnerApplicationById(appId, client);
+    if (!appRow) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    }
+    const actor = req.actor?.username || req.auth?.username || null;
+    const saved = await client.query(
+      `INSERT INTO public.technician_certifications(application_id, technician_username, certification_code, status, admin_note, approved_by, approved_at, updated_by, updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,CASE WHEN $4='approved' THEN NOW() ELSE NULL END,$6,NOW())
+       ON CONFLICT(application_id, certification_code) DO UPDATE SET
+         technician_username=EXCLUDED.technician_username,
+         status=EXCLUDED.status,
+         admin_note=EXCLUDED.admin_note,
+         approved_by=CASE WHEN EXCLUDED.status='approved' THEN EXCLUDED.approved_by ELSE public.technician_certifications.approved_by END,
+         approved_at=CASE WHEN EXCLUDED.status='approved' THEN NOW() ELSE public.technician_certifications.approved_at END,
+         updated_by=EXCLUDED.updated_by,
+         updated_at=NOW()
+       RETURNING *`,
+      [appRow.id, appRow.technician_username || null, code, status, admin_note, actor]
+    );
+    await logPartnerOnboardingEvent(client, {
+      application_id: appRow.id,
+      actor_type: 'admin',
+      actor_username: actor,
+      event_type: 'certification_status_changed',
+      to_status: status,
+      note: `${code}: ${admin_note || ''}`.trim(),
+      metadata: { certification_code: code },
+    });
+    await client.query('COMMIT');
+    await auditLog(req, { action: 'PARTNER_CERTIFICATION_STATUS_UPDATE', target_username: appRow.application_code, target_role: 'partner_application', meta: { certification_code: code, status, admin_note } });
+    return res.json({ ok: true, certification: saved.rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('PUT certification status error:', e);
+    return res.status(500).json({ error: 'อัปเดต Certification ไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/admin/partners/certification-dry-run', requireAdminSession, async (req, res) => {
+  try {
+    const technicianUsername = String(req.body?.technician_username || '').trim();
+    const requiredCodes = getRequiredCertificationCodesForJob(req.body || {});
+    const check = await technicianHasRequiredCertifications(technicianUsername, requiredCodes, { partnerOnly: false });
+    return res.json({
+      ok: true,
+      mode: getCertificationEnforcementMode(),
+      technician_username: technicianUsername,
+      required_certifications: requiredCodes,
+      ...check,
+      block_reason: check.ok ? null : explainCertificationBlockReason(requiredCodes, check.missing || []),
+    });
+  } catch (e) {
+    console.error('POST certification dry-run error:', e);
+    return res.status(500).json({ error: 'ตรวจ certification dry-run ไม่สำเร็จ' });
+  }
+});
+
+app.post('/admin/partners/applications/:id/trial-jobs', requireAdminSession, async (req, res) => {
+  const appId = Number(req.params.id);
+  const certification_code = String(req.body?.certification_code || '').trim();
+  const job_id = req.body?.job_id == null || String(req.body.job_id).trim() === '' ? null : Number(req.body.job_id);
+  if (!PARTNER_CERTIFICATION_CODES.includes(certification_code)) return res.status(400).json({ error: 'certification_code ไม่ถูกต้อง' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const appRow = await getPartnerApplicationById(appId, client);
+    if (!appRow) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    }
+    const actor = req.actor?.username || req.auth?.username || null;
+    const saved = await client.query(
+      `INSERT INTO public.partner_trial_jobs(application_id, technician_username, certification_code, job_id, status, admin_note, created_by)
+       VALUES($1,$2,$3,$4,'unlocked',$5,$6)
+       RETURNING *`,
+      [appRow.id, appRow.technician_username || null, certification_code, Number.isFinite(job_id) ? job_id : null, req.body?.admin_note || null, actor]
+    );
+    await client.query(
+      `INSERT INTO public.technician_certifications(application_id, technician_username, certification_code, status, updated_by, updated_at)
+       VALUES($1,$2,$3,'trial_unlocked',$4,NOW())
+       ON CONFLICT(application_id, certification_code) DO UPDATE SET status='trial_unlocked', updated_by=$4, updated_at=NOW()`,
+      [appRow.id, appRow.technician_username || null, certification_code, actor]
+    );
+    await logPartnerOnboardingEvent(client, { application_id: appRow.id, actor_type: 'admin', actor_username: actor, event_type: 'trial_unlocked', to_status: 'trial_unlocked', note: certification_code, metadata: { trial_job_id: saved.rows[0].id } });
+    await client.query('COMMIT');
+    await auditLog(req, { action: 'PARTNER_TRIAL_UNLOCKED', target_username: appRow.application_code, target_role: 'partner_application', meta: { certification_code, trial_job_id: saved.rows[0].id } });
+    return res.json({ ok: true, trial_job: saved.rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('POST trial job error:', e);
+    return res.status(500).json({ error: 'ปลดล็อก Trial ไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/admin/partners/applications/:id/trial-jobs', requireAdminSession, async (req, res) => {
+  try {
+    const appRow = await getPartnerApplicationById(req.params.id);
+    if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    const trials = await pool.query(`SELECT * FROM public.partner_trial_jobs WHERE application_id=$1 ORDER BY created_at DESC`, [appRow.id]);
+    const evals = await pool.query(`SELECT * FROM public.partner_evaluations WHERE application_id=$1 ORDER BY evaluated_at DESC`, [appRow.id]);
+    return res.json({ ok: true, trial_jobs: trials.rows, evaluations: evals.rows });
+  } catch (e) {
+    console.error('GET trial jobs error:', e);
+    return res.status(500).json({ error: 'โหลด Trial ไม่สำเร็จ' });
+  }
+});
+
+app.post('/admin/partners/trial-jobs/:trial_job_id/evaluate', requireAdminSession, async (req, res) => {
+  const trialId = Number(req.params.trial_job_id);
+  const result = String(req.body?.result || '').trim();
+  if (!Number.isFinite(trialId) || trialId <= 0) return res.status(400).json({ error: 'trial_job_id ไม่ถูกต้อง' });
+  if (!PARTNER_TRIAL_RESULTS.has(result)) return res.status(400).json({ error: 'result ไม่ถูกต้อง' });
+  const score = (v) => Math.max(0, Math.min(5, Number(v || 0)));
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const trialR = await client.query(`SELECT * FROM public.partner_trial_jobs WHERE id=$1 FOR UPDATE`, [trialId]);
+    if (!trialR.rows.length) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'ไม่พบ Trial job' });
+    }
+    const trial = trialR.rows[0];
+    const actor = req.actor?.username || req.auth?.username || null;
+    const saved = await client.query(
+      `INSERT INTO public.partner_evaluations
+        (trial_job_id, application_id, evaluator_username, punctuality_score, uniform_score, communication_score, photo_quality_score, job_quality_score, customer_issue, admin_note, result, evaluated_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+       RETURNING *`,
+      [trial.id, trial.application_id, actor, score(req.body?.punctuality_score), score(req.body?.uniform_score), score(req.body?.communication_score), score(req.body?.photo_quality_score), score(req.body?.job_quality_score), !!req.body?.customer_issue, req.body?.admin_note || null, result]
+    );
+    await client.query(`UPDATE public.partner_trial_jobs SET status=$1, evaluated_at=NOW(), updated_at=NOW() WHERE id=$2`, [result, trial.id]);
+    await logPartnerOnboardingEvent(client, { application_id: trial.application_id, actor_type: 'admin', actor_username: actor, event_type: 'trial_evaluated', to_status: result, note: req.body?.admin_note || null, metadata: { trial_job_id: trial.id, evaluation_id: saved.rows[0].id } });
+    await client.query('COMMIT');
+    await auditLog(req, { action: 'PARTNER_TRIAL_EVALUATED', target_role: 'partner_application', meta: { trial_job_id: trial.id, result } });
+    return res.json({ ok: true, evaluation: saved.rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('POST trial evaluate error:', e);
+    return res.status(500).json({ error: 'บันทึกประเมิน Trial ไม่สำเร็จ' });
   } finally {
     client.release();
   }
@@ -6350,6 +6913,231 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_events_application_created ON public.partner_onboarding_events(application_id, created_at DESC)`);
+
+// 4.2) Partner Onboarding: agreement, academy, exams, certification, trial/evaluation
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.agreement_templates (
+    id BIGSERIAL PRIMARY KEY,
+    template_code TEXT NOT NULL,
+    version INT NOT NULL DEFAULT 1,
+    title TEXT NOT NULL,
+    body_text TEXT NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(template_code, version)
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_agreement_templates_active ON public.agreement_templates(template_code, is_active, version DESC)`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.agreement_signatures (
+    id BIGSERIAL PRIMARY KEY,
+    application_id BIGINT NOT NULL REFERENCES public.partner_applications(id) ON DELETE CASCADE,
+    template_id BIGINT NOT NULL REFERENCES public.agreement_templates(id),
+    template_version INT NOT NULL,
+    signer_full_name TEXT NOT NULL,
+    consent_terms BOOLEAN NOT NULL DEFAULT FALSE,
+    signed_ip TEXT,
+    signed_user_agent TEXT,
+    signed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_agreement_signatures_application ON public.agreement_signatures(application_id, signed_at DESC)`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.academy_courses (
+    id BIGSERIAL PRIMARY KEY,
+    course_code TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    description TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.academy_lessons (
+    id BIGSERIAL PRIMARY KEY,
+    course_id BIGINT NOT NULL REFERENCES public.academy_courses(id) ON DELETE CASCADE,
+    lesson_title TEXT NOT NULL,
+    body_text TEXT,
+    sort_order INT NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(course_id, sort_order)
+  )
+`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.academy_progress (
+    id BIGSERIAL PRIMARY KEY,
+    application_id BIGINT NOT NULL REFERENCES public.partner_applications(id) ON DELETE CASCADE,
+    course_id BIGINT NOT NULL REFERENCES public.academy_courses(id) ON DELETE CASCADE,
+    lesson_id BIGINT NOT NULL REFERENCES public.academy_lessons(id) ON DELETE CASCADE,
+    completed BOOLEAN NOT NULL DEFAULT FALSE,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(application_id, lesson_id)
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_academy_progress_application ON public.academy_progress(application_id, course_id)`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.academy_exams (
+    id BIGSERIAL PRIMARY KEY,
+    course_id BIGINT NOT NULL REFERENCES public.academy_courses(id) ON DELETE CASCADE,
+    exam_code TEXT NOT NULL UNIQUE,
+    title TEXT NOT NULL,
+    passing_score_percent NUMERIC(5,2) NOT NULL DEFAULT 80,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.academy_exam_questions (
+    id BIGSERIAL PRIMARY KEY,
+    exam_id BIGINT NOT NULL REFERENCES public.academy_exams(id) ON DELETE CASCADE,
+    question_text TEXT NOT NULL,
+    choices_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    correct_choice_index INT NOT NULL DEFAULT 0,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(exam_id, sort_order)
+  )
+`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.academy_exam_attempts (
+    id BIGSERIAL PRIMARY KEY,
+    application_id BIGINT NOT NULL REFERENCES public.partner_applications(id) ON DELETE CASCADE,
+    exam_id BIGINT NOT NULL REFERENCES public.academy_exams(id) ON DELETE CASCADE,
+    answers_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    score_percent NUMERIC(5,2) NOT NULL DEFAULT 0,
+    passed BOOLEAN NOT NULL DEFAULT FALSE,
+    submitted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_exam_attempts_application ON public.academy_exam_attempts(application_id, submitted_at DESC)`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.technician_certifications (
+    id BIGSERIAL PRIMARY KEY,
+    application_id BIGINT REFERENCES public.partner_applications(id) ON DELETE CASCADE,
+    technician_username TEXT,
+    certification_code TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'not_started' CHECK (status IN ('not_started','in_training','exam_ready','exam_failed','exam_passed','trial_unlocked','approved','suspended','revoked')),
+    approved_by TEXT,
+    approved_at TIMESTAMPTZ,
+    expires_at TIMESTAMPTZ,
+    admin_note TEXT,
+    updated_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(application_id, certification_code)
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_cert_username_code ON public.technician_certifications(technician_username, certification_code, status)`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.partner_trial_jobs (
+    id BIGSERIAL PRIMARY KEY,
+    application_id BIGINT NOT NULL REFERENCES public.partner_applications(id) ON DELETE CASCADE,
+    technician_username TEXT,
+    certification_code TEXT NOT NULL,
+    job_id BIGINT,
+    status TEXT NOT NULL DEFAULT 'unlocked',
+    admin_note TEXT,
+    created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    evaluated_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_trial_jobs_application ON public.partner_trial_jobs(application_id, created_at DESC)`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.partner_evaluations (
+    id BIGSERIAL PRIMARY KEY,
+    trial_job_id BIGINT NOT NULL REFERENCES public.partner_trial_jobs(id) ON DELETE CASCADE,
+    application_id BIGINT NOT NULL REFERENCES public.partner_applications(id) ON DELETE CASCADE,
+    evaluator_username TEXT,
+    punctuality_score NUMERIC(4,2) NOT NULL DEFAULT 0,
+    uniform_score NUMERIC(4,2) NOT NULL DEFAULT 0,
+    communication_score NUMERIC(4,2) NOT NULL DEFAULT 0,
+    photo_quality_score NUMERIC(4,2) NOT NULL DEFAULT 0,
+    job_quality_score NUMERIC(4,2) NOT NULL DEFAULT 0,
+    customer_issue BOOLEAN NOT NULL DEFAULT FALSE,
+    admin_note TEXT,
+    result TEXT NOT NULL CHECK (result IN ('passed','failed','needs_more_trial')),
+    evaluated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_evaluations_application ON public.partner_evaluations(application_id, evaluated_at DESC)`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.partner_incidents (
+    id BIGSERIAL PRIMARY KEY,
+    application_id BIGINT NOT NULL REFERENCES public.partner_applications(id) ON DELETE CASCADE,
+    trial_job_id BIGINT REFERENCES public.partner_trial_jobs(id) ON DELETE SET NULL,
+    incident_type TEXT,
+    severity TEXT,
+    note TEXT,
+    created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_incidents_application ON public.partner_incidents(application_id, created_at DESC)`);
+
+try {
+  await pool.query(
+    `INSERT INTO public.agreement_templates(template_code, version, title, body_text, is_active)
+     VALUES('partner_standard', 1, 'CWF Partner Service Agreement', $1, TRUE)
+     ON CONFLICT(template_code, version) DO NOTHING`,
+    ['ข้อตกลงพาร์ทเนอร์ CWF: ผู้สมัครยืนยันว่าจะปฏิบัติตามมาตรฐานแบรนด์ การสื่อสาร การถ่ายรูปหลักฐาน การไม่เปลี่ยนราคาเอง และไม่รับเงินนอกระบบ จนกว่าจะมีสัญญาฉบับเต็มในระบบ']
+  );
+  const courseR = await pool.query(
+    `INSERT INTO public.academy_courses(course_code, title, description, is_active)
+     VALUES('cwf_basic_partner', 'Basic Partner Course', 'หลักสูตรพื้นฐานสำหรับพาร์ทเนอร์ CWF', TRUE)
+     ON CONFLICT(course_code) DO UPDATE SET title=EXCLUDED.title
+     RETURNING id`
+  );
+  const courseId = courseR.rows[0]?.id;
+  if (courseId) {
+    for (let i = 0; i < BASIC_PARTNER_LESSONS.length; i++) {
+      await pool.query(
+        `INSERT INTO public.academy_lessons(course_id, lesson_title, body_text, sort_order, is_active)
+         VALUES($1,$2,$3,$4,TRUE)
+         ON CONFLICT(course_id, sort_order) DO UPDATE SET lesson_title=EXCLUDED.lesson_title, body_text=EXCLUDED.body_text, is_active=TRUE`,
+        [courseId, BASIC_PARTNER_LESSONS[i], BASIC_PARTNER_LESSONS[i], i + 1]
+      );
+    }
+    const examR = await pool.query(
+      `INSERT INTO public.academy_exams(course_id, exam_code, title, passing_score_percent, is_active)
+       VALUES($1,'cwf_basic_partner_exam','Basic Partner Exam',80,TRUE)
+       ON CONFLICT(exam_code) DO UPDATE SET title=EXCLUDED.title, passing_score_percent=80, is_active=TRUE
+       RETURNING id`,
+      [courseId]
+    );
+    const examId = examR.rows[0]?.id;
+    for (let i = 0; examId && i < BASIC_PARTNER_EXAM_QUESTIONS.length; i++) {
+      const q = BASIC_PARTNER_EXAM_QUESTIONS[i];
+      await pool.query(
+        `INSERT INTO public.academy_exam_questions(exam_id, question_text, choices_json, correct_choice_index, sort_order)
+         VALUES($1,$2,$3::jsonb,$4,$5)
+         ON CONFLICT(exam_id, sort_order) DO UPDATE SET question_text=EXCLUDED.question_text, choices_json=EXCLUDED.choices_json, correct_choice_index=EXCLUDED.correct_choice_index`,
+        [examId, q.q, JSON.stringify(q.choices), q.answer, i + 1]
+      );
+    }
+  }
+} catch (e) {
+  console.warn('[ensureSchema] seed partner academy/agreement skipped:', e.message);
+}
 
 
 // 5) auth sessions (server-side) - for Super Admin impersonation & real logout
@@ -15650,6 +16438,8 @@ app.get("/tech", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/add-job", (req, res) => res.redirect(302, "/admin-add-v2.html"));
 app.get("/customer", (req, res) => res.sendFile(sendHtml("customer.html")));
 app.get("/partner-apply", (req, res) => res.sendFile(sendHtml("partner-apply.html")));
+app.get("/partner-agreement", (req, res) => res.sendFile(sendHtml("partner-agreement.html")));
+app.get("/partner-academy", (req, res) => res.sendFile(sendHtml("partner-academy.html")));
 // ✅ หน้าใหม่: คำนวณราคาติดตั้งแอร์ (ลูกค้า)
 app.get("/install-quote", (req, res) => res.sendFile(sendHtml("install-quote.html")));
 // Canonical path: keep short URL, redirect direct-file access
@@ -15671,6 +16461,8 @@ app.get("/tech.html", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/add-job.html", (req, res) => res.redirect(302, "/admin-add-v2.html"));
 app.get("/register.html", (req, res) => res.sendFile(sendHtml("register.html")));
 app.get("/partner-apply.html", (req, res) => res.sendFile(sendHtml("partner-apply.html")));
+app.get("/partner-agreement.html", (req, res) => res.sendFile(sendHtml("partner-agreement.html")));
+app.get("/partner-academy.html", (req, res) => res.sendFile(sendHtml("partner-academy.html")));
 app.get("/index.html", (req, res) => res.sendFile(sendHtml("index.html")));
 app.get("/", (req, res) => res.sendFile(sendHtml("login.html")));
 

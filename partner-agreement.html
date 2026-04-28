@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CWF Partner Agreement</title>
+  <style>
+    :root{--navy:#071b4d;--blue:#0b4bb3;--yellow:#ffcc00;--ink:#0f172a;--muted:#64748b;--line:#dbe7ff;--bg:#f6f8fc}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:linear-gradient(180deg,var(--navy),var(--blue) 260px,var(--bg) 260px);color:var(--ink)}
+    .wrap{max-width:920px;margin:0 auto;padding:28px 14px 64px}
+    .brand{color:#fff;margin:8px 0 18px}
+    .brand h1{margin:0;font-size:28px}.brand p{margin:6px 0 0;color:rgba(255,255,255,.82);font-weight:800}
+    .panel{background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 14px 34px rgba(2,6,23,.12);padding:16px;margin-bottom:14px}
+    .row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:end}
+    label{display:block;font-size:12px;font-weight:900;color:#334155;margin-bottom:6px}
+    input,textarea{width:100%;border:1px solid #c9d7f2;border-radius:8px;padding:11px 12px;font:inherit;font-weight:700;background:#fff}
+    button{border:0;border-radius:8px;padding:11px 14px;font-weight:1000;cursor:pointer}
+    .primary{background:var(--yellow);color:var(--navy)}.secondary{background:var(--blue);color:#fff}
+    .muted{color:var(--muted);font-weight:800}.badge{display:inline-flex;border-radius:999px;padding:5px 10px;font-weight:1000;font-size:12px;background:#e2e8f0}
+    .badge.ok{background:#dcfce7;color:#166534}.contract{white-space:pre-wrap;line-height:1.7;border:1px solid var(--line);border-radius:8px;padding:14px;background:#fbfdff;max-height:48vh;overflow:auto}
+    .check{display:flex;gap:10px;align-items:flex-start;margin:14px 0}.check input{width:auto;margin-top:4px}
+    .hidden{display:none}.msg{font-weight:900;margin-top:10px}.msg.err{color:#b91c1c}.msg.ok{color:#166534}
+    @media(max-width:720px){.row{grid-template-columns:1fr}.brand h1{font-size:23px}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="brand">
+      <h1>CWF Partner Agreement</h1>
+      <p>อ่านสัญญาและยืนยันลายเซ็นสำหรับ Partner</p>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <div>
+          <label for="applicationCode">รหัสใบสมัคร</label>
+          <input id="applicationCode" autocomplete="off" placeholder="เช่น CWF-P20260428-XXXXXXXX">
+        </div>
+        <button class="secondary" id="btnLoad" type="button">โหลดสัญญา</button>
+      </div>
+      <div id="message" class="msg"></div>
+    </section>
+
+    <section class="panel hidden" id="agreementPanel">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;flex-wrap:wrap">
+        <div>
+          <h2 id="templateTitle" style="margin:0 0 4px">-</h2>
+          <div class="muted" id="applicantName">-</div>
+        </div>
+        <span class="badge" id="signatureBadge">ยังไม่เซ็น</span>
+      </div>
+      <div class="contract" id="contractBody" style="margin-top:12px"></div>
+      <div id="signatureForm">
+        <label class="check">
+          <input id="consent" type="checkbox">
+          <span>ข้าพเจ้าอ่านและยอมรับเงื่อนไขในสัญญา Partner ของ CWF</span>
+        </label>
+        <label for="signerName">พิมพ์ชื่อ-นามสกุลเป็นลายเซ็น</label>
+        <input id="signerName" autocomplete="name" placeholder="ชื่อ-นามสกุลตรงกับใบสมัคร">
+        <button class="primary" id="btnSign" type="button" style="margin-top:12px">เซ็นสัญญา</button>
+      </div>
+    </section>
+  </main>
+  <script src="/partner-agreement.js"></script>
+</body>
+</html>
