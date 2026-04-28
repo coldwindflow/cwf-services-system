@@ -1,148 +1,356 @@
-<!DOCTYPE html>
-<html lang="th">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Partner Onboarding - CWF Admin</title>
-  <script src="/admin-v2-common.js"></script>
-  <style>
-    :root{--navy:#081c4b;--blue:#0b4bb3;--yellow:#ffcc00;--ink:#0f172a;--muted:#64748b;--line:#dbe7ff;--bg:#f6f8fc}
-    *{box-sizing:border-box}
-    body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:linear-gradient(180deg,var(--navy),var(--blue) 260px,var(--bg) 260px);color:var(--ink)}
-    .app{max-width:1200px;margin:0 auto;padding:86px 14px 64px}
-    .hero{color:#fff;margin-bottom:14px}
-    .hero h1{margin:0;font-size:26px}.hero p{margin:6px 0 0;color:rgba(255,255,255,.8);font-weight:800}
-    .panel{background:#fff;border:1px solid var(--line);border-radius:8px;box-shadow:0 14px 34px rgba(2,6,23,.12);padding:14px}
-    .toolbar{display:grid;grid-template-columns:180px 1fr auto;gap:10px;align-items:end}
-    label{display:block;font-size:12px;font-weight:900;color:#334155;margin-bottom:5px}
-    input,select,textarea{width:100%;border:1px solid #c9d7f2;border-radius:8px;padding:10px 12px;font:inherit;font-weight:700;background:#fff}
-    textarea{min-height:78px;resize:vertical}
-    button{border:0;border-radius:8px;padding:10px 13px;font-weight:1000;cursor:pointer}
-    .primary{background:var(--yellow);color:var(--navy)}.secondary{background:var(--blue);color:#fff}.ghost{background:#eef4ff;color:var(--navy)}
-    .list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
-    .item{border:1px solid var(--line);border-radius:8px;padding:12px;background:#fff;cursor:pointer}
-    .item:hover{border-color:#7da8ff;background:#fbfdff}
-    .itemTop{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
-    .muted{color:var(--muted);font-weight:800;font-size:13px}
-    .status{display:inline-flex;align-items:center;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:1000;background:#e2e8f0;color:#0f172a;white-space:nowrap}
-    .status.submitted{background:#dbeafe;color:#1d4ed8}.status.under_review{background:#fef3c7;color:#92400e}.status.need_more_documents{background:#ffe4e6;color:#be123c}.status.rejected{background:#fee2e2;color:#991b1b}.status.approved_for_training{background:#dcfce7;color:#166534}
-    .status.approved{background:#dcfce7;color:#166534}.status.uploaded{background:#dbeafe;color:#1d4ed8}.status.need_reupload{background:#fef3c7;color:#92400e}
-    .chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.chip{border-radius:999px;background:#f1f5f9;padding:4px 8px;font-size:12px;font-weight:900}
-    .drawer{position:fixed;inset:0;background:rgba(2,6,23,.55);z-index:3200;display:none;padding:12px;align-items:flex-end;justify-content:center}
-    .drawer.open{display:flex}.sheet{background:#fff;border-radius:8px;max-width:1040px;width:100%;max-height:86vh;overflow:auto;padding:14px;border:1px solid var(--line)}
-    .sheetHead{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;border-bottom:1px solid var(--line);padding-bottom:10px}
-    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.grid3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
-    .doc{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fff;margin-top:8px}
-    .docTop{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
-    .miniGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
-    .miniCard{border:1px solid var(--line);border-radius:8px;padding:10px;background:#fbfdff}
-    .miniCard b{display:block;margin-bottom:4px}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
-    .timeline{display:flex;flex-direction:column;gap:8px}.event{border-left:3px solid #bdd2ff;padding:4px 0 4px 10px;font-size:13px}
-    @media(max-width:860px){.toolbar,.list,.grid2,.grid3,.miniGrid{grid-template-columns:1fr}.app{padding-top:82px}.hero h1{font-size:22px}}
-  </style>
-</head>
-<body>
-  <div class="app">
-    <section class="hero">
-      <h1>Partner Onboarding</h1>
-      <p>ตรวจใบสมัคร เอกสาร และสถานะ Phase 1A</p>
-    </section>
+(function(){
+  const STATUS_LABELS = {
+    draft:'ร่าง', submitted:'ส่งใบสมัครแล้ว', under_review:'กำลังตรวจสอบ', need_more_documents:'ขอเอกสารเพิ่ม',
+    rejected:'ไม่ผ่าน', approved_for_training:'อนุมัติเข้าอบรม',
+    uploaded:'อัปโหลดแล้ว', approved:'อนุมัติ', need_reupload:'ขออัปโหลดใหม่',
+    not_started:'ยังไม่เริ่ม', in_training:'กำลังอบรม', exam_ready:'พร้อมสอบ', exam_failed:'สอบไม่ผ่าน',
+    exam_passed:'สอบผ่าน', trial_unlocked:'Trial', suspended:'ระงับ', revoked:'ยกเลิก'
+  };
+  const DOC_LABELS = {
+    id_card:'บัตรประชาชน', profile_photo:'รูปโปรไฟล์', bank_book:'หน้าสมุดบัญชี', tools_photo:'รูปเครื่องมือ',
+    vehicle_photo:'รูปยานพาหนะ', certificate_or_portfolio:'ใบรับรอง/ผลงาน', other:'เอกสารอื่น'
+  };
+  const CERT_LABELS = {
+    cwf_basic_partner:'Basic Partner', clean_wall_normal:'ล้างผนังปกติ', clean_wall_premium:'ล้างผนังพรีเมียม',
+    clean_wall_hanging_coil:'ล้างแขวนคอยล์', clean_wall_overhaul:'ตัดล้างใหญ่',
+    clean_ceiling_suspended:'ล้างแขวน/เปลือยใต้ฝ้า', clean_cassette_4way:'ล้างแอร์สี่ทิศทาง',
+    clean_duct_type:'ล้างแอร์ท่อลม', repair_diagnosis_basic:'ตรวจเช็กอาการ', repair_water_leak:'แก้น้ำรั่ว',
+    repair_electrical_basic:'งานไฟฟ้าเบื้องต้น', repair_refrigerant_basic:'เติมน้ำยา/ระบบน้ำยา',
+    repair_parts_replacement:'เปลี่ยนอะไหล่', install_wall_standard:'ติดตั้งแอร์ผนัง',
+    install_condo:'ติดตั้งคอนโด', install_relocation:'ย้ายแอร์'
+  };
+  const DOC_STATUSES = ['uploaded','approved','rejected','need_reupload'];
+  const CERT_STATUSES = ['not_started','in_training','exam_ready','exam_failed','exam_passed','trial_unlocked','approved','suspended','revoked'];
+  const CERT_CODES = Object.keys(CERT_LABELS);
 
-    <section class="panel">
-      <div class="toolbar">
-        <div>
-          <label>สถานะ</label>
-          <select id="statusFilter">
-            <option value="">ทั้งหมด</option>
-            <option value="submitted">ส่งใบสมัครแล้ว</option>
-            <option value="under_review">กำลังตรวจสอบ</option>
-            <option value="need_more_documents">ขอเอกสารเพิ่ม</option>
-            <option value="rejected">ไม่ผ่าน</option>
-            <option value="approved_for_training">อนุมัติเข้าอบรม</option>
-          </select>
+  let activeId = null;
+  let activeDetail = null;
+  let activeExtra = {};
+
+  const $ = (id)=>document.getElementById(id);
+  const esc = (s)=>String(s ?? '').replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
+  const fmtDate = (v)=>v ? new Date(v).toLocaleString('th-TH', { dateStyle:'medium', timeStyle:'short' }) : '-';
+  const badge = (s)=>`<span class="status ${esc(s)}">${esc(STATUS_LABELS[s] || s || '-')}</span>`;
+  const asList = (v)=>Array.isArray(v) ? v : [];
+
+  async function api(url, opts){
+    if (window.apiFetch) return window.apiFetch(url, opts);
+    const res = await fetch(url, { credentials:'include', headers:{'Content-Type':'application/json'}, ...(opts||{}) });
+    const data = await res.json().catch(()=>null);
+    if (!res.ok) throw new Error(data?.error || 'Request failed');
+    return data;
+  }
+
+  function kv(label, value){
+    return `<div style="margin:0 0 8px"><div class="muted">${esc(label)}</div><b>${esc(value || '-')}</b></div>`;
+  }
+
+  function renderList(rows){
+    const box = $('applicationList');
+    if (!rows.length) {
+      box.innerHTML = '<div class="muted">ไม่พบใบสมัคร</div>';
+      return;
+    }
+    box.innerHTML = rows.map(r=>`
+      <div class="item" data-id="${esc(r.id)}">
+        <div class="itemTop">
+          <div>
+            <b>${esc(r.full_name)}</b>
+            <div class="muted">${esc(r.application_code)} • ${esc(r.phone || '-')}</div>
+          </div>
+          ${badge(r.status)}
         </div>
-        <div>
-          <label>ค้นหา</label>
-          <input id="searchInput" placeholder="ชื่อ / เบอร์ / รหัสใบสมัคร">
+        <div class="chips">
+          <span class="chip">เอกสาร ${Number(r.document_count || 0)}</span>
+          <span class="chip">ผ่าน ${Number(r.approved_document_count || 0)}</span>
+          ${Number(r.problem_document_count || 0) ? `<span class="chip">ต้องดู ${Number(r.problem_document_count || 0)}</span>` : ''}
         </div>
-        <button class="secondary" id="btnReload" type="button">โหลดรายการ</button>
+        <div class="muted" style="margin-top:8px">ส่งเมื่อ ${fmtDate(r.submitted_at || r.created_at)}</div>
       </div>
-      <div class="list" id="applicationList"></div>
-    </section>
-  </div>
+    `).join('');
+  }
 
-  <div class="drawer" id="detailDrawer">
-    <div class="sheet">
-      <div class="sheetHead">
-        <div>
-          <div class="muted" id="detailCode">-</div>
-          <h2 id="detailName" style="margin:4px 0 0">-</h2>
-        </div>
-        <button class="ghost" id="btnClose" type="button">ปิด</button>
-      </div>
+  async function loadList(){
+    const params = new URLSearchParams();
+    const status = $('statusFilter').value;
+    const q = $('searchInput').value.trim();
+    if (status) params.set('status', status);
+    if (q) params.set('q', q);
+    const data = await api(`/admin/partners/applications?${params.toString()}`);
+    renderList(data.applications || []);
+  }
 
-      <div style="height:12px"></div>
+  function renderDetail(data){
+    activeDetail = data;
+    const a = data.application;
+    activeId = a.id;
+    $('detailCode').textContent = a.application_code || '-';
+    $('detailName').textContent = a.full_name || '-';
+    $('applicationStatus').value = a.status || 'submitted';
+    $('applicationNote').value = a.admin_note || '';
+    $('detailInfo').innerHTML = `
       <div class="grid2">
-        <div>
-          <h3>ข้อมูลใบสมัคร</h3>
-          <div id="detailInfo"></div>
+        <div>${kv('เบอร์โทร', a.phone)}${kv('บัญชีช่าง', a.technician_username)}${kv('LINE ID', a.line_id)}${kv('อีเมล', a.email)}${kv('ประสบการณ์', a.experience_years == null ? '-' : `${a.experience_years} ปี`)}</div>
+        <div>${kv('จังหวัด/พื้นที่', [a.province, a.district].filter(Boolean).join(' / '))}${kv('เป้าหมายงาน', a.work_intent)}${kv('การเดินทาง', a.travel_method || a.vehicle_type)}${kv('ธนาคาร', a.bank_name)}${kv('เลขบัญชี 4 ตัวท้าย', a.bank_account_last4)}</div>
+      </div>
+      ${kv('ที่อยู่', a.address_text)}
+      <div class="chips">
+        <span class="chip">วัน/สัปดาห์ ${esc(a.available_days_per_week ?? '-')}</span>
+        <span class="chip">งาน/วัน ${esc(a.max_jobs_per_day ?? '-')}</span>
+        <span class="chip">เครื่อง/วัน ${esc(a.max_units_per_day ?? '-')}</span>
+        <span class="chip">รัศมี ${esc(a.service_radius_km ?? '-')} กม.</span>
+        ${a.can_accept_urgent_jobs ? '<span class="chip">รับงานด่วน</span>' : ''}
+        ${a.can_work_condo ? '<span class="chip">ทำคอนโด</span>' : ''}
+        ${a.has_helper_team ? `<span class="chip">มีทีม ${esc(a.team_size ?? '')}</span>` : ''}
+      </div>
+      <div class="chips">${asList(a.service_zones).map(x=>`<span class="chip">${esc(x)}</span>`).join('') || '<span class="chip">ไม่ระบุโซน</span>'}</div>
+      <div class="chips">${asList(a.preferred_job_types).map(x=>`<span class="chip">${esc(x)}</span>`).join('') || '<span class="chip">ไม่ระบุประเภทงาน</span>'}</div>
+      <div class="chips">${asList(a.equipment_json).map(x=>`<span class="chip">${esc(x)}</span>`).join('') || '<span class="chip">ไม่ระบุ checklist อุปกรณ์</span>'}</div>
+      ${a.equipment_notes ? kv('อุปกรณ์', a.equipment_notes) : ''}
+      ${a.notes ? kv('หมายเหตุผู้สมัคร', a.notes) : ''}
+    `;
+    renderDocuments(data.documents || []);
+    renderEvents(data.events || []);
+    renderExtraPlaceholders();
+    $('detailDrawer').classList.add('open');
+    loadExtra(a.id);
+  }
+
+  function renderDocuments(docs){
+    $('documents').innerHTML = docs.length ? docs.map(d=>{
+      const options = DOC_STATUSES.map(s=>`<option value="${s}" ${s === d.status ? 'selected' : ''}>${esc(STATUS_LABELS[s] || s)}</option>`).join('');
+      return `
+        <div class="doc" data-doc-id="${esc(d.id)}">
+          <div class="docTop">
+            <div>
+              <b>${esc(DOC_LABELS[d.document_type] || d.document_type)}</b>
+              <div class="muted">${esc(d.original_filename || '-')} • ${fmtDate(d.uploaded_at || d.created_at)}</div>
+              ${d.public_url ? `<a href="${esc(d.public_url)}" target="_blank" rel="noopener">เปิดไฟล์</a>` : ''}
+            </div>
+            ${badge(d.status)}
+          </div>
+          <div class="grid3" style="margin-top:8px">
+            <div><label>สถานะเอกสาร</label><select data-doc-status>${options}</select></div>
+            <div style="grid-column:span 2"><label>หมายเหตุ</label><input data-doc-note value="${esc(d.admin_note || '')}"></div>
+          </div>
+          <button class="ghost" data-save-doc type="button" style="margin-top:8px">บันทึกเอกสาร</button>
         </div>
-        <div>
-          <h3>อัปเดตสถานะ</h3>
-          <label>สถานะใบสมัคร</label>
-          <select id="applicationStatus">
-            <option value="draft">ร่าง</option>
-            <option value="submitted">ส่งใบสมัครแล้ว</option>
-            <option value="under_review">กำลังตรวจสอบ</option>
-            <option value="need_more_documents">ขอเอกสารเพิ่ม</option>
-            <option value="rejected">ไม่ผ่าน</option>
-            <option value="approved_for_training">อนุมัติเข้าอบรม</option>
-          </select>
-          <label style="margin-top:8px">หมายเหตุแอดมิน</label>
-          <textarea id="applicationNote"></textarea>
-          <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap">
-            <button class="primary" id="btnSaveStatus" type="button">บันทึกสถานะ</button>
+      `;
+    }).join('') : '<div class="muted">ยังไม่มีเอกสาร</div>';
+  }
+
+  function renderEvents(events){
+    $('events').innerHTML = events.length ? events.map(e=>`
+      <div class="event">
+        <b>${esc(e.event_type)}</b> ${e.from_status || e.to_status ? `<span class="muted">${esc(e.from_status || '-')} → ${esc(e.to_status || '-')}</span>` : ''}
+        <div>${esc(e.note || '')}</div>
+        <div class="muted">${esc(e.actor_type || '-')} ${esc(e.actor_username || '')} • ${fmtDate(e.created_at)}</div>
+      </div>
+    `).join('') : '<div class="muted">ยังไม่มี timeline</div>';
+  }
+
+  function renderExtraPlaceholders(){
+    $('onboardingSummary').innerHTML = '<div class="muted">กำลังโหลดข้อมูล onboarding...</div>';
+    $('certifications').innerHTML = '<div class="muted">กำลังโหลด certifications...</div>';
+    $('trialJobs').innerHTML = '<div class="muted">กำลังโหลด trial jobs...</div>';
+  }
+
+  async function loadExtra(id){
+    try {
+      const [agreement, academy, exams, certifications, trials] = await Promise.all([
+        api(`/admin/partners/applications/${id}/agreement`),
+        api(`/admin/partners/applications/${id}/academy`),
+        api(`/admin/partners/applications/${id}/exams`),
+        api(`/admin/partners/applications/${id}/certifications`),
+        api(`/admin/partners/applications/${id}/trial-jobs`)
+      ]);
+      activeExtra = { agreement, academy, exams, certifications, trials };
+      renderOnboardingSummary();
+      renderCertifications(certifications.certifications || []);
+      renderTrials(trials.trial_jobs || []);
+    } catch (e) {
+      $('onboardingSummary').innerHTML = `<div class="muted">${esc(e.message)}</div>`;
+    }
+  }
+
+  function renderOnboardingSummary(){
+    const sigs = activeExtra.agreement?.signatures || [];
+    const lessons = activeExtra.academy?.lessons || [];
+    const attempts = activeExtra.exams?.attempts || [];
+    const trials = activeExtra.trials?.trial_jobs || [];
+    const doneLessons = lessons.filter(l=>l.completed).length;
+    const bestExam = attempts[0];
+    $('onboardingSummary').innerHTML = `
+      <div class="miniCard"><b>Agreement</b>${sigs.length ? badge('approved') : badge('not_started')}<div class="muted">${sigs[0] ? fmtDate(sigs[0].signed_at) : 'ยังไม่เซ็น'}</div></div>
+      <div class="miniCard"><b>Academy</b><span class="badge">${doneLessons}/${lessons.length || 0}</span><div class="muted">บทเรียนที่ทำแล้ว</div></div>
+      <div class="miniCard"><b>Exam</b>${bestExam ? badge(bestExam.passed ? 'exam_passed' : 'exam_failed') : badge('not_started')}<div class="muted">${bestExam ? `${Number(bestExam.score_percent)}% • ${fmtDate(bestExam.submitted_at)}` : 'ยังไม่สอบ'}</div></div>
+      <div class="miniCard"><b>Trial</b><span class="badge">${trials.length}</span><div class="muted">งานทดลอง</div></div>
+    `;
+  }
+
+  function certStatus(code, rows){
+    return rows.find(r=>r.certification_code === code) || { certification_code: code, status: 'not_started' };
+  }
+
+  function renderCertifications(rows){
+    $('trialCertification').innerHTML = CERT_CODES.map(code=>`<option value="${esc(code)}">${esc(CERT_LABELS[code])}</option>`).join('');
+    $('certifications').innerHTML = CERT_CODES.map(code=>{
+      const row = certStatus(code, rows);
+      const options = CERT_STATUSES.map(s=>`<option value="${s}" ${row.status === s ? 'selected' : ''}>${esc(STATUS_LABELS[s] || s)}</option>`).join('');
+      return `
+        <div class="doc" data-cert-code="${esc(code)}">
+          <div class="docTop">
+            <div><b>${esc(CERT_LABELS[code])}</b><div class="muted">${esc(code)} • partner toggle: ${row.preference_enabled ? 'รับงานนี้' : 'ไม่รับ/ล็อก'}</div></div>
+            ${badge(row.status)}
+          </div>
+          <div class="grid2" style="margin-top:8px">
+            <div><label>สถานะ</label><select data-cert-status>${options}</select></div>
+            <div><label>หมายเหตุ</label><input data-cert-note value="${esc(row.admin_note || '')}"></div>
+          </div>
+          <div class="actions">
+            <button class="ghost" data-quick-cert="in_training" type="button">approve training</button>
+            <button class="ghost" data-quick-cert="trial_unlocked" type="button">unlock trial</button>
+            <button class="primary" data-quick-cert="approved" type="button">approve full</button>
+            <button class="ghost" data-quick-cert="exam_ready" type="button">require retake</button>
+            <button class="ghost" data-quick-cert="suspended" type="button">suspend</button>
+            <button class="ghost" data-quick-cert="revoked" type="button">revoke</button>
           </div>
         </div>
+      `;
+    }).join('');
+  }
+
+  function renderTrials(rows){
+    $('trialJobs').innerHTML = rows.length ? rows.map(t=>`
+      <div class="doc" data-trial-id="${esc(t.id)}">
+        <div class="docTop">
+          <div>
+            <b>${esc(CERT_LABELS[t.certification_code] || t.certification_code)}</b>
+            <div class="muted">Trial #${esc(t.id)} • ${fmtDate(t.created_at)} ${t.job_id ? `• Job ${esc(t.job_id)}` : ''}</div>
+          </div>
+          ${badge(t.status || 'trial_unlocked')}
+        </div>
+        <div class="grid3" style="margin-top:8px">
+          <div><label>ตรงเวลา</label><input type="number" min="0" max="5" data-eval="punctuality_score"></div>
+          <div><label>เครื่องแบบ</label><input type="number" min="0" max="5" data-eval="uniform_score"></div>
+          <div><label>สื่อสาร</label><input type="number" min="0" max="5" data-eval="communication_score"></div>
+          <div><label>รูปถ่าย</label><input type="number" min="0" max="5" data-eval="photo_quality_score"></div>
+          <div><label>คุณภาพงาน</label><input type="number" min="0" max="5" data-eval="job_quality_score"></div>
+          <div><label>ผล</label><select data-eval="result"><option value="passed">passed</option><option value="failed">failed</option><option value="needs_more_trial">needs_more_trial</option></select></div>
+        </div>
+        <label style="margin-top:8px">ปัญหาลูกค้า</label><input data-eval="customer_issue">
+        <label style="margin-top:8px">หมายเหตุ</label><input data-eval="admin_note">
+        <button class="secondary" data-save-eval type="button" style="margin-top:8px">บันทึกประเมิน</button>
       </div>
+    `).join('') : '<div class="muted">ยังไม่มี trial job</div>';
+  }
 
-      <h3>เอกสาร</h3>
-      <div id="documents"></div>
+  async function openDetail(id){
+    const data = await api(`/admin/partners/applications/${encodeURIComponent(id)}`);
+    renderDetail(data);
+  }
 
-      <h3>Onboarding</h3>
-      <div class="miniGrid" id="onboardingSummary"></div>
+  async function saveApplicationStatus(){
+    if (!activeId) return;
+    const data = await api(`/admin/partners/applications/${activeId}/status`, {
+      method:'PUT',
+      body: JSON.stringify({ status:$('applicationStatus').value, admin_note:$('applicationNote').value.trim() })
+    });
+    await openDetail(data.application.id);
+    await loadList();
+  }
 
-      <h3>Certifications</h3>
-      <div class="grid2">
-        <div id="certifications"></div>
-        <div>
-          <label>สร้าง Trial Job สำหรับ Certification</label>
-          <select id="trialCertification"></select>
-          <label style="margin-top:8px">Job ID (ถ้ามี)</label>
-          <input id="trialJobId" placeholder="เว้นว่างได้">
-          <label style="margin-top:8px">หมายเหตุ Trial</label>
-          <textarea id="trialNote"></textarea>
-          <button class="secondary" id="btnCreateTrial" type="button" style="margin-top:8px">อนุมัติ Trial</button>
+  async function saveDocument(card){
+    const docId = card.dataset.docId;
+    await api(`/admin/partners/applications/${activeId}/documents/${docId}/status`, {
+      method:'PUT',
+      body: JSON.stringify({ status:card.querySelector('[data-doc-status]').value, admin_note:card.querySelector('[data-doc-note]').value.trim() })
+    });
+    await openDetail(activeId);
+  }
+
+  async function updateCertification(card, statusOverride){
+    const code = card.dataset.certCode;
+    const status = statusOverride || card.querySelector('[data-cert-status]').value;
+    const noteEl = card.querySelector('[data-cert-note]');
+    await api(`/admin/partners/applications/${activeId}/certifications/${encodeURIComponent(code)}/status`, {
+      method:'PUT',
+      body: JSON.stringify({ status, admin_note: noteEl ? noteEl.value.trim() : '' })
+    });
+    await loadExtra(activeId);
+  }
+
+  async function createTrial(){
+    const certification_code = $('trialCertification').value;
+    await api(`/admin/partners/applications/${activeId}/trial-jobs`, {
+      method:'POST',
+      body: JSON.stringify({ certification_code, job_id:$('trialJobId').value.trim() || null, admin_note:$('trialNote').value.trim() })
+    });
+    $('trialJobId').value = '';
+    $('trialNote').value = '';
+    await loadExtra(activeId);
+  }
+
+  async function saveEvaluation(card){
+    const payload = {};
+    card.querySelectorAll('[data-eval]').forEach(el => {
+      const key = el.dataset.eval;
+      payload[key] = key.endsWith('_score') ? Number(el.value || 0) : el.value;
+    });
+    await api(`/admin/partners/trial-jobs/${card.dataset.trialId}/evaluate`, { method:'POST', body:JSON.stringify(payload) });
+    await loadExtra(activeId);
+  }
+
+  async function runEligibleDryRun(){
+    const payload = {
+      job_type:$('dryRunJobType').value.trim(),
+      wash_variant:$('dryRunVariant').value.trim(),
+      repair_variant:$('dryRunVariant').value.trim(),
+      install_variant:$('dryRunVariant').value.trim(),
+      ac_type:$('dryRunVariant').value.trim(),
+      zone:$('dryRunZone').value.trim()
+    };
+    const data = await api('/admin/partners/eligible-dry-run', { method:'POST', body:JSON.stringify(payload) });
+    const partners = data.partners || [];
+    $('eligibleDryRun').innerHTML = partners.slice(0, 20).map(p => `
+      <div class="doc">
+        <div class="docTop"><div><b>${esc(p.full_name)}</b><div class="muted">${esc(p.technician_username || '-')} • ${esc(p.province || '')} ${esc(p.district || '')}</div></div>${p.eligible ? badge('approved') : badge('need_more_documents')}</div>
+        <div class="chips">
+          <span class="chip">cert ${p.checks.certification_approved ? 'ผ่าน' : 'ขาด ' + esc((p.missing_certifications || []).join(','))}</span>
+          <span class="chip">toggle ${p.checks.preference_on ? 'เปิด' : 'ปิด'}</span>
+          <span class="chip">availability ${p.checks.availability_on ? 'เปิด' : 'paused'}</span>
+          <span class="chip">zone ${p.checks.zone_match ? 'ตรง' : 'ไม่ตรง'}</span>
         </div>
       </div>
+    `).join('') || '<div class="muted">ไม่พบพาร์ทเนอร์</div>';
+  }
 
-      <h3>Trial Jobs</h3>
-      <div id="trialJobs"></div>
+  $('btnReload').addEventListener('click', loadList);
+  $('statusFilter').addEventListener('change', loadList);
+  $('searchInput').addEventListener('keydown', e=>{ if(e.key === 'Enter') loadList(); });
+  $('applicationList').addEventListener('click', e=>{
+    const item = e.target.closest('[data-id]');
+    if (item) openDetail(item.dataset.id).catch(err=>alert(err.message));
+  });
+  $('btnClose').addEventListener('click', ()=>$('detailDrawer').classList.remove('open'));
+  $('btnSaveStatus').addEventListener('click', () => saveApplicationStatus().catch(err=>alert(err.message)));
+  $('documents').addEventListener('click', e=>{
+    const btn = e.target.closest('[data-save-doc]');
+    if (btn) saveDocument(btn.closest('[data-doc-id]')).catch(err=>alert(err.message));
+  });
+  $('certifications').addEventListener('click', e=>{
+    const quick = e.target.closest('[data-quick-cert]');
+    if (quick) updateCertification(quick.closest('[data-cert-code]'), quick.dataset.quickCert).catch(err=>alert(err.message));
+  });
+  $('certifications').addEventListener('change', e=>{
+    if (e.target.matches('[data-cert-status]')) updateCertification(e.target.closest('[data-cert-code]')).catch(err=>alert(err.message));
+  });
+  $('btnCreateTrial').addEventListener('click', () => createTrial().catch(err=>alert(err.message)));
+  $('btnDryRun').addEventListener('click', () => runEligibleDryRun().catch(err=>alert(err.message)));
+  $('trialJobs').addEventListener('click', e=>{
+    const btn = e.target.closest('[data-save-eval]');
+    if (btn) saveEvaluation(btn.closest('[data-trial-id]')).catch(err=>alert(err.message));
+  });
 
-      <h3>Eligible Partner Dry-run</h3>
-      <div class="grid3">
-        <div><label>ประเภทงาน</label><input id="dryRunJobType" placeholder="ล้าง / ซ่อม / ติดตั้ง / ย้าย"></div>
-        <div><label>ชนิด/รายละเอียด</label><input id="dryRunVariant" placeholder="พรีเมียม / น้ำรั่ว / คอนโด"></div>
-        <div><label>โซน</label><input id="dryRunZone" placeholder="จังหวัด/เขต"></div>
-      </div>
-      <button class="secondary" id="btnDryRun" type="button" style="margin-top:8px">ดูพาร์ทเนอร์ที่เหมาะสม</button>
-      <div id="eligibleDryRun" style="margin-top:8px"></div>
-
-      <h3>Timeline</h3>
-      <div class="timeline" id="events"></div>
-    </div>
-  </div>
-
-  <script src="/admin-partner-onboarding.js"></script>
-</body>
-</html>
+  loadList().catch(err=>{ $('applicationList').innerHTML = `<div class="muted">${esc(err.message)}</div>`; });
+})();
