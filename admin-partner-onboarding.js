@@ -175,13 +175,15 @@
 
   function renderOnboardingSummary(){
     const sigs = activeExtra.agreement?.signatures || [];
+    const contractReady = activeExtra.agreement?.contract_ready !== false;
+    const contractWarning = activeExtra.agreement?.contract_ready_message || 'ต้องนำเข้าสัญญาฉบับจริงก่อนเปิดให้เซ็น';
     const lessons = activeExtra.academy?.lessons || [];
     const attempts = activeExtra.exams?.attempts || [];
     const trials = activeExtra.trials?.trial_jobs || [];
     const doneLessons = lessons.filter(l=>l.completed).length;
     const bestExam = attempts[0];
     $('onboardingSummary').innerHTML = `
-      <div class="miniCard"><b>Agreement</b>${sigs.length ? badge('approved') : badge('not_started')}<div class="muted">${sigs[0] ? fmtDate(sigs[0].signed_at) : 'ยังไม่เซ็น'}</div></div>
+      <div class="miniCard"><b>Agreement</b>${!contractReady ? '<span class="badge warn">ยังไม่พร้อม</span>' : (sigs.length ? badge('approved') : badge('not_started'))}<div class="muted">${!contractReady ? esc(contractWarning) : (sigs[0] ? fmtDate(sigs[0].signed_at) : 'ยังไม่เซ็น')}</div></div>
       <div class="miniCard"><b>Academy</b><span class="badge">${doneLessons}/${lessons.length || 0}</span><div class="muted">บทเรียนที่ทำแล้ว</div></div>
       <div class="miniCard"><b>Exam</b>${bestExam ? badge(bestExam.passed ? 'exam_passed' : 'exam_failed') : badge('not_started')}<div class="muted">${bestExam ? `${Number(bestExam.score_percent)}% • ${fmtDate(bestExam.submitted_at)}` : 'ยังไม่สอบ'}</div></div>
       <div class="miniCard"><b>Trial</b><span class="badge">${trials.length}</span><div class="muted">งานทดลอง</div></div>

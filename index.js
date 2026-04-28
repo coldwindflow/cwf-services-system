@@ -1228,6 +1228,55 @@ function normalizePartnerNumber(v, fallback = null) {
   return Number.isFinite(n) ? Math.max(0, n) : fallback;
 }
 
+const CWF_PASSWORD_HASH_PREFIX = 'cwf_scrypt$v1$';
+const CWF_PASSWORD_SCRYPT_KEYLEN = 64;
+
+function isCwfPasswordHash(stored) {
+  return String(stored || '').startsWith(CWF_PASSWORD_HASH_PREFIX);
+}
+
+function hashPasswordForStorage(password) {
+  const raw = String(password || '');
+  if (!raw) return Promise.resolve('');
+  const salt = crypto.randomBytes(16).toString('hex');
+  return new Promise((resolve, reject) => {
+    crypto.scrypt(raw, salt, CWF_PASSWORD_SCRYPT_KEYLEN, (err, derivedKey) => {
+      if (err) return reject(err);
+      resolve(`${CWF_PASSWORD_HASH_PREFIX}${salt}$${derivedKey.toString('hex')}`);
+    });
+  });
+}
+
+function verifyCwfPasswordHash(inputPassword, storedHash) {
+  const raw = String(inputPassword || '');
+  const stored = String(storedHash || '');
+  const parts = stored.split('$');
+  // cwf_scrypt$v1$<saltHex>$<hashHex>
+  if (parts.length !== 4 || `${parts[0]}$${parts[1]}$` !== CWF_PASSWORD_HASH_PREFIX) return Promise.resolve(false);
+  const salt = parts[2];
+  const expectedHex = parts[3];
+  return new Promise((resolve) => {
+    crypto.scrypt(raw, salt, CWF_PASSWORD_SCRYPT_KEYLEN, (err, derivedKey) => {
+      if (err) return resolve(false);
+      try {
+        const actual = Buffer.from(derivedKey.toString('hex'), 'hex');
+        const expected = Buffer.from(expectedHex, 'hex');
+        if (!expected.length || actual.length !== expected.length) return resolve(false);
+        return resolve(crypto.timingSafeEqual(actual, expected));
+      } catch (_) {
+        return resolve(false);
+      }
+    });
+  });
+}
+
+async function verifyPasswordAgainstStored(inputPassword, storedPassword) {
+  const stored = String(storedPassword || '');
+  if (isCwfPasswordHash(stored)) return verifyCwfPasswordHash(inputPassword, stored);
+  // Legacy compatibility: existing CWF users remain plaintext until password change.
+  return String(inputPassword || '') === stored;
+}
+
 async function findExistingPartnerTechnicianByPhone(client, phone) {
   const variants = getPhoneVariants(phone);
   if (!variants.length) return null;
@@ -1268,11 +1317,12 @@ async function ensurePartnerTechnicianAccount(client, { phone, password, fullNam
     username = `${makePartnerUsernameFromPhone(phone, applicationCode)}${i + 1}`;
   }
 
+  const storedPassword = await hashPasswordForStorage(password);
   await client.query(
     `INSERT INTO public.users(username, password, role, full_name)
      VALUES($1,$2,'technician',$3)
      ON CONFLICT(username) DO NOTHING`,
-    [username, password, fullName || username]
+    [username, storedPassword, fullName || username]
   );
   await client.query(
     `INSERT INTO public.technician_profiles(username, full_name, phone, employment_type, partner_status, accept_status, line_id, rating, grade, done_count)
@@ -2099,6 +2149,21 @@ app.put('/admin/partners/applications/:id/documents/:document_id/status', requir
   }
 });
 
+function isPartnerAgreementTemplateReady(template) {
+  if (!template) return false;
+  const sourceNote = String(template.source_note || '').toUpperCase();
+  const content = String(template.content_html || template.body_text || '').trim();
+  if (!content) return false;
+  if (sourceNote.includes('PLACEHOLDER') || sourceNote.includes('IMPORT_REQUIRED')) return false;
+  if (/placeholder/i.test(content) || content.includes('ต้องนำเนื้อหา') || content.includes('โปรดนำเนื้อหา')) return false;
+  return true;
+}
+
+function partnerAgreementReadinessMessage(template) {
+  if (isPartnerAgreementTemplateReady(template)) return '';
+  return 'ยังไม่สามารถเซ็นสัญญาได้ เพราะยังไม่ได้นำเข้าสัญญาฉบับจริง';
+}
+
 // =======================================
 // Partner Agreement / Academy / Exam / Certification / Trial
 // Enforcement helpers are available above, but job-blocking remains OFF by default.
@@ -2117,7 +2182,16 @@ app.get('/partner/agreement/:application_code', async (req, res) => {
        ORDER BY signed_at DESC LIMIT 1`,
       [appRow.id]
     );
-    return res.json({ ok: true, application: partnerApplicationPublicShape(appRow), template: tpl.rows[0] || null, signature: sig.rows[0] || null });
+    const template = tpl.rows[0] || null;
+    const contract_ready = isPartnerAgreementTemplateReady(template);
+    return res.json({
+      ok: true,
+      application: partnerApplicationPublicShape(appRow),
+      template,
+      signature: sig.rows[0] || null,
+      contract_ready,
+      contract_ready_message: contract_ready ? '' : partnerAgreementReadinessMessage(template),
+    });
   } catch (e) {
     console.error('GET partner agreement error:', e);
     return res.status(500).json({ error: 'โหลดสัญญาไม่สำเร็จ' });
@@ -2143,6 +2217,10 @@ app.post('/partner/agreement/:application_code/sign', async (req, res) => {
     );
     if (!tplR.rows.length) throw new Error('ไม่พบ template สัญญาที่เปิดใช้งาน');
     const tpl = tplR.rows[0];
+    if (!isPartnerAgreementTemplateReady(tpl)) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: partnerAgreementReadinessMessage(tpl), contract_ready: false });
+    }
     const sig = await client.query(
       `INSERT INTO public.agreement_signatures
         (application_id, template_id, template_version, signer_full_name, consent_terms, signed_ip, signed_user_agent, signed_at)
@@ -2304,6 +2382,14 @@ app.get('/admin/partners/applications/:id/agreement', requireAdminSession, async
   try {
     const appRow = await getPartnerApplicationById(req.params.id);
     if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    const tpl = await pool.query(
+      `SELECT id, template_code, version, title, source_note, content_html, body_text
+       FROM public.agreement_templates
+       WHERE template_code='partner_standard' AND is_active=TRUE
+       ORDER BY version DESC LIMIT 1`
+    );
+    const template = tpl.rows[0] || null;
+    const contract_ready = isPartnerAgreementTemplateReady(template);
     const sig = await pool.query(
       `SELECT s.id, s.template_version, s.signer_full_name, s.signed_ip, s.signed_user_agent, s.signed_at, t.template_code, t.title, t.source_note
        FROM public.agreement_signatures s
@@ -2312,7 +2398,13 @@ app.get('/admin/partners/applications/:id/agreement', requireAdminSession, async
        ORDER BY s.signed_at DESC`,
       [appRow.id]
     );
-    return res.json({ ok: true, signatures: sig.rows });
+    return res.json({
+      ok: true,
+      signatures: sig.rows,
+      template: template ? { id: template.id, template_code: template.template_code, version: template.version, title: template.title, source_note: template.source_note } : null,
+      contract_ready,
+      contract_ready_message: contract_ready ? '' : partnerAgreementReadinessMessage(template),
+    });
   } catch (e) {
     console.error('GET admin agreement error:', e);
     return res.status(500).json({ error: 'โหลดสถานะสัญญาไม่สำเร็จ' });
@@ -8433,15 +8525,16 @@ app.post("/login", async (req, res) => {
   const { username, password } = req.body || {};
   try {
     const r = await pool.query(
-      `SELECT username, role FROM public.users WHERE username=$1 AND password=$2`,
-      [username, password]
+      `SELECT username, role, password FROM public.users WHERE username=$1 LIMIT 1`,
+      [username]
     );
     if (r.rows.length === 0) return res.status(401).json({ error: "ชื่อผู้ใช้หรือรหัสผ่านผิด" });
+    const passwordOk = await verifyPasswordAgainstStored(password, r.rows[0].password);
+    if (!passwordOk) return res.status(401).json({ error: "ชื่อผู้ใช้หรือรหัสผ่านผิด" });
 
     const u = String(r.rows[0].username);
     const role = normalizeRole(r.rows[0].role);
 
-    // ✅ Create server-side session cookie (HttpOnly) for real logout + impersonation
     try {
       const maxAgeSec = 7 * 24 * 60 * 60;
       const token = crypto.randomBytes(24).toString('hex');
@@ -8463,12 +8556,6 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// =======================================
-// 🔑 CHANGE PASSWORD (Technician)
-// - ต้องใส่รหัสเดิม
-// - ต้องยืนยันรหัสใหม่ 2 ครั้ง
-// หมายเหตุ: ระบบเดิมเก็บรหัสแบบ plaintext (ยังไม่เปลี่ยนเพื่อกัน regression)
-// =======================================
 app.post("/auth/change-password", async (req, res) => {
   try {
     const username = (req.body?.username || "").toString().trim();
@@ -8479,22 +8566,19 @@ app.post("/auth/change-password", async (req, res) => {
     if (!username) return res.status(400).json({ error: "username หาย" });
     if (!oldPassword) return res.status(400).json({ error: "ต้องใส่รหัสเดิม" });
     if (!newPassword) return res.status(400).json({ error: "ต้องใส่รหัสใหม่" });
-    if (newPassword !== confirmPassword) {
-      return res.status(400).json({ error: "ยืนยันรหัสใหม่ไม่ตรงกัน" });
-    }
-    if (newPassword.length < 4) {
-      return res.status(400).json({ error: "รหัสใหม่ต้องยาวอย่างน้อย 4 ตัวอักษร" });
-    }
+    if (newPassword !== confirmPassword) return res.status(400).json({ error: "ยืนยันรหัสใหม่ไม่ตรงกัน" });
+    if (newPassword.length < 4) return res.status(400).json({ error: "รหัสใหม่ต้องยาวอย่างน้อย 4 ตัวอักษร" });
 
     const r = await pool.query(
-      `SELECT username FROM public.users WHERE username=$1 AND password=$2 LIMIT 1`,
-      [username, oldPassword]
+      `SELECT username, password FROM public.users WHERE username=$1 LIMIT 1`,
+      [username]
     );
-    if (r.rows.length === 0) {
+    if (r.rows.length === 0 || !(await verifyPasswordAgainstStored(oldPassword, r.rows[0].password))) {
       return res.status(401).json({ error: "รหัสเดิมไม่ถูกต้อง" });
     }
 
-    await pool.query(`UPDATE public.users SET password=$2 WHERE username=$1`, [username, newPassword]);
+    const storedNewPassword = await hashPasswordForStorage(newPassword);
+    await pool.query(`UPDATE public.users SET password=$2 WHERE username=$1`, [username, storedNewPassword]);
     return res.json({ ok: true });
   } catch (e) {
     console.error("POST change-password error:", e);
@@ -8502,9 +8586,6 @@ app.post("/auth/change-password", async (req, res) => {
   }
 });
 
-// =======================================
-// 👷 USERS: technicians list (legacy)
-// =======================================
 app.get("/users/technicians", async (req, res) => {
   try {
     const r = await pool.query(
