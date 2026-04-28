@@ -65,7 +65,7 @@ function cloudinarySignParams(params) {
   return crypto.createHash('sha1').update(toSign).digest('hex');
 }
 
-async function cloudinaryUploadBuffer({ buffer, mimetype, folder, publicId, transformation }) {
+async function cloudinaryUploadBuffer({ buffer, mimetype, folder, publicId, transformation, resourceType = 'image' }) {
   if (!CLOUDINARY_ENABLED) throw new Error('CLOUDINARY_NOT_CONFIGURED');
   const ts = Math.floor(Date.now() / 1000);
   const params = {
@@ -85,7 +85,8 @@ async function cloudinaryUploadBuffer({ buffer, mimetype, folder, publicId, tran
     file: dataUri,
   });
 
-  const url = `https://api.cloudinary.com/v1_1/${encodeURIComponent(CLOUDINARY_CLOUD_NAME)}/image/upload`;
+  const safeResourceType = resourceType === 'raw' ? 'raw' : 'image';
+  const url = `https://api.cloudinary.com/v1_1/${encodeURIComponent(CLOUDINARY_CLOUD_NAME)}/${safeResourceType}/upload`;
   const resp = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/x-www-form-urlencoded' },
@@ -1069,6 +1070,72 @@ const PARTNER_CERTIFICATION_STATUSES = new Set([
 
 const PARTNER_TRIAL_RESULTS = new Set(['passed', 'failed', 'needs_more_trial']);
 
+const PARTNER_WORK_INTENTS = new Set([
+  'full_time_with_cwf',
+  'part_time_extra_income',
+  'has_regular_job_accept_extra',
+  'team_partner',
+  'company_subcontractor',
+]);
+
+const PARTNER_TRAVEL_METHODS = new Set([
+  'motorcycle',
+  'car',
+  'pickup',
+  'van',
+  'public_transport',
+]);
+
+const PARTNER_JOB_INTEREST_LABELS = {
+  clean_wall_normal: 'ล้างแอร์ผนังปกติ',
+  clean_wall_premium: 'ล้างแอร์ผนังพรีเมียม',
+  clean_wall_hanging_coil: 'ล้างแขวนคอยล์',
+  clean_wall_overhaul: 'ตัดล้างใหญ่',
+  clean_ceiling_suspended: 'ล้างแอร์แขวน/เปลือยใต้ฝ้า',
+  clean_cassette_4way: 'ล้างแอร์สี่ทิศทาง',
+  clean_duct_type: 'ล้างแอร์ท่อลม',
+  repair_diagnosis_basic: 'ตรวจเช็กอาการ',
+  repair_water_leak: 'แก้น้ำรั่ว',
+  repair_electrical_basic: 'งานไฟฟ้าเบื้องต้น',
+  repair_refrigerant_basic: 'เติมน้ำยา/ระบบน้ำยา',
+  repair_parts_replacement: 'เปลี่ยนอะไหล่',
+  install_wall_standard: 'ติดตั้งแอร์ผนัง',
+  install_condo: 'ติดตั้งคอนโด',
+  install_relocation: 'ย้ายแอร์',
+};
+
+const PARTNER_EQUIPMENT_CHOICES = [
+  'มีครบพร้อมทำงาน',
+  'ปั๊มน้ำแรงดัน',
+  'เครื่องฉีดน้ำแรงดัน',
+  'ผ้าใบรองน้ำ',
+  'ถังรองน้ำ',
+  'กระบอกฉีดน้ำยา',
+  'น้ำยาล้างคอยล์',
+  'แปรงล้างแอร์',
+  'ถุงล้างแอร์',
+  'เครื่องเป่าลม',
+  'เครื่องดูดฝุ่น/ดูดน้ำ',
+  'บันได',
+  'สว่าน',
+  'ไขควง/ชุดเครื่องมือช่าง',
+  'ประแจ/คีม/คัตเตอร์',
+  'มัลติมิเตอร์',
+  'แคลมป์มิเตอร์',
+  'เกจ์วัดน้ำยาแอร์',
+  'เครื่องชั่งน้ำยา',
+  'แวคคั่มปั๊ม',
+  'ถังน้ำยา',
+  'เครื่องเชื่อม/ชุดเชื่อมท่อทองแดง',
+  'คัตเตอร์ตัดท่อ',
+  'บานแฟร์',
+  'ทอร์คประแจ',
+  'ปั๊มน้ำทิ้ง',
+  'อุปกรณ์ติดตั้งรางครอบท่อ',
+  'ชุด PPE / ถุงมือ / แว่นตา',
+  'ยูนิฟอร์มสุภาพพร้อมเข้าหน้างาน',
+];
+
 const BASIC_PARTNER_LESSONS = [
   'มาตรฐานแบรนด์ CWF',
   'การแต่งกายและมารยาทหน้างาน',
@@ -1081,6 +1148,36 @@ const BASIC_PARTNER_LESSONS = [
   'ความรับผิดชอบงานรับประกัน',
   'กติกางานทดลอง',
 ];
+
+const BASIC_PARTNER_LESSON_BODIES = [
+  'รักษาความตรงเวลา ความสุภาพ ความสะอาด และคุณภาพงานทุกครั้ง งานของพาร์ทเนอร์สะท้อนแบรนด์ CWF โดยตรง หากเจอปัญหาต้องแจ้งแอดมินก่อนตัดสินใจแทนบริษัท',
+  'แต่งกายสุภาพ ใส่รองเท้าที่เหมาะกับงาน เตรียมผ้าปู/อุปกรณ์ป้องกันพื้นที่ลูกค้า และหลีกเลี่ยงคำพูดหรือพฤติกรรมที่ทำให้ลูกค้าไม่สบายใจ',
+  'อธิบายขั้นตอนก่อนเริ่มงาน แจ้งความเสี่ยงอย่างตรงไปตรงมา ใช้ภาษาสุภาพ และส่งต่อประเด็นราคา/ข้อพิพาทให้แอดมินดูแล',
+  'เมื่อถึงหน้างานให้เช็กอินในระบบหรือแจ้งแอดมินตามช่องทางที่กำหนด เพื่อให้ลูกค้าและทีมทราบสถานะจริง',
+  'ถ่ายรูปก่อนเริ่มงาน ระหว่างงานสำคัญ และหลังเสร็จงานให้ชัดเจน เห็นตัวเครื่อง พื้นที่ทำงาน และหลักฐานความเรียบร้อย',
+  'ห้ามเปลี่ยนราคาเองหรือเสนอรายการเพิ่มเองโดยไม่ผ่านระบบ CWF รายการเพิ่มต้องได้รับการยืนยันจากแอดมินก่อน',
+  'ห้ามรับเงินสด/โอนส่วนตัวนอกระบบ CWF เว้นแต่แอดมินแจ้งเป็นลายลักษณ์อักษรในเคสนั้น ๆ',
+  'ก่อนปิดงานให้ตรวจความเรียบร้อย อธิบายงานที่ทำ ถ่ายรูปหลังงาน เก็บพื้นที่ และอัปเดตสถานะ/หมายเหตุในระบบให้ครบ',
+  'งานที่มีปัญหาหลังบริการต้องแจ้ง CWF และร่วมแก้ไขตามนโยบายรับประกัน ห้ามปฏิเสธลูกค้าเองหรือปิดการสื่อสาร',
+  'งานทดลองใช้วัดมาตรฐานจริง ทั้งเวลา เครื่องแบบ การสื่อสาร รูปถ่าย คุณภาพงาน และความรับผิดชอบ ผ่านงานทดลองแล้วแอดมินยังต้องอนุมัติ certification รายประเภทก่อนรับงานจริง',
+];
+
+const CWF_PARTNER_CONTRACT_PLACEHOLDER_HTML = `
+<h2>CWF สัญญาพาร์ทเนอร์ช่างแอร์ ฉบับใช้งานจริง</h2>
+<p><strong>สถานะเนื้อหา:</strong> โครงสร้างพร้อมใช้งาน แต่ยังต้องนำเนื้อหาฉบับเต็มจากไฟล์ CWF_สัญญาพาร์ทเนอร์ช่างแอร์_ฉบับใช้งานจริง_ครบถ้วน.pdf มาวางแทนข้อความ placeholder นี้ก่อนเปิดรับสมัครจริง</p>
+<h3>คู่สัญญา</h3>
+<p>Coldwindflow Air Services หรือ CWF และพาร์ทเนอร์ช่างแอร์ผู้สมัครตามชื่อในใบสมัคร ตกลงร่วมงานภายใต้เงื่อนไขมาตรฐานบริการของ CWF</p>
+<h3>ค่าตอบแทน การจ่ายเงิน ภาษี และเงินประกัน</h3>
+<p>ค่าตอบแทน รอบจ่าย ภาษี หัก ณ ที่จ่าย เอกสารประกอบ และเงินประกันให้เป็นไปตามประกาศ/เอกสารแนบท้ายของ CWF ในแต่ละช่วงเวลา</p>
+<h3>หน้าที่ของพาร์ทเนอร์</h3>
+<p>ให้บริการด้วยความสุภาพ ตรงเวลา ใช้อุปกรณ์พร้อมทำงาน เช็กอิน ถ่ายรูปก่อน-หลังงาน ปิดงานในระบบ และรับผิดชอบงานรับประกันตามนโยบาย CWF</p>
+<h3>ข้อห้าม</h3>
+<p>ห้ามเปลี่ยนราคาเอง ห้ามรับเงินนอกระบบ ห้ามดึงลูกค้าออกนอกระบบ ห้ามใช้ข้อมูลลูกค้านอกวัตถุประสงค์ และห้ามมอบหมายงานให้ผู้อื่นโดยไม่ได้รับอนุญาต</p>
+<h3>ความเสียหาย การรับประกัน และความรับผิด</h3>
+<p>หากเกิดความเสียหายจากการปฏิบัติงาน พาร์ทเนอร์ต้องแจ้ง CWF ทันที ร่วมตรวจสอบข้อเท็จจริง และรับผิดชอบตามข้อตกลง/นโยบายที่ประกาศ</p>
+<h3>การสิ้นสุดสัญญา</h3>
+<p>CWF อาจระงับหรือยุติสิทธิ์พาร์ทเนอร์เมื่อมีการฝ่าฝืนมาตรฐาน ทุจริต รับเงินนอกระบบ ทำให้ลูกค้าเสียหาย หรือมีเหตุจำเป็นทางธุรกิจ</p>
+`;
 
 const BASIC_PARTNER_EXAM_QUESTIONS = [
   { q: 'เมื่อถึงหน้างานควรทำอะไรเป็นอันดับแรก', choices: ['เช็กอินและทักทายลูกค้า', 'เริ่มงานทันทีโดยไม่แจ้ง', 'ขอเงินก่อนเริ่มงาน'], answer: 0 },
@@ -1103,6 +1200,94 @@ function normalizeJsonArrayInput(value) {
 
 function normalizePartnerPhone(phone) {
   return String(phone || '').trim().replace(/\s+/g, '');
+}
+
+function partnerPhoneDigits(phone) {
+  return String(phone || '').replace(/\D/g, '');
+}
+
+function makePartnerUsernameFromPhone(phone, fallbackCode = '') {
+  const digits = partnerPhoneDigits(phone);
+  if (digits.length >= 6) return normalizePartnerPhone(phone);
+  return `partner${String(fallbackCode || crypto.randomBytes(4).toString('hex')).replace(/[^a-z0-9]/gi, '').slice(-8).toLowerCase()}`;
+}
+
+function normalizePartnerBool(v) {
+  return v === true || v === 'true' || v === 1 || v === '1' || String(v || '').toLowerCase() === 'on';
+}
+
+function normalizePartnerInt(v, fallback = null) {
+  if (v === '' || v == null) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.round(n)) : fallback;
+}
+
+function normalizePartnerNumber(v, fallback = null) {
+  if (v === '' || v == null) return fallback;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, n) : fallback;
+}
+
+async function findExistingPartnerTechnicianByPhone(client, phone) {
+  const variants = getPhoneVariants(phone);
+  if (!variants.length) return null;
+  const r = await client.query(
+    `SELECT u.username, p.phone
+     FROM public.users u
+     LEFT JOIN public.technician_profiles p ON p.username=u.username
+     WHERE u.role='technician' AND (u.username = ANY($1::text[]) OR p.phone = ANY($1::text[]))
+     ORDER BY CASE WHEN p.phone = ANY($1::text[]) THEN 0 ELSE 1 END
+     LIMIT 1`,
+    [variants]
+  );
+  return r.rows[0] || null;
+}
+
+async function ensurePartnerTechnicianAccount(client, { phone, password, fullName, lineId, applicationCode }) {
+  const existing = await findExistingPartnerTechnicianByPhone(client, phone);
+  if (existing?.username) {
+    await client.query(
+      `INSERT INTO public.technician_profiles(username, full_name, phone, employment_type, partner_status, line_id)
+       VALUES($1,$2,$3,'partner','applicant',$4)
+       ON CONFLICT(username) DO UPDATE SET
+         full_name=COALESCE(public.technician_profiles.full_name, EXCLUDED.full_name),
+         phone=COALESCE(public.technician_profiles.phone, EXCLUDED.phone),
+         employment_type=COALESCE(public.technician_profiles.employment_type, 'partner'),
+         partner_status=COALESCE(public.technician_profiles.partner_status, 'applicant'),
+         line_id=COALESCE(public.technician_profiles.line_id, EXCLUDED.line_id),
+         updated_at=NOW()`,
+      [existing.username, fullName || existing.username, phone || null, lineId || null]
+    );
+    return { username: existing.username, created: false };
+  }
+
+  let username = makePartnerUsernameFromPhone(phone, applicationCode);
+  for (let i = 0; i < 10; i++) {
+    const taken = await client.query(`SELECT 1 FROM public.users WHERE username=$1 LIMIT 1`, [username]);
+    if (!taken.rows.length) break;
+    username = `${makePartnerUsernameFromPhone(phone, applicationCode)}${i + 1}`;
+  }
+
+  await client.query(
+    `INSERT INTO public.users(username, password, role, full_name)
+     VALUES($1,$2,'technician',$3)
+     ON CONFLICT(username) DO NOTHING`,
+    [username, password, fullName || username]
+  );
+  await client.query(
+    `INSERT INTO public.technician_profiles(username, full_name, phone, employment_type, partner_status, accept_status, line_id, rating, grade, done_count)
+     VALUES($1,$2,$3,'partner','applicant','paused',$4,5,'A',0)
+     ON CONFLICT(username) DO UPDATE SET
+       full_name=COALESCE(EXCLUDED.full_name, public.technician_profiles.full_name),
+       phone=COALESCE(EXCLUDED.phone, public.technician_profiles.phone),
+       employment_type='partner',
+       partner_status=COALESCE(public.technician_profiles.partner_status, 'applicant'),
+       accept_status=COALESCE(public.technician_profiles.accept_status, 'paused'),
+       line_id=COALESCE(public.technician_profiles.line_id, EXCLUDED.line_id),
+       updated_at=NOW()`,
+    [username, fullName || username, phone || null, lineId || null]
+  );
+  return { username, created: true };
 }
 
 function sanitizePartnerApplicationCode(code) {
@@ -1201,20 +1386,27 @@ async function uploadPartnerDocumentFile(file, applicationCode, documentType) {
     return '.jpg';
   })();
 
-  if (CLOUDINARY_ENABLED && String(file.mimetype || '').toLowerCase().startsWith('image/')) {
+  if (CLOUDINARY_ENABLED) {
     const publicId = `${safeCode}_${safeType}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
+    const isPdf = String(file.mimetype || '').toLowerCase() === 'application/pdf';
     const up = await cloudinaryUploadBuffer({
       buffer: file.buffer,
-      mimetype: file.mimetype || 'image/jpeg',
+      mimetype: file.mimetype || (isPdf ? 'application/pdf' : 'image/jpeg'),
       folder: `cwf/partner_applications/${safeCode}/${safeType}`,
       publicId,
-      transformation: 'c_limit,w_1600/q_auto/f_auto',
+      transformation: isPdf ? undefined : 'c_limit,w_1600/q_auto/f_auto',
+      resourceType: isPdf ? 'raw' : 'image',
     });
     return {
       public_url: up.secure_url,
       storage_path: up.public_id || publicId,
       cloud_public_id: up.public_id || publicId,
     };
+  }
+
+  const requireCloudinary = envBool('PARTNER_REQUIRE_CLOUDINARY_DOCS', String(process.env.NODE_ENV || '').toLowerCase() === 'production');
+  if (requireCloudinary) {
+    throw new Error('PARTNER_DOCUMENTS_REQUIRE_CLOUDINARY');
   }
 
   const dir = path.join(PARTNER_APPLICATION_UPLOAD_DIR, safeCode);
@@ -1237,14 +1429,32 @@ function partnerApplicationPublicShape(row, docs = [], events = []) {
     full_name: row.full_name,
     phone: row.phone,
     line_id: row.line_id,
+    line_user_id: row.line_user_id || null,
     email: row.email,
     address_text: row.address_text,
+    province: row.province || null,
+    district: row.district || null,
     service_zones: row.service_zones || [],
     preferred_job_types: row.preferred_job_types || [],
+    work_intent: row.work_intent || null,
+    available_days_per_week: row.available_days_per_week == null ? null : Number(row.available_days_per_week),
+    preferred_work_days: row.preferred_work_days || [],
+    max_jobs_per_day: row.max_jobs_per_day == null ? null : Number(row.max_jobs_per_day),
+    max_units_per_day: row.max_units_per_day == null ? null : Number(row.max_units_per_day),
+    can_accept_urgent_jobs: !!row.can_accept_urgent_jobs,
+    can_work_condo: !!row.can_work_condo,
+    can_issue_tax_invoice: !!row.can_issue_tax_invoice,
+    has_helper_team: !!row.has_helper_team,
+    team_size: row.team_size == null ? null : Number(row.team_size),
+    travel_method: row.travel_method || null,
+    service_radius_km: row.service_radius_km == null ? null : Number(row.service_radius_km),
     experience_years: row.experience_years == null ? null : Number(row.experience_years),
     has_vehicle: !!row.has_vehicle,
     vehicle_type: row.vehicle_type,
+    equipment_json: row.equipment_json || [],
     equipment_notes: row.equipment_notes,
+    technician_username: row.technician_username || null,
+    account_created_at: row.account_created_at || null,
     notes: row.notes,
     status: row.status,
     admin_note: row.admin_note,
@@ -1341,11 +1551,15 @@ app.post('/partner/apply', async (req, res) => {
   const body = req.body || {};
   const full_name = String(body.full_name || '').trim();
   const phone = normalizePartnerPhone(body.phone);
+  const password = String(body.password || '').trim();
+  const confirm_password = String(body.confirm_password || '').trim();
   const consent_pdpa = body.consent_pdpa === true || body.consent_pdpa === 'true' || body.consent_pdpa === 1 || body.consent_pdpa === '1';
   const consent_terms = body.consent_terms === true || body.consent_terms === 'true' || body.consent_terms === 1 || body.consent_terms === '1';
 
   if (!full_name) return res.status(400).json({ error: 'กรุณากรอกชื่อ-นามสกุล' });
   if (!phone) return res.status(400).json({ error: 'กรุณากรอกเบอร์โทร' });
+  if (!password || password.length < 6) return res.status(400).json({ error: 'กรุณาตั้งรหัสผ่านอย่างน้อย 6 ตัวอักษร' });
+  if (password !== confirm_password) return res.status(400).json({ error: 'ยืนยันรหัสผ่านไม่ตรงกัน' });
   if (!consent_pdpa || !consent_terms) return res.status(400).json({ error: 'กรุณายอมรับ PDPA และเงื่อนไขการสมัคร' });
 
   const client = await pool.connect();
@@ -1354,21 +1568,36 @@ app.post('/partner/apply', async (req, res) => {
     const application_code = await generateUniquePartnerApplicationCode(client);
     const service_zones = normalizeJsonArrayInput(body.service_zones);
     const preferred_job_types = normalizeJsonArrayInput(body.preferred_job_types);
+    const equipment_json = normalizeJsonArrayInput(body.equipment_json).filter(x => PARTNER_EQUIPMENT_CHOICES.includes(x));
+    const preferred_work_days = normalizeJsonArrayInput(body.preferred_work_days);
     const experienceRaw = body.experience_years === '' || body.experience_years == null ? null : Number(body.experience_years);
     const experience_years = Number.isFinite(experienceRaw) ? Math.max(0, experienceRaw) : null;
     const has_vehicle = body.has_vehicle === true || body.has_vehicle === 'true' || body.has_vehicle === 1 || body.has_vehicle === '1';
+    const work_intent = PARTNER_WORK_INTENTS.has(String(body.work_intent || '')) ? String(body.work_intent) : null;
+    const travel_method = PARTNER_TRAVEL_METHODS.has(String(body.travel_method || '')) ? String(body.travel_method) : null;
+    const account = await ensurePartnerTechnicianAccount(client, {
+      phone,
+      password,
+      fullName: full_name,
+      lineId: body.line_id ? String(body.line_id).trim() : null,
+      applicationCode: application_code,
+    });
 
     const r = await client.query(
       `INSERT INTO public.partner_applications
         (application_code, user_id, technician_username, full_name, phone, line_id, email, address_text,
          service_zones, preferred_job_types, experience_years, has_vehicle, vehicle_type, equipment_notes,
-         bank_account_name, bank_name, bank_account_last4, notes, consent_pdpa, consent_terms, status, submitted_at, updated_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'submitted',NOW(),NOW())
+         bank_account_name, bank_name, bank_account_last4, notes, consent_pdpa, consent_terms, status, submitted_at, updated_at,
+         province, district, work_intent, available_days_per_week, preferred_work_days, max_jobs_per_day, max_units_per_day,
+         can_accept_urgent_jobs, can_work_condo, can_issue_tax_invoice, has_helper_team, team_size, travel_method,
+         service_radius_km, equipment_json, line_user_id, account_created_at, account_note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'submitted',NOW(),NOW(),
+         $21,$22,$23,$24,$25::jsonb,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35::jsonb,$36,NOW(),$37)
        RETURNING *`,
       [
         application_code,
         body.user_id ? String(body.user_id).trim() : null,
-        body.technician_username ? String(body.technician_username).trim() : null,
+        account.username,
         full_name,
         phone,
         body.line_id ? String(body.line_id).trim() : null,
@@ -1386,6 +1615,23 @@ app.post('/partner/apply', async (req, res) => {
         body.notes ? String(body.notes).trim() : null,
         consent_pdpa,
         consent_terms,
+        body.province ? String(body.province).trim() : null,
+        body.district ? String(body.district).trim() : null,
+        work_intent,
+        normalizePartnerInt(body.available_days_per_week),
+        JSON.stringify(preferred_work_days),
+        normalizePartnerInt(body.max_jobs_per_day),
+        normalizePartnerInt(body.max_units_per_day),
+        normalizePartnerBool(body.can_accept_urgent_jobs),
+        normalizePartnerBool(body.can_work_condo),
+        normalizePartnerBool(body.can_issue_tax_invoice),
+        normalizePartnerBool(body.has_helper_team),
+        normalizePartnerInt(body.team_size),
+        travel_method,
+        normalizePartnerNumber(body.service_radius_km),
+        JSON.stringify(equipment_json),
+        body.line_user_id ? String(body.line_user_id).trim() : null,
+        account.created ? 'created_new_technician_account' : 'linked_existing_technician_account',
       ]
     );
     const appRow = r.rows[0];
@@ -1395,7 +1641,7 @@ app.post('/partner/apply', async (req, res) => {
       event_type: 'application_submitted',
       to_status: 'submitted',
       note: 'Partner application submitted',
-      metadata: { application_code },
+      metadata: { application_code, technician_username: account.username, account_created: account.created },
     });
     await client.query('COMMIT');
     return res.json({ ok: true, application: partnerApplicationPublicShape(appRow) });
@@ -1487,10 +1733,193 @@ app.post('/partner/application/:application_code/documents', upload.single('docu
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('POST partner document error:', e);
-    const msg = e && e.code === 'LIMIT_FILE_SIZE' ? 'ไฟล์ใหญ่เกิน 8MB' : 'อัปโหลดเอกสารไม่สำเร็จ';
+    const msg = e && e.code === 'LIMIT_FILE_SIZE'
+      ? 'ไฟล์ใหญ่เกิน 8MB'
+      : e && e.message === 'PARTNER_DOCUMENTS_REQUIRE_CLOUDINARY'
+        ? 'ระบบเอกสารพาร์ทเนอร์ต้องใช้ Cloudinary ใน production กรุณาตั้งค่า Cloudinary ก่อนรับเอกสาร'
+        : 'อัปโหลดเอกสารไม่สำเร็จ';
     return res.status(500).json({ error: msg });
   } finally {
     client.release();
+  }
+});
+
+async function buildPartnerStatusForApplication(appRow) {
+  const docsR = await pool.query(
+    `SELECT id, document_type, original_filename, mime_type, file_size, status, admin_note, uploaded_at, reviewed_at
+     FROM public.partner_application_documents
+     WHERE application_id=$1
+     ORDER BY created_at DESC, id DESC`,
+    [appRow.id]
+  );
+  const sigR = await pool.query(
+    `SELECT id, template_version, signer_full_name, signed_at
+     FROM public.agreement_signatures
+     WHERE application_id=$1
+     ORDER BY signed_at DESC LIMIT 1`,
+    [appRow.id]
+  );
+  const courseR = await pool.query(`SELECT id FROM public.academy_courses WHERE course_code='cwf_basic_partner' LIMIT 1`);
+  const lessonsR = courseR.rows[0]
+    ? await pool.query(
+        `SELECT COUNT(*)::int AS total,
+                COUNT(p.id) FILTER (WHERE COALESCE(p.completed,FALSE))::int AS completed
+         FROM public.academy_lessons l
+         LEFT JOIN public.academy_progress p ON p.lesson_id=l.id AND p.application_id=$2
+         WHERE l.course_id=$1 AND l.is_active=TRUE`,
+        [courseR.rows[0].id, appRow.id]
+      )
+    : { rows: [{ total: 0, completed: 0 }] };
+  const examR = await pool.query(
+    `SELECT score_percent, passed, submitted_at
+     FROM public.academy_exam_attempts
+     WHERE application_id=$1
+     ORDER BY submitted_at DESC LIMIT 1`,
+    [appRow.id]
+  );
+  const certR = await pool.query(
+    `SELECT c.certification_code, c.status, COALESCE(p.enabled,FALSE) AS preference_enabled
+     FROM public.technician_certifications c
+     LEFT JOIN public.technician_certification_preferences p
+       ON p.technician_username=c.technician_username AND p.certification_code=c.certification_code
+     WHERE c.application_id=$1
+     ORDER BY c.certification_code ASC`,
+    [appRow.id]
+  );
+  const availabilityR = appRow.technician_username
+    ? await pool.query(`SELECT * FROM public.partner_availability_preferences WHERE technician_username=$1 LIMIT 1`, [appRow.technician_username])
+    : { rows: [] };
+  return {
+    application: partnerApplicationPublicShape(appRow, docsR.rows, []),
+    agreement: sigR.rows[0] || null,
+    academy: lessonsR.rows[0] || { total: 0, completed: 0 },
+    exam: examR.rows[0] || null,
+    certifications: certR.rows || [],
+    availability: availabilityR.rows[0] || null,
+    stages: {
+      applied: true,
+      documents_pending: docsR.rows.some(d => d.status !== 'approved'),
+      agreement_signed: !!sigR.rows[0],
+      basic_training_done: Number(lessonsR.rows[0]?.total || 0) > 0 && Number(lessonsR.rows[0]?.completed || 0) >= Number(lessonsR.rows[0]?.total || 0),
+      exam_passed: !!examR.rows[0]?.passed,
+      real_jobs_unlocked: certR.rows.some(c => c.status === 'approved'),
+    },
+  };
+}
+
+app.get('/partner/status', async (req, res) => {
+  try {
+    const applicationCode = sanitizePartnerApplicationCode(req.query.application_code || req.query.ref || '');
+    const phone = normalizePartnerPhone(req.query.phone || '');
+    if (!applicationCode || !phone) return res.status(400).json({ error: 'ต้องมีรหัสอ้างอิงและเบอร์โทร' });
+    const r = await pool.query(`SELECT * FROM public.partner_applications WHERE application_code=$1 AND phone=$2 LIMIT 1`, [applicationCode, phone]);
+    if (!r.rows.length) return res.status(404).json({ error: 'ไม่พบข้อมูลใบสมัคร' });
+    return res.json({ ok: true, ...(await buildPartnerStatusForApplication(r.rows[0])) });
+  } catch (e) {
+    console.error('GET partner status error:', e);
+    return res.status(500).json({ error: 'โหลดสถานะไม่สำเร็จ' });
+  }
+});
+
+app.get('/tech/partner-onboarding', requireTechnicianSession, async (req, res) => {
+  try {
+    const username = req.auth?.username;
+    const r = await pool.query(`SELECT * FROM public.partner_applications WHERE technician_username=$1 ORDER BY created_at DESC LIMIT 1`, [username]);
+    if (!r.rows.length) return res.json({ ok: true, partner: null });
+    return res.json({ ok: true, partner: await buildPartnerStatusForApplication(r.rows[0]) });
+  } catch (e) {
+    console.error('GET tech partner onboarding error:', e);
+    return res.status(500).json({ error: 'โหลดสถานะพาร์ทเนอร์ไม่สำเร็จ' });
+  }
+});
+
+app.get('/tech/partner/preferences', requireTechnicianSession, async (req, res) => {
+  try {
+    const username = req.auth?.username;
+    const r = await pool.query(
+      `SELECT c.certification_code, c.status, COALESCE(p.enabled,FALSE) AS enabled
+       FROM public.technician_certifications c
+       LEFT JOIN public.technician_certification_preferences p
+         ON p.technician_username=c.technician_username AND p.certification_code=c.certification_code
+       WHERE c.technician_username=$1
+       ORDER BY c.certification_code ASC`,
+      [username]
+    );
+    return res.json({ ok: true, preferences: r.rows });
+  } catch (e) {
+    console.error('GET tech partner preferences error:', e);
+    return res.status(500).json({ error: 'โหลดประเภทงานไม่สำเร็จ' });
+  }
+});
+
+app.put('/tech/partner/preferences/:certification_code', requireTechnicianSession, async (req, res) => {
+  const username = req.auth?.username;
+  const code = String(req.params.certification_code || '').trim();
+  const enabled = normalizePartnerBool(req.body?.enabled);
+  if (!PARTNER_CERTIFICATION_CODES.includes(code)) return res.status(400).json({ error: 'certification_code ไม่ถูกต้อง' });
+  try {
+    const cert = await pool.query(`SELECT status FROM public.technician_certifications WHERE technician_username=$1 AND certification_code=$2 LIMIT 1`, [username, code]);
+    const status = cert.rows[0]?.status || 'not_started';
+    if (enabled && status !== 'approved') return res.status(403).json({ error: 'ยังเปิดรับงานประเภทนี้ไม่ได้จนกว่าแอดมินอนุมัติ certification' });
+    const finalEnabled = enabled && status === 'approved';
+    const r = await pool.query(
+      `INSERT INTO public.technician_certification_preferences(technician_username, certification_code, enabled, updated_at)
+       VALUES($1,$2,$3,NOW())
+       ON CONFLICT(technician_username, certification_code) DO UPDATE SET enabled=EXCLUDED.enabled, updated_at=NOW()
+       RETURNING *`,
+      [username, code, finalEnabled]
+    );
+    return res.json({ ok: true, preference: r.rows[0] });
+  } catch (e) {
+    console.error('PUT tech partner preference error:', e);
+    return res.status(500).json({ error: 'บันทึกประเภทงานไม่สำเร็จ' });
+  }
+});
+
+app.get('/tech/partner/availability', requireTechnicianSession, async (req, res) => {
+  try {
+    const username = req.auth?.username;
+    const r = await pool.query(`SELECT * FROM public.partner_availability_preferences WHERE technician_username=$1 LIMIT 1`, [username]);
+    return res.json({ ok: true, availability: r.rows[0] || null });
+  } catch (e) {
+    console.error('GET tech partner availability error:', e);
+    return res.status(500).json({ error: 'โหลดเวลารับงานไม่สำเร็จ' });
+  }
+});
+
+app.put('/tech/partner/availability', requireTechnicianSession, async (req, res) => {
+  try {
+    const username = req.auth?.username;
+    const workingDays = normalizeJsonArrayInput(req.body?.working_days);
+    const timeWindows = Array.isArray(req.body?.time_windows) ? req.body.time_windows : [];
+    const vacationDays = normalizeJsonArrayInput(req.body?.vacation_days);
+    const r = await pool.query(
+      `INSERT INTO public.partner_availability_preferences
+        (technician_username, working_days, time_windows, max_jobs_per_day, max_units_per_day, paused, vacation_days, updated_at)
+       VALUES($1,$2::jsonb,$3::jsonb,$4,$5,$6,$7::jsonb,NOW())
+       ON CONFLICT(technician_username) DO UPDATE SET
+         working_days=EXCLUDED.working_days,
+         time_windows=EXCLUDED.time_windows,
+         max_jobs_per_day=EXCLUDED.max_jobs_per_day,
+         max_units_per_day=EXCLUDED.max_units_per_day,
+         paused=EXCLUDED.paused,
+         vacation_days=EXCLUDED.vacation_days,
+         updated_at=NOW()
+       RETURNING *`,
+      [
+        username,
+        JSON.stringify(workingDays),
+        JSON.stringify(timeWindows),
+        normalizePartnerInt(req.body?.max_jobs_per_day),
+        normalizePartnerInt(req.body?.max_units_per_day),
+        normalizePartnerBool(req.body?.paused),
+        JSON.stringify(vacationDays),
+      ]
+    );
+    return res.json({ ok: true, availability: r.rows[0] });
+  } catch (e) {
+    console.error('PUT tech partner availability error:', e);
+    return res.status(500).json({ error: 'บันทึกเวลารับงานไม่สำเร็จ' });
   }
 });
 
@@ -1876,7 +2305,7 @@ app.get('/admin/partners/applications/:id/agreement', requireAdminSession, async
     const appRow = await getPartnerApplicationById(req.params.id);
     if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
     const sig = await pool.query(
-      `SELECT s.id, s.template_version, s.signer_full_name, s.signed_ip, s.signed_user_agent, s.signed_at, t.template_code, t.title
+      `SELECT s.id, s.template_version, s.signer_full_name, s.signed_ip, s.signed_user_agent, s.signed_at, t.template_code, t.title, t.source_note
        FROM public.agreement_signatures s
        JOIN public.agreement_templates t ON t.id=s.template_id
        WHERE s.application_id=$1
@@ -1931,10 +2360,13 @@ app.get('/admin/partners/applications/:id/certifications', requireAdminSession, 
     const appRow = await getPartnerApplicationById(req.params.id);
     if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
     const r = await pool.query(
-      `SELECT certification_code, status, approved_by, approved_at, expires_at, admin_note, updated_by, updated_at
-       FROM public.technician_certifications
-       WHERE application_id=$1
-       ORDER BY certification_code ASC`,
+      `SELECT c.certification_code, c.status, c.approved_by, c.approved_at, c.expires_at, c.admin_note, c.updated_by, c.updated_at,
+              COALESCE(p.enabled,FALSE) AS preference_enabled
+       FROM public.technician_certifications c
+       LEFT JOIN public.technician_certification_preferences p
+         ON p.technician_username=c.technician_username AND p.certification_code=c.certification_code
+       WHERE c.application_id=$1
+       ORDER BY c.certification_code ASC`,
       [appRow.id]
     );
     const map = new Map((r.rows || []).map(x => [x.certification_code, x]));
@@ -1984,6 +2416,14 @@ app.put('/admin/partners/applications/:id/certifications/:certification_code/sta
       note: `${code}: ${admin_note || ''}`.trim(),
       metadata: { certification_code: code },
     });
+    if (['suspended', 'revoked'].includes(status) && appRow.technician_username) {
+      await client.query(
+        `INSERT INTO public.technician_certification_preferences(technician_username, certification_code, enabled, updated_at)
+         VALUES($1,$2,FALSE,NOW())
+         ON CONFLICT(technician_username, certification_code) DO UPDATE SET enabled=FALSE, updated_at=NOW()`,
+        [appRow.technician_username, code]
+      );
+    }
     await client.query('COMMIT');
     await auditLog(req, { action: 'PARTNER_CERTIFICATION_STATUS_UPDATE', target_username: appRow.application_code, target_role: 'partner_application', meta: { certification_code: code, status, admin_note } });
     return res.json({ ok: true, certification: saved.rows[0] });
@@ -2012,6 +2452,58 @@ app.post('/admin/partners/certification-dry-run', requireAdminSession, async (re
   } catch (e) {
     console.error('POST certification dry-run error:', e);
     return res.status(500).json({ error: 'ตรวจ certification dry-run ไม่สำเร็จ' });
+  }
+});
+
+app.post('/admin/partners/eligible-dry-run', requireAdminSession, async (req, res) => {
+  try {
+    const requiredCodes = getRequiredCertificationCodesForJob(req.body || {});
+    const zone = String(req.body?.zone || req.body?.province || '').trim();
+    const r = await pool.query(
+      `SELECT a.id, a.application_code, a.full_name, a.phone, a.technician_username, a.province, a.district,
+              a.service_zones, a.max_jobs_per_day, a.max_units_per_day,
+              COALESCE(av.paused, TRUE) AS paused,
+              COALESCE(av.working_days, '[]'::jsonb) AS working_days,
+              COALESCE(av.time_windows, '[]'::jsonb) AS time_windows,
+              COALESCE(jsonb_agg(DISTINCT jsonb_build_object(
+                'code', c.certification_code,
+                'status', c.status,
+                'preference_enabled', COALESCE(pref.enabled,FALSE)
+              )) FILTER (WHERE c.certification_code IS NOT NULL), '[]'::jsonb) AS certifications
+       FROM public.partner_applications a
+       LEFT JOIN public.partner_availability_preferences av ON av.technician_username=a.technician_username
+       LEFT JOIN public.technician_certifications c ON c.application_id=a.id
+       LEFT JOIN public.technician_certification_preferences pref
+         ON pref.technician_username=a.technician_username AND pref.certification_code=c.certification_code
+       WHERE a.technician_username IS NOT NULL
+       GROUP BY a.id, av.paused, av.working_days, av.time_windows
+       ORDER BY a.created_at DESC
+       LIMIT 200`
+    );
+    const rows = r.rows.map(row => {
+      const certs = Array.isArray(row.certifications) ? row.certifications : [];
+      const missing = requiredCodes.filter(code => !certs.some(c => c.code === code && c.status === 'approved'));
+      const preferenceOff = requiredCodes.filter(code => !certs.some(c => c.code === code && c.preference_enabled === true));
+      const zones = Array.isArray(row.service_zones) ? row.service_zones : [];
+      const zoneMatch = !zone || zones.some(z => String(z).includes(zone)) || String(row.province || '').includes(zone) || String(row.district || '').includes(zone);
+      return {
+        ...row,
+        required_certifications: requiredCodes,
+        checks: {
+          certification_approved: missing.length === 0,
+          preference_on: preferenceOff.length === 0,
+          availability_on: row.paused !== true,
+          zone_match: zoneMatch,
+        },
+        missing_certifications: missing,
+        preferences_off: preferenceOff,
+        eligible: missing.length === 0 && preferenceOff.length === 0 && row.paused !== true && zoneMatch,
+      };
+    });
+    return res.json({ ok: true, mode: getCertificationEnforcementMode(), required_certifications: requiredCodes, partners: rows });
+  } catch (e) {
+    console.error('POST eligible dry-run error:', e);
+    return res.status(500).json({ error: 'ตรวจรายชื่อพาร์ทเนอร์ที่เหมาะสมไม่สำเร็จ' });
   }
 });
 
@@ -6874,6 +7366,26 @@ await pool.query(`
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_applications_status_created ON public.partner_applications(status, created_at DESC)`);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_applications_phone ON public.partner_applications(phone)`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS province TEXT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS district TEXT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS work_intent TEXT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS available_days_per_week INT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS preferred_work_days JSONB NOT NULL DEFAULT '[]'::jsonb`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS max_jobs_per_day INT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS max_units_per_day INT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS can_accept_urgent_jobs BOOLEAN NOT NULL DEFAULT FALSE`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS can_work_condo BOOLEAN NOT NULL DEFAULT FALSE`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS can_issue_tax_invoice BOOLEAN NOT NULL DEFAULT FALSE`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS has_helper_team BOOLEAN NOT NULL DEFAULT FALSE`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS team_size INT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS travel_method TEXT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS service_radius_km NUMERIC(8,2)`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS equipment_json JSONB NOT NULL DEFAULT '[]'::jsonb`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS line_user_id TEXT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS account_created_at TIMESTAMPTZ`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS account_note TEXT`);
+await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS partner_status TEXT`);
+await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS line_id TEXT`);
 
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.partner_application_documents (
@@ -6914,6 +7426,32 @@ await pool.query(`
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_events_application_created ON public.partner_onboarding_events(application_id, created_at DESC)`);
 
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.technician_certification_preferences (
+    id BIGSERIAL PRIMARY KEY,
+    technician_username TEXT NOT NULL,
+    certification_code TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(technician_username, certification_code)
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_cert_prefs_username_enabled ON public.technician_certification_preferences(technician_username, enabled)`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.partner_availability_preferences (
+    id BIGSERIAL PRIMARY KEY,
+    technician_username TEXT NOT NULL UNIQUE,
+    working_days JSONB NOT NULL DEFAULT '[]'::jsonb,
+    time_windows JSONB NOT NULL DEFAULT '[]'::jsonb,
+    max_jobs_per_day INT,
+    max_units_per_day INT,
+    paused BOOLEAN NOT NULL DEFAULT TRUE,
+    vacation_days JSONB NOT NULL DEFAULT '[]'::jsonb,
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+
 // 4.2) Partner Onboarding: agreement, academy, exams, certification, trial/evaluation
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.agreement_templates (
@@ -6929,6 +7467,8 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_agreement_templates_active ON public.agreement_templates(template_code, is_active, version DESC)`);
+await pool.query(`ALTER TABLE public.agreement_templates ADD COLUMN IF NOT EXISTS content_html TEXT`);
+await pool.query(`ALTER TABLE public.agreement_templates ADD COLUMN IF NOT EXISTS source_note TEXT`);
 
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.agreement_signatures (
@@ -7096,10 +7636,18 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_incidents_application O
 
 try {
   await pool.query(
-    `INSERT INTO public.agreement_templates(template_code, version, title, body_text, is_active)
-     VALUES('partner_standard', 1, 'CWF Partner Service Agreement', $1, TRUE)
-     ON CONFLICT(template_code, version) DO NOTHING`,
-    ['ข้อตกลงพาร์ทเนอร์ CWF: ผู้สมัครยืนยันว่าจะปฏิบัติตามมาตรฐานแบรนด์ การสื่อสาร การถ่ายรูปหลักฐาน การไม่เปลี่ยนราคาเอง และไม่รับเงินนอกระบบ จนกว่าจะมีสัญญาฉบับเต็มในระบบ']
+    `INSERT INTO public.agreement_templates(template_code, version, title, body_text, content_html, source_note, is_active)
+     VALUES('partner_standard', 1, 'CWF สัญญาพาร์ทเนอร์ช่างแอร์ ฉบับใช้งานจริง', $1, $2, $3, TRUE)
+     ON CONFLICT(template_code, version) DO UPDATE SET
+       title=EXCLUDED.title,
+       content_html=COALESCE(public.agreement_templates.content_html, EXCLUDED.content_html),
+       source_note=COALESCE(public.agreement_templates.source_note, EXCLUDED.source_note),
+       updated_at=NOW()`,
+    [
+      'CWF สัญญาพาร์ทเนอร์ช่างแอร์ ฉบับใช้งานจริง - placeholder พร้อมโครงสร้าง โปรดนำเนื้อหาจาก PDF ฉบับจริงเข้า content_html ก่อนเปิดรับสมัครจริง',
+      CWF_PARTNER_CONTRACT_PLACEHOLDER_HTML,
+      'PLACEHOLDER_IMPORT_REQUIRED: paste full content from CWF_สัญญาพาร์ทเนอร์ช่างแอร์_ฉบับใช้งานจริง_ครบถ้วน.pdf',
+    ]
   );
   const courseR = await pool.query(
     `INSERT INTO public.academy_courses(course_code, title, description, is_active)
@@ -7114,7 +7662,7 @@ try {
         `INSERT INTO public.academy_lessons(course_id, lesson_title, body_text, sort_order, is_active)
          VALUES($1,$2,$3,$4,TRUE)
          ON CONFLICT(course_id, sort_order) DO UPDATE SET lesson_title=EXCLUDED.lesson_title, body_text=EXCLUDED.body_text, is_active=TRUE`,
-        [courseId, BASIC_PARTNER_LESSONS[i], BASIC_PARTNER_LESSONS[i], i + 1]
+        [courseId, BASIC_PARTNER_LESSONS[i], BASIC_PARTNER_LESSON_BODIES[i] || BASIC_PARTNER_LESSONS[i], i + 1]
       );
     }
     const examR = await pool.query(
@@ -16438,6 +16986,7 @@ app.get("/tech", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/add-job", (req, res) => res.redirect(302, "/admin-add-v2.html"));
 app.get("/customer", (req, res) => res.sendFile(sendHtml("customer.html")));
 app.get("/partner-apply", (req, res) => res.sendFile(sendHtml("partner-apply.html")));
+app.get("/partner-status", (req, res) => res.sendFile(sendHtml("partner-status.html")));
 app.get("/partner-agreement", (req, res) => res.sendFile(sendHtml("partner-agreement.html")));
 app.get("/partner-academy", (req, res) => res.sendFile(sendHtml("partner-academy.html")));
 // ✅ หน้าใหม่: คำนวณราคาติดตั้งแอร์ (ลูกค้า)
@@ -16461,6 +17010,7 @@ app.get("/tech.html", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/add-job.html", (req, res) => res.redirect(302, "/admin-add-v2.html"));
 app.get("/register.html", (req, res) => res.sendFile(sendHtml("register.html")));
 app.get("/partner-apply.html", (req, res) => res.sendFile(sendHtml("partner-apply.html")));
+app.get("/partner-status.html", (req, res) => res.sendFile(sendHtml("partner-status.html")));
 app.get("/partner-agreement.html", (req, res) => res.sendFile(sendHtml("partner-agreement.html")));
 app.get("/partner-academy.html", (req, res) => res.sendFile(sendHtml("partner-academy.html")));
 app.get("/index.html", (req, res) => res.sendFile(sendHtml("index.html")));

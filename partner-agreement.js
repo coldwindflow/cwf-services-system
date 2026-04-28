@@ -35,7 +35,10 @@
     $('agreementPanel').classList.remove('hidden');
     $('templateTitle').textContent = template.title || 'CWF Partner Agreement';
     $('applicantName').textContent = `${app.full_name || '-'} • ${app.application_code || state.applicationCode}`;
-    $('contractBody').innerHTML = esc(template.body_text || 'ยังไม่มี template สัญญาที่เปิดใช้งาน');
+    $('contractBody').innerHTML = template.content_html || esc(template.body_text || 'ยังไม่มี template สัญญาที่เปิดใช้งาน');
+    if (template.source_note && String(template.source_note).includes('PLACEHOLDER')) {
+      $('contractBody').insertAdjacentHTML('afterbegin', '<div style="border-left:4px solid #ffcc00;background:#fffbe6;padding:10px 12px;margin-bottom:12px;font-weight:900">คำเตือน: เนื้อหาสัญญายังเป็น placeholder ต้องนำสัญญา PDF ฉบับจริงเข้า template ก่อนเปิดใช้งานจริง</div>');
+    }
     $('signerName').value = app.full_name || '';
     if (signature) {
       $('signatureBadge').textContent = `เซ็นแล้ว ${new Date(signature.signed_at).toLocaleString('th-TH')}`;

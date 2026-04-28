@@ -44,6 +44,7 @@
         <div class="top">
           <div>
             <b>${esc(lesson.sort_order || '')}. ${esc(lesson.lesson_title)}</b>
+            <div style="margin-top:6px;line-height:1.55">${esc(lesson.body_text || '')}</div>
             <div class="muted">${lesson.completed ? `เสร็จแล้ว ${new Date(lesson.completed_at).toLocaleString('th-TH')}` : 'ยังไม่เสร็จ'}</div>
           </div>
           <span class="badge ${lesson.completed ? 'ok' : ''}">${lesson.completed ? 'เสร็จแล้ว' : 'รอทำ'}</span>
