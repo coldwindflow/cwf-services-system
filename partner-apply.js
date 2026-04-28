@@ -1,4 +1,6 @@
 (function(){
+  'use strict';
+
   const PROVINCES = ['กรุงเทพมหานคร','สมุทรปราการ','นนทบุรี','ปทุมธานี','สมุทรสาคร','นครปฐม','ฉะเชิงเทรา'];
   const DISTRICTS_BY_PROVINCE = {
     'กรุงเทพมหานคร': ['พระโขนง','บางนา','วัฒนา','คลองเตย','สวนหลวง','ประเวศ','บางกะปิ','ห้วยขวาง','ดินแดง','ราชเทวี','ปทุมวัน','สาทร','บางรัก','ยานนาวา','ลาดพร้าว','จตุจักร','หลักสี่','ดอนเมือง','สายไหม','บางเขน','มีนบุรี','ลาดกระบัง','หนองจอก','คันนายาว','บึงกุ่ม','สะพานสูง','วังทองหลาง','จอมทอง','ธนบุรี','บางกอกใหญ่','บางกอกน้อย','ตลิ่งชัน','ทวีวัฒนา','ภาษีเจริญ','บางแค','หนองแขม','บางบอน','บางขุนเทียน','ราษฎร์บูรณะ','ทุ่งครุ','บางซื่อ','ดุสิต','พญาไท','คลองสามวา','บางพลัด','สัมพันธวงศ์','ป้อมปราบศัตรูพ่าย'],
@@ -30,11 +32,14 @@
 
   const $ = (id) => document.getElementById(id);
   const val = (id) => ($(id)?.value || '').trim();
-  const checked = (id) => !!$(id)?.checked;
+  const isChecked = (id) => !!$(id)?.checked;
   const checkedValues = (id) => Array.from($(id)?.querySelectorAll('input:checked') || []).map(el => el.value);
 
+  function escapeAttr(s){
+    return String(s ?? '').replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
   function options(items, placeholder){
-    return `${placeholder ? `<option value="">${placeholder}</option>` : ''}${items.map(x => Array.isArray(x) ? `<option value="${x[0]}">${x[1]}</option>` : `<option value="${x}">${x}</option>`).join('')}`;
+    return `${placeholder ? `<option value="">${escapeAttr(placeholder)}</option>` : ''}${items.map(x => Array.isArray(x) ? `<option value="${escapeAttr(x[0])}">${escapeAttr(x[1])}</option>` : `<option value="${escapeAttr(x)}">${escapeAttr(x)}</option>`).join('')}`;
   }
   function renderChips(id, items){
     const root = $(id);
@@ -42,27 +47,32 @@
     root.innerHTML = items.map(item => {
       const value = Array.isArray(item) ? item[0] : item;
       const label = Array.isArray(item) ? item[1] : item;
-      return `<label class="chip"><input type="checkbox" value="${value}"><span>${label}</span></label>`;
+      return `<label class="chip"><input type="checkbox" value="${escapeAttr(value)}"><span>${escapeAttr(label)}</span></label>`;
     }).join('');
+  }
+  function syncChipState(rootId){
+    const root = $(rootId);
+    if (!root) return;
+    root.querySelectorAll('.chip').forEach(chip => {
+      const input = chip.querySelector('input');
+      chip.classList.toggle('active', !!input?.checked);
+    });
   }
   function bindChipState(rootId){
     const root = $(rootId);
     if (!root) return;
-    const sync = () => root.querySelectorAll('.chip').forEach(chip => chip.classList.toggle('active', !!chip.querySelector('input')?.checked));
-    root.addEventListener('change', sync);
-    sync();
+    root.addEventListener('change', () => syncChipState(rootId));
+    syncChipState(rootId);
   }
   function bindSingleChipState(ids){
-    ids.forEach(id => {
-      const el = $(id);
-      const chip = el?.closest('.chip');
-      if (!el || !chip) return;
-      el.addEventListener('change', () => {
-        ids.forEach(otherId => $(otherId)?.closest('.chip')?.classList.remove('active'));
-        chip.classList.toggle('active', !!el.checked);
+    const sync = () => {
+      ids.forEach(id => {
+        const el = $(id);
+        el?.closest('.chip')?.classList.toggle('active', !!el.checked);
       });
-      chip.classList.toggle('active', !!el.checked);
-    });
+    };
+    ids.forEach(id => $(id)?.addEventListener('change', sync));
+    sync();
   }
 
   async function jsonFetch(url, opts = {}) {
@@ -76,18 +86,33 @@
     return data;
   }
 
+  function fillProvinceOptions(){
+    const provinceEl = $('province');
+    if (!provinceEl) return;
+    const current = provinceEl.value;
+    provinceEl.innerHTML = options(PROVINCES, 'เลือกจังหวัด');
+    if (current && PROVINCES.includes(current)) provinceEl.value = current;
+  }
+
   function updateDistricts(){
-    const province = val('province');
-    const list = DISTRICTS_BY_PROVINCE[province] || [];
+    const provinceEl = $('province');
     const districtEl = $('district');
-    if (!districtEl) return;
+    if (!provinceEl || !districtEl) return;
+
+    const province = String(provinceEl.value || '').trim();
+    const list = DISTRICTS_BY_PROVINCE[province] || [];
+    const previous = districtEl.value;
+
     districtEl.innerHTML = options(list, province ? 'เลือกเขต / อำเภอ' : 'เลือกจังหวัดก่อน');
-    districtEl.disabled = !province;
+    districtEl.disabled = !province || !list.length;
+    districtEl.removeAttribute('aria-disabled');
+
+    if (previous && list.includes(previous)) districtEl.value = previous;
   }
 
   function toggleHelper(){
     const wrap = $('helperCountWrap');
-    const hasHelpers = checked('crew_mode_helpers');
+    const hasHelpers = isChecked('crew_mode_helpers');
     if (wrap) wrap.style.display = hasHelpers ? 'block' : 'none';
     if (!hasHelpers && $('helper_count')) $('helper_count').value = '';
   }
@@ -113,8 +138,8 @@
       preferred_work_days: checkedValues('workDays'),
       max_jobs_per_day: val('max_jobs_per_day'),
       max_units_per_day: val('max_units_per_day'),
-      can_accept_urgent_jobs: checked('can_accept_urgent_jobs'),
-      can_work_condo: checked('can_work_condo'),
+      can_accept_urgent_jobs: isChecked('can_accept_urgent_jobs'),
+      can_work_condo: isChecked('can_work_condo'),
       can_issue_tax_invoice: false,
       has_helper_team: helperCount > 0,
       helper_count: helperCount,
@@ -131,8 +156,8 @@
       bank_name: val('bank_name'),
       bank_account_last4: val('bank_account_last4'),
       notes: val('notes'),
-      consent_pdpa: checked('consent_pdpa'),
-      consent_terms: checked('consent_terms')
+      consent_pdpa: isChecked('consent_pdpa'),
+      consent_terms: isChecked('consent_terms')
     };
   }
 
@@ -163,48 +188,62 @@
     try { sessionStorage.setItem('cwf_partner_ref', JSON.stringify({ code, phone: app.phone || '' })); } catch(_) {}
   }
 
-  $('province').innerHTML = options(PROVINCES, 'เลือกจังหวัด');
-  $('work_intent').innerHTML = options(WORK_INTENTS, 'เลือกลักษณะการทำงาน');
-  $('travel_method').innerHTML = options(TRAVEL, 'เลือกการเดินทาง');
-  renderChips('workDays', DAYS);
-  renderChips('jobInterests', JOBS);
-  renderChips('equipmentList', EQUIPMENT);
-  bindChipState('workDays');
-  bindChipState('jobInterests');
-  bindChipState('equipmentList');
-  bindSingleChipState(['crew_mode_solo','crew_mode_helpers']);
-  updateDistricts();
-  toggleHelper();
+  function initPartnerApply(){
+    fillProvinceOptions();
+    $('work_intent') && ($('work_intent').innerHTML = options(WORK_INTENTS, 'เลือกลักษณะการทำงาน'));
+    $('travel_method') && ($('travel_method').innerHTML = options(TRAVEL, 'เลือกการเดินทาง'));
+    renderChips('workDays', DAYS);
+    renderChips('jobInterests', JOBS);
+    renderChips('equipmentList', EQUIPMENT);
+    bindChipState('workDays');
+    bindChipState('jobInterests');
+    bindChipState('equipmentList');
+    bindSingleChipState(['crew_mode_solo','crew_mode_helpers']);
 
-  $('province')?.addEventListener('change', updateDistricts);
-  $('crew_mode_solo')?.addEventListener('change', toggleHelper);
-  $('crew_mode_helpers')?.addEventListener('change', toggleHelper);
-
-  $('btnReset')?.addEventListener('click', () => {
-    $('applyForm')?.reset();
     updateDistricts();
     toggleHelper();
-    ['workDays','jobInterests','equipmentList'].forEach(bindChipState);
-    bindSingleChipState(['crew_mode_solo','crew_mode_helpers']);
-    $('resultBox').style.display = 'none';
-  });
 
-  $('applyForm')?.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const submitBtn = $('submitBtn');
-    const submitText = $('submitBtnText');
-    try {
-      const body = buildPayload();
-      validate(body);
-      if (submitBtn) submitBtn.disabled = true;
-      if (submitText) submitText.textContent = 'กำลังส่งใบสมัคร...';
-      const data = await jsonFetch('/partner/apply', { method:'POST', body: JSON.stringify(body) });
-      showResult(data.application || {});
-    } catch(err) {
-      alert(err.message || 'ส่งใบสมัครไม่สำเร็จ');
-    } finally {
-      if (submitBtn) submitBtn.disabled = false;
-      if (submitText) submitText.textContent = 'ส่งใบสมัครและสร้างบัญชี';
-    }
-  });
+    $('province')?.addEventListener('change', updateDistricts);
+    $('province')?.addEventListener('input', updateDistricts);
+    $('crew_mode_solo')?.addEventListener('change', toggleHelper);
+    $('crew_mode_helpers')?.addEventListener('change', toggleHelper);
+
+    $('btnReset')?.addEventListener('click', () => {
+      $('applyForm')?.reset();
+      fillProvinceOptions();
+      updateDistricts();
+      toggleHelper();
+      ['workDays','jobInterests','equipmentList'].forEach(syncChipState);
+      bindSingleChipState(['crew_mode_solo','crew_mode_helpers']);
+      $('resultBox') && ($('resultBox').style.display = 'none');
+    });
+
+    $('applyForm')?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = $('submitBtn');
+      const submitText = $('submitBtnText');
+      try {
+        const body = buildPayload();
+        validate(body);
+        if (submitBtn) submitBtn.disabled = true;
+        if (submitText) submitText.textContent = 'กำลังส่งใบสมัคร...';
+        const data = await jsonFetch('/partner/apply', { method:'POST', body: JSON.stringify(body) });
+        showResult(data.application || {});
+      } catch(err) {
+        alert(err.message || 'ส่งใบสมัครไม่สำเร็จ');
+      } finally {
+        if (submitBtn) submitBtn.disabled = false;
+        if (submitText) submitText.textContent = 'ส่งใบสมัครและสร้างบัญชี';
+      }
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initPartnerApply);
+  } else {
+    initPartnerApply();
+  }
+
+  // Extra guard for mobile browsers / stale form restore: keep district list in sync.
+  setTimeout(updateDistricts, 300);
 })();
