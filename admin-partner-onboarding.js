@@ -165,14 +165,16 @@
 
   async function loadExtra(id){
     try {
-      const [agreement, academy, exams, certifications, trials] = await Promise.all([
+      const [agreement, academy, exams, certifications, trials, interview] = await Promise.all([
         api(`/admin/partners/applications/${id}/agreement`),
         api(`/admin/partners/applications/${id}/academy`),
         api(`/admin/partners/applications/${id}/exams`),
         api(`/admin/partners/applications/${id}/certifications`),
-        api(`/admin/partners/applications/${id}/trial-jobs`)
+        api(`/admin/partners/applications/${id}/trial-jobs`),
+        api(`/admin/partners/applications/${id}/interview`)
       ]);
-      activeExtra = { agreement, academy, exams, certifications, trials };
+      activeExtra = { agreement, academy, exams, certifications, trials, interview };
+      renderInterview(interview.interview || null);
       renderOnboardingSummary();
       renderCertifications(certifications.certifications || []);
       renderTrials(trials.trial_jobs || []);
@@ -184,6 +186,62 @@
 
   function checklistItem(label, ok, detail){
     return `<div class="reviewCheck ${ok ? 'ok' : 'warn'}"><div>${ok ? '✓' : '•'} ${esc(label)}</div><small>${esc(detail || '')}</small></div>`;
+  }
+
+
+  function renderInterview(row){
+    const statusOptions = [
+      ['not_called','ยังไม่ได้โทร'],
+      ['no_answer','โทรไม่ติด'],
+      ['contacted','คุยแล้ว'],
+      ['follow_up','นัดติดตามอีกครั้ง'],
+      ['passed','ผ่านสัมภาษณ์'],
+      ['failed','ไม่ผ่านสัมภาษณ์']
+    ];
+    const resultOptions = [
+      ['follow_up','รอดูเพิ่มเติม'],
+      ['passed','ผ่าน'],
+      ['failed','ไม่ผ่าน']
+    ];
+    const optionHtml = (items, value) => items.map(([v,l]) => `<option value="${v}" ${v === value ? 'selected' : ''}>${l}</option>`).join('');
+    $('interviewPanel').innerHTML = `
+      ${row ? `<div class="muted">สัมภาษณ์ล่าสุดโดย ${esc(row.interviewer_username || '-')} • ${fmtDate(row.interviewed_at)}</div>` : `<div class="muted">ยังไม่มีบันทึกสัมภาษณ์</div>`}
+      <div class="interviewResult">
+        <div><label>สถานะการโทร</label><select id="interviewCallStatus">${optionHtml(statusOptions, row?.call_status || 'contacted')}</select></div>
+        <div><label>ผลสัมภาษณ์</label><select id="interviewResult">${optionHtml(resultOptions, row?.result || 'follow_up')}</select></div>
+        <div><label>นัดติดตาม</label><input id="interviewFollowUp" type="datetime-local" value=""></div>
+      </div>
+      <div class="interviewScores">
+        <div><label>ทัศนคติ</label><input id="interviewAttitude" type="number" min="0" max="5" step="1" value="${esc(row?.attitude_score ?? '')}" placeholder="0-5"></div>
+        <div><label>ประสบการณ์</label><input id="interviewExperience" type="number" min="0" max="5" step="1" value="${esc(row?.experience_score ?? '')}" placeholder="0-5"></div>
+        <div><label>สื่อสาร</label><input id="interviewCommunication" type="number" min="0" max="5" step="1" value="${esc(row?.communication_score ?? '')}" placeholder="0-5"></div>
+        <div><label>เครื่องมือพร้อม</label><input id="interviewTools" type="number" min="0" max="5" step="1" value="${esc(row?.tool_readiness_score ?? '')}" placeholder="0-5"></div>
+        <div><label>เวลารับงาน</label><input id="interviewAvailability" type="number" min="0" max="5" step="1" value="${esc(row?.availability_score ?? '')}" placeholder="0-5"></div>
+      </div>
+      <label style="margin-top:10px">หมายเหตุสัมภาษณ์</label>
+      <textarea id="interviewNote" placeholder="สรุปการคุยจริง เช่น ประสบการณ์ พื้นที่รับงาน เครื่องมือ ทัศนคติ ข้อกังวล">${esc(row?.admin_note || '')}</textarea>
+      <button class="secondary" id="btnSaveInterview" type="button" style="margin-top:10px">บันทึกสัมภาษณ์</button>
+    `;
+  }
+
+  async function saveInterview(){
+    if (!activeId) return;
+    const payload = {
+      call_status: $('interviewCallStatus').value,
+      result: $('interviewResult').value,
+      attitude_score: Number($('interviewAttitude').value || 0),
+      experience_score: Number($('interviewExperience').value || 0),
+      communication_score: Number($('interviewCommunication').value || 0),
+      tool_readiness_score: Number($('interviewTools').value || 0),
+      availability_score: Number($('interviewAvailability').value || 0),
+      admin_note: $('interviewNote').value.trim(),
+      next_follow_up_at: $('interviewFollowUp').value || null
+    };
+    const scores = ['attitude_score','experience_score','communication_score','tool_readiness_score','availability_score'].map(k => Number(payload[k] || 0));
+    if (scores.some(s => !Number.isFinite(s) || s < 0 || s > 5)) throw new Error('คะแนนสัมภาษณ์ต้องอยู่ระหว่าง 0-5');
+    if (!payload.admin_note || payload.admin_note.length < 8) throw new Error('กรุณาใส่หมายเหตุสัมภาษณ์อย่างน้อย 8 ตัวอักษร');
+    await api(`/admin/partners/applications/${activeId}/interview`, { method:'PUT', body:JSON.stringify(payload) });
+    await loadExtra(activeId);
   }
 
   function renderAdminReviewChecklist(){
@@ -198,12 +256,15 @@
     const trainingDone = academy && Number(academy.lesson_count || 0) > 0 && Number(academy.completed_count || 0) >= Number(academy.lesson_count || 0);
     const examPassed = attempts.some(a => a.passed === true || a.passed === 'true');
     const hasApprovedCert = certs.some(c => c.status === 'approved');
+    const interview = activeExtra.interview?.interview || null;
+    const interviewPassed = interview?.result === 'passed';
     return `
       <h3 style="margin:0 0 8px">Checklist อนุมัติพาร์ทเนอร์</h3>
       <div class="reviewChecklist">
         ${checklistItem('เอกสารหลักอัปโหลดครบ', docsUploaded, 'บัตรประชาชน / รูปโปรไฟล์ / สมุดบัญชี')}
         ${checklistItem('เอกสารหลักผ่านตรวจ', docsApproved, 'ถ้าไม่ผ่าน ให้ระบุเหตุผลและขออัปโหลดใหม่')}
         ${checklistItem('เซ็นสัญญาแล้ว', sigs.length > 0, sigs[0]?.signed_at ? fmtDate(sigs[0].signed_at) : 'ยังไม่เซ็น')}
+        ${checklistItem('สัมภาษณ์แล้ว', !!interview, interview ? `${interview.result || '-'} • ${fmtDate(interview.interviewed_at)}` : 'ยังไม่มีบันทึก')}
         ${checklistItem('อบรม Basic ครบ', !!trainingDone, academy ? `${academy.completed_count || 0}/${academy.lesson_count || 0} บทเรียน` : 'ยังไม่มีข้อมูล')}
         ${checklistItem('สอบผ่าน 80%', !!examPassed, attempts[0] ? `คะแนนล่าสุด ${attempts[0].score_percent || 0}%` : 'ยังไม่มีผลสอบ')}
         ${checklistItem('เปิดสิทธิ์งานแล้ว', !!hasApprovedCert, hasApprovedCert ? 'มี certification approved' : 'ยังไม่มีสิทธิ์รับงานจริง')}
@@ -404,6 +465,10 @@
   });
   $('btnClose').addEventListener('click', ()=>$('detailDrawer').classList.remove('open'));
   $('btnSaveStatus').addEventListener('click', () => saveApplicationStatus().catch(err=>alert(err.message)));
+  $('interviewPanel').addEventListener('click', e=>{
+    const btn = e.target.closest('#btnSaveInterview');
+    if (btn) saveInterview().catch(err=>alert(err.message));
+  });
   $('documents').addEventListener('click', e=>{
     const reason = e.target.closest('[data-reason]');
     if (reason) {

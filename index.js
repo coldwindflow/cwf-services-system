@@ -2923,6 +2923,88 @@ app.post('/admin/partners/eligible-dry-run', requireAdminSession, async (req, re
   }
 });
 
+
+app.get('/admin/partners/applications/:id/interview', requireAdminSession, async (req, res) => {
+  try {
+    const appRow = await getPartnerApplicationById(req.params.id);
+    if (!appRow) return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    const r = await pool.query(
+      `SELECT * FROM public.partner_interviews WHERE application_id=$1 ORDER BY interviewed_at DESC, id DESC LIMIT 1`,
+      [appRow.id]
+    );
+    return res.json({ ok: true, interview: r.rows[0] || null });
+  } catch (e) {
+    console.error('GET partner interview error:', e);
+    return res.status(500).json({ error: 'โหลดข้อมูลสัมภาษณ์ไม่สำเร็จ' });
+  }
+});
+
+app.put('/admin/partners/applications/:id/interview', requireAdminSession, async (req, res) => {
+  const appId = Number(req.params.id);
+  if (!Number.isFinite(appId) || appId <= 0) return res.status(400).json({ error: 'id ไม่ถูกต้อง' });
+  const call_status = String(req.body?.call_status || 'contacted').trim();
+  const result = String(req.body?.result || 'follow_up').trim();
+  const allowedCall = new Set(['not_called','no_answer','contacted','follow_up','passed','failed']);
+  const allowedResult = new Set(['passed','failed','follow_up']);
+  if (!allowedCall.has(call_status)) return res.status(400).json({ error: 'call_status ไม่ถูกต้อง' });
+  if (!allowedResult.has(result)) return res.status(400).json({ error: 'result ไม่ถูกต้อง' });
+  const score = (v) => Math.max(0, Math.min(5, Number(v || 0)));
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const appRow = await getPartnerApplicationById(appId, client);
+    if (!appRow) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ error: 'ไม่พบใบสมัคร' });
+    }
+    const actor = req.actor?.username || req.auth?.username || null;
+    const admin_note = String(req.body?.admin_note || '').trim();
+    const saved = await client.query(
+      `INSERT INTO public.partner_interviews
+        (application_id, interviewer_username, call_status, attitude_score, experience_score, communication_score, tool_readiness_score, availability_score, result, admin_note, next_follow_up_at, interviewed_at, updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),NOW())
+       RETURNING *`,
+      [
+        appRow.id,
+        actor,
+        call_status,
+        score(req.body?.attitude_score),
+        score(req.body?.experience_score),
+        score(req.body?.communication_score),
+        score(req.body?.tool_readiness_score),
+        score(req.body?.availability_score),
+        result,
+        admin_note || null,
+        req.body?.next_follow_up_at ? new Date(req.body.next_follow_up_at) : null,
+      ]
+    );
+    await logPartnerOnboardingEvent(client, {
+      application_id: appRow.id,
+      actor_type: 'admin',
+      actor_username: actor,
+      event_type: 'interview_saved',
+      to_status: result,
+      note: admin_note || `interview ${result}`,
+      metadata: { interview_id: saved.rows[0].id, call_status },
+    });
+    await client.query('COMMIT');
+    await auditLog(req, {
+      action: 'PARTNER_INTERVIEW_SAVED',
+      target_username: appRow.application_code,
+      target_role: 'partner_application',
+      meta: { application_id: appRow.id, interview_id: saved.rows[0].id, result, call_status },
+    });
+    return res.json({ ok: true, interview: saved.rows[0] });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('PUT partner interview error:', e);
+    return res.status(500).json({ error: 'บันทึกสัมภาษณ์ไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+
 app.post('/admin/partners/applications/:id/trial-jobs', requireAdminSession, async (req, res) => {
   const appId = Number(req.params.id);
   const certification_code = String(req.body?.certification_code || '').trim();
@@ -8080,6 +8162,28 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_incidents_application ON public.partner_incidents(application_id, created_at DESC)`);
+
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.partner_interviews (
+    id BIGSERIAL PRIMARY KEY,
+    application_id BIGINT NOT NULL REFERENCES public.partner_applications(id) ON DELETE CASCADE,
+    interviewer_username TEXT,
+    call_status TEXT NOT NULL DEFAULT 'not_called' CHECK (call_status IN ('not_called','no_answer','contacted','follow_up','passed','failed')),
+    attitude_score NUMERIC(4,2) NOT NULL DEFAULT 0,
+    experience_score NUMERIC(4,2) NOT NULL DEFAULT 0,
+    communication_score NUMERIC(4,2) NOT NULL DEFAULT 0,
+    tool_readiness_score NUMERIC(4,2) NOT NULL DEFAULT 0,
+    availability_score NUMERIC(4,2) NOT NULL DEFAULT 0,
+    result TEXT NOT NULL DEFAULT 'follow_up' CHECK (result IN ('passed','failed','follow_up')),
+    admin_note TEXT,
+    next_follow_up_at TIMESTAMPTZ,
+    interviewed_at TIMESTAMPTZ DEFAULT NOW(),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_interviews_application ON public.partner_interviews(application_id, interviewed_at DESC)`);
 
 try {
   await pool.query(

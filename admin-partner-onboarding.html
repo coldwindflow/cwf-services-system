@@ -58,6 +58,12 @@
     .scoreHint{margin-top:8px;color:var(--muted);font-size:12px;font-weight:800;line-height:1.5}
     @media(max-width:900px){.scoreGrid,.trialDecision{grid-template-columns:1fr}.trialHeader{flex-direction:column}}
 
+  
+    .interviewPanel{border:1px solid var(--line);border-radius:18px;background:#fff;padding:14px;margin:10px 0 14px;box-shadow:0 8px 22px rgba(7,27,73,.06)}
+    .interviewScores{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:10px;margin-top:10px}
+    .interviewScores input{font-size:18px;text-align:center;font-weight:1000}
+    .interviewResult{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-top:10px}
+    @media(max-width:900px){.interviewScores,.interviewResult{grid-template-columns:1fr}}
   </style>
 </head>
 <body>
@@ -127,6 +133,12 @@
 
       <h3>เอกสาร</h3>
       <div id="documents"></div>
+
+
+      <h3>Interview / Screening Call</h3>
+      <div class="interviewPanel" id="interviewPanel">
+        <div class="muted">กำลังโหลดข้อมูลสัมภาษณ์...</div>
+      </div>
 
       <h3>Onboarding</h3>
       <div class="miniGrid" id="onboardingSummary"></div>
