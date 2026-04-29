@@ -262,28 +262,49 @@
   }
 
   function renderTrials(rows){
-    $('trialJobs').innerHTML = rows.length ? rows.map(t=>`
-      <div class="doc" data-trial-id="${esc(t.id)}">
-        <div class="docTop">
+    const evals = activeExtra.trials?.evaluations || [];
+    const latestEval = new Map(evals.map(e => [String(e.trial_job_id), e]));
+    $('trialJobs').innerHTML = rows.length ? rows.map(t=>{
+      const existing = latestEval.get(String(t.id));
+      const isPassed = t.status === 'passed' || existing?.result === 'passed';
+      const scoreAvg = existing ? Math.round(((Number(existing.punctuality_score||0)+Number(existing.uniform_score||0)+Number(existing.communication_score||0)+Number(existing.photo_quality_score||0)+Number(existing.job_quality_score||0))/5)*10)/10 : null;
+      return `
+      <div class="trialEvalCard" data-trial-id="${esc(t.id)}">
+        <div class="trialHeader">
           <div>
-            <b>${esc(CERT_LABELS[t.certification_code] || t.certification_code)}</b>
+            <b style="font-size:18px">${esc(CERT_LABELS[t.certification_code] || t.certification_code)}</b>
             <div class="muted">Trial #${esc(t.id)} • ${fmtDate(t.created_at)} ${t.job_id ? `• Job ${esc(t.job_id)}` : ''}</div>
+            ${t.admin_note ? `<div class="muted">โน้ตตอนปลด Trial: ${esc(t.admin_note)}</div>` : ''}
           </div>
-          ${badge(t.status || 'trial_unlocked')}
+          <div>${badge(t.status || 'trial_unlocked')}${scoreAvg !== null ? `<span class="badge" style="margin-left:6px">เฉลี่ย ${scoreAvg}/5</span>` : ''}</div>
         </div>
-        <div class="grid3" style="margin-top:8px">
-          <div><label>ตรงเวลา</label><input type="number" min="0" max="5" data-eval="punctuality_score"></div>
-          <div><label>เครื่องแบบ</label><input type="number" min="0" max="5" data-eval="uniform_score"></div>
-          <div><label>สื่อสาร</label><input type="number" min="0" max="5" data-eval="communication_score"></div>
-          <div><label>รูปถ่าย</label><input type="number" min="0" max="5" data-eval="photo_quality_score"></div>
-          <div><label>คุณภาพงาน</label><input type="number" min="0" max="5" data-eval="job_quality_score"></div>
-          <div><label>ผล</label><select data-eval="result"><option value="passed">passed</option><option value="failed">failed</option><option value="needs_more_trial">needs_more_trial</option></select></div>
+        ${existing ? `<div class="doc" style="margin-top:10px;background:#f8fbff">
+          <b>ผลประเมินล่าสุด: ${esc(existing.result)}</b>
+          <div class="muted">ตรงเวลา ${esc(existing.punctuality_score)} • แต่งกาย ${esc(existing.uniform_score)} • สื่อสาร ${esc(existing.communication_score)} • รูปถ่าย ${esc(existing.photo_quality_score)} • คุณภาพงาน ${esc(existing.job_quality_score)}</div>
+          ${existing.admin_note ? `<div style="margin-top:6px">${esc(existing.admin_note)}</div>` : ''}
+        </div>` : ''}
+        <div class="scoreGrid">
+          <div class="scoreBox"><label>ตรงเวลา</label><input type="number" min="0" max="5" step="1" data-eval="punctuality_score" value="${esc(existing?.punctuality_score ?? '')}" placeholder="0-5"></div>
+          <div class="scoreBox"><label>แต่งกาย</label><input type="number" min="0" max="5" step="1" data-eval="uniform_score" value="${esc(existing?.uniform_score ?? '')}" placeholder="0-5"></div>
+          <div class="scoreBox"><label>สื่อสาร</label><input type="number" min="0" max="5" step="1" data-eval="communication_score" value="${esc(existing?.communication_score ?? '')}" placeholder="0-5"></div>
+          <div class="scoreBox"><label>รูปก่อน-หลัง</label><input type="number" min="0" max="5" step="1" data-eval="photo_quality_score" value="${esc(existing?.photo_quality_score ?? '')}" placeholder="0-5"></div>
+          <div class="scoreBox"><label>คุณภาพงาน</label><input type="number" min="0" max="5" step="1" data-eval="job_quality_score" value="${esc(existing?.job_quality_score ?? '')}" placeholder="0-5"></div>
         </div>
-        <label style="margin-top:8px">ปัญหาลูกค้า</label><input data-eval="customer_issue">
-        <label style="margin-top:8px">หมายเหตุ</label><input data-eval="admin_note">
-        <button class="secondary" data-save-eval type="button" style="margin-top:8px">บันทึกประเมิน</button>
+        <div class="trialDecision">
+          <div><label>ผลประเมิน</label><select data-eval="result">
+            <option value="passed" ${existing?.result === 'passed' ? 'selected' : ''}>ผ่าน Trial</option>
+            <option value="needs_more_trial" ${existing?.result === 'needs_more_trial' ? 'selected' : ''}>ต้องทดลองเพิ่ม</option>
+            <option value="failed" ${existing?.result === 'failed' ? 'selected' : ''}>ไม่ผ่าน</option>
+          </select></div>
+          <label class="checkline"><input data-eval="customer_issue" type="checkbox" ${existing?.customer_issue ? 'checked' : ''}> มีปัญหา/ร้องเรียนจากลูกค้า</label>
+        </div>
+        <label style="margin-top:10px">หมายเหตุประเมิน</label>
+        <textarea data-eval="admin_note" placeholder="สรุปพฤติกรรม จุดแข็ง จุดที่ต้องแก้ เช่น ตรงเวลา สื่อสารดี รูปครบ ไม่เปลี่ยนราคาเอง">${esc(existing?.admin_note || '')}</textarea>
+        <label class="checkline" style="display:block;margin-top:10px"><input data-eval="approve_certification" type="checkbox" ${isPassed ? 'checked' : ''}> ถ้าผ่าน Trial ให้เปิดสิทธิ์ certification นี้ทันที</label>
+        <div class="scoreHint">เกณฑ์แนะนำ: ถ้าจะให้ผ่าน ควรได้คะแนนเฉลี่ย 4/5 ขึ้นไป ไม่มีปัญหาลูกค้ารุนแรง และใช้ระบบครบ</div>
+        <button class="secondary" data-save-eval type="button" style="margin-top:10px">บันทึกผล Trial Evaluation</button>
       </div>
-    `).join('') : '<div class="muted">ยังไม่มี trial job</div>';
+    `}).join('') : '<div class="muted">ยังไม่มี Trial job — เลือก certification แล้วกด “สร้าง Trial” ก่อน</div>';
   }
 
   async function openDetail(id){
@@ -336,8 +357,16 @@
     const payload = {};
     card.querySelectorAll('[data-eval]').forEach(el => {
       const key = el.dataset.eval;
-      payload[key] = key.endsWith('_score') ? Number(el.value || 0) : el.value;
+      if (el.type === 'checkbox') payload[key] = !!el.checked;
+      else payload[key] = key.endsWith('_score') ? Number(el.value || 0) : el.value;
     });
+    const scores = ['punctuality_score','uniform_score','communication_score','photo_quality_score','job_quality_score'].map(k => Number(payload[k] || 0));
+    if (scores.some(s => !Number.isFinite(s) || s < 0 || s > 5)) {
+      throw new Error('คะแนน Trial ต้องอยู่ระหว่าง 0-5');
+    }
+    if (!payload.admin_note || String(payload.admin_note).trim().length < 8) {
+      throw new Error('กรุณาใส่หมายเหตุประเมินอย่างน้อย 8 ตัวอักษร');
+    }
     await api(`/admin/partners/trial-jobs/${card.dataset.trialId}/evaluate`, { method:'POST', body:JSON.stringify(payload) });
     await loadExtra(activeId);
   }

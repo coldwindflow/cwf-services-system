@@ -2999,6 +2999,28 @@ app.post('/admin/partners/trial-jobs/:trial_job_id/evaluate', requireAdminSessio
       [trial.id, trial.application_id, actor, score(req.body?.punctuality_score), score(req.body?.uniform_score), score(req.body?.communication_score), score(req.body?.photo_quality_score), score(req.body?.job_quality_score), !!req.body?.customer_issue, req.body?.admin_note || null, result]
     );
     await client.query(`UPDATE public.partner_trial_jobs SET status=$1, evaluated_at=NOW(), updated_at=NOW() WHERE id=$2`, [result, trial.id]);
+    const approveCertification = normalizePartnerBool(req.body?.approve_certification);
+    if (approveCertification && result === 'passed' && trial.technician_username) {
+      await client.query(
+        `INSERT INTO public.technician_certifications(application_id, technician_username, certification_code, status, admin_note, approved_by, approved_at, updated_by, updated_at)
+         VALUES($1,$2,$3,'approved',$4,$5,NOW(),$5,NOW())
+         ON CONFLICT(application_id, certification_code) DO UPDATE SET
+           technician_username=EXCLUDED.technician_username,
+           status='approved',
+           admin_note=EXCLUDED.admin_note,
+           approved_by=EXCLUDED.approved_by,
+           approved_at=NOW(),
+           updated_by=EXCLUDED.updated_by,
+           updated_at=NOW()`,
+        [trial.application_id, trial.technician_username, trial.certification_code, req.body?.admin_note || 'ผ่าน Trial Evaluation และอนุมัติสิทธิ์รับงาน', actor]
+      );
+      await client.query(
+        `INSERT INTO public.technician_certification_preferences(technician_username, certification_code, enabled, updated_at)
+         VALUES($1,$2,TRUE,NOW())
+         ON CONFLICT(technician_username, certification_code) DO UPDATE SET enabled=TRUE, updated_at=NOW()`,
+        [trial.technician_username, trial.certification_code]
+      );
+    }
     await logPartnerOnboardingEvent(client, { application_id: trial.application_id, actor_type: 'admin', actor_username: actor, event_type: 'trial_evaluated', to_status: result, note: req.body?.admin_note || null, metadata: { trial_job_id: trial.id, evaluation_id: saved.rows[0].id } });
     await client.query('COMMIT');
     await auditLog(req, { action: 'PARTNER_TRIAL_EVALUATED', target_role: 'partner_application', meta: { trial_job_id: trial.id, result } });
