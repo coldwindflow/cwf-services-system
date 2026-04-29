@@ -1503,6 +1503,107 @@ function makePartnerUsernameFromPhone(phone, fallbackCode = '') {
   return `partner${String(fallbackCode || crypto.randomBytes(4).toString('hex')).replace(/[^a-z0-9]/gi, '').slice(-8).toLowerCase()}`;
 }
 
+function getLineMessagingAccessToken() {
+  return String(process.env.LINE_MESSAGING_CHANNEL_ACCESS_TOKEN || process.env.LINE_CHANNEL_ACCESS_TOKEN || process.env.LINE_BOT_CHANNEL_ACCESS_TOKEN || '').trim();
+}
+
+function getPartnerAdminLineTargets() {
+  const raw = String(process.env.PARTNER_ADMIN_LINE_TARGETS || process.env.LINE_ADMIN_GROUP_ID || process.env.LINE_ADMIN_USER_ID || '').trim();
+  return raw ? raw.split(',').map(s => s.trim()).filter(Boolean) : [];
+}
+
+function partnerAppUrl(path = '') {
+  const base = String(process.env.APP_BASE_URL || process.env.PUBLIC_APP_URL || 'https://app.cwf-air.com').replace(/\/+$/, '');
+  return `${base}${String(path || '').startsWith('/') ? path : `/${path}`}`;
+}
+
+function partnerNotifyEnabled() {
+  return String(process.env.PARTNER_LINE_NOTIFY_ENABLED || 'true').toLowerCase() !== 'false';
+}
+
+async function logPartnerNotification(applicationId, channel, target, eventType, status, payload, errorMessage = null) {
+  try {
+    await pool.query(
+      `INSERT INTO public.partner_notification_logs(application_id, channel, target, event_type, status, payload_json, error_message, created_at)
+       VALUES($1,$2,$3,$4,$5,$6::jsonb,$7,NOW())`,
+      [applicationId || null, channel || 'line', target || null, eventType || 'unknown', status || 'unknown', JSON.stringify(payload || {}), errorMessage || null]
+    );
+  } catch (e) {
+    console.warn('[partner_notify] log failed:', e?.message || e);
+  }
+}
+
+async function pushLineText(targetId, text, meta = {}) {
+  const token = getLineMessagingAccessToken();
+  if (!partnerNotifyEnabled() || !targetId || !token) {
+    await logPartnerNotification(meta.application_id, 'line', targetId || null, meta.event_type || 'line_push', 'skipped', { reason: !token ? 'missing_token' : 'disabled', text });
+    return { ok: false, skipped: true };
+  }
+  try {
+    const res = await fetch('https://api.line.me/v2/bot/message/push', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+      body: JSON.stringify({ to: targetId, messages: [{ type: 'text', text: String(text || '').slice(0, 4900) }] }),
+    });
+    const raw = await res.text().catch(() => '');
+    if (!res.ok) throw new Error(raw || `LINE push ${res.status}`);
+    await logPartnerNotification(meta.application_id, 'line', targetId, meta.event_type || 'line_push', 'sent', { text, line_response: raw || null });
+    return { ok: true };
+  } catch (e) {
+    await logPartnerNotification(meta.application_id, 'line', targetId, meta.event_type || 'line_push', 'failed', { text }, String(e?.message || e));
+    console.warn('[partner_notify] LINE push failed:', e?.message || e);
+    return { ok: false, error: String(e?.message || e) };
+  }
+}
+
+async function notifyPartnerAdmins(eventType, text, applicationId = null) {
+  const targets = getPartnerAdminLineTargets();
+  if (!targets.length) {
+    await logPartnerNotification(applicationId, 'line', null, eventType, 'skipped', { reason: 'missing_admin_targets', text });
+    return;
+  }
+  await Promise.all(targets.map(t => pushLineText(t, text, { event_type: eventType, application_id: applicationId })));
+}
+
+async function getPartnerLineUserId(applicationId, client = pool) {
+  try {
+    const r = await client.query(
+      `SELECT COALESCE(u.line_user_id, a.line_user_id) AS line_user_id
+       FROM public.partner_applications a
+       LEFT JOIN public.users u ON u.username=a.technician_username
+       WHERE a.id=$1 LIMIT 1`,
+      [applicationId]
+    );
+    return r.rows[0]?.line_user_id || null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function notifyPartnerApplicant(applicationId, eventType, text, client = pool) {
+  const lineUserId = await getPartnerLineUserId(applicationId, client);
+  if (!lineUserId) {
+    await logPartnerNotification(applicationId, 'line', null, eventType, 'skipped', { reason: 'partner_line_not_linked', text });
+    return;
+  }
+  await pushLineText(lineUserId, text, { event_type: eventType, application_id: applicationId });
+}
+
+function partnerNotifyTextNewApplication(appRow) {
+  return [
+    '🔔 มีใบสมัครพาร์ทเนอร์ CWF ใหม่',
+    `ชื่อ: ${appRow.full_name || '-'}`,
+    `เบอร์: ${appRow.phone || '-'}`,
+    `พื้นที่: ${[appRow.province, appRow.district].filter(Boolean).join(' / ') || '-'}`,
+    `รหัส: ${appRow.application_code || '-'}`,
+    partnerAppUrl('/admin-partner-onboarding.html')
+  ].join('\n');
+}
+
+function partnerNotifyTextApplicant(title, lines = []) {
+  return [`CWF Partner`, title, ...lines].filter(Boolean).join('\n');
+}
+
 function normalizePartnerBool(v) {
   return v === true || v === 'true' || v === 1 || v === '1' || String(v || '').toLowerCase() === 'on';
 }
@@ -1985,6 +2086,7 @@ app.post('/partner/apply', async (req, res) => {
       metadata: { application_code, technician_username: account.username, account_created: account.created },
     });
     await client.query('COMMIT');
+    notifyPartnerAdmins('partner_application_submitted', partnerNotifyTextNewApplication(appRow), appRow.id).catch(()=>{});
     return res.json({ ok: true, application: partnerApplicationPublicShape(appRow) });
   } catch (e) {
     await client.query('ROLLBACK');
@@ -2070,6 +2172,12 @@ app.post('/partner/application/:application_code/documents', upload.single('docu
       metadata: { document_id: docR.rows[0].id, document_type },
     });
     await client.query('COMMIT');
+    notifyPartnerAdmins('partner_document_uploaded', [
+      '📎 พาร์ทเนอร์อัปโหลดเอกสารใหม่',
+      `รหัส: ${appRow.application_code}`,
+      `เอกสาร: ${document_type}`,
+      partnerAppUrl('/admin-partner-onboarding.html')
+    ].join('\n'), appRow.id).catch(()=>{});
     return res.json({ ok: true, document: docR.rows[0] });
   } catch (e) {
     await client.query('ROLLBACK');
@@ -2424,6 +2532,15 @@ app.put('/admin/partners/applications/:id/documents/:document_id/status', requir
       metadata: { document_id, document_type: row.document_type },
     });
     await client.query('COMMIT');
+    notifyPartnerApplicant(id, 'partner_document_reviewed', partnerNotifyTextApplicant(
+      status === 'approved' ? 'เอกสารของคุณผ่านการตรวจแล้ว' : 'มีการอัปเดตสถานะเอกสาร',
+      [
+        `เอกสาร: ${row.document_type}`,
+        `สถานะ: ${status}`,
+        admin_note ? `หมายเหตุ: ${admin_note}` : '',
+        partnerAppUrl('/partner-dashboard.html')
+      ].filter(Boolean)
+    )).catch(()=>{});
     await auditLog(req, {
       action: 'PARTNER_DOCUMENT_STATUS_UPDATE',
       target_username: row.application_code,
@@ -2531,6 +2648,16 @@ app.post('/partner/agreement/:application_code/sign', async (req, res) => {
       metadata: { signature_id: sig.rows[0].id, template_code: tpl.template_code },
     });
     await client.query('COMMIT');
+    notifyPartnerAdmins('partner_agreement_signed', [
+      '📝 พาร์ทเนอร์เซ็นสัญญาแล้ว',
+      `ชื่อ: ${appR.rows[0].full_name || '-'}`,
+      `รหัส: ${appR.rows[0].application_code || '-'}`,
+      partnerAppUrl('/admin-partner-onboarding.html')
+    ].join('\n'), appR.rows[0].id).catch(()=>{});
+    notifyPartnerApplicant(appR.rows[0].id, 'partner_agreement_signed', partnerNotifyTextApplicant(
+      'เซ็นสัญญาเรียบร้อยแล้ว',
+      ['ขั้นตอนต่อไป: เข้า Academy เพื่ออบรมและทำข้อสอบ', partnerAppUrl('/partner-dashboard.html')]
+    ), client).catch(()=>{});
     return res.json({ ok: true, signature: sig.rows[0] });
   } catch (e) {
     await client.query('ROLLBACK');
@@ -2692,6 +2819,19 @@ app.post('/partner/academy/:application_code/exam/submit', async (req, res) => {
       metadata: { attempt_id: saved.rows[0].id, passed, score },
     });
     await client.query('COMMIT');
+    notifyPartnerApplicant(appRow.id, 'partner_exam_submitted', partnerNotifyTextApplicant(
+      passed ? 'สอบผ่าน Basic Partner แล้ว' : 'สอบยังไม่ผ่าน',
+      [`คะแนน: ${score}%`, passed ? 'รอแอดมินตรวจและอนุมัติขั้นถัดไป' : 'สามารถทบทวนบทเรียนและสอบใหม่ตามเงื่อนไข', partnerAppUrl('/partner-dashboard.html')]
+    ), client).catch(()=>{});
+    if (passed) {
+      notifyPartnerAdmins('partner_exam_passed', [
+        '🎓 พาร์ทเนอร์สอบผ่าน Basic Partner',
+        `ชื่อ: ${appRow.full_name || '-'}`,
+        `คะแนน: ${score}%`,
+        `รหัส: ${appRow.application_code || '-'}`,
+        partnerAppUrl('/admin-partner-onboarding.html')
+      ].join('\n'), appRow.id).catch(()=>{});
+    }
     return res.json({ ok: true, attempt: saved.rows[0], passed });
   } catch (e) {
     await client.query('ROLLBACK');
@@ -2841,6 +2981,15 @@ app.put('/admin/partners/applications/:id/certifications/:certification_code/sta
       );
     }
     await client.query('COMMIT');
+    notifyPartnerApplicant(appRow.id, 'partner_certification_updated', partnerNotifyTextApplicant(
+      status === 'approved' ? 'คุณได้รับอนุมัติสิทธิ์รับงานแล้ว' : 'มีการอัปเดตสถานะ certification',
+      [
+        `ประเภท: ${code}`,
+        `สถานะ: ${status}`,
+        admin_note ? `หมายเหตุ: ${admin_note}` : '',
+        partnerAppUrl('/partner-dashboard.html')
+      ].filter(Boolean)
+    ), client).catch(()=>{});
     await auditLog(req, { action: 'PARTNER_CERTIFICATION_STATUS_UPDATE', target_username: appRow.application_code, target_role: 'partner_application', meta: { certification_code: code, status, admin_note } });
     return res.json({ ok: true, certification: saved.rows[0] });
   } catch (e) {
@@ -2988,6 +3137,15 @@ app.put('/admin/partners/applications/:id/interview', requireAdminSession, async
       metadata: { interview_id: saved.rows[0].id, call_status },
     });
     await client.query('COMMIT');
+    notifyPartnerApplicant(appRow.id, 'partner_interview_saved', partnerNotifyTextApplicant(
+      result === 'passed' ? 'สัมภาษณ์ผ่านแล้ว' : result === 'failed' ? 'ผลสัมภาษณ์ยังไม่ผ่าน' : 'มีการบันทึกผลสัมภาษณ์',
+      [
+        `สถานะ: ${call_status}`,
+        `ผล: ${result}`,
+        admin_note ? `หมายเหตุ: ${admin_note}` : '',
+        partnerAppUrl('/partner-dashboard.html')
+      ].filter(Boolean)
+    ), client).catch(()=>{});
     await auditLog(req, {
       action: 'PARTNER_INTERVIEW_SAVED',
       target_username: appRow.application_code,
@@ -3033,6 +3191,10 @@ app.post('/admin/partners/applications/:id/trial-jobs', requireAdminSession, asy
     );
     await logPartnerOnboardingEvent(client, { application_id: appRow.id, actor_type: 'admin', actor_username: actor, event_type: 'trial_unlocked', to_status: 'trial_unlocked', note: certification_code, metadata: { trial_job_id: saved.rows[0].id } });
     await client.query('COMMIT');
+    notifyPartnerApplicant(appRow.id, 'partner_trial_unlocked', partnerNotifyTextApplicant(
+      'แอดมินปลดล็อกงานทดลองให้แล้ว',
+      [`ประเภท: ${certification_code}`, req.body?.admin_note ? `หมายเหตุ: ${req.body.admin_note}` : '', partnerAppUrl('/partner-dashboard.html')].filter(Boolean)
+    ), client).catch(()=>{});
     await auditLog(req, { action: 'PARTNER_TRIAL_UNLOCKED', target_username: appRow.application_code, target_role: 'partner_application', meta: { certification_code, trial_job_id: saved.rows[0].id } });
     return res.json({ ok: true, trial_job: saved.rows[0] });
   } catch (e) {
@@ -3105,6 +3267,16 @@ app.post('/admin/partners/trial-jobs/:trial_job_id/evaluate', requireAdminSessio
     }
     await logPartnerOnboardingEvent(client, { application_id: trial.application_id, actor_type: 'admin', actor_username: actor, event_type: 'trial_evaluated', to_status: result, note: req.body?.admin_note || null, metadata: { trial_job_id: trial.id, evaluation_id: saved.rows[0].id } });
     await client.query('COMMIT');
+    notifyPartnerApplicant(trial.application_id, 'partner_trial_evaluated', partnerNotifyTextApplicant(
+      result === 'passed' ? 'งานทดลองผ่านแล้ว' : result === 'needs_more_trial' ? 'ต้องทดลองงานเพิ่มเติม' : 'งานทดลองไม่ผ่าน',
+      [
+        `ประเภท: ${trial.certification_code}`,
+        `ผล: ${result}`,
+        approveCertification ? 'เปิดสิทธิ์รับงานประเภทนี้แล้ว' : '',
+        req.body?.admin_note ? `หมายเหตุ: ${req.body.admin_note}` : '',
+        partnerAppUrl('/partner-dashboard.html')
+      ].filter(Boolean)
+    ), client).catch(()=>{});
     await auditLog(req, { action: 'PARTNER_TRIAL_EVALUATED', target_role: 'partner_application', meta: { trial_job_id: trial.id, result } });
     return res.json({ ok: true, evaluation: saved.rows[0] });
   } catch (e) {
@@ -8184,6 +8356,22 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_interviews_application ON public.partner_interviews(application_id, interviewed_at DESC)`);
+
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.partner_notification_logs (
+    id BIGSERIAL PRIMARY KEY,
+    application_id BIGINT REFERENCES public.partner_applications(id) ON DELETE SET NULL,
+    channel TEXT NOT NULL DEFAULT 'line',
+    target TEXT,
+    event_type TEXT,
+    status TEXT,
+    payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    error_message TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_partner_notification_logs_application ON public.partner_notification_logs(application_id, created_at DESC)`);
 
 try {
   await pool.query(
