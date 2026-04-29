@@ -238,6 +238,24 @@
     /* ISSUE: ปุ่มออกจากระบบ ให้แดงชัด + ตัวหนังสือขาว */
     .techMenuDanger{border-color:rgba(239,68,68,0.28);background:#fff5f5;color:#b91c1c}
     .techMenuDanger .sub{color:#dc2626}
+
+    .techMenuSetting{border-color:rgba(11,86,216,.28);background:linear-gradient(180deg,#fff,#f4f8ff);}
+    .techMenuSetting .menuIcon{background:var(--tech-yellow-soft);color:#111827;}
+    .techMenuHidden{display:none !important;}
+    #techSettingsModal{display:none;position:fixed;inset:0;z-index:4050;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.55)}
+    #techSettingsModal .settingsPanel{width:min(460px,100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:28px;border:1px solid var(--tech-border);box-shadow:0 28px 80px rgba(2,6,23,.35);padding:16px}
+    .settingsHead{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}
+    .settingsHead h3{margin:0;color:var(--tech-navy);font-size:24px;line-height:1.15}
+    .settingsHead p{margin:5px 0 0;color:var(--tech-muted);font-weight:800;line-height:1.45}
+    .settingsGrid{display:grid;gap:10px}
+    .settingsItem{width:100%;border:1px solid var(--tech-border);border-radius:20px;background:#fff;box-shadow:var(--tech-shadow-soft);padding:14px;display:flex;align-items:center;gap:12px;text-align:left;color:var(--tech-navy);cursor:pointer}
+    .settingsItem .sIcon{width:48px;height:48px;border-radius:16px;background:var(--tech-blue-soft);display:flex;align-items:center;justify-content:center;font-size:22px;flex:0 0 48px}
+    .settingsItem .sText{display:flex;flex-direction:column;gap:3px;min-width:0}
+    .settingsItem strong{font-size:16px;line-height:1.2}
+    .settingsItem span{font-size:12px;color:var(--tech-muted);font-weight:900;line-height:1.35}
+    .settingsItem.line .sIcon{background:#06c755;color:#fff;font-size:13px;font-weight:1200}
+    .settingsClose{background:var(--tech-yellow-soft)!important;border-color:rgba(244,196,0,.45)!important;color:#111827!important}
+
     .techMenuSmall{font-size:12px;font-weight:900;color:rgba(15,23,42,0.70)}
 
     /* Profile compact (ISSUE-2) */
@@ -375,65 +393,77 @@
       border-left:1px solid rgba(255,255,255,.65) !important;
     }
     .techMenuBtn{
-      border-radius:20px !important;background:rgba(255,255,255,.92) !important;
-      border-color:rgba(11,46,109,.14) !important;box-shadow:0 12px 28px rgba(11,46,109,.10) !important;
-    }
-    .techMenuBtn .menuIcon{background:linear-gradient(135deg,#EAF2FF,#FFF6CC) !important;color:#08245b !important;}
-    .techMenuDanger{background:linear-gradient(135deg,#DC2626,#991B1B) !important;color:#fff !important;border-color:rgba(220,38,38,.28) !important;}
-    .techMenuDanger .sub,.techMenuDanger .menuArrow,.techMenuDanger .menuText strong{color:#fff !important;}
-    .techMenuDanger .menuIcon{background:rgba(255,255,255,.18) !important;color:#fff !important;}
-    @media (max-width:420px){
-      .app{padding-left:14px !important;padding-right:14px !important;}
-      #techTopNav .in{padding-left:14px !important;padding-right:14px !important;}
-      #techTopSpacer{height:68px !important;}
-      .card.tight{padding:16px !important;}
-      h2{font-size:22px !important;}
-      .nav-btn{font-size:11px !important;padding:8px 6px !important;}
-    }
-
-  </style>
-  <script defer src="/cwf-pwa.js?v=company-logo-icon-v32"></script>
-  <script defer src="/tech-onboarding.js?v=phase2a-dashboard"></script>
-</head>
-
-<body>
-  <div class="app">
-        <!-- ✅ Tech Top Nav (admin-like) -->
-    <div id="techTopNav">
-      <div class="in">
-        <div class="ttl">
-          <b>CWF – ช่าง</b>
-          <span id="me">ผู้ใช้: -</span>
-        </div>
-        <button class="tech-icbtn" type="button" id="techMenuBtn" aria-label="เมนู">☰</button>
-      </div>
-    </div>
-    <div id="techTopSpacer"></div>
-
-    <!-- ✅ Drawer Menu -->
-    <div id="techDrawerBackdrop"></div>
-    <div id="techDrawer">
-      <div class="panel">
-        <div class="techMenuHead">
-          <b>เมนูช่าง</b>
-          <button class="tech-icbtn" type="button" id="techMenuCloseBtn" aria-label="ปิด">✕</button>
-        </div>
-
-        <div class="techMenuList">
+      border-radius:20px !important;background:rgba(255,255,255,.<div class="techMenuList">
           <!-- keep ids for app.js bindings -->
           <button class="techMenuBtn" type="button" id="notifyBtn">
             <span class="left"><span class="menuIcon">🔔</span><span class="menuText"><strong>แจ้งเตือน / เสียงเตือน</strong><span class="sub" id="notifyStateText">-</span></span></span>
             <span class="menuArrow">›</span>
           </button>
 
-          <button class="techMenuBtn" type="button" id="themeToggleBtn">
-            <span class="left"><span class="menuIcon">🎨</span><span class="menuText"><strong>สลับธีม</strong><span class="sub">โหมดสีหน้าช่าง</span></span></span>
+          <button class="techMenuBtn techMenuSetting" type="button" onclick="openTechSettingsModal()">
+            <span class="left"><span class="menuIcon">⚙️</span><span class="menuText"><strong>ตั้งค่า</strong><span class="sub">LINE / โปรไฟล์ / รหัสผ่าน / วันทำงาน / งานที่รับได้</span></span></span>
             <span class="menuArrow">›</span>
           </button>
 
-          <button class="techMenuBtn" type="button" onclick="goEditProfile()">
-            <span class="left"><span class="menuIcon">✏️</span><span class="menuText"><strong>แก้ไขโปรไฟล์</strong><span class="sub">ข้อมูลช่าง</span></span></span>
+          <!-- hidden legacy buttons kept for existing app.js bindings / rollback safety -->
+          <button class="techMenuBtn techMenuHidden" type="button" id="themeToggleBtn">
+            <span class="left"><span class="menuIcon">🎨</span><span class="menuText"><strong>สลับธีม</strong><span class="sub">โหมดสีหน้าช่าง</span></span></span>
             <span class="menuArrow">›</span>
+          </button>
+          <button class="techMenuBtn techMenuHidden" type="button" onclick="goEditProfile()"></button>
+          <button class="techMenuBtn techMenuHidden" type="button" onclick="location.href='/tech/base-status'"></button>
+          <button class="techMenuBtn techMenuHidden" type="button" onclick="goChangePassword()"></button>
+          <button class="techMenuBtn techMenuHidden" type="button" onclick="openWorkdaysModal()"></button>
+          <button class="techMenuBtn techMenuHidden" type="button" id="techMatrixBtn"></button>
+
+          <div class="techMenuSmall" style="margin-top:4px;padding:0 2px;">อื่นๆ</div>
+
+          <button class="techMenuBtn techMenuDanger" type="button" onclick="logout()">
+            <span class="left"><span class="menuIcon">🚪</span><span class="menuText"><strong>ออกจากระบบ</strong><span class="sub">Logout</span></span></span>
+            <span class="menuArrow">›</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ✅ Settings Modal: รวมเมนูเดิม + ผูก LINE Login -->
+    <div id="techSettingsModal">
+      <div class="settingsPanel">
+        <div class="settingsHead">
+          <div>
+            <h3>ตั้งค่า</h3>
+            <p>รวมการตั้งค่าบัญชีและการรับงานไว้ในที่เดียว</p>
+          </div>
+          <button class="tech-icbtn settingsClose" type="button" onclick="closeTechSettingsModal()" aria-label="ปิด">✕</button>
+        </div>
+        <div class="settingsGrid">
+          <button class="settingsItem line" type="button" onclick="bindCurrentTechLine()">
+            <span class="sIcon">LINE</span><span class="sText"><strong>ผูก LINE Login</strong><span>ใช้ LINE เข้าแอพช่างครั้งถัดไป</span></span>
+          </button>
+          <button class="settingsItem" type="button" onclick="goEditProfile()">
+            <span class="sIcon">✏️</span><span class="sText"><strong>แก้ไขโปรไฟล์</strong><span>ข้อมูลส่วนตัว รูปโปรไฟล์ และข้อมูลช่าง</span></span>
+          </button>
+          <button class="settingsItem" type="button" onclick="goChangePassword()">
+            <span class="sIcon">🔑</span><span class="sText"><strong>เปลี่ยนรหัสผ่าน</strong><span>ตั้งรหัสผ่านใหม่เพื่อความปลอดภัย</span></span>
+          </button>
+          <button class="settingsItem" type="button" onclick="openWorkdaysModal()">
+            <span class="sIcon">🗓️</span><span class="sText"><strong>วันหยุด / วันทำงาน</strong><span>ตั้งค่าวันรับงานและวันไม่สะดวก</span></span>
+          </button>
+          <button class="settingsItem" type="button" onclick="document.getElementById('techMatrixBtn')?.click()">
+            <span class="sIcon">🧩</span><span class="sText"><strong>งานที่รับได้</strong><span>ตั้งค่าประเภทงานที่พร้อมให้แสดงสลอตลูกค้า</span></span>
+          </button>
+          <button class="settingsItem" type="button" onclick="location.href='/tech/base-status'">
+            <span class="sIcon">🧬</span><span class="sText"><strong>แบบประเมิน Base Status</strong><span>ตรวจค่าสเตตัสและข้อมูลพื้นฐานช่าง</span></span>
+          </button>
+          <button class="settingsItem" type="button" onclick="document.getElementById('themeToggleBtn')?.click()">
+            <span class="sIcon">🎨</span><span class="sText"><strong>สลับธีม</strong><span>โหมดสีหน้าช่าง</span></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ✅ Modal: Technician Service Matrix (self-config) -->
+<span class="menuArrow">›</span>
           </button>
 
           <button class="techMenuBtn" type="button" onclick="location.href='/tech/base-status'">
@@ -982,6 +1012,14 @@
 
 
 
+    function openTechSettingsModal(){
+      const m = document.getElementById('techSettingsModal');
+      if (m) m.style.display = 'flex';
+    }
+    function closeTechSettingsModal(){
+      const m = document.getElementById('techSettingsModal');
+      if (m) m.style.display = 'none';
+    }
     function bindCurrentTechLine(){
       try{
         const username = localStorage.getItem('username') || '';
@@ -997,6 +1035,8 @@
         alert('ไม่สามารถเริ่มผูก LINE ได้');
       }
     }
+    window.openTechSettingsModal = openTechSettingsModal;
+    window.closeTechSettingsModal = closeTechSettingsModal;
     window.bindCurrentTechLine = bindCurrentTechLine;
 
 
