@@ -981,6 +981,25 @@
         });
 
 
+
+    function bindCurrentTechLine(){
+      try{
+        const username = localStorage.getItem('username') || '';
+        if (!username) {
+          alert('กรุณา Login ด้วยบัญชีช่างก่อนผูก LINE');
+          location.href = '/login.html';
+          return;
+        }
+        const ok = confirm('ต้องการผูก LINE กับบัญชีช่างนี้ใช่ไหม?\n\nหลังผูกแล้ว ครั้งต่อไปสามารถกด LINE Login เข้าแอพช่างได้ทันที');
+        if (!ok) return;
+        location.href = '/auth/line/app?next=tech_bind';
+      }catch(e){
+        alert('ไม่สามารถเริ่มผูก LINE ได้');
+      }
+    }
+    window.bindCurrentTechLine = bindCurrentTechLine;
+
+
 function logout(){
       localStorage.removeItem("username");
       localStorage.removeItem("role");
