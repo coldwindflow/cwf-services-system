@@ -499,6 +499,126 @@ app.get('/auth/line/callback', async (req, res) => {
   }
 });
 
+// =======================================
+// 🔐 App Login with LINE (Admin / Technician)
+// - Existing customer LINE login remains unchanged at /auth/line
+// - App LINE login binds LINE userId to an existing CWF user after password verification
+// =======================================
+app.get('/auth/line/app', (req, res) => {
+  const clientId = String(process.env.LINE_CHANNEL_ID || '').trim();
+  const callback = getLineAppCallbackUrl(req);
+  if (!clientId) return res.status(500).send('LINE_CHANNEL_ID is not set');
+  const state = crypto.randomBytes(18).toString('hex');
+  const secureCookie = callback.startsWith('https://');
+  setHttpOnlyCookie(res, 'cwf_line_app_state', state, { maxAgeSec: 10 * 60, secure: secureCookie });
+  const authorize = new URL('https://access.line.me/oauth2/v2.1/authorize');
+  authorize.searchParams.set('response_type', 'code');
+  authorize.searchParams.set('client_id', clientId);
+  authorize.searchParams.set('redirect_uri', callback);
+  authorize.searchParams.set('state', state);
+  authorize.searchParams.set('scope', 'profile');
+  res.redirect(authorize.toString());
+});
+
+app.get('/auth/line/app/callback', async (req, res) => {
+  try {
+    const code = String(req.query?.code || '').trim();
+    const state = String(req.query?.state || '').trim();
+    const stateCookie = parseCookieValue(req, 'cwf_line_app_state');
+    clearCookie(res, 'cwf_line_app_state');
+    if (!code) return res.redirect('/login.html?line=failed&reason=no_code');
+    if (!state || !stateCookie || state !== stateCookie) return res.redirect('/login.html?line=failed&reason=bad_state');
+
+    const clientId = String(process.env.LINE_CHANNEL_ID || '').trim();
+    const clientSecret = String(process.env.LINE_CHANNEL_SECRET || '').trim();
+    const callback = getLineAppCallbackUrl(req);
+    if (!clientId || !clientSecret) return res.redirect('/login.html?line=failed&reason=misconfig');
+
+    const tokenRes = await fetch('https://api.line.me/oauth2/v2.1/token', {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: callback, client_id: clientId, client_secret: clientSecret }),
+    });
+    const tokenText = await tokenRes.text().catch(()=> '');
+    let tokenJson = {};
+    try { tokenJson = tokenText ? JSON.parse(tokenText) : {}; } catch (_) {}
+    if (!tokenRes.ok) {
+      console.error('[LINE_APP_TOKEN_HTTP]', tokenRes.status, tokenText);
+      return res.redirect(`/login.html?line=failed&reason=token_http_${tokenRes.status}`);
+    }
+    const accessToken = String(tokenJson?.access_token || '').trim();
+    if (!accessToken) return res.redirect('/login.html?line=failed&reason=no_access_token');
+
+    const profRes = await fetch('https://api.line.me/v2/profile', { headers: { Authorization: `Bearer ${accessToken}` } });
+    const profText = await profRes.text().catch(()=> '');
+    let prof = {};
+    try { prof = profText ? JSON.parse(profText) : {}; } catch (_) {}
+    if (!profRes.ok) {
+      console.error('[LINE_APP_PROFILE_HTTP]', profRes.status, profText);
+      return res.redirect(`/login.html?line=failed&reason=profile_http_${profRes.status}`);
+    }
+    const lineUserId = String(prof?.userId || '').trim();
+    if (!lineUserId) return res.redirect('/login.html?line=failed&reason=no_user');
+
+    const found = await pool.query(
+      `SELECT username, role FROM public.users WHERE line_user_id=$1 LIMIT 1`,
+      [lineUserId]
+    );
+    if ((found.rows || []).length) {
+      const row = found.rows[0];
+      const login = await issueAppLoginForUser(res, row.username);
+      return res.redirect(`/line-login-bridge.html?username=${encodeURIComponent(login.username)}&role=${encodeURIComponent(login.role)}&to=${encodeURIComponent(safeRedirectTargetForRole(login.role))}`);
+    }
+
+    const bindToken = createLineBindToken(prof);
+    if (!bindToken) return res.redirect('/login.html?line=failed&reason=no_jwt_secret');
+    const secureCookie = callback.startsWith('https://');
+    setHttpOnlyCookie(res, 'cwf_line_bind', bindToken, { maxAgeSec: 10 * 60, secure: secureCookie });
+    return res.redirect('/login.html?line_bind=1');
+  } catch (e) {
+    console.error('[LINE_APP_CALLBACK_ERROR]', e);
+    return res.redirect('/login.html?line=failed&reason=server');
+  }
+});
+
+app.post('/auth/line/bind', async (req, res) => {
+  try {
+    const lineProfile = readLineBindToken(req);
+    if (!lineProfile) return res.status(401).json({ error: 'LINE_BIND_EXPIRED' });
+    const username = String(req.body?.username || '').trim();
+    const password = String(req.body?.password || '');
+    if (!username || !password) return res.status(400).json({ error: 'กรุณากรอก username และ password เพื่อผูก LINE' });
+    const r = await pool.query(`SELECT username, role, password FROM public.users WHERE username=$1 LIMIT 1`, [username]);
+    if (!(r.rows || []).length) return res.status(401).json({ error: 'ชื่อผู้ใช้หรือรหัสผ่านผิด' });
+    const passwordOk = await verifyPasswordAgainstStored(password, r.rows[0].password);
+    if (!passwordOk) return res.status(401).json({ error: 'ชื่อผู้ใช้หรือรหัสผ่านผิด' });
+    await bindLineProfileToUser(r.rows[0].username, lineProfile, pool);
+    clearCookie(res, 'cwf_line_bind');
+    const login = await issueAppLoginForUser(res, r.rows[0].username);
+    return res.json({ ok: true, username: login.username, role: login.role });
+  } catch (e) {
+    console.error('POST /auth/line/bind error:', e);
+    return res.status(500).json({ error: 'ผูก LINE ไม่สำเร็จ' });
+  }
+});
+
+app.post('/auth/password-reset/request', async (req, res) => {
+  try {
+    const usernameOrPhone = String(req.body?.username || req.body?.phone || '').trim();
+    const note = String(req.body?.note || '').trim().slice(0, 500);
+    if (!usernameOrPhone) return res.status(400).json({ error: 'กรุณากรอกเบอร์โทรหรือ username' });
+    await pool.query(
+      `INSERT INTO public.password_reset_requests(username_or_phone, note, status, created_at)
+       VALUES($1,$2,'requested',NOW())`,
+      [usernameOrPhone, note || null]
+    );
+    return res.json({ ok: true, message: 'ส่งคำขอรีเซ็ตรหัสผ่านแล้ว แอดมินจะตรวจสอบให้' });
+  } catch (e) {
+    console.error('POST /auth/password-reset/request error:', e);
+    return res.status(500).json({ error: 'ส่งคำขอรีเซ็ตรหัสผ่านไม่สำเร็จ' });
+  }
+});
+
 app.get('/public/me', (req, res) => {
   try {
     const jwtSecret = getJwtSecret();
@@ -798,6 +918,94 @@ async function ensureSessionForUser(res, username) {
   );
   setAuthCookies(res, { session_token: token, max_age_sec: maxAgeSec });
   return { token, role };
+}
+
+function makeCwfAuthCookieBase64(username, role, maxAgeMs = 7 * 24 * 60 * 60 * 1000) {
+  const payload = { u: String(username || ''), r: String(role || ''), exp: Date.now() + maxAgeMs };
+  return Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+}
+
+async function issueAppLoginForUser(res, username) {
+  const maxAgeSec = 7 * 24 * 60 * 60;
+  const token = crypto.randomBytes(24).toString('hex');
+  const exp = new Date(Date.now() + maxAgeSec * 1000);
+  const q = await pool.query('SELECT role FROM public.users WHERE username=$1 LIMIT 1', [username]);
+  const role = normalizeRole(q.rows?.[0]?.role || '');
+  await pool.query(
+    `INSERT INTO public.auth_sessions(session_token, username, role, expires_at)
+     VALUES($1,$2,$3,$4)
+     ON CONFLICT (session_token) DO NOTHING`,
+    [token, username, role, exp]
+  );
+  const authB64 = makeCwfAuthCookieBase64(username, role);
+  setAuthCookies(res, { session_token: token, cwf_auth_base64: authB64, max_age_sec: maxAgeSec });
+  return { username: String(username), role };
+}
+
+function getLineAppCallbackUrl(req) {
+  return String(process.env.LINE_APP_CALLBACK_URL || process.env.LINE_LOGIN_CALLBACK_URL || '').trim() || `${getReqBaseUrl(req)}/auth/line/app/callback`;
+}
+
+function safeRedirectTargetForRole(role) {
+  const r = normalizeRole(role);
+  if (r === 'super_admin') return '/admin-super-v2.html';
+  if (r === 'admin') return '/admin-dashboard-v2.html';
+  if (r === 'technician') return '/tech.html';
+  return '/login.html';
+}
+
+function createLineBindToken(profile) {
+  const secret = getJwtSecret();
+  if (!secret) return '';
+  const now = Math.floor(Date.now() / 1000);
+  return jwtSign({
+    kind: 'line_bind',
+    line_user_id: String(profile.userId || ''),
+    line_display_name: String(profile.displayName || ''),
+    line_picture_url: String(profile.pictureUrl || ''),
+    iat: now,
+    exp: now + (10 * 60),
+  }, secret);
+}
+
+function readLineBindToken(req) {
+  const secret = getJwtSecret();
+  if (!secret) return null;
+  const token = parseCookieValue(req, 'cwf_line_bind');
+  if (!token) return null;
+  const payload = jwtVerify(token, secret);
+  if (!payload || payload.kind !== 'line_bind' || !payload.line_user_id) return null;
+  return payload;
+}
+
+async function bindLineProfileToUser(username, lineProfile, client = pool) {
+  const u = String(username || '').trim();
+  const lineUserId = String(lineProfile?.line_user_id || lineProfile?.userId || '').trim();
+  const displayName = String(lineProfile?.line_display_name || lineProfile?.displayName || '').trim();
+  const pictureUrl = String(lineProfile?.line_picture_url || lineProfile?.pictureUrl || '').trim();
+  if (!u || !lineUserId) return;
+  await client.query(
+    `UPDATE public.users
+        SET line_user_id=$2, line_display_name=$3, line_picture_url=$4, line_linked_at=NOW()
+      WHERE username=$1`,
+    [u, lineUserId, displayName || null, pictureUrl || null]
+  );
+  await client.query(
+    `UPDATE public.technician_profiles
+        SET line_user_id=$2,
+            line_id=COALESCE(line_id, $3),
+            updated_at=NOW()
+      WHERE username=$1`,
+    [u, lineUserId, displayName || null]
+  ).catch(() => {});
+  await client.query(
+    `UPDATE public.partner_applications
+        SET line_user_id=$2,
+            line_id=COALESCE(line_id, $3),
+            updated_at=NOW()
+      WHERE technician_username=$1`,
+    [u, lineUserId, displayName || null]
+  ).catch(() => {});
 }
 
 // Normalize legacy/DB role strings to stable internal roles
@@ -7441,6 +7649,11 @@ await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS approved_at T
 await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS full_name TEXT`);
 await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS photo_url TEXT`);
 await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS commission_rate_percent DOUBLE PRECISION DEFAULT 0`);
+await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS line_user_id TEXT`);
+await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS line_display_name TEXT`);
+await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS line_picture_url TEXT`);
+await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS line_linked_at TIMESTAMPTZ`);
+await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_line_user_id ON public.users(line_user_id) WHERE line_user_id IS NOT NULL`);
 
 
 
@@ -7915,6 +8128,19 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON public.auth_sessions(username)`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.password_reset_requests (
+    id BIGSERIAL PRIMARY KEY,
+    username_or_phone TEXT NOT NULL,
+    note TEXT,
+    status TEXT NOT NULL DEFAULT 'requested',
+    admin_note TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    resolved_at TIMESTAMPTZ
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_password_reset_requests_status_created ON public.password_reset_requests(status, created_at DESC)`);
 
 // 6) duration rules (managed by Super Admin)
 await pool.query(`

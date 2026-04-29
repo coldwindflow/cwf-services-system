@@ -3,151 +3,204 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <!-- ✅ PWA (Phase 2) -->
   <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0B2E6D">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="apple-touch-icon" href="/icon-cwf-v32-180.png">
-
   <title>Login - CWF</title>
   <link rel="stylesheet" href="style.css">
   <script defer src="/cwf-pwa.js?v=company-logo-icon-v32"></script>
+  <style>
+    :root{--navy:#071b49;--blue:#0b55c7;--yellow:#ffd233;--ink:#101828;--muted:#667085;--line:#d9e5fb;--surface:#fff;--soft:#f4f7fc;--ok:#06c755}
+    *{box-sizing:border-box}
+    body.theme-yellowblue{min-height:100vh;background:linear-gradient(180deg,#071b49 0,#0b55c7 310px,#f4f7fc 310px);font-family:Arial,"Noto Sans Thai",sans-serif;color:var(--ink);margin:0}
+    .login-wrap{max-width:460px;margin:0 auto;padding:28px 16px 56px}
+    .login-hero{color:#fff;padding:8px 0 18px}
+    .brand-row{display:flex;align-items:center;gap:14px}
+    .brand-row img{width:62px;height:62px;border-radius:18px;background:#fff;padding:8px;object-fit:contain;box-shadow:0 14px 30px rgba(0,0,0,.18)}
+    .brand-row h1{font-size:30px;line-height:1.1;margin:0;font-weight:1000}
+    .brand-row p{margin:6px 0 0;color:rgba(255,255,255,.86);font-weight:800}
+    .login-card{background:#fff;border:1px solid var(--line);border-radius:28px;padding:22px;box-shadow:0 18px 45px rgba(7,27,73,.16)}
+    .login-card h2{margin:0;font-size:28px;color:var(--navy)}
+    .login-card .sub{margin:7px 0 18px;color:var(--muted);font-weight:800;line-height:1.55}
+    label{display:block;font-size:14px;font-weight:1000;color:#344054;margin:12px 0 7px}
+    input{width:100%;border:2px solid var(--line);border-radius:18px;padding:15px 16px;font:inherit;color:#101828;background:#fff;outline:none;font-weight:800}
+    input:focus{border-color:#82adff;box-shadow:0 0 0 4px rgba(11,85,199,.09)}
+    .btn{width:100%;border:0;border-radius:18px;min-height:54px;padding:14px 16px;font-weight:1000;font-size:16px;cursor:pointer;text-decoration:none;display:flex;align-items:center;justify-content:center;gap:10px}
+    .btn-primary{background:var(--yellow);color:var(--navy);box-shadow:0 12px 28px rgba(255,210,51,.24)}
+    .btn-line{background:#06c755;color:#fff;box-shadow:0 12px 28px rgba(6,199,85,.18)}
+    .btn-soft{background:#eef4ff;color:var(--navy)}
+    .btn-ghost{background:#fff;color:var(--blue);border:2px solid var(--line)}
+    .divider{display:flex;align-items:center;gap:12px;margin:18px 0;color:#8a98ad;font-size:13px;font-weight:900}
+    .divider:before,.divider:after{content:"";height:1px;flex:1;background:var(--line)}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+    .alert{display:none;border-radius:18px;padding:12px 14px;margin-bottom:14px;font-weight:900;line-height:1.55}
+    .alert.show{display:block}.alert.info{background:#eff6ff;color:#174ea6;border:1px solid #bfdbfe}.alert.warn{background:#fff7d6;color:#7a4b00;border:1px solid #ffe08a}.alert.err{background:#fff1f2;color:#991b1b;border:1px solid #fecdd3}.alert.ok{background:#ecfdf3;color:#166534;border:1px solid #bbf7d0}
+    .mini-actions{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-top:12px;flex-wrap:wrap}
+    .mini-actions button{border:0;background:transparent;color:var(--blue);font-weight:1000;cursor:pointer;padding:6px 0}
+    .panel{display:none;margin-top:14px;border:1px solid var(--line);background:#f8fbff;border-radius:20px;padding:14px}.panel.show{display:block}
+    .small{font-size:13px;color:var(--muted);font-weight:800;line-height:1.55}
+    @media(max-width:420px){.login-wrap{padding:22px 14px 42px}.brand-row h1{font-size:25px}.login-card{padding:18px}.grid2{grid-template-columns:1fr}}
+  </style>
 </head>
 <body class="theme-yellowblue" data-theme-lock="yellowblue">
-
-  <div class="app">
-    <div class="topbar">
-      <div class="brand">
-        <!-- ✅ ใช้ absolute path -->
+  <main class="login-wrap">
+    <section class="login-hero">
+      <div class="brand-row">
         <img src="/logo.png" alt="CWF">
-        <div class="title">
-          <b>CWF – Smart Field Service</b>
-          <span>เข้าสู่ระบบ</span>
+        <div>
+          <h1>CWF Login</h1>
+          <p>เข้าสู่ระบบสำหรับแอดมินและช่าง</p>
         </div>
       </div>
-      <span class="badge wait">🔒 Secure</span>
-    </div>
+    </section>
 
-    <div class="card">
+    <section class="login-card">
+      <div id="alertBox" class="alert"></div>
       <h2>เข้าสู่ระบบ</h2>
-      <p class="muted" style="margin:6px 0 14px;">สำหรับ Admin / Technician</p>
+      <p class="sub">ใช้เบอร์/รหัสผ่าน หรือเข้าสู่ระบบด้วย LINE หลังจากผูกบัญชีแล้ว</p>
 
-      <label for="u">Username</label>
-      <input id="u" placeholder="เช่น admin / tech1" autocomplete="username">
+      <a class="btn btn-line" href="/auth/line/app">เข้าสู่ระบบด้วย LINE</a>
+      <div class="divider">หรือใช้รหัสผ่าน</div>
 
-      <label for="p" style="margin-top:10px;">Password</label>
+      <label for="u">Username / เบอร์โทร</label>
+      <input id="u" placeholder="เช่น 098xxxxxxx" autocomplete="username">
+
+      <label for="p">Password</label>
       <input id="p" type="password" placeholder="รหัสผ่าน" autocomplete="current-password">
 
-      <div class="row" style="margin-top:12px;">
-        <button onclick="login()">Login</button>
+      <div style="margin-top:14px">
+        <button class="btn btn-primary" onclick="login()">Login</button>
       </div>
 
-      <p class="muted" style="margin-top:10px;">
-        ถ้าเข้าไม่ได้ ให้เช็ค username/password ในฐานข้อมูล (users)
-      </p>
-    </div>
-  </div>
+      <div class="mini-actions">
+        <button type="button" onclick="showForgot()">ลืมรหัสผ่าน</button>
+        <button type="button" onclick="location.href='/partner-apply.html'">สมัครพาร์ทเนอร์ช่าง</button>
+      </div>
+
+      <div id="lineBindPanel" class="panel">
+        <b>ผูก LINE กับบัญชี CWF</b>
+        <p class="small">LINE นี้ยังไม่เคยผูกกับบัญชี CWF กรุณากรอกเบอร์/รหัสผ่านเดิมหนึ่งครั้งเพื่อผูกบัญชี หลังจากนั้นจะ Login ด้วย LINE ได้ทันที</p>
+        <button class="btn btn-line" type="button" onclick="bindLine()">ผูก LINE กับบัญชีนี้</button>
+      </div>
+
+      <div id="forgotPanel" class="panel">
+        <b>ลืมรหัสผ่าน</b>
+        <p class="small">กรอกเบอร์โทรหรือ username แล้วระบบจะส่งคำขอให้แอดมินตรวจสอบและรีเซ็ตรหัสผ่าน</p>
+        <label for="forgotUser">เบอร์โทร / Username</label>
+        <input id="forgotUser" placeholder="เช่น 098xxxxxxx">
+        <label for="forgotNote">หมายเหตุเพิ่มเติม</label>
+        <input id="forgotNote" placeholder="เช่น เป็นบัญชีช่างที่สมัครวันนี้">
+        <div style="margin-top:12px"><button class="btn btn-soft" type="button" onclick="requestPasswordReset()">ส่งคำขอรีเซ็ตรหัสผ่าน</button></div>
+      </div>
+    </section>
+  </main>
 
 <script>
-  // ✅ ใช้ origin เดียวกับที่เปิดอยู่ (HTTP/HTTPS/พอร์ตไหนก็ได้)
   const API_BASE = window.location.origin;
-
-
-  // ✅ Auto-restore session เมื่อเปิดแอพใหม่/รีเฟรช (กันเหมือนหลุดล็อกอิน)
   function getCookie(name){
-    try{
-      return document.cookie.split(";").map(s=>s.trim()).find(s=>s.startsWith(name+"="))?.split("=").slice(1).join("=") || "";
-    }catch{ return ""; }
+    try{return document.cookie.split(';').map(s=>s.trim()).find(s=>s.startsWith(name+'='))?.split('=').slice(1).join('=') || '';}catch{return '';}
+  }
+  function showAlert(msg, type='info'){
+    const el = document.getElementById('alertBox');
+    el.textContent = msg || '';
+    el.className = `alert show ${type}`;
   }
   function restoreAuthFromCookie(){
     try{
-      if (localStorage.getItem("username") && localStorage.getItem("role")) return;
-      const raw = getCookie("cwf_auth");
+      if (localStorage.getItem('username') && localStorage.getItem('role')) return;
+      const raw = getCookie('cwf_auth');
       if (!raw) return;
-      const obj = JSON.parse(decodeURIComponent(escape(atob(raw))));
+      const obj = JSON.parse(decodeURIComponent(escape(atob(decodeURIComponent(raw)))));
       if (!obj || !obj.u || !obj.r) return;
       if (obj.exp && Date.now() > Number(obj.exp)) return;
-      localStorage.setItem("username", obj.u);
-      localStorage.setItem("role", obj.r);
+      localStorage.setItem('username', obj.u);
+      localStorage.setItem('role', obj.r);
     }catch{}
   }
-  function redirectIfAlreadyLoggedIn(){
-    const role = localStorage.getItem("role");
-    if (role === "super_admin") location.replace("/admin-super-v2.html");
-    else if (role === "admin") location.replace("/admin-dashboard-v2.html");
-    if (role === "technician") location.replace("/tech.html");
+  function redirectByRole(role){
+    if (role === 'super_admin') location.replace('/admin-super-v2.html');
+    else if (role === 'admin') location.replace('/admin-dashboard-v2.html');
+    else if (role === 'technician') location.replace('/tech.html');
   }
   restoreAuthFromCookie();
 
-  // ✅ Prevent login bounce loop:
-  // If localStorage/cookie says logged in but server session is gone, clear and stay on login.
-  (async function validateAndRedirect(){
+  (async function init(){
+    const qs = new URLSearchParams(location.search);
+    if (qs.get('line_bind') === '1') {
+      document.getElementById('lineBindPanel').classList.add('show');
+      showAlert('กรุณา Login ด้วยบัญชี CWF หนึ่งครั้ง เพื่อผูก LINE กับบัญชีนี้', 'warn');
+    } else if (qs.get('line') === 'failed') {
+      showAlert(`LINE Login ไม่สำเร็จ (${qs.get('reason') || 'unknown'})`, 'err');
+    }
     try{
       const role = localStorage.getItem('role');
       if (!role) return;
-      const r = await fetch(`${API_BASE}/api/auth/me`, { credentials: 'include' });
+      const r = await fetch(`${API_BASE}/api/auth/me`, { credentials:'include' });
       if (!r.ok) throw new Error('UNAUTHORIZED');
       const d = await r.json().catch(()=>null);
       if (!d || !d.ok) throw new Error('UNAUTHORIZED');
-      // sync role/username from server (supports impersonation-safe)
       localStorage.setItem('username', d.username);
       localStorage.setItem('role', d.role);
-      redirectIfAlreadyLoggedIn();
+      redirectByRole(d.role);
     }catch(_){
-      try{ localStorage.removeItem('username'); localStorage.removeItem('role'); }catch(e){}
-      try{ sessionStorage.removeItem('cwf_logged_out'); }catch(e){}
+      localStorage.removeItem('username');
+      localStorage.removeItem('role');
     }
   })();
 
   async function login() {
     try {
       const res = await fetch(`${API_BASE}/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: u.value.trim(),
-          password: p.value
-        })
+        method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include',
+        body:JSON.stringify({ username:u.value.trim(), password:p.value })
       });
-
-      const d = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(d.error || "login failed");
-
-      localStorage.setItem("username", d.username);
-      localStorage.setItem("role", d.role);
-
-      // ✅ Persist auth fallback (cookie) เพื่อกันเคส localStorage หลุดในบางเครื่อง/PWA
-      // - เก็บแค่ username/role + exp (ไม่ใช่ข้อมูลลับ)
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) throw new Error(d.error || 'login failed');
+      localStorage.setItem('username', d.username);
+      localStorage.setItem('role', d.role);
       try {
-        const expMs = Date.now() + 7 * 24 * 60 * 60 * 1000; // 7 วัน
-        const payload = btoa(unescape(encodeURIComponent(JSON.stringify({ u: d.username, r: d.role, exp: expMs }))));
-        const secure = (location.protocol === "https:") ? "; Secure" : "";
-        document.cookie = `cwf_auth=${payload}; Max-Age=${7 * 24 * 60 * 60}; Path=/; SameSite=Lax${secure}`;
-      } catch (e) {}
-
-      // NOTE: เคยมีโค้ดที่ "ลบ cookie" ทิ้งทันทีหลัง set (ทำให้แอดมิน/ช่างไม่มี cwf_auth)
-      // ส่งผลให้ API ที่ต้องอ่าน cookie (เช่น admin-only rank update) ถูก 401/403
-      // จึงลบส่วนที่ clear cookie ออก และคง cookie ไว้ตาม Max-Age ที่กำหนด
-
-      if (d.role === "super_admin") location.href = "/admin-super-v2.html";
-      else if (d.role === "admin") location.href = "/admin-dashboard-v2.html";
-      if (d.role === "technician") location.href = "/tech.html";
-      if (!d.role) alert("Login ผ่าน แต่ไม่มี role ในระบบ");
+        const expMs = Date.now() + 7 * 24 * 60 * 60 * 1000;
+        const payload = btoa(unescape(encodeURIComponent(JSON.stringify({ u:d.username, r:d.role, exp:expMs }))));
+        const secure = location.protocol === 'https:' ? '; Secure' : '';
+        document.cookie = `cwf_auth=${payload}; Max-Age=${7*24*60*60}; Path=/; SameSite=Lax${secure}`;
+      } catch(e) {}
+      redirectByRole(d.role);
     } catch (err) {
-      alert(`❌ ${err.message}`);
+      showAlert(`❌ ${err.message}`, 'err');
     }
   }
-</script>
-
-
-<script>
-  // ✅ Register Service Worker (เพื่อให้เปิดแบบ PWA เสถียร)
-  if ("serviceWorker" in navigator) {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+  async function bindLine(){
+    try{
+      const username = u.value.trim();
+      const password = p.value;
+      if (!username || !password) throw new Error('กรุณากรอก username และ password ก่อนผูก LINE');
+      const res = await fetch(`${API_BASE}/auth/line/bind`, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ username, password }) });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) throw new Error(d.error || 'ผูก LINE ไม่สำเร็จ');
+      localStorage.setItem('username', d.username);
+      localStorage.setItem('role', d.role);
+      showAlert('ผูก LINE สำเร็จ กำลังเข้าสู่ระบบ...', 'ok');
+      setTimeout(()=>redirectByRole(d.role), 500);
+    }catch(err){ showAlert(`❌ ${err.message}`, 'err'); }
+  }
+  function showForgot(){ document.getElementById('forgotPanel').classList.toggle('show'); }
+  async function requestPasswordReset(){
+    try{
+      const username = document.getElementById('forgotUser').value.trim();
+      const note = document.getElementById('forgotNote').value.trim();
+      if (!username) throw new Error('กรุณากรอกเบอร์โทรหรือ username');
+      const res = await fetch(`${API_BASE}/auth/password-reset/request`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ username, note }) });
+      const d = await res.json().catch(()=>({}));
+      if (!res.ok) throw new Error(d.error || 'ส่งคำขอไม่สำเร็จ');
+      showAlert(d.message || 'ส่งคำขอแล้ว', 'ok');
+    }catch(err){ showAlert(`❌ ${err.message}`, 'err'); }
   }
 </script>
-
+<script>
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(()=>{});
+</script>
 </body>
 </html>
