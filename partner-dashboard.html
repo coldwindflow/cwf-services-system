@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CWF Partner Dashboard</title>
+  <style>
+    :root{--navy:#061b49;--blue:#0b56d8;--yellow:#ffd233;--ink:#10203b;--muted:#64748b;--line:#dbe7ff;--bg:#f5f8fd;--ok:#168048;--warn:#a15c00;--bad:#b91c1c}
+    *{box-sizing:border-box}
+    body{margin:0;font-family:Arial,"Noto Sans Thai",sans-serif;background:linear-gradient(180deg,#06173f 0,#0b56d8 280px,var(--bg) 280px);color:var(--ink)}
+    .wrap{max-width:980px;margin:0 auto;padding:18px 14px 84px}
+    .top{color:#fff;padding:10px 0 18px}.back{color:#fff;text-decoration:none;font-weight:1000;display:inline-flex;margin-bottom:14px}.top h1{margin:0;font-size:34px;line-height:1.12}.top p{margin:8px 0 0;color:rgba(255,255,255,.86);font-weight:800;line-height:1.5}
+    .hero{background:#fff;border:1px solid var(--line);border-radius:30px;box-shadow:0 18px 44px rgba(7,27,73,.14);padding:18px;margin-bottom:16px}
+    .hero-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.hero-head h2{margin:0;font-size:26px;color:var(--navy)}.muted{color:var(--muted);font-weight:800}.badge{display:inline-flex;border-radius:999px;padding:7px 11px;font-weight:1000;font-size:12px;background:#e2e8f0}.ok{background:#dcfce7;color:#166534}.warn{background:#fff0c2;color:#8a4d00}.bad{background:#fee2e2;color:#991b1b}
+    .progress{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:16px}.step{border:1px solid var(--line);border-radius:18px;padding:12px;background:#f8fbff;text-align:center}.step .no{width:32px;height:32px;margin:0 auto 7px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#dbe7ff;color:var(--navy);font-weight:1000}.step.done{background:#eefdf3;border-color:#bbf7d0}.step.done .no{background:#22c55e;color:#fff}.step.current{background:#fff9e8;border-color:#ffd966}.step.current .no{background:var(--yellow);color:var(--navy)}.step b{display:block;font-size:13px}
+    .grid{display:grid;grid-template-columns:1.15fr .85fr;gap:16px}.panel{background:#fff;border:1px solid var(--line);border-radius:26px;box-shadow:0 12px 30px rgba(7,27,73,.08);padding:16px;margin-bottom:16px}.panel h3{margin:0 0 10px;color:var(--navy);font-size:22px}.action{display:flex;align-items:center;gap:14px;padding:14px;border:1px solid var(--line);border-radius:20px;background:#fff;text-decoration:none;color:var(--ink);margin-top:10px}.action:hover{border-color:#8eb5ff;background:#f8fbff}.icon{width:48px;height:48px;border-radius:16px;background:#eef4ff;display:flex;align-items:center;justify-content:center;font-size:24px}.action b{font-size:18px}.action span{display:block;margin-top:4px;color:var(--muted);font-weight:800;font-size:13px}.arrow{margin-left:auto;font-weight:1000;color:var(--blue)}
+    .todo{display:grid;gap:10px}.todo-row{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:16px;padding:12px;background:#f8fbff}.dot{width:12px;height:12px;border-radius:50%;background:#f59e0b;margin-top:5px}.todo-row.done .dot{background:#22c55e}.todo-row b{display:block}.cert-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}.cert{border:1px solid var(--line);border-radius:16px;padding:10px;background:#f8fbff;font-weight:900}.empty{border:1px dashed #b9c9e8;border-radius:18px;padding:18px;text-align:center;color:var(--muted);font-weight:900;background:#fbfdff}.footer-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.btn{border:0;border-radius:16px;padding:13px 15px;font-weight:1000;text-decoration:none;display:inline-flex;align-items:center;justify-content:center}.primary{background:var(--yellow);color:var(--navy)}.secondary{background:var(--blue);color:#fff}.ghost{background:#eef4ff;color:var(--navy)}
+    @media(max-width:860px){.grid{grid-template-columns:1fr}.progress{grid-template-columns:repeat(2,1fr)}.top h1{font-size:28px}.hero-head{flex-direction:column}.cert-grid{grid-template-columns:1fr}}
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <section class="top">
+      <a class="back" href="/tech.html">← กลับหน้าแอพช่าง</a>
+      <h1>Partner Dashboard</h1>
+      <p>ดูสถานะทั้งหมดในหน้าเดียว และทำขั้นตอนที่ยังค้างให้ครบ</p>
+    </section>
+
+    <section class="hero" id="heroPanel">
+      <div class="muted">กำลังโหลดสถานะพาร์ทเนอร์...</div>
+    </section>
+
+    <section class="grid">
+      <div>
+        <section class="panel">
+          <h3>ทำขั้นตอนต่อ</h3>
+          <a class="action" id="docLink" href="/partner-status.html"><div class="icon">📷</div><div><b>อัปโหลดเอกสาร / รูปโปรไฟล์</b><span>ส่งเอกสารให้แอดมินตรวจสอบ</span></div><div class="arrow">›</div></a>
+          <a class="action" id="agreementLink" href="/partner-agreement.html"><div class="icon">📝</div><div><b>อ่านและเซ็นสัญญา</b><span>ตรวจสัญญาและเซ็นด้วยลายเซ็นบนหน้าจอ</span></div><div class="arrow">›</div></a>
+          <a class="action" id="academyLink" href="/partner-academy.html"><div class="icon">🎓</div><div><b>อบรมและทำข้อสอบ Academy</b><span>ดูบทเรียนให้ครบและสอบผ่าน 80%</span></div><div class="arrow">›</div></a>
+        </section>
+
+        <section class="panel">
+          <h3>สิทธิ์งานที่อนุมัติ</h3>
+          <div id="certifications" class="cert-grid"></div>
+        </section>
+      </div>
+
+      <aside>
+        <section class="panel">
+          <h3>สิ่งที่ยังต้องทำ</h3>
+          <div id="todoList" class="todo"></div>
+        </section>
+        <section class="panel">
+          <h3>ข้อมูลผู้สมัคร</h3>
+          <div id="profileInfo" class="muted">-</div>
+        </section>
+      </aside>
+    </section>
+  </main>
+  <script src="/partner-dashboard.js?v=phase2a"></script>
+</body>
+</html>

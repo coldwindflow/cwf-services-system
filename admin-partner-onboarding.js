@@ -131,7 +131,15 @@
           </div>
           <div class="grid3" style="margin-top:8px">
             <div><label>สถานะเอกสาร</label><select data-doc-status>${options}</select></div>
-            <div style="grid-column:span 2"><label>หมายเหตุ</label><input data-doc-note value="${esc(d.admin_note || '')}"></div>
+            <div style="grid-column:span 2">
+              <label>หมายเหตุ / เหตุผลถ้าไม่ผ่าน</label>
+              <input data-doc-note value="${esc(d.admin_note || '')}" placeholder="เช่น รูปไม่ชัด / ชื่อบัญชีไม่ตรง / ขอเอกสารใหม่">
+              <div class="quickReasons">
+                <button class="reasonChip" type="button" data-reason="รูปไม่ชัด กรุณาถ่ายใหม่ให้เห็นข้อมูลครบ">รูปไม่ชัด</button>
+                <button class="reasonChip" type="button" data-reason="ข้อมูลไม่ครบ กรุณาอัปโหลดเอกสารใหม่">ข้อมูลไม่ครบ</button>
+                <button class="reasonChip" type="button" data-reason="ชื่อบัญชีไม่ตรงกับชื่อผู้สมัคร กรุณาตรวจสอบ">ชื่อไม่ตรง</button>
+              </div>
+            </div>
           </div>
           <button class="ghost" data-save-doc type="button" style="margin-top:8px">บันทึกเอกสาร</button>
         </div>
@@ -173,6 +181,36 @@
     }
   }
 
+
+  function checklistItem(label, ok, detail){
+    return `<div class="reviewCheck ${ok ? 'ok' : 'warn'}"><div>${ok ? '✓' : '•'} ${esc(label)}</div><small>${esc(detail || '')}</small></div>`;
+  }
+
+  function renderAdminReviewChecklist(){
+    const docs = activeDetail?.documents || [];
+    const sigs = activeExtra.agreement?.signatures || [];
+    const academy = activeExtra.academy?.academy || null;
+    const attempts = activeExtra.exams?.attempts || [];
+    const certs = activeExtra.certifications?.certifications || [];
+    const requiredDocs = ['id_card','profile_photo','bank_book'];
+    const docsUploaded = requiredDocs.every(t => docs.some(d => d.document_type === t));
+    const docsApproved = requiredDocs.every(t => docs.some(d => d.document_type === t && d.status === 'approved'));
+    const trainingDone = academy && Number(academy.lesson_count || 0) > 0 && Number(academy.completed_count || 0) >= Number(academy.lesson_count || 0);
+    const examPassed = attempts.some(a => a.passed === true || a.passed === 'true');
+    const hasApprovedCert = certs.some(c => c.status === 'approved');
+    return `
+      <h3 style="margin:0 0 8px">Checklist อนุมัติพาร์ทเนอร์</h3>
+      <div class="reviewChecklist">
+        ${checklistItem('เอกสารหลักอัปโหลดครบ', docsUploaded, 'บัตรประชาชน / รูปโปรไฟล์ / สมุดบัญชี')}
+        ${checklistItem('เอกสารหลักผ่านตรวจ', docsApproved, 'ถ้าไม่ผ่าน ให้ระบุเหตุผลและขออัปโหลดใหม่')}
+        ${checklistItem('เซ็นสัญญาแล้ว', sigs.length > 0, sigs[0]?.signed_at ? fmtDate(sigs[0].signed_at) : 'ยังไม่เซ็น')}
+        ${checklistItem('อบรม Basic ครบ', !!trainingDone, academy ? `${academy.completed_count || 0}/${academy.lesson_count || 0} บทเรียน` : 'ยังไม่มีข้อมูล')}
+        ${checklistItem('สอบผ่าน 80%', !!examPassed, attempts[0] ? `คะแนนล่าสุด ${attempts[0].score_percent || 0}%` : 'ยังไม่มีผลสอบ')}
+        ${checklistItem('เปิดสิทธิ์งานแล้ว', !!hasApprovedCert, hasApprovedCert ? 'มี certification approved' : 'ยังไม่มีสิทธิ์รับงานจริง')}
+      </div>
+    `;
+  }
+
   function renderOnboardingSummary(){
     const sigs = activeExtra.agreement?.signatures || [];
     const contractReady = activeExtra.agreement?.contract_ready !== false;
@@ -183,6 +221,7 @@
     const doneLessons = lessons.filter(l=>l.completed).length;
     const bestExam = attempts[0];
     $('onboardingSummary').innerHTML = `
+      ${renderAdminReviewChecklist()}
       <div class="miniCard"><b>Agreement</b>${!contractReady ? '<span class="badge warn">ยังไม่พร้อม</span>' : (sigs.length ? badge('approved') : badge('not_started'))}<div class="muted">${!contractReady ? esc(contractWarning) : (sigs[0] ? fmtDate(sigs[0].signed_at) : 'ยังไม่เซ็น')}</div></div>
       <div class="miniCard"><b>Academy</b><span class="badge">${doneLessons}/${lessons.length || 0}</span><div class="muted">บทเรียนที่ทำแล้ว</div></div>
       <div class="miniCard"><b>Exam</b>${bestExam ? badge(bestExam.passed ? 'exam_passed' : 'exam_failed') : badge('not_started')}<div class="muted">${bestExam ? `${Number(bestExam.score_percent)}% • ${fmtDate(bestExam.submitted_at)}` : 'ยังไม่สอบ'}</div></div>
@@ -337,6 +376,13 @@
   $('btnClose').addEventListener('click', ()=>$('detailDrawer').classList.remove('open'));
   $('btnSaveStatus').addEventListener('click', () => saveApplicationStatus().catch(err=>alert(err.message)));
   $('documents').addEventListener('click', e=>{
+    const reason = e.target.closest('[data-reason]');
+    if (reason) {
+      const card = reason.closest('[data-doc-id]');
+      const input = card && card.querySelector('[data-doc-note]');
+      if (input) input.value = reason.dataset.reason || '';
+      return;
+    }
     const btn = e.target.closest('[data-save-doc]');
     if (btn) saveDocument(btn.closest('[data-doc-id]')).catch(err=>alert(err.message));
   });
