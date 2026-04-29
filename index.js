@@ -574,7 +574,7 @@ app.get('/auth/line/app/callback', async (req, res) => {
     if (!bindToken) return res.redirect('/login.html?line=failed&reason=no_jwt_secret');
     const secureCookie = callback.startsWith('https://');
     setHttpOnlyCookie(res, 'cwf_line_bind', bindToken, { maxAgeSec: 10 * 60, secure: secureCookie });
-    return res.redirect('/login.html?line_bind=1');
+    return res.redirect('/login.html?line_new=1');
   } catch (e) {
     console.error('[LINE_APP_CALLBACK_ERROR]', e);
     return res.redirect('/login.html?line=failed&reason=server');
@@ -1991,6 +1991,7 @@ async function getPartnerApplicationById(id, client = pool) {
 // =======================================
 app.post('/partner/apply', async (req, res) => {
   const body = req.body || {};
+  const pendingLineProfile = readLineBindToken(req);
   const full_name = String(body.full_name || '').trim();
   const phone = normalizePartnerPhone(body.phone);
   const password = String(body.password || '').trim();
@@ -2072,7 +2073,7 @@ app.post('/partner/apply', async (req, res) => {
         travel_method,
         normalizePartnerNumber(body.service_radius_km),
         JSON.stringify(equipment_json),
-        body.line_user_id ? String(body.line_user_id).trim() : null,
+        pendingLineProfile?.line_user_id || (body.line_user_id ? String(body.line_user_id).trim() : null),
         account.created ? 'created_new_technician_account' : 'linked_existing_technician_account',
       ]
     );
@@ -2083,10 +2084,14 @@ app.post('/partner/apply', async (req, res) => {
       event_type: 'application_submitted',
       to_status: 'submitted',
       note: 'Partner application submitted',
-      metadata: { application_code, technician_username: account.username, account_created: account.created },
+      metadata: { application_code, technician_username: account.username, account_created: account.created, line_bound: !!pendingLineProfile?.line_user_id },
     });
+    if (pendingLineProfile?.line_user_id) {
+      await bindLineProfileToUser(account.username, pendingLineProfile, client);
+    }
     await client.query('COMMIT');
     notifyPartnerAdmins('partner_application_submitted', partnerNotifyTextNewApplication(appRow), appRow.id).catch(()=>{});
+    if (pendingLineProfile?.line_user_id) clearCookie(res, 'cwf_line_bind');
     return res.json({ ok: true, application: partnerApplicationPublicShape(appRow) });
   } catch (e) {
     await client.query('ROLLBACK');

@@ -136,6 +136,14 @@
         <p>กรอกข้อมูลให้ครบเพื่อให้ทีมงานตรวจสอบและเปิดขั้นตอนถัดไป</p>
       </div>
       <div class="card-body">
+        <div class="notice" id="linePendingNotice" style="display:none">
+          <div style="font-size:20px">✅</div>
+          <div>
+            <strong>สมัครด้วย LINE นี้</strong>
+            หลังส่งใบสมัคร ระบบจะผูก LINE นี้กับบัญชีช่างให้ทันที เพื่อใช้ LINE Login ในครั้งถัดไป
+          </div>
+        </div>
+
         <div class="notice">
           <div style="font-size:20px">ℹ️</div>
           <div>
@@ -319,6 +327,14 @@
       </div>
     </main>
   </div>
+  <script>
+    if (new URLSearchParams(location.search).get("line_pending") === "1") {
+      document.addEventListener("DOMContentLoaded", () => {
+        const el = document.getElementById("linePendingNotice");
+        if (el) el.style.display = "flex";
+      });
+    }
+  </script>
   <script src="/partner-apply.js?v=20260428-bank-submit-final"></script>
 </body>
 </html>

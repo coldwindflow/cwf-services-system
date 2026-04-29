@@ -42,6 +42,12 @@
     .mini-actions button{border:0;background:transparent;color:var(--blue);font-weight:1000;cursor:pointer;padding:6px 0}
     .panel{display:none;margin-top:14px;border:1px solid var(--line);background:#f8fbff;border-radius:20px;padding:14px}.panel.show{display:block}
     .small{font-size:13px;color:var(--muted);font-weight:800;line-height:1.55}
+
+    .line-choice{display:grid;gap:10px;margin-top:12px}
+    .line-choice .btn{min-height:50px}
+    .btn-outline{background:#fff;color:var(--navy);border:2px solid var(--line)}
+    .status-card{border:1px solid #dbe7ff;background:#fff;border-radius:16px;padding:12px;margin:10px 0;color:#344054;font-weight:800;line-height:1.55}
+
     @media(max-width:420px){.login-wrap{padding:22px 14px 42px}.brand-row h1{font-size:25px}.login-card{padding:18px}.grid2{grid-template-columns:1fr}}
   </style>
 </head>
@@ -81,9 +87,15 @@
       </div>
 
       <div id="lineBindPanel" class="panel">
-        <b>ผูก LINE กับบัญชี CWF</b>
-        <p class="small">LINE นี้ยังไม่เคยผูกกับบัญชี CWF กรุณากรอกเบอร์/รหัสผ่านเดิมหนึ่งครั้งเพื่อผูกบัญชี หลังจากนั้นจะ Login ด้วย LINE ได้ทันที</p>
-        <button class="btn btn-line" type="button" onclick="bindLine()">ผูก LINE กับบัญชีนี้</button>
+        <b>ยังไม่พบบัญชี CWF ที่ผูกกับ LINE นี้</b>
+        <div class="status-card">
+          ถ้าคุณเป็นช่างใหม่ ให้สมัครพาร์ทเนอร์ช่างด้วย LINE นี้ได้เลย<br>
+          ถ้าคุณมีบัญชี CWF อยู่แล้ว ให้กรอกเบอร์/รหัสผ่านแล้วกดผูกบัญชี
+        </div>
+        <div class="line-choice">
+          <button class="btn btn-line" type="button" onclick="startPartnerApplyWithLine()">สมัครพาร์ทเนอร์ช่างด้วย LINE นี้</button>
+          <button class="btn btn-outline" type="button" onclick="bindLine()">ผูก LINE กับบัญชีเดิม</button>
+        </div>
       </div>
 
       <div id="forgotPanel" class="panel">
@@ -129,11 +141,21 @@
 
   (async function init(){
     const qs = new URLSearchParams(location.search);
-    if (qs.get('line_bind') === '1') {
+    if (qs.get('line_new') === '1' || qs.get('line_bind') === '1') {
       document.getElementById('lineBindPanel').classList.add('show');
-      showAlert('กรุณา Login ด้วยบัญชี CWF หนึ่งครั้ง เพื่อผูก LINE กับบัญชีนี้', 'warn');
+      showAlert('LINE นี้ยังไม่เคยผูกกับบัญชี CWF เลือกสมัครใหม่หรือผูกกับบัญชีเดิม', 'warn');
     } else if (qs.get('line') === 'failed') {
-      showAlert(`LINE Login ไม่สำเร็จ (${qs.get('reason') || 'unknown'})`, 'err');
+      const reason = qs.get('reason') || 'unknown';
+      const messages = {
+        no_code: 'LINE ไม่ส่งรหัสกลับมา กรุณาลองใหม่',
+        bad_state: 'Session LINE หมดอายุ กรุณากด Login ด้วย LINE ใหม่อีกครั้ง',
+        misconfig: 'ระบบ LINE Login ยังตั้งค่าไม่ครบ กรุณาแจ้งแอดมิน',
+        no_access_token: 'LINE ไม่ส่ง access token กลับมา กรุณาลองใหม่',
+        no_user: 'ไม่พบข้อมูลผู้ใช้จาก LINE กรุณาลองใหม่',
+        no_jwt_secret: 'ระบบยังไม่ได้ตั้งค่า JWT_SECRET กรุณาแจ้งแอดมิน',
+        server: 'ระบบเข้าสู่ระบบด้วย LINE ขัดข้อง กรุณาลองใหม่หรือลงชื่อเข้าด้วยรหัสผ่าน'
+      };
+      showAlert(messages[reason] || `LINE Login ไม่สำเร็จ (${reason})`, 'err');
     }
     try{
       const role = localStorage.getItem('role');
@@ -172,6 +194,10 @@
       showAlert(`❌ ${err.message}`, 'err');
     }
   }
+  function startPartnerApplyWithLine(){
+    location.href = '/partner-apply.html?line_pending=1';
+  }
+
   async function bindLine(){
     try{
       const username = u.value.trim();
