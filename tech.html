@@ -613,7 +613,97 @@
         @media (max-width:380px){
           .accept-btn,.zone-select{ font-size:13px; }
         }
+      
+    /* ✅ CWF FIX: keep hamburger menu visible; only sub-settings are grouped */
+    #techTopNav{display:block!important;position:fixed!important;left:0!important;right:0!important;top:0!important;z-index:5000!important}
+    #techMenuBtn{display:inline-flex!important;visibility:visible!important;opacity:1!important}
+    #techDrawerBackdrop{z-index:5100!important}
+    #techDrawer{z-index:5200!important}
+    #techTopSpacer{display:block!important;height:82px!important}
+    .techMenuHidden{display:none!important}
+
       </style>
+
+      <!-- ✅ CWF FIX: Restored hamburger menu DOM. Keep burger menu, combine only settings. -->
+      <div id="techTopNav">
+        <div class="in">
+          <div class="ttl">
+            <b>CWF – ช่าง</b>
+            <span id="me">ผู้ใช้: -</span>
+          </div>
+          <button class="tech-icbtn" type="button" id="techMenuBtn" aria-label="เมนู">☰</button>
+        </div>
+      </div>
+      <div id="techTopSpacer"></div>
+
+      <div id="techDrawerBackdrop"></div>
+      <div id="techDrawer">
+        <div class="panel">
+          <div class="techMenuHead">
+            <b>เมนูช่าง</b>
+            <button class="tech-icbtn" type="button" id="techMenuCloseBtn" aria-label="ปิด">✕</button>
+          </div>
+
+          <div class="techMenuList">
+            <button class="techMenuBtn" type="button" id="notifyBtn">
+              <span class="left"><span class="menuIcon">🔔</span><span class="menuText"><strong>แจ้งเตือน / เสียงเตือน</strong><span class="sub" id="notifyStateText">-</span></span></span>
+              <span class="menuArrow">›</span>
+            </button>
+
+            <button class="techMenuBtn techMenuSetting" type="button" onclick="openTechSettingsModal()">
+              <span class="left"><span class="menuIcon">⚙️</span><span class="menuText"><strong>ตั้งค่า</strong><span class="sub">LINE / โปรไฟล์ / รหัสผ่าน / วันทำงาน / งานที่รับได้</span></span></span>
+              <span class="menuArrow">›</span>
+            </button>
+
+            <button class="techMenuBtn techMenuHidden" type="button" id="themeToggleBtn" aria-hidden="true">theme</button>
+            <button class="techMenuBtn techMenuHidden" type="button" id="techMatrixBtn" aria-hidden="true">matrix</button>
+
+            <div class="techMenuSmall" style="margin-top:4px;padding:0 2px;">อื่นๆ</div>
+
+            <button class="techMenuBtn techMenuDanger" type="button" onclick="logout()">
+              <span class="left"><span class="menuIcon">🚪</span><span class="menuText"><strong>ออกจากระบบ</strong><span class="sub">Logout</span></span></span>
+              <span class="menuArrow">›</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="techSettingsModal">
+        <div class="settingsPanel">
+          <div class="settingsHead">
+            <div>
+              <h3>ตั้งค่า</h3>
+              <p>รวมการตั้งค่าบัญชีและการรับงานไว้ในที่เดียว</p>
+            </div>
+            <button class="tech-icbtn settingsClose" type="button" onclick="closeTechSettingsModal()" aria-label="ปิด">✕</button>
+          </div>
+          <div class="settingsGrid">
+            <button class="settingsItem line" type="button" onclick="bindCurrentTechLine()">
+              <span class="sIcon">LINE</span><span class="sText"><strong>ผูก LINE Login</strong><span>ใช้ LINE เข้าแอพช่างครั้งถัดไป</span></span>
+            </button>
+            <button class="settingsItem" type="button" onclick="goEditProfile()">
+              <span class="sIcon">✏️</span><span class="sText"><strong>แก้ไขโปรไฟล์</strong><span>ข้อมูลส่วนตัว รูปโปรไฟล์ และข้อมูลช่าง</span></span>
+            </button>
+            <button class="settingsItem" type="button" onclick="goChangePassword()">
+              <span class="sIcon">🔑</span><span class="sText"><strong>เปลี่ยนรหัสผ่าน</strong><span>ตั้งรหัสผ่านใหม่เพื่อความปลอดภัย</span></span>
+            </button>
+            <button class="settingsItem" type="button" onclick="openWorkdaysModal()">
+              <span class="sIcon">🗓️</span><span class="sText"><strong>วันหยุด / วันทำงาน</strong><span>ตั้งค่าวันรับงานและวันไม่สะดวก</span></span>
+            </button>
+            <button class="settingsItem" type="button" onclick="document.getElementById('techMatrixBtn')?.click()">
+              <span class="sIcon">🧩</span><span class="sText"><strong>งานที่รับได้</strong><span>ตั้งค่าประเภทงานที่พร้อมให้แสดงสลอตลูกค้า</span></span>
+            </button>
+            <button class="settingsItem" type="button" onclick="location.href='/tech/base-status'">
+              <span class="sIcon">🧬</span><span class="sText"><strong>แบบประเมิน Base Status</strong><span>ตรวจค่าสเตตัสและข้อมูลพื้นฐานช่าง</span></span>
+            </button>
+            <button class="settingsItem" type="button" onclick="document.getElementById('themeToggleBtn')?.click()">
+              <span class="sIcon">🎨</span><span class="sText"><strong>สลับธีม</strong><span>โหมดสีหน้าช่าง</span></span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+
 
       <div class="tech-ctrl-row">
         <button id="acceptToggleBtn" class="accept-btn ready" type="button">
@@ -863,7 +953,26 @@
     <button class="nav-btn" id="nav-income" onclick="switchTab('income')">💰 รายได้</button>
   </div>
 
-  <script src="app.js?v=tech-premium-v10-6-ui-shell"></script>
+  <script src="app.js?v=tech-premium-v10-6-ui-shell">
+    document.addEventListener('DOMContentLoaded', ()=>{
+      if (!document.getElementById('techMenuBtn')) {
+        const btn = document.createElement('button');
+        btn.id = 'techMenuBtn';
+        btn.type = 'button';
+        btn.className = 'tech-icbtn';
+        btn.textContent = '☰';
+        btn.style.cssText = 'position:fixed;right:14px;top:calc(10px + env(safe-area-inset-top));z-index:6000;background:#F4C400;color:#111827';
+        btn.addEventListener('click', ()=> {
+          const bd = document.getElementById('techDrawerBackdrop');
+          const dr = document.getElementById('techDrawer');
+          if (bd) bd.style.display='block';
+          if (dr) dr.style.display='block';
+        });
+        document.body.appendChild(btn);
+      }
+    });
+
+  </script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
         function goChangePassword(){ location.href = '/change-password.html'; }
