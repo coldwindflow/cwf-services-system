@@ -291,7 +291,7 @@
     .chipStat .v{font-size:18px;font-weight:1200;color:var(--tech-navy)}
     .chipStat.clickable{cursor:pointer;transition:transform .16s ease, border-color .16s ease, background .16s ease;}
     .chipStat.clickable:active{transform:scale(.985);}
-    .chipStat.clickable .k::after{content:' แตะดู';font-size:10px;font-weight:1000;color:var(--tech-navy-2);}
+    .chipStat.clickable .k::after{content:'';}
     .work-summary-card{margin-top:12px;padding:14px;border-radius:20px;border:1px solid var(--tech-border);background:linear-gradient(180deg,#fff,#F9FBFF);}
     .work-summary-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px;}
     .work-summary-head b{color:var(--tech-navy);font-size:16px;}
@@ -312,6 +312,16 @@
     .work-row:first-of-type{border-top:none;}
     .work-row span{font-size:13px;color:#0f172a;font-weight:900;}
     .work-row strong{font-size:13px;color:var(--tech-navy);}
+    .deposit-mini-card{display:none;margin-top:12px;border-radius:18px;border:1px solid rgba(245,158,11,.34);background:linear-gradient(180deg,#FFFBEB,#fff);padding:12px 14px;}
+    .deposit-mini-card .deposit-head{display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    .deposit-mini-card b{color:var(--tech-navy);font-size:15px;}
+    .deposit-mini-card .remain{font-size:24px;font-weight:1200;color:var(--tech-navy);margin-top:6px;}
+    .deposit-progress{height:8px;border-radius:999px;background:rgba(15,23,42,.08);overflow:hidden;margin-top:10px;}
+    .deposit-progress span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--tech-yellow),#0B63F6);width:0%;}
+    details.statement-panel{margin-top:12px;padding-top:12px;border-top:1px solid rgba(15,23,42,0.08);}
+    details.statement-panel summary{list-style:none;cursor:pointer;user-select:none;border-radius:16px;border:1px solid var(--tech-border);background:#fff;padding:12px 14px;font-weight:1100;color:var(--tech-navy);display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    details.statement-panel summary::-webkit-details-marker{display:none;}
+    .statement-body{margin-top:12px;}
     details.tech-more summary{border-radius:16px;border:1px solid var(--tech-border);background:#fff;padding:12px 14px;font-weight:1000;color:var(--tech-navy)}
     .tech-more .moreBox{border-radius:18px;border:1px solid var(--tech-border);background:#fff;padding:12px;}
     .accept-btn{min-height:48px;border-radius:16px;border:1px solid var(--tech-border);font-weight:1000;}
@@ -736,7 +746,7 @@
         </div>
 
         <div class="chips">
-          <div class="chipStat clickable" role="button" tabindex="0" title="แตะเพื่อดูรายละเอียดรายได้" onclick="switchTab('income')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('income')}">
+          <div class="chipStat clickable" role="button" tabindex="0" onclick="switchTab('income')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('income')}">
             <div class="k">💰 รายได้วันนี้</div>
             <div class="v" id="incomeDaily">-</div>
           </div>
@@ -862,6 +872,19 @@
             <details class="work-more" id="incomeWorkSummaryDetails"></details>
           </div>
 
+          <div class="deposit-mini-card" id="incomeDepositRemainWrap">
+            <div class="deposit-head">
+              <div>
+                <b>เงินประกันงานคงเหลือ</b>
+                <div class="muted" style="font-size:12px;margin-top:3px">ระบบจะหักอัตโนมัติจนกว่าจะครบเป้าหมาย</div>
+              </div>
+              <span style="font-size:22px">🛡️</span>
+            </div>
+            <div class="remain" id="incomeDepositRemainVal">-</div>
+            <div class="muted" id="incomeDepositProgressText" style="font-size:12px;margin-top:4px">-</div>
+            <div class="deposit-progress"><span id="incomeDepositProgressBar"></span></div>
+          </div>
+
           <!-- keep legacy summary ids for backward compatibility (hidden) -->
           <div style="display:none">
             <span id="incomeMonth">-</span>
@@ -876,30 +899,42 @@
             <button class="btn blue" id="btnReloadIncomeOverview">รีเฟรชภาพรวม</button>
           </div>
 
-          <!-- ✅ รายละเอียดรายวัน (statement) -->
-          <div style="margin-top:12px;padding-top:12px;border-top:1px solid rgba(15,23,42,0.08)">
-            <b style="color:#0b1b3a">สเตทเมนต์รายวัน</b>
-            <div class="muted" style="margin-top:6px">เลือกวันแล้วดูว่าแต่ละงานได้เท่าไหร่แบบอ่านเป็นขั้นตอน</div>
+          <!-- ✅ รายละเอียดรายวัน (statement) ซ่อนตัวกรองไว้ก่อน เพื่อลดความรก -->
+          <details class="statement-panel" id="incomeStatementPanel">
+            <summary>
+              <span>สเตทเมนต์รายได้</span>
+              <span>▾</span>
+            </summary>
+            <div class="statement-body">
+              <div class="muted" style="margin-top:2px">เลือกดูรายวัน / ทั้งเดือน / ย้อนหลัง 3 เดือน</div>
 
-            <div class="premium-filter-row" style="margin-top:10px;">
-              <button class="btn" id="btnIncomeQuickToday">วันนี้</button>
-              <button class="btn" id="btnIncomeQuickYesterday">เมื่อวาน</button>
-              <button class="btn" id="btnIncomeQuick7">7 วันล่าสุด</button>
-            </div>
+              <div class="premium-filter-row" style="margin-top:10px;">
+                <button class="btn" id="btnIncomeQuickToday">วันนี้</button>
+                <button class="btn" id="btnIncomeQuickYesterday">เมื่อวาน</button>
+                <button class="btn blue" id="btnIncomeQuickMonth">ทั้งเดือน</button>
+                <button class="btn" id="btnIncomeQuick3Months">ย้อนหลัง 3 เดือน</button>
+              </div>
 
-            <div id="techIncomeLast7Wrap" style="margin-top:10px;display:none">
-              <div class="muted">สรุป 7 วันล่าสุด</div>
-              <div id="techIncomeLast7List" style="margin-top:8px"></div>
-              <div style="height:10px"></div>
-            </div>
+              <div class="premium-filter-row" style="margin-top:10px;align-items:center;">
+                <input id="incomeMonthPicker" class="premium-input" type="month" style="flex:1;min-width:150px" />
+                <button class="btn" id="btnLoadIncomeMonth">ดูเดือนที่เลือก</button>
+              </div>
 
-            <div class="premium-filter-row" style="margin-top:10px;align-items:center;">
-              <input id="incomeDatePicker" class="premium-input" type="date" style="flex:1;min-width:180px" />
-              <button class="btn blue" id="btnLoadIncomeDay">ดูรายละเอียด</button>
+              <div class="premium-filter-row" style="margin-top:10px;align-items:center;">
+                <input id="incomeDatePicker" class="premium-input" type="date" style="flex:1;min-width:180px" />
+                <button class="btn blue" id="btnLoadIncomeDay">ดูรายวัน</button>
+              </div>
+
+              <div id="techIncomeLast7Wrap" style="margin-top:10px;display:none">
+                <div class="muted" id="techIncomeLast7Title">สรุปสเตทเมนต์</div>
+                <div id="techIncomeLast7List" style="margin-top:8px"></div>
+                <div style="height:10px"></div>
+              </div>
+
+              <div id="techIncomeDayHint" class="muted" style="margin-top:8px">เลือกวันที่หรือเดือนที่ต้องการดู</div>
+              <div id="techIncomeDayList" style="margin-top:10px"></div>
             </div>
-            <div id="techIncomeDayHint" class="muted" style="margin-top:8px">เลือกวันที่แล้วกดดูรายละเอียด</div>
-            <div id="techIncomeDayList" style="margin-top:10px"></div>
-          </div>
+          </details>
         </div>
 
         <div class="card" style="margin-top:0">

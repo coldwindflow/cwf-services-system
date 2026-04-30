@@ -5199,9 +5199,9 @@ function _normAcKey(s) {
   const v = String(s || '').toLowerCase();
   if (!v) return null;
   if (v.includes('ผนัง') || v.includes('wall')) return 'wall';
-  if (v.includes('สี่ทิศ') || v.includes('four') || v.includes('4')) return 'fourway';
-  if (v.includes('แขวน')) return 'hanging';
-  if (v.includes('ใต้ฝ้า') || v.includes('เปลือย') || v.includes('ฝัง') || v.includes('ceiling')) return 'ceiling';
+  if (v.includes('สี่ทิศ') || v.includes('ฝังฝ้า') || v.includes('cassette') || v.includes('four') || v.includes('4')) return 'fourway';
+  if (v.includes('แขวน') || v.includes('ตั้งพื้น') || v.includes('floor')) return 'hanging';
+  if (v.includes('ใต้ฝ้า') || v.includes('เปลือย') || v.includes('ceiling') || v.includes('concealed')) return 'ceiling';
   return null;
 }
 function _normWashKey(s) {
@@ -5223,8 +5223,8 @@ function _thaiLabelJob(k){
 function _thaiLabelAc(k){
   if (k==='wall') return 'ผนัง';
   if (k==='fourway') return 'สี่ทิศทาง';
-  if (k==='hanging') return 'แขวน';
-  if (k==='ceiling') return 'เปลือยใต้ฝ้า';
+  if (k==='hanging') return 'แขวน/ตั้งพื้น';
+  if (k==='ceiling') return 'เปลือย';
   return '';
 }
 function _thaiLabelWash(k){
@@ -7064,8 +7064,8 @@ function _cwfWorkSummaryFromLines(lines, win){
         let ac = String(detail.ac_type_key || '').trim();
         if (!ac) {
           if (/สี่ทิศ|four|4way|4-way/.test(acText)) ac = 'fourway';
-          else if (/เปลือย|ใต้ฝ้า|ceiling/.test(acText)) ac = 'ceiling';
-          else if (/แขวน/.test(acText) && !/แขวนคอย/.test(acText)) ac = 'hanging';
+          else if (/เปลือย|ใต้ฝ้า|concealed|ceiling/.test(acText)) ac = 'ceiling';
+          else if (/แขวน|ตั้งพื้น|floor/.test(acText) && !/แขวนคอย/.test(acText)) ac = 'hanging';
           else ac = 'wall';
         }
         totalMachines += qty;
@@ -7073,8 +7073,8 @@ function _cwfWorkSummaryFromLines(lines, win){
         _cwfAddWork(byAc, ac, _thaiLabelAc(ac) || ac, 'เครื่อง', qty);
         if (ac === 'wall') {
           _cwfAddWork(cards, `wall_${wash}`, _thaiLabelWash(wash) || wash, 'เครื่อง', qty);
-        } else {
-          _cwfAddWork(cards, 'other_ac', 'แอร์ประเภทอื่น', 'เครื่อง', qty);
+        } else if (ac === 'fourway' || ac === 'hanging' || ac === 'ceiling') {
+          _cwfAddWork(cards, `ac_${ac}`, _thaiLabelAc(ac) || ac, 'เครื่อง', qty);
         }
       }
       continue;
@@ -7088,19 +7088,21 @@ function _cwfWorkSummaryFromLines(lines, win){
       _cwfAddWork(byWash, wash, _thaiLabelWash(wash) || wash, 'เครื่อง', mc);
       _cwfAddWork(byAc, ac, _thaiLabelAc(ac) || ac, 'เครื่อง', mc);
       if (ac === 'wall') _cwfAddWork(cards, `wall_${wash}`, _thaiLabelWash(wash) || wash, 'เครื่อง', mc);
-      else _cwfAddWork(cards, 'other_ac', 'แอร์ประเภทอื่น', 'เครื่อง', mc);
+      else if (ac === 'fourway' || ac === 'hanging' || ac === 'ceiling') _cwfAddWork(cards, `ac_${ac}`, _thaiLabelAc(ac) || ac, 'เครื่อง', mc);
     }
   }
 
   for (const it of jobTypeJobs.values()) _cwfAddWork(cards, it.key, it.label, it.unit, it.count);
 
-  const order = ['wall_normal','wall_premium','wall_coil','wall_overhaul','other_ac','repair','install'];
+  const order = ['wall_normal','wall_premium','wall_coil','wall_overhaul','ac_fourway','ac_hanging','ac_ceiling','repair','install'];
   const fixedLabels = {
     wall_normal: 'ล้างธรรมดา',
     wall_premium: 'พรีเมี่ยม',
     wall_coil: 'แขวนคอยล์',
     wall_overhaul: 'ตัดล้างใหญ่',
-    other_ac: 'แอร์ประเภทอื่น',
+    ac_fourway: 'สี่ทิศทาง',
+    ac_hanging: 'แขวน/ตั้งพื้น',
+    ac_ceiling: 'เปลือย',
     repair: 'ซ่อม',
     install: 'ติดตั้ง',
   };
@@ -8403,6 +8405,7 @@ all_total += inc;
     const workSummary = (monthlyStart && monthlyEnd && !Number.isNaN(monthlyStart.getTime()) && !Number.isNaN(monthlyEnd.getTime()))
       ? await _computeTechnicianWorkSummary(tech, monthlyStart, monthlyEnd, payoutMonth.payout_month || ymKey)
       : { cards: [], groups: [], total_machines: 0, jobs_count: 0 };
+    const depositSummary = await _getDepositSummary(tech);
 
     return res.json({
       ok: true,
@@ -8423,6 +8426,10 @@ all_total += inc;
       monthly_income_period_start: payoutMonth.monthly_income_period_start || null,
       monthly_income_period_end: payoutMonth.monthly_income_period_end || null,
       work_summary: workSummary,
+      deposit_target_amount: depositSummary.deposit_target_amount || 0,
+      deposit_collected_total: depositSummary.deposit_collected_total || 0,
+      deposit_remaining_amount: depositSummary.deposit_remaining_amount || 0,
+      deposit_is_required: depositSummary.deposit_is_required !== false,
       // Backward-compatible fields kept for old clients, but the new income card no longer uses them.
       true_outstanding_amount: outstanding.true_outstanding_amount,
       pending_payout_remaining_total: outstanding.true_outstanding_amount,
@@ -8604,13 +8611,26 @@ app.get('/tech/income_next_period_estimate', requireTechnicianSession, async (re
 app.get('/tech/income_last_days', requireTechnicianSession, async (req, res) => {
   try {
     const tech = String(req.auth?.username || '').trim();
-    const days = Math.min(Math.max(Number(req.query.days || 7), 1), 31);
+    const qStart = parseDateYMD(req.query.start);
+    const qEnd = parseDateYMD(req.query.end);
+    let days = Math.min(Math.max(Number(req.query.days || 7), 1), 92);
 
     const nowBkk = _bkkNow();
     const { y, m, d } = _bkkYmd(nowBkk);
     const todayStart = _bangkokMidnightUTC(y, m, d);
-    const start = new Date(todayStart.getTime() - (days - 1) * 24*60*60*1000);
-    const endEx = _bangkokMidnightUTC(y, m, d + 1);
+    let start = new Date(todayStart.getTime() - (days - 1) * 24*60*60*1000);
+    let endEx = _bangkokMidnightUTC(y, m, d + 1);
+    if (qStart && qEnd) {
+      const [sy, sm, sd] = qStart.split('-').map(Number);
+      const [ey, em, ed] = qEnd.split('-').map(Number);
+      start = _bangkokMidnightUTC(sy, sm, sd);
+      endEx = _bangkokMidnightUTC(ey, em, ed + 1);
+      const diffDays = Math.ceil((endEx.getTime() - start.getTime()) / (24*60*60*1000));
+      days = Math.min(Math.max(diffDays, 1), 92);
+      if (diffDays > 92) {
+        start = new Date(endEx.getTime() - 91 * 24*60*60*1000);
+      }
+    }
 
     const donePred = _sqlDonePredicate('j');
     const jobsQ = await pool.query(
@@ -8685,6 +8705,7 @@ app.get('/tech/payments_total', requireTechnicianSession, async (req, res) => {
     const workSummary = (monthlyStart && monthlyEnd && !Number.isNaN(monthlyStart.getTime()) && !Number.isNaN(monthlyEnd.getTime()))
       ? await _computeTechnicianWorkSummary(tech, monthlyStart, monthlyEnd, payoutMonth.payout_month || ymKey)
       : { cards: [], groups: [], total_machines: 0, jobs_count: 0 };
+    const depositSummary = await _getDepositSummary(tech);
     return res.json({
       ok:true,
       username: tech,
@@ -8699,6 +8720,10 @@ app.get('/tech/payments_total', requireTechnicianSession, async (req, res) => {
       monthly_income_period_start: payoutMonth.monthly_income_period_start || null,
       monthly_income_period_end: payoutMonth.monthly_income_period_end || null,
       work_summary: workSummary,
+      deposit_target_amount: depositSummary.deposit_target_amount || 0,
+      deposit_collected_total: depositSummary.deposit_collected_total || 0,
+      deposit_remaining_amount: depositSummary.deposit_remaining_amount || 0,
+      deposit_is_required: depositSummary.deposit_is_required !== false,
       // Backward-compatible fields kept for old clients.
       true_outstanding_amount: outstanding.true_outstanding_amount,
       pending_payout_remaining_total: outstanding.true_outstanding_amount,

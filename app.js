@@ -65,10 +65,19 @@ const incomeWorkSummaryWrapEl = document.getElementById('incomeWorkSummaryWrap')
 const incomeWorkSummaryGridEl = document.getElementById('incomeWorkSummaryGrid');
 const incomeWorkSummaryPeriodEl = document.getElementById('incomeWorkSummaryPeriod');
 const incomeWorkSummaryDetailsEl = document.getElementById('incomeWorkSummaryDetails');
+const incomeDepositRemainWrapEl = document.getElementById('incomeDepositRemainWrap');
+const incomeDepositRemainValEl = document.getElementById('incomeDepositRemainVal');
+const incomeDepositProgressTextEl = document.getElementById('incomeDepositProgressText');
+const incomeDepositProgressBarEl = document.getElementById('incomeDepositProgressBar');
 const btnReloadIncomeOverviewEl = document.getElementById('btnReloadIncomeOverview');
 const btnIncomeQuickTodayEl = document.getElementById('btnIncomeQuickToday');
 const btnIncomeQuickYesterdayEl = document.getElementById('btnIncomeQuickYesterday');
 const btnIncomeQuick7El = document.getElementById('btnIncomeQuick7');
+const btnIncomeQuickMonthEl = document.getElementById('btnIncomeQuickMonth');
+const btnIncomeQuick3MonthsEl = document.getElementById('btnIncomeQuick3Months');
+const incomeMonthPickerEl = document.getElementById('incomeMonthPicker');
+const btnLoadIncomeMonthEl = document.getElementById('btnLoadIncomeMonth');
+const techIncomeLast7TitleEl = document.getElementById('techIncomeLast7Title');
 const techIncomeLast7WrapEl = document.getElementById('techIncomeLast7Wrap');
 const techIncomeLast7ListEl = document.getElementById('techIncomeLast7List');
 const techPayoutPeriodsEl = document.getElementById('techPayoutPeriods');
@@ -633,6 +642,25 @@ function _formatShortThaiDate(iso){
     return new Intl.DateTimeFormat('th-TH', { timeZone:'Asia/Bangkok', day:'2-digit', month:'short' }).format(d);
   }catch{ return ''; }
 }
+function renderDepositRemaining(info){
+  if (!incomeDepositRemainWrapEl) return;
+  const remaining = Number(info?.deposit_remaining_amount ?? info?.deposit?.deposit_remaining_amount ?? 0);
+  const target = Number(info?.deposit_target_amount ?? info?.deposit?.deposit_target_amount ?? 0);
+  const collected = Number(info?.deposit_collected_total ?? info?.deposit?.deposit_collected_total ?? 0);
+  const required = info?.deposit_is_required !== false;
+  if (!required || !Number.isFinite(remaining) || remaining <= 0) { incomeDepositRemainWrapEl.style.display = 'none'; return; }
+  incomeDepositRemainWrapEl.style.display = 'block';
+  if (incomeDepositRemainValEl) incomeDepositRemainValEl.textContent = formatBaht(remaining);
+  if (incomeDepositProgressTextEl) {
+    const left = target > 0 ? `สะสมแล้ว ${formatBaht(collected)} / เป้าหมาย ${formatBaht(target)}` : `สะสมแล้ว ${formatBaht(collected)}`;
+    incomeDepositProgressTextEl.textContent = left;
+  }
+  if (incomeDepositProgressBarEl) {
+    const pct = target > 0 ? Math.max(0, Math.min(100, (collected / target) * 100)) : 0;
+    incomeDepositProgressBarEl.style.width = pct.toFixed(0) + '%';
+  }
+}
+
 function renderTechWorkSummary(summary){
   if (!incomeWorkSummaryWrapEl || !incomeWorkSummaryGridEl) return;
   const cards = Array.isArray(summary?.cards) ? summary.cards : [];
@@ -695,6 +723,10 @@ async function loadIncomeSummary() {
         monthly_income_display_amount: Number((data.monthly_income_display_amount ?? data.payout_month_total) || 0),
         monthly_income_display_label: String(data.monthly_income_display_label || data.payout_month || ''),
         work_summary: data.work_summary || null,
+        deposit_target_amount: Number(data.deposit_target_amount||0),
+        deposit_collected_total: Number(data.deposit_collected_total||0),
+        deposit_remaining_amount: Number(data.deposit_remaining_amount||0),
+        deposit_is_required: data.deposit_is_required !== false,
         true_outstanding_amount: Number(data.true_outstanding_amount||data.pending_payout_remaining_total||0)
       }));
     } catch {}
@@ -706,6 +738,7 @@ async function loadIncomeSummary() {
     if (incomeMonth2El) incomeMonth2El.textContent = formatBaht(data.month_total);
     if (incomeAll2El) incomeAll2El.textContent = formatBaht(data.all_total);
     renderTechWorkSummary(data.work_summary);
+    renderDepositRemaining(data);
   } catch (e) {
     // fail-open (ไม่ให้หน้า tech พัง) + show cached value if available
     try {
@@ -718,6 +751,7 @@ async function loadIncomeSummary() {
         if (incomeMonth2El) incomeMonth2El.textContent = formatBaht(c.month_total);
         if (incomeAll2El) incomeAll2El.textContent = formatBaht(c.all_total);
         renderTechWorkSummary(c.work_summary);
+        renderDepositRemaining(c);
         return;
       }
     } catch {}
@@ -728,6 +762,7 @@ async function loadIncomeSummary() {
     if (incomeMonth2El) incomeMonth2El.textContent = "-";
     if (incomeAll2El) incomeAll2El.textContent = "-";
     renderTechWorkSummary(null);
+    renderDepositRemaining(null);
   }
 }
 
@@ -787,6 +822,7 @@ async function loadOutstandingTotal(){
       if (c && Number.isFinite(Number(c.payout_month_total ?? c.true_outstanding_amount))) {
         incomeOutstandingValEl.textContent = formatBaht(Math.max(0, Number((c.monthly_income_display_amount ?? c.payout_month_total ?? c.true_outstanding_amount) || 0)));
         renderTechWorkSummary(c.work_summary);
+        renderDepositRemaining(c);
         return;
       }
     } catch {}
@@ -797,6 +833,11 @@ async function loadOutstandingTotal(){
 function renderLastDaysSummary(payload){
   if (!techIncomeLast7WrapEl || !techIncomeLast7ListEl) return;
   const days = Array.isArray(payload?.days) ? payload.days : [];
+  if (techIncomeLast7TitleEl) {
+    const a = payload?.range_start || '';
+    const b = payload?.range_end || '';
+    techIncomeLast7TitleEl.textContent = (a && b) ? `สรุปสเตทเมนต์ ${a} - ${b}` : 'สรุปสเตทเมนต์';
+  }
   if (!days.length) {
     techIncomeLast7WrapEl.style.display = 'none';
     return;
@@ -820,16 +861,35 @@ function renderLastDaysSummary(payload){
   }).join('');
 }
 
-async function loadLastDays(days = 7){
+async function loadLastDays(days = 7, opts = {}){
   if (!techIncomeLast7WrapEl || !techIncomeLast7ListEl) return;
   try{
-    const res = await fetch(`${API_BASE}/tech/income_last_days?days=${encodeURIComponent(days)}`, { credentials:'include' });
+    const params = new URLSearchParams();
+    if (opts.start && opts.end) { params.set('start', opts.start); params.set('end', opts.end); }
+    else { params.set('days', String(days)); }
+    const res = await fetch(`${API_BASE}/tech/income_last_days?${params.toString()}`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     renderLastDaysSummary(data);
-  }catch(e){
-    techIncomeLast7WrapEl.style.display = 'none';
-  }
+  }catch(e){ techIncomeLast7WrapEl.style.display = 'none'; }
+}
+
+function _monthRangeFromYm(ym){
+  const m = String(ym || '').match(/^(\d{4})-(\d{2})$/);
+  if (!m) return null;
+  const y = Number(m[1]); const mo = Number(m[2]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || mo < 1 || mo > 12) return null;
+  const start = `${y}-${String(mo).padStart(2,'0')}-01`;
+  const last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const end = `${y}-${String(mo).padStart(2,'0')}-${String(last).padStart(2,'0')}`;
+  return { start, end };
+}
+
+async function loadIncomeMonthStatement(ym){
+  const r = _monthRangeFromYm(ym);
+  if (!r) return;
+  if (techIncomeDayListEl) techIncomeDayListEl.innerHTML = '';
+  await loadLastDays(31, r);
 }
 
 async function loadIncomeOverview(){
@@ -1347,6 +1407,7 @@ loadIncomeOverview();
 // ✅ รายละเอียดรายวัน (วันนี้ทำอะไรไป)
 try{
   if (incomeDatePickerEl) incomeDatePickerEl.value = _bkkYmdNow();
+  if (incomeMonthPickerEl) incomeMonthPickerEl.value = _bkkYmdNow().slice(0,7);
   if (btnLoadIncomeDayEl) btnLoadIncomeDayEl.addEventListener('click', ()=> loadIncomeDayDetail(incomeDatePickerEl?.value || _bkkYmdNow()));
   try {
     const savedUpcomingFilter = localStorage.getItem(ACTIVE_UPCOMING_FILTER_KEY) || "";
@@ -1366,7 +1427,6 @@ try{
 
   if (btnReloadIncomeOverviewEl) btnReloadIncomeOverviewEl.addEventListener('click', async ()=>{
     await loadIncomeOverview();
-    await loadLastDays(7);
   });
   if (btnIncomeQuickTodayEl) btnIncomeQuickTodayEl.addEventListener('click', ()=>{
     const d = _bkkYmdNow();
@@ -1383,9 +1443,20 @@ try{
   if (btnIncomeQuick7El) btnIncomeQuick7El.addEventListener('click', async ()=>{
     await loadLastDays(7);
   });
+  if (btnIncomeQuickMonthEl) btnIncomeQuickMonthEl.addEventListener('click', async ()=>{
+    const ym = incomeMonthPickerEl?.value || _bkkYmdNow().slice(0,7);
+    await loadIncomeMonthStatement(ym);
+  });
+  if (btnLoadIncomeMonthEl) btnLoadIncomeMonthEl.addEventListener('click', async ()=>{
+    const ym = incomeMonthPickerEl?.value || _bkkYmdNow().slice(0,7);
+    await loadIncomeMonthStatement(ym);
+  });
+  if (btnIncomeQuick3MonthsEl) btnIncomeQuick3MonthsEl.addEventListener('click', async ()=>{
+    if (techIncomeDayListEl) techIncomeDayListEl.innerHTML = '';
+    await loadLastDays(92);
+  });
 
-  // preload last 7 days summary (fail-open)
-  loadLastDays(7);
+  // ไม่ preload สเตทเมนต์ เพื่อลดความรกและโหลดเฉพาะตอนช่างกดดู
 }catch(e){}
 
 loadOffers();
