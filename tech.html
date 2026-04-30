@@ -540,192 +540,147 @@
 
 
     <!-- ===============================
-         🎛️ แถบควบคุมช่าง (สั้น ชัด ใช้งานจริง)
-         - ปุ่มเดียว สีเขียว/แดง สลับรับงาน/หยุดรับงาน
-         - โซนรับงาน: dropdown (กว้างเท่าปุ่ม) อยู่แถวเดียวกัน
-         - แสดงสถานะใต้แถวปุ่มให้เห็นชัด
+         🎛️ แถบควบคุมช่าง CWF — แถวเดียว สวย อ่านง่าย
+         - รับงาน/หยุดรับงาน + พื้นที่รับงาน อยู่บรรทัดเดียวกัน
+         - รองรับโค้ดเดิมด้วย id เดิม: acceptToggleBtn / zoneSelect / acceptStatusText
     =============================== -->
-    <div class="card tight" style="margin-top:10px;">
+    <div class="tech-control-card">
       <style>
-        /* ✅ แถบควบคุมบนมือถือ: ปุ่ม + โซน กว้างเท่ากัน */
+        .tech-control-card{
+          margin:10px 0 12px;
+          padding:10px;
+          border-radius:26px;
+          border:1px solid rgba(215,224,238,.95);
+          background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(244,248,255,.94));
+          box-shadow:0 16px 38px rgba(11,46,109,.14);
+        }
         .tech-ctrl-row{
-          display:flex;
+          display:grid;
+          grid-template-columns:minmax(132px,0.88fr) minmax(0,1.12fr);
           gap:10px;
           align-items:stretch;
         }
-        .tech-ctrl-row > *{
-          flex:1;
-          min-width:0;
-        }
-
-        /* ✅ ปุ่มรับงาน/หยุดรับงาน: กว้างเท่ากันตลอด */
         .accept-btn{
           width:100%;
-          min-height:44px;
-          border-radius:14px;
-          border:1px solid rgba(15,23,42,0.10);
-          font-weight:900;
-          font-size:14px;
+          min-height:58px;
+          border-radius:22px;
+          border:1px solid rgba(15,23,42,.10);
+          font-weight:1100;
+          font-size:16px;
           display:flex;
           align-items:center;
           justify-content:center;
-          gap:8px;
-          padding:10px 12px;
-          box-shadow:none;
+          gap:9px;
+          padding:11px 12px;
           cursor:pointer;
           user-select:none;
           white-space:nowrap;
+          letter-spacing:.1px;
+          transition:transform .12s ease, box-shadow .12s ease, background .12s ease;
         }
+        .accept-btn:active{transform:translateY(1px) scale(.99)}
         .accept-btn.ready{
-          background: rgba(34,197,94,0.18);
-          color:#0f172a;
-          border-color: rgba(34,197,94,0.35);
+          background:linear-gradient(135deg,#ecfdf5,#ffffff);
+          color:#14532d;
+          border-color:rgba(34,197,94,.38);
+          box-shadow:0 10px 22px rgba(34,197,94,.13), inset 0 0 0 1px rgba(255,255,255,.7);
         }
         .accept-btn.paused{
-          background: rgba(239,68,68,0.18);
-          color:#0f172a;
-          border-color: rgba(239,68,68,0.35);
+          background:linear-gradient(135deg,#fff1f2,#ffffff);
+          color:#991b1b;
+          border-color:rgba(239,68,68,.34);
+          box-shadow:0 10px 22px rgba(239,68,68,.12), inset 0 0 0 1px rgba(255,255,255,.7);
         }
         .accept-btn:disabled{
-          opacity:0.75;
+          opacity:.76;
           cursor:not-allowed;
         }
-
-        /* ✅ dropdown โซน: กว้างเท่าปุ่ม */
+        .zone-wrap{
+          position:relative;
+          display:flex;
+          align-items:center;
+          min-width:0;
+        }
+        .zone-wrap::before{
+          content:"📍";
+          position:absolute;
+          left:14px;
+          top:50%;
+          transform:translateY(-50%);
+          z-index:1;
+          font-size:18px;
+          pointer-events:none;
+        }
+        .zone-wrap::after{
+          content:"พื้นที่รับงาน";
+          position:absolute;
+          left:44px;
+          top:9px;
+          z-index:1;
+          font-size:10px;
+          line-height:1;
+          color:rgba(15,23,42,.48);
+          font-weight:1000;
+          pointer-events:none;
+        }
         .zone-select{
           width:100%;
-          min-height:44px;
-          border-radius:14px;
-          border:1px solid rgba(15,23,42,0.10);
-          padding:10px 12px;
-          font-weight:800;
-          font-size:14px;
-          background:#fff;
+          min-height:58px;
+          border-radius:22px;
+          border:1px solid rgba(11,46,109,.18);
+          padding:24px 38px 9px 44px;
+          font-weight:1000;
+          font-size:16px;
+          color:#0B2E6D;
+          background:linear-gradient(135deg,#ffffff,#f8fbff);
+          box-shadow:0 10px 22px rgba(11,46,109,.08), inset 0 0 0 1px rgba(255,255,255,.7);
+          appearance:auto;
+          min-width:0;
         }
-
-        /* ✅ ข้อความสถานะใต้แถว */
         .accept-hint{
-          margin-top:8px;
+          margin:8px 2px 0;
           font-size:12px;
-          color: rgba(15,23,42,0.65);
+          color:rgba(255,255,255,.82);
+          font-weight:900;
+          display:flex;
+          align-items:center;
+          gap:6px;
+          min-height:18px;
         }
-
+        .accept-hint::before{
+          content:"●";
+          color:#ef4444;
+          font-size:14px;
+        }
         @media (max-width:380px){
-          .accept-btn,.zone-select{ font-size:13px; }
+          .tech-control-card{padding:8px;border-radius:22px}
+          .tech-ctrl-row{grid-template-columns:minmax(112px,.86fr) minmax(0,1.14fr);gap:8px}
+          .accept-btn,.zone-select{min-height:54px;font-size:14px;border-radius:19px}
+          .zone-select{padding-left:39px;padding-right:28px}
+          .zone-wrap::before{left:12px}
+          .zone-wrap::after{left:40px}
         }
-      
-    /* ✅ CWF FIX: keep hamburger menu visible; only sub-settings are grouped */
-    #techTopNav{display:block!important;position:fixed!important;left:0!important;right:0!important;top:0!important;z-index:5000!important}
-    #techMenuBtn{display:inline-flex!important;visibility:visible!important;opacity:1!important}
-    #techDrawerBackdrop{z-index:5100!important}
-    #techDrawer{z-index:5200!important}
-    #techTopSpacer{display:block!important;height:82px!important}
-    .techMenuHidden{display:none!important}
-
       </style>
 
-      <!-- ✅ CWF FIX: Restored hamburger menu DOM. Keep burger menu, combine only settings. -->
-      <div id="techTopNav">
-        <div class="in">
-          <div class="ttl">
-            <b>CWF – ช่าง</b>
-            <span id="me">ผู้ใช้: -</span>
-          </div>
-          <button class="tech-icbtn" type="button" id="techMenuBtn" aria-label="เมนู">☰</button>
-        </div>
-      </div>
-      <div id="techTopSpacer"></div>
-
-      <div id="techDrawerBackdrop"></div>
-      <div id="techDrawer">
-        <div class="panel">
-          <div class="techMenuHead">
-            <b>เมนูช่าง</b>
-            <button class="tech-icbtn" type="button" id="techMenuCloseBtn" aria-label="ปิด">✕</button>
-          </div>
-
-          <div class="techMenuList">
-            <button class="techMenuBtn" type="button" id="notifyBtn">
-              <span class="left"><span class="menuIcon">🔔</span><span class="menuText"><strong>แจ้งเตือน / เสียงเตือน</strong><span class="sub" id="notifyStateText">-</span></span></span>
-              <span class="menuArrow">›</span>
-            </button>
-
-            <button class="techMenuBtn techMenuSetting" type="button" onclick="openTechSettingsModal()">
-              <span class="left"><span class="menuIcon">⚙️</span><span class="menuText"><strong>ตั้งค่า</strong><span class="sub">LINE / โปรไฟล์ / รหัสผ่าน / วันทำงาน / งานที่รับได้</span></span></span>
-              <span class="menuArrow">›</span>
-            </button>
-
-            <button class="techMenuBtn techMenuHidden" type="button" id="themeToggleBtn" aria-hidden="true">theme</button>
-            <button class="techMenuBtn techMenuHidden" type="button" id="techMatrixBtn" aria-hidden="true">matrix</button>
-
-            <div class="techMenuSmall" style="margin-top:4px;padding:0 2px;">อื่นๆ</div>
-
-            <button class="techMenuBtn techMenuDanger" type="button" onclick="logout()">
-              <span class="left"><span class="menuIcon">🚪</span><span class="menuText"><strong>ออกจากระบบ</strong><span class="sub">Logout</span></span></span>
-              <span class="menuArrow">›</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <div id="techSettingsModal">
-        <div class="settingsPanel">
-          <div class="settingsHead">
-            <div>
-              <h3>ตั้งค่า</h3>
-              <p>รวมการตั้งค่าบัญชีและการรับงานไว้ในที่เดียว</p>
-            </div>
-            <button class="tech-icbtn settingsClose" type="button" onclick="closeTechSettingsModal()" aria-label="ปิด">✕</button>
-          </div>
-          <div class="settingsGrid">
-            <button class="settingsItem line" type="button" onclick="bindCurrentTechLine()">
-              <span class="sIcon">LINE</span><span class="sText"><strong>ผูก LINE Login</strong><span>ใช้ LINE เข้าแอพช่างครั้งถัดไป</span></span>
-            </button>
-            <button class="settingsItem" type="button" onclick="goEditProfile()">
-              <span class="sIcon">✏️</span><span class="sText"><strong>แก้ไขโปรไฟล์</strong><span>ข้อมูลส่วนตัว รูปโปรไฟล์ และข้อมูลช่าง</span></span>
-            </button>
-            <button class="settingsItem" type="button" onclick="goChangePassword()">
-              <span class="sIcon">🔑</span><span class="sText"><strong>เปลี่ยนรหัสผ่าน</strong><span>ตั้งรหัสผ่านใหม่เพื่อความปลอดภัย</span></span>
-            </button>
-            <button class="settingsItem" type="button" onclick="openWorkdaysModal()">
-              <span class="sIcon">🗓️</span><span class="sText"><strong>วันหยุด / วันทำงาน</strong><span>ตั้งค่าวันรับงานและวันไม่สะดวก</span></span>
-            </button>
-            <button class="settingsItem" type="button" onclick="document.getElementById('techMatrixBtn')?.click()">
-              <span class="sIcon">🧩</span><span class="sText"><strong>งานที่รับได้</strong><span>ตั้งค่าประเภทงานที่พร้อมให้แสดงสลอตลูกค้า</span></span>
-            </button>
-            <button class="settingsItem" type="button" onclick="location.href='/tech/base-status'">
-              <span class="sIcon">🧬</span><span class="sText"><strong>แบบประเมิน Base Status</strong><span>ตรวจค่าสเตตัสและข้อมูลพื้นฐานช่าง</span></span>
-            </button>
-            <button class="settingsItem" type="button" onclick="document.getElementById('themeToggleBtn')?.click()">
-              <span class="sIcon">🎨</span><span class="sText"><strong>สลับธีม</strong><span>โหมดสีหน้าช่าง</span></span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-
-
       <div class="tech-ctrl-row">
-        <button id="acceptToggleBtn" class="accept-btn ready" type="button">
-          🟢 รับงาน
-        </button>
+        <button id="acceptToggleBtn" class="accept-btn ready" type="button">🟢 รับงาน</button>
 
-        <select id="zoneSelect" class="zone-select">
-          <!-- ✅ เอาคำว่า "โซนที่รับงาน:" ออก ให้เห็นสั้น ๆ อ่านง่าย -->
-          <option value="">ทุกโซน</option>
-          <option value="สุขุมวิท">สุขุมวิท</option>
-          <option value="อ่อนนุช">อ่อนนุช</option>
-          <option value="พระโขนง">พระโขนง</option>
-          <option value="บางนา">บางนา</option>
-          <option value="ศรีนครินทร์">ศรีนครินทร์</option>
-          <option value="อื่นๆ">อื่นๆ</option>
-        </select>
+        <div class="zone-wrap">
+          <select id="zoneSelect" class="zone-select">
+            <option value="">ทุกโซน</option>
+            <option value="สุขุมวิท">สุขุมวิท</option>
+            <option value="อ่อนนุช">อ่อนนุช</option>
+            <option value="พระโขนง">พระโขนง</option>
+            <option value="บางนา">บางนา</option>
+            <option value="ศรีนครินทร์">ศรีนครินทร์</option>
+            <option value="อื่นๆ">อื่นๆ</option>
+          </select>
+        </div>
       </div>
 
-      <!-- ✅ แสดงสถานะให้เห็นชัด -->
       <div id="acceptStatusText" class="accept-hint">กำลังโหลดสถานะ...</div>
 
-      <!-- ✅ รองรับหน้าเก่า/โค้ดเดิม (ซ่อนไว้ ไม่ให้รก) -->
+      <!-- รองรับหน้าเก่า/โค้ดเดิม ซ่อนไว้ไม่ให้รก -->
       <select id="acceptStatusSelect" style="display:none;">
         <option value="ready">ready</option>
         <option value="paused">paused</option>
@@ -953,26 +908,7 @@
     <button class="nav-btn" id="nav-income" onclick="switchTab('income')">💰 รายได้</button>
   </div>
 
-  <script src="app.js?v=tech-premium-v10-6-ui-shell">
-    document.addEventListener('DOMContentLoaded', ()=>{
-      if (!document.getElementById('techMenuBtn')) {
-        const btn = document.createElement('button');
-        btn.id = 'techMenuBtn';
-        btn.type = 'button';
-        btn.className = 'tech-icbtn';
-        btn.textContent = '☰';
-        btn.style.cssText = 'position:fixed;right:14px;top:calc(10px + env(safe-area-inset-top));z-index:6000;background:#F4C400;color:#111827';
-        btn.addEventListener('click', ()=> {
-          const bd = document.getElementById('techDrawerBackdrop');
-          const dr = document.getElementById('techDrawer');
-          if (bd) bd.style.display='block';
-          if (dr) dr.style.display='block';
-        });
-        document.body.appendChild(btn);
-      }
-    });
-
-  </script>
+  <script src="app.js?v=tech-premium-v10-6-ui-shell"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
         function goChangePassword(){ location.href = '/change-password.html'; }
