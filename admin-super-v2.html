@@ -262,7 +262,7 @@
                 <input id="legacySettleCutoff" type="date" style="min-width:170px" />
                 <input id="legacySettleTech" placeholder="username ช่าง (ว่าง = ทุกคน)" style="flex:1;min-width:180px" />
                 <input id="legacySettleNote" placeholder="โน้ต เช่น จ่ายนอกระบบก่อนเริ่มใช้ payout" style="flex:1;min-width:220px" />
-                <button class="btn yellow" id="btnLegacySettle">บันทึกว่างวดเก่าจ่ายแล้ว</button>
+                <button class="btn yellow" id="btnLegacySettle" type="button" onclick="window.cwfLegacySettleOldPayouts && window.cwfLegacySettleOldPayouts()">บันทึกว่างวดเก่าจ่ายแล้ว</button>
               </div>
               <div class="muted" id="legacySettleResult" style="margin-top:8px">-</div>
             </details>

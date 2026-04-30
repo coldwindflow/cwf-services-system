@@ -835,9 +835,18 @@
         method: 'POST',
         body: JSON.stringify({ cutoff_date, technician_username, note })
       });
-      const msg = `สำเร็จ: อัปเดต payment ${Number(r.updated_payments||0)} รายการ จาก ${Number(r.touched_periods||0)} งวด`;
+      const updated = Number(r.updated_payments||0);
+      const touched = Number(r.touched_periods||0);
+      const createdPeriods = Number(r.created_periods||0);
+      const createdLines = Number(r.created_lines||0);
+      const checkedJobs = Number(r.checked_jobs||0);
+      const candidateLines = Number(r.candidate_lines||0);
+      const msg = updated > 0
+        ? `สำเร็จ: บันทึกจ่ายแล้ว ${updated} รายการ • แตะ ${touched} งวด • สร้างงวดที่ขาด ${createdPeriods} งวด • สร้างรายการรายได้ ${createdLines} รายการ`
+        : `ไม่พบยอดค้างที่ต้องเคลียร์ • ตรวจงาน ${checkedJobs} งาน • พบรายการตรงเงื่อนไข ${candidateLines} รายการ • สร้างงวด ${createdPeriods} งวด • สร้างรายการ ${createdLines} รายการ`;
       if (outEl) outEl.textContent = msg;
-      toast('เคลียร์ยอดเก่าแล้ว');
+      alert(msg);
+      toast(updated > 0 ? 'เคลียร์ยอดเก่าแล้ว' : 'ไม่พบยอดค้างที่ต้องเคลียร์');
       await loadPayouts();
       if (ACTIVE_PAYOUT) await openPayout(ACTIVE_PAYOUT);
       await loadAudit();
@@ -848,6 +857,7 @@
     }
   }
 
+  window.cwfLegacySettleOldPayouts = legacySettleOldPayouts;
   if ($('btnGenP10')) $('btnGenP10').addEventListener('click', ()=> generatePayout('10'));
   if ($('btnGenP25')) $('btnGenP25').addEventListener('click', ()=> generatePayout('25'));
   if ($('btnReloadPayouts')) $('btnReloadPayouts').addEventListener('click', loadPayouts);
