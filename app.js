@@ -1,4 +1,4 @@
-﻿
+
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
 const activeUpcomingJobsEl = document.getElementById("active-upcoming-list");
@@ -61,6 +61,10 @@ const incomeTodayValEl = document.getElementById('incomeTodayVal');
 const incomePeriodEstValEl = document.getElementById('incomePeriodEstVal');
 const incomeOutstandingValEl = document.getElementById('incomeOutstandingVal');
 const incomePeriodRangeEl = document.getElementById('incomePeriodRange');
+const incomeWorkSummaryWrapEl = document.getElementById('incomeWorkSummaryWrap');
+const incomeWorkSummaryGridEl = document.getElementById('incomeWorkSummaryGrid');
+const incomeWorkSummaryPeriodEl = document.getElementById('incomeWorkSummaryPeriod');
+const incomeWorkSummaryDetailsEl = document.getElementById('incomeWorkSummaryDetails');
 const btnReloadIncomeOverviewEl = document.getElementById('btnReloadIncomeOverview');
 const btnIncomeQuickTodayEl = document.getElementById('btnIncomeQuickToday');
 const btnIncomeQuickYesterdayEl = document.getElementById('btnIncomeQuickYesterday');
@@ -609,6 +613,66 @@ function _bestEffortUsername() {
   return '';
 }
 
+
+function escapeHTML(s){
+  return String(s ?? '').replace(/[&<>"']/g, (c)=>({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
+}
+function _formatWorkCount(n){
+  const x = Number(n || 0);
+  if (!Number.isFinite(x)) return '0';
+  if (Math.abs(x - Math.round(x)) < 0.001) return String(Math.round(x));
+  return x.toFixed(1).replace(/\.0$/, '');
+}
+function _formatShortThaiDate(iso){
+  try{
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    return new Intl.DateTimeFormat('th-TH', { timeZone:'Asia/Bangkok', day:'2-digit', month:'short' }).format(d);
+  }catch{ return ''; }
+}
+function renderTechWorkSummary(summary){
+  if (!incomeWorkSummaryWrapEl || !incomeWorkSummaryGridEl) return;
+  const cards = Array.isArray(summary?.cards) ? summary.cards : [];
+  const visible = cards.filter(x => Number(x?.count || 0) > 0);
+  if (!visible.length) {
+    incomeWorkSummaryWrapEl.style.display = 'none';
+    incomeWorkSummaryGridEl.innerHTML = '';
+    if (incomeWorkSummaryDetailsEl) incomeWorkSummaryDetailsEl.innerHTML = '';
+    return;
+  }
+  incomeWorkSummaryWrapEl.style.display = '';
+  if (incomeWorkSummaryPeriodEl) {
+    const a = _formatShortThaiDate(summary?.period_start);
+    const b = _formatShortThaiDate(summary?.period_end);
+    incomeWorkSummaryPeriodEl.textContent = (a && b) ? `รอบเดียวกับรวมรายได้ • ${a} - ${b}` : 'รอบเดียวกับรวมรายได้รอบเดือน';
+  }
+  incomeWorkSummaryGridEl.innerHTML = visible.map(x => `
+    <div class="work-chip">
+      <div class="work-label">${escapeHTML(x.label || '-')}</div>
+      <div class="work-value">${_formatWorkCount(x.count)} <span>${escapeHTML(x.unit || 'เครื่อง')}</span></div>
+    </div>
+  `).join('');
+  if (incomeWorkSummaryDetailsEl) {
+    const groups = (Array.isArray(summary?.groups) ? summary.groups : [])
+      .map(g => ({ ...g, items: (Array.isArray(g.items) ? g.items : []).filter(it => Number(it?.count || 0) > 0) }))
+      .filter(g => g.items.length);
+    incomeWorkSummaryDetailsEl.innerHTML = groups.length ? `
+      <summary><span>ดูแยกประเภท</span><span>▾</span></summary>
+      <div class="work-more-box">
+        ${groups.map(g => `
+          <div class="work-group">
+            <b>${escapeHTML(g.label || '')}</b>
+            ${g.items.map(it => `<div class="work-row"><span>${escapeHTML(it.label || '-')}</span><strong>${_formatWorkCount(it.count)} ${escapeHTML(it.unit || '')}</strong></div>`).join('')}
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+  }
+}
+
 async function loadIncomeSummary() {
   if (!incomeDailyEl && !incomeMonthEl && !incomeAllEl && !incomeDaily2El && !incomeMonth2El && !incomeAll2El) return; // UI ไม่ได้มีส่วนนี้
   try {
@@ -627,7 +691,10 @@ async function loadIncomeSummary() {
         day_total: Number(data.day_total||0),
         month_total: Number(data.month_total||0),
         all_total: Number(data.all_total||0),
-        payout_month_total: Number(data.payout_month_total||0),
+        payout_month_total: Number((data.monthly_income_display_amount ?? data.payout_month_total) || 0),
+        monthly_income_display_amount: Number((data.monthly_income_display_amount ?? data.payout_month_total) || 0),
+        monthly_income_display_label: String(data.monthly_income_display_label || data.payout_month || ''),
+        work_summary: data.work_summary || null,
         true_outstanding_amount: Number(data.true_outstanding_amount||data.pending_payout_remaining_total||0)
       }));
     } catch {}
@@ -638,6 +705,7 @@ async function loadIncomeSummary() {
     if (incomeDaily2El) incomeDaily2El.textContent = formatBaht(data.day_total);
     if (incomeMonth2El) incomeMonth2El.textContent = formatBaht(data.month_total);
     if (incomeAll2El) incomeAll2El.textContent = formatBaht(data.all_total);
+    renderTechWorkSummary(data.work_summary);
   } catch (e) {
     // fail-open (ไม่ให้หน้า tech พัง) + show cached value if available
     try {
@@ -649,6 +717,7 @@ async function loadIncomeSummary() {
         if (incomeDaily2El) incomeDaily2El.textContent = formatBaht(c.day_total);
         if (incomeMonth2El) incomeMonth2El.textContent = formatBaht(c.month_total);
         if (incomeAll2El) incomeAll2El.textContent = formatBaht(c.all_total);
+        renderTechWorkSummary(c.work_summary);
         return;
       }
     } catch {}
@@ -658,6 +727,7 @@ async function loadIncomeSummary() {
     if (incomeDaily2El) incomeDaily2El.textContent = "-";
     if (incomeMonth2El) incomeMonth2El.textContent = "-";
     if (incomeAll2El) incomeAll2El.textContent = "-";
+    renderTechWorkSummary(null);
   }
 }
 
@@ -707,14 +777,16 @@ async function loadOutstandingTotal(){
     const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v10-6-rolling-month-total`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
-    const payoutMonthTotal = Number(data.payout_month_total ?? 0);
+    const payoutMonthTotal = Number(data.monthly_income_display_amount ?? data.payout_month_total ?? 0);
     incomeOutstandingValEl.textContent = formatBaht(Math.max(0, payoutMonthTotal));
+    renderTechWorkSummary(data.work_summary);
   }catch(e){
     try {
       await loadIncomeSummary();
       const c = JSON.parse(localStorage.getItem('__cwf_income_cache_v10_2__')||'null');
       if (c && Number.isFinite(Number(c.payout_month_total ?? c.true_outstanding_amount))) {
-        incomeOutstandingValEl.textContent = formatBaht(Math.max(0, Number((c.payout_month_total ?? c.true_outstanding_amount) || 0)));
+        incomeOutstandingValEl.textContent = formatBaht(Math.max(0, Number((c.monthly_income_display_amount ?? c.payout_month_total ?? c.true_outstanding_amount) || 0)));
+        renderTechWorkSummary(c.work_summary);
         return;
       }
     } catch {}

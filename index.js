@@ -6957,126 +6957,183 @@ async function _computeTechnicianTrueOutstanding(username){
   }
 }
 
+function _technicianRollingDisplayMonthWindow(nowBkk = _bkkNow()){
+  const ymd = _bkkYmd(nowBkk);
+  let displayY = ymd.y;
+  let displayM = ymd.m;
+  if (ymd.d <= 15) {
+    displayM -= 1;
+    if (displayM <= 0) { displayM = 12; displayY -= 1; }
+  }
+  const displayYm = `${displayY}-${String(displayM).padStart(2, '0')}`;
+  const start = _bangkokMidnightUTC(displayY, displayM, 1);
+  let nextY = displayY;
+  let nextM = displayM + 1;
+  if (nextM > 12) { nextM = 1; nextY += 1; }
+  const nextMonthStart = _bangkokMidnightUTC(nextY, nextM, 1);
+  const isCurrentDisplayMonth = displayY === ymd.y && displayM === ymd.m;
+  const endEx = isCurrentDisplayMonth ? nowBkk : nextMonthStart;
+  return {
+    y: displayY,
+    m: displayM,
+    ym: displayYm,
+    start,
+    endEx,
+    is_current_month: isCurrentDisplayMonth,
+    policy: 'day_1_15_show_previous_month_day_16_end_show_current_month_to_date',
+  };
+}
+
 async function _computeTechnicianPayoutMonthTotal(username, ym = ''){
   const tech = String(username || '').trim();
   if (!tech) return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', periods: [] };
   try {
-    const nowBkk = _bkkNow();
-    const ymd = _bkkYmd(nowBkk);
-    const yy = ymd.y;
-    const mm = ymd.m;
-    const dd = ymd.d;
-    const labelYm = `${yy}-${String(mm).padStart(2, '0')}`;
-
-    function _nextYm(y, m){
-      return m >= 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 };
-    }
-
-    const windows = [];
-    if (dd <= 15) {
-      const prevBounds = _periodBoundsForYm('10', yy, mm);
-      const currentFull = _periodBoundsForYm('25', yy, mm);
-      windows.push({ type: '10', y: yy, m: mm, payout_id: `payout_${labelYm}_10`, bounds: prevBounds, mode: 'previous_completed_cycle' });
-      windows.push({ type: '25', y: yy, m: mm, payout_id: `payout_${labelYm}_25`, bounds: { ...currentFull, endEx: nowBkk < currentFull.endEx ? nowBkk : currentFull.endEx }, mode: 'current_cycle_to_date' });
-    } else {
-      const prevBounds = _periodBoundsForYm('25', yy, mm);
-      const nym = _nextYm(yy, mm);
-      const currentFull = _periodBoundsForYm('10', nym.y, nym.m);
-      const nextYm = `${nym.y}-${String(nym.m).padStart(2, '0')}`;
-      windows.push({ type: '25', y: yy, m: mm, payout_id: `payout_${labelYm}_25`, bounds: prevBounds, mode: 'previous_completed_cycle' });
-      windows.push({ type: '10', y: nym.y, m: nym.m, payout_id: `payout_${nextYm}_10`, bounds: { ...currentFull, endEx: nowBkk < currentFull.endEx ? nowBkk : currentFull.endEx }, mode: 'current_cycle_to_date' });
-    }
-
-    let total = 0;
-    let netTotal = 0;
-    const periods = [];
-
-    for (const w of windows) {
-      const storedQ = await pool.query(
-        `WITH gross AS (
-           SELECT COALESCE(SUM(earn_amount),0)::numeric AS gross_amount, COUNT(*)::int AS lines_count
-             FROM public.technician_payout_lines
-            WHERE payout_id=$1 AND technician_username=$2
-         ),
-         adj AS (
-           SELECT COALESCE(SUM(adj_amount),0)::numeric AS adj_total
-             FROM public.technician_payout_adjustments
-            WHERE payout_id=$1 AND technician_username=$2
-         ),
-         dep AS (
-           SELECT COALESCE(SUM(amount),0)::numeric AS deposit_deduction_amount
-             FROM public.technician_deposit_ledger
-            WHERE payout_id=$1 AND technician_username=$2 AND transaction_type='collect'
-         ),
-         pay AS (
-           SELECT COALESCE(MAX(paid_amount),0)::numeric AS paid_amount,
-                  COALESCE(MAX(paid_status),'unpaid') AS paid_status
-             FROM public.technician_payout_payments
-            WHERE payout_id=$1 AND technician_username=$2
-         ),
-         period AS (
-           SELECT COALESCE(MAX(status),'virtual') AS period_status
-             FROM public.technician_payout_periods
-            WHERE payout_id=$1
-         )
-         SELECT gross.gross_amount, gross.lines_count,
-                COALESCE(adj.adj_total,0)::numeric AS adj_total,
-                COALESCE(dep.deposit_deduction_amount,0)::numeric AS deposit_deduction_amount,
-                COALESCE(pay.paid_amount,0)::numeric AS paid_amount,
-                COALESCE(pay.paid_status,'unpaid') AS paid_status,
-                COALESCE(period.period_status,'virtual') AS period_status
-           FROM gross, adj, dep, pay, period`,
-        [w.payout_id, tech]
-      );
-      const stored = storedQ.rows?.[0] || {};
-      let gross = _money(stored.gross_amount || 0);
-      let adj = _money(stored.adj_total || 0);
-      let dep = _money(stored.deposit_deduction_amount || 0);
-      let source = Number(stored.lines_count || 0) > 0 ? 'stored_payout_lines' : 'live_completed_jobs';
-
-      if (source === 'live_completed_jobs' || w.mode === 'current_cycle_to_date') {
-        const liveLines = await _computeTechLinesInRange(tech, w.bounds.start, w.bounds.endEx, {
-          payout_id: w.payout_id,
-          period_type: w.type,
-          label_ym: `${w.y}-${String(w.m).padStart(2, '0')}`,
-        });
-        gross = _money((liveLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
-        adj = 0;
-        dep = 0;
-        source = 'live_completed_jobs';
-      }
-
-      const periodTotal = _money(gross + adj);
-      const periodNet = _money(gross + adj - dep);
-      total += periodTotal;
-      netTotal += periodNet;
-      periods.push({
-        payout_id: w.payout_id,
-        period_type: w.type,
-        period_start: w.bounds.start.toISOString(),
-        period_end: w.bounds.endEx.toISOString(),
-        mode: w.mode,
-        source,
-        period_status: stored.period_status || 'virtual',
-        paid_status: stored.paid_status || 'unpaid',
-        gross_amount: gross,
-        adj_total: adj,
-        deposit_deduction_amount: dep,
-        payout_month_amount: periodTotal,
-        payout_month_net_amount: periodNet,
-      });
-    }
-
+    void ym; // The display month follows CWF rolling payout-month rule, not caller input.
+    const win = _technicianRollingDisplayMonthWindow(_bkkNow());
+    const lines = await _computeTechLinesInRange(tech, win.start, win.endEx, {
+      payout_id: `virtual_month_${win.ym}`,
+      label_ym: win.ym,
+    });
+    const total = _money((lines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
     return {
-      payout_month: labelYm,
-      payout_month_total: _money(total),
-      payout_month_net_total: _money(netTotal),
-      payout_month_policy: 'previous_cycle_plus_current_completed_jobs_to_date',
-      periods,
+      payout_month: win.ym,
+      payout_month_total: total,
+      payout_month_net_total: total,
+      payout_month_policy: win.policy,
+      monthly_income_display_amount: total,
+      monthly_income_display_label: win.ym,
+      monthly_income_period_start: win.start.toISOString(),
+      monthly_income_period_end: win.endEx.toISOString(),
+      periods: [{
+        payout_id: `virtual_month_${win.ym}`,
+        period_type: 'month_display',
+        period_start: win.start.toISOString(),
+        period_end: win.endEx.toISOString(),
+        source: 'live_completed_jobs',
+        mode: win.is_current_month ? 'current_month_to_date' : 'previous_full_month',
+        gross_amount: total,
+        adj_total: 0,
+        deposit_deduction_amount: 0,
+        payout_month_amount: total,
+        payout_month_net_amount: total,
+      }],
     };
   } catch (e) {
     console.error('_computeTechnicianPayoutMonthTotal', e);
     return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', periods: [] };
+  }
+}
+
+function _cwfWorkNum(n){
+  const x = Number(n || 0);
+  if (!Number.isFinite(x)) return 0;
+  return Math.round(x * 100) / 100;
+}
+function _cwfAddWork(map, key, label, unit, qty){
+  const q = _cwfWorkNum(qty);
+  if (!q) return;
+  if (!map.has(key)) map.set(key, { key, label, unit, count: 0 });
+  const it = map.get(key);
+  it.count = _cwfWorkNum(Number(it.count || 0) + q);
+}
+function _cwfWorkSummaryFromLines(lines, win){
+  const cards = new Map();
+  const byWash = new Map();
+  const byAc = new Map();
+  const jobTypeJobs = new Map();
+  const jobSeen = new Set();
+  let totalMachines = 0;
+  for (const ln of (Array.isArray(lines) ? lines : [])) {
+    const detail = (ln && typeof ln.detail_json === 'object') ? ln.detail_json : {};
+    const jobId = String(ln?.job_id || '').trim();
+    const jobType = String(detail.job_type_key || '').trim();
+    if (jobId && !jobSeen.has(jobId)) {
+      jobSeen.add(jobId);
+      if (jobType === 'repair' || jobType === 'install') {
+        _cwfAddWork(jobTypeJobs, jobType, _thaiLabelJob(jobType) || jobType, 'งาน', 1);
+      }
+    }
+
+    const rateRows = Array.isArray(detail.contract_rate_rows) ? detail.contract_rate_rows : [];
+    if (rateRows.length) {
+      for (const r of rateRows) {
+        const share = Number(r.share || 1);
+        const qty = Number.isFinite(share) && share > 0 ? share : 1;
+        const wash = String(r.wash_key || detail.wash_variant_key || '').split('+')[0] || 'normal';
+        const acText = [r.item_name, detail.ac_type, detail.job_type].filter(Boolean).join(' ').toLowerCase();
+        let ac = String(detail.ac_type_key || '').trim();
+        if (!ac) {
+          if (/สี่ทิศ|four|4way|4-way/.test(acText)) ac = 'fourway';
+          else if (/เปลือย|ใต้ฝ้า|ceiling/.test(acText)) ac = 'ceiling';
+          else if (/แขวน/.test(acText) && !/แขวนคอย/.test(acText)) ac = 'hanging';
+          else ac = 'wall';
+        }
+        totalMachines += qty;
+        _cwfAddWork(byWash, wash, _thaiLabelWash(wash) || wash, 'เครื่อง', qty);
+        _cwfAddWork(byAc, ac, _thaiLabelAc(ac) || ac, 'เครื่อง', qty);
+        if (ac === 'wall') {
+          _cwfAddWork(cards, `wall_${wash}`, _thaiLabelWash(wash) || wash, 'เครื่อง', qty);
+        } else {
+          _cwfAddWork(cards, 'other_ac', 'แอร์ประเภทอื่น', 'เครื่อง', qty);
+        }
+      }
+      continue;
+    }
+
+    const mc = Number(detail.machine_count_for_tech ?? ln.machine_count_for_tech ?? 0);
+    if (Number.isFinite(mc) && mc > 0) {
+      const wash = String(detail.wash_variant_key || '').split('+')[0] || 'normal';
+      const ac = String(detail.ac_type_key || '') || 'wall';
+      totalMachines += mc;
+      _cwfAddWork(byWash, wash, _thaiLabelWash(wash) || wash, 'เครื่อง', mc);
+      _cwfAddWork(byAc, ac, _thaiLabelAc(ac) || ac, 'เครื่อง', mc);
+      if (ac === 'wall') _cwfAddWork(cards, `wall_${wash}`, _thaiLabelWash(wash) || wash, 'เครื่อง', mc);
+      else _cwfAddWork(cards, 'other_ac', 'แอร์ประเภทอื่น', 'เครื่อง', mc);
+    }
+  }
+
+  for (const it of jobTypeJobs.values()) _cwfAddWork(cards, it.key, it.label, it.unit, it.count);
+
+  const order = ['wall_normal','wall_premium','wall_coil','wall_overhaul','other_ac','repair','install'];
+  const fixedLabels = {
+    wall_normal: 'ล้างธรรมดา',
+    wall_premium: 'พรีเมี่ยม',
+    wall_coil: 'แขวนคอยล์',
+    wall_overhaul: 'ตัดล้างใหญ่',
+    other_ac: 'แอร์ประเภทอื่น',
+    repair: 'ซ่อม',
+    install: 'ติดตั้ง',
+  };
+  for (const k of order) {
+    if (!cards.has(k)) cards.set(k, { key: k, label: fixedLabels[k], unit: (k === 'repair' || k === 'install') ? 'งาน' : 'เครื่อง', count: 0 });
+  }
+  const cardArr = order.map(k => cards.get(k)).filter(Boolean).map(x => ({ ...x, count: _cwfWorkNum(x.count) }));
+  return {
+    period_start: win?.start?.toISOString?.() || null,
+    period_end: win?.endEx?.toISOString?.() || null,
+    period_label: win?.ym || '',
+    policy: 'same_period_as_rolling_month_income_card',
+    total_machines: _cwfWorkNum(totalMachines),
+    jobs_count: jobSeen.size,
+    cards: cardArr,
+    groups: [
+      { key: 'wash', label: 'แยกตามประเภทการล้าง', items: Array.from(byWash.values()).map(x => ({ ...x, count: _cwfWorkNum(x.count) })).sort((a,b)=>Number(b.count)-Number(a.count)) },
+      { key: 'ac', label: 'แยกตามประเภทแอร์', items: Array.from(byAc.values()).map(x => ({ ...x, count: _cwfWorkNum(x.count) })).sort((a,b)=>Number(b.count)-Number(a.count)) },
+      { key: 'job', label: 'งานอื่น', items: Array.from(jobTypeJobs.values()).map(x => ({ ...x, count: _cwfWorkNum(x.count) })).sort((a,b)=>Number(b.count)-Number(a.count)) },
+    ],
+  };
+}
+async function _computeTechnicianWorkSummary(username, start, endEx, labelYm = ''){
+  const tech = String(username || '').trim();
+  if (!tech || !(start instanceof Date) || !(endEx instanceof Date)) {
+    return { period_label: labelYm || '', total_machines: 0, jobs_count: 0, cards: [], groups: [] };
+  }
+  try {
+    const lines = await _computeTechLinesInRange(tech, start, endEx, { payout_id: `work_summary_${labelYm || 'month'}`, label_ym: labelYm || '' });
+    return _cwfWorkSummaryFromLines(lines || [], { start, endEx, ym: labelYm || '' });
+  } catch (e) {
+    console.error('_computeTechnicianWorkSummary', e);
+    return { period_label: labelYm || '', total_machines: 0, jobs_count: 0, cards: [], groups: [] };
   }
 }
 
@@ -8341,6 +8398,11 @@ all_total += inc;
 
     const outstanding = await _computeTechnicianTrueOutstanding(tech);
     const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, ymKey);
+    const monthlyStart = payoutMonth.monthly_income_period_start ? new Date(payoutMonth.monthly_income_period_start) : null;
+    const monthlyEnd = payoutMonth.monthly_income_period_end ? new Date(payoutMonth.monthly_income_period_end) : null;
+    const workSummary = (monthlyStart && monthlyEnd && !Number.isNaN(monthlyStart.getTime()) && !Number.isNaN(monthlyEnd.getTime()))
+      ? await _computeTechnicianWorkSummary(tech, monthlyStart, monthlyEnd, payoutMonth.payout_month || ymKey)
+      : { cards: [], groups: [], total_machines: 0, jobs_count: 0 };
 
     return res.json({
       ok: true,
@@ -8356,6 +8418,11 @@ all_total += inc;
       payout_month_net_total: payoutMonth.payout_month_net_total || 0,
       payout_month_policy: payoutMonth.payout_month_policy || 'sum_payout_10_and_25_for_label_month',
       payout_month_periods: payoutMonth.periods || [],
+      monthly_income_display_amount: payoutMonth.monthly_income_display_amount ?? payoutMonth.payout_month_total ?? 0,
+      monthly_income_display_label: payoutMonth.monthly_income_display_label || payoutMonth.payout_month || ymKey,
+      monthly_income_period_start: payoutMonth.monthly_income_period_start || null,
+      monthly_income_period_end: payoutMonth.monthly_income_period_end || null,
+      work_summary: workSummary,
       // Backward-compatible fields kept for old clients, but the new income card no longer uses them.
       true_outstanding_amount: outstanding.true_outstanding_amount,
       pending_payout_remaining_total: outstanding.true_outstanding_amount,
@@ -8613,6 +8680,11 @@ app.get('/tech/payments_total', requireTechnicianSession, async (req, res) => {
     const nowYmd = _bkkYmd(_bkkNow());
     const ymKey = `${nowYmd.y}-${String(nowYmd.m).padStart(2, '0')}`;
     const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, ymKey);
+    const monthlyStart = payoutMonth.monthly_income_period_start ? new Date(payoutMonth.monthly_income_period_start) : null;
+    const monthlyEnd = payoutMonth.monthly_income_period_end ? new Date(payoutMonth.monthly_income_period_end) : null;
+    const workSummary = (monthlyStart && monthlyEnd && !Number.isNaN(monthlyStart.getTime()) && !Number.isNaN(monthlyEnd.getTime()))
+      ? await _computeTechnicianWorkSummary(tech, monthlyStart, monthlyEnd, payoutMonth.payout_month || ymKey)
+      : { cards: [], groups: [], total_machines: 0, jobs_count: 0 };
     return res.json({
       ok:true,
       username: tech,
@@ -8622,6 +8694,11 @@ app.get('/tech/payments_total', requireTechnicianSession, async (req, res) => {
       payout_month_net_total: payoutMonth.payout_month_net_total || 0,
       payout_month_policy: payoutMonth.payout_month_policy || 'sum_payout_10_and_25_for_label_month',
       payout_month_periods: payoutMonth.periods || [],
+      monthly_income_display_amount: payoutMonth.monthly_income_display_amount ?? payoutMonth.payout_month_total ?? 0,
+      monthly_income_display_label: payoutMonth.monthly_income_display_label || payoutMonth.payout_month || ymKey,
+      monthly_income_period_start: payoutMonth.monthly_income_period_start || null,
+      monthly_income_period_end: payoutMonth.monthly_income_period_end || null,
+      work_summary: workSummary,
       // Backward-compatible fields kept for old clients.
       true_outstanding_amount: outstanding.true_outstanding_amount,
       pending_payout_remaining_total: outstanding.true_outstanding_amount,

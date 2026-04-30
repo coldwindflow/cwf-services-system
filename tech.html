@@ -289,6 +289,29 @@
     .chipStat{border-radius:18px;border:1px solid var(--tech-border);background:#fff;padding:12px;box-shadow:none;}
     .chipStat .k{font-size:11px;font-weight:1000;color:var(--tech-muted)}
     .chipStat .v{font-size:18px;font-weight:1200;color:var(--tech-navy)}
+    .chipStat.clickable{cursor:pointer;transition:transform .16s ease, border-color .16s ease, background .16s ease;}
+    .chipStat.clickable:active{transform:scale(.985);}
+    .chipStat.clickable .k::after{content:' แตะดู';font-size:10px;font-weight:1000;color:var(--tech-navy-2);}
+    .work-summary-card{margin-top:12px;padding:14px;border-radius:20px;border:1px solid var(--tech-border);background:linear-gradient(180deg,#fff,#F9FBFF);}
+    .work-summary-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:10px;}
+    .work-summary-head b{color:var(--tech-navy);font-size:16px;}
+    .work-summary-head .hint{font-size:12px;color:var(--tech-muted);font-weight:900;margin-top:3px;line-height:1.35;}
+    .work-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;}
+    .work-chip{border-radius:16px;border:1px solid rgba(11,46,109,.12);background:#fff;padding:10px 12px;min-height:74px;}
+    .work-label{font-size:12px;font-weight:1000;color:var(--tech-muted);line-height:1.25;}
+    .work-value{margin-top:7px;font-size:22px;font-weight:1200;color:var(--tech-navy);line-height:1;}
+    .work-value span{font-size:11px;font-weight:1000;color:var(--tech-muted);}
+    details.work-more{margin-top:10px;}
+    details.work-more summary{list-style:none;cursor:pointer;user-select:none;border-radius:14px;border:1px solid rgba(11,46,109,.12);background:#fff;padding:10px 12px;font-weight:1000;color:var(--tech-navy);display:flex;justify-content:space-between;align-items:center;}
+    details.work-more summary::-webkit-details-marker{display:none;}
+    .work-more-box{margin-top:10px;border-radius:16px;border:1px solid rgba(11,46,109,.10);background:#fff;padding:12px;}
+    .work-group{margin-top:12px;}
+    .work-group:first-child{margin-top:0;}
+    .work-group b{display:block;font-size:12px;color:var(--tech-muted);margin-bottom:6px;}
+    .work-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid rgba(15,23,42,.06);}
+    .work-row:first-of-type{border-top:none;}
+    .work-row span{font-size:13px;color:#0f172a;font-weight:900;}
+    .work-row strong{font-size:13px;color:var(--tech-navy);}
     details.tech-more summary{border-radius:16px;border:1px solid var(--tech-border);background:#fff;padding:12px 14px;font-weight:1000;color:var(--tech-navy)}
     .tech-more .moreBox{border-radius:18px;border:1px solid var(--tech-border);background:#fff;padding:12px;}
     .accept-btn{min-height:48px;border-radius:16px;border:1px solid var(--tech-border);font-weight:1000;}
@@ -713,7 +736,7 @@
         </div>
 
         <div class="chips">
-          <div class="chipStat">
+          <div class="chipStat clickable" role="button" tabindex="0" title="แตะเพื่อดูรายละเอียดรายได้" onclick="switchTab('income')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('income')}">
             <div class="k">💰 รายได้วันนี้</div>
             <div class="v" id="incomeDaily">-</div>
           </div>
@@ -737,8 +760,6 @@
           <div class="row"><span class="k">ชื่อช่าง</span><span class="v" id="profile-name-more">-</span></div>
           <div class="row"><span class="k">Rank</span><span class="v" id="profile-rank-more">-</span></div>
           <div class="row"><span class="k">เกรด</span><span class="v" id="profile-grade-more">-</span></div>
-          <div class="row"><span class="k">รายได้เดือนนี้</span><span class="v" id="incomeMonth">-</span></div>
-          <div class="row"><span class="k">สะสมทั้งหมด</span><span class="v" id="incomeAll">-</span></div>
         </div>
       </details>
 
@@ -808,7 +829,7 @@
       <div class="grid" style="margin-top:12px">
         <div class="card" style="margin-top:0">
           <b style="color:#0b1b3a">ภาพรวม</b>
-          <div class="muted" style="margin-top:6px">ยอดหลักที่ช่างถามบ่อย: วันนี้ / งวดถัดไป / รวมรายได้เดือนนี้</div>
+          <div class="muted" style="margin-top:6px">ยอดหลักที่ช่างถามบ่อย: วันนี้ / งวดถัดไป / รวมรายได้รอบเดือน</div>
 
           <div class="income-stack">
             <div class="income-summary-card primary">
@@ -824,14 +845,27 @@
             </div>
 
             <div class="income-summary-card highlight">
-              <div class="title">รวมรายได้เดือนนี้</div>
-              <div class="desc">งวดก่อนหน้า + งานที่ปิดแล้วสะสมถึงวันนี้</div>
+              <div class="title">รวมรายได้รอบเดือน</div>
+              <div class="desc">รวมงวด 10 + 25 ของรอบเดือนที่กำลังแสดง</div>
               <div class="value" id="incomeOutstandingVal">-</div>
             </div>
           </div>
 
+          <div class="work-summary-card" id="incomeWorkSummaryWrap" style="display:none">
+            <div class="work-summary-head">
+              <div>
+                <b>สรุปงานที่ทำ</b>
+                <div class="hint" id="incomeWorkSummaryPeriod">รอบเดียวกับรวมรายได้รอบเดือน</div>
+              </div>
+            </div>
+            <div class="work-grid" id="incomeWorkSummaryGrid"></div>
+            <details class="work-more" id="incomeWorkSummaryDetails"></details>
+          </div>
+
           <!-- keep legacy summary ids for backward compatibility (hidden) -->
           <div style="display:none">
+            <span id="incomeMonth">-</span>
+            <span id="incomeAll">-</span>
             <span id="incomeDaily2">-</span>
             <span id="incomeMonth2">-</span>
             <span id="incomeAll2">-</span>
