@@ -6941,9 +6941,6 @@ async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip
     const err = new Error('PAYOUT_ALREADY_PAID'); err.code='PAYOUT_ALREADY_PAID'; throw err;
   }
 
-  // ✅ partner ต้องกดถอนก่อนจ่าย
-  const withdrawReqId = await _requireWithdrawIfPartner(payout_id, tech, actor);
-
   let deposit_collections = { checked: 0, inserted: 0 };
   if (String(period.status) === 'draft') {
     deposit_collections = await _ensureDepositCollectionsForPayout(payout_id, actor);
@@ -6976,14 +6973,18 @@ async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip
     await pool.query(`UPDATE public.technician_payout_periods SET status='locked' WHERE payout_id=$1 AND status='draft'`, [payout_id]);
   }
 
-  // ✅ mark withdraw request paid when fully paid
-  if (withdrawReqId && String(paid_status) === 'paid') {
-    await pool.query(
-      `UPDATE public.technician_withdraw_requests
-          SET status='paid', paid_at=NOW(), paid_by=$2
-        WHERE request_id=$1`,
-      [withdrawReqId, actor || null]
-    );
+  if (String(paid_status) === 'paid') {
+    try {
+      const prof = await _getTechProfile(tech);
+      if (_isPartnerEmploymentType(prof?.employment_type || '')) {
+        await pool.query(
+          `UPDATE public.technician_withdraw_requests
+              SET status='paid', paid_at=NOW(), paid_by=$3
+            WHERE payout_id=$1 AND technician_username=$2 AND status IN ('approved','requested')`,
+          [payout_id, tech, actor || null]
+        );
+      }
+    } catch {}
   }
 
   // if all techs paid -> mark payout as paid
@@ -7112,8 +7113,6 @@ app.post('/admin/super/payouts/:payout_id/pay', requireSuperAdmin, async (req, r
     console.error('POST /admin/super/payouts/:payout_id/pay', e);
     if (String(e.code||'') === 'PAYOUT_NOT_FOUND') return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
     if (String(e.code||'') === 'PAYOUT_ALREADY_PAID') return res.status(409).json({ ok:false, error:'PAYOUT_ALREADY_PAID' });
-    if (String(e.code||'') === 'WITHDRAW_REQUIRED') return res.status(409).json({ ok:false, error:'WITHDRAW_REQUIRED' });
-    if (String(e.code||'') === 'WITHDRAW_REJECTED') return res.status(409).json({ ok:false, error:'WITHDRAW_REJECTED' });
     return res.status(500).json({ ok:false, error:'PAY_FAILED' });
   }
 });
@@ -7181,22 +7180,6 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
       targets = list.filter(u=>netMap.has(u));
     }
     if (!targets.length) return res.status(400).json({ ok:false, error:'NO_TECH_SELECTED' });
-
-    // ✅ partner ต้องกดถอนก่อนจ่าย (bulk)
-    const notRequested = [];
-    for (const t of targets) {
-      try {
-        await _requireWithdrawIfPartner(payout_id, t, actor);
-      } catch (e) {
-        const code = String(e.code || '');
-        if (code === 'WITHDRAW_REQUIRED' || code === 'WITHDRAW_REJECTED') {
-          notRequested.push({ technician_username: t, error: code });
-        }
-      }
-    }
-    if (notRequested.length) {
-      return res.status(409).json({ ok:false, error:'WITHDRAW_REQUIRED', notRequested });
-    }
 
     const depositSummary = await _ensureDepositCollectionsForPayout(payout_id, actor);
     for (const r of rows) {

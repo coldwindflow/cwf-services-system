@@ -46,24 +46,19 @@
       .app{padding:10px}.top{border-radius:0 0 22px 22px}.card{padding:12px;border-radius:20px}
       table{font-size:13px} td{padding:10px 8px}.btn{min-height:42px;border-radius:14px}
       .sectionTitle{gap:10px}.sectionTitle>.row{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:8px}
-      #btnRegeneratePayout,#btnReconcilePayout,#btnDeletePayout,#btnLockPayout{width:100%}
+      #btnLockPayout{width:100%}
     }
 
 
-    /* ===== Payroll UX Cleanup v10.3 ===== */
+    /* ===== Payout Workflow ===== */
     .payroll-shell{display:grid;grid-template-columns:1.05fr .95fr;gap:12px;margin-top:12px}
-    .payroll-hero{background:linear-gradient(135deg,#061b49,#0b4bb3 62%,#08a4ff);color:#fff;border:none;border-radius:24px;padding:16px;box-shadow:0 18px 42px rgba(2,6,23,.22)}
-    .payroll-hero b{color:#fff}
-    .payroll-hero .muted{color:rgba(255,255,255,.84)}
     .payroll-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
     .payroll-card{border-radius:20px;border:1px solid rgba(11,75,179,.14);background:#fff;padding:12px;box-shadow:0 10px 26px rgba(2,6,23,.08)}
     .payroll-card .label{font-size:12px;font-weight:1000;color:rgba(15,23,42,.62)}
     .payroll-card .value{font-size:22px;font-weight:1200;color:#061b49;margin-top:4px}
     .payroll-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
     .payroll-actions .btn{width:100%;min-height:46px}
-    .payroll-tools{border-radius:18px;border:1px dashed rgba(245,158,11,.45);background:#fffbeb;padding:10px;margin-top:10px}
-    .payroll-tools summary{color:#92400e}
-    .danger-note{border-radius:16px;background:#fff7ed;border:1px solid rgba(249,115,22,.18);padding:10px;color:#9a3412;font-weight:900;font-size:12px;line-height:1.45}
+    .bulk-pay-box{border-radius:18px;border:1px solid rgba(11,75,179,.16);background:#f8fbff;padding:10px}
     .payout-card-list{display:grid;gap:10px;margin-top:10px}
     .payout-card-item{border-radius:20px;border:1px solid rgba(11,75,179,.16);background:#fff;padding:12px;box-shadow:0 10px 26px rgba(2,6,23,.07)}
     .payout-card-item.active{border-color:#0b4bb3;box-shadow:0 16px 34px rgba(11,75,179,.18)}
@@ -94,7 +89,7 @@
         1) <b>Admin IDs</b>: สร้าง/แก้ไขแอดมิน, เปลี่ยนคอมมิชชั่น(ตัวเลข), เปลี่ยนรหัสผ่าน<br/>
         2) <b>สวมสิทธิ</b>: เลือกผู้ใช้แล้วกดสวมสิทธิ (มีบันทึก Audit) / หยุดสวมสิทธิ<br/>
         3) <b>Duration</b>: กำหนดเวลาต่อ service_key (นาที)<br/>
-        4) <b>รายได้ช่าง</b>: ตั้ง Defaults/Override แล้วใช้ “คำนวณตาม Job” เพื่อตรวจผล
+        4) <b>งวดจ่ายช่าง</b>: เลือกงวด ตรวจยอดรายช่าง ล็อกงวด และบันทึกจ่าย
       </div>
     </div>
 
@@ -221,80 +216,15 @@
       </div>
     </details>
 
-    <details>
-      <summary>💰 รายได้ช่าง — สูตรใหม่ตามสัญญาเท่านั้น</summary>
-      <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
-        <div class="card" style="background:linear-gradient(135deg,#061b49,#0b4bb3);color:white;border:none">
-          <div class="sectionTitle">
-            <div>
-              <b style="font-size:18px">Contract Payroll Engine v2</b>
-              <div style="opacity:.88;margin-top:6px;line-height:1.5">
-                ระบบนี้ปิดการคิดแบบ % เดิมแล้ว ใช้เฉพาะเรทบาท/เครื่องตามสัญญา CWF 2026 หลังช่างกดจบงาน
-              </div>
-            </div>
-            <span class="pill" style="background:#fffd01;color:#111827">CONTRACT ONLY</span>
-          </div>
-        </div>
-
-        <div class="grid" style="margin-top:12px">
-          <div class="card" style="margin-top:0">
-            <b style="color:#0b1b3a">พนักงานประจำ</b>
-            <div class="muted" style="margin-top:6px">ตัวอย่างเรทล้างแขวนคอยล์: ≤12,000 BTU = 220 / 190 / 190 / 160 • 18,000+ = 280 / 240 / 240 / 210</div>
-          </div>
-          <div class="card" style="margin-top:0">
-            <b style="color:#0b1b3a">พาร์ทเนอร์</b>
-            <div class="muted" style="margin-top:6px">ตัวอย่างเรทล้างแขวนคอยล์: ≤12,000 BTU = 850 / 800 / 800 / 750 • 18,000+ = 1,050 / 1,000 / 1,000 / 950</div>
-          </div>
-        </div>
-
-        <div class="card" style="margin-top:12px">
-          <b style="color:#0b1b3a">ตรวจผลตาม Job จริง</b>
-          <div class="muted" style="margin-top:4px;line-height:1.5">
-            ใช้ข้อมูลจาก <span class="mono">job_items</span>, <span class="mono">assigned_technician_username</span>, ประเภทช่างในโปรไฟล์ และเรทสัญญาเท่านั้น<br/>
-            ไม่อ่านค่า Defaults / Override / Percent เดิม เพื่อกันยอดเพี้ยน เช่นเคสแขวนคอยล์ 1 เครื่องต้องไม่ออก 1,804 อีก
-          </div>
-          <div class="row" style="margin-top:10px">
-            <input id="calcJobId" placeholder="job_id เช่น 232" style="flex:1;min-width:180px" />
-            <button class="btn blue" id="btnCalcJob">คำนวณตามสัญญา</button>
-          </div>
-          <div class="muted" id="calcNote" style="margin-top:10px">-</div>
-          <pre id="calcOut" style="margin-top:10px;max-height:360px">-</pre>
-        </div>
-
-        <div style="display:none">
-          <input id="defCompanyPct" value="0" />
-          <input id="defPartnerCut" value="0" />
-          <input id="defCustomPct" value="0" />
-          <button id="btnReloadIncome" type="button"></button>
-          <button id="btnSaveIncomeDefaults" type="button"></button>
-          <select id="ovTech"></select>
-          <select id="ovType"><option value="company">company</option></select>
-          <input id="ovValue" value="0" />
-          <button id="btnSaveOverride" type="button"></button>
-          <button id="btnClearOverride" type="button"></button>
-        </div>
-      </div>
-    </details>
-
     <details open class="payroll-focus">
       <summary>🗓️ งวดจ่ายช่าง — หน้าหลักใช้งานจริง</summary>
       <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px;background:transparent">
-        <div class="payroll-hero">
-          <div class="sectionTitle">
-            <div>
-              <b style="font-size:20px">Contract Payroll v10.3</b>
-              <div class="muted" style="margin-top:6px;line-height:1.5">หน้าหลักเหลือเฉพาะสิ่งที่ต้องใช้จริง: เลือกงวด → ดูยอดรายช่าง → ตรวจสอบ → ล็อกงวด/จ่ายเงิน</div>
-            </div>
-            <span class="pill" style="background:#fffd01;color:#111827">คิดตามสัญญาเท่านั้น</span>
-          </div>
-        </div>
-
         <div class="payroll-shell">
           <div class="card" style="margin-top:0">
             <div class="sectionTitle">
               <div>
                 <b>1) เลือกงวดจ่าย</b>
-                <div class="muted" style="margin-top:4px">งวด draft จะแสดงยอดสดจากสูตรสัญญา ไม่ใช้ยอดเก่า 350/1400</div>
+                <div class="muted" style="margin-top:4px">เลือกงวดเพื่อดูยอดรายช่างและบันทึกการจ่ายเงิน</div>
               </div>
               <button class="btn blue" id="btnReloadPayouts">รีเฟรช</button>
             </div>
@@ -306,17 +236,6 @@
             <div class="muted" id="payoutGenStatus" style="margin-top:10px">-</div>
             <div id="payoutsCards" class="payout-card-list"></div>
             <div class="soft-hide-table"><table><tbody id="payoutsTbody"></tbody></table></div>
-
-            <details class="payroll-tools">
-              <summary>เครื่องมือระบบ / แก้ยอดเก่าค้าง</summary>
-              <div class="danger-note" style="margin-top:10px">ใช้เฉพาะตอนสูตรเปลี่ยนหรือยอด draft เก่ายังค้างเท่านั้น ระบบไม่แตะงวด locked/paid</div>
-              <div class="payroll-actions">
-                <button class="btn red" id="btnPurgeDraftLegacy">ล้างยอดเก่า draft</button>
-                <button class="btn blue" id="btnReconcilePayout" disabled>ตรวจสอบงวด</button>
-                <button class="btn yellow" id="btnRegeneratePayout" disabled>คำนวณงวดนี้ใหม่</button>
-                <button class="btn gray" id="btnDeletePayout" disabled>ลบงวด draft</button>
-              </div>
-            </details>
           </div>
 
           <div class="card" style="margin-top:0">
@@ -330,140 +249,12 @@
                 <button class="btn red" id="btnLockPayout" disabled>ยืนยัน/ล็อกงวด</button>
               </div>
             </div>
-            <div id="payoutReconcileBox" style="margin-top:10px"></div>
             <div id="payoutTechsBox" style="margin-top:10px"></div>
             <div id="payoutLinesBox" style="margin-top:10px"></div>
           </div>
         </div>
       </div>
     </details>
-
-    <div style="display:none" aria-hidden="true">
-      <button id="btnReloadStepRules" type="button"></button>
-      <input id="sr_rule_id" value="" />
-      <input id="sr_priority" value="0" />
-      <select id="sr_enabled"><option value="false">disabled</option></select>
-      <input id="sr_job_type" value="" />
-      <input id="sr_ac_type" value="" />
-      <input id="sr_wash_variant" value="" />
-      <input id="sr_s1" value="0" />
-      <input id="sr_s2" value="0" />
-      <input id="sr_s3" value="0" />
-      <input id="sr_s4" value="0" />
-      <button id="btnUpsertStepRule" type="button"></button>
-      <div id="stepRuleStatus"></div>
-      <table><tbody id="stepRulesTbody"></tbody></table>
-    </div>
-
-    <details style="display:none" aria-hidden="true">
-  <summary>👤 % พิเศษรายช่าง (Override legacy - disabled)</summary>
-  <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
-    <div class="grid2">
-      <div class="card">
-        <div class="sectionTitle">
-          <div>
-            <b>% พิเศษรายช่าง (Override)</b>
-            <div class="muted" style="margin-top:4px">ตั้งครั้งเดียวแล้วจบ: เลือกช่าง → เลือกเงื่อนไข (ถ้ามี) → ใส่ % 1/2/3/4+ (ระบบจะเลือก override ก่อน rule ปกติ)</div>
-          </div>
-          <button class="btn blue" id="btnReloadOverrides">รีเฟรช</button>
-        </div>
-
-        <div class="row" style="margin-top:10px;flex-wrap:wrap">
-          <div style="flex:1;min-width:240px">
-            <div class="muted" style="margin-bottom:4px">เลือกช่าง</div>
-            <select id="or_tech" style="width:100%"></select>
-          </div>
-          <div style="width:180px">
-            <div class="muted" style="margin-bottom:4px">สถานะ</div>
-            <select id="or_enabled" style="width:100%">
-              <option value="true">ใช้งาน</option>
-              <option value="false">ปิด</option>
-            </select>
-          </div>
-          <div style="width:180px">
-            <div class="muted" style="margin-bottom:4px">ลำดับความสำคัญ</div>
-            <input id="or_priority" type="number" placeholder="100" style="width:100%" />
-          </div>
-        </div>
-
-        <div class="row" style="margin-top:10px;flex-wrap:wrap">
-          <div style="flex:1;min-width:200px">
-            <div class="muted" style="margin-bottom:4px">ประเภทงาน</div>
-            <select id="or_job_type" style="width:100%">
-              <option value="">ทั้งหมด</option>
-              <option value="wash">ล้าง</option>
-              <option value="repair">ซ่อม</option>
-              <option value="install">ติดตั้ง</option>
-            </select>
-          </div>
-          <div style="flex:1;min-width:200px">
-            <div class="muted" style="margin-bottom:4px">ประเภทแอร์</div>
-            <select id="or_ac_type" style="width:100%">
-              <option value="">ทั้งหมด</option>
-              <option value="wall">ผนัง</option>
-              <option value="fourway">สี่ทิศทาง</option>
-              <option value="hanging">แขวน</option>
-              <option value="ceiling">เปลือยใต้ฝ้า</option>
-            </select>
-          </div>
-          <div style="flex:1;min-width:220px">
-            <div class="muted" style="margin-bottom:4px">ประเภทการล้าง (เฉพาะล้างผนัง)</div>
-            <select id="or_wash_variant" style="width:100%">
-              <option value="">ทั้งหมด</option>
-              <option value="normal">ธรรมดา</option>
-              <option value="premium">พรีเมียม</option>
-              <option value="coil">แขวนคอยน์</option>
-              <option value="overhaul">ตัดล้าง</option>
-            </select>
-          </div>
-        </div>
-
-        <div class="row" style="margin-top:10px;flex-wrap:wrap">
-          <div style="width:140px">
-            <div class="muted" style="margin-bottom:4px">1 เครื่อง %</div>
-            <input id="or_s1" type="number" placeholder="เช่น 0.4" style="width:100%" />
-          </div>
-          <div style="width:140px">
-            <div class="muted" style="margin-bottom:4px">2 เครื่อง %</div>
-            <input id="or_s2" type="number" placeholder="เช่น 0.45" style="width:100%" />
-          </div>
-          <div style="width:140px">
-            <div class="muted" style="margin-bottom:4px">3 เครื่อง %</div>
-            <input id="or_s3" type="number" placeholder="เช่น 0.5" style="width:100%" />
-          </div>
-          <div style="width:140px">
-            <div class="muted" style="margin-bottom:4px">4+ เครื่อง %</div>
-            <input id="or_s4" type="number" placeholder="เช่น 0.55" style="width:100%" />
-          </div>
-          <div style="flex:1;min-width:220px">
-            <div class="muted" style="margin-bottom:4px">รหัส (ระบบสร้างให้)</div>
-            <input id="or_override_id" readonly style="width:100%;opacity:0.85" />
-          </div>
-          <button class="btn yellow" id="btnUpsertOverride" style="height:44px;margin-top:22px">บันทึก</button>
-        </div>
-
-        <div class="muted" id="overrideStatus" style="margin-top:10px">-</div>
-      </div>
-
-      <div class="card">
-        <b style="color:#0b1b3a">รายการ Override รายช่าง</b>
-        <div class="muted" style="margin-top:4px">กด “แก้ไข” เพื่อดึงค่ามาใส่ฟอร์ม</div>
-        <div style="overflow:auto;margin-top:8px">
-          <table>
-            <thead>
-              <tr class="muted">
-                <td>override_id</td><td>tech</td><td>match</td><td>1</td><td>2</td><td>3</td><td>4+</td><td>priority</td><td>enabled</td><td>จัดการ</td>
-              </tr>
-            </thead>
-            <tbody id="overridesTbody"></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-</details>
-
-</details>
 
     <details>
       <summary>🧾 Audit Log</summary>
@@ -494,6 +285,6 @@
   </div>
 
   <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="admin-super-v2.js?v=contract-payroll-v10-3-payroll-ui"></script>
+  <script src="admin-super-v2.js?v=payout-ui"></script>
 </body>
 </html>

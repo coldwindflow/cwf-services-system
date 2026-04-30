@@ -13,12 +13,6 @@
       POST /admin/super/durations
       DELETE /admin/super/durations/:service_key
       GET  /admin/super/audit
-      GET  /admin/super/tech_income/defaults
-      PUT  /admin/super/tech_income/defaults/:income_type
-      GET  /admin/super/tech_income/overrides
-      PUT  /admin/super/tech_income/overrides/:username
-      DELETE /admin/super/tech_income/overrides/:username
-      GET  /admin/super/tech_income/calc/job/:job_id
 */
 
 (async function () {
@@ -54,6 +48,14 @@
     const data = await res.json().catch(() => null);
     if (!res.ok) throw new Error((data && data.error) || 'REQUEST_FAILED');
     return data;
+  }
+  function cleanPayoutError(e){
+    const msg = String(e?.message || e || '');
+    if (msg.includes('PAYOUT_ALREADY_PAID')) return 'งวดนี้จ่ายครบแล้ว ไม่ต้องบันทึกซ้ำ';
+    if (msg.includes('PAYOUT_NOT_FOUND')) return 'ไม่พบงวดจ่ายนี้';
+    if (msg.includes('NO_TECH_SELECTED')) return 'กรุณาเลือกช่างก่อนบันทึกจ่าย';
+    if (msg.includes('PAY_BULK_FAILED') || msg.includes('PAY_FAILED')) return 'บันทึกการจ่ายไม่สำเร็จ กรุณาลองใหม่';
+    return 'ดำเนินการไม่สำเร็จ กรุณาลองใหม่';
   }
 
   // ===== Guard =====
@@ -295,409 +297,6 @@
 
   $('btnReloadAudit').addEventListener('click', loadAudit);
 
-  // ===== Technician Income =====
-  async function loadIncomeDefaultsAndOverrides() {
-    try {
-      const d = await api('/admin/super/tech_income/defaults');
-      const def = d.defaults || {};
-      $('defCompanyPct').value = String(def.company?.commission_percent ?? 0);
-      $('defPartnerCut').value = String(def.partner?.company_cut_percent ?? 0);
-      $('defCustomPct').value = String(def.custom?.percent ?? 0);
-    } catch (_) {
-      // endpoint might not exist yet in some deployments; keep page usable
-      $('defCompanyPct').value = String($('defCompanyPct').value || 0);
-      $('defPartnerCut').value = String($('defPartnerCut').value || 0);
-      $('defCustomPct').value = String($('defCustomPct').value || 0);
-    }
-
-    try {
-      const tech = await api('/admin/super/users?role=technician');
-      const rows = tech.users || [];
-      const sel = $('ovTech');
-      const cur = sel.value;
-      sel.innerHTML = rows.map(t => {
-        const label = `${t.username}${t.full_name ? ` • ${t.full_name}` : ''}`;
-        return `<option value="${esc(t.username)}">${esc(label)}</option>`;
-      }).join('');
-      if (cur) sel.value = cur;
-    } catch (_) { }
-  }
-
-  $('btnReloadIncome').addEventListener('click', async () => {
-    await loadIncomeDefaultsAndOverrides();
-    toast('รีเฟรชแล้ว');
-  });
-
-  $('btnSaveIncomeDefaults').addEventListener('click', async () => {
-    const companyPct = Number($('defCompanyPct').value || 0);
-    const partnerCut = Number($('defPartnerCut').value || 0);
-    const customPct = Number($('defCustomPct').value || 0);
-    if (![companyPct, partnerCut, customPct].every(n => Number.isFinite(n) && n >= 0)) {
-      alert('กรอกตัวเลขให้ถูกต้อง (ต้องเป็นเลข >= 0)');
-      return;
-    }
-    try {
-      await api('/admin/super/tech_income/defaults/company', { method: 'PUT', body: JSON.stringify({ commission_percent: companyPct }) });
-      await api('/admin/super/tech_income/defaults/partner', { method: 'PUT', body: JSON.stringify({ company_cut_percent: partnerCut }) });
-      await api('/admin/super/tech_income/defaults/custom', { method: 'PUT', body: JSON.stringify({ mode: 'percent', percent: customPct }) });
-      await api('/admin/super/tech_income/defaults/special_only', { method: 'PUT', body: JSON.stringify({}) });
-      toast('บันทึก Defaults แล้ว');
-      await loadAudit();
-    } catch (e) {
-      alert(`บันทึก Defaults ไม่สำเร็จ: ${e.message}`);
-    }
-  });
-
-  $('btnSaveOverride').addEventListener('click', async () => {
-    const username = $('ovTech').value;
-    const income_type = $('ovType').value;
-    const v = Number($('ovValue').value || 0);
-    if (!username) { alert('เลือกช่างก่อน'); return; }
-    if (income_type !== 'special_only') {
-      if (!Number.isFinite(v) || v < 0) { alert('กรอกตัวเลข >= 0'); return; }
-    }
-    const payload = { income_type };
-    if (income_type === 'company') payload.config = { commission_percent: v };
-    if (income_type === 'partner') payload.config = { company_cut_percent: v };
-    if (income_type === 'custom') payload.config = { mode: 'percent', percent: v };
-    if (income_type === 'special_only') payload.config = {};
-    try {
-      await api(`/admin/super/tech_income/overrides/${encodeURIComponent(username)}`, { method: 'PUT', body: JSON.stringify(payload) });
-      toast('บันทึก Override แล้ว');
-      await loadAudit();
-    } catch (e) {
-      alert(`บันทึก Override ไม่สำเร็จ: ${e.message}`);
-    }
-  });
-
-  $('btnClearOverride').addEventListener('click', async () => {
-    const username = $('ovTech').value;
-    if (!username) { alert('เลือกช่างก่อน'); return; }
-    if (!confirm(`ล้าง Override ของ ${username} ?`)) return;
-    try {
-      await api(`/admin/super/tech_income/overrides/${encodeURIComponent(username)}`, { method: 'DELETE' });
-      toast('ล้างแล้ว');
-      await loadAudit();
-    } catch (e) {
-      alert(`ล้างไม่สำเร็จ: ${e.message}`);
-    }
-  });
-
-  $('btnCalcJob').addEventListener('click', async () => {
-    const job_id = String($('calcJobId').value || '').trim();
-    if (!job_id) { alert('กรอก job_id'); return; }
-    $('calcOut').textContent = 'กำลังคำนวณ...';
-    $('calcNote').textContent = 'รอสักครู่';
-    try {
-      const r = await api(`/admin/super/tech_income/calc/job/${encodeURIComponent(job_id)}`);
-      $('calcNote').textContent = r.note || 'Contract-only payroll';
-      const lines = Array.isArray(r.lines) ? r.lines : [];
-      const summary = lines.map(x => {
-        const d = x.detail_json || {};
-        const rows = Array.isArray(d.contract_rate_rows) ? d.contract_rate_rows : [];
-        const rateText = rows.map(rr => `${rr.wash_label || rr.wash_key || 'บริการ'} ${rr.btu_tier === 'large' ? '18,000+' : '≤12,000'} เครื่องที่ ${rr.machine_index}: ${Number(rr.paid_rate ?? rr.rate ?? 0).toLocaleString('th-TH')}฿`).join('\n  - ');
-        return [
-          `ช่าง: ${x.technician_username}`,
-          `ประเภท: ${d.technician_type || '-'} | โหมด: ${d.split_mode || d.mode || '-'}`,
-          `จำนวนเครื่องที่คิด: ${Number(x.machine_count_for_tech || 0)}`,
-          `รายได้: ${Number(x.earn_amount || 0).toLocaleString('th-TH')} ฿`,
-          rateText ? `เรท:\n  - ${rateText}` : 'เรท: -',
-        ].join('\n');
-      }).join('\n\n--------------------\n\n');
-      $('calcOut').textContent = `JOB #${r.job_id}\nรวมทั้งงาน: ${Number(r.gross_amount || 0).toLocaleString('th-TH')} ฿\nPayroll: ${r.payroll_version || '-'}\n\n${summary || '(ไม่มี line รายได้)'}`;
-    } catch (e) {
-      $('calcNote').textContent = '-';
-      $('calcOut').textContent = `ERROR: ${e.message}`;
-    }
-  });
-
-  // =======================================
-  // 🪜 Step Ladder Rules (Phase 1)
-  // =======================================
-
-  let STEP_RULES = [];
-  function fmtPct(x){
-    const n = Number(x||0);
-    if (!Number.isFinite(n)) return '0';
-    return (Math.round(n*100)/100).toString();
-  }
-
-  async function loadStepRules(){
-    if (!$('stepRulesTbody')) return;
-    try{
-      const r = await api('/admin/super/income_step_rules');
-      STEP_RULES = r.rules || [];
-      renderStepRules();
-    }catch(e){
-      $('stepRulesTbody').innerHTML = `<tr class="tr"><td colspan="9" class="muted">โหลดไม่สำเร็จ</td></tr>`;
-    }
-  }
-
-  function renderStepRules(){
-    const tb = $('stepRulesTbody');
-    if (!tb) return;
-    if (!STEP_RULES.length) {
-      tb.innerHTML = `<tr class="tr"><td colspan="9" class="muted">ยังไม่มี rule</td></tr>`;
-      return;
-    }
-    tb.innerHTML = STEP_RULES.map(r=>{
-      const match = [r.job_type?`job=${esc(r.job_type)}`:'', r.ac_type?`ac=${esc(r.ac_type)}`:'', r.wash_variant?`wash=${esc(r.wash_variant)}`:'']
-        .filter(Boolean).join(' • ') || 'default';
-      return `
-        <tr class="tr">
-          <td class="mono">${esc(r.rule_id)}</td>
-          <td class="muted">${match}</td>
-          <td>${fmtPct(r.step_1_percent)}</td>
-          <td>${fmtPct(r.step_2_percent)}</td>
-          <td>${fmtPct(r.step_3_percent)}</td>
-          <td>${fmtPct(r.step_4p_percent)}</td>
-          <td>${Number(r.priority||0)}</td>
-          <td>${r.enabled ? '<span class="pill blue">on</span>' : '<span class="pill">off</span>'}</td>
-          <td><button class="btn gray" data-act="edit" data-id="${esc(r.rule_id)}">แก้ไข</button></td>
-        </tr>
-      `;
-    }).join('');
-
-    tb.querySelectorAll('button[data-act="edit"]').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const id = btn.getAttribute('data-id');
-        const it = STEP_RULES.find(x=>String(x.rule_id)===String(id));
-        if (!it) return;
-        $('sr_rule_id').value = it.rule_id || '';
-        $('sr_priority').value = Number(it.priority||0);
-        $('sr_enabled').value = it.enabled ? 'true' : 'false';
-        $('sr_job_type').value = it.job_type || '';
-        $('sr_ac_type').value = it.ac_type || '';
-        $('sr_wash_variant').value = it.wash_variant || '';
-        $('sr_s1').value = fmtPct(it.step_1_percent);
-        $('sr_s2').value = fmtPct(it.step_2_percent);
-        $('sr_s3').value = fmtPct(it.step_3_percent);
-        $('sr_s4').value = fmtPct(it.step_4p_percent);
-        toast('ดึงค่าเข้าแบบฟอร์มแล้ว');
-      });
-    });
-  }
-
-  if ($('btnReloadStepRules')) $('btnReloadStepRules').addEventListener('click', loadStepRules);
-  if ($('btnUpsertStepRule')) $('btnUpsertStepRule').addEventListener('click', async ()=>{
-    try{
-      const payload = {
-        rule_id: String($('sr_rule_id').value||'').trim(),
-        priority: Number($('sr_priority').value||0),
-        enabled: String($('sr_enabled').value||'true') !== 'false',
-        job_type: String($('sr_job_type').value||'').trim() || null,
-        ac_type: String($('sr_ac_type').value||'').trim() || null,
-        wash_variant: String($('sr_wash_variant').value||'').trim() || null,
-        step_1_percent: Number($('sr_s1').value||0),
-        step_2_percent: Number($('sr_s2').value||0),
-        step_3_percent: Number($('sr_s3').value||0),
-        step_4p_percent: Number($('sr_s4').value||0),
-        scope_type: 'combined'
-      };
-      if (!payload.rule_id) { alert('กรอก rule_id'); return; }
-      $('stepRuleStatus').textContent = 'กำลังบันทึก...';
-      await api('/admin/super/income_step_rules/upsert', { method:'POST', body: JSON.stringify(payload) });
-      $('stepRuleStatus').textContent = 'บันทึกแล้ว';
-      toast('บันทึกแล้ว');
-      await loadStepRules();
-  await loadOverrides();
-      await loadAudit();
-    }catch(e){
-      $('stepRuleStatus').textContent = 'บันทึกไม่สำเร็จ';
-      alert(`บันทึกไม่สำเร็จ: ${e.message}`);
-    }
-  });
-
-  
-// =======================================
-// 👤 Technician Step Overrides
-// =======================================
-
-let OVERRIDES = [];
-let TECH_OPTIONS = [];
-
-function _slug(s){
-  return String(s||'').trim().toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'');
-}
-
-function _buildOverrideId(){
-  const tech = String($('or_tech')?.value||'').trim();
-  const job = String($('or_job_type')?.value||'').trim() || 'any';
-  const ac  = String($('or_ac_type')?.value||'').trim() || 'any';
-  let wash  = String($('or_wash_variant')?.value||'').trim() || 'any';
-  // wash_variant is only meaningful for wash+wall
-  if (!(job==='wash' && ac==='wall')) wash = 'any';
-  if (!tech) return '';
-  return `ov_${_slug(tech)}__${_slug(job)}__${_slug(ac)}__${_slug(wash)}`;
-}
-
-function _updateOverrideIdPreview(){
-  const id = _buildOverrideId();
-  if ($('or_override_id')) $('or_override_id').value = id;
-}
-
-function _updateWashVariantEnabled(){
-  const job = String($('or_job_type')?.value||'').trim();
-  const ac  = String($('or_ac_type')?.value||'').trim();
-  const el = $('or_wash_variant');
-  if (!el) return;
-  const enabled = (job==='wash' && ac==='wall');
-  el.disabled = !enabled;
-  if (!enabled) el.value = '';
-}
-
-async function loadTechnicianOptions(){
-  const sel = $('or_tech');
-  if (!sel) return;
-  try{
-    // use existing admin technicians endpoint (works for super too)
-    const r = await api('/admin/technicians');
-    const list = (r.technicians || r.items || r.rows || []).map(t=>({
-      username: t.username || t.tech_username || t.technician_username || t.id || '',
-      name: t.name || t.full_name || t.display_name || ''
-    })).filter(x=>x.username);
-    TECH_OPTIONS = list;
-  }catch(e){
-    TECH_OPTIONS = [];
-  }
-  // render dropdown
-  sel.innerHTML = '';
-  const opt0 = document.createElement('option');
-  opt0.value = '';
-  opt0.textContent = '— เลือกช่าง —';
-  sel.appendChild(opt0);
-  TECH_OPTIONS.forEach(t=>{
-    const o = document.createElement('option');
-    o.value = t.username;
-    o.textContent = t.name ? `${t.username} (${t.name})` : t.username;
-    sel.appendChild(o);
-  });
-}
-
-async function loadOverrides(){
-  if (!$('overridesTbody')) return;
-  try{
-    // populate dropdown once
-    if ($('or_tech') && (!$('or_tech').options || $('or_tech').options.length<=1)) {
-      await loadTechnicianOptions();
-      if ($('or_priority') && !$('or_priority').value) $('or_priority').value = '100';
-      _updateWashVariantEnabled();
-      _updateOverrideIdPreview();
-    }
-    const r = await api('/admin/super/income_step_overrides');
-    OVERRIDES = r.overrides || [];
-    renderOverrides();
-  }catch(e){
-    $('overridesTbody').innerHTML = `<tr class="tr"><td colspan="10" class="muted">โหลดไม่สำเร็จ</td></tr>`;
-  }
-}
-
-function renderOverrides(){
-  const tb = $('overridesTbody');
-  if (!tb) return;
-  if (!OVERRIDES.length) {
-    tb.innerHTML = `<tr class="tr"><td colspan="10" class="muted">ยังไม่มี override</td></tr>`;
-    return;
-  }
-  tb.innerHTML = OVERRIDES.map(r=>{
-    const match = [r.job_type?`job=${esc(r.job_type)}`:'', r.ac_type?`ac=${esc(r.ac_type)}`:'', r.wash_variant?`wash=${esc(r.wash_variant)}`:'']
-      .filter(Boolean).join(' • ') || 'any';
-    return `
-      <tr class="tr">
-        <td class="mono">${esc(r.override_id)}</td>
-        <td class="mono">${esc(r.technician_username)}</td>
-        <td class="muted">${match}</td>
-        <td>${fmtPct(r.step_1_percent)}</td>
-        <td>${fmtPct(r.step_2_percent)}</td>
-        <td>${fmtPct(r.step_3_percent)}</td>
-        <td>${fmtPct(r.step_4p_percent)}</td>
-        <td>${Number(r.priority||0)}</td>
-        <td>${r.enabled ? '<span class="pill blue">on</span>' : '<span class="pill">off</span>'}</td>
-        <td><button class="btn gray" data-act="edit_ov" data-id="${esc(r.override_id)}">แก้ไข</button></td>
-      </tr>
-    `;
-  }).join('');
-
-  tb.querySelectorAll('button[data-act="edit_ov"]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const id = btn.getAttribute('data-id');
-      const it = OVERRIDES.find(x=>String(x.override_id)===String(id));
-      if (!it) return;
-      // ensure dropdown is loaded
-      if ($('or_tech') && (!$('or_tech').options || $('or_tech').options.length<=1)) {
-        loadTechnicianOptions().then(()=>{ $('or_tech').value = it.technician_username || ''; _updateOverrideIdPreview(); });
-      } else {
-        $('or_tech').value = it.technician_username || '';
-      }
-      $('or_priority').value = String(Number(it.priority||100));
-      $('or_enabled').value = it.enabled ? 'true' : 'false';
-      $('or_job_type').value = it.job_type || '';
-      $('or_ac_type').value = it.ac_type || '';
-      _updateWashVariantEnabled();
-      $('or_wash_variant').value = it.wash_variant || '';
-      $('or_s1').value = fmtPct(it.step_1_percent);
-      $('or_s2').value = fmtPct(it.step_2_percent);
-      $('or_s3').value = fmtPct(it.step_3_percent);
-      $('or_s4').value = fmtPct(it.step_4p_percent);
-      // show system-generated id preview (should match stored)
-      $('or_override_id').value = it.override_id || _buildOverrideId();
-      toast('ดึงค่า override เข้าแบบฟอร์มแล้ว');
-    });
-  });
-}
-
-if ($('btnReloadOverrides')) $('btnReloadOverrides').addEventListener('click', loadOverrides);
-if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', async ()=>{
-  try{
-    _updateWashVariantEnabled();
-    _updateOverrideIdPreview();
-    const payload = {
-      override_id: String($('or_override_id').value||'').trim(),
-      technician_username: String($('or_tech').value||'').trim(),
-      priority: Number($('or_priority').value||100),
-      enabled: String($('or_enabled').value||'true') !== 'false',
-      job_type: String($('or_job_type').value||'').trim() || null,
-      ac_type: String($('or_ac_type').value||'').trim() || null,
-      wash_variant: String($('or_wash_variant').value||'').trim() || null,
-      step_1_percent: Number($('or_s1').value||0),
-      step_2_percent: Number($('or_s2').value||0),
-      step_3_percent: Number($('or_s3').value||0),
-      step_4p_percent: Number($('or_s4').value||0),
-      scope_type: 'combined'
-    };
-    if (!payload.technician_username) { alert('เลือกช่าง'); return; }
-    if (!payload.override_id) {
-      payload.override_id = _buildOverrideId();
-      $('or_override_id').value = payload.override_id;
-    }
-    // wash_variant only for wash+wall
-    if (!(payload.job_type==='wash' && payload.ac_type==='wall')) payload.wash_variant = null;
-    $('overrideStatus').textContent = 'กำลังบันทึก...';
-    await api('/admin/super/income_step_overrides/upsert', { method:'POST', body: JSON.stringify(payload) });
-    $('overrideStatus').textContent = 'บันทึกแล้ว';
-    toast('บันทึกแล้ว');
-    await loadOverrides();
-    await loadAudit();
-  }catch(e){
-    $('overrideStatus').textContent = 'บันทึกไม่สำเร็จ';
-    alert(`บันทึกไม่สำเร็จ: ${e.message}`);
-  }
-});
-
-// wire up live preview for override
-['or_tech','or_job_type','or_ac_type','or_wash_variant'].forEach(id=>{
-  const el = $(id);
-  if (!el) return;
-  el.addEventListener('change', ()=>{
-    _updateWashVariantEnabled();
-    _updateOverrideIdPreview();
-  });
-});
-
-// =======================================
-  // 🗓️ Payout Periods (Phase 1)
-  // =======================================
-
   let PAYOUTS = [];
   let ACTIVE_PAYOUT = '';
   let ACTIVE_TECH = '';
@@ -739,7 +338,6 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
       const range = `${fmtDate(p.period_start)} - ${fmtDate(p.period_end)}`;
       const st = String(p.status||'draft');
       const isActive = String(ACTIVE_PAYOUT||'') === String(p.payout_id||'');
-      const sourceTxt = p.source === 'live_contract_recompute_draft' ? 'สดจากสูตรสัญญา' : 'ยอดที่บันทึกไว้';
       const statusClass = st === 'paid' ? 'blue' : (st === 'locked' ? 'yellow' : 'blue');
       return `
         <div class="payout-card-item ${isActive?'active':''}">
@@ -758,7 +356,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
             </div>
           </div>
           <div class="row" style="justify-content:space-between;align-items:center;margin-top:10px;gap:8px">
-            <div class="muted">แหล่งยอด: <b>${esc(sourceTxt)}</b></div>
+            <div class="muted">${Number(p.techs_count||0)} ?? ? ${Number(p.lines_count||0)} ??????</div>
             <button class="btn blue" data-act="view" data-id="${esc(p.payout_id)}">เลือกงวดนี้</button>
           </div>
         </div>
@@ -777,7 +375,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
             <td><b>${fmtBaht(p.total_amount)}</b></td>
             <td>${Number(p.techs_count||0)}</td>
             <td>${Number(p.lines_count||0)}</td>
-            <td>${esc(p.status||'draft')}<div class="muted" style="font-size:11px;margin-top:3px">${esc(p.source==='live_contract_recompute_draft'?'สด/สูตรสัญญา':'stored')}</div></td>
+            <td>${esc(p.status||'draft')}</td>
             <td><button class="btn gray" data-act="view" data-id="${esc(p.payout_id)}">ดู</button></td>
           </tr>
         `;
@@ -789,25 +387,6 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
         btn.addEventListener('click', ()=> openPayout(btn.getAttribute('data-id')));
       });
     });
-  }
-
-  async function purgeDraftLegacyPayoutLines(){
-    if (!confirm('ล้างยอดเก่า draft ทั้งหมด?\n\nระบบจะลบเฉพาะ payout_lines ของงวด draft ที่ยังไม่มี payment เท่านั้น\nไม่แตะ locked/paid และไม่แตะ adjustment')) return;
-    const btn = $('btnPurgeDraftLegacy');
-    const old = btn ? btn.textContent : '';
-    try{
-      if (btn){ btn.disabled = true; btn.textContent = 'กำลังล้าง...'; }
-      const r = await api('/admin/super/payouts/purge_draft_legacy', { method:'POST' });
-      $('payoutGenStatus').textContent = 'ล้างยอดเก่า draft สำเร็จ: ' + Number(r.deleted_lines||0) + ' บรรทัด — จากนี้ draft จะแสดงยอดสดจากสูตรสัญญา';
-      toast('ล้างยอดเก่าแล้ว');
-      await loadPayouts();
-      if (ACTIVE_PAYOUT) await openPayout(ACTIVE_PAYOUT);
-      await loadAudit();
-    }catch(e){
-      alert('ล้างยอดเก่าไม่สำเร็จ: ' + (e.message||'error'));
-    }finally{
-      if (btn){ btn.disabled = false; btn.textContent = old || 'ล้างยอดเก่า draft'; }
-    }
   }
 
   async function generatePayout(type){
@@ -835,7 +414,6 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
     try{
       const meta = (Array.isArray(PAYOUTS)?PAYOUTS:[]).find(x=>String(x.payout_id)===String(id)) || {};
       const st = String(meta.status||'draft');
-      if ($('payoutReconcileBox')) $('payoutReconcileBox').innerHTML = '';
       const pill = $('payoutStatusPill');
       if (pill){
         pill.style.display = 'inline-flex';
@@ -860,87 +438,6 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
         };
       }
 
-      // ✅ ลบงวด (เฉพาะ draft และต้องไม่มี payment/adjustment)
-      const delBtn = $('btnDeletePayout');
-      if (delBtn){
-        delBtn.disabled = (st !== 'draft');
-        delBtn.onclick = async ()=>{
-          if (!confirm(`ลบงวด ${id} ?\n\nเงื่อนไข: ต้องเป็น draft และยังไม่มีการจ่าย/ปรับยอด`)) return;
-          try{
-            await api(`/admin/super/payouts/${encodeURIComponent(id)}`, { method:'DELETE' });
-            toast('ลบงวดแล้ว');
-            ACTIVE_PAYOUT = '';
-            ACTIVE_TECH = '';
-            $('payoutDetailHint').textContent = 'เลือกงวดจากตาราง';
-            $('payoutTechsBox').innerHTML = '';
-            $('payoutLinesBox').innerHTML = '';
-            await loadPayouts();
-            await loadAudit();
-          }catch(e){
-            alert(`ลบไม่สำเร็จ: ${e.message}`);
-          }
-        };
-      }
-
-      // 🔁 Regenerate งวด draft จากสูตรสัญญาเท่านั้น (ไม่แตะ locked/paid)
-      const regenBtn = $('btnRegeneratePayout');
-      if (regenBtn){
-        regenBtn.disabled = (st !== 'draft');
-        regenBtn.onclick = async ()=>{
-          if (st !== 'draft') {
-            alert('งวดนี้ locked/paid แล้ว ห้าม regenerate แบบเงียบ ให้ใช้ Adjustment แยกต่างหาก');
-            return;
-          }
-          if (!confirm(`Regenerate งวด ${id} จากสูตรสัญญาใหม่?\n\nระบบจะลบบรรทัดรายได้เดิมของงวด draft นี้ แล้วสร้างใหม่จาก Contract Engine เท่านั้น\n- ไม่แตะ locked/paid\n- ไม่เอา line_total/unit_price/special_bonus_amount มาเป็นรายได้\n- adjustment เดิมยังอยู่แยกต่างหาก`)) return;
-          regenBtn.disabled = true;
-          const oldText = regenBtn.textContent;
-          regenBtn.textContent = 'กำลัง Regenerate...';
-          if ($('payoutReconcileBox')) $('payoutReconcileBox').innerHTML = '<div class="muted">กำลัง regenerate จากสูตรสัญญา...</div>';
-          try{
-            const rr = await api(`/admin/super/payouts/${encodeURIComponent(id)}/regenerate_contract`, { method:'POST' });
-            const msg = `Regenerate สำเร็จ: ลบ/แทนที่ ${Number(rr.old_lines||0)} บรรทัดเดิม → ${Number(rr.new_lines||0)} บรรทัดใหม่ | ยอดใหม่ ${fmtBaht(rr.new_total)}`;
-            $('payoutGenStatus').textContent = msg;
-            if ($('payoutReconcileBox')) {
-              const errs = Array.isArray(rr.errors) && rr.errors.length ? `<div class="muted" style="margin-top:6px;color:#b45309">มีรายการต้องตรวจสอบ ${rr.errors.length} รายการ</div>` : '';
-              $('payoutReconcileBox').innerHTML = `
-                <div class="card" style="background:#f0fdf4;border-color:#bbf7d0">
-                  <b style="color:#166534">Regenerate ตามสัญญาสำเร็จ</b>
-                  <div class="muted" style="margin-top:6px">old lines: ${Number(rr.old_lines||0)} / old total: ${fmtBaht(rr.old_total)}</div>
-                  <div class="muted">new lines: ${Number(rr.new_lines||0)} / new total: <b>${fmtBaht(rr.new_total)}</b></div>
-                  <div class="muted">adjustments ที่แยกไว้: ${Number(rr.adjustments_count||0)} รายการ (${fmtBaht(rr.adjustments_total)})</div>
-                  <div class="muted mono" style="margin-top:6px">rate_source=contract | ignored=line_total, unit_price, special_bonus_amount, percentage</div>
-                  ${errs}
-                </div>
-              `;
-            }
-            toast('Regenerate สำเร็จ');
-            await loadPayouts();
-            await openPayout(id);
-            await loadAudit();
-          }catch(e){
-            if ($('payoutReconcileBox')) $('payoutReconcileBox').innerHTML = `<div class="muted">Regenerate ไม่สำเร็จ: ${esc(e.message||'error')}</div>`;
-            alert(`Regenerate ไม่สำเร็จ: ${e.message}`);
-          }finally{
-            regenBtn.textContent = oldText;
-            regenBtn.disabled = (st !== 'draft');
-          }
-        };
-      }
-
-      // ✅ Phase 5: ตรวจสอบงวด (reconcile)
-      const recBtn = $('btnReconcilePayout');
-      if (recBtn){
-        recBtn.disabled = false;
-        recBtn.onclick = async ()=>{
-          if ($('payoutReconcileBox')) $('payoutReconcileBox').innerHTML = '<div class="muted">กำลังตรวจสอบงวด...</div>';
-          try{
-            const rr = await api(`/admin/super/payouts/${encodeURIComponent(id)}/reconcile`);
-            renderPayoutReconcile(rr);
-          }catch(e){
-            if ($('payoutReconcileBox')) $('payoutReconcileBox').innerHTML = `<div class="muted">ตรวจสอบไม่สำเร็จ: ${esc(e.message||'error')}</div>`;
-          }
-        };
-      }
     }catch(e){}
 
     $('payoutDetailHint').textContent = `กำลังโหลดรายช่างของงวด: ${id}`;
@@ -967,10 +464,12 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
     const totalDeposit = arr.reduce((a,t)=>a+_safeNum(t.deposit_deduction_amount||0),0);
     const totalPaid = arr.reduce((a,t)=>a+_safeNum(t.paid_amount||0),0);
     const totalRem = arr.reduce((a,t)=>a+_safeNum(t.remaining_amount||0),0);
+    const isPayableTech = (t)=> String(t?.paid_status||'unpaid') !== 'paid' && _safeNum(t?.remaining_amount||0) > 0.0001;
     const allUsers = arr.map(t=>String(t.technician_username||'').trim()).filter(Boolean);
-    const allSet = new Set(allUsers);
+    const payableUsers = arr.filter(isPayableTech).map(t=>String(t.technician_username||'').trim()).filter(Boolean);
+    const allSet = new Set(payableUsers);
     BULK_SELECTED_TECHS = new Set(Array.from(BULK_SELECTED_TECHS).filter(u=>allSet.has(u)));
-    const isAllSelected = allUsers.length>0 && allUsers.every(u=>BULK_SELECTED_TECHS.has(u));
+    const isAllSelected = payableUsers.length>0 && payableUsers.every(u=>BULK_SELECTED_TECHS.has(u));
 
     box.innerHTML = `
       <div class="payroll-cards">
@@ -981,19 +480,18 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
         <div class="payroll-card"><div class="label">คงเหลือ</div><div class="value">${fmtBaht(totalRem)}</div></div>
       </div>
 
-      <details class="payroll-tools" style="margin-top:12px">
-        <summary>เครื่องมือจ่ายเงินหลายคน</summary>
+      <div class="bulk-pay-box" style="margin-top:12px">
+        <b>จ่ายหลายคน</b>
         <div class="row" style="margin-top:10px;gap:8px;align-items:center">
-          <label class="row" style="gap:8px;align-items:center"><input type="checkbox" id="chkSelectAllTech" ${isAllSelected?'checked':''} /><span class="muted">เลือกทั้งหมด</span></label>
+          <label class="row" style="gap:8px;align-items:center"><input type="checkbox" id="chkSelectAllTech" ${isAllSelected?'checked':''} ${payableUsers.length?'':'disabled'} /><span class="muted">เลือกทั้งหมด</span></label>
         </div>
         <div class="row" style="margin-top:10px;flex-wrap:wrap;gap:8px;align-items:center">
           <input id="bulkSlipUrl" placeholder="ลิงก์สลิป (ใช้ร่วมกันได้ / ว่างได้)" style="flex:1;min-width:220px" />
           <input id="bulkNote" placeholder="โน้ต (ว่างได้)" style="flex:1;min-width:180px" />
           <button class="btn blue" id="btnPaySelectedFull">จ่ายครบที่เลือก</button>
-          <button class="btn red" id="btnPayAllFull">จ่ายครบทั้งหมด</button>
+          <button class="btn red" id="btnPayAllFull" ${payableUsers.length?'':'disabled'}>จ่ายครบทั้งหมด</button>
         </div>
-        <div class="muted" style="margin-top:8px;line-height:1.4">ปุ่มนี้ตั้งยอดจ่าย = ยอดสุทธิอัตโนมัติ ถ้าจ่ายบางส่วนให้กด “จ่าย” ที่รายช่าง</div>
-      </details>
+      </div>
 
       <div style="margin-top:10px">
         ${arr.map(t=>{
@@ -1006,37 +504,37 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
           const rem = fmtBaht(t.remaining_amount||0);
           const st = esc(t.paid_status||'unpaid');
           const pillClass = (st==='paid') ? 'blue' : (st==='partial' ? 'yellow' : '');
+          const canPay = isPayableTech(t);
           const checked = BULK_SELECTED_TECHS.has(String(t.technician_username||'')) ? 'checked' : '';
           return `<div class="tech-pay-card">
             <div class="head">
               <div>
                 <label class="row" style="gap:8px;align-items:center">
-                  <input type="checkbox" data-act="sel" data-u="${u}" ${checked} />
+                  <input type="checkbox" data-act="sel" data-u="${u}" ${checked} ${canPay?'':'disabled'} />
                   <b class="mono">${u}</b>
                 </label>
-                <div class="muted" style="margin-top:6px">${Number(t.jobs_count||0)} งาน • สถานะ <span class="pill ${pillClass}">${st}</span></div>
-                <div class="muted" style="margin-top:6px">Gross ${gross} • Adj ${adj} • <span style="color:#0b4bb3;font-weight:700">Deposit ${dep}</span></div>
+                <div class="muted" style="margin-top:6px">สถานะ <span class="pill ${pillClass}">${st}</span></div>
+                <div class="muted" style="margin-top:6px">Gross ${gross} • Deposit ${dep} • Net ${net}</div>
               </div>
               <div style="text-align:right">
-                <div class="money">${net}</div>
-                <div class="muted" style="margin-top:4px">จ่ายแล้ว ${paid} • คงเหลือ ${rem}</div>
+                <div class="money">${rem}</div>
+                <div class="muted" style="margin-top:4px">Paid ${paid} • Remaining ${rem}</div>
               </div>
             </div>
             <div class="pay-actions">
               <button class="btn gray" data-act="tech" data-u="${u}">ดูรายการงาน</button>
-              <button class="btn blue" data-act="pay" data-u="${u}" data-net="${_safeNum(t.net_amount)}">จ่าย</button>
+              <button class="btn blue" data-act="pay" data-u="${u}" data-net="${_safeNum(t.net_amount)}" ${canPay?'':'disabled'}>${canPay?'จ่าย':'จ่ายแล้ว'}</button>
               <button class="btn yellow" data-act="adj" data-u="${u}">ปรับยอด</button>
             </div>
           </div>`;
         }).join('')}
       </div>
-      <div class="muted" style="margin-top:10px">หมายเหตุ: “ปรับยอด” แยกจากรายได้ใบงานและเก็บ audit trail</div>
     `;
 
     const selAll = $('chkSelectAllTech');
     if (selAll){
       selAll.onchange = ()=>{
-        if (selAll.checked) allUsers.forEach(u=>BULK_SELECTED_TECHS.add(u));
+        if (selAll.checked) payableUsers.forEach(u=>BULK_SELECTED_TECHS.add(u));
         else BULK_SELECTED_TECHS = new Set();
         renderPayoutTechs(arr);
       };
@@ -1066,9 +564,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
           if (ACTIVE_TECH) await openPayoutTech(ACTIVE_TECH);
           await loadAudit();
         }catch(e){
-          const msg = String(e.message||'');
-          if (msg.includes('WITHDRAW_REQUIRED')) alert('จ่ายไม่สำเร็จ: พาร์ทเนอร์ต้องกด "ขอถอนเงิน" ก่อน ถึงจะจ่ายได้');
-          else alert(`จ่ายไม่สำเร็จ: ${msg}`);
+          alert(cleanPayoutError(e));
         }
       };
     }
@@ -1076,17 +572,18 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
     if (btnAll){
       btnAll.onclick = async ()=>{
         if (!ACTIVE_PAYOUT) return;
-        if (!confirm(`จ่ายครบทั้งหมดในงวด ${ACTIVE_PAYOUT} ?\n\nระบบจะตั้งยอดจ่าย = ยอดสุทธิอัตโนมัติ`)) return;
+        if (!payableUsers.length) return alert('ไม่มีรายการค้างจ่าย');
+        if (!confirm(`จ่ายครบทั้งหมดในงวด ${ACTIVE_PAYOUT} ?\n\nระบบจะบันทึกเฉพาะรายการที่ยังค้างจ่าย ${payableUsers.length} คน`)) return;
         const slip_url = String(($('bulkSlipUrl')?.value||'')).trim();
         const note = String(($('bulkNote')?.value||'')).trim();
         try{
-          await api(`/admin/super/payouts/${encodeURIComponent(ACTIVE_PAYOUT)}/pay_bulk`, { method:'POST', body: JSON.stringify({ mode:'all', slip_url, note }) });
+          await api(`/admin/super/payouts/${encodeURIComponent(ACTIVE_PAYOUT)}/pay_bulk`, { method:'POST', body: JSON.stringify({ mode:'selected', technicians: payableUsers, slip_url, note }) });
           toast('บันทึกการจ่ายแล้ว');
-          BULK_SELECTED_TECHS = new Set(allUsers);
+          BULK_SELECTED_TECHS = new Set(payableUsers);
           await openPayout(ACTIVE_PAYOUT);
           if (ACTIVE_TECH) await openPayoutTech(ACTIVE_TECH);
           await loadAudit();
-        }catch(e){ alert(`จ่ายไม่สำเร็จ: ${e.message}`); }
+        }catch(e){ alert(cleanPayoutError(e)); }
       };
     }
 
@@ -1108,9 +605,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
           if (ACTIVE_TECH === u) await openPayoutTech(u);
           await loadAudit();
         }catch(e){
-          const msg = String(e.message||'');
-          if (msg.includes('WITHDRAW_REQUIRED')) alert('บันทึกไม่สำเร็จ: พาร์ทเนอร์ต้องกด "ขอถอนเงิน" ก่อน ถึงจะจ่ายได้');
-          else alert(`บันทึกไม่สำเร็จ: ${msg}`);
+          alert(cleanPayoutError(e));
         }
       });
     });
@@ -1134,55 +629,6 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
         }catch(e){ alert(`ปรับยอดไม่สำเร็จ: ${e.message}`); }
       });
     });
-  }
-
-  function renderPayoutReconcile(rr){
-    const box = $('payoutReconcileBox');
-    if (!box) return;
-    const mism = Array.isArray(rr?.mismatches) ? rr.mismatches : [];
-    const miss = Array.isArray(rr?.missing_now) ? rr.missing_now : [];
-    const news = Array.isArray(rr?.new_expected) ? rr.new_expected : [];
-
-    const badge = (txt)=>`<span class="pill blue" style="margin-left:6px">${esc(txt)}</span>`;
-    let html = `<div class="card" style="padding:10px">
-      <div class="row" style="justify-content:space-between;align-items:center">
-        <div><b>ตรวจสอบงวด</b>${badge(`mismatch ${mism.length}`)}${badge(`missing ${miss.length}`)}${badge(`new ${news.length}`)}</div>
-        <div class="muted mono">${esc(rr?.payout_id||'')}</div>
-      </div>
-      <div class="muted" style="margin-top:6px">ถ้ามี mismatch แปลว่า job/รายการ/การมอบหมาย ถูกแก้หลัง generate หรือ rule เปลี่ยน (งวด locked/paid ให้ใช้ Adjustment เท่านั้น)</div>
-    `;
-
-    const rows = [];
-    for (const m of mism.slice(0, 50)) {
-      rows.push(`<tr>
-        <td class="mono">${esc(m.job_id)}</td>
-        <td class="mono">${esc(m.technician_username||'-')}</td>
-        <td class="mono">${esc((m.stored_earn??'-'))}</td>
-        <td class="mono">${esc((m.expected_earn??'-'))}</td>
-        <td class="mono">${esc((m.delta??'-'))}</td>
-        <td class="muted">${m.changed_after_generate ? 'แก้หลังสร้างงวด' : ''}</td>
-      </tr>`);
-    }
-    if (rows.length) {
-      html += `<div style="overflow:auto;margin-top:10px">
-        <table>
-          <thead><tr class="muted"><td>job</td><td>tech</td><td>stored</td><td>expected</td><td>delta</td><td>hint</td></tr></thead>
-          <tbody>${rows.join('')}</tbody>
-        </table>
-      </div>`;
-    } else {
-      html += `<div class="muted" style="margin-top:10px">ไม่พบ mismatch</div>`;
-    }
-
-    if (miss.length) {
-      html += `<div class="muted" style="margin-top:10px">มีบรรทัดที่เคยอยู่ในงวด แต่คำนวณปัจจุบันไม่เจอ (มักเกิดจากการแก้ assign/ลบรายการ): ${esc(miss.length)} รายการ</div>`;
-    }
-    if (news.length) {
-      html += `<div class="muted" style="margin-top:6px">มีบรรทัดใหม่ที่คำนวณปัจจุบันควรมี แต่ใน DB ไม่มี: ${esc(news.length)} รายการ</div>`;
-    }
-
-    html += `</div>`;
-    box.innerHTML = html;
   }
 
   async function openPayoutTech(username){
@@ -1211,6 +657,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
     const rem = Number(payload?.remaining_amount||0);
     const paidStatus = String(payload?.paid_status||payload?.payment?.paid_status||'unpaid');
     const adjustments = Array.isArray(payload?.adjustments)?payload.adjustments:[];
+    const canPayDetail = paidStatus !== 'paid' && rem > 0.0001;
 
     const head = `
       <div class="row" style="justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:10px">
@@ -1227,7 +674,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
           </div>
         </div>
         <div class="row" style="gap:8px">
-          <button class="btn blue" id="btnPayThisTech">จ่าย/แก้ยอดจ่าย</button>
+          <button class="btn blue" id="btnPayThisTech" ${canPayDetail?'':'disabled'}>${canPayDetail?'จ่าย/แก้ยอดจ่าย':'จ่ายแล้ว'}</button>
           <button class="btn yellow" id="btnAdjThisTech">ปรับยอด</button>
           <button class="btn gray" id="btnOpenSlipAdmin">เปิดสลิป (ช่าง)</button>
         </div>
@@ -1322,7 +769,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
           await openPayoutTech(u);
           await loadAudit();
         }catch(e){
-          alert(`บันทึกไม่สำเร็จ: ${e.message}`);
+          alert(cleanPayoutError(e));
         }
       };
     }
@@ -1371,7 +818,6 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
   if ($('btnGenP10')) $('btnGenP10').addEventListener('click', ()=> generatePayout('10'));
   if ($('btnGenP25')) $('btnGenP25').addEventListener('click', ()=> generatePayout('25'));
   if ($('btnReloadPayouts')) $('btnReloadPayouts').addEventListener('click', loadPayouts);
-    if ($('btnPurgeDraftLegacy')) $('btnPurgeDraftLegacy').addEventListener('click', purgeDraftLegacyPayoutLines);
 
   // ===== Init =====
   await loadAdmins();
@@ -1379,7 +825,5 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
   await refreshImpState();
   await loadDurations();
   await loadAudit();
-  await loadIncomeDefaultsAndOverrides();
   await loadPayouts();
-  await loadStepRules();
 })();
