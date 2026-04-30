@@ -703,7 +703,7 @@ async function loadNextPeriodEstimate(){
 async function loadOutstandingTotal(){
   if (!incomeOutstandingValEl) return;
   try{
-    const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v10-3-outstanding`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v10-4-locked-outstanding`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     const outstanding = Number(data.true_outstanding_amount ?? data.pending_payout_remaining_total ?? 0);

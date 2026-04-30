@@ -6919,10 +6919,17 @@ async function _computeTechnicianTrueOutstanding(username){
       const statusCalc = _paidStatus(net, paid);
       const periodStatus = String(r.period_status || '').trim();
       const storedPaidStatus = String(r.paid_status || '').trim();
-      const remaining = _money(Math.max(0, net - paid));
+      const rawRemaining = _money(Math.max(0, net - paid));
       paidTotal += paid;
-      const shouldCount = periodStatus !== 'paid' && storedPaidStatus !== 'paid' && statusCalc !== 'paid' && remaining > 0;
-      if (shouldCount) outstanding += remaining;
+
+      // MVP rule: "ยอดรอจ่ายจริง" must not include draft/live estimates.
+      // Draft/next-cycle money is already shown separately as "คาดว่าจะได้งวดถัดไป".
+      // Count only locked periods that are not fully paid yet.
+      const isLockedForPayout = periodStatus === 'locked';
+      const isAlreadyPaid = periodStatus === 'paid' || storedPaidStatus === 'paid' || statusCalc === 'paid';
+      const shouldCount = isLockedForPayout && !isAlreadyPaid && rawRemaining > 0;
+      const remaining = shouldCount ? rawRemaining : 0;
+      if (shouldCount) outstanding += rawRemaining;
       rows.push({
         payout_id: r.payout_id,
         period_status: periodStatus,
@@ -6932,6 +6939,7 @@ async function _computeTechnicianTrueOutstanding(username){
         deposit_deduction_amount: dep,
         net_amount: net,
         paid_amount: paid,
+        raw_remaining_amount: rawRemaining,
         remaining_amount: remaining,
         counted_as_outstanding: shouldCount,
       });
@@ -6939,6 +6947,7 @@ async function _computeTechnicianTrueOutstanding(username){
     return {
       true_outstanding_amount: _money(outstanding),
       paid_total: _money(paidTotal),
+      outstanding_policy: 'locked_pending_only',
       periods_count: rows.filter(r => r.counted_as_outstanding).length,
       rows,
     };
@@ -8092,6 +8101,7 @@ all_total += inc;
       true_outstanding_amount: outstanding.true_outstanding_amount,
       pending_payout_remaining_total: outstanding.true_outstanding_amount,
       paid_total: outstanding.paid_total,
+      outstanding_policy: outstanding.outstanding_policy || 'locked_pending_only',
       outstanding_periods_count: outstanding.periods_count,
       jobs_count: jobs.length,
       computed_jobs: computed,
@@ -8347,6 +8357,7 @@ app.get('/tech/payments_total', requireTechnicianSession, async (req, res) => {
       paid_total,
       true_outstanding_amount: outstanding.true_outstanding_amount,
       pending_payout_remaining_total: outstanding.true_outstanding_amount,
+      outstanding_policy: outstanding.outstanding_policy || 'locked_pending_only',
       outstanding_periods_count: outstanding.periods_count
     });
   } catch (e) {
