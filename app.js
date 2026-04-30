@@ -1563,7 +1563,7 @@ function renderOffers(offers) {
   const filtered = z ? (offers || []).filter(o => !o.job_zone || String(o.job_zone).trim() === z) : (offers || []);
 
   if (!filtered.length) {
-    offerList.innerHTML = "<p>ไม่มีข้อเสนองานตอนนี้</p>";
+    offerList.innerHTML = "<p>ยังไม่มีงานที่เสนอให้ตอนนี้</p>";
     return;
   }
 
