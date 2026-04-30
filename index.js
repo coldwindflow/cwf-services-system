@@ -7845,6 +7845,9 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
     };
     const fmtDate = (d)=>{ try{ const x=new Date(d); if (Number.isNaN(x.getTime())) return '-'; return x.toLocaleDateString('th-TH',{year:'numeric',month:'short',day:'numeric'});}catch{return '-';} };
 
+    const slipDocNo = `CWF-PAY-${String(payout_id || '').replace(/[^A-Za-z0-9]+/g,'-').replace(/^-+|-+$/g,'')}-${String(tech || '').replace(/[^A-Za-z0-9ก-๙]+/g,'-').replace(/^-+|-+$/g,'')}`.toUpperCase();
+    const issuedAtTh = new Date().toLocaleString('th-TH', { timeZone:'Asia/Bangkok' });
+
     const rowsHtml = (rows||[]).map(r=>{
       const dj = r.detail_json || {};
       const jt = esc(dj.job_type||'');
@@ -7886,13 +7889,16 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
             </div>
           </div>
           <div class="right">
-            <div><b>${esc(payout_id)}</b></div>
+            <div class="docLabel">เลขที่เอกสาร</div>
+            <div><b class="mono">${esc(slipDocNo)}</b></div>
             <div class="muted">งวด ${esc(period.period_type)} • ${esc(fmtDate(period.period_start))} - ${esc(fmtDate(period.period_end))}</div>
+            <div class="muted">Payout ID: ${esc(payout_id)}</div>
           </div>
         </div>
 
         <div class="grid">
           <div class="card soft">
+            <div class="row"><span class="muted">เลขที่เอกสาร</span><b class="mono">${esc(slipDocNo)}</b></div>
             <div class="row"><span class="muted">ช่าง</span><b class="mono">${esc(tech)}</b></div>
           <div class="row"><span class="muted">ยอดงวด (ก่อนปรับ)</span><b>${esc(fmtBaht(gross))}</b></div>
           <div class="row"><span class="muted">ปรับยอด (รวม)</span><b>${esc(fmtBaht(adj_total))}</b></div>
@@ -7924,13 +7930,24 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
         </table>
 
         <div class="sign">
-          <div class="signBox">ผู้รับเงิน / Technician</div>
-          <div class="signBox">ผู้อนุมัติจ่าย / Admin</div>
+          <div class="signBox">
+            <div class="signLine"></div>
+            <div class="signTitle">ผู้รับเงิน / Technician</div>
+            <div class="signName mono">${esc(tech)}</div>
+            <div class="signDate">วันที่ ______ / ______ / ______</div>
+          </div>
+          <div class="signBox">
+            <div class="signLine"></div>
+            <div class="signTitle">ผู้อนุมัติจ่าย / Company Authorized Signature</div>
+            <div class="signName">Coldwindflow Air Services</div>
+            <div class="signDate">วันที่ ______ / ______ / ______</div>
+          </div>
         </div>
 
         <div class="foot muted">
           <div>
-            <div>ออกเอกสารเมื่อ: ${esc(new Date().toLocaleString('th-TH', { timeZone:'Asia/Bangkok' }))}</div>
+            <div>เลขที่เอกสาร: ${esc(slipDocNo)}</div>
+            <div>ออกเอกสารเมื่อ: ${esc(issuedAtTh)}</div>
             <div>Coldwindflow Air Services • 23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260 • โทร 098-877-7321</div>
           </div>
           ${payment?.slip_url ? `<div>หลักฐานแนบ: ${esc(payment.slip_url)}</div>` : ''}
