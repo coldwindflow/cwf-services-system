@@ -92,6 +92,9 @@ const techPayoutModalSummaryEl = document.getElementById('techPayoutModalSummary
 const techPayoutModalLinesEl = document.getElementById('techPayoutModalLines');
 const btnPayoutModalSlipEl = document.getElementById('btnPayoutModalSlip');
 const btnPayoutModalPdfEl = document.getElementById('btnPayoutModalPdf');
+const pushNotifyBoxEl = document.getElementById('pushNotifyBox');
+const btnEnablePushEl = document.getElementById('btnEnablePush');
+const pushNotifyHintEl = document.getElementById('pushNotifyHint');
 
 // ✅ รายละเอียดรายวัน (วันนี้ทำอะไรไป)
 const incomeDatePickerEl = document.getElementById('incomeDatePicker');
@@ -417,6 +420,99 @@ async function updateZone(zone) {
   }
 }
 
+
+// =======================================
+// 🔔 Web Push Notification: งานเข้าแม้ปิด PWA
+// =======================================
+function urlBase64ToUint8Array(base64String) {
+  const padding = '='.repeat((4 - base64String.length % 4) % 4);
+  const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+  for (let i = 0; i < rawData.length; ++i) outputArray[i] = rawData.charCodeAt(i);
+  return outputArray;
+}
+
+function setPushUi(state, text) {
+  if (pushNotifyHintEl) pushNotifyHintEl.textContent = text || '';
+  if (!btnEnablePushEl) return;
+  btnEnablePushEl.classList.remove('ok','warn');
+  if (state === 'ok') { btnEnablePushEl.classList.add('ok'); btnEnablePushEl.textContent = 'เปิดแล้ว'; }
+  else if (state === 'warn') { btnEnablePushEl.classList.add('warn'); btnEnablePushEl.textContent = 'เปิดไม่ได้'; }
+  else { btnEnablePushEl.textContent = 'เปิดแจ้งเตือน'; }
+}
+
+async function ensureServiceWorkerForPush() {
+  if (!('serviceWorker' in navigator)) throw new Error('เครื่องนี้ไม่รองรับ Service Worker');
+  const reg = await navigator.serviceWorker.register('/sw.js?v=push-v1');
+  try { await navigator.serviceWorker.ready; } catch (_) {}
+  return reg;
+}
+
+async function enableTechPushNotifications() {
+  try {
+    if (!btnEnablePushEl) return;
+    btnEnablePushEl.disabled = true;
+    setPushUi('', 'กำลังเปิดแจ้งเตือน...');
+
+    if (!('Notification' in window) || !('PushManager' in window)) {
+      throw new Error('เบราว์เซอร์นี้ไม่รองรับแจ้งเตือนแบบ Push');
+    }
+
+    const keyRes = await fetch(`${API_BASE}/tech/push_public_key`);
+    const keyData = await keyRes.json().catch(() => ({}));
+    if (!keyRes.ok || !keyData.enabled || !keyData.publicKey) {
+      throw new Error('ระบบแจ้งเตือนยังไม่ได้ตั้งค่า VAPID บนเซิร์ฟเวอร์');
+    }
+
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') throw new Error('ยังไม่ได้อนุญาตแจ้งเตือน');
+
+    const reg = await ensureServiceWorkerForPush();
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlBase64ToUint8Array(keyData.publicKey)
+      });
+    }
+
+    const saveRes = await fetch(`${API_BASE}/tech/push_subscribe`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subscription: sub, device_label: navigator.platform || '' })
+    });
+    const save = await saveRes.json().catch(() => ({}));
+    if (!saveRes.ok) throw new Error(save.error || 'บันทึกอุปกรณ์แจ้งเตือนไม่สำเร็จ');
+
+    setPushUi('ok', 'พร้อมรับแจ้งเตือนงานเข้า แม้ปิดหน้า PWA');
+    try { await fetch(`${API_BASE}/tech/push_test`, { method: 'POST' }); } catch (_) {}
+  } catch (e) {
+    console.warn('enableTechPushNotifications:', e);
+    setPushUi('warn', e.message || 'เปิดแจ้งเตือนไม่สำเร็จ');
+    alert(`เปิดแจ้งเตือนไม่สำเร็จ: ${e.message || e}`);
+  } finally {
+    if (btnEnablePushEl) btnEnablePushEl.disabled = false;
+  }
+}
+
+async function initPushNotificationUi() {
+  if (!pushNotifyBoxEl || !btnEnablePushEl) return;
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
+    setPushUi('warn', 'เครื่องนี้ไม่รองรับแจ้งเตือนแบบ Push');
+    return;
+  }
+  if (Notification.permission === 'granted') {
+    setPushUi('ok', 'เปิดแจ้งเตือนแล้ว');
+  } else if (Notification.permission === 'denied') {
+    setPushUi('warn', 'แจ้งเตือนถูกบล็อกในเบราว์เซอร์');
+  } else {
+    setPushUi('', 'เปิดไว้เพื่อรับงานใหม่แม้ปิดหน้า PWA');
+  }
+  btnEnablePushEl.addEventListener('click', enableTechPushNotifications);
+}
+window.enableTechPushNotifications = enableTechPushNotifications;
+
 // ✅ bind controls (ทั้งปุ่มใหม่ + dropdown เก่า)
 function bindTechControls() {
   // ปุ่มใหม่
@@ -451,6 +547,7 @@ window.clockOut = clockOut;
 
   bindTechControls();
   loadAcceptStatusSafe();
+  initPushNotificationUi().catch(()=>{});
 })();
 
 

@@ -26,6 +26,18 @@ const crypto = require("crypto");
 const fs = require("fs");
 
 // =======================================
+// 🔔 Web Push Notifications (optional / fail-open)
+// - ใช้แจ้งเตือนงานเข้าให้ช่าง แม้ปิดหน้า PWA
+// - ถ้า package/ENV ไม่พร้อม ระบบงานเดิมต้องไม่พัง
+// =======================================
+let webpush = null;
+try {
+  webpush = require("web-push");
+} catch (e) {
+  console.warn("⚠️ web-push not installed; push notifications disabled");
+}
+
+// =======================================
 // 🚩 FEATURE FLAGS (safe / backward compatible)
 // - เปิด/ปิดการโชว์ทีมช่าง + เบอร์โทรใน Tracking แบบไม่กระทบของเดิม
 // - ค่าเริ่มต้น: เปิด (true) ตาม requirement และยังต้องผ่านลิงก์ tracking ที่ถูกต้องเท่านั้น
@@ -43,6 +55,15 @@ const ENABLE_AVAILABILITY_V2 = envBool("ENABLE_AVAILABILITY_V2", true);
 // ✅ Safe toggle: urgent offer flow (public booking + offers)
 const ENABLE_URGENT_FLOW = envBool("ENABLE_URGENT_FLOW", true);
 const ENABLE_PARTNER_DEPOSIT_DEDUCTION = envBool("ENABLE_PARTNER_DEPOSIT_DEDUCTION", true);
+const ENABLE_WEB_PUSH_NOTIFICATIONS = envBool("ENABLE_WEB_PUSH_NOTIFICATIONS", true);
+const WEB_PUSH_PUBLIC_KEY = String(process.env.WEB_PUSH_PUBLIC_KEY || "").trim();
+const WEB_PUSH_PRIVATE_KEY = String(process.env.WEB_PUSH_PRIVATE_KEY || "").trim();
+const WEB_PUSH_SUBJECT = String(process.env.WEB_PUSH_SUBJECT || "mailto:admin@cwf-air.com").trim();
+const WEB_PUSH_READY = Boolean(ENABLE_WEB_PUSH_NOTIFICATIONS && webpush && WEB_PUSH_PUBLIC_KEY && WEB_PUSH_PRIVATE_KEY);
+if (WEB_PUSH_READY) {
+  try { webpush.setVapidDetails(WEB_PUSH_SUBJECT, WEB_PUSH_PUBLIC_KEY, WEB_PUSH_PRIVATE_KEY); }
+  catch (e) { console.warn("⚠️ web-push VAPID setup failed", e.message); }
+}
 const TRAVEL_BUFFER_MIN = Math.max(0, Number(process.env.TRAVEL_BUFFER_MIN || 30)); // นาที/งาน (Travel Buffer)
 
 // =======================================
@@ -10137,6 +10158,23 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
       WHERE transaction_type='collect'
     `);
 
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_push_subscriptions (
+        subscription_id BIGSERIAL PRIMARY KEY,
+        technician_username TEXT NOT NULL,
+        endpoint TEXT NOT NULL UNIQUE,
+        p256dh TEXT NOT NULL,
+        auth TEXT NOT NULL,
+        user_agent TEXT,
+        device_label TEXT,
+        is_active BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        last_seen_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_push_subs_username ON public.technician_push_subscriptions(technician_username, is_active)`);
+
     // =======================================
     // 💳 Technician Withdraw Requests (Partners)
     // - พาร์ทเนอร์ต้องกด "ขอถอน" ก่อน Super Admin จ่าย
@@ -11571,6 +11609,9 @@ if (coerceNumber(override_price, 0) > 0) {
       );
     }
 
+    const directPushTargets = (bm === "urgent") ? [] : [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))];
+    let urgentPushTargets = [];
+
     // urgent offers to partner (ถ้า bm=urgent และกลุ่ม partner)
     if (bm === "urgent") {
       const partners = await client.query(
@@ -11602,10 +11643,20 @@ if (coerceNumber(override_price, 0) > 0) {
           [job_id, u]
         );
       }
+      urgentPushTargets = available.slice();
       console.log("[admin_book_v2] urgent_offers", { job_id, booking_code, count: available.length });
     }
 
     await client.query("COMMIT");
+
+    // 🔔 best-effort push: ห้ามให้แจ้งเตือนพังจนการลงงาน fail
+    try {
+      if (urgentPushTargets.length) {
+        _notifyUrgentOffer({ usernames: urgentPushTargets, job_id, booking_code, job_type, appointment_datetime: apptIso, job_zone }).catch(()=>{});
+      } else if (directPushTargets.length) {
+        _notifyDirectJobAssigned({ usernames: directPushTargets, job_id, booking_code, job_type, appointment_datetime: apptIso, job_zone }).catch(()=>{});
+      }
+    } catch (_) {}
 
     console.log("[admin_book_v2]", {
       job_id,
@@ -14263,6 +14314,191 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
 // =======================================
 // ✅ OFFERS
 // =======================================
+
+
+// =======================================
+// 🔔 Technician Web Push helpers (best-effort)
+// =======================================
+function _pushReady() {
+  return Boolean(WEB_PUSH_READY && webpush);
+}
+
+function _safePushUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '/tech.html';
+  // Keep notifications on this origin only.
+  if (raw.startsWith('/')) return raw;
+  try {
+    const u = new URL(raw);
+    return u.origin === `https://${u.host}` && u.pathname ? `${u.pathname}${u.search || ''}` : '/tech.html';
+  } catch {
+    return '/tech.html';
+  }
+}
+
+function _shortJobText(job) {
+  const jt = String(job?.job_type || 'งานใหม่').trim();
+  const zone = String(job?.job_zone || '').trim();
+  const when = job?.appointment_datetime ? (() => {
+    try { return new Date(job.appointment_datetime).toLocaleString('th-TH', { timeZone:'Asia/Bangkok', day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }); } catch { return ''; }
+  })() : '';
+  return [jt, when, zone].filter(Boolean).join(' • ');
+}
+
+async function _sendPushToTechnician(username, payload = {}) {
+  const tech = String(username || '').trim();
+  if (!tech || !_pushReady()) return { attempted: 0, sent: 0, disabled: true };
+
+  const q = await pool.query(
+    `SELECT subscription_id, endpoint, p256dh, auth
+       FROM public.technician_push_subscriptions
+      WHERE technician_username=$1 AND is_active=TRUE
+      ORDER BY updated_at DESC
+      LIMIT 10`,
+    [tech]
+  );
+  const rows = q.rows || [];
+  let sent = 0;
+  for (const r of rows) {
+    const sub = {
+      endpoint: r.endpoint,
+      keys: { p256dh: r.p256dh, auth: r.auth }
+    };
+    try {
+      await webpush.sendNotification(sub, JSON.stringify({
+        title: payload.title || 'CWF มีงานใหม่',
+        body: payload.body || 'มีงานใหม่เข้ามา กรุณาเปิดแอพเพื่อตรวจสอบ',
+        url: _safePushUrl(payload.url || '/tech.html'),
+        tag: payload.tag || `cwf-job-${payload.job_id || Date.now()}`,
+        job_id: payload.job_id || null,
+        kind: payload.kind || 'job'
+      }));
+      sent += 1;
+    } catch (e) {
+      const code = Number(e?.statusCode || e?.status || 0);
+      console.warn('[webpush] send failed', { tech, subscription_id: r.subscription_id, code, message: e?.message });
+      if (code === 404 || code === 410) {
+        try {
+          await pool.query(`UPDATE public.technician_push_subscriptions SET is_active=FALSE, updated_at=NOW() WHERE subscription_id=$1`, [r.subscription_id]);
+        } catch (_) {}
+      }
+    }
+  }
+  return { attempted: rows.length, sent };
+}
+
+async function _sendPushToTechnicians(usernames = [], payload = {}) {
+  const targets = Array.from(new Set((Array.isArray(usernames) ? usernames : [usernames]).map(x => String(x || '').trim()).filter(Boolean)));
+  let attempted = 0;
+  let sent = 0;
+  for (const u of targets) {
+    try {
+      const r = await _sendPushToTechnician(u, payload);
+      attempted += Number(r.attempted || 0);
+      sent += Number(r.sent || 0);
+    } catch (e) {
+      console.warn('[webpush] target failed', { tech: u, message: e?.message });
+    }
+  }
+  return { targets: targets.length, attempted, sent };
+}
+
+async function _notifyDirectJobAssigned({ usernames, job_id, booking_code, job_type, appointment_datetime, job_zone }) {
+  try {
+    const title = 'CWF มีงานใหม่';
+    const body = _shortJobText({ job_type, appointment_datetime, job_zone }) || `งานใหม่ ${booking_code || ''}`;
+    return await _sendPushToTechnicians(usernames, {
+      title,
+      body,
+      job_id,
+      kind: 'direct_job',
+      tag: `cwf-direct-${job_id}`,
+      url: `/tech.html?tab=active&job_id=${encodeURIComponent(String(job_id || ''))}`
+    });
+  } catch (e) { console.warn('[webpush] direct job notify failed', e?.message); return null; }
+}
+
+async function _notifyUrgentOffer({ usernames, job_id, booking_code, job_type, appointment_datetime, job_zone }) {
+  try {
+    const title = 'CWF มีงานให้รับ';
+    const body = _shortJobText({ job_type, appointment_datetime, job_zone }) || `มีงานให้รับ ${booking_code || ''}`;
+    return await _sendPushToTechnicians(usernames, {
+      title,
+      body,
+      job_id,
+      kind: 'urgent_offer',
+      tag: `cwf-offer-${job_id}`,
+      url: `/tech.html?tab=new&job_id=${encodeURIComponent(String(job_id || ''))}`
+    });
+  } catch (e) { console.warn('[webpush] urgent offer notify failed', e?.message); return null; }
+}
+
+// Technician push subscription APIs
+app.get('/tech/push_public_key', requireTechnicianSession, async (req, res) => {
+  return res.json({ success: true, enabled: _pushReady(), publicKey: WEB_PUSH_PUBLIC_KEY || '' });
+});
+
+app.post('/tech/push_subscribe', requireTechnicianSession, async (req, res) => {
+  try {
+    if (!_pushReady()) return res.status(503).json({ error: 'PUSH_NOT_CONFIGURED' });
+    const tech = _authUsername(req);
+    const sub = req.body?.subscription || req.body || {};
+    const endpoint = String(sub.endpoint || '').trim();
+    const p256dh = String(sub.keys?.p256dh || req.body?.p256dh || '').trim();
+    const auth = String(sub.keys?.auth || req.body?.auth || '').trim();
+    if (!tech || !endpoint || !p256dh || !auth) return res.status(400).json({ error: 'ข้อมูลแจ้งเตือนไม่ครบ' });
+    await pool.query(
+      `INSERT INTO public.technician_push_subscriptions
+        (technician_username, endpoint, p256dh, auth, user_agent, device_label, is_active, updated_at, last_seen_at)
+       VALUES ($1,$2,$3,$4,$5,$6,TRUE,NOW(),NOW())
+       ON CONFLICT (endpoint) DO UPDATE SET
+         technician_username=EXCLUDED.technician_username,
+         p256dh=EXCLUDED.p256dh,
+         auth=EXCLUDED.auth,
+         user_agent=EXCLUDED.user_agent,
+         device_label=EXCLUDED.device_label,
+         is_active=TRUE,
+         updated_at=NOW(),
+         last_seen_at=NOW()`,
+      [tech, endpoint, p256dh, auth, String(req.headers['user-agent'] || '').slice(0, 500), String(req.body?.device_label || '').slice(0, 120)]
+    );
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('POST /tech/push_subscribe', e);
+    return res.status(500).json({ error: 'เปิดแจ้งเตือนไม่สำเร็จ' });
+  }
+});
+
+app.post('/tech/push_unsubscribe', requireTechnicianSession, async (req, res) => {
+  try {
+    const tech = _authUsername(req);
+    const endpoint = String(req.body?.endpoint || req.body?.subscription?.endpoint || '').trim();
+    if (endpoint) {
+      await pool.query(`UPDATE public.technician_push_subscriptions SET is_active=FALSE, updated_at=NOW() WHERE technician_username=$1 AND endpoint=$2`, [tech, endpoint]);
+    }
+    return res.json({ success: true });
+  } catch (e) {
+    console.error('POST /tech/push_unsubscribe', e);
+    return res.status(500).json({ error: 'ปิดแจ้งเตือนไม่สำเร็จ' });
+  }
+});
+
+app.post('/tech/push_test', requireTechnicianSession, async (req, res) => {
+  try {
+    const tech = _authUsername(req);
+    const result = await _sendPushToTechnician(tech, {
+      title: 'CWF ทดสอบแจ้งเตือน',
+      body: 'ระบบแจ้งเตือนงานเข้าพร้อมใช้งานแล้ว',
+      kind: 'test',
+      tag: `cwf-test-${tech}`,
+      url: '/tech.html'
+    });
+    return res.json({ success: true, result });
+  } catch (e) {
+    console.error('POST /tech/push_test', e);
+    return res.status(500).json({ error: 'ส่งทดสอบไม่สำเร็จ' });
+  }
+});
 
 // ✅ Auto finalize urgent jobs when no one accepts
 // - Safe: ไม่กระทบงานปกติ / ไม่ล้มระบบ ถ้า query fail

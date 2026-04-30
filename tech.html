@@ -258,6 +258,14 @@
 
     .techMenuSmall{font-size:12px;font-weight:900;color:rgba(15,23,42,0.70)}
 
+    .pushNotifyBox{margin-top:10px;border-radius:18px;border:1px solid rgba(11,46,109,.12);background:linear-gradient(180deg,#fff,#F8FBFF);padding:12px;display:flex;align-items:center;justify-content:space-between;gap:10px;}
+    .pushNotifyBox .txt{min-width:0;}
+    .pushNotifyBox b{display:block;color:var(--tech-navy);font-size:14px;}
+    .pushNotifyBox span{display:block;color:var(--tech-muted);font-size:12px;font-weight:900;margin-top:2px;line-height:1.35;}
+    .pushNotifyBtn{border:0;border-radius:14px;background:var(--tech-navy);color:#fff;font-weight:1100;padding:10px 12px;white-space:nowrap;box-shadow:0 8px 18px rgba(11,46,109,.18);}
+    .pushNotifyBtn.ok{background:#0f9f6e;}
+    .pushNotifyBtn.warn{background:#f59e0b;color:#111827;}
+
     /* Profile compact (ISSUE-2) */
     .profile-compact{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;}
     .profile-compact .left{display:flex;align-items:center;gap:12px;min-width:0;flex:1 1 240px;}
@@ -786,6 +794,14 @@
         </div>
       </details>
 
+      <div class="pushNotifyBox" id="pushNotifyBox">
+        <div class="txt">
+          <b>🔔 แจ้งเตือนงานเข้า</b>
+          <span id="pushNotifyHint">เปิดไว้เพื่อรับงานใหม่แม้ปิดหน้า PWA</span>
+        </div>
+        <button class="pushNotifyBtn" id="btnEnablePush" type="button">เปิดแจ้งเตือน</button>
+      </div>
+ 
 <hr>
 
       <!-- ✅ กันหัวข้อซ้อน ให้เหลืออันเดียว -->
@@ -958,7 +974,7 @@
     <button class="nav-btn" id="nav-income" onclick="switchTab('income')">💰 รายได้</button>
   </div>
 
-  <script src="app.js?v=tech-income-slip-modal-v1"></script>
+  <script src="app.js?v=tech-push-notify-v1"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

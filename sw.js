@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v34-exact-selected-icon";
+const CACHE_NAME = "cwf-cache-v35-push-notifications";
 
 const ASSETS = [
   "/",
@@ -9,7 +9,7 @@ const ASSETS = [
   "/index.html",
   "/tech.html",
   "/style.css",
-  "/app.js?v=tech-premium-v10-5",
+  "/app.js?v=tech-premium-v10-6-push",
   "/logo.png",
   "/manifest.json",
   "/mainfest.json",
@@ -106,4 +106,39 @@ self.addEventListener("fetch", (e) => {
         return cached;
       })
   );
+});
+
+
+// 🔔 Web Push: แจ้งเตือนงานเข้า แม้ปิดหน้า PWA
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (_) { data = {}; }
+  const title = data.title || "CWF มีงานใหม่";
+  const options = {
+    body: data.body || "มีงานใหม่เข้ามา กรุณาเปิดแอพเพื่อตรวจสอบ",
+    icon: "/icon-cwf-v34-192.png",
+    badge: "/icon-cwf-v34-192.png",
+    tag: data.tag || "cwf-job-notification",
+    renotify: true,
+    data: { url: data.url || "/tech.html", job_id: data.job_id || null, kind: data.kind || "job" }
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification && event.notification.data && event.notification.data.url) || "/tech.html";
+  event.waitUntil((async () => {
+    const allClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const client of allClients) {
+      try {
+        const u = new URL(client.url);
+        if (u.origin === self.location.origin && "focus" in client) {
+          if ("navigate" in client) await client.navigate(targetUrl);
+          return client.focus();
+        }
+      } catch (_) {}
+    }
+    return clients.openWindow(targetUrl);
+  })());
 });
