@@ -6961,20 +6961,37 @@ async function _computeTechnicianPayoutMonthTotal(username, ym = ''){
   const tech = String(username || '').trim();
   if (!tech) return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', periods: [] };
   try {
-    let labelYm = String(ym || '').trim();
-    if (!/^\d{4}-\d{2}$/.test(labelYm)) {
-      const now = _bkkNow();
-      const ymd = _bkkYmd(now);
-      labelYm = `${ymd.y}-${String(ymd.m).padStart(2, '0')}`;
+    const nowBkk = _bkkNow();
+    const ymd = _bkkYmd(nowBkk);
+    const yy = ymd.y;
+    const mm = ymd.m;
+    const dd = ymd.d;
+    const labelYm = `${yy}-${String(mm).padStart(2, '0')}`;
+
+    function _nextYm(y, m){
+      return m >= 12 ? { y: y + 1, m: 1 } : { y, m: m + 1 };
     }
-    const [yy, mm] = labelYm.split('-').map(Number);
+
+    const windows = [];
+    if (dd <= 15) {
+      const prevBounds = _periodBoundsForYm('10', yy, mm);
+      const currentFull = _periodBoundsForYm('25', yy, mm);
+      windows.push({ type: '10', y: yy, m: mm, payout_id: `payout_${labelYm}_10`, bounds: prevBounds, mode: 'previous_completed_cycle' });
+      windows.push({ type: '25', y: yy, m: mm, payout_id: `payout_${labelYm}_25`, bounds: { ...currentFull, endEx: nowBkk < currentFull.endEx ? nowBkk : currentFull.endEx }, mode: 'current_cycle_to_date' });
+    } else {
+      const prevBounds = _periodBoundsForYm('25', yy, mm);
+      const nym = _nextYm(yy, mm);
+      const currentFull = _periodBoundsForYm('10', nym.y, nym.m);
+      const nextYm = `${nym.y}-${String(nym.m).padStart(2, '0')}`;
+      windows.push({ type: '25', y: yy, m: mm, payout_id: `payout_${labelYm}_25`, bounds: prevBounds, mode: 'previous_completed_cycle' });
+      windows.push({ type: '10', y: nym.y, m: nym.m, payout_id: `payout_${nextYm}_10`, bounds: { ...currentFull, endEx: nowBkk < currentFull.endEx ? nowBkk : currentFull.endEx }, mode: 'current_cycle_to_date' });
+    }
+
     let total = 0;
     let netTotal = 0;
     const periods = [];
 
-    for (const type of ['10','25']) {
-      const bounds = _periodBoundsForYm(type, yy, mm);
-      const payout_id = `payout_${labelYm}_${type}`;
+    for (const w of windows) {
       const storedQ = await pool.query(
         `WITH gross AS (
            SELECT COALESCE(SUM(earn_amount),0)::numeric AS gross_amount, COUNT(*)::int AS lines_count
@@ -7009,23 +7026,24 @@ async function _computeTechnicianPayoutMonthTotal(username, ym = ''){
                 COALESCE(pay.paid_status,'unpaid') AS paid_status,
                 COALESCE(period.period_status,'virtual') AS period_status
            FROM gross, adj, dep, pay, period`,
-        [payout_id, tech]
+        [w.payout_id, tech]
       );
       const stored = storedQ.rows?.[0] || {};
       let gross = _money(stored.gross_amount || 0);
       let adj = _money(stored.adj_total || 0);
       let dep = _money(stored.deposit_deduction_amount || 0);
-      let source = Number(stored.lines_count || 0) > 0 ? 'stored_payout_lines' : 'live_estimate';
+      let source = Number(stored.lines_count || 0) > 0 ? 'stored_payout_lines' : 'live_completed_jobs';
 
-      if (source === 'live_estimate') {
-        const liveLines = await _computeTechLinesInRange(tech, bounds.start, bounds.endEx, {
-          payout_id,
-          period_type: bounds.period_type,
-          label_ym: bounds.label_ym,
+      if (source === 'live_completed_jobs' || w.mode === 'current_cycle_to_date') {
+        const liveLines = await _computeTechLinesInRange(tech, w.bounds.start, w.bounds.endEx, {
+          payout_id: w.payout_id,
+          period_type: w.type,
+          label_ym: `${w.y}-${String(w.m).padStart(2, '0')}`,
         });
         gross = _money((liveLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
         adj = 0;
         dep = 0;
+        source = 'live_completed_jobs';
       }
 
       const periodTotal = _money(gross + adj);
@@ -7033,10 +7051,11 @@ async function _computeTechnicianPayoutMonthTotal(username, ym = ''){
       total += periodTotal;
       netTotal += periodNet;
       periods.push({
-        payout_id,
-        period_type: type,
-        period_start: bounds.start.toISOString(),
-        period_end: bounds.endEx.toISOString(),
+        payout_id: w.payout_id,
+        period_type: w.type,
+        period_start: w.bounds.start.toISOString(),
+        period_end: w.bounds.endEx.toISOString(),
+        mode: w.mode,
         source,
         period_status: stored.period_status || 'virtual',
         paid_status: stored.paid_status || 'unpaid',
@@ -7052,7 +7071,7 @@ async function _computeTechnicianPayoutMonthTotal(username, ym = ''){
       payout_month: labelYm,
       payout_month_total: _money(total),
       payout_month_net_total: _money(netTotal),
-      payout_month_policy: 'sum_payout_10_and_25_for_label_month',
+      payout_month_policy: 'previous_cycle_plus_current_completed_jobs_to_date',
       periods,
     };
   } catch (e) {

@@ -665,7 +665,7 @@ async function loadIncomeSummary() {
 // 💰 INCOME OVERVIEW (Phase 4 UX)
 // - Today (fast)
 // - Next period estimate (fast)
-// - Payout month total = sum of payout cycles 10 + 25 for the current month
+// - Rolling month total = previous payout cycle + current completed jobs to date
 // - Last 7 days summary
 // =======================================
 
@@ -704,7 +704,7 @@ async function loadNextPeriodEstimate(){
 async function loadOutstandingTotal(){
   if (!incomeOutstandingValEl) return;
   try{
-    const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v10-5-payout-month-total`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v10-6-rolling-month-total`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     const payoutMonthTotal = Number(data.payout_month_total ?? 0);
