@@ -251,6 +251,22 @@
             </div>
             <div id="payoutTechsBox" style="margin-top:10px"></div>
             <div id="payoutLinesBox" style="margin-top:10px"></div>
+
+            <details class="legacy-settle-box" style="margin-top:12px">
+              <summary>🧹 เคลียร์ยอดค้างเก่าก่อนระบบ</summary>
+              <div class="muted" style="margin-top:8px;line-height:1.45">
+                ใช้เฉพาะกรณีที่งวดเก่าจ่ายเงินจริงไปแล้ว แต่มาเริ่มใช้ระบบ payout ทีหลัง จึงยังค้างในหน้าช่าง<br/>
+                ระบบจะบันทึก payment row แบบ audit ไม่ลบงาน ไม่ลบงวด และไม่โอนเงินอัตโนมัติ
+              </div>
+              <div class="row" style="margin-top:10px;gap:8px;align-items:center">
+                <input id="legacySettleCutoff" type="date" style="min-width:170px" />
+                <input id="legacySettleTech" placeholder="username ช่าง (ว่าง = ทุกคน)" style="flex:1;min-width:180px" />
+                <input id="legacySettleNote" placeholder="โน้ต เช่น จ่ายนอกระบบก่อนเริ่มใช้ payout" style="flex:1;min-width:220px" />
+                <button class="btn yellow" id="btnLegacySettle">บันทึกว่างวดเก่าจ่ายแล้ว</button>
+              </div>
+              <div class="muted" id="legacySettleResult" style="margin-top:8px">-</div>
+            </details>
+
           </div>
         </div>
       </div>

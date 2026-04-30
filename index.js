@@ -7382,6 +7382,135 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
   }
 });
 
+
+
+// ---- Super Admin: legacy payout settlement
+// One-time cleanup for payouts that were paid outside the app before Technician Payout MVP.
+// This does NOT delete jobs, payout lines, or audit history. It only records payment rows
+// so technician outstanding uses the same source of truth as current payout periods.
+app.post('/admin/super/payouts/legacy_settle', requireSuperAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const b = req.body || {};
+    const cutoff = String(b.cutoff_date || '').trim();
+    const techFilter = String(b.technician_username || '').trim();
+    const noteInput = String(b.note || '').trim();
+    const actor = req.actor?.username || null;
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(cutoff)) {
+      return res.status(400).json({ ok:false, error:'INVALID_CUTOFF_DATE' });
+    }
+
+    const cutoffEnd = `${cutoff} 23:59:59+07`;
+    const periodsQ = await pool.query(
+      `SELECT payout_id, status, period_start, period_end
+         FROM public.technician_payout_periods
+        WHERE period_end <= $1::timestamptz
+        ORDER BY period_end ASC, payout_id ASC`,
+      [cutoffEnd]
+    );
+
+    let checked_periods = 0;
+    let touched_periods = 0;
+    let updated_payments = 0;
+    let skipped_paid_rows = 0;
+    const affected = [];
+
+    await client.query('BEGIN');
+
+    for (const period of (periodsQ.rows || [])) {
+      const payout_id = String(period.payout_id || '').trim();
+      if (!payout_id) continue;
+      checked_periods++;
+
+      const techRows = await _buildPayoutTechSummaryRows(payout_id);
+      let periodTouched = false;
+
+      for (const row of (techRows || [])) {
+        const tech = String(row.technician_username || '').trim();
+        if (!tech) continue;
+        if (techFilter && tech !== techFilter) continue;
+
+        const net = _money(row.net_amount ?? row.total_amount ?? 0);
+        const paid = _money(row.paid_amount || 0);
+        const status = String(row.paid_status || '').trim();
+        const remaining = _money(Math.max(0, net - paid));
+
+        if (net <= 0 || status === 'paid' || remaining <= 0.0001) {
+          skipped_paid_rows++;
+          continue;
+        }
+
+        const note = noteInput || `Legacy paid outside app before payout MVP. Settled by Super Admin cutoff ${cutoff}.`;
+        await client.query(
+          `INSERT INTO public.technician_payout_payments(
+             payout_id, technician_username, paid_amount, paid_status, paid_at, paid_by, slip_url, note, updated_at
+           ) VALUES($1,$2,$3,'paid',NOW(),$4,NULL,$5,NOW())
+           ON CONFLICT (payout_id, technician_username)
+           DO UPDATE SET
+             paid_amount=GREATEST(public.technician_payout_payments.paid_amount, EXCLUDED.paid_amount),
+             paid_status='paid',
+             paid_at=NOW(),
+             paid_by=EXCLUDED.paid_by,
+             note=COALESCE(NULLIF(public.technician_payout_payments.note,''), EXCLUDED.note),
+             updated_at=NOW()`,
+          [payout_id, tech, net, actor, note]
+        );
+
+        updated_payments++;
+        periodTouched = true;
+        affected.push({ payout_id, technician_username: tech, paid_amount: net, previous_paid_amount: paid, previous_remaining_amount: remaining });
+      }
+
+      if (periodTouched) {
+        touched_periods++;
+        const paidCheck = await client.query(
+          `WITH gross AS (
+             SELECT technician_username, COALESCE(SUM(earn_amount),0) AS gross_amount
+               FROM public.technician_payout_lines
+              WHERE payout_id=$1
+              GROUP BY technician_username
+           ),
+           adj AS (
+             SELECT technician_username, COALESCE(SUM(adj_amount),0) AS adj_total
+               FROM public.technician_payout_adjustments
+              WHERE payout_id=$1
+              GROUP BY technician_username
+           ),
+           dep AS (
+             SELECT technician_username, COALESCE(SUM(amount),0) AS deposit_deduction_amount
+               FROM public.technician_deposit_ledger
+              WHERE payout_id=$1 AND transaction_type='collect'
+              GROUP BY technician_username
+           )
+           SELECT g.technician_username,
+                  (g.gross_amount + COALESCE(a.adj_total,0) - COALESCE(d.deposit_deduction_amount,0)) AS net_amount,
+                  COALESCE(p.paid_amount,0) AS paid_amount
+             FROM gross g
+             LEFT JOIN adj a ON a.technician_username=g.technician_username
+             LEFT JOIN dep d ON d.technician_username=g.technician_username
+             LEFT JOIN public.technician_payout_payments p
+               ON p.payout_id=$1 AND p.technician_username=g.technician_username`,
+          [payout_id]
+        );
+        const allPaid = (paidCheck.rows || []).length > 0 && (paidCheck.rows || []).every(r => _paidStatus(r.net_amount, r.paid_amount) === 'paid');
+        if (allPaid) {
+          await client.query(`UPDATE public.technician_payout_periods SET status='paid' WHERE payout_id=$1`, [payout_id]);
+        }
+      }
+    }
+
+    await client.query('COMMIT');
+    return res.json({ ok:true, cutoff_date: cutoff, technician_username: techFilter || null, checked_periods, touched_periods, updated_payments, skipped_paid_rows, affected });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('POST /admin/super/payouts/legacy_settle', e);
+    return res.status(500).json({ ok:false, error:'LEGACY_SETTLE_FAILED' });
+  } finally {
+    client.release();
+  }
+});
+
 // ---- Super Admin: adjust (create / delete)
 app.post('/admin/super/payouts/:payout_id/adjust', requireSuperAdmin, async (req, res) => {
   try {

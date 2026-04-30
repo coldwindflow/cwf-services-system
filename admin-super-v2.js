@@ -815,9 +815,43 @@
     });
   }
 
+
+  async function legacySettleOldPayouts(){
+    const cutoffEl = $('legacySettleCutoff');
+    const techEl = $('legacySettleTech');
+    const noteEl = $('legacySettleNote');
+    const outEl = $('legacySettleResult');
+    const cutoff_date = String(cutoffEl?.value || '').trim();
+    const technician_username = String(techEl?.value || '').trim();
+    const note = String(noteEl?.value || '').trim();
+
+    if (!cutoff_date) return alert('กรุณาเลือกวันที่สิ้นสุดงวดเก่าที่จ่ายไปแล้ว');
+    const who = technician_username || 'ทุกช่าง';
+    if (!confirm(`ยืนยันเคลียร์ยอดค้างเก่าถึงวันที่ ${cutoff_date} สำหรับ ${who}?\n\nใช้เฉพาะงวดที่จ่ายเงินจริงไปแล้วนอกระบบเท่านั้น\nระบบจะบันทึกเป็นจ่ายแล้วในแอพ ไม่ลบข้อมูลเดิม`)) return;
+
+    if (outEl) outEl.textContent = 'กำลังบันทึกยอดเก่าเป็นจ่ายแล้ว...';
+    try {
+      const r = await api('/admin/super/payouts/legacy_settle', {
+        method: 'POST',
+        body: JSON.stringify({ cutoff_date, technician_username, note })
+      });
+      const msg = `สำเร็จ: อัปเดต payment ${Number(r.updated_payments||0)} รายการ จาก ${Number(r.touched_periods||0)} งวด`;
+      if (outEl) outEl.textContent = msg;
+      toast('เคลียร์ยอดเก่าแล้ว');
+      await loadPayouts();
+      if (ACTIVE_PAYOUT) await openPayout(ACTIVE_PAYOUT);
+      await loadAudit();
+    } catch (e) {
+      const msg = cleanPayoutError(e) || 'เคลียร์ยอดเก่าไม่สำเร็จ';
+      if (outEl) outEl.textContent = msg;
+      alert(msg);
+    }
+  }
+
   if ($('btnGenP10')) $('btnGenP10').addEventListener('click', ()=> generatePayout('10'));
   if ($('btnGenP25')) $('btnGenP25').addEventListener('click', ()=> generatePayout('25'));
   if ($('btnReloadPayouts')) $('btnReloadPayouts').addEventListener('click', loadPayouts);
+  if ($('btnLegacySettle')) $('btnLegacySettle').addEventListener('click', legacySettleOldPayouts);
 
   // ===== Init =====
   await loadAdmins();
