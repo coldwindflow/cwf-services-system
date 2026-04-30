@@ -85,6 +85,13 @@ const techPayoutLinesEl = document.getElementById('techPayoutLines');
 const techPayoutDetailHintEl = document.getElementById('techPayoutDetailHint');
 const techPayoutTotalPillEl = document.getElementById('techPayoutTotalPill');
 const btnReloadIncomePeriodsEl = document.getElementById('btnReloadIncomePeriods');
+const techPayoutModalBackdropEl = document.getElementById('techPayoutModalBackdrop');
+const techPayoutModalTitleEl = document.getElementById('techPayoutModalTitle');
+const techPayoutModalSubEl = document.getElementById('techPayoutModalSub');
+const techPayoutModalSummaryEl = document.getElementById('techPayoutModalSummary');
+const techPayoutModalLinesEl = document.getElementById('techPayoutModalLines');
+const btnPayoutModalSlipEl = document.getElementById('btnPayoutModalSlip');
+const btnPayoutModalPdfEl = document.getElementById('btnPayoutModalPdf');
 
 // ✅ รายละเอียดรายวัน (วันนี้ทำอะไรไป)
 const incomeDatePickerEl = document.getElementById('incomeDatePicker');
@@ -815,6 +822,7 @@ async function loadOutstandingTotal(){
     const payoutMonthTotal = Number(data.monthly_income_display_amount ?? data.payout_month_total ?? 0);
     incomeOutstandingValEl.textContent = formatBaht(Math.max(0, payoutMonthTotal));
     renderTechWorkSummary(data.work_summary);
+    renderDepositRemaining(data);
   }catch(e){
     try {
       await loadIncomeSummary();
@@ -1074,11 +1082,8 @@ window.loadTechPayoutPeriods = loadTechPayoutPeriods;
 function renderTechPayoutPeriods(list){
   if (!techPayoutPeriodsEl) return;
   const arr = Array.isArray(list) ? list : [];
-  if (!arr.length) {
-    techPayoutPeriodsEl.innerHTML = `<div class="muted">ยังไม่มีงวดที่สร้าง</div>`;
-    return;
-  }
-  const rows = arr.map(p=>{
+  if (!arr.length) { techPayoutPeriodsEl.innerHTML = `<div class="muted">ยังไม่มีงวดที่สร้าง</div>`; return; }
+  techPayoutPeriodsEl.innerHTML = arr.map(p=>{
     const id = _safeText(p.payout_id);
     const type = _safeText(p.period_type);
     const st = _fmtDateTH(p.period_start);
@@ -1090,124 +1095,45 @@ function renderTechPayoutPeriods(list){
     const paySt = _safeText(p.paid_status||'unpaid');
     const status = _safeText(p.status||'draft');
     const active = (__cwfPayoutActiveId===p.payout_id);
-    return `
-      <div class="tr" style="padding:10px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);margin-bottom:8px;cursor:pointer;${active?'outline:2px solid rgba(11,75,179,0.35)':''}" onclick="window.openTechPayoutDetail('${id}')">
-        <div class="row" style="justify-content:space-between;gap:10px">
-          <div>
-            <b>งวด ${type}</b>
-            <div class="muted" style="margin-top:4px">${st} - ${en}</div>
-          </div>
-          <div style="text-align:right">
-            <b>${total}</b>
-            <div class="muted" style="margin-top:4px">Gross: ${gross} • เงินฝาก: ${dep} • จ่าย: ${paySt} • คงเหลือ: ${rem}</div>
-            <div class="muted" style="margin-top:3px">สถานะงวด: ${status}</div>
-          </div>
-        </div>
-      </div>
-    `;
+    return `<button type="button" class="tr" style="width:100%;text-align:left;padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10);margin-bottom:10px;cursor:pointer;background:#fff;${active?'outline:2px solid rgba(11,75,179,0.35)':''}" onclick="window.openTechPayoutDetail('${id}')"><div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start"><div><b>งวด ${type}</b><div class="muted" style="margin-top:4px">${st} - ${en}</div><div class="muted" style="margin-top:4px">สถานะงวด: ${status} • จ่าย: ${paySt}</div></div><div style="text-align:right"><b style="font-size:18px;color:#0B2E6D">${total}</b><div class="muted" style="margin-top:4px">ก่อนหัก ${gross}</div><div class="muted" style="margin-top:3px">ฝาก ${dep} • คงเหลือ ${rem}</div></div></div></button>`;
   }).join('');
-  techPayoutPeriodsEl.innerHTML = rows;
 }
-
+function openTechPayoutModal(){ if (techPayoutModalBackdropEl) techPayoutModalBackdropEl.classList.add('show'); try { document.body.style.overflow = 'hidden'; } catch(e) {} }
+function closeTechPayoutModal(){ if (techPayoutModalBackdropEl) techPayoutModalBackdropEl.classList.remove('show'); try { document.body.style.overflow = ''; } catch(e) {} }
+window.closeTechPayoutModal = closeTechPayoutModal;
 async function openTechPayoutDetail(payout_id){
-  const id = String(payout_id||'').trim();
-  if (!id) return;
+  const id = String(payout_id||'').trim(); if (!id) return;
   __cwfPayoutActiveId = id;
   try { renderTechPayoutPeriods(__cwfPayoutCache.payouts); } catch(e) {}
-  if (techPayoutDetailHintEl) techPayoutDetailHintEl.textContent = `กำลังโหลดรายละเอียดงวด: ${id}`;
-  if (techPayoutLinesEl) techPayoutLinesEl.innerHTML = `<div class="muted">กำลังโหลดรายการงาน...</div>`;
-  if (techPayoutTotalPillEl) { techPayoutTotalPillEl.style.display='none'; techPayoutTotalPillEl.textContent=''; }
-  const btnSlipTop = document.getElementById('btnOpenSlip');
-  if (btnSlipTop){ btnSlipTop.style.display='none'; btnSlipTop.onclick=null; }
-  const btnWithdraw = document.getElementById('btnWithdraw');
-  if (btnWithdraw){ btnWithdraw.style.display='none'; btnWithdraw.onclick=null; btnWithdraw.disabled=false; btnWithdraw.textContent='ขอถอนเงิน'; }
-
+  if (techPayoutModalTitleEl) techPayoutModalTitleEl.textContent = `รายละเอียดงวด`;
+  if (techPayoutModalSubEl) techPayoutModalSubEl.textContent = `กำลังโหลด ${id}`;
+  if (techPayoutModalSummaryEl) techPayoutModalSummaryEl.innerHTML = `<div class="muted">กำลังโหลด...</div>`;
+  if (techPayoutModalLinesEl) techPayoutModalLinesEl.innerHTML = `<div class="muted">กำลังโหลดรายการงาน...</div>`;
+  openTechPayoutModal();
   try{
     const res = await fetch(`${API_BASE}/tech/payouts/${encodeURIComponent(id)}`, { credentials:'include' });
-    const data = await res.json();
-    if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
-    const gross = formatBaht(data.gross_amount||0);
-    const dep = formatBaht(data.deposit_deduction_amount||0);
-    const total = formatBaht(data.net_amount||data.total_amount||0);
-    const paid = formatBaht(data.paid_amount||0);
-    const rem = formatBaht(data.remaining_amount||0);
-    const paySt = _safeText(data.paid_status||'unpaid');
-    const depTarget = formatBaht(data.deposit_target_amount||0);
-    const depCollected = formatBaht(data.deposit_collected_total||0);
-    const depRemaining = formatBaht(data.deposit_remaining_amount||0);
-    if (techPayoutDetailHintEl) techPayoutDetailHintEl.textContent = `รายการงานในงวด (${(data.lines||[]).length} งาน)`;
-    if (techPayoutTotalPillEl) {
-      techPayoutTotalPillEl.style.display='inline-flex';
-      techPayoutTotalPillEl.className = 'pill blue';
-      techPayoutTotalPillEl.textContent = `Gross: ${gross} • เงินฝาก: ${dep} • Net: ${total} • จ่ายแล้ว: ${paid} • คงเหลือ: ${rem} (${paySt})`;
-    }
-    const btnSlipTop = document.getElementById('btnOpenSlip');
-    if (btnSlipTop){
-      btnSlipTop.style.display = 'inline-flex';
-      btnSlipTop.onclick = ()=>{ window.open(`/tech/payouts/${encodeURIComponent(id)}/slip`, '_blank'); };
-    }
-
-    // ✅ partner withdraw flow
-    const btnWithdraw = document.getElementById('btnWithdraw');
-    try{
-      const prof = data.profile || null;
-      const et = String(prof?.employment_type || '').toLowerCase();
-      const remainingNum = Number(data.remaining_amount||0);
-      const wr = data.withdraw_request || null;
-      if (btnWithdraw && et === 'partner' && remainingNum > 0.0001) {
-        btnWithdraw.style.display = 'inline-flex';
-        if (wr && (wr.status==='requested' || wr.status==='approved')) {
-          btnWithdraw.disabled = true;
-          btnWithdraw.textContent = `รออนุมัติถอน (${wr.status})`;
-        } else if (wr && wr.status==='paid') {
-          btnWithdraw.disabled = true;
-          btnWithdraw.textContent = 'ถอนแล้ว';
-        } else {
-          btnWithdraw.disabled = false;
-          btnWithdraw.textContent = 'ขอถอนเงิน';
-          btnWithdraw.onclick = async ()=>{
-            btnWithdraw.disabled = true;
-            btnWithdraw.textContent = 'กำลังส่งคำขอ...';
-            try{
-              const r = await fetch(`${API_BASE}/tech/withdraw_requests`, {
-                method:'POST',
-                credentials:'include',
-                headers:{ 'Content-Type':'application/json' },
-                body: JSON.stringify({ payout_id: id })
-              });
-              const j = await r.json();
-              if (!j || !j.ok) throw new Error(j?.error||'REQUEST_FAILED');
-              showToast('ส่งคำขอถอนเงินแล้ว', 'success');
-              await openTechPayoutDetail(id);
-            } catch(e){
-              showToast('ส่งคำขอไม่สำเร็จ', 'error');
-              btnWithdraw.disabled = false;
-              btnWithdraw.textContent = 'ขอถอนเงิน';
-            }
-          };
-        }
-      }
-    }catch(e){ /* ignore */ }
-    renderTechPayoutLines(data.lines||[], data.net_amount||data.total_amount||0, data.adjustments||[], data.payment||null, id, {
-      gross_amount: data.gross_amount,
-      deposit_deduction_amount: data.deposit_deduction_amount,
-      deposit_target_amount: data.deposit_target_amount,
-      deposit_collected_total: data.deposit_collected_total,
-      deposit_remaining_amount: data.deposit_remaining_amount,
-      depositText: `เงินฝาก เป้า ${depTarget} • เก็บแล้ว ${depCollected} • คงเหลือ ${depRemaining}`
-    });
-  }catch(e){
-    if (techPayoutDetailHintEl) techPayoutDetailHintEl.textContent = 'โหลดรายละเอียดไม่สำเร็จ';
-    if (techPayoutLinesEl) techPayoutLinesEl.innerHTML = `<div class="muted">โหลดรายการไม่สำเร็จ</div>`;
-  }
+    const data = await res.json(); if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
+    const gross = formatBaht(data.gross_amount||0), dep = formatBaht(data.deposit_deduction_amount||0), total = formatBaht(data.net_amount||data.total_amount||0), paid = formatBaht(data.paid_amount||0), rem = formatBaht(data.remaining_amount||0);
+    const depTarget = formatBaht(data.deposit_target_amount||0), depCollected = formatBaht(data.deposit_collected_total||0), depRemaining = formatBaht(data.deposit_remaining_amount||0);
+    const period = (__cwfPayoutCache.payouts||[]).find(x=>String(x.payout_id)===id) || {};
+    const type = _safeText(data.period_type || period.period_type || ''), st = _fmtDateTH(data.period_start || period.period_start), en = _fmtDateTH(data.period_end || period.period_end), paySt = _safeText(data.paid_status||'unpaid');
+    if (techPayoutModalTitleEl) techPayoutModalTitleEl.textContent = `งวด ${type || ''}`.trim() || 'รายละเอียดงวด';
+    if (techPayoutModalSubEl) techPayoutModalSubEl.textContent = `${id} • ${st} - ${en} • ${paySt}`;
+    if (techPayoutModalSummaryEl) techPayoutModalSummaryEl.innerHTML = `<div class="payout-kpi"><div class="k">รายได้ก่อนหัก</div><div class="v">${gross}</div></div><div class="payout-kpi"><div class="k">หักเงินประกัน</div><div class="v">${dep}</div></div><div class="payout-kpi net"><div class="k">ยอดสุทธิในงวด</div><div class="v">${total}</div></div><div class="payout-kpi"><div class="k">จ่ายแล้ว</div><div class="v">${paid}</div></div><div class="payout-kpi"><div class="k">คงเหลือ</div><div class="v">${rem}</div></div><div class="payout-kpi"><div class="k">เงินประกันสะสม</div><div class="v">${depCollected}</div></div><div class="payout-kpi"><div class="k">เงินประกันคงเหลือ</div><div class="v">${depRemaining}</div></div><div class="payout-kpi"><div class="k">เป้าหมายประกัน</div><div class="v">${depTarget}</div></div>`;
+    const slipUrl = `/tech/payouts/${encodeURIComponent(id)}/slip`;
+    if (btnPayoutModalSlipEl) btnPayoutModalSlipEl.onclick = ()=> window.open(slipUrl, '_blank');
+    if (btnPayoutModalPdfEl) btnPayoutModalPdfEl.onclick = ()=> window.open(`${slipUrl}?print=1`, '_blank');
+    renderTechPayoutLines(data.lines||[], data.net_amount||data.total_amount||0, data.adjustments||[], data.payment||null, id, { gross_amount:data.gross_amount, deposit_deduction_amount:data.deposit_deduction_amount, deposit_target_amount:data.deposit_target_amount, deposit_collected_total:data.deposit_collected_total, deposit_remaining_amount:data.deposit_remaining_amount, depositText:`เงินประกัน เป้า ${depTarget} • เก็บแล้ว ${depCollected} • คงเหลือ ${depRemaining}` });
+  }catch(e){ if (techPayoutModalSubEl) techPayoutModalSubEl.textContent = 'โหลดรายละเอียดไม่สำเร็จ'; if (techPayoutModalSummaryEl) techPayoutModalSummaryEl.innerHTML = `<div class="muted">โหลดรายละเอียดไม่สำเร็จ</div>`; if (techPayoutModalLinesEl) techPayoutModalLinesEl.innerHTML = ''; }
 }
 window.openTechPayoutDetail = openTechPayoutDetail;
 
 function renderTechPayoutLines(lines, total, adjustments, payment, payoutId, summary){
-  if (!techPayoutLinesEl) return;
+  const payoutLinesTargetEl = techPayoutModalLinesEl || techPayoutLinesEl;
+  if (!payoutLinesTargetEl) return;
   const arr = Array.isArray(lines) ? lines : [];
   if (!arr.length) {
-    techPayoutLinesEl.innerHTML = `<div class="muted">ไม่มีรายการงานในงวดนี้</div>`;
+    payoutLinesTargetEl.innerHTML = `<div class="muted">ไม่มีรายการงานในงวดนี้</div>`;
     return;
   }
 
@@ -1275,9 +1201,9 @@ function renderTechPayoutLines(lines, total, adjustments, payment, payoutId, sum
       return `<div class="muted">• ${dt} ${j} : ${_safeText(a.reason)} (${amt})</div>`;
     }).join('') : `<div class="muted">-</div>`;
 
-    const slipBtn = `<button class="btn" id="btnSlip" style="width:100%;margin:8px 0">เปิดสลิปงวดนี้</button>`;
+    const slipBtn = techPayoutModalLinesEl ? '' : `<button class="btn" id="btnSlip" style="width:100%;margin:8px 0">เปิดสลิปงวดนี้</button>`;
 
-    techPayoutLinesEl.innerHTML = `
+    payoutLinesTargetEl.innerHTML = `
       <div class="card" style="margin-top:0">
         <b>สรุปงวด</b>
         <div class="muted" style="margin-top:6px">Gross payout: <b>${grossText}</b> • หักเงินฝาก: <b>${depText}</b> • Net payable: <b>${netText}</b></div>

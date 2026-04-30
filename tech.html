@@ -318,10 +318,23 @@
     .deposit-mini-card .remain{font-size:24px;font-weight:1200;color:var(--tech-navy);margin-top:6px;}
     .deposit-progress{height:8px;border-radius:999px;background:rgba(15,23,42,.08);overflow:hidden;margin-top:10px;}
     .deposit-progress span{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,var(--tech-yellow),#0B63F6);width:0%;}
-    details.statement-panel{margin-top:12px;padding-top:12px;border-top:1px solid rgba(15,23,42,0.08);}
-    details.statement-panel summary{list-style:none;cursor:pointer;user-select:none;border-radius:16px;border:1px solid var(--tech-border);background:#fff;padding:12px 14px;font-weight:1100;color:var(--tech-navy);display:flex;align-items:center;justify-content:space-between;gap:10px;}
-    details.statement-panel summary::-webkit-details-marker{display:none;}
-    .statement-body{margin-top:12px;}
+    .payout-modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,.56);z-index:3200;display:none;padding:14px;align-items:flex-end;justify-content:center;}
+    .payout-modal-backdrop.show{display:flex;}
+    .payout-modal{width:min(520px,100%);max-height:88vh;overflow:auto;border-radius:28px 28px 18px 18px;background:#fff;border:1px solid rgba(255,255,255,.24);box-shadow:0 24px 70px rgba(2,6,23,.36);}
+    .payout-modal-head{position:sticky;top:0;z-index:1;background:linear-gradient(135deg,#061a44,#0B2E6D 58%,#1677ff);color:#fff;padding:16px 16px 14px;border-radius:28px 28px 0 0;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
+    .payout-modal-head b{font-size:18px;line-height:1.15;}
+    .payout-modal-head .sub{font-size:12px;font-weight:900;color:rgba(255,255,255,.82);margin-top:4px;}
+    .payout-close{min-width:42px;height:42px;border-radius:16px;border:1px solid rgba(255,255,255,.28);background:rgba(255,255,255,.12);color:#fff;font-size:24px;font-weight:1000;}
+    .payout-modal-body{padding:14px 14px 18px;}
+    .payout-total-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+    .payout-kpi{border-radius:18px;border:1px solid var(--tech-border);background:linear-gradient(180deg,#fff,#F8FBFF);padding:12px;}
+    .payout-kpi .k{font-size:12px;font-weight:1000;color:var(--tech-muted);}
+    .payout-kpi .v{margin-top:6px;font-size:20px;font-weight:1200;color:var(--tech-navy);}
+    .payout-kpi.net{grid-column:1/-1;background:linear-gradient(180deg,#FFFDF5,#FFF6CC);border-color:#F4C400;}
+    .payout-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;}
+    .payout-actions .btn{width:100%;}
+    .payout-line-list{margin-top:12px;}
+    @media (max-width:420px){.payout-total-grid{grid-template-columns:1fr}.payout-kpi.net{grid-column:auto}.payout-actions{grid-template-columns:1fr}.payout-modal-backdrop{padding:0;align-items:flex-end}.payout-modal{border-radius:26px 26px 0 0;max-height:90vh}}
     details.tech-more summary{border-radius:16px;border:1px solid var(--tech-border);background:#fff;padding:12px 14px;font-weight:1000;color:var(--tech-navy)}
     .tech-more .moreBox{border-radius:18px;border:1px solid var(--tech-border);background:#fff;padding:12px;}
     .accept-btn{min-height:48px;border-radius:16px;border:1px solid var(--tech-border);font-weight:1000;}
@@ -899,68 +912,40 @@
             <button class="btn blue" id="btnReloadIncomeOverview">รีเฟรชภาพรวม</button>
           </div>
 
-          <!-- ✅ รายละเอียดรายวัน (statement) ซ่อนตัวกรองไว้ก่อน เพื่อลดความรก -->
-          <details class="statement-panel" id="incomeStatementPanel">
-            <summary>
-              <span>สเตทเมนต์รายได้</span>
-              <span>▾</span>
-            </summary>
-            <div class="statement-body">
-              <div class="muted" style="margin-top:2px">เลือกดูรายวัน / ทั้งเดือน / ย้อนหลัง 3 เดือน</div>
-
-              <div class="premium-filter-row" style="margin-top:10px;">
-                <button class="btn" id="btnIncomeQuickToday">วันนี้</button>
-                <button class="btn" id="btnIncomeQuickYesterday">เมื่อวาน</button>
-                <button class="btn blue" id="btnIncomeQuickMonth">ทั้งเดือน</button>
-                <button class="btn" id="btnIncomeQuick3Months">ย้อนหลัง 3 เดือน</button>
-              </div>
-
-              <div class="premium-filter-row" style="margin-top:10px;align-items:center;">
-                <input id="incomeMonthPicker" class="premium-input" type="month" style="flex:1;min-width:150px" />
-                <button class="btn" id="btnLoadIncomeMonth">ดูเดือนที่เลือก</button>
-              </div>
-
-              <div class="premium-filter-row" style="margin-top:10px;align-items:center;">
-                <input id="incomeDatePicker" class="premium-input" type="date" style="flex:1;min-width:180px" />
-                <button class="btn blue" id="btnLoadIncomeDay">ดูรายวัน</button>
-              </div>
-
-              <div id="techIncomeLast7Wrap" style="margin-top:10px;display:none">
-                <div class="muted" id="techIncomeLast7Title">สรุปสเตทเมนต์</div>
-                <div id="techIncomeLast7List" style="margin-top:8px"></div>
-                <div style="height:10px"></div>
-              </div>
-
-              <div id="techIncomeDayHint" class="muted" style="margin-top:8px">เลือกวันที่หรือเดือนที่ต้องการดู</div>
-              <div id="techIncomeDayList" style="margin-top:10px"></div>
-            </div>
-          </details>
         </div>
 
         <div class="card" style="margin-top:0">
           <div class="sectionTitle">
             <div>
               <b>งวดเงินเดือน</b>
-              <div class="muted" style="margin-top:4px">แตะที่งวดเพื่อดูรายการงาน</div>
+              <div class="muted" style="margin-top:4px">เลือกงวดเพื่อดูรายละเอียด สลิป และบันทึก PDF</div>
             </div>
           </div>
           <div id="techPayoutPeriods" style="margin-top:10px"></div>
         </div>
       </div>
 
-      <div class="card" style="margin-top:12px">
-        <div class="sectionTitle">
-          <div>
-            <b>รายละเอียดงวด</b>
-            <div class="muted" id="techPayoutDetailHint" style="margin-top:4px">เลือกงวดด้านบน</div>
-          </div>
-          <div class="row" style="gap:8px;align-items:center">
-            <div class="pill" id="techPayoutTotalPill" style="display:none"></div>
-            <button class="btn" id="btnOpenSlip" style="display:none">เปิดสลิป</button>
-            <button class="btn" id="btnWithdraw" style="display:none;background:#0b4bb3;color:#fff">ขอถอนเงิน</button>
-          </div>
+
+    </div>
+  </div>
+
+  <div class="payout-modal-backdrop" id="techPayoutModalBackdrop" onclick="if(event.target===this) window.closeTechPayoutModal && window.closeTechPayoutModal()">
+    <div class="payout-modal" role="dialog" aria-modal="true" aria-labelledby="techPayoutModalTitle">
+      <div class="payout-modal-head">
+        <div>
+          <b id="techPayoutModalTitle">รายละเอียดงวด</b>
+          <div class="sub" id="techPayoutModalSub">กำลังโหลด...</div>
         </div>
-        <div id="techPayoutLines" style="margin-top:10px"></div>
+        <button class="payout-close" type="button" onclick="window.closeTechPayoutModal && window.closeTechPayoutModal()">×</button>
+      </div>
+      <div class="payout-modal-body">
+        <div id="techPayoutModalSummary" class="payout-total-grid"></div>
+        <div class="payout-actions">
+          <button class="btn blue" type="button" id="btnPayoutModalSlip">เปิดสลิป</button>
+          <button class="btn" type="button" id="btnPayoutModalPdf">Save PDF</button>
+        </div>
+        <div class="muted" id="techPayoutModalHint" style="margin-top:10px">สลิปจะเปิดหน้าใหม่ สามารถกดพิมพ์/บันทึกเป็น PDF ได้</div>
+        <div id="techPayoutModalLines" class="payout-line-list"></div>
       </div>
     </div>
   </div>
@@ -973,7 +958,7 @@
     <button class="nav-btn" id="nav-income" onclick="switchTab('income')">💰 รายได้</button>
   </div>
 
-  <script src="app.js?v=tech-premium-v10-6-ui-shell"></script>
+  <script src="app.js?v=tech-income-slip-modal-v1"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

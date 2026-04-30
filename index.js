@@ -7873,8 +7873,8 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
       <div class="wrap">
         <div class="top">
           <div>
-            <div class="brand">Coldwindflow (CWF)</div>
-            <div class="muted">สลิปงวดช่าง</div>
+            <div class="brand">Coldwindflow Air Services</div>
+            <div class="subbrand">Technician Payout Slip • สลิปงวดช่าง</div>
           </div>
           <div class="right">
             <div><b>${esc(payout_id)}</b></div>
@@ -7882,16 +7882,24 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
           </div>
         </div>
 
-        <div class="card">
-          <div class="row"><span class="muted">ช่าง</span><b class="mono">${esc(tech)}</b></div>
+        <div class="grid">
+          <div class="card soft">
+            <div class="row"><span class="muted">ช่าง</span><b class="mono">${esc(tech)}</b></div>
           <div class="row"><span class="muted">ยอดงวด (ก่อนปรับ)</span><b>${esc(fmtBaht(gross))}</b></div>
           <div class="row"><span class="muted">ปรับยอด (รวม)</span><b>${esc(fmtBaht(adj_total))}</b></div>
-          <div class="row deposit-row"><span class="muted">หักเงินฝากพาร์ทเนอร์</span><b>${esc(fmtBaht(deposit_deduction_amount))}</b></div>
+          <div class="row deposit-row"><span class="muted">หักเงินประกันงาน</span><b>${esc(fmtBaht(deposit_deduction_amount))}</b></div>
           <div class="row"><span class="muted">ยอดสุทธิ</span><b>${esc(fmtBaht(net))}</b></div>
-          <div class="row"><span class="muted">เงินฝาก เป้า/เก็บแล้ว/คงเหลือ</span><b>${esc(fmtBaht(deposit.deposit_target_amount))} / ${esc(fmtBaht(deposit.deposit_collected_total))} / ${esc(fmtBaht(deposit.deposit_remaining_amount))}</b></div>
+          <div class="row"><span class="muted">เงินประกัน เป้า/เก็บแล้ว/คงเหลือ</span><b>${esc(fmtBaht(deposit.deposit_target_amount))} / ${esc(fmtBaht(deposit.deposit_collected_total))} / ${esc(fmtBaht(deposit.deposit_remaining_amount))}</b></div>
           <div class="row"><span class="muted">จ่ายแล้ว</span><b>${esc(fmtBaht(paid_amount))}</b></div>
           <div class="row"><span class="muted">คงเหลือ</span><b>${esc(fmtBaht(remaining))}</b></div>
           <div class="row"><span class="muted">สถานะ</span><b>${esc(payment?.paid_status || _paidStatus(net, paid_amount))}</b></div>
+          </div>
+          <div class="card yellow">
+            <div class="row total"><span>ยอดสุทธิที่ใช้จ่าย</span><b>${esc(fmtBaht(net))}</b></div>
+            <div class="row"><span>จ่ายแล้ว</span><b>${esc(fmtBaht(paid_amount))}</b></div>
+            <div class="row"><span>คงเหลือ</span><b>${esc(fmtBaht(remaining))}</b></div>
+            <div class="row"><span>วันที่จ่าย</span><b>${esc(payment?.paid_at ? fmtDate(payment.paid_at) : '-')}</b></div>
+          </div>
         </div>
 
         <h3>รายการงาน</h3>
@@ -7906,12 +7914,18 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
           <tbody>${adjHtml || '<tr><td colspan="4" class="muted">-</td></tr>'}</tbody>
         </table>
 
+        <div class="sign">
+          <div class="signBox">ผู้รับเงิน / Technician</div>
+          <div class="signBox">ผู้อนุมัติจ่าย / Admin</div>
+        </div>
+
         <div class="foot muted">
-          ออกเอกสารเมื่อ: ${esc(new Date().toISOString())}
-          ${payment?.slip_url ? `<div>สลิปแนบ: ${esc(payment.slip_url)}</div>` : ''}
+          <div>ออกเอกสารเมื่อ: ${esc(new Date().toLocaleString('th-TH', { timeZone:'Asia/Bangkok' }))}</div>
+          ${payment?.slip_url ? `<div>หลักฐานแนบ: ${esc(payment.slip_url)}</div>` : ''}
         </div>
 
         <div class="printbar">
+          <button class="secondary" onclick="history.back()">กลับ</button>
           <button onclick="window.print()">พิมพ์ / Save PDF</button>
         </div>
       </div>
