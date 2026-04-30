@@ -1223,6 +1223,65 @@ async function requireTechnicianSession(req, res, next) {
   }
 }
 
+
+// =======================================
+// 🔐 Technician job ownership guard
+// - Use server-side session identity only; never trust technician_username from body/query.
+// - Supports single-tech jobs, legacy technician_team, job_team_members, and job_assignments.
+// =======================================
+function _authUsername(req) {
+  return String(req?.auth?.username || req?.effective?.username || '').trim();
+}
+
+function _isAdminActor(req) {
+  const r = String(req?.actor?.role || req?.auth?.role || '').trim().toLowerCase();
+  return r === 'admin' || r === 'super_admin';
+}
+
+async function assertTechBelongsToJob(clientOrPool, job_id, username) {
+  const jid = Number(job_id);
+  const u = String(username || '').trim();
+  if (!jid || !u) return false;
+
+  const q = await clientOrPool.query(
+    `
+    SELECT 1
+    FROM public.jobs j
+    LEFT JOIN public.job_team_members tm
+      ON tm.job_id = j.job_id
+     AND tm.username = $2
+    LEFT JOIN public.job_assignments ja
+      ON ja.job_id = j.job_id
+     AND ja.technician_username = $2
+    WHERE j.job_id = $1
+      AND (
+        j.technician_username = $2
+        OR j.technician_team = $2
+        OR $2 = ANY(regexp_split_to_array(COALESCE(j.technician_team,''), '\\s*,\\s*'))
+        OR tm.username IS NOT NULL
+        OR ja.technician_username IS NOT NULL
+      )
+    LIMIT 1
+    `,
+    [jid, u]
+  );
+  return !!q.rows.length;
+}
+
+async function requireTechOwnsResolvedJob(req, res, realId, clientOrPool = pool) {
+  const tech = _authUsername(req);
+  if (!tech) {
+    res.status(401).json({ error: 'UNAUTHORIZED' });
+    return null;
+  }
+  const ok = await assertTechBelongsToJob(clientOrPool, realId, tech);
+  if (!ok) {
+    res.status(403).json({ error: 'ช่างคนนี้ไม่ได้อยู่ในทีมของงานนี้' });
+    return null;
+  }
+  return tech;
+}
+
 async function auditLog(req, { action, target_username = null, target_role = null, meta = null }) {
   try {
     const actor = req.actor || null;
@@ -14270,9 +14329,9 @@ app.get("/offers/tech/:username", async (req, res) => {
   }
 });
 
-app.post("/offers/:offer_id/accept", async (req, res) => {
+app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) => {
   const { offer_id } = req.params;
-  const { username } = req.body || {};
+  const username = _authUsername(req);
 
   const client = await pool.connect();
   try {
@@ -14290,7 +14349,7 @@ app.post("/offers/:offer_id/accept", async (req, res) => {
     const offer = offerR.rows[0];
     if (offer.status !== "pending") throw new Error("offer นี้ถูกตอบไปแล้ว");
     if (new Date(offer.expires_at) < new Date()) throw new Error("หมดเวลารับงานแล้ว");
-    if (username && username !== offer.technician_username) throw new Error("username ไม่ตรงกับ offer");
+    if (!username || username !== offer.technician_username) throw new Error("username ไม่ตรงกับ offer");
 
     const jobR = await client.query(
       `SELECT job_id, technician_team FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
@@ -14350,9 +14409,9 @@ app.post("/offers/:offer_id/accept", async (req, res) => {
   }
 });
 
-app.post("/offers/:offer_id/decline", async (req, res) => {
+app.post("/offers/:offer_id/decline", requireTechnicianSession, async (req, res) => {
   const { offer_id } = req.params;
-  const { username } = req.body || {};
+  const username = _authUsername(req);
 
   const client = await pool.connect();
   try {
@@ -14369,7 +14428,7 @@ app.post("/offers/:offer_id/decline", async (req, res) => {
 
     const offer = offerR.rows[0];
     if (offer.status !== "pending") throw new Error("offer นี้ถูกตอบไปแล้ว");
-    if (username && username !== offer.technician_username) throw new Error("username ไม่ตรงกับ offer");
+    if (!username || username !== offer.technician_username) throw new Error("username ไม่ตรงกับ offer");
 
     if (new Date(offer.expires_at) < new Date()) {
       await client.query(`UPDATE public.job_offers SET status='expired', responded_at=NOW() WHERE offer_id=$1`, [offer_id]);
@@ -14424,11 +14483,13 @@ app.post("/offers/:offer_id/decline", async (req, res) => {
 // =======================================
 // 🚗 TRAVEL START (เริ่มเดินทาง)
 // =======================================
-app.post("/jobs/:job_id/travel-start", async (req, res) => {
+app.post("/jobs/:job_id/travel-start", requireTechnicianSession, async (req, res) => {
   const { job_id } = req.params;
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+    const technician_username = await requireTechOwnsResolvedJob(req, res, realId, pool);
+    if (!technician_username) return;
 
     await pool.query(
       `UPDATE public.jobs
@@ -14446,7 +14507,7 @@ app.post("/jobs/:job_id/travel-start", async (req, res) => {
 // =======================================
 // 📍 CHECK-IN
 // =======================================
-app.post("/jobs/:job_id/checkin", async (req, res) => {
+app.post("/jobs/:job_id/checkin", requireTechnicianSession, async (req, res) => {
   const { job_id } = req.params;
   const { lat, lng } = req.body || {};
 
@@ -14455,6 +14516,8 @@ app.post("/jobs/:job_id/checkin", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+    const technician_username = await requireTechOwnsResolvedJob(req, res, realId, pool);
+    if (!technician_username) return;
 
     const r = await pool.query(
       `SELECT gps_latitude, gps_longitude, maps_url FROM public.jobs WHERE job_id=$1`,
@@ -14815,11 +14878,11 @@ app.put("/jobs/:job_id/note", async (req, res) => {
 // =======================================
 // ✅ FINALIZE JOB (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์ลูกค้า
 // =======================================
-app.post("/jobs/:job_id/finalize", async (req, res) => {
+app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) => {
   const { job_id } = req.params;
   // DEBUG (production-safe): ช่วยยืนยันว่า request วิ่งถึง server จริง
   // (กรณีช่างกดปิดงานแล้วเงียบ ไม่มี log) — log แค่ id+status ไม่ log ข้อมูลลูกค้า
-  try { console.log('[finalize] hit', { job_id: String(job_id), status: String(req.body?.status || '').trim() }); } catch {}
+  try { console.log('[finalize] hit', { job_id: String(job_id), tech: _authUsername(req), status: String(req.body?.status || '').trim() }); } catch {}
   const status = String(req.body?.status || "").trim();
   const signature_data = req.body?.signature_data;
   const note = String(req.body?.note || "").trim();
@@ -14843,6 +14906,11 @@ app.post("/jobs/:job_id/finalize", async (req, res) => {
     if (!realId) {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+    }
+    const technician_username = await requireTechOwnsResolvedJob(req, res, realId, client);
+    if (!technician_username) {
+      await client.query("ROLLBACK");
+      return;
     }
 // ✅ งานทีม: กัน finalize ก่อนที่ทุกคนกดเสร็จของตัวเอง
 if (status === "เสร็จแล้ว") {
@@ -14963,7 +15031,7 @@ if (status === "เสร็จแล้ว") {
         await logJobUpdate(
           realId,
           {
-            actor_username: null,
+            actor_username: technician_username,
             actor_role: "tech",
             action: "revisit_result",
             message: revisitResult === "successful" ? "successful" : "unsuccessful",
@@ -14977,7 +15045,7 @@ if (status === "เสร็จแล้ว") {
         );
       }
       await logJobUpdate(realId, {
-        actor_username: null,
+        actor_username: technician_username,
         actor_role: 'tech',
         action: 'finalize_done',
         message: 'เสร็จแล้ว',
@@ -15001,7 +15069,7 @@ if (status === "เสร็จแล้ว") {
          WHERE job_id=$3`,
         [note, sigPath, realId]
       );
-      await logJobUpdate(realId, { actor_username: null, actor_role: 'tech', action: 'finalize_cancel', message: note || 'ยกเลิก' }, client);
+      await logJobUpdate(realId, { actor_username: technician_username, actor_role: 'tech', action: 'finalize_cancel', message: note || 'ยกเลิก' }, client);
     }
 
     await client.query("COMMIT");
@@ -15020,11 +15088,11 @@ if (status === "เสร็จแล้ว") {
 // - POST /jobs/:job_id/assignment-done { technician_username }
 // - returns { success, all_done, assignments:{total,done} }
 // =======================================
-app.post("/jobs/:job_id/assignment-done", async (req, res) => {
+app.post("/jobs/:job_id/assignment-done", requireTechnicianSession, async (req, res) => {
   const job_id = Number(req.params.job_id);
-  const technician_username = String(req.body?.technician_username || "").trim();
+  const technician_username = _authUsername(req);
   if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
-  if (!technician_username) return res.status(400).json({ error: "ต้องระบุ technician_username" });
+  if (!technician_username) return res.status(401).json({ error: "UNAUTHORIZED" });
 
   const client = await pool.connect();
   try {
@@ -15111,6 +15179,26 @@ app.put("/technicians/:username/accept-status", async (req, res) => {
 
   if (!["ready", "paused"].includes(status)) {
     return res.status(400).json({ error: "status ต้องเป็น ready หรือ paused" });
+  }
+
+  try {
+    const ctx = await getAuthContext(req, res);
+    if (!ctx.ok) return res.status(401).json({ error: 'UNAUTHORIZED' });
+    const actorRole = String(ctx.actor?.role || '').trim().toLowerCase();
+    const actorIsAdmin = actorRole === 'admin' || actorRole === 'super_admin';
+    const effectiveUser = String(ctx.effective?.username || '').trim();
+    const effectiveIsTech = isTechnicianRole(ctx.effective?.role);
+    if (!actorIsAdmin && (!effectiveIsTech || effectiveUser !== String(username || '').trim())) {
+      return res.status(403).json({ error: 'FORBIDDEN' });
+    }
+    req.actor = ctx.actor;
+    req.effective = ctx.effective;
+    req.auth = ctx.effective;
+    req.impersonating = !!ctx.impersonating;
+    req.session_token = ctx.session_token;
+  } catch (e) {
+    console.error('accept-status auth error:', e);
+    return res.status(500).json({ error: 'AUTH_FAILED' });
   }
 
   const client = await pool.connect();
