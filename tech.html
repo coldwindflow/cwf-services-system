@@ -531,7 +531,7 @@
          - รับงาน/หยุดรับงาน + พื้นที่รับงาน อยู่บรรทัดเดียวกัน
          - รองรับโค้ดเดิมด้วย id เดิม: acceptToggleBtn / zoneSelect / acceptStatusText
     =============================== -->
-    <div class="tech-control-card">
+    <div class="tech-control-card" id="techControlCard">
       <style>
         .tech-control-card{
           margin:10px 0 12px;
@@ -625,19 +625,26 @@
           min-width:0;
         }
         .accept-hint{
-          margin:8px 2px 0;
+          margin:10px 2px 0;
+          padding:10px 12px;
+          border-radius:16px;
+          border:1px solid rgba(11,46,109,.10);
+          background:linear-gradient(135deg,rgba(11,46,109,.08),rgba(37,99,235,.05));
           font-size:12px;
-          color:rgba(255,255,255,.82);
-          font-weight:900;
+          color:#0B2E6D;
+          font-weight:1000;
           display:flex;
-          align-items:center;
-          gap:6px;
+          align-items:flex-start;
+          gap:8px;
           min-height:18px;
+          line-height:1.45;
         }
         .accept-hint::before{
           content:"●";
           color:#ef4444;
           font-size:14px;
+          line-height:1.2;
+          margin-top:1px;
         }
         @media (max-width:380px){
           .tech-control-card{padding:8px;border-radius:22px}
@@ -1095,6 +1102,12 @@ function logout(){
         document.getElementById("tab-"+k).classList.toggle("active", k===k0);
         document.getElementById("nav-"+k).classList.toggle("active", k===k0);
       });
+
+      // ✅ แถบควบคุมรับงาน/โซน แสดงเฉพาะหน้า “รับงานใหม่”
+      const techControlCard = document.getElementById('techControlCard');
+      if (techControlCard) {
+        techControlCard.style.display = (k0 === 'new') ? '' : 'none';
+      }
 
       // lazy load income periods
       if (k0 === 'income') {
