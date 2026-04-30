@@ -197,6 +197,16 @@
       border:1px solid rgba(255,255,255,0.18);background:rgba(255,255,255,0.12);
       box-shadow:0 10px 26px rgba(0,0,0,0.18);cursor:pointer;user-select:none}
     .tech-icbtn:active{transform: translateY(1px) scale(0.99)}
+    .techTopActions{display:flex;align-items:center;gap:10px;flex-shrink:0}
+    .tech-push-icbtn{position:relative;color:#fff;font-size:20px}
+    .tech-push-icbtn .bell{position:relative;z-index:1;line-height:1;transform:translateY(-1px)}
+    .tech-push-icbtn .dot{position:absolute;right:11px;top:11px;width:10px;height:10px;border-radius:999px;background:#ef4444;border:2px solid rgba(11,46,109,0.95);box-shadow:0 0 0 2px rgba(255,255,255,0.08)}
+    .tech-push-icbtn.active{background:linear-gradient(135deg,#22c55e,#16a34a);border-color:rgba(255,255,255,.35);box-shadow:0 14px 28px rgba(34,197,94,.25)}
+    .tech-push-icbtn.active .dot{background:#bbf7d0;border-color:rgba(22,101,52,.9)}
+    .tech-push-icbtn.warn{background:linear-gradient(135deg,#facc15,#f59e0b);border-color:rgba(255,255,255,.35);color:#111827;box-shadow:0 14px 28px rgba(245,158,11,.22)}
+    .tech-push-icbtn.warn .dot{background:#111827;border-color:rgba(245,158,11,.82)}
+    .tech-push-icbtn.loading{pointer-events:none;opacity:.84}
+    .pushNotifyBox{display:none !important;}
     /* ISSUE: hamburger icon มองไม่เห็น/กลืนกับพื้นหลัง => ทำให้เป็นสีน้ำเงิน */
     #techMenuBtn{background:var(--tech-yellow);border-color:rgba(244,196,0,0.9);color:#111827;font-size:22px;font-weight:1200;}
     /* ปุ่มปิดเมนูใน drawer ให้มองชัดบนพื้นหลังขาว */
@@ -404,6 +414,13 @@
       border:1px solid rgba(255,255,255,.35) !important;
       color:#111827 !important;box-shadow:0 14px 28px rgba(244,196,0,.25) !important;
     }
+    #techPushIconBtn{
+      width:44px !important;height:44px !important;border-radius:16px !important;
+      background:rgba(255,255,255,.12) !important;border:1px solid rgba(255,255,255,.22) !important;
+      box-shadow:0 14px 28px rgba(2,6,23,.22) !important;color:#fff !important;
+    }
+    #techPushIconBtn .dot{right:10px !important;top:10px !important}
+    }
     #techTopSpacer{height:70px !important;}
     .card{
       border-radius:24px !important;
@@ -467,7 +484,13 @@
           <b>CWF – ช่าง</b>
           <span id="me">ผู้ใช้: -</span>
         </div>
-        <button class="tech-icbtn" type="button" id="techMenuBtn" aria-label="เมนู">☰</button>
+        <div class="techTopActions">
+          <button class="tech-icbtn tech-push-icbtn" type="button" id="techPushIconBtn" aria-label="เปิดแจ้งเตือนงานเข้า" title="เปิดแจ้งเตือนงานเข้า">
+            <span class="bell">🔔</span>
+            <span class="dot" id="techPushIconDot"></span>
+          </button>
+          <button class="tech-icbtn" type="button" id="techMenuBtn" aria-label="เมนู">☰</button>
+        </div>
       </div>
     </div>
     <div id="techTopSpacer"></div>
@@ -794,14 +817,10 @@
         </div>
       </details>
 
-      <div class="pushNotifyBox" id="pushNotifyBox">
-        <div class="txt">
-          <b>🔔 แจ้งเตือนงานเข้า</b>
-          <span id="pushNotifyHint">เปิดไว้เพื่อรับงานใหม่แม้ปิดหน้า PWA</span>
-        </div>
-        <button class="pushNotifyBtn" id="btnEnablePush" type="button">เปิดแจ้งเตือน</button>
+      <div class="pushNotifyBox" id="pushNotifyBox" aria-hidden="true">
+        <span id="pushNotifyHint">เปิดไว้เพื่อรับงานใหม่แม้ปิดหน้า PWA</span>
       </div>
- 
+
 <hr>
 
       <!-- ✅ กันหัวข้อซ้อน ให้เหลืออันเดียว -->
@@ -974,7 +993,7 @@
     <button class="nav-btn" id="nav-income" onclick="switchTab('income')">💰 รายได้</button>
   </div>
 
-  <script src="app.js?v=tech-push-notify-v1"></script>
+  <script src="app.js?v=tech-push-notify-v2"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

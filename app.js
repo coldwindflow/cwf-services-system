@@ -93,8 +93,10 @@ const techPayoutModalLinesEl = document.getElementById('techPayoutModalLines');
 const btnPayoutModalSlipEl = document.getElementById('btnPayoutModalSlip');
 const btnPayoutModalPdfEl = document.getElementById('btnPayoutModalPdf');
 const pushNotifyBoxEl = document.getElementById('pushNotifyBox');
-const btnEnablePushEl = document.getElementById('btnEnablePush');
 const pushNotifyHintEl = document.getElementById('pushNotifyHint');
+const techPushIconBtnEl = document.getElementById('techPushIconBtn');
+const techPushIconDotEl = document.getElementById('techPushIconDot');
+const notifyStateTextEl = document.getElementById('notifyStateText');
 
 // ✅ รายละเอียดรายวัน (วันนี้ทำอะไรไป)
 const incomeDatePickerEl = document.getElementById('incomeDatePicker');
@@ -434,12 +436,29 @@ function urlBase64ToUint8Array(base64String) {
 }
 
 function setPushUi(state, text) {
-  if (pushNotifyHintEl) pushNotifyHintEl.textContent = text || '';
-  if (!btnEnablePushEl) return;
-  btnEnablePushEl.classList.remove('ok','warn');
-  if (state === 'ok') { btnEnablePushEl.classList.add('ok'); btnEnablePushEl.textContent = 'เปิดแล้ว'; }
-  else if (state === 'warn') { btnEnablePushEl.classList.add('warn'); btnEnablePushEl.textContent = 'เปิดไม่ได้'; }
-  else { btnEnablePushEl.textContent = 'เปิดแจ้งเตือน'; }
+  const msg = text || '';
+  if (pushNotifyHintEl) pushNotifyHintEl.textContent = msg;
+  if (notifyStateTextEl) {
+    if (state === 'ok') notifyStateTextEl.textContent = 'เปิดแล้ว';
+    else if (state === 'warn') notifyStateTextEl.textContent = 'ตั้งค่า';
+    else notifyStateTextEl.textContent = 'ยังไม่เปิด';
+  }
+  if (!techPushIconBtnEl) return;
+  techPushIconBtnEl.classList.remove('active', 'warn', 'loading');
+  let label = 'เปิดแจ้งเตือนงานเข้า';
+  if (state === 'ok') {
+    techPushIconBtnEl.classList.add('active');
+    label = 'แจ้งเตือนงานเข้าเปิดแล้ว';
+  } else if (state === 'warn') {
+    techPushIconBtnEl.classList.add('warn');
+    label = msg || 'เปิดแจ้งเตือนไม่สำเร็จ';
+  } else if (msg && /กำลัง/.test(msg)) {
+    techPushIconBtnEl.classList.add('loading');
+    label = msg;
+  }
+  techPushIconBtnEl.setAttribute('title', label);
+  techPushIconBtnEl.setAttribute('aria-label', label);
+  if (techPushIconDotEl) techPushIconDotEl.style.display = 'block';
 }
 
 async function ensureServiceWorkerForPush() {
@@ -451,8 +470,7 @@ async function ensureServiceWorkerForPush() {
 
 async function enableTechPushNotifications() {
   try {
-    if (!btnEnablePushEl) return;
-    btnEnablePushEl.disabled = true;
+    if (techPushIconBtnEl) techPushIconBtnEl.disabled = true;
     setPushUi('', 'กำลังเปิดแจ้งเตือน...');
 
     if (!('Notification' in window) || !('PushManager' in window)) {
@@ -492,12 +510,12 @@ async function enableTechPushNotifications() {
     setPushUi('warn', e.message || 'เปิดแจ้งเตือนไม่สำเร็จ');
     alert(`เปิดแจ้งเตือนไม่สำเร็จ: ${e.message || e}`);
   } finally {
-    if (btnEnablePushEl) btnEnablePushEl.disabled = false;
+    if (techPushIconBtnEl) techPushIconBtnEl.disabled = false;
   }
 }
 
 async function initPushNotificationUi() {
-  if (!pushNotifyBoxEl || !btnEnablePushEl) return;
+  if (!techPushIconBtnEl) return;
   if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) {
     setPushUi('warn', 'เครื่องนี้ไม่รองรับแจ้งเตือนแบบ Push');
     return;
@@ -509,7 +527,7 @@ async function initPushNotificationUi() {
   } else {
     setPushUi('', 'เปิดไว้เพื่อรับงานใหม่แม้ปิดหน้า PWA');
   }
-  btnEnablePushEl.addEventListener('click', enableTechPushNotifications);
+  techPushIconBtnEl.addEventListener('click', enableTechPushNotifications);
 }
 window.enableTechPushNotifications = enableTechPushNotifications;
 
