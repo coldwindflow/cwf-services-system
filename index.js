@@ -6957,6 +6957,110 @@ async function _computeTechnicianTrueOutstanding(username){
   }
 }
 
+async function _computeTechnicianPayoutMonthTotal(username, ym = ''){
+  const tech = String(username || '').trim();
+  if (!tech) return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', periods: [] };
+  try {
+    let labelYm = String(ym || '').trim();
+    if (!/^\d{4}-\d{2}$/.test(labelYm)) {
+      const now = _bkkNow();
+      const ymd = _bkkYmd(now);
+      labelYm = `${ymd.y}-${String(ymd.m).padStart(2, '0')}`;
+    }
+    const [yy, mm] = labelYm.split('-').map(Number);
+    let total = 0;
+    let netTotal = 0;
+    const periods = [];
+
+    for (const type of ['10','25']) {
+      const bounds = _periodBoundsForYm(type, yy, mm);
+      const payout_id = `payout_${labelYm}_${type}`;
+      const storedQ = await pool.query(
+        `WITH gross AS (
+           SELECT COALESCE(SUM(earn_amount),0)::numeric AS gross_amount, COUNT(*)::int AS lines_count
+             FROM public.technician_payout_lines
+            WHERE payout_id=$1 AND technician_username=$2
+         ),
+         adj AS (
+           SELECT COALESCE(SUM(adj_amount),0)::numeric AS adj_total
+             FROM public.technician_payout_adjustments
+            WHERE payout_id=$1 AND technician_username=$2
+         ),
+         dep AS (
+           SELECT COALESCE(SUM(amount),0)::numeric AS deposit_deduction_amount
+             FROM public.technician_deposit_ledger
+            WHERE payout_id=$1 AND technician_username=$2 AND transaction_type='collect'
+         ),
+         pay AS (
+           SELECT COALESCE(MAX(paid_amount),0)::numeric AS paid_amount,
+                  COALESCE(MAX(paid_status),'unpaid') AS paid_status
+             FROM public.technician_payout_payments
+            WHERE payout_id=$1 AND technician_username=$2
+         ),
+         period AS (
+           SELECT COALESCE(MAX(status),'virtual') AS period_status
+             FROM public.technician_payout_periods
+            WHERE payout_id=$1
+         )
+         SELECT gross.gross_amount, gross.lines_count,
+                COALESCE(adj.adj_total,0)::numeric AS adj_total,
+                COALESCE(dep.deposit_deduction_amount,0)::numeric AS deposit_deduction_amount,
+                COALESCE(pay.paid_amount,0)::numeric AS paid_amount,
+                COALESCE(pay.paid_status,'unpaid') AS paid_status,
+                COALESCE(period.period_status,'virtual') AS period_status
+           FROM gross, adj, dep, pay, period`,
+        [payout_id, tech]
+      );
+      const stored = storedQ.rows?.[0] || {};
+      let gross = _money(stored.gross_amount || 0);
+      let adj = _money(stored.adj_total || 0);
+      let dep = _money(stored.deposit_deduction_amount || 0);
+      let source = Number(stored.lines_count || 0) > 0 ? 'stored_payout_lines' : 'live_estimate';
+
+      if (source === 'live_estimate') {
+        const liveLines = await _computeTechLinesInRange(tech, bounds.start, bounds.endEx, {
+          payout_id,
+          period_type: bounds.period_type,
+          label_ym: bounds.label_ym,
+        });
+        gross = _money((liveLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
+        adj = 0;
+        dep = 0;
+      }
+
+      const periodTotal = _money(gross + adj);
+      const periodNet = _money(gross + adj - dep);
+      total += periodTotal;
+      netTotal += periodNet;
+      periods.push({
+        payout_id,
+        period_type: type,
+        period_start: bounds.start.toISOString(),
+        period_end: bounds.endEx.toISOString(),
+        source,
+        period_status: stored.period_status || 'virtual',
+        paid_status: stored.paid_status || 'unpaid',
+        gross_amount: gross,
+        adj_total: adj,
+        deposit_deduction_amount: dep,
+        payout_month_amount: periodTotal,
+        payout_month_net_amount: periodNet,
+      });
+    }
+
+    return {
+      payout_month: labelYm,
+      payout_month_total: _money(total),
+      payout_month_net_total: _money(netTotal),
+      payout_month_policy: 'sum_payout_10_and_25_for_label_month',
+      periods,
+    };
+  } catch (e) {
+    console.error('_computeTechnicianPayoutMonthTotal', e);
+    return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', periods: [] };
+  }
+}
+
 async function _getPayoutPeriod(payout_id){
   const r = await pool.query(
     `SELECT payout_id, status, period_type, period_start, period_end, created_at
@@ -8217,6 +8321,7 @@ all_total += inc;
     }
 
     const outstanding = await _computeTechnicianTrueOutstanding(tech);
+    const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, ymKey);
 
     return res.json({
       ok: true,
@@ -8227,6 +8332,12 @@ all_total += inc;
       month_total,
       all_total,
       lifetime_income_total: all_total,
+      payout_month: payoutMonth.payout_month || ymKey,
+      payout_month_total: payoutMonth.payout_month_total || 0,
+      payout_month_net_total: payoutMonth.payout_month_net_total || 0,
+      payout_month_policy: payoutMonth.payout_month_policy || 'sum_payout_10_and_25_for_label_month',
+      payout_month_periods: payoutMonth.periods || [],
+      // Backward-compatible fields kept for old clients, but the new income card no longer uses them.
       true_outstanding_amount: outstanding.true_outstanding_amount,
       pending_payout_remaining_total: outstanding.true_outstanding_amount,
       paid_total: outstanding.paid_total,
@@ -8480,10 +8591,19 @@ app.get('/tech/payments_total', requireTechnicianSession, async (req, res) => {
     );
     const paid_total = Number(q.rows?.[0]?.paid_total || 0);
     const outstanding = await _computeTechnicianTrueOutstanding(tech);
+    const nowYmd = _bkkYmd(_bkkNow());
+    const ymKey = `${nowYmd.y}-${String(nowYmd.m).padStart(2, '0')}`;
+    const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, ymKey);
     return res.json({
       ok:true,
       username: tech,
       paid_total,
+      payout_month: payoutMonth.payout_month || ymKey,
+      payout_month_total: payoutMonth.payout_month_total || 0,
+      payout_month_net_total: payoutMonth.payout_month_net_total || 0,
+      payout_month_policy: payoutMonth.payout_month_policy || 'sum_payout_10_and_25_for_label_month',
+      payout_month_periods: payoutMonth.periods || [],
+      // Backward-compatible fields kept for old clients.
       true_outstanding_amount: outstanding.true_outstanding_amount,
       pending_payout_remaining_total: outstanding.true_outstanding_amount,
       outstanding_policy: outstanding.outstanding_policy || 'locked_pending_only',

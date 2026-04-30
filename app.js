@@ -627,6 +627,7 @@ async function loadIncomeSummary() {
         day_total: Number(data.day_total||0),
         month_total: Number(data.month_total||0),
         all_total: Number(data.all_total||0),
+        payout_month_total: Number(data.payout_month_total||0),
         true_outstanding_amount: Number(data.true_outstanding_amount||data.pending_payout_remaining_total||0)
       }));
     } catch {}
@@ -664,7 +665,7 @@ async function loadIncomeSummary() {
 // 💰 INCOME OVERVIEW (Phase 4 UX)
 // - Today (fast)
 // - Next period estimate (fast)
-// - True outstanding from payout remaining, not lifetime income minus paid
+// - Payout month total = sum of payout cycles 10 + 25 for the current month
 // - Last 7 days summary
 // =======================================
 
@@ -703,17 +704,17 @@ async function loadNextPeriodEstimate(){
 async function loadOutstandingTotal(){
   if (!incomeOutstandingValEl) return;
   try{
-    const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v10-4-locked-outstanding`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v10-5-payout-month-total`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
-    const outstanding = Number(data.true_outstanding_amount ?? data.pending_payout_remaining_total ?? 0);
-    incomeOutstandingValEl.textContent = formatBaht(Math.max(0, outstanding));
+    const payoutMonthTotal = Number(data.payout_month_total ?? 0);
+    incomeOutstandingValEl.textContent = formatBaht(Math.max(0, payoutMonthTotal));
   }catch(e){
     try {
       await loadIncomeSummary();
       const c = JSON.parse(localStorage.getItem('__cwf_income_cache_v10_2__')||'null');
-      if (c && Number.isFinite(Number(c.true_outstanding_amount))) {
-        incomeOutstandingValEl.textContent = formatBaht(Math.max(0, Number(c.true_outstanding_amount||0)));
+      if (c && Number.isFinite(Number(c.payout_month_total ?? c.true_outstanding_amount))) {
+        incomeOutstandingValEl.textContent = formatBaht(Math.max(0, Number((c.payout_month_total ?? c.true_outstanding_amount) || 0)));
         return;
       }
     } catch {}
