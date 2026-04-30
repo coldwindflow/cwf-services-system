@@ -51,7 +51,7 @@
   }
   function cleanPayoutError(e){
     const msg = String(e?.message || e || '');
-    if (msg.includes('PAYOUT_ALREADY_PAID')) return 'งวดนี้จ่ายครบแล้ว ไม่ต้องบันทึกซ้ำ';
+    if (msg.includes('PAYOUT_ALREADY_PAID')) return 'งวดนี้จ่ายครบแล้ว';
     if (msg.includes('PAYOUT_NOT_FOUND')) return 'ไม่พบงวดจ่ายนี้';
     if (msg.includes('NO_TECH_SELECTED')) return 'กรุณาเลือกช่างก่อนบันทึกจ่าย';
     if (msg.includes('PAY_BULK_FAILED') || msg.includes('PAY_FAILED')) return 'บันทึกการจ่ายไม่สำเร็จ กรุณาลองใหม่';
@@ -572,7 +572,7 @@
     if (btnAll){
       btnAll.onclick = async ()=>{
         if (!ACTIVE_PAYOUT) return;
-        if (!payableUsers.length) return alert('ไม่มีรายการค้างจ่าย');
+        if (!payableUsers.length) return alert('ไม่มีรายการค้างจ่ายในงวดนี้');
         if (!confirm(`จ่ายครบทั้งหมดในงวด ${ACTIVE_PAYOUT} ?\n\nระบบจะบันทึกเฉพาะรายการที่ยังค้างจ่าย ${payableUsers.length} คน`)) return;
         const slip_url = String(($('bulkSlipUrl')?.value||'')).trim();
         const note = String(($('bulkNote')?.value||'')).trim();

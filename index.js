@@ -6856,6 +6856,98 @@ async function _ensureDepositCollectionsForPayout(payout_id, actor) {
   return { checked, inserted };
 }
 
+async function _computeTechnicianTrueOutstanding(username){
+  const tech = String(username || '').trim();
+  if (!tech) return { true_outstanding_amount: 0, paid_total: 0, periods_count: 0, rows: [] };
+  try {
+    const q = await pool.query(
+      `WITH gross AS (
+         SELECT payout_id, technician_username,
+                COALESCE(SUM(earn_amount),0)::numeric AS gross_amount,
+                COUNT(*)::int AS lines_count
+           FROM public.technician_payout_lines
+          WHERE technician_username=$1
+          GROUP BY payout_id, technician_username
+       ),
+       adj AS (
+         SELECT payout_id, technician_username,
+                COALESCE(SUM(adj_amount),0)::numeric AS adj_total
+           FROM public.technician_payout_adjustments
+          WHERE technician_username=$1
+          GROUP BY payout_id, technician_username
+       ),
+       dep AS (
+         SELECT payout_id, technician_username,
+                COALESCE(SUM(amount),0)::numeric AS deposit_deduction_amount
+           FROM public.technician_deposit_ledger
+          WHERE technician_username=$1 AND transaction_type='collect'
+          GROUP BY payout_id, technician_username
+       ),
+       pay AS (
+         SELECT payout_id, technician_username,
+                COALESCE(paid_amount,0)::numeric AS paid_amount,
+                COALESCE(paid_status,'unpaid') AS paid_status
+           FROM public.technician_payout_payments
+          WHERE technician_username=$1
+       )
+       SELECT p.payout_id,
+              COALESCE(p.status,'draft') AS period_status,
+              g.technician_username,
+              g.gross_amount,
+              COALESCE(a.adj_total,0)::numeric AS adj_total,
+              COALESCE(d.deposit_deduction_amount,0)::numeric AS deposit_deduction_amount,
+              COALESCE(pay.paid_amount,0)::numeric AS paid_amount,
+              COALESCE(pay.paid_status,'unpaid') AS paid_status,
+              g.lines_count
+         FROM gross g
+         JOIN public.technician_payout_periods p ON p.payout_id=g.payout_id
+         LEFT JOIN adj a ON a.payout_id=g.payout_id AND a.technician_username=g.technician_username
+         LEFT JOIN dep d ON d.payout_id=g.payout_id AND d.technician_username=g.technician_username
+         LEFT JOIN pay ON pay.payout_id=g.payout_id AND pay.technician_username=g.technician_username
+        ORDER BY p.period_start DESC, p.payout_id DESC`,
+      [tech]
+    );
+    let outstanding = 0;
+    let paidTotal = 0;
+    const rows = [];
+    for (const r of (q.rows || [])) {
+      const gross = _money(r.gross_amount || 0);
+      const adj = _money(r.adj_total || 0);
+      const dep = _money(r.deposit_deduction_amount || 0);
+      const net = _money(gross + adj - dep);
+      const paid = _money(r.paid_amount || 0);
+      const statusCalc = _paidStatus(net, paid);
+      const periodStatus = String(r.period_status || '').trim();
+      const storedPaidStatus = String(r.paid_status || '').trim();
+      const remaining = _money(Math.max(0, net - paid));
+      paidTotal += paid;
+      const shouldCount = periodStatus !== 'paid' && storedPaidStatus !== 'paid' && statusCalc !== 'paid' && remaining > 0;
+      if (shouldCount) outstanding += remaining;
+      rows.push({
+        payout_id: r.payout_id,
+        period_status: periodStatus,
+        paid_status: statusCalc,
+        gross_amount: gross,
+        adj_total: adj,
+        deposit_deduction_amount: dep,
+        net_amount: net,
+        paid_amount: paid,
+        remaining_amount: remaining,
+        counted_as_outstanding: shouldCount,
+      });
+    }
+    return {
+      true_outstanding_amount: _money(outstanding),
+      paid_total: _money(paidTotal),
+      periods_count: rows.filter(r => r.counted_as_outstanding).length,
+      rows,
+    };
+  } catch (e) {
+    console.error('_computeTechnicianTrueOutstanding', e);
+    return { true_outstanding_amount: 0, paid_total: 0, periods_count: 0, rows: [] };
+  }
+}
+
 async function _getPayoutPeriod(payout_id){
   const r = await pool.query(
     `SELECT payout_id, status, period_type, period_start, period_end, created_at
@@ -7986,6 +8078,8 @@ all_total += inc;
       computed++;
     }
 
+    const outstanding = await _computeTechnicianTrueOutstanding(tech);
+
     return res.json({
       ok: true,
       username: tech,
@@ -7994,6 +8088,11 @@ all_total += inc;
       day_total,
       month_total,
       all_total,
+      lifetime_income_total: all_total,
+      true_outstanding_amount: outstanding.true_outstanding_amount,
+      pending_payout_remaining_total: outstanding.true_outstanding_amount,
+      paid_total: outstanding.paid_total,
+      outstanding_periods_count: outstanding.periods_count,
       jobs_count: jobs.length,
       computed_jobs: computed,
       capped: jobs.length > HARD_CAP
@@ -8241,7 +8340,15 @@ app.get('/tech/payments_total', requireTechnicianSession, async (req, res) => {
       [tech]
     );
     const paid_total = Number(q.rows?.[0]?.paid_total || 0);
-    return res.json({ ok:true, username: tech, paid_total });
+    const outstanding = await _computeTechnicianTrueOutstanding(tech);
+    return res.json({
+      ok:true,
+      username: tech,
+      paid_total,
+      true_outstanding_amount: outstanding.true_outstanding_amount,
+      pending_payout_remaining_total: outstanding.true_outstanding_amount,
+      outstanding_periods_count: outstanding.periods_count
+    });
   } catch (e) {
     console.error('GET /tech/payments_total', e);
     return res.status(500).json({ ok:false, error:'LOAD_FAILED' });

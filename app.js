@@ -626,7 +626,8 @@ async function loadIncomeSummary() {
         ts: Date.now(),
         day_total: Number(data.day_total||0),
         month_total: Number(data.month_total||0),
-        all_total: Number(data.all_total||0)
+        all_total: Number(data.all_total||0),
+        true_outstanding_amount: Number(data.true_outstanding_amount||data.pending_payout_remaining_total||0)
       }));
     } catch {}
 
@@ -663,7 +664,7 @@ async function loadIncomeSummary() {
 // 💰 INCOME OVERVIEW (Phase 4 UX)
 // - Today (fast)
 // - Next period estimate (fast)
-// - Outstanding (all_total - paid_total)
+// - True outstanding from payout remaining, not lifetime income minus paid
 // - Last 7 days summary
 // =======================================
 
@@ -702,20 +703,20 @@ async function loadNextPeriodEstimate(){
 async function loadOutstandingTotal(){
   if (!incomeOutstandingValEl) return;
   try{
-    // ใช้ cache จาก income_summary (authoritative) เพื่อไม่ต้องยิง compute ซ้ำ
-    const cache = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache_v10_2__')||'null');}catch{return null;} })();
-    if (!cache || typeof cache !== 'object') {
-      await loadIncomeSummary();
-    }
-    const c = (()=>{ try{return JSON.parse(localStorage.getItem('__cwf_income_cache_v10_2__')||'null');}catch{return null;} })();
-    const allTotal = Number(c?.all_total || 0);
-
-    const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v10-2`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/payments_total?v=contract-v10-3-outstanding`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
-    const paid = Number(data.paid_total || 0);
-    incomeOutstandingValEl.textContent = formatBaht(allTotal - paid);
+    const outstanding = Number(data.true_outstanding_amount ?? data.pending_payout_remaining_total ?? 0);
+    incomeOutstandingValEl.textContent = formatBaht(Math.max(0, outstanding));
   }catch(e){
+    try {
+      await loadIncomeSummary();
+      const c = JSON.parse(localStorage.getItem('__cwf_income_cache_v10_2__')||'null');
+      if (c && Number.isFinite(Number(c.true_outstanding_amount))) {
+        incomeOutstandingValEl.textContent = formatBaht(Math.max(0, Number(c.true_outstanding_amount||0)));
+        return;
+      }
+    } catch {}
     incomeOutstandingValEl.textContent = '-';
   }
 }
