@@ -514,11 +514,12 @@
     if (!tb) return;
     const list = Array.isArray(rows) ? rows : [];
     if (!list.length){
-      tb.innerHTML = `<tr><td colspan="5" class="muted">— ยังไม่มีข้อมูล —</td></tr>`;
+      tb.innerHTML = `<tr><td colspan="6" class="muted">— ยังไม่มีข้อมูล —</td></tr>`;
       return;
     }
     tb.innerHTML = list.map(r=>{
       const u = escapeHtml(String(r.technician_username||''));
+      const dep = Number(r.deposit_deduction_amount||0);
       const net = Number(r.net_amount||0);
       const paid = Number(r.paid_amount||0);
       const rem = Number(r.remaining_amount||0);
@@ -527,6 +528,7 @@
       const stLabel = st==='paid' ? 'paid' : (st==='partial' ? 'partial' : 'unpaid');
       return `<tr>
         <td><b>${u}</b></td>
+        <td style="text-align:right">${fmtMoney(dep)}</td>
         <td style="text-align:right"><b>${fmtMoney(net)}</b></td>
         <td style="text-align:right">${fmtMoney(paid)}</td>
         <td style="text-align:right">${fmtMoney(rem)}</td>

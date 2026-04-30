@@ -963,6 +963,8 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
     if (!arr.length) { box.innerHTML = `<div class="muted">ยังไม่มีรายช่างในงวดนี้</div>`; return; }
 
     const totalNet = arr.reduce((a,t)=>a+_safeNum(t.net_amount||t.total_amount||0),0);
+    const totalGross = arr.reduce((a,t)=>a+_safeNum(t.gross_amount||0),0);
+    const totalDeposit = arr.reduce((a,t)=>a+_safeNum(t.deposit_deduction_amount||0),0);
     const totalPaid = arr.reduce((a,t)=>a+_safeNum(t.paid_amount||0),0);
     const totalRem = arr.reduce((a,t)=>a+_safeNum(t.remaining_amount||0),0);
     const allUsers = arr.map(t=>String(t.technician_username||'').trim()).filter(Boolean);
@@ -972,6 +974,8 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
 
     box.innerHTML = `
       <div class="payroll-cards">
+        <div class="payroll-card"><div class="label">Gross payout</div><div class="value">${fmtBaht(totalGross)}</div></div>
+        <div class="payroll-card" style="border-color:#f4c542;background:#fffdf3"><div class="label">Partner deposit</div><div class="value" style="color:#0b4bb3">${fmtBaht(totalDeposit)}</div></div>
         <div class="payroll-card"><div class="label">ยอดสุทธิรวม</div><div class="value">${fmtBaht(totalNet)}</div></div>
         <div class="payroll-card"><div class="label">จ่ายแล้ว</div><div class="value">${fmtBaht(totalPaid)}</div></div>
         <div class="payroll-card"><div class="label">คงเหลือ</div><div class="value">${fmtBaht(totalRem)}</div></div>
@@ -994,6 +998,9 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
       <div style="margin-top:10px">
         ${arr.map(t=>{
           const u = esc(t.technician_username);
+          const gross = fmtBaht(t.gross_amount||0);
+          const adj = fmtBaht(t.adj_total||0);
+          const dep = fmtBaht(t.deposit_deduction_amount||0);
           const net = fmtBaht(t.net_amount||t.total_amount||0);
           const paid = fmtBaht(t.paid_amount||0);
           const rem = fmtBaht(t.remaining_amount||0);
@@ -1008,6 +1015,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
                   <b class="mono">${u}</b>
                 </label>
                 <div class="muted" style="margin-top:6px">${Number(t.jobs_count||0)} งาน • สถานะ <span class="pill ${pillClass}">${st}</span></div>
+                <div class="muted" style="margin-top:6px">Gross ${gross} • Adj ${adj} • <span style="color:#0b4bb3;font-weight:700">Deposit ${dep}</span></div>
               </div>
               <div style="text-align:right">
                 <div class="money">${net}</div>
@@ -1197,6 +1205,7 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
     const arr = Array.isArray(payload?.lines)?payload.lines:[];
     const gross = Number(payload?.gross_amount||0);
     const adjTotal = Number(payload?.adj_total||0);
+    const dep = Number(payload?.deposit_deduction_amount||0);
     const net = Number(payload?.net_amount||payload?.total_amount||0);
     const paid = Number(payload?.paid_amount||0);
     const rem = Number(payload?.remaining_amount||0);
@@ -1208,7 +1217,10 @@ if ($('btnUpsertOverride')) $('btnUpsertOverride').addEventListener('click', asy
         <div>
           <b>รายการงานของ ${esc(username)}</b>
           <div class="muted" style="margin-top:4px">
-            ยอดก่อนปรับ: <b>${fmtBaht(gross)}</b> • ปรับยอด: <b>${fmtBaht(adjTotal)}</b> • ยอดสุทธิ: <b>${fmtBaht(net)}</b>
+            ยอดก่อนปรับ: <b>${fmtBaht(gross)}</b> • ปรับยอด: <b>${fmtBaht(adjTotal)}</b> • Deposit: <b style="color:#0b4bb3">${fmtBaht(dep)}</b> • ยอดสุทธิ: <b>${fmtBaht(net)}</b>
+          </div>
+          <div class="muted" style="margin-top:4px">
+            Deposit target: <b>${fmtBaht(payload?.deposit_target_amount||0)}</b> • collected: <b>${fmtBaht(payload?.deposit_collected_total||0)}</b> • remaining: <b>${fmtBaht(payload?.deposit_remaining_amount||0)}</b>
           </div>
           <div class="muted" style="margin-top:4px">
             จ่ายแล้ว: <b>${fmtBaht(paid)}</b> • คงเหลือ: <b>${fmtBaht(rem)}</b> • สถานะ: <b>${esc(paidStatus)}</b>

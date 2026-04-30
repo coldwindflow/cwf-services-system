@@ -949,6 +949,8 @@ function renderTechPayoutPeriods(list){
     const type = _safeText(p.period_type);
     const st = _fmtDateTH(p.period_start);
     const en = _fmtDateTH(p.period_end);
+    const gross = formatBaht(p.gross_amount||0);
+    const dep = formatBaht(p.deposit_deduction_amount||0);
     const total = formatBaht(p.net_amount||p.total_amount||0);
     const rem = formatBaht(p.remaining_amount||0);
     const paySt = _safeText(p.paid_status||'unpaid');
@@ -963,7 +965,8 @@ function renderTechPayoutPeriods(list){
           </div>
           <div style="text-align:right">
             <b>${total}</b>
-            <div class="muted" style="margin-top:4px">สถานะงวด: ${status} • จ่าย: ${paySt} • คงเหลือ: ${rem}</div>
+            <div class="muted" style="margin-top:4px">Gross: ${gross} • เงินฝาก: ${dep} • จ่าย: ${paySt} • คงเหลือ: ${rem}</div>
+            <div class="muted" style="margin-top:3px">สถานะงวด: ${status}</div>
           </div>
         </div>
       </div>
@@ -989,15 +992,20 @@ async function openTechPayoutDetail(payout_id){
     const res = await fetch(`${API_BASE}/tech/payouts/${encodeURIComponent(id)}`, { credentials:'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
+    const gross = formatBaht(data.gross_amount||0);
+    const dep = formatBaht(data.deposit_deduction_amount||0);
     const total = formatBaht(data.net_amount||data.total_amount||0);
     const paid = formatBaht(data.paid_amount||0);
     const rem = formatBaht(data.remaining_amount||0);
     const paySt = _safeText(data.paid_status||'unpaid');
+    const depTarget = formatBaht(data.deposit_target_amount||0);
+    const depCollected = formatBaht(data.deposit_collected_total||0);
+    const depRemaining = formatBaht(data.deposit_remaining_amount||0);
     if (techPayoutDetailHintEl) techPayoutDetailHintEl.textContent = `รายการงานในงวด (${(data.lines||[]).length} งาน)`;
     if (techPayoutTotalPillEl) {
       techPayoutTotalPillEl.style.display='inline-flex';
       techPayoutTotalPillEl.className = 'pill blue';
-      techPayoutTotalPillEl.textContent = `ยอดสุทธิ: ${total} • จ่ายแล้ว: ${paid} • คงเหลือ: ${rem} (${paySt})`;
+      techPayoutTotalPillEl.textContent = `Gross: ${gross} • เงินฝาก: ${dep} • Net: ${total} • จ่ายแล้ว: ${paid} • คงเหลือ: ${rem} (${paySt})`;
     }
     const btnSlipTop = document.getElementById('btnOpenSlip');
     if (btnSlipTop){
@@ -1046,7 +1054,14 @@ async function openTechPayoutDetail(payout_id){
         }
       }
     }catch(e){ /* ignore */ }
-    renderTechPayoutLines(data.lines||[], data.net_amount||data.total_amount||0, data.adjustments||[], data.payment||null, id);
+    renderTechPayoutLines(data.lines||[], data.net_amount||data.total_amount||0, data.adjustments||[], data.payment||null, id, {
+      gross_amount: data.gross_amount,
+      deposit_deduction_amount: data.deposit_deduction_amount,
+      deposit_target_amount: data.deposit_target_amount,
+      deposit_collected_total: data.deposit_collected_total,
+      deposit_remaining_amount: data.deposit_remaining_amount,
+      depositText: `เงินฝาก เป้า ${depTarget} • เก็บแล้ว ${depCollected} • คงเหลือ ${depRemaining}`
+    });
   }catch(e){
     if (techPayoutDetailHintEl) techPayoutDetailHintEl.textContent = 'โหลดรายละเอียดไม่สำเร็จ';
     if (techPayoutLinesEl) techPayoutLinesEl.innerHTML = `<div class="muted">โหลดรายการไม่สำเร็จ</div>`;
@@ -1054,7 +1069,7 @@ async function openTechPayoutDetail(payout_id){
 }
 window.openTechPayoutDetail = openTechPayoutDetail;
 
-function renderTechPayoutLines(lines, total, adjustments, payment, payoutId){
+function renderTechPayoutLines(lines, total, adjustments, payment, payoutId, summary){
   if (!techPayoutLinesEl) return;
   const arr = Array.isArray(lines) ? lines : [];
   if (!arr.length) {
@@ -1066,6 +1081,10 @@ function renderTechPayoutLines(lines, total, adjustments, payment, payoutId){
 
   const adjArr = Array.isArray(adjustments)?adjustments:[];
   const pay = payment || null;
+  const grossText = formatBaht(summary?.gross_amount||0);
+  const depText = formatBaht(summary?.deposit_deduction_amount||0);
+  const netText = formatBaht(total||0);
+  const depositSummaryText = _safeText(summary?.depositText || '');
 
   let shown = Math.min(PAGE, arr.length);
 
@@ -1125,6 +1144,11 @@ function renderTechPayoutLines(lines, total, adjustments, payment, payoutId){
     const slipBtn = `<button class="btn" id="btnSlip" style="width:100%;margin:8px 0">เปิดสลิปงวดนี้</button>`;
 
     techPayoutLinesEl.innerHTML = `
+      <div class="card" style="margin-top:0">
+        <b>สรุปงวด</b>
+        <div class="muted" style="margin-top:6px">Gross payout: <b>${grossText}</b> • หักเงินฝาก: <b>${depText}</b> • Net payable: <b>${netText}</b></div>
+        ${depositSummaryText ? `<div class="muted" style="margin-top:4px">${depositSummaryText}</div>` : ''}
+      </div>
       <div class="card" style="margin-top:0">
         <b>Adjustment (Audit)</b>
         <div class="muted" style="margin-top:4px">การปรับยอดจะถูกแสดงในสลิปงวด</div>

@@ -42,6 +42,7 @@ const FLAG_SHOW_TECH_PHONE_ON_TRACKING = envBool("SHOW_TECH_PHONE_ON_TRACKING", 
 const ENABLE_AVAILABILITY_V2 = envBool("ENABLE_AVAILABILITY_V2", true);
 // ✅ Safe toggle: urgent offer flow (public booking + offers)
 const ENABLE_URGENT_FLOW = envBool("ENABLE_URGENT_FLOW", true);
+const ENABLE_PARTNER_DEPOSIT_DEDUCTION = envBool("ENABLE_PARTNER_DEPOSIT_DEDUCTION", true);
 const TRAVEL_BUFFER_MIN = Math.max(0, Number(process.env.TRAVEL_BUFFER_MIN || 30)); // นาที/งาน (Travel Buffer)
 
 // =======================================
@@ -4663,17 +4664,17 @@ function _periodBoundsBangkok(type, nowBkk) {
   const n = nowBkk || _bkkNow();
   const { y, m } = _bkkYmd(n);
   if (t === '10') {
-    // finished_at in [prevMonth 26 00:00, thisMonth 1 00:00)
+    // finished_at in [prevMonth 16 00:00, thisMonth 1 00:00)
     let py = y, pm = m - 1;
     if (pm <= 0) { pm = 12; py = y - 1; }
-    const start = _bangkokMidnightUTC(py, pm, 26);
+    const start = _bangkokMidnightUTC(py, pm, 16);
     const endEx = _bangkokMidnightUTC(y, m, 1);
     return { period_type: '10', start, endEx, label_ym: `${y}-${String(m).padStart(2, '0')}` };
   }
   if (t === '25') {
-    // finished_at in [thisMonth 11 00:00, thisMonth 26 00:00)
-    const start = _bangkokMidnightUTC(y, m, 11);
-    const endEx = _bangkokMidnightUTC(y, m, 26);
+    // finished_at in [thisMonth 1 00:00, thisMonth 16 00:00)
+    const start = _bangkokMidnightUTC(y, m, 1);
+    const endEx = _bangkokMidnightUTC(y, m, 16);
     return { period_type: '25', start, endEx, label_ym: `${y}-${String(m).padStart(2, '0')}` };
   }
   const err = new Error('INVALID_PERIOD_TYPE');
@@ -4696,13 +4697,13 @@ function _periodBoundsForYm(type, y, m) {
   if (t === '10') {
     let py = yy, pm = mm - 1;
     if (pm <= 0) { pm = 12; py = yy - 1; }
-    const start = _bangkokMidnightUTC(py, pm, 26);
+    const start = _bangkokMidnightUTC(py, pm, 16);
     const endEx = _bangkokMidnightUTC(yy, mm, 1);
     return { period_type: '10', start, endEx, label_ym: `${yy}-${String(mm).padStart(2, '0')}` };
   }
   if (t === '25') {
-    const start = _bangkokMidnightUTC(yy, mm, 11);
-    const endEx = _bangkokMidnightUTC(yy, mm, 26);
+    const start = _bangkokMidnightUTC(yy, mm, 1);
+    const endEx = _bangkokMidnightUTC(yy, mm, 16);
     return { period_type: '25', start, endEx, label_ym: `${yy}-${String(mm).padStart(2, '0')}` };
   }
   const err = new Error('INVALID_PERIOD_TYPE');
@@ -4727,7 +4728,7 @@ function _recentPeriods(countPairs = 6, nowBkk) {
     let yy = y;
     let mm = m - i;
     while (mm <= 0) { mm += 12; yy -= 1; }
-    // เดือนนี้: งวด 25 (11-25) และ งวด 10 (26 เดือนก่อน - 1 เดือนนี้)
+    // เดือนนี้: งวด 25 (1-15) และงวด 10 (16 เดือนก่อน - 1 เดือนนี้)
     const b25 = _periodBoundsForYm('25', yy, mm);
     const b10 = _periodBoundsForYm('10', yy, mm);
     out.push({ ...b25, payout_id: `payout_${b25.label_ym}_25` });
@@ -5163,15 +5164,21 @@ async function _buildPayoutTechSummaryRows(payout_id){
     const gross_amount = Number(r.gross_amount || 0);
     const adj_total = Number(adjQ.rows?.[0]?.adj_total || 0);
     const paid_amount = Number(payQ.rows?.[0]?.paid_amount || 0);
-    const net_amount = gross_amount + adj_total;
+    const deposit_deduction_amount = await _getDepositDeductionForPayout(payout_id, tech);
+    const deposit = await _getDepositSummary(tech);
+    const net_amount = _money(gross_amount + adj_total - deposit_deduction_amount);
+    const paid_status = _paidStatus(net_amount, paid_amount);
     out.push({
       technician_username: tech,
       gross_amount,
       adj_total,
+      deposit_deduction_amount,
       net_amount,
       paid_amount,
-      paid_status: String(payQ.rows?.[0]?.paid_status || 'unpaid'),
-      remaining_amount: net_amount - paid_amount,
+      paid_status,
+      remaining_amount: _money(net_amount - paid_amount),
+      ...deposit,
+      latest_deposit_deduction: deposit_deduction_amount,
       jobs_count: Number(r.jobs_count || 0),
       source,
     });
@@ -6282,9 +6289,12 @@ app.get('/admin/super/payouts/:payout_id/tech/:username', requireSuperAdmin, asy
 
     const gross = lines.reduce((s,x)=>s+Number(x.earn_amount||0),0);
     const adj_total = (adjR.rows||[]).reduce((s,x)=>s+Number(x.adj_amount||0),0);
-    const net = gross + adj_total;
+    const deposit_deduction_amount = await _getDepositDeductionForPayout(payout_id, username);
+    const deposit = await _getDepositSummary(username);
+    const net = _money(gross + adj_total - deposit_deduction_amount);
     const paid_amount = Number(payR.rows?.[0]?.paid_amount || 0);
-    const remaining = net - paid_amount;
+    const remaining = _money(net - paid_amount);
+    const paid_status = _paidStatus(net, paid_amount);
     return res.json({
       ok:true,
       payout_id,
@@ -6293,10 +6303,13 @@ app.get('/admin/super/payouts/:payout_id/tech/:username', requireSuperAdmin, asy
       source: loaded.source,
       gross_amount: gross,
       adj_total,
+      deposit_deduction_amount,
       net_amount: net,
       paid_amount,
       remaining_amount: remaining,
-      paid_status: String(payR.rows?.[0]?.paid_status || 'unpaid'),
+      paid_status,
+      ...deposit,
+      latest_deposit_deduction: deposit_deduction_amount,
       payment: payR.rows?.[0] || null,
       adjustments: adjR.rows || [],
       lines,
@@ -6362,9 +6375,11 @@ app.get('/admin/payouts/:payout_id/tech/:username', requireAdminSession, async (
     );
     const gross = lines.reduce((s,x)=>s+Number(x.earn_amount||0),0);
     const adj_total = (adjR.rows||[]).reduce((s,x)=>s+Number(x.adj_amount||0),0);
-    const net = gross + adj_total;
+    const deposit_deduction_amount = await _getDepositDeductionForPayout(payout_id, username);
+    const deposit = await _getDepositSummary(username);
+    const net = _money(gross + adj_total - deposit_deduction_amount);
     const paid_amount = Number(payR.rows?.[0]?.paid_amount || 0);
-    return res.json({ ok:true, payout_id, technician_username: username, status, source: loaded.source, gross_amount: gross, adj_total, net_amount: net, paid_amount, remaining_amount: net-paid_amount, paid_status: String(payR.rows?.[0]?.paid_status || 'unpaid'), payment: payR.rows?.[0] || null, adjustments: adjR.rows || [], lines });
+    return res.json({ ok:true, payout_id, technician_username: username, status, source: loaded.source, gross_amount: gross, adj_total, deposit_deduction_amount, net_amount: net, paid_amount, remaining_amount: _money(net-paid_amount), paid_status: _paidStatus(net, paid_amount), ...deposit, latest_deposit_deduction: deposit_deduction_amount, payment: payR.rows?.[0] || null, adjustments: adjR.rows || [], lines });
   } catch (e) {
     console.error('GET /admin/payouts/:payout_id/tech/:username', e);
     return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
@@ -6687,7 +6702,11 @@ app.get('/admin/super/payouts/:payout_id/reconcile', requireSuperAdmin, async (r
 // - Adjustments: ปรับยอดแบบมีเหตุผล (audit trail)
 // =======================================
 
-function _money(n){ const x = Number(n||0); return Number.isFinite(x) ? x : 0; }
+function _money(n){ const x = Number(n||0); return Number.isFinite(x) ? Number(x.toFixed(2)) : 0; }
+function _isPartnerEmploymentType(v) {
+  const s = String(v || '').trim().toLowerCase();
+  return s === 'partner' || s === 'พาร์ทเนอร์';
+}
 function _paidStatus(netAmount, paidAmount){
   const net = _money(netAmount);
   const paid = _money(paidAmount);
@@ -6695,6 +6714,146 @@ function _paidStatus(netAmount, paidAmount){
   if (paid <= EPS) return 'unpaid';
   if (paid + EPS >= net) return 'paid';
   return 'partial';
+}
+
+async function _getDepositAccount(username){
+  const tech = String(username || '').trim();
+  if (!tech) return { technician_username: '', target_amount: 5000, is_required: true };
+  try {
+    const q = await pool.query(
+      `SELECT technician_username, COALESCE(target_amount,5000)::numeric AS target_amount,
+              COALESCE(is_required,TRUE) AS is_required, created_at, updated_at, updated_by
+         FROM public.technician_deposit_accounts
+        WHERE technician_username=$1
+        LIMIT 1`,
+      [tech]
+    );
+    if (q.rows[0]) return { ...q.rows[0], target_amount: _money(q.rows[0].target_amount || 5000) };
+  } catch {}
+  return { technician_username: tech, target_amount: 5000, is_required: true };
+}
+
+async function _getDepositCollected(username){
+  const tech = String(username || '').trim();
+  if (!tech) return 0;
+  try {
+    const q = await pool.query(
+      `SELECT COALESCE(SUM(
+          CASE transaction_type
+            WHEN 'collect' THEN amount
+            WHEN 'manual_adjust' THEN amount
+            WHEN 'refund' THEN -amount
+            WHEN 'claim_deduct' THEN -amount
+            ELSE 0
+          END
+        ),0)::numeric AS collected
+         FROM public.technician_deposit_ledger
+        WHERE technician_username=$1`,
+      [tech]
+    );
+    return _money(q.rows?.[0]?.collected || 0);
+  } catch {
+    return 0;
+  }
+}
+
+async function _getDepositSummary(username){
+  const account = await _getDepositAccount(username);
+  const collected = await _getDepositCollected(username);
+  const target = _money(account.target_amount || 5000);
+  return {
+    deposit_target_amount: target,
+    deposit_collected_total: collected,
+    deposit_remaining_amount: _money(Math.max(0, target - collected)),
+    deposit_is_required: account.is_required !== false,
+  };
+}
+
+async function _getDepositDeductionForPayout(payout_id, username){
+  const pid = String(payout_id || '').trim();
+  const tech = String(username || '').trim();
+  if (!pid || !tech) return 0;
+  try {
+    const q = await pool.query(
+      `SELECT COALESCE(SUM(amount),0)::numeric AS amount
+         FROM public.technician_deposit_ledger
+        WHERE payout_id=$1 AND technician_username=$2 AND transaction_type='collect'`,
+      [pid, tech]
+    );
+    return _money(q.rows?.[0]?.amount || 0);
+  } catch {
+    return 0;
+  }
+}
+
+async function _calcPartnerDepositDeduction({ username, gross_amount } = {}){
+  const tech = String(username || '').trim();
+  const gross = _money(gross_amount || 0);
+  if (!tech || gross <= 0) return 0;
+  const prof = await _getTechProfile(tech);
+  if (!_isPartnerEmploymentType(prof?.employment_type || 'company')) return 0;
+  const summary = await _getDepositSummary(tech);
+  if (summary.deposit_is_required === false) return 0;
+  const remaining = _money(summary.deposit_remaining_amount || 0);
+  if (remaining <= 0) return 0;
+  return _money(Math.min(_money(gross * 0.10), 500, remaining));
+}
+
+async function _ensureDepositCollectionForPayout({ payout_id, username, gross_amount, actor } = {}){
+  const pid = String(payout_id || '').trim();
+  const tech = String(username || '').trim();
+  if (!pid || !tech) return { deposit_deduction_amount: 0, inserted: false, disabled: !ENABLE_PARTNER_DEPOSIT_DEDUCTION };
+  const existing = await _getDepositDeductionForPayout(pid, tech);
+  if (existing > 0) return { deposit_deduction_amount: existing, inserted: false, existing: true };
+  if (!ENABLE_PARTNER_DEPOSIT_DEDUCTION) return { deposit_deduction_amount: 0, inserted: false, disabled: true };
+  const deduction = await _calcPartnerDepositDeduction({ username: tech, gross_amount });
+  if (deduction <= 0) return { deposit_deduction_amount: 0, inserted: false };
+  const q = await pool.query(
+    `INSERT INTO public.technician_deposit_ledger(
+       technician_username, payout_id, transaction_type, amount, note, created_by, meta_json
+     ) VALUES($1,$2,'collect',$3,$4,$5,$6::jsonb)
+     ON CONFLICT (technician_username, payout_id, transaction_type)
+     WHERE transaction_type='collect'
+     DO NOTHING
+     RETURNING ledger_id`,
+    [
+      tech,
+      pid,
+      deduction,
+      'Automatic partner work deposit deduction',
+      actor || null,
+      JSON.stringify({ gross_amount: _money(gross_amount || 0), formula: 'min(gross*0.10,500,remaining)' })
+    ]
+  );
+  const after = await _getDepositDeductionForPayout(pid, tech);
+  return { deposit_deduction_amount: after, inserted: (q.rowCount || 0) > 0 };
+}
+
+async function _ensureDepositCollectionsForPayout(payout_id, actor) {
+  const pid = String(payout_id || '').trim();
+  if (!pid) return { checked: 0, inserted: 0 };
+  const q = await pool.query(
+    `SELECT technician_username, COALESCE(SUM(earn_amount),0)::numeric AS gross_amount
+       FROM public.technician_payout_lines
+      WHERE payout_id=$1
+      GROUP BY technician_username`,
+    [pid]
+  );
+  let checked = 0;
+  let inserted = 0;
+  for (const row of (q.rows || [])) {
+    const username = String(row.technician_username || '').trim();
+    if (!username) continue;
+    checked++;
+    const r = await _ensureDepositCollectionForPayout({
+      payout_id: pid,
+      username,
+      gross_amount: row.gross_amount,
+      actor,
+    });
+    if (r.inserted) inserted++;
+  }
+  return { checked, inserted };
 }
 
 async function _getPayoutPeriod(payout_id){
@@ -6723,14 +6882,22 @@ async function _getTechGrossAdjNet(payout_id, tech){
   );
   const gross = _money(g.rows[0]?.gross_amount || 0);
   const adj = _money(a.rows[0]?.adj_total || 0);
-  return { gross_amount: gross, adj_total: adj, net_amount: gross + adj };
+  const deposit_deduction_amount = await _getDepositDeductionForPayout(payout_id, tech);
+  const deposit = await _getDepositSummary(tech);
+  return {
+    gross_amount: gross,
+    adj_total: adj,
+    deposit_deduction_amount,
+    net_amount: _money(gross + adj - deposit_deduction_amount),
+    ...deposit,
+    latest_deposit_deduction: deposit_deduction_amount,
+  };
 }
 
 async function _requireWithdrawIfPartner(payout_id, tech, actor){
   // พาร์ทเนอร์ต้องมี withdraw request ก่อนจ่าย (requested/approved)
   const prof = await _getTechProfile(tech);
-  const et = String(prof?.employment_type || 'company').toLowerCase();
-  if (et !== 'partner') return null;
+  if (!_isPartnerEmploymentType(prof?.employment_type || 'company')) return null;
   const q = await pool.query(
     `SELECT request_id, status
        FROM public.technician_withdraw_requests
@@ -6777,6 +6944,14 @@ async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip
   // ✅ partner ต้องกดถอนก่อนจ่าย
   const withdrawReqId = await _requireWithdrawIfPartner(payout_id, tech, actor);
 
+  let deposit_collections = { checked: 0, inserted: 0 };
+  if (String(period.status) === 'draft') {
+    deposit_collections = await _ensureDepositCollectionsForPayout(payout_id, actor);
+  } else {
+    const beforeDeposit = await _getTechGrossAdjNet(payout_id, tech);
+    const r = await _ensureDepositCollectionForPayout({ payout_id, username: tech, gross_amount: beforeDeposit.gross_amount, actor });
+    deposit_collections = { checked: 1, inserted: r.inserted ? 1 : 0 };
+  }
   const { net_amount } = await _getTechGrossAdjNet(payout_id, tech);
   const paid_status = _paidStatus(net_amount, paid_amount);
 
@@ -6827,12 +7002,20 @@ async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip
         FROM public.technician_payout_adjustments
        WHERE payout_id=$1
        GROUP BY technician_username
+    ),
+    dep AS (
+      SELECT technician_username,
+             COALESCE(SUM(amount),0) AS deposit_deduction_amount
+        FROM public.technician_deposit_ledger
+       WHERE payout_id=$1 AND transaction_type='collect'
+       GROUP BY technician_username
     )
     SELECT g.technician_username,
-           (g.gross_amount + COALESCE(a.adj_total,0)) AS net_amount,
+           (g.gross_amount + COALESCE(a.adj_total,0) - COALESCE(d.deposit_deduction_amount,0)) AS net_amount,
            COALESCE(p.paid_amount,0) AS paid_amount
       FROM gross g
       LEFT JOIN adj a ON a.technician_username=g.technician_username
+      LEFT JOIN dep d ON d.technician_username=g.technician_username
       LEFT JOIN public.technician_payout_payments p ON p.payout_id=$1 AND p.technician_username=g.technician_username
     `,
     [payout_id]
@@ -6843,7 +7026,7 @@ async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip
     await pool.query(`UPDATE public.technician_payout_periods SET status='paid' WHERE payout_id=$1`, [payout_id]);
   }
 
-  return { paid_status, net_amount };
+  return { paid_status, net_amount, deposit_collections };
 }
 
 // ---- Super Admin: lock payout
@@ -6900,9 +7083,11 @@ app.post('/admin/super/payouts/:payout_id/lock', requireSuperAdmin, async (req, 
     if (!p) return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
     if (String(p.status) === 'paid') return res.json({ ok:true, payout_id, status:'paid', already:true });
 
+    const depositSummary = await _ensureDepositCollectionsForPayout(payout_id, req.actor?.username || null);
+
     await pool.query(`UPDATE public.technician_payout_periods SET status='locked' WHERE payout_id=$1 AND status='draft'`, [payout_id]);
     const p2 = await _getPayoutPeriod(payout_id);
-    return res.json({ ok:true, payout_id, status: p2?.status || 'locked' });
+    return res.json({ ok:true, payout_id, status: p2?.status || 'locked', deposit_collections: depositSummary.inserted, deposit_checked: depositSummary.checked });
   } catch (e) {
     console.error('POST /admin/super/payouts/:payout_id/lock', e);
     return res.status(500).json({ ok:false, error:'LOCK_FAILED' });
@@ -6975,6 +7160,8 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
          GROUP BY technician_username
       )
       SELECT g.technician_username,
+             g.gross_amount,
+             COALESCE(a.adj_total,0) AS adj_total,
              (g.gross_amount + COALESCE(a.adj_total,0)) AS net_amount
         FROM gross g
         LEFT JOIN adj a ON a.technician_username=g.technician_username
@@ -6984,6 +7171,7 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
     );
     const rows = techsQ.rows || [];
     if (!rows.length) return res.json({ ok:true, payout_id, updated:0, status: period.status });
+    const actor = req.actor?.username || null;
     const netMap = new Map(rows.map(r=>[String(r.technician_username), _money(r.net_amount)]));
 
     let targets = [];
@@ -6995,7 +7183,6 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
     if (!targets.length) return res.status(400).json({ ok:false, error:'NO_TECH_SELECTED' });
 
     // ✅ partner ต้องกดถอนก่อนจ่าย (bulk)
-    const actor = req.actor?.username || null;
     const notRequested = [];
     for (const t of targets) {
       try {
@@ -7009,6 +7196,12 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
     }
     if (notRequested.length) {
       return res.status(409).json({ ok:false, error:'WITHDRAW_REQUIRED', notRequested });
+    }
+
+    const depositSummary = await _ensureDepositCollectionsForPayout(payout_id, actor);
+    for (const r of rows) {
+      const totals = await _getTechGrossAdjNet(payout_id, String(r.technician_username || ''));
+      netMap.set(String(r.technician_username), _money(totals.net_amount));
     }
 
     await client.query('BEGIN');
@@ -7043,7 +7236,7 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
       // ✅ mark withdraw request paid for partner
       try {
         const prof = await _getTechProfile(tech);
-        if (String(prof?.employment_type || '').toLowerCase() === 'partner') {
+        if (_isPartnerEmploymentType(prof?.employment_type || '')) {
           await client.query(
             `UPDATE public.technician_withdraw_requests
                 SET status='paid', paid_at=NOW(), paid_by=$3
@@ -7070,12 +7263,20 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
           FROM public.technician_payout_adjustments
          WHERE payout_id=$1
          GROUP BY technician_username
+      ),
+      dep AS (
+        SELECT technician_username,
+               COALESCE(SUM(amount),0) AS deposit_deduction_amount
+          FROM public.technician_deposit_ledger
+         WHERE payout_id=$1 AND transaction_type='collect'
+         GROUP BY technician_username
       )
       SELECT g.technician_username,
-             (g.gross_amount + COALESCE(a.adj_total,0)) AS net_amount,
+             (g.gross_amount + COALESCE(a.adj_total,0) - COALESCE(d.deposit_deduction_amount,0)) AS net_amount,
              COALESCE(p.paid_amount,0) AS paid_amount
         FROM gross g
         LEFT JOIN adj a ON a.technician_username=g.technician_username
+        LEFT JOIN dep d ON d.technician_username=g.technician_username
         LEFT JOIN public.technician_payout_payments p ON p.payout_id=$1 AND p.technician_username=g.technician_username
       `,
       [payout_id]
@@ -7087,7 +7288,7 @@ app.post('/admin/super/payouts/:payout_id/pay_bulk', requireSuperAdmin, async (r
 
     await client.query('COMMIT');
     const after = await _getPayoutPeriod(payout_id);
-    return res.json({ ok:true, payout_id, updated, status: after?.status || period.status, mode, targets });
+    return res.json({ ok:true, payout_id, updated, status: after?.status || period.status, mode, targets, deposit_collections: depositSummary.inserted, deposit_checked: depositSummary.checked });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
     console.error('POST /admin/super/payouts/:payout_id/pay_bulk', e);
@@ -7227,11 +7428,13 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
 
     const gross = (rows || []).reduce((a, it) => a + _money(it.earn_amount || 0), 0);
     const adj_total = (adjQ.rows || []).reduce((a, it) => a + _money(it.adj_amount || 0), 0);
-    const net = gross + adj_total;
+    const deposit_deduction_amount = await _getDepositDeductionForPayout(payout_id, tech);
+    const deposit = await _getDepositSummary(tech);
+    const net = _money(gross + adj_total - deposit_deduction_amount);
 
     const payment = payQ.rows[0] || null;
     const paid_amount = _money(payment?.paid_amount || 0);
-    const remaining = net - paid_amount;
+    const remaining = _money(net - paid_amount);
 
     let tpl = '';
     try{
@@ -7288,7 +7491,9 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
           <div class="row"><span class="muted">ช่าง</span><b class="mono">${esc(tech)}</b></div>
           <div class="row"><span class="muted">ยอดงวด (ก่อนปรับ)</span><b>${esc(fmtBaht(gross))}</b></div>
           <div class="row"><span class="muted">ปรับยอด (รวม)</span><b>${esc(fmtBaht(adj_total))}</b></div>
+          <div class="row deposit-row"><span class="muted">หักเงินฝากพาร์ทเนอร์</span><b>${esc(fmtBaht(deposit_deduction_amount))}</b></div>
           <div class="row"><span class="muted">ยอดสุทธิ</span><b>${esc(fmtBaht(net))}</b></div>
+          <div class="row"><span class="muted">เงินฝาก เป้า/เก็บแล้ว/คงเหลือ</span><b>${esc(fmtBaht(deposit.deposit_target_amount))} / ${esc(fmtBaht(deposit.deposit_collected_total))} / ${esc(fmtBaht(deposit.deposit_remaining_amount))}</b></div>
           <div class="row"><span class="muted">จ่ายแล้ว</span><b>${esc(fmtBaht(paid_amount))}</b></div>
           <div class="row"><span class="muted">คงเหลือ</span><b>${esc(fmtBaht(remaining))}</b></div>
           <div class="row"><span class="muted">สถานะ</span><b>${esc(payment?.paid_status || _paidStatus(net, paid_amount))}</b></div>
@@ -7400,8 +7605,11 @@ app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
       const paid_amount = Number(payment?.paid_amount || 0);
       const paid_status = String(payment?.paid_status || (paid_amount > 0 ? 'partial' : 'unpaid'));
 
-      const net_amount = gross_amount + adj_total;
-      const remaining_amount = net_amount - paid_amount;
+      const deposit_deduction_amount = await _getDepositDeductionForPayout(p.payout_id, tech);
+      const deposit = await _getDepositSummary(tech);
+      const net_amount = _money(gross_amount + adj_total - deposit_deduction_amount);
+      const remaining_amount = _money(net_amount - paid_amount);
+      const paid_status_calc = _paidStatus(net_amount, paid_amount);
 
       rows.push({
         payout_id: p.payout_id,
@@ -7411,10 +7619,13 @@ app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
         status,
         gross_amount,
         adj_total,
+        deposit_deduction_amount,
         net_amount,
         paid_amount,
-        paid_status,
+        paid_status: paid_status_calc,
         remaining_amount,
+        ...deposit,
+        latest_deposit_deduction: deposit_deduction_amount,
         lines_count,
         paid_at: payment?.paid_at || null,
         slip_url: payment?.slip_url || null,
@@ -7483,10 +7694,12 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
 
     const gross = (lines || []).reduce((a, it) => a + Number(it.earn_amount || 0), 0);
     const adj_total = (adjQ.rows || []).reduce((a, it) => a + Number(it.adj_amount || 0), 0);
-    const net = gross + adj_total;
+    const deposit_deduction_amount = await _getDepositDeductionForPayout(payout_id, tech);
+    const deposit = await _getDepositSummary(tech);
+    const net = _money(gross + adj_total - deposit_deduction_amount);
     const payment = payQ.rows[0] || null;
     const paid_amount = Number(payment?.paid_amount || 0);
-    const remaining = net - paid_amount;
+    const remaining = _money(net - paid_amount);
 
     const profile = await _getTechProfile(tech);
     const wrQ = await pool.query(
@@ -7516,10 +7729,13 @@ app.get('/tech/payouts/:payout_id', requireTechnicianSession, async (req, res) =
       period_end: meta?.period_end || bounds.endEx.toISOString(),
       gross_amount: gross,
       adj_total,
+      deposit_deduction_amount,
       net_amount: net,
       paid_amount,
-      paid_status: payment?.paid_status || (paid_amount > 0 ? 'partial' : 'unpaid'),
+      paid_status: _paidStatus(net, paid_amount),
       remaining_amount: remaining,
+      ...deposit,
+      latest_deposit_deduction: deposit_deduction_amount,
       payment,
       withdraw_request,
       adjustments: adjQ.rows || [],
@@ -7573,13 +7789,14 @@ app.post('/tech/withdraw_requests', requireTechnicianSession, async (req, res) =
       [payout_id, tech]
     );
     const adj_total = Number(adjQ.rows[0]?.adj_total || 0);
-    const net = gross + adj_total;
+    const deposit_deduction_amount = await _getDepositDeductionForPayout(payout_id, tech);
+    const net = _money(gross + adj_total - deposit_deduction_amount);
     const payQ = await pool.query(
       `SELECT COALESCE(paid_amount,0) AS paid_amount FROM public.technician_payout_payments WHERE payout_id=$1 AND technician_username=$2 LIMIT 1`,
       [payout_id, tech]
     );
     const paid_amount = Number(payQ.rows[0]?.paid_amount || 0);
-    const remaining = net - paid_amount;
+    const remaining = _money(net - paid_amount);
 
     const reqAmount = (b.amount_requested == null || String(b.amount_requested).trim()==='') ? remaining : _money(b.amount_requested);
     if (!Number.isFinite(reqAmount) || reqAmount <= 0) return res.status(400).json({ ok:false, error:'INVALID_AMOUNT' });
@@ -7888,10 +8105,10 @@ app.get('/tech/income_today_month', async (req, res) => {
 
 /**
  * (Phase 4 UX) งวดถัดไปที่ระบบโชว์บนการ์ด: "คาดว่าจะได้งวดถัดไป"
- * - ถ้าวันที่ 1-10: งวด 25 ของเดือนนี้ (11-25) (ยังไม่เริ่ม => 0)
- * - 11-25: งวด 25 ของเดือนนี้ (ongoing)
- * - 26-สิ้นเดือน: งวด 10 ของเดือนหน้า (26-สิ้นเดือนนี้) (ongoing)
+ * - วันที่ 1-15: งวด 25 ของเดือนนี้
+ * - วันที่ 16-สิ้นเดือน: งวด 10 ของเดือนหน้า
  */
+// Current rule: Bangkok day 1-15 => current month 25 cycle; day 16-end => next month 10 cycle.
 app.get('/tech/income_next_period_estimate', requireTechnicianSession, async (req, res) => {
   try {
     const tech = String(req.auth?.username || '').trim();
@@ -7899,10 +8116,10 @@ app.get('/tech/income_next_period_estimate', requireTechnicianSession, async (re
     const { y, m, d } = _bkkYmd(nowBkk);
 
     let bounds;
-    if (d <= 25) {
+    if (d <= 15) {
       bounds = _periodBoundsForYm('25', y, m);
     } else {
-      // 26..end => งวด 10 ของเดือนหน้า
+      // 16..end => งวด 10 ของเดือนหน้า
       let ny = y, nm = m + 1;
       if (nm > 12) { nm = 1; ny = y + 1; }
       bounds = _periodBoundsForYm('10', ny, nm);
@@ -9315,6 +9532,37 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
       )
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_payout_adjustments_pid_tech ON public.technician_payout_adjustments(payout_id, technician_username, created_at DESC)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_deposit_accounts (
+        technician_username TEXT PRIMARY KEY,
+        target_amount NUMERIC(12,2) NOT NULL DEFAULT 5000,
+        is_required BOOLEAN NOT NULL DEFAULT TRUE,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_by TEXT
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_deposit_ledger (
+        ledger_id BIGSERIAL PRIMARY KEY,
+        technician_username TEXT NOT NULL,
+        payout_id TEXT,
+        transaction_type TEXT NOT NULL CHECK (transaction_type IN ('collect','refund','claim_deduct','manual_adjust')),
+        amount NUMERIC(12,2) NOT NULL,
+        note TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        created_by TEXT,
+        meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deposit_ledger_tech_created ON public.technician_deposit_ledger(technician_username, created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_deposit_ledger_payout ON public.technician_deposit_ledger(payout_id)`);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_deposit_collect_once_per_payout_tech
+      ON public.technician_deposit_ledger(technician_username, payout_id, transaction_type)
+      WHERE transaction_type='collect'
+    `);
 
     // =======================================
     // 💳 Technician Withdraw Requests (Partners)
