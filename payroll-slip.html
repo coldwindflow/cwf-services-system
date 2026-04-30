@@ -11,8 +11,13 @@
     .wrap{max-width:920px;margin:18px auto;padding:0 12px 24px;}
     .slip{background:#fff;border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 18px 45px rgba(11,46,109,.12)}
     .top{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;padding:18px 18px 16px;background:linear-gradient(135deg,#061a44,var(--navy) 56%,#1677ff);color:#fff;}
+    .brandRow{display:flex;gap:12px;align-items:center;}
+    .brandMark{width:64px;height:64px;object-fit:contain;border-radius:16px;background:rgba(255,255,255,.12);padding:6px;border:1px solid rgba(255,255,255,.18);box-shadow:0 10px 22px rgba(0,0,0,.18)}
     .brand{font-weight:1000;font-size:21px;letter-spacing:.01em;line-height:1.1;}
     .subbrand{font-size:12px;font-weight:800;color:rgba(255,255,255,.82);margin-top:4px;}
+    .companyMeta{margin-top:8px;font-size:12px;line-height:1.6;color:rgba(255,255,255,.88);}
+    .companyMeta strong{color:#fff;}
+    .companyContact{display:block;}
     .right{text-align:right;}.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;}
     .muted{color:var(--muted);font-size:13px;}.top .muted{color:rgba(255,255,255,.78)}
     .content{padding:16px 18px 20px;}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:12px;}
@@ -25,7 +30,7 @@
     th,td{padding:10px;border-bottom:1px solid rgba(15,23,42,.08);font-size:13px;vertical-align:top;}th{background:#f3f6ff;text-align:left;color:#334155;font-size:12px;}tr:last-child td{border-bottom:none}.right{text-align:right}
     .foot{margin-top:14px;font-size:12px;display:flex;justify-content:space-between;gap:12px;align-items:flex-end;}.sign{margin-top:28px;display:grid;grid-template-columns:1fr 1fr;gap:18px}.signBox{border-top:1px solid rgba(15,23,42,.35);padding-top:8px;text-align:center;color:var(--muted);font-size:12px}
     .printbar{position:sticky;bottom:10px;display:flex;justify-content:flex-end;gap:8px;margin-top:12px}.printbar button{background:var(--navy);color:#fff;border:none;border-radius:14px;padding:11px 16px;font-weight:900;cursor:pointer}.printbar button.secondary{background:#fff;color:var(--navy);border:1px solid var(--line)}
-    @media (max-width:640px){.top{flex-direction:column}.right{text-align:left}.grid{grid-template-columns:1fr}.wrap{margin:0;padding:0}.slip{border-radius:0;border-left:none;border-right:none}.content{padding:14px}.foot{display:block}.sign{grid-template-columns:1fr}}
+    @media (max-width:640px){.top{flex-direction:column}.brandRow{align-items:flex-start}.brandMark{width:56px;height:56px}.right{text-align:left}.grid{grid-template-columns:1fr}.wrap{margin:0;padding:0}.slip{border-radius:0;border-left:none;border-right:none}.content{padding:14px}.foot{display:block}.sign{grid-template-columns:1fr}}
     @media print{body{background:#fff}.wrap{max-width:none;margin:0;padding:0}.slip{box-shadow:none;border-radius:0;border:none}.printbar{display:none}.top{-webkit-print-color-adjust:exact;print-color-adjust:exact}.card.yellow{-webkit-print-color-adjust:exact;print-color-adjust:exact} @page{size:A4;margin:12mm}}
   </style>
 </head>

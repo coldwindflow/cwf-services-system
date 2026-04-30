@@ -7873,8 +7873,17 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
       <div class="wrap">
         <div class="top">
           <div>
-            <div class="brand">Coldwindflow Air Services</div>
-            <div class="subbrand">Technician Payout Slip • สลิปงวดช่าง</div>
+            <div class="brandRow">
+              <img class="brandMark" src="/logo.png" alt="Coldwindflow logo" />
+              <div>
+                <div class="brand">Coldwindflow Air Services</div>
+                <div class="subbrand">Technician Payout Slip • สลิปงวดช่าง</div>
+                <div class="companyMeta">
+                  <span class="companyContact"><strong>ที่อยู่:</strong> 23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260</span>
+                  <span class="companyContact"><strong>โทร:</strong> 098-877-7321</span>
+                </div>
+              </div>
+            </div>
           </div>
           <div class="right">
             <div><b>${esc(payout_id)}</b></div>
@@ -7920,7 +7929,10 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
         </div>
 
         <div class="foot muted">
-          <div>ออกเอกสารเมื่อ: ${esc(new Date().toLocaleString('th-TH', { timeZone:'Asia/Bangkok' }))}</div>
+          <div>
+            <div>ออกเอกสารเมื่อ: ${esc(new Date().toLocaleString('th-TH', { timeZone:'Asia/Bangkok' }))}</div>
+            <div>Coldwindflow Air Services • 23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260 • โทร 098-877-7321</div>
+          </div>
           ${payment?.slip_url ? `<div>หลักฐานแนบ: ${esc(payment.slip_url)}</div>` : ''}
         </div>
 
