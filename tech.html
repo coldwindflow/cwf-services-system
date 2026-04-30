@@ -393,8 +393,39 @@
       border-left:1px solid rgba(255,255,255,.65) !important;
     }
     .techMenuBtn{
-      border-radius:20px !important;background:rgba(255,255,255,.<div class="techMenuList">
-          <!-- keep ids for app.js bindings -->
+      border-radius:20px !important;background:rgba(255,255,255,.
+
+    /* ✅ final guard: burger must always be visible */
+    #techTopNav{display:block!important;position:fixed!important;left:0!important;right:0!important;top:0!important;z-index:5000!important}
+    #techMenuBtn{display:inline-flex!important;visibility:visible!important;opacity:1!important}
+    #techDrawerBackdrop{z-index:5100!important}
+    #techDrawer{z-index:5200!important}
+    #techTopSpacer{display:block!important;height:82px!important}
+</style>
+</head>
+<body>
+  <div class="app">
+    <!-- ✅ Restored fixed top bar + hamburger menu -->
+    <div id="techTopNav">
+      <div class="in">
+        <div class="ttl">
+          <b>CWF – ช่าง</b>
+          <span id="me">ผู้ใช้: -</span>
+        </div>
+        <button class="tech-icbtn" type="button" id="techMenuBtn" aria-label="เมนู">☰</button>
+      </div>
+    </div>
+    <div id="techTopSpacer"></div>
+
+    <div id="techDrawerBackdrop"></div>
+    <div id="techDrawer">
+      <div class="panel">
+        <div class="techMenuHead">
+          <b>เมนูช่าง</b>
+          <button class="tech-icbtn" type="button" id="techMenuCloseBtn" aria-label="ปิด">✕</button>
+        </div>
+
+        <div class="techMenuList">
           <button class="techMenuBtn" type="button" id="notifyBtn">
             <span class="left"><span class="menuIcon">🔔</span><span class="menuText"><strong>แจ้งเตือน / เสียงเตือน</strong><span class="sub" id="notifyStateText">-</span></span></span>
             <span class="menuArrow">›</span>
@@ -405,19 +436,10 @@
             <span class="menuArrow">›</span>
           </button>
 
-          <!-- hidden legacy buttons kept for existing app.js bindings / rollback safety -->
-          <button class="techMenuBtn techMenuHidden" type="button" id="themeToggleBtn">
-            <span class="left"><span class="menuIcon">🎨</span><span class="menuText"><strong>สลับธีม</strong><span class="sub">โหมดสีหน้าช่าง</span></span></span>
-            <span class="menuArrow">›</span>
-          </button>
-          <button class="techMenuBtn techMenuHidden" type="button" onclick="goEditProfile()"></button>
-          <button class="techMenuBtn techMenuHidden" type="button" onclick="location.href='/tech/base-status'"></button>
-          <button class="techMenuBtn techMenuHidden" type="button" onclick="goChangePassword()"></button>
-          <button class="techMenuBtn techMenuHidden" type="button" onclick="openWorkdaysModal()"></button>
-          <button class="techMenuBtn techMenuHidden" type="button" id="techMatrixBtn"></button>
+          <button class="techMenuBtn techMenuHidden" type="button" id="themeToggleBtn">theme</button>
+          <button class="techMenuBtn techMenuHidden" type="button" id="techMatrixBtn">matrix</button>
 
           <div class="techMenuSmall" style="margin-top:4px;padding:0 2px;">อื่นๆ</div>
-
           <button class="techMenuBtn techMenuDanger" type="button" onclick="logout()">
             <span class="left"><span class="menuIcon">🚪</span><span class="menuText"><strong>ออกจากระบบ</strong><span class="sub">Logout</span></span></span>
             <span class="menuArrow">›</span>
@@ -426,7 +448,6 @@
       </div>
     </div>
 
-    <!-- ✅ Settings Modal: รวมเมนูเดิม + ผูก LINE Login -->
     <div id="techSettingsModal">
       <div class="settingsPanel">
         <div class="settingsHead">
@@ -462,42 +483,7 @@
       </div>
     </div>
 
-    <!-- ✅ Modal: Technician Service Matrix (self-config) -->
-<span class="menuArrow">›</span>
-          </button>
-
-          <button class="techMenuBtn" type="button" onclick="location.href='/tech/base-status'">
-            <span class="left"><span class="menuIcon">🧬</span><span class="menuText"><strong>แบบประเมิน Base Status</strong><span class="sub">ค่าสเตตัสช่าง</span></span></span>
-            <span class="menuArrow">›</span>
-          </button>
-
-          <button class="techMenuBtn" type="button" onclick="goChangePassword()">
-            <span class="left"><span class="menuIcon">🔑</span><span class="menuText"><strong>เปลี่ยนรหัสผ่าน</strong><span class="sub">ความปลอดภัย</span></span></span>
-            <span class="menuArrow">›</span>
-          </button>
-
-          <button class="techMenuBtn" type="button" onclick="openWorkdaysModal()">
-            <span class="left"><span class="menuIcon">🗓️</span><span class="menuText"><strong>วันหยุด / วันทำงาน</strong><span class="sub">ตั้งค่า</span></span></span>
-            <span class="menuArrow">›</span>
-          </button>
-
-          <button class="techMenuBtn" type="button" id="techMatrixBtn">
-            <span class="left"><span class="menuIcon">🧩</span><span class="menuText"><strong>งานที่รับได้</strong><span class="sub">ตั้งค่าสลอตลูกค้า</span></span></span>
-            <span class="menuArrow">›</span>
-          </button>
-
-          <div class="techMenuSmall" style="margin-top:4px;padding:0 2px;">อื่นๆ</div>
-
-          <button class="techMenuBtn techMenuDanger" type="button" onclick="logout()">
-            <span class="left"><span class="menuIcon">🚪</span><span class="menuText"><strong>ออกจากระบบ</strong><span class="sub">Logout</span></span></span>
-            <span class="menuArrow">›</span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- ✅ Modal: Technician Service Matrix (self-config) -->
-    <div id="techMatrixModal" style="display:none;position:fixed;inset:0;z-index:4000;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,0.55)">
+<div id="techMatrixModal" style="display:none;position:fixed;inset:0;z-index:4000;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,0.55)">
       <div style="width:min(720px, 100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:18px;border:1px solid rgba(15,23,42,0.12);box-shadow:0 28px 80px rgba(2,6,23,0.35);padding:12px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
           <b style="font-size:14px">งานที่รับได้ (สำหรับสลอตหน้าลูกค้า)</b>
@@ -537,6 +523,7 @@
         </div>
       </div>
     </div>
+
 
 
     <!-- ===============================
@@ -750,7 +737,8 @@
 <hr>
 
       <!-- ✅ กันหัวข้อซ้อน ให้เหลืออันเดียว -->
-      <h2 style="margin-top:6px;">งานที่แนะนำ (รับภายใน 10 นาที)</h2>
+      <h2 style="margin-top:6px;">คำแนะนำช่าง</h2>
+      <div class="muted" style="font-weight:900;line-height:1.55;margin:8px 0 12px;">หากมีงานที่ระบบเสนอให้คุณ จะขึ้นที่หน้านี้ ให้รอกดรับงานจากตรงนี้เท่านั้น</div>
       <div id="offer-list"></div>
     </div>
 
