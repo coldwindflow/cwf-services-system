@@ -564,17 +564,41 @@
       </div>
     </div>
 
-<div id="serviceZoneModal" style="display:none;position:fixed;inset:0;z-index:4050;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,0.55)">
-  <div style="width:min(520px,100%);background:#fff;border-radius:18px;border:1px solid rgba(15,23,42,.12);box-shadow:0 28px 80px rgba(2,6,23,.35);padding:14px">
+<div id="serviceZoneModal" style="display:none;position:fixed;inset:0;z-index:4060;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,0.55)">
+  <div style="width:min(560px,100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:18px;border:1px solid rgba(15,23,42,.12);box-shadow:0 28px 80px rgba(2,6,23,.35);padding:14px">
     <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
       <div><b style="font-size:16px;color:#0b2e6d">พื้นที่ประจำของฉัน</b><div class="muted" style="margin-top:4px">เลือกจังหวัดและเขต/อำเภอ ระบบจะกำหนดโซนหลักให้</div></div>
       <button class="tech-icbtn" type="button" onclick="closeServiceZoneModal()">×</button>
+    </div>
+    <div style="margin-top:12px;border:1px solid rgba(11,75,179,.14);background:linear-gradient(135deg,#f8fbff,#fffbea);border-radius:16px;padding:12px">
+      <div style="font-weight:1000;color:#0b2e6d;margin-bottom:6px">โซนงานใช้ตอนระบบยิงงานด่วน</div>
+      <div class="muted" style="line-height:1.55">ระบบจะให้สิทธิ์ช่างในโซนเดียวกับหน้างานก่อน ถ้าไม่มีคนพอจึงค่อยดูช่างที่เปิดรับงานนอกโซน โซนนี้ระบบล็อกจากพื้นที่ประจำ ไม่ต้องเลือกหลายโซนเอง</div>
+      <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:10px;font-size:11px;font-weight:900;color:#0f172a">
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">A กรุงเทพตะวันออกแกนหลัก</div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">B กรุงเทพเหนือ-ตะวันออก</div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">C กรุงเทพชั้นใน</div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">D ธนบุรีตอนใน</div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">E ฝั่งตะวันตกตอนล่าง</div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">F สมุทรปราการฝั่งตะวันออก</div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">G นนทบุรี</div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">H ปทุมธานี</div>
+      </div>
     </div>
     <div style="display:grid;gap:10px;margin-top:12px">
       <label class="muted">จังหวัด</label>
       <select id="homeProvince" class="premium-input"><option value="กรุงเทพมหานคร">กรุงเทพมหานคร</option><option value="สมุทรปราการ">สมุทรปราการ</option><option value="นนทบุรี">นนทบุรี</option><option value="ปทุมธานี">ปทุมธานี</option></select>
       <label class="muted">เขต / อำเภอ</label>
-      <input id="homeDistrict" class="premium-input" placeholder="เช่น สวนหลวง, บางพลี, ปากเกร็ด">
+      <input id="homeDistrict" class="premium-input" list="homeDistrictList" placeholder="เช่น สวนหลวง, บางพลี, ปากเกร็ด">
+      <datalist id="homeDistrictList">
+        <option value="พระโขนง"><option value="บางนา"><option value="สวนหลวง"><option value="ประเวศ"><option value="บางกะปิ"><option value="สะพานสูง"><option value="ลาดกระบัง">
+        <option value="ดอนเมือง"><option value="สายไหม"><option value="บางเขน"><option value="หลักสี่"><option value="จตุจักร"><option value="บางซื่อ"><option value="ลาดพร้าว"><option value="วังทองหลาง"><option value="บึงกุ่ม"><option value="คันนายาว"><option value="คลองสามวา"><option value="มีนบุรี"><option value="หนองจอก">
+        <option value="ปทุมวัน"><option value="ราชเทวี"><option value="พญาไท"><option value="ดุสิต"><option value="พระนคร"><option value="ป้อมปราบศัตรูพ่าย"><option value="สัมพันธวงศ์"><option value="บางรัก"><option value="สาทร"><option value="ยานนาวา"><option value="ห้วยขวาง"><option value="ดินแดง"><option value="วัฒนา"><option value="คลองเตย"><option value="บางคอแหลม">
+        <option value="คลองสาน"><option value="ธนบุรี"><option value="บางกอกใหญ่"><option value="บางกอกน้อย"><option value="บางพลัด"><option value="ตลิ่งชัน">
+        <option value="ภาษีเจริญ"><option value="บางแค"><option value="หนองแขม"><option value="ทวีวัฒนา"><option value="จอมทอง"><option value="ราษฎร์บูรณะ"><option value="ทุ่งครุ"><option value="บางขุนเทียน"><option value="บางบอน"><option value="พระประแดง"><option value="พระสมุทรเจดีย์">
+        <option value="เมืองสมุทรปราการ"><option value="บางพลี"><option value="บางเสาธง"><option value="บางบ่อ">
+        <option value="เมืองนนทบุรี"><option value="ปากเกร็ด"><option value="บางกรวย"><option value="บางใหญ่"><option value="บางบัวทอง"><option value="ไทรน้อย">
+        <option value="เมืองปทุมธานี"><option value="คลองหลวง"><option value="ธัญบุรี"><option value="ลำลูกกา"><option value="หนองเสือ"><option value="ลาดหลุมแก้ว"><option value="สามโคก">
+      </datalist>
       <div id="homeZoneHint" class="muted" style="background:#f8fbff;border:1px solid rgba(11,75,179,.16);border-radius:14px;padding:10px">กรุณาเลือกจังหวัดและเขต/อำเภอ</div>
       <label style="display:flex;gap:8px;align-items:flex-start;font-weight:800;color:#0f172a"><input id="allowOutOfZone" type="checkbox" style="margin-top:3px"> <span>เปิดรับงานนอกโซนเมื่อจำเป็น<br><small class="muted">ถ้าเปิด ระบบอาจเสนอให้งานใกล้เคียงหรืองานนอกโซน เมื่อไม่มีช่างในพื้นที่เพียงพอ</small></span></label>
       <button id="btnSaveHomeZone" class="btn primary" type="button">บันทึกพื้นที่ประจำ</button>
@@ -757,7 +781,7 @@
       <div class="tech-ctrl-row">
         <button id="acceptToggleBtn" class="accept-btn ready" type="button">🟢 รับงาน</button>
 
-        <div class="zone-wrap" style="display:none">
+        <div class="zone-wrap">
           <select id="zoneSelect" class="zone-select">
             <option value="">ทุกโซน</option>
             <option value="สุขุมวิท">สุขุมวิท</option>

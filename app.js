@@ -429,69 +429,92 @@ async function updateZone(zone) {
 }
 
 async function detectHomeServiceZone() {
-  if (!homeZoneHintEl) return null;
+  const provinceEl = document.getElementById("homeProvince") || homeProvinceEl;
+  const districtEl = document.getElementById("homeDistrict") || homeDistrictEl;
+  const hintEl = document.getElementById("homeZoneHint") || homeZoneHintEl;
+  if (!hintEl) return null;
   try {
     const res = await fetch(`${API_BASE}/service_zones/detect`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        home_province: homeProvinceEl?.value || "",
-        home_district: homeDistrictEl?.value || "",
+        home_province: provinceEl?.value || "",
+        home_district: districtEl?.value || "",
       }),
     });
     const data = await res.json().catch(() => ({}));
     const z = data.detected || null;
     if (z) {
-      homeZoneHintEl.textContent = `ระบบกำหนดโซนให้: Zone ${z.service_zone_code} - ${z.service_zone_label}`;
-      homeZoneHintEl.style.color = "#0b4bb3";
+      hintEl.textContent = `ระบบกำหนดโซนให้: Zone ${z.service_zone_code} - ${z.service_zone_label}`;
+      hintEl.style.color = "#0b4bb3";
     } else {
-      homeZoneHintEl.textContent = "ระบบยังหาโซนไม่ได้ กรุณาใส่เขต/อำเภอให้ชัดเจน";
-      homeZoneHintEl.style.color = "#b45309";
+      hintEl.textContent = "ระบบยังหาโซนไม่ได้ กรุณาใส่เขต/อำเภอให้ชัดเจน";
+      hintEl.style.color = "#b45309";
     }
     return z;
   } catch (e) {
-    homeZoneHintEl.textContent = "ตรวจโซนไม่สำเร็จ แต่ยังบันทึกได้";
+    hintEl.textContent = "ตรวจโซนไม่สำเร็จ แต่ยังบันทึกได้";
     return null;
   }
 }
 
 function openServiceZoneModal() {
-  if (serviceZoneModalEl) serviceZoneModalEl.style.display = "flex";
+  const settingsModal = document.getElementById("techSettingsModal");
+  const modalEl = document.getElementById("serviceZoneModal") || serviceZoneModalEl;
+  if (settingsModal) settingsModal.style.display = "none";
+  if (modalEl) modalEl.style.display = "flex";
   detectHomeServiceZone();
 }
 
 function closeServiceZoneModal() {
-  if (serviceZoneModalEl) serviceZoneModalEl.style.display = "none";
+  const modalEl = document.getElementById("serviceZoneModal") || serviceZoneModalEl;
+  if (modalEl) modalEl.style.display = "none";
 }
 
 async function saveHomeServiceZone() {
+  const provinceEl = document.getElementById("homeProvince") || homeProvinceEl;
+  const districtEl = document.getElementById("homeDistrict") || homeDistrictEl;
+  const hintEl = document.getElementById("homeZoneHint") || homeZoneHintEl;
+  const allowEl = document.getElementById("allowOutOfZone") || allowOutOfZoneEl;
+  const btnEl = document.getElementById("btnSaveHomeZone") || btnSaveHomeZoneEl;
   try {
+    if (btnEl) {
+      btnEl.disabled = true;
+      btnEl.textContent = "กำลังบันทึก...";
+    }
     const res = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/service-zone`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        home_province: homeProvinceEl?.value || "",
-        home_district: homeDistrictEl?.value || "",
-        allow_out_of_zone: !!allowOutOfZoneEl?.checked,
+        home_province: provinceEl?.value || "",
+        home_district: districtEl?.value || "",
+        allow_out_of_zone: !!allowEl?.checked,
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || "บันทึกพื้นที่ประจำไม่สำเร็จ");
-    if (homeZoneHintEl) {
-      homeZoneHintEl.textContent = data.service_zone_code
+    if (hintEl) {
+      hintEl.textContent = data.service_zone_code
         ? `ระบบกำหนดโซนให้: Zone ${data.service_zone_code} - ${data.service_zone_label}`
         : "บันทึกแล้ว แต่ยังไม่พบโซนจากเขต/อำเภอนี้";
+      hintEl.style.color = data.service_zone_code ? "#0b4bb3" : "#b45309";
     }
     alert("บันทึกพื้นที่ประจำแล้ว");
     closeServiceZoneModal();
     loadProfile();
   } catch (e) {
     alert(e.message || "บันทึกพื้นที่ประจำไม่สำเร็จ");
+  } finally {
+    if (btnEl) {
+      btnEl.disabled = false;
+      btnEl.textContent = "บันทึกพื้นที่ประจำ";
+    }
   }
 }
 
 window.openServiceZoneModal = openServiceZoneModal;
 window.closeServiceZoneModal = closeServiceZoneModal;
+window.saveHomeServiceZone = saveHomeServiceZone;
 
 
 // =======================================
