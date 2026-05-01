@@ -50,6 +50,8 @@ const homeProvinceEl = document.getElementById("homeProvince");
 const homeDistrictEl = document.getElementById("homeDistrict");
 const homeZoneHintEl = document.getElementById("homeZoneHint");
 const allowOutOfZoneEl = document.getElementById("allowOutOfZone");
+const secondaryServiceZoneEl = document.getElementById("secondaryServiceZone");
+const zoneQuickBtnEl = document.getElementById("zoneQuickBtn");
 const btnSaveHomeZoneEl = document.getElementById("btnSaveHomeZone");
 
 // ✅ รายได้ (Technician)
@@ -490,6 +492,7 @@ async function saveHomeServiceZone() {
       body: JSON.stringify({
         home_province: provinceEl?.value || "",
         home_district: districtEl?.value || "",
+        secondary_service_zone_code: (document.getElementById("secondaryServiceZone")?.value || ""),
         allow_out_of_zone: !!allowEl?.checked,
       }),
     });
@@ -650,6 +653,7 @@ function bindTechControls() {
   if (zoneSelect) {
     zoneSelect.onchange = () => updateZone(zoneSelect.value);
   }
+  if (zoneQuickBtnEl) zoneQuickBtnEl.onclick = openServiceZoneModal;
   if (homeProvinceEl) homeProvinceEl.onchange = detectHomeServiceZone;
   if (homeDistrictEl) homeDistrictEl.oninput = detectHomeServiceZone;
   if (btnSaveHomeZoneEl) btnSaveHomeZoneEl.onclick = saveHomeServiceZone;
@@ -760,10 +764,17 @@ async function loadProfile() {
     if (homeProvinceEl && data.home_province) homeProvinceEl.value = data.home_province;
     if (homeDistrictEl) homeDistrictEl.value = data.home_district || "";
     if (allowOutOfZoneEl) allowOutOfZoneEl.checked = !!data.allow_out_of_zone;
+    if (secondaryServiceZoneEl) secondaryServiceZoneEl.value = data.secondary_service_zone_code || "";
     if (homeZoneHintEl) {
       homeZoneHintEl.textContent = data.home_service_zone_code
-        ? `ระบบกำหนดโซนให้: Zone ${data.home_service_zone_code} - ${data.home_service_zone_label || ""}`
+        ? `โซนหลัก: Zone ${data.home_service_zone_code} - ${data.home_service_zone_label || ""}${data.secondary_service_zone_code ? ` • โซนรอง: Zone ${data.secondary_service_zone_code} - ${data.secondary_service_zone_label || ""}` : ""}`
         : "ระบบจะกำหนดโซนให้หลังกรอกเขต/อำเภอ";
+    }
+    const zoneQuickSummary = document.getElementById("zoneQuickSummary");
+    if (zoneQuickSummary) {
+      zoneQuickSummary.textContent = data.home_service_zone_code
+        ? `หลัก ${data.home_service_zone_code}${data.secondary_service_zone_code ? ` / รอง ${data.secondary_service_zone_code}` : " / ยังไม่เลือกโซนรอง"}`
+        : "ยังไม่ได้ตั้งพื้นที่";
     }
 
     // ✅ sync technician compact profile "more" fields (safe no-op if not present)

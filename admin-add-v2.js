@@ -168,6 +168,7 @@ async function detectAdminServiceZone(){
     service_zone_code: override,
     address_text: el('address_text')?.value || '',
     job_zone: el('job_zone')?.value || '',
+    maps_url: el('maps_url')?.value || '',
   };
   try{
     const r = await apiFetch('/service_zones/detect', { method:'POST', body: JSON.stringify(payload) });
@@ -2774,6 +2775,8 @@ function wireEvents() {
   loadServiceZones().then(() => detectAdminServiceZone()).catch(() => {});
   el("address_text")?.addEventListener("input", () => detectAdminServiceZone());
   el("job_zone")?.addEventListener("input", () => detectAdminServiceZone());
+  el("maps_url")?.addEventListener("input", () => detectAdminServiceZone());
+  el("maps_url")?.addEventListener("change", () => detectAdminServiceZone());
   el("service_zone_code")?.addEventListener("change", () => detectAdminServiceZone());
   el("promotion_id").addEventListener("change", () => updateTotalPreview());
   const btnEx = el("btnAddExtra"); if(btnEx) btnEx.addEventListener("click", addExtra);
