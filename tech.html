@@ -503,6 +503,39 @@
   .zone-map-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.zone-map-actions button{min-height:42px;border:0;border-radius:14px;background:#0B4BB3;color:#fff;font-weight:1000;box-shadow:0 10px 22px rgba(11,75,179,.18)}.zone-map-actions button.outline{background:#fff;color:#0B2E6D;border:1px solid rgba(11,46,109,.16)}
   .zone-detail-modal{position:fixed;inset:0;z-index:4095;align-items:center;justify-content:center;background:rgba(2,6,23,.72);padding:14px;backdrop-filter:blur(9px)}.zone-detail-panel{width:min(720px,100%);max-height:92vh;overflow:auto;border-radius:26px;background:#f8fbff;padding:14px;border:1px solid rgba(255,255,255,.55);box-shadow:0 28px 70px rgba(2,6,23,.35)}.zone-detail-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border-radius:22px;background:linear-gradient(135deg,#fff,#eef6ff);padding:14px;border:1px solid rgba(11,46,109,.12)}.zone-eyebrow.dark{color:#0B4BB3}.zone-detail-head h3{margin:4px 0 6px;color:#0B2E6D;font-size:22px;line-height:1.15}.zone-detail-head p{margin:0;color:#475569;font-weight:900;line-height:1.45}.zone-detail-close{width:44px;height:44px;border-radius:16px;border:1px solid rgba(11,46,109,.14);background:#fff;color:#0B2E6D;font-size:28px;font-weight:1000}.zone-detail-body{display:grid;gap:10px;margin-top:12px}.zone-guide-card,.zone-guide-grid>div{border-radius:18px;background:#fff;border:1px solid rgba(11,46,109,.12);padding:12px;box-shadow:0 10px 24px rgba(11,46,109,.06)}.zone-guide-card.primary{background:linear-gradient(135deg,#fffbea,#fff)}.zone-guide-card.warning{background:linear-gradient(135deg,#eff6ff,#fff)}.zone-guide-card b,.zone-guide-grid b{color:#0B2E6D;font-weight:1000}.zone-guide-card ol{margin:8px 0 0 20px;padding:0;color:#334155;font-weight:850;line-height:1.55}.zone-guide-card p{margin:8px 0 0;color:#334155;font-weight:850;line-height:1.55}.zone-guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.zone-guide-grid span{display:block;margin-top:5px;color:#475569;font-weight:850;line-height:1.45;font-size:13px}
   @media(max-width:620px){.zone-hero-modern{min-height:220px!important;padding:14px!important}.zone-hero-copy{width:calc(100% - 58px)!important;padding:12px!important}.zone-hero-title{font-size:26px!important}.zone-hero-lead{font-size:14px!important}.zone-map-card img{min-width:1040px!important}.zone-map-actions{grid-template-columns:1fr}.zone-guide-grid{grid-template-columns:1fr}.zone-detail-panel{border-radius:24px;padding:10px}}
+
+  /* CWF final zone modal UX fix: readable header + stable map actions */
+  #serviceZoneModal .zone-panel{width:min(760px,calc(100vw - 18px))!important;max-height:calc(100vh - 22px)!important;overflow:auto!important;padding:10px!important;}
+  #serviceZoneModal .zone-hero{min-height:auto!important;padding:16px!important;border-radius:24px!important;background:linear-gradient(135deg,#06163a 0%,#0B2E6D 58%,#0B4BB3 100%)!important;}
+  #serviceZoneModal .zone-hero:before{background:linear-gradient(90deg,rgba(2,6,23,.94),rgba(2,6,23,.70),rgba(2,6,23,.28)),radial-gradient(circle at 92% 86%,rgba(250,204,21,.45),transparent 36%)!important;}
+  #serviceZoneModal .zone-hero-copy{width:calc(100% - 58px)!important;max-width:620px!important;background:rgba(2,6,23,.78)!important;border:1px solid rgba(255,255,255,.26)!important;border-radius:20px!important;padding:13px 14px!important;box-shadow:0 16px 34px rgba(2,6,23,.28),inset 0 0 0 1px rgba(255,255,255,.08)!important;}
+  #serviceZoneModal .zone-eyebrow{color:#FDE68A!important;font-size:11px!important;letter-spacing:.18em!important;font-weight:1000!important;}
+  #serviceZoneModal .zone-hero-title{display:block!important;color:#fff!important;font-size:34px!important;line-height:1.05!important;font-weight:1000!important;margin:8px 0 10px!important;text-shadow:0 4px 16px rgba(0,0,0,.95),0 0 2px rgba(255,255,255,.9)!important;opacity:1!important;visibility:visible!important;}
+  #serviceZoneModal .zone-hero-lead{display:block!important;color:#EAF2FF!important;background:rgba(15,23,42,.72)!important;border:1px solid rgba(255,255,255,.14)!important;border-radius:16px!important;padding:10px 11px!important;font-size:14px!important;line-height:1.48!important;font-weight:950!important;text-shadow:0 2px 10px rgba(0,0,0,.88)!important;}
+  #serviceZoneModal .zone-hero-pills{gap:8px!important;margin-top:11px!important;}
+  #serviceZoneModal .zone-hero-pills span{background:#fff!important;color:#0B2E6D!important;border:1px solid rgba(255,255,255,.7)!important;box-shadow:0 7px 18px rgba(2,6,23,.22)!important;}
+  #serviceZoneModal .zone-close{width:48px!important;height:48px!important;border-radius:18px!important;font-size:34px!important;background:rgba(255,255,255,.18)!important;}
+  #serviceZoneModal .zone-map-card{margin-top:14px!important;border-radius:22px!important;overflow:hidden!important;}
+  #serviceZoneModal .zone-map-scroll{cursor:default!important;overflow-x:auto!important;overflow-y:hidden!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-x!important;background:#fff!important;border-radius:22px 22px 0 0!important;}
+  #serviceZoneModal .zone-map-card img{display:block!important;width:auto!important;min-width:1320px!important;max-width:none!important;height:auto!important;max-height:none!important;object-fit:contain!important;background:#fff!important;}
+  #serviceZoneModal .zone-map-note{padding:13px 14px!important;font-size:15px!important;line-height:1.45!important;}
+  #serviceZoneModal .zone-map-note span{font-size:13px!important;line-height:1.45!important;}
+  #serviceZoneModal .zone-map-actions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:14px!important;margin-top:14px!important;padding-top:2px!important;}
+  #serviceZoneModal .zone-map-actions button{min-height:50px!important;border-radius:18px!important;font-size:14px!important;padding:11px 12px!important;}
+  #zoneMapPreviewModal{z-index:7000!important;}
+  #zoneMapPreviewModal .zone-map-preview-body{align-items:flex-start!important;justify-content:flex-start!important;padding:64px 12px 18px!important;overflow:auto!important;}
+  #zoneMapPreviewModal .zone-map-preview-body img{width:1320px!important;max-width:none!important;height:auto!important;border-radius:18px!important;}
+  #zoneDetailModal{z-index:7100!important;}
+  @media(max-width:620px){
+    #serviceZoneModal .zone-panel{width:calc(100vw - 14px)!important;padding:9px!important;}
+    #serviceZoneModal .zone-hero{padding:14px!important;border-radius:22px!important;}
+    #serviceZoneModal .zone-hero-copy{width:calc(100% - 56px)!important;padding:12px!important;}
+    #serviceZoneModal .zone-hero-title{font-size:30px!important;}
+    #serviceZoneModal .zone-hero-lead{font-size:13px!important;}
+    #serviceZoneModal .zone-map-card img{min-width:1480px!important;}
+    #serviceZoneModal .zone-map-actions{grid-template-columns:1fr!important;gap:12px!important;}
+    #zoneMapPreviewModal .zone-map-preview-body img{width:1500px!important;}
+  }
 </style>
 </head>
 <body>
@@ -607,13 +640,15 @@
     </div>
 
     <div class="zone-map-card">
-      <div class="zone-map-scroll" onclick="window.openZoneMapPreview && window.openZoneMapPreview()"><img src="/assets/cwf-service-zone-map.jpg" alt="แผนที่แบ่งโซนงานช่าง CWF กรุงเทพฯ สมุทรปราการ" loading="lazy"></div>
+      <div class="zone-map-scroll" aria-label="แผนที่แบ่งโซนงานช่าง CWF กรุงเทพฯ สมุทรปราการ">
+        <img src="/assets/cwf-service-zone-map.jpg" alt="แผนที่แบ่งโซนงานช่าง CWF กรุงเทพฯ สมุทรปราการ" loading="lazy">
+      </div>
       <div class="zone-map-note">
         <b>แผนที่โซนงาน</b>
-        <span>เลื่อนซ้าย-ขวาเพื่อดูรายละเอียด หรือกดปุ่มด้านล่างเพื่ออ่านแบบเต็ม</span>
+        <span>เลื่อนซ้าย-ขวาเพื่อดูภาพขนาดใหญ่ หรือกดปุ่มด้านล่างเพื่อดูภาพ/รายละเอียดแบบเต็ม</span>
         <div class="zone-map-actions">
-          <button type="button" onclick="window.openZoneMapPreview && window.openZoneMapPreview()">🔍 ดูภาพเต็มจอ</button>
-          <button type="button" class="outline" onclick="window.openZoneDetailModal && window.openZoneDetailModal()">📖 อ่านรายละเอียดพื้นที่รับงาน</button>
+          <button type="button" onclick="event.stopPropagation(); window.openZoneMapPreview && window.openZoneMapPreview()">🔍 ดูภาพเต็มจอ</button>
+          <button type="button" class="outline" onclick="event.stopPropagation(); window.openZoneDetailModal && window.openZoneDetailModal()">📖 อ่านรายละเอียดพื้นที่รับงาน</button>
         </div>
       </div>
     </div>
@@ -1147,8 +1182,8 @@
   </div>
 
   <script>
-    window.openZoneMapPreview = window.openZoneMapPreview || function(){ var modal=document.getElementById('zoneMapPreviewModal'); if(modal) modal.style.display='flex'; };
-    window.closeZoneMapPreview = window.closeZoneMapPreview || function(){ var modal=document.getElementById('zoneMapPreviewModal'); if(modal) modal.style.display='none'; };
+    window.openZoneMapPreview = window.openZoneMapPreview || function(){ var modal=document.getElementById('zoneMapPreviewModal'); if(modal){ modal.style.display='flex'; document.body.style.overflow='hidden'; } };
+    window.closeZoneMapPreview = window.closeZoneMapPreview || function(){ var modal=document.getElementById('zoneMapPreviewModal'); if(modal){ modal.style.display='none'; document.body.style.overflow=''; } };
     window.openZoneDetailModal = window.openZoneDetailModal || function(){ var modal=document.getElementById('zoneDetailModal'); if(modal) modal.style.display='flex'; };
     window.closeZoneDetailModal = window.closeZoneDetailModal || function(){ var modal=document.getElementById('zoneDetailModal'); if(modal) modal.style.display='none'; };
     window.__cwfOpenZoneQuickModalFallback = function(ev){
@@ -1168,7 +1203,7 @@
       }
     });
   </script>
-  <script src="app.js?v=zone-map-detail-readable-v6"></script>
+  <script src="app.js?v=zone-map-layout-readable-v7"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
