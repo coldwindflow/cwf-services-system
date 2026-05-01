@@ -179,7 +179,7 @@ async function getTechnicianPrimaryZone(username) {
   if (!u) return null;
   try {
     const r = await pool.query(
-      `SELECT p.home_service_zone_code, p.secondary_service_zone_code, p.allow_out_of_zone,
+      `SELECT p.home_service_zone_code, p.secondary_service_zone_code, p.allow_out_of_zone, p.service_radius_km,
               z.zone_label, z2.zone_label AS secondary_service_zone_label
        FROM public.technician_profiles p
        LEFT JOIN public.service_zones z ON z.zone_code=p.home_service_zone_code
@@ -196,13 +196,14 @@ async function getTechnicianPrimaryZone(username) {
       secondary_zone_code: row.secondary_service_zone_code || null,
       secondary_zone_label: row.secondary_service_zone_label || (SERVICE_ZONE_BY_CODE.get(row.secondary_service_zone_code || "")?.label || null),
       allow_out_of_zone: !!row.allow_out_of_zone,
+      service_radius_km: row.service_radius_km == null ? null : Number(row.service_radius_km),
     };
   } catch (_) {
     return null;
   }
 }
 
-async function updateTechnicianHomeZone(username, home_province, home_district, allow_out_of_zone = false, secondary_service_zone_code = "") {
+async function updateTechnicianHomeZone(username, home_province, home_district, allow_out_of_zone = false, secondary_service_zone_code = "", service_radius_km = null) {
   const u = String(username || "").trim();
   if (!u) throw new Error("username required");
   const cleanProvince = String(home_province || "").trim();
@@ -211,10 +212,12 @@ async function updateTechnicianHomeZone(username, home_province, home_district, 
   const zoneCode = detected?.service_zone_code || null;
   const secondaryCode = String(secondary_service_zone_code || "").trim().toUpperCase();
   const safeSecondaryCode = secondaryCode && SERVICE_ZONE_BY_CODE.has(secondaryCode) && secondaryCode !== zoneCode ? secondaryCode : null;
+  const radiusNumRaw = Number(service_radius_km);
+  const safeRadiusKm = Number.isFinite(radiusNumRaw) && radiusNumRaw > 0 ? Math.min(Math.max(radiusNumRaw, 1), 500) : null;
   await pool.query(
     `INSERT INTO public.technician_profiles
-       (username, home_province, home_district, home_service_zone_code, secondary_service_zone_code, allow_out_of_zone, preferred_zone, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+       (username, home_province, home_district, home_service_zone_code, secondary_service_zone_code, allow_out_of_zone, preferred_zone, service_radius_km, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
      ON CONFLICT (username) DO UPDATE SET
        home_province=EXCLUDED.home_province,
        home_district=EXCLUDED.home_district,
@@ -222,8 +225,9 @@ async function updateTechnicianHomeZone(username, home_province, home_district, 
        secondary_service_zone_code=EXCLUDED.secondary_service_zone_code,
        allow_out_of_zone=EXCLUDED.allow_out_of_zone,
        preferred_zone=COALESCE(NULLIF(EXCLUDED.home_district,''), technician_profiles.preferred_zone),
+       service_radius_km=EXCLUDED.service_radius_km,
        updated_at=NOW()`,
-    [u, cleanProvince || null, cleanDistrict || null, zoneCode, safeSecondaryCode, !!allow_out_of_zone, cleanDistrict || null]
+    [u, cleanProvince || null, cleanDistrict || null, zoneCode, safeSecondaryCode, !!allow_out_of_zone, cleanDistrict || null, safeRadiusKm]
   );
   await pool.query(`UPDATE public.technician_service_zones SET is_primary=FALSE, is_active=FALSE, updated_at=NOW() WHERE technician_username=$1`, [u]);
   const zoneRows = [[zoneCode, 1, true], [safeSecondaryCode, 2, false]].filter(x => x[0]);
@@ -237,7 +241,7 @@ async function updateTechnicianHomeZone(username, home_province, home_district, 
     );
   }
   const secondaryZone = safeSecondaryCode ? SERVICE_ZONE_BY_CODE.get(safeSecondaryCode) : null;
-  return { ...detected, home_province: cleanProvince, home_district: cleanDistrict, preferred_zone: cleanDistrict, allow_out_of_zone: !!allow_out_of_zone, secondary_service_zone_code: safeSecondaryCode, secondary_service_zone_label: secondaryZone?.label || null };
+  return { ...detected, home_province: cleanProvince, home_district: cleanDistrict, preferred_zone: cleanDistrict, allow_out_of_zone: !!allow_out_of_zone, secondary_service_zone_code: safeSecondaryCode, secondary_service_zone_label: secondaryZone?.label || null, service_radius_km: safeRadiusKm };
 }
 
 async function technicianMatchesServiceZone(username, zone_code) {
@@ -9967,6 +9971,7 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_income_overrides_type ON p
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS home_service_zone_code TEXT`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS allow_out_of_zone BOOLEAN NOT NULL DEFAULT FALSE`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS secondary_service_zone_code TEXT`);
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS service_radius_km NUMERIC(8,2)`);
 
     // 3.3) technician_profiles: เบอร์โทร (ใช้แสดงให้ลูกค้า "หลังเริ่มเดินทาง" เท่านั้น)
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS phone TEXT`);
@@ -15955,7 +15960,8 @@ app.put("/technicians/:username/service-zone", async (req, res) => {
     const home_district = String(req.body?.home_district || "").trim();
     const secondary_service_zone_code = String(req.body?.secondary_service_zone_code || "").trim().toUpperCase();
     const allow_out_of_zone = req.body?.allow_out_of_zone === true || String(req.body?.allow_out_of_zone || "").toLowerCase() === "true";
-    const saved = await updateTechnicianHomeZone(username, home_province, home_district, allow_out_of_zone, secondary_service_zone_code);
+    const service_radius_km = req.body?.service_radius_km ?? null;
+    const saved = await updateTechnicianHomeZone(username, home_province, home_district, allow_out_of_zone, secondary_service_zone_code, service_radius_km);
     res.json({ ok: true, ...saved });
   } catch (e) {
     console.error("PUT /technicians/:username/service-zone", e);
@@ -16013,6 +16019,7 @@ app.get("/technicians/:username/profile", async (req, res) => {
               COALESCE(home_district,'') AS home_district,
               COALESCE(home_service_zone_code,'') AS home_service_zone_code,
               COALESCE(secondary_service_zone_code,'') AS secondary_service_zone_code,
+              service_radius_km,
               COALESCE(allow_out_of_zone,FALSE) AS allow_out_of_zone,
               z.zone_label AS home_service_zone_label,
               z2.zone_label AS secondary_service_zone_label

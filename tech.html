@@ -567,37 +567,68 @@
 <div id="serviceZoneModal" class="zone-modal" style="display:none">
   <div class="zone-panel">
     <div class="zone-hero">
-      <div>
+      <div class="zone-hero-copy">
         <div class="zone-eyebrow">CWF SERVICE AREA</div>
         <h2>ตั้งค่าพื้นที่รับงานของฉัน</h2>
-        <p>ระบบจะล็อกโซนหลักจากเขต/อำเภอที่อยู่ประจำ และเลือกโซนรองไว้สำหรับงานใกล้เคียงได้</p>
+        <p>เลือกจังหวัดและเขต/อำเภอจากดรอปดาวน์ ระบบจะล็อกโซนหลักให้เอง แล้วเลือกโซนรองกับระยะทางรับงานได้</p>
       </div>
-      <button class="zone-close" type="button" onclick="closeServiceZoneModal()">×</button>
+      <button class="zone-close" type="button" onclick="closeServiceZoneModal()" aria-label="ปิด">×</button>
     </div>
+
     <div class="zone-map-card">
       <img src="/assets/cwf-service-zone-map.jpg" alt="แผนที่แบ่งโซนงานช่าง CWF กรุงเทพฯ สมุทรปราการ" loading="lazy">
-      <div class="zone-map-note">ดูภาพรวมโซนก่อนตั้งค่า • โซนรองใช้เป็นพื้นที่สำรอง ไม่ได้บังคับรับทุกงาน</div>
+      <div class="zone-map-note"><b>แผนที่โซนงาน</b><span>โซนหลักใช้จัดงานก่อน • โซนรองใช้เป็นพื้นที่สำรอง • นอกโซนใช้เฉพาะเมื่อเปิดรับเอง</span></div>
     </div>
+
     <div class="zone-form-grid">
-      <label><span>1) จังหวัดพื้นที่ประจำ</span><select id="homeProvince" class="premium-input"><option value="กรุงเทพมหานคร">กรุงเทพมหานคร</option><option value="สมุทรปราการ">สมุทรปราการ</option><option value="นนทบุรี">นนทบุรี</option><option value="ปทุมธานี">ปทุมธานี</option></select></label>
-      <label><span>2) เขต / อำเภอที่อยู่ประจำ</span><select id="homeDistrict" class="premium-input"><option value="">เลือกเขต / อำเภอ</option></select></label>
+      <label><span>1) จังหวัดพื้นที่ประจำ</span><select id="homeProvince" class="premium-input" onchange="window.populateHomeDistrictOptions && window.populateHomeDistrictOptions(); window.detectHomeServiceZone && window.detectHomeServiceZone();"><option value="กรุงเทพมหานคร">กรุงเทพมหานคร</option><option value="สมุทรปราการ">สมุทรปราการ</option><option value="นนทบุรี">นนทบุรี</option><option value="ปทุมธานี">ปทุมธานี</option></select></label>
+      <label><span>2) เขต / อำเภอที่อยู่ประจำ</span><select id="homeDistrict" class="premium-input" onfocus="window.populateHomeDistrictOptions && window.populateHomeDistrictOptions(this.value);" onclick="window.populateHomeDistrictOptions && window.populateHomeDistrictOptions(this.value);" onchange="window.detectHomeServiceZone && window.detectHomeServiceZone();"><option value="">เลือกเขต / อำเภอ</option><option value="พระโขนง">พระโขนง</option><option value="บางนา">บางนา</option><option value="สวนหลวง">สวนหลวง</option><option value="ประเวศ">ประเวศ</option><option value="บางกะปิ">บางกะปิ</option><option value="สะพานสูง">สะพานสูง</option><option value="ลาดกระบัง">ลาดกระบัง</option><option value="ดอนเมือง">ดอนเมือง</option><option value="สายไหม">สายไหม</option><option value="บางเขน">บางเขน</option><option value="หลักสี่">หลักสี่</option><option value="จตุจักร">จตุจักร</option><option value="บางซื่อ">บางซื่อ</option><option value="ลาดพร้าว">ลาดพร้าว</option><option value="วังทองหลาง">วังทองหลาง</option><option value="บึงกุ่ม">บึงกุ่ม</option><option value="คันนายาว">คันนายาว</option><option value="คลองสามวา">คลองสามวา</option><option value="มีนบุรี">มีนบุรี</option><option value="หนองจอก">หนองจอก</option><option value="ปทุมวัน">ปทุมวัน</option><option value="ราชเทวี">ราชเทวี</option><option value="พญาไท">พญาไท</option><option value="ดุสิต">ดุสิต</option><option value="พระนคร">พระนคร</option><option value="ป้อมปราบศัตรูพ่าย">ป้อมปราบศัตรูพ่าย</option><option value="สัมพันธวงศ์">สัมพันธวงศ์</option><option value="บางรัก">บางรัก</option><option value="สาทร">สาทร</option><option value="ยานนาวา">ยานนาวา</option><option value="ห้วยขวาง">ห้วยขวาง</option><option value="ดินแดง">ดินแดง</option><option value="วัฒนา">วัฒนา</option><option value="คลองเตย">คลองเตย</option><option value="บางคอแหลม">บางคอแหลม</option><option value="คลองสาน">คลองสาน</option><option value="ธนบุรี">ธนบุรี</option><option value="บางกอกใหญ่">บางกอกใหญ่</option><option value="บางกอกน้อย">บางกอกน้อย</option><option value="บางพลัด">บางพลัด</option><option value="ตลิ่งชัน">ตลิ่งชัน</option><option value="ภาษีเจริญ">ภาษีเจริญ</option><option value="บางแค">บางแค</option><option value="หนองแขม">หนองแขม</option><option value="ทวีวัฒนา">ทวีวัฒนา</option><option value="จอมทอง">จอมทอง</option><option value="ราษฎร์บูรณะ">ราษฎร์บูรณะ</option><option value="ทุ่งครุ">ทุ่งครุ</option><option value="บางขุนเทียน">บางขุนเทียน</option><option value="บางบอน">บางบอน</option></select></label>
       <label><span>3) พื้นที่รับงานรอง</span><select id="secondaryServiceZone" class="premium-input"><option value="">ไม่เลือกโซนรอง</option><option value="A">Zone A - กรุงเทพตะวันออกแกนหลัก</option><option value="B">Zone B - กรุงเทพเหนือ-ตะวันออก</option><option value="C">Zone C - กรุงเทพชั้นใน</option><option value="D">Zone D - ธนบุรีตอนใน</option><option value="E">Zone E - ฝั่งตะวันตกตอนล่าง</option><option value="F">Zone F - สมุทรปราการฝั่งตะวันออก</option><option value="G">Zone G - นนทบุรี</option><option value="H">Zone H - ปทุมธานี</option></select></label>
+      <label><span>4) ระยะทางรับงานสูงสุด</span><select id="serviceRadiusKm" class="premium-input"><option value="10">ไม่เกิน 10 กม.</option><option value="15">ไม่เกิน 15 กม.</option><option value="20">ไม่เกิน 20 กม.</option><option value="25">ไม่เกิน 25 กม.</option><option value="30">ไม่เกิน 30 กม.</option><option value="40">ไม่เกิน 40 กม.</option><option value="50">ไม่เกิน 50 กม.</option><option value="">ไม่จำกัดระยะทาง</option></select></label>
       <div id="homeZoneHint" class="zone-detect-box">เลือกจังหวัดและเขต/อำเภอ ระบบจะหาโซนหลักให้อัตโนมัติ</div>
     </div>
+
     <div class="zone-explain">
-      <div><b>โซนหลัก</b><span>ได้สิทธิ์งานในพื้นที่ก่อน ใช้จากพื้นที่ประจำของช่าง</span></div>
-      <div><b>โซนรอง</b><span>ใช้สำหรับงานใกล้เคียง เผื่อโซนหลักงานน้อยหรือระบบต้องการคนเพิ่ม</span></div>
-      <div><b>นอกโซน</b><span>เปิดเฉพาะเมื่อยอมรับงานนอกพื้นที่ได้จริง</span></div>
+      <div><b>โซนหลัก</b><span>ระบบให้สิทธิ์งานในพื้นที่นี้ก่อน</span></div>
+      <div><b>โซนรอง</b><span>ใช้เป็นพื้นที่สำรองเมื่อมีงานใกล้เคียง</span></div>
+      <div><b>ระยะทาง</b><span>ใช้เป็นเงื่อนไขตั้งค่ารับงานแบบด่วน</span></div>
     </div>
+
     <label class="zone-check"><input id="allowOutOfZone" type="checkbox"> <span><b>เปิดรับงานนอกโซนเมื่อจำเป็น</b><small>ระบบจะจัดอันดับหลังโซนหลักและโซนรอง เพื่อลดการวิ่งไกล</small></span></label>
     <button id="btnSaveHomeZone" class="btn primary zone-save" type="button">บันทึกพื้นที่รับงาน</button>
   </div>
 </div>
+
+<div id="zoneQuickModal" class="zone-modal zone-quick-modal" style="display:none">
+  <div class="zone-quick-panel">
+    <div class="zone-quick-head">
+      <div>
+        <div class="zone-eyebrow">QUICK AREA</div>
+        <h3>ตั้งค่าพื้นที่รับงานด่วน</h3>
+        <p>ปรับโซนรอง / ระยะทาง / งานนอกโซน ได้จากหน้าแรก</p>
+      </div>
+      <button class="zone-close" type="button" onclick="closeZoneQuickModal()" aria-label="ปิด">×</button>
+    </div>
+    <div class="quick-zone-status" id="quickZoneStatus">กำลังโหลดพื้นที่รับงาน...</div>
+    <div class="quick-form">
+      <label><span>โซนรอง</span><select id="quickSecondaryServiceZone" class="premium-input"><option value="">ไม่เลือกโซนรอง</option><option value="A">Zone A - กรุงเทพตะวันออก</option><option value="B">Zone B - กรุงเทพเหนือ/ตะวันออก</option><option value="C">Zone C - กรุงเทพชั้นใน</option><option value="D">Zone D - ธนบุรีตอนใน</option><option value="E">Zone E - ฝั่งตะวันตกตอนล่าง</option><option value="F">Zone F - สมุทรปราการตะวันออก</option><option value="G">Zone G - นนทบุรี</option><option value="H">Zone H - ปทุมธานี</option></select></label>
+      <label><span>ระยะทางรับงาน</span><select id="quickServiceRadiusKm" class="premium-input"><option value="10">ไม่เกิน 10 กม.</option><option value="15">ไม่เกิน 15 กม.</option><option value="20">ไม่เกิน 20 กม.</option><option value="25">ไม่เกิน 25 กม.</option><option value="30">ไม่เกิน 30 กม.</option><option value="40">ไม่เกิน 40 กม.</option><option value="50">ไม่เกิน 50 กม.</option><option value="">ไม่จำกัดระยะทาง</option></select></label>
+      <label class="quick-check"><input id="quickAllowOutOfZone" type="checkbox"><span>รับงานนอกโซนเมื่อจำเป็น</span></label>
+    </div>
+    <div class="quick-actions">
+      <button class="btn primary" id="btnSaveQuickZone" type="button">บันทึกด่วน</button>
+      <button class="btn" type="button" onclick="openServiceZoneModal()">ตั้งค่าแบบละเอียด</button>
+    </div>
+  </div>
+</div>
 <style>
-  .zone-modal{position:fixed;inset:0;z-index:4060;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.68);backdrop-filter:blur(10px)}
-  .zone-panel{width:min(720px,100%);max-height:calc(100vh - 28px);overflow:auto;background:linear-gradient(180deg,#fff,#f8fbff);border-radius:24px;border:1px solid rgba(255,255,255,.72);box-shadow:0 28px 80px rgba(2,6,23,.38);padding:12px;color:#0f172a}
-  .zone-hero{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;background:linear-gradient(135deg,#0B2E6D,#0B4BB3 62%,#F4C400);border-radius:20px;padding:14px;color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
-  .zone-eyebrow{font-size:10px;font-weight:1000;letter-spacing:.14em;color:#FDE68A}.zone-hero h2{margin:3px 0 3px;font-size:21px;line-height:1.12}.zone-hero p{margin:0;color:rgba(255,255,255,.88);font-weight:800;line-height:1.35;font-size:13px}.zone-close{width:40px;height:40px;border-radius:14px;border:1px solid rgba(255,255,255,.38);background:rgba(255,255,255,.16);color:#fff;font-size:28px;line-height:1;cursor:pointer}.zone-map-card{margin-top:10px;border-radius:18px;overflow:hidden;background:#fff;border:1px solid rgba(11,75,179,.14);box-shadow:0 12px 30px rgba(11,46,109,.10)}.zone-map-card img{display:block;width:100%;max-height:220px;object-fit:contain;background:#fff}.zone-map-note{padding:8px 10px;background:linear-gradient(90deg,#fffbea,#f8fbff);font-size:11px;font-weight:1000;color:#0B2E6D;line-height:1.35}.zone-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.zone-form-grid label span{display:block;font-size:12px;font-weight:1000;color:#0B2E6D;margin:0 0 6px}.zone-form-grid .premium-input{width:100%;min-height:44px;border-radius:14px;border:1px solid rgba(11,46,109,.16);background:#fff;padding:9px 11px;font-weight:900;color:#0f172a;font-size:14px}.zone-detect-box{grid-column:1/-1;border-radius:16px;padding:12px;border:1px solid rgba(11,75,179,.18);background:#fff;color:#0B4BB3;font-weight:1000;line-height:1.45}.zone-explain{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}.zone-explain div{border:1px solid rgba(11,46,109,.12);background:#fff;border-radius:14px;padding:9px}.zone-explain b{display:block;color:#0B2E6D}.zone-explain span{display:block;margin-top:4px;font-size:12px;color:#64748b;font-weight:800;line-height:1.4}.zone-check{display:flex;gap:10px;align-items:flex-start;margin-top:12px;border-radius:18px;padding:12px;background:linear-gradient(135deg,#fffbea,#fff);border:1px solid rgba(244,196,0,.32);font-weight:900}.zone-check input{margin-top:4px;width:18px;height:18px}.zone-check small{display:block;color:#64748b;margin-top:3px;line-height:1.35}.zone-save{width:100%;min-height:46px;margin-top:10px;border-radius:16px;font-weight:1000}@media(max-width:620px){.zone-hero h2{font-size:20px}.zone-form-grid,.zone-explain{grid-template-columns:1fr}.zone-panel{border-radius:22px;padding:10px}}
+  .zone-modal{position:fixed;inset:0;z-index:4060;align-items:center;justify-content:center;padding:12px;background:rgba(2,6,23,.66);backdrop-filter:blur(10px)}
+  .zone-panel{width:min(760px,100%);max-height:calc(100vh - 24px);overflow:auto;background:linear-gradient(180deg,#fff,#f8fbff);border-radius:26px;border:1px solid rgba(255,255,255,.72);box-shadow:0 28px 80px rgba(2,6,23,.38);padding:12px;color:#0f172a}
+  .zone-hero{position:relative;overflow:hidden;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;background:linear-gradient(135deg,#05245b 0%,#0B4BB3 58%,#F4C400 100%);border-radius:22px;padding:18px 16px;color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+  .zone-hero:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(2,6,23,.38),rgba(2,6,23,.08));pointer-events:none}.zone-hero-copy{position:relative;z-index:1;max-width:560px}.zone-eyebrow{font-size:10px;font-weight:1000;letter-spacing:.15em;color:#FDE68A}.zone-hero h2{margin:5px 0 7px;font-size:25px;line-height:1.08;color:#fff;text-shadow:0 2px 10px rgba(2,6,23,.45)}.zone-hero p{margin:0;color:#fff;font-weight:900;line-height:1.42;font-size:14px;text-shadow:0 1px 7px rgba(2,6,23,.38)}.zone-close{position:relative;z-index:2;width:44px;height:44px;border-radius:16px;border:1px solid rgba(255,255,255,.42);background:rgba(255,255,255,.18);color:#fff;font-size:30px;line-height:1;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(255,255,255,.10)}
+  .zone-map-card{margin-top:12px;border-radius:20px;overflow:hidden;background:#fff;border:1px solid rgba(11,75,179,.14);box-shadow:0 12px 32px rgba(11,46,109,.10)}.zone-map-card img{display:block;width:100%;height:min(48vh,460px);object-fit:contain;background:#fff}.zone-map-note{display:flex;gap:6px;flex-direction:column;padding:10px 12px;background:linear-gradient(90deg,#fffbea,#f8fbff);font-size:12px;font-weight:1000;color:#0B2E6D;line-height:1.4}.zone-map-note span{color:#334155;font-size:11px}.zone-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.zone-form-grid label span,.quick-form label span{display:block;font-size:12px;font-weight:1000;color:#0B2E6D;margin:0 0 6px}.premium-input{width:100%;min-height:48px;border-radius:16px;border:1px solid rgba(11,46,109,.16);background:#fff;padding:10px 12px;font-weight:1000;color:#0f172a;font-size:15px;box-shadow:0 8px 18px rgba(11,46,109,.06)}.zone-detect-box{grid-column:1/-1;border-radius:16px;padding:12px;border:1px solid rgba(11,75,179,.18);background:#fff;color:#0B4BB3;font-weight:1000;line-height:1.45}.zone-explain{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}.zone-explain div{border:1px solid rgba(11,46,109,.12);background:#fff;border-radius:15px;padding:10px}.zone-explain b{display:block;color:#0B2E6D}.zone-explain span{display:block;margin-top:4px;font-size:12px;color:#64748b;font-weight:800;line-height:1.4}.zone-check{display:flex;gap:10px;align-items:flex-start;margin-top:12px;border-radius:18px;padding:12px;background:linear-gradient(135deg,#fffbea,#fff);border:1px solid rgba(244,196,0,.32);font-weight:900}.zone-check input,.quick-check input{margin-top:4px;width:18px;height:18px}.zone-check small{display:block;color:#64748b;margin-top:3px;line-height:1.35}.zone-save{width:100%;min-height:48px;margin-top:10px;border-radius:16px;font-weight:1000}
+  .zone-quick-modal{z-index:4070;align-items:flex-end}.zone-quick-panel{width:min(560px,100%);background:linear-gradient(180deg,#fff,#f8fbff);border-radius:26px 26px 18px 18px;padding:14px;border:1px solid rgba(255,255,255,.75);box-shadow:0 -18px 60px rgba(2,6,23,.34);color:#0f172a}.zone-quick-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;background:linear-gradient(135deg,#05245b,#0B4BB3);color:#fff;border-radius:20px;padding:14px}.zone-quick-head h3{margin:4px 0 4px;font-size:21px;line-height:1.15}.zone-quick-head p{margin:0;color:rgba(255,255,255,.90);font-size:12px;font-weight:900;line-height:1.35}.quick-zone-status{margin-top:10px;border-radius:16px;background:#fff;border:1px solid rgba(11,46,109,.12);padding:11px 12px;color:#0B2E6D;font-weight:1000;line-height:1.4}.quick-form{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.quick-check{grid-column:1/-1;display:flex;align-items:center;gap:9px;border-radius:16px;padding:10px 12px;background:#fffbea;border:1px solid rgba(244,196,0,.32);font-weight:1000;color:#0B2E6D}.quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.quick-actions .btn{min-height:46px;border-radius:16px;font-weight:1000}
+  @media(max-width:620px){.zone-panel{border-radius:24px;padding:10px}.zone-hero{padding:16px 14px}.zone-hero h2{font-size:24px}.zone-form-grid,.zone-explain,.quick-form,.quick-actions{grid-template-columns:1fr}.zone-map-card img{height:min(52vh,520px)}}
 </style>
 <div id="techMatrixModal" style="display:none;position:fixed;inset:0;z-index:4000;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,0.55)">
       <div style="width:min(720px, 100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:18px;border:1px solid rgba(15,23,42,0.12);box-shadow:0 28px 80px rgba(2,6,23,0.35);padding:12px">
@@ -779,7 +810,7 @@
         <button id="acceptToggleBtn" class="accept-btn ready" type="button">🟢 รับงาน</button>
 
         <div class="zone-wrap">
-          <button id="zoneQuickBtn" class="zone-select zone-action-btn" type="button" onclick="openServiceZoneModal()"><span>ตั้งค่าพื้นที่</span><small id="zoneQuickSummary">โซนหลัก / รอง</small></button>
+          <button id="zoneQuickBtn" class="zone-select zone-action-btn" type="button" onclick="openZoneQuickModal()"><span>ตั้งค่าด่วน</span><small id="zoneQuickSummary">โซน / ระยะทาง</small></button>
           <select id="zoneSelect" class="zone-select" style="display:none"><option value="">ทุกโซน</option></select>
         </div>
       </div>
