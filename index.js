@@ -206,8 +206,20 @@ async function getTechnicianPrimaryZone(username) {
 async function updateTechnicianHomeZone(username, home_province, home_district, allow_out_of_zone = false, secondary_service_zone_code = "", service_radius_km = null) {
   const u = String(username || "").trim();
   if (!u) throw new Error("username required");
-  const cleanProvince = String(home_province || "").trim();
-  const cleanDistrict = String(home_district || "").trim();
+  const cleanProvinceInput = String(home_province || "").trim();
+  const cleanDistrictInput = String(home_district || "").trim();
+  let existingHome = null;
+  if (!cleanProvinceInput || !cleanDistrictInput) {
+    try {
+      const existingQ = await pool.query(
+        `SELECT home_province, home_district FROM public.technician_profiles WHERE username=$1 LIMIT 1`,
+        [u]
+      );
+      existingHome = existingQ.rows?.[0] || null;
+    } catch (_) {}
+  }
+  const cleanProvince = cleanProvinceInput || String(existingHome?.home_province || "").trim();
+  const cleanDistrict = cleanDistrictInput || String(existingHome?.home_district || "").trim();
   const detected = await detectServiceZoneFromText({ home_province: cleanProvince, home_district: cleanDistrict });
   const zoneCode = detected?.service_zone_code || null;
   const secondaryCode = String(secondary_service_zone_code || "").trim().toUpperCase();

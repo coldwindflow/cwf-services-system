@@ -74,6 +74,7 @@ function populateHomeDistrictOptions(selectedDistrict = "") {
   if (!districtEl) return;
   const province = String(provinceEl?.value || "กรุงเทพมหานคร").trim() || "กรุงเทพมหานคร";
   const districts = HOME_DISTRICTS_BY_PROVINCE[province] || HOME_DISTRICTS_BY_PROVINCE["กรุงเทพมหานคร"] || [];
+  if (!districts.length) return;
   const current = String(selectedDistrict || districtEl.value || "").trim();
   const opts = ['<option value="">เลือกเขต / อำเภอ</option>'].concat(
     districts.map((name) => '<option value="' + name + '">' + name + '</option>')
@@ -462,13 +463,22 @@ function syncQuickZoneFields() {
 
 function openZoneQuickModal() {
   syncQuickZoneFields();
+  const detailModal = document.getElementById("serviceZoneModal") || serviceZoneModalEl;
   const modalEl = document.getElementById("zoneQuickModal") || zoneQuickModalEl;
-  if (modalEl) modalEl.style.display = "flex";
+  if (detailModal) detailModal.style.display = "none";
+  if (modalEl) {
+    modalEl.removeAttribute("hidden");
+    modalEl.style.display = "flex";
+    modalEl.classList.add("is-open");
+  }
 }
 
 function closeZoneQuickModal() {
   const modalEl = document.getElementById("zoneQuickModal") || zoneQuickModalEl;
-  if (modalEl) modalEl.style.display = "none";
+  if (modalEl) {
+    modalEl.style.display = "none";
+    modalEl.classList.remove("is-open");
+  }
 }
 
 async function saveQuickServiceZone() {
