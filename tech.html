@@ -473,6 +473,23 @@
     #techDrawerBackdrop{z-index:5100!important}
     #techDrawer{z-index:5200!important}
     #techTopSpacer{display:block!important;height:82px!important}
+
+  /* CWF zone modal readability override v5 */
+  .zone-panel{width:min(820px,100%)!important}
+  .zone-hero{background:linear-gradient(135deg,#061b45 0%,#0B2E6D 60%,#0B4BB3 100%)!important;padding:18px 16px!important}
+  .zone-hero:before{background:radial-gradient(circle at 92% 8%,rgba(244,196,0,.32),transparent 30%),linear-gradient(90deg,rgba(2,6,23,.82),rgba(2,6,23,.52))!important}
+  .zone-hero-copy{max-width:610px!important;background:rgba(2,6,23,.36)!important;border:1px solid rgba(255,255,255,.18)!important;border-radius:20px!important;padding:12px 13px!important;backdrop-filter:blur(6px)!important}
+  .zone-hero h2{margin:6px 0 8px!important;font-size:26px!important;line-height:1.08!important;color:#fff!important;opacity:1!important;text-shadow:0 3px 12px rgba(0,0,0,.78)!important}
+  .zone-hero-lead{margin:0!important;max-width:560px!important;color:#fff!important;font-weight:1000!important;line-height:1.5!important;font-size:14px!important;text-shadow:0 2px 10px rgba(0,0,0,.72)!important}
+  .zone-hero-pills{display:flex!important;flex-wrap:wrap!important;gap:7px!important;margin-top:12px!important}
+  .zone-hero-pills span{border-radius:999px!important;background:#fff!important;color:#0B2E6D!important;padding:6px 9px!important;font-size:11px!important;font-weight:1000!important;box-shadow:0 6px 16px rgba(2,6,23,.18)!important}
+  .zone-map-scroll{width:100%!important;overflow-x:auto!important;overflow-y:hidden!important;background:#fff!important;-webkit-overflow-scrolling:touch!important;cursor:zoom-in!important}
+  .zone-map-card img{display:block!important;width:100%!important;min-width:720px!important;height:auto!important;max-height:none!important;object-fit:contain!important;background:#fff!important}
+  .zone-map-preview-modal{position:fixed;inset:0;z-index:4090;align-items:center;justify-content:center;background:rgba(2,6,23,.86);padding:12px;backdrop-filter:blur(8px)}
+  .zone-map-preview-body{width:100%;height:100%;overflow:auto;-webkit-overflow-scrolling:touch;display:flex;align-items:flex-start;justify-content:center}
+  .zone-map-preview-body img{display:block;width:max(100%,920px);height:auto;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.42)}
+  .zone-map-preview-close{position:fixed;right:14px;top:14px;z-index:4100;width:48px;height:48px;border-radius:18px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.18);color:#fff;font-size:32px;line-height:1;box-shadow:0 12px 30px rgba(0,0,0,.24)}
+  @media(max-width:620px){.zone-hero-copy{padding:11px 12px!important}.zone-hero h2{font-size:22px!important}.zone-hero-lead{font-size:13px!important}.zone-map-card{margin-left:-4px;margin-right:-4px}.zone-map-card img{min-width:760px!important}.zone-map-preview-body img{width:max(100%,940px)}}
 </style>
 </head>
 <body>
@@ -569,16 +586,16 @@
     <div class="zone-hero zone-hero-modern">
       <div class="zone-hero-copy">
         <div class="zone-eyebrow">CWF SERVICE AREA</div>
-        <h2>ตั้งค่าพื้นที่รับงาน</h2>
-        <div class="zone-hero-pill">โซนหลัก • โซนรอง • ระยะทาง</div>
-        <p>เลือกจังหวัดและเขต/อำเภอจากรายการ ระบบจะกำหนดโซนหลักให้อัตโนมัติ แล้วเลือกโซนรองกับระยะทางรับงานได้ทันที</p>
+        <h2>ตั้งค่าพื้นที่รับงานของฉัน</h2>
+        <p class="zone-hero-lead">เลือกจังหวัดและเขต/อำเภอจากรายการ ระบบจะเลือกโซนหลักให้อัตโนมัติ แล้วค่อยตั้งโซนรองกับระยะทางรับงาน</p>
+        <div class="zone-hero-pills"><span>โซนหลักอัตโนมัติ</span><span>เลือกโซนรองได้</span><span>กำหนดระยะทาง</span></div>
       </div>
       <button class="zone-close" type="button" onclick="closeServiceZoneModal()" aria-label="ปิด">×</button>
     </div>
 
     <div class="zone-map-card">
-      <img src="/assets/cwf-service-zone-map.jpg" alt="แผนที่แบ่งโซนงานช่าง CWF กรุงเทพฯ สมุทรปราการ" loading="lazy">
-      <div class="zone-map-note"><b>แผนที่โซนงาน</b><span>โซนหลักใช้จัดงานก่อน • โซนรองใช้เป็นพื้นที่สำรอง • นอกโซนใช้เฉพาะเมื่อเปิดรับเอง</span></div>
+      <div class="zone-map-scroll" onclick="window.openZoneMapPreview && window.openZoneMapPreview()"><img src="/assets/cwf-service-zone-map.jpg" alt="แผนที่แบ่งโซนงานช่าง CWF กรุงเทพฯ สมุทรปราการ" loading="lazy"></div>
+      <div class="zone-map-note"><b>แผนที่โซนงาน</b><span>ภาพขยายใหญ่ขึ้น เลื่อนซ้าย-ขวาได้ และแตะที่ภาพเพื่อดูแบบเต็มจอ</span></div>
     </div>
 
     <div class="zone-form-grid">
@@ -598,6 +615,11 @@
     <label class="zone-check"><input id="allowOutOfZone" type="checkbox"> <span><b>เปิดรับงานนอกโซนเมื่อจำเป็น</b><small>ระบบจะจัดอันดับหลังโซนหลักและโซนรอง เพื่อลดการวิ่งไกล</small></span></label>
     <button id="btnSaveHomeZone" class="btn primary zone-save" type="button">บันทึกพื้นที่รับงาน</button>
   </div>
+</div>
+
+<div id="zoneMapPreviewModal" class="zone-map-preview-modal" style="display:none" onclick="if(event.target===this) window.closeZoneMapPreview && window.closeZoneMapPreview()">
+  <button class="zone-map-preview-close" type="button" onclick="closeZoneMapPreview()" aria-label="ปิดภาพเต็มจอ">×</button>
+  <div class="zone-map-preview-body"><img src="/assets/cwf-service-zone-map.jpg" alt="แผนที่แบ่งโซนงานช่าง CWF กรุงเทพฯ สมุทรปราการ แบบเต็มจอ"></div>
 </div>
 
 <div id="zoneQuickModal" class="zone-modal zone-quick-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="zoneQuickTitle">
@@ -1062,6 +1084,8 @@
   </div>
 
   <script>
+    window.openZoneMapPreview = window.openZoneMapPreview || function(){ var modal=document.getElementById('zoneMapPreviewModal'); if(modal) modal.style.display='flex'; };
+    window.closeZoneMapPreview = window.closeZoneMapPreview || function(){ var modal=document.getElementById('zoneMapPreviewModal'); if(modal) modal.style.display='none'; };
     window.__cwfOpenZoneQuickModalFallback = function(ev){
       if (ev && ev.preventDefault) ev.preventDefault();
       var modal = document.getElementById('zoneQuickModal');
@@ -1079,7 +1103,7 @@
       }
     });
   </script>
-  <script src="app.js?v=zone-quick-modal-fix-v4"></script>
+  <script src="app.js?v=zone-map-header-readable-v5"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
