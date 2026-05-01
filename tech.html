@@ -490,6 +490,19 @@
   .zone-map-preview-body img{display:block;width:max(100%,920px);height:auto;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.42)}
   .zone-map-preview-close{position:fixed;right:14px;top:14px;z-index:4100;width:48px;height:48px;border-radius:18px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.18);color:#fff;font-size:32px;line-height:1;box-shadow:0 12px 30px rgba(0,0,0,.24)}
   @media(max-width:620px){.zone-hero-copy{padding:11px 12px!important}.zone-hero h2{font-size:22px!important}.zone-hero-lead{font-size:13px!important}.zone-map-card{margin-left:-4px;margin-right:-4px}.zone-map-card img{min-width:760px!important}.zone-map-preview-body img{width:max(100%,940px)}}
+
+  .zone-hero-modern{min-height:210px!important;padding:18px!important;background:linear-gradient(135deg,#071a3f 0%,#0B2E6D 58%,#0B4BB3 100%)!important}
+  .zone-hero-modern:before{background:linear-gradient(90deg,rgba(2,6,23,.92),rgba(2,6,23,.68),rgba(2,6,23,.24)),radial-gradient(circle at 92% 88%,rgba(244,196,0,.42),transparent 36%)!important}
+  .zone-hero-copy{width:calc(100% - 68px)!important;max-width:640px!important;background:rgba(2,6,23,.66)!important;border:1px solid rgba(255,255,255,.22)!important;border-radius:22px!important;padding:14px 14px 15px!important;box-shadow:0 16px 34px rgba(2,6,23,.22),inset 0 0 0 1px rgba(255,255,255,.08)!important}
+  .zone-hero-title{display:block!important;margin:7px 0 10px!important;color:#fff!important;font-size:28px!important;line-height:1.08!important;font-weight:1000!important;letter-spacing:-.02em!important;text-shadow:0 3px 14px rgba(0,0,0,.95),0 0 1px #fff!important;opacity:1!important;visibility:visible!important}
+  .zone-hero-modern h2{display:none!important}
+  .zone-hero-lead{color:#fff!important;background:rgba(15,23,42,.62)!important;border-radius:16px!important;padding:10px 11px!important;font-size:15px!important;line-height:1.48!important;text-shadow:0 2px 10px rgba(0,0,0,.86)!important}
+  .zone-hero-pills span{background:#fff!important;color:#0B2E6D!important;border:1px solid rgba(255,255,255,.7)!important}
+  .zone-map-scroll{border-radius:20px 20px 0 0!important;background:#f8fbff!important;overflow-x:auto!important;overflow-y:hidden!important;-webkit-overflow-scrolling:touch!important;padding:0!important}
+  .zone-map-card img{width:auto!important;max-width:none!important;min-width:980px!important;height:auto!important;max-height:none!important;object-fit:contain!important;background:#fff!important}
+  .zone-map-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.zone-map-actions button{min-height:42px;border:0;border-radius:14px;background:#0B4BB3;color:#fff;font-weight:1000;box-shadow:0 10px 22px rgba(11,75,179,.18)}.zone-map-actions button.outline{background:#fff;color:#0B2E6D;border:1px solid rgba(11,46,109,.16)}
+  .zone-detail-modal{position:fixed;inset:0;z-index:4095;align-items:center;justify-content:center;background:rgba(2,6,23,.72);padding:14px;backdrop-filter:blur(9px)}.zone-detail-panel{width:min(720px,100%);max-height:92vh;overflow:auto;border-radius:26px;background:#f8fbff;padding:14px;border:1px solid rgba(255,255,255,.55);box-shadow:0 28px 70px rgba(2,6,23,.35)}.zone-detail-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border-radius:22px;background:linear-gradient(135deg,#fff,#eef6ff);padding:14px;border:1px solid rgba(11,46,109,.12)}.zone-eyebrow.dark{color:#0B4BB3}.zone-detail-head h3{margin:4px 0 6px;color:#0B2E6D;font-size:22px;line-height:1.15}.zone-detail-head p{margin:0;color:#475569;font-weight:900;line-height:1.45}.zone-detail-close{width:44px;height:44px;border-radius:16px;border:1px solid rgba(11,46,109,.14);background:#fff;color:#0B2E6D;font-size:28px;font-weight:1000}.zone-detail-body{display:grid;gap:10px;margin-top:12px}.zone-guide-card,.zone-guide-grid>div{border-radius:18px;background:#fff;border:1px solid rgba(11,46,109,.12);padding:12px;box-shadow:0 10px 24px rgba(11,46,109,.06)}.zone-guide-card.primary{background:linear-gradient(135deg,#fffbea,#fff)}.zone-guide-card.warning{background:linear-gradient(135deg,#eff6ff,#fff)}.zone-guide-card b,.zone-guide-grid b{color:#0B2E6D;font-weight:1000}.zone-guide-card ol{margin:8px 0 0 20px;padding:0;color:#334155;font-weight:850;line-height:1.55}.zone-guide-card p{margin:8px 0 0;color:#334155;font-weight:850;line-height:1.55}.zone-guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.zone-guide-grid span{display:block;margin-top:5px;color:#475569;font-weight:850;line-height:1.45;font-size:13px}
+  @media(max-width:620px){.zone-hero-modern{min-height:220px!important;padding:14px!important}.zone-hero-copy{width:calc(100% - 58px)!important;padding:12px!important}.zone-hero-title{font-size:26px!important}.zone-hero-lead{font-size:14px!important}.zone-map-card img{min-width:1040px!important}.zone-map-actions{grid-template-columns:1fr}.zone-guide-grid{grid-template-columns:1fr}.zone-detail-panel{border-radius:24px;padding:10px}}
 </style>
 </head>
 <body>
@@ -586,16 +599,23 @@
     <div class="zone-hero zone-hero-modern">
       <div class="zone-hero-copy">
         <div class="zone-eyebrow">CWF SERVICE AREA</div>
-        <h2>ตั้งค่าพื้นที่รับงานของฉัน</h2>
-        <p class="zone-hero-lead">เลือกจังหวัดและเขต/อำเภอจากรายการ ระบบจะเลือกโซนหลักให้อัตโนมัติ แล้วค่อยตั้งโซนรองกับระยะทางรับงาน</p>
-        <div class="zone-hero-pills"><span>โซนหลักอัตโนมัติ</span><span>เลือกโซนรองได้</span><span>กำหนดระยะทาง</span></div>
+        <div class="zone-hero-title" role="heading" aria-level="2">ตั้งค่าพื้นที่รับงานของฉัน</div>
+        <p class="zone-hero-lead">เลือกจังหวัดและเขต/อำเภอจากดรอปดาวน์ ระบบจะกำหนดโซนหลักให้เอง แล้วเลือกโซนรองกับระยะทางรับงานได้ทันที</p>
+        <div class="zone-hero-pills"><span>โซนหลักอัตโนมัติ</span><span>โซนรองสำรองงาน</span><span>เลือกระยะทาง</span></div>
       </div>
       <button class="zone-close" type="button" onclick="closeServiceZoneModal()" aria-label="ปิด">×</button>
     </div>
 
     <div class="zone-map-card">
       <div class="zone-map-scroll" onclick="window.openZoneMapPreview && window.openZoneMapPreview()"><img src="/assets/cwf-service-zone-map.jpg" alt="แผนที่แบ่งโซนงานช่าง CWF กรุงเทพฯ สมุทรปราการ" loading="lazy"></div>
-      <div class="zone-map-note"><b>แผนที่โซนงาน</b><span>ภาพขยายใหญ่ขึ้น เลื่อนซ้าย-ขวาได้ และแตะที่ภาพเพื่อดูแบบเต็มจอ</span></div>
+      <div class="zone-map-note">
+        <b>แผนที่โซนงาน</b>
+        <span>เลื่อนซ้าย-ขวาเพื่อดูรายละเอียด หรือกดปุ่มด้านล่างเพื่ออ่านแบบเต็ม</span>
+        <div class="zone-map-actions">
+          <button type="button" onclick="window.openZoneMapPreview && window.openZoneMapPreview()">🔍 ดูภาพเต็มจอ</button>
+          <button type="button" class="outline" onclick="window.openZoneDetailModal && window.openZoneDetailModal()">📖 อ่านรายละเอียดพื้นที่รับงาน</button>
+        </div>
+      </div>
     </div>
 
     <div class="zone-form-grid">
@@ -620,6 +640,49 @@
 <div id="zoneMapPreviewModal" class="zone-map-preview-modal" style="display:none" onclick="if(event.target===this) window.closeZoneMapPreview && window.closeZoneMapPreview()">
   <button class="zone-map-preview-close" type="button" onclick="closeZoneMapPreview()" aria-label="ปิดภาพเต็มจอ">×</button>
   <div class="zone-map-preview-body"><img src="/assets/cwf-service-zone-map.jpg" alt="แผนที่แบ่งโซนงานช่าง CWF กรุงเทพฯ สมุทรปราการ แบบเต็มจอ"></div>
+</div>
+
+<div id="zoneDetailModal" class="zone-detail-modal" style="display:none" onclick="if(event.target===this) window.closeZoneDetailModal && window.closeZoneDetailModal()">
+  <div class="zone-detail-panel" role="dialog" aria-modal="true" aria-labelledby="zoneDetailTitle">
+    <div class="zone-detail-head">
+      <div>
+        <div class="zone-eyebrow dark">CWF ZONE GUIDE</div>
+        <h3 id="zoneDetailTitle">รายละเอียดพื้นที่รับงานและวิธีตั้งค่า</h3>
+        <p>ใช้เพื่อลดระยะทาง ลดค่าวิ่ง และช่วยให้ระบบเลือกช่างที่เหมาะกับงานมากขึ้น</p>
+      </div>
+      <button type="button" class="zone-detail-close" onclick="closeZoneDetailModal()" aria-label="ปิดรายละเอียด">×</button>
+    </div>
+    <div class="zone-detail-body">
+      <div class="zone-guide-card primary">
+        <b>หลักการทำงาน</b>
+        <ol>
+          <li><b>โซนหลัก</b> ระบบเลือกจากจังหวัด + เขต/อำเภอที่ช่างอยู่ประจำ ใช้จัดงานก่อนเป็นอันดับแรก</li>
+          <li><b>โซนรอง</b> ใช้เป็นพื้นที่สำรองสำหรับงานใกล้เคียง ไม่ได้บังคับให้รับทุกงาน</li>
+          <li><b>รับนอกโซน</b> ใช้เฉพาะกรณีเปิดรับเอง หรือแอดมินเห็นว่าจำเป็น</li>
+          <li><b>ระยะทางรับงาน</b> ใช้เป็นกรอบตั้งค่าด่วน เพื่อไม่ให้ระบบดันงานไกลเกินไป</li>
+        </ol>
+      </div>
+      <div class="zone-guide-grid">
+        <div><b>Zone A</b><span>กรุงเทพฯ ตะวันออกแกนหลัก: พระโขนง บางนา สวนหลวง ประเวศ บางกะปิ สะพานสูง ลาดกระบัง</span></div>
+        <div><b>Zone B</b><span>กรุงเทพฯ เหนือ-ตะวันออก: ดอนเมือง สายไหม บางเขน หลักสี่ จตุจักร ลาดพร้าว วังทองหลาง บึงกุ่ม คันนายาว คลองสามวา มีนบุรี หนองจอก</span></div>
+        <div><b>Zone C</b><span>กรุงเทพฯ ชั้นใน: ปทุมวัน ราชเทวี พญาไท ดุสิต พระนคร ป้อมปราบฯ สัมพันธวงศ์ บางรัก สาทร ยานนาวา ห้วยขวาง ดินแดง วัฒนา คลองเตย บางคอแหลม</span></div>
+        <div><b>Zone D</b><span>ธนบุรีตอนใน: คลองสาน ธนบุรี บางกอกใหญ่ บางกอกน้อย บางพลัด ตลิ่งชัน</span></div>
+        <div><b>Zone E</b><span>ฝั่งตะวันตก-ใต้/ข้ามฝั่งแม่น้ำ: ภาษีเจริญ บางแค หนองแขม ทวีวัฒนา จอมทอง ราษฎร์บูรณะ ทุ่งครุ บางขุนเทียน บางบอน พระประแดง พระสมุทรเจดีย์</span></div>
+        <div><b>Zone F</b><span>สมุทรปราการฝั่งตะวันออก: เมืองสมุทรปราการ บางพลี บางเสาธง บางบ่อ</span></div>
+      </div>
+      <div class="zone-guide-card examples">
+        <b>ตัวอย่างการตั้งค่า</b>
+        <p><b>ช่าง A</b> อยู่บางนา → โซนหลัก A, โซนรอง F, ระยะ 20 กม. เหมาะกับงานสุขุมวิท บางนา สมุทรปราการฝั่งตะวันออก</p>
+        <p><b>ช่าง B</b> อยู่บางแค → โซนหลัก E, โซนรอง D, ระยะ 25 กม. เหมาะกับงานฝั่งธนฯ และชั้นในบางส่วน</p>
+        <p><b>ช่าง C</b> อยู่ลาดพร้าว → โซนหลัก B, โซนรอง C, ระยะ 20 กม. เหมาะกับงานโซนเหนือและกลางเมือง</p>
+      </div>
+      <div class="zone-guide-card warning">
+        <b>ผลกับการลงงานของแอดมิน</b>
+        <p><b>ยิงงานด่วน</b>: ระบบจะเสนอให้ช่างที่ตรงโซนหลักก่อน จากนั้นโซนรอง แล้วค่อยช่างที่เปิดรับนอกโซน</p>
+        <p><b>บังคับเพิ่มงานให้ช่าง</b>: แอดมินยังล็อกช่างได้เหมือนเดิม ระบบไม่บล็อกเพราะโซน แต่จะแจ้ง warning ถ้างานอยู่นอกโซนของช่าง</p>
+      </div>
+    </div>
+  </div>
 </div>
 
 <div id="zoneQuickModal" class="zone-modal zone-quick-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="zoneQuickTitle">
@@ -1086,6 +1149,8 @@
   <script>
     window.openZoneMapPreview = window.openZoneMapPreview || function(){ var modal=document.getElementById('zoneMapPreviewModal'); if(modal) modal.style.display='flex'; };
     window.closeZoneMapPreview = window.closeZoneMapPreview || function(){ var modal=document.getElementById('zoneMapPreviewModal'); if(modal) modal.style.display='none'; };
+    window.openZoneDetailModal = window.openZoneDetailModal || function(){ var modal=document.getElementById('zoneDetailModal'); if(modal) modal.style.display='flex'; };
+    window.closeZoneDetailModal = window.closeZoneDetailModal || function(){ var modal=document.getElementById('zoneDetailModal'); if(modal) modal.style.display='none'; };
     window.__cwfOpenZoneQuickModalFallback = function(ev){
       if (ev && ev.preventDefault) ev.preventDefault();
       var modal = document.getElementById('zoneQuickModal');
@@ -1103,7 +1168,7 @@
       }
     });
   </script>
-  <script src="app.js?v=zone-map-header-readable-v5"></script>
+  <script src="app.js?v=zone-map-detail-readable-v6"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

@@ -11944,12 +11944,13 @@ if (coerceNumber(override_price, 0) > 0) {
       let candidateRows = partnerRows;
       if (ENABLE_SERVICE_ZONE_FILTER && detectedZoneCode) {
         const primary = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() === detectedZoneCode);
-        const fallback = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() !== detectedZoneCode && r.allow_out_of_zone);
+        const secondary = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() !== detectedZoneCode && String(r.secondary_service_zone_code || "").toUpperCase() === detectedZoneCode);
+        const fallback = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() !== detectedZoneCode && String(r.secondary_service_zone_code || "").toUpperCase() !== detectedZoneCode && r.allow_out_of_zone);
         zone_filter_applied = true;
-        zone_matched_technicians_count = primary.length;
-        zone_fallback_used = primary.length === 0 && fallback.length > 0;
-        candidateRows = (primary.length || fallback.length) ? [...primary, ...fallback] : partnerRows;
-        if (!primary.length && !fallback.length) zone_fallback_used = true;
+        zone_matched_technicians_count = primary.length + secondary.length;
+        zone_fallback_used = primary.length === 0 && secondary.length === 0 && fallback.length > 0;
+        candidateRows = (primary.length || secondary.length || fallback.length) ? [...primary, ...secondary, ...fallback] : partnerRows;
+        if (!primary.length && !secondary.length && !fallback.length) zone_fallback_used = true;
       }
       const list = rankTechniciansForServiceZone(candidateRows, detectedZoneCode).map((r) => r.username);
       // จำกัด 30 ทีม
