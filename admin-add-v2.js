@@ -2555,7 +2555,7 @@ async function submitBooking() {
       // keep DBG.lastRes/intervals from last availability call
       dbgRender();
     }
-    const endpoint = (uiMode === 'urgent') ? "/admin/urgent_broadcast_v2" : "/admin/book_v2";
+    const endpoint = "/admin/book_v2";
     if (DEBUG_ENABLED) {
       DBG.lastReq = maskPII({ endpoint, payload: payload });
       dbgRender();
@@ -2566,7 +2566,10 @@ async function submitBooking() {
       dbgRender();
     }
     if(uiMode === 'urgent') {
-      showToast(`ยิงงานด่วนสำเร็จ: ${r.booking_code} • ส่งข้อเสนอ ${Number(r.offers||0)} คน`, 'success');
+      const offersRaw = r.offers_count ?? r.offer_count ?? r.offers_sent ?? r.offers;
+      const offerCount = Array.isArray(offersRaw) ? offersRaw.length : Number(offersRaw);
+      const offerText = Number.isFinite(offerCount) ? ` ส่งข้อเสนอ ${offerCount} คน` : '';
+      showToast(`ยิงงานด่วนสำเร็จ${r.booking_code ? `: ${r.booking_code}` : ''}${offerText}`, 'success');
     } else {
       showToast(`บันทึกงานสำเร็จ: ${r.booking_code}`, 'success');
     }
