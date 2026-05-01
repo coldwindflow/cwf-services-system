@@ -548,6 +548,9 @@
           <button class="settingsItem" type="button" onclick="openWorkdaysModal()">
             <span class="sIcon">🗓️</span><span class="sText"><strong>วันหยุด / วันทำงาน</strong><span>ตั้งค่าวันรับงานและวันไม่สะดวก</span></span>
           </button>
+          <button class="settingsItem" type="button" onclick="openServiceZoneModal()">
+            <span class="sIcon">ZONE</span><span class="sText"><strong>พื้นที่ประจำของฉัน</strong><span>เลือกจังหวัด/อำเภอ ระบบกำหนดโซนให้อัตโนมัติ</span></span>
+          </button>
           <button class="settingsItem" type="button" onclick="document.getElementById('techMatrixBtn')?.click()">
             <span class="sIcon">🧩</span><span class="sText"><strong>งานที่รับได้</strong><span>ตั้งค่าประเภทงานที่พร้อมให้แสดงสลอตลูกค้า</span></span>
           </button>
@@ -561,6 +564,23 @@
       </div>
     </div>
 
+<div id="serviceZoneModal" style="display:none;position:fixed;inset:0;z-index:4050;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,0.55)">
+  <div style="width:min(520px,100%);background:#fff;border-radius:18px;border:1px solid rgba(15,23,42,.12);box-shadow:0 28px 80px rgba(2,6,23,.35);padding:14px">
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+      <div><b style="font-size:16px;color:#0b2e6d">พื้นที่ประจำของฉัน</b><div class="muted" style="margin-top:4px">เลือกจังหวัดและเขต/อำเภอ ระบบจะกำหนดโซนหลักให้</div></div>
+      <button class="tech-icbtn" type="button" onclick="closeServiceZoneModal()">×</button>
+    </div>
+    <div style="display:grid;gap:10px;margin-top:12px">
+      <label class="muted">จังหวัด</label>
+      <select id="homeProvince" class="premium-input"><option value="กรุงเทพมหานคร">กรุงเทพมหานคร</option><option value="สมุทรปราการ">สมุทรปราการ</option><option value="นนทบุรี">นนทบุรี</option><option value="ปทุมธานี">ปทุมธานี</option></select>
+      <label class="muted">เขต / อำเภอ</label>
+      <input id="homeDistrict" class="premium-input" placeholder="เช่น สวนหลวง, บางพลี, ปากเกร็ด">
+      <div id="homeZoneHint" class="muted" style="background:#f8fbff;border:1px solid rgba(11,75,179,.16);border-radius:14px;padding:10px">กรุณาเลือกจังหวัดและเขต/อำเภอ</div>
+      <label style="display:flex;gap:8px;align-items:flex-start;font-weight:800;color:#0f172a"><input id="allowOutOfZone" type="checkbox" style="margin-top:3px"> <span>เปิดรับงานนอกโซนเมื่อจำเป็น<br><small class="muted">ถ้าเปิด ระบบอาจเสนอให้งานใกล้เคียงหรืองานนอกโซน เมื่อไม่มีช่างในพื้นที่เพียงพอ</small></span></label>
+      <button id="btnSaveHomeZone" class="btn primary" type="button">บันทึกพื้นที่ประจำ</button>
+    </div>
+  </div>
+</div>
 <div id="techMatrixModal" style="display:none;position:fixed;inset:0;z-index:4000;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,0.55)">
       <div style="width:min(720px, 100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:18px;border:1px solid rgba(15,23,42,0.12);box-shadow:0 28px 80px rgba(2,6,23,0.35);padding:12px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
@@ -737,7 +757,7 @@
       <div class="tech-ctrl-row">
         <button id="acceptToggleBtn" class="accept-btn ready" type="button">🟢 รับงาน</button>
 
-        <div class="zone-wrap">
+        <div class="zone-wrap" style="display:none">
           <select id="zoneSelect" class="zone-select">
             <option value="">ทุกโซน</option>
             <option value="สุขุมวิท">สุขุมวิท</option>

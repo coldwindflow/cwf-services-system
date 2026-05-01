@@ -54,6 +54,7 @@ const FLAG_SHOW_TECH_PHONE_ON_TRACKING = envBool("SHOW_TECH_PHONE_ON_TRACKING", 
 const ENABLE_AVAILABILITY_V2 = envBool("ENABLE_AVAILABILITY_V2", true);
 // ✅ Safe toggle: urgent offer flow (public booking + offers)
 const ENABLE_URGENT_FLOW = envBool("ENABLE_URGENT_FLOW", true);
+const ENABLE_SERVICE_ZONE_FILTER = envBool("ENABLE_SERVICE_ZONE_FILTER", true);
 const ENABLE_PARTNER_DEPOSIT_DEDUCTION = envBool("ENABLE_PARTNER_DEPOSIT_DEDUCTION", true);
 const ENABLE_WEB_PUSH_NOTIFICATIONS = envBool("ENABLE_WEB_PUSH_NOTIFICATIONS", true);
 const WEB_PUSH_PUBLIC_KEY = String(process.env.WEB_PUSH_PUBLIC_KEY || "").trim();
@@ -65,6 +66,147 @@ if (WEB_PUSH_READY) {
   catch (e) { console.warn("⚠️ web-push VAPID setup failed", e.message); }
 }
 const TRAVEL_BUFFER_MIN = Math.max(0, Number(process.env.TRAVEL_BUFFER_MIN || 30)); // นาที/งาน (Travel Buffer)
+
+const SERVICE_ZONE_SEEDS = [
+  { code: "A", name: "bangkok_east_core", label: "กรุงเทพตะวันออกแกนหลัก", group: "bangkok", color: "#0B4BB3", order: 10, districts: ["พระโขนง", "บางนา", "สวนหลวง", "ประเวศ", "บางกะปิ", "สะพานสูง", "ลาดกระบัง"] },
+  { code: "B", name: "bangkok_north_east", label: "กรุงเทพเหนือ-ตะวันออก", group: "bangkok", color: "#2563EB", order: 20, districts: ["ดอนเมือง", "สายไหม", "บางเขน", "หลักสี่", "จตุจักร", "บางซื่อ", "ลาดพร้าว", "วังทองหลาง", "บึงกุ่ม", "คันนายาว", "คลองสามวา", "มีนบุรี", "หนองจอก"] },
+  { code: "C", name: "bangkok_inner", label: "กรุงเทพชั้นใน", group: "bangkok", color: "#06B6D4", order: 30, districts: ["ปทุมวัน", "ราชเทวี", "พญาไท", "ดุสิต", "พระนคร", "ป้อมปราบศัตรูพ่าย", "สัมพันธวงศ์", "บางรัก", "สาทร", "ยานนาวา", "ห้วยขวาง", "ดินแดง", "วัฒนา", "คลองเตย", "บางคอแหลม"] },
+  { code: "D", name: "thonburi_inner", label: "ธนบุรีตอนใน", group: "bangkok_west", color: "#10B981", order: 40, districts: ["คลองสาน", "ธนบุรี", "บางกอกใหญ่", "บางกอกน้อย", "บางพลัด", "ตลิ่งชัน"] },
+  { code: "E", name: "west_southwest_river_side", label: "ฝั่งตะวันตกตอนล่าง / ข้ามฝั่งแม่น้ำ", group: "bangkok_west", color: "#F59E0B", order: 50, districts: ["ภาษีเจริญ", "บางแค", "หนองแขม", "ทวีวัฒนา", "จอมทอง", "ราษฎร์บูรณะ", "ทุ่งครุ", "บางขุนเทียน", "บางบอน", "พระประแดง", "พระสมุทรเจดีย์"] },
+  { code: "F", name: "samut_prakan_east", label: "สมุทรปราการฝั่งตะวันออก", group: "samut_prakan", color: "#EF4444", order: 60, districts: ["เมืองสมุทรปราการ", "บางพลี", "บางเสาธง", "บางบ่อ"] },
+  { code: "G", name: "nonthaburi", label: "นนทบุรี", group: "nonthaburi", color: "#8B5CF6", order: 70, districts: ["เมืองนนทบุรี", "ปากเกร็ด", "บางกรวย", "บางใหญ่", "บางบัวทอง", "ไทรน้อย"] },
+  { code: "H", name: "pathum_thani", label: "ปทุมธานี", group: "pathum_thani", color: "#EC4899", order: 80, districts: ["เมืองปทุมธานี", "คลองหลวง", "ธัญบุรี", "ลำลูกกา", "หนองเสือ", "ลาดหลุมแก้ว", "สามโคก"] },
+];
+const SERVICE_ZONE_BY_CODE = new Map(SERVICE_ZONE_SEEDS.map(z => [z.code, z]));
+
+function normalizeThaiAreaText(v) {
+  return String(v || "")
+    .normalize("NFC")
+    .toLowerCase()
+    .replace(/[\u200B-\u200D\uFEFF]/g, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .replace(/^(เขต|อำเภอ|อําเภอ|อ\.)/u, "");
+}
+
+async function getServiceZones() {
+  try {
+    const r = await pool.query(
+      `SELECT zone_code, zone_name, zone_label, province_group, color_hex, is_active, sort_order
+       FROM public.service_zones
+       WHERE is_active=TRUE
+       ORDER BY sort_order, zone_code`
+    );
+    if (r.rows.length) return r.rows;
+  } catch (_) {}
+  return SERVICE_ZONE_SEEDS.map(z => ({
+    zone_code: z.code,
+    zone_name: z.name,
+    zone_label: z.label,
+    province_group: z.group,
+    color_hex: z.color,
+    is_active: true,
+    sort_order: z.order,
+  }));
+}
+
+async function detectServiceZoneFromText({ address_text, job_zone, service_zone_code, home_province, home_district } = {}) {
+  const explicit = String(service_zone_code || "").trim().toUpperCase();
+  if (explicit && SERVICE_ZONE_BY_CODE.has(explicit)) {
+    const z = SERVICE_ZONE_BY_CODE.get(explicit);
+    return { service_zone_code: z.code, service_zone_label: z.label, service_zone_source: "admin_override", matched_district: null };
+  }
+  const hay = normalizeThaiAreaText([home_district, job_zone, address_text, home_province].filter(Boolean).join(" "));
+  if (!hay) return null;
+  const matches = [];
+  for (const z of SERVICE_ZONE_SEEDS) {
+    for (const district of z.districts) {
+      const d = normalizeThaiAreaText(district);
+      if (d && hay.includes(d)) matches.push({ z, district, len: d.length });
+    }
+  }
+  matches.sort((a, b) => b.len - a.len || a.z.order - b.z.order);
+  const best = matches[0];
+  if (!best) return null;
+  return { service_zone_code: best.z.code, service_zone_label: best.z.label, service_zone_source: "auto_detect", matched_district: best.district };
+}
+
+async function getTechnicianPrimaryZone(username) {
+  const u = String(username || "").trim();
+  if (!u) return null;
+  try {
+    const r = await pool.query(
+      `SELECT p.home_service_zone_code, p.allow_out_of_zone, z.zone_label
+       FROM public.technician_profiles p
+       LEFT JOIN public.service_zones z ON z.zone_code=p.home_service_zone_code
+       WHERE p.username=$1
+       LIMIT 1`,
+      [u]
+    );
+    const row = r.rows[0];
+    if (!row) return null;
+    return {
+      zone_code: row.home_service_zone_code || null,
+      zone_label: row.zone_label || (SERVICE_ZONE_BY_CODE.get(row.home_service_zone_code || "")?.label || null),
+      allow_out_of_zone: !!row.allow_out_of_zone,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
+async function updateTechnicianHomeZone(username, home_province, home_district, allow_out_of_zone = false) {
+  const u = String(username || "").trim();
+  if (!u) throw new Error("username required");
+  const detected = await detectServiceZoneFromText({ home_province, home_district });
+  const zoneCode = detected?.service_zone_code || null;
+  await pool.query(
+    `INSERT INTO public.technician_profiles
+       (username, home_province, home_district, home_service_zone_code, allow_out_of_zone, updated_at)
+     VALUES ($1,$2,$3,$4,$5,NOW())
+     ON CONFLICT (username) DO UPDATE SET
+       home_province=EXCLUDED.home_province,
+       home_district=EXCLUDED.home_district,
+       home_service_zone_code=EXCLUDED.home_service_zone_code,
+       allow_out_of_zone=EXCLUDED.allow_out_of_zone,
+       updated_at=NOW()`,
+    [u, String(home_province || "").trim() || null, String(home_district || "").trim() || null, zoneCode, !!allow_out_of_zone]
+  );
+  await pool.query(`UPDATE public.technician_service_zones SET is_primary=FALSE, is_active=FALSE, updated_at=NOW() WHERE technician_username=$1`, [u]);
+  if (zoneCode) {
+    await pool.query(
+      `INSERT INTO public.technician_service_zones (technician_username, zone_code, priority, is_primary, is_active, updated_at)
+       VALUES ($1,$2,1,TRUE,TRUE,NOW())
+       ON CONFLICT (technician_username, zone_code) DO UPDATE SET
+         priority=1, is_primary=TRUE, is_active=TRUE, updated_at=NOW()`,
+      [u, zoneCode]
+    );
+  }
+  return { ...detected, home_province: String(home_province || "").trim(), home_district: String(home_district || "").trim(), allow_out_of_zone: !!allow_out_of_zone };
+}
+
+async function technicianMatchesServiceZone(username, zone_code) {
+  const z = String(zone_code || "").trim().toUpperCase();
+  if (!z) return { matches: false, allow_out_of_zone: false };
+  const pz = await getTechnicianPrimaryZone(username);
+  return {
+    matches: !!pz?.zone_code && String(pz.zone_code).toUpperCase() === z,
+    allow_out_of_zone: !!pz?.allow_out_of_zone,
+    zone_code: pz?.zone_code || null,
+  };
+}
+
+function rankTechniciansForServiceZone(technicians, zone_code) {
+  const z = String(zone_code || "").trim().toUpperCase();
+  const rows = Array.isArray(technicians) ? technicians : [];
+  return rows.slice().sort((a, b) => {
+    const az = String(a.home_service_zone_code || "").trim().toUpperCase();
+    const bz = String(b.home_service_zone_code || "").trim().toUpperCase();
+    const ar = z && az === z ? 0 : (a.allow_out_of_zone ? 1 : 2);
+    const br = z && bz === z ? 0 : (b.allow_out_of_zone ? 1 : 2);
+    if (ar !== br) return ar - br;
+    return String(a.username || "").localeCompare(String(b.username || ""));
+  });
+}
 
 // =======================================
 // ☁️ CLOUDINARY (optional / backward compatible)
@@ -9067,6 +9209,8 @@ await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS approved_at T
     // 2.1) jobs: maps_url / job_zone / travel_started_at / started_at / finished_at / canceled_at / final_signature_*
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS maps_url TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS job_zone TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS service_zone_code TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS service_zone_source TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS travel_started_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS finished_at TIMESTAMPTZ`);
@@ -9149,6 +9293,70 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_profiles_phone ON public.customer_profiles(phone)`);
+// 3.15) service zones: automatic district/amphoe mapping for dispatch
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.service_zones (
+    zone_code TEXT PRIMARY KEY,
+    zone_name TEXT NOT NULL,
+    zone_label TEXT NOT NULL,
+    province_group TEXT,
+    color_hex TEXT,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    sort_order INTEGER NOT NULL DEFAULT 100,
+    notes TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.service_zone_areas (
+    area_id BIGSERIAL PRIMARY KEY,
+    zone_code TEXT NOT NULL REFERENCES public.service_zones(zone_code),
+    province TEXT NOT NULL,
+    district TEXT NOT NULL,
+    subdistrict TEXT,
+    river_side TEXT,
+    is_primary BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_service_zone_areas_unique_area ON public.service_zone_areas(zone_code, province, district, (COALESCE(subdistrict,'')))`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.technician_service_zones (
+    technician_username TEXT NOT NULL,
+    zone_code TEXT NOT NULL REFERENCES public.service_zones(zone_code),
+    priority INTEGER NOT NULL DEFAULT 100,
+    is_primary BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (technician_username, zone_code)
+  )
+`);
+for (const z of SERVICE_ZONE_SEEDS) {
+  await pool.query(
+    `INSERT INTO public.service_zones (zone_code, zone_name, zone_label, province_group, color_hex, sort_order, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,NOW())
+     ON CONFLICT (zone_code) DO UPDATE SET
+       zone_name=EXCLUDED.zone_name,
+       zone_label=EXCLUDED.zone_label,
+       province_group=EXCLUDED.province_group,
+       color_hex=EXCLUDED.color_hex,
+       sort_order=EXCLUDED.sort_order,
+       is_active=TRUE,
+       updated_at=NOW()`,
+    [z.code, z.name, z.label, z.group, z.color, z.order]
+  );
+  const province = z.group === 'samut_prakan' ? 'สมุทรปราการ' : (z.group === 'nonthaburi' ? 'นนทบุรี' : (z.group === 'pathum_thani' ? 'ปทุมธานี' : 'กรุงเทพมหานคร'));
+  for (const district of z.districts) {
+    await pool.query(
+      `INSERT INTO public.service_zone_areas (zone_code, province, district, is_primary)
+       VALUES ($1,$2,$3,TRUE)
+       ON CONFLICT (zone_code, province, district, (COALESCE(subdistrict,''))) DO NOTHING`,
+      [z.code, province, district]
+    );
+  }
+}
 
 // 3.2) technician_service_matrix: กำหนดว่าช่างคนไหนรับงานประเภทไหน/แอร์ประเภทไหน/วิธีล้างไหนได้บ้าง
 // - ใช้กับหน้าจองลูกค้า (ไม่กระทบงานเดิม: ถ้าไม่มี record -> allow all)
@@ -9694,6 +9902,10 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_income_overrides_type ON p
     await pool.query(
       `ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS accept_status_updated_at TIMESTAMPTZ`
     );
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS home_province TEXT`);
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS home_district TEXT`);
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS home_service_zone_code TEXT`);
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS allow_out_of_zone BOOLEAN NOT NULL DEFAULT FALSE`);
 
     // 3.3) technician_profiles: เบอร์โทร (ใช้แสดงให้ลูกค้า "หลังเริ่มเดินทาง" เท่านั้น)
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS phone TEXT`);
@@ -11244,6 +11456,7 @@ async function handleAdminBookV2(req, res) {
     customer_note,
     maps_url,
     job_zone,
+    service_zone_code,
     booking_mode,
     tech_type,
     technician_username,
@@ -11287,6 +11500,14 @@ async function handleAdminBookV2(req, res) {
   const bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
   const ttype = (tech_type || (bm === "urgent" ? "partner" : "company")).toString().trim().toLowerCase();
   const mode = (dispatch_mode || "normal").toString().trim().toLowerCase();
+  const zoneDetected = await detectServiceZoneFromText({ address_text, job_zone, service_zone_code });
+  const detectedZoneCode = zoneDetected?.service_zone_code || null;
+  const detectedZoneLabel = zoneDetected?.service_zone_label || null;
+  const detectedZoneSource = zoneDetected?.service_zone_source || (detectedZoneCode ? "auto_detect" : null);
+  let zone_filter_applied = false;
+  let zone_matched_technicians_count = 0;
+  let zone_fallback_used = false;
+  let forced_assignment_zone_warning = null;
   if (!['company','partner','all'].includes(ttype)) return res.status(400).json({ error: "tech_type ต้องเป็น company|partner|all" });
   if (!['normal','forced','offer'].includes(mode)) return res.status(400).json({ error: "dispatch_mode ต้องเป็น normal|forced|offer" });
 
@@ -11443,7 +11664,7 @@ if (coerceNumber(override_price, 0) > 0) {
       const offerOnly = (mode === 'offer'); // offer flow must respect accept_status
       const tr = await client.query(
         `
-        SELECT u.username
+        SELECT u.username, p.home_service_zone_code, COALESCE(p.allow_out_of_zone,FALSE) AS allow_out_of_zone
         FROM public.users u
         LEFT JOIN public.technician_profiles p ON p.username=u.username
         WHERE u.role='technician'
@@ -11456,7 +11677,8 @@ if (coerceNumber(override_price, 0) > 0) {
         `,
         [ttype === 'all' ? 'company' : ttype, !offerOnly, isAll]
       );
-      const list = (tr.rows || []).map((r) => r.username).slice(0, 60);
+      const rankedRows = (ENABLE_SERVICE_ZONE_FILTER && detectedZoneCode) ? rankTechniciansForServiceZone(tr.rows || [], detectedZoneCode) : (tr.rows || []);
+      const list = rankedRows.map((r) => r.username).slice(0, 60);
       selectedTech = await pickFirstAvailableTech(list, apptIso, duration_min);
     } else {
       // ✅ Forced lock: allow even if technician hasn't opened accept_status,
@@ -11480,6 +11702,18 @@ if (coerceNumber(override_price, 0) > 0) {
       const conflict = await checkTechCollision(selectedTech, apptIso, duration_min, null);
       if (conflict) {
         return http409Conflict(res, conflict);
+      }
+      if (detectedZoneCode) {
+        const zoneMatch = await technicianMatchesServiceZone(selectedTech, detectedZoneCode);
+        if (!zoneMatch.matches) {
+          forced_assignment_zone_warning = {
+            technician_username: selectedTech,
+            job_zone: detectedZoneCode,
+            technician_zone: zoneMatch.zone_code,
+            allow_out_of_zone: zoneMatch.allow_out_of_zone,
+          };
+          console.warn("[admin_book_v2] forced out-of-zone assignment", forced_assignment_zone_warning);
+        }
       }
     }
 
@@ -11506,8 +11740,8 @@ if (coerceNumber(override_price, 0) > 0) {
        address_text, technician_team, technician_username, job_status,
        booking_token, job_source, dispatch_mode, customer_note,
        maps_url, job_zone, duration_min, booking_mode, admin_override_duration_min,
-       gps_latitude, gps_longitude)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,'admin',$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       gps_latitude, gps_longitude, service_zone_code, service_zone_source)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,'admin',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
       RETURNING job_id
       `,
       [
@@ -11529,6 +11763,8 @@ if (coerceNumber(override_price, 0) > 0) {
         Math.max(0, coerceNumber(override_duration_min, 0)),
         final_lat,
         final_lng,
+        detectedZoneCode,
+        detectedZoneSource,
       ]
     );
 
@@ -11616,7 +11852,7 @@ if (coerceNumber(override_price, 0) > 0) {
     if (bm === "urgent") {
       const partners = await client.query(
         `
-        SELECT u.username
+        SELECT u.username, p.home_service_zone_code, COALESCE(p.allow_out_of_zone,FALSE) AS allow_out_of_zone
         FROM public.users u
         LEFT JOIN public.technician_profiles p ON p.username=u.username
         WHERE u.role='technician'
@@ -11626,10 +11862,21 @@ if (coerceNumber(override_price, 0) > 0) {
         `
       );
 
-      const list = (partners.rows || []).map((r) => r.username);
+      const partnerRows = partners.rows || [];
+      let candidateRows = partnerRows;
+      if (ENABLE_SERVICE_ZONE_FILTER && detectedZoneCode) {
+        const primary = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() === detectedZoneCode);
+        const fallback = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() !== detectedZoneCode && r.allow_out_of_zone);
+        zone_filter_applied = true;
+        zone_matched_technicians_count = primary.length;
+        zone_fallback_used = primary.length === 0 && fallback.length > 0;
+        candidateRows = (primary.length || fallback.length) ? [...primary, ...fallback] : partnerRows;
+        if (!primary.length && !fallback.length) zone_fallback_used = true;
+      }
+      const list = rankTechniciansForServiceZone(candidateRows, detectedZoneCode).map((r) => r.username);
       // จำกัด 30 ทีม
       const maxTeams = 30;
-      const shuffled = list.sort(() => Math.random() - 0.5).slice(0, maxTeams);
+      const shuffled = list.slice(0, maxTeams);
       const available = [];
       for (const u of shuffled) {
         const ok = await isTechFree(u, apptIso, duration_min, null);
@@ -11685,6 +11932,14 @@ if (coerceNumber(override_price, 0) > 0) {
       total: Number(pricing.total || 0),
       booking_mode: bm,
       dispatch_mode: mode,
+      service_zone_code: detectedZoneCode,
+      service_zone_label: detectedZoneLabel,
+      service_zone_source: detectedZoneSource,
+      zone_filter_applied,
+      zone_matched_technicians_count,
+      zone_fallback_used,
+      forced_assignment_zone_warning,
+      offers_count: urgentPushTargets.length,
     });
   } catch (e) {
     await client.query("ROLLBACK");
@@ -15613,6 +15868,38 @@ app.put("/technicians/:username/zone", async (req, res) => {
 // =======================================
 // 👤 TECHNICIAN PROFILE (v4)
 // =======================================
+app.get("/service_zones", async (req, res) => {
+  try {
+    res.json({ ok: true, zones: await getServiceZones(), filter_enabled: ENABLE_SERVICE_ZONE_FILTER });
+  } catch (e) {
+    console.error("GET /service_zones", e);
+    res.status(500).json({ error: "LOAD_SERVICE_ZONES_FAILED" });
+  }
+});
+
+app.post("/service_zones/detect", async (req, res) => {
+  try {
+    const detected = await detectServiceZoneFromText(req.body || {});
+    res.json({ ok: true, detected });
+  } catch (e) {
+    console.error("POST /service_zones/detect", e);
+    res.status(500).json({ error: "DETECT_SERVICE_ZONE_FAILED" });
+  }
+});
+
+app.put("/technicians/:username/service-zone", async (req, res) => {
+  try {
+    const username = String(req.params.username || "").trim();
+    const home_province = String(req.body?.home_province || "").trim();
+    const home_district = String(req.body?.home_district || "").trim();
+    const allow_out_of_zone = req.body?.allow_out_of_zone === true || String(req.body?.allow_out_of_zone || "").toLowerCase() === "true";
+    const saved = await updateTechnicianHomeZone(username, home_province, home_district, allow_out_of_zone);
+    res.json({ ok: true, ...saved });
+  } catch (e) {
+    console.error("PUT /technicians/:username/service-zone", e);
+    res.status(500).json({ error: "SAVE_TECH_SERVICE_ZONE_FAILED" });
+  }
+});
 const PROFILE_REQ_DIR = path.join(UPLOAD_DIR, "profile_requests");
 const TECH_PROFILE_DIR = path.join(UPLOAD_DIR, "tech_profiles");
 const SIGNATURE_DIR = path.join(UPLOAD_DIR, "signatures");
@@ -15659,9 +15946,15 @@ app.get("/technicians/:username/profile", async (req, res) => {
       `SELECT username, technician_code, full_name, photo_path, position, rank_level, rank_key, rating, grade, done_count,
               COALESCE(accept_status,'ready') AS accept_status, accept_status_updated_at,
               COALESCE(preferred_zone,'') AS preferred_zone,
-              COALESCE(phone,'') AS phone
-       FROM public.technician_profiles
-       WHERE username=$1`,
+              COALESCE(phone,'') AS phone,
+              COALESCE(home_province,'') AS home_province,
+              COALESCE(home_district,'') AS home_district,
+              COALESCE(home_service_zone_code,'') AS home_service_zone_code,
+              COALESCE(allow_out_of_zone,FALSE) AS allow_out_of_zone,
+              z.zone_label AS home_service_zone_label
+       FROM public.technician_profiles p
+       LEFT JOIN public.service_zones z ON z.zone_code=p.home_service_zone_code
+       WHERE p.username=$1`,
       [username]
     );
 

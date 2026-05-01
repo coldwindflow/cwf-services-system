@@ -45,6 +45,12 @@ const profilePositionEl = document.getElementById("profile-position");
 const profileRankBadgeEl = document.getElementById("profile-rank-badge");
 const profileRankLabelEl = document.getElementById("profile-rank-label");
 const profileHintEl = document.getElementById("profile-hint");
+const serviceZoneModalEl = document.getElementById("serviceZoneModal");
+const homeProvinceEl = document.getElementById("homeProvince");
+const homeDistrictEl = document.getElementById("homeDistrict");
+const homeZoneHintEl = document.getElementById("homeZoneHint");
+const allowOutOfZoneEl = document.getElementById("allowOutOfZone");
+const btnSaveHomeZoneEl = document.getElementById("btnSaveHomeZone");
 
 // ✅ รายได้ (Technician)
 const incomeDailyEl = document.getElementById("incomeDaily");
@@ -422,6 +428,71 @@ async function updateZone(zone) {
   }
 }
 
+async function detectHomeServiceZone() {
+  if (!homeZoneHintEl) return null;
+  try {
+    const res = await fetch(`${API_BASE}/service_zones/detect`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        home_province: homeProvinceEl?.value || "",
+        home_district: homeDistrictEl?.value || "",
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    const z = data.detected || null;
+    if (z) {
+      homeZoneHintEl.textContent = `ระบบกำหนดโซนให้: Zone ${z.service_zone_code} - ${z.service_zone_label}`;
+      homeZoneHintEl.style.color = "#0b4bb3";
+    } else {
+      homeZoneHintEl.textContent = "ระบบยังหาโซนไม่ได้ กรุณาใส่เขต/อำเภอให้ชัดเจน";
+      homeZoneHintEl.style.color = "#b45309";
+    }
+    return z;
+  } catch (e) {
+    homeZoneHintEl.textContent = "ตรวจโซนไม่สำเร็จ แต่ยังบันทึกได้";
+    return null;
+  }
+}
+
+function openServiceZoneModal() {
+  if (serviceZoneModalEl) serviceZoneModalEl.style.display = "flex";
+  detectHomeServiceZone();
+}
+
+function closeServiceZoneModal() {
+  if (serviceZoneModalEl) serviceZoneModalEl.style.display = "none";
+}
+
+async function saveHomeServiceZone() {
+  try {
+    const res = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/service-zone`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        home_province: homeProvinceEl?.value || "",
+        home_district: homeDistrictEl?.value || "",
+        allow_out_of_zone: !!allowOutOfZoneEl?.checked,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "บันทึกพื้นที่ประจำไม่สำเร็จ");
+    if (homeZoneHintEl) {
+      homeZoneHintEl.textContent = data.service_zone_code
+        ? `ระบบกำหนดโซนให้: Zone ${data.service_zone_code} - ${data.service_zone_label}`
+        : "บันทึกแล้ว แต่ยังไม่พบโซนจากเขต/อำเภอนี้";
+    }
+    alert("บันทึกพื้นที่ประจำแล้ว");
+    closeServiceZoneModal();
+    loadProfile();
+  } catch (e) {
+    alert(e.message || "บันทึกพื้นที่ประจำไม่สำเร็จ");
+  }
+}
+
+window.openServiceZoneModal = openServiceZoneModal;
+window.closeServiceZoneModal = closeServiceZoneModal;
+
 
 // =======================================
 // 🔔 Web Push Notification: งานเข้าแม้ปิด PWA
@@ -550,6 +621,9 @@ function bindTechControls() {
   if (zoneSelect) {
     zoneSelect.onchange = () => updateZone(zoneSelect.value);
   }
+  if (homeProvinceEl) homeProvinceEl.onchange = detectHomeServiceZone;
+  if (homeDistrictEl) homeDistrictEl.oninput = detectHomeServiceZone;
+  if (btnSaveHomeZoneEl) btnSaveHomeZoneEl.onclick = saveHomeServiceZone;
 }
 
 // expose for compatibility (inline onclick)
@@ -653,6 +727,15 @@ async function loadProfile() {
     // Photo (serve from /uploads)
     const photo = data.photo_path || "/logo.png";
     if (profilePhotoEl) profilePhotoEl.src = photo;
+
+    if (homeProvinceEl && data.home_province) homeProvinceEl.value = data.home_province;
+    if (homeDistrictEl) homeDistrictEl.value = data.home_district || "";
+    if (allowOutOfZoneEl) allowOutOfZoneEl.checked = !!data.allow_out_of_zone;
+    if (homeZoneHintEl) {
+      homeZoneHintEl.textContent = data.home_service_zone_code
+        ? `ระบบกำหนดโซนให้: Zone ${data.home_service_zone_code} - ${data.home_service_zone_label || ""}`
+        : "ระบบจะกำหนดโซนให้หลังกรอกเขต/อำเภอ";
+    }
 
     // ✅ sync technician compact profile "more" fields (safe no-op if not present)
     try{ if (typeof window !== 'undefined' && typeof window.__cwfSyncTechMore === 'function') window.__cwfSyncTechMore(); }catch(e){}
@@ -1558,9 +1641,7 @@ function loadOffers() {
 function renderOffers(offers) {
   if (!offerList) return;
 
-  // ✅ กรองตามโซนที่ช่างเลือก (ถ้าในงานมี job_zone)
-  const z = String((zoneSelect && zoneSelect.value) || localStorage.getItem('cwf_zone') || '').trim();
-  const filtered = z ? (offers || []).filter(o => !o.job_zone || String(o.job_zone).trim() === z) : (offers || []);
+  const filtered = offers || [];
 
   if (!filtered.length) {
     offerList.innerHTML = "<p>ยังไม่มีงานที่เสนอให้ตอนนี้</p>";

@@ -27,6 +27,8 @@ let state = {
   confirmed_tech_label: "",
   team_members: [],
   customer_lookup: { query: "", data: null },
+  service_zones: [],
+  detected_service_zone: null,
   // confirmation summary texts (TH/EN)
   summary_texts: { th: "", en: "", lang: "th" },
 };
@@ -139,6 +141,52 @@ function resetCustomerLookupUI(message){
   const hint = el("customer_lookup_hint");
   if (btn) btn.style.display = "none";
   if (hint) hint.textContent = message || "กรอกเบอร์ลูกค้าเก่าแล้วออกจากช่องนี้ ระบบจะค้นหาข้อมูลล่าสุดให้ก่อน โดยยังไม่เติมค่าให้อัตโนมัติ";
+}
+
+async function loadServiceZones(){
+  try{
+    const r = await apiFetch('/service_zones');
+    state.service_zones = Array.isArray(r.zones) ? r.zones : [];
+    const sel = el('service_zone_code');
+    if(sel){
+      const cur = sel.value || '';
+      sel.innerHTML = `<option value="">Auto / ระบบเลือกจากที่อยู่</option>` + state.service_zones.map(z => (
+        `<option value="${z.zone_code}">Zone ${z.zone_code} - ${z.zone_label}</option>`
+      )).join('');
+      sel.value = cur;
+    }
+  }catch(e){
+    console.warn('loadServiceZones:', e?.message || e);
+  }
+}
+
+async function detectAdminServiceZone(){
+  const override = String(el('service_zone_code')?.value || '').trim();
+  const hint = el('service_zone_hint');
+  const sourceEl = el('service_zone_source');
+  const payload = {
+    service_zone_code: override,
+    address_text: el('address_text')?.value || '',
+    job_zone: el('job_zone')?.value || '',
+  };
+  try{
+    const r = await apiFetch('/service_zones/detect', { method:'POST', body: JSON.stringify(payload) });
+    state.detected_service_zone = r.detected || null;
+    if(sourceEl) sourceEl.value = state.detected_service_zone?.service_zone_source || '';
+    if(hint){
+      if(state.detected_service_zone){
+        const z = state.detected_service_zone;
+        hint.textContent = `${override ? 'เลือกเอง' : 'ระบบเลือกให้'}: Zone ${z.service_zone_code} - ${z.service_zone_label}`;
+        hint.style.color = '#0b4bb3';
+      }else{
+        hint.textContent = 'ระบบยังหาโซนไม่ได้ กรุณาเลือกโซนเอง หรือใส่เขต/อำเภอเพิ่ม';
+        hint.style.color = '#b45309';
+      }
+    }
+  }catch(e){
+    if(hint) hint.textContent = 'ตรวจโซนไม่สำเร็จ แต่ยังบันทึกงานต่อได้';
+    state.detected_service_zone = null;
+  }
 }
 
 function renderCustomerLookupUI(result){
@@ -2485,6 +2533,8 @@ async function submitBooking() {
     customer_note: (el("customer_note").value || "").trim(),
     maps_url: (el("maps_url").value || "").trim(),
     job_zone: (el("job_zone").value || "").trim(),
+    service_zone_code: (state.detected_service_zone?.service_zone_code || el("service_zone_code")?.value || "").trim(),
+    service_zone_source: (state.detected_service_zone?.service_zone_source || el("service_zone_source")?.value || "").trim(),
     booking_mode: (el("booking_mode").value || "scheduled").trim(),
     tech_type: (el("tech_type").value || "company").trim(),
     // CWF Spec: do not silently fallback single->auto; backend is the source of truth.
@@ -2721,6 +2771,10 @@ function wireEvents() {
       resetCustomerLookupUI("เบอร์โทรเปลี่ยนแล้ว • ค้นหาข้อมูลลูกค้าเก่าใหม่ได้");
     }
   });
+  loadServiceZones().then(() => detectAdminServiceZone()).catch(() => {});
+  el("address_text")?.addEventListener("input", () => detectAdminServiceZone());
+  el("job_zone")?.addEventListener("input", () => detectAdminServiceZone());
+  el("service_zone_code")?.addEventListener("change", () => detectAdminServiceZone());
   el("promotion_id").addEventListener("change", () => updateTotalPreview());
   const btnEx = el("btnAddExtra"); if(btnEx) btnEx.addEventListener("click", addExtra);
   el("appt_date").addEventListener("change", async ()=>{
