@@ -579,20 +579,10 @@
       <div class="zone-map-note">ดูภาพรวมโซนก่อนตั้งค่า • โซนรองใช้เป็นพื้นที่สำรอง ไม่ได้บังคับรับทุกงาน</div>
     </div>
     <div class="zone-form-grid">
-      <label><span>จังหวัดพื้นที่ประจำ</span><select id="homeProvince" class="premium-input"><option value="กรุงเทพมหานคร">กรุงเทพมหานคร</option><option value="สมุทรปราการ">สมุทรปราการ</option><option value="นนทบุรี">นนทบุรี</option><option value="ปทุมธานี">ปทุมธานี</option></select></label>
-      <label><span>เขต / อำเภอที่อยู่ประจำ</span><input id="homeDistrict" class="premium-input" list="homeDistrictList" placeholder="เช่น สวนหลวง, บางพลี, ปากเกร็ด"></label>
-      <datalist id="homeDistrictList">
-        <option value="พระโขนง"><option value="บางนา"><option value="สวนหลวง"><option value="ประเวศ"><option value="บางกะปิ"><option value="สะพานสูง"><option value="ลาดกระบัง">
-        <option value="ดอนเมือง"><option value="สายไหม"><option value="บางเขน"><option value="หลักสี่"><option value="จตุจักร"><option value="บางซื่อ"><option value="ลาดพร้าว"><option value="วังทองหลาง"><option value="บึงกุ่ม"><option value="คันนายาว"><option value="คลองสามวา"><option value="มีนบุรี"><option value="หนองจอก">
-        <option value="ปทุมวัน"><option value="ราชเทวี"><option value="พญาไท"><option value="ดุสิต"><option value="พระนคร"><option value="ป้อมปราบศัตรูพ่าย"><option value="สัมพันธวงศ์"><option value="บางรัก"><option value="สาทร"><option value="ยานนาวา"><option value="ห้วยขวาง"><option value="ดินแดง"><option value="วัฒนา"><option value="คลองเตย"><option value="บางคอแหลม">
-        <option value="คลองสาน"><option value="ธนบุรี"><option value="บางกอกใหญ่"><option value="บางกอกน้อย"><option value="บางพลัด"><option value="ตลิ่งชัน">
-        <option value="ภาษีเจริญ"><option value="บางแค"><option value="หนองแขม"><option value="ทวีวัฒนา"><option value="จอมทอง"><option value="ราษฎร์บูรณะ"><option value="ทุ่งครุ"><option value="บางขุนเทียน"><option value="บางบอน"><option value="พระประแดง"><option value="พระสมุทรเจดีย์">
-        <option value="เมืองสมุทรปราการ"><option value="บางพลี"><option value="บางเสาธง"><option value="บางบ่อ">
-        <option value="เมืองนนทบุรี"><option value="ปากเกร็ด"><option value="บางกรวย"><option value="บางใหญ่"><option value="บางบัวทอง"><option value="ไทรน้อย">
-        <option value="เมืองปทุมธานี"><option value="คลองหลวง"><option value="ธัญบุรี"><option value="ลำลูกกา"><option value="หนองเสือ"><option value="ลาดหลุมแก้ว"><option value="สามโคก">
-      </datalist>
-      <label><span>พื้นที่รับงานรอง</span><select id="secondaryServiceZone" class="premium-input"><option value="">ไม่เลือกโซนรอง</option><option value="A">Zone A - กรุงเทพตะวันออกแกนหลัก</option><option value="B">Zone B - กรุงเทพเหนือ-ตะวันออก</option><option value="C">Zone C - กรุงเทพชั้นใน</option><option value="D">Zone D - ธนบุรีตอนใน</option><option value="E">Zone E - ฝั่งตะวันตกตอนล่าง</option><option value="F">Zone F - สมุทรปราการฝั่งตะวันออก</option><option value="G">Zone G - นนทบุรี</option><option value="H">Zone H - ปทุมธานี</option></select></label>
-      <div id="homeZoneHint" class="zone-detect-box">กรุณาเลือกจังหวัดและเขต/อำเภอ ระบบจะหาโซนหลักให้อัตโนมัติ</div>
+      <label><span>1) จังหวัดพื้นที่ประจำ</span><select id="homeProvince" class="premium-input"><option value="กรุงเทพมหานคร">กรุงเทพมหานคร</option><option value="สมุทรปราการ">สมุทรปราการ</option><option value="นนทบุรี">นนทบุรี</option><option value="ปทุมธานี">ปทุมธานี</option></select></label>
+      <label><span>2) เขต / อำเภอที่อยู่ประจำ</span><select id="homeDistrict" class="premium-input"><option value="">เลือกเขต / อำเภอ</option></select></label>
+      <label><span>3) พื้นที่รับงานรอง</span><select id="secondaryServiceZone" class="premium-input"><option value="">ไม่เลือกโซนรอง</option><option value="A">Zone A - กรุงเทพตะวันออกแกนหลัก</option><option value="B">Zone B - กรุงเทพเหนือ-ตะวันออก</option><option value="C">Zone C - กรุงเทพชั้นใน</option><option value="D">Zone D - ธนบุรีตอนใน</option><option value="E">Zone E - ฝั่งตะวันตกตอนล่าง</option><option value="F">Zone F - สมุทรปราการฝั่งตะวันออก</option><option value="G">Zone G - นนทบุรี</option><option value="H">Zone H - ปทุมธานี</option></select></label>
+      <div id="homeZoneHint" class="zone-detect-box">เลือกจังหวัดและเขต/อำเภอ ระบบจะหาโซนหลักให้อัตโนมัติ</div>
     </div>
     <div class="zone-explain">
       <div><b>โซนหลัก</b><span>ได้สิทธิ์งานในพื้นที่ก่อน ใช้จากพื้นที่ประจำของช่าง</span></div>
@@ -605,9 +595,9 @@
 </div>
 <style>
   .zone-modal{position:fixed;inset:0;z-index:4060;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.68);backdrop-filter:blur(10px)}
-  .zone-panel{width:min(760px,100%);max-height:calc(100vh - 28px);overflow:auto;background:linear-gradient(180deg,#fff,#f8fbff);border-radius:28px;border:1px solid rgba(255,255,255,.72);box-shadow:0 34px 90px rgba(2,6,23,.42);padding:14px;color:#0f172a}
-  .zone-hero{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;background:linear-gradient(135deg,#0B2E6D,#0B4BB3 62%,#F4C400);border-radius:24px;padding:18px;color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
-  .zone-eyebrow{font-size:11px;font-weight:1000;letter-spacing:.16em;color:#FDE68A}.zone-hero h2{margin:4px 0 4px;font-size:24px;line-height:1.12}.zone-hero p{margin:0;color:rgba(255,255,255,.86);font-weight:800;line-height:1.45}.zone-close{width:40px;height:40px;border-radius:14px;border:1px solid rgba(255,255,255,.38);background:rgba(255,255,255,.16);color:#fff;font-size:28px;line-height:1;cursor:pointer}.zone-map-card{margin-top:12px;border-radius:22px;overflow:hidden;background:#fff;border:1px solid rgba(11,75,179,.14);box-shadow:0 18px 44px rgba(11,46,109,.12)}.zone-map-card img{display:block;width:100%;height:auto}.zone-map-note{padding:10px 12px;background:linear-gradient(90deg,#fffbea,#f8fbff);font-size:12px;font-weight:1000;color:#0B2E6D}.zone-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px}.zone-form-grid label span{display:block;font-size:12px;font-weight:1000;color:#0B2E6D;margin:0 0 6px}.zone-form-grid .premium-input{width:100%;min-height:48px;border-radius:16px;border:1px solid rgba(11,46,109,.16);background:#fff;padding:11px 12px;font-weight:900;color:#0f172a}.zone-detect-box{grid-column:1/-1;border-radius:16px;padding:12px;border:1px solid rgba(11,75,179,.18);background:#fff;color:#0B4BB3;font-weight:1000;line-height:1.45}.zone-explain{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px;margin-top:12px}.zone-explain div{border:1px solid rgba(11,46,109,.12);background:#fff;border-radius:16px;padding:11px}.zone-explain b{display:block;color:#0B2E6D}.zone-explain span{display:block;margin-top:4px;font-size:12px;color:#64748b;font-weight:800;line-height:1.4}.zone-check{display:flex;gap:10px;align-items:flex-start;margin-top:12px;border-radius:18px;padding:12px;background:linear-gradient(135deg,#fffbea,#fff);border:1px solid rgba(244,196,0,.32);font-weight:900}.zone-check input{margin-top:4px;width:18px;height:18px}.zone-check small{display:block;color:#64748b;margin-top:3px;line-height:1.35}.zone-save{width:100%;min-height:50px;margin-top:12px;border-radius:18px;font-weight:1000}@media(max-width:620px){.zone-hero h2{font-size:20px}.zone-form-grid,.zone-explain{grid-template-columns:1fr}.zone-panel{border-radius:22px;padding:10px}}
+  .zone-panel{width:min(720px,100%);max-height:calc(100vh - 28px);overflow:auto;background:linear-gradient(180deg,#fff,#f8fbff);border-radius:24px;border:1px solid rgba(255,255,255,.72);box-shadow:0 28px 80px rgba(2,6,23,.38);padding:12px;color:#0f172a}
+  .zone-hero{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;background:linear-gradient(135deg,#0B2E6D,#0B4BB3 62%,#F4C400);border-radius:20px;padding:14px;color:#fff;box-shadow:inset 0 0 0 1px rgba(255,255,255,.14)}
+  .zone-eyebrow{font-size:10px;font-weight:1000;letter-spacing:.14em;color:#FDE68A}.zone-hero h2{margin:3px 0 3px;font-size:21px;line-height:1.12}.zone-hero p{margin:0;color:rgba(255,255,255,.88);font-weight:800;line-height:1.35;font-size:13px}.zone-close{width:40px;height:40px;border-radius:14px;border:1px solid rgba(255,255,255,.38);background:rgba(255,255,255,.16);color:#fff;font-size:28px;line-height:1;cursor:pointer}.zone-map-card{margin-top:10px;border-radius:18px;overflow:hidden;background:#fff;border:1px solid rgba(11,75,179,.14);box-shadow:0 12px 30px rgba(11,46,109,.10)}.zone-map-card img{display:block;width:100%;max-height:220px;object-fit:contain;background:#fff}.zone-map-note{padding:8px 10px;background:linear-gradient(90deg,#fffbea,#f8fbff);font-size:11px;font-weight:1000;color:#0B2E6D;line-height:1.35}.zone-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.zone-form-grid label span{display:block;font-size:12px;font-weight:1000;color:#0B2E6D;margin:0 0 6px}.zone-form-grid .premium-input{width:100%;min-height:44px;border-radius:14px;border:1px solid rgba(11,46,109,.16);background:#fff;padding:9px 11px;font-weight:900;color:#0f172a;font-size:14px}.zone-detect-box{grid-column:1/-1;border-radius:16px;padding:12px;border:1px solid rgba(11,75,179,.18);background:#fff;color:#0B4BB3;font-weight:1000;line-height:1.45}.zone-explain{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}.zone-explain div{border:1px solid rgba(11,46,109,.12);background:#fff;border-radius:14px;padding:9px}.zone-explain b{display:block;color:#0B2E6D}.zone-explain span{display:block;margin-top:4px;font-size:12px;color:#64748b;font-weight:800;line-height:1.4}.zone-check{display:flex;gap:10px;align-items:flex-start;margin-top:12px;border-radius:18px;padding:12px;background:linear-gradient(135deg,#fffbea,#fff);border:1px solid rgba(244,196,0,.32);font-weight:900}.zone-check input{margin-top:4px;width:18px;height:18px}.zone-check small{display:block;color:#64748b;margin-top:3px;line-height:1.35}.zone-save{width:100%;min-height:46px;margin-top:10px;border-radius:16px;font-weight:1000}@media(max-width:620px){.zone-hero h2{font-size:20px}.zone-form-grid,.zone-explain{grid-template-columns:1fr}.zone-panel{border-radius:22px;padding:10px}}
 </style>
 <div id="techMatrixModal" style="display:none;position:fixed;inset:0;z-index:4000;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,0.55)">
       <div style="width:min(720px, 100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:18px;border:1px solid rgba(15,23,42,0.12);box-shadow:0 28px 80px rgba(2,6,23,0.35);padding:12px">
@@ -661,30 +651,30 @@
       <style>
         .tech-control-card{
           margin:10px 0 12px;
-          padding:10px;
-          border-radius:26px;
+          padding:8px;
+          border-radius:22px;
           border:1px solid rgba(215,224,238,.95);
           background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(244,248,255,.94));
           box-shadow:0 16px 38px rgba(11,46,109,.14);
         }
         .tech-ctrl-row{
           display:grid;
-          grid-template-columns:minmax(132px,0.88fr) minmax(0,1.12fr);
-          gap:10px;
+          grid-template-columns:minmax(118px,0.82fr) minmax(0,1.18fr);
+          gap:8px;
           align-items:stretch;
         }
         .accept-btn{
           width:100%;
-          min-height:58px;
-          border-radius:22px;
+          min-height:48px;
+          border-radius:18px;
           border:1px solid rgba(15,23,42,.10);
           font-weight:1100;
-          font-size:16px;
+          font-size:14px;
           display:flex;
           align-items:center;
           justify-content:center;
           gap:9px;
-          padding:11px 12px;
+          padding:8px 10px;
           cursor:pointer;
           user-select:none;
           white-space:nowrap;
@@ -721,16 +711,16 @@
           top:50%;
           transform:translateY(-50%);
           z-index:1;
-          font-size:18px;
+          font-size:15px;
           pointer-events:none;
         }
         .zone-wrap::after{
           content:"พื้นที่รับงาน";
           position:absolute;
-          left:44px;
-          top:9px;
+          left:38px;
+          top:7px;
           z-index:1;
-          font-size:10px;
+          font-size:9px;
           line-height:1;
           color:rgba(15,23,42,.48);
           font-weight:1000;
@@ -738,12 +728,12 @@
         }
         .zone-select{
           width:100%;
-          min-height:58px;
-          border-radius:22px;
+          min-height:48px;
+          border-radius:18px;
           border:1px solid rgba(11,46,109,.18);
-          padding:24px 38px 9px 44px;
+          padding:20px 30px 7px 38px;
           font-weight:1000;
-          font-size:16px;
+          font-size:14px;
           color:#0B2E6D;
           background:linear-gradient(135deg,#ffffff,#f8fbff);
           box-shadow:0 10px 22px rgba(11,46,109,.08), inset 0 0 0 1px rgba(255,255,255,.7);
@@ -751,8 +741,8 @@
           min-width:0;
         }
         .zone-action-btn{appearance:none;text-align:left;display:flex;flex-direction:column;justify-content:center;gap:3px;cursor:pointer;}
-        .zone-action-btn span{font-size:15px;line-height:1;color:#0B2E6D;}
-        .zone-action-btn small{font-size:11px;color:#64748b;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+        .zone-action-btn span{font-size:13px;line-height:1;color:#0B2E6D;}
+        .zone-action-btn small{font-size:10px;color:#64748b;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
         .accept-hint{
           margin:10px 2px 0;
           padding:10px 12px;
@@ -789,7 +779,7 @@
         <button id="acceptToggleBtn" class="accept-btn ready" type="button">🟢 รับงาน</button>
 
         <div class="zone-wrap">
-          <button id="zoneQuickBtn" class="zone-select zone-action-btn" type="button"><span>ตั้งค่าพื้นที่รับงาน</span><small id="zoneQuickSummary">โซนหลัก / โซนรอง</small></button>
+          <button id="zoneQuickBtn" class="zone-select zone-action-btn" type="button" onclick="openServiceZoneModal()"><span>ตั้งค่าพื้นที่</span><small id="zoneQuickSummary">โซนหลัก / รอง</small></button>
           <select id="zoneSelect" class="zone-select" style="display:none"><option value="">ทุกโซน</option></select>
         </div>
       </div>

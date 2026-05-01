@@ -54,6 +54,25 @@ const secondaryServiceZoneEl = document.getElementById("secondaryServiceZone");
 const zoneQuickBtnEl = document.getElementById("zoneQuickBtn");
 const btnSaveHomeZoneEl = document.getElementById("btnSaveHomeZone");
 
+const HOME_DISTRICTS_BY_PROVINCE = {
+  "กรุงเทพมหานคร": ["พระโขนง","บางนา","สวนหลวง","ประเวศ","บางกะปิ","สะพานสูง","ลาดกระบัง","ดอนเมือง","สายไหม","บางเขน","หลักสี่","จตุจักร","บางซื่อ","ลาดพร้าว","วังทองหลาง","บึงกุ่ม","คันนายาว","คลองสามวา","มีนบุรี","หนองจอก","ปทุมวัน","ราชเทวี","พญาไท","ดุสิต","พระนคร","ป้อมปราบศัตรูพ่าย","สัมพันธวงศ์","บางรัก","สาทร","ยานนาวา","ห้วยขวาง","ดินแดง","วัฒนา","คลองเตย","บางคอแหลม","คลองสาน","ธนบุรี","บางกอกใหญ่","บางกอกน้อย","บางพลัด","ตลิ่งชัน","ภาษีเจริญ","บางแค","หนองแขม","ทวีวัฒนา","จอมทอง","ราษฎร์บูรณะ","ทุ่งครุ","บางขุนเทียน","บางบอน"],
+  "สมุทรปราการ": ["เมืองสมุทรปราการ","บางพลี","บางเสาธง","บางบ่อ","พระประแดง","พระสมุทรเจดีย์"],
+  "นนทบุรี": ["เมืองนนทบุรี","ปากเกร็ด","บางกรวย","บางใหญ่","บางบัวทอง","ไทรน้อย"],
+  "ปทุมธานี": ["เมืองปทุมธานี","คลองหลวง","ธัญบุรี","ลำลูกกา","หนองเสือ","ลาดหลุมแก้ว","สามโคก"]
+};
+
+function populateHomeDistrictOptions(selectedDistrict = "") {
+  const provinceEl = document.getElementById("homeProvince") || homeProvinceEl;
+  const districtEl = document.getElementById("homeDistrict") || homeDistrictEl;
+  if (!districtEl) return;
+  const province = String(provinceEl?.value || "กรุงเทพมหานคร").trim() || "กรุงเทพมหานคร";
+  const districts = HOME_DISTRICTS_BY_PROVINCE[province] || [];
+  const current = String(selectedDistrict || districtEl.value || "").trim();
+  districtEl.innerHTML = '<option value="">เลือกเขต / อำเภอ</option>' + districts.map((name) => '<option value="' + name + '">' + name + '</option>').join("");
+  if (current && districts.includes(current)) districtEl.value = current;
+}
+
+
 // ✅ รายได้ (Technician)
 const incomeDailyEl = document.getElementById("incomeDaily");
 const incomeMonthEl = document.getElementById("incomeMonth");
@@ -462,6 +481,7 @@ async function detectHomeServiceZone() {
 }
 
 function openServiceZoneModal() {
+  populateHomeDistrictOptions();
   const settingsModal = document.getElementById("techSettingsModal");
   const modalEl = document.getElementById("serviceZoneModal") || serviceZoneModalEl;
   if (settingsModal) settingsModal.style.display = "none";
@@ -654,8 +674,8 @@ function bindTechControls() {
     zoneSelect.onchange = () => updateZone(zoneSelect.value);
   }
   if (zoneQuickBtnEl) zoneQuickBtnEl.onclick = openServiceZoneModal;
-  if (homeProvinceEl) homeProvinceEl.onchange = detectHomeServiceZone;
-  if (homeDistrictEl) homeDistrictEl.oninput = detectHomeServiceZone;
+  if (homeProvinceEl) homeProvinceEl.onchange = () => { populateHomeDistrictOptions(); detectHomeServiceZone(); };
+  if (homeDistrictEl) homeDistrictEl.onchange = detectHomeServiceZone;
   if (btnSaveHomeZoneEl) btnSaveHomeZoneEl.onclick = saveHomeServiceZone;
 }
 
@@ -762,7 +782,7 @@ async function loadProfile() {
     if (profilePhotoEl) profilePhotoEl.src = photo;
 
     if (homeProvinceEl && data.home_province) homeProvinceEl.value = data.home_province;
-    if (homeDistrictEl) homeDistrictEl.value = data.home_district || "";
+    populateHomeDistrictOptions(data.home_district || "");
     if (allowOutOfZoneEl) allowOutOfZoneEl.checked = !!data.allow_out_of_zone;
     if (secondaryServiceZoneEl) secondaryServiceZoneEl.value = data.secondary_service_zone_code || "";
     if (homeZoneHintEl) {
