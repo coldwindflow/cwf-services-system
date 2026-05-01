@@ -11801,6 +11801,18 @@ app.get("/admin/customer_lookup_by_phone_v2", requireAdminSoft, async (req, res)
 });
 
 app.post("/admin/book_v2", requireAdminSoft, handleAdminBookV2);
+app.post("/admin/urgent_broadcast_v2", requireAdminSoft, (req, res) => {
+  req.body = {
+    ...(req.body || {}),
+    booking_mode: "urgent",
+    dispatch_mode: req.body?.dispatch_mode || "offer",
+  };
+  console.log("[urgent_broadcast_v2 alias] forwarding to /admin/book_v2", {
+    booking_mode: req.body?.booking_mode,
+    dispatch_mode: req.body?.dispatch_mode,
+  });
+  return handleAdminBookV2(req, res);
+});
 app.post("/internal/book_from_ai", requireInternalApiKeyOnly, handleInternalBookFromAi);
 
 app.get("/admin/jobs_v2", requireAdminSoft, async (req, res) => {
