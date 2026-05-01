@@ -574,14 +574,14 @@
       <div style="font-weight:1000;color:#0b2e6d;margin-bottom:6px">โซนงานใช้ตอนระบบยิงงานด่วน</div>
       <div class="muted" style="line-height:1.55">ระบบจะให้สิทธิ์ช่างในโซนเดียวกับหน้างานก่อน ถ้าไม่มีคนพอจึงค่อยดูช่างที่เปิดรับงานนอกโซน โซนนี้ระบบล็อกจากพื้นที่ประจำ ไม่ต้องเลือกหลายโซนเอง</div>
       <div style="display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:10px;font-size:11px;font-weight:900;color:#0f172a">
-        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">A กรุงเทพตะวันออกแกนหลัก</div>
-        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">B กรุงเทพเหนือ-ตะวันออก</div>
-        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">C กรุงเทพชั้นใน</div>
-        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">D ธนบุรีตอนใน</div>
-        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">E ฝั่งตะวันตกตอนล่าง</div>
-        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">F สมุทรปราการฝั่งตะวันออก</div>
-        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">G นนทบุรี</div>
-        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">H ปทุมธานี</div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">A กรุงเทพตะวันออกแกนหลัก<br><small class="muted">พระโขนง, บางนา, สวนหลวง, ประเวศ, บางกะปิ, สะพานสูง, ลาดกระบัง</small></div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">B กรุงเทพเหนือ-ตะวันออก<br><small class="muted">ดอนเมือง, สายไหม, บางเขน, หลักสี่, จตุจักร, บางซื่อ, ลาดพร้าว, วังทองหลาง, บึงกุ่ม, คันนายาว, คลองสามวา, มีนบุรี, หนองจอก</small></div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">C กรุงเทพชั้นใน<br><small class="muted">ปทุมวัน, ราชเทวี, พญาไท, ดุสิต, พระนคร, ป้อมปราบศัตรูพ่าย, สัมพันธวงศ์, บางรัก, สาทร, ยานนาวา, ห้วยขวาง, ดินแดง, วัฒนา, คลองเตย, บางคอแหลม</small></div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">D ธนบุรีตอนใน<br><small class="muted">คลองสาน, ธนบุรี, บางกอกใหญ่, บางกอกน้อย, บางพลัด, ตลิ่งชัน</small></div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">E ฝั่งตะวันตกตอนล่าง<br><small class="muted">ภาษีเจริญ, บางแค, หนองแขม, ทวีวัฒนา, จอมทอง, ราษฎร์บูรณะ, ทุ่งครุ, บางขุนเทียน, บางบอน, พระประแดง, พระสมุทรเจดีย์</small></div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">F สมุทรปราการฝั่งตะวันออก<br><small class="muted">เมืองสมุทรปราการ, บางพลี, บางเสาธง, บางบ่อ</small></div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">G นนทบุรี<br><small class="muted">เมืองนนทบุรี, ปากเกร็ด, บางกรวย, บางใหญ่, บางบัวทอง, ไทรน้อย</small></div>
+        <div style="background:#fff;border:1px solid rgba(11,75,179,.12);border-radius:12px;padding:8px">H ปทุมธานี<br><small class="muted">เมืองปทุมธานี, คลองหลวง, ธัญบุรี, ลำลูกกา, หนองเสือ, ลาดหลุมแก้ว, สามโคก</small></div>
       </div>
     </div>
     <div style="display:grid;gap:10px;margin-top:12px">
@@ -784,11 +784,30 @@
         <div class="zone-wrap">
           <select id="zoneSelect" class="zone-select">
             <option value="">ทุกโซน</option>
-            <option value="สุขุมวิท">สุขุมวิท</option>
-            <option value="อ่อนนุช">อ่อนนุช</option>
-            <option value="พระโขนง">พระโขนง</option>
-            <option value="บางนา">บางนา</option>
-            <option value="ศรีนครินทร์">ศรีนครินทร์</option>
+            <optgroup label="Zone A - กรุงเทพตะวันออกแกนหลัก">
+              <option value="พระโขนง">พระโขนง</option><option value="บางนา">บางนา</option><option value="สวนหลวง">สวนหลวง</option><option value="ประเวศ">ประเวศ</option><option value="บางกะปิ">บางกะปิ</option><option value="สะพานสูง">สะพานสูง</option><option value="ลาดกระบัง">ลาดกระบัง</option>
+            </optgroup>
+            <optgroup label="Zone B - กรุงเทพเหนือ-ตะวันออก">
+              <option value="ดอนเมือง">ดอนเมือง</option><option value="สายไหม">สายไหม</option><option value="บางเขน">บางเขน</option><option value="หลักสี่">หลักสี่</option><option value="จตุจักร">จตุจักร</option><option value="บางซื่อ">บางซื่อ</option><option value="ลาดพร้าว">ลาดพร้าว</option><option value="วังทองหลาง">วังทองหลาง</option><option value="บึงกุ่ม">บึงกุ่ม</option><option value="คันนายาว">คันนายาว</option><option value="คลองสามวา">คลองสามวา</option><option value="มีนบุรี">มีนบุรี</option><option value="หนองจอก">หนองจอก</option>
+            </optgroup>
+            <optgroup label="Zone C - กรุงเทพชั้นใน">
+              <option value="ปทุมวัน">ปทุมวัน</option><option value="ราชเทวี">ราชเทวี</option><option value="พญาไท">พญาไท</option><option value="ดุสิต">ดุสิต</option><option value="พระนคร">พระนคร</option><option value="ป้อมปราบศัตรูพ่าย">ป้อมปราบศัตรูพ่าย</option><option value="สัมพันธวงศ์">สัมพันธวงศ์</option><option value="บางรัก">บางรัก</option><option value="สาทร">สาทร</option><option value="ยานนาวา">ยานนาวา</option><option value="ห้วยขวาง">ห้วยขวาง</option><option value="ดินแดง">ดินแดง</option><option value="วัฒนา">วัฒนา</option><option value="คลองเตย">คลองเตย</option><option value="บางคอแหลม">บางคอแหลม</option>
+            </optgroup>
+            <optgroup label="Zone D - ธนบุรีตอนใน">
+              <option value="คลองสาน">คลองสาน</option><option value="ธนบุรี">ธนบุรี</option><option value="บางกอกใหญ่">บางกอกใหญ่</option><option value="บางกอกน้อย">บางกอกน้อย</option><option value="บางพลัด">บางพลัด</option><option value="ตลิ่งชัน">ตลิ่งชัน</option>
+            </optgroup>
+            <optgroup label="Zone E - ฝั่งตะวันตกตอนล่าง">
+              <option value="ภาษีเจริญ">ภาษีเจริญ</option><option value="บางแค">บางแค</option><option value="หนองแขม">หนองแขม</option><option value="ทวีวัฒนา">ทวีวัฒนา</option><option value="จอมทอง">จอมทอง</option><option value="ราษฎร์บูรณะ">ราษฎร์บูรณะ</option><option value="ทุ่งครุ">ทุ่งครุ</option><option value="บางขุนเทียน">บางขุนเทียน</option><option value="บางบอน">บางบอน</option><option value="พระประแดง">พระประแดง</option><option value="พระสมุทรเจดีย์">พระสมุทรเจดีย์</option>
+            </optgroup>
+            <optgroup label="Zone F - สมุทรปราการฝั่งตะวันออก">
+              <option value="เมืองสมุทรปราการ">เมืองสมุทรปราการ</option><option value="บางพลี">บางพลี</option><option value="บางเสาธง">บางเสาธง</option><option value="บางบ่อ">บางบ่อ</option>
+            </optgroup>
+            <optgroup label="Zone G - นนทบุรี">
+              <option value="เมืองนนทบุรี">เมืองนนทบุรี</option><option value="ปากเกร็ด">ปากเกร็ด</option><option value="บางกรวย">บางกรวย</option><option value="บางใหญ่">บางใหญ่</option><option value="บางบัวทอง">บางบัวทอง</option><option value="ไทรน้อย">ไทรน้อย</option>
+            </optgroup>
+            <optgroup label="Zone H - ปทุมธานี">
+              <option value="เมืองปทุมธานี">เมืองปทุมธานี</option><option value="คลองหลวง">คลองหลวง</option><option value="ธัญบุรี">ธัญบุรี</option><option value="ลำลูกกา">ลำลูกกา</option><option value="หนองเสือ">หนองเสือ</option><option value="ลาดหลุมแก้ว">ลาดหลุมแก้ว</option><option value="สามโคก">สามโคก</option>
+            </optgroup>
             <option value="อื่นๆ">อื่นๆ</option>
           </select>
         </div>
@@ -1037,7 +1056,7 @@
     <button class="nav-btn" id="nav-income" onclick="switchTab('income')">💰 รายได้</button>
   </div>
 
-  <script src="app.js?v=tech-push-notify-v2"></script>
+  <script src="app.js?v=service-zone-settings-fix-v2"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

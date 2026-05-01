@@ -157,19 +157,22 @@ async function getTechnicianPrimaryZone(username) {
 async function updateTechnicianHomeZone(username, home_province, home_district, allow_out_of_zone = false) {
   const u = String(username || "").trim();
   if (!u) throw new Error("username required");
-  const detected = await detectServiceZoneFromText({ home_province, home_district });
+  const cleanProvince = String(home_province || "").trim();
+  const cleanDistrict = String(home_district || "").trim();
+  const detected = await detectServiceZoneFromText({ home_province: cleanProvince, home_district: cleanDistrict });
   const zoneCode = detected?.service_zone_code || null;
   await pool.query(
     `INSERT INTO public.technician_profiles
-       (username, home_province, home_district, home_service_zone_code, allow_out_of_zone, updated_at)
-     VALUES ($1,$2,$3,$4,$5,NOW())
+       (username, home_province, home_district, home_service_zone_code, allow_out_of_zone, preferred_zone, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,NOW())
      ON CONFLICT (username) DO UPDATE SET
        home_province=EXCLUDED.home_province,
        home_district=EXCLUDED.home_district,
        home_service_zone_code=EXCLUDED.home_service_zone_code,
        allow_out_of_zone=EXCLUDED.allow_out_of_zone,
+       preferred_zone=COALESCE(NULLIF(EXCLUDED.home_district,''), technician_profiles.preferred_zone),
        updated_at=NOW()`,
-    [u, String(home_province || "").trim() || null, String(home_district || "").trim() || null, zoneCode, !!allow_out_of_zone]
+    [u, cleanProvince || null, cleanDistrict || null, zoneCode, !!allow_out_of_zone, cleanDistrict || null]
   );
   await pool.query(`UPDATE public.technician_service_zones SET is_primary=FALSE, is_active=FALSE, updated_at=NOW() WHERE technician_username=$1`, [u]);
   if (zoneCode) {
@@ -181,7 +184,7 @@ async function updateTechnicianHomeZone(username, home_province, home_district, 
       [u, zoneCode]
     );
   }
-  return { ...detected, home_province: String(home_province || "").trim(), home_district: String(home_district || "").trim(), allow_out_of_zone: !!allow_out_of_zone };
+  return { ...detected, home_province: cleanProvince, home_district: cleanDistrict, preferred_zone: cleanDistrict, allow_out_of_zone: !!allow_out_of_zone };
 }
 
 async function technicianMatchesServiceZone(username, zone_code) {
@@ -9902,6 +9905,7 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_income_overrides_type ON p
     await pool.query(
       `ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS accept_status_updated_at TIMESTAMPTZ`
     );
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS preferred_zone TEXT`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS home_province TEXT`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS home_district TEXT`);
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS home_service_zone_code TEXT`);

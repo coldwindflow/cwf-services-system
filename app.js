@@ -437,6 +437,7 @@ async function detectHomeServiceZone() {
     const res = await fetch(`${API_BASE}/service_zones/detect`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({
         home_province: provinceEl?.value || "",
         home_district: districtEl?.value || "",
@@ -485,6 +486,7 @@ async function saveHomeServiceZone() {
     const res = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/service-zone`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
       body: JSON.stringify({
         home_province: provinceEl?.value || "",
         home_district: districtEl?.value || "",
@@ -498,6 +500,10 @@ async function saveHomeServiceZone() {
         ? `ระบบกำหนดโซนให้: Zone ${data.service_zone_code} - ${data.service_zone_label}`
         : "บันทึกแล้ว แต่ยังไม่พบโซนจากเขต/อำเภอนี้";
       hintEl.style.color = data.service_zone_code ? "#0b4bb3" : "#b45309";
+    }
+    if (zoneSelect && data.preferred_zone) {
+      zoneSelect.value = data.preferred_zone;
+      localStorage.setItem("cwf_zone", data.preferred_zone);
     }
     alert("บันทึกพื้นที่ประจำแล้ว");
     closeServiceZoneModal();
