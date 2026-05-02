@@ -30,8 +30,8 @@
   const money = (v) => Number(v || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
   const dateTH = (v) => v ? new Date(v).toLocaleString('th-TH', { dateStyle:'medium', timeStyle:'short' }) : '-';
 
-  function empty(text) { return `<div class="empty">${esc(text)}</div>`; }
-  function badge(text, tone = 'gray') { return `<span class="badge ${esc(tone)}">${esc(text)}</span>`; }
+  function empty(text) { return `<div class="acctEmpty">${esc(text)}</div>`; }
+  function badge(text, tone = 'gray') { return `<span class="acctBadge ${esc(tone)}">${esc(text)}</span>`; }
   function statusBadge(status) {
     const s = String(status || '').toLowerCase();
     const label = ({ draft:'ร่าง', issued:'ออกเอกสารแล้ว', voided:'ยกเลิก', paid:'ชำระแล้ว', submitted:'รอตรวจ', approved:'อนุมัติแล้ว' })[s] || status || '-';
@@ -108,7 +108,7 @@
     const all = [];
     for (const p of payloads || []) for (const e of (p && p.soft_errors) || []) all.push(e);
     const el = $('softErrors'); if (!el) return;
-    el.innerHTML = all.length ? `<div class="softErr">ข้อมูลบางส่วนโหลดไม่ครบ: ${all.map(e => esc(e.scope || e.message)).join(', ')}</div>` : '';
+    el.innerHTML = all.length ? `<div class="acctSoftErr">ข้อมูลบางส่วนโหลดไม่ครบ: ${all.map(e => esc(e.scope || e.message)).join(', ')}</div>` : '';
   }
 
   function normalizeTab(tab) {
@@ -128,7 +128,7 @@
     } catch (_) {}
   }
   function scrollActiveChipIntoView(tab) {
-    const btn = document.querySelector(`.tabBtn[data-tab="${tab}"]`);
+    const btn = document.querySelector(`.acctTabBtn[data-tab="${tab}"]`);
     try { btn?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' }); } catch (_) {}
   }
   function scrollWorkspaceIntoView() {
@@ -151,12 +151,12 @@
     const tab = normalizeTab(tabKey);
     state.tab = tab;
     updateWorkspaceHeader(tab);
-    document.querySelectorAll('.tabBtn').forEach((b) => {
+    document.querySelectorAll('.acctTabBtn').forEach((b) => {
       const active = b.dataset.tab === tab;
       b.classList.toggle('active', active);
       b.setAttribute('aria-selected', active ? 'true' : 'false');
     });
-    document.querySelectorAll('.panel').forEach((p) => {
+    document.querySelectorAll('.acctPanel').forEach((p) => {
       const active = p.id === `panel-${tab}`;
       p.classList.toggle('active', active);
       if (active) { p.classList.remove('navFocus'); void p.offsetWidth; p.classList.add('navFocus'); }
@@ -174,11 +174,11 @@
     const el = $('accountingCards'); const cards = state.summary?.cards || [];
     if (!el) return;
     el.innerHTML = cards.length ? cards.map((c) => `
-      <article class="card">
-        <div class="top"><b>${esc(c.label)}</b><span class="dot tone-${esc(c.status_key || 'blue')}"></span></div>
-        <div class="count">${money(c.count)}</div>
-        <div class="amount">${c.total_amount == null ? 'ไม่มีมูลค่ารวม' : `${money(c.total_amount)} บาท`}</div>
-        <button class="goBtn" type="button" data-target-tab="${esc(c.target_tab || 'overview')}">ไปจัดการ</button>
+      <article class="acctCard">
+        <div class="acctCardTop"><b>${esc(c.label)}</b><span class="acctDot tone-${esc(c.status_key || 'blue')}"></span></div>
+        <div class="acctCount">${money(c.count)}</div>
+        <div class="acctAmount">${c.total_amount == null ? 'ไม่มีมูลค่ารวม' : `${money(c.total_amount)} บาท`}</div>
+        <button class="acctGoBtn" type="button" data-target-tab="${esc(c.target_tab || 'overview')}">ไปจัดการ</button>
       </article>`).join('') : empty('ยังไม่มีข้อมูลงานบัญชีวันนี้');
     el.querySelectorAll('[data-target-tab]').forEach((btn) => btn.addEventListener('click', () => showAccountingTab(btn.dataset.targetTab, { scroll: true, updateUrl: true })));
   }
@@ -186,9 +186,9 @@
     const s = $('overviewSummary'); const a = $('overviewAudit');
     const cards = state.summary?.cards || [];
     if (s) s.innerHTML = cards.length ? cards.map((c) => `
-      <div class="row">
+      <div class="acctRow">
         <div><b>${esc(c.label)}</b><small>${c.total_amount == null ? 'จำนวนรายการ' : `${money(c.total_amount)} บาท`}</small></div>
-        <div class="actionsCol">${badge(`${money(c.count)} รายการ`, c.status_key === 'red' ? 'bad' : 'gray')}<button class="goBtn" type="button" data-target-tab="${esc(c.target_tab || 'overview')}">ไปจัดการ</button></div>
+        <div class="acctActionsCol">${badge(`${money(c.count)} รายการ`, c.status_key === 'red' ? 'bad' : 'gray')}<button class="acctGoBtn" type="button" data-target-tab="${esc(c.target_tab || 'overview')}">ไปจัดการ</button></div>
       </div>`).join('') : empty('ยังไม่มีสรุป');
     s?.querySelectorAll('[data-target-tab]').forEach((btn) => btn.addEventListener('click', () => showAccountingTab(btn.dataset.targetTab, { scroll: true, updateUrl: true })));
     if (a) renderAuditInto(a, state.summary?.recent_audit || []);
@@ -206,22 +206,22 @@
     el.innerHTML = rows.length ? rows.map((r) => {
       const paid = String(r.payment_status || '').toLowerCase() === 'paid';
       return `
-        <div class="row">
+        <div class="acctRow">
           <div>
             <b>${esc(r.booking_code || 'ไม่มี Booking Code')} <small>#${esc(r.job_id)}</small></b>
             <small>${esc(r.customer_name || '-')} • ${esc(r.masked_customer_phone || '')} • เสร็จ ${esc(dateTH(r.finished_at))}</small>
-            <div class="miniStats">
-              <div class="miniStat"><span>ยอดขาย</span><b>${money(r.gross_sales_amount)} ฿</b></div>
-              <div class="miniStat"><span>ช่องทาง</span><b>${esc(r.payment_method || '-')}</b></div>
-              <div class="miniStat"><span>อ้างอิง</span><b>${esc(r.payment_reference || '-')}</b></div>
+            <div class="acctMiniStats">
+              <div class="acctMiniStat"><span>ยอดขาย</span><b>${money(r.gross_sales_amount)} ฿</b></div>
+              <div class="acctMiniStat"><span>ช่องทาง</span><b>${esc(r.payment_method || '-')}</b></div>
+              <div class="acctMiniStat"><span>อ้างอิง</span><b>${esc(r.payment_reference || '-')}</b></div>
             </div>
             <small>สถานะรับเงินลูกค้า: ${esc(revenueStatusLabel(r.payment_status))}${r.paid_at ? ` • รับเมื่อ ${esc(dateTH(r.paid_at))}` : ''}</small>
           </div>
-          <div class="actionsCol">
+          <div class="acctActionsCol">
             ${revenueStatusBadge(r.payment_status)}
             ${badge(r.payment_proof_url ? 'มีหลักฐานรับเงิน' : 'ยังไม่มีหลักฐาน', r.payment_proof_url ? 'ok' : 'warn')}
-            ${paid ? `<button class="disabledBtn" type="button" disabled>รับเงินแล้ว</button>` : `<button class="yellowBtn" type="button" data-mark-revenue-paid="${esc(r.job_id)}">บันทึกรับเงินแล้ว</button>`}
-            <button class="secondaryBtn" type="button" data-job-id="${esc(r.job_id)}">ดูรายละเอียดงาน</button>
+            ${paid ? `<button class="acctDisabledBtn" type="button" disabled>รับเงินแล้ว</button>` : `<button class="acctPrimaryBtn" type="button" data-mark-revenue-paid="${esc(r.job_id)}">บันทึกรับเงินแล้ว</button>`}
+            <button class="acctSecondaryBtn" type="button" data-job-id="${esc(r.job_id)}">ดูรายละเอียดงาน</button>
           </div>
         </div>`;
     }).join('') : empty('ไม่พบรายรับตามเงื่อนไข');
@@ -232,12 +232,12 @@
   function renderDocs() {
     const el = $('documentsList'); const rows = state.summary?.documents || []; if (!el) return;
     el.innerHTML = rows.length ? rows.map((d) => `
-      <div class="row"><div><b>${esc(d.document_no || `เอกสาร #${d.document_id}`)}</b><small>${esc(docType(d.document_type))} • งาน #${esc(d.job_id || '-')} • ${esc(d.customer_name || '-')}</small></div><div class="actionsCol">${statusBadge(d.status)}<span class="amountStrong">${money(d.total_amount)} ฿</span></div></div>`).join('') : empty('ยังไม่มีเอกสารบัญชี');
+      <div class="acctRow"><div><b>${esc(d.document_no || `เอกสาร #${d.document_id}`)}</b><small>${esc(docType(d.document_type))} • งาน #${esc(d.job_id || '-')} • ${esc(d.customer_name || '-')}</small></div><div class="acctActionsCol">${statusBadge(d.status)}<span class="acctAmountStrong">${money(d.total_amount)} ฿</span></div></div>`).join('') : empty('ยังไม่มีเอกสารบัญชี');
   }
   function renderExpenses() {
     const el = $('expensesList'); const rows = state.summary?.expenses || []; if (!el) return;
     el.innerHTML = rows.length ? rows.map((x) => `
-      <div class="row"><div><b>${esc(x.category || 'รายจ่าย')}</b><small>${esc(x.vendor_name || '-')} • ${esc(x.description || '')} • ${esc(x.expense_date || '-')}</small></div><div class="actionsCol">${statusBadge(x.status)}<span class="amountStrong">${money(x.amount)} ฿</span></div></div>`).join('') : empty('ยังไม่มีรายจ่าย');
+      <div class="acctRow"><div><b>${esc(x.category || 'รายจ่าย')}</b><small>${esc(x.vendor_name || '-')} • ${esc(x.description || '')} • ${esc(x.expense_date || '-')}</small></div><div class="acctActionsCol">${statusBadge(x.status)}<span class="acctAmountStrong">${money(x.amount)} ฿</span></div></div>`).join('') : empty('ยังไม่มีรายจ่าย');
   }
   function renderPayouts() {
     const el = $('payoutList'); if (!el) return;
@@ -245,19 +245,19 @@
     el.innerHTML = rows.length ? rows.map((p) => {
       const selected = String(state.selectedPayoutId || '') === String(p.payout_id || '');
       return `
-        <div class="row" style="border-color:${selected ? 'rgba(11,75,179,.36)' : 'rgba(15,23,42,.08)'};background:${selected ? '#eef6ff' : '#fbfdff'}">
+        <div class="acctRow" style="border-color:${selected ? 'rgba(11,75,179,.36)' : 'rgba(15,23,42,.08)'};background:${selected ? '#eef6ff' : '#fbfdff'}">
           <div>
             <b>งวด #${esc(p.payout_id)} • รอบวันที่ ${esc(p.period_type)}</b>
             <small>${esc(dateTH(p.period_start))} - ${esc(dateTH(p.period_end))} • ช่าง ${money(p.technician_count)} คน</small>
-            <div class="miniStats">
-              <div class="miniStat"><span>ยอดสุทธิ</span><b>${money(p.net_payable)} ฿</b></div>
-              <div class="miniStat"><span>จ่ายแล้ว</span><b>${money(p.paid_amount)} ฿</b></div>
-              <div class="miniStat"><span>คงเหลือ</span><b>${money(p.remaining_amount)} ฿</b></div>
+            <div class="acctMiniStats">
+              <div class="acctMiniStat"><span>ยอดสุทธิ</span><b>${money(p.net_payable)} ฿</b></div>
+              <div class="acctMiniStat"><span>จ่ายแล้ว</span><b>${money(p.paid_amount)} ฿</b></div>
+              <div class="acctMiniStat"><span>คงเหลือ</span><b>${money(p.remaining_amount)} ฿</b></div>
             </div>
           </div>
-          <div class="actionsCol">
+          <div class="acctActionsCol">
             ${statusBadge(p.status)}
-            <button class="yellowBtn" type="button" data-load-payout-techs="${esc(p.payout_id)}">เลือกงวดนี้</button>
+            <button class="acctPrimaryBtn" type="button" data-load-payout-techs="${esc(p.payout_id)}">เลือกงวดนี้</button>
           </div>
         </div>`;
     }).join('') : empty('ยังไม่มีงวดจ่ายช่าง');
@@ -268,33 +268,33 @@
     const el = $('payoutTechs'); if (!el) return;
     const payoutId = state.selectedPayoutId;
     if (!payoutId) {
-      el.innerHTML = `<div class="box"><h3>รายละเอียดรายช่าง</h3><div class="empty">เลือกงวดจ่ายด้านซ้ายก่อน แล้วรายชื่อช่างจะขึ้นตรงนี้</div></div>`;
+      el.innerHTML = `<div class="acctBox"><h3>รายละเอียดรายช่าง</h3><div class="acctEmpty">เลือกงวดจ่ายด้านซ้ายก่อน แล้วรายชื่อช่างจะขึ้นตรงนี้</div></div>`;
       return;
     }
     const rows = state.payoutTechs[payoutId] || [];
     el.innerHTML = `
-      <div class="box">
+      <div class="acctBox">
         <h3>รายละเอียดงวด #${esc(payoutId)}</h3>
-        <div class="muted" style="margin-bottom:10px">บันทึกจ่ายได้เฉพาะหลังโอนเงินจริงแล้วเท่านั้น ระบบไม่โอนเงินอัตโนมัติ</div>
-        <div class="list">
+        <div class="acctMuted" style="margin-bottom:10px">บันทึกจ่ายได้เฉพาะหลังโอนเงินจริงแล้วเท่านั้น ระบบไม่โอนเงินอัตโนมัติ</div>
+        <div class="acctList">
           ${rows.length ? rows.map((t) => {
             const remaining = Number(t.remaining_amount || 0);
             const paid = String(t.paid_status || '').toLowerCase() === 'paid' || remaining <= 0.0001;
             return `
-              <div class="row">
+              <div class="acctRow">
                 <div>
                   <b>${esc(t.technician_username || '-')}</b>
-                  <div class="miniStats">
-                    <div class="miniStat"><span>จำนวนงาน</span><b>${money(t.job_count)}</b></div>
-                    <div class="miniStat"><span>ยอดสุทธิ</span><b>${money(t.net_amount)} ฿</b></div>
-                    <div class="miniStat"><span>คงเหลือ</span><b>${money(t.remaining_amount)} ฿</b></div>
+                  <div class="acctMiniStats">
+                    <div class="acctMiniStat"><span>จำนวนงาน</span><b>${money(t.job_count)}</b></div>
+                    <div class="acctMiniStat"><span>ยอดสุทธิ</span><b>${money(t.net_amount)} ฿</b></div>
+                    <div class="acctMiniStat"><span>คงเหลือ</span><b>${money(t.remaining_amount)} ฿</b></div>
                   </div>
                   <small>รายได้ก่อนหัก ${money(t.gross_amount)} บาท • หักประกัน ${money(t.deposit_deduction_amount)} บาท • ปรับยอด ${money(t.adj_total)} บาท • จ่ายแล้ว ${money(t.paid_amount)} บาท</small>
                   <small>สถานะจ่ายเงินช่าง: ${esc(payoutStatusLabel(t.paid_status))}${t.paid_at ? ` • จ่ายเมื่อ ${esc(dateTH(t.paid_at))}` : ''}</small>
                 </div>
-                <div class="actionsCol">
+                <div class="acctActionsCol">
                   ${payoutStatusBadge(t.paid_status)}
-                  ${paid ? `<button class="disabledBtn" type="button" disabled>จ่ายช่างแล้ว</button>` : `<button class="yellowBtn" type="button" data-pay-payout="${esc(payoutId)}" data-tech="${esc(t.technician_username)}" data-remaining="${esc(t.remaining_amount)}">บันทึกจ่ายแล้ว</button>`}
+                  ${paid ? `<button class="acctDisabledBtn" type="button" disabled>จ่ายช่างแล้ว</button>` : `<button class="acctPrimaryBtn" type="button" data-pay-payout="${esc(payoutId)}" data-tech="${esc(t.technician_username)}" data-remaining="${esc(t.remaining_amount)}">บันทึกจ่ายแล้ว</button>`}
                 </div>
               </div>`;
           }).join('') : empty('ยังไม่มีรายละเอียดช่างในงวดนี้')}
@@ -306,18 +306,18 @@
     const rows = state.deposits?.rows || []; const ledger = state.deposits?.ledger || [];
     const list = $('depositList'); const led = $('depositLedger');
     if (list) list.innerHTML = rows.length ? rows.map((r) => `
-      <div class="row"><div><b>${esc(r.technician_username)}</b><small>เป้าหมาย ${money(r.target_amount)} บาท • เก็บแล้ว ${money(r.collected_total)} บาท</small></div><div class="actionsCol">${badge(`คงเหลือ ${money(r.remaining_amount)}`, Number(r.remaining_amount) > 0 ? 'warn' : 'ok')}</div></div>`).join('') : empty('ยังไม่มีข้อมูลเงินประกัน');
+      <div class="acctRow"><div><b>${esc(r.technician_username)}</b><small>เป้าหมาย ${money(r.target_amount)} บาท • เก็บแล้ว ${money(r.collected_total)} บาท</small></div><div class="acctActionsCol">${badge(`คงเหลือ ${money(r.remaining_amount)}`, Number(r.remaining_amount) > 0 ? 'warn' : 'ok')}</div></div>`).join('') : empty('ยังไม่มีข้อมูลเงินประกัน');
     if (led) led.innerHTML = ledger.length ? ledger.map((r) => `
-      <div class="row"><div><b>${esc(r.transaction_type)} • ${money(r.amount)} บาท</b><small>${esc(r.technician_username)} • ${esc(r.payout_id || '-')} • ${esc(r.note || '')}</small></div><small>${esc(dateTH(r.created_at))}</small></div>`).join('') : empty('ยังไม่มี ledger เงินประกัน');
+      <div class="acctRow"><div><b>${esc(r.transaction_type)} • ${money(r.amount)} บาท</b><small>${esc(r.technician_username)} • ${esc(r.payout_id || '-')} • ${esc(r.note || '')}</small></div><small>${esc(dateTH(r.created_at))}</small></div>`).join('') : empty('ยังไม่มี ledger เงินประกัน');
   }
   function renderReports() {
     const el = $('reportCards'); if (!el) return;
     const reports = ['รายงานรายรับ','รายงานรายจ่าย','รายงานจ่ายช่าง','รายงานเงินประกัน','รายงานกำไรขั้นต้น','รายงานเอกสารขาย','VAT summary (เมื่อเปิด VAT mode)','withholding tax summary (เมื่อมีข้อมูล)'];
-    el.innerHTML = reports.map((r) => `<div class="box"><h3>${esc(r)}</h3><div class="muted">สำหรับตรวจทานและเตรียมบัญชี ไม่ใช่การยื่นภาษีอัตโนมัติ</div><button class="disabledBtn" type="button" disabled>Export - Phase ถัดไป</button></div>`).join('');
+    el.innerHTML = reports.map((r) => `<div class="acctBox"><h3>${esc(r)}</h3><div class="acctMuted">สำหรับตรวจทานและเตรียมบัญชี ไม่ใช่การยื่นภาษีอัตโนมัติ</div><button class="acctDisabledBtn" type="button" disabled>Export - Phase ถัดไป</button></div>`).join('');
   }
   function renderAuditInto(el, rows) {
     el.innerHTML = rows.length ? rows.map((r) => `
-      <div class="row"><div><b>${esc(auditActionLabel(r.action))}</b><small>${esc(r.entity_type || '-')} #${esc(r.entity_id || '-')} • ${esc(r.actor_username || '-')} (${esc(r.actor_role || '-')}) • ${esc(r.note || '')}</small></div><small>${esc(dateTH(r.created_at))}</small></div>`).join('') : empty('ยังไม่มีประวัติการทำรายการ');
+      <div class="acctRow"><div><b>${esc(auditActionLabel(r.action))}</b><small>${esc(r.entity_type || '-')} #${esc(r.entity_id || '-')} • ${esc(r.actor_username || '-')} (${esc(r.actor_role || '-')}) • ${esc(r.note || '')}</small></div><small>${esc(dateTH(r.created_at))}</small></div>`).join('') : empty('ยังไม่มีประวัติการทำรายการ');
   }
   function renderAudit() { const el = $('auditList'); if (el) renderAuditInto(el, state.audit || []); }
   function renderAll() { renderCards(); renderOverview(); renderRevenue(); renderDocs(); renderExpenses(); renderPayouts(); renderDeposits(); renderReports(); renderAudit(); }
@@ -328,7 +328,7 @@
   }
   function openModal(html, onSubmit) {
     const modal = $('accountingModal'); if (!modal) return;
-    modal.innerHTML = `<div class="modalCard" role="dialog" aria-modal="true">${html}</div>`;
+    modal.innerHTML = `<div class="acctModalCard" role="dialog" aria-modal="true">${html}</div>`;
     modal.classList.add('show'); modal.setAttribute('aria-hidden', 'false');
     modal.querySelector('[data-close]')?.addEventListener('click', closeModal);
     modal.onclick = (ev) => { if (ev.target === modal) closeModal(); };
@@ -350,15 +350,15 @@
   function openRevenuePaidModal(jobId) {
     const row = (state.revenue || []).find((r) => String(r.job_id) === String(jobId));
     openModal(`
-      <form class="formGrid">
+      <form class="acctFormGrid">
         <h3>ยืนยันการรับเงิน</h3>
         <p>งาน ${esc(row?.booking_code || `#${jobId}`)} • ยอด ${money(row?.gross_sales_amount)} บาท<br>กรุณายืนยันว่าได้รับเงินจริงจากลูกค้าแล้ว ก่อนบันทึกสถานะรับเงิน</p>
-        <label>ช่องทางรับเงิน<input class="input" name="payment_method" placeholder="เช่น โอน, เงินสด, QR" value="${esc(row?.payment_method || '')}"></label>
-        <label>เลขอ้างอิง/หมายเหตุ<input class="input" name="payment_reference" placeholder="เลขสลิป / เลขรายการ" value="${esc(row?.payment_reference || '')}"></label>
-        <label>หมายเหตุ<textarea class="input" name="note" placeholder="รายละเอียดเพิ่มเติม"></textarea></label>
-        <label class="checkLine"><input type="checkbox" name="confirm_received" value="1"><span>ยืนยันว่าได้รับเงินจริงแล้ว</span></label>
-        <div class="softErr" data-error style="display:block;min-height:0"></div>
-        <div class="modalActions"><button class="ghostBtn" type="button" data-close>ยกเลิก</button><button class="primaryBtn" type="submit">บันทึกรับเงินแล้ว</button></div>
+        <label>ช่องทางรับเงิน<input class="acctInput" name="payment_method" placeholder="เช่น โอน, เงินสด, QR" value="${esc(row?.payment_method || '')}"></label>
+        <label>เลขอ้างอิง/หมายเหตุ<input class="acctInput" name="payment_reference" placeholder="เลขสลิป / เลขรายการ" value="${esc(row?.payment_reference || '')}"></label>
+        <label>หมายเหตุ<textarea class="acctInput" name="note" placeholder="รายละเอียดเพิ่มเติม"></textarea></label>
+        <label class="acctCheckLine"><input type="checkbox" name="confirm_received" value="1"><span>ยืนยันว่าได้รับเงินจริงแล้ว</span></label>
+        <div class="acctSoftErr" data-error style="display:block;min-height:0"></div>
+        <div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">บันทึกรับเงินแล้ว</button></div>
       </form>`, async (fd, errEl) => {
         if (fd.get('confirm_received') !== '1') { if (errEl) errEl.textContent = 'กรุณาติ๊กยืนยันว่าได้รับเงินจริงแล้ว'; return; }
         await postJson(`/admin/accounting/revenue/${encodeURIComponent(jobId)}/mark-paid`, {
@@ -371,17 +371,17 @@
   }
   function openPayoutPaidModal(payoutId, tech, remaining) {
     openModal(`
-      <form class="formGrid">
+      <form class="acctFormGrid">
         <h3>ยืนยันการจ่ายเงินช่าง</h3>
         <p>ช่าง: <b>${esc(tech)}</b><br>ระบบไม่โอนเงินอัตโนมัติ กรุณาโอนเงินจริงก่อน แล้วจึงบันทึกจ่ายแล้ว</p>
-        <label>ยอดที่จ่าย<input class="input" name="paid_amount" type="number" min="0.01" step="0.01" value="${esc(remaining || '')}"></label>
-        <label>ช่องทางจ่าย<input class="input" name="payment_method" placeholder="เช่น โอนธนาคาร, เงินสด"></label>
-        <label>เลขอ้างอิงหรือหมายเหตุ<input class="input" name="payment_reference" placeholder="เลขสลิป / เลขรายการ"></label>
-        <label>URL หลักฐานการโอน ถ้ามี<input class="input" name="slip_url" placeholder="https://..."></label>
-        <label>หมายเหตุ<textarea class="input" name="note" placeholder="รายละเอียดเพิ่มเติม"></textarea></label>
-        <label class="checkLine"><input type="checkbox" name="confirm_paid" value="1"><span>ยืนยันว่าได้โอน/จ่ายเงินจริงแล้ว</span></label>
-        <div class="softErr" data-error style="display:block;min-height:0"></div>
-        <div class="modalActions"><button class="ghostBtn" type="button" data-close>ยกเลิก</button><button class="primaryBtn" type="submit">บันทึกจ่ายแล้ว</button></div>
+        <label>ยอดที่จ่าย<input class="acctInput" name="paid_amount" type="number" min="0.01" step="0.01" value="${esc(remaining || '')}"></label>
+        <label>ช่องทางจ่าย<input class="acctInput" name="payment_method" placeholder="เช่น โอนธนาคาร, เงินสด"></label>
+        <label>เลขอ้างอิงหรือหมายเหตุ<input class="acctInput" name="payment_reference" placeholder="เลขสลิป / เลขรายการ"></label>
+        <label>URL หลักฐานการโอน ถ้ามี<input class="acctInput" name="slip_url" placeholder="https://..."></label>
+        <label>หมายเหตุ<textarea class="acctInput" name="note" placeholder="รายละเอียดเพิ่มเติม"></textarea></label>
+        <label class="acctCheckLine"><input type="checkbox" name="confirm_paid" value="1"><span>ยืนยันว่าได้โอน/จ่ายเงินจริงแล้ว</span></label>
+        <div class="acctSoftErr" data-error style="display:block;min-height:0"></div>
+        <div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">บันทึกจ่ายแล้ว</button></div>
       </form>`, async (fd, errEl) => {
         if (fd.get('confirm_paid') !== '1') { if (errEl) errEl.textContent = 'กรุณาติ๊กยืนยันว่าได้โอน/จ่ายเงินจริงแล้ว'; return; }
         await postJson(`/admin/accounting/payouts/${encodeURIComponent(payoutId)}/pay`, {
@@ -416,7 +416,7 @@
       if (state.tab === 'deposits') await loadDeposits();
       if (state.tab === 'audit') await loadAudit();
     } catch (e) {
-      const err = $('softErrors'); if (err) err.innerHTML = `<div class="softErr">โหลดข้อมูลงานบัญชีไม่สำเร็จ: ${esc(e.message || e)}</div>`;
+      const err = $('softErrors'); if (err) err.innerHTML = `<div class="acctSoftErr">โหลดข้อมูลงานบัญชีไม่สำเร็จ: ${esc(e.message || e)}</div>`;
     }
   }
   function workspaceAction() {
@@ -427,10 +427,8 @@
     return reloadAll();
   }
   function bind() {
-    document.querySelectorAll('.tabBtn').forEach((b) => b.addEventListener('click', () => showAccountingTab(b.dataset.tab, { scroll: true, updateUrl: true })));
+    document.querySelectorAll('.acctTabBtn').forEach((b) => b.addEventListener('click', () => showAccountingTab(b.dataset.tab, { scroll: true, updateUrl: true })));
     $('btnReloadAccounting')?.addEventListener('click', reloadAll);
-    $('btnOpenRevenue')?.addEventListener('click', () => showAccountingTab('revenue', { scroll: true, updateUrl: true }));
-    $('btnOpenPayouts')?.addEventListener('click', () => showAccountingTab('payouts', { scroll: true, updateUrl: true }));
     $('workspacePrimaryAction')?.addEventListener('click', workspaceAction);
     $('btnReloadRevenue')?.addEventListener('click', loadRevenue);
     $('revenueSearch')?.addEventListener('input', renderRevenue);
