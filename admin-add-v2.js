@@ -2986,3 +2986,63 @@ async function init() {
 }
 
 document.addEventListener("DOMContentLoaded", init);
+
+// =============================================================
+// Accounting quotation -> Admin Add Job prefill
+// - Additive only. Does not change booking/availability/submit logic.
+// - When accounting confirms a quotation it stores cwf_accounting_quote_prefill
+//   and redirects here; this fills customer + service lines so admin can choose
+//   appointment/technician normally.
+// =============================================================
+(function initAccountingQuotePrefill(){
+  function safeSet(id, value){ try{ const x = document.getElementById(id); if(x && value != null && String(value) !== ''){ x.value = value; x.dispatchEvent(new Event('input', { bubbles:true })); x.dispatchEvent(new Event('change', { bubbles:true })); } }catch(_){} }
+  function normalizeLine(x){
+    return {
+      job_type: String(x?.job_type || 'ล้าง'),
+      ac_type: String(x?.ac_type || 'ผนัง'),
+      wash_variant: String(x?.wash_variant || ''),
+      btu: String(x?.btu || ''),
+      machine_count: Number(x?.qty || x?.machine_count || 1) || 1,
+      admin_override_price: Number(x?.unit_price || 0) || undefined,
+      quote_description: String(x?.description || '')
+    };
+  }
+  function apply(){
+    let raw = null;
+    try { raw = localStorage.getItem('cwf_accounting_quote_prefill'); } catch(_) {}
+    if(!raw) return;
+    let data = null;
+    try { data = JSON.parse(raw); } catch(_) { return; }
+    if(!data || data.source !== 'accounting_quotation') return;
+    try { localStorage.removeItem('cwf_accounting_quote_prefill'); } catch(_) {}
+    safeSet('customer_name', data.customer_name || '');
+    safeSet('customer_phone', data.customer_phone || '');
+    safeSet('address_text', data.address_text || '');
+    safeSet('customer_note', data.customer_note || `จากใบเสนอราคา ${data.document_no || ''}`);
+    const lines = Array.isArray(data.service_lines) ? data.service_lines.map(normalizeLine) : [];
+    if(lines.length){
+      const first = lines[0];
+      safeSet('job_type', first.job_type);
+      safeSet('ac_type', first.ac_type);
+      safeSet('btu', first.btu);
+      safeSet('machine_count', first.machine_count);
+      setTimeout(()=>{
+        try {
+          if(typeof buildVariantUI === 'function') buildVariantUI();
+          const w = document.getElementById('wash_variant');
+          if(w && first.wash_variant){ w.value = first.wash_variant; w.dispatchEvent(new Event('change', { bubbles:true })); }
+          if(window.state && Array.isArray(window.state.service_lines)) {
+            window.state.service_lines = lines.slice(1);
+          } else if(typeof state !== 'undefined' && Array.isArray(state.service_lines)) {
+            state.service_lines = lines.slice(1);
+          }
+          if(typeof renderServiceLines === 'function') renderServiceLines();
+          if(typeof refreshPreviewDebounced === 'function') refreshPreviewDebounced();
+        } catch(e){ console.warn('[accounting quote prefill] service apply failed', e); }
+      }, 400);
+    }
+    try { window.dispatchEvent(new CustomEvent('cwf:accounting-quote-prefilled', { detail: data })); } catch(_) {}
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => setTimeout(apply, 700));
+  else setTimeout(apply, 700);
+})();
