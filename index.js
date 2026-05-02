@@ -1385,6 +1385,78 @@ async function requireAdminSession(req, res, next) {
   }
 }
 
+function _accountingActor(req) {
+  const actor = req?.actor || req?.auth || req?.effective || {};
+  return {
+    username: String(actor.username || '').trim(),
+    role: normalizeRole(actor.role || ''),
+  };
+}
+
+function requireAccountingPermission(permissionKey) {
+  const key = String(permissionKey || '').trim();
+  return async (req, res, next) => {
+    try {
+      const ctx = await getAuthContext(req, res);
+      if (!ctx.ok) return res.status(401).json({ ok: false, error: 'UNAUTHORIZED' });
+      const actorRole = normalizeRole(ctx.actor?.role);
+      if (actorRole !== 'admin' && actorRole !== 'super_admin') {
+        return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+      }
+      req.actor = ctx.actor;
+      req.effective = ctx.effective;
+      req.auth = ctx.effective;
+      req.impersonating = !!ctx.impersonating;
+      req.session_token = ctx.session_token;
+      if (actorRole === 'super_admin') return next();
+
+      // Phase 1 read-only accounting dashboard: allow Admin by default while
+      // granular accounting_permissions rows are introduced. Future accounting
+      // write actions should require explicit non-revoked permissions.
+      if (key.startsWith('accounting.read')) return next();
+
+      const r = await pool.query(
+        `SELECT 1 FROM public.accounting_permissions
+         WHERE username=$1 AND permission_key=$2 AND revoked_at IS NULL
+         LIMIT 1`,
+        [ctx.actor.username, key]
+      );
+      if (!r.rows.length) return res.status(403).json({ ok: false, error: 'ACCOUNTING_PERMISSION_REQUIRED' });
+      return next();
+    } catch (e) {
+      console.error('requireAccountingPermission error:', e);
+      return res.status(500).json({ ok: false, error: 'ACCOUNTING_AUTH_FAILED' });
+    }
+  };
+}
+
+async function logAccountingAudit(req, { action, entity_type, entity_id = null, before_json = null, after_json = null, note = null } = {}) {
+  try {
+    const actor = _accountingActor(req);
+    await pool.query(
+      `INSERT INTO public.accounting_audit_log
+        (actor_user_id, actor_username, actor_role, action, entity_type, entity_id,
+         before_json, after_json, ip_address, user_agent, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9,$10,$11)`,
+      [
+        actor.username || null,
+        actor.username || null,
+        actor.role || null,
+        String(action || '').trim(),
+        String(entity_type || '').trim(),
+        entity_id == null ? null : String(entity_id),
+        before_json == null ? null : JSON.stringify(before_json),
+        after_json == null ? null : JSON.stringify(after_json),
+        req?.ip || req?.headers?.['x-forwarded-for'] || null,
+        req?.headers?.['user-agent'] || null,
+        note == null ? null : String(note),
+      ]
+    );
+  } catch (e) {
+    console.warn('[accounting_audit] log failed:', e.message);
+  }
+}
+
 async function requireInternalApiKeyOnly(req, res, next) {
   try {
     const suppliedKey = getInternalApiKeyFromRequest(req);
@@ -10499,6 +10571,121 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
       WHERE transaction_type='collect'
     `);
 
+    // =======================================
+    // 📘 Accounting module foundation (Phase 1)
+    // - Read-only dashboard now; write/issue/void flows come later with audit.
+    // - Backward compatible only: no destructive migration.
+    // =======================================
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.accounting_permissions (
+        username TEXT NOT NULL,
+        permission_key TEXT NOT NULL,
+        granted_by TEXT,
+        granted_at TIMESTAMPTZ DEFAULT NOW(),
+        revoked_at TIMESTAMPTZ,
+        note TEXT,
+        PRIMARY KEY(username, permission_key)
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.accounting_audit_log (
+        id BIGSERIAL PRIMARY KEY,
+        actor_user_id TEXT,
+        actor_username TEXT,
+        actor_role TEXT,
+        action TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT,
+        before_json JSONB,
+        after_json JSONB,
+        ip_address TEXT,
+        user_agent TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        note TEXT
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_accounting_audit_created ON public.accounting_audit_log(created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_accounting_audit_entity ON public.accounting_audit_log(entity_type, entity_id, created_at DESC)`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.accounting_documents (
+        document_id BIGSERIAL PRIMARY KEY,
+        document_no TEXT UNIQUE,
+        document_type TEXT NOT NULL CHECK (document_type IN ('quotation','invoice','receipt')),
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','issued','voided','paid')),
+        job_id BIGINT REFERENCES public.jobs(job_id) ON DELETE SET NULL,
+        customer_name TEXT,
+        customer_phone TEXT,
+        issue_date DATE,
+        due_date DATE,
+        subtotal NUMERIC(12,2) DEFAULT 0,
+        discount_amount NUMERIC(12,2) DEFAULT 0,
+        vat_amount NUMERIC(12,2) DEFAULT 0,
+        withholding_amount NUMERIC(12,2) DEFAULT 0,
+        total_amount NUMERIC(12,2) DEFAULT 0,
+        payload_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+        created_by TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_by TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        issued_by TEXT,
+        issued_at TIMESTAMPTZ,
+        voided_by TEXT,
+        voided_at TIMESTAMPTZ,
+        void_reason TEXT
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_accounting_documents_job ON public.accounting_documents(job_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_accounting_documents_status ON public.accounting_documents(document_type, status, created_at DESC)`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.accounting_document_sequences (
+        document_type TEXT NOT NULL,
+        year INT NOT NULL,
+        last_number INT NOT NULL DEFAULT 0,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        PRIMARY KEY(document_type, year)
+      )
+    `);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.accounting_expenses (
+        expense_id BIGSERIAL PRIMARY KEY,
+        expense_date DATE NOT NULL,
+        category TEXT NOT NULL,
+        vendor_name TEXT,
+        description TEXT,
+        amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+        vat_amount NUMERIC(12,2) DEFAULT 0,
+        withholding_amount NUMERIC(12,2) DEFAULT 0,
+        payment_method TEXT,
+        job_id BIGINT REFERENCES public.jobs(job_id) ON DELETE SET NULL,
+        status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','submitted','approved','voided')),
+        created_by TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_by TEXT,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        voided_by TEXT,
+        voided_at TIMESTAMPTZ,
+        void_reason TEXT
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_accounting_expenses_status ON public.accounting_expenses(status, expense_date DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_accounting_expenses_job ON public.accounting_expenses(job_id)`);
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.accounting_expense_attachments (
+        attachment_id BIGSERIAL PRIMARY KEY,
+        expense_id BIGINT NOT NULL REFERENCES public.accounting_expenses(expense_id) ON DELETE CASCADE,
+        public_url TEXT NOT NULL,
+        original_name TEXT,
+        mime_type TEXT,
+        file_size BIGINT,
+        uploaded_by TEXT,
+        uploaded_at TIMESTAMPTZ DEFAULT NOW(),
+        is_voided BOOLEAN NOT NULL DEFAULT FALSE,
+        voided_by TEXT,
+        voided_at TIMESTAMPTZ
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_accounting_expense_attachments_expense ON public.accounting_expense_attachments(expense_id, uploaded_at DESC)`);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.technician_push_subscriptions (
         subscription_id BIGSERIAL PRIMARY KEY,
@@ -16997,6 +17184,284 @@ app.post("/admin/technicians/:username/photo", requireAdminSession, upload.singl
   } catch (e) {
     console.error("POST admin tech photo error:", e);
     res.status(500).json({ error: "อัปโหลดรูปไม่สำเร็จ" });
+  }
+});
+
+// =======================================
+// 📘 ADMIN ACCOUNTING (Phase 1 read-only)
+// =======================================
+function _maskPhone(phone) {
+  const s = String(phone || '').replace(/\D/g, '');
+  if (s.length < 7) return phone ? 'xxx' : '';
+  return `${s.slice(0, 3)}xxx${s.slice(-4)}`;
+}
+
+function _accountingCard(key, label, count = 0, total_amount = null, tone = 'blue', target_tab = 'overview') {
+  return { key, label, count: Number(count || 0), total_amount: total_amount == null ? null : _money(total_amount), status_key: tone, target_tab };
+}
+
+async function _accountingSafeQuery(soft_errors, label, sql, params = [], fallbackRows = []) {
+  try {
+    return await pool.query(sql, params);
+  } catch (e) {
+    soft_errors.push({ scope: label, message: String(e?.message || e) });
+    return { rows: fallbackRows };
+  }
+}
+
+app.get('/admin/accounting/summary', requireAccountingPermission('accounting.read.summary'), async (req, res) => {
+  const soft_errors = [];
+  try {
+    const waitingReceipts = await _accountingSafeQuery(soft_errors, 'waiting_receipts',
+      `WITH gross AS (
+         SELECT j.job_id, COALESCE(NULLIF(SUM(COALESCE(ji.line_total,0)),0), COALESCE(j.job_price,0), 0) AS total_amount
+           FROM public.jobs j
+           LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
+          WHERE ${_sqlDonePredicate('j')}
+            AND j.finished_at IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1 FROM public.accounting_documents d
+               WHERE d.job_id=j.job_id AND d.document_type='receipt' AND COALESCE(d.status,'') <> 'voided'
+            )
+          GROUP BY j.job_id, j.job_price
+       )
+       SELECT COUNT(*)::int AS count, COALESCE(SUM(total_amount),0)::numeric AS total_amount FROM gross`);
+
+    const unpaidRevenue = await _accountingSafeQuery(soft_errors, 'unpaid_revenue',
+      `WITH gross AS (
+         SELECT j.job_id, COALESCE(NULLIF(SUM(COALESCE(ji.line_total,0)),0), COALESCE(j.job_price,0), 0) AS total_amount
+           FROM public.jobs j
+           LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
+          WHERE ${_sqlDonePredicate('j')}
+            AND j.finished_at IS NOT NULL
+            AND COALESCE(j.payment_status,'unpaid') <> 'paid'
+          GROUP BY j.job_id, j.job_price
+       )
+       SELECT COUNT(*)::int AS count, COALESCE(SUM(total_amount),0)::numeric AS total_amount FROM gross`);
+
+    const waitingProof = await _accountingSafeQuery(soft_errors, 'waiting_payment_proof',
+      `WITH gross AS (
+         SELECT j.job_id, COALESCE(NULLIF(SUM(COALESCE(ji.line_total,0)),0), COALESCE(j.job_price,0), 0) AS total_amount
+           FROM public.jobs j
+           LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
+          WHERE ${_sqlDonePredicate('j')}
+            AND j.finished_at IS NOT NULL
+            AND COALESCE(j.payment_status,'unpaid')='paid'
+            AND NOT EXISTS (
+              SELECT 1 FROM public.job_photos p
+               WHERE p.job_id=j.job_id AND COALESCE(p.phase,'')='payment_slip' AND COALESCE(p.public_url,'') <> ''
+            )
+          GROUP BY j.job_id, j.job_price
+       )
+       SELECT COUNT(*)::int AS count, COALESCE(SUM(total_amount),0)::numeric AS total_amount FROM gross`);
+
+    const payoutPending = await _accountingSafeQuery(soft_errors, 'pending_payout_periods',
+      `WITH period_sum AS (
+         SELECT p.payout_id,
+                COALESCE(SUM(l.earn_amount),0) AS gross_amount,
+                COALESCE(adj.adj_total,0) AS adj_total,
+                COALESCE(dep.deposit_deduction_amount,0) AS deposit_deduction_amount,
+                COALESCE(pay.paid_amount,0) AS paid_amount
+           FROM public.technician_payout_periods p
+           LEFT JOIN public.technician_payout_lines l ON l.payout_id=p.payout_id
+           LEFT JOIN (SELECT payout_id, SUM(adj_amount) AS adj_total FROM public.technician_payout_adjustments GROUP BY payout_id) adj ON adj.payout_id=p.payout_id
+           LEFT JOIN (SELECT payout_id, SUM(amount) AS deposit_deduction_amount FROM public.technician_deposit_ledger WHERE transaction_type='collect' GROUP BY payout_id) dep ON dep.payout_id=p.payout_id
+           LEFT JOIN (SELECT payout_id, SUM(paid_amount) AS paid_amount FROM public.technician_payout_payments GROUP BY payout_id) pay ON pay.payout_id=p.payout_id
+          WHERE COALESCE(p.status,'draft') <> 'paid'
+          GROUP BY p.payout_id, adj.adj_total, dep.deposit_deduction_amount, pay.paid_amount
+       )
+       SELECT COUNT(*)::int AS count,
+              COALESCE(SUM(gross_amount + adj_total - deposit_deduction_amount - paid_amount),0)::numeric AS total_amount
+         FROM period_sum`);
+
+    const pendingExpenses = await _accountingSafeQuery(soft_errors, 'pending_expenses',
+      `SELECT COUNT(*)::int AS count, COALESCE(SUM(amount),0)::numeric AS total_amount FROM public.accounting_expenses WHERE status IN ('draft','submitted')`);
+    const pendingDocuments = await _accountingSafeQuery(soft_errors, 'pending_documents',
+      `SELECT COUNT(*)::int AS count, COALESCE(SUM(total_amount),0)::numeric AS total_amount FROM public.accounting_documents WHERE status='draft'`);
+    const recentAudit = await _accountingSafeQuery(soft_errors, 'recent_audit',
+      `SELECT id, actor_username, actor_role, action, entity_type, entity_id, created_at, note FROM public.accounting_audit_log ORDER BY created_at DESC LIMIT 10`);
+    const docs = await _accountingSafeQuery(soft_errors, 'documents',
+      `SELECT document_id, document_no, document_type, status, job_id, customer_name, issue_date, total_amount, created_at FROM public.accounting_documents ORDER BY created_at DESC LIMIT 30`);
+    const expenses = await _accountingSafeQuery(soft_errors, 'expenses',
+      `SELECT expense_id, expense_date, category, vendor_name, description, amount, vat_amount, withholding_amount, status, created_at FROM public.accounting_expenses ORDER BY expense_date DESC, created_at DESC LIMIT 30`);
+
+    const wr = waitingReceipts.rows[0] || {};
+    const ur = unpaidRevenue.rows[0] || {};
+    const wp = waitingProof.rows[0] || {};
+    const pp = payoutPending.rows[0] || {};
+    const pe = pendingExpenses.rows[0] || {};
+    const pd = pendingDocuments.rows[0] || {};
+    return res.json({
+      ok: true,
+      cards: [
+        _accountingCard('waiting_receipts', 'รอออกใบเสร็จ', wr.count, wr.total_amount, 'yellow', 'documents'),
+        _accountingCard('unpaid_revenue', 'ค้างรับเงิน', ur.count, ur.total_amount, 'red', 'revenue'),
+        _accountingCard('waiting_payment_proof', 'รอแนบหลักฐานรับเงิน', wp.count, wp.total_amount, 'sky', 'revenue'),
+        _accountingCard('pending_payout_periods', 'งวดจ่ายช่างค้างจ่าย', pp.count, pp.total_amount, 'blue', 'payouts'),
+        _accountingCard('pending_expenses', 'รายจ่ายรอตรวจ', pe.count, pe.total_amount, 'orange', 'expenses'),
+        _accountingCard('pending_documents', 'เอกสารรอตรวจ', pd.count, pd.total_amount, 'purple', 'documents'),
+        _accountingCard('recommended_exports', 'รายงานที่ควร Export', 6, null, 'green', 'reports'),
+      ],
+      recent_audit: recentAudit.rows,
+      documents: docs.rows,
+      expenses: expenses.rows,
+      soft_errors,
+    });
+  } catch (e) {
+    console.error('GET /admin/accounting/summary', e);
+    return res.status(500).json({ ok: false, cards: [], recent_audit: [], documents: [], expenses: [], soft_errors: [{ scope: 'summary', message: e.message }] });
+  }
+});
+
+app.get('/admin/accounting/revenue', requireAccountingPermission('accounting.read.revenue'), async (req, res) => {
+  const soft_errors = [];
+  try {
+    const q = await _accountingSafeQuery(soft_errors, 'revenue',
+      `WITH gross AS (
+         SELECT j.job_id, COALESCE(NULLIF(SUM(COALESCE(ji.line_total,0)),0), COALESCE(j.job_price,0), 0)::numeric AS gross_sales_amount
+           FROM public.jobs j
+           LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
+          WHERE ${_sqlDonePredicate('j')} AND j.finished_at IS NOT NULL
+          GROUP BY j.job_id, j.job_price
+       ),
+       proof AS (
+         SELECT DISTINCT ON (job_id) job_id, public_url
+           FROM public.job_photos
+          WHERE COALESCE(phase,'')='payment_slip' AND COALESCE(public_url,'') <> ''
+          ORDER BY job_id, COALESCE(uploaded_at, created_at) DESC
+       ),
+       doc AS (
+         SELECT job_id, jsonb_object_agg(document_type, status ORDER BY created_at DESC) AS document_status
+           FROM public.accounting_documents
+          WHERE COALESCE(status,'') <> 'voided'
+          GROUP BY job_id
+       )
+       SELECT j.job_id, j.booking_code, j.finished_at,
+              COALESCE(j.customer_name,'') AS customer_name,
+              COALESCE(j.customer_phone,'') AS customer_phone,
+              g.gross_sales_amount,
+              COALESCE(j.payment_status,'unpaid') AS payment_status,
+              NULL::text AS payment_method,
+              COALESCE(doc.document_status, '{}'::jsonb) AS document_status,
+              proof.public_url AS payment_proof_url
+         FROM gross g
+         JOIN public.jobs j ON j.job_id=g.job_id
+         LEFT JOIN proof ON proof.job_id=j.job_id
+         LEFT JOIN doc ON doc.job_id=j.job_id
+        ORDER BY j.finished_at DESC
+        LIMIT 200`);
+    const rows = q.rows.map(r => {
+      const doc = r.document_status || {};
+      return {
+        job_id: r.job_id,
+        booking_code: r.booking_code,
+        finished_at: r.finished_at,
+        customer_name: r.customer_name,
+        masked_customer_phone: _maskPhone(r.customer_phone),
+        gross_sales_amount: r.gross_sales_amount,
+        payment_status: r.payment_status,
+        payment_method: r.payment_method,
+        document_status: doc,
+        payment_proof_url: r.payment_proof_url,
+        action_label: Object.keys(doc).length ? 'ดูรายละเอียด' : 'ออกเอกสาร',
+      };
+    });
+    return res.json({ ok: true, rows, soft_errors });
+  } catch (e) {
+    console.error('GET /admin/accounting/revenue', e);
+    return res.status(500).json({ ok: false, rows: [], soft_errors: [{ scope: 'revenue', message: e.message }] });
+  }
+});
+
+app.get('/admin/accounting/payouts', requireAccountingPermission('accounting.read.payouts'), async (req, res) => {
+  const soft_errors = [];
+  try {
+    const q = await _accountingSafeQuery(soft_errors, 'payouts',
+      `WITH line_sum AS (
+         SELECT payout_id, COUNT(DISTINCT technician_username)::int AS technician_count, COALESCE(SUM(earn_amount),0)::numeric AS gross_amount
+           FROM public.technician_payout_lines GROUP BY payout_id
+       ),
+       adj AS (SELECT payout_id, COALESCE(SUM(adj_amount),0)::numeric AS adj_total FROM public.technician_payout_adjustments GROUP BY payout_id),
+       dep AS (SELECT payout_id, COALESCE(SUM(amount),0)::numeric AS deposit_deduction_amount FROM public.technician_deposit_ledger WHERE transaction_type='collect' GROUP BY payout_id),
+       pay AS (SELECT payout_id, COALESCE(SUM(paid_amount),0)::numeric AS paid_amount FROM public.technician_payout_payments GROUP BY payout_id)
+       SELECT p.payout_id, p.period_type, p.period_start, p.period_end, p.status,
+              COALESCE(line_sum.technician_count,0)::int AS technician_count,
+              COALESCE(line_sum.gross_amount,0)::numeric AS gross_amount,
+              COALESCE(dep.deposit_deduction_amount,0)::numeric AS deposit_deduction_amount,
+              COALESCE(adj.adj_total,0)::numeric AS adj_total,
+              (COALESCE(line_sum.gross_amount,0) + COALESCE(adj.adj_total,0) - COALESCE(dep.deposit_deduction_amount,0))::numeric AS net_payable,
+              COALESCE(pay.paid_amount,0)::numeric AS paid_amount,
+              GREATEST(0, COALESCE(line_sum.gross_amount,0) + COALESCE(adj.adj_total,0) - COALESCE(dep.deposit_deduction_amount,0) - COALESCE(pay.paid_amount,0))::numeric AS remaining_amount
+         FROM public.technician_payout_periods p
+         LEFT JOIN line_sum ON line_sum.payout_id=p.payout_id
+         LEFT JOIN adj ON adj.payout_id=p.payout_id
+         LEFT JOIN dep ON dep.payout_id=p.payout_id
+         LEFT JOIN pay ON pay.payout_id=p.payout_id
+        ORDER BY p.period_start DESC, p.payout_id DESC
+        LIMIT 80`);
+    return res.json({ ok: true, rows: q.rows, note: 'ระบบไม่โอนเงินอัตโนมัติ การบันทึกจ่ายแล้วจะทำใน Phase ถัดไปพร้อม permission และ audit เต็มรูปแบบ', soft_errors });
+  } catch (e) {
+    console.error('GET /admin/accounting/payouts', e);
+    return res.status(500).json({ ok: false, rows: [], note: '', soft_errors: [{ scope: 'payouts', message: e.message }] });
+  }
+});
+
+app.get('/admin/accounting/deposits', requireAccountingPermission('accounting.read.deposits'), async (req, res) => {
+  const soft_errors = [];
+  try {
+    const q = await _accountingSafeQuery(soft_errors, 'deposits',
+      `WITH ledger AS (
+         SELECT technician_username,
+                COALESCE(SUM(CASE
+                  WHEN transaction_type='collect' THEN amount
+                  WHEN transaction_type='manual_adjust' THEN amount
+                  WHEN transaction_type IN ('refund','claim_deduct') THEN -amount
+                  ELSE 0 END),0)::numeric AS collected_total,
+                MAX(created_at) AS latest_at
+           FROM public.technician_deposit_ledger
+          GROUP BY technician_username
+       )
+       SELECT COALESCE(a.technician_username, ledger.technician_username) AS technician_username,
+              COALESCE(a.target_amount,5000)::numeric AS target_amount,
+              COALESCE(ledger.collected_total,0)::numeric AS collected_total,
+              GREATEST(0, COALESCE(a.target_amount,5000) - COALESCE(ledger.collected_total,0))::numeric AS remaining_amount,
+              ledger.latest_at
+         FROM public.technician_deposit_accounts a
+         FULL OUTER JOIN ledger ON ledger.technician_username=a.technician_username
+        ORDER BY collected_total DESC, technician_username ASC`);
+    const ledger = await _accountingSafeQuery(soft_errors, 'deposit_ledger',
+      `SELECT ledger_id, technician_username, payout_id, transaction_type, amount, note, created_at, created_by
+         FROM public.technician_deposit_ledger
+        ORDER BY created_at DESC
+        LIMIT 80`);
+    const totalHeld = q.rows.reduce((sum, r) => sum + Number(r.collected_total || 0), 0);
+    return res.json({ ok: true, total_deposit_held: _money(totalHeld), rows: q.rows, ledger: ledger.rows, note: 'เงินประกันไม่ใช่กำไรบริษัท', soft_errors });
+  } catch (e) {
+    console.error('GET /admin/accounting/deposits', e);
+    return res.status(500).json({ ok: false, total_deposit_held: 0, rows: [], ledger: [], note: 'เงินประกันไม่ใช่กำไรบริษัท', soft_errors: [{ scope: 'deposits', message: e.message }] });
+  }
+});
+
+app.get('/admin/accounting/audit', requireAccountingPermission('accounting.read.audit'), async (req, res) => {
+  const soft_errors = [];
+  try {
+    const action = String(req.query.action || '').trim();
+    const entity = String(req.query.entity_type || '').trim();
+    const params = [];
+    const where = [];
+    if (action) { params.push(action); where.push(`action=$${params.length}`); }
+    if (entity) { params.push(entity); where.push(`entity_type=$${params.length}`); }
+    const q = await _accountingSafeQuery(soft_errors, 'audit',
+      `SELECT id, actor_username, actor_role, action, entity_type, entity_id, created_at, note
+         FROM public.accounting_audit_log
+        ${where.length ? `WHERE ${where.join(' AND ')}` : ''}
+        ORDER BY created_at DESC
+        LIMIT 120`,
+      params);
+    return res.json({ ok: true, rows: q.rows, soft_errors });
+  } catch (e) {
+    console.error('GET /admin/accounting/audit', e);
+    return res.status(500).json({ ok: false, rows: [], soft_errors: [{ scope: 'audit', message: e.message }] });
   }
 });
 
