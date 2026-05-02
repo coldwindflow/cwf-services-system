@@ -313,6 +313,36 @@
     try{ const d=new Date(iso); if (Number.isNaN(d.getTime())) return '-'; return d.toLocaleDateString('th-TH',{ year:'numeric', month:'short', day:'numeric' }); }catch{ return '-'; }
   }
 
+
+  function payoutStatusThai(status){
+    const s = String(status || 'draft').trim().toLowerCase();
+    const map = { draft:'กำลังตรวจยอด', locked:'พร้อมจ่าย', paid:'จ่ายแล้ว', cancelled:'ยกเลิก' };
+    return map[s] || s || '-';
+  }
+  function paidStatusThai(status){
+    const s = String(status || 'unpaid').trim().toLowerCase();
+    const map = { unpaid:'รอจ่าย', partial:'จ่ายบางส่วน', paid:'จ่ายแล้ว', hold:'ระงับยอด', disputed:'มีปัญหา', cancelled:'ยกเลิก' };
+    return map[s] || s || '-';
+  }
+  function statusPillClass(status){
+    const s = String(status || '').trim().toLowerCase();
+    if (s === 'paid') return 'blue';
+    if (s === 'locked' || s === 'partial') return 'yellow';
+    return 'blue';
+  }
+  function currentPayoutTypeBkk(){
+    const now = new Date();
+    const bkk = new Date(now.getTime() + (7 * 60 * 60 * 1000));
+    const day = bkk.getUTCDate();
+    // วันที่ 1-10 โฟกัสรอบวันที่ 10, วันที่ 11-25 โฟกัสรอบวันที่ 25, หลัง 25 เตรียมรอบ 10 ถัดไปตาม backend ปัจจุบัน
+    return (day <= 10 || day > 25) ? '10' : '25';
+  }
+  function periodSortValue(p){
+    const d = new Date(p?.period_start || p?.created_at || 0);
+    const t = d.getTime();
+    return Number.isFinite(t) ? t : 0;
+  }
+
   async function loadPayouts(){
     if (!$('payoutsTbody')) return;
     try{
@@ -328,57 +358,99 @@
     const tb = $('payoutsTbody');
     const cards = $('payoutsCards');
     if (!tb && !cards) return;
-    if (!PAYOUTS.length) {
+    const rows = Array.isArray(PAYOUTS) ? [...PAYOUTS] : [];
+    if (!rows.length) {
       if (tb) tb.innerHTML = `<tr class="tr"><td colspan="8" class="muted">ยังไม่มีงวด</td></tr>`;
-      if (cards) cards.innerHTML = `<div class="muted">ยังไม่มีงวด</div>`;
+      if (cards) cards.innerHTML = `
+        <div class="payout-help">
+          ยังไม่มีงวดจ่ายในระบบ กด <b>เตรียมงวดปัจจุบัน</b> เพื่อรวมงานที่ปิดแล้วเข้ารอบจ่าย
+        </div>`;
       return;
     }
 
-    const cardHtml = PAYOUTS.map(p=>{
+    rows.sort((a,b)=>periodSortValue(b)-periodSortValue(a));
+    const nonPaid = rows.filter(p=>String(p.status||'draft').toLowerCase() !== 'paid');
+    const paid = rows.filter(p=>String(p.status||'draft').toLowerCase() === 'paid');
+    const latest = rows[0] ? [rows[0]] : [];
+    const activeMap = new Map();
+    [...nonPaid, ...latest].forEach(p=>{ if (p?.payout_id) activeMap.set(String(p.payout_id), p); });
+    const active = Array.from(activeMap.values()).filter(p=>String(p.status||'draft').toLowerCase() !== 'paid');
+
+    function activeCard(p){
       const range = `${fmtDate(p.period_start)} - ${fmtDate(p.period_end)}`;
       const st = String(p.status||'draft');
       const isActive = String(ACTIVE_PAYOUT||'') === String(p.payout_id||'');
-      const statusClass = st === 'paid' ? 'blue' : (st === 'locked' ? 'yellow' : 'blue');
+      const amount = fmtBaht(p.total_amount || 0);
       return `
         <div class="payout-card-item ${isActive?'active':''}">
           <div class="topline">
             <div>
               <div class="row" style="gap:8px;align-items:center">
-                <span class="pill ${statusClass}">${esc(st)}</span>
-                <span class="pill" style="background:#eef6ff;color:#0b4bb3">${esc(p.period_type)}</span>
+                <span class="pill ${statusPillClass(st)}">${esc(payoutStatusThai(st))}</span>
+                <span class="pill" style="background:#eef6ff;color:#0b4bb3">งวดวันที่ ${esc(p.period_type)}</span>
               </div>
-              <div class="muted" style="margin-top:8px">${esc(range)}</div>
-              <div class="muted mono" style="margin-top:4px">ID ${esc(p.payout_id)}</div>
+              <div class="muted" style="margin-top:8px">รอบงาน: ${esc(range)}</div>
+              <div class="payout-system-note">รหัสระบบ: ${esc(p.payout_id)}</div>
             </div>
             <div style="text-align:right">
-              <div class="amount">${fmtBaht(p.total_amount)}</div>
-              <div class="muted" style="margin-top:4px">${Number(p.techs_count||0)} ช่าง • ${Number(p.lines_count||0)} รายการ</div>
+              <div class="amount">${amount}</div>
+              <div class="muted" style="margin-top:4px">รายได้ก่อนหักโดยประมาณ</div>
             </div>
           </div>
           <div class="row" style="justify-content:space-between;align-items:center;margin-top:10px;gap:8px">
-            <div class="muted">${Number(p.techs_count||0)} ?? ? ${Number(p.lines_count||0)} ??????</div>
-            <button class="btn blue" data-act="view" data-id="${esc(p.payout_id)}">เลือกงวดนี้</button>
+            <div class="muted">${Number(p.techs_count||0)} ช่าง • ${Number(p.lines_count||0)} รายการ</div>
+            <button class="btn blue" data-act="view" data-id="${esc(p.payout_id)}">ตรวจยอดและจ่ายเงิน</button>
           </div>
-        </div>
-      `;
-    }).join('');
+        </div>`;
+    }
 
-    if (cards) cards.innerHTML = cardHtml;
+    function historyRow(p){
+      const range = `${fmtDate(p.period_start)} - ${fmtDate(p.period_end)}`;
+      return `
+        <div class="payout-history-row">
+          <div>
+            <b>งวดวันที่ ${esc(p.period_type)}</b>
+            <div class="muted" style="margin-top:4px">${esc(range)} • ${Number(p.techs_count||0)} ช่าง • ${Number(p.lines_count||0)} รายการ</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+            <span class="pill blue">จ่ายแล้ว</span>
+            <span class="amount">${fmtBaht(p.total_amount||0)}</span>
+            <button class="btn gray" data-act="view" data-id="${esc(p.payout_id)}">ดูประวัติ</button>
+          </div>
+        </div>`;
+    }
+
+    const activeHtml = active.length
+      ? active.map(activeCard).join('')
+      : `<div class="payout-help">ตอนนี้ไม่มีงวดค้างตรวจหรือค้างจ่าย ถ้าถึงรอบใหม่ให้กด <b>เตรียมงวดปัจจุบัน</b></div>`;
+    const shownPaid = paid.slice(0,3);
+    const morePaid = paid.slice(3);
+    const historyHtml = paid.length ? `
+      <div class="payout-subhead"><b>ประวัติงวดจ่าย</b><span class="muted">แสดงล่าสุด ${shownPaid.length} งวด</span></div>
+      <div class="payout-history-list">${shownPaid.map(historyRow).join('')}</div>
+      ${morePaid.length ? `<details class="advanced-tools"><summary>ดูประวัติเพิ่ม (${morePaid.length} งวด)</summary><div class="payout-history-list">${morePaid.map(historyRow).join('')}</div></details>` : ''}
+    ` : `<div class="payout-subhead"><b>ประวัติงวดจ่าย</b></div><div class="muted">ยังไม่มีประวัติงวดที่จ่ายแล้ว</div>`;
+
+    if (cards) cards.innerHTML = `
+      <div class="payout-subhead"><b>งวดที่ต้องจัดการ</b><span class="muted">ตรวจยอด → ล็อกงวด → โอนเงิน → บันทึกจ่ายแล้ว</span></div>
+      ${activeHtml}
+      ${historyHtml}
+    `;
+
     if (tb) {
-      tb.innerHTML = PAYOUTS.map(p=>{
+      tb.innerHTML = rows.map(p=>{
         const range = `${fmtDate(p.period_start)} - ${fmtDate(p.period_end)}`;
         return `
           <tr class="tr">
             <td class="mono">${esc(p.payout_id)}</td>
-            <td><span class="pill blue">${esc(p.period_type)}</span></td>
+            <td><span class="pill blue">งวด ${esc(p.period_type)}</span></td>
             <td class="muted">${esc(range)}</td>
             <td><b>${fmtBaht(p.total_amount)}</b></td>
             <td>${Number(p.techs_count||0)}</td>
             <td>${Number(p.lines_count||0)}</td>
-            <td>${esc(p.status||'draft')}</td>
+            <td>${esc(payoutStatusThai(p.status||'draft'))}</td>
             <td><button class="btn gray" data-act="view" data-id="${esc(p.payout_id)}">ดู</button></td>
-          </tr>
-        `;
+          </tr>`;
       }).join('');
     }
 
@@ -391,17 +463,21 @@
 
   async function generatePayout(type){
     const t = String(type||'').trim();
-    $('payoutGenStatus').textContent = 'กำลังสร้างงวด...';
+    $('payoutGenStatus').textContent = 'กำลังเตรียมงวด...';
     try{
       const r = await api(`/admin/super/payouts/generate?type=${encodeURIComponent(t)}`, { method:'POST' });
-      $('payoutGenStatus').textContent = r.already_generated ? `งวดนี้ถูกสร้างแล้ว (${r.payout_id})` : `สร้างสำเร็จ (${r.payout_id})`;
+      $('payoutGenStatus').textContent = r.already_generated ? `งวดนี้ถูกเตรียมไว้แล้ว` : `เตรียมงวดสำเร็จ`; 
       toast('สำเร็จ');
       await loadPayouts();
       await loadAudit();
     }catch(e){
-      $('payoutGenStatus').textContent = 'สร้างไม่สำเร็จ';
-      alert(`สร้างไม่สำเร็จ: ${e.message}`);
+      $('payoutGenStatus').textContent = 'เตรียมงวดไม่สำเร็จ';
+      alert(`เตรียมงวดไม่สำเร็จ: ${e.message}`);
     }
+  }
+
+  async function generateCurrentPayout(){
+    await generatePayout(currentPayoutTypeBkk());
   }
 
   async function openPayout(payout_id){
@@ -418,7 +494,7 @@
       if (pill){
         pill.style.display = 'inline-flex';
         pill.className = 'pill ' + (st==='paid' ? 'green' : (st==='locked' ? 'yellow' : 'blue'));
-        pill.textContent = `status: ${st}`;
+        pill.textContent = payoutStatusThai(st);
       }
       const lockBtn = $('btnLockPayout');
       if (lockBtn){
@@ -440,7 +516,7 @@
 
     }catch(e){}
 
-    $('payoutDetailHint').textContent = `กำลังโหลดรายช่างของงวด: ${id}`;
+    $('payoutDetailHint').textContent = `กำลังโหลดรายช่างของงวดที่เลือก`;
     $('payoutTechsBox').innerHTML = `<div class="muted">กำลังโหลด...</div>`;
     $('payoutLinesBox').innerHTML = '';
     try{
@@ -473,8 +549,8 @@
 
     box.innerHTML = `
       <div class="payroll-cards">
-        <div class="payroll-card"><div class="label">Gross payout</div><div class="value">${fmtBaht(totalGross)}</div></div>
-        <div class="payroll-card" style="border-color:#f4c542;background:#fffdf3"><div class="label">Partner deposit</div><div class="value" style="color:#0b4bb3">${fmtBaht(totalDeposit)}</div></div>
+        <div class="payroll-card"><div class="label">รายได้ก่อนหัก</div><div class="value">${fmtBaht(totalGross)}</div></div>
+        <div class="payroll-card" style="border-color:#f4c542;background:#fffdf3"><div class="label">หักเงินประกัน</div><div class="value" style="color:#0b4bb3">${fmtBaht(totalDeposit)}</div></div>
         <div class="payroll-card"><div class="label">ยอดสุทธิรวม</div><div class="value">${fmtBaht(totalNet)}</div></div>
         <div class="payroll-card"><div class="label">จ่ายแล้ว</div><div class="value">${fmtBaht(totalPaid)}</div></div>
         <div class="payroll-card"><div class="label">คงเหลือ</div><div class="value">${fmtBaht(totalRem)}</div></div>
@@ -502,8 +578,9 @@
           const net = fmtBaht(t.net_amount||t.total_amount||0);
           const paid = fmtBaht(t.paid_amount||0);
           const rem = fmtBaht(t.remaining_amount||0);
-          const st = esc(t.paid_status||'unpaid');
-          const pillClass = (st==='paid') ? 'blue' : (st==='partial' ? 'yellow' : '');
+          const stRaw = String(t.paid_status||'unpaid');
+          const st = esc(paidStatusThai(stRaw));
+          const pillClass = statusPillClass(stRaw);
           const canPay = isPayableTech(t);
           const checked = BULK_SELECTED_TECHS.has(String(t.technician_username||'')) ? 'checked' : '';
           return `<div class="tech-pay-card">
@@ -514,17 +591,17 @@
                   <b class="mono">${u}</b>
                 </label>
                 <div class="muted" style="margin-top:6px">สถานะ <span class="pill ${pillClass}">${st}</span></div>
-                <div class="muted" style="margin-top:6px">Gross ${gross} • Deposit ${dep} • Net ${net}</div>
+                <div class="muted" style="margin-top:6px">รายได้ก่อนหัก ${gross} • หักเงินประกัน ${dep} • ยอดสุทธิ ${net}</div>
               </div>
               <div style="text-align:right">
                 <div class="money">${rem}</div>
-                <div class="muted" style="margin-top:4px">Paid ${paid} • Remaining ${rem}</div>
+                <div class="muted" style="margin-top:4px">จ่ายแล้ว ${paid} • คงเหลือ ${rem}</div>
               </div>
             </div>
             <div class="pay-actions">
               <button class="btn gray" data-act="tech" data-u="${u}">ดูรายการงาน</button>
-              <button class="btn blue" data-act="pay" data-u="${u}" data-net="${_safeNum(t.net_amount)}" ${canPay?'':'disabled'}>${canPay?'จ่าย':'จ่ายแล้ว'}</button>
-              <button class="btn yellow" data-act="adj" data-u="${u}">ปรับยอด</button>
+              <button class="btn blue" data-act="pay" data-u="${u}" data-net="${_safeNum(t.net_amount)}" ${canPay?'':'disabled'}>${canPay?'บันทึกจ่ายแล้ว':'จ่ายแล้ว'}</button>
+              <button class="btn yellow" data-act="adj" data-u="${u}">เพิ่มหัก/บวก</button>
             </div>
           </div>`;
         }).join('')}
@@ -664,18 +741,18 @@
         <div>
           <b>รายการงานของ ${esc(username)}</b>
           <div class="muted" style="margin-top:4px">
-            ยอดก่อนปรับ: <b>${fmtBaht(gross)}</b> • ปรับยอด: <b>${fmtBaht(adjTotal)}</b> • Deposit: <b style="color:#0b4bb3">${fmtBaht(dep)}</b> • ยอดสุทธิ: <b>${fmtBaht(net)}</b>
+            ยอดก่อนปรับ: <b>${fmtBaht(gross)}</b> • ปรับยอด: <b>${fmtBaht(adjTotal)}</b> • หักเงินประกัน: <b style="color:#0b4bb3">${fmtBaht(dep)}</b> • ยอดสุทธิ: <b>${fmtBaht(net)}</b>
           </div>
           <div class="muted" style="margin-top:4px">
-            Deposit target: <b>${fmtBaht(payload?.deposit_target_amount||0)}</b> • collected: <b>${fmtBaht(payload?.deposit_collected_total||0)}</b> • remaining: <b>${fmtBaht(payload?.deposit_remaining_amount||0)}</b>
+            เป้าหมายเงินประกัน: <b>${fmtBaht(payload?.deposit_target_amount||0)}</b> • เก็บแล้ว: <b>${fmtBaht(payload?.deposit_collected_total||0)}</b> • คงเหลือ: <b>${fmtBaht(payload?.deposit_remaining_amount||0)}</b>
           </div>
           <div class="muted" style="margin-top:4px">
-            จ่ายแล้ว: <b>${fmtBaht(paid)}</b> • คงเหลือ: <b>${fmtBaht(rem)}</b> • สถานะ: <b>${esc(paidStatus)}</b>
+            จ่ายแล้ว: <b>${fmtBaht(paid)}</b> • คงเหลือ: <b>${fmtBaht(rem)}</b> • สถานะ: <b>${esc(paidStatusThai(paidStatus))}</b>
           </div>
         </div>
         <div class="row" style="gap:8px">
-          <button class="btn blue" id="btnPayThisTech" ${canPayDetail?'':'disabled'}>${canPayDetail?'จ่าย/แก้ยอดจ่าย':'จ่ายแล้ว'}</button>
-          <button class="btn yellow" id="btnAdjThisTech">ปรับยอด</button>
+          <button class="btn blue" id="btnPayThisTech" ${canPayDetail?'':'disabled'}>${canPayDetail?'บันทึกจ่ายแล้ว':'จ่ายแล้ว'}</button>
+          <button class="btn yellow" id="btnAdjThisTech">เพิ่มหัก/บวก</button>
           <button class="btn gray" id="btnOpenSlipAdmin">เปิดสลิป (ช่าง)</button>
         </div>
       </div>
@@ -683,7 +760,7 @@
 
     const adjBox = `
       <div class="card" style="margin-top:10px">
-        <b>Adjustment (Audit)</b>
+        <b>รายการหัก/บวก (Audit)</b>
         <div class="muted" style="margin-top:4px">ปรับยอดแบบมีเหตุผล • ลบได้เฉพาะ Super Admin</div>
         <div style="overflow:auto;margin-top:8px">
           <table>
@@ -858,6 +935,7 @@
   }
 
   window.cwfLegacySettleOldPayouts = legacySettleOldPayouts;
+  if ($('btnGenCurrentPayout')) $('btnGenCurrentPayout').addEventListener('click', generateCurrentPayout);
   if ($('btnGenP10')) $('btnGenP10').addEventListener('click', ()=> generatePayout('10'));
   if ($('btnGenP25')) $('btnGenP25').addEventListener('click', ()=> generatePayout('25'));
   if ($('btnReloadPayouts')) $('btnReloadPayouts').addEventListener('click', loadPayouts);

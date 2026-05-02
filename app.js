@@ -1434,6 +1434,18 @@ function _safeText(s){
   return String(s||'').replace(/[&<>"']/g, (c)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
+
+function _payoutStatusTH(status){
+  const s = String(status || 'draft').trim().toLowerCase();
+  const map = { draft:'กำลังตรวจยอด', locked:'พร้อมจ่าย', paid:'จ่ายแล้ว', cancelled:'ยกเลิก' };
+  return map[s] || s || '-';
+}
+function _paidStatusTH(status){
+  const s = String(status || 'unpaid').trim().toLowerCase();
+  const map = { unpaid:'รอจ่าย', partial:'จ่ายบางส่วน', paid:'จ่ายแล้ว', hold:'ระงับยอด', disputed:'มีปัญหา', cancelled:'ยกเลิก' };
+  return map[s] || s || '-';
+}
+
 async function loadTechPayoutPeriods(force=false){
   if (!techPayoutPeriodsEl) return;
   const now = Date.now();
@@ -1468,10 +1480,10 @@ function renderTechPayoutPeriods(list){
     const dep = formatBaht(p.deposit_deduction_amount||0);
     const total = formatBaht(p.net_amount||p.total_amount||0);
     const rem = formatBaht(p.remaining_amount||0);
-    const paySt = _safeText(p.paid_status||'unpaid');
-    const status = _safeText(p.status||'draft');
+    const paySt = _safeText(_paidStatusTH(p.paid_status||'unpaid'));
+    const status = _safeText(_payoutStatusTH(p.status||'draft'));
     const active = (__cwfPayoutActiveId===p.payout_id);
-    return `<button type="button" class="tr" style="width:100%;text-align:left;padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10);margin-bottom:10px;cursor:pointer;background:#fff;${active?'outline:2px solid rgba(11,75,179,0.35)':''}" onclick="window.openTechPayoutDetail('${id}')"><div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start"><div><b>งวด ${type}</b><div class="muted" style="margin-top:4px">${st} - ${en}</div><div class="muted" style="margin-top:4px">สถานะงวด: ${status} • จ่าย: ${paySt}</div></div><div style="text-align:right"><b style="font-size:18px;color:#0B2E6D">${total}</b><div class="muted" style="margin-top:4px">ก่อนหัก ${gross}</div><div class="muted" style="margin-top:3px">ฝาก ${dep} • คงเหลือ ${rem}</div></div></div></button>`;
+    return `<button type="button" class="tr" style="width:100%;text-align:left;padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10);margin-bottom:10px;cursor:pointer;background:#fff;${active?'outline:2px solid rgba(11,75,179,0.35)':''}" onclick="window.openTechPayoutDetail('${id}')"><div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start"><div><b>งวด ${type}</b><div class="muted" style="margin-top:4px">${st} - ${en}</div><div class="muted" style="margin-top:4px">สถานะงวด: ${status} • จ่าย: ${paySt}</div></div><div style="text-align:right"><b style="font-size:18px;color:#0B2E6D">${total}</b><div class="muted" style="margin-top:4px">ก่อนหัก ${gross}</div><div class="muted" style="margin-top:3px">หักประกัน ${dep} • คงเหลือ ${rem}</div></div></div></button>`;
   }).join('');
 }
 function openTechPayoutModal(){ if (techPayoutModalBackdropEl) techPayoutModalBackdropEl.classList.add('show'); try { document.body.style.overflow = 'hidden'; } catch(e) {} }
@@ -1492,7 +1504,7 @@ async function openTechPayoutDetail(payout_id){
     const gross = formatBaht(data.gross_amount||0), dep = formatBaht(data.deposit_deduction_amount||0), total = formatBaht(data.net_amount||data.total_amount||0), paid = formatBaht(data.paid_amount||0), rem = formatBaht(data.remaining_amount||0);
     const depTarget = formatBaht(data.deposit_target_amount||0), depCollected = formatBaht(data.deposit_collected_total||0), depRemaining = formatBaht(data.deposit_remaining_amount||0);
     const period = (__cwfPayoutCache.payouts||[]).find(x=>String(x.payout_id)===id) || {};
-    const type = _safeText(data.period_type || period.period_type || ''), st = _fmtDateTH(data.period_start || period.period_start), en = _fmtDateTH(data.period_end || period.period_end), paySt = _safeText(data.paid_status||'unpaid');
+    const type = _safeText(data.period_type || period.period_type || ''), st = _fmtDateTH(data.period_start || period.period_start), en = _fmtDateTH(data.period_end || period.period_end), paySt = _safeText(_paidStatusTH(data.paid_status||'unpaid'));
     if (techPayoutModalTitleEl) techPayoutModalTitleEl.textContent = `งวด ${type || ''}`.trim() || 'รายละเอียดงวด';
     if (techPayoutModalSubEl) techPayoutModalSubEl.textContent = `${id} • ${st} - ${en} • ${paySt}`;
     if (techPayoutModalSummaryEl) techPayoutModalSummaryEl.innerHTML = `<div class="payout-kpi"><div class="k">รายได้ก่อนหัก</div><div class="v">${gross}</div></div><div class="payout-kpi"><div class="k">หักเงินประกัน</div><div class="v">${dep}</div></div><div class="payout-kpi net"><div class="k">ยอดสุทธิในงวด</div><div class="v">${total}</div></div><div class="payout-kpi"><div class="k">จ่ายแล้ว</div><div class="v">${paid}</div></div><div class="payout-kpi"><div class="k">คงเหลือ</div><div class="v">${rem}</div></div><div class="payout-kpi"><div class="k">เงินประกันสะสม</div><div class="v">${depCollected}</div></div><div class="payout-kpi"><div class="k">เงินประกันคงเหลือ</div><div class="v">${depRemaining}</div></div><div class="payout-kpi"><div class="k">เป้าหมายประกัน</div><div class="v">${depTarget}</div></div>`;
@@ -1582,11 +1594,11 @@ function renderTechPayoutLines(lines, total, adjustments, payment, payoutId, sum
     payoutLinesTargetEl.innerHTML = `
       <div class="card" style="margin-top:0">
         <b>สรุปงวด</b>
-        <div class="muted" style="margin-top:6px">Gross payout: <b>${grossText}</b> • หักเงินฝาก: <b>${depText}</b> • Net payable: <b>${netText}</b></div>
+        <div class="muted" style="margin-top:6px">รายได้ก่อนหัก: <b>${grossText}</b> • หักเงินประกัน: <b>${depText}</b> • ยอดสุทธิ: <b>${netText}</b></div>
         ${depositSummaryText ? `<div class="muted" style="margin-top:4px">${depositSummaryText}</div>` : ''}
       </div>
       <div class="card" style="margin-top:0">
-        <b>Adjustment (Audit)</b>
+        <b>รายการหัก/บวก</b>
         <div class="muted" style="margin-top:4px">การปรับยอดจะถูกแสดงในสลิปงวด</div>
         <div style="margin-top:8px">${adjHtml}</div>
       </div>
