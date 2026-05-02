@@ -10771,7 +10771,7 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_accounting_expense_attachments_expense ON public.accounting_expense_attachments(expense_id, uploaded_at DESC)`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.accounting_settings (
-        key TEXT PRIMARY KEY,
+        "key" TEXT PRIMARY KEY,
         value_json JSONB NOT NULL DEFAULT '{}'::jsonb,
         updated_by TEXT,
         updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -16457,7 +16457,7 @@ app.post("/profile/request", upload.single("photo"), async (req, res) => {
 app.get("/admin/profile/requests", requireAdminSession, async (req, res) => {
   try {
     const q = await pool.query(
-      `SELECT r.id, r.username, r.full_name, r.photo_temp_path, r.requested_at,
+      `SELECT r.id, r.id AS request_id, r.username, r.full_name, r.photo_temp_path, r.requested_at,
               p.technician_code, p.position
        FROM public.technician_profile_requests r
        LEFT JOIN public.technician_profiles p ON p.username = r.username
@@ -16531,18 +16531,24 @@ app.post("/admin/profile/requests/:id/approve", requireAdminSession, async (req,
       }
     }
 
-    await client.query(
-      `INSERT INTO public.technician_profiles (username, technician_code, full_name, photo_path, position)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (username) DO UPDATE SET
-         technician_code = EXCLUDED.technician_code,
-         full_name = COALESCE(EXCLUDED.full_name, public.technician_profiles.full_name),
-         photo_path = COALESCE(EXCLUDED.photo_path, public.technician_profiles.photo_path),
-         position = COALESCE(EXCLUDED.position, public.technician_profiles.position),
-         accept_status = COALESCE(public.technician_profiles.accept_status,'ready'),
-         updated_at = CURRENT_TIMESTAMP`,
+    const updTechProfile = await client.query(
+      `UPDATE public.technician_profiles
+          SET technician_code=$2,
+              full_name=COALESCE($3, full_name),
+              photo_path=COALESCE($4, photo_path),
+              position=COALESCE($5, position),
+              accept_status=COALESCE(accept_status,'ready'),
+              updated_at=CURRENT_TIMESTAMP
+        WHERE username=$1`,
       [reqRow.username, technician_code, reqRow.full_name || null, finalPhotoPath || null, position]
     );
+    if (!updTechProfile.rowCount) {
+      await client.query(
+        `INSERT INTO public.technician_profiles (username, technician_code, full_name, photo_path, position, accept_status, updated_at)
+         VALUES ($1,$2,$3,$4,$5,'ready',CURRENT_TIMESTAMP)`,
+        [reqRow.username, technician_code, reqRow.full_name || null, finalPhotoPath || null, position]
+      );
+    }
 
     await client.query(
       `UPDATE public.technician_profile_requests
@@ -17360,9 +17366,83 @@ function _accountingWhtMonthLabel(monthKey) {
   const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, 1));
   return d.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', year: 'numeric', month: 'long' });
 }
+
+async function _ensureAccountingSettingsSchema() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.accounting_settings (
+      "key" TEXT,
+      value_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_by TEXT,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`ALTER TABLE IF EXISTS public.accounting_settings ADD COLUMN IF NOT EXISTS "key" TEXT`);
+  await pool.query(`ALTER TABLE IF EXISTS public.accounting_settings ADD COLUMN IF NOT EXISTS value_json JSONB NOT NULL DEFAULT '{}'::jsonb`);
+  await pool.query(`ALTER TABLE IF EXISTS public.accounting_settings ADD COLUMN IF NOT EXISTS updated_by TEXT`);
+  await pool.query(`ALTER TABLE IF EXISTS public.accounting_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
+  // Some older builds created setting_key instead of key. Copy it forward if it exists.
+  await pool.query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_schema='public' AND table_name='accounting_settings' AND column_name='setting_key'
+      ) THEN
+        EXECUTE 'UPDATE public.accounting_settings SET "key" = setting_key WHERE "key" IS NULL AND setting_key IS NOT NULL';
+      END IF;
+    END $$;
+  `);
+}
+
+async function _ensureTechnicianTaxProfileSchema(clientOrPool = pool) {
+  const q = (sql, params) => clientOrPool.query(sql, params);
+  await q(`ALTER TABLE IF EXISTS public.technician_profiles ADD COLUMN IF NOT EXISTS full_name TEXT`);
+  await q(`ALTER TABLE IF EXISTS public.technician_profiles ADD COLUMN IF NOT EXISTS tax_id TEXT`);
+  await q(`ALTER TABLE IF EXISTS public.technician_profiles ADD COLUMN IF NOT EXISTS tax_address TEXT`);
+  await q(`ALTER TABLE IF EXISTS public.technician_profiles ADD COLUMN IF NOT EXISTS tax_branch TEXT`);
+  await q(`ALTER TABLE IF EXISTS public.technician_profiles ADD COLUMN IF NOT EXISTS wht_income_type TEXT DEFAULT 'ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)'`);
+  await q(`ALTER TABLE IF EXISTS public.technician_profiles ADD COLUMN IF NOT EXISTS wht_default_rate NUMERIC(5,2) DEFAULT 3`);
+  await q(`ALTER TABLE IF EXISTS public.technician_profiles ADD COLUMN IF NOT EXISTS tax_profile_status TEXT DEFAULT 'not_submitted'`);
+  await q(`ALTER TABLE IF EXISTS public.technician_profiles ADD COLUMN IF NOT EXISTS tax_profile_reviewed_by TEXT`);
+  await q(`ALTER TABLE IF EXISTS public.technician_profiles ADD COLUMN IF NOT EXISTS tax_profile_reviewed_at TIMESTAMPTZ`);
+  await q(`ALTER TABLE IF EXISTS public.technician_profiles ADD COLUMN IF NOT EXISTS tax_profile_note TEXT`);
+  await q(`ALTER TABLE IF EXISTS public.technician_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
+  await q(`
+    CREATE TABLE IF NOT EXISTS public.technician_tax_profile_requests (
+      id BIGSERIAL PRIMARY KEY,
+      username TEXT NOT NULL,
+      full_name TEXT,
+      tax_id TEXT,
+      tax_address TEXT,
+      tax_branch TEXT,
+      wht_income_type TEXT,
+      wht_default_rate NUMERIC(5,2) DEFAULT 3,
+      status TEXT NOT NULL DEFAULT 'pending',
+      requested_at TIMESTAMPTZ DEFAULT NOW(),
+      reviewed_by TEXT,
+      reviewed_at TIMESTAMPTZ,
+      admin_note TEXT
+    )
+  `);
+  await q(`ALTER TABLE IF EXISTS public.technician_tax_profile_requests ADD COLUMN IF NOT EXISTS username TEXT`);
+  await q(`ALTER TABLE IF EXISTS public.technician_tax_profile_requests ADD COLUMN IF NOT EXISTS full_name TEXT`);
+  await q(`ALTER TABLE IF EXISTS public.technician_tax_profile_requests ADD COLUMN IF NOT EXISTS tax_id TEXT`);
+  await q(`ALTER TABLE IF EXISTS public.technician_tax_profile_requests ADD COLUMN IF NOT EXISTS tax_address TEXT`);
+  await q(`ALTER TABLE IF EXISTS public.technician_tax_profile_requests ADD COLUMN IF NOT EXISTS tax_branch TEXT`);
+  await q(`ALTER TABLE IF EXISTS public.technician_tax_profile_requests ADD COLUMN IF NOT EXISTS wht_income_type TEXT`);
+  await q(`ALTER TABLE IF EXISTS public.technician_tax_profile_requests ADD COLUMN IF NOT EXISTS wht_default_rate NUMERIC(5,2) DEFAULT 3`);
+  await q(`ALTER TABLE IF EXISTS public.technician_tax_profile_requests ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'pending'`);
+  await q(`ALTER TABLE IF EXISTS public.technician_tax_profile_requests ADD COLUMN IF NOT EXISTS requested_at TIMESTAMPTZ DEFAULT NOW()`);
+  await q(`ALTER TABLE IF EXISTS public.technician_tax_profile_requests ADD COLUMN IF NOT EXISTS reviewed_by TEXT`);
+  await q(`ALTER TABLE IF EXISTS public.technician_tax_profile_requests ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMPTZ`);
+  await q(`ALTER TABLE IF EXISTS public.technician_tax_profile_requests ADD COLUMN IF NOT EXISTS admin_note TEXT`);
+  await q(`CREATE INDEX IF NOT EXISTS idx_tech_tax_profile_requests_status_created ON public.technician_tax_profile_requests(status, requested_at DESC)`);
+}
+
 async function _getAccountingSettings() {
   try {
-    const q = await pool.query(`SELECT value_json FROM public.accounting_settings WHERE key='company' LIMIT 1`);
+    await _ensureAccountingSettingsSchema();
+    const q = await pool.query(`SELECT value_json FROM public.accounting_settings WHERE "key"='company' LIMIT 1`);
     const v = q.rows[0]?.value_json || {};
     return {
       company_name: v.company_name || 'Coldwindflow Air Services',
@@ -17616,10 +17696,21 @@ app.post('/admin/accounting/settings', requireAdminSession, upload.fields([
     if (sig) next.signature_url = sig;
     if (stamp) next.stamp_url = stamp;
     if (!next.company_name) next.company_name = 'Coldwindflow Air Services';
-    await pool.query(`INSERT INTO public.accounting_settings(key, value_json, updated_by, updated_at)
-      VALUES('company',$1::jsonb,$2,NOW())
-      ON CONFLICT(key) DO UPDATE SET value_json=EXCLUDED.value_json, updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
-      [JSON.stringify(next), actor.username || null]);
+    await _ensureAccountingSettingsSchema();
+    const payloadJson = JSON.stringify(next);
+    const upd = await pool.query(
+      `UPDATE public.accounting_settings
+          SET value_json=$1::jsonb, updated_by=$2, updated_at=NOW()
+        WHERE "key"='company'`,
+      [payloadJson, actor.username || null]
+    );
+    if (!upd.rowCount) {
+      await pool.query(
+        `INSERT INTO public.accounting_settings("key", value_json, updated_by, updated_at)
+         VALUES('company',$1::jsonb,$2,NOW())`,
+        [payloadJson, actor.username || null]
+      );
+    }
     await logAccountingAudit(req, { action:'UPDATE_ACCOUNTING_SETTINGS', entity_type:'accounting_settings', entity_id:'company', before_json:before, after_json:next, note:'แก้ไขตั้งค่าข้อมูลบริษัทสำหรับออกเอกสาร' });
     return res.json({ ok:true, settings: next });
   } catch (e) {
@@ -18205,6 +18296,7 @@ app.get('/admin/accounting/payouts/:payout_id/techs', requireAccountingPermissio
 
 app.get('/technicians/:username/tax-profile', async (req, res) => {
   try {
+    await _ensureTechnicianTaxProfileSchema();
     const username = String(req.params.username || '').trim();
     const profile = await _accountingGetTechTaxProfile(username);
     if (!profile) return res.status(404).json({ ok:false, error:'TECHNICIAN_NOT_FOUND' });
@@ -18215,6 +18307,7 @@ app.get('/technicians/:username/tax-profile', async (req, res) => {
 
 app.post('/technicians/:username/tax-profile/request', async (req, res) => {
   try {
+    await _ensureTechnicianTaxProfileSchema();
     const username = String(req.params.username || req.body?.username || '').trim();
     if (!username) return res.status(400).json({ ok:false, error:'MISSING_USERNAME' });
     const body = req.body || {};
@@ -18321,6 +18414,7 @@ app.get('/technicians/:username/withholding-certs/:document_id/print', async (re
 
 app.get('/admin/accounting/technician-tax-requests', requireAdminSession, async (req, res) => {
   try {
+    await _ensureTechnicianTaxProfileSchema();
     const q = await pool.query(`SELECT * FROM public.technician_tax_profile_requests WHERE status='pending' ORDER BY requested_at ASC LIMIT 80`);
     return res.json({ ok:true, rows:q.rows });
   } catch(e) { return res.status(500).json({ ok:false, error:'TAX_REQUESTS_FAILED', message:e.message }); }
@@ -18331,6 +18425,7 @@ app.post('/admin/accounting/technician-tax-requests/:id/approve', requireAdminSe
   try {
     const id = Number(req.params.id || 0); const actor = _accountingActor(req).username || null;
     await client.query('BEGIN');
+    await _ensureTechnicianTaxProfileSchema(client);
     const rq = await client.query(`SELECT * FROM public.technician_tax_profile_requests WHERE id=$1 FOR UPDATE`, [id]);
     const row = rq.rows[0]; if (!row) { await client.query('ROLLBACK'); return res.status(404).json({ ok:false, error:'REQUEST_NOT_FOUND' }); }
     // Update first, then insert if missing. This avoids relying on an existing UNIQUE
@@ -18368,6 +18463,7 @@ app.post('/admin/accounting/technician-tax-requests/:id/approve', requireAdminSe
 
 app.post('/admin/accounting/technician-tax-requests/:id/reject', requireAdminSession, async (req, res) => {
   try {
+    await _ensureTechnicianTaxProfileSchema();
     const id = Number(req.params.id || 0); const actor = _accountingActor(req).username || null;
     const q = await pool.query(`UPDATE public.technician_tax_profile_requests SET status='rejected', reviewed_by=$2, reviewed_at=NOW(), admin_note=$3 WHERE id=$1 RETURNING *`, [id, actor, req.body?.admin_note || null]);
     if (!q.rows[0]) return res.status(404).json({ ok:false, error:'REQUEST_NOT_FOUND' });

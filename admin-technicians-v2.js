@@ -245,14 +245,14 @@
           `${new Date(r.requested_at || r.created_at || Date.now()).toLocaleString('th-TH')}`,
           [
             {text:'อนุมัติ',kind:'yellow',onClick: async ()=>{
-              const reqId = r.id || r.request_id;
+              const reqId = r.id || r.request_id || r.profile_request_id;
               if (!reqId) throw new Error('ไม่พบรหัสคำขอ');
               await apiFetch(`/admin/profile/requests/${reqId}/approve`,{method:'POST',body:JSON.stringify({reviewed_by:decided_by, technician_code:r.technician_code||r.username, position:r.position||undefined})});
               showToast('อนุมัติแล้ว','success'); loadApprovals();
             }},
             {text:'ปฏิเสธ',kind:'gray',onClick: async ()=>{
               const admin_note = prompt('เหตุผล (optional)','') || '';
-              const reqId = r.id || r.request_id;
+              const reqId = r.id || r.request_id || r.profile_request_id;
               if (!reqId) throw new Error('ไม่พบรหัสคำขอ');
               await apiFetch(`/admin/profile/requests/${reqId}/reject`,{method:'POST',body:JSON.stringify({reviewed_by:decided_by, admin_note})});
               showToast('ปฏิเสธแล้ว','success'); loadApprovals();

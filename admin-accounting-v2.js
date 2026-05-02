@@ -582,14 +582,17 @@
       <form class="acctFormGrid">
         <h3>สร้างเอกสารขาย</h3>
         <p>ใส่เลขงาน แล้วเลือกว่าเป็นใบเสนอราคา / ใบแจ้งหนี้ / ใบเสร็จ ระบบจะรันเลขเอกสารให้อัตโนมัติ</p>
-        <label>ประเภทเอกสาร<select class="acctInput" name="document_type" required><option value="quotation">ใบเสนอราคา</option><option value="invoice">ใบแจ้งหนี้</option><option value="receipt">ใบเสร็จรับเงิน</option></select></label>
+        <label>ประเภทเอกสาร<select class="acctInput" name="document_type" required><option value="quotation">ใบเสนอราคา</option><option value="invoice">ใบแจ้งหนี้</option><option value="receipt">ใบเสร็จรับเงิน</option><option value="tax_invoice">ใบกำกับภาษี</option></select></label>
         <label>Job ID<input class="acctInput" name="job_id" type="number" min="1" value="${esc(jobId)}" required placeholder="เช่น 123"></label>
+        <label>วันที่ออกเอกสาร<input class="acctInput" name="issue_date" type="date" value="${todayIso()}"></label>
+        <label>เลขภาษีลูกค้า/บริษัท <small>ใช้กับใบกำกับภาษี</small><input class="acctInput" name="customer_tax_id" placeholder="เลขประจำตัวผู้เสียภาษี"></label>
+        <label>ที่อยู่สำหรับออกใบกำกับภาษี<textarea class="acctInput" name="customer_address" placeholder="กรอกถ้าต้องออกใบกำกับภาษี"></textarea></label>
         <label>วันครบกำหนด ถ้ามี<input class="acctInput" name="due_date" type="date"></label>
         <label class="acctCheckLine"><input type="checkbox" name="issue_now" value="1"><span>ออกเอกสารทันที (issued) ถ้ายังไม่แน่ใจให้ปล่อยเป็น draft</span></label>
         <div class="acctSoftErr" data-error style="display:block;min-height:0"></div>
         <div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">สร้างเอกสาร</button></div>
       </form>`, async (fd) => {
-        const payload = { document_type: fd.get('document_type'), job_id: Number(fd.get('job_id')), due_date: fd.get('due_date') || null, issue_now: fd.get('issue_now') === '1' };
+        const payload = { document_type: fd.get('document_type'), job_id: Number(fd.get('job_id')), issue_date: fd.get('issue_date') || todayIso(), due_date: fd.get('due_date') || null, customer_tax_id: fd.get('customer_tax_id') || '', customer_address: fd.get('customer_address') || '', issue_now: fd.get('issue_now') === '1' || fd.get('document_type') === 'tax_invoice' };
         await postJson('/admin/accounting/documents', payload);
         closeModal();
         await Promise.all([loadSummary(), loadAudit()]);
