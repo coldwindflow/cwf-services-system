@@ -11,57 +11,50 @@
   <title>งานบัญชี</title>
   <link rel="stylesheet" href="style.css">
   <style>
-    :root{--navy:#081c4b;--blue:#1558d6;--sky:#38bdf8;--yellow:#ffcc00;--ink:#09152f;--muted:#64748b;--line:rgba(15,23,42,.10);--card:#fff}
+    :root{
+      --navy:#061747;--navy2:#0b2e6d;--blue:#1558d6;--sky:#38bdf8;--skySoft:#e0f5ff;--yellow:#ffcc00;
+      --ink:#09152f;--muted:#64748b;--line:rgba(15,23,42,.10);--card:#fff;--soft:#f8fbff;
+      --shadow:0 18px 44px rgba(8,28,75,.10);--shadow2:0 26px 70px rgba(2,6,23,.24)
+    }
     *{box-sizing:border-box}
+    html{scroll-behavior:smooth}
     html,body{max-width:100%;overflow-x:hidden}
-    body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:linear-gradient(180deg,#06163d 0,#0b4bb3 220px,#eef6ff 220px,#f8fbff 100%)}
-    .wrap{width:min(1180px,calc(100vw - 24px));margin:0 auto;padding:76px 0 96px}
-    .hero{position:relative;overflow:hidden;border-radius:28px;padding:20px;color:#fff;background:radial-gradient(360px 240px at 88% 0,rgba(255,204,0,.26),transparent 68%),linear-gradient(135deg,#081c4b,#0b4bb3 58%,#38bdf8);box-shadow:0 26px 70px rgba(2,6,23,.24);border:1px solid rgba(255,255,255,.14)}
+    body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:linear-gradient(180deg,#06163d 0,#0b4bb3 230px,#eef6ff 230px,#f8fbff 100%)}
+    button,input,textarea{font:inherit}
+    .wrap{width:min(1220px,calc(100vw - 24px));margin:0 auto;padding:76px 0 96px}
+    .hero{position:relative;overflow:hidden;border-radius:30px;padding:22px;color:#fff;background:radial-gradient(360px 240px at 88% 0,rgba(255,204,0,.28),transparent 68%),linear-gradient(135deg,#081c4b,#0b4bb3 58%,#38bdf8);box-shadow:var(--shadow2);border:1px solid rgba(255,255,255,.14)}
+    .hero:after{content:"";position:absolute;right:-80px;bottom:-120px;width:280px;height:280px;border-radius:999px;background:rgba(255,255,255,.10);pointer-events:none}
     .eyebrow{display:inline-flex;gap:8px;align-items:center;border-radius:999px;padding:7px 11px;background:rgba(255,255,255,.14);font-size:12px;font-weight:900}
-    h1{margin:12px 0 0;font-size:clamp(30px,4vw,46px);line-height:1.05;letter-spacing:0}
-    .subtitle{margin:8px 0 0;max-width:760px;color:rgba(255,255,255,.86);font-weight:800;line-height:1.5}
-    .heroGrid{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:end}
-    .refreshBtn{border:0;border-radius:18px;background:linear-gradient(135deg,#fff2a8,var(--yellow));color:#09152f;font-weight:1000;padding:12px 16px;cursor:pointer;box-shadow:0 16px 34px rgba(0,0,0,.16)}
-    .sectionTitle{margin:22px 2px 12px;font-size:20px;font-weight:1100;color:#0b2e6d}
+    h1{margin:12px 0 0;font-size:clamp(31px,4.2vw,48px);line-height:1.05;letter-spacing:0}
+    .subtitle{margin:8px 0 0;max-width:760px;color:rgba(255,255,255,.88);font-weight:800;line-height:1.5}
+    .heroGrid{display:grid;grid-template-columns:1fr auto;gap:14px;align-items:end;position:relative;z-index:1}
+    .refreshBtn,.primaryBtn{border:0;border-radius:18px;background:linear-gradient(135deg,#fff2a8,var(--yellow));color:#09152f;font-weight:1000;padding:12px 16px;cursor:pointer;box-shadow:0 16px 34px rgba(0,0,0,.16);min-height:46px}
+    .sectionTitle{margin:22px 2px 12px;font-size:20px;font-weight:1100;color:#0b2e6d;display:flex;align-items:center;gap:8px}
+    .sectionTitle:before{content:"";width:7px;height:22px;border-radius:999px;background:linear-gradient(180deg,var(--yellow),#38bdf8)}
     .cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
-    .card{min-width:0;background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;box-shadow:0 16px 38px rgba(8,28,75,.08);min-height:148px;display:flex;flex-direction:column;gap:10px}
+    .card{min-width:0;background:linear-gradient(180deg,#fff,#fbfdff);border:1px solid var(--line);border-radius:20px;padding:15px;box-shadow:var(--shadow);min-height:154px;display:flex;flex-direction:column;gap:10px;transition:transform .16s ease,box-shadow .16s ease,border-color .16s ease}
+    .card:hover{transform:translateY(-2px);box-shadow:0 24px 56px rgba(8,28,75,.13);border-color:rgba(21,88,214,.22)}
     .card .top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
-    .card b{font-size:14px;line-height:1.25;color:#0b2e6d}
-    .count{font-size:30px;line-height:1;font-weight:1100;color:#081c4b}
-    .amount{font-size:12px;font-weight:900;color:#475569}
-    .goBtn{margin-top:auto;border:1px solid rgba(21,88,214,.18);border-radius:13px;background:#f8fbff;color:#0b4bb3;font-weight:1000;padding:9px 10px;cursor:pointer}
-    .dot{width:11px;height:11px;border-radius:999px;background:var(--blue);box-shadow:0 0 0 4px rgba(21,88,214,.12);flex:0 0 auto}
-    .tone-red{background:#ef4444;box-shadow:0 0 0 4px rgba(239,68,68,.12)} .tone-yellow{background:#ffcc00;box-shadow:0 0 0 4px rgba(255,204,0,.18)} .tone-sky{background:#38bdf8;box-shadow:0 0 0 4px rgba(56,189,248,.15)} .tone-green{background:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.12)} .tone-orange{background:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,.14)} .tone-purple{background:#8b5cf6;box-shadow:0 0 0 4px rgba(139,92,246,.12)}
-    .tabs{margin:16px 0;display:flex;gap:8px;overflow-x:auto;padding:2px 2px 8px;scrollbar-width:thin}
-    .tabBtn{white-space:nowrap;border:1px solid rgba(11,75,179,.16);background:rgba(255,255,255,.92);color:#0b2e6d;border-radius:999px;padding:11px 14px;font-weight:1000;cursor:pointer;min-height:44px}
-    .tabBtn:focus-visible,.goBtn:focus-visible{outline:3px solid rgba(255,204,0,.72);outline-offset:2px}
-    .tabBtn.active{background:linear-gradient(135deg,#0b4bb3,#38bdf8);color:#fff;border-color:transparent;box-shadow:0 12px 28px rgba(11,75,179,.18)}
-    .panel{display:none;scroll-margin-top:86px}.panel.active{display:block}.panel.navFocus{animation:cwfPanelFocus 1.05s ease}
-    @keyframes cwfPanelFocus{0%{box-shadow:0 0 0 0 rgba(255,204,0,.0)}20%{box-shadow:0 0 0 5px rgba(255,204,0,.22)}100%{box-shadow:0 0 0 0 rgba(255,204,0,.0)}}
-    .grid2{display:grid;grid-template-columns:1.1fr .9fr;gap:12px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
-    .box{background:#fff;border:1px solid var(--line);border-radius:20px;padding:14px;box-shadow:0 14px 34px rgba(8,28,75,.07)}
-    .box h2,.box h3{margin:0 0 10px;color:#0b2e6d;letter-spacing:0}.box h2{font-size:18px}.box h3{font-size:16px}
-    .muted{color:var(--muted);font-size:12px;font-weight:800;line-height:1.45}
-    .list{display:grid;gap:9px}.row{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:11px;border:1px solid rgba(15,23,42,.08);border-radius:15px;background:#fbfdff}
-    .row b{font-size:14px;color:#0f172a}.row small{display:block;color:#64748b;font-weight:800;margin-top:3px}
-    .badge{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:6px 9px;font-size:11px;font-weight:1000;background:#e8f1ff;color:#0b4bb3}
-    .badge.warn{background:#fff6cc;color:#92400e}.badge.bad{background:#fee2e2;color:#991b1b}.badge.ok{background:#dcfce7;color:#166534}.badge.gray{background:#f1f5f9;color:#334155}
-    .note{border-radius:16px;padding:12px;border:1px solid rgba(255,204,0,.32);background:linear-gradient(135deg,#fffbea,#f8fbff);color:#0b2e6d;font-weight:900;line-height:1.5}
-    .tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.input{border:1px solid rgba(15,23,42,.14);border-radius:13px;padding:11px 12px;background:#fff;font-weight:800;min-width:180px;min-height:44px}
-    .disabledBtn{border:0;border-radius:13px;background:#e2e8f0;color:#64748b;font-weight:1000;padding:11px 13px;min-height:44px;cursor:not-allowed}
-    .softErr{margin-top:12px;color:#92400e;background:#fff7ed;border:1px solid #fed7aa;border-radius:14px;padding:10px;font-size:12px;font-weight:800}
-    .modalBackdrop{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(2,6,23,.52);backdrop-filter:blur(8px)}
-    .modalBackdrop.show{display:flex}
-    .modalCard{width:min(520px,100%);max-height:min(760px,calc(100vh - 28px));overflow:auto;border-radius:24px;background:#fff;border:1px solid rgba(255,255,255,.6);box-shadow:0 28px 90px rgba(2,6,23,.34);padding:18px}
-    .modalCard h3{margin:0;color:#0b2e6d;font-size:20px}.modalCard p{margin:8px 0 14px;color:#475569;font-weight:800;line-height:1.5}
-    .formGrid{display:grid;gap:10px}.formGrid label{display:grid;gap:6px;color:#0b2e6d;font-size:13px;font-weight:1000}.formGrid textarea{min-height:78px;resize:vertical}
-    .checkLine{display:flex!important;grid-template-columns:auto 1fr;align-items:flex-start;gap:10px;border:1px solid rgba(255,204,0,.34);background:#fffbea;border-radius:16px;padding:11px;line-height:1.45}
-    .checkLine input{width:20px;height:20px;flex:0 0 auto}.modalActions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
-    .primaryBtn{border:0;border-radius:14px;background:linear-gradient(135deg,#ffdf4d,#ffcc00);color:#09152f;font-weight:1100;padding:11px 14px;min-height:46px;cursor:pointer}
-    .ghostBtn{border:1px solid rgba(11,75,179,.18);border-radius:14px;background:#f8fbff;color:#0b4bb3;font-weight:1000;padding:11px 14px;min-height:46px;cursor:pointer}
+    .card b{font-size:14px;line-height:1.25;color:#0b2e6d}.card small{color:#64748b;font-weight:800;line-height:1.35}
+    .count{font-size:32px;line-height:1;font-weight:1100;color:#081c4b}.amount{font-size:12px;font-weight:900;color:#475569}
+    .goBtn,.ghostBtn,.disabledBtn{border-radius:14px;font-weight:1000;min-height:44px;padding:10px 12px}
+    .goBtn{margin-top:auto;border:1px solid rgba(21,88,214,.18);background:linear-gradient(180deg,#fff,#eef6ff);color:#0b4bb3;cursor:pointer}
+    .goBtn:hover{border-color:rgba(21,88,214,.36);background:#e8f1ff}.ghostBtn{border:1px solid rgba(11,75,179,.18);background:#f8fbff;color:#0b4bb3;cursor:pointer}.disabledBtn{border:0;background:#e2e8f0;color:#64748b;cursor:not-allowed}
+    .dot{width:12px;height:12px;border-radius:999px;background:var(--blue);box-shadow:0 0 0 4px rgba(21,88,214,.12);flex:0 0 auto}.tone-red{background:#ef4444;box-shadow:0 0 0 4px rgba(239,68,68,.12)} .tone-yellow{background:#ffcc00;box-shadow:0 0 0 4px rgba(255,204,0,.18)} .tone-sky{background:#38bdf8;box-shadow:0 0 0 4px rgba(56,189,248,.15)} .tone-green{background:#16a34a;box-shadow:0 0 0 4px rgba(22,163,74,.12)} .tone-orange{background:#f59e0b;box-shadow:0 0 0 4px rgba(245,158,11,.14)} .tone-purple{background:#8b5cf6;box-shadow:0 0 0 4px rgba(139,92,246,.12)}
+    .tabsShell{position:sticky;top:8px;z-index:30;margin:16px 0 12px;padding:8px;border:1px solid rgba(11,75,179,.10);border-radius:22px;background:rgba(248,251,255,.86);backdrop-filter:blur(14px);box-shadow:0 12px 30px rgba(8,28,75,.08)}
+    .tabs{display:flex;gap:8px;overflow-x:auto;padding:2px 2px 6px;scrollbar-width:thin}.tabBtn{white-space:nowrap;border:1px solid rgba(11,75,179,.16);background:rgba(255,255,255,.95);color:#0b2e6d;border-radius:999px;padding:11px 14px;font-weight:1000;cursor:pointer;min-height:44px}.tabBtn.active{background:linear-gradient(135deg,#0b4bb3,#38bdf8);color:#fff;border-color:transparent;box-shadow:0 12px 28px rgba(11,75,179,.18)}
+    .tabBtn:focus-visible,.goBtn:focus-visible,.ghostBtn:focus-visible,.primaryBtn:focus-visible{outline:3px solid rgba(255,204,0,.72);outline-offset:2px}
+    .workspace{scroll-margin-top:96px;background:rgba(255,255,255,.72);border:1px solid rgba(255,255,255,.78);border-radius:26px;padding:14px;box-shadow:var(--shadow);transition:box-shadow .25s ease,transform .25s ease}.workspace.navFocus{animation:cwfPanelFocus 1.05s ease}.workspaceHead{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;margin-bottom:12px;padding:15px;border-radius:22px;background:linear-gradient(135deg,#081c4b,#0b4bb3 72%,#38bdf8);color:#fff}.workspaceHead h2{margin:0;font-size:22px}.workspaceHead p{margin:4px 0 0;color:rgba(255,255,255,.84);font-weight:800;line-height:1.45}.workspaceHint{display:inline-flex;align-items:center;gap:7px;border-radius:999px;padding:8px 11px;background:rgba(255,204,0,.18);color:#fff;font-size:12px;font-weight:1000;white-space:nowrap}
+    .panel{display:none;scroll-margin-top:96px}.panel.active{display:block}@keyframes cwfPanelFocus{0%{box-shadow:0 0 0 0 rgba(255,204,0,0)}20%{box-shadow:0 0 0 6px rgba(255,204,0,.22)}100%{box-shadow:var(--shadow)}}
+    .grid2{display:grid;grid-template-columns:1.1fr .9fr;gap:12px}.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}.payoutLayout{display:grid;grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);gap:12px;align-items:start}
+    .box{background:#fff;border:1px solid var(--line);border-radius:22px;padding:15px;box-shadow:0 14px 34px rgba(8,28,75,.07)}.box h2,.box h3{margin:0 0 10px;color:#0b2e6d;letter-spacing:0}.box h2{font-size:18px}.box h3{font-size:16px}.muted{color:var(--muted);font-size:12px;font-weight:800;line-height:1.45}
+    .list{display:grid;gap:10px}.row{min-width:0;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px;border:1px solid rgba(15,23,42,.08);border-radius:17px;background:#fbfdff}.row b{font-size:14px;color:#0f172a}.row small{display:block;color:#64748b;font-weight:800;margin-top:3px;line-height:1.4}.rowStrong{background:linear-gradient(135deg,#fff,#eef6ff);border-color:rgba(21,88,214,.16)}
+    .actionStack{display:grid;gap:7px;justify-items:end;text-align:right}.actionStack .goBtn,.actionStack .disabledBtn{width:100%;min-width:132px}.badge{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:6px 9px;font-size:11px;font-weight:1000;background:#e8f1ff;color:#0b4bb3}.badge.warn{background:#fff6cc;color:#92400e}.badge.bad{background:#fee2e2;color:#991b1b}.badge.ok{background:#dcfce7;color:#166534}.badge.gray{background:#f1f5f9;color:#334155}
+    .note{border-radius:16px;padding:12px;border:1px solid rgba(255,204,0,.32);background:linear-gradient(135deg,#fffbea,#f8fbff);color:#0b2e6d;font-weight:900;line-height:1.5}.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}.input{border:1px solid rgba(15,23,42,.14);border-radius:13px;padding:11px 12px;background:#fff;font-weight:800;min-width:180px;min-height:44px;width:auto}.softErr{margin-top:12px;color:#92400e;background:#fff7ed;border:1px solid #fed7aa;border-radius:14px;padding:10px;font-size:12px;font-weight:800}
+    .modalBackdrop{position:fixed;inset:0;z-index:1000;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(2,6,23,.52);backdrop-filter:blur(8px)}.modalBackdrop.show{display:flex}.modalCard{width:min(540px,100%);max-height:min(760px,calc(100vh - 28px));overflow:auto;border-radius:24px;background:#fff;border:1px solid rgba(255,255,255,.6);box-shadow:0 28px 90px rgba(2,6,23,.34);padding:18px}.modalCard h3{margin:0;color:#0b2e6d;font-size:20px}.modalCard p{margin:8px 0 14px;color:#475569;font-weight:800;line-height:1.5}.formGrid{display:grid;gap:10px}.formGrid label{display:grid;gap:6px;color:#0b2e6d;font-size:13px;font-weight:1000}.formGrid textarea{min-height:78px;resize:vertical}.checkLine{display:flex!important;grid-template-columns:auto 1fr;align-items:flex-start;gap:10px;border:1px solid rgba(255,204,0,.34);background:#fffbea;border-radius:16px;padding:11px;line-height:1.45}.checkLine input{width:20px;height:20px;flex:0 0 auto}.modalActions{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
     @media (min-width:1025px){.cards .card:first-child{grid-column:span 2}.cards .card:nth-child(2){grid-column:span 2}}
-    @media (min-width:641px) and (max-width:1024px){.wrap{width:min(100% - 20px,1180px)}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2,.grid3{grid-template-columns:1fr}.heroGrid{grid-template-columns:1fr}.refreshBtn{width:100%;min-height:48px}.tabs{padding-bottom:10px}.card{min-height:142px}}
-    @media (max-width:640px){.wrap{width:min(100% - 18px,1180px);padding-top:70px}.hero{border-radius:22px;padding:16px}.cards{grid-template-columns:1fr}.card{min-height:auto}.row{grid-template-columns:1fr}.row>div:last-child{justify-items:start!important;text-align:left!important}.tabs{margin-inline:-2px;padding:2px 2px 10px;overflow-x:auto}.tabBtn{min-height:46px;padding:11px 14px}.goBtn,.refreshBtn,.disabledBtn{width:100%;min-height:46px}.tools{display:grid;grid-template-columns:1fr}.input{width:100%;min-width:0}.grid2,.grid3{grid-template-columns:1fr}.count{font-size:34px}.modalBackdrop{align-items:flex-end;padding:10px}.modalCard{border-radius:22px 22px 18px 18px;max-height:calc(100vh - 20px)}.modalActions{display:grid;grid-template-columns:1fr}.primaryBtn,.ghostBtn{width:100%}}
+    @media (min-width:641px) and (max-width:1024px){.wrap{width:min(100% - 20px,1180px)}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2,.grid3,.payoutLayout{grid-template-columns:1fr}.heroGrid,.workspaceHead{grid-template-columns:1fr}.refreshBtn{width:100%;min-height:48px}.tabsShell{top:6px}.card{min-height:142px}.workspaceHint{justify-self:start}}
+    @media (max-width:640px){.wrap{width:min(100% - 18px,1180px);padding-top:70px}.hero{border-radius:22px;padding:16px}.cards{grid-template-columns:1fr}.card{min-height:auto}.row{grid-template-columns:1fr}.actionStack{justify-items:stretch;text-align:left}.actionStack .goBtn,.actionStack .disabledBtn{min-width:0}.tabsShell{top:4px;margin-inline:-2px;border-radius:18px;padding:7px}.tabs{padding:2px 2px 8px}.tabBtn{min-height:46px;padding:11px 14px}.goBtn,.refreshBtn,.disabledBtn{width:100%;min-height:46px}.tools{display:grid;grid-template-columns:1fr}.input{width:100%;min-width:0}.grid2,.grid3,.payoutLayout,.workspaceHead{grid-template-columns:1fr}.workspace{border-radius:22px;padding:10px}.workspaceHead{border-radius:18px;padding:13px}.workspaceHead h2{font-size:20px}.workspaceHint{justify-self:start;white-space:normal}.count{font-size:34px}.modalBackdrop{align-items:flex-end;padding:10px}.modalCard{border-radius:22px 22px 18px 18px;max-height:calc(100vh - 20px)}.modalActions{display:grid;grid-template-columns:1fr}.primaryBtn,.ghostBtn{width:100%}}
   </style>
 </head>
 <body>
@@ -78,82 +71,97 @@
     </section>
 
     <div class="sectionTitle">งานบัญชีวันนี้</div>
-    <section id="accountingCards" class="cards"></section>
+    <section id="accountingCards" class="cards" aria-label="งานบัญชีวันนี้"></section>
 
-    <nav id="accountingTabs" class="tabs" aria-label="Accounting tabs">
-      <button class="tabBtn active" data-tab="overview" aria-selected="true" aria-controls="panel-overview">ภาพรวม</button>
-      <button class="tabBtn" data-tab="revenue" aria-selected="false" aria-controls="panel-revenue">รายรับ</button>
-      <button class="tabBtn" data-tab="documents" aria-selected="false" aria-controls="panel-documents">เอกสาร</button>
-      <button class="tabBtn" data-tab="expenses" aria-selected="false" aria-controls="panel-expenses">รายจ่าย</button>
-      <button class="tabBtn" data-tab="payouts" aria-selected="false" aria-controls="panel-payouts">จ่ายเงินช่าง</button>
-      <button class="tabBtn" data-tab="deposits" aria-selected="false" aria-controls="panel-deposits">เงินประกัน</button>
-      <button class="tabBtn" data-tab="reports" aria-selected="false" aria-controls="panel-reports">รายงาน</button>
-      <button class="tabBtn" data-tab="audit" aria-selected="false" aria-controls="panel-audit">ประวัติการทำรายการ</button>
-    </nav>
+    <div class="tabsShell">
+      <nav id="accountingTabs" class="tabs" aria-label="Accounting tabs">
+        <button class="tabBtn active" data-tab="overview" aria-selected="true" aria-controls="panel-overview">ภาพรวม</button>
+        <button class="tabBtn" data-tab="revenue" aria-selected="false" aria-controls="panel-revenue">รายรับ</button>
+        <button class="tabBtn" data-tab="documents" aria-selected="false" aria-controls="panel-documents">เอกสาร</button>
+        <button class="tabBtn" data-tab="expenses" aria-selected="false" aria-controls="panel-expenses">รายจ่าย</button>
+        <button class="tabBtn" data-tab="payouts" aria-selected="false" aria-controls="panel-payouts">จ่ายเงินช่าง</button>
+        <button class="tabBtn" data-tab="deposits" aria-selected="false" aria-controls="panel-deposits">เงินประกัน</button>
+        <button class="tabBtn" data-tab="reports" aria-selected="false" aria-controls="panel-reports">รายงาน</button>
+        <button class="tabBtn" data-tab="audit" aria-selected="false" aria-controls="panel-audit">ประวัติการทำรายการ</button>
+      </nav>
+    </div>
 
-    <section id="panel-overview" class="panel active" tabindex="-1">
-      <div class="grid2">
-        <div class="box"><h2>สรุปภาพรวม</h2><div id="overviewSummary" class="list"></div></div>
-        <div class="box"><h2>ประวัติล่าสุด</h2><div id="overviewAudit" class="list"></div></div>
+    <main id="accountingWorkspace" class="workspace" tabindex="-1">
+      <div class="workspaceHead">
+        <div>
+          <h2 id="activeTabTitle">ภาพรวม</h2>
+          <p id="activeTabHint">เลือกงานบัญชีที่ต้องจัดการจากการ์ดด้านบนหรือแท็บนี้ ระบบจะแสดงส่วนทำงานตรงนี้ทันที</p>
+        </div>
+        <span id="activeTabBadge" class="workspaceHint">พร้อมจัดการ</span>
       </div>
-    </section>
 
-    <section id="panel-revenue" class="panel" tabindex="-1">
-      <div class="box">
-        <h2>รายรับจากงานที่เสร็จแล้ว</h2>
-        <div class="tools"><input id="revenueSearch" class="input" placeholder="ค้นหาชื่อลูกค้า / Booking"><button id="btnReloadRevenue" class="goBtn" type="button">โหลดรายรับ</button></div>
-        <div id="revenueList" class="list"></div>
-      </div>
-    </section>
+      <section id="panel-overview" class="panel active" tabindex="-1">
+        <div class="grid2">
+          <div class="box"><h2>สรุปภาพรวม</h2><div id="overviewSummary" class="list"></div></div>
+          <div class="box"><h2>ประวัติล่าสุด</h2><div id="overviewAudit" class="list"></div></div>
+        </div>
+      </section>
 
-    <section id="panel-documents" class="panel" tabindex="-1">
-      <div class="box">
-        <h2>เอกสารขาย</h2>
-        <div class="note">รองรับเลขเอกสารพื้นฐาน QT-YYYY-0001, INV-YYYY-0001, RC-YYYY-0001 ใน Phase ถัดไป ตอนนี้ยังไม่เปิดปุ่ม issue/void</div>
-        <div id="documentsList" class="list" style="margin-top:10px"></div>
-      </div>
-    </section>
+      <section id="panel-revenue" class="panel" tabindex="-1">
+        <div class="box">
+          <h2>รายรับจากงานที่เสร็จแล้ว</h2>
+          <div class="note" style="margin-bottom:10px">สถานะหน้านี้คือ “รับเงินลูกค้า” ไม่ใช่สถานะจ่ายเงินช่าง ถ้าเก็บเงินจริงแล้วให้กด “บันทึกรับเงินแล้ว”</div>
+          <div class="tools"><input id="revenueSearch" class="input" placeholder="ค้นหาชื่อลูกค้า / Booking"><button id="btnReloadRevenue" class="goBtn" type="button">โหลดรายรับ</button></div>
+          <div id="revenueList" class="list"></div>
+        </div>
+      </section>
 
-    <section id="panel-expenses" class="panel" tabindex="-1">
-      <div class="box">
-        <h2>รายจ่าย</h2>
-        <div class="tools"><button class="disabledBtn" type="button" disabled>เพิ่มรายจ่าย - Phase 2</button></div>
-        <div id="expensesList" class="list"></div>
-      </div>
-    </section>
+      <section id="panel-documents" class="panel" tabindex="-1">
+        <div class="box">
+          <h2>เอกสารขาย</h2>
+          <div class="note">รองรับเลขเอกสารพื้นฐาน QT-YYYY-0001, INV-YYYY-0001, RC-YYYY-0001 ใน Phase ถัดไป ตอนนี้ยังไม่เปิดปุ่ม issue/void</div>
+          <div id="documentsList" class="list" style="margin-top:10px"></div>
+        </div>
+      </section>
 
-    <section id="panel-payouts" class="panel" tabindex="-1">
-      <div class="box">
-        <h2>จ่ายเงินช่าง</h2>
-        <div id="payoutNote" class="note">ระบบไม่โอนเงินอัตโนมัติ กรุณาโอนเงินจริงก่อน แล้วจึงบันทึกจ่ายแล้ว</div>
-        <div id="payoutList" class="list" style="margin-top:10px"></div>
-        <div id="payoutTechs" class="list" style="margin-top:12px"></div>
-      </div>
-    </section>
+      <section id="panel-expenses" class="panel" tabindex="-1">
+        <div class="box">
+          <h2>รายจ่าย</h2>
+          <div class="tools"><button class="disabledBtn" type="button" disabled>เพิ่มรายจ่าย - Phase 2</button></div>
+          <div id="expensesList" class="list"></div>
+        </div>
+      </section>
 
-    <section id="panel-deposits" class="panel" tabindex="-1">
-      <div class="grid2">
-        <div class="box"><h2>เงินประกัน</h2><div class="note">เงินประกันไม่ใช่กำไรบริษัท</div><div id="depositList" class="list" style="margin-top:10px"></div></div>
-        <div class="box"><h2>Ledger ล่าสุด</h2><div id="depositLedger" class="list"></div></div>
-      </div>
-    </section>
+      <section id="panel-payouts" class="panel" tabindex="-1">
+        <div class="box">
+          <h2>จ่ายเงินช่าง</h2>
+          <div id="payoutNote" class="note">ระบบไม่โอนเงินอัตโนมัติ กรุณาโอนเงินจริงก่อน แล้วจึงบันทึกจ่ายแล้ว</div>
+          <div class="payoutLayout" style="margin-top:12px">
+            <div><h3>งวดจ่าย</h3><div id="payoutList" class="list"></div></div>
+            <div id="payoutTechs" class="list"></div>
+          </div>
+        </div>
+      </section>
 
-    <section id="panel-reports" class="panel" tabindex="-1">
-      <div class="box">
-        <h2>รายงานสำหรับเตรียมบัญชี</h2>
-        <div class="note">รายงานในหน้านี้ใช้เพื่อ review/เตรียมเอกสารบัญชีเท่านั้น ไม่ใช่การยื่นภาษีอัตโนมัติ และไม่มีการส่ง e-Tax อัตโนมัติ</div>
-        <div id="reportCards" class="grid3" style="margin-top:12px"></div>
-      </div>
-    </section>
+      <section id="panel-deposits" class="panel" tabindex="-1">
+        <div class="grid2">
+          <div class="box"><h2>เงินประกัน</h2><div class="note">เงินประกันไม่ใช่กำไรบริษัท</div><div id="depositList" class="list" style="margin-top:10px"></div></div>
+          <div class="box"><h2>Ledger ล่าสุด</h2><div id="depositLedger" class="list"></div></div>
+        </div>
+      </section>
 
-    <section id="panel-audit" class="panel" tabindex="-1">
-      <div class="box"><h2>ประวัติการทำรายการ</h2><div id="auditList" class="list"></div></div>
-    </section>
+      <section id="panel-reports" class="panel" tabindex="-1">
+        <div class="box">
+          <h2>รายงานสำหรับเตรียมบัญชี</h2>
+          <div class="note">รายงานในหน้านี้ใช้เพื่อ review/เตรียมเอกสารบัญชีเท่านั้น ไม่ใช่การยื่นภาษีอัตโนมัติ และไม่มีการส่ง e-Tax อัตโนมัติ</div>
+          <div id="reportCards" class="grid3" style="margin-top:12px"></div>
+        </div>
+      </section>
+
+      <section id="panel-audit" class="panel" tabindex="-1">
+        <div class="box"><h2>ประวัติการทำรายการ</h2><div id="auditList" class="list"></div></div>
+      </section>
+    </main>
 
     <div id="softErrors"></div>
   </div>
   <div id="accountingModal" class="modalBackdrop" aria-hidden="true"></div>
   <script src="admin-v2-common.js?v=accounting-entry-v2"></script>
-  <script src="admin-accounting-v2.js?v=accounting-payment-v1"></script>
+  <script src="admin-accounting-v2.js?v=accounting-workbench-v2"></script>
 </body>
 </html>
