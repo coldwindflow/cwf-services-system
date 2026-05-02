@@ -1410,9 +1410,10 @@ function requireAccountingPermission(permissionKey) {
       req.session_token = ctx.session_token;
       if (actorRole === 'super_admin') return next();
 
-      // Phase 1 read-only accounting dashboard: allow Admin by default while
-      // granular accounting_permissions rows are introduced. Future accounting
-      // write actions should require explicit non-revoked permissions.
+      // Phase 1/1.1 accounting: allow Admin read by default while granular
+      // accounting_permissions rows are introduced. For the two MVP write
+      // actions below, Admin is allowed only while that permission key has not
+      // been seeded for anyone yet; once seeded, the explicit row is required.
       if (key.startsWith('accounting.read')) return next();
 
       const r = await pool.query(
@@ -1421,8 +1422,19 @@ function requireAccountingPermission(permissionKey) {
          LIMIT 1`,
         [ctx.actor.username, key]
       );
-      if (!r.rows.length) return res.status(403).json({ ok: false, error: 'ACCOUNTING_PERMISSION_REQUIRED' });
-      return next();
+      if (r.rows.length) return next();
+
+      if (['accounting_manage_revenue', 'accounting_mark_payout_paid'].includes(key)) {
+        const seeded = await pool.query(
+          `SELECT 1 FROM public.accounting_permissions
+           WHERE permission_key=$1 AND revoked_at IS NULL
+           LIMIT 1`,
+          [key]
+        );
+        if (!seeded.rows.length) return next();
+      }
+
+      return res.status(403).json({ ok: false, error: 'ACCOUNTING_PERMISSION_REQUIRED' });
     } catch (e) {
       console.error('requireAccountingPermission error:', e);
       return res.status(500).json({ ok: false, error: 'ACCOUNTING_AUTH_FAILED' });
@@ -9445,6 +9457,9 @@ await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS approved_at T
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS paid_at TIMESTAMPTZ`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS paid_by TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS payment_status TEXT DEFAULT 'unpaid'`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS payment_method TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS payment_reference TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS payment_note TEXT`);
 
 
 // 3) users: admin profile + commission rate (dashboard)
@@ -10525,6 +10540,8 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
       )
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_payout_payments_pid_tech ON public.technician_payout_payments(payout_id, technician_username)`);
+    await pool.query(`ALTER TABLE public.technician_payout_payments ADD COLUMN IF NOT EXISTS payment_method TEXT`);
+    await pool.query(`ALTER TABLE public.technician_payout_payments ADD COLUMN IF NOT EXISTS payment_reference TEXT`);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.technician_payout_adjustments (
@@ -17200,6 +17217,13 @@ function _accountingCard(key, label, count = 0, total_amount = null, tone = 'blu
   return { key, label, count: Number(count || 0), total_amount: total_amount == null ? null : _money(total_amount), status_key: tone, target_tab };
 }
 
+function _accountingRevenueStatus(row = {}) {
+  const raw = String(row.payment_status || row.raw_payment_status || '').trim().toLowerCase();
+  if (raw === 'paid' || row.paid_at) return 'paid';
+  if (raw === 'partial') return 'partial';
+  return 'unpaid';
+}
+
 async function _accountingSafeQuery(soft_errors, label, sql, params = [], fallbackRows = []) {
   try {
     return await pool.query(sql, params);
@@ -17234,7 +17258,7 @@ app.get('/admin/accounting/summary', requireAccountingPermission('accounting.rea
            LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
           WHERE ${_sqlDonePredicate('j')}
             AND j.finished_at IS NOT NULL
-            AND COALESCE(j.payment_status,'unpaid') <> 'paid'
+            AND NOT (COALESCE(j.payment_status,'unpaid') = 'paid' OR j.paid_at IS NOT NULL)
           GROUP BY j.job_id, j.job_price
        )
        SELECT COUNT(*)::int AS count, COALESCE(SUM(total_amount),0)::numeric AS total_amount FROM gross`);
@@ -17246,7 +17270,7 @@ app.get('/admin/accounting/summary', requireAccountingPermission('accounting.rea
            LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
           WHERE ${_sqlDonePredicate('j')}
             AND j.finished_at IS NOT NULL
-            AND COALESCE(j.payment_status,'unpaid')='paid'
+            AND (COALESCE(j.payment_status,'unpaid')='paid' OR j.paid_at IS NOT NULL)
             AND NOT EXISTS (
               SELECT 1 FROM public.job_photos p
                WHERE p.job_id=j.job_id AND COALESCE(p.phase,'')='payment_slip' AND COALESCE(p.public_url,'') <> ''
@@ -17340,8 +17364,11 @@ app.get('/admin/accounting/revenue', requireAccountingPermission('accounting.rea
               COALESCE(j.customer_name,'') AS customer_name,
               COALESCE(j.customer_phone,'') AS customer_phone,
               g.gross_sales_amount,
-              COALESCE(j.payment_status,'unpaid') AS payment_status,
-              NULL::text AS payment_method,
+              COALESCE(j.payment_status,'unpaid') AS raw_payment_status,
+              j.paid_at,
+              j.paid_by,
+              j.payment_method,
+              j.payment_reference,
               COALESCE(doc.document_status, '{}'::jsonb) AS document_status,
               proof.public_url AS payment_proof_url
          FROM gross g
@@ -17359,8 +17386,12 @@ app.get('/admin/accounting/revenue', requireAccountingPermission('accounting.rea
         customer_name: r.customer_name,
         masked_customer_phone: _maskPhone(r.customer_phone),
         gross_sales_amount: r.gross_sales_amount,
-        payment_status: r.payment_status,
+        payment_status: _accountingRevenueStatus(r),
+        raw_payment_status: r.raw_payment_status,
+        paid_at: r.paid_at,
+        paid_by: r.paid_by,
         payment_method: r.payment_method,
+        payment_reference: r.payment_reference,
         document_status: doc,
         payment_proof_url: r.payment_proof_url,
         action_label: Object.keys(doc).length ? 'ดูรายละเอียด' : 'ออกเอกสาร',
@@ -17370,6 +17401,77 @@ app.get('/admin/accounting/revenue', requireAccountingPermission('accounting.rea
   } catch (e) {
     console.error('GET /admin/accounting/revenue', e);
     return res.status(500).json({ ok: false, rows: [], soft_errors: [{ scope: 'revenue', message: e.message }] });
+  }
+});
+
+app.post('/admin/accounting/revenue/:job_id/mark-paid', requireAccountingPermission('accounting_manage_revenue'), async (req, res) => {
+  try {
+    const job_id = String(req.params.job_id || '').trim();
+    const body = req.body || {};
+    if (!job_id) return res.status(400).json({ ok: false, error: 'MISSING_JOB_ID' });
+    if (!/^\d+$/.test(job_id)) return res.status(400).json({ ok: false, error: 'INVALID_JOB_ID' });
+    if (body.confirm_received !== true) return res.status(400).json({ ok: false, error: 'CONFIRM_RECEIVED_REQUIRED' });
+
+    const beforeQ = await pool.query(
+      `SELECT job_id, booking_code, job_status, finished_at, canceled_at, payment_status, paid_at, paid_by,
+              payment_method, payment_reference, payment_note,
+              (${_sqlDonePredicate('j')}) AS is_completed
+         FROM public.jobs j
+        WHERE j.job_id=$1
+        LIMIT 1`,
+      [job_id]
+    );
+    const before = beforeQ.rows[0];
+    if (!before) return res.status(404).json({ ok: false, error: 'JOB_NOT_FOUND' });
+    const st = String(before.job_status || '').trim().toLowerCase();
+    if (before.canceled_at || ['ยกเลิก', 'cancelled', 'canceled'].includes(st)) {
+      return res.status(409).json({ ok: false, error: 'CANNOT_MARK_CANCELED_JOB_PAID' });
+    }
+    const actor = _accountingActor(req);
+    if (!before.is_completed && actor.role !== 'super_admin') {
+      return res.status(409).json({ ok: false, error: 'JOB_NOT_COMPLETED' });
+    }
+    if (!before.is_completed && body.confirm_non_completed !== true) {
+      return res.status(400).json({ ok: false, error: 'CONFIRM_NON_COMPLETED_REQUIRED' });
+    }
+
+    const payment_method = String(body.payment_method || '').trim() || null;
+    const payment_reference = String(body.payment_reference || '').trim() || null;
+    const payment_note = String(body.note || '').trim() || null;
+
+    await pool.query(
+      `UPDATE public.jobs
+          SET payment_status='paid',
+              paid_at=COALESCE(paid_at, NOW()),
+              paid_by=$2,
+              payment_method=COALESCE($3, payment_method),
+              payment_reference=COALESCE($4, payment_reference),
+              payment_note=COALESCE($5, payment_note)
+        WHERE job_id=$1`,
+      [job_id, actor.username || null, payment_method, payment_reference, payment_note]
+    );
+
+    const afterQ = await pool.query(
+      `SELECT job_id, booking_code, job_status, finished_at, payment_status, paid_at, paid_by,
+              payment_method, payment_reference, payment_note
+         FROM public.jobs
+        WHERE job_id=$1
+        LIMIT 1`,
+      [job_id]
+    );
+    const after = afterQ.rows[0] || null;
+    await logAccountingAudit(req, {
+      action: 'MARK_REVENUE_PAID',
+      entity_type: 'job',
+      entity_id: job_id,
+      before_json: before,
+      after_json: after,
+      note: payment_note || payment_reference || payment_method || null,
+    });
+    return res.json({ ok: true, job_id, payment_status: 'paid', row: after });
+  } catch (e) {
+    console.error('POST /admin/accounting/revenue/:job_id/mark-paid', e);
+    return res.status(500).json({ ok: false, error: 'MARK_REVENUE_PAID_FAILED' });
   }
 });
 
@@ -17399,10 +17501,127 @@ app.get('/admin/accounting/payouts', requireAccountingPermission('accounting.rea
          LEFT JOIN pay ON pay.payout_id=p.payout_id
         ORDER BY p.period_start DESC, p.payout_id DESC
         LIMIT 80`);
-    return res.json({ ok: true, rows: q.rows, note: 'ระบบไม่โอนเงินอัตโนมัติ การบันทึกจ่ายแล้วจะทำใน Phase ถัดไปพร้อม permission และ audit เต็มรูปแบบ', soft_errors });
+    return res.json({ ok: true, rows: q.rows, note: 'ระบบไม่โอนเงินอัตโนมัติ กรุณาโอนเงินจริงก่อน แล้วจึงบันทึกจ่ายแล้ว', soft_errors });
   } catch (e) {
     console.error('GET /admin/accounting/payouts', e);
     return res.status(500).json({ ok: false, rows: [], note: '', soft_errors: [{ scope: 'payouts', message: e.message }] });
+  }
+});
+
+app.get('/admin/accounting/payouts/:payout_id/techs', requireAccountingPermission('accounting.read.payouts'), async (req, res) => {
+  try {
+    const payout_id = String(req.params.payout_id || '').trim();
+    if (!payout_id) return res.status(400).json({ ok: false, error: 'MISSING_PAYOUT_ID', rows: [] });
+    const payload = await _buildPayoutTechSummaryRows(payout_id);
+    if (!payload.period) return res.status(404).json({ ok: false, error: 'PAYOUT_NOT_FOUND', rows: [] });
+    const pays = await pool.query(
+      `SELECT technician_username, paid_amount, paid_status, paid_at, paid_by, slip_url, note,
+              payment_method, payment_reference
+         FROM public.technician_payout_payments
+        WHERE payout_id=$1`,
+      [payout_id]
+    );
+    const payMap = new Map((pays.rows || []).map(r => [String(r.technician_username || ''), r]));
+    const rows = (payload.techs || []).map(t => {
+      const p = payMap.get(String(t.technician_username || '')) || {};
+      const paid_amount = _money(p.paid_amount == null ? t.paid_amount : p.paid_amount);
+      const net_amount = _money(t.net_amount);
+      return {
+        technician_username: t.technician_username,
+        job_count: Number(t.jobs_count || t.job_count || 0),
+        gross_amount: _money(t.gross_amount),
+        deposit_deduction_amount: _money(t.deposit_deduction_amount),
+        adj_total: _money(t.adj_total),
+        net_amount,
+        paid_amount,
+        remaining_amount: _money(Math.max(0, Number(net_amount || 0) - Number(paid_amount || 0))),
+        paid_status: _paidStatus(net_amount, paid_amount),
+        paid_at: p.paid_at || null,
+        paid_by: p.paid_by || null,
+        slip_url: p.slip_url || null,
+        note: p.note || null,
+        payment_method: p.payment_method || null,
+        payment_reference: p.payment_reference || null,
+      };
+    });
+    return res.json({ ok: true, payout_id, period: payload.period, source: payload.source, rows, soft_errors: [] });
+  } catch (e) {
+    console.error('GET /admin/accounting/payouts/:payout_id/techs', e);
+    return res.status(500).json({ ok: false, rows: [], soft_errors: [{ scope: 'payout_techs', message: e.message }] });
+  }
+});
+
+app.post('/admin/accounting/payouts/:payout_id/pay', requireAccountingPermission('accounting_mark_payout_paid'), async (req, res) => {
+  try {
+    const payout_id = String(req.params.payout_id || '').trim();
+    const body = req.body || {};
+    const tech = String(body.technician_username || '').trim();
+    const paidNow = _money(body.paid_amount);
+    if (!payout_id) return res.status(400).json({ ok: false, error: 'MISSING_PAYOUT_ID' });
+    if (!tech) return res.status(400).json({ ok: false, error: 'MISSING_TECHNICIAN_USERNAME' });
+    if (body.confirm_paid !== true) return res.status(400).json({ ok: false, error: 'CONFIRM_PAID_REQUIRED' });
+    if (Number(paidNow || 0) <= 0) return res.status(400).json({ ok: false, error: 'INVALID_PAID_AMOUNT' });
+
+    const beforeTotals = await _getTechGrossAdjNet(payout_id, tech);
+    const beforePayQ = await pool.query(
+      `SELECT paid_amount, paid_status, paid_at, paid_by, slip_url, note, payment_method, payment_reference
+         FROM public.technician_payout_payments
+        WHERE payout_id=$1 AND technician_username=$2
+        LIMIT 1`,
+      [payout_id, tech]
+    );
+    const beforePayment = beforePayQ.rows[0] || null;
+    const currentPaid = Number(beforePayment?.paid_amount || 0);
+    const remaining = Math.max(0, Number(beforeTotals.net_amount || 0) - currentPaid);
+    if (remaining <= 0.0001) return res.status(409).json({ ok: false, error: 'PAYOUT_ALREADY_PAID' });
+    if (Number(paidNow) - remaining > 0.01) return res.status(400).json({ ok: false, error: 'PAID_AMOUNT_EXCEEDS_REMAINING', remaining_amount: _money(remaining) });
+
+    const payment_method = String(body.payment_method || '').trim() || null;
+    const payment_reference = String(body.payment_reference || '').trim() || null;
+    const note = String(body.note || '').trim() || null;
+    const slip_url = String(body.slip_url || '').trim() || null;
+    const cumulativePaid = _money(currentPaid + Number(paidNow));
+    const result = await _upsertPaymentAndMaybeMarkPaid(payout_id, tech, cumulativePaid, slip_url, note, _accountingActor(req).username || null);
+
+    await pool.query(
+      `UPDATE public.technician_payout_payments
+          SET payment_method=COALESCE($3, payment_method),
+              payment_reference=COALESCE($4, payment_reference)
+        WHERE payout_id=$1 AND technician_username=$2`,
+      [payout_id, tech, payment_method, payment_reference]
+    );
+
+    const afterPayQ = await pool.query(
+      `SELECT paid_amount, paid_status, paid_at, paid_by, slip_url, note, payment_method, payment_reference
+         FROM public.technician_payout_payments
+        WHERE payout_id=$1 AND technician_username=$2
+        LIMIT 1`,
+      [payout_id, tech]
+    );
+    const afterTotals = await _getTechGrossAdjNet(payout_id, tech);
+    await logAccountingAudit(req, {
+      action: 'MARK_PAYOUT_PAID',
+      entity_type: 'technician_payout_payment',
+      entity_id: `${payout_id}:${tech}`,
+      before_json: { totals: beforeTotals, payment: beforePayment },
+      after_json: { totals: afterTotals, payment: afterPayQ.rows[0] || null },
+      note: note || payment_reference || payment_method || null,
+    });
+
+    return res.json({
+      ok: true,
+      payout_id,
+      technician_username: tech,
+      paid_amount: cumulativePaid,
+      paid_status: result.paid_status,
+      net_amount: result.net_amount,
+      payment: afterPayQ.rows[0] || null,
+    });
+  } catch (e) {
+    console.error('POST /admin/accounting/payouts/:payout_id/pay', e);
+    if (String(e.code || '') === 'PAYOUT_NOT_FOUND') return res.status(404).json({ ok: false, error: 'PAYOUT_NOT_FOUND' });
+    if (String(e.code || '') === 'PAYOUT_ALREADY_PAID') return res.status(409).json({ ok: false, error: 'PAYOUT_ALREADY_PAID' });
+    return res.status(500).json({ ok: false, error: 'MARK_PAYOUT_PAID_FAILED' });
   }
 });
 

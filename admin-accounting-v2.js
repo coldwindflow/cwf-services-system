@@ -1,7 +1,7 @@
-/* Admin Accounting v2 Phase 1: read-only shell */
+/* Admin Accounting v2 Phase 1.1: safe manual payment recording */
 (function(){
   const $ = (id)=>document.getElementById(id);
-  const state = { summary:null, revenue:[], payouts:[], deposits:null, audit:[], tab:'overview' };
+  const state = { summary:null, revenue:[], payouts:[], payoutTechs:{}, selectedPayoutId:null, deposits:null, audit:[], tab:'overview' };
   const VALID_TABS = new Set(['overview','revenue','documents','expenses','payouts','deposits','reports','audit']);
 
   function esc(v){
@@ -24,6 +24,17 @@
     if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
     return data;
   }
+  async function postJson(url, body){
+    if (window.apiFetch) return window.apiFetch(url, { method:'POST', body: JSON.stringify(body || {}) });
+    const res = await fetch(url, { method:'POST', credentials:'include', headers:{ 'Content-Type':'application/json', 'x-user-role':'admin' }, body: JSON.stringify(body || {}) });
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok) {
+      const err = new Error(data.error || `HTTP ${res.status}`);
+      err.payload = data;
+      throw err;
+    }
+    return data;
+  }
   function setLoading(id, text='กำลังโหลดข้อมูล...'){
     const el = $(id);
     if (el) el.innerHTML = `<div class="muted">${esc(text)}</div>`;
@@ -39,6 +50,32 @@
     if (['voided','unpaid'].includes(v)) return badge(s, 'bad');
     return badge(s || '-', 'gray');
   }
+  function revenueStatusLabel(s){
+    const v = String(s || '').toLowerCase();
+    if (v === 'paid') return 'รับเงินแล้ว';
+    if (v === 'partial') return 'รับบางส่วน';
+    return 'ยังไม่รับเงิน';
+  }
+  function payoutStatusLabel(s){
+    const v = String(s || '').toLowerCase();
+    if (v === 'paid') return 'จ่ายช่างแล้ว';
+    if (v === 'partial') return 'จ่ายช่างบางส่วน';
+    return 'ยังไม่จ่ายช่าง';
+  }
+  function revenueStatusBadge(s){
+    const v = String(s || '').toLowerCase();
+    return badge(revenueStatusLabel(v), v === 'paid' ? 'ok' : (v === 'partial' ? 'warn' : 'bad'));
+  }
+  function payoutStatusBadge(s){
+    const v = String(s || '').toLowerCase();
+    return badge(payoutStatusLabel(v), v === 'paid' ? 'ok' : (v === 'partial' ? 'warn' : 'bad'));
+  }
+  function auditActionLabel(action){
+    const v = String(action || '');
+    if (v === 'MARK_REVENUE_PAID') return 'บันทึกรับเงินลูกค้า';
+    if (v === 'MARK_PAYOUT_PAID') return 'บันทึกจ่ายเงินช่าง';
+    return v || '-';
+  }
   function showErrors(payloads){
     const all = [];
     for (const p of payloads || []) {
@@ -47,6 +84,45 @@
     const el = $('softErrors');
     if (!el) return;
     el.innerHTML = all.length ? `<div class="softErr">ข้อมูลบางส่วนโหลดไม่ครบ: ${all.map(e=>esc(e.scope || e.message)).join(', ')}</div>` : '';
+  }
+  function cleanError(e){
+    const msg = String(e?.payload?.error || e?.message || e || '');
+    if (msg.includes('CONFIRM_RECEIVED_REQUIRED')) return 'กรุณาติ๊กยืนยันว่าได้รับเงินจริงแล้ว';
+    if (msg.includes('CONFIRM_PAID_REQUIRED')) return 'กรุณาติ๊กยืนยันว่าได้โอน/จ่ายเงินจริงแล้ว';
+    if (msg.includes('PAID_AMOUNT_EXCEEDS_REMAINING')) return 'ยอดที่จ่ายมากกว่ายอดคงเหลือ';
+    if (msg.includes('PAYOUT_ALREADY_PAID')) return 'รายการนี้จ่ายครบแล้ว';
+    if (msg.includes('ACCOUNTING_PERMISSION_REQUIRED')) return 'บัญชีนี้ยังไม่มีสิทธิ์ทำรายการนี้';
+    if (msg.includes('JOB_NOT_COMPLETED')) return 'งานนี้ยังไม่เสร็จ จึงบันทึกรับเงินจากหน้านี้ไม่ได้';
+    if (msg.includes('CANNOT_MARK_CANCELED_JOB_PAID')) return 'งานที่ยกเลิกแล้วไม่สามารถบันทึกรับเงินได้';
+    return 'บันทึกไม่สำเร็จ กรุณาลองใหม่';
+  }
+  function closeModal(){
+    const modal = $('accountingModal');
+    if (!modal) return;
+    modal.classList.remove('show');
+    modal.setAttribute('aria-hidden', 'true');
+    modal.onclick = null;
+    modal.innerHTML = '';
+  }
+  function openModal(html, onSubmit){
+    const modal = $('accountingModal');
+    if (!modal) return;
+    modal.innerHTML = `<div class="modalCard" role="dialog" aria-modal="true">${html}</div>`;
+    modal.classList.add('show');
+    modal.setAttribute('aria-hidden', 'false');
+    modal.querySelector('[data-close]')?.addEventListener('click', closeModal);
+    modal.onclick = (ev)=>{ if (ev.target === modal) closeModal(); };
+    modal.querySelector('form')?.addEventListener('submit', async (ev)=>{
+      ev.preventDefault();
+      const err = modal.querySelector('[data-error]');
+      if (err) err.textContent = '';
+      try {
+        await onSubmit(new FormData(ev.currentTarget), err);
+      } catch (e) {
+        if (err) err.textContent = cleanError(e);
+      }
+    });
+    setTimeout(()=>modal.querySelector('input,select,textarea,button')?.focus(), 0);
   }
   function normalizeTab(tab){
     const key = String(tab || '').replace(/^#/, '').trim().toLowerCase();
@@ -138,15 +214,59 @@
         <div>
           <b>${esc(r.booking_code || 'ไม่มี Booking Code')} <small>#${esc(r.job_id)}</small></b>
           <small>${esc(r.customer_name || '-')} • ${esc(r.masked_customer_phone || '')} • เสร็จ ${esc(dateTH(r.finished_at))}</small>
-          <small>ยอดขาย ${money(r.gross_sales_amount)} บาท • วิธีรับเงิน ${esc(r.payment_method || '-')}</small>
+          <small>ยอดขาย ${money(r.gross_sales_amount)} บาท • ช่องทางรับเงิน ${esc(r.payment_method || '-')} • อ้างอิง ${esc(r.payment_reference || '-')}</small>
+          <small>สถานะรับเงินลูกค้า: ${esc(revenueStatusLabel(r.payment_status))}${r.paid_at ? ` • รับเมื่อ ${esc(dateTH(r.paid_at))}` : ''}</small>
         </div>
         <div style="display:grid;gap:6px;justify-items:end">
-          ${statusBadge(r.payment_status)}
+          ${revenueStatusBadge(r.payment_status)}
           ${badge(Object.keys(r.document_status || {}).length ? 'มีเอกสาร' : 'ยังไม่มีเอกสาร', Object.keys(r.document_status || {}).length ? 'ok' : 'warn')}
+          ${String(r.payment_status || '').toLowerCase() === 'paid'
+            ? `<button class="disabledBtn" type="button" disabled>รับเงินแล้ว</button>`
+            : `<button class="goBtn" type="button" data-mark-revenue-paid="${esc(r.job_id)}">บันทึกรับเงินแล้ว</button>`}
           <button class="goBtn" type="button" onclick="location.href='/admin-job-view-v2.html?job_id=${encodeURIComponent(r.job_id)}'">${esc(r.action_label || 'ดูรายละเอียด')}</button>
         </div>
       </div>
     `).join('') : empty('ยังไม่มีรายรับจากงานที่เสร็จแล้ว');
+    el.querySelectorAll('[data-mark-revenue-paid]').forEach(btn=>{
+      btn.addEventListener('click', ()=>openRevenuePaidModal(btn.dataset.markRevenuePaid));
+    });
+  }
+  function openRevenuePaidModal(jobId){
+    const row = (state.revenue || []).find(r => String(r.job_id) === String(jobId));
+    openModal(`
+      <form class="formGrid">
+        <h3>ยืนยันการรับเงิน</h3>
+        <p>กรุณายืนยันว่าได้รับเงินจริงจากลูกค้าแล้ว ก่อนบันทึกสถานะรับเงิน</p>
+        <label>ช่องทางรับเงิน
+          <input class="input" name="payment_method" placeholder="เช่น โอน, เงินสด, QR" value="${esc(row?.payment_method || '')}">
+        </label>
+        <label>เลขอ้างอิง/หมายเหตุ
+          <input class="input" name="payment_reference" placeholder="เลขสลิป / เลขรายการ" value="${esc(row?.payment_reference || '')}">
+        </label>
+        <label>หมายเหตุ
+          <textarea class="input" name="note" placeholder="รายละเอียดเพิ่มเติม"></textarea>
+        </label>
+        <label class="checkLine"><input type="checkbox" name="confirm_received" value="1"><span>ยืนยันว่าได้รับเงินจริงแล้ว</span></label>
+        <div class="softErr" data-error style="display:block;min-height:0"></div>
+        <div class="modalActions">
+          <button class="ghostBtn" type="button" data-close>ยกเลิก</button>
+          <button class="primaryBtn" type="submit">บันทึกรับเงินแล้ว</button>
+        </div>
+      </form>
+    `, async (fd, errEl)=>{
+      if (fd.get('confirm_received') !== '1') {
+        if (errEl) errEl.textContent = 'กรุณาติ๊กยืนยันว่าได้รับเงินจริงแล้ว';
+        return;
+      }
+      await postJson(`/admin/accounting/revenue/${encodeURIComponent(jobId)}/mark-paid`, {
+        payment_method: fd.get('payment_method'),
+        payment_reference: fd.get('payment_reference'),
+        note: fd.get('note'),
+        confirm_received: true,
+      });
+      closeModal();
+      await Promise.all([loadSummary(), loadRevenue(), loadAudit()]);
+    });
   }
   function renderDocs(){
     const el = $('documentsList');
@@ -172,9 +292,112 @@
     el.innerHTML = rows.length ? rows.map(p=>`
       <div class="row">
         <div><b>${esc(p.payout_id)} • รอบ ${esc(p.period_type)}</b><small>${esc(dateTH(p.period_start))} - ${esc(dateTH(p.period_end))} • ช่าง ${money(p.technician_count)} คน</small><small>Gross ${money(p.gross_amount)} • หักประกัน ${money(p.deposit_deduction_amount)} • ปรับยอด ${money(p.adj_total)}</small></div>
-        <div style="text-align:right">${statusBadge(p.status)}<small>สุทธิ ${money(p.net_payable)} บาท</small><small>คงเหลือ ${money(p.remaining_amount)} บาท</small></div>
+        <div style="display:grid;gap:6px;justify-items:end;text-align:right">
+          ${statusBadge(p.status)}
+          <small>สุทธิ ${money(p.net_payable)} บาท</small>
+          <small>คงเหลือ ${money(p.remaining_amount)} บาท</small>
+          <button class="goBtn" type="button" data-load-payout-techs="${esc(p.payout_id)}">ดูรายละเอียด</button>
+        </div>
       </div>
     `).join('') : empty('ยังไม่มีงวดจ่ายช่าง');
+    el.querySelectorAll('[data-load-payout-techs]').forEach(btn=>{
+      btn.addEventListener('click', ()=>loadPayoutTechs(btn.dataset.loadPayoutTechs));
+    });
+    renderPayoutTechs();
+  }
+  function renderPayoutTechs(){
+    const el = $('payoutTechs');
+    if (!el) return;
+    const payoutId = state.selectedPayoutId;
+    if (!payoutId) {
+      el.innerHTML = '';
+      return;
+    }
+    const rows = state.payoutTechs[payoutId] || [];
+    el.innerHTML = `
+      <div class="box">
+        <h3>รายละเอียดงวด ${esc(payoutId)}</h3>
+        <div class="list">
+          ${rows.length ? rows.map(t=>{
+            const remaining = Number(t.remaining_amount || 0);
+            const paid = String(t.paid_status || '').toLowerCase() === 'paid' || remaining <= 0.0001;
+            return `
+              <div class="row">
+                <div>
+                  <b>${esc(t.technician_username || '-')}</b>
+                  <small>จำนวนงาน ${money(t.job_count)} • รายได้ก่อนหัก ${money(t.gross_amount)} บาท • หักเงินประกัน ${money(t.deposit_deduction_amount)} บาท</small>
+                  <small>ปรับยอด ${money(t.adj_total)} บาท • ยอดสุทธิ ${money(t.net_amount)} บาท • จ่ายแล้ว ${money(t.paid_amount)} บาท • คงเหลือ ${money(t.remaining_amount)} บาท</small>
+                  <small>สถานะจ่ายเงินช่าง: ${esc(payoutStatusLabel(t.paid_status))}${t.paid_at ? ` • จ่ายเมื่อ ${esc(dateTH(t.paid_at))}` : ''}</small>
+                </div>
+                <div style="display:grid;gap:6px;justify-items:end">
+                  ${payoutStatusBadge(t.paid_status)}
+                  ${paid
+                    ? `<button class="disabledBtn" type="button" disabled>จ่ายช่างแล้ว</button>`
+                    : `<button class="goBtn" type="button" data-pay-payout="${esc(payoutId)}" data-tech="${esc(t.technician_username)}" data-remaining="${esc(t.remaining_amount)}">บันทึกจ่ายแล้ว</button>`}
+                </div>
+              </div>
+            `;
+          }).join('') : empty('ยังไม่มีรายละเอียดช่างในงวดนี้')}
+        </div>
+      </div>`;
+    el.querySelectorAll('[data-pay-payout]').forEach(btn=>{
+      btn.addEventListener('click', ()=>openPayoutPaidModal(btn.dataset.payPayout, btn.dataset.tech, btn.dataset.remaining));
+    });
+    try { el.scrollIntoView({ behavior:'smooth', block:'start' }); } catch (_) {}
+  }
+  async function loadPayoutTechs(payoutId){
+    state.selectedPayoutId = payoutId;
+    setLoading('payoutTechs', 'กำลังโหลดรายละเอียดงวดจ่ายช่าง...');
+    const r = await getJson(`/admin/accounting/payouts/${encodeURIComponent(payoutId)}/techs`);
+    state.payoutTechs[payoutId] = r.rows || [];
+    renderPayoutTechs();
+    showErrors([r]);
+  }
+  function openPayoutPaidModal(payoutId, tech, remaining){
+    openModal(`
+      <form class="formGrid">
+        <h3>ยืนยันการจ่ายเงินช่าง</h3>
+        <p>ระบบไม่โอนเงินอัตโนมัติ กรุณาโอนเงินจริงก่อน แล้วจึงบันทึกจ่ายแล้ว</p>
+        <label>ยอดที่จ่าย
+          <input class="input" name="paid_amount" type="number" min="0.01" step="0.01" value="${esc(remaining || '')}">
+        </label>
+        <label>ช่องทางจ่าย
+          <input class="input" name="payment_method" placeholder="เช่น โอนธนาคาร, เงินสด">
+        </label>
+        <label>เลขอ้างอิงหรือหมายเหตุ
+          <input class="input" name="payment_reference" placeholder="เลขสลิป / เลขรายการ">
+        </label>
+        <label>slip_url
+          <input class="input" name="slip_url" placeholder="URL หลักฐานการโอน (ถ้ามี)">
+        </label>
+        <label>หมายเหตุ
+          <textarea class="input" name="note" placeholder="รายละเอียดเพิ่มเติม"></textarea>
+        </label>
+        <label class="checkLine"><input type="checkbox" name="confirm_paid" value="1"><span>ยืนยันว่าได้โอน/จ่ายเงินจริงแล้ว</span></label>
+        <div class="softErr" data-error style="display:block;min-height:0"></div>
+        <div class="modalActions">
+          <button class="ghostBtn" type="button" data-close>ยกเลิก</button>
+          <button class="primaryBtn" type="submit">บันทึกจ่ายแล้ว</button>
+        </div>
+      </form>
+    `, async (fd, errEl)=>{
+      if (fd.get('confirm_paid') !== '1') {
+        if (errEl) errEl.textContent = 'กรุณาติ๊กยืนยันว่าได้โอน/จ่ายเงินจริงแล้ว';
+        return;
+      }
+      await postJson(`/admin/accounting/payouts/${encodeURIComponent(payoutId)}/pay`, {
+        technician_username: tech,
+        paid_amount: fd.get('paid_amount'),
+        payment_method: fd.get('payment_method'),
+        payment_reference: fd.get('payment_reference'),
+        slip_url: fd.get('slip_url'),
+        note: fd.get('note'),
+        confirm_paid: true,
+      });
+      closeModal();
+      await Promise.all([loadSummary(), loadPayouts(), loadAudit()]);
+      await loadPayoutTechs(payoutId);
+    });
   }
   function renderDeposits(){
     const rows = state.deposits?.rows || [];
@@ -196,7 +419,7 @@
   }
   function renderAuditInto(el, rows){
     el.innerHTML = rows.length ? rows.map(r=>`
-      <div class="row"><div><b>${esc(r.action)} • ${esc(r.entity_type)}</b><small>${esc(r.actor_username || '-')} (${esc(r.actor_role || '-')}) • ${esc(r.note || '')}</small></div><small>${esc(dateTH(r.created_at))}</small></div>
+      <div class="row"><div><b>${esc(auditActionLabel(r.action))}</b><small>${esc(r.entity_type || '-')} #${esc(r.entity_id || '-')} • ${esc(r.actor_username || '-')} (${esc(r.actor_role || '-')}) • ${esc(r.note || '')}</small></div><small>${esc(dateTH(r.created_at))}</small></div>
     `).join('') : empty('ยังไม่มีประวัติการทำรายการ');
   }
   function renderAudit(){
