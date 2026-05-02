@@ -109,69 +109,25 @@ async function getServiceZones() {
   }));
 }
 
-function safeDecodeText(v) {
-  const raw = String(v || "");
-  try { return decodeURIComponent(raw.replace(/\+/g, " ")); } catch (_) { return raw; }
-}
-
-function extractLatLngFromMapsText(v) {
-  const raw = safeDecodeText(v);
-  const patterns = [
-    /@(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
-    /[?&](?:q|query|ll)=(-?\d+(?:\.\d+)?),\s*(-?\d+(?:\.\d+)?)/,
-    /!3d(-?\d+(?:\.\d+)?)!4d(-?\d+(?:\.\d+)?)/,
-    /(?:^|[^\d-])(-?\d{1,2}\.\d{4,})\s*,\s*(100\.\d{4,})(?:[^\d]|$)/
-  ];
-  for (const re of patterns) {
-    const m = raw.match(re);
-    if (!m) continue;
-    const lat = Number(m[1]);
-    const lng = Number(m[2]);
-    if (Number.isFinite(lat) && Number.isFinite(lng) && lat >= 13.35 && lat <= 14.35 && lng >= 99.75 && lng <= 101.25) return { lat, lng };
-  }
-  return null;
-}
-
-function detectServiceZoneFromLatLng(lat, lng) {
-  const la = Number(lat), ln = Number(lng);
-  if (!Number.isFinite(la) || !Number.isFinite(ln)) return null;
-  let code = null;
-  if (la >= 13.50 && la <= 13.77 && ln >= 100.58 && ln <= 100.92) code = "F";
-  else if (la >= 13.49 && la <= 13.72 && ln >= 100.34 && ln < 100.58) code = "E";
-  else if (la >= 13.70 && la <= 13.90 && ln >= 100.36 && ln < 100.52) code = "D";
-  else if (la >= 13.78 && la <= 14.16 && ln >= 100.15 && ln <= 100.78) code = "G";
-  else if (la >= 13.88 && la <= 14.25 && ln >= 100.35 && ln <= 100.95) code = "H";
-  else if (la >= 13.68 && la <= 13.82 && ln >= 100.48 && ln < 100.62) code = "C";
-  else if (la >= 13.62 && la <= 13.86 && ln >= 100.58 && ln <= 100.86) code = "A";
-  else if (la >= 13.76 && la <= 14.02 && ln >= 100.50 && ln <= 100.95) code = "B";
-  if (!code) return null;
-  const z = SERVICE_ZONE_BY_CODE.get(code);
-  return z ? { service_zone_code: z.code, service_zone_label: z.label, service_zone_source: "maps_coordinate", matched_district: null, matched_lat: la, matched_lng: ln } : null;
-}
-
-async function detectServiceZoneFromText({ address_text, job_zone, service_zone_code, home_province, home_district, maps_url } = {}) {
+async function detectServiceZoneFromText({ address_text, job_zone, service_zone_code, home_province, home_district } = {}) {
   const explicit = String(service_zone_code || "").trim().toUpperCase();
   if (explicit && SERVICE_ZONE_BY_CODE.has(explicit)) {
     const z = SERVICE_ZONE_BY_CODE.get(explicit);
     return { service_zone_code: z.code, service_zone_label: z.label, service_zone_source: "admin_override", matched_district: null };
   }
-  const decodedMapText = safeDecodeText(maps_url);
-  const hay = normalizeThaiAreaText([home_district, job_zone, address_text, home_province, decodedMapText].filter(Boolean).join(" "));
+  const hay = normalizeThaiAreaText([home_district, job_zone, address_text, home_province].filter(Boolean).join(" "));
+  if (!hay) return null;
   const matches = [];
-  if (hay) {
-    for (const z of SERVICE_ZONE_SEEDS) {
-      for (const district of z.districts) {
-        const d = normalizeThaiAreaText(district);
-        if (d && hay.includes(d)) matches.push({ z, district, len: d.length });
-      }
+  for (const z of SERVICE_ZONE_SEEDS) {
+    for (const district of z.districts) {
+      const d = normalizeThaiAreaText(district);
+      if (d && hay.includes(d)) matches.push({ z, district, len: d.length });
     }
   }
   matches.sort((a, b) => b.len - a.len || a.z.order - b.z.order);
   const best = matches[0];
-  if (best) return { service_zone_code: best.z.code, service_zone_label: best.z.label, service_zone_source: "auto_detect", matched_district: best.district };
-  const ll = extractLatLngFromMapsText(maps_url || address_text || job_zone || "");
-  if (ll) return detectServiceZoneFromLatLng(ll.lat, ll.lng);
-  return null;
+  if (!best) return null;
+  return { service_zone_code: best.z.code, service_zone_label: best.z.label, service_zone_source: "auto_detect", matched_district: best.district };
 }
 
 async function getTechnicianPrimaryZone(username) {
@@ -179,11 +135,9 @@ async function getTechnicianPrimaryZone(username) {
   if (!u) return null;
   try {
     const r = await pool.query(
-      `SELECT p.home_service_zone_code, p.secondary_service_zone_code, p.allow_out_of_zone, p.service_radius_km,
-              z.zone_label, z2.zone_label AS secondary_service_zone_label
+      `SELECT p.home_service_zone_code, p.secondary_service_zone_code, p.service_radius_km, p.allow_out_of_zone, z.zone_label
        FROM public.technician_profiles p
        LEFT JOIN public.service_zones z ON z.zone_code=p.home_service_zone_code
-       LEFT JOIN public.service_zones z2 ON z2.zone_code=p.secondary_service_zone_code
        WHERE p.username=$1
        LIMIT 1`,
       [u]
@@ -194,9 +148,8 @@ async function getTechnicianPrimaryZone(username) {
       zone_code: row.home_service_zone_code || null,
       zone_label: row.zone_label || (SERVICE_ZONE_BY_CODE.get(row.home_service_zone_code || "")?.label || null),
       secondary_zone_code: row.secondary_service_zone_code || null,
-      secondary_zone_label: row.secondary_service_zone_label || (SERVICE_ZONE_BY_CODE.get(row.secondary_service_zone_code || "")?.label || null),
-      allow_out_of_zone: !!row.allow_out_of_zone,
       service_radius_km: row.service_radius_km == null ? null : Number(row.service_radius_km),
+      allow_out_of_zone: !!row.allow_out_of_zone,
     };
   } catch (_) {
     return null;
@@ -206,62 +159,67 @@ async function getTechnicianPrimaryZone(username) {
 async function updateTechnicianHomeZone(username, home_province, home_district, allow_out_of_zone = false, secondary_service_zone_code = "", service_radius_km = null) {
   const u = String(username || "").trim();
   if (!u) throw new Error("username required");
-  const cleanProvinceInput = String(home_province || "").trim();
-  const cleanDistrictInput = String(home_district || "").trim();
-  let existingHome = null;
-  if (!cleanProvinceInput || !cleanDistrictInput) {
-    try {
-      const existingQ = await pool.query(
-        `SELECT home_province, home_district FROM public.technician_profiles WHERE username=$1 LIMIT 1`,
-        [u]
-      );
-      existingHome = existingQ.rows?.[0] || null;
-    } catch (_) {}
+  const cleanProvince = String(home_province || "").trim();
+  const cleanDistrict = String(home_district || "").trim();
+  const cleanSecondary = String(secondary_service_zone_code || "").trim().toUpperCase();
+  const safeSecondary = SERVICE_ZONE_BY_CODE.has(cleanSecondary) ? cleanSecondary : null;
+  const rawRadius = String(service_radius_km ?? "").trim();
+  const safeRadius = rawRadius === "" ? null : (Number.isFinite(Number(rawRadius)) ? Math.max(0, Math.min(300, Number(rawRadius))) : null);
+  let existing = null;
+  if (!cleanProvince && !cleanDistrict) {
+    const er = await pool.query(`SELECT home_province, home_district, home_service_zone_code FROM public.technician_profiles WHERE username=$1 LIMIT 1`, [u]);
+    existing = er.rows[0] || null;
   }
-  const cleanProvince = cleanProvinceInput || String(existingHome?.home_province || "").trim();
-  const cleanDistrict = cleanDistrictInput || String(existingHome?.home_district || "").trim();
-  const detected = await detectServiceZoneFromText({ home_province: cleanProvince, home_district: cleanDistrict });
-  const zoneCode = detected?.service_zone_code || null;
-  const secondaryCode = String(secondary_service_zone_code || "").trim().toUpperCase();
-  const safeSecondaryCode = secondaryCode && SERVICE_ZONE_BY_CODE.has(secondaryCode) && secondaryCode !== zoneCode ? secondaryCode : null;
-  const radiusNumRaw = Number(service_radius_km);
-  const safeRadiusKm = Number.isFinite(radiusNumRaw) && radiusNumRaw > 0 ? Math.min(Math.max(radiusNumRaw, 1), 500) : null;
+  const finalProvince = cleanProvince || existing?.home_province || "";
+  const finalDistrict = cleanDistrict || existing?.home_district || "";
+  const detected = await detectServiceZoneFromText({ home_province: finalProvince, home_district: finalDistrict });
+  const zoneCode = detected?.service_zone_code || existing?.home_service_zone_code || null;
   await pool.query(
     `INSERT INTO public.technician_profiles
-       (username, home_province, home_district, home_service_zone_code, secondary_service_zone_code, allow_out_of_zone, preferred_zone, service_radius_km, updated_at)
+       (username, home_province, home_district, home_service_zone_code, secondary_service_zone_code, service_radius_km, allow_out_of_zone, preferred_zone, updated_at)
      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NOW())
      ON CONFLICT (username) DO UPDATE SET
-       home_province=EXCLUDED.home_province,
-       home_district=EXCLUDED.home_district,
-       home_service_zone_code=EXCLUDED.home_service_zone_code,
+       home_province=COALESCE(NULLIF(EXCLUDED.home_province,''), technician_profiles.home_province),
+       home_district=COALESCE(NULLIF(EXCLUDED.home_district,''), technician_profiles.home_district),
+       home_service_zone_code=COALESCE(EXCLUDED.home_service_zone_code, technician_profiles.home_service_zone_code),
        secondary_service_zone_code=EXCLUDED.secondary_service_zone_code,
+       service_radius_km=EXCLUDED.service_radius_km,
        allow_out_of_zone=EXCLUDED.allow_out_of_zone,
        preferred_zone=COALESCE(NULLIF(EXCLUDED.home_district,''), technician_profiles.preferred_zone),
-       service_radius_km=EXCLUDED.service_radius_km,
        updated_at=NOW()`,
-    [u, cleanProvince || null, cleanDistrict || null, zoneCode, safeSecondaryCode, !!allow_out_of_zone, cleanDistrict || null, safeRadiusKm]
+    [u, finalProvince || null, finalDistrict || null, zoneCode, safeSecondary, safeRadius, !!allow_out_of_zone, finalDistrict || null]
   );
   await pool.query(`UPDATE public.technician_service_zones SET is_primary=FALSE, is_active=FALSE, updated_at=NOW() WHERE technician_username=$1`, [u]);
-  const zoneRows = [[zoneCode, 1, true], [safeSecondaryCode, 2, false]].filter(x => x[0]);
-  for (const [code, priority, isPrimary] of zoneRows) {
+  if (zoneCode) {
     await pool.query(
       `INSERT INTO public.technician_service_zones (technician_username, zone_code, priority, is_primary, is_active, updated_at)
-       VALUES ($1,$2,$3,$4,TRUE,NOW())
+       VALUES ($1,$2,1,TRUE,TRUE,NOW())
        ON CONFLICT (technician_username, zone_code) DO UPDATE SET
-         priority=EXCLUDED.priority, is_primary=EXCLUDED.is_primary, is_active=TRUE, updated_at=NOW()`,
-      [u, code, priority, isPrimary]
+         priority=1, is_primary=TRUE, is_active=TRUE, updated_at=NOW()`,
+      [u, zoneCode]
     );
   }
-  const secondaryZone = safeSecondaryCode ? SERVICE_ZONE_BY_CODE.get(safeSecondaryCode) : null;
-  return { ...detected, home_province: cleanProvince, home_district: cleanDistrict, preferred_zone: cleanDistrict, allow_out_of_zone: !!allow_out_of_zone, secondary_service_zone_code: safeSecondaryCode, secondary_service_zone_label: secondaryZone?.label || null, service_radius_km: safeRadiusKm };
+  if (safeSecondary && safeSecondary !== zoneCode) {
+    await pool.query(
+      `INSERT INTO public.technician_service_zones (technician_username, zone_code, priority, is_primary, is_active, updated_at)
+       VALUES ($1,$2,2,FALSE,TRUE,NOW())
+       ON CONFLICT (technician_username, zone_code) DO UPDATE SET
+         priority=2, is_primary=FALSE, is_active=TRUE, updated_at=NOW()`,
+      [u, safeSecondary]
+    );
+  }
+  return { ...detected, home_province: finalProvince, home_district: finalDistrict, preferred_zone: finalDistrict, secondary_service_zone_code: safeSecondary, service_radius_km: safeRadius, allow_out_of_zone: !!allow_out_of_zone };
 }
 
 async function technicianMatchesServiceZone(username, zone_code) {
   const z = String(zone_code || "").trim().toUpperCase();
   if (!z) return { matches: false, allow_out_of_zone: false };
   const pz = await getTechnicianPrimaryZone(username);
+  const primaryMatch = !!pz?.zone_code && String(pz.zone_code).toUpperCase() === z;
+  const secondaryMatch = !!pz?.secondary_zone_code && String(pz.secondary_zone_code).toUpperCase() === z;
   return {
-    matches: (!!pz?.zone_code && String(pz.zone_code).toUpperCase() === z) || (!!pz?.secondary_zone_code && String(pz.secondary_zone_code).toUpperCase() === z),
+    matches: primaryMatch || secondaryMatch,
+    match_type: primaryMatch ? "primary" : (secondaryMatch ? "secondary" : "none"),
     allow_out_of_zone: !!pz?.allow_out_of_zone,
     zone_code: pz?.zone_code || null,
     secondary_zone_code: pz?.secondary_zone_code || null,
@@ -274,10 +232,10 @@ function rankTechniciansForServiceZone(technicians, zone_code) {
   return rows.slice().sort((a, b) => {
     const az = String(a.home_service_zone_code || "").trim().toUpperCase();
     const bz = String(b.home_service_zone_code || "").trim().toUpperCase();
-    const as = String(a.secondary_service_zone_code || "").trim().toUpperCase();
-    const bs = String(b.secondary_service_zone_code || "").trim().toUpperCase();
-    const ar = z && az === z ? 0 : (z && as === z ? 1 : (a.allow_out_of_zone ? 2 : 3));
-    const br = z && bz === z ? 0 : (z && bs === z ? 1 : (b.allow_out_of_zone ? 2 : 3));
+    const asz = String(a.secondary_service_zone_code || "").trim().toUpperCase();
+    const bsz = String(b.secondary_service_zone_code || "").trim().toUpperCase();
+    const ar = z && az === z ? 0 : (z && asz === z ? 1 : (a.allow_out_of_zone ? 2 : 3));
+    const br = z && bz === z ? 0 : (z && bsz === z ? 1 : (b.allow_out_of_zone ? 2 : 3));
     if (ar !== br) return ar - br;
     return String(a.username || "").localeCompare(String(b.username || ""));
   });
@@ -11578,7 +11536,7 @@ async function handleAdminBookV2(req, res) {
   const bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
   const ttype = (tech_type || (bm === "urgent" ? "partner" : "company")).toString().trim().toLowerCase();
   const mode = (dispatch_mode || "normal").toString().trim().toLowerCase();
-  const zoneDetected = await detectServiceZoneFromText({ address_text, job_zone, service_zone_code, maps_url });
+  const zoneDetected = await detectServiceZoneFromText({ address_text, job_zone, service_zone_code });
   const detectedZoneCode = zoneDetected?.service_zone_code || null;
   const detectedZoneLabel = zoneDetected?.service_zone_label || null;
   const detectedZoneSource = zoneDetected?.service_zone_source || (detectedZoneCode ? "auto_detect" : null);
@@ -11944,13 +11902,12 @@ if (coerceNumber(override_price, 0) > 0) {
       let candidateRows = partnerRows;
       if (ENABLE_SERVICE_ZONE_FILTER && detectedZoneCode) {
         const primary = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() === detectedZoneCode);
-        const secondary = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() !== detectedZoneCode && String(r.secondary_service_zone_code || "").toUpperCase() === detectedZoneCode);
-        const fallback = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() !== detectedZoneCode && String(r.secondary_service_zone_code || "").toUpperCase() !== detectedZoneCode && r.allow_out_of_zone);
+        const fallback = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() !== detectedZoneCode && r.allow_out_of_zone);
         zone_filter_applied = true;
-        zone_matched_technicians_count = primary.length + secondary.length;
-        zone_fallback_used = primary.length === 0 && secondary.length === 0 && fallback.length > 0;
-        candidateRows = (primary.length || secondary.length || fallback.length) ? [...primary, ...secondary, ...fallback] : partnerRows;
-        if (!primary.length && !secondary.length && !fallback.length) zone_fallback_used = true;
+        zone_matched_technicians_count = primary.length;
+        zone_fallback_used = primary.length === 0 && fallback.length > 0;
+        candidateRows = (primary.length || fallback.length) ? [...primary, ...fallback] : partnerRows;
+        if (!primary.length && !fallback.length) zone_fallback_used = true;
       }
       const list = rankTechniciansForServiceZone(candidateRows, detectedZoneCode).map((r) => r.username);
       // จำกัด 30 ทีม
@@ -15971,8 +15928,8 @@ app.put("/technicians/:username/service-zone", async (req, res) => {
     const username = String(req.params.username || "").trim();
     const home_province = String(req.body?.home_province || "").trim();
     const home_district = String(req.body?.home_district || "").trim();
-    const secondary_service_zone_code = String(req.body?.secondary_service_zone_code || "").trim().toUpperCase();
     const allow_out_of_zone = req.body?.allow_out_of_zone === true || String(req.body?.allow_out_of_zone || "").toLowerCase() === "true";
+    const secondary_service_zone_code = String(req.body?.secondary_service_zone_code || "").trim();
     const service_radius_km = req.body?.service_radius_km ?? null;
     const saved = await updateTechnicianHomeZone(username, home_province, home_district, allow_out_of_zone, secondary_service_zone_code, service_radius_km);
     res.json({ ok: true, ...saved });
@@ -16034,11 +15991,9 @@ app.get("/technicians/:username/profile", async (req, res) => {
               COALESCE(secondary_service_zone_code,'') AS secondary_service_zone_code,
               service_radius_km,
               COALESCE(allow_out_of_zone,FALSE) AS allow_out_of_zone,
-              z.zone_label AS home_service_zone_label,
-              z2.zone_label AS secondary_service_zone_label
+              z.zone_label AS home_service_zone_label
        FROM public.technician_profiles p
        LEFT JOIN public.service_zones z ON z.zone_code=p.home_service_zone_code
-       LEFT JOIN public.service_zones z2 ON z2.zone_code=p.secondary_service_zone_code
        WHERE p.username=$1`,
       [username]
     );

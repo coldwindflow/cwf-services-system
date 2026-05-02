@@ -490,6 +490,52 @@
   .zone-map-preview-body img{display:block;width:max(100%,920px);height:auto;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.42)}
   .zone-map-preview-close{position:fixed;right:14px;top:14px;z-index:4100;width:48px;height:48px;border-radius:18px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.18);color:#fff;font-size:32px;line-height:1;box-shadow:0 12px 30px rgba(0,0,0,.24)}
   @media(max-width:620px){.zone-hero-copy{padding:11px 12px!important}.zone-hero h2{font-size:22px!important}.zone-hero-lead{font-size:13px!important}.zone-map-card{margin-left:-4px;margin-right:-4px}.zone-map-card img{min-width:760px!important}.zone-map-preview-body img{width:max(100%,940px)}}
+
+  .zone-hero-modern{min-height:210px!important;padding:18px!important;background:linear-gradient(135deg,#071a3f 0%,#0B2E6D 58%,#0B4BB3 100%)!important}
+  .zone-hero-modern:before{background:linear-gradient(90deg,rgba(2,6,23,.92),rgba(2,6,23,.68),rgba(2,6,23,.24)),radial-gradient(circle at 92% 88%,rgba(244,196,0,.42),transparent 36%)!important}
+  .zone-hero-copy{width:calc(100% - 68px)!important;max-width:640px!important;background:rgba(2,6,23,.66)!important;border:1px solid rgba(255,255,255,.22)!important;border-radius:22px!important;padding:14px 14px 15px!important;box-shadow:0 16px 34px rgba(2,6,23,.22),inset 0 0 0 1px rgba(255,255,255,.08)!important}
+  .zone-hero-title{display:block!important;margin:7px 0 10px!important;color:#fff!important;font-size:28px!important;line-height:1.08!important;font-weight:1000!important;letter-spacing:-.02em!important;text-shadow:0 3px 14px rgba(0,0,0,.95),0 0 1px #fff!important;opacity:1!important;visibility:visible!important}
+  .zone-hero-modern h2{display:none!important}
+  .zone-hero-lead{color:#fff!important;background:rgba(15,23,42,.62)!important;border-radius:16px!important;padding:10px 11px!important;font-size:15px!important;line-height:1.48!important;text-shadow:0 2px 10px rgba(0,0,0,.86)!important}
+  .zone-hero-pills span{background:#fff!important;color:#0B2E6D!important;border:1px solid rgba(255,255,255,.7)!important}
+  .zone-map-scroll{border-radius:20px 20px 0 0!important;background:#f8fbff!important;overflow-x:auto!important;overflow-y:hidden!important;-webkit-overflow-scrolling:touch!important;padding:0!important}
+  .zone-map-card img{width:auto!important;max-width:none!important;min-width:980px!important;height:auto!important;max-height:none!important;object-fit:contain!important;background:#fff!important}
+  .zone-map-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.zone-map-actions button{min-height:42px;border:0;border-radius:14px;background:#0B4BB3;color:#fff;font-weight:1000;box-shadow:0 10px 22px rgba(11,75,179,.18)}.zone-map-actions button.outline{background:#fff;color:#0B2E6D;border:1px solid rgba(11,46,109,.16)}
+  .zone-detail-modal{position:fixed;inset:0;z-index:4095;align-items:center;justify-content:center;background:rgba(2,6,23,.72);padding:14px;backdrop-filter:blur(9px)}.zone-detail-panel{width:min(720px,100%);max-height:92vh;overflow:auto;border-radius:26px;background:#f8fbff;padding:14px;border:1px solid rgba(255,255,255,.55);box-shadow:0 28px 70px rgba(2,6,23,.35)}.zone-detail-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;border-radius:22px;background:linear-gradient(135deg,#fff,#eef6ff);padding:14px;border:1px solid rgba(11,46,109,.12)}.zone-eyebrow.dark{color:#0B4BB3}.zone-detail-head h3{margin:4px 0 6px;color:#0B2E6D;font-size:22px;line-height:1.15}.zone-detail-head p{margin:0;color:#475569;font-weight:900;line-height:1.45}.zone-detail-close{width:44px;height:44px;border-radius:16px;border:1px solid rgba(11,46,109,.14);background:#fff;color:#0B2E6D;font-size:28px;font-weight:1000}.zone-detail-body{display:grid;gap:10px;margin-top:12px}.zone-guide-card,.zone-guide-grid>div{border-radius:18px;background:#fff;border:1px solid rgba(11,46,109,.12);padding:12px;box-shadow:0 10px 24px rgba(11,46,109,.06)}.zone-guide-card.primary{background:linear-gradient(135deg,#fffbea,#fff)}.zone-guide-card.warning{background:linear-gradient(135deg,#eff6ff,#fff)}.zone-guide-card b,.zone-guide-grid b{color:#0B2E6D;font-weight:1000}.zone-guide-card ol{margin:8px 0 0 20px;padding:0;color:#334155;font-weight:850;line-height:1.55}.zone-guide-card p{margin:8px 0 0;color:#334155;font-weight:850;line-height:1.55}.zone-guide-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.zone-guide-grid span{display:block;margin-top:5px;color:#475569;font-weight:850;line-height:1.45;font-size:13px}
+  @media(max-width:620px){.zone-hero-modern{min-height:220px!important;padding:14px!important}.zone-hero-copy{width:calc(100% - 58px)!important;padding:12px!important}.zone-hero-title{font-size:26px!important}.zone-hero-lead{font-size:14px!important}.zone-map-card img{min-width:1040px!important}.zone-map-actions{grid-template-columns:1fr}.zone-guide-grid{grid-template-columns:1fr}.zone-detail-panel{border-radius:24px;padding:10px}}
+
+  /* CWF final zone modal UX fix: readable header + stable map actions */
+  #serviceZoneModal .zone-panel{width:min(760px,calc(100vw - 18px))!important;max-height:calc(100vh - 22px)!important;overflow:auto!important;padding:10px!important;}
+  #serviceZoneModal .zone-hero{min-height:auto!important;padding:16px!important;border-radius:24px!important;background:linear-gradient(135deg,#06163a 0%,#0B2E6D 58%,#0B4BB3 100%)!important;}
+  #serviceZoneModal .zone-hero:before{background:linear-gradient(90deg,rgba(2,6,23,.94),rgba(2,6,23,.70),rgba(2,6,23,.28)),radial-gradient(circle at 92% 86%,rgba(250,204,21,.45),transparent 36%)!important;}
+  #serviceZoneModal .zone-hero-copy{width:calc(100% - 58px)!important;max-width:620px!important;background:rgba(2,6,23,.78)!important;border:1px solid rgba(255,255,255,.26)!important;border-radius:20px!important;padding:13px 14px!important;box-shadow:0 16px 34px rgba(2,6,23,.28),inset 0 0 0 1px rgba(255,255,255,.08)!important;}
+  #serviceZoneModal .zone-eyebrow{color:#FDE68A!important;font-size:11px!important;letter-spacing:.18em!important;font-weight:1000!important;}
+  #serviceZoneModal .zone-hero-title{display:block!important;color:#fff!important;font-size:34px!important;line-height:1.05!important;font-weight:1000!important;margin:8px 0 10px!important;text-shadow:0 4px 16px rgba(0,0,0,.95),0 0 2px rgba(255,255,255,.9)!important;opacity:1!important;visibility:visible!important;}
+  #serviceZoneModal .zone-hero-lead{display:block!important;color:#EAF2FF!important;background:rgba(15,23,42,.72)!important;border:1px solid rgba(255,255,255,.14)!important;border-radius:16px!important;padding:10px 11px!important;font-size:14px!important;line-height:1.48!important;font-weight:950!important;text-shadow:0 2px 10px rgba(0,0,0,.88)!important;}
+  #serviceZoneModal .zone-hero-pills{gap:8px!important;margin-top:11px!important;}
+  #serviceZoneModal .zone-hero-pills span{background:#fff!important;color:#0B2E6D!important;border:1px solid rgba(255,255,255,.7)!important;box-shadow:0 7px 18px rgba(2,6,23,.22)!important;}
+  #serviceZoneModal .zone-close{width:48px!important;height:48px!important;border-radius:18px!important;font-size:34px!important;background:rgba(255,255,255,.18)!important;}
+  #serviceZoneModal .zone-map-card{margin-top:14px!important;border-radius:22px!important;overflow:hidden!important;}
+  #serviceZoneModal .zone-map-scroll{cursor:default!important;overflow-x:auto!important;overflow-y:hidden!important;-webkit-overflow-scrolling:touch!important;touch-action:pan-x!important;background:#fff!important;border-radius:22px 22px 0 0!important;}
+  #serviceZoneModal .zone-map-card img{display:block!important;width:auto!important;min-width:1320px!important;max-width:none!important;height:auto!important;max-height:none!important;object-fit:contain!important;background:#fff!important;}
+  #serviceZoneModal .zone-map-note{padding:13px 14px!important;font-size:15px!important;line-height:1.45!important;}
+  #serviceZoneModal .zone-map-note span{font-size:13px!important;line-height:1.45!important;}
+  #serviceZoneModal .zone-map-actions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:14px!important;margin-top:14px!important;padding-top:2px!important;}
+  #serviceZoneModal .zone-map-actions button{min-height:50px!important;border-radius:18px!important;font-size:14px!important;padding:11px 12px!important;}
+  #zoneMapPreviewModal{z-index:7000!important;}
+  #zoneMapPreviewModal .zone-map-preview-body{align-items:flex-start!important;justify-content:flex-start!important;padding:64px 12px 18px!important;overflow:auto!important;}
+  #zoneMapPreviewModal .zone-map-preview-body img{width:1320px!important;max-width:none!important;height:auto!important;border-radius:18px!important;}
+  #zoneDetailModal{z-index:7100!important;}
+  @media(max-width:620px){
+    #serviceZoneModal .zone-panel{width:calc(100vw - 14px)!important;padding:9px!important;}
+    #serviceZoneModal .zone-hero{padding:14px!important;border-radius:22px!important;}
+    #serviceZoneModal .zone-hero-copy{width:calc(100% - 56px)!important;padding:12px!important;}
+    #serviceZoneModal .zone-hero-title{font-size:30px!important;}
+    #serviceZoneModal .zone-hero-lead{font-size:13px!important;}
+    #serviceZoneModal .zone-map-card img{min-width:1480px!important;}
+    #serviceZoneModal .zone-map-actions{grid-template-columns:1fr!important;gap:12px!important;}
+    #zoneMapPreviewModal .zone-map-preview-body img{width:1500px!important;}
+  }
 </style>
 </head>
 <body>
@@ -581,479 +627,125 @@
       </div>
     </div>
 
-<div id="serviceZoneModal" class="zone-modal" style="display:none">
-  <div class="zone-panel">
-    <div class="zone-hero zone-hero-modern">
-      <div class="zone-hero-copy">
-        <div class="zone-eyebrow">CWF SERVICE AREA</div>
-        <h2>ตั้งค่าพื้นที่รับงานของฉัน</h2>
-        <p class="zone-hero-lead">เลือกจังหวัดและเขต/อำเภอจากรายการ ระบบจะเลือกโซนหลักให้อัตโนมัติ แล้วค่อยตั้งโซนรองกับระยะทางรับงาน</p>
-        <div class="zone-hero-pills"><span>โซนหลักอัตโนมัติ</span><span>เลือกโซนรองได้</span><span>กำหนดระยะทาง</span></div>
+
+<div id="serviceZoneModal" class="cwfz-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="cwfzTitle">
+  <div class="cwfz-panel">
+    <div class="cwfz-head">
+      <div class="cwfz-head-text">
+        <div class="cwfz-kicker">CWF SERVICE AREA</div>
+        <h2 id="cwfzTitle">ตั้งค่าพื้นที่รับงานของฉัน</h2>
+        <p>เลือกจังหวัดและเขต/อำเภอจากรายการ ระบบจะกำหนดโซนหลักให้อัตโนมัติ แล้วเลือกโซนรองและระยะทางรับงานได้</p>
+        <div class="cwfz-badges"><span>โซนหลักอัตโนมัติ</span><span>โซนรอง</span><span>ระยะทาง</span></div>
       </div>
-      <button class="zone-close" type="button" onclick="closeServiceZoneModal()" aria-label="ปิด">×</button>
+      <button class="cwfz-close" type="button" onclick="closeServiceZoneModal()" aria-label="ปิด">×</button>
     </div>
 
-    <div class="zone-map-card">
-      <div class="zone-map-scroll" onclick="window.openZoneMapPreview && window.openZoneMapPreview()"><img src="/assets/cwf-service-zone-map.jpg" alt="แผนที่แบ่งโซนงานช่าง CWF กรุงเทพฯ สมุทรปราการ" loading="lazy"></div>
-      <div class="zone-map-note"><b>แผนที่โซนงาน</b><span>ภาพขยายใหญ่ขึ้น เลื่อนซ้าย-ขวาได้ และแตะที่ภาพเพื่อดูแบบเต็มจอ</span></div>
+    <div class="cwfz-map-card">
+      <div class="cwfz-map-title">
+        <div><b>แผนที่แบ่งโซนงานช่าง</b><span>ดูภาพรวมก่อนตั้งค่า กดดูเต็มจอเพื่ออ่านรายละเอียดในภาพ</span></div>
+      </div>
+      <div class="cwfz-map-frame">
+        <img src="/assets/cwf-service-zone-map.jpg" alt="แผนที่แบ่งโซนงานช่าง CWF กรุงเทพฯ สมุทรปราการ" loading="lazy">
+      </div>
+      <div class="cwfz-map-actions">
+        <button type="button" class="cwfz-action primary" onclick="openZoneMapPreview()">🔍 ดูภาพเต็มจอ</button>
+        <button type="button" class="cwfz-action" onclick="openZoneDetailModal()">📖 อ่านรายละเอียดพื้นที่รับงาน</button>
+      </div>
     </div>
 
-    <div class="zone-form-grid">
-      <label><span>1) จังหวัดพื้นที่ประจำ</span><select id="homeProvince" class="premium-input" onchange="window.populateHomeDistrictOptions && window.populateHomeDistrictOptions(); window.detectHomeServiceZone && window.detectHomeServiceZone();"><option value="กรุงเทพมหานคร">กรุงเทพมหานคร</option><option value="สมุทรปราการ">สมุทรปราการ</option><option value="นนทบุรี">นนทบุรี</option><option value="ปทุมธานี">ปทุมธานี</option></select></label>
-      <label><span>2) เขต / อำเภอที่อยู่ประจำ</span><select id="homeDistrict" class="premium-input" onfocus="window.populateHomeDistrictOptions && window.populateHomeDistrictOptions(this.value);" onclick="window.populateHomeDistrictOptions && window.populateHomeDistrictOptions(this.value);" onchange="window.detectHomeServiceZone && window.detectHomeServiceZone();"><option value="">เลือกเขต / อำเภอ</option><option value="พระโขนง">พระโขนง</option><option value="บางนา">บางนา</option><option value="สวนหลวง">สวนหลวง</option><option value="ประเวศ">ประเวศ</option><option value="บางกะปิ">บางกะปิ</option><option value="สะพานสูง">สะพานสูง</option><option value="ลาดกระบัง">ลาดกระบัง</option><option value="ดอนเมือง">ดอนเมือง</option><option value="สายไหม">สายไหม</option><option value="บางเขน">บางเขน</option><option value="หลักสี่">หลักสี่</option><option value="จตุจักร">จตุจักร</option><option value="บางซื่อ">บางซื่อ</option><option value="ลาดพร้าว">ลาดพร้าว</option><option value="วังทองหลาง">วังทองหลาง</option><option value="บึงกุ่ม">บึงกุ่ม</option><option value="คันนายาว">คันนายาว</option><option value="คลองสามวา">คลองสามวา</option><option value="มีนบุรี">มีนบุรี</option><option value="หนองจอก">หนองจอก</option><option value="ปทุมวัน">ปทุมวัน</option><option value="ราชเทวี">ราชเทวี</option><option value="พญาไท">พญาไท</option><option value="ดุสิต">ดุสิต</option><option value="พระนคร">พระนคร</option><option value="ป้อมปราบศัตรูพ่าย">ป้อมปราบศัตรูพ่าย</option><option value="สัมพันธวงศ์">สัมพันธวงศ์</option><option value="บางรัก">บางรัก</option><option value="สาทร">สาทร</option><option value="ยานนาวา">ยานนาวา</option><option value="ห้วยขวาง">ห้วยขวาง</option><option value="ดินแดง">ดินแดง</option><option value="วัฒนา">วัฒนา</option><option value="คลองเตย">คลองเตย</option><option value="บางคอแหลม">บางคอแหลม</option><option value="คลองสาน">คลองสาน</option><option value="ธนบุรี">ธนบุรี</option><option value="บางกอกใหญ่">บางกอกใหญ่</option><option value="บางกอกน้อย">บางกอกน้อย</option><option value="บางพลัด">บางพลัด</option><option value="ตลิ่งชัน">ตลิ่งชัน</option><option value="ภาษีเจริญ">ภาษีเจริญ</option><option value="บางแค">บางแค</option><option value="หนองแขม">หนองแขม</option><option value="ทวีวัฒนา">ทวีวัฒนา</option><option value="จอมทอง">จอมทอง</option><option value="ราษฎร์บูรณะ">ราษฎร์บูรณะ</option><option value="ทุ่งครุ">ทุ่งครุ</option><option value="บางขุนเทียน">บางขุนเทียน</option><option value="บางบอน">บางบอน</option></select></label>
+    <div class="cwfz-form">
+      <label><span>1) จังหวัดพื้นที่ประจำ</span><select id="homeProvince" class="premium-input"><option value="กรุงเทพมหานคร">กรุงเทพมหานคร</option><option value="สมุทรปราการ">สมุทรปราการ</option><option value="นนทบุรี">นนทบุรี</option><option value="ปทุมธานี">ปทุมธานี</option></select></label>
+      <label><span>2) เขต / อำเภอที่อยู่ประจำ</span><select id="homeDistrict" class="premium-input"><option value="">เลือกเขต / อำเภอ</option></select></label>
       <label><span>3) พื้นที่รับงานรอง</span><select id="secondaryServiceZone" class="premium-input"><option value="">ไม่เลือกโซนรอง</option><option value="A">Zone A - กรุงเทพตะวันออกแกนหลัก</option><option value="B">Zone B - กรุงเทพเหนือ-ตะวันออก</option><option value="C">Zone C - กรุงเทพชั้นใน</option><option value="D">Zone D - ธนบุรีตอนใน</option><option value="E">Zone E - ฝั่งตะวันตกตอนล่าง</option><option value="F">Zone F - สมุทรปราการฝั่งตะวันออก</option><option value="G">Zone G - นนทบุรี</option><option value="H">Zone H - ปทุมธานี</option></select></label>
-      <label><span>4) ระยะทางรับงานสูงสุด</span><select id="serviceRadiusKm" class="premium-input"><option value="10">ไม่เกิน 10 กม.</option><option value="15">ไม่เกิน 15 กม.</option><option value="20">ไม่เกิน 20 กม.</option><option value="25">ไม่เกิน 25 กม.</option><option value="30">ไม่เกิน 30 กม.</option><option value="40">ไม่เกิน 40 กม.</option><option value="50">ไม่เกิน 50 กม.</option><option value="">ไม่จำกัดระยะทาง</option></select></label>
-      <div id="homeZoneHint" class="zone-detect-box">เลือกจังหวัดและเขต/อำเภอ ระบบจะหาโซนหลักให้อัตโนมัติ</div>
+      <label><span>4) ระยะทางรับงานสูงสุด</span><select id="serviceRadiusKm" class="premium-input"><option value="10">ไม่เกิน 10 กม.</option><option value="15">ไม่เกิน 15 กม.</option><option value="20" selected>ไม่เกิน 20 กม.</option><option value="25">ไม่เกิน 25 กม.</option><option value="30">ไม่เกิน 30 กม.</option><option value="40">ไม่เกิน 40 กม.</option><option value="50">ไม่เกิน 50 กม.</option><option value="">ไม่จำกัดระยะทาง</option></select></label>
+      <div id="homeZoneHint" class="cwfz-hint">เลือกจังหวัดและเขต/อำเภอ ระบบจะหาโซนหลักให้อัตโนมัติ</div>
     </div>
 
-    <div class="zone-explain">
-      <div><b>โซนหลัก</b><span>ระบบให้สิทธิ์งานในพื้นที่นี้ก่อน</span></div>
-      <div><b>โซนรอง</b><span>ใช้เป็นพื้นที่สำรองเมื่อมีงานใกล้เคียง</span></div>
-      <div><b>ระยะทาง</b><span>ใช้เป็นเงื่อนไขตั้งค่ารับงานแบบด่วน</span></div>
+    <div class="cwfz-rule-grid">
+      <div><b>โซนหลัก</b><span>ใช้จัดงานก่อน ถ้างานอยู่โซนเดียวกับพื้นที่ประจำ</span></div>
+      <div><b>โซนรอง</b><span>ใช้เป็นพื้นที่สำรองเมื่องานใกล้เคียงหรืองานในโซนหลักมีน้อย</span></div>
+      <div><b>นอกโซน</b><span>ใช้เฉพาะเมื่อเปิดรับเอง ระบบจะจัดลำดับหลังโซนหลัก/รอง</span></div>
     </div>
 
-    <label class="zone-check"><input id="allowOutOfZone" type="checkbox"> <span><b>เปิดรับงานนอกโซนเมื่อจำเป็น</b><small>ระบบจะจัดอันดับหลังโซนหลักและโซนรอง เพื่อลดการวิ่งไกล</small></span></label>
-    <button id="btnSaveHomeZone" class="btn primary zone-save" type="button">บันทึกพื้นที่รับงาน</button>
+    <label class="cwfz-check"><input id="allowOutOfZone" type="checkbox"> <span><b>เปิดรับงานนอกโซนเมื่อจำเป็น</b><small>เหมาะกับวันที่ว่างหรืออยากรับงานเพิ่ม ระบบจะยังจัดอันดับหลังโซนหลักและโซนรอง</small></span></label>
+    <button id="btnSaveHomeZone" class="btn primary cwfz-save" type="button">บันทึกพื้นที่รับงาน</button>
   </div>
 </div>
 
-<div id="zoneMapPreviewModal" class="zone-map-preview-modal" style="display:none" onclick="if(event.target===this) window.closeZoneMapPreview && window.closeZoneMapPreview()">
-  <button class="zone-map-preview-close" type="button" onclick="closeZoneMapPreview()" aria-label="ปิดภาพเต็มจอ">×</button>
-  <div class="zone-map-preview-body"><img src="/assets/cwf-service-zone-map.jpg" alt="แผนที่แบ่งโซนงานช่าง CWF กรุงเทพฯ สมุทรปราการ แบบเต็มจอ"></div>
+<div id="zoneMapPreviewModal" class="cwfz-preview" style="display:none" onclick="if(event.target===this) closeZoneMapPreview()">
+  <button class="cwfz-preview-close" type="button" onclick="closeZoneMapPreview()" aria-label="ปิดภาพเต็มจอ">×</button>
+  <div class="cwfz-preview-body"><img src="/assets/cwf-service-zone-map.jpg" alt="แผนที่แบ่งโซนงานช่าง CWF แบบเต็มจอ"></div>
 </div>
 
-<div id="zoneQuickModal" class="zone-modal zone-quick-modal" style="display:none" role="dialog" aria-modal="true" aria-labelledby="zoneQuickTitle">
-  <div class="zone-quick-panel">
-    <div class="zone-quick-head">
-      <div class="quick-head-icon">📍</div>
-      <div class="quick-head-copy">
-        <div class="zone-eyebrow">QUICK AREA SETTING</div>
-        <h3 id="zoneQuickTitle">ตั้งค่าพื้นที่รับงานด่วน</h3>
-        <p>ตั้งโซนรองและระยะทางรับงาน โดยไม่ต้องออกจากหน้ารับงาน</p>
-      </div>
-      <button class="zone-close" type="button" onclick="closeZoneQuickModal()" aria-label="ปิด">×</button>
+<div id="zoneDetailModal" class="cwfz-detail" style="display:none" onclick="if(event.target===this) closeZoneDetailModal()">
+  <div class="cwfz-detail-panel" role="dialog" aria-modal="true" aria-labelledby="zoneDetailTitle">
+    <div class="cwfz-detail-head">
+      <div><b id="zoneDetailTitle">รายละเอียดพื้นที่รับงาน</b><span>อธิบายโซน วิธีตั้งค่า และตัวอย่างการใช้งานจริง</span></div>
+      <button type="button" onclick="closeZoneDetailModal()" aria-label="ปิด">×</button>
     </div>
-    <div class="quick-zone-status" id="quickZoneStatus">กำลังโหลดพื้นที่รับงาน...</div>
-    <div class="quick-form">
-      <label><span>โซนรอง</span><select id="quickSecondaryServiceZone" class="premium-input"><option value="">ไม่เลือกโซนรอง</option><option value="A">Zone A - กรุงเทพตะวันออก</option><option value="B">Zone B - กรุงเทพเหนือ/ตะวันออก</option><option value="C">Zone C - กรุงเทพชั้นใน</option><option value="D">Zone D - ธนบุรีตอนใน</option><option value="E">Zone E - ฝั่งตะวันตกตอนล่าง</option><option value="F">Zone F - สมุทรปราการตะวันออก</option><option value="G">Zone G - นนทบุรี</option><option value="H">Zone H - ปทุมธานี</option></select></label>
-      <label><span>ระยะทางรับงาน</span><select id="quickServiceRadiusKm" class="premium-input"><option value="10">ไม่เกิน 10 กม.</option><option value="15">ไม่เกิน 15 กม.</option><option value="20">ไม่เกิน 20 กม.</option><option value="25">ไม่เกิน 25 กม.</option><option value="30">ไม่เกิน 30 กม.</option><option value="40">ไม่เกิน 40 กม.</option><option value="50">ไม่เกิน 50 กม.</option><option value="">ไม่จำกัดระยะทาง</option></select></label>
-      <label class="quick-check"><input id="quickAllowOutOfZone" type="checkbox"><span><b>รับงานนอกโซน</b><small>เปิดเฉพาะวันที่พร้อมวิ่งไกลหรือรับงานพิเศษ</small></span></label>
-    </div>
-    <div class="quick-note">โซนหลักยังอ้างอิงจากเขต/อำเภอในเมนูตั้งค่าแบบละเอียด เพื่อป้องกันเลือกผิดพื้นที่</div>
-    <div class="quick-actions">
-      <button class="btn primary" id="btnSaveQuickZone" type="button" onclick="saveQuickServiceZone()">บันทึกด่วน</button>
-      <button class="btn" type="button" onclick="openServiceZoneModal()">ตั้งค่าแบบละเอียด</button>
+    <div class="cwfz-detail-body">
+      <section><h4>โซนงานหลัก</h4><p><b>Zone A</b> กรุงเทพฯ ตะวันออกแกนหลัก เช่น พระโขนง บางนา สวนหลวง ประเวศ บางกะปิ สะพานสูง ลาดกระบัง</p><p><b>Zone B</b> กรุงเทพฯ เหนือ-ตะวันออก เช่น ดอนเมือง สายไหม บางเขน หลักสี่ จตุจักร ลาดพร้าว วังทองหลาง บึงกุ่ม คันนายาว คลองสามวา มีนบุรี หนองจอก</p><p><b>Zone C</b> กรุงเทพฯ ชั้นใน เช่น ปทุมวัน ราชเทวี พญาไท ดุสิต พระนคร บางรัก สาทร ยานนาวา ห้วยขวาง ดินแดง วัฒนา คลองเตย</p><p><b>Zone D</b> ธนบุรีตอนใน เช่น คลองสาน ธนบุรี บางกอกใหญ่ บางกอกน้อย บางพลัด ตลิ่งชัน</p><p><b>Zone E</b> ฝั่งตะวันตกตอนล่าง / ข้ามฝั่งแม่น้ำ เช่น ภาษีเจริญ บางแค หนองแขม ทวีวัฒนา จอมทอง ราษฎร์บูรณะ ทุ่งครุ บางขุนเทียน บางบอน พระประแดง พระสมุทรเจดีย์</p><p><b>Zone F</b> สมุทรปราการฝั่งตะวันออก เช่น เมืองสมุทรปราการ บางพลี บางเสาธง บางบ่อ</p></section>
+      <section><h4>วิธีตั้งค่า</h4><ol><li>เลือกจังหวัดและเขต/อำเภอที่อยู่ประจำ ระบบจะเลือกโซนหลักให้เอง</li><li>เลือกโซนรองเป็นพื้นที่สำรองที่รับได้บ่อย แต่ไม่ใช่พื้นที่บังคับ</li><li>เลือกระยะทางรับงานสูงสุด เพื่อลดงานไกลเกินไป</li><li>เปิด “รับงานนอกโซน” เฉพาะวันที่อยากรับงานเพิ่ม</li></ol></section>
+      <section><h4>ตัวอย่าง</h4><p><b>ช่าง A</b> อยู่บางนา ระบบกำหนด Zone A เลือก Zone F เป็นโซนรอง รับงานสมุทรปราการได้เมื่อมีงานใกล้</p><p><b>ช่าง B</b> อยู่จตุจักร ระบบกำหนด Zone B เลือก Zone C เป็นโซนรอง รับงานใจกลางเมืองเพิ่มได้</p><p><b>ช่าง C</b> อยู่บางแค ระบบกำหนด Zone E ถ้าไม่อยากข้ามแม่น้ำไม่ต้องเปิดรับนอกโซน</p></section>
     </div>
   </div>
 </div>
-<style>
-  .zone-modal{position:fixed;inset:0;z-index:4060;align-items:center;justify-content:center;padding:12px;background:rgba(2,6,23,.66);backdrop-filter:blur(10px)}
-  .zone-panel{width:min(760px,100%);max-height:calc(100vh - 24px);overflow:auto;background:linear-gradient(180deg,#fff,#f8fbff);border-radius:26px;border:1px solid rgba(255,255,255,.72);box-shadow:0 28px 80px rgba(2,6,23,.38);padding:12px;color:#0f172a}
-  .zone-hero{position:relative;overflow:hidden;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;background:radial-gradient(circle at 88% 18%,rgba(244,196,0,.34),transparent 29%),linear-gradient(135deg,#061b45 0%,#0B4BB3 62%,#0e7490 100%);border-radius:24px;padding:18px 16px;color:#fff;box-shadow:0 16px 36px rgba(11,46,109,.24),inset 0 0 0 1px rgba(255,255,255,.22)}
-  .zone-hero:before{content:"";position:absolute;inset:0;background:linear-gradient(90deg,rgba(2,6,23,.28),rgba(2,6,23,.02));pointer-events:none}.zone-hero:after{content:"";position:absolute;right:-34px;bottom:-42px;width:170px;height:170px;border-radius:999px;background:rgba(244,196,0,.38);filter:blur(14px);pointer-events:none}.zone-hero-copy{position:relative;z-index:1;max-width:580px}.zone-eyebrow{font-size:10px;font-weight:1000;letter-spacing:.16em;color:#FDE68A;text-transform:uppercase}.zone-hero h2{margin:6px 0 8px;font-size:28px;line-height:1.05;color:#fff;text-shadow:0 2px 12px rgba(2,6,23,.45);letter-spacing:-.02em}.zone-hero-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.24);padding:7px 10px;margin-bottom:9px;color:#fff;font-size:12px;font-weight:1000;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)}.zone-hero p{margin:0;max-width:520px;color:#f8fbff;font-weight:900;line-height:1.45;font-size:14px;text-shadow:0 1px 8px rgba(2,6,23,.36)}.zone-close{position:relative;z-index:2;width:44px;height:44px;border-radius:16px;border:1px solid rgba(255,255,255,.42);background:rgba(255,255,255,.18);color:#fff;font-size:30px;line-height:1;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(255,255,255,.10)}
-  .zone-map-card{margin-top:12px;border-radius:20px;overflow:hidden;background:#fff;border:1px solid rgba(11,75,179,.14);box-shadow:0 12px 32px rgba(11,46,109,.10)}.zone-map-card img{display:block;width:100%;height:min(48vh,460px);object-fit:contain;background:#fff}.zone-map-note{display:flex;gap:6px;flex-direction:column;padding:10px 12px;background:linear-gradient(90deg,#fffbea,#f8fbff);font-size:12px;font-weight:1000;color:#0B2E6D;line-height:1.4}.zone-map-note span{color:#334155;font-size:11px}.zone-form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}.zone-form-grid label span,.quick-form label span{display:block;font-size:12px;font-weight:1000;color:#0B2E6D;margin:0 0 6px}.premium-input{width:100%;min-height:48px;border-radius:16px;border:1px solid rgba(11,46,109,.16);background:#fff;padding:10px 12px;font-weight:1000;color:#0f172a;font-size:15px;box-shadow:0 8px 18px rgba(11,46,109,.06)}.zone-detect-box{grid-column:1/-1;border-radius:16px;padding:12px;border:1px solid rgba(11,75,179,.18);background:#fff;color:#0B4BB3;font-weight:1000;line-height:1.45}.zone-explain{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:10px}.zone-explain div{border:1px solid rgba(11,46,109,.12);background:#fff;border-radius:15px;padding:10px}.zone-explain b{display:block;color:#0B2E6D}.zone-explain span{display:block;margin-top:4px;font-size:12px;color:#64748b;font-weight:800;line-height:1.4}.zone-check{display:flex;gap:10px;align-items:flex-start;margin-top:12px;border-radius:18px;padding:12px;background:linear-gradient(135deg,#fffbea,#fff);border:1px solid rgba(244,196,0,.32);font-weight:900}.zone-check input,.quick-check input{margin-top:4px;width:18px;height:18px}.zone-check small{display:block;color:#64748b;margin-top:3px;line-height:1.35}.zone-save{width:100%;min-height:48px;margin-top:10px;border-radius:16px;font-weight:1000}
-  .zone-quick-modal{z-index:4070;align-items:flex-end}.zone-quick-panel{width:min(560px,100%);background:linear-gradient(180deg,#fff,#f8fbff);border-radius:28px 28px 18px 18px;padding:14px;border:1px solid rgba(255,255,255,.75);box-shadow:0 -18px 60px rgba(2,6,23,.34);color:#0f172a}.zone-quick-head{display:grid;grid-template-columns:auto 1fr auto;gap:11px;align-items:start;background:radial-gradient(circle at 95% 10%,rgba(244,196,0,.35),transparent 35%),linear-gradient(135deg,#061b45,#0B4BB3);color:#fff;border-radius:22px;padding:14px}.quick-head-icon{width:42px;height:42px;border-radius:15px;display:grid;place-items:center;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.28);font-size:21px}.zone-quick-head h3{margin:4px 0 4px;font-size:22px;line-height:1.1;color:#fff}.zone-quick-head p{margin:0;color:rgba(255,255,255,.92);font-size:12px;font-weight:900;line-height:1.35}.quick-zone-status{margin-top:10px;border-radius:17px;background:#fff;border:1px solid rgba(11,46,109,.12);padding:11px 12px;color:#0B2E6D;font-weight:1000;line-height:1.4;box-shadow:0 8px 18px rgba(11,46,109,.06)}.quick-form{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.quick-check{grid-column:1/-1;display:flex;align-items:flex-start;gap:9px;border-radius:17px;padding:11px 12px;background:linear-gradient(135deg,#fffbea,#fff);border:1px solid rgba(244,196,0,.32);font-weight:1000;color:#0B2E6D}.quick-check b{display:block}.quick-check small{display:block;margin-top:2px;color:#64748b;font-size:11px;line-height:1.35}.quick-note{margin-top:10px;border-radius:15px;padding:10px 12px;background:#eef6ff;border:1px solid rgba(11,75,179,.12);color:#0B2E6D;font-size:12px;font-weight:900;line-height:1.4}.quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.quick-actions .btn{min-height:46px;border-radius:16px;font-weight:1000}
-  @media(max-width:620px){.zone-panel{border-radius:24px;padding:10px}.zone-hero{padding:16px 14px}.zone-hero h2{font-size:24px}.zone-hero-pill{font-size:11px;padding:6px 9px}.zone-form-grid,.zone-explain,.quick-form,.quick-actions{grid-template-columns:1fr}.zone-map-card img{height:min(52vh,520px)}.zone-quick-head{grid-template-columns:auto 1fr auto}.quick-head-icon{width:38px;height:38px}}
+
+<div id="zoneQuickModal" class="cwfz-modal cwfz-quick" style="display:none" role="dialog" aria-modal="true" aria-labelledby="zoneQuickTitle">
+  <div class="cwfz-quick-panel">
+    <div class="cwfz-quick-head">
+      <div><b id="zoneQuickTitle">ตั้งค่าพื้นที่รับงานด่วน</b><span>ปรับโซนรอง ระยะทาง และรับงานนอกโซน โดยไม่ต้องเข้าเมนูละเอียด</span></div>
+      <button type="button" onclick="closeZoneQuickModal()" aria-label="ปิด">×</button>
+    </div>
+    <div id="quickZoneStatus" class="cwfz-hint">โซนหลักอ้างอิงจากพื้นที่ประจำ</div>
+    <div class="cwfz-form quick">
+      <label><span>โซนรอง</span><select id="quickSecondaryServiceZone" class="premium-input"><option value="">ไม่เลือกโซนรอง</option><option value="A">Zone A</option><option value="B">Zone B</option><option value="C">Zone C</option><option value="D">Zone D</option><option value="E">Zone E</option><option value="F">Zone F</option><option value="G">Zone G</option><option value="H">Zone H</option></select></label>
+      <label><span>ระยะทางรับงาน</span><select id="quickServiceRadiusKm" class="premium-input"><option value="10">10 กม.</option><option value="15">15 กม.</option><option value="20">20 กม.</option><option value="25">25 กม.</option><option value="30">30 กม.</option><option value="40">40 กม.</option><option value="50">50 กม.</option><option value="">ไม่จำกัด</option></select></label>
+    </div>
+    <label class="cwfz-check"><input id="quickAllowOutOfZone" type="checkbox"> <span><b>เปิดรับงานนอกโซน</b><small>ใช้เฉพาะวันที่พร้อมวิ่งไกลหรืออยากรับงานเพิ่ม</small></span></label>
+    <div class="cwfz-quick-actions"><button class="btn primary" id="btnSaveQuickZone" type="button" onclick="saveQuickServiceZone()">บันทึกด่วน</button><button class="btn" type="button" onclick="closeZoneQuickModal();openServiceZoneModal();">ตั้งค่าแบบละเอียด</button></div>
+  </div>
+</div>
+
+<style id="cwf-zone-professional-rebuild-v12">
+  .cwfz-modal{position:fixed;inset:0;z-index:6100;align-items:flex-start;justify-content:center;padding:14px 10px;background:rgba(2,6,23,.72);backdrop-filter:blur(10px);overflow:auto;-webkit-overflow-scrolling:touch;box-sizing:border-box}.cwfz-panel{width:min(720px,100%);background:linear-gradient(180deg,#fff,#f6f9ff);border-radius:28px;border:1px solid rgba(255,255,255,.8);box-shadow:0 28px 80px rgba(2,6,23,.38);padding:12px;color:#0f172a;box-sizing:border-box}.cwfz-head{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:start;border-radius:24px;padding:18px;background:radial-gradient(circle at 90% 0%,rgba(244,196,0,.35),transparent 32%),linear-gradient(135deg,#071A43 0%,#0B2E6D 58%,#0B4BB3 100%);box-shadow:0 16px 36px rgba(11,46,109,.25);color:#fff}.cwfz-kicker{font-size:11px;letter-spacing:.18em;color:#FDE68A;font-weight:1000}.cwfz-head h2{margin:8px 0 8px;color:#fff;font-size:clamp(32px,8.5vw,48px);line-height:1.02;font-weight:1000;letter-spacing:-.04em;text-shadow:0 4px 14px rgba(0,0,0,.55)}.cwfz-head p{margin:0;color:#EFF6FF;font-size:15px;line-height:1.5;font-weight:900;max-width:560px}.cwfz-badges{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}.cwfz-badges span{background:#fff;color:#0B2E6D;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:1000}.cwfz-close,.cwfz-detail-head button,.cwfz-quick-head button{width:48px;height:48px;border:0;border-radius:18px;background:rgba(255,255,255,.18);color:#fff;font-size:34px;line-height:1;font-weight:900;box-shadow:inset 0 0 0 1px rgba(255,255,255,.35);cursor:pointer}.cwfz-map-card{margin-top:14px;background:#fff;border:1px solid rgba(11,75,179,.16);border-radius:24px;overflow:hidden;box-shadow:0 16px 36px rgba(11,46,109,.10)}.cwfz-map-title{padding:14px 14px 10px;color:#0B2E6D}.cwfz-map-title b{display:block;font-size:18px;font-weight:1000}.cwfz-map-title span{display:block;margin-top:3px;color:#64748b;font-size:13px;font-weight:800}.cwfz-map-frame{background:#fff;overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;border-top:1px solid #eef2f7;border-bottom:1px solid #eef2f7}.cwfz-map-frame img{display:block;width:100%;min-width:680px;height:auto;background:#fff;pointer-events:none;user-select:none}.cwfz-map-actions{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px;background:linear-gradient(90deg,#fffbea,#f8fbff)}.cwfz-action{min-height:50px;border:1px solid rgba(11,46,109,.15);border-radius:17px;background:#fff;color:#0B2E6D;font-size:14px;font-weight:1000;box-shadow:0 8px 18px rgba(11,46,109,.08);cursor:pointer}.cwfz-action.primary{background:linear-gradient(135deg,#0B4BB3,#1558D6);color:#fff;border:0}.cwfz-form{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:14px}.cwfz-form.quick{margin-top:12px}.cwfz-form label span{display:block;margin:0 0 7px;color:#0B2E6D;font-size:13px;font-weight:1000}.premium-input{width:100%;min-height:50px;border-radius:17px;border:1px solid rgba(11,46,109,.16);background:#fff;padding:10px 12px;font-size:15px;font-weight:1000;color:#0f172a;box-shadow:0 8px 18px rgba(11,46,109,.06);box-sizing:border-box}.cwfz-hint{grid-column:1/-1;border-radius:18px;padding:13px;background:#eef6ff;border:1px solid rgba(11,75,179,.14);color:#0B2E6D;font-size:13px;font-weight:1000;line-height:1.45}.cwfz-rule-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:12px}.cwfz-rule-grid div{background:#fff;border:1px solid rgba(11,46,109,.10);border-radius:18px;padding:12px}.cwfz-rule-grid b{display:block;color:#0B2E6D;font-weight:1000}.cwfz-rule-grid span{display:block;margin-top:4px;color:#64748b;font-size:12px;font-weight:800;line-height:1.4}.cwfz-check{display:flex;gap:10px;align-items:flex-start;margin-top:12px;padding:13px;border-radius:18px;background:linear-gradient(135deg,#fffbea,#fff);border:1px solid rgba(244,196,0,.35);font-weight:1000;color:#0B2E6D}.cwfz-check input{width:19px;height:19px;margin-top:4px}.cwfz-check small{display:block;margin-top:3px;color:#64748b;font-size:12px;line-height:1.35}.cwfz-save{width:100%;min-height:50px;margin-top:12px;border-radius:18px;font-weight:1000}.cwfz-preview,.cwfz-detail{position:fixed;inset:0;z-index:7200;align-items:center;justify-content:center;background:rgba(2,6,23,.88);backdrop-filter:blur(8px);padding:12px;box-sizing:border-box}.cwfz-preview{align-items:stretch;justify-content:flex-start}.cwfz-preview-close{position:fixed;top:12px;right:12px;z-index:7210;width:52px;height:52px;border-radius:18px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.18);color:#fff;font-size:36px;line-height:1}.cwfz-preview-body{width:100%;height:100%;overflow:auto;-webkit-overflow-scrolling:touch;padding:72px 8px 16px;box-sizing:border-box}.cwfz-preview-body img{display:block;width:1100px;max-width:none;height:auto;border-radius:18px;background:#fff;box-shadow:0 24px 70px rgba(0,0,0,.45)}.cwfz-detail-panel{width:min(720px,100%);max-height:calc(100vh - 24px);overflow:auto;background:#fff;border-radius:26px;padding:12px;box-shadow:0 28px 80px rgba(2,6,23,.45)}.cwfz-detail-head{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:start;padding:16px;border-radius:22px;background:linear-gradient(135deg,#071A43,#0B4BB3);color:#fff}.cwfz-detail-head b{display:block;font-size:24px;font-weight:1000}.cwfz-detail-head span{display:block;margin-top:4px;color:#EAF2FF;font-weight:850;line-height:1.4}.cwfz-detail-body{padding:4px}.cwfz-detail-body section{margin-top:12px;border:1px solid rgba(11,46,109,.10);border-radius:18px;padding:13px;background:#f8fbff}.cwfz-detail-body h4{margin:0 0 8px;color:#0B2E6D;font-size:17px}.cwfz-detail-body p,.cwfz-detail-body li{color:#334155;font-size:14px;font-weight:800;line-height:1.55}.cwfz-quick{z-index:6300;align-items:flex-end}.cwfz-quick-panel{width:min(560px,100%);background:linear-gradient(180deg,#fff,#f8fbff);border-radius:28px 28px 18px 18px;padding:14px;color:#0f172a;box-shadow:0 -18px 60px rgba(2,6,23,.34)}.cwfz-quick-head{display:grid;grid-template-columns:1fr auto;gap:10px;padding:15px;border-radius:22px;background:linear-gradient(135deg,#071A43,#0B4BB3);color:#fff}.cwfz-quick-head b{display:block;font-size:22px}.cwfz-quick-head span{display:block;margin-top:3px;font-size:12px;font-weight:850;color:#EAF2FF;line-height:1.35}.cwfz-quick-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}.cwfz-quick-actions .btn{min-height:48px;border-radius:16px;font-weight:1000}@media(max-width:620px){.cwfz-modal{padding:10px 7px}.cwfz-panel{border-radius:24px;padding:10px}.cwfz-head{padding:16px;border-radius:22px}.cwfz-close{width:46px;height:46px}.cwfz-map-frame img{min-width:760px}.cwfz-map-actions,.cwfz-form,.cwfz-form.quick,.cwfz-rule-grid,.cwfz-quick-actions{grid-template-columns:1fr}.cwfz-preview-body img{width:1150px}.cwfz-detail-head b{font-size:21px}}
 </style>
-<div id="techMatrixModal" style="display:none;position:fixed;inset:0;z-index:4000;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,0.55)">
-      <div style="width:min(720px, 100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:18px;border:1px solid rgba(15,23,42,0.12);box-shadow:0 28px 80px rgba(2,6,23,0.35);padding:12px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-          <b style="font-size:14px">งานที่รับได้ (สำหรับสลอตหน้าลูกค้า)</b>
-          <button class="tech-icbtn" type="button" id="techMatrixCloseBtn" aria-label="ปิด" style="background:rgba(37,99,235,0.10);border-color:rgba(37,99,235,0.25);color:#2563eb">✕</button>
-        </div>
-        <div class="muted" style="margin-top:8px">ติ๊กเฉพาะที่รับได้จริง • ถ้าไม่ติ๊กเลย = ไม่แสดงสลอตลูกค้า</div>
 
-        <div style="margin-top:10px;border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:12px;background:#f8fafc">
-          <div class="muted" style="margin-bottom:8px">ประเภทงาน</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_job_wash" type="checkbox" style="width:18px;height:18px"> ล้าง</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_job_repair" type="checkbox" style="width:18px;height:18px"> ซ่อม</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_job_install" type="checkbox" style="width:18px;height:18px"> ติดตั้ง</label>
-          </div>
-
-          <div class="muted" style="margin:12px 0 8px 0">ประเภทแอร์</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_wall" type="checkbox" style="width:18px;height:18px"> ผนัง</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_fourway" type="checkbox" style="width:18px;height:18px"> สี่ทิศทาง</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_hanging" type="checkbox" style="width:18px;height:18px"> แขวน</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_ceiling" type="checkbox" style="width:18px;height:18px"> ใต้ฝ้า/เปลือย</label>
-          </div>
-
-          <div class="muted" style="margin:12px 0 8px 0">วิธีล้างแอร์ผนัง</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_normal" type="checkbox" style="width:18px;height:18px"> ธรรมดา</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_premium" type="checkbox" style="width:18px;height:18px"> พรีเมียม</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_coil" type="checkbox" style="width:18px;height:18px"> แขวนคอยล์</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_overhaul" type="checkbox" style="width:18px;height:18px"> ตัดล้าง</label>
-          </div>
-        </div>
-
-        <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn" type="button" id="techMatrixSaveBtn" style="background:linear-gradient(135deg, #2563eb, #06b6d4);color:#fff;border:none;border-radius:16px;min-height:46px;font-weight:1000;padding:10px 14px">บันทึก</button>
-          <button class="btn" type="button" id="techMatrixClearBtn" style="background:rgba(15,23,42,0.06);color:#0f172a;border:1px solid rgba(15,23,42,0.12);border-radius:16px;min-height:46px;font-weight:1000;padding:10px 14px">ล้างทั้งหมด</button>
-          <span class="muted" id="techMatrixStatus" style="align-self:center">—</span>
-        </div>
-      </div>
-    </div>
-
-
-
-    <!-- ===============================
-         🎛️ แถบควบคุมช่าง CWF — แถวเดียว สวย อ่านง่าย
-         - รับงาน/หยุดรับงาน + พื้นที่รับงาน อยู่บรรทัดเดียวกัน
-         - รองรับโค้ดเดิมด้วย id เดิม: acceptToggleBtn / zoneSelect / acceptStatusText
-    =============================== -->
-    <div class="tech-control-card" id="techControlCard">
-      <style>
-        .tech-control-card{
-          margin:10px 0 12px;
-          padding:8px;
-          border-radius:22px;
-          border:1px solid rgba(215,224,238,.95);
-          background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(244,248,255,.94));
-          box-shadow:0 16px 38px rgba(11,46,109,.14);
-        }
-        .tech-ctrl-row{
-          display:grid;
-          grid-template-columns:minmax(118px,0.82fr) minmax(0,1.18fr);
-          gap:8px;
-          align-items:stretch;
-        }
-        .accept-btn{
-          width:100%;
-          min-height:48px;
-          border-radius:18px;
-          border:1px solid rgba(15,23,42,.10);
-          font-weight:1100;
-          font-size:14px;
-          display:flex;
-          align-items:center;
-          justify-content:center;
-          gap:9px;
-          padding:8px 10px;
-          cursor:pointer;
-          user-select:none;
-          white-space:nowrap;
-          letter-spacing:.1px;
-          transition:transform .12s ease, box-shadow .12s ease, background .12s ease;
-        }
-        .accept-btn:active{transform:translateY(1px) scale(.99)}
-        .accept-btn.ready{
-          background:linear-gradient(135deg,#ecfdf5,#ffffff);
-          color:#14532d;
-          border-color:rgba(34,197,94,.38);
-          box-shadow:0 10px 22px rgba(34,197,94,.13), inset 0 0 0 1px rgba(255,255,255,.7);
-        }
-        .accept-btn.paused{
-          background:linear-gradient(135deg,#fff1f2,#ffffff);
-          color:#991b1b;
-          border-color:rgba(239,68,68,.34);
-          box-shadow:0 10px 22px rgba(239,68,68,.12), inset 0 0 0 1px rgba(255,255,255,.7);
-        }
-        .accept-btn:disabled{
-          opacity:.76;
-          cursor:not-allowed;
-        }
-        .zone-wrap{
-          position:relative;
-          display:flex;
-          align-items:center;
-          min-width:0;
-        }
-        .zone-wrap::before{
-          content:"📍";
-          position:absolute;
-          left:14px;
-          top:50%;
-          transform:translateY(-50%);
-          z-index:1;
-          font-size:15px;
-          pointer-events:none;
-        }
-        .zone-wrap::after{
-          content:"พื้นที่รับงาน";
-          position:absolute;
-          left:38px;
-          top:7px;
-          z-index:1;
-          font-size:9px;
-          line-height:1;
-          color:rgba(15,23,42,.48);
-          font-weight:1000;
-          pointer-events:none;
-        }
-        .zone-select{
-          width:100%;
-          min-height:48px;
-          border-radius:18px;
-          border:1px solid rgba(11,46,109,.18);
-          padding:20px 30px 7px 38px;
-          font-weight:1000;
-          font-size:14px;
-          color:#0B2E6D;
-          background:linear-gradient(135deg,#ffffff,#f8fbff);
-          box-shadow:0 10px 22px rgba(11,46,109,.08), inset 0 0 0 1px rgba(255,255,255,.7);
-          appearance:auto;
-          min-width:0;
-        }
-        .zone-action-btn{appearance:none;text-align:left;display:flex;flex-direction:column;justify-content:center;gap:3px;cursor:pointer;}
-        .zone-action-btn span{font-size:13px;line-height:1;color:#0B2E6D;}
-        .zone-action-btn small{font-size:10px;color:#64748b;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-        .accept-hint{
-          margin:10px 2px 0;
-          padding:10px 12px;
-          border-radius:16px;
-          border:1px solid rgba(11,46,109,.10);
-          background:linear-gradient(135deg,rgba(11,46,109,.08),rgba(37,99,235,.05));
-          font-size:12px;
-          color:#0B2E6D;
-          font-weight:1000;
-          display:flex;
-          align-items:flex-start;
-          gap:8px;
-          min-height:18px;
-          line-height:1.45;
-        }
-        .accept-hint::before{
-          content:"●";
-          color:#ef4444;
-          font-size:14px;
-          line-height:1.2;
-          margin-top:1px;
-        }
-        @media (max-width:380px){
-          .tech-control-card{padding:8px;border-radius:22px}
-          .tech-ctrl-row{grid-template-columns:minmax(112px,.86fr) minmax(0,1.14fr);gap:8px}
-          .accept-btn,.zone-select{min-height:54px;font-size:14px;border-radius:19px}
-          .zone-select{padding-left:39px;padding-right:28px}
-          .zone-wrap::before{left:12px}
-          .zone-wrap::after{left:40px}
-        }
-      </style>
-
-      <div class="tech-ctrl-row">
-        <button id="acceptToggleBtn" class="accept-btn ready" type="button">🟢 รับงาน</button>
-
-        <div class="zone-wrap">
-          <button id="zoneQuickBtn" class="zone-select zone-action-btn" type="button" onclick="return window.__cwfOpenZoneQuickModalFallback ? window.__cwfOpenZoneQuickModalFallback(event) : (window.openZoneQuickModal ? (window.openZoneQuickModal(), false) : false)"><span>ตั้งค่าด่วน</span><small id="zoneQuickSummary">โซน / ระยะทาง</small></button>
-          <select id="zoneSelect" class="zone-select" style="display:none"><option value="">ทุกโซน</option></select>
-        </div>
-      </div>
-
-      <div id="acceptStatusText" class="accept-hint">กำลังโหลดสถานะ...</div>
-
-      <!-- รองรับหน้าเก่า/โค้ดเดิม ซ่อนไว้ไม่ให้รก -->
-      <select id="acceptStatusSelect" style="display:none;">
-        <option value="ready">ready</option>
-        <option value="paused">paused</option>
-      </select>
-      <div id="att-status" style="display:none;"></div>
-    </div>
-
-<div class="tabs tech-top-tabs">
-      <button class="tab-btn active" id="tab-new" onclick="switchTab('new')">รับงานใหม่</button>
-      <button class="tab-btn" id="tab-active" onclick="switchTab('active')">งานปัจจุบัน</button>
-      <button class="tab-btn" id="tab-history" onclick="switchTab('history')">ประวัติงาน</button>
-      <button class="tab-btn" id="tab-income" onclick="switchTab('income')">รายได้</button>
-    </div>
-
-    <div class="card section active" id="sec-new">
-      <h2>โปรไฟล์ช่าง</h2>
-
-      <!-- ✅ โปรไฟล์ช่าง (แสดงเฉพาะ: รูป / รหัส / รายได้วันนี้ / งานสะสม / คะแนน) -->
-      <div class="profile-compact">
-        <div class="left">
-          <img id="profile-photo" class="tech-avatar" src="/logo.png" alt="photo">
-          <div class="meta">
-            <div class="name" id="profile-name">-</div>
-            <div class="code" id="profile-code">รหัสช่าง: -</div>
-            <!-- ซ่อนข้อมูลเยอะ ๆ ตามสเปค แต่ยังคง id ไว้ให้ app.js เติมค่า -->
-            <div style="display:none">
-              <div id="profile-rank" style="display:flex;align-items:center;gap:8px;">
-                <img id="profile-rank-badge" src="/assets/ranks/rank_lv1_128.png" alt="rank" style="width:44px;height:auto;display:block;">
-                <div class="muted" id="profile-rank-label">Rank: -</div>
-              </div>
-              <div class="stat-line" id="profile-grade">เกรด: -</div>
-              <div class="muted" id="profile-hint"></div>
-            </div>
-          </div>
-        </div>
-
-        <div class="chips">
-          <div class="chipStat clickable" role="button" tabindex="0" onclick="switchTab('income')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('income')}">
-            <div class="k">💰 รายได้วันนี้</div>
-            <div class="v" id="incomeDaily">-</div>
-          </div>
-          <div class="chipStat">
-            <div class="k">✅ งานสะสม</div>
-            <div class="v" id="doneCount">-</div>
-          </div>
-          <div class="chipStat">
-            <div class="k">⭐ คะแนน</div>
-            <div class="v" id="rating">-</div>
-          </div>
-        </div>
-      </div>
-
-      <details class="tech-more">
-        <summary>
-          <span>ดูข้อมูลเพิ่มเติม</span>
-          <span>▾</span>
-        </summary>
-        <div class="moreBox">
-          <div class="row"><span class="k">ชื่อช่าง</span><span class="v" id="profile-name-more">-</span></div>
-          <div class="row"><span class="k">Rank</span><span class="v" id="profile-rank-more">-</span></div>
-          <div class="row"><span class="k">เกรด</span><span class="v" id="profile-grade-more">-</span></div>
-        </div>
-      </details>
-
-      <div class="pushNotifyBox" id="pushNotifyBox" aria-hidden="true">
-        <span id="pushNotifyHint">เปิดไว้เพื่อรับงานใหม่แม้ปิดหน้า PWA</span>
-      </div>
-
-<hr>
-
-      <!-- ✅ กันหัวข้อซ้อน ให้เหลืออันเดียว -->
-      <h2 style="margin-top:6px;">งานที่เสนอให้คุณ</h2>
-      <div class="muted" style="font-weight:900;line-height:1.55;margin:8px 0 12px;">หากมีงานใหม่ ระบบจะแสดงที่นี่ ให้กดรับงานจากหน้านี้เท่านั้น</div>
-      <div id="offer-list"></div>
-    </div>
-
-    <div class="card section" id="sec-active">
-      <h2>งานของฉัน</h2>
-
-      <!-- ✅ Sub-tab: วันนี้ / งานล่วงหน้า (ไม่กระทบของเดิม: ยังใช้ #active-list เป็น Today) -->
-      <div class="tabs" style="margin-top:10px;gap:10px;">
-        <button class="tab-btn active" id="tab-active-today" type="button" onclick="switchActiveSubTab('today')">งานวันนี้</button>
-        <button class="tab-btn" id="tab-active-upcoming" type="button" onclick="switchActiveSubTab('upcoming')">ตารางล่วงหน้า</button>
-      </div>
-
-      <div class="section active" id="sec-active-today" style="margin-top:10px;">
-        <!-- ✅ ต้องตรงกับ app.js (Today) -->
-        <div id="active-list"></div>
-      </div>
-
-      <div class="section" id="sec-active-upcoming" style="margin-top:10px;">
-        <div class="upcoming-filter-box">
-          <div class="premium-section-title">
-            <div>
-              <div class="tech-label">🗓️ ตารางล่วงหน้า</div>
-              <div class="hint">งานที่เพิ่มไว้ล่วงหน้า • เมื่อถึงวันนัด งานจะย้ายไปอยู่ใน “งานวันนี้” อัตโนมัติ</div>
-            </div>
-          </div>
-          <div class="premium-filter-row" style="margin-top:10px;align-items:center;">
-            <input id="activeUpcomingDatePicker" class="premium-input" type="date" />
-            <button class="btn blue" type="button" id="btnUpcomingApply">ดูวันที่เลือก</button>
-            <button class="btn" type="button" id="btnUpcomingClear">ดูทั้งหมด</button>
-          </div>
-          <div id="activeUpcomingHint" class="hint">เลือกดูเฉพาะแต่ละวันได้ เพื่อลดความสับสน</div>
-          <div id="activeUpcomingDateQuick" class="premium-filter-row" style="margin-top:10px;"></div>
-        </div>
-        <div class="upcoming-list-wrap">
-          <div id="active-upcoming-list"></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="card section" id="sec-history">
-      <h2>ประวัติงาน</h2>
-
-      <!-- ✅ ฟิลเตอร์เร็ว: วัน / เดือน / ทั้งหมด -->
-      <div class="tabs" style="margin-top:10px;gap:10px;">
-        <button class="tab-btn" id="tab-his-day" type="button" onclick="setHistoryFilter('day')">วัน</button>
-        <button class="tab-btn active" id="tab-his-month" type="button" onclick="setHistoryFilter('month')">เดือน</button>
-        <button class="tab-btn" id="tab-his-all" type="button" onclick="setHistoryFilter('all')">ทั้งหมด</button>
-      </div>
-      <div class="muted" id="history-filter-hint" style="margin-top:8px;">แสดงงานที่ปิดแล้วแบบย่อ</div>
-
-      <!-- ✅ ต้องตรงกับ app.js -->
-      <div id="history-list" style="margin-top:10px;"></div>
-    </div>
-
-    <div class="card section" id="sec-income">
-      <h2>รายได้ของฉัน</h2>
-      <div class="muted" style="margin-top:6px">สรุปยอดให้อ่านง่ายก่อน แล้วค่อยกดดูรายละเอียดรายวัน/งวด</div>
-
-      <div class="grid" style="margin-top:12px">
-        <div class="card" style="margin-top:0">
-          <b style="color:#0b1b3a">ภาพรวม</b>
-          <div class="muted" style="margin-top:6px">ยอดหลักที่ช่างถามบ่อย: วันนี้ / งวดถัดไป / รวมรายได้รอบเดือน</div>
-
-          <div class="income-stack">
-            <div class="income-summary-card primary">
-              <div class="title">วันนี้ได้</div>
-              <div class="desc">รวมจากงานที่ปิดวันนี้</div>
-              <div class="value" id="incomeTodayVal">-</div>
-            </div>
-
-            <div class="income-summary-card">
-              <div class="title">คาดว่าจะได้งวดถัดไป</div>
-              <div class="desc" id="incomePeriodRange">-</div>
-              <div class="value" id="incomePeriodEstVal">-</div>
-            </div>
-
-            <div class="income-summary-card highlight">
-              <div class="title">รวมรายได้รอบเดือน</div>
-              <div class="desc">รวมงวด 10 + 25 ของรอบเดือนที่กำลังแสดง</div>
-              <div class="value" id="incomeOutstandingVal">-</div>
-            </div>
-          </div>
-
-          <div class="work-summary-card" id="incomeWorkSummaryWrap" style="display:none">
-            <div class="work-summary-head">
-              <div>
-                <b>สรุปงานที่ทำ</b>
-                <div class="hint" id="incomeWorkSummaryPeriod">รอบเดียวกับรวมรายได้รอบเดือน</div>
-              </div>
-            </div>
-            <div class="work-grid" id="incomeWorkSummaryGrid"></div>
-            <details class="work-more" id="incomeWorkSummaryDetails"></details>
-          </div>
-
-          <div class="deposit-mini-card" id="incomeDepositRemainWrap">
-            <div class="deposit-head">
-              <div>
-                <b>เงินประกันงานคงเหลือ</b>
-                <div class="muted" style="font-size:12px;margin-top:3px">ระบบจะหักอัตโนมัติจนกว่าจะครบเป้าหมาย</div>
-              </div>
-              <span style="font-size:22px">🛡️</span>
-            </div>
-            <div class="remain" id="incomeDepositRemainVal">-</div>
-            <div class="muted" id="incomeDepositProgressText" style="font-size:12px;margin-top:4px">-</div>
-            <div class="deposit-progress"><span id="incomeDepositProgressBar"></span></div>
-          </div>
-
-          <!-- keep legacy summary ids for backward compatibility (hidden) -->
-          <div style="display:none">
-            <span id="incomeMonth">-</span>
-            <span id="incomeAll">-</span>
-            <span id="incomeDaily2">-</span>
-            <span id="incomeMonth2">-</span>
-            <span id="incomeAll2">-</span>
-          </div>
-
-          <div class="income-toolbar">
-            <button class="btn" id="btnReloadIncomePeriods">รีเฟรชงวดเงิน</button>
-            <button class="btn blue" id="btnReloadIncomeOverview">รีเฟรชภาพรวม</button>
-          </div>
-
-        </div>
-
-        <div class="card" style="margin-top:0">
-          <div class="sectionTitle">
-            <div>
-              <b>งวดเงินเดือน</b>
-              <div class="muted" style="margin-top:4px">เลือกงวดเพื่อดูรายละเอียด สลิป และบันทึก PDF</div>
-            </div>
-          </div>
-          <div id="techPayoutPeriods" style="margin-top:10px"></div>
-        </div>
-      </div>
-
-
-    </div>
-  </div>
-
+<script id="cwf-zone-professional-rebuild-js-v12">
+(function(){
+  const DISTRICTS = {
+    'กรุงเทพมหานคร':['พระโขนง','บางนา','สวนหลวง','ประเวศ','บางกะปิ','สะพานสูง','ลาดกระบัง','ดอนเมือง','สายไหม','บางเขน','หลักสี่','จตุจักร','บางซื่อ','ลาดพร้าว','วังทองหลาง','บึงกุ่ม','คันนายาว','คลองสามวา','มีนบุรี','หนองจอก','ปทุมวัน','ราชเทวี','พญาไท','ดุสิต','พระนคร','ป้อมปราบศัตรูพ่าย','สัมพันธวงศ์','บางรัก','สาทร','ยานนาวา','ห้วยขวาง','ดินแดง','วัฒนา','คลองเตย','บางคอแหลม','คลองสาน','ธนบุรี','บางกอกใหญ่','บางกอกน้อย','บางพลัด','ตลิ่งชัน','ภาษีเจริญ','บางแค','หนองแขม','ทวีวัฒนา','จอมทอง','ราษฎร์บูรณะ','ทุ่งครุ','บางขุนเทียน','บางบอน'],
+    'สมุทรปราการ':['เมืองสมุทรปราการ','บางพลี','บางเสาธง','บางบ่อ','พระประแดง','พระสมุทรเจดีย์'],
+    'นนทบุรี':['เมืองนนทบุรี','ปากเกร็ด','บางกรวย','บางใหญ่','บางบัวทอง','ไทรน้อย'],
+    'ปทุมธานี':['เมืองปทุมธานี','คลองหลวง','ธัญบุรี','ลำลูกกา','ลาดหลุมแก้ว','สามโคก','หนองเสือ']
+  };
+  function el(id){ return document.getElementById(id); }
+  window.populateHomeDistrictOptions = function(keep){
+    const p = el('homeProvince'); const d = el('homeDistrict'); if(!p||!d) return;
+    const current = keep || d.value || '';
+    const list = DISTRICTS[p.value] || [];
+    d.innerHTML = '<option value="">เลือกเขต / อำเภอ</option>' + list.map(x => '<option value="'+x+'">'+x+'</option>').join('');
+    if(current && list.includes(current)) d.value = current;
+  };
+  window.openServiceZoneModal = window.openServiceZoneModal || function(){ const m=el('serviceZoneModal'); const s=el('techSettingsModal'); if(s) s.style.display='none'; if(m){ m.style.display='flex'; document.body.style.overflow='hidden'; } window.populateHomeDistrictOptions(); if(window.detectHomeServiceZone) window.detectHomeServiceZone(); };
+  window.closeServiceZoneModal = window.closeServiceZoneModal || function(){ const m=el('serviceZoneModal'); if(m){ m.style.display='none'; document.body.style.overflow=''; } };
+  window.openZoneMapPreview = function(){ const m=el('zoneMapPreviewModal'); if(m){ m.style.display='flex'; document.body.style.overflow='hidden'; } };
+  window.closeZoneMapPreview = function(){ const m=el('zoneMapPreviewModal'); if(m){ m.style.display='none'; document.body.style.overflow=''; } };
+  window.openZoneDetailModal = function(){ const m=el('zoneDetailModal'); if(m){ m.style.display='flex'; document.body.style.overflow='hidden'; } };
+  window.closeZoneDetailModal = function(){ const m=el('zoneDetailModal'); if(m){ m.style.display='none'; document.body.style.overflow=''; } };
+  window.openZoneQuickModal = function(){ const m=el('zoneQuickModal'); if(!m) return; const s=el('secondaryServiceZone'); const r=el('serviceRadiusKm'); const a=el('allowOutOfZone'); if(el('quickSecondaryServiceZone')&&s) el('quickSecondaryServiceZone').value=s.value||''; if(el('quickServiceRadiusKm')&&r) el('quickServiceRadiusKm').value=r.value||'20'; if(el('quickAllowOutOfZone')&&a) el('quickAllowOutOfZone').checked=!!a.checked; m.style.display='flex'; document.body.style.overflow='hidden'; };
+  window.closeZoneQuickModal = function(){ const m=el('zoneQuickModal'); if(m){ m.style.display='none'; document.body.style.overflow=''; } };
+  window.__cwfOpenZoneQuickModalFallback = function(ev){ if(ev&&ev.preventDefault) ev.preventDefault(); window.openZoneQuickModal(); return false; };
+  document.addEventListener('DOMContentLoaded', function(){
+    window.populateHomeDistrictOptions();
+    const p=el('homeProvince'), d=el('homeDistrict'), save=el('btnSaveHomeZone'), qbtn=el('zoneQuickBtn');
+    if(p) p.addEventListener('change', function(){ window.populateHomeDistrictOptions(); if(window.detectHomeServiceZone) window.detectHomeServiceZone(); });
+    if(d) d.addEventListener('change', function(){ if(window.detectHomeServiceZone) window.detectHomeServiceZone(); });
+    if(save) save.addEventListener('click', function(){ if(window.saveHomeServiceZone) window.saveHomeServiceZone(); });
+    if(qbtn) qbtn.addEventListener('click', window.__cwfOpenZoneQuickModalFallback);
+  });
+})();
+</script>
   <div class="payout-modal-backdrop" id="techPayoutModalBackdrop" onclick="if(event.target===this) window.closeTechPayoutModal && window.closeTechPayoutModal()">
     <div class="payout-modal" role="dialog" aria-modal="true" aria-labelledby="techPayoutModalTitle">
       <div class="payout-modal-head">
@@ -1084,8 +776,10 @@
   </div>
 
   <script>
-    window.openZoneMapPreview = window.openZoneMapPreview || function(){ var modal=document.getElementById('zoneMapPreviewModal'); if(modal) modal.style.display='flex'; };
-    window.closeZoneMapPreview = window.closeZoneMapPreview || function(){ var modal=document.getElementById('zoneMapPreviewModal'); if(modal) modal.style.display='none'; };
+    window.openZoneMapPreview = function(){ var modal=document.getElementById('zoneMapPreviewModal'); if(modal){ modal.style.display='flex'; document.body.style.overflow='hidden'; } };
+    window.closeZoneMapPreview = function(){ var modal=document.getElementById('zoneMapPreviewModal'); if(modal){ modal.style.display='none'; document.body.style.overflow=''; } };
+    window.openZoneDetailModal = window.openZoneDetailModal || function(){ var modal=document.getElementById('zoneDetailModal'); if(modal) modal.style.display='flex'; };
+    window.closeZoneDetailModal = window.closeZoneDetailModal || function(){ var modal=document.getElementById('zoneDetailModal'); if(modal) modal.style.display='none'; };
     window.__cwfOpenZoneQuickModalFallback = function(ev){
       if (ev && ev.preventDefault) ev.preventDefault();
       var modal = document.getElementById('zoneQuickModal');
@@ -1103,7 +797,7 @@
       }
     });
   </script>
-  <script src="app.js?v=zone-map-header-readable-v5"></script>
+  <script src="app.js?v=zone-professional-rebuild-v12"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

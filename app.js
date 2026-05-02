@@ -46,45 +46,19 @@ const profileRankBadgeEl = document.getElementById("profile-rank-badge");
 const profileRankLabelEl = document.getElementById("profile-rank-label");
 const profileHintEl = document.getElementById("profile-hint");
 const serviceZoneModalEl = document.getElementById("serviceZoneModal");
-const zoneQuickModalEl = document.getElementById("zoneQuickModal");
-const quickZoneStatusEl = document.getElementById("quickZoneStatus");
-const quickSecondaryServiceZoneEl = document.getElementById("quickSecondaryServiceZone");
-const quickServiceRadiusKmEl = document.getElementById("quickServiceRadiusKm");
-const quickAllowOutOfZoneEl = document.getElementById("quickAllowOutOfZone");
-const btnSaveQuickZoneEl = document.getElementById("btnSaveQuickZone");
-const serviceRadiusKmEl = document.getElementById("serviceRadiusKm");
 const homeProvinceEl = document.getElementById("homeProvince");
 const homeDistrictEl = document.getElementById("homeDistrict");
 const homeZoneHintEl = document.getElementById("homeZoneHint");
 const allowOutOfZoneEl = document.getElementById("allowOutOfZone");
-const secondaryServiceZoneEl = document.getElementById("secondaryServiceZone");
-const zoneQuickBtnEl = document.getElementById("zoneQuickBtn");
 const btnSaveHomeZoneEl = document.getElementById("btnSaveHomeZone");
-
-const HOME_DISTRICTS_BY_PROVINCE = {
-  "กรุงเทพมหานคร": ["พระโขนง","บางนา","สวนหลวง","ประเวศ","บางกะปิ","สะพานสูง","ลาดกระบัง","ดอนเมือง","สายไหม","บางเขน","หลักสี่","จตุจักร","บางซื่อ","ลาดพร้าว","วังทองหลาง","บึงกุ่ม","คันนายาว","คลองสามวา","มีนบุรี","หนองจอก","ปทุมวัน","ราชเทวี","พญาไท","ดุสิต","พระนคร","ป้อมปราบศัตรูพ่าย","สัมพันธวงศ์","บางรัก","สาทร","ยานนาวา","ห้วยขวาง","ดินแดง","วัฒนา","คลองเตย","บางคอแหลม","คลองสาน","ธนบุรี","บางกอกใหญ่","บางกอกน้อย","บางพลัด","ตลิ่งชัน","ภาษีเจริญ","บางแค","หนองแขม","ทวีวัฒนา","จอมทอง","ราษฎร์บูรณะ","ทุ่งครุ","บางขุนเทียน","บางบอน"],
-  "สมุทรปราการ": ["เมืองสมุทรปราการ","บางพลี","บางเสาธง","บางบ่อ","พระประแดง","พระสมุทรเจดีย์"],
-  "นนทบุรี": ["เมืองนนทบุรี","ปากเกร็ด","บางกรวย","บางใหญ่","บางบัวทอง","ไทรน้อย"],
-  "ปทุมธานี": ["เมืองปทุมธานี","คลองหลวง","ธัญบุรี","ลำลูกกา","หนองเสือ","ลาดหลุมแก้ว","สามโคก"]
-};
-
-function populateHomeDistrictOptions(selectedDistrict = "") {
-  const provinceEl = document.getElementById("homeProvince") || homeProvinceEl;
-  const districtEl = document.getElementById("homeDistrict") || homeDistrictEl;
-  if (!districtEl) return;
-  const province = String(provinceEl?.value || "กรุงเทพมหานคร").trim() || "กรุงเทพมหานคร";
-  const districts = HOME_DISTRICTS_BY_PROVINCE[province] || HOME_DISTRICTS_BY_PROVINCE["กรุงเทพมหานคร"] || [];
-  if (!districts.length) return;
-  const current = String(selectedDistrict || districtEl.value || "").trim();
-  const opts = ['<option value="">เลือกเขต / อำเภอ</option>'].concat(
-    districts.map((name) => '<option value="' + name + '">' + name + '</option>')
-  );
-  districtEl.innerHTML = opts.join("");
-  if (current && districts.includes(current)) districtEl.value = current;
-  else if (current) districtEl.value = "";
-}
-window.populateHomeDistrictOptions = populateHomeDistrictOptions;
-
+const secondaryServiceZoneEl = document.getElementById("secondaryServiceZone");
+const serviceRadiusKmEl = document.getElementById("serviceRadiusKm");
+const quickSecondaryServiceZoneEl = document.getElementById("quickSecondaryServiceZone");
+const quickServiceRadiusKmEl = document.getElementById("quickServiceRadiusKm");
+const quickAllowOutOfZoneEl = document.getElementById("quickAllowOutOfZone");
+const quickZoneStatusEl = document.getElementById("quickZoneStatus");
+const zoneQuickModalEl = document.getElementById("zoneQuickModal");
+const zoneQuickSummaryEl = document.getElementById("zoneQuickSummary");
 
 // ✅ รายได้ (Technician)
 const incomeDailyEl = document.getElementById("incomeDaily");
@@ -435,91 +409,6 @@ async function setAcceptStatusSafe(nextStatus) {
   }
 }
 
-let __TECH_ZONE_PROFILE__ = {};
-
-function setSelectValueSafe(el, value) {
-  if (!el) return;
-  const v = String(value ?? "");
-  el.value = v;
-  if (v && el.value !== v) el.value = "";
-}
-
-function syncQuickZoneFields() {
-  const p = __TECH_ZONE_PROFILE__ || {};
-  const secondary = String(p.secondary_service_zone_code || document.getElementById("secondaryServiceZone")?.value || "").toUpperCase();
-  const radius = (p.service_radius_km ?? document.getElementById("serviceRadiusKm")?.value ?? "20");
-  setSelectValueSafe(quickSecondaryServiceZoneEl || document.getElementById("quickSecondaryServiceZone"), secondary);
-  setSelectValueSafe(quickServiceRadiusKmEl || document.getElementById("quickServiceRadiusKm"), String(radius ?? ""));
-  const quickAllow = quickAllowOutOfZoneEl || document.getElementById("quickAllowOutOfZone");
-  if (quickAllow) quickAllow.checked = !!(p.allow_out_of_zone || document.getElementById("allowOutOfZone")?.checked);
-  const status = quickZoneStatusEl || document.getElementById("quickZoneStatus");
-  if (status) {
-    const primary = p.home_service_zone_code ? `Zone ${p.home_service_zone_code}${p.home_service_zone_label ? ` - ${p.home_service_zone_label}` : ""}` : "ยังไม่ได้ตั้งโซนหลัก";
-    const sec = secondary ? `โซนรอง ${secondary}` : "ยังไม่เลือกโซนรอง";
-    const rText = radius ? `ระยะ ${radius} กม.` : "ไม่จำกัดระยะทาง";
-    status.textContent = `${primary} • ${sec} • ${rText}`;
-  }
-}
-
-function openZoneQuickModal() {
-  syncQuickZoneFields();
-  const detailModal = document.getElementById("serviceZoneModal") || serviceZoneModalEl;
-  const modalEl = document.getElementById("zoneQuickModal") || zoneQuickModalEl;
-  if (detailModal) detailModal.style.display = "none";
-  if (modalEl) {
-    modalEl.removeAttribute("hidden");
-    modalEl.style.display = "flex";
-    modalEl.classList.add("is-open");
-  }
-}
-
-function closeZoneQuickModal() {
-  const modalEl = document.getElementById("zoneQuickModal") || zoneQuickModalEl;
-  if (modalEl) {
-    modalEl.style.display = "none";
-    modalEl.classList.remove("is-open");
-  }
-}
-
-async function saveQuickServiceZone() {
-  const p = __TECH_ZONE_PROFILE__ || {};
-  const btnEl = document.getElementById("btnSaveQuickZone") || btnSaveQuickZoneEl;
-  const secondary = document.getElementById("quickSecondaryServiceZone")?.value || "";
-  const radius = document.getElementById("quickServiceRadiusKm")?.value || "";
-  const allow = !!document.getElementById("quickAllowOutOfZone")?.checked;
-  try {
-    if (btnEl) { btnEl.disabled = true; btnEl.textContent = "กำลังบันทึก..."; }
-    const res = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/service-zone`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      credentials: "same-origin",
-      body: JSON.stringify({
-        home_province: p.home_province || document.getElementById("homeProvince")?.value || "",
-        home_district: p.home_district || document.getElementById("homeDistrict")?.value || "",
-        secondary_service_zone_code: secondary,
-        allow_out_of_zone: allow,
-        service_radius_km: radius,
-      }),
-    });
-    const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.error || "บันทึกพื้นที่รับงานด่วนไม่สำเร็จ");
-    __TECH_ZONE_PROFILE__ = { ...__TECH_ZONE_PROFILE__, ...data, service_radius_km: data.service_radius_km ?? radius };
-    const secEl = document.getElementById("secondaryServiceZone");
-    const radiusEl = document.getElementById("serviceRadiusKm");
-    const allowEl = document.getElementById("allowOutOfZone");
-    if (secEl) secEl.value = secondary;
-    if (radiusEl) radiusEl.value = String(radius ?? "");
-    if (allowEl) allowEl.checked = allow;
-    syncQuickZoneFields();
-    closeZoneQuickModal();
-    loadProfile();
-  } catch (e) {
-    alert(e.message || "บันทึกพื้นที่รับงานด่วนไม่สำเร็จ");
-  } finally {
-    if (btnEl) { btnEl.disabled = false; btnEl.textContent = "บันทึกด่วน"; }
-  }
-}
-
 // ✅ โซน (เหมือนเดิม แต่ทำให้ไม่พังแม้ backend ไม่ตอบ)
 async function updateZone(zone) {
   const z = String(zone || "").trim();
@@ -579,21 +468,78 @@ async function detectHomeServiceZone() {
 }
 
 function openServiceZoneModal() {
-  populateHomeDistrictOptions(__TECH_ZONE_PROFILE__?.home_district || "");
   const settingsModal = document.getElementById("techSettingsModal");
-  const quickModal = document.getElementById("zoneQuickModal") || zoneQuickModalEl;
   const modalEl = document.getElementById("serviceZoneModal") || serviceZoneModalEl;
   if (settingsModal) settingsModal.style.display = "none";
-  if (quickModal) quickModal.style.display = "none";
   if (modalEl) modalEl.style.display = "flex";
-  const radiusEl = document.getElementById("serviceRadiusKm") || serviceRadiusKmEl;
-  if (radiusEl) radiusEl.value = String(__TECH_ZONE_PROFILE__?.service_radius_km ?? radiusEl.value ?? "20");
   detectHomeServiceZone();
 }
 
 function closeServiceZoneModal() {
   const modalEl = document.getElementById("serviceZoneModal") || serviceZoneModalEl;
   if (modalEl) modalEl.style.display = "none";
+}
+
+function updateZoneQuickSummary(data = {}) {
+  const homeZone = data.home_service_zone_code || data.service_zone_code || "";
+  const secondary = data.secondary_service_zone_code || (document.getElementById("secondaryServiceZone") || secondaryServiceZoneEl)?.value || "";
+  const radius = data.service_radius_km || (document.getElementById("serviceRadiusKm") || serviceRadiusKmEl)?.value || "";
+  const text = `${homeZone ? `หลัก ${homeZone}` : "โซน"}${secondary ? ` / รอง ${secondary}` : ""}${radius ? ` / ${radius} กม.` : ""}`;
+  if (zoneQuickSummaryEl) zoneQuickSummaryEl.textContent = text;
+  if (quickZoneStatusEl) quickZoneStatusEl.textContent = homeZone ? `โซนหลักปัจจุบัน: Zone ${homeZone}` : "โซนหลักอ้างอิงจากพื้นที่ประจำ";
+}
+
+function openZoneQuickModal() {
+  const modalEl = document.getElementById("zoneQuickModal") || zoneQuickModalEl;
+  if (!modalEl) return;
+  const srcSecondary = (document.getElementById("secondaryServiceZone") || secondaryServiceZoneEl)?.value || "";
+  const srcRadius = (document.getElementById("serviceRadiusKm") || serviceRadiusKmEl)?.value || "20";
+  const srcAllow = !!((document.getElementById("allowOutOfZone") || allowOutOfZoneEl)?.checked);
+  const qSecondary = document.getElementById("quickSecondaryServiceZone") || quickSecondaryServiceZoneEl;
+  const qRadius = document.getElementById("quickServiceRadiusKm") || quickServiceRadiusKmEl;
+  const qAllow = document.getElementById("quickAllowOutOfZone") || quickAllowOutOfZoneEl;
+  if (qSecondary) qSecondary.value = srcSecondary;
+  if (qRadius) qRadius.value = srcRadius;
+  if (qAllow) qAllow.checked = srcAllow;
+  updateZoneQuickSummary();
+  modalEl.style.display = "flex";
+}
+
+function closeZoneQuickModal() {
+  const modalEl = document.getElementById("zoneQuickModal") || zoneQuickModalEl;
+  if (modalEl) modalEl.style.display = "none";
+}
+
+async function saveQuickServiceZone() {
+  const qSecondary = document.getElementById("quickSecondaryServiceZone") || quickSecondaryServiceZoneEl;
+  const qRadius = document.getElementById("quickServiceRadiusKm") || quickServiceRadiusKmEl;
+  const qAllow = document.getElementById("quickAllowOutOfZone") || quickAllowOutOfZoneEl;
+  const secondaryEl = document.getElementById("secondaryServiceZone") || secondaryServiceZoneEl;
+  const radiusEl = document.getElementById("serviceRadiusKm") || serviceRadiusKmEl;
+  const allowEl = document.getElementById("allowOutOfZone") || allowOutOfZoneEl;
+  if (secondaryEl) secondaryEl.value = qSecondary?.value || "";
+  if (radiusEl) radiusEl.value = qRadius?.value || "";
+  if (allowEl) allowEl.checked = !!qAllow?.checked;
+  try {
+    const res = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/service-zone`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      credentials: "same-origin",
+      body: JSON.stringify({
+        secondary_service_zone_code: qSecondary?.value || "",
+        service_radius_km: qRadius?.value || "",
+        allow_out_of_zone: !!qAllow?.checked,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || "บันทึกตั้งค่าด่วนไม่สำเร็จ");
+    updateZoneQuickSummary(data);
+    closeZoneQuickModal();
+    alert("บันทึกตั้งค่าด่วนแล้ว");
+    loadProfile();
+  } catch (e) {
+    alert(e.message || "บันทึกตั้งค่าด่วนไม่สำเร็จ");
+  }
 }
 
 async function saveHomeServiceZone() {
@@ -614,9 +560,9 @@ async function saveHomeServiceZone() {
       body: JSON.stringify({
         home_province: provinceEl?.value || "",
         home_district: districtEl?.value || "",
-        secondary_service_zone_code: (document.getElementById("secondaryServiceZone")?.value || ""),
+        secondary_service_zone_code: (document.getElementById("secondaryServiceZone") || secondaryServiceZoneEl)?.value || "",
+        service_radius_km: (document.getElementById("serviceRadiusKm") || serviceRadiusKmEl)?.value || "",
         allow_out_of_zone: !!allowEl?.checked,
-        service_radius_km: (document.getElementById("serviceRadiusKm")?.value || ""),
       }),
     });
     const data = await res.json().catch(() => ({}));
@@ -627,8 +573,6 @@ async function saveHomeServiceZone() {
         : "บันทึกแล้ว แต่ยังไม่พบโซนจากเขต/อำเภอนี้";
       hintEl.style.color = data.service_zone_code ? "#0b4bb3" : "#b45309";
     }
-    __TECH_ZONE_PROFILE__ = { ...__TECH_ZONE_PROFILE__, ...data, service_radius_km: data.service_radius_km ?? document.getElementById("serviceRadiusKm")?.value ?? "" };
-    syncQuickZoneFields();
     if (zoneSelect && data.preferred_zone) {
       zoneSelect.value = data.preferred_zone;
       localStorage.setItem("cwf_zone", data.preferred_zone);
@@ -648,11 +592,11 @@ async function saveHomeServiceZone() {
 
 window.openServiceZoneModal = openServiceZoneModal;
 window.closeServiceZoneModal = closeServiceZoneModal;
+window.saveHomeServiceZone = saveHomeServiceZone;
 window.openZoneQuickModal = openZoneQuickModal;
 window.closeZoneQuickModal = closeZoneQuickModal;
 window.saveQuickServiceZone = saveQuickServiceZone;
-window.detectHomeServiceZone = detectHomeServiceZone;
-window.saveHomeServiceZone = saveHomeServiceZone;
+window.updateZoneQuickSummary = updateZoneQuickSummary;
 
 
 // =======================================
@@ -782,16 +726,11 @@ function bindTechControls() {
   if (zoneSelect) {
     zoneSelect.onchange = () => updateZone(zoneSelect.value);
   }
-  if (zoneQuickBtnEl) zoneQuickBtnEl.onclick = openZoneQuickModal;
-  if (homeProvinceEl) homeProvinceEl.onchange = () => { populateHomeDistrictOptions(); detectHomeServiceZone(); };
-  if (homeDistrictEl) {
-    homeDistrictEl.onfocus = () => populateHomeDistrictOptions(homeDistrictEl.value);
-    homeDistrictEl.onclick = () => populateHomeDistrictOptions(homeDistrictEl.value);
-    homeDistrictEl.onchange = detectHomeServiceZone;
-  }
+  if (homeProvinceEl) homeProvinceEl.onchange = detectHomeServiceZone;
+  if (homeDistrictEl) homeDistrictEl.onchange = detectHomeServiceZone;
   if (btnSaveHomeZoneEl) btnSaveHomeZoneEl.onclick = saveHomeServiceZone;
-  if (btnSaveQuickZoneEl) btnSaveQuickZoneEl.onclick = saveQuickServiceZone;
-  populateHomeDistrictOptions(homeDistrictEl?.value || "");
+  const zoneQuickBtn = document.getElementById("zoneQuickBtn");
+  if (zoneQuickBtn) zoneQuickBtn.onclick = (ev) => { ev.preventDefault(); openZoneQuickModal(); return false; };
 }
 
 // expose for compatibility (inline onclick)
@@ -896,23 +835,16 @@ async function loadProfile() {
     const photo = data.photo_path || "/logo.png";
     if (profilePhotoEl) profilePhotoEl.src = photo;
 
-    __TECH_ZONE_PROFILE__ = { ...__TECH_ZONE_PROFILE__, ...data };
     if (homeProvinceEl && data.home_province) homeProvinceEl.value = data.home_province;
-    populateHomeDistrictOptions(data.home_district || "");
+    if (homeDistrictEl) homeDistrictEl.value = data.home_district || "";
     if (allowOutOfZoneEl) allowOutOfZoneEl.checked = !!data.allow_out_of_zone;
     if (secondaryServiceZoneEl) secondaryServiceZoneEl.value = data.secondary_service_zone_code || "";
-    if (serviceRadiusKmEl) serviceRadiusKmEl.value = String(data.service_radius_km ?? "20");
-    syncQuickZoneFields();
+    if (serviceRadiusKmEl) serviceRadiusKmEl.value = data.service_radius_km == null ? "20" : String(data.service_radius_km);
+    updateZoneQuickSummary(data);
     if (homeZoneHintEl) {
       homeZoneHintEl.textContent = data.home_service_zone_code
-        ? `โซนหลัก: Zone ${data.home_service_zone_code} - ${data.home_service_zone_label || ""}${data.secondary_service_zone_code ? ` • โซนรอง: Zone ${data.secondary_service_zone_code} - ${data.secondary_service_zone_label || ""}` : ""}`
+        ? `ระบบกำหนดโซนให้: Zone ${data.home_service_zone_code} - ${data.home_service_zone_label || ""}`
         : "ระบบจะกำหนดโซนให้หลังกรอกเขต/อำเภอ";
-    }
-    const zoneQuickSummary = document.getElementById("zoneQuickSummary");
-    if (zoneQuickSummary) {
-      zoneQuickSummary.textContent = data.home_service_zone_code
-        ? `หลัก ${data.home_service_zone_code}${data.secondary_service_zone_code ? ` / รอง ${data.secondary_service_zone_code}` : " / ไม่เลือกโซนรอง"}${data.service_radius_km ? ` / ${data.service_radius_km} กม.` : ""}`
-        : "ยังไม่ได้ตั้งพื้นที่";
     }
 
     // ✅ sync technician compact profile "more" fields (safe no-op if not present)
