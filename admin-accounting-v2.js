@@ -18,10 +18,13 @@
     summary: null,
     revenue: [],
     payouts: [],
+    payoutPeriods: {},
     deposits: null,
     audit: [],
+    reportSummary: null,
     payoutTechs: {},
     selectedPayoutId: null,
+    payoutTechError: null,
     loading: new Set(),
   };
 
@@ -29,7 +32,6 @@
   const esc = (v) => String(v ?? '').replace(/[&<>'"]/g, (c) => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', "'":'&#39;', '"':'&quot;' }[c]));
   const money = (v) => Number(v || 0).toLocaleString('th-TH', { maximumFractionDigits: 2 });
   const dateTH = (v) => v ? new Date(v).toLocaleString('th-TH', { dateStyle:'medium', timeStyle:'short' }) : '-';
-  const dateOnlyTH = (v) => v ? new Date(v).toLocaleDateString('th-TH', { day:'numeric', month:'short', year:'numeric' }) : '-';
 
   function empty(text) { return `<div class="acctEmpty">${esc(text)}</div>`; }
   function badge(text, tone = 'gray') { return `<span class="acctBadge ${esc(tone)}">${esc(text)}</span>`; }
@@ -93,6 +95,22 @@
     }
     return payload || { ok: true };
   }
+  async function postForm(url, formData) {
+    const res = await fetch(url, { method: 'POST', credentials: 'include', body: formData });
+    let payload = null;
+    try { payload = await res.json(); } catch (_) { payload = null; }
+    if (!res.ok || (payload && payload.ok === false)) {
+      const err = new Error(payload?.message || payload?.error || `HTTP_${res.status}`);
+      err.payload = payload;
+      throw err;
+    }
+    return payload || { ok: true };
+  }
+  function simpleDateTH(v) {
+    if (!v) return '-';
+    try { return new Date(v).toLocaleDateString('th-TH', { dateStyle:'medium' }); } catch (_) { return String(v || '-'); }
+  }
+
   function cleanError(e) {
     const msg = String(e?.payload?.error || e?.message || e || '');
     if (msg.includes('CONFIRM_RECEIVED_REQUIRED')) return 'กรุณาติ๊กยืนยันว่าได้รับเงินจริงแล้ว';
@@ -100,10 +118,13 @@
     if (msg.includes('PAID_AMOUNT_EXCEEDS_REMAINING')) return 'ยอดที่จ่ายมากกว่ายอดคงเหลือ';
     if (msg.includes('PAYOUT_ALREADY_PAID')) return 'รายการนี้จ่ายครบแล้ว';
     if (msg.includes('ACCOUNTING_PERMISSION_REQUIRED')) return 'บัญชีนี้ยังไม่มีสิทธิ์ทำรายการนี้ กรุณาให้ Super Admin เพิ่มสิทธิ์บัญชี';
-    if (msg.includes('MISSING_CATEGORY')) return 'กรุณาเลือกหมวดรายจ่าย';
-    if (msg.includes('INVALID_AMOUNT')) return 'กรุณาใส่จำนวนเงินมากกว่า 0';
     if (msg.includes('JOB_NOT_COMPLETED')) return 'งานนี้ยังไม่เสร็จ จึงบันทึกรับเงินจากหน้านี้ไม่ได้';
     if (msg.includes('CANNOT_MARK_CANCELED_JOB_PAID')) return 'งานที่ยกเลิกแล้วไม่สามารถบันทึกรับเงินได้';
+    if (msg.includes('EXPENSE_DATE_REQUIRED')) return 'กรุณาระบุวันที่รายจ่าย';
+    if (msg.includes('EXPENSE_CATEGORY_REQUIRED')) return 'กรุณาเลือกหมวดรายจ่าย';
+    if (msg.includes('INVALID_EXPENSE_AMOUNT')) return 'จำนวนเงินรายจ่ายต้องมากกว่า 0';
+    if (msg.includes('DOCUMENT_ALREADY_EXISTS')) return 'งานนี้มีเอกสารประเภทนี้แล้ว';
+    if (msg.includes('JOB_ID_REQUIRED')) return 'กรุณาใส่เลขงาน';
     return 'บันทึกไม่สำเร็จ กรุณาลองใหม่';
   }
   function setLoading(id, text = 'กำลังโหลดข้อมูล...') { const el = $(id); if (el) el.innerHTML = empty(text); }
@@ -167,6 +188,7 @@
     if (tab === 'revenue' && !state.revenue.length) loadRevenue();
     if (tab === 'payouts' && !state.payouts.length) loadPayouts();
     if (tab === 'deposits' && !state.deposits) loadDeposits();
+    if (tab === 'reports' && !state.reportSummary) loadReportSummary();
     if (tab === 'audit' && !state.audit.length) loadAudit();
     if (opts.updateUrl) updateTabUrl(tab);
     scrollActiveChipIntoView(tab);
@@ -186,7 +208,7 @@
     el.querySelectorAll('[data-target-tab]').forEach((btn) => btn.addEventListener('click', () => showAccountingTab(btn.dataset.targetTab, { scroll: true, updateUrl: true })));
   }
   function renderOverview() {
-    const s = $('overviewSummary'); const a = $('overviewAudit');
+    const s = $('overviewSummary'); const a = $('overviewAudit'); const ch = $('overviewCharts');
     const cards = state.summary?.cards || [];
     if (s) s.innerHTML = cards.length ? cards.map((c) => `
       <div class="acctRow">
@@ -194,6 +216,25 @@
         <div class="acctActionsCol">${badge(`${money(c.count)} รายการ`, c.status_key === 'red' ? 'bad' : 'gray')}<button class="acctGoBtn" type="button" data-target-tab="${esc(c.target_tab || 'overview')}">ไปจัดการ</button></div>
       </div>`).join('') : empty('ยังไม่มีสรุป');
     s?.querySelectorAll('[data-target-tab]').forEach((btn) => btn.addEventListener('click', () => showAccountingTab(btn.dataset.targetTab, { scroll: true, updateUrl: true })));
+    if (ch) {
+      const total = cards.reduce((sum, c) => sum + Number(c.count || 0), 0) || 1;
+      const unpaid = cards.find(c => c.key === 'unpaid_revenue')?.count || 0;
+      const payout = cards.find(c => c.key === 'pending_payout_periods')?.count || 0;
+      const expense = cards.find(c => c.key === 'pending_expenses')?.count || 0;
+      const p1 = Math.min(100, Math.round((Number(unpaid) / total) * 100));
+      const p2 = Math.min(100, p1 + Math.round((Number(payout) / total) * 100));
+      const p3 = Math.min(100, p2 + Math.round((Number(expense) / total) * 100));
+      ch.innerHTML = `
+        <div class="acctChartWrap">
+          <div class="acctDonut" style="--p1:${p1}%;--p2:${p2}%;--p3:${p3}%"><b>${money(total)}</b></div>
+          <div class="acctLegend">
+            <div class="acctLegendRow"><span><i style="background:#0b4bb3"></i>ค้างรับเงิน</span><b>${money(unpaid)}</b></div>
+            <div class="acctLegendRow"><span><i style="background:#38bdf8"></i>งวดจ่ายช่าง</span><b>${money(payout)}</b></div>
+            <div class="acctLegendRow"><span><i style="background:#ffcc00"></i>รายจ่ายรอตรวจ</span><b>${money(expense)}</b></div>
+            <div class="acctMuted">โดนัทนี้ช่วยให้บัญชีเห็นงานเร่งด่วนทันที กดการ์ดด้านซ้ายเพื่อทำรายการต่อ</div>
+          </div>
+        </div>`;
+    }
     if (a) renderAuditInto(a, state.summary?.recent_audit || []);
   }
   function renderRevenue() {
@@ -224,86 +265,91 @@
             ${revenueStatusBadge(r.payment_status)}
             ${badge(r.payment_proof_url ? 'มีหลักฐานรับเงิน' : 'ยังไม่มีหลักฐาน', r.payment_proof_url ? 'ok' : 'warn')}
             ${paid ? `<button class="acctDisabledBtn" type="button" disabled>รับเงินแล้ว</button>` : `<button class="acctPrimaryBtn" type="button" data-mark-revenue-paid="${esc(r.job_id)}">บันทึกรับเงินแล้ว</button>`}
-            <button class="acctSecondaryBtn" type="button" data-job-id="${esc(r.job_id)}">ดูรายละเอียดงาน</button>
+            <button class="acctSecondaryBtn" type="button" data-create-doc-from-job="${esc(r.job_id)}">สร้างเอกสาร</button><button class="acctSecondaryBtn" type="button" data-job-id="${esc(r.job_id)}">ดูรายละเอียดงาน</button>
           </div>
         </div>`;
     }).join('') : empty('ไม่พบรายรับตามเงื่อนไข');
     el.querySelectorAll('[data-mark-revenue-paid]').forEach((btn) => btn.addEventListener('click', () => openRevenuePaidModal(btn.dataset.markRevenuePaid)));
+    el.querySelectorAll('[data-create-doc-from-job]').forEach((btn) => btn.addEventListener('click', () => openCreateDocumentModal(btn.dataset.createDocFromJob)));
     el.querySelectorAll('[data-job-id]').forEach((btn) => btn.addEventListener('click', () => { location.href = `/admin-job-view-v2.html?job_id=${encodeURIComponent(btn.dataset.jobId)}`; }));
   }
   function docType(t) { return ({ quotation:'ใบเสนอราคา', invoice:'ใบแจ้งหนี้', receipt:'ใบเสร็จรับเงิน' })[t] || t || '-'; }
   function renderDocs() {
     const el = $('documentsList'); const rows = state.summary?.documents || []; if (!el) return;
     el.innerHTML = rows.length ? rows.map((d) => `
-      <div class="acctRow"><div><b>${esc(d.document_no || `เอกสาร #${d.document_id}`)}</b><small>${esc(docType(d.document_type))} • งาน #${esc(d.job_id || '-')} • ${esc(d.customer_name || '-')}</small></div><div class="acctActionsCol">${statusBadge(d.status)}<span class="acctAmountStrong">${money(d.total_amount)} ฿</span></div></div>`).join('') : empty('ยังไม่มีเอกสารบัญชี');
+      <div class="acctRow">
+        <div>
+          <b>${esc(d.document_no || `เอกสาร #${d.document_id}`)}</b>
+          <small>${esc(docType(d.document_type))} • งาน #${esc(d.job_id || '-')} • ${esc(d.customer_name || '-')}</small>
+          <small>วิธีใช้: ตรวจยอดให้ถูกต้อง → ออกเอกสาร → ส่งให้ลูกค้า/บัญชีตรวจ</small>
+        </div>
+        <div class="acctActionsCol">${statusBadge(d.status)}<span class="acctAmountStrong">${money(d.total_amount)} ฿</span>${d.job_id ? `<button class="acctSecondaryBtn" type="button" data-doc-preview="${esc(d.document_type)}" data-job-id="${esc(d.job_id)}">เปิดตัวอย่าง</button>` : ''}</div>
+      </div>`).join('') : empty('ยังไม่มีเอกสารบัญชี กด “+ สร้างเอกสารขาย” เพื่อเริ่มจากเลขงาน');
+    el.querySelectorAll('[data-doc-preview]').forEach((btn) => btn.addEventListener('click', () => {
+      const t = btn.dataset.docPreview; const jobId = btn.dataset.jobId;
+      const path = t === 'quotation' ? 'quote' : (t === 'receipt' ? 'receipt' : 'quote');
+      window.open(`/docs/${path}/${encodeURIComponent(jobId)}`, '_blank');
+    }));
   }
   function renderExpenses() {
     const el = $('expensesList'); const rows = state.summary?.expenses || []; if (!el) return;
-    el.innerHTML = `
-      <div class="acctToolbarLine">
-        <button id="btnOpenExpenseModal" class="acctPrimaryBtn" type="button">+ เพิ่มรายจ่ายจริง</button>
-        <span class="acctMuted">บันทึกค่าอะไหล่ ค่าน้ำยา ค่าเดินทาง หรือค่าใช้จ่ายอื่น พร้อมหลักฐาน</span>
-      </div>
-      ${rows.length ? rows.map((x) => `
-        <div class="acctRow">
-          <div>
-            <b>${esc(x.category || 'รายจ่าย')}</b>
-            <small>${esc(x.vendor_name || '-')} • ${esc(x.description || '')}</small>
-            <small>วันที่ ${esc(dateOnlyTH(x.expense_date || x.created_at))}${x.payment_method ? ` • ${esc(x.payment_method)}` : ''}${x.payment_reference ? ` • Ref: ${esc(x.payment_reference)}` : ''}</small>
-          </div>
-          <div class="acctActionsCol">${statusBadge(x.status)}<span class="acctAmountStrong">${money(x.amount)} ฿</span></div>
-        </div>`).join('') : empty('ยังไม่มีรายจ่าย กด “เพิ่มรายจ่ายจริง” เพื่อเริ่มบันทึก')}`;
-    $('btnOpenExpenseModal')?.addEventListener('click', openExpenseModal);
-  }
-  function payoutDueText(p) {
-    const due = p.due_date ? dateOnlyTH(p.due_date) : `วันที่ ${esc(p.period_type || '-')}`;
-    return `กำหนดจ่าย ${due}`;
+    el.innerHTML = rows.length ? rows.map((x) => `
+      <div class="acctRow">
+        <div>
+          <b>${esc(x.category || 'รายจ่าย')} • ${money(x.amount)} ฿</b>
+          <small>${esc(x.vendor_name || '-')} • ${esc(x.description || '')} • วันที่ ${esc(simpleDateTH(x.expense_date))}</small>
+          <small>VAT ${money(x.vat_amount)} • หัก ณ ที่จ่าย ${money(x.withholding_amount)}</small>
+        </div>
+        <div class="acctActionsCol">${statusBadge(x.status)}${x.proof_url ? `<a class="acctSecondaryBtn" href="${esc(x.proof_url)}" target="_blank" rel="noopener">ดูหลักฐาน</a>` : badge('ไม่มีรูปหลักฐาน', 'warn')}</div>
+      </div>`).join('') : empty('ยังไม่มีรายจ่าย กด “+ เพิ่มรายจ่ายจริง” เพื่อบันทึกค่าใช้จ่ายพร้อมรูปหลักฐาน');
   }
   function renderPayouts() {
     const el = $('payoutList'); if (!el) return;
-    const rows = state.payouts || [];
-    const dueCount = rows.filter(p => Number(p.remaining_amount || 0) > 0 && String(p.status || '') !== 'paid').length;
-    el.innerHTML = `
-      <div class="acctDueBanner">
-        <b>งวดจ่ายวันที่ 10 / 25 จะขึ้นให้อัตโนมัติเมื่อถึงกำหนด</b>
-        <span>ไม่ต้องกดสร้างงวดเอง ระบบเตรียมงวดให้ตอนเปิดหน้านี้ เหลือค้างจ่าย ${money(dueCount)} งวด</span>
-      </div>
-      ${rows.length ? rows.map((p) => {
+    const rows = (state.payouts || []).slice();
+    el.innerHTML = rows.length ? rows.map((p) => {
       const selected = String(state.selectedPayoutId || '') === String(p.payout_id || '');
-      const paid = String(p.status || '').toLowerCase() === 'paid' || Number(p.remaining_amount || 0) <= 0;
+      const dueTone = p.is_due && Number(p.remaining_amount || 0) > 0 ? 'bad' : (Number(p.remaining_amount || 0) <= 0 ? 'ok' : 'warn');
       return `
-        <article class="acctRow ${selected ? 'selected' : ''}">
+        <div class="acctRow" style="border-color:${selected ? 'rgba(11,75,179,.36)' : 'rgba(15,23,42,.08)'};background:${selected ? '#eef6ff' : '#fbfdff'}">
           <div>
-            <b>งวดจ่ายช่าง รอบวันที่ ${esc(p.period_type || '-')}</b>
-            <small>${esc(payoutDueText(p))} • ช่วงงาน ${esc(dateOnlyTH(p.period_start))} - ${esc(dateOnlyTH(p.period_end))}</small>
-            <small>${money(p.technician_count)} ช่าง • ${money(p.lines_count || 0)} รายการ • ID ${esc(p.payout_id || '-')}</small>
+            <b>งวดวันที่ ${esc(p.period_type)} • กำหนดจ่าย ${esc(p.due_label || simpleDateTH(p.due_date))}</b>
+            <small>${esc(p.cutoff_label || `${dateTH(p.period_start)} - ${dateTH(p.period_end)}`)} • ${esc(p.payment_rule_note || '')}</small>
+            <small>ช่าง ${money(p.technician_count)} คน • รายการ ${money(p.line_count || 0)} • ID ${esc(p.payout_id)}</small>
             <div class="acctMiniStats">
-              <div class="acctMiniStat"><b>${money(p.net_payable)} ฿</b><span>ยอดสุทธิต้องจ่าย</span></div>
-              <div class="acctMiniStat"><b>${money(p.paid_amount)} ฿</b><span>จ่ายแล้ว</span></div>
-              <div class="acctMiniStat"><b>${money(p.remaining_amount)} ฿</b><span>คงเหลือ</span></div>
+              <div class="acctMiniStat"><span>ยอดสุทธิต้องจ่าย</span><b>${money(p.net_payable)} ฿</b></div>
+              <div class="acctMiniStat"><span>จ่ายแล้ว</span><b>${money(p.paid_amount)} ฿</b></div>
+              <div class="acctMiniStat"><span>คงเหลือ</span><b>${money(p.remaining_amount)} ฿</b></div>
             </div>
           </div>
           <div class="acctActionsCol">
-            ${payoutStatusBadge(paid ? 'paid' : (Number(p.paid_amount || 0) > 0 ? 'partial' : 'unpaid'))}
-            ${p.is_due && !paid ? badge('ถึงกำหนดจ่าย', 'warn') : ''}
+            ${badge(p.is_due ? 'ถึงกำหนดแล้ว' : 'ยังไม่ถึงกำหนด', dueTone)}
+            ${statusBadge(p.status)}
             <button class="acctPrimaryBtn" type="button" data-load-payout-techs="${esc(p.payout_id)}">ดู/จ่ายรายช่าง</button>
           </div>
-        </article>`;
-    }).join('') : empty('ยังไม่มีงวดจ่ายที่ถึงกำหนด ระบบจะสร้างงวดวันที่ 10/25 ให้อัตโนมัติเมื่อมีงานเสร็จในรอบนั้น')}`;
+        </div>`;
+    }).join('') : empty('ยังไม่มีงวดจ่ายช่าง ระบบจะสร้างงวดวันที่ 10/25 อัตโนมัติเมื่อถึงกำหนด');
     el.querySelectorAll('[data-load-payout-techs]').forEach((btn) => btn.addEventListener('click', () => loadPayoutTechs(btn.dataset.loadPayoutTechs)));
+    renderPayoutTechs();
   }
   function renderPayoutTechs() {
     const el = $('payoutTechs'); if (!el) return;
     const payoutId = state.selectedPayoutId;
     if (!payoutId) {
-      el.innerHTML = `<div class="acctBox"><h3>รายละเอียดรายช่าง</h3><div class="acctEmpty">เลือกงวดจ่ายด้านซ้ายก่อน แล้วรายชื่อช่างจะขึ้นตรงนี้</div></div>`;
+      el.innerHTML = `<div class="acctBox"><h3>รายละเอียดรายช่าง</h3><div class="acctEmpty">กด “ดู/จ่ายรายช่าง” ที่งวดจ่ายก่อน รายชื่อช่างและยอดคงเหลือจะขึ้นตรงนี้</div></div>`;
+      return;
+    }
+    if (state.payoutTechError) {
+      el.innerHTML = `<div class="acctBox"><h3>รายละเอียดงวด #${esc(payoutId)}</h3><div class="acctSoftErr">โหลดรายช่างไม่สำเร็จ: ${esc(state.payoutTechError)}</div><button class="acctPrimaryBtn" type="button" data-retry-payout-techs="${esc(payoutId)}">ลองโหลดใหม่</button></div>`;
+      el.querySelector('[data-retry-payout-techs]')?.addEventListener('click', () => loadPayoutTechs(payoutId));
       return;
     }
     const rows = state.payoutTechs[payoutId] || [];
+    const period = (state.payoutPeriods || {})[payoutId] || (state.payouts || []).find(p => String(p.payout_id) === String(payoutId)) || {};
     el.innerHTML = `
       <div class="acctBox">
-        <h3>รายละเอียดงวด #${esc(payoutId)}</h3>
-        <div class="acctMuted" style="margin-bottom:10px">บันทึกจ่ายได้เฉพาะหลังโอนเงินจริงแล้วเท่านั้น ระบบไม่โอนเงินอัตโนมัติ</div>
+        <h3>รายละเอียดงวดวันที่ ${esc(period.period_type || '')}</h3>
+        <div class="acctDueBanner">กำหนดจ่าย ${esc(period.due_label || simpleDateTH(period.due_date))}<br>${esc(period.cutoff_label || '')}<br>${esc(period.payment_rule_note || 'บันทึกได้หลังโอนเงินจริงเท่านั้น')}</div>
+        <div class="acctMuted" style="margin:10px 0">ระบบไม่โอนเงินอัตโนมัติ บัญชีต้องโอนเงินจริงก่อน แล้วจึงกดบันทึกจ่ายแล้ว</div>
         <div class="acctList">
           ${rows.length ? rows.map((t) => {
             const remaining = Number(t.remaining_amount || 0);
@@ -325,7 +371,7 @@
                   ${paid ? `<button class="acctDisabledBtn" type="button" disabled>จ่ายช่างแล้ว</button>` : `<button class="acctPrimaryBtn" type="button" data-pay-payout="${esc(payoutId)}" data-tech="${esc(t.technician_username)}" data-remaining="${esc(t.remaining_amount)}">บันทึกจ่ายแล้ว</button>`}
                 </div>
               </div>`;
-          }).join('') : empty('ยังไม่มีรายละเอียดช่างในงวดนี้')}
+          }).join('') : empty('ยังไม่มีรายช่างในงวดนี้ ถ้างวดนี้ควรมีงาน ให้ตรวจว่ามีงานเสร็จในช่วงตัดยอดนี้แล้วหรือยัง')}
         </div>
       </div>`;
     el.querySelectorAll('[data-pay-payout]').forEach((btn) => btn.addEventListener('click', () => openPayoutPaidModal(btn.dataset.payPayout, btn.dataset.tech, btn.dataset.remaining)));
@@ -339,6 +385,15 @@
       <div class="acctRow"><div><b>${esc(r.transaction_type)} • ${money(r.amount)} บาท</b><small>${esc(r.technician_username)} • ${esc(r.payout_id || '-')} • ${esc(r.note || '')}</small></div><small>${esc(dateTH(r.created_at))}</small></div>`).join('') : empty('ยังไม่มี ledger เงินประกัน');
   }
   function renderReports() {
+    const sumEl = $('reportSummary');
+    if (sumEl) {
+      const r = state.reportSummary || {};
+      sumEl.innerHTML = `
+        <div class="acctSummaryTile"><span>รายรับงานเสร็จ</span><b>${money(r.revenue?.total_amount)} ฿</b></div>
+        <div class="acctSummaryTile"><span>รายจ่ายที่บันทึก</span><b>${money(r.expenses?.total_amount)} ฿</b></div>
+        <div class="acctSummaryTile"><span>ยอดจ่ายช่าง</span><b>${money(r.payouts?.net_payable)} ฿</b></div>
+        <div class="acctSummaryTile"><span>กำไรขั้นต้นประมาณ</span><b>${money(r.estimated_gross_profit)} ฿</b></div>`;
+    }
     const el = $('reportCards'); if (!el) return;
     const reports = [
       { key: 'revenue', title: 'รายงานรายรับ', desc: 'งานที่เสร็จแล้ว ยอดขาย สถานะรับเงิน และหลักฐานรับเงิน' },
@@ -347,12 +402,12 @@
       { key: 'deposits', title: 'รายงานเงินประกัน', desc: 'ยอดเงินประกันที่ถืออยู่ แยกตามช่าง และยอดคงเหลือเป้าหมาย' },
       { key: 'gross-profit', title: 'รายงานกำไรขั้นต้น', desc: 'สรุปยอดขาย หักรายจ่าย หักยอดจ่ายช่าง เพื่อใช้ตรวจทานเบื้องต้น' },
       { key: 'documents', title: 'รายงานเอกสารขาย', desc: 'ใบเสนอราคา ใบแจ้งหนี้ ใบเสร็จ และสถานะเอกสาร' },
-      { key: 'vat-summary', title: 'VAT summary', desc: 'สรุป VAT จากเอกสารขายและรายจ่าย สำหรับให้บัญชีตรวจ' },
-      { key: 'withholding-summary', title: 'Withholding tax summary', desc: 'สรุปหัก ณ ที่จ่ายจากรายจ่าย/ข้อมูลที่มีในระบบ' },
+      { key: 'vat-summary', title: 'VAT summary', desc: 'สรุป VAT จากเอกสารขายและรายจ่ายที่บันทึกไว้' },
+      { key: 'withholding-summary', title: 'Withholding summary', desc: 'สรุปหัก ณ ที่จ่ายจากรายจ่ายที่บันทึกไว้' },
     ];
     el.innerHTML = reports.map((r) => `
       <div class="acctBox acctReportCard">
-        <div class="acctBadge ok">CSV พร้อมใช้</div>
+        <div class="acctBadge ok">CSV + พิมพ์ได้</div>
         <h3>${esc(r.title)}</h3>
         <div class="acctMuted">${esc(r.desc)}</div>
         <button class="acctPrimaryBtn" type="button" data-export-report="${esc(r.key)}">ดาวน์โหลด CSV</button>
@@ -391,34 +446,51 @@
     setTimeout(() => modal.querySelector('input,select,textarea,button')?.focus(), 0);
   }
   function openExpenseModal() {
-    const today = new Date().toISOString().slice(0, 10);
-    const cats = ['ค่าอะไหล่','ค่าน้ำยาแอร์','ค่าเดินทาง','ค่าอุปกรณ์','ค่าโฆษณา','ค่าระบบ/ซอฟต์แวร์','ค่าจ้างช่าง','ค่าเช่า/สำนักงาน','ค่าอื่น ๆ'];
+    const today = new Date().toISOString().slice(0,10);
     openModal(`
-      <form class="acctFormGrid">
+      <form class="acctFormGrid" enctype="multipart/form-data">
         <h3>เพิ่มรายจ่ายจริง</h3>
-        <p>บันทึกรายจ่ายที่เกิดขึ้นจริง พร้อมข้อมูลสำหรับให้บัญชีตรวจย้อนหลัง</p>
-        <label>วันที่จ่าย<input class="acctInput" name="expense_date" type="date" value="${esc(today)}"></label>
-        <label>หมวดรายจ่าย<select class="acctInput" name="category">${cats.map(c => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}</select></label>
+        <p>บันทึกรายจ่ายพร้อมรูปใบเสร็จ/สลิป ระบบจะเก็บ audit log ให้ตรวจย้อนหลัง</p>
+        <label>วันที่รายจ่าย<input class="acctInput" name="expense_date" type="date" value="${today}" required></label>
+        <label>หมวดรายจ่าย<select class="acctInput" name="category" required>
+          <option value="ค่าอะไหล่">ค่าอะไหล่</option><option value="ค่าน้ำยาแอร์">ค่าน้ำยาแอร์</option><option value="ค่าเดินทาง">ค่าเดินทาง</option><option value="ค่าอุปกรณ์">ค่าอุปกรณ์</option><option value="ค่าโฆษณา">ค่าโฆษณา</option><option value="ค่าระบบ/ซอฟต์แวร์">ค่าระบบ/ซอฟต์แวร์</option><option value="ค่าจ้างช่าง">ค่าจ้างช่าง</option><option value="ค่าเช่า/สำนักงาน">ค่าเช่า/สำนักงาน</option><option value="ค่าอื่น ๆ">ค่าอื่น ๆ</option>
+        </select></label>
         <label>ร้านค้า/ผู้ขาย<input class="acctInput" name="vendor_name" placeholder="เช่น ร้านอะไหล่ / ปั๊มน้ำมัน"></label>
-        <label>รายละเอียด<textarea class="acctInput" name="description" placeholder="อธิบายรายจ่ายนี้"></textarea></label>
-        <label>จำนวนเงิน<input class="acctInput" name="amount" type="number" min="0.01" step="0.01" placeholder="0.00"></label>
-        <div class="acctGrid2">
-          <label>VAT ถ้ามี<input class="acctInput" name="vat_amount" type="number" min="0" step="0.01" value="0"></label>
-          <label>หัก ณ ที่จ่าย ถ้ามี<input class="acctInput" name="withholding_amount" type="number" min="0" step="0.01" value="0"></label>
-        </div>
+        <label>รายละเอียด<textarea class="acctInput" name="description" placeholder="ระบุรายละเอียดรายจ่าย"></textarea></label>
+        <label>จำนวนเงิน<input class="acctInput" name="amount" type="number" min="0.01" step="0.01" required></label>
+        <label>VAT ถ้ามี<input class="acctInput" name="vat_amount" type="number" min="0" step="0.01" value="0"></label>
+        <label>หัก ณ ที่จ่าย ถ้ามี<input class="acctInput" name="withholding_amount" type="number" min="0" step="0.01" value="0"></label>
         <label>ช่องทางชำระเงิน<input class="acctInput" name="payment_method" placeholder="เงินสด / โอน / บัตร"></label>
         <label>เลขอ้างอิง<input class="acctInput" name="payment_reference" placeholder="เลขสลิป / เลขใบเสร็จ"></label>
-        <label>ผูกกับรหัสงาน ถ้ามี<input class="acctInput" name="job_id" inputmode="numeric" placeholder="เช่น 123"></label>
-        <label>URL หลักฐาน ถ้ามี<input class="acctInput" name="proof_url" placeholder="https://..."></label>
+        <label>ผูกกับ Job ID ถ้ามี<input class="acctInput" name="job_id" type="number" min="1" placeholder="ไม่บังคับ"></label>
+        <label>รูปใบเสร็จ/สลิป<input class="acctInput" name="proof" type="file" accept="image/*,application/pdf"></label>
+        <label>หรือ URL หลักฐาน<input class="acctInput" name="proof_url" placeholder="https://..."></label>
         <div class="acctSoftErr" data-error style="display:block;min-height:0"></div>
         <div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">บันทึกรายจ่าย</button></div>
       </form>`, async (fd) => {
-        await postJson('/admin/accounting/expenses', {
-          expense_date: fd.get('expense_date'), category: fd.get('category'), vendor_name: fd.get('vendor_name'), description: fd.get('description'), amount: fd.get('amount'), vat_amount: fd.get('vat_amount'), withholding_amount: fd.get('withholding_amount'), payment_method: fd.get('payment_method'), payment_reference: fd.get('payment_reference'), job_id: fd.get('job_id'), proof_url: fd.get('proof_url'), status: 'submitted'
-        });
+        await postForm('/admin/accounting/expenses', fd);
         closeModal();
         await Promise.all([loadSummary(), loadAudit()]);
         showAccountingTab('expenses', { scroll: false, updateUrl: true });
+      });
+  }
+  function openCreateDocumentModal(jobId = '') {
+    openModal(`
+      <form class="acctFormGrid">
+        <h3>สร้างเอกสารขาย</h3>
+        <p>ใส่เลขงาน แล้วเลือกว่าเป็นใบเสนอราคา / ใบแจ้งหนี้ / ใบเสร็จ ระบบจะรันเลขเอกสารให้อัตโนมัติ</p>
+        <label>ประเภทเอกสาร<select class="acctInput" name="document_type" required><option value="quotation">ใบเสนอราคา</option><option value="invoice">ใบแจ้งหนี้</option><option value="receipt">ใบเสร็จรับเงิน</option></select></label>
+        <label>Job ID<input class="acctInput" name="job_id" type="number" min="1" value="${esc(jobId)}" required placeholder="เช่น 123"></label>
+        <label>วันครบกำหนด ถ้ามี<input class="acctInput" name="due_date" type="date"></label>
+        <label class="acctCheckLine"><input type="checkbox" name="issue_now" value="1"><span>ออกเอกสารทันที (issued) ถ้ายังไม่แน่ใจให้ปล่อยเป็น draft</span></label>
+        <div class="acctSoftErr" data-error style="display:block;min-height:0"></div>
+        <div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">สร้างเอกสาร</button></div>
+      </form>`, async (fd) => {
+        const payload = { document_type: fd.get('document_type'), job_id: Number(fd.get('job_id')), due_date: fd.get('due_date') || null, issue_now: fd.get('issue_now') === '1' };
+        await postJson('/admin/accounting/documents', payload);
+        closeModal();
+        await Promise.all([loadSummary(), loadAudit()]);
+        showAccountingTab('documents', { scroll: false, updateUrl: true });
       });
   }
 
@@ -474,14 +546,22 @@
     state.summary = await getJson('/admin/accounting/summary'); renderAll(); showErrors([state.summary]);
   }
   async function loadRevenue() { setLoading('revenueList'); const r = await getJson('/admin/accounting/revenue'); state.revenue = r.rows || []; renderRevenue(); showErrors([r]); }
-  async function loadPayouts() { setLoading('payoutList'); const r = await getJson('/admin/accounting/payouts'); state.payouts = r.rows || []; if ($('payoutNote') && r.note) $('payoutNote').textContent = r.note; renderPayouts(); showErrors([r]); }
+  async function loadPayouts() { setLoading('payoutList'); const r = await getJson('/admin/accounting/payouts'); state.payouts = r.rows || []; state.payoutPeriods = Object.fromEntries((state.payouts || []).map(p => [String(p.payout_id), p])); if ($('payoutNote') && r.note) $('payoutNote').textContent = r.note; renderPayouts(); showErrors([r]); }
   async function loadPayoutTechs(payoutId, options = {}) {
-    state.selectedPayoutId = payoutId; setLoading('payoutTechs', 'กำลังโหลดรายละเอียดรายช่าง...'); renderPayouts();
-    const r = await getJson(`/admin/accounting/payouts/${encodeURIComponent(payoutId)}/techs`);
-    state.payoutTechs[payoutId] = r.rows || []; renderPayouts(); showErrors([r]);
+    state.selectedPayoutId = payoutId; state.payoutTechError = null; setLoading('payoutTechs', 'กำลังโหลดรายละเอียดรายช่าง...'); renderPayouts();
+    try {
+      const r = await getJson(`/admin/accounting/payouts/${encodeURIComponent(payoutId)}/techs`);
+      state.payoutTechs[payoutId] = r.rows || [];
+      if (r.period) state.payoutPeriods[payoutId] = r.period;
+      showErrors([r]);
+    } catch (e) {
+      state.payoutTechError = cleanError(e) || e.message || 'โหลดข้อมูลไม่สำเร็จ';
+    }
+    renderPayouts();
     if (!options.keepPosition) requestAnimationFrame(() => { try { $('payoutTechs')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); } catch (_) {} });
   }
   async function loadDeposits() { setLoading('depositList'); setLoading('depositLedger'); state.deposits = await getJson('/admin/accounting/deposits'); renderDeposits(); showErrors([state.deposits]); }
+  async function loadReportSummary() { const r = await getJson('/admin/accounting/reports/summary'); state.reportSummary = r; renderReports(); showErrors([r]); }
   async function loadAudit() { setLoading('auditList'); const r = await getJson('/admin/accounting/audit'); state.audit = r.rows || []; renderAudit(); showErrors([r]); }
   async function reloadAll() {
     try {
@@ -489,6 +569,7 @@
       if (state.tab === 'revenue') await loadRevenue();
       if (state.tab === 'payouts') await loadPayouts();
       if (state.tab === 'deposits') await loadDeposits();
+      if (state.tab === 'reports') await loadReportSummary();
       if (state.tab === 'audit') await loadAudit();
     } catch (e) {
       const err = $('softErrors'); if (err) err.innerHTML = `<div class="acctSoftErr">โหลดข้อมูลงานบัญชีไม่สำเร็จ: ${esc(e.message || e)}</div>`;
@@ -496,9 +577,9 @@
   }
   function workspaceAction() {
     if (state.tab === 'revenue') return loadRevenue();
-    if (state.tab === 'expenses') return openExpenseModal();
     if (state.tab === 'payouts') return loadPayouts();
     if (state.tab === 'deposits') return loadDeposits();
+    if (state.tab === 'reports') return loadReportSummary();
     if (state.tab === 'audit') return loadAudit();
     return reloadAll();
   }
@@ -515,6 +596,9 @@
     $('btnReloadAccounting')?.addEventListener('click', reloadAll);
     $('workspacePrimaryAction')?.addEventListener('click', workspaceAction);
     $('btnReloadRevenue')?.addEventListener('click', loadRevenue);
+    $('btnOpenExpense')?.addEventListener('click', openExpenseModal);
+    $('btnOpenCreateDoc')?.addEventListener('click', () => openCreateDocumentModal());
+    $('btnPrintReport')?.addEventListener('click', () => window.print());
     $('revenueSearch')?.addEventListener('input', renderRevenue);
     $('revenueStatusFilter')?.addEventListener('change', renderRevenue);
     window.addEventListener('hashchange', () => showAccountingTab(initialTabFromUrl(), { scroll: true, updateUrl: false }));
