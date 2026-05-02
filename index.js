@@ -17364,39 +17364,50 @@ async function _getAccountingSettings() {
       logo_url: v.logo_url || '',
       signature_url: v.signature_url || '',
       stamp_url: v.stamp_url || '',
+      vat_rate: v.vat_rate ?? 7,
+      wht_rate: v.wht_rate ?? 3,
+      footer_note: v.footer_note || '',
+      bank_info: v.bank_info || '',
     };
   } catch (_) {
     return { company_name: 'Coldwindflow Air Services', tax_id: '', branch: 'สำนักงานใหญ่', address: '23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260', phone: '098-877-7321', signer_name: 'สุทธิพงษ์ ศรีวารินทร์', signer_position: 'ผู้มีอำนาจลงนาม' };
   }
 }
-async function _accountingSaveAssetFromFile(file, kind) {
-  if (!file) return '';
-  const safeKind = String(kind || 'asset').replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
-  if (CLOUDINARY_ENABLED) {
-    const publicId = `${safeKind}_${Date.now()}_${crypto.randomUUID().slice(0,8)}`;
-    const up = await cloudinaryUploadBuffer({ buffer: file.buffer, mimetype: file.mimetype || 'image/jpeg', folder: 'cwf/accounting/settings', publicId, transformation: 'c_limit,w_1000/q_auto/f_auto' });
-    return up.secure_url;
+
+async function _accountingSaveUploadedAsset(file, folder = 'settings') {
+  if (!file || !file.buffer) return '';
+  const publicId = `cwf/accounting/${folder}/${Date.now()}-${crypto.randomBytes(4).toString('hex')}`;
+  try {
+    const up = await cloudinaryUploadBuffer({ buffer: file.buffer, mimetype: file.mimetype || 'image/jpeg', folder: `cwf/accounting/${folder}`, publicId, transformation: 'c_limit,w_1400/q_auto/f_auto' });
+    return up.secure_url || up.url || '';
+  } catch (e) {
+    const dir = path.join(__dirname, 'uploads', 'accounting', folder);
+    fs.mkdirSync(dir, { recursive: true });
+    const ext = path.extname(file.originalname || '') || '.jpg';
+    const safeName = `${Date.now()}-${crypto.randomBytes(4).toString('hex')}${ext}`;
+    fs.writeFileSync(path.join(dir, safeName), file.buffer);
+    return `/uploads/accounting/${folder}/${safeName}`;
   }
-  return saveUploadedFile(file, UPLOAD_DIR, `accounting_${safeKind}`);
 }
 
-async function _saveAccountingSettingsFromBody(body = {}, files = {}, actor = null) {
-  const current = await _getAccountingSettings();
-  const v = { ...current };
-  const keys = ['company_name','tax_id','branch','address','phone','signer_name','signer_position','logo_url','signature_url','stamp_url','footer_text','bank_info'];
-  for (const k of keys) if (body[k] !== undefined) v[k] = String(body[k] || '').trim();
-  if (body.vat_rate !== undefined) v.vat_rate = Number(body.vat_rate || 0);
-  if (body.withholding_rate !== undefined) v.withholding_rate = Number(body.withholding_rate || 0);
-  const logo = files.logo_file?.[0];
-  const sig = files.signature_file?.[0];
-  const stamp = files.stamp_file?.[0];
-  if (logo) v.logo_url = await _accountingSaveAssetFromFile(logo, 'logo');
-  if (sig) v.signature_url = await _accountingSaveAssetFromFile(sig, 'signature');
-  if (stamp) v.stamp_url = await _accountingSaveAssetFromFile(stamp, 'stamp');
-  await pool.query(`INSERT INTO public.accounting_settings(key, value_json, updated_by, updated_at)
-    VALUES('company', $1::jsonb, $2, NOW())
-    ON CONFLICT(key) DO UPDATE SET value_json=EXCLUDED.value_json, updated_by=EXCLUDED.updated_by, updated_at=NOW()`, [JSON.stringify(v), actor?.username || actor || null]);
-  return v;
+function _accountingSettingsFromBody(body = {}, current = {}) {
+  const pick = (k, def='') => String(body[k] ?? current[k] ?? def).trim();
+  return {
+    company_name: pick('company_name', 'Coldwindflow Air Services'),
+    tax_id: pick('tax_id'),
+    branch: pick('branch', 'สำนักงานใหญ่'),
+    address: pick('address', '23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260'),
+    phone: pick('phone', '098-877-7321'),
+    signer_name: pick('signer_name', 'สุทธิพงษ์ ศรีวารินทร์'),
+    signer_position: pick('signer_position', 'ผู้มีอำนาจลงนาม'),
+    vat_rate: _money(body.vat_rate ?? current.vat_rate ?? 7),
+    wht_rate: _money(body.wht_rate ?? current.wht_rate ?? 3),
+    footer_note: pick('footer_note'),
+    bank_info: pick('bank_info'),
+    logo_url: pick('logo_url'),
+    signature_url: pick('signature_url'),
+    stamp_url: pick('stamp_url'),
+  };
 }
 
 async function _accountingGetTechTaxProfile(username) {
@@ -17566,6 +17577,43 @@ async function _accountingSafeQuery(soft_errors, label, sql, params = [], fallba
     return { rows: fallbackRows };
   }
 }
+
+app.get('/admin/accounting/settings', requireAccountingPermission('accounting_manage_documents'), async (req, res) => {
+  try {
+    const settings = await _getAccountingSettings();
+    return res.json({ ok: true, settings });
+  } catch (e) {
+    console.error('GET /admin/accounting/settings', e);
+    return res.status(500).json({ ok:false, error:'ACCOUNTING_SETTINGS_GET_FAILED', message:e.message });
+  }
+});
+
+app.post('/admin/accounting/settings', requireAccountingPermission('accounting_manage_documents'), upload.fields([
+  { name: 'logo_file', maxCount: 1 }, { name: 'signature_file', maxCount: 1 }, { name: 'stamp_file', maxCount: 1 }
+]), async (req, res) => {
+  try {
+    const actor = req.adminSession || req.user || {};
+    const before = await _getAccountingSettings();
+    const next = _accountingSettingsFromBody(req.body || {}, before);
+    const files = req.files || {};
+    const logo = files.logo_file?.[0] ? await _accountingSaveUploadedAsset(files.logo_file[0], 'company') : '';
+    const sig = files.signature_file?.[0] ? await _accountingSaveUploadedAsset(files.signature_file[0], 'signatures') : '';
+    const stamp = files.stamp_file?.[0] ? await _accountingSaveUploadedAsset(files.stamp_file[0], 'stamps') : '';
+    if (logo) next.logo_url = logo;
+    if (sig) next.signature_url = sig;
+    if (stamp) next.stamp_url = stamp;
+    if (!next.company_name) return res.status(400).json({ ok:false, error:'COMPANY_NAME_REQUIRED' });
+    await pool.query(`INSERT INTO public.accounting_settings(key, value_json, updated_by, updated_at)
+      VALUES('company',$1::jsonb,$2,NOW())
+      ON CONFLICT(key) DO UPDATE SET value_json=EXCLUDED.value_json, updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
+      [JSON.stringify(next), actor.username || actor.user_id || null]);
+    await logAccountingAudit(req, { action:'UPDATE_ACCOUNTING_SETTINGS', entity_type:'accounting_settings', entity_id:'company', before_json:before, after_json:next, note:'แก้ไขตั้งค่าข้อมูลบริษัทสำหรับออกเอกสาร' });
+    return res.json({ ok:true, settings: next });
+  } catch (e) {
+    console.error('POST /admin/accounting/settings', e);
+    return res.status(500).json({ ok:false, error:'ACCOUNTING_SETTINGS_SAVE_FAILED', message:e.message });
+  }
+});
 
 app.get('/admin/accounting/summary', requireAccountingPermission('accounting.read.summary'), async (req, res) => {
   const soft_errors = [];
@@ -17809,34 +17857,6 @@ app.post('/admin/accounting/revenue/:job_id/mark-paid', requireAccountingPermiss
   }
 });
 
-
-
-app.get('/admin/accounting/settings', requireAccountingPermission('accounting_view'), async (req, res) => {
-  try {
-    const settings = await _getAccountingSettings();
-    return res.json({ ok: true, settings });
-  } catch (e) {
-    console.error('GET /admin/accounting/settings', e);
-    return res.status(500).json({ ok: false, error: 'ACCOUNTING_SETTINGS_FAILED', message: e.message });
-  }
-});
-
-app.post('/admin/accounting/settings', requireAccountingPermission('accounting_manage_documents'), upload.fields([
-  { name: 'logo_file', maxCount: 1 },
-  { name: 'signature_file', maxCount: 1 },
-  { name: 'stamp_file', maxCount: 1 },
-]), async (req, res) => {
-  try {
-    const actor = _accountingActor(req);
-    const before = await _getAccountingSettings();
-    const settings = await _saveAccountingSettingsFromBody(req.body || {}, req.files || {}, actor);
-    await logAccountingAudit(req, { action: 'UPDATE_ACCOUNTING_SETTINGS', entity_type: 'accounting_settings', entity_id: 'company', before_json: before, after_json: settings, note: 'อัปเดตข้อมูลบริษัท/เอกสาร' });
-    return res.json({ ok: true, settings });
-  } catch (e) {
-    console.error('POST /admin/accounting/settings', e);
-    return res.status(500).json({ ok: false, error: 'SAVE_ACCOUNTING_SETTINGS_FAILED', message: e.message });
-  }
-});
 
 app.post('/admin/accounting/expenses', requireAccountingPermission('accounting_manage_expense'), upload.single('proof'), async (req, res) => {
   try {

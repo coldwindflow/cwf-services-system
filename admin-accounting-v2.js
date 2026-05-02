@@ -9,7 +9,7 @@
     payouts: { title: 'จ่ายเงินช่าง', hint: 'เลือกงวดจ่าย ดูรายช่าง แล้วบันทึกจ่ายหลังโอนเงินจริงเท่านั้น', action: 'โหลดงวดจ่าย' },
     deposits: { title: 'เงินประกัน', hint: 'ดูยอดเงินประกันที่ถือไว้แยกตามช่าง เงินประกันไม่ใช่กำไรบริษัท', action: 'โหลดเงินประกัน' },
     reports: { title: 'รายงาน', hint: 'รายงานสำหรับเตรียมบัญชี ไม่ใช่การยื่นภาษีอัตโนมัติ', action: 'ดูรายงาน' },
-    settings: { title: 'ตั้งค่าเอกสาร', hint: 'ข้อมูลบริษัท โลโก้ ลายเซ็น และตราประทับสำหรับออกเอกสาร', action: 'โหลดตั้งค่า' },
+    settings: { title: 'ตั้งค่าเอกสาร', hint: 'ตั้งค่าข้อมูลบริษัท โลโก้ ลายเซ็น และตราประทับสำหรับออกเอกสาร', action: 'แก้ไขข้อมูลบริษัท' },
     audit: { title: 'ประวัติการทำรายการ', hint: 'ตรวจย้อนหลังว่าใครทำอะไร เมื่อไหร่', action: 'โหลดประวัติ' },
   };
   const VALID_TABS = new Set(Object.keys(TAB_META));
@@ -23,11 +23,11 @@
     deposits: null,
     audit: [],
     reportSummary: null,
-    settings: null,
     payoutTechs: {},
     selectedPayoutId: null,
     payoutTechError: null,
     taxRequests: [],
+    settings: null,
     loading: new Set(),
   };
 
@@ -404,36 +404,6 @@
     if (led) led.innerHTML = ledger.length ? ledger.map((r) => `
       <div class="acctRow"><div><b>${esc(r.transaction_type)} • ${money(r.amount)} บาท</b><small>${esc(r.technician_username)} • ${esc(r.payout_id || '-')} • ${esc(r.note || '')}</small></div><small>${esc(dateTH(r.created_at))}</small></div>`).join('') : empty('ยังไม่มี ledger เงินประกัน');
   }
-
-  function renderSettings() {
-    const el = $('settingsSummary'); if (!el) return;
-    const x = state.settings || {};
-    el.innerHTML = `
-      <div class="acctRow"><div><b>${esc(x.company_name || 'Coldwindflow Air Services')}</b><small>เลขภาษี ${esc(x.tax_id || '-')} • ${esc(x.branch || 'สำนักงานใหญ่')}</small><small>${esc(x.address || '-')}</small><small>โทร ${esc(x.phone || '-')}</small></div><div class="acctActionsCol">${badge(x.tax_id ? 'พร้อมออกเอกสาร' : 'ควรเติมเลขภาษี', x.tax_id ? 'ok' : 'warn')}</div></div>
-      <div class="acctGrid3">
-        <div class="acctMiniStat"><span>โลโก้</span><b>${x.logo_url ? 'มีแล้ว' : 'ยังไม่มี'}</b></div>
-        <div class="acctMiniStat"><span>ลายเซ็น</span><b>${x.signature_url ? 'มีแล้ว' : 'ยังไม่มี'}</b></div>
-        <div class="acctMiniStat"><span>ตราประทับ</span><b>${x.stamp_url ? 'มีแล้ว' : 'ยังไม่มี'}</b></div>
-      </div>`;
-  }
-
-  function openSettingsModal(){
-    const x = state.settings || {};
-    openModal(`<form class="acctFormGrid" enctype="multipart/form-data">
-      <h3>ตั้งค่าข้อมูลบริษัท / เอกสาร</h3>
-      <p>ข้อมูลนี้จะใช้บนใบเสนอราคา ใบกำกับภาษี ใบเสร็จ และทวิ50</p>
-      <div class="acctGrid2"><label>ชื่อบริษัท/ร้าน<input class="acctInput" name="company_name" value="${esc(x.company_name || '')}" required></label><label>เลขประจำตัวผู้เสียภาษี<input class="acctInput" name="tax_id" value="${esc(x.tax_id || '')}"></label><label>สาขา<input class="acctInput" name="branch" value="${esc(x.branch || 'สำนักงานใหญ่')}"></label><label>เบอร์โทร<input class="acctInput" name="phone" value="${esc(x.phone || '')}"></label></div>
-      <label>ที่อยู่<textarea class="acctInput" name="address">${esc(x.address || '')}</textarea></label>
-      <div class="acctGrid2"><label>ชื่อผู้ลงนาม<input class="acctInput" name="signer_name" value="${esc(x.signer_name || '')}"></label><label>ตำแหน่ง<input class="acctInput" name="signer_position" value="${esc(x.signer_position || '')}"></label></div>
-      <div class="acctGrid2"><label>VAT %<input class="acctInput" name="vat_rate" type="number" step="0.01" value="${esc(x.vat_rate ?? 7)}"></label><label>หัก ณ ที่จ่าย %<input class="acctInput" name="withholding_rate" type="number" step="0.01" value="${esc(x.withholding_rate ?? 3)}"></label></div>
-      <label>ข้อความท้ายเอกสาร<textarea class="acctInput" name="footer_text">${esc(x.footer_text || '')}</textarea></label>
-      <label>ข้อมูลบัญชีรับเงิน<textarea class="acctInput" name="bank_info">${esc(x.bank_info || '')}</textarea></label>
-      <div class="acctGrid2"><label>URL โลโก้<input class="acctInput" name="logo_url" value="${esc(x.logo_url || '')}"></label><label>หรืออัปโหลดโลโก้<input class="acctInput" name="logo_file" type="file" accept="image/*"></label><label>URL ลายเซ็น<input class="acctInput" name="signature_url" value="${esc(x.signature_url || '')}"></label><label>หรืออัปโหลดลายเซ็น<input class="acctInput" name="signature_file" type="file" accept="image/*"></label><label>URL ตราประทับ<input class="acctInput" name="stamp_url" value="${esc(x.stamp_url || '')}"></label><label>หรืออัปโหลดตราประทับ<input class="acctInput" name="stamp_file" type="file" accept="image/*"></label></div>
-      <div class="acctSoftErr" data-error style="display:block;min-height:0"></div>
-      <div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">บันทึกข้อมูลบริษัท</button></div>
-    </form>`, async(fd)=>{ const r=await postForm('/admin/accounting/settings', fd); state.settings = r.settings || {}; closeModal(); renderSettings(); await loadAudit(); });
-  }
-
   function renderReports() {
     const sumEl = $('reportSummary');
     if (sumEl) {
@@ -495,6 +465,28 @@
     });
     setTimeout(() => modal.querySelector('input,select,textarea,button')?.focus(), 0);
   }
+  function renderSettings(){
+    const el=$('settingsSummary'); if(!el) return;
+    const s=state.settings || {};
+    el.innerHTML=`<div class="acctRow"><div><b>${esc(s.company_name||'ยังไม่ได้ตั้งชื่อบริษัท')}</b><small>เลขภาษี ${esc(s.tax_id||'-')} • ${esc(s.branch||'สำนักงานใหญ่')}</small><small>${esc(s.address||'-')}</small><small>โทร ${esc(s.phone||'-')}</small></div><div class="acctActionsCol">${s.logo_url?'<span class="acctBadge ok">มีโลโก้</span>':'<span class="acctBadge warn">ยังไม่มีโลโก้</span>'}${s.signature_url?'<span class="acctBadge ok">มีลายเซ็น</span>':'<span class="acctBadge warn">ยังไม่มีลายเซ็น</span>'}${s.stamp_url?'<span class="acctBadge ok">มีตราประทับ</span>':'<span class="acctBadge warn">ยังไม่มีตราประทับ</span>'}</div></div>`;
+  }
+  async function loadSettings(){ try{ const r=await getJson('/admin/accounting/settings'); state.settings=r.settings||{}; renderSettings(); }catch(e){ const el=$('settingsSummary'); if(el) el.innerHTML=`<div class="acctSoftErr">โหลดตั้งค่าเอกสารไม่สำเร็จ: ${esc(cleanError(e)||e.message)}</div>`; } }
+  function openSettingsModal(){
+    const s=state.settings || {};
+    openModal(`<form class="acctFormGrid" enctype="multipart/form-data">
+      <h3>ตั้งค่าข้อมูลบริษัทสำหรับออกเอกสาร</h3>
+      <p>ข้อมูลนี้จะใช้บนใบเสนอราคา ใบกำกับภาษี ใบเสร็จ และทวิ50</p>
+      <div class="acctGrid2"><label>ชื่อร้าน/บริษัท<input class="acctInput" name="company_name" required value="${esc(s.company_name||'Coldwindflow Air Services')}"></label><label>เลขประจำตัวผู้เสียภาษี<input class="acctInput" name="tax_id" value="${esc(s.tax_id||'')}"></label><label>สาขา<input class="acctInput" name="branch" value="${esc(s.branch||'สำนักงานใหญ่')}"></label><label>โทรศัพท์<input class="acctInput" name="phone" value="${esc(s.phone||'098-877-7321')}"></label></div>
+      <label>ที่อยู่บริษัท<textarea class="acctInput" name="address" required>${esc(s.address||'')}</textarea></label>
+      <div class="acctGrid2"><label>ผู้ลงนาม<input class="acctInput" name="signer_name" value="${esc(s.signer_name||'')}"></label><label>ตำแหน่ง<input class="acctInput" name="signer_position" value="${esc(s.signer_position||'')}"></label><label>VAT %<input class="acctInput" name="vat_rate" type="number" step="0.01" value="${esc(s.vat_rate||7)}"></label><label>หัก ณ ที่จ่าย %<input class="acctInput" name="wht_rate" type="number" step="0.01" value="${esc(s.wht_rate||3)}"></label></div>
+      <label>ข้อความท้ายเอกสาร<textarea class="acctInput" name="footer_note">${esc(s.footer_note||'')}</textarea></label>
+      <label>ข้อมูลบัญชีรับเงิน<textarea class="acctInput" name="bank_info">${esc(s.bank_info||'')}</textarea></label>
+      <div class="acctGrid2"><label>URL โลโก้<input class="acctInput" name="logo_url" value="${esc(s.logo_url||'')}"></label><label>อัปโหลดโลโก้<input class="acctInput" name="logo_file" type="file" accept="image/*"></label><label>URL ลายเซ็น<input class="acctInput" name="signature_url" value="${esc(s.signature_url||'')}"></label><label>อัปโหลดลายเซ็น<input class="acctInput" name="signature_file" type="file" accept="image/*"></label><label>URL ตราประทับ<input class="acctInput" name="stamp_url" value="${esc(s.stamp_url||'')}"></label><label>อัปโหลดตราประทับ<input class="acctInput" name="stamp_file" type="file" accept="image/*"></label></div>
+      <div class="acctSoftErr" data-error style="display:block;min-height:0"></div>
+      <div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">บันทึกตั้งค่าเอกสาร</button></div>
+    </form>`, async(fd)=>{ await postForm('/admin/accounting/settings', fd); closeModal(); await Promise.all([loadSettings(), loadAudit()]); });
+  }
+
   function openExpenseModal() {
     const today = new Date().toISOString().slice(0,10);
     openModal(`
@@ -536,15 +528,25 @@
   }
   function addQuoteLine(container, data={}){
     const row = document.createElement('div'); row.className='acctQuoteLine acctBox';
-    row.innerHTML = `<div class="acctGrid3"><label>ประเภทงาน<select class="acctInput" name="job_type"><option value="cleaning">ล้างแอร์</option><option value="repair">ซ่อมแอร์</option><option value="install">ติดตั้งแอร์</option></select></label><label>ประเภทแอร์<select class="acctInput" name="ac_type"><option value="wall">แอร์ผนัง</option></select><small>ประเภทการล้างเลือกได้เฉพาะแอร์ผนังตาม flow ปัจจุบัน</small></label><label>ประเภทการล้าง<select class="acctInput" name="wash_variant"><option value="normal">ล้างปกติ</option><option value="premium">ล้างพรีเมียม</option><option value="hanging_coil">ล้างแขวนคอยล์</option><option value="overhaul">ตัดล้างใหญ่</option></select></label><label>BTU<select class="acctInput" name="btu"><option value="<=12000">ไม่เกิน 12,000 BTU</option><option value=">=18000">18,000 BTU ขึ้นไป</option></select></label><label>จำนวน<input class="acctInput" name="quantity" type="number" min="1" value="1"></label><label>ราคา/หน่วย<input class="acctInput" name="unit_price" type="number" min="0" step="0.01"></label></div><label>รายละเอียดเพิ่มเติม<input class="acctInput" name="description" placeholder="เช่น ล้างแอร์ผนังพรีเมียม"></label><button type="button" class="acctGhostBtn" data-remove-line>ลบรายการนี้</button>`;
+    row.innerHTML = `<div class="acctGrid3">
+      <label>ประเภทงาน<select class="acctInput" name="job_type"><option value="cleaning">ล้างแอร์</option><option value="repair">ซ่อมแอร์</option><option value="install">ติดตั้งแอร์</option></select></label>
+      <label>ประเภทแอร์<select class="acctInput" name="ac_type"><option value="wall">แอร์ผนัง</option><option value="cassette">แอร์สี่ทิศทาง</option><option value="ceiling">แอร์แขวน</option><option value="concealed">แอร์เปลือย</option></select><small>แอร์ผนังเลือกประเภทการล้างได้ ส่วนแอร์อื่นมีแบบเดียวตาม flow งานปัจจุบัน</small></label>
+      <label data-wash-wrap>ประเภทการล้าง<select class="acctInput" name="wash_variant"><option value="normal">ล้างปกติ</option><option value="premium">ล้างพรีเมียม</option><option value="hanging_coil">ล้างแขวนคอยล์</option><option value="overhaul">ตัดล้างใหญ่</option></select></label>
+      <label>BTU<select class="acctInput" name="btu"><option value="<=12000">ไม่เกิน 12,000 BTU</option><option value=">=18000">18,000 BTU ขึ้นไป</option></select></label>
+      <label>จำนวน<input class="acctInput" name="quantity" type="number" min="1" value="1"></label>
+      <label>ราคา/หน่วย<input class="acctInput" name="unit_price" type="number" min="0" step="0.01"></label>
+    </div><label>รายละเอียดเพิ่มเติม<input class="acctInput" name="description" placeholder="เช่น ล้างแอร์ผนังพรีเมียม"></label><button type="button" class="acctGhostBtn" data-remove-line>ลบรายการนี้</button>`;
     container.appendChild(row);
-    const setPrice=()=>{ const wash=row.querySelector('[name=wash_variant]').value; const btu=row.querySelector('[name=btu]').value; const p=row.querySelector('[name=unit_price]'); if(!p.dataset.touched) p.value=quoteDefaultPrice(wash,btu); };
+    const acSel=row.querySelector('[name=ac_type]'); const washWrap=row.querySelector('[data-wash-wrap]');
+    const setPrice=()=>{ const ac=acSel.value; const wash=row.querySelector('[name=wash_variant]').value; const btu=row.querySelector('[name=btu]').value; const p=row.querySelector('[name=unit_price]'); if(!p.dataset.touched) p.value=ac==='wall'?quoteDefaultPrice(wash,btu):0; };
+    const updateWash=()=>{ const isWall=acSel.value==='wall'; if(washWrap) washWrap.style.display=isWall?'grid':'none'; if(!isWall){ const wash=row.querySelector('[name=wash_variant]'); if(wash) wash.value='standard'; } else { const wash=row.querySelector('[name=wash_variant]'); if(wash && wash.value==='standard') wash.value='normal'; } setPrice(); updateQuoteTotal(container); };
     row.querySelector('[name=unit_price]').addEventListener('input', e=>{ e.target.dataset.touched='1'; updateQuoteTotal(container); });
-    ['wash_variant','btu','quantity'].forEach(n=>row.querySelector(`[name=${n}]`)?.addEventListener('change',()=>{setPrice();updateQuoteTotal(container)}));
+    ['ac_type','wash_variant','btu','quantity'].forEach(n=>row.querySelector(`[name=${n}]`)?.addEventListener('change',()=>{ n==='ac_type'?updateWash():(setPrice(),updateQuoteTotal(container)); }));
     row.querySelector('[data-remove-line]').addEventListener('click',()=>{ row.remove(); updateQuoteTotal(container); });
-    setPrice(); updateQuoteTotal(container);
+    if(data.ac_type) row.querySelector('[name=ac_type]').value=data.ac_type;
+    updateWash();
   }
-  function quoteItemsFrom(container){ return Array.from(container.querySelectorAll('.acctQuoteLine')).map(r=>{ const get=n=>r.querySelector(`[name=${n}]`)?.value||''; const qty=Number(get('quantity')||1); const unit=Number(get('unit_price')||0); const wash=get('wash_variant'); const btu=get('btu'); return { job_type:get('job_type'), ac_type:'wall', wash_variant:wash, btu, quantity:qty, unit_price:unit, line_total:qty*unit, description:get('description')||`ล้างแอร์ผนัง ${wash} ${btu}` }; }); }
+  function quoteItemsFrom(container){ return Array.from(container.querySelectorAll('.acctQuoteLine')).map(r=>{ const get=n=>r.querySelector(`[name=${n}]`)?.value||''; const qty=Number(get('quantity')||1); const unit=Number(get('unit_price')||0); const ac=get('ac_type')||'wall'; const wash=ac==='wall'?get('wash_variant'):'standard'; const btu=get('btu'); const acLabel={wall:'แอร์ผนัง',cassette:'แอร์สี่ทิศทาง',ceiling:'แอร์แขวน',concealed:'แอร์เปลือย'}[ac]||ac; const washLabel={normal:'ล้างปกติ',premium:'ล้างพรีเมียม',hanging_coil:'ล้างแขวนคอยล์',overhaul:'ตัดล้างใหญ่',standard:'บริการมาตรฐาน'}[wash]||wash; return { job_type:get('job_type'), ac_type:ac, wash_variant:wash, btu, quantity:qty, unit_price:unit, line_total:qty*unit, description:get('description')||`${acLabel} ${washLabel} ${btu}` }; }); }
   function updateQuoteTotal(container){ const out=document.getElementById('quoteTotalPreview'); if(!out) return; const total=quoteItemsFrom(container).reduce((s,x)=>s+Number(x.line_total||0),0); out.textContent=`ยอดรวม ${money(total)} บาท`; }
   function openQuotationModal(){
     openModal(`<form class="acctFormGrid"><h3>สร้างใบเสนอราคา</h3><p>สร้างใบเสนอราคาเองได้โดยไม่ต้องมี Job ID เลือกประเภทการล้างเฉพาะแอร์ผนัง และเพิ่มหลายรายการได้</p><div class="acctGrid2"><label>วันที่ออกเอกสาร<input class="acctInput" name="issue_date" type="date" value="${todayIso()}"></label><label>วันหมดอายุ<input class="acctInput" name="due_date" type="date"></label><label>ชื่อลูกค้า<input class="acctInput" name="customer_name" required></label><label>เบอร์ลูกค้า<input class="acctInput" name="customer_phone"></label></div><label>ที่อยู่ลูกค้า<textarea class="acctInput" name="customer_address"></textarea></label><div id="quoteLineList" class="acctList"></div><button class="acctSecondaryBtn" type="button" id="btnAddQuoteLine">+ เพิ่มรายการ</button><div id="quoteTotalPreview" class="acctAmountStrong">ยอดรวม 0 บาท</div><label>หมายเหตุ<textarea class="acctInput" name="note"></textarea></label><label class="acctCheckLine"><input type="checkbox" name="issue_now" value="1"><span>ออกเอกสารทันที</span></label><div class="acctSoftErr" data-error style="display:block;min-height:0"></div><div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">สร้างใบเสนอราคา</button></div></form>`, async(fd)=>{ const box=document.getElementById('quoteLineList'); const r=await postJson('/admin/accounting/documents',{ document_type:'quotation', issue_date:fd.get('issue_date'), due_date:fd.get('due_date'), customer_name:fd.get('customer_name'), customer_phone:fd.get('customer_phone'), customer_address:fd.get('customer_address'), note:fd.get('note'), issue_now:fd.get('issue_now')==='1', line_items:quoteItemsFrom(box) }); closeModal(); await Promise.all([loadSummary(),loadAudit()]); showAccountingTab('documents',{scroll:false,updateUrl:true}); if(r.print_url) window.open(r.print_url,'_blank','noopener'); });
@@ -691,7 +693,6 @@
   }
   async function loadDeposits() { setLoading('depositList'); setLoading('depositLedger'); state.deposits = await getJson('/admin/accounting/deposits'); renderDeposits(); showErrors([state.deposits]); }
   async function loadReportSummary() { const r = await getJson('/admin/accounting/reports/summary'); state.reportSummary = r; renderReports(); showErrors([r]); }
-  async function loadSettings() { const r = await getJson('/admin/accounting/settings'); state.settings = r.settings || {}; renderSettings(); showErrors([r]); }
   async function loadAudit() { setLoading('auditList'); const r = await getJson('/admin/accounting/audit'); state.audit = r.rows || []; renderAudit(); showErrors([r]); }
   async function reloadAll() {
     try {
@@ -711,7 +712,7 @@
     if (state.tab === 'payouts') return Promise.all([loadPayouts(), loadTaxRequests()]);
     if (state.tab === 'deposits') return loadDeposits();
     if (state.tab === 'reports') return loadReportSummary();
-    if (state.tab === 'settings') return loadSettings();
+    if (state.tab === 'settings') return openSettingsModal();
     if (state.tab === 'audit') return loadAudit();
     return reloadAll();
   }
@@ -732,6 +733,7 @@
     $('btnOpenCreateDoc')?.addEventListener('click', () => openCreateDocumentModal());
     $('btnOpenQuoteDoc')?.addEventListener('click', openQuotationModal);
     $('btnOpenTaxInvoiceDoc')?.addEventListener('click', openTaxInvoiceModal);
+    $('btnOpenSettings')?.addEventListener('click', openSettingsModal);
     $('btnPrintReport')?.addEventListener('click', () => window.print());
     $('revenueSearch')?.addEventListener('input', renderRevenue);
     $('revenueStatusFilter')?.addEventListener('change', renderRevenue);
@@ -742,6 +744,7 @@
   bind();
   renderReports();
   renderPayoutTechs();
+  renderSettings();
   showAccountingTab(initialTabFromUrl(), { scroll: location.search.includes('tab=') || !!location.hash, updateUrl: false });
   reloadAll();
 })();

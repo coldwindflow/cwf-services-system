@@ -4272,8 +4272,8 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
 
 
 // ✅ Tax profile + withholding certificates for technicians (ทวิ50)
-function _cwfCurrentTechUsernameForTax(){
-  return String(localStorage.getItem('username') || localStorage.getItem('tech_username') || window.currentUsername || window.username || '').trim();
+function getCurrentTechUsernameForTax(){
+  return String(localStorage.getItem('username') || localStorage.getItem('technician_username') || window.currentUsername || window.CWF_CURRENT_USERNAME || '').trim();
 }
 async function openTechTaxProfileModal(){
   closeTechSettingsModal?.();
@@ -4282,9 +4282,9 @@ async function openTechTaxProfileModal(){
   const msg = document.getElementById('techTaxProfileMsg');
   if (!modal || !form) return;
   modal.style.display='flex'; if (msg) msg.textContent='กำลังโหลดข้อมูล...';
-  if (!_cwfCurrentTechUsernameForTax()) { if (msg) msg.textContent='ไม่พบรหัสช่าง กรุณาเข้าสู่ระบบใหม่'; return; }
   try{
-    const u = _cwfCurrentTechUsernameForTax();
+    const u = getCurrentTechUsernameForTax();
+    if(!u) throw new Error('ไม่พบรหัสช่าง กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่');
     const r = await fetch(`/technicians/${encodeURIComponent(u)}/tax-profile`, { credentials:'include' });
     const data = await r.json().catch(()=>({}));
     const p = data.profile || {};
@@ -4301,8 +4301,8 @@ function closeTechTaxProfileModal(){ const m=document.getElementById('techTaxPro
 async function submitTechTaxProfileRequest(ev){
   ev?.preventDefault?.();
   const form = document.getElementById('techTaxProfileForm'); const msg=document.getElementById('techTaxProfileMsg'); if(!form) return;
-  const u = _cwfCurrentTechUsernameForTax();
-  if (!u) { if(msg) msg.textContent='ไม่พบรหัสช่าง กรุณาเข้าสู่ระบบใหม่'; return; }
+  const u = getCurrentTechUsernameForTax();
+  if(!u){ if(msg) msg.textContent='❌ ไม่พบรหัสช่าง กรุณาเข้าสู่ระบบใหม่'; return; }
   const body = Object.fromEntries(new FormData(form).entries());
   try{
     if(msg) msg.textContent='กำลังส่งคำขอ...';
@@ -4322,8 +4322,7 @@ async function openTechWhtDocumentsModal(){
 function closeTechWhtDocumentsModal(){ const m=document.getElementById('techWhtDocsModal'); if(m) m.style.display='none'; }
 async function loadTechWhtDocuments(){
   const box=document.getElementById('techWhtDocsList'); if(!box) return;
-  const u=_cwfCurrentTechUsernameForTax(); const y=document.getElementById('techWhtYear')?.value || new Date().getFullYear();
-  if(!u){ box.innerHTML='<div class="taxDocRow" style="color:#b91c1c;font-weight:900">ไม่พบรหัสช่าง กรุณาเข้าสู่ระบบใหม่</div>'; return; }
+  const u=getCurrentTechUsernameForTax(); if(!u){ box.innerHTML='<div class="taxDocRow" style="color:#b91c1c;font-weight:900">ไม่พบรหัสช่าง กรุณาเข้าสู่ระบบใหม่</div>'; return; } const y=document.getElementById('techWhtYear')?.value || new Date().getFullYear();
   box.innerHTML='<div class="muted">กำลังโหลดเอกสาร...</div>';
   try{
     const res=await fetch(`/technicians/${encodeURIComponent(u)}/withholding-certs?year=${encodeURIComponent(y)}`, {credentials:'include'});
@@ -4332,6 +4331,7 @@ async function loadTechWhtDocuments(){
     box.innerHTML = rows.length ? rows.map(r=>`<div class="taxDocRow"><b>${r.document_no||'ทวิ50'}</b><div class="muted">เดือน ${((r.payload_json||{}).wht_month_label)||'-'} • เงินได้ ${Number(r.total_amount||0).toLocaleString('th-TH')} บาท • หักไว้ ${Number(r.withholding_amount||0).toLocaleString('th-TH')} บาท</div><div class="taxDocActions"><a class="primary" href="${r.print_url}" target="_blank" rel="noopener">พิมพ์ / Save PDF</a><a class="secondary" href="${r.print_url}" download>ดาวน์โหลด</a></div></div>`).join('') : '<div class="taxDocRow muted">ยังไม่มีเอกสารทวิ50ในปีนี้ หลังบริษัทออกเอกสารแล้วจะขึ้นที่นี่</div>';
   }catch(e){ box.innerHTML=`<div class="taxDocRow" style="color:#b91c1c;font-weight:900">โหลดเอกสารไม่สำเร็จ: ${e.message||''}</div>`; }
 }
+
 window.openTechTaxProfileModal = openTechTaxProfileModal;
 window.closeTechTaxProfileModal = closeTechTaxProfileModal;
 window.submitTechTaxProfileRequest = submitTechTaxProfileRequest;

@@ -252,7 +252,7 @@
     .techMenuSetting{border-color:rgba(11,86,216,.28);background:linear-gradient(180deg,#fff,#f4f8ff);}
     .techMenuSetting .menuIcon{background:var(--tech-yellow-soft);color:#111827;}
     .techMenuHidden{display:none !important;}
-    #techSettingsModal{display:none;position:fixed;inset:0;z-index:4050;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.55)}
+    #techSettingsModal{display:none;position:fixed;inset:0;z-index:4050;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.78)}
     #techSettingsModal .settingsPanel{width:min(460px,100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:28px;border:1px solid var(--tech-border);box-shadow:0 28px 80px rgba(2,6,23,.35);padding:16px}
     .settingsHead{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}
     .settingsHead h3{margin:0;color:var(--tech-navy);font-size:24px;line-height:1.15}
@@ -491,7 +491,7 @@
   .zone-map-preview-close{position:fixed;right:14px;top:14px;z-index:4100;width:48px;height:48px;border-radius:18px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.18);color:#fff;font-size:32px;line-height:1;box-shadow:0 12px 30px rgba(0,0,0,.24)}
   @media(max-width:620px){.zone-hero-copy{padding:11px 12px!important}.zone-hero h2{font-size:22px!important}.zone-hero-lead{font-size:13px!important}.zone-map-card{margin-left:-4px;margin-right:-4px}.zone-map-card img{min-width:760px!important}.zone-map-preview-body img{width:max(100%,940px)}}
 
-    .taxDocPanel{width:min(460px,100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:28px;border:1px solid var(--tech-border);box-shadow:0 28px 80px rgba(2,6,23,.35);padding:18px}
+    .taxDocPanel{width:min(460px,100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff!important;color:#08245b!important;border-radius:28px;border:1px solid var(--tech-border);box-shadow:0 28px 80px rgba(2,6,23,.35);padding:18px;opacity:1!important;position:relative}.taxDocPanel *{color:inherit}.taxDocPanel input,.taxDocPanel textarea,.taxDocPanel select{background:#fff!important;color:#111827!important;-webkit-text-fill-color:#111827!important;opacity:1!important}.taxDocPanel .primary{background:linear-gradient(135deg,#0b4bb3,#16b9f2)!important;color:#fff!important}.taxDocPanel .secondary{background:#fff!important;color:#0b2e6d!important;border:1px solid #d7e0ee!important}
     .taxDocForm{display:grid;gap:12px}.taxDocForm label{font-size:13px;font-weight:1000;color:#08245b}.taxDocForm input,.taxDocForm textarea,.taxDocForm select{width:100%;min-height:48px;border:1px solid #d7e0ee;border-radius:16px;padding:10px 12px;font-weight:800}.taxDocNote{background:#fff8d8;border:1px solid #ffe08a;border-radius:18px;padding:12px;color:#513f00;font-weight:800;line-height:1.55}.taxDocRow{border:1px solid #d7e0ee;border-radius:18px;padding:12px;margin-top:10px;background:#fbfdff}.taxDocRow b{color:#08245b}.taxDocStatus{display:inline-flex;border-radius:999px;padding:6px 10px;background:#eef6ff;color:#0b4bb3;font-weight:1000;font-size:12px}.taxDocActions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}@media(max-width:560px){.taxDocActions{grid-template-columns:1fr}}
 </style>
 </head>
@@ -590,7 +590,7 @@
       </div>
     </div>
 
-    <div id="techTaxProfileModal" style="display:none;position:fixed;inset:0;z-index:6100;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.55)">
+    <div id="techTaxProfileModal" style="display:none;position:fixed;inset:0;z-index:6100;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.78)">
       <div class="taxDocPanel">
         <div class="settingsHead"><div><h3>ข้อมูลออกเอกสาร / ทวิ50</h3><p>ส่งข้อมูลให้แอดมินอนุมัติก่อนนำไปใช้ในเอกสาร</p></div><button class="tech-icbtn settingsClose" type="button" onclick="closeTechTaxProfileModal()">✕</button></div>
         <div class="taxDocNote">ข้อมูลนี้ใช้สำหรับออกหนังสือรับรองหัก ณ ที่จ่าย (ทวิ50) ให้ช่าง ระบบจะยังไม่ใช้จนกว่าแอดมินอนุมัติ</div>
@@ -606,7 +606,7 @@
         </form>
       </div>
     </div>
-    <div id="techWhtDocsModal" style="display:none;position:fixed;inset:0;z-index:6100;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.55)">
+    <div id="techWhtDocsModal" style="display:none;position:fixed;inset:0;z-index:6100;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.78)">
       <div class="taxDocPanel">
         <div class="settingsHead"><div><h3>เอกสารทวิ50ของฉัน</h3><p>ดาวน์โหลด/พิมพ์ย้อนหลังตามปีภาษี</p></div><button class="tech-icbtn settingsClose" type="button" onclick="closeTechWhtDocumentsModal()">✕</button></div>
         <div class="taxDocNote">เอกสารจะแสดงหลังบริษัทบันทึกจ่ายเงินจริงและออกทวิ50ประจำเดือนให้แล้ว</div>
@@ -1357,7 +1357,7 @@
       }
     });
   </script>
-  <script src="app.js?v=tax-profile-wht-fix-v7"></script>
+  <script src="app.js?v=tax-profile-wht-real-v12"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
