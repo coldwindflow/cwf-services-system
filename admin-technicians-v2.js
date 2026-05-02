@@ -242,15 +242,19 @@
       for (const r of prof){
         profBox.appendChild(reqRow(
           `${r.username} • ขอแก้โปรไฟล์`,
-          `${new Date(r.created_at).toLocaleString('th-TH')}`,
+          `${new Date(r.requested_at || r.created_at || Date.now()).toLocaleString('th-TH')}`,
           [
             {text:'อนุมัติ',kind:'yellow',onClick: async ()=>{
-              await apiFetch(`/admin/profile/requests/${r.request_id}/approve`,{method:'POST',body:JSON.stringify({reviewed_by:decided_by})});
+              const reqId = r.id || r.request_id;
+              if (!reqId) throw new Error('ไม่พบรหัสคำขอ');
+              await apiFetch(`/admin/profile/requests/${reqId}/approve`,{method:'POST',body:JSON.stringify({reviewed_by:decided_by, technician_code:r.technician_code||r.username, position:r.position||undefined})});
               showToast('อนุมัติแล้ว','success'); loadApprovals();
             }},
             {text:'ปฏิเสธ',kind:'gray',onClick: async ()=>{
               const admin_note = prompt('เหตุผล (optional)','') || '';
-              await apiFetch(`/admin/profile/requests/${r.request_id}/reject`,{method:'POST',body:JSON.stringify({reviewed_by:decided_by, admin_note})});
+              const reqId = r.id || r.request_id;
+              if (!reqId) throw new Error('ไม่พบรหัสคำขอ');
+              await apiFetch(`/admin/profile/requests/${reqId}/reject`,{method:'POST',body:JSON.stringify({reviewed_by:decided_by, admin_note})});
               showToast('ปฏิเสธแล้ว','success'); loadApprovals();
             }},
           ]

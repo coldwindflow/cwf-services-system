@@ -16475,13 +16475,12 @@ app.post("/admin/profile/requests/:id/approve", requireAdminSession, async (req,
   const client = await pool.connect();
   try {
     const id = Number(req.params.id);
-    const technician_code = (req.body.technician_code || "").trim();
+    let technician_code = (req.body.technician_code || "").trim();
 
     // ✅ FIX: ถ้าแอดมินไม่ส่ง position มา = อย่าทับของเดิม
     const position = (req.body.position || "").trim() || null;
 
     if (!id) return res.status(400).json({ error: "id ไม่ถูกต้อง" });
-    if (!technician_code) return res.status(400).json({ error: "ต้องใส่รหัสช่าง" });
 
     await client.query("BEGIN");
 
@@ -16497,6 +16496,18 @@ app.post("/admin/profile/requests/:id/approve", requireAdminSession, async (req,
     if (reqRow.status !== "pending") {
       await client.query("ROLLBACK");
       return res.status(400).json({ error: "คำขอนี้ไม่อยู่ในสถานะ pending" });
+    }
+
+    if (!technician_code) {
+      const existingCode = await client.query(
+        `SELECT technician_code FROM public.technician_profiles WHERE username=$1 LIMIT 1`,
+        [reqRow.username]
+      );
+      technician_code = String(existingCode.rows[0]?.technician_code || reqRow.username || '').trim();
+    }
+    if (!technician_code) {
+      await client.query("ROLLBACK");
+      return res.status(400).json({ error: "ไม่พบรหัสช่างเดิม กรุณาใส่รหัสช่าง" });
     }
 
     let finalPhotoPath = null;
@@ -17361,7 +17372,7 @@ async function _getAccountingSettings() {
       phone: v.phone || '098-877-7321',
       signer_name: v.signer_name || 'สุทธิพงษ์ ศรีวารินทร์',
       signer_position: v.signer_position || 'ผู้มีอำนาจลงนาม',
-      logo_url: v.logo_url || '',
+      logo_url: v.logo_url || '/logo.png',
       signature_url: v.signature_url || '',
       stamp_url: v.stamp_url || '',
       vat_rate: v.vat_rate ?? 7,
@@ -17406,7 +17417,7 @@ function _accountingSettingsFromBody(body = {}, current = {}) {
     bank_info: pick('bank_info'),
     // Keep existing uploaded assets when the form sends empty URL fields.
     // Users should not lose logo/signature/stamp by simply saving other settings.
-    logo_url: String(body.logo_url ?? '').trim() || current.logo_url || '',
+    logo_url: String(body.logo_url ?? '').trim() || current.logo_url || '/logo.png',
     signature_url: String(body.signature_url ?? '').trim() || current.signature_url || '',
     stamp_url: String(body.stamp_url ?? '').trim() || current.stamp_url || '',
   };
@@ -17580,7 +17591,7 @@ async function _accountingSafeQuery(soft_errors, label, sql, params = [], fallba
   }
 }
 
-app.get('/admin/accounting/settings', requireAccountingPermission('accounting_manage_documents'), async (req, res) => {
+app.get('/admin/accounting/settings', requireAdminSession, async (req, res) => {
   try {
     const settings = await _getAccountingSettings();
     return res.json({ ok: true, settings });
@@ -17590,7 +17601,7 @@ app.get('/admin/accounting/settings', requireAccountingPermission('accounting_ma
   }
 });
 
-app.post('/admin/accounting/settings', requireAccountingPermission('accounting_manage_documents'), upload.fields([
+app.post('/admin/accounting/settings', requireAdminSession, upload.fields([
   { name: 'logo_file', maxCount: 1 }, { name: 'signature_file', maxCount: 1 }, { name: 'stamp_file', maxCount: 1 }
 ]), async (req, res) => {
   try {
@@ -17604,7 +17615,7 @@ app.post('/admin/accounting/settings', requireAccountingPermission('accounting_m
     if (logo) next.logo_url = logo;
     if (sig) next.signature_url = sig;
     if (stamp) next.stamp_url = stamp;
-    if (!next.company_name) return res.status(400).json({ ok:false, error:'COMPANY_NAME_REQUIRED' });
+    if (!next.company_name) next.company_name = 'Coldwindflow Air Services';
     await pool.query(`INSERT INTO public.accounting_settings(key, value_json, updated_by, updated_at)
       VALUES('company',$1::jsonb,$2,NOW())
       ON CONFLICT(key) DO UPDATE SET value_json=EXCLUDED.value_json, updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
@@ -18244,6 +18255,58 @@ app.get('/technicians/:username/withholding-certs', async (req, res) => {
   } catch(e) { console.error('GET /technicians/:username/withholding-certs', e); return res.status(500).json({ ok:false, error:'TECH_WHT_LIST_FAILED', message:e.message }); }
 });
 
+
+app.get('/technicians/:username/withholding-certs/yearly.csv', async (req, res) => {
+  try {
+    const username = String(req.params.username || '').trim();
+    const year = Number(req.query.year || new Date().getFullYear());
+    const start = `${year}-01-01`, end = `${year + 1}-01-01`;
+    const q = await pool.query(
+      `SELECT document_no, issue_date, customer_name, total_amount, withholding_amount, payload_json, created_at
+         FROM public.accounting_documents
+        WHERE document_type='withholding_cert' AND COALESCE(status,'') <> 'voided'
+          AND payload_json->>'technician_username'=$1
+          AND COALESCE(issue_date, created_at::date) >= $2::date AND COALESCE(issue_date, created_at::date) < $3::date
+        ORDER BY COALESCE(issue_date, created_at::date) ASC, document_id ASC`,
+      [username, start, end]
+    );
+    const headers = ['เดือน','เลขเอกสาร','วันที่ออก','ผู้รับเงิน','เงินได้','ภาษีหัก ณ ที่จ่าย'];
+    const rows = q.rows.map(r => {
+      const p = r.payload_json || {};
+      return [p.wht_month_label || '', r.document_no || '', r.issue_date || '', r.customer_name || username, r.total_amount || 0, r.withholding_amount || 0];
+    });
+    const csvEscape = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`;
+    const csv = '\ufeff' + [headers, ...rows].map(row => row.map(csvEscape).join(',')).join('\n');
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="wht-${username}-${year}.csv"`);
+    return res.send(csv);
+  } catch(e) { console.error('GET technician withholding yearly csv', e); return res.status(500).send('Export failed'); }
+});
+
+app.get('/technicians/:username/withholding-certs/yearly/print', async (req, res) => {
+  try {
+    const username = String(req.params.username || '').trim();
+    const year = Number(req.query.year || new Date().getFullYear());
+    const start = `${year}-01-01`, end = `${year + 1}-01-01`;
+    const q = await pool.query(
+      `SELECT document_no, issue_date, customer_name, total_amount, withholding_amount, payload_json, created_at
+         FROM public.accounting_documents
+        WHERE document_type='withholding_cert' AND COALESCE(status,'') <> 'voided'
+          AND payload_json->>'technician_username'=$1
+          AND COALESCE(issue_date, created_at::date) >= $2::date AND COALESCE(issue_date, created_at::date) < $3::date
+        ORDER BY COALESCE(issue_date, created_at::date) ASC, document_id ASC`,
+      [username, start, end]
+    );
+    const totalIncome = q.rows.reduce((a,r)=>a+Number(r.total_amount||0),0);
+    const totalWht = q.rows.reduce((a,r)=>a+Number(r.withholding_amount||0),0);
+    const rowsHtml = q.rows.map(r => {
+      const p = r.payload_json || {};
+      return `<tr><td>${p.wht_month_label || ''}</td><td>${r.document_no || ''}</td><td>${r.issue_date || ''}</td><td class="num">${Number(r.total_amount||0).toLocaleString('th-TH')}</td><td class="num">${Number(r.withholding_amount||0).toLocaleString('th-TH')}</td></tr>`;
+    }).join('') || '<tr><td colspan="5">ยังไม่มีเอกสารในปีนี้</td></tr>';
+    return res.type('html').send(`<!doctype html><html lang="th"><head><meta charset="utf-8"><title>สรุปทวิ50 ${year}</title><style>body{font-family:Arial,'Noto Sans Thai',sans-serif;color:#0b2a5b;padding:28px}h1{margin:0 0 6px}.muted{color:#64748b}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{border:1px solid #cbd5e1;padding:8px;text-align:left}th{background:#eff6ff}.num{text-align:right}.sum{margin-top:16px;font-size:18px;font-weight:800}@media print{button{display:none}}</style></head><body><button onclick="print()">พิมพ์ / Save PDF</button><h1>สรุปเอกสารทวิ50 ประจำปี ${year}</h1><div class="muted">ช่าง: ${username}</div><table><thead><tr><th>เดือน</th><th>เลขเอกสาร</th><th>วันที่ออก</th><th>เงินได้</th><th>ภาษีหัก ณ ที่จ่าย</th></tr></thead><tbody>${rowsHtml}</tbody></table><div class="sum">รวมเงินได้ ${totalIncome.toLocaleString('th-TH')} บาท • รวมภาษีหักไว้ ${totalWht.toLocaleString('th-TH')} บาท</div></body></html>`);
+  } catch(e) { console.error('GET technician withholding yearly print', e); return res.status(500).send('Print failed'); }
+});
+
 app.get('/technicians/:username/withholding-certs/:document_id/print', async (req, res) => {
   try {
     const username = String(req.params.username || '').trim();
@@ -18256,14 +18319,14 @@ app.get('/technicians/:username/withholding-certs/:document_id/print', async (re
   } catch(e) { console.error('GET technician withholding print', e); return res.status(500).send('Print failed'); }
 });
 
-app.get('/admin/accounting/technician-tax-requests', requireAccountingPermission('accounting_mark_payout_paid'), async (req, res) => {
+app.get('/admin/accounting/technician-tax-requests', requireAdminSession, async (req, res) => {
   try {
     const q = await pool.query(`SELECT * FROM public.technician_tax_profile_requests WHERE status='pending' ORDER BY requested_at ASC LIMIT 80`);
     return res.json({ ok:true, rows:q.rows });
   } catch(e) { return res.status(500).json({ ok:false, error:'TAX_REQUESTS_FAILED', message:e.message }); }
 });
 
-app.post('/admin/accounting/technician-tax-requests/:id/approve', requireAccountingPermission('accounting_mark_payout_paid'), async (req, res) => {
+app.post('/admin/accounting/technician-tax-requests/:id/approve', requireAdminSession, async (req, res) => {
   const client = await pool.connect();
   try {
     const id = Number(req.params.id || 0); const actor = _accountingActor(req).username || null;
@@ -18303,7 +18366,7 @@ app.post('/admin/accounting/technician-tax-requests/:id/approve', requireAccount
   } catch(e) { try{await client.query('ROLLBACK')}catch(_){}; console.error('APPROVE_TAX_REQUEST_FAILED', e); return res.status(500).json({ ok:false, error:'APPROVE_TAX_REQUEST_FAILED', message:e.message }); } finally { client.release(); }
 });
 
-app.post('/admin/accounting/technician-tax-requests/:id/reject', requireAccountingPermission('accounting_mark_payout_paid'), async (req, res) => {
+app.post('/admin/accounting/technician-tax-requests/:id/reject', requireAdminSession, async (req, res) => {
   try {
     const id = Number(req.params.id || 0); const actor = _accountingActor(req).username || null;
     const q = await pool.query(`UPDATE public.technician_tax_profile_requests SET status='rejected', reviewed_by=$2, reviewed_at=NOW(), admin_note=$3 WHERE id=$1 RETURNING *`, [id, actor, req.body?.admin_note || null]);

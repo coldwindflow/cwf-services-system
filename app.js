@@ -4291,19 +4291,48 @@ function getCurrentTechUsernameForTax(){
 }
 function showTaxDocModal(modal){
   if (!modal) return;
-  try { window.closeTechSettingsModal && window.closeTechSettingsModal(); } catch (_) {}
-  modal.style.display = 'flex';
+  try { (window.closeTechSettingsModal || function(){})(); } catch (_) {}
+  // Move the modal out of the settings drawer. If it stays nested inside the
+  // drawer, the parent backdrop/opacity styles make the WHT form look transparent.
+  try { if (modal.parentElement !== document.body) document.body.appendChild(modal); } catch (_) {}
+  modal.style.setProperty('display','flex','important');
+  modal.style.setProperty('position','fixed','important');
+  modal.style.setProperty('inset','0','important');
+  modal.style.setProperty('z-index','2147483000','important');
+  modal.style.setProperty('background','rgba(2,6,23,.82)','important');
+  modal.style.setProperty('align-items','flex-start','important');
+  modal.style.setProperty('justify-content','center','important');
+  modal.style.setProperty('overflow','auto','important');
+  modal.style.setProperty('padding','18px 12px 90px','important');
   modal.setAttribute('aria-hidden','false');
+  const panel = modal.querySelector('.taxDocPanel');
+  if (panel) {
+    panel.style.setProperty('background','#ffffff','important');
+    panel.style.setProperty('color','#08245b','important');
+    panel.style.setProperty('opacity','1','important');
+    panel.style.setProperty('width','min(640px,100%)','important');
+    panel.style.setProperty('border-radius','24px','important');
+    panel.style.setProperty('box-shadow','0 28px 80px rgba(0,0,0,.36)','important');
+    panel.style.setProperty('border','1px solid rgba(226,232,240,.95)','important');
+  }
+  modal.querySelectorAll('input,textarea,select').forEach(el => {
+    el.style.setProperty('background','#fff','important');
+    el.style.setProperty('color','#111827','important');
+    el.style.setProperty('-webkit-text-fill-color','#111827','important');
+    el.style.setProperty('border','1px solid #cbd5e1','important');
+  });
   document.body.classList.add('tax-doc-modal-open');
+  document.body.style.overflow='hidden';
 }
 function hideTaxDocModal(modal){
   if (!modal) return;
   modal.style.display = 'none';
   modal.setAttribute('aria-hidden','true');
   document.body.classList.remove('tax-doc-modal-open');
+  document.body.style.overflow='';
 }
 async function openTechTaxProfileModal(){
-  closeTechSettingsModal?.();
+  try { (window.closeTechSettingsModal || function(){})(); } catch (_) {}
   const modal = document.getElementById('techTaxProfileModal');
   const form = document.getElementById('techTaxProfileForm');
   const msg = document.getElementById('techTaxProfileMsg');
@@ -4344,7 +4373,7 @@ async function submitTechTaxProfileRequest(ev){
   }catch(e){ if(msg) msg.textContent='❌ '+(e.message || 'ส่งคำขอไม่สำเร็จ'); }
 }
 async function openTechWhtDocumentsModal(){
-  closeTechSettingsModal?.();
+  try { (window.closeTechSettingsModal || function(){})(); } catch (_) {}
   const m=document.getElementById('techWhtDocsModal'); const y=document.getElementById('techWhtYear'); if(!m) return;
   if(y && !y.value) y.value = new Date().getFullYear();
   showTaxDocModal(m);
@@ -4359,7 +4388,10 @@ async function loadTechWhtDocuments(){
     const res=await fetch(`/technicians/${encodeURIComponent(u)}/withholding-certs?year=${encodeURIComponent(y)}`, {credentials:'include'});
     const data=await res.json().catch(()=>({})); if(!res.ok || data.ok===false) throw new Error(data.error || 'โหลดไม่สำเร็จ');
     const rows=data.rows||[];
-    box.innerHTML = rows.length ? rows.map(r=>`<div class="taxDocRow"><b>${r.document_no||'ทวิ50'}</b><div class="muted">เดือน ${((r.payload_json||{}).wht_month_label)||'-'} • เงินได้ ${Number(r.total_amount||0).toLocaleString('th-TH')} บาท • หักไว้ ${Number(r.withholding_amount||0).toLocaleString('th-TH')} บาท</div><div class="taxDocActions"><a class="primary" href="${r.print_url}" target="_blank" rel="noopener">พิมพ์ / Save PDF</a><a class="secondary" href="${r.print_url}" download>ดาวน์โหลด</a></div></div>`).join('') : '<div class="taxDocRow muted">ยังไม่มีเอกสารทวิ50ในปีนี้ หลังบริษัทออกเอกสารแล้วจะขึ้นที่นี่</div>';
+    const yearlyPrint = `/technicians/${encodeURIComponent(u)}/withholding-certs/yearly/print?year=${encodeURIComponent(y)}`;
+    const yearlyCsv = `/technicians/${encodeURIComponent(u)}/withholding-certs/yearly.csv?year=${encodeURIComponent(y)}`;
+    const yearlyActions = `<div class="taxDocRow"><b>สรุปทวิ50ทั้งปี ${y}</b><div class="muted">ใช้รวมเอกสารรายเดือนสำหรับตรวจและยื่นภาษีประจำปี</div><div class="taxDocActions"><a class="primary" href="${yearlyPrint}" target="_blank" rel="noopener">พิมพ์สรุปรายปี</a><a class="secondary" href="${yearlyCsv}" target="_blank" rel="noopener">ดาวน์โหลด CSV รายปี</a></div></div>`;
+    box.innerHTML = yearlyActions + (rows.length ? rows.map(r=>`<div class="taxDocRow"><b>${r.document_no||'ทวิ50'}</b><div class="muted">เดือน ${((r.payload_json||{}).wht_month_label)||'-'} • เงินได้ ${Number(r.total_amount||0).toLocaleString('th-TH')} บาท • หักไว้ ${Number(r.withholding_amount||0).toLocaleString('th-TH')} บาท</div><div class="taxDocActions"><a class="primary" href="${r.print_url}" target="_blank" rel="noopener">พิมพ์ / Save PDF รายเดือน</a><a class="secondary" href="${r.print_url}" target="_blank" rel="noopener">ดาวน์โหลดรายเดือน</a></div></div>`).join('') : '<div class="taxDocRow muted">ยังไม่มีเอกสารทวิ50ในปีนี้ หลังบริษัทออกเอกสารแล้วจะขึ้นที่นี่</div>');
   }catch(e){ box.innerHTML=`<div class="taxDocRow" style="color:#b91c1c;font-weight:900">โหลดเอกสารไม่สำเร็จ: ${e.message||''}</div>`; }
 }
 
