@@ -269,9 +269,28 @@
             <div style="margin-top:14px"><label for="notes">หมายเหตุเพิ่มเติม</label><textarea id="notes"></textarea></div>
           </section>
 
+
           <section class="section">
             <div class="section-title">
               <div class="section-no">7</div>
+              <div>
+                <h3>ข้อมูลสำหรับออกเอกสารทวิ50</h3>
+                <p>กรอกไว้ตั้งแต่สมัคร ระบบจะนำไปใช้กับแอพช่างและรอแอดมินอนุมัติ</p>
+              </div>
+            </div>
+            <div class="notice"><div style="font-size:20px">🧾</div><div><strong>ข้อมูลนี้ใช้ทำหนังสือรับรองหัก ณ ที่จ่าย</strong> หากยังไม่แน่ใจสามารถแก้ในแอพช่างภายหลังได้ แต่ต้องรอแอดมินอนุมัติ</div></div>
+            <div class="grid2">
+              <div><label for="tax_id">เลขประจำตัวผู้เสียภาษี/บัตรประชาชน</label><input id="tax_id" inputmode="numeric" placeholder="13 หลัก"></div>
+              <div><label for="tax_branch">สาขา/หมายเหตุภาษี</label><input id="tax_branch" placeholder="บุคคลธรรมดาเว้นว่างได้"></div>
+              <div style="grid-column:1/-1"><label for="tax_address">ที่อยู่ตามบัตร/ที่อยู่ภาษี</label><textarea id="tax_address" placeholder="ถ้าเว้นว่าง ระบบจะใช้ที่อยู่ปัจจุบันในใบสมัคร"></textarea></div>
+              <div><label for="wht_income_type">ประเภทเงินได้</label><input id="wht_income_type" value="ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)"></div>
+              <div><label for="wht_default_rate">อัตราหัก ณ ที่จ่าย %</label><input id="wht_default_rate" type="number" min="0" max="15" step="0.01" value="3"></div>
+            </div>
+          </section>
+
+          <section class="section">
+            <div class="section-title">
+              <div class="section-no">8</div>
               <div>
                 <h3>อ่านและยืนยันเงื่อนไข</h3>
                 <p>กดอ่านเงื่อนไขก่อนติ๊กยอมรับและส่งใบสมัคร</p>

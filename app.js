@@ -4269,3 +4269,61 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
     alert(`❌ ${e.message}`);
   }
 }
+
+
+// ✅ Tax profile + withholding certificates for technicians (ทวิ50)
+async function openTechTaxProfileModal(){
+  closeTechSettingsModal?.();
+  const modal = document.getElementById('techTaxProfileModal');
+  const form = document.getElementById('techTaxProfileForm');
+  const msg = document.getElementById('techTaxProfileMsg');
+  if (!modal || !form) return;
+  modal.style.display='flex'; if (msg) msg.textContent='กำลังโหลดข้อมูล...';
+  try{
+    const u = localStorage.getItem('username') || window.currentUsername || '';
+    const r = await fetch(`/technicians/${encodeURIComponent(u)}/tax-profile`, { credentials:'include' });
+    const data = await r.json().catch(()=>({}));
+    const p = data.profile || {};
+    form.full_name.value = p.full_name || '';
+    form.tax_id.value = p.tax_id || '';
+    form.tax_address.value = p.tax_address || '';
+    form.tax_branch.value = p.tax_branch || '';
+    form.wht_income_type.value = p.wht_income_type || 'ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)';
+    form.wht_default_rate.value = p.wht_default_rate || 3;
+    if (msg) msg.textContent = p.is_complete ? 'ข้อมูลครบแล้ว หากแก้ไขใหม่จะส่งให้แอดมินอนุมัติอีกครั้ง' : 'กรอกข้อมูลให้ครบเพื่อส่งให้แอดมินอนุมัติ';
+  }catch(e){ if(msg) msg.textContent='โหลดข้อมูลไม่สำเร็จ แต่สามารถกรอกส่งใหม่ได้'; }
+}
+function closeTechTaxProfileModal(){ const m=document.getElementById('techTaxProfileModal'); if(m) m.style.display='none'; }
+async function submitTechTaxProfileRequest(ev){
+  ev?.preventDefault?.();
+  const form = document.getElementById('techTaxProfileForm'); const msg=document.getElementById('techTaxProfileMsg'); if(!form) return;
+  const u = localStorage.getItem('username') || window.currentUsername || '';
+  const body = Object.fromEntries(new FormData(form).entries());
+  try{
+    if(msg) msg.textContent='กำลังส่งคำขอ...';
+    const res = await fetch(`/technicians/${encodeURIComponent(u)}/tax-profile/request`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify(body) });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok || data.ok===false) throw new Error(data.error || 'ส่งคำขอไม่สำเร็จ');
+    if(msg) msg.textContent='✅ ส่งคำขอแล้ว กรุณารอแอดมินอนุมัติ';
+  }catch(e){ if(msg) msg.textContent='❌ '+(e.message || 'ส่งคำขอไม่สำเร็จ'); }
+}
+async function openTechWhtDocumentsModal(){
+  closeTechSettingsModal?.();
+  const m=document.getElementById('techWhtDocsModal'); const y=document.getElementById('techWhtYear'); if(!m) return;
+  if(y && !y.value) y.value = new Date().getFullYear();
+  m.style.display='flex';
+  await loadTechWhtDocuments();
+}
+function closeTechWhtDocumentsModal(){ const m=document.getElementById('techWhtDocsModal'); if(m) m.style.display='none'; }
+async function loadTechWhtDocuments(){
+  const box=document.getElementById('techWhtDocsList'); if(!box) return;
+  const u=localStorage.getItem('username') || window.currentUsername || ''; const y=document.getElementById('techWhtYear')?.value || new Date().getFullYear();
+  box.innerHTML='<div class="muted">กำลังโหลดเอกสาร...</div>';
+  try{
+    const res=await fetch(`/technicians/${encodeURIComponent(u)}/withholding-certs?year=${encodeURIComponent(y)}`, {credentials:'include'});
+    const data=await res.json().catch(()=>({})); if(!res.ok || data.ok===false) throw new Error(data.error || 'โหลดไม่สำเร็จ');
+    const rows=data.rows||[];
+    box.innerHTML = rows.length ? rows.map(r=>`<div class="taxDocRow"><b>${r.document_no||'ทวิ50'}</b><div class="muted">เดือน ${((r.payload_json||{}).wht_month_label)||'-'} • เงินได้ ${Number(r.total_amount||0).toLocaleString('th-TH')} บาท • หักไว้ ${Number(r.withholding_amount||0).toLocaleString('th-TH')} บาท</div><div class="taxDocActions"><a class="primary" href="${r.print_url}" target="_blank" rel="noopener">พิมพ์ / Save PDF</a><a class="secondary" href="${r.print_url}" download>ดาวน์โหลด</a></div></div>`).join('') : '<div class="taxDocRow muted">ยังไม่มีเอกสารทวิ50ในปีนี้ หลังบริษัทออกเอกสารแล้วจะขึ้นที่นี่</div>';
+  }catch(e){ box.innerHTML=`<div class="taxDocRow" style="color:#b91c1c;font-weight:900">โหลดเอกสารไม่สำเร็จ: ${e.message||''}</div>`; }
+}
+window.addEventListener('DOMContentLoaded', () => { document.getElementById('techTaxProfileForm')?.addEventListener('submit', submitTechTaxProfileRequest); });

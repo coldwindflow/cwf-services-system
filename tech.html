@@ -490,6 +490,9 @@
   .zone-map-preview-body img{display:block;width:max(100%,920px);height:auto;background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(0,0,0,.42)}
   .zone-map-preview-close{position:fixed;right:14px;top:14px;z-index:4100;width:48px;height:48px;border-radius:18px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.18);color:#fff;font-size:32px;line-height:1;box-shadow:0 12px 30px rgba(0,0,0,.24)}
   @media(max-width:620px){.zone-hero-copy{padding:11px 12px!important}.zone-hero h2{font-size:22px!important}.zone-hero-lead{font-size:13px!important}.zone-map-card{margin-left:-4px;margin-right:-4px}.zone-map-card img{min-width:760px!important}.zone-map-preview-body img{width:max(100%,940px)}}
+
+    .taxDocPanel{width:min(460px,100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:28px;border:1px solid var(--tech-border);box-shadow:0 28px 80px rgba(2,6,23,.35);padding:18px}
+    .taxDocForm{display:grid;gap:12px}.taxDocForm label{font-size:13px;font-weight:1000;color:#08245b}.taxDocForm input,.taxDocForm textarea,.taxDocForm select{width:100%;min-height:48px;border:1px solid #d7e0ee;border-radius:16px;padding:10px 12px;font-weight:800}.taxDocNote{background:#fff8d8;border:1px solid #ffe08a;border-radius:18px;padding:12px;color:#513f00;font-weight:800;line-height:1.55}.taxDocRow{border:1px solid #d7e0ee;border-radius:18px;padding:12px;margin-top:10px;background:#fbfdff}.taxDocRow b{color:#08245b}.taxDocStatus{display:inline-flex;border-radius:999px;padding:6px 10px;background:#eef6ff;color:#0b4bb3;font-weight:1000;font-size:12px}.taxDocActions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}@media(max-width:560px){.taxDocActions{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -559,6 +562,12 @@
           <button class="settingsItem" type="button" onclick="goEditProfile()">
             <span class="sIcon">✏️</span><span class="sText"><strong>แก้ไขโปรไฟล์</strong><span>ข้อมูลส่วนตัว รูปโปรไฟล์ และข้อมูลช่าง</span></span>
           </button>
+          <button class="settingsItem" type="button" onclick="openTechTaxProfileModal()">
+            <span class="sIcon">🧾</span><span class="sText"><strong>ข้อมูลออกเอกสาร / ทวิ50</strong><span>ชื่อ-เลขภาษี-ที่อยู่ ใช้ออกหนังสือรับรองหัก ณ ที่จ่าย รอแอดมินอนุมัติ</span></span>
+          </button>
+          <button class="settingsItem" type="button" onclick="openTechWhtDocumentsModal()">
+            <span class="sIcon">50</span><span class="sText"><strong>เอกสารทวิ50ของฉัน</strong><span>ดาวน์โหลด/พิมพ์ย้อนหลังรายเดือน เพื่อนำไปยื่นสรรพากร</span></span>
+          </button>
           <button class="settingsItem" type="button" onclick="goChangePassword()">
             <span class="sIcon">🔑</span><span class="sText"><strong>เปลี่ยนรหัสผ่าน</strong><span>ตั้งรหัสผ่านใหม่เพื่อความปลอดภัย</span></span>
           </button>
@@ -578,6 +587,31 @@
             <span class="sIcon">🎨</span><span class="sText"><strong>สลับธีม</strong><span>โหมดสีหน้าช่าง</span></span>
           </button>
         </div>
+      </div>
+    </div>
+
+    <div id="techTaxProfileModal" style="display:none;position:fixed;inset:0;z-index:6100;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.55)">
+      <div class="taxDocPanel">
+        <div class="settingsHead"><div><h3>ข้อมูลออกเอกสาร / ทวิ50</h3><p>ส่งข้อมูลให้แอดมินอนุมัติก่อนนำไปใช้ในเอกสาร</p></div><button class="tech-icbtn settingsClose" type="button" onclick="closeTechTaxProfileModal()">✕</button></div>
+        <div class="taxDocNote">ข้อมูลนี้ใช้สำหรับออกหนังสือรับรองหัก ณ ที่จ่าย (ทวิ50) ให้ช่าง ระบบจะยังไม่ใช้จนกว่าแอดมินอนุมัติ</div>
+        <form id="techTaxProfileForm" class="taxDocForm">
+          <label>ชื่อ-นามสกุลตามบัตร/ภาษี<input name="full_name" required></label>
+          <label>เลขประจำตัวผู้เสียภาษี/บัตรประชาชน<input name="tax_id" inputmode="numeric" required placeholder="13 หลัก"></label>
+          <label>ที่อยู่ตามบัตร/ที่อยู่ภาษี<textarea name="tax_address" required></textarea></label>
+          <label>สาขา/หมายเหตุภาษี<input name="tax_branch" placeholder="บุคคลธรรมดาเว้นว่างได้"></label>
+          <label>ประเภทเงินได้<input name="wht_income_type" value="ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)"></label>
+          <label>อัตราหัก ณ ที่จ่าย %<input name="wht_default_rate" type="number" min="0" max="15" step="0.01" value="3"></label>
+          <div id="techTaxProfileMsg" class="muted"></div>
+          <div class="taxDocActions"><button class="secondary" type="button" onclick="closeTechTaxProfileModal()">ยกเลิก</button><button class="primary" type="submit">ส่งให้แอดมินอนุมัติ</button></div>
+        </form>
+      </div>
+    </div>
+    <div id="techWhtDocsModal" style="display:none;position:fixed;inset:0;z-index:6100;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.55)">
+      <div class="taxDocPanel">
+        <div class="settingsHead"><div><h3>เอกสารทวิ50ของฉัน</h3><p>ดาวน์โหลด/พิมพ์ย้อนหลังตามปีภาษี</p></div><button class="tech-icbtn settingsClose" type="button" onclick="closeTechWhtDocumentsModal()">✕</button></div>
+        <div class="taxDocNote">เอกสารจะแสดงหลังบริษัทบันทึกจ่ายเงินจริงและออกทวิ50ประจำเดือนให้แล้ว</div>
+        <div class="taxDocForm"><label>ปีภาษี<input id="techWhtYear" type="number" min="2024" max="2100"></label><button class="primary" type="button" onclick="loadTechWhtDocuments()">โหลดเอกสาร</button></div>
+        <div id="techWhtDocsList" style="margin-top:12px"></div>
       </div>
     </div>
 

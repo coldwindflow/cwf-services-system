@@ -133,6 +133,11 @@
       bank_account_number: bankAccountNumber.replace(/\\D/g,''),
       bank_account_last4: bankAccountNumber.replace(/\\D/g,'').slice(-4),
       notes: val('notes'),
+      tax_id: val('tax_id'),
+      tax_address: val('tax_address') || val('address_text'),
+      tax_branch: val('tax_branch'),
+      wht_income_type: val('wht_income_type') || 'ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)',
+      wht_default_rate: val('wht_default_rate') || 3,
       consent_pdpa: checked('consent_pdpa'),
       consent_terms: checked('consent_terms')
     };

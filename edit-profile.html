@@ -56,6 +56,19 @@
 
       <div id="msg" style="margin-top:10px;"></div>
     </div>
+
+    <div class="card">
+      <h2>🧾 ข้อมูลออกเอกสาร / ทวิ50</h2>
+      <p class="muted">ข้อมูลนี้ใช้สำหรับออกหนังสือรับรองหัก ณ ที่จ่ายให้ช่าง ต้องรอแอดมินอนุมัติก่อนใช้งานจริง</p>
+      <label>ชื่อ-นามสกุลตามบัตร/ภาษี</label><input id="tax_full_name">
+      <label style="margin-top:10px;">เลขประจำตัวผู้เสียภาษี/บัตรประชาชน</label><input id="tax_id" inputmode="numeric" placeholder="13 หลัก">
+      <label style="margin-top:10px;">ที่อยู่ตามบัตร/ที่อยู่ภาษี</label><textarea id="tax_address"></textarea>
+      <label style="margin-top:10px;">สาขา/หมายเหตุภาษี</label><input id="tax_branch" placeholder="บุคคลธรรมดาเว้นว่างได้">
+      <label style="margin-top:10px;">ประเภทเงินได้</label><input id="wht_income_type" value="ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)">
+      <label style="margin-top:10px;">อัตราหัก ณ ที่จ่าย %</label><input id="wht_default_rate" type="number" min="0" max="15" step="0.01" value="3">
+      <div class="row" style="margin-top:12px;"><button type="button" onclick="submitTaxProfileRequest()">📨 ส่งข้อมูลทวิ50ให้แอดมินอนุมัติ</button></div>
+      <div id="taxMsg" class="muted" style="margin-top:8px;"></div>
+    </div>
   </div>
 
 <script>
