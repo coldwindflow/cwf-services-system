@@ -2,6 +2,7 @@
 (function(){
   const $ = (id)=>document.getElementById(id);
   const state = { summary:null, revenue:[], payouts:[], deposits:null, audit:[], tab:'overview' };
+  const VALID_TABS = new Set(['overview','revenue','documents','expenses','payouts','deposits','reports','audit']);
 
   function esc(v){
     return String(v == null ? '' : v).replace(/[&<>"']/g, (m)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[m]));
@@ -47,14 +48,59 @@
     if (!el) return;
     el.innerHTML = all.length ? `<div class="softErr">ข้อมูลบางส่วนโหลดไม่ครบ: ${all.map(e=>esc(e.scope || e.message)).join(', ')}</div>` : '';
   }
-  function switchTab(tab){
+  function normalizeTab(tab){
+    const key = String(tab || '').replace(/^#/, '').trim().toLowerCase();
+    return VALID_TABS.has(key) ? key : 'overview';
+  }
+  function initialTabFromUrl(){
+    const qs = new URLSearchParams(location.search || '');
+    return normalizeTab(qs.get('tab') || (location.hash || '').replace(/^#/, '') || 'overview');
+  }
+  function updateTabUrl(tab){
+    try {
+      const url = new URL(location.href);
+      url.searchParams.set('tab', tab);
+      url.hash = tab;
+      history.replaceState({ accountingTab: tab }, '', url.toString());
+    } catch (_) {}
+  }
+  function scrollActiveChipIntoView(tab){
+    const btn = document.querySelector(`.tabBtn[data-tab="${tab}"]`);
+    try { btn?.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' }); } catch (_) {}
+  }
+  function scrollAccountingContentIntoView(tab){
+    const panel = $(`panel-${tab}`);
+    if (!panel) return;
+    const topNav = document.getElementById('cwfTopNav');
+    const offset = (topNav?.getBoundingClientRect?.().height || 68) + 12;
+    const y = panel.getBoundingClientRect().top + window.pageYOffset - offset;
+    try {
+      window.scrollTo({ top: Math.max(0, y), behavior: 'smooth' });
+    } catch (_) {
+      window.scrollTo(0, Math.max(0, y));
+    }
+    panel.classList.remove('navFocus');
+    void panel.offsetWidth;
+    panel.classList.add('navFocus');
+    try { panel.focus({ preventScroll: true }); } catch (_) {}
+  }
+  function showAccountingTab(tabKey, options = {}){
+    const opts = Object.assign({ scroll: true, updateUrl: true }, options);
+    const tab = normalizeTab(tabKey);
     state.tab = tab;
-    document.querySelectorAll('.tabBtn').forEach(b=>b.classList.toggle('active', b.dataset.tab === tab));
+    document.querySelectorAll('.tabBtn').forEach(b=>{
+      const active = b.dataset.tab === tab;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-selected', active ? 'true' : 'false');
+    });
     document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('active', p.id === `panel-${tab}`));
     if (tab === 'revenue' && !state.revenue.length) loadRevenue();
     if (tab === 'payouts' && !state.payouts.length) loadPayouts();
     if (tab === 'deposits' && !state.deposits) loadDeposits();
     if (tab === 'audit' && !state.audit.length) loadAudit();
+    if (opts.updateUrl) updateTabUrl(tab);
+    scrollActiveChipIntoView(tab);
+    if (opts.scroll) requestAnimationFrame(()=>scrollAccountingContentIntoView(tab));
   }
 
   function renderCards(){
@@ -66,10 +112,10 @@
         <div class="top"><b>${esc(c.label)}</b><span class="dot tone-${esc(c.status_key || 'blue')}"></span></div>
         <div class="count">${money(c.count)}</div>
         <div class="amount">${c.total_amount == null ? 'ไม่มีมูลค่ารวม' : `${money(c.total_amount)} บาท`}</div>
-        <button class="goBtn" type="button" data-go="${esc(c.target_tab || 'overview')}">ไปจัดการ</button>
+        <button class="goBtn" type="button" data-target-tab="${esc(c.target_tab || 'overview')}">ไปจัดการ</button>
       </article>
     `).join('') : empty('ยังไม่มีข้อมูลงานบัญชีวันนี้');
-    el.querySelectorAll('[data-go]').forEach(btn=>btn.addEventListener('click', ()=>switchTab(btn.dataset.go)));
+    el.querySelectorAll('[data-target-tab]').forEach(btn=>btn.addEventListener('click', ()=>showAccountingTab(btn.dataset.targetTab, { scroll:true, updateUrl:true })));
   }
   function renderOverview(){
     const s = $('overviewSummary');
@@ -183,12 +229,15 @@
     }
   }
   function bind(){
-    document.querySelectorAll('.tabBtn').forEach(b=>b.addEventListener('click', ()=>switchTab(b.dataset.tab)));
+    document.querySelectorAll('.tabBtn').forEach(b=>b.addEventListener('click', ()=>showAccountingTab(b.dataset.tab, { scroll:true, updateUrl:true })));
     $('btnReloadAccounting')?.addEventListener('click', reloadAll);
     $('btnReloadRevenue')?.addEventListener('click', loadRevenue);
     $('revenueSearch')?.addEventListener('input', renderRevenue);
+    window.addEventListener('hashchange', ()=>showAccountingTab(initialTabFromUrl(), { scroll:true, updateUrl:false }));
+    window.addEventListener('popstate', ()=>showAccountingTab(initialTabFromUrl(), { scroll:true, updateUrl:false }));
   }
   bind();
   renderReports();
+  showAccountingTab(initialTabFromUrl(), { scroll: location.search.includes('tab=') || !!location.hash, updateUrl: false });
   reloadAll();
 })();
