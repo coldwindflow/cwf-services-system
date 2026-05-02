@@ -484,7 +484,7 @@
       <div class="acctGrid2"><label>URL โลโก้<input class="acctInput" name="logo_url" value="${esc(s.logo_url||'')}"></label><label>อัปโหลดโลโก้<input class="acctInput" name="logo_file" type="file" accept="image/*"></label><label>URL ลายเซ็น<input class="acctInput" name="signature_url" value="${esc(s.signature_url||'')}"></label><label>อัปโหลดลายเซ็น<input class="acctInput" name="signature_file" type="file" accept="image/*"></label><label>URL ตราประทับ<input class="acctInput" name="stamp_url" value="${esc(s.stamp_url||'')}"></label><label>อัปโหลดตราประทับ<input class="acctInput" name="stamp_file" type="file" accept="image/*"></label></div>
       <div class="acctSoftErr" data-error style="display:block;min-height:0"></div>
       <div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">บันทึกตั้งค่าเอกสาร</button></div>
-    </form>`, async(fd)=>{ await postForm('/admin/accounting/settings', fd); closeModal(); await Promise.all([loadSettings(), loadAudit()]); });
+    </form>`, async(fd)=>{ const r = await postForm('/admin/accounting/settings', fd); state.settings = r.settings || state.settings || {}; closeModal(); await Promise.all([loadSettings(), loadAudit()]); alert('บันทึกตั้งค่าข้อมูลบริษัทแล้ว'); });
   }
 
   function openExpenseModal() {
@@ -555,7 +555,27 @@
   function openTaxInvoiceModal(){ openModal(`<form class="acctFormGrid"><h3>ออกใบกำกับภาษี</h3><div class="acctGrid2"><label>วันที่ออก<input class="acctInput" name="issue_date" type="date" value="${todayIso()}"></label><label>ชื่อลูกค้า/บริษัท<input class="acctInput" name="customer_name" required></label><label>เลขภาษีลูกค้า<input class="acctInput" name="customer_tax_id" required></label><label>ยอดก่อน VAT<input class="acctInput" name="amount" type="number" min="0" step="0.01" required></label></div><label>ที่อยู่ลูกค้า<textarea class="acctInput" name="customer_address" required></textarea></label><label>รายละเอียด<input class="acctInput" name="description" value="ค่าบริการ"></label><div class="acctSoftErr" data-error style="display:block;min-height:0"></div><div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">ออกใบกำกับภาษี</button></div></form>`, async(fd)=>{ const amount=Number(fd.get('amount')||0); const r=await postJson('/admin/accounting/documents',{ document_type:'tax_invoice', issue_now:true, issue_date:fd.get('issue_date'), customer_name:fd.get('customer_name'), customer_tax_id:fd.get('customer_tax_id'), customer_address:fd.get('customer_address'), line_items:[{description:fd.get('description'), quantity:1, unit_price:amount, line_total:amount}], vat_rate:7 }); closeModal(); await Promise.all([loadSummary(),loadAudit()]); if(r.print_url) window.open(r.print_url,'_blank','noopener'); }); }
   async function confirmQuotation(id){ const r=await postJson(`/admin/accounting/documents/${encodeURIComponent(id)}/confirm`,{}); try{localStorage.setItem('cwf_accounting_quote_prefill',JSON.stringify(r.prefill||{}));}catch(_){} location.href=`/admin-add-v2.html?from_quote=${encodeURIComponent(id)}`; }
   async function loadTaxRequests(){ try{ const r=await getJson('/admin/accounting/technician-tax-requests'); state.taxRequests=r.rows||[]; renderTaxRequests(); }catch(e){ state.taxRequests=[]; renderTaxRequests(cleanError(e)); } }
-  function renderTaxRequests(err){ const el=$('taxRequestBox'); if(!el) return; const rows=state.taxRequests||[]; el.innerHTML=`<div class="acctBox"><h3>คำขอข้อมูลทวิ50จากช่าง</h3><div class="acctMuted">ช่างส่งข้อมูลจากเมนูตั้งค่า แอดมินต้องอนุมัติก่อนนำไปใช้ออกทวิ50</div>${err?`<div class="acctSoftErr">${esc(err)}</div>`:''}<div class="acctList">${rows.length?rows.map(r=>`<div class="acctRow"><div><b>${esc(r.full_name||r.username)}</b><small>${esc(r.username)} • เลขภาษี ${esc(r.tax_id||'-')}</small><small>${esc(r.tax_address||'')}</small></div><div class="acctActionsCol"><button class="acctPrimaryBtn" data-approve-tax="${esc(r.id)}">อนุมัติ</button><button class="acctGhostBtn" data-reject-tax="${esc(r.id)}">ปฏิเสธ</button></div></div>`).join(''):'<div class="acctEmpty">ไม่มีคำขอรออนุมัติ</div>'}</div></div>`; el.querySelectorAll('[data-approve-tax]').forEach(b=>b.addEventListener('click',async()=>{await postJson(`/admin/accounting/technician-tax-requests/${b.dataset.approveTax}/approve`,{}); await loadTaxRequests();})); el.querySelectorAll('[data-reject-tax]').forEach(b=>b.addEventListener('click',async()=>{const note=prompt('เหตุผลที่ปฏิเสธ')||''; await postJson(`/admin/accounting/technician-tax-requests/${b.dataset.rejectTax}/reject`,{admin_note:note}); await loadTaxRequests();})); }
+  function renderTaxRequests(err){
+    const el=$('taxRequestBox');
+    if(!el) return;
+    const rows=state.taxRequests||[];
+    el.innerHTML=`<div class="acctBox"><div class="acctSectionTitleLine"><h3>คำขอข้อมูลทวิ50จากช่าง</h3><button class="acctGhostBtn" type="button" data-refresh-tax>รีเฟรชคำขอ</button></div><div class="acctMuted">ช่างส่งข้อมูลจากเมนูตั้งค่า แอดมินต้องอนุมัติก่อนนำไปใช้ออกทวิ50</div>${err?`<div class="acctSoftErr">${esc(err)}</div>`:''}<div class="acctList">${rows.length?rows.map(r=>`<div class="acctRow"><div><b>${esc(r.full_name||r.username)}</b><small>${esc(r.username)} • เลขภาษี ${esc(r.tax_id||'-')}</small><small>${esc(r.tax_address||'')}</small><small>ส่งเมื่อ ${esc(fmtDate(r.requested_at)||'-')}</small></div><div class="acctActionsCol"><button class="acctPrimaryBtn" data-approve-tax="${esc(r.id)}">อนุมัติข้อมูลนี้</button><button class="acctGhostBtn" data-reject-tax="${esc(r.id)}">ปฏิเสธ</button></div></div>`).join(''):'<div class="acctEmpty">ไม่มีคำขอรออนุมัติ</div>'}</div></div>`;
+    el.querySelector('[data-refresh-tax]')?.addEventListener('click', loadTaxRequests);
+    el.querySelectorAll('[data-approve-tax]').forEach(b=>b.addEventListener('click',async()=>{
+      if(!confirm('อนุมัติข้อมูลทวิ50ของช่างคนนี้ เพื่อนำไปใช้ในเอกสารใช่ไหม?')) return;
+      const old=b.textContent; b.disabled=true; b.textContent='กำลังอนุมัติ...';
+      try{ await postJson(`/admin/accounting/technician-tax-requests/${b.dataset.approveTax}/approve`,{}); await loadTaxRequests(); alert('อนุมัติข้อมูลทวิ50แล้ว'); }
+      catch(e){ alert('อนุมัติไม่สำเร็จ: '+(cleanError(e)||e.message||'')); }
+      finally{ b.disabled=false; b.textContent=old; }
+    }));
+    el.querySelectorAll('[data-reject-tax]').forEach(b=>b.addEventListener('click',async()=>{
+      const note=prompt('เหตุผลที่ปฏิเสธ')||'';
+      const old=b.textContent; b.disabled=true; b.textContent='กำลังบันทึก...';
+      try{ await postJson(`/admin/accounting/technician-tax-requests/${b.dataset.rejectTax}/reject`,{admin_note:note}); await loadTaxRequests(); }
+      catch(e){ alert('ปฏิเสธไม่สำเร็จ: '+(cleanError(e)||e.message||'')); }
+      finally{ b.disabled=false; b.textContent=old; }
+    }));
+  }
 
   function openCreateDocumentModal(jobId = '') {
     openModal(`

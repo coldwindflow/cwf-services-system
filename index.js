@@ -17404,9 +17404,11 @@ function _accountingSettingsFromBody(body = {}, current = {}) {
     wht_rate: _money(body.wht_rate ?? current.wht_rate ?? 3),
     footer_note: pick('footer_note'),
     bank_info: pick('bank_info'),
-    logo_url: pick('logo_url'),
-    signature_url: pick('signature_url'),
-    stamp_url: pick('stamp_url'),
+    // Keep existing uploaded assets when the form sends empty URL fields.
+    // Users should not lose logo/signature/stamp by simply saving other settings.
+    logo_url: String(body.logo_url ?? '').trim() || current.logo_url || '',
+    signature_url: String(body.signature_url ?? '').trim() || current.signature_url || '',
+    stamp_url: String(body.stamp_url ?? '').trim() || current.stamp_url || '',
   };
 }
 
@@ -17592,7 +17594,7 @@ app.post('/admin/accounting/settings', requireAccountingPermission('accounting_m
   { name: 'logo_file', maxCount: 1 }, { name: 'signature_file', maxCount: 1 }, { name: 'stamp_file', maxCount: 1 }
 ]), async (req, res) => {
   try {
-    const actor = req.adminSession || req.user || {};
+    const actor = _accountingActor(req);
     const before = await _getAccountingSettings();
     const next = _accountingSettingsFromBody(req.body || {}, before);
     const files = req.files || {};
@@ -17606,7 +17608,7 @@ app.post('/admin/accounting/settings', requireAccountingPermission('accounting_m
     await pool.query(`INSERT INTO public.accounting_settings(key, value_json, updated_by, updated_at)
       VALUES('company',$1::jsonb,$2,NOW())
       ON CONFLICT(key) DO UPDATE SET value_json=EXCLUDED.value_json, updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
-      [JSON.stringify(next), actor.username || actor.user_id || null]);
+      [JSON.stringify(next), actor.username || null]);
     await logAccountingAudit(req, { action:'UPDATE_ACCOUNTING_SETTINGS', entity_type:'accounting_settings', entity_id:'company', before_json:before, after_json:next, note:'แก้ไขตั้งค่าข้อมูลบริษัทสำหรับออกเอกสาร' });
     return res.json({ ok:true, settings: next });
   } catch (e) {
@@ -18268,15 +18270,37 @@ app.post('/admin/accounting/technician-tax-requests/:id/approve', requireAccount
     await client.query('BEGIN');
     const rq = await client.query(`SELECT * FROM public.technician_tax_profile_requests WHERE id=$1 FOR UPDATE`, [id]);
     const row = rq.rows[0]; if (!row) { await client.query('ROLLBACK'); return res.status(404).json({ ok:false, error:'REQUEST_NOT_FOUND' }); }
-    await client.query(`INSERT INTO public.technician_profiles(username, full_name, tax_id, tax_address, tax_branch, wht_income_type, wht_default_rate, tax_profile_status, tax_profile_reviewed_by, tax_profile_reviewed_at)
-      VALUES($1,$2,$3,$4,$5,$6,$7,'approved',$8,NOW())
-      ON CONFLICT(username) DO UPDATE SET full_name=EXCLUDED.full_name, tax_id=EXCLUDED.tax_id, tax_address=EXCLUDED.tax_address, tax_branch=EXCLUDED.tax_branch, wht_income_type=EXCLUDED.wht_income_type, wht_default_rate=EXCLUDED.wht_default_rate, tax_profile_status='approved', tax_profile_reviewed_by=$8, tax_profile_reviewed_at=NOW(), updated_at=NOW()`,
-      [row.username, row.full_name, row.tax_id, row.tax_address, row.tax_branch, row.wht_income_type, row.wht_default_rate, actor]);
+    // Update first, then insert if missing. This avoids relying on an existing UNIQUE
+    // constraint in older production schemas while still keeping the operation safe.
+    const updProfile = await client.query(
+      `UPDATE public.technician_profiles
+          SET full_name=$2,
+              tax_id=$3,
+              tax_address=$4,
+              tax_branch=$5,
+              wht_income_type=$6,
+              wht_default_rate=$7,
+              tax_profile_status='approved',
+              tax_profile_reviewed_by=$8,
+              tax_profile_reviewed_at=NOW(),
+              updated_at=NOW()
+        WHERE username=$1
+        RETURNING username`,
+      [row.username, row.full_name, row.tax_id, row.tax_address, row.tax_branch, row.wht_income_type, row.wht_default_rate, actor]
+    );
+    if (!updProfile.rows.length) {
+      await client.query(
+        `INSERT INTO public.technician_profiles
+           (username, full_name, tax_id, tax_address, tax_branch, wht_income_type, wht_default_rate, tax_profile_status, tax_profile_reviewed_by, tax_profile_reviewed_at, updated_at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,'approved',$8,NOW(),NOW())`,
+        [row.username, row.full_name, row.tax_id, row.tax_address, row.tax_branch, row.wht_income_type, row.wht_default_rate, actor]
+      );
+    }
     const up = await client.query(`UPDATE public.technician_tax_profile_requests SET status='approved', reviewed_by=$2, reviewed_at=NOW(), admin_note=$3 WHERE id=$1 RETURNING *`, [id, actor, req.body?.admin_note || null]);
     await client.query('COMMIT');
     await logAccountingAudit(req, { action:'APPROVE_TECH_TAX_PROFILE', entity_type:'technician_tax_profile_request', entity_id:String(id), after_json:up.rows[0], note:'อนุมัติข้อมูลทวิ50ช่าง' });
     return res.json({ ok:true, row:up.rows[0] });
-  } catch(e) { try{await client.query('ROLLBACK')}catch(_){}; return res.status(500).json({ ok:false, error:'APPROVE_TAX_REQUEST_FAILED', message:e.message }); } finally { client.release(); }
+  } catch(e) { try{await client.query('ROLLBACK')}catch(_){}; console.error('APPROVE_TAX_REQUEST_FAILED', e); return res.status(500).json({ ok:false, error:'APPROVE_TAX_REQUEST_FAILED', message:e.message }); } finally { client.release(); }
 });
 
 app.post('/admin/accounting/technician-tax-requests/:id/reject', requireAccountingPermission('accounting_mark_payout_paid'), async (req, res) => {

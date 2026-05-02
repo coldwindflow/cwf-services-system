@@ -4273,7 +4273,34 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
 
 // ✅ Tax profile + withholding certificates for technicians (ทวิ50)
 function getCurrentTechUsernameForTax(){
-  return String(localStorage.getItem('username') || localStorage.getItem('technician_username') || window.currentUsername || window.CWF_CURRENT_USERNAME || '').trim();
+  const fromStore = String(
+    localStorage.getItem('username') ||
+    localStorage.getItem('technician_username') ||
+    localStorage.getItem('cwf_username') ||
+    window.currentUsername ||
+    window.CWF_CURRENT_USERNAME ||
+    ''
+  ).trim();
+  if (fromStore) return fromStore;
+  try {
+    const meText = document.getElementById('me')?.textContent || '';
+    const m = meText.match(/(?:ผู้ใช้|user)\s*:\s*([^\s]+)/i);
+    if (m && m[1] && m[1] !== '-') return m[1].trim();
+  } catch (_) {}
+  return '';
+}
+function showTaxDocModal(modal){
+  if (!modal) return;
+  try { window.closeTechSettingsModal && window.closeTechSettingsModal(); } catch (_) {}
+  modal.style.display = 'flex';
+  modal.setAttribute('aria-hidden','false');
+  document.body.classList.add('tax-doc-modal-open');
+}
+function hideTaxDocModal(modal){
+  if (!modal) return;
+  modal.style.display = 'none';
+  modal.setAttribute('aria-hidden','true');
+  document.body.classList.remove('tax-doc-modal-open');
 }
 async function openTechTaxProfileModal(){
   closeTechSettingsModal?.();
@@ -4281,7 +4308,7 @@ async function openTechTaxProfileModal(){
   const form = document.getElementById('techTaxProfileForm');
   const msg = document.getElementById('techTaxProfileMsg');
   if (!modal || !form) return;
-  modal.style.display='flex'; if (msg) msg.textContent='กำลังโหลดข้อมูล...';
+  showTaxDocModal(modal); if (msg) msg.textContent='กำลังโหลดข้อมูล...';
   try{
     const u = getCurrentTechUsernameForTax();
     if(!u) throw new Error('ไม่พบรหัสช่าง กรุณาออกจากระบบแล้วเข้าสู่ระบบใหม่');
@@ -4295,15 +4322,19 @@ async function openTechTaxProfileModal(){
     form.wht_income_type.value = p.wht_income_type || 'ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)';
     form.wht_default_rate.value = p.wht_default_rate || 3;
     if (msg) msg.textContent = p.is_complete ? 'ข้อมูลครบแล้ว หากแก้ไขใหม่จะส่งให้แอดมินอนุมัติอีกครั้ง' : 'กรอกข้อมูลให้ครบเพื่อส่งให้แอดมินอนุมัติ';
-  }catch(e){ if(msg) msg.textContent='โหลดข้อมูลไม่สำเร็จ แต่สามารถกรอกส่งใหม่ได้'; }
+  }catch(e){ if(msg) msg.textContent='⚠️ โหลดข้อมูลเดิมไม่สำเร็จ: '+(e.message||'')+' แต่สามารถกรอกส่งใหม่ได้'; }
 }
-function closeTechTaxProfileModal(){ const m=document.getElementById('techTaxProfileModal'); if(m) m.style.display='none'; }
+function closeTechTaxProfileModal(){ hideTaxDocModal(document.getElementById('techTaxProfileModal')); }
 async function submitTechTaxProfileRequest(ev){
   ev?.preventDefault?.();
   const form = document.getElementById('techTaxProfileForm'); const msg=document.getElementById('techTaxProfileMsg'); if(!form) return;
   const u = getCurrentTechUsernameForTax();
   if(!u){ if(msg) msg.textContent='❌ ไม่พบรหัสช่าง กรุณาเข้าสู่ระบบใหม่'; return; }
   const body = Object.fromEntries(new FormData(form).entries());
+  if(!String(body.full_name||'').trim() || !String(body.tax_id||'').trim() || !String(body.tax_address||'').trim()){
+    if(msg) msg.textContent='❌ กรุณากรอกชื่อ เลขภาษี/บัตรประชาชน และที่อยู่ภาษีให้ครบ';
+    return;
+  }
   try{
     if(msg) msg.textContent='กำลังส่งคำขอ...';
     const res = await fetch(`/technicians/${encodeURIComponent(u)}/tax-profile/request`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify(body) });
@@ -4316,10 +4347,10 @@ async function openTechWhtDocumentsModal(){
   closeTechSettingsModal?.();
   const m=document.getElementById('techWhtDocsModal'); const y=document.getElementById('techWhtYear'); if(!m) return;
   if(y && !y.value) y.value = new Date().getFullYear();
-  m.style.display='flex';
+  showTaxDocModal(m);
   await loadTechWhtDocuments();
 }
-function closeTechWhtDocumentsModal(){ const m=document.getElementById('techWhtDocsModal'); if(m) m.style.display='none'; }
+function closeTechWhtDocumentsModal(){ hideTaxDocModal(document.getElementById('techWhtDocsModal')); }
 async function loadTechWhtDocuments(){
   const box=document.getElementById('techWhtDocsList'); if(!box) return;
   const u=getCurrentTechUsernameForTax(); if(!u){ box.innerHTML='<div class="taxDocRow" style="color:#b91c1c;font-weight:900">ไม่พบรหัสช่าง กรุณาเข้าสู่ระบบใหม่</div>'; return; } const y=document.getElementById('techWhtYear')?.value || new Date().getFullYear();

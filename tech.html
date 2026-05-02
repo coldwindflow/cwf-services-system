@@ -493,6 +493,79 @@
 
     .taxDocPanel{width:min(460px,100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff!important;color:#08245b!important;border-radius:28px;border:1px solid var(--tech-border);box-shadow:0 28px 80px rgba(2,6,23,.35);padding:18px;opacity:1!important;position:relative}.taxDocPanel *{color:inherit}.taxDocPanel input,.taxDocPanel textarea,.taxDocPanel select{background:#fff!important;color:#111827!important;-webkit-text-fill-color:#111827!important;opacity:1!important}.taxDocPanel .primary{background:linear-gradient(135deg,#0b4bb3,#16b9f2)!important;color:#fff!important}.taxDocPanel .secondary{background:#fff!important;color:#0b2e6d!important;border:1px solid #d7e0ee!important}
     .taxDocForm{display:grid;gap:12px}.taxDocForm label{font-size:13px;font-weight:1000;color:#08245b}.taxDocForm input,.taxDocForm textarea,.taxDocForm select{width:100%;min-height:48px;border:1px solid #d7e0ee;border-radius:16px;padding:10px 12px;font-weight:800}.taxDocNote{background:#fff8d8;border:1px solid #ffe08a;border-radius:18px;padding:12px;color:#513f00;font-weight:800;line-height:1.55}.taxDocRow{border:1px solid #d7e0ee;border-radius:18px;padding:12px;margin-top:10px;background:#fbfdff}.taxDocRow b{color:#08245b}.taxDocStatus{display:inline-flex;border-radius:999px;padding:6px 10px;background:#eef6ff;color:#0b4bb3;font-weight:1000;font-size:12px}.taxDocActions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}@media(max-width:560px){.taxDocActions{grid-template-columns:1fr}}
+
+
+    /* ✅ CWF WHT / tax modals final readability guard: fully opaque, always above settings drawer */
+    #techTaxProfileModal,
+    #techWhtDocsModal{
+      position:fixed!important;
+      inset:0!important;
+      z-index:99999!important;
+      align-items:center!important;
+      justify-content:center!important;
+      padding:14px!important;
+      background:rgba(2,6,23,.82)!important;
+      backdrop-filter:blur(10px)!important;
+      -webkit-backdrop-filter:blur(10px)!important;
+    }
+    #techTaxProfileModal .taxDocPanel,
+    #techWhtDocsModal .taxDocPanel{
+      width:min(520px,100%)!important;
+      max-height:calc(100vh - 28px)!important;
+      overflow:auto!important;
+      background:#ffffff!important;
+      color:#08245b!important;
+      border-radius:28px!important;
+      border:1px solid #d7e0ee!important;
+      box-shadow:0 30px 90px rgba(0,0,0,.52)!important;
+      padding:18px!important;
+      opacity:1!important;
+      isolation:isolate!important;
+    }
+    #techTaxProfileModal .taxDocPanel *,
+    #techWhtDocsModal .taxDocPanel *{
+      opacity:1!important;
+      text-shadow:none!important;
+      filter:none!important;
+      box-sizing:border-box!important;
+    }
+    #techTaxProfileModal h3,#techWhtDocsModal h3{color:#08245b!important;font-size:24px!important;margin:0!important;font-weight:1000!important;line-height:1.15!important}
+    #techTaxProfileModal p,#techWhtDocsModal p{color:#42526b!important;font-weight:800!important;margin:4px 0 0!important;line-height:1.45!important}
+    #techTaxProfileModal label,#techWhtDocsModal label{color:#08245b!important;font-weight:1000!important;display:grid!important;gap:7px!important}
+    #techTaxProfileModal input,#techTaxProfileModal textarea,#techTaxProfileModal select,
+    #techWhtDocsModal input,#techWhtDocsModal textarea,#techWhtDocsModal select{
+      width:100%!important;
+      background:#fff!important;
+      color:#111827!important;
+      -webkit-text-fill-color:#111827!important;
+      border:1px solid #cfd8e6!important;
+      border-radius:16px!important;
+      min-height:52px!important;
+      padding:11px 13px!important;
+      font-size:16px!important;
+      font-weight:850!important;
+      box-shadow:0 8px 22px rgba(8,36,91,.08)!important;
+    }
+    #techTaxProfileModal textarea,#techWhtDocsModal textarea{min-height:116px!important;resize:vertical!important}
+    #techTaxProfileModal .settingsHead,#techWhtDocsModal .settingsHead{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:12px!important;margin-bottom:12px!important;background:#fff!important;color:#08245b!important}
+    #techTaxProfileModal .settingsClose,#techWhtDocsModal .settingsClose{background:#fff7c2!important;color:#08245b!important;border:1px solid #f6d84e!important;box-shadow:0 12px 26px rgba(8,36,91,.16)!important;flex:0 0 auto!important}
+    #techTaxProfileModal .taxDocNote,#techWhtDocsModal .taxDocNote{background:#fff8d8!important;border:1px solid #ffe08a!important;color:#513f00!important;border-radius:18px!important;padding:12px!important;font-weight:900!important;line-height:1.55!important;margin-bottom:12px!important}
+    #techTaxProfileModal .taxDocForm,#techWhtDocsModal .taxDocForm{display:grid!important;gap:13px!important;background:#fff!important;color:#08245b!important}
+    #techTaxProfileModal .taxDocRow,#techWhtDocsModal .taxDocRow{background:#fbfdff!important;border:1px solid #d7e0ee!important;color:#08245b!important;border-radius:18px!important;padding:12px!important;margin-top:10px!important}
+    #techTaxProfileModal .muted,#techWhtDocsModal .muted,#techTaxProfileMsg{color:#526276!important;font-weight:850!important}
+    #techTaxProfileModal .primary,#techWhtDocsModal .primary,
+    #techTaxProfileModal button.primary,#techWhtDocsModal button.primary{
+      border:0!important;border-radius:18px!important;min-height:54px!important;padding:12px 16px!important;
+      background:linear-gradient(135deg,#0b4bb3,#16b9f2)!important;color:#fff!important;-webkit-text-fill-color:#fff!important;font-weight:1000!important;text-align:center!important;text-decoration:none!important;
+    }
+    #techTaxProfileModal .secondary,#techWhtDocsModal .secondary,
+    #techTaxProfileModal button.secondary,#techWhtDocsModal button.secondary{
+      border:1px solid #d7e0ee!important;border-radius:18px!important;min-height:54px!important;padding:12px 16px!important;
+      background:#fff!important;color:#0b2e6d!important;-webkit-text-fill-color:#0b2e6d!important;font-weight:1000!important;text-align:center!important;text-decoration:none!important;
+    }
+    #techTaxProfileModal .taxDocActions,#techWhtDocsModal .taxDocActions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;margin-top:12px!important}
+    @media(max-width:560px){#techTaxProfileModal,#techWhtDocsModal{align-items:flex-start!important;padding:10px!important;overflow:auto!important}#techTaxProfileModal .taxDocPanel,#techWhtDocsModal .taxDocPanel{border-radius:24px!important;margin-top:12px!important}.taxDocActions{grid-template-columns:1fr!important}}
+
 </style>
 </head>
 <body>
@@ -786,6 +859,79 @@
   .cwf-zone-quick-panel,.cwf-zone-detail-panel{width:min(94vw,520px)!important;max-height:calc(100vh - 28px)!important;overflow:auto!important;-webkit-overflow-scrolling:touch!important;border-radius:26px!important;background:#fff!important;box-shadow:0 32px 90px rgba(2,6,23,.38)!important;border:1px solid rgba(255,255,255,.82)!important;padding:14px!important}.cwf-zone-quick-head,.cwf-zone-detail-head{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:12px!important;border-radius:22px!important;background:linear-gradient(135deg,#0B2E6D,#0B4BB3)!important;padding:16px!important;color:#fff!important}.cwf-zone-quick-head h3,.cwf-zone-detail-head h3{margin:0!important;color:#fff!important;font-size:26px!important;line-height:1.1!important;font-weight:1000!important}.cwf-zone-quick-head p,.cwf-zone-detail-head p{margin:8px 0 0!important;color:rgba(255,255,255,.92)!important;font-size:13px!important;line-height:1.45!important;font-weight:850!important}.cwf-zone-quick-actions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;margin-top:13px!important}.cwf-zone-quick-actions .btn{min-height:48px!important;border-radius:16px!important;font-weight:1000!important}.cwf-zone-detail-body{display:grid!important;gap:10px!important;margin-top:12px!important}.cwf-zone-detail-body section{border-radius:18px!important;border:1px solid rgba(11,46,109,.10)!important;background:#f8fbff!important;padding:12px!important}.cwf-zone-detail-body h4{margin:0 0 6px!important;color:#0B2E6D!important;font-size:16px!important}.cwf-zone-detail-body p{margin:0 0 6px!important;color:#334155!important;line-height:1.55!important;font-weight:750!important;font-size:13px!important}
   .cwf-zone-map-preview{z-index:4700!important}.cwf-zone-preview-panel{width:min(96vw,980px)!important;max-height:calc(100vh - 28px)!important;overflow:auto!important;-webkit-overflow-scrolling:touch!important;border-radius:22px!important;background:#fff!important;padding:10px!important;box-shadow:0 32px 90px rgba(2,6,23,.48)!important}.cwf-zone-preview-panel img{display:block!important;width:100%!important;max-width:1200px!important;height:auto!important;border-radius:16px!important;background:#fff!important;margin:0 auto!important}
   @media(max-width:620px){.cwf-zone-v20{padding:10px!important}.cwf-zone-panel{width:96vw!important;border-radius:26px!important;padding:10px!important}.cwf-zone-header{min-height:220px!important;padding:14px!important;border-radius:22px!important}.cwf-zone-header-card{max-width:calc(100% - 64px)!important;padding:13px!important;border-radius:20px!important}.cwf-zone-header h2{font-size:34px!important}.cwf-zone-header p{font-size:14px!important}.cwf-zone-close{width:52px!important;height:52px!important;border-radius:18px!important;font-size:36px!important}.cwf-zone-map-frame{padding:8px!important}.cwf-zone-map-frame img{max-height:54vh!important}.cwf-zone-actions,.cwf-zone-form-grid,.cwf-zone-quick-actions{grid-template-columns:1fr!important}.cwf-zone-action{min-height:46px!important}.cwf-zone-quick-head h3,.cwf-zone-detail-head h3{font-size:24px!important}}
+
+
+    /* ✅ CWF WHT / tax modals final readability guard: fully opaque, always above settings drawer */
+    #techTaxProfileModal,
+    #techWhtDocsModal{
+      position:fixed!important;
+      inset:0!important;
+      z-index:99999!important;
+      align-items:center!important;
+      justify-content:center!important;
+      padding:14px!important;
+      background:rgba(2,6,23,.82)!important;
+      backdrop-filter:blur(10px)!important;
+      -webkit-backdrop-filter:blur(10px)!important;
+    }
+    #techTaxProfileModal .taxDocPanel,
+    #techWhtDocsModal .taxDocPanel{
+      width:min(520px,100%)!important;
+      max-height:calc(100vh - 28px)!important;
+      overflow:auto!important;
+      background:#ffffff!important;
+      color:#08245b!important;
+      border-radius:28px!important;
+      border:1px solid #d7e0ee!important;
+      box-shadow:0 30px 90px rgba(0,0,0,.52)!important;
+      padding:18px!important;
+      opacity:1!important;
+      isolation:isolate!important;
+    }
+    #techTaxProfileModal .taxDocPanel *,
+    #techWhtDocsModal .taxDocPanel *{
+      opacity:1!important;
+      text-shadow:none!important;
+      filter:none!important;
+      box-sizing:border-box!important;
+    }
+    #techTaxProfileModal h3,#techWhtDocsModal h3{color:#08245b!important;font-size:24px!important;margin:0!important;font-weight:1000!important;line-height:1.15!important}
+    #techTaxProfileModal p,#techWhtDocsModal p{color:#42526b!important;font-weight:800!important;margin:4px 0 0!important;line-height:1.45!important}
+    #techTaxProfileModal label,#techWhtDocsModal label{color:#08245b!important;font-weight:1000!important;display:grid!important;gap:7px!important}
+    #techTaxProfileModal input,#techTaxProfileModal textarea,#techTaxProfileModal select,
+    #techWhtDocsModal input,#techWhtDocsModal textarea,#techWhtDocsModal select{
+      width:100%!important;
+      background:#fff!important;
+      color:#111827!important;
+      -webkit-text-fill-color:#111827!important;
+      border:1px solid #cfd8e6!important;
+      border-radius:16px!important;
+      min-height:52px!important;
+      padding:11px 13px!important;
+      font-size:16px!important;
+      font-weight:850!important;
+      box-shadow:0 8px 22px rgba(8,36,91,.08)!important;
+    }
+    #techTaxProfileModal textarea,#techWhtDocsModal textarea{min-height:116px!important;resize:vertical!important}
+    #techTaxProfileModal .settingsHead,#techWhtDocsModal .settingsHead{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:12px!important;margin-bottom:12px!important;background:#fff!important;color:#08245b!important}
+    #techTaxProfileModal .settingsClose,#techWhtDocsModal .settingsClose{background:#fff7c2!important;color:#08245b!important;border:1px solid #f6d84e!important;box-shadow:0 12px 26px rgba(8,36,91,.16)!important;flex:0 0 auto!important}
+    #techTaxProfileModal .taxDocNote,#techWhtDocsModal .taxDocNote{background:#fff8d8!important;border:1px solid #ffe08a!important;color:#513f00!important;border-radius:18px!important;padding:12px!important;font-weight:900!important;line-height:1.55!important;margin-bottom:12px!important}
+    #techTaxProfileModal .taxDocForm,#techWhtDocsModal .taxDocForm{display:grid!important;gap:13px!important;background:#fff!important;color:#08245b!important}
+    #techTaxProfileModal .taxDocRow,#techWhtDocsModal .taxDocRow{background:#fbfdff!important;border:1px solid #d7e0ee!important;color:#08245b!important;border-radius:18px!important;padding:12px!important;margin-top:10px!important}
+    #techTaxProfileModal .muted,#techWhtDocsModal .muted,#techTaxProfileMsg{color:#526276!important;font-weight:850!important}
+    #techTaxProfileModal .primary,#techWhtDocsModal .primary,
+    #techTaxProfileModal button.primary,#techWhtDocsModal button.primary{
+      border:0!important;border-radius:18px!important;min-height:54px!important;padding:12px 16px!important;
+      background:linear-gradient(135deg,#0b4bb3,#16b9f2)!important;color:#fff!important;-webkit-text-fill-color:#fff!important;font-weight:1000!important;text-align:center!important;text-decoration:none!important;
+    }
+    #techTaxProfileModal .secondary,#techWhtDocsModal .secondary,
+    #techTaxProfileModal button.secondary,#techWhtDocsModal button.secondary{
+      border:1px solid #d7e0ee!important;border-radius:18px!important;min-height:54px!important;padding:12px 16px!important;
+      background:#fff!important;color:#0b2e6d!important;-webkit-text-fill-color:#0b2e6d!important;font-weight:1000!important;text-align:center!important;text-decoration:none!important;
+    }
+    #techTaxProfileModal .taxDocActions,#techWhtDocsModal .taxDocActions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;margin-top:12px!important}
+    @media(max-width:560px){#techTaxProfileModal,#techWhtDocsModal{align-items:flex-start!important;padding:10px!important;overflow:auto!important}#techTaxProfileModal .taxDocPanel,#techWhtDocsModal .taxDocPanel{border-radius:24px!important;margin-top:12px!important}.taxDocActions{grid-template-columns:1fr!important}}
+
 </style>
 
 
@@ -892,6 +1038,79 @@
     .cwf-zone-v20 .cwf-zone-header-v21 .cwf-zone-chip-row{grid-template-columns:1fr!important;gap:7px!important}
     .cwf-zone-v20 .cwf-zone-header-v21 .cwf-zone-chip-row span{min-height:32px!important}
   }
+
+
+    /* ✅ CWF WHT / tax modals final readability guard: fully opaque, always above settings drawer */
+    #techTaxProfileModal,
+    #techWhtDocsModal{
+      position:fixed!important;
+      inset:0!important;
+      z-index:99999!important;
+      align-items:center!important;
+      justify-content:center!important;
+      padding:14px!important;
+      background:rgba(2,6,23,.82)!important;
+      backdrop-filter:blur(10px)!important;
+      -webkit-backdrop-filter:blur(10px)!important;
+    }
+    #techTaxProfileModal .taxDocPanel,
+    #techWhtDocsModal .taxDocPanel{
+      width:min(520px,100%)!important;
+      max-height:calc(100vh - 28px)!important;
+      overflow:auto!important;
+      background:#ffffff!important;
+      color:#08245b!important;
+      border-radius:28px!important;
+      border:1px solid #d7e0ee!important;
+      box-shadow:0 30px 90px rgba(0,0,0,.52)!important;
+      padding:18px!important;
+      opacity:1!important;
+      isolation:isolate!important;
+    }
+    #techTaxProfileModal .taxDocPanel *,
+    #techWhtDocsModal .taxDocPanel *{
+      opacity:1!important;
+      text-shadow:none!important;
+      filter:none!important;
+      box-sizing:border-box!important;
+    }
+    #techTaxProfileModal h3,#techWhtDocsModal h3{color:#08245b!important;font-size:24px!important;margin:0!important;font-weight:1000!important;line-height:1.15!important}
+    #techTaxProfileModal p,#techWhtDocsModal p{color:#42526b!important;font-weight:800!important;margin:4px 0 0!important;line-height:1.45!important}
+    #techTaxProfileModal label,#techWhtDocsModal label{color:#08245b!important;font-weight:1000!important;display:grid!important;gap:7px!important}
+    #techTaxProfileModal input,#techTaxProfileModal textarea,#techTaxProfileModal select,
+    #techWhtDocsModal input,#techWhtDocsModal textarea,#techWhtDocsModal select{
+      width:100%!important;
+      background:#fff!important;
+      color:#111827!important;
+      -webkit-text-fill-color:#111827!important;
+      border:1px solid #cfd8e6!important;
+      border-radius:16px!important;
+      min-height:52px!important;
+      padding:11px 13px!important;
+      font-size:16px!important;
+      font-weight:850!important;
+      box-shadow:0 8px 22px rgba(8,36,91,.08)!important;
+    }
+    #techTaxProfileModal textarea,#techWhtDocsModal textarea{min-height:116px!important;resize:vertical!important}
+    #techTaxProfileModal .settingsHead,#techWhtDocsModal .settingsHead{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:12px!important;margin-bottom:12px!important;background:#fff!important;color:#08245b!important}
+    #techTaxProfileModal .settingsClose,#techWhtDocsModal .settingsClose{background:#fff7c2!important;color:#08245b!important;border:1px solid #f6d84e!important;box-shadow:0 12px 26px rgba(8,36,91,.16)!important;flex:0 0 auto!important}
+    #techTaxProfileModal .taxDocNote,#techWhtDocsModal .taxDocNote{background:#fff8d8!important;border:1px solid #ffe08a!important;color:#513f00!important;border-radius:18px!important;padding:12px!important;font-weight:900!important;line-height:1.55!important;margin-bottom:12px!important}
+    #techTaxProfileModal .taxDocForm,#techWhtDocsModal .taxDocForm{display:grid!important;gap:13px!important;background:#fff!important;color:#08245b!important}
+    #techTaxProfileModal .taxDocRow,#techWhtDocsModal .taxDocRow{background:#fbfdff!important;border:1px solid #d7e0ee!important;color:#08245b!important;border-radius:18px!important;padding:12px!important;margin-top:10px!important}
+    #techTaxProfileModal .muted,#techWhtDocsModal .muted,#techTaxProfileMsg{color:#526276!important;font-weight:850!important}
+    #techTaxProfileModal .primary,#techWhtDocsModal .primary,
+    #techTaxProfileModal button.primary,#techWhtDocsModal button.primary{
+      border:0!important;border-radius:18px!important;min-height:54px!important;padding:12px 16px!important;
+      background:linear-gradient(135deg,#0b4bb3,#16b9f2)!important;color:#fff!important;-webkit-text-fill-color:#fff!important;font-weight:1000!important;text-align:center!important;text-decoration:none!important;
+    }
+    #techTaxProfileModal .secondary,#techWhtDocsModal .secondary,
+    #techTaxProfileModal button.secondary,#techWhtDocsModal button.secondary{
+      border:1px solid #d7e0ee!important;border-radius:18px!important;min-height:54px!important;padding:12px 16px!important;
+      background:#fff!important;color:#0b2e6d!important;-webkit-text-fill-color:#0b2e6d!important;font-weight:1000!important;text-align:center!important;text-decoration:none!important;
+    }
+    #techTaxProfileModal .taxDocActions,#techWhtDocsModal .taxDocActions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;margin-top:12px!important}
+    @media(max-width:560px){#techTaxProfileModal,#techWhtDocsModal{align-items:flex-start!important;padding:10px!important;overflow:auto!important}#techTaxProfileModal .taxDocPanel,#techWhtDocsModal .taxDocPanel{border-radius:24px!important;margin-top:12px!important}.taxDocActions{grid-template-columns:1fr!important}}
+
 </style>
 
 <script id="cwf-zone-stable-js-v20">
@@ -1083,7 +1302,80 @@
           .zone-wrap::before{left:12px}
           .zone-wrap::after{left:40px}
         }
-      </style>
+      
+
+    /* ✅ CWF WHT / tax modals final readability guard: fully opaque, always above settings drawer */
+    #techTaxProfileModal,
+    #techWhtDocsModal{
+      position:fixed!important;
+      inset:0!important;
+      z-index:99999!important;
+      align-items:center!important;
+      justify-content:center!important;
+      padding:14px!important;
+      background:rgba(2,6,23,.82)!important;
+      backdrop-filter:blur(10px)!important;
+      -webkit-backdrop-filter:blur(10px)!important;
+    }
+    #techTaxProfileModal .taxDocPanel,
+    #techWhtDocsModal .taxDocPanel{
+      width:min(520px,100%)!important;
+      max-height:calc(100vh - 28px)!important;
+      overflow:auto!important;
+      background:#ffffff!important;
+      color:#08245b!important;
+      border-radius:28px!important;
+      border:1px solid #d7e0ee!important;
+      box-shadow:0 30px 90px rgba(0,0,0,.52)!important;
+      padding:18px!important;
+      opacity:1!important;
+      isolation:isolate!important;
+    }
+    #techTaxProfileModal .taxDocPanel *,
+    #techWhtDocsModal .taxDocPanel *{
+      opacity:1!important;
+      text-shadow:none!important;
+      filter:none!important;
+      box-sizing:border-box!important;
+    }
+    #techTaxProfileModal h3,#techWhtDocsModal h3{color:#08245b!important;font-size:24px!important;margin:0!important;font-weight:1000!important;line-height:1.15!important}
+    #techTaxProfileModal p,#techWhtDocsModal p{color:#42526b!important;font-weight:800!important;margin:4px 0 0!important;line-height:1.45!important}
+    #techTaxProfileModal label,#techWhtDocsModal label{color:#08245b!important;font-weight:1000!important;display:grid!important;gap:7px!important}
+    #techTaxProfileModal input,#techTaxProfileModal textarea,#techTaxProfileModal select,
+    #techWhtDocsModal input,#techWhtDocsModal textarea,#techWhtDocsModal select{
+      width:100%!important;
+      background:#fff!important;
+      color:#111827!important;
+      -webkit-text-fill-color:#111827!important;
+      border:1px solid #cfd8e6!important;
+      border-radius:16px!important;
+      min-height:52px!important;
+      padding:11px 13px!important;
+      font-size:16px!important;
+      font-weight:850!important;
+      box-shadow:0 8px 22px rgba(8,36,91,.08)!important;
+    }
+    #techTaxProfileModal textarea,#techWhtDocsModal textarea{min-height:116px!important;resize:vertical!important}
+    #techTaxProfileModal .settingsHead,#techWhtDocsModal .settingsHead{display:flex!important;align-items:flex-start!important;justify-content:space-between!important;gap:12px!important;margin-bottom:12px!important;background:#fff!important;color:#08245b!important}
+    #techTaxProfileModal .settingsClose,#techWhtDocsModal .settingsClose{background:#fff7c2!important;color:#08245b!important;border:1px solid #f6d84e!important;box-shadow:0 12px 26px rgba(8,36,91,.16)!important;flex:0 0 auto!important}
+    #techTaxProfileModal .taxDocNote,#techWhtDocsModal .taxDocNote{background:#fff8d8!important;border:1px solid #ffe08a!important;color:#513f00!important;border-radius:18px!important;padding:12px!important;font-weight:900!important;line-height:1.55!important;margin-bottom:12px!important}
+    #techTaxProfileModal .taxDocForm,#techWhtDocsModal .taxDocForm{display:grid!important;gap:13px!important;background:#fff!important;color:#08245b!important}
+    #techTaxProfileModal .taxDocRow,#techWhtDocsModal .taxDocRow{background:#fbfdff!important;border:1px solid #d7e0ee!important;color:#08245b!important;border-radius:18px!important;padding:12px!important;margin-top:10px!important}
+    #techTaxProfileModal .muted,#techWhtDocsModal .muted,#techTaxProfileMsg{color:#526276!important;font-weight:850!important}
+    #techTaxProfileModal .primary,#techWhtDocsModal .primary,
+    #techTaxProfileModal button.primary,#techWhtDocsModal button.primary{
+      border:0!important;border-radius:18px!important;min-height:54px!important;padding:12px 16px!important;
+      background:linear-gradient(135deg,#0b4bb3,#16b9f2)!important;color:#fff!important;-webkit-text-fill-color:#fff!important;font-weight:1000!important;text-align:center!important;text-decoration:none!important;
+    }
+    #techTaxProfileModal .secondary,#techWhtDocsModal .secondary,
+    #techTaxProfileModal button.secondary,#techWhtDocsModal button.secondary{
+      border:1px solid #d7e0ee!important;border-radius:18px!important;min-height:54px!important;padding:12px 16px!important;
+      background:#fff!important;color:#0b2e6d!important;-webkit-text-fill-color:#0b2e6d!important;font-weight:1000!important;text-align:center!important;text-decoration:none!important;
+    }
+    #techTaxProfileModal .taxDocActions,#techWhtDocsModal .taxDocActions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;margin-top:12px!important}
+    @media(max-width:560px){#techTaxProfileModal,#techWhtDocsModal{align-items:flex-start!important;padding:10px!important;overflow:auto!important}#techTaxProfileModal .taxDocPanel,#techWhtDocsModal .taxDocPanel{border-radius:24px!important;margin-top:12px!important}.taxDocActions{grid-template-columns:1fr!important}}
+
+</style>
 
       <div class="tech-ctrl-row">
         <button id="acceptToggleBtn" class="accept-btn ready" type="button">🟢 รับงาน</button>
@@ -1357,7 +1649,7 @@
       }
     });
   </script>
-  <script src="app.js?v=tax-profile-wht-real-v12"></script>
+  <script src="app.js?v=tax-wht-modal-final-v21"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
