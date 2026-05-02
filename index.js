@@ -6420,6 +6420,34 @@ app.post('/admin/super/payouts/generate', requireSuperAdmin, async (req, res) =>
   }
 });
 
+
+async function _ensureDuePayoutPeriodsBangkok(actorUsername = null) {
+  // Lazy auto-create: prepare payout periods when admin opens payout page.
+  // Does not pay money, does not overwrite locked/paid periods, and is idempotent.
+  const n = _bkkNow();
+  const { d } = _bkkYmd(n);
+  const dueTypes = [];
+  if (d >= 10) dueTypes.push('10');
+  if (d >= 25) dueTypes.push('25');
+  const created = [];
+  for (const type of dueTypes) {
+    try {
+      const { period_type, start, endEx, label_ym } = _periodBoundsBangkok(type, n);
+      const payout_id = `payout_${label_ym}_${period_type}`;
+      const r = await pool.query(
+        `INSERT INTO public.technician_payout_periods(payout_id, period_type, period_start, period_end, status, created_by)
+         VALUES($1,$2,$3,$4,'draft',$5)
+         ON CONFLICT (payout_id) DO NOTHING`,
+        [payout_id, period_type, start.toISOString(), endEx.toISOString(), actorUsername || 'system:auto_due']
+      );
+      if ((r.rowCount || 0) > 0) created.push(payout_id);
+    } catch (e) {
+      console.warn('[payout_auto_ensure] skipped', type, e?.message || e);
+    }
+  }
+  return { created, checked_types: dueTypes };
+}
+
 async function _listPayoutPeriodsLiveAware({ limit = 24 } = {}) {
   // v10.2: draft payout_lines are disposable cache only.
   // Super Admin list must never show old 350/1400 stored rows for draft periods.
@@ -6483,8 +6511,9 @@ async function _listPayoutPeriodsLiveAware({ limit = 24 } = {}) {
 
 app.get('/admin/super/payouts', requireSuperAdmin, async (req, res) => {
   try {
+    const auto_ensure = await _ensureDuePayoutPeriodsBangkok(req.actor?.username || null);
     const payouts = await _listPayoutPeriodsLiveAware({ limit: req.query.limit || 24 });
-    return res.json({ ok: true, payouts });
+    return res.json({ ok: true, payouts, auto_ensure });
   } catch (e) {
     console.error('GET /admin/super/payouts', e);
     return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
@@ -7664,11 +7693,33 @@ app.post('/admin/super/payouts/:payout_id/lock', requireSuperAdmin, async (req, 
     if (!p) return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
     if (String(p.status) === 'paid') return res.json({ ok:true, payout_id, status:'paid', already:true });
 
+    // If this period was lazily auto-created, it may not have stored lines yet.
+    // Before locking, regenerate draft lines from the contract engine so locked/paid periods use a stable snapshot.
+    let regen = null;
+    if (String(p.status || 'draft') === 'draft') {
+      const client = await pool.connect();
+      try {
+        await client.query('BEGIN');
+        regen = await _regenerateDraftPayoutContractLines({
+          client,
+          payout_id,
+          actor_username: req.actor?.username || null,
+          req,
+        });
+        await client.query('COMMIT');
+      } catch (e) {
+        try { await client.query('ROLLBACK'); } catch {}
+        throw e;
+      } finally {
+        client.release();
+      }
+    }
+
     const depositSummary = await _ensureDepositCollectionsForPayout(payout_id, req.actor?.username || null);
 
     await pool.query(`UPDATE public.technician_payout_periods SET status='locked' WHERE payout_id=$1 AND status='draft'`, [payout_id]);
     const p2 = await _getPayoutPeriod(payout_id);
-    return res.json({ ok:true, payout_id, status: p2?.status || 'locked', deposit_collections: depositSummary.inserted, deposit_checked: depositSummary.checked });
+    return res.json({ ok:true, payout_id, status: p2?.status || 'locked', regenerated: regen ? true : false, deposit_collections: depositSummary.inserted, deposit_checked: depositSummary.checked });
   } catch (e) {
     console.error('POST /admin/super/payouts/:payout_id/lock', e);
     return res.status(500).json({ ok:false, error:'LOCK_FAILED' });

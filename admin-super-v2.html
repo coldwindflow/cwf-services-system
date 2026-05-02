@@ -64,22 +64,19 @@
     .payout-card-item.active{border-color:#0b4bb3;box-shadow:0 16px 34px rgba(11,75,179,.18)}
     .payout-card-item .topline{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}
     .payout-card-item .amount{font-size:22px;font-weight:1200;color:#061b49}
+    .payout-due-alert{border-radius:22px;border:1px solid rgba(244,196,0,.45);background:linear-gradient(135deg,#fff8d6,#fff);padding:14px;box-shadow:0 12px 30px rgba(2,6,23,.08);margin:10px 0}
+    .payout-due-alert.danger{border-color:rgba(220,38,38,.30);background:linear-gradient(135deg,#fff1f2,#fff)}
+    .payout-due-alert.ok{border-color:rgba(22,163,74,.25);background:linear-gradient(135deg,#ecfdf5,#fff)}
+    .payout-stepper{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin:10px 0}
+    .payout-step{border:1px solid rgba(11,75,179,.18);background:#f8fbff;border-radius:14px;padding:8px 6px;text-align:center;font-size:12px;font-weight:1000;color:#061b49}
+    .payout-history-filters{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}.payout-history-filters input,.payout-history-filters select{width:100%;min-height:42px;border-radius:14px;border:1px solid rgba(11,75,179,.18);padding:8px 10px;font-weight:900;color:#061b49;background:#fff}
+    .payout-history-list{display:grid;gap:8px}.payout-history-row{border-radius:16px;border:1px solid rgba(11,75,179,.14);background:#fff;padding:10px;box-shadow:0 8px 20px rgba(2,6,23,.05)}
     .tech-pay-card{border-radius:22px;border:1px solid rgba(11,75,179,.15);background:#fff;padding:12px;margin-top:10px;box-shadow:0 10px 28px rgba(2,6,23,.08)}
     .tech-pay-card .head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
     .tech-pay-card .money{font-size:22px;font-weight:1200;color:#061b49}
     .pay-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.pay-actions .btn{flex:1;min-width:90px}
     .soft-hide-table{display:none!important}
     @media(max-width:920px){.payroll-shell,.payroll-cards{grid-template-columns:1fr}.payroll-actions{grid-template-columns:1fr}.payout-card-item .topline{flex-direction:column}.payroll-focus > summary{font-size:15px}.grid{grid-template-columns:1fr}}
-
-    .payout-help{border-radius:18px;border:1px solid rgba(11,75,179,.16);background:linear-gradient(180deg,#ffffff,#f4f8ff);padding:12px;margin-top:10px;color:#334155;font-weight:900;line-height:1.5}
-    .payout-stepper{display:grid;grid-template-columns:repeat(5,1fr);gap:7px;margin-top:10px}
-    .payout-step{border-radius:999px;background:#eef6ff;color:#0b2e6d;padding:8px 9px;text-align:center;font-size:12px;font-weight:1000;border:1px solid rgba(11,75,179,.12)}
-    .payout-subhead{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:12px 0 6px;flex-wrap:wrap}
-    .payout-subhead b{font-size:15px;color:#061b49}.payout-history-list{display:grid;gap:8px;margin-top:8px}
-    .payout-history-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid rgba(15,23,42,.10);background:#fff;border-radius:16px;padding:10px 12px;box-shadow:0 8px 18px rgba(2,6,23,.05)}
-    .payout-history-row .amount{font-weight:1200;color:#061b49}.payout-system-note{font-size:11px;color:rgba(15,23,42,.48);margin-top:5px}
-    .advanced-tools summary{font-size:13px;color:#0b4bb3}.advanced-tools{box-shadow:none!important;background:#fbfdff!important;margin-top:10px!important}
-    @media(max-width:720px){.payout-stepper{grid-template-columns:1fr 1fr}.payout-step:last-child{grid-column:1/-1}.payout-history-row{align-items:flex-start;flex-direction:column}.payroll-actions{grid-template-columns:1fr!important}}
   </style>
   <script defer src="/cwf-pwa.js?v=company-logo-icon-v32"></script>
 </head>
@@ -229,23 +226,21 @@
     <details open class="payroll-focus">
       <summary>💸 จ่ายเงินช่าง</summary>
       <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px;background:transparent">
-        <div class="payout-help">
-          ตรวจยอดรายได้ หักเงินประกัน และบันทึกการจ่ายเงินรอบวันที่ 10 / 25<br/>
-          <span class="muted">ระบบไม่โอนเงินอัตโนมัติ แอดมินต้องโอนเงินจริงก่อน แล้วกด “บันทึกจ่ายแล้ว” เพื่อเก็บประวัติ</span>
-          <div class="payout-stepper">
-            <div class="payout-step">1. เตรียมงวด</div>
-            <div class="payout-step">2. ตรวจยอด</div>
-            <div class="payout-step">3. ล็อกงวด</div>
-            <div class="payout-step">4. โอนเงิน</div>
-            <div class="payout-step">5. บันทึกจ่ายแล้ว</div>
-          </div>
+        <div class="payout-due-alert" id="payoutDueAlert">กำลังตรวจสอบงวดจ่าย...</div>
+        <div class="payout-stepper" aria-label="ขั้นตอนการจ่ายเงิน">
+          <div class="payout-step">1. เตรียมงวด</div>
+          <div class="payout-step">2. ตรวจยอด</div>
+          <div class="payout-step">3. ล็อกงวด</div>
+          <div class="payout-step">4. โอนเงิน</div>
+          <div class="payout-step">5. บันทึกจ่ายแล้ว</div>
         </div>
+        <div class="muted" style="font-weight:900;margin:6px 0 10px">ระบบไม่โอนเงินอัตโนมัติ แอดมินต้องโอนเงินจริงก่อน แล้วกดบันทึกจ่ายแล้วเพื่อเก็บประวัติ</div>
         <div class="payroll-shell">
           <div class="card" style="margin-top:0">
             <div class="sectionTitle">
               <div>
-                <b>1) งวดที่ต้องจัดการ</b>
-                <div class="muted" style="margin-top:4px">ระบบจะแยกงวดที่ยังต้องตรวจ/จ่าย ออกจากประวัติงวดจ่ายแล้ว</div>
+                <b>งวดที่ต้องจัดการ</b>
+                <div class="muted" style="margin-top:4px">ตรวจยอดรายได้ หักเงินประกัน และบันทึกการจ่ายเงินรอบวันที่ 10 / 25</div>
               </div>
               <button class="btn blue" id="btnReloadPayouts">รีเฟรช</button>
             </div>
@@ -253,23 +248,36 @@
             <div class="payroll-actions" style="grid-template-columns:1fr">
               <button class="btn yellow" id="btnGenCurrentPayout">เตรียมงวดปัจจุบัน</button>
             </div>
-            <details class="advanced-tools">
-              <summary>เครื่องมือขั้นสูง</summary>
-              <div class="payroll-actions">
+            <details style="margin-top:10px">
+              <summary class="muted" style="cursor:pointer;font-weight:1000">เครื่องมือขั้นสูง</summary>
+              <div class="payroll-actions" style="margin-top:10px">
                 <button class="btn gray" id="btnGenP10">เตรียมงวดวันที่ 10</button>
                 <button class="btn gray" id="btnGenP25">เตรียมงวดวันที่ 25</button>
               </div>
             </details>
             <div class="muted" id="payoutGenStatus" style="margin-top:10px">-</div>
             <div id="payoutsCards" class="payout-card-list"></div>
+
+            <details style="margin-top:14px">
+              <summary><b>ประวัติงวดจ่าย</b></summary>
+              <div class="payout-history-filters">
+                <input id="payoutFilterMonth" type="month" />
+                <select id="payoutFilterType"><option value="all">ทุกรอบ</option><option value="10">รอบวันที่ 10</option><option value="25">รอบวันที่ 25</option></select>
+                <select id="payoutFilterStatus"><option value="all">ทุกสถานะ</option><option value="draft">กำลังตรวจยอด</option><option value="locked">พร้อมจ่าย</option><option value="paid">จ่ายแล้ว</option><option value="cancelled">ยกเลิก</option></select>
+                <input id="payoutFilterSearch" placeholder="ค้นหา เช่น username หรือรหัสงวด" />
+              </div>
+              <button class="btn blue" id="btnApplyPayoutHistoryFilter">ค้นหาประวัติ</button>
+              <button class="btn gray" id="btnShowMorePayoutHistory">ดูประวัติเพิ่ม</button>
+              <div id="payoutHistoryCards" class="payout-history-list" style="margin-top:10px"></div>
+            </details>
             <div class="soft-hide-table"><table><tbody id="payoutsTbody"></tbody></table></div>
           </div>
 
           <div class="card" style="margin-top:0">
             <div class="sectionTitle">
               <div>
-                <b>2) ตรวจยอดรายช่าง</b>
-                <div class="muted" id="payoutDetailHint" style="margin-top:4px">เลือกงวดจากด้านซ้ายเพื่อดูรายช่าง</div>
+                <b>รายละเอียดงวด / รายช่าง</b>
+                <div class="muted" id="payoutDetailHint" style="margin-top:4px">เลือกงวดจากด้านซ้าย</div>
               </div>
               <div class="row">
                 <span class="pill" id="payoutStatusPill" style="display:none"></span>
@@ -328,6 +336,6 @@
   </div>
 
   <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="admin-super-v2.js?v=payout-ux-simplified-v1"></script>
+  <script src="admin-super-v2.js?v=payout-ui"></script>
 </body>
 </html>
