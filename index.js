@@ -17369,6 +17369,36 @@ async function _getAccountingSettings() {
     return { company_name: 'Coldwindflow Air Services', tax_id: '', branch: 'สำนักงานใหญ่', address: '23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260', phone: '098-877-7321', signer_name: 'สุทธิพงษ์ ศรีวารินทร์', signer_position: 'ผู้มีอำนาจลงนาม' };
   }
 }
+async function _accountingSaveAssetFromFile(file, kind) {
+  if (!file) return '';
+  const safeKind = String(kind || 'asset').replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+  if (CLOUDINARY_ENABLED) {
+    const publicId = `${safeKind}_${Date.now()}_${crypto.randomUUID().slice(0,8)}`;
+    const up = await cloudinaryUploadBuffer({ buffer: file.buffer, mimetype: file.mimetype || 'image/jpeg', folder: 'cwf/accounting/settings', publicId, transformation: 'c_limit,w_1000/q_auto/f_auto' });
+    return up.secure_url;
+  }
+  return saveUploadedFile(file, UPLOAD_DIR, `accounting_${safeKind}`);
+}
+
+async function _saveAccountingSettingsFromBody(body = {}, files = {}, actor = null) {
+  const current = await _getAccountingSettings();
+  const v = { ...current };
+  const keys = ['company_name','tax_id','branch','address','phone','signer_name','signer_position','logo_url','signature_url','stamp_url','footer_text','bank_info'];
+  for (const k of keys) if (body[k] !== undefined) v[k] = String(body[k] || '').trim();
+  if (body.vat_rate !== undefined) v.vat_rate = Number(body.vat_rate || 0);
+  if (body.withholding_rate !== undefined) v.withholding_rate = Number(body.withholding_rate || 0);
+  const logo = files.logo_file?.[0];
+  const sig = files.signature_file?.[0];
+  const stamp = files.stamp_file?.[0];
+  if (logo) v.logo_url = await _accountingSaveAssetFromFile(logo, 'logo');
+  if (sig) v.signature_url = await _accountingSaveAssetFromFile(sig, 'signature');
+  if (stamp) v.stamp_url = await _accountingSaveAssetFromFile(stamp, 'stamp');
+  await pool.query(`INSERT INTO public.accounting_settings(key, value_json, updated_by, updated_at)
+    VALUES('company', $1::jsonb, $2, NOW())
+    ON CONFLICT(key) DO UPDATE SET value_json=EXCLUDED.value_json, updated_by=EXCLUDED.updated_by, updated_at=NOW()`, [JSON.stringify(v), actor?.username || actor || null]);
+  return v;
+}
+
 async function _accountingGetTechTaxProfile(username) {
   const tech = String(username || '').trim();
   if (!tech) return null;
@@ -17779,6 +17809,34 @@ app.post('/admin/accounting/revenue/:job_id/mark-paid', requireAccountingPermiss
   }
 });
 
+
+
+app.get('/admin/accounting/settings', requireAccountingPermission('accounting_view'), async (req, res) => {
+  try {
+    const settings = await _getAccountingSettings();
+    return res.json({ ok: true, settings });
+  } catch (e) {
+    console.error('GET /admin/accounting/settings', e);
+    return res.status(500).json({ ok: false, error: 'ACCOUNTING_SETTINGS_FAILED', message: e.message });
+  }
+});
+
+app.post('/admin/accounting/settings', requireAccountingPermission('accounting_manage_documents'), upload.fields([
+  { name: 'logo_file', maxCount: 1 },
+  { name: 'signature_file', maxCount: 1 },
+  { name: 'stamp_file', maxCount: 1 },
+]), async (req, res) => {
+  try {
+    const actor = _accountingActor(req);
+    const before = await _getAccountingSettings();
+    const settings = await _saveAccountingSettingsFromBody(req.body || {}, req.files || {}, actor);
+    await logAccountingAudit(req, { action: 'UPDATE_ACCOUNTING_SETTINGS', entity_type: 'accounting_settings', entity_id: 'company', before_json: before, after_json: settings, note: 'อัปเดตข้อมูลบริษัท/เอกสาร' });
+    return res.json({ ok: true, settings });
+  } catch (e) {
+    console.error('POST /admin/accounting/settings', e);
+    return res.status(500).json({ ok: false, error: 'SAVE_ACCOUNTING_SETTINGS_FAILED', message: e.message });
+  }
+});
 
 app.post('/admin/accounting/expenses', requireAccountingPermission('accounting_manage_expense'), upload.single('proof'), async (req, res) => {
   try {

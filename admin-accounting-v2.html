@@ -61,6 +61,7 @@
         <button class="acctTabBtn" data-tab="payouts" aria-selected="false" aria-controls="panel-payouts" type="button">จ่ายเงินช่าง</button>
         <button class="acctTabBtn" data-tab="deposits" aria-selected="false" aria-controls="panel-deposits" type="button">เงินประกัน</button>
         <button class="acctTabBtn" data-tab="reports" aria-selected="false" aria-controls="panel-reports" type="button">รายงาน</button>
+        <button class="acctTabBtn" data-tab="settings" aria-selected="false" aria-controls="panel-settings" type="button">ตั้งค่าเอกสาร</button>
         <button class="acctTabBtn" data-tab="audit" aria-selected="false" aria-controls="panel-audit" type="button">ประวัติ</button>
       </nav>
     </div>
@@ -110,8 +111,8 @@
 
         <section id="panel-documents" class="acctPanel" tabindex="-1">
           <div class="acctBox">
-            <div class="acctSectionTitleLine"><h2>เอกสารขาย</h2><button id="btnOpenCreateDoc" class="acctPrimaryBtn" type="button">+ สร้างเอกสารขาย</button></div>
-            <div class="acctNote">วิธีใช้: เลือกประเภทเอกสาร ใส่เลขงาน แล้วกดสร้าง ระบบจะรันเลข QT/INV/RC ให้อัตโนมัติ เอกสารออกแล้วห้ามแก้เงียบ ๆ ให้ void/reissue ในเฟสถัดไป</div>
+            <div class="acctSectionTitleLine"><h2>เอกสารขาย</h2><div class="acctTools" style="margin:0"><button id="btnOpenQuoteDoc" class="acctPrimaryBtn" type="button">+ ใบเสนอราคา</button><button id="btnOpenTaxInvoiceDoc" class="acctSecondaryBtn" type="button">+ ใบกำกับภาษี</button><button id="btnOpenCreateDoc" class="acctGhostBtn" type="button">เอกสารจาก Job</button></div></div>
+            <div class="acctNote">วิธีใช้: สร้างใบเสนอราคาเองได้หลายรายการก่อนลูกค้ายืนยัน, ออกใบกำกับภาษีจากข้อมูลลูกค้า/บริษัท, หรือสร้างเอกสารจาก Job เดิม ระบบจะรันเลขเอกสารอัตโนมัติและพิมพ์เอกสารได้ทันที</div>
             <div class="acctGuide" style="margin-top:10px">
               <div class="acctGuideStep">1) ใบเสนอราคา: ใช้ก่อนลูกค้ายืนยันงาน</div>
               <div class="acctGuideStep">2) ใบแจ้งหนี้: ใช้เรียกเก็บเงิน</div>
@@ -160,6 +161,25 @@
           </div>
         </section>
 
+        <section id="panel-settings" class="acctPanel" tabindex="-1">
+          <div class="acctGrid2">
+            <div class="acctBox">
+              <div class="acctSectionTitleLine"><h2>ตั้งค่าข้อมูลบริษัท / เอกสาร</h2><button id="btnOpenSettings" class="acctPrimaryBtn" type="button">แก้ไขข้อมูลเอกสาร</button></div>
+              <div class="acctNote">ตั้งค่าชื่อบริษัท เลขภาษี ที่อยู่ โลโก้ ลายเซ็น และตราประทับ เพื่อใช้พิมพ์ใบเสนอราคา ใบกำกับภาษี ใบเสร็จ และทวิ50 ให้ถูกต้อง</div>
+              <div id="settingsSummary" class="acctList" style="margin-top:10px"></div>
+            </div>
+            <div class="acctBox">
+              <h2>คำแนะนำก่อนออกเอกสาร</h2>
+              <div class="acctGuide">
+                <div class="acctGuideStep">1) ตรวจชื่อบริษัท/ร้านและเลขประจำตัวผู้เสียภาษีให้ถูกต้อง</div>
+                <div class="acctGuideStep">2) ใส่ที่อยู่ เบอร์โทร และสาขาให้ครบก่อนพิมพ์เอกสาร</div>
+                <div class="acctGuideStep">3) ใส่ลายเซ็น/ตราประทับเป็น URL รูปภาพ หรืออัปโหลดในช่องตั้งค่า</div>
+                <div class="acctGuideStep">4) เอกสารภาษีเป็นข้อมูลให้บัญชีตรวจ ไม่ใช่การยื่นภาษีอัตโนมัติ</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
         <section id="panel-audit" class="acctPanel" tabindex="-1">
           <div class="acctBox"><h2>ประวัติการทำรายการ</h2><div id="auditList" class="acctList"></div></div>
         </section>
@@ -168,7 +188,7 @@
     <div id="softErrors"></div>
   </main>
   <div id="accountingModal" class="acctModalBackdrop" aria-hidden="true"></div>
-  <script src="admin-v2-common.js?v=accounting-entry-v3"></script>
-  <script src="admin-accounting-v2.js?v=accounting-real-work-v3"></script>
+  <script src="admin-v2-common.js?v=accounting-entry-v6"></script>
+  <script src="admin-accounting-v2.js?v=accounting-docs-wht-fix-v7"></script>
 </body>
 </html>

@@ -9,6 +9,7 @@
     payouts: { title: 'จ่ายเงินช่าง', hint: 'เลือกงวดจ่าย ดูรายช่าง แล้วบันทึกจ่ายหลังโอนเงินจริงเท่านั้น', action: 'โหลดงวดจ่าย' },
     deposits: { title: 'เงินประกัน', hint: 'ดูยอดเงินประกันที่ถือไว้แยกตามช่าง เงินประกันไม่ใช่กำไรบริษัท', action: 'โหลดเงินประกัน' },
     reports: { title: 'รายงาน', hint: 'รายงานสำหรับเตรียมบัญชี ไม่ใช่การยื่นภาษีอัตโนมัติ', action: 'ดูรายงาน' },
+    settings: { title: 'ตั้งค่าเอกสาร', hint: 'ข้อมูลบริษัท โลโก้ ลายเซ็น และตราประทับสำหรับออกเอกสาร', action: 'โหลดตั้งค่า' },
     audit: { title: 'ประวัติการทำรายการ', hint: 'ตรวจย้อนหลังว่าใครทำอะไร เมื่อไหร่', action: 'โหลดประวัติ' },
   };
   const VALID_TABS = new Set(Object.keys(TAB_META));
@@ -22,6 +23,7 @@
     deposits: null,
     audit: [],
     reportSummary: null,
+    settings: null,
     payoutTechs: {},
     selectedPayoutId: null,
     payoutTechError: null,
@@ -402,6 +404,36 @@
     if (led) led.innerHTML = ledger.length ? ledger.map((r) => `
       <div class="acctRow"><div><b>${esc(r.transaction_type)} • ${money(r.amount)} บาท</b><small>${esc(r.technician_username)} • ${esc(r.payout_id || '-')} • ${esc(r.note || '')}</small></div><small>${esc(dateTH(r.created_at))}</small></div>`).join('') : empty('ยังไม่มี ledger เงินประกัน');
   }
+
+  function renderSettings() {
+    const el = $('settingsSummary'); if (!el) return;
+    const x = state.settings || {};
+    el.innerHTML = `
+      <div class="acctRow"><div><b>${esc(x.company_name || 'Coldwindflow Air Services')}</b><small>เลขภาษี ${esc(x.tax_id || '-')} • ${esc(x.branch || 'สำนักงานใหญ่')}</small><small>${esc(x.address || '-')}</small><small>โทร ${esc(x.phone || '-')}</small></div><div class="acctActionsCol">${badge(x.tax_id ? 'พร้อมออกเอกสาร' : 'ควรเติมเลขภาษี', x.tax_id ? 'ok' : 'warn')}</div></div>
+      <div class="acctGrid3">
+        <div class="acctMiniStat"><span>โลโก้</span><b>${x.logo_url ? 'มีแล้ว' : 'ยังไม่มี'}</b></div>
+        <div class="acctMiniStat"><span>ลายเซ็น</span><b>${x.signature_url ? 'มีแล้ว' : 'ยังไม่มี'}</b></div>
+        <div class="acctMiniStat"><span>ตราประทับ</span><b>${x.stamp_url ? 'มีแล้ว' : 'ยังไม่มี'}</b></div>
+      </div>`;
+  }
+
+  function openSettingsModal(){
+    const x = state.settings || {};
+    openModal(`<form class="acctFormGrid" enctype="multipart/form-data">
+      <h3>ตั้งค่าข้อมูลบริษัท / เอกสาร</h3>
+      <p>ข้อมูลนี้จะใช้บนใบเสนอราคา ใบกำกับภาษี ใบเสร็จ และทวิ50</p>
+      <div class="acctGrid2"><label>ชื่อบริษัท/ร้าน<input class="acctInput" name="company_name" value="${esc(x.company_name || '')}" required></label><label>เลขประจำตัวผู้เสียภาษี<input class="acctInput" name="tax_id" value="${esc(x.tax_id || '')}"></label><label>สาขา<input class="acctInput" name="branch" value="${esc(x.branch || 'สำนักงานใหญ่')}"></label><label>เบอร์โทร<input class="acctInput" name="phone" value="${esc(x.phone || '')}"></label></div>
+      <label>ที่อยู่<textarea class="acctInput" name="address">${esc(x.address || '')}</textarea></label>
+      <div class="acctGrid2"><label>ชื่อผู้ลงนาม<input class="acctInput" name="signer_name" value="${esc(x.signer_name || '')}"></label><label>ตำแหน่ง<input class="acctInput" name="signer_position" value="${esc(x.signer_position || '')}"></label></div>
+      <div class="acctGrid2"><label>VAT %<input class="acctInput" name="vat_rate" type="number" step="0.01" value="${esc(x.vat_rate ?? 7)}"></label><label>หัก ณ ที่จ่าย %<input class="acctInput" name="withholding_rate" type="number" step="0.01" value="${esc(x.withholding_rate ?? 3)}"></label></div>
+      <label>ข้อความท้ายเอกสาร<textarea class="acctInput" name="footer_text">${esc(x.footer_text || '')}</textarea></label>
+      <label>ข้อมูลบัญชีรับเงิน<textarea class="acctInput" name="bank_info">${esc(x.bank_info || '')}</textarea></label>
+      <div class="acctGrid2"><label>URL โลโก้<input class="acctInput" name="logo_url" value="${esc(x.logo_url || '')}"></label><label>หรืออัปโหลดโลโก้<input class="acctInput" name="logo_file" type="file" accept="image/*"></label><label>URL ลายเซ็น<input class="acctInput" name="signature_url" value="${esc(x.signature_url || '')}"></label><label>หรืออัปโหลดลายเซ็น<input class="acctInput" name="signature_file" type="file" accept="image/*"></label><label>URL ตราประทับ<input class="acctInput" name="stamp_url" value="${esc(x.stamp_url || '')}"></label><label>หรืออัปโหลดตราประทับ<input class="acctInput" name="stamp_file" type="file" accept="image/*"></label></div>
+      <div class="acctSoftErr" data-error style="display:block;min-height:0"></div>
+      <div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">บันทึกข้อมูลบริษัท</button></div>
+    </form>`, async(fd)=>{ const r=await postForm('/admin/accounting/settings', fd); state.settings = r.settings || {}; closeModal(); renderSettings(); await loadAudit(); });
+  }
+
   function renderReports() {
     const sumEl = $('reportSummary');
     if (sumEl) {
@@ -659,6 +691,7 @@
   }
   async function loadDeposits() { setLoading('depositList'); setLoading('depositLedger'); state.deposits = await getJson('/admin/accounting/deposits'); renderDeposits(); showErrors([state.deposits]); }
   async function loadReportSummary() { const r = await getJson('/admin/accounting/reports/summary'); state.reportSummary = r; renderReports(); showErrors([r]); }
+  async function loadSettings() { const r = await getJson('/admin/accounting/settings'); state.settings = r.settings || {}; renderSettings(); showErrors([r]); }
   async function loadAudit() { setLoading('auditList'); const r = await getJson('/admin/accounting/audit'); state.audit = r.rows || []; renderAudit(); showErrors([r]); }
   async function reloadAll() {
     try {
@@ -667,6 +700,7 @@
       if (state.tab === 'payouts') { await loadPayouts(); await loadTaxRequests(); }
       if (state.tab === 'deposits') await loadDeposits();
       if (state.tab === 'reports') await loadReportSummary();
+      if (state.tab === 'settings') await loadSettings();
       if (state.tab === 'audit') await loadAudit();
     } catch (e) {
       const err = $('softErrors'); if (err) err.innerHTML = `<div class="acctSoftErr">โหลดข้อมูลงานบัญชีไม่สำเร็จ: ${esc(e.message || e)}</div>`;
@@ -677,6 +711,7 @@
     if (state.tab === 'payouts') return Promise.all([loadPayouts(), loadTaxRequests()]);
     if (state.tab === 'deposits') return loadDeposits();
     if (state.tab === 'reports') return loadReportSummary();
+    if (state.tab === 'settings') return loadSettings();
     if (state.tab === 'audit') return loadAudit();
     return reloadAll();
   }
