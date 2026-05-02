@@ -1424,7 +1424,7 @@ function requireAccountingPermission(permissionKey) {
       );
       if (r.rows.length) return next();
 
-      if (['accounting_manage_revenue', 'accounting_mark_payout_paid'].includes(key)) {
+      if (['accounting_manage_revenue', 'accounting_mark_payout_paid', 'accounting_manage_expense'].includes(key)) {
         const seeded = await pool.query(
           `SELECT 1 FROM public.accounting_permissions
            WHERE permission_key=$1 AND revoked_at IS NULL
@@ -10686,6 +10686,8 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_accounting_expenses_status ON public.accounting_expenses(status, expense_date DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_accounting_expenses_job ON public.accounting_expenses(job_id)`);
+    await pool.query(`ALTER TABLE IF EXISTS public.accounting_expenses ADD COLUMN IF NOT EXISTS payment_reference TEXT`);
+    await pool.query(`ALTER TABLE IF EXISTS public.accounting_expenses ADD COLUMN IF NOT EXISTS proof_url TEXT`);
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.accounting_expense_attachments (
         attachment_id BIGSERIAL PRIMARY KEY,
@@ -17233,6 +17235,49 @@ async function _accountingSafeQuery(soft_errors, label, sql, params = [], fallba
   }
 }
 
+
+function _payoutDueDateIso(row = {}) {
+  try {
+    const parsed = _parsePayoutId(String(row.payout_id || ''));
+    if (parsed && parsed.y && parsed.m && (parsed.type === '10' || parsed.type === '25')) {
+      return _bangkokMidnightUTC(parsed.y, parsed.m, Number(parsed.type)).toISOString();
+    }
+    const type = String(row.period_type || '').trim();
+    if (type === '10' && row.period_end) {
+      const d = new Date(row.period_end); d.setUTCDate(d.getUTCDate() + 9); return d.toISOString();
+    }
+    if (type === '25' && row.period_start) {
+      const d = new Date(row.period_start); d.setUTCDate(d.getUTCDate() + 24); return d.toISOString();
+    }
+  } catch {}
+  return null;
+}
+
+async function _ensurePayoutSnapshotForAccountingPay(payout_id, req) {
+  const p = await _getPayoutPeriod(payout_id);
+  if (!p) {
+    const err = new Error('PAYOUT_NOT_FOUND'); err.code = 'PAYOUT_NOT_FOUND'; throw err;
+  }
+  if (String(p.status || '') !== 'draft') return { regenerated: false, status: p.status };
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const regen = await _regenerateDraftPayoutContractLines({
+      client,
+      payout_id,
+      actor_username: req?.actor?.username || null,
+      req,
+    });
+    await client.query('COMMIT');
+    return { regenerated: true, status: 'draft', regen };
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 app.get('/admin/accounting/summary', requireAccountingPermission('accounting.read.summary'), async (req, res) => {
   const soft_errors = [];
   try {
@@ -17475,33 +17520,108 @@ app.post('/admin/accounting/revenue/:job_id/mark-paid', requireAccountingPermiss
   }
 });
 
+app.post('/admin/accounting/expenses', requireAccountingPermission('accounting_manage_expense'), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const expense_date = String(body.expense_date || '').trim() || new Date().toISOString().slice(0, 10);
+    const category = String(body.category || '').trim();
+    const vendor_name = String(body.vendor_name || '').trim() || null;
+    const description = String(body.description || '').trim() || null;
+    const amount = _money(body.amount);
+    const vat_amount = _money(body.vat_amount);
+    const withholding_amount = _money(body.withholding_amount);
+    const payment_method = String(body.payment_method || '').trim() || null;
+    const payment_reference = String(body.payment_reference || '').trim() || null;
+    const proof_url = String(body.proof_url || '').trim() || null;
+    const job_id_raw = String(body.job_id || '').trim();
+    const job_id = job_id_raw ? Number(job_id_raw) : null;
+    const status = String(body.status || 'submitted').trim();
+    if (!category) return res.status(400).json({ ok: false, error: 'MISSING_CATEGORY' });
+    if (!Number.isFinite(Number(amount)) || Number(amount) <= 0) return res.status(400).json({ ok: false, error: 'INVALID_AMOUNT' });
+    if (job_id_raw && (!Number.isFinite(job_id) || job_id <= 0)) return res.status(400).json({ ok: false, error: 'INVALID_JOB_ID' });
+    if (!['draft','submitted','approved'].includes(status)) return res.status(400).json({ ok: false, error: 'INVALID_STATUS' });
+
+    const q = await pool.query(
+      `INSERT INTO public.accounting_expenses(
+         expense_date, category, vendor_name, description, amount, vat_amount, withholding_amount,
+         payment_method, payment_reference, proof_url, job_id, status, created_by, updated_by
+       ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$13)
+       RETURNING *`,
+      [expense_date, category, vendor_name, description, amount, vat_amount, withholding_amount,
+       payment_method, payment_reference, proof_url, job_id, status, _accountingActor(req).username || null]
+    );
+    const row = q.rows[0];
+    if (proof_url) {
+      try {
+        await pool.query(
+          `INSERT INTO public.accounting_expense_attachments(expense_id, public_url, original_name, uploaded_by)
+           VALUES($1,$2,$3,$4)`,
+          [row.expense_id, proof_url, 'proof_url', _accountingActor(req).username || null]
+        );
+      } catch (e) { console.warn('[accounting_expense_attachment] skipped', e?.message || e); }
+    }
+    await logAccountingAudit(req, {
+      action: 'CREATE_EXPENSE',
+      entity_type: 'accounting_expense',
+      entity_id: row.expense_id,
+      before_json: null,
+      after_json: row,
+      note: description || category,
+    });
+    return res.json({ ok: true, expense: row });
+  } catch (e) {
+    console.error('POST /admin/accounting/expenses', e);
+    return res.status(500).json({ ok: false, error: 'CREATE_EXPENSE_FAILED' });
+  }
+});
+
 app.get('/admin/accounting/payouts', requireAccountingPermission('accounting.read.payouts'), async (req, res) => {
   const soft_errors = [];
   try {
-    const q = await _accountingSafeQuery(soft_errors, 'payouts',
-      `WITH line_sum AS (
-         SELECT payout_id, COUNT(DISTINCT technician_username)::int AS technician_count, COALESCE(SUM(earn_amount),0)::numeric AS gross_amount
-           FROM public.technician_payout_lines GROUP BY payout_id
-       ),
-       adj AS (SELECT payout_id, COALESCE(SUM(adj_amount),0)::numeric AS adj_total FROM public.technician_payout_adjustments GROUP BY payout_id),
-       dep AS (SELECT payout_id, COALESCE(SUM(amount),0)::numeric AS deposit_deduction_amount FROM public.technician_deposit_ledger WHERE transaction_type='collect' GROUP BY payout_id),
-       pay AS (SELECT payout_id, COALESCE(SUM(paid_amount),0)::numeric AS paid_amount FROM public.technician_payout_payments GROUP BY payout_id)
-       SELECT p.payout_id, p.period_type, p.period_start, p.period_end, p.status,
-              COALESCE(line_sum.technician_count,0)::int AS technician_count,
-              COALESCE(line_sum.gross_amount,0)::numeric AS gross_amount,
-              COALESCE(dep.deposit_deduction_amount,0)::numeric AS deposit_deduction_amount,
-              COALESCE(adj.adj_total,0)::numeric AS adj_total,
-              (COALESCE(line_sum.gross_amount,0) + COALESCE(adj.adj_total,0) - COALESCE(dep.deposit_deduction_amount,0))::numeric AS net_payable,
-              COALESCE(pay.paid_amount,0)::numeric AS paid_amount,
-              GREATEST(0, COALESCE(line_sum.gross_amount,0) + COALESCE(adj.adj_total,0) - COALESCE(dep.deposit_deduction_amount,0) - COALESCE(pay.paid_amount,0))::numeric AS remaining_amount
-         FROM public.technician_payout_periods p
-         LEFT JOIN line_sum ON line_sum.payout_id=p.payout_id
-         LEFT JOIN adj ON adj.payout_id=p.payout_id
-         LEFT JOIN dep ON dep.payout_id=p.payout_id
-         LEFT JOIN pay ON pay.payout_id=p.payout_id
-        ORDER BY p.period_start DESC, p.payout_id DESC
-        LIMIT 80`);
-    return res.json({ ok: true, rows: q.rows, note: 'ระบบไม่โอนเงินอัตโนมัติ กรุณาโอนเงินจริงก่อน แล้วจึงบันทึกจ่ายแล้ว', soft_errors });
+    const auto_ensure = await _ensureDuePayoutPeriodsBangkok(_accountingActor(req).username || null);
+    const liveRows = await _listPayoutPeriodsLiveAware({ limit: req.query.limit || 80 });
+    const rows = [];
+    for (const p of (liveRows || [])) {
+      const payout_id = String(p.payout_id || '');
+      const adjQ = await _accountingSafeQuery(soft_errors, `payout_adj_${payout_id}`,
+        `SELECT COALESCE(SUM(adj_amount),0)::numeric AS adj_total FROM public.technician_payout_adjustments WHERE payout_id=$1`, [payout_id]);
+      const depQ = await _accountingSafeQuery(soft_errors, `payout_dep_${payout_id}`,
+        `SELECT COALESCE(SUM(amount),0)::numeric AS deposit_deduction_amount FROM public.technician_deposit_ledger WHERE transaction_type='collect' AND payout_id=$1`, [payout_id]);
+      const payQ = await _accountingSafeQuery(soft_errors, `payout_pay_${payout_id}`,
+        `SELECT COALESCE(SUM(paid_amount),0)::numeric AS paid_amount FROM public.technician_payout_payments WHERE payout_id=$1`, [payout_id]);
+      const gross = _money(p.total_amount || p.gross_amount || 0);
+      const adj = _money(adjQ.rows?.[0]?.adj_total || 0);
+      const dep = _money(depQ.rows?.[0]?.deposit_deduction_amount || 0);
+      const paid = _money(payQ.rows?.[0]?.paid_amount || 0);
+      const net = _money(gross + adj - dep);
+      const remaining = _money(Math.max(0, net - paid));
+      rows.push({
+        payout_id,
+        period_type: p.period_type,
+        period_start: p.period_start,
+        period_end: p.period_end,
+        due_date: _payoutDueDateIso(p),
+        status: p.status,
+        technician_count: Number(p.techs_count || p.technician_count || 0),
+        lines_count: Number(p.lines_count || 0),
+        gross_amount: gross,
+        deposit_deduction_amount: dep,
+        adj_total: adj,
+        net_payable: net,
+        paid_amount: paid,
+        remaining_amount: remaining,
+        source: p.source,
+        cache_note: p.cache_note,
+        is_due: !!_payoutDueDateIso(p) && new Date(_payoutDueDateIso(p)).getTime() <= Date.now(),
+      });
+    }
+    return res.json({
+      ok: true,
+      rows,
+      auto_ensure,
+      note: 'ระบบสร้างงวดวันที่ 10/25 ให้อัตโนมัติเมื่อถึงกำหนด แต่ไม่โอนเงินอัตโนมัติ กรุณาโอนเงินจริงก่อน แล้วจึงบันทึกจ่ายแล้ว',
+      soft_errors,
+    });
   } catch (e) {
     console.error('GET /admin/accounting/payouts', e);
     return res.status(500).json({ ok: false, rows: [], note: '', soft_errors: [{ scope: 'payouts', message: e.message }] });
@@ -17562,6 +17682,7 @@ app.post('/admin/accounting/payouts/:payout_id/pay', requireAccountingPermission
     if (body.confirm_paid !== true) return res.status(400).json({ ok: false, error: 'CONFIRM_PAID_REQUIRED' });
     if (Number(paidNow || 0) <= 0) return res.status(400).json({ ok: false, error: 'INVALID_PAID_AMOUNT' });
 
+    const snapshot = await _ensurePayoutSnapshotForAccountingPay(payout_id, req);
     const beforeTotals = await _getTechGrossAdjNet(payout_id, tech);
     const beforePayQ = await pool.query(
       `SELECT paid_amount, paid_status, paid_at, paid_by, slip_url, note, payment_method, payment_reference
