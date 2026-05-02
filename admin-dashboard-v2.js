@@ -610,6 +610,7 @@
     $('goAddJob')?.addEventListener('click', ()=> location.href = '/admin-add-v2.html');
     $('goQueue')?.addEventListener('click', ()=> location.href = '/admin-queue-v2.html');
     $('goHistory')?.addEventListener('click', ()=> location.href = '/admin-history-v2.html');
+    $('goAccounting')?.addEventListener('click', ()=> location.href = '/admin-accounting-v2.html');
     $('goReview')?.addEventListener('click', ()=> location.href = '/admin-review-v2.html');
     $('goTechs')?.addEventListener('click', ()=> location.href = '/admin-technicians-v2.html');
     $('goPromos')?.addEventListener('click', ()=> location.href = '/admin-promotions-v2.html');
