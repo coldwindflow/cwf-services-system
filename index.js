@@ -17661,6 +17661,290 @@ app.get('/admin/accounting/deposits', requireAccountingPermission('accounting.re
   }
 });
 
+
+function _accountingCsvValue(v) {
+  if (v == null) return '';
+  if (v instanceof Date) return v.toISOString();
+  if (typeof v === 'object') return JSON.stringify(v);
+  return String(v);
+}
+
+function _accountingCsv(rows = [], columns = []) {
+  const escCsv = (v) => {
+    const raw = _accountingCsvValue(v);
+    const escaped = raw.replace(/"/g, '""');
+    return /[",\n\r]/.test(escaped) ? `"${escaped}"` : escaped;
+  };
+  const header = columns.map(c => escCsv(c.label || c.key)).join(',');
+  const body = rows.map(row => columns.map(c => escCsv(row[c.key])).join(',')).join('\n');
+  return '\ufeff' + header + (body ? '\n' + body : '\n');
+}
+
+function _accountingSendCsv(res, filename, rows, columns) {
+  const safeName = String(filename || 'accounting-report.csv').replace(/[^a-zA-Z0-9._-]/g, '_');
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeName}"`);
+  return res.send(_accountingCsv(rows, columns));
+}
+
+const ACCOUNTING_REPORTS = {
+  revenue: {
+    filename: 'cwf-accounting-revenue.csv',
+    label: 'รายงานรายรับ',
+    columns: [
+      { key: 'booking_code', label: 'รหัสงาน' },
+      { key: 'job_id', label: 'Job ID' },
+      { key: 'finished_at', label: 'วันที่งานเสร็จ' },
+      { key: 'customer_name', label: 'ลูกค้า' },
+      { key: 'customer_phone_masked', label: 'เบอร์ลูกค้า' },
+      { key: 'gross_sales_amount', label: 'ยอดขายเต็ม' },
+      { key: 'payment_status_th', label: 'สถานะรับเงิน' },
+      { key: 'raw_payment_status', label: 'สถานะเดิม' },
+      { key: 'paid_at', label: 'รับเงินเมื่อ' },
+      { key: 'paid_by', label: 'บันทึกโดย' },
+      { key: 'payment_method', label: 'ช่องทางรับเงิน' },
+      { key: 'payment_reference', label: 'เลขอ้างอิง' },
+      { key: 'payment_proof_url', label: 'หลักฐานรับเงิน' },
+    ],
+    sql: () => `WITH gross AS (
+        SELECT j.job_id, COALESCE(NULLIF(SUM(COALESCE(ji.line_total,0)),0), COALESCE(j.job_price,0), 0)::numeric AS gross_sales_amount
+          FROM public.jobs j
+          LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
+         WHERE ${_sqlDonePredicate('j')} AND j.finished_at IS NOT NULL
+         GROUP BY j.job_id, j.job_price
+      ), proof AS (
+        SELECT DISTINCT ON (job_id) job_id, public_url
+          FROM public.job_photos
+         WHERE COALESCE(phase,'')='payment_slip' AND COALESCE(public_url,'') <> ''
+         ORDER BY job_id, COALESCE(uploaded_at, created_at) DESC
+      )
+      SELECT j.booking_code, j.job_id, j.finished_at, COALESCE(j.customer_name,'') AS customer_name,
+             ${"''"} AS customer_phone_masked,
+             g.gross_sales_amount,
+             CASE WHEN COALESCE(j.payment_status,'unpaid')='paid' OR j.paid_at IS NOT NULL THEN 'รับเงินแล้ว'
+                  WHEN COALESCE(j.payment_status,'unpaid')='partial' THEN 'รับบางส่วน'
+                  ELSE 'ยังไม่รับเงิน' END AS payment_status_th,
+             COALESCE(j.payment_status,'unpaid') AS raw_payment_status,
+             j.paid_at, j.paid_by, j.payment_method, j.payment_reference,
+             proof.public_url AS payment_proof_url,
+             j.customer_phone
+        FROM gross g
+        JOIN public.jobs j ON j.job_id=g.job_id
+        LEFT JOIN proof ON proof.job_id=j.job_id
+       ORDER BY j.finished_at DESC
+       LIMIT 5000`,
+    transform: rows => rows.map(r => ({ ...r, customer_phone_masked: _maskPhone(r.customer_phone) })),
+  },
+  expenses: {
+    filename: 'cwf-accounting-expenses.csv',
+    label: 'รายงานรายจ่าย',
+    columns: [
+      { key: 'expense_id', label: 'Expense ID' },
+      { key: 'expense_date', label: 'วันที่' },
+      { key: 'category', label: 'หมวดรายจ่าย' },
+      { key: 'vendor_name', label: 'ร้านค้า/ผู้ขาย' },
+      { key: 'description', label: 'รายละเอียด' },
+      { key: 'amount', label: 'จำนวนเงิน' },
+      { key: 'vat_amount', label: 'VAT' },
+      { key: 'withholding_amount', label: 'หัก ณ ที่จ่าย' },
+      { key: 'payment_method', label: 'ช่องทางชำระเงิน' },
+      { key: 'job_id', label: 'Job ID' },
+      { key: 'status', label: 'สถานะ' },
+      { key: 'created_by', label: 'บันทึกโดย' },
+      { key: 'created_at', label: 'บันทึกเมื่อ' },
+    ],
+    sql: () => `SELECT expense_id, expense_date, category, vendor_name, description, amount, vat_amount, withholding_amount,
+                       payment_method, job_id, status, created_by, created_at
+                  FROM public.accounting_expenses
+                 WHERE COALESCE(status,'') <> 'voided'
+                 ORDER BY expense_date DESC, created_at DESC
+                 LIMIT 5000`,
+  },
+  payouts: {
+    filename: 'cwf-accounting-payouts.csv',
+    label: 'รายงานจ่ายช่าง',
+    columns: [
+      { key: 'payout_id', label: 'งวดจ่าย' },
+      { key: 'period_type', label: 'รอบวันที่' },
+      { key: 'period_start', label: 'เริ่มงวด' },
+      { key: 'period_end', label: 'สิ้นสุดงวด' },
+      { key: 'status_th', label: 'สถานะจ่ายช่าง' },
+      { key: 'technician_count', label: 'จำนวนช่าง' },
+      { key: 'gross_amount', label: 'รายได้ก่อนหัก' },
+      { key: 'deposit_deduction_amount', label: 'หักเงินประกัน' },
+      { key: 'adj_total', label: 'ปรับยอด' },
+      { key: 'net_payable', label: 'ยอดสุทธิ' },
+      { key: 'paid_amount', label: 'จ่ายแล้ว' },
+      { key: 'remaining_amount', label: 'คงเหลือ' },
+    ],
+    sql: () => `WITH line_sum AS (
+        SELECT payout_id, COUNT(DISTINCT technician_username)::int AS technician_count, COALESCE(SUM(earn_amount),0)::numeric AS gross_amount
+          FROM public.technician_payout_lines GROUP BY payout_id
+      ), adj AS (SELECT payout_id, COALESCE(SUM(adj_amount),0)::numeric AS adj_total FROM public.technician_payout_adjustments GROUP BY payout_id),
+      dep AS (SELECT payout_id, COALESCE(SUM(amount),0)::numeric AS deposit_deduction_amount FROM public.technician_deposit_ledger WHERE transaction_type='collect' GROUP BY payout_id),
+      pay AS (SELECT payout_id, COALESCE(SUM(paid_amount),0)::numeric AS paid_amount FROM public.technician_payout_payments GROUP BY payout_id)
+      SELECT p.payout_id, p.period_type, p.period_start, p.period_end,
+             CASE WHEN GREATEST(0, COALESCE(line_sum.gross_amount,0) + COALESCE(adj.adj_total,0) - COALESCE(dep.deposit_deduction_amount,0) - COALESCE(pay.paid_amount,0)) <= 0 THEN 'จ่ายช่างแล้ว'
+                  WHEN COALESCE(pay.paid_amount,0) > 0 THEN 'จ่ายช่างบางส่วน'
+                  ELSE 'ยังไม่จ่ายช่าง' END AS status_th,
+             COALESCE(line_sum.technician_count,0)::int AS technician_count,
+             COALESCE(line_sum.gross_amount,0)::numeric AS gross_amount,
+             COALESCE(dep.deposit_deduction_amount,0)::numeric AS deposit_deduction_amount,
+             COALESCE(adj.adj_total,0)::numeric AS adj_total,
+             (COALESCE(line_sum.gross_amount,0) + COALESCE(adj.adj_total,0) - COALESCE(dep.deposit_deduction_amount,0))::numeric AS net_payable,
+             COALESCE(pay.paid_amount,0)::numeric AS paid_amount,
+             GREATEST(0, COALESCE(line_sum.gross_amount,0) + COALESCE(adj.adj_total,0) - COALESCE(dep.deposit_deduction_amount,0) - COALESCE(pay.paid_amount,0))::numeric AS remaining_amount
+        FROM public.technician_payout_periods p
+        LEFT JOIN line_sum ON line_sum.payout_id=p.payout_id
+        LEFT JOIN adj ON adj.payout_id=p.payout_id
+        LEFT JOIN dep ON dep.payout_id=p.payout_id
+        LEFT JOIN pay ON pay.payout_id=p.payout_id
+       ORDER BY p.period_start DESC, p.payout_id DESC
+       LIMIT 5000`,
+  },
+  deposits: {
+    filename: 'cwf-accounting-deposits.csv',
+    label: 'รายงานเงินประกัน',
+    columns: [
+      { key: 'technician_username', label: 'ช่าง' },
+      { key: 'target_amount', label: 'เป้าหมายเงินประกัน' },
+      { key: 'collected_total', label: 'สะสมแล้ว' },
+      { key: 'remaining_amount', label: 'คงเหลือถึงเป้าหมาย' },
+      { key: 'latest_at', label: 'อัปเดตล่าสุด' },
+      { key: 'note', label: 'หมายเหตุ' },
+    ],
+    sql: () => `WITH ledger AS (
+        SELECT technician_username,
+               COALESCE(SUM(CASE WHEN transaction_type='collect' THEN amount WHEN transaction_type='manual_adjust' THEN amount WHEN transaction_type IN ('refund','claim_deduct') THEN -amount ELSE 0 END),0)::numeric AS collected_total,
+               MAX(created_at) AS latest_at
+          FROM public.technician_deposit_ledger
+         GROUP BY technician_username
+      )
+      SELECT COALESCE(a.technician_username, ledger.technician_username) AS technician_username,
+             COALESCE(a.target_amount,5000)::numeric AS target_amount,
+             COALESCE(ledger.collected_total,0)::numeric AS collected_total,
+             GREATEST(0, COALESCE(a.target_amount,5000) - COALESCE(ledger.collected_total,0))::numeric AS remaining_amount,
+             ledger.latest_at,
+             'เงินประกันไม่ใช่กำไรบริษัท' AS note
+        FROM public.technician_deposit_accounts a
+        FULL OUTER JOIN ledger ON ledger.technician_username=a.technician_username
+       ORDER BY collected_total DESC, technician_username ASC
+       LIMIT 5000`,
+  },
+  documents: {
+    filename: 'cwf-accounting-documents.csv',
+    label: 'รายงานเอกสารขาย',
+    columns: [
+      { key: 'document_no', label: 'เลขเอกสาร' },
+      { key: 'document_type', label: 'ประเภทเอกสาร' },
+      { key: 'status', label: 'สถานะ' },
+      { key: 'job_id', label: 'Job ID' },
+      { key: 'customer_name', label: 'ลูกค้า' },
+      { key: 'issue_date', label: 'วันที่ออก' },
+      { key: 'due_date', label: 'ครบกำหนด' },
+      { key: 'subtotal', label: 'ยอดก่อนภาษี' },
+      { key: 'discount_amount', label: 'ส่วนลด' },
+      { key: 'vat_amount', label: 'VAT' },
+      { key: 'withholding_amount', label: 'หัก ณ ที่จ่าย' },
+      { key: 'total_amount', label: 'ยอดรวม' },
+      { key: 'created_by', label: 'สร้างโดย' },
+      { key: 'created_at', label: 'สร้างเมื่อ' },
+    ],
+    sql: () => `SELECT document_no, document_type, status, job_id, customer_name, issue_date, due_date,
+                       subtotal, discount_amount, vat_amount, withholding_amount, total_amount, created_by, created_at
+                  FROM public.accounting_documents
+                 ORDER BY created_at DESC
+                 LIMIT 5000`,
+  },
+  'gross-profit': {
+    filename: 'cwf-accounting-gross-profit.csv',
+    label: 'รายงานกำไรขั้นต้น',
+    columns: [
+      { key: 'revenue_total', label: 'ยอดขายงานเสร็จแล้ว' },
+      { key: 'expense_total', label: 'รายจ่ายที่บันทึก' },
+      { key: 'technician_payable_total', label: 'ยอดสุทธิจ่ายช่าง' },
+      { key: 'estimated_gross_profit', label: 'กำไรขั้นต้นโดยประมาณ' },
+      { key: 'note', label: 'หมายเหตุ' },
+    ],
+    sql: () => `WITH revenue AS (
+        SELECT COALESCE(SUM(total_amount),0)::numeric AS revenue_total FROM (
+          SELECT j.job_id, COALESCE(NULLIF(SUM(COALESCE(ji.line_total,0)),0), COALESCE(j.job_price,0), 0)::numeric AS total_amount
+            FROM public.jobs j
+            LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
+           WHERE ${_sqlDonePredicate('j')} AND j.finished_at IS NOT NULL
+           GROUP BY j.job_id, j.job_price
+        ) x
+      ), expenses AS (
+        SELECT COALESCE(SUM(amount),0)::numeric AS expense_total FROM public.accounting_expenses WHERE COALESCE(status,'') <> 'voided'
+      ), payout AS (
+        SELECT COALESCE(SUM(net_payable),0)::numeric AS technician_payable_total FROM (
+          WITH line_sum AS (SELECT payout_id, COALESCE(SUM(earn_amount),0)::numeric AS gross_amount FROM public.technician_payout_lines GROUP BY payout_id),
+          adj AS (SELECT payout_id, COALESCE(SUM(adj_amount),0)::numeric AS adj_total FROM public.technician_payout_adjustments GROUP BY payout_id),
+          dep AS (SELECT payout_id, COALESCE(SUM(amount),0)::numeric AS deposit_deduction_amount FROM public.technician_deposit_ledger WHERE transaction_type='collect' GROUP BY payout_id)
+          SELECT p.payout_id, (COALESCE(line_sum.gross_amount,0) + COALESCE(adj.adj_total,0) - COALESCE(dep.deposit_deduction_amount,0))::numeric AS net_payable
+            FROM public.technician_payout_periods p
+            LEFT JOIN line_sum ON line_sum.payout_id=p.payout_id
+            LEFT JOIN adj ON adj.payout_id=p.payout_id
+            LEFT JOIN dep ON dep.payout_id=p.payout_id
+        ) y
+      )
+      SELECT revenue.revenue_total, expenses.expense_total, payout.technician_payable_total,
+             (revenue.revenue_total - expenses.expense_total - payout.technician_payable_total)::numeric AS estimated_gross_profit,
+             'รายงานนี้เป็นข้อมูลให้บัญชีตรวจ ไม่ใช่การยื่นภาษีอัตโนมัติ' AS note
+        FROM revenue, expenses, payout`,
+  },
+  'vat-summary': {
+    filename: 'cwf-accounting-vat-summary.csv',
+    label: 'VAT summary',
+    columns: [
+      { key: 'source', label: 'ประเภท' },
+      { key: 'item_count', label: 'จำนวนรายการ' },
+      { key: 'vat_amount', label: 'VAT' },
+      { key: 'note', label: 'หมายเหตุ' },
+    ],
+    sql: () => `SELECT 'เอกสารขาย' AS source, COUNT(*)::int AS item_count, COALESCE(SUM(vat_amount),0)::numeric AS vat_amount, 'VAT จาก accounting_documents' AS note FROM public.accounting_documents WHERE COALESCE(status,'') <> 'voided'
+                UNION ALL
+                SELECT 'รายจ่าย' AS source, COUNT(*)::int AS item_count, COALESCE(SUM(vat_amount),0)::numeric AS vat_amount, 'VAT จาก accounting_expenses' AS note FROM public.accounting_expenses WHERE COALESCE(status,'') <> 'voided'`,
+  },
+  'withholding-summary': {
+    filename: 'cwf-accounting-withholding-summary.csv',
+    label: 'Withholding tax summary',
+    columns: [
+      { key: 'source', label: 'ประเภท' },
+      { key: 'category', label: 'หมวด' },
+      { key: 'vendor_name', label: 'ร้านค้า/ผู้ขาย' },
+      { key: 'item_count', label: 'จำนวนรายการ' },
+      { key: 'withholding_amount', label: 'หัก ณ ที่จ่าย' },
+    ],
+    sql: () => `SELECT 'รายจ่าย' AS source, category, vendor_name, COUNT(*)::int AS item_count, COALESCE(SUM(withholding_amount),0)::numeric AS withholding_amount
+                  FROM public.accounting_expenses
+                 WHERE COALESCE(status,'') <> 'voided' AND COALESCE(withholding_amount,0) <> 0
+                 GROUP BY category, vendor_name
+                 ORDER BY withholding_amount DESC`,
+  },
+};
+
+app.get('/admin/accounting/reports/:report_key.csv', requireAccountingPermission('accounting.read.reports'), async (req, res) => {
+  const reportKey = String(req.params.report_key || '').replace(/\.csv$/i, '').trim();
+  const report = ACCOUNTING_REPORTS[reportKey];
+  if (!report) return res.status(404).json({ ok: false, error: 'ACCOUNTING_REPORT_NOT_FOUND' });
+  try {
+    const q = await pool.query(report.sql(), []);
+    const rows = typeof report.transform === 'function' ? report.transform(q.rows || []) : (q.rows || []);
+    await logAccountingAudit(req, {
+      action: 'REPORT_EXPORT',
+      entity_type: 'accounting_report',
+      entity_id: reportKey,
+      after_json: { report_key: reportKey, rows: rows.length },
+      note: report.label,
+    });
+    return _accountingSendCsv(res, report.filename, rows, report.columns);
+  } catch (e) {
+    console.error('GET /admin/accounting/reports/:report_key.csv', reportKey, e);
+    return res.status(500).json({ ok: false, error: 'ACCOUNTING_REPORT_EXPORT_FAILED', message: e.message });
+  }
+});
+
 app.get('/admin/accounting/audit', requireAccountingPermission('accounting.read.audit'), async (req, res) => {
   const soft_errors = [];
   try {

@@ -312,8 +312,23 @@
   }
   function renderReports() {
     const el = $('reportCards'); if (!el) return;
-    const reports = ['รายงานรายรับ','รายงานรายจ่าย','รายงานจ่ายช่าง','รายงานเงินประกัน','รายงานกำไรขั้นต้น','รายงานเอกสารขาย','VAT summary (เมื่อเปิด VAT mode)','withholding tax summary (เมื่อมีข้อมูล)'];
-    el.innerHTML = reports.map((r) => `<div class="acctBox"><h3>${esc(r)}</h3><div class="acctMuted">สำหรับตรวจทานและเตรียมบัญชี ไม่ใช่การยื่นภาษีอัตโนมัติ</div><button class="acctDisabledBtn" type="button" disabled>Export - Phase ถัดไป</button></div>`).join('');
+    const reports = [
+      { key: 'revenue', title: 'รายงานรายรับ', desc: 'งานที่เสร็จแล้ว ยอดขาย สถานะรับเงิน และหลักฐานรับเงิน' },
+      { key: 'expenses', title: 'รายงานรายจ่าย', desc: 'รายการค่าใช้จ่าย VAT และหัก ณ ที่จ่ายที่บันทึกไว้' },
+      { key: 'payouts', title: 'รายงานจ่ายช่าง', desc: 'งวดจ่าย ยอดสุทธิ จ่ายแล้ว คงเหลือ และสถานะจ่ายช่าง' },
+      { key: 'deposits', title: 'รายงานเงินประกัน', desc: 'ยอดเงินประกันที่ถืออยู่ แยกตามช่าง และยอดคงเหลือเป้าหมาย' },
+      { key: 'gross-profit', title: 'รายงานกำไรขั้นต้น', desc: 'สรุปยอดขาย หักรายจ่าย หักยอดจ่ายช่าง เพื่อใช้ตรวจทานเบื้องต้น' },
+      { key: 'documents', title: 'รายงานเอกสารขาย', desc: 'ใบเสนอราคา ใบแจ้งหนี้ ใบเสร็จ และสถานะเอกสาร' },
+      { key: 'vat-summary', title: 'VAT summary', desc: 'สรุป VAT จากเอกสารขายและรายจ่าย สำหรับให้บัญชีตรวจ' },
+      { key: 'withholding-summary', title: 'Withholding tax summary', desc: 'สรุปหัก ณ ที่จ่ายจากรายจ่าย/ข้อมูลที่มีในระบบ' },
+    ];
+    el.innerHTML = reports.map((r) => `
+      <div class="acctBox acctReportCard">
+        <div class="acctBadge ok">CSV พร้อมใช้</div>
+        <h3>${esc(r.title)}</h3>
+        <div class="acctMuted">${esc(r.desc)}</div>
+        <button class="acctPrimaryBtn" type="button" data-export-report="${esc(r.key)}">ดาวน์โหลด CSV</button>
+      </div>`).join('');
   }
   function renderAuditInto(el, rows) {
     el.innerHTML = rows.length ? rows.map((r) => `
@@ -428,6 +443,14 @@
   }
   function bind() {
     document.querySelectorAll('.acctTabBtn').forEach((b) => b.addEventListener('click', () => showAccountingTab(b.dataset.tab, { scroll: true, updateUrl: true })));
+    document.addEventListener('click', (ev) => {
+      const btn = ev.target?.closest?.('[data-export-report]');
+      if (!btn) return;
+      const key = btn.getAttribute('data-export-report');
+      if (!key) return;
+      window.location.href = `/admin/accounting/reports/${encodeURIComponent(key)}.csv`;
+      setTimeout(loadAudit, 900);
+    });
     $('btnReloadAccounting')?.addEventListener('click', reloadAll);
     $('workspacePrimaryAction')?.addEventListener('click', workspaceAction);
     $('btnReloadRevenue')?.addEventListener('click', loadRevenue);
