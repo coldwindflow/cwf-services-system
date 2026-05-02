@@ -17303,24 +17303,82 @@ function _accountingWhtMonthLabel(monthKey) {
   return d.toLocaleDateString('th-TH', { timeZone: 'Asia/Bangkok', year: 'numeric', month: 'long' });
 }
 async function _getAccountingSettings() {
+  const defaults = {
+    company_name: 'Coldwindflow Air Services',
+    tax_id: '',
+    branch: 'สำนักงานใหญ่',
+    address: '23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260',
+    phone: '098-877-7321',
+    email: '',
+    website: 'www.cwf-air.com',
+    signer_name: 'สุทธิพงษ์ ศรีวารินทร์',
+    signer_position: 'ผู้มีอำนาจลงนาม',
+    logo_url: '',
+    signature_url: '',
+    stamp_url: '',
+    vat_rate: 7,
+    withholding_rate: 3,
+    bank_text: '',
+    document_note: 'เอกสารนี้ออกโดยระบบ CWF เพื่อใช้ประกอบงานบริการและงานบัญชี',
+  };
   try {
-    const q = await pool.query(`SELECT value_json FROM public.accounting_settings WHERE key='company' LIMIT 1`);
+    const q = await pool.query(`SELECT value_json FROM public.accounting_settings WHERE "key"='company' LIMIT 1`);
     const v = q.rows[0]?.value_json || {};
     return {
-      company_name: v.company_name || 'Coldwindflow Air Services',
-      tax_id: v.tax_id || '',
-      branch: v.branch || 'สำนักงานใหญ่',
-      address: v.address || '23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260',
-      phone: v.phone || '098-877-7321',
-      signer_name: v.signer_name || 'สุทธิพงษ์ ศรีวารินทร์',
-      signer_position: v.signer_position || 'ผู้มีอำนาจลงนาม',
-      logo_url: v.logo_url || '',
-      signature_url: v.signature_url || '',
-      stamp_url: v.stamp_url || '',
+      ...defaults,
+      ...v,
+      company_name: v.company_name || v.company || defaults.company_name,
+      tax_id: v.tax_id || v.company_tax_id || defaults.tax_id,
+      branch: v.branch || v.company_branch || defaults.branch,
+      address: v.address || v.company_address || defaults.address,
+      phone: v.phone || v.company_phone || defaults.phone,
+      signer_position: v.signer_position || v.signer_title || defaults.signer_position,
     };
   } catch (_) {
-    return { company_name: 'Coldwindflow Air Services', tax_id: '', branch: 'สำนักงานใหญ่', address: '23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260', phone: '098-877-7321', signer_name: 'สุทธิพงษ์ ศรีวารินทร์', signer_position: 'ผู้มีอำนาจลงนาม' };
+    return defaults;
   }
+}
+async function _saveAccountingSettings(req, raw = {}) {
+  const before = await _getAccountingSettings();
+  const actor = _accountingActor(req).username || null;
+  const payload = {
+    ...before,
+    company_name: String(raw.company_name || before.company_name || '').trim(),
+    tax_id: String(raw.tax_id || raw.company_tax_id || before.tax_id || '').trim(),
+    branch: String(raw.branch || raw.company_branch || before.branch || '').trim(),
+    address: String(raw.address || raw.company_address || before.address || '').trim(),
+    phone: String(raw.phone || raw.company_phone || before.phone || '').trim(),
+    email: String(raw.email || before.email || '').trim(),
+    website: String(raw.website || before.website || '').trim(),
+    signer_name: String(raw.signer_name || before.signer_name || '').trim(),
+    signer_position: String(raw.signer_position || raw.signer_title || before.signer_position || '').trim(),
+    logo_url: String(raw.logo_url || before.logo_url || '').trim(),
+    signature_url: String(raw.signature_url || before.signature_url || '').trim(),
+    stamp_url: String(raw.stamp_url || before.stamp_url || '').trim(),
+    vat_rate: _money(raw.vat_rate == null ? before.vat_rate : raw.vat_rate),
+    withholding_rate: _money(raw.withholding_rate == null ? before.withholding_rate : raw.withholding_rate),
+    bank_text: String(raw.bank_text || before.bank_text || '').trim(),
+    document_note: String(raw.document_note || before.document_note || '').trim(),
+  };
+  await pool.query(
+    `INSERT INTO public.accounting_settings("key", value_json, updated_by, updated_at)
+     VALUES('company',$1::jsonb,$2,NOW())
+     ON CONFLICT("key") DO UPDATE SET value_json=EXCLUDED.value_json, updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
+    [JSON.stringify(payload), actor]
+  );
+  await logAccountingAudit(req, { action: 'UPDATE_ACCOUNTING_SETTINGS', entity_type: 'accounting_settings', entity_id: 'company', before_json: before, after_json: payload, note: 'อัปเดตข้อมูลบริษัท/เอกสารบัญชี' });
+  return payload;
+}
+async function _accountingSaveUploadedAsset(file, type) {
+  if (!file) return null;
+  try {
+    const publicId = `${type}_${Date.now()}`;
+    if (CLOUDINARY_CLOUD_NAME && CLOUDINARY_API_KEY && CLOUDINARY_API_SECRET) {
+      const up = await cloudinaryUploadBuffer({ buffer: file.buffer, mimetype: file.mimetype || 'image/jpeg', folder: `cwf/accounting/${type}`, publicId, transformation: 'c_limit,w_1800/q_auto/f_auto' });
+      return up.secure_url || up.url || null;
+    }
+  } catch (e) { console.warn('[accounting asset upload] cloudinary failed:', e.message); }
+  try { return saveUploadedFile(file, UPLOAD_DIR, `accounting_${type}`); } catch (_) { return null; }
 }
 async function _accountingGetTechTaxProfile(username) {
   const tech = String(username || '').trim();
@@ -17435,6 +17493,50 @@ function _accountingWithholdingPrintHtml(doc, company) {
   <div class="box"><b>อ้างอิงงวดจ่าย:</b> ${(p.source_rows || []).map(x => escH(x.payout_id)).join(', ') || escH(p.source_payout_id || '')}<br><span class="muted">เอกสารนี้เป็นหลักฐานการหักภาษี ณ ที่จ่าย ให้ตรวจความถูกต้องก่อนนำส่ง/ใช้ยื่นภาษี</span></div>
   <div class="sign"><div class="signbox">ผู้รับเงิน / ผู้ถูกหักภาษี</div><div class="signbox">${escH(company.signer_name || '')}<br>${escH(company.signer_position || '')}</div></div>
   </main></body></html>`;
+}
+
+function _accountingDocTypeLabel(type) {
+  return ({ quotation:'ใบเสนอราคา', invoice:'ใบแจ้งหนี้', receipt:'ใบเสร็จรับเงิน', tax_invoice:'ใบกำกับภาษี', withholding_cert:'หนังสือรับรองหัก ณ ที่จ่าย' })[String(type||'')] || String(type||'-');
+}
+function _accountingNum(v, fallback = 0) {
+  const n = Number(String(v ?? '').replace(/,/g, ''));
+  return Number.isFinite(n) ? n : fallback;
+}
+function _accountingBool(v) { return v === true || v === 'true' || v === '1' || v === 1 || v === 'on'; }
+function _accountingNormalizeLineItems(raw) {
+  const arr = Array.isArray(raw) ? raw : [];
+  return arr.map((x, i) => {
+    const qty = Math.max(1, _accountingNum(x.qty ?? x.machine_count, 1));
+    const unit = _money(_accountingNum(x.unit_price ?? x.price, 0));
+    const total = _money(qty * Number(unit || 0));
+    const job_type = String(x.job_type || 'ล้างแอร์').trim();
+    const ac_type = String(x.ac_type || 'แอร์ผนัง').trim();
+    const wash_variant = String(x.wash_variant || '').trim();
+    const btu = String(x.btu || '').trim();
+    const desc = String(x.description || [job_type, ac_type, wash_variant, btu && `${btu} BTU`].filter(Boolean).join(' / ')).trim();
+    return { line_no: i + 1, job_type, ac_type, wash_variant, btu, qty, unit_price: unit, line_total: total, description: desc };
+  }).filter(x => x.qty > 0 && Number(x.unit_price) >= 0);
+}
+function _accountingCalcDocumentTotals(lineItems, opts = {}) {
+  const subtotal = _money((lineItems || []).reduce((s, x) => s + Number(x.line_total || 0), 0));
+  const discount = _money(Math.max(0, _accountingNum(opts.discount_amount, 0)));
+  const taxable = Math.max(0, Number(subtotal) - Number(discount));
+  const vat = _money(opts.vat_enabled ? taxable * (_accountingNum(opts.vat_rate, 7) / 100) : 0);
+  const wh = _money(Math.max(0, _accountingNum(opts.withholding_amount, 0)));
+  return { subtotal, discount_amount: discount, vat_amount: vat, withholding_amount: wh, total_amount: _money(taxable + Number(vat) - Number(wh)) };
+}
+function _accountingGenericDocumentPrintHtml(doc, company) {
+  const esc = _accountingDocumentHtmlEscape;
+  const p = doc.payload_json || {};
+  const lines = Array.isArray(p.line_items) ? p.line_items : [];
+  const money = v => Number(v || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const logo = company.logo_url ? `<img class="logo" src="${esc(company.logo_url)}">` : `<div class="logoText">CWF</div>`;
+  const sig = company.signature_url ? `<img class="sig" src="${esc(company.signature_url)}">` : '';
+  const stamp = company.stamp_url ? `<img class="stamp" src="${esc(company.stamp_url)}">` : '';
+  const rows = lines.map((x, i) => `<tr><td>${i+1}</td><td>${esc(x.description || '')}<div class="muted">${esc([x.job_type,x.ac_type,x.wash_variant,x.btu && `${x.btu} BTU`].filter(Boolean).join(' / '))}</div></td><td class="num">${esc(x.qty || 1)}</td><td class="num">${money(x.unit_price)}</td><td class="num">${money(x.line_total)}</td></tr>`).join('') || '<tr><td colspan="5">ไม่มีรายการ</td></tr>';
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(_accountingDocTypeLabel(doc.document_type))} ${esc(doc.document_no)}</title><style>
+  @page{size:A4;margin:12mm}*{box-sizing:border-box}body{margin:0;background:#eef6ff;color:#0f172a;font-family:Tahoma,Arial,sans-serif}.sheet{width:210mm;min-height:297mm;margin:0 auto;background:#fff;padding:14mm;box-shadow:0 16px 50px rgba(2,6,23,.18)}.top{display:flex;justify-content:space-between;gap:14px;border-bottom:4px solid #0b4bb3;padding-bottom:12px}.brand{display:flex;gap:12px}.logo{width:72px;height:72px;object-fit:contain}.logoText{width:72px;height:72px;border-radius:18px;background:#0b4bb3;color:#ffcc00;display:grid;place-items:center;font-weight:900;font-size:24px}.company h1{font-size:20px;margin:0 0 4px;color:#0b2e6d}.company div,.meta div{font-size:12px;line-height:1.55}.docTitle{text-align:right}.docTitle h2{margin:0;color:#0b2e6d;font-size:25px}.docNo{font-weight:900;background:#fff3bf;border-radius:999px;padding:6px 10px;display:inline-block;margin-top:6px}.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}.box{border:1px solid #dbe7f5;border-radius:14px;padding:10px;margin-top:12px}table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#0b4bb3;color:#fff}th,td{border:1px solid #dbe7f5;padding:8px;font-size:12px;vertical-align:top}.num{text-align:right}.muted{color:#64748b}.total{margin-left:auto;width:86mm}.total td:first-child{font-weight:700}.note{font-size:12px;line-height:1.55}.sign{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:24px}.signBox{text-align:center;min-height:98px;position:relative}.sig{max-width:150px;max-height:60px}.stamp{position:absolute;right:22px;top:0;max-width:92px;max-height:92px;opacity:.82}.printbar{position:fixed;right:16px;bottom:16px}.printbar button{border:0;border-radius:14px;padding:10px 15px;font-weight:900;background:#ffcc00;color:#071947;box-shadow:0 10px 28px rgba(2,6,23,.2)}@media print{body{background:#fff}.sheet{box-shadow:none;margin:0;width:auto;min-height:auto}.printbar{display:none}}@media(max-width:760px){.sheet{width:100%;min-height:auto;padding:18px}.top,.grid2,.sign{display:grid;grid-template-columns:1fr}.docTitle{text-align:left}.total{width:100%}}
+  </style></head><body><main class="sheet"><div class="top"><div class="brand">${logo}<div class="company"><h1>${esc(company.company_name)}</h1><div>${esc(company.address)}</div><div>โทร ${esc(company.phone || '-')} ${company.email ? ' | '+esc(company.email):''}</div><div>เลขประจำตัวผู้เสียภาษี ${esc(company.tax_id || '-')} ${esc(company.branch || '')}</div></div></div><div class="docTitle"><h2>${esc(_accountingDocTypeLabel(doc.document_type))}</h2><div class="docNo">${esc(doc.document_no)}</div><div class="meta"><div>วันที่ ${esc(_accountingThaiDate(doc.issue_date || doc.created_at))}</div>${doc.due_date ? `<div>ครบกำหนด ${esc(_accountingThaiDate(doc.due_date))}</div>` : ''}</div></div></div><div class="grid2"><div class="box"><b>ลูกค้า</b><div>${esc(doc.customer_name || '-')}</div><div>${esc(doc.customer_phone || '')}</div><div>${esc(doc.customer_address || p.customer_address || '')}</div>${doc.customer_tax_id ? `<div>เลขภาษี ${esc(doc.customer_tax_id)}</div>` : ''}</div><div class="box"><b>ข้อมูลเอกสาร</b><div>สถานะ: ${esc(doc.status || '-')}</div><div>Job ID: ${esc(doc.job_id || '-')}</div><div>${esc(company.payment_terms || '')}</div></div></div><table><thead><tr><th style="width:12mm">#</th><th>รายการ</th><th class="num" style="width:18mm">จำนวน</th><th class="num" style="width:28mm">ราคา/หน่วย</th><th class="num" style="width:30mm">รวม</th></tr></thead><tbody>${rows}</tbody></table><table class="total"><tr><td>ยอดก่อนลด</td><td class="num">${money(doc.subtotal)}</td></tr><tr><td>ส่วนลด</td><td class="num">${money(doc.discount_amount)}</td></tr><tr><td>VAT</td><td class="num">${money(doc.vat_amount)}</td></tr><tr><td>หัก ณ ที่จ่าย</td><td class="num">${money(doc.withholding_amount)}</td></tr><tr><td>ยอดสุทธิ</td><td class="num"><b>${money(doc.total_amount)}</b></td></tr></table><div class="box note"><b>หมายเหตุ</b><br>${esc(p.note || company.document_note || '')}<br>${company.bank_text ? esc(company.bank_text) : ''}</div><div class="sign"><div></div><div class="signBox">${stamp}${sig}<div style="margin-top:52px;border-top:1px solid #94a3b8;padding-top:8px">${esc(company.signer_name || '')}<br>${esc(company.signer_position || '')}</div></div></div></main><div class="printbar"><button onclick="window.print()">พิมพ์ / Save PDF</button></div></body></html>`;
 }
 async function _accountingStoredPayoutTechRows(payout_id) {
   const q = await pool.query(
@@ -17800,60 +17902,138 @@ app.post('/admin/accounting/expenses', requireAccountingPermission('accounting_m
   }
 });
 
+
+app.get('/admin/accounting/settings', requireAccountingPermission('accounting.read.settings'), async (req, res) => {
+  try { return res.json({ ok: true, settings: await _getAccountingSettings() }); }
+  catch (e) { return res.status(500).json({ ok: false, error: 'GET_ACCOUNTING_SETTINGS_FAILED', message: e.message }); }
+});
+
+app.post('/admin/accounting/settings', requireAccountingPermission('accounting_manage_documents'), upload.fields([{ name: 'logo', maxCount: 1 }, { name: 'signature', maxCount: 1 }, { name: 'stamp', maxCount: 1 }]), async (req, res) => {
+  try {
+    const body = req.body || {};
+    const files = req.files || {};
+    const next = { ...body };
+    const logo = await _accountingSaveUploadedAsset(files.logo?.[0], 'logo');
+    const signature = await _accountingSaveUploadedAsset(files.signature?.[0], 'signature');
+    const stamp = await _accountingSaveUploadedAsset(files.stamp?.[0], 'stamp');
+    if (logo) next.logo_url = logo;
+    if (signature) next.signature_url = signature;
+    if (stamp) next.stamp_url = stamp;
+    const settings = await _saveAccountingSettings(req, next);
+    return res.json({ ok: true, settings });
+  } catch (e) {
+    console.error('POST /admin/accounting/settings', e);
+    return res.status(500).json({ ok: false, error: 'SAVE_ACCOUNTING_SETTINGS_FAILED', message: e.message });
+  }
+});
+
 app.post('/admin/accounting/documents', requireAccountingPermission('accounting_manage_documents'), async (req, res) => {
   try {
     const body = req.body || {};
     const document_type = String(body.document_type || '').trim();
-    const job_id = Number(body.job_id || 0);
-    if (!['quotation','invoice','receipt'].includes(document_type)) return res.status(400).json({ ok: false, error: 'INVALID_DOCUMENT_TYPE' });
-    if (!job_id) return res.status(400).json({ ok: false, error: 'JOB_ID_REQUIRED' });
-    const job = await pool.query(
-      `SELECT j.job_id, j.booking_code, j.customer_name, j.customer_phone, j.job_price, j.payment_status, j.paid_at,
-              COALESCE(NULLIF(SUM(COALESCE(ji.line_total,0)),0), COALESCE(j.job_price,0), 0)::numeric AS subtotal
-         FROM public.jobs j
-         LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
-        WHERE j.job_id=$1
-        GROUP BY j.job_id, j.booking_code, j.customer_name, j.customer_phone, j.job_price, j.payment_status, j.paid_at
-        LIMIT 1`,
-      [job_id]
-    );
-    if (!job.rows[0]) return res.status(404).json({ ok: false, error: 'JOB_NOT_FOUND' });
-    const exists = await pool.query(
-      `SELECT document_id, document_no, status FROM public.accounting_documents WHERE job_id=$1 AND document_type=$2 AND COALESCE(status,'') <> 'voided' ORDER BY created_at DESC LIMIT 1`,
-      [job_id, document_type]
-    );
-    if (exists.rows[0] && body.force_new !== true) return res.status(409).json({ ok: false, error: 'DOCUMENT_ALREADY_EXISTS', row: exists.rows[0] });
+    if (!['quotation','invoice','receipt','tax_invoice'].includes(document_type)) return res.status(400).json({ ok: false, error: 'INVALID_DOCUMENT_TYPE' });
     const actor = _accountingActor(req);
+    const settings = await _getAccountingSettings();
+    let lineItems = _accountingNormalizeLineItems(body.line_items || []);
+    let job_id = Number(body.job_id || 0) || null;
+    let customer = {
+      customer_name: String(body.customer_name || '').trim(),
+      customer_phone: String(body.customer_phone || '').trim(),
+      customer_tax_id: String(body.customer_tax_id || '').trim(),
+      customer_address: String(body.customer_address || '').trim(),
+    };
+    let sourcePayload = { source: 'manual_accounting_document' };
+
+    if (job_id && !lineItems.length) {
+      const job = await pool.query(
+        `SELECT j.job_id, j.booking_code, j.customer_name, j.customer_phone, j.job_price, j.payment_status, j.paid_at,
+                COALESCE(NULLIF(SUM(COALESCE(ji.line_total,0)),0), COALESCE(j.job_price,0), 0)::numeric AS subtotal,
+                COALESCE(jsonb_agg(jsonb_build_object('description', COALESCE(ji.label,ji.service_name,ji.item_name,'บริการแอร์'), 'qty', COALESCE(ji.quantity,ji.qty,1), 'unit_price', COALESCE(ji.unit_price,0), 'line_total', COALESCE(ji.line_total,0))) FILTER (WHERE ji.job_id IS NOT NULL), '[]'::jsonb) AS items
+           FROM public.jobs j
+           LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
+          WHERE j.job_id=$1
+          GROUP BY j.job_id, j.booking_code, j.customer_name, j.customer_phone, j.job_price, j.payment_status, j.paid_at
+          LIMIT 1`,
+        [job_id]
+      );
+      const j = job.rows[0];
+      if (!j) return res.status(404).json({ ok: false, error: 'JOB_NOT_FOUND' });
+      customer.customer_name = customer.customer_name || j.customer_name || '';
+      customer.customer_phone = customer.customer_phone || j.customer_phone || '';
+      lineItems = _accountingNormalizeLineItems((j.items || []).map(x => ({ description: x.description, qty: x.qty, unit_price: Number(x.unit_price || 0) || Number(j.subtotal || 0), line_total: x.line_total })));
+      if (!lineItems.length) lineItems = _accountingNormalizeLineItems([{ description: 'ค่าบริการแอร์', qty: 1, unit_price: j.subtotal || j.job_price || 0 }]);
+      sourcePayload = { source: 'job', booking_code: j.booking_code || null, raw_payment_status: j.payment_status || null, paid_at: j.paid_at || null };
+    }
+
+    if (!customer.customer_name) return res.status(400).json({ ok: false, error: 'CUSTOMER_NAME_REQUIRED' });
+    if (!lineItems.length) return res.status(400).json({ ok: false, error: 'LINE_ITEMS_REQUIRED' });
+    const status = _accountingBool(body.issue_now) || document_type === 'tax_invoice' ? 'issued' : 'draft';
+    const vatEnabled = document_type === 'tax_invoice' ? true : _accountingBool(body.vat_enabled);
+    const totals = _accountingCalcDocumentTotals(lineItems, { discount_amount: body.discount_amount, vat_enabled: vatEnabled, vat_rate: body.vat_rate || settings.vat_rate || 7, withholding_amount: body.withholding_amount });
     const docNo = await _accountingNextDocumentNo(document_type);
-    const j = job.rows[0];
-    const status = String(body.issue_now || '').toLowerCase() === 'true' || body.issue_now === true ? 'issued' : 'draft';
+    const payload = {
+      ...sourcePayload,
+      line_items: lineItems,
+      note: String(body.note || '').trim(),
+      vat_enabled: vatEnabled,
+      vat_rate: _accountingNum(body.vat_rate || settings.vat_rate || 7, 7),
+      quotation_to_job_prefill: document_type === 'quotation' ? {
+        customer_name: customer.customer_name,
+        customer_phone: customer.customer_phone,
+        customer_address: customer.customer_address,
+        line_items: lineItems,
+      } : null,
+    };
     const ins = await pool.query(
       `INSERT INTO public.accounting_documents(
-         document_no, document_type, status, job_id, customer_name, customer_phone, issue_date, due_date,
-         subtotal, discount_amount, vat_amount, withholding_amount, total_amount, payload_json,
+         document_no, document_type, status, job_id, customer_name, customer_phone, customer_tax_id, customer_address,
+         issue_date, due_date, subtotal, discount_amount, vat_amount, withholding_amount, total_amount, payload_json,
          created_by, updated_by, issued_by, issued_at
-       ) VALUES($1,$2,$3,$4,$5,$6,CURRENT_DATE,$7,$8,0,0,0,$8,$9,$10,$10,$11,$12)
+       ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,CURRENT_DATE,$9,$10,$11,$12,$13,$14,$15::jsonb,$16,$16,$17,$18)
        RETURNING *`,
-      [
-        docNo, document_type, status, job_id, j.customer_name || null, j.customer_phone || null,
-        body.due_date || null, _money(j.subtotal || 0),
-        JSON.stringify({ source: 'accounting', booking_code: j.booking_code || null, raw_payment_status: j.payment_status || null, paid_at: j.paid_at || null }),
-        actor.username || null,
-        status === 'issued' ? (actor.username || null) : null,
-        status === 'issued' ? new Date() : null,
-      ]
+      [docNo, document_type, status, job_id, customer.customer_name, customer.customer_phone, customer.customer_tax_id || null, customer.customer_address || null,
+       body.due_date || null, totals.subtotal, totals.discount_amount, totals.vat_amount, totals.withholding_amount, totals.total_amount,
+       JSON.stringify(payload), actor.username || null, status === 'issued' ? (actor.username || null) : null, status === 'issued' ? new Date() : null]
     );
-    await logAccountingAudit(req, {
-      action: status === 'issued' ? 'ISSUE_DOCUMENT' : 'CREATE_DOCUMENT',
-      entity_type: 'accounting_document',
-      entity_id: String(ins.rows[0].document_id),
-      after_json: ins.rows[0],
-      note: `${docNo} จากงาน ${job_id}`,
-    });
-    return res.json({ ok: true, row: ins.rows[0] });
+    await logAccountingAudit(req, { action: status === 'issued' ? 'ISSUE_DOCUMENT' : 'CREATE_DOCUMENT', entity_type: 'accounting_document', entity_id: String(ins.rows[0].document_id), after_json: ins.rows[0], note: `${docNo} ${_accountingDocTypeLabel(document_type)}` });
+    return res.json({ ok: true, row: ins.rows[0], print_url: `/admin/accounting/documents/${ins.rows[0].document_id}/print` });
   } catch (e) {
     console.error('POST /admin/accounting/documents', e);
     return res.status(500).json({ ok: false, error: 'CREATE_DOCUMENT_FAILED', message: e.message });
+  }
+});
+
+app.post('/admin/accounting/documents/:document_id/confirm', requireAccountingPermission('accounting_manage_documents'), async (req, res) => {
+  try {
+    const id = Number(req.params.document_id || 0);
+    if (!id) return res.status(400).json({ ok: false, error: 'INVALID_DOCUMENT_ID' });
+    const beforeQ = await pool.query(`SELECT * FROM public.accounting_documents WHERE document_id=$1 LIMIT 1`, [id]);
+    const before = beforeQ.rows[0];
+    if (!before) return res.status(404).json({ ok: false, error: 'DOCUMENT_NOT_FOUND' });
+    if (before.document_type !== 'quotation') return res.status(400).json({ ok: false, error: 'ONLY_QUOTATION_CAN_CONFIRM' });
+    const actor = _accountingActor(req).username || null;
+    const upd = await pool.query(
+      `UPDATE public.accounting_documents SET confirmed_by=$2, confirmed_at=COALESCE(confirmed_at,NOW()), status=CASE WHEN status='draft' THEN 'issued' ELSE status END, updated_by=$2, updated_at=NOW() WHERE document_id=$1 RETURNING *`,
+      [id, actor]
+    );
+    const doc = upd.rows[0];
+    const p = doc.payload_json || {};
+    const prefill = {
+      source: 'accounting_quotation',
+      document_id: doc.document_id,
+      document_no: doc.document_no,
+      customer_name: doc.customer_name,
+      customer_phone: doc.customer_phone,
+      address_text: doc.customer_address || p.customer_address || '',
+      customer_note: `จากใบเสนอราคา ${doc.document_no}`,
+      line_items: p.line_items || [],
+      service_lines: p.line_items || [],
+    };
+    await logAccountingAudit(req, { action: 'CONFIRM_QUOTATION', entity_type: 'accounting_document', entity_id: String(id), before_json: before, after_json: doc, note: `ลูกค้ายืนยันใบเสนอราคา ${doc.document_no}` });
+    return res.json({ ok: true, row: doc, prefill, redirect_url: `/admin-add-v2.html?from_quote=${encodeURIComponent(String(doc.document_id))}` });
+  } catch (e) {
+    console.error('POST /admin/accounting/documents/:document_id/confirm', e);
+    return res.status(500).json({ ok: false, error: 'CONFIRM_QUOTATION_FAILED', message: e.message });
   }
 });
 
@@ -18130,7 +18310,7 @@ app.get('/admin/accounting/documents/:document_id/print', requireAccountingPermi
     if (!doc) return res.status(404).send('Document not found');
     const company = await _getAccountingSettings();
     if (String(doc.document_type) === 'withholding_cert') return res.type('html').send(_accountingWithholdingPrintHtml(doc, company));
-    return res.type('html').send(`<!doctype html><meta charset="utf-8"><title>${_accountingDocumentHtmlEscape(doc.document_no || '')}</title><button onclick="window.print()">พิมพ์</button><h1>${_accountingDocumentHtmlEscape(doc.document_no || '')}</h1><pre>${_accountingDocumentHtmlEscape(JSON.stringify(doc, null, 2))}</pre>`);
+    return res.type('html').send(_accountingGenericDocumentPrintHtml(doc, company));
   } catch (e) {
     console.error('GET /admin/accounting/documents/:document_id/print', e);
     return res.status(500).send('Print document failed');

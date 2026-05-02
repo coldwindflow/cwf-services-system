@@ -2997,10 +2997,13 @@ document.addEventListener("DOMContentLoaded", init);
 (function initAccountingQuotePrefill(){
   function safeSet(id, value){ try{ const x = document.getElementById(id); if(x && value != null && String(value) !== ''){ x.value = value; x.dispatchEvent(new Event('input', { bubbles:true })); x.dispatchEvent(new Event('change', { bubbles:true })); } }catch(_){} }
   function normalizeLine(x){
+    const jobRaw = String(x?.job_type || 'ล้าง').replace('ล้างแอร์','ล้าง');
+    const acRaw = String(x?.ac_type || 'ผนัง').replace('แอร์ผนัง','ผนัง');
+    const washRaw = String(x?.wash_variant || '').replace('ล้างปกติ','ล้างธรรมดา').replace('ล้างแบบแขวนคอยล์','ล้างแขวนคอยน์').replace('ตัดล้างใหญ่','ล้างแบบตัดล้าง');
     return {
-      job_type: String(x?.job_type || 'ล้าง'),
-      ac_type: String(x?.ac_type || 'ผนัง'),
-      wash_variant: String(x?.wash_variant || ''),
+      job_type: jobRaw,
+      ac_type: acRaw,
+      wash_variant: washRaw,
       btu: String(x?.btu || ''),
       machine_count: Number(x?.qty || x?.machine_count || 1) || 1,
       admin_override_price: Number(x?.unit_price || 0) || undefined,

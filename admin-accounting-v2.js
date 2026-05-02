@@ -10,8 +10,17 @@
     deposits: { title: 'เงินประกัน', hint: 'ดูยอดเงินประกันที่ถือไว้แยกตามช่าง เงินประกันไม่ใช่กำไรบริษัท', action: 'โหลดเงินประกัน' },
     reports: { title: 'รายงาน', hint: 'รายงานสำหรับเตรียมบัญชี ไม่ใช่การยื่นภาษีอัตโนมัติ', action: 'ดูรายงาน' },
     audit: { title: 'ประวัติการทำรายการ', hint: 'ตรวจย้อนหลังว่าใครทำอะไร เมื่อไหร่', action: 'โหลดประวัติ' },
+    settings: { title: 'ตั้งค่าเอกสาร', hint: 'ตั้งค่าข้อมูลบริษัท ลายเซ็น ตราประทับ และข้อมูลท้ายเอกสาร', action: 'โหลดตั้งค่า' },
   };
   const VALID_TABS = new Set(Object.keys(TAB_META));
+  const SERVICE_PRICE = {
+    'ล้าง|ผนัง|ล้างธรรมดา|12000':600, 'ล้าง|ผนัง|ล้างธรรมดา|18000':750,
+    'ล้าง|ผนัง|ล้างพรีเมียม|12000':900, 'ล้าง|ผนัง|ล้างพรีเมียม|18000':1100,
+    'ล้าง|ผนัง|ล้างแขวนคอยน์|12000':1400, 'ล้าง|ผนัง|ล้างแขวนคอยน์|18000':1700,
+    'ล้าง|ผนัง|ล้างแบบตัดล้าง|12000':2000, 'ล้าง|ผนัง|ล้างแบบตัดล้าง|18000':2300,
+  };
+  function priceFor(job, ac, wash, btu){ const size = Number(btu||0) <= 12000 ? '12000' : '18000'; return SERVICE_PRICE[[job,ac,wash,size].join('|')] || 0; }
+
 
   const state = {
     tab: 'overview',
@@ -21,6 +30,7 @@
     payoutPeriods: {},
     deposits: null,
     audit: [],
+    settings: {},
     reportSummary: null,
     payoutTechs: {},
     selectedPayoutId: null,
@@ -283,23 +293,23 @@
     el.querySelectorAll('[data-create-doc-from-job]').forEach((btn) => btn.addEventListener('click', () => openCreateDocumentModal(btn.dataset.createDocFromJob)));
     el.querySelectorAll('[data-job-id]').forEach((btn) => btn.addEventListener('click', () => { location.href = `/admin-job-view-v2.html?job_id=${encodeURIComponent(btn.dataset.jobId)}`; }));
   }
-  function docType(t) { return ({ quotation:'ใบเสนอราคา', invoice:'ใบแจ้งหนี้', receipt:'ใบเสร็จรับเงิน' })[t] || t || '-'; }
+  function docType(t) { return ({ quotation:'ใบเสนอราคา', invoice:'ใบแจ้งหนี้', receipt:'ใบเสร็จรับเงิน', tax_invoice:'ใบกำกับภาษี', withholding_cert:'ทวิ50' })[t] || t || '-'; }
   function renderDocs() {
-    const el = $('documentsList'); const rows = state.summary?.documents || []; if (!el) return;
+    const rows = state.summary?.documents || [];
+    const el = $('documentsList'); if (!el) return;
     el.innerHTML = rows.length ? rows.map((d) => `
       <div class="acctRow">
         <div>
-          <b>${esc(d.document_no || `เอกสาร #${d.document_id}`)}</b>
-          <small>${esc(docType(d.document_type))} • งาน #${esc(d.job_id || '-')} • ${esc(d.customer_name || '-')}</small>
-          <small>วิธีใช้: ตรวจยอดให้ถูกต้อง → ออกเอกสาร → ส่งให้ลูกค้า/บัญชีตรวจ</small>
+          <b>${esc(d.document_no || '-')} • ${esc(docType(d.document_type))}</b>
+          <small>${esc(d.customer_name || '-')} • ยอด ${money(d.total_amount)} บาท • สถานะ ${esc(d.status || '-')} ${d.confirmed_at ? '• ลูกค้ายืนยันแล้ว' : ''}</small>
         </div>
-        <div class="acctActionsCol">${statusBadge(d.status)}<span class="acctAmountStrong">${money(d.total_amount)} ฿</span>${d.job_id ? `<button class="acctSecondaryBtn" type="button" data-doc-preview="${esc(d.document_type)}" data-job-id="${esc(d.job_id)}">เปิดตัวอย่าง</button>` : ''}</div>
-      </div>`).join('') : empty('ยังไม่มีเอกสารบัญชี กด “+ สร้างเอกสารขาย” เพื่อเริ่มจากเลขงาน');
-    el.querySelectorAll('[data-doc-preview]').forEach((btn) => btn.addEventListener('click', () => {
-      const t = btn.dataset.docPreview; const jobId = btn.dataset.jobId;
-      const path = t === 'quotation' ? 'quote' : (t === 'receipt' ? 'receipt' : 'quote');
-      window.open(`/docs/${path}/${encodeURIComponent(jobId)}`, '_blank');
-    }));
+        <div class="acctActionsCol">
+          ${statusBadge(d.status)}
+          <a class="acctSecondaryBtn" href="/admin/accounting/documents/${esc(d.document_id)}/print" target="_blank" rel="noopener">พิมพ์เอกสาร</a>
+          ${d.document_type === 'quotation' && !d.confirmed_at ? `<button class="acctPrimaryBtn" type="button" data-confirm-quote="${esc(d.document_id)}">ลูกค้ายืนยัน → เพิ่มงาน</button>` : ''}
+        </div>
+      </div>`).join('') : empty('ยังไม่มีเอกสาร กด “+ ใบเสนอราคา” เพื่อเริ่มสร้างเอกสารขาย');
+    el.querySelectorAll('[data-confirm-quote]').forEach(btn => btn.addEventListener('click', () => confirmQuotation(btn.dataset.confirmQuote)));
   }
   function renderExpenses() {
     const el = $('expensesList'); const rows = state.summary?.expenses || []; if (!el) return;
@@ -439,7 +449,15 @@
       <div class="acctRow"><div><b>${esc(auditActionLabel(r.action))}</b><small>${esc(r.entity_type || '-')} #${esc(r.entity_id || '-')} • ${esc(r.actor_username || '-')} (${esc(r.actor_role || '-')}) • ${esc(r.note || '')}</small></div><small>${esc(dateTH(r.created_at))}</small></div>`).join('') : empty('ยังไม่มีประวัติการทำรายการ');
   }
   function renderAudit() { const el = $('auditList'); if (el) renderAuditInto(el, state.audit || []); }
-  function renderAll() { renderCards(); renderOverview(); renderRevenue(); renderDocs(); renderExpenses(); renderPayouts(); renderDeposits(); renderReports(); renderAudit(); }
+  function renderSettings() {
+    const el = $('settingsView'); if (!el) return;
+    const s = state.settings || {};
+    el.innerHTML = `
+      <div class="acctRow"><div><b>${esc(s.company_name || 'Coldwindflow Air Services')}</b><small>เลขภาษี ${esc(s.tax_id || '-')} • ${esc(s.branch || 'สำนักงานใหญ่')}<br>${esc(s.address || '-')}</small></div><button class="acctPrimaryBtn" type="button" id="btnEditSettingsInline">แก้ไขข้อมูลบริษัท</button></div>
+      <div class="acctGrid3"><div class="acctBox"><b>โลโก้</b><br>${s.logo_url ? `<img class="acctThumb" src="${esc(s.logo_url)}">` : '<div class="acctMuted">ยังไม่มีโลโก้</div>'}</div><div class="acctBox"><b>ลายเซ็น</b><br>${s.signature_url ? `<img class="acctThumb" src="${esc(s.signature_url)}">` : '<div class="acctMuted">ยังไม่มีลายเซ็น</div>'}</div><div class="acctBox"><b>ตราประทับ</b><br>${s.stamp_url ? `<img class="acctThumb" src="${esc(s.stamp_url)}">` : '<div class="acctMuted">ยังไม่มีตราประทับ</div>'}</div></div>`;
+    $('btnEditSettingsInline')?.addEventListener('click', openSettingsModal);
+  }
+  function renderAll() { renderCards(); renderOverview(); renderRevenue(); renderDocs(); renderExpenses(); renderPayouts(); renderDeposits(); renderReports(); renderAudit(); renderSettings(); }
 
   function closeModal() {
     const modal = $('accountingModal'); if (!modal) return;
@@ -495,24 +513,55 @@
         showAccountingTab('expenses', { scroll: false, updateUrl: true });
       });
   }
+  function quoteLineHtml() {
+    return `<div class="quoteLine acctBox" style="box-shadow:none">
+      <div class="acctGrid3">
+        <label>ประเภทงาน<select class="acctInput q-job"><option value="ล้าง">ล้าง</option><option value="ซ่อม">ซ่อม</option><option value="ติดตั้ง">ติดตั้ง</option></select></label>
+        <label>ประเภทแอร์<select class="acctInput q-ac"><option value="ผนัง">ผนัง</option><option value="แขวน">แขวน</option><option value="4 ทิศทาง">4 ทิศทาง</option><option value="เปลือยใต้ฝ้า">เปลือยใต้ฝ้า</option></select></label>
+        <label>ประเภทการล้างเฉพาะแอร์ผนัง<select class="acctInput q-wash"><option value="ล้างธรรมดา">ล้างธรรมดา</option><option value="ล้างพรีเมียม">ล้างพรีเมียม</option><option value="ล้างแขวนคอยน์">ล้างแขวนคอยน์</option><option value="ล้างแบบตัดล้าง">ล้างแบบตัดล้าง</option></select></label>
+        <label>BTU<select class="acctInput q-btu"><option value="12000">ไม่เกิน 12,000</option><option value="18000">18,000 ขึ้นไป</option></select></label>
+        <label>จำนวน<input class="acctInput q-qty" type="number" min="1" value="1"></label>
+        <label>ราคา/หน่วย<input class="acctInput q-price" type="number" min="0" step="0.01" value="600"></label>
+      </div>
+      <label>รายละเอียดเพิ่มเติม<input class="acctInput q-desc" placeholder="เช่น ล้างแอร์ผนัง 12,000 BTU"></label>
+      <div class="acctActionsCol"><button class="acctSecondaryBtn q-del" type="button">ลบรายการ</button></div>
+    </div>`;
+  }
+  function collectQuoteLines(wrap) {
+    return Array.from(wrap.querySelectorAll('.quoteLine')).map(line => {
+      const job_type=line.querySelector('.q-job')?.value||''; const ac_type=line.querySelector('.q-ac')?.value||''; const wash_variant=line.querySelector('.q-wash')?.value||''; const btu=line.querySelector('.q-btu')?.value||''; const qty=Number(line.querySelector('.q-qty')?.value||1); const unit_price=Number(line.querySelector('.q-price')?.value||0); const desc=line.querySelector('.q-desc')?.value||'';
+      return { job_type, ac_type, wash_variant, btu, qty, unit_price, description: desc };
+    }).filter(x => x.qty > 0);
+  }
+  function updateQuoteTotals(wrap) {
+    wrap.querySelectorAll('.quoteLine').forEach(line => {
+      const job=line.querySelector('.q-job')?.value||''; const ac=line.querySelector('.q-ac')?.value||''; const wash=line.querySelector('.q-wash')?.value||''; const btu=line.querySelector('.q-btu')?.value||''; const p=priceFor(job,ac,wash,btu); if (p && !line.querySelector('.q-price').dataset.touched) line.querySelector('.q-price').value=p;
+    });
+    const total = collectQuoteLines(wrap).reduce((s,x)=>s+(Number(x.qty||0)*Number(x.unit_price||0)),0);
+    const out = document.querySelector('[data-quote-total]'); if (out) out.textContent = `ยอดรวม ${money(total)} บาท`;
+  }
+  function openQuoteModal() {
+    openModal(`<form class="acctFormGrid"><h3>สร้างใบเสนอราคา</h3><p>เพิ่มหลายรายการได้ตาม Flow หน้าเพิ่มงาน แล้วพิมพ์ส่งลูกค้า เมื่อลูกค้ายืนยันระบบจะพาไปหน้าเพิ่มงานพร้อมข้อมูล</p><div class="acctGrid2"><label>ชื่อลูกค้า<input class="acctInput" name="customer_name" required></label><label>เบอร์ลูกค้า<input class="acctInput" name="customer_phone"></label></div><label>ที่อยู่ลูกค้า<textarea class="acctInput" name="customer_address"></textarea></label><h3>รายการบริการ</h3><div id="quoteLines" class="acctList">${quoteLineHtml()}</div><div class="acctTools"><button class="acctSecondaryBtn" id="btnAddQuoteLine" type="button">+ เพิ่มรายการ</button><b data-quote-total>ยอดรวม 600 บาท</b></div><label>หมายเหตุ<textarea class="acctInput" name="note"></textarea></label><div class="acctSoftErr" data-error style="display:block;min-height:0"></div><div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">สร้างใบเสนอราคา</button></div></form>`, async (fd) => { const wrap=document.getElementById('quoteLines'); const r=await postJson('/admin/accounting/documents',{document_type:'quotation',customer_name:fd.get('customer_name'),customer_phone:fd.get('customer_phone'),customer_address:fd.get('customer_address'),note:fd.get('note'),line_items:collectQuoteLines(wrap)}); closeModal(); await Promise.all([loadSummary(), loadAudit()]); showAccountingTab('documents',{scroll:false,updateUrl:true}); if(r.print_url) window.open(r.print_url,'_blank','noopener'); });
+    const wrap = document.getElementById('quoteLines');
+    document.getElementById('btnAddQuoteLine').onclick=()=>{wrap.insertAdjacentHTML('beforeend', quoteLineHtml()); updateQuoteTotals(wrap);};
+    wrap.addEventListener('click', e=>{ if(e.target.classList.contains('q-del')){ if(wrap.querySelectorAll('.quoteLine').length>1) e.target.closest('.quoteLine').remove(); updateQuoteTotals(wrap); } });
+    wrap.addEventListener('input', e=>{ if(e.target.classList.contains('q-price')) e.target.dataset.touched='1'; updateQuoteTotals(wrap); });
+    wrap.addEventListener('change', ()=>updateQuoteTotals(wrap));
+  }
+  function openTaxInvoiceModal() {
+    openModal(`<form class="acctFormGrid"><h3>ออกใบกำกับภาษี</h3><p>ใช้สำหรับออกเอกสาร VAT เพื่อพิมพ์/บันทึก PDF เท่านั้น ยังไม่ส่ง e-Tax อัตโนมัติ</p><label>ชื่อลูกค้า/บริษัท<input class="acctInput" name="customer_name" required></label><label>เลขประจำตัวผู้เสียภาษี<input class="acctInput" name="customer_tax_id"></label><label>ที่อยู่ลูกค้า<textarea class="acctInput" name="customer_address"></textarea></label><label>รายละเอียด<input class="acctInput" name="description" value="ค่าบริการล้าง/ซ่อม/ติดตั้งแอร์"></label><label>ยอดก่อน VAT<input class="acctInput" name="amount" type="number" min="0.01" step="0.01" required></label><div class="acctSoftErr" data-error style="display:block;min-height:0"></div><div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">ออกใบกำกับภาษี</button></div></form>`, async (fd) => { const amount=Number(fd.get('amount')||0); const r=await postJson('/admin/accounting/documents',{document_type:'tax_invoice',customer_name:fd.get('customer_name'),customer_tax_id:fd.get('customer_tax_id'),customer_address:fd.get('customer_address'),line_items:[{description:fd.get('description'),qty:1,unit_price:amount}],vat_enabled:true,issue_now:true}); closeModal(); await Promise.all([loadSummary(), loadAudit()]); showAccountingTab('documents',{scroll:false,updateUrl:true}); if(r.print_url) window.open(r.print_url,'_blank','noopener'); });
+  }
   function openCreateDocumentModal(jobId = '') {
-    openModal(`
-      <form class="acctFormGrid">
-        <h3>สร้างเอกสารขาย</h3>
-        <p>ใส่เลขงาน แล้วเลือกว่าเป็นใบเสนอราคา / ใบแจ้งหนี้ / ใบเสร็จ ระบบจะรันเลขเอกสารให้อัตโนมัติ</p>
-        <label>ประเภทเอกสาร<select class="acctInput" name="document_type" required><option value="quotation">ใบเสนอราคา</option><option value="invoice">ใบแจ้งหนี้</option><option value="receipt">ใบเสร็จรับเงิน</option></select></label>
-        <label>Job ID<input class="acctInput" name="job_id" type="number" min="1" value="${esc(jobId)}" required placeholder="เช่น 123"></label>
-        <label>วันครบกำหนด ถ้ามี<input class="acctInput" name="due_date" type="date"></label>
-        <label class="acctCheckLine"><input type="checkbox" name="issue_now" value="1"><span>ออกเอกสารทันที (issued) ถ้ายังไม่แน่ใจให้ปล่อยเป็น draft</span></label>
-        <div class="acctSoftErr" data-error style="display:block;min-height:0"></div>
-        <div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">สร้างเอกสาร</button></div>
-      </form>`, async (fd) => {
-        const payload = { document_type: fd.get('document_type'), job_id: Number(fd.get('job_id')), due_date: fd.get('due_date') || null, issue_now: fd.get('issue_now') === '1' };
-        await postJson('/admin/accounting/documents', payload);
-        closeModal();
-        await Promise.all([loadSummary(), loadAudit()]);
-        showAccountingTab('documents', { scroll: false, updateUrl: true });
-      });
+    openModal(`<form class="acctFormGrid"><h3>สร้างเอกสารจาก Job</h3><p>สำหรับใบแจ้งหนี้/ใบเสร็จจากงานที่มีอยู่แล้ว ถ้าต้องเสนอราคาก่อนให้ใช้ปุ่ม “+ ใบเสนอราคา”</p><label>ประเภทเอกสาร<select class="acctInput" name="document_type" required><option value="invoice">ใบแจ้งหนี้</option><option value="receipt">ใบเสร็จรับเงิน</option><option value="quotation">ใบเสนอราคาจาก Job</option></select></label><label>Job ID<input class="acctInput" name="job_id" type="number" min="1" value="${esc(jobId)}" required></label><label>วันครบกำหนด ถ้ามี<input class="acctInput" name="due_date" type="date"></label><label class="acctCheckLine"><input type="checkbox" name="issue_now" value="1"><span>ออกเอกสารทันที</span></label><div class="acctSoftErr" data-error style="display:block;min-height:0"></div><div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">สร้างเอกสาร</button></div></form>`, async (fd) => { const r=await postJson('/admin/accounting/documents',{document_type:fd.get('document_type'),job_id:Number(fd.get('job_id')),due_date:fd.get('due_date')||null,issue_now:fd.get('issue_now')==='1'}); closeModal(); await Promise.all([loadSummary(), loadAudit()]); showAccountingTab('documents',{scroll:false,updateUrl:true}); if(r.print_url) window.open(r.print_url,'_blank','noopener'); });
+  }
+  async function confirmQuotation(id) {
+    const r = await postJson(`/admin/accounting/documents/${encodeURIComponent(id)}/confirm`, {});
+    try { localStorage.setItem('cwf_accounting_quote_prefill', JSON.stringify(r.prefill)); } catch(_) {}
+    window.location.href = r.redirect_url || '/admin-add-v2.html';
+  }
+  function openSettingsModal() {
+    const s = state.settings || {};
+    openModal(`<form class="acctFormGrid" enctype="multipart/form-data"><h3>ตั้งค่าเอกสารบริษัท</h3><label>ชื่อร้าน/บริษัท<input class="acctInput" name="company_name" value="${esc(s.company_name||'')}"></label><label>เลขประจำตัวผู้เสียภาษี<input class="acctInput" name="tax_id" value="${esc(s.tax_id||'')}"></label><label>สาขา<input class="acctInput" name="branch" value="${esc(s.branch||'')}"></label><label>ที่อยู่<textarea class="acctInput" name="address">${esc(s.address||'')}</textarea></label><label>เบอร์โทร<input class="acctInput" name="phone" value="${esc(s.phone||'')}"></label><label>โลโก้<input class="acctInput" name="logo" type="file" accept="image/*"></label><label>ลายเซ็น<input class="acctInput" name="signature" type="file" accept="image/*"></label><label>ตราประทับ<input class="acctInput" name="stamp" type="file" accept="image/*"></label><label>หรือ Logo URL<input class="acctInput" name="logo_url" value="${esc(s.logo_url||'')}"></label><label>Signature URL<input class="acctInput" name="signature_url" value="${esc(s.signature_url||'')}"></label><label>Stamp URL<input class="acctInput" name="stamp_url" value="${esc(s.stamp_url||'')}"></label><label>ผู้ลงนาม<input class="acctInput" name="signer_name" value="${esc(s.signer_name||'')}"></label><label>ตำแหน่ง<input class="acctInput" name="signer_position" value="${esc(s.signer_position||'')}"></label><label>VAT %<input class="acctInput" name="vat_rate" type="number" value="${esc(s.vat_rate||7)}"></label><label>หัก ณ ที่จ่าย %<input class="acctInput" name="withholding_rate" type="number" value="${esc(s.withholding_rate||3)}"></label><label>ข้อความท้ายเอกสาร<textarea class="acctInput" name="document_note">${esc(s.document_note||'')}</textarea></label><label>ข้อมูลบัญชีรับเงิน<textarea class="acctInput" name="bank_text">${esc(s.bank_text||'')}</textarea></label><div class="acctSoftErr" data-error style="display:block;min-height:0"></div><div class="acctModalActions"><button class="acctGhostBtn" type="button" data-close>ยกเลิก</button><button class="acctPrimaryBtn" type="submit">บันทึกตั้งค่า</button></div></form>`, async (fd) => { await postForm('/admin/accounting/settings', fd); closeModal(); await loadSettings(); await loadAudit(); });
   }
 
   function openRevenuePaidModal(jobId) {
@@ -632,6 +681,7 @@
   async function loadDeposits() { setLoading('depositList'); setLoading('depositLedger'); state.deposits = await getJson('/admin/accounting/deposits'); renderDeposits(); showErrors([state.deposits]); }
   async function loadReportSummary() { const r = await getJson('/admin/accounting/reports/summary'); state.reportSummary = r; renderReports(); showErrors([r]); }
   async function loadAudit() { setLoading('auditList'); const r = await getJson('/admin/accounting/audit'); state.audit = r.rows || []; renderAudit(); showErrors([r]); }
+  async function loadSettings() { setLoading('settingsView'); const r = await getJson('/admin/accounting/settings'); state.settings = r.settings || {}; renderSettings(); showErrors([r]); }
   async function reloadAll() {
     try {
       await loadSummary();
@@ -640,6 +690,7 @@
       if (state.tab === 'deposits') await loadDeposits();
       if (state.tab === 'reports') await loadReportSummary();
       if (state.tab === 'audit') await loadAudit();
+      if (state.tab === 'settings') await loadSettings();
     } catch (e) {
       const err = $('softErrors'); if (err) err.innerHTML = `<div class="acctSoftErr">โหลดข้อมูลงานบัญชีไม่สำเร็จ: ${esc(e.message || e)}</div>`;
     }
@@ -650,6 +701,7 @@
     if (state.tab === 'deposits') return loadDeposits();
     if (state.tab === 'reports') return loadReportSummary();
     if (state.tab === 'audit') return loadAudit();
+    if (state.tab === 'settings') return loadSettings();
     return reloadAll();
   }
   function bind() {
@@ -667,6 +719,9 @@
     $('btnReloadRevenue')?.addEventListener('click', loadRevenue);
     $('btnOpenExpense')?.addEventListener('click', openExpenseModal);
     $('btnOpenCreateDoc')?.addEventListener('click', () => openCreateDocumentModal());
+    $('btnOpenQuote')?.addEventListener('click', openQuoteModal);
+    $('btnOpenTaxInvoice')?.addEventListener('click', openTaxInvoiceModal);
+    $('btnEditSettings')?.addEventListener('click', openSettingsModal);
     $('btnPrintReport')?.addEventListener('click', () => window.print());
     $('revenueSearch')?.addEventListener('input', renderRevenue);
     $('revenueStatusFilter')?.addEventListener('change', renderRevenue);

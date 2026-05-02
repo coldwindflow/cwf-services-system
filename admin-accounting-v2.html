@@ -61,6 +61,7 @@
         <button class="acctTabBtn" data-tab="deposits" aria-selected="false" aria-controls="panel-deposits" type="button">เงินประกัน</button>
         <button class="acctTabBtn" data-tab="reports" aria-selected="false" aria-controls="panel-reports" type="button">รายงาน</button>
         <button class="acctTabBtn" data-tab="audit" aria-selected="false" aria-controls="panel-audit" type="button">ประวัติ</button>
+        <button class="acctTabBtn" data-tab="settings" aria-selected="false" aria-controls="panel-settings" type="button">ตั้งค่าเอกสาร</button>
       </nav>
     </div>
 
@@ -109,8 +110,8 @@
 
         <section id="panel-documents" class="acctPanel" tabindex="-1">
           <div class="acctBox">
-            <div class="acctSectionTitleLine"><h2>เอกสารขาย</h2><button id="btnOpenCreateDoc" class="acctPrimaryBtn" type="button">+ สร้างเอกสารขาย</button></div>
-            <div class="acctNote">วิธีใช้: เลือกประเภทเอกสาร ใส่เลขงาน แล้วกดสร้าง ระบบจะรันเลข QT/INV/RC ให้อัตโนมัติ เอกสารออกแล้วห้ามแก้เงียบ ๆ ให้ void/reissue ในเฟสถัดไป</div>
+            <div class="acctSectionTitleLine"><h2>เอกสารขาย</h2><div class="acctDocActionGrid"><button id="btnOpenQuote" class="acctPrimaryBtn" type="button">+ ใบเสนอราคา</button><button id="btnOpenTaxInvoice" class="acctSecondaryBtn" type="button">+ ใบกำกับภาษี</button><button id="btnOpenCreateDoc" class="acctSecondaryBtn" type="button">+ เอกสารจาก Job</button></div></div>
+            <div class="acctNote">ใบเสนอราคาสร้างเองได้หลายรายการ พิมพ์ส่งลูกค้าได้ และเมื่อลูกค้ายืนยันสามารถส่งข้อมูลไปหน้าเพิ่มงานเพื่อเลือกคิวช่างตาม Flow เดิม</div>
             <div class="acctGuide" style="margin-top:10px">
               <div class="acctGuideStep">1) ใบเสนอราคา: ใช้ก่อนลูกค้ายืนยันงาน</div>
               <div class="acctGuideStep">2) ใบแจ้งหนี้: ใช้เรียกเก็บเงิน</div>
@@ -162,12 +163,20 @@
         <section id="panel-audit" class="acctPanel" tabindex="-1">
           <div class="acctBox"><h2>ประวัติการทำรายการ</h2><div id="auditList" class="acctList"></div></div>
         </section>
+
+        <section id="panel-settings" class="acctPanel" tabindex="-1">
+          <div class="acctBox">
+            <div class="acctSectionTitleLine"><h2>ตั้งค่าเอกสารบริษัท</h2><button id="btnEditSettings" class="acctPrimaryBtn" type="button">แก้ไขข้อมูลบริษัท</button></div>
+            <div class="acctNote">ตั้งค่าชื่อร้าน/บริษัท เลขภาษี ที่อยู่ โลโก้ ลายเซ็น ตราประทับ และข้อมูลท้ายเอกสาร เพื่อใช้กับใบเสนอราคา ใบกำกับภาษี และทวิ50</div>
+            <div id="settingsView" class="acctList" style="margin-top:10px"></div>
+          </div>
+        </section>
       </div>
     </section>
     <div id="softErrors"></div>
   </main>
   <div id="accountingModal" class="acctModalBackdrop" aria-hidden="true"></div>
   <script src="admin-v2-common.js?v=accounting-entry-v3"></script>
-  <script src="admin-accounting-v2.js?v=accounting-real-work-v3"></script>
+  <script src="admin-accounting-v2.js?v=accounting-docs-real-v1"></script>
 </body>
 </html>
