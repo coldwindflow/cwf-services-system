@@ -13170,8 +13170,49 @@ app.get('/admin/deductions/summary', requireAdminSession, async (_req, res) => {
         SELECT COUNT(*)::int AS open_rework_count
         FROM public.technician_rework_cases
         WHERE status IN ('open','in_progress')
+      ),
+      warranty_jobs AS (
+        SELECT COUNT(*)::int AS warranty_jobs_count
+        FROM public.jobs j
+        WHERE j.warranty_end_at IS NOT NULL
+          AND j.warranty_end_at >= NOW()
+          AND COALESCE(j.canceled_at, NULL) IS NULL
+          AND COALESCE(j.job_status,'') NOT ILIKE '%ยกเลิก%'
+          AND COALESCE(j.job_status,'') NOT ILIKE '%cancel%'
+      ),
+      failed_rework AS (
+        SELECT COUNT(*)::int AS unresolved_failed_rework_count
+        FROM public.technician_rework_cases
+        WHERE status <> 'voided'
+          AND (resolution='failed' OR revisit_result ILIKE '%fail%' OR revisit_result ILIKE '%ไม่สำเร็จ%')
+      ),
+      suggestions AS (
+        SELECT (
+          (SELECT COUNT(*) FROM public.jobs j
+             WHERE j.appointment_datetime IS NOT NULL
+               AND COALESCE(j.checkin_at, j.started_at) IS NOT NULL
+               AND COALESCE(j.checkin_at, j.started_at) > j.appointment_datetime + INTERVAL '15 minutes'
+               AND NOT EXISTS (
+                 SELECT 1 FROM public.technician_deduction_cases dc
+                  WHERE dc.job_id=j.job_id
+                    AND dc.technician_username=COALESCE(NULLIF(j.technician_username,''), j.technician_username)
+                    AND dc.deduction_type='late_arrival'
+                    AND dc.status NOT IN ('rejected','voided')
+               )
+          ) +
+          (SELECT COUNT(*) FROM public.technician_rework_cases rc
+             WHERE rc.status <> 'voided'
+               AND NOT EXISTS (
+                 SELECT 1 FROM public.technician_deduction_cases dc
+                  WHERE dc.job_id=rc.job_id
+                    AND dc.technician_username=rc.technician_username
+                    AND dc.deduction_type IN ('warranty_rework_minor','warranty_rework_major','rework_failed')
+                    AND dc.status NOT IN ('rejected','voided')
+               )
+          )
+        )::int AS suggestions_count
       )
-      SELECT * FROM totals, open_rework
+      SELECT * FROM totals, open_rework, warranty_jobs, failed_rework, suggestions
     `);
     const top = await pool.query(`
       SELECT technician_username, COUNT(*)::int AS case_count, COALESCE(SUM(amount),0)::numeric AS amount
@@ -13254,6 +13295,253 @@ app.get('/admin/deductions/audit', requireAdminSession, async (req, res) => {
   } catch (e) {
     console.error('GET /admin/deductions/audit', e);
     return res.status(500).json({ ok: false, error: 'โหลด audit ไม่สำเร็จ' });
+  }
+});
+
+
+app.get('/admin/deductions/technician_search', requireAdminSession, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit || 20)));
+    const params = [];
+    let where = `WHERE (u.role IN ('technician','tech','senior_technician','lead_technician','ช่าง') OR p.username IS NOT NULL)`;
+    if (q) {
+      params.push(`%${q}%`);
+      where += ` AND (u.username ILIKE $1 OR COALESCE(u.full_name,'') ILIKE $1 OR COALESCE(p.full_name,'') ILIKE $1 OR COALESCE(p.phone,'') ILIKE $1)`;
+    }
+    const r = await pool.query(
+      `SELECT u.username AS technician_username,
+              COALESCE(NULLIF(p.full_name,''), NULLIF(u.full_name,''), u.username) AS display_name,
+              COALESCE(p.phone,'') AS phone,
+              COALESCE(u.role,'technician') AS role,
+              COALESCE(NULLIF(p.accept_status,''), NULLIF(p.partner_status,''), '') AS active_status
+         FROM public.users u
+         LEFT JOIN public.technician_profiles p ON p.username=u.username
+         ${where}
+        ORDER BY COALESCE(NULLIF(p.full_name,''), NULLIF(u.full_name,''), u.username) ASC
+        LIMIT ${limit}`,
+      params
+    );
+    const rows = (r.rows || []).map(row => ({
+      ...row,
+      label: `${row.display_name || row.technician_username} (${row.technician_username})${row.phone ? ' • ' + row.phone : ''}`,
+    }));
+    return res.json({ ok: true, rows });
+  } catch (e) {
+    console.error('GET /admin/deductions/technician_search', e);
+    return res.status(500).json({ ok: false, error: 'ค้นหาช่างไม่สำเร็จ' });
+  }
+});
+
+app.get('/admin/deductions/job_search', requireAdminSession, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const technician = String(req.query.technician_username || '').trim();
+    const warrantyOnly = String(req.query.warranty_only || '') === '1';
+    const status = String(req.query.status || '').trim();
+    const limit = Math.min(50, Math.max(1, Number(req.query.limit || 20)));
+    const where = [];
+    const params = [];
+    let p = 1;
+    if (q) {
+      const num = Number(q);
+      if (Number.isFinite(num) && num > 0) {
+        where.push(`(j.job_id=$${p} OR COALESCE(j.booking_code,'') ILIKE $${p+1} OR COALESCE(j.customer_name,'') ILIKE $${p+1} OR COALESCE(j.customer_phone,'') ILIKE $${p+1} OR COALESCE(j.address_text,'') ILIKE $${p+1})`);
+        params.push(num, `%${q}%`); p += 2;
+      } else {
+        where.push(`(COALESCE(j.booking_code,'') ILIKE $${p} OR COALESCE(j.customer_name,'') ILIKE $${p} OR COALESCE(j.customer_phone,'') ILIKE $${p} OR COALESCE(j.address_text,'') ILIKE $${p} OR COALESCE(j.technician_username,'') ILIKE $${p} OR COALESCE(tp.full_name,'') ILIKE $${p})`);
+        params.push(`%${q}%`); p += 1;
+      }
+    }
+    if (technician) { where.push(`COALESCE(ja.technician_username, j.technician_username)=$${p++}`); params.push(technician); }
+    if (warrantyOnly) where.push(`j.warranty_end_at IS NOT NULL AND j.warranty_end_at >= NOW()`);
+    if (status) { where.push(`j.job_status=$${p++}`); params.push(status); }
+    where.push(`COALESCE(j.job_status,'') NOT ILIKE '%ยกเลิก%' AND COALESCE(j.job_status,'') NOT ILIKE '%cancel%'`);
+    const sqlWhere = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const r = await pool.query(
+      `SELECT j.job_id,
+              COALESCE(j.booking_code, j.job_id::text) AS job_code,
+              j.customer_name,
+              j.customer_phone,
+              (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date AS appointment_date,
+              to_char(j.appointment_datetime AT TIME ZONE 'Asia/Bangkok', 'HH24:MI') AS appointment_time,
+              j.appointment_datetime,
+              j.job_status,
+              j.warranty_end_at,
+              (j.warranty_end_at IS NOT NULL AND j.warranty_end_at >= NOW()) AS is_in_warranty,
+              COALESCE(ja.technician_username, j.technician_username) AS technician_username,
+              COALESCE(NULLIF(tp.full_name,''), NULLIF(u.full_name,''), COALESCE(ja.technician_username, j.technician_username)) AS technician_name
+         FROM public.jobs j
+         LEFT JOIN LATERAL (
+           SELECT technician_username FROM public.job_assignments a WHERE a.job_id=j.job_id ORDER BY created_at ASC LIMIT 1
+         ) ja ON TRUE
+         LEFT JOIN public.technician_profiles tp ON tp.username=COALESCE(ja.technician_username, j.technician_username)
+         LEFT JOIN public.users u ON u.username=COALESCE(ja.technician_username, j.technician_username)
+         ${sqlWhere}
+        ORDER BY j.appointment_datetime DESC NULLS LAST, j.job_id DESC
+        LIMIT ${limit}`,
+      params
+    );
+    const rows = (r.rows || []).map(row => ({
+      ...row,
+      label: `#${row.job_code || row.job_id} • ${row.customer_name || '-'} • ${row.customer_phone || '-'} • ${row.technician_name || row.technician_username || '-'}`,
+    }));
+    return res.json({ ok: true, rows });
+  } catch (e) {
+    console.error('GET /admin/deductions/job_search', e);
+    return res.status(500).json({ ok: false, error: 'ค้นหางานไม่สำเร็จ' });
+  }
+});
+
+app.get('/admin/deductions/warranty_jobs', requireAdminSession, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim();
+    const technician = String(req.query.technician_username || '').trim();
+    const status = String(req.query.status || '').trim();
+    const onlyWithout = String(req.query.only_without_rework_case || '') === '1';
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+    const where = [`j.warranty_end_at IS NOT NULL`, `j.warranty_end_at >= NOW()`, `COALESCE(j.job_status,'') NOT ILIKE '%ยกเลิก%'`, `COALESCE(j.job_status,'') NOT ILIKE '%cancel%'`];
+    const params = [];
+    let p = 1;
+    if (q) {
+      const num = Number(q);
+      if (Number.isFinite(num) && num > 0) {
+        where.push(`(j.job_id=$${p} OR COALESCE(j.booking_code,'') ILIKE $${p+1} OR COALESCE(j.customer_name,'') ILIKE $${p+1} OR COALESCE(j.customer_phone,'') ILIKE $${p+1} OR COALESCE(j.address_text,'') ILIKE $${p+1} OR COALESCE(tp.full_name,'') ILIKE $${p+1})`);
+        params.push(num, `%${q}%`); p += 2;
+      } else {
+        where.push(`(COALESCE(j.booking_code,'') ILIKE $${p} OR COALESCE(j.customer_name,'') ILIKE $${p} OR COALESCE(j.customer_phone,'') ILIKE $${p} OR COALESCE(j.address_text,'') ILIKE $${p} OR COALESCE(j.technician_username,'') ILIKE $${p} OR COALESCE(tp.full_name,'') ILIKE $${p})`);
+        params.push(`%${q}%`); p += 1;
+      }
+    }
+    if (technician) { where.push(`COALESCE(ja.technician_username, j.technician_username)=$${p++}`); params.push(technician); }
+    if (status) { where.push(`j.job_status=$${p++}`); params.push(status); }
+    if (onlyWithout) where.push(`NOT EXISTS (SELECT 1 FROM public.technician_rework_cases ar WHERE ar.job_id=j.job_id AND ar.status IN ('open','in_progress'))`);
+    const r = await pool.query(
+      `SELECT j.job_id,
+              COALESCE(j.booking_code, j.job_id::text) AS job_code,
+              j.customer_name,
+              j.customer_phone,
+              j.address_text AS address,
+              (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date AS appointment_date,
+              to_char(j.appointment_datetime AT TIME ZONE 'Asia/Bangkok', 'HH24:MI') AS appointment_time,
+              j.finished_at,
+              j.warranty_end_at,
+              GREATEST(0, CEIL(EXTRACT(EPOCH FROM (j.warranty_end_at - NOW())) / 86400.0))::int AS warranty_days_left,
+              j.job_status,
+              COALESCE(ja.technician_username, j.technician_username) AS technician_username,
+              COALESCE(NULLIF(tp.full_name,''), NULLIF(u.full_name,''), COALESCE(ja.technician_username, j.technician_username)) AS technician_name,
+              EXISTS (SELECT 1 FROM public.technician_rework_cases ar WHERE ar.job_id=j.job_id AND ar.status IN ('open','in_progress')) AS has_active_rework_case,
+              lr.rework_case_id AS latest_rework_case_id,
+              lr.status AS latest_rework_status,
+              j.return_reason
+         FROM public.jobs j
+         LEFT JOIN LATERAL (
+           SELECT technician_username FROM public.job_assignments a WHERE a.job_id=j.job_id ORDER BY created_at ASC LIMIT 1
+         ) ja ON TRUE
+         LEFT JOIN public.technician_profiles tp ON tp.username=COALESCE(ja.technician_username, j.technician_username)
+         LEFT JOIN public.users u ON u.username=COALESCE(ja.technician_username, j.technician_username)
+         LEFT JOIN LATERAL (
+           SELECT rework_case_id, status FROM public.technician_rework_cases rc WHERE rc.job_id=j.job_id ORDER BY created_at DESC, rework_case_id DESC LIMIT 1
+         ) lr ON TRUE
+        WHERE ${where.join(' AND ')}
+        ORDER BY j.warranty_end_at ASC, j.job_id DESC
+        LIMIT ${limit}`,
+      params
+    );
+    return res.json({ ok: true, rows: r.rows || [] });
+  } catch (e) {
+    console.error('GET /admin/deductions/warranty_jobs', e);
+    return res.status(500).json({ ok: false, error: 'โหลดงานในประกันไม่สำเร็จ' });
+  }
+});
+
+app.get('/admin/deductions/suggestions', requireAdminSession, async (req, res) => {
+  try {
+    const from = String(req.query.from || '').slice(0,10);
+    const to = String(req.query.to || '').slice(0,10);
+    const technician = String(req.query.technician_username || '').trim();
+    const severity = String(req.query.severity || '').trim();
+    const type = String(req.query.type || '').trim();
+    const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
+    const params = [];
+    let p = 1;
+    const common = [];
+    if (from) { common.push(`detected_at >= $${p++}::timestamptz`); params.push(`${from} 00:00:00+07:00`); }
+    if (to) { common.push(`detected_at <= $${p++}::timestamptz`); params.push(`${to} 23:59:59+07:00`); }
+    if (technician) { common.push(`technician_username=$${p++}`); params.push(technician); }
+    if (severity) { common.push(`severity=$${p++}`); params.push(severity); }
+    if (type) { common.push(`deduction_type=$${p++}`); params.push(type); }
+    const whereSuggestion = common.length ? `WHERE ${common.join(' AND ')}` : '';
+    const sql = `
+      WITH raw AS (
+        SELECT
+          ('late_arrival:' || j.job_id)::text AS suggestion_id,
+          'late_arrival'::text AS deduction_type,
+          'เข้างานสาย'::text AS deduction_type_label_th,
+          COALESCE(ja.technician_username, j.technician_username)::text AS technician_username,
+          COALESCE(NULLIF(tp.full_name,''), NULLIF(u.full_name,''), COALESCE(ja.technician_username, j.technician_username))::text AS technician_name,
+          COALESCE(tp.phone,'')::text AS technician_phone,
+          j.job_id,
+          COALESCE(j.booking_code, j.job_id::text)::text AS job_code,
+          j.customer_name,
+          j.customer_phone,
+          ('ระบบพบว่าเช็คอิน/เริ่มงานช้ากว่าเวลานัดประมาณ ' || ROUND(EXTRACT(EPOCH FROM (COALESCE(j.checkin_at,j.started_at) - j.appointment_datetime))/60.0)::int || ' นาที')::text AS reason,
+          ('นัดหมาย ' || to_char(j.appointment_datetime AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD HH24:MI') || ' / เริ่มจริง ' || to_char(COALESCE(j.checkin_at,j.started_at) AT TIME ZONE 'Asia/Bangkok','YYYY-MM-DD HH24:MI'))::text AS evidence_summary,
+          100::numeric AS suggested_amount,
+          CASE WHEN COALESCE(j.checkin_at,j.started_at) > j.appointment_datetime + INTERVAL '60 minutes' THEN 'high' ELSE 'medium' END::text AS severity,
+          COALESCE(j.checkin_at,j.started_at, NOW()) AS detected_at,
+          'jobs.checkin_at'::text AS source
+        FROM public.jobs j
+        LEFT JOIN LATERAL (SELECT technician_username FROM public.job_assignments a WHERE a.job_id=j.job_id ORDER BY created_at ASC LIMIT 1) ja ON TRUE
+        LEFT JOIN public.technician_profiles tp ON tp.username=COALESCE(ja.technician_username, j.technician_username)
+        LEFT JOIN public.users u ON u.username=COALESCE(ja.technician_username, j.technician_username)
+        WHERE j.appointment_datetime IS NOT NULL
+          AND COALESCE(j.checkin_at, j.started_at) IS NOT NULL
+          AND COALESCE(j.checkin_at, j.started_at) > j.appointment_datetime + INTERVAL '15 minutes'
+          AND COALESCE(ja.technician_username, j.technician_username) IS NOT NULL
+        UNION ALL
+        SELECT
+          ('rework:' || rc.rework_case_id)::text AS suggestion_id,
+          CASE WHEN rc.resolution='failed' OR COALESCE(rc.revisit_result,'') ILIKE '%fail%' OR COALESCE(rc.revisit_result,'') ILIKE '%ไม่สำเร็จ%' THEN 'rework_failed' ELSE 'warranty_rework_minor' END::text AS deduction_type,
+          CASE WHEN rc.resolution='failed' OR COALESCE(rc.revisit_result,'') ILIKE '%fail%' OR COALESCE(rc.revisit_result,'') ILIKE '%ไม่สำเร็จ%' THEN 'แก้งานไม่สำเร็จ' ELSE 'งานถูกส่งกลับแก้ในประกัน' END::text AS deduction_type_label_th,
+          rc.technician_username,
+          COALESCE(NULLIF(tp.full_name,''), NULLIF(u.full_name,''), rc.technician_username)::text AS technician_name,
+          COALESCE(tp.phone,'')::text AS technician_phone,
+          rc.job_id,
+          COALESCE(j.booking_code, rc.job_id::text)::text AS job_code,
+          j.customer_name,
+          j.customer_phone,
+          ('งานถูกเปิดเคสแก้ไข: ' || COALESCE(rc.reason_note, rc.reason_type, '-'))::text AS reason,
+          ('เคส ' || rc.case_code || ' / สถานะ ' || rc.status || COALESCE(' / ผล ' || rc.resolution, ''))::text AS evidence_summary,
+          CASE WHEN rc.resolution='failed' THEN 300 ELSE 100 END::numeric AS suggested_amount,
+          CASE WHEN rc.resolution='failed' THEN 'high' ELSE 'medium' END::text AS severity,
+          COALESCE(rc.resolved_at, rc.created_at, NOW()) AS detected_at,
+          'technician_rework_cases'::text AS source
+        FROM public.technician_rework_cases rc
+        LEFT JOIN public.jobs j ON j.job_id=rc.job_id
+        LEFT JOIN public.technician_profiles tp ON tp.username=rc.technician_username
+        LEFT JOIN public.users u ON u.username=rc.technician_username
+        WHERE rc.status <> 'voided'
+          AND rc.technician_username IS NOT NULL
+      ), deduped AS (
+        SELECT raw.*, dc.case_id AS existing_case_id
+          FROM raw
+          LEFT JOIN public.technician_deduction_cases dc
+            ON dc.job_id=raw.job_id
+           AND dc.technician_username=raw.technician_username
+           AND dc.deduction_type=raw.deduction_type
+           AND dc.status NOT IN ('rejected','voided')
+      )
+      SELECT *, (existing_case_id IS NULL) AS can_create_case
+        FROM deduped
+        ${whereSuggestion}
+       ORDER BY detected_at DESC NULLS LAST
+       LIMIT ${limit}`;
+    const r = await pool.query(sql, params);
+    return res.json({ ok: true, rows: r.rows || [], skipped_detections: ['missing_status_update', 'missing_required_photos', 'no_show', 'same_day_cancel'] });
+  } catch (e) {
+    console.error('GET /admin/deductions/suggestions', e);
+    return res.status(500).json({ ok: false, error: 'โหลดเคสแนะนำจากระบบไม่สำเร็จ' });
   }
 });
 
@@ -13479,7 +13767,22 @@ app.get('/admin/rework_cases/:id', requireAdminSession, async (req, res) => {
        ORDER BY created_at DESC, audit_id DESC`,
       [String(id)]
     );
-    return res.json({ ok: true, row, job: jr.rows[0] || null, linked_deduction_case: deduction, audit_logs: audit.rows });
+    let job_updates = [];
+    try {
+      const ur = await pool.query(
+        `SELECT update_id, actor_username, actor_role, action, message, payload_json, created_at
+           FROM public.job_updates_v2
+          WHERE job_id=$1
+            AND (action ILIKE '%rework%' OR action ILIKE '%revisit%' OR action IN ('rework_case_created','rework_case_resolved'))
+          ORDER BY created_at DESC, update_id DESC
+          LIMIT 30`,
+        [row.job_id]
+      );
+      job_updates = ur.rows || [];
+    } catch (e) {
+      try { console.warn('[rework detail] job update lookup skipped:', e.message); } catch {}
+    }
+    return res.json({ ok: true, row, job: jr.rows[0] || null, linked_deduction_case: deduction, audit_logs: audit.rows, job_updates });
   } catch (e) {
     console.error('GET /admin/rework_cases/:id', e);
     return res.status(500).json({ ok: false, error: 'โหลดรายละเอียดเคสงานแก้ไขไม่สำเร็จ' });

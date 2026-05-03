@@ -2,189 +2,54 @@
   const $ = (id) => document.getElementById(id);
   const warn = 'ยอดนี้ยังไม่ถูกนำไปรวมในรอบจ่ายเงิน จนกว่าจะกดนำเข้ารอบจ่าย';
   const types = ['late_arrival','missing_status_update','missing_required_photos','poor_work_quality','customer_complaint_valid','left_before_complete','no_show','same_day_cancel','warranty_rework_minor','warranty_rework_major','rework_failed','replacement_technician_cost','customer_property_damage','company_equipment_damage','off_platform_payment','confidentiality_breach','fraud_or_false_report','deposit_installment','deposit_damage_offset','manual_adjustment','overpayment_recovery'];
+  const typeMeta = {
+    late_arrival:['เข้างานสาย','ช่างเช็คอิน/เริ่มงานช้ากว่าเวลานัด',100,'medium'], missing_status_update:['ไม่อัปเดตสถานะ','ไม่มีการอัปเดตเดินทาง/เช็คอิน/สถานะตามที่ควร',100,'medium'], missing_required_photos:['รูปไม่ครบ','รูปก่อน/หลังงาน หรือหลักฐานตามระบบไม่ครบ',100,'medium'], poor_work_quality:['คุณภาพงานไม่ดี','งานไม่ได้มาตรฐาน ต้องตรวจสอบ',200,'high'], customer_complaint_valid:['ลูกค้าร้องเรียนจริง','มีข้อร้องเรียนจากลูกค้าและตรวจสอบแล้ว',200,'high'], left_before_complete:['ออกจากงานก่อนเสร็จ','ช่างออกจากพื้นที่ก่อนงานเสร็จสมบูรณ์',300,'high'], no_show:['ไม่เข้าหน้างาน','ช่างไม่เข้าหน้างานตามนัด',300,'high'], same_day_cancel:['ยกเลิกวันเดียวกัน','ช่างยกเลิกงานกะทันหัน',200,'high'], warranty_rework_minor:['งานแก้ไขในประกันเล็กน้อย','ต้องกลับไปแก้ไขในประกันระดับเล็กน้อย',100,'medium'], warranty_rework_major:['งานแก้ไขในประกันรุนแรง','งานมีปัญหาต้องกลับแก้ไขระดับสูง',300,'high'], rework_failed:['แก้งานไม่สำเร็จ','กลับไปแก้แล้วไม่สำเร็จหรือยังมีปัญหา',300,'high'], replacement_technician_cost:['ค่าเปลี่ยนช่าง','บริษัทต้องส่งช่างคนใหม่แทน',500,'high'], customer_property_damage:['ทรัพย์สินลูกค้าเสียหาย','มีความเสียหายต่อทรัพย์สินลูกค้า',1000,'critical'], company_equipment_damage:['อุปกรณ์บริษัทเสียหาย','ช่างทำอุปกรณ์บริษัทเสียหาย',500,'high'], off_platform_payment:['รับเงินนอกระบบ','รับเงิน/ปิดดีลนอกระบบบริษัท',1000,'critical'], confidentiality_breach:['ละเมิดข้อมูล','เปิดเผยข้อมูลลูกค้าหรือบริษัท',1000,'critical'], fraud_or_false_report:['รายงานเท็จ/ทุจริต','ข้อมูลเท็จหรือพฤติกรรมทุจริต',1000,'critical'], deposit_installment:['หักเงินประกันงวด','รายการหักเงินประกันตามงวด',0,'medium'], deposit_damage_offset:['หักเงินประกันชดเชยเสียหาย','ใช้เงินประกันชดเชยความเสียหาย',0,'high'], manual_adjustment:['ปรับยอดเอง','รายการปรับยอดโดยแอดมิน',0,'medium'], overpayment_recovery:['เรียกคืนจ่ายเกิน','หักคืนจากยอดที่เคยจ่ายเกิน',0,'medium']
+  };
   const reworkTypes = ['water_leak','not_clean','customer_complaint','missing_photos','same_issue_not_fixed','poor_work_standard','other'];
+  const reworkLabels = { water_leak:'น้ำหยด', not_clean:'ล้างไม่สะอาด', customer_complaint:'ลูกค้าร้องเรียน', missing_photos:'รูปไม่ครบ', same_issue_not_fixed:'อาการเดิมยังไม่หาย', poor_work_standard:'งานไม่ได้มาตรฐาน', other:'อื่น ๆ' };
+  const resolutionLabels = { fixed:'แก้ไขสำเร็จ', failed:'แก้ไขไม่สำเร็จ', changed_technician:'เปลี่ยนช่าง', company_absorbed:'บริษัทรับผิดชอบ', deduction_required:'ต้องเปิดเคสหักเงิน' };
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const money = (n) => Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const date = (s) => s ? new Date(s).toLocaleString('th-TH') : '-';
-  const chip = (v) => `<span class="chip ${['high','critical','voided','rejected','failed'].includes(String(v))?'danger':(['approved','resolved','fixed'].includes(String(v))?'ok':(['pending_approval','open','in_progress'].includes(String(v))?'warn':''))}">${esc(v || '-')}</span>`;
-  function setStatus(msg, type){
-    const el = $('pageStatus');
-    if (!el) return;
-    el.textContent = msg || '';
-    el.className = `statusbar ${msg ? 'show' : ''} ${type === 'error' ? 'error' : ''}`;
-  }
-  function setButtonBusy(btn, busy){
-    if (!btn) return;
-    btn.disabled = !!busy;
-    if (busy) btn.dataset.oldText = btn.textContent;
-    btn.textContent = busy ? 'กำลังดำเนินการ...' : (btn.dataset.oldText || btn.textContent);
-  }
-  async function api(url, opts){
-    const r = await fetch(url, { credentials:'same-origin', headers:{ 'Content-Type':'application/json', ...(opts&&opts.headers||{}) }, ...opts });
-    const data = await r.json().catch(()=>({}));
-    if (!r.ok) throw new Error(data.error || data.message || `HTTP ${r.status}`);
-    return data;
-  }
-  function qs(obj){
-    const p = new URLSearchParams();
-    Object.entries(obj).forEach(([k,v]) => { if (v !== undefined && v !== null && String(v).trim() !== '') p.set(k, String(v).trim()); });
-    return p.toString();
-  }
-  function openModal(title, html){ $('modalTitle').textContent = title; $('modalBody').innerHTML = html; $('modalBackdrop').style.display = 'block'; }
-  function closeModal(){ $('modalBackdrop').style.display = 'none'; $('modalBody').innerHTML = ''; }
-  function fillOptions(){
-    $('fType').innerHTML = '<option value="">ทั้งหมด</option>' + types.map(x=>`<option>${x}</option>`).join('');
-    $('rType').innerHTML = '<option value="">ทั้งหมด</option>' + reworkTypes.map(x=>`<option>${x}</option>`).join('');
-  }
-  async function loadSummary(){
-    setStatus('กำลังโหลดสรุป...');
-    const d = await api('/admin/deductions/summary');
-    const top = (d.top_technicians_by_cases || [])[0];
-    const cards = [
-      ['จำนวนเคสรออนุมัติ', d.pending_count || 0],
-      ['ยอดหักรออนุมัติ', money(d.pending_amount)],
-      ['ยอดหักอนุมัติแล้ว', money(d.approved_amount)],
-      ['งานแก้ไขค้าง', d.open_rework_count || 0],
-      ['เคสรุนแรง High/Critical', d.high_critical_count || 0],
-      ['ช่างที่มีเคสผิดกฎมากที่สุด', top ? `${esc(top.technician_username)} (${top.case_count})` : '-'],
-    ];
-    $('summaryCards').innerHTML = cards.map(([k,v]) => `<article class="card"><div class="k">${k}</div><div class="v">${v}</div></article>`).join('');
-    setStatus('');
-  }
-  async function loadDeductions(){
-    setStatus('กำลังโหลดเคสหักเงิน...');
-    const query = qs({ from:$('fFrom').value, to:$('fTo').value, technician_username:$('fTech').value, status:$('fStatus').value, deduction_type:$('fType').value, severity:$('fSeverity').value, job_id:$('fJob').value, pending_approval:$('fPending').value });
-    const d = await api('/admin/deductions' + (query ? `?${query}` : ''));
-    const rows = d.rows || [];
-    $('deductionRows').innerHTML = rows.length ? rows.map(r => `
-      <tr>
-        <td><b>${esc(r.case_code)}</b></td><td>${esc(r.technician_username)}</td>
-        <td>${r.job_id ? `<a href="/admin-job-view-v2.html?job_id=${encodeURIComponent(r.job_id)}">#${esc(r.job_id)}</a>` : '-'}</td>
-        <td>${esc(r.deduction_type)}</td><td><b>${money(r.amount)}</b></td><td>${esc(r.reason)}</td>
-        <td>${chip(r.severity)}</td><td>${chip(r.status)}</td><td>${date(r.created_at)}</td>
-        <td><div class="actions">${actionsFor(r)}</div></td>
-      </tr>`).join('') : `<tr><td colspan="10" class="empty">ยังไม่มีเคส</td></tr>`;
-    setStatus('');
-  }
-  function actionsFor(r){
-    const id = Number(r.case_id);
-    const a = [`<button class="btn soft" data-detail="${id}">ดูรายละเอียด</button>`];
-    if (r.status === 'open') a.push(`<button class="btn soft" data-edit="${id}">แก้ไข</button>`,`<button class="btn blue" data-submit="${id}">ส่งอนุมัติ</button>`);
-    if (r.status === 'pending_approval') a.push(`<button class="btn blue" data-approve="${id}">อนุมัติ</button>`,`<button class="btn yellow" data-reject="${id}">ปฏิเสธ</button>`);
-    if (['open','pending_approval','approved'].includes(r.status)) a.push(`<button class="btn danger" data-void="${id}">ยกเลิก</button>`);
-    return a.join('');
-  }
-  function deductionForm(row){
-    return `<div class="form-grid">
-      <div><label>ช่าง</label><input id="mTech" value="${esc(row?.technician_username || '')}"></div>
-      <div><label>งาน optional</label><input id="mJob" value="${esc(row?.job_id || '')}" placeholder="job_id"></div>
-      <div><label>ประเภทหักเงิน</label><select id="mType">${types.map(t=>`<option ${row?.deduction_type===t?'selected':''}>${t}</option>`).join('')}</select></div>
-      <div><label>จำนวนเงิน</label><input id="mAmount" type="number" min="0" step="0.01" value="${esc(row?.amount || '')}"></div>
-      <div><label>severity</label><select id="mSeverity">${['low','medium','high','critical'].map(s=>`<option ${String(row?.severity||'medium')===s?'selected':''}>${s}</option>`).join('')}</select></div>
-      <div class="full"><label>เหตุผล</label><textarea id="mReason" rows="3">${esc(row?.reason || '')}</textarea></div>
-      <div class="full"><label>หลักฐาน/หมายเหตุหลักฐาน</label><textarea id="mEvidence" rows="3">${esc(JSON.stringify(row?.evidence_json || []))}</textarea></div>
-      <div class="full notice">${warn}</div>
-      <div class="full actions"><button class="btn blue" id="mSave">${row ? 'บันทึก' : 'สร้างเคส'}</button></div>
-    </div>`;
-  }
-  function readDeductionForm(){
-    return { technician_username:$('mTech')?.value, job_id:$('mJob')?.value, deduction_type:$('mType')?.value, amount:Number($('mAmount')?.value || 0), reason:$('mReason')?.value, severity:$('mSeverity')?.value, evidence_json:$('mEvidence')?.value };
-  }
-  async function createDeduction(prefill){
-    openModal('สร้างเคสหักเงิน', deductionForm(prefill || null));
-    $('mSave').onclick = async () => { await api('/admin/deductions', { method:'POST', body:JSON.stringify(readDeductionForm()) }); closeModal(); await loadAll(); };
-  }
-  async function detail(id){
-    const d = await api(`/admin/deductions/${id}`);
-    openModal(`รายละเอียด ${d.row.case_code}`, `<div class="notice">${warn}</div><pre>${esc(JSON.stringify(d, null, 2))}</pre>`);
-  }
-  async function edit(id){
-    const d = await api(`/admin/deductions/${id}`);
-    openModal(`แก้ไข ${d.row.case_code}`, deductionForm(d.row));
-    $('mTech').disabled = true;
-    $('mSave').onclick = async () => { await api(`/admin/deductions/${id}`, { method:'PATCH', body:JSON.stringify(readDeductionForm()) }); closeModal(); await loadAll(); };
-  }
-  async function transition(id, action, needNote){
-    const note = needNote ? prompt('ระบุเหตุผล') : '';
-    if (needNote && !note) return;
-    if (!confirm('ยืนยันดำเนินการ?')) return;
-    await api(`/admin/deductions/${id}/${action}`, { method:'POST', body:JSON.stringify({ note }) });
-    await loadAll();
-  }
-  async function loadRework(){
-    setStatus('กำลังโหลดงานแก้ไข...');
-    const query = qs({ status:$('rStatus').value, technician_username:$('rTech').value, job_id:$('rJob').value, reason_type:$('rType').value });
-    const d = await api('/admin/rework_cases' + (query ? `?${query}` : ''));
-    const rows = d.rows || [];
-    $('reworkRows').innerHTML = rows.length ? rows.map(r => `
-      <tr><td><b>${esc(r.case_code)}</b></td><td>#${esc(r.job_id)}</td><td>${esc(r.technician_username||'-')}</td><td>${esc(r.reason_type)}</td><td>${chip(r.status)}</td><td>${chip(r.resolution||'-')}</td><td>${date(r.created_at)}</td><td><div class="actions"><button class="btn soft" data-rdetail="${r.rework_case_id}">ดู</button>${r.status!=='resolved'?`<button class="btn blue" data-resolve="${r.rework_case_id}">ปิดเคส</button>`:''}</div></td></tr>`).join('') : `<tr><td colspan="8" class="empty">ยังไม่มีเคสงานแก้ไข</td></tr>`;
-    setStatus('');
-  }
-  async function reworkDetail(id){
-    const d = await api(`/admin/rework_cases/${id}`);
-    openModal(`งานแก้ไข ${d.row.case_code}`, `<pre>${esc(JSON.stringify(d, null, 2))}</pre>`);
-  }
-  async function resolveRework(id){
-    openModal('ปิดเคสงานแก้ไข', `<div class="form-grid">
-      <div><label>resolution</label><select id="rwResolution"><option>fixed</option><option>failed</option><option>changed_technician</option><option>company_absorbed</option><option>deduction_required</option></select></div>
-      <div><label>revisit_result</label><input id="rwResult" placeholder="optional"></div>
-      <div class="full"><label>revisit_note</label><textarea id="rwNote" rows="3"></textarea></div>
-      <div class="full"><label><input id="rwCreateDeduction" type="checkbox" style="width:auto;min-height:auto"> สร้างเคสหักเงินที่เชื่อมกับงานแก้ไข</label></div>
-      <div><label>ประเภทหักเงิน</label><select id="rwType">${types.map(t=>`<option>${t}</option>`).join('')}</select></div>
-      <div><label>จำนวนเงิน</label><input id="rwAmount" type="number" min="0" step="0.01"></div>
-      <div><label>severity</label><select id="rwSeverity"><option>medium</option><option>low</option><option>high</option><option>critical</option></select></div>
-      <div class="full"><label>เหตุผลหักเงิน</label><textarea id="rwDeductReason" rows="2"></textarea></div>
-      <div class="full notice">${warn}</div><div class="full actions"><button class="btn blue" id="rwSave">ปิดเคส</button></div>
-    </div>`);
-    $('rwSave').onclick = async () => {
-      await api(`/admin/rework_cases/${id}/resolve`, { method:'POST', body:JSON.stringify({ resolution:$('rwResolution').value, revisit_result:$('rwResult').value, revisit_note:$('rwNote').value, create_deduction:$('rwCreateDeduction').checked, deduction_type:$('rwType').value, amount:Number($('rwAmount').value||0), severity:$('rwSeverity').value, deduction_reason:$('rwDeductReason').value }) });
-      closeModal(); await loadAll();
-    };
-  }
-  async function loadAudit(){
-    setStatus('กำลังโหลด audit...');
-    const query = qs({ entity_type:$('aEntityType').value, entity_id:$('aEntityId').value, actor_username:$('aActor').value });
-    const d = await api('/admin/deductions/audit' + (query ? `?${query}` : ''));
-    const rows = d.rows || [];
-    $('auditRows').innerHTML = rows.length ? rows.map(r => `<tr><td>${date(r.created_at)}</td><td>${esc(r.actor_username||'-')}<br><span class="chip">${esc(r.actor_role||'-')}</span></td><td>${esc(r.action)}</td><td>${esc(r.entity_type)} #${esc(r.entity_id||'-')}</td><td>${esc(r.note||'')}</td></tr>`).join('') : `<tr><td colspan="5" class="empty">ยังไม่มี audit</td></tr>`;
-    setStatus('');
-  }
-  async function loadAll(){ await Promise.all([loadSummary(), loadDeductions(), loadRework(), loadAudit()]); }
-  document.addEventListener('click', async (ev) => {
-    const t = ev.target?.closest?.('[data-tab],[data-detail],[data-edit],[data-submit],[data-approve],[data-reject],[data-void],[data-rdetail],[data-resolve]');
-    if (!t) return;
-    try {
-      setButtonBusy(t, true);
-      if (t.matches('[data-tab]')) {
-        document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
-        document.querySelectorAll('.tab-panel').forEach(x=>x.style.display='none'); $(`panel-${t.dataset.tab}`).style.display = '';
-      }
-      if (t.dataset.detail) await detail(t.dataset.detail);
-      if (t.dataset.edit) await edit(t.dataset.edit);
-      if (t.dataset.submit) await transition(t.dataset.submit, 'submit');
-      if (t.dataset.approve) await transition(t.dataset.approve, 'approve');
-      if (t.dataset.reject) await transition(t.dataset.reject, 'reject', true);
-      if (t.dataset.void) await transition(t.dataset.void, 'void', true);
-      if (t.dataset.rdetail) await reworkDetail(t.dataset.rdetail);
-      if (t.dataset.resolve) await resolveRework(t.dataset.resolve);
-    } catch (e) {
-      console.error(e);
-      setStatus(e.message || 'ดำเนินการไม่สำเร็จ', 'error');
-      alert(e.message || 'ดำเนินการไม่สำเร็จ');
-    } finally {
-      setButtonBusy(t, false);
-    }
-  });
-  function bind(){
-    fillOptions();
-    $('modalClose').onclick = closeModal;
-    $('modalBackdrop').addEventListener('click', e => { if (e.target === $('modalBackdrop')) closeModal(); });
-    $('btnCreateDeduction').onclick = () => createDeduction();
-    $('btnLoad').onclick = loadDeductions;
-    $('btnLoadRework').onclick = loadRework;
-    $('btnLoadAudit').onclick = loadAudit;
-    $('btnClear').onclick = () => { ['fFrom','fTo','fTech','fStatus','fType','fSeverity','fJob','fPending'].forEach(id => $(id).value=''); loadDeductions(); };
-    loadAll().catch(e => { setStatus(e.message || 'โหลดข้อมูลไม่สำเร็จ', 'error'); alert(e.message); });
-  }
-  document.addEventListener('DOMContentLoaded', bind);
+  const shortDate = (s) => s ? new Date(s).toLocaleDateString('th-TH') : '-';
+  const chip = (v) => `<span class="chip ${['high','critical','voided','rejected','failed','rework_failed'].includes(String(v))?'danger':(['approved','resolved','fixed'].includes(String(v))?'ok':(['pending_approval','open','in_progress','medium'].includes(String(v))?'warn':'muted'))}">${esc(v || '-')}</span>`;
+  let selectedTech = null;
+  let selectedJob = null;
+  let selectedActiveTab = 'deductions';
+  function setStatus(msg, type){ const el=$('pageStatus'); if(!el)return; el.textContent=msg||''; el.className=`statusbar ${msg?'show':''} ${type==='error'?'error':(type==='ok'?'ok':'')}`; }
+  function setButtonBusy(btn,busy){ if(!btn)return; btn.disabled=!!busy; if(busy)btn.dataset.oldText=btn.textContent; btn.textContent=busy?'กำลังดำเนินการ...':(btn.dataset.oldText||btn.textContent); }
+  async function api(url, opts){ const r=await fetch(url,{credentials:'same-origin',headers:{'Content-Type':'application/json',...(opts&&opts.headers||{})},...opts}); const data=await r.json().catch(()=>({})); if(!r.ok)throw new Error(data.error||data.message||`HTTP ${r.status}`); return data; }
+  function qs(obj){ const p=new URLSearchParams(); Object.entries(obj).forEach(([k,v])=>{ if(v!==undefined&&v!==null&&String(v).trim()!=='')p.set(k,String(v).trim()); }); return p.toString(); }
+  function openModal(title,html){ $('modalTitle').textContent=title; $('modalBody').innerHTML=html; $('modalBackdrop').style.display='block'; }
+  function closeModal(){ $('modalBackdrop').style.display='none'; $('modalBody').innerHTML=''; selectedTech=null; selectedJob=null; }
+  function fillOptions(){ $('fType').innerHTML='<option value="">ทั้งหมด</option>'+types.map(x=>`<option>${x}</option>`).join(''); $('sType').innerHTML='<option value="">ทั้งหมด</option>'+types.map(x=>`<option>${x}</option>`).join(''); $('rType').innerHTML='<option value="">ทั้งหมด</option>'+reworkTypes.map(x=>`<option value="${x}">${reworkLabels[x]||x}</option>`).join(''); }
+  async function loadSummary(){ setStatus('กำลังโหลดสรุป...'); const d=await api('/admin/deductions/summary'); const top=(d.top_technicians_by_cases||[])[0]; const cards=[['เคสรออนุมัติ',d.pending_count||0],['ยอดหักรออนุมัติ',money(d.pending_amount)],['ยอดหักอนุมัติแล้ว',money(d.approved_amount)],['งานแก้ไขค้าง',d.open_rework_count||0],['งานในประกัน',d.warranty_jobs_count||0],['เคสที่ระบบแนะนำ',d.suggestions_count||0],['เคสรุนแรง',d.high_critical_count||0],['ช่างที่มีเคสมากที่สุด',top?`${esc(top.technician_username)} (${top.case_count})`:'-']]; $('summaryCards').innerHTML=cards.map(([k,v])=>`<article class="card"><div class="k">${k}</div><div class="v">${v}</div></article>`).join(''); setStatus(''); }
+  async function loadDeductions(){ setStatus('กำลังโหลดเคสหักเงิน...'); const query=qs({from:$('fFrom').value,to:$('fTo').value,technician_username:$('fTech').value,status:$('fStatus').value,deduction_type:$('fType').value,severity:$('fSeverity').value,job_id:$('fJob').value,pending_approval:$('fPending').value}); const d=await api('/admin/deductions'+(query?`?${query}`:'')); const rows=d.rows||[]; $('deductionRows').innerHTML=rows.length?rows.map(r=>`<tr><td><b>${esc(r.case_code)}</b></td><td>${esc(r.technician_username)}</td><td>${r.job_id?`<a href="/admin-job-view-v2.html?job_id=${encodeURIComponent(r.job_id)}">#${esc(r.job_id)}</a>`:'-'}</td><td>${esc(typeMeta[r.deduction_type]?.[0]||r.deduction_type)}<div class="hint">${esc(r.deduction_type)}</div></td><td><b>${money(r.amount)}</b></td><td>${esc(r.reason)}</td><td>${chip(r.severity)}</td><td>${chip(r.status)}</td><td>${date(r.created_at)}</td><td><div class="actions">${actionsFor(r)}</div></td></tr>`).join(''):`<tr><td colspan="10" class="empty">ยังไม่มีเคส</td></tr>`; setStatus(''); }
+  function actionsFor(r){ const id=Number(r.case_id); const a=[`<button class="btn soft small" data-detail="${id}">ดูรายละเอียด</button>`]; if(r.status==='open')a.push(`<button class="btn soft small" data-edit="${id}">แก้ไข</button>`,`<button class="btn blue small" data-submit="${id}">ส่งอนุมัติ</button>`); if(r.status==='pending_approval')a.push(`<button class="btn blue small" data-approve="${id}">อนุมัติ</button>`,`<button class="btn yellow small" data-reject="${id}">ปฏิเสธ</button>`); if(['open','pending_approval','approved'].includes(r.status))a.push(`<button class="btn danger small" data-void="${id}">ยกเลิก</button>`); return a.join(''); }
+  function deductionForm(row){ selectedTech=row?.technician_username?{technician_username:row.technician_username,label:row.technician_username}:selectedTech; selectedJob=row?.job_id?{job_id:row.job_id,job_code:row.job_id,label:'#'+row.job_id}:selectedJob; return `<div class="form-grid"><div class="full notice">${warn}</div><div><label>ค้นหาช่าง</label><input id="mTechSearch" placeholder="ชื่อ / เบอร์ / username" value="${esc(selectedTech?.label||row?.technician_username||'')}"><div class="search-results" id="mTechResults"></div><div class="selected-box" id="mTechSelected">${selectedTech?esc(selectedTech.label):'ยังไม่ได้เลือกช่าง'}</div></div><div><label>ค้นหางาน</label><input id="mJobSearch" placeholder="เลขงาน / ชื่อลูกค้า / เบอร์ลูกค้า" value="${esc(selectedJob?.label||row?.job_id||'')}"><div class="search-results" id="mJobResults"></div><div class="selected-box" id="mJobSelected">${selectedJob?esc(selectedJob.label):'ไม่ผูกงานก็ได้'}</div></div><div><label>ประเภทหักเงิน</label><select id="mType">${types.map(t=>`<option value="${t}" ${row?.deduction_type===t?'selected':''}>${typeMeta[t]?.[0]||t}</option>`).join('')}</select><div class="hint" id="mTypeHint"></div></div><div><label>จำนวนเงิน</label><input id="mAmount" type="number" min="0" step="0.01" value="${esc(row?.amount ?? '')}"></div><div><label>severity</label><select id="mSeverity">${['low','medium','high','critical'].map(s=>`<option ${String(row?.severity||'medium')===s?'selected':''}>${s}</option>`).join('')}</select></div><div class="full"><label>เหตุผล</label><textarea id="mReason" rows="3">${esc(row?.reason||'')}</textarea></div><div class="full"><label>หลักฐาน/ลิงก์/หมายเหตุหลักฐาน</label><textarea id="mEvidence" rows="3">${esc(formatEvidenceForEdit(row?.evidence_json))}</textarea></div><div class="full actions"><button class="btn blue" id="mSave">${row?'บันทึก':'สร้างเคส'}</button></div></div>`; }
+  function formatEvidenceForEdit(v){ if(!v)return ''; if(typeof v==='string')return v; try{return JSON.stringify(v,null,2);}catch{return String(v||'');} }
+  function evidenceFromText(text){ const s=String(text||'').trim(); if(!s)return []; try{return JSON.parse(s);}catch{return s.split('\n').map(x=>x.trim()).filter(Boolean).map(note=>({note}));} }
+  function readDeductionForm(){ return {technician_username:selectedTech?.technician_username||$('mTechSearch')?.value,job_id:selectedJob?.job_id||'',deduction_type:$('mType')?.value,amount:Number($('mAmount')?.value||0),reason:$('mReason')?.value,severity:$('mSeverity')?.value,evidence_json:evidenceFromText($('mEvidence')?.value)}; }
+  function refreshTypeHint(){ const t=$('mType')?.value; const m=typeMeta[t]||[]; if($('mTypeHint'))$('mTypeHint').textContent=m[1]||''; if(!Number($('mAmount')?.value||0)&&m[2])$('mAmount').value=m[2]; if($('mSeverity')&&m[3])$('mSeverity').value=m[3]; }
+  function attachSearchHandlers(){ const techInput=$('mTechSearch'), jobInput=$('mJobSearch'); let techTimer, jobTimer; if(techInput){ techInput.oninput=()=>{ clearTimeout(techTimer); techTimer=setTimeout(()=>searchTech(techInput.value),250); }; if(techInput.value) searchTech(techInput.value); } if(jobInput){ jobInput.oninput=()=>{ clearTimeout(jobTimer); jobTimer=setTimeout(()=>searchJob(jobInput.value),250); }; if(jobInput.value) searchJob(jobInput.value); } if($('mType')){ $('mType').onchange=refreshTypeHint; refreshTypeHint(); } }
+  async function searchTech(q){ const box=$('mTechResults'); if(!box||String(q||'').trim().length<1){ if(box)box.innerHTML=''; return; } const d=await api('/admin/deductions/technician_search?'+qs({q,limit:12})); box.innerHTML=(d.rows||[]).map(r=>`<button type="button" class="result-item" data-pick-tech="${esc(r.technician_username)}" data-label="${esc(r.label)}"><b>${esc(r.display_name||r.technician_username)}</b><div class="mini-meta">${esc(r.technician_username)} ${r.phone?'• '+esc(r.phone):''}</div></button>`).join('')||'<div class="empty">ไม่พบช่าง</div>'; }
+  async function searchJob(q){ const box=$('mJobResults'); if(!box||String(q||'').trim().length<1){ if(box)box.innerHTML=''; return; } const d=await api('/admin/deductions/job_search?'+qs({q,technician_username:selectedTech?.technician_username||'',limit:12})); box.innerHTML=(d.rows||[]).map(r=>`<button type="button" class="result-item" data-pick-job="${esc(r.job_id)}" data-job='${esc(JSON.stringify(r))}'><b>#${esc(r.job_code||r.job_id)} ${r.is_in_warranty?'• อยู่ในประกัน':''}</b><div class="mini-meta">${esc(r.customer_name||'-')} • ${esc(r.customer_phone||'-')} • ช่าง ${esc(r.technician_name||r.technician_username||'-')}</div></button>`).join('')||'<div class="empty">ไม่พบงาน</div>'; }
+  async function createDeduction(prefill){ selectedTech=prefill?.technician_username?{technician_username:prefill.technician_username,label:prefill.technician_name?`${prefill.technician_name} (${prefill.technician_username})`:prefill.technician_username}:null; selectedJob=prefill?.job_id?{job_id:prefill.job_id,job_code:prefill.job_code||prefill.job_id,label:`#${prefill.job_code||prefill.job_id} ${prefill.customer_name||''}`}:null; openModal('สร้างเคสหักเงิน',deductionForm(prefill||null)); attachSearchHandlers(); $('mSave').onclick=async()=>{await api('/admin/deductions',{method:'POST',body:JSON.stringify(readDeductionForm())}); closeModal(); await loadAll(); setStatus('สร้างเคสสำเร็จ','ok');}; }
+  async function detail(id){ const d=await api(`/admin/deductions/${id}`); openModal(`รายละเอียด ${d.row.case_code}`,`<div class="notice">${warn}</div>${detailBlock('ข้อมูลเคส',d.row)}${d.job?detailBlock('ข้อมูลงาน',d.job):''}<h3>Audit</h3><pre>${esc(JSON.stringify(d.audit_logs||[],null,2))}</pre>`); }
+  function detailBlock(title,obj){ return `<div class="mini-card"><div class="mini-title">${esc(title)}</div><pre>${esc(JSON.stringify(obj,null,2))}</pre></div>`; }
+  async function edit(id){ const d=await api(`/admin/deductions/${id}`); openModal(`แก้ไข ${d.row.case_code}`,deductionForm(d.row)); attachSearchHandlers(); $('mTechSearch').disabled=true; $('mSave').onclick=async()=>{await api(`/admin/deductions/${id}`,{method:'PATCH',body:JSON.stringify(readDeductionForm())}); closeModal(); await loadAll();}; }
+  async function transition(id,action,needNote){ const note=needNote?prompt('ระบุเหตุผล'):''; if(needNote&&!note)return; if(!confirm('ยืนยันดำเนินการ?'))return; await api(`/admin/deductions/${id}/${action}`,{method:'POST',body:JSON.stringify({note})}); await loadAll(); }
+  async function loadWarranty(){ setStatus('กำลังโหลดงานในประกัน...'); const query=qs({q:$('wQuery').value,technician_username:$('wTech').value,status:$('wStatus').value,only_without_rework_case:$('wWithout').value}); const d=await api('/admin/deductions/warranty_jobs'+(query?`?${query}`:'')); const rows=d.rows||[]; $('warrantyRows').innerHTML=rows.length?rows.map(r=>`<tr><td><b>#${esc(r.job_code||r.job_id)}</b></td><td>${esc(r.customer_name||'-')}<div class="hint">${esc(r.customer_phone||'')}</div></td><td>${esc(r.technician_name||r.technician_username||'-')}<div class="hint">${esc(r.technician_username||'')}</div></td><td>${shortDate(r.appointment_date)}</td><td>${shortDate(r.warranty_end_at)}</td><td>${chip((r.warranty_days_left||0)+' วัน')}</td><td>${chip(r.job_status)}</td><td>${r.latest_rework_case_id?`#${r.latest_rework_case_id} ${chip(r.latest_rework_status)}`:'ยังไม่มี'}${r.return_reason?`<div class="hint">${esc(r.return_reason)}</div>`:''}</td><td><div class="actions"><button class="btn blue small" data-wrework="${r.job_id}" data-job='${esc(JSON.stringify(r))}'>ส่งงานกลับแก้</button><button class="btn yellow small" data-wdeduct="${r.job_id}" data-job='${esc(JSON.stringify(r))}'>เปิดเคสหักเงิน</button><button class="btn soft small" data-whistory="${r.job_id}">ดูประวัติ</button></div></td></tr>`).join(''):`<tr><td colspan="9" class="empty">ยังไม่พบงานในประกัน</td></tr>`; setStatus(''); }
+  async function openReworkFromJob(job){ openModal('ส่งงานกลับแก้',`<div class="form-grid"><div class="full mini-card"><div class="mini-title">#${esc(job.job_code||job.job_id)} • ${esc(job.customer_name||'-')}</div><div class="mini-meta">ช่าง ${esc(job.technician_name||job.technician_username||'-')} • หมดประกัน ${shortDate(job.warranty_end_at)}</div></div><div><label>เหตุผล</label><select id="wrReason">${reworkTypes.map(t=>`<option value="${t}">${reworkLabels[t]||t}</option>`).join('')}</select></div><div><label>อยู่ในประกัน</label><select id="wrWarranty"><option value="true">ใช่</option><option value="false">ไม่แน่ใจ/ตรวจสอบเพิ่ม</option></select></div><div class="full"><label>รายละเอียด</label><textarea id="wrNote" rows="3" placeholder="อธิบายปัญหาให้ช่างเข้าใจ"></textarea></div><div class="full notice">การส่งงานกลับแก้จะถูกบันทึก audit และทำให้งานกลับเป็นสถานะ “งานแก้ไข”</div><div class="full actions"><button class="btn blue" id="wrSave">ส่งงานกลับแก้</button></div></div>`); $('wrSave').onclick=async()=>{await api(`/admin/jobs/${job.job_id}/rework_case`,{method:'POST',body:JSON.stringify({reason_type:$('wrReason').value,reason_note:$('wrNote').value,warranty_checked:$('wrWarranty').value==='true',technician_username:job.technician_username})}); closeModal(); await loadAll(); setStatus('ส่งงานกลับแก้สำเร็จ','ok');}; }
+  function openHistory(jobId){ document.querySelector('[data-tab="deductions"]').click(); $('fJob').value=jobId; loadDeductions(); }
+  async function loadSuggestions(){ setStatus('กำลังโหลดเคสแนะนำจากระบบ...'); const query=qs({from:$('sFrom').value,to:$('sTo').value,technician_username:$('sTech').value,type:$('sType').value,severity:$('sSeverity').value}); const d=await api('/admin/deductions/suggestions'+(query?`?${query}`:'')); const rows=d.rows||[]; $('suggestionRows').innerHTML=rows.length?rows.map(r=>`<tr><td><b>${esc(r.deduction_type_label_th||r.deduction_type)}</b><div class="hint">${esc(r.deduction_type)} • ${esc(r.source)}</div></td><td>${esc(r.technician_name||r.technician_username||'-')}<div class="hint">${esc(r.technician_phone||'')}</div></td><td>#${esc(r.job_code||r.job_id||'-')}<div class="hint">${esc(r.customer_name||'')} ${esc(r.customer_phone||'')}</div></td><td>${esc(r.reason)}<div class="hint">${esc(r.evidence_summary||'')}</div></td><td><b>${money(r.suggested_amount)}</b></td><td>${chip(r.severity)}</td><td>${r.can_create_case?`<button class="btn blue small" data-screate="${esc(r.suggestion_id)}" data-sug='${esc(JSON.stringify(r))}'>สร้างเคส</button>`:`${chip('มีเคสแล้ว')}<div class="hint">case #${esc(r.existing_case_id)}</div>`}</td></tr>`).join(''):`<tr><td colspan="7" class="empty">ยังไม่มีเคสที่ระบบแนะนำ</td></tr>`; $('suggestionSkipped').textContent=(d.skipped_detections||[]).length?`ยังไม่เปิดจับอัตโนมัติสำหรับข้อมูลที่ยังไม่ชัวร์: ${(d.skipped_detections||[]).join(', ')}`:''; setStatus(''); }
+  function createFromSuggestion(s){ createDeduction({technician_username:s.technician_username,technician_name:s.technician_name,job_id:s.job_id,job_code:s.job_code,customer_name:s.customer_name,deduction_type:s.deduction_type,amount:s.suggested_amount,reason:s.reason,severity:s.severity,evidence_json:[{source:s.source,evidence_summary:s.evidence_summary,suggestion_id:s.suggestion_id}]}); }
+  async function loadRework(){ setStatus('กำลังโหลดงานแก้ไข...'); const query=qs({status:$('rStatus').value,technician_username:$('rTech').value,job_id:$('rJob').value,reason_type:$('rType').value}); const d=await api('/admin/rework_cases'+(query?`?${query}`:'')); const rows=d.rows||[]; $('reworkRows').innerHTML=rows.length?rows.map(r=>`<tr><td><b>${esc(r.case_code)}</b></td><td>#${esc(r.job_id)}</td><td>${esc(r.technician_username||'-')}</td><td>${esc(reworkLabels[r.reason_type]||r.reason_type)}</td><td>${chip(r.status)}</td><td>${chip(resolutionLabels[r.resolution]||r.resolution||'-')}</td><td>${date(r.created_at)}</td><td><div class="actions"><button class="btn soft small" data-rdetail="${r.rework_case_id}">ดู</button>${r.status!=='resolved'?`<button class="btn blue small" data-resolve="${r.rework_case_id}">ปิดเคส</button>`:''}</div></td></tr>`).join(''):`<tr><td colspan="8" class="empty">ยังไม่มีเคสงานแก้ไข</td></tr>`; setStatus(''); }
+  async function reworkDetail(id){ const d=await api(`/admin/rework_cases/${id}`); const r=d.row||{}; openModal(`งานแก้ไข ${esc(r.case_code||'')}`,`<div class="stack"><div class="mini-card"><div class="mini-title">ข้อมูลงาน</div><div>งาน #${esc(d.job?.booking_code||d.job?.job_id||r.job_id)} • ลูกค้า ${esc(d.job?.customer_name||'-')} • ช่าง ${esc(r.technician_username||'-')}</div></div><div class="mini-card"><div class="mini-title">ผลการกลับไปแก้</div><div>สถานะ ${chip(r.status)} ผล ${chip(resolutionLabels[r.resolution]||r.resolution||'-')}</div><div class="mini-meta">revisit_result: ${esc(r.revisit_result||'-')}<br>หมายเหตุช่าง/แอดมิน: ${esc(r.revisit_note||'-')}</div></div>${d.linked_deduction_case?detailBlock('เคสหักเงินที่เชื่อม',d.linked_deduction_case):''}${detailBlock('หลักฐาน/ข้อมูลเคส',r)}${detailBlock('Job updates ที่เกี่ยวกับ rework/revisit',d.job_updates||[])}${detailBlock('Audit',d.audit_logs||[])}</div>`); }
+  async function resolveRework(id){ openModal('ปิดเคสงานแก้ไข',`<div class="form-grid"><div><label>ผลการปิดเคส</label><select id="rwResolution">${Object.entries(resolutionLabels).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select></div><div><label>ผลการกลับไปแก้</label><input id="rwResult" placeholder="เช่น สำเร็จ / ไม่สำเร็จ"></div><div class="full"><label>หมายเหตุ</label><textarea id="rwNote" rows="3"></textarea></div><div class="full"><label><input id="rwCreateDeduction" type="checkbox" style="width:auto;min-height:auto"> สร้างเคสหักเงินที่เชื่อมกับงานแก้ไข</label></div><div><label>ประเภทหักเงิน</label><select id="rwType">${types.map(t=>`<option value="${t}">${typeMeta[t]?.[0]||t}</option>`).join('')}</select></div><div><label>จำนวนเงิน</label><input id="rwAmount" type="number" min="0" step="0.01"></div><div><label>severity</label><select id="rwSeverity"><option>medium</option><option>low</option><option>high</option><option>critical</option></select></div><div class="full"><label>เหตุผลหักเงิน</label><textarea id="rwDeductReason" rows="2"></textarea></div><div class="full notice">${warn}</div><div class="full actions"><button class="btn blue" id="rwSave">ปิดเคส</button></div></div>`); $('rwResolution').onchange=()=>{ if($('rwResolution').value==='deduction_required')$('rwCreateDeduction').checked=true; }; $('rwSave').onclick=async()=>{ await api(`/admin/rework_cases/${id}/resolve`,{method:'POST',body:JSON.stringify({resolution:$('rwResolution').value,revisit_result:$('rwResult').value,revisit_note:$('rwNote').value,create_deduction:$('rwCreateDeduction').checked,deduction_type:$('rwType').value,amount:Number($('rwAmount').value||0),severity:$('rwSeverity').value,deduction_reason:$('rwDeductReason').value})}); closeModal(); await loadAll(); }; }
+  async function loadAudit(){ setStatus('กำลังโหลด audit...'); const query=qs({entity_type:$('aEntityType').value,entity_id:$('aEntityId').value,actor_username:$('aActor').value}); const d=await api('/admin/deductions/audit'+(query?`?${query}`:'')); const rows=d.rows||[]; $('auditRows').innerHTML=rows.length?rows.map(r=>`<tr><td>${date(r.created_at)}</td><td>${esc(r.actor_username||'-')}<br>${chip(r.actor_role||'-')}</td><td>${esc(r.action)}</td><td>${esc(r.entity_type)} #${esc(r.entity_id||'-')}</td><td>${esc(r.note||'')}</td></tr>`).join(''):`<tr><td colspan="5" class="empty">ยังไม่มี audit</td></tr>`; setStatus(''); }
+  async function loadAll(){ await Promise.all([loadSummary(),loadDeductions(),loadWarranty(),loadSuggestions(),loadRework(),loadAudit()]); }
+  document.addEventListener('click',async(ev)=>{ const t=ev.target?.closest?.('[data-tab],[data-detail],[data-edit],[data-submit],[data-approve],[data-reject],[data-void],[data-rdetail],[data-resolve],[data-pick-tech],[data-pick-job],[data-wrework],[data-wdeduct],[data-whistory],[data-screate]'); if(!t)return; try{ setButtonBusy(t,true); if(t.matches('[data-tab]')){ selectedActiveTab=t.dataset.tab; document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); t.classList.add('active'); document.querySelectorAll('.tab-panel').forEach(x=>x.style.display='none'); $(`panel-${t.dataset.tab}`).style.display=''; } if(t.dataset.pickTech){ selectedTech={technician_username:t.dataset.pickTech,label:t.dataset.label||t.dataset.pickTech}; $('mTechSelected').textContent=selectedTech.label; $('mTechResults').innerHTML=''; } if(t.dataset.pickJob){ const job=JSON.parse(t.dataset.job||'{}'); selectedJob=job; $('mJobSelected').textContent=job.label||`#${job.job_id}`; $('mJobResults').innerHTML=''; if(job.technician_username&&!selectedTech){ selectedTech={technician_username:job.technician_username,label:job.technician_name?`${job.technician_name} (${job.technician_username})`:job.technician_username}; if($('mTechSelected'))$('mTechSelected').textContent=selectedTech.label; if($('mTechSearch'))$('mTechSearch').value=selectedTech.label; } } if(t.dataset.detail)await detail(t.dataset.detail); if(t.dataset.edit)await edit(t.dataset.edit); if(t.dataset.submit)await transition(t.dataset.submit,'submit'); if(t.dataset.approve)await transition(t.dataset.approve,'approve'); if(t.dataset.reject)await transition(t.dataset.reject,'reject',true); if(t.dataset.void)await transition(t.dataset.void,'void',true); if(t.dataset.rdetail)await reworkDetail(t.dataset.rdetail); if(t.dataset.resolve)await resolveRework(t.dataset.resolve); if(t.dataset.wrework)await openReworkFromJob(JSON.parse(t.dataset.job||'{}')); if(t.dataset.wdeduct)await createDeduction(JSON.parse(t.dataset.job||'{}')); if(t.dataset.whistory)openHistory(t.dataset.whistory); if(t.dataset.screate)createFromSuggestion(JSON.parse(t.dataset.sug||'{}')); }catch(e){ console.error(e); setStatus(e.message||'ดำเนินการไม่สำเร็จ','error'); alert(e.message||'ดำเนินการไม่สำเร็จ'); }finally{ setButtonBusy(t,false); } });
+  function bind(){ fillOptions(); $('modalClose').onclick=closeModal; $('modalBackdrop').addEventListener('click',e=>{ if(e.target===$('modalBackdrop'))closeModal(); }); $('btnCreateDeduction').onclick=()=>createDeduction(); $('btnRefreshAll').onclick=()=>loadAll().catch(e=>setStatus(e.message,'error')); $('btnLoad').onclick=loadDeductions; $('btnLoadWarranty').onclick=loadWarranty; $('btnLoadSuggestions').onclick=loadSuggestions; $('btnLoadRework').onclick=loadRework; $('btnLoadAudit').onclick=loadAudit; $('btnClear').onclick=()=>{['fFrom','fTo','fTech','fStatus','fType','fSeverity','fJob','fPending'].forEach(id=>$(id).value=''); loadDeductions();}; loadAll().catch(e=>{setStatus(e.message||'โหลดข้อมูลไม่สำเร็จ','error'); alert(e.message);}); }
+  document.addEventListener('DOMContentLoaded',bind);
 })();

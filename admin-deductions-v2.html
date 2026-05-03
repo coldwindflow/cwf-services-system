@@ -6,107 +6,41 @@
   <title>หักเงินและงานแก้ไข - CWF</title>
   <link rel="stylesheet" href="style.css" />
   <style>
-    :root{--blue:#1558d6;--navy:#071947;--yellow:#ffcc00;--ink:#09152f;--muted:#64748b;--line:#d9e5ff;--bg:#f4f8ff}
-    *{box-sizing:border-box}
-    body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:var(--bg)}
-    .wrap{max-width:1220px;margin:0 auto;padding:18px 16px 86px}
-    .hero{display:flex;justify-content:space-between;gap:14px;align-items:flex-end;padding:18px 0}
-    h1{margin:0;color:#fff;font-size:30px;line-height:1.15}
-    .subtitle{color:rgba(255,255,255,.84);font-weight:800;margin-top:6px}
-    .btn{border:0;border-radius:14px;padding:11px 14px;font-weight:1000;cursor:pointer;min-height:44px}
-    .btn.blue{background:linear-gradient(135deg,var(--navy),var(--blue));color:#fff}
-    .btn.yellow{background:linear-gradient(135deg,#ffe875,var(--yellow));color:#111827}
-    .btn.soft{background:#fff;color:var(--navy);border:1px solid var(--line)}
-    .btn.danger{background:#dc2626;color:#fff}
-    .tabs,.actions,.filters,.grid{display:flex;gap:10px;flex-wrap:wrap}
-    .tab{border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:999px;padding:10px 14px;font-weight:1000;cursor:pointer}
-    .tab.active{background:var(--yellow);color:#111827;border-color:transparent}
-    .notice{background:#fff7cc;border:1px solid #f4c430;color:#5c4300;border-radius:8px;padding:12px 14px;font-weight:900;margin:10px 0 14px}
-    .cards{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px}
-    .card,.panel{background:rgba(255,255,255,.98);border:1px solid var(--line);border-radius:8px;box-shadow:0 14px 34px rgba(2,6,23,.08)}
-    .card{padding:14px}.card .k{font-size:12px;color:var(--muted);font-weight:900}.card .v{font-size:24px;font-weight:1100;margin-top:5px;color:var(--navy)}
-    .panel{padding:14px;margin-top:12px}
-    input,select,textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px 11px;min-height:42px;background:#fff;color:var(--ink);font:inherit}
-    label{display:block;font-size:12px;color:var(--muted);font-weight:1000;margin-bottom:5px}
-    .field{min-width:150px;flex:1}
-    .field.small{max-width:150px}
-    .table-wrap{overflow:auto;border-radius:8px;border:1px solid var(--line)}
-    table{width:100%;border-collapse:collapse;background:#fff;min-width:900px}
-    th,td{padding:11px 10px;border-bottom:1px solid #eef3ff;text-align:left;vertical-align:top}
-    th{font-size:12px;color:var(--muted);background:#f8fbff;white-space:nowrap}
-    .chip{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:1000;background:#edf4ff;color:#1647a3}
-    .chip.warn{background:#fff2b8;color:#5c4300}.chip.danger{background:#fee2e2;color:#991b1b}.chip.ok{background:#dcfce7;color:#166534}
-    .modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,.58);display:none;z-index:4000;padding:12px;overflow:auto}
-    .modal{max-width:760px;margin:20px auto;background:#fff;border-radius:8px;border:1px solid var(--line);box-shadow:0 28px 80px rgba(0,0,0,.28);overflow:hidden}
-    .modal-head{display:flex;justify-content:space-between;gap:10px;align-items:center;background:var(--navy);color:#fff;padding:13px 14px}
-    .modal-body{padding:14px}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.full{grid-column:1/-1}
-    pre{white-space:pre-wrap;background:#081225;color:#e5eefc;border-radius:8px;padding:10px;max-height:280px;overflow:auto}
-    .empty{padding:18px;text-align:center;color:var(--muted);font-weight:900}
-    .statusbar{display:none;margin:8px 0 12px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:10px 12px;color:var(--muted);font-weight:900}
-    .statusbar.show{display:block}.statusbar.error{border-color:#fecaca;background:#fff1f2;color:#991b1b}
-    @media(max-width:860px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.hero{align-items:flex-start;flex-direction:column}h1{font-size:25px}.form-grid{grid-template-columns:1fr}.field.small{max-width:none}}
+    :root{--blue:#1558d6;--blue2:#2563eb;--navy:#071947;--yellow:#ffcc00;--ink:#09152f;--muted:#64748b;--line:#d9e5ff;--bg:#f4f8ff;--red:#dc2626;--green:#16a34a}
+    *{box-sizing:border-box} body{margin:0;font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--ink);background:radial-gradient(circle at top left,#e8f1ff 0,#f4f8ff 38%,#fff 100%)}
+    .wrap{max-width:1280px;margin:0 auto;padding:18px 16px 92px}.hero{display:flex;justify-content:space-between;gap:14px;align-items:flex-end;background:linear-gradient(135deg,var(--navy),var(--blue));border-radius:22px;padding:20px;margin:8px 0 14px;box-shadow:0 18px 40px rgba(7,25,71,.22)}
+    h1{margin:0;color:#fff;font-size:30px;line-height:1.15}.subtitle{color:rgba(255,255,255,.86);font-weight:800;margin-top:7px}.hero-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+    .btn{border:0;border-radius:14px;padding:11px 14px;font-weight:1000;cursor:pointer;min-height:42px;box-shadow:0 8px 20px rgba(2,6,23,.08)}.btn:disabled{opacity:.6;cursor:not-allowed}.btn.blue{background:linear-gradient(135deg,var(--navy),var(--blue2));color:#fff}.btn.yellow{background:linear-gradient(135deg,#ffe875,var(--yellow));color:#111827}.btn.soft{background:#fff;color:var(--navy);border:1px solid var(--line);box-shadow:none}.btn.danger{background:var(--red);color:#fff}.btn.small{padding:8px 10px;min-height:34px;border-radius:11px;font-size:12px}
+    .tabs,.actions,.filters,.inline{display:flex;gap:10px;flex-wrap:wrap}.tab{border:1px solid var(--line);background:#fff;color:var(--navy);border-radius:999px;padding:10px 14px;font-weight:1000;cursor:pointer}.tab.active{background:var(--yellow);color:#111827;border-color:transparent}.notice{background:#fff7cc;border:1px solid #f4c430;color:#5c4300;border-radius:14px;padding:12px 14px;font-weight:900;margin:10px 0 14px}.hint{font-size:12px;color:var(--muted);font-weight:800;margin-top:5px}.cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}.card,.panel{background:rgba(255,255,255,.98);border:1px solid var(--line);border-radius:18px;box-shadow:0 14px 34px rgba(2,6,23,.08)}.card{padding:14px}.card .k{font-size:12px;color:var(--muted);font-weight:900}.card .v{font-size:24px;font-weight:1100;margin-top:5px;color:var(--navy)}.panel{padding:14px;margin-top:12px}
+    input,select,textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px 11px;min-height:42px;background:#fff;color:var(--ink);font:inherit}textarea{resize:vertical}label{display:block;font-size:12px;color:var(--muted);font-weight:1000;margin-bottom:5px}.field{min-width:170px;flex:1}.field.small{max-width:170px}.field.medium{max-width:260px}.table-wrap{overflow:auto;border-radius:14px;border:1px solid var(--line)}table{width:100%;border-collapse:collapse;background:#fff;min-width:980px}th,td{padding:11px 10px;border-bottom:1px solid #eef3ff;text-align:left;vertical-align:top}th{font-size:12px;color:var(--muted);background:#f8fbff;white-space:nowrap}.chip{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;font-size:12px;font-weight:1000;background:#edf4ff;color:#1647a3}.chip.warn{background:#fff2b8;color:#5c4300}.chip.danger{background:#fee2e2;color:#991b1b}.chip.ok{background:#dcfce7;color:#166534}.chip.muted{background:#f1f5f9;color:#475569}.stack{display:grid;gap:8px}.mini-card{border:1px solid var(--line);border-radius:14px;padding:10px;background:#f8fbff}.mini-title{font-weight:1000;color:var(--navy)}.mini-meta{font-size:12px;color:var(--muted);font-weight:800;margin-top:3px}.empty{padding:18px;text-align:center;color:var(--muted);font-weight:900}.statusbar{display:none;margin:8px 0 12px;border:1px solid var(--line);background:#fff;border-radius:14px;padding:10px 12px;color:var(--muted);font-weight:900}.statusbar.show{display:block}.statusbar.error{border-color:#fecaca;background:#fff1f2;color:#991b1b}.statusbar.ok{border-color:#bbf7d0;background:#f0fdf4;color:#166534}
+    .modal-backdrop{position:fixed;inset:0;background:rgba(2,6,23,.58);display:none;z-index:4000;padding:12px;overflow:auto}.modal{max-width:900px;margin:18px auto;background:#fff;border-radius:18px;border:1px solid var(--line);box-shadow:0 28px 80px rgba(0,0,0,.28);overflow:hidden}.modal-head{display:flex;justify-content:space-between;gap:10px;align-items:center;background:linear-gradient(135deg,var(--navy),var(--blue));color:#fff;padding:13px 14px}.modal-body{padding:14px}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}.full{grid-column:1/-1}.search-results{display:grid;gap:7px;margin-top:7px;max-height:190px;overflow:auto}.result-item{border:1px solid var(--line);background:#fff;border-radius:12px;padding:9px;text-align:left;cursor:pointer}.result-item:hover{border-color:var(--blue2);background:#f8fbff}.selected-box{border:1px dashed var(--blue2);background:#f0f6ff;border-radius:12px;padding:10px;font-weight:900;color:var(--navy)}pre{white-space:pre-wrap;background:#081225;color:#e5eefc;border-radius:12px;padding:10px;max-height:280px;overflow:auto}
+    @media(max-width:900px){.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.hero{align-items:flex-start;flex-direction:column}h1{font-size:25px}.form-grid{grid-template-columns:1fr}.field.small,.field.medium{max-width:none}.hero-actions{justify-content:flex-start}.btn{width:auto}.modal{margin:8px auto}.wrap{padding-left:10px;padding-right:10px}}
   </style>
 </head>
 <body>
   <div class="wrap">
     <header class="hero">
-      <div>
-        <h1>หักเงินและงานแก้ไข</h1>
-        <div class="subtitle">จัดการเคสหักเงิน งานแก้ไขในประกัน และประวัติการอนุมัติของช่าง</div>
-      </div>
-      <button class="btn yellow" id="btnCreateDeduction">สร้างเคสหักเงิน</button>
+      <div><h1>หักเงินและงานแก้ไข</h1><div class="subtitle">ศูนย์ควบคุมเคสหักเงิน งานแก้ไขในประกัน และเคสที่ระบบตรวจพบให้แอดมินตรวจสอบ</div></div>
+      <div class="hero-actions"><button class="btn yellow" id="btnCreateDeduction">สร้างเคสหักเงิน</button><button class="btn soft" id="btnRefreshAll">รีเฟรชทั้งหมด</button></div>
     </header>
-
     <div class="notice">ยอดนี้ยังไม่ถูกนำไปรวมในรอบจ่ายเงิน จนกว่าจะกดนำเข้ารอบจ่าย</div>
     <div class="statusbar" id="pageStatus"></div>
-
     <section class="cards" id="summaryCards"></section>
-
-    <section class="panel">
-      <div class="tabs">
-        <button class="tab active" data-tab="deductions">เคสหักเงิน</button>
-        <button class="tab" data-tab="rework">งานแก้ไข</button>
-        <button class="tab" data-tab="audit">Audit</button>
-      </div>
-    </section>
-
-    <section class="panel tab-panel" id="panel-deductions">
-      <div class="filters">
-        <div class="field small"><label>จากวันที่</label><input type="date" id="fFrom"></div>
-        <div class="field small"><label>ถึงวันที่</label><input type="date" id="fTo"></div>
-        <div class="field"><label>ช่าง</label><input id="fTech" placeholder="username"></div>
-        <div class="field"><label>สถานะ</label><select id="fStatus"><option value="">ทั้งหมด</option><option>open</option><option>pending_approval</option><option>approved</option><option>applied</option><option>rejected</option><option>voided</option></select></div>
-        <div class="field"><label>ประเภท</label><select id="fType"></select></div>
-        <div class="field"><label>severity</label><select id="fSeverity"><option value="">ทั้งหมด</option><option>low</option><option>medium</option><option>high</option><option>critical</option></select></div>
-        <div class="field small"><label>งานในประกัน</label><input id="fJob" placeholder="job_id"></div>
-        <div class="field small"><label>รออนุมัติ</label><select id="fPending"><option value="">ทั้งหมด</option><option value="1">ใช่</option></select></div>
-        <div class="actions" style="align-items:flex-end"><button class="btn blue" id="btnLoad">ค้นหา</button><button class="btn soft" id="btnClear">ล้าง</button></div>
-      </div>
-      <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>รหัสเคส</th><th>ช่าง</th><th>งาน</th><th>ประเภท</th><th>ยอดหัก</th><th>เหตุผล</th><th>ความรุนแรง</th><th>สถานะ</th><th>วันที่สร้าง</th><th>จัดการ</th></tr></thead><tbody id="deductionRows"></tbody></table></div>
-    </section>
-
-    <section class="panel tab-panel" id="panel-rework" style="display:none">
-      <div class="filters">
-        <div class="field"><label>สถานะ</label><select id="rStatus"><option value="">ทั้งหมด</option><option>open</option><option>in_progress</option><option>resolved</option><option>voided</option></select></div>
-        <div class="field"><label>ช่าง</label><input id="rTech" placeholder="username"></div>
-        <div class="field small"><label>job_id</label><input id="rJob"></div>
-        <div class="field"><label>ประเภท</label><select id="rType"></select></div>
-        <div class="actions" style="align-items:flex-end"><button class="btn blue" id="btnLoadRework">ค้นหา</button></div>
-      </div>
-      <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>รหัส</th><th>งาน</th><th>ช่าง</th><th>ประเภท</th><th>สถานะ</th><th>ผล</th><th>วันที่สร้าง</th><th>จัดการ</th></tr></thead><tbody id="reworkRows"></tbody></table></div>
-    </section>
-
-    <section class="panel tab-panel" id="panel-audit" style="display:none">
-      <div class="filters">
-        <div class="field"><label>entity_type</label><input id="aEntityType"></div>
-        <div class="field"><label>entity_id</label><input id="aEntityId"></div>
-        <div class="field"><label>actor</label><input id="aActor"></div>
-        <div class="actions" style="align-items:flex-end"><button class="btn blue" id="btnLoadAudit">โหลด Audit</button></div>
-      </div>
-      <div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>เวลา</th><th>actor</th><th>action</th><th>entity</th><th>note</th></tr></thead><tbody id="auditRows"></tbody></table></div>
-    </section>
+    <section class="panel"><div class="tabs">
+      <button class="tab active" data-tab="deductions">เคสหักเงิน</button>
+      <button class="tab" data-tab="warranty">งานในประกัน</button>
+      <button class="tab" data-tab="suggestions">เคสแนะนำจากระบบ</button>
+      <button class="tab" data-tab="rework">งานแก้ไข</button>
+      <button class="tab" data-tab="audit">Audit</button>
+    </div></section>
+    <section class="panel tab-panel" id="panel-deductions"><div class="filters">
+      <div class="field small"><label>จากวันที่</label><input type="date" id="fFrom"></div><div class="field small"><label>ถึงวันที่</label><input type="date" id="fTo"></div><div class="field"><label>ช่าง</label><input id="fTech" placeholder="username / ชื่อ / เบอร์"></div><div class="field"><label>สถานะ</label><select id="fStatus"><option value="">ทั้งหมด</option><option>open</option><option>pending_approval</option><option>approved</option><option>applied</option><option>rejected</option><option>voided</option></select></div><div class="field"><label>ประเภท</label><select id="fType"></select></div><div class="field"><label>severity</label><select id="fSeverity"><option value="">ทั้งหมด</option><option>low</option><option>medium</option><option>high</option><option>critical</option></select></div><div class="field small"><label>job_id</label><input id="fJob" placeholder="job_id"></div><div class="field small"><label>รออนุมัติ</label><select id="fPending"><option value="">ทั้งหมด</option><option value="1">ใช่</option></select></div><div class="actions" style="align-items:flex-end"><button class="btn blue" id="btnLoad">ค้นหา</button><button class="btn soft" id="btnClear">ล้าง</button></div>
+    </div><div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>รหัสเคส</th><th>ช่าง</th><th>งาน</th><th>ประเภท</th><th>ยอดหัก</th><th>เหตุผล</th><th>ความรุนแรง</th><th>สถานะ</th><th>วันที่สร้าง</th><th>จัดการ</th></tr></thead><tbody id="deductionRows"></tbody></table></div></section>
+    <section class="panel tab-panel" id="panel-warranty" style="display:none"><div class="filters"><div class="field"><label>ค้นหา</label><input id="wQuery" placeholder="ค้นหาเลขงาน / ชื่อลูกค้า / เบอร์ลูกค้า / ช่าง"></div><div class="field"><label>ช่าง</label><input id="wTech" placeholder="username"></div><div class="field"><label>สถานะงาน</label><input id="wStatus" placeholder="เว้นว่าง = ทั้งหมด"></div><div class="field small"><label>เคสแก้ไข</label><select id="wWithout"><option value="">ทั้งหมด</option><option value="1">ยังไม่มีเคสค้าง</option></select></div><div class="actions" style="align-items:flex-end"><button class="btn blue" id="btnLoadWarranty">โหลดงานในประกัน</button></div></div><div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>เลขงาน</th><th>ลูกค้า</th><th>ช่าง</th><th>วันที่งาน</th><th>หมดประกัน</th><th>เหลือ</th><th>สถานะ</th><th>เคสล่าสุด</th><th>จัดการ</th></tr></thead><tbody id="warrantyRows"></tbody></table></div></section>
+    <section class="panel tab-panel" id="panel-suggestions" style="display:none"><div class="filters"><div class="field small"><label>จากวันที่</label><input type="date" id="sFrom"></div><div class="field small"><label>ถึงวันที่</label><input type="date" id="sTo"></div><div class="field"><label>ช่าง</label><input id="sTech" placeholder="username"></div><div class="field"><label>ประเภท</label><select id="sType"></select></div><div class="field"><label>severity</label><select id="sSeverity"><option value="">ทั้งหมด</option><option>medium</option><option>high</option><option>low</option><option>critical</option></select></div><div class="actions" style="align-items:flex-end"><button class="btn blue" id="btnLoadSuggestions">โหลดเคสแนะนำ</button></div></div><div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>ประเภท</th><th>ช่าง</th><th>งาน</th><th>หลักฐานที่ระบบพบ</th><th>ยอดแนะนำ</th><th>ความรุนแรง</th><th>จัดการ</th></tr></thead><tbody id="suggestionRows"></tbody></table></div><div class="hint" id="suggestionSkipped"></div></section>
+    <section class="panel tab-panel" id="panel-rework" style="display:none"><div class="filters"><div class="field"><label>สถานะ</label><select id="rStatus"><option value="">ทั้งหมด</option><option>open</option><option>in_progress</option><option>resolved</option><option>voided</option></select></div><div class="field"><label>ช่าง</label><input id="rTech" placeholder="username"></div><div class="field small"><label>job_id</label><input id="rJob"></div><div class="field"><label>ประเภท</label><select id="rType"></select></div><div class="actions" style="align-items:flex-end"><button class="btn blue" id="btnLoadRework">ค้นหา</button></div></div><div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>รหัส</th><th>งาน</th><th>ช่าง</th><th>ประเภท</th><th>สถานะ</th><th>ผล</th><th>วันที่สร้าง</th><th>จัดการ</th></tr></thead><tbody id="reworkRows"></tbody></table></div></section>
+    <section class="panel tab-panel" id="panel-audit" style="display:none"><div class="filters"><div class="field"><label>entity_type</label><input id="aEntityType"></div><div class="field"><label>entity_id</label><input id="aEntityId"></div><div class="field"><label>actor</label><input id="aActor"></div><div class="actions" style="align-items:flex-end"><button class="btn blue" id="btnLoadAudit">โหลด Audit</button></div></div><div class="table-wrap" style="margin-top:12px"><table><thead><tr><th>เวลา</th><th>actor</th><th>action</th><th>entity</th><th>note</th></tr></thead><tbody id="auditRows"></tbody></table></div></section>
   </div>
-
   <div class="modal-backdrop" id="modalBackdrop"><div class="modal"><div class="modal-head"><b id="modalTitle">รายละเอียด</b><button class="btn yellow" id="modalClose">ปิด</button></div><div class="modal-body" id="modalBody"></div></div></div>
   <script src="admin-v2-common.js"></script>
   <script src="admin-deductions-v2.js"></script>
