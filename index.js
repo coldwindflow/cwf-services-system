@@ -17439,29 +17439,74 @@ async function _ensureTechnicianTaxProfileSchema(clientOrPool = pool) {
   await q(`CREATE INDEX IF NOT EXISTS idx_tech_tax_profile_requests_status_created ON public.technician_tax_profile_requests(status, requested_at DESC)`);
 }
 
+
+async function _ensureAccountingCompanySettingsSchema() {
+  // Dedicated single-row JSON table for company document settings.
+  // This avoids failures from older production accounting_settings schemas
+  // that were created without a "key" column.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.accounting_company_settings (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      value_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+      updated_by TEXT,
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`ALTER TABLE IF EXISTS public.accounting_company_settings ADD COLUMN IF NOT EXISTS value_json JSONB NOT NULL DEFAULT '{}'::jsonb`);
+  await pool.query(`ALTER TABLE IF EXISTS public.accounting_company_settings ADD COLUMN IF NOT EXISTS updated_by TEXT`);
+  await pool.query(`ALTER TABLE IF EXISTS public.accounting_company_settings ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
+}
+
+function _accountingDefaultCompanySettings() {
+  return {
+    company_name: 'Coldwindflow Air Services',
+    tax_id: '',
+    branch: 'สำนักงานใหญ่',
+    address: '23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260',
+    phone: '098-877-7321',
+    signer_name: 'สุทธิพงษ์ ศรีวารินทร์',
+    signer_position: 'ผู้มีอำนาจลงนาม',
+    logo_url: '/logo.png',
+    signature_url: '',
+    stamp_url: '',
+    vat_rate: 7,
+    wht_rate: 3,
+    footer_note: '',
+    bank_info: '',
+  };
+}
+
+function _mergeAccountingCompanySettings(v = {}) {
+  const d = _accountingDefaultCompanySettings();
+  return {
+    ...d,
+    ...(v || {}),
+    company_name: String(v.company_name || d.company_name).trim() || d.company_name,
+    tax_id: String(v.tax_id || '').trim(),
+    branch: String(v.branch || d.branch).trim() || d.branch,
+    address: String(v.address || d.address).trim() || d.address,
+    phone: String(v.phone || d.phone).trim() || d.phone,
+    signer_name: String(v.signer_name || d.signer_name).trim() || d.signer_name,
+    signer_position: String(v.signer_position || d.signer_position).trim() || d.signer_position,
+    logo_url: String(v.logo_url || d.logo_url).trim() || d.logo_url,
+    signature_url: String(v.signature_url || '').trim(),
+    stamp_url: String(v.stamp_url || '').trim(),
+    vat_rate: _money(v.vat_rate == null ? d.vat_rate : v.vat_rate),
+    wht_rate: _money(v.wht_rate == null ? d.wht_rate : v.wht_rate),
+    footer_note: String(v.footer_note || '').trim(),
+    bank_info: String(v.bank_info || '').trim(),
+  };
+}
+
 async function _getAccountingSettings() {
+  const defaults = _accountingDefaultCompanySettings();
   try {
-    await _ensureAccountingSettingsSchema();
-    const q = await pool.query(`SELECT value_json FROM public.accounting_settings WHERE "key"='company' LIMIT 1`);
-    const v = q.rows[0]?.value_json || {};
-    return {
-      company_name: v.company_name || 'Coldwindflow Air Services',
-      tax_id: v.tax_id || '',
-      branch: v.branch || 'สำนักงานใหญ่',
-      address: v.address || '23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260',
-      phone: v.phone || '098-877-7321',
-      signer_name: v.signer_name || 'สุทธิพงษ์ ศรีวารินทร์',
-      signer_position: v.signer_position || 'ผู้มีอำนาจลงนาม',
-      logo_url: v.logo_url || '/logo.png',
-      signature_url: v.signature_url || '',
-      stamp_url: v.stamp_url || '',
-      vat_rate: v.vat_rate ?? 7,
-      wht_rate: v.wht_rate ?? 3,
-      footer_note: v.footer_note || '',
-      bank_info: v.bank_info || '',
-    };
-  } catch (_) {
-    return { company_name: 'Coldwindflow Air Services', tax_id: '', branch: 'สำนักงานใหญ่', address: '23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260', phone: '098-877-7321', signer_name: 'สุทธิพงษ์ ศรีวารินทร์', signer_position: 'ผู้มีอำนาจลงนาม' };
+    await _ensureAccountingCompanySettingsSchema();
+    const q = await pool.query(`SELECT value_json FROM public.accounting_company_settings WHERE id=1 LIMIT 1`);
+    return _mergeAccountingCompanySettings(q.rows[0]?.value_json || defaults);
+  } catch (e) {
+    console.error('ACCOUNTING_COMPANY_SETTINGS_GET_FALLBACK', e?.message || e);
+    return defaults;
   }
 }
 
@@ -17504,24 +17549,29 @@ function _accountingSettingsFromBody(body = {}, current = {}) {
 }
 
 async function _accountingGetTechTaxProfile(username) {
+  await _ensureTechnicianTaxProfileSchema();
   const tech = String(username || '').trim();
   if (!tech) return null;
   const q = await pool.query(
-    `SELECT u.username,
-            COALESCE(NULLIF(p.full_name,''), NULLIF(u.full_name,''), u.username) AS full_name,
+    `SELECT COALESCE(p.username, u.username, $1) AS username,
+            COALESCE(NULLIF(p.full_name,''), NULLIF(u.full_name,''), p.username, u.username, $1) AS full_name,
             COALESCE(p.phone,'') AS phone,
             COALESCE(p.tax_id,'') AS tax_id,
             COALESCE(p.tax_address,'') AS tax_address,
             COALESCE(p.tax_branch,'') AS tax_branch,
             COALESCE(p.wht_income_type,'ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)') AS wht_income_type,
-            COALESCE(p.wht_default_rate,3)::numeric AS wht_default_rate
-       FROM public.users u
-       LEFT JOIN public.technician_profiles p ON p.username=u.username
-      WHERE u.username=$1
+            COALESCE(p.wht_default_rate,3)::numeric AS wht_default_rate,
+            COALESCE(p.tax_profile_status,'not_submitted') AS tax_profile_status,
+            p.tax_profile_reviewed_by,
+            p.tax_profile_reviewed_at,
+            p.tax_profile_note
+       FROM (SELECT $1::text AS username) seed
+       LEFT JOIN public.technician_profiles p ON LOWER(p.username)=LOWER(seed.username)
+       LEFT JOIN public.users u ON LOWER(u.username)=LOWER(seed.username)
       LIMIT 1`,
     [tech]
   );
-  const row = q.rows[0] || { username: tech, full_name: tech, tax_id: '', tax_address: '', tax_branch: '', wht_income_type: 'ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)', wht_default_rate: 3 };
+  const row = q.rows[0] || { username: tech, full_name: tech, tax_id: '', tax_address: '', tax_branch: '', wht_income_type: 'ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)', wht_default_rate: 3, tax_profile_status: 'not_submitted' };
   const missing = [];
   if (!String(row.full_name || '').trim()) missing.push('ชื่อช่าง/ผู้รับเงิน');
   if (!String(row.tax_id || '').trim()) missing.push('เลขประจำตัวผู้เสียภาษี/บัตรประชาชน');
@@ -17695,24 +17745,24 @@ app.post('/admin/accounting/settings', requireAdminSession, upload.fields([
     if (logo) next.logo_url = logo;
     if (sig) next.signature_url = sig;
     if (stamp) next.stamp_url = stamp;
-    if (!next.company_name) next.company_name = 'Coldwindflow Air Services';
-    await _ensureAccountingSettingsSchema();
-    const payloadJson = JSON.stringify(next);
+    const finalSettings = _mergeAccountingCompanySettings(next);
+    await _ensureAccountingCompanySettingsSchema();
+    const payloadJson = JSON.stringify(finalSettings);
     const upd = await pool.query(
-      `UPDATE public.accounting_settings
+      `UPDATE public.accounting_company_settings
           SET value_json=$1::jsonb, updated_by=$2, updated_at=NOW()
-        WHERE "key"='company'`,
+        WHERE id=1`,
       [payloadJson, actor.username || null]
     );
     if (!upd.rowCount) {
       await pool.query(
-        `INSERT INTO public.accounting_settings("key", value_json, updated_by, updated_at)
-         VALUES('company',$1::jsonb,$2,NOW())`,
+        `INSERT INTO public.accounting_company_settings(id, value_json, updated_by, updated_at)
+         VALUES(1,$1::jsonb,$2,NOW())`,
         [payloadJson, actor.username || null]
       );
     }
-    await logAccountingAudit(req, { action:'UPDATE_ACCOUNTING_SETTINGS', entity_type:'accounting_settings', entity_id:'company', before_json:before, after_json:next, note:'แก้ไขตั้งค่าข้อมูลบริษัทสำหรับออกเอกสาร' });
-    return res.json({ ok:true, settings: next });
+    await logAccountingAudit(req, { action:'UPDATE_ACCOUNTING_SETTINGS', entity_type:'accounting_company_settings', entity_id:'1', before_json:before, after_json:finalSettings, note:'แก้ไขตั้งค่าข้อมูลบริษัทสำหรับออกเอกสาร' });
+    return res.json({ ok:true, settings: finalSettings });
   } catch (e) {
     console.error('POST /admin/accounting/settings', e);
     return res.status(500).json({ ok:false, error:'ACCOUNTING_SETTINGS_SAVE_FAILED', message:e.message });
@@ -18325,7 +18375,27 @@ app.post('/technicians/:username/tax-profile/request', async (req, res) => {
        VALUES($1,$2,$3,$4,$5,$6,$7,'pending') RETURNING *`,
       [username, full_name, tax_id, tax_address, tax_branch || null, wht_income_type, wht_default_rate]
     );
-    await pool.query(`UPDATE public.technician_profiles SET tax_profile_status='pending_review', updated_at=NOW() WHERE username=$1`, [username]);
+    const upd = await pool.query(
+      `UPDATE public.technician_profiles
+          SET full_name=COALESCE(NULLIF($2,''), full_name),
+              tax_id=COALESCE(NULLIF($3,''), tax_id),
+              tax_address=COALESCE(NULLIF($4,''), tax_address),
+              tax_branch=COALESCE(NULLIF($5,''), tax_branch),
+              wht_income_type=COALESCE(NULLIF($6,''), wht_income_type),
+              wht_default_rate=$7,
+              tax_profile_status='pending_review',
+              updated_at=NOW()
+        WHERE LOWER(username)=LOWER($1)
+        RETURNING username`,
+      [username, full_name, tax_id, tax_address, tax_branch || null, wht_income_type, wht_default_rate]
+    );
+    if (!upd.rows.length) {
+      await pool.query(
+        `INSERT INTO public.technician_profiles(username, full_name, tax_id, tax_address, tax_branch, wht_income_type, wht_default_rate, tax_profile_status, updated_at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,'pending_review',NOW())`,
+        [username, full_name, tax_id, tax_address, tax_branch || null, wht_income_type, wht_default_rate]
+      );
+    }
     return res.json({ ok:true, request:ins.rows[0] });
   } catch(e) { console.error('POST /technicians/:username/tax-profile/request', e); return res.status(500).json({ ok:false, error:'TECH_TAX_PROFILE_REQUEST_FAILED', message:e.message }); }
 });
@@ -18442,7 +18512,7 @@ app.post('/admin/accounting/technician-tax-requests/:id/approve', requireAdminSe
               tax_profile_reviewed_by=$8,
               tax_profile_reviewed_at=NOW(),
               updated_at=NOW()
-        WHERE username=$1
+        WHERE LOWER(username)=LOWER($1)
         RETURNING username`,
       [row.username, row.full_name, row.tax_id, row.tax_address, row.tax_branch, row.wht_income_type, row.wht_default_rate, actor]
     );
@@ -18467,7 +18537,7 @@ app.post('/admin/accounting/technician-tax-requests/:id/reject', requireAdminSes
     const id = Number(req.params.id || 0); const actor = _accountingActor(req).username || null;
     const q = await pool.query(`UPDATE public.technician_tax_profile_requests SET status='rejected', reviewed_by=$2, reviewed_at=NOW(), admin_note=$3 WHERE id=$1 RETURNING *`, [id, actor, req.body?.admin_note || null]);
     if (!q.rows[0]) return res.status(404).json({ ok:false, error:'REQUEST_NOT_FOUND' });
-    await pool.query(`UPDATE public.technician_profiles SET tax_profile_status='rejected', tax_profile_note=$2 WHERE username=$1`, [q.rows[0].username, req.body?.admin_note || null]);
+    await pool.query(`UPDATE public.technician_profiles SET tax_profile_status='rejected', tax_profile_note=$2 WHERE LOWER(username)=LOWER($1)`, [q.rows[0].username, req.body?.admin_note || null]);
     await logAccountingAudit(req, { action:'REJECT_TECH_TAX_PROFILE', entity_type:'technician_tax_profile_request', entity_id:String(id), after_json:q.rows[0], note:req.body?.admin_note || 'ปฏิเสธข้อมูลทวิ50ช่าง' });
     return res.json({ ok:true, row:q.rows[0] });
   } catch(e) { return res.status(500).json({ ok:false, error:'REJECT_TAX_REQUEST_FAILED', message:e.message }); }

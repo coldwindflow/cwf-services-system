@@ -4368,8 +4368,9 @@ async function submitTechTaxProfileRequest(ev){
     if(msg) msg.textContent='กำลังส่งคำขอ...';
     const res = await fetch(`/technicians/${encodeURIComponent(u)}/tax-profile/request`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify(body) });
     const data = await res.json().catch(()=>({}));
-    if(!res.ok || data.ok===false) throw new Error(data.error || 'ส่งคำขอไม่สำเร็จ');
+    if(!res.ok || data.ok===false) throw new Error(data.error || data.message || 'ส่งคำขอไม่สำเร็จ');
     if(msg) msg.textContent='✅ ส่งคำขอแล้ว กรุณารอแอดมินอนุมัติ';
+    setTimeout(() => { try { closeTechTaxProfileModal(); } catch (_) {} }, 900);
   }catch(e){ if(msg) msg.textContent='❌ '+(e.message || 'ส่งคำขอไม่สำเร็จ'); }
 }
 async function openTechWhtDocumentsModal(){
