@@ -17748,36 +17748,78 @@ function _accountingLocalAssetPath(urlOrPath) {
   const full = path.join(__dirname, rel);
   return fs.existsSync(full) ? full : '';
 }
-async function _accountingEmbedLocalImage(pdfDoc, assetPath) {
-  const localPath = _accountingLocalAssetPath(assetPath);
-  if (!localPath) return null;
-  const raw = fs.readFileSync(localPath);
-  const lower = localPath.toLowerCase();
-  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return pdfDoc.embedJpg(raw);
-  return pdfDoc.embedPng(raw);
+function resolveAccountingSignaturePath(company = {}) {
+  const candidates = [
+    company.signature_url,
+    '/assets/signatures/owner-signature.png',
+    'assets/signatures/owner-signature.png',
+    '/public/assets/signatures/owner-signature.png',
+  ].map(v => String(v || '').trim()).filter(Boolean);
+  for (const c of candidates) {
+    const local = _accountingLocalAssetPath(c);
+    if (local) return local;
+  }
+  return '';
 }
-
-async function _accountingDrawWhtSignatureOnPdf(pdfDoc, page, company = {}) {
-  // ทวิ50แบบราชการไม่ควรมีโลโก้/ตราประทับทับช่องเอกสาร
-  // ใส่เฉพาะลายเซ็นผู้จ่ายเงินในช่องลงชื่อด้านล่างขวา
-  const signatureUrl = company.signature_url || '/assets/signatures/owner-signature.png';
+function _accountingSignaturePublicUrl(company = {}) {
+  const raw = String(company.signature_url || '').trim();
+  if (raw && (/^https?:\/\//i.test(raw) || raw.startsWith('/') || raw.startsWith('data:'))) return raw;
+  return resolveAccountingSignaturePath(company) ? '/assets/signatures/owner-signature.png' : '';
+}
+async function _accountingLoadImageBytes(assetPathOrUrl) {
+  const src = String(assetPathOrUrl || '').trim();
+  if (!src) return null;
+  if (src.startsWith('data:image/')) {
+    const m = src.match(/^data:(image\/(?:png|jpe?g));base64,(.+)$/i);
+    if (!m) return null;
+    return { bytes: Buffer.from(m[2], 'base64'), mime: m[1].toLowerCase(), source: 'data-url' };
+  }
+  if (/^https?:\/\//i.test(src)) {
+    const r = await fetch(src);
+    if (!r.ok) throw new Error(`HTTP_${r.status}`);
+    return { bytes: Buffer.from(await r.arrayBuffer()), mime: String(r.headers.get('content-type') || '').toLowerCase(), source: src };
+  }
+  const localPath = _accountingLocalAssetPath(src) || (fs.existsSync(src) ? src : '');
+  if (!localPath) return null;
+  const lower = localPath.toLowerCase();
+  return { bytes: fs.readFileSync(localPath), mime: lower.endsWith('.jpg') || lower.endsWith('.jpeg') ? 'image/jpeg' : 'image/png', source: localPath };
+}
+async function loadAccountingSignatureImage(pdfDoc, company = {}) {
+  const fallbackPath = resolveAccountingSignaturePath(company);
+  const candidates = [company.signature_url, fallbackPath].map(v => String(v || '').trim()).filter(Boolean);
+  for (const src of candidates) {
+    try {
+      const raw = await _accountingLoadImageBytes(src);
+      if (!raw) continue;
+      if (raw.mime.includes('jpeg') || raw.mime.includes('jpg')) return pdfDoc.embedJpg(raw.bytes);
+      return pdfDoc.embedPng(raw.bytes);
+    } catch (e) {
+      console.warn('ACCOUNTING_SIGNATURE_LOAD_FAILED', src, e?.message || e);
+    }
+  }
+  console.warn('ACCOUNTING_SIGNATURE_MISSING', company.signature_url || '/assets/signatures/owner-signature.png');
+  return null;
+}
+async function drawAccountingSignature(pdfDoc, page, company = {}, box = {}) {
   try {
-    const img = await _accountingEmbedLocalImage(pdfDoc, signatureUrl);
+    const img = await loadAccountingSignatureImage(pdfDoc, company);
     if (!img) return;
-    const maxW = 128;
-    const maxH = 58;
+    const x = Number(box.x ?? 384);
+    const y = Number(box.y ?? 88);
+    const maxW = Number(box.maxW ?? 132);
+    const maxH = Number(box.maxH ?? 46);
     const scale = Math.min(maxW / img.width, maxH / img.height, 1);
     const w = img.width * scale;
     const h = img.height * scale;
     page.drawImage(img, {
-      x: 392 + ((maxW - w) / 2),
-      y: 82,
+      x: x + ((maxW - w) / 2),
+      y: y + ((maxH - h) / 2),
       width: w,
       height: h,
-      opacity: 0.98,
+      opacity: Number(box.opacity ?? 0.98),
     });
   } catch (e) {
-    console.warn('WHT50_SIGNATURE_DRAW_FAILED', e?.message || e);
+    console.warn('ACCOUNTING_SIGNATURE_DRAW_FAILED', e?.message || e);
   }
 }
 async function _accountingWithholdingPdfBuffer(doc, company = {}) {
@@ -17806,54 +17848,105 @@ async function _accountingWithholdingPdfBuffer(doc, company = {}) {
   const pndForm = String(p.form_type || p.pnd_form || 'pnd3').trim().toLowerCase();
   const payerName = `${company.company_name || 'Coldwindflow Air Services'}${company.branch ? ` (${company.branch})` : ''}`;
   const payeeName = String(p.payee_name || doc.customer_name || '').trim();
+  const page = pdfDoc.getPages()[0];
+  const black = require('pdf-lib').rgb(0, 0, 0);
+  const rectByName = {};
+  for (const f of form.getFields()) {
+    try {
+      const widgets = f.acroField.getWidgets();
+      const r = widgets[0]?.getRectangle();
+      if (r) rectByName[f.getName()] = { x: r.x, y: r.y, width: r.width, height: r.height };
+    } catch (_) {}
+  }
+  const fieldRect = (name) => rectByName[name] || null;
+  const fit = (text, maxWidth, font, size, min = 7) => {
+    let s = size;
+    const t = String(text ?? '');
+    while (font && s > min && font.widthOfTextAtSize(t, s) > maxWidth) s -= 0.5;
+    return s;
+  };
+  const drawTextIn = (name, text, opt = {}) => {
+    const r = fieldRect(name);
+    if (!r) return;
+    const font = opt.bold ? (boldFont || regularFont) : (regularFont || boldFont);
+    const size = fit(text, r.width - 3, font, opt.size || 11, opt.min || 7);
+    const y = r.y + Math.max(1.2, (r.height - size) / 2) + (opt.dy || 0);
+    let x = r.x + (opt.dx || 1.5);
+    if (opt.align === 'right' && font) x = r.x + r.width - font.widthOfTextAtSize(String(text ?? ''), size) - 2;
+    if (opt.align === 'center' && font) x = r.x + (r.width - font.widthOfTextAtSize(String(text ?? ''), size)) / 2;
+    page.drawText(String(text ?? ''), { x, y, size, font, color: black, maxWidth: r.width - 2 });
+  };
+  const drawTaxIdDigits = (name, value) => {
+    const r = fieldRect(name);
+    const font = boldFont || regularFont;
+    if (!r || !font) return;
+    const digits = _accountingWhtTaxIdDigits(value).padEnd(13, ' ');
+    const cell = r.width / 13;
+    for (let i = 0; i < 13; i += 1) {
+      const d = digits[i].trim();
+      if (!d) continue;
+      const size = 10.5;
+      page.drawText(d, {
+        x: r.x + (i * cell) + ((cell - font.widthOfTextAtSize(d, size)) / 2),
+        y: r.y + 2.2,
+        size,
+        font,
+        color: black,
+      });
+    }
+  };
+  const drawCheck = (name) => {
+    const r = fieldRect(name);
+    const font = boldFont || regularFont;
+    if (!r || !font) return;
+    page.drawText('X', { x: r.x + 2.4, y: r.y + 1.6, size: 9.5, font, color: black });
+  };
+  const moneyText = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   // ลบปุ่ม Clear Data จาก template เดิม เพื่อไม่ให้ติดไปในเอกสารบริษัท
   _accountingRemovePdfField(form, 'clear data');
 
-  // Header / parties
-  _accountingSetPdfTextField(form, 'book_no', '');
-  _accountingSetPdfTextField(form, 'run_no', docNo);
-  _accountingSetPdfTextField(form, 'id1', payerTaxId);
-  _accountingSetPdfTextField(form, 'name1', payerName);
-  _accountingSetPdfTextField(form, 'tin1', '');
-  _accountingSetPdfTextField(form, 'add1', company.address || '');
-  _accountingSetPdfTextField(form, 'id1_2', payeeTaxId);
-  _accountingSetPdfTextField(form, 'name2', payeeName);
-  _accountingSetPdfTextField(form, 'tin1_2', '');
-  _accountingSetPdfTextField(form, 'add2', p.payee_address || doc.customer_address || '');
-  _accountingSetPdfTextField(form, 'item', p.item_no || '');
-
-  // PND checkboxes: template field order is 1,2,3,4 / 5,6,7 by coordinates.
-  ['chk1','chk2','chk3','chk4','chk5','chk6','chk7'].forEach(k => _accountingCheckPdfBox(form, k, false));
-  const pndMap = { pnd1k: 'chk1', pnd1k_special: 'chk2', pnd2: 'chk3', pnd3: 'chk4', pnd2k: 'chk5', pnd3k: 'chk6', pnd53: 'chk7' };
-  _accountingCheckPdfBox(form, pndMap[pndForm] || 'chk4', true);
-
-  // Row 5: service income under Section 3 Tredecim / 40(8). The full template has many rows; row 5 fields are date14.0/pay1.13.0/tax1.13.0.
-  _accountingSetPdfTextField(form, 'date14.0', paidDate.slash);
-  _accountingSetPdfTextField(form, 'pay1.13.0', incomeAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-  _accountingSetPdfTextField(form, 'tax1.13.0', withholdingAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-  _accountingSetPdfTextField(form, 'spec3', incomeType);
-
-  // Totals and payment method
-  _accountingSetPdfTextField(form, 'pay1.14', incomeAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-  _accountingSetPdfTextField(form, 'tax1.14', withholdingAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
-  _accountingSetPdfTextField(form, 'total', `(${_accountingThaiBahtText(withholdingAmount)})`);
-  ['chk8','chk9','chk10','chk11'].forEach(k => _accountingCheckPdfBox(form, k, false));
-  _accountingCheckPdfBox(form, 'chk8', true); // หัก ณ ที่จ่าย
-  _accountingSetPdfTextField(form, 'date_pay', issueDate.day);
-  _accountingSetPdfTextField(form, 'month_pay', issueDate.month);
-  _accountingSetPdfTextField(form, 'year_pay', issueDate.year);
-
-  // Some official templates use these bottom fields for funds; leave blank explicitly.
-  _accountingSetPdfTextField(form, 'Text1.0.0', '');
-  _accountingSetPdfTextField(form, 'Text1.0.1', '');
-  _accountingSetPdfTextField(form, 'Text1.1.0', '');
-  _accountingSetPdfTextField(form, 'spec4', '');
-
+  // WHT coordinate map: keep template art untouched, flatten blank fields, then
+  // draw values ourselves so Thai text/digits sit inside the government boxes.
+  for (const f of form.getFields()) {
+    try {
+      if (f.constructor?.name === 'PDFTextField') f.setText('');
+      if (f.constructor?.name === 'PDFCheckBox') f.uncheck();
+    } catch (_) {}
+  }
   try { form.updateFieldAppearances(regularFont || boldFont); } catch (_) {}
   try { form.flatten(); } catch (_) {}
-  const page = pdfDoc.getPages()[0];
-  await _accountingDrawWhtSignatureOnPdf(pdfDoc, page, company);
+
+  drawTextIn('run_no', docNo, { size: 8.2, align: 'center', min: 6 });
+  drawTaxIdDigits('id1', payerTaxId);
+  drawTextIn('name1', payerName, { size: 11.5, min: 8 });
+  drawTextIn('tin1', '', { size: 10 });
+  drawTextIn('add1', company.address || '', { size: 10.2, min: 7 });
+  drawTaxIdDigits('id1_2', payeeTaxId);
+  drawTextIn('name2', payeeName, { size: 11.5, min: 8 });
+  drawTextIn('tin1_2', '', { size: 10 });
+  drawTextIn('add2', p.payee_address || doc.customer_address || '', { size: 10, min: 7 });
+  drawTextIn('item', p.item_no || '', { size: 10.5, align: 'center' });
+
+  const pndMap = { pnd1k: 'chk1', pnd1k_special: 'chk2', pnd2: 'chk3', pnd3: 'chk4', pnd2k: 'chk5', pnd3k: 'chk6', pnd53: 'chk7' };
+  drawCheck(pndMap[pndForm] || 'chk4');
+
+  // Row 5: service income under Section 3 Tredecim / 40(8). The full template has many rows; row 5 fields are date14.0/pay1.13.0/tax1.13.0.
+  drawTextIn('date14.0', paidDate.slash, { size: 10.5, align: 'center' });
+  drawTextIn('pay1.13.0', moneyText(incomeAmount), { size: 10.2, align: 'right', min: 7 });
+  drawTextIn('tax1.13.0', moneyText(withholdingAmount), { size: 10.2, align: 'right', min: 7 });
+  drawTextIn('spec3', incomeType, { size: 10, min: 7 });
+
+  // Totals and payment method
+  drawTextIn('pay1.14', moneyText(incomeAmount), { size: 10.2, align: 'right', min: 7 });
+  drawTextIn('tax1.14', moneyText(withholdingAmount), { size: 10.2, align: 'right', min: 7 });
+  drawTextIn('total', `(${_accountingThaiBahtText(withholdingAmount)})`, { size: 11, align: 'center', min: 7 });
+  drawCheck('chk8'); // หัก ณ ที่จ่าย
+  drawTextIn('date_pay', issueDate.day, { size: 10.5, align: 'center' });
+  drawTextIn('month_pay', issueDate.month, { size: 10.5, align: 'center' });
+  drawTextIn('year_pay', issueDate.year, { size: 10.5, align: 'center' });
+
+  await drawAccountingSignature(pdfDoc, page, company, { x: 382, y: 88, maxW: 136, maxH: 44 });
   return Buffer.from(await pdfDoc.save({ useObjectStreams: false }));
 }
 
@@ -18846,6 +18939,7 @@ function _accountingGenericDocumentPrintHtml(doc, company) {
   const fmt = (v) => Number(v || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const typeLabel = ({ quotation:'ใบเสนอราคา', invoice:'ใบแจ้งหนี้', receipt:'ใบเสร็จรับเงิน', tax_invoice:'ใบกำกับภาษี' })[doc.document_type] || doc.document_type;
   const p = doc.payload_json || {};
+  const signatureUrl = _accountingSignaturePublicUrl(company);
   const rows = Array.isArray(p.line_items) ? p.line_items : [];
   const issueDate = doc.issue_date ? _accountingThaiDate(doc.issue_date) : _accountingThaiDate(new Date());
   const dueDate = doc.due_date ? _accountingThaiDate(doc.due_date) : '-';
@@ -18855,7 +18949,7 @@ function _accountingGenericDocumentPrintHtml(doc, company) {
   <div class="box"><b>ลูกค้า</b><br>${escH(doc.customer_name||'-')}<br>${doc.customer_tax_id?`เลขภาษี: ${escH(doc.customer_tax_id)}<br>`:''}${escH(doc.customer_address||'')}${doc.customer_phone?`<br>โทร ${escH(doc.customer_phone)}`:''}</div>
   <table class="tbl"><thead><tr><th>#</th><th>รายการ</th><th class="right">จำนวน</th><th class="right">ราคา/หน่วย</th><th class="right">รวม</th></tr></thead><tbody>${rows.length?rows.map((r,i)=>`<tr><td>${i+1}</td><td>${escH(r.description||r.job_type||'-')}<div class="muted">${escH([r.ac_type, r.wash_variant, r.btu].filter(Boolean).join(' / '))}</div></td><td class="right">${fmt(r.quantity||1)}</td><td class="right">${fmt(r.unit_price||0)}</td><td class="right">${fmt(r.line_total||0)}</td></tr>`).join(''):`<tr><td>1</td><td>ยอดเอกสาร</td><td class="right">1</td><td class="right">${fmt(doc.subtotal)}</td><td class="right">${fmt(doc.subtotal)}</td></tr>`}</tbody><tfoot><tr><th colspan="4" class="right">Subtotal</th><th class="right">${fmt(doc.subtotal)}</th></tr><tr><th colspan="4" class="right">ส่วนลด</th><th class="right">${fmt(doc.discount_amount)}</th></tr><tr><th colspan="4" class="right">VAT</th><th class="right">${fmt(doc.vat_amount)}</th></tr><tr><th colspan="4" class="right">หัก ณ ที่จ่าย</th><th class="right">${fmt(doc.withholding_amount)}</th></tr><tr><th colspan="4" class="right">ยอดรวมสุทธิ</th><th class="right">${fmt(doc.total_amount)}</th></tr></tfoot></table>
   <div class="box"><b>หมายเหตุ</b><br>${escH(p.note || company.footer_text || 'เอกสารนี้ใช้ประกอบการตรวจสอบและทำรายการของ Coldwindflow Air Services')}</div>
-  <div class="sign"><div class="signBox">${company.stamp_url?`<img class="asset" src="${escH(company.stamp_url)}"><br>`:''}${company.signature_url?`<img class="asset" src="${escH(company.signature_url)}"><br>`:''}<div>ลงชื่อ _______________________</div><b>${escH(company.signer_name||'')}</b><div class="muted">${escH(company.signer_position||'')}</div></div></div>
+  <div class="sign"><div class="signBox">${company.stamp_url?`<img class="asset" src="${escH(company.stamp_url)}"><br>`:''}${signatureUrl?`<img class="asset" src="${escH(signatureUrl)}"><br>`:''}<div>ลงชื่อ _______________________</div><b>${escH(company.signer_name||'')}</b><div class="muted">${escH(company.signer_position||'')}</div></div></div>
 </main></body></html>`;
 }
 
@@ -19342,6 +19436,7 @@ function docHtml(title, data) {
   const COMPANY_ADDRESS = process.env.COMPANY_ADDRESS || "23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260";
   const COMPANY_PHONE = process.env.COMPANY_PHONE || "098-877-7321";
   const COMPANY_LINE = process.env.COMPANY_LINE || "@cwfair";
+  const COMPANY_SIGNATURE_URL = process.env.COMPANY_SIGNATURE_URL || _accountingSignaturePublicUrl({ signature_url: '/assets/signatures/owner-signature.png' });
 
   const BANK_NAME = process.env.COMPANY_BANK_NAME || "";
   const BANK_ACCOUNT = process.env.COMPANY_BANK_ACCOUNT || "";
@@ -19437,7 +19532,9 @@ function docHtml(title, data) {
       <div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;">
         <div style="flex:1;min-width:240px;">
           <div class="muted">ลายเซ็นผู้รับเงิน / ผู้ให้บริการ</div>
-          <div style="height:70px;border-bottom:1px dashed rgba(15,23,42,.35);margin-top:8px;"></div>
+          <div style="height:70px;border-bottom:1px dashed rgba(15,23,42,.35);margin-top:8px;text-align:center;">
+            ${COMPANY_SIGNATURE_URL ? `<img src="${COMPANY_SIGNATURE_URL}" alt="authorized signature" style="max-width:180px;max-height:68px;object-fit:contain;">` : ``}
+          </div>
           <div class="muted" style="margin-top:6px;">(${COMPANY_NAME})</div>
         </div>
         <div style="width:220px;text-align:center;">
