@@ -17470,7 +17470,7 @@ function _accountingDefaultCompanySettings() {
     signer_name: 'สุทธิพงษ์ ศรีวารินทร์',
     signer_position: 'ผู้มีอำนาจลงนาม',
     logo_url: '/logo.png',
-    signature_url: '',
+    signature_url: '/assets/signatures/owner-signature.png',
     stamp_url: '',
     vat_rate: 7,
     wht_rate: 3,
@@ -17492,7 +17492,7 @@ function _mergeAccountingCompanySettings(v = {}) {
     signer_name: String(v.signer_name || d.signer_name).trim() || d.signer_name,
     signer_position: String(v.signer_position || d.signer_position).trim() || d.signer_position,
     logo_url: String(v.logo_url || d.logo_url).trim() || d.logo_url,
-    signature_url: String(v.signature_url || '').trim(),
+    signature_url: String(v.signature_url || d.signature_url).trim() || d.signature_url,
     stamp_url: String(v.stamp_url || '').trim(),
     vat_rate: _money(v.vat_rate == null ? d.vat_rate : v.vat_rate),
     wht_rate: _money(v.wht_rate == null ? d.wht_rate : v.wht_rate),
@@ -17546,7 +17546,7 @@ function _accountingSettingsFromBody(body = {}, current = {}) {
     // Keep existing uploaded assets when the form sends empty URL fields.
     // Users should not lose logo/signature/stamp by simply saving other settings.
     logo_url: String(body.logo_url ?? '').trim() || current.logo_url || '/logo.png',
-    signature_url: String(body.signature_url ?? '').trim() || current.signature_url || '',
+    signature_url: String(body.signature_url ?? '').trim() || current.signature_url || '/assets/signatures/owner-signature.png',
     stamp_url: String(body.stamp_url ?? '').trim() || current.stamp_url || '',
   };
 }
@@ -17699,7 +17699,7 @@ function _accountingThaiBahtText(amount) {
 }
 function _accountingWhtDisplayNo(docNo, issueDate) {
   const raw = String(docNo || '').trim();
-  if (/^WT\d{10}$/.test(raw)) return raw;
+  if (/^WT\d{10,12}$/.test(raw)) return raw;
   const issue = issueDate ? new Date(issueDate) : new Date();
   const bkk = new Date(issue.toLocaleString('en-US', { timeZone: 'Asia/Bangkok' }));
   const year = bkk.getFullYear();
@@ -17748,21 +17748,36 @@ function _accountingLocalAssetPath(urlOrPath) {
   const full = path.join(__dirname, rel);
   return fs.existsSync(full) ? full : '';
 }
-async function _accountingDrawLocalLogoOnWhtPdf(pdfDoc, page, company = {}) {
-  const logoPath = _accountingLocalAssetPath(company.stamp_url || company.logo_url || '/logo.png');
-  if (!logoPath) return;
+async function _accountingEmbedLocalImage(pdfDoc, assetPath) {
+  const localPath = _accountingLocalAssetPath(assetPath);
+  if (!localPath) return null;
+  const raw = fs.readFileSync(localPath);
+  const lower = localPath.toLowerCase();
+  if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) return pdfDoc.embedJpg(raw);
+  return pdfDoc.embedPng(raw);
+}
+
+async function _accountingDrawWhtSignatureOnPdf(pdfDoc, page, company = {}) {
+  // ทวิ50แบบราชการไม่ควรมีโลโก้/ตราประทับทับช่องเอกสาร
+  // ใส่เฉพาะลายเซ็นผู้จ่ายเงินในช่องลงชื่อด้านล่างขวา
+  const signatureUrl = company.signature_url || '/assets/signatures/owner-signature.png';
   try {
-    const raw = fs.readFileSync(logoPath);
-    let img = null;
-    const lower = logoPath.toLowerCase();
-    if (lower.endsWith('.jpg') || lower.endsWith('.jpeg')) img = await pdfDoc.embedJpg(raw);
-    else img = await pdfDoc.embedPng(raw);
-    const maxW = 44, maxH = 22;
-    const scaled = img.scale(Math.min(maxW / img.width, maxH / img.height, 1));
-    // ตำแหน่งตราประทับด้านล่างขวา ตามช่องผู้จ่ายเงินของฟอร์ม
-    page.drawImage(img, { x: 520 - scaled.width, y: 72, width: scaled.width, height: scaled.height, opacity: 0.95 });
+    const img = await _accountingEmbedLocalImage(pdfDoc, signatureUrl);
+    if (!img) return;
+    const maxW = 128;
+    const maxH = 58;
+    const scale = Math.min(maxW / img.width, maxH / img.height, 1);
+    const w = img.width * scale;
+    const h = img.height * scale;
+    page.drawImage(img, {
+      x: 392 + ((maxW - w) / 2),
+      y: 82,
+      width: w,
+      height: h,
+      opacity: 0.98,
+    });
   } catch (e) {
-    console.warn('WHT50_LOGO_DRAW_FAILED', e?.message || e);
+    console.warn('WHT50_SIGNATURE_DRAW_FAILED', e?.message || e);
   }
 }
 async function _accountingWithholdingPdfBuffer(doc, company = {}) {
@@ -17838,7 +17853,7 @@ async function _accountingWithholdingPdfBuffer(doc, company = {}) {
   try { form.updateFieldAppearances(regularFont || boldFont); } catch (_) {}
   try { form.flatten(); } catch (_) {}
   const page = pdfDoc.getPages()[0];
-  await _accountingDrawLocalLogoOnWhtPdf(pdfDoc, page, company);
+  await _accountingDrawWhtSignatureOnPdf(pdfDoc, page, company);
   return Buffer.from(await pdfDoc.save({ useObjectStreams: false }));
 }
 
