@@ -17339,7 +17339,7 @@ function _accountingPayoutCutoffLabel(period = {}) {
 }
 async function _accountingNextDocumentNo(documentType) {
   const type = String(documentType || '').trim();
-  const prefix = ({ quotation: 'QT', invoice: 'INV', receipt: 'RC', tax_invoice: 'TAX', withholding_cert: 'WHT' })[type];
+  const prefix = ({ quotation: 'QT', invoice: 'INV', receipt: 'RC', tax_invoice: 'TAX', withholding_cert: 'WT' })[type];
   if (!prefix) {
     const e = new Error('INVALID_DOCUMENT_TYPE'); e.code = 'INVALID_DOCUMENT_TYPE'; throw e;
   }
@@ -17351,6 +17351,10 @@ async function _accountingNextDocumentNo(documentType) {
      RETURNING last_number`,
     [type, year]
   );
+  if (type === 'withholding_cert') {
+    const month = String(new Date().toLocaleString('en-US', { timeZone: 'Asia/Bangkok', month: '2-digit' })).padStart(2, '0');
+    return `${prefix}${year}${month}${String(q.rows[0]?.last_number || 1).padStart(4, '0')}`;
+  }
   return `${prefix}-${year}-${String(q.rows[0]?.last_number || 1).padStart(4, '0')}`;
 }
 
@@ -17655,18 +17659,102 @@ function _accountingDocumentHtmlEscape(v) {
 function _accountingWithholdingPrintHtml(doc, company) {
   const p = doc.payload_json || {};
   const escH = _accountingDocumentHtmlEscape;
-  const fmt = n => Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-  const issueDate = doc.issue_date ? new Date(doc.issue_date).toLocaleDateString('th-TH', { dateStyle: 'medium' }) : new Date().toLocaleDateString('th-TH', { dateStyle: 'medium' });
-  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escH(doc.document_no)} - หนังสือรับรองหัก ณ ที่จ่าย</title>
-  <style>@page{size:A4;margin:12mm}body{font-family:Arial,'Noto Sans Thai',sans-serif;color:#0f172a;background:#eef5ff;margin:0}.sheet{max-width:900px;margin:18px auto;background:#fff;padding:26px;border:1px solid #dbe4f0}.top{display:flex;justify-content:space-between;gap:14px;border-bottom:3px solid #0b4bb3;padding-bottom:14px}.title{text-align:center;margin:18px 0}.title h1{margin:0;font-size:26px;color:#0b2d66}.box{border:1px solid #cbd5e1;border-radius:12px;padding:12px;margin:10px 0}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}.muted{color:#64748b}.tbl{width:100%;border-collapse:collapse;margin-top:12px}.tbl th,.tbl td{border:1px solid #cbd5e1;padding:9px;text-align:left}.tbl th{background:#eff6ff}.right{text-align:right!important}.sign{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:32px}.signbox{text-align:center;padding-top:38px;border-top:1px solid #94a3b8}.noprint{position:sticky;top:0;background:#0b2d66;color:#fff;padding:10px;text-align:center}.noprint button{background:#ffd21f;border:0;border-radius:999px;padding:10px 18px;font-weight:800}@media print{body{background:#fff}.noprint{display:none}.sheet{margin:0;max-width:none;border:0;padding:0}}</style></head><body><div class="noprint"><button onclick="window.print()">พิมพ์ / Save PDF</button></div><main class="sheet">
-  <div class="top"><div><b>${escH(company.company_name)}</b><div class="muted">เลขประจำตัวผู้เสียภาษี: ${escH(company.tax_id || '-')} • ${escH(company.branch || '')}</div><div>${escH(company.address || '')}</div><div>โทร ${escH(company.phone || '-')}</div></div><div><b>เลขที่เอกสาร</b><br>${escH(doc.document_no)}<br><span class="muted">วันที่ออก ${escH(issueDate)}</span></div></div>
-  <div class="title"><h1>หนังสือรับรองการหักภาษี ณ ที่จ่าย</h1><div>ตามมาตรา 50 ทวิ แห่งประมวลรัษฎากร</div><div class="muted">สำหรับเดือน ${escH(p.wht_month_label || '')}</div></div>
-  <div class="grid"><div class="box"><b>ผู้มีหน้าที่หักภาษี ณ ที่จ่าย</b><br>${escH(company.company_name)}<br>เลขภาษี: ${escH(company.tax_id || '-')}<br>${escH(company.address || '')}</div><div class="box"><b>ผู้ถูกหักภาษี ณ ที่จ่าย</b><br>${escH(p.payee_name || doc.customer_name || '-')}<br>เลขภาษี/บัตรประชาชน: ${escH(p.payee_tax_id || doc.customer_tax_id || '-')}<br>${escH(p.payee_address || doc.customer_address || '')}</div></div>
-  <table class="tbl"><thead><tr><th>ประเภทเงินได้พึงประเมินที่จ่าย</th><th>เดือน/ปีที่จ่าย</th><th class="right">จำนวนเงินที่จ่าย</th><th class="right">อัตราหัก</th><th class="right">ภาษีที่หักไว้</th></tr></thead><tbody><tr><td>${escH(p.income_type || 'ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)')}</td><td>${escH(p.wht_month_label || '')}</td><td class="right">${fmt(p.income_amount)}</td><td class="right">${fmt(p.withholding_rate)}%</td><td class="right">${fmt(p.withholding_amount)}</td></tr></tbody><tfoot><tr><th colspan="2">รวม</th><th class="right">${fmt(p.income_amount)}</th><th></th><th class="right">${fmt(p.withholding_amount)}</th></tr></tfoot></table>
-  <div class="box"><b>อ้างอิงงวดจ่าย:</b> ${(p.source_rows || []).map(x => escH(x.payout_id)).join(', ') || escH(p.source_payout_id || '')}<br><span class="muted">เอกสารนี้เป็นหลักฐานการหักภาษี ณ ที่จ่าย ให้ตรวจความถูกต้องก่อนนำส่ง/ใช้ยื่นภาษี</span></div>
-  <div class="sign"><div class="signbox">ผู้รับเงิน / ผู้ถูกหักภาษี</div><div class="signbox">${escH(company.signer_name || '')}<br>${escH(company.signer_position || '')}</div></div>
-  </main></body></html>`;
+  const num = (n) => Number(n || 0);
+  const fmt = (n) => num(n).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmt0 = (n) => num(n).toLocaleString('th-TH', { maximumFractionDigits: 0 });
+  const issue = doc.issue_date ? new Date(doc.issue_date) : new Date();
+  const paidDateRaw = p.paid_date || p.payment_date || p.wht_paid_date || doc.issue_date || new Date();
+  const paidDate = new Date(paidDateRaw);
+  const d2 = (v) => String(v).padStart(2, '0');
+  const issueDay = d2(issue.getDate());
+  const issueMonth = d2(issue.getMonth() + 1);
+  const issueYear = issue.getFullYear();
+  const paidDateText = Number.isNaN(paidDate.getTime()) ? '' : `${d2(paidDate.getDate())}/${d2(paidDate.getMonth()+1)}/${paidDate.getFullYear()}`;
+  const incomeAmount = num(p.income_amount || doc.total_amount || doc.subtotal || 0);
+  const withholdingAmount = num(p.withholding_amount || doc.withholding_amount || 0);
+  const incomeType = String(p.income_type || 'ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)');
+  const payerName = company.company_name || p.payer?.company_name || 'Coldwindflow Air Services';
+  const payerTaxId = String(company.tax_id || p.payer?.tax_id || '').replace(/\D/g, '');
+  const payerAddress = company.address || p.payer?.address || '';
+  const payerBranch = company.branch || p.payer?.branch || 'สำนักงานใหญ่';
+  const payeeName = p.payee_name || doc.customer_name || p.technician_username || '-';
+  const payeeTaxId = String(p.payee_tax_id || doc.customer_tax_id || '').replace(/\D/g, '');
+  const payeeAddress = p.payee_address || doc.customer_address || '';
+  const payeeBranch = p.payee_branch || '';
+  const docNo = doc.document_no || '';
+  const stampUrl = company.stamp_url || company.logo_url || '';
+  const signatureUrl = company.signature_url || '';
+  const signer = company.signer_name || payerName;
+  const signerPosition = company.signer_position || 'ผู้จ่ายเงิน';
+
+  function digitBoxes(value, len = 13) {
+    const chars = String(value || '').replace(/\D/g, '').slice(0, len).padEnd(len, ' ');
+    return `<span class="digitBoxes">${chars.split('').map(ch => `<span>${escH(ch)}</span>`).join('')}</span>`;
+  }
+  function cb(checked=false) { return `<span class="cb${checked ? ' checked' : ''}">${checked ? '✓' : ''}</span>`; }
+  function thaiBahtText(amount) {
+    amount = Math.round(num(amount) * 100) / 100;
+    const txtNumArr = ['ศูนย์','หนึ่ง','สอง','สาม','สี่','ห้า','หก','เจ็ด','แปด','เก้า'];
+    const txtDigitArr = ['', 'สิบ', 'ร้อย', 'พัน', 'หมื่น', 'แสน', 'ล้าน'];
+    function readInt(n) {
+      n = String(parseInt(n || 0, 10));
+      if (n === '0' || n === 'NaN') return 'ศูนย์';
+      let out = '';
+      const parts = [];
+      while (n.length > 6) { parts.unshift(n.slice(-6)); n = n.slice(0, -6); }
+      parts.unshift(n);
+      parts.forEach((part, pi) => {
+        part = String(parseInt(part,10));
+        let s = '';
+        for (let i = 0; i < part.length; i++) {
+          const d = Number(part[i]);
+          const pos = part.length - i - 1;
+          if (!d) continue;
+          if (pos === 1 && d === 1) s += 'สิบ';
+          else if (pos === 1 && d === 2) s += 'ยี่สิบ';
+          else if (pos === 0 && d === 1 && part.length > 1) s += 'เอ็ด';
+          else s += txtNumArr[d] + txtDigitArr[pos];
+        }
+        out += s + (pi < parts.length - 1 ? 'ล้าน' : '');
+      });
+      return out || 'ศูนย์';
+    }
+    const baht = Math.floor(amount);
+    const satang = Math.round((amount - baht) * 100);
+    return `${readInt(baht)}บาท${satang ? readInt(satang) + 'สตางค์' : 'ถ้วน'}`;
+  }
+  const amountWords = thaiBahtText(withholdingAmount || incomeAmount);
+  const pnd3 = String(p.form_type || p.pnd || 'pnd3').toLowerCase().includes('3');
+  const pnd53 = String(p.form_type || p.pnd || '').toLowerCase().includes('53');
+  const incomeRows = [
+    '1. เงินเดือน ค่าจ้าง เบี้ยเลี้ยง โบนัส ฯลฯ ตามมาตรา 40 (1)',
+    '2. ค่าธรรมเนียม ค่านายหน้า ฯลฯ ตามมาตรา 40 (2)',
+    '3. ค่าแห่งลิขสิทธิ์ ฯลฯ ตามมาตรา 40 (3)',
+    '4. (ก) ดอกเบี้ย ฯลฯ ตามมาตรา 40 (4)(ก)<br>&nbsp;&nbsp;&nbsp;&nbsp;(ข) เงินปันผล เงินส่วนแบ่งกำไร ฯลฯ ตามมาตรา 40 (4)(ข)<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(1) กรณีได้รับเครดิตภาษี 30% / 25% / 20% / อัตราอื่น<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;(2) กรณีไม่ได้รับเครดิตภาษี',
+    '5. การจ่ายเงินได้ที่ต้องหักภาษี ณ ที่จ่ายตามคำสั่งกรมสรรพากรที่ออกตามมาตรา 3 เตรส เช่น ค่าจ้างทำของ ค่าโฆษณา ค่าเช่า ค่าขนส่ง ค่าบริการ ฯลฯ',
+    '6. อื่นๆ (ระบุ) .................................................................'
+  ];
+  const activeIncomeIndex = /40\s*\(\s*1\s*\)|เงินเดือน/.test(incomeType) ? 0
+    : /40\s*\(\s*2\s*\)|นายหน้า/.test(incomeType) ? 1
+    : /40\s*\(\s*3\s*\)|ลิขสิทธิ/.test(incomeType) ? 2
+    : /40\s*\(\s*4\s*\)|ดอกเบี้ย|เงินปันผล/.test(incomeType) ? 3
+    : /อื่น/.test(incomeType) && !/40\s*\(\s*8\s*\)/.test(incomeType) ? 5 : 4;
+
+  return `<!doctype html><html lang="th"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${escH(docNo)} - หนังสือรับรองการหักภาษี ณ ที่จ่าย</title>
+<style>
+@page{size:A4;margin:8mm}*{box-sizing:border-box}body{margin:0;background:#e5e7eb;color:#111;font-family:'TH Sarabun New','Sarabun','Noto Sans Thai',Tahoma,sans-serif}.toolbar{position:sticky;top:0;z-index:5;background:#102a5e;color:#fff;text-align:center;padding:8px}.toolbar button{background:#ffd21f;color:#111;border:0;border-radius:999px;padding:8px 18px;font-weight:800}.whtSheet{width:190mm;min-height:275mm;margin:10px auto;background:#fff;padding:4mm;border:1px solid #111;font-size:12px;line-height:1.18}.copyNote{font-size:11px;font-weight:700;line-height:1.15}.docHead{display:grid;grid-template-columns:1fr 1.1fr .7fr;align-items:start;gap:4px;border-bottom:1px solid #111;padding-bottom:2px}.title{text-align:center}.title h1{font-size:20px;margin:0;font-weight:900}.title div{font-size:13px;font-weight:700}.docNo{text-align:right;font-size:12px}.rowLine{border-bottom:1px dotted #111;min-height:18px;padding:2px 3px;display:flex;align-items:flex-end;gap:5px}.section{border:1px solid #111;border-top:0;padding:2px 4px}.section.first{border-top:1px solid #111;margin-top:2px}.label{font-weight:900}.hint{font-size:9px;color:#222}.twocol{display:grid;grid-template-columns:1fr 1fr;gap:6px}.taxLine{display:flex;justify-content:space-between;gap:6px;align-items:center}.digitBoxes{display:inline-flex;vertical-align:middle;gap:1px;margin-left:3px}.digitBoxes span{display:inline-flex;width:14px;height:17px;border:1px solid #111;align-items:center;justify-content:center;font-size:12px;font-weight:700}.smallBoxes span{width:12px;height:15px}.cb{display:inline-flex;width:13px;height:13px;border:1px solid #111;align-items:center;justify-content:center;font-size:11px;margin:0 3px 0 8px;vertical-align:middle}.checked{font-weight:900}.pnd{font-size:11px;display:flex;gap:6px;align-items:center;flex-wrap:wrap;padding:3px 0}.incomeTable{width:100%;border-collapse:collapse;table-layout:fixed}.incomeTable th,.incomeTable td{border:1px solid #111;padding:3px 4px;vertical-align:top}.incomeTable th{text-align:center;font-size:12px}.incomeName{width:56%}.dateCol{width:15%;text-align:center}.amountCol{width:14%;text-align:right}.taxCol{width:15%;text-align:right}.incomeList{min-height:132mm}.incomeItem{margin:0 0 3px}.selectedIncome{font-weight:900}.selectedIncome:before{content:'✓ ';font-weight:900}.right{text-align:right}.center{text-align:center}.totalRow td{font-weight:900}.fundLine{border:1px solid #111;border-top:0;padding:3px 5px;font-size:11px}.payMethod{border:1px solid #111;border-top:0;padding:3px 5px;font-size:11px}.bottomGrid{display:grid;grid-template-columns:39mm 1fr 44mm;border:1px solid #111;border-top:0;min-height:34mm}.warning{border-right:1px solid #111;padding:4px;font-size:10.5px;font-weight:700}.certify{padding:4px;text-align:center;font-size:11px}.signArea{position:relative;padding-top:17px}.signature{max-height:28px;max-width:80px;display:block;margin:0 auto -8px}.stamp{max-height:58px;max-width:68px;position:absolute;right:2px;bottom:3px;opacity:.9}.notes{font-size:9px;font-weight:700;margin-top:2px}.footerDots{letter-spacing:2px;color:#333}.printOnly{display:none}@media print{body{background:#fff}.toolbar{display:none}.whtSheet{margin:0;border:1px solid #111;width:100%;min-height:auto;page-break-after:always}.printOnly{display:block}}
+</style></head><body><div class="toolbar"><button onclick="window.print()">พิมพ์ / Save PDF</button></div><main class="whtSheet">
+  <div class="docHead"><div class="copyNote">ฉบับที่ 1 &nbsp; (สำหรับผู้ถูกหักภาษี ณ ที่จ่าย ใช้แนบพร้อมกับแบบแสดงรายการภาษี)<br>ฉบับที่ 2 &nbsp; (สำหรับผู้ถูกหักภาษี ณ ที่จ่าย เก็บไว้เป็นหลักฐาน)</div><div class="title"><h1>หนังสือรับรองการหักภาษี ณ ที่จ่าย</h1><div>ตามมาตรา 50 ทวิ แห่งประมวลรัษฎากร</div></div><div class="docNo">เล่มที่ ..........................<br>เลขที่ <b>${escH(docNo)}</b></div></div>
+  <div class="section first"><div class="taxLine"><span class="label">ผู้มีหน้าที่หักภาษี ณ ที่จ่าย :-</span><span><b>เลขประจำตัวผู้เสียภาษีอากร (13หลัก)*</b> ${digitBoxes(payerTaxId)}</span></div><div class="rowLine"><b>ชื่อ</b> ${escH(payerName)} <span class="hint">(${escH(payerBranch)})</span></div><div class="rowLine"><b>ที่อยู่</b> ${escH(payerAddress)}</div></div>
+  <div class="section"><div class="taxLine"><span class="label">ผู้ถูกหักภาษี ณ ที่จ่าย :-</span><span><b>เลขประจำตัวผู้เสียภาษีอากร (13หลัก)*</b> ${digitBoxes(payeeTaxId)}</span></div><div class="rowLine"><b>ชื่อ</b> ${escH(payeeName)}</div><div class="rowLine"><b>ที่อยู่</b> ${escH(payeeAddress)} ${payeeBranch ? `(${escH(payeeBranch)})` : ''}</div><div class="pnd"><b>ลำดับที่ ในแบบ</b> ${cb(false)} (1) ภ.ง.ด.1ก ${cb(false)} (2) ภ.ง.ด.1ก พิเศษ ${cb(false)} (3) ภ.ง.ด.2 ${cb(pnd3)} (4) ภ.ง.ด.3 ${cb(false)} (5) ภ.ง.ด.2ก ${cb(false)} (6) ภ.ง.ด.3ก ${cb(pnd53)} (7) ภ.ง.ด.53</div></div>
+  <table class="incomeTable"><thead><tr><th class="incomeName">ประเภทเงินได้พึงประเมินที่จ่าย</th><th class="dateCol">วัน เดือน<br>หรือปีภาษี ที่จ่าย</th><th class="amountCol">จำนวนเงินที่จ่าย</th><th class="taxCol">ภาษีที่หัก<br>และนำส่งไว้</th></tr></thead><tbody><tr><td class="incomeList">${incomeRows.map((row,i)=>`<p class="incomeItem ${i===activeIncomeIndex?'selectedIncome':''}">${row}</p>`).join('')}</td><td class="center" style="vertical-align:bottom"><b>${escH(paidDateText)}</b></td><td class="right" style="vertical-align:bottom"><b>${fmt(incomeAmount)}</b></td><td class="right" style="vertical-align:bottom"><b>${fmt(withholdingAmount)}</b></td></tr><tr class="totalRow"><td colspan="2" class="right">รวมเงินที่จ่ายและภาษีที่หักนำส่ง</td><td class="right">${fmt(incomeAmount)}</td><td class="right">${fmt(withholdingAmount)}</td></tr><tr class="totalRow"><td colspan="3">รวมเงินภาษีที่หักนำส่ง (ตัวอักษร) &nbsp; ${escH(amountWords)}</td><td></td></tr></tbody></table>
+  <div class="fundLine"><b>เงินที่จ่ายเข้า</b> กบข./กสจ./กองทุนสงเคราะห์ครูโรงเรียนเอกชน....................บาท &nbsp;&nbsp; กองทุนประกันสังคม....................บาท &nbsp;&nbsp; กองทุนสำรองเลี้ยงชีพ....................บาท</div>
+  <div class="payMethod"><b>ผู้จ่ายเงิน</b> ${cb(true)} (1) หัก ณ ที่จ่าย ${cb(false)} (2) ออกให้ตลอดไป ${cb(false)} (3) ออกให้ครั้งเดียว ${cb(false)} (4) อื่นๆ (ระบุ) ...........................................................</div>
+  <div class="bottomGrid"><div class="warning"><b>คำเตือน</b><br>ผู้มีหน้าที่ออกหนังสือรับรองการหักภาษี ณ ที่จ่าย ฝ่าฝืนไม่ปฏิบัติตามมาตรา 50 ทวิ แห่งประมวลรัษฎากร ต้องรับโทษทางอาญาตามมาตรา 35 แห่งประมวลรัษฎากร</div><div class="certify">ขอรับรองว่าข้อความและตัวเลขดังกล่าวข้างต้นถูกต้องตรงกับความจริงทุกประการ<div class="signArea">${signatureUrl ? `<img class="signature" src="${escH(signatureUrl)}">` : ''}<div>ลงชื่อ ........................................................ ผู้จ่ายเงิน</div><div>${issueDay} / ${issueMonth} / ${issueYear}</div><div class="hint">(วัน เดือน ปี ที่ออกหนังสือรับรองฯ)</div></div></div><div style="position:relative;padding:4px">${stampUrl ? `<img class="stamp" src="${escH(stampUrl)}">` : ''}</div></div>
+  <div class="notes">หมายเหตุ&nbsp;&nbsp; เลขประจำตัวผู้เสียภาษีอากร (13 หลัก)* หมายถึง 1. กรณีบุคคลธรรมดาไทย ให้ใช้เลขประจำตัวประชาชนของกรมการปกครอง 2. กรณีนิติบุคคล ให้ใช้เลขทะเบียนนิติบุคคลของกรมพัฒนาธุรกิจการค้า 3. กรณีอื่นๆ ให้ใช้เลขประจำตัวผู้เสียภาษีอากร (13 หลัก) ของกรมสรรพากร</div>
+</main></body></html>`;
 }
+
 async function _accountingStoredPayoutTechRows(payout_id) {
   const q = await pool.query(
     `WITH line_sum AS (
