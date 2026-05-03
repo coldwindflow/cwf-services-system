@@ -17721,7 +17721,7 @@ const ACCOUNTING_WHT_LAYOUT = Object.freeze({
   // A4 pdf-lib coordinates, origin is bottom-left. Signature is intentionally
   // small and clipped to the payer signer box so it cannot cover the date,
   // payer text, stamp placeholder, or certification wording.
-  signatureBox: Object.freeze({ x: 334, y: 91, maxW: 86, maxH: 20 }),
+  signatureBox: Object.freeze({ x: 300, y: 91, maxW: 150, maxH: 27 }),
   taxDigitSize: 10,
   checkboxSize: 9,
   headerTextSize: 10.5,
@@ -17970,7 +17970,12 @@ async function _accountingWithholdingPdfBuffer(doc, company = {}) {
   drawTextIn('month_pay', issueDate.month, { size: 9.8, align: 'center' });
   drawTextIn('year_pay', issueDate.year, { size: 9.8, align: 'center' });
 
-  await drawAccountingSignature(pdfDoc, page, company, ACCOUNTING_WHT_LAYOUT.signatureBox);
+  await drawAccountingSignature(
+    pdfDoc,
+    page,
+    { ...company, signature_url: '/assets/signatures/owner-signature-wht-transparent.png' },
+    ACCOUNTING_WHT_LAYOUT.signatureBox
+  );
   return Buffer.from(await pdfDoc.save({ useObjectStreams: false }));
 }
 
