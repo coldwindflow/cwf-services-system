@@ -497,6 +497,9 @@ async function loadJob(){
           <textarea id="return_reason" rows="2" placeholder="ระบุปัญหาที่ต้องให้ช่างแก้ไข"></textarea>
         </div>
         <button id="btnReturnFix" class="danger" type="button" style="width:auto" ${wOk ? '' : 'disabled'} title="${wOk ? '' : 'หมดประกันแล้ว'}">↩️ ตีกลับเป็นงานแก้ไข</button>
+        <button id="btnCreateReworkCase" class="secondary" type="button" style="width:auto">ส่งงานกลับแก้</button>
+        <button id="btnCreateDeductionCase" class="secondary" type="button" style="width:auto">เปิดเคสหักเงิน</button>
+        <button id="btnViewCaseHistory" class="secondary" type="button" style="width:auto">ดูประวัติเคส</button>
       </div>
       <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:flex-end">
         <div style="width:220px">
@@ -877,6 +880,57 @@ async function loadJob(){
       });
       showToast('ตีกลับงานแก้ไขแล้ว', 'success');
       await loadJob();
+    };
+  }
+
+  const btnCreateReworkCase = el('btnCreateReworkCase');
+  if (btnCreateReworkCase) {
+    btnCreateReworkCase.onclick = async ()=>{
+      const reason = (el('return_reason')?.value||'').trim() || prompt('ระบุปัญหาที่ต้องส่งงานกลับแก้', '');
+      if (!reason) return alert('ต้องระบุปัญหา/เหตุผลก่อนส่งงานกลับแก้');
+      const reason_type = prompt('ประเภทงานแก้ไข: water_leak, not_clean, customer_complaint, missing_photos, same_issue_not_fixed, poor_work_standard, other', 'other') || 'other';
+      if (!confirm('สร้างเคสงานแก้ไขและส่งงานกลับให้ช่างแก้?')) return;
+      await apiFetch(`/admin/jobs/${encodeURIComponent(String(job.job_id))}/rework_case`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason_type, reason_note: reason, warranty_checked: !!job.is_in_warranty })
+      });
+      showToast('สร้างเคสงานแก้ไขแล้ว', 'success');
+      await loadJob();
+    };
+  }
+
+  const btnCreateDeductionCase = el('btnCreateDeductionCase');
+  if (btnCreateDeductionCase) {
+    btnCreateDeductionCase.onclick = async ()=>{
+      const technician_username = String(job.technician_username || '').trim() || prompt('username ช่าง', '');
+      if (!technician_username) return alert('ต้องระบุช่าง');
+      const deduction_type = prompt('ประเภทหักเงิน', 'manual_adjustment') || 'manual_adjustment';
+      const amount = Number(prompt('จำนวนเงินที่ต้องการหัก', '0') || 0);
+      const reason = prompt('เหตุผล', '') || '';
+      if (!amount || amount <= 0 || !reason) return alert('ต้องระบุจำนวนเงินและเหตุผลให้ครบ');
+      await apiFetch('/admin/deductions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ technician_username, job_id: job.job_id, deduction_type, amount, reason, severity: 'medium', evidence_json: [] })
+      });
+      showToast('เปิดเคสหักเงินแล้ว', 'success');
+    };
+  }
+
+  const btnViewCaseHistory = el('btnViewCaseHistory');
+  if (btnViewCaseHistory) {
+    btnViewCaseHistory.onclick = async ()=>{
+      const d = await apiFetch(`/admin/deductions?job_id=${encodeURIComponent(String(job.job_id))}`);
+      const r = await apiFetch(`/admin/rework_cases?job_id=${encodeURIComponent(String(job.job_id))}`);
+      const lines = [
+        'เคสหักเงิน',
+        ...((d.rows || []).map(x => `${x.case_code} | ${x.status} | ${x.deduction_type} | ${Number(x.amount||0).toLocaleString()} บาท | ${x.reason}`)),
+        '',
+        'งานแก้ไข',
+        ...((r.rows || []).map(x => `${x.case_code} | ${x.status} | ${x.reason_type} | ${x.resolution || '-'}`)),
+      ];
+      alert(lines.join('\n') || 'ยังไม่มีประวัติเคส');
     };
   }
 

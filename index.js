@@ -1469,6 +1469,136 @@ async function logAccountingAudit(req, { action, entity_type, entity_id = null, 
   }
 }
 
+const DEDUCTION_TYPES = new Set([
+  'late_arrival','missing_status_update','missing_required_photos','poor_work_quality',
+  'customer_complaint_valid','left_before_complete','no_show','same_day_cancel',
+  'warranty_rework_minor','warranty_rework_major','rework_failed','replacement_technician_cost',
+  'customer_property_damage','company_equipment_damage','off_platform_payment',
+  'confidentiality_breach','fraud_or_false_report','deposit_installment',
+  'deposit_damage_offset','manual_adjustment','overpayment_recovery'
+]);
+const DEDUCTION_SEVERITIES = new Set(['low','medium','high','critical']);
+const REWORK_REASON_TYPES = new Set(['water_leak','not_clean','customer_complaint','missing_photos','same_issue_not_fixed','poor_work_standard','other']);
+const REWORK_RESOLUTIONS = new Set(['fixed','failed','changed_technician','company_absorbed','deduction_required']);
+const PAYOUT_DEDUCTION_WARNING = 'ยอดนี้ยังไม่ถูกนำไปรวมในรอบจ่ายเงิน จนกว่าจะกดนำเข้ารอบจ่าย';
+
+function getActorUsername(req) {
+  const actor = req?.actor || req?.auth || req?.effective || {};
+  return String(actor.username || '').trim() || null;
+}
+
+function getActorRole(req) {
+  const actor = req?.actor || req?.auth || req?.effective || {};
+  return normalizeRole(actor.role || '') || null;
+}
+
+async function generateDeductionCaseCode(client) {
+  const prefix = `DED-${new Date().toISOString().slice(0,10).replace(/-/g,'')}`;
+  for (let i = 0; i < 8; i++) {
+    const r = await client.query(`SELECT nextval(pg_get_serial_sequence('public.technician_deduction_cases','case_id')) AS n`);
+    const code = `${prefix}-${String(r.rows[0].n).padStart(6,'0')}`;
+    const exists = await client.query(`SELECT 1 FROM public.technician_deduction_cases WHERE case_code=$1 LIMIT 1`, [code]);
+    if (!exists.rows.length) return code;
+  }
+  return `${prefix}-${Date.now()}`;
+}
+
+async function generateReworkCaseCode(client) {
+  const prefix = `RW-${new Date().toISOString().slice(0,10).replace(/-/g,'')}`;
+  for (let i = 0; i < 8; i++) {
+    const r = await client.query(`SELECT nextval(pg_get_serial_sequence('public.technician_rework_cases','rework_case_id')) AS n`);
+    const code = `${prefix}-${String(r.rows[0].n).padStart(6,'0')}`;
+    const exists = await client.query(`SELECT 1 FROM public.technician_rework_cases WHERE case_code=$1 LIMIT 1`, [code]);
+    if (!exists.rows.length) return code;
+  }
+  return `${prefix}-${Date.now()}`;
+}
+
+async function logDeductionAudit(client, req, { action, entity_type, entity_id = null, before = null, after = null, note = null } = {}) {
+  await client.query(
+    `INSERT INTO public.technician_deduction_audit_logs
+      (actor_username, actor_role, action, entity_type, entity_id, before_json, after_json, note)
+     VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7::jsonb,$8)`,
+    [
+      getActorUsername(req),
+      getActorRole(req),
+      String(action || '').trim(),
+      String(entity_type || '').trim(),
+      entity_id == null ? null : String(entity_id),
+      before == null ? null : JSON.stringify(before),
+      after == null ? null : JSON.stringify(after),
+      note == null ? null : String(note),
+    ]
+  );
+}
+
+function validateDeductionType(type) {
+  return DEDUCTION_TYPES.has(String(type || '').trim());
+}
+
+function validateSeverity(severity) {
+  return DEDUCTION_SEVERITIES.has(String(severity || '').trim());
+}
+
+function validateDeductionStatusTransition(from, to) {
+  const key = `${String(from || '').trim()}->${String(to || '').trim()}`;
+  return new Set([
+    'open->pending_approval',
+    'pending_approval->approved',
+    'pending_approval->rejected',
+    'open->voided',
+    'pending_approval->voided',
+    'approved->voided',
+  ]).has(key);
+}
+
+function normalizeEvidenceJson(input) {
+  if (input == null || input === '') return [];
+  if (Array.isArray(input)) return input.slice(0, 30);
+  if (typeof input === 'object') return input;
+  const s = String(input || '').trim();
+  if (!s) return [];
+  try {
+    const parsed = JSON.parse(s);
+    if (Array.isArray(parsed)) return parsed.slice(0, 30);
+    if (parsed && typeof parsed === 'object') return parsed;
+  } catch {}
+  return [{ note: s.slice(0, 2000) }];
+}
+
+function deductionListFilters(query = {}) {
+  const where = [];
+  const params = [];
+  let p = 1;
+  const add = (sql, val) => { params.push(val); where.push(sql.replace('?', `$${p++}`)); };
+  if (query.from) add(`created_at >= ?::timestamptz`, `${String(query.from).slice(0,10)} 00:00:00+07:00`);
+  if (query.to) add(`created_at <= ?::timestamptz`, `${String(query.to).slice(0,10)} 23:59:59+07:00`);
+  if (query.technician_username) add(`technician_username = ?`, String(query.technician_username).trim());
+  if (query.status) add(`status = ?`, String(query.status).trim());
+  if (query.deduction_type) add(`deduction_type = ?`, String(query.deduction_type).trim());
+  if (query.severity) add(`severity = ?`, String(query.severity).trim());
+  if (query.job_id) add(`job_id = ?`, Number(query.job_id));
+  if (String(query.pending_approval || '') === '1') add(`status = ?`, 'pending_approval');
+  return { where, params, p };
+}
+
+async function assertTechnicianExistsIfSafe(client, username) {
+  const u = String(username || '').trim();
+  if (!u) return false;
+  try {
+    const r = await client.query(
+      `SELECT 1 FROM public.users WHERE username=$1
+       UNION SELECT 1 FROM public.technician_profiles WHERE username=$1
+       LIMIT 1`,
+      [u]
+    );
+    return !!r.rows.length;
+  } catch (e) {
+    console.warn('[deductions] technician validation skipped:', e.message);
+    return true;
+  }
+}
+
 async function requireInternalApiKeyOnly(req, res, next) {
   try {
     const suppliedKey = getInternalApiKeyFromRequest(req);
@@ -10650,6 +10780,96 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
     // - Read-only dashboard now; write/issue/void flows come later with audit.
     // - Backward compatible only: no destructive migration.
     // =======================================
+    // Technician Deduction & Warranty Rework Center (case/audit tables only).
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_deduction_cases (
+        case_id BIGSERIAL PRIMARY KEY,
+        case_code TEXT UNIQUE NOT NULL,
+        technician_username TEXT NOT NULL,
+        job_id BIGINT NULL REFERENCES public.jobs(job_id) ON DELETE SET NULL,
+        deduction_type TEXT NOT NULL CHECK (deduction_type IN (
+          'late_arrival','missing_status_update','missing_required_photos','poor_work_quality',
+          'customer_complaint_valid','left_before_complete','no_show','same_day_cancel',
+          'warranty_rework_minor','warranty_rework_major','rework_failed','replacement_technician_cost',
+          'customer_property_damage','company_equipment_damage','off_platform_payment',
+          'confidentiality_breach','fraud_or_false_report','deposit_installment',
+          'deposit_damage_offset','manual_adjustment','overpayment_recovery'
+        )),
+        amount NUMERIC(12,2) NOT NULL DEFAULT 0 CHECK (amount >= 0),
+        reason TEXT NOT NULL,
+        evidence_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','pending_approval','approved','applied','rejected','voided')),
+        severity TEXT NOT NULL DEFAULT 'medium' CHECK (severity IN ('low','medium','high','critical')),
+        created_by TEXT,
+        approved_by TEXT,
+        approved_at TIMESTAMPTZ,
+        rejected_by TEXT,
+        rejected_at TIMESTAMPTZ,
+        voided_by TEXT,
+        voided_at TIMESTAMPTZ,
+        applied_by TEXT,
+        applied_at TIMESTAMPTZ,
+        applied_payout_id TEXT NULL,
+        applied_adjustment_id BIGINT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdc_technician_created ON public.technician_deduction_cases(technician_username, created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdc_job_id ON public.technician_deduction_cases(job_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdc_status_created ON public.technician_deduction_cases(status, created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdc_deduction_type ON public.technician_deduction_cases(deduction_type)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdc_severity ON public.technician_deduction_cases(severity)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_rework_cases (
+        rework_case_id BIGSERIAL PRIMARY KEY,
+        case_code TEXT UNIQUE NOT NULL,
+        job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
+        technician_username TEXT,
+        reason_type TEXT NOT NULL CHECK (reason_type IN (
+          'water_leak','not_clean','customer_complaint','missing_photos',
+          'same_issue_not_fixed','poor_work_standard','other'
+        )),
+        reason_note TEXT,
+        warranty_checked BOOLEAN NOT NULL DEFAULT FALSE,
+        warranty_end_at TIMESTAMPTZ,
+        status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','in_progress','resolved','voided')),
+        resolution TEXT CHECK (resolution IS NULL OR resolution IN ('fixed','failed','changed_technician','company_absorbed','deduction_required')),
+        revisit_result TEXT,
+        revisit_note TEXT,
+        evidence_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+        linked_deduction_case_id BIGINT NULL REFERENCES public.technician_deduction_cases(case_id) ON DELETE SET NULL,
+        created_by TEXT,
+        resolved_by TEXT,
+        resolved_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_trc_job_id ON public.technician_rework_cases(job_id)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_trc_technician_created ON public.technician_rework_cases(technician_username, created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_trc_status_created ON public.technician_rework_cases(status, created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_trc_resolution ON public.technician_rework_cases(resolution)`);
+
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS public.technician_deduction_audit_logs (
+        audit_id BIGSERIAL PRIMARY KEY,
+        actor_username TEXT,
+        actor_role TEXT,
+        action TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT,
+        before_json JSONB,
+        after_json JSONB,
+        note TEXT,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      )
+    `);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdal_created ON public.technician_deduction_audit_logs(created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdal_entity ON public.technician_deduction_audit_logs(entity_type, entity_id, created_at DESC)`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdal_actor ON public.technician_deduction_audit_logs(actor_username, created_at DESC)`);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.accounting_permissions (
         username TEXT NOT NULL,
@@ -12916,6 +13136,416 @@ app.get('/admin/job_v2', requireAdminSoft, (req, res) => {
   const id = String(req.query?.id || req.query?.job_id || req.query?.booking_code || '').trim();
   if (!id) return res.status(400).json({ error: 'ต้องระบุ id' });
   return res.redirect(302, `/admin/job_v2/${encodeURIComponent(id)}`);
+});
+
+app.get('/admin/deductions', requireAdminSession, async (req, res) => {
+  try {
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+    const { where, params } = deductionListFilters(req.query || {});
+    const sqlWhere = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const r = await pool.query(
+      `SELECT * FROM public.technician_deduction_cases ${sqlWhere}
+       ORDER BY created_at DESC, case_id DESC LIMIT ${limit}`,
+      params
+    );
+    return res.json({ ok: true, rows: r.rows, message: PAYOUT_DEDUCTION_WARNING });
+  } catch (e) {
+    console.error('GET /admin/deductions', e);
+    return res.status(500).json({ ok: false, error: 'โหลดเคสหักเงินไม่สำเร็จ' });
+  }
+});
+
+app.get('/admin/deductions/summary', requireAdminSession, async (_req, res) => {
+  try {
+    const q = await pool.query(`
+      WITH totals AS (
+        SELECT
+          COUNT(*) FILTER (WHERE status='pending_approval')::int AS pending_count,
+          COALESCE(SUM(amount) FILTER (WHERE status='pending_approval'),0)::numeric AS pending_amount,
+          COALESCE(SUM(amount) FILTER (WHERE status='approved'),0)::numeric AS approved_amount,
+          COUNT(*) FILTER (WHERE severity IN ('high','critical') AND status NOT IN ('rejected','voided'))::int AS high_critical_count
+        FROM public.technician_deduction_cases
+      ),
+      open_rework AS (
+        SELECT COUNT(*)::int AS open_rework_count
+        FROM public.technician_rework_cases
+        WHERE status IN ('open','in_progress')
+      )
+      SELECT * FROM totals, open_rework
+    `);
+    const top = await pool.query(`
+      SELECT technician_username, COUNT(*)::int AS case_count, COALESCE(SUM(amount),0)::numeric AS amount
+        FROM public.technician_deduction_cases
+       WHERE status NOT IN ('rejected','voided')
+       GROUP BY technician_username
+       ORDER BY case_count DESC, amount DESC
+       LIMIT 5
+    `);
+    const recent = await pool.query(`
+      SELECT case_id, case_code, technician_username, job_id, deduction_type, amount, status, severity, created_at
+        FROM public.technician_deduction_cases
+       ORDER BY created_at DESC, case_id DESC
+       LIMIT 8
+    `);
+    return res.json({ ok: true, ...(q.rows[0] || {}), top_technicians_by_cases: top.rows, recent_cases: recent.rows, message: PAYOUT_DEDUCTION_WARNING });
+  } catch (e) {
+    console.error('GET /admin/deductions/summary', e);
+    return res.status(500).json({ ok: false, error: 'โหลดสรุปเคสไม่สำเร็จ' });
+  }
+});
+
+app.post('/admin/deductions', requireAdminSession, async (req, res) => {
+  const b = req.body || {};
+  const technician_username = String(b.technician_username || '').trim();
+  const deduction_type = String(b.deduction_type || '').trim();
+  const amount = Number(b.amount || 0);
+  const reason = String(b.reason || '').trim();
+  const severity = String(b.severity || 'medium').trim();
+  const job_id = b.job_id == null || b.job_id === '' ? null : Number(b.job_id);
+  if (!technician_username) return res.status(400).json({ ok: false, error: 'ต้องระบุช่าง' });
+  if (!validateDeductionType(deduction_type)) return res.status(400).json({ ok: false, error: 'ประเภทหักเงินไม่ถูกต้อง' });
+  if (!Number.isFinite(amount) || amount <= 0) return res.status(400).json({ ok: false, error: 'จำนวนเงินต้องมากกว่า 0' });
+  if (!reason) return res.status(400).json({ ok: false, error: 'ต้องระบุเหตุผล' });
+  if (!validateSeverity(severity)) return res.status(400).json({ ok: false, error: 'ระดับความรุนแรงไม่ถูกต้อง' });
+  if (job_id != null && (!Number.isFinite(job_id) || job_id <= 0)) return res.status(400).json({ ok: false, error: 'job_id ไม่ถูกต้อง' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    if (!(await assertTechnicianExistsIfSafe(client, technician_username))) throw createHttpError(404, 'ไม่พบช่าง');
+    if (job_id != null) {
+      const jr = await client.query(`SELECT 1 FROM public.jobs WHERE job_id=$1 LIMIT 1`, [job_id]);
+      if (!jr.rows.length) throw createHttpError(404, 'ไม่พบงาน');
+    }
+    const evidence = normalizeEvidenceJson(b.evidence_json ?? b.evidence_note);
+    const ins = await client.query(
+      `INSERT INTO public.technician_deduction_cases
+       (case_code, technician_username, job_id, deduction_type, amount, reason, evidence_json, status, severity, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,'open',$8,$9)
+       RETURNING *`,
+      [await generateDeductionCaseCode(client), technician_username, job_id, deduction_type, amount, reason, JSON.stringify(evidence), severity, getActorUsername(req)]
+    );
+    await logDeductionAudit(client, req, { action: 'DEDUCTION_CASE_CREATE', entity_type: 'deduction_case', entity_id: ins.rows[0].case_id, after: ins.rows[0], note: PAYOUT_DEDUCTION_WARNING });
+    await client.query('COMMIT');
+    return res.json({ ok: true, row: ins.rows[0], message: PAYOUT_DEDUCTION_WARNING });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('POST /admin/deductions', e);
+    return res.status(Number(e.status || 500)).json({ ok: false, error: e.message || 'สร้างเคสหักเงินไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/admin/deductions/audit', requireAdminSession, async (req, res) => {
+  try {
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+    const where = [];
+    const params = [];
+    let p = 1;
+    const add = (sql, val) => { params.push(val); where.push(sql.replace('?', `$${p++}`)); };
+    if (req.query.entity_type) add('entity_type=?', String(req.query.entity_type).trim());
+    if (req.query.entity_id) add('entity_id=?', String(req.query.entity_id).trim());
+    if (req.query.actor_username) add('actor_username=?', String(req.query.actor_username).trim());
+    if (req.query.from) add('created_at >= ?::timestamptz', `${String(req.query.from).slice(0,10)} 00:00:00+07:00`);
+    if (req.query.to) add('created_at <= ?::timestamptz', `${String(req.query.to).slice(0,10)} 23:59:59+07:00`);
+    const sqlWhere = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const r = await pool.query(`SELECT * FROM public.technician_deduction_audit_logs ${sqlWhere} ORDER BY created_at DESC, audit_id DESC LIMIT ${limit}`, params);
+    return res.json({ ok: true, rows: r.rows });
+  } catch (e) {
+    console.error('GET /admin/deductions/audit', e);
+    return res.status(500).json({ ok: false, error: 'โหลด audit ไม่สำเร็จ' });
+  }
+});
+
+app.get('/admin/deductions/:id', requireAdminSession, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false, error: 'case_id ไม่ถูกต้อง' });
+  try {
+    const cr = await pool.query(`SELECT * FROM public.technician_deduction_cases WHERE case_id=$1`, [id]);
+    if (!cr.rows.length) return res.status(404).json({ ok: false, error: 'ไม่พบเคส' });
+    const row = cr.rows[0];
+    let job = null;
+    if (row.job_id) {
+      const jr = await pool.query(
+        `SELECT job_id, booking_code, customer_name, customer_phone, job_type, job_status,
+                appointment_datetime, technician_username, warranty_end_at, return_reason
+           FROM public.jobs WHERE job_id=$1`,
+        [row.job_id]
+      );
+      job = jr.rows[0] || null;
+    }
+    const audit = await pool.query(
+      `SELECT * FROM public.technician_deduction_audit_logs
+       WHERE entity_type='deduction_case' AND entity_id=$1
+       ORDER BY created_at DESC, audit_id DESC`,
+      [String(id)]
+    );
+    return res.json({ ok: true, row, job, audit_logs: audit.rows, message: PAYOUT_DEDUCTION_WARNING });
+  } catch (e) {
+    console.error('GET /admin/deductions/:id', e);
+    return res.status(500).json({ ok: false, error: 'โหลดรายละเอียดเคสไม่สำเร็จ' });
+  }
+});
+
+app.patch('/admin/deductions/:id', requireAdminSession, async (req, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false, error: 'case_id ไม่ถูกต้อง' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const cur = await client.query(`SELECT * FROM public.technician_deduction_cases WHERE case_id=$1 FOR UPDATE`, [id]);
+    if (!cur.rows.length) throw createHttpError(404, 'ไม่พบเคส');
+    const before = cur.rows[0];
+    if (before.status !== 'open') throw createHttpError(409, 'แก้ไขได้เฉพาะเคสสถานะ open');
+    const deduction_type = b.deduction_type == null ? before.deduction_type : String(b.deduction_type).trim();
+    const amount = b.amount == null ? Number(before.amount) : Number(b.amount);
+    const reason = b.reason == null ? before.reason : String(b.reason).trim();
+    const severity = b.severity == null ? before.severity : String(b.severity).trim();
+    const evidence = b.evidence_json == null ? before.evidence_json : normalizeEvidenceJson(b.evidence_json);
+    const job_id = b.job_id == null || b.job_id === '' ? null : Number(b.job_id);
+    if (!validateDeductionType(deduction_type)) throw createHttpError(400, 'ประเภทหักเงินไม่ถูกต้อง');
+    if (!Number.isFinite(amount) || amount <= 0) throw createHttpError(400, 'จำนวนเงินต้องมากกว่า 0');
+    if (!reason) throw createHttpError(400, 'ต้องระบุเหตุผล');
+    if (!validateSeverity(severity)) throw createHttpError(400, 'ระดับความรุนแรงไม่ถูกต้อง');
+    if (job_id != null) {
+      const jr = await client.query(`SELECT 1 FROM public.jobs WHERE job_id=$1 LIMIT 1`, [job_id]);
+      if (!jr.rows.length) throw createHttpError(404, 'ไม่พบงาน');
+    }
+    const up = await client.query(
+      `UPDATE public.technician_deduction_cases
+          SET deduction_type=$2, amount=$3, reason=$4, evidence_json=$5::jsonb, severity=$6, job_id=$7, updated_at=NOW()
+        WHERE case_id=$1 RETURNING *`,
+      [id, deduction_type, amount, reason, JSON.stringify(evidence), severity, job_id]
+    );
+    await logDeductionAudit(client, req, { action: 'DEDUCTION_CASE_UPDATE', entity_type: 'deduction_case', entity_id: id, before, after: up.rows[0] });
+    await client.query('COMMIT');
+    return res.json({ ok: true, row: up.rows[0], message: PAYOUT_DEDUCTION_WARNING });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('PATCH /admin/deductions/:id', e);
+    return res.status(Number(e.status || 500)).json({ ok: false, error: e.message || 'แก้ไขเคสไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+async function transitionDeductionCase(req, res, toStatus, action) {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false, error: 'case_id ไม่ถูกต้อง' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const cur = await client.query(`SELECT * FROM public.technician_deduction_cases WHERE case_id=$1 FOR UPDATE`, [id]);
+    if (!cur.rows.length) throw createHttpError(404, 'ไม่พบเคส');
+    const before = cur.rows[0];
+    if (!validateDeductionStatusTransition(before.status, toStatus)) throw createHttpError(409, `เปลี่ยนสถานะจาก ${before.status} เป็น ${toStatus} ไม่ได้`);
+    const note = String(req.body?.note || req.body?.reason || '').trim();
+    if ((toStatus === 'rejected' || toStatus === 'voided') && !note) throw createHttpError(400, 'ต้องระบุเหตุผล');
+    const actor = getActorUsername(req);
+    const sets = ['status=$2', 'updated_at=NOW()'];
+    const params = [id, toStatus];
+    let p = 3;
+    if (toStatus === 'approved') { sets.push(`approved_by=$${p++}`, 'approved_at=NOW()'); params.push(actor); }
+    if (toStatus === 'rejected') { sets.push(`rejected_by=$${p++}`, 'rejected_at=NOW()'); params.push(actor); }
+    if (toStatus === 'voided') { sets.push(`voided_by=$${p++}`, 'voided_at=NOW()'); params.push(actor); }
+    const up = await client.query(`UPDATE public.technician_deduction_cases SET ${sets.join(', ')} WHERE case_id=$1 RETURNING *`, params);
+    await logDeductionAudit(client, req, { action, entity_type: 'deduction_case', entity_id: id, before, after: up.rows[0], note: note || PAYOUT_DEDUCTION_WARNING });
+    await client.query('COMMIT');
+    return res.json({ ok: true, row: up.rows[0], message: PAYOUT_DEDUCTION_WARNING });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error(`POST /admin/deductions/:id/${toStatus}`, e);
+    return res.status(Number(e.status || 500)).json({ ok: false, error: e.message || 'เปลี่ยนสถานะเคสไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+}
+
+app.post('/admin/deductions/:id/submit', requireAdminSession, (req, res) => transitionDeductionCase(req, res, 'pending_approval', 'DEDUCTION_CASE_SUBMIT'));
+app.post('/admin/deductions/:id/approve', requireSuperAdmin, (req, res) => transitionDeductionCase(req, res, 'approved', 'DEDUCTION_CASE_APPROVE'));
+app.post('/admin/deductions/:id/reject', requireSuperAdmin, (req, res) => transitionDeductionCase(req, res, 'rejected', 'DEDUCTION_CASE_REJECT'));
+app.post('/admin/deductions/:id/void', requireSuperAdmin, (req, res) => transitionDeductionCase(req, res, 'voided', 'DEDUCTION_CASE_VOID'));
+
+app.post('/admin/jobs/:job_id/rework_case', requireAdminSession, async (req, res) => {
+  const raw = String(req.params.job_id || '').trim();
+  const reason_type = String(req.body?.reason_type || '').trim();
+  const reason_note = String(req.body?.reason_note || req.body?.reason || '').trim();
+  const warranty_checked = !!req.body?.warranty_checked;
+  if (!REWORK_REASON_TYPES.has(reason_type)) return res.status(400).json({ ok: false, error: 'ประเภทงานแก้ไขไม่ถูกต้อง' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const realId = await resolveJobIdAny(client, raw);
+    if (!realId) throw createHttpError(400, 'job_id ไม่ถูกต้อง');
+    const jr = await client.query(
+      `SELECT job_id, booking_code, technician_username, warranty_end_at, job_status
+         FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+      [realId]
+    );
+    if (!jr.rows.length) throw createHttpError(404, 'ไม่พบงาน');
+    const job = jr.rows[0];
+    const technician_username = String(req.body?.technician_username || job.technician_username || '').trim() || null;
+    const ins = await client.query(
+      `INSERT INTO public.technician_rework_cases
+       (case_code, job_id, technician_username, reason_type, reason_note, warranty_checked, warranty_end_at, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING *`,
+      [await generateReworkCaseCode(client), realId, technician_username, reason_type, reason_note || null, warranty_checked, job.warranty_end_at || null, getActorUsername(req)]
+    );
+    await client.query(
+      `UPDATE public.jobs
+          SET job_status='งานแก้ไข',
+              returned_at=NOW(),
+              return_reason=$1,
+              returned_by=COALESCE($2, returned_by),
+              travel_started_at=NULL,
+              started_at=NULL,
+              checkin_at=NULL,
+              checkin_latitude=NULL,
+              checkin_longitude=NULL,
+              finished_at=NULL,
+              canceled_at=NULL,
+              cancel_reason=NULL,
+              final_signature_path=NULL,
+              final_signature_status=NULL,
+              final_signature_at=NULL
+        WHERE job_id=$3`,
+      [reason_note || reason_type, getActorUsername(req), realId]
+    );
+    await client.query(`UPDATE public.job_assignments SET status='in_progress', done_at=NULL WHERE job_id=$1`, [realId]);
+    await logJobUpdate(realId, {
+      actor_username: getActorUsername(req),
+      actor_role: getActorRole(req) || 'admin',
+      action: 'rework_case_created',
+      message: reason_note || reason_type,
+      payload: { rework_case_id: ins.rows[0].rework_case_id, case_code: ins.rows[0].case_code, reason_type },
+    }, client);
+    await logDeductionAudit(client, req, { action: 'REWORK_CASE_CREATE', entity_type: 'rework_case', entity_id: ins.rows[0].rework_case_id, after: ins.rows[0] });
+    await client.query('COMMIT');
+    return res.json({ ok: true, row: ins.rows[0] });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('POST /admin/jobs/:job_id/rework_case', e);
+    return res.status(Number(e.status || 500)).json({ ok: false, error: e.message || 'สร้างเคสงานแก้ไขไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/admin/rework_cases', requireAdminSession, async (req, res) => {
+  try {
+    const limit = Math.min(200, Math.max(1, Number(req.query.limit || 100)));
+    const where = [];
+    const params = [];
+    let p = 1;
+    const add = (sql, val) => { params.push(val); where.push(sql.replace('?', `$${p++}`)); };
+    if (req.query.status) add('status=?', String(req.query.status).trim());
+    if (req.query.technician_username) add('technician_username=?', String(req.query.technician_username).trim());
+    if (req.query.job_id) add('job_id=?', Number(req.query.job_id));
+    if (req.query.reason_type) add('reason_type=?', String(req.query.reason_type).trim());
+    if (req.query.from) add('created_at >= ?::timestamptz', `${String(req.query.from).slice(0,10)} 00:00:00+07:00`);
+    if (req.query.to) add('created_at <= ?::timestamptz', `${String(req.query.to).slice(0,10)} 23:59:59+07:00`);
+    const sqlWhere = where.length ? `WHERE ${where.join(' AND ')}` : '';
+    const r = await pool.query(`SELECT * FROM public.technician_rework_cases ${sqlWhere} ORDER BY created_at DESC, rework_case_id DESC LIMIT ${limit}`, params);
+    return res.json({ ok: true, rows: r.rows });
+  } catch (e) {
+    console.error('GET /admin/rework_cases', e);
+    return res.status(500).json({ ok: false, error: 'โหลดเคสงานแก้ไขไม่สำเร็จ' });
+  }
+});
+
+app.get('/admin/rework_cases/:id', requireAdminSession, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false, error: 'rework_case_id ไม่ถูกต้อง' });
+  try {
+    const rr = await pool.query(`SELECT * FROM public.technician_rework_cases WHERE rework_case_id=$1`, [id]);
+    if (!rr.rows.length) return res.status(404).json({ ok: false, error: 'ไม่พบเคสงานแก้ไข' });
+    const row = rr.rows[0];
+    const jr = await pool.query(
+      `SELECT job_id, booking_code, customer_name, customer_phone, job_type, job_status,
+              appointment_datetime, technician_username, warranty_end_at, return_reason
+         FROM public.jobs WHERE job_id=$1`,
+      [row.job_id]
+    );
+    let deduction = null;
+    if (row.linked_deduction_case_id) {
+      const dr = await pool.query(`SELECT * FROM public.technician_deduction_cases WHERE case_id=$1`, [row.linked_deduction_case_id]);
+      deduction = dr.rows[0] || null;
+    }
+    const audit = await pool.query(
+      `SELECT * FROM public.technician_deduction_audit_logs
+       WHERE entity_type='rework_case' AND entity_id=$1
+       ORDER BY created_at DESC, audit_id DESC`,
+      [String(id)]
+    );
+    return res.json({ ok: true, row, job: jr.rows[0] || null, linked_deduction_case: deduction, audit_logs: audit.rows });
+  } catch (e) {
+    console.error('GET /admin/rework_cases/:id', e);
+    return res.status(500).json({ ok: false, error: 'โหลดรายละเอียดเคสงานแก้ไขไม่สำเร็จ' });
+  }
+});
+
+app.post('/admin/rework_cases/:id/resolve', requireAdminSession, async (req, res) => {
+  const id = Number(req.params.id);
+  const resolution = String(req.body?.resolution || '').trim();
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false, error: 'rework_case_id ไม่ถูกต้อง' });
+  if (!REWORK_RESOLUTIONS.has(resolution)) return res.status(400).json({ ok: false, error: 'resolution ไม่ถูกต้อง' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const cur = await client.query(`SELECT * FROM public.technician_rework_cases WHERE rework_case_id=$1 FOR UPDATE`, [id]);
+    if (!cur.rows.length) throw createHttpError(404, 'ไม่พบเคสงานแก้ไข');
+    const before = cur.rows[0];
+    if (before.status === 'resolved') throw createHttpError(409, 'เคสนี้ปิดแล้ว');
+    const evidence = normalizeEvidenceJson(req.body?.evidence_json);
+    let linkedDeductionId = before.linked_deduction_case_id || null;
+    let linkedDeduction = null;
+    if (resolution === 'deduction_required' && req.body?.create_deduction === true) {
+      const deduction_type = String(req.body?.deduction_type || '').trim();
+      const amount = Number(req.body?.amount || 0);
+      const reason = String(req.body?.deduction_reason || req.body?.reason || '').trim();
+      const severity = String(req.body?.severity || 'medium').trim();
+      if (!validateDeductionType(deduction_type)) throw createHttpError(400, 'ประเภทหักเงินไม่ถูกต้อง');
+      if (!Number.isFinite(amount) || amount <= 0) throw createHttpError(400, 'จำนวนเงินต้องมากกว่า 0');
+      if (!reason) throw createHttpError(400, 'ต้องระบุเหตุผลหักเงิน');
+      if (!validateSeverity(severity)) throw createHttpError(400, 'ระดับความรุนแรงไม่ถูกต้อง');
+      const dr = await client.query(
+        `INSERT INTO public.technician_deduction_cases
+         (case_code, technician_username, job_id, deduction_type, amount, reason, evidence_json, status, severity, created_by)
+         VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,'open',$8,$9)
+         RETURNING *`,
+        [await generateDeductionCaseCode(client), before.technician_username, before.job_id, deduction_type, amount, reason, JSON.stringify(evidence), severity, getActorUsername(req)]
+      );
+      linkedDeduction = dr.rows[0];
+      linkedDeductionId = linkedDeduction.case_id;
+      await logDeductionAudit(client, req, { action: 'DEDUCTION_CASE_CREATE_FROM_REWORK', entity_type: 'deduction_case', entity_id: linkedDeduction.case_id, after: linkedDeduction, note: PAYOUT_DEDUCTION_WARNING });
+    }
+    const up = await client.query(
+      `UPDATE public.technician_rework_cases
+          SET status='resolved', resolution=$2, revisit_result=$3, revisit_note=$4, evidence_json=$5::jsonb,
+              linked_deduction_case_id=$6, resolved_by=$7, resolved_at=NOW(), updated_at=NOW()
+        WHERE rework_case_id=$1
+        RETURNING *`,
+      [id, resolution, String(req.body?.revisit_result || '').trim() || null, String(req.body?.revisit_note || '').trim() || null, JSON.stringify(evidence), linkedDeductionId, getActorUsername(req)]
+    );
+    await logDeductionAudit(client, req, { action: 'REWORK_CASE_RESOLVE', entity_type: 'rework_case', entity_id: id, before, after: up.rows[0] });
+    await logJobUpdate(before.job_id, {
+      actor_username: getActorUsername(req),
+      actor_role: getActorRole(req) || 'admin',
+      action: 'rework_case_resolved',
+      message: resolution,
+      payload: { rework_case_id: id, resolution, linked_deduction_case_id: linkedDeductionId },
+    }, client);
+    await client.query('COMMIT');
+    return res.json({ ok: true, row: up.rows[0], linked_deduction_case: linkedDeduction, message: PAYOUT_DEDUCTION_WARNING });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('POST /admin/rework_cases/:id/resolve', e);
+    return res.status(Number(e.status || 500)).json({ ok: false, error: e.message || 'ปิดเคสงานแก้ไขไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
 });
 
 function createHttpError(status, message, extra) {

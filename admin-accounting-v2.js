@@ -749,6 +749,7 @@
       window.location.href = `/admin/accounting/reports/${encodeURIComponent(key)}.csv`;
       setTimeout(loadAudit, 900);
     });
+    $('btnOpenDeductions')?.addEventListener('click', () => { location.href = '/admin-deductions-v2.html'; });
     $('btnReloadAccounting')?.addEventListener('click', reloadAll);
     $('workspacePrimaryAction')?.addEventListener('click', workspaceAction);
     $('btnReloadRevenue')?.addEventListener('click', loadRevenue);
