@@ -17470,7 +17470,7 @@ function _accountingDefaultCompanySettings() {
     signer_name: 'สุทธิพงษ์ ศรีวารินทร์',
     signer_position: 'ผู้มีอำนาจลงนาม',
     logo_url: '/logo.png',
-    signature_url: '/assets/signatures/owner-signature.png',
+    signature_url: '/assets/signatures/owner-signature-transparent.png',
     stamp_url: '',
     vat_rate: 7,
     wht_rate: 3,
@@ -17546,7 +17546,7 @@ function _accountingSettingsFromBody(body = {}, current = {}) {
     // Keep existing uploaded assets when the form sends empty URL fields.
     // Users should not lose logo/signature/stamp by simply saving other settings.
     logo_url: String(body.logo_url ?? '').trim() || current.logo_url || '/logo.png',
-    signature_url: String(body.signature_url ?? '').trim() || current.signature_url || '/assets/signatures/owner-signature.png',
+    signature_url: String(body.signature_url ?? '').trim() || current.signature_url || '/assets/signatures/owner-signature-transparent.png',
     stamp_url: String(body.stamp_url ?? '').trim() || current.stamp_url || '',
   };
 }
@@ -17717,6 +17717,17 @@ function _accountingWhtDateFields(value) {
   return { day, month, year, slash: `${day}/${month}/${year}` };
 }
 
+const ACCOUNTING_WHT_LAYOUT = Object.freeze({
+  // A4 pdf-lib coordinates, origin is bottom-left. Signature is intentionally
+  // small and clipped to the payer signer box so it cannot cover the date,
+  // payer text, stamp placeholder, or certification wording.
+  signatureBox: Object.freeze({ x: 398, y: 100, maxW: 108, maxH: 30 }),
+  taxDigitSize: 10,
+  checkboxSize: 9,
+  headerTextSize: 10.5,
+  tableTextSize: 9.8,
+});
+
 function _accountingWithholdingPrintHtml(doc, company) {
   const p = doc.payload_json || {};
   const escH = _accountingDocumentHtmlEscape;
@@ -17749,10 +17760,15 @@ function _accountingLocalAssetPath(urlOrPath) {
   return fs.existsSync(full) ? full : '';
 }
 function resolveAccountingSignaturePath(company = {}) {
+  const configured = String(company.signature_url || '').trim();
+  const configuredIsDefaultOwner = !configured || /(^|\/)owner-signature\.png$/i.test(configured);
   const candidates = [
-    company.signature_url,
+    configuredIsDefaultOwner ? '/assets/signatures/owner-signature-transparent.png' : configured,
+    configuredIsDefaultOwner ? '' : '/assets/signatures/owner-signature-transparent.png',
+    '/assets/signatures/owner-signature-transparent.png',
     '/assets/signatures/owner-signature.png',
     'assets/signatures/owner-signature.png',
+    'assets/signatures/owner-signature-transparent.png',
     '/public/assets/signatures/owner-signature.png',
   ].map(v => String(v || '').trim()).filter(Boolean);
   for (const c of candidates) {
@@ -17763,6 +17779,9 @@ function resolveAccountingSignaturePath(company = {}) {
 }
 function _accountingSignaturePublicUrl(company = {}) {
   const raw = String(company.signature_url || '').trim();
+  if (!raw || /(^|\/)owner-signature\.png$/i.test(raw)) {
+    return resolveAccountingSignaturePath({ signature_url: raw }) ? '/assets/signatures/owner-signature-transparent.png' : '';
+  }
   if (raw && (/^https?:\/\//i.test(raw) || raw.startsWith('/') || raw.startsWith('data:'))) return raw;
   return resolveAccountingSignaturePath(company) ? '/assets/signatures/owner-signature.png' : '';
 }
@@ -17786,8 +17805,13 @@ async function _accountingLoadImageBytes(assetPathOrUrl) {
 }
 async function loadAccountingSignatureImage(pdfDoc, company = {}) {
   const fallbackPath = resolveAccountingSignaturePath(company);
-  const candidates = [company.signature_url, fallbackPath].map(v => String(v || '').trim()).filter(Boolean);
-  for (const src of candidates) {
+  const configured = String(company.signature_url || '').trim();
+  const configuredIsDefaultOwner = !configured || /(^|\/)owner-signature\.png$/i.test(configured);
+  const candidates = configuredIsDefaultOwner
+    ? [fallbackPath, configured]
+    : [configured, fallbackPath];
+  const uniqueCandidates = [...new Set(candidates.map(v => String(v || '').trim()).filter(Boolean))];
+  for (const src of uniqueCandidates) {
     try {
       const raw = await _accountingLoadImageBytes(src);
       if (!raw) continue;
@@ -17797,7 +17821,7 @@ async function loadAccountingSignatureImage(pdfDoc, company = {}) {
       console.warn('ACCOUNTING_SIGNATURE_LOAD_FAILED', src, e?.message || e);
     }
   }
-  console.warn('ACCOUNTING_SIGNATURE_MISSING', company.signature_url || '/assets/signatures/owner-signature.png');
+  console.warn('ACCOUNTING_SIGNATURE_MISSING', company.signature_url || '/assets/signatures/owner-signature-transparent.png');
   return null;
 }
 async function drawAccountingSignature(pdfDoc, page, company = {}, box = {}) {
@@ -17885,7 +17909,7 @@ async function _accountingWithholdingPdfBuffer(doc, company = {}) {
     for (let i = 0; i < 13; i += 1) {
       const d = digits[i].trim();
       if (!d) continue;
-      const size = 10.5;
+      const size = ACCOUNTING_WHT_LAYOUT.taxDigitSize;
       page.drawText(d, {
         x: r.x + (i * cell) + ((cell - font.widthOfTextAtSize(d, size)) / 2),
         y: r.y + 2.2,
@@ -17899,7 +17923,7 @@ async function _accountingWithholdingPdfBuffer(doc, company = {}) {
     const r = fieldRect(name);
     const font = boldFont || regularFont;
     if (!r || !font) return;
-    page.drawText('X', { x: r.x + 2.4, y: r.y + 1.6, size: 9.5, font, color: black });
+    page.drawText('X', { x: r.x + 2.5, y: r.y + 1.7, size: ACCOUNTING_WHT_LAYOUT.checkboxSize, font, color: black });
   };
   const moneyText = (n) => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -17917,36 +17941,36 @@ async function _accountingWithholdingPdfBuffer(doc, company = {}) {
   try { form.updateFieldAppearances(regularFont || boldFont); } catch (_) {}
   try { form.flatten(); } catch (_) {}
 
-  drawTextIn('run_no', docNo, { size: 8.2, align: 'center', min: 6 });
+  drawTextIn('run_no', docNo, { size: 7.6, align: 'center', min: 5.8 });
   drawTaxIdDigits('id1', payerTaxId);
-  drawTextIn('name1', payerName, { size: 11.5, min: 8 });
+  drawTextIn('name1', payerName, { size: ACCOUNTING_WHT_LAYOUT.headerTextSize, min: 8 });
   drawTextIn('tin1', '', { size: 10 });
-  drawTextIn('add1', company.address || '', { size: 10.2, min: 7 });
+  drawTextIn('add1', company.address || '', { size: 9.7, min: 7 });
   drawTaxIdDigits('id1_2', payeeTaxId);
-  drawTextIn('name2', payeeName, { size: 11.5, min: 8 });
+  drawTextIn('name2', payeeName, { size: ACCOUNTING_WHT_LAYOUT.headerTextSize, min: 8 });
   drawTextIn('tin1_2', '', { size: 10 });
-  drawTextIn('add2', p.payee_address || doc.customer_address || '', { size: 10, min: 7 });
+  drawTextIn('add2', p.payee_address || doc.customer_address || '', { size: 9.5, min: 7 });
   drawTextIn('item', p.item_no || '', { size: 10.5, align: 'center' });
 
   const pndMap = { pnd1k: 'chk1', pnd1k_special: 'chk2', pnd2: 'chk3', pnd3: 'chk4', pnd2k: 'chk5', pnd3k: 'chk6', pnd53: 'chk7' };
   drawCheck(pndMap[pndForm] || 'chk4');
 
   // Row 5: service income under Section 3 Tredecim / 40(8). The full template has many rows; row 5 fields are date14.0/pay1.13.0/tax1.13.0.
-  drawTextIn('date14.0', paidDate.slash, { size: 10.5, align: 'center' });
-  drawTextIn('pay1.13.0', moneyText(incomeAmount), { size: 10.2, align: 'right', min: 7 });
-  drawTextIn('tax1.13.0', moneyText(withholdingAmount), { size: 10.2, align: 'right', min: 7 });
-  drawTextIn('spec3', incomeType, { size: 10, min: 7 });
+  drawTextIn('date14.0', paidDate.slash, { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'center' });
+  drawTextIn('pay1.13.0', moneyText(incomeAmount), { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'right', min: 7 });
+  drawTextIn('tax1.13.0', moneyText(withholdingAmount), { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'right', min: 7 });
+  drawTextIn('spec3', incomeType, { size: 9.4, min: 7 });
 
   // Totals and payment method
-  drawTextIn('pay1.14', moneyText(incomeAmount), { size: 10.2, align: 'right', min: 7 });
-  drawTextIn('tax1.14', moneyText(withholdingAmount), { size: 10.2, align: 'right', min: 7 });
-  drawTextIn('total', `(${_accountingThaiBahtText(withholdingAmount)})`, { size: 11, align: 'center', min: 7 });
+  drawTextIn('pay1.14', moneyText(incomeAmount), { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'right', min: 7 });
+  drawTextIn('tax1.14', moneyText(withholdingAmount), { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'right', min: 7 });
+  drawTextIn('total', `(${_accountingThaiBahtText(withholdingAmount)})`, { size: 10.2, align: 'center', min: 7 });
   drawCheck('chk8'); // หัก ณ ที่จ่าย
-  drawTextIn('date_pay', issueDate.day, { size: 10.5, align: 'center' });
-  drawTextIn('month_pay', issueDate.month, { size: 10.5, align: 'center' });
-  drawTextIn('year_pay', issueDate.year, { size: 10.5, align: 'center' });
+  drawTextIn('date_pay', issueDate.day, { size: 9.8, align: 'center' });
+  drawTextIn('month_pay', issueDate.month, { size: 9.8, align: 'center' });
+  drawTextIn('year_pay', issueDate.year, { size: 9.8, align: 'center' });
 
-  await drawAccountingSignature(pdfDoc, page, company, { x: 382, y: 88, maxW: 136, maxH: 44 });
+  await drawAccountingSignature(pdfDoc, page, company, ACCOUNTING_WHT_LAYOUT.signatureBox);
   return Buffer.from(await pdfDoc.save({ useObjectStreams: false }));
 }
 
@@ -19436,7 +19460,7 @@ function docHtml(title, data) {
   const COMPANY_ADDRESS = process.env.COMPANY_ADDRESS || "23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260";
   const COMPANY_PHONE = process.env.COMPANY_PHONE || "098-877-7321";
   const COMPANY_LINE = process.env.COMPANY_LINE || "@cwfair";
-  const COMPANY_SIGNATURE_URL = process.env.COMPANY_SIGNATURE_URL || _accountingSignaturePublicUrl({ signature_url: '/assets/signatures/owner-signature.png' });
+  const COMPANY_SIGNATURE_URL = process.env.COMPANY_SIGNATURE_URL || _accountingSignaturePublicUrl({ signature_url: '/assets/signatures/owner-signature-transparent.png' });
 
   const BANK_NAME = process.env.COMPANY_BANK_NAME || "";
   const BANK_ACCOUNT = process.env.COMPANY_BANK_ACCOUNT || "";
