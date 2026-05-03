@@ -17721,7 +17721,7 @@ const ACCOUNTING_WHT_LAYOUT = Object.freeze({
   // A4 pdf-lib coordinates, origin is bottom-left. Signature is intentionally
   // scaled inside the payer signer box so it cannot cover the date,
   // payer text, stamp placeholder, or certification wording.
-  signatureBox: Object.freeze({ x: 300, y: 84, maxW: 190, maxH: 22 }),
+  signatureBox: Object.freeze({ x: 300, y: 79, maxW: 190, maxH: 22 }),
   taxDigitSize: 10,
   checkboxSize: 9,
   headerTextSize: 10.5,
@@ -17957,13 +17957,13 @@ async function _accountingWithholdingPdfBuffer(doc, company = {}) {
 
   // Row 5: service income under Section 3 Tredecim / 40(8). The full template has many rows; row 5 fields are date14.0/pay1.13.0/tax1.13.0.
   drawTextIn('date14.0', paidDate.slash, { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'center', dy: 1.4 });
-  drawTextIn('pay1.13.0', moneyText(incomeAmount), { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'right', min: 7, dy: 1.4 });
-  drawTextIn('tax1.13.0', moneyText(withholdingAmount), { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'right', min: 7, dy: 1.4 });
+  drawTextIn('pay1.13.0', moneyText(incomeAmount), { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'center', min: 7, dy: 1.4 });
+  drawTextIn('tax1.13.0', moneyText(withholdingAmount), { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'center', min: 7, dy: 1.4 });
   drawTextIn('spec3', incomeType, { size: 9.4, min: 7, dy: 1.2 });
 
   // Totals and payment method
-  drawTextIn('pay1.14', moneyText(incomeAmount), { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'right', min: 7, dy: 1.4 });
-  drawTextIn('tax1.14', moneyText(withholdingAmount), { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'right', min: 7, dy: 1.4 });
+  drawTextIn('pay1.14', moneyText(incomeAmount), { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'center', min: 7, dy: 1.4 });
+  drawTextIn('tax1.14', moneyText(withholdingAmount), { size: ACCOUNTING_WHT_LAYOUT.tableTextSize, align: 'center', min: 7, dy: 1.4 });
   drawTextIn('total', `(${_accountingThaiBahtText(withholdingAmount)})`, { size: 10.2, align: 'center', min: 7, dy: 1 });
   drawCheck('chk8'); // หัก ณ ที่จ่าย
   drawTextIn('date_pay', issueDate.day, { size: 9.8, align: 'center', dy: 1.1 });
