@@ -13174,8 +13174,8 @@ app.get('/admin/deductions/summary', requireAdminSession, async (_req, res) => {
       warranty_jobs AS (
         SELECT COUNT(*)::int AS warranty_jobs_count
         FROM public.jobs j
-        WHERE j.warranty_end_at IS NOT NULL
-          AND j.warranty_end_at >= NOW()
+        WHERE COALESCE(j.warranty_end_at, CASE WHEN j.finished_at IS NOT NULL THEN j.finished_at + INTERVAL '30 days' ELSE NULL END) IS NOT NULL
+          AND COALESCE(j.warranty_end_at, CASE WHEN j.finished_at IS NOT NULL THEN j.finished_at + INTERVAL '30 days' ELSE NULL END) >= NOW()
           AND COALESCE(j.canceled_at, NULL) IS NULL
           AND COALESCE(j.job_status,'') NOT ILIKE '%ยกเลิก%'
           AND COALESCE(j.job_status,'') NOT ILIKE '%cancel%'
@@ -13354,7 +13354,8 @@ app.get('/admin/deductions/job_search', requireAdminSession, async (req, res) =>
       }
     }
     if (technician) { where.push(`COALESCE(ja.technician_username, j.technician_username)=$${p++}`); params.push(technician); }
-    if (warrantyOnly) where.push(`j.warranty_end_at IS NOT NULL AND j.warranty_end_at >= NOW()`);
+    const effectiveWarrantyEndSql = `COALESCE(j.warranty_end_at, CASE WHEN j.finished_at IS NOT NULL THEN j.finished_at + INTERVAL '30 days' ELSE NULL END)`;
+    if (warrantyOnly) where.push(`${effectiveWarrantyEndSql} IS NOT NULL AND ${effectiveWarrantyEndSql} >= NOW()`);
     if (status) { where.push(`j.job_status=$${p++}`); params.push(status); }
     where.push(`COALESCE(j.job_status,'') NOT ILIKE '%ยกเลิก%' AND COALESCE(j.job_status,'') NOT ILIKE '%cancel%'`);
     const sqlWhere = where.length ? `WHERE ${where.join(' AND ')}` : '';
@@ -13367,8 +13368,10 @@ app.get('/admin/deductions/job_search', requireAdminSession, async (req, res) =>
               to_char(j.appointment_datetime AT TIME ZONE 'Asia/Bangkok', 'HH24:MI') AS appointment_time,
               j.appointment_datetime,
               j.job_status,
-              j.warranty_end_at,
-              (j.warranty_end_at IS NOT NULL AND j.warranty_end_at >= NOW()) AS is_in_warranty,
+              ${effectiveWarrantyEndSql} AS warranty_end_at,
+              j.warranty_end_at AS original_warranty_end_at,
+              (j.warranty_end_at IS NULL AND j.finished_at IS NOT NULL) AS warranty_inferred,
+              (${effectiveWarrantyEndSql} IS NOT NULL AND ${effectiveWarrantyEndSql} >= NOW()) AS is_in_warranty,
               COALESCE(ja.technician_username, j.technician_username) AS technician_username,
               COALESCE(NULLIF(tp.full_name,''), NULLIF(u.full_name,''), COALESCE(ja.technician_username, j.technician_username)) AS technician_name
          FROM public.jobs j
@@ -13400,16 +13403,25 @@ app.get('/admin/deductions/warranty_jobs', requireAdminSession, async (req, res)
     const status = String(req.query.status || '').trim();
     const onlyWithout = String(req.query.only_without_rework_case || '') === '1';
     const limit = Math.min(100, Math.max(1, Number(req.query.limit || 50)));
-    const where = [`j.warranty_end_at IS NOT NULL`, `j.warranty_end_at >= NOW()`, `COALESCE(j.job_status,'') NOT ILIKE '%ยกเลิก%'`, `COALESCE(j.job_status,'') NOT ILIKE '%cancel%'`];
+    // Production usability: older jobs may not have warranty_end_at populated yet.
+    // Treat finished jobs within 30 days as warranty candidates so admins can actually find/send them back.
+    const effectiveWarrantyEndSql = `COALESCE(j.warranty_end_at, CASE WHEN j.finished_at IS NOT NULL THEN j.finished_at + INTERVAL '30 days' ELSE NULL END)`;
+    const where = [
+      `${effectiveWarrantyEndSql} IS NOT NULL`,
+      `${effectiveWarrantyEndSql} >= NOW()`,
+      `COALESCE(j.canceled_at, NULL) IS NULL`,
+      `COALESCE(j.job_status,'') NOT ILIKE '%ยกเลิก%'`,
+      `COALESCE(j.job_status,'') NOT ILIKE '%cancel%'`
+    ];
     const params = [];
     let p = 1;
     if (q) {
       const num = Number(q);
       if (Number.isFinite(num) && num > 0) {
-        where.push(`(j.job_id=$${p} OR COALESCE(j.booking_code,'') ILIKE $${p+1} OR COALESCE(j.customer_name,'') ILIKE $${p+1} OR COALESCE(j.customer_phone,'') ILIKE $${p+1} OR COALESCE(j.address_text,'') ILIKE $${p+1} OR COALESCE(tp.full_name,'') ILIKE $${p+1})`);
+        where.push(`(j.job_id=$${p} OR COALESCE(j.booking_code,'') ILIKE $${p+1} OR COALESCE(j.customer_name,'') ILIKE $${p+1} OR COALESCE(j.customer_phone,'') ILIKE $${p+1} OR COALESCE(j.address_text,'') ILIKE $${p+1} OR COALESCE(tp.full_name,'') ILIKE $${p+1} OR COALESCE(ja.technician_username, j.technician_username, '') ILIKE $${p+1})`);
         params.push(num, `%${q}%`); p += 2;
       } else {
-        where.push(`(COALESCE(j.booking_code,'') ILIKE $${p} OR COALESCE(j.customer_name,'') ILIKE $${p} OR COALESCE(j.customer_phone,'') ILIKE $${p} OR COALESCE(j.address_text,'') ILIKE $${p} OR COALESCE(j.technician_username,'') ILIKE $${p} OR COALESCE(tp.full_name,'') ILIKE $${p})`);
+        where.push(`(COALESCE(j.booking_code,'') ILIKE $${p} OR COALESCE(j.customer_name,'') ILIKE $${p} OR COALESCE(j.customer_phone,'') ILIKE $${p} OR COALESCE(j.address_text,'') ILIKE $${p} OR COALESCE(j.technician_username,'') ILIKE $${p} OR COALESCE(ja.technician_username,'') ILIKE $${p} OR COALESCE(tp.full_name,'') ILIKE $${p})`);
         params.push(`%${q}%`); p += 1;
       }
     }
@@ -13425,8 +13437,11 @@ app.get('/admin/deductions/warranty_jobs', requireAdminSession, async (req, res)
               (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date AS appointment_date,
               to_char(j.appointment_datetime AT TIME ZONE 'Asia/Bangkok', 'HH24:MI') AS appointment_time,
               j.finished_at,
-              j.warranty_end_at,
-              GREATEST(0, CEIL(EXTRACT(EPOCH FROM (j.warranty_end_at - NOW())) / 86400.0))::int AS warranty_days_left,
+              ${effectiveWarrantyEndSql} AS warranty_end_at,
+              j.warranty_end_at AS original_warranty_end_at,
+              (j.warranty_end_at IS NULL AND j.finished_at IS NOT NULL) AS warranty_inferred,
+              CASE WHEN j.warranty_end_at IS NULL AND j.finished_at IS NOT NULL THEN 'inferred_30_days_from_finished_at' ELSE 'jobs.warranty_end_at' END AS warranty_source,
+              GREATEST(0, CEIL(EXTRACT(EPOCH FROM (${effectiveWarrantyEndSql} - NOW())) / 86400.0))::int AS warranty_days_left,
               j.job_status,
               COALESCE(ja.technician_username, j.technician_username) AS technician_username,
               COALESCE(NULLIF(tp.full_name,''), NULLIF(u.full_name,''), COALESCE(ja.technician_username, j.technician_username)) AS technician_name,
@@ -13444,14 +13459,14 @@ app.get('/admin/deductions/warranty_jobs', requireAdminSession, async (req, res)
            SELECT rework_case_id, status FROM public.technician_rework_cases rc WHERE rc.job_id=j.job_id ORDER BY created_at DESC, rework_case_id DESC LIMIT 1
          ) lr ON TRUE
         WHERE ${where.join(' AND ')}
-        ORDER BY j.warranty_end_at ASC, j.job_id DESC
+        ORDER BY ${effectiveWarrantyEndSql} ASC, j.job_id DESC
         LIMIT ${limit}`,
       params
     );
-    return res.json({ ok: true, rows: r.rows || [] });
+    return res.json({ ok: true, rows: r.rows || [], note: 'รวมงานที่มี warranty_end_at และงานที่ปิดภายใน 30 วันแต่ยังไม่มี warranty_end_at' });
   } catch (e) {
     console.error('GET /admin/deductions/warranty_jobs', e);
-    return res.status(500).json({ ok: false, error: 'โหลดงานในประกันไม่สำเร็จ' });
+    return res.status(500).json({ ok: false, error: 'โหลดงานในประกันไม่สำเร็จ', detail: process.env.NODE_ENV === 'production' ? undefined : String(e.message || e) });
   }
 });
 
