@@ -8389,10 +8389,11 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
             <div class="signDate">วันที่ ______ / ______ / ______</div>
           </div>
           <div class="signBox">
+            <img src="/assets/signatures/owner-signature-transparent.png" alt="authorized signature" style="max-width:170px;max-height:42px;object-fit:contain;margin:0 auto 2px;display:block;" />
             <div class="signLine"></div>
             <div class="signTitle">ผู้อนุมัติจ่าย / Company Authorized Signature</div>
-            <div class="signName">Coldwindflow Air Services</div>
-            <div class="signDate">วันที่ ______ / ______ / ______</div>
+            <div class="signName">นาย สุทธิพงษ์ ศรีวารินทร์</div>
+            <div class="signDate">ผู้มีอำนาจลงนาม • วันที่ ______ / ______ / ______</div>
           </div>
         </div>
 
@@ -17467,7 +17468,7 @@ function _accountingDefaultCompanySettings() {
     branch: 'สำนักงานใหญ่',
     address: '23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260',
     phone: '098-877-7321',
-    signer_name: 'สุทธิพงษ์ ศรีวารินทร์',
+    signer_name: 'นาย สุทธิพงษ์ ศรีวารินทร์',
     signer_position: 'ผู้มีอำนาจลงนาม',
     logo_url: '/logo.png',
     signature_url: '/assets/signatures/owner-signature-transparent.png',
@@ -17537,7 +17538,7 @@ function _accountingSettingsFromBody(body = {}, current = {}) {
     branch: pick('branch', 'สำนักงานใหญ่'),
     address: pick('address', '23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260'),
     phone: pick('phone', '098-877-7321'),
-    signer_name: pick('signer_name', 'สุทธิพงษ์ ศรีวารินทร์'),
+    signer_name: pick('signer_name', 'นาย สุทธิพงษ์ ศรีวารินทร์'),
     signer_position: pick('signer_position', 'ผู้มีอำนาจลงนาม'),
     vat_rate: _money(body.vat_rate ?? current.vat_rate ?? 7),
     wht_rate: _money(body.wht_rate ?? current.wht_rate ?? 3),
@@ -17780,6 +17781,13 @@ function resolveAccountingSignaturePath(company = {}) {
     if (local) return local;
   }
   return '';
+}
+function _accountingOwnerSignerName() { return 'นาย สุทธิพงษ์ ศรีวารินทร์'; }
+function _accountingOwnerSignerPosition() { return 'ผู้มีอำนาจลงนาม'; }
+function _accountingOwnerSignaturePublicUrl() {
+  return resolveAccountingSignaturePath({ signature_url: '/assets/signatures/owner-signature-transparent.png' })
+    ? '/assets/signatures/owner-signature-transparent.png'
+    : '';
 }
 function _accountingSignaturePublicUrl(company = {}) {
   const raw = String(company.signature_url || '').trim();
@@ -18974,7 +18982,9 @@ function _accountingGenericDocumentPrintHtml(doc, company) {
   const fmt = (v) => Number(v || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const typeLabel = ({ quotation:'ใบเสนอราคา', invoice:'ใบแจ้งหนี้', receipt:'ใบเสร็จรับเงิน', tax_invoice:'ใบกำกับภาษี' })[doc.document_type] || doc.document_type;
   const p = doc.payload_json || {};
-  const signatureUrl = _accountingSignaturePublicUrl(company);
+  const signatureUrl = _accountingOwnerSignaturePublicUrl() || _accountingSignaturePublicUrl(company);
+  const signerName = _accountingOwnerSignerName();
+  const signerPosition = _accountingOwnerSignerPosition();
   const rows = Array.isArray(p.line_items) ? p.line_items : [];
   const issueDate = doc.issue_date ? _accountingThaiDate(doc.issue_date) : _accountingThaiDate(new Date());
   const dueDate = doc.due_date ? _accountingThaiDate(doc.due_date) : '-';
@@ -18984,7 +18994,7 @@ function _accountingGenericDocumentPrintHtml(doc, company) {
   <div class="box"><b>ลูกค้า</b><br>${escH(doc.customer_name||'-')}<br>${doc.customer_tax_id?`เลขภาษี: ${escH(doc.customer_tax_id)}<br>`:''}${escH(doc.customer_address||'')}${doc.customer_phone?`<br>โทร ${escH(doc.customer_phone)}`:''}</div>
   <table class="tbl"><thead><tr><th>#</th><th>รายการ</th><th class="right">จำนวน</th><th class="right">ราคา/หน่วย</th><th class="right">รวม</th></tr></thead><tbody>${rows.length?rows.map((r,i)=>`<tr><td>${i+1}</td><td>${escH(r.description||r.job_type||'-')}<div class="muted">${escH([r.ac_type, r.wash_variant, r.btu].filter(Boolean).join(' / '))}</div></td><td class="right">${fmt(r.quantity||1)}</td><td class="right">${fmt(r.unit_price||0)}</td><td class="right">${fmt(r.line_total||0)}</td></tr>`).join(''):`<tr><td>1</td><td>ยอดเอกสาร</td><td class="right">1</td><td class="right">${fmt(doc.subtotal)}</td><td class="right">${fmt(doc.subtotal)}</td></tr>`}</tbody><tfoot><tr><th colspan="4" class="right">Subtotal</th><th class="right">${fmt(doc.subtotal)}</th></tr><tr><th colspan="4" class="right">ส่วนลด</th><th class="right">${fmt(doc.discount_amount)}</th></tr><tr><th colspan="4" class="right">VAT</th><th class="right">${fmt(doc.vat_amount)}</th></tr><tr><th colspan="4" class="right">หัก ณ ที่จ่าย</th><th class="right">${fmt(doc.withholding_amount)}</th></tr><tr><th colspan="4" class="right">ยอดรวมสุทธิ</th><th class="right">${fmt(doc.total_amount)}</th></tr></tfoot></table>
   <div class="box"><b>หมายเหตุ</b><br>${escH(p.note || company.footer_text || 'เอกสารนี้ใช้ประกอบการตรวจสอบและทำรายการของ Coldwindflow Air Services')}</div>
-  <div class="sign"><div class="signBox">${company.stamp_url?`<img class="asset" src="${escH(company.stamp_url)}"><br>`:''}${signatureUrl?`<img class="asset" src="${escH(signatureUrl)}"><br>`:''}<div>ลงชื่อ _______________________</div><b>${escH(company.signer_name||'')}</b><div class="muted">${escH(company.signer_position||'')}</div></div></div>
+  <div class="sign"><div class="signBox">${company.stamp_url?`<img class="asset" src="${escH(company.stamp_url)}"><br>`:''}${signatureUrl?`<img class="asset" src="${escH(signatureUrl)}" alt="authorized signature"><br>`:''}<div>ลงชื่อ _______________________</div><b>${escH(signerName)}</b><div class="muted">${escH(signerPosition)}</div></div></div>
 </main></body></html>`;
 }
 
@@ -19471,7 +19481,9 @@ function docHtml(title, data) {
   const COMPANY_ADDRESS = process.env.COMPANY_ADDRESS || "23/61 ถ.พึ่งมี 50 แขวงบางจาก เขตพระโขนง กรุงเทพฯ 10260";
   const COMPANY_PHONE = process.env.COMPANY_PHONE || "098-877-7321";
   const COMPANY_LINE = process.env.COMPANY_LINE || "@cwfair";
-  const COMPANY_SIGNATURE_URL = process.env.COMPANY_SIGNATURE_URL || _accountingSignaturePublicUrl({ signature_url: '/assets/signatures/owner-signature-transparent.png' });
+  const COMPANY_SIGNATURE_URL = process.env.COMPANY_SIGNATURE_URL || _accountingOwnerSignaturePublicUrl() || _accountingSignaturePublicUrl({ signature_url: '/assets/signatures/owner-signature-transparent.png' });
+  const COMPANY_SIGNER_NAME = _accountingOwnerSignerName();
+  const COMPANY_SIGNER_POSITION = _accountingOwnerSignerPosition();
 
   const BANK_NAME = process.env.COMPANY_BANK_NAME || "";
   const BANK_ACCOUNT = process.env.COMPANY_BANK_ACCOUNT || "";
@@ -19570,7 +19582,9 @@ function docHtml(title, data) {
           <div style="height:70px;border-bottom:1px dashed rgba(15,23,42,.35);margin-top:8px;text-align:center;">
             ${COMPANY_SIGNATURE_URL ? `<img src="${COMPANY_SIGNATURE_URL}" alt="authorized signature" style="max-width:180px;max-height:68px;object-fit:contain;">` : ``}
           </div>
-          <div class="muted" style="margin-top:6px;">(${COMPANY_NAME})</div>
+          <div style="font-weight:800;margin-top:6px;">${COMPANY_SIGNER_NAME}</div>
+          <div class="muted">${COMPANY_SIGNER_POSITION}</div>
+          <div class="muted">(${COMPANY_NAME})</div>
         </div>
         <div style="width:220px;text-align:center;">
           ${j.final_signature_path ? `
