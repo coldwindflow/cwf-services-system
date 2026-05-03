@@ -7,6 +7,18 @@
   const money = (n) => Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const date = (s) => s ? new Date(s).toLocaleString('th-TH') : '-';
   const chip = (v) => `<span class="chip ${['high','critical','voided','rejected','failed'].includes(String(v))?'danger':(['approved','resolved','fixed'].includes(String(v))?'ok':(['pending_approval','open','in_progress'].includes(String(v))?'warn':''))}">${esc(v || '-')}</span>`;
+  function setStatus(msg, type){
+    const el = $('pageStatus');
+    if (!el) return;
+    el.textContent = msg || '';
+    el.className = `statusbar ${msg ? 'show' : ''} ${type === 'error' ? 'error' : ''}`;
+  }
+  function setButtonBusy(btn, busy){
+    if (!btn) return;
+    btn.disabled = !!busy;
+    if (busy) btn.dataset.oldText = btn.textContent;
+    btn.textContent = busy ? 'กำลังดำเนินการ...' : (btn.dataset.oldText || btn.textContent);
+  }
   async function api(url, opts){
     const r = await fetch(url, { credentials:'same-origin', headers:{ 'Content-Type':'application/json', ...(opts&&opts.headers||{}) }, ...opts });
     const data = await r.json().catch(()=>({}));
@@ -25,6 +37,7 @@
     $('rType').innerHTML = '<option value="">ทั้งหมด</option>' + reworkTypes.map(x=>`<option>${x}</option>`).join('');
   }
   async function loadSummary(){
+    setStatus('กำลังโหลดสรุป...');
     const d = await api('/admin/deductions/summary');
     const top = (d.top_technicians_by_cases || [])[0];
     const cards = [
@@ -36,8 +49,10 @@
       ['ช่างที่มีเคสผิดกฎมากที่สุด', top ? `${esc(top.technician_username)} (${top.case_count})` : '-'],
     ];
     $('summaryCards').innerHTML = cards.map(([k,v]) => `<article class="card"><div class="k">${k}</div><div class="v">${v}</div></article>`).join('');
+    setStatus('');
   }
   async function loadDeductions(){
+    setStatus('กำลังโหลดเคสหักเงิน...');
     const query = qs({ from:$('fFrom').value, to:$('fTo').value, technician_username:$('fTech').value, status:$('fStatus').value, deduction_type:$('fType').value, severity:$('fSeverity').value, job_id:$('fJob').value, pending_approval:$('fPending').value });
     const d = await api('/admin/deductions' + (query ? `?${query}` : ''));
     const rows = d.rows || [];
@@ -49,6 +64,7 @@
         <td>${chip(r.severity)}</td><td>${chip(r.status)}</td><td>${date(r.created_at)}</td>
         <td><div class="actions">${actionsFor(r)}</div></td>
       </tr>`).join('') : `<tr><td colspan="10" class="empty">ยังไม่มีเคส</td></tr>`;
+    setStatus('');
   }
   function actionsFor(r){
     const id = Number(r.case_id);
@@ -96,11 +112,13 @@
     await loadAll();
   }
   async function loadRework(){
+    setStatus('กำลังโหลดงานแก้ไข...');
     const query = qs({ status:$('rStatus').value, technician_username:$('rTech').value, job_id:$('rJob').value, reason_type:$('rType').value });
     const d = await api('/admin/rework_cases' + (query ? `?${query}` : ''));
     const rows = d.rows || [];
     $('reworkRows').innerHTML = rows.length ? rows.map(r => `
       <tr><td><b>${esc(r.case_code)}</b></td><td>#${esc(r.job_id)}</td><td>${esc(r.technician_username||'-')}</td><td>${esc(r.reason_type)}</td><td>${chip(r.status)}</td><td>${chip(r.resolution||'-')}</td><td>${date(r.created_at)}</td><td><div class="actions"><button class="btn soft" data-rdetail="${r.rework_case_id}">ดู</button>${r.status!=='resolved'?`<button class="btn blue" data-resolve="${r.rework_case_id}">ปิดเคส</button>`:''}</div></td></tr>`).join('') : `<tr><td colspan="8" class="empty">ยังไม่มีเคสงานแก้ไข</td></tr>`;
+    setStatus('');
   }
   async function reworkDetail(id){
     const d = await api(`/admin/rework_cases/${id}`);
@@ -124,27 +142,38 @@
     };
   }
   async function loadAudit(){
+    setStatus('กำลังโหลด audit...');
     const query = qs({ entity_type:$('aEntityType').value, entity_id:$('aEntityId').value, actor_username:$('aActor').value });
     const d = await api('/admin/deductions/audit' + (query ? `?${query}` : ''));
     const rows = d.rows || [];
     $('auditRows').innerHTML = rows.length ? rows.map(r => `<tr><td>${date(r.created_at)}</td><td>${esc(r.actor_username||'-')}<br><span class="chip">${esc(r.actor_role||'-')}</span></td><td>${esc(r.action)}</td><td>${esc(r.entity_type)} #${esc(r.entity_id||'-')}</td><td>${esc(r.note||'')}</td></tr>`).join('') : `<tr><td colspan="5" class="empty">ยังไม่มี audit</td></tr>`;
+    setStatus('');
   }
   async function loadAll(){ await Promise.all([loadSummary(), loadDeductions(), loadRework(), loadAudit()]); }
   document.addEventListener('click', async (ev) => {
     const t = ev.target?.closest?.('[data-tab],[data-detail],[data-edit],[data-submit],[data-approve],[data-reject],[data-void],[data-rdetail],[data-resolve]');
     if (!t) return;
-    if (t.matches('[data-tab]')) {
-      document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
-      document.querySelectorAll('.tab-panel').forEach(x=>x.style.display='none'); $(`panel-${t.dataset.tab}`).style.display = '';
+    try {
+      setButtonBusy(t, true);
+      if (t.matches('[data-tab]')) {
+        document.querySelectorAll('.tab').forEach(x=>x.classList.remove('active')); t.classList.add('active');
+        document.querySelectorAll('.tab-panel').forEach(x=>x.style.display='none'); $(`panel-${t.dataset.tab}`).style.display = '';
+      }
+      if (t.dataset.detail) await detail(t.dataset.detail);
+      if (t.dataset.edit) await edit(t.dataset.edit);
+      if (t.dataset.submit) await transition(t.dataset.submit, 'submit');
+      if (t.dataset.approve) await transition(t.dataset.approve, 'approve');
+      if (t.dataset.reject) await transition(t.dataset.reject, 'reject', true);
+      if (t.dataset.void) await transition(t.dataset.void, 'void', true);
+      if (t.dataset.rdetail) await reworkDetail(t.dataset.rdetail);
+      if (t.dataset.resolve) await resolveRework(t.dataset.resolve);
+    } catch (e) {
+      console.error(e);
+      setStatus(e.message || 'ดำเนินการไม่สำเร็จ', 'error');
+      alert(e.message || 'ดำเนินการไม่สำเร็จ');
+    } finally {
+      setButtonBusy(t, false);
     }
-    if (t.dataset.detail) detail(t.dataset.detail);
-    if (t.dataset.edit) edit(t.dataset.edit);
-    if (t.dataset.submit) transition(t.dataset.submit, 'submit');
-    if (t.dataset.approve) transition(t.dataset.approve, 'approve');
-    if (t.dataset.reject) transition(t.dataset.reject, 'reject', true);
-    if (t.dataset.void) transition(t.dataset.void, 'void', true);
-    if (t.dataset.rdetail) reworkDetail(t.dataset.rdetail);
-    if (t.dataset.resolve) resolveRework(t.dataset.resolve);
   });
   function bind(){
     fillOptions();
@@ -155,7 +184,7 @@
     $('btnLoadRework').onclick = loadRework;
     $('btnLoadAudit').onclick = loadAudit;
     $('btnClear').onclick = () => { ['fFrom','fTo','fTech','fStatus','fType','fSeverity','fJob','fPending'].forEach(id => $(id).value=''); loadDeductions(); };
-    loadAll().catch(e => alert(e.message));
+    loadAll().catch(e => { setStatus(e.message || 'โหลดข้อมูลไม่สำเร็จ', 'error'); alert(e.message); });
   }
   document.addEventListener('DOMContentLoaded', bind);
 })();

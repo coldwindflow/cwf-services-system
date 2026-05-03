@@ -95,6 +95,74 @@ function escapeHtml(str){
     .replace(/'/g, '&#39;');
 }
 
+const DEDUCTION_CASE_TYPES = [
+  'late_arrival','missing_status_update','missing_required_photos','poor_work_quality',
+  'customer_complaint_valid','left_before_complete','no_show','same_day_cancel',
+  'warranty_rework_minor','warranty_rework_major','rework_failed','replacement_technician_cost',
+  'customer_property_damage','company_equipment_damage','off_platform_payment',
+  'confidentiality_breach','fraud_or_false_report','deposit_installment',
+  'deposit_damage_offset','manual_adjustment','overpayment_recovery',
+];
+const REWORK_CASE_REASON_TYPES = ['water_leak','not_clean','customer_complaint','missing_photos','same_issue_not_fixed','poor_work_standard','other'];
+const DEDUCTION_WARNING_TEXT = 'ยอดนี้ยังไม่ถูกนำไปรวมในรอบจ่ายเงิน จนกว่าจะกดนำเข้ารอบจ่าย';
+
+function ensureCaseModal(){
+  if (!document.getElementById('caseModalStyle')) {
+    const style = document.createElement('style');
+    style.id = 'caseModalStyle';
+    style.textContent = `
+      .caseModalBackdrop{position:fixed;inset:0;z-index:4200;display:none;background:rgba(2,6,23,.58);padding:12px;overflow:auto}
+      .caseModal{max-width:760px;margin:24px auto;background:#fff;border:1px solid rgba(21,88,214,.18);border-radius:12px;box-shadow:0 28px 86px rgba(2,6,23,.32);overflow:hidden}
+      .caseModalHead{display:flex;align-items:center;justify-content:space-between;gap:10px;background:#071947;color:#fff;padding:13px 14px}
+      .caseModalHead b{font-size:17px}.caseModalBody{padding:14px}
+      .caseGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:11px}
+      .caseGrid .full{grid-column:1/-1}.caseGrid label{font-size:12px;font-weight:1000;color:#64748b;margin-bottom:5px;display:block}
+      .caseGrid input,.caseGrid select,.caseGrid textarea{width:100%;min-height:42px;border:1px solid #d9e5ff;border-radius:8px;padding:10px 11px;background:#fff;color:#09152f;font:inherit}
+      .caseActions{display:flex;justify-content:flex-end;gap:10px;flex-wrap:wrap;margin-top:12px}
+      .caseBtn{border:0;border-radius:14px;padding:11px 14px;font-weight:1000;cursor:pointer;min-height:44px}
+      .caseBtn.blue{background:linear-gradient(135deg,#071947,#1558d6);color:#fff}.caseBtn.yellow{background:linear-gradient(135deg,#ffe875,#ffcc00);color:#111827}
+      .caseNotice{background:#fff7cc;border:1px solid #f4c430;color:#5c4300;border-radius:8px;padding:11px 12px;font-weight:900}
+      .caseList{display:grid;gap:10px}.caseItem{border:1px solid #d9e5ff;border-radius:8px;padding:11px;background:#f8fbff}
+      .caseMeta{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;color:#64748b;font-size:12px;font-weight:800}
+      @media(max-width:720px){.caseModal{margin:8px auto}.caseGrid{grid-template-columns:1fr}.caseActions{justify-content:stretch}.caseBtn{width:100%}}
+    `;
+    document.head.appendChild(style);
+  }
+  if (!document.getElementById('caseModalBackdrop')) {
+    const wrap = document.createElement('div');
+    wrap.id = 'caseModalBackdrop';
+    wrap.className = 'caseModalBackdrop';
+    wrap.innerHTML = `<div class="caseModal" role="dialog" aria-modal="true">
+      <div class="caseModalHead"><b id="caseModalTitle">รายละเอียดเคส</b><button class="caseBtn yellow" id="caseModalClose" type="button">ปิด</button></div>
+      <div class="caseModalBody" id="caseModalBody"></div>
+    </div>`;
+    document.body.appendChild(wrap);
+    el('caseModalClose').onclick = closeCaseModal;
+    wrap.addEventListener('click', (ev)=>{ if (ev.target === wrap) closeCaseModal(); });
+  }
+}
+
+function openCaseModal(title, html){
+  ensureCaseModal();
+  el('caseModalTitle').textContent = title;
+  el('caseModalBody').innerHTML = html;
+  el('caseModalBackdrop').style.display = 'block';
+}
+
+function closeCaseModal(){
+  const bd = el('caseModalBackdrop');
+  if (bd) bd.style.display = 'none';
+}
+
+function optionList(values, selected){
+  return values.map(v=>`<option value="${escapeHtml(v)}" ${String(selected||'')===v?'selected':''}>${escapeHtml(v)}</option>`).join('');
+}
+
+function normalizeEvidenceNote(note){
+  const s = String(note || '').trim();
+  return s ? [{ note: s }] : [];
+}
+
 // --- Team editor (minimal UI; backward compatible) ---
 const teamEdit = {
   techs: [],
@@ -886,35 +954,72 @@ async function loadJob(){
   const btnCreateReworkCase = el('btnCreateReworkCase');
   if (btnCreateReworkCase) {
     btnCreateReworkCase.onclick = async ()=>{
-      const reason = (el('return_reason')?.value||'').trim() || prompt('ระบุปัญหาที่ต้องส่งงานกลับแก้', '');
-      if (!reason) return alert('ต้องระบุปัญหา/เหตุผลก่อนส่งงานกลับแก้');
-      const reason_type = prompt('ประเภทงานแก้ไข: water_leak, not_clean, customer_complaint, missing_photos, same_issue_not_fixed, poor_work_standard, other', 'other') || 'other';
-      if (!confirm('สร้างเคสงานแก้ไขและส่งงานกลับให้ช่างแก้?')) return;
-      await apiFetch(`/admin/jobs/${encodeURIComponent(String(job.job_id))}/rework_case`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason_type, reason_note: reason, warranty_checked: !!job.is_in_warranty })
-      });
-      showToast('สร้างเคสงานแก้ไขแล้ว', 'success');
-      await loadJob();
+      openCaseModal('ส่งงานกลับแก้', `
+        <div class="caseGrid">
+          <div><label>ประเภทงานแก้ไข</label><select id="caseReworkType">${optionList(REWORK_CASE_REASON_TYPES, 'other')}</select></div>
+          <div><label>สถานะประกัน</label><input value="${inWarranty(job) ? 'อยู่ในประกัน' : 'นอกประกัน/ไม่พบข้อมูล'}" disabled></div>
+          <div class="full"><label>เหตุผล/ปัญหา</label><textarea id="caseReworkReason" rows="4" placeholder="ระบุปัญหาที่ต้องให้ช่างแก้ไข">${escapeHtml((el('return_reason')?.value||'').trim())}</textarea></div>
+          <div class="full"><label style="display:flex;gap:8px;align-items:center;color:#09152f"><input id="caseWarrantyChecked" type="checkbox" ${inWarranty(job) ? 'checked' : ''} style="width:auto;min-height:auto"> ตรวจสอบประกันแล้ว</label></div>
+          <div class="full caseActions"><button class="caseBtn yellow" type="button" id="caseCancel">ยกเลิก</button><button class="caseBtn blue" type="button" id="caseSubmitRework">สร้างเคสและส่งกลับแก้</button></div>
+        </div>
+      `);
+      el('caseCancel').onclick = closeCaseModal;
+      el('caseSubmitRework').onclick = async ()=>{
+        const reason_note = String(el('caseReworkReason')?.value || '').trim();
+        const reason_type = String(el('caseReworkType')?.value || '').trim();
+        if (!reason_note) return alert('ต้องระบุปัญหา/เหตุผลก่อนส่งงานกลับแก้');
+        await apiFetch(`/admin/jobs/${encodeURIComponent(String(job.job_id))}/rework_case`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reason_type, reason_note, warranty_checked: !!el('caseWarrantyChecked')?.checked })
+        });
+        closeCaseModal();
+        showToast('สร้างเคสงานแก้ไขแล้ว', 'success');
+        await loadJob();
+      };
     };
   }
 
   const btnCreateDeductionCase = el('btnCreateDeductionCase');
   if (btnCreateDeductionCase) {
     btnCreateDeductionCase.onclick = async ()=>{
-      const technician_username = String(job.technician_username || '').trim() || prompt('username ช่าง', '');
-      if (!technician_username) return alert('ต้องระบุช่าง');
-      const deduction_type = prompt('ประเภทหักเงิน', 'manual_adjustment') || 'manual_adjustment';
-      const amount = Number(prompt('จำนวนเงินที่ต้องการหัก', '0') || 0);
-      const reason = prompt('เหตุผล', '') || '';
-      if (!amount || amount <= 0 || !reason) return alert('ต้องระบุจำนวนเงินและเหตุผลให้ครบ');
-      await apiFetch('/admin/deductions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ technician_username, job_id: job.job_id, deduction_type, amount, reason, severity: 'medium', evidence_json: [] })
-      });
-      showToast('เปิดเคสหักเงินแล้ว', 'success');
+      openCaseModal('เปิดเคสหักเงิน', `
+        <div class="caseGrid">
+          <div><label>ช่าง</label><input id="caseDeductTech" value="${escapeHtml(String(job.technician_username || '').trim())}" placeholder="username"></div>
+          <div><label>งาน</label><input id="caseDeductJob" value="${escapeHtml(String(job.job_id || ''))}" disabled></div>
+          <div><label>ประเภทหักเงิน</label><select id="caseDeductType">${optionList(DEDUCTION_CASE_TYPES, 'manual_adjustment')}</select></div>
+          <div><label>จำนวนเงิน</label><input id="caseDeductAmount" type="number" min="0" step="0.01" placeholder="0.00"></div>
+          <div><label>ความรุนแรง</label><select id="caseDeductSeverity">${optionList(['low','medium','high','critical'], 'medium')}</select></div>
+          <div class="full"><label>เหตุผล</label><textarea id="caseDeductReason" rows="3" placeholder="ระบุเหตุผลการเปิดเคสหักเงิน"></textarea></div>
+          <div class="full"><label>หลักฐาน/หมายเหตุหลักฐาน</label><textarea id="caseDeductEvidence" rows="2" placeholder="เช่น รูปก่อน/หลัง, ข้อความลูกค้า, หมายเหตุ"></textarea></div>
+          <div class="full caseNotice">${DEDUCTION_WARNING_TEXT}</div>
+          <div class="full caseActions"><button class="caseBtn yellow" type="button" id="caseCancel">ยกเลิก</button><button class="caseBtn blue" type="button" id="caseSubmitDeduction">สร้างเคสหักเงิน</button></div>
+        </div>
+      `);
+      el('caseCancel').onclick = closeCaseModal;
+      el('caseSubmitDeduction').onclick = async ()=>{
+        const technician_username = String(el('caseDeductTech')?.value || '').trim();
+        const amount = Number(el('caseDeductAmount')?.value || 0);
+        const reason = String(el('caseDeductReason')?.value || '').trim();
+        if (!technician_username) return alert('ต้องระบุช่าง');
+        if (!Number.isFinite(amount) || amount <= 0) return alert('จำนวนเงินต้องมากกว่า 0');
+        if (!reason) return alert('ต้องระบุเหตุผล');
+        await apiFetch('/admin/deductions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            technician_username,
+            job_id: job.job_id,
+            deduction_type: el('caseDeductType')?.value,
+            amount,
+            reason,
+            severity: el('caseDeductSeverity')?.value || 'medium',
+            evidence_json: normalizeEvidenceNote(el('caseDeductEvidence')?.value),
+          })
+        });
+        closeCaseModal();
+        showToast('เปิดเคสหักเงินแล้ว', 'success');
+      };
     };
   }
 
@@ -923,14 +1028,33 @@ async function loadJob(){
     btnViewCaseHistory.onclick = async ()=>{
       const d = await apiFetch(`/admin/deductions?job_id=${encodeURIComponent(String(job.job_id))}`);
       const r = await apiFetch(`/admin/rework_cases?job_id=${encodeURIComponent(String(job.job_id))}`);
-      const lines = [
-        'เคสหักเงิน',
-        ...((d.rows || []).map(x => `${x.case_code} | ${x.status} | ${x.deduction_type} | ${Number(x.amount||0).toLocaleString()} บาท | ${x.reason}`)),
-        '',
-        'งานแก้ไข',
-        ...((r.rows || []).map(x => `${x.case_code} | ${x.status} | ${x.reason_type} | ${x.resolution || '-'}`)),
-      ];
-      alert(lines.join('\n') || 'ยังไม่มีประวัติเคส');
+      const deductions = d.rows || [];
+      const reworks = r.rows || [];
+      const deductionHtml = deductions.length ? deductions.map(x=>`
+        <div class="caseItem">
+          <b>${escapeHtml(x.case_code || '-')}</b>
+          <div>${escapeHtml(x.deduction_type || '-')} · ${Number(x.amount||0).toLocaleString()} บาท</div>
+          <div class="caseMeta"><span>สถานะ: ${escapeHtml(x.status || '-')}</span><span>รุนแรง: ${escapeHtml(x.severity || '-')}</span><span>${fmtDT(x.created_at)}</span></div>
+          <div style="margin-top:6px">${escapeHtml(x.reason || '')}</div>
+        </div>`).join('') : '<div class="muted2">ยังไม่มีเคสหักเงิน</div>';
+      const reworkHtml = reworks.length ? reworks.map(x=>`
+        <div class="caseItem">
+          <b>${escapeHtml(x.case_code || '-')}</b>
+          <div>${escapeHtml(x.reason_type || '-')}</div>
+          <div class="caseMeta"><span>สถานะ: ${escapeHtml(x.status || '-')}</span><span>ผล: ${escapeHtml(x.resolution || '-')}</span><span>${fmtDT(x.created_at)}</span></div>
+          <div style="margin-top:6px">${escapeHtml(x.reason_note || '')}</div>
+        </div>`).join('') : '<div class="muted2">ยังไม่มีเคสงานแก้ไข</div>';
+      openCaseModal('ประวัติเคสของงานนี้', `
+        <div class="caseList">
+          <div class="caseNotice">${DEDUCTION_WARNING_TEXT}</div>
+          <h3 style="margin:0;color:#071947">เคสหักเงิน</h3>
+          ${deductionHtml}
+          <h3 style="margin:4px 0 0;color:#071947">งานแก้ไข</h3>
+          ${reworkHtml}
+          <div class="caseActions"><button class="caseBtn yellow" type="button" id="caseCancel">ปิด</button></div>
+        </div>
+      `);
+      el('caseCancel').onclick = closeCaseModal;
     };
   }
 
