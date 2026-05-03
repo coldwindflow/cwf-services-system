@@ -17721,7 +17721,7 @@ const ACCOUNTING_WHT_LAYOUT = Object.freeze({
   // A4 pdf-lib coordinates, origin is bottom-left. Signature is intentionally
   // small and clipped to the payer signer box so it cannot cover the date,
   // payer text, stamp placeholder, or certification wording.
-  signatureBox: Object.freeze({ x: 398, y: 100, maxW: 108, maxH: 30 }),
+  signatureBox: Object.freeze({ x: 326, y: 78, maxW: 110, maxH: 24 }),
   taxDigitSize: 10,
   checkboxSize: 9,
   headerTextSize: 10.5,
