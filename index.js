@@ -17723,6 +17723,10 @@ const ACCOUNTING_WHT_LAYOUT = Object.freeze({
   // payer text, stamp placeholder, or certification wording.
   signatureBox: Object.freeze({ x: 300, y: 79, maxW: 190, maxH: 22 }),
   taxDigitSize: 10,
+  // Template tax-id fields are grouped 1-4-5-2-1 with visible gaps.
+  // Drawing with equal 13-cell spacing makes each digit drift off-center,
+  // so these offsets target the visual center of each printed box.
+  taxDigitCenterOffsets: Object.freeze([5.6, 23.5, 35.5, 47.8, 59.8, 79.0, 90.3, 101.8, 113.8, 126.3, 144.9, 157.0, 175.6]),
   checkboxSize: 9,
   headerTextSize: 10.5,
   tableTextSize: 9.8,
@@ -17905,14 +17909,16 @@ async function _accountingWithholdingPdfBuffer(doc, company = {}) {
     const font = boldFont || regularFont;
     if (!r || !font) return;
     const digits = _accountingWhtTaxIdDigits(value).padEnd(13, ' ');
-    const cell = r.width / 13;
+    const offsets = ACCOUNTING_WHT_LAYOUT.taxDigitCenterOffsets || [];
+    const size = ACCOUNTING_WHT_LAYOUT.taxDigitSize;
+    const y = r.y + Math.max(1.6, (r.height - size) / 2) + 1.2;
     for (let i = 0; i < 13; i += 1) {
       const d = digits[i].trim();
       if (!d) continue;
-      const size = ACCOUNTING_WHT_LAYOUT.taxDigitSize;
+      const visualCenter = offsets[i] ? r.x + offsets[i] : r.x + ((i + 0.5) * (r.width / 13));
       page.drawText(d, {
-        x: r.x + (i * cell) + ((cell - font.widthOfTextAtSize(d, size)) / 2),
-        y: r.y + 3,
+        x: visualCenter - (font.widthOfTextAtSize(d, size) / 2),
+        y,
         size,
         font,
         color: black,
