@@ -13677,6 +13677,21 @@ if (coerceNumber(override_price, 0) > 0) {
         if (ok) available.push(u);
       }
 
+      if (!available.length) {
+        const err = new Error('ยิงงานด่วนไม่สำเร็จ: ตอนนี้ไม่มีช่างพาร์ทเนอร์ที่ว่างและเปิดรับงาน ระบบจึงยังไม่ได้ส่งงานออกไปให้ช่างรับ');
+        err.statusCode = 409;
+        err.code = 'NO_URGENT_OFFER_TARGETS';
+        err.debug = {
+          partner_count: partnerRows.length,
+          candidate_count: candidateRows.length,
+          service_zone_code: detectedZoneCode || null,
+          zone_filter_applied,
+          zone_matched_technicians_count,
+          zone_fallback_used,
+        };
+        throw err;
+      }
+
       for (const u of available) {
         await client.query(
           `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
@@ -13749,8 +13764,13 @@ if (coerceNumber(override_price, 0) > 0) {
     });
   } catch (e) {
     await client.query("ROLLBACK");
+    const statusCode = Number(e?.statusCode || e?.status || 500);
     console.error("/admin/book_v2 error:", e);
-    return res.status(500).json({ error: e.message || "admin book v2 failed" });
+    return res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
+      error: e.message || "admin book v2 failed",
+      code: e?.code || undefined,
+      debug: e?.debug || undefined,
+    });
   } finally {
     client.release();
   }
@@ -17762,6 +17782,10 @@ async function autoFinalizeUrgentJobs() {
         AND j.technician_team IS NULL
         AND j.canceled_at IS NULL
         AND (j.job_status='รอช่างยืนยัน' OR j.job_status='pending_accept')
+        AND EXISTS (
+          SELECT 1 FROM public.job_offers any_offer
+          WHERE any_offer.job_id=j.job_id
+        )
         AND NOT EXISTS (
           SELECT 1 FROM public.job_offers o
           WHERE o.job_id=j.job_id
@@ -24316,6 +24340,13 @@ if (itemIdQty.length) {
         if (availablePartners.length >= 30) break; // limit scan
       }
 
+      if (!availablePartners.length) {
+        const err = new Error('ตอนนี้ไม่มีช่างพาร์ทเนอร์ที่ว่างและเปิดรับงาน ระบบจึงยังไม่ได้ส่งงานออกไปให้ช่างรับ');
+        err.statusCode = 409;
+        err.code = 'NO_URGENT_OFFER_TARGETS';
+        throw err;
+      }
+
       // ✅ safety: จำกัดไม่เกิน 30 ช่าง/ทีมที่ส่ง offer
       for (const u of availablePartners) {
         await client.query(
@@ -24363,8 +24394,12 @@ if (itemIdQty.length) {
     });
   } catch (e) {
     await client.query("ROLLBACK");
+    const statusCode = Number(e?.statusCode || e?.status || 500);
     console.error(e);
-    res.status(500).json({ error: e.message || "จองงานไม่สำเร็จ" });
+    res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 500).json({
+      error: e.message || "จองงานไม่สำเร็จ",
+      code: e?.code || undefined,
+    });
   } finally {
     client.release();
   }
