@@ -17813,7 +17813,12 @@ app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) 
     await client.query(
       `UPDATE public.jobs
        SET technician_username=$1,
-           technician_team=$1
+           technician_team=$1,
+           job_status=CASE
+             WHEN job_status IS NULL OR TRIM(job_status)='' THEN 'รอดำเนินการ'
+             WHEN job_status IN ('รอช่างยืนยัน','pending_accept','accepted','assigned','ไม่พบช่างรับงาน') THEN 'รอดำเนินการ'
+             ELSE job_status
+           END
        WHERE job_id=$2`,
       [offer.technician_username, offer.job_id]
     );

@@ -2293,8 +2293,30 @@ function isActiveStatusValue(s) {
   if (isDoneStatusValue(v) || isCancelStatusValue(v)) return false;
   return [
     "รอดำเนินการ","กำลังทำ","ตีกลับ","รอช่างยืนยัน","งานแก้ไข","รับงานแล้ว",
-    "accepted","assigned","pending","in_progress","in progress","working","started"
-  ].includes(v) || v.includes("รอดำเนิน") || v.includes("กำลัง") || v.includes("แก้ไข");
+    "accepted","assigned","pending","pending_accept","in_progress","in progress","working","started"
+  ].includes(v) || v.includes("รอดำเนิน") || v.includes("กำลัง") || v.includes("แก้ไข") || v.includes("รับงาน") || v.includes("ยืนยัน");
+}
+
+function technicianJobStatusBadge(job) {
+  const raw = normStatus(job?.job_status);
+  const v = normStatusKey(raw);
+  const hasAssignedTech = !!String(job?.technician_team || job?.technician_username || job?.assigned_to || '').trim();
+  if (isDoneStatusValue(raw)) return `<span class="badge ok">✅ เสร็จแล้ว</span>`;
+  if (isCancelStatusValue(raw)) return `<span class="badge bad">⛔ ยกเลิก</span>`;
+  if (raw === "กำลังทำ" || v === "working" || v === "started" || v === "in_progress" || v === "in progress") {
+    return `<span class="badge run">🛠️ กำลังทำ</span>`;
+  }
+  if (raw === "งานแก้ไข" || v.includes("แก้ไข")) return `<span class="badge wait">🔁 งานแก้ไข</span>`;
+
+  // งานยิงด่วนหลังช่างกดรับงาน บาง record ยังถือ job_status เดิมเป็น
+  // "รอช่างยืนยัน" / "pending_accept" / "accepted" จึงห้ามปล่อยให้ตกไปเป็นยกเลิก
+  if (hasAssignedTech && (["รอช่างยืนยัน", "รับงานแล้ว", "accepted", "assigned", "pending_accept"].includes(v) || raw === "รอช่างยืนยัน" || raw === "รับงานแล้ว")) {
+    return `<span class="badge wait">📌 รับงานแล้ว</span>`;
+  }
+  if (isActiveStatusValue(raw)) return `<span class="badge wait">⏳ รอดำเนินการ</span>`;
+
+  // fallback ปลอดภัย: สถานะที่ไม่รู้จักแต่ยังอยู่ในงานปัจจุบัน ไม่ควรแสดงเป็น "ยกเลิก"
+  return `<span class="badge wait">⏳ รอดำเนินการ</span>`;
 }
 function jobHistoryYmd(job) {
   // ประวัติงานต้องอิงวันปิดงานก่อน ไม่ใช่วันนัดอย่างเดียว
@@ -2882,16 +2904,7 @@ function buildJobCard(job, historyMode = false) {
 
   const status = normStatus(job.job_status) || "รอดำเนินการ";
 
-  const badge =
-    status === "รอดำเนินการ"
-      ? `<span class="badge wait">⏳ รอดำเนินการ</span>`
-      : status === "กำลังทำ"
-      ? `<span class="badge run">🛠️ กำลังทำ</span>`
-      : status === "งานแก้ไข"
-      ? `<span class="badge wait">🔁 งานแก้ไข</span>`
-      : status === "เสร็จแล้ว"
-      ? `<span class="badge ok">✅ เสร็จแล้ว</span>`
-      : `<span class="badge bad">⛔ ยกเลิก</span>`;
+  const badge = technicianJobStatusBadge(job);
 
   // ✅ jobKey: ใช้เป็น key/พารามิเตอร์ได้ทั้ง job_id (number) และ booking_code (string)
   const jobKey = String((job.job_id ?? job.booking_code ?? "")).trim();
@@ -3332,7 +3345,7 @@ function workflowNext(jobId) {
     const paymentSettled = revisitFlow ? false : paid;
 
     // งานปิดแล้ว: ให้ไปดู e-slip (ถ้ามี) และจบ
-    if (status === "เสร็จแล้ว" || status === "ยกเลิก") {
+    if (isDoneStatusValue(status) || isCancelStatusValue(status)) {
       if (paid) return openESlip(keyBase);
       alert("งานนี้ปิดแล้ว");
       return;
