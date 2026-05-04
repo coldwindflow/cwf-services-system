@@ -6825,8 +6825,16 @@ async function _buildTechnicianJobMoneySummary(job, username, opts = {}) {
   const job_id = job?.job_id;
   const tech = String(username || '').trim();
   const context = String(opts?.context || '').trim();
+  let customerCollectAmount = null;
+  try {
+    customerCollectAmount = await _getCustomerCollectAmountForTechJob(job_id, Number(job?.job_price || 0));
+  } catch (e) {
+    // Regression guard: money display must never control job visibility.
+    try { console.warn('[tech_money] customer collect unavailable', { job_id, username: tech, error: e.message }); } catch {}
+    customerCollectAmount = Number(job?.job_price || 0) || null;
+  }
   const summary = {
-    customer_collect_amount: await _getCustomerCollectAmountForTechJob(job_id, Number(job?.job_price || 0)),
+    customer_collect_amount: customerCollectAmount,
     customer_collect_label: context === 'history' ? 'ยอดที่ลูกค้าจ่าย' : 'ยอดเก็บลูกค้า',
     technician_income_amount: null,
     technician_income_label: context === 'offered' ? 'รายได้ช่างโดยประมาณ' : (context === 'history' ? 'รายได้ที่ได้รับ' : 'รายได้ช่างของคุณ'),
@@ -15959,51 +15967,22 @@ app.get("/jobs/tech/:username", async (req, res) => {
       FROM public.jobs
       WHERE
   (
-    -- New (team assignments): show only if this technician is assigned AND not marked done yet
+    -- Visibility must be based on assignment/ownership only.
+    -- Do not hide a job just because an assignment row is already marked done;
+    -- the frontend will place it into current/upcoming/history from the overall job_status.
     EXISTS (
       SELECT 1 FROM public.job_assignments ja
       WHERE ja.job_id = public.jobs.job_id
         AND ja.technician_username=$1
-        AND COALESCE(ja.status,'in_progress') <> 'done'
     )
-
-    OR
-
-    -- ✅ IMPORTANT: keep completed/canceled jobs visible in technician history
-    -- even if this technician already marked assignment as done
-    (
-      EXISTS (
-        SELECT 1 FROM public.job_assignments ja_done
-        WHERE ja_done.job_id = public.jobs.job_id
-          AND ja_done.technician_username=$1
-          AND COALESCE(ja_done.status,'') = 'done'
-      )
-      AND COALESCE(public.jobs.job_status,'') IN ('เสร็จแล้ว','ยกเลิก')
+    OR technician_team=$1
+    OR EXISTS (
+      SELECT 1 FROM public.job_team_members tm
+      WHERE tm.job_id = public.jobs.job_id AND tm.username=$1
     )
-
-    OR
-
-    -- Legacy fallback: show jobs from old logic, but hide them if this tech already marked done in job_assignments
-    (
-      (technician_team=$1
-        OR EXISTS (
-          SELECT 1 FROM public.job_team_members tm
-          WHERE tm.job_id = public.jobs.job_id AND tm.username=$1
-        )
-        OR (technician_username=$1 AND COALESCE(dispatch_mode,'') <> 'offer')
-      )
-      AND (
-        NOT EXISTS (
-          SELECT 1 FROM public.job_assignments ja2
-          WHERE ja2.job_id = public.jobs.job_id
-            AND ja2.technician_username=$1
-            AND COALESCE(ja2.status,'') = 'done'
-        )
-        OR COALESCE(public.jobs.job_status,'') IN ('เสร็จแล้ว','ยกเลิก')
-      )
-    )
+    OR (technician_username=$1 AND COALESCE(dispatch_mode,'') <> 'offer')
   )
-ORDER BY appointment_datetime ASC
+ORDER BY appointment_datetime ASC NULLS LAST, job_id ASC
       `,
       [username]
     );
@@ -16012,9 +15991,25 @@ ORDER BY appointment_datetime ASC
       const st = String(row.job_status || '').trim().toLowerCase();
       const isDone = ['เสร็จแล้ว','เสร็จสิ้น','ปิดงาน','done','completed'].includes(st);
       const context = isDone || row.finished_at ? 'history' : 'current';
-      const money = await _buildTechnicianJobMoneySummary(row, username, { context });
+      let money;
+      try {
+        money = await _buildTechnicianJobMoneySummary(row, username, { context });
+      } catch (e) {
+        try { console.warn('[tech_jobs] money summary failed but keeping job visible', { job_id: row.job_id, username, error: e.message }); } catch {}
+        money = {
+          customer_collect_amount: Number(row.job_price || 0) || null,
+          customer_collect_label: context === 'history' ? 'ยอดที่ลูกค้าจ่าย' : 'ยอดเก็บลูกค้า',
+          technician_income_amount: null,
+          technician_income_label: context === 'history' ? 'รายได้ที่ได้รับ' : 'รายได้ช่างของคุณ',
+          technician_income_source: 'unavailable',
+          technician_income_breakdown: { source: 'unavailable', rows: [], related_items: [] },
+          technician_income_rate_set_id: null,
+          technician_income_rate_set_version: null,
+        };
+      }
       rows.push({ ...row, ...money });
     }
+    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows', { username, count: rows.length }); } catch {}
     res.json(rows);
   } catch (e) {
     console.error(e);
@@ -17191,9 +17186,25 @@ app.get("/offers/tech/:username", async (req, res) => {
 
     const rows = [];
     for (const row of (r.rows || [])) {
-      const money = await _buildTechnicianJobMoneySummary(row, username, { context: 'offered' });
+      let money;
+      try {
+        money = await _buildTechnicianJobMoneySummary(row, username, { context: 'offered' });
+      } catch (e) {
+        try { console.warn('[tech_offers] money summary failed but keeping offer visible', { job_id: row.job_id, username, error: e.message }); } catch {}
+        money = {
+          customer_collect_amount: Number(row.job_price || 0) || null,
+          customer_collect_label: 'ยอดเก็บลูกค้า',
+          technician_income_amount: null,
+          technician_income_label: 'รายได้ช่างโดยประมาณ',
+          technician_income_source: 'unavailable',
+          technician_income_breakdown: { source: 'unavailable', rows: [], related_items: [] },
+          technician_income_rate_set_id: null,
+          technician_income_rate_set_version: null,
+        };
+      }
       rows.push({ ...row, ...money });
     }
+    try { console.log('[CWF_TECH_JOBS_DEBUG] api offers', { username, count: rows.length }); } catch {}
     res.json(rows);
   } catch (e) {
     console.error(e);
