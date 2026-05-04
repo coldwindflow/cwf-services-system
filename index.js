@@ -15976,6 +15976,7 @@ app.get("/jobs/tech/:username", async (req, res) => {
         AND ja.technician_username=$1
     )
     OR technician_team=$1
+    OR (',' || regexp_replace(COALESCE(technician_team,''), '\s+', '', 'g') || ',') ILIKE ('%,' || regexp_replace($1, '\s+', '', 'g') || ',%')
     OR EXISTS (
       SELECT 1 FROM public.job_team_members tm
       WHERE tm.job_id = public.jobs.job_id AND tm.username=$1
@@ -15989,8 +15990,10 @@ ORDER BY appointment_datetime ASC NULLS LAST, job_id ASC
     const rows = [];
     for (const row of (r.rows || [])) {
       const st = String(row.job_status || '').trim().toLowerCase();
-      const isDone = ['เสร็จแล้ว','เสร็จสิ้น','ปิดงาน','done','completed'].includes(st);
-      const context = isDone || row.finished_at ? 'history' : 'current';
+      const isDone = ['เสร็จแล้ว','เสร็จสิ้น','ปิดงาน','done','completed','closed','paid'].includes(st)
+        || st.includes('เสร็จ') || st.includes('ปิดงาน') || st.includes('completed') || st.includes('closed');
+      const paySt = String(row.payment_status || '').trim().toLowerCase();
+      const context = (isDone || row.finished_at || row.paid_at || paySt === 'paid' || paySt.includes('paid') || paySt.includes('ชำระ')) ? 'history' : 'current';
       let money;
       try {
         money = await _buildTechnicianJobMoneySummary(row, username, { context });

@@ -2087,24 +2087,52 @@ function normStatusKey(s) {
 }
 function isDoneStatusValue(s) {
   const v = normStatusKey(s);
-  return ["เสร็จแล้ว","เสร็จสิ้น","ปิดงาน","done","completed"].includes(v);
+  if (!v) return false;
+  // Robust production history detector: DB can contain Thai variants such as
+  // "เสร็จสิ้นงาน", "ปิดงานแล้ว", or English variants from older code.
+  return ["เสร็จแล้ว","เสร็จสิ้น","ปิดงาน","done","completed","complete","closed","paid"].includes(v)
+    || v.includes("เสร็จ")
+    || v.includes("ปิดงาน")
+    || v.includes("completed")
+    || v.includes("closed");
 }
 function isCancelStatusValue(s) {
   const v = normStatusKey(s);
-  return ["ยกเลิก","cancelled","canceled","cancel"].includes(v) || v.includes("ยกเลิก");
+  return ["ยกเลิก","cancelled","canceled","cancel"].includes(v) || v.includes("ยกเลิก") || v.includes("cancel");
 }
-function isActiveStatusValue(s) {
-  const v = normStatusKey(s);
-  if (!v) return false;
-  if (isDoneStatusValue(v) || isCancelStatusValue(v)) return false;
+function hasCompletionSignal(job) {
+  if (!job || typeof job !== 'object') return false;
+  if (job.finished_at || job.completed_at || job.closed_at) return true;
+  const pay = normStatusKey(job.payment_status);
+  if (job.paid_at || pay === 'paid' || pay === 'ชำระแล้ว' || pay.includes('paid') || pay.includes('ชำระ')) return true;
+  return false;
+}
+function isHistoryJob(job) {
+  return isDoneStatusValue(job?.job_status) || isCancelStatusValue(job?.job_status) || hasCompletionSignal(job);
+}
+function isActiveJob(job) {
+  if (!job || typeof job !== 'object') return false;
+  if (isHistoryJob(job)) return false;
+  const v = normStatusKey(job.job_status);
+  if (!v) return true; // keep assigned job visible instead of hiding it when status is blank
   return [
     "รอดำเนินการ","กำลังทำ","ตีกลับ","รอช่างยืนยัน","งานแก้ไข","รับงานแล้ว",
-    "accepted","assigned","pending","in_progress","in progress","working","started"
-  ].includes(v) || v.includes("รอดำเนิน") || v.includes("กำลัง") || v.includes("แก้ไข");
+    "accepted","assigned","pending","in_progress","in progress","working","started","on_the_way"
+  ].includes(v) || v.includes("รอดำเนิน") || v.includes("กำลัง") || v.includes("แก้ไข") || v.includes("รับงาน") || v.includes("pending") || v.includes("progress");
+}
+function isActiveStatusValue(s) {
+  // Backward compatible wrapper for old call sites.
+  const v = normStatusKey(s);
+  if (!v) return true;
+  return !isDoneStatusValue(v) && !isCancelStatusValue(v) && (
+    ["รอดำเนินการ","กำลังทำ","ตีกลับ","รอช่างยืนยัน","งานแก้ไข","รับงานแล้ว","accepted","assigned","pending","in_progress","in progress","working","started","on_the_way"].includes(v)
+    || v.includes("รอดำเนิน") || v.includes("กำลัง") || v.includes("แก้ไข") || v.includes("รับงาน") || v.includes("pending") || v.includes("progress")
+  );
 }
 function jobHistoryYmd(job) {
   // ประวัติงานต้องอิงวันปิดงานก่อน ไม่ใช่วันนัดอย่างเดียว
-  return ymdBkkFromISO(job?.finished_at || job?.completed_at || job?.closed_at || job?.appointment_datetime);
+  // paid_at เป็น fallback สำคัญสำหรับงานเก่าที่ปิด/จ่ายแล้วแต่ไม่มี finished_at
+  return ymdBkkFromISO(job?.finished_at || job?.completed_at || job?.closed_at || job?.paid_at || job?.appointment_datetime);
 }
 
 // =======================================
@@ -2326,7 +2354,7 @@ function renderJobs(jobs) {
 
   const todayYMD = todayYmdBkk();
 
-  const activeAll = jobs.filter((j) => isActiveStatusValue(j.job_status));
+  const activeAll = jobs.filter((j) => isActiveJob(j));
   // งานปัจจุบัน = งาน active ทั้ง "วันนี้" และงานค้างจากวันก่อนหน้า
   // โดยเฉพาะงาน "งานแก้ไข" ที่ถูก return_for_fix_v2 หลังวันนัดเดิมผ่านไปแล้ว
   // ต้องยังเห็นใน current/active flow ของช่าง ไม่งั้นงานจะหายจากหน้าจอ
@@ -2344,19 +2372,26 @@ function renderJobs(jobs) {
     return aa - bb;
   });
 
-  let historyAll = jobs.filter((j) => isDoneStatusValue(j.job_status) || isCancelStatusValue(j.job_status));
+  const historyBase = jobs.filter((j) => isHistoryJob(j));
+  let historyAll = [...historyBase];
+  let historyFilterFallback = false;
 
   // ✅ ฟิลเตอร์ประวัติ: วัน/เดือน/ทั้งหมด (อิง Asia/Bangkok)
-  // งานที่ปิดแล้วต้องอิง finished_at ก่อน ถ้าไม่มีค่อย fallback ไป appointment_datetime
-  // กันเคสปิดงานวันนี้แต่นัดเมื่อวานแล้วประวัติหาย
+  // งานที่ปิดแล้วต้องอิง finished_at ก่อน ไม่ใช่วันนัดอย่างเดียว
+  // Production safety: ถ้าตัวกรองวัน/เดือนทำให้ว่าง แต่ยังมีประวัติจริงใน payload
+  // ให้แสดงทั้งหมดแทน ดีกว่าทำให้ช่างเข้าใจว่างานหายจากระบบ
   const monthKey = todayYMD.slice(0,7);
   if (__HISTORY_FILTER__ === "day") {
-    historyAll = historyAll.filter(j => jobHistoryYmd(j) === todayYMD);
+    historyAll = historyBase.filter(j => jobHistoryYmd(j) === todayYMD);
   } else if (__HISTORY_FILTER__ === "month") {
-    historyAll = historyAll.filter(j => {
+    historyAll = historyBase.filter(j => {
       const y = jobHistoryYmd(j);
       return y && y.slice(0,7) === monthKey;
     });
+  }
+  if (!historyAll.length && historyBase.length && __HISTORY_FILTER__ !== "all") {
+    historyAll = [...historyBase];
+    historyFilterFallback = true;
   }
 
   const prioritizedActiveToday = [...activeToday].sort((a, b) => {
@@ -2406,6 +2441,13 @@ function renderJobs(jobs) {
     if (!historyAll.length) {
       historyJobsEl.innerHTML = "<p>ยังไม่มีงานที่ปิดแล้ว</p>";
     } else {
+      if (historyFilterFallback) {
+        const hint = document.createElement('div');
+        hint.className = 'muted';
+        hint.style.margin = '0 0 10px';
+        hint.textContent = 'ไม่พบงานตามตัวกรองที่เลือก จึงแสดงประวัติทั้งหมดให้แทน';
+        historyJobsEl.appendChild(hint);
+      }
       historyAll.forEach((job) => historyJobsEl.appendChild(buildHistorySummary(job)));
     }
   }
