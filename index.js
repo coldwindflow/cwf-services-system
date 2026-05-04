@@ -4927,9 +4927,39 @@ app.delete('/admin/super/durations/:service_key', requireSuperAdmin, async (req,
   }
 });
 
+
+async function ensureCustomerMessageTemplateStore() {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.customer_message_templates (
+      template_key TEXT NOT NULL,
+      lang TEXT NOT NULL DEFAULT 'th',
+      template_text TEXT NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      updated_by TEXT,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      PRIMARY KEY (template_key, lang)
+    )`);
+  await pool.query(
+    `INSERT INTO public.customer_message_templates(template_key, lang, template_text, enabled, updated_at)
+     VALUES($1,'th',$2,TRUE,NOW()),($1,'en',$3,TRUE,NOW())
+     ON CONFLICT (template_key, lang) DO NOTHING`,
+    [CUSTOMER_CONFIRMATION_TEMPLATE_KEY, DEFAULT_CUSTOMER_CONFIRMATION_TEMPLATES.th, DEFAULT_CUSTOMER_CONFIRMATION_TEMPLATES.en]
+  );
+}
+function requiredCustomerConfirmationPlaceholders(lang='th') {
+  const lng = String(lang || 'th').toLowerCase() === 'en' ? 'en' : 'th';
+  return lng === 'en'
+    ? ['booking_code','tracking_url','customer_name','customer_phone','appointment_en','job_type_en','address_text','items_text_en','job_price_en']
+    : ['booking_code','tracking_url','customer_name','customer_phone','appointment_th','job_type','address_text','items_text','job_price_th'];
+}
+function missingCustomerConfirmationPlaceholders(templateText, lang='th') {
+  const text = String(templateText || '');
+  return requiredCustomerConfirmationPlaceholders(lang).filter((k) => !(new RegExp(`{{\\s*${k}\\s*}}`)).test(text));
+}
 // Customer appointment confirmation template (Super Admin)
 app.get('/admin/super/customer_confirmation_template', requireSuperAdmin, async (req, res) => {
   try {
+    await ensureCustomerMessageTemplateStore();
     const q = await pool.query(
       `SELECT template_key, lang, template_text, enabled, updated_by, updated_at
          FROM public.customer_message_templates
@@ -4958,6 +4988,7 @@ app.get('/admin/super/customer_confirmation_template', requireSuperAdmin, async 
 
 app.post('/admin/super/customer_confirmation_template', requireSuperAdmin, async (req, res) => {
   try {
+    await ensureCustomerMessageTemplateStore();
     const lang = String(req.body?.lang || 'th').toLowerCase() === 'en' ? 'en' : 'th';
     const reset = !!req.body?.reset;
     const template_text = reset
@@ -4965,6 +4996,13 @@ app.post('/admin/super/customer_confirmation_template', requireSuperAdmin, async
       : String(req.body?.template_text || '').trim();
     if (!template_text || template_text.length < 20) {
       return res.status(400).json({ error: 'ข้อความสั้นเกินไปหรือไม่ครบ' });
+    }
+    const missing = missingCustomerConfirmationPlaceholders(template_text, lang);
+    if (!reset && missing.length) {
+      return res.status(400).json({
+        error: `ยังบันทึกไม่ได้ เพราะขาดตัวแปรจำเป็น: ${missing.map((k) => `{{${k}}}`).join(', ')}`,
+        missing_placeholders: missing,
+      });
     }
     await pool.query(
       `INSERT INTO public.customer_message_templates(template_key, lang, template_text, enabled, updated_by, updated_at)
