@@ -1962,7 +1962,7 @@ const CWF_PARTNER_CONTRACT_REAL_HTML = `
 <li>หากพบว่ารายละเอียดงานจริงไม่ตรงกับข้อมูลที่ได้รับ ต้องแจ้งบริษัทก่อนเริ่มงานหรือก่อนเสนอค่าใช้จ่ายเพิ่มกับลูกค้า</li>
 </ul>
 <h3>4. เรทค่าตอบแทนพาร์ทเนอร์แบบขั้นบันได</h3>
-<p>หลักการสำคัญ: เรทนี้เป็น เรทพาร์ทเนอร์เท่านั้น ไม่ใช่เรทช่างบริษัท เริ่มต้นที่ 400 บาท สำหรับงานล้างปกติ ไม่เกิน 12,000 BTU เครื่องที่ 1</p>
+<p>หลักการสำคัญ: เรทนี้เป็น เรทพาร์ทเนอร์เท่านั้น ไม่ใช่เรทที่จะได้รับบริษัท เริ่มต้นที่ 400 บาท สำหรับงานล้างปกติ ไม่เกิน 12,000 BTU เครื่องที่ 1</p>
 <p>และปรับเป็นขั้นบันไดตามจำนวนเครื่องในหน้างานเดียวกัน เพื่อให้บริษัทแบกรับต้นทุนได้ และช่างไม่รู้สึกถูกเอาเปรียบ</p>
 <p class="contract-table-line"><strong>ประเภทงาน</strong></p>
 <p class="contract-table-line"><strong>ขนาด BTU</strong></p>
@@ -4909,7 +4909,7 @@ app.delete('/admin/super/durations/:service_key', requireSuperAdmin, async (req,
 });
 
 // =======================================
-// 💰 Technician Income Settings (ISSUE-2/3)
+// 💲 Technician Income Settings (ISSUE-2/3)
 // - Super Admin only
 // - Defaults + Override per technician
 // =======================================
@@ -6014,7 +6014,7 @@ function _thaiLabelWash(k){
 
 
 // =======================================
-// 💰 CWF Contract Payroll Engine (2026)
+// 💲 CWF Contract Payroll Engine (2026)
 // - Uses fixed per-machine ladder rates from the attached CWF technician contracts.
 // - Replaces the old percent-based technician income calculation for completed jobs.
 // =======================================
@@ -6852,7 +6852,7 @@ async function _buildTechnicianJobMoneySummary(job, username, opts = {}) {
     customer_collect_amount: customerCollectAmount,
     customer_collect_label: context === 'history' ? 'ยอดที่ลูกค้าจ่าย' : 'ยอดเก็บลูกค้า',
     technician_income_amount: null,
-    technician_income_label: context === 'offered' ? 'รายได้ช่างโดยประมาณ' : (context === 'history' ? 'รายได้ที่ได้รับ' : 'รายได้ช่างของคุณ'),
+    technician_income_label: context === 'offered' ? 'ที่ช่างจะได้รับ' : (context === 'history' ? 'ที่ช่างได้รับ' : 'ที่ช่างจะได้รับ'),
     technician_income_source: 'unavailable',
     technician_income_breakdown: { source: 'unavailable', rows: [], related_items: [] },
     technician_income_rate_set_id: null,
@@ -6929,7 +6929,7 @@ function _moneySummaryFromPreview(row, context) {
     technician_income_rate_set_id: row.rate_set_id || detail.rate_set_id || null,
     technician_income_rate_set_version: row.rate_set_version || detail.rate_set_version || null,
     technician_income_breakdown: detail.technician_income_breakdown || detail.breakdown || detail || { source: row.income_source || 'preview', rows: [], related_items: [] },
-    technician_income_label: context === 'offered' ? 'รายได้ช่างโดยประมาณ' : (context === 'history' ? 'รายได้ที่ได้รับ' : 'รายได้ช่างของคุณ'),
+    technician_income_label: context === 'offered' ? 'ที่ช่างจะได้รับ' : (context === 'history' ? 'ที่ช่างได้รับ' : 'ที่ช่างจะได้รับ'),
   };
 }
 
@@ -7003,7 +7003,7 @@ async function _getOrCalculateTechnicianIncomePreview(job_id, username, context 
     technician_income_rate_set_id: made.rate_set_id || null,
     technician_income_rate_set_version: made.rate_set_version || null,
     technician_income_breakdown: made.technician_income_breakdown || { source: made.technician_income_source, rows: [], related_items: [] },
-    technician_income_label: context === 'offered' ? 'รายได้ช่างโดยประมาณ' : (context === 'history' ? 'รายได้ที่ได้รับ' : 'รายได้ช่างของคุณ'),
+    technician_income_label: context === 'offered' ? 'ที่ช่างจะได้รับ' : (context === 'history' ? 'ที่ช่างได้รับ' : 'ที่ช่างจะได้รับ'),
   };
 }
 
@@ -7503,7 +7503,7 @@ app.get('/admin/super/payouts/:payout_id/techs', requireSuperAdmin, async (req, 
 });
 
 // =======================================
-// 👀 Admin (ปกติ) ดูรายได้ช่าง/สถานะจ่าย (READ-ONLY)
+// 👀 Admin (ปกติ) ดูที่ช่างจะได้รับ/สถานะจ่าย (READ-ONLY)
 // - ตาม requirement: แอดมินทั่วไปต้องดูได้ว่า "จ่ายแล้ว/ยัง" โดยไม่ต้องเป็น Super
 // - ปลอด regression: เป็น endpoint เพิ่ม ไม่กระทบของเดิม
 // =======================================
@@ -9664,8 +9664,8 @@ app.post('/admin/super/withdraw_requests/:request_id/reject', requireSuperAdmin,
 });
 
 // =======================================
-// 💰 Technician Income Summary (for technician UI)
-// - รายได้วันนี้ / เดือนนี้ / สะสมทั้งหมด
+// 💲 Technician Income Summary (for technician UI)
+// - ยอดวันนี้ / เดือนนี้ / สะสมทั้งหมด
 // - ใช้ finished_at + payout engine เดียวกับ Super Admin calc
 // =======================================
 function toBangkokDateKey(d) {
@@ -10158,7 +10158,7 @@ app.get('/tech/payments_total', requireTechnicianSession, async (req, res) => {
 });
 
 /**
- * รายละเอียดรายได้รายวัน (เพื่อให้ช่างเห็นว่า "วันนี้ทำอะไร ได้เท่าไหร่" แบบไม่ต้องสร้างงวด)
+ * รายละเอียดยอดที่ช่างจะได้รับรายวัน (เพื่อให้ช่างเห็นว่า "วันนี้ทำอะไร ได้เท่าไหร่" แบบไม่ต้องสร้างงวด)
  * GET /tech/income_day_detail?date=YYYY-MM-DD&limit=50&offset=0
  */
 app.get('/tech/income_day_detail', requireTechnicianSession, async (req, res) => {
@@ -11539,7 +11539,7 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_technician_reviews_tech ON publ
 
 
     // =======================================
-    // 💰 Technician Payout Periods + Step Ladder Rules (Phase 1)
+    // 💲 Technician Payout Periods + Step Ladder Rules (Phase 1)
     // - Cached payout lines per period (10/25)
     // - Deterministic step rule matching + snapshot
     // =======================================
@@ -16143,7 +16143,7 @@ function _techJobMoneyFallback(row, username, context) {
     customer_collect_amount: Number(row?.job_price || 0) || null,
     customer_collect_label: ctx === 'history' ? 'ยอดที่ลูกค้าจ่าย' : 'ยอดเก็บลูกค้า',
     technician_income_amount: null,
-    technician_income_label: ctx === 'offered' ? 'รายได้ช่างโดยประมาณ' : (ctx === 'history' ? 'รายได้ที่ได้รับ' : 'รายได้ช่างของคุณ'),
+    technician_income_label: ctx === 'offered' ? 'ที่ช่างจะได้รับ' : (ctx === 'history' ? 'ที่ช่างได้รับ' : 'ที่ช่างจะได้รับ'),
     technician_income_source: 'loading',
     technician_income_breakdown: { source: 'loading', rows: [], related_items: [] },
     technician_income_rate_set_id: null,
@@ -17201,7 +17201,7 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
         `🧾 Job Type: ${translateJobTypeEN(job.job_type)}\n` +
         `🏠 Address: ${job.address_text || "-"}\n\n` +
         `🧾 Items:\n${lineEN.length ? lineEN.join("\n") : "- (no items)"}\n\n` +
-        `💰 Net Total: ${Number(job.job_price || 0).toFixed(2)} THB\n\n` +
+        `💲 Net Total: ${Number(job.job_price || 0).toFixed(2)} THB\n\n` +
         `Thank you.\nLINE OA: @cwfair\nCall: 098-877-7321`;
     } else {
       text =
@@ -17215,7 +17215,7 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
         `🧾 ประเภทงาน: ${job.job_type || "-"}\n` +
         `🏠 ที่อยู่: ${job.address_text || "-"}\n\n` +
         `🧾 รายการ:\n${lines.length ? lines.join("\n") : "- (ไม่มีรายการ)"}\n\n` +
-        `💰 ยอดชำระสุทธิ: ${Number(job.job_price || 0).toFixed(2)} บาท\n\n` +
+        `💲 ยอดชำระสุทธิ: ${Number(job.job_price || 0).toFixed(2)} บาท\n\n` +
         `ขอบคุณค่ะ\nLINE OA: @cwfair\nโทร: 098-877-7321`;
     }
 
@@ -17478,7 +17478,7 @@ app.post("/tech/income-summary-batch", async (req, res) => {
     return res.json({ ok: true, items });
   } catch (e) {
     console.error('POST /tech/income-summary-batch error:', e);
-    return res.status(500).json({ ok: false, error: "โหลดรายได้ช่างไม่สำเร็จ" });
+    return res.status(500).json({ ok: false, error: "โหลดที่ช่างจะได้รับไม่สำเร็จ" });
   }
 });
 
@@ -17497,7 +17497,7 @@ app.get("/tech/jobs/:job_id/income-detail", async (req, res) => {
     return res.json({ ok: true, job_id: jobId, context, ...money });
   } catch (e) {
     console.error('GET /tech/jobs/:job_id/income-detail error:', e);
-    return res.status(500).json({ ok: false, error: "โหลดรายละเอียดรายได้ช่างไม่สำเร็จ" });
+    return res.status(500).json({ ok: false, error: "โหลดรายละเอียดที่ช่างจะได้รับไม่สำเร็จ" });
   }
 });
 
@@ -23035,7 +23035,7 @@ function http409Conflict(res, conflict){
 }
 
 // =======================================
-// 💰 Pricing + Duration Preview (public)
+// 💲 Pricing + Duration Preview (public)
 // =======================================
 app.post("/public/pricing_preview", async (req, res) => {
   try {

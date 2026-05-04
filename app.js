@@ -970,7 +970,7 @@ async function loadProfile() {
 }
 
 // =======================================
-// 💰 INCOME SUMMARY (Technician)
+// 💲 INCOME SUMMARY (Technician)
 // - แสดง: วันนี้ / เดือนนี้ / สะสมทั้งหมด
 // =======================================
 function formatBaht(n) {
@@ -1070,18 +1070,18 @@ function renderTechnicianMoneySummary(job, context) {
     const key = _techIncomeCardKey(displayJob, ctx);
     __techIncomeModalJobStore.set(key, { ...(displayJob || {}), __incomeContext: ctx, __incomeKey: key });
     const label = ctx === 'offered'
-      ? 'รายได้โดยประมาณ'
-      : (ctx === 'history' ? 'ได้รับ' : 'รายได้ช่าง');
+      ? 'ที่ช่างจะได้รับ'
+      : (ctx === 'history' ? 'ได้รับ' : 'ที่ช่างจะได้รับ');
     const helper = ctx === 'offered'
       ? 'แตะดูรายละเอียดเรทงานนี้'
-      : (ctx === 'history' ? 'แตะดูรายละเอียดรายได้' : 'แตะดูรายละเอียดรายได้');
+      : (ctx === 'history' ? 'แตะดูรายละเอียดยอดที่ช่างจะได้รับ' : 'แตะดูรายละเอียดยอดที่ช่างจะได้รับ');
     const hasAmount = _hasIncomeAmount(displayJob);
     const isLoading = !hasAmount && String(displayJob?.technician_income_source || '') === 'loading';
     const amount = hasAmount ? _techMoneyAmountText(displayJob?.technician_income_amount, 'รอคำนวณรายได้') : (isLoading ? 'กำลังคำนวณ…' : 'รอตรวจสอบรายได้');
     const pendingClass = hasAmount ? '' : 'is-pending';
     return `
-      <button type="button" class="tech-income-chip ${pendingClass}" data-tech-income-chip="${escapeAttr(key)}" data-job-id="${escapeAttr(jobId)}" data-income-context="${escapeAttr(ctx)}" onclick="openTechnicianIncomeModal('${escapeHTML(key)}')" aria-label="ดูรายละเอียดรายได้ช่าง">
-        <span class="tech-income-chip-icon">💰</span>
+      <button type="button" class="tech-income-chip ${pendingClass}" data-tech-income-chip="${escapeAttr(key)}" data-job-id="${escapeAttr(jobId)}" data-income-context="${escapeAttr(ctx)}" onclick="openTechnicianIncomeModal('${escapeHTML(key)}')" aria-label="ดูรายละเอียดที่ช่างจะได้รับ">
+        <span class="tech-income-chip-icon">💲</span>
         <span class="tech-income-chip-main">
           <span class="tech-income-chip-label">${escapeHTML(label)}</span>
           <strong data-income-amount>${escapeHTML(amount)}</strong>
@@ -1091,7 +1091,7 @@ function renderTechnicianMoneySummary(job, context) {
       </button>
     `;
   } catch (e) {
-    return `<div class="tech-income-chip is-pending"><span class="tech-income-chip-icon">💰</span><span class="tech-income-chip-main"><span class="tech-income-chip-label">รายได้ช่าง</span><strong>กำลังคำนวณ…</strong></span></div>`;
+    return `<div class="tech-income-chip is-pending"><span class="tech-income-chip-icon">💲</span><span class="tech-income-chip-main"><span class="tech-income-chip-label">ที่ช่างจะได้รับ</span><strong>กำลังคำนวณ…</strong></span></div>`;
   }
 }
 function _renderTechnicianIncomeBreakdownContent(job) {
@@ -1101,15 +1101,15 @@ function _renderTechnicianIncomeBreakdownContent(job) {
   const source = String(job?.technician_income_source || '');
   const sourceText = source === 'finalized_payout'
     ? 'จากยอดปิดงวดแล้ว'
-    : (source === 'fallback_v4' ? 'ใช้เรทสำรอง v4' : 'คำนวณตามเรทช่าง');
+    : (source === 'fallback_v4' ? 'ใช้เรทสำรอง v4' : 'คำนวณตามเรทที่จะได้รับ');
   if (!rows.length) {
     return `
       <div class="tech-income-modal-summary">
-        <div class="k">รายได้ช่างของคุณ</div>
+        <div class="k">ที่ช่างจะได้รับ</div>
         <div class="v">${escapeHTML(amount)}</div>
         <div class="s">${escapeHTML(sourceText)}${version ? ' • ' + version : ''}</div>
       </div>
-      <div class="tech-income-modal-empty">ยังไม่มีรายละเอียดรายได้ กรุณาติดต่อแอดมินเพื่อตรวจสอบ</div>
+      <div class="tech-income-modal-empty">ยังไม่มีรายละเอียดยอดที่ช่างจะได้รับ กรุณาติดต่อแอดมินเพื่อตรวจสอบ</div>
     `;
   }
   const rowsHtml = rows.map((r) => {
@@ -1133,15 +1133,15 @@ function _renderTechnicianIncomeBreakdownContent(job) {
   }).join('');
   return `
     <div class="tech-income-modal-summary">
-      <div class="k">รายได้ช่างของคุณ</div>
+      <div class="k">ที่ช่างจะได้รับ</div>
       <div class="v">${escapeHTML(amount)}</div>
       <div class="s">${escapeHTML(sourceText)}${version ? ' • ' + version : ''}</div>
     </div>
     <div class="tech-income-modal-list">
-      <div class="tech-income-modal-list-head"><span>รายการ / เรทช่าง</span><b>รวม ${escapeHTML(amount)}</b></div>
+      <div class="tech-income-modal-list-head"><span>รายการ / เรทที่จะได้รับ</span><b>รวม ${escapeHTML(amount)}</b></div>
       ${rowsHtml}
     </div>
-    <div class="tech-income-modal-note">แสดงเฉพาะส่วนรายได้ของช่างคนนี้ ไม่ใช่ยอดเก็บลูกค้า</div>
+    <div class="tech-income-modal-note">แสดงเฉพาะส่วนยอดที่ช่างจะได้รับคนนี้ ไม่ใช่ยอดเก็บลูกค้า</div>
   `;
 }
 function renderTechnicianIncomeBreakdown(job) {
@@ -1156,8 +1156,8 @@ function ensureTechnicianIncomeModal() {
   modal.innerHTML = `
     <div class="tech-income-modal-card" role="dialog" aria-modal="true" aria-labelledby="tech-income-modal-title">
       <button type="button" class="tech-income-modal-close" onclick="closeTechnicianIncomeModal()" aria-label="ปิด">×</button>
-      <div class="tech-income-modal-title" id="tech-income-modal-title">รายละเอียดรายได้ช่าง</div>
-      <div class="tech-income-modal-sub">เงินส่วนนี้คือรายได้ของช่าง ไม่ใช่ยอดเก็บลูกค้า</div>
+      <div class="tech-income-modal-title" id="tech-income-modal-title">รายละเอียดที่ช่างจะได้รับ</div>
+      <div class="tech-income-modal-sub">เงินส่วนนี้คือยอดที่ช่างจะได้รับ ไม่ใช่ยอดเก็บลูกค้า</div>
       <div class="tech-income-modal-body" id="tech-income-modal-body"></div>
       <button type="button" class="tech-income-modal-ok" onclick="closeTechnicianIncomeModal()">ปิด</button>
     </div>
@@ -1194,11 +1194,11 @@ function openTechnicianIncomeModal(key) {
 
   body.innerHTML = `
     <div class="tech-income-modal-summary">
-      <div class="k">รายได้ช่างของคุณ</div>
+      <div class="k">ที่ช่างจะได้รับ</div>
       <div class="v">${escapeHTML(_techMoneyAmountText(job?.technician_income_amount, 'กำลังโหลด…'))}</div>
-      <div class="s">กำลังโหลดรายละเอียดรายได้ โดยไม่บล็อกใบงาน</div>
+      <div class="s">กำลังโหลดรายละเอียดยอดที่ช่างจะได้รับ โดยไม่บล็อกใบงาน</div>
     </div>
-    <div class="tech-income-modal-empty">กำลังโหลดรายละเอียดรายได้ช่าง…</div>
+    <div class="tech-income-modal-empty">กำลังโหลดรายละเอียดที่ช่างจะได้รับ…</div>
   `;
 
   if (!jobId) {
@@ -1356,7 +1356,7 @@ async function loadIncomeSummary() {
 }
 
 // =======================================
-// 💰 INCOME OVERVIEW (Phase 4 UX)
+// 💲 INCOME OVERVIEW (Phase 4 UX)
 // - Today (fast)
 // - Next period estimate (fast)
 // - Rolling month total = previous payout cycle + current completed jobs to date
@@ -2583,7 +2583,7 @@ function renderJobs(jobs) {
   }
 
 
-  // โหลดรายได้ช่างแบบ async หลังใบงานแสดงแล้ว ใบงานจึงไม่ต้องรอ payout/rate engine
+  // โหลดที่ช่างจะได้รับแบบ async หลังใบงานแสดงแล้ว ใบงานจึงไม่ต้องรอ payout/rate engine
   try {
     scheduleTechnicianIncomeSummaryLoad([...prioritizedActiveToday, ...filteredUpcoming, ...historyAll], 'jobs');
   } catch (_) {}
@@ -4151,7 +4151,7 @@ function saveNote(jobId) {
 }
 
 // =======================================
-// 💰 PRICING
+// 💲 PRICING
 // =======================================
 function loadPricing(jobId) {
   fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/pricing`)
