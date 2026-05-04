@@ -216,7 +216,7 @@
     return `${pageHeader(t, "ภาพรวมร้านสไตล์ CWF แต่แยก Workspace ชัดเจน เห็นงาน รายได้ บัญชี ความเสี่ยง และ insight สำคัญในหน้าเดียว", `<button class="primary" data-action="open-job-modal">+ เพิ่มงาน</button>`)}
       <section class="command-hero glass-card">
         <div class="command-left">
-          <div class="command-logo"><img src="./assets/logo-findfix.png" alt="FindFix"></div>
+          <div class="command-logo"><img src="./assets/logo-findfix-icon.png?v=3" alt="FindFix icon"></div>
           <div>
             <p class="eyebrow">FindFix Command Center</p>
             <h3>${escapeHtml(t.name)}</h3>

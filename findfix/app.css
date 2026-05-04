@@ -263,3 +263,213 @@ a{color:inherit}
   .inline-brand-pill,.topbar-brand-pill{padding:9px 10px}
   .logo-chip{width:46px;height:46px}
 }
+
+/* ===== Missing route-specific styles fixed for real usability ===== */
+.command-hero,
+.accounting-hero{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  gap:18px;
+  align-items:center;
+  padding:20px;
+  margin-bottom:16px;
+}
+.command-left{
+  display:flex;
+  align-items:center;
+  gap:16px;
+  min-width:0;
+}
+.command-logo{
+  width:84px;
+  height:84px;
+  border-radius:22px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 auto;
+  background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(255,255,255,.02));
+  border:1px solid rgba(124,238,255,.18);
+  overflow:hidden;
+}
+.command-logo img{
+  width:56px;
+  height:56px;
+  object-fit:contain;
+}
+.command-left h3,
+.accounting-hero h3{
+  margin:0 0 8px;
+  font-size:28px;
+}
+.command-left p,
+.accounting-hero p{
+  margin:0;
+  color:#c0deed;
+  line-height:1.6;
+}
+.command-actions{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  justify-content:flex-end;
+}
+.wow-grid,
+.accounting-grid{
+  display:grid;
+  grid-template-columns:1.05fr .95fr;
+  gap:16px;
+  margin-bottom:16px;
+}
+.wow-card,
+.accounting-preview,
+.ai-card{
+  min-width:0;
+}
+.big-insight{
+  margin:0 0 16px;
+  font-size:22px;
+  line-height:1.5;
+  color:#f2fdff;
+}
+.signal-list,
+.timeline-list,
+.ledger-list,
+.doc-grid,
+.money-stack{
+  display:grid;
+  gap:12px;
+}
+.signal-list > div,
+.timeline-item,
+.ledger-row,
+.doc-card,
+.money-stack > div,
+.accounting-score{
+  border:1px solid rgba(124,238,255,.12);
+  background:rgba(255,255,255,.04);
+  border-radius:18px;
+  padding:14px 16px;
+}
+.signal-list b,
+.ledger-row strong,
+.doc-card strong,
+.timeline-item strong,
+.money-stack strong,
+.accounting-score strong{
+  display:block;
+}
+.signal-list span,
+.timeline-item small,
+.ledger-row small,
+.doc-card small,
+.doc-card em,
+.money-stack span,
+.accounting-score small{
+  color:var(--muted);
+  font-style:normal;
+  line-height:1.5;
+}
+.timeline-item{
+  display:grid;
+  grid-template-columns:40px 1fr;
+  gap:12px;
+  align-items:start;
+}
+.timeline-item i{
+  width:40px;
+  height:40px;
+  display:grid;
+  place-items:center;
+  border-radius:12px;
+  font-style:normal;
+  font-weight:800;
+  background:linear-gradient(135deg,rgba(26,167,255,.18),rgba(142,255,47,.16));
+  color:#fff;
+}
+.ledger-row{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:center;
+}
+.ledger-row b{
+  font-size:20px;
+  white-space:nowrap;
+}
+.ledger-row.income{border-color:rgba(22,240,159,.22)}
+.ledger-row.expense{border-color:rgba(255,91,122,.22)}
+.ledger-row.tax{border-color:rgba(249,255,112,.18)}
+.ledger-row.receivable{border-color:rgba(26,167,255,.22)}
+.doc-grid{
+  grid-template-columns:repeat(2,minmax(0,1fr));
+}
+.doc-card span{
+  font-size:24px;
+  margin-bottom:8px;
+  display:block;
+}
+.doc-card strong{font-size:17px;margin-bottom:6px}
+.doc-card em{display:block;margin-bottom:6px}
+.money-stack > div,
+.accounting-score{
+  display:grid;
+  gap:6px;
+}
+.money-stack strong,
+.accounting-score strong{
+  font-size:28px;
+  color:#fff;
+}
+.accounting-score{
+  min-width:250px;
+  text-align:right;
+}
+.stat em{
+  display:block;
+  margin-top:8px;
+  color:var(--muted);
+  font-style:normal;
+  font-size:13px;
+}
+.stat-blue{background:linear-gradient(180deg,rgba(26,167,255,.18),rgba(26,167,255,.06))}
+.stat-green{background:linear-gradient(180deg,rgba(22,240,159,.18),rgba(22,240,159,.06))}
+.stat-lime{background:linear-gradient(180deg,rgba(142,255,47,.16),rgba(142,255,47,.05))}
+.stat-cyan{background:linear-gradient(180deg,rgba(124,238,255,.18),rgba(124,238,255,.05))}
+
+@media (max-width:1080px){
+  .wow-grid,
+  .accounting-grid,
+  .accounting-grid.lower{
+    grid-template-columns:1fr;
+  }
+  .command-hero,
+  .accounting-hero{
+    grid-template-columns:1fr;
+  }
+  .command-actions{justify-content:flex-start}
+  .doc-grid{grid-template-columns:1fr 1fr}
+}
+
+@media (max-width:760px){
+  .command-left{
+    align-items:flex-start;
+  }
+  .command-logo{
+    width:64px;
+    height:64px;
+    border-radius:18px;
+  }
+  .command-logo img{
+    width:40px;
+    height:40px;
+  }
+  .command-left h3,
+  .accounting-hero h3{font-size:24px}
+  .big-insight{font-size:18px}
+  .doc-grid{grid-template-columns:1fr}
+  .accounting-score{
+    min-width:0;
+    text-align:left;
+  }
+}
