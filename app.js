@@ -2082,6 +2082,30 @@ function loadJobs() {
 function normStatus(s) {
   return String(s || "").trim();
 }
+function normStatusKey(s) {
+  return normStatus(s).toLowerCase();
+}
+function isDoneStatusValue(s) {
+  const v = normStatusKey(s);
+  return ["เสร็จแล้ว","เสร็จสิ้น","ปิดงาน","done","completed"].includes(v);
+}
+function isCancelStatusValue(s) {
+  const v = normStatusKey(s);
+  return ["ยกเลิก","cancelled","canceled","cancel"].includes(v) || v.includes("ยกเลิก");
+}
+function isActiveStatusValue(s) {
+  const v = normStatusKey(s);
+  if (!v) return false;
+  if (isDoneStatusValue(v) || isCancelStatusValue(v)) return false;
+  return [
+    "รอดำเนินการ","กำลังทำ","ตีกลับ","รอช่างยืนยัน","งานแก้ไข","รับงานแล้ว",
+    "accepted","assigned","pending","in_progress","in progress","working","started"
+  ].includes(v) || v.includes("รอดำเนิน") || v.includes("กำลัง") || v.includes("แก้ไข");
+}
+function jobHistoryYmd(job) {
+  // ประวัติงานต้องอิงวันปิดงานก่อน ไม่ใช่วันนัดอย่างเดียว
+  return ymdBkkFromISO(job?.finished_at || job?.completed_at || job?.closed_at || job?.appointment_datetime);
+}
 
 // =======================================
 // 🗓️ DATE HELPERS (Asia/Bangkok) + History Filter
@@ -2300,14 +2324,9 @@ function renderJobs(jobs) {
     return;
   }
 
-  // ✅ สถานะที่ถือว่าเป็น ‘งานกำลังดำเนินการ’
-  const ACTIVE_STATUSES = new Set(["รอดำเนินการ","กำลังทำ","ตีกลับ","รอช่างยืนยัน","งานแก้ไข"]);
-  const DONE_STATUSES = new Set(["เสร็จแล้ว","เสร็จสิ้น","ปิดงาน","done","completed"]);
-  const CANCEL_STATUSES = new Set(["ยกเลิก","cancelled","canceled","cancel"]);
-
   const todayYMD = todayYmdBkk();
 
-  const activeAll = jobs.filter((j) => ACTIVE_STATUSES.has(normStatus(j.job_status)));
+  const activeAll = jobs.filter((j) => isActiveStatusValue(j.job_status));
   // งานปัจจุบัน = งาน active ทั้ง "วันนี้" และงานค้างจากวันก่อนหน้า
   // โดยเฉพาะงาน "งานแก้ไข" ที่ถูก return_for_fix_v2 หลังวันนัดเดิมผ่านไปแล้ว
   // ต้องยังเห็นใน current/active flow ของช่าง ไม่งั้นงานจะหายจากหน้าจอ
@@ -2325,18 +2344,17 @@ function renderJobs(jobs) {
     return aa - bb;
   });
 
-  let historyAll = jobs.filter((j) => {
-    const st = normStatus(j.job_status);
-    return DONE_STATUSES.has(st) || CANCEL_STATUSES.has(st) || st === "ยกเลิก";
-  });
+  let historyAll = jobs.filter((j) => isDoneStatusValue(j.job_status) || isCancelStatusValue(j.job_status));
 
   // ✅ ฟิลเตอร์ประวัติ: วัน/เดือน/ทั้งหมด (อิง Asia/Bangkok)
+  // งานที่ปิดแล้วต้องอิง finished_at ก่อน ถ้าไม่มีค่อย fallback ไป appointment_datetime
+  // กันเคสปิดงานวันนี้แต่นัดเมื่อวานแล้วประวัติหาย
   const monthKey = todayYMD.slice(0,7);
   if (__HISTORY_FILTER__ === "day") {
-    historyAll = historyAll.filter(j => ymdBkkFromISO(j.appointment_datetime) === todayYMD);
+    historyAll = historyAll.filter(j => jobHistoryYmd(j) === todayYMD);
   } else if (__HISTORY_FILTER__ === "month") {
     historyAll = historyAll.filter(j => {
-      const y = ymdBkkFromISO(j.appointment_datetime);
+      const y = jobHistoryYmd(j);
       return y && y.slice(0,7) === monthKey;
     });
   }
@@ -2352,6 +2370,16 @@ function renderJobs(jobs) {
     const ba = b?.appointment_datetime ? new Date(b.appointment_datetime).getTime() : 0;
     return aa - ba;
   });
+
+  try {
+    console.log('[CWF_TECH_JOBS_DEBUG] render counts', {
+      raw: jobs.length,
+      activeToday: prioritizedActiveToday.length,
+      activeUpcoming: activeUpcoming.length,
+      history: historyAll.length,
+      filter: __HISTORY_FILTER__,
+    });
+  } catch (_) {}
 
   if (activeJobsEl) {
     if (!prioritizedActiveToday.length) activeJobsEl.innerHTML = "<p>✅ วันนี้ยังไม่มีงาน</p>";
