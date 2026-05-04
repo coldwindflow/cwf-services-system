@@ -120,7 +120,13 @@ self.addEventListener("push", (event) => {
     badge: "/icon-cwf-v34-192.png",
     tag: data.tag || "cwf-job-notification",
     renotify: true,
-    data: { url: data.url || "/tech.html", job_id: data.job_id || null, kind: data.kind || "job" }
+    requireInteraction: data.kind === "urgent_offer",
+    timestamp: Date.now(),
+    vibrate: [120, 70, 120],
+    actions: [
+      { action: "open", title: data.kind === "urgent_offer" ? "เปิดดูงาน / รับงาน" : "เปิดดูงาน" }
+    ],
+    data: { url: data.url || "/tech.html", job_id: data.job_id || null, kind: data.kind || "job", income_amount_text: data.income_amount_text || "" }
   };
   event.waitUntil(self.registration.showNotification(title, options));
 });

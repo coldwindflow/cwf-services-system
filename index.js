@@ -7123,11 +7123,14 @@ async function _markTechnicianIncomePreviewStale(job_id) {
 
 async function _refreshTechnicianIncomePreviewForJob(job_id, usernames, opts = {}) {
   const list = [...new Set((Array.isArray(usernames) ? usernames : [usernames]).map(x => String(x || '').trim()).filter(Boolean))].slice(0, 60);
-  if (!list.length) return;
+  const incomeByUsername = {};
+  if (!list.length) return incomeByUsername;
   await _markTechnicianIncomePreviewStale(job_id);
   for (const u of list) {
-    await _calculateAndStoreTechnicianIncomePreview(job_id, u, { source: opts.source || 'job_preview' });
+    const made = await _calculateAndStoreTechnicianIncomePreview(job_id, u, { source: opts.source || 'job_preview' });
+    if (made && made.technician_income_amount != null) incomeByUsername[u] = Number(made.technician_income_amount || 0);
   }
+  return incomeByUsername;
 }
 
 async function _findLockedOrPaidPeriodByFinishedAt(client, finishedAtIso){
@@ -13579,19 +13582,21 @@ if (coerceNumber(override_price, 0) > 0) {
     // ✅ Prepare technician income preview/cache right after job creation.
     // Covers: normal/forced jobs + urgent offers shown on รับงานใหม่.
     // It calculates only this job per technician, so technician app can display income immediately.
+    let incomeByUsernameForNotify = {};
     try {
       const previewTargets = [...new Set([selectedTech, ...tmList, ...urgentPushTargets].map(x => (x || '').toString().trim()).filter(Boolean))].slice(0, 60);
-      await _refreshTechnicianIncomePreviewForJob(job_id, previewTargets, { source: bm === 'urgent' ? 'offer_preview' : 'job_preview' });
+      incomeByUsernameForNotify = await _refreshTechnicianIncomePreviewForJob(job_id, previewTargets, { source: bm === 'urgent' ? 'offer_preview' : 'job_preview' }) || {};
     } catch (e) {
       console.warn('[income_preview] admin_book_v2 preview failed', e.message);
     }
 
     // 🔔 best-effort push: ห้ามให้แจ้งเตือนพังจนการลงงาน fail
+    // ใส่ยอด “ที่ช่างจะได้รับ” ลงในแจ้งเตือน โดยใช้ preview ที่คำนวณไว้หลังสร้างงานทันที
     try {
       if (urgentPushTargets.length) {
-        _notifyUrgentOffer({ usernames: urgentPushTargets, job_id, booking_code, job_type, appointment_datetime: apptIso, job_zone }).catch(()=>{});
+        _notifyUrgentOffer({ usernames: urgentPushTargets, job_id, booking_code, job_type, appointment_datetime: apptIso, job_zone, income_by_username: incomeByUsernameForNotify }).catch(()=>{});
       } else if (directPushTargets.length) {
-        _notifyDirectJobAssigned({ usernames: directPushTargets, job_id, booking_code, job_type, appointment_datetime: apptIso, job_zone }).catch(()=>{});
+        _notifyDirectJobAssigned({ usernames: directPushTargets, job_id, booking_code, job_type, appointment_datetime: apptIso, job_zone, income_by_username: incomeByUsernameForNotify }).catch(()=>{});
       }
     } catch (_) {}
 
@@ -17311,21 +17316,24 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
         `🏠 Address: ${job.address_text || "-"}\n\n` +
         `🧾 Items:\n${lineEN.length ? lineEN.join("\n") : "- (no items)"}\n\n` +
         `💲 Net Total: ${Number(job.job_price || 0).toFixed(2)} THB\n\n` +
-        `Thank you.\nLINE OA: @cwfair\nCall: 098-877-7321`;
+        `Note: Before arriving at the job site, our technician will call to reconfirm the appointment. Please kindly answer the call so our team can provide service on time.\n\n` +
+        `Thank you.\nColdwindflow Air Services\nLINE OA: @cwfair\nCall: 098-877-7321`;
     } else {
       text =
         `ยืนยันนัดหมายบริการแอร์\n\n` +
         `Coldwindflow Air Services\n` +
-        `แอดมินฝ่ายบริการลูกค้า ขอเรียนยืนยันนัดหมายดังนี้ค่ะ\n\n` +
-        `🔎 เลขงาน: ${job.booking_code || "#" + job.job_id}\n🔗 ติดตามงาน: ${origin}/track.html?q=${encodeURIComponent(job.booking_code || String(job.job_id))}\n` +
-        `📍 ชื่อลูกค้า: ${job.customer_name || "-"}\n` +
-        `📞 เบอร์: ${job.customer_phone || "-"}\n` +
-        `📅 วันที่นัด: ${ddTH} เวลา ${ttTH} น.\n` +
+        `แอดมินขออนุญาตยืนยันรายละเอียดนัดหมายดังนี้ค่ะ\n\n` +
+        `🔎 เลขงาน: ${job.booking_code || "#" + job.job_id}\n` +
+        `🔗 ติดตามสถานะงาน: ${origin}/track.html?q=${encodeURIComponent(job.booking_code || String(job.job_id))}\n` +
+        `👤 ชื่อลูกค้า: ${job.customer_name || "-"}\n` +
+        `📞 เบอร์โทร: ${job.customer_phone || "-"}\n` +
+        `📅 วันและเวลานัด: ${ddTH} เวลา ${ttTH} น.\n` +
         `🧾 ประเภทงาน: ${job.job_type || "-"}\n` +
-        `🏠 ที่อยู่: ${job.address_text || "-"}\n\n` +
-        `🧾 รายการ:\n${lines.length ? lines.join("\n") : "- (ไม่มีรายการ)"}\n\n` +
+        `🏠 สถานที่บริการ: ${job.address_text || "-"}\n\n` +
+        `🧾 รายการบริการ:\n${lines.length ? lines.join("\n") : "- (ไม่มีรายการ)"}\n\n` +
         `💲 ยอดชำระสุทธิ: ${Number(job.job_price || 0).toFixed(2)} บาท\n\n` +
-        `ขอบคุณค่ะ\nLINE OA: @cwfair\nโทร: 098-877-7321`;
+        `หมายเหตุ: ก่อนช่างเข้าหน้างาน จะมีช่างติดต่อโทรยืนยันนัดหมายอีกครั้ง รบกวนลูกค้ารับสายตามเบอร์ที่แจ้งไว้ เพื่อให้ทีมงานเข้าบริการได้ตรงเวลาและไม่ตกหล่นนะคะ\n\n` +
+        `ขอบคุณค่ะ\nColdwindflow Air Services\nLINE OA: @cwfair\nโทร: 098-877-7321`;
     }
 
     res.json({ text });
@@ -17411,13 +17419,32 @@ async function _sendPushToTechnician(username, payload = {}) {
   return { attempted: rows.length, sent };
 }
 
+function _formatNotifyIncomeAmount(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  try { return n.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท'; }
+  catch { return Math.round(n).toString() + ' บาท'; }
+}
+
+function _incomeAmountFromNotifyMap(map, username) {
+  if (!map || typeof map !== 'object') return '';
+  const raw = map[String(username || '').trim()];
+  return _formatNotifyIncomeAmount(raw);
+}
+
 async function _sendPushToTechnicians(usernames = [], payload = {}) {
   const targets = Array.from(new Set((Array.isArray(usernames) ? usernames : [usernames]).map(x => String(x || '').trim()).filter(Boolean)));
   let attempted = 0;
   let sent = 0;
   for (const u of targets) {
     try {
-      const r = await _sendPushToTechnician(u, payload);
+      const incomeText = _incomeAmountFromNotifyMap(payload.income_by_username, u);
+      const perTechPayload = { ...payload };
+      if (incomeText) {
+        perTechPayload.body = `${payload.body || 'มีงานใหม่เข้ามา'}\n💲 ที่ช่างจะได้รับ: ${incomeText}`;
+        perTechPayload.income_amount_text = incomeText;
+      }
+      const r = await _sendPushToTechnician(u, perTechPayload);
       attempted += Number(r.attempted || 0);
       sent += Number(r.sent || 0);
     } catch (e) {
@@ -17427,13 +17454,14 @@ async function _sendPushToTechnicians(usernames = [], payload = {}) {
   return { targets: targets.length, attempted, sent };
 }
 
-async function _notifyDirectJobAssigned({ usernames, job_id, booking_code, job_type, appointment_datetime, job_zone }) {
+async function _notifyDirectJobAssigned({ usernames, job_id, booking_code, job_type, appointment_datetime, job_zone, income_by_username }) {
   try {
     const title = 'CWF มีงานใหม่';
     const body = _shortJobText({ job_type, appointment_datetime, job_zone }) || `งานใหม่ ${booking_code || ''}`;
     return await _sendPushToTechnicians(usernames, {
       title,
       body,
+      income_by_username,
       job_id,
       kind: 'direct_job',
       tag: `cwf-direct-${job_id}`,
@@ -17442,13 +17470,14 @@ async function _notifyDirectJobAssigned({ usernames, job_id, booking_code, job_t
   } catch (e) { console.warn('[webpush] direct job notify failed', e?.message); return null; }
 }
 
-async function _notifyUrgentOffer({ usernames, job_id, booking_code, job_type, appointment_datetime, job_zone }) {
+async function _notifyUrgentOffer({ usernames, job_id, booking_code, job_type, appointment_datetime, job_zone, income_by_username }) {
   try {
     const title = 'CWF มีงานให้รับ';
     const body = _shortJobText({ job_type, appointment_datetime, job_zone }) || `มีงานให้รับ ${booking_code || ''}`;
     return await _sendPushToTechnicians(usernames, {
       title,
       body,
+      income_by_username,
       job_id,
       kind: 'urgent_offer',
       tag: `cwf-offer-${job_id}`,

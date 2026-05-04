@@ -1030,6 +1030,19 @@ function _techMoneyAmountText(value, fallbackText) {
   const txt = formatBahtText(value);
   return txt || fallbackText;
 }
+function _offerIncomeNotifyText(offer) {
+  const txt = formatBahtText(offer?.technician_income_amount);
+  return txt ? `💲 ที่ช่างจะได้รับ: ${txt}` : '💲 เปิดดูยอดที่ช่างจะได้รับในแอพ';
+}
+function _offerShortNotifyText(offer) {
+  if (!offer) return 'มีข้อเสนองานใหม่';
+  const code = offer.booking_code || (offer.job_id ? `CWF${String(offer.job_id).padStart(7, '0')}` : '');
+  let when = '';
+  try {
+    when = offer.appointment_datetime ? new Date(offer.appointment_datetime).toLocaleString('th-TH', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
+  } catch (_) {}
+  return [code, offer.job_type, when].filter(Boolean).join(' • ') || 'มีข้อเสนองานใหม่';
+}
 const __techIncomeModalJobStore = new Map();
 const __techIncomeSummaryCache = new Map();
 const __techIncomeDetailCache = new Map();
@@ -2116,7 +2129,13 @@ function loadOffers() {
 
         const newOnes = nowIds.filter((id) => !prevSet.has(id));
         if (newOnes.length > 0) {
-          showNotify("📌 CWF มีงานเข้าใหม่", `มีข้อเสนอใหม่ ${newOnes.length} งาน`);
+          const newOffers = list.filter((o) => newOnes.includes(Number(o.offer_id)));
+          if (newOffers.length === 1) {
+            const offer = newOffers[0];
+            showNotify("📌 CWF มีงานเข้าใหม่", `${_offerShortNotifyText(offer)}\n${_offerIncomeNotifyText(offer)}`);
+          } else {
+            showNotify("📌 CWF มีงานเข้าใหม่", `มีข้อเสนอใหม่ ${newOffers.length || newOnes.length} งาน\n💲 เปิดดูยอดที่ช่างจะได้รับในแต่ละงาน`);
+          }
         }
 
         // เก็บล่าสุด (จำกัด 50)
@@ -2152,22 +2171,32 @@ function renderOffers(offers) {
       const min = Math.floor(secLeft / 60);
       const sec = secLeft % 60;
 
+      const booking = o.booking_code || ('CWF'+String(o.job_id).padStart(7,'0'));
+      const apptText = (() => { try { return new Date(o.appointment_datetime).toLocaleString("th-TH", { dateStyle:"medium", timeStyle:"short" }); } catch (_) { return o.appointment_datetime || "-"; } })();
       return `
-      <div class="job-card" style="border:1px solid rgba(251,191,36,0.55);">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
-          <b>📌 งานใหม่เสนอให้รับ</b>
-          <span class="badge wait">⏳ ${min}:${String(sec).padStart(2, "0")}</span>
+      <div class="job-card cwf-new-offer-card" style="border:1px solid rgba(251,191,36,0.55);">
+        <div class="cwf-new-offer-head">
+          <div>
+            <span class="cwf-new-offer-kicker">งานเข้าใหม่</span>
+            <b>📌 งานใหม่เสนอให้รับ</b>
+          </div>
+          <span class="badge wait cwf-new-offer-countdown">⏳ ${min}:${String(sec).padStart(2, "0")}</span>
         </div>
         ${renderTechnicianMoneySummary(o, "offered")}
 
-        <p style="margin-top:10px;"><b>Booking:</b> ${o.booking_code || ('CWF'+String(o.job_id).padStart(7,'0'))}</p>
-        <p><b>ลูกค้า:</b> ${o.customer_name}</p>
-        <p><b>ประเภท:</b> ${o.job_type}</p>
-        <p><b>นัด:</b> ${new Date(o.appointment_datetime).toLocaleString("th-TH")}</p>
-        <p><b>ที่อยู่:</b> ${o.address_text || "-"}</p>
+        <div class="cwf-new-offer-grid">
+          <div><span>เลขงาน</span><b>${escapeHTML(booking)}</b></div>
+          <div><span>ประเภท</span><b>${escapeHTML(o.job_type || '-')}</b></div>
+          <div><span>วันนัด</span><b>${escapeHTML(apptText)}</b></div>
+          <div><span>ลูกค้า</span><b>${escapeHTML(o.customer_name || '-')}</b></div>
+        </div>
+        <div class="cwf-new-offer-address">
+          <span>ที่อยู่</span>
+          <b>${escapeHTML(o.address_text || "-")}</b>
+        </div>
 
-        <div class="row" style="margin-top:10px;">
-          <button onclick="acceptOffer(${o.offer_id})">✅ รับงาน</button>
+        <div class="row cwf-new-offer-actions" style="margin-top:10px;">
+          <button onclick="acceptOffer(${o.offer_id})">✅ รับงานนี้</button>
           <button class="danger" onclick="declineOffer(${o.offer_id})">❌ ไม่รับงาน</button>
         </div>
       </div>

@@ -1254,15 +1254,17 @@ function buildSummaryText(job, items, promotion){
   lines.push(`ยืนยันนัดหมายบริการแอร์`);
   lines.push(`Coldwindflow Air Services`);
   lines.push('');
+  lines.push(`แอดมินขออนุญาตยืนยันรายละเอียดนัดหมายดังนี้ค่ะ`);
+  lines.push('');
   lines.push(`🔎 เลขงาน: ${safe(job.booking_code||job.job_id)}`);
-  lines.push(`📍 ชื่อลูกค้า: ${safe(job.customer_name||'-')}`);
-  lines.push(`📞 เบอร์: ${safe(job.customer_phone||'-')}`);
-  lines.push(`📅 วันที่นัด: ${appt}`);
+  lines.push(`👤 ชื่อลูกค้า: ${safe(job.customer_name||'-')}`);
+  lines.push(`📞 เบอร์โทร: ${safe(job.customer_phone||'-')}`);
+  lines.push(`📅 วันและเวลานัด: ${appt}`);
   lines.push(`🧾 ประเภทงาน: ${safe(job.job_type||'-')}`);
-  if (addr) lines.push(`🏠 ที่อยู่: ${addr}`);
+  if (addr) lines.push(`🏠 สถานที่บริการ: ${addr}`);
   if (items?.length){
     lines.push('');
-    lines.push('รายการบริการ:');
+    lines.push('🧾 รายการบริการ:');
     for (const it of items){
       lines.push(`- ${safe(it.item_name)} x${safe(it.qty)}`);
     }
@@ -1271,6 +1273,13 @@ function buildSummaryText(job, items, promotion){
     lines.push('');
     lines.push(`🎁 โปรโมชั่น: ${safe(promotion.promo_name)}`);
   }
+  lines.push('');
+  lines.push('หมายเหตุ: ก่อนช่างเข้าหน้างาน จะมีช่างติดต่อโทรยืนยันนัดหมายอีกครั้ง รบกวนลูกค้ารับสายตามเบอร์ที่แจ้งไว้ เพื่อให้ทีมงานเข้าบริการได้ตรงเวลาและไม่ตกหล่นนะคะ');
+  lines.push('');
+  lines.push('ขอบคุณค่ะ');
+  lines.push('Coldwindflow Air Services');
+  lines.push('LINE OA: @cwfair');
+  lines.push('โทร: 098-877-7321');
   return lines.join('\n');
 }
 
