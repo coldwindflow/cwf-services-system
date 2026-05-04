@@ -1238,7 +1238,13 @@ const btnClone = el('btnClone');
 
   // summary copy (existing feature)
   try {
-    const text = buildSummaryText(job, items, promotion);
+    let text = '';
+    try {
+      const r = await apiFetch(`/jobs/${encodeURIComponent(String(job.job_id))}/summary`);
+      text = String(r?.text || '').trim();
+    } catch (_) {
+      text = buildSummaryText(job, items, promotion);
+    }
     if (text) {
       el('summary_card').style.display = 'block';
       el('summary_text').value = text;

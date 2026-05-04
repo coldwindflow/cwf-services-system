@@ -50,6 +50,15 @@
     }
 
 
+
+    .message-template-box{display:grid;grid-template-columns:1fr .9fr;gap:12px;margin-top:12px}
+    .template-editor textarea{width:100%;min-height:360px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;line-height:1.55;font-weight:800}
+    .placeholder-grid{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+    .placeholder-chip{border:1px solid rgba(11,75,179,.18);background:#f8fbff;color:#061b49;border-radius:999px;padding:6px 9px;font-size:12px;font-weight:1000;cursor:pointer}
+    .template-preview{white-space:pre-wrap;background:linear-gradient(180deg,#f8fbff,#fff);border:1px solid rgba(11,75,179,.16);border-radius:18px;padding:12px;min-height:360px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.7);font-weight:800;color:#0f172a}
+    .template-note{border-radius:18px;background:linear-gradient(135deg,#fff8d6,#fff);border:1px solid rgba(244,196,0,.4);padding:10px;font-weight:900;color:#5b4200}
+    @media(max-width:920px){.message-template-box{grid-template-columns:1fr}.template-preview{min-height:220px}.template-editor textarea{min-height:300px}}
+
     /* ===== Payout Workflow ===== */
     .payroll-shell{display:grid;grid-template-columns:1.05fr .95fr;gap:12px;margin-top:12px}
     .payroll-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-top:12px}
@@ -352,6 +361,46 @@
         </div>
       </div>
     </details>
+
+    <details id="customerMessageTemplateManager">
+      <summary>💬 ข้อความยืนยันนัดลูกค้า</summary>
+      <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px">
+        <div class="card">
+          <div class="sectionTitle">
+            <div>
+              <b>ตั้งค่าข้อความยืนยันนัดหมายลูกค้า</b>
+              <div class="muted" style="margin-top:4px">ข้อความนี้ใช้กับปุ่มคัดลอกหลังแอดมินเพิ่มงาน และหน้าใบงานแอดมิน</div>
+            </div>
+            <div class="row">
+              <select id="customerMsgLang" style="min-width:120px">
+                <option value="th">ไทย</option>
+                <option value="en">English</option>
+              </select>
+              <button class="btn blue" id="btnLoadCustomerMsg" type="button">รีเฟรช</button>
+              <button class="btn yellow" id="btnSaveCustomerMsg" type="button">บันทึกข้อความ</button>
+            </div>
+          </div>
+          <div class="template-note" style="margin-top:10px">แนะนำให้คงประโยค “ก่อนช่างเข้าหน้างาน จะมีช่างโทรยืนยันนัดหมายอีกครั้ง” ไว้ เพื่อช่วยลดปัญหาลูกค้าไม่รับสายและช่างเข้าหน้างานไม่ได้</div>
+          <div class="message-template-box">
+            <div class="template-editor">
+              <label><b>ข้อความที่ต้องการให้แอดมินคัดลอกส่งลูกค้า</b></label>
+              <textarea id="customerMsgTemplate" placeholder="กำลังโหลดข้อความ..."></textarea>
+              <div class="row" style="margin-top:8px">
+                <button class="btn gray" id="btnPreviewCustomerMsg" type="button">ดูตัวอย่าง</button>
+                <button class="btn gray" id="btnResetCustomerMsg" type="button">คืนค่าเริ่มต้น</button>
+              </div>
+              <div class="muted" style="margin-top:10px">คลิกตัวแปรเพื่อแทรกในข้อความ</div>
+              <div id="customerMsgPlaceholders" class="placeholder-grid"></div>
+            </div>
+            <div>
+              <label><b>ตัวอย่างข้อความหลังแทนข้อมูลจริง</b></label>
+              <div id="customerMsgPreview" class="template-preview">กด “ดูตัวอย่าง” เพื่อดูผลลัพธ์</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </details>
+
 
     <details>
       <summary>🧾 Audit Log</summary>

@@ -79,80 +79,14 @@ const SERVICE_ZONE_SEEDS = [
 ];
 const SERVICE_ZONE_BY_CODE = new Map(SERVICE_ZONE_SEEDS.map(z => [z.code, z]));
 
-// Neighborhood/subdistrict hints for auto service-zone detection.
-// Keep this as a dispatch helper only: it does not replace the official district zoning above.
-const SERVICE_ZONE_AREA_HINTS = [
-  // Zone A: Bangkok east core around Phra Khanong / Bang Na / Suan Luang / Prawet.
-  { zone: "A", district: "พระโขนง", aliases: ["อ่อนนุช", "สุขุมวิท77", "สุขุมวิท 77", "บางจาก", "ปุณณวิถี", "วชิรธรรมสาธิต"] },
-  { zone: "A", district: "บางนา", aliases: ["อุดมสุข", "สุขุมวิท103", "สุขุมวิท 103", "บางนาเหนือ", "บางนาใต้", "แบริ่ง", "ลาซาล", "ศรีลาซาล"] },
-  { zone: "A", district: "สวนหลวง", aliases: ["พัฒนาการ", "คลองตันพัฒนา", "อ่อนนุช46", "อ่อนนุช 46", "ศรีนครินทร์", "กรุงเทพกรีฑา"] },
-  { zone: "A", district: "ประเวศ", aliases: ["หนองบอน", "ดอกไม้", "เฉลิมพระเกียรติ ร.9", "ซีคอน", "พาราไดซ์"] },
-  { zone: "A", district: "บางกะปิ", aliases: ["หัวหมาก", "คลองจั่น", "รามคำแหง"] },
-  { zone: "A", district: "สะพานสูง", aliases: ["ทับช้าง", "ราษฎร์พัฒนา", "รามคำแหงปลาย"] },
-  { zone: "A", district: "ลาดกระบัง", aliases: ["ร่มเกล้า", "หัวตะเข้", "คลองสองต้นนุ่น", "ลำปลาทิว", "ขุมทอง"] },
-
-  // Zone B: Bangkok north/east.
-  { zone: "B", district: "ลาดพร้าว", aliases: ["โชคชัย4", "โชคชัย 4", "นาคนิวาส", "ลาดปลาเค้า"] },
-  { zone: "B", district: "วังทองหลาง", aliases: ["รามคำแหง39", "รามคำแหง 39", "ลาดพร้าว 101", "คลองเจ้าคุณสิงห์", "พลับพลา"] },
-  { zone: "B", district: "บึงกุ่ม", aliases: ["นวมินทร์", "คลองกุ่ม", "นวลจันทร์"] },
-  { zone: "B", district: "คันนายาว", aliases: ["รามอินทรา", "นวลจันทร์", "เสรีไทย"] },
-  { zone: "B", district: "คลองสามวา", aliases: ["หทัยราษฎร์", "สามวาตะวันตก", "สามวาตะวันออก", "บางชัน", "ทรายกองดิน"] },
-  { zone: "B", district: "มีนบุรี", aliases: ["สุวินทวงศ์", "แสนแสบ"] },
-
-  // Zone C: inner Bangkok.
-  { zone: "C", district: "วัฒนา", aliases: ["พระโขนงเหนือ", "เอกมัย", "ทองหล่อ", "อโศก", "พร้อมพงษ์", "คลองตันเหนือ"] },
-  { zone: "C", district: "คลองเตย", aliases: ["พระโขนง", "คลองเตยเหนือ", "คลองตัน", "กล้วยน้ำไท", "พระราม4"] },
-  { zone: "C", district: "ห้วยขวาง", aliases: ["รัชดา", "รัชดาภิเษก", "ห้วยขวาง", "สามเสนนอก"] },
-  { zone: "C", district: "สาทร", aliases: ["ยานนาวา", "ทุ่งมหาเมฆ", "สีลม"] },
-
-  // Zone E: lower west side and cross-river Samut Prakan.
-  { zone: "E", district: "พระประแดง", aliases: ["สำโรงใต้", "บางพึ่ง", "บางจาก", "บางครุ", "บางหญ้าแพรก", "บางหัวเสือ", "ทรงคนอง", "ตลาด", "ลัดหลวง", "บางกอบัว"] },
-  { zone: "E", district: "พระสมุทรเจดีย์", aliases: ["นาเกลือ", "บ้านคลองสวน", "แหลมฟ้าผ่า", "ปากคลองบางปลากด", "ในคลองบางปลากด"] },
-
-  // Zone F: Samut Prakan east side.
-  { zone: "F", district: "เมืองสมุทรปราการ", aliases: ["ปากน้ำ", "สำโรงเหนือ", "เทพารักษ์", "แพรกษา", "แพรกษาใหม่", "บางเมือง", "บางเมืองใหม่", "บางด้วน", "บางโปรง", "บางปู", "บางปูใหม่", "ท้ายบ้าน", "ท้ายบ้านใหม่"] },
-  { zone: "F", district: "บางพลี", aliases: ["บางพลีใหญ่", "บางแก้ว", "บางปลา", "บางโฉลง", "ราชาเทวะ", "หนองปรือ", "กิ่งแก้ว", "สุวรรณภูมิ"] },
-  { zone: "F", district: "บางเสาธง", aliases: ["บางเสาธง", "ศีรษะจรเข้น้อย", "ศีรษะจรเข้ใหญ่"] },
-  { zone: "F", district: "บางบ่อ", aliases: ["บางบ่อ", "บางเพรียง", "บ้านระกาศ", "คลองด่าน", "คลองสวน", "เปร็ง", "บางพลีน้อย"] },
-
-  // Zone G/H: nearby provinces. Use mostly unambiguous subdistrict/neighborhood names.
-  { zone: "G", district: "ปากเกร็ด", aliases: ["เมืองทอง", "เมืองทองธานี", "แจ้งวัฒนะ", "เกาะเกร็ด", "บางพูด", "บางตลาด", "คลองเกลือ"] },
-  { zone: "G", district: "บางใหญ่", aliases: ["เสาธงหิน", "บางแม่นาง", "บางม่วง", "บางเลน", "ตลาดบางใหญ่", "เซ็นทรัลเวสต์เกต"] },
-  { zone: "G", district: "บางบัวทอง", aliases: ["บางรักพัฒนา", "บางคูรัด", "ละหาร", "ลำโพ", "พิมลราช", "โสนลอย"] },
-  { zone: "H", district: "ลำลูกกา", aliases: ["คูคต", "ลาดสวาย", "บึงคำพร้อย", "ลำลูกกา", "บึงทองหลาง"] },
-  { zone: "H", district: "คลองหลวง", aliases: ["คลองหนึ่ง", "คลองสอง", "คลองสาม", "คลองสี่", "คลองห้า", "คลองหก", "คลองเจ็ด", "ธรรมศาสตร์รังสิต"] },
-  { zone: "H", district: "ธัญบุรี", aliases: ["รังสิต", "ประชาธิปัตย์", "บึงยี่โถ", "ลำผักกูด", "บึงสนั่น"] },
-];
-
 function normalizeThaiAreaText(v) {
   return String(v || "")
     .normalize("NFC")
     .toLowerCase()
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
-    // Remove common Thai address prefixes anywhere in the text before compaction.
-    // This lets inputs like "ต.บางเพรียง", "แขวงบางจาก", "เขตสวนหลวง" match cleanly.
-    .replace(/(กรุงเทพมหานคร|กรุงเทพฯ|กทม\.?|จังหวัด|จ\.|เขต|แขวง|อำเภอ|อําเภอ|อ\.|ตำบล|ต\.)/gu, "")
-    .replace(/[^\p{L}\p{N}]+/gu, "");
+    .replace(/[^\p{L}\p{N}]+/gu, "")
+    .replace(/^(เขต|อำเภอ|อําเภอ|อ\.)/u, "");
 }
-
-function buildServiceZoneTextMatchers() {
-  const rows = [];
-  for (const z of SERVICE_ZONE_SEEDS) {
-    for (const district of z.districts) {
-      rows.push({ z, district, alias: district, match_type: "district", priority: 100, len: normalizeThaiAreaText(district).length });
-    }
-  }
-  for (const item of SERVICE_ZONE_AREA_HINTS) {
-    const z = SERVICE_ZONE_BY_CODE.get(String(item.zone || "").toUpperCase());
-    if (!z) continue;
-    const aliases = Array.from(new Set([item.district, ...(item.aliases || [])].filter(Boolean)));
-    for (const alias of aliases) {
-      rows.push({ z, district: item.district || alias, alias, match_type: alias === item.district ? "district_hint" : "area_hint", priority: alias === item.district ? 95 : 80, len: normalizeThaiAreaText(alias).length });
-    }
-  }
-  return rows.filter(r => r.len > 0);
-}
-const SERVICE_ZONE_TEXT_MATCHERS = buildServiceZoneTextMatchers();
 
 async function getServiceZones() {
   try {
@@ -225,25 +159,16 @@ async function detectServiceZoneFromText({ address_text, job_zone, service_zone_
   const hay = normalizeThaiAreaText([home_district, job_zone, address_text, home_province, decodedMapText].filter(Boolean).join(" "));
   const matches = [];
   if (hay) {
-    for (const m of SERVICE_ZONE_TEXT_MATCHERS) {
-      const key = normalizeThaiAreaText(m.alias);
-      if (key && hay.includes(key)) {
-        matches.push({ ...m, len: key.length });
+    for (const z of SERVICE_ZONE_SEEDS) {
+      for (const district of z.districts) {
+        const d = normalizeThaiAreaText(district);
+        if (d && hay.includes(d)) matches.push({ z, district, len: d.length });
       }
     }
   }
-  matches.sort((a, b) => b.len - a.len || b.priority - a.priority || a.z.order - b.z.order);
+  matches.sort((a, b) => b.len - a.len || a.z.order - b.z.order);
   const best = matches[0];
-  if (best) {
-    return {
-      service_zone_code: best.z.code,
-      service_zone_label: best.z.label,
-      service_zone_source: best.match_type === "area_hint" ? "area_alias_detect" : "auto_detect",
-      matched_district: best.district,
-      matched_area: best.alias,
-      matched_type: best.match_type
-    };
-  }
+  if (best) return { service_zone_code: best.z.code, service_zone_label: best.z.label, service_zone_source: "auto_detect", matched_district: best.district };
   const ll = extractLatLngFromMapsText(maps_url || address_text || job_zone || "");
   if (ll) return detectServiceZoneFromLatLng(ll.lat, ll.lng);
   return null;
@@ -4999,6 +4924,97 @@ app.delete('/admin/super/durations/:service_key', requireSuperAdmin, async (req,
   } catch (e) {
     console.error('DELETE /admin/super/durations', e);
     return res.status(500).json({ error: 'ลบ duration ไม่สำเร็จ' });
+  }
+});
+
+// Customer appointment confirmation template (Super Admin)
+app.get('/admin/super/customer_confirmation_template', requireSuperAdmin, async (req, res) => {
+  try {
+    const q = await pool.query(
+      `SELECT template_key, lang, template_text, enabled, updated_by, updated_at
+         FROM public.customer_message_templates
+        WHERE template_key=$1
+        ORDER BY lang ASC`,
+      [CUSTOMER_CONFIRMATION_TEMPLATE_KEY]
+    );
+    const rows = q.rows || [];
+    const byLang = {};
+    for (const r of rows) byLang[String(r.lang || 'th')] = r;
+    return res.json({
+      ok: true,
+      template_key: CUSTOMER_CONFIRMATION_TEMPLATE_KEY,
+      placeholders: CUSTOMER_CONFIRMATION_PLACEHOLDERS,
+      defaults: DEFAULT_CUSTOMER_CONFIRMATION_TEMPLATES,
+      templates: {
+        th: byLang.th || { lang:'th', template_text: DEFAULT_CUSTOMER_CONFIRMATION_TEMPLATES.th, enabled:true },
+        en: byLang.en || { lang:'en', template_text: DEFAULT_CUSTOMER_CONFIRMATION_TEMPLATES.en, enabled:true },
+      }
+    });
+  } catch (e) {
+    console.error('GET /admin/super/customer_confirmation_template', e);
+    return res.status(500).json({ error: 'โหลดข้อความยืนยันนัดไม่สำเร็จ' });
+  }
+});
+
+app.post('/admin/super/customer_confirmation_template', requireSuperAdmin, async (req, res) => {
+  try {
+    const lang = String(req.body?.lang || 'th').toLowerCase() === 'en' ? 'en' : 'th';
+    const reset = !!req.body?.reset;
+    const template_text = reset
+      ? DEFAULT_CUSTOMER_CONFIRMATION_TEMPLATES[lang]
+      : String(req.body?.template_text || '').trim();
+    if (!template_text || template_text.length < 20) {
+      return res.status(400).json({ error: 'ข้อความสั้นเกินไปหรือไม่ครบ' });
+    }
+    await pool.query(
+      `INSERT INTO public.customer_message_templates(template_key, lang, template_text, enabled, updated_by, updated_at)
+       VALUES($1,$2,$3,TRUE,$4,NOW())
+       ON CONFLICT (template_key, lang)
+       DO UPDATE SET template_text=EXCLUDED.template_text, enabled=TRUE, updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
+      [CUSTOMER_CONFIRMATION_TEMPLATE_KEY, lang, template_text, req.actor?.username || null]
+    );
+    await auditLog(req, {
+      action: reset ? 'CUSTOMER_CONFIRMATION_TEMPLATE_RESET' : 'CUSTOMER_CONFIRMATION_TEMPLATE_UPDATE',
+      target_role: 'message_template',
+      target_username: CUSTOMER_CONFIRMATION_TEMPLATE_KEY,
+      meta: { lang, length: template_text.length }
+    });
+    return res.json({ ok: true, lang, template_text });
+  } catch (e) {
+    console.error('POST /admin/super/customer_confirmation_template', e);
+    return res.status(500).json({ error: 'บันทึกข้อความยืนยันนัดไม่สำเร็จ' });
+  }
+});
+
+app.post('/admin/super/customer_confirmation_template/preview', requireSuperAdmin, async (req, res) => {
+  try {
+    const lang = String(req.body?.lang || 'th').toLowerCase() === 'en' ? 'en' : 'th';
+    const template = String(req.body?.template_text || '').trim() || DEFAULT_CUSTOMER_CONFIRMATION_TEMPLATES[lang];
+    const origin = `${req.protocol}://${req.get('host')}`;
+    const sampleJob = {
+      job_id: 250,
+      booking_code: 'CWF4P7YAPX',
+      customer_name: 'Test ลูกค้า',
+      customer_phone: '0987654321',
+      appointment_datetime: new Date(),
+      address_text: 'อ่อนนุช ถนนสุขุมวิท กรุงเทพฯ',
+      job_type: 'ล้าง',
+      job_price: 1600,
+    };
+    const dt = new Date(sampleJob.appointment_datetime);
+    const vars = buildCustomerConfirmationVars({
+      job: sampleJob,
+      items: [{ item_name:'ล้างแอร์ผนัง ไม่เกิน 12,000 BTU', qty:2, unit_price:800, line_total:1600 }],
+      origin,
+      ddTH: dt.toLocaleDateString('th-TH', { timeZone:'Asia/Bangkok' }),
+      ttTH: dt.toLocaleTimeString('th-TH', { timeZone:'Asia/Bangkok', hour:'2-digit', minute:'2-digit' }),
+      ddEN: dt.toLocaleDateString('en-GB', { timeZone:'Asia/Bangkok' }),
+      ttEN: dt.toLocaleTimeString('en-GB', { timeZone:'Asia/Bangkok', hour:'2-digit', minute:'2-digit' }),
+    });
+    return res.json({ ok:true, text: renderCustomerConfirmationTemplate(template, vars) });
+  } catch (e) {
+    console.error('POST /admin/super/customer_confirmation_template/preview', e);
+    return res.status(500).json({ error: 'preview ไม่สำเร็จ' });
   }
 });
 
@@ -10600,6 +10616,26 @@ await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS line_picture
 await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS line_linked_at TIMESTAMPTZ`);
 await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_users_line_user_id ON public.users(line_user_id) WHERE line_user_id IS NOT NULL`);
 
+// 3.x) Super Admin configurable customer message templates
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.customer_message_templates (
+    template_key TEXT NOT NULL,
+    lang TEXT NOT NULL DEFAULT 'th',
+    template_text TEXT NOT NULL,
+    enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_by TEXT,
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (template_key, lang)
+  )
+`);
+await pool.query(`
+  INSERT INTO public.customer_message_templates(template_key, lang, template_text, enabled, updated_at)
+  VALUES
+    ($1, 'th', $2, TRUE, NOW()),
+    ($1, 'en', $3, TRUE, NOW())
+  ON CONFLICT (template_key, lang) DO NOTHING
+`, [CUSTOMER_CONFIRMATION_TEMPLATE_KEY, DEFAULT_CUSTOMER_CONFIRMATION_TEMPLATES.th, DEFAULT_CUSTOMER_CONFIRMATION_TEMPLATES.en]);
+
 
 
 // 3.0) Bootstrap default Super Admin user (only if missing) - keeps DB role constraint safe
@@ -10695,22 +10731,6 @@ for (const z of SERVICE_ZONE_SEEDS) {
        VALUES ($1,$2,$3,TRUE)
        ON CONFLICT (zone_code, province, district, (COALESCE(subdistrict,''))) DO NOTHING`,
       [z.code, province, district]
-    );
-  }
-}
-for (const area of SERVICE_ZONE_AREA_HINTS) {
-  const z = SERVICE_ZONE_BY_CODE.get(String(area.zone || '').toUpperCase());
-  if (!z) continue;
-  const province = z.group === 'samut_prakan' ? 'สมุทรปราการ' : (z.group === 'nonthaburi' ? 'นนทบุรี' : (z.group === 'pathum_thani' ? 'ปทุมธานี' : 'กรุงเทพมหานคร'));
-  const district = String(area.district || '').trim();
-  for (const alias of (area.aliases || [])) {
-    const subdistrict = String(alias || '').trim();
-    if (!district || !subdistrict) continue;
-    await pool.query(
-      `INSERT INTO public.service_zone_areas (zone_code, province, district, subdistrict, is_primary)
-       VALUES ($1,$2,$3,$4,FALSE)
-       ON CONFLICT (zone_code, province, district, (COALESCE(subdistrict,''))) DO NOTHING`,
-      [z.code, province, district, subdistrict]
     );
   }
 }
@@ -17351,6 +17371,126 @@ function translateServiceItemNameEN(name){
 }
 
 
+
+// ===== Customer confirmation message templates (Super Admin configurable) =====
+const CUSTOMER_CONFIRMATION_TEMPLATE_KEY = 'customer_appointment_confirmation';
+const DEFAULT_CUSTOMER_CONFIRMATION_TEMPLATES = {
+  th: `ยืนยันนัดหมายบริการแอร์
+
+Coldwindflow Air Services
+แอดมินขออนุญาตยืนยันรายละเอียดนัดหมายดังนี้ค่ะ
+
+🔎 เลขงาน: {{booking_code}}
+🔗 ติดตามสถานะงาน: {{tracking_url}}
+👤 ชื่อลูกค้า: {{customer_name}}
+📞 เบอร์โทร: {{customer_phone}}
+📅 วันและเวลานัด: {{appointment_th}}
+🧾 ประเภทงาน: {{job_type}}
+🏠 สถานที่บริการ: {{address_text}}
+
+🧾 รายการบริการ:
+{{items_text}}
+
+💲 ยอดชำระสุทธิ: {{job_price_th}} บาท
+
+หมายเหตุ: ก่อนช่างเข้าหน้างาน จะมีช่างติดต่อโทรยืนยันนัดหมายอีกครั้ง รบกวนลูกค้ารับสายตามเบอร์ที่แจ้งไว้ เพื่อให้ทีมงานเข้าบริการได้ตรงเวลาและไม่ตกหล่นนะคะ
+
+ขอบคุณค่ะ
+Coldwindflow Air Services
+LINE OA: @cwfair
+โทร: 098-877-7321`,
+  en: `Service Appointment Confirmation
+
+Coldwindflow Air Services
+Our admin team would like to confirm your appointment details:
+
+🔎 Job No.: {{booking_code}}
+🔗 Track: {{tracking_url}}
+📍 Customer: {{customer_name}}
+📞 Phone: {{customer_phone}}
+📅 Appointment: {{appointment_en}}
+🧾 Job Type: {{job_type_en}}
+🏠 Address: {{address_text}}
+
+🧾 Items:
+{{items_text_en}}
+
+💲 Net Total: {{job_price_en}} THB
+
+Note: Before arriving at the job site, our technician will call to reconfirm the appointment. Please kindly answer the call so our team can provide service on time.
+
+Thank you.
+Coldwindflow Air Services
+LINE OA: @cwfair
+Call: 098-877-7321`
+};
+const CUSTOMER_CONFIRMATION_PLACEHOLDERS = [
+  'booking_code','tracking_url','customer_name','customer_phone','appointment_th','appointment_en','job_type','job_type_en','address_text','items_text','items_text_en','job_price_th','job_price_en'
+];
+function _safeMsgText(v, fallback='-') {
+  const t = String(v ?? '').trim();
+  return t || fallback;
+}
+function _formatMoney2(n) {
+  const x = Number(n || 0);
+  return Number.isFinite(x) ? x.toFixed(2) : '0.00';
+}
+async function getCustomerConfirmationTemplate(lang='th') {
+  const key = CUSTOMER_CONFIRMATION_TEMPLATE_KEY;
+  const lng = String(lang || 'th').toLowerCase() === 'en' ? 'en' : 'th';
+  try {
+    const r = await pool.query(
+      `SELECT template_text FROM public.customer_message_templates WHERE template_key=$1 AND lang=$2 AND enabled=TRUE LIMIT 1`,
+      [key, lng]
+    );
+    const tpl = String(r.rows?.[0]?.template_text || '').trim();
+    if (tpl) return tpl;
+  } catch (e) {
+    try { console.warn('[customer_template] load fallback:', e.message); } catch {}
+  }
+  return DEFAULT_CUSTOMER_CONFIRMATION_TEMPLATES[lng] || DEFAULT_CUSTOMER_CONFIRMATION_TEMPLATES.th;
+}
+function renderCustomerConfirmationTemplate(template, vars) {
+  let out = String(template || '');
+  const escapeRegExp = (value) => String(value || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  for (const [k, v] of Object.entries(vars || {})) {
+    const re = new RegExp(`{{\\s*${escapeRegExp(k)}\\s*}}`, 'g');
+    out = out.replace(re, String(v ?? ''));
+  }
+  // Keep unknown placeholders visible for Super Admin debugging, but remove accidental undefined/null text.
+  return out.replace(/undefined|null/g, '-').trim();
+}
+function buildCustomerConfirmationVars({ job, items, origin, ddTH, ttTH, ddEN, ttEN }) {
+  const booking = _safeMsgText(job.booking_code || (job.job_id ? `#${job.job_id}` : '-'));
+  const itemRows = (items || []).map((it) => {
+    const qty = Number(it.qty || 0);
+    const up = Number(it.unit_price || 0);
+    const lt = Number(it.line_total || 0);
+    return `- ${_safeMsgText(it.item_name)} x${qty} @ ${_formatMoney2(up)} บาท = ${_formatMoney2(lt)} บาท`;
+  });
+  const itemRowsEN = (items || []).map((it) => {
+    const qty = Number(it.qty || 0);
+    const up = Number(it.unit_price || 0);
+    const lt = Number(it.line_total || 0);
+    return `- ${translateServiceItemNameEN(it.item_name)} x${qty} @ ${_formatMoney2(up)} THB = ${_formatMoney2(lt)} THB`;
+  });
+  return {
+    booking_code: booking,
+    tracking_url: `${origin}/track.html?q=${encodeURIComponent(job.booking_code || String(job.job_id || ''))}`,
+    customer_name: _safeMsgText(job.customer_name),
+    customer_phone: _safeMsgText(job.customer_phone),
+    appointment_th: `${ddTH} เวลา ${ttTH} น.`,
+    appointment_en: `${ddEN} ${ttEN}`,
+    job_type: _safeMsgText(job.job_type),
+    job_type_en: translateJobTypeEN(job.job_type),
+    address_text: _safeMsgText(job.address_text),
+    items_text: itemRows.length ? itemRows.join('\n') : '- (ไม่มีรายการ)',
+    items_text_en: itemRowsEN.length ? itemRowsEN.join('\n') : '- (no items)',
+    job_price_th: _formatMoney2(job.job_price),
+    job_price_en: _formatMoney2(job.job_price),
+  };
+}
+
 app.get("/jobs/:job_id/summary", async (req, res) => {
   const { job_id } = req.params;
   const lang = String(req.query.lang || 'th').toLowerCase();
@@ -17379,53 +17519,19 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
     const ddEN = dt.toLocaleDateString("en-GB", { timeZone: "Asia/Bangkok" });
     const ttEN = dt.toLocaleTimeString("en-GB", { timeZone: "Asia/Bangkok", hour: "2-digit", minute: "2-digit" });
 
-    const lines = itemsR.rows.map((it) => {
-      const qty = Number(it.qty);
-      const up = Number(it.unit_price);
-      const lt = Number(it.line_total);
-      return `- ${it.item_name} x${qty} @ ${up} บาท = ${lt} บาท`;
+    const vars = buildCustomerConfirmationVars({
+      job,
+      items: itemsR.rows,
+      origin,
+      ddTH,
+      ttTH,
+      ddEN,
+      ttEN,
     });
 
-    let text = '';
-    if(lang === 'en'){
-      const lineEN = itemsR.rows.map((it) => {
-        const qty = Number(it.qty);
-        const up = Number(it.unit_price);
-        const lt = Number(it.line_total);
-        return `- ${translateServiceItemNameEN(it.item_name)} x${qty} @ ${up} THB = ${lt} THB`;
-      });
-      text =
-        `Service Appointment Confirmation\n\n` +
-        `Coldwindflow Air Services\n` +
-        `Our admin team would like to confirm your appointment details:\n\n` +
-        `🔎 Job No.: ${job.booking_code || "#" + job.job_id}\n` +
-        `🔗 Track: ${origin}/track.html?q=${encodeURIComponent(job.booking_code || String(job.job_id))}\n` +
-        `📍 Customer: ${job.customer_name || "-"}\n` +
-        `📞 Phone: ${job.customer_phone || "-"}\n` +
-        `📅 Appointment: ${ddEN} ${ttEN}\n` +
-        `🧾 Job Type: ${translateJobTypeEN(job.job_type)}\n` +
-        `🏠 Address: ${job.address_text || "-"}\n\n` +
-        `🧾 Items:\n${lineEN.length ? lineEN.join("\n") : "- (no items)"}\n\n` +
-        `💲 Net Total: ${Number(job.job_price || 0).toFixed(2)} THB\n\n` +
-        `Note: Before arriving at the job site, our technician will call to reconfirm the appointment. Please kindly answer the call so our team can provide service on time.\n\n` +
-        `Thank you.\nColdwindflow Air Services\nLINE OA: @cwfair\nCall: 098-877-7321`;
-    } else {
-      text =
-        `ยืนยันนัดหมายบริการแอร์\n\n` +
-        `Coldwindflow Air Services\n` +
-        `แอดมินขออนุญาตยืนยันรายละเอียดนัดหมายดังนี้ค่ะ\n\n` +
-        `🔎 เลขงาน: ${job.booking_code || "#" + job.job_id}\n` +
-        `🔗 ติดตามสถานะงาน: ${origin}/track.html?q=${encodeURIComponent(job.booking_code || String(job.job_id))}\n` +
-        `👤 ชื่อลูกค้า: ${job.customer_name || "-"}\n` +
-        `📞 เบอร์โทร: ${job.customer_phone || "-"}\n` +
-        `📅 วันและเวลานัด: ${ddTH} เวลา ${ttTH} น.\n` +
-        `🧾 ประเภทงาน: ${job.job_type || "-"}\n` +
-        `🏠 สถานที่บริการ: ${job.address_text || "-"}\n\n` +
-        `🧾 รายการบริการ:\n${lines.length ? lines.join("\n") : "- (ไม่มีรายการ)"}\n\n` +
-        `💲 ยอดชำระสุทธิ: ${Number(job.job_price || 0).toFixed(2)} บาท\n\n` +
-        `หมายเหตุ: ก่อนช่างเข้าหน้างาน จะมีช่างติดต่อโทรยืนยันนัดหมายอีกครั้ง รบกวนลูกค้ารับสายตามเบอร์ที่แจ้งไว้ เพื่อให้ทีมงานเข้าบริการได้ตรงเวลาและไม่ตกหล่นนะคะ\n\n` +
-        `ขอบคุณค่ะ\nColdwindflow Air Services\nLINE OA: @cwfair\nโทร: 098-877-7321`;
-    }
+    const template = await getCustomerConfirmationTemplate(lang);
+    const text = renderCustomerConfirmationTemplate(template, vars);
+
 
     res.json({ text });
   } catch (e) {

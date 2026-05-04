@@ -1073,6 +1073,98 @@
     await loadTechRateAudit();
   }
 
+
+
+  // ===== Customer confirmation message template =====
+  const CUSTOMER_MSG_STATE = { templates:null, placeholders:[], defaults:null };
+  function insertAtCursor(textarea, text) {
+    if (!textarea) return;
+    const start = textarea.selectionStart ?? textarea.value.length;
+    const end = textarea.selectionEnd ?? textarea.value.length;
+    textarea.value = textarea.value.slice(0, start) + text + textarea.value.slice(end);
+    textarea.focus();
+    const pos = start + text.length;
+    textarea.setSelectionRange(pos, pos);
+  }
+  function renderCustomerMsgPlaceholders() {
+    const box = $('customerMsgPlaceholders');
+    if (!box) return;
+    const list = CUSTOMER_MSG_STATE.placeholders || [];
+    box.innerHTML = list.map(k => `<button type="button" class="placeholder-chip" data-k="${esc(k)}">{{${esc(k)}}}</button>`).join('');
+    box.querySelectorAll('.placeholder-chip').forEach(btn => {
+      btn.addEventListener('click', () => insertAtCursor($('customerMsgTemplate'), `{{${btn.dataset.k}}}`));
+    });
+  }
+  function currentCustomerMsgLang() {
+    return String($('customerMsgLang')?.value || 'th').toLowerCase() === 'en' ? 'en' : 'th';
+  }
+  function setCustomerMsgEditorFromState() {
+    const lang = currentCustomerMsgLang();
+    const row = CUSTOMER_MSG_STATE.templates?.[lang];
+    if ($('customerMsgTemplate')) $('customerMsgTemplate').value = row?.template_text || CUSTOMER_MSG_STATE.defaults?.[lang] || '';
+    if ($('customerMsgPreview')) $('customerMsgPreview').textContent = 'กด “ดูตัวอย่าง” เพื่อดูผลลัพธ์';
+  }
+  async function loadCustomerMsgTemplate() {
+    if (!$('customerMsgTemplate')) return;
+    try {
+      const r = await api('/admin/super/customer_confirmation_template');
+      CUSTOMER_MSG_STATE.templates = r.templates || {};
+      CUSTOMER_MSG_STATE.placeholders = r.placeholders || [];
+      CUSTOMER_MSG_STATE.defaults = r.defaults || {};
+      renderCustomerMsgPlaceholders();
+      setCustomerMsgEditorFromState();
+      toast('โหลดข้อความยืนยันนัดแล้ว');
+    } catch(e) {
+      alert(`โหลดข้อความยืนยันนัดไม่สำเร็จ: ${e.message}`);
+    }
+  }
+  async function previewCustomerMsgTemplate() {
+    if (!$('customerMsgTemplate')) return;
+    try {
+      const r = await api('/admin/super/customer_confirmation_template/preview', {
+        method:'POST',
+        body: JSON.stringify({ lang: currentCustomerMsgLang(), template_text: $('customerMsgTemplate').value })
+      });
+      $('customerMsgPreview').textContent = r.text || '';
+    } catch(e) {
+      alert(`preview ไม่สำเร็จ: ${e.message}`);
+    }
+  }
+  async function saveCustomerMsgTemplate() {
+    const text = String($('customerMsgTemplate')?.value || '').trim();
+    if (!text) return alert('กรุณาใส่ข้อความก่อนบันทึก');
+    if (!text.includes('{{booking_code}}') && !confirm('ข้อความไม่มี {{booking_code}} ต้องการบันทึกต่อไหม?')) return;
+    if (!confirm('บันทึกข้อความยืนยันนัดหมายลูกค้า? ข้อความนี้จะใช้หลังแอดมินเพิ่มงานทันที')) return;
+    try {
+      await api('/admin/super/customer_confirmation_template', {
+        method:'POST',
+        body: JSON.stringify({ lang: currentCustomerMsgLang(), template_text: text })
+      });
+      toast('บันทึกข้อความยืนยันนัดแล้ว');
+      await loadCustomerMsgTemplate();
+      await previewCustomerMsgTemplate();
+      await loadAudit();
+    } catch(e) {
+      alert(`บันทึกไม่สำเร็จ: ${e.message}`);
+    }
+  }
+  async function resetCustomerMsgTemplate() {
+    const lang = currentCustomerMsgLang();
+    if (!confirm(`คืนค่าข้อความ${lang === 'en' ? 'ภาษาอังกฤษ' : 'ภาษาไทย'}เป็นค่าเริ่มต้น?`)) return;
+    try {
+      await api('/admin/super/customer_confirmation_template', {
+        method:'POST',
+        body: JSON.stringify({ lang, reset:true })
+      });
+      toast('คืนค่าเริ่มต้นแล้ว');
+      await loadCustomerMsgTemplate();
+      await previewCustomerMsgTemplate();
+      await loadAudit();
+    } catch(e) {
+      alert(`คืนค่าไม่สำเร็จ: ${e.message}`);
+    }
+  }
+
   if ($('btnGenCurrentPayout')) $('btnGenCurrentPayout').addEventListener('click', ()=> generatePayout(currentPayoutType()));
   if ($('btnGenP10')) $('btnGenP10').addEventListener('click', ()=> generatePayout('10'));
   if ($('btnGenP25')) $('btnGenP25').addEventListener('click', ()=> generatePayout('25'));
@@ -1085,6 +1177,11 @@
   if ($('btnSaveTechRateDraft')) $('btnSaveTechRateDraft').addEventListener('click', saveTechRateDraft);
   if ($('btnActivateTechRateDraft')) $('btnActivateTechRateDraft').addEventListener('click', activateTechRateDraft);
   if ($('btnReloadTechRateAudit')) $('btnReloadTechRateAudit').addEventListener('click', loadTechRateAudit);
+  if ($('customerMsgLang')) $('customerMsgLang').addEventListener('change', () => { setCustomerMsgEditorFromState(); });
+  if ($('btnLoadCustomerMsg')) $('btnLoadCustomerMsg').addEventListener('click', loadCustomerMsgTemplate);
+  if ($('btnPreviewCustomerMsg')) $('btnPreviewCustomerMsg').addEventListener('click', previewCustomerMsgTemplate);
+  if ($('btnSaveCustomerMsg')) $('btnSaveCustomerMsg').addEventListener('click', saveCustomerMsgTemplate);
+  if ($('btnResetCustomerMsg')) $('btnResetCustomerMsg').addEventListener('click', resetCustomerMsgTemplate);
 
   // ===== Init =====
   await loadAdmins();
@@ -1094,5 +1191,6 @@
   await loadAudit();
   await loadTechRates();
   await loadTechRateAudit();
+  await loadCustomerMsgTemplate();
   await loadPayouts();
 })();
