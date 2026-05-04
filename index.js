@@ -5260,6 +5260,8 @@ app.post('/api/super/technician-income-rates/:rate_set_id/activate', requireSupe
       [rateSetId, req.actor.username]
     );
     await _insertRateAudit(client, req, { rate_set_id: rateSetId, action:'activate', field_name:'status', old_value:'draft', new_value:'active' });
+    // New active rate affects only unlocked/unpaid jobs. Mark previews stale so the next request refreshes safely.
+    await _markTechIncomePreviewStaleForUnlockedJobs(client);
     await auditLog(req, { action:'TECH_INCOME_RATE_ACTIVATE', meta:{ rate_set_id:rateSetId, version:rateSet.version } });
     await client.query('COMMIT');
     return res.json({ ok:true, active: await _fetchRateSetWithItems(rateSetId) });
@@ -6870,6 +6872,225 @@ async function _buildTechnicianJobMoneySummary(job, username, opts = {}) {
     try { console.warn('[tech_money] income unavailable', { job_id, username: tech, context, error: e.message, code: e.code }); } catch {}
     return summary;
   }
+}
+
+
+
+function _techIncomePreviewSummaryFromRow(preview, context = 'current') {
+  if (!preview) return null;
+  const breakdown = (preview.breakdown_json && typeof preview.breakdown_json === 'object') ? preview.breakdown_json : { source: 'preview', rows: [], related_items: [] };
+  return {
+    customer_collect_amount: null,
+    customer_collect_label: context === 'history' ? 'ยอดที่ลูกค้าจ่าย' : 'ยอดเก็บลูกค้า',
+    technician_income_amount: preview.income_amount == null ? null : _money(preview.income_amount),
+    technician_income_label: context === 'offered' ? 'รายได้ช่างโดยประมาณ' : (context === 'history' ? 'รายได้ที่ได้รับ' : 'รายได้ช่างของคุณ'),
+    technician_income_source: preview.income_source || 'preview',
+    technician_income_breakdown: breakdown,
+    technician_income_rate_set_id: preview.rate_set_id || null,
+    technician_income_rate_set_version: preview.rate_set_version || null,
+    technician_income_preview_calculated_at: preview.calculated_at || null,
+    technician_income_preview_status: preview.is_stale ? 'stale' : 'ready',
+  };
+}
+
+function _techIncomePreviewPayloadFromMoney(jobId, username, money, context = 'current') {
+  const amount = money?.technician_income_amount;
+  return {
+    job_id: Number(jobId),
+    technician_username: String(username || '').trim(),
+    income_amount: amount == null ? null : _money(amount),
+    income_source: money?.technician_income_source || 'calculated_preview',
+    rate_set_id: money?.technician_income_rate_set_id || null,
+    rate_set_version: money?.technician_income_rate_set_version || null,
+    breakdown_json: money?.technician_income_breakdown || { source: 'preview', rows: [], related_items: [] },
+    context,
+  };
+}
+
+async function _loadTechIncomePreviewMap(username, jobIds, opts = {}) {
+  const tech = String(username || '').trim();
+  const ids = _sanitizeTechJobIds(jobIds);
+  const includeStale = !!opts.includeStale;
+  const map = new Map();
+  if (!tech || !ids.length) return map;
+  try {
+    const r = await pool.query(
+      `SELECT job_id, technician_username, income_amount, income_source, rate_set_id, rate_set_version,
+              breakdown_json, is_stale, calculated_at, updated_at
+         FROM public.job_technician_income_preview
+        WHERE technician_username=$1
+          AND job_id = ANY($2::int[])
+          AND ($3::boolean = TRUE OR COALESCE(is_stale,FALSE)=FALSE)`,
+      [tech, ids, includeStale]
+    );
+    for (const row of (r.rows || [])) map.set(String(row.job_id), row);
+  } catch (e) {
+    try { console.warn('[tech_income_preview] load skipped', e.message); } catch {}
+  }
+  return map;
+}
+
+async function _saveTechIncomePreview(payload, clientOrPool = pool) {
+  const jobId = Number(payload?.job_id || 0);
+  const tech = String(payload?.technician_username || '').trim();
+  if (!Number.isInteger(jobId) || jobId <= 0 || !tech) return null;
+  try {
+    const r = await clientOrPool.query(
+      `INSERT INTO public.job_technician_income_preview
+        (job_id, technician_username, income_amount, income_source, rate_set_id, rate_set_version, breakdown_json, is_stale, calculated_at, updated_at)
+       VALUES($1,$2,$3,$4,$5,$6,$7::jsonb,FALSE,NOW(),NOW())
+       ON CONFLICT(job_id, technician_username) DO UPDATE SET
+         income_amount=EXCLUDED.income_amount,
+         income_source=EXCLUDED.income_source,
+         rate_set_id=EXCLUDED.rate_set_id,
+         rate_set_version=EXCLUDED.rate_set_version,
+         breakdown_json=EXCLUDED.breakdown_json,
+         is_stale=FALSE,
+         calculated_at=NOW(),
+         updated_at=NOW()
+       RETURNING job_id, technician_username, income_amount, income_source, rate_set_id, rate_set_version, breakdown_json, is_stale, calculated_at, updated_at`,
+      [
+        jobId,
+        tech,
+        payload.income_amount == null ? null : Number(payload.income_amount || 0),
+        payload.income_source || 'calculated_preview',
+        payload.rate_set_id || null,
+        payload.rate_set_version || null,
+        JSON.stringify(payload.breakdown_json || { source:'preview', rows:[], related_items:[] }),
+      ]
+    );
+    return r.rows?.[0] || null;
+  } catch (e) {
+    try { console.warn('[tech_income_preview] save skipped', { job_id: jobId, username: tech, error: e.message }); } catch {}
+    return null;
+  }
+}
+
+async function _markTechIncomePreviewStaleForJob(clientOrPool, job_id) {
+  const id = Number(job_id || 0);
+  if (!Number.isInteger(id) || id <= 0) return;
+  try {
+    await clientOrPool.query(`UPDATE public.job_technician_income_preview SET is_stale=TRUE, updated_at=NOW() WHERE job_id=$1`, [id]);
+  } catch (e) {
+    try { console.warn('[tech_income_preview] stale job skipped', { job_id: id, error: e.message }); } catch {}
+  }
+}
+
+async function _markTechIncomePreviewStaleForUnlockedJobs(clientOrPool) {
+  try {
+    await clientOrPool.query(
+      `UPDATE public.job_technician_income_preview p
+          SET is_stale=TRUE, updated_at=NOW()
+        WHERE EXISTS (
+          SELECT 1 FROM public.jobs j
+           WHERE j.job_id=p.job_id
+             AND j.canceled_at IS NULL
+             AND j.paid_at IS NULL
+             AND j.finished_at IS NULL
+        )`
+    );
+  } catch (e) {
+    try { console.warn('[tech_income_preview] stale active jobs skipped', e.message); } catch {}
+  }
+}
+
+async function _listTechniciansForIncomePreviewJob(job_id) {
+  const id = Number(job_id || 0);
+  if (!Number.isInteger(id) || id <= 0) return [];
+  const set = new Set();
+  try {
+    const r = await pool.query(
+      `WITH j AS (
+          SELECT job_id, technician_username, technician_team FROM public.jobs WHERE job_id=$1
+        ), team_text AS (
+          SELECT trim(x) AS username FROM j, regexp_split_to_table(COALESCE(j.technician_team,''), '\\s*,\\s*') AS x
+        )
+        SELECT username FROM (
+          SELECT technician_username AS username FROM j
+          UNION ALL SELECT username FROM team_text
+          UNION ALL SELECT username FROM public.job_team_members WHERE job_id=$1
+          UNION ALL SELECT technician_username AS username FROM public.job_assignments WHERE job_id=$1
+          UNION ALL SELECT assigned_technician_username AS username FROM public.job_items WHERE job_id=$1
+        ) u
+        WHERE NULLIF(trim(COALESCE(username,'')), '') IS NOT NULL`,
+      [id]
+    );
+    for (const row of (r.rows || [])) {
+      const u = String(row.username || '').trim();
+      if (u) set.add(u);
+    }
+  } catch (e) {
+    try { console.warn('[tech_income_preview] list techs skipped', { job_id: id, error: e.message }); } catch {}
+  }
+  return [...set].slice(0, 20);
+}
+
+async function _loadJobRowForIncomePreview(job_id) {
+  const id = Number(job_id || 0);
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const r = await pool.query(
+    `SELECT job_id, booking_code, booking_token, job_source, dispatch_mode,
+            customer_name, customer_phone, job_type, appointment_datetime,
+            job_status, job_price, paid_at, paid_by, payment_status, address_text,
+            gps_latitude, gps_longitude, air_type, air_quantity,
+            technician_team, technician_username, created_at,
+            maps_url, job_zone,
+            travel_started_at, started_at, finished_at, canceled_at, cancel_reason,
+            checkin_at, technician_note, technician_note_at
+       FROM public.jobs WHERE job_id=$1 LIMIT 1`,
+    [id]
+  );
+  return r.rows?.[0] || null;
+}
+
+async function _calculateAndStoreTechIncomePreviewForJobTech(row, username, context = 'current') {
+  const tech = String(username || '').trim();
+  const jobId = Number(row?.job_id || 0);
+  if (!tech || !Number.isInteger(jobId) || jobId <= 0) return null;
+  const money = await _buildTechnicianJobMoneySummary(row, tech, { context });
+  const payload = _techIncomePreviewPayloadFromMoney(jobId, tech, money, context);
+  const saved = await _saveTechIncomePreview(payload);
+  return saved ? _techIncomePreviewSummaryFromRow(saved, context) : money;
+}
+
+async function _refreshTechIncomePreviewForJob(job_id) {
+  const jobId = Number(job_id || 0);
+  if (!Number.isInteger(jobId) || jobId <= 0) return { ok:false, count:0 };
+  const row = await _loadJobRowForIncomePreview(jobId);
+  if (!row) return { ok:false, count:0 };
+  const techs = await _listTechniciansForIncomePreviewJob(jobId);
+  const context = _techJobContextFromRow(row, 'current');
+  let count = 0;
+  for (const tech of techs) {
+    try {
+      await _calculateAndStoreTechIncomePreviewForJobTech(row, tech, context);
+      count += 1;
+    } catch (e) {
+      try { console.warn('[tech_income_preview] refresh tech skipped', { job_id: jobId, username: tech, error: e.message }); } catch {}
+    }
+  }
+  return { ok:true, count };
+}
+
+function _scheduleTechIncomePreviewRefresh(job_id) {
+  const id = Number(job_id || 0);
+  if (!Number.isInteger(id) || id <= 0) return;
+  setTimeout(() => {
+    _refreshTechIncomePreviewForJob(id).catch((e) => {
+      try { console.warn('[tech_income_preview] background refresh failed', { job_id: id, error: e.message }); } catch {}
+    });
+  }, 20);
+}
+
+async function _getPreviewOrCalculateTechIncome(row, username, context = 'current', opts = {}) {
+  const tech = String(username || '').trim();
+  const jobId = Number(row?.job_id || 0);
+  if (!tech || !Number.isInteger(jobId) || jobId <= 0) return null;
+  const previewMap = await _loadTechIncomePreviewMap(tech, [jobId], { includeStale: false });
+  const preview = previewMap.get(String(jobId));
+  if (preview) return _techIncomePreviewSummaryFromRow(preview, context);
+  const calculated = await _calculateAndStoreTechIncomePreviewForJobTech(row, tech, context);
+  return calculated;
 }
 
 async function _findLockedOrPaidPeriodByFinishedAt(client, finishedAtIso){
@@ -10945,6 +11166,27 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_tiral_rate_set_created ON public.technician_income_rate_audit_logs(rate_set_id, created_at DESC)`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.job_technician_income_preview (
+    id BIGSERIAL PRIMARY KEY,
+    job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
+    technician_username TEXT NOT NULL,
+    income_amount NUMERIC(12,2),
+    income_source TEXT,
+    rate_set_id BIGINT,
+    rate_set_version TEXT,
+    breakdown_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_stale BOOLEAN NOT NULL DEFAULT FALSE,
+    calculated_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(job_id, technician_username)
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_jtip_tech_job ON public.job_technician_income_preview(technician_username, job_id)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_jtip_job ON public.job_technician_income_preview(job_id)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_jtip_stale ON public.job_technician_income_preview(is_stale, updated_at DESC)`);
+
 try {
   const activeRate = await pool.query(
     `SELECT id FROM public.technician_income_rate_sets WHERE contract_type='partner' AND status='active' LIMIT 1`
@@ -16055,13 +16297,19 @@ ORDER BY appointment_datetime ASC NULLS LAST, job_id ASC
       `,
       [username]
     );
-    // Performance: job visibility must be fast and independent from payout/rate calculation.
-    // Income is loaded asynchronously by /tech/income-summary-batch after cards are already visible.
-    const rows = (r.rows || []).map((row) => {
+    // Performance: job visibility is fast and independent from payout/rate calculation.
+    // If a per-job preview exists, attach it immediately. Missing previews load asynchronously later.
+    const rawRows = r.rows || [];
+    const previewMap = await _loadTechIncomePreviewMap(username, rawRows.map((x) => x.job_id), { includeStale: false });
+    const rows = rawRows.map((row) => {
       const context = _techJobContextFromRow(row, 'current');
-      return { ...row, ..._techJobMoneyFallback(row, username, context) };
+      const fallback = _techJobMoneyFallback(row, username, context);
+      const preview = previewMap.get(String(row.job_id));
+      return preview
+        ? { ...row, ...fallback, ..._techIncomePreviewSummaryFromRow(preview, context) }
+        : { ...row, ...fallback };
     });
-    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows fast', { username, count: rows.length }); } catch {}
+    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows fast', { username, count: rows.length, preview_count: previewMap.size }); } catch {}
     res.json(rows);
   } catch (e) {
     console.error(e);
@@ -16232,7 +16480,14 @@ try {
         });
       }
 
+      if (wantsItemsSave || wantsTeamSave) {
+        // Fast tech app: invalidate cached per-job income preview when items/team changes.
+        // Recalculation runs after commit and must never block admin save.
+        await _markTechIncomePreviewStaleForJob(client, job_id);
+      }
+
       await client.query("COMMIT");
+      if (wantsItemsSave || wantsTeamSave) _scheduleTechIncomePreviewRefresh(job_id);
       return res.json({
         success: true,
         steps: {
@@ -16703,7 +16958,9 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
       baseItemsSnapshot: base_items_snapshot,
     });
 
+    await _markTechIncomePreviewStaleForJob(client, job_id);
     await client.query("COMMIT");
+    _scheduleTechIncomePreviewRefresh(job_id);
     res.json({ success: true, pricing: result.pricing });
   } catch (e) {
     await client.query("ROLLBACK");
@@ -16782,7 +17039,9 @@ app.put("/jobs/:job_id/team", async (req, res) => {
       baseTeamSnapshot: base_team_snapshot,
     });
 
+    await _markTechIncomePreviewStaleForJob(client, job_id);
     await client.query("COMMIT");
+    _scheduleTechIncomePreviewRefresh(job_id);
     res.json({ success: true, members: result.members, primary_username: result.primary || null });
   } catch (e) {
     await client.query("ROLLBACK");
@@ -17211,11 +17470,13 @@ app.post("/tech/income-summary-batch", async (req, res) => {
 
   try {
     const visibleRows = await _loadTechnicianVisibleJobsByIds(username, jobIds);
+    const previewMap = await _loadTechIncomePreviewMap(username, visibleRows.map((x) => x.job_id), { includeStale: false });
     const items = {};
     for (const row of visibleRows) {
       const context = _techJobContextFromRow(row, 'current');
       try {
-        const money = await _buildTechnicianJobMoneySummary(row, username, { context });
+        const preview = previewMap.get(String(row.job_id));
+        const money = preview ? _techIncomePreviewSummaryFromRow(preview, context) : await _getPreviewOrCalculateTechIncome(row, username, context);
         items[String(row.job_id)] = {
           job_id: row.job_id,
           context,
@@ -17224,6 +17485,7 @@ app.post("/tech/income-summary-batch", async (req, res) => {
           technician_income_source: money?.technician_income_source || 'unavailable',
           technician_income_rate_set_id: money?.technician_income_rate_set_id || null,
           technician_income_rate_set_version: money?.technician_income_rate_set_version || null,
+          technician_income_preview_status: money?.technician_income_preview_status || (preview ? 'ready' : 'calculated'),
         };
       } catch (e) {
         try { console.warn('[tech_income_batch] item failed', { username, job_id: row.job_id, error: e.message }); } catch {}
@@ -17238,7 +17500,7 @@ app.post("/tech/income-summary-batch", async (req, res) => {
         };
       }
     }
-    return res.json({ ok: true, items });
+    return res.json({ ok: true, items, source: 'job_technician_income_preview' });
   } catch (e) {
     console.error('POST /tech/income-summary-batch error:', e);
     return res.status(500).json({ ok: false, error: "โหลดรายได้ช่างไม่สำเร็จ" });
@@ -17256,8 +17518,10 @@ app.get("/tech/jobs/:job_id/income-detail", async (req, res) => {
     const row = visibleRows[0];
     if (!row) return res.status(404).json({ ok: false, error: "job_not_found" });
     const context = _techJobContextFromRow(row, 'current');
-    const money = await _buildTechnicianJobMoneySummary(row, username, { context });
-    return res.json({ ok: true, job_id: jobId, context, ...money });
+    const previewMap = await _loadTechIncomePreviewMap(username, [jobId], { includeStale: false });
+    const preview = previewMap.get(String(jobId));
+    const money = preview ? _techIncomePreviewSummaryFromRow(preview, context) : await _getPreviewOrCalculateTechIncome(row, username, context);
+    return res.json({ ok: true, job_id: jobId, context, ...(money || _techJobMoneyFallback(row, username, context)) });
   } catch (e) {
     console.error('GET /tech/jobs/:job_id/income-detail error:', e);
     return res.status(500).json({ ok: false, error: "โหลดรายละเอียดรายได้ช่างไม่สำเร็จ" });
@@ -17298,8 +17562,15 @@ app.get("/offers/tech/:username", async (req, res) => {
     );
 
     // Performance: do not block offered job visibility on income calculation.
-    const rows = (r.rows || []).map((row) => ({ ...row, ..._techJobMoneyFallback(row, username, 'offered') }));
-    try { console.log('[CWF_TECH_JOBS_DEBUG] api offers fast', { username, count: rows.length }); } catch {}
+    // Attach fast preview if available; missing previews hydrate asynchronously from the frontend.
+    const rawRows = r.rows || [];
+    const previewMap = await _loadTechIncomePreviewMap(username, rawRows.map((x) => x.job_id), { includeStale: false });
+    const rows = rawRows.map((row) => {
+      const fallback = _techJobMoneyFallback(row, username, 'offered');
+      const preview = previewMap.get(String(row.job_id));
+      return preview ? { ...row, ...fallback, ..._techIncomePreviewSummaryFromRow(preview, 'offered') } : { ...row, ...fallback };
+    });
+    try { console.log('[CWF_TECH_JOBS_DEBUG] api offers fast', { username, count: rows.length, preview_count: previewMap.size }); } catch {}
     res.json(rows);
   } catch (e) {
     console.error(e);
@@ -17373,7 +17644,9 @@ app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) 
       [offer.job_id, offer.technician_username]
     );
 
+    await _markTechIncomePreviewStaleForJob(client, offer.job_id);
     await client.query("COMMIT");
+    _scheduleTechIncomePreviewRefresh(offer.job_id);
 
     // best effort: ถ้าเป็น urgent และไม่มี offer ค้างแล้ว ให้สรุปสถานะ
     await autoFinalizeUrgentJobs();
