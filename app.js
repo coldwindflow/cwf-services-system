@@ -1030,81 +1030,128 @@ function _techMoneyAmountText(value, fallbackText) {
   const txt = formatBahtText(value);
   return txt || fallbackText;
 }
+const __techIncomeModalJobStore = new Map();
+function _techIncomeCardKey(job, context) {
+  const raw = job?.job_id ?? job?.offer_id ?? job?.booking_code ?? Math.random().toString(36).slice(2);
+  return `${String(context || 'current')}-${String(raw).replace(/[^a-zA-Z0-9_-]/g, '')}`;
+}
 function renderTechnicianMoneySummary(job, context) {
-  const ctx = String(context || 'current');
-  const customerLabel = ctx === 'history' ? '💳 ยอดที่ลูกค้าจ่าย' : '💳 ยอดเก็บลูกค้า';
-  const incomeLabel = ctx === 'offered'
-    ? '💰 รายได้ช่างโดยประมาณ'
-    : (ctx === 'history' ? '💰 รายได้ที่ได้รับ' : '💰 รายได้ช่างของคุณ');
-  const incomeHelper = ctx === 'offered' ? 'คำนวณตามเรทงานปัจจุบัน' : 'คำนวณตามเรทช่าง';
-  const customerAmount = _techMoneyAmountText(job?.customer_collect_amount, 'รอตรวจสอบยอดเก็บลูกค้า');
-  const incomeAmount = _techMoneyAmountText(job?.technician_income_amount, 'รอระบบคำนวณรายได้');
+  try {
+    const ctx = String(context || 'current');
+    const key = _techIncomeCardKey(job, ctx);
+    __techIncomeModalJobStore.set(key, { ...(job || {}), __incomeContext: ctx });
+    const label = ctx === 'offered'
+      ? 'รายได้โดยประมาณ'
+      : (ctx === 'history' ? 'ได้รับ' : 'รายได้ช่าง');
+    const helper = ctx === 'offered'
+      ? 'แตะดูรายละเอียดเรทงานนี้'
+      : (ctx === 'history' ? 'แตะดูรายละเอียดรายได้' : 'แตะดูรายละเอียดรายได้');
+    const amount = _techMoneyAmountText(job?.technician_income_amount, 'รอคำนวณรายได้');
+    const unavailable = !formatBahtText(job?.technician_income_amount);
+    return `
+      <button type="button" class="tech-income-chip ${unavailable ? 'is-pending' : ''}" onclick="openTechnicianIncomeModal('${escapeHTML(key)}')" aria-label="ดูรายละเอียดรายได้ช่าง">
+        <span class="tech-income-chip-icon">💰</span>
+        <span class="tech-income-chip-main">
+          <span class="tech-income-chip-label">${escapeHTML(label)}</span>
+          <strong>${escapeHTML(amount)}</strong>
+        </span>
+        <span class="tech-income-chip-hint">${escapeHTML(helper)}</span>
+        <span class="tech-income-chip-arrow">›</span>
+      </button>
+    `;
+  } catch (e) {
+    return `<div class="tech-income-chip is-pending"><span class="tech-income-chip-icon">💰</span><span class="tech-income-chip-main"><span class="tech-income-chip-label">รายได้ช่าง</span><strong>รอคำนวณรายได้</strong></span></div>`;
+  }
+}
+function _renderTechnicianIncomeBreakdownContent(job) {
+  const rows = Array.isArray(job?.technician_income_breakdown?.rows) ? job.technician_income_breakdown.rows : [];
+  const amount = _techMoneyAmountText(job?.technician_income_amount, 'รอคำนวณรายได้');
+  const version = job?.technician_income_rate_set_version ? `เรท ${escapeHTML(job.technician_income_rate_set_version)}` : '';
   const source = String(job?.technician_income_source || '');
   const sourceText = source === 'finalized_payout'
     ? 'จากยอดปิดงวดแล้ว'
-    : (source === 'fallback_v4' ? 'ใช้เรทสำรอง v4' : incomeHelper);
-  return `
-    <div class="tech-money-grid" data-context="${escapeHTML(ctx)}">
-      <div class="tech-money-card tech-money-card--customer">
-        <div class="tech-money-label">${customerLabel}</div>
-        <div class="tech-money-amount">${escapeHTML(customerAmount)}</div>
-        <div class="tech-money-helper">ใช้ตอนรับเงินจากลูกค้า</div>
-      </div>
-      <div class="tech-money-card tech-money-card--income">
-        <div class="tech-money-label">${incomeLabel}</div>
-        <div class="tech-money-amount">${escapeHTML(incomeAmount)}</div>
-        <div class="tech-money-helper">${escapeHTML(sourceText)}</div>
-      </div>
-    </div>
-  `;
-}
-function renderTechnicianIncomeBreakdown(job) {
-  const rows = Array.isArray(job?.technician_income_breakdown?.rows) ? job.technician_income_breakdown.rows : [];
-  const amount = _techMoneyAmountText(job?.technician_income_amount, 'รอระบบคำนวณรายได้');
-  const version = job?.technician_income_rate_set_version ? ` • เรท ${escapeHTML(job.technician_income_rate_set_version)}` : '';
+    : (source === 'fallback_v4' ? 'ใช้เรทสำรอง v4' : 'คำนวณตามเรทช่าง');
   if (!rows.length) {
     return `
-      <details class="cwf-details tech-income-breakdown" style="margin-top:10px;">
-        <summary>💰 ดูรายละเอียดรายได้ช่าง</summary>
-        <div class="cwf-details-body">
-          <div class="muted">ติดต่อแอดมินเพื่อตรวจสอบรายได้</div>
-          <div style="margin-top:6px;"><b>${escapeHTML(amount)}</b>${version}</div>
-        </div>
-      </details>
+      <div class="tech-income-modal-summary">
+        <div class="k">รายได้ช่างของคุณ</div>
+        <div class="v">${escapeHTML(amount)}</div>
+        <div class="s">${escapeHTML(sourceText)}${version ? ' • ' + version : ''}</div>
+      </div>
+      <div class="tech-income-modal-empty">ยังไม่มีรายละเอียดรายได้ กรุณาติดต่อแอดมินเพื่อตรวจสอบ</div>
     `;
   }
   const rowsHtml = rows.map((r) => {
     const item = escapeHTML(r.item_name || 'รายการบริการ');
-    const idx = r.machine_index ? `เครื่องที่ ${escapeHTML(r.machine_index)}` : 'ต่อรายการ';
+    const qty = r.qty || r.quantity || r.machine_index || '';
+    const idx = r.machine_index ? `เครื่องที่ ${escapeHTML(r.machine_index)}` : (qty ? `จำนวน ${escapeHTML(qty)}` : 'ต่อรายการ');
     const rate = formatBahtText(r.paid_rate ?? r.rate ?? 0) || '-';
-    const total = formatBahtText(r.total ?? r.paid_rate ?? 0) || '-';
+    const total = formatBahtText(r.total ?? r.amount ?? r.paid_rate ?? r.rate ?? 0) || '-';
     return `
-      <div class="tech-income-breakdown-row">
-        <div>
+      <div class="tech-income-modal-row">
+        <div class="tech-income-modal-row-main">
           <b>${item}</b>
-          <div class="muted" style="font-size:12px;">${idx}</div>
+          <span>${idx}</span>
         </div>
-        <div class="tech-income-breakdown-money">
-          <span>${escapeHTML(rate)}</span>
-          <b>${escapeHTML(total)}</b>
+        <div class="tech-income-modal-row-money">
+          <small>${escapeHTML(rate)}</small>
+          <strong>${escapeHTML(total)}</strong>
         </div>
       </div>
     `;
   }).join('');
   return `
-    <details class="cwf-details tech-income-breakdown" style="margin-top:10px;">
-      <summary>💰 ดูรายละเอียดรายได้ช่าง</summary>
-      <div class="cwf-details-body">
-        <div class="tech-income-breakdown-head">
-          <span>รายการ / เรทช่าง</span>
-          <b>รวม ${escapeHTML(amount)}</b>
-        </div>
-        ${rowsHtml}
-        <div class="muted" style="font-size:12px;margin-top:8px;">แสดงเฉพาะส่วนของช่างคนนี้${version}</div>
-      </div>
-    </details>
+    <div class="tech-income-modal-summary">
+      <div class="k">รายได้ช่างของคุณ</div>
+      <div class="v">${escapeHTML(amount)}</div>
+      <div class="s">${escapeHTML(sourceText)}${version ? ' • ' + version : ''}</div>
+    </div>
+    <div class="tech-income-modal-list">
+      <div class="tech-income-modal-list-head"><span>รายการ / เรทช่าง</span><b>รวม ${escapeHTML(amount)}</b></div>
+      ${rowsHtml}
+    </div>
+    <div class="tech-income-modal-note">แสดงเฉพาะส่วนรายได้ของช่างคนนี้ ไม่ใช่ยอดเก็บลูกค้า</div>
   `;
 }
+function renderTechnicianIncomeBreakdown(job) {
+  return _renderTechnicianIncomeBreakdownContent(job);
+}
+function ensureTechnicianIncomeModal() {
+  let modal = document.getElementById('tech-income-modal');
+  if (modal) return modal;
+  modal = document.createElement('div');
+  modal.id = 'tech-income-modal';
+  modal.className = 'tech-income-modal-backdrop';
+  modal.innerHTML = `
+    <div class="tech-income-modal-card" role="dialog" aria-modal="true" aria-labelledby="tech-income-modal-title">
+      <button type="button" class="tech-income-modal-close" onclick="closeTechnicianIncomeModal()" aria-label="ปิด">×</button>
+      <div class="tech-income-modal-title" id="tech-income-modal-title">รายละเอียดรายได้ช่าง</div>
+      <div class="tech-income-modal-sub">เงินส่วนนี้คือรายได้ของช่าง ไม่ใช่ยอดเก็บลูกค้า</div>
+      <div class="tech-income-modal-body" id="tech-income-modal-body"></div>
+      <button type="button" class="tech-income-modal-ok" onclick="closeTechnicianIncomeModal()">ปิด</button>
+    </div>
+  `;
+  modal.addEventListener('click', (ev) => {
+    if (ev.target === modal) closeTechnicianIncomeModal();
+  });
+  document.body.appendChild(modal);
+  return modal;
+}
+function openTechnicianIncomeModal(key) {
+  const modal = ensureTechnicianIncomeModal();
+  const body = document.getElementById('tech-income-modal-body');
+  const job = __techIncomeModalJobStore.get(String(key || '')) || {};
+  if (body) body.innerHTML = _renderTechnicianIncomeBreakdownContent(job);
+  modal.classList.add('show');
+  try { document.body.style.overflow = 'hidden'; } catch {}
+}
+function closeTechnicianIncomeModal() {
+  const modal = document.getElementById('tech-income-modal');
+  if (modal) modal.classList.remove('show');
+  try { document.body.style.overflow = ''; } catch {}
+}
+window.openTechnicianIncomeModal = openTechnicianIncomeModal;
+window.closeTechnicianIncomeModal = closeTechnicianIncomeModal;
 function _formatWorkCount(n){
   const x = Number(n || 0);
   if (!Number.isFinite(x)) return '0';
@@ -1946,14 +1993,13 @@ function renderOffers(offers) {
           <b>📌 งานใหม่เสนอให้รับ</b>
           <span class="badge wait">⏳ ${min}:${String(sec).padStart(2, "0")}</span>
         </div>
+        ${renderTechnicianMoneySummary(o, "offered")}
 
         <p style="margin-top:10px;"><b>Booking:</b> ${o.booking_code || ('CWF'+String(o.job_id).padStart(7,'0'))}</p>
         <p><b>ลูกค้า:</b> ${o.customer_name}</p>
         <p><b>ประเภท:</b> ${o.job_type}</p>
         <p><b>นัด:</b> ${new Date(o.appointment_datetime).toLocaleString("th-TH")}</p>
         <p><b>ที่อยู่:</b> ${o.address_text || "-"}</p>
-
-        ${renderTechnicianMoneySummary(o, "offered")}
 
         <div class="row" style="margin-top:10px;">
           <button onclick="acceptOffer(${o.offer_id})">✅ รับงาน</button>
@@ -2035,29 +2081,6 @@ function loadJobs() {
 // =======================================
 function normStatus(s) {
   return String(s || "").trim();
-}
-function normStatusKey(s) {
-  return normStatus(s).toLowerCase();
-}
-function isDoneStatusValue(s) {
-  const v = normStatusKey(s);
-  return ["เสร็จแล้ว","เสร็จสิ้น","ปิดงาน","done","completed"].includes(v);
-}
-function isCancelStatusValue(s) {
-  const v = normStatusKey(s);
-  return ["ยกเลิก","cancelled","canceled","cancel"].includes(v) || v.includes("ยกเลิก");
-}
-function isActiveStatusValue(s) {
-  const v = normStatusKey(s);
-  if (!v) return false;
-  if (isDoneStatusValue(v) || isCancelStatusValue(v)) return false;
-  return [
-    "รอดำเนินการ","กำลังทำ","ตีกลับ","รอช่างยืนยัน","งานแก้ไข","รับงานแล้ว",
-    "accepted","assigned","pending","in_progress","in progress","working","started"
-  ].includes(v) || v.includes("รอดำเนิน") || v.includes("กำลัง") || v.includes("แก้ไข");
-}
-function jobHistoryYmd(job) {
-  return ymdBkkFromISO(job?.finished_at || job?.appointment_datetime);
 }
 
 // =======================================
@@ -2277,9 +2300,14 @@ function renderJobs(jobs) {
     return;
   }
 
+  // ✅ สถานะที่ถือว่าเป็น ‘งานกำลังดำเนินการ’
+  const ACTIVE_STATUSES = new Set(["รอดำเนินการ","กำลังทำ","ตีกลับ","รอช่างยืนยัน","งานแก้ไข"]);
+  const DONE_STATUSES = new Set(["เสร็จแล้ว","เสร็จสิ้น","ปิดงาน","done","completed"]);
+  const CANCEL_STATUSES = new Set(["ยกเลิก","cancelled","canceled","cancel"]);
+
   const todayYMD = todayYmdBkk();
 
-  const activeAll = jobs.filter((j) => isActiveStatusValue(j.job_status));
+  const activeAll = jobs.filter((j) => ACTIVE_STATUSES.has(normStatus(j.job_status)));
   // งานปัจจุบัน = งาน active ทั้ง "วันนี้" และงานค้างจากวันก่อนหน้า
   // โดยเฉพาะงาน "งานแก้ไข" ที่ถูก return_for_fix_v2 หลังวันนัดเดิมผ่านไปแล้ว
   // ต้องยังเห็นใน current/active flow ของช่าง ไม่งั้นงานจะหายจากหน้าจอ
@@ -2297,16 +2325,18 @@ function renderJobs(jobs) {
     return aa - bb;
   });
 
-  let historyAll = jobs.filter((j) => isDoneStatusValue(j.job_status) || isCancelStatusValue(j.job_status));
+  let historyAll = jobs.filter((j) => {
+    const st = normStatus(j.job_status);
+    return DONE_STATUSES.has(st) || CANCEL_STATUSES.has(st) || st === "ยกเลิก";
+  });
 
   // ✅ ฟิลเตอร์ประวัติ: วัน/เดือน/ทั้งหมด (อิง Asia/Bangkok)
-  // งานที่ปิดแล้วให้อิง finished_at ก่อน ถ้าไม่มีค่อย fallback ไป appointment_datetime
   const monthKey = todayYMD.slice(0,7);
   if (__HISTORY_FILTER__ === "day") {
-    historyAll = historyAll.filter(j => jobHistoryYmd(j) === todayYMD);
+    historyAll = historyAll.filter(j => ymdBkkFromISO(j.appointment_datetime) === todayYMD);
   } else if (__HISTORY_FILTER__ === "month") {
     historyAll = historyAll.filter(j => {
-      const y = jobHistoryYmd(j);
+      const y = ymdBkkFromISO(j.appointment_datetime);
       return y && y.slice(0,7) === monthKey;
     });
   }
@@ -2322,16 +2352,6 @@ function renderJobs(jobs) {
     const ba = b?.appointment_datetime ? new Date(b.appointment_datetime).getTime() : 0;
     return aa - ba;
   });
-
-  try {
-    console.log('[CWF_TECH_JOBS_DEBUG] render counts', {
-      raw: jobs.length,
-      activeToday: prioritizedActiveToday.length,
-      activeUpcoming: activeUpcoming.length,
-      history: historyAll.length,
-      filter: __HISTORY_FILTER__,
-    });
-  } catch (_) {}
 
   if (activeJobsEl) {
     if (!prioritizedActiveToday.length) activeJobsEl.innerHTML = "<p>✅ วันนี้ยังไม่มีงาน</p>";
@@ -2717,6 +2737,7 @@ function buildJobCard(job, historyMode = false) {
       </div>
       ${badge}
     </div>
+    ${renderTechnicianMoneySummary(job, historyMode ? "history" : "current")}
 
     <p style="margin-top:8px;"><b>ลูกค้า:</b> ${escape(job.customer_name || "-")}</p>
     <p><b>โทร:</b> ${escape(job.customer_phone || "-")}</p>
@@ -2732,8 +2753,6 @@ function buildJobCard(job, historyMode = false) {
         </div>
       </div>
     ` : ``}
-
-    ${renderTechnicianMoneySummary(job, historyMode ? "history" : "current")}
 
     <details class="cwf-details" style="margin-top:10px;">
       <summary>👥 ทีมช่างในงานนี้</summary>
@@ -2769,8 +2788,6 @@ function buildJobCard(job, historyMode = false) {
         <div id="pricing-${jobId}">กำลังโหลด...</div>
       </div>
     </details>
-
-    ${renderTechnicianIncomeBreakdown(job)}
 
     ${showWorkTools ? `
       <details class="cwf-details" style="margin-top:10px;" ${isWorking ? "open" : ""}>
@@ -2932,11 +2949,11 @@ function buildHistorySummary(job){
       </div>
       ${badge}
     </div>
+    ${renderTechnicianMoneySummary(job, 'history')}
     <div class="muted" style="margin-top:8px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
       <span><b>ลูกค้า:</b> ${cust}</span>
     </div>
     <div class="muted" style="margin-top:4px;"><b>ประเภท:</b> ${type}</div>
-    ${renderTechnicianMoneySummary(job, 'history')}
 
     <details class="cwf-details" style="margin-top:10px;">
       <summary>ดูรายละเอียด</summary>
