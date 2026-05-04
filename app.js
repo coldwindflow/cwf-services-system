@@ -16,13 +16,6 @@ const historyFilterHintEl = document.getElementById("history-filter-hint");
 
 const ACTIVE_UPCOMING_FILTER_KEY = "cwf_tech_upcoming_filter";
 let __ACTIVE_UPCOMING_FILTER__ = "";
-
-// ✅ ประวัติงาน: โหลดแบบแบ่งหน้าเพื่อให้แอพช่างไม่ค้าง
-// ต้องประกาศไว้ต้นไฟล์ก่อน loadJobs() ถูกเรียก ไม่งั้น PWA จะ error แล้วงานไม่โหลด
-const HISTORY_PAGE_SIZE = 20;
-let __HISTORY_LOADED_COUNT__ = 0;
-let __HISTORY_CAN_LOAD_MORE__ = true;
-let __HISTORY_LOADING_MORE__ = false;
 // =======================================
 // 🔧 CONFIG
 // =======================================
@@ -139,11 +132,6 @@ const techPayoutModalSummaryEl = document.getElementById('techPayoutModalSummary
 const techPayoutModalLinesEl = document.getElementById('techPayoutModalLines');
 const btnPayoutModalSlipEl = document.getElementById('btnPayoutModalSlip');
 const btnPayoutModalPdfEl = document.getElementById('btnPayoutModalPdf');
-const incomePayoutMonthSelectEl = document.getElementById('incomePayoutMonthSelect');
-const depositLedgerModalBackdropEl = document.getElementById('depositLedgerModalBackdrop');
-const depositLedgerModalSubEl = document.getElementById('depositLedgerModalSub');
-const depositLedgerSummaryEl = document.getElementById('depositLedgerSummary');
-const depositLedgerListEl = document.getElementById('depositLedgerList');
 const pushNotifyBoxEl = document.getElementById('pushNotifyBox');
 const pushNotifyHintEl = document.getElementById('pushNotifyHint');
 const techPushIconBtnEl = document.getElementById('techPushIconBtn');
@@ -1671,29 +1659,6 @@ function _safeText(s){
   return String(s||'').replace(/[&<>"']/g, (c)=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
 }
 
-const TH_MONTHS_FULL = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
-function _currentYmBangkok(){
-  try { return new Intl.DateTimeFormat('en-CA', { timeZone:'Asia/Bangkok', year:'numeric', month:'2-digit' }).format(new Date()); } catch { return new Date().toISOString().slice(0,7); }
-}
-function initPayoutMonthSelect(){
-  if (!incomePayoutMonthSelectEl) return;
-  const currentYm = _currentYmBangkok();
-  const year = Number(currentYm.slice(0,4)) || new Date().getFullYear();
-  const keep = incomePayoutMonthSelectEl.value || currentYm;
-  incomePayoutMonthSelectEl.innerHTML = TH_MONTHS_FULL.map((m,idx)=>{
-    const ym = `${year}-${String(idx+1).padStart(2,'0')}`;
-    return `<option value="${ym}">${m} ${year + 543}</option>`;
-  }).join('');
-  incomePayoutMonthSelectEl.value = /^\d{4}-\d{2}$/.test(keep) ? keep : currentYm;
-}
-initPayoutMonthSelect();
-if (incomePayoutMonthSelectEl) incomePayoutMonthSelectEl.addEventListener('change', ()=> loadTechPayoutPeriods(true));
-
-function _selectedPayoutYm(){
-  const v = String(incomePayoutMonthSelectEl?.value || '').trim();
-  return /^\d{4}-\d{2}$/.test(v) ? v : _currentYmBangkok();
-}
-
 
 function _payoutStatusTH(status){
   const s = String(status || 'draft').trim().toLowerCase();
@@ -1709,20 +1674,20 @@ function _paidStatusTH(status){
 async function loadTechPayoutPeriods(force=false){
   if (!techPayoutPeriodsEl) return;
   const now = Date.now();
-  const month = _selectedPayoutYm();
-  if (!force && __cwfPayoutCache.month === month && __cwfPayoutCache.payouts.length && (now-__cwfPayoutCache.ts)<15000) {
+  if (!force && __cwfPayoutCache.payouts.length && (now-__cwfPayoutCache.ts)<15000) {
+    // render from cache
     renderTechPayoutPeriods(__cwfPayoutCache.payouts);
     return;
   }
-  techPayoutPeriodsEl.innerHTML = `<div class="muted">กำลังโหลดประวัติงวดจ่ายเงิน...</div>`;
+  techPayoutPeriodsEl.innerHTML = `<div class="muted">กำลังโหลดงวด...</div>`;
   try{
-    const res = await fetch(`${API_BASE}/tech/payouts?month=${encodeURIComponent(month)}`, { credentials: 'include' });
+    const res = await fetch(`${API_BASE}/tech/payouts`, { credentials: 'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
-    __cwfPayoutCache = { ts: now, month, payouts: data.payouts||[], byId: {} };
+    __cwfPayoutCache = { ts: now, payouts: data.payouts||[], byId: {} };
     renderTechPayoutPeriods(__cwfPayoutCache.payouts);
   }catch(e){
-    techPayoutPeriodsEl.innerHTML = `<div class="muted">โหลดประวัติงวดจ่ายเงินไม่สำเร็จ</div>`;
+    techPayoutPeriodsEl.innerHTML = `<div class="muted">โหลดงวดไม่สำเร็จ</div>`;
   }
 }
 window.loadTechPayoutPeriods = loadTechPayoutPeriods;
@@ -1730,7 +1695,7 @@ window.loadTechPayoutPeriods = loadTechPayoutPeriods;
 function renderTechPayoutPeriods(list){
   if (!techPayoutPeriodsEl) return;
   const arr = Array.isArray(list) ? list : [];
-  if (!arr.length) { techPayoutPeriodsEl.innerHTML = `<div class="muted">ยังไม่มีประวัติงวดจ่ายเงินของเดือนนี้</div>`; return; }
+  if (!arr.length) { techPayoutPeriodsEl.innerHTML = `<div class="muted">ยังไม่มีงวดที่สร้าง</div>`; return; }
   techPayoutPeriodsEl.innerHTML = arr.map(p=>{
     const id = _safeText(p.payout_id);
     const type = _safeText(p.period_type);
@@ -1743,7 +1708,7 @@ function renderTechPayoutPeriods(list){
     const paySt = _safeText(_paidStatusTH(p.paid_status||'unpaid'));
     const status = _safeText(_payoutStatusTH(p.status||'draft'));
     const active = (__cwfPayoutActiveId===p.payout_id);
-    return `<button type="button" class="tr" style="width:100%;text-align:left;padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10);margin-bottom:10px;cursor:pointer;background:#fff;${active?'outline:2px solid rgba(11,75,179,0.35)':''}" onclick="window.openTechPayoutDetail('${id}')"><div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start"><div><b>งวดจ่าย ${type}</b><div class="muted" style="margin-top:4px">${st} - ${en}</div><div class="muted" style="margin-top:4px">สถานะงวด: ${status} • จ่าย: ${paySt}</div></div><div style="text-align:right"><b style="font-size:18px;color:#0B2E6D">${total}</b><div class="muted" style="margin-top:4px">ก่อนหัก ${gross}</div><div class="muted" style="margin-top:3px">หักประกัน ${dep} • คงเหลือ ${rem}</div></div></div></button>`;
+    return `<button type="button" class="tr" style="width:100%;text-align:left;padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10);margin-bottom:10px;cursor:pointer;background:#fff;${active?'outline:2px solid rgba(11,75,179,0.35)':''}" onclick="window.openTechPayoutDetail('${id}')"><div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start"><div><b>งวด ${type}</b><div class="muted" style="margin-top:4px">${st} - ${en}</div><div class="muted" style="margin-top:4px">สถานะงวด: ${status} • จ่าย: ${paySt}</div></div><div style="text-align:right"><b style="font-size:18px;color:#0B2E6D">${total}</b><div class="muted" style="margin-top:4px">ก่อนหัก ${gross}</div><div class="muted" style="margin-top:3px">หักประกัน ${dep} • คงเหลือ ${rem}</div></div></div></button>`;
   }).join('');
 }
 function openTechPayoutModal(){ if (techPayoutModalBackdropEl) techPayoutModalBackdropEl.classList.add('show'); try { document.body.style.overflow = 'hidden'; } catch(e) {} }
@@ -1871,58 +1836,6 @@ function renderTechPayoutLines(lines, total, adjustments, payment, payoutId, sum
     if (btn) btn.onclick = ()=>{ shown = Math.min(shown + PAGE, arr.length); renderSlice(); };
   };
   renderSlice();
-}
-
-function openDepositLedgerModal(){ if (depositLedgerModalBackdropEl) depositLedgerModalBackdropEl.classList.add('show'); try { document.body.style.overflow = 'hidden'; } catch(e) {} }
-function closeDepositLedgerModal(){ if (depositLedgerModalBackdropEl) depositLedgerModalBackdropEl.classList.remove('show'); try { document.body.style.overflow = ''; } catch(e) {} }
-window.closeDepositLedgerModal = closeDepositLedgerModal;
-
-function _depositTypeTH(t){
-  const s = String(t||'').trim();
-  const map = { collect:'หักเงินประกัน', refund:'คืนเงินประกัน', claim_deduct:'หักชดเชยความเสียหาย', manual_adjust:'ปรับยอดเงินประกัน' };
-  return map[s] || s || '-';
-}
-
-async function openDepositLedgerDetail(){
-  if (!depositLedgerModalBackdropEl) return;
-  if (depositLedgerSummaryEl) depositLedgerSummaryEl.innerHTML = `<div class="muted">กำลังโหลด...</div>`;
-  if (depositLedgerListEl) depositLedgerListEl.innerHTML = '';
-  if (depositLedgerModalSubEl) depositLedgerModalSubEl.textContent = 'กำลังโหลดรายละเอียดเงินประกันงาน...';
-  openDepositLedgerModal();
-  try{
-    const res = await fetch(`${API_BASE}/tech/deposit_ledger`, { credentials:'include' });
-    const data = await res.json();
-    if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
-    const sum = data.summary || {};
-    if (depositLedgerSummaryEl) {
-      depositLedgerSummaryEl.innerHTML = `
-        <div class="deposit-ledger-card"><span class="muted">เป้าหมาย</span><b>${formatBaht(sum.deposit_target_amount||0)}</b></div>
-        <div class="deposit-ledger-card"><span class="muted">สะสมแล้ว</span><b>${formatBaht(sum.deposit_collected_total||0)}</b></div>
-        <div class="deposit-ledger-card"><span class="muted">คงเหลือ</span><b>${formatBaht(sum.deposit_remaining_amount||0)}</b></div>
-        <div class="deposit-ledger-card"><span class="muted">สถานะ</span><b>${Number(sum.deposit_remaining_amount||0) <= 0 ? 'ครบแล้ว' : 'กำลังสะสม'}</b></div>`;
-    }
-    const rows = Array.isArray(data.ledger) ? data.ledger : [];
-    if (depositLedgerModalSubEl) depositLedgerModalSubEl.textContent = rows.length ? `ประวัติการหัก/ปรับยอดทั้งหมด ${rows.length} รายการ` : 'ยังไม่มีประวัติการหักเงินประกัน';
-    if (depositLedgerListEl) {
-      depositLedgerListEl.innerHTML = rows.length ? rows.map(r=>{
-        const amount = formatBaht(r.amount || 0);
-        const dateText = _fmtDateTH(r.created_at);
-        const payout = r.payout_id ? `งวด ${_safeText(r.payout_id)}` : 'ไม่ผูกงวด';
-        const type = _depositTypeTH(r.transaction_type);
-        const note = _safeText(r.note || '');
-        return `<div class="deposit-ledger-row"><div class="top"><div><b>${_safeText(type)}</b><div class="muted" style="margin-top:4px">${dateText} • ${payout}</div></div><div class="amt">${amount}</div></div>${note ? `<div class="muted" style="margin-top:8px">${note}</div>` : ''}</div>`;
-      }).join('') : `<div class="muted" style="text-align:center;padding:18px">ยังไม่มีรายการหักเงินประกัน</div>`;
-    }
-  }catch(e){
-    if (depositLedgerModalSubEl) depositLedgerModalSubEl.textContent = 'โหลดรายละเอียดไม่สำเร็จ';
-    if (depositLedgerSummaryEl) depositLedgerSummaryEl.innerHTML = `<div class="muted">โหลดรายละเอียดไม่สำเร็จ</div>`;
-  }
-}
-window.openDepositLedgerDetail = openDepositLedgerDetail;
-
-if (incomeDepositRemainWrapEl) {
-  incomeDepositRemainWrapEl.addEventListener('click', openDepositLedgerDetail);
-  incomeDepositRemainWrapEl.addEventListener('keydown', (ev)=>{ if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); openDepositLedgerDetail(); } });
 }
 
 // Hook reload button
@@ -2341,64 +2254,20 @@ function declineOffer(offerId) {
 // =======================================
 // 📡 LOAD JOBS
 // =======================================
-function _mergeJobsById(base, incoming){
-  const map = new Map();
-  (Array.isArray(base) ? base : []).forEach(j => map.set(String(j?.job_id || j?.booking_code || Math.random()), j));
-  (Array.isArray(incoming) ? incoming : []).forEach(j => map.set(String(j?.job_id || j?.booking_code || Math.random()), j));
-  return Array.from(map.values());
-}
-
-function _countHistoryItems(arr){
-  return (Array.isArray(arr) ? arr : []).filter(_jobIsHistoryClient).length;
-}
-
-function loadJobs(opts = {}) {
-  const appendHistory = !!opts.appendHistory;
-  const currentLoaded = Math.max(HISTORY_PAGE_SIZE, Number(__HISTORY_LOADED_COUNT__ || 0));
-  const limit = appendHistory ? HISTORY_PAGE_SIZE : currentLoaded;
-  const offset = appendHistory ? __HISTORY_LOADED_COUNT__ : 0;
-  if (!appendHistory) {
-    __HISTORY_CAN_LOAD_MORE__ = true;
-  }
-  const url = `${API_BASE}/jobs/tech/${encodeURIComponent(username)}?history_limit=${limit}&history_offset=${offset}`;
-  return fetch(url, { cache: "no-store" })
+function loadJobs() {
+  fetch(`${API_BASE}/jobs/tech/${username}`, { cache: "no-store" })
     .then((res) => {
       if (!res.ok) throw new Error("โหลดข้อมูลงานไม่สำเร็จ");
       return res.json();
     })
-    .then((jobs) => {
-      const incomingHistoryCount = _countHistoryItems(jobs);
-      if (appendHistory) {
-        window.__JOB_CACHE__ = _mergeJobsById(window.__JOB_CACHE__ || [], jobs || []);
-      } else {
-        window.__JOB_CACHE__ = Array.isArray(jobs) ? jobs : [];
-      }
-      __HISTORY_LOADED_COUNT__ = _countHistoryItems(window.__JOB_CACHE__ || []);
-      __HISTORY_CAN_LOAD_MORE__ = incomingHistoryCount >= HISTORY_PAGE_SIZE;
-      renderJobs(window.__JOB_CACHE__ || []);
-    })
+    .then((jobs) => renderJobs(jobs))
     .catch((err) => {
       console.error(err);
-      if (!appendHistory) {
-        if (activeJobsEl) activeJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
-        if (activeUpcomingJobsEl) activeUpcomingJobsEl.innerHTML = "<p>❌ โหลดงานล่วงหน้าไม่สำเร็จ</p>";
-        if (historyJobsEl) historyJobsEl.innerHTML = "<p>❌ โหลดประวัติงานไม่สำเร็จ</p>";
-        renderProfile(0);
-      } else {
-        const btn = document.getElementById('btnLoadMoreHistory');
-        if (btn) { btn.disabled = false; btn.textContent = `ดูเพิ่มอีก ${HISTORY_PAGE_SIZE} งาน`; }
-      }
+      if (activeJobsEl) activeJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
+      if (historyJobsEl) historyJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
+      renderProfile(0);
     });
 }
-
-async function loadMoreHistoryJobs(){
-  if (__HISTORY_LOADING_MORE__ || !__HISTORY_CAN_LOAD_MORE__) return;
-  __HISTORY_LOADING_MORE__ = true;
-  const btn = document.getElementById('btnLoadMoreHistory');
-  if (btn) { btn.disabled = true; btn.textContent = 'กำลังโหลดเพิ่ม...'; }
-  try { await loadJobs({ appendHistory:true }); } finally { __HISTORY_LOADING_MORE__ = false; }
-}
-window.loadMoreHistoryJobs = loadMoreHistoryJobs;
 
 // =======================================
 // 🧩 RENDER JOBS
@@ -2473,10 +2342,6 @@ const LS_HISTORY_FILTER = "cwf_tech_history_filter";
 let __HISTORY_FILTER__ = (()=>{
   try { return localStorage.getItem(LS_HISTORY_FILTER) || "month"; } catch(e){ return "month"; }
 })();
-
-function _jobIsHistoryClient(job){
-  return isDoneStatusValue(job?.job_status) || isCancelStatusValue(job?.job_status) || !!job?.finished_at || !!job?.paid_at;
-}
 
 function setHistoryFilter(f){
   const v = (f === "day" || f === "all") ? f : "month";
@@ -2703,11 +2568,7 @@ function renderJobs(jobs) {
   });
 
   const historyBase = jobs.filter((j) => isDoneStatusValue(j.job_status) || isCancelStatusValue(j.job_status) || !!j.finished_at || !!j.paid_at);
-  let historyAll = [...historyBase].sort((a,b)=>{
-    const aa = new Date(a?.finished_at || a?.completed_at || a?.closed_at || a?.paid_at || a?.appointment_datetime || a?.created_at || 0).getTime() || 0;
-    const bb = new Date(b?.finished_at || b?.completed_at || b?.closed_at || b?.paid_at || b?.appointment_datetime || b?.created_at || 0).getTime() || 0;
-    return bb - aa;
-  });
+  let historyAll = historyBase;
 
   // ✅ ฟิลเตอร์ประวัติ: วัน/เดือน/ทั้งหมด (อิง Asia/Bangkok)
   // งานที่ปิดแล้วต้องอิง finished_at ก่อน ถ้าไม่มีค่อย fallback ไป appointment_datetime
@@ -2721,11 +2582,9 @@ function renderJobs(jobs) {
       return y && y.slice(0,7) === monthKey;
     });
   }
-  // ถ้าฟิลเตอร์วัน/เดือนทำให้ไม่เห็นงานปิดเลย แต่มีประวัติจริง ให้ fallback แสดงทั้งหมด
-  // เพื่อกันเคสวันที่ปิดงาน/วันที่นัดถูกบันทึกคนละรูปแบบในงานเก่า
-  if (!historyAll.length && historyBase.length && __HISTORY_FILTER__ !== "all") {
-    historyAll = historyBase;
-  }
+  // IMPORTANT: ห้าม fallback ไปแสดงทั้งหมดเมื่อเลือก “วัน” หรือ “เดือน”
+  // เพราะจะทำให้หน้า “วันนี้” แสดงงานเมื่อวาน/งานเก่า และหน้า “เดือนนี้” แสดงงานนอกเดือน
+  // ถ้าไม่มีงานตรงช่วงที่เลือก ให้แสดงว่าไม่มีงานในช่วงนั้นจริง ๆ
 
   const prioritizedActiveToday = [...activeToday].sort((a, b) => {
     const aRevisit = isRevisitJob(a) ? 1 : 0;
@@ -2772,21 +2631,21 @@ function renderJobs(jobs) {
 
   if (historyJobsEl) {
     if (!historyAll.length) {
-      historyJobsEl.innerHTML = "<p>ยังไม่มีงานที่ปิดแล้ว</p>";
+      const emptyText = (__HISTORY_FILTER__ === "day")
+        ? "ยังไม่มีงานที่ปิดแล้วในวันนี้"
+        : (__HISTORY_FILTER__ === "month")
+          ? "ยังไม่มีงานที่ปิดแล้วในเดือนนี้"
+          : "ยังไม่มีงานที่ปิดแล้ว";
+      historyJobsEl.innerHTML = `<p>${emptyText}</p>`;
     } else {
-      historyAll.forEach((job) => historyJobsEl.appendChild(buildHistorySummary(job)));
-      if (__HISTORY_CAN_LOAD_MORE__) {
-        const wrap = document.createElement('div');
-        wrap.className = 'history-more-wrap';
-        wrap.innerHTML = `<button class="btn blue" id="btnLoadMoreHistory" type="button" onclick="window.loadMoreHistoryJobs && window.loadMoreHistoryJobs()">ดูเพิ่มอีก ${HISTORY_PAGE_SIZE} งาน</button><div class="muted" style="margin-top:6px">แสดงล่าสุด ${historyAll.length} งาน เพื่อลดการโหลดหน้าแอพช้า</div>`;
-        historyJobsEl.appendChild(wrap);
-      } else if (historyAll.length >= HISTORY_PAGE_SIZE) {
-        const done = document.createElement('div');
-        done.className = 'muted';
-        done.style.cssText = 'text-align:center;margin-top:10px';
-        done.textContent = `แสดงครบเท่าที่โหลดได้แล้ว (${historyAll.length} งาน)`;
-        historyJobsEl.appendChild(done);
-      }
+      historyAll
+        .slice()
+        .sort((a, b) => {
+          const aa = new Date(a?.finished_at || a?.completed_at || a?.closed_at || a?.paid_at || a?.appointment_datetime || 0).getTime() || 0;
+          const bb = new Date(b?.finished_at || b?.completed_at || b?.closed_at || b?.paid_at || b?.appointment_datetime || 0).getTime() || 0;
+          return bb - aa;
+        })
+        .forEach((job) => historyJobsEl.appendChild(buildHistorySummary(job)));
     }
   }
 
