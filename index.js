@@ -5260,6 +5260,18 @@ app.post('/api/super/technician-income-rates/:rate_set_id/activate', requireSupe
       [rateSetId, req.actor.username]
     );
     await _insertRateAudit(client, req, { rate_set_id: rateSetId, action:'activate', field_name:'status', old_value:'draft', new_value:'active' });
+    // เรทใหม่มีผลกับงานที่ยังไม่ล็อก/ยังไม่ปิดงวด: mark preview เป็น stale เพื่อให้คำนวณใหม่เฉพาะตอนจำเป็น
+    try {
+      await client.query(`
+        UPDATE public.job_technician_income_preview p
+           SET is_stale=TRUE, updated_at=NOW()
+         WHERE EXISTS (
+           SELECT 1 FROM public.jobs j
+            WHERE j.job_id=p.job_id
+              AND COALESCE(j.job_status,'') NOT IN ('เสร็จแล้ว','เสร็จสิ้น','ปิดงาน','done','completed','closed')
+         )
+      `);
+    } catch (e) { console.warn('[tech_income_preview] mark stale on rate activate skipped', e.message); }
     await auditLog(req, { action:'TECH_INCOME_RATE_ACTIVATE', meta:{ rate_set_id:rateSetId, version:rateSet.version } });
     await client.query('COMMIT');
     return res.json({ ok:true, active: await _fetchRateSetWithItems(rateSetId) });
@@ -6821,6 +6833,126 @@ function _mapTechIncomeSourceFromLine(line, fallbackSource) {
   return fallbackSource || 'calculated_active_rate';
 }
 
+function _techIncomePreviewSummaryFromRow(row, context) {
+  if (!row) return null;
+  const amount = Number(row.income_amount);
+  if (!Number.isFinite(amount)) return null;
+  const breakdown = row.breakdown_json && typeof row.breakdown_json === 'object'
+    ? row.breakdown_json
+    : { source: row.income_source || 'preview', rows: [], related_items: [] };
+  return {
+    technician_income_amount: _money(amount),
+    technician_income_label: context === 'offered' ? 'รายได้ช่างโดยประมาณ' : (context === 'history' ? 'รายได้ที่ได้รับ' : 'รายได้ช่างของคุณ'),
+    technician_income_source: row.is_stale ? 'preview_stale' : (row.income_source || 'preview'),
+    technician_income_breakdown: breakdown,
+    technician_income_rate_set_id: row.rate_set_id || breakdown.rate_set_id || null,
+    technician_income_rate_set_version: row.rate_set_version || breakdown.rate_set_version || null,
+  };
+}
+
+async function _loadJobTechnicianIncomePreview(job_id, username) {
+  const tech = String(username || '').trim();
+  const id = Number(job_id);
+  if (!Number.isFinite(id) || id <= 0 || !tech) return null;
+  try {
+    const r = await pool.query(
+      `SELECT job_id, technician_username, income_amount, income_source, rate_set_id, rate_set_version, breakdown_json, is_stale, calculated_at, updated_at
+         FROM public.job_technician_income_preview
+        WHERE job_id=$1 AND technician_username=$2
+        LIMIT 1`,
+      [id, tech]
+    );
+    return r.rows?.[0] || null;
+  } catch (e) {
+    // Table may not exist until ensureSchema runs on a fresh deploy. Never break jobs because of preview.
+    try { console.warn('[tech_income_preview] load skipped', { job_id:id, username:tech, error:e.message }); } catch {}
+    return null;
+  }
+}
+
+async function _loadJobTechnicianIncomePreviewMap(username, jobIds) {
+  const tech = String(username || '').trim();
+  const ids = _sanitizeTechJobIds(jobIds || []);
+  const map = new Map();
+  if (!tech || !ids.length) return map;
+  try {
+    const r = await pool.query(
+      `SELECT job_id, technician_username, income_amount, income_source, rate_set_id, rate_set_version, breakdown_json, is_stale, calculated_at, updated_at
+         FROM public.job_technician_income_preview
+        WHERE technician_username=$1 AND job_id = ANY($2::int[])`,
+      [tech, ids]
+    );
+    for (const row of (r.rows || [])) map.set(String(row.job_id), row);
+  } catch (e) {
+    try { console.warn('[tech_income_preview] map load skipped', { username:tech, error:e.message }); } catch {}
+  }
+  return map;
+}
+
+async function _upsertJobTechnicianIncomePreview(client, line, source = 'preview') {
+  if (!line || !line.job_id || !line.technician_username) return;
+  const detail = (line.detail_json && typeof line.detail_json === 'object') ? line.detail_json : {};
+  const breakdown = _techIncomeBreakdownFromLine({ ...line, detail_json: detail }, source);
+  const rateSetId = detail.rate_set_id || breakdown.rate_set_id || null;
+  const rateSetVersion = detail.rate_set_version || breakdown.rate_set_version || null;
+  await client.query(
+    `INSERT INTO public.job_technician_income_preview
+       (job_id, technician_username, income_amount, income_source, rate_set_id, rate_set_version, breakdown_json, is_stale, calculated_at, updated_at)
+     VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,FALSE,NOW(),NOW())
+     ON CONFLICT (job_id, technician_username) DO UPDATE SET
+       income_amount=EXCLUDED.income_amount,
+       income_source=EXCLUDED.income_source,
+       rate_set_id=EXCLUDED.rate_set_id,
+       rate_set_version=EXCLUDED.rate_set_version,
+       breakdown_json=EXCLUDED.breakdown_json,
+       is_stale=FALSE,
+       calculated_at=NOW(),
+       updated_at=NOW()`,
+    [line.job_id, line.technician_username, _money(line.earn_amount || 0), source, rateSetId, rateSetVersion, JSON.stringify(breakdown)]
+  );
+}
+
+async function refreshJobTechnicianIncomePreview(job_id, opts = {}) {
+  const id = Number(job_id);
+  if (!Number.isFinite(id) || id <= 0) return { ok:false, count:0 };
+  const assumeTechnician = String(opts.assumeTechnician || '').trim();
+  try {
+    const lines = await _buildPayoutLinesForJob(id, { includeUnfinished: true, assumeTechnician });
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      if (assumeTechnician) {
+        await client.query(`UPDATE public.job_technician_income_preview SET is_stale=TRUE, updated_at=NOW() WHERE job_id=$1 AND technician_username=$2`, [id, assumeTechnician]);
+      } else {
+        await client.query(`UPDATE public.job_technician_income_preview SET is_stale=TRUE, updated_at=NOW() WHERE job_id=$1`, [id]);
+      }
+      let count = 0;
+      for (const line of (lines || [])) {
+        if (assumeTechnician && String(line.technician_username || '') !== assumeTechnician) continue;
+        await _upsertJobTechnicianIncomePreview(client, line, 'preview');
+        count += 1;
+      }
+      await client.query('COMMIT');
+      return { ok:true, count };
+    } catch (e) {
+      try { await client.query('ROLLBACK'); } catch {}
+      throw e;
+    } finally {
+      client.release();
+    }
+  } catch (e) {
+    try { console.warn('[tech_income_preview] refresh failed', { job_id:id, assumeTechnician, error:e.message, code:e.code }); } catch {}
+    return { ok:false, count:0, error:e.message };
+  }
+}
+
+function _refreshJobTechnicianIncomePreviewSoon(job_id, opts = {}) {
+  // Best-effort: never block admin save/render path for preview cache.
+  try {
+    setTimeout(() => { refreshJobTechnicianIncomePreview(job_id, opts).catch(()=>{}); }, 0);
+  } catch (_) {}
+}
+
 async function _buildTechnicianJobMoneySummary(job, username, opts = {}) {
   const job_id = job?.job_id;
   const tech = String(username || '').trim();
@@ -6856,6 +6988,16 @@ async function _buildTechnicianJobMoneySummary(job, username, opts = {}) {
         return summary;
       }
     }
+
+    // Fast path: read pre-calculated per-job preview first.
+    // This keeps technician job cards/modal fast and avoids running payout engine on every page view.
+    const preview = await _loadJobTechnicianIncomePreview(job_id, tech);
+    const previewSummary = _techIncomePreviewSummaryFromRow(preview, context);
+    if (previewSummary && !preview?.is_stale) {
+      Object.assign(summary, previewSummary);
+      return summary;
+    }
+
     const lines = await _buildPayoutLinesForJob(job_id, { includeUnfinished: true, assumeTechnician: tech });
     const line = (lines || []).find((ln) => String(ln.technician_username || '') === tech) || null;
     if (!line) return summary;
@@ -6865,6 +7007,12 @@ async function _buildTechnicianJobMoneySummary(job, username, opts = {}) {
     summary.technician_income_breakdown = _techIncomeBreakdownFromLine(line, summary.technician_income_source);
     summary.technician_income_rate_set_id = line.detail_json?.rate_set_id || summary.technician_income_breakdown.rate_set_id || null;
     summary.technician_income_rate_set_version = line.detail_json?.rate_set_version || summary.technician_income_breakdown.rate_set_version || null;
+    // Store the result so the next technician job load can show income instantly.
+    try {
+      const client = await pool.connect();
+      try { await _upsertJobTechnicianIncomePreview(client, line, summary.technician_income_source || 'preview'); }
+      finally { client.release(); }
+    } catch (_) {}
     return summary;
   } catch (e) {
     try { console.warn('[tech_money] income unavailable', { job_id, username: tech, context, error: e.message, code: e.code }); } catch {}
@@ -11323,6 +11471,28 @@ await pool.query(`
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_assignments_user ON public.job_assignments(technician_username, status)`);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_assignments_job ON public.job_assignments(job_id)`);
 
+// 3.5.1.2) ✅ รายได้ช่าง Preview/Cache ต่อใบงาน
+// - คำนวณตอนแอดมินเพิ่ม/แก้งาน หรือครั้งแรกที่ช่างดูรายได้
+// - หน้าใบงานช่างอ่านค่าที่เตรียมไว้ทันที ไม่ต้องรอ payout engine หนัก ๆ
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.job_technician_income_preview (
+    id BIGSERIAL PRIMARY KEY,
+    job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
+    technician_username TEXT NOT NULL,
+    income_amount NUMERIC(12,2),
+    income_source TEXT DEFAULT 'preview',
+    rate_set_id BIGINT,
+    rate_set_version TEXT,
+    breakdown_json JSONB DEFAULT '{}'::jsonb,
+    is_stale BOOLEAN NOT NULL DEFAULT FALSE,
+    calculated_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(job_id, technician_username)
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_tech_income_preview_job ON public.job_technician_income_preview(job_id)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_tech_income_preview_tech ON public.job_technician_income_preview(technician_username, updated_at DESC)`);
+
 // 3.5.1.1) job_assignments: เงินพิเศษเป็นก้อน (แยกจาก pool/ไม่หาร) - backward compatible
 await pool.query(`ALTER TABLE public.job_assignments ADD COLUMN IF NOT EXISTS special_bonus_amount DOUBLE PRECISION DEFAULT 0`);
 
@@ -13283,6 +13453,16 @@ if (coerceNumber(override_price, 0) > 0) {
     }
 
     await client.query("COMMIT");
+
+    // 💰 เตรียมรายได้ช่าง preview/cache ตั้งแต่ตอนแอดมินเพิ่มงาน
+    // ทำหลัง commit แบบ best-effort เพื่อให้หน้าใบงานช่างอ่านยอดได้เร็ว และไม่บล็อกการลงงาน
+    try {
+      if (urgentPushTargets.length) {
+        for (const u of urgentPushTargets.slice(0, 30)) _refreshJobTechnicianIncomePreviewSoon(job_id, { assumeTechnician: u });
+      } else {
+        _refreshJobTechnicianIncomePreviewSoon(job_id);
+      }
+    } catch (_) {}
 
     // 🔔 best-effort push: ห้ามให้แจ้งเตือนพังจนการลงงาน fail
     try {
@@ -16003,6 +16183,7 @@ async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
         OR (',' || replace(COALESCE(j.technician_team,''),' ','') || ',') LIKE ('%,' || replace($1,' ','') || ',%')
         OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id = j.job_id AND tm.username = $1)
         OR (j.technician_username = $1 AND COALESCE(j.dispatch_mode,'') <> 'offer')
+        OR EXISTS (SELECT 1 FROM public.job_offers o WHERE o.job_id = j.job_id AND o.technician_username = $1 AND o.status='pending' AND o.expires_at >= NOW())
       )
     ORDER BY j.appointment_datetime ASC NULLS LAST, j.job_id ASC
     `,
@@ -16016,52 +16197,71 @@ async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
 // =======================================
 app.get("/jobs/tech/:username", async (req, res) => {
   const { username } = req.params;
+  const historyScope = ['day','month','all'].includes(String(req.query?.history_scope || '').trim())
+    ? String(req.query.history_scope).trim()
+    : 'month';
   try {
     const r = await pool.query(
       `
-      SELECT
-        job_id, booking_code, booking_token, job_source, dispatch_mode,
-        customer_name, customer_phone, job_type, appointment_datetime,
-        job_status, job_price, paid_at, paid_by, payment_status, address_text,
-        gps_latitude, gps_longitude, air_type, air_quantity,
-        technician_team, technician_username, created_at,
-        maps_url, job_zone,
-        travel_started_at, started_at, finished_at, canceled_at, cancel_reason,
-        checkin_at,
-        technician_note, technician_note_at,
-        final_signature_path, final_signature_status, final_signature_at,
-        checkin_latitude, checkin_longitude, checkin_at,
-        technician_note, technician_note_at
-      FROM public.jobs
+      WITH visible_jobs AS (
+        SELECT
+          j.job_id, j.booking_code, j.booking_token, j.job_source, j.dispatch_mode,
+          j.customer_name, j.customer_phone, j.job_type, j.appointment_datetime,
+          j.job_status, j.job_price, j.paid_at, j.paid_by, j.payment_status, j.address_text,
+          j.gps_latitude, j.gps_longitude, j.air_type, j.air_quantity,
+          j.technician_team, j.technician_username, j.created_at,
+          j.maps_url, j.job_zone,
+          j.travel_started_at, j.started_at, j.finished_at, j.canceled_at, j.cancel_reason,
+          j.checkin_at,
+          j.technician_note, j.technician_note_at,
+          j.final_signature_path, j.final_signature_status, j.final_signature_at,
+          j.checkin_latitude, j.checkin_longitude,
+          CASE
+            WHEN j.finished_at IS NOT NULL OR j.paid_at IS NOT NULL OR j.canceled_at IS NOT NULL
+              OR LOWER(TRIM(COALESCE(j.job_status,''))) IN ('เสร็จแล้ว','เสร็จสิ้น','เสร็จสิ้นงาน','ปิดงาน','ปิดงานแล้ว','done','completed','closed','paid','ยกเลิก','cancel','canceled','cancelled')
+              OR TRIM(COALESCE(j.job_status,'')) LIKE '%เสร็จ%'
+              OR TRIM(COALESCE(j.job_status,'')) LIKE '%ปิดงาน%'
+              OR TRIM(COALESCE(j.job_status,'')) LIKE '%ยกเลิก%'
+            THEN TRUE ELSE FALSE END AS is_history_job,
+          COALESCE(j.finished_at, j.paid_at, j.canceled_at, j.appointment_datetime, j.created_at) AS history_at
+        FROM public.jobs j
+        WHERE (
+          EXISTS (SELECT 1 FROM public.job_assignments ja WHERE ja.job_id = j.job_id AND ja.technician_username=$1)
+          OR j.technician_team=$1
+          OR (',' || replace(COALESCE(j.technician_team,''),' ','') || ',') LIKE ('%,' || replace($1,' ','') || ',%')
+          OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id = j.job_id AND tm.username=$1)
+          OR (j.technician_username=$1 AND COALESCE(j.dispatch_mode,'') <> 'offer')
+        )
+      )
+      SELECT * FROM visible_jobs
       WHERE
-  (
-    -- Visibility must be based on assignment/ownership only.
-    -- Do not hide a job just because an assignment row is already marked done;
-    -- the frontend will place it into current/upcoming/history from the overall job_status.
-    EXISTS (
-      SELECT 1 FROM public.job_assignments ja
-      WHERE ja.job_id = public.jobs.job_id
-        AND ja.technician_username=$1
-    )
-    OR technician_team=$1
-    OR (',' || replace(COALESCE(technician_team,''),' ','') || ',') LIKE ('%,' || replace($1,' ','') || ',%')
-    OR EXISTS (
-      SELECT 1 FROM public.job_team_members tm
-      WHERE tm.job_id = public.jobs.job_id AND tm.username=$1
-    )
-    OR (technician_username=$1 AND COALESCE(dispatch_mode,'') <> 'offer')
-  )
-ORDER BY appointment_datetime ASC NULLS LAST, job_id ASC
+        is_history_job = FALSE
+        OR (
+          $2 = 'all' AND history_at >= (NOW() AT TIME ZONE 'Asia/Bangkok' - INTERVAL '180 days')
+        )
+        OR (
+          $2 = 'month'
+          AND history_at >= date_trunc('month', NOW() AT TIME ZONE 'Asia/Bangkok') AT TIME ZONE 'Asia/Bangkok'
+          AND history_at <  (date_trunc('month', NOW() AT TIME ZONE 'Asia/Bangkok') + INTERVAL '1 month') AT TIME ZONE 'Asia/Bangkok'
+        )
+        OR (
+          $2 = 'day'
+          AND history_at >= date_trunc('day', NOW() AT TIME ZONE 'Asia/Bangkok') AT TIME ZONE 'Asia/Bangkok'
+          AND history_at <  (date_trunc('day', NOW() AT TIME ZONE 'Asia/Bangkok') + INTERVAL '1 day') AT TIME ZONE 'Asia/Bangkok'
+        )
+      ORDER BY is_history_job ASC, appointment_datetime ASC NULLS LAST, job_id ASC
       `,
-      [username]
+      [username, historyScope]
     );
-    // Performance: job visibility must be fast and independent from payout/rate calculation.
-    // Income is loaded asynchronously by /tech/income-summary-batch after cards are already visible.
+    const previewMap = await _loadJobTechnicianIncomePreviewMap(username, (r.rows || []).map(row => row.job_id));
     const rows = (r.rows || []).map((row) => {
       const context = _techJobContextFromRow(row, 'current');
-      return { ...row, ..._techJobMoneyFallback(row, username, context) };
+      const fallback = _techJobMoneyFallback(row, username, context);
+      const previewRow = previewMap.get(String(row.job_id));
+      const previewSummary = (!previewRow?.is_stale) ? _techIncomePreviewSummaryFromRow(previewRow, context) : null;
+      return { ...row, ...fallback, ...(previewSummary || {}) };
     });
-    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows fast', { username, count: rows.length }); } catch {}
+    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows fast', { username, count: rows.length, historyScope, previewCount: previewMap.size }); } catch {}
     res.json(rows);
   } catch (e) {
     console.error(e);
@@ -16233,6 +16433,8 @@ try {
       }
 
       await client.query("COMMIT");
+      // 💰 รายได้ช่าง preview/cache ต้องอัปเดตเมื่อแอดมินแก้รายการ/ทีม/ช่าง
+      if (wantsItemsSave || wantsTeamSave || desiredPrimaryFromBody) _refreshJobTechnicianIncomePreviewSoon(job_id);
       return res.json({
         success: true,
         steps: {
@@ -16704,6 +16906,7 @@ app.put("/jobs/:job_id/items-admin", async (req, res) => {
     });
 
     await client.query("COMMIT");
+    _refreshJobTechnicianIncomePreviewSoon(job_id);
     res.json({ success: true, pricing: result.pricing });
   } catch (e) {
     await client.query("ROLLBACK");
@@ -17211,10 +17414,24 @@ app.post("/tech/income-summary-batch", async (req, res) => {
 
   try {
     const visibleRows = await _loadTechnicianVisibleJobsByIds(username, jobIds);
+    const previewMap = await _loadJobTechnicianIncomePreviewMap(username, visibleRows.map(r => r.job_id));
     const items = {};
     for (const row of visibleRows) {
       const context = _techJobContextFromRow(row, 'current');
       try {
+        const previewSummary = _techIncomePreviewSummaryFromRow(previewMap.get(String(row.job_id)), context);
+        if (previewSummary && !previewMap.get(String(row.job_id))?.is_stale) {
+          items[String(row.job_id)] = {
+            job_id: row.job_id,
+            context,
+            status: 'ready',
+            technician_income_amount: previewSummary.technician_income_amount,
+            technician_income_source: previewSummary.technician_income_source || 'preview',
+            technician_income_rate_set_id: previewSummary.technician_income_rate_set_id || null,
+            technician_income_rate_set_version: previewSummary.technician_income_rate_set_version || null,
+          };
+          continue;
+        }
         const money = await _buildTechnicianJobMoneySummary(row, username, { context });
         items[String(row.job_id)] = {
           job_id: row.job_id,
@@ -17374,6 +17591,7 @@ app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) 
     );
 
     await client.query("COMMIT");
+    _refreshJobTechnicianIncomePreviewSoon(offer.job_id, { assumeTechnician: offer.technician_username });
 
     // best effort: ถ้าเป็น urgent และไม่มี offer ค้างแล้ว ให้สรุปสถานะ
     await autoFinalizeUrgentJobs();

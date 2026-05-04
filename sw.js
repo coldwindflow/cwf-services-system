@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v39-tech-income-async";
+const CACHE_NAME = "cwf-cache-v40-tech-income-preview-fast-card";
 
 const ASSETS = [
   "/",
@@ -9,7 +9,7 @@ const ASSETS = [
   "/index.html",
   "/tech.html",
   "/style.css",
-  "/app.js?v=tech-income-async-v1-20260504",
+  "/app.js?v=tech-income-preview-v2-20260504",
   "/logo.png",
   "/manifest.json",
   "/mainfest.json",

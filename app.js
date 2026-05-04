@@ -1079,18 +1079,17 @@ function renderTechnicianMoneySummary(job, context) {
     const amount = hasAmount ? _techMoneyAmountText(displayJob?.technician_income_amount, 'รอคำนวณรายได้') : (isLoading ? 'กำลังคำนวณ…' : 'รอตรวจสอบรายได้');
     const pendingClass = hasAmount ? '' : 'is-pending';
     return `
-      <button type="button" class="tech-income-chip ${pendingClass}" data-tech-income-chip="${escapeAttr(key)}" data-job-id="${escapeAttr(jobId)}" data-income-context="${escapeAttr(ctx)}" onclick="openTechnicianIncomeModal('${escapeHTML(key)}')" aria-label="ดูรายละเอียดรายได้ช่าง">
+      <button type="button" class="tech-income-chip tech-income-chip--mini ${pendingClass}" data-tech-income-chip="${escapeAttr(key)}" data-job-id="${escapeAttr(jobId)}" data-income-context="${escapeAttr(ctx)}" onclick="openTechnicianIncomeModal('${escapeHTML(key)}')" aria-label="ดูรายละเอียดรายได้ช่าง">
         <span class="tech-income-chip-icon">💰</span>
         <span class="tech-income-chip-main">
           <span class="tech-income-chip-label">${escapeHTML(label)}</span>
           <strong data-income-amount>${escapeHTML(amount)}</strong>
         </span>
-        <span class="tech-income-chip-hint">${escapeHTML(helper)}</span>
         <span class="tech-income-chip-arrow">›</span>
       </button>
     `;
   } catch (e) {
-    return `<div class="tech-income-chip is-pending"><span class="tech-income-chip-icon">💰</span><span class="tech-income-chip-main"><span class="tech-income-chip-label">รายได้ช่าง</span><strong>กำลังคำนวณ…</strong></span></div>`;
+    return `<div class="tech-income-chip tech-income-chip--mini is-pending"><span class="tech-income-chip-icon">💰</span><span class="tech-income-chip-main"><span class="tech-income-chip-label">รายได้ช่าง</span><strong>กำลังคำนวณ…</strong></span></div>`;
   }
 }
 function _renderTechnicianIncomeBreakdownContent(job) {
@@ -2219,7 +2218,8 @@ function declineOffer(offerId) {
 // 📡 LOAD JOBS
 // =======================================
 function loadJobs() {
-  fetch(`${API_BASE}/jobs/tech/${username}`, { cache: "no-store" })
+  const scope = encodeURIComponent(__HISTORY_FILTER__ || 'month');
+  fetch(`${API_BASE}/jobs/tech/${username}?history_scope=${scope}&v=${Date.now()}`, { cache: "no-store" })
     .then((res) => {
       if (!res.ok) throw new Error("โหลดข้อมูลงานไม่สำเร็จ");
       return res.json();
@@ -2295,8 +2295,8 @@ function setHistoryFilter(f){
   if (typeof historyFilterHintEl !== "undefined" && historyFilterHintEl) {
     historyFilterHintEl.textContent = (v === "day") ? "แสดงงานปิดแล้ว: วันนี้" : (v === "month") ? "แสดงงานปิดแล้ว: เดือนนี้" : "แสดงงานปิดแล้ว: ทั้งหมด";
   }
-  // re-render from cache (ไม่เรียก API ซ้ำ)
-  try { renderJobs(window.__JOB_CACHE__ || []); } catch(e) {}
+  // โหลดใหม่ตาม scope จริง (day/month/all) เพื่อไม่ให้ค้างอยู่ที่รายเดือน
+  try { loadJobs(); } catch(e) { try { renderJobs(window.__JOB_CACHE__ || []); } catch(_) {} }
 }
 window.setHistoryFilter = setHistoryFilter;
 
@@ -2575,9 +2575,10 @@ function renderJobs(jobs) {
   }
 
 
-  // โหลดรายได้ช่างแบบ async หลังใบงานแสดงแล้ว ใบงานจึงไม่ต้องรอ payout/rate engine
+  // โหลดรายได้ช่างแบบ async เฉพาะงานปัจจุบัน/ล่วงหน้าเท่านั้น
+  // ประวัติใช้ preview ที่บันทึกไว้แล้ว หรือโหลดรายละเอียดตอนแตะการ์ด เพื่อลดความช้า
   try {
-    scheduleTechnicianIncomeSummaryLoad([...prioritizedActiveToday, ...filteredUpcoming, ...historyAll], 'jobs');
+    scheduleTechnicianIncomeSummaryLoad([...prioritizedActiveToday, ...filteredUpcoming], 'jobs');
   } catch (_) {}
 
   // 🔔 เตือนก่อนถึงเวลานัด 30 นาที (เฉพาะงานวันนี้)
