@@ -6774,17 +6774,19 @@ async function _getCustomerCollectAmountForTechJob(job_id, fallbackAmount) {
 async function _loadFinalizedTechPayoutLineForJob(job_id, username) {
   const tech = String(username || '').trim();
   if (!tech) return null;
+  const aliases = await _getTechnicianVisibilityAliases(tech).catch(() => [tech]);
   const r = await pool.query(
     `SELECT l.payout_id, l.technician_username, l.job_id, l.earn_amount, l.detail_json,
             p.status AS payout_status, p.period_start, p.period_end
        FROM public.technician_payout_lines l
        JOIN public.technician_payout_periods p ON p.payout_id = l.payout_id
       WHERE l.job_id::text = $1::text
-        AND l.technician_username = $2
+        AND l.technician_username = ANY($2::text[])
         AND COALESCE(p.status,'draft') IN ('locked','paid')
-      ORDER BY CASE WHEN p.status='paid' THEN 0 ELSE 1 END, p.period_end DESC, l.line_id DESC
+      ORDER BY CASE WHEN l.technician_username=$3 THEN 0 ELSE 1 END,
+               CASE WHEN p.status='paid' THEN 0 ELSE 1 END, p.period_end DESC, l.line_id DESC
       LIMIT 1`,
-    [String(job_id), tech]
+    [String(job_id), aliases, tech]
   );
   return r.rows?.[0] || null;
 }
@@ -6970,7 +6972,12 @@ async function _calculateAndStoreTechnicianIncomePreview(job_id, username, opts 
   if (!Number.isInteger(jid) || jid <= 0 || !tech) return null;
   try {
     const lines = await _buildPayoutLinesForJob(jid, { includeUnfinished: true, assumeTechnician: tech });
-    const line = (lines || []).find((ln) => String(ln.technician_username || '').trim() === tech) || null;
+    const aliases = await _getTechnicianVisibilityAliases(tech).catch(() => [tech]);
+    const aliasSet = new Set((aliases || [tech]).map(x => String(x || '').trim()).filter(Boolean));
+    let line = (lines || []).find((ln) => String(ln.technician_username || '').trim() === tech) || null;
+    if (!line && aliasSet.size) {
+      line = (lines || []).find((ln) => aliasSet.has(String(ln.technician_username || '').trim())) || null;
+    }
     if (!line) {
       // Keep a non-stale row with null/0? No: do not store false 0 for jobs we cannot infer.
       // Delete stale preview so UI shows fallback instead of a wrong zero.
@@ -16166,10 +16173,65 @@ function _sanitizeTechJobIds(input) {
   return out;
 }
 
+async function _getTechnicianVisibilityAliases(username) {
+  const base = String(username || '').trim();
+  if (!base) return [];
+  const aliases = new Set([base]);
+  try {
+    const r = await pool.query(
+      `SELECT username, technician_code, full_name, phone, line_id
+         FROM public.technician_profiles
+        WHERE username=$1 OR technician_code=$1 OR full_name=$1 OR phone=$1 OR line_id=$1
+        LIMIT 5`,
+      [base]
+    );
+    for (const row of (r.rows || [])) {
+      for (const k of ['username','technician_code','full_name','phone','line_id']) {
+        const v = String(row?.[k] || '').trim();
+        if (v) aliases.add(v);
+      }
+    }
+  } catch (e) {
+    try { console.warn('[tech_visibility_aliases] fallback username only', { username: base, error: e.message }); } catch {}
+  }
+  return [...aliases].filter(Boolean).slice(0, 12);
+}
+
+function _techVisibilityPredicateSql(aliasParam = '$1') {
+  return `(
+    EXISTS (
+      SELECT 1 FROM public.job_assignments ja
+      WHERE ja.job_id = j.job_id
+        AND ja.technician_username = ANY(${aliasParam}::text[])
+    )
+    OR j.technician_username = ANY(${aliasParam}::text[])
+    OR EXISTS (
+      SELECT 1 FROM public.job_team_members tm
+      WHERE tm.job_id = j.job_id
+        AND tm.username = ANY(${aliasParam}::text[])
+    )
+    OR EXISTS (
+      SELECT 1 FROM public.job_offers o
+      WHERE o.job_id = j.job_id
+        AND o.technician_username = ANY(${aliasParam}::text[])
+        AND o.status IN ('pending','accepted')
+    )
+    OR EXISTS (
+      SELECT 1 FROM unnest(${aliasParam}::text[]) AS a(alias)
+      WHERE a.alias <> ''
+        AND (
+          j.technician_team = a.alias
+          OR (',' || replace(COALESCE(j.technician_team,''),' ','') || ',') LIKE ('%,' || replace(a.alias,' ','') || ',%')
+        )
+    )
+  )`;
+}
+
 async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
   const tech = String(username || '').trim();
   const ids = _sanitizeTechJobIds(jobIds);
   if (!tech || !ids.length) return [];
+  const aliases = await _getTechnicianVisibilityAliases(tech);
   const r = await pool.query(
     `
     SELECT
@@ -16183,17 +16245,10 @@ async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
       j.checkin_at, j.technician_note, j.technician_note_at
     FROM public.jobs j
     WHERE j.job_id = ANY($2::int[])
-      AND (
-        EXISTS (SELECT 1 FROM public.job_assignments ja WHERE ja.job_id = j.job_id AND ja.technician_username = $1)
-        OR j.technician_team = $1
-        OR (',' || replace(COALESCE(j.technician_team,''),' ','') || ',') LIKE ('%,' || replace($1,' ','') || ',%')
-        OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id = j.job_id AND tm.username = $1)
-        OR EXISTS (SELECT 1 FROM public.job_offers o WHERE o.job_id = j.job_id AND o.technician_username = $1 AND o.status IN ('pending','accepted'))
-        OR (j.technician_username = $1 AND COALESCE(j.dispatch_mode,'') <> 'offer')
-      )
+      AND ${_techVisibilityPredicateSql('$1')}
     ORDER BY j.appointment_datetime ASC NULLS LAST, j.job_id ASC
     `,
-    [tech, ids]
+    [aliases, ids]
   );
   return r.rows || [];
 }
@@ -16204,49 +16259,26 @@ async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
 app.get("/jobs/tech/:username", async (req, res) => {
   const { username } = req.params;
   try {
+    const aliases = await _getTechnicianVisibilityAliases(username);
     const r = await pool.query(
       `
       SELECT
-        job_id, booking_code, booking_token, job_source, dispatch_mode,
-        customer_name, customer_phone, job_type, appointment_datetime,
-        job_status, job_price, paid_at, paid_by, payment_status, address_text,
-        gps_latitude, gps_longitude, air_type, air_quantity,
-        technician_team, technician_username, created_at,
-        maps_url, job_zone,
-        travel_started_at, started_at, finished_at, canceled_at, cancel_reason,
-        checkin_at,
-        technician_note, technician_note_at,
-        final_signature_path, final_signature_status, final_signature_at,
-        checkin_latitude, checkin_longitude, checkin_at,
-        technician_note, technician_note_at
-      FROM public.jobs
-      WHERE
-  (
-    -- Visibility must be based on assignment/ownership only.
-    -- Do not hide a job just because an assignment row is already marked done;
-    -- the frontend will place it into current/upcoming/history from the overall job_status.
-    EXISTS (
-      SELECT 1 FROM public.job_assignments ja
-      WHERE ja.job_id = public.jobs.job_id
-        AND ja.technician_username=$1
-    )
-    OR technician_team=$1
-    OR (',' || replace(COALESCE(technician_team,''),' ','') || ',') LIKE ('%,' || replace($1,' ','') || ',%')
-    OR EXISTS (
-      SELECT 1 FROM public.job_team_members tm
-      WHERE tm.job_id = public.jobs.job_id AND tm.username=$1
-    )
-    OR EXISTS (
-      SELECT 1 FROM public.job_offers o
-      WHERE o.job_id = public.jobs.job_id
-        AND o.technician_username=$1
-        AND o.status IN ('pending','accepted')
-    )
-    OR (technician_username=$1 AND COALESCE(dispatch_mode,'') <> 'offer')
-  )
-ORDER BY appointment_datetime ASC NULLS LAST, job_id ASC
+        j.job_id, j.booking_code, j.booking_token, j.job_source, j.dispatch_mode,
+        j.customer_name, j.customer_phone, j.job_type, j.appointment_datetime,
+        j.job_status, j.job_price, j.paid_at, j.paid_by, j.payment_status, j.address_text,
+        j.gps_latitude, j.gps_longitude, j.air_type, j.air_quantity,
+        j.technician_team, j.technician_username, j.created_at,
+        j.maps_url, j.job_zone,
+        j.travel_started_at, j.started_at, j.finished_at, j.canceled_at, j.cancel_reason,
+        j.checkin_at,
+        j.technician_note, j.technician_note_at,
+        j.final_signature_path, j.final_signature_status, j.final_signature_at,
+        j.checkin_latitude, j.checkin_longitude
+      FROM public.jobs j
+      WHERE ${_techVisibilityPredicateSql('$1')}
+      ORDER BY j.appointment_datetime ASC NULLS LAST, j.job_id ASC
       `,
-      [username]
+      [aliases]
     );
     // Performance: job visibility must be fast and independent from payout/rate calculation.
     // Income is loaded asynchronously by /tech/income-summary-batch after cards are already visible.
@@ -16254,7 +16286,7 @@ ORDER BY appointment_datetime ASC NULLS LAST, job_id ASC
       const context = _techJobContextFromRow(row, 'current');
       return { ...row, ..._techJobMoneyFallback(row, username, context) };
     });
-    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows fast', { username, count: rows.length }); } catch {}
+    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows fast', { username, aliases, count: rows.length }); } catch {}
     res.json(rows);
   } catch (e) {
     console.error(e);
@@ -17469,6 +17501,72 @@ app.get("/tech/jobs/:job_id/income-detail", async (req, res) => {
   }
 });
 
+
+app.post("/api/super/technician-income-preview/backfill", requireSuperAdmin, async (req, res) => {
+  const b = req.body || {};
+  const limit = Math.max(1, Math.min(200, Number(b.limit || 100) || 100));
+  const daysBack = Math.max(1, Math.min(730, Number(b.days_back || 180) || 180));
+  const daysForward = Math.max(1, Math.min(180, Number(b.days_forward || 60) || 60));
+  const usernameFilter = String(b.username || '').trim();
+  try {
+    const rowsQ = await pool.query(
+      `
+      WITH scoped_jobs AS (
+        SELECT j.job_id, j.appointment_datetime, j.finished_at, j.paid_at, j.created_at
+          FROM public.jobs j
+         WHERE COALESCE(j.canceled_at, NULL) IS NULL
+           AND COALESCE(j.appointment_datetime, j.finished_at, j.paid_at, j.created_at, NOW()) >= (NOW() - ($2::int * INTERVAL '1 day'))
+           AND COALESCE(j.appointment_datetime, j.finished_at, j.paid_at, j.created_at, NOW()) <  (NOW() + ($3::int * INTERVAL '1 day'))
+         ORDER BY COALESCE(j.created_at, j.appointment_datetime, j.finished_at, j.paid_at, NOW()) DESC NULLS LAST, j.job_id DESC
+         LIMIT 1000
+      ), pairs AS (
+        SELECT sj.job_id, NULLIF(TRIM(j.technician_username),'') AS tech
+          FROM scoped_jobs sj JOIN public.jobs j ON j.job_id=sj.job_id
+        UNION
+        SELECT sj.job_id, NULLIF(TRIM(x.tech),'') AS tech
+          FROM scoped_jobs sj JOIN public.jobs j ON j.job_id=sj.job_id
+          CROSS JOIN LATERAL regexp_split_to_table(COALESCE(j.technician_team,''), '\s*,\s*') AS x(tech)
+        UNION
+        SELECT sj.job_id, NULLIF(TRIM(tm.username),'') AS tech
+          FROM scoped_jobs sj JOIN public.job_team_members tm ON tm.job_id=sj.job_id
+        UNION
+        SELECT sj.job_id, NULLIF(TRIM(ja.technician_username),'') AS tech
+          FROM scoped_jobs sj JOIN public.job_assignments ja ON ja.job_id=sj.job_id
+        UNION
+        SELECT sj.job_id, NULLIF(TRIM(o.technician_username),'') AS tech
+          FROM scoped_jobs sj JOIN public.job_offers o ON o.job_id=sj.job_id AND o.status IN ('pending','accepted')
+      )
+      SELECT DISTINCT p.job_id, p.tech AS technician_username
+        FROM pairs p
+        LEFT JOIN public.job_technician_income_preview prev
+          ON prev.job_id=p.job_id AND prev.technician_username=p.tech AND COALESCE(prev.is_stale,FALSE)=FALSE
+       WHERE p.tech IS NOT NULL AND p.tech <> ''
+         AND ($4::text = '' OR p.tech = $4::text)
+         AND prev.id IS NULL
+       ORDER BY p.job_id DESC
+       LIMIT $1
+      `,
+      [limit, daysBack, daysForward, usernameFilter]
+    );
+    let inserted = 0, failed = 0, skipped = 0;
+    const failures = [];
+    for (const row of rowsQ.rows || []) {
+      try {
+        const made = await _calculateAndStoreTechnicianIncomePreview(row.job_id, row.technician_username, { source: 'backfill_preview' });
+        if (made) inserted += 1;
+        else skipped += 1;
+      } catch (e) {
+        failed += 1;
+        if (failures.length < 10) failures.push({ job_id: row.job_id, technician_username: row.technician_username, error: e.message });
+      }
+    }
+    return res.json({ ok: true, scanned: rowsQ.rowCount || 0, inserted, updated: 0, skipped, failed, failures, has_more_hint: (rowsQ.rowCount || 0) >= limit });
+  } catch (e) {
+    console.error('/api/super/technician-income-preview/backfill error:', e);
+    return res.status(500).json({ ok: false, error: 'backfill_failed', message: e.message });
+  }
+});
+
 app.get("/offers/tech/:username", async (req, res) => {
   const { username } = req.params;
 
@@ -17485,6 +17583,7 @@ app.get("/offers/tech/:username", async (req, res) => {
     // ถ้า urgent ไม่มีใครรับแล้ว ให้ขึ้นสถานะลูกค้าแบบปลอดภัย
     await autoFinalizeUrgentJobs();
 
+    const aliases = await _getTechnicianVisibilityAliases(username);
     const r = await pool.query(
       `
       SELECT
@@ -17494,12 +17593,12 @@ app.get("/offers/tech/:username", async (req, res) => {
         COALESCE(j.job_zone,'') AS job_zone
       FROM public.job_offers o
       JOIN public.jobs j ON j.job_id = o.job_id
-      WHERE o.technician_username=$1
+      WHERE o.technician_username = ANY($1::text[])
         AND o.status='pending'
         AND o.expires_at >= NOW()
       ORDER BY o.expires_at ASC
       `,
-      [username]
+      [aliases]
     );
 
     // Offered job cards should show income immediately when possible.

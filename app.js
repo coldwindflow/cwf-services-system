@@ -1982,7 +1982,7 @@ try{
 loadOffers();
 loadJobs();
 setInterval(() => loadOffers(), 15000);
-setInterval(() => loadJobs(), 20000); // keep active/history in sync (admin force close etc.)
+setInterval(() => loadJobs(), 45000); // keep active/history in sync without making technician app feel heavy
 setInterval(() => loadIncomeSummary(), 60000);
 setInterval(() => loadIncomeOverview(), 90000);
 
@@ -2304,6 +2304,13 @@ window.setHistoryFilter = setHistoryFilter;
 // init filter UI (ถ้ามีปุ่ม)
 try {
   if (typeof historyTabDayEl !== "undefined" && historyTabDayEl) setHistoryFilter(__HISTORY_FILTER__);
+} catch(e) {}
+
+// Production guard: bind history filter buttons with JS too, not only inline onclick.
+try {
+  if (historyTabDayEl) historyTabDayEl.addEventListener('click', (ev) => { ev.preventDefault(); setHistoryFilter('day'); });
+  if (historyTabMonthEl) historyTabMonthEl.addEventListener('click', (ev) => { ev.preventDefault(); setHistoryFilter('month'); });
+  if (historyTabAllEl) historyTabAllEl.addEventListener('click', (ev) => { ev.preventDefault(); setHistoryFilter('all'); });
 } catch(e) {}
 
 
