@@ -77,6 +77,9 @@
     .pay-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.pay-actions .btn{flex:1;min-width:90px}
     .soft-hide-table{display:none!important}
     @media(max-width:920px){.payroll-shell,.payroll-cards{grid-template-columns:1fr}.payroll-actions{grid-template-columns:1fr}.payout-card-item .topline{flex-direction:column}.payroll-focus > summary{font-size:15px}.grid{grid-template-columns:1fr}}
+    .rate-manager{display:grid;gap:12px}.rate-table-wrap{overflow:auto;border:1px solid rgba(11,75,179,.14);border-radius:16px;background:#fff}
+    .rate-table-wrap table{border-spacing:0;margin:0;min-width:680px}.rate-table-wrap th,.rate-table-wrap td{padding:10px;border-bottom:1px solid rgba(15,23,42,.08);text-align:left}.rate-table-wrap th{background:#f3f7ff;color:#061b49;font-size:12px}.rate-table-wrap input{width:110px;text-align:right}
+    .rate-warning{border-radius:18px;border:1px solid rgba(244,196,0,.55);background:#fff9db;padding:12px;color:#422006;font-weight:900}.rate-audit-list{display:grid;gap:8px}.rate-audit-row{border:1px solid rgba(11,75,179,.12);border-radius:14px;padding:10px;background:#fff}
   </style>
   <script defer src="/cwf-pwa.js?v=company-logo-icon-v32"></script>
 </head>
@@ -303,6 +306,49 @@
             </details>
 
           </div>
+        </div>
+      </div>
+    </details>
+
+    <details id="techRateManager">
+      <summary>จัดการเรทรายได้ช่าง</summary>
+      <div class="card rate-manager" style="box-shadow:none;border:none;padding:0;margin-top:10px">
+        <div class="card">
+          <div class="sectionTitle">
+            <div>
+              <b>จัดการเรทรายได้ช่าง</b>
+              <div class="muted" style="margin-top:4px">ใช้สำหรับกำหนดเรทรายได้ช่างที่ระบบ payout, รายได้ช่าง, และสัญญาพาร์ทเนอร์ใช้ร่วมกัน</div>
+            </div>
+            <div class="row">
+              <button class="btn blue" id="btnReloadTechRates" type="button">รีเฟรช</button>
+              <button class="btn yellow" id="btnCreateTechRateDraft" type="button">สร้าง draft จากเรทปัจจุบัน</button>
+            </div>
+          </div>
+          <div class="rate-warning" style="margin-top:10px">การเปลี่ยนเรทมีผลกับงานใหม่หรือรายการที่ยังไม่ถูกล็อกงวดจ่ายเท่านั้น งานที่ล็อก/จ่ายแล้วจะไม่ถูกแก้ย้อนหลัง</div>
+          <div class="muted" id="techRateStatus" style="margin-top:10px">กำลังโหลด...</div>
+        </div>
+        <div class="card">
+          <div class="sectionTitle">
+            <div>
+              <b id="techRateEditorTitle">เรทที่ใช้งานอยู่</b>
+              <div class="muted" id="techRateEditorHint" style="margin-top:4px">สร้าง draft เพื่อแก้ไขตัวเลขและ preview ก่อน activate</div>
+            </div>
+            <div class="row">
+              <button class="btn blue" id="btnSaveTechRateDraft" type="button" disabled>บันทึก draft</button>
+              <button class="btn yellow" id="btnActivateTechRateDraft" type="button" disabled>Activate draft</button>
+            </div>
+          </div>
+          <div id="techRateTables" style="margin-top:10px"></div>
+        </div>
+        <div class="card">
+          <div class="sectionTitle">
+            <div>
+              <b>Audit history</b>
+              <div class="muted" style="margin-top:4px">บันทึกการแก้ไขและ activate เรทโดย Super Admin</div>
+            </div>
+            <button class="btn blue" id="btnReloadTechRateAudit" type="button">รีเฟรช audit</button>
+          </div>
+          <div id="techRateAudit" class="rate-audit-list" style="margin-top:10px"></div>
         </div>
       </div>
     </details>

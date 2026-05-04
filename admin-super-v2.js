@@ -969,6 +969,110 @@
   }
 
   window.cwfLegacySettleOldPayouts = legacySettleOldPayouts;
+
+  // ===== Technician income rate sets =====
+  const RATE_LABELS = {
+    ac: { wall:'แอร์ผนัง', fourway:'แอร์สี่ทิศทาง', hanging:'แอร์แขวน/ตั้งพื้น', ceiling:'แอร์เปลือย/ใต้ฝ้า' },
+    wash: { normal:'ล้างปกติ', premium:'ล้างพรีเมียม', coil:'ล้างแบบแขวนคอยล์', overhaul:'ตัดล้างใหญ่', none:'-' },
+    tier: { small:'ไม่เกิน 12,000 BTU', large:'18,000 BTU ขึ้นไป', all:'ทุก BTU' }
+  };
+  let TECH_RATE_STATE = { active:null, drafts:[], editing:null };
+  const rateAmount = (items, ac, wash, tier, from) => {
+    const r = (items || []).find(x => x.ac_type_key===ac && x.wash_type_key===wash && x.btu_tier===tier && Number(x.step_from)===from);
+    return Number(r?.amount || 0);
+  };
+  const setRateAmount = (items, ac, wash, tier, from, amount) => {
+    const r = (items || []).find(x => x.ac_type_key===ac && x.wash_type_key===wash && x.btu_tier===tier && Number(x.step_from)===from);
+    if (r) r.amount = Number(amount || 0);
+  };
+  function renderTechRateTables() {
+    const box = $('techRateTables');
+    if (!box) return;
+    const full = TECH_RATE_STATE.editing || TECH_RATE_STATE.active;
+    const editable = !!(full?.rate_set && String(full.rate_set.status) === 'draft');
+    const items = full?.items || [];
+    if (!full) {
+      box.innerHTML = '<div class="muted">ยังไม่มี rate set ในฐานข้อมูล ระบบ backend จะใช้ fallback v4 ชั่วคราว</div>';
+      return;
+    }
+    if ($('techRateEditorTitle')) $('techRateEditorTitle').textContent = editable ? `Draft: ${full.rate_set.version}` : `Active: ${full.rate_set.version}`;
+    if ($('btnSaveTechRateDraft')) $('btnSaveTechRateDraft').disabled = !editable;
+    if ($('btnActivateTechRateDraft')) $('btnActivateTechRateDraft').disabled = !editable;
+    const wallRows = [
+      ['normal','small'],['normal','large'],['premium','small'],['premium','large'],['coil','small'],['coil','large'],['overhaul','small'],['overhaul','large']
+    ].map(([wash,tier]) => `
+      <tr data-ac="wall" data-wash="${wash}" data-tier="${tier}">
+        <td>${esc(RATE_LABELS.wash[wash])}</td><td>${esc(RATE_LABELS.tier[tier])}</td>
+        <td><input class="rate-input" data-from="1" type="number" min="0" step="1" ${editable?'':'disabled'} value="${rateAmount(items,'wall',wash,tier,1)}"></td>
+        <td><input class="rate-input" data-from="2" type="number" min="0" step="1" ${editable?'':'disabled'} value="${rateAmount(items,'wall',wash,tier,2)}"></td>
+        <td><input class="rate-input" data-from="4" type="number" min="0" step="1" ${editable?'':'disabled'} value="${rateAmount(items,'wall',wash,tier,4)}"></td>
+      </tr>`).join('');
+    const fixedRows = ['fourway','hanging','ceiling'].map(ac => `
+      <tr data-ac="${ac}" data-wash="none" data-tier="all">
+        <td>${esc(RATE_LABELS.ac[ac])}</td><td>${esc(RATE_LABELS.tier.all)}</td>
+        <td><input class="rate-input" data-from="1" type="number" min="0" step="1" ${editable?'':'disabled'} value="${rateAmount(items,ac,'none','all',1)}"></td>
+      </tr>`).join('');
+    box.innerHTML = `
+      <h3 style="margin:0 0 8px;color:#061b49">แอร์ผนัง</h3>
+      <div class="rate-table-wrap"><table><thead><tr><th>ประเภทการล้าง</th><th>BTU tier</th><th>เครื่องที่ 1</th><th>เครื่องที่ 2-3</th><th>เครื่องที่ 4 ขึ้นไป</th></tr></thead><tbody>${wallRows}</tbody></table></div>
+      <h3 style="margin:14px 0 8px;color:#061b49">แอร์สี่ทิศทาง / แอร์แขวน/ตั้งพื้น / แอร์เปลือย/ใต้ฝ้า</h3>
+      <div class="rate-table-wrap"><table><thead><tr><th>AC type</th><th>BTU</th><th>เรทต่อเครื่อง</th></tr></thead><tbody>${fixedRows}</tbody></table></div>`;
+    box.querySelectorAll('.rate-input').forEach(input => {
+      input.addEventListener('input', () => {
+        const tr = input.closest('tr');
+        setRateAmount(items, tr.dataset.ac, tr.dataset.wash, tr.dataset.tier, Number(input.dataset.from), Number(input.value || 0));
+      });
+    });
+  }
+  async function loadTechRates() {
+    if (!$('techRateTables')) return;
+    try {
+      const r = await api('/api/super/technician-income-rates');
+      TECH_RATE_STATE.active = r.active || null;
+      TECH_RATE_STATE.drafts = r.drafts || [];
+      TECH_RATE_STATE.editing = TECH_RATE_STATE.drafts[0] || TECH_RATE_STATE.active;
+      if ($('techRateStatus')) $('techRateStatus').textContent = r.active?.rate_set ? `Active ${r.active.rate_set.version} • ${r.active.items.length} รายการ` : (r.warning || 'ใช้ fallback v4');
+      renderTechRateTables();
+    } catch(e) {
+      if ($('techRateStatus')) $('techRateStatus').textContent = `โหลดเรทไม่สำเร็จ: ${e.message}`;
+    }
+  }
+  async function loadTechRateAudit() {
+    if (!$('techRateAudit')) return;
+    try {
+      const r = await api('/api/super/technician-income-rates/audit');
+      const rows = r.rows || [];
+      $('techRateAudit').innerHTML = rows.length ? rows.map(x => `<div class="rate-audit-row"><b>${esc(x.action)}</b> <span class="muted">${esc(x.version || '')}</span><div class="muted">${new Date(x.created_at).toLocaleString('th-TH')} • ${esc(x.actor_username || '-')} • ${esc(x.field_name || '')}: ${esc(x.old_value || '-')} → ${esc(x.new_value || '-')}</div></div>`).join('') : '<div class="muted">ยังไม่มี audit</div>';
+    } catch(e) {
+      $('techRateAudit').innerHTML = `<div class="muted">โหลด audit ไม่สำเร็จ: ${esc(e.message)}</div>`;
+    }
+  }
+  async function createTechRateDraft() {
+    const version = prompt('ตั้งชื่อ version สำหรับ draft', `partner_v4_draft_${Date.now()}`);
+    if (!version) return;
+    await api('/api/super/technician-income-rates/draft', { method:'POST', body: JSON.stringify({ version }) });
+    toast('สร้าง draft แล้ว');
+    await loadTechRates();
+    await loadTechRateAudit();
+  }
+  async function saveTechRateDraft() {
+    const full = TECH_RATE_STATE.editing;
+    if (!full?.rate_set || String(full.rate_set.status) !== 'draft') return;
+    await api(`/api/super/technician-income-rates/${encodeURIComponent(full.rate_set.id)}/items`, { method:'PUT', body: JSON.stringify({ items: full.items }) });
+    toast('บันทึก draft แล้ว');
+    await loadTechRates();
+    await loadTechRateAudit();
+  }
+  async function activateTechRateDraft() {
+    const full = TECH_RATE_STATE.editing;
+    if (!full?.rate_set || String(full.rate_set.status) !== 'draft') return;
+    if (!confirm('ยืนยัน activate draft นี้? งานที่ล็อก/จ่ายแล้วจะไม่ถูกแก้ย้อนหลัง')) return;
+    await api(`/api/super/technician-income-rates/${encodeURIComponent(full.rate_set.id)}/activate`, { method:'POST', body: JSON.stringify({ confirm:true }) });
+    toast('Activate เรทใหม่แล้ว');
+    await loadTechRates();
+    await loadTechRateAudit();
+  }
+
   if ($('btnGenCurrentPayout')) $('btnGenCurrentPayout').addEventListener('click', ()=> generatePayout(currentPayoutType()));
   if ($('btnGenP10')) $('btnGenP10').addEventListener('click', ()=> generatePayout('10'));
   if ($('btnGenP25')) $('btnGenP25').addEventListener('click', ()=> generatePayout('25'));
@@ -976,6 +1080,11 @@
   if ($('btnLegacySettle')) $('btnLegacySettle').addEventListener('click', legacySettleOldPayouts);
   if ($('btnApplyPayoutHistoryFilter')) $('btnApplyPayoutHistoryFilter').addEventListener('click', ()=> renderPayouts());
   if ($('btnShowMorePayoutHistory')) $('btnShowMorePayoutHistory').addEventListener('click', ()=> { SHOW_ALL_PAYOUT_HISTORY = true; renderPayouts(); });
+  if ($('btnReloadTechRates')) $('btnReloadTechRates').addEventListener('click', loadTechRates);
+  if ($('btnCreateTechRateDraft')) $('btnCreateTechRateDraft').addEventListener('click', createTechRateDraft);
+  if ($('btnSaveTechRateDraft')) $('btnSaveTechRateDraft').addEventListener('click', saveTechRateDraft);
+  if ($('btnActivateTechRateDraft')) $('btnActivateTechRateDraft').addEventListener('click', activateTechRateDraft);
+  if ($('btnReloadTechRateAudit')) $('btnReloadTechRateAudit').addEventListener('click', loadTechRateAudit);
 
   // ===== Init =====
   await loadAdmins();
@@ -983,5 +1092,7 @@
   await refreshImpState();
   await loadDurations();
   await loadAudit();
+  await loadTechRates();
+  await loadTechRateAudit();
   await loadPayouts();
 })();

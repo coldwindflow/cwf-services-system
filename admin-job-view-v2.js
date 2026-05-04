@@ -707,6 +707,49 @@ async function loadJob(){
       } catch(_e) {}
       return row;
     };
+    const STD_AC_TYPES = {
+      wall: 'แอร์ผนัง',
+      fourway: 'แอร์สี่ทิศทาง',
+      hanging: 'แอร์แขวน/ตั้งพื้น',
+      ceiling: 'แอร์เปลือย/ใต้ฝ้า',
+    };
+    const STD_WASH_TYPES = {
+      normal: 'ล้างปกติ',
+      premium: 'ล้างพรีเมียม',
+      coil: 'ล้างแบบแขวนคอยล์',
+      overhaul: 'ตัดล้างใหญ่',
+    };
+    const STD_BTU = {
+      small: 'ไม่เกิน 12,000 BTU',
+      large: '18,000 BTU ขึ้นไป',
+      all: 'ทุก BTU',
+    };
+    const standardItemName = (it) => {
+      const ac = String(it.ac_type_key || 'wall');
+      const qty = Math.max(0, Math.round(Number(it.qty || 0)));
+      if (ac === 'wall') {
+        const wash = String(it.wash_type_key || 'normal');
+        const tier = String(it.btu_tier || 'small');
+        const btuText = tier === 'large' ? '18000 BTU' : '12000 BTU';
+        return `ล้างแอร์ผนัง • ${STD_WASH_TYPES[wash] || STD_WASH_TYPES.normal} • ${btuText} • ${qty || 1} เครื่อง`;
+      }
+      return `${STD_AC_TYPES[ac] || STD_AC_TYPES.fourway} • ทุก BTU • ${qty || 1} เครื่อง`;
+    };
+    const parseStandardItemName = (name) => {
+      const s = String(name || '').toLowerCase();
+      if (!s.trim()) return null;
+      const ac = s.includes('สี่ทิศ') || s.includes('cassette') || s.includes('four') ? 'fourway'
+        : (s.includes('แขวน') || s.includes('ตั้งพื้น') || s.includes('floor') ? 'hanging'
+        : (s.includes('เปลือย') || s.includes('ใต้ฝ้า') || s.includes('ceiling') || s.includes('concealed') ? 'ceiling'
+        : (s.includes('ผนัง') || s.includes('wall') || s.includes('ล้างแอร์') ? 'wall' : null)));
+      if (!ac) return null;
+      const wash = ac !== 'wall' ? 'none'
+        : (s.includes('พรีเมียม') || s.includes('premium') ? 'premium'
+        : (s.includes('แขวนคอย') || s.includes('coil') ? 'coil'
+        : (s.includes('ตัดล้าง') || s.includes('overhaul') || s.includes('ใหญ่') ? 'overhaul' : 'normal')));
+      const tier = ac !== 'wall' ? 'all' : ((s.includes('18000') || s.includes('18,000') || s.includes('18 000')) ? 'large' : 'small');
+      return { ac_type_key: ac, wash_type_key: wash, btu_tier: tier, is_standard: true };
+    };
 
     let editorItems = (Array.isArray(items) ? items : []).map(it=>({
       item_id: Number(it.item_id||0) || null,
@@ -714,7 +757,7 @@ async function loadJob(){
       qty: Number(it.qty||1) || 1,
       unit_price: Number(it.unit_price||0) || 0,
       assigned_technician_username: (String(it.assigned_technician_username||'').trim() || inferAssigneeFromItemName(it.item_name) || null),
-    })).map(normalizeLegacyServiceRow);
+    })).map(normalizeLegacyServiceRow).map(row => Object.assign(row, parseStandardItemName(row.item_name) || { is_standard:false }));
 
     const tbody = el('items_editor');
 
@@ -742,6 +785,10 @@ async function loadJob(){
       tbody.innerHTML = editorItems.map((it, idx)=>{
         const line = (Number(it.qty)||0) * (Number(it.unit_price)||0);
         const curAssignee = String(it.assigned_technician_username||'').trim();
+        const acKey = String(it.ac_type_key || 'wall');
+        const isStd = !!it.is_standard || !!it.ac_type_key;
+        const washKey = acKey === 'wall' ? String(it.wash_type_key || 'normal') : 'none';
+        const btuKey = acKey === 'wall' ? String(it.btu_tier || 'small') : 'all';
         // Ensure the current assignee is selectable even if not in the team list snapshot (legacy jobs).
         const members = teamMembers.slice();
         if (curAssignee && !members.includes(curAssignee)) members.push(curAssignee);
@@ -752,9 +799,21 @@ async function loadJob(){
           const sel = curAssignee && curAssignee === val ? 'selected' : '';
           return `<option value="${escapeHtml(val)}" ${sel}>${escapeHtml(label)}</option>`;
         }).join('');
+        const acOpts = Object.entries(STD_AC_TYPES).map(([k,v])=>`<option value="${k}" ${acKey===k?'selected':''}>${escapeHtml(v)}</option>`).join('');
+        const washOpts = Object.entries(STD_WASH_TYPES).map(([k,v])=>`<option value="${k}" ${washKey===k?'selected':''}>${escapeHtml(v)}</option>`).join('');
+        const btuOpts = Object.entries(STD_BTU).filter(([k])=>acKey === 'wall' ? k !== 'all' : k === 'all').map(([k,v])=>`<option value="${k}" ${btuKey===k?'selected':''}>${escapeHtml(v)}</option>`).join('');
         return `<tr data-idx="${idx}">
-          <td style="min-width:220px">
-            <input class="it_name" value="${escapeHtml(it.item_name)}" placeholder="ชื่อรายการ" />
+          <td style="min-width:280px">
+            <div class="std_editor" style="${isStd?'':'display:none'};display:${isStd?'grid':'none'};gap:6px">
+              <select class="it_ac_type">${acOpts}</select>
+              <select class="it_wash_type" style="${acKey==='wall'?'':'display:none'}">${washOpts}</select>
+              <select class="it_btu_tier">${btuOpts}</select>
+              <div class="muted2" style="font-size:12px">${escapeHtml(standardItemName({ ...it, ac_type_key: acKey, wash_type_key: washKey, btu_tier: btuKey }))}</div>
+            </div>
+            <div class="legacy_editor" style="${isStd?'display:none':''}">
+              <input class="it_name" value="${escapeHtml(it.item_name)}" placeholder="ชื่อรายการ" />
+              <button type="button" class="btn-small it_convert" style="width:auto;margin-top:6px">แปลงเป็นรายการมาตรฐาน</button>
+            </div>
           </td>
           <td style="width:210px">
             <select class="it_assignee" style="width:100%">${assigneeOpts}</select>
@@ -770,6 +829,10 @@ async function loadJob(){
       Array.from(tbody.querySelectorAll('tr')).forEach(tr=>{
         const idx = Number(tr.getAttribute('data-idx'));
         const name = tr.querySelector('.it_name');
+        const acSel = tr.querySelector('.it_ac_type');
+        const washSel = tr.querySelector('.it_wash_type');
+        const btuSel = tr.querySelector('.it_btu_tier');
+        const convert = tr.querySelector('.it_convert');
         const assignee = tr.querySelector('.it_assignee');
         const splitMode = String(el('edit_split_mode')?.value || 'mixed');
         const qty = tr.querySelector('.it_qty');
@@ -784,7 +847,30 @@ async function loadJob(){
           if (lineEl) lineEl.textContent = (Number.isFinite(ln) ? ln : 0).toLocaleString();
         };
 
+        const syncStandard = () => {
+          const row = editorItems[idx];
+          row.is_standard = true;
+          row.ac_type_key = String(acSel?.value || 'wall');
+          if (row.ac_type_key !== 'wall') {
+            row.wash_type_key = 'none';
+            row.btu_tier = 'all';
+          } else {
+            row.wash_type_key = String(washSel?.value || 'normal');
+            row.btu_tier = String(btuSel?.value || 'small');
+          }
+          row.item_name = standardItemName(row);
+          renderEditor();
+        };
         if (name) name.oninput = ()=>{ editorItems[idx].item_name = name.value; };
+        if (acSel) acSel.onchange = syncStandard;
+        if (washSel) washSel.onchange = syncStandard;
+        if (btuSel) btuSel.onchange = syncStandard;
+        if (convert) convert.onclick = () => {
+          const parsed = parseStandardItemName(editorItems[idx].item_name) || { ac_type_key:'wall', wash_type_key:'normal', btu_tier:'small', is_standard:true };
+          Object.assign(editorItems[idx], parsed);
+          editorItems[idx].item_name = standardItemName(editorItems[idx]);
+          renderEditor();
+        };
         if (assignee) {
           if (splitMode === 'coop_equal') { assignee.value = ''; assignee.disabled = true; }
           assignee.onchange = ()=>{
@@ -792,7 +878,7 @@ async function loadJob(){
           editorItems[idx].assigned_technician_username = v || null;
         };
         }
-        if (qty) qty.oninput = ()=>{ editorItems[idx].qty = Number(qty.value||0); recalc(); };
+        if (qty) qty.oninput = ()=>{ editorItems[idx].qty = Number(qty.value||0); if (editorItems[idx].is_standard) editorItems[idx].item_name = standardItemName(editorItems[idx]); recalc(); };
         if (unit) unit.oninput = ()=>{ editorItems[idx].unit_price = Number(unit.value||0); recalc(); };
         if (del) del.onclick = ()=>{ editorItems.splice(idx,1); renderEditor(); };
       });
@@ -803,7 +889,7 @@ async function loadJob(){
     const btnAddItem = el('btnAddItem');
     if (btnAddItem) {
       btnAddItem.onclick = ()=>{
-        editorItems.push({ item_id: null, item_name: '', qty: 1, unit_price: 0 });
+        editorItems.push({ item_id: null, item_name: 'ล้างแอร์ผนัง • ล้างปกติ • 12000 BTU • 1 เครื่อง', qty: 1, unit_price: 0, ac_type_key:'wall', wash_type_key:'normal', btu_tier:'small', is_standard:true });
         renderEditor();
       };
     }
@@ -878,6 +964,7 @@ async function loadJob(){
               qty: Number(it.qty||0),
               unit_price: Number(it.unit_price||0),
               assigned_technician_username: String(it.assigned_technician_username||'').trim() || null,
+              is_service: true,
             }))
             .filter(it=>it.item_name);
 

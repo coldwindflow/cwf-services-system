@@ -3482,6 +3482,11 @@ app.get('/partner/agreement/:application_code', async (req, res) => {
       [appRow.id]
     );
     const template = tpl.rows[0] || null;
+    if (template && Number(template.version || 0) >= 4) {
+      const rateCtx = await _loadActiveTechnicianIncomeRateSet('partner');
+      template.content_html = _buildPartnerAgreementV4RateHtml(rateCtx.rate_source === 'database' ? rateCtx.items : CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS);
+      template.source_note = `${template.source_note || 'TECHNICIAN_INCOME_RATE_SET_V4'};rate_source=${rateCtx.rate_source};rate_set=${rateCtx.rate_set_version || 'fallback'}`;
+    }
     const contract_ready = isPartnerAgreementTemplateReady(template);
     return res.json({
       ok: true,
@@ -3520,6 +3525,11 @@ app.post('/partner/agreement/:application_code/sign', async (req, res) => {
     );
     if (!tplR.rows.length) throw new Error('ไม่พบ template สัญญาที่เปิดใช้งาน');
     const tpl = tplR.rows[0];
+    if (Number(tpl.version || 0) >= 4) {
+      const rateCtx = await _loadActiveTechnicianIncomeRateSet('partner');
+      tpl.content_html = _buildPartnerAgreementV4RateHtml(rateCtx.rate_source === 'database' ? rateCtx.items : CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS);
+      tpl.source_note = `${tpl.source_note || 'TECHNICIAN_INCOME_RATE_SET_V4'};rate_source=${rateCtx.rate_source};rate_set=${rateCtx.rate_set_version || 'fallback'}`;
+    }
     if (!isPartnerAgreementTemplateReady(tpl)) {
       await client.query('ROLLBACK');
       return res.status(400).json({ error: partnerAgreementReadinessMessage(tpl), contract_ready: false });
@@ -5053,6 +5063,231 @@ app.delete('/admin/super/tech_income/overrides/:username', requireSuperAdmin, as
   }
 });
 
+async function _insertRateAudit(clientOrPool, req, { rate_set_id, action, field_name = null, old_value = null, new_value = null }) {
+  await clientOrPool.query(
+    `INSERT INTO public.technician_income_rate_audit_logs
+      (rate_set_id, action, field_name, old_value, new_value, actor_username, actor_role, ip_address, user_agent)
+     VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [
+      rate_set_id || null,
+      action,
+      field_name,
+      old_value == null ? null : String(old_value),
+      new_value == null ? null : String(new_value),
+      req.actor?.username || null,
+      req.actor?.role || 'super_admin',
+      req.ip || null,
+      String(req.headers['user-agent'] || '').slice(0, 500)
+    ]
+  );
+}
+function _sanitizeRateItemsPayload(items) {
+  if (!Array.isArray(items) || !items.length) {
+    const err = new Error('INVALID_RATE_ITEMS'); err.statusCode = 400; throw err;
+  }
+  const cleaned = items.map((it, idx) => ({
+    ac_type_key: String(it.ac_type_key || '').trim(),
+    wash_type_key: String(it.wash_type_key || '').trim(),
+    btu_tier: String(it.btu_tier || '').trim(),
+    step_from: Number(it.step_from || 0),
+    step_to: it.step_to == null || it.step_to === '' ? null : Number(it.step_to),
+    amount: Number(it.amount),
+    unit: 'per_unit',
+    sort_order: Number.isFinite(Number(it.sort_order)) ? Number(it.sort_order) : idx + 1,
+  }));
+  for (const it of cleaned) {
+    if (!_validTechRateItemShape(it)) {
+      const err = new Error('INVALID_RATE_COMBINATION'); err.statusCode = 400; throw err;
+    }
+  }
+  const keys = new Set();
+  for (const it of cleaned) {
+    const k = `${it.ac_type_key}|${it.wash_type_key}|${it.btu_tier}|${it.step_from}|${it.step_to == null ? '' : it.step_to}`;
+    if (keys.has(k)) { const err = new Error('DUPLICATE_RATE_ROW'); err.statusCode = 400; throw err; }
+    keys.add(k);
+  }
+  return cleaned;
+}
+async function _fetchRateSetWithItems(rateSetId) {
+  const rs = await pool.query(`SELECT * FROM public.technician_income_rate_sets WHERE id=$1 LIMIT 1`, [rateSetId]);
+  const rate_set = rs.rows?.[0] || null;
+  if (!rate_set) return null;
+  const items = await pool.query(
+    `SELECT id, rate_set_id, ac_type_key, wash_type_key, btu_tier, step_from, step_to, amount, unit, sort_order, created_at, updated_at
+       FROM public.technician_income_rate_items
+      WHERE rate_set_id=$1
+      ORDER BY sort_order ASC, id ASC`,
+    [rateSetId]
+  );
+  return { rate_set, items: items.rows || [] };
+}
+
+app.get('/api/super/technician-income-rates', requireSuperAdmin, async (req, res) => {
+  try {
+    const active = await pool.query(
+      `SELECT * FROM public.technician_income_rate_sets WHERE contract_type='partner' AND status='active' ORDER BY activated_at DESC NULLS LAST, id DESC LIMIT 1`
+    );
+    const drafts = await pool.query(
+      `SELECT * FROM public.technician_income_rate_sets WHERE contract_type='partner' AND status='draft' ORDER BY updated_at DESC, id DESC LIMIT 5`
+    );
+    const activeFull = active.rows?.[0] ? await _fetchRateSetWithItems(active.rows[0].id) : null;
+    const draftFull = [];
+    for (const d of (drafts.rows || [])) {
+      const full = await _fetchRateSetWithItems(d.id);
+      if (full) draftFull.push(full);
+    }
+    return res.json({
+      ok: true,
+      active: activeFull,
+      drafts: draftFull,
+      fallback_items: CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS,
+      warning: activeFull ? '' : 'ยังไม่มี active rate set ในฐานข้อมูล ระบบจะใช้ fallback v4 ชั่วคราว'
+    });
+  } catch (e) {
+    console.error('GET /api/super/technician-income-rates', e);
+    return res.status(500).json({ ok:false, error:'LOAD_TECH_RATE_SET_FAILED' });
+  }
+});
+
+app.post('/api/super/technician-income-rates/draft', requireSuperAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const active = await client.query(
+      `SELECT * FROM public.technician_income_rate_sets WHERE contract_type='partner' AND status='active' ORDER BY activated_at DESC NULLS LAST, id DESC LIMIT 1`
+    );
+    const src = active.rows?.[0] || null;
+    const version = String(req.body?.version || `partner_v4_draft_${Date.now()}`).trim().slice(0, 80);
+    const name = String(req.body?.name || `Draft from ${src?.version || 'fallback v4'}`).trim().slice(0, 200);
+    const rs = await client.query(
+      `INSERT INTO public.technician_income_rate_sets(version, name, contract_type, status, effective_from, notes, created_by, updated_by)
+       VALUES($1,$2,'partner','draft',NOW(),$3,$4,$4)
+       RETURNING *`,
+      [version, name, String(req.body?.notes || '').trim() || 'Draft created from active technician income rates', req.actor.username]
+    );
+    const newId = rs.rows[0].id;
+    const srcItems = src
+      ? (await client.query(`SELECT * FROM public.technician_income_rate_items WHERE rate_set_id=$1 ORDER BY sort_order ASC, id ASC`, [src.id])).rows
+      : CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS;
+    for (const it of srcItems) {
+      await client.query(
+        `INSERT INTO public.technician_income_rate_items
+          (rate_set_id, ac_type_key, wash_type_key, btu_tier, step_from, step_to, amount, unit, sort_order)
+         VALUES($1,$2,$3,$4,$5,$6,$7,'per_unit',$8)`,
+        [newId, it.ac_type_key, it.wash_type_key, it.btu_tier, it.step_from, it.step_to, it.amount, it.sort_order]
+      );
+    }
+    await _insertRateAudit(client, req, { rate_set_id: newId, action:'create_draft', field_name:'source', new_value: src?.version || 'fallback_v4' });
+    await auditLog(req, { action:'TECH_INCOME_RATE_DRAFT_CREATE', meta:{ rate_set_id:newId, source_rate_set_id:src?.id || null } });
+    await client.query('COMMIT');
+    return res.json({ ok:true, draft: await _fetchRateSetWithItems(newId) });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('POST /api/super/technician-income-rates/draft', e);
+    return res.status(Number(e.statusCode || 500)).json({ ok:false, error:e.message || 'CREATE_DRAFT_FAILED' });
+  } finally {
+    client.release();
+  }
+});
+
+app.put('/api/super/technician-income-rates/:rate_set_id/items', requireSuperAdmin, async (req, res) => {
+  const rateSetId = Number(req.params.rate_set_id);
+  if (!Number.isFinite(rateSetId) || rateSetId <= 0) return res.status(400).json({ ok:false, error:'INVALID_RATE_SET_ID' });
+  const client = await pool.connect();
+  try {
+    const items = _sanitizeRateItemsPayload(req.body?.items);
+    await client.query('BEGIN');
+    const rs = await client.query(`SELECT * FROM public.technician_income_rate_sets WHERE id=$1 FOR UPDATE`, [rateSetId]);
+    const rateSet = rs.rows?.[0];
+    if (!rateSet) throw Object.assign(new Error('RATE_SET_NOT_FOUND'), { statusCode:404 });
+    if (String(rateSet.status) !== 'draft') throw Object.assign(new Error('ONLY_DRAFT_CAN_BE_EDITED'), { statusCode:409 });
+    const oldItems = (await client.query(`SELECT * FROM public.technician_income_rate_items WHERE rate_set_id=$1 ORDER BY sort_order ASC, id ASC`, [rateSetId])).rows || [];
+    await client.query(`DELETE FROM public.technician_income_rate_items WHERE rate_set_id=$1`, [rateSetId]);
+    for (const it of items) {
+      await client.query(
+        `INSERT INTO public.technician_income_rate_items
+          (rate_set_id, ac_type_key, wash_type_key, btu_tier, step_from, step_to, amount, unit, sort_order)
+         VALUES($1,$2,$3,$4,$5,$6,$7,'per_unit',$8)`,
+        [rateSetId, it.ac_type_key, it.wash_type_key, it.btu_tier, it.step_from, it.step_to, it.amount, it.sort_order]
+      );
+    }
+    const oldMap = new Map(oldItems.map(it => [`${it.ac_type_key}|${it.wash_type_key}|${it.btu_tier}|${it.step_from}|${it.step_to || ''}`, Number(it.amount || 0)]));
+    for (const it of items) {
+      const k = `${it.ac_type_key}|${it.wash_type_key}|${it.btu_tier}|${it.step_from}|${it.step_to || ''}`;
+      const oldAmount = oldMap.get(k);
+      if (oldAmount !== Number(it.amount)) {
+        await _insertRateAudit(client, req, { rate_set_id: rateSetId, action:'update_item', field_name:k, old_value: oldAmount == null ? null : oldAmount, new_value: it.amount });
+      }
+    }
+    await client.query(`UPDATE public.technician_income_rate_sets SET updated_by=$2, updated_at=NOW() WHERE id=$1`, [rateSetId, req.actor.username]);
+    await auditLog(req, { action:'TECH_INCOME_RATE_ITEMS_UPDATE', meta:{ rate_set_id:rateSetId, items_count:items.length } });
+    await client.query('COMMIT');
+    return res.json({ ok:true, draft: await _fetchRateSetWithItems(rateSetId) });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('PUT /api/super/technician-income-rates/:rate_set_id/items', e);
+    return res.status(Number(e.statusCode || 500)).json({ ok:false, error:e.message || 'UPDATE_RATE_ITEMS_FAILED' });
+  } finally {
+    client.release();
+  }
+});
+
+app.post('/api/super/technician-income-rates/:rate_set_id/activate', requireSuperAdmin, async (req, res) => {
+  const rateSetId = Number(req.params.rate_set_id);
+  if (!Number.isFinite(rateSetId) || rateSetId <= 0) return res.status(400).json({ ok:false, error:'INVALID_RATE_SET_ID' });
+  if (req.body?.confirm !== true) return res.status(400).json({ ok:false, error:'CONFIRM_REQUIRED' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const rs = await client.query(`SELECT * FROM public.technician_income_rate_sets WHERE id=$1 FOR UPDATE`, [rateSetId]);
+    const rateSet = rs.rows?.[0];
+    if (!rateSet) throw Object.assign(new Error('RATE_SET_NOT_FOUND'), { statusCode:404 });
+    if (String(rateSet.status) !== 'draft') throw Object.assign(new Error('ONLY_DRAFT_CAN_BE_ACTIVATED'), { statusCode:409 });
+    const itemCount = await client.query(`SELECT COUNT(*)::int AS c FROM public.technician_income_rate_items WHERE rate_set_id=$1`, [rateSetId]);
+    if (Number(itemCount.rows?.[0]?.c || 0) < CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS.length) {
+      throw Object.assign(new Error('INCOMPLETE_RATE_ITEMS'), { statusCode:400 });
+    }
+    await client.query(
+      `UPDATE public.technician_income_rate_sets
+          SET status='inactive', effective_to=COALESCE(effective_to,NOW()), updated_at=NOW(), updated_by=$2
+        WHERE contract_type='partner' AND status='active' AND id<>$1`,
+      [rateSetId, req.actor.username]
+    );
+    await client.query(
+      `UPDATE public.technician_income_rate_sets
+          SET status='active', activated_at=NOW(), activated_by=$2, updated_by=$2, updated_at=NOW()
+        WHERE id=$1`,
+      [rateSetId, req.actor.username]
+    );
+    await _insertRateAudit(client, req, { rate_set_id: rateSetId, action:'activate', field_name:'status', old_value:'draft', new_value:'active' });
+    await auditLog(req, { action:'TECH_INCOME_RATE_ACTIVATE', meta:{ rate_set_id:rateSetId, version:rateSet.version } });
+    await client.query('COMMIT');
+    return res.json({ ok:true, active: await _fetchRateSetWithItems(rateSetId) });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('POST /api/super/technician-income-rates/:rate_set_id/activate', e);
+    return res.status(Number(e.statusCode || 500)).json({ ok:false, error:e.message || 'ACTIVATE_RATE_SET_FAILED' });
+  } finally {
+    client.release();
+  }
+});
+
+app.get('/api/super/technician-income-rates/audit', requireSuperAdmin, async (req, res) => {
+  try {
+    const q = await pool.query(
+      `SELECT l.*, s.version, s.name
+         FROM public.technician_income_rate_audit_logs l
+         LEFT JOIN public.technician_income_rate_sets s ON s.id=l.rate_set_id
+        ORDER BY l.created_at DESC, l.id DESC
+        LIMIT 80`
+    );
+    return res.json({ ok:true, rows:q.rows || [] });
+  } catch (e) {
+    console.error('GET /api/super/technician-income-rates/audit', e);
+    return res.status(500).json({ ok:false, error:'LOAD_RATE_AUDIT_FAILED' });
+  }
+});
+
 async function getIncomeSettingForTech(username, employment_type) {
   const ov = await pool.query(`SELECT income_type, config_json FROM public.technician_income_overrides WHERE username=$1 LIMIT 1`, [username]);
   if ((ov.rows || []).length) {
@@ -5773,6 +6008,37 @@ function _thaiLabelWash(k){
 // - Replaces the old percent-based technician income calculation for completed jobs.
 // =======================================
 const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_v10_2_contract_engine_live_draft_purge';
+const CWF_TECHNICIAN_INCOME_RATE_SET_VERSION = 'partner_v4_2026_05';
+const CWF_TECHNICIAN_INCOME_RATE_SET_NAME = 'CWF Partner Technician Income Rates v4';
+const CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS = Object.freeze([
+  { ac_type_key:'wall', wash_type_key:'normal', btu_tier:'small', step_from:1, step_to:1, amount:400, sort_order:10 },
+  { ac_type_key:'wall', wash_type_key:'normal', btu_tier:'small', step_from:2, step_to:3, amount:350, sort_order:11 },
+  { ac_type_key:'wall', wash_type_key:'normal', btu_tier:'small', step_from:4, step_to:null, amount:320, sort_order:12 },
+  { ac_type_key:'wall', wash_type_key:'normal', btu_tier:'large', step_from:1, step_to:1, amount:450, sort_order:13 },
+  { ac_type_key:'wall', wash_type_key:'normal', btu_tier:'large', step_from:2, step_to:3, amount:400, sort_order:14 },
+  { ac_type_key:'wall', wash_type_key:'normal', btu_tier:'large', step_from:4, step_to:null, amount:350, sort_order:15 },
+  { ac_type_key:'wall', wash_type_key:'premium', btu_tier:'small', step_from:1, step_to:1, amount:650, sort_order:20 },
+  { ac_type_key:'wall', wash_type_key:'premium', btu_tier:'small', step_from:2, step_to:3, amount:600, sort_order:21 },
+  { ac_type_key:'wall', wash_type_key:'premium', btu_tier:'small', step_from:4, step_to:null, amount:550, sort_order:22 },
+  { ac_type_key:'wall', wash_type_key:'premium', btu_tier:'large', step_from:1, step_to:1, amount:800, sort_order:23 },
+  { ac_type_key:'wall', wash_type_key:'premium', btu_tier:'large', step_from:2, step_to:3, amount:750, sort_order:24 },
+  { ac_type_key:'wall', wash_type_key:'premium', btu_tier:'large', step_from:4, step_to:null, amount:700, sort_order:25 },
+  { ac_type_key:'wall', wash_type_key:'coil', btu_tier:'small', step_from:1, step_to:1, amount:900, sort_order:30 },
+  { ac_type_key:'wall', wash_type_key:'coil', btu_tier:'small', step_from:2, step_to:3, amount:850, sort_order:31 },
+  { ac_type_key:'wall', wash_type_key:'coil', btu_tier:'small', step_from:4, step_to:null, amount:800, sort_order:32 },
+  { ac_type_key:'wall', wash_type_key:'coil', btu_tier:'large', step_from:1, step_to:1, amount:1100, sort_order:33 },
+  { ac_type_key:'wall', wash_type_key:'coil', btu_tier:'large', step_from:2, step_to:3, amount:1050, sort_order:34 },
+  { ac_type_key:'wall', wash_type_key:'coil', btu_tier:'large', step_from:4, step_to:null, amount:1000, sort_order:35 },
+  { ac_type_key:'wall', wash_type_key:'overhaul', btu_tier:'small', step_from:1, step_to:1, amount:1200, sort_order:40 },
+  { ac_type_key:'wall', wash_type_key:'overhaul', btu_tier:'small', step_from:2, step_to:3, amount:1100, sort_order:41 },
+  { ac_type_key:'wall', wash_type_key:'overhaul', btu_tier:'small', step_from:4, step_to:null, amount:1000, sort_order:42 },
+  { ac_type_key:'wall', wash_type_key:'overhaul', btu_tier:'large', step_from:1, step_to:1, amount:1450, sort_order:43 },
+  { ac_type_key:'wall', wash_type_key:'overhaul', btu_tier:'large', step_from:2, step_to:3, amount:1350, sort_order:44 },
+  { ac_type_key:'wall', wash_type_key:'overhaul', btu_tier:'large', step_from:4, step_to:null, amount:1250, sort_order:45 },
+  { ac_type_key:'fourway', wash_type_key:'none', btu_tier:'all', step_from:1, step_to:null, amount:1100, sort_order:50 },
+  { ac_type_key:'hanging', wash_type_key:'none', btu_tier:'all', step_from:1, step_to:null, amount:800, sort_order:60 },
+  { ac_type_key:'ceiling', wash_type_key:'none', btu_tier:'all', step_from:1, step_to:null, amount:800, sort_order:70 },
+]);
 const CWF_CONTRACT_PAYROLL_RATES = Object.freeze({
   company: Object.freeze({
     normal:   Object.freeze({ small: [80, 70, 70, 60],    large: [100, 85, 85, 70] }),
@@ -5782,9 +6048,10 @@ const CWF_CONTRACT_PAYROLL_RATES = Object.freeze({
   }),
   partner: Object.freeze({
     normal:   Object.freeze({ small: [400, 350, 350, 320],     large: [450, 400, 400, 350] }),
-    premium:  Object.freeze({ small: [550, 500, 500, 450],     large: [700, 650, 650, 600] }),
-    coil:     Object.freeze({ small: [850, 800, 800, 750],     large: [1050, 1000, 1000, 950] }),
+    premium:  Object.freeze({ small: [650, 600, 600, 550],     large: [800, 750, 750, 700] }),
+    coil:     Object.freeze({ small: [900, 850, 850, 800],     large: [1100, 1050, 1050, 1000] }),
     overhaul: Object.freeze({ small: [1200, 1100, 1100, 1000], large: [1450, 1350, 1350, 1250] }),
+    fixed:    Object.freeze({ fourway: 1100, hanging: 800, ceiling: 800 }),
   }),
 });
 
@@ -5812,14 +6079,159 @@ function _contractRateAt(techType, washKey, btuTier, machineIndex){
   const idx = Math.max(1, Number(machineIndex || 1));
   return Number(arr[idx >= 4 ? 3 : idx - 1] || 0);
 }
+function _validTechRateItemShape(it){
+  const ac = String(it?.ac_type_key || '').trim();
+  const wash = String(it?.wash_type_key || '').trim();
+  const tier = String(it?.btu_tier || '').trim();
+  const from = Number(it?.step_from || 0);
+  const toRaw = it?.step_to;
+  const to = toRaw == null || toRaw === '' ? null : Number(toRaw);
+  const amount = Number(it?.amount);
+  if (!['wall','fourway','hanging','ceiling'].includes(ac)) return false;
+  if (!['normal','premium','coil','overhaul','none'].includes(wash)) return false;
+  if (!['small','large','all'].includes(tier)) return false;
+  if (!Number.isInteger(from) || from < 1) return false;
+  if (to != null && (!Number.isInteger(to) || to < from)) return false;
+  if (!Number.isFinite(amount) || amount < 0) return false;
+  if (ac === 'wall') return wash !== 'none' && tier !== 'all';
+  return wash === 'none' && tier === 'all' && from === 1 && to == null;
+}
+function _rateSetRowsToContext(rateSet, items){
+  return {
+    rate_set_id: rateSet?.id || null,
+    rate_set_version: rateSet?.version || null,
+    rate_source: rateSet?.id ? 'database' : 'fallback',
+    items: Array.isArray(items) ? items : [],
+  };
+}
+async function _loadActiveTechnicianIncomeRateSet(contractType = 'partner'){
+  try {
+    const rs = await pool.query(
+      `SELECT *
+         FROM public.technician_income_rate_sets
+        WHERE contract_type=$1
+          AND status='active'
+          AND (effective_from IS NULL OR effective_from <= NOW())
+          AND (effective_to IS NULL OR effective_to >= NOW())
+        ORDER BY activated_at DESC NULLS LAST, id DESC
+        LIMIT 1`,
+      [contractType]
+    );
+    const rateSet = rs.rows?.[0] || null;
+    if (!rateSet) {
+      console.warn('[tech_income_rates] missing active DB rate set, using fallback rates');
+      return _rateSetRowsToContext(null, []);
+    }
+    const items = await pool.query(
+      `SELECT id, rate_set_id, ac_type_key, wash_type_key, btu_tier,
+              step_from, step_to, amount, unit, sort_order
+         FROM public.technician_income_rate_items
+        WHERE rate_set_id=$1
+        ORDER BY sort_order ASC, id ASC`,
+      [rateSet.id]
+    );
+    if (!items.rows?.length) {
+      console.warn('[tech_income_rates] active DB rate set has no items, using fallback rates', rateSet.id);
+      return _rateSetRowsToContext(null, []);
+    }
+    return _rateSetRowsToContext(rateSet, items.rows);
+  } catch (e) {
+    console.warn('[tech_income_rates] load failed, using fallback rates:', e.message);
+    return _rateSetRowsToContext(null, []);
+  }
+}
+function _contractDbRateAt(rateContext, spec, machineIndex){
+  if (!rateContext || rateContext.rate_source !== 'database') return null;
+  const idx = Math.max(1, Number(machineIndex || 1));
+  const rows = Array.isArray(rateContext.items) ? rateContext.items : [];
+  const ac = spec.ac_key === 'wall' ? 'wall' : spec.ac_key;
+  const wash = ac === 'wall' ? spec.wash_key : 'none';
+  const tier = ac === 'wall' ? spec.btu_tier : 'all';
+  const hit = rows.find(r => {
+    const from = Number(r.step_from || 1);
+    const to = r.step_to == null ? null : Number(r.step_to);
+    return String(r.ac_type_key) === ac
+      && String(r.wash_type_key) === wash
+      && String(r.btu_tier) === tier
+      && idx >= from
+      && (to == null || idx <= to);
+  });
+  if (!hit) return null;
+  const amount = Number(hit.amount || 0);
+  return Number.isFinite(amount) ? amount : null;
+}
+function _contractRateAtFromContext(rateContext, techType, spec, machineIndex){
+  const ac = spec?.ac_key || 'wall';
+  const dbRate = techType === 'partner' ? _contractDbRateAt(rateContext, spec, machineIndex) : null;
+  if (dbRate != null) return { rate: dbRate, rate_source: 'database' };
+  if (techType === 'partner' && ac !== 'wall') {
+    const fallback = Number(CWF_CONTRACT_PAYROLL_RATES.partner.fixed?.[ac] || 0);
+    return { rate: fallback, rate_source: 'fallback' };
+  }
+  return {
+    rate: _contractRateAt(techType, spec?.wash_key, spec?.btu_tier, machineIndex),
+    rate_source: techType === 'partner' ? 'fallback' : 'contract',
+  };
+}
+function _buildPartnerAgreementV4RateHtml(items = CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS){
+  const rows = Array.isArray(items) && items.length ? items : CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS;
+  const amountOf = (ac, wash, tier, from) => {
+    const r = rows.find(x => x.ac_type_key === ac && x.wash_type_key === wash && x.btu_tier === tier && Number(x.step_from) === from);
+    return Number(r?.amount || 0).toLocaleString('th-TH');
+  };
+  const wall = [
+    ['ล้างปกติ', 'normal', 'small', 'ไม่เกิน 12,000 BTU'],
+    ['ล้างปกติ', 'normal', 'large', '18,000 BTU ขึ้นไป'],
+    ['ล้างพรีเมียม', 'premium', 'small', 'ไม่เกิน 12,000 BTU'],
+    ['ล้างพรีเมียม', 'premium', 'large', '18,000 BTU ขึ้นไป'],
+    ['ล้างแบบแขวนคอยล์', 'coil', 'small', 'ไม่เกิน 12,000 BTU'],
+    ['ล้างแบบแขวนคอยล์', 'coil', 'large', '18,000 BTU ขึ้นไป'],
+    ['ตัดล้างใหญ่', 'overhaul', 'small', 'ไม่เกิน 12,000 BTU'],
+    ['ตัดล้างใหญ่', 'overhaul', 'large', '18,000 BTU ขึ้นไป'],
+  ].map(([label,wash,tier,btu]) => `<tr><td>${label}</td><td>${btu}</td><td>${amountOf('wall',wash,tier,1)}</td><td>${amountOf('wall',wash,tier,2)}</td><td>${amountOf('wall',wash,tier,4)}</td></tr>`).join('');
+  const fixed = [
+    ['แอร์สี่ทิศทาง', 'fourway'],
+    ['แอร์แขวน/ตั้งพื้น', 'hanging'],
+    ['แอร์เปลือย/ใต้ฝ้า', 'ceiling'],
+  ].map(([label, ac]) => {
+    const r = rows.find(x => x.ac_type_key === ac);
+    return `<tr><td>${label}</td><td>ทุก BTU</td><td>${Number(r?.amount || 0).toLocaleString('th-TH')}</td></tr>`;
+  }).join('');
+  return `
+    <section class="cwf-contract">
+      <h2>CWF สัญญาพาร์ทเนอร์ช่างแอร์ ฉบับใช้งานจริง v4 เรทใหม่</h2>
+      <p><b>หมายเหตุ:</b> ประเภทการล้างใช้เฉพาะแอร์ผนังเท่านั้น แอร์ประเภทอื่นคิดตามเรทคงที่ต่อเครื่อง</p>
+      <h3>เรทรายได้พาร์ทเนอร์ - แอร์ผนัง</h3>
+      <div style="overflow:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:680px">
+          <thead><tr><th>ประเภทการล้าง</th><th>BTU</th><th>เครื่องที่ 1</th><th>เครื่องที่ 2-3</th><th>เครื่องที่ 4 ขึ้นไป</th></tr></thead>
+          <tbody>${wall}</tbody>
+        </table>
+      </div>
+      <h3>เรทรายได้พาร์ทเนอร์ - แอร์ประเภทอื่น</h3>
+      <div style="overflow:auto">
+        <table style="width:100%;border-collapse:collapse;min-width:420px">
+          <thead><tr><th>ประเภทแอร์</th><th>BTU</th><th>เรทต่อเครื่อง</th></tr></thead>
+          <tbody>${fixed}</tbody>
+        </table>
+      </div>
+      <style>
+        .cwf-contract table th,.cwf-contract table td{border:1px solid #d7deea;padding:8px;text-align:left}
+        .cwf-contract table th{background:#eef4ff;color:#0b2e6d}
+        .cwf-contract h2,.cwf-contract h3{color:#0b2e6d}
+      </style>
+    </section>`;
+}
 function _contractServiceKeyFromItem(it){
   const nm = String(it?.item_name || '');
   const ac_key = _normAcKey(nm) || 'wall';
   let wash_key = _normWashKey(nm);
-  if (!wash_key) wash_key = 'normal';
-  if (!['normal','premium','coil','overhaul'].includes(wash_key)) wash_key = 'normal';
+  if (ac_key !== 'wall') wash_key = 'none';
+  else if (!wash_key) wash_key = 'normal';
+  if (ac_key === 'wall' && !['normal','premium','coil','overhaul'].includes(wash_key)) wash_key = 'normal';
   const { btu, btu_tier } = _contractBtuTierFromText(nm);
-  return { ac_key, wash_key, btu, btu_tier, group_key: `${wash_key}|${btu_tier}` };
+  const tier = ac_key === 'wall' ? btu_tier : 'all';
+  return { ac_key, wash_key, btu, btu_tier: tier, group_key: `${ac_key}|${wash_key}|${tier}` };
 }
 
 function _contractIsVagueServiceItem(it){
@@ -5899,17 +6311,19 @@ function _contractNormalizeServiceItems(meta, items){
   }
   return { serviceItems: service, ignoredLegacyItems };
 }
-function _contractMachineRates(washKey, btuTier, startIndex, qty, techType){
+function _contractMachineRates(spec, startIndex, qty, techType, rateContext){
   const out = [];
   const n = Math.max(0, Math.round(Number(qty || 0)));
   for (let i = 0; i < n; i++) {
     const machine_index = Number(startIndex || 1) + i;
-    out.push({ machine_index, rate: _contractRateAt(techType, washKey, btuTier, machine_index) });
+    const picked = _contractRateAtFromContext(rateContext, techType, spec, machine_index);
+    out.push({ machine_index, rate: picked.rate, rate_source: picked.rate_source });
   }
   return out;
 }
 function _sumContractMachineRates(washKey, btuTier, startIndex, qty, techType){
-  return _contractMachineRates(washKey, btuTier, startIndex, qty, techType).reduce((a,x)=>a+Number(x.rate||0),0);
+  const spec = { ac_key:'wall', wash_key: washKey, btu_tier: btuTier };
+  return _contractMachineRates(spec, startIndex, qty, techType, null).reduce((a,x)=>a+Number(x.rate||0),0);
 }
 
 async function _pickStepRule({ job_type_key, ac_key, wash_key }) {
@@ -6044,6 +6458,7 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
     [job_id]
   );
   const items = itemsQ.rows || [];
+  const rateContext = await _loadActiveTechnicianIncomeRateSet('partner');
   // Contract-only rebuild: never pay customer selling price as technician income.
   // Convert legacy/generic rows (e.g. 1,400 "ค่าบริการ") into service specs first.
   const { serviceItems: svcItems, ignoredLegacyItems } = _contractNormalizeServiceItems(meta, items);
@@ -6119,7 +6534,7 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
     const techType = techTypeOf(tech);
     if (techType === 'special_only') return;
     const startIdx = nextStartIndex(tech, spec.group_key, qty);
-    const rates = _contractMachineRates(spec.wash_key, spec.btu_tier, startIdx, qty, techType);
+    const rates = _contractMachineRates(spec, startIdx, qty, techType, rateContext);
     const amount = rates.reduce((a, x) => a + Number(x.rate || 0), 0);
     addAmount(tech, amount);
     addMachine(tech, qty);
@@ -6133,10 +6548,14 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
     });
     addRateRows(tech, rates.map(x => ({
       item_name: it.item_name,
+      ac_type_key: spec.ac_key,
       wash_key: spec.wash_key,
       wash_label: _thaiLabelWash(spec.wash_key) || spec.wash_key,
       btu_tier: spec.btu_tier,
       btu: spec.btu || null,
+      rate_set_id: techType === 'partner' ? rateContext.rate_set_id : null,
+      rate_set_version: techType === 'partner' ? rateContext.rate_set_version : null,
+      rate_source: x.rate_source || (techType === 'partner' ? rateContext.rate_source : 'contract'),
       tech_type: techType,
       machine_index: x.machine_index,
       rate: Number(x.rate || 0),
@@ -6155,7 +6574,7 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
       const techType = techTypeOf(tech);
       if (techType === 'special_only') continue;
       const startIdx = nextStartIndex(tech, spec.group_key, qty);
-      const rates = _contractMachineRates(spec.wash_key, spec.btu_tier, startIdx, qty, techType);
+      const rates = _contractMachineRates(spec, startIdx, qty, techType, rateContext);
       const amount = rates.reduce((a, x) => a + (Number(x.rate || 0) / divisor), 0);
       addAmount(tech, amount);
       addMachine(tech, qty / divisor);
@@ -6170,10 +6589,14 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
       });
       addRateRows(tech, rates.map(x => ({
         item_name: it.item_name,
+        ac_type_key: spec.ac_key,
         wash_key: spec.wash_key,
         wash_label: _thaiLabelWash(spec.wash_key) || spec.wash_key,
         btu_tier: spec.btu_tier,
         btu: spec.btu || null,
+        rate_set_id: techType === 'partner' ? rateContext.rate_set_id : null,
+        rate_set_version: techType === 'partner' ? rateContext.rate_set_version : null,
+        rate_source: x.rate_source || (techType === 'partner' ? rateContext.rate_source : 'contract'),
         tech_type: techType,
         machine_index: x.machine_index,
         rate: Number(x.rate || 0),
@@ -6216,6 +6639,9 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
     const machine_count_for_tech = Number(machineCountByTech.get(tech) || 0);
     const rateRows = contractRowsByTech.get(tech) || [];
     const related_items = relatedByTech.get(tech) || [];
+    const detailRateSource = techType === 'partner'
+      ? (rateRows.some(r => r.rate_source === 'fallback') ? 'fallback' : rateContext.rate_source)
+      : 'contract';
 
     if (Math.abs(earn_amount) < 0.0001 && !rateRows.length) continue;
 
@@ -6225,9 +6651,12 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
       job_type: _thaiLabelJob(_normJobKey(meta.job_type)) || String(meta.job_type || '').trim(),
       job_type_key: _normJobKey(meta.job_type),
       ac_type: '',
-      ac_type_key: null,
+      ac_type_key: rateRows.length ? Array.from(new Set(rateRows.map(r => r.ac_type_key).filter(Boolean))).join('+') : null,
       wash_variant: rateRows.length ? Array.from(new Set(rateRows.map(r => r.wash_label).filter(Boolean))).join(' + ') : '',
       wash_variant_key: rateRows.length ? Array.from(new Set(rateRows.map(r => r.wash_key).filter(Boolean))).join('+') : null,
+      btu_tier: rateRows.length ? Array.from(new Set(rateRows.map(r => r.btu_tier).filter(Boolean))).join('+') : null,
+      rate_set_id: techType === 'partner' ? rateContext.rate_set_id : null,
+      rate_set_version: techType === 'partner' ? rateContext.rate_set_version : null,
       machine_count_total: totalMachine,
       machine_count_for_tech,
       mode,
@@ -6244,7 +6673,7 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
       related_items,
       ignored_legacy_items: ignoredLegacyItems || [],
       ignored_legacy_fields: ['line_total','unit_price','total_price','paid_amount','final_price','special_bonus_amount','percentage','company_cut_percent','commission_percent'],
-      rate_source: 'contract',
+      rate_source: detailRateSource,
       audit_note: rateRows.length ? 'คำนวณจากเรทสัญญาเท่านั้น' : 'ต้องตรวจสอบ: ไม่พบ service line ที่ infer ได้จากข้อมูลใบงานโดยไม่ใช้ราคาขายลูกค้า',
       items: related_items,
       base_service_total: svcItems.reduce((a, it) => a + Number(it.line_total || 0), 0),
@@ -10247,6 +10676,123 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_tech_income_overrides_type ON public.technician_income_overrides(income_type)`);
+
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.technician_income_rate_sets (
+    id BIGSERIAL PRIMARY KEY,
+    version TEXT NOT NULL,
+    name TEXT NOT NULL,
+    contract_type TEXT NOT NULL CHECK (contract_type IN ('partner','company','special')),
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','active','inactive','archived')),
+    effective_from TIMESTAMPTZ,
+    effective_to TIMESTAMPTZ,
+    notes TEXT,
+    created_by TEXT,
+    updated_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    activated_at TIMESTAMPTZ,
+    activated_by TEXT,
+    UNIQUE(contract_type, version)
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_tirs_active ON public.technician_income_rate_sets(contract_type, status, activated_at DESC)`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.technician_income_rate_items (
+    id BIGSERIAL PRIMARY KEY,
+    rate_set_id BIGINT NOT NULL REFERENCES public.technician_income_rate_sets(id) ON DELETE CASCADE,
+    ac_type_key TEXT NOT NULL CHECK (ac_type_key IN ('wall','fourway','hanging','ceiling')),
+    wash_type_key TEXT NOT NULL CHECK (wash_type_key IN ('normal','premium','coil','overhaul','none')),
+    btu_tier TEXT NOT NULL CHECK (btu_tier IN ('small','large','all')),
+    step_from INT NOT NULL,
+    step_to INT,
+    amount NUMERIC(12,2) NOT NULL,
+    unit TEXT NOT NULL DEFAULT 'per_unit',
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    CHECK (amount >= 0),
+    CHECK (step_from >= 1),
+    CHECK (step_to IS NULL OR step_to >= step_from)
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_tiri_rate_set ON public.technician_income_rate_items(rate_set_id, sort_order, id)`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.technician_income_rate_audit_logs (
+    id BIGSERIAL PRIMARY KEY,
+    rate_set_id BIGINT REFERENCES public.technician_income_rate_sets(id) ON DELETE SET NULL,
+    action TEXT NOT NULL,
+    field_name TEXT,
+    old_value TEXT,
+    new_value TEXT,
+    actor_username TEXT,
+    actor_role TEXT,
+    ip_address TEXT,
+    user_agent TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_tiral_rate_set_created ON public.technician_income_rate_audit_logs(rate_set_id, created_at DESC)`);
+try {
+  const activeRate = await pool.query(
+    `SELECT id FROM public.technician_income_rate_sets WHERE contract_type='partner' AND status='active' LIMIT 1`
+  );
+  if (!activeRate.rows?.length) {
+    const rs = await pool.query(
+      `INSERT INTO public.technician_income_rate_sets
+        (version, name, contract_type, status, effective_from, notes, created_by, updated_by, activated_at, activated_by)
+       VALUES($1,$2,'partner','active',NOW(),$3,'system','system',NOW(),'system')
+       ON CONFLICT(contract_type, version) DO UPDATE SET
+         status='active', name=EXCLUDED.name, notes=EXCLUDED.notes, updated_at=NOW(), activated_at=COALESCE(public.technician_income_rate_sets.activated_at,NOW())
+       RETURNING id`,
+      [
+        CWF_TECHNICIAN_INCOME_RATE_SET_VERSION,
+        CWF_TECHNICIAN_INCOME_RATE_SET_NAME,
+        'Seeded revised partner agreement v4 rates. Wall AC uses wash type + BTU + ladder; other AC types use fixed per-unit rates.'
+      ]
+    );
+    const rateSetId = rs.rows[0]?.id;
+    if (rateSetId) {
+      await pool.query(`DELETE FROM public.technician_income_rate_items WHERE rate_set_id=$1`, [rateSetId]);
+      for (const it of CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS) {
+        await pool.query(
+          `INSERT INTO public.technician_income_rate_items
+            (rate_set_id, ac_type_key, wash_type_key, btu_tier, step_from, step_to, amount, unit, sort_order)
+           VALUES($1,$2,$3,$4,$5,$6,$7,'per_unit',$8)`,
+          [rateSetId, it.ac_type_key, it.wash_type_key, it.btu_tier, it.step_from, it.step_to, it.amount, it.sort_order]
+        );
+      }
+      await pool.query(
+        `INSERT INTO public.technician_income_rate_audit_logs(rate_set_id, action, field_name, new_value, actor_username, actor_role)
+         VALUES($1,'seed_active_v4','rate_set',$2,'system','system')`,
+        [rateSetId, CWF_TECHNICIAN_INCOME_RATE_SET_VERSION]
+      );
+    }
+  }
+} catch (e) {
+  console.warn('[ensureSchema] seed technician income rates skipped:', e.message);
+}
+try {
+  await pool.query(
+    `INSERT INTO public.agreement_templates(template_code, version, title, body_text, content_html, source_note, is_active)
+     VALUES('partner_standard', 4, $1, $2, $3, $4, TRUE)
+     ON CONFLICT(template_code, version) DO UPDATE SET
+       title=EXCLUDED.title,
+       body_text=EXCLUDED.body_text,
+       content_html=EXCLUDED.content_html,
+       source_note=EXCLUDED.source_note,
+       is_active=TRUE,
+       updated_at=NOW()`,
+    [
+      'CWF สัญญาพาร์ทเนอร์ช่างแอร์ ฉบับใช้งานจริง v4 เรทใหม่',
+      'CWF partner technician agreement v4 revised technician income rates',
+      _buildPartnerAgreementV4RateHtml(CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS),
+      'TECHNICIAN_INCOME_RATE_SET_V4_DEFAULTS'
+    ]
+  );
+} catch (e) {
+  console.warn('[ensureSchema] seed partner agreement v4 skipped:', e.message);
+}
 
 
     await pool.query(
