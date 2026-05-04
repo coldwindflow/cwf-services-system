@@ -177,7 +177,9 @@ async function detectAdminServiceZone(){
     if(hint){
       if(state.detected_service_zone){
         const z = state.detected_service_zone;
-        hint.textContent = `${override ? 'เลือกเอง' : 'ระบบเลือกให้'}: Zone ${z.service_zone_code} - ${z.service_zone_label}`;
+        const matched = [z.matched_area, z.matched_district].filter(Boolean).join(' / ');
+        const sourceLabel = z.service_zone_source === 'maps_coordinate' ? 'จาก GPS/แผนที่' : (z.service_zone_source === 'area_alias_detect' ? 'จากย่าน/ตำบล' : (override ? 'เลือกเอง' : 'จากที่อยู่'));
+        hint.textContent = `${override ? 'เลือกเอง' : 'ระบบเลือกให้'}: Zone ${z.service_zone_code} - ${z.service_zone_label}${matched ? ` • ${matched}` : ''} (${sourceLabel})`;
         hint.style.color = '#0b4bb3';
       }else{
         hint.textContent = 'ระบบยังหาโซนไม่ได้ กรุณาเลือกโซนเอง หรือใส่เขต/อำเภอเพิ่ม';

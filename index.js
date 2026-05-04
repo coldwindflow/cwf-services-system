@@ -79,14 +79,80 @@ const SERVICE_ZONE_SEEDS = [
 ];
 const SERVICE_ZONE_BY_CODE = new Map(SERVICE_ZONE_SEEDS.map(z => [z.code, z]));
 
+// Neighborhood/subdistrict hints for auto service-zone detection.
+// Keep this as a dispatch helper only: it does not replace the official district zoning above.
+const SERVICE_ZONE_AREA_HINTS = [
+  // Zone A: Bangkok east core around Phra Khanong / Bang Na / Suan Luang / Prawet.
+  { zone: "A", district: "พระโขนง", aliases: ["อ่อนนุช", "สุขุมวิท77", "สุขุมวิท 77", "บางจาก", "ปุณณวิถี", "วชิรธรรมสาธิต"] },
+  { zone: "A", district: "บางนา", aliases: ["อุดมสุข", "สุขุมวิท103", "สุขุมวิท 103", "บางนาเหนือ", "บางนาใต้", "แบริ่ง", "ลาซาล", "ศรีลาซาล"] },
+  { zone: "A", district: "สวนหลวง", aliases: ["พัฒนาการ", "คลองตันพัฒนา", "อ่อนนุช46", "อ่อนนุช 46", "ศรีนครินทร์", "กรุงเทพกรีฑา"] },
+  { zone: "A", district: "ประเวศ", aliases: ["หนองบอน", "ดอกไม้", "เฉลิมพระเกียรติ ร.9", "ซีคอน", "พาราไดซ์"] },
+  { zone: "A", district: "บางกะปิ", aliases: ["หัวหมาก", "คลองจั่น", "รามคำแหง"] },
+  { zone: "A", district: "สะพานสูง", aliases: ["ทับช้าง", "ราษฎร์พัฒนา", "รามคำแหงปลาย"] },
+  { zone: "A", district: "ลาดกระบัง", aliases: ["ร่มเกล้า", "หัวตะเข้", "คลองสองต้นนุ่น", "ลำปลาทิว", "ขุมทอง"] },
+
+  // Zone B: Bangkok north/east.
+  { zone: "B", district: "ลาดพร้าว", aliases: ["โชคชัย4", "โชคชัย 4", "นาคนิวาส", "ลาดปลาเค้า"] },
+  { zone: "B", district: "วังทองหลาง", aliases: ["รามคำแหง39", "รามคำแหง 39", "ลาดพร้าว 101", "คลองเจ้าคุณสิงห์", "พลับพลา"] },
+  { zone: "B", district: "บึงกุ่ม", aliases: ["นวมินทร์", "คลองกุ่ม", "นวลจันทร์"] },
+  { zone: "B", district: "คันนายาว", aliases: ["รามอินทรา", "นวลจันทร์", "เสรีไทย"] },
+  { zone: "B", district: "คลองสามวา", aliases: ["หทัยราษฎร์", "สามวาตะวันตก", "สามวาตะวันออก", "บางชัน", "ทรายกองดิน"] },
+  { zone: "B", district: "มีนบุรี", aliases: ["สุวินทวงศ์", "แสนแสบ"] },
+
+  // Zone C: inner Bangkok.
+  { zone: "C", district: "วัฒนา", aliases: ["พระโขนงเหนือ", "เอกมัย", "ทองหล่อ", "อโศก", "พร้อมพงษ์", "คลองตันเหนือ"] },
+  { zone: "C", district: "คลองเตย", aliases: ["พระโขนง", "คลองเตยเหนือ", "คลองตัน", "กล้วยน้ำไท", "พระราม4"] },
+  { zone: "C", district: "ห้วยขวาง", aliases: ["รัชดา", "รัชดาภิเษก", "ห้วยขวาง", "สามเสนนอก"] },
+  { zone: "C", district: "สาทร", aliases: ["ยานนาวา", "ทุ่งมหาเมฆ", "สีลม"] },
+
+  // Zone E: lower west side and cross-river Samut Prakan.
+  { zone: "E", district: "พระประแดง", aliases: ["สำโรงใต้", "บางพึ่ง", "บางจาก", "บางครุ", "บางหญ้าแพรก", "บางหัวเสือ", "ทรงคนอง", "ตลาด", "ลัดหลวง", "บางกอบัว"] },
+  { zone: "E", district: "พระสมุทรเจดีย์", aliases: ["นาเกลือ", "บ้านคลองสวน", "แหลมฟ้าผ่า", "ปากคลองบางปลากด", "ในคลองบางปลากด"] },
+
+  // Zone F: Samut Prakan east side.
+  { zone: "F", district: "เมืองสมุทรปราการ", aliases: ["ปากน้ำ", "สำโรงเหนือ", "เทพารักษ์", "แพรกษา", "แพรกษาใหม่", "บางเมือง", "บางเมืองใหม่", "บางด้วน", "บางโปรง", "บางปู", "บางปูใหม่", "ท้ายบ้าน", "ท้ายบ้านใหม่"] },
+  { zone: "F", district: "บางพลี", aliases: ["บางพลีใหญ่", "บางแก้ว", "บางปลา", "บางโฉลง", "ราชาเทวะ", "หนองปรือ", "กิ่งแก้ว", "สุวรรณภูมิ"] },
+  { zone: "F", district: "บางเสาธง", aliases: ["บางเสาธง", "ศีรษะจรเข้น้อย", "ศีรษะจรเข้ใหญ่"] },
+  { zone: "F", district: "บางบ่อ", aliases: ["บางบ่อ", "บางเพรียง", "บ้านระกาศ", "คลองด่าน", "คลองสวน", "เปร็ง", "บางพลีน้อย"] },
+
+  // Zone G/H: nearby provinces. Use mostly unambiguous subdistrict/neighborhood names.
+  { zone: "G", district: "ปากเกร็ด", aliases: ["เมืองทอง", "เมืองทองธานี", "แจ้งวัฒนะ", "เกาะเกร็ด", "บางพูด", "บางตลาด", "คลองเกลือ"] },
+  { zone: "G", district: "บางใหญ่", aliases: ["เสาธงหิน", "บางแม่นาง", "บางม่วง", "บางเลน", "ตลาดบางใหญ่", "เซ็นทรัลเวสต์เกต"] },
+  { zone: "G", district: "บางบัวทอง", aliases: ["บางรักพัฒนา", "บางคูรัด", "ละหาร", "ลำโพ", "พิมลราช", "โสนลอย"] },
+  { zone: "H", district: "ลำลูกกา", aliases: ["คูคต", "ลาดสวาย", "บึงคำพร้อย", "ลำลูกกา", "บึงทองหลาง"] },
+  { zone: "H", district: "คลองหลวง", aliases: ["คลองหนึ่ง", "คลองสอง", "คลองสาม", "คลองสี่", "คลองห้า", "คลองหก", "คลองเจ็ด", "ธรรมศาสตร์รังสิต"] },
+  { zone: "H", district: "ธัญบุรี", aliases: ["รังสิต", "ประชาธิปัตย์", "บึงยี่โถ", "ลำผักกูด", "บึงสนั่น"] },
+];
+
 function normalizeThaiAreaText(v) {
   return String(v || "")
     .normalize("NFC")
     .toLowerCase()
     .replace(/[\u200B-\u200D\uFEFF]/g, "")
-    .replace(/[^\p{L}\p{N}]+/gu, "")
-    .replace(/^(เขต|อำเภอ|อําเภอ|อ\.)/u, "");
+    // Remove common Thai address prefixes anywhere in the text before compaction.
+    // This lets inputs like "ต.บางเพรียง", "แขวงบางจาก", "เขตสวนหลวง" match cleanly.
+    .replace(/(กรุงเทพมหานคร|กรุงเทพฯ|กทม\.?|จังหวัด|จ\.|เขต|แขวง|อำเภอ|อําเภอ|อ\.|ตำบล|ต\.)/gu, "")
+    .replace(/[^\p{L}\p{N}]+/gu, "");
 }
+
+function buildServiceZoneTextMatchers() {
+  const rows = [];
+  for (const z of SERVICE_ZONE_SEEDS) {
+    for (const district of z.districts) {
+      rows.push({ z, district, alias: district, match_type: "district", priority: 100, len: normalizeThaiAreaText(district).length });
+    }
+  }
+  for (const item of SERVICE_ZONE_AREA_HINTS) {
+    const z = SERVICE_ZONE_BY_CODE.get(String(item.zone || "").toUpperCase());
+    if (!z) continue;
+    const aliases = Array.from(new Set([item.district, ...(item.aliases || [])].filter(Boolean)));
+    for (const alias of aliases) {
+      rows.push({ z, district: item.district || alias, alias, match_type: alias === item.district ? "district_hint" : "area_hint", priority: alias === item.district ? 95 : 80, len: normalizeThaiAreaText(alias).length });
+    }
+  }
+  return rows.filter(r => r.len > 0);
+}
+const SERVICE_ZONE_TEXT_MATCHERS = buildServiceZoneTextMatchers();
 
 async function getServiceZones() {
   try {
@@ -159,16 +225,25 @@ async function detectServiceZoneFromText({ address_text, job_zone, service_zone_
   const hay = normalizeThaiAreaText([home_district, job_zone, address_text, home_province, decodedMapText].filter(Boolean).join(" "));
   const matches = [];
   if (hay) {
-    for (const z of SERVICE_ZONE_SEEDS) {
-      for (const district of z.districts) {
-        const d = normalizeThaiAreaText(district);
-        if (d && hay.includes(d)) matches.push({ z, district, len: d.length });
+    for (const m of SERVICE_ZONE_TEXT_MATCHERS) {
+      const key = normalizeThaiAreaText(m.alias);
+      if (key && hay.includes(key)) {
+        matches.push({ ...m, len: key.length });
       }
     }
   }
-  matches.sort((a, b) => b.len - a.len || a.z.order - b.z.order);
+  matches.sort((a, b) => b.len - a.len || b.priority - a.priority || a.z.order - b.z.order);
   const best = matches[0];
-  if (best) return { service_zone_code: best.z.code, service_zone_label: best.z.label, service_zone_source: "auto_detect", matched_district: best.district };
+  if (best) {
+    return {
+      service_zone_code: best.z.code,
+      service_zone_label: best.z.label,
+      service_zone_source: best.match_type === "area_hint" ? "area_alias_detect" : "auto_detect",
+      matched_district: best.district,
+      matched_area: best.alias,
+      matched_type: best.match_type
+    };
+  }
   const ll = extractLatLngFromMapsText(maps_url || address_text || job_zone || "");
   if (ll) return detectServiceZoneFromLatLng(ll.lat, ll.lng);
   return null;
@@ -10620,6 +10695,22 @@ for (const z of SERVICE_ZONE_SEEDS) {
        VALUES ($1,$2,$3,TRUE)
        ON CONFLICT (zone_code, province, district, (COALESCE(subdistrict,''))) DO NOTHING`,
       [z.code, province, district]
+    );
+  }
+}
+for (const area of SERVICE_ZONE_AREA_HINTS) {
+  const z = SERVICE_ZONE_BY_CODE.get(String(area.zone || '').toUpperCase());
+  if (!z) continue;
+  const province = z.group === 'samut_prakan' ? 'สมุทรปราการ' : (z.group === 'nonthaburi' ? 'นนทบุรี' : (z.group === 'pathum_thani' ? 'ปทุมธานี' : 'กรุงเทพมหานคร'));
+  const district = String(area.district || '').trim();
+  for (const alias of (area.aliases || [])) {
+    const subdistrict = String(alias || '').trim();
+    if (!district || !subdistrict) continue;
+    await pool.query(
+      `INSERT INTO public.service_zone_areas (zone_code, province, district, subdistrict, is_primary)
+       VALUES ($1,$2,$3,$4,FALSE)
+       ON CONFLICT (zone_code, province, district, (COALESCE(subdistrict,''))) DO NOTHING`,
+      [z.code, province, district, subdistrict]
     );
   }
 }
