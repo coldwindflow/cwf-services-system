@@ -1069,23 +1069,28 @@ function renderTechnicianMoneySummary(job, context) {
     const key = _techIncomeCardKey(displayJob, ctx);
     __techIncomeModalJobStore.set(key, { ...(displayJob || {}), __incomeContext: ctx, __incomeKey: key });
     const label = ctx === 'offered'
-      ? 'รายได้ด่วน'
+      ? 'รายได้โดยประมาณ'
       : (ctx === 'history' ? 'ได้รับ' : 'รายได้ช่าง');
+    const helper = ctx === 'offered'
+      ? 'แตะดูรายละเอียดเรทงานนี้'
+      : (ctx === 'history' ? 'แตะดูรายละเอียดรายได้' : 'แตะดูรายละเอียดรายได้');
     const hasAmount = _hasIncomeAmount(displayJob);
     const isLoading = !hasAmount && String(displayJob?.technician_income_source || '') === 'loading';
-    const amount = hasAmount ? _techMoneyAmountText(displayJob?.technician_income_amount, 'รอคำนวณ') : (isLoading ? 'กำลังคำนวณ…' : 'รอตรวจสอบ');
+    const amount = hasAmount ? _techMoneyAmountText(displayJob?.technician_income_amount, 'รอคำนวณรายได้') : (isLoading ? 'กำลังคำนวณ…' : 'รอตรวจสอบรายได้');
     const pendingClass = hasAmount ? '' : 'is-pending';
     return `
-      <div class="tech-income-under-status">
-        <button type="button" class="tech-income-chip tech-income-chip--mini ${pendingClass}" data-tech-income-chip="${escapeAttr(key)}" data-job-id="${escapeAttr(jobId)}" data-income-context="${escapeAttr(ctx)}" onclick="openTechnicianIncomeModal('${escapeHTML(key)}')" aria-label="ดูรายละเอียดรายได้ช่าง">
-          <span class="tech-income-chip-icon">💰</span>
-          <span class="tech-income-chip-text"><b>${escapeHTML(label)}</b><strong data-income-amount>${escapeHTML(amount)}</strong></span>
-          <span class="tech-income-chip-arrow">›</span>
-        </button>
-      </div>
+      <button type="button" class="tech-income-chip ${pendingClass}" data-tech-income-chip="${escapeAttr(key)}" data-job-id="${escapeAttr(jobId)}" data-income-context="${escapeAttr(ctx)}" onclick="openTechnicianIncomeModal('${escapeHTML(key)}')" aria-label="ดูรายละเอียดรายได้ช่าง">
+        <span class="tech-income-chip-icon">💰</span>
+        <span class="tech-income-chip-main">
+          <span class="tech-income-chip-label">${escapeHTML(label)}</span>
+          <strong data-income-amount>${escapeHTML(amount)}</strong>
+        </span>
+        <span class="tech-income-chip-hint">${escapeHTML(helper)}</span>
+        <span class="tech-income-chip-arrow">›</span>
+      </button>
     `;
   } catch (e) {
-    return `<div class="tech-income-under-status"><button type="button" class="tech-income-chip tech-income-chip--mini is-pending"><span class="tech-income-chip-icon">💰</span><span class="tech-income-chip-text"><b>รายได้ช่าง</b><strong>กำลังคำนวณ…</strong></span></button></div>`;
+    return `<div class="tech-income-chip is-pending"><span class="tech-income-chip-icon">💰</span><span class="tech-income-chip-main"><span class="tech-income-chip-label">รายได้ช่าง</span><strong>กำลังคำนวณ…</strong></span></div>`;
   }
 }
 function _renderTechnicianIncomeBreakdownContent(job) {
@@ -1976,7 +1981,7 @@ try{
 loadOffers();
 loadJobs();
 setInterval(() => loadOffers(), 15000);
-setInterval(() => loadJobs(), 45000); // keep active/history in sync without making technician page feel slow
+setInterval(() => loadJobs(), 20000); // keep active/history in sync (admin force close etc.)
 setInterval(() => loadIncomeSummary(), 60000);
 setInterval(() => loadIncomeOverview(), 90000);
 
@@ -2141,14 +2146,12 @@ function renderOffers(offers) {
       const sec = secLeft % 60;
 
       return `
-      <div class="job-card urgent-offer-card">
-        <div class="job-card-head">
-          <div class="job-card-title"><b>📌 งานใหม่เสนอให้รับ</b></div>
-          <div class="job-status-stack">
-            <span class="badge wait">⏳ ${min}:${String(sec).padStart(2, "0")}</span>
-            ${renderTechnicianMoneySummary(o, "offered")}
-          </div>
+      <div class="job-card" style="border:1px solid rgba(251,191,36,0.55);">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+          <b>📌 งานใหม่เสนอให้รับ</b>
+          <span class="badge wait">⏳ ${min}:${String(sec).padStart(2, "0")}</span>
         </div>
+        ${renderTechnicianMoneySummary(o, "offered")}
 
         <p style="margin-top:10px;"><b>Booking:</b> ${o.booking_code || ('CWF'+String(o.job_id).padStart(7,'0'))}</p>
         <p><b>ลูกค้า:</b> ${o.customer_name}</p>
@@ -2215,31 +2218,16 @@ function declineOffer(offerId) {
 // =======================================
 // 📡 LOAD JOBS
 // =======================================
-let __loadJobsSeq = 0;
 function loadJobs() {
-  const seq = ++__loadJobsSeq;
-  const filter = (__HISTORY_FILTER__ === 'day' || __HISTORY_FILTER__ === 'all') ? __HISTORY_FILTER__ : 'month';
-  const params = new URLSearchParams();
-  params.set('history_scope', filter);
-  params.set('upcoming_days', '45');
-  params.set('v', 'history-filter-fast-v2');
-  if (filter === 'day') params.set('history_day', todayYmdBkk());
-  if (filter === 'month') params.set('history_month', todayYmdBkk().slice(0, 7));
-  const url = `${API_BASE}/jobs/tech/${encodeURIComponent(username)}?${params.toString()}`;
-  fetch(url, { cache: "no-store" })
+  fetch(`${API_BASE}/jobs/tech/${username}`, { cache: "no-store" })
     .then((res) => {
       if (!res.ok) throw new Error("โหลดข้อมูลงานไม่สำเร็จ");
       return res.json();
     })
-    .then((jobs) => {
-      if (seq !== __loadJobsSeq) return;
-      renderJobs(jobs);
-    })
+    .then((jobs) => renderJobs(jobs))
     .catch((err) => {
-      if (seq !== __loadJobsSeq) return;
       console.error(err);
       if (activeJobsEl) activeJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
-      if (activeUpcomingJobsEl) activeUpcomingJobsEl.innerHTML = "<p>❌ โหลดงานล่วงหน้าไม่สำเร็จ</p>";
       if (historyJobsEl) historyJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
       renderProfile(0);
     });
@@ -2307,16 +2295,10 @@ function setHistoryFilter(f){
   if (typeof historyFilterHintEl !== "undefined" && historyFilterHintEl) {
     historyFilterHintEl.textContent = (v === "day") ? "แสดงงานปิดแล้ว: วันนี้" : (v === "month") ? "แสดงงานปิดแล้ว: เดือนนี้" : "แสดงงานปิดแล้ว: ทั้งหมด";
   }
-  // เปลี่ยนตัวกรองแล้วโหลดจาก backend ตาม scope จริง (day/month/all)
-  try { loadJobs(); } catch(e) { try { renderJobs(window.__JOB_CACHE__ || []); } catch(_) {} }
+  // re-render from cache (ไม่เรียก API ซ้ำ)
+  try { renderJobs(window.__JOB_CACHE__ || []); } catch(e) {}
 }
 window.setHistoryFilter = setHistoryFilter;
-
-try {
-  if (historyTabDayEl) historyTabDayEl.addEventListener('click', (ev)=>{ ev.preventDefault(); setHistoryFilter('day'); });
-  if (historyTabMonthEl) historyTabMonthEl.addEventListener('click', (ev)=>{ ev.preventDefault(); setHistoryFilter('month'); });
-  if (historyTabAllEl) historyTabAllEl.addEventListener('click', (ev)=>{ ev.preventDefault(); setHistoryFilter('all'); });
-} catch(e) {}
 
 // init filter UI (ถ้ามีปุ่ม)
 try {
@@ -2595,7 +2577,7 @@ function renderJobs(jobs) {
 
   // โหลดรายได้ช่างแบบ async หลังใบงานแสดงแล้ว ใบงานจึงไม่ต้องรอ payout/rate engine
   try {
-    scheduleTechnicianIncomeSummaryLoad([...prioritizedActiveToday, ...filteredUpcoming], 'jobs');
+    scheduleTechnicianIncomeSummaryLoad([...prioritizedActiveToday, ...filteredUpcoming, ...historyAll], 'jobs');
   } catch (_) {}
 
   // 🔔 เตือนก่อนถึงเวลานัด 30 นาที (เฉพาะงานวันนี้)
@@ -2946,16 +2928,14 @@ function buildJobCard(job, historyMode = false) {
   const showWorkTools = checkedIn || isWorking || historyMode;
 
   div.innerHTML = `
-    <div class="job-card-head">
-      <div class="job-card-title">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
+      <div>
         <b>📌 Booking: ${bookingCode}</b>
         <div class="muted" style="font-size:12px;margin-top:2px;">งานในระบบ: #${jobId}</div>
       </div>
-      <div class="job-status-stack">
-        ${badge}
-        ${renderTechnicianMoneySummary(job, historyMode ? "history" : "current")}
-      </div>
+      ${badge}
     </div>
+    ${renderTechnicianMoneySummary(job, historyMode ? "history" : "current")}
 
     <p style="margin-top:8px;"><b>ลูกค้า:</b> ${escape(job.customer_name || "-")}</p>
     <p><b>โทร:</b> ${escape(job.customer_phone || "-")}</p>
@@ -3160,16 +3140,14 @@ function buildHistorySummary(job){
   const type = esc(job?.job_type || '-');
 
   div.innerHTML = `
-    <div class="job-card-head">
-      <div class="job-card-title" style="min-width:0;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
+      <div style="min-width:0;">
         <b>📌 ${esc(bookingCode)}</b>
         <div class="muted" style="font-size:12px;margin-top:2px;">${apTxt}</div>
       </div>
-      <div class="job-status-stack">
-        ${badge}
-        ${renderTechnicianMoneySummary(job, 'history')}
-      </div>
+      ${badge}
     </div>
+    ${renderTechnicianMoneySummary(job, 'history')}
     <div class="muted" style="margin-top:8px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
       <span><b>ลูกค้า:</b> ${cust}</span>
     </div>
