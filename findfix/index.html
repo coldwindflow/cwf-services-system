@@ -1,1 +1,108 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FindFix | Service Business Platform</title>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="./app.css" />
+</head>
+<body>
+  <main id="app" class="ff-shell" aria-live="polite"></main>
 
+  <template id="login-template">
+    <section class="login-screen">
+      <div class="fx-grid" aria-hidden="true"></div>
+      <div class="orb orb-a" aria-hidden="true"></div>
+      <div class="orb orb-b" aria-hidden="true"></div>
+
+      <div class="brand-stage">
+        <div class="brand-mark large" aria-label="FindFix logo">
+          <span class="mark-core">⌁</span>
+          <span class="mark-tool">🔧</span>
+        </div>
+        <div>
+          <p class="eyebrow">Field service operating system</p>
+          <h1>Find<span>Fix</span></h1>
+          <p class="hero-copy">ระบบจัดการธุรกิจบริการแบบแยกร้านในแพลตฟอร์มเดียว งาน ช่าง ลูกค้า รายได้ เอกสาร และการตั้งค่าร้าน แยกตาม Workspace ชัดเจน</p>
+          <div class="hero-actions">
+            <button class="primary" data-action="quick-login" data-role="owner">เข้าใช้งานตัวอย่าง</button>
+            <button class="ghost" data-action="seed-reset">รีเซ็ตข้อมูล Demo</button>
+          </div>
+        </div>
+      </div>
+
+      <form class="login-card" data-form="login">
+        <div class="card-top">
+          <div>
+            <p class="eyebrow">Secure Workspace</p>
+            <h2>เข้าสู่ FindFix</h2>
+          </div>
+          <span class="status-pill">Demo Ready</span>
+        </div>
+
+        <label>เลือกร้าน / Workspace</label>
+        <select name="tenant" id="tenantSelect"></select>
+
+        <label>บทบาทผู้ใช้</label>
+        <select name="role">
+          <option value="owner">เจ้าของร้าน</option>
+          <option value="admin">แอดมินร้าน</option>
+          <option value="accountant">บัญชี</option>
+          <option value="tech">ช่าง</option>
+          <option value="platform">Platform Owner</option>
+        </select>
+
+        <label>ชื่อผู้ใช้</label>
+        <input name="displayName" value="Demo User" autocomplete="name" />
+
+        <button class="primary wide" type="submit">เข้าใช้งาน</button>
+        <p class="mini-note">โครงนี้แยกจาก Admin CWF เดิม 100% และเก็บข้อมูล Demo ใน localStorage เท่านั้น เพื่อพัฒนาต่อเป็นระบบจริงโดยไม่กระทบร้านเดิม</p>
+      </form>
+    </section>
+  </template>
+
+  <template id="app-template">
+    <section class="app-frame">
+      <aside class="sidebar">
+        <a class="side-brand" href="#/dashboard" aria-label="FindFix home">
+          <span class="brand-mark"><span class="mark-core">⌁</span><span class="mark-tool">🔧</span></span>
+          <strong>Find<span>Fix</span></strong>
+        </a>
+        <nav class="nav-list" aria-label="FindFix navigation">
+          <button data-route="dashboard">ภาพรวม</button>
+          <button data-route="workspaces">ร้าน/สาขา</button>
+          <button data-route="jobs">งานบริการ</button>
+          <button data-route="technicians">ช่าง</button>
+          <button data-route="customers">ลูกค้า</button>
+          <button data-route="finance">รายได้</button>
+          <button data-route="settings">ตั้งค่า</button>
+        </nav>
+        <div class="tenant-card compact">
+          <small>Active Workspace</small>
+          <strong id="sideTenantName">-</strong>
+          <span id="sideTenantCode">-</span>
+        </div>
+      </aside>
+
+      <section class="main-panel">
+        <header class="topbar">
+          <button class="hamburger" data-action="toggle-menu" aria-label="เปิดเมนู">☰</button>
+          <div class="workspace-select">
+            <small>Workspace</small>
+            <select id="workspaceSwitcher"></select>
+          </div>
+          <div class="top-actions">
+            <button class="ghost small" data-action="copy-link">คัดลอกลิงก์ร้าน</button>
+            <button class="danger small" data-action="logout">ออกจากระบบ</button>
+          </div>
+        </header>
+
+        <section id="page" class="page"></section>
+      </section>
+    </section>
+  </template>
+
+  <script src="./app.js"></script>
+</body>
+</html>
