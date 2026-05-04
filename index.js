@@ -16258,9 +16258,49 @@ async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
 // =======================================
 app.get("/jobs/tech/:username", async (req, res) => {
   const { username } = req.params;
+  const historyMonth = /^\d{4}-\d{2}$/.test(String(req.query?.history_month || ''))
+    ? String(req.query.history_month)
+    : new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit' }).format(new Date());
+  const upcomingDaysRaw = Number(req.query?.upcoming_days);
+  const upcomingDays = Number.isFinite(upcomingDaysRaw) ? Math.min(Math.max(Math.trunc(upcomingDaysRaw), 7), 90) : 45;
   try {
     const r = await pool.query(
       `
+      WITH tech_jobs AS (
+        SELECT
+          job_id, booking_code, booking_token, job_source, dispatch_mode,
+          customer_name, customer_phone, job_type, appointment_datetime,
+          job_status, job_price, paid_at, paid_by, payment_status, address_text,
+          gps_latitude, gps_longitude, air_type, air_quantity,
+          technician_team, technician_username, created_at,
+          maps_url, job_zone,
+          travel_started_at, started_at, finished_at, canceled_at, cancel_reason,
+          checkin_at,
+          technician_note, technician_note_at,
+          final_signature_path, final_signature_status, final_signature_at,
+          checkin_latitude, checkin_longitude, checkin_at,
+          technician_note, technician_note_at,
+          LOWER(TRIM(COALESCE(job_status,''))) AS _status_key,
+          COALESCE(finished_at, paid_at, appointment_datetime) AS _history_at
+        FROM public.jobs
+        WHERE
+          (
+            -- Visibility must be based on assignment/ownership only.
+            -- Do not hide a job just because an assignment row is already marked done.
+            EXISTS (
+              SELECT 1 FROM public.job_assignments ja
+              WHERE ja.job_id = public.jobs.job_id
+                AND ja.technician_username=$1
+            )
+            OR technician_team=$1
+            OR (',' || replace(COALESCE(technician_team,''),' ','') || ',') LIKE ('%,' || replace($1,' ','') || ',%')
+            OR EXISTS (
+              SELECT 1 FROM public.job_team_members tm
+              WHERE tm.job_id = public.jobs.job_id AND tm.username=$1
+            )
+            OR (technician_username=$1 AND COALESCE(dispatch_mode,'') <> 'offer')
+          )
+      )
       SELECT
         job_id, booking_code, booking_token, job_source, dispatch_mode,
         customer_name, customer_phone, job_type, appointment_datetime,
@@ -16274,28 +16314,38 @@ app.get("/jobs/tech/:username", async (req, res) => {
         final_signature_path, final_signature_status, final_signature_at,
         checkin_latitude, checkin_longitude, checkin_at,
         technician_note, technician_note_at
-      FROM public.jobs
+      FROM tech_jobs
       WHERE
-  (
-    -- Visibility must be based on assignment/ownership only.
-    -- Do not hide a job just because an assignment row is already marked done;
-    -- the frontend will place it into current/upcoming/history from the overall job_status.
-    EXISTS (
-      SELECT 1 FROM public.job_assignments ja
-      WHERE ja.job_id = public.jobs.job_id
-        AND ja.technician_username=$1
-    )
-    OR technician_team=$1
-    OR (',' || replace(COALESCE(technician_team,''),' ','') || ',') LIKE ('%,' || replace($1,' ','') || ',%')
-    OR EXISTS (
-      SELECT 1 FROM public.job_team_members tm
-      WHERE tm.job_id = public.jobs.job_id AND tm.username=$1
-    )
-    OR (technician_username=$1 AND COALESCE(dispatch_mode,'') <> 'offer')
-  )
-ORDER BY appointment_datetime ASC NULLS LAST, job_id ASC
+        (
+          -- Active/current/upcoming jobs: keep old active jobs and only future jobs in the next 45 days by default.
+          NOT (
+            _status_key IN ('เสร็จแล้ว','เสร็จสิ้น','เสร็จสิ้นงาน','ปิดงาน','ปิดงานแล้ว','done','completed','closed','paid','ยกเลิก','cancelled','canceled','cancel')
+            OR _status_key LIKE '%เสร็จ%'
+            OR _status_key LIKE '%ปิดงาน%'
+            OR _status_key LIKE '%ยกเลิก%'
+            OR finished_at IS NOT NULL
+            OR paid_at IS NOT NULL
+          )
+          AND (appointment_datetime IS NULL OR appointment_datetime < (NOW() + ($3::int * INTERVAL '1 day')))
+        )
+        OR
+        (
+          -- History: only the selected Bangkok month, so old history does not slow down the technician job list.
+          (
+            _status_key IN ('เสร็จแล้ว','เสร็จสิ้น','เสร็จสิ้นงาน','ปิดงาน','ปิดงานแล้ว','done','completed','closed','paid','ยกเลิก','cancelled','canceled','cancel')
+            OR _status_key LIKE '%เสร็จ%'
+            OR _status_key LIKE '%ปิดงาน%'
+            OR _status_key LIKE '%ยกเลิก%'
+            OR finished_at IS NOT NULL
+            OR paid_at IS NOT NULL
+          )
+          AND _history_at IS NOT NULL
+          AND (_history_at AT TIME ZONE 'Asia/Bangkok')::date >= to_date($2 || '-01', 'YYYY-MM-DD')
+          AND (_history_at AT TIME ZONE 'Asia/Bangkok')::date < (to_date($2 || '-01', 'YYYY-MM-DD') + INTERVAL '1 month')::date
+        )
+      ORDER BY appointment_datetime ASC NULLS LAST, job_id ASC
       `,
-      [username]
+      [username, historyMonth, upcomingDays]
     );
     // Performance: job visibility is fast and independent from payout/rate calculation.
     // If a per-job preview exists, attach it immediately. Missing previews load asynchronously later.
@@ -16309,7 +16359,7 @@ ORDER BY appointment_datetime ASC NULLS LAST, job_id ASC
         ? { ...row, ...fallback, ..._techIncomePreviewSummaryFromRow(preview, context) }
         : { ...row, ...fallback };
     });
-    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows fast', { username, count: rows.length, preview_count: previewMap.size }); } catch {}
+    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows fast', { username, count: rows.length, preview_count: previewMap.size, history_month: historyMonth, upcoming_days: upcomingDays }); } catch {}
     res.json(rows);
   } catch (e) {
     console.error(e);

@@ -1069,28 +1069,30 @@ function renderTechnicianMoneySummary(job, context) {
     const key = _techIncomeCardKey(displayJob, ctx);
     __techIncomeModalJobStore.set(key, { ...(displayJob || {}), __incomeContext: ctx, __incomeKey: key });
     const label = ctx === 'offered'
-      ? 'รายได้โดยประมาณ'
+      ? 'รายได้งานด่วน'
       : (ctx === 'history' ? 'ได้รับ' : 'รายได้ช่าง');
     const helper = ctx === 'offered'
-      ? 'แตะดูรายละเอียดเรทงานนี้'
-      : (ctx === 'history' ? 'แตะดูรายละเอียดรายได้' : 'แตะดูรายละเอียดรายได้');
+      ? 'แตะดูเรท'
+      : (ctx === 'history' ? 'ดูรายละเอียด' : 'ดูรายละเอียด');
     const hasAmount = _hasIncomeAmount(displayJob);
     const isLoading = !hasAmount && String(displayJob?.technician_income_source || '') === 'loading';
-    const amount = hasAmount ? _techMoneyAmountText(displayJob?.technician_income_amount, 'รอคำนวณรายได้') : (isLoading ? 'กำลังคำนวณ…' : 'รอตรวจสอบรายได้');
+    const amount = hasAmount ? _techMoneyAmountText(displayJob?.technician_income_amount, 'รอคำนวณ') : (isLoading ? 'กำลังคำนวณ…' : 'รอตรวจสอบ');
     const pendingClass = hasAmount ? '' : 'is-pending';
     return `
-      <button type="button" class="tech-income-chip ${pendingClass}" data-tech-income-chip="${escapeAttr(key)}" data-job-id="${escapeAttr(jobId)}" data-income-context="${escapeAttr(ctx)}" onclick="openTechnicianIncomeModal('${escapeHTML(key)}')" aria-label="ดูรายละเอียดรายได้ช่าง">
-        <span class="tech-income-chip-icon">💰</span>
-        <span class="tech-income-chip-main">
-          <span class="tech-income-chip-label">${escapeHTML(label)}</span>
-          <strong data-income-amount>${escapeHTML(amount)}</strong>
-        </span>
-        <span class="tech-income-chip-hint">${escapeHTML(helper)}</span>
-        <span class="tech-income-chip-arrow">›</span>
-      </button>
+      <div class="tech-income-under-status">
+        <button type="button" class="tech-income-chip tech-income-chip--compact ${pendingClass}" data-tech-income-chip="${escapeAttr(key)}" data-job-id="${escapeAttr(jobId)}" data-income-context="${escapeAttr(ctx)}" onclick="openTechnicianIncomeModal('${escapeHTML(key)}')" aria-label="ดูรายละเอียดรายได้ช่าง">
+          <span class="tech-income-chip-icon">💰</span>
+          <span class="tech-income-chip-main">
+            <span class="tech-income-chip-label">${escapeHTML(label)}</span>
+            <strong data-income-amount>${escapeHTML(amount)}</strong>
+          </span>
+          <span class="tech-income-chip-hint">${escapeHTML(helper)}</span>
+          <span class="tech-income-chip-arrow">›</span>
+        </button>
+      </div>
     `;
   } catch (e) {
-    return `<div class="tech-income-chip is-pending"><span class="tech-income-chip-icon">💰</span><span class="tech-income-chip-main"><span class="tech-income-chip-label">รายได้ช่าง</span><strong>กำลังคำนวณ…</strong></span></div>`;
+    return `<div class="tech-income-under-status"><div class="tech-income-chip tech-income-chip--compact is-pending"><span class="tech-income-chip-icon">💰</span><span class="tech-income-chip-main"><span class="tech-income-chip-label">รายได้ช่าง</span><strong>กำลังคำนวณ…</strong></span></div></div>`;
   }
 }
 function _renderTechnicianIncomeBreakdownContent(job) {
@@ -2146,7 +2148,7 @@ function renderOffers(offers) {
       const sec = secLeft % 60;
 
       return `
-      <div class="job-card" style="border:1px solid rgba(251,191,36,0.55);">
+      <div class="job-card urgent-offer-card">
         <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
           <b>📌 งานใหม่เสนอให้รับ</b>
           <span class="badge wait">⏳ ${min}:${String(sec).padStart(2, "0")}</span>
@@ -2219,7 +2221,9 @@ function declineOffer(offerId) {
 // 📡 LOAD JOBS
 // =======================================
 function loadJobs() {
-  fetch(`${API_BASE}/jobs/tech/${username}`, { cache: "no-store" })
+  const ym = todayYmdBkk().slice(0, 7);
+  const url = `${API_BASE}/jobs/tech/${encodeURIComponent(username)}?history_month=${encodeURIComponent(ym)}&upcoming_days=45&v=month-fast-v1`;
+  fetch(url, { cache: "no-store" })
     .then((res) => {
       if (!res.ok) throw new Error("โหลดข้อมูลงานไม่สำเร็จ");
       return res.json();
@@ -2228,6 +2232,7 @@ function loadJobs() {
     .catch((err) => {
       console.error(err);
       if (activeJobsEl) activeJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
+      if (activeUpcomingJobsEl) activeUpcomingJobsEl.innerHTML = "<p>❌ โหลดงานล่วงหน้าไม่สำเร็จ</p>";
       if (historyJobsEl) historyJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
       renderProfile(0);
     });
