@@ -1,7 +1,7 @@
 (() => {
   const STORE_KEY = "findfix.v1.workspaces";
   const SESSION_KEY = "findfix.v1.session";
-  const ROUTES = ["dashboard", "workspaces", "jobs", "technicians", "customers", "finance", "settings"];
+  const ROUTES = ["dashboard", "workspaces", "jobs", "technicians", "customers", "finance", "accounting", "settings"];
 
   const seedWorkspaces = () => ([
     {
@@ -175,20 +175,27 @@
   function closeMenu() { app.querySelector(".sidebar")?.classList.remove("open"); }
 
   function stats(t) {
-    const revenue = t.jobs.filter((j) => j.status === "completed").reduce((s, j) => s + Number(j.price || 0), 0);
+    const completedJobs = t.jobs.filter((j) => j.status === "completed");
+    const revenue = completedJobs.reduce((s, j) => s + Number(j.price || 0), 0);
     const activeJobs = t.jobs.filter((j) => j.status !== "completed").length;
-    return { revenue, activeJobs, jobCount: t.jobs.length, techCount: t.techs.length, customerCount: t.customers.length };
+    const techPay = Math.round(revenue * 0.38);
+    const expenses = Math.round(revenue * 0.12);
+    const vat = Math.round(revenue * 0.07);
+    const withholding = Math.round(revenue * 0.03);
+    const netProfit = Math.max(0, revenue - techPay - expenses);
+    const receivable = t.jobs.filter((j) => j.status === "scheduled" || j.status === "in_progress").reduce((sum, j) => sum + Number(j.price || 0), 0);
+    return { revenue, activeJobs, jobCount: t.jobs.length, techCount: t.techs.length, customerCount: t.customers.length, completedCount: completedJobs.length, techPay, expenses, vat, withholding, netProfit, receivable };
   }
   function pageHeader(t, desc, actionHtml = "") {
     return `<div class="hero-panel"><div><p class="eyebrow">${escapeHtml(t.plan)} Workspace</p><h2 class="workspace-title">${escapeHtml(t.name)} <span>Console</span></h2><p class="subtitle">${escapeHtml(desc)}</p></div><div>${actionHtml}</div></div>`;
   }
   function renderStats(t) {
     const s = stats(t);
-    return `<div class="stats-grid">
-      <div class="stat"><small>งานทั้งหมด</small><strong>${s.jobCount}</strong></div>
-      <div class="stat"><small>งานที่ยังไม่ปิด</small><strong>${s.activeJobs}</strong></div>
-      <div class="stat"><small>รายได้ปิดงาน</small><strong>฿${money(s.revenue)}</strong></div>
-      <div class="stat"><small>ช่างในร้าน</small><strong>${s.techCount}</strong></div>
+    return `<div class="stats-grid premium-stats">
+      <div class="stat stat-blue"><small>งานทั้งหมด</small><strong>${s.jobCount}</strong><em>${s.activeJobs} งานยังไม่ปิด</em></div>
+      <div class="stat stat-green"><small>รายได้ปิดงาน</small><strong>฿${money(s.revenue)}</strong><em>จาก ${s.completedCount} งานสำเร็จ</em></div>
+      <div class="stat stat-lime"><small>กำไรสุทธิตัวอย่าง</small><strong>฿${money(s.netProfit)}</strong><em>หักค่าช่าง/ค่าใช้จ่าย demo</em></div>
+      <div class="stat stat-cyan"><small>ช่างในร้าน</small><strong>${s.techCount}</strong><em>${s.customerCount} ลูกค้าในระบบ</em></div>
     </div>`;
   }
 
@@ -197,19 +204,55 @@
     const page = document.getElementById("page");
     const t = getActiveWorkspace();
     app.querySelectorAll("[data-route]").forEach((btn) => btn.classList.toggle("active", btn.dataset.route === route));
-    const views = { dashboard, workspaces, jobs, technicians, customers, finance, settings };
+    const views = { dashboard, workspaces, jobs, technicians, customers, finance, accounting, settings };
     page.innerHTML = views[route](t);
     bindPage(route, t);
   }
 
   function dashboard(t) {
-    const grouped = Object.fromEntries(statusOrder.map((s) => [s, t.jobs.filter((j) => j.status === s)]));
-    return `${pageHeader(t, "ภาพรวมร้านที่แยกด้วย tenant_id/company_id ตั้งแต่ระดับหน้าแอพ เพื่อใช้ต่อยอดเป็นระบบจริงโดยไม่ปนกับ CWF Admin เดิม", `<button class="primary" data-action="open-job-modal">+ เพิ่มงาน</button>`)}${renderStats(t)}
+    const s = stats(t);
+    const grouped = Object.fromEntries(statusOrder.map((status) => [status, t.jobs.filter((j) => j.status === status)]));
+    const aiScore = Math.min(98, 72 + Math.round((s.completedCount / Math.max(1, s.jobCount)) * 20));
+    return `${pageHeader(t, "ภาพรวมร้านสไตล์ CWF แต่แยก Workspace ชัดเจน เห็นงาน รายได้ บัญชี ความเสี่ยง และ insight สำคัญในหน้าเดียว", `<button class="primary" data-action="open-job-modal">+ เพิ่มงาน</button>`)}
+      <section class="command-hero glass-card">
+        <div class="command-left">
+          <div class="command-logo"><img src="./assets/logo-findfix.png" alt="FindFix"></div>
+          <div>
+            <p class="eyebrow">FindFix Command Center</p>
+            <h3>${escapeHtml(t.name)}</h3>
+            <p>ศูนย์ควบคุมร้านแบบเดียวกับ CWF: งานวันนี้, รายได้, บัญชี, เอกสาร, แจ้งเตือน และการแยกร้านในระบบเดียว</p>
+          </div>
+        </div>
+        <div class="command-actions">
+          <button class="ghost small" data-route="accounting">เปิดงานบัญชี</button>
+          <button class="ghost small" data-route="jobs">ดูงานบริการ</button>
+        </div>
+      </section>
+      ${renderStats(t)}
+      <div class="wow-grid">
+        <section class="glass-card wow-card ai-card">
+          <div class="section-head"><h3>AI Operation Insight</h3><span class="pill">Score ${aiScore}%</span></div>
+          <p class="big-insight">วันนี้ควรโฟกัส: ปิดงานค้าง ${s.activeJobs} งาน และตรวจยอดค้างรับ ฿${money(s.receivable)}</p>
+          <div class="signal-list">
+            <div><b>⚡ Smart Alert</b><span>ถ้างานค้างเกินกำหนด ระบบควรแจ้งแอดมิน/ช่างอัตโนมัติ</span></div>
+            <div><b>💲 Money Guard</b><span>แยกยอดรับจริง ค่าช่าง ค่าใช้จ่าย และกำไรต่อร้าน</span></div>
+            <div><b>🧾 Document Ready</b><span>ต่อยอดใบเสนอราคา ใบรับเงิน ใบกำกับภาษี และ ทวิ50 ได้</span></div>
+          </div>
+        </section>
+        <section class="glass-card accounting-preview">
+          <div class="section-head"><h3>ภาพรวมบัญชี</h3><button class="ghost small" data-route="accounting">ไปงานบัญชี</button></div>
+          <div class="money-stack">
+            <div><span>รายได้รวม</span><strong>฿${money(s.revenue)}</strong></div>
+            <div><span>ค่าช่างโดยประมาณ</span><strong>฿${money(s.techPay)}</strong></div>
+            <div><span>กำไรสุทธิ demo</span><strong>฿${money(s.netProfit)}</strong></div>
+          </div>
+        </section>
+      </div>
       <div class="dashboard-grid">
         <section class="glass-card"><div class="section-head"><h3>กระดานงานบริการ</h3><span class="pill">${escapeHtml(t.id)}</span></div><div class="kanban">
           ${statusOrder.map((status) => `<div class="lane"><h4>${statusText[status]}</h4>${grouped[status].length ? grouped[status].map(jobCard).join("") : `<div class="empty">ยังไม่มีงาน</div>`}</div>`).join("")}
         </div></section>
-        <section class="glass-card"><div class="section-head"><h3>Audit / Activity</h3><button class="ghost small" data-route="settings">ตั้งค่า</button></div><div class="list">${t.audit.slice(-6).reverse().map((x) => `<div class="row"><div><strong>${escapeHtml(x)}</strong><small>${new Date().toLocaleDateString("th-TH")}</small></div><span class="pill">Log</span></div>`).join("")}</div></section>
+        <section class="glass-card"><div class="section-head"><h3>Audit / Activity</h3><button class="ghost small" data-route="settings">ตั้งค่า</button></div><div class="timeline-list">${t.audit.slice(-7).reverse().map((x, idx) => `<div class="timeline-item"><i>${idx + 1}</i><div><strong>${escapeHtml(x)}</strong><small>${new Date().toLocaleDateString("th-TH")}</small></div></div>`).join("")}</div></section>
       </div>`;
   }
   function jobCard(j) { return `<article class="job-card"><b>${escapeHtml(j.id)} · ${escapeHtml(j.customer)}</b><small>${escapeHtml(j.service)} / ${escapeHtml(j.tech)} / ฿${money(j.price)}</small></article>`; }
@@ -248,6 +291,53 @@
       <section class="glass-card"><div class="section-head"><h3>งานที่ปิดแล้ว</h3><span class="pill">฿${money(s.revenue)}</span></div><div class="list">${completed.length ? completed.map((j) => `<div class="row"><div><strong>${escapeHtml(j.id)} · ${escapeHtml(j.customer)}</strong><small>${escapeHtml(j.service)}</small></div><b>฿${money(j.price)}</b></div>`).join("") : `<div class="empty">ยังไม่มีงานปิด</div>`}</div></section></div>`;
   }
 
+  function accounting(t) {
+    const s = stats(t);
+    const completed = t.jobs.filter((j) => j.status === "completed");
+    const docs = [
+      { title: "ใบเสนอราคา", count: Math.max(1, Math.ceil(t.jobs.length / 2)), status: "พร้อมสร้าง" },
+      { title: "ใบรับเงิน / E-Receipt", count: completed.length, status: "จากงานปิดแล้ว" },
+      { title: "ใบกำกับภาษี", count: Math.max(0, completed.length - 1), status: "รอข้อมูลภาษี" },
+      { title: "ทวิ50 ช่าง", count: t.techs.length, status: "สร้างรายเดือน" }
+    ];
+    const ledger = [
+      { label: "รายได้จากงานปิด", amount: s.revenue, type: "income" },
+      { label: "ยอดค้างรับจากงานยังไม่ปิด", amount: s.receivable, type: "receivable" },
+      { label: "ค่าช่างโดยประมาณ", amount: s.techPay, type: "expense" },
+      { label: "ค่าใช้จ่ายหน้างาน demo", amount: s.expenses, type: "expense" },
+      { label: "VAT 7% ตัวอย่าง", amount: s.vat, type: "tax" },
+      { label: "หัก ณ ที่จ่าย 3% ตัวอย่าง", amount: s.withholding, type: "tax" }
+    ];
+    return `${pageHeader(t, "งานบัญชีของร้านนี้ แยกจาก Workspace อื่น เห็นรายได้ เอกสาร ภาษี ค่าช่าง และรายการที่ต้องจัดการในหน้าเดียว", `<button class="primary" data-action="open-doc-modal">+ สร้างเอกสาร</button>`)}
+      <div class="accounting-hero glass-card">
+        <div>
+          <p class="eyebrow">Accounting Control Room</p>
+          <h3>งานบัญชี</h3>
+          <p>โครงนี้ออกแบบให้ต่อยอดเป็นระบบบัญชีจริงของ FindFix: ใบเสนอราคา, ใบรับเงิน, ใบกำกับภาษี, ค่าใช้จ่าย, ค่าช่าง, ทวิ50 และรายงานสรรพากร</p>
+        </div>
+        <div class="accounting-score"><span>Net Demo</span><strong>฿${money(s.netProfit)}</strong><small>หลังหักค่าช่าง/ค่าใช้จ่ายตัวอย่าง</small></div>
+      </div>
+      <div class="accounting-grid">
+        <section class="glass-card"><div class="section-head"><h3>สรุปการเงิน</h3><span class="pill">${escapeHtml(t.plan)}</span></div><div class="ledger-list">
+          ${ledger.map((x) => `<div class="ledger-row ${x.type}"><div><strong>${escapeHtml(x.label)}</strong><small>${escapeHtml(x.type)}</small></div><b>฿${money(x.amount)}</b></div>`).join("")}
+        </div></section>
+        <section class="glass-card"><div class="section-head"><h3>เอกสารบัญชี</h3><span class="pill">Document Center</span></div><div class="doc-grid">
+          ${docs.map((d) => `<article class="doc-card"><span>🧾</span><strong>${escapeHtml(d.title)}</strong><em>${d.count} รายการ</em><small>${escapeHtml(d.status)}</small></article>`).join("")}
+        </div></section>
+      </div>
+      <div class="accounting-grid lower">
+        <section class="glass-card"><div class="section-head"><h3>รายการงานพร้อมออกเอกสาร</h3><button class="ghost small" data-route="jobs">ดูงานทั้งหมด</button></div><div class="table-wrap"><table class="ff-table"><thead><tr><th>เลขงาน</th><th>ลูกค้า</th><th>บริการ</th><th>ยอด</th><th>เอกสาร</th></tr></thead><tbody>
+          ${completed.length ? completed.map((j) => `<tr><td>${escapeHtml(j.id)}</td><td>${escapeHtml(j.customer)}</td><td>${escapeHtml(j.service)}</td><td>฿${money(j.price)}</td><td><span class="pill">พร้อมออกใบรับเงิน</span></td></tr>`).join("") : `<tr><td colspan="5"><div class="empty">ยังไม่มีงานปิดสำหรับออกเอกสาร</div></td></tr>`}
+        </tbody></table></div></section>
+        <section class="glass-card"><div class="section-head"><h3>สิ่งที่ว้าวสำหรับต่อยอด</h3><span class="pill">WOW</span></div><div class="signal-list">
+          <div><b>📌 Auto Tax Checklist</b><span>เตือนเอกสารที่ยังไม่มีเลขภาษี/ที่อยู่/ลายเซ็น</span></div>
+          <div><b>📄 One-click PDF</b><span>สร้างใบเสนอราคา ใบรับเงิน ใบกำกับภาษี จากงานเดียว</span></div>
+          <div><b>🔐 Audit by Role</b><span>รู้ว่าใครสร้าง/แก้/อนุมัติ/จ่ายเงิน เมื่อไหร่</span></div>
+          <div><b>📊 Owner Report</b><span>รายงานกำไร รายจ่าย ค่าช่าง แยกเดือน/ไตรมาส</span></div>
+        </div></section>
+      </div>`;
+  }
+
   function settings(t) {
     return `${pageHeader(t, "ตั้งค่าร้าน โลโก้ สีหลัก แพ็กเกจ เบอร์ LINE และข้อมูลเอกสาร เพื่อให้แต่ละร้านมี Branding ของตัวเอง", "")}
       <form class="glass-card" data-form="settings"><div class="form-grid">
@@ -265,6 +355,7 @@
     app.querySelectorAll("[data-action='open-job-modal']").forEach((b) => b.addEventListener("click", () => openJobModal(t)));
     app.querySelectorAll("[data-action='open-tech-modal']").forEach((b) => b.addEventListener("click", () => openTechModal(t)));
     app.querySelectorAll("[data-action='open-workspace-modal']").forEach((b) => b.addEventListener("click", openWorkspaceModal));
+    app.querySelectorAll("[data-action='open-doc-modal']").forEach((b) => b.addEventListener("click", () => openDocModal(t)));
     app.querySelectorAll("[data-route]").forEach((b) => b.addEventListener("click", () => { location.hash = `#/${b.dataset.route}`; renderPage(); }));
     const jobFilter = app.querySelector("[data-filter='jobs']");
     const statusFilter = app.querySelector("[data-filter-status]");
@@ -334,6 +425,23 @@
       const item = { id: `tenant_${slug}_${Date.now()}`, slug, name: fd.get("name"), plan: fd.get("plan"), color: "#8eff2f", owner: fd.get("owner"), phone: "", line: "", domain: `${slug}.findfix.app`, address: "", createdAt: new Date().toISOString().slice(0,10), usageLimit: 120, jobs: [], techs: [], customers: [], audit: ["สร้าง Workspace"] };
       const items = [item, ...loadWorkspaces()]; saveWorkspaces(items); setSession({ ...getSession(), tenantId: item.id });
       wrap.remove(); toast("สร้างร้านใหม่แล้ว"); renderApp();
+    });
+  }
+
+  function openDocModal(t) {
+    const wrap = modal(`<div class="section-head"><h2>สร้างเอกสารบัญชี</h2><button class="ghost small" data-close>ปิด</button></div><form data-form="doc"><div class="form-grid">
+      <div class="field"><label>ประเภทเอกสาร</label><select name="docType"><option>ใบเสนอราคา</option><option>ใบรับเงิน / E-Receipt</option><option>ใบกำกับภาษี</option><option>ทวิ50 ช่าง</option></select></div>
+      <div class="field"><label>อ้างอิงงาน</label><select name="jobId">${t.jobs.map((j) => `<option value="${escapeHtml(j.id)}">${escapeHtml(j.id)} · ${escapeHtml(j.customer)}</option>`).join("")}</select></div>
+      <div class="field"><label>ผู้สร้าง</label><input name="createdBy" value="Demo Accountant"></div>
+      <div class="field"><label>สถานะ</label><select name="status"><option>ร่างเอกสาร</option><option>รออนุมัติ</option><option>พร้อมส่งลูกค้า</option></select></div>
+      <div class="field full"><label>หมายเหตุ</label><textarea name="note" rows="3" placeholder="เช่น ต้องตรวจเลขภาษี / แนบลายเซ็น / ส่ง LINE OA"></textarea></div>
+    </div><div class="modal-actions"><button class="ghost" type="button" data-close>ยกเลิก</button><button class="primary" type="submit">บันทึก Demo</button></div></form>`);
+    wrap.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => wrap.remove()));
+    wrap.querySelector("form").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const fd = new FormData(e.currentTarget);
+      updateWorkspace({ ...t, audit: [...t.audit, `สร้างเอกสาร ${fd.get("docType")} สำหรับ ${fd.get("jobId")}`] });
+      wrap.remove(); toast("สร้างเอกสาร Demo แล้ว"); renderApp();
     });
   }
 
