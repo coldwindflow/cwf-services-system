@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>FindFix | Workspace Platform</title>
   <meta name="description" content="FindFix - แพลตฟอร์มจัดการธุรกิจบริการแบบแยกร้านในระบบเดียว" />
-  <link rel="icon" type="image/png" href="./assets/logo-findfix.png" />
+  <link rel="icon" type="image/png" href="./assets/logo-findfix-icon.png" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="./app.css" />
 </head>
@@ -19,52 +19,56 @@
       <div class="orb orb-b" aria-hidden="true"></div>
       <div class="orb orb-c" aria-hidden="true"></div>
 
-      <div class="brand-stage">
+      <section class="brand-stage">
         <div class="brand-panel glass-card">
-          <div class="hero-brand-row">
-            <img class="logo-hero" src="./assets/logo-findfix.png" alt="FindFix logo" />
-            <div>
-              <p class="eyebrow">Service business workspace platform</p>
-              <h1>Find<span>Fix</span></h1>
-              <p class="hero-copy">โครงแอพ FindFix แบบแยกจาก CWF เดิม เพื่อให้ต่อยอดเป็นระบบจริงได้ในอนาคต ทั้งการแยกร้าน การจัดการงาน ช่าง ลูกค้า รายได้ และการตั้งค่าร้านในแพลตฟอร์มเดียว</p>
+          <div class="brand-header-row">
+            <div class="brand-copy-block">
+              <span class="brand-badge">FindFix Platform</span>
+              <h1 class="brand-title">จัดการร้านบริการแบบแยกร้านได้ <span>ในระบบเดียว</span></h1>
+              <p class="hero-copy">โครงแอพ FindFix ที่แยกจาก CWF เดิม เพื่อใช้เป็นฐานต่อยอดไปสู่ระบบจริง ทั้งการจัดการงาน ช่าง ลูกค้า รายได้ งานบัญชี และการตั้งค่าร้านโดยไม่กระทบระบบเดิม</p>
+            </div>
+            <div class="brand-logo-wrap">
+              <img class="logo-hero" src="./assets/logo-findfix-clean.png" alt="FindFix logo" />
             </div>
           </div>
+
           <div class="hero-actions">
             <button class="primary" data-action="quick-login" data-role="owner">เข้าใช้งานตัวอย่าง</button>
             <button class="ghost" data-action="seed-reset">รีเซ็ตข้อมูล Demo</button>
           </div>
-          <div class="hero-feature-grid">
-            <article class="hero-feature-card">
-              <span class="feature-kicker">Multi Workspace</span>
-              <strong>แยกร้านในระบบเดียว</strong>
-              <p>แต่ละร้านมีช่าง งาน ลูกค้า และการตั้งค่าแยกกันชัดเจน</p>
+
+          <div class="hero-metrics">
+            <article class="metric-card">
+              <small>Multi Workspace</small>
+              <strong>3 ร้านตัวอย่าง</strong>
+              <span>แยกข้อมูลแต่ละร้านชัดเจน</span>
             </article>
-            <article class="hero-feature-card">
-              <span class="feature-kicker">Operations</span>
-              <strong>งาน ช่าง รายได้</strong>
-              <p>เป็นฐานต่อยอดไปสู่ระบบจริงแบบ SaaS หรือ White-label ได้ต่อ</p>
+            <article class="metric-card">
+              <small>Operations + Accounting</small>
+              <strong>Dashboard พร้อมบัญชี</strong>
+              <span>งาน ช่าง รายได้ เอกสารบัญชี</span>
             </article>
-            <article class="hero-feature-card">
-              <span class="feature-kicker">Safe Prototype</span>
+            <article class="metric-card">
+              <small>Safe Prototype</small>
               <strong>ไม่กระทบ CWF เดิม</strong>
-              <p>เก็บข้อมูล Demo ใน localStorage และวางแยกเป็นโครงใหม่โดยเฉพาะ</p>
+              <span>ข้อมูล Demo เก็บแยกใน localStorage</span>
             </article>
           </div>
         </div>
-      </div>
+      </section>
 
       <form class="login-card" data-form="login">
         <div class="card-top">
           <div>
             <p class="eyebrow">Secure workspace</p>
-            <h2>เข้าสู่ FindFix</h2>
-            <p class="card-subtext">เลือก Workspace และบทบาท เพื่อจำลองการเข้าใช้งานระบบจริง</p>
+            <h2>เข้าสู่ระบบ FindFix</h2>
+            <p class="card-subtext">เลือก Workspace และบทบาทผู้ใช้ เพื่อเข้าใช้งานระบบตัวอย่าง</p>
           </div>
           <span class="status-pill">Demo Ready</span>
         </div>
 
         <div class="inline-brand-pill">
-          <img class="logo-chip" src="./assets/logo-findfix.png" alt="FindFix" />
+          <img class="logo-chip" src="./assets/logo-findfix-icon.png" alt="FindFix" />
           <div>
             <strong>FindFix</strong>
             <small>Independent app shell</small>
@@ -87,7 +91,7 @@
         <input name="displayName" value="Demo User" autocomplete="name" />
 
         <button class="primary wide" type="submit">เข้าใช้งาน</button>
-        <p class="mini-note">โครงนี้แยกจาก Admin CWF เดิม 100% และเก็บข้อมูล Demo ใน localStorage เท่านั้น เพื่อพัฒนาต่อเป็นระบบจริงโดยไม่กระทบร้านเดิม</p>
+        <p class="mini-note">หน้า FindFix นี้เป็นโครงแยกเฉพาะ ไม่แตะ Admin CWF เดิม และใช้สำหรับมองภาพพัฒนาต่อได้จริง</p>
       </form>
     </section>
   </template>
@@ -96,7 +100,7 @@
     <section class="app-frame">
       <aside class="sidebar">
         <a class="side-brand" href="#/dashboard" aria-label="FindFix home">
-          <img class="logo-side" src="./assets/logo-findfix.png" alt="FindFix logo" />
+          <img class="logo-side" src="./assets/logo-findfix-icon.png" alt="FindFix logo" />
           <span class="brand-wording"><strong>Find<span>Fix</span></strong><small>Workspace Platform</small></span>
         </a>
         <nav class="nav-list" aria-label="FindFix navigation">
@@ -120,7 +124,7 @@
         <header class="topbar">
           <button class="hamburger" data-action="toggle-menu" aria-label="เปิดเมนู">☰</button>
           <div class="topbar-brand-pill">
-            <img class="logo-chip" src="./assets/logo-findfix.png" alt="FindFix" />
+            <img class="logo-chip" src="./assets/logo-findfix-icon.png" alt="FindFix" />
             <div>
               <strong>FindFix</strong>
               <small>Workspace Control Center</small>
