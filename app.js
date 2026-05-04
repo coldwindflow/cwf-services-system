@@ -828,6 +828,29 @@ function calcGradeFromDone(doneCount) {
   return calcGrade(doneCount);
 }
 
+async function loadCompletedCountSummary() {
+  if (!doneCountEl) return null;
+  const u = String(username || "").trim();
+  if (!u) {
+    doneCountEl.textContent = "0";
+    return 0;
+  }
+  try {
+    const url = `${API_BASE}/tech/completed_count_summary?username=${encodeURIComponent(u)}&v=completed-count-month-bkk-20260504`;
+    const res = await fetch(url, { credentials: "include", cache: "no-store" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || data.ok === false) throw new Error(data?.error || "LOAD_COMPLETED_COUNT_FAILED");
+    const n = Number(data.month_completed_jobs || 0);
+    const safe = Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
+    try { if (typeof window !== "undefined") window.__CWF_MONTH_DONE__ = safe; } catch (_) {}
+    doneCountEl.textContent = String(safe);
+    return safe;
+  } catch (_) {
+    if (!Number.isFinite(Number(window.__CWF_MONTH_DONE__))) doneCountEl.textContent = "0";
+    return null;
+  }
+}
+
 // ✅ แปลงตำแหน่งจากค่าฐานข้อมูล -> ข้อความแสดงผล
 function prettyPosition(pos) {
   const p = String(pos || "").trim();
@@ -884,13 +907,7 @@ async function loadProfile() {
     const grade = data.grade || calcGradeFromDone(doneAllTime);
     if (profileGradeEl) profileGradeEl.textContent = `เกรด: ${grade}`;
     if (ratingEl) ratingEl.textContent = (data.rating ?? 0).toString();
-    // ✅ งานสะสมบนหน้า (ขอให้เป็น “จำนวนงานที่ทำแล้วภายในเดือนปัจจุบัน”)
-    // - ถ้า renderJobs คำนวณไว้แล้ว ให้ใช้ค่านั้น (กันโดน profile endpoint overwrite)
-    // - ถ้ายังไม่มี ให้ fallback เป็น all-time เพื่อไม่ให้ว่าง
-    const monthDone = (typeof window !== 'undefined' && Number.isFinite(window.__CWF_MONTH_DONE__))
-      ? Number(window.__CWF_MONTH_DONE__)
-      : doneAllTime;
-    if (doneCountEl) doneCountEl.textContent = String(monthDone);
+    loadCompletedCountSummary();
 
     // Photo (serve from /uploads)
     const photo = data.photo_path || "/logo.png";
@@ -946,15 +963,7 @@ async function loadProfile() {
     if (profileRankLabelEl) profileRankLabelEl.textContent = "Rank: -";
     if (profileGradeEl) profileGradeEl.textContent = "เกรด: -";
     if (ratingEl) ratingEl.textContent = "0.0";
-    // fail-open: ถ้าคำนวณงานสะสมเดือนนี้ไว้แล้ว ให้คงไว้
-    try{
-      const monthDone = (typeof window !== 'undefined' && Number.isFinite(window.__CWF_MONTH_DONE__))
-        ? Number(window.__CWF_MONTH_DONE__)
-        : 0;
-      if (doneCountEl) doneCountEl.textContent = String(monthDone);
-    }catch(e2){
-      if (doneCountEl) doneCountEl.textContent = "0";
-    }
+    loadCompletedCountSummary();
     if (profilePhotoEl) profilePhotoEl.src = "/logo.png";
     try{ if (typeof window !== 'undefined' && typeof window.__cwfSyncTechMore === 'function') window.__cwfSyncTechMore(); }catch(e){}
   }
@@ -2153,7 +2162,7 @@ function renderJobs(jobs) {
     if (activeJobsEl) activeJobsEl.innerHTML = "<p>✅ วันนี้ยังไม่มีงาน</p>";
     if (activeUpcomingJobsEl) activeUpcomingJobsEl.innerHTML = "<p>ยังไม่มีงานล่วงหน้า</p>";
     if (historyJobsEl) historyJobsEl.innerHTML = "<p>ยังไม่มีประวัติงาน</p>";
-    if (doneCountEl) doneCountEl.textContent = "0";
+    loadCompletedCountSummary();
     renderProfile(0);
     return;
   }
@@ -2247,20 +2256,8 @@ function renderJobs(jobs) {
     // ignore
   }
 
-  // ✅ งานสะสม: แสดง “จำนวนงานที่ทำแล้วภายในเดือนปัจจุบัน” เสมอ
-  // - ไม่ผูกกับ history filter (วัน/เดือน/ทั้งหมด)
-  // - นับเฉพาะงานที่ถือว่า done (ไม่รวมยกเลิก)
-  const monthKey2 = todayYMD.slice(0,7);
-  const monthDone = jobs.filter((j)=>{
-    const st = normStatus(j.job_status);
-    if (!DONE_STATUSES.has(st)) return false;
-    const y = ymdBkkFromISO(j.appointment_datetime);
-    return y && y.slice(0,7) === monthKey2;
-  }).length;
-
-  try{ if (typeof window !== 'undefined') window.__CWF_MONTH_DONE__ = monthDone; }catch(e){}
-  if (doneCountEl) doneCountEl.textContent = String(monthDone);
-  renderProfile(monthDone);
+  loadCompletedCountSummary();
+  renderProfile();
 }
 
 
