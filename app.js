@@ -1044,7 +1044,8 @@ function _incomeFetchUsername() {
 }
 function _hasIncomeAmount(job) {
   const n = Number(job?.technician_income_amount);
-  return Number.isFinite(n);
+  // 0 บาททำให้ช่างเข้าใจผิดในงานจริง ถ้าคำนวณไม่ได้ให้แสดง fallback แทน
+  return Number.isFinite(n) && n > 0;
 }
 function _mergeTechIncomeIntoJob(job, income) {
   if (!job || !income) return job;
@@ -2218,51 +2219,18 @@ function declineOffer(offerId) {
 // =======================================
 // 📡 LOAD JOBS
 // =======================================
-var __LOAD_JOBS_SEQ__ = 0;
-
-function normalizeJobsPayload(payload) {
-  if (Array.isArray(payload)) return payload;
-  if (payload && Array.isArray(payload.jobs)) return payload.jobs;
-  if (payload && Array.isArray(payload.rows)) return payload.rows;
-  if (payload && Array.isArray(payload.items)) return payload.items;
-  return [];
-}
-
-function loadJobs(options = {}) {
-  if (!Number.isFinite(__LOAD_JOBS_SEQ__)) __LOAD_JOBS_SEQ__ = 0;
-  const seq = ++__LOAD_JOBS_SEQ__;
-  const historyScope = (options.historyScope === "day" || options.historyScope === "all")
-    ? options.historyScope
-    : (__HISTORY_FILTER__ === "day" || __HISTORY_FILTER__ === "all" ? __HISTORY_FILTER__ : "month");
-  const qs = new URLSearchParams({
-    history_scope: historyScope,
-    v: `tech-history-stable-${Date.now()}`,
-  });
-  const url = `${API_BASE}/jobs/tech/${encodeURIComponent(username)}?${qs.toString()}`;
-  console.log('[CWF_TECH_JOBS_DEBUG] loadJobs start', { seq, historyScope, reason: options.reason || 'normal' });
-  return fetch(url, { cache: "no-store" })
+function loadJobs() {
+  fetch(`${API_BASE}/jobs/tech/${username}`, { cache: "no-store" })
     .then((res) => {
       if (!res.ok) throw new Error("โหลดข้อมูลงานไม่สำเร็จ");
       return res.json();
     })
-    .then((payload) => {
-      if (seq !== __LOAD_JOBS_SEQ__) {
-        console.log('[CWF_TECH_JOBS_DEBUG] ignore stale loadJobs response', { seq, current: __LOAD_JOBS_SEQ__ });
-        return [];
-      }
-      const jobs = normalizeJobsPayload(payload);
-      console.log('[CWF_TECH_JOBS_DEBUG] loadJobs success', { seq, rows: jobs.length, historyScope });
-      renderJobs(jobs);
-      return jobs;
-    })
+    .then((jobs) => renderJobs(jobs))
     .catch((err) => {
-      if (seq !== __LOAD_JOBS_SEQ__) return [];
-      console.error('[CWF_TECH_JOBS_DEBUG] loadJobs failed', err);
+      console.error(err);
       if (activeJobsEl) activeJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
-      if (activeUpcomingJobsEl) activeUpcomingJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
       if (historyJobsEl) historyJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
       renderProfile(0);
-      return [];
     });
 }
 
@@ -2313,62 +2281,30 @@ function todayYmdBkk(){
   return __DTF_BKK_YMD__.format(new Date());
 }
 
-var LS_HISTORY_FILTER = "cwf_tech_history_filter";
-var __HISTORY_FILTER__ = (()=>{
+const LS_HISTORY_FILTER = "cwf_tech_history_filter";
+let __HISTORY_FILTER__ = (()=>{
   try { return localStorage.getItem(LS_HISTORY_FILTER) || "month"; } catch(e){ return "month"; }
 })();
 
-function updateHistoryFilterUi(v){
-  const scope = (v === "day" || v === "all") ? v : "month";
-  if (historyTabDayEl) historyTabDayEl.classList.toggle("active", scope === "day");
-  if (historyTabMonthEl) historyTabMonthEl.classList.toggle("active", scope === "month");
-  if (historyTabAllEl) historyTabAllEl.classList.toggle("active", scope === "all");
-  if (historyFilterHintEl) {
-    historyFilterHintEl.textContent = scope === "day"
-      ? "แสดงงานที่ปิดแล้ว: วันนี้"
-      : scope === "month"
-        ? "แสดงงานที่ปิดแล้ว: เดือนนี้"
-        : "แสดงงานที่ปิดแล้ว: ทั้งหมด";
-  }
-}
-
-function setHistoryFilter(f, options = {}){
+function setHistoryFilter(f){
   const v = (f === "day" || f === "all") ? f : "month";
   __HISTORY_FILTER__ = v;
   try { localStorage.setItem(LS_HISTORY_FILTER, v); } catch(e) {}
-  updateHistoryFilterUi(v);
-
-  // ตอบสนองทันทีจาก cache ก่อน เพื่อให้ปุ่มไม่ค้าง
-  try { renderJobs(window.__JOB_CACHE__ || []); } catch(e) { console.warn('[CWF_TECH_JOBS_DEBUG] render cache failed', e); }
-
-  // แล้วค่อยโหลดข้อมูลตาม scope จริงจาก backend อีกครั้ง
-  if (!(options && options.skipLoad)) {
-    try { loadJobs({ historyScope: v, reason: 'history-filter' }); } catch(e) { console.warn('[CWF_TECH_JOBS_DEBUG] reload history failed', e); }
+  if (typeof historyTabDayEl !== "undefined" && historyTabDayEl) historyTabDayEl.classList.toggle("active", v === "day");
+  if (typeof historyTabMonthEl !== "undefined" && historyTabMonthEl) historyTabMonthEl.classList.toggle("active", v === "month");
+  if (typeof historyTabAllEl !== "undefined" && historyTabAllEl) historyTabAllEl.classList.toggle("active", v === "all");
+  if (typeof historyFilterHintEl !== "undefined" && historyFilterHintEl) {
+    historyFilterHintEl.textContent = (v === "day") ? "แสดงงานปิดแล้ว: วันนี้" : (v === "month") ? "แสดงงานปิดแล้ว: เดือนนี้" : "แสดงงานปิดแล้ว: ทั้งหมด";
   }
+  // re-render from cache (ไม่เรียก API ซ้ำ)
+  try { renderJobs(window.__JOB_CACHE__ || []); } catch(e) {}
 }
 window.setHistoryFilter = setHistoryFilter;
 
-function bindHistoryFilterButtons(){
-  const binds = [
-    [historyTabDayEl, 'day'],
-    [historyTabMonthEl, 'month'],
-    [historyTabAllEl, 'all'],
-  ];
-  binds.forEach(([el, scope]) => {
-    if (!el || el.dataset.cwfHistoryBound === '1') return;
-    el.dataset.cwfHistoryBound = '1';
-    el.addEventListener('click', (ev) => {
-      ev.preventDefault();
-      ev.stopPropagation();
-      setHistoryFilter(scope);
-    });
-  });
-  updateHistoryFilterUi(__HISTORY_FILTER__);
-}
-window.bindHistoryFilterButtons = bindHistoryFilterButtons;
-
-// init filter UI (ถ้ามีปุ่ม) — ห้ามเรียก loadJobs ซ้ำตอน bootstrap
-try { bindHistoryFilterButtons(); setHistoryFilter(__HISTORY_FILTER__, { skipLoad: true }); } catch(e) {}
+// init filter UI (ถ้ามีปุ่ม)
+try {
+  if (typeof historyTabDayEl !== "undefined" && historyTabDayEl) setHistoryFilter(__HISTORY_FILTER__);
+} catch(e) {}
 
 
 // =======================================
@@ -2567,25 +2503,25 @@ function renderJobs(jobs) {
     return aa - bb;
   });
 
-  const historyBase = jobs
-    .filter((j) => isDoneStatusValue(j.job_status) || !!j.finished_at || !!j.paid_at || isCancelStatusValue(j.job_status))
-    .sort((a,b)=>{
-      const at = new Date(a?.finished_at || a?.paid_at || a?.appointment_datetime || a?.created_at || 0).getTime() || 0;
-      const bt = new Date(b?.finished_at || b?.paid_at || b?.appointment_datetime || b?.created_at || 0).getTime() || 0;
-      return bt - at;
-    });
+  const historyBase = jobs.filter((j) => isDoneStatusValue(j.job_status) || isCancelStatusValue(j.job_status) || !!j.finished_at || !!j.paid_at);
   let historyAll = historyBase;
 
   // ✅ ฟิลเตอร์ประวัติ: วัน/เดือน/ทั้งหมด (อิง Asia/Bangkok)
-  // งานที่ปิดแล้วต้องอิง finished_at ก่อน ถ้าไม่มีค่อย fallback ไป paid_at/appointment_datetime
+  // งานที่ปิดแล้วต้องอิง finished_at ก่อน ถ้าไม่มีค่อย fallback ไป appointment_datetime
+  // กันเคสปิดงานวันนี้แต่นัดเมื่อวานแล้วประวัติหาย
   const monthKey = todayYMD.slice(0,7);
   if (__HISTORY_FILTER__ === "day") {
-    historyAll = historyBase.filter(j => jobHistoryYmd(j) === todayYMD);
+    historyAll = historyAll.filter(j => jobHistoryYmd(j) === todayYMD);
   } else if (__HISTORY_FILTER__ === "month") {
-    historyAll = historyBase.filter(j => {
+    historyAll = historyAll.filter(j => {
       const y = jobHistoryYmd(j);
       return y && y.slice(0,7) === monthKey;
     });
+  }
+  // ถ้าฟิลเตอร์วัน/เดือนทำให้ไม่เห็นงานปิดเลย แต่มีประวัติจริง ให้ fallback แสดงทั้งหมด
+  // เพื่อกันเคสวันที่ปิดงาน/วันที่นัดถูกบันทึกคนละรูปแบบในงานเก่า
+  if (!historyAll.length && historyBase.length && __HISTORY_FILTER__ !== "all") {
+    historyAll = historyBase;
   }
 
   const prioritizedActiveToday = [...activeToday].sort((a, b) => {
@@ -2633,7 +2569,7 @@ function renderJobs(jobs) {
 
   if (historyJobsEl) {
     if (!historyAll.length) {
-      historyJobsEl.innerHTML = `<p>ยังไม่มีงานที่ปิดแล้ว${__HISTORY_FILTER__ === "day" ? "วันนี้" : (__HISTORY_FILTER__ === "month" ? "ในเดือนนี้" : "")}</p>`;
+      historyJobsEl.innerHTML = "<p>ยังไม่มีงานที่ปิดแล้ว</p>";
     } else {
       historyAll.forEach((job) => historyJobsEl.appendChild(buildHistorySummary(job)));
     }
@@ -2642,7 +2578,7 @@ function renderJobs(jobs) {
 
   // โหลดรายได้ช่างแบบ async หลังใบงานแสดงแล้ว ใบงานจึงไม่ต้องรอ payout/rate engine
   try {
-    scheduleTechnicianIncomeSummaryLoad([...prioritizedActiveToday, ...filteredUpcoming], 'jobs');
+    scheduleTechnicianIncomeSummaryLoad([...prioritizedActiveToday, ...filteredUpcoming, ...historyAll], 'jobs');
   } catch (_) {}
 
   // 🔔 เตือนก่อนถึงเวลานัด 30 นาที (เฉพาะงานวันนี้)
