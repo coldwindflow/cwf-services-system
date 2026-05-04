@@ -9497,12 +9497,48 @@ app.get('/tech/payouts/:payout_id/slip', requireTechnicianSession, async (req, r
 // 🧑‍🔧 Payout Periods (Technician) - Phase 1
 // =======================================
 
+
+app.get('/tech/deposit_ledger', requireTechnicianSession, async (req, res) => {
+  try {
+    const tech = String(req.auth?.username || '').trim();
+    const summary = await _getDepositSummary(tech);
+    const limit = Math.min(Math.max(Number(req.query.limit || 100), 1), 300);
+    const q = await pool.query(
+      `SELECT ledger_id, technician_username, payout_id, transaction_type,
+              COALESCE(amount,0)::numeric AS amount, note, created_at, created_by, meta_json
+         FROM public.technician_deposit_ledger
+        WHERE technician_username=$1
+        ORDER BY created_at DESC, ledger_id DESC
+        LIMIT $2`,
+      [tech, limit]
+    );
+    return res.json({ ok: true, username: tech, summary, ledger: q.rows || [] });
+  } catch (e) {
+    console.error('GET /tech/deposit_ledger', e);
+    return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
+  }
+});
+
 app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
   try {
     const tech = String(req.auth?.username || '').trim();
 
-    // ✅ สร้างรายการงวด "เสมือน" ให้ช่างเห็นได้เลย (ไม่ต้องกดสร้างงวด)
-    const periods = _recentPeriods(6, _bkkNow());
+    // ✅ หน้าแอพช่างเลือกดูเป็นรายเดือน: โหลดแค่ 2 งวดของเดือนนั้น ลดความช้า
+    const qMonth = String(req.query.month || '').trim();
+    let periods;
+    if (/^\d{4}-\d{2}$/.test(qMonth)) {
+      const [yy, mm] = qMonth.split('-').map(Number);
+      const b25 = _periodBoundsForYm('25', yy, mm);
+      const b10 = _periodBoundsForYm('10', yy, mm);
+      periods = [
+        { ...b25, payout_id: `payout_${b25.label_ym}_25` },
+        { ...b10, payout_id: `payout_${b10.label_ym}_10` },
+      ];
+      periods.sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
+    } else {
+      // backward compatible สำหรับ client เก่า
+      periods = _recentPeriods(6, _bkkNow());
+    }
 
     const rows = [];
     for (const p of periods) {
@@ -16511,8 +16547,59 @@ app.get("/jobs/tech/:username", async (req, res) => {
   const { username } = req.params;
   try {
     const aliases = await _getTechnicianVisibilityAliases(username);
-    const r = await pool.query(
-      `
+    const historyLimit = Math.min(Math.max(Number(req.query.history_limit || 0), 0), 100);
+    const historyOffset = Math.max(Number(req.query.history_offset || 0), 0);
+    const historyWhere = `(
+      ${_sqlDonePredicate('j')}
+      OR COALESCE(j.job_status,'') ILIKE '%ยกเลิก%'
+      OR COALESCE(j.job_status,'') IN ('cancel','canceled','cancelled')
+      OR j.finished_at IS NOT NULL
+      OR j.paid_at IS NOT NULL
+      OR j.canceled_at IS NOT NULL
+    )`;
+
+    let sql;
+    let params;
+    if (historyLimit > 0) {
+      // Performance mode: ส่ง active/upcoming ทั้งหมด + ประวัติงานล่าสุดทีละหน้า
+      // ช่วยให้หน้าแอพช่างไม่ต้องโหลดประวัติเก่าทั้งหมดทุกครั้ง
+      sql = `
+        WITH visible AS (
+          SELECT
+            j.job_id, j.booking_code, j.booking_token, j.job_source, j.dispatch_mode,
+            j.customer_name, j.customer_phone, j.job_type, j.appointment_datetime,
+            j.job_status, j.job_price, j.paid_at, j.paid_by, j.payment_status, j.address_text,
+            j.gps_latitude, j.gps_longitude, j.air_type, j.air_quantity,
+            j.technician_team, j.technician_username, j.created_at,
+            j.maps_url, j.job_zone,
+            j.travel_started_at, j.started_at, j.finished_at, j.canceled_at, j.cancel_reason,
+            j.checkin_at,
+            j.technician_note, j.technician_note_at,
+            j.final_signature_path, j.final_signature_status, j.final_signature_at,
+            j.checkin_latitude, j.checkin_longitude,
+            ${historyWhere} AS is_history
+          FROM public.jobs j
+          WHERE ${_techVisibilityPredicateSql('$1')}
+        ), history_page AS (
+          SELECT job_id
+            FROM visible
+           WHERE is_history = TRUE
+           ORDER BY COALESCE(finished_at, paid_at, canceled_at, appointment_datetime, created_at) DESC NULLS LAST, job_id DESC
+           LIMIT $2 OFFSET $3
+        )
+        SELECT * FROM visible
+         WHERE is_history = FALSE
+            OR job_id IN (SELECT job_id FROM history_page)
+         ORDER BY
+           CASE WHEN is_history THEN 1 ELSE 0 END ASC,
+           CASE WHEN is_history THEN COALESCE(finished_at, paid_at, canceled_at, appointment_datetime, created_at) END DESC NULLS LAST,
+           CASE WHEN is_history THEN job_id END DESC,
+           CASE WHEN NOT is_history THEN appointment_datetime END ASC NULLS LAST,
+           CASE WHEN NOT is_history THEN job_id END ASC
+      `;
+      params = [aliases, historyLimit, historyOffset];
+    } else {
+      sql = `
       SELECT
         j.job_id, j.booking_code, j.booking_token, j.job_source, j.dispatch_mode,
         j.customer_name, j.customer_phone, j.job_type, j.appointment_datetime,
@@ -16528,16 +16615,20 @@ app.get("/jobs/tech/:username", async (req, res) => {
       FROM public.jobs j
       WHERE ${_techVisibilityPredicateSql('$1')}
       ORDER BY j.appointment_datetime ASC NULLS LAST, j.job_id ASC
-      `,
-      [aliases]
-    );
+      `;
+      params = [aliases];
+    }
+
+    const r = await pool.query(sql, params);
     // Performance: job visibility must be fast and independent from payout/rate calculation.
     // Income is loaded asynchronously by /tech/income-summary-batch after cards are already visible.
     const rows = (r.rows || []).map((row) => {
       const context = _techJobContextFromRow(row, 'current');
-      return { ...row, ..._techJobMoneyFallback(row, username, context) };
+      const clean = { ...row };
+      delete clean.is_history;
+      return { ...clean, ..._techJobMoneyFallback(row, username, context) };
     });
-    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows fast', { username, aliases, count: rows.length }); } catch {}
+    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows fast', { username, aliases, count: rows.length, historyLimit, historyOffset }); } catch {}
     res.json(rows);
   } catch (e) {
     console.error(e);

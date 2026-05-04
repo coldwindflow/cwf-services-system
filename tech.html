@@ -330,7 +330,9 @@
     .work-row:first-of-type{border-top:none;}
     .work-row span{font-size:13px;color:#0f172a;font-weight:900;}
     .work-row strong{font-size:13px;color:var(--tech-navy);}
-    .deposit-mini-card{display:none;margin-top:12px;border-radius:18px;border:1px solid rgba(245,158,11,.34);background:linear-gradient(180deg,#FFFBEB,#fff);padding:12px 14px;}
+    .deposit-mini-card{display:none;margin-top:12px;border-radius:18px;border:1px solid rgba(245,158,11,.34);background:linear-gradient(180deg,#FFFBEB,#fff);padding:12px 14px;cursor:pointer;transition:transform .16s ease, box-shadow .16s ease;position:relative;}
+    .deposit-mini-card:hover{transform:translateY(-1px);box-shadow:0 12px 28px rgba(11,46,109,.12);}
+    .deposit-mini-card:after{content:'›';position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:30px;font-weight:1000;color:#0B2E6D;opacity:.75;}
     .deposit-mini-card .deposit-head{display:flex;align-items:center;justify-content:space-between;gap:10px;}
     .deposit-mini-card b{color:var(--tech-navy);font-size:15px;}
     .deposit-mini-card .remain{font-size:24px;font-weight:1200;color:var(--tech-navy);margin-top:6px;}
@@ -352,6 +354,14 @@
     .payout-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;}
     .payout-actions .btn{width:100%;}
     .payout-line-list{margin-top:12px;}
+    .deposit-ledger-summary{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;}
+    .deposit-ledger-card{border-radius:18px;border:1px solid var(--tech-border);background:linear-gradient(180deg,#fff,#F8FBFF);padding:12px;}
+    .deposit-ledger-card b{display:block;font-size:18px;color:var(--tech-navy);margin-top:4px;}
+    .deposit-ledger-row{border-radius:18px;border:1px solid rgba(15,23,42,.10);background:#fff;padding:12px;margin-bottom:10px;}
+    .deposit-ledger-row .top{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;}
+    .deposit-ledger-row .amt{font-size:18px;font-weight:1200;color:#0B2E6D;}
+    .income-select{width:100%;min-height:48px;border-radius:16px;border:1px solid var(--tech-border);background:#fff;padding:0 14px;font-weight:1000;color:var(--tech-navy);}
+    .history-more-wrap{text-align:center;margin:12px 0 4px;}
     @media (max-width:420px){.payout-total-grid{grid-template-columns:1fr}.payout-kpi.net{grid-column:auto}.payout-actions{grid-template-columns:1fr}.payout-modal-backdrop{padding:0;align-items:flex-end}.payout-modal{border-radius:26px 26px 0 0;max-height:90vh}}
     details.tech-more summary{border-radius:16px;border:1px solid var(--tech-border);background:#fff;padding:12px 14px;font-weight:1000;color:var(--tech-navy)}
     .tech-more .moreBox{border-radius:18px;border:1px solid var(--tech-border);background:#fff;padding:12px;}
@@ -1576,7 +1586,7 @@
             <details class="work-more" id="incomeWorkSummaryDetails"></details>
           </div>
 
-          <div class="deposit-mini-card" id="incomeDepositRemainWrap">
+          <div class="deposit-mini-card" id="incomeDepositRemainWrap" role="button" tabindex="0" aria-label="ดูรายละเอียดเงินประกันงาน">
             <div class="deposit-head">
               <div>
                 <b>เงินประกันงานคงเหลือ</b>
@@ -1599,7 +1609,7 @@
           </div>
 
           <div class="income-toolbar">
-            <button class="btn" id="btnReloadIncomePeriods">รีเฟรชงวดเงิน</button>
+            <button class="btn" id="btnReloadIncomePeriods">รีเฟรชประวัติงวด</button>
             <button class="btn blue" id="btnReloadIncomeOverview">รีเฟรชภาพรวม</button>
           </div>
 
@@ -1608,9 +1618,12 @@
         <div class="card" style="margin-top:0">
           <div class="sectionTitle">
             <div>
-              <b>งวดเงินเดือน</b>
-              <div class="muted" style="margin-top:4px">เลือกงวดเพื่อดูรายละเอียด สลิป และบันทึก PDF</div>
+              <b>ประวัติงวดจ่ายเงิน</b>
+              <div class="muted" style="margin-top:4px">เลือกเดือนเพื่อดู 2 งวดปกติของเดือนนั้น ไม่โหลดทั้งหมดให้หน้าแอพช้า</div>
             </div>
+          </div>
+          <div style="margin-top:10px">
+            <select id="incomePayoutMonthSelect" class="income-select" aria-label="เลือกเดือนประวัติงวดจ่ายเงิน"></select>
           </div>
           <div id="techPayoutPeriods" style="margin-top:10px"></div>
         </div>
@@ -1637,6 +1650,22 @@
         </div>
         <div class="muted" id="techPayoutModalHint" style="margin-top:10px">สลิปจะเปิดหน้าใหม่ สามารถกดพิมพ์/บันทึกเป็น PDF ได้</div>
         <div id="techPayoutModalLines" class="payout-line-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="payout-modal-backdrop" id="depositLedgerModalBackdrop" onclick="if(event.target===this) window.closeDepositLedgerModal && window.closeDepositLedgerModal()">
+    <div class="payout-modal" role="dialog" aria-modal="true" aria-labelledby="depositLedgerModalTitle">
+      <div class="payout-modal-head">
+        <div>
+          <b id="depositLedgerModalTitle">รายละเอียดเงินประกันงาน</b>
+          <div class="sub" id="depositLedgerModalSub">ดูวันที่หัก ยอดหัก และงวดที่เกี่ยวข้อง</div>
+        </div>
+        <button class="payout-close" type="button" onclick="window.closeDepositLedgerModal && window.closeDepositLedgerModal()">×</button>
+      </div>
+      <div class="payout-modal-body">
+        <div id="depositLedgerSummary" class="deposit-ledger-summary"></div>
+        <div id="depositLedgerList"></div>
       </div>
     </div>
   </div>
@@ -1687,7 +1716,7 @@
     .tech-income-modal-backdrop{position:fixed;inset:0;z-index:9999;display:none;align-items:flex-end;justify-content:center;background:rgba(2,10,32,.52);backdrop-filter:blur(5px);padding:18px}.tech-income-modal-backdrop.show{display:flex}.tech-income-modal-card{width:min(560px,100%);max-height:84vh;overflow:auto;background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);border-radius:28px;padding:20px;box-shadow:0 30px 80px rgba(2,10,32,.35);position:relative;border:1px solid rgba(255,255,255,.75)}.tech-income-modal-close{position:absolute;right:14px;top:12px;width:38px;height:38px;border-radius:999px;border:1px solid rgba(15,23,42,.08);background:#fff;color:#0b2e6d;font-size:24px;font-weight:900;cursor:pointer}.tech-income-modal-title{font-size:25px;font-weight:1000;color:#08245b;padding-right:42px}.tech-income-modal-sub{margin-top:4px;color:#64748b;font-size:13px;font-weight:850}.tech-income-modal-summary{margin-top:16px;padding:16px;border-radius:22px;background:linear-gradient(135deg,#eaf4ff 0%,#fffdf0 100%);border:1px solid rgba(37,99,235,.14)}.tech-income-modal-summary .k{font-size:13px;color:#475569;font-weight:1000}.tech-income-modal-summary .v{font-size:34px;line-height:1.1;font-weight:1000;color:#08245b;margin-top:5px}.tech-income-modal-summary .s{font-size:12px;color:#64748b;font-weight:850;margin-top:5px}.tech-income-modal-list{margin-top:14px}.tech-income-modal-list-head{display:flex;justify-content:space-between;align-items:center;gap:10px;color:#0b2e6d;font-weight:1000;margin-bottom:6px}.tech-income-modal-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 0;border-top:1px solid rgba(15,23,42,.08)}.tech-income-modal-row-main{display:grid;gap:3px;min-width:0}.tech-income-modal-row-main b{color:#0f172a}.tech-income-modal-row-main span,.tech-income-modal-row-money small{font-size:12px;color:#64748b;font-weight:850}.tech-income-modal-row-money{text-align:right;display:grid;gap:3px;white-space:nowrap}.tech-income-modal-row-money strong{color:#08245b;font-size:16px}.tech-income-modal-note,.tech-income-modal-empty{margin-top:12px;padding:12px;border-radius:16px;background:#f8fafc;color:#64748b;font-size:13px;font-weight:850}.tech-income-modal-ok{width:100%;margin-top:16px;border:0;border-radius:18px;padding:13px 16px;background:linear-gradient(135deg,#0b2e6d,#1161d8);color:#fff;font-weight:1000;font-size:16px;cursor:pointer}
     @media(max-width:420px){.tech-income-chip{grid-template-columns:auto minmax(0,1fr) auto}.tech-income-chip-hint{display:none}.tech-income-chip-main strong{font-size:19px}.tech-income-modal-backdrop{padding:10px}.tech-income-modal-card{border-radius:24px;padding:18px}.tech-income-modal-summary .v{font-size:30px}.tech-income-modal-row{grid-template-columns:1fr}.tech-income-modal-row-money{text-align:left;white-space:normal}}
   </style>
-  <script src="app.js?v=tech-income-wording-v1-20260504"></script>
+  <script src="app.js?v=tech-income-ledger-history-v1-20260504"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
