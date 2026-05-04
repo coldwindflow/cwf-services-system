@@ -15943,6 +15943,74 @@ app.get("/admin/schedule_v2", requireAdminSoft, async (req, res) => {
   }
 });
 
+
+function _techJobMoneyFallback(row, username, context) {
+  const ctx = String(context || '').trim();
+  return {
+    customer_collect_amount: Number(row?.job_price || 0) || null,
+    customer_collect_label: ctx === 'history' ? 'ยอดที่ลูกค้าจ่าย' : 'ยอดเก็บลูกค้า',
+    technician_income_amount: null,
+    technician_income_label: ctx === 'offered' ? 'รายได้ช่างโดยประมาณ' : (ctx === 'history' ? 'รายได้ที่ได้รับ' : 'รายได้ช่างของคุณ'),
+    technician_income_source: 'loading',
+    technician_income_breakdown: { source: 'loading', rows: [], related_items: [] },
+    technician_income_rate_set_id: null,
+    technician_income_rate_set_version: null,
+  };
+}
+
+function _techJobContextFromRow(row, fallbackContext) {
+  const st = String(row?.job_status || '').trim().toLowerCase();
+  const doneWords = ['เสร็จแล้ว','เสร็จสิ้น','เสร็จสิ้นงาน','ปิดงาน','ปิดงานแล้ว','done','completed','closed','paid'];
+  const cancelWords = ['ยกเลิก','cancelled','canceled','cancel'];
+  if (doneWords.includes(st) || cancelWords.includes(st) || row?.finished_at || row?.paid_at) return 'history';
+  return fallbackContext || 'current';
+}
+
+function _sanitizeTechJobIds(input) {
+  const arr = Array.isArray(input) ? input : [];
+  const out = [];
+  const seen = new Set();
+  for (const raw of arr) {
+    const id = Number(raw);
+    if (!Number.isInteger(id) || id <= 0 || seen.has(id)) continue;
+    seen.add(id);
+    out.push(id);
+    if (out.length >= 60) break;
+  }
+  return out;
+}
+
+async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
+  const tech = String(username || '').trim();
+  const ids = _sanitizeTechJobIds(jobIds);
+  if (!tech || !ids.length) return [];
+  const r = await pool.query(
+    `
+    SELECT
+      j.job_id, j.booking_code, j.booking_token, j.job_source, j.dispatch_mode,
+      j.customer_name, j.customer_phone, j.job_type, j.appointment_datetime,
+      j.job_status, j.job_price, j.paid_at, j.paid_by, j.payment_status, j.address_text,
+      j.gps_latitude, j.gps_longitude, j.air_type, j.air_quantity,
+      j.technician_team, j.technician_username, j.created_at,
+      j.maps_url, j.job_zone,
+      j.travel_started_at, j.started_at, j.finished_at, j.canceled_at, j.cancel_reason,
+      j.checkin_at, j.technician_note, j.technician_note_at
+    FROM public.jobs j
+    WHERE j.job_id = ANY($2::int[])
+      AND (
+        EXISTS (SELECT 1 FROM public.job_assignments ja WHERE ja.job_id = j.job_id AND ja.technician_username = $1)
+        OR j.technician_team = $1
+        OR (',' || replace(COALESCE(j.technician_team,''),' ','') || ',') LIKE ('%,' || replace($1,' ','') || ',%')
+        OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id = j.job_id AND tm.username = $1)
+        OR (j.technician_username = $1 AND COALESCE(j.dispatch_mode,'') <> 'offer')
+      )
+    ORDER BY j.appointment_datetime ASC NULLS LAST, j.job_id ASC
+    `,
+    [tech, ids]
+  );
+  return r.rows || [];
+}
+
 // =======================================
 // 👨‍🔧 JOBS: technician sees only own jobs
 // =======================================
@@ -15976,7 +16044,7 @@ app.get("/jobs/tech/:username", async (req, res) => {
         AND ja.technician_username=$1
     )
     OR technician_team=$1
-    OR (',' || regexp_replace(COALESCE(technician_team,''), '\s+', '', 'g') || ',') ILIKE ('%,' || regexp_replace($1, '\s+', '', 'g') || ',%')
+    OR (',' || replace(COALESCE(technician_team,''),' ','') || ',') LIKE ('%,' || replace($1,' ','') || ',%')
     OR EXISTS (
       SELECT 1 FROM public.job_team_members tm
       WHERE tm.job_id = public.jobs.job_id AND tm.username=$1
@@ -15987,32 +16055,13 @@ ORDER BY appointment_datetime ASC NULLS LAST, job_id ASC
       `,
       [username]
     );
-    const rows = [];
-    for (const row of (r.rows || [])) {
-      const st = String(row.job_status || '').trim().toLowerCase();
-      const isDone = ['เสร็จแล้ว','เสร็จสิ้น','ปิดงาน','done','completed','closed','paid'].includes(st)
-        || st.includes('เสร็จ') || st.includes('ปิดงาน') || st.includes('completed') || st.includes('closed');
-      const paySt = String(row.payment_status || '').trim().toLowerCase();
-      const context = (isDone || row.finished_at || row.paid_at || paySt === 'paid' || paySt.includes('paid') || paySt.includes('ชำระ')) ? 'history' : 'current';
-      let money;
-      try {
-        money = await _buildTechnicianJobMoneySummary(row, username, { context });
-      } catch (e) {
-        try { console.warn('[tech_jobs] money summary failed but keeping job visible', { job_id: row.job_id, username, error: e.message }); } catch {}
-        money = {
-          customer_collect_amount: Number(row.job_price || 0) || null,
-          customer_collect_label: context === 'history' ? 'ยอดที่ลูกค้าจ่าย' : 'ยอดเก็บลูกค้า',
-          technician_income_amount: null,
-          technician_income_label: context === 'history' ? 'รายได้ที่ได้รับ' : 'รายได้ช่างของคุณ',
-          technician_income_source: 'unavailable',
-          technician_income_breakdown: { source: 'unavailable', rows: [], related_items: [] },
-          technician_income_rate_set_id: null,
-          technician_income_rate_set_version: null,
-        };
-      }
-      rows.push({ ...row, ...money });
-    }
-    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows', { username, count: rows.length }); } catch {}
+    // Performance: job visibility must be fast and independent from payout/rate calculation.
+    // Income is loaded asynchronously by /tech/income-summary-batch after cards are already visible.
+    const rows = (r.rows || []).map((row) => {
+      const context = _techJobContextFromRow(row, 'current');
+      return { ...row, ..._techJobMoneyFallback(row, username, context) };
+    });
+    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows fast', { username, count: rows.length }); } catch {}
     res.json(rows);
   } catch (e) {
     console.error(e);
@@ -17154,6 +17203,67 @@ async function autoFinalizeUrgentJobs() {
   }
 }
 
+app.post("/tech/income-summary-batch", async (req, res) => {
+  const username = String(req.body?.username || req.query?.username || '').trim();
+  const jobIds = _sanitizeTechJobIds(req.body?.job_ids || req.body?.jobIds || []);
+  if (!username) return res.status(400).json({ ok: false, error: "username_required" });
+  if (!jobIds.length) return res.json({ ok: true, items: {} });
+
+  try {
+    const visibleRows = await _loadTechnicianVisibleJobsByIds(username, jobIds);
+    const items = {};
+    for (const row of visibleRows) {
+      const context = _techJobContextFromRow(row, 'current');
+      try {
+        const money = await _buildTechnicianJobMoneySummary(row, username, { context });
+        items[String(row.job_id)] = {
+          job_id: row.job_id,
+          context,
+          status: money?.technician_income_amount == null ? 'unavailable' : 'ready',
+          technician_income_amount: money?.technician_income_amount ?? null,
+          technician_income_source: money?.technician_income_source || 'unavailable',
+          technician_income_rate_set_id: money?.technician_income_rate_set_id || null,
+          technician_income_rate_set_version: money?.technician_income_rate_set_version || null,
+        };
+      } catch (e) {
+        try { console.warn('[tech_income_batch] item failed', { username, job_id: row.job_id, error: e.message }); } catch {}
+        items[String(row.job_id)] = {
+          job_id: row.job_id,
+          context,
+          status: 'unavailable',
+          technician_income_amount: null,
+          technician_income_source: 'unavailable',
+          technician_income_rate_set_id: null,
+          technician_income_rate_set_version: null,
+        };
+      }
+    }
+    return res.json({ ok: true, items });
+  } catch (e) {
+    console.error('POST /tech/income-summary-batch error:', e);
+    return res.status(500).json({ ok: false, error: "โหลดรายได้ช่างไม่สำเร็จ" });
+  }
+});
+
+app.get("/tech/jobs/:job_id/income-detail", async (req, res) => {
+  const jobId = Number(req.params.job_id);
+  const username = String(req.query?.username || req.body?.username || '').trim();
+  if (!Number.isInteger(jobId) || jobId <= 0) return res.status(400).json({ ok: false, error: "invalid_job_id" });
+  if (!username) return res.status(400).json({ ok: false, error: "username_required" });
+
+  try {
+    const visibleRows = await _loadTechnicianVisibleJobsByIds(username, [jobId]);
+    const row = visibleRows[0];
+    if (!row) return res.status(404).json({ ok: false, error: "job_not_found" });
+    const context = _techJobContextFromRow(row, 'current');
+    const money = await _buildTechnicianJobMoneySummary(row, username, { context });
+    return res.json({ ok: true, job_id: jobId, context, ...money });
+  } catch (e) {
+    console.error('GET /tech/jobs/:job_id/income-detail error:', e);
+    return res.status(500).json({ ok: false, error: "โหลดรายละเอียดรายได้ช่างไม่สำเร็จ" });
+  }
+});
+
 app.get("/offers/tech/:username", async (req, res) => {
   const { username } = req.params;
 
@@ -17187,27 +17297,9 @@ app.get("/offers/tech/:username", async (req, res) => {
       [username]
     );
 
-    const rows = [];
-    for (const row of (r.rows || [])) {
-      let money;
-      try {
-        money = await _buildTechnicianJobMoneySummary(row, username, { context: 'offered' });
-      } catch (e) {
-        try { console.warn('[tech_offers] money summary failed but keeping offer visible', { job_id: row.job_id, username, error: e.message }); } catch {}
-        money = {
-          customer_collect_amount: Number(row.job_price || 0) || null,
-          customer_collect_label: 'ยอดเก็บลูกค้า',
-          technician_income_amount: null,
-          technician_income_label: 'รายได้ช่างโดยประมาณ',
-          technician_income_source: 'unavailable',
-          technician_income_breakdown: { source: 'unavailable', rows: [], related_items: [] },
-          technician_income_rate_set_id: null,
-          technician_income_rate_set_version: null,
-        };
-      }
-      rows.push({ ...row, ...money });
-    }
-    try { console.log('[CWF_TECH_JOBS_DEBUG] api offers', { username, count: rows.length }); } catch {}
+    // Performance: do not block offered job visibility on income calculation.
+    const rows = (r.rows || []).map((row) => ({ ...row, ..._techJobMoneyFallback(row, username, 'offered') }));
+    try { console.log('[CWF_TECH_JOBS_DEBUG] api offers fast', { username, count: rows.length }); } catch {}
     res.json(rows);
   } catch (e) {
     console.error(e);

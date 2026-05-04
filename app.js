@@ -1031,6 +1031,31 @@ function _techMoneyAmountText(value, fallbackText) {
   return txt || fallbackText;
 }
 const __techIncomeModalJobStore = new Map();
+const __techIncomeSummaryCache = new Map();
+const __techIncomeDetailCache = new Map();
+const __techIncomeBatchPending = new Set();
+
+function _jobIdOf(job) {
+  const id = Number(job?.job_id);
+  return Number.isFinite(id) && id > 0 ? String(Math.trunc(id)) : '';
+}
+function _incomeFetchUsername() {
+  try { return String(username || _bestEffortUsername() || '').trim(); } catch { return _bestEffortUsername(); }
+}
+function _hasIncomeAmount(job) {
+  const n = Number(job?.technician_income_amount);
+  return Number.isFinite(n);
+}
+function _mergeTechIncomeIntoJob(job, income) {
+  if (!job || !income) return job;
+  const next = { ...(job || {}) };
+  if (Object.prototype.hasOwnProperty.call(income, 'technician_income_amount')) next.technician_income_amount = income.technician_income_amount;
+  if (income.technician_income_source) next.technician_income_source = income.technician_income_source;
+  if (income.technician_income_rate_set_id !== undefined) next.technician_income_rate_set_id = income.technician_income_rate_set_id;
+  if (income.technician_income_rate_set_version !== undefined) next.technician_income_rate_set_version = income.technician_income_rate_set_version;
+  if (income.technician_income_breakdown) next.technician_income_breakdown = income.technician_income_breakdown;
+  return next;
+}
 function _techIncomeCardKey(job, context) {
   const raw = job?.job_id ?? job?.offer_id ?? job?.booking_code ?? Math.random().toString(36).slice(2);
   return `${String(context || 'current')}-${String(raw).replace(/[^a-zA-Z0-9_-]/g, '')}`;
@@ -1038,29 +1063,34 @@ function _techIncomeCardKey(job, context) {
 function renderTechnicianMoneySummary(job, context) {
   try {
     const ctx = String(context || 'current');
-    const key = _techIncomeCardKey(job, ctx);
-    __techIncomeModalJobStore.set(key, { ...(job || {}), __incomeContext: ctx });
+    const jobId = _jobIdOf(job);
+    const cached = jobId && __techIncomeSummaryCache.has(jobId) ? __techIncomeSummaryCache.get(jobId) : null;
+    const displayJob = cached ? _mergeTechIncomeIntoJob(job, cached) : job;
+    const key = _techIncomeCardKey(displayJob, ctx);
+    __techIncomeModalJobStore.set(key, { ...(displayJob || {}), __incomeContext: ctx, __incomeKey: key });
     const label = ctx === 'offered'
       ? 'รายได้โดยประมาณ'
       : (ctx === 'history' ? 'ได้รับ' : 'รายได้ช่าง');
     const helper = ctx === 'offered'
       ? 'แตะดูรายละเอียดเรทงานนี้'
       : (ctx === 'history' ? 'แตะดูรายละเอียดรายได้' : 'แตะดูรายละเอียดรายได้');
-    const amount = _techMoneyAmountText(job?.technician_income_amount, 'รอคำนวณรายได้');
-    const unavailable = !formatBahtText(job?.technician_income_amount);
+    const hasAmount = _hasIncomeAmount(displayJob);
+    const isLoading = !hasAmount && String(displayJob?.technician_income_source || '') === 'loading';
+    const amount = hasAmount ? _techMoneyAmountText(displayJob?.technician_income_amount, 'รอคำนวณรายได้') : (isLoading ? 'กำลังคำนวณ…' : 'รอตรวจสอบรายได้');
+    const pendingClass = hasAmount ? '' : 'is-pending';
     return `
-      <button type="button" class="tech-income-chip ${unavailable ? 'is-pending' : ''}" onclick="openTechnicianIncomeModal('${escapeHTML(key)}')" aria-label="ดูรายละเอียดรายได้ช่าง">
+      <button type="button" class="tech-income-chip ${pendingClass}" data-tech-income-chip="${escapeAttr(key)}" data-job-id="${escapeAttr(jobId)}" data-income-context="${escapeAttr(ctx)}" onclick="openTechnicianIncomeModal('${escapeHTML(key)}')" aria-label="ดูรายละเอียดรายได้ช่าง">
         <span class="tech-income-chip-icon">💰</span>
         <span class="tech-income-chip-main">
           <span class="tech-income-chip-label">${escapeHTML(label)}</span>
-          <strong>${escapeHTML(amount)}</strong>
+          <strong data-income-amount>${escapeHTML(amount)}</strong>
         </span>
         <span class="tech-income-chip-hint">${escapeHTML(helper)}</span>
         <span class="tech-income-chip-arrow">›</span>
       </button>
     `;
   } catch (e) {
-    return `<div class="tech-income-chip is-pending"><span class="tech-income-chip-icon">💰</span><span class="tech-income-chip-main"><span class="tech-income-chip-label">รายได้ช่าง</span><strong>รอคำนวณรายได้</strong></span></div>`;
+    return `<div class="tech-income-chip is-pending"><span class="tech-income-chip-icon">💰</span><span class="tech-income-chip-main"><span class="tech-income-chip-label">รายได้ช่าง</span><strong>กำลังคำนวณ…</strong></span></div>`;
   }
 }
 function _renderTechnicianIncomeBreakdownContent(job) {
@@ -1140,10 +1170,44 @@ function ensureTechnicianIncomeModal() {
 function openTechnicianIncomeModal(key) {
   const modal = ensureTechnicianIncomeModal();
   const body = document.getElementById('tech-income-modal-body');
-  const job = __techIncomeModalJobStore.get(String(key || '')) || {};
-  if (body) body.innerHTML = _renderTechnicianIncomeBreakdownContent(job);
+  const storeKey = String(key || '');
+  const job = __techIncomeModalJobStore.get(storeKey) || {};
+  const jobId = _jobIdOf(job);
   modal.classList.add('show');
   try { document.body.style.overflow = 'hidden'; } catch {}
+
+  if (!body) return;
+  const cachedDetail = jobId && __techIncomeDetailCache.has(jobId) ? __techIncomeDetailCache.get(jobId) : null;
+  if (cachedDetail) {
+    const merged = _mergeTechIncomeIntoJob(job, cachedDetail);
+    __techIncomeModalJobStore.set(storeKey, merged);
+    body.innerHTML = _renderTechnicianIncomeBreakdownContent(merged);
+    return;
+  }
+
+  const hasRows = Array.isArray(job?.technician_income_breakdown?.rows) && job.technician_income_breakdown.rows.length;
+  if (hasRows) {
+    body.innerHTML = _renderTechnicianIncomeBreakdownContent(job);
+    return;
+  }
+
+  body.innerHTML = `
+    <div class="tech-income-modal-summary">
+      <div class="k">รายได้ช่างของคุณ</div>
+      <div class="v">${escapeHTML(_techMoneyAmountText(job?.technician_income_amount, 'กำลังโหลด…'))}</div>
+      <div class="s">กำลังโหลดรายละเอียดรายได้ โดยไม่บล็อกใบงาน</div>
+    </div>
+    <div class="tech-income-modal-empty">กำลังโหลดรายละเอียดรายได้ช่าง…</div>
+  `;
+
+  if (!jobId) {
+    body.innerHTML = _renderTechnicianIncomeBreakdownContent(job);
+    return;
+  }
+
+  fetchTechnicianIncomeDetail(jobId, storeKey).catch(() => {
+    if (body) body.innerHTML = _renderTechnicianIncomeBreakdownContent(job);
+  });
 }
 function closeTechnicianIncomeModal() {
   const modal = document.getElementById('tech-income-modal');
@@ -1927,6 +1991,99 @@ window.addEventListener("focus", () => {
   try { loadIncomeSummary(); } catch(e) {}
   try { loadIncomeOverview(); } catch(e) {}
 });
+
+function _updateIncomeChipDom(jobId, income) {
+  const id = String(jobId || '');
+  if (!id) return;
+  const chips = document.querySelectorAll(`[data-tech-income-chip][data-job-id="${cssEscapeCompat(id)}"]`);
+  const hasAmount = _hasIncomeAmount(income);
+  const amountText = hasAmount ? _techMoneyAmountText(income.technician_income_amount, 'รอตรวจสอบรายได้') : 'รอตรวจสอบรายได้';
+  chips.forEach((chip) => {
+    try {
+      chip.classList.toggle('is-pending', !hasAmount);
+      const amountEl = chip.querySelector('[data-income-amount]');
+      if (amountEl) amountEl.textContent = amountText;
+      const key = chip.getAttribute('data-tech-income-chip') || '';
+      const oldJob = __techIncomeModalJobStore.get(key) || { job_id: id };
+      __techIncomeModalJobStore.set(key, _mergeTechIncomeIntoJob(oldJob, income));
+    } catch (_) {}
+  });
+}
+
+function scheduleTechnicianIncomeSummaryLoad(jobs, context) {
+  const list = Array.isArray(jobs) ? jobs : [];
+  const ids = [];
+  for (const job of list) {
+    const id = _jobIdOf(job);
+    if (!id) continue;
+    if (__techIncomeSummaryCache.has(id)) {
+      _updateIncomeChipDom(id, __techIncomeSummaryCache.get(id));
+      continue;
+    }
+    if (_hasIncomeAmount(job)) {
+      __techIncomeSummaryCache.set(id, {
+        job_id: Number(id),
+        technician_income_amount: job.technician_income_amount,
+        technician_income_source: job.technician_income_source || 'preloaded',
+        technician_income_rate_set_id: job.technician_income_rate_set_id || null,
+        technician_income_rate_set_version: job.technician_income_rate_set_version || null,
+      });
+      continue;
+    }
+    if (!__techIncomeBatchPending.has(id)) ids.push(id);
+  }
+  if (!ids.length) return;
+  ids.forEach((id) => __techIncomeBatchPending.add(id));
+  window.setTimeout(() => fetchTechnicianIncomeSummaryBatch(ids, context), 0);
+}
+
+async function fetchTechnicianIncomeSummaryBatch(ids, context) {
+  const unique = [...new Set((ids || []).map((x) => Number(x)).filter((x) => Number.isFinite(x) && x > 0))].slice(0, 60);
+  if (!unique.length) return;
+  try {
+    const res = await fetch(`${API_BASE}/tech/income-summary-batch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      cache: 'no-store',
+      body: JSON.stringify({ username: _incomeFetchUsername(), job_ids: unique, context: context || 'current' }),
+    });
+    const data = await res.json().catch(() => ({}));
+    const items = data && data.items ? data.items : {};
+    for (const id of unique) {
+      const item = items[String(id)] || { job_id: id, technician_income_amount: null, technician_income_source: 'unavailable' };
+      __techIncomeSummaryCache.set(String(id), item);
+      _updateIncomeChipDom(String(id), item);
+    }
+  } catch (e) {
+    try { console.warn('[CWF_TECH_JOBS_DEBUG] income batch failed', e?.message || e); } catch (_) {}
+    unique.forEach((id) => _updateIncomeChipDom(String(id), { job_id: id, technician_income_amount: null, technician_income_source: 'unavailable' }));
+  } finally {
+    unique.forEach((id) => __techIncomeBatchPending.delete(String(id)));
+  }
+}
+
+async function fetchTechnicianIncomeDetail(jobId, storeKey) {
+  const id = String(jobId || '');
+  if (!id) return null;
+  if (__techIncomeDetailCache.has(id)) return __techIncomeDetailCache.get(id);
+  const res = await fetch(`${API_BASE}/tech/jobs/${encodeURIComponent(id)}/income-detail?username=${encodeURIComponent(_incomeFetchUsername())}`, { cache: 'no-store' });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok || !data || data.ok === false) throw new Error(data.error || 'income detail failed');
+  __techIncomeDetailCache.set(id, data);
+  __techIncomeSummaryCache.set(id, data);
+  _updateIncomeChipDom(id, data);
+  const key = String(storeKey || '');
+  if (key) {
+    const oldJob = __techIncomeModalJobStore.get(key) || { job_id: id };
+    const merged = _mergeTechIncomeIntoJob(oldJob, data);
+    __techIncomeModalJobStore.set(key, merged);
+    const body = document.getElementById('tech-income-modal-body');
+    const modal = document.getElementById('tech-income-modal');
+    if (body && modal && modal.classList.contains('show')) body.innerHTML = _renderTechnicianIncomeBreakdownContent(merged);
+  }
+  return data;
+}
+
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     try { loadJobs(); } catch(e) {}
@@ -1962,6 +2119,7 @@ function loadOffers() {
       }
 
       renderOffers(list);
+      scheduleTechnicianIncomeSummaryLoad(list, 'offered');
     })
     .catch((err) => {
       console.error(err);
@@ -2087,51 +2245,23 @@ function normStatusKey(s) {
 }
 function isDoneStatusValue(s) {
   const v = normStatusKey(s);
-  if (!v) return false;
-  // Robust production history detector: DB can contain Thai variants such as
-  // "เสร็จสิ้นงาน", "ปิดงานแล้ว", or English variants from older code.
-  return ["เสร็จแล้ว","เสร็จสิ้น","ปิดงาน","done","completed","complete","closed","paid"].includes(v)
-    || v.includes("เสร็จ")
-    || v.includes("ปิดงาน")
-    || v.includes("completed")
-    || v.includes("closed");
+  return ["เสร็จแล้ว","เสร็จสิ้น","เสร็จสิ้นงาน","ปิดงาน","ปิดงานแล้ว","done","completed","closed","paid"].includes(v) || v.includes("เสร็จ") || v.includes("ปิดงาน");
 }
 function isCancelStatusValue(s) {
   const v = normStatusKey(s);
-  return ["ยกเลิก","cancelled","canceled","cancel"].includes(v) || v.includes("ยกเลิก") || v.includes("cancel");
-}
-function hasCompletionSignal(job) {
-  if (!job || typeof job !== 'object') return false;
-  if (job.finished_at || job.completed_at || job.closed_at) return true;
-  const pay = normStatusKey(job.payment_status);
-  if (job.paid_at || pay === 'paid' || pay === 'ชำระแล้ว' || pay.includes('paid') || pay.includes('ชำระ')) return true;
-  return false;
-}
-function isHistoryJob(job) {
-  return isDoneStatusValue(job?.job_status) || isCancelStatusValue(job?.job_status) || hasCompletionSignal(job);
-}
-function isActiveJob(job) {
-  if (!job || typeof job !== 'object') return false;
-  if (isHistoryJob(job)) return false;
-  const v = normStatusKey(job.job_status);
-  if (!v) return true; // keep assigned job visible instead of hiding it when status is blank
-  return [
-    "รอดำเนินการ","กำลังทำ","ตีกลับ","รอช่างยืนยัน","งานแก้ไข","รับงานแล้ว",
-    "accepted","assigned","pending","in_progress","in progress","working","started","on_the_way"
-  ].includes(v) || v.includes("รอดำเนิน") || v.includes("กำลัง") || v.includes("แก้ไข") || v.includes("รับงาน") || v.includes("pending") || v.includes("progress");
+  return ["ยกเลิก","cancelled","canceled","cancel"].includes(v) || v.includes("ยกเลิก");
 }
 function isActiveStatusValue(s) {
-  // Backward compatible wrapper for old call sites.
   const v = normStatusKey(s);
-  if (!v) return true;
-  return !isDoneStatusValue(v) && !isCancelStatusValue(v) && (
-    ["รอดำเนินการ","กำลังทำ","ตีกลับ","รอช่างยืนยัน","งานแก้ไข","รับงานแล้ว","accepted","assigned","pending","in_progress","in progress","working","started","on_the_way"].includes(v)
-    || v.includes("รอดำเนิน") || v.includes("กำลัง") || v.includes("แก้ไข") || v.includes("รับงาน") || v.includes("pending") || v.includes("progress")
-  );
+  if (!v) return false;
+  if (isDoneStatusValue(v) || isCancelStatusValue(v)) return false;
+  return [
+    "รอดำเนินการ","กำลังทำ","ตีกลับ","รอช่างยืนยัน","งานแก้ไข","รับงานแล้ว",
+    "accepted","assigned","pending","in_progress","in progress","working","started"
+  ].includes(v) || v.includes("รอดำเนิน") || v.includes("กำลัง") || v.includes("แก้ไข");
 }
 function jobHistoryYmd(job) {
   // ประวัติงานต้องอิงวันปิดงานก่อน ไม่ใช่วันนัดอย่างเดียว
-  // paid_at เป็น fallback สำคัญสำหรับงานเก่าที่ปิด/จ่ายแล้วแต่ไม่มี finished_at
   return ymdBkkFromISO(job?.finished_at || job?.completed_at || job?.closed_at || job?.paid_at || job?.appointment_datetime);
 }
 
@@ -2354,7 +2484,7 @@ function renderJobs(jobs) {
 
   const todayYMD = todayYmdBkk();
 
-  const activeAll = jobs.filter((j) => isActiveJob(j));
+  const activeAll = jobs.filter((j) => isActiveStatusValue(j.job_status));
   // งานปัจจุบัน = งาน active ทั้ง "วันนี้" และงานค้างจากวันก่อนหน้า
   // โดยเฉพาะงาน "งานแก้ไข" ที่ถูก return_for_fix_v2 หลังวันนัดเดิมผ่านไปแล้ว
   // ต้องยังเห็นใน current/active flow ของช่าง ไม่งั้นงานจะหายจากหน้าจอ
@@ -2372,26 +2502,25 @@ function renderJobs(jobs) {
     return aa - bb;
   });
 
-  const historyBase = jobs.filter((j) => isHistoryJob(j));
-  let historyAll = [...historyBase];
-  let historyFilterFallback = false;
+  const historyBase = jobs.filter((j) => isDoneStatusValue(j.job_status) || isCancelStatusValue(j.job_status) || !!j.finished_at || !!j.paid_at);
+  let historyAll = historyBase;
 
   // ✅ ฟิลเตอร์ประวัติ: วัน/เดือน/ทั้งหมด (อิง Asia/Bangkok)
-  // งานที่ปิดแล้วต้องอิง finished_at ก่อน ไม่ใช่วันนัดอย่างเดียว
-  // Production safety: ถ้าตัวกรองวัน/เดือนทำให้ว่าง แต่ยังมีประวัติจริงใน payload
-  // ให้แสดงทั้งหมดแทน ดีกว่าทำให้ช่างเข้าใจว่างานหายจากระบบ
+  // งานที่ปิดแล้วต้องอิง finished_at ก่อน ถ้าไม่มีค่อย fallback ไป appointment_datetime
+  // กันเคสปิดงานวันนี้แต่นัดเมื่อวานแล้วประวัติหาย
   const monthKey = todayYMD.slice(0,7);
   if (__HISTORY_FILTER__ === "day") {
-    historyAll = historyBase.filter(j => jobHistoryYmd(j) === todayYMD);
+    historyAll = historyAll.filter(j => jobHistoryYmd(j) === todayYMD);
   } else if (__HISTORY_FILTER__ === "month") {
-    historyAll = historyBase.filter(j => {
+    historyAll = historyAll.filter(j => {
       const y = jobHistoryYmd(j);
       return y && y.slice(0,7) === monthKey;
     });
   }
+  // ถ้าฟิลเตอร์วัน/เดือนทำให้ไม่เห็นงานปิดเลย แต่มีประวัติจริง ให้ fallback แสดงทั้งหมด
+  // เพื่อกันเคสวันที่ปิดงาน/วันที่นัดถูกบันทึกคนละรูปแบบในงานเก่า
   if (!historyAll.length && historyBase.length && __HISTORY_FILTER__ !== "all") {
-    historyAll = [...historyBase];
-    historyFilterFallback = true;
+    historyAll = historyBase;
   }
 
   const prioritizedActiveToday = [...activeToday].sort((a, b) => {
@@ -2441,16 +2570,15 @@ function renderJobs(jobs) {
     if (!historyAll.length) {
       historyJobsEl.innerHTML = "<p>ยังไม่มีงานที่ปิดแล้ว</p>";
     } else {
-      if (historyFilterFallback) {
-        const hint = document.createElement('div');
-        hint.className = 'muted';
-        hint.style.margin = '0 0 10px';
-        hint.textContent = 'ไม่พบงานตามตัวกรองที่เลือก จึงแสดงประวัติทั้งหมดให้แทน';
-        historyJobsEl.appendChild(hint);
-      }
       historyAll.forEach((job) => historyJobsEl.appendChild(buildHistorySummary(job)));
     }
   }
+
+
+  // โหลดรายได้ช่างแบบ async หลังใบงานแสดงแล้ว ใบงานจึงไม่ต้องรอ payout/rate engine
+  try {
+    scheduleTechnicianIncomeSummaryLoad([...prioritizedActiveToday, ...filteredUpcoming, ...historyAll], 'jobs');
+  } catch (_) {}
 
   // 🔔 เตือนก่อนถึงเวลานัด 30 นาที (เฉพาะงานวันนี้)
   try {
