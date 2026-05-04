@@ -16,6 +16,13 @@ const historyFilterHintEl = document.getElementById("history-filter-hint");
 
 const ACTIVE_UPCOMING_FILTER_KEY = "cwf_tech_upcoming_filter";
 let __ACTIVE_UPCOMING_FILTER__ = "";
+
+// ✅ ประวัติงาน: โหลดแบบแบ่งหน้าเพื่อให้แอพช่างไม่ค้าง
+// ต้องประกาศไว้ต้นไฟล์ก่อน loadJobs() ถูกเรียก ไม่งั้น PWA จะ error แล้วงานไม่โหลด
+const HISTORY_PAGE_SIZE = 20;
+let __HISTORY_LOADED_COUNT__ = 0;
+let __HISTORY_CAN_LOAD_MORE__ = true;
+let __HISTORY_LOADING_MORE__ = false;
 // =======================================
 // 🔧 CONFIG
 // =======================================
@@ -2372,9 +2379,15 @@ function loadJobs(opts = {}) {
     })
     .catch((err) => {
       console.error(err);
-      if (activeJobsEl) activeJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
-      if (historyJobsEl) historyJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
-      renderProfile(0);
+      if (!appendHistory) {
+        if (activeJobsEl) activeJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
+        if (activeUpcomingJobsEl) activeUpcomingJobsEl.innerHTML = "<p>❌ โหลดงานล่วงหน้าไม่สำเร็จ</p>";
+        if (historyJobsEl) historyJobsEl.innerHTML = "<p>❌ โหลดประวัติงานไม่สำเร็จ</p>";
+        renderProfile(0);
+      } else {
+        const btn = document.getElementById('btnLoadMoreHistory');
+        if (btn) { btn.disabled = false; btn.textContent = `ดูเพิ่มอีก ${HISTORY_PAGE_SIZE} งาน`; }
+      }
     });
 }
 
@@ -2460,11 +2473,6 @@ const LS_HISTORY_FILTER = "cwf_tech_history_filter";
 let __HISTORY_FILTER__ = (()=>{
   try { return localStorage.getItem(LS_HISTORY_FILTER) || "month"; } catch(e){ return "month"; }
 })();
-
-const HISTORY_PAGE_SIZE = 20;
-let __HISTORY_LOADED_COUNT__ = 0;
-let __HISTORY_CAN_LOAD_MORE__ = true;
-let __HISTORY_LOADING_MORE__ = false;
 
 function _jobIsHistoryClient(job){
   return isDoneStatusValue(job?.job_status) || isCancelStatusValue(job?.job_status) || !!job?.finished_at || !!job?.paid_at;
