@@ -55,8 +55,10 @@
     .template-editor textarea{width:100%;min-height:360px;font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;line-height:1.55;font-weight:800}
     .placeholder-grid{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
     .placeholder-chip{border:1px solid rgba(11,75,179,.18);background:#f8fbff;color:#061b49;border-radius:999px;padding:6px 9px;font-size:12px;font-weight:1000;cursor:pointer}
-    .placeholder-chip.required{background:linear-gradient(135deg,#fff1b8,#fff9df);border-color:rgba(244,196,0,.65);color:#5b4200}
-    .template-status{margin-top:10px;border-radius:16px;padding:10px 12px;font-weight:900;line-height:1.45}.template-status.ok{background:#ecfdf3;border:1px solid rgba(22,163,74,.22);color:#14532d}.template-status.warn{background:#fff7ed;border:1px solid rgba(245,158,11,.35);color:#7c2d12}
+    .placeholder-chip.required{background:linear-gradient(135deg,#ffe15a,#fff7cf);border-color:rgba(244,196,0,.7);box-shadow:0 6px 14px rgba(244,196,0,.18)}
+    .template-status{border-radius:16px;padding:10px 12px;margin-top:10px;font-weight:1000;line-height:1.45}
+    .template-status.ok{background:#eafaf1;border:1px solid rgba(34,197,94,.25);color:#065f46}
+    .template-status.warn{background:#fff7ed;border:1px solid rgba(245,158,11,.35);color:#7c2d12}
     .template-preview{white-space:pre-wrap;background:linear-gradient(180deg,#f8fbff,#fff);border:1px solid rgba(11,75,179,.16);border-radius:18px;padding:12px;min-height:360px;box-shadow:inset 0 0 0 1px rgba(255,255,255,.7);font-weight:800;color:#0f172a}
     .template-note{border-radius:18px;background:linear-gradient(135deg,#fff8d6,#fff);border:1px solid rgba(244,196,0,.4);padding:10px;font-weight:900;color:#5b4200}
     @media(max-width:920px){.message-template-box{grid-template-columns:1fr}.template-preview{min-height:220px}.template-editor textarea{min-height:300px}}
@@ -382,23 +384,22 @@
               <button class="btn yellow" id="btnSaveCustomerMsg" type="button">บันทึกข้อความ</button>
             </div>
           </div>
-          <div class="template-note" style="margin-top:10px">
-            แก้ได้เฉพาะข้อความ/คำพูดรอบ ๆ ตัวแปร ส่วนข้อมูลที่ระบบต้องเติมให้อัตโนมัติ เช่น เลขงาน วันนัด รายการบริการ และยอดเงิน ให้คงตัวแปรรูปแบบ <b>{{booking_code}}</b> ไว้ ห้ามลบตัวแปรจำเป็นออก
-          </div>
-          <div id="customerMsgStatus" class="template-status ok">กำลังโหลดข้อความปัจจุบัน...</div>
+          <div class="template-note" style="margin-top:10px">แก้ได้เฉพาะข้อความ/คำพูดรอบ ๆ ตัวแปร ส่วนข้อมูลที่ระบบต้องเติมให้อัตโนมัติ เช่น เลขงาน วันนัด รายการบริการ และยอดเงิน ให้คงตัวแปรรูปแบบ {{booking_code}} ไว้ ห้ามลบตัวแปรจำเป็นออก</div>
+          <div id="customerMsgLoadState" class="template-status ok">ระบบจะแสดงข้อความปัจจุบัน/ค่าเริ่มต้นให้แก้ไขที่นี่</div>
           <div class="message-template-box">
             <div class="template-editor">
-              <label><b>ข้อความปัจจุบันที่แอดมินคัดลอกส่งลูกค้า</b></label>
+              <label><b>ข้อความที่ต้องการให้แอดมินคัดลอกส่งลูกค้า</b></label>
               <textarea id="customerMsgTemplate" placeholder="ระบบจะแสดงข้อความปัจจุบัน/ค่าเริ่มต้นให้แก้ไขที่นี่"></textarea>
+              <div id="customerMsgStatus" class="template-status ok">กำลังตรวจสอบตัวแปรจำเป็น...</div>
               <div class="row" style="margin-top:8px">
                 <button class="btn gray" id="btnPreviewCustomerMsg" type="button">ดูตัวอย่าง</button>
                 <button class="btn gray" id="btnResetCustomerMsg" type="button">คืนค่าเริ่มต้น</button>
               </div>
-              <div class="muted" style="margin-top:10px">คลิกตัวแปรเพื่อแทรกในข้อความ ป้ายสีเหลืองคือ “ตัวแปรจำเป็น” ที่ระบบต้องใช้เติมข้อมูลอัตโนมัติ</div>
+              <div class="muted" style="margin-top:10px">คลิกตัวแปรเพื่อแทรกในข้อความ</div>
               <div id="customerMsgPlaceholders" class="placeholder-grid"></div>
             </div>
             <div>
-              <label><b>ตัวอย่างข้อความหลังระบบแทนข้อมูลจริง</b></label>
+              <label><b>ตัวอย่างข้อความหลังแทนข้อมูลจริง</b></label>
               <div id="customerMsgPreview" class="template-preview">กด “ดูตัวอย่าง” เพื่อดูผลลัพธ์</div>
             </div>
           </div>
@@ -436,6 +437,6 @@
   </div>
 
   <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="admin-super-v2.js?v=payout-ui"></script>
+  <script src="admin-super-v2.js?v=customer-msg-template-safe-v2-20260504"></script>
 </body>
 </html>

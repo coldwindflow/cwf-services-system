@@ -1076,11 +1076,7 @@
 
 
   // ===== Customer confirmation message template =====
-  const CUSTOMER_MSG_REQUIRED_BY_LANG = {
-    th: ['booking_code','tracking_url','customer_name','customer_phone','appointment_th','job_type','address_text','items_text','job_price_th'],
-    en: ['booking_code','tracking_url','customer_name','customer_phone','appointment_en','job_type_en','address_text','items_text_en','job_price_en'],
-  };
-  const CUSTOMER_MSG_FRONTEND_DEFAULTS = {
+  const CUSTOMER_MSG_DEFAULTS_LOCAL = {
     th: `ยืนยันนัดหมายบริการแอร์
 
 Coldwindflow Air Services
@@ -1130,16 +1126,11 @@ Coldwindflow Air Services
 LINE OA: @cwfair
 Call: 098-877-7321`
   };
-  const CUSTOMER_MSG_FALLBACK_PLACEHOLDERS = ['booking_code','tracking_url','customer_name','customer_phone','appointment_th','appointment_en','job_type','job_type_en','address_text','items_text','items_text_en','job_price_th','job_price_en'];
-  const CUSTOMER_MSG_STATE = {
-    templates: {
-      th: { lang:'th', template_text: CUSTOMER_MSG_FRONTEND_DEFAULTS.th, source:'frontend_default' },
-      en: { lang:'en', template_text: CUSTOMER_MSG_FRONTEND_DEFAULTS.en, source:'frontend_default' },
-    },
-    placeholders: CUSTOMER_MSG_FALLBACK_PLACEHOLDERS.slice(),
-    defaults: CUSTOMER_MSG_FRONTEND_DEFAULTS,
-    loaded: false,
+  const CUSTOMER_MSG_REQUIRED = {
+    th: ['booking_code','tracking_url','customer_name','customer_phone','appointment_th','job_type','address_text','items_text','job_price_th'],
+    en: ['booking_code','tracking_url','customer_name','customer_phone','appointment_en','job_type_en','address_text','items_text_en','job_price_en']
   };
+  const CUSTOMER_MSG_STATE = { templates:null, placeholders:['booking_code','tracking_url','customer_name','customer_phone','appointment_th','appointment_en','job_type','job_type_en','address_text','items_text','items_text_en','job_price_th','job_price_en'], defaults:CUSTOMER_MSG_DEFAULTS_LOCAL };
   function insertAtCursor(textarea, text) {
     if (!textarea) return;
     const start = textarea.selectionStart ?? textarea.value.length;
@@ -1148,77 +1139,76 @@ Call: 098-877-7321`
     textarea.focus();
     const pos = start + text.length;
     textarea.setSelectionRange(pos, pos);
-    validateCustomerMsgTemplate(false);
   }
-  function customerMsgRequiredVars(lang=currentCustomerMsgLang()) {
-    return CUSTOMER_MSG_REQUIRED_BY_LANG[lang] || CUSTOMER_MSG_REQUIRED_BY_LANG.th;
+  function requiredMissingCustomerMsg(text, lang=currentCustomerMsgLang()) {
+    const required = CUSTOMER_MSG_REQUIRED[lang] || CUSTOMER_MSG_REQUIRED.th;
+    return required.filter(k => !String(text || '').includes(`{{${k}}}`));
   }
-  function missingCustomerMsgVars(text, lang=currentCustomerMsgLang()) {
-    const raw = String(text || '');
-    return customerMsgRequiredVars(lang).filter(k => !new RegExp(`{{\\s*${k}\\s*}}`).test(raw));
+  function updateCustomerMsgStatus() {
+    const el = $('customerMsgStatus');
+    const ta = $('customerMsgTemplate');
+    if (!el || !ta) return;
+    const missing = requiredMissingCustomerMsg(ta.value);
+    if (missing.length) {
+      el.textContent = `⚠️ ขาดตัวแปรจำเป็น: ${missing.map(k => `{{${k}}}`).join(', ')} — ระบบยังไม่ให้บันทึก เพื่อกันข้อมูลเลขงาน/วันนัด/รายการ/ยอดเงินหาย`;
+      el.className = 'template-status warn';
+    } else {
+      el.textContent = '✅ พร้อมใช้งาน: ตัวแปรจำเป็นครบ แอดมินแก้เฉพาะคำพูดรอบ ๆ ได้อย่างปลอดภัย';
+      el.className = 'template-status ok';
+    }
   }
   function renderCustomerMsgPlaceholders() {
     const box = $('customerMsgPlaceholders');
     if (!box) return;
-    const lang = currentCustomerMsgLang();
-    const required = new Set(customerMsgRequiredVars(lang));
     const list = CUSTOMER_MSG_STATE.placeholders || [];
-    box.innerHTML = list.map(k => `<button type="button" class="placeholder-chip ${required.has(k) ? 'required' : ''}" data-k="${esc(k)}">${required.has(k) ? 'จำเป็น ' : ''}{{${esc(k)}}}</button>`).join('');
+    const required = new Set(CUSTOMER_MSG_REQUIRED[currentCustomerMsgLang()] || []);
+    box.innerHTML = list.map(k => `<button type="button" class="placeholder-chip ${required.has(k) ? 'required' : ''}" data-k="${esc(k)}" title="กดเพื่อแทรกตัวแปร">{{${esc(k)}}}</button>`).join('');
     box.querySelectorAll('.placeholder-chip').forEach(btn => {
-      btn.addEventListener('click', () => insertAtCursor($('customerMsgTemplate'), `{{${btn.dataset.k}}}`));
+      btn.addEventListener('click', () => {
+        insertAtCursor($('customerMsgTemplate'), `{{${btn.dataset.k}}}`);
+        updateCustomerMsgStatus();
+      });
     });
   }
   function currentCustomerMsgLang() {
     return String($('customerMsgLang')?.value || 'th').toLowerCase() === 'en' ? 'en' : 'th';
   }
-  function setCustomerMsgStatus(text, ok=true) {
-    const elStatus = $('customerMsgStatus');
-    if (!elStatus) return;
-    elStatus.textContent = text || '';
-    elStatus.className = ok ? 'template-status ok' : 'template-status warn';
-  }
-  function validateCustomerMsgTemplate(showStatus=true) {
-    const editor = $('customerMsgTemplate');
-    if (!editor) return { ok:true, missing:[] };
-    const missing = missingCustomerMsgVars(editor.value, currentCustomerMsgLang());
-    const ok = missing.length === 0;
-    if (showStatus) {
-      if (ok) setCustomerMsgStatus('พร้อมใช้งาน: ตัวแปรสำคัญครบ ระบบจะเติมข้อมูลลูกค้า/วันนัด/รายการ/ยอดเงินให้อัตโนมัติ', true);
-      else setCustomerMsgStatus(`ยังไม่ควรบันทึก: ขาดตัวแปรจำเป็น ${missing.map(k => `{{${k}}}`).join(', ')}`, false);
-    }
-    return { ok, missing };
-  }
   function setCustomerMsgEditorFromState() {
     const lang = currentCustomerMsgLang();
     const row = CUSTOMER_MSG_STATE.templates?.[lang];
-    const text = row?.template_text || CUSTOMER_MSG_STATE.defaults?.[lang] || CUSTOMER_MSG_FRONTEND_DEFAULTS[lang] || '';
-    if ($('customerMsgTemplate')) $('customerMsgTemplate').value = text;
+    const text = String(row?.template_text || CUSTOMER_MSG_STATE.defaults?.[lang] || CUSTOMER_MSG_DEFAULTS_LOCAL[lang] || '').trim();
+    const ta = $('customerMsgTemplate');
+    if (ta) {
+      ta.value = text;
+      ta.placeholder = 'แก้ไขข้อความยืนยันนัดหมายลูกค้าได้ที่นี่';
+      ta.removeAttribute('disabled');
+    }
     if ($('customerMsgPreview')) $('customerMsgPreview').textContent = 'กด “ดูตัวอย่าง” เพื่อดูผลลัพธ์';
+    if ($('customerMsgLoadState')) $('customerMsgLoadState').textContent = row?.updated_at ? `โหลดข้อความปัจจุบันแล้ว • แก้ไขล่าสุด: ${row.updated_at}` : 'แสดงค่าเริ่มต้นพร้อมใช้งาน หากเคยบันทึกไว้ระบบจะโหลดมาแทนให้อัตโนมัติ';
     renderCustomerMsgPlaceholders();
-    validateCustomerMsgTemplate(true);
+    updateCustomerMsgStatus();
   }
   async function loadCustomerMsgTemplate() {
     if (!$('customerMsgTemplate')) return;
-    // Show the current default immediately, so the editor is never blank even if the API is slow or a deploy is still migrating DB.
-    if (!CUSTOMER_MSG_STATE.loaded && !$('customerMsgTemplate').value.trim()) setCustomerMsgEditorFromState();
+    // แสดงค่าเริ่มต้นทันที เพื่อไม่ให้ Super Admin เห็นช่องว่าง/ค้างโหลด
+    if (!String($('customerMsgTemplate').value || '').trim()) setCustomerMsgEditorFromState();
+    if ($('customerMsgLoadState')) $('customerMsgLoadState').textContent = 'กำลังโหลดข้อความปัจจุบันจากระบบ...';
     try {
       const r = await api('/admin/super/customer_confirmation_template');
-      CUSTOMER_MSG_STATE.templates = r.templates || CUSTOMER_MSG_STATE.templates || {};
-      CUSTOMER_MSG_STATE.placeholders = (r.placeholders && r.placeholders.length) ? r.placeholders : CUSTOMER_MSG_FALLBACK_PLACEHOLDERS.slice();
-      CUSTOMER_MSG_STATE.defaults = r.defaults || CUSTOMER_MSG_FRONTEND_DEFAULTS;
-      CUSTOMER_MSG_STATE.loaded = true;
+      CUSTOMER_MSG_STATE.templates = r.templates || {};
+      CUSTOMER_MSG_STATE.placeholders = r.placeholders || CUSTOMER_MSG_STATE.placeholders || [];
+      CUSTOMER_MSG_STATE.defaults = Object.assign({}, CUSTOMER_MSG_DEFAULTS_LOCAL, r.defaults || {});
       setCustomerMsgEditorFromState();
-      setCustomerMsgStatus('โหลดข้อความปัจจุบันจากระบบแล้ว แก้ไขได้โดยไม่ลบตัวแปรจำเป็น', true);
-      try { await previewCustomerMsgTemplate(false); } catch {}
       toast('โหลดข้อความยืนยันนัดแล้ว');
     } catch(e) {
+      CUSTOMER_MSG_STATE.defaults = CUSTOMER_MSG_DEFAULTS_LOCAL;
       setCustomerMsgEditorFromState();
-      setCustomerMsgStatus(`โหลดจากเซิร์ฟเวอร์ไม่สำเร็จ จึงแสดงค่าเริ่มต้นไว้ก่อน: ${e.message}`, false);
+      if ($('customerMsgLoadState')) $('customerMsgLoadState').textContent = `⚠️ โหลดจากฐานข้อมูลไม่สำเร็จ จึงแสดงค่าเริ่มต้นให้แก้ไขได้ก่อน: ${e.message}`;
+      console.warn('[customer message template] fallback defaults:', e);
     }
   }
-  async function previewCustomerMsgTemplate(showAlert=true) {
+  async function previewCustomerMsgTemplate() {
     if (!$('customerMsgTemplate')) return;
-    validateCustomerMsgTemplate(true);
     try {
       const r = await api('/admin/super/customer_confirmation_template/preview', {
         method:'POST',
@@ -1226,15 +1216,16 @@ Call: 098-877-7321`
       });
       $('customerMsgPreview').textContent = r.text || '';
     } catch(e) {
-      if (showAlert) alert(`preview ไม่สำเร็จ: ${e.message}`);
+      alert(`preview ไม่สำเร็จ: ${e.message}`);
     }
   }
   async function saveCustomerMsgTemplate() {
     const text = String($('customerMsgTemplate')?.value || '').trim();
     if (!text) return alert('กรุณาใส่ข้อความก่อนบันทึก');
-    const v = validateCustomerMsgTemplate(true);
-    if (!v.ok) {
-      return alert(`ยังบันทึกไม่ได้ เพราะขาดตัวแปรสำคัญที่ระบบต้องเติมอัตโนมัติ:\n${v.missing.map(k => `{{${k}}}`).join('\n')}\n\nให้กดตัวแปรด้านล่างเพื่อแทรกกลับเข้าไปก่อนบันทึก`);
+    const missing = requiredMissingCustomerMsg(text);
+    if (missing.length) {
+      updateCustomerMsgStatus();
+      return alert(`ยังบันทึกไม่ได้ เพราะขาดตัวแปรจำเป็น:\n${missing.map(k => `{{${k}}}`).join('\n')}\n\nให้กดป้ายตัวแปรด้านล่างเพื่อแทรกกลับเข้าไปก่อน`);
     }
     if (!confirm('บันทึกข้อความยืนยันนัดหมายลูกค้า? ข้อความนี้จะใช้หลังแอดมินเพิ่มงานทันที')) return;
     try {
@@ -1244,7 +1235,7 @@ Call: 098-877-7321`
       });
       toast('บันทึกข้อความยืนยันนัดแล้ว');
       await loadCustomerMsgTemplate();
-      await previewCustomerMsgTemplate(false);
+      await previewCustomerMsgTemplate();
       await loadAudit();
     } catch(e) {
       alert(`บันทึกไม่สำเร็จ: ${e.message}`);
@@ -1260,7 +1251,7 @@ Call: 098-877-7321`
       });
       toast('คืนค่าเริ่มต้นแล้ว');
       await loadCustomerMsgTemplate();
-      await previewCustomerMsgTemplate(false);
+      await previewCustomerMsgTemplate();
       await loadAudit();
     } catch(e) {
       alert(`คืนค่าไม่สำเร็จ: ${e.message}`);
@@ -1279,15 +1270,12 @@ Call: 098-877-7321`
   if ($('btnSaveTechRateDraft')) $('btnSaveTechRateDraft').addEventListener('click', saveTechRateDraft);
   if ($('btnActivateTechRateDraft')) $('btnActivateTechRateDraft').addEventListener('click', activateTechRateDraft);
   if ($('btnReloadTechRateAudit')) $('btnReloadTechRateAudit').addEventListener('click', loadTechRateAudit);
-  if ($('customerMsgLang')) $('customerMsgLang').addEventListener('change', () => { setCustomerMsgEditorFromState(); previewCustomerMsgTemplate(false).catch(()=>{}); });
+  if ($('customerMsgLang')) $('customerMsgLang').addEventListener('change', () => { setCustomerMsgEditorFromState(); });
+  if ($('customerMsgTemplate')) $('customerMsgTemplate').addEventListener('input', updateCustomerMsgStatus);
   if ($('btnLoadCustomerMsg')) $('btnLoadCustomerMsg').addEventListener('click', loadCustomerMsgTemplate);
   if ($('btnPreviewCustomerMsg')) $('btnPreviewCustomerMsg').addEventListener('click', previewCustomerMsgTemplate);
   if ($('btnSaveCustomerMsg')) $('btnSaveCustomerMsg').addEventListener('click', saveCustomerMsgTemplate);
   if ($('btnResetCustomerMsg')) $('btnResetCustomerMsg').addEventListener('click', resetCustomerMsgTemplate);
-  if ($('customerMsgTemplate')) $('customerMsgTemplate').addEventListener('input', () => validateCustomerMsgTemplate(true));
-  if ($('customerMessageTemplateManager')) $('customerMessageTemplateManager').addEventListener('toggle', (ev) => { if (ev.target.open) loadCustomerMsgTemplate().catch(()=>{}); });
-  // Load this panel independently so it does not wait for payout/rate/audit requests.
-  loadCustomerMsgTemplate().catch(() => {});
 
   // ===== Init =====
   await loadAdmins();
