@@ -16258,9 +16258,12 @@ async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
 // =======================================
 app.get("/jobs/tech/:username", async (req, res) => {
   const { username } = req.params;
-  const historyMonth = /^\d{4}-\d{2}$/.test(String(req.query?.history_month || ''))
-    ? String(req.query.history_month)
-    : new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit' }).format(new Date());
+  const bkkMonthNow = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit' }).format(new Date());
+  const bkkDayNow = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Bangkok', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+  const historyScopeRaw = String(req.query?.history_scope || '').trim().toLowerCase();
+  const historyScope = (historyScopeRaw === 'day' || historyScopeRaw === 'all') ? historyScopeRaw : 'month';
+  const historyMonth = /^\d{4}-\d{2}$/.test(String(req.query?.history_month || '')) ? String(req.query.history_month) : bkkMonthNow;
+  const historyDay = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query?.history_day || '')) ? String(req.query.history_day) : bkkDayNow;
   const upcomingDaysRaw = Number(req.query?.upcoming_days);
   const upcomingDays = Number.isFinite(upcomingDaysRaw) ? Math.min(Math.max(Math.trunc(upcomingDaysRaw), 7), 90) : 45;
   try {
@@ -16340,12 +16343,15 @@ app.get("/jobs/tech/:username", async (req, res) => {
             OR paid_at IS NOT NULL
           )
           AND _history_at IS NOT NULL
-          AND (_history_at AT TIME ZONE 'Asia/Bangkok')::date >= to_date($2 || '-01', 'YYYY-MM-DD')
-          AND (_history_at AT TIME ZONE 'Asia/Bangkok')::date < (to_date($2 || '-01', 'YYYY-MM-DD') + INTERVAL '1 month')::date
+          AND (
+            ($4::text = 'day' AND (_history_at AT TIME ZONE 'Asia/Bangkok')::date = $5::date)
+            OR ($4::text = 'month' AND (_history_at AT TIME ZONE 'Asia/Bangkok')::date >= to_date($2 || '-01', 'YYYY-MM-DD') AND (_history_at AT TIME ZONE 'Asia/Bangkok')::date < (to_date($2 || '-01', 'YYYY-MM-DD') + INTERVAL '1 month')::date)
+            OR ($4::text = 'all' AND (_history_at AT TIME ZONE 'Asia/Bangkok')::date >= ((NOW() AT TIME ZONE 'Asia/Bangkok')::date - INTERVAL '180 days'))
+          )
         )
       ORDER BY appointment_datetime ASC NULLS LAST, job_id ASC
       `,
-      [username, historyMonth, upcomingDays]
+      [username, historyMonth, upcomingDays, historyScope, historyDay]
     );
     // Performance: job visibility is fast and independent from payout/rate calculation.
     // If a per-job preview exists, attach it immediately. Missing previews load asynchronously later.
@@ -16359,7 +16365,7 @@ app.get("/jobs/tech/:username", async (req, res) => {
         ? { ...row, ...fallback, ..._techIncomePreviewSummaryFromRow(preview, context) }
         : { ...row, ...fallback };
     });
-    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows fast', { username, count: rows.length, preview_count: previewMap.size, history_month: historyMonth, upcoming_days: upcomingDays }); } catch {}
+    try { console.log('[CWF_TECH_JOBS_DEBUG] api rows fast', { username, count: rows.length, preview_count: previewMap.size, history_scope: historyScope, history_month: historyMonth, history_day: historyDay, upcoming_days: upcomingDays }); } catch {}
     res.json(rows);
   } catch (e) {
     console.error(e);

@@ -1670,28 +1670,30 @@
     });
   </script>
   <style id="tech-money-summary-styles">
-    .tech-income-under-status{margin:7px 0 8px;display:flex;align-items:center;justify-content:flex-end;}
+    .job-card-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+    .job-card-title{min-width:0;flex:1;}
+    .job-status-stack{display:flex;flex-direction:column;align-items:flex-end;gap:6px;flex-shrink:0;max-width:46%;}
+    .tech-income-under-status{margin:0;display:flex;align-items:center;justify-content:flex-end;width:100%;}
     .tech-income-chip{
-      appearance:none;-webkit-appearance:none;border:0;background:none;font:inherit;
-      width:auto;max-width:100%;min-height:42px;padding:8px 10px 8px 9px;border-radius:15px;
-      border:1px solid rgba(244,196,0,.42);
-      background:linear-gradient(135deg,rgba(255,251,235,.98) 0%,rgba(239,246,255,.98) 100%);
-      box-shadow:0 8px 18px rgba(11,46,109,.10);
-      display:inline-grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:7px;
-      text-align:left;cursor:pointer;color:#0f172a;font-family:inherit;
-      transition:transform .15s ease,box-shadow .15s ease,border-color .15s ease;
+      border:1px solid rgba(11,46,109,.10);background:linear-gradient(135deg,#fff9d7 0%,#eef6ff 100%);
+      border-radius:999px;padding:5px 7px;display:inline-flex;align-items:center;gap:5px;color:#08245b;cursor:pointer;
+      box-shadow:0 5px 13px rgba(8,36,91,.10);transition:.16s ease;font-family:inherit;max-width:100%;
     }
-    .tech-income-chip--compact{min-width:190px;}
+    .tech-income-chip--mini{min-width:0;width:auto;max-width:176px;}
     .tech-income-chip:active{transform:scale(.985)}
-    .tech-income-chip:hover{box-shadow:0 12px 24px rgba(8,36,91,.14);border-color:rgba(245,158,11,.62)}
-    .tech-income-chip-icon{width:28px;height:28px;border-radius:11px;display:grid;place-items:center;background:linear-gradient(135deg,#facc15,#fde68a);font-size:15px;box-shadow:inset 0 0 0 1px rgba(146,64,14,.10)}
-    .tech-income-chip-main{min-width:0;display:grid;gap:0}.tech-income-chip-label{font-size:11px;font-weight:1000;color:#475569;line-height:1.05;letter-spacing:.1px}.tech-income-chip-main strong{font-size:16px;font-weight:1000;color:#08245b;line-height:1.12;white-space:nowrap}.tech-income-chip-hint{font-size:10px;font-weight:950;color:#64748b;white-space:nowrap;background:rgba(255,255,255,.72);border:1px solid rgba(15,23,42,.06);border-radius:999px;padding:3px 6px}.tech-income-chip-arrow{font-size:22px;font-weight:1000;color:#0b2e6d;line-height:1}.tech-income-chip.is-pending{background:linear-gradient(135deg,#f8fafc 0%,#ffffff 100%);border-color:rgba(100,116,139,.22)}
-    .urgent-offer-card{border:1px solid rgba(251,191,36,0.62)!important;background:linear-gradient(180deg,#fff 0%,#fffdf3 100%)!important;box-shadow:0 14px 30px rgba(146,64,14,.10)!important;}
-    .urgent-offer-card .tech-income-under-status{justify-content:flex-start;margin-top:8px;}
+    .tech-income-chip:hover{box-shadow:0 8px 18px rgba(8,36,91,.14);border-color:rgba(245,158,11,.50)}
+    .tech-income-chip-icon{width:22px;height:22px;border-radius:9px;display:grid;place-items:center;background:linear-gradient(135deg,#facc15,#fde68a);font-size:12px;box-shadow:inset 0 0 0 1px rgba(146,64,14,.10);flex:0 0 auto;}
+    .tech-income-chip-text{min-width:0;display:grid;gap:0;line-height:1.05;text-align:left;}
+    .tech-income-chip-text b{font-size:10px;font-weight:1000;color:#475569;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+    .tech-income-chip-text strong{font-size:13px;font-weight:1000;color:#08245b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:112px;}
+    .tech-income-chip-arrow{font-size:16px;font-weight:1000;color:#0b2e6d;line-height:1;flex:0 0 auto;}
+    .tech-income-chip.is-pending{background:linear-gradient(135deg,#f8fafc 0%,#ffffff 100%);border-color:rgba(100,116,139,.20);box-shadow:0 3px 9px rgba(15,23,42,.06)}
+    .tech-income-chip.is-pending .tech-income-chip-text strong{color:#64748b;font-size:12px;}
+    .urgent-offer-card .job-status-stack{max-width:52%;}
     .tech-income-modal-backdrop{position:fixed;inset:0;z-index:9999;display:none;align-items:flex-end;justify-content:center;background:rgba(2,10,32,.52);backdrop-filter:blur(5px);padding:18px}.tech-income-modal-backdrop.show{display:flex}.tech-income-modal-card{width:min(560px,100%);max-height:84vh;overflow:auto;background:linear-gradient(180deg,#ffffff 0%,#f8fbff 100%);border-radius:28px;padding:20px;box-shadow:0 30px 80px rgba(2,10,32,.35);position:relative;border:1px solid rgba(255,255,255,.75)}.tech-income-modal-close{position:absolute;right:14px;top:12px;width:38px;height:38px;border-radius:999px;border:1px solid rgba(15,23,42,.08);background:#fff;color:#0b2e6d;font-size:24px;font-weight:900;cursor:pointer}.tech-income-modal-title{font-size:25px;font-weight:1000;color:#08245b;padding-right:42px}.tech-income-modal-sub{margin-top:4px;color:#64748b;font-size:13px;font-weight:850}.tech-income-modal-summary{margin-top:16px;padding:16px;border-radius:22px;background:linear-gradient(135deg,#eaf4ff 0%,#fffdf0 100%);border:1px solid rgba(37,99,235,.14)}.tech-income-modal-summary .k{font-size:13px;color:#475569;font-weight:1000}.tech-income-modal-summary .v{font-size:34px;line-height:1.1;font-weight:1000;color:#08245b;margin-top:5px}.tech-income-modal-summary .s{font-size:12px;color:#64748b;font-weight:850;margin-top:5px}.tech-income-modal-list{margin-top:14px}.tech-income-modal-list-head{display:flex;justify-content:space-between;align-items:center;gap:10px;color:#0b2e6d;font-weight:1000;margin-bottom:6px}.tech-income-modal-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 0;border-top:1px solid rgba(15,23,42,.08)}.tech-income-modal-row-main{display:grid;gap:3px;min-width:0}.tech-income-modal-row-main b{color:#0f172a}.tech-income-modal-row-main span,.tech-income-modal-row-money small{font-size:12px;color:#64748b;font-weight:850}.tech-income-modal-row-money{text-align:right;display:grid;gap:3px;white-space:nowrap}.tech-income-modal-row-money strong{color:#08245b;font-size:16px}.tech-income-modal-note,.tech-income-modal-empty{margin-top:12px;padding:12px;border-radius:16px;background:#f8fafc;color:#64748b;font-size:13px;font-weight:850}.tech-income-modal-ok{width:100%;margin-top:16px;border:0;border-radius:18px;padding:13px 16px;background:linear-gradient(135deg,#0b2e6d,#1161d8);color:#fff;font-weight:1000;font-size:16px;cursor:pointer}
-    @media(max-width:420px){.tech-income-under-status{justify-content:flex-start}.tech-income-chip{grid-template-columns:auto minmax(0,1fr) auto;min-width:0;width:auto}.tech-income-chip-hint{display:none}.tech-income-chip-main strong{font-size:15px}.tech-income-modal-backdrop{padding:10px}.tech-income-modal-card{border-radius:24px;padding:18px}.tech-income-modal-summary .v{font-size:30px}.tech-income-modal-row{grid-template-columns:1fr}.tech-income-modal-row-money{text-align:left;white-space:normal}}
+    @media(max-width:420px){.job-card-head{gap:8px}.job-status-stack{max-width:50%;}.tech-income-chip--mini{max-width:154px;padding:5px 6px}.tech-income-chip-icon{width:20px;height:20px;font-size:11px}.tech-income-chip-text b{font-size:9.5px}.tech-income-chip-text strong{font-size:12px;max-width:92px}.tech-income-chip-arrow{font-size:14px}.tech-income-modal-backdrop{padding:10px}.tech-income-modal-card{border-radius:24px;padding:18px}.tech-income-modal-summary .v{font-size:30px}.tech-income-modal-row{grid-template-columns:1fr}.tech-income-modal-row-money{text-align:left;white-space:normal}}
   </style>
-  <script src="app.js?v=tech-month-fast-income-card-v1-20260504"></script>
+  <script src="app.js?v=tech-history-filter-chip-v3-20260504"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
