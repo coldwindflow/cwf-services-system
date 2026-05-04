@@ -311,20 +311,20 @@
     </details>
 
     <details id="techRateManager">
-      <summary>จัดการเรทรายได้ช่าง</summary>
+      <summary>ตั้งค่ารายได้พาร์ทเนอร์ตามสัญญา</summary>
       <div class="card rate-manager" style="box-shadow:none;border:none;padding:0;margin-top:10px">
         <div class="card">
           <div class="sectionTitle">
             <div>
-              <b>จัดการเรทรายได้ช่าง</b>
-              <div class="muted" style="margin-top:4px">ใช้สำหรับกำหนดเรทรายได้ช่างที่ระบบ payout, รายได้ช่าง, และสัญญาพาร์ทเนอร์ใช้ร่วมกัน</div>
+              <b>ตั้งค่ารายได้พาร์ทเนอร์ตามสัญญา</b>
+              <div class="muted" style="margin-top:4px">ใช้สำหรับกำหนดเรทบาทต่อเครื่องของพาร์ทเนอร์ ระบบ payout และหน้า “ที่ช่างจะได้รับ” ใช้มาตรฐานเดียวกัน</div>
             </div>
             <div class="row">
               <button class="btn blue" id="btnReloadTechRates" type="button">รีเฟรช</button>
               <button class="btn yellow" id="btnCreateTechRateDraft" type="button">สร้าง draft จากเรทปัจจุบัน</button>
             </div>
           </div>
-          <div class="rate-warning" style="margin-top:10px">การเปลี่ยนเรทมีผลกับงานใหม่หรือรายการที่ยังไม่ถูกล็อกงวดจ่ายเท่านั้น งานที่ล็อก/จ่ายแล้วจะไม่ถูกแก้ย้อนหลัง</div>
+          <div class="rate-warning" style="margin-top:10px">มาตรฐานใหม่: พาร์ทเนอร์ใช้เรทเดียวตามจำนวนรวมของรายการประเภทเดียวกันในใบงาน ไม่ใช่เปอร์เซ็นต์/ไม่ใช่ขั้นบันไดสะสม และงานที่ล็อก/จ่ายแล้วจะไม่ถูกแก้ย้อนหลัง</div>
           <div class="muted" id="techRateStatus" style="margin-top:10px">กำลังโหลด...</div>
         </div>
         <div class="card">

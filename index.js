@@ -2767,6 +2767,10 @@ function partnerApplicationPublicShape(row, docs = [], events = []) {
     equipment_notes: row.equipment_notes,
     technician_username: row.technician_username || null,
     account_created_at: row.account_created_at || null,
+    contract_version: row.contract_version || null,
+    contract_accepted_at: row.contract_accepted_at || null,
+    contract_accepted_ip: row.contract_accepted_ip || null,
+    contract_acceptance_json: row.contract_acceptance_json || {},
     notes: row.notes,
     status: row.status,
     admin_note: row.admin_note,
@@ -2867,12 +2871,14 @@ app.post('/partner/apply', async (req, res) => {
   const confirm_password = String(body.confirm_password || '').trim();
   const consent_pdpa = body.consent_pdpa === true || body.consent_pdpa === 'true' || body.consent_pdpa === 1 || body.consent_pdpa === '1';
   const consent_terms = body.consent_terms === true || body.consent_terms === 'true' || body.consent_terms === 1 || body.consent_terms === '1';
+  const consent_contract_rate = body.consent_contract_rate === true || body.consent_contract_rate === 'true' || body.consent_contract_rate === 1 || body.consent_contract_rate === '1';
+  const consent_deposit = body.consent_deposit === true || body.consent_deposit === 'true' || body.consent_deposit === 1 || body.consent_deposit === '1';
 
   if (!full_name) return res.status(400).json({ error: 'กรุณากรอกชื่อ-นามสกุล' });
   if (!phone) return res.status(400).json({ error: 'กรุณากรอกเบอร์โทร' });
   if (!password || password.length < 6) return res.status(400).json({ error: 'กรุณาตั้งรหัสผ่านอย่างน้อย 6 ตัวอักษร' });
   if (password !== confirm_password) return res.status(400).json({ error: 'ยืนยันรหัสผ่านไม่ตรงกัน' });
-  if (!consent_pdpa || !consent_terms) return res.status(400).json({ error: 'กรุณายอมรับ PDPA และเงื่อนไขการสมัคร' });
+  if (!consent_pdpa || !consent_terms || !consent_contract_rate || !consent_deposit) return res.status(400).json({ error: 'กรุณายอมรับ PDPA เงื่อนไขการสมัคร สัญญาเรทเดียว และเงินประกันก่อนส่งใบสมัคร' });
 
   const client = await pool.connect();
   try {
@@ -2902,9 +2908,11 @@ app.post('/partner/apply', async (req, res) => {
          bank_account_name, bank_name, bank_account_last4, notes, consent_pdpa, consent_terms, status, submitted_at, updated_at,
          province, district, work_intent, available_days_per_week, preferred_work_days, max_jobs_per_day, max_units_per_day,
          can_accept_urgent_jobs, can_work_condo, can_issue_tax_invoice, has_helper_team, team_size, travel_method,
-         service_radius_km, equipment_json, line_user_id, account_created_at, account_note)
+         service_radius_km, equipment_json, line_user_id, account_created_at, account_note,
+         contract_version, contract_accepted_at, contract_accepted_ip, contract_user_agent, contract_acceptance_json)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::jsonb,$10::jsonb,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,'submitted',NOW(),NOW(),
-         $21,$22,$23,$24,$25::jsonb,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35::jsonb,$36,NOW(),$37)
+         $21,$22,$23,$24,$25::jsonb,$26,$27,$28,$29,$30,$31,$32,$33,$34,$35::jsonb,$36,NOW(),$37,
+         $38,NOW(),$39,$40,$41::jsonb)
        RETURNING *`,
       [
         application_code,
@@ -2944,6 +2952,17 @@ app.post('/partner/apply', async (req, res) => {
         JSON.stringify(equipment_json),
         body.line_user_id ? String(body.line_user_id).trim() : null,
         account.created ? 'created_new_technician_account' : 'linked_existing_technician_account',
+        'partner_single_rate_2026_05',
+        req.ip || null,
+        String(req.headers['user-agent'] || '').slice(0, 500),
+        JSON.stringify({
+          consent_terms,
+          consent_contract_rate,
+          consent_deposit,
+          accepted_contract_pdf: '/docs/CWF_partner_contract_single_rate_2026.pdf',
+          accepted_contract_version: 'partner_single_rate_2026_05',
+          accepted_at: new Date().toISOString(),
+        }),
       ]
     );
     const appRow = r.rows[0];
@@ -2972,7 +2991,7 @@ app.post('/partner/apply', async (req, res) => {
       actor_type: 'applicant',
       event_type: 'application_submitted',
       to_status: 'submitted',
-      note: 'Partner application submitted',
+      note: 'Partner application submitted with partner_single_rate_2026_05 acceptance',
       metadata: { application_code, technician_username: account.username, account_created: account.created },
     });
     await client.query('COMMIT');
@@ -6015,10 +6034,10 @@ function _thaiLabelWash(k){
 
 // =======================================
 // 💲 CWF Contract Payroll Engine (2026)
-// - Uses fixed per-machine ladder rates from the attached CWF technician contracts.
-// - Replaces the old percent-based technician income calculation for completed jobs.
+// - Uses partner single-rate per unit based on total quantity of the same item group in a job.
+// - Company technician rates remain backward-compatible; partner rates are NOT percentage/cumulative ladder.
 // =======================================
-const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_contract_2026_04_v10_2_contract_engine_live_draft_purge';
+const CWF_CONTRACT_PAYROLL_VERSION = 'cwf_partner_single_rate_2026_05_v1';
 const CWF_TECHNICIAN_INCOME_RATE_SET_VERSION = 'partner_v4_2026_05';
 const CWF_TECHNICIAN_INCOME_RATE_SET_NAME = 'CWF Partner Technician Income Rates v4';
 const CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS = Object.freeze([
@@ -6211,11 +6230,11 @@ function _buildPartnerAgreementV4RateHtml(items = CWF_TECHNICIAN_INCOME_DEFAULT_
   return `
     <section class="cwf-contract">
       <h2>CWF สัญญาพาร์ทเนอร์ช่างแอร์ ฉบับใช้งานจริง v4 เรทใหม่</h2>
-      <p><b>หมายเหตุ:</b> ประเภทการล้างใช้เฉพาะแอร์ผนังเท่านั้น แอร์ประเภทอื่นคิดตามเรทคงที่ต่อเครื่อง</p>
+      <p><b>หมายเหตุ:</b> ระบบคิดรายได้พาร์ทเนอร์แบบเรทเดียวตามจำนวนรวมของรายการประเภทเดียวกันในใบงาน ไม่ใช่เปอร์เซ็นต์และไม่ใช่ขั้นบันไดสะสม</p>
       <h3>เรทรายได้พาร์ทเนอร์ - แอร์ผนัง</h3>
       <div style="overflow:auto">
         <table style="width:100%;border-collapse:collapse;min-width:680px">
-          <thead><tr><th>ประเภทการล้าง</th><th>BTU</th><th>เครื่องที่ 1</th><th>เครื่องที่ 2-3</th><th>เครื่องที่ 4 ขึ้นไป</th></tr></thead>
+          <thead><tr><th>ประเภทการล้าง</th><th>BTU</th><th>จำนวนรวม 1 เครื่อง</th><th>จำนวนรวม 2-3 เครื่อง</th><th>จำนวนรวม 4 เครื่องขึ้นไป</th></tr></thead>
           <tbody>${wall}</tbody>
         </table>
       </div>
@@ -6333,6 +6352,34 @@ function _contractMachineRates(spec, startIndex, qty, techType, rateContext){
     out.push({ machine_index, rate: picked.rate, rate_source: picked.rate_source });
   }
   return out;
+}
+
+function _contractSingleRateBracketIndex(groupQty){
+  const n = Math.max(0, Math.round(Number(groupQty || 0)));
+  if (n >= 4) return 4;
+  if (n >= 2) return 2;
+  return 1;
+}
+function _contractSingleRateForGroup(spec, groupQty, techType, rateContext){
+  // New partner contract: one rate per unit for the whole same-service group in the job.
+  // Example: wall normal small qty 5 => every unit uses the 4+ rate (320), not 400+350+350+320+320.
+  const bracketIndex = _contractSingleRateBracketIndex(groupQty);
+  const picked = _contractRateAtFromContext(rateContext, techType, spec, bracketIndex);
+  return { rate: Number(picked.rate || 0), rate_source: picked.rate_source, bracket_index: bracketIndex };
+}
+function _contractHeightExtraFromText(text){
+  const raw = String(text || '').toLowerCase();
+  if (!raw) return { amount:0, key:null, manual:false, label:'' };
+  if (/(over_?10m|สูงเกิน\s*10|เกิน\s*10\s*เมตร|10\s*เมตร\s*ขึ้นไป)/i.test(raw)) {
+    return { amount:0, key:'over_10m', manual:true, label:'สูงเกิน 10 เมตร: ต้องประเมิน/อนุมัติเอง' };
+  }
+  if (/(over_?7m|7m|สูงเกิน\s*7|เกิน\s*7\s*เมตร|7\s*-\s*10\s*เมตร)/i.test(raw)) {
+    return { amount:500, key:'over_7m_to_10m', manual:false, label:'ค่าเสี่ยงภัยสูงเกิน 7-10 เมตร' };
+  }
+  if (/(over_?5m|5m|สูงเกิน\s*5|เกิน\s*5\s*เมตร|5\s*เมตร)/i.test(raw)) {
+    return { amount:300, key:'over_5m', manual:false, label:'ค่าเสี่ยงภัยสูงเกิน 5 เมตร' };
+  }
+  return { amount:0, key:null, manual:false, label:'' };
 }
 function _sumContractMachineRates(washKey, btuTier, startIndex, qty, techType){
   const spec = { ac_key:'wall', wash_key: washKey, btu_tier: btuTier };
@@ -6472,12 +6519,7 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
   );
   const items = itemsQ.rows || [];
   const rateContext = await _loadActiveTechnicianIncomeRateSet('partner');
-  // Contract-only rebuild: never pay customer selling price as technician income.
-  // Convert legacy/generic rows (e.g. 1,400 "ค่าบริการ") into service specs first.
   const { serviceItems: svcItems, ignoredLegacyItems } = _contractNormalizeServiceItems(meta, items);
-  // Old special income is intentionally disabled here. Manual bonuses/หักเงิน must be entered
-  // only via technician_payout_adjustments, never via job_items.line_total or job_assignments.special_bonus_amount.
-  const specialItems = [];
 
   const team = await getTeamForJob(job_id);
   const assumedTech = String(opts?.assumeTechnician || '').trim();
@@ -6503,12 +6545,6 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
   const profileMap = new Map();
   (profQ.rows || []).forEach(r => profileMap.set(String(r.username), r));
 
-  // V9 hard reset: ignore legacy job_assignments.special_bonus_amount.
-  // This column belongs to the old income system and can leak old top-ups into technician income
-  // (example: company 220 + old 130 = 350, partner 850 + old 550 = 1,400).
-  // Manual extra pay must be recorded as technician_payout_adjustments after payout generation.
-  const bonusMap = new Map();
-
   const assignedSvc = svcItems.filter(it => String(it.assigned_technician_username || '').trim());
   const unassignedSvc = svcItems.filter(it => !String(it.assigned_technician_username || '').trim());
   const hasAssigned = assignedSvc.length > 0;
@@ -6516,6 +6552,7 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
 
   const relatedByTech = new Map(team.map(u => [u, []]));
   const contractRowsByTech = new Map(team.map(u => [u, []]));
+  const extrasByTech = new Map(team.map(u => [u, []]));
   const serviceAmountByTech = new Map(team.map(u => [u, 0]));
   const machineCountByTech = new Map(team.map(u => [u, 0]));
 
@@ -6529,34 +6566,117 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
     if (!contractRowsByTech.has(tech)) contractRowsByTech.set(tech, []);
     contractRowsByTech.get(tech).push(...rows);
   };
+  const addExtra = (tech, extra) => {
+    if (!extra || (!Number(extra.amount || 0) && !extra.manual)) return;
+    if (!extrasByTech.has(tech)) extrasByTech.set(tech, []);
+    extrasByTech.get(tech).push(extra);
+  };
   const techTypeOf = (tech) => {
     const prof = profileMap.get(String(tech)) || {};
     return _contractTechType(prof.employment_type, prof.compensation_mode);
   };
 
-  const cursor = new Map();
-  const nextStartIndex = (tech, groupKey, qty) => {
+  // Count total quantity per same-service group for the whole job first.
+  // This is the source of truth for partner single-rate selection.
+  const groupQtyMap = new Map();
+  const itemSpecMap = new Map();
+  for (const it of svcItems) {
+    const spec = _contractServiceKeyFromItem(it);
+    itemSpecMap.set(it, spec);
+    const qty = Math.max(0, Math.round(Number(it.qty || 0)));
+    groupQtyMap.set(spec.group_key, Number(groupQtyMap.get(spec.group_key) || 0) + qty);
+  }
+
+  // Company technicians keep the existing per-machine contract engine. Partner technicians use the new single-rate engine.
+  const companyCursor = new Map();
+  const nextCompanyStartIndex = (tech, groupKey, qty) => {
     const key = `${tech}|${groupKey}`;
-    const start = Number(cursor.get(key) || 0) + 1;
-    cursor.set(key, Number(cursor.get(key) || 0) + Math.max(0, Math.round(Number(qty || 0))));
+    const start = Number(companyCursor.get(key) || 0) + 1;
+    companyCursor.set(key, Number(companyCursor.get(key) || 0) + Math.max(0, Math.round(Number(qty || 0))));
     return start;
   };
 
-  function applyWholeItemToTech(it, tech, reason){
-    const qty = Math.max(0, Math.round(Number(it.qty || 0)));
+  function applyItemToTech(it, tech, qtyForTech, share, reason){
+    const qty = Number(qtyForTech || 0);
     if (!qty || !tech) return;
-    const spec = _contractServiceKeyFromItem(it);
+    const spec = itemSpecMap.get(it) || _contractServiceKeyFromItem(it);
+    const groupQty = Number(groupQtyMap.get(spec.group_key) || qty || 0);
     const techType = techTypeOf(tech);
     if (techType === 'special_only') return;
-    const startIdx = nextStartIndex(tech, spec.group_key, qty);
-    const rates = _contractMachineRates(spec, startIdx, qty, techType, rateContext);
-    const amount = rates.reduce((a, x) => a + Number(x.rate || 0), 0);
+
+    if (techType === 'partner') {
+      const picked = _contractSingleRateForGroup(spec, groupQty, techType, rateContext);
+      const baseAmount = Number(picked.rate || 0) * qty;
+      addAmount(tech, baseAmount);
+      addMachine(tech, qty);
+      addRelated(tech, {
+        job_item_id: it.job_item_id,
+        item_name: it.item_name,
+        qty,
+        original_qty: Number(it.qty || 0),
+        group_qty: groupQty,
+        line_total: Number(it.line_total || 0),
+        assigned_technician_username: String(it.assigned_technician_username || '').trim() || null,
+        contract_reason: reason,
+      });
+      addRateRows(tech, [{
+        item_name: it.item_name,
+        ac_type_key: spec.ac_key,
+        wash_key: spec.wash_key,
+        wash_label: _thaiLabelWash(spec.wash_key) || spec.wash_key,
+        btu_tier: spec.btu_tier,
+        btu: spec.btu || null,
+        rate_set_id: rateContext.rate_set_id || null,
+        rate_set_version: rateContext.rate_set_version || null,
+        rate_source: picked.rate_source || rateContext.rate_source || 'fallback',
+        tech_type: techType,
+        contract_version: CWF_CONTRACT_PAYROLL_VERSION,
+        rule_id: `${spec.group_key}|qty:${groupQty}|bracket:${picked.bracket_index}`,
+        group_key: spec.group_key,
+        group_qty: groupQty,
+        bracket_index: picked.bracket_index,
+        qty,
+        rate_per_unit: Number(picked.rate || 0),
+        rate: Number(picked.rate || 0),
+        share: Number(share || 1),
+        paid_rate: Number(picked.rate || 0),
+        total: baseAmount,
+        base_amount: baseAmount,
+        reason,
+        single_rate_contract: true,
+      }]);
+
+      const heightExtra = _contractHeightExtraFromText([it.item_name, meta.customer_note, meta.note, meta.admin_note].filter(Boolean).join(' '));
+      if (heightExtra.key) {
+        const amount = Number(heightExtra.amount || 0) * qty;
+        if (amount) addAmount(tech, amount);
+        addExtra(tech, {
+          extra_type: 'height_risk',
+          condition_key: heightExtra.key,
+          label: heightExtra.label,
+          qty,
+          amount_per_unit: Number(heightExtra.amount || 0),
+          amount,
+          manual_approval_required: Boolean(heightExtra.manual),
+          source_item_name: it.item_name || null,
+        });
+      }
+      return;
+    }
+
+    // Backward-compatible company technician calculation.
+    const wholeQty = Math.max(0, Math.round(Number(qty || 0)));
+    if (!wholeQty) return;
+    const startIdx = nextCompanyStartIndex(tech, spec.group_key, wholeQty);
+    const rates = _contractMachineRates(spec, startIdx, wholeQty, techType, rateContext);
+    const amount = rates.reduce((a, x) => a + Number(x.rate || 0), 0) * Number(share || 1);
     addAmount(tech, amount);
     addMachine(tech, qty);
     addRelated(tech, {
       job_item_id: it.job_item_id,
       item_name: it.item_name,
       qty,
+      original_qty: Number(it.qty || 0),
       line_total: Number(it.line_total || 0),
       assigned_technician_username: String(it.assigned_technician_username || '').trim() || null,
       contract_reason: reason,
@@ -6568,74 +6688,37 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
       wash_label: _thaiLabelWash(spec.wash_key) || spec.wash_key,
       btu_tier: spec.btu_tier,
       btu: spec.btu || null,
-      rate_set_id: techType === 'partner' ? rateContext.rate_set_id : null,
-      rate_set_version: techType === 'partner' ? rateContext.rate_set_version : null,
-      rate_source: x.rate_source || (techType === 'partner' ? rateContext.rate_source : 'contract'),
+      rate_set_id: null,
+      rate_set_version: null,
+      rate_source: 'contract',
       tech_type: techType,
       machine_index: x.machine_index,
+      qty: Number(share || 1),
       rate: Number(x.rate || 0),
-      share: 1,
-      paid_rate: Number(x.rate || 0),
+      rate_per_unit: Number(x.rate || 0),
+      share: Number(share || 1),
+      paid_rate: Number(x.rate || 0) * Number(share || 1),
+      total: Number(x.rate || 0) * Number(share || 1),
       reason,
     })));
-  }
-
-  function applySharedItemToTeam(it, reason){
-    const qty = Math.max(0, Math.round(Number(it.qty || 0)));
-    if (!qty || !team.length) return;
-    const spec = _contractServiceKeyFromItem(it);
-    const divisor = team.length;
-    for (const tech of team) {
-      const techType = techTypeOf(tech);
-      if (techType === 'special_only') continue;
-      const startIdx = nextStartIndex(tech, spec.group_key, qty);
-      const rates = _contractMachineRates(spec, startIdx, qty, techType, rateContext);
-      const amount = rates.reduce((a, x) => a + (Number(x.rate || 0) / divisor), 0);
-      addAmount(tech, amount);
-      addMachine(tech, qty / divisor);
-      addRelated(tech, {
-        job_item_id: it.job_item_id,
-        item_name: it.item_name,
-        qty: qty / divisor,
-        original_qty: qty,
-        line_total: Number(it.line_total || 0),
-        assigned_technician_username: null,
-        contract_reason: reason,
-      });
-      addRateRows(tech, rates.map(x => ({
-        item_name: it.item_name,
-        ac_type_key: spec.ac_key,
-        wash_key: spec.wash_key,
-        wash_label: _thaiLabelWash(spec.wash_key) || spec.wash_key,
-        btu_tier: spec.btu_tier,
-        btu: spec.btu || null,
-        rate_set_id: techType === 'partner' ? rateContext.rate_set_id : null,
-        rate_set_version: techType === 'partner' ? rateContext.rate_set_version : null,
-        rate_source: x.rate_source || (techType === 'partner' ? rateContext.rate_source : 'contract'),
-        tech_type: techType,
-        machine_index: x.machine_index,
-        rate: Number(x.rate || 0),
-        share: 1 / divisor,
-        paid_rate: Number(x.rate || 0) / divisor,
-        reason,
-      })));
-    }
   }
 
   for (const it of assignedSvc) {
     const tech = String(it.assigned_technician_username || '').trim();
     if (!team.includes(tech)) team.push(tech);
-    applyWholeItemToTech(it, tech, 'assigned_item');
+    const qty = Math.max(0, Math.round(Number(it.qty || 0)));
+    applyItemToTech(it, tech, qty, 1, 'assigned_item');
   }
   for (const it of unassignedSvc) {
-    if (team.length === 1) applyWholeItemToTech(it, team[0], 'single_or_unassigned_item');
-    else applySharedItemToTeam(it, hasAssigned ? 'mixed_unassigned_shared' : 'coop_equal_shared');
+    const qty = Math.max(0, Math.round(Number(it.qty || 0)));
+    if (!qty) continue;
+    if (team.length === 1) {
+      applyItemToTech(it, team[0], qty, 1, 'single_or_unassigned_item');
+    } else {
+      const splitQty = qty / team.length;
+      for (const tech of team) applyItemToTech(it, tech, splitQty, 1 / team.length, hasAssigned ? 'mixed_unassigned_shared' : 'coop_equal_shared');
+    }
   }
-
-  const specialByTech = new Map(team.map(u => [u, 0]));
-  // Contract-only rebuild: do not convert legacy job_items line_total into technician income.
-  // This is the root fix for the 1,400 customer-price leak.
-  void specialItems;
 
   const totalMachine = svcItems.reduce((a, it) => a + Math.max(0, Number(it.qty || 0)), 0);
   const lines = [];
@@ -6648,12 +6731,14 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
     if (techType === 'special_only') continue;
 
     const base_amount = Number(serviceAmountByTech.get(tech) || 0);
-    const special_income = Number(specialByTech.get(tech) || 0);
-    const special_bonus = 0; // V9: assignment bonus disabled; use payout adjustments only
+    const special_income = 0;
+    const special_bonus = 0;
     const earn_amount = base_amount + special_income + special_bonus;
     const machine_count_for_tech = Number(machineCountByTech.get(tech) || 0);
     const rateRows = contractRowsByTech.get(tech) || [];
     const related_items = relatedByTech.get(tech) || [];
+    const extras = extrasByTech.get(tech) || [];
+    const extras_total = extras.reduce((a, x) => a + Number(x.amount || 0), 0);
     const detailRateSource = techType === 'partner'
       ? (rateRows.some(r => r.rate_source === 'fallback') ? 'fallback' : rateContext.rate_source)
       : 'contract';
@@ -6662,6 +6747,8 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
 
     const detail_json = {
       payroll_version: CWF_CONTRACT_PAYROLL_VERSION,
+      contract_version: techType === 'partner' ? 'partner_single_rate_2026_05' : CWF_CONTRACT_PAYROLL_VERSION,
+      partner_single_rate_contract: techType === 'partner',
       contract_only: true,
       job_type: _thaiLabelJob(_normJobKey(meta.job_type)) || String(meta.job_type || '').trim(),
       job_type_key: _normJobKey(meta.job_type),
@@ -6680,11 +6767,16 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
       how_machine_count_for_tech: mode === 'assigned'
         ? 'คิดเฉพาะรายการที่ assign ให้ช่าง หรือรายการที่ไม่มี assign ในงานช่างเดี่ยว'
         : 'รายการที่ไม่ assign ในงานทีมถูกหารเท่ากันตามจำนวนช่างในทีม',
-      how_percent_selected: 'ไม่ใช้เปอร์เซ็นต์แล้ว: ใช้เรทบาท/เครื่องตามสัญญา CWF 2026 เท่านั้น',
+      how_percent_selected: techType === 'partner'
+        ? 'ไม่ใช้เปอร์เซ็นต์และไม่ใช้ขั้นบันไดสะสม: ใช้เรทเดียวต่อเครื่องตามจำนวนรวมของรายการประเภทเดียวกันในใบงาน'
+        : 'ช่างบริษัทใช้เรทสัญญาเดิมแบบ backward-compatible',
       how_split_applied: mode === 'mixed'
         ? 'รายการที่ assign คิดเต็มให้เจ้าของรายการ + รายการไม่ assign หารเท่ากัน'
         : (mode === 'coop_equal' ? 'ไม่มี assign รายการ: หารเรทสัญญาเท่ากันตามทีม' : 'คิดตามรายการที่ช่างรับผิดชอบ'),
+      group_quantity_rule: 'เลือกเรทจากจำนวนรวมของ ac_type + wash_variant + btu_bucket ในใบงานเดียวกัน แล้วใช้เรทนั้นกับทุกเครื่องในกลุ่ม',
       contract_rate_rows: rateRows,
+      extras,
+      extras_total,
       related_items,
       ignored_legacy_items: ignoredLegacyItems || [],
       ignored_legacy_fields: ['line_total','unit_price','total_price','paid_amount','final_price','special_bonus_amount','percentage','company_cut_percent','commission_percent'],
@@ -6703,6 +6795,7 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
 
     const setting_snapshot = {
       payroll_version: CWF_CONTRACT_PAYROLL_VERSION,
+      contract_version: detail_json.contract_version,
       contract_only: true,
       old_percent_defaults_ignored: true,
       employment_type: String(prof.employment_type || 'company'),
@@ -6720,13 +6813,20 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
       base_amount,
       percent_final: null,
       machine_count_for_tech,
-      step_rule_key: `contract:${techType}`,
+      step_rule_key: `contract:${techType}${techType === 'partner' ? ':single_rate' : ''}`,
       detail_json,
       setting_snapshot,
     });
   }
 
   return lines;
+}
+
+async function computePartnerSingleRatePayout(job_id, opts = {}) {
+  // Explicit helper for the new partner agreement. It reuses the production payout line engine
+  // so Super Admin preview, technician income, and payout generation share one source of truth.
+  const lines = await _buildPayoutLinesForJob(job_id, opts);
+  return (lines || []).filter(ln => String(ln?.detail_json?.technician_type || ln?.setting_snapshot?.technician_type || '').toLowerCase() === 'partner');
 }
 
 // =======================================
@@ -6802,20 +6902,24 @@ function _techIncomeBreakdownFromLine(line, source) {
     rate_set_id: detail.rate_set_id || null,
     rate_set_version: detail.rate_set_version || null,
     rows: rows.slice(0, 80).map((r) => {
-      const paidRate = Number(r.paid_rate ?? r.rate ?? 0);
+      const qty = Number(r.qty == null ? 1 : r.qty);
+      const paidRate = Number(r.paid_rate ?? r.rate_per_unit ?? r.rate ?? 0);
       const share = Number(r.share == null ? 1 : r.share);
+      const total = Number(r.total ?? r.base_amount ?? (paidRate * (Number.isFinite(qty) ? qty : 1)));
       return {
         item_name: String(r.item_name || 'รายการบริการ').trim(),
         ac_type_key: r.ac_type_key || null,
         wash_type_key: r.wash_key || r.wash_type_key || null,
         btu_tier: r.btu_tier || null,
         machine_index: r.machine_index == null ? null : Number(r.machine_index),
-        qty: 1,
+        group_qty: r.group_qty == null ? null : Number(r.group_qty),
+        qty: Number.isFinite(qty) ? qty : 1,
         share: Number.isFinite(share) ? share : 1,
-        rate: _money(r.rate || 0),
+        rate: _money(r.rate_per_unit ?? r.rate ?? 0),
         paid_rate: _money(paidRate),
-        total: _money(paidRate),
+        total: _money(total),
         reason: r.reason || null,
+        single_rate_contract: Boolean(r.single_rate_contract),
       };
     }),
     related_items: items.slice(0, 30).map((it) => ({
@@ -7066,7 +7170,7 @@ app.get('/admin/super/tech_income/calc/job/:job_id', requireSuperAdmin, async (r
       ok: true,
       job_id,
       payroll_version: CWF_CONTRACT_PAYROLL_VERSION,
-      note: 'ใช้เรทบาท/เครื่องแบบขั้นบันไดตามสัญญา CWF 2026 (ไม่ใช้เปอร์เซ็นต์รายได้เดิม)',
+      note: 'พาร์ทเนอร์ใช้เรทเดียวต่อเครื่องตามจำนวนรวมของรายการประเภทเดียวกันในใบงาน; ช่างบริษัทใช้เรทสัญญาเดิม (ไม่ใช้เปอร์เซ็นต์รายได้เดิม)',
       gross_amount,
       lines,
     });
@@ -10632,6 +10736,11 @@ await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXIS
 await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS line_user_id TEXT`);
 await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS account_created_at TIMESTAMPTZ`);
 await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS account_note TEXT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS contract_version TEXT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS contract_accepted_at TIMESTAMPTZ`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS contract_accepted_ip TEXT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS contract_user_agent TEXT`);
+await pool.query(`ALTER TABLE public.partner_applications ADD COLUMN IF NOT EXISTS contract_acceptance_json JSONB NOT NULL DEFAULT '{}'::jsonb`);
 await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS partner_status TEXT`);
 await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS line_id TEXT`);
 
@@ -11114,7 +11223,7 @@ try {
       [
         CWF_TECHNICIAN_INCOME_RATE_SET_VERSION,
         CWF_TECHNICIAN_INCOME_RATE_SET_NAME,
-        'Seeded revised partner agreement v4 rates. Wall AC uses wash type + BTU + ladder; other AC types use fixed per-unit rates.'
+        'Seeded revised partner agreement v4 rates. Partner income uses one rate per unit based on total quantity of the same item group in the job; not cumulative ladder or percent.'
       ]
     );
     const rateSetId = rs.rows[0]?.id;

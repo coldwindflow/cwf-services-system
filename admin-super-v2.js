@@ -1014,8 +1014,8 @@
       </tr>`).join('');
     box.innerHTML = `
       <h3 style="margin:0 0 8px;color:#061b49">แอร์ผนัง</h3>
-      <div class="rate-table-wrap"><table><thead><tr><th>ประเภทการล้าง</th><th>BTU tier</th><th>เครื่องที่ 1</th><th>เครื่องที่ 2-3</th><th>เครื่องที่ 4 ขึ้นไป</th></tr></thead><tbody>${wallRows}</tbody></table></div>
-      <h3 style="margin:14px 0 8px;color:#061b49">แอร์สี่ทิศทาง / แอร์แขวน/ตั้งพื้น / แอร์เปลือย/ใต้ฝ้า</h3>
+      <div class="rate-table-wrap"><table><thead><tr><th>ประเภทการล้าง</th><th>BTU tier</th><th>จำนวนรวม 1 เครื่อง</th><th>จำนวนรวม 2-3 เครื่อง</th><th>จำนวนรวม 4 เครื่องขึ้นไป</th></tr></thead><tbody>${wallRows}</tbody></table></div>
+      <h3 style="margin:14px 0 8px;color:#061b49">แอร์ประเภทอื่น — เรทคงที่ต่อเครื่อง</h3>
       <div class="rate-table-wrap"><table><thead><tr><th>AC type</th><th>BTU</th><th>เรทต่อเครื่อง</th></tr></thead><tbody>${fixedRows}</tbody></table></div>`;
     box.querySelectorAll('.rate-input').forEach(input => {
       input.addEventListener('input', () => {
@@ -1031,7 +1031,7 @@
       TECH_RATE_STATE.active = r.active || null;
       TECH_RATE_STATE.drafts = r.drafts || [];
       TECH_RATE_STATE.editing = TECH_RATE_STATE.drafts[0] || TECH_RATE_STATE.active;
-      if ($('techRateStatus')) $('techRateStatus').textContent = r.active?.rate_set ? `Active ${r.active.rate_set.version} • ${r.active.items.length} รายการ` : (r.warning || 'ใช้ fallback v4');
+      if ($('techRateStatus')) $('techRateStatus').textContent = r.active?.rate_set ? `Active ${r.active.rate_set.version} • ${r.active.items.length} รายการ • ใช้เรทเดียวตามจำนวนรวม` : (r.warning || 'ใช้ fallback single-rate v4');
       renderTechRateTables();
     } catch(e) {
       if ($('techRateStatus')) $('techRateStatus').textContent = `โหลดเรทไม่สำเร็จ: ${e.message}`;
@@ -1048,7 +1048,7 @@
     }
   }
   async function createTechRateDraft() {
-    const version = prompt('ตั้งชื่อ version สำหรับ draft', `partner_v4_draft_${Date.now()}`);
+    const version = prompt('ตั้งชื่อ version สำหรับ draft', `partner_single_rate_2026_05_draft_${Date.now()}`);
     if (!version) return;
     await api('/api/super/technician-income-rates/draft', { method:'POST', body: JSON.stringify({ version }) });
     toast('สร้าง draft แล้ว');

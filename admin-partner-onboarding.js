@@ -91,7 +91,7 @@
     $('detailInfo').innerHTML = `
       <div class="grid2">
         <div>${kv('เบอร์โทร', a.phone)}${kv('บัญชีช่าง', a.technician_username)}${kv('LINE ID', a.line_id)}${kv('อีเมล', a.email)}${kv('ประสบการณ์', a.experience_years == null ? '-' : `${a.experience_years} ปี`)}</div>
-        <div>${kv('จังหวัด/พื้นที่', [a.province, a.district].filter(Boolean).join(' / '))}${kv('เป้าหมายงาน', a.work_intent)}${kv('การเดินทาง', a.travel_method || a.vehicle_type)}${kv('ธนาคาร', a.bank_name)}${kv('เลขบัญชี 4 ตัวท้าย', a.bank_account_last4)}</div>
+        <div>${kv('จังหวัด/พื้นที่', [a.province, a.district].filter(Boolean).join(' / '))}${kv('เป้าหมายงาน', a.work_intent)}${kv('การเดินทาง', a.travel_method || a.vehicle_type)}${kv('ธนาคาร', a.bank_name)}${kv('เลขบัญชี 4 ตัวท้าย', a.bank_account_last4)}${kv('ยอมรับสัญญา', a.contract_accepted_at ? `${a.contract_version || 'partner_single_rate_2026_05'} • ${fmtDate(a.contract_accepted_at)}` : 'ยังไม่ยอมรับในใบสมัคร')}</div>
       </div>
       ${kv('ที่อยู่', a.address_text)}
       <div class="chips">
@@ -263,6 +263,7 @@
       <div class="reviewChecklist">
         ${checklistItem('เอกสารหลักอัปโหลดครบ', docsUploaded, 'บัตรประชาชน / รูปโปรไฟล์ / สมุดบัญชี')}
         ${checklistItem('เอกสารหลักผ่านตรวจ', docsApproved, 'ถ้าไม่ผ่าน ให้ระบุเหตุผลและขออัปโหลดใหม่')}
+        ${checklistItem('ยอมรับสัญญาเรทเดียวในใบสมัคร', !!activeDetail?.application?.contract_accepted_at, activeDetail?.application?.contract_accepted_at ? `${activeDetail.application.contract_version || 'partner_single_rate_2026_05'} • ${fmtDate(activeDetail.application.contract_accepted_at)}` : 'ยังไม่กดยอมรับ')}
         ${checklistItem('เซ็นสัญญาแล้ว', sigs.length > 0, sigs[0]?.signed_at ? fmtDate(sigs[0].signed_at) : 'ยังไม่เซ็น')}
         ${checklistItem('สัมภาษณ์แล้ว', !!interview, interview ? `${interview.result || '-'} • ${fmtDate(interview.interviewed_at)}` : 'ยังไม่มีบันทึก')}
         ${checklistItem('อบรม Basic ครบ', !!trainingDone, academy ? `${academy.completed_count || 0}/${academy.lesson_count || 0} บทเรียน` : 'ยังไม่มีข้อมูล')}

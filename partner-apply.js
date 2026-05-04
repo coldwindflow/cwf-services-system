@@ -139,7 +139,9 @@
       wht_income_type: val('wht_income_type') || 'ค่าบริการ/ค่าจ้างทำของ ตามมาตรา 40(8)',
       wht_default_rate: val('wht_default_rate') || 3,
       consent_pdpa: checked('consent_pdpa'),
-      consent_terms: checked('consent_terms')
+      consent_terms: checked('consent_terms'),
+      consent_contract_rate: checked('consent_contract_rate'),
+      consent_deposit: checked('consent_deposit')
     };
   }
 
@@ -155,7 +157,7 @@
     if (!body.equipment_json.length) throw new Error('กรุณาเลือกเครื่องมือ / อุปกรณ์อย่างน้อย 1 รายการ');
     if (!body.bank_account_name || !body.bank_name || !body.bank_account_number) throw new Error('กรุณากรอกข้อมูลรับเงินให้ครบ');
     if (!/^\d{10,15}$/.test(body.bank_account_number)) throw new Error('กรุณากรอกเลขบัญชีเป็นตัวเลข 10-15 หลัก');
-    if (!body.consent_pdpa || !body.consent_terms) throw new Error('กรุณายอมรับเงื่อนไขก่อนส่งใบสมัคร');
+    if (!body.consent_pdpa || !body.consent_terms || !body.consent_contract_rate || !body.consent_deposit) throw new Error('กรุณายอมรับเงื่อนไข สัญญาเรทเดียว และเงินประกันก่อนส่งใบสมัคร');
   }
 
   function showResult(app){

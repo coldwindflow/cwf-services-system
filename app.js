@@ -1114,15 +1114,21 @@ function _renderTechnicianIncomeBreakdownContent(job) {
   }
   const rowsHtml = rows.map((r) => {
     const item = escapeHTML(r.item_name || 'รายการบริการ');
-    const qty = r.qty || r.quantity || r.machine_index || '';
-    const idx = r.machine_index ? `เครื่องที่ ${escapeHTML(r.machine_index)}` : (qty ? `จำนวน ${escapeHTML(qty)}` : 'ต่อรายการ');
+    const qtyNum = Number(r.qty || r.quantity || 0);
+    const qty = Number.isFinite(qtyNum) && qtyNum > 0 ? qtyNum : (r.machine_index || '');
+    const groupQty = Number(r.group_qty || 0);
+    const idx = r.single_rate_contract && groupQty
+      ? `จำนวนที่ช่างรับ ${escapeHTML(qty)} เครื่อง • จำนวนรวมกลุ่มนี้ ${escapeHTML(groupQty)} เครื่อง`
+      : (r.machine_index ? `เครื่องที่ ${escapeHTML(r.machine_index)}` : (qty ? `จำนวน ${escapeHTML(qty)}` : 'ต่อรายการ'));
     const rate = formatBahtText(r.paid_rate ?? r.rate ?? 0) || '-';
     const total = formatBahtText(r.total ?? r.amount ?? r.paid_rate ?? r.rate ?? 0) || '-';
+    const formula = qty && r.single_rate_contract ? `${escapeHTML(qty)} × ${escapeHTML(rate)} = ${escapeHTML(total)}` : `${escapeHTML(rate)}`;
     return `
       <div class="tech-income-modal-row">
         <div class="tech-income-modal-row-main">
           <b>${item}</b>
           <span>${idx}</span>
+          ${r.single_rate_contract ? `<span>สูตรเรทเดียว: ${formula}</span>` : ''}
         </div>
         <div class="tech-income-modal-row-money">
           <small>${escapeHTML(rate)}</small>
