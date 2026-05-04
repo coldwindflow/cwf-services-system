@@ -1020,6 +1020,91 @@ function escapeHTML(s){
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
   }[c]));
 }
+function formatBahtText(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x)) return null;
+  try { return x.toLocaleString('th-TH', { maximumFractionDigits: 0 }) + ' บาท'; }
+  catch { return Math.round(x).toString() + ' บาท'; }
+}
+function _techMoneyAmountText(value, fallbackText) {
+  const txt = formatBahtText(value);
+  return txt || fallbackText;
+}
+function renderTechnicianMoneySummary(job, context) {
+  const ctx = String(context || 'current');
+  const customerLabel = ctx === 'history' ? '💳 ยอดที่ลูกค้าจ่าย' : '💳 ยอดเก็บลูกค้า';
+  const incomeLabel = ctx === 'offered'
+    ? '💰 รายได้ช่างโดยประมาณ'
+    : (ctx === 'history' ? '💰 รายได้ที่ได้รับ' : '💰 รายได้ช่างของคุณ');
+  const incomeHelper = ctx === 'offered' ? 'คำนวณตามเรทงานปัจจุบัน' : 'คำนวณตามเรทช่าง';
+  const customerAmount = _techMoneyAmountText(job?.customer_collect_amount, 'รอตรวจสอบยอดเก็บลูกค้า');
+  const incomeAmount = _techMoneyAmountText(job?.technician_income_amount, 'รอระบบคำนวณรายได้');
+  const source = String(job?.technician_income_source || '');
+  const sourceText = source === 'finalized_payout'
+    ? 'จากยอดปิดงวดแล้ว'
+    : (source === 'fallback_v4' ? 'ใช้เรทสำรอง v4' : incomeHelper);
+  return `
+    <div class="tech-money-grid" data-context="${escapeHTML(ctx)}">
+      <div class="tech-money-card tech-money-card--customer">
+        <div class="tech-money-label">${customerLabel}</div>
+        <div class="tech-money-amount">${escapeHTML(customerAmount)}</div>
+        <div class="tech-money-helper">ใช้ตอนรับเงินจากลูกค้า</div>
+      </div>
+      <div class="tech-money-card tech-money-card--income">
+        <div class="tech-money-label">${incomeLabel}</div>
+        <div class="tech-money-amount">${escapeHTML(incomeAmount)}</div>
+        <div class="tech-money-helper">${escapeHTML(sourceText)}</div>
+      </div>
+    </div>
+  `;
+}
+function renderTechnicianIncomeBreakdown(job) {
+  const rows = Array.isArray(job?.technician_income_breakdown?.rows) ? job.technician_income_breakdown.rows : [];
+  const amount = _techMoneyAmountText(job?.technician_income_amount, 'รอระบบคำนวณรายได้');
+  const version = job?.technician_income_rate_set_version ? ` • เรท ${escapeHTML(job.technician_income_rate_set_version)}` : '';
+  if (!rows.length) {
+    return `
+      <details class="cwf-details tech-income-breakdown" style="margin-top:10px;">
+        <summary>💰 ดูรายละเอียดรายได้ช่าง</summary>
+        <div class="cwf-details-body">
+          <div class="muted">ติดต่อแอดมินเพื่อตรวจสอบรายได้</div>
+          <div style="margin-top:6px;"><b>${escapeHTML(amount)}</b>${version}</div>
+        </div>
+      </details>
+    `;
+  }
+  const rowsHtml = rows.map((r) => {
+    const item = escapeHTML(r.item_name || 'รายการบริการ');
+    const idx = r.machine_index ? `เครื่องที่ ${escapeHTML(r.machine_index)}` : 'ต่อรายการ';
+    const rate = formatBahtText(r.paid_rate ?? r.rate ?? 0) || '-';
+    const total = formatBahtText(r.total ?? r.paid_rate ?? 0) || '-';
+    return `
+      <div class="tech-income-breakdown-row">
+        <div>
+          <b>${item}</b>
+          <div class="muted" style="font-size:12px;">${idx}</div>
+        </div>
+        <div class="tech-income-breakdown-money">
+          <span>${escapeHTML(rate)}</span>
+          <b>${escapeHTML(total)}</b>
+        </div>
+      </div>
+    `;
+  }).join('');
+  return `
+    <details class="cwf-details tech-income-breakdown" style="margin-top:10px;">
+      <summary>💰 ดูรายละเอียดรายได้ช่าง</summary>
+      <div class="cwf-details-body">
+        <div class="tech-income-breakdown-head">
+          <span>รายการ / เรทช่าง</span>
+          <b>รวม ${escapeHTML(amount)}</b>
+        </div>
+        ${rowsHtml}
+        <div class="muted" style="font-size:12px;margin-top:8px;">แสดงเฉพาะส่วนของช่างคนนี้${version}</div>
+      </div>
+    </details>
+  `;
+}
 function _formatWorkCount(n){
   const x = Number(n || 0);
   if (!Number.isFinite(x)) return '0';
@@ -1807,7 +1892,7 @@ document.addEventListener("visibilitychange", () => {
 // 📨 LOAD OFFERS
 // =======================================
 function loadOffers() {
-  fetch(`${API_BASE}/offers/tech/${username}`)
+  fetch(`${API_BASE}/offers/tech/${username}`, { cache: "no-store" })
     .then((res) => res.json())
     .then((offers) => {
       const list = Array.isArray(offers) ? offers : [];
@@ -1867,6 +1952,8 @@ function renderOffers(offers) {
         <p><b>ประเภท:</b> ${o.job_type}</p>
         <p><b>นัด:</b> ${new Date(o.appointment_datetime).toLocaleString("th-TH")}</p>
         <p><b>ที่อยู่:</b> ${o.address_text || "-"}</p>
+
+        ${renderTechnicianMoneySummary(o, "offered")}
 
         <div class="row" style="margin-top:10px;">
           <button onclick="acceptOffer(${o.offer_id})">✅ รับงาน</button>
@@ -1928,7 +2015,7 @@ function declineOffer(offerId) {
 // 📡 LOAD JOBS
 // =======================================
 function loadJobs() {
-  fetch(`${API_BASE}/jobs/tech/${username}`)
+  fetch(`${API_BASE}/jobs/tech/${username}`, { cache: "no-store" })
     .then((res) => {
       if (!res.ok) throw new Error("โหลดข้อมูลงานไม่สำเร็จ");
       return res.json();
@@ -2620,6 +2707,8 @@ function buildJobCard(job, historyMode = false) {
       </div>
     ` : ``}
 
+    ${renderTechnicianMoneySummary(job, historyMode ? "history" : "current")}
+
     <details class="cwf-details" style="margin-top:10px;">
       <summary>👥 ทีมช่างในงานนี้</summary>
       <div class="cwf-details-body" id="team-${jobId}">กำลังโหลด...</div>
@@ -2649,12 +2738,13 @@ function buildJobCard(job, historyMode = false) {
 
 
     <details class="cwf-details" style="margin-top:10px;">
-      <summary>💰 รายละเอียดราคา</summary>
+      <summary>💳 รายละเอียดยอดเก็บลูกค้า</summary>
       <div class="cwf-details-body">
         <div id="pricing-${jobId}">กำลังโหลด...</div>
       </div>
     </details>
 
+    ${renderTechnicianIncomeBreakdown(job)}
 
     ${showWorkTools ? `
       <details class="cwf-details" style="margin-top:10px;" ${isWorking ? "open" : ""}>
@@ -2800,9 +2890,6 @@ function buildHistorySummary(job){
   const bookingCode = job?.booking_code || (job?.job_id != null ? ("CWF" + String(job.job_id).padStart(7,'0')) : '-');
   const apYmd = ymdBkkFromISO(job?.appointment_datetime);
   const apTxt = job?.appointment_datetime ? new Date(job.appointment_datetime).toLocaleString('th-TH') : '-';
-  const price = Number(job?.job_price || 0);
-  const priceTxt = isFinite(price) ? price.toLocaleString('th-TH') + ' บาท' : '-';
-
   const badge = (st === 'เสร็จแล้ว' || st === 'เสร็จสิ้น' || st === 'ปิดงาน' || st === 'done' || st === 'completed')
     ? '<span class="badge ok">✅ เสร็จแล้ว</span>'
     : '<span class="badge bad">⛔ ยกเลิก</span>';
@@ -2821,9 +2908,9 @@ function buildHistorySummary(job){
     </div>
     <div class="muted" style="margin-top:8px;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
       <span><b>ลูกค้า:</b> ${cust}</span>
-      <span title="ยอดที่ลูกค้าชำระ">💰 ${priceTxt}</span>
     </div>
     <div class="muted" style="margin-top:4px;"><b>ประเภท:</b> ${type}</div>
+    ${renderTechnicianMoneySummary(job, 'history')}
 
     <details class="cwf-details" style="margin-top:10px;">
       <summary>ดูรายละเอียด</summary>

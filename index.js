@@ -6467,6 +6467,8 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
   const specialItems = [];
 
   const team = await getTeamForJob(job_id);
+  const assumedTech = String(opts?.assumeTechnician || '').trim();
+  if (assumedTech && !team.includes(assumedTech)) team.push(assumedTech);
   for (const it of svcItems) {
     const assignedTech = String(it.assigned_technician_username || '').trim();
     if (assignedTech && !team.includes(assignedTech)) team.push(assignedTech);
@@ -6719,6 +6721,149 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
 // - If a job's finished_at falls inside a locked/paid payout period,
 //   disallow edits that would change income. Use adjustment instead.
 // =======================================
+async function _getCustomerCollectAmountForTechJob(job_id, fallbackAmount) {
+  try {
+    const realId = await resolveJobIdAny(pool, job_id);
+    if (!realId) return _money(fallbackAmount || 0);
+    const itemsR = await pool.query(
+      `SELECT qty, unit_price, line_total FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
+      [realId]
+    );
+    const subtotal = (itemsR.rows || []).reduce((sum, it) => {
+      const qty = Number(it.qty || 0);
+      const unit = Number(it.unit_price || 0);
+      const line = Number((it.line_total ?? (qty * unit)) || 0);
+      return sum + (Number.isFinite(line) ? line : 0);
+    }, 0);
+    if (!(subtotal > 0)) return _money(fallbackAmount || 0);
+    const promoR = await pool.query(
+      `SELECT p.promo_type, p.promo_value, jp.applied_discount
+         FROM public.job_promotions jp
+         JOIN public.promotions p ON p.promo_id = jp.promo_id
+        WHERE jp.job_id=$1
+        LIMIT 1`,
+      [realId]
+    );
+    const promo = promoR.rows?.[0] || null;
+    let discount = 0;
+    if (promo) {
+      if (promo.applied_discount != null) discount = Number(promo.applied_discount || 0);
+      else if (promo.promo_type === 'percent') discount = subtotal * (Number(promo.promo_value || 0) / 100);
+      else if (promo.promo_type === 'amount') discount = Number(promo.promo_value || 0);
+    }
+    return _money(Math.max(0, subtotal - discount));
+  } catch (e) {
+    try { console.warn('[tech_money] customer collect fallback', { job_id, error: e.message }); } catch {}
+    return _money(fallbackAmount || 0);
+  }
+}
+
+async function _loadFinalizedTechPayoutLineForJob(job_id, username) {
+  const tech = String(username || '').trim();
+  if (!tech) return null;
+  const r = await pool.query(
+    `SELECT l.payout_id, l.technician_username, l.job_id, l.earn_amount, l.detail_json,
+            p.status AS payout_status, p.period_start, p.period_end
+       FROM public.technician_payout_lines l
+       JOIN public.technician_payout_periods p ON p.payout_id = l.payout_id
+      WHERE l.job_id::text = $1::text
+        AND l.technician_username = $2
+        AND COALESCE(p.status,'draft') IN ('locked','paid')
+      ORDER BY CASE WHEN p.status='paid' THEN 0 ELSE 1 END, p.period_end DESC, l.line_id DESC
+      LIMIT 1`,
+    [String(job_id), tech]
+  );
+  return r.rows?.[0] || null;
+}
+
+function _techIncomeBreakdownFromLine(line, source) {
+  const detail = (line && typeof line.detail_json === 'object' && line.detail_json) ? line.detail_json : {};
+  const rows = Array.isArray(detail.contract_rate_rows) ? detail.contract_rate_rows : [];
+  const items = Array.isArray(detail.related_items) ? detail.related_items : (Array.isArray(detail.items) ? detail.items : []);
+  return {
+    source,
+    mode: detail.mode || detail.split_mode || null,
+    rate_source: detail.rate_source || null,
+    rate_set_id: detail.rate_set_id || null,
+    rate_set_version: detail.rate_set_version || null,
+    rows: rows.slice(0, 80).map((r) => {
+      const paidRate = Number(r.paid_rate ?? r.rate ?? 0);
+      const share = Number(r.share == null ? 1 : r.share);
+      return {
+        item_name: String(r.item_name || 'รายการบริการ').trim(),
+        ac_type_key: r.ac_type_key || null,
+        wash_type_key: r.wash_key || r.wash_type_key || null,
+        btu_tier: r.btu_tier || null,
+        machine_index: r.machine_index == null ? null : Number(r.machine_index),
+        qty: 1,
+        share: Number.isFinite(share) ? share : 1,
+        rate: _money(r.rate || 0),
+        paid_rate: _money(paidRate),
+        total: _money(paidRate),
+        reason: r.reason || null,
+      };
+    }),
+    related_items: items.slice(0, 30).map((it) => ({
+      item_name: it.item_name || '',
+      qty: Number(it.qty || 0),
+      assigned_technician_username: it.assigned_technician_username || null,
+      contract_reason: it.contract_reason || null,
+    })),
+  };
+}
+
+function _mapTechIncomeSourceFromLine(line, fallbackSource) {
+  const detail = (line && typeof line.detail_json === 'object' && line.detail_json) ? line.detail_json : {};
+  const raw = String(detail.rate_source || '').trim().toLowerCase();
+  if (raw === 'fallback') return 'fallback_v4';
+  if (raw === 'database') return fallbackSource || 'calculated_active_rate';
+  if (raw === 'contract') return fallbackSource || 'calculated_contract';
+  return fallbackSource || 'calculated_active_rate';
+}
+
+async function _buildTechnicianJobMoneySummary(job, username, opts = {}) {
+  const job_id = job?.job_id;
+  const tech = String(username || '').trim();
+  const context = String(opts?.context || '').trim();
+  const summary = {
+    customer_collect_amount: await _getCustomerCollectAmountForTechJob(job_id, Number(job?.job_price || 0)),
+    customer_collect_label: context === 'history' ? 'ยอดที่ลูกค้าจ่าย' : 'ยอดเก็บลูกค้า',
+    technician_income_amount: null,
+    technician_income_label: context === 'offered' ? 'รายได้ช่างโดยประมาณ' : (context === 'history' ? 'รายได้ที่ได้รับ' : 'รายได้ช่างของคุณ'),
+    technician_income_source: 'unavailable',
+    technician_income_breakdown: { source: 'unavailable', rows: [], related_items: [] },
+    technician_income_rate_set_id: null,
+    technician_income_rate_set_version: null,
+  };
+  if (!job_id || !tech) return summary;
+  try {
+    if (context === 'history') {
+      const stored = await _loadFinalizedTechPayoutLineForJob(job_id, tech);
+      if (stored) {
+        summary.technician_income_amount = _money(stored.earn_amount || 0);
+        summary.technician_income_source = 'finalized_payout';
+        summary.technician_income_breakdown = _techIncomeBreakdownFromLine(stored, 'finalized_payout');
+        summary.technician_income_rate_set_id = summary.technician_income_breakdown.rate_set_id || null;
+        summary.technician_income_rate_set_version = summary.technician_income_breakdown.rate_set_version || null;
+        return summary;
+      }
+    }
+    const lines = await _buildPayoutLinesForJob(job_id, { includeUnfinished: true, assumeTechnician: tech });
+    const line = (lines || []).find((ln) => String(ln.technician_username || '') === tech) || null;
+    if (!line) return summary;
+    const calculatedSource = context === 'history' ? 'calculated_active_rate' : 'active_rate';
+    summary.technician_income_amount = _money(line.earn_amount || 0);
+    summary.technician_income_source = _mapTechIncomeSourceFromLine(line, calculatedSource);
+    summary.technician_income_breakdown = _techIncomeBreakdownFromLine(line, summary.technician_income_source);
+    summary.technician_income_rate_set_id = line.detail_json?.rate_set_id || summary.technician_income_breakdown.rate_set_id || null;
+    summary.technician_income_rate_set_version = line.detail_json?.rate_set_version || summary.technician_income_breakdown.rate_set_version || null;
+    return summary;
+  } catch (e) {
+    try { console.warn('[tech_money] income unavailable', { job_id, username: tech, context, error: e.message, code: e.code }); } catch {}
+    return summary;
+  }
+}
+
 async function _findLockedOrPaidPeriodByFinishedAt(client, finishedAtIso){
   if (!finishedAtIso) return null;
   const r = await client.query(
@@ -15862,7 +16007,15 @@ ORDER BY appointment_datetime ASC
       `,
       [username]
     );
-    res.json(r.rows);
+    const rows = [];
+    for (const row of (r.rows || [])) {
+      const st = String(row.job_status || '').trim().toLowerCase();
+      const isDone = ['เสร็จแล้ว','เสร็จสิ้น','ปิดงาน','done','completed'].includes(st);
+      const context = isDone || row.finished_at ? 'history' : 'current';
+      const money = await _buildTechnicianJobMoneySummary(row, username, { context });
+      rows.push({ ...row, ...money });
+    }
+    res.json(rows);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "โหลดงานไม่สำเร็จ" });
@@ -17036,7 +17189,12 @@ app.get("/offers/tech/:username", async (req, res) => {
       [username]
     );
 
-    res.json(r.rows);
+    const rows = [];
+    for (const row of (r.rows || [])) {
+      const money = await _buildTechnicianJobMoneySummary(row, username, { context: 'offered' });
+      rows.push({ ...row, ...money });
+    }
+    res.json(rows);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "โหลดข้อเสนองานไม่สำเร็จ" });

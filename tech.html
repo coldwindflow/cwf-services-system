@@ -1669,7 +1669,22 @@
       }
     });
   </script>
-  <script src="app.js?v=completed-count-month-bkk-20260504"></script>
+  <style id="tech-money-summary-styles">
+    .tech-money-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+    .tech-money-card{border-radius:18px;padding:12px;border:1px solid rgba(15,23,42,.10);box-shadow:0 10px 24px rgba(8,36,91,.08);min-width:0}
+    .tech-money-card--customer{background:linear-gradient(180deg,#fff9db 0%,#fffef5 100%);border-color:rgba(245,158,11,.28)}
+    .tech-money-card--income{background:linear-gradient(180deg,#eaf4ff 0%,#f8fbff 100%);border-color:rgba(37,99,235,.24)}
+    .tech-money-label{font-size:12px;font-weight:1000;color:#334155;line-height:1.25;word-break:break-word}
+    .tech-money-amount{font-size:22px;font-weight:1000;color:#08245b;line-height:1.15;margin-top:6px;word-break:break-word}
+    .tech-money-helper{font-size:11px;font-weight:850;color:#64748b;line-height:1.35;margin-top:5px}
+    .tech-money-grid[data-context="history"] .tech-money-card--income{order:-1;background:linear-gradient(180deg,#e8fff3 0%,#f7fffb 100%);border-color:rgba(16,185,129,.24)}
+    .tech-income-breakdown-head{display:flex;justify-content:space-between;gap:10px;align-items:center;margin-bottom:8px;color:#0b2e6d}
+    .tech-income-breakdown-row{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:10px 0;border-top:1px solid rgba(15,23,42,.08)}
+    .tech-income-breakdown-money{text-align:right;display:grid;gap:3px;color:#0b2e6d;white-space:nowrap}
+    .tech-income-breakdown-money span{font-size:12px;color:#64748b;font-weight:850}
+    @media(max-width:390px){.tech-money-grid{grid-template-columns:1fr}.tech-money-amount{font-size:20px}.tech-income-breakdown-row{grid-template-columns:1fr}.tech-income-breakdown-money{text-align:left;white-space:normal}}
+  </style>
+  <script src="app.js?v=tech-money-summary-v1-20260504"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

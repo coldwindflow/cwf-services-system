@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v35-push-notifications";
+const CACHE_NAME = "cwf-cache-v36-tech-money-summary";
 
 const ASSETS = [
   "/",
@@ -9,7 +9,7 @@ const ASSETS = [
   "/index.html",
   "/tech.html",
   "/style.css",
-  "/app.js?v=tech-premium-v10-6-push",
+  "/app.js?v=tech-money-summary-v1-20260504",
   "/logo.png",
   "/manifest.json",
   "/mainfest.json",
