@@ -2897,7 +2897,7 @@ window.callCustomer = callCustomer;
 
 // =======================================
 // 🧩 CWF CLOSE FLOW MODAL UI (clean production layout v2 - collect customer payment)
-// - หน้าหลักต้องเหลือแค่ปุ่ม: ลงรูป / เช็คลิส / เก็บเงินลูกค้า
+// - กล่องปิดงานต้องเหลือแค่ปุ่ม: ลงรูปหลักฐาน / เช็คลิสตรวจสภาพ
 // - รายละเอียดทั้งหมดอยู่ใน Modal เพื่อไม่ให้หน้า “งานปัจจุบัน” รก/ซ้อน
 // =======================================
 const CWF_COMPANY_QR_URL = "/assets/cwf-promptpay-qr.jpg";
@@ -2933,6 +2933,15 @@ function ensureCwfCloseStyles(){
   const style = document.createElement('style');
   style.id = 'cwfCloseFlowStyles';
   style.textContent = `
+    .cwf-close-hub-clean{display:grid!important;grid-template-columns:1fr!important;gap:18px!important;margin:14px 0 22px!important}
+    .cwf-close-hub-clean .cwf-clean-action{appearance:none!important;-webkit-appearance:none!important;width:100%!important;min-height:76px!important;display:grid!important;grid-template-columns:48px 1fr 22px!important;align-items:center!important;gap:13px!important;text-align:left!important;border:1px solid rgba(148,163,184,.34)!important;background:#ffffff!important;background-image:none!important;color:#0f172a!important;border-radius:22px!important;padding:14px 15px!important;box-shadow:0 10px 24px rgba(15,23,42,.07)!important;line-height:1.25!important}
+    .cwf-close-hub-clean .cwf-clean-action:active{transform:translateY(1px)!important}
+    .cwf-close-hub-clean .cwf-clean-action:disabled{opacity:.55!important;cursor:not-allowed!important}
+    .cwf-close-hub-clean .cwf-clean-icon{width:46px!important;height:46px!important;border-radius:16px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:#eef5ff!important;color:#1558d6!important;font-size:23px!important;border:1px solid rgba(37,99,235,.12)!important}
+    .cwf-close-hub-clean .cwf-clean-text{min-width:0!important;display:block!important}
+    .cwf-close-hub-clean .cwf-clean-text b{display:block!important;color:#0f172a!important;font-size:18px!important;font-weight:1000!important;margin:0 0 4px!important;letter-spacing:0!important}
+    .cwf-close-hub-clean .cwf-clean-text small{display:block!important;color:#64748b!important;font-size:13px!important;font-weight:750!important;line-height:1.35!important}
+    .cwf-close-hub-clean .cwf-clean-arrow{color:#94a3b8!important;font-size:24px!important;font-weight:1000!important;text-align:right!important}
     .cwf-close-hub{display:grid!important;grid-template-columns:1fr!important;gap:12px!important;margin:12px 0 14px!important}
     .cwf-close-action{appearance:none!important;-webkit-appearance:none!important;width:100%!important;min-height:84px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:14px!important;text-align:left!important;border:1px solid rgba(148,163,184,.32)!important;background:#ffffff!important;color:#0f172a!important;border-radius:24px!important;padding:17px 16px!important;box-shadow:0 10px 26px rgba(15,23,42,.08)!important;cursor:pointer!important;line-height:1.28!important}
     .cwf-close-action:active{transform:translateY(1px)!important}.cwf-close-action:disabled{opacity:.58!important;cursor:not-allowed!important}.cwf-close-action .cwf-action-left{display:flex!important;align-items:center!important;gap:14px!important;min-width:0!important}.cwf-close-action .ico{width:48px!important;height:48px!important;min-width:48px!important;border-radius:17px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:#eef5ff!important;color:#1558d6!important;font-size:24px!important;border:1px solid rgba(37,99,235,.12)!important;box-shadow:none!important}.cwf-close-action b{display:block!important;font-size:18px!important;margin:0!important;color:#0f172a!important;font-weight:1000!important;letter-spacing:0!important}.cwf-close-action small{display:block!important;color:#64748b!important;line-height:1.42!important;margin-top:4px!important;font-size:13px!important;font-weight:750!important}.cwf-action-arrow{font-size:24px!important;color:#94a3b8!important;font-weight:1000!important}
@@ -3338,12 +3347,16 @@ function buildJobCard(job, historyMode = false) {
       <details class="cwf-details" style="margin-top:10px;" ${isWorking ? "open" : ""}>
         <summary>🛠️ ปิดงาน / หลักฐาน</summary>
         <div class="cwf-details-body">
-          <div class="cwf-close-hub">
-            <button class="cwf-close-action" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""} aria-label="ลงรูปหลักฐาน">
-              <span class="cwf-action-left"><span class="ico">📷</span><span><b>ลงรูปหลักฐาน</b><small>อัปโหลดรูปก่อนทำ หลังทำ และรูปตรวจเช็ค</small></span></span><span class="cwf-action-arrow">›</span>
+          <div class="cwf-close-hub-clean" data-cwf-close-clean="1">
+            <button class="cwf-clean-action cwf-clean-photo" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""} aria-label="ลงรูปหลักฐาน">
+              <span class="cwf-clean-icon">📷</span>
+              <span class="cwf-clean-text"><b>ลงรูปหลักฐาน</b><small>รูปก่อนทำ / หลังทำ / รูปตรวจเช็ค</small></span>
+              <span class="cwf-clean-arrow">›</span>
             </button>
-            <button class="cwf-close-action" type="button" onclick="openTechChecklistModal('${jobKeyJs}', 'pre')" ${!canEdit ? "disabled" : ""} aria-label="เช็คลิสตรวจสภาพ">
-              <span class="cwf-action-left"><span class="ico">✅</span><span><b>เช็คลิสตรวจสภาพ</b><small>ติ๊กตรวจก่อนล้างและหลังล้างแบบสั้น</small></span></span><span class="cwf-action-arrow">›</span>
+            <button class="cwf-clean-action cwf-clean-checklist" type="button" onclick="openTechChecklistModal('${jobKeyJs}', 'pre')" ${!canEdit ? "disabled" : ""} aria-label="เช็คลิสตรวจสภาพ">
+              <span class="cwf-clean-icon">✅</span>
+              <span class="cwf-clean-text"><b>เช็คลิสตรวจสภาพ</b><small>ติ๊กตรวจสภาพก่อนล้าง / หลังล้าง</small></span>
+              <span class="cwf-clean-arrow">›</span>
             </button>
           </div>
 
@@ -4876,39 +4889,83 @@ window.addEventListener('DOMContentLoaded', () => { document.getElementById('tec
 
 
 // =======================================
-// 🧹 CLOSE PANEL VISUAL CLEANUP PATCH
-// - Force the close panel to show only 2 clean white action buttons.
-// - Remove legacy "เก็บเงินลูกค้า" button from this panel even if older render/cache remains.
+// 🧹 CLOSE PANEL VISUAL CLEANUP PATCH (v4 hard replace)
+// - Force close panel to show only 2 white buttons.
+// - Remove legacy/old blue collect-payment button from this panel.
+// - Works even if older HTML is rendered before the new code runs.
 // =======================================
 (function cwfClosePanelVisualCleanupPatch(){
-  const STYLE_ID = 'cwf-close-panel-visual-cleanup-v3';
+  const STYLE_ID = 'cwf-close-panel-visual-cleanup-v4';
   function ensureStyle(){
     if (document.getElementById(STYLE_ID)) return;
     const st = document.createElement('style');
     st.id = STYLE_ID;
     st.textContent = `
-      .cwf-close-hub{display:grid!important;grid-template-columns:1fr!important;gap:18px!important;margin:14px 0 20px!important}
-      .cwf-close-action{appearance:none!important;-webkit-appearance:none!important;width:100%!important;min-height:84px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:14px!important;text-align:left!important;border:1px solid rgba(148,163,184,.32)!important;background:#fff!important;color:#0f172a!important;border-radius:24px!important;padding:17px 16px!important;box-shadow:0 10px 26px rgba(15,23,42,.08)!important;line-height:1.28!important}
-      .cwf-close-action .cwf-action-left{display:flex!important;align-items:center!important;gap:14px!important;min-width:0!important}
-      .cwf-close-action .ico{width:48px!important;height:48px!important;min-width:48px!important;border-radius:17px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:#eef5ff!important;color:#1558d6!important;font-size:24px!important;border:1px solid rgba(37,99,235,.12)!important;box-shadow:none!important}
-      .cwf-close-action b{display:block!important;font-size:18px!important;color:#0f172a!important;font-weight:1000!important;margin:0!important}
-      .cwf-close-action small{display:block!important;color:#64748b!important;line-height:1.42!important;margin-top:4px!important;font-size:13px!important;font-weight:750!important}
-      .cwf-action-arrow{font-size:24px!important;color:#94a3b8!important;font-weight:1000!important}
+      details.cwf-details[data-cwf-close-panel="1"] summary{font-weight:1000!important;color:#0f172a!important}
+      .cwf-close-hub-clean{display:grid!important;grid-template-columns:1fr!important;gap:18px!important;margin:14px 0 22px!important}
+      .cwf-close-hub-clean .cwf-clean-action{appearance:none!important;-webkit-appearance:none!important;width:100%!important;min-height:76px!important;display:grid!important;grid-template-columns:48px 1fr 22px!important;align-items:center!important;gap:13px!important;text-align:left!important;border:1px solid rgba(148,163,184,.34)!important;background:#fff!important;background-image:none!important;color:#0f172a!important;border-radius:22px!important;padding:14px 15px!important;box-shadow:0 10px 24px rgba(15,23,42,.07)!important;line-height:1.25!important}
+      .cwf-close-hub-clean .cwf-clean-icon{width:46px!important;height:46px!important;border-radius:16px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:#eef5ff!important;color:#1558d6!important;font-size:23px!important;border:1px solid rgba(37,99,235,.12)!important}
+      .cwf-close-hub-clean .cwf-clean-text{min-width:0!important;display:block!important}
+      .cwf-close-hub-clean .cwf-clean-text b{display:block!important;color:#0f172a!important;font-size:18px!important;font-weight:1000!important;margin:0 0 4px!important;letter-spacing:0!important}
+      .cwf-close-hub-clean .cwf-clean-text small{display:block!important;color:#64748b!important;font-size:13px!important;font-weight:750!important;line-height:1.35!important}
+      .cwf-close-hub-clean .cwf-clean-arrow{color:#94a3b8!important;font-size:24px!important;font-weight:1000!important;text-align:right!important}
     `;
     document.head.appendChild(st);
+  }
+  function findJobKey(details){
+    const btn = details.querySelector('button[onclick*="openTechPhotoModal"],button[onclick*="openTechChecklistModal"]');
+    const raw = btn ? String(btn.getAttribute('onclick') || '') : '';
+    const m = raw.match(/'([^']+)'/);
+    return m ? m[1] : '';
+  }
+  function setImportant(el, prop, value){ try{ el.style.setProperty(prop, value, 'important'); }catch(e){} }
+  function hardStyleButton(btn){
+    setImportant(btn, 'background', '#ffffff');
+    setImportant(btn, 'background-image', 'none');
+    setImportant(btn, 'color', '#0f172a');
+    setImportant(btn, 'border', '1px solid rgba(148,163,184,.34)');
+    setImportant(btn, 'border-radius', '22px');
+    setImportant(btn, 'box-shadow', '0 10px 24px rgba(15,23,42,.07)');
+    setImportant(btn, 'min-height', '76px');
+    setImportant(btn, 'margin', '0');
   }
   function cleanup(){
     ensureStyle();
     document.querySelectorAll('details.cwf-details').forEach((details)=>{
       const summary = details.querySelector('summary');
       if (!summary) return;
-      if (summary.textContent.includes('ปิดงาน') && summary.textContent.includes('หลักฐาน')) {
-        summary.textContent = '🛠️ ปิดงาน / หลักฐาน';
-        details.querySelectorAll('button.cwf-close-action').forEach((btn)=>{
-          const txt = (btn.textContent || '').replace(/\s+/g,' ').trim();
-          if (txt.includes('เก็บเงินลูกค้า') || txt.includes('จ่ายเงิน')) btn.remove();
-        });
+      const st = summary.textContent || '';
+      if (!st.includes('ปิดงาน') || !st.includes('หลักฐาน')) return;
+      details.dataset.cwfClosePanel = '1';
+      summary.textContent = '🛠️ ปิดงาน / หลักฐาน';
+      const body = details.querySelector('.cwf-details-body');
+      if (!body) return;
+      const jobKey = findJobKey(details);
+      let hub = body.querySelector('.cwf-close-hub-clean');
+      if (!hub) {
+        const oldHub = body.querySelector('.cwf-close-hub');
+        hub = document.createElement('div');
+        hub.className = 'cwf-close-hub-clean';
+        hub.dataset.cwfCloseClean = '1';
+        hub.innerHTML = `
+          <button class="cwf-clean-action cwf-clean-photo" type="button" ${jobKey ? `onclick="openTechPhotoModal('${jobKey}')"` : ''} aria-label="ลงรูปหลักฐาน">
+            <span class="cwf-clean-icon">📷</span><span class="cwf-clean-text"><b>ลงรูปหลักฐาน</b><small>รูปก่อนทำ / หลังทำ / รูปตรวจเช็ค</small></span><span class="cwf-clean-arrow">›</span>
+          </button>
+          <button class="cwf-clean-action cwf-clean-checklist" type="button" ${jobKey ? `onclick="openTechChecklistModal('${jobKey}', 'pre')"` : ''} aria-label="เช็คลิสตรวจสภาพ">
+            <span class="cwf-clean-icon">✅</span><span class="cwf-clean-text"><b>เช็คลิสตรวจสภาพ</b><small>ติ๊กตรวจสภาพก่อนล้าง / หลังล้าง</small></span><span class="cwf-clean-arrow">›</span>
+          </button>`;
+        if (oldHub) oldHub.replaceWith(hub);
+        else body.prepend(hub);
       }
+      hub.querySelectorAll('button').forEach(hardStyleButton);
+      // Remove any remaining old blue buttons for collect/payment inside this close panel.
+      body.querySelectorAll('button').forEach((btn)=>{
+        if (btn.closest('.cwf-close-hub-clean')) return;
+        const txt = (btn.textContent || '').replace(/\s+/g,' ').trim();
+        if (txt.includes('เก็บเงินลูกค้า') || txt.includes('จ่ายเงิน')) btn.remove();
+      });
+      // Remove legacy old hub if it still remains after replacement.
+      body.querySelectorAll('.cwf-close-hub').forEach((oldHub)=>oldHub.remove());
     });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', cleanup);

@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  var VERSION = 'close-flow-modal-clean-v1';
+  var VERSION = 'close-panel-hard-clean-v4';
   function register(){
     if (!('serviceWorker' in navigator)) return;
     window.addEventListener('load', function(){
