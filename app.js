@@ -2531,7 +2531,7 @@ function renderUpcomingHint(filteredCount, totalCount){
 }
 
 function renderJobs(jobs) {
-  // ✅ cache ไว้ใช้กับ popup จ่ายเงิน / เปิด e-slip
+  // ✅ cache ไว้ใช้กับ popup เก็บเงินลูกค้า / เปิด e-slip
   window.__JOB_CACHE__ = Array.isArray(jobs) ? jobs : [];
 
   if (activeJobsEl) activeJobsEl.innerHTML = "";
@@ -2897,7 +2897,7 @@ window.callCustomer = callCustomer;
 
 // =======================================
 // 🧩 CWF CLOSE FLOW MODAL UI (clean production layout)
-// - หน้าหลักต้องเหลือแค่ปุ่ม: ลงรูป / เช็คลิส / จ่ายเงิน
+// - หน้าหลักต้องเหลือแค่ปุ่ม: ลงรูป / เช็คลิส / เก็บเงินลูกค้า
 // - รายละเอียดทั้งหมดอยู่ใน Modal เพื่อไม่ให้หน้า “งานปัจจุบัน” รก/ซ้อน
 // =======================================
 const CWF_COMPANY_QR_URL = "/assets/cwf-promptpay-qr.jpg";
@@ -3137,12 +3137,12 @@ async function openTechPaymentModal(jobId, method){
   const cashHtml = `<div class="cwf-pay-card"><b>ลูกค้าจ่ายเงินสดให้ช่าง</b><div class="muted">หลังรับเงินสด ช่างต้องโอนเข้าบริษัทและแนบสลิปก่อนปิดงาน</div><label style="display:block;margin-top:10px;font-weight:900">จำนวนเงินสดที่รับจากลูกค้า</label><input type="number" value="${String(pay.cash_amount||'').replace(/"/g,'&quot;')}" placeholder="เช่น 1200" oninput="cwfUpdatePaymentField('${key.replace(/'/g,"\\'")}', 'cash_amount', this.value)"><label style="display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:900"><input type="checkbox" style="width:22px;height:22px" ${pay.cash_confirmed?'checked':''} onchange="cwfUpdatePaymentField('${key.replace(/'/g,"\\'")}', 'cash_confirmed', this.checked, true)"> ฉันยืนยันว่าได้รับเงินสดจากลูกค้าตามจำนวนที่ระบุแล้ว</label><textarea style="margin-top:10px" placeholder="หมายเหตุการรับเงินสด" oninput="cwfUpdatePaymentField('${key.replace(/'/g,"\\'")}', 'note', this.value)">${String(pay.note||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea><button type="button" onclick="cwfUploadPaymentSlip('${key.replace(/'/g,"\\'")}', 'cash_transfer_slip')">📎 แนบสลิปที่ช่างโอนเข้าบริษัท</button><div class="cwf-mini-status"><span class="cwf-chip ${pay.slip_uploaded?'ok':'warn'}">${pay.slip_uploaded?'แนบสลิปแล้ว':'ยังไม่แนบสลิป'}</span></div></div>`;
   const adminHtml = `<div class="cwf-pay-card"><b>ลูกค้าจ่ายกับแอดมิน / ให้แอดมินจัดการ</b><div class="muted" style="margin-top:6px">ใช้กรณีลูกค้าโอนให้แอดมินโดยตรง หรือแอดมินจะเป็นผู้ลงสลิปและอัปเดตสถานะชำระเงินภายหลัง</div><div class="cwf-mini-status"><span class="cwf-chip warn">ปิดงานได้โดยไม่ต้องแนบสลิป</span><span class="cwf-chip">สถานะ: รอแอดมินอัปเดต</span></div></div>`;
   const body = tabs + (active === 'cash' ? cashHtml : active === 'admin' ? adminHtml : qrHtml);
-  cwfOpenModal('💳 การชำระเงิน', body, `<button class="secondary" type="button" onclick="cwfCloseModal()">ปิด</button>`);
+  cwfOpenModal('💳 เก็บเงินลูกค้า', body, `<button class="secondary" type="button" onclick="cwfCloseModal()">ปิด</button>`);
 }
 window.openTechPaymentModal = openTechPaymentModal;
 async function cwfValidatePayment(jobId){
   const p = cwfGetPayment(jobId); const method = p.method || '';
-  if (!method) return 'กรุณาเลือกวิธีชำระเงิน';
+  if (!method) return 'กรุณาเลือกวิธีเก็บเงินลูกค้า';
   if (p.uploading) return 'กรุณารอให้อัปโหลดสลิปให้เสร็จก่อนปิดงาน';
   if (method === 'qr' && !p.slip_uploaded) return 'กรุณาแนบสลิปโอนเงินก่อนปิดงาน';
   if (method === 'cash') {
@@ -3242,10 +3242,10 @@ function buildJobCard(job, historyMode = false) {
                 ? "🚗 เริ่มเดินทาง"
                 : (!checkedIn
                     ? "📍 เช็คอิน"
-                    : (!isWorking ? "▶️ เริ่มทำงาน" : "💳 จ่ายเงิน")))));
+                    : (!isWorking ? "▶️ เริ่มทำงาน" : "💳 เก็บเงินลูกค้า")))));
 
 
-  // ✅ ปุ่มสถานะจะแสดงเป็น 4 ปุ่มเรียงลำดับ (เริ่มเดินทาง → เช็คอิน → เริ่มทำงาน → จ่ายเงิน)
+  // ✅ ปุ่มสถานะจะแสดงเป็น 4 ปุ่มเรียงลำดับ (เริ่มเดินทาง → เช็คอิน → เริ่มทำงาน → เก็บเงินลูกค้า)
 
   const escape = (s) => String(s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
@@ -3269,7 +3269,7 @@ function buildJobCard(job, historyMode = false) {
         ? "ไปถึงหน้างานแล้วกด “เช็คอิน”"
         : (!isWorking
           ? "เช็คอินแล้ว กด “เริ่มทำงาน” เพื่อเปิดสถานะกำลังทำ"
-          : (!paid ? "ทำงานเสร็จให้กด “จ่ายเงิน” เพื่อแสดง QR และแนบสลิป" : "✅ จ่ายเงินแล้ว"))));
+          : (!paid ? "ทำงานเสร็จให้กด “เก็บเงินลูกค้า” เพื่อเลือกวิธีรับเงินและแนบสลิป" : "✅ เก็บเงินแล้ว"))));
 
   // ✅ แสดงส่วนรูป/หมายเหตุ/ปิดงาน เฉพาะตอนเริ่มทำงานแล้ว
   const showWorkTools = checkedIn || isWorking || historyMode;
@@ -3336,7 +3336,7 @@ function buildJobCard(job, historyMode = false) {
 
     ${showWorkTools ? `
       <details class="cwf-details" style="margin-top:10px;" ${isWorking ? "open" : ""}>
-        <summary>🛠️ ปิดงาน / หลักฐาน / ชำระเงิน</summary>
+        <summary>🛠️ ปิดงาน / หลักฐาน / เก็บเงินลูกค้า</summary>
         <div class="cwf-details-body">
           <div class="cwf-close-hub">
             <button class="cwf-close-action" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
@@ -3346,7 +3346,7 @@ function buildJobCard(job, historyMode = false) {
               <span class="ico">✅</span><span><b>เช็คลิส</b><small>ติ๊กตรวจสภาพก่อนล้างและหลังล้างใน Modal</small></span>
             </button>
             <button class="cwf-close-action" type="button" onclick="openTechPaymentModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
-              <span class="ico">💳</span><span><b>จ่ายเงิน</b><small>เลือก QR / เงินสด / แอดมินจัดการ</small></span>
+              <span class="ico">💳</span><span><b>เก็บเงินลูกค้า</b><small>เลือก QR / เงินสด / แอดมินจัดการ</small></span>
             </button>
           </div>
 
@@ -3400,7 +3400,7 @@ function buildJobCard(job, historyMode = false) {
         </div>
       </details>
     ` : `
-      <div class="muted" style="margin-top:10px;">* หลังจาก “เช็คอิน” แล้ว จะเปิดปุ่ม ลงรูป / เช็คลิส / จ่ายเงิน / ปิดงาน *</div>
+      <div class="muted" style="margin-top:10px;">* หลังจาก “เช็คอิน” แล้ว จะเปิดปุ่ม ลงรูป / เช็คลิส / เก็บเงินลูกค้า / ปิดงาน *</div>
     `}
   `;
 
@@ -3560,7 +3560,7 @@ async function startWork(jobId) {
 
 // =======================================
 // 🔁 WORKFLOW NEXT (ปุ่มเดียวสลับขั้นตอน)
-// - ลำดับ: เริ่มเดินทาง -> เช็คอิน -> เริ่มทำงาน -> จ่ายเงิน -> e-slip
+// - ลำดับ: เริ่มเดินทาง -> เช็คอิน -> เริ่มทำงาน -> เก็บเงินลูกค้า -> e-slip
 // - เงื่อนไข: ต้องโทรลูกค้าก่อน ถึงจะเริ่มเดินทางได้
 // =======================================
 function workflowNext(jobId) {
@@ -3613,7 +3613,7 @@ function workflowNext(jobId) {
     }
 
     if (!paymentSettled) {
-      return payJob(keyBase);
+      return openTechPaymentModal(keyBase);
     }
 
     // จ่ายแล้ว => ดู e-slip ได้ตลอด
@@ -3627,8 +3627,8 @@ window.workflowNext = workflowNext;
 
 
 // =======================================
-// 💳 PAYMENT (จ่ายเงิน + QR + แนบสลิป + e-slip)
-// - ปุ่ม "จ่ายเงิน" จะเด้งเป็น Popup แสดงยอดรวม + QR ให้ลูกค้าแสกน
+// 💳 LEGACY PAYMENT (disabled: use new เก็บเงินลูกค้า modal)
+// - ปุ่มเดิมถูกปิดใช้งานแล้ว เพื่อไม่ให้ UI เก่าซ้อนกับ Flow ใหม่
 // - กด "จ่ายแล้ว" => บันทึก paid_at ในระบบ + เปิดให้แนบรูปสลิป (phase = payment_slip)
 // - e-slip (ย่อ) เปิดได้ที่ /docs/eslip/:job_id
 // =======================================
@@ -3653,7 +3653,7 @@ function ensurePayModal() {
   wrap.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,0.6);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px;";
   wrap.innerHTML = `
     <div class="card" style="width:min(520px, 100%);">
-      <h3 style="margin-top:0;">💳 ชำระเงิน</h3>
+      <h3 style="margin-top:0;">💳 เก็บเงินลูกค้า</h3>
       <div class="muted" id="pay-subtitle">แสดง QR ให้ลูกค้าแสกน</div>
 
       <div class="card tight" style="margin-top:10px;">
@@ -3700,111 +3700,8 @@ function ensurePayModal() {
 }
 
 async function payJob(jobId) {
-  const id = Number(jobId);
-  if (!id) return;
-
-  ensurePayModal();
-  __payJobId = id;
-
-  const modal = document.getElementById("pay-modal");
-  const tEl = document.getElementById("pay-total");
-  const bEl = document.getElementById("pay-booking");
-  const qrEl = document.getElementById("pay-qr");
-  const btnRefresh = document.getElementById("btn-refresh-qr");
-  const msgEl = document.getElementById("pay-msg");
-  const btnPaid = document.getElementById("btn-paid");
-  const btnE = document.getElementById("btn-eslip");
-
-  if (msgEl) msgEl.textContent = "";
-  if (btnE) btnE.style.display = "none";
-
-  // หา job จาก cache เพื่อโชว์ booking
-  const job = (window.__JOB_CACHE__ || []).find(j => Number(j.job_id) === id) || {};
-  const bookingCode = job.booking_code || ("CWF" + String(id).padStart(7, "0"));
-  if (bEl) bEl.textContent = bookingCode;
-
-  // ดึงยอดรวม (ใช้ pricing เป็นหลัก)
-  let total = Number(job.job_price || 0);
-  try {
-    const rr = await fetch(`${API_BASE}/jobs/${id}/pricing`);
-    if (rr.ok) {
-      const data = await rr.json().catch(() => ({}));
-      total = Number(data.total || total || 0);
-    }
-  } catch {
-    // ignore
-  }
-
-  if (tEl) tEl.textContent = `${total.toFixed(2)} บาท`;
-  const renderQr = () => {
-    if (!qrEl) return;
-    const ts = Date.now();
-    qrEl.src = `${buildPromptPayQrUrl(total)}?ts=${ts}`;
-  };
-  if (qrEl) {
-    // fallback: ถ้า promptpay.io ถูกบล็อค/ล่ม ให้ใช้ QR สำรอง (ถ้าตั้งค่าไว้)
-    qrEl.onerror = () => {
-      const fallback = window.CWF_STATIC_QR_URL || "";
-      if (fallback) {
-        qrEl.src = `${fallback}?ts=${Date.now()}`;
-      }
-    };
-  }
-  renderQr();
-  if (btnRefresh) {
-    btnRefresh.onclick = () => {
-      renderQr();
-      if (msgEl) msgEl.textContent = "🔄 สร้าง QR ใหม่แล้ว";
-    };
-  }
-
-  if (btnPaid) {
-    btnPaid.disabled = false;
-    // IMPORTANT: Mobile/PWA บางรุ่นจะ "บล็อค" file picker ถ้าเรียกหลัง await
-    // แก้โดย: เปิด picker แบบ synchronous ก่อน แล้วค่อยยิง API / อัปโหลด
-    btnPaid.onclick = () => {
-      try {
-        // 1) เปิดเลือกสลิปก่อน (ไม่ await) เพื่อให้ iOS/Android WebView อนุญาต
-        openFilePicker({ multiple: false, accept: 'image/*' }, async (files) => {
-          if (!files || !files.length) {
-            showToast('ยังไม่ได้เลือกสลิป', 'error');
-            return;
-          }
-
-          btnPaid.disabled = true;
-          if (msgEl) msgEl.textContent = "กำลังบันทึกการชำระเงิน...";
-
-          // 2) บันทึกการจ่ายเงิน
-          const res = await fetch(`${API_BASE}/jobs/${id}/pay`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ username, amount: total }),
-          });
-          const data = await res.json().catch(() => ({}));
-          if (!res.ok) throw new Error(data.error || "บันทึกการจ่ายเงินไม่สำเร็จ");
-
-          if (msgEl) msgEl.textContent = "✅ บันทึกแล้ว กำลังแนบสลิป...";
-
-          // 3) อัปโหลดสลิปแบบตรง (phase = payment_slip)
-          await uploadFilesAsPhotos(id, 'payment_slip', files);
-
-          if (msgEl) msgEl.textContent = "✅ แนบสลิปแล้ว";
-          if (btnE) {
-            btnE.style.display = "";
-            btnE.onclick = () => openESlip(id);
-          }
-
-          loadJobs();
-        });
-      } catch (e) {
-        console.error(e);
-        alert(`❌ ${e.message}`);
-        if (msgEl) msgEl.textContent = `❌ ${e.message}`;
-      }
-    };
-  }
-
-  if (modal) modal.style.display = "flex";
+  // ✅ ปิด Flow จ่ายเงินเดิมทั้งหมด แล้วส่งเข้า Modal ใหม่ “เก็บเงินลูกค้า” เท่านั้น
+  return openTechPaymentModal(String(jobId || ''));
 }
 window.payJob = payJob;
 
