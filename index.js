@@ -13611,10 +13611,14 @@ async function handleAdminBookV2(req, res) {
   const bm = isUrgentOffer ? "urgent" : rawBm;
   const ttype = (tech_type || (bm === "urgent" ? "partner" : "company")).toString().trim().toLowerCase();
   const mode = isUrgentOffer ? "offer" : rawMode;
+  // ✅ HOTFIX: allow_time_proposal may be omitted by older cached frontend/PWA.
+  // Do not reference an undeclared destructured variable here; otherwise /admin/book_v2
+  // crashes the whole Node process and Cloudflare shows 502. Missing value = false.
+  const allowTimeProposalRaw = body.allow_time_proposal;
   const allowTimeProposal = isUrgentOffer && (
-    allow_time_proposal === true ||
-    String(allow_time_proposal || "").trim().toLowerCase() === "true" ||
-    String(allow_time_proposal || "").trim() === "1"
+    allowTimeProposalRaw === true ||
+    String(allowTimeProposalRaw || "").trim().toLowerCase() === "true" ||
+    String(allowTimeProposalRaw || "").trim() === "1"
   );
   const zoneDetected = await detectServiceZoneFromText({ address_text, job_zone, service_zone_code, maps_url });
   const detectedZoneCode = zoneDetected?.service_zone_code || null;
