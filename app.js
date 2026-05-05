@@ -2933,9 +2933,9 @@ function ensureCwfCloseStyles(){
   const style = document.createElement('style');
   style.id = 'cwfCloseFlowStyles';
   style.textContent = `
-    .cwf-close-hub{display:grid!important;grid-template-columns:1fr!important;gap:16px!important;margin:14px 0 18px!important}
-    .cwf-close-action{appearance:none!important;-webkit-appearance:none!important;width:100%!important;min-height:82px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:14px!important;text-align:left!important;border:1px solid rgba(148,163,184,.28)!important;background:#ffffff!important;color:#0f172a!important;border-radius:24px!important;padding:16px!important;box-shadow:0 8px 22px rgba(15,23,42,.08)!important;cursor:pointer!important;line-height:1.28!important}
-    .cwf-close-action:active{transform:translateY(1px)!important}.cwf-close-action:disabled{opacity:.58!important;cursor:not-allowed!important}.cwf-close-action .cwf-action-left{display:flex!important;align-items:center!important;gap:14px!important;min-width:0!important}.cwf-close-action .ico{width:46px!important;height:46px!important;min-width:46px!important;border-radius:16px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:#eef5ff!important;color:#1558d6!important;font-size:23px!important;border:1px solid rgba(37,99,235,.12)!important;box-shadow:none!important}.cwf-close-action b{display:block!important;font-size:18px!important;margin:0!important;color:#0f172a!important;font-weight:1000!important;letter-spacing:0!important}.cwf-close-action small{display:block!important;color:#64748b!important;line-height:1.42!important;margin-top:4px!important;font-size:13px!important;font-weight:750!important}.cwf-action-arrow{font-size:24px!important;color:#94a3b8!important;font-weight:1000!important}
+    .cwf-close-hub{display:grid!important;grid-template-columns:1fr!important;gap:12px!important;margin:12px 0 14px!important}
+    .cwf-close-action{appearance:none!important;-webkit-appearance:none!important;width:100%!important;min-height:84px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:14px!important;text-align:left!important;border:1px solid rgba(148,163,184,.32)!important;background:#ffffff!important;color:#0f172a!important;border-radius:24px!important;padding:17px 16px!important;box-shadow:0 10px 26px rgba(15,23,42,.08)!important;cursor:pointer!important;line-height:1.28!important}
+    .cwf-close-action:active{transform:translateY(1px)!important}.cwf-close-action:disabled{opacity:.58!important;cursor:not-allowed!important}.cwf-close-action .cwf-action-left{display:flex!important;align-items:center!important;gap:14px!important;min-width:0!important}.cwf-close-action .ico{width:48px!important;height:48px!important;min-width:48px!important;border-radius:17px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:#eef5ff!important;color:#1558d6!important;font-size:24px!important;border:1px solid rgba(37,99,235,.12)!important;box-shadow:none!important}.cwf-close-action b{display:block!important;font-size:18px!important;margin:0!important;color:#0f172a!important;font-weight:1000!important;letter-spacing:0!important}.cwf-close-action small{display:block!important;color:#64748b!important;line-height:1.42!important;margin-top:4px!important;font-size:13px!important;font-weight:750!important}.cwf-action-arrow{font-size:24px!important;color:#94a3b8!important;font-weight:1000!important}
     .cwf-modal-backdrop{position:fixed;inset:0;z-index:10050;background:rgba(2,6,23,.62);display:flex;align-items:flex-end;justify-content:center;padding:0 10px 10px}
     .cwf-modal-panel{width:min(720px,100%);max-height:88vh;overflow:hidden;background:#f8fbff;border:1px solid rgba(148,163,184,.34);border-radius:26px 26px 18px 18px;box-shadow:0 26px 70px rgba(2,6,23,.36);display:flex;flex-direction:column}
     .cwf-modal-head{padding:15px 16px;background:linear-gradient(135deg,#071947,#1558d6);color:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px}.cwf-modal-head b{font-size:18px}.cwf-modal-head button{width:auto;min-width:44px;border-radius:999px;background:#ffcc00;color:#111827;border:0;font-weight:900;padding:9px 13px}
@@ -3397,7 +3397,7 @@ function buildJobCard(job, historyMode = false) {
         </div>
       </details>
     ` : `
-      <div class="muted" style="margin-top:10px;">* หลังจาก “เช็คอิน” แล้ว จะเปิดปุ่ม ลงรูป / เช็คลิส / เก็บเงินลูกค้า / ปิดงาน *</div>
+      <div class="muted" style="margin-top:10px;">* หลังจาก “เช็คอิน” แล้ว จะเปิดปุ่ม ลงรูป / เช็คลิส / ปิดงาน *</div>
     `}
   `;
 
@@ -4873,3 +4873,46 @@ window.openTechWhtDocumentsModal = openTechWhtDocumentsModal;
 window.closeTechWhtDocumentsModal = closeTechWhtDocumentsModal;
 window.loadTechWhtDocuments = loadTechWhtDocuments;
 window.addEventListener('DOMContentLoaded', () => { document.getElementById('techTaxProfileForm')?.addEventListener('submit', submitTechTaxProfileRequest); });
+
+
+// =======================================
+// 🧹 CLOSE PANEL VISUAL CLEANUP PATCH
+// - Force the close panel to show only 2 clean white action buttons.
+// - Remove legacy "เก็บเงินลูกค้า" button from this panel even if older render/cache remains.
+// =======================================
+(function cwfClosePanelVisualCleanupPatch(){
+  const STYLE_ID = 'cwf-close-panel-visual-cleanup-v3';
+  function ensureStyle(){
+    if (document.getElementById(STYLE_ID)) return;
+    const st = document.createElement('style');
+    st.id = STYLE_ID;
+    st.textContent = `
+      .cwf-close-hub{display:grid!important;grid-template-columns:1fr!important;gap:18px!important;margin:14px 0 20px!important}
+      .cwf-close-action{appearance:none!important;-webkit-appearance:none!important;width:100%!important;min-height:84px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:14px!important;text-align:left!important;border:1px solid rgba(148,163,184,.32)!important;background:#fff!important;color:#0f172a!important;border-radius:24px!important;padding:17px 16px!important;box-shadow:0 10px 26px rgba(15,23,42,.08)!important;line-height:1.28!important}
+      .cwf-close-action .cwf-action-left{display:flex!important;align-items:center!important;gap:14px!important;min-width:0!important}
+      .cwf-close-action .ico{width:48px!important;height:48px!important;min-width:48px!important;border-radius:17px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:#eef5ff!important;color:#1558d6!important;font-size:24px!important;border:1px solid rgba(37,99,235,.12)!important;box-shadow:none!important}
+      .cwf-close-action b{display:block!important;font-size:18px!important;color:#0f172a!important;font-weight:1000!important;margin:0!important}
+      .cwf-close-action small{display:block!important;color:#64748b!important;line-height:1.42!important;margin-top:4px!important;font-size:13px!important;font-weight:750!important}
+      .cwf-action-arrow{font-size:24px!important;color:#94a3b8!important;font-weight:1000!important}
+    `;
+    document.head.appendChild(st);
+  }
+  function cleanup(){
+    ensureStyle();
+    document.querySelectorAll('details.cwf-details').forEach((details)=>{
+      const summary = details.querySelector('summary');
+      if (!summary) return;
+      if (summary.textContent.includes('ปิดงาน') && summary.textContent.includes('หลักฐาน')) {
+        summary.textContent = '🛠️ ปิดงาน / หลักฐาน';
+        details.querySelectorAll('button.cwf-close-action').forEach((btn)=>{
+          const txt = (btn.textContent || '').replace(/\s+/g,' ').trim();
+          if (txt.includes('เก็บเงินลูกค้า') || txt.includes('จ่ายเงิน')) btn.remove();
+        });
+      }
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', cleanup);
+  else cleanup();
+  const mo = new MutationObserver(()=>cleanup());
+  mo.observe(document.documentElement, { childList:true, subtree:true });
+})();
