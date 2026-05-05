@@ -2894,6 +2894,287 @@ function callCustomer(jobId, phone) {
 }
 window.callCustomer = callCustomer;
 
+
+// =======================================
+// 🧩 CWF CLOSE FLOW MODAL UI (clean production layout)
+// - หน้าหลักต้องเหลือแค่ปุ่ม: ลงรูป / เช็คลิส / จ่ายเงิน
+// - รายละเอียดทั้งหมดอยู่ใน Modal เพื่อไม่ให้หน้า “งานปัจจุบัน” รก/ซ้อน
+// =======================================
+const CWF_COMPANY_QR_URL = "/assets/cwf-promptpay-qr.jpg";
+const CWF_PRE_CHECK_ITEMS = [
+  "หน้ากาก / ฝาครอบ / ขาล็อก",
+  "บานสวิง",
+  "แผ่นกรองอากาศ",
+  "น้ำหยด / รอยน้ำรั่วก่อนล้าง",
+  "เสียงผิดปกติ / เครื่องสั่น",
+  "ความเย็นก่อนล้าง",
+  "Error / เปิดไม่ติด / รีโมทสั่งไม่ได้",
+];
+const CWF_POST_CHECK_ITEMS = [
+  "เปิดเครื่องติดปกติ",
+  "แอร์เย็นหลังล้าง",
+  "ไม่มีน้ำหยดหลังล้าง",
+  "บานสวิง / หน้ากาก ประกอบกลับปกติ",
+  "พื้นที่ทำงานสะอาดเรียบร้อย",
+];
+
+function cwfCloseKey(jobId){ return String(jobId || "").trim(); }
+function cwfCloseJsonKey(jobId, name){ return `cwf_close_${name}_${cwfCloseKey(jobId)}`; }
+function cwfReadJsonLS(key, fallback){ try { return JSON.parse(localStorage.getItem(key) || ""); } catch { return fallback; } }
+function cwfWriteJsonLS(key, value){ try { localStorage.setItem(key, JSON.stringify(value)); } catch {} }
+function cwfGetCachedJob(jobId){
+  const key = cwfCloseKey(jobId);
+  return (window.__JOB_CACHE__ || []).find(j => String(j.job_id) === key || String(j.booking_code || "") === key) || null;
+}
+function cwfMoney(n){ return Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 }); }
+
+function ensureCwfCloseStyles(){
+  if (document.getElementById('cwfCloseFlowStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'cwfCloseFlowStyles';
+  style.textContent = `
+    .cwf-close-hub{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:10px 0 12px}
+    .cwf-close-action{border:1px solid rgba(37,99,235,.18);background:linear-gradient(180deg,#fff,#f8fbff);border-radius:20px;padding:13px 10px;min-height:92px;text-align:left;box-shadow:0 12px 34px rgba(15,23,42,.08);cursor:pointer;color:#0f172a;width:100%}
+    .cwf-close-action:disabled{opacity:.55;cursor:not-allowed}.cwf-close-action .ico{font-size:24px;display:block}.cwf-close-action b{display:block;font-size:16px;margin-top:5px}.cwf-close-action small{display:block;color:#64748b;line-height:1.35;margin-top:4px}
+    .cwf-modal-backdrop{position:fixed;inset:0;z-index:10050;background:rgba(2,6,23,.62);display:flex;align-items:flex-end;justify-content:center;padding:0 10px 10px}
+    .cwf-modal-panel{width:min(720px,100%);max-height:88vh;overflow:hidden;background:#f8fbff;border:1px solid rgba(148,163,184,.34);border-radius:26px 26px 18px 18px;box-shadow:0 26px 70px rgba(2,6,23,.36);display:flex;flex-direction:column}
+    .cwf-modal-head{padding:15px 16px;background:linear-gradient(135deg,#071947,#1558d6);color:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px}.cwf-modal-head b{font-size:18px}.cwf-modal-head button{width:auto;min-width:44px;border-radius:999px;background:#ffcc00;color:#111827;border:0;font-weight:900;padding:9px 13px}
+    .cwf-modal-body{padding:14px;overflow:auto}.cwf-modal-footer{padding:12px 14px;border-top:1px solid rgba(148,163,184,.25);background:#fff;display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+    .cwf-mini-status{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.cwf-chip{border:1px solid rgba(37,99,235,.18);background:#eef5ff;color:#1558d6;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:900}.cwf-chip.ok{background:#ecfdf5;color:#047857;border-color:#a7f3d0}.cwf-chip.warn{background:#fff7ed;color:#c2410c;border-color:#fed7aa}.cwf-chip.bad{background:#fff1f2;color:#be123c;border-color:#fecdd3}
+    .cwf-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cwf-photo-card{background:#fff;border:1px solid rgba(37,99,235,.15);border-radius:18px;padding:12px;box-shadow:0 10px 26px rgba(15,23,42,.06)}.cwf-photo-card b{font-size:16px}.cwf-photo-card .muted{font-size:12px}.cwf-photo-card button{width:100%;margin-top:9px;border-radius:15px}.cwf-thumb-row{display:flex;gap:6px;overflow:auto;margin-top:8px}.cwf-thumb-row img{width:54px;height:54px;border-radius:12px;object-fit:cover;border:1px solid rgba(15,23,42,.12);background:#fff}
+    .cwf-check-list{display:flex;flex-direction:column;gap:8px}.cwf-check-row{background:#fff;border:1px solid rgba(37,99,235,.13);border-radius:16px;padding:10px}.cwf-check-main{display:flex;align-items:center;gap:10px}.cwf-check-main input{width:22px;height:22px;accent-color:#1558d6}.cwf-check-main label{font-weight:900;color:#0f172a;line-height:1.35}.cwf-check-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-left:32px}.cwf-link-btn{border:1px solid rgba(148,163,184,.3);background:#f8fafc;color:#334155;border-radius:999px;padding:7px 10px;font-weight:900;font-size:12px;width:auto}.cwf-issue-note{margin:8px 0 0 32px}.cwf-issue-note textarea{min-height:74px;border-radius:14px}
+    .cwf-pay-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}.cwf-pay-tab{border:1px solid rgba(37,99,235,.16);background:#fff;color:#0f172a;border-radius:17px;padding:10px 8px;font-weight:1000;min-height:70px}.cwf-pay-tab.active{background:linear-gradient(135deg,#1558d6,#05b6d6);color:#fff;border-color:transparent;box-shadow:0 12px 28px rgba(37,99,235,.23)}.cwf-pay-card{background:#fff;border:1px solid rgba(37,99,235,.14);border-radius:20px;padding:13px;box-shadow:0 12px 28px rgba(15,23,42,.06)}.cwf-qr-img{display:block;width:min(300px,100%);margin:12px auto;border-radius:18px;border:1px solid rgba(15,23,42,.12);background:#fff}.cwf-pay-card input,.cwf-pay-card textarea{border-radius:14px}
+    .cwf-note-box{background:#fff;border:1px solid rgba(37,99,235,.12);border-radius:18px;padding:12px;margin-top:10px}.cwf-note-box textarea{border-radius:16px;min-height:105px}.cwf-final-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.cwf-final-row button{border-radius:18px;min-height:52px}
+    @media(max-width:560px){.cwf-close-hub{grid-template-columns:1fr}.cwf-close-action{min-height:auto;display:flex;gap:12px;align-items:center}.cwf-close-action .ico{font-size:22px}.cwf-close-action small{margin-top:1px}.cwf-photo-grid{grid-template-columns:1fr}.cwf-pay-tabs{grid-template-columns:1fr}.cwf-modal-panel{max-height:90vh}.cwf-final-row{grid-template-columns:1fr}}
+  `;
+  document.head.appendChild(style);
+}
+
+function cwfOpenModal(title, bodyHtml, footerHtml){
+  ensureCwfCloseStyles();
+  const old = document.getElementById('cwf-close-flow-modal');
+  if (old) old.remove();
+  const wrap = document.createElement('div');
+  wrap.id = 'cwf-close-flow-modal';
+  wrap.className = 'cwf-modal-backdrop';
+  wrap.innerHTML = `
+    <div class="cwf-modal-panel" role="dialog" aria-modal="true">
+      <div class="cwf-modal-head"><b>${title}</b><button type="button" onclick="cwfCloseModal()">ปิด</button></div>
+      <div class="cwf-modal-body">${bodyHtml || ''}</div>
+      ${footerHtml ? '<div class="cwf-modal-footer">' + footerHtml + '</div>' : ''}
+    </div>`;
+  wrap.addEventListener('click', (ev)=>{ if (ev.target === wrap) cwfCloseModal(); });
+  document.body.appendChild(wrap);
+  return wrap;
+}
+function cwfCloseModal(){ const el = document.getElementById('cwf-close-flow-modal'); if (el) el.remove(); }
+window.cwfCloseModal = cwfCloseModal;
+
+async function cwfCountPhotos(jobId){
+  const phases = ['before','after','pressure','current','temp','defect','payment_slip','cash_transfer_slip','revisit_before','revisit_after','revisit_defect'];
+  const counts = Object.fromEntries(phases.map(p=>[p,0]));
+  const urls = Object.fromEntries(phases.map(p=>[p,[]]));
+  try {
+    const rr = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos`, { cache:'no-store' });
+    if (rr.ok) {
+      const list = await rr.json().catch(()=>[]);
+      (Array.isArray(list) ? list : []).forEach(p => {
+        const ph = String(p.phase || '').trim();
+        if (counts[ph] != null && p.public_url) { counts[ph] += 1; urls[ph].push(p.public_url); }
+      });
+    }
+  } catch {}
+  try {
+    const pending = await idbGetByJob(jobId);
+    (pending || []).forEach(p => { const ph = String(p.phase || '').trim(); if (counts[ph] != null) counts[ph] += 1; });
+  } catch {}
+  return { counts, urls };
+}
+
+async function openTechPhotoModal(jobId){
+  const key = cwfCloseKey(jobId);
+  const job = cwfGetCachedJob(key);
+  const canEdit = !job || !isDoneStatusValue(normStatus(job.job_status));
+  const revisitFlow = isRevisitJob(job);
+  cwfOpenModal('📷 ลงรูปหลักฐานหน้างาน', `<div class="muted">กำลังโหลดสถานะรูป...</div>`);
+  const { counts, urls } = await cwfCountPhotos(key);
+  const defs = [
+    ['before','ก่อนทำ','หลักฐานสำคัญ'], ['after','หลังทำ','หลักฐานสำคัญ'],
+    ['pressure','วัดน้ำยา','เพิ่มเติม'], ['current','วัดกระแส','เพิ่มเติม'], ['temp','อุณหภูมิ','เพิ่มเติม'], ['defect','ตำหนิ','เพิ่มเติม'],
+  ].concat(revisitFlow ? [['revisit_before','ก่อนแก้','งานแก้ไข'], ['revisit_after','หลังแก้','งานแก้ไข'], ['revisit_defect','จุดปัญหา','งานแก้ไข']] : []);
+  const html = `
+    <div class="cwf-mini-status">
+      <span class="cwf-chip ${counts.before ? 'ok':'warn'}">ก่อนทำ ${counts.before || 0} รูป</span>
+      <span class="cwf-chip ${counts.after ? 'ok':'warn'}">หลังทำ ${counts.after || 0} รูป</span>
+      <span class="cwf-chip">กดเพิ่มรูปแล้วรอระบบอัปโหลดให้เสร็จ</span>
+    </div>
+    <div class="cwf-photo-grid">
+      ${defs.map(([phase,label,badge])=>`
+        <div class="cwf-photo-card" id="photo-card-${phase}">
+          <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><b>${label}</b><span class="cwf-chip ${counts[phase] ? 'ok':''}">${badge}</span></div>
+          <div class="muted" style="margin-top:5px">${counts[phase] ? 'มีแล้ว ' + counts[phase] + ' รูป' : 'ยังไม่มีรูป'}</div>
+          ${(urls[phase] || []).length ? '<div class="cwf-thumb-row">' + urls[phase].slice(0,6).map(u=>'<a href="'+u+'" target="_blank"><img src="'+u+'" alt="'+label+'"></a>').join('') + '</div>' : ''}
+          <button type="button" ${canEdit ? '' : 'disabled'} onclick="cwfPickPhotoAndRefresh('${key.replace(/'/g,"\\'")}', '${phase}')">📷 เพิ่มรูป</button>
+        </div>`).join('')}
+    </div>
+    <div class="cwf-mini-status" style="margin-top:12px">
+      <button class="secondary" type="button" style="width:auto" onclick="openUploadedPhotos('${key.replace(/'/g,"\\'")}')">🖼️ ดูรูปที่อัปโหลดแล้ว</button>
+      <button class="secondary" type="button" style="width:auto" onclick="forceUpload('${key.replace(/'/g,"\\'")}')">⬆️ อัปโหลดค้างในเครื่อง</button>
+    </div>`;
+  cwfOpenModal('📷 ลงรูปหลักฐานหน้างาน', html, `<button type="button" class="secondary" onclick="cwfCloseModal()">ปิด</button>`);
+}
+window.openTechPhotoModal = openTechPhotoModal;
+function cwfPickPhotoAndRefresh(jobId, phase){
+  try {
+    pickPhotos(jobId, phase, 12);
+    setTimeout(()=>openTechPhotoModal(jobId), 900);
+  } catch(e){ alert(e.message || 'เลือกรูปไม่สำเร็จ'); }
+}
+window.cwfPickPhotoAndRefresh = cwfPickPhotoAndRefresh;
+
+function cwfDefaultChecklist(){ return { pre:{}, post:{} }; }
+function cwfGetChecklist(jobId){ return cwfReadJsonLS(cwfCloseJsonKey(jobId,'checklist'), cwfDefaultChecklist()) || cwfDefaultChecklist(); }
+function cwfSaveChecklist(jobId, data){ cwfWriteJsonLS(cwfCloseJsonKey(jobId,'checklist'), data || cwfDefaultChecklist()); }
+function cwfChecklistProgress(section){ const items = section === 'pre' ? CWF_PRE_CHECK_ITEMS : CWF_POST_CHECK_ITEMS; const data = cwfGetChecklist(window.__cwfChecklistJobId || ''); return items.filter((_,i)=> data?.[section]?.[i]?.checked || data?.[section]?.[i]?.issue).length; }
+function cwfSetChecklistAll(jobId, section){
+  const data = cwfGetChecklist(jobId); data[section] = data[section] || {};
+  const items = section === 'pre' ? CWF_PRE_CHECK_ITEMS : CWF_POST_CHECK_ITEMS;
+  items.forEach((_,i)=>{ data[section][i] = { checked:true, issue:false, note:'' }; });
+  cwfSaveChecklist(jobId, data); openTechChecklistModal(jobId, section);
+}
+window.cwfSetChecklistAll = cwfSetChecklistAll;
+function cwfToggleCheck(jobId, section, idx, checked){
+  const data = cwfGetChecklist(jobId); data[section] = data[section] || {}; const row = data[section][idx] || {};
+  row.checked = !!checked; if (checked) row.issue = false; data[section][idx] = row; cwfSaveChecklist(jobId, data); openTechChecklistModal(jobId, section);
+}
+window.cwfToggleCheck = cwfToggleCheck;
+function cwfToggleIssue(jobId, section, idx){
+  const data = cwfGetChecklist(jobId); data[section] = data[section] || {}; const row = data[section][idx] || {};
+  row.issue = !row.issue; if (row.issue) row.checked = false; data[section][idx] = row; cwfSaveChecklist(jobId, data); openTechChecklistModal(jobId, section);
+}
+window.cwfToggleIssue = cwfToggleIssue;
+function cwfSaveIssueNote(jobId, section, idx, value){
+  const data = cwfGetChecklist(jobId); data[section] = data[section] || {}; const row = data[section][idx] || {}; row.note = String(value || ''); data[section][idx] = row; cwfSaveChecklist(jobId, data);
+}
+window.cwfSaveIssueNote = cwfSaveIssueNote;
+function cwfChecklistSectionHtml(jobId, section){
+  const data = cwfGetChecklist(jobId); const items = section === 'pre' ? CWF_PRE_CHECK_ITEMS : CWF_POST_CHECK_ITEMS;
+  const issueText = section === 'pre' ? 'มีปัญหาอยู่ก่อน' : 'พบปัญหาใหม่';
+  const checkedCount = items.filter((_,i)=> data?.[section]?.[i]?.checked || data?.[section]?.[i]?.issue).length;
+  return `
+    <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px">
+      <div><b>${section === 'pre' ? '🔎 ตรวจสภาพก่อนล้าง' : '✅ ตรวจหลังล้าง'}</b><div class="muted">ติ๊กปกติให้ครบ หรือกด “${issueText}” เฉพาะรายการที่มีปัญหา</div></div>
+      <span class="cwf-chip ${checkedCount === items.length ? 'ok':'warn'}">${checkedCount}/${items.length}</span>
+    </div>
+    <button type="button" class="secondary" style="width:auto;margin-bottom:10px" onclick="cwfSetChecklistAll('${String(jobId).replace(/'/g,"\\'")}', '${section}')">ปกติทั้งหมด</button>
+    <div class="cwf-check-list">
+      ${items.map((label,i)=>{ const row = data?.[section]?.[i] || {}; return `
+        <div class="cwf-check-row">
+          <div class="cwf-check-main">
+            <input type="checkbox" ${row.checked ? 'checked':''} onchange="cwfToggleCheck('${String(jobId).replace(/'/g,"\\'")}', '${section}', ${i}, this.checked)">
+            <label>${i+1}. ${label}</label>
+            ${row.issue ? `<span class="cwf-chip bad">${issueText}</span>` : ''}
+          </div>
+          <div class="cwf-check-tools"><button type="button" class="cwf-link-btn" onclick="cwfToggleIssue('${String(jobId).replace(/'/g,"\\'")}', '${section}', ${i})">${row.issue ? 'ยกเลิกปัญหา' : issueText}</button></div>
+          ${row.issue ? `<div class="cwf-issue-note"><textarea placeholder="หมายเหตุ เช่น บานสวิงหักอยู่ก่อน / หน้ากากแตก / มีน้ำหยด" oninput="cwfSaveIssueNote('${String(jobId).replace(/'/g,"\\'")}', '${section}', ${i}, this.value)">${String(row.note||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea></div>` : ''}
+        </div>`; }).join('')}
+    </div>`;
+}
+function openTechChecklistModal(jobId, section){
+  const active = section || 'pre';
+  const key = cwfCloseKey(jobId);
+  const html = `
+    <div class="cwf-pay-tabs" style="grid-template-columns:1fr 1fr">
+      <button type="button" class="cwf-pay-tab ${active==='pre'?'active':''}" onclick="openTechChecklistModal('${key.replace(/'/g,"\\'")}', 'pre')">ก่อนล้าง</button>
+      <button type="button" class="cwf-pay-tab ${active==='post'?'active':''}" onclick="openTechChecklistModal('${key.replace(/'/g,"\\'")}', 'post')">หลังล้าง</button>
+    </div>
+    ${cwfChecklistSectionHtml(key, active)}`;
+  cwfOpenModal('✅ เช็คลิสตรวจสภาพ', html, `<button class="secondary" type="button" onclick="cwfCloseModal()">ปิด</button>`);
+}
+window.openTechChecklistModal = openTechChecklistModal;
+function cwfValidateChecklist(jobId){
+  const data = cwfGetChecklist(jobId);
+  for (const [section, items] of [['pre', CWF_PRE_CHECK_ITEMS], ['post', CWF_POST_CHECK_ITEMS]]) {
+    for (let i=0;i<items.length;i++) {
+      const row = data?.[section]?.[i] || {};
+      if (!row.checked && !row.issue) return section === 'pre' ? 'กรุณาตรวจสภาพก่อนล้างให้ครบ' : 'กรุณาตรวจหลังล้างให้ครบ';
+      if (row.issue && !String(row.note || '').trim()) return section === 'pre' ? 'กรุณาระบุหมายเหตุสำหรับรายการที่มีปัญหาอยู่ก่อน' : 'กรุณาระบุหมายเหตุสำหรับปัญหาใหม่หลังล้าง';
+    }
+  }
+  return '';
+}
+
+function cwfGetPayment(jobId){ return cwfReadJsonLS(cwfCloseJsonKey(jobId,'payment'), { method:'', cash_amount:'', cash_confirmed:false, slip_uploaded:false, note:'' }) || {}; }
+function cwfSavePayment(jobId, data){ cwfWriteJsonLS(cwfCloseJsonKey(jobId,'payment'), data || {}); }
+function cwfSetPaymentMethod(jobId, method){ const p = cwfGetPayment(jobId); p.method = method; cwfSavePayment(jobId, p); openTechPaymentModal(jobId, method); }
+window.cwfSetPaymentMethod = cwfSetPaymentMethod;
+function cwfUpdatePaymentField(jobId, field, value, isCheck){ const p = cwfGetPayment(jobId); p[field] = isCheck ? !!value : String(value || ''); cwfSavePayment(jobId, p); }
+window.cwfUpdatePaymentField = cwfUpdatePaymentField;
+async function cwfUploadPaymentSlip(jobId, phase){
+  openFilePicker({ multiple:false, accept:'image/*' }, async (files)=>{
+    if (!files || !files.length) return;
+    try {
+      const p = cwfGetPayment(jobId); p.uploading = true; cwfSavePayment(jobId, p); openTechPaymentModal(jobId, p.method || (phase === 'cash_transfer_slip' ? 'cash':'qr'));
+      await uploadFilesAsPhotos(jobId, phase, files);
+      const p2 = cwfGetPayment(jobId); p2.slip_uploaded = true; p2.slip_phase = phase; p2.uploading = false; cwfSavePayment(jobId, p2); openTechPaymentModal(jobId, p2.method || (phase === 'cash_transfer_slip' ? 'cash':'qr'));
+    } catch(e){ const p3 = cwfGetPayment(jobId); p3.uploading = false; cwfSavePayment(jobId, p3); alert(e.message || 'อัปโหลดสลิปไม่สำเร็จ'); openTechPaymentModal(jobId, p3.method); }
+  });
+}
+window.cwfUploadPaymentSlip = cwfUploadPaymentSlip;
+async function openTechPaymentModal(jobId, method){
+  const key = cwfCloseKey(jobId); const pay = cwfGetPayment(key); const active = method || pay.method || 'qr';
+  if (!pay.method) { pay.method = active; cwfSavePayment(key, pay); }
+  const job = cwfGetCachedJob(key) || {};
+  let total = Number(job.job_price || 0);
+  try { const rr = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(key))}/pricing`); if (rr.ok) { const d = await rr.json().catch(()=>({})); total = Number(d.total || total || 0); } } catch {}
+  const tabs = `
+    <div class="cwf-pay-tabs">
+      <button type="button" class="cwf-pay-tab ${active==='qr'?'active':''}" onclick="cwfSetPaymentMethod('${key.replace(/'/g,"\\'")}', 'qr')">📱 สแกนจ่ายบริษัท</button>
+      <button type="button" class="cwf-pay-tab ${active==='cash'?'active':''}" onclick="cwfSetPaymentMethod('${key.replace(/'/g,"\\'")}', 'cash')">💵 เงินสดให้ช่าง</button>
+      <button type="button" class="cwf-pay-tab ${active==='admin'?'active':''}" onclick="cwfSetPaymentMethod('${key.replace(/'/g,"\\'")}', 'admin')">👩‍💼 แอดมินจัดการ</button>
+    </div>`;
+  const qrHtml = `<div class="cwf-pay-card"><b>ลูกค้าสแกนจ่ายบริษัท</b><div class="muted">ให้ลูกค้าสแกน QR นี้เพื่อโอนเข้าบัญชีบริษัท</div><img class="cwf-qr-img" src="${CWF_COMPANY_QR_URL}" alt="CWF PromptPay QR"><div class="cwf-chip ok">ยอดโดยประมาณ ${cwfMoney(total)} บาท</div><button type="button" onclick="cwfUploadPaymentSlip('${key.replace(/'/g,"\\'")}', 'payment_slip')">📎 แนบสลิปโอนเงิน</button><div class="cwf-mini-status"><span class="cwf-chip ${pay.slip_uploaded?'ok':'warn'}">${pay.slip_uploaded?'แนบสลิปแล้ว':'ยังไม่แนบสลิป'}</span></div></div>`;
+  const cashHtml = `<div class="cwf-pay-card"><b>ลูกค้าจ่ายเงินสดให้ช่าง</b><div class="muted">หลังรับเงินสด ช่างต้องโอนเข้าบริษัทและแนบสลิปก่อนปิดงาน</div><label style="display:block;margin-top:10px;font-weight:900">จำนวนเงินสดที่รับจากลูกค้า</label><input type="number" value="${String(pay.cash_amount||'').replace(/"/g,'&quot;')}" placeholder="เช่น 1200" oninput="cwfUpdatePaymentField('${key.replace(/'/g,"\\'")}', 'cash_amount', this.value)"><label style="display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:900"><input type="checkbox" style="width:22px;height:22px" ${pay.cash_confirmed?'checked':''} onchange="cwfUpdatePaymentField('${key.replace(/'/g,"\\'")}', 'cash_confirmed', this.checked, true)"> ฉันยืนยันว่าได้รับเงินสดจากลูกค้าตามจำนวนที่ระบุแล้ว</label><textarea style="margin-top:10px" placeholder="หมายเหตุการรับเงินสด" oninput="cwfUpdatePaymentField('${key.replace(/'/g,"\\'")}', 'note', this.value)">${String(pay.note||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea><button type="button" onclick="cwfUploadPaymentSlip('${key.replace(/'/g,"\\'")}', 'cash_transfer_slip')">📎 แนบสลิปที่ช่างโอนเข้าบริษัท</button><div class="cwf-mini-status"><span class="cwf-chip ${pay.slip_uploaded?'ok':'warn'}">${pay.slip_uploaded?'แนบสลิปแล้ว':'ยังไม่แนบสลิป'}</span></div></div>`;
+  const adminHtml = `<div class="cwf-pay-card"><b>ลูกค้าจ่ายกับแอดมิน / ให้แอดมินจัดการ</b><div class="muted" style="margin-top:6px">ใช้กรณีลูกค้าโอนให้แอดมินโดยตรง หรือแอดมินจะเป็นผู้ลงสลิปและอัปเดตสถานะชำระเงินภายหลัง</div><div class="cwf-mini-status"><span class="cwf-chip warn">ปิดงานได้โดยไม่ต้องแนบสลิป</span><span class="cwf-chip">สถานะ: รอแอดมินอัปเดต</span></div></div>`;
+  const body = tabs + (active === 'cash' ? cashHtml : active === 'admin' ? adminHtml : qrHtml);
+  cwfOpenModal('💳 การชำระเงิน', body, `<button class="secondary" type="button" onclick="cwfCloseModal()">ปิด</button>`);
+}
+window.openTechPaymentModal = openTechPaymentModal;
+async function cwfValidatePayment(jobId){
+  const p = cwfGetPayment(jobId); const method = p.method || '';
+  if (!method) return 'กรุณาเลือกวิธีชำระเงิน';
+  if (p.uploading) return 'กรุณารอให้อัปโหลดสลิปให้เสร็จก่อนปิดงาน';
+  if (method === 'qr' && !p.slip_uploaded) return 'กรุณาแนบสลิปโอนเงินก่อนปิดงาน';
+  if (method === 'cash') {
+    if (!Number(p.cash_amount || 0)) return 'กรุณาระบุจำนวนเงินสดที่รับ';
+    if (!p.cash_confirmed) return 'กรุณายืนยันการรับเงินสด';
+    if (!p.slip_uploaded) return 'กรุณาแนบสลิปที่ช่างโอนเข้าบริษัทก่อนปิดงาน';
+  }
+  return '';
+}
+async function cwfHasRequiredBeforeAfter(jobId){
+  const { counts } = await cwfCountPhotos(jobId);
+  return (counts.before || 0) > 0 && (counts.after || 0) > 0;
+}
+function cwfAskMissingPhotoAck(jobId){
+  return new Promise((resolve)=>{
+    const key = cwfCloseKey(jobId);
+    const body = `<div class="cwf-pay-card"><b style="font-size:18px;color:#be123c">งานนี้ยังไม่มีรูปหลักฐาน หรือรูปยังไม่ครบตามขั้นตอน</b><p>รูปก่อนทำและหลังทำเป็นหลักฐานสำคัญสำหรับยืนยันสภาพเครื่องก่อนเริ่มงาน ผลงานหลังล้าง และใช้ตรวจสอบกรณีลูกค้าแจ้งปัญหาภายหลัง</p><p>หากช่างปิดงานโดยไม่มีรูปหลักฐาน และภายหลังมีข้อร้องเรียนจากลูกค้า บริษัทอาจพิจารณาให้ช่างรับผิดชอบตามข้อเท็จจริงและระเบียบบริษัท</p><label style="display:flex;gap:10px;align-items:flex-start;font-weight:900"><input id="cwfPhotoAckCheck" type="checkbox" style="width:24px;height:24px"> ข้าพเจ้าเข้าใจและยอมรับว่า หากไม่มีรูปหลักฐานหน้างาน และเกิดข้อร้องเรียนที่ไม่สามารถตรวจสอบย้อนหลังได้ ข้าพเจ้าอาจต้องรับผิดชอบตามข้อเท็จจริงและระเบียบบริษัท</label></div>`;
+    const footer = `<button class="secondary" type="button" onclick="cwfCloseModal(); window.__cwfPhotoAckResolve && window.__cwfPhotoAckResolve(false)">กลับไปแนบรูป</button><button type="button" onclick="if(!document.getElementById('cwfPhotoAckCheck')?.checked){alert('กรุณาติ๊กยอมรับเงื่อนไขก่อน');return;} localStorage.setItem('cwf_close_photo_ack_${key}', String(Date.now())); cwfCloseModal(); window.__cwfPhotoAckResolve && window.__cwfPhotoAckResolve(true)">ยืนยันปิดงานโดยไม่มีรูป</button>`;
+    window.__cwfPhotoAckResolve = resolve;
+    cwfOpenModal('ยืนยันปิดงานโดยไม่มีรูปหลักฐาน', body, footer);
+  });
+}
+async function cwfValidateCloseRequirements(jobId, targetStatus){
+  if (targetStatus !== 'เสร็จแล้ว') return true;
+  if (window.__CWF_UPLOAD_BUSY_COUNT > 0) { alert('กรุณารอให้อัปโหลดรูปให้เสร็จก่อนปิดงาน'); return false; }
+  const checklistMsg = cwfValidateChecklist(jobId); if (checklistMsg) { alert(checklistMsg); openTechChecklistModal(jobId, checklistMsg.includes('หลัง') ? 'post':'pre'); return false; }
+  const payMsg = await cwfValidatePayment(jobId); if (payMsg) { alert(payMsg); openTechPaymentModal(jobId); return false; }
+  const hasPhoto = await cwfHasRequiredBeforeAfter(jobId);
+  if (!hasPhoto) return await cwfAskMissingPhotoAck(jobId);
+  return true;
+}
+
 // =======================================
 // ↩️ RETURN JOB (ช่างตีกลับงาน) - (ปิดใช้งานฝั่งช่างตามคำสั่งล่าสุด)
 // - ยังไม่ลบ endpoint ฝั่ง backend เผื่อใช้งานอนาคต
@@ -2902,294 +3183,6 @@ window.callCustomer = callCustomer;
 // =======================================
 // 🧱 BUILD JOB CARD
 // =======================================
-
-
-// =======================================
-// ✅ CWF TECH CLOSE FLOW v2 (photo UX + checklist + payment)
-// =======================================
-const CWF_STATIC_PROMPTPAY_QR = '/assets/cwf-promptpay-qr.jpg';
-const CWF_CLOSE_PAYMENT_METHODS = {
-  qr: 'customer_qr_company',
-  cash: 'cash_to_technician',
-  admin: 'admin_handles_payment',
-};
-const CWF_CLOSE_PAYMENT_STATUS = {
-  pendingVerify: 'pending_verification',
-  pendingAdmin: 'pending_admin_update',
-};
-const CWF_PRECHECK_ITEMS = [
-  'หน้ากาก / ฝาครอบ / ขาล็อก',
-  'บานสวิง',
-  'แผ่นกรองอากาศ',
-  'น้ำหยด / รอยน้ำรั่วก่อนล้าง',
-  'เสียงผิดปกติ / เครื่องสั่น',
-  'ความเย็นก่อนล้าง',
-  'Error / เปิดไม่ติด / รีโมทสั่งไม่ได้',
-];
-const CWF_POSTCHECK_ITEMS = [
-  'เปิดเครื่องติดปกติ',
-  'แอร์เย็นหลังล้าง',
-  'ไม่มีน้ำหยดหลังล้าง',
-  'บานสวิง / หน้ากาก ประกอบกลับปกติ',
-  'พื้นที่ทำงานสะอาดเรียบร้อย',
-];
-const CWF_PRECHECK_STATUSES = ['ปกติ','มีปัญหาอยู่ก่อน','ตรวจไม่ได้'];
-const CWF_POSTCHECK_STATUSES = ['ปกติ','ยังมีปัญหาเดิม','พบปัญหาใหม่'];
-const __cwfPhotoUploadState = window.__cwfPhotoUploadState || (window.__cwfPhotoUploadState = {});
-
-function cwfEsc(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
-function cwfKey(jobId){ return String(jobId||'').trim(); }
-function cwfPreKey(jobId){ return `cwf_pre_check_v2_${cwfKey(jobId)}`; }
-function cwfPostKey(jobId){ return `cwf_post_check_v2_${cwfKey(jobId)}`; }
-function cwfPayKey(jobId){ return `cwf_close_payment_v2_${cwfKey(jobId)}`; }
-function cwfPhotoAckKey(jobId){ return `cwf_photo_ack_v2_${cwfKey(jobId)}`; }
-function cwfDefaultChecklist(items){ return items.map(label => ({ label, status:'', note:'' })); }
-function cwfLoadJson(key, fallback){ try { const raw = localStorage.getItem(key); return raw ? JSON.parse(raw) : fallback; } catch { return fallback; } }
-function cwfSaveJson(key, val){ try { localStorage.setItem(key, JSON.stringify(val)); } catch(e){} }
-function cwfLoadPreCheck(jobId){ return cwfLoadJson(cwfPreKey(jobId), cwfDefaultChecklist(CWF_PRECHECK_ITEMS)); }
-function cwfLoadPostCheck(jobId){ return cwfLoadJson(cwfPostKey(jobId), cwfDefaultChecklist(CWF_POSTCHECK_ITEMS)); }
-function cwfLoadPayment(jobId){ return cwfLoadJson(cwfPayKey(jobId), { method:'', cash_amount:'', cash_confirmed:false, note:'' }); }
-function cwfSavePayment(jobId, patch){ const cur=cwfLoadPayment(jobId); const next=Object.assign({}, cur, patch||{}); cwfSaveJson(cwfPayKey(jobId), next); return next; }
-function cwfPhaseLabel(phase){ return ({ before:'ก่อนทำ', after:'หลังทำ', pressure:'วัดน้ำยา', current:'วัดกระแส', temp:'อุณหภูมิ', defect:'ตำหนิ', payment_slip:'สลิปชำระเงิน', revisit_before:'ก่อนแก้', revisit_after:'หลังแก้', revisit_defect:'จุดปัญหา' })[phase] || phase; }
-function cwfIsUploading(jobId){ const m=__cwfPhotoUploadState[cwfKey(jobId)]||{}; return Object.values(m).some(v=>v && v.status==='uploading'); }
-function cwfSetPhotoState(jobId, phase, status){ const k=cwfKey(jobId); __cwfPhotoUploadState[k]=__cwfPhotoUploadState[k]||{}; __cwfPhotoUploadState[k][phase]={status, at:Date.now()}; try{ refreshPhotoStatus(jobId); }catch(e){} }
-function cwfClearPhotoState(jobId, phase){ const k=cwfKey(jobId); if(__cwfPhotoUploadState[k]) delete __cwfPhotoUploadState[k][phase]; try{ refreshPhotoStatus(jobId); }catch(e){} }
-
-function ensureCwfCloseFlowStyles(){
-  if (document.getElementById('cwf-close-flow-styles')) return;
-  const st=document.createElement('style'); st.id='cwf-close-flow-styles';
-  st.textContent=`
-    .cwf-close-dashboard{border:1px solid rgba(37,99,235,.14);background:linear-gradient(180deg,#ffffff,#f6f9ff);border-radius:24px;padding:14px;margin-top:10px;box-shadow:0 16px 36px rgba(15,23,42,.08)}
-    .cwf-section-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;margin-bottom:10px}.cwf-section-head b{font-size:16px}.cwf-section-head .muted{font-size:12px;line-height:1.45;color:#64748b}
-    .cwf-action-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}.cwf-action-card{border:1px solid rgba(37,99,235,.16);background:linear-gradient(180deg,#fff,#f8fbff);border-radius:22px;padding:13px;text-align:left;box-shadow:0 12px 24px rgba(15,23,42,.06);cursor:pointer;min-height:104px;color:#0f172a}.cwf-action-card h4{margin:0 0 6px;font-size:15px}.cwf-action-card p{margin:0;color:#64748b;font-size:12px;line-height:1.45}.cwf-action-card:hover{transform:translateY(-1px);box-shadow:0 16px 30px rgba(15,23,42,.11)}
-    .cwf-mini-badge{display:inline-flex;align-items:center;justify-content:center;gap:4px;border-radius:999px;padding:5px 9px;font-size:11px;font-weight:900;background:#eff6ff;color:#1d4ed8;border:1px solid rgba(37,99,235,.16);white-space:nowrap}.cwf-mini-badge.warn{background:#fff7ed;color:#c2410c;border-color:rgba(234,88,12,.22)}.cwf-mini-badge.ok{background:#ecfdf5;color:#047857;border-color:rgba(16,185,129,.22)}.cwf-mini-badge.bad{background:#fef2f2;color:#b91c1c;border-color:rgba(239,68,68,.22)}
-    .cwf-modal{position:fixed;inset:0;background:rgba(15,23,42,.68);display:flex;align-items:center;justify-content:center;z-index:10000;padding:14px}.cwf-modal-card{width:min(640px,100%);max-height:88vh;overflow:auto;background:#fff;border-radius:26px;padding:16px;box-shadow:0 32px 80px rgba(0,0,0,.34)}.cwf-modal-title{position:sticky;top:-16px;z-index:2;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;background:linear-gradient(180deg,#fff,#fff);padding:2px 0 12px;margin-bottom:8px;border-bottom:1px solid rgba(15,23,42,.06)}.cwf-modal-title h3{margin:0;font-size:20px}.cwf-icon-close{border:0;background:#f1f5f9;border-radius:14px;width:42px;height:42px;font-size:22px;cursor:pointer;color:#0f172a}
-    .cwf-modal-intro{border:1px solid rgba(37,99,235,.14);background:linear-gradient(180deg,#f8fbff,#eef6ff);border-radius:20px;padding:12px;margin-bottom:12px;color:#334155;line-height:1.5}.cwf-modal-intro b{color:#0f172a}.cwf-modal-footer{position:sticky;bottom:-16px;background:linear-gradient(180deg,rgba(255,255,255,.82),#fff);border-top:1px solid rgba(15,23,42,.06);padding-top:10px;margin-top:14px;display:flex;justify-content:flex-end;gap:10px}
-    .cwf-photo-list{display:grid;gap:10px}.cwf-photo-row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;border:1px solid rgba(37,99,235,.14);border-radius:18px;background:#fff;padding:12px;box-shadow:0 8px 18px rgba(15,23,42,.045)}.cwf-photo-row.is-uploading{outline:2px solid rgba(14,165,233,.28)}.cwf-photo-row.is-failed{outline:2px solid rgba(239,68,68,.22)}.cwf-photo-row-title{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.cwf-photo-row-title b{font-size:15px}.cwf-photo-state{font-size:12px;color:#64748b;margin-top:4px}.cwf-photo-row button{width:auto;min-width:116px;border-radius:14px}.cwf-thumb-row{grid-column:1/-1;display:flex;gap:6px;overflow-x:auto}.cwf-thumb-row img{width:52px;height:52px;object-fit:cover;border-radius:12px;border:1px solid rgba(15,23,42,.1);background:#fff}.cwf-subtitle{font-weight:1000;margin:14px 0 8px;color:#0f172a}
-    .cwf-check-list{display:grid;gap:8px}.cwf-check-row{border:1px solid rgba(37,99,235,.12);background:#fff;border-radius:18px;padding:10px;box-shadow:0 8px 18px rgba(15,23,42,.04)}.cwf-check-main{display:flex;align-items:center;gap:10px}.cwf-check-main input{width:24px;height:24px;accent-color:#2563eb}.cwf-check-main b{font-size:14px;line-height:1.35}.cwf-check-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px;padding-left:34px}.cwf-link-btn{border:1px solid rgba(37,99,235,.18);background:#eff6ff;color:#1d4ed8;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:900;cursor:pointer}.cwf-danger-link{background:#fff7ed;color:#c2410c;border-color:rgba(234,88,12,.22)}.cwf-note-input{width:100%;margin-top:8px;border-radius:14px;border:1px solid rgba(15,23,42,.16);padding:10px;box-sizing:border-box;display:none}.cwf-note-input.is-open{display:block}
-    .cwf-pay-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:12px}.cwf-pay-tab{border:1px solid rgba(37,99,235,.16);background:#f8fbff;border-radius:16px;padding:11px 8px;text-align:center;font-weight:1000;color:#1e3a8a;cursor:pointer;line-height:1.25}.cwf-pay-tab.active{background:linear-gradient(135deg,#1558d6,#0ea5e9);color:#fff;border-color:transparent;box-shadow:0 12px 24px rgba(37,99,235,.24)}.cwf-pay-panel{border:1px solid rgba(37,99,235,.14);background:#fff;border-radius:20px;padding:12px;box-shadow:0 10px 22px rgba(15,23,42,.05)}.cwf-qr-img{width:100%;max-width:260px;border-radius:18px;border:1px solid rgba(15,23,42,.14);background:#fff;box-shadow:0 10px 22px rgba(15,23,42,.08)}
-    .cwf-compact-section{border:1px solid rgba(15,23,42,.08);background:#fff;border-radius:18px;padding:12px;margin-top:10px}.cwf-compact-section h4{margin:0 0 6px}.cwf-compact-section .muted{font-size:12px;line-height:1.45;color:#64748b}
-    @media(max-width:620px){.cwf-modal{align-items:flex-end;padding:8px}.cwf-modal-card{border-radius:24px 24px 0 0;max-height:92vh;padding:14px}.cwf-action-grid{grid-template-columns:1fr}.cwf-action-card{min-height:auto}.cwf-pay-tabs{grid-template-columns:1fr}.cwf-photo-row{grid-template-columns:1fr}.cwf-photo-row button{width:100%}.cwf-check-tools{padding-left:0}}
-  `;
-  document.head.appendChild(st);
-}
-function renderPhotoEvidenceSection(jobId, canEdit, revisitFlow){
-  const disabled = !canEdit ? 'disabled' : '';
-  const card = (phase, badge, max=20)=>`
-    <div class="cwf-photo-row" data-photo-card="${phase}">
-      <div>
-        <div class="cwf-photo-row-title"><b>${cwfEsc(cwfPhaseLabel(phase))}</b><span class="cwf-mini-badge">${badge}</span></div>
-        <div class="cwf-photo-state" data-photo-state="${phase}">กำลังตรวจสถานะ...</div>
-      </div>
-      <button type="button" onclick="pickPhotos('${String(jobId).replace(/'/g,"\\'")}', '${phase}', ${max})" ${disabled}>📷 เพิ่มรูป</button>
-      <div class="cwf-thumb-row" data-photo-thumbs="${phase}"></div>
-    </div>`;
-  return `
-    <div class="cwf-modal-intro"><b>รูปหลักฐานหน้างาน</b><br>เพิ่มเฉพาะรูปที่จำเป็นก่อน ไม่บังคับแข็ง แต่ถ้าไม่มีรูปก่อนทำ/หลังทำ ระบบจะให้ช่างยอมรับเงื่อนไขก่อนปิดงาน</div>
-    <div class="cwf-subtitle">รูปหลักฐานสำคัญ</div>
-    <div class="cwf-photo-list">${card('before','สำคัญ',20)}${card('after','สำคัญ',20)}</div>
-    <div class="cwf-subtitle">รูปตรวจเช็คเพิ่มเติม</div>
-    <div class="cwf-photo-list">${card('pressure','เพิ่มเติม',4)}${card('current','เพิ่มเติม',4)}${card('temp','เพิ่มเติม',4)}${card('defect','เพิ่มเติม',4)}</div>
-    ${revisitFlow ? `<div class="cwf-subtitle">รูปงานแก้ไข</div><div class="cwf-photo-list">${card('revisit_before','งานแก้ไข',6)}${card('revisit_after','งานแก้ไข',6)}${card('revisit_defect','งานแก้ไข',6)}</div>` : ``}
-    <div id="photo-status-${jobId}" style="margin-top:10px"></div>`;
-}
-
-function renderChecklistSection(jobId, type, canEdit){
-  const isPre = type === 'pre';
-  const title = isPre ? 'ตรวจสภาพก่อนล้าง' : 'ตรวจหลังล้าง';
-  const desc = isPre ? 'ติ๊กเฉพาะรายการหลักที่มักมีข้อโต้แย้งกับลูกค้า ถ้ามีปัญหาให้กด “ระบุปัญหา”' : 'ติ๊กยืนยันหลังล้างแบบสั้น ๆ ก่อนปิดงาน';
-  const items = isPre ? CWF_PRECHECK_ITEMS : CWF_POSTCHECK_ITEMS;
-  const id = `${type}-check-${jobId}`;
-  return `
-    <div class="cwf-compact-section" id="${id}">
-      <div class="cwf-section-head"><div><b>${isPre?'🔎':'✅'} ${title}</b><div class="muted">${desc}</div></div><span class="cwf-mini-badge" id="${type}-check-progress-${jobId}">ติ๊กแล้ว 0/${items.length}</span></div>
-      ${canEdit ? `<button class="secondary" type="button" style="width:auto;margin-bottom:8px" onclick="cwfMarkAllChecklist('${jobId}','${type}')">✓ ปกติทั้งหมด</button>` : ``}
-      <div class="cwf-check-list" id="${type}-check-list-${jobId}"></div>
-    </div>`;
-}
-
-function renderPaymentCloseSection(jobId, job, canEdit){
-  const total = Number(job?.job_price || 0);
-  return `
-    <div class="cwf-modal-intro"><b>การชำระเงิน</b><br>เลือกวิธีชำระเงิน 1 แบบ ระบบจะสลับหน้าจอให้กรอกเฉพาะข้อมูลที่จำเป็น</div>
-    <div class="muted" style="margin-bottom:8px">ยอดที่ต้องชำระ: <b>${total ? total.toLocaleString() : '-'} บาท</b></div>
-    <div id="close-payment-${jobId}">
-      <div class="cwf-pay-tabs">
-        <button class="cwf-pay-tab" type="button" data-pay-method="${CWF_CLOSE_PAYMENT_METHODS.qr}" onclick="cwfSelectPaymentMethod('${jobId}','${CWF_CLOSE_PAYMENT_METHODS.qr}')">🏦<br>สแกนจ่าย</button>
-        <button class="cwf-pay-tab" type="button" data-pay-method="${CWF_CLOSE_PAYMENT_METHODS.cash}" onclick="cwfSelectPaymentMethod('${jobId}','${CWF_CLOSE_PAYMENT_METHODS.cash}')">💵<br>เงินสด</button>
-        <button class="cwf-pay-tab" type="button" data-pay-method="${CWF_CLOSE_PAYMENT_METHODS.admin}" onclick="cwfSelectPaymentMethod('${jobId}','${CWF_CLOSE_PAYMENT_METHODS.admin}')">👩‍💼<br>แอดมิน</button>
-      </div>
-      <div id="payment-dynamic-${jobId}" style="margin-top:12px"></div>
-    </div>`;
-}
-
-
-function cwfActionBadgeHtml(state, text){ return `<span class="cwf-mini-badge ${state||''}">${cwfEsc(text||'-')}</span>`; }
-function renderCloseActionPanel(jobId, job, canEdit, revisitFlow){
-  return `
-    <div class="cwf-close-dashboard" id="cwf-close-dashboard-${jobId}">
-      <div class="cwf-section-head">
-        <div><b>🧰 ขั้นตอนก่อนปิดงาน</b><div class="muted">กดปุ่มแต่ละส่วนเพื่อเปิดหน้าต่างแยก ไม่ซ้อนข้อมูลยาว ๆ ในหน้าเดียว</div></div>
-        <span class="cwf-mini-badge warn" id="close-ready-badge-${jobId}">ตรวจข้อมูล</span>
-      </div>
-      <div class="cwf-action-grid">
-        <button class="cwf-action-card" type="button" onclick="cwfOpenPhotoEvidenceModal('${jobId}', ${canEdit ? 'true':'false'}, ${revisitFlow ? 'true':'false'})">
-          <h4>📷 ลงรูป</h4><p id="photo-summary-${jobId}">รูปก่อนทำ / หลังทำ / สลิป</p><div style="margin-top:8px" id="photo-summary-badge-${jobId}">${cwfActionBadgeHtml('warn','ตรวจรูป')}</div>
-        </button>
-        <button class="cwf-action-card" type="button" onclick="cwfOpenChecklistModal('${jobId}', ${canEdit ? 'true':'false'})">
-          <h4>✅ เช็คลิส</h4><p id="check-summary-${jobId}">ติ๊กตรวจสภาพก่อนและหลังล้าง</p><div style="margin-top:8px" id="check-summary-badge-${jobId}">${cwfActionBadgeHtml('warn','ยังไม่ครบ')}</div>
-        </button>
-        <button class="cwf-action-card" type="button" onclick="cwfOpenClosePaymentModal('${jobId}', ${JSON.stringify(Number(job?.job_price||0))}, ${canEdit ? 'true':'false'})">
-          <h4>💳 จ่ายเงิน</h4><p id="pay-summary-${jobId}">เลือก 3 ช้อยในหน้าต่างเดียว</p><div style="margin-top:8px" id="pay-summary-badge-${jobId}">${cwfActionBadgeHtml('warn','ยังไม่เลือก')}</div>
-        </button>
-      </div>
-    </div>`;
-}
-
-function cwfModalShell(title, bodyHtml){
-  ensureCwfCloseFlowStyles();
-  const wrap=document.createElement('div'); wrap.className='cwf-modal';
-  wrap.innerHTML=`<div class="cwf-modal-card"><div class="cwf-modal-title"><h3>${cwfEsc(title)}</h3><button class="cwf-icon-close" type="button" aria-label="ปิด" onclick="this.closest('.cwf-modal').remove()">×</button></div>${bodyHtml}<div class="cwf-modal-footer"><button class="secondary" type="button" style="width:auto" onclick="this.closest('.cwf-modal').remove()">ปิด</button></div></div>`;
-  document.body.appendChild(wrap); return wrap;
-}
-
-function cwfOpenPhotoEvidenceModal(jobId, canEdit=true, revisitFlow=false){
-  const wrap=cwfModalShell('ลงรูปหลักฐานหน้างาน', renderPhotoEvidenceSection(jobId, canEdit, revisitFlow));
-  setTimeout(()=>{ refreshPhotoStatus(jobId); }, 0);
-  return wrap;
-}
-function cwfOpenChecklistModal(jobId, canEdit=true){
-  const body=`${renderChecklistSection(jobId,'pre',canEdit)}${renderChecklistSection(jobId,'post',canEdit)}`;
-  const wrap=cwfModalShell('เช็คลิสตรวจสภาพแอร์', body);
-  setTimeout(()=>{ cwfRenderChecklist(jobId,'pre'); cwfRenderChecklist(jobId,'post'); cwfUpdateCloseActionSummary(jobId); }, 0);
-  return wrap;
-}
-function cwfOpenClosePaymentModal(jobId, total=0, canEdit=true){
-  const fakeJob={ job_price: total || 0 };
-  const wrap=cwfModalShell('การชำระเงิน', renderPaymentCloseSection(jobId, fakeJob, canEdit));
-  setTimeout(()=>{ cwfRenderPaymentDynamic(jobId); }, 0);
-  return wrap;
-}
-async function cwfUpdateCloseActionSummary(jobId){
-  try{
-    const counts=await cwfGetPhotoCounts(jobId);
-    const before=Number(counts.before?.uploaded||0)+Number(counts.before?.local||0);
-    const after=Number(counts.after?.uploaded||0)+Number(counts.after?.local||0);
-    const slip=Number(counts.payment_slip?.uploaded||0)+Number(counts.payment_slip?.local||0);
-    const ps=document.getElementById(`photo-summary-${jobId}`); if(ps) ps.textContent=`ก่อนทำ ${before} รูป • หลังทำ ${after} รูป • สลิป ${slip} รูป`;
-    const pb=document.getElementById(`photo-summary-badge-${jobId}`); if(pb) pb.innerHTML=(before&&after)?cwfActionBadgeHtml('ok','รูปสำคัญครบ'):cwfActionBadgeHtml('warn','รูปสำคัญยังไม่ครบ');
-  }catch(e){}
-  try{
-    const pre=cwfLoadPreCheck(jobId), post=cwfLoadPostCheck(jobId);
-    const preDone=pre.filter(x=>x.status).length, postDone=post.filter(x=>x.status).length;
-    const issue=pre.filter(x=>x.status==='มีปัญหาอยู่ก่อน').length + post.filter(x=>x.status==='พบปัญหาใหม่').length;
-    const cs=document.getElementById(`check-summary-${jobId}`); if(cs) cs.textContent=`ก่อนล้าง ${preDone}/7 • หลังล้าง ${postDone}/5${issue?` • พบปัญหา ${issue} รายการ`:''}`;
-    const cb=document.getElementById(`check-summary-badge-${jobId}`); if(cb) cb.innerHTML=(preDone===7 && postDone===5)?cwfActionBadgeHtml('ok','เช็กครบแล้ว'):cwfActionBadgeHtml('warn','ยังเช็กไม่ครบ');
-  }catch(e){}
-  try{
-    const pay=cwfLoadPayment(jobId); const hasSlip=await cwfHasPaymentSlip(jobId);
-    const label=pay.method===CWF_CLOSE_PAYMENT_METHODS.qr?'สแกนจ่ายบริษัท':pay.method===CWF_CLOSE_PAYMENT_METHODS.cash?'เงินสดให้ช่าง':pay.method===CWF_CLOSE_PAYMENT_METHODS.admin?'แอดมินจัดการ':'ยังไม่เลือก';
-    const ps=document.getElementById(`pay-summary-${jobId}`); if(ps) ps.textContent=pay.method===CWF_CLOSE_PAYMENT_METHODS.cash?`${label} • ยอด ${pay.cash_amount||'-'} บาท`:label;
-    const pb=document.getElementById(`pay-summary-badge-${jobId}`); if(pb){
-      let ok=false; if(pay.method===CWF_CLOSE_PAYMENT_METHODS.admin) ok=true; else if(pay.method===CWF_CLOSE_PAYMENT_METHODS.qr && hasSlip) ok=true; else if(pay.method===CWF_CLOSE_PAYMENT_METHODS.cash && hasSlip && pay.cash_confirmed && pay.cash_amount) ok=true;
-      pb.innerHTML=pay.method ? cwfActionBadgeHtml(ok?'ok':'warn', ok?'พร้อม':'ยังขาดข้อมูล') : cwfActionBadgeHtml('warn','ยังไม่เลือก');
-    }
-    const rb=document.getElementById(`close-ready-badge-${jobId}`); if(rb){ const v=await cwfValidateCloseFlow(jobId); rb.className=`cwf-mini-badge ${v.ok?'ok':'warn'}`; rb.textContent=v.ok?'พร้อมปิดงาน':'ยังต้องตรวจ'; }
-  }catch(e){}
-}
-
-function cwfRenderChecklist(jobId, type){
-  const isPre = type === 'pre';
-  const list = isPre ? cwfLoadPreCheck(jobId) : cwfLoadPostCheck(jobId);
-  const normalStatus = 'ปกติ';
-  const issueStatus = isPre ? 'มีปัญหาอยู่ก่อน' : 'พบปัญหาใหม่';
-  const altStatus = isPre ? 'ตรวจไม่ได้' : 'ยังมีปัญหาเดิม';
-  const box = document.getElementById(`${type}-check-list-${jobId}`);
-  const prog = document.getElementById(`${type}-check-progress-${jobId}`);
-  if (!box) return;
-  const done = list.filter(x=>String(x.status||'').trim()).length;
-  if (prog){ prog.textContent = done === list.length ? 'ตรวจครบแล้ว' : `ติ๊กแล้ว ${done}/${list.length}`; prog.className = `cwf-mini-badge ${done===list.length?'ok':'warn'}`; }
-  box.innerHTML = list.map((it, idx)=>{
-    const isNormal = it.status === normalStatus;
-    const isIssue = it.status === issueStatus;
-    const isAlt = it.status === altStatus;
-    const needNote = isIssue;
-    const noteOpen = isIssue || String(it.note||'').trim();
-    return `<div class="cwf-check-row">
-      <label class="cwf-check-main">
-        <input type="checkbox" ${isNormal?'checked':''} onchange="cwfToggleChecklistNormal('${jobId}','${type}',${idx},this.checked)">
-        <b>${idx+1}. ${cwfEsc(it.label)}</b>
-        ${needNote?'<span class="cwf-mini-badge bad">ต้องมีหมายเหตุ</span>':(isAlt?'<span class="cwf-mini-badge warn">'+altStatus+'</span>':'')}
-      </label>
-      <div class="cwf-check-tools">
-        <button type="button" class="cwf-link-btn ${isIssue?'cwf-danger-link':''}" onclick="cwfMarkChecklistIssue('${jobId}','${type}',${idx})">${isIssue?'กำลังระบุปัญหา':'ระบุปัญหา'}</button>
-        <button type="button" class="cwf-link-btn" onclick="cwfSetChecklistStatus('${jobId}','${type}',${idx},'${altStatus}')">${altStatus}</button>
-        ${it.status?`<span class="cwf-mini-badge ${isNormal?'ok':(isIssue?'bad':'warn')}">${cwfEsc(it.status)}</span>`:''}
-      </div>
-      <textarea class="cwf-note-input ${noteOpen?'is-open':''}" rows="2" placeholder="${isPre?'เช่น บานสวิงหักอยู่ก่อน / หน้ากากแตก / มีน้ำหยดก่อนล้าง':'หมายเหตุปัญหาหลังล้าง'}" onchange="cwfSetChecklistNote('${jobId}','${type}',${idx},this.value)">${cwfEsc(it.note||'')}</textarea>
-    </div>`;
-  }).join('');
-}
-function cwfToggleChecklistNormal(jobId,type,idx,checked){ const list=type==='pre'?cwfLoadPreCheck(jobId):cwfLoadPostCheck(jobId); if(!list[idx])return; list[idx].status=checked?'ปกติ':''; if(checked) list[idx].note=''; cwfSaveJson(type==='pre'?cwfPreKey(jobId):cwfPostKey(jobId), list); cwfRenderChecklist(jobId,type); cwfUpdateCloseActionSummary(jobId); }
-function cwfMarkChecklistIssue(jobId,type,idx){ const list=type==='pre'?cwfLoadPreCheck(jobId):cwfLoadPostCheck(jobId); if(!list[idx])return; list[idx].status=type==='pre'?'มีปัญหาอยู่ก่อน':'พบปัญหาใหม่'; cwfSaveJson(type==='pre'?cwfPreKey(jobId):cwfPostKey(jobId), list); cwfRenderChecklist(jobId,type); cwfUpdateCloseActionSummary(jobId); }
-function cwfSetChecklistStatus(jobId,type,idx,status){ const list=type==='pre'?cwfLoadPreCheck(jobId):cwfLoadPostCheck(jobId); if(!list[idx])return; list[idx].status=status; if(status==='ปกติ') list[idx].note=''; cwfSaveJson(type==='pre'?cwfPreKey(jobId):cwfPostKey(jobId), list); cwfRenderChecklist(jobId,type); cwfUpdateCloseActionSummary(jobId); }
-function cwfSetChecklistNote(jobId,type,idx,note){ const list=type==='pre'?cwfLoadPreCheck(jobId):cwfLoadPostCheck(jobId); if(!list[idx])return; list[idx].note=String(note||''); cwfSaveJson(type==='pre'?cwfPreKey(jobId):cwfPostKey(jobId), list); cwfUpdateCloseActionSummary(jobId); }
-function cwfMarkAllChecklist(jobId,type){ const items=type==='pre'?CWF_PRECHECK_ITEMS:CWF_POSTCHECK_ITEMS; const list=items.map(label=>({ label, status:'ปกติ', note:'' })); cwfSaveJson(type==='pre'?cwfPreKey(jobId):cwfPostKey(jobId), list); cwfRenderChecklist(jobId,type); cwfUpdateCloseActionSummary(jobId); }
-
-
-async function cwfGetUploadedPhotos(jobId){ try{ const rr=await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos`,{cache:'no-store'}); return rr.ok ? ((await rr.json())||[]) : []; }catch{return [];} }
-async function cwfGetPhotoCounts(jobId){ const all=await idbGetByJob(jobId).catch(()=>[]); const uploaded=await cwfGetUploadedPhotos(jobId); const phases=['before','after','pressure','current','temp','defect','payment_slip','revisit_before','revisit_after','revisit_defect']; const out={}; phases.forEach(ph=>{ out[ph]={ local:all.filter(x=>x.phase===ph).length, uploaded:(uploaded||[]).filter(x=>x.phase===ph && x.public_url).length, urls:(uploaded||[]).filter(x=>x.phase===ph && x.public_url).map(x=>x.public_url) }; }); return out; }
-async function cwfHasPaymentSlip(jobId){ const c=await cwfGetPhotoCounts(jobId); return Number(c.payment_slip?.uploaded||0) > 0 || Number(c.payment_slip?.local||0) > 0; }
-
-function cwfSelectPaymentMethod(jobId, method){ cwfSavePayment(jobId, { method }); cwfRenderPaymentDynamic(jobId); cwfUpdateCloseActionSummary(jobId); }
-async function cwfRenderPaymentDynamic(jobId){
-  const st=cwfLoadPayment(jobId); const box=document.getElementById(`payment-dynamic-${jobId}`); if(!box) return;
-  document.querySelectorAll(`#close-payment-${jobId} .cwf-pay-tab`).forEach(el=>el.classList.toggle('active', el.getAttribute('data-pay-method')===st.method));
-  const slip = await cwfHasPaymentSlip(jobId);
-  if (st.method === CWF_CLOSE_PAYMENT_METHODS.qr) {
-    box.innerHTML = `<div class="cwf-pay-panel"><div style="text-align:center"><img class="cwf-qr-img" src="${CWF_STATIC_PROMPTPAY_QR}" alt="Thai QR Payment"><div class="muted" style="margin-top:8px">ให้ลูกค้าสแกน QR นี้เพื่อโอนเข้าบัญชีบริษัท</div><button class="secondary" type="button" style="width:auto;margin-top:8px" onclick="cwfOpenQrLarge()">ดู QR ขนาดใหญ่</button></div><div class="row" style="margin-top:12px;gap:10px;flex-wrap:wrap;align-items:center"><button type="button" style="width:auto" onclick="pickPhotos('${jobId}','payment_slip',1)">📎 แนบสลิปโอนเงิน</button><span class="cwf-mini-badge ${slip?'ok':'bad'}">${slip?'มีสลิปแล้ว':'ยังไม่มีสลิป'}</span></div></div>`;
-  } else if (st.method === CWF_CLOSE_PAYMENT_METHODS.cash) {
-    box.innerHTML = `<div class="cwf-pay-panel"><label><b>จำนวนเงินสดที่รับจากลูกค้า</b></label><input inputmode="decimal" placeholder="เช่น 1200" value="${cwfEsc(st.cash_amount||'')}" oninput="cwfSavePayment('${jobId}',{cash_amount:this.value});cwfUpdateCloseActionSummary('${jobId}')"><div class="muted" style="margin-top:6px">หลังรับเงินสด ช่างต้องโอนเงินเข้าบริษัทและแนบสลิปก่อนปิดงาน</div><textarea rows="2" placeholder="หมายเหตุการรับเงินสด (ไม่บังคับ)" style="margin-top:8px" onchange="cwfSavePayment('${jobId}',{note:this.value});cwfUpdateCloseActionSummary('${jobId}')">${cwfEsc(st.note||'')}</textarea><label style="display:flex;gap:8px;margin-top:10px;align-items:flex-start"><input type="checkbox" ${st.cash_confirmed?'checked':''} onchange="cwfSavePayment('${jobId}',{cash_confirmed:this.checked});cwfUpdateCloseActionSummary('${jobId}')"><span>ฉันยืนยันว่าได้รับเงินสดจากลูกค้าตามจำนวนที่ระบุแล้ว</span></label><div class="row" style="margin-top:12px;gap:10px;flex-wrap:wrap;align-items:center"><button type="button" style="width:auto" onclick="pickPhotos('${jobId}','payment_slip',1)">📎 แนบสลิปที่ช่างโอนเข้าบริษัท</button><span class="cwf-mini-badge ${slip?'ok':'bad'}">${slip?'มีสลิปแล้ว':'ยังไม่มีสลิป'}</span></div></div>`;
-  } else if (st.method === CWF_CLOSE_PAYMENT_METHODS.admin) {
-    box.innerHTML = `<div class="cwf-pay-panel"><b>👩‍💼 รอแอดมินอัปเดตการชำระเงิน</b><div class="muted" style="margin-top:6px">ใช้กรณีลูกค้าโอนให้แอดมินโดยตรง หรือแอดมินจะเป็นผู้ลงสลิปและอัปเดตสถานะชำระเงินภายหลัง ช่างปิดงานได้โดยไม่ต้องแนบสลิป</div></div>`;
-  } else {
-    box.innerHTML = `<div class="cwf-pay-panel"><div class="muted">เลือกวิธีชำระเงินด้านบนก่อน</div></div>`;
-  }
-}
-
-function cwfOpenQrLarge(){ const wrap=document.createElement('div'); wrap.className='cwf-modal'; wrap.innerHTML=`<div class="cwf-modal-card" style="text-align:center"><h3 style="margin-top:0">QR โอนเข้าบริษัท</h3><img src="${CWF_STATIC_PROMPTPAY_QR}" alt="Thai QR Payment" style="width:100%;max-width:360px;border-radius:18px;border:1px solid rgba(15,23,42,.14)"><div style="margin-top:12px"><button type="button" class="secondary" onclick="this.closest('.cwf-modal').remove()">ปิด</button></div></div>`; document.body.appendChild(wrap); }
-
-async function cwfValidateCloseFlow(jobId){
-  if (cwfIsUploading(jobId)) return { ok:false, message:'กรุณารอให้อัปโหลดรูปให้เสร็จก่อนปิดงาน' };
-  const pre=cwfLoadPreCheck(jobId), post=cwfLoadPostCheck(jobId);
-  if (pre.some(x=>!x.status)) return { ok:false, message:'กรุณาตรวจสภาพก่อนล้างให้ครบ' };
-  if (post.some(x=>!x.status)) return { ok:false, message:'กรุณาตรวจหลังล้างให้ครบ' };
-  if (pre.some(x=>x.status==='มีปัญหาอยู่ก่อน' && !String(x.note||'').trim())) return { ok:false, message:'กรุณาระบุหมายเหตุสำหรับรายการที่มีปัญหาอยู่ก่อน' };
-  if (post.some(x=>x.status==='พบปัญหาใหม่' && !String(x.note||'').trim())) return { ok:false, message:'กรุณาระบุหมายเหตุสำหรับปัญหาใหม่หลังล้าง' };
-  const pay=cwfLoadPayment(jobId); if(!pay.method) return { ok:false, message:'กรุณาเลือกวิธีชำระเงิน' };
-  const hasSlip=await cwfHasPaymentSlip(jobId);
-  if (pay.method===CWF_CLOSE_PAYMENT_METHODS.qr && !hasSlip) return { ok:false, message:'กรุณาแนบสลิปโอนเงินก่อนปิดงาน' };
-  if (pay.method===CWF_CLOSE_PAYMENT_METHODS.cash) {
-    if (!Number(String(pay.cash_amount||'').replace(/,/g,''))) return { ok:false, message:'กรุณาระบุจำนวนเงินสดที่รับ' };
-    if (!pay.cash_confirmed) return { ok:false, message:'กรุณายืนยันการรับเงินสด' };
-    if (!hasSlip) return { ok:false, message:'กรุณาแนบสลิปที่ช่างโอนเข้าบริษัทก่อนปิดงาน' };
-  }
-  const counts=await cwfGetPhotoCounts(jobId); const missing=[]; if(!(counts.before.uploaded||counts.before.local)) missing.push('ก่อนทำ'); if(!(counts.after.uploaded||counts.after.local)) missing.push('หลังทำ');
-  return { ok:true, missingPhotos:missing, pre, post, payment:pay };
-}
-function cwfOpenMissingPhotoAck(jobId, missing, onOk){
-  const wrap=document.createElement('div'); wrap.className='cwf-modal'; wrap.innerHTML=`<div class="cwf-modal-card"><h3 style="margin-top:0">ยืนยันปิดงานโดยไม่มีรูปหลักฐาน</h3><div class="muted" style="white-space:pre-line;line-height:1.55">งานนี้ยังไม่มีรูปหลักฐาน หรือรูปยังไม่ครบตามขั้นตอน
-
-รูปก่อนทำและหลังทำเป็นหลักฐานสำคัญสำหรับยืนยันสภาพเครื่องก่อนเริ่มงาน ผลงานหลังล้าง และใช้ตรวจสอบกรณีลูกค้าแจ้งปัญหาภายหลัง
-
-หากช่างปิดงานโดยไม่มีรูปหลักฐาน และภายหลังมีข้อร้องเรียนจากลูกค้า เช่น อุปกรณ์ชำรุด มีรอยแตก น้ำหยด เครื่องทำงานผิดปกติ หรือความเสียหายอื่นที่ไม่สามารถตรวจสอบย้อนหลังได้ บริษัทอาจพิจารณาให้ช่างรับผิดชอบตามข้อเท็จจริงและระเบียบบริษัท
-
-กรุณากลับไปแนบรูป หรือยืนยันว่าต้องการปิดงานโดยไม่มีรูปหลักฐาน</div><div class="cwf-mini-badge bad" style="margin-top:10px">ขาดรูป: ${cwfEsc((missing||[]).join(', ')||'-')}</div><label style="display:flex;gap:8px;margin-top:12px;align-items:flex-start"><input type="checkbox" id="ack-missing-photo-${jobId}"><span>ข้าพเจ้าเข้าใจและยอมรับว่า หากไม่มีรูปหลักฐานหน้างาน และเกิดข้อร้องเรียนที่ไม่สามารถตรวจสอบย้อนหลังได้ ข้าพเจ้าอาจต้องรับผิดชอบตามข้อเท็จจริงและระเบียบบริษัท</span></label><div class="row" style="margin-top:14px;gap:10px;flex-wrap:wrap"><button class="secondary" type="button" onclick="this.closest('.cwf-modal').remove()">กลับไปแนบรูป</button><button type="button" onclick="cwfConfirmMissingPhotoAck('${jobId}')">ยืนยันปิดงานโดยไม่มีรูป</button></div></div>`; document.body.appendChild(wrap); window.__cwfAckCallback=onOk; window.__cwfAckMissing=missing||[];
-}
-function cwfConfirmMissingPhotoAck(jobId){ const cb=document.getElementById(`ack-missing-photo-${jobId}`); if(!cb?.checked) return alert('กรุณาติ๊กยอมรับเงื่อนไขก่อน'); cwfSaveJson(cwfPhotoAckKey(jobId), { accepted:true, at:new Date().toISOString(), by:(typeof username==='string'?username:''), missing:window.__cwfAckMissing||[] }); const m=document.querySelector('.cwf-modal'); if(m)m.remove(); const fn=window.__cwfAckCallback; window.__cwfAckCallback=null; if(typeof fn==='function') fn(); }
-function cwfGetClosePayload(jobId, signatureType){ const pay=cwfLoadPayment(jobId); return { pre_cleaning_checklist:cwfLoadPreCheck(jobId), post_cleaning_checklist:cwfLoadPostCheck(jobId), photo_acknowledgement:cwfLoadJson(cwfPhotoAckKey(jobId), null), close_payment_method:pay.method, close_payment_status: pay.method===CWF_CLOSE_PAYMENT_METHODS.admin ? CWF_CLOSE_PAYMENT_STATUS.pendingAdmin : CWF_CLOSE_PAYMENT_STATUS.pendingVerify, close_cash_amount: pay.method===CWF_CLOSE_PAYMENT_METHODS.cash ? Number(String(pay.cash_amount||'').replace(/,/g,'')) : null, close_payment_note: pay.note || '', close_cash_confirmed: !!pay.cash_confirmed, close_signature_type: signatureType || (pay.method===CWF_CLOSE_PAYMENT_METHODS.cash?'technician_signature':'customer_signature') }; }
-
-window.cwfToggleChecklistNormal=cwfToggleChecklistNormal; window.cwfMarkChecklistIssue=cwfMarkChecklistIssue; window.cwfSetChecklistStatus=cwfSetChecklistStatus; window.cwfSetChecklistNote=cwfSetChecklistNote; window.cwfMarkAllChecklist=cwfMarkAllChecklist; window.cwfSelectPaymentMethod=cwfSelectPaymentMethod; window.cwfOpenQrLarge=cwfOpenQrLarge; window.cwfConfirmMissingPhotoAck=cwfConfirmMissingPhotoAck; window.cwfOpenPhotoEvidenceModal=cwfOpenPhotoEvidenceModal; window.cwfOpenChecklistModal=cwfOpenChecklistModal; window.cwfOpenClosePaymentModal=cwfOpenClosePaymentModal;
 
 function buildJobCard(job, historyMode = false) {
   const div = document.createElement("div");
@@ -3343,13 +3336,23 @@ function buildJobCard(job, historyMode = false) {
 
     ${showWorkTools ? `
       <details class="cwf-details" style="margin-top:10px;" ${isWorking ? "open" : ""}>
-        <summary>🛠️ รูป / หมายเหตุ / ปิดงาน</summary>
+        <summary>🛠️ ปิดงาน / หลักฐาน / ชำระเงิน</summary>
         <div class="cwf-details-body">
-          ${renderCloseActionPanel(jobId, job, canEdit, revisitFlow)}
+          <div class="cwf-close-hub">
+            <button class="cwf-close-action" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
+              <span class="ico">📷</span><span><b>ลงรูป</b><small>เพิ่มรูปก่อนทำ หลังทำ และรูปตรวจเช็คทั้งหมด</small></span>
+            </button>
+            <button class="cwf-close-action" type="button" onclick="openTechChecklistModal('${jobKeyJs}', 'pre')" ${!canEdit ? "disabled" : ""}>
+              <span class="ico">✅</span><span><b>เช็คลิส</b><small>ติ๊กตรวจสภาพก่อนล้างและหลังล้างใน Modal</small></span>
+            </button>
+            <button class="cwf-close-action" type="button" onclick="openTechPaymentModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
+              <span class="ico">💳</span><span><b>จ่ายเงิน</b><small>เลือก QR / เงินสด / แอดมินจัดการ</small></span>
+            </button>
+          </div>
 
-          <hr style="margin:12px 0;" />
+          <div id="photo-status-${jobId}" style="display:none"></div>
 
-          <div>
+          <div class="cwf-note-box">
             <b>🛡️ ประกันงาน</b>
             <div class="muted" style="margin-top:4px;font-size:12px;">ต้องเลือกก่อนกด “เสร็จสิ้น”</div>
             ${(() => {
@@ -3358,64 +3361,26 @@ function buildJobCard(job, historyMode = false) {
               let label = '';
               let kindSelect = '';
               let monthSelect = '';
-
-              if (kind === 'clean') {
-                label = 'ล้าง: ประกัน 30 วัน';
-              } else if (kind === 'install') {
-                label = 'ติดตั้ง: ประกัน 3 ปี';
-              } else if (kind === 'repair') {
-                label = 'ซ่อม: เลือก 3/6/12 เดือน';
-              } else {
-                // งานเก่า/ค่าพิเศษ: ให้เลือกชนิดประกันเอง เพื่อไม่บล็อกการปิดงานผิดพลาด
+              if (kind === 'clean') label = 'ล้าง: ประกัน 30 วัน';
+              else if (kind === 'install') label = 'ติดตั้ง: ประกัน 3 ปี';
+              else if (kind === 'repair') label = 'ซ่อม: เลือก 3/6/12 เดือน';
+              else {
                 label = 'โปรดเลือกประเภทประกันก่อนปิดงาน';
-                kindSelect = `
-                  <select id="warranty-kind-${jobId}" style="margin-top:6px;width:100%;" onchange="toggleWarrantyMonths(${jobId})">
-                    <option value="">เลือกประเภทประกัน</option>
-                    <option value="clean">ล้าง (30 วัน)</option>
-                    <option value="repair">ซ่อม (เลือกเดือน)</option>
-                    <option value="install">ติดตั้ง (3 ปี)</option>
-                  </select>`;
-                // ในโหมดเลือกเอง: เตรียม dropdown เดือน แต่ซ่อนไว้จนกว่าจะเลือก repair
-                monthSelect = `
-                  <select id="warranty-months-${jobId}" style="margin-top:6px;width:100%;display:none;">
-                    <option value="">เลือกเดือนประกัน</option>
-                    <option value="3">3 เดือน</option>
-                    <option value="6">6 เดือน</option>
-                    <option value="12">12 เดือน</option>
-                  </select>`;
+                kindSelect = `<select id="warranty-kind-${jobId}" style="margin-top:6px;width:100%;" onchange="toggleWarrantyMonths(${jobId})"><option value="">เลือกประเภทประกัน</option><option value="clean">ล้าง (30 วัน)</option><option value="repair">ซ่อม (เลือกเดือน)</option><option value="install">ติดตั้ง (3 ปี)</option></select>`;
+                monthSelect = `<select id="warranty-months-${jobId}" style="margin-top:6px;width:100%;display:none;"><option value="">เลือกเดือนประกัน</option><option value="3">3 เดือน</option><option value="6">6 เดือน</option><option value="12">12 เดือน</option></select>`;
               }
-
-              if (kind === 'repair') {
-                monthSelect = `
-                  <select id="warranty-months-${jobId}" style="margin-top:6px;width:100%;">
-                    <option value="">เลือกเดือนประกัน</option>
-                    <option value="3">3 เดือน</option>
-                    <option value="6">6 เดือน</option>
-                    <option value="12">12 เดือน</option>
-                  </select>`;
-              }
-
-              // ถ้า kind มาจาก detect → เก็บเป็น hidden เพื่อ backward compatible
-              const kindHidden = (kind && !kindSelect)
-                ? `<input type="hidden" id="warranty-kind-${jobId}" value="${kind}">`
-                : '';
-
-              return `
-                ${kindHidden}
-                <div class="pill" style="margin-top:6px;background:#eff6ff;border-color:rgba(37,99,235,0.25);color:#0f172a;">${label}</div>
-                ${kindSelect}
-                ${monthSelect}
-              `;
+              if (kind === 'repair') monthSelect = `<select id="warranty-months-${jobId}" style="margin-top:6px;width:100%;"><option value="">เลือกเดือนประกัน</option><option value="3">3 เดือน</option><option value="6">6 เดือน</option><option value="12">12 เดือน</option></select>`;
+              const kindHidden = (kind && !kindSelect) ? `<input type="hidden" id="warranty-kind-${jobId}" value="${kind}">` : '';
+              return `${kindHidden}<div class="pill" style="margin-top:6px;background:#eff6ff;border-color:rgba(37,99,235,0.25);color:#0f172a;">${label}</div>${kindSelect}${monthSelect}`;
             })()}
           </div>
 
-          <div>
+          <div class="cwf-note-box">
             <b>📝 หมายเหตุช่าง</b>
             <textarea id="note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""} oninput="noteDraftChanged('${jobKeyJs}')">${escape(getNoteDraft(keyBase) || job.technician_note || "")}</textarea>
             ${revisitFlow ? `
               <div style="margin-top:10px;">
                 <b>🔁 ผลงานแก้ไข</b>
-                <div class="muted" style="margin-top:4px;font-size:12px;">ฟิลด์นี้จำเป็นสำหรับงานแก้ไข: เลือกผลลัพธ์ แล้วสรุปอาการ/สิ่งที่ทำใน revisit_note ก่อนกด “เสร็จสิ้น”</div>
                 <select id="revisit-result-${keyBase}" style="margin-top:6px;width:100%;" ${!canEdit ? "disabled" : ""}>
                   <option value="">เลือกผลการกลับไปแก้ (จำเป็น)</option>
                   <option value="successful">successful - แก้แล้วใช้งานได้</option>
@@ -3424,33 +3389,25 @@ function buildJobCard(job, historyMode = false) {
                 <textarea id="revisit-note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="revisit_note (จำเป็น): สรุปผลการแก้ / เหตุผล / อาการที่ยังพบ" ${!canEdit ? "disabled" : ""}>${escape(job.technician_note || "")}</textarea>
               </div>
             ` : ``}
-
             ${historyMode ? "" : ((checkedIn || isWorking) ? `
               <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
                 <button class="secondary" type="button" style="width:auto;" onclick="saveNote('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>💾 บันทึกหมายเหตุ</button>
-                ${isWorking ? `
-                  <button type="button" style="width:auto;" onclick="requestFinalize('${jobKeyJs}', 'เสร็จแล้ว')">✅ เสร็จสิ้น</button>
-                  <button class="danger" type="button" style="width:auto;" onclick="requestFinalize('${jobKeyJs}', 'ยกเลิก')">⛔ ยกเลิก</button>
-                ` : ``}
               </div>
+              ${isWorking ? `<div class="cwf-final-row"><button type="button" onclick="requestFinalize('${jobKeyJs}', 'เสร็จแล้ว')">✅ เสร็จสิ้น</button><button class="danger" type="button" onclick="requestFinalize('${jobKeyJs}', 'ยกเลิก')">⛔ ยกเลิก</button></div>` : ``}
             ` : ``)}
             <div id="note-status-${jobId}" style="margin-top:6px;"></div>
           </div>
         </div>
       </details>
     ` : `
-      <div class="muted" style="margin-top:10px;">* หลังจาก “เช็คอิน” แล้ว จะเปิดให้ใส่รูป/หมายเหตุ (ปุ่มเสร็จสิ้น/ยกเลิก จะขึ้นหลังเริ่มทำงาน) *</div>
+      <div class="muted" style="margin-top:10px;">* หลังจาก “เช็คอิน” แล้ว จะเปิดปุ่ม ลงรูป / เช็คลิส / จ่ายเงิน / ปิดงาน *</div>
     `}
   `;
 
   setTimeout(() => {
-    ensureCwfCloseFlowStyles();
     loadPricing(jobId);
     loadTeam(jobId);
-    if (showWorkTools) {
-      refreshPhotoStatus(jobId);
-      cwfUpdateCloseActionSummary(jobId);
-    }
+    if (showWorkTools) refreshPhotoStatus(jobId);
   }, 0);
 
   return div;
@@ -3670,77 +3627,183 @@ window.workflowNext = workflowNext;
 
 
 // =======================================
-// 💳 PAYMENT v2 (fixed QR + slip evidence + admin pending)
+// 💳 PAYMENT (จ่ายเงิน + QR + แนบสลิป + e-slip)
+// - ปุ่ม "จ่ายเงิน" จะเด้งเป็น Popup แสดงยอดรวม + QR ให้ลูกค้าแสกน
+// - กด "จ่ายแล้ว" => บันทึก paid_at ในระบบ + เปิดให้แนบรูปสลิป (phase = payment_slip)
+// - e-slip (ย่อ) เปิดได้ที่ /docs/eslip/:job_id
 // =======================================
+const CWF_PROMPTPAY_PHONE = (window.CWF_PROMPTPAY_PHONE || "0653157648").replace(/[^0-9]/g, "");
+
+// ✅ สร้าง URL รูป QR (PromptPay) ตามยอดเงิน
+function buildPromptPayQrUrl(amount) {
+  const amt = Number(amount || 0);
+  // promptpay.io รองรับ amount เป็นเลขทศนิยมได้
+  return `https://promptpay.io/${encodeURIComponent(CWF_PROMPTPAY_PHONE)}/${encodeURIComponent(amt.toFixed(2))}.png`;
+}
+
 let __payModalInited = false;
 let __payJobId = null;
 
 function ensurePayModal() {
   if (__payModalInited) return;
   __payModalInited = true;
-  ensureCwfCloseFlowStyles();
+
   const wrap = document.createElement("div");
   wrap.id = "pay-modal";
-  wrap.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,0.66);display:none;align-items:flex-end;justify-content:center;z-index:9999;padding:14px;";
+  wrap.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,0.6);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px;";
   wrap.innerHTML = `
-    <div class="card" style="width:min(560px, 100%);max-height:86vh;overflow:auto;border-radius:22px 22px 10px 10px;">
-      <h3 style="margin-top:0;">💳 การชำระเงิน</h3>
-      <div class="muted" id="pay-subtitle">เลือกวิธีชำระเงินให้ตรงกับหน้างาน แล้วแนบหลักฐานตามเงื่อนไข</div>
-      <div class="card tight" style="margin-top:10px;background:#fff;">
+    <div class="card" style="width:min(520px, 100%);">
+      <h3 style="margin-top:0;">💳 ชำระเงิน</h3>
+      <div class="muted" id="pay-subtitle">แสดง QR ให้ลูกค้าแสกน</div>
+
+      <div class="card tight" style="margin-top:10px;">
         <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <div><div class="muted">ยอดที่ต้องชำระ</div><div style="font-size:22px;font-weight:900;" id="pay-total">0.00 บาท</div></div>
-          <div style="text-align:right;"><div class="muted">Booking</div><div style="font-weight:800;" id="pay-booking">-</div></div>
+          <div>
+            <div class="muted">ยอดที่ต้องชำระ</div>
+            <div style="font-size:22px;font-weight:900;" id="pay-total">0.00 บาท</div>
+          </div>
+          <div style="text-align:right;">
+            <div class="muted">Booking</div>
+            <div style="font-weight:800;" id="pay-booking">-</div>
+          </div>
+        </div>
+
+        <div style="margin-top:10px;display:flex;justify-content:center;">
+          <img id="pay-qr" src="" alt="QR" style="width:260px;height:260px;object-fit:contain;border-radius:16px;border:1px solid rgba(15,23,42,0.15);background:#fff;"/>
+        </div>
+
+        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;justify-content:center;">
+          <button class="secondary" type="button" style="width:auto;" id="btn-refresh-qr">🔄 สร้าง QR ใหม่</button>
+        </div>
+
+        <div class="muted" style="margin-top:8px;font-size:12px;">
+          * ถ้า QR หมดอายุ/ไม่ขึ้น ให้กด “สร้าง QR ใหม่” ได้ตลอด
         </div>
       </div>
-      <div class="cwf-pay-grid" style="margin-top:12px;">
-        <div class="cwf-pay-card" data-modal-pay="${CWF_CLOSE_PAYMENT_METHODS.qr}"><h4>🏦 ลูกค้าสแกนจ่ายบริษัท</h4><p>แสดง QR บริษัท และต้องแนบสลิปก่อนปิดงาน</p></div>
-        <div class="cwf-pay-card" data-modal-pay="${CWF_CLOSE_PAYMENT_METHODS.cash}"><h4>💵 ลูกค้าจ่ายเงินสดให้ช่าง</h4><p>ช่างรับเงินสด โอนเข้าบริษัท และแนบสลิปก่อนปิดงาน</p></div>
-        <div class="cwf-pay-card" data-modal-pay="${CWF_CLOSE_PAYMENT_METHODS.admin}"><h4>👩‍💼 ให้แอดมินจัดการ</h4><p>ปิดงานได้ รอแอดมินลงสลิป/ยืนยันภายหลัง</p></div>
-      </div>
-      <div id="pay-modal-dynamic" style="margin-top:12px;"></div>
-      <div class="row" style="margin-top:12px;gap:10px;flex-wrap:wrap;">
+
+      <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
         <button class="secondary" type="button" style="width:auto;" onclick="closePayModal()">ปิด</button>
-        <button type="button" style="width:auto;" onclick="closePayModal();setTimeout(()=>{const el=document.querySelector('[id^=close-payment-]'); if(el) el.scrollIntoView({behavior:'smooth',block:'center'});},50)">ไปที่ส่วนปิดงาน</button>
+        <button type="button" style="width:auto;" id="btn-paid">✅ จ่ายแล้ว (แนบสลิป)</button>
+        <button class="secondary" type="button" style="width:auto;display:none;" id="btn-eslip">🧾 เปิด e-slip</button>
       </div>
+
       <div id="pay-msg" class="muted" style="margin-top:8px;"></div>
     </div>
   `;
   document.body.appendChild(wrap);
-  Array.from(wrap.querySelectorAll('[data-modal-pay]')).forEach(card=>{
-    card.onclick=()=>{ if(!__payJobId) return; cwfSelectPaymentMethod(__payJobId, card.getAttribute('data-modal-pay')); renderPayModalDynamic(); };
-  });
-  window.closePayModal = () => { const el = document.getElementById("pay-modal"); if (el) el.style.display = "none"; __payJobId = null; };
-}
 
-async function renderPayModalDynamic(){
-  const jobId=__payJobId; if(!jobId) return;
-  const st=cwfLoadPayment(jobId); const box=document.getElementById('pay-modal-dynamic'); if(!box)return;
-  document.querySelectorAll('#pay-modal [data-modal-pay]').forEach(el=>el.classList.toggle('active', el.getAttribute('data-modal-pay')===st.method));
-  const slip=await cwfHasPaymentSlip(jobId);
-  if(st.method===CWF_CLOSE_PAYMENT_METHODS.qr){
-    box.innerHTML=`<div class="card tight" style="background:#fff;text-align:center"><img class="cwf-qr-img" src="${CWF_STATIC_PROMPTPAY_QR}" alt="Thai QR Payment"><div class="muted" style="margin-top:8px">ให้ลูกค้าสแกน QR นี้เพื่อโอนเข้าบัญชีบริษัท</div><div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;justify-content:center"><button type="button" style="width:auto" onclick="pickPhotos('${jobId}','payment_slip',1)">📎 แนบสลิปโอนเงิน</button><button class="secondary" type="button" style="width:auto" onclick="cwfOpenQrLarge()">ดู QR ขนาดใหญ่</button><span class="cwf-mini-badge ${slip?'ok':'bad'}">${slip?'มีสลิปแล้ว':'ยังไม่มีสลิป'}</span></div></div>`;
-  } else if(st.method===CWF_CLOSE_PAYMENT_METHODS.cash){
-    box.innerHTML=`<div class="card tight" style="background:#fff"><label>จำนวนเงินสดที่รับจากลูกค้า</label><input inputmode="decimal" value="${cwfEsc(st.cash_amount||'')}" oninput="cwfSavePayment('${jobId}',{cash_amount:this.value});cwfUpdateCloseActionSummary('${jobId}')"><div class="muted" style="margin-top:6px">หลังรับเงินสด ช่างต้องโอนเข้าบริษัทและแนบสลิปก่อนปิดงาน</div><label style="display:flex;gap:8px;margin-top:10px"><input type="checkbox" ${st.cash_confirmed?'checked':''} onchange="cwfSavePayment('${jobId}',{cash_confirmed:this.checked});cwfUpdateCloseActionSummary('${jobId}')"><span>ฉันยืนยันว่าได้รับเงินสดจากลูกค้าตามจำนวนที่ระบุแล้ว</span></label><div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap"><button type="button" style="width:auto" onclick="pickPhotos('${jobId}','payment_slip',1)">📎 แนบสลิปที่ช่างโอนเข้าบริษัท</button><span class="cwf-mini-badge ${slip?'ok':'bad'}">${slip?'มีสลิปแล้ว':'ยังไม่มีสลิป'}</span></div></div>`;
-  } else if(st.method===CWF_CLOSE_PAYMENT_METHODS.admin){
-    box.innerHTML=`<div class="card tight" style="background:#fff"><b>รอแอดมินอัปเดตการชำระเงิน</b><div class="muted" style="margin-top:6px">ใช้กรณีลูกค้าโอนให้แอดมินโดยตรง หรือแอดมินจะเป็นผู้ลงสลิปและยืนยันภายหลัง</div></div>`;
-  } else box.innerHTML='<div class="muted">เลือกวิธีชำระเงินด้านบน</div>';
+  window.closePayModal = () => {
+    const el = document.getElementById("pay-modal");
+    if (el) el.style.display = "none";
+    __payJobId = null;
+  };
 }
 
 async function payJob(jobId) {
   const id = Number(jobId);
   if (!id) return;
+
   ensurePayModal();
   __payJobId = id;
+
   const modal = document.getElementById("pay-modal");
   const tEl = document.getElementById("pay-total");
   const bEl = document.getElementById("pay-booking");
+  const qrEl = document.getElementById("pay-qr");
+  const btnRefresh = document.getElementById("btn-refresh-qr");
+  const msgEl = document.getElementById("pay-msg");
+  const btnPaid = document.getElementById("btn-paid");
+  const btnE = document.getElementById("btn-eslip");
+
+  if (msgEl) msgEl.textContent = "";
+  if (btnE) btnE.style.display = "none";
+
+  // หา job จาก cache เพื่อโชว์ booking
   const job = (window.__JOB_CACHE__ || []).find(j => Number(j.job_id) === id) || {};
   const bookingCode = job.booking_code || ("CWF" + String(id).padStart(7, "0"));
   if (bEl) bEl.textContent = bookingCode;
+
+  // ดึงยอดรวม (ใช้ pricing เป็นหลัก)
   let total = Number(job.job_price || 0);
-  try { const rr = await fetch(`${API_BASE}/jobs/${id}/pricing`); if (rr.ok) { const data = await rr.json().catch(() => ({})); total = Number(data.total || total || 0); } } catch {}
+  try {
+    const rr = await fetch(`${API_BASE}/jobs/${id}/pricing`);
+    if (rr.ok) {
+      const data = await rr.json().catch(() => ({}));
+      total = Number(data.total || total || 0);
+    }
+  } catch {
+    // ignore
+  }
+
   if (tEl) tEl.textContent = `${total.toFixed(2)} บาท`;
-  await renderPayModalDynamic();
+  const renderQr = () => {
+    if (!qrEl) return;
+    const ts = Date.now();
+    qrEl.src = `${buildPromptPayQrUrl(total)}?ts=${ts}`;
+  };
+  if (qrEl) {
+    // fallback: ถ้า promptpay.io ถูกบล็อค/ล่ม ให้ใช้ QR สำรอง (ถ้าตั้งค่าไว้)
+    qrEl.onerror = () => {
+      const fallback = window.CWF_STATIC_QR_URL || "";
+      if (fallback) {
+        qrEl.src = `${fallback}?ts=${Date.now()}`;
+      }
+    };
+  }
+  renderQr();
+  if (btnRefresh) {
+    btnRefresh.onclick = () => {
+      renderQr();
+      if (msgEl) msgEl.textContent = "🔄 สร้าง QR ใหม่แล้ว";
+    };
+  }
+
+  if (btnPaid) {
+    btnPaid.disabled = false;
+    // IMPORTANT: Mobile/PWA บางรุ่นจะ "บล็อค" file picker ถ้าเรียกหลัง await
+    // แก้โดย: เปิด picker แบบ synchronous ก่อน แล้วค่อยยิง API / อัปโหลด
+    btnPaid.onclick = () => {
+      try {
+        // 1) เปิดเลือกสลิปก่อน (ไม่ await) เพื่อให้ iOS/Android WebView อนุญาต
+        openFilePicker({ multiple: false, accept: 'image/*' }, async (files) => {
+          if (!files || !files.length) {
+            showToast('ยังไม่ได้เลือกสลิป', 'error');
+            return;
+          }
+
+          btnPaid.disabled = true;
+          if (msgEl) msgEl.textContent = "กำลังบันทึกการชำระเงิน...";
+
+          // 2) บันทึกการจ่ายเงิน
+          const res = await fetch(`${API_BASE}/jobs/${id}/pay`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ username, amount: total }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "บันทึกการจ่ายเงินไม่สำเร็จ");
+
+          if (msgEl) msgEl.textContent = "✅ บันทึกแล้ว กำลังแนบสลิป...";
+
+          // 3) อัปโหลดสลิปแบบตรง (phase = payment_slip)
+          await uploadFilesAsPhotos(id, 'payment_slip', files);
+
+          if (msgEl) msgEl.textContent = "✅ แนบสลิปแล้ว";
+          if (btnE) {
+            btnE.style.display = "";
+            btnE.onclick = () => openESlip(id);
+          }
+
+          loadJobs();
+        });
+      } catch (e) {
+        console.error(e);
+        alert(`❌ ${e.message}`);
+        if (msgEl) msgEl.textContent = `❌ ${e.message}`;
+      }
+    };
+  }
+
   if (modal) modal.style.display = "flex";
 }
 window.payJob = payJob;
@@ -3790,8 +3853,8 @@ function ensureSignatureModal() {
   wrap.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,0.6);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px;";
   wrap.innerHTML = `
     <div class="card" style="width:min(520px, 100%);">
-      <h3 style="margin-top:0;" id="sig-modal-title">✍️ ลายเซ็นลูกค้ารับงาน</h3>
-      <div class="muted" id="sig-modal-subtitle">ให้ลูกค้าเซ็นเพื่อยืนยัน “เสร็จสิ้น/ยกเลิก” งาน</div>
+      <h3 style="margin-top:0;">✍️ ลายเซ็นต์ลูกค้า</h3>
+      <div class="muted">ให้ลูกค้าเซ็นเพื่อยืนยัน “เสร็จสิ้น/ยกเลิก” งาน</div>
       <div style="margin-top:10px;border:1px solid rgba(15,23,42,0.15);border-radius:14px;overflow:hidden;background:#fff;">
         <canvas id="sig-canvas" width="480" height="220" style="width:100%;height:auto;touch-action:none;"></canvas>
       </div>
@@ -3863,7 +3926,7 @@ function ensureSignatureModal() {
   };
 
   wrap.querySelector("#sig-confirm").onclick = () => {
-    if (!hasStroke) return alert((wrap.dataset.signatureType === "technician_signature") ? "ให้ช่างเซ็นรับรองก่อน" : "ให้ลูกค้าเซ็นก่อน");
+    if (!hasStroke) return alert("ให้ลูกค้าเซ็นก่อน");
     const dataUrl = canvas.toDataURL("image/png");
     wrap.style.display = "none";
 
@@ -3875,16 +3938,11 @@ function ensureSignatureModal() {
   };
 }
 
-function openSignatureModal(onConfirm, signatureType) {
+function openSignatureModal(onConfirm) {
   ensureSignatureModal();
   const wrap = document.getElementById("sig-modal");
   if (!wrap) return;
   __sigOnConfirm = onConfirm;
-  wrap.dataset.signatureType = signatureType || 'customer_signature';
-  const title = wrap.querySelector('#sig-modal-title');
-  const sub = wrap.querySelector('#sig-modal-subtitle');
-  if (title) title.textContent = (signatureType === 'technician_signature') ? '✍️ ลายเซ็นช่างรับรองปิดงาน' : '✍️ ลายเซ็นลูกค้ารับงาน';
-  if (sub) sub.textContent = (signatureType === 'technician_signature') ? 'ให้ช่างเซ็นรับรองการปิดงานและการรับ/โอนเงินตามข้อมูลที่บันทึก' : 'ให้ลูกค้าเซ็นเพื่อยืนยัน “เสร็จสิ้น/ยกเลิก” งาน';
 
   // เคลียร์ canvas ทุกครั้ง
   const canvas = wrap.querySelector("#sig-canvas");
@@ -4212,11 +4270,8 @@ function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
           }
         }
 
-        const closeValidation = await cwfValidateCloseFlow(jobId);
-        if (!closeValidation.ok) {
-          alert(closeValidation.message || 'กรุณาตรวจสอบข้อมูลก่อนปิดงาน');
-          return;
-        }
+        const closeOk = await cwfValidateCloseRequirements(jobId, targetStatus);
+        if (!closeOk) return;
 
         // fail-open: ถ้า endpoint ไม่มี ให้ fallback ไป flow เดิม
         const r = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/assignment-done`, {
@@ -4235,25 +4290,15 @@ function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
         // fail-open
         console.warn('[assignment-done] fail-open', e);
       }
-      const openFinalSignature = async () => {
-        const pay = cwfLoadPayment(jobId);
-        const signatureType = pay.method === CWF_CLOSE_PAYMENT_METHODS.cash ? 'technician_signature' : 'customer_signature';
-        openSignatureModal((signatureDataUrl) => finalizeJob(jobId, targetStatus, signatureDataUrl, signatureType), signatureType);
-      };
-      const finalValidation = await cwfValidateCloseFlow(jobId);
-      if (finalValidation.missingPhotos && finalValidation.missingPhotos.length) {
-        cwfOpenMissingPhotoAck(jobId, finalValidation.missingPhotos, openFinalSignature);
-      } else {
-        openFinalSignature();
-      }
+      openSignatureModal((signatureDataUrl) => finalizeJob(jobId, targetStatus, signatureDataUrl));
     })();
     return;
   }
 
-  openSignatureModal((signatureDataUrl) => finalizeJob(jobId, targetStatus, signatureDataUrl, 'customer_signature'), 'customer_signature');
+  openSignatureModal((signatureDataUrl) => finalizeJob(jobId, targetStatus, signatureDataUrl));
 }
 
-async function finalizeJob(jobId, targetStatus, signatureDataUrl, signatureType) {
+async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
   try {
     const job = getJobFromCache(jobId);
     const revisitFlow = isRevisitJob(job);
@@ -4285,7 +4330,6 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl, signatureType)
         note,
         revisit_result,
         revisit_note,
-        ...cwfGetClosePayload(jobId, signatureType),
       }),
     });
 
@@ -4342,69 +4386,51 @@ async function closeJob(jobId) {
 // =======================================
 // 📍 CHECK-IN
 // =======================================
-const __cwfCheckinBusy = window.__cwfCheckinBusy || (window.__cwfCheckinBusy = {});
 function checkin(jobId) {
+  if (!navigator.geolocation) return alert("เครื่องนี้ไม่รองรับ GPS");
   const key = String(jobId || '').trim();
-  if (!key) return alert('ไม่พบรหัสงานสำหรับเช็คอิน');
-  if (__cwfCheckinBusy[key]) return;
-  if (!navigator.geolocation) return alert('เครื่องนี้ไม่รองรับ GPS');
+  if (!key) return alert("ไม่พบรหัสงาน");
+  if (window.__CWF_CHECKIN_BUSY && window.__CWF_CHECKIN_BUSY[key]) return;
+  window.__CWF_CHECKIN_BUSY = window.__CWF_CHECKIN_BUSY || {};
+  window.__CWF_CHECKIN_BUSY[key] = true;
 
-  __cwfCheckinBusy[key] = true;
-  const box = document.getElementById(`checkin-status-${key}`) || document.getElementById(`travel-hint-${key}`);
-  const btn = document.querySelector(`[data-role="workflow"][data-jobkey="${(typeof CSS !== 'undefined' && CSS.escape) ? CSS.escape(key) : key.replace(/[^a-zA-Z0-9_-]/g,'\\$&')}"]`);
-  const oldText = btn ? btn.textContent : '';
-  if (box) box.innerHTML = '📍 กำลังเช็คอิน... กำลังขอพิกัด';
-  if (btn) { btn.disabled = true; btn.textContent = '📍 กำลังเช็คอิน...'; }
+  const btn = document.querySelector(`[data-role="workflow"][data-jobkey="${CSS.escape(key)}"]`);
+  const oldText = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '📍 กำลังเช็คอิน...'; }
+  const hint = document.getElementById(`travel-hint-${key}`) || document.getElementById(`checkin-status-${key}`);
+  if (hint) hint.innerHTML = '📍 กำลังขอพิกัด GPS...';
 
-  const finishUi = (ok, msg) => {
-    if (box) box.innerHTML = ok ? '✅ เช็คอินสำเร็จ กำลังอัปเดตงาน...' : 'ยังไม่เช็คอิน';
-    if (!ok && btn) { btn.disabled = false; btn.textContent = oldText || '📍 เช็คอิน'; }
-  };
-
-  const sendCheckin = (lat, lng) => {
-    if (box) box.innerHTML = '📍 ได้พิกัดแล้ว กำลังบันทึกเช็คอิน...';
-    return fetch(`${API_BASE}/jobs/${encodeURIComponent(key)}/checkin`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ lat, lng }),
-    })
-      .then(async (res) => {
-        const data = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(data.error || 'เช็คอินไม่สำเร็จ');
-        return data;
-      })
-      .then(() => {
-        finishUi(true);
-        try { localStorage.setItem(`cwf_checkin_${key}`, String(Date.now())); } catch {}
-        try {
-          const cache = window.__JOB_CACHE__ || [];
-          const job = cache.find(j => String(j.job_id) === key || String(j.booking_code||'') === key);
-          if (job) job.checkin_at = new Date().toISOString();
-        } catch {}
-        setTimeout(()=>{ try { loadJobs(); } catch(e){} }, 120);
-      })
-      .catch((e) => {
-        finishUi(false);
-        alert(`❌ ${e.message || 'เช็คอินไม่สำเร็จ'}`);
-      })
-      .finally(() => {
-        __cwfCheckinBusy[key] = false;
-        if (btn) { btn.disabled = false; btn.textContent = oldText || '📍 เช็คอิน'; }
-      });
+  const finish = () => {
+    window.__CWF_CHECKIN_BUSY[key] = false;
+    if (btn) { btn.disabled = false; btn.innerHTML = oldText || '📍 เช็คอิน'; }
   };
 
   navigator.geolocation.getCurrentPosition(
-    (pos) => sendCheckin(pos.coords.latitude, pos.coords.longitude),
-    (err) => {
-      __cwfCheckinBusy[key] = false;
-      finishUi(false);
-      const msg = err && err.code === 1 ? 'กรุณาอนุญาต GPS ก่อนเช็คอิน' : 'ขอพิกัด GPS ไม่สำเร็จ กรุณาลองใหม่';
-      alert(`❌ ${msg}`);
+    (pos) => {
+      const lat = pos.coords.latitude;
+      const lng = pos.coords.longitude;
+      if (hint) hint.innerHTML = '📍 ได้พิกัดแล้ว กำลังบันทึกเช็คอิน...';
+      fetch(`${API_BASE}/jobs/${encodeURIComponent(String(key))}/checkin`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat, lng }),
+      })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.error || "เช็คอินไม่สำเร็จ");
+          return data;
+        })
+        .then(() => {
+          if (hint) hint.innerHTML = "✅ เช็คอินสำเร็จ";
+          setTimeout(()=>loadJobs(), 150);
+        })
+        .catch((e) => alert(`❌ ${e.message}`))
+        .finally(finish);
     },
-    { enableHighAccuracy: false, timeout: 4500, maximumAge: 120000 }
+    (err) => { finish(); alert(err?.message ? `ขอสิทธิ์ GPS ไม่สำเร็จ: ${err.message}` : "ขอสิทธิ์ GPS ไม่สำเร็จ/ถูกปฏิเสธ"); },
+    { enableHighAccuracy: false, maximumAge: 60000, timeout: 8000 }
   );
 }
-
 
 // =======================================
 // 📝 NOTE
@@ -4524,57 +4550,66 @@ window.loadTeam = loadTeam;
 // =======================================
 async function refreshPhotoStatus(jobId) {
   const box = document.getElementById(`photo-status-${jobId}`);
-  const global = document.getElementById(`photo-global-${jobId}`);
+  if (!box) return;
+
   try {
-    const counts = await cwfGetPhotoCounts(jobId);
-    const phases = ['before','after','pressure','current','temp','defect','payment_slip','revisit_before','revisit_after','revisit_defect'];
-    const stateMap = (__cwfPhotoUploadState[cwfKey(jobId)] || {});
-    let anyUploading = false;
-    phases.forEach(ph=>{
-      const card = document.querySelector(`[data-photo-card="${ph}"]`);
-      const stateEl = document.querySelector(`[data-photo-state="${ph}"]`);
-      const thumbs = document.querySelector(`[data-photo-thumbs="${ph}"]`);
-      const st = stateMap[ph]?.status || '';
-      if (st === 'uploading') anyUploading = true;
-      const uploaded = Number(counts[ph]?.uploaded || 0);
-      const local = Number(counts[ph]?.local || 0);
-      if (card) { card.classList.toggle('is-uploading', st==='uploading'); card.classList.toggle('is-failed', st==='failed'); }
-      if (stateEl) {
-        let text = 'ยังไม่มีรูป'; let cls = 'muted';
-        if (st === 'uploading') { text = 'กำลังอัปโหลด...'; cls='cwf-mini-badge'; }
-        else if (st === 'failed') { text = 'อัปโหลดล้มเหลว'; cls='cwf-mini-badge bad'; }
-        else if (uploaded > 0) { text = `อัปโหลดแล้ว ${uploaded} รูป`; cls='cwf-mini-badge ok'; }
-        else if (local > 0) { text = `ค้างในเครื่อง ${local} รูป`; cls='cwf-mini-badge warn'; }
-        stateEl.className = cls; stateEl.textContent = text;
-      }
-      if (thumbs) {
-        const urls = (counts[ph]?.urls || []).slice(-6);
-        thumbs.innerHTML = urls.map(u=>`<a href="${u}" target="_blank" rel="noopener"><img src="${u}" alt="${ph}"></a>`).join('');
-      }
-    });
-    if (global) {
-      global.className = `cwf-mini-badge ${anyUploading?'warn':'ok'}`;
-      global.textContent = anyUploading ? 'กำลังอัปโหลด' : 'พร้อมใช้งาน';
+    const job = getJobFromCache(jobId);
+    const revisitFlow = isRevisitJob(job);
+    const all = await idbGetByJob(jobId);
+    const byPhase = (ph) => all.filter((x) => x.phase === ph).length;
+
+    // ✅ นับรูปที่อัปโหลดแล้วจากเซิร์ฟเวอร์ (ให้ช่างรู้ว่าขึ้นจริง)
+    let uploaded = [];
+    try {
+      const rr = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos`);
+      if (rr.ok) uploaded = (await rr.json()) || [];
+    } catch {
+      // ignore
     }
-    if (box) {
-      const needBefore = Number(counts.before?.uploaded||0)+Number(counts.before?.local||0);
-      const needAfter = Number(counts.after?.uploaded||0)+Number(counts.after?.local||0);
-      box.innerHTML = `
-        <div class="muted" style="line-height:1.55">
-          รูปสำคัญ → ก่อนทำ: <b>${needBefore}</b> รูป, หลังทำ: <b>${needAfter}</b> รูป, สลิป: <b>${Number(counts.payment_slip?.uploaded||0)+Number(counts.payment_slip?.local||0)}</b> รูป
+    const upByPhase = (ph) => (uploaded || []).filter((x) => x.phase === ph && x.public_url).length;
+
+    box.innerHTML = `
+      <div class="muted">
+        ค้างในเครื่อง → ก่อนทำ: <b>${byPhase("before")}</b>,
+        หลังทำ: <b>${byPhase("after")}</b>,
+        วัดน้ำยา: <b>${byPhase("pressure")}</b>,
+        วัดกระแส: <b>${byPhase("current")}</b>,
+        อุณหภูมิ: <b>${byPhase("temp")}</b>,
+        ตำหนิ: <b>${byPhase("defect")}</b>,
+        สลิป: <b>${byPhase("payment_slip")}</b>
+      </div>
+
+      <div class="muted" style="margin-top:6px;">
+        อัปโหลดแล้ว → ก่อนทำ: <b>${upByPhase("before")}</b>,
+        หลังทำ: <b>${upByPhase("after")}</b>,
+        วัดน้ำยา: <b>${upByPhase("pressure")}</b>,
+        วัดกระแส: <b>${upByPhase("current")}</b>,
+        อุณหภูมิ: <b>${upByPhase("temp")}</b>,
+        ตำหนิ: <b>${upByPhase("defect")}</b>,
+        สลิป: <b>${upByPhase("payment_slip")}</b>
+      </div>
+
+      ${revisitFlow ? `
+        <div class="muted" style="margin-top:6px;">
+          งานแก้ไข → ค้างในเครื่อง: ก่อนแก้ <b>${byPhase("revisit_before")}</b>,
+          หลังแก้ <b>${byPhase("revisit_after")}</b>,
+          จุดปัญหา <b>${byPhase("revisit_defect")}</b>
         </div>
-        ${anyUploading ? `<div class="cwf-mini-badge warn" style="margin-top:8px">กำลังอัปโหลดรูป กรุณารอสักครู่</div>` : ``}
-        <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" style="width:auto;" onclick="openUploadedPhotos(${jobId})">🖼️ ดูรูปที่อัปโหลดแล้ว</button>
-          <button class="secondary" type="button" style="width:auto;" onclick="forceUpload(${jobId})">⬆️ อัปโหลดค้างในเครื่อง</button>
+        <div class="muted" style="margin-top:6px;">
+          งานแก้ไข → อัปโหลดแล้ว: ก่อนแก้ <b>${upByPhase("revisit_before")}</b>,
+          หลังแก้ <b>${upByPhase("revisit_after")}</b>,
+          จุดปัญหา <b>${upByPhase("revisit_defect")}</b>
         </div>
-      `;
-    }
-    try { cwfRenderPaymentDynamic(jobId); } catch(e) {}
-    try { cwfUpdateCloseActionSummary(jobId); } catch(e) {}
+      ` : ``}
+
+      <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
+        <button class="secondary" type="button" style="width:auto;" onclick="openUploadedPhotos(${jobId})">🖼️ ดูรูปที่อัปโหลดแล้ว</button>
+        <button class="secondary" type="button" style="width:auto;" onclick="forceUpload(${jobId})">⬆️ อัปโหลดค้างในเครื่อง</button>
+      </div>
+    `;
   } catch (e) {
     console.error(e);
-    if (box) box.textContent = "❌ โหลดสถานะรูปไม่สำเร็จ";
+    box.textContent = "❌ โหลดสถานะรูปไม่สำเร็จ";
   }
 }
 
@@ -4756,11 +4791,9 @@ function openFilePicker(opts, onPicked){
 
 // Upload a given File[] as job photos (same flow as pickPhotos)
 async function uploadFilesAsPhotos(jobId, phase, files){
+  window.__CWF_UPLOAD_BUSY_COUNT = (window.__CWF_UPLOAD_BUSY_COUNT || 0) + 1;
   const selected = Array.from(files || []);
   if (!selected.length) return;
-  cwfSetPhotoState(jobId, phase, 'uploading');
-  let hadFailure = false;
-  try {
 
   for (const f of selected) {
     const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
@@ -4788,7 +4821,6 @@ async function uploadFilesAsPhotos(jobId, phase, files){
       const up = await upRes.json().catch(() => ({}));
       if (!upRes.ok) throw new Error(up.error || "อัปโหลดรูปไม่สำเร็จ");
     } catch (e) {
-      hadFailure = true;
       // fail-open: เก็บค้างในเครื่อง แล้วให้กดอัปโหลดภายหลัง
       const buffer = await f.arrayBuffer();
       await idbPut({
@@ -4803,10 +4835,8 @@ async function uploadFilesAsPhotos(jobId, phase, files){
       });
     }
   }
-  } finally {
-    if (hadFailure) cwfSetPhotoState(jobId, phase, 'failed'); else cwfClearPhotoState(jobId, phase);
-    try { await refreshPhotoStatus(jobId); } catch {}
-  }
+  try { await refreshPhotoStatus(jobId); } catch {}
+  finally { window.__CWF_UPLOAD_BUSY_COUNT = Math.max(0, (window.__CWF_UPLOAD_BUSY_COUNT || 1) - 1); }
 }
 
 async function pickPhotos(jobId, phase, maxFiles = 20) {
@@ -4819,9 +4849,7 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
     input.onchange = async () => {
       const selected = Array.from(input.files || []).slice(0, maxFiles);
       if (!selected.length) return;
-      cwfSetPhotoState(jobId, phase, 'uploading');
-      let hadFailure = false;
-      try {
+      window.__CWF_UPLOAD_BUSY_COUNT = (window.__CWF_UPLOAD_BUSY_COUNT || 0) + 1;
 
       for (const f of selected) {
         const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
@@ -4863,7 +4891,6 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
           console.warn("upload-now error, fallback to idb:", e.message);
         }
 
-        hadFailure = true;
         await idbPut({
           photo_id: Number(photo_id),
           job_id: Number(jobId),
@@ -4877,10 +4904,8 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
       }
 
       alert("✅ รับรูปแล้ว (อัปโหลดทันทีถ้าเน็ตพร้อม / ถ้าไม่พร้อมจะค้างในเครื่อง)");
-      } finally {
-        if (hadFailure) cwfSetPhotoState(jobId, phase, 'failed'); else cwfClearPhotoState(jobId, phase);
-        refreshPhotoStatus(jobId);
-      }
+      window.__CWF_UPLOAD_BUSY_COUNT = Math.max(0, (window.__CWF_UPLOAD_BUSY_COUNT || 1) - 1);
+      refreshPhotoStatus(jobId);
     };
 
     input.click();

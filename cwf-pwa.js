@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  var VERSION = 'company-logo-icon-v32';
+  var VERSION = 'close-flow-modal-clean-v1';
   function register(){
     if (!('serviceWorker' in navigator)) return;
     window.addEventListener('load', function(){
