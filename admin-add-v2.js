@@ -1020,8 +1020,10 @@ function updateFlowUI(){
   const assignHidden = el('assign_mode');
   const techHidden = el('technician_username');
   const teamCsv = el('team_members_csv');
+  const timeProposalWrap = el('allow_time_proposal_wrap');
 
   if(uiMode === 'urgent'){
+    if(timeProposalWrap) timeProposalWrap.style.display = 'flex';
     if(assignWrap) assignWrap.style.display = 'none';
     if(assignCard) assignCard.style.display = 'none';
     if(dateWrap) dateWrap.style.display = 'none';
@@ -1034,12 +1036,12 @@ function updateFlowUI(){
     if(assignHidden) assignHidden.value = 'auto';
     if(techHidden) techHidden.value = '';
     if(teamCsv) teamCsv.value = '';
-    // งานด่วนควรส่งให้ช่างทุกประเภทที่เปิดรับงาน + อยู่ในโซน เพื่อไม่ให้ข้อเสนอหายเพราะเลือกกลุ่มผิด
-    if(el('tech_type')) el('tech_type').value = 'all';
     state.confirmed_tech_username = '';
     state.selected_slot_iso = null;
     state.teamPicker = { q:'', selected:new Set(), primary:'' };
   } else {
+    if(timeProposalWrap) timeProposalWrap.style.display = 'none';
+    if(el('allow_time_proposal')) el('allow_time_proposal').checked = false;
     if(assignWrap) assignWrap.style.display = '';
     if(dateWrap) dateWrap.style.display = '';
     if(btnLoad) btnLoad.style.display = '';
@@ -1074,6 +1076,7 @@ function syncModesFromUI(){
   }
 
   if(uiMode === 'urgent'){
+    if(el('tech_type')) el('tech_type').value = 'all';
     if(el('technician_username')) el('technician_username').value = '';
     if(el('team_members_csv')) el('team_members_csv').value = '';
   }

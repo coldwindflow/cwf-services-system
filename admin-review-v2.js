@@ -144,7 +144,7 @@ async function loadQueue(){
             <div style="text-align:right;display:flex;flex-direction:column;gap:6px;align-items:flex-end;">
               ${badge}${urgent}
               <button class="btn btn-primary" type="button" onclick="openJob(${r.job_id})">เปิด</button>
-              <button class="btn btn-ghost" type="button" style="min-height:34px;padding:7px 10px" onclick="quickRebroadcastOffer(${Number(r.job_id)})">📣 ยิงใหม่</button>
+              <button class="btn" type="button" style="background:linear-gradient(135deg,#2563eb,#06b6d4);color:#fff" onclick="rebroadcastOfferQuick(${Number(r.job_id)})">📣 ลองยิงใหม่</button>
             </div>
           </div>
           <div class="muted" style="margin-top:8px;">📅 ${thDateTime(r.appointment_datetime)} • 🧾 ${safe(r.job_type||"-")}</div>
@@ -158,21 +158,6 @@ async function loadQueue(){
   }catch(e){
     console.error(e);
     $("list").innerHTML = `<div class="card"><div class="muted">โหลดไม่สำเร็จ: ${safe(e.message||e)}</div></div>`;
-  }
-}
-
-
-async function quickRebroadcastOffer(jobId){
-  const jid = Number(jobId);
-  if (!jid) return;
-  if (!confirm("ยืนยันยิงข้อเสนอใหม่ให้ช่างที่เปิดรับงาน ว่างจริง และอยู่ในพื้นที่นี้?")) return;
-  try{
-    const out = await apiFetch(`/jobs/${jid}/rebroadcast_offer_v2`, { method:"POST", body: JSON.stringify({ tech_type:"all" }) });
-    showToast(out.message || `ส่งข้อเสนอใหม่แล้ว ${Number(out.offers_count||0)} คน`, "success");
-    await loadQueue();
-  }catch(e){
-    console.error(e);
-    showToast(e.message || "ยิงข้อเสนอใหม่ไม่สำเร็จ", "error");
   }
 }
 
@@ -540,6 +525,21 @@ async function dispatchJob(){
   }
 }
 
+
+async function rebroadcastOfferQuick(jobId){
+  const id = Number(jobId || 0);
+  if (!id) return showToast("ไม่พบรหัสงาน", "error");
+  if (!confirm("ยืนยันยิงข้อเสนอใหม่ให้ช่างที่เปิดรับงาน ว่างจริง และอยู่ในพื้นที่นี้?")) return;
+  try{
+    const out = await apiFetch(`/jobs/${id}/rebroadcast_offer_v2`, { method:"POST", body: JSON.stringify({ tech_type:"all" }) });
+    showToast(out.message || `ส่งข้อเสนอใหม่แล้ว ${Number(out.offers_count||0)} คน`, "success");
+    await loadQueue();
+  }catch(e){
+    console.error(e);
+    showToast(e.message || "ยิงข้อเสนอใหม่ไม่สำเร็จ", "error");
+  }
+}
+window.rebroadcastOfferQuick = rebroadcastOfferQuick;
 
 async function rebroadcastOffer(){
   if (!CURRENT) return;

@@ -13473,28 +13473,46 @@ async function logJobUpdate(job_id, { actor_username, actor_role, action, messag
   }
 }
 
-function generateUnitCode(unitNo) {
-  // ใช้รหัสเรียงตามลำดับเครื่องในใบงาน เพื่อลดความสับสนของช่าง
-  // เช่น งานเดียวกันมี 3 เครื่อง => 001, 002, 003
-  const n = Math.max(1, Math.min(999, Math.floor(Number(unitNo) || 1)));
-  return String(n).padStart(3, '0');
+function generateUnitCode(jobId, unitNo) {
+  // ใช้รหัส 7 หลักที่อ่านง่ายและเรียงตามเครื่องในใบงาน
+  // รูปแบบ: เลขงาน 5 หลักท้าย + ลำดับเครื่อง 2 หลัก เช่น 0123401, 0123402
+  // ช่วยให้ช่างเขียนบนสติ๊กเกอร์และตามงานย้อนหลังได้ง่ายกว่าเลขสุ่ม
+  const jid = Math.abs(Number(jobId || 0) || 0);
+  const no = Math.max(1, Math.min(99, Math.floor(Number(unitNo || 1) || 1)));
+  return `${String(jid).padStart(5, '0').slice(-5)}${String(no).padStart(2, '0')}`;
+}
+
+function unitDisplayItemName(value) {
+  let text = String(value || '').trim();
+  if (!text) return 'เครื่องปรับอากาศ';
+  // ตัดจำนวนเครื่องออกจากชื่อที่ใช้แสดงในดรอปดาวน์/การ์ด เพื่อไม่ให้ช่างเถียงกันหน้างาน
+  text = text.replace(/\s*(?:x|×)\s*\d+\s*$/i, '');
+  text = text.replace(/\s*\d+\s*เครื่อง\s*$/i, '');
+  text = text.replace(/\s{2,}/g, ' ').trim();
+  return text || 'เครื่องปรับอากาศ';
 }
 
 async function normalizeJobUnitCodes(jobId, db = pool) {
   const realId = Number(jobId);
-  if (!Number.isFinite(realId) || realId <= 0) return;
-  try {
-    const rows = await db.query(`SELECT unit_id, unit_no, unit_code FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
-    for (const u of rows.rows || []) {
-      const code = generateUnitCode(u.unit_no);
-      if (String(u.unit_code || '') !== code) {
-        await db.query(`UPDATE public.job_units SET unit_code=$1, updated_at=NOW() WHERE unit_id=$2 AND job_id=$3`, [code, u.unit_id, realId]);
-      }
+  if (!Number.isFinite(realId) || realId <= 0) return [];
+  const rows = await db.query(`SELECT unit_id, unit_no, unit_code, item_name FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
+  let no = 1;
+  for (const u of rows.rows || []) {
+    const targetNo = Number(u.unit_no || no) > 0 ? Number(u.unit_no || no) : no;
+    const code = generateUnitCode(realId, targetNo);
+    const cleanName = unitDisplayItemName(u.item_name);
+    if (String(u.unit_code || '') !== code || Number(u.unit_no || 0) !== targetNo || String(u.item_name || '') !== cleanName) {
+      await db.query(
+        `UPDATE public.job_units SET unit_no=$3, unit_code=$4, item_name=$5, updated_at=NOW() WHERE job_id=$1 AND unit_id=$2`,
+        [realId, u.unit_id, targetNo, code, cleanName]
+      ).catch(()=>{});
     }
-  } catch (e) {
-    console.warn('[job_units] normalize codes failed', e.message);
+    no += 1;
   }
+  const finalRows = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
+  return finalRows.rows || [];
 }
+
 
 function normalizePhotoCategory(phase, category) {
   const raw = String(category || '').trim();
@@ -13509,11 +13527,7 @@ async function ensureJobUnits(job_id, db = pool) {
   const realId = Number(job_id);
   if (!Number.isFinite(realId) || realId <= 0) return [];
   const existing = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
-  if (existing.rows.length) {
-    await normalizeJobUnitCodes(realId, db);
-    const normalized = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
-    return normalized.rows;
-  }
+  if (existing.rows.length) return await normalizeJobUnitCodes(realId, db);
   const itemR = await db.query(
     `SELECT item_name, qty, assigned_technician_username FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
     [realId]
@@ -13523,9 +13537,9 @@ async function ensureJobUnits(job_id, db = pool) {
   const rowsToCreate = [];
   for (const it of itemR.rows || []) {
     const qty = Math.max(1, Math.min(99, Math.floor(Number(it.qty || 1) || 1)));
-    for (let i = 0; i < qty; i++) rowsToCreate.push({ item_name: it.item_name || job.job_type || 'เครื่องปรับอากาศ', assigned_technician: it.assigned_technician_username || job.technician_username || null });
+    for (let i = 0; i < qty; i++) rowsToCreate.push({ item_name: unitDisplayItemName(it.item_name || job.job_type || 'เครื่องปรับอากาศ'), assigned_technician: it.assigned_technician_username || job.technician_username || null });
   }
-  if (!rowsToCreate.length) rowsToCreate.push({ item_name: job.job_type || 'เครื่องปรับอากาศ', assigned_technician: job.technician_username || null });
+  if (!rowsToCreate.length) rowsToCreate.push({ item_name: unitDisplayItemName(job.job_type || 'เครื่องปรับอากาศ'), assigned_technician: job.technician_username || null });
   let unitNo = 1;
   for (const row of rowsToCreate) {
     for (let attempt = 0; attempt < 12; attempt++) {
@@ -13533,14 +13547,13 @@ async function ensureJobUnits(job_id, db = pool) {
         `INSERT INTO public.job_units (job_id, unit_code, unit_no, item_name, assigned_technician)
          VALUES ($1,$2,$3,$4,$5)
          ON CONFLICT DO NOTHING RETURNING unit_id`,
-        [realId, generateUnitCode(unitNo), unitNo, row.item_name || 'เครื่องปรับอากาศ', row.assigned_technician || null]
+        [realId, generateUnitCode(realId, unitNo), unitNo, unitDisplayItemName(row.item_name || 'เครื่องปรับอากาศ'), row.assigned_technician || null]
       );
       if (ins.rows.length) break;
     }
     unitNo += 1;
   }
-  const finalR = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
-  return finalR.rows;
+  return await normalizeJobUnitCodes(realId, db);
 }
 
 async function getUnitsWithEvidence(job_id, db = pool) {
@@ -13740,7 +13753,7 @@ async function handleAdminBookV2(req, res) {
   const rawMode = (dispatch_mode || "normal").toString().trim().toLowerCase();
   const isUrgentOffer = rawBm === "urgent" || rawMode === "offer";
   const bm = isUrgentOffer ? "urgent" : rawBm;
-  const ttype = (tech_type || (bm === "urgent" ? "all" : "company")).toString().trim().toLowerCase();
+  const ttype = (tech_type || (bm === "urgent" ? "partner" : "company")).toString().trim().toLowerCase();
   const mode = isUrgentOffer ? "offer" : rawMode;
   // ✅ HOTFIX: allow_time_proposal may be omitted by older cached frontend/PWA.
   // Do not reference an undeclared destructured variable here; otherwise /admin/book_v2
@@ -18716,7 +18729,7 @@ app.get("/offers/tech/:username", async (req, res) => {
         COALESCE(j.job_zone,'') AS job_zone,
         COALESCE(sz.zone_label,'') AS job_zone_label,
         COALESCE((
-          SELECT string_agg(CONCAT(COALESCE(ji.item_name,''), CASE WHEN COALESCE(ji.qty,0) > 1 THEN CONCAT(' x', ji.qty::text) ELSE '' END), ', ' ORDER BY ji.job_item_id)
+          SELECT string_agg(COALESCE(ji.item_name,''), ', ' ORDER BY ji.job_item_id)
           FROM public.job_items ji
           WHERE ji.job_id = j.job_id
         ), '') AS service_items_text
@@ -19424,7 +19437,7 @@ async function mediaRetentionRows() {
             COUNT(DISTINCT CASE WHEN COALESCE(p.photo_category,'')='payment_slip' OR COALESCE(p.phase,'') ILIKE '%slip%' OR COALESCE(p.phase,'')='payment_slip' THEN p.photo_id END)::int AS slip_count,
             COUNT(DISTINCT c.checklist_id)::int AS checklist_count,
             COUNT(DISTINCT u.unit_id)::int AS unit_count,
-            COALESCE(SUM(CASE WHEN p.deleted_at IS NULL THEN COALESCE(p.file_size_bytes,p.file_size,0) ELSE 0 END),0)::bigint AS bytes_estimated,
+            COALESCE(SUM(CASE WHEN p.deleted_at IS NULL THEN COALESCE(p.file_size_bytes,0) ELSE 0 END),0)::bigint AS bytes_estimated,
             (SELECT string_agg(COALESCE(ji.item_name,''), ' ') FROM public.job_items ji WHERE ji.job_id=j.job_id) AS service_items_text
        FROM public.jobs j
        LEFT JOIN public.job_photos p ON p.job_id=j.job_id AND p.deleted_at IS NULL
@@ -19446,8 +19459,8 @@ async function mediaRetentionRows() {
 app.get('/admin/media-retention/summary', requireAdminSession, async (_req, res) => {
   try {
     const jobs = await mediaRetentionRows();
-    const photosR = await pool.query(`SELECT COUNT(*)::int AS total, SUM(CASE WHEN COALESCE(photo_category,'')='payment_slip' OR COALESCE(phase,'') ILIKE '%slip%' OR COALESCE(phase,'')='payment_slip' THEN 1 ELSE 0 END)::int AS slips, COALESCE(SUM(COALESCE(file_size_bytes,file_size,0)),0)::bigint AS bytes FROM public.job_photos WHERE deleted_at IS NULL`);
-    return res.json({ success:true, total_photos:Number(photosR.rows?.[0]?.total||0), eligible_photos:null, eligible_jobs:jobs.filter(j=>j.eligibility?.eligible).length, slip_photos:Number(photosR.rows?.[0]?.slips||0), bytes_estimated:Number(photosR.rows?.[0]?.bytes||0), note:'รูปสลิปไม่ถูกลบอัตโนมัติ' });
+    const photosR = await pool.query(`SELECT COUNT(*)::int AS total, SUM(CASE WHEN COALESCE(photo_category,'')='payment_slip' OR COALESCE(phase,'') ILIKE '%slip%' OR COALESCE(phase,'')='payment_slip' THEN 1 ELSE 0 END)::int AS slips, COALESCE(SUM(COALESCE(file_size_bytes,0)),0)::bigint AS bytes FROM public.job_photos WHERE deleted_at IS NULL`);
+    return res.json({ success:true, total_photos:Number(photosR.rows?.[0]?.total||0), eligible_photos:jobs.filter(j=>j.eligibility?.eligible).reduce((sum,j)=>sum+Number(j.photo_count||0),0), eligible_jobs:jobs.filter(j=>j.eligibility?.eligible).length, slip_photos:Number(photosR.rows?.[0]?.slips||0), bytes_estimated:Number(photosR.rows?.[0]?.bytes||0), note:'รูปสลิปไม่ถูกลบอัตโนมัติ' });
   } catch (e) { return res.status(500).json({ error:'โหลดสรุปพื้นที่จัดเก็บไม่สำเร็จ' }); }
 });
 
@@ -19473,7 +19486,7 @@ app.post('/admin/media-retention/purge', requireAdminSession, async (req, res) =
   for (const id of ids) {
     const jobR = await pool.query(`SELECT j.*, (SELECT string_agg(COALESCE(ji.item_name,''), ' ') FROM public.job_items ji WHERE ji.job_id=j.job_id) AS service_items_text FROM public.jobs j WHERE j.job_id=$1`, [id]);
     const el = mediaPurgeEligibility(jobR.rows[0]);
-    const photosR = await pool.query(`SELECT photo_id, phase, photo_category, COALESCE(file_size_bytes,file_size,0)::bigint AS bytes FROM public.job_photos WHERE job_id=$1 AND deleted_at IS NULL`, [id]);
+    const photosR = await pool.query(`SELECT photo_id, phase, photo_category, COALESCE(file_size_bytes,0)::bigint AS bytes FROM public.job_photos WHERE job_id=$1 AND deleted_at IS NULL`, [id]);
     const evidence = (photosR.rows || []).filter(isEvidencePhotoRow);
     const slips = (photosR.rows || []).filter(p => normalizePhotoCategory(p.phase, p.photo_category) === 'payment_slip' || String(p.phase||'').toLowerCase().includes('slip'));
     const summary = { eligible: !!el.eligible, reason: el.reason, photos_count:evidence.length, checklist_count:0, units_count:0, slips_count:slips.length, bytes_estimated:evidence.reduce((s,p)=>s+Number(p.bytes||0),0) };
