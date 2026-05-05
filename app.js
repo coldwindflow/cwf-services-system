@@ -3185,6 +3185,9 @@ async function cwfValidateCloseRequirements(jobId, targetStatus){
 // =======================================
 
 function buildJobCard(job, historyMode = false) {
+  // ✅ โหลดสไตล์ปุ่มปิดงานตั้งแต่ตอนสร้างการ์ดโดยตรง
+  // ไม่ใช้ MutationObserver / ไม่ใช้ setTimeout / ไม่แก้ DOM ย้อนหลัง
+  try { ensureCwfCloseStyles(); } catch (_) {}
   const div = document.createElement("div");
   div.className = "job-card";
 
@@ -4873,50 +4876,3 @@ window.openTechWhtDocumentsModal = openTechWhtDocumentsModal;
 window.closeTechWhtDocumentsModal = closeTechWhtDocumentsModal;
 window.loadTechWhtDocuments = loadTechWhtDocuments;
 window.addEventListener('DOMContentLoaded', () => { document.getElementById('techTaxProfileForm')?.addEventListener('submit', submitTechTaxProfileRequest); });
-
-
-// =======================================
-// 🧹 CLOSE PANEL VISUAL CLEANUP PATCH (safe no-freeze version)
-// - No MutationObserver on the whole document, because it can loop/freeze the PWA.
-// - Apply styles + a few delayed cleanups only after job cards render.
-// =======================================
-(function cwfClosePanelVisualCleanupPatch(){
-  const STYLE_ID = 'cwf-close-panel-visual-cleanup-v4-safe';
-  function ensureStyle(){
-    if (document.getElementById(STYLE_ID)) return;
-    const st = document.createElement('style');
-    st.id = STYLE_ID;
-    st.textContent = `
-      details.cwf-details summary{color:#0f172a!important}
-      .cwf-close-hub{display:grid!important;grid-template-columns:1fr!important;gap:18px!important;margin:14px 0 20px!important}
-      .cwf-close-action{appearance:none!important;-webkit-appearance:none!important;width:100%!important;min-height:84px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:14px!important;text-align:left!important;border:1px solid rgba(148,163,184,.32)!important;background:#fff!important;background-image:none!important;color:#0f172a!important;border-radius:24px!important;padding:17px 16px!important;box-shadow:0 10px 26px rgba(15,23,42,.08)!important;line-height:1.28!important;text-shadow:none!important}
-      .cwf-close-action .cwf-action-left{display:flex!important;align-items:center!important;gap:14px!important;min-width:0!important}
-      .cwf-close-action .ico{width:48px!important;height:48px!important;min-width:48px!important;border-radius:17px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:#eef5ff!important;color:#1558d6!important;font-size:24px!important;border:1px solid rgba(37,99,235,.12)!important;box-shadow:none!important;text-shadow:none!important}
-      .cwf-close-action b{display:block!important;font-size:18px!important;color:#0f172a!important;font-weight:1000!important;margin:0!important;text-shadow:none!important;opacity:1!important}
-      .cwf-close-action small{display:block!important;color:#64748b!important;line-height:1.42!important;margin-top:4px!important;font-size:13px!important;font-weight:750!important;text-shadow:none!important;opacity:1!important}
-      .cwf-action-arrow{font-size:24px!important;color:#94a3b8!important;font-weight:1000!important}
-    `;
-    document.head.appendChild(st);
-  }
-  function cleanup(){
-    ensureStyle();
-    document.querySelectorAll('details.cwf-details').forEach((details)=>{
-      const summary = details.querySelector('summary');
-      if (!summary) return;
-      const summaryText = (summary.textContent || '').replace(/\s+/g,' ').trim();
-      if (!summaryText.includes('ปิดงาน') || !summaryText.includes('หลักฐาน')) return;
-      if (summaryText !== '🛠️ ปิดงาน / หลักฐาน') summary.textContent = '🛠️ ปิดงาน / หลักฐาน';
-      details.querySelectorAll('button.cwf-close-action').forEach((btn)=>{
-        const txt = (btn.textContent || '').replace(/\s+/g,' ').trim();
-        if (txt.includes('เก็บเงินลูกค้า') || txt.includes('จ่ายเงิน')) btn.remove();
-      });
-    });
-  }
-  function runSafeCleanups(){
-    cleanup();
-    [250, 800, 1600, 3000].forEach((ms)=>setTimeout(cleanup, ms));
-  }
-  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', runSafeCleanups, { once:true });
-  else runSafeCleanups();
-  window.cwfClosePanelVisualCleanup = cleanup;
-})();
