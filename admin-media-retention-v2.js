@@ -70,13 +70,27 @@ async function loadAll(){
   const qs = new URLSearchParams();
   qs.set('job_type', $('filterType').value || 'all');
   qs.set('q', $('filterSearch').value || '');
-  const [summary, jobs] = await Promise.all([
-    api('/admin/media-retention/summary'),
-    api('/admin/media-retention/jobs?' + qs.toString()),
-  ]);
-  renderSummary(summary);
-  renderJobs(jobs.jobs || []);
-  window.__mediaJobs = jobs.jobs || [];
+  let jobs = { jobs: [] };
+  try {
+    jobs = await api('/admin/media-retention/jobs?' + qs.toString());
+    window.__mediaJobs = jobs.jobs || [];
+    renderJobs(window.__mediaJobs);
+  } catch(e) {
+    $('mediaJobs').innerHTML = `<div class="muted2">${esc(e.message || 'โหลดรายการรูปไม่สำเร็จ')}</div>`;
+  }
+  try {
+    const summary = await api('/admin/media-retention/summary');
+    renderSummary(summary);
+  } catch(e) {
+    const rows = window.__mediaJobs || [];
+    renderSummary({
+      total_photos: rows.reduce((s,j)=>s+Number(j.photo_count||0),0),
+      eligible_photos: rows.filter(j=>j.eligibility?.eligible).reduce((s,j)=>s+Number(j.photo_count||0),0),
+      eligible_jobs: rows.filter(j=>j.eligibility?.eligible).length,
+      slip_photos: rows.reduce((s,j)=>s+Number(j.slip_count||0),0),
+      bytes_estimated: rows.reduce((s,j)=>s+Number(j.bytes_estimated||0),0),
+    });
+  }
 }
 
 async function dryRun(jobId){

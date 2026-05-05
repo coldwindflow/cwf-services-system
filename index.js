@@ -11844,12 +11844,15 @@ await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS file_si
 await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
 await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS deleted_by TEXT`);
 await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS photo_category TEXT`);
+await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS photo_note TEXT`);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_photos_unit_id ON public.job_photos(unit_id)`);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_photos_photo_category ON public.job_photos(photo_category)`);
 await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS media_retention_purged_at TIMESTAMPTZ`);
 await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS media_retention_purged_by TEXT`);
 await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS media_retention_summary JSONB`);
 await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS media_retention_locked BOOLEAN DEFAULT FALSE`);
+await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ`);
+await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS closed_at TIMESTAMPTZ`);
 await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS per_unit_evidence_enabled BOOLEAN DEFAULT FALSE`);
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.media_retention_logs (
@@ -13196,7 +13199,8 @@ async function buildUrgentOfferCandidatesForJob(job, techType='partner', db=pool
     const code = String(zoneCode).toUpperCase();
     const primary = candidateRows.filter(r => String(r.home_service_zone_code || '').toUpperCase() === code);
     const secondary = candidateRows.filter(r => String(r.home_service_zone_code || '').toUpperCase() !== code && String(r.secondary_service_zone_code || '').toUpperCase() === code);
-    candidateRows = [...primary, ...secondary];
+    const outOfZone = candidateRows.filter(r => !primary.includes(r) && !secondary.includes(r) && r.allow_out_of_zone === true);
+    candidateRows = [...primary, ...secondary, ...outOfZone];
   }
   const ranked = rankTechniciansForServiceZone(candidateRows, zoneCode).map(r => r.username).slice(0, 30);
   const available = [];
@@ -13215,13 +13219,16 @@ app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSoft, async (req, res
     await client.query('BEGIN');
     const jobR = await client.query(
       `SELECT job_id, job_type, booking_code, appointment_datetime, COALESCE(duration_min,60) AS duration_min,
-              address_text, maps_url, job_zone, service_zone_code, technician_username, technician_team
+              address_text, maps_url, job_zone, service_zone_code, job_status, technician_username, technician_team
          FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
       [job_id]
     );
     const job = jobR.rows[0];
     if (!job) throw new Error('ไม่พบงานนี้');
-    if (job.technician_username || job.technician_team) throw new Error('งานนี้มีช่างรับไปแล้ว ไม่สามารถยิงข้อเสนอซ้ำได้');
+    const canClearAssignedForRebroadcast = ['ตีกลับ','ไม่พบช่างรับงาน','รอพิจารณาเวลาใหม่','รอช่างยืนยัน'].includes(String(job.job_status || '').trim());
+    if ((job.technician_username || job.technician_team) && !canClearAssignedForRebroadcast) {
+      throw new Error('งานนี้มีช่างรับไปแล้ว ไม่สามารถยิงข้อเสนอซ้ำได้');
+    }
 
     await client.query(`UPDATE public.job_offers SET status='expired', responded_at=COALESCE(responded_at,NOW()) WHERE job_id=$1 AND status='pending'`, [job_id]);
     const { available, zoneCode, totalCandidates } = await buildUrgentOfferCandidatesForJob(job, techType, client);
@@ -13595,6 +13602,7 @@ async function validatePerUnitCompletion(job_id, db = pool) {
     const label = `เครื่องที่ ${u.unit_no || '-'} รหัส ${u.unit_code || '-'}`;
     if (!u.checklist?.pre?.completed) return `${label} ยังไม่ได้ทำเช็คลิสก่อนทำ`;
     if (!u.checklist?.post?.completed) return `${label} ยังไม่ได้ทำเช็คลิสหลังทำ`;
+    if (Number(u.photo_counts?.nameplate || 0) < 1) return `${label} ยังไม่มีรูปเนมเพลท`;
     if (Number(u.photo_counts?.before || 0) < 1) return `${label} ยังไม่มีรูปก่อนทำ`;
     if (Number(u.photo_counts?.after || 0) < 1) return `${label} ยังไม่มีรูปหลังทำ`;
   }
@@ -18911,6 +18919,10 @@ app.post("/offers/:offer_id/time-proposal", requireTechnicianSession, async (req
       [offer.offer_id, offer.job_id, offer.technician_username, proposedIso, note || null]
     );
 
+    // เมื่อช่างเสนอเวลาใหม่ ให้การ์ดหายจากช่างคนนั้นและส่งงานกลับไปให้แอดมินพิจารณาทันที
+    await client.query(`UPDATE public.job_offers SET status='expired', responded_at=NOW() WHERE offer_id=$1`, [offer.offer_id]);
+    await client.query(`UPDATE public.jobs SET job_status='รอพิจารณาเวลาใหม่', technician_username=NULL, technician_team=NULL, dispatch_mode='offer' WHERE job_id=$1 AND technician_team IS NULL`, [offer.job_id]);
+
     await client.query("COMMIT");
     return res.json({
       success: true,
@@ -19202,12 +19214,14 @@ app.post("/jobs/:job_id/checkin", requireTechnicianSession, async (req, res) => 
 app.post("/jobs/:job_id/photos/meta", async (req, res) => {
   const { job_id } = req.params;
   const { phase, mime_type, original_name, file_size, uploaded_by } = req.body || {};
+  const photoNote = String(req.body?.photo_note || req.body?.note || '').trim().slice(0, 500);
   const bodyUnitId = Number(req.body?.unit_id || 0);
   const bodyUnitCode = String(req.body?.unit_code || '').trim();
   const bodyUnitNo = Number(req.body?.unit_no || 0);
   const photoCategory = normalizePhotoCategory(phase, req.body?.photo_category);
 
   const allowedPhases = [
+    "nameplate",
     "before",
     "after",
     "pressure",
@@ -19262,11 +19276,11 @@ app.post("/jobs/:job_id/photos/meta", async (req, res) => {
     const r = await pool.query(
       `
       INSERT INTO public.job_photos
-        (job_id, phase, mime_type, original_name, file_size, file_size_bytes, photo_type, uploaded_by, unit_id, unit_code, unit_no, photo_category)
-      VALUES ($1,$2,$3,$4,$5,$5,NULL,$6,$7,$8,$9,$10)
+        (job_id, phase, mime_type, original_name, file_size, file_size_bytes, photo_type, uploaded_by, unit_id, unit_code, unit_no, photo_category, photo_note)
+      VALUES ($1,$2,$3,$4,$5,$5,NULL,$6,$7,$8,$9,$10,$11)
       RETURNING photo_id
       `,
-      [realId, phase, mime_type, original_name || null, file_size || null, uploaded_by || null, unitMeta.unit_id || null, unitMeta.unit_code || bodyUnitCode || null, unitMeta.unit_no || (Number.isFinite(bodyUnitNo) && bodyUnitNo > 0 ? bodyUnitNo : null), photoCategory]
+      [realId, phase, mime_type, original_name || null, file_size || null, uploaded_by || null, unitMeta.unit_id || null, unitMeta.unit_code || bodyUnitCode || null, unitMeta.unit_no || (Number.isFinite(bodyUnitNo) && bodyUnitNo > 0 ? bodyUnitNo : null), photoCategory, photoNote || null]
     );
     res.json({ success: true, photo_id: r.rows[0].photo_id });
   } catch (e) {
@@ -19375,7 +19389,7 @@ app.get("/jobs/:job_id/photos", async (req, res) => {
     let unitWhere = '';
     if (Number.isFinite(unitId) && unitId > 0) { params.push(unitId); unitWhere = ' AND unit_id=$2'; }
     const r = await pool.query(
-      `SELECT photo_id, phase, created_at, uploaded_at, public_url, uploaded_by, unit_id, unit_code, unit_no, photo_category
+      `SELECT photo_id, phase, created_at, uploaded_at, public_url, uploaded_by, unit_id, unit_code, unit_no, photo_category, photo_note
        FROM public.job_photos WHERE job_id=$1 ${unitWhere} AND deleted_at IS NULL ORDER BY unit_no NULLS LAST, photo_id ASC`,
       params
     );

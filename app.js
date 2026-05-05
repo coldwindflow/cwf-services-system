@@ -2172,9 +2172,9 @@ function offerAreaText(o) {
   const candidates = [
     o?.service_area,
     o?.area_text,
-    o?.job_zone_label,
     o?.address_area,
     o?.job_zone,
+    o?.job_zone_label,
   ].map(offerHumanText).filter((v) => v && v !== "-");
   const picked = candidates.find((v) => !/^zone\s*[a-z]$/i.test(v) && !/^[A-H]$/i.test(v)) || candidates[0] || "-";
   if (/^[A-H]$/i.test(picked)) return zoneLabels[picked.toUpperCase()] || "-";
@@ -2300,7 +2300,7 @@ function renderOffers(offers) {
             <span class="cwf-new-offer-kicker">งานเข้าใหม่</span>
             <b>งานใหม่เสนอให้รับ</b>
           </div>
-          <span class="badge wait cwf-new-offer-countdown">⏳ ${min}:${String(sec).padStart(2, "0")}</span>
+          <span class="badge wait cwf-new-offer-countdown" data-offer-expires="${Number(expires)}">⏳ ${min}:${String(sec).padStart(2, "0")}</span>
         </div>
         ${renderTechnicianMoneySummary(o, "offered")}
 
@@ -2321,6 +2321,26 @@ function renderOffers(offers) {
     `;
     })
     .join("");
+  startOfferCountdownTicker();
+}
+
+let __CWF_OFFER_COUNTDOWN_TIMER__ = null;
+function updateOfferCountdownBadges(){
+  try {
+    document.querySelectorAll('[data-offer-expires]').forEach((el)=>{
+      const expires = Number(el.getAttribute('data-offer-expires') || 0);
+      const secLeft = Math.max(0, Math.floor((expires - Date.now()) / 1000));
+      const min = Math.floor(secLeft / 60);
+      const sec = secLeft % 60;
+      el.textContent = `⏳ ${min}:${String(sec).padStart(2, '0')}`;
+      if (secLeft <= 0) el.textContent = '⏳ หมดเวลา';
+    });
+  } catch(_) {}
+}
+function startOfferCountdownTicker(){
+  updateOfferCountdownBadges();
+  if (__CWF_OFFER_COUNTDOWN_TIMER__) clearInterval(__CWF_OFFER_COUNTDOWN_TIMER__);
+  __CWF_OFFER_COUNTDOWN_TIMER__ = setInterval(updateOfferCountdownBadges, 1000);
 }
 
 function acceptOffer(offerId) {
@@ -3059,7 +3079,7 @@ function ensureCwfCloseStyles(){
     .cwf-modal-head{padding:15px 16px;background:linear-gradient(135deg,#071947,#1558d6);color:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px}.cwf-modal-head b{font-size:18px}.cwf-modal-head button{width:auto;min-width:44px;border-radius:999px;background:#ffcc00;color:#111827;border:0;font-weight:900;padding:9px 13px}
     .cwf-modal-body{padding:14px;overflow:auto}.cwf-modal-footer{padding:12px 14px;border-top:1px solid rgba(148,163,184,.25);background:#fff;display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
     .cwf-mini-status{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.cwf-chip{border:1px solid rgba(37,99,235,.18);background:#eef5ff;color:#1558d6;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:900}.cwf-chip.ok{background:#ecfdf5;color:#047857;border-color:#a7f3d0}.cwf-chip.warn{background:#fff7ed;color:#c2410c;border-color:#fed7aa}.cwf-chip.bad{background:#fff1f2;color:#be123c;border-color:#fecdd3}
-    .cwf-unit-toolbar{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:12px}.cwf-unit-select{width:100%;border:1px solid rgba(37,99,235,.18);border-radius:16px;padding:12px;background:#fff;font-weight:900;color:#0f172a}.cwf-unit-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-unit-tab{border:1px solid rgba(37,99,235,.18)!important;background:#fff!important;color:#0f172a!important;border-radius:16px!important;padding:12px 10px!important;font-weight:1000!important}.cwf-unit-tab.active{background:linear-gradient(135deg,#1558d6,#05b6d6)!important;color:#fff!important;border-color:transparent!important}.cwf-unit-summary{background:#fff;border:1px solid rgba(37,99,235,.14);border-radius:18px;padding:12px;margin-bottom:12px;box-shadow:0 10px 24px rgba(15,23,42,.05)}.cwf-unit-summary b{font-size:17px}.cwf-unit-owner{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;padding:5px 9px;font-size:12px;font-weight:1000}.cwf-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cwf-photo-card{background:#fff;border:1px solid rgba(37,99,235,.15);border-radius:18px;padding:12px;box-shadow:0 10px 26px rgba(15,23,42,.06)}.cwf-photo-card b{font-size:16px}.cwf-photo-card .muted{font-size:12px}.cwf-photo-card button{width:100%;margin-top:9px;border-radius:15px}.cwf-thumb-row{display:flex;gap:6px;overflow:auto;margin-top:8px}.cwf-thumb-row img{width:54px;height:54px;border-radius:12px;object-fit:cover;border:1px solid rgba(15,23,42,.12);background:#fff}
+    .cwf-unit-toolbar{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:12px}.cwf-unit-select{width:100%;border:1px solid rgba(37,99,235,.18);border-radius:16px;padding:12px;background:#fff;font-weight:900;color:#0f172a}.cwf-unit-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-unit-tab{border:1px solid rgba(37,99,235,.18)!important;background:#fff!important;color:#0f172a!important;border-radius:16px!important;padding:12px 10px!important;font-weight:1000!important}.cwf-unit-tab.active{background:linear-gradient(135deg,#1558d6,#05b6d6)!important;color:#fff!important;border-color:transparent!important}.cwf-unit-summary{background:#fff;border:1px solid rgba(37,99,235,.14);border-radius:18px;padding:12px;margin-bottom:12px;box-shadow:0 10px 24px rgba(15,23,42,.05)}.cwf-unit-summary b{font-size:17px}.cwf-unit-owner{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;padding:5px 9px;font-size:12px;font-weight:1000}.cwf-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cwf-photo-card{background:#fff;border:1px solid rgba(37,99,235,.15);border-radius:18px;padding:12px;box-shadow:0 10px 26px rgba(15,23,42,.06)}.cwf-photo-card b{font-size:16px}.cwf-photo-card .muted{font-size:12px}.cwf-photo-card button{width:100%;margin-top:9px;border-radius:15px}.cwf-thumb-row{display:flex;gap:6px;overflow:auto;margin-top:8px}.cwf-thumb-row img{width:54px;height:54px;border-radius:12px;object-fit:cover;border:1px solid rgba(15,23,42,.12);background:#fff}.cwf-thumb{min-width:64px;max-width:90px}.cwf-thumb-note{font-size:11px;color:#475569;margin-top:3px;line-height:1.25}.cwf-photo-note{width:100%;border:1px solid rgba(15,23,42,.14);border-radius:12px;padding:8px 10px;margin-top:8px;font-size:13px;background:#f8fafc}.cwf-check-select{width:100%;border:1px solid rgba(37,99,235,.18);border-radius:14px;padding:11px 12px;font-weight:900;background:#fff;margin:8px 0 10px}
     .cwf-check-list{display:flex;flex-direction:column;gap:8px}.cwf-check-row{background:#fff;border:1px solid rgba(37,99,235,.13);border-radius:16px;padding:10px}.cwf-check-main{display:flex;align-items:center;gap:10px}.cwf-check-main input{width:22px;height:22px;accent-color:#1558d6}.cwf-check-main label{font-weight:900;color:#0f172a;line-height:1.35}.cwf-check-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-left:32px}.cwf-link-btn{border:1px solid rgba(148,163,184,.3);background:#f8fafc;color:#334155;border-radius:999px;padding:7px 10px;font-weight:900;font-size:12px;width:auto}.cwf-issue-note{margin:8px 0 0 32px}.cwf-issue-note textarea{min-height:74px;border-radius:14px}
     .cwf-pay-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}.cwf-pay-tab{appearance:none!important;border:1px solid rgba(37,99,235,.16)!important;background:#fff!important;color:#0f172a!important;border-radius:17px!important;padding:12px 8px!important;font-weight:1000!important;min-height:62px!important;line-height:1.25!important}.cwf-pay-tab.active{background:linear-gradient(135deg,#1558d6,#05b6d6)!important;color:#fff!important;border-color:transparent!important;box-shadow:0 12px 28px rgba(37,99,235,.23)!important}.cwf-pay-card{background:#fff;border:1px solid rgba(37,99,235,.14);border-radius:20px;padding:13px;box-shadow:0 12px 28px rgba(15,23,42,.06)}.cwf-qr-img{display:block;width:min(300px,100%);margin:12px auto;border-radius:18px;border:1px solid rgba(15,23,42,.12);background:#fff}.cwf-pay-card input,.cwf-pay-card textarea{border-radius:14px}
     .cwf-note-box{background:#fff;border:1px solid rgba(37,99,235,.12);border-radius:18px;padding:12px;margin-top:10px}.cwf-note-box textarea{border-radius:16px;min-height:105px}.cwf-final-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.cwf-final-row button{border-radius:18px;min-height:52px}
@@ -3138,13 +3158,26 @@ async function cwfPickUnitPhoto(jobId, unitId, phase){
   const units = await cwfLoadUnits(jobId);
   const unit = units.find(u => String(u.unit_id) === String(unitId));
   if (!unit) return alert('กรุณาเลือกเครื่องก่อนอัปโหลดรูป');
+  const noteEl = document.getElementById(`cwfPhotoNote_${phase}`);
+  const photo_note = String(noteEl?.value || '').trim().slice(0, 500);
   openFilePicker({ multiple:true, accept:'image/*' }, async (files)=>{
     if (!files || !files.length) return;
     for (const f of Array.from(files || [])) {
       const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
         method:'POST',
         headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ phase, mime_type:f.type, original_name:f.name, file_size:f.size, uploaded_by:(typeof username === 'string' ? username : '') || null, unit_id:unit.unit_id, unit_code:unit.unit_code, unit_no:unit.unit_no, photo_category:'job_evidence' })
+        body: JSON.stringify({
+          phase,
+          mime_type:f.type,
+          original_name:f.name,
+          file_size:f.size,
+          uploaded_by:(typeof username === 'string' ? username : '') || null,
+          unit_id:unit.unit_id,
+          unit_code:unit.unit_code,
+          unit_no:unit.unit_no,
+          photo_category:'job_evidence',
+          photo_note
+        })
       });
       const meta = await metaRes.json().catch(()=>({}));
       if (!metaRes.ok) throw new Error(meta.error || 'สร้างข้อมูลรูปไม่สำเร็จ');
@@ -3181,13 +3214,57 @@ async function cwfSaveUnitChecklist(jobId, unitId, section){
     if (!row.checked && !row.issue) return alert(section === 'pre' ? 'กรุณาทำเช็คลิสก่อนทำให้ครบ' : 'กรุณาทำเช็คลิสหลังทำให้ครบ');
     if (row.issue && !String(row.note || '').trim()) return alert('กรุณาระบุหมายเหตุสำหรับรายการที่มีปัญหา');
   }
-  const r = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/units/${encodeURIComponent(String(unitId))}/checklist`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ checklist_type:section, checklist_json:rows, technician_username:(typeof username === 'string' ? username : '') || null }) });
-  const d = await r.json().catch(()=>({}));
-  if (!r.ok) return alert(d.error || 'บันทึกเช็คลิสเครื่องนี้ไม่สำเร็จ');
+  let d = {};
+  try {
+    d = await cwfSaveUnitChecklistRows(jobId, unitId, section, rows);
+  } catch(e) {
+    return alert(e.message || 'บันทึกเช็คลิสเครื่องนี้ไม่สำเร็จ');
+  }
   alert(d.message || 'บันทึกเช็คลิสเครื่องนี้แล้ว');
   openTechPhotoModal(jobId, 'checklist', unitId);
 }
 window.cwfSaveUnitChecklist = cwfSaveUnitChecklist;
+
+function cwfBuildNormalChecklistRows(section){
+  const items = section === 'pre' ? CWF_PRE_CHECK_ITEMS : CWF_POST_CHECK_ITEMS;
+  return items.map(label => ({ label, checked:true, issue:false, note:'', status:'ปกติ', auto_normal:true }));
+}
+
+async function cwfSaveUnitChecklistRows(jobId, unitId, section, rows){
+  const r = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/units/${encodeURIComponent(String(unitId))}/checklist`, {
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ checklist_type:section, checklist_json:rows, technician_username:(typeof username === 'string' ? username : '') || null })
+  });
+  const d = await r.json().catch(()=>({}));
+  if (!r.ok) throw new Error(d.error || 'บันทึกเช็คลิสเครื่องนี้ไม่สำเร็จ');
+  return d;
+}
+
+function cwfAskAutoNormalChecklistAck(missingLabels){
+  return new Promise((resolve)=>{
+    const list = (missingLabels || []).slice(0, 12).map(x=>`<li>${escapeHTML(x)}</li>`).join('');
+    const body = `<div class="cwf-pay-card"><b style="font-size:18px;color:#be123c">ยืนยันเช็คลิสเป็นปกติอัตโนมัติ</b><p>ยังมีเช็คลิสบางรายการที่ช่างไม่ได้กดบันทึก ระบบจะบันทึกเป็น <b>ปกติทั้งหมด</b> ทั้งก่อนทำ/หลังทำสำหรับเครื่องที่ยังขาด</p><ul style="margin:8px 0 10px 20px">${list}</ul><p>หากภายหลังลูกค้าร้องเรียนหรือมีปัญหาที่เกี่ยวข้องกับรายการตรวจเช็ค ช่างผู้ปิดงานต้องรับผิดชอบตามข้อเท็จจริงและเงื่อนไขการรับประกันงาน ไม่มีข้ออ้างว่าไม่ได้ตรวจหรือไม่ได้ระบุไว้</p><label style="display:flex;gap:10px;align-items:flex-start;font-weight:900"><input id="cwfAutoChecklistAck" type="checkbox" style="width:24px;height:24px"> ข้าพเจ้าเข้าใจและยอมรับเงื่อนไขนี้</label></div>`;
+    const footer = `<button class="secondary" type="button" onclick="cwfCloseModal(); window.__cwfAutoChecklistResolve && window.__cwfAutoChecklistResolve(false)">กลับไปทำเช็คลิส</button><button type="button" onclick="if(!document.getElementById('cwfAutoChecklistAck')?.checked){alert('กรุณาติ๊กยอมรับเงื่อนไขก่อน');return;} cwfCloseModal(); window.__cwfAutoChecklistResolve && window.__cwfAutoChecklistResolve(true)">ยืนยันและบันทึกเป็นปกติ</button>`;
+    window.__cwfAutoChecklistResolve = resolve;
+    cwfOpenModal('ยืนยันเช็คลิสก่อนปิดงาน', body, footer);
+  });
+}
+
+async function cwfAutoCompleteMissingUnitChecklists(jobId, units){
+  const missing = [];
+  for (const u of units || []) {
+    const label = `เครื่องที่ ${u.unit_no || '-'} รหัส ${u.unit_code || '-'}`;
+    if (!(u.checklist && u.checklist.pre && u.checklist.pre.completed)) missing.push({ unit:u, section:'pre', label:`${label} เช็คลิสก่อนทำ` });
+    if (!(u.checklist && u.checklist.post && u.checklist.post.completed)) missing.push({ unit:u, section:'post', label:`${label} เช็คลิสหลังทำ` });
+  }
+  if (!missing.length) return true;
+  const ok = await cwfAskAutoNormalChecklistAck(missing.map(x=>x.label));
+  if (!ok) return false;
+  for (const m of missing) await cwfSaveUnitChecklistRows(jobId, m.unit.unit_id, m.section, cwfBuildNormalChecklistRows(m.section));
+  return true;
+}
+
 
 
 async function cwfLoadUnitPhotos(jobId, unitId){
@@ -3211,7 +3288,7 @@ function cwfRenderUnitEvidenceModal(jobId, units, tab, selectedUnitId, unitPhoto
   const photoByPhase = (phase) => photos.filter(p => String(p.phase || '') === phase).slice(0, 8);
   const jobSafe = String(jobId).replace(/'/g,"\\'");
   const optionHtml = units.map(u => `<option value="${String(u.unit_id)}" ${String(u.unit_id)===String(sid)?'selected':''}>${escapeHTML(cwfUnitOptionLabel(u))}</option>`).join('');
-  const ownerHtml = selected?.assigned_technician ? `<span class="cwf-unit-owner">👷 ผู้รับผิดชอบ: ${escapeHTML(selected.assigned_technician)}</span>` : `<span class="cwf-chip warn">ยังไม่ระบุช่างประจำเครื่อง</span>`;
+  const ownerHtml = selected?.assigned_technician ? `<span class="cwf-unit-owner">👷 ผู้รับผิดชอบ: ${escapeHTML(selected.assigned_technician)}</span>` : '';
   const summary = `
     <div class="cwf-unit-toolbar">
       <select class="cwf-unit-select" onchange="openTechPhotoModal('${jobSafe}', '${active}', this.value)">${optionHtml}</select>
@@ -3223,27 +3300,38 @@ function cwfRenderUnitEvidenceModal(jobId, units, tab, selectedUnitId, unitPhoto
     <div class="cwf-unit-summary" style="${mine ? 'border-color:#1558d6;box-shadow:0 0 0 2px rgba(21,88,214,.10)' : ''}">
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
         <div><b>${escapeHTML(cwfUnitTitle(selected))}</b><div class="muted" style="margin-top:4px">${escapeHTML(cwfUnitShortDetail(selected))}</div></div>
-        ${mine ? '<span class="cwf-chip ok">เครื่องของฉัน</span>' : ownerHtml}
-      </div>
-      <div class="cwf-mini-status">
-        <span class="cwf-chip ${counts.before ? 'ok':'warn'}">รูปก่อนทำ: ${counts.before || 0}</span>
-        <span class="cwf-chip ${counts.after ? 'ok':'warn'}">รูปหลังทำ: ${counts.after || 0}</span>
-        <span class="cwf-chip ${preOk ? 'ok':'warn'}">เช็คลิสก่อนทำ: ${preOk ? 'ครบ':'ยังไม่ครบ'}</span>
-        <span class="cwf-chip ${postOk ? 'ok':'warn'}">เช็คลิสหลังทำ: ${postOk ? 'ครบ':'ยังไม่ครบ'}</span>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">${mine ? '<span class="cwf-chip ok">เครื่องของฉัน</span>' : ''}${ownerHtml}</div>
       </div>
     </div>`;
   if (active === 'checklist') {
+    const selectedSection = window.__cwfUnitChecklistSection || 'pre';
+    const sectionOk = selectedSection === 'pre' ? preOk : postOk;
+    const sectionText = selectedSection === 'pre' ? 'ก่อนทำ' : 'หลังทำ';
     return summary + `
-      <div class="cwf-photo-grid">
-        <div class="cwf-photo-card"><b>🔎 เช็คลิสก่อนทำ</b><div class="muted" style="margin-top:5px">${preOk ? 'บันทึกแล้ว' : 'ยังไม่ครบ'}</div><button type="button" onclick="openTechUnitChecklistModal('${jobSafe}', '${sid}', 'pre')">ทำเช็คลิสก่อนทำ</button></div>
-        <div class="cwf-photo-card"><b>✅ เช็คลิสหลังทำ</b><div class="muted" style="margin-top:5px">${postOk ? 'บันทึกแล้ว' : 'ยังไม่ครบ'}</div><button type="button" onclick="openTechUnitChecklistModal('${jobSafe}', '${sid}', 'post')">ทำเช็คลิสหลังทำ</button></div>
+      <div class="cwf-photo-card">
+        <label style="font-weight:1000;color:#0b2e6d">เลือกหน้าเช็คลิส</label>
+        <select class="cwf-check-select" onchange="window.__cwfUnitChecklistSection=this.value; openTechPhotoModal('${jobSafe}', 'checklist', '${sid}')">
+          <option value="pre" ${selectedSection==='pre'?'selected':''}>🔎 เช็คลิสก่อนทำ</option>
+          <option value="post" ${selectedSection==='post'?'selected':''}>✅ เช็คลิสหลังทำ</option>
+        </select>
+        <div class="cwf-mini-status"><span class="cwf-chip ${sectionOk ? 'ok':'bad'}">${sectionOk ? 'บันทึกแล้ว' : 'ยังไม่ครบ'}</span></div>
+        <button type="button" onclick="openTechUnitChecklistModal('${jobSafe}', '${sid}', '${selectedSection}')">ทำเช็คลิส${sectionText}</button>
+        <div class="muted" style="margin-top:8px;font-size:12px">ถ้าไม่ทำเช็คลิสก่อนปิดงาน ระบบจะให้ยืนยันบันทึกเป็น “ปกติ” ทั้งหมด และช่างต้องรับผิดชอบตามเงื่อนไขรับประกันหากมีข้อร้องเรียน</div>
       </div>`;
   }
+  const phaseDefs = [
+    ['nameplate','🏷️ เนมเพลท','บังคับใส่ เพื่อยืนยันเครื่องที่ทำ'],
+    ['before','📷 รูปก่อนทำ','บังคับใส่ ก่อนเริ่มงาน'],
+    ['after','📷 รูปหลังทำ','บังคับใส่ หลังทำเสร็จ'],
+    ['pressure','🧪 วัดน้ำยา','ไม่บังคับ'],
+    ['current','⚡ วัดกระแส','ไม่บังคับ'],
+    ['defect','⚠️ ตำหนิ','ไม่บังคับ'],
+  ];
   const photoCard = (phase, label, hint) => {
     const imgs = photoByPhase(phase);
-    return `<div class="cwf-photo-card"><b>${label}</b><div class="muted" style="margin-top:5px">${imgs.length ? 'มีแล้ว '+imgs.length+' รูป' : hint}</div>${imgs.length ? '<div class="cwf-thumb-row">'+imgs.map(p=>`<a href="${p.public_url}" target="_blank"><img src="${p.public_url}" alt="${label}"></a>`).join('')+'</div>' : ''}<button type="button" onclick="cwfPickUnitPhoto('${jobSafe}', '${sid}', '${phase}')">📷 เพิ่มรูป${label.replace(/^[^ ]+\s*/, '')}</button></div>`;
+    return `<div class="cwf-photo-card"><div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><b>${label}</b><span class="cwf-chip ${imgs.length ? 'ok':(phase==='nameplate'||phase==='before'||phase==='after'?'bad':'')}">${imgs.length} รูป</span></div><div class="muted" style="margin-top:5px">${hint}</div>${imgs.length ? '<div class="cwf-thumb-row">'+imgs.map(p=>`<div class="cwf-thumb"><a href="${p.public_url}" target="_blank"><img src="${p.public_url}" alt="${label}"></a>${p.photo_note ? `<div class="cwf-thumb-note">${escapeHTML(p.photo_note)}</div>` : ''}</div>`).join('')+'</div>' : ''}<textarea id="cwfPhotoNote_${phase}" class="cwf-photo-note" rows="2" placeholder="หมายเหตุใต้รูป / คำอธิบาย (ถ้ามี)"></textarea><button type="button" onclick="cwfPickUnitPhoto('${jobSafe}', '${sid}', '${phase}')">📷 เพิ่ม${label.replace(/^[^ ]+\s*/, '')}</button></div>`;
   };
-  return summary + `<div class="cwf-photo-grid">${photoCard('before','📷 รูปก่อนทำ','ยังไม่มีรูปก่อนทำ')}${photoCard('after','📷 รูปหลังทำ','ยังไม่มีรูปหลังทำ')}</div>`;
+  return summary + `<div class="cwf-photo-grid">${phaseDefs.map(x => photoCard(x[0], x[1], x[2])).join('')}</div>`;
 }
 
 async function openTechPhotoModal(jobId, tab = 'photos', selectedUnitId = null){
@@ -3435,11 +3523,12 @@ async function cwfValidateCloseRequirements(jobId, targetStatus){
   if (units.length) {
     for (const u of units) {
       const label = `เครื่องที่ ${u.unit_no || '-'} รหัส ${u.unit_code || '-'}`;
-      if (!(u.checklist && u.checklist.pre && u.checklist.pre.completed)) { alert(`${label} ยังไม่ได้ทำเช็คลิสก่อนทำ`); openTechPhotoModal(jobId); return false; }
-      if (!(u.checklist && u.checklist.post && u.checklist.post.completed)) { alert(`${label} ยังไม่ได้ทำเช็คลิสหลังทำ`); openTechPhotoModal(jobId); return false; }
-      if (Number((u.photo_counts || {}).before || 0) < 1) { alert(`${label} ยังไม่มีรูปก่อนทำ`); openTechPhotoModal(jobId); return false; }
-      if (Number((u.photo_counts || {}).after || 0) < 1) { alert(`${label} ยังไม่มีรูปหลังทำ`); openTechPhotoModal(jobId); return false; }
+      if (Number((u.photo_counts || {}).nameplate || 0) < 1) { alert(`${label} ยังไม่มีรูปเนมเพลท`); openTechPhotoModal(jobId, 'photos', u.unit_id); return false; }
+      if (Number((u.photo_counts || {}).before || 0) < 1) { alert(`${label} ยังไม่มีรูปก่อนทำ`); openTechPhotoModal(jobId, 'photos', u.unit_id); return false; }
+      if (Number((u.photo_counts || {}).after || 0) < 1) { alert(`${label} ยังไม่มีรูปหลังทำ`); openTechPhotoModal(jobId, 'photos', u.unit_id); return false; }
     }
+    const checklistOk = await cwfAutoCompleteMissingUnitChecklists(jobId, units);
+    if (!checklistOk) { openTechPhotoModal(jobId, 'checklist'); return false; }
     const payMsgUnit = await cwfValidatePayment(jobId); if (payMsgUnit) { alert(payMsgUnit); openTechPaymentModal(jobId); return false; }
     return true;
   }
@@ -3620,9 +3709,7 @@ function buildJobCard(job, historyMode = false) {
             <button class="cwf-close-action" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""} aria-label="ลงรูปหลักฐาน">
               <span class="cwf-action-left"><span class="ico">📷</span><span><b>ลงรูปหลักฐาน</b><small>อัปโหลดรูปก่อนทำ หลังทำ และรูปตรวจเช็ค</small></span></span><span class="cwf-action-arrow">›</span>
             </button>
-            <button class="cwf-close-action" type="button" onclick="openTechChecklistModal('${jobKeyJs}', 'pre')" ${!canEdit ? "disabled" : ""} aria-label="เช็คลิสตรวจสภาพ">
-              <span class="cwf-action-left"><span class="ico">✅</span><span><b>เช็คลิสตรวจสภาพ</b><small>ติ๊กตรวจก่อนล้างและหลังล้างแบบสั้น</small></span></span><span class="cwf-action-arrow">›</span>
-            </button>
+
           </div>
 
           <div id="photo-status-${jobId}" style="display:none"></div>
