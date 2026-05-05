@@ -446,6 +446,7 @@ function injectAdminMenu(){
             <div class="cwf-link" data-href="/admin-technicians-v2.html">🧰 จัดการช่าง <small>ID/อนุมัติ</small></div>
             <div class="cwf-link" data-href="/admin-partner-onboarding.html">🤝 Partner Onboarding <small>สมัคร/เอกสาร</small></div>
             <div class="cwf-link" data-href="/admin-team-status.html">🧬 Team Status <small>Base Status</small></div>
+            <div class="cwf-link" data-href="/admin-media-retention-v2.html">ตัวจัดการรูปและพื้นที่จัดเก็บ <small>ล้างข้อมูลหนัก</small></div>
             <div class="cwf-link" id="cwfSuperAdminLink" data-href="/admin-super-v2.html" style="display:none">🛡️ Super Admin <small>จัดการทั้งหมด</small></div>
           </div>
         </div>

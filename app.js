@@ -3109,12 +3109,101 @@ async function cwfCountPhotos(jobId){
   return { counts, urls };
 }
 
+async function cwfLoadUnits(jobId){
+  try {
+    const r = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/units`, { cache:'no-store' });
+    const d = await r.json().catch(()=>({}));
+    if (r.ok && Array.isArray(d.units)) return d.units;
+  } catch {}
+  return [];
+}
+
+function cwfUnitTitle(u){ return `เครื่องที่ ${u?.unit_no || '-'} รหัสเครื่อง ${u?.unit_code || '-'}`; }
+
+async function cwfPickUnitPhoto(jobId, unitId, phase){
+  const units = await cwfLoadUnits(jobId);
+  const unit = units.find(u => String(u.unit_id) === String(unitId));
+  if (!unit) return alert('กรุณาเลือกเครื่องก่อนอัปโหลดรูป');
+  openFilePicker({ multiple:true, accept:'image/*' }, async (files)=>{
+    if (!files || !files.length) return;
+    for (const f of Array.from(files || [])) {
+      const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ phase, mime_type:f.type, original_name:f.name, file_size:f.size, uploaded_by:(typeof username === 'string' ? username : '') || null, unit_id:unit.unit_id, unit_code:unit.unit_code, unit_no:unit.unit_no, photo_category:'job_evidence' })
+      });
+      const meta = await metaRes.json().catch(()=>({}));
+      if (!metaRes.ok) throw new Error(meta.error || 'สร้างข้อมูลรูปไม่สำเร็จ');
+      const form = new FormData();
+      form.append('photo', f, f.name || 'photo.jpg');
+      const upRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${meta.photo_id}/upload`, { method:'POST', body:form });
+      const up = await upRes.json().catch(()=>({}));
+      if (!upRes.ok) throw new Error(up.error || 'อัปโหลดรูปไม่สำเร็จ');
+    }
+    alert('อัปโหลดรูปเครื่องนี้แล้ว');
+    openTechPhotoModal(jobId);
+  });
+}
+window.cwfPickUnitPhoto = cwfPickUnitPhoto;
+
+async function openTechUnitChecklistModal(jobId, unitId, section){
+  const units = await cwfLoadUnits(jobId);
+  const unit = units.find(u => String(u.unit_id) === String(unitId));
+  if (!unit) return alert('ไม่พบเครื่องนี้');
+  const active = section || 'pre';
+  const key = `${cwfCloseKey(jobId)}_unit_${unitId}`;
+  const html = `<div class="cwf-note-box" style="margin-bottom:10px"><b>${cwfUnitTitle(unit)}</b><div class="muted">${String(unit.item_name || 'เครื่องปรับอากาศ')}</div></div>${cwfChecklistSectionHtml(key, active)}`;
+  const footer = `<button class="secondary" type="button" onclick="cwfCloseModal()">ปิด</button><button type="button" onclick="cwfSaveUnitChecklist('${String(jobId).replace(/'/g,"\\'")}', '${String(unitId).replace(/'/g,"\\'")}', '${active}')">บันทึกเช็คลิสเครื่องนี้</button>`;
+  cwfOpenModal(active === 'pre' ? 'เช็คลิสก่อนทำ' : 'เช็คลิสหลังทำ', html, footer);
+}
+window.openTechUnitChecklistModal = openTechUnitChecklistModal;
+
+async function cwfSaveUnitChecklist(jobId, unitId, section){
+  const key = `${cwfCloseKey(jobId)}_unit_${unitId}`;
+  const data = cwfGetChecklist(key);
+  const items = section === 'pre' ? CWF_PRE_CHECK_ITEMS : CWF_POST_CHECK_ITEMS;
+  const rows = items.map((label, i) => ({ label, ...(data?.[section]?.[i] || {}) }));
+  for (const row of rows) {
+    if (!row.checked && !row.issue) return alert(section === 'pre' ? 'กรุณาทำเช็คลิสก่อนทำให้ครบ' : 'กรุณาทำเช็คลิสหลังทำให้ครบ');
+    if (row.issue && !String(row.note || '').trim()) return alert('กรุณาระบุหมายเหตุสำหรับรายการที่มีปัญหา');
+  }
+  const r = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/units/${encodeURIComponent(String(unitId))}/checklist`, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ checklist_type:section, checklist_json:rows, technician_username:(typeof username === 'string' ? username : '') || null }) });
+  const d = await r.json().catch(()=>({}));
+  if (!r.ok) return alert(d.error || 'บันทึกเช็คลิสเครื่องนี้ไม่สำเร็จ');
+  alert(d.message || 'บันทึกเช็คลิสเครื่องนี้แล้ว');
+  openTechPhotoModal(jobId);
+}
+window.cwfSaveUnitChecklist = cwfSaveUnitChecklist;
+
+function cwfRenderUnitCards(jobId, units){
+  const current = (typeof username === 'string' ? username : '') || '';
+  return `<div class="cwf-photo-grid">${units.map(u => {
+    const mine = current && String(u.assigned_technician || '') === current;
+    const counts = u.photo_counts || {};
+    const preOk = !!(u.checklist && u.checklist.pre && u.checklist.pre.completed);
+    const postOk = !!(u.checklist && u.checklist.post && u.checklist.post.completed);
+    return `<div class="cwf-photo-card" style="${mine ? 'border-color:#1558d6;box-shadow:0 0 0 2px rgba(21,88,214,.12)' : ''}">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><b>${cwfUnitTitle(u)}</b><span class="cwf-chip ${mine?'ok':''}">${mine ? 'เครื่องของฉัน' : 'ดูได้'}</span></div>
+      <div class="muted" style="margin-top:5px">${String(u.item_name || 'เครื่องปรับอากาศ')}</div>
+      ${u.assigned_technician ? `<div class="muted">ผู้รับผิดชอบ: ${String(u.assigned_technician)}</div>` : ''}
+      <div class="cwf-mini-status"><span class="cwf-chip ${counts.before ? 'ok':'warn'}">รูปก่อนทำ: ${counts.before || 0} รูป</span><span class="cwf-chip ${counts.after ? 'ok':'warn'}">รูปหลังทำ: ${counts.after || 0} รูป</span><span class="cwf-chip ${preOk ? 'ok':'warn'}">เช็คลิสก่อนทำ: ${preOk ? 'ครบ':'ยังไม่ครบ'}</span><span class="cwf-chip ${postOk ? 'ok':'warn'}">เช็คลิสหลังทำ: ${postOk ? 'ครบ':'ยังไม่ครบ'}</span></div>
+      <div class="cwf-final-row"><button type="button" onclick="openTechUnitChecklistModal('${String(jobId).replace(/'/g,"\\'")}', '${u.unit_id}', 'pre')">เช็คลิสก่อนทำ</button><button type="button" onclick="cwfPickUnitPhoto('${String(jobId).replace(/'/g,"\\'")}', '${u.unit_id}', 'before')">รูปก่อนทำ</button><button type="button" onclick="openTechUnitChecklistModal('${String(jobId).replace(/'/g,"\\'")}', '${u.unit_id}', 'post')">เช็คลิสหลังทำ</button><button type="button" onclick="cwfPickUnitPhoto('${String(jobId).replace(/'/g,"\\'")}', '${u.unit_id}', 'after')">รูปหลังทำ</button></div>
+    </div>`;
+  }).join('')}</div>`;
+}
+
 async function openTechPhotoModal(jobId){
   const key = cwfCloseKey(jobId);
   const job = cwfGetCachedJob(key);
   const canEdit = !job || !isDoneStatusValue(normStatus(job.job_status));
   const revisitFlow = isRevisitJob(job);
   cwfOpenModal('📷 ลงรูปหลักฐานหน้างาน', `<div class="muted">กำลังโหลดสถานะรูป...</div>`);
+  const units = await cwfLoadUnits(key);
+  if (units.length && !revisitFlow) {
+    const html = `<div class="muted" style="margin-bottom:10px">เลือกเครื่องเพื่อทำเช็คลิสและอัปโหลดรูปแยกตามเครื่อง</div>${cwfRenderUnitCards(key, units)}`;
+    cwfOpenModal('หลักฐานแยกตามเครื่องปรับอากาศ', html, `<button type="button" class="secondary" onclick="cwfCloseModal()">ปิด</button>`);
+    return;
+  }
   const { counts, urls } = await cwfCountPhotos(key);
   const defs = [
     ['before','ก่อนทำ','หลักฐานสำคัญ'], ['after','หลังทำ','หลักฐานสำคัญ'],
@@ -3286,6 +3375,18 @@ function cwfAskMissingPhotoAck(jobId){
 async function cwfValidateCloseRequirements(jobId, targetStatus){
   if (targetStatus !== 'เสร็จแล้ว') return true;
   if (window.__CWF_UPLOAD_BUSY_COUNT > 0) { alert('กรุณารอให้อัปโหลดรูปให้เสร็จก่อนปิดงาน'); return false; }
+  const units = await cwfLoadUnits(jobId);
+  if (units.length) {
+    for (const u of units) {
+      const label = `เครื่องที่ ${u.unit_no || '-'} รหัส ${u.unit_code || '-'}`;
+      if (!(u.checklist && u.checklist.pre && u.checklist.pre.completed)) { alert(`${label} ยังไม่ได้ทำเช็คลิสก่อนทำ`); openTechPhotoModal(jobId); return false; }
+      if (!(u.checklist && u.checklist.post && u.checklist.post.completed)) { alert(`${label} ยังไม่ได้ทำเช็คลิสหลังทำ`); openTechPhotoModal(jobId); return false; }
+      if (Number((u.photo_counts || {}).before || 0) < 1) { alert(`${label} ยังไม่มีรูปก่อนทำ`); openTechPhotoModal(jobId); return false; }
+      if (Number((u.photo_counts || {}).after || 0) < 1) { alert(`${label} ยังไม่มีรูปหลังทำ`); openTechPhotoModal(jobId); return false; }
+    }
+    const payMsgUnit = await cwfValidatePayment(jobId); if (payMsgUnit) { alert(payMsgUnit); openTechPaymentModal(jobId); return false; }
+    return true;
+  }
   const checklistMsg = cwfValidateChecklist(jobId); if (checklistMsg) { alert(checklistMsg); openTechChecklistModal(jobId, checklistMsg.includes('หลัง') ? 'post':'pre'); return false; }
   const payMsg = await cwfValidatePayment(jobId); if (payMsg) { alert(payMsg); openTechPaymentModal(jobId); return false; }
   const hasPhoto = await cwfHasRequiredBeforeAfter(jobId);
@@ -4267,6 +4368,14 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
       body: JSON.stringify({ note: revisit_note || note }),
     }).catch(() => {});
 
+    const closePay = cwfGetPayment(jobId);
+    const closeMethod = closePay.method === 'cash' ? 'cash_to_technician' : (closePay.method === 'admin' ? 'admin_handles_payment' : 'customer_qr_company');
+    const oldChecklist = cwfGetChecklist(jobId);
+    const toChecklistArray = (section) => (section === 'pre' ? CWF_PRE_CHECK_ITEMS : CWF_POST_CHECK_ITEMS).map((label, i) => {
+      const row = (oldChecklist && oldChecklist[section] && oldChecklist[section][i]) || {};
+      return { label, status: row.issue ? (section === 'pre' ? 'มีปัญหาอยู่ก่อน' : 'พบปัญหาใหม่') : 'ปกติ', checked: !!row.checked, issue: !!row.issue, note: row.note || '' };
+    });
+    const unitsForFinalize = await cwfLoadUnits(jobId);
     const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/finalize`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -4276,6 +4385,15 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
         note,
         revisit_result,
         revisit_note,
+        pre_cleaning_checklist: toChecklistArray('pre'),
+        post_cleaning_checklist: toChecklistArray('post'),
+        per_unit_evidence: unitsForFinalize.length > 0,
+        close_payment_method: closeMethod,
+        close_payment_status: closeMethod === 'admin_handles_payment' ? 'pending_admin_update' : 'pending_verification',
+        close_cash_amount: closePay.cash_amount || null,
+        close_payment_note: closePay.note || '',
+        close_cash_confirmed: !!closePay.cash_confirmed,
+        close_signature_type: closeMethod === 'cash_to_technician' ? 'technician_signature' : 'customer_signature',
       }),
     });
 
@@ -4750,6 +4868,8 @@ async function uploadFilesAsPhotos(jobId, phase, files){
         mime_type: f.type,
         original_name: f.name,
         file_size: f.size,
+        uploaded_by: (typeof username === 'string' ? username : '') || null,
+        photo_category: String(phase || '').includes('slip') ? 'payment_slip' : 'job_evidence',
       }),
     });
 

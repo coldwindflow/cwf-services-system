@@ -11798,6 +11798,80 @@ await pool.query(`
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_photos_job_id ON public.job_photos(job_id)`);
 
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.job_units (
+    unit_id BIGSERIAL PRIMARY KEY,
+    job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
+    unit_code TEXT NOT NULL,
+    unit_no INTEGER NOT NULL,
+    item_name TEXT,
+    ac_type TEXT,
+    wash_type TEXT,
+    btu TEXT,
+    location_label TEXT,
+    assigned_technician TEXT,
+    status TEXT DEFAULT 'pending',
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(job_id, unit_code),
+    UNIQUE(job_id, unit_no)
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_units_job_id ON public.job_units(job_id)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_units_assigned_technician ON public.job_units(assigned_technician)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_units_unit_code ON public.job_units(unit_code)`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.job_unit_checklists (
+    checklist_id BIGSERIAL PRIMARY KEY,
+    job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
+    unit_id BIGINT NOT NULL REFERENCES public.job_units(unit_id) ON DELETE CASCADE,
+    technician_username TEXT,
+    checklist_type TEXT NOT NULL CHECK (checklist_type IN ('pre','post')),
+    checklist_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+    completed_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(unit_id, checklist_type)
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_unit_checklists_job_id ON public.job_unit_checklists(job_id)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_unit_checklists_unit_id ON public.job_unit_checklists(unit_id)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_unit_checklists_technician ON public.job_unit_checklists(technician_username)`);
+await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS unit_id BIGINT REFERENCES public.job_units(unit_id) ON DELETE SET NULL`);
+await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS unit_code TEXT`);
+await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS unit_no INTEGER`);
+await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS file_size_bytes BIGINT`);
+await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ`);
+await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS deleted_by TEXT`);
+await pool.query(`ALTER TABLE public.job_photos ADD COLUMN IF NOT EXISTS photo_category TEXT`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_photos_unit_id ON public.job_photos(unit_id)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_photos_photo_category ON public.job_photos(photo_category)`);
+await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS media_retention_purged_at TIMESTAMPTZ`);
+await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS media_retention_purged_by TEXT`);
+await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS media_retention_summary JSONB`);
+await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS media_retention_locked BOOLEAN DEFAULT FALSE`);
+await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS per_unit_evidence_enabled BOOLEAN DEFAULT FALSE`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.media_retention_logs (
+    log_id BIGSERIAL PRIMARY KEY,
+    run_id TEXT NOT NULL,
+    job_id BIGINT,
+    dry_run BOOLEAN DEFAULT TRUE,
+    action TEXT NOT NULL,
+    photos_count INTEGER DEFAULT 0,
+    checklist_count INTEGER DEFAULT 0,
+    units_count INTEGER DEFAULT 0,
+    slips_count INTEGER DEFAULT 0,
+    bytes_estimated BIGINT DEFAULT 0,
+    result TEXT,
+    error_message TEXT,
+    created_by TEXT,
+    created_at TIMESTAMPTZ DEFAULT NOW()
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_media_retention_logs_job_id ON public.media_retention_logs(job_id, created_at DESC)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_media_retention_logs_run_id ON public.media_retention_logs(run_id)`);
+
 // 3.4.1) ✅ Job updates / audit log (admin + technician)
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.job_updates_v2 (
@@ -12960,6 +13034,9 @@ try {
       expires_at = offerR.rows[0].expires_at;
     }
 
+    await ensureJobUnits(job_id, client);
+    await client.query(`UPDATE public.jobs SET per_unit_evidence_enabled=TRUE WHERE job_id=$1`, [job_id]);
+
     await client.query("COMMIT");
 
     // ✅ Prepare technician income preview immediately after admin creates the job.
@@ -13286,6 +13363,126 @@ async function logJobUpdate(job_id, { actor_username, actor_role, action, messag
     // fail-open (do not break production flow)
     try { console.warn('logJobUpdate failed', e.message); } catch {}
   }
+}
+
+function generateUnitCode() {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+function normalizePhotoCategory(phase, category) {
+  const raw = String(category || '').trim();
+  if (raw === 'payment_slip' || raw === 'job_evidence' || raw === 'other') return raw;
+  const ph = String(phase || '').trim().toLowerCase();
+  if (ph.includes('payment') || ph.includes('slip') || ph.includes('receipt') || ph.includes('tax')) return 'payment_slip';
+  if (['before','after','pressure','current','temp','defect','revisit_before','revisit_after','revisit_defect'].includes(ph)) return 'job_evidence';
+  return 'other';
+}
+
+async function ensureJobUnits(job_id, db = pool) {
+  const realId = Number(job_id);
+  if (!Number.isFinite(realId) || realId <= 0) return [];
+  const existing = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
+  if (existing.rows.length) return existing.rows;
+  const itemR = await db.query(
+    `SELECT item_name, qty, assigned_technician_username FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
+    [realId]
+  );
+  const jobR = await db.query(`SELECT job_type, technician_username FROM public.jobs WHERE job_id=$1 LIMIT 1`, [realId]);
+  const job = jobR.rows[0] || {};
+  const rowsToCreate = [];
+  for (const it of itemR.rows || []) {
+    const qty = Math.max(1, Math.min(99, Math.floor(Number(it.qty || 1) || 1)));
+    for (let i = 0; i < qty; i++) rowsToCreate.push({ item_name: it.item_name || job.job_type || 'เครื่องปรับอากาศ', assigned_technician: it.assigned_technician_username || job.technician_username || null });
+  }
+  if (!rowsToCreate.length) rowsToCreate.push({ item_name: job.job_type || 'เครื่องปรับอากาศ', assigned_technician: job.technician_username || null });
+  let unitNo = 1;
+  for (const row of rowsToCreate) {
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const ins = await db.query(
+        `INSERT INTO public.job_units (job_id, unit_code, unit_no, item_name, assigned_technician)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT DO NOTHING RETURNING unit_id`,
+        [realId, generateUnitCode(), unitNo, row.item_name || 'เครื่องปรับอากาศ', row.assigned_technician || null]
+      );
+      if (ins.rows.length) break;
+    }
+    unitNo += 1;
+  }
+  const finalR = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
+  return finalR.rows;
+}
+
+async function getUnitsWithEvidence(job_id, db = pool) {
+  const units = await ensureJobUnits(job_id, db);
+  if (!units.length) return [];
+  const ids = units.map(u => Number(u.unit_id));
+  const photosR = await db.query(
+    `SELECT unit_id, phase, COUNT(*)::int AS count
+       FROM public.job_photos
+      WHERE job_id=$1 AND unit_id = ANY($2::bigint[]) AND deleted_at IS NULL AND COALESCE(public_url,'') <> ''
+      GROUP BY unit_id, phase`,
+    [job_id, ids]
+  );
+  const checklistR = await db.query(
+    `SELECT unit_id, checklist_type, completed_at, technician_username, checklist_json
+       FROM public.job_unit_checklists
+      WHERE job_id=$1 AND unit_id = ANY($2::bigint[])`,
+    [job_id, ids]
+  );
+  const photoMap = new Map();
+  for (const p of photosR.rows || []) {
+    const cur = photoMap.get(String(p.unit_id)) || {};
+    cur[String(p.phase || '')] = Number(p.count || 0);
+    photoMap.set(String(p.unit_id), cur);
+  }
+  const checkMap = new Map();
+  for (const c of checklistR.rows || []) {
+    const cur = checkMap.get(String(c.unit_id)) || {};
+    cur[String(c.checklist_type || '')] = { completed: !!c.completed_at, completed_at: c.completed_at, technician_username: c.technician_username || null, checklist_json: c.checklist_json || [] };
+    checkMap.set(String(c.unit_id), cur);
+  }
+  return units.map(u => ({ ...u, photo_counts: photoMap.get(String(u.unit_id)) || {}, checklist: checkMap.get(String(u.unit_id)) || {} }));
+}
+
+async function validatePerUnitCompletion(job_id, db = pool) {
+  const units = await getUnitsWithEvidence(job_id, db);
+  if (!units.length) return null;
+  for (const u of units) {
+    const label = `เครื่องที่ ${u.unit_no || '-'} รหัส ${u.unit_code || '-'}`;
+    if (!u.checklist?.pre?.completed) return `${label} ยังไม่ได้ทำเช็คลิสก่อนทำ`;
+    if (!u.checklist?.post?.completed) return `${label} ยังไม่ได้ทำเช็คลิสหลังทำ`;
+    if (Number(u.photo_counts?.before || 0) < 1) return `${label} ยังไม่มีรูปก่อนทำ`;
+    if (Number(u.photo_counts?.after || 0) < 1) return `${label} ยังไม่มีรูปหลังทำ`;
+  }
+  return null;
+}
+
+function getRetentionDaysForJob(job) {
+  const text = `${job?.job_type || ''} ${job?.service_items_text || ''}`.toLowerCase();
+  if (text.includes('ล้าง')) return 45;
+  if (text.includes('ติดตั้ง')) return 380;
+  if (text.includes('ซ่อม')) return 195;
+  return 195;
+}
+function getJobCompletionDate(job) { return job?.finished_at || job?.completed_at || job?.closed_at || null; }
+function mediaPurgeEligibility(job, now = new Date()) {
+  if (!job) return { eligible: false, reason: 'ไม่พบข้อมูลงาน' };
+  if (job.media_retention_locked) return { eligible: false, reason: 'งานนี้ถูกล็อกการล้างข้อมูลไว้' };
+  const st = String(job.job_status || '').trim().toLowerCase();
+  const done = st.includes('เสร็จ') || st.includes('ปิดงาน') || st === 'done' || st === 'completed';
+  if (!done) return { eligible: false, reason: 'งานนี้ยังไม่ปิดงาน จึงยังล้างข้อมูลไม่ได้' };
+  const completion = getJobCompletionDate(job);
+  if (!completion) return { eligible: false, reason: 'ยังไม่พบวันที่ปิดงาน จึงยังล้างข้อมูลไม่ได้' };
+  const retentionDays = getRetentionDaysForJob(job);
+  const eligibleAt = new Date(new Date(completion).getTime() + retentionDays * 86400000);
+  if (eligibleAt > now) return { eligible: false, reason: 'งานนี้ยังอยู่ในระยะรับประกัน จึงยังล้างข้อมูลไม่ได้', eligible_at: eligibleAt.toISOString(), retention_days: retentionDays };
+  return { eligible: true, reason: 'ล้างข้อมูลหนักได้แล้ว', eligible_at: eligibleAt.toISOString(), retention_days: retentionDays };
+}
+function isEvidencePhotoRow(p) {
+  const category = normalizePhotoCategory(p.phase, p.photo_category);
+  const ph = String(p.phase || '').toLowerCase();
+  if (category === 'payment_slip' || ph.includes('payment') || ph.includes('slip') || ph.includes('receipt') || ph.includes('tax')) return false;
+  return category === 'job_evidence' || ['before','after','pressure','current','temp','defect','revisit_before','revisit_after','revisit_defect'].includes(ph);
 }
 
 async function pickFirstAvailableTech(usernames, apptIso, durationMin) {
@@ -13840,6 +14037,9 @@ if (coerceNumber(override_price, 0) > 0) {
       urgentPushTargets = available.slice();
       console.log("[admin_book_v2] urgent_offers", { job_id, booking_code, count: available.length });
     }
+
+    await ensureJobUnits(job_id, client);
+    await client.query(`UPDATE public.jobs SET per_unit_evidence_enabled=TRUE WHERE job_id=$1`, [job_id]);
 
     await client.query("COMMIT");
 
@@ -14540,10 +14740,11 @@ app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
 
     // photos + updates + team (non-breaking additions)
     const ph = await pool.query(
-      `SELECT photo_id, phase, created_at, uploaded_at, public_url
-       FROM public.job_photos WHERE job_id=$1 ORDER BY photo_id ASC`,
+      `SELECT photo_id, phase, created_at, uploaded_at, public_url, uploaded_by, unit_id, unit_code, unit_no, photo_category
+       FROM public.job_photos WHERE job_id=$1 AND deleted_at IS NULL ORDER BY unit_no NULLS LAST, photo_id ASC`,
       [jid]
     );
+    const units = job.per_unit_evidence_enabled ? await getUnitsWithEvidence(jid, pool).catch(() => []) : [];
     const up = await pool.query(
       `SELECT update_id, actor_username, actor_role, action, message, payload_json, created_at
        FROM public.job_updates_v2 WHERE job_id=$1 ORDER BY created_at DESC, update_id DESC LIMIT 200`,
@@ -14568,6 +14769,7 @@ app.get("/admin/job_v2/:job_id", requireAdminSoft, async (req, res) => {
       items: ir.rows || [],
       promotion: pr.rows[0] || null,
       photos: ph.rows || [],
+      units,
       updates: up.rows || [],
       team_members: tm.rows || [],
     });
@@ -18852,6 +19054,10 @@ app.post("/jobs/:job_id/checkin", requireTechnicianSession, async (req, res) => 
 app.post("/jobs/:job_id/photos/meta", async (req, res) => {
   const { job_id } = req.params;
   const { phase, mime_type, original_name, file_size, uploaded_by } = req.body || {};
+  const bodyUnitId = Number(req.body?.unit_id || 0);
+  const bodyUnitCode = String(req.body?.unit_code || '').trim();
+  const bodyUnitNo = Number(req.body?.unit_no || 0);
+  const photoCategory = normalizePhotoCategory(phase, req.body?.photo_category);
 
   const allowedPhases = [
     "before",
@@ -18873,6 +19079,12 @@ app.post("/jobs/:job_id/photos/meta", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+    let unitMeta = { unit_id: null, unit_code: null, unit_no: null };
+    if (Number.isFinite(bodyUnitId) && bodyUnitId > 0) {
+      const unitR = await pool.query(`SELECT unit_id, unit_code, unit_no FROM public.job_units WHERE job_id=$1 AND unit_id=$2 LIMIT 1`, [realId, bodyUnitId]);
+      if (!unitR.rows.length) return res.status(400).json({ error: "กรุณาเลือกเครื่องที่อยู่ในงานนี้ก่อนอัปโหลดรูป" });
+      unitMeta = unitR.rows[0];
+    }
 
     // uploaded_by: ต้องเป็นช่างที่อยู่ในทีมของงาน (หรือช่างหลัก) เพื่อผูกหลักฐานให้ถูกคน
     if (uploaded_by) {
@@ -18901,11 +19113,12 @@ app.post("/jobs/:job_id/photos/meta", async (req, res) => {
     }
     const r = await pool.query(
       `
-      INSERT INTO public.job_photos (job_id, phase, mime_type, original_name, file_size, photo_type, uploaded_by)
-      VALUES ($1,$2,$3,$4,$5,NULL,$6)
+      INSERT INTO public.job_photos
+        (job_id, phase, mime_type, original_name, file_size, file_size_bytes, photo_type, uploaded_by, unit_id, unit_code, unit_no, photo_category)
+      VALUES ($1,$2,$3,$4,$5,$5,NULL,$6,$7,$8,$9,$10)
       RETURNING photo_id
       `,
-      [realId, phase, mime_type, original_name || null, file_size || null, uploaded_by || null]
+      [realId, phase, mime_type, original_name || null, file_size || null, uploaded_by || null, unitMeta.unit_id || null, unitMeta.unit_code || bodyUnitCode || null, unitMeta.unit_no || (Number.isFinite(bodyUnitNo) && bodyUnitNo > 0 ? bodyUnitNo : null), photoCategory]
     );
     res.json({ success: true, photo_id: r.rows[0].photo_id });
   } catch (e) {
@@ -19009,15 +19222,134 @@ app.get("/jobs/:job_id/photos", async (req, res) => {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
+    const unitId = Number(req.query?.unit_id || 0);
+    const params = [realId];
+    let unitWhere = '';
+    if (Number.isFinite(unitId) && unitId > 0) { params.push(unitId); unitWhere = ' AND unit_id=$2'; }
     const r = await pool.query(
-      `SELECT photo_id, phase, created_at, uploaded_at, public_url FROM public.job_photos WHERE job_id=$1 ORDER BY photo_id ASC`,
-      [realId]
+      `SELECT photo_id, phase, created_at, uploaded_at, public_url, uploaded_by, unit_id, unit_code, unit_no, photo_category
+       FROM public.job_photos WHERE job_id=$1 ${unitWhere} AND deleted_at IS NULL ORDER BY unit_no NULLS LAST, photo_id ASC`,
+      params
     );
     res.json(r.rows);
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "โหลดรายการรูปไม่สำเร็จ" });
   }
+});
+
+app.get("/jobs/:job_id/units", async (req, res) => {
+  try {
+    const realId = await resolveJobIdAny(pool, req.params.job_id);
+    if (!realId) return res.status(400).json({ error: "ไม่พบงานนี้" });
+    const jobR = await pool.query(`SELECT COALESCE(per_unit_evidence_enabled,FALSE) AS enabled FROM public.jobs WHERE job_id=$1 LIMIT 1`, [realId]);
+    const units = await getUnitsWithEvidence(realId, pool);
+    const enabled = !!jobR.rows?.[0]?.enabled;
+    return res.json({ success: true, per_unit_evidence_enabled: enabled, units: enabled ? units : [] });
+  } catch (e) {
+    console.error('GET /jobs/:job_id/units', e);
+    return res.status(500).json({ error: "โหลดข้อมูลเครื่องไม่สำเร็จ" });
+  }
+});
+
+app.put("/jobs/:job_id/units/:unit_id/checklist", requireTechnicianSession, async (req, res) => {
+  try {
+    const realId = await resolveJobIdAny(pool, req.params.job_id);
+    if (!realId) return res.status(400).json({ error: "ไม่พบงานนี้" });
+    const technician = await requireTechOwnsResolvedJob(req, res, realId, pool);
+    if (!technician) return;
+    const unitId = Number(req.params.unit_id || 0);
+    const type = String(req.body?.checklist_type || '').trim();
+    if (!['pre','post'].includes(type)) return res.status(400).json({ error: "ประเภทเช็คลิสไม่ถูกต้อง" });
+    const list = Array.isArray(req.body?.checklist_json) ? req.body.checklist_json : [];
+    const unitR = await pool.query(`SELECT unit_id FROM public.job_units WHERE job_id=$1 AND unit_id=$2 LIMIT 1`, [realId, unitId]);
+    if (!unitR.rows.length) return res.status(404).json({ error: "ไม่พบเครื่องนี้ในงาน" });
+    await pool.query(
+      `INSERT INTO public.job_unit_checklists (job_id, unit_id, technician_username, checklist_type, checklist_json, completed_at, updated_at)
+       VALUES ($1,$2,$3,$4,$5::jsonb,NOW(),NOW())
+       ON CONFLICT (unit_id, checklist_type)
+       DO UPDATE SET technician_username=EXCLUDED.technician_username, checklist_json=EXCLUDED.checklist_json, completed_at=NOW(), updated_at=NOW()`,
+      [realId, unitId, technician || _authUsername(req) || null, type, JSON.stringify(list)]
+    );
+    return res.json({ success: true, message: "บันทึกเช็คลิสเครื่องนี้แล้ว" });
+  } catch (e) {
+    console.error('PUT /jobs/:job_id/units/:unit_id/checklist', e);
+    return res.status(500).json({ error: "บันทึกเช็คลิสเครื่องนี้ไม่สำเร็จ" });
+  }
+});
+
+async function mediaRetentionRows() {
+  const r = await pool.query(
+    `SELECT j.job_id, j.booking_code, j.customer_name, j.customer_phone, j.job_type, j.job_status,
+            j.finished_at, j.completed_at, j.closed_at, j.media_retention_locked, j.media_retention_purged_at,
+            COUNT(DISTINCT p.photo_id)::int AS photo_count,
+            COUNT(DISTINCT CASE WHEN COALESCE(p.photo_category,'')='payment_slip' OR COALESCE(p.phase,'') ILIKE '%slip%' OR COALESCE(p.phase,'')='payment_slip' THEN p.photo_id END)::int AS slip_count,
+            COUNT(DISTINCT c.checklist_id)::int AS checklist_count,
+            COUNT(DISTINCT u.unit_id)::int AS unit_count,
+            COALESCE(SUM(CASE WHEN p.deleted_at IS NULL THEN COALESCE(p.file_size_bytes,p.file_size,0) ELSE 0 END),0)::bigint AS bytes_estimated,
+            (SELECT string_agg(COALESCE(ji.item_name,''), ' ') FROM public.job_items ji WHERE ji.job_id=j.job_id) AS service_items_text
+       FROM public.jobs j
+       LEFT JOIN public.job_photos p ON p.job_id=j.job_id AND p.deleted_at IS NULL
+       LEFT JOIN public.job_unit_checklists c ON c.job_id=j.job_id
+       LEFT JOIN public.job_units u ON u.job_id=j.job_id
+      WHERE j.finished_at IS NOT NULL OR COALESCE(j.job_status,'') ILIKE '%เสร็จ%' OR COALESCE(j.job_status,'') IN ('done','completed','ปิดงาน')
+      GROUP BY j.job_id
+      ORDER BY COALESCE(j.finished_at, j.completed_at, j.closed_at) DESC NULLS LAST
+      LIMIT 200`
+  );
+  return (r.rows || []).map(j => {
+    const el = mediaPurgeEligibility(j);
+    const completion = getJobCompletionDate(j);
+    const warrantyEnd = completion ? new Date(new Date(completion).getTime() + (getRetentionDaysForJob(j) - 15) * 86400000) : null;
+    return { ...j, completion_date: completion, warranty_end_date: warrantyEnd ? warrantyEnd.toISOString() : null, purge_eligible_date: el.eligible_at || null, eligibility: el };
+  });
+}
+
+app.get('/admin/media-retention/summary', requireAdminSession, async (_req, res) => {
+  try {
+    const jobs = await mediaRetentionRows();
+    const photosR = await pool.query(`SELECT COUNT(*)::int AS total, SUM(CASE WHEN COALESCE(photo_category,'')='payment_slip' OR COALESCE(phase,'') ILIKE '%slip%' OR COALESCE(phase,'')='payment_slip' THEN 1 ELSE 0 END)::int AS slips, COALESCE(SUM(COALESCE(file_size_bytes,file_size,0)),0)::bigint AS bytes FROM public.job_photos WHERE deleted_at IS NULL`);
+    return res.json({ success:true, total_photos:Number(photosR.rows?.[0]?.total||0), eligible_photos:null, eligible_jobs:jobs.filter(j=>j.eligibility?.eligible).length, slip_photos:Number(photosR.rows?.[0]?.slips||0), bytes_estimated:Number(photosR.rows?.[0]?.bytes||0), note:'รูปสลิปไม่ถูกลบอัตโนมัติ' });
+  } catch (e) { return res.status(500).json({ error:'โหลดสรุปพื้นที่จัดเก็บไม่สำเร็จ' }); }
+});
+
+app.get('/admin/media-retention/jobs', requireAdminSession, async (req, res) => {
+  try {
+    const q = String(req.query.q || '').trim().toLowerCase();
+    const type = String(req.query.job_type || 'all').trim();
+    let jobs = await mediaRetentionRows();
+    if (type && type !== 'all') jobs = jobs.filter(j => String(j.job_type || '').includes(type));
+    if (q) jobs = jobs.filter(j => `${j.customer_name||''} ${j.customer_phone||''} ${j.booking_code||''}`.toLowerCase().includes(q));
+    return res.json({ success:true, jobs });
+  } catch (e) { return res.status(500).json({ error:'โหลดรายการงานสำหรับล้างข้อมูลไม่สำเร็จ' }); }
+});
+
+app.post('/admin/media-retention/purge', requireAdminSession, async (req, res) => {
+  const dryRun = req.body?.dry_run !== false;
+  const ids = Array.isArray(req.body?.job_ids) ? req.body.job_ids.map(Number).filter(n => Number.isFinite(n) && n > 0).slice(0,50) : [];
+  const actor = _authUsername(req) || req.actor?.username || 'admin';
+  if (!ids.length) return res.status(400).json({ error:'กรุณาเลือกงานที่ต้องการตรวจสอบ' });
+  if (!dryRun && String(req.body?.confirm_text || '').trim() !== 'ยืนยันลบ') return res.status(400).json({ error:'กรุณาพิมพ์คำว่า ยืนยันลบ เพื่อยืนยันการล้างข้อมูลหนัก' });
+  const runId = crypto.randomUUID();
+  const results = [];
+  for (const id of ids) {
+    const jobR = await pool.query(`SELECT j.*, (SELECT string_agg(COALESCE(ji.item_name,''), ' ') FROM public.job_items ji WHERE ji.job_id=j.job_id) AS service_items_text FROM public.jobs j WHERE j.job_id=$1`, [id]);
+    const el = mediaPurgeEligibility(jobR.rows[0]);
+    const photosR = await pool.query(`SELECT photo_id, phase, photo_category, COALESCE(file_size_bytes,file_size,0)::bigint AS bytes FROM public.job_photos WHERE job_id=$1 AND deleted_at IS NULL`, [id]);
+    const evidence = (photosR.rows || []).filter(isEvidencePhotoRow);
+    const slips = (photosR.rows || []).filter(p => normalizePhotoCategory(p.phase, p.photo_category) === 'payment_slip' || String(p.phase||'').toLowerCase().includes('slip'));
+    const summary = { eligible: !!el.eligible, reason: el.reason, photos_count:evidence.length, checklist_count:0, units_count:0, slips_count:slips.length, bytes_estimated:evidence.reduce((s,p)=>s+Number(p.bytes||0),0) };
+    if (el.eligible && !dryRun && evidence.length) {
+      const photoIds = evidence.map(p => Number(p.photo_id)).filter(Boolean);
+      await pool.query(`UPDATE public.job_photos SET deleted_at=NOW(), deleted_by=$2, public_url=NULL, storage_path=NULL, cloud_public_id=NULL WHERE job_id=$1 AND photo_id=ANY($3::bigint[])`, [id, actor, photoIds]);
+      await pool.query(`UPDATE public.job_unit_checklists SET checklist_json='[]'::jsonb, updated_at=NOW() WHERE job_id=$1`, [id]);
+      await pool.query(`UPDATE public.job_units SET ac_type=NULL, wash_type=NULL, btu=NULL, location_label=NULL, updated_at=NOW() WHERE job_id=$1`, [id]);
+      await pool.query(`UPDATE public.jobs SET media_retention_purged_at=NOW(), media_retention_purged_by=$2, media_retention_summary=$3::jsonb WHERE job_id=$1`, [id, actor, JSON.stringify(summary)]);
+    }
+    await pool.query(`INSERT INTO public.media_retention_logs (run_id, job_id, dry_run, action, photos_count, checklist_count, units_count, slips_count, bytes_estimated, result, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [runId, id, dryRun, dryRun?'dry_run':'purge', summary.photos_count, summary.checklist_count, summary.units_count, summary.slips_count, summary.bytes_estimated, summary.reason, actor]).catch(()=>null);
+    results.push({ job_id:id, ...summary });
+  }
+  return res.json({ success:true, run_id:runId, dry_run:dryRun, message: dryRun ? 'ตรวจสอบก่อนลบเสร็จแล้ว ยังไม่มีการลบข้อมูลจริง' : 'ล้างรูปเก่าเรียบร้อย รูปสลิปไม่ถูกลบอัตโนมัติ', results });
 });
 
 // =======================================
@@ -19098,6 +19430,13 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
     if (!technician_username) {
       await client.query("ROLLBACK");
       return;
+    }
+    if (status === "เสร็จแล้ว" && per_unit_evidence) {
+      const unitMissing = await validatePerUnitCompletion(realId, client);
+      if (unitMissing) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: unitMissing });
+      }
     }
 // ✅ งานทีม: กัน finalize ก่อนที่ทุกคนกดเสร็จของตัวเอง
 if (status === "เสร็จแล้ว") {
@@ -24956,6 +25295,9 @@ if (itemIdQty.length) {
         [job_id, it.item_id, it.item_name, it.qty, it.unit_price, it.line_total]
       );
     }
+
+    await ensureJobUnits(job_id, client);
+    await client.query(`UPDATE public.jobs SET per_unit_evidence_enabled=TRUE WHERE job_id=$1`, [job_id]);
 
     await client.query("COMMIT");
 

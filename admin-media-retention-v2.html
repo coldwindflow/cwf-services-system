@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ตัวจัดการรูปและพื้นที่จัดเก็บ</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body class="cwf-admin-v2-shell">
+  <main class="wrap">
+    <section class="card">
+      <h2>ตัวจัดการรูปและพื้นที่จัดเก็บ</h2>
+      <div class="muted2">ตรวจสอบรูปหลักฐานเก่าหลังพ้นระยะประกัน รูปสลิปไม่ถูกลบอัตโนมัติ</div>
+    </section>
+
+    <section class="card">
+      <div id="mediaSummary" class="summary-grid"></div>
+      <div class="row" style="gap:10px;flex-wrap:wrap;align-items:flex-end;margin-top:12px">
+        <div style="width:180px">
+          <label>ประเภทงาน</label>
+          <select id="filterType">
+            <option value="all">ทั้งหมด</option>
+            <option value="ล้าง">งานล้าง</option>
+            <option value="ซ่อม">งานซ่อม</option>
+            <option value="ติดตั้ง">งานติดตั้ง</option>
+          </select>
+        </div>
+        <div style="width:190px">
+          <label>สถานะ</label>
+          <select id="filterStatus">
+            <option value="all">ทั้งหมด</option>
+            <option value="eligible">ลบได้แล้ว</option>
+            <option value="protected">ยังอยู่ในประกัน</option>
+          </select>
+        </div>
+        <div style="flex:1;min-width:220px">
+          <label>ค้นหาลูกค้าจากชื่อ/เบอร์</label>
+          <input id="filterSearch" placeholder="ชื่อ เบอร์ หรือเลขงาน">
+        </div>
+        <button id="btnReload" type="button" style="width:auto">ค้นหา</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div id="mediaJobs" class="list"></div>
+    </section>
+  </main>
+  <script src="/admin-v2-common.js"></script>
+  <script src="/admin-media-retention-v2.js"></script>
+</body>
+</html>

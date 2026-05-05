@@ -352,6 +352,78 @@ function warrantyLabel(job){
   return `<span class="pill" style="${base}">${title}</span> <span class="muted2" style="font-size:12px">หมด: ${end}${extra}</span>`;
 }
 
+function renderUnitEvidence(units, photos){
+  const arr = Array.isArray(units) ? units : [];
+  const allPhotos = Array.isArray(photos) ? photos : [];
+  if (!arr.length) return '';
+  const byUnit = new Map();
+  allPhotos.forEach(p => {
+    const id = p && p.unit_id != null ? String(p.unit_id) : '';
+    if (!id) return;
+    const cur = byUnit.get(id) || [];
+    cur.push(p);
+    byUnit.set(id, cur);
+  });
+  return `<details class="cwf-details" style="margin-top:10px" open>
+    <summary>หลักฐานแยกตามเครื่องปรับอากาศ</summary>
+    <div class="cwf-details-body">
+      <div class="list">
+        ${arr.map(u => {
+          const ps = byUnit.get(String(u.unit_id)) || [];
+          const before = ps.filter(p => String(p.phase||'') === 'before');
+          const after = ps.filter(p => String(p.phase||'') === 'after');
+          const pre = u.checklist && u.checklist.pre && u.checklist.pre.completed;
+          const post = u.checklist && u.checklist.post && u.checklist.post.completed;
+          const thumbs = (list, label) => list.length
+            ? `<div class="mini" style="margin-top:8px"><b>${label}</b></div><div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">${list.map(p => {
+                const url = safe(p.public_url);
+                return url ? `<a href="${escapeHtml(url)}" target="_blank" rel="noopener" title="${escapeHtml(safe(p.uploaded_by||''))}"><img src="${escapeHtml(url)}" alt="${escapeHtml(label)}" style="width:76px;height:76px;object-fit:cover;border-radius:10px;border:1px solid rgba(15,23,42,.12)"></a>` : '';
+              }).join('')}</div>` : `<div class="muted2 mini">${label}: ยังไม่มีรูป</div>`;
+          return `<div class="item">
+            <b>เครื่องที่ ${escapeHtml(safe(u.unit_no||'-'))} • รหัสเครื่อง ${escapeHtml(safe(u.unit_code||'-'))}</b>
+            <div class="mini" style="margin-top:4px">${escapeHtml(safe(u.item_name||'เครื่องปรับอากาศ'))}</div>
+            <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px">
+              <span class="pill">ผู้รับผิดชอบ: ${escapeHtml(safe(u.assigned_technician||'-'))}</span>
+              <span class="pill">${pre ? 'เช็คลิสก่อนทำ: ครบ' : 'เช็คลิสก่อนทำ: ยังไม่ครบ'}</span>
+              <span class="pill">${post ? 'เช็คลิสหลังทำ: ครบ' : 'เช็คลิสหลังทำ: ยังไม่ครบ'}</span>
+            </div>
+            ${thumbs(before, 'รูปก่อนทำ')}
+            ${thumbs(after, 'รูปหลังทำ')}
+            ${ps.filter(p => !['before','after'].includes(String(p.phase||''))).length ? `<div class="mini" style="margin-top:8px">รูปอื่น: ${ps.filter(p => !['before','after'].includes(String(p.phase||''))).length} รูป</div>` : ''}
+          </div>`;
+        }).join('')}
+      </div>
+    </div>
+  </details>`;
+}
+
+async function purgeThisJobMedia(jobId){
+  const id = Number(jobId || 0);
+  if (!id) return alert('ไม่พบเลขงาน');
+  try {
+    const dry = await apiFetch('/admin/media-retention/purge', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ dry_run:true, job_ids:[id], confirm_text:'' })
+    });
+    const first = (dry.results || [])[0] || {};
+    const ok = confirm(`ตรวจสอบก่อนลบเสร็จแล้ว ยังไม่มีการลบข้อมูลจริง\nรูปหลักฐานที่ล้างได้: ${first.photos_count || 0} รูป\nรูปสลิป: ${first.slips_count || 0} รูป ไม่ถูกลบอัตโนมัติ\n\nต้องการล้างข้อมูลหนักของงานนี้หรือไม่?`);
+    if (!ok) return;
+    const typed = prompt('พิมพ์ "ยืนยันลบ" เพื่อยืนยันการล้างข้อมูลหนัก');
+    if (String(typed || '').trim() !== 'ยืนยันลบ') return alert('ยกเลิกการล้างข้อมูล');
+    const r = await apiFetch('/admin/media-retention/purge', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ dry_run:false, job_ids:[id], confirm_text:'ยืนยันลบ' })
+    });
+    alert(r.message || 'ล้างรูปเก่าเรียบร้อย');
+    loadJob();
+  } catch (e) {
+    alert(e.message || 'ล้างข้อมูลหนักไม่สำเร็จ');
+  }
+}
+window.purgeThisJobMedia = purgeThisJobMedia;
+
 async function loadJob(){
   const qs = new URLSearchParams(location.search);
   const raw = qs.get('job_id') || '';
@@ -365,6 +437,7 @@ async function loadJob(){
   const job = r.job || {};
   const items = Array.isArray(r.items) ? r.items.map(x=>normalizeLegacyQtyUnit(Object.assign({}, x))) : [];
   const photos = Array.isArray(r.photos) ? r.photos : [];
+  const units = Array.isArray(r.units) ? r.units : [];
   const updates = Array.isArray(r.updates) ? r.updates : [];
   const team = Array.isArray(r.team_members) ? r.team_members : [];
   const promotion = r.promotion || null;
@@ -422,6 +495,7 @@ async function loadJob(){
   const baseTeamSnapshot = buildAdminEditTeamSnapshot(String(job.technician_username||'').trim(), teamInitMembers);
 
   const wOk = inWarranty(job);
+  const unitEvidenceHtml = renderUnitEvidence(units, photos);
 
   el('jobCard').innerHTML = `
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
@@ -620,6 +694,10 @@ async function loadJob(){
         </div>
         <button id="btnExtend" type="button" style="width:auto">➕ Extend</button>
       </div>
+      <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:center">
+        <span class="pill">หากงานพ้นระยะเก็บรูปแล้ว สามารถตรวจสอบก่อนล้างข้อมูลหนักได้</span>
+        <button class="secondary" type="button" style="width:auto" onclick="purgeThisJobMedia(${Number(job.job_id||0)})">ล้างรูปและข้อมูลหนักของงานนี้</button>
+      </div>
     </div>
 
     <hr style="margin:12px 0;" />
@@ -666,6 +744,8 @@ async function loadJob(){
         <div class="list">${photoRows}</div>
       </div>
     </details>
+
+    ${unitEvidenceHtml}
 
     <details class="cwf-details" style="margin-top:10px" open>
       <summary>🕒 Updates / Timeline</summary>
