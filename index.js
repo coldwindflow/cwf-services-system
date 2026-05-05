@@ -376,6 +376,72 @@ async function cloudinaryUploadBuffer({ buffer, mimetype, folder, publicId, tran
   return json; // {secure_url, public_id, bytes, width, height, ...}
 }
 
+async function cloudinaryDestroyPublicId(publicId, resourceType = 'image') {
+  const id = String(publicId || '').trim();
+  if (!id || !CLOUDINARY_ENABLED) return { ok: false, skipped: true };
+  const ts = Math.floor(Date.now() / 1000);
+  const safeResourceType = resourceType === 'raw' ? 'raw' : 'image';
+  const params = { public_id: id, timestamp: ts };
+  const signature = cloudinarySignParams(params);
+  const body = new URLSearchParams({
+    public_id: id,
+    timestamp: String(ts),
+    api_key: CLOUDINARY_API_KEY,
+    signature,
+  });
+  const url = `https://api.cloudinary.com/v1_1/${encodeURIComponent(CLOUDINARY_CLOUD_NAME)}/${safeResourceType}/destroy`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const json = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const err = new Error(json?.error?.message || `Cloudinary destroy failed (${resp.status})`);
+    err._cloudinary = json;
+    throw err;
+  }
+  return { ok: true, result: json?.result || null };
+}
+
+function isSafeLocalUploadPath(storagePath) {
+  const raw = String(storagePath || '').trim();
+  if (!raw) return false;
+  try {
+    const abs = path.resolve(raw.startsWith('/uploads/') ? path.join(UPLOAD_DIR, raw.replace(/^\/uploads\/?/, '')) : raw);
+    const base = path.resolve(UPLOAD_DIR);
+    return abs === base || abs.startsWith(base + path.sep);
+  } catch (_) {
+    return false;
+  }
+}
+
+async function deleteJobEvidenceFileBestEffort(photoRow) {
+  const row = photoRow || {};
+  const publicId = String(row.cloud_public_id || '').trim();
+  if (publicId) {
+    try {
+      await cloudinaryDestroyPublicId(publicId);
+      return { deleted: true, storage: 'cloudinary' };
+    } catch (e) {
+      console.warn('[media-retention] cloudinary destroy failed', { photo_id: row.photo_id, public_id: publicId, error: e.message });
+      return { deleted: false, storage: 'cloudinary', error: e.message };
+    }
+  }
+  const storagePath = String(row.storage_path || '').trim();
+  if (storagePath && isSafeLocalUploadPath(storagePath)) {
+    try {
+      const abs = path.resolve(storagePath.startsWith('/uploads/') ? path.join(UPLOAD_DIR, storagePath.replace(/^\/uploads\/?/, '')) : storagePath);
+      if (fs.existsSync(abs)) fs.unlinkSync(abs);
+      return { deleted: true, storage: 'local' };
+    } catch (e) {
+      console.warn('[media-retention] local delete failed', { photo_id: row.photo_id, storage_path: storagePath, error: e.message });
+      return { deleted: false, storage: 'local', error: e.message };
+    }
+  }
+  return { deleted: false, skipped: true };
+}
+
 
 // ==============================
 // 🧭 GPS/Maps Resolver (safe)
@@ -19247,9 +19313,11 @@ app.get("/jobs/:job_id/units", async (req, res) => {
     const realId = await resolveJobIdAny(pool, req.params.job_id);
     if (!realId) return res.status(400).json({ error: "ไม่พบงานนี้" });
     const jobR = await pool.query(`SELECT COALESCE(per_unit_evidence_enabled,FALSE) AS enabled FROM public.jobs WHERE job_id=$1 LIMIT 1`, [realId]);
-    const units = await getUnitsWithEvidence(realId, pool);
     const enabled = !!jobR.rows?.[0]?.enabled;
-    return res.json({ success: true, per_unit_evidence_enabled: enabled, units: enabled ? units : [] });
+    // Legacy jobs must not be silently converted just because a technician opens the page.
+    if (!enabled) return res.json({ success: true, per_unit_evidence_enabled: false, units: [] });
+    const units = await getUnitsWithEvidence(realId, pool);
+    return res.json({ success: true, per_unit_evidence_enabled: true, units });
   } catch (e) {
     console.error('GET /jobs/:job_id/units', e);
     return res.status(500).json({ error: "โหลดข้อมูลเครื่องไม่สำเร็จ" });
@@ -19339,11 +19407,34 @@ app.post('/admin/media-retention/purge', requireAdminSession, async (req, res) =
   for (const id of ids) {
     const jobR = await pool.query(`SELECT j.*, (SELECT string_agg(COALESCE(ji.item_name,''), ' ') FROM public.job_items ji WHERE ji.job_id=j.job_id) AS service_items_text FROM public.jobs j WHERE j.job_id=$1`, [id]);
     const el = mediaPurgeEligibility(jobR.rows[0]);
-    const photosR = await pool.query(`SELECT photo_id, phase, photo_category, COALESCE(file_size_bytes,file_size,0)::bigint AS bytes FROM public.job_photos WHERE job_id=$1 AND deleted_at IS NULL`, [id]);
+    const photosR = await pool.query(
+      `SELECT photo_id, phase, photo_category, public_url, storage_path, cloud_public_id, COALESCE(file_size_bytes,file_size,0)::bigint AS bytes
+         FROM public.job_photos
+        WHERE job_id=$1 AND deleted_at IS NULL`,
+      [id]
+    );
     const evidence = (photosR.rows || []).filter(isEvidencePhotoRow);
     const slips = (photosR.rows || []).filter(p => normalizePhotoCategory(p.phase, p.photo_category) === 'payment_slip' || String(p.phase||'').toLowerCase().includes('slip'));
-    const summary = { eligible: !!el.eligible, reason: el.reason, photos_count:evidence.length, checklist_count:0, units_count:0, slips_count:slips.length, bytes_estimated:evidence.reduce((s,p)=>s+Number(p.bytes||0),0) };
+    const checklistCountR = await pool.query(`SELECT COUNT(*)::int AS n FROM public.job_unit_checklists WHERE job_id=$1`, [id]);
+    const unitCountR = await pool.query(`SELECT COUNT(*)::int AS n FROM public.job_units WHERE job_id=$1`, [id]);
+    const summary = {
+      eligible: !!el.eligible,
+      reason: el.reason,
+      photos_count: evidence.length,
+      checklist_count: Number(checklistCountR.rows?.[0]?.n || 0),
+      units_count: Number(unitCountR.rows?.[0]?.n || 0),
+      slips_count: slips.length,
+      bytes_estimated: evidence.reduce((sum,p)=>sum+Number(p.bytes||0),0),
+      files_deleted: 0,
+      files_delete_failed: 0,
+      slip_policy: 'รูปสลิปไม่ถูกลบอัตโนมัติ',
+    };
     if (el.eligible && !dryRun && evidence.length) {
+      for (const photo of evidence) {
+        const del = await deleteJobEvidenceFileBestEffort(photo);
+        if (del.deleted) summary.files_deleted += 1;
+        else if (del.error) summary.files_delete_failed += 1;
+      }
       const photoIds = evidence.map(p => Number(p.photo_id)).filter(Boolean);
       await pool.query(`UPDATE public.job_photos SET deleted_at=NOW(), deleted_by=$2, public_url=NULL, storage_path=NULL, cloud_public_id=NULL WHERE job_id=$1 AND photo_id=ANY($3::bigint[])`, [id, actor, photoIds]);
       await pool.query(`UPDATE public.job_unit_checklists SET checklist_json='[]'::jsonb, updated_at=NOW() WHERE job_id=$1`, [id]);
@@ -19435,7 +19526,20 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
       await client.query("ROLLBACK");
       return;
     }
-    if (status === "เสร็จแล้ว" && per_unit_evidence) {
+    // ✅ Per-unit evidence validation: do not use an undeclared variable here.
+    // New jobs created after the unit-evidence patch set per_unit_evidence_enabled=TRUE.
+    // Old jobs remain backward compatible and keep the legacy job-level photo/checklist flow.
+    let perUnitEvidenceEnabled = false;
+    try {
+      const unitFlagR = await client.query(
+        `SELECT COALESCE(per_unit_evidence_enabled,FALSE) AS enabled FROM public.jobs WHERE job_id=$1 LIMIT 1`,
+        [realId]
+      );
+      perUnitEvidenceEnabled = !!unitFlagR.rows?.[0]?.enabled;
+    } catch (e) {
+      console.warn('[finalize] per-unit flag check failed (fail-open)', e.message);
+    }
+    if (status === "เสร็จแล้ว" && perUnitEvidenceEnabled) {
       const unitMissing = await validatePerUnitCompletion(realId, client);
       if (unitMissing) {
         await client.query("ROLLBACK");

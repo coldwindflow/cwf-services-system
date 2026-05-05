@@ -25,6 +25,30 @@ function getToken() {
   );
 }
 
+
+function humanApiErrorMessage(status, rawBody, jsonData){
+  const raw = String(rawBody || '');
+  const lower = raw.toLowerCase();
+  const jsonMsg = jsonData && (jsonData.error_th || jsonData.message || jsonData.error);
+  if (status === 502 || status === 503 || status === 504 || /<!doctype|<html|cloudflare|cf-error|cf-footer|bad gateway/i.test(raw)) {
+    return 'เซิร์ฟเวอร์ไม่พร้อมใช้งานชั่วคราว กรุณารอสักครู่แล้วลองใหม่';
+  }
+  if (status === 500) return 'ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง';
+  if (jsonMsg) {
+    const msg = String(jsonMsg || '');
+    const map = {
+      NO_URGENT_OFFER_TARGETS: 'ไม่พบช่างที่เปิดรับงานและอยู่ในพื้นที่นี้',
+      NO_SERVICE_ZONE_FOR_URGENT_OFFER: 'ยังไม่พบพื้นที่บริการ กรุณาระบุย่าน/เขตให้ชัดเจน',
+    };
+    if (map[msg]) return map[msg];
+    if (/column .* does not exist|relation .* does not exist/i.test(msg)) return 'ระบบยังอัปเดตฐานข้อมูลไม่สมบูรณ์ กรุณาแจ้งผู้ดูแล';
+    if (/referenceerror|undefined|null|nan/i.test(msg)) return 'ระบบขัดข้องชั่วคราว กรุณาแจ้งผู้ดูแล';
+    return msg;
+  }
+  if (lower.includes('undefined') || lower.includes('null') || lower.includes('nan')) return 'ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง';
+  return 'ทำรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
+}
+
 // Normalize role strings from DB/legacy UI to stable internal values
 // (fixes login bounce when DB has "Super Admin"/"super admin" etc.)
 function normalizeRole(role){
@@ -118,13 +142,16 @@ async function apiFetch(url, options = {}) {
   }));
   const ct = (res.headers.get("content-type") || "").toLowerCase();
   let data = null;
+  let rawText = "";
   if (ct.includes("application/json")) {
-    data = await res.json().catch(() => null);
+    rawText = await res.text().catch(() => "");
+    try { data = rawText ? JSON.parse(rawText) : null; } catch { data = null; }
   } else {
-    data = await res.text().catch(() => null);
+    rawText = await res.text().catch(() => "");
+    data = rawText;
   }
   if (!res.ok) {
-    const msg = (data && data.error) ? data.error : (typeof data === "string" ? data : "Request failed");
+    const msg = humanApiErrorMessage(res.status, rawText, (data && typeof data === "object") ? data : null);
     const err = new Error(msg);
     err.status = res.status;
     err.data = data;
