@@ -7,20 +7,18 @@ function fmtBytes(n){
   return `${(x / 1024 / 1024).toLocaleString('th-TH', { maximumFractionDigits: 1 })} MB`;
 }
 
-function humanApiError(status, raw, data){
-  const text = String(raw || '');
-  if (status === 502 || status === 503 || status === 504 || /<!doctype|<html|cloudflare|cf-error|cf-footer|bad gateway/i.test(text)) {
-    return 'เซิร์ฟเวอร์ไม่พร้อมใช้งานชั่วคราว กรุณารอสักครู่แล้วลองใหม่';
-  }
-  if (status === 500) return 'ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง';
-  return data?.error || data?.message || 'ทำรายการไม่สำเร็จ';
-}
 async function api(url, opts){
   const r = await fetch(url, Object.assign({ credentials:'same-origin' }, opts || {}));
-  const raw = await r.text().catch(()=>'');
+  const raw = await r.text().catch(()=> '');
   let d = {};
   try { d = raw ? JSON.parse(raw) : {}; } catch { d = {}; }
-  if (!r.ok) throw new Error(humanApiError(r.status, raw, d));
+  if (!r.ok) {
+    let msg = d.error_th || d.message || d.error || 'ทำรายการไม่สำเร็จ';
+    if (r.status === 502 || r.status === 503 || r.status === 504 || /<!doctype|<html|cloudflare|cf-error|cf-footer|bad gateway/i.test(raw)) {
+      msg = 'เซิร์ฟเวอร์ไม่พร้อมใช้งานชั่วคราว กรุณารอสักครู่แล้วลองใหม่';
+    }
+    throw new Error(msg);
+  }
   return d;
 }
 

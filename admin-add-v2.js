@@ -552,6 +552,18 @@ function updateAssignUIVisibility(){
   if (timeProposalWrap) timeProposalWrap.style.display = (uiMode === 'urgent') ? 'flex' : 'none';
   if (uiMode !== 'urgent' && el('allow_time_proposal')) el('allow_time_proposal').checked = false;
 
+  if(uiMode === 'urgent') {
+    if(teamWrap) teamWrap.style.display = 'none';
+    if(hint) hint.style.display = 'none';
+    if(lbl) lbl.textContent = 'งานด่วน';
+    if(techSel) { techSel.value = ''; techSel.disabled = true; }
+    if(el('technician_username')) el('technician_username').value = '';
+    if(el('team_members_csv')) el('team_members_csv').value = '';
+    state.teamPicker.selected = new Set();
+    state.teamPicker.primary = '';
+    return;
+  }
+
   if(mode === 'team'){
     if(teamWrap) teamWrap.style.display = 'block';
     if(hint) hint.style.display = 'none';

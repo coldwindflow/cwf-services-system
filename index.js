@@ -376,72 +376,6 @@ async function cloudinaryUploadBuffer({ buffer, mimetype, folder, publicId, tran
   return json; // {secure_url, public_id, bytes, width, height, ...}
 }
 
-async function cloudinaryDestroyPublicId(publicId, resourceType = 'image') {
-  const id = String(publicId || '').trim();
-  if (!id || !CLOUDINARY_ENABLED) return { ok: false, skipped: true };
-  const ts = Math.floor(Date.now() / 1000);
-  const safeResourceType = resourceType === 'raw' ? 'raw' : 'image';
-  const params = { public_id: id, timestamp: ts };
-  const signature = cloudinarySignParams(params);
-  const body = new URLSearchParams({
-    public_id: id,
-    timestamp: String(ts),
-    api_key: CLOUDINARY_API_KEY,
-    signature,
-  });
-  const url = `https://api.cloudinary.com/v1_1/${encodeURIComponent(CLOUDINARY_CLOUD_NAME)}/${safeResourceType}/destroy`;
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    body,
-  });
-  const json = await resp.json().catch(() => ({}));
-  if (!resp.ok) {
-    const err = new Error(json?.error?.message || `Cloudinary destroy failed (${resp.status})`);
-    err._cloudinary = json;
-    throw err;
-  }
-  return { ok: true, result: json?.result || null };
-}
-
-function isSafeLocalUploadPath(storagePath) {
-  const raw = String(storagePath || '').trim();
-  if (!raw) return false;
-  try {
-    const abs = path.resolve(raw.startsWith('/uploads/') ? path.join(UPLOAD_DIR, raw.replace(/^\/uploads\/?/, '')) : raw);
-    const base = path.resolve(UPLOAD_DIR);
-    return abs === base || abs.startsWith(base + path.sep);
-  } catch (_) {
-    return false;
-  }
-}
-
-async function deleteJobEvidenceFileBestEffort(photoRow) {
-  const row = photoRow || {};
-  const publicId = String(row.cloud_public_id || '').trim();
-  if (publicId) {
-    try {
-      await cloudinaryDestroyPublicId(publicId);
-      return { deleted: true, storage: 'cloudinary' };
-    } catch (e) {
-      console.warn('[media-retention] cloudinary destroy failed', { photo_id: row.photo_id, public_id: publicId, error: e.message });
-      return { deleted: false, storage: 'cloudinary', error: e.message };
-    }
-  }
-  const storagePath = String(row.storage_path || '').trim();
-  if (storagePath && isSafeLocalUploadPath(storagePath)) {
-    try {
-      const abs = path.resolve(storagePath.startsWith('/uploads/') ? path.join(UPLOAD_DIR, storagePath.replace(/^\/uploads\/?/, '')) : storagePath);
-      if (fs.existsSync(abs)) fs.unlinkSync(abs);
-      return { deleted: true, storage: 'local' };
-    } catch (e) {
-      console.warn('[media-retention] local delete failed', { photo_id: row.photo_id, storage_path: storagePath, error: e.message });
-      return { deleted: false, storage: 'local', error: e.message };
-    }
-  }
-  return { deleted: false, skipped: true };
-}
-
 
 // ==============================
 // 🧭 GPS/Maps Resolver (safe)
@@ -13227,6 +13161,101 @@ app.put("/jobs/:job_id/assign", async (req, res) => {
   }
 });
 
+
+async function buildUrgentOfferCandidatesForJob(job, techType='partner', db=pool) {
+  const ttype = String(techType || 'partner').trim().toLowerCase();
+  const detected = await detectServiceZoneFromText({
+    address_text: job.address_text,
+    job_zone: job.job_zone,
+    service_zone_code: job.service_zone_code,
+    maps_url: job.maps_url,
+  });
+  const zoneCode = detected?.service_zone_code || job.service_zone_code || null;
+  if (ENABLE_SERVICE_ZONE_FILTER && !zoneCode) {
+    const err = new Error('ยังไม่พบพื้นที่บริการ กรุณาระบุย่าน/เขตให้ชัดเจนก่อนยิงข้อเสนอใหม่');
+    err.statusCode = 409;
+    err.code = 'NO_SERVICE_ZONE_FOR_URGENT_OFFER';
+    throw err;
+  }
+  const partners = await db.query(
+    `SELECT u.username, p.home_service_zone_code, p.secondary_service_zone_code, COALESCE(p.allow_out_of_zone,FALSE) AS allow_out_of_zone
+       FROM public.users u
+       LEFT JOIN public.technician_profiles p ON p.username=u.username
+      WHERE u.role='technician'
+        AND COALESCE(p.accept_status,'ready') <> 'paused'
+        AND (
+              $1::text = 'all'
+           OR ($1::text = 'company' AND COALESCE(p.employment_type,'company') IN ('company','custom','special_only'))
+           OR ($1::text <> 'company' AND COALESCE(p.employment_type,'company') = $1::text)
+        )
+      ORDER BY u.username`,
+    [ttype]
+  );
+  let candidateRows = partners.rows || [];
+  if (ENABLE_SERVICE_ZONE_FILTER && zoneCode) {
+    const code = String(zoneCode).toUpperCase();
+    const primary = candidateRows.filter(r => String(r.home_service_zone_code || '').toUpperCase() === code);
+    const secondary = candidateRows.filter(r => String(r.home_service_zone_code || '').toUpperCase() !== code && String(r.secondary_service_zone_code || '').toUpperCase() === code);
+    candidateRows = [...primary, ...secondary];
+  }
+  const ranked = rankTechniciansForServiceZone(candidateRows, zoneCode).map(r => r.username).slice(0, 30);
+  const available = [];
+  for (const u of ranked) {
+    if (await isTechFree(u, job.appointment_datetime, Number(job.duration_min || 60), job.job_id)) available.push(u);
+  }
+  return { available, zoneCode, totalCandidates: candidateRows.length };
+}
+
+app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSoft, async (req, res) => {
+  const job_id = Number(req.params.job_id);
+  if (!Number.isInteger(job_id) || job_id <= 0) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
+  const techType = String(req.body?.tech_type || 'partner').trim().toLowerCase();
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const jobR = await client.query(
+      `SELECT job_id, job_type, booking_code, appointment_datetime, COALESCE(duration_min,60) AS duration_min,
+              address_text, maps_url, job_zone, service_zone_code, technician_username, technician_team
+         FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+      [job_id]
+    );
+    const job = jobR.rows[0];
+    if (!job) throw new Error('ไม่พบงานนี้');
+    if (job.technician_username || job.technician_team) throw new Error('งานนี้มีช่างรับไปแล้ว ไม่สามารถยิงข้อเสนอซ้ำได้');
+
+    await client.query(`UPDATE public.job_offers SET status='expired', responded_at=COALESCE(responded_at,NOW()) WHERE job_id=$1 AND status='pending'`, [job_id]);
+    const { available, zoneCode, totalCandidates } = await buildUrgentOfferCandidatesForJob(job, techType, client);
+    if (!available.length) {
+      const err = new Error('ไม่พบช่างที่เปิดรับงาน ว่างจริง และอยู่ในพื้นที่นี้');
+      err.statusCode = 409;
+      err.code = 'NO_URGENT_OFFER_TARGETS';
+      err.debug = { service_zone_code: zoneCode || null, candidate_count: totalCandidates };
+      throw err;
+    }
+    for (const u of available) {
+      await client.query(
+        `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
+         VALUES ($1,$2,'pending',NOW() + INTERVAL '10 minutes')`,
+        [job_id, u]
+      );
+    }
+    await client.query(
+      `UPDATE public.jobs SET booking_mode='urgent', dispatch_mode='offer', job_status='รอช่างยืนยัน', technician_username=NULL, technician_team=NULL WHERE job_id=$1`,
+      [job_id]
+    );
+    await client.query('COMMIT');
+    try { _notifyUrgentOffer({ usernames: available, job_id, booking_code: job.booking_code, job_type: job.job_type, appointment_datetime: job.appointment_datetime, job_zone: job.job_zone }).catch(()=>{}); } catch (_) {}
+    return res.json({ success:true, job_id, offers_count: available.length, message:`ส่งข้อเสนอใหม่ให้ช่าง ${available.length} คนแล้ว` });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    const status = Number(e.statusCode || e.status || 500);
+    console.error('POST /jobs/:job_id/rebroadcast_offer_v2 error:', e);
+    return res.status(status >= 400 && status < 600 ? status : 500).json({ error: e.message || 'ยิงข้อเสนอใหม่ไม่สำเร็จ', code: e.code || undefined, debug: e.debug || undefined });
+  } finally {
+    client.release();
+  }
+});
+
 // =======================================
 // 🚀 ADMIN DISPATCH V2 (สำหรับ Review Queue)
 // - ไม่กระทบ endpoint เดิม (/jobs/:job_id/assign)
@@ -13279,28 +13308,41 @@ app.post("/jobs/:job_id/dispatch_v2", requireAdminSoft, async (req, res) => {
       );
     }
 
-    // set คนหลัก + dispatch_mode
-    await client.query(
-      `UPDATE public.jobs
-       SET technician_username=$1::text,
-           technician_team=$1::text,
-           dispatch_mode=$2::text
-       WHERE job_id=$3`,
-      [technician_username, mode === 'offer' ? 'offer' : 'forced', job_id]
-    );
-
     let offer = null;
     if (mode === 'offer') {
-      const ready = await isTechReady(technician_username);
-      if (!ready) throw new Error('ช่างคนนี้กดหยุดรับงานอยู่');
-
-      const offerR = await client.query(
-        `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
-         VALUES ($1,$2,'pending', NOW() + INTERVAL '10 minutes')
-         RETURNING offer_id, expires_at`,
-        [job_id, technician_username]
+      // ส่งเป็นข้อเสนองานเท่านั้น: ห้าม assign ช่างก่อนกดรับจริง
+      await client.query(
+        `UPDATE public.jobs
+         SET technician_username=NULL,
+             technician_team=NULL,
+             dispatch_mode='offer',
+             booking_mode='urgent',
+             job_status='รอช่างยืนยัน'
+         WHERE job_id=$1`,
+        [job_id]
       );
-      offer = offerR.rows[0] || null;
+      for (const u of safeTeam) {
+        const ready = await isTechReady(u);
+        if (!ready) continue;
+        const offerR = await client.query(
+          `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
+           VALUES ($1,$2,'pending', NOW() + INTERVAL '10 minutes')
+           RETURNING offer_id, expires_at`,
+          [job_id, u]
+        );
+        if (!offer) offer = offerR.rows[0] || null;
+      }
+      if (!offer) throw new Error('ไม่มีช่างที่เปิดรับงานสำหรับส่งข้อเสนอ');
+    } else {
+      // forced = มอบหมายงานให้ช่างทันที
+      await client.query(
+        `UPDATE public.jobs
+         SET technician_username=$1::text,
+             technician_team=$1::text,
+             dispatch_mode='forced'
+         WHERE job_id=$2`,
+        [technician_username, job_id]
+      );
     }
 
     // ✅ status update: งานลูกค้าจอง (รอตรวจสอบ) เมื่อยิงแบบ forced => รอดำเนินการ
@@ -13318,8 +13360,8 @@ app.post("/jobs/:job_id/dispatch_v2", requireAdminSoft, async (req, res) => {
     }
 
 
-// ✅ sync job_assignments (team status per technician)
-try {
+// ✅ sync job_assignments เฉพาะ forced เท่านั้น; offer รอให้ช่างกดรับก่อน
+if (mode === 'forced') try {
   for (const u of safeTeam) {
     await client.query(
       `
@@ -19312,12 +19354,13 @@ app.get("/jobs/:job_id/units", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, req.params.job_id);
     if (!realId) return res.status(400).json({ error: "ไม่พบงานนี้" });
-    const jobR = await pool.query(`SELECT COALESCE(per_unit_evidence_enabled,FALSE) AS enabled FROM public.jobs WHERE job_id=$1 LIMIT 1`, [realId]);
-    const enabled = !!jobR.rows?.[0]?.enabled;
-    // Legacy jobs must not be silently converted just because a technician opens the page.
-    if (!enabled) return res.json({ success: true, per_unit_evidence_enabled: false, units: [] });
+    // เปิดระบบแยกเครื่องแบบปลอดภัยเมื่อช่าง/แอดมินเข้าหน้านี้
+    // เพื่อให้งานเก่าหรืองานที่สร้างก่อน migration เห็นการ์ดเครื่องทันที ไม่กลับไปลงรูปรวม
     const units = await getUnitsWithEvidence(realId, pool);
-    return res.json({ success: true, per_unit_evidence_enabled: true, units });
+    if (units.length) {
+      await pool.query(`UPDATE public.jobs SET per_unit_evidence_enabled=TRUE WHERE job_id=$1 AND COALESCE(per_unit_evidence_enabled,FALSE)=FALSE`, [realId]).catch(()=>{});
+    }
+    return res.json({ success: true, per_unit_evidence_enabled: units.length > 0, units });
   } catch (e) {
     console.error('GET /jobs/:job_id/units', e);
     return res.status(500).json({ error: "โหลดข้อมูลเครื่องไม่สำเร็จ" });
@@ -19407,34 +19450,11 @@ app.post('/admin/media-retention/purge', requireAdminSession, async (req, res) =
   for (const id of ids) {
     const jobR = await pool.query(`SELECT j.*, (SELECT string_agg(COALESCE(ji.item_name,''), ' ') FROM public.job_items ji WHERE ji.job_id=j.job_id) AS service_items_text FROM public.jobs j WHERE j.job_id=$1`, [id]);
     const el = mediaPurgeEligibility(jobR.rows[0]);
-    const photosR = await pool.query(
-      `SELECT photo_id, phase, photo_category, public_url, storage_path, cloud_public_id, COALESCE(file_size_bytes,file_size,0)::bigint AS bytes
-         FROM public.job_photos
-        WHERE job_id=$1 AND deleted_at IS NULL`,
-      [id]
-    );
+    const photosR = await pool.query(`SELECT photo_id, phase, photo_category, COALESCE(file_size_bytes,file_size,0)::bigint AS bytes FROM public.job_photos WHERE job_id=$1 AND deleted_at IS NULL`, [id]);
     const evidence = (photosR.rows || []).filter(isEvidencePhotoRow);
     const slips = (photosR.rows || []).filter(p => normalizePhotoCategory(p.phase, p.photo_category) === 'payment_slip' || String(p.phase||'').toLowerCase().includes('slip'));
-    const checklistCountR = await pool.query(`SELECT COUNT(*)::int AS n FROM public.job_unit_checklists WHERE job_id=$1`, [id]);
-    const unitCountR = await pool.query(`SELECT COUNT(*)::int AS n FROM public.job_units WHERE job_id=$1`, [id]);
-    const summary = {
-      eligible: !!el.eligible,
-      reason: el.reason,
-      photos_count: evidence.length,
-      checklist_count: Number(checklistCountR.rows?.[0]?.n || 0),
-      units_count: Number(unitCountR.rows?.[0]?.n || 0),
-      slips_count: slips.length,
-      bytes_estimated: evidence.reduce((sum,p)=>sum+Number(p.bytes||0),0),
-      files_deleted: 0,
-      files_delete_failed: 0,
-      slip_policy: 'รูปสลิปไม่ถูกลบอัตโนมัติ',
-    };
+    const summary = { eligible: !!el.eligible, reason: el.reason, photos_count:evidence.length, checklist_count:0, units_count:0, slips_count:slips.length, bytes_estimated:evidence.reduce((s,p)=>s+Number(p.bytes||0),0) };
     if (el.eligible && !dryRun && evidence.length) {
-      for (const photo of evidence) {
-        const del = await deleteJobEvidenceFileBestEffort(photo);
-        if (del.deleted) summary.files_deleted += 1;
-        else if (del.error) summary.files_delete_failed += 1;
-      }
       const photoIds = evidence.map(p => Number(p.photo_id)).filter(Boolean);
       await pool.query(`UPDATE public.job_photos SET deleted_at=NOW(), deleted_by=$2, public_url=NULL, storage_path=NULL, cloud_public_id=NULL WHERE job_id=$1 AND photo_id=ANY($3::bigint[])`, [id, actor, photoIds]);
       await pool.query(`UPDATE public.job_unit_checklists SET checklist_json='[]'::jsonb, updated_at=NOW() WHERE job_id=$1`, [id]);
@@ -19526,20 +19546,10 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
       await client.query("ROLLBACK");
       return;
     }
-    // ✅ Per-unit evidence validation: do not use an undeclared variable here.
-    // New jobs created after the unit-evidence patch set per_unit_evidence_enabled=TRUE.
-    // Old jobs remain backward compatible and keep the legacy job-level photo/checklist flow.
-    let perUnitEvidenceEnabled = false;
-    try {
-      const unitFlagR = await client.query(
-        `SELECT COALESCE(per_unit_evidence_enabled,FALSE) AS enabled FROM public.jobs WHERE job_id=$1 LIMIT 1`,
-        [realId]
-      );
-      perUnitEvidenceEnabled = !!unitFlagR.rows?.[0]?.enabled;
-    } catch (e) {
-      console.warn('[finalize] per-unit flag check failed (fail-open)', e.message);
-    }
-    if (status === "เสร็จแล้ว" && perUnitEvidenceEnabled) {
+    const perUnitEvidenceRequested = req.body?.per_unit_evidence === true || String(req.body?.per_unit_evidence || '').trim().toLowerCase() === 'true' || String(req.body?.per_unit_evidence || '').trim() === '1';
+    const perUnitFlagR = await client.query(`SELECT COALESCE(per_unit_evidence_enabled,FALSE) AS enabled FROM public.jobs WHERE job_id=$1 LIMIT 1`, [realId]);
+    const perUnitEnabled = perUnitEvidenceRequested || !!perUnitFlagR.rows?.[0]?.enabled;
+    if (status === "เสร็จแล้ว" && perUnitEnabled) {
       const unitMissing = await validatePerUnitCompletion(realId, client);
       if (unitMissing) {
         await client.query("ROLLBACK");

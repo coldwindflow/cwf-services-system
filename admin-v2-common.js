@@ -25,30 +25,6 @@ function getToken() {
   );
 }
 
-
-function humanApiErrorMessage(status, rawBody, jsonData){
-  const raw = String(rawBody || '');
-  const lower = raw.toLowerCase();
-  const jsonMsg = jsonData && (jsonData.error_th || jsonData.message || jsonData.error);
-  if (status === 502 || status === 503 || status === 504 || /<!doctype|<html|cloudflare|cf-error|cf-footer|bad gateway/i.test(raw)) {
-    return 'เซิร์ฟเวอร์ไม่พร้อมใช้งานชั่วคราว กรุณารอสักครู่แล้วลองใหม่';
-  }
-  if (status === 500) return 'ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง';
-  if (jsonMsg) {
-    const msg = String(jsonMsg || '');
-    const map = {
-      NO_URGENT_OFFER_TARGETS: 'ไม่พบช่างที่เปิดรับงานและอยู่ในพื้นที่นี้',
-      NO_SERVICE_ZONE_FOR_URGENT_OFFER: 'ยังไม่พบพื้นที่บริการ กรุณาระบุย่าน/เขตให้ชัดเจน',
-    };
-    if (map[msg]) return map[msg];
-    if (/column .* does not exist|relation .* does not exist/i.test(msg)) return 'ระบบยังอัปเดตฐานข้อมูลไม่สมบูรณ์ กรุณาแจ้งผู้ดูแล';
-    if (/referenceerror|undefined|null|nan/i.test(msg)) return 'ระบบขัดข้องชั่วคราว กรุณาแจ้งผู้ดูแล';
-    return msg;
-  }
-  if (lower.includes('undefined') || lower.includes('null') || lower.includes('nan')) return 'ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง';
-  return 'ทำรายการไม่สำเร็จ กรุณาลองใหม่อีกครั้ง';
-}
-
 // Normalize role strings from DB/legacy UI to stable internal values
 // (fixes login bounce when DB has "Super Admin"/"super admin" etc.)
 function normalizeRole(role){
@@ -142,16 +118,24 @@ async function apiFetch(url, options = {}) {
   }));
   const ct = (res.headers.get("content-type") || "").toLowerCase();
   let data = null;
-  let rawText = "";
   if (ct.includes("application/json")) {
-    rawText = await res.text().catch(() => "");
-    try { data = rawText ? JSON.parse(rawText) : null; } catch { data = null; }
+    data = await res.json().catch(() => null);
   } else {
-    rawText = await res.text().catch(() => "");
-    data = rawText;
+    data = await res.text().catch(() => null);
   }
   if (!res.ok) {
-    const msg = humanApiErrorMessage(res.status, rawText, (data && typeof data === "object") ? data : null);
+    const raw = typeof data === "string" ? data : "";
+    const apiMsg = data && typeof data === "object" ? (data.error_th || data.message || data.error || data.code) : "";
+    let msg = apiMsg || raw || "ระบบขัดข้องชั่วคราว กรุณาลองใหม่อีกครั้ง";
+    if (res.status === 502 || res.status === 503 || res.status === 504 || /<!doctype|<html|cloudflare|cf-error|cf-footer|bad gateway/i.test(raw)) {
+      msg = "เซิร์ฟเวอร์ไม่พร้อมใช้งานชั่วคราว กรุณารอสักครู่แล้วลองใหม่";
+    } else if (/NO_URGENT_OFFER_TARGETS/i.test(String(msg))) {
+      msg = "ไม่พบช่างที่เปิดรับงานและอยู่ในพื้นที่นี้";
+    } else if (/NO_SERVICE_ZONE_FOR_URGENT_OFFER/i.test(String(msg))) {
+      msg = "ยังไม่พบพื้นที่บริการ กรุณาระบุย่าน/เขตให้ชัดเจน";
+    } else if (/undefined|null|NaN|ReferenceError|column .* does not exist|relation .* does not exist/i.test(String(msg))) {
+      msg = "ระบบขัดข้องชั่วคราว กรุณาแจ้งผู้ดูแลระบบ";
+    }
     const err = new Error(msg);
     err.status = res.status;
     err.data = data;
@@ -473,7 +457,7 @@ function injectAdminMenu(){
             <div class="cwf-link" data-href="/admin-technicians-v2.html">🧰 จัดการช่าง <small>ID/อนุมัติ</small></div>
             <div class="cwf-link" data-href="/admin-partner-onboarding.html">🤝 Partner Onboarding <small>สมัคร/เอกสาร</small></div>
             <div class="cwf-link" data-href="/admin-team-status.html">🧬 Team Status <small>Base Status</small></div>
-            <div class="cwf-link" data-href="/admin-media-retention-v2.html">ตัวจัดการรูปและพื้นที่จัดเก็บ <small>ล้างข้อมูลหนัก</small></div>
+            <div class="cwf-link" data-href="/admin-media-retention-v2.html">🖼️ ตัวจัดการรูปและพื้นที่จัดเก็บ <small>ล้างข้อมูลหนัก</small></div>
             <div class="cwf-link" id="cwfSuperAdminLink" data-href="/admin-super-v2.html" style="display:none">🛡️ Super Admin <small>จัดการทั้งหมด</small></div>
           </div>
         </div>

@@ -524,6 +524,23 @@ async function dispatchJob(){
   }
 }
 
+
+async function rebroadcastOffer(){
+  if (!CURRENT) return;
+  if (!confirm("ยืนยันยิงข้อเสนอใหม่ให้ช่างที่เปิดรับงาน ว่างจริง และอยู่ในพื้นที่นี้?")) return;
+  try{
+    await saveJob();
+    const tech_type = $("mTechType")?.value || "partner";
+    const out = await apiFetch(`/jobs/${CURRENT.job_id}/rebroadcast_offer_v2`, { method:"POST", body: JSON.stringify({ tech_type }) });
+    showToast(out.message || `ส่งข้อเสนอใหม่แล้ว ${Number(out.offers_count||0)} คน`, "success");
+    closeModal();
+    await loadQueue();
+  }catch(e){
+    console.error(e);
+    showToast(e.message || "ยิงข้อเสนอใหม่ไม่สำเร็จ", "error");
+  }
+}
+
 async function cancelJob(){
   if (!CURRENT) return;
   if (!confirm("ยืนยันยกเลิกงานนี้?")) return;
@@ -559,6 +576,7 @@ async function cancelJob(){
   $("btnSave").addEventListener("click", saveJob);
   $("btnDispatch").addEventListener("click", dispatchJob);
   $("btnCancel").addEventListener("click", cancelJob);
+  if ($("btnRebroadcast")) $("btnRebroadcast").addEventListener("click", rebroadcastOffer);
   $("btnLoadPricing").addEventListener("click", loadPricing);
 
   $("mTechType").addEventListener("change", renderTechPickers);
