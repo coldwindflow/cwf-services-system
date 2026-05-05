@@ -10630,6 +10630,7 @@ async function ensureSchema() {
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS booking_code TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS booking_mode TEXT DEFAULT 'scheduled'`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS admin_override_duration_min INT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS allow_time_proposal BOOLEAN DEFAULT FALSE`);
 
 
 // 2.0) jobs: admin attribution (dashboard/commission) - backward compatible
@@ -11759,6 +11760,24 @@ await pool.query(`
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_offers_tech_status ON public.job_offers(technician_username, status)`);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_offers_job_id ON public.job_offers(job_id)`);
+await pool.query(`
+  CREATE TABLE IF NOT EXISTS public.job_offer_time_proposals (
+    proposal_id BIGSERIAL PRIMARY KEY,
+    offer_id BIGINT NOT NULL REFERENCES public.job_offers(offer_id) ON DELETE CASCADE,
+    job_id BIGINT NOT NULL REFERENCES public.jobs(job_id) ON DELETE CASCADE,
+    technician_username TEXT NOT NULL,
+    proposed_datetime TIMESTAMPTZ NOT NULL,
+    note TEXT,
+    status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','expired','superseded')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    decided_at TIMESTAMPTZ,
+    decided_by TEXT,
+    admin_note TEXT
+  )
+`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_offer_time_proposals_job_status ON public.job_offer_time_proposals(job_id, status)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_offer_time_proposals_tech_status ON public.job_offer_time_proposals(technician_username, status)`);
+await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_offer_time_proposals_offer ON public.job_offer_time_proposals(offer_id)`);
 
 
 // 3.4) ✅ รูปภาพหน้างาน (job_photos)
@@ -12768,6 +12787,7 @@ app.post("/jobs", async (req, res) => {
     items,
     promotion_id,
     dispatch_mode,
+    allow_time_proposal,
   } = req.body || {};
 
   // ✅ FIX TIMEZONE: ถ้ามีการส่งวันนัดมา ให้ normalize เป็นเวลาไทยก่อนบันทึก
@@ -13394,6 +13414,11 @@ async function handleAdminBookV2(req, res) {
   const bm = isUrgentOffer ? "urgent" : rawBm;
   const ttype = (tech_type || (bm === "urgent" ? "partner" : "company")).toString().trim().toLowerCase();
   const mode = isUrgentOffer ? "offer" : rawMode;
+  const allowTimeProposal = isUrgentOffer && (
+    allow_time_proposal === true ||
+    String(allow_time_proposal || "").trim().toLowerCase() === "true" ||
+    String(allow_time_proposal || "").trim() === "1"
+  );
   const zoneDetected = await detectServiceZoneFromText({ address_text, job_zone, service_zone_code, maps_url });
   const detectedZoneCode = zoneDetected?.service_zone_code || null;
   const detectedZoneLabel = zoneDetected?.service_zone_label || null;
@@ -13642,8 +13667,8 @@ if (coerceNumber(override_price, 0) > 0) {
        address_text, technician_team, technician_username, job_status,
        booking_token, job_source, dispatch_mode, customer_note,
        maps_url, job_zone, duration_min, booking_mode, admin_override_duration_min,
-       gps_latitude, gps_longitude, service_zone_code, service_zone_source)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,'admin',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+       gps_latitude, gps_longitude, service_zone_code, service_zone_source, allow_time_proposal)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,'admin',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
       RETURNING job_id
       `,
       [
@@ -13667,6 +13692,7 @@ if (coerceNumber(override_price, 0) > 0) {
         final_lng,
         detectedZoneCode,
         detectedZoneSource,
+        allowTimeProposal,
       ]
     );
 
@@ -13873,6 +13899,7 @@ if (coerceNumber(override_price, 0) > 0) {
       zone_fallback_used,
       forced_assignment_zone_warning,
       offers_count: urgentPushTargets.length,
+      allow_time_proposal: allowTimeProposal,
     });
   } catch (e) {
     await client.query("ROLLBACK");
@@ -14252,7 +14279,7 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
     const q = String(req.query.q || '').trim();
 
     // support: status=all (ดูทั้งหมดที่ควร review)
-    const allow = ['รอตรวจสอบ', 'pending_review', 'ตีกลับ', 'ไม่พบช่างรับงาน'];
+    const allow = ['รอตรวจสอบ', 'pending_review', 'ตีกลับ', 'ไม่พบช่างรับงาน', 'รอพิจารณาเวลาใหม่'];
     const wantAll = status.toLowerCase() === 'all';
 
     const params = [];
@@ -14261,7 +14288,7 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
 
     // default: scheduled bookings ที่ยังไม่ยกเลิก
     where.push(`canceled_at IS NULL`);
-    where.push(`COALESCE(booking_mode,'scheduled') IN ('scheduled','')`);
+    where.push(`COALESCE(booking_mode,'scheduled') IN ('scheduled','','urgent')`);
 
     if (!wantAll) {
       if (!allow.includes(status)) return res.status(400).json({ error: 'status ไม่ถูกต้อง' });
@@ -14300,6 +14327,162 @@ app.get("/admin/review_queue_v2", requireAdminSoft, async (req, res) => {
   } catch (e) {
     console.error('/admin/review_queue_v2 error:', e);
     return res.status(500).json({ error: 'โหลดคิวงานรอตรวจสอบไม่สำเร็จ' });
+  }
+});
+
+app.get("/admin/jobs/:job_id/time-proposals", requireAdminSoft, async (req, res) => {
+  const jobId = Number(req.params.job_id);
+  if (!Number.isInteger(jobId) || jobId <= 0) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+  try {
+    const r = await pool.query(
+      `SELECT p.proposal_id, p.offer_id, p.job_id, p.technician_username,
+              COALESCE(tp.full_name, u.full_name, p.technician_username) AS technician_name,
+              p.proposed_datetime, p.note, p.status, p.created_at, p.decided_at, p.decided_by, p.admin_note
+       FROM public.job_offer_time_proposals p
+       LEFT JOIN public.technician_profiles tp ON tp.username=p.technician_username
+       LEFT JOIN public.users u ON u.username=p.technician_username
+       WHERE p.job_id=$1
+       ORDER BY p.proposed_datetime ASC, p.created_at ASC`,
+      [jobId]
+    );
+    return res.json({ success: true, rows: r.rows || [] });
+  } catch (e) {
+    console.error("GET /admin/jobs/:job_id/time-proposals error:", e);
+    return res.status(500).json({ error: "โหลดเวลาใหม่ที่ช่างเสนอไม่สำเร็จ" });
+  }
+});
+
+app.post("/admin/time-proposals/:proposal_id/approve", requireAdminSoft, async (req, res) => {
+  const proposalId = Number(req.params.proposal_id);
+  const admin = _authUsername(req) || req.session?.username || "admin";
+  if (!Number.isInteger(proposalId) || proposalId <= 0) return res.status(400).json({ error: "proposal_id ไม่ถูกต้อง" });
+
+  const client = await pool.connect();
+  let approved = null;
+  try {
+    await client.query("BEGIN");
+    const pr = await client.query(
+      `SELECT *
+       FROM public.job_offer_time_proposals
+       WHERE proposal_id=$1
+       FOR UPDATE`,
+      [proposalId]
+    );
+    const proposal = pr.rows[0];
+    if (!proposal) throw new Error("ไม่พบเวลาที่ช่างเสนอ");
+    if (proposal.status !== "pending") throw new Error("รายการนี้ถูกพิจารณาแล้ว");
+
+    const jr = await client.query(
+      `SELECT job_id, job_type, booking_code, appointment_datetime, COALESCE(duration_min,60) AS duration_min,
+              technician_username, technician_team, job_zone
+       FROM public.jobs
+       WHERE job_id=$1
+       FOR UPDATE`,
+      [proposal.job_id]
+    );
+    const job = jr.rows[0];
+    if (!job) throw new Error("ไม่พบงาน");
+    if (job.technician_username || job.technician_team) throw new Error("งานนี้มีช่างรับไปแล้ว");
+
+    const free = await isTechFree(proposal.technician_username, proposal.proposed_datetime, job.duration_min, proposal.job_id);
+    if (!free) throw new Error("เวลานี้ชนกับคิวอื่นของช่างแล้ว กรุณาเลือกข้อเสนออื่น");
+
+    await client.query(
+      `UPDATE public.jobs
+       SET appointment_datetime=$1,
+           technician_username=$2,
+           technician_team=$2,
+           job_status='รอดำเนินการ'
+       WHERE job_id=$3`,
+      [proposal.proposed_datetime, proposal.technician_username, proposal.job_id]
+    );
+    await client.query(
+      `UPDATE public.job_offer_time_proposals
+       SET status='approved', decided_at=NOW(), decided_by=$2
+       WHERE proposal_id=$1`,
+      [proposalId, admin]
+    );
+    await client.query(
+      `UPDATE public.job_offer_time_proposals
+       SET status='superseded', decided_at=NOW(), decided_by=$2
+       WHERE job_id=$1 AND status='pending' AND proposal_id<>$3`,
+      [proposal.job_id, admin, proposalId]
+    );
+    await client.query(
+      `UPDATE public.job_offers
+       SET status='expired'
+       WHERE job_id=$1 AND status='pending'`,
+      [proposal.job_id]
+    );
+    await client.query(
+      `INSERT INTO public.job_team_members (job_id, username)
+       VALUES ($1,$2)
+       ON CONFLICT (job_id, username) DO NOTHING`,
+      [proposal.job_id, proposal.technician_username]
+    );
+
+    await client.query("COMMIT");
+    approved = { ...job, appointment_datetime: proposal.proposed_datetime, technician_username: proposal.technician_username };
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("POST /admin/time-proposals/:proposal_id/approve error:", e);
+    return res.status(400).json({ error: e.message || "อนุมัติเวลาใหม่ไม่สำเร็จ" });
+  } finally {
+    client.release();
+  }
+
+  try {
+    for (let i = 0; i < 3; i++) {
+      await _notifyDirectJobAssigned({
+        usernames: [approved.technician_username],
+        job_id: approved.job_id,
+        booking_code: approved.booking_code,
+        job_type: approved.job_type,
+        appointment_datetime: approved.appointment_datetime,
+        job_zone: approved.job_zone,
+      });
+    }
+  } catch (_) {}
+
+  return res.json({ success: true, job_id: approved.job_id, message: "อนุมัติเวลาใหม่และมอบหมายงานให้ช่างแล้ว" });
+});
+
+app.post("/admin/time-proposals/:proposal_id/reject", requireAdminSoft, async (req, res) => {
+  const proposalId = Number(req.params.proposal_id);
+  const admin = _authUsername(req) || req.session?.username || "admin";
+  const adminNote = String(req.body?.admin_note || req.body?.adminNote || "").trim().slice(0, 1000);
+  if (!Number.isInteger(proposalId) || proposalId <= 0) return res.status(400).json({ error: "proposal_id ไม่ถูกต้อง" });
+  try {
+    const r = await pool.query(
+      `UPDATE public.job_offer_time_proposals
+       SET status='rejected', decided_at=NOW(), decided_by=$2, admin_note=$3
+       WHERE proposal_id=$1 AND status='pending'
+       RETURNING proposal_id, job_id`,
+      [proposalId, admin, adminNote || null]
+    );
+    if (!r.rows.length) return res.status(400).json({ error: "รายการนี้ถูกพิจารณาแล้วหรือไม่พบรายการ" });
+    await pool.query(
+      `UPDATE public.jobs j
+       SET job_status='ไม่พบช่างรับงาน',
+           technician_username=NULL,
+           technician_team=NULL
+       WHERE j.job_id=$1
+         AND j.technician_username IS NULL
+         AND j.technician_team IS NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM public.job_offers o
+           WHERE o.job_id=j.job_id AND o.status='pending' AND o.expires_at >= NOW()
+         )
+         AND NOT EXISTS (
+           SELECT 1 FROM public.job_offer_time_proposals p
+           WHERE p.job_id=j.job_id AND p.status='pending'
+         )`,
+      [r.rows[0].job_id]
+    );
+    return res.json({ success: true, message: "ปฏิเสธเวลาใหม่แล้ว", job_id: r.rows[0].job_id });
+  } catch (e) {
+    console.error("POST /admin/time-proposals/:proposal_id/reject error:", e);
+    return res.status(500).json({ error: "ปฏิเสธเวลาใหม่ไม่สำเร็จ" });
   }
 });
 
@@ -18010,11 +18193,20 @@ async function autoFinalizeUrgentJobs() {
     await pool.query(
       `
       UPDATE public.jobs j
-      SET job_status='ไม่พบช่างรับงาน'
+      SET job_status = CASE
+        WHEN EXISTS (
+          SELECT 1 FROM public.job_offer_time_proposals p
+          WHERE p.job_id=j.job_id AND p.status='pending'
+        ) THEN 'รอพิจารณาเวลาใหม่'
+        ELSE 'ไม่พบช่างรับงาน'
+      END,
+      technician_username=NULL,
+      technician_team=NULL
       WHERE COALESCE(j.booking_mode,'scheduled')='urgent'
         AND j.technician_team IS NULL
+        AND j.technician_username IS NULL
         AND j.canceled_at IS NULL
-        AND (j.job_status='รอช่างยืนยัน' OR j.job_status='pending_accept')
+        AND (j.job_status='รอช่างยืนยัน' OR j.job_status='pending_accept' OR j.job_status='รอพิจารณาเวลาใหม่')
         AND EXISTS (
           SELECT 1 FROM public.job_offers any_offer
           WHERE any_offer.job_id=j.job_id
@@ -18180,11 +18372,20 @@ app.get("/offers/tech/:username", async (req, res) => {
       `
       SELECT
         o.offer_id, o.job_id, o.status, o.offered_at, o.expires_at,
-        j.customer_name, j.customer_phone, j.job_type, j.appointment_datetime,
-        j.address_text, j.job_price, j.job_status, j.booking_code,
-        COALESCE(j.job_zone,'') AS job_zone
+        j.job_type, j.appointment_datetime,
+        j.address_text, j.maps_url, j.gps_latitude, j.gps_longitude,
+        j.job_price, j.job_status, j.booking_code, j.customer_note,
+        COALESCE(j.allow_time_proposal,FALSE) AS allow_time_proposal,
+        COALESCE(j.job_zone,'') AS job_zone,
+        COALESCE(sz.zone_label,'') AS job_zone_label,
+        COALESCE((
+          SELECT string_agg(CONCAT(COALESCE(ji.item_name,''), CASE WHEN COALESCE(ji.qty,0) > 1 THEN CONCAT(' x', ji.qty::text) ELSE '' END), ', ' ORDER BY ji.job_item_id)
+          FROM public.job_items ji
+          WHERE ji.job_id = j.job_id
+        ), '') AS service_items_text
       FROM public.job_offers o
       JOIN public.jobs j ON j.job_id = o.job_id
+      LEFT JOIN public.service_zones sz ON sz.zone_code = j.service_zone_code
       WHERE o.technician_username = ANY($1::text[])
         AND o.status='pending'
         AND o.expires_at >= NOW()
@@ -18261,6 +18462,12 @@ app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) 
       `UPDATE public.job_offers SET status='expired' WHERE job_id=$1 AND status='pending' AND offer_id<>$2`,
       [offer.job_id, offer_id]
     );
+    await client.query(
+      `UPDATE public.job_offer_time_proposals
+       SET status='superseded', decided_at=NOW()
+       WHERE job_id=$1 AND status='pending'`,
+      [offer.job_id]
+    );
 
     // ✅ FIX สำคัญ: ต้อง set technician_team ถึงจะไปอยู่ “งานปัจจุบัน”
     // ✅ set ทั้ง technician_username + technician_team เพื่อให้ทุกหน้ามองเห็นตรงกัน
@@ -18294,6 +18501,76 @@ app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) 
     await client.query("ROLLBACK");
     console.error(e);
     res.status(400).json({ error: e.message || "รับงานไม่สำเร็จ" });
+  } finally {
+    client.release();
+  }
+});
+
+app.post("/offers/:offer_id/time-proposal", requireTechnicianSession, async (req, res) => {
+  const offerId = Number(req.params.offer_id);
+  const username = _authUsername(req);
+  const proposedRaw = req.body?.proposed_datetime || req.body?.proposedDatetime || "";
+  const note = String(req.body?.note || "").trim().slice(0, 1000);
+  const proposedIso = normalizeAppointmentDatetime(proposedRaw);
+  const proposedDate = new Date(proposedIso);
+
+  if (!Number.isInteger(offerId) || offerId <= 0) return res.status(400).json({ error: "ข้อเสนองานไม่ถูกต้อง" });
+  if (!proposedRaw || Number.isNaN(proposedDate.getTime())) return res.status(400).json({ error: "กรุณาเลือกเวลาใหม่ให้ถูกต้อง" });
+  if (proposedDate.getTime() <= Date.now()) return res.status(400).json({ error: "เวลาใหม่ต้องเป็นเวลาในอนาคต" });
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    const offerR = await client.query(
+      `SELECT offer_id, job_id, technician_username, status, expires_at
+       FROM public.job_offers
+       WHERE offer_id=$1
+       FOR UPDATE`,
+      [offerId]
+    );
+    const offer = offerR.rows[0];
+    if (!offer) throw new Error("ไม่พบข้อเสนองานนี้");
+    if (offer.status !== "pending") throw new Error("ข้อเสนองานนี้ถูกตอบไปแล้ว");
+    if (new Date(offer.expires_at).getTime() < Date.now()) throw new Error("หมดเวลารับงานแล้ว");
+    if (!username || username !== offer.technician_username) throw new Error("บัญชีช่างไม่ตรงกับข้อเสนองาน");
+
+    const jobR = await client.query(
+      `SELECT job_id, appointment_datetime, COALESCE(duration_min,60) AS duration_min,
+              COALESCE(allow_time_proposal,FALSE) AS allow_time_proposal,
+              technician_username, technician_team
+       FROM public.jobs
+       WHERE job_id=$1
+       FOR UPDATE`,
+      [offer.job_id]
+    );
+    const job = jobR.rows[0];
+    if (!job) throw new Error("ไม่พบงานนี้");
+    if (!job.allow_time_proposal) throw new Error("งานนี้ยังไม่เปิดให้เสนอเวลาใหม่");
+    if (job.technician_username || job.technician_team) throw new Error("งานนี้มีช่างรับไปแล้ว");
+    if (new Date(job.appointment_datetime).getTime() === proposedDate.getTime()) throw new Error("กรุณาเลือกเวลาที่ต่างจากเวลานัดเดิม");
+
+    const free = await isTechFree(offer.technician_username, proposedIso, job.duration_min, offer.job_id);
+    if (!free) throw new Error("เวลาที่เสนอชนกับคิวอื่นของช่าง กรุณาเลือกเวลาอื่น");
+
+    const ins = await client.query(
+      `INSERT INTO public.job_offer_time_proposals
+         (offer_id, job_id, technician_username, proposed_datetime, note, status)
+       VALUES ($1,$2,$3,$4,$5,'pending')
+       RETURNING proposal_id`,
+      [offer.offer_id, offer.job_id, offer.technician_username, proposedIso, note || null]
+    );
+
+    await client.query("COMMIT");
+    return res.json({
+      success: true,
+      proposal_id: ins.rows[0]?.proposal_id,
+      message: "ส่งเวลาใหม่ให้แอดมินพิจารณาแล้ว งานยังไม่ถูกมอบหมายจนกว่าแอดมินและลูกค้าจะยืนยัน",
+    });
+  } catch (e) {
+    await client.query("ROLLBACK");
+    console.error("POST /offers/:offer_id/time-proposal error:", e);
+    return res.status(400).json({ error: e.message || "ส่งเวลาใหม่ไม่สำเร็จ" });
   } finally {
     client.release();
   }

@@ -99,6 +99,7 @@ function mapFilterStatus(v){
     pending: "รอตรวจสอบ",
     return: "ตีกลับ",
     noaccept: "ไม่พบช่างรับงาน",
+    timeproposal: "รอพิจารณาเวลาใหม่",
     all: "all",
   };
   return m[v] || "รอตรวจสอบ";
@@ -127,6 +128,12 @@ async function loadQueue(){
     $("list").innerHTML = rows.map(r=>{
       const badge = `<span class="pill">${safe(r.job_status||"")}</span>`;
       const urgent = (String(r.booking_mode||"").toLowerCase()==="urgent") ? '<span class="pill" style="background:#fee2e2">ด่วน</span>' : '';
+      const proposalPanel = safe(r.job_status) === "รอพิจารณาเวลาใหม่"
+        ? `<div class="proposal-panel" id="proposal-panel-${Number(r.job_id)}">
+             <div class="proposal-warning">มีช่างเสนอเวลาใหม่ กรุณาสอบถามลูกค้าและกดยอมรับเวลาที่เหมาะสม</div>
+             <div class="muted">กำลังโหลดเวลาที่เสนอ...</div>
+           </div>`
+        : "";
       return `
         <div class="card">
           <div class="row">
@@ -142,12 +149,68 @@ async function loadQueue(){
           <div class="muted" style="margin-top:8px;">📅 ${thDateTime(r.appointment_datetime)} • 🧾 ${safe(r.job_type||"-")}</div>
           <div class="muted" style="margin-top:4px;">📍 ${safe(r.job_zone||"")} ${safe(r.address_text||"")}</div>
           <div class="muted" style="margin-top:4px;">⏱️ ${Number(r.duration_min||0)} นาที</div>
+          ${proposalPanel}
         </div>
       `;
     }).join("");
+    loadProposalPanels(rows);
   }catch(e){
     console.error(e);
     $("list").innerHTML = `<div class="card"><div class="muted">โหลดไม่สำเร็จ: ${safe(e.message||e)}</div></div>`;
+  }
+}
+
+async function loadProposalPanels(rows){
+  const targets = (rows || []).filter(r => safe(r.job_status) === "รอพิจารณาเวลาใหม่");
+  for (const r of targets) {
+    const box = $(`proposal-panel-${Number(r.job_id)}`);
+    if (!box) continue;
+    try {
+      const data = await apiFetch(`/admin/jobs/${Number(r.job_id)}/time-proposals`);
+      const proposals = (Array.isArray(data.rows) ? data.rows : []).filter(p => safe(p.status) === "pending");
+      if (!proposals.length) {
+        box.innerHTML = `<div class="proposal-warning">มีช่างเสนอเวลาใหม่ กรุณาสอบถามลูกค้าและกดยอมรับเวลาที่เหมาะสม</div><div class="muted">ยังไม่มีข้อเสนอที่รอพิจารณา</div>`;
+        continue;
+      }
+      box.innerHTML = `
+        <div class="proposal-warning">มีช่างเสนอเวลาใหม่ กรุณาสอบถามลูกค้าและกดยอมรับเวลาที่เหมาะสม</div>
+        ${proposals.map(p => `
+          <div class="proposal-item">
+            <b>${safe(p.technician_name || p.technician_username || "-")}</b>
+            <div class="muted">เวลาใหม่: ${thDateTime(p.proposed_datetime)}</div>
+            ${safe(p.note) ? `<div class="muted">หมายเหตุช่าง: ${safe(p.note)}</div>` : ""}
+            <div class="proposal-actions">
+              <button class="btn btn-primary" type="button" onclick="approveTimeProposal(${Number(p.proposal_id)})">ยอมรับเวลานี้</button>
+              <button class="btn btn-danger" type="button" onclick="rejectTimeProposal(${Number(p.proposal_id)})">ปฏิเสธ</button>
+            </div>
+          </div>
+        `).join("")}
+      `;
+    } catch (e) {
+      box.innerHTML = `<div class="proposal-warning">มีช่างเสนอเวลาใหม่ กรุณาสอบถามลูกค้าและกดยอมรับเวลาที่เหมาะสม</div><div class="muted">โหลดข้อเสนอไม่สำเร็จ: ${safe(e.message || e)}</div>`;
+    }
+  }
+}
+
+async function approveTimeProposal(proposalId){
+  if (!confirm("ยืนยันอนุมัติเวลาใหม่นี้และมอบหมายงานให้ช่าง?")) return;
+  try {
+    const r = await apiFetch(`/admin/time-proposals/${Number(proposalId)}/approve`, { method:"POST", body: JSON.stringify({}) });
+    showToast(r.message || "อนุมัติเวลาใหม่แล้ว", "success");
+    loadQueue();
+  } catch(e) {
+    showToast(e.message || "อนุมัติเวลาใหม่ไม่สำเร็จ", "error");
+  }
+}
+
+async function rejectTimeProposal(proposalId){
+  const admin_note = prompt("หมายเหตุถึงช่าง/ทีมงาน (ถ้ามี)") || "";
+  try {
+    const r = await apiFetch(`/admin/time-proposals/${Number(proposalId)}/reject`, { method:"POST", body: JSON.stringify({ admin_note }) });
+    showToast(r.message || "ปฏิเสธเวลาใหม่แล้ว", "success");
+    loadQueue();
+  } catch(e) {
+    showToast(e.message || "ปฏิเสธเวลาใหม่ไม่สำเร็จ", "error");
   }
 }
 
@@ -454,7 +517,7 @@ async function dispatchJob(){
     showToast("ยิงงานสำเร็จ","success");
     closeModal();
     await loadQueue();
-    if (out && out.offer && out.offer.offer_id) showToast("ส่งเป็นข้อเสนอแล้ว (offer)","info");
+    if (out && out.offer && out.offer.offer_id) showToast("ส่งเป็นข้อเสนองานแล้ว","info");
   }catch(e){
     console.error(e);
     showToast(e.message||"ยิงงานไม่สำเร็จ","error");

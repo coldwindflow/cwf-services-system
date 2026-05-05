@@ -376,16 +376,24 @@
           <select id="dispatch_mode_ui">
 
             <option value="assign">นัดงาน (แอดมินสั่งงาน)</option>
-            <option value="urgent">Urgent (ยิงด่วน/ข้อเสนอ)</option>
+            <option value="urgent">งานด่วน (ส่งข้อเสนอให้ช่าง)</option>
           </select>
-          <div class="muted2 mini" style="margin-top:6px" id="dispatch_ui_help">นัดงาน = แอดมินสั่งงานให้ช่างได้ทันที (ไม่สนเปิดรับงาน) แต่ <b>ห้ามชนคิว</b> • Urgent = ยิงข้อเสนอให้ช่างที่ว่างจริง+เปิดรับงาน</div>
+          <div class="muted2 mini" style="margin-top:6px" id="dispatch_ui_help">นัดงาน = แอดมินมอบหมายให้ช่างได้ทันที แต่ <b>ห้ามชนคิว</b> • งานด่วน = ส่งข้อเสนอให้ช่างที่ว่างจริงและเปิดรับงาน</div>
+
+          <label id="allow_time_proposal_wrap" class="pill" style="margin-top:10px;display:none;align-items:flex-start;gap:10px">
+            <input id="allow_time_proposal" type="checkbox" style="width:18px;height:18px;margin-top:2px">
+            <span>
+              <b style="display:block;color:#0b1b3a">อนุญาตให้ช่างเสนอเวลาใหม่ได้</b>
+              <span class="muted2 mini">ใช้เฉพาะงานด่วน เมื่อลูกค้าอาจรับเวลาอื่นได้</span>
+            </span>
+          </label>
 
           <div id="assign_mode_ui_wrap">
             <label style="margin-top:10px">รูปแบบมอบหมาย *</label>
             <select id="assign_mode_ui">
-              <option value="auto">auto (ระบบเลือก)</option>
-              <option value="single">single (เลือกช่างคนเดียว)</option>
-              <option value="team">team (เลือกทีม)</option>
+              <option value="auto">ระบบช่วยเลือก</option>
+              <option value="single">เลือกช่างคนเดียว</option>
+              <option value="team">เลือกทีมช่าง</option>
             </select>
             <div id="assign_mode_ui_help" class="muted2 mini" style="margin-top:6px">ทีม = เลือกช่างร่วมหลายคน (validation ยังห้ามชนคิวเหมือนเดิม)</div>
           </div>

@@ -547,7 +547,10 @@ function updateAssignUIVisibility(){
   const techSel = el('technician_username_select');
   const allowPick = !!state.slots_loaded;
   if(techSel) techSel.disabled = !allowPick || (mode === 'auto');
-  if(help) help.innerHTML = (uiMode==='urgent') ? 'Urgent: ยิงข้อเสนอไปช่างที่ว่างและเปิดรับงาน' : 'นัดงาน: แอดมินสั่งงานได้ทันที (ไม่สนเปิดรับงาน) แต่ห้ามชนคิว';
+  if(help) help.innerHTML = (uiMode==='urgent') ? 'งานด่วน: ส่งข้อเสนอให้ช่างที่ว่างและเปิดรับงาน' : 'นัดงาน: แอดมินมอบหมายงานได้ทันที แต่ห้ามชนคิว';
+  const timeProposalWrap = el('allow_time_proposal_wrap');
+  if (timeProposalWrap) timeProposalWrap.style.display = (uiMode === 'urgent') ? 'flex' : 'none';
+  if (uiMode !== 'urgent' && el('allow_time_proposal')) el('allow_time_proposal').checked = false;
 
   if(mode === 'team'){
     if(teamWrap) teamWrap.style.display = 'block';
@@ -1035,7 +1038,7 @@ function updateFlowUI(){
   try { updateWashAssignmentUI(); } catch(e){}
   if(help){
     help.textContent = (uiMode==='urgent')
-      ? 'Urgent: ยิงข้อเสนอให้ช่างที่เปิดรับงาน + ว่าง + อยู่ในโซนนี้เท่านั้น ใครกดรับก่อนจะได้งาน'
+      ? 'งานด่วน: ส่งข้อเสนอให้ช่างที่เปิดรับงาน ว่าง และอยู่ในพื้นที่นี้ ใครกดรับก่อนจะได้งาน'
       : 'นัดงาน: แอดมินสั่งงานได้ทันที (ไม่สนเปิดรับงาน) แต่ห้ามชนคิว';
   }
 }
@@ -2193,7 +2196,7 @@ function openSlotModal(slot){
         </div>
       </div>
       <div class="card-lite" style="padding:12px;border-radius:16px">
-        <b style="color:#0b1b3a">โหมดข้อเสนอ (offer)</b>
+        <b style="color:#0b1b3a">โหมดข้อเสนองาน</b>
         <div class="muted2 mini" style="margin-top:6px">
           ระบบจะยิงข้อเสนอไปให้ช่างที่ “ว่างและเปิดรับงาน” • ไม่ต้องเลือกช่างเอง
         </div>
@@ -2527,7 +2530,7 @@ async function submitBooking() {
   }
   if (uiMode === 'urgent') {
     const lv = (el('appointment_datetime')?.value || '').trim();
-    if(!lv){ showToast('Urgent: เลือกวัน/เวลาในช่อง “วันเวลา” ก่อน', 'error'); return; }
+    if(!lv){ showToast('งานด่วน: เลือกวัน/เวลาในช่อง “วันเวลา” ก่อน', 'error'); return; }
   }
 
   const payload = Object.assign({}, getPayloadV2(), {
@@ -2574,6 +2577,7 @@ async function submitBooking() {
       const mode = (el('assign_mode')?.value || 'auto').toString();
       return mode === 'team' ? getTeamMembersForPayload() : [];
     })(),
+    allow_time_proposal: uiMode === 'urgent' ? !!el('allow_time_proposal')?.checked : false,
     // wash split assignment (optional, lock mode only)
     split_assignments: (()=>{
       try {

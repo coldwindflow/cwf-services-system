@@ -40,6 +40,11 @@
     .slotbox{display:flex;flex-direction:column;gap:8px;margin-top:8px}
     .slot{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px;border-radius:14px;border:1px solid rgba(15,23,42,0.12);background:#fff}
     .slot small{color:#64748b;font-weight:700}
+    .proposal-panel{margin-top:10px;padding:10px;border-radius:14px;background:#fff7ed;border:1px solid rgba(245,158,11,.28)}
+    .proposal-warning{font-weight:900;color:#9a3412;margin-bottom:8px}
+    .proposal-item{padding:9px;border-radius:12px;background:#fff;border:1px solid rgba(15,23,42,.10);display:grid;gap:6px;margin-top:8px}
+    .proposal-actions{display:flex;gap:8px;flex-wrap:wrap}
+    .proposal-actions .btn{min-height:38px;padding:8px 10px}
   </style>
 </head>
 <body class="theme-2">
@@ -58,6 +63,7 @@
           <option value="pending">รอตรวจสอบ</option>
           <option value="return">ตีกลับ</option>
           <option value="noaccept">ไม่พบช่างรับงาน</option>
+          <option value="timeproposal">รอพิจารณาเวลาใหม่</option>
           <option value="all">ทั้งหมด</option>
         </select>
         <button class="btn btn-ghost" id="btnReload" type="button">🔄 โหลดใหม่</button>
@@ -118,14 +124,14 @@
             <b>👷 เลือกกลุ่มช่าง</b>
             <select id="mTechType">
               <option value="company">ช่างบริษัท (scheduled)</option>
-              <option value="partner">ช่างพาร์ทเนอร์ (urgent/offer)</option>
+              <option value="partner">ช่างพาร์ทเนอร์ (งานด่วน/ข้อเสนอ)</option>
             </select>
           </div>
           <div class="grid2" style="margin-top:10px">
             <select id="mPrimaryTech"></select>
             <select id="mDispatchMode">
-              <option value="forced">ยิงงานให้ช่าง (forced)</option>
-              <option value="offer">ส่งเป็นข้อเสนอ (offer)</option>
+              <option value="forced">มอบหมายงานให้ช่าง</option>
+              <option value="offer">ส่งเป็นข้อเสนองาน</option>
             </select>
           </div>
           <div class="muted" style="margin-top:8px">* ถ้าเลือกหลายคน ให้ติ๊ก “ช่างร่วม” ด้านล่าง ระบบจะเช็คชนคิวของทุกคน (รวม buffer)</div>

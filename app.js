@@ -1036,12 +1036,11 @@ function _offerIncomeNotifyText(offer) {
 }
 function _offerShortNotifyText(offer) {
   if (!offer) return 'มีข้อเสนองานใหม่';
-  const code = offer.booking_code || (offer.job_id ? `CWF${String(offer.job_id).padStart(7, '0')}` : '');
   let when = '';
   try {
     when = offer.appointment_datetime ? new Date(offer.appointment_datetime).toLocaleString('th-TH', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' }) : '';
   } catch (_) {}
-  return [code, offer.job_type, when].filter(Boolean).join(' • ') || 'มีข้อเสนองานใหม่';
+  return [offer.job_type, when].filter(Boolean).join(' • ') || 'มีข้อเสนองานใหม่';
 }
 const __techIncomeModalJobStore = new Map();
 const __techIncomeSummaryCache = new Map();
@@ -2153,6 +2152,118 @@ function loadOffers() {
     });
 }
 
+function offerHumanText(v) {
+  const s = String(v ?? "").trim();
+  if (!s || ["undefined", "null", "NaN"].includes(s)) return "-";
+  return s;
+}
+
+function offerAreaText(o) {
+  const zoneLabels = {
+    A: "กรุงเทพตะวันออกแกนหลัก",
+    B: "กรุงเทพเหนือ-ตะวันออก",
+    C: "กรุงเทพชั้นใน",
+    D: "ธนบุรีตอนใน",
+    E: "ฝั่งตะวันตกตอนล่าง",
+    F: "สมุทรปราการฝั่งตะวันออก",
+    G: "นนทบุรี",
+    H: "ปทุมธานี",
+  };
+  const candidates = [
+    o?.service_area,
+    o?.area_text,
+    o?.job_zone_label,
+    o?.address_area,
+    o?.job_zone,
+  ].map(offerHumanText).filter((v) => v && v !== "-");
+  const picked = candidates.find((v) => !/^zone\s*[a-z]$/i.test(v) && !/^[A-H]$/i.test(v)) || candidates[0] || "-";
+  if (/^[A-H]$/i.test(picked)) return zoneLabels[picked.toUpperCase()] || "-";
+  return picked.replace(/^Zone\s+/i, "โซน ");
+}
+
+function offerMapUrl(o) {
+  const maps = String(o?.maps_url || "").trim();
+  if (maps) return maps;
+  const lat = Number(o?.gps_latitude);
+  const lng = Number(o?.gps_longitude);
+  if (Number.isFinite(lat) && Number.isFinite(lng)) return `https://www.google.com/maps?q=${lat},${lng}`;
+  const address = String(o?.address_text || "").trim();
+  if (address) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+  return "";
+}
+
+function openOfferMap(btn) {
+  const url = btn?.dataset?.url || "";
+  if (!url) return;
+  window.open(url, "_blank", "noopener");
+}
+
+function openTimeProposalModal(offerId, originalIso) {
+  closeTimeProposalModal();
+  const originalText = (() => {
+    try { return new Date(originalIso).toLocaleString("th-TH", { dateStyle:"medium", timeStyle:"short" }); }
+    catch (_) { return offerHumanText(originalIso); }
+  })();
+  const overlay = document.createElement("div");
+  overlay.id = "timeProposalOverlay";
+  overlay.className = "cwf-time-proposal-overlay";
+  overlay.innerHTML = `
+    <div class="cwf-time-proposal-modal" role="dialog" aria-modal="true">
+      <div class="cwf-time-proposal-head">
+        <b>เสนอเวลาใหม่</b>
+        <button type="button" onclick="closeTimeProposalModal()">ปิด</button>
+      </div>
+      <div class="cwf-time-proposal-original">เวลาเดิม: ${escapeHTML(originalText)}</div>
+      <label>เวลาใหม่ที่เสนอ</label>
+      <input id="timeProposalInput" type="datetime-local">
+      <label>หมายเหตุถึงแอดมิน (ถ้ามี)</label>
+      <textarea id="timeProposalNote" rows="3" placeholder="เช่น ไปถึงได้หลังจากเวลานี้"></textarea>
+      <div class="cwf-time-proposal-actions">
+        <button type="button" class="secondary" onclick="closeTimeProposalModal()">ยกเลิก</button>
+        <button type="button" onclick="submitTimeProposal(${Number(offerId)}, '${escapeHTML(String(originalIso || ""))}')">ส่งให้แอดมิน</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function closeTimeProposalModal() {
+  const old = document.getElementById("timeProposalOverlay");
+  if (old) old.remove();
+}
+
+function submitTimeProposal(offerId, originalIso) {
+  const input = document.getElementById("timeProposalInput");
+  const note = document.getElementById("timeProposalNote");
+  const value = (input?.value || "").trim();
+  if (!value) return alert("กรุณาเลือกเวลาใหม่");
+  const proposed = new Date(value);
+  const original = new Date(originalIso);
+  if (Number.isNaN(proposed.getTime())) return alert("เวลาใหม่ไม่ถูกต้อง");
+  if (proposed.getTime() <= Date.now()) return alert("เวลาใหม่ต้องเป็นเวลาในอนาคต");
+  if (!Number.isNaN(original.getTime()) && proposed.getTime() === original.getTime()) return alert("กรุณาเลือกเวลาที่ต่างจากเวลาเดิม");
+
+  fetch(`${API_BASE}/offers/${offerId}/time-proposal`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, proposed_datetime: value, note: note?.value || "" }),
+  })
+    .then(async (res) => {
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || "ส่งเวลาใหม่ไม่สำเร็จ");
+      return data;
+    })
+    .then((data) => {
+      alert(data.message || "ส่งเวลาใหม่ให้แอดมินแล้ว");
+      closeTimeProposalModal();
+      loadOffers();
+    })
+    .catch((err) => {
+      console.error(err);
+      alert(`❌ ${err.message}`);
+    });
+}
+
 function renderOffers(offers) {
   if (!offerList) return;
 
@@ -2171,33 +2282,40 @@ function renderOffers(offers) {
       const min = Math.floor(secLeft / 60);
       const sec = secLeft % 60;
 
-      const booking = o.booking_code || ('CWF'+String(o.job_id).padStart(7,'0'));
       const apptText = (() => { try { return new Date(o.appointment_datetime).toLocaleString("th-TH", { dateStyle:"medium", timeStyle:"short" }); } catch (_) { return o.appointment_datetime || "-"; } })();
+      const serviceText = offerHumanText(o.service_items_text) !== "-" ? o.service_items_text : o.job_type;
+      const areaText = offerAreaText(o);
+      const noteText = offerHumanText(o.customer_note);
+      const mapUrl = offerMapUrl(o);
+      const mapButton = mapUrl
+        ? `<button type="button" class="secondary" data-url="${escapeHTML(mapUrl)}" onclick="openOfferMap(this)">🗺️ ดูแผนที่</button>`
+        : `<button type="button" class="secondary" disabled>🗺️ ดูแผนที่</button>`;
+      const proposeButton = o.allow_time_proposal
+        ? `<button type="button" class="secondary" onclick="openTimeProposalModal(${Number(o.offer_id)}, '${escapeHTML(String(o.appointment_datetime || ""))}')">🕒 อยากรับนะแต่ขอเวลาใหม่</button>`
+        : "";
       return `
       <div class="job-card cwf-new-offer-card" style="border:1px solid rgba(251,191,36,0.55);">
         <div class="cwf-new-offer-head">
           <div>
             <span class="cwf-new-offer-kicker">งานเข้าใหม่</span>
-            <b>📌 งานใหม่เสนอให้รับ</b>
+            <b>งานใหม่เสนอให้รับ</b>
           </div>
           <span class="badge wait cwf-new-offer-countdown">⏳ ${min}:${String(sec).padStart(2, "0")}</span>
         </div>
         ${renderTechnicianMoneySummary(o, "offered")}
 
-        <div class="cwf-new-offer-grid">
-          <div><span>เลขงาน</span><b>${escapeHTML(booking)}</b></div>
-          <div><span>ประเภท</span><b>${escapeHTML(o.job_type || '-')}</b></div>
-          <div><span>วันนัด</span><b>${escapeHTML(apptText)}</b></div>
-          <div><span>ลูกค้า</span><b>${escapeHTML(o.customer_name || '-')}</b></div>
+        <div class="cwf-new-offer-details">
+          <div><span>ประเภทงาน</span><b>${escapeHTML(offerHumanText(o.job_type))}</b></div>
+          <div><span>รายการบริการ</span><b>${escapeHTML(offerHumanText(serviceText))}</b></div>
+          <div><span>เวลานัด</span><b>${escapeHTML(offerHumanText(apptText))}</b></div>
+          <div><span>พื้นที่</span><b>พื้นที่: ${escapeHTML(areaText)}</b></div>
         </div>
-        <div class="cwf-new-offer-address">
-          <span>ที่อยู่</span>
-          <b>${escapeHTML(o.address_text || "-")}</b>
-        </div>
+        ${noteText !== "-" ? `<div class="cwf-new-offer-note"><span>หมายเหตุ:</span><b>${escapeHTML(noteText)}</b></div>` : ""}
 
         <div class="row cwf-new-offer-actions" style="margin-top:10px;">
+          ${mapButton}
           <button onclick="acceptOffer(${o.offer_id})">✅ รับงานนี้</button>
-          <button class="danger" onclick="declineOffer(${o.offer_id})">❌ ไม่รับงาน</button>
+          ${proposeButton}
         </div>
       </div>
     `;
