@@ -149,6 +149,35 @@ function detectServiceZoneFromLatLng(lat, lng) {
   return z ? { service_zone_code: z.code, service_zone_label: z.label, service_zone_source: "maps_coordinate", matched_district: null, matched_lat: la, matched_lng: ln } : null;
 }
 
+
+const SERVICE_AREA_ALIAS_SEEDS = [
+  { code: "A", aliases: ["อ่อนนุช", "อุดมสุข", "บางจาก", "ปุณณวิถี", "สุขุมวิท101", "สุขุมวิท 101", "สุขุมวิท103", "สุขุมวิท 103", "บางนา", "ศรีนครินทร์", "พัฒนาการ"] },
+  { code: "B", aliases: ["รามคำแหง", "ลาดพร้าว", "วังทองหลาง", "บางกะปิ", "หัวหมาก"] },
+];
+
+function detectServiceZoneFromAreaAlias(hay) {
+  const matches = [];
+  const normalizedHay = normalizeThaiAreaText(hay);
+  if (!normalizedHay) return null;
+  for (const seed of SERVICE_AREA_ALIAS_SEEDS) {
+    const z = SERVICE_ZONE_BY_CODE.get(seed.code);
+    if (!z) continue;
+    for (const alias of seed.aliases || []) {
+      const a = normalizeThaiAreaText(alias);
+      if (a && normalizedHay.includes(a)) matches.push({ z, alias, len: a.length });
+    }
+  }
+  matches.sort((a, b) => b.len - a.len || a.z.order - b.z.order);
+  const best = matches[0];
+  return best ? {
+    service_zone_code: best.z.code,
+    service_zone_label: best.z.label,
+    service_zone_source: "area_alias_detect",
+    matched_district: null,
+    matched_area: best.alias,
+  } : null;
+}
+
 async function detectServiceZoneFromText({ address_text, job_zone, service_zone_code, home_province, home_district, maps_url } = {}) {
   const explicit = String(service_zone_code || "").trim().toUpperCase();
   if (explicit && SERVICE_ZONE_BY_CODE.has(explicit)) {
@@ -169,6 +198,12 @@ async function detectServiceZoneFromText({ address_text, job_zone, service_zone_
   matches.sort((a, b) => b.len - a.len || a.z.order - b.z.order);
   const best = matches[0];
   if (best) return { service_zone_code: best.z.code, service_zone_label: best.z.label, service_zone_source: "auto_detect", matched_district: best.district };
+
+  // Area/neighborhood fallback only after real district detection.
+  // This prevents aliases such as “รามคำแหง” from overriding a real district like “สวนหลวง”.
+  const aliasDetected = detectServiceZoneFromAreaAlias(hay);
+  if (aliasDetected) return aliasDetected;
+
   const ll = extractLatLngFromMapsText(maps_url || address_text || job_zone || "");
   if (ll) return detectServiceZoneFromLatLng(ll.lat, ll.lng);
   return null;
@@ -13353,9 +13388,12 @@ async function handleAdminBookV2(req, res) {
   // Normalize ONCE and use the normalized value everywhere in this handler.
   const apptIso = normalizeAppointmentDatetime(appointment_datetime);
 
-  const bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
+  const rawBm = (booking_mode || "scheduled").toString().trim().toLowerCase();
+  const rawMode = (dispatch_mode || "normal").toString().trim().toLowerCase();
+  const isUrgentOffer = rawBm === "urgent" || rawMode === "offer";
+  const bm = isUrgentOffer ? "urgent" : rawBm;
   const ttype = (tech_type || (bm === "urgent" ? "partner" : "company")).toString().trim().toLowerCase();
-  const mode = (dispatch_mode || "normal").toString().trim().toLowerCase();
+  const mode = isUrgentOffer ? "offer" : rawMode;
   const zoneDetected = await detectServiceZoneFromText({ address_text, job_zone, service_zone_code, maps_url });
   const detectedZoneCode = zoneDetected?.service_zone_code || null;
   const detectedZoneLabel = zoneDetected?.service_zone_label || null;
@@ -13374,13 +13412,15 @@ async function handleAdminBookV2(req, res) {
   const tmRawArr = Array.isArray(team_members_raw) ? team_members_raw : [];
   const tmAny = tmRawArr.some(x => (x||'').toString().trim());
   const techProvided = (technician_username || '').toString().trim().length > 0;
-  if (assign_mode === 'single') {
-    if (!techProvided) return res.status(400).json({ error: 'โหมด single ต้องระบุ technician_username' });
-    if (tmAny) return res.status(400).json({ error: 'โหมด single ห้ามส่ง team_members' });
-  } else if (assign_mode === 'auto') {
-    if (tmAny) return res.status(400).json({ error: 'โหมด auto ห้ามส่ง team_members' });
-  } else if (assign_mode === 'team') {
-    if (!techProvided) return res.status(400).json({ error: 'โหมด team ต้องระบุ technician_username (ช่างหลัก)' });
+  if (!isUrgentOffer) {
+    if (assign_mode === 'single') {
+      if (!techProvided) return res.status(400).json({ error: 'โหมด single ต้องระบุ technician_username' });
+      if (tmAny) return res.status(400).json({ error: 'โหมด single ห้ามส่ง team_members' });
+    } else if (assign_mode === 'auto') {
+      if (tmAny) return res.status(400).json({ error: 'โหมด auto ห้ามส่ง team_members' });
+    } else if (assign_mode === 'team') {
+      if (!techProvided) return res.status(400).json({ error: 'โหมด team ต้องระบุ technician_username (ช่างหลัก)' });
+    }
   }
 
   const payloadV2 = {
@@ -13470,7 +13510,7 @@ const serviceLineItems = buildServiceLineItemsFromPayload(
         machine_count: payloadV2.machine_count,
         wash_variant: payloadV2.wash_variant,
         repair_variant: payloadV2.repair_variant,
-        assigned_to: (technician_username || null),
+        assigned_to: (isUrgentOffer ? null : (technician_username || null)),
       }] }
 );
 
@@ -13510,14 +13550,20 @@ if (coerceNumber(override_price, 0) > 0) {
     // pricing via existing calcPricing
     const pricing = calcPricing(computedItems, promo);
 
+    if (isUrgentOffer && ENABLE_SERVICE_ZONE_FILTER && !detectedZoneCode) {
+      const err = new Error('ยิงงานด่วนไม่สำเร็จ: ระบบยังระบุโซนพื้นที่ไม่ได้ กรุณาเลือกโซนหรือกรอกย่าน/เขตให้ชัดเจนก่อนยิงงาน');
+      err.statusCode = 409;
+      err.code = 'NO_SERVICE_ZONE_FOR_URGENT_OFFER';
+      err.debug = { service_zone_code: detectedZoneCode || null, service_zone_source: detectedZoneSource || null };
+      throw err;
+    }
+
     // choose technician
-    let selectedTech = (technician_username || "").toString().trim();
-    if (!selectedTech) {
-      // list group techs
-      
-      // list group techs (Admin assign ignores accept_status; Offer must respect paused)
+    // Urgent offer must NEVER auto-assign before a technician accepts the offer.
+    let selectedTech = isUrgentOffer ? "" : (technician_username || "").toString().trim();
+    if (!isUrgentOffer && !selectedTech) {
+      // list group techs (Admin assign ignores accept_status)
       const isAll = (ttype === 'all');
-      const offerOnly = (mode === 'offer'); // offer flow must respect accept_status
       const tr = await client.query(
         `
         SELECT u.username, p.home_service_zone_code, p.secondary_service_zone_code, COALESCE(p.allow_out_of_zone,FALSE) AS allow_out_of_zone
@@ -13531,12 +13577,12 @@ if (coerceNumber(override_price, 0) > 0) {
           ))
         ORDER BY u.username
         `,
-        [ttype === 'all' ? 'company' : ttype, !offerOnly, isAll]
+        [ttype === 'all' ? 'company' : ttype, true, isAll]
       );
       const rankedRows = (ENABLE_SERVICE_ZONE_FILTER && detectedZoneCode) ? rankTechniciansForServiceZone(tr.rows || [], detectedZoneCode) : (tr.rows || []);
       const list = rankedRows.map((r) => r.username).slice(0, 60);
       selectedTech = await pickFirstAvailableTech(list, apptIso, duration_min);
-    } else {
+    } else if (!isUrgentOffer && selectedTech) {
       // ✅ Forced lock: allow even if technician hasn't opened accept_status,
       // but still block lock on the technician's off-day.
       if (mode === 'forced') {
@@ -13573,12 +13619,12 @@ if (coerceNumber(override_price, 0) > 0) {
       }
     }
 
-    if (!selectedTech) {
+    if (!isUrgentOffer && !selectedTech) {
       return res.status(409).json({ error: "ไม่พบช่างว่างในช่วงเวลานี้" });
     }
 
     // ✅ Team members collision check (including buffer) - backward compatible
-    const tmIn = (assign_mode === 'team') ? (Array.isArray(team_members_raw) ? team_members_raw : []) : [];
+    const tmIn = (!isUrgentOffer && assign_mode === 'team') ? (Array.isArray(team_members_raw) ? team_members_raw : []) : [];
     const tmList = [...new Set(tmIn.map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
     for (const u of tmList) {
       if (u === selectedTech) continue;
@@ -13607,15 +13653,15 @@ if (coerceNumber(override_price, 0) > 0) {
         apptIso,
         Number(pricing.total || 0),
         String(address_text).trim(),
-        mode === "forced" ? selectedTech : null,
-        selectedTech,
+        (!isUrgentOffer && mode === "forced") ? selectedTech : null,
+        isUrgentOffer ? null : selectedTech,
         jobStatus,
         mode,
         (customer_note || "").toString(),
         (String(maps_url || "").trim() || null),
         (String(job_zone || "").trim() || null),
         duration_min,
-        (bm === "urgent" ? "urgent" : "scheduled"),
+        (isUrgentOffer ? "urgent" : "scheduled"),
         Math.max(0, coerceNumber(override_duration_min, 0)),
         final_lat,
         final_lng,
@@ -13629,8 +13675,9 @@ if (coerceNumber(override_price, 0) > 0) {
     await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
 
     // ✅ Team members (primary + assistants) - backward compatible
+    // Urgent jobs are intentionally unassigned until a technician accepts the offer.
     // NOTE: some production DBs may not have is_primary column yet.
-    try {
+    if (!isUrgentOffer) try {
       const tmAll = [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
       await client.query(`DELETE FROM public.job_team_members WHERE job_id=$1`, [job_id]);
       for (const u of tmAll) {
@@ -13658,7 +13705,7 @@ if (coerceNumber(override_price, 0) > 0) {
     }
 
     // ✅ job_assignments upsert (team status per technician)
-    try {
+    if (!isUrgentOffer) try {
       const tmAll = [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
       for (const u of tmAll) {
         await client.query(
@@ -13701,11 +13748,11 @@ if (coerceNumber(override_price, 0) > 0) {
       );
     }
 
-    const directPushTargets = (bm === "urgent") ? [] : [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))];
+    const directPushTargets = isUrgentOffer ? [] : [...new Set([selectedTech, ...tmList].map(x => (x||"").toString().trim()).filter(Boolean))];
     let urgentPushTargets = [];
 
     // urgent offers to partner (ถ้า bm=urgent และกลุ่ม partner)
-    if (bm === "urgent") {
+    if (isUrgentOffer) {
       const partners = await client.query(
         `
         SELECT u.username, p.home_service_zone_code, p.secondary_service_zone_code, COALESCE(p.allow_out_of_zone,FALSE) AS allow_out_of_zone
@@ -13713,22 +13760,24 @@ if (coerceNumber(override_price, 0) > 0) {
         LEFT JOIN public.technician_profiles p ON p.username=u.username
         WHERE u.role='technician'
           AND COALESCE(p.accept_status,'ready') <> 'paused'
-          AND COALESCE(p.employment_type,'company') = 'partner'
+          AND (
+                $1::text = 'all'
+             OR ($1::text = 'company' AND COALESCE(p.employment_type,'company') IN ('company','custom','special_only'))
+             OR ($1::text <> 'company' AND COALESCE(p.employment_type,'company') = $1::text)
+          )
         ORDER BY u.username
         `
-      );
+      , [ttype]);
 
       const partnerRows = partners.rows || [];
       let candidateRows = partnerRows;
       if (ENABLE_SERVICE_ZONE_FILTER && detectedZoneCode) {
         const primary = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() === detectedZoneCode);
         const secondary = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() !== detectedZoneCode && String(r.secondary_service_zone_code || "").toUpperCase() === detectedZoneCode);
-        const fallback = partnerRows.filter(r => String(r.home_service_zone_code || "").toUpperCase() !== detectedZoneCode && String(r.secondary_service_zone_code || "").toUpperCase() !== detectedZoneCode && r.allow_out_of_zone);
         zone_filter_applied = true;
         zone_matched_technicians_count = primary.length + secondary.length;
-        zone_fallback_used = primary.length === 0 && secondary.length === 0 && fallback.length > 0;
-        candidateRows = (primary.length || secondary.length || fallback.length) ? [...primary, ...secondary, ...fallback] : partnerRows;
-        if (!primary.length && !secondary.length && !fallback.length) zone_fallback_used = true;
+        zone_fallback_used = false;
+        candidateRows = [...primary, ...secondary];
       }
       const list = rankTechniciansForServiceZone(candidateRows, detectedZoneCode).map((r) => r.username);
       // จำกัด 30 ทีม
@@ -13741,7 +13790,7 @@ if (coerceNumber(override_price, 0) > 0) {
       }
 
       if (!available.length) {
-        const err = new Error('ยิงงานด่วนไม่สำเร็จ: ตอนนี้ไม่มีช่างพาร์ทเนอร์ที่ว่างและเปิดรับงาน ระบบจึงยังไม่ได้ส่งงานออกไปให้ช่างรับ');
+        const err = new Error('ยิงงานด่วนไม่สำเร็จ: ตอนนี้ไม่มีช่างที่เปิดรับงาน ว่างจริง และอยู่ในโซนนี้ ระบบจึงยังไม่ได้ส่งงานออกไปให้ช่างรับ');
         err.statusCode = 409;
         err.code = 'NO_URGENT_OFFER_TARGETS';
         err.debug = {
@@ -13774,7 +13823,7 @@ if (coerceNumber(override_price, 0) > 0) {
     let incomeByUsernameForNotify = {};
     try {
       const previewTargets = [...new Set([selectedTech, ...tmList, ...urgentPushTargets].map(x => (x || '').toString().trim()).filter(Boolean))].slice(0, 60);
-      incomeByUsernameForNotify = await _refreshTechnicianIncomePreviewForJob(job_id, previewTargets, { source: bm === 'urgent' ? 'offer_preview' : 'job_preview' }) || {};
+      incomeByUsernameForNotify = await _refreshTechnicianIncomePreviewForJob(job_id, previewTargets, { source: isUrgentOffer ? 'offer_preview' : 'job_preview' }) || {};
     } catch (e) {
       console.warn('[income_preview] admin_book_v2 preview failed', e.message);
     }
@@ -13793,7 +13842,7 @@ if (coerceNumber(override_price, 0) > 0) {
       job_id,
       booking_code,
       tech_type: ttype,
-      technician_username: selectedTech,
+      technician_username: isUrgentOffer ? null : selectedTech,
       duration_min,
       effective_block_min: effectiveBlockMin(duration_min),
       standard_price,
@@ -13805,7 +13854,7 @@ if (coerceNumber(override_price, 0) > 0) {
       success: true,
       job_id,
       booking_code,
-      technician_username: selectedTech,
+      technician_username: isUrgentOffer ? null : selectedTech,
       tech_type: ttype,
       duration_min,
       effective_block_min: effectiveBlockMin(duration_min),
@@ -23913,11 +23962,28 @@ app.get("/public/availability_v2", async (req, res) => {
       crew_size = Math.max(1, Math.min(tech_count || 1, Number(crew_size || 1) || 1));
     }
 
-    // ✅ UI primary window is LOCKED to 09:00–18:00
+    // ✅ UI primary window defaults to 09:00–18:00.
+    // Admin forced mode can extend it to include special slots outside normal hours.
     let uiStartMin = toMin('09:00');
-    const uiEndMin = toMin('18:00');
+    let uiEndMin = toMin('18:00');
     const work_start = '09:00';
     const work_end = '18:00';
+    if (forced && specialMap.size) {
+      let specialStartMin = uiStartMin;
+      let specialEndMin = uiEndMin;
+      for (const arr of specialMap.values()) {
+        for (const w of (arr || [])) {
+          const ws = toMin(w.start);
+          const we = toMin(w.end);
+          if (Number.isFinite(ws) && Number.isFinite(we) && we > ws) {
+            specialStartMin = Math.min(specialStartMin, ws);
+            specialEndMin = Math.max(specialEndMin, we);
+          }
+        }
+      }
+      uiStartMin = specialStartMin;
+      uiEndMin = specialEndMin;
+    }
 
     // ✅ If checking "today" in Bangkok time, do not show slots in the past.
     // Only applies to start-mode slot display; free-mode still shows full-day free/busy ranges.
@@ -23996,7 +24062,7 @@ app.get("/public/availability_v2", async (req, res) => {
     // Ensure deterministic sweep start from uiStartMin
     const sweepPoints = points.length ? points : [];
     if (!sweepPoints.length) {
-      if (debugFlag) debugReasons.push({ code: 'NO_EVENTS', message: 'ไม่มีช่วงเวลาว่าง/ช่วงเริ่มงานในหน้าต่าง 09:00–18:00 (อาจเกิดจากวันหยุด/ไม่มี special slot/หรือถูก busy block ทั้งหมด)' });
+      if (debugFlag) debugReasons.push({ code: 'NO_EVENTS', message: 'ไม่มีช่วงเวลาว่าง/ช่วงเริ่มงานในหน้าต่างเวลาที่แสดง (อาจเกิดจากวันหยุด/ไม่มี special slot/หรือถูก busy block ทั้งหมด)' });
       console.log("[availability_v2]", { date, tech_type, forced, duration_min, crew_size, effective_duration_min, tech_count, slots: 0, reason: debugReasons.map(r=>r.code).join(',') });
       // Public customer response should not reveal technician counts.
       const isPublicCustomer = !forced && !debugFlag;

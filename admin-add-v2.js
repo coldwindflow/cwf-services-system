@@ -994,24 +994,49 @@ function updateFlowUI(){
   const uiMode = (el('dispatch_mode_ui')?.value || 'assign').toString();
   const btnLoad = el('btnLoadSlots');
   const slotsBox = el('slots_box');
+  const slotsWrap = el('slots_wrap');
   const assignCard = el('assign_card');
+  const assignWrap = el('assign_mode_ui_wrap');
+  const dateWrap = el('appt_date_wrap');
   const help = el('dispatch_ui_help');
-  // Urgent: ไม่ต้องโหลดสล็อต ไม่เลือกช่างรายคน
+  const appt = el('appointment_datetime');
+  const apptLabel = el('appointment_datetime_label');
+  const apptHelp = el('appointment_datetime_help');
+  const assignHidden = el('assign_mode');
+  const techHidden = el('technician_username');
+  const teamCsv = el('team_members_csv');
+
   if(uiMode === 'urgent'){
-    if(btnLoad) btnLoad.style.display = 'none';
-    if(slotsBox) slotsBox.innerHTML = `<div class="muted2">Urgent: ไม่ต้องโหลดสล็อต • เลือกวัน/เวลาในช่องด้านล่าง แล้วกด “บันทึก” เพื่อยิงข้อเสนอ</div>`;
+    if(assignWrap) assignWrap.style.display = 'none';
     if(assignCard) assignCard.style.display = 'none';
-    // appointment_datetime ให้แก้เองได้
-    const appt = el('appointment_datetime'); if(appt) appt.removeAttribute('readonly');
+    if(dateWrap) dateWrap.style.display = 'none';
+    if(btnLoad) btnLoad.style.display = 'none';
+    if(slotsWrap) slotsWrap.style.display = 'none';
+    if(slotsBox) slotsBox.innerHTML = '';
+    if(appt) appt.removeAttribute('readonly');
+    if(apptLabel) apptLabel.textContent = 'วันเวลาเร่งด่วน';
+    if(apptHelp) apptHelp.textContent = 'ระบบจะยิงข้อเสนอให้ช่างที่เปิดรับงาน + ว่าง + อยู่ในโซนนี้เท่านั้น ใครกดรับก่อนจะได้งาน';
+    if(assignHidden) assignHidden.value = 'auto';
+    if(techHidden) techHidden.value = '';
+    if(teamCsv) teamCsv.value = '';
+    state.confirmed_tech_username = '';
+    state.selected_slot_iso = null;
+    state.teamPicker = { q:'', selected:new Set(), primary:'' };
   } else {
+    if(assignWrap) assignWrap.style.display = '';
+    if(dateWrap) dateWrap.style.display = '';
     if(btnLoad) btnLoad.style.display = '';
-    const appt = el('appointment_datetime'); if(appt) appt.setAttribute('readonly','readonly');
-    // assign card จะเปิดเมื่อโหลดสล็อตแล้ว
+    if(slotsWrap) slotsWrap.style.display = '';
+    if(appt) appt.setAttribute('readonly','readonly');
+    if(apptLabel) apptLabel.textContent = 'วันเวลา (ตรวจสอบก่อนบันทึก)';
+    if(apptHelp) apptHelp.textContent = '';
   }
-  // Admin assign: workload assignment (per technician) available after slot selection
+
   try { updateWashAssignmentUI(); } catch(e){}
   if(help){
-    help.textContent = (uiMode==='urgent') ? 'Urgent: ยิงข้อเสนอไปช่างที่ว่างและเปิดรับงาน' : 'นัดงาน: แอดมินสั่งงานได้ทันที (ไม่สนเปิดรับงาน) แต่ห้ามชนคิว';
+    help.textContent = (uiMode==='urgent')
+      ? 'Urgent: ยิงข้อเสนอให้ช่างที่เปิดรับงาน + ว่าง + อยู่ในโซนนี้เท่านั้น ใครกดรับก่อนจะได้งาน'
+      : 'นัดงาน: แอดมินสั่งงานได้ทันที (ไม่สนเปิดรับงาน) แต่ห้ามชนคิว';
   }
 }
 
@@ -1023,17 +1048,18 @@ function syncModesFromUI(){
   const assign = el('assign_mode');
   if(!dmUI || !booking || !dispatch) return;
   const uiMode = (dmUI.value || 'assign').toString();
-  const uiAssign = (amUI?.value || 'auto').toString();
 
-  // booking_mode (legacy): urgent vs scheduled
   booking.value = (uiMode === 'urgent') ? 'urgent' : 'scheduled';
-
-  // dispatch_mode (backend v2): forced/offer
-  // NOTE: “นัดงาน (แอดมินสั่งงาน)” ต้อง ignore open_to_work เสมอ => ใช้ forced เป็นค่าเดียว
   dispatch.value = (uiMode === 'urgent') ? 'offer' : 'forced';
 
-  // assign_mode (backend v2): auto/single/team
-  if(assign) assign.value = uiAssign;
+  if(assign){
+    assign.value = (uiMode === 'urgent') ? 'auto' : ((amUI?.value || 'auto').toString());
+  }
+
+  if(uiMode === 'urgent'){
+    if(el('technician_username')) el('technician_username').value = '';
+    if(el('team_members_csv')) el('team_members_csv').value = '';
+  }
 
   updateFlowUI();
 }
@@ -1359,33 +1385,14 @@ function canLoadAvailability() {
 
 
 async function runUrgentPreview(){
+  // Removed backend call to non-existing /admin/urgent_preview_v2.
+  // Urgent eligibility is validated safely at submit time by /admin/book_v2.
   try{
-    syncModesFromUI();
     const uiMode = (el('dispatch_mode_ui')?.value || 'normal').toString();
     if(uiMode !== 'urgent') return;
-    const dtLocal = (el('appointment_datetime')?.value || '').trim();
-    if(!dtLocal) return;
-    const apptIso = localDatetimeToBangkokISO(dtLocal);
-    const tech_type = (el('tech_type')?.value || 'partner').trim();
-    const duration_min = Number(state.duration_min || 0);
-    if(duration_min <= 0) return;
-    const r = await apiFetch('/admin/urgent_preview_v2', { method:'POST', body: JSON.stringify({ appointment_datetime: apptIso, duration_min, tech_type }) });
-    const free = Number(r.free_count || 0);
     const box = el('slots_box');
-    if(box){
-      box.innerHTML = `<div class="pill" style="display:flex;justify-content:space-between;gap:10px;align-items:center">
-        <span class="muted2 mini">ตอนนี้ว่าง <b style="color:#0b1b3a">${free}</b> คน (ตามประเภทช่างที่เลือก)</span>
-        <span class="muted2 mini">duration ${duration_min} + buffer 30</span>
-      </div>`;
-    }
-    if(DEBUG_ENABLED){
-      DBG.lastReq = maskPII({ endpoint:'/admin/urgent_preview_v2', payload:{ appointment_datetime: apptIso, duration_min, tech_type } });
-      DBG.lastRes = r;
-      dbgRender();
-    }
-  }catch(e){
-    console.warn('urgent_preview failed', e);
-  }
+    if(box) box.innerHTML = '';
+  }catch(e){}
 }
 
 async function loadAvailability() {

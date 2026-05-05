@@ -380,32 +380,36 @@
           </select>
           <div class="muted2 mini" style="margin-top:6px" id="dispatch_ui_help">นัดงาน = แอดมินสั่งงานให้ช่างได้ทันที (ไม่สนเปิดรับงาน) แต่ <b>ห้ามชนคิว</b> • Urgent = ยิงข้อเสนอให้ช่างที่ว่างจริง+เปิดรับงาน</div>
 
-          <label style="margin-top:10px">รูปแบบมอบหมาย *</label>
-          <select id="assign_mode_ui">
-            <option value="auto">auto (ระบบเลือก)</option>
-            <option value="single">single (เลือกช่างคนเดียว)</option>
-            <option value="team">team (เลือกทีม)</option>
-          </select>
-          <div class="muted2 mini" style="margin-top:6px">ทีม = เลือกช่างร่วมหลายคน (validation ยังห้ามชนคิวเหมือนเดิม)</div>
+          <div id="assign_mode_ui_wrap">
+            <label style="margin-top:10px">รูปแบบมอบหมาย *</label>
+            <select id="assign_mode_ui">
+              <option value="auto">auto (ระบบเลือก)</option>
+              <option value="single">single (เลือกช่างคนเดียว)</option>
+              <option value="team">team (เลือกทีม)</option>
+            </select>
+            <div id="assign_mode_ui_help" class="muted2 mini" style="margin-top:6px">ทีม = เลือกช่างร่วมหลายคน (validation ยังห้ามชนคิวเหมือนเดิม)</div>
+          </div>
 
-          <label style="margin-top:10px">วันที่</label>
-          <input id="appt_date" type="date">
+          <div id="appt_date_wrap">
+            <label style="margin-top:10px">วันที่</label>
+            <input id="appt_date" type="date">
+          </div>
           <button class="secondary" type="button" id="btnLoadSlots" style="margin-top:8px;width:100%">โหลดคิวว่าง</button>
-          <div class="muted2 mini" style="margin-top:8px">🐞 Debug = มุมขวาบน (ใส่รหัสก่อนเปิด) • ไม่แสดงในหน้าเพื่อไม่รก</div>
+          <div id="debug_hint" class="muted2 mini" style="margin-top:8px">🐞 Debug = มุมขวาบน (ใส่รหัสก่อนเปิด) • ไม่แสดงในหน้าเพื่อไม่รก</div>
 
           <!-- Slots appear directly under the load button (no scrolling confusion) -->
-          <div style="margin-top:10px">
+          <div id="slots_wrap" style="margin-top:10px">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap">
               <b style="color:#0b1b3a">สล็อตเวลา</b>
               <span class="muted2 mini">แตะสล็อตเพื่อเลือกช่าง</span>
             </div>
             <div id="slots_box" style="margin-top:10px"></div>
+          </div>
 
-            <div id="dt_preview_wrap" style="margin-top:12px">
-              <label style="font-weight:900">วันเวลา (ตรวจสอบก่อนบันทึก)</label>
-              <input id="appointment_datetime" type="datetime-local" style="margin-top:6px;width:100%;font-size:16px;font-weight:900;padding:12px 14px;border-radius:16px" />
-              
-            </div>
+          <div id="dt_preview_wrap" style="margin-top:12px">
+            <label id="appointment_datetime_label" style="font-weight:900">วันเวลา (ตรวจสอบก่อนบันทึก)</label>
+            <input id="appointment_datetime" type="datetime-local" style="margin-top:6px;width:100%;font-size:16px;font-weight:900;padding:12px 14px;border-radius:16px" />
+            <div id="appointment_datetime_help" class="muted2 mini" style="margin-top:6px"></div>
           </div>
         </div>
         <div>
