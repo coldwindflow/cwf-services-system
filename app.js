@@ -2896,7 +2896,7 @@ window.callCustomer = callCustomer;
 
 
 // =======================================
-// 🧩 CWF CLOSE FLOW MODAL UI (clean production layout)
+// 🧩 CWF CLOSE FLOW MODAL UI (clean production layout v2 - collect customer payment)
 // - หน้าหลักต้องเหลือแค่ปุ่ม: ลงรูป / เช็คลิส / เก็บเงินลูกค้า
 // - รายละเอียดทั้งหมดอยู่ใน Modal เพื่อไม่ให้หน้า “งานปัจจุบัน” รก/ซ้อน
 // =======================================
@@ -2933,9 +2933,9 @@ function ensureCwfCloseStyles(){
   const style = document.createElement('style');
   style.id = 'cwfCloseFlowStyles';
   style.textContent = `
-    .cwf-close-hub{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:10px 0 12px}
-    .cwf-close-action{border:1px solid rgba(37,99,235,.18);background:linear-gradient(180deg,#fff,#f8fbff);border-radius:20px;padding:13px 10px;min-height:92px;text-align:left;box-shadow:0 12px 34px rgba(15,23,42,.08);cursor:pointer;color:#0f172a;width:100%}
-    .cwf-close-action:disabled{opacity:.55;cursor:not-allowed}.cwf-close-action .ico{font-size:24px;display:block}.cwf-close-action b{display:block;font-size:16px;margin-top:5px}.cwf-close-action small{display:block;color:#64748b;line-height:1.35;margin-top:4px}
+    .cwf-close-hub{display:grid!important;grid-template-columns:1fr!important;gap:12px!important;margin:12px 0 14px!important}
+    .cwf-close-action{appearance:none!important;-webkit-appearance:none!important;width:100%!important;min-height:78px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px!important;text-align:left!important;border:1px solid rgba(21,88,214,.18)!important;background:linear-gradient(180deg,#ffffff,#f8fbff)!important;color:#0f172a!important;border-radius:22px!important;padding:14px 15px!important;box-shadow:0 14px 34px rgba(15,23,42,.10)!important;cursor:pointer!important;line-height:1.25!important}
+    .cwf-close-action:disabled{opacity:.55!important;cursor:not-allowed!important}.cwf-close-action .cwf-action-left{display:flex!important;align-items:center!important;gap:13px!important;min-width:0!important}.cwf-close-action .ico{width:48px!important;height:48px!important;min-width:48px!important;border-radius:17px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:linear-gradient(135deg,#1558d6,#05b6d6)!important;color:#fff!important;font-size:24px!important;box-shadow:0 8px 20px rgba(21,88,214,.20)!important}.cwf-close-action b{display:block!important;font-size:18px!important;margin:0!important;color:#0f172a!important;font-weight:1000!important;letter-spacing:0!important}.cwf-close-action small{display:block!important;color:#475569!important;line-height:1.45!important;margin-top:3px!important;font-size:13px!important;font-weight:800!important}.cwf-action-arrow{font-size:22px!important;color:#1558d6!important;font-weight:1000!important}
     .cwf-modal-backdrop{position:fixed;inset:0;z-index:10050;background:rgba(2,6,23,.62);display:flex;align-items:flex-end;justify-content:center;padding:0 10px 10px}
     .cwf-modal-panel{width:min(720px,100%);max-height:88vh;overflow:hidden;background:#f8fbff;border:1px solid rgba(148,163,184,.34);border-radius:26px 26px 18px 18px;box-shadow:0 26px 70px rgba(2,6,23,.36);display:flex;flex-direction:column}
     .cwf-modal-head{padding:15px 16px;background:linear-gradient(135deg,#071947,#1558d6);color:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px}.cwf-modal-head b{font-size:18px}.cwf-modal-head button{width:auto;min-width:44px;border-radius:999px;background:#ffcc00;color:#111827;border:0;font-weight:900;padding:9px 13px}
@@ -2943,9 +2943,9 @@ function ensureCwfCloseStyles(){
     .cwf-mini-status{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.cwf-chip{border:1px solid rgba(37,99,235,.18);background:#eef5ff;color:#1558d6;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:900}.cwf-chip.ok{background:#ecfdf5;color:#047857;border-color:#a7f3d0}.cwf-chip.warn{background:#fff7ed;color:#c2410c;border-color:#fed7aa}.cwf-chip.bad{background:#fff1f2;color:#be123c;border-color:#fecdd3}
     .cwf-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cwf-photo-card{background:#fff;border:1px solid rgba(37,99,235,.15);border-radius:18px;padding:12px;box-shadow:0 10px 26px rgba(15,23,42,.06)}.cwf-photo-card b{font-size:16px}.cwf-photo-card .muted{font-size:12px}.cwf-photo-card button{width:100%;margin-top:9px;border-radius:15px}.cwf-thumb-row{display:flex;gap:6px;overflow:auto;margin-top:8px}.cwf-thumb-row img{width:54px;height:54px;border-radius:12px;object-fit:cover;border:1px solid rgba(15,23,42,.12);background:#fff}
     .cwf-check-list{display:flex;flex-direction:column;gap:8px}.cwf-check-row{background:#fff;border:1px solid rgba(37,99,235,.13);border-radius:16px;padding:10px}.cwf-check-main{display:flex;align-items:center;gap:10px}.cwf-check-main input{width:22px;height:22px;accent-color:#1558d6}.cwf-check-main label{font-weight:900;color:#0f172a;line-height:1.35}.cwf-check-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-left:32px}.cwf-link-btn{border:1px solid rgba(148,163,184,.3);background:#f8fafc;color:#334155;border-radius:999px;padding:7px 10px;font-weight:900;font-size:12px;width:auto}.cwf-issue-note{margin:8px 0 0 32px}.cwf-issue-note textarea{min-height:74px;border-radius:14px}
-    .cwf-pay-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}.cwf-pay-tab{border:1px solid rgba(37,99,235,.16);background:#fff;color:#0f172a;border-radius:17px;padding:10px 8px;font-weight:1000;min-height:70px}.cwf-pay-tab.active{background:linear-gradient(135deg,#1558d6,#05b6d6);color:#fff;border-color:transparent;box-shadow:0 12px 28px rgba(37,99,235,.23)}.cwf-pay-card{background:#fff;border:1px solid rgba(37,99,235,.14);border-radius:20px;padding:13px;box-shadow:0 12px 28px rgba(15,23,42,.06)}.cwf-qr-img{display:block;width:min(300px,100%);margin:12px auto;border-radius:18px;border:1px solid rgba(15,23,42,.12);background:#fff}.cwf-pay-card input,.cwf-pay-card textarea{border-radius:14px}
+    .cwf-pay-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}.cwf-pay-tab{appearance:none!important;border:1px solid rgba(37,99,235,.16)!important;background:#fff!important;color:#0f172a!important;border-radius:17px!important;padding:12px 8px!important;font-weight:1000!important;min-height:62px!important;line-height:1.25!important}.cwf-pay-tab.active{background:linear-gradient(135deg,#1558d6,#05b6d6)!important;color:#fff!important;border-color:transparent!important;box-shadow:0 12px 28px rgba(37,99,235,.23)!important}.cwf-pay-card{background:#fff;border:1px solid rgba(37,99,235,.14);border-radius:20px;padding:13px;box-shadow:0 12px 28px rgba(15,23,42,.06)}.cwf-qr-img{display:block;width:min(300px,100%);margin:12px auto;border-radius:18px;border:1px solid rgba(15,23,42,.12);background:#fff}.cwf-pay-card input,.cwf-pay-card textarea{border-radius:14px}
     .cwf-note-box{background:#fff;border:1px solid rgba(37,99,235,.12);border-radius:18px;padding:12px;margin-top:10px}.cwf-note-box textarea{border-radius:16px;min-height:105px}.cwf-final-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.cwf-final-row button{border-radius:18px;min-height:52px}
-    @media(max-width:560px){.cwf-close-hub{grid-template-columns:1fr}.cwf-close-action{min-height:auto;display:flex;gap:12px;align-items:center}.cwf-close-action .ico{font-size:22px}.cwf-close-action small{margin-top:1px}.cwf-photo-grid{grid-template-columns:1fr}.cwf-pay-tabs{grid-template-columns:1fr}.cwf-modal-panel{max-height:90vh}.cwf-final-row{grid-template-columns:1fr}}
+    @media(max-width:560px){.cwf-photo-grid{grid-template-columns:1fr!important}.cwf-pay-tabs{grid-template-columns:1fr!important}.cwf-modal-panel{max-height:90vh!important}.cwf-final-row{grid-template-columns:1fr!important}}
   `;
   document.head.appendChild(style);
 }
@@ -3339,14 +3339,14 @@ function buildJobCard(job, historyMode = false) {
         <summary>🛠️ ปิดงาน / หลักฐาน / เก็บเงินลูกค้า</summary>
         <div class="cwf-details-body">
           <div class="cwf-close-hub">
-            <button class="cwf-close-action" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
-              <span class="ico">📷</span><span><b>ลงรูป</b><small>เพิ่มรูปก่อนทำ หลังทำ และรูปตรวจเช็คทั้งหมด</small></span>
+            <button class="cwf-close-action" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""} aria-label="ลงรูปหลักฐาน">
+              <span class="cwf-action-left"><span class="ico">📷</span><span><b>ลงรูปหลักฐาน</b><small>อัปโหลดรูปก่อนทำ หลังทำ และรูปตรวจเช็ค</small></span></span><span class="cwf-action-arrow">›</span>
             </button>
-            <button class="cwf-close-action" type="button" onclick="openTechChecklistModal('${jobKeyJs}', 'pre')" ${!canEdit ? "disabled" : ""}>
-              <span class="ico">✅</span><span><b>เช็คลิส</b><small>ติ๊กตรวจสภาพก่อนล้างและหลังล้างใน Modal</small></span>
+            <button class="cwf-close-action" type="button" onclick="openTechChecklistModal('${jobKeyJs}', 'pre')" ${!canEdit ? "disabled" : ""} aria-label="เช็คลิสตรวจสภาพ">
+              <span class="cwf-action-left"><span class="ico">✅</span><span><b>เช็คลิสตรวจสภาพ</b><small>ติ๊กตรวจก่อนล้างและหลังล้างแบบสั้น</small></span></span><span class="cwf-action-arrow">›</span>
             </button>
-            <button class="cwf-close-action" type="button" onclick="openTechPaymentModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
-              <span class="ico">💳</span><span><b>เก็บเงินลูกค้า</b><small>เลือก QR / เงินสด / แอดมินจัดการ</small></span>
+            <button class="cwf-close-action" type="button" onclick="openTechPaymentModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""} aria-label="เก็บเงินลูกค้า">
+              <span class="cwf-action-left"><span class="ico">💳</span><span><b>เก็บเงินลูกค้า</b><small>เลือก QR บริษัท / เงินสด / ให้แอดมินจัดการ</small></span></span><span class="cwf-action-arrow">›</span>
             </button>
           </div>
 
@@ -3627,80 +3627,11 @@ window.workflowNext = workflowNext;
 
 
 // =======================================
-// 💳 LEGACY PAYMENT (disabled: use new เก็บเงินลูกค้า modal)
-// - ปุ่มเดิมถูกปิดใช้งานแล้ว เพื่อไม่ให้ UI เก่าซ้อนกับ Flow ใหม่
-// - กด "จ่ายแล้ว" => บันทึก paid_at ในระบบ + เปิดให้แนบรูปสลิป (phase = payment_slip)
-// - e-slip (ย่อ) เปิดได้ที่ /docs/eslip/:job_id
+// 💳 COLLECT CUSTOMER PAYMENT (new flow only)
+// - เอา popup/QR จ่ายเงินเก่าออกแล้ว
+// - ทุกจุดที่เคยเรียก payJob จะเปิด Modal ใหม่ “เก็บเงินลูกค้า” เท่านั้น
 // =======================================
-const CWF_PROMPTPAY_PHONE = (window.CWF_PROMPTPAY_PHONE || "0653157648").replace(/[^0-9]/g, "");
-
-// ✅ สร้าง URL รูป QR (PromptPay) ตามยอดเงิน
-function buildPromptPayQrUrl(amount) {
-  const amt = Number(amount || 0);
-  // promptpay.io รองรับ amount เป็นเลขทศนิยมได้
-  return `https://promptpay.io/${encodeURIComponent(CWF_PROMPTPAY_PHONE)}/${encodeURIComponent(amt.toFixed(2))}.png`;
-}
-
-let __payModalInited = false;
-let __payJobId = null;
-
-function ensurePayModal() {
-  if (__payModalInited) return;
-  __payModalInited = true;
-
-  const wrap = document.createElement("div");
-  wrap.id = "pay-modal";
-  wrap.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,0.6);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px;";
-  wrap.innerHTML = `
-    <div class="card" style="width:min(520px, 100%);">
-      <h3 style="margin-top:0;">💳 เก็บเงินลูกค้า</h3>
-      <div class="muted" id="pay-subtitle">แสดง QR ให้ลูกค้าแสกน</div>
-
-      <div class="card tight" style="margin-top:10px;">
-        <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;">
-          <div>
-            <div class="muted">ยอดที่ต้องชำระ</div>
-            <div style="font-size:22px;font-weight:900;" id="pay-total">0.00 บาท</div>
-          </div>
-          <div style="text-align:right;">
-            <div class="muted">Booking</div>
-            <div style="font-weight:800;" id="pay-booking">-</div>
-          </div>
-        </div>
-
-        <div style="margin-top:10px;display:flex;justify-content:center;">
-          <img id="pay-qr" src="" alt="QR" style="width:260px;height:260px;object-fit:contain;border-radius:16px;border:1px solid rgba(15,23,42,0.15);background:#fff;"/>
-        </div>
-
-        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;justify-content:center;">
-          <button class="secondary" type="button" style="width:auto;" id="btn-refresh-qr">🔄 สร้าง QR ใหม่</button>
-        </div>
-
-        <div class="muted" style="margin-top:8px;font-size:12px;">
-          * ถ้า QR หมดอายุ/ไม่ขึ้น ให้กด “สร้าง QR ใหม่” ได้ตลอด
-        </div>
-      </div>
-
-      <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-        <button class="secondary" type="button" style="width:auto;" onclick="closePayModal()">ปิด</button>
-        <button type="button" style="width:auto;" id="btn-paid">✅ จ่ายแล้ว (แนบสลิป)</button>
-        <button class="secondary" type="button" style="width:auto;display:none;" id="btn-eslip">🧾 เปิด e-slip</button>
-      </div>
-
-      <div id="pay-msg" class="muted" style="margin-top:8px;"></div>
-    </div>
-  `;
-  document.body.appendChild(wrap);
-
-  window.closePayModal = () => {
-    const el = document.getElementById("pay-modal");
-    if (el) el.style.display = "none";
-    __payJobId = null;
-  };
-}
-
 async function payJob(jobId) {
-  // ✅ ปิด Flow จ่ายเงินเดิมทั้งหมด แล้วส่งเข้า Modal ใหม่ “เก็บเงินลูกค้า” เท่านั้น
   return openTechPaymentModal(String(jobId || ''));
 }
 window.payJob = payJob;
