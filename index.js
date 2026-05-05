@@ -13209,7 +13209,7 @@ async function buildUrgentOfferCandidatesForJob(job, techType='partner', db=pool
 app.post('/jobs/:job_id/rebroadcast_offer_v2', requireAdminSoft, async (req, res) => {
   const job_id = Number(req.params.job_id);
   if (!Number.isInteger(job_id) || job_id <= 0) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
-  const techType = String(req.body?.tech_type || 'partner').trim().toLowerCase();
+  const techType = String(req.body?.tech_type || 'all').trim().toLowerCase();
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -13473,8 +13473,27 @@ async function logJobUpdate(job_id, { actor_username, actor_role, action, messag
   }
 }
 
-function generateUnitCode() {
-  return String(Math.floor(100000 + Math.random() * 900000));
+function generateUnitCode(unitNo) {
+  // ใช้รหัสเรียงตามลำดับเครื่องในใบงาน เพื่อลดความสับสนของช่าง
+  // เช่น งานเดียวกันมี 3 เครื่อง => 001, 002, 003
+  const n = Math.max(1, Math.min(999, Math.floor(Number(unitNo) || 1)));
+  return String(n).padStart(3, '0');
+}
+
+async function normalizeJobUnitCodes(jobId, db = pool) {
+  const realId = Number(jobId);
+  if (!Number.isFinite(realId) || realId <= 0) return;
+  try {
+    const rows = await db.query(`SELECT unit_id, unit_no, unit_code FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
+    for (const u of rows.rows || []) {
+      const code = generateUnitCode(u.unit_no);
+      if (String(u.unit_code || '') !== code) {
+        await db.query(`UPDATE public.job_units SET unit_code=$1, updated_at=NOW() WHERE unit_id=$2 AND job_id=$3`, [code, u.unit_id, realId]);
+      }
+    }
+  } catch (e) {
+    console.warn('[job_units] normalize codes failed', e.message);
+  }
 }
 
 function normalizePhotoCategory(phase, category) {
@@ -13490,7 +13509,11 @@ async function ensureJobUnits(job_id, db = pool) {
   const realId = Number(job_id);
   if (!Number.isFinite(realId) || realId <= 0) return [];
   const existing = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
-  if (existing.rows.length) return existing.rows;
+  if (existing.rows.length) {
+    await normalizeJobUnitCodes(realId, db);
+    const normalized = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
+    return normalized.rows;
+  }
   const itemR = await db.query(
     `SELECT item_name, qty, assigned_technician_username FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
     [realId]
@@ -13510,7 +13533,7 @@ async function ensureJobUnits(job_id, db = pool) {
         `INSERT INTO public.job_units (job_id, unit_code, unit_no, item_name, assigned_technician)
          VALUES ($1,$2,$3,$4,$5)
          ON CONFLICT DO NOTHING RETURNING unit_id`,
-        [realId, generateUnitCode(), unitNo, row.item_name || 'เครื่องปรับอากาศ', row.assigned_technician || null]
+        [realId, generateUnitCode(unitNo), unitNo, row.item_name || 'เครื่องปรับอากาศ', row.assigned_technician || null]
       );
       if (ins.rows.length) break;
     }
@@ -13717,7 +13740,7 @@ async function handleAdminBookV2(req, res) {
   const rawMode = (dispatch_mode || "normal").toString().trim().toLowerCase();
   const isUrgentOffer = rawBm === "urgent" || rawMode === "offer";
   const bm = isUrgentOffer ? "urgent" : rawBm;
-  const ttype = (tech_type || (bm === "urgent" ? "partner" : "company")).toString().trim().toLowerCase();
+  const ttype = (tech_type || (bm === "urgent" ? "all" : "company")).toString().trim().toLowerCase();
   const mode = isUrgentOffer ? "offer" : rawMode;
   // ✅ HOTFIX: allow_time_proposal may be omitted by older cached frontend/PWA.
   // Do not reference an undeclared destructured variable here; otherwise /admin/book_v2

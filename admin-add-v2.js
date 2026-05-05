@@ -1034,6 +1034,8 @@ function updateFlowUI(){
     if(assignHidden) assignHidden.value = 'auto';
     if(techHidden) techHidden.value = '';
     if(teamCsv) teamCsv.value = '';
+    // งานด่วนควรส่งให้ช่างทุกประเภทที่เปิดรับงาน + อยู่ในโซน เพื่อไม่ให้ข้อเสนอหายเพราะเลือกกลุ่มผิด
+    if(el('tech_type')) el('tech_type').value = 'all';
     state.confirmed_tech_username = '';
     state.selected_slot_iso = null;
     state.teamPicker = { q:'', selected:new Set(), primary:'' };

@@ -3059,7 +3059,7 @@ function ensureCwfCloseStyles(){
     .cwf-modal-head{padding:15px 16px;background:linear-gradient(135deg,#071947,#1558d6);color:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px}.cwf-modal-head b{font-size:18px}.cwf-modal-head button{width:auto;min-width:44px;border-radius:999px;background:#ffcc00;color:#111827;border:0;font-weight:900;padding:9px 13px}
     .cwf-modal-body{padding:14px;overflow:auto}.cwf-modal-footer{padding:12px 14px;border-top:1px solid rgba(148,163,184,.25);background:#fff;display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
     .cwf-mini-status{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.cwf-chip{border:1px solid rgba(37,99,235,.18);background:#eef5ff;color:#1558d6;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:900}.cwf-chip.ok{background:#ecfdf5;color:#047857;border-color:#a7f3d0}.cwf-chip.warn{background:#fff7ed;color:#c2410c;border-color:#fed7aa}.cwf-chip.bad{background:#fff1f2;color:#be123c;border-color:#fecdd3}
-    .cwf-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cwf-photo-card{background:#fff;border:1px solid rgba(37,99,235,.15);border-radius:18px;padding:12px;box-shadow:0 10px 26px rgba(15,23,42,.06)}.cwf-photo-card b{font-size:16px}.cwf-photo-card .muted{font-size:12px}.cwf-photo-card button{width:100%;margin-top:9px;border-radius:15px}.cwf-thumb-row{display:flex;gap:6px;overflow:auto;margin-top:8px}.cwf-thumb-row img{width:54px;height:54px;border-radius:12px;object-fit:cover;border:1px solid rgba(15,23,42,.12);background:#fff}
+    .cwf-unit-select{width:100%;border:1px solid rgba(37,99,235,.22);border-radius:16px;padding:12px;font-weight:900;background:#fff;margin-bottom:10px}.cwf-unit-workspace{display:grid;gap:10px}.cwf-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cwf-photo-card{background:#fff;border:1px solid rgba(37,99,235,.15);border-radius:18px;padding:12px;box-shadow:0 10px 26px rgba(15,23,42,.06)}.cwf-photo-card b{font-size:16px}.cwf-photo-card .muted{font-size:12px}.cwf-photo-card button{width:100%;margin-top:9px;border-radius:15px}.cwf-thumb-row{display:flex;gap:6px;overflow:auto;margin-top:8px}.cwf-thumb-row img{width:54px;height:54px;border-radius:12px;object-fit:cover;border:1px solid rgba(15,23,42,.12);background:#fff}
     .cwf-check-list{display:flex;flex-direction:column;gap:8px}.cwf-check-row{background:#fff;border:1px solid rgba(37,99,235,.13);border-radius:16px;padding:10px}.cwf-check-main{display:flex;align-items:center;gap:10px}.cwf-check-main input{width:22px;height:22px;accent-color:#1558d6}.cwf-check-main label{font-weight:900;color:#0f172a;line-height:1.35}.cwf-check-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-left:32px}.cwf-link-btn{border:1px solid rgba(148,163,184,.3);background:#f8fafc;color:#334155;border-radius:999px;padding:7px 10px;font-weight:900;font-size:12px;width:auto}.cwf-issue-note{margin:8px 0 0 32px}.cwf-issue-note textarea{min-height:74px;border-radius:14px}
     .cwf-pay-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}.cwf-pay-tab{appearance:none!important;border:1px solid rgba(37,99,235,.16)!important;background:#fff!important;color:#0f172a!important;border-radius:17px!important;padding:12px 8px!important;font-weight:1000!important;min-height:62px!important;line-height:1.25!important}.cwf-pay-tab.active{background:linear-gradient(135deg,#1558d6,#05b6d6)!important;color:#fff!important;border-color:transparent!important;box-shadow:0 12px 28px rgba(37,99,235,.23)!important}.cwf-pay-card{background:#fff;border:1px solid rgba(37,99,235,.14);border-radius:20px;padding:13px;box-shadow:0 12px 28px rgba(15,23,42,.06)}.cwf-qr-img{display:block;width:min(300px,100%);margin:12px auto;border-radius:18px;border:1px solid rgba(15,23,42,.12);background:#fff}.cwf-pay-card input,.cwf-pay-card textarea{border-radius:14px}
     .cwf-note-box{background:#fff;border:1px solid rgba(37,99,235,.12);border-radius:18px;padding:12px;margin-top:10px}.cwf-note-box textarea{border-radius:16px;min-height:105px}.cwf-final-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.cwf-final-row button{border-radius:18px;min-height:52px}
@@ -3118,7 +3118,13 @@ async function cwfLoadUnits(jobId){
   return [];
 }
 
-function cwfUnitTitle(u){ return `เครื่องที่ ${u?.unit_no || '-'} รหัสเครื่อง ${u?.unit_code || '-'}`; }
+function cwfUnitTitle(u){ return `เครื่องที่ ${u?.unit_no || '-'} · รหัส ${u?.unit_code || '-'}`; }
+function cwfUnitOptionLabel(u){
+  const base = `เครื่องที่ ${u?.unit_no || '-'} · รหัส ${u?.unit_code || '-'}`;
+  const item = String(u?.item_name || '').trim();
+  const tech = String(u?.assigned_technician || '').trim();
+  return [base, item, tech ? `ผู้รับผิดชอบ ${tech}` : ''].filter(Boolean).join(' • ');
+}
 
 async function cwfPickUnitPhoto(jobId, unitId, phase){
   const units = await cwfLoadUnits(jobId);
@@ -3141,7 +3147,7 @@ async function cwfPickUnitPhoto(jobId, unitId, phase){
       if (!upRes.ok) throw new Error(up.error || 'อัปโหลดรูปไม่สำเร็จ');
     }
     alert('อัปโหลดรูปเครื่องนี้แล้ว');
-    openTechPhotoModal(jobId);
+    openTechPhotoModal(jobId, unitId);
   });
 }
 window.cwfPickUnitPhoto = cwfPickUnitPhoto;
@@ -3153,7 +3159,7 @@ async function openTechUnitChecklistModal(jobId, unitId, section){
   const active = section || 'pre';
   const key = `${cwfCloseKey(jobId)}_unit_${unitId}`;
   const html = `<div class="cwf-note-box" style="margin-bottom:10px"><b>${cwfUnitTitle(unit)}</b><div class="muted">${String(unit.item_name || 'เครื่องปรับอากาศ')}</div></div>${cwfChecklistSectionHtml(key, active)}`;
-  const footer = `<button class="secondary" type="button" onclick="cwfCloseModal()">ปิด</button><button type="button" onclick="cwfSaveUnitChecklist('${String(jobId).replace(/'/g,"\\'")}', '${String(unitId).replace(/'/g,"\\'")}', '${active}')">บันทึกเช็คลิสเครื่องนี้</button>`;
+  const footer = `<button class="secondary" type="button" onclick="cwfCloseModal()">ปิด</button><button type="button" onclick="cwfSaveUnitChecklist('${String(jobId).replace(/'/g,"\'")}', '${String(unitId).replace(/'/g,"\'")}', '${active}')">บันทึกเช็คลิสเครื่องนี้</button>`;
   cwfOpenModal(active === 'pre' ? 'เช็คลิสก่อนทำ' : 'เช็คลิสหลังทำ', html, footer);
 }
 window.openTechUnitChecklistModal = openTechUnitChecklistModal;
@@ -3171,28 +3177,53 @@ async function cwfSaveUnitChecklist(jobId, unitId, section){
   const d = await r.json().catch(()=>({}));
   if (!r.ok) return alert(d.error || 'บันทึกเช็คลิสเครื่องนี้ไม่สำเร็จ');
   alert(d.message || 'บันทึกเช็คลิสเครื่องนี้แล้ว');
-  openTechPhotoModal(jobId);
+  openTechPhotoModal(jobId, unitId);
 }
 window.cwfSaveUnitChecklist = cwfSaveUnitChecklist;
 
-function cwfRenderUnitCards(jobId, units){
+function cwfRenderUnitCards(jobId, units, selectedUnitId){
   const current = (typeof username === 'string' ? username : '') || '';
-  return `<div class="cwf-photo-grid">${units.map(u => {
-    const mine = current && String(u.assigned_technician || '') === current;
-    const counts = u.photo_counts || {};
-    const preOk = !!(u.checklist && u.checklist.pre && u.checklist.pre.completed);
-    const postOk = !!(u.checklist && u.checklist.post && u.checklist.post.completed);
-    return `<div class="cwf-photo-card" style="${mine ? 'border-color:#1558d6;box-shadow:0 0 0 2px rgba(21,88,214,.12)' : ''}">
-      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start"><b>${cwfUnitTitle(u)}</b><span class="cwf-chip ${mine?'ok':''}">${mine ? 'เครื่องของฉัน' : 'ดูได้'}</span></div>
-      <div class="muted" style="margin-top:5px">${String(u.item_name || 'เครื่องปรับอากาศ')}</div>
-      ${u.assigned_technician ? `<div class="muted">ผู้รับผิดชอบ: ${String(u.assigned_technician)}</div>` : ''}
-      <div class="cwf-mini-status"><span class="cwf-chip ${counts.before ? 'ok':'warn'}">รูปก่อนทำ: ${counts.before || 0} รูป</span><span class="cwf-chip ${counts.after ? 'ok':'warn'}">รูปหลังทำ: ${counts.after || 0} รูป</span><span class="cwf-chip ${preOk ? 'ok':'warn'}">เช็คลิสก่อนทำ: ${preOk ? 'ครบ':'ยังไม่ครบ'}</span><span class="cwf-chip ${postOk ? 'ok':'warn'}">เช็คลิสหลังทำ: ${postOk ? 'ครบ':'ยังไม่ครบ'}</span></div>
-      <div class="cwf-final-row"><button type="button" onclick="openTechUnitChecklistModal('${String(jobId).replace(/'/g,"\\'")}', '${u.unit_id}', 'pre')">เช็คลิสก่อนทำ</button><button type="button" onclick="cwfPickUnitPhoto('${String(jobId).replace(/'/g,"\\'")}', '${u.unit_id}', 'before')">รูปก่อนทำ</button><button type="button" onclick="openTechUnitChecklistModal('${String(jobId).replace(/'/g,"\\'")}', '${u.unit_id}', 'post')">เช็คลิสหลังทำ</button><button type="button" onclick="cwfPickUnitPhoto('${String(jobId).replace(/'/g,"\\'")}', '${u.unit_id}', 'after')">รูปหลังทำ</button></div>
+  const safeJob = String(jobId).replace(/'/g,"\'");
+  const chosen = units.find(u => String(u.unit_id) === String(selectedUnitId)) || units.find(u => current && String(u.assigned_technician || '') === current) || units[0];
+  if (!chosen) return '<div class="muted">ยังไม่พบรายการเครื่องในใบงานนี้</div>';
+  const counts = chosen.photo_counts || {};
+  const preOk = !!(chosen.checklist && chosen.checklist.pre && chosen.checklist.pre.completed);
+  const postOk = !!(chosen.checklist && chosen.checklist.post && chosen.checklist.post.completed);
+  const mine = current && String(chosen.assigned_technician || '') === current;
+  const selector = units.length > 1 ? `
+    <label style="display:block;font-weight:1000;color:#0b2e6d;margin-bottom:6px">เลือกเครื่องที่ต้องการลงรูป/เช็คลิส</label>
+    <select class="cwf-unit-select" onchange="openTechPhotoModal('${safeJob}', this.value)">
+      ${units.map(u => `<option value="${u.unit_id}" ${String(u.unit_id)===String(chosen.unit_id)?'selected':''}>${escapeHTML(cwfUnitOptionLabel(u))}</option>`).join('')}
+    </select>` : '';
+  return `
+    <div class="cwf-unit-workspace">
+      ${selector}
+      <div class="cwf-photo-card cwf-unit-active-card" style="${mine ? 'border-color:#1558d6;box-shadow:0 0 0 2px rgba(21,88,214,.12)' : ''}">
+        <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start">
+          <div>
+            <b>${escapeHTML(cwfUnitTitle(chosen))}</b>
+            <div class="muted" style="margin-top:4px">${escapeHTML(String(chosen.item_name || 'เครื่องปรับอากาศ'))}</div>
+            ${chosen.assigned_technician ? `<div class="muted">ผู้รับผิดชอบ: ${escapeHTML(String(chosen.assigned_technician))}</div>` : ''}
+          </div>
+          <span class="cwf-chip ${mine?'ok':''}">${mine ? 'เครื่องของฉัน' : 'เลือกเครื่องแล้ว'}</span>
+        </div>
+        <div class="cwf-mini-status">
+          <span class="cwf-chip ${counts.before ? 'ok':'warn'}">รูปก่อนทำ: ${counts.before || 0} รูป</span>
+          <span class="cwf-chip ${counts.after ? 'ok':'warn'}">รูปหลังทำ: ${counts.after || 0} รูป</span>
+          <span class="cwf-chip ${preOk ? 'ok':'warn'}">เช็คลิสก่อนทำ: ${preOk ? 'ครบ':'ยังไม่ครบ'}</span>
+          <span class="cwf-chip ${postOk ? 'ok':'warn'}">เช็คลิสหลังทำ: ${postOk ? 'ครบ':'ยังไม่ครบ'}</span>
+        </div>
+        <div class="cwf-final-row">
+          <button type="button" onclick="openTechUnitChecklistModal('${safeJob}', '${chosen.unit_id}', 'pre')">เช็คลิสก่อนทำ</button>
+          <button type="button" onclick="cwfPickUnitPhoto('${safeJob}', '${chosen.unit_id}', 'before')">รูปก่อนทำ</button>
+          <button type="button" onclick="openTechUnitChecklistModal('${safeJob}', '${chosen.unit_id}', 'post')">เช็คลิสหลังทำ</button>
+          <button type="button" onclick="cwfPickUnitPhoto('${safeJob}', '${chosen.unit_id}', 'after')">รูปหลังทำ</button>
+        </div>
+      </div>
     </div>`;
-  }).join('')}</div>`;
 }
 
-async function openTechPhotoModal(jobId){
+async function openTechPhotoModal(jobId, selectedUnitId){
   const key = cwfCloseKey(jobId);
   const job = cwfGetCachedJob(key);
   const canEdit = !job || !isDoneStatusValue(normStatus(job.job_status));
@@ -3200,7 +3231,7 @@ async function openTechPhotoModal(jobId){
   cwfOpenModal('📷 ลงรูปหลักฐานหน้างาน', `<div class="muted">กำลังโหลดสถานะรูป...</div>`);
   const units = await cwfLoadUnits(key);
   if (units.length && !revisitFlow) {
-    const html = `<div class="muted" style="margin-bottom:10px">เลือกเครื่องเพื่อทำเช็คลิสและอัปโหลดรูปแยกตามเครื่อง</div>${cwfRenderUnitCards(key, units)}`;
+    const html = `<div class="muted" style="margin-bottom:10px">เลือกลำดับเครื่องจากดรอปดาวน์ แล้วลงรูป/เช็คลิสของเครื่องนั้นโดยตรง</div>${cwfRenderUnitCards(key, units, selectedUnitId)}`;
     cwfOpenModal('หลักฐานแยกตามเครื่องปรับอากาศ', html, `<button type="button" class="secondary" onclick="cwfCloseModal()">ปิด</button>`);
     return;
   }
