@@ -17112,7 +17112,7 @@ function _techVisibilityPredicateSql(aliasParam = '$1') {
       SELECT 1 FROM public.job_offers o
       WHERE o.job_id = j.job_id
         AND o.technician_username = ANY(${aliasParam}::text[])
-        AND o.status IN ('pending','accepted')
+        AND o.status IN ('accepted')
     )
     OR EXISTS (
       SELECT 1 FROM unnest(${aliasParam}::text[]) AS a(alias)
@@ -19447,11 +19447,12 @@ async function mediaRetentionRows() {
   const r = await pool.query(
     `SELECT j.job_id, j.booking_code, j.customer_name, j.customer_phone, j.job_type, j.job_status,
             j.finished_at, j.completed_at, j.closed_at, j.media_retention_locked, j.media_retention_purged_at,
-            COUNT(DISTINCT p.photo_id)::int AS photo_count,
-            COUNT(DISTINCT CASE WHEN COALESCE(p.photo_category,'')='payment_slip' OR COALESCE(p.phase,'') ILIKE '%slip%' OR COALESCE(p.phase,'')='payment_slip' THEN p.photo_id END)::int AS slip_count,
+            COUNT(DISTINCT CASE WHEN p.deleted_at IS NULL AND NOT (COALESCE(p.photo_category,'')='payment_slip' OR COALESCE(p.phase,'') ILIKE '%slip%') THEN p.photo_id END)::int AS photo_count,
+            COUNT(DISTINCT CASE WHEN p.deleted_at IS NULL AND (COALESCE(p.photo_category,'')='payment_slip' OR COALESCE(p.phase,'') ILIKE '%slip%' OR COALESCE(p.phase,'')='payment_slip') THEN p.photo_id END)::int AS slip_count,
             COUNT(DISTINCT c.checklist_id)::int AS checklist_count,
             COUNT(DISTINCT u.unit_id)::int AS unit_count,
-            COALESCE(SUM(CASE WHEN p.deleted_at IS NULL THEN COALESCE(p.file_size_bytes,0) ELSE 0 END),0)::bigint AS bytes_estimated,
+            COALESCE(SUM(CASE WHEN p.deleted_at IS NULL AND NOT (COALESCE(p.photo_category,'')='payment_slip' OR COALESCE(p.phase,'') ILIKE '%slip%') THEN COALESCE(p.file_size_bytes,0) ELSE 0 END),0)::bigint AS bytes_estimated,
+            COALESCE(SUM(CASE WHEN p.deleted_at IS NULL AND (COALESCE(p.photo_category,'')='payment_slip' OR COALESCE(p.phase,'') ILIKE '%slip%') THEN COALESCE(p.file_size_bytes,0) ELSE 0 END),0)::bigint AS slip_bytes_estimated,
             (SELECT string_agg(COALESCE(ji.item_name,''), ' ') FROM public.job_items ji WHERE ji.job_id=j.job_id) AS service_items_text
        FROM public.jobs j
        LEFT JOIN public.job_photos p ON p.job_id=j.job_id AND p.deleted_at IS NULL
@@ -19459,8 +19460,9 @@ async function mediaRetentionRows() {
        LEFT JOIN public.job_units u ON u.job_id=j.job_id
       WHERE j.finished_at IS NOT NULL OR COALESCE(j.job_status,'') ILIKE '%เสร็จ%' OR COALESCE(j.job_status,'') IN ('done','completed','ปิดงาน')
       GROUP BY j.job_id
-      ORDER BY COALESCE(j.finished_at, j.completed_at, j.closed_at) DESC NULLS LAST
-      LIMIT 200`
+      HAVING COUNT(DISTINCT CASE WHEN p.deleted_at IS NULL THEN p.photo_id END) > 0
+      ORDER BY COALESCE(j.finished_at, j.completed_at, j.closed_at) ASC NULLS LAST, j.job_id ASC
+      LIMIT 500`
   );
   return (r.rows || []).map(j => {
     const el = mediaPurgeEligibility(j);
@@ -19474,7 +19476,17 @@ app.get('/admin/media-retention/summary', requireAdminSession, async (_req, res)
   try {
     const jobs = await mediaRetentionRows();
     const photosR = await pool.query(`SELECT COUNT(*)::int AS total, SUM(CASE WHEN COALESCE(photo_category,'')='payment_slip' OR COALESCE(phase,'') ILIKE '%slip%' OR COALESCE(phase,'')='payment_slip' THEN 1 ELSE 0 END)::int AS slips, COALESCE(SUM(COALESCE(file_size_bytes,0)),0)::bigint AS bytes FROM public.job_photos WHERE deleted_at IS NULL`);
-    return res.json({ success:true, total_photos:Number(photosR.rows?.[0]?.total||0), eligible_photos:jobs.filter(j=>j.eligibility?.eligible).reduce((sum,j)=>sum+Number(j.photo_count||0),0), eligible_jobs:jobs.filter(j=>j.eligibility?.eligible).length, slip_photos:Number(photosR.rows?.[0]?.slips||0), bytes_estimated:Number(photosR.rows?.[0]?.bytes||0), note:'รูปสลิปไม่ถูกลบอัตโนมัติ' });
+    const eligible = jobs.filter(j=>j.eligibility?.eligible);
+    return res.json({ success:true,
+      total_photos:Number(photosR.rows?.[0]?.total||0),
+      eligible_photos:eligible.reduce((sum,j)=>sum+Number(j.photo_count||0),0),
+      eligible_jobs:eligible.length,
+      slip_photos:Number(photosR.rows?.[0]?.slips||0),
+      bytes_estimated:eligible.reduce((sum,j)=>sum+Number(j.bytes_estimated||0),0),
+      total_bytes_estimated:Number(photosR.rows?.[0]?.bytes||0),
+      slip_bytes_estimated:jobs.reduce((sum,j)=>sum+Number(j.slip_bytes_estimated||0),0),
+      storage_free_note:'พื้นที่ว่างจริงต้องดูจาก Render/Cloudinary; ระบบนี้คำนวณพื้นที่ที่ล้างได้จากขนาดไฟล์ที่บันทึกไว้',
+      note:'รูปสลิปไม่ถูกลบอัตโนมัติ ต้องเลือกลบสลิปเองเท่านั้น' });
   } catch (e) { return res.status(500).json({ error:'โหลดสรุปพื้นที่จัดเก็บไม่สำเร็จ' }); }
 });
 
@@ -19491,10 +19503,14 @@ app.get('/admin/media-retention/jobs', requireAdminSession, async (req, res) => 
 
 app.post('/admin/media-retention/purge', requireAdminSession, async (req, res) => {
   const dryRun = req.body?.dry_run !== false;
-  const ids = Array.isArray(req.body?.job_ids) ? req.body.job_ids.map(Number).filter(n => Number.isFinite(n) && n > 0).slice(0,50) : [];
+  const slipOnly = req.body?.slip_only === true || String(req.body?.purge_type || '').trim() === 'slips';
+  const ids = Array.isArray(req.body?.job_ids) ? req.body.job_ids.map(Number).filter(n => Number.isFinite(n) && n > 0).slice(0,200) : [];
   const actor = _authUsername(req) || req.actor?.username || 'admin';
   if (!ids.length) return res.status(400).json({ error:'กรุณาเลือกงานที่ต้องการตรวจสอบ' });
-  if (!dryRun && String(req.body?.confirm_text || '').trim() !== 'ยืนยันลบ') return res.status(400).json({ error:'กรุณาพิมพ์คำว่า ยืนยันลบ เพื่อยืนยันการล้างข้อมูลหนัก' });
+  if (!dryRun) {
+    const need = slipOnly ? 'ยืนยันลบสลิป' : 'ยืนยันลบ';
+    if (String(req.body?.confirm_text || '').trim() !== need) return res.status(400).json({ error:`กรุณาพิมพ์คำว่า ${need} เพื่อยืนยันการลบ` });
+  }
   const runId = crypto.randomUUID();
   const results = [];
   for (const id of ids) {
@@ -19503,18 +19519,21 @@ app.post('/admin/media-retention/purge', requireAdminSession, async (req, res) =
     const photosR = await pool.query(`SELECT photo_id, phase, photo_category, COALESCE(file_size_bytes,0)::bigint AS bytes FROM public.job_photos WHERE job_id=$1 AND deleted_at IS NULL`, [id]);
     const evidence = (photosR.rows || []).filter(isEvidencePhotoRow);
     const slips = (photosR.rows || []).filter(p => normalizePhotoCategory(p.phase, p.photo_category) === 'payment_slip' || String(p.phase||'').toLowerCase().includes('slip'));
-    const summary = { eligible: !!el.eligible, reason: el.reason, photos_count:evidence.length, checklist_count:0, units_count:0, slips_count:slips.length, bytes_estimated:evidence.reduce((s,p)=>s+Number(p.bytes||0),0) };
-    if (el.eligible && !dryRun && evidence.length) {
-      const photoIds = evidence.map(p => Number(p.photo_id)).filter(Boolean);
+    const targetPhotos = slipOnly ? slips : evidence;
+    const summary = { eligible: slipOnly ? slips.length > 0 : !!el.eligible, reason: slipOnly ? 'เลือกลบเฉพาะรูปสลิปโดยแอดมิน' : el.reason, photos_count:evidence.length, checklist_count:0, units_count:0, slips_count:slips.length, bytes_estimated:targetPhotos.reduce((s,p)=>s+Number(p.bytes||0),0), purge_type: slipOnly ? 'slips' : 'job_evidence' };
+    if (summary.eligible && !dryRun && targetPhotos.length) {
+      const photoIds = targetPhotos.map(p => Number(p.photo_id)).filter(Boolean);
       await pool.query(`UPDATE public.job_photos SET deleted_at=NOW(), deleted_by=$2, public_url=NULL, storage_path=NULL, cloud_public_id=NULL WHERE job_id=$1 AND photo_id=ANY($3::bigint[])`, [id, actor, photoIds]);
-      await pool.query(`UPDATE public.job_unit_checklists SET checklist_json='[]'::jsonb, updated_at=NOW() WHERE job_id=$1`, [id]);
-      await pool.query(`UPDATE public.job_units SET ac_type=NULL, wash_type=NULL, btu=NULL, location_label=NULL, updated_at=NOW() WHERE job_id=$1`, [id]);
-      await pool.query(`UPDATE public.jobs SET media_retention_purged_at=NOW(), media_retention_purged_by=$2, media_retention_summary=$3::jsonb WHERE job_id=$1`, [id, actor, JSON.stringify(summary)]);
+      if (!slipOnly) {
+        await pool.query(`UPDATE public.job_unit_checklists SET checklist_json='[]'::jsonb, updated_at=NOW() WHERE job_id=$1`, [id]);
+        await pool.query(`UPDATE public.job_units SET ac_type=NULL, wash_type=NULL, btu=NULL, location_label=NULL, updated_at=NOW() WHERE job_id=$1`, [id]);
+        await pool.query(`UPDATE public.jobs SET media_retention_purged_at=NOW(), media_retention_purged_by=$2, media_retention_summary=$3::jsonb WHERE job_id=$1`, [id, actor, JSON.stringify(summary)]);
+      }
     }
     await pool.query(`INSERT INTO public.media_retention_logs (run_id, job_id, dry_run, action, photos_count, checklist_count, units_count, slips_count, bytes_estimated, result, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [runId, id, dryRun, dryRun?'dry_run':'purge', summary.photos_count, summary.checklist_count, summary.units_count, summary.slips_count, summary.bytes_estimated, summary.reason, actor]).catch(()=>null);
     results.push({ job_id:id, ...summary });
   }
-  return res.json({ success:true, run_id:runId, dry_run:dryRun, message: dryRun ? 'ตรวจสอบก่อนลบเสร็จแล้ว ยังไม่มีการลบข้อมูลจริง' : 'ล้างรูปเก่าเรียบร้อย รูปสลิปไม่ถูกลบอัตโนมัติ', results });
+  return res.json({ success:true, run_id:runId, dry_run:dryRun, message: dryRun ? 'ตรวจสอบก่อนลบเสร็จแล้ว ยังไม่มีการลบข้อมูลจริง' : (slipOnly ? 'ลบรูปสลิปที่เลือกเรียบร้อย' : 'ล้างรูปหลักฐานเก่าเรียบร้อย รูปสลิปไม่ถูกลบอัตโนมัติ'), results });
 });
 
 // =======================================

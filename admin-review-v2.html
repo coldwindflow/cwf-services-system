@@ -45,6 +45,8 @@
     .proposal-item{padding:9px;border-radius:12px;background:#fff;border:1px solid rgba(15,23,42,.10);display:grid;gap:6px;margin-top:8px}
     .proposal-actions{display:flex;gap:8px;flex-wrap:wrap}
     .proposal-actions .btn{min-height:38px;padding:8px 10px}
+    .approval-alert{margin-top:12px;padding:13px;border-radius:18px;background:linear-gradient(135deg,#fff7ed,#eff6ff);border:1px solid rgba(245,158,11,.30);font-weight:900;color:#0f172a}
+    .review-card-hot{border:1px solid rgba(245,158,11,.35)!important;box-shadow:0 18px 44px rgba(15,23,42,.10)!important}
   </style>
 </head>
 <body class="theme-2">
@@ -60,15 +62,15 @@
     <div class="card" style="margin-top:12px">
       <div class="grid2">
         <select id="filterStatus">
+          <option value="all" selected>ทั้งหมด</option>
           <option value="pending">รอตรวจสอบ</option>
           <option value="return">ตีกลับ</option>
           <option value="noaccept">ไม่พบช่างรับงาน</option>
           <option value="timeproposal">รอพิจารณาเวลาใหม่</option>
-          <option value="all">ทั้งหมด</option>
         </select>
         <button class="btn btn-ghost" id="btnReload" type="button">🔄 โหลดใหม่</button>
       </div>
-      <div class="muted" style="margin-top:8px">* แนะนำ: ตรวจงานแล้วกด “บันทึก & ยิงงาน” เพื่อส่งให้ช่าง (คิด travel buffer แล้ว)</div>
+      <div class="muted" style="margin-top:8px">* แนะนำ: ตรวจงานแล้วกด “บันทึก & ยิงงาน” เพื่อส่งให้ช่าง (คิด travel buffer แล้ว)</div><div id="approvalAlert" class="approval-alert" style="display:none"></div>
     </div>
 
     <div class="grid" id="list"></div>
@@ -165,6 +167,6 @@
   </div>
 
   <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="admin-review-v2.js?v=rebroadcast-timeproposal-final-v7"></script>
+  <script src="admin-review-v2.js?v=review-all-alert-v10"></script>
 </body>
 </html>

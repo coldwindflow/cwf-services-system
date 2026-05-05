@@ -3080,7 +3080,7 @@ function ensureCwfCloseStyles(){
     .cwf-modal-body{padding:14px;overflow:auto}.cwf-modal-footer{padding:12px 14px;border-top:1px solid rgba(148,163,184,.25);background:#fff;display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
     .cwf-mini-status{display:flex;gap:8px;flex-wrap:wrap;margin:8px 0}.cwf-chip{border:1px solid rgba(37,99,235,.18);background:#eef5ff;color:#1558d6;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:900}.cwf-chip.ok{background:#ecfdf5;color:#047857;border-color:#a7f3d0}.cwf-chip.warn{background:#fff7ed;color:#c2410c;border-color:#fed7aa}.cwf-chip.bad{background:#fff1f2;color:#be123c;border-color:#fecdd3}
     .cwf-unit-toolbar{display:grid;grid-template-columns:1fr;gap:10px;margin-bottom:12px}.cwf-unit-select{width:100%;border:1px solid rgba(37,99,235,.18);border-radius:16px;padding:12px;background:#fff;font-weight:900;color:#0f172a}.cwf-unit-tabs{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-unit-tab{border:1px solid rgba(37,99,235,.18)!important;background:#fff!important;color:#0f172a!important;border-radius:16px!important;padding:12px 10px!important;font-weight:1000!important}.cwf-unit-tab.active{background:linear-gradient(135deg,#1558d6,#05b6d6)!important;color:#fff!important;border-color:transparent!important}.cwf-unit-summary{background:#fff;border:1px solid rgba(37,99,235,.14);border-radius:18px;padding:12px;margin-bottom:12px;box-shadow:0 10px 24px rgba(15,23,42,.05)}.cwf-unit-summary b{font-size:17px}.cwf-unit-owner{display:inline-flex;align-items:center;gap:6px;border-radius:999px;background:#ecfdf5;color:#047857;border:1px solid #a7f3d0;padding:5px 9px;font-size:12px;font-weight:1000}.cwf-photo-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.cwf-photo-card{background:#fff;border:1px solid rgba(37,99,235,.15);border-radius:18px;padding:12px;box-shadow:0 10px 26px rgba(15,23,42,.06)}.cwf-photo-card b{font-size:16px}.cwf-photo-card .muted{font-size:12px}.cwf-photo-card button{width:100%;margin-top:9px;border-radius:15px}.cwf-thumb-row{display:flex;gap:6px;overflow:auto;margin-top:8px}.cwf-thumb-row img{width:54px;height:54px;border-radius:12px;object-fit:cover;border:1px solid rgba(15,23,42,.12);background:#fff}.cwf-thumb{min-width:64px;max-width:90px}.cwf-thumb-note{font-size:11px;color:#475569;margin-top:3px;line-height:1.25}.cwf-photo-note{width:100%;border:1px solid rgba(15,23,42,.14);border-radius:12px;padding:8px 10px;margin-top:8px;font-size:13px;background:#f8fafc}.cwf-check-select{width:100%;border:1px solid rgba(37,99,235,.18);border-radius:14px;padding:11px 12px;font-weight:900;background:#fff;margin:8px 0 10px}
-    .cwf-check-list{display:flex;flex-direction:column;gap:8px}.cwf-check-row{background:#fff;border:1px solid rgba(37,99,235,.13);border-radius:16px;padding:10px}.cwf-check-main{display:flex;align-items:center;gap:10px}.cwf-check-main input{width:22px;height:22px;accent-color:#1558d6}.cwf-check-main label{font-weight:900;color:#0f172a;line-height:1.35}.cwf-check-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-left:32px}.cwf-link-btn{border:1px solid rgba(148,163,184,.3);background:#f8fafc;color:#334155;border-radius:999px;padding:7px 10px;font-weight:900;font-size:12px;width:auto}.cwf-issue-note{margin:8px 0 0 32px}.cwf-issue-note textarea{min-height:74px;border-radius:14px}
+    .cwf-check-list{display:flex;flex-direction:column;gap:8px}.cwf-check-row{background:#fff;border:1px solid rgba(37,99,235,.13);border-radius:16px;padding:10px}.cwf-check-main{display:flex;align-items:center;gap:10px}.cwf-check-main input{width:22px;height:22px;accent-color:#1558d6}.cwf-check-main label{font-weight:900;color:#0f172a;line-height:1.35}.cwf-check-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-left:32px}.cwf-check-issue-photo{margin:8px 0 0 32px;font-size:12px;color:#475569}.cwf-link-btn{border:1px solid rgba(148,163,184,.3);background:#f8fafc;color:#334155;border-radius:999px;padding:7px 10px;font-weight:900;font-size:12px;width:auto}.cwf-issue-note{margin:8px 0 0 32px}.cwf-issue-note textarea{min-height:74px;border-radius:14px}
     .cwf-pay-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}.cwf-pay-tab{appearance:none!important;border:1px solid rgba(37,99,235,.16)!important;background:#fff!important;color:#0f172a!important;border-radius:17px!important;padding:12px 8px!important;font-weight:1000!important;min-height:62px!important;line-height:1.25!important}.cwf-pay-tab.active{background:linear-gradient(135deg,#1558d6,#05b6d6)!important;color:#fff!important;border-color:transparent!important;box-shadow:0 12px 28px rgba(37,99,235,.23)!important}.cwf-pay-card{background:#fff;border:1px solid rgba(37,99,235,.14);border-radius:20px;padding:13px;box-shadow:0 12px 28px rgba(15,23,42,.06)}.cwf-qr-img{display:block;width:min(300px,100%);margin:12px auto;border-radius:18px;border:1px solid rgba(15,23,42,.12);background:#fff}.cwf-pay-card input,.cwf-pay-card textarea{border-radius:14px}
     .cwf-note-box{background:#fff;border:1px solid rgba(37,99,235,.12);border-radius:18px;padding:12px;margin-top:10px}.cwf-note-box textarea{border-radius:16px;min-height:105px}.cwf-final-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.cwf-final-row button{border-radius:18px;min-height:52px}
     @media(max-width:560px){.cwf-photo-grid{grid-template-columns:1fr!important}.cwf-pay-tabs{grid-template-columns:1fr!important}.cwf-modal-panel{max-height:90vh!important}.cwf-final-row{grid-template-columns:1fr!important}}
@@ -3192,6 +3192,47 @@ async function cwfPickUnitPhoto(jobId, unitId, phase){
   });
 }
 window.cwfPickUnitPhoto = cwfPickUnitPhoto;
+
+async function cwfAttachChecklistIssuePhoto(checkKey, section, idx, label){
+  try {
+    const ctx = window.__cwfChecklistContext || null;
+    if (!ctx || ctx.mode !== 'unit' || !ctx.jobId || !ctx.unitId) {
+      return alert('กรุณาเปิดเช็คลิสจากหน้าหลักฐานแยกเครื่องก่อนแนบรูป');
+    }
+    const note = `รูปประกอบเช็คลิส${section === 'pre' ? 'ก่อนทำ' : 'หลังทำ'} ข้อ ${Number(idx)+1}: ${label || ''}`.slice(0,500);
+    await cwfPickUnitPhotoWithNote(ctx.jobId, ctx.unitId, 'defect', note);
+  } catch(e) { alert(e.message || 'แนบรูปปัญหาไม่สำเร็จ'); }
+}
+window.cwfAttachChecklistIssuePhoto = cwfAttachChecklistIssuePhoto;
+
+async function cwfPickUnitPhotoWithNote(jobId, unitId, phase, photoNote){
+  const units = await cwfLoadUnits(jobId);
+  const unit = units.find(u => String(u.unit_id) === String(unitId));
+  if (!unit) return alert('กรุณาเลือกเครื่องก่อนอัปโหลดรูป');
+  return new Promise((resolve)=>{
+    openFilePicker({ multiple:true, accept:'image/*' }, async (files)=>{
+      if (!files || !files.length) return resolve(false);
+      try {
+        for (const f of Array.from(files || [])) {
+          const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ phase, mime_type:f.type, original_name:f.name, file_size:f.size, uploaded_by:(typeof username === 'string' ? username : '') || null, unit_id:unit.unit_id, unit_code:unit.unit_code, unit_no:unit.unit_no, photo_category:'job_evidence', photo_note:photoNote || '' })
+          });
+          const meta = await metaRes.json().catch(()=>({}));
+          if (!metaRes.ok) throw new Error(meta.error || 'สร้างข้อมูลรูปไม่สำเร็จ');
+          const form = new FormData(); form.append('photo', f, f.name || 'photo.jpg');
+          const upRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${meta.photo_id}/upload`, { method:'POST', body:form });
+          const up = await upRes.json().catch(()=>({}));
+          if (!upRes.ok) throw new Error(up.error || 'อัปโหลดรูปไม่สำเร็จ');
+        }
+        alert('แนบรูปปัญหาแล้ว');
+        openTechPhotoModal(jobId, 'checklist', unitId);
+        resolve(true);
+      } catch(e) { alert(e.message || 'อัปโหลดรูปไม่สำเร็จ'); resolve(false); }
+    });
+  });
+}
+window.cwfPickUnitPhotoWithNote = cwfPickUnitPhotoWithNote;
 
 async function openTechUnitChecklistModal(jobId, unitId, section){
   const units = await cwfLoadUnits(jobId);
@@ -3305,8 +3346,10 @@ function cwfRenderUnitEvidenceModal(jobId, units, tab, selectedUnitId, unitPhoto
     </div>`;
   if (active === 'checklist') {
     const selectedSection = window.__cwfUnitChecklistSection || 'pre';
+    window.__cwfChecklistContext = { mode:'unit', jobId:String(jobId), unitId:String(sid), section:selectedSection };
     const sectionOk = selectedSection === 'pre' ? preOk : postOk;
-    const sectionText = selectedSection === 'pre' ? 'ก่อนทำ' : 'หลังทำ';
+    const sectionKey = `${cwfCloseKey(jobId)}_unit_${sid}`;
+    const statusText = selectedSection === 'pre' ? 'เช็คลิสก่อนทำ' : 'เช็คลิสหลังทำ';
     return summary + `
       <div class="cwf-photo-card">
         <label style="font-weight:1000;color:#0b2e6d">เลือกหน้าเช็คลิส</label>
@@ -3314,8 +3357,9 @@ function cwfRenderUnitEvidenceModal(jobId, units, tab, selectedUnitId, unitPhoto
           <option value="pre" ${selectedSection==='pre'?'selected':''}>🔎 เช็คลิสก่อนทำ</option>
           <option value="post" ${selectedSection==='post'?'selected':''}>✅ เช็คลิสหลังทำ</option>
         </select>
-        <div class="cwf-mini-status"><span class="cwf-chip ${sectionOk ? 'ok':'bad'}">${sectionOk ? 'บันทึกแล้ว' : 'ยังไม่ครบ'}</span></div>
-        <button type="button" onclick="openTechUnitChecklistModal('${jobSafe}', '${sid}', '${selectedSection}')">ทำเช็คลิส${sectionText}</button>
+        <div class="cwf-mini-status"><span class="cwf-chip ${sectionOk ? 'ok':'bad'}">${statusText}: ${sectionOk ? 'บันทึกแล้ว' : 'ยังไม่ครบ'}</span></div>
+        ${cwfChecklistSectionHtml(sectionKey, selectedSection)}
+        <button type="button" style="margin-top:12px" onclick="cwfSaveUnitChecklist('${jobSafe}', '${sid}', '${selectedSection}')">บันทึก${statusText}</button>
         <div class="muted" style="margin-top:8px;font-size:12px">ถ้าไม่ทำเช็คลิสก่อนปิดงาน ระบบจะให้ยืนยันบันทึกเป็น “ปกติ” ทั้งหมด และช่างต้องรับผิดชอบตามเงื่อนไขรับประกันหากมีข้อร้องเรียน</div>
       </div>`;
   }
@@ -3387,21 +3431,32 @@ function cwfDefaultChecklist(){ return { pre:{}, post:{} }; }
 function cwfGetChecklist(jobId){ return cwfReadJsonLS(cwfCloseJsonKey(jobId,'checklist'), cwfDefaultChecklist()) || cwfDefaultChecklist(); }
 function cwfSaveChecklist(jobId, data){ cwfWriteJsonLS(cwfCloseJsonKey(jobId,'checklist'), data || cwfDefaultChecklist()); }
 function cwfChecklistProgress(section){ const items = section === 'pre' ? CWF_PRE_CHECK_ITEMS : CWF_POST_CHECK_ITEMS; const data = cwfGetChecklist(window.__cwfChecklistJobId || ''); return items.filter((_,i)=> data?.[section]?.[i]?.checked || data?.[section]?.[i]?.issue).length; }
+function cwfRefreshChecklistView(jobId, section){
+  try {
+    const ctx = window.__cwfChecklistContext || null;
+    if (ctx && ctx.mode === 'unit' && ctx.unitId) {
+      window.__cwfUnitChecklistSection = section || ctx.section || 'pre';
+      openTechPhotoModal(ctx.jobId || jobId, 'checklist', ctx.unitId);
+      return;
+    }
+  } catch (_) {}
+  openTechChecklistModal(jobId, section);
+}
 function cwfSetChecklistAll(jobId, section){
   const data = cwfGetChecklist(jobId); data[section] = data[section] || {};
   const items = section === 'pre' ? CWF_PRE_CHECK_ITEMS : CWF_POST_CHECK_ITEMS;
   items.forEach((_,i)=>{ data[section][i] = { checked:true, issue:false, note:'' }; });
-  cwfSaveChecklist(jobId, data); openTechChecklistModal(jobId, section);
+  cwfSaveChecklist(jobId, data); cwfRefreshChecklistView(jobId, section);
 }
 window.cwfSetChecklistAll = cwfSetChecklistAll;
 function cwfToggleCheck(jobId, section, idx, checked){
   const data = cwfGetChecklist(jobId); data[section] = data[section] || {}; const row = data[section][idx] || {};
-  row.checked = !!checked; if (checked) row.issue = false; data[section][idx] = row; cwfSaveChecklist(jobId, data); openTechChecklistModal(jobId, section);
+  row.checked = !!checked; if (checked) row.issue = false; data[section][idx] = row; cwfSaveChecklist(jobId, data); cwfRefreshChecklistView(jobId, section);
 }
 window.cwfToggleCheck = cwfToggleCheck;
 function cwfToggleIssue(jobId, section, idx){
   const data = cwfGetChecklist(jobId); data[section] = data[section] || {}; const row = data[section][idx] || {};
-  row.issue = !row.issue; if (row.issue) row.checked = false; data[section][idx] = row; cwfSaveChecklist(jobId, data); openTechChecklistModal(jobId, section);
+  row.issue = !row.issue; if (row.issue) row.checked = false; data[section][idx] = row; cwfSaveChecklist(jobId, data); cwfRefreshChecklistView(jobId, section);
 }
 window.cwfToggleIssue = cwfToggleIssue;
 function cwfSaveIssueNote(jobId, section, idx, value){
@@ -3426,12 +3481,16 @@ function cwfChecklistSectionHtml(jobId, section){
             <label>${i+1}. ${label}</label>
             ${row.issue ? `<span class="cwf-chip bad">${issueText}</span>` : ''}
           </div>
-          <div class="cwf-check-tools"><button type="button" class="cwf-link-btn" onclick="cwfToggleIssue('${String(jobId).replace(/'/g,"\\'")}', '${section}', ${i})">${row.issue ? 'ยกเลิกปัญหา' : issueText}</button></div>
-          ${row.issue ? `<div class="cwf-issue-note"><textarea placeholder="หมายเหตุ เช่น บานสวิงหักอยู่ก่อน / หน้ากากแตก / มีน้ำหยด" oninput="cwfSaveIssueNote('${String(jobId).replace(/'/g,"\\'")}', '${section}', ${i}, this.value)">${String(row.note||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea></div>` : ''}
+          <div class="cwf-check-tools">
+            <button type="button" class="cwf-link-btn" onclick="cwfToggleIssue('${String(jobId).replace(/'/g,"\\'")}', '${section}', ${i})">${row.issue ? 'ยกเลิกปัญหา' : issueText}</button>
+            ${row.issue ? `<button type="button" class="cwf-link-btn" onclick="cwfAttachChecklistIssuePhoto('${String(jobId).replace(/'/g,"\\'")}', '${section}', ${i}, '')">📎 แนบรูปปัญหา</button>` : ''}
+          </div>
+          ${row.issue ? `<div class="cwf-issue-note"><textarea placeholder="หมายเหตุ เช่น บานสวิงหักอยู่ก่อน / หน้ากากแตก / มีน้ำหยด" oninput="cwfSaveIssueNote('${String(jobId).replace(/'/g,"\\'")}', '${section}', ${i}, this.value)">${String(row.note||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</textarea><div class="cwf-check-issue-photo">แนบรูปประกอบได้ เพื่อใช้เป็นหลักฐานว่าปัญหามีอยู่ก่อนหรือพบจากหน้างานจริง</div></div>` : ''}
         </div>`; }).join('')}
     </div>`;
 }
 function openTechChecklistModal(jobId, section){
+  window.__cwfChecklistContext = { mode:'job', jobId:String(jobId), section:section || 'pre' };
   const active = section || 'pre';
   const key = cwfCloseKey(jobId);
   const html = `
@@ -3529,11 +3588,11 @@ async function cwfValidateCloseRequirements(jobId, targetStatus){
     }
     const checklistOk = await cwfAutoCompleteMissingUnitChecklists(jobId, units);
     if (!checklistOk) { openTechPhotoModal(jobId, 'checklist'); return false; }
-    const payMsgUnit = await cwfValidatePayment(jobId); if (payMsgUnit) { alert(payMsgUnit); openTechPaymentModal(jobId); return false; }
+    const payMsgUnit = await cwfValidatePayment(jobId); if (payMsgUnit) { alert(payMsgUnit === 'กรุณาเลือกวิธีเก็บเงินลูกค้า' ? 'ยังไม่ได้เก็บเงินกับลูกค้า กรุณาเลือกวิธีชำระเงินก่อนปิดงาน' : payMsgUnit); openTechPaymentModal(jobId); return false; }
     return true;
   }
   const checklistMsg = cwfValidateChecklist(jobId); if (checklistMsg) { alert(checklistMsg); openTechChecklistModal(jobId, checklistMsg.includes('หลัง') ? 'post':'pre'); return false; }
-  const payMsg = await cwfValidatePayment(jobId); if (payMsg) { alert(payMsg); openTechPaymentModal(jobId); return false; }
+  const payMsg = await cwfValidatePayment(jobId); if (payMsg) { alert(payMsg === 'กรุณาเลือกวิธีเก็บเงินลูกค้า' ? 'ยังไม่ได้เก็บเงินกับลูกค้า กรุณาเลือกวิธีชำระเงินก่อนปิดงาน' : payMsg); openTechPaymentModal(jobId); return false; }
   const hasPhoto = await cwfHasRequiredBeforeAfter(jobId);
   if (!hasPhoto) return await cwfAskMissingPhotoAck(jobId);
   return true;

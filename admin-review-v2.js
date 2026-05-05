@@ -102,11 +102,11 @@ function mapFilterStatus(v){
     timeproposal: "รอพิจารณาเวลาใหม่",
     all: "all",
   };
-  return m[v] || "รอตรวจสอบ";
+  return m[v] || "all";
 }
 
 async function loadQueue(){
-  const f = $("filterStatus")?.value || "pending";
+  const f = $("filterStatus")?.value || "all";
   const status = mapFilterStatus(f);
 
   $("list").innerHTML = '<div class="card"><div class="muted">กำลังโหลด...</div></div>';
@@ -119,6 +119,19 @@ async function loadQueue(){
     const rows = Array.isArray(data.rows) ? data.rows : [];
     ROW_MAP = new Map(rows.map(r=>[Number(r.job_id), r]));
     $("pillCount").textContent = `${rows.length} งาน`;
+    const needs = rows.filter(r => ["รอตรวจสอบ","ตีกลับ","ไม่พบช่างรับงาน","รอพิจารณาเวลาใหม่"].includes(safe(r.job_status)));
+    const alertBox = $("approvalAlert");
+    if (alertBox) {
+      if (needs.length) {
+        const pending = needs.filter(r=>safe(r.job_status)==="รอตรวจสอบ").length;
+        const noaccept = needs.filter(r=>safe(r.job_status)==="ไม่พบช่างรับงาน" || safe(r.job_status)==="ตีกลับ").length;
+        const timep = needs.filter(r=>safe(r.job_status)==="รอพิจารณาเวลาใหม่").length;
+        alertBox.style.display = "block";
+        alertBox.innerHTML = `🔔 มีงานที่แอดมินต้องจัดการ ${needs.length} งาน` + (pending?` • รอตรวจสอบ ${pending}`:"") + (noaccept?` • ต้องยิงใหม่/ติดต่อ ${noaccept}`:"") + (timep?` • รออนุมัติเวลาใหม่ ${timep}`:"");
+      } else {
+        alertBox.style.display = "none";
+      }
+    }
 
     if (!rows.length){
       $("list").innerHTML = '<div class="card"><div class="muted">ไม่มีงานในคิวนี้</div></div>';
@@ -135,7 +148,7 @@ async function loadQueue(){
            </div>`
         : "";
       return `
-        <div class="card">
+        <div class="card review-card-hot">
           <div class="row">
             <div>
               <b>#${r.job_id} • ${safe(r.booking_code||"")}</b>

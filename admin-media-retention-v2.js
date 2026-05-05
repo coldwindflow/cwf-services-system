@@ -4,11 +4,15 @@ function fmtDate(v){ if(!v) return '-'; try { return new Date(v).toLocaleDateStr
 function fmtBytes(n){
   const x = Number(n || 0);
   if (!Number.isFinite(x) || x <= 0) return '0 MB';
+  if (x >= 1024*1024*1024) return `${(x / 1024 / 1024 / 1024).toLocaleString('th-TH', { maximumFractionDigits: 2 })} GB`;
   return `${(x / 1024 / 1024).toLocaleString('th-TH', { maximumFractionDigits: 1 })} MB`;
 }
 
 async function api(url, opts){
-  const r = await fetch(url, Object.assign({ credentials:'same-origin' }, opts || {}));
+  const options = Object.assign({}, opts || {});
+  const isForm = (typeof FormData !== 'undefined') && options.body instanceof FormData;
+  const headers = Object.assign(isForm ? {} : { 'Content-Type':'application/json' }, { 'x-user-role':'admin' }, options.headers || {});
+  const r = await fetch(url, Object.assign({ credentials:'same-origin' }, options, { headers }));
   const raw = await r.text().catch(()=> '');
   let d = {};
   try { d = raw ? JSON.parse(raw) : {}; } catch { d = {}; }
@@ -22,28 +26,53 @@ async function api(url, opts){
   return d;
 }
 
+function selectedJobIds(){
+  return Array.from(document.querySelectorAll('.media-job-check:checked')).map(x=>Number(x.value)).filter(Boolean);
+}
+function eligibleJobIds(){
+  return (window.__mediaFiltered || []).filter(j=>j.eligibility?.eligible).map(j=>Number(j.job_id)).filter(Boolean);
+}
+function updateBulkBar(){
+  const ids = selectedJobIds();
+  const bar = $('bulkBar');
+  if (bar) bar.innerHTML = `เลือกแล้ว <b>${ids.length}</b> ใบงาน`;
+}
+function setAllEligible(v){
+  const ids = new Set(eligibleJobIds());
+  document.querySelectorAll('.media-job-check').forEach(ch=>{ if(ids.has(Number(ch.value))) ch.checked = !!v; });
+  updateBulkBar();
+}
+
 function renderSummary(s){
   const cards = [
     ['รูปทั้งหมด', s.total_photos || 0],
     ['รูปหลักฐานที่ลบได้แล้ว', s.eligible_photos == null ? 'ตรวจตามรายการ' : s.eligible_photos],
     ['งานที่ล้างข้อมูลได้แล้ว', s.eligible_jobs || 0],
-    ['รูปสลิปที่ไม่ลบอัตโนมัติ', s.slip_photos || 0],
-    ['พื้นที่โดยประมาณที่ล้างได้', fmtBytes(s.bytes_estimated || 0)],
+    ['รูปสลิป', `${s.slip_photos || 0} รูป`],
+    ['พื้นที่ที่ล้างได้โดยประมาณ', fmtBytes(s.bytes_estimated || 0)],
+    ['พื้นที่ที่ระบบบันทึกไว้ทั้งหมด', fmtBytes(s.total_bytes_estimated || 0)],
   ];
-  $('mediaSummary').innerHTML = cards.map(([t,v]) => `<div class="summary-card"><div class="muted2">${esc(t)}</div><b style="font-size:22px">${esc(v)}</b></div>`).join('');
+  $('mediaSummary').innerHTML = cards.map(([t,v]) => `<div class="summary-card"><div class="muted2">${esc(t)}</div><b style="font-size:22px">${esc(v)}</b></div>`).join('') + `<div class="muted2" style="grid-column:1/-1;margin-top:6px">${esc(s.storage_free_note || 'พื้นที่ว่างจริงดูได้จาก Render/Cloudinary Dashboard')}</div>`;
 }
 
 function renderJobs(rows){
   const status = $('filterStatus').value || 'all';
   const filtered = rows.filter(j => status === 'all' || (status === 'eligible' ? j.eligibility?.eligible : !j.eligibility?.eligible));
+  window.__mediaFiltered = filtered;
+  updateBulkBar();
   $('mediaJobs').innerHTML = filtered.length ? filtered.map(j => {
     const ok = !!j.eligibility?.eligible;
-    return `<div class="item">
-      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
-        <div>
-          <b>${esc(j.booking_code || ('#' + j.job_id))} • ${esc(j.job_type || '-')}</b>
-          <div class="mini">${esc(j.customer_name || '-')} • ${esc(j.customer_phone || '-')}</div>
-        </div>
+    const hasEvidence = Number(j.photo_count || 0) > 0;
+    const hasSlips = Number(j.slip_count || 0) > 0;
+    return `<div class="item media-job-row ${ok ? 'is-eligible':''}">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
+        <label style="display:flex;gap:10px;align-items:flex-start;min-width:0">
+          <input class="media-job-check" type="checkbox" value="${Number(j.job_id)}" ${ok ? 'checked' : ''} onchange="updateBulkBar()" style="width:22px;height:22px;margin-top:4px">
+          <div>
+            <b>${esc(j.booking_code || ('#' + j.job_id))} • ${esc(j.job_type || '-')}</b>
+            <div class="mini">${esc(j.customer_name || '-')} • ${esc(j.customer_phone || '-')}</div>
+          </div>
+        </label>
         <span class="pill" style="${ok ? 'background:#dcfce7;color:#166534' : 'background:#fff7ed;color:#9a3412'}">${esc(j.eligibility?.reason || '-')}</span>
       </div>
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">
@@ -51,17 +80,20 @@ function renderJobs(rows){
         <span class="pill">หมดประกัน: ${fmtDate(j.warranty_end_date)}</span>
         <span class="pill">ล้างได้ตั้งแต่: ${fmtDate(j.purge_eligible_date)}</span>
         <span class="pill">รูปหลักฐาน: ${Number(j.photo_count || 0)} รูป</span>
-        <span class="pill">รูปสลิป: ${Number(j.slip_count || 0)} รูป ไม่ถูกลบอัตโนมัติ</span>
+        <span class="pill">รูปสลิป: ${Number(j.slip_count || 0)} รูป</span>
+        <span class="pill">พื้นที่: ${fmtBytes(j.bytes_estimated || 0)}</span>
         <span class="pill">เช็คลิส: ${Number(j.checklist_count || 0)}</span>
         <span class="pill">เครื่อง: ${Number(j.unit_count || 0)}</span>
       </div>
       <div class="row" style="gap:8px;flex-wrap:wrap;margin-top:10px">
         <button class="secondary" type="button" style="width:auto" onclick="location.href='/admin-job-view-v2.html?job_id=${encodeURIComponent(j.job_id)}'">ดูรายละเอียด</button>
-        <button class="secondary" type="button" style="width:auto" onclick="dryRun(${Number(j.job_id)})">ตรวจสอบก่อนลบ</button>
-        <button class="danger" type="button" style="width:auto" ${ok ? '' : 'disabled'} onclick="purgeJob(${Number(j.job_id)})">ล้างข้อมูลหนัก</button>
+        <button class="secondary" type="button" style="width:auto" onclick="dryRunMany([${Number(j.job_id)}], false)">ตรวจสอบก่อนลบ</button>
+        <button class="danger" type="button" style="width:auto" ${ok && hasEvidence ? '' : 'disabled'} onclick="purgeMany([${Number(j.job_id)}], false)">ล้างหลักฐานงาน</button>
+        <button class="danger" type="button" style="width:auto;background:#7c2d12" ${hasSlips ? '' : 'disabled'} onclick="purgeMany([${Number(j.job_id)}], true)">ลบเฉพาะสลิป</button>
       </div>
     </div>`;
-  }).join('') : '<div class="muted2">ไม่พบงานตามเงื่อนไข</div>';
+  }).join('') : '<div class="muted2">ไม่พบงานที่มีรูปตามเงื่อนไข</div>';
+  updateBulkBar();
 }
 
 async function loadAll(){
@@ -83,41 +115,42 @@ async function loadAll(){
     renderSummary(summary);
   } catch(e) {
     const rows = window.__mediaJobs || [];
+    const elig = rows.filter(j=>j.eligibility?.eligible);
     renderSummary({
-      total_photos: rows.reduce((s,j)=>s+Number(j.photo_count||0),0),
-      eligible_photos: rows.filter(j=>j.eligibility?.eligible).reduce((s,j)=>s+Number(j.photo_count||0),0),
-      eligible_jobs: rows.filter(j=>j.eligibility?.eligible).length,
+      total_photos: rows.reduce((s,j)=>s+Number(j.photo_count||0)+Number(j.slip_count||0),0),
+      eligible_photos: elig.reduce((s,j)=>s+Number(j.photo_count||0),0),
+      eligible_jobs: elig.length,
       slip_photos: rows.reduce((s,j)=>s+Number(j.slip_count||0),0),
-      bytes_estimated: rows.reduce((s,j)=>s+Number(j.bytes_estimated||0),0),
+      bytes_estimated: elig.reduce((s,j)=>s+Number(j.bytes_estimated||0),0),
+      total_bytes_estimated: rows.reduce((s,j)=>s+Number(j.bytes_estimated||0)+Number(j.slip_bytes_estimated||0),0),
     });
   }
 }
 
-async function dryRun(jobId){
-  const r = await api('/admin/media-retention/purge', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ dry_run:true, job_ids:[jobId], confirm_text:'' })
-  });
-  const one = (r.results || [])[0] || {};
-  alert(`ตรวจสอบก่อนลบเสร็จแล้ว ยังไม่มีการลบข้อมูลจริง\nรูปหลักฐาน: ${one.photos_count || 0} รูป\nเช็คลิส: ${one.checklist_count || 0}\nรูปสลิป: ${one.slips_count || 0} รูป ไม่ถูกลบอัตโนมัติ`);
+async function dryRunMany(ids, slipOnly){
+  const r = await api('/admin/media-retention/purge', { method:'POST', body: JSON.stringify({ dry_run:true, job_ids:ids, slip_only:!!slipOnly, purge_type: slipOnly ? 'slips' : 'job_evidence', confirm_text:'' }) });
+  const total = (r.results || []).reduce((a,x)=>({ photos:a.photos+Number(x.photos_count||0), slips:a.slips+Number(x.slips_count||0), bytes:a.bytes+Number(x.bytes_estimated||0) }), {photos:0, slips:0, bytes:0});
+  alert(`ตรวจสอบก่อนลบเสร็จแล้ว ยังไม่มีการลบข้อมูลจริง\n${slipOnly ? 'รูปสลิป' : 'รูปหลักฐาน'}: ${slipOnly ? total.slips : total.photos} รูป\nพื้นที่โดยประมาณ: ${fmtBytes(total.bytes)}`);
+  return r;
 }
-
-async function purgeJob(jobId){
-  await dryRun(jobId);
-  const text = prompt('พิมพ์ "ยืนยันลบ" เพื่อยืนยันการล้างข้อมูลหนัก');
-  if (String(text || '').trim() !== 'ยืนยันลบ') return alert('ยกเลิกการล้างข้อมูล');
-  const r = await api('/admin/media-retention/purge', {
-    method:'POST',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ dry_run:false, job_ids:[jobId], confirm_text:'ยืนยันลบ' })
-  });
-  alert(r.message || 'ล้างรูปเก่าเรียบร้อย');
+async function purgeMany(ids, slipOnly){
+  if (!ids.length) return alert('กรุณาเลือกงานก่อน');
+  await dryRunMany(ids, slipOnly);
+  const need = slipOnly ? 'ยืนยันลบสลิป' : 'ยืนยันลบ';
+  const text = prompt(`พิมพ์ "${need}" เพื่อยืนยัน${slipOnly ? 'การลบเฉพาะรูปสลิป' : 'การล้างรูปหลักฐานและข้อมูลหนัก'}`);
+  if (String(text || '').trim() !== need) return alert('ยกเลิกการลบ');
+  const r = await api('/admin/media-retention/purge', { method:'POST', body: JSON.stringify({ dry_run:false, job_ids:ids, slip_only:!!slipOnly, purge_type: slipOnly ? 'slips' : 'job_evidence', confirm_text:need }) });
+  alert(r.message || 'ทำรายการเรียบร้อย');
   loadAll();
 }
+function dryRun(jobId){ return dryRunMany([Number(jobId)], false); }
+function purgeJob(jobId){ return purgeMany([Number(jobId)], false); }
+function purgeSelected(slipOnly){ return purgeMany(selectedJobIds(), !!slipOnly); }
+function dryRunSelected(){ return dryRunMany(selectedJobIds(), false); }
 
-window.dryRun = dryRun;
-window.purgeJob = purgeJob;
+window.dryRun = dryRun; window.purgeJob = purgeJob; window.updateBulkBar = updateBulkBar; window.setAllEligible = setAllEligible; window.purgeSelected = purgeSelected; window.dryRunSelected = dryRunSelected;
 $('btnReload')?.addEventListener('click', loadAll);
 $('filterStatus')?.addEventListener('change', () => renderJobs(window.__mediaJobs || []));
+$('filterType')?.addEventListener('change', loadAll);
+$('filterSearch')?.addEventListener('keydown', (e)=>{ if(e.key==='Enter') loadAll(); });
 loadAll().catch(e => { $('mediaJobs').innerHTML = `<div class="muted2">${esc(e.message || 'โหลดข้อมูลไม่สำเร็จ')}</div>`; });

@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>ตัวจัดการรูปและพื้นที่จัดเก็บ</title>
   <link rel="stylesheet" href="/style.css">
+  <style>.media-bulk{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:12px;padding:10px;border-radius:16px;background:#f8fafc;border:1px solid rgba(15,23,42,.08)}.media-job-row{border-radius:18px}.media-job-row.is-eligible{box-shadow:0 0 0 2px rgba(34,197,94,.10)}</style>
 </head>
 <body class="cwf-admin-v2-shell">
   <main class="wrap">
@@ -39,13 +40,22 @@
         </div>
         <button id="btnReload" type="button" style="width:auto">ค้นหา</button>
       </div>
+      <div class="media-bulk">
+        <span id="bulkBar">เลือกแล้ว <b>0</b> ใบงาน</span>
+        <button type="button" class="secondary" style="width:auto" onclick="setAllEligible(true)">เลือกงานที่ลบได้ทั้งหมด</button>
+        <button type="button" class="secondary" style="width:auto" onclick="setAllEligible(false)">เอาติ๊กถูกออกทั้งหมด</button>
+        <button type="button" class="secondary" style="width:auto" onclick="dryRunSelected()">ตรวจสอบรายการที่เลือก</button>
+        <button type="button" class="danger" style="width:auto" onclick="purgeSelected(false)">ล้างหลักฐานงานที่เลือก</button>
+        <button type="button" class="danger" style="width:auto;background:#7c2d12" onclick="purgeSelected(true)">ลบเฉพาะสลิปที่เลือก</button>
+      </div>
     </section>
 
     <section class="card">
+      <div class="muted2" style="margin-bottom:8px">เรียงงานเก่าก่อน เพื่อให้ล้างข้อมูลที่ควรลบก่อน งานที่ไม่มีรูปจะไม่แสดงให้รก</div>
       <div id="mediaJobs" class="list"></div>
     </section>
   </main>
   <script src="/admin-v2-common.js"></script>
-  <script src="/admin-media-retention-v2.js?v=media-final-v5"></script>
+  <script src="/admin-media-retention-v2.js?v=media-bulk-v10"></script>
 </body>
 </html>
