@@ -2933,9 +2933,9 @@ function ensureCwfCloseStyles(){
   const style = document.createElement('style');
   style.id = 'cwfCloseFlowStyles';
   style.textContent = `
-    .cwf-close-hub{display:grid!important;grid-template-columns:1fr!important;gap:12px!important;margin:12px 0 14px!important}
-    .cwf-close-action{appearance:none!important;-webkit-appearance:none!important;width:100%!important;min-height:78px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px!important;text-align:left!important;border:1px solid rgba(21,88,214,.18)!important;background:linear-gradient(180deg,#ffffff,#f8fbff)!important;color:#0f172a!important;border-radius:22px!important;padding:14px 15px!important;box-shadow:0 14px 34px rgba(15,23,42,.10)!important;cursor:pointer!important;line-height:1.25!important}
-    .cwf-close-action:disabled{opacity:.55!important;cursor:not-allowed!important}.cwf-close-action .cwf-action-left{display:flex!important;align-items:center!important;gap:13px!important;min-width:0!important}.cwf-close-action .ico{width:48px!important;height:48px!important;min-width:48px!important;border-radius:17px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:linear-gradient(135deg,#1558d6,#05b6d6)!important;color:#fff!important;font-size:24px!important;box-shadow:0 8px 20px rgba(21,88,214,.20)!important}.cwf-close-action b{display:block!important;font-size:18px!important;margin:0!important;color:#0f172a!important;font-weight:1000!important;letter-spacing:0!important}.cwf-close-action small{display:block!important;color:#475569!important;line-height:1.45!important;margin-top:3px!important;font-size:13px!important;font-weight:800!important}.cwf-action-arrow{font-size:22px!important;color:#1558d6!important;font-weight:1000!important}
+    .cwf-close-hub{display:grid!important;grid-template-columns:1fr!important;gap:16px!important;margin:14px 0 18px!important}
+    .cwf-close-action{appearance:none!important;-webkit-appearance:none!important;width:100%!important;min-height:82px!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:14px!important;text-align:left!important;border:1px solid rgba(148,163,184,.28)!important;background:#ffffff!important;color:#0f172a!important;border-radius:24px!important;padding:16px!important;box-shadow:0 8px 22px rgba(15,23,42,.08)!important;cursor:pointer!important;line-height:1.28!important}
+    .cwf-close-action:active{transform:translateY(1px)!important}.cwf-close-action:disabled{opacity:.58!important;cursor:not-allowed!important}.cwf-close-action .cwf-action-left{display:flex!important;align-items:center!important;gap:14px!important;min-width:0!important}.cwf-close-action .ico{width:46px!important;height:46px!important;min-width:46px!important;border-radius:16px!important;display:flex!important;align-items:center!important;justify-content:center!important;background:#eef5ff!important;color:#1558d6!important;font-size:23px!important;border:1px solid rgba(37,99,235,.12)!important;box-shadow:none!important}.cwf-close-action b{display:block!important;font-size:18px!important;margin:0!important;color:#0f172a!important;font-weight:1000!important;letter-spacing:0!important}.cwf-close-action small{display:block!important;color:#64748b!important;line-height:1.42!important;margin-top:4px!important;font-size:13px!important;font-weight:750!important}.cwf-action-arrow{font-size:24px!important;color:#94a3b8!important;font-weight:1000!important}
     .cwf-modal-backdrop{position:fixed;inset:0;z-index:10050;background:rgba(2,6,23,.62);display:flex;align-items:flex-end;justify-content:center;padding:0 10px 10px}
     .cwf-modal-panel{width:min(720px,100%);max-height:88vh;overflow:hidden;background:#f8fbff;border:1px solid rgba(148,163,184,.34);border-radius:26px 26px 18px 18px;box-shadow:0 26px 70px rgba(2,6,23,.36);display:flex;flex-direction:column}
     .cwf-modal-head{padding:15px 16px;background:linear-gradient(135deg,#071947,#1558d6);color:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px}.cwf-modal-head b{font-size:18px}.cwf-modal-head button{width:auto;min-width:44px;border-radius:999px;background:#ffcc00;color:#111827;border:0;font-weight:900;padding:9px 13px}
@@ -3336,7 +3336,7 @@ function buildJobCard(job, historyMode = false) {
 
     ${showWorkTools ? `
       <details class="cwf-details" style="margin-top:10px;" ${isWorking ? "open" : ""}>
-        <summary>🛠️ ปิดงาน / หลักฐาน / เก็บเงินลูกค้า</summary>
+        <summary>🛠️ ปิดงาน / หลักฐาน</summary>
         <div class="cwf-details-body">
           <div class="cwf-close-hub">
             <button class="cwf-close-action" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""} aria-label="ลงรูปหลักฐาน">
@@ -3344,9 +3344,6 @@ function buildJobCard(job, historyMode = false) {
             </button>
             <button class="cwf-close-action" type="button" onclick="openTechChecklistModal('${jobKeyJs}', 'pre')" ${!canEdit ? "disabled" : ""} aria-label="เช็คลิสตรวจสภาพ">
               <span class="cwf-action-left"><span class="ico">✅</span><span><b>เช็คลิสตรวจสภาพ</b><small>ติ๊กตรวจก่อนล้างและหลังล้างแบบสั้น</small></span></span><span class="cwf-action-arrow">›</span>
-            </button>
-            <button class="cwf-close-action" type="button" onclick="openTechPaymentModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""} aria-label="เก็บเงินลูกค้า">
-              <span class="cwf-action-left"><span class="ico">💳</span><span><b>เก็บเงินลูกค้า</b><small>เลือก QR บริษัท / เงินสด / ให้แอดมินจัดการ</small></span></span><span class="cwf-action-arrow">›</span>
             </button>
           </div>
 
