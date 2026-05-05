@@ -10647,6 +10647,27 @@ await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS approved_at T
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS payment_reference TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS payment_note TEXT`);
 
+    // 2.5b) jobs: technician close flow v2 (photo acknowledgement + checklist + payment proof + signature type)
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS pre_cleaning_checklist JSONB`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS post_cleaning_checklist JSONB`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS checklist_completed_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS checklist_completed_by TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS photo_acknowledgement_required BOOLEAN DEFAULT FALSE`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS photo_acknowledgement_accepted BOOLEAN DEFAULT FALSE`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS photo_acknowledgement_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS photo_acknowledgement_by TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS missing_photo_categories JSONB`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_payment_method TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_payment_status TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_cash_amount NUMERIC`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_payment_note TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_cash_confirmed BOOLEAN DEFAULT FALSE`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_cash_confirmed_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_cash_confirmed_by TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_signature_type TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_signature_by TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_signature_at TIMESTAMPTZ`);
+
 
 // 3) users: admin profile + commission rate (dashboard)
 await pool.query(`ALTER TABLE public.users ADD COLUMN IF NOT EXISTS full_name TEXT`);
@@ -16529,7 +16550,11 @@ async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
       j.technician_team, j.technician_username, j.created_at,
       j.maps_url, j.job_zone,
       j.travel_started_at, j.started_at, j.finished_at, j.canceled_at, j.cancel_reason,
-      j.checkin_at, j.technician_note, j.technician_note_at
+      j.checkin_at, j.technician_note, j.technician_note_at,
+      j.pre_cleaning_checklist, j.post_cleaning_checklist,
+      j.photo_acknowledgement_required, j.photo_acknowledgement_accepted, j.missing_photo_categories,
+      j.close_payment_method, j.close_payment_status, j.close_cash_amount, j.close_payment_note,
+      j.close_cash_confirmed, j.close_signature_type, j.close_signature_by, j.close_signature_at
     FROM public.jobs j
     WHERE j.job_id = ANY($2::int[])
       AND ${_techVisibilityPredicateSql('$1')}
@@ -16576,6 +16601,10 @@ app.get("/jobs/tech/:username", async (req, res) => {
             j.checkin_at,
             j.technician_note, j.technician_note_at,
             j.final_signature_path, j.final_signature_status, j.final_signature_at,
+            j.pre_cleaning_checklist, j.post_cleaning_checklist,
+            j.photo_acknowledgement_required, j.photo_acknowledgement_accepted, j.missing_photo_categories,
+            j.close_payment_method, j.close_payment_status, j.close_cash_amount, j.close_payment_note,
+            j.close_cash_confirmed, j.close_signature_type, j.close_signature_by, j.close_signature_at,
             j.checkin_latitude, j.checkin_longitude,
             ${historyWhere} AS is_history
           FROM public.jobs j
@@ -16611,6 +16640,10 @@ app.get("/jobs/tech/:username", async (req, res) => {
         j.checkin_at,
         j.technician_note, j.technician_note_at,
         j.final_signature_path, j.final_signature_status, j.final_signature_at,
+        j.pre_cleaning_checklist, j.post_cleaning_checklist,
+        j.photo_acknowledgement_required, j.photo_acknowledgement_accepted, j.missing_photo_categories,
+        j.close_payment_method, j.close_payment_status, j.close_cash_amount, j.close_payment_note,
+        j.close_cash_confirmed, j.close_signature_type, j.close_signature_by, j.close_signature_at,
         j.checkin_latitude, j.checkin_longitude
       FROM public.jobs j
       WHERE ${_techVisibilityPredicateSql('$1')}
@@ -17070,8 +17103,8 @@ app.get("/jobs/:job_id/pricing", async (req, res) => {
 
 
 // =======================================
-// 💳 MARK PAID (ช่างกดจ่ายเงินแล้ว)
-// - บันทึก paid_at + payment_status='paid'
+// 💳 PAYMENT NOTICE (ช่างแนบสลิปแล้ว / รอตรวจสอบ)
+// - ไม่ mark paid ทันที เพื่อให้แอดมินตรวจสอบก่อน
 // =======================================
 app.post("/jobs/:job_id/pay", async (req, res) => {
   const job_id = await resolveJobIdAny(pool, req.params.job_id);
@@ -17083,9 +17116,9 @@ app.post("/jobs/:job_id/pay", async (req, res) => {
   try {
     await pool.query(
       `UPDATE public.jobs
-       SET paid_at = COALESCE(paid_at, NOW()),
-           paid_by = COALESCE(paid_by, $1),
-           payment_status = 'paid'
+       SET paid_by = COALESCE(paid_by, $1),
+           payment_status = CASE WHEN COALESCE(payment_status,'')='paid' THEN payment_status ELSE 'pending_verification' END,
+           close_payment_status = COALESCE(close_payment_status, 'pending_verification')
        WHERE job_id=$2`,
       [paid_by, job_id]
     );
@@ -17093,6 +17126,30 @@ app.post("/jobs/:job_id/pay", async (req, res) => {
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "บันทึกการจ่ายเงินไม่สำเร็จ" });
+  }
+});
+
+
+// ✅ ADMIN: confirm customer payment after technician close flow
+app.post('/admin/jobs/:job_id/confirm-payment-v2', requireAdminSoft, async (req, res) => {
+  const job_id = await resolveJobIdAny(pool, req.params.job_id);
+  const admin = String(req.body?.admin_username || req.body?.username || _authUsername(req) || 'admin').trim() || 'admin';
+  if (!job_id) return res.status(400).json({ error: 'job_id ไม่ถูกต้อง' });
+  try {
+    await pool.query(
+      `UPDATE public.jobs
+          SET payment_status='paid',
+              paid_at=COALESCE(paid_at, NOW()),
+              paid_by=COALESCE(paid_by, $2),
+              close_payment_status='paid'
+        WHERE job_id=$1`,
+      [job_id, admin]
+    );
+    try { await logJobUpdate(job_id, { actor_username: admin, actor_role: 'admin', action: 'payment_confirmed', message: 'แอดมินยืนยันการชำระเงินแล้ว' }); } catch (_) {}
+    res.json({ success: true, job_id: Number(job_id), payment_status: 'paid' });
+  } catch (e) {
+    console.error('confirm-payment-v2', e);
+    res.status(500).json({ error: 'ยืนยันการชำระเงินไม่สำเร็จ' });
   }
 });
 
@@ -18675,11 +18732,31 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
   const warranty_kind = String(req.body?.warranty_kind || "").trim();
   const warranty_months = req.body?.warranty_months;
 
+  const pre_cleaning_checklist = Array.isArray(req.body?.pre_cleaning_checklist) ? req.body.pre_cleaning_checklist : null;
+  const post_cleaning_checklist = Array.isArray(req.body?.post_cleaning_checklist) ? req.body.post_cleaning_checklist : null;
+  const photo_ack = (req.body && typeof req.body.photo_acknowledgement === 'object') ? req.body.photo_acknowledgement : null;
+  const close_payment_method = String(req.body?.close_payment_method || '').trim();
+  const close_payment_status = String(req.body?.close_payment_status || '').trim();
+  const close_cash_amount = req.body?.close_cash_amount == null ? null : Number(req.body.close_cash_amount);
+  const close_payment_note = String(req.body?.close_payment_note || '').trim();
+  const close_cash_confirmed = !!req.body?.close_cash_confirmed;
+  const close_signature_type = String(req.body?.close_signature_type || 'customer_signature').trim();
+
   if (!["เสร็จแล้ว", "ยกเลิก"].includes(status)) {
     return res.status(400).json({ error: "status ต้องเป็น 'เสร็จแล้ว' หรือ 'ยกเลิก'" });
   }
   if (!signature_data) {
-    return res.status(400).json({ error: "ต้องมีลายเซ็นต์ลูกค้า" });
+    return res.status(400).json({ error: "ต้องมีลายเซ็นปิดงาน" });
+  }
+  if (status === 'เสร็จแล้ว') {
+    if (!pre_cleaning_checklist || !pre_cleaning_checklist.length) return res.status(400).json({ error: 'กรุณาตรวจสภาพก่อนล้างให้ครบ' });
+    if (!post_cleaning_checklist || !post_cleaning_checklist.length) return res.status(400).json({ error: 'กรุณาตรวจหลังล้างให้ครบ' });
+    if (!close_payment_method) return res.status(400).json({ error: 'กรุณาเลือกวิธีชำระเงิน' });
+    if (close_payment_method === 'cash_to_technician') {
+      if (!Number.isFinite(close_cash_amount) || close_cash_amount <= 0) return res.status(400).json({ error: 'กรุณาระบุจำนวนเงินสดที่รับ' });
+      if (!close_cash_confirmed) return res.status(400).json({ error: 'กรุณายืนยันการรับเงินสด' });
+      if (close_signature_type !== 'technician_signature') return res.status(400).json({ error: 'กรุณาให้ช่างเซ็นรับรองปิดงาน' });
+    }
   }
 
   const client = await pool.connect();
@@ -18797,6 +18874,9 @@ if (status === "เสร็จแล้ว") {
 	          wMonths = w.months;
 	        }
 	      }
+      const ackAccepted = !!(photo_ack && photo_ack.accepted);
+      const missingPhotos = (photo_ack && Array.isArray(photo_ack.missing)) ? photo_ack.missing : [];
+      const paymentStatusToSave = close_payment_method === 'admin_handles_payment' ? 'pending_admin_update' : (close_payment_status || 'pending_verification');
       await client.query(
         `UPDATE public.jobs
          SET job_status='เสร็จแล้ว',
@@ -18807,9 +18887,41 @@ if (status === "เสร็จแล้ว") {
              warranty_kind = COALESCE($3, warranty_kind),
              warranty_months = COALESCE($4, warranty_months),
              warranty_start_at = COALESCE(warranty_start_at, NOW()),
-         warranty_end_at = COALESCE($5, warranty_end_at)
+             warranty_end_at = COALESCE($5, warranty_end_at),
+             pre_cleaning_checklist = COALESCE($6::jsonb, pre_cleaning_checklist),
+             post_cleaning_checklist = COALESCE($7::jsonb, post_cleaning_checklist),
+             checklist_completed_at = NOW(),
+             checklist_completed_by = $8,
+             photo_acknowledgement_required = $9,
+             photo_acknowledgement_accepted = $10,
+             photo_acknowledgement_at = CASE WHEN $10 THEN NOW() ELSE photo_acknowledgement_at END,
+             photo_acknowledgement_by = CASE WHEN $10 THEN $8 ELSE photo_acknowledgement_by END,
+             missing_photo_categories = COALESCE($11::jsonb, missing_photo_categories),
+             close_payment_method = $12,
+             close_payment_status = $13,
+             payment_status = CASE WHEN COALESCE(payment_status,'')='paid' THEN payment_status ELSE $13 END,
+             close_cash_amount = $14,
+             close_payment_note = NULLIF($15,''),
+             close_cash_confirmed = $16,
+             close_cash_confirmed_at = CASE WHEN $16 THEN NOW() ELSE close_cash_confirmed_at END,
+             close_cash_confirmed_by = CASE WHEN $16 THEN $8 ELSE close_cash_confirmed_by END,
+             close_signature_type = $17,
+             close_signature_by = $8,
+             close_signature_at = NOW()
          WHERE job_id=$2`,
-        [sigPath, realId, wKind, wMonths, wEndIso]
+        [sigPath, realId, wKind, wMonths, wEndIso,
+          pre_cleaning_checklist ? JSON.stringify(pre_cleaning_checklist) : null,
+          post_cleaning_checklist ? JSON.stringify(post_cleaning_checklist) : null,
+          technician_username,
+          missingPhotos.length > 0,
+          ackAccepted,
+          missingPhotos.length ? JSON.stringify(missingPhotos) : null,
+          close_payment_method || null,
+          paymentStatusToSave,
+          Number.isFinite(close_cash_amount) ? close_cash_amount : null,
+          close_payment_note,
+          close_cash_confirmed,
+          close_signature_type || 'customer_signature']
       );
       if (isRevisitFlow && revisitResult) {
         await logJobUpdate(
@@ -18839,6 +18951,10 @@ if (status === "เสร็จแล้ว") {
           warranty_end_at: wEndIso || null,
           revisit_result: revisitResult || null,
           revisit_note: revisitNote || null,
+          close_payment_method: close_payment_method || null,
+          close_payment_status: close_payment_method === 'admin_handles_payment' ? 'pending_admin_update' : (close_payment_status || 'pending_verification'),
+          close_signature_type: close_signature_type || 'customer_signature',
+          photo_acknowledgement_accepted: !!(photo_ack && photo_ack.accepted),
         }
       }, client);
     } else {

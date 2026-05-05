@@ -299,6 +299,48 @@ function inWarranty(job){
   return new Date(job.warranty_end_at).getTime() >= Date.now();
 }
 
+
+function renderCloseFlowSummary(job){
+  const payMap = {
+    customer_qr_company: 'ลูกค้าสแกนจ่ายบริษัท',
+    cash_to_technician: 'ลูกค้าจ่ายเงินสดให้ช่าง',
+    admin_handles_payment: 'ลูกค้าจ่ายกับแอดมิน / รอแอดมินจัดการ'
+  };
+  const statusMap = {
+    pending_admin_update: 'รอแอดมินอัปเดตการชำระเงิน',
+    pending_verification: 'ชำระแล้วรอตรวจสอบ',
+    paid: 'จ่ายแล้ว',
+    unpaid: 'ยังไม่ชำระ'
+  };
+  const pre = Array.isArray(job?.pre_cleaning_checklist) ? job.pre_cleaning_checklist : [];
+  const post = Array.isArray(job?.post_cleaning_checklist) ? job.post_cleaning_checklist : [];
+  const preIssues = pre.filter(x=>String(x.status||'')==='มีปัญหาอยู่ก่อน');
+  const postIssues = post.filter(x=>String(x.status||'')==='พบปัญหาใหม่');
+  const preText = pre.length ? (preIssues.length ? `ก่อนล้าง: มีปัญหาอยู่ก่อน ${preIssues.length} รายการ` : 'ก่อนล้าง: ปกติทั้งหมด') : 'ยังไม่มีข้อมูลตรวจสภาพ';
+  const postText = post.length ? (postIssues.length ? `หลังล้าง: พบปัญหาใหม่ ${postIssues.length} รายการ` : 'หลังล้าง: ปกติทั้งหมด') : 'ยังไม่มีข้อมูลตรวจหลังล้าง';
+  const sig = job?.close_signature_type === 'technician_signature' ? 'ปิดงานโดยช่างรับรอง' : (job?.close_signature_type === 'customer_signature' ? 'ปิดงานด้วยลายเซ็นลูกค้า' : 'ยังไม่มีข้อมูลชนิดลายเซ็น');
+  const pay = payMap[job?.close_payment_method] || job?.payment_method || '-';
+  const payStatus = statusMap[job?.close_payment_status] || statusMap[job?.payment_status] || job?.close_payment_status || job?.payment_status || '-';
+  const ack = job?.photo_acknowledgement_accepted ? `<div class="pill" style="background:#fff7ed;border-color:rgba(234,88,12,.25);color:#9a3412">ปิดงานโดยไม่มีรูปหลักฐานครบถ้วน และช่างได้ยอมรับเงื่อนไขแล้ว</div>` : '';
+  const issueDetails = [...preIssues, ...postIssues].map(x=>`<li><b>${escapeHtml(safe(x.label||'-'))}</b>: ${escapeHtml(safe(x.note||x.status||''))}</li>`).join('');
+  return `<details class="cwf-details" style="margin-top:12px" open>
+    <summary>✅ สรุปปิดงาน / หลักฐาน / การชำระเงิน</summary>
+    <div class="cwf-details-body">
+      <div class="row" style="gap:8px;flex-wrap:wrap">
+        <span class="pill">${escapeHtml(preText)}</span>
+        <span class="pill">${escapeHtml(postText)}</span>
+        <span class="pill">${escapeHtml(sig)}</span>
+      </div>
+      <div style="margin-top:8px"><b>วิธีชำระเงิน:</b> ${escapeHtml(safe(pay))}</div>
+      <div style="margin-top:4px"><b>สถานะชำระเงิน:</b> ${escapeHtml(safe(payStatus))}</div>
+      ${job?.close_cash_amount ? `<div style="margin-top:4px"><b>เงินสดที่ช่างรับ:</b> ${Number(job.close_cash_amount||0).toLocaleString()} บาท</div>` : ''}
+      ${(job?.payment_status !== 'paid' && job?.close_payment_status !== 'paid') ? `<div style="margin-top:10px"><button id="btnConfirmPaymentV2" class="secondary" type="button" style="width:auto">✅ แอดมินยืนยันว่าจ่ายแล้ว</button></div>` : ''}
+      ${ack ? `<div style="margin-top:8px">${ack}</div>` : ''}
+      ${issueDetails ? `<details style="margin-top:8px"><summary>ดูรายการที่มีปัญหา</summary><ul>${issueDetails}</ul></details>` : ''}
+    </div>
+  </details>`;
+}
+
 function warrantyLabel(job){
   const end = job?.warranty_end_at ? fmtDT(job.warranty_end_at) : null;
   const kind = String(job?.warranty_kind||'').trim();
@@ -403,6 +445,8 @@ async function loadJob(){
       <div style="margin-top:6px"><b>ช่างหลัก:</b> ${escapeHtml(safe(job.technician_username||'-'))}</div>
       <div style="margin-top:6px"><b>ทีมช่าง:</b> <span title="${escapeHtml(teamText)}">${escapeHtml(teamText)}</span></div>
     </div>
+
+    ${renderCloseFlowSummary(job)}
 
     <div class="row" style="margin-top:12px;gap:10px;flex-wrap:wrap">
       <button id="btnDocQuote" class="secondary" type="button" style="width:auto">🧾 ใบเสนอราคา (เต็ม)</button>
