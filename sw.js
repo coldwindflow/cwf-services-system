@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v47-work-calendar-open-fix-20260507";
+const CACHE_NAME = "cwf-cache-v47-work-calendar-open-force-20260507";
 
 const ASSETS = [
   "/",
@@ -9,7 +9,7 @@ const ASSETS = [
   "/index.html",
   "/tech.html",
   "/style.css",
-  "/app.js?v=work-calendar-open-fix-20260507",
+  "/app.js?v=20260507_work_calendar_open_v2",
   "/logo.png",
   "/assets/cwf-promptpay-qr.jpg",
   "/manifest.json",

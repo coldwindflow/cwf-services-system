@@ -4438,8 +4438,8 @@ function ensureWorkdaysModal(){
       <div class="cwf-calendar-head">
         <div>
           <div class="cwf-eyebrow">CWF Work Calendar</div>
-          <h3 id="cwfWorkCalendarTitle">🗓️ ตั้งค่าปฏิทินรับงาน</h3>
-          <p>สำหรับงานล่วงหน้าที่แอดมินมอบหมายเท่านั้น • งานด่วนใช้ปุ่มหน้าแรกเหมือนเดิม</p>
+          <h3 id="cwfWorkCalendarTitle">🗓️ ปฏิทินรับงานช่าง</h3>
+          <p>ใช้เฉพาะงานล่วงหน้าที่แอดมินบังคับ/มอบหมายให้ ไม่เกี่ยวกับงานด่วน</p>
         </div>
         <button class="cwf-close" type="button" id="techWorkCalendarClose">✕</button>
       </div>
@@ -4491,8 +4491,8 @@ function ensureWorkdaysModal(){
           </div>
           <label>หมายเหตุถึงแอดมิน <textarea id="workDayNote" class="premium-input" rows="3" placeholder="เช่น รับได้เฉพาะช่วงเช้า / วันนี้มีธุระช่วงบ่าย / โทรคอนเฟิร์มก่อนมอบหมาย"></textarea></label>
           <button id="saveWorkDayBtn" class="cwf-save-btn" type="button">💾 บันทึกวันที่เลือก</button>
-          <button id="applyWorkingMonthBtn" class="cwf-soft-btn" type="button">✅ รับล่วงหน้าทั้งเดือน</button>
-          <button id="applyOffSundaysBtn" class="cwf-soft-btn" type="button">🏖️ ไม่รับวันอาทิตย์</button>
+          <button id="applyWorkingMonthBtn" class="cwf-soft-btn" type="button">✅ รับงานล่วงหน้า จันทร์-เสาร์ ทั้งเดือน</button>
+          <button id="applyOffSundaysBtn" class="cwf-soft-btn" type="button">🏖️ วันอาทิตย์ไม่รับทั้งเดือน</button>
         </div>
       </div>
     </div>
@@ -4502,18 +4502,17 @@ function ensureWorkdaysModal(){
   const style = document.createElement('style');
   style.id = 'cwf-work-calendar-v2-style';
   style.textContent = `
-    .cwf-calendar-backdrop{position:fixed!important;inset:0!important;display:none;align-items:flex-start;justify-content:center;z-index:99999!important;background:rgba(2,6,23,.86)!important;padding:12px;overflow:auto;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
-    .cwf-calendar-panel{width:min(760px,100%);background:#fff!important;border:1px solid rgba(215,224,238,.95);border-radius:24px;box-shadow:0 32px 110px rgba(2,6,23,.58);padding:12px;color:#08245b;opacity:1!important;isolation:isolate}
-    .cwf-calendar-head{display:flex;justify-content:space-between;gap:10px;align-items:flex-start;background:linear-gradient(135deg,#08245b,#0b62d6 70%,#17bff3);color:#fff;border-radius:20px;padding:14px;box-shadow:0 14px 34px rgba(8,36,91,.25)}
-    .cwf-calendar-head h3{margin:0;font-size:20px;line-height:1.2}.cwf-calendar-head p{margin:5px 0 0;opacity:.94;font-weight:900;line-height:1.42;font-size:13px}.cwf-eyebrow{font-size:10px;letter-spacing:.08em;text-transform:uppercase;opacity:.82;font-weight:1000}
-    .cwf-close{border:0;background:#fff!important;color:#08245b!important;border-radius:16px;min-width:50px;min-height:44px;font-size:22px;font-weight:1000;box-shadow:0 10px 24px rgba(0,0,0,.18)}
-    .cwf-guide-card{margin:10px 0;background:#fff8d8;border:1px solid #ffe08a;border-radius:18px;padding:10px}.cwf-guide-toggle{width:100%;border:0;background:transparent;color:#513f00;font-weight:1000;text-align:left;font-size:15px}.cwf-guide-body{display:grid;gap:8px;margin-top:10px;color:#463800;font-weight:850;line-height:1.5}
-    .cwf-calendar-toolbar{display:grid;grid-template-columns:1fr 1.2fr 1fr;gap:8px;align-items:center;margin:10px 0}.cwf-mini-btn,.cwf-month-input{border:1px solid #d7e0ee;background:#fff;color:#08245b;border-radius:14px;min-height:42px;padding:9px 10px;font-weight:1000}.cwf-month-input{width:100%;min-width:0;text-align:center}
-    .cwf-calendar-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:10px}.cwf-week-head{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:5px}.cwf-week-head span{text-align:center;font-size:12px;font-weight:1000;color:#526276}
-    .cwf-month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.cwf-day-cell{min-height:44px;border:1px solid #d7e0ee;background:#fff;border-radius:11px;padding:4px 2px;text-align:center;color:#08245b;box-shadow:0 4px 9px rgba(8,36,91,.05);position:relative;overflow:hidden}.cwf-day-cell.is-selected{outline:3px solid #0ea5e9;outline-offset:1px}.cwf-day-cell.is-off{background:#fff1f2;border-color:#fecdd3}.cwf-day-cell.is-advance{background:#eafaf0;border-color:#86efac}.cwf-day-cell.is-holiday{background:#fef9c3;border-color:#fde68a}.cwf-day-num{font-size:15px;font-weight:1000}.cwf-day-label{font-size:9px;font-weight:1000;margin-top:1px;line-height:1.05;white-space:nowrap}.cwf-job-dot{position:absolute;right:2px;top:2px;background:#08245b;color:#fff;border-radius:999px;padding:0 4px;font-size:8px;font-weight:1000}
-    .cwf-day-editor{background:#fff;border:1px solid #d7e0ee;border-radius:20px;padding:12px;display:grid;gap:10px;box-shadow:0 16px 30px rgba(8,36,91,.08)}.cwf-editor-title{display:flex;justify-content:space-between;align-items:center;gap:8px}.cwf-editor-title span{font-size:18px;font-weight:1000}.cwf-editor-title b{background:#e0f2fe;color:#075985;border-radius:999px;padding:6px 10px;font-size:12px}.cwf-day-editor label{display:grid;gap:6px;font-weight:1000;color:#0b2e6d}.cwf-time-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-save-btn,.cwf-soft-btn{border-radius:16px;min-height:48px;padding:11px 12px;font-weight:1000}.cwf-save-btn{border:0;background:linear-gradient(135deg,#0b4bb3,#16b9f2);color:#fff}.cwf-soft-btn{background:#fff;border:1px solid #d7e0ee;color:#08245b}.cwf-calendar-status{font-size:12px;font-weight:900;color:#526276;margin-top:8px;min-height:18px}
-    @media(min-width:860px){.cwf-calendar-layout{grid-template-columns:minmax(0,1fr) minmax(300px,.82fr)}.cwf-day-cell{min-height:50px}.cwf-day-label{font-size:10px}}
-    @media(max-width:420px){.cwf-calendar-backdrop{padding:8px}.cwf-calendar-panel{border-radius:20px;padding:9px}.cwf-calendar-head{border-radius:18px}.cwf-calendar-toolbar{grid-template-columns:1fr}.cwf-day-cell{min-height:39px;border-radius:9px}.cwf-day-num{font-size:14px}.cwf-day-label{font-size:8px}.cwf-time-grid{grid-template-columns:1fr 1fr}.cwf-save-btn,.cwf-soft-btn{min-height:44px;font-size:13px}}
+    .cwf-calendar-backdrop{position:fixed!important;inset:0!important;display:none;align-items:flex-start;justify-content:center;z-index:99999!important;background:rgba(2,6,23,.82)!important;padding:14px;overflow:auto;backdrop-filter:blur(8px)}
+    .cwf-calendar-panel{width:min(920px,100%);background:#ffffff!important;border:1px solid rgba(215,224,238,.95);border-radius:28px;box-shadow:0 32px 110px rgba(2,6,23,.55);padding:14px;color:#08245b;opacity:1!important}
+    .cwf-calendar-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;background:linear-gradient(135deg,#08245b,#0b62d6 65%,#17bff3);color:#fff;border-radius:24px;padding:16px;box-shadow:0 14px 34px rgba(8,36,91,.25)}
+    .cwf-calendar-head h3{margin:0;font-size:22px}.cwf-calendar-head p{margin:5px 0 0;opacity:.92;font-weight:800;line-height:1.45}.cwf-eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.82;font-weight:1000}
+    .cwf-close{border:0;background:#fff;color:#08245b;border-radius:16px;min-width:44px;min-height:44px;font-weight:1000;box-shadow:0 10px 24px rgba(0,0,0,.18)}
+    .cwf-guide-card{margin:12px 0;background:#fff8d8;border:1px solid #ffe08a;border-radius:20px;padding:10px}.cwf-guide-toggle{width:100%;border:0;background:transparent;color:#513f00;font-weight:1000;text-align:left;font-size:15px}.cwf-guide-body{display:grid;gap:8px;margin-top:10px;color:#463800;font-weight:850;line-height:1.5}
+    .cwf-calendar-toolbar{display:flex;gap:10px;align-items:center;margin:12px 0;flex-wrap:wrap}.cwf-mini-btn,.cwf-month-input{border:1px solid #d7e0ee;background:#fff;color:#08245b;border-radius:16px;min-height:44px;padding:10px 12px;font-weight:1000}.cwf-month-input{flex:1;min-width:170px}
+    .cwf-calendar-layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr);gap:12px}.cwf-week-head{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px}.cwf-week-head span{text-align:center;font-size:12px;font-weight:1000;color:#526276}
+    .cwf-month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.cwf-day-cell{min-height:52px;border:1px solid #d7e0ee;background:#fff;border-radius:14px;padding:6px 5px;text-align:center;color:#08245b;box-shadow:0 5px 12px rgba(8,36,91,.06);position:relative;overflow:hidden}.cwf-day-cell.is-selected{outline:3px solid #0ea5e9}.cwf-day-cell.is-off{background:#fff1f2;border-color:#fecdd3}.cwf-day-cell.is-advance{background:#eafaf0;border-color:#86efac}.cwf-day-cell.is-holiday{background:#fef9c3;border-color:#fde68a}.cwf-day-num{font-size:16px;font-weight:1000}.cwf-day-label{font-size:10px;font-weight:1000;margin-top:2px;line-height:1.15}.cwf-job-dot{position:absolute;right:4px;top:4px;background:#08245b;color:#fff;border-radius:999px;padding:1px 5px;font-size:9px;font-weight:1000}
+    .cwf-day-editor{background:#fff;border:1px solid #d7e0ee;border-radius:22px;padding:12px;display:grid;gap:10px;box-shadow:0 16px 30px rgba(8,36,91,.08)}.cwf-editor-title{display:flex;justify-content:space-between;align-items:center;gap:8px}.cwf-editor-title span{font-size:18px;font-weight:1000}.cwf-editor-title b{background:#e0f2fe;color:#075985;border-radius:999px;padding:6px 10px;font-size:12px}.cwf-day-editor label{display:grid;gap:6px;font-weight:1000;color:#0b2e6d}.cwf-time-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-checkline{display:flex!important;grid-template-columns:none!important;align-items:center;gap:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:10px}.cwf-checkline input{width:18px;height:18px}.cwf-quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-save-btn,.cwf-soft-btn{border:0;border-radius:18px;min-height:50px;padding:12px 14px;font-weight:1000}.cwf-save-btn{background:linear-gradient(135deg,#0b4bb3,#16b9f2);color:#fff}.cwf-soft-btn{background:#fff;border:1px solid #d7e0ee;color:#08245b}.cwf-calendar-status{font-size:12px;font-weight:900;color:#526276;margin-top:8px;min-height:18px}
+    @media(max-width:820px){.cwf-calendar-layout{grid-template-columns:1fr}.cwf-day-cell{min-height:64px;padding:7px}.cwf-day-label{font-size:10px}.cwf-calendar-panel{padding:10px;border-radius:24px}.cwf-calendar-head{border-radius:20px}.cwf-time-grid{grid-template-columns:1fr 1fr}}
   `;
   document.head.appendChild(style);
 
@@ -4574,7 +4573,7 @@ function renderWorkCalendarGrid(){
     return `<button type="button" class="cwf-day-cell ${cls} ${iso===__cwfWorkCalendarState.selectedDate?'is-selected':''}" data-date="${iso}">
       ${jobs ? `<span class="cwf-job-dot">${jobs}</span>` : ''}
       <div class="cwf-day-num">${Number(iso.slice(-2))}</div>
-      <div class="cwf-day-label">${noteIcon}${st==='advance_only'||st==='working'?'รับ':'ไม่'}</div>
+      <div class="cwf-day-label">${noteIcon} ${cwfStatusEmoji(st)} ${st==='advance_only'||st==='working'?'รับ':'ไม่รับ'}</div>
     </button>`;
   }).join('');
   Array.from(grid.querySelectorAll('[data-date]')).forEach(btn=> btn.onclick = () => selectWorkCalendarDate(btn.getAttribute('data-date')));
@@ -4646,7 +4645,6 @@ function openWorkdaysModal(){
   if (!wrap) return;
   wrap.style.display = 'flex';
   document.body.style.overflow='hidden';
-  try{ wrap.scrollTop = 0; }catch{}
   loadWorkdaysModalData(cwfMonthText());
 }
 window.openTechWorkCalendarV2 = openWorkdaysModal;
