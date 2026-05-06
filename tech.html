@@ -677,7 +677,7 @@
             <span class="sIcon">🔑</span><span class="sText"><strong>เปลี่ยนรหัสผ่าน</strong><span>ตั้งรหัสผ่านใหม่เพื่อความปลอดภัย</span></span>
           </button>
           <button class="settingsItem" type="button" onclick="openWorkdaysModal()">
-            <span class="sIcon">🗓️</span><span class="sText"><strong>วันหยุด / วันทำงาน</strong><span>ตั้งค่าวันรับงานและวันไม่สะดวก</span></span>
+            <span class="sIcon">🗓️</span><span class="sText"><strong>ปฏิทินรับงาน</strong><span>ตั้งวันหยุด รับงานล่วงหน้า และช่วงเวลาทำงานทั้งเดือน</span></span>
           </button>
           <button class="settingsItem" type="button" onclick="openServiceZoneModal()">
             <span class="sIcon">ZONE</span><span class="sText"><strong>พื้นที่ประจำของฉัน</strong><span>เลือกจังหวัด/อำเภอ ระบบกำหนดโซนให้อัตโนมัติ</span></span>
@@ -1160,43 +1160,52 @@
   });
 </script>
 
-<div id="techMatrixModal" style="display:none;position:fixed;inset:0;z-index:4000;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,0.55)">
-      <div style="width:min(720px, 100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:18px;border:1px solid rgba(15,23,42,0.12);box-shadow:0 28px 80px rgba(2,6,23,0.35);padding:12px">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-          <b style="font-size:14px">งานที่รับได้ (สำหรับสลอตหน้าลูกค้า)</b>
-          <button class="tech-icbtn" type="button" id="techMatrixCloseBtn" aria-label="ปิด" style="background:rgba(37,99,235,0.10);border-color:rgba(37,99,235,0.25);color:#2563eb">✕</button>
+<div id="techMatrixModal" style="display:none;position:fixed;inset:0;z-index:4000;align-items:flex-start;justify-content:center;padding:14px;background:rgba(2,6,23,0.68);overflow:auto">
+      <div style="width:min(780px, 100%);max-height:calc(100vh - 28px);overflow:auto;background:linear-gradient(180deg,#fff,#f7fbff);border-radius:28px;border:1px solid rgba(215,224,238,.95);box-shadow:0 28px 90px rgba(2,6,23,0.42);padding:14px;color:#08245b">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;background:linear-gradient(135deg,#08245b,#0b62d6 65%,#17bff3);color:#fff;border-radius:24px;padding:16px;">
+          <div><div style="font-size:11px;font-weight:1000;letter-spacing:.08em;opacity:.84;">SERVICE SKILL MATRIX</div><h3 style="margin:2px 0 4px;font-size:22px;">🧩 งานที่รับได้</h3><p style="margin:0;opacity:.92;font-weight:850;line-height:1.45;">ติ๊กเฉพาะงานที่ทำได้จริง ระบบใช้ช่วยคัดกรองงานล่วงหน้าและสลอตลูกค้า</p></div>
+          <button class="tech-icbtn" type="button" id="techMatrixCloseBtn" aria-label="ปิด" style="background:#fff;color:#08245b;border:0;border-radius:16px;min-width:44px;min-height:44px;box-shadow:0 10px 24px rgba(0,0,0,.18);">✕</button>
         </div>
-        <div class="muted" style="margin-top:8px">ติ๊กเฉพาะที่รับได้จริง • ถ้าไม่ติ๊กเลย = ไม่แสดงสลอตลูกค้า</div>
-
-        <div style="margin-top:10px;border:1px solid rgba(15,23,42,0.10);border-radius:16px;padding:12px;background:#f8fafc">
-          <div class="muted" style="margin-bottom:8px">ประเภทงาน</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_job_wash" type="checkbox" style="width:18px;height:18px"> ล้าง</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_job_repair" type="checkbox" style="width:18px;height:18px"> ซ่อม</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_job_install" type="checkbox" style="width:18px;height:18px"> ติดตั้ง</label>
-          </div>
-
-          <div class="muted" style="margin:12px 0 8px 0">ประเภทแอร์</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_wall" type="checkbox" style="width:18px;height:18px"> ผนัง</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_fourway" type="checkbox" style="width:18px;height:18px"> สี่ทิศทาง</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_hanging" type="checkbox" style="width:18px;height:18px"> แขวน</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_ceiling" type="checkbox" style="width:18px;height:18px"> ใต้ฝ้า/เปลือย</label>
-          </div>
-
-          <div class="muted" style="margin:12px 0 8px 0">วิธีล้างแอร์ผนัง</div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_normal" type="checkbox" style="width:18px;height:18px"> ธรรมดา</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_premium" type="checkbox" style="width:18px;height:18px"> พรีเมียม</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_coil" type="checkbox" style="width:18px;height:18px"> แขวนคอยล์</label>
-            <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_overhaul" type="checkbox" style="width:18px;height:18px"> ตัดล้าง</label>
-          </div>
+        <div style="margin-top:12px;background:#fff8d8;border:1px solid #ffe08a;color:#513f00;border-radius:20px;padding:12px;font-weight:900;line-height:1.55;">
+          📘 วิธีใช้: เลือกประเภทงานหลักก่อน แล้วเลือกประเภทแอร์ที่รับได้ • แอร์ผนังต้องเลือกวิธีล้าง 4 แบบตามที่รับจริง • ถ้าไม่ติ๊กอะไรเลย ระบบจะถือว่าไม่พร้อมโชว์สลอตลูกค้า
         </div>
 
-        <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap">
-          <button class="btn" type="button" id="techMatrixSaveBtn" style="background:linear-gradient(135deg, #2563eb, #06b6d4);color:#fff;border:none;border-radius:16px;min-height:46px;font-weight:1000;padding:10px 14px">บันทึก</button>
-          <button class="btn" type="button" id="techMatrixClearBtn" style="background:rgba(15,23,42,0.06);color:#0f172a;border:1px solid rgba(15,23,42,0.12);border-radius:16px;min-height:46px;font-weight:1000;padding:10px 14px">ล้างทั้งหมด</button>
-          <span class="muted" id="techMatrixStatus" style="align-self:center">—</span>
+        <div style="display:grid;gap:12px;margin-top:12px;">
+          <section style="border:1px solid #d7e0ee;border-radius:22px;padding:12px;background:#fff;">
+            <b style="font-size:16px;">🛠️ ประเภทงานหลัก</b>
+            <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px;">
+              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_job_wash" type="checkbox" style="width:20px;height:20px"> 🧼 ล้าง</label>
+              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_job_repair" type="checkbox" style="width:20px;height:20px"> 🔧 ซ่อม</label>
+              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_job_install" type="checkbox" style="width:20px;height:20px"> 🏗️ ติดตั้ง</label>
+            </div>
+          </section>
+
+          <section style="border:1px solid #d7e0ee;border-radius:22px;padding:12px;background:#fff;">
+            <b style="font-size:16px;">❄️ ประเภทแอร์ที่รับได้</b>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
+              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_wall" type="checkbox" style="width:20px;height:20px"> แอร์ผนัง</label>
+              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_fourway" type="checkbox" style="width:20px;height:20px"> แอร์สี่ทิศทาง</label>
+              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_hanging" type="checkbox" style="width:20px;height:20px"> แอร์แขวน/ตั้งพื้น</label>
+              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_ac_ceiling" type="checkbox" style="width:20px;height:20px"> แอร์เปลือย/ใต้ฝ้า</label>
+            </div>
+          </section>
+
+          <section style="border:1px solid #d7e0ee;border-radius:22px;padding:12px;background:#fff;">
+            <b style="font-size:16px;">🧼 วิธีล้างเฉพาะแอร์ผนัง</b>
+            <div style="color:#526276;font-size:12px;font-weight:850;margin-top:4px;">แอร์ประเภทอื่นไม่ต้องเลือกวิธีล้าง 4 แบบ ให้เลือกเฉพาะประเภทแอร์ด้านบนพอ</div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
+              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_normal" type="checkbox" style="width:20px;height:20px"> ล้างธรรมดา</label>
+              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_premium" type="checkbox" style="width:20px;height:20px"> ล้างพรีเมียม</label>
+              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_coil" type="checkbox" style="width:20px;height:20px"> ล้างแบบแขวนคอยล์</label>
+              <label class="pill" style="gap:10px;justify-content:flex-start"><input id="t_cap_wash_overhaul" type="checkbox" style="width:20px;height:20px"> ตัดล้างใหญ่</label>
+            </div>
+          </section>
+        </div>
+
+        <div style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+          <button class="btn" type="button" id="techMatrixSaveBtn" style="background:linear-gradient(135deg, #0b4bb3, #16b9f2);color:#fff;border:none;border-radius:18px;min-height:50px;font-weight:1000;padding:12px 16px">💾 บันทึกงานที่รับได้</button>
+          <button class="btn" type="button" id="techMatrixClearBtn" style="background:#fff;color:#0f172a;border:1px solid #d7e0ee;border-radius:18px;min-height:50px;font-weight:1000;padding:12px 16px">ล้างทั้งหมด</button>
+          <span class="muted" id="techMatrixStatus" style="align-self:center;font-weight:900;">—</span>
         </div>
       </div>
     </div>
@@ -1419,6 +1428,7 @@
       </div>
 
       <div id="acceptStatusText" class="accept-hint">กำลังโหลดสถานะ...</div>
+      <div style="margin-top:6px;font-size:12px;font-weight:900;color:#526276;line-height:1.45;">⏰ ปุ่มรับงานใช้เฉพาะวันนี้ และระบบจะปิดรับงานอัตโนมัติหลังเที่ยงคืน</div>
 
       <!-- รองรับหน้าเก่า/โค้ดเดิม ซ่อนไว้ไม่ให้รก -->
       <select id="acceptStatusSelect" style="display:none;">
@@ -1426,6 +1436,21 @@
         <option value="paused">paused</option>
       </select>
       <div id="att-status" style="display:none;"></div>
+    </div>
+
+    <div id="dailyReadinessCard" class="card" style="display:none;margin:10px 0 12px;padding:12px;border-radius:22px;border:1px solid rgba(251,191,36,.55);background:linear-gradient(135deg,#fff8d8,#fff 65%,#eef8ff);box-shadow:0 16px 38px rgba(8,36,91,.12);">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div style="min-width:0;">
+          <div style="font-size:12px;font-weight:1000;color:#8a6200;letter-spacing:.03em;">🌅 DAILY READINESS</div>
+          <h3 style="margin:2px 0 4px;color:#08245b;font-size:18px;">พร้อมทำงานวันนี้</h3>
+          <div id="dailyReadinessStatus" style="display:grid;gap:2px;font-weight:900;color:#526276;line-height:1.45;"><b>กำลังโหลด...</b><span>ถ้ามีงานวันนี้ ให้กดยืนยันเพื่อให้แอดมินรู้ว่าพร้อมออกงานจริง</span></div>
+        </div>
+        <button type="button" onclick="openWorkdaysModal()" style="border:1px solid #d7e0ee;background:#fff;color:#08245b;border-radius:16px;min-height:40px;padding:8px 12px;font-weight:1000;">📘 คู่มือ/ปฏิทิน</button>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
+        <button id="btnDailyReady" type="button" onclick="submitDailyReadiness('ready')" style="border:0;border-radius:18px;min-height:50px;background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;font-weight:1000;">✅ พร้อมทำงาน</button>
+        <button id="btnDailyNotReady" type="button" onclick="submitDailyReadiness('not_ready')" style="border:0;border-radius:18px;min-height:50px;background:linear-gradient(135deg,#ea580c,#f97316);color:#fff;font-weight:1000;">⚠️ ไม่พร้อม</button>
+      </div>
     </div>
 
 <div class="tabs tech-top-tabs">

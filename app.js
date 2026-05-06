@@ -4386,193 +4386,246 @@ function toggleWarrantyMonths(jobId){
 window.toggleWarrantyMonths = toggleWarrantyMonths;
 
 // =======================================
-// 🗓️ TECH WORKDAYS / OFF-DAYS (v2)
-// - ตั้งวันหยุดประจำสัปดาห์ + วันหยุดล่วงหน้า (override)
-// - ใช้ backend: /technicians/:username/weekly-off-days และ /technicians/:username/workdays-v2
+// 🧭 CWF Technician Work Calendar & Daily Readiness v2
+// - UI ใหม่แทน modal วันหยุดเดิม: ตั้งค่ารับงานทั้งเดือน + คู่มือ + พร้อมทำงานวันนี้
 // =======================================
-let __workdaysModalInited = false;
+let __cwfWorkCalendarState = { month: '', selectedDate: '', items: new Map(), holidays: new Map(), jobCounts: new Map(), employmentType: 'company' };
+
+function cwfTodayIso(){ return toIsoDateLocal(new Date()); }
+function cwfMonthText(d){ return toIsoDateLocal(d || new Date()).slice(0,7); }
+function cwfDaysInMonth(month){
+  const [y,m] = String(month || cwfMonthText()).split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  const arr = [];
+  for(let day=1; day<=last; day++) arr.push(`${y}-${String(m).padStart(2,'0')}-${String(day).padStart(2,'0')}`);
+  return arr;
+}
+function cwfStatusLabel(st){
+  return ({ working:'ทำงาน', weekly_off:'หยุดประจำ', special_holiday:'วันหยุดพิเศษ', vacation:'วันลา', unavailable:'ไม่ว่าง', urgent_only:'รับงานด่วน', advance_only:'รับล่วงหน้า' })[st] || 'ทำงาน';
+}
+function cwfStatusEmoji(st){
+  return ({ working:'✅', weekly_off:'🏖️', special_holiday:'🎌', vacation:'🌙', unavailable:'⛔', urgent_only:'⚡', advance_only:'📅' })[st] || '✅';
+}
+function cwfGetCalendarItem(iso){ return __cwfWorkCalendarState.items.get(iso) || null; }
+function cwfDefaultCalendarItem(iso){
+  const h = __cwfWorkCalendarState.holidays.get(iso);
+  if(h) return { work_date:iso, day_status:'special_holiday', can_accept_advance_job:false, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:0, max_units_per_day:0, note:h.holiday_name || 'วันหยุดพิเศษ' };
+  return { work_date:iso, day_status:'working', can_accept_advance_job:true, can_accept_urgent_job:true, start_time:'09:00', end_time:'18:00', max_jobs_per_day:3, max_units_per_day:8, note:'' };
+}
+function cwfEffectiveCalendarItem(iso){ return cwfGetCalendarItem(iso) || cwfDefaultCalendarItem(iso); }
+function cwfFormatThaiDate(iso){
+  try{ return new Date(String(iso)+'T00:00:00').toLocaleDateString('th-TH',{weekday:'short',day:'2-digit',month:'short'}); }catch{ return iso; }
+}
 
 function ensureWorkdaysModal(){
-  if (__workdaysModalInited) return;
-  __workdaysModalInited = true;
-
+  if (document.getElementById('workdays-modal')) return;
   const wrap = document.createElement('div');
   wrap.id = 'workdays-modal';
-  wrap.style.cssText = 'position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:99999;background:rgba(0,0,0,0.45);padding:16px;';
+  wrap.className = 'cwf-calendar-backdrop';
   wrap.innerHTML = `
-    <div class="card" style="width:min(560px,100%);max-height:90vh;overflow:auto;">
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;">
+    <div class="cwf-calendar-panel" role="dialog" aria-modal="true" aria-labelledby="cwfWorkCalendarTitle">
+      <div class="cwf-calendar-head">
         <div>
-          <h3 style="margin:0;">🗓️ ตั้งค่าวันหยุดของฉัน</h3>
-          <div class="muted" style="margin-top:4px;font-size:12px;">ตั้งวันหยุดประจำสัปดาห์ + ตั้งวันหยุดล่วงหน้า (วันนี้ถึง 14 วัน)</div>
+          <div class="cwf-eyebrow">CWF Work Calendar</div>
+          <h3 id="cwfWorkCalendarTitle">🗓️ ปฏิทินรับงานช่าง</h3>
+          <p>ตั้งวันทำงาน/วันหยุด/รับงานล่วงหน้าได้ทั้งเดือน ใช้จริงกับงานนัดหมายและงานด่วน</p>
         </div>
-        <button class="secondary" type="button" id="workdays-close" style="width:auto;">ปิด</button>
+        <button class="cwf-close" type="button" id="workdays-close">✕</button>
       </div>
 
-      <div style="margin-top:12px;">
-        <b>วันหยุดประจำสัปดาห์</b>
-        <div class="muted" style="margin-top:4px;font-size:12px;">เลือกวันหยุดทุกสัปดาห์ (เช่น อาทิตย์/เสาร์)</div>
-        <div id="weekly-off-grid" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin-top:10px;"></div>
-        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-          <button class="warning" type="button" id="weekly-save" style="width:auto;">บันทึกวันหยุดประจำสัปดาห์</button>
-          <span class="muted" id="weekly-status" style="font-size:12px;"></span>
+      <div class="cwf-guide-card">
+        <button type="button" class="cwf-guide-toggle" id="workCalendarGuideBtn">📘 อ่านวิธีใช้ฟีเจอร์นี้</button>
+        <div id="workCalendarGuide" class="cwf-guide-body" style="display:none">
+          <div>✅ <b>ทำงาน</b> = แอดมินส่งงานล่วงหน้าได้ตามช่วงเวลาที่ตั้ง</div>
+          <div>📅 <b>รับล่วงหน้า</b> = เหมาะกับพาร์ทเนอร์ที่รับงานนัดหมายจากบริษัท</div>
+          <div>⚡ <b>รับงานด่วน</b> = ใช้กับงานเสนอวันนี้/งานด่วน ไม่ใช่งานนัดล่วงหน้า</div>
+          <div>🏖️ <b>หยุด</b> = ระบบไม่ควรมองว่าพร้อมรับงานวันนั้น</div>
+          <div>🌅 <b>พร้อมทำงานวันนี้</b> = ถ้ามีงานวันนี้ ต้องกดยืนยันตอนเช้า แอดมินจะได้รู้ก่อนเกิดปัญหา</div>
         </div>
       </div>
 
-      <hr style="margin:12px 0;"/>
+      <div class="cwf-calendar-toolbar">
+        <button type="button" class="cwf-mini-btn" id="calendarPrevMonth">‹ เดือนก่อน</button>
+        <input id="workCalendarMonth" type="month" class="cwf-month-input">
+        <button type="button" class="cwf-mini-btn" id="calendarNextMonth">เดือนถัดไป ›</button>
+      </div>
 
-      <div>
-        <b>วันหยุดล่วงหน้า (Override)</b>
-        <div class="muted" style="margin-top:4px;font-size:12px;">ใช้กรณีอยากหยุดเพิ่ม/ทำงานเพิ่มเป็นรายวัน</div>
-        <div id="override-list" style="margin-top:10px;display:grid;gap:8px;"></div>
-        <div class="muted" id="override-status" style="margin-top:8px;font-size:12px;"></div>
+      <div class="cwf-calendar-layout">
+        <div>
+          <div class="cwf-week-head"><span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span></div>
+          <div id="workCalendarGrid" class="cwf-month-grid"></div>
+          <div id="workCalendarStatus" class="cwf-calendar-status">กำลังโหลด...</div>
+        </div>
+
+        <div class="cwf-day-editor">
+          <div class="cwf-editor-title"><span id="workDayTitle">เลือกวันที่</span><b id="workDayBadge">—</b></div>
+          <label>สถานะวันนั้น
+            <select id="workDayStatus" class="premium-input">
+              <option value="working">✅ ทำงาน</option>
+              <option value="advance_only">📅 รับงานล่วงหน้า</option>
+              <option value="urgent_only">⚡ รับเฉพาะงานด่วน</option>
+              <option value="weekly_off">🏖️ หยุดประจำสัปดาห์</option>
+              <option value="special_holiday">🎌 วันหยุดพิเศษ</option>
+              <option value="vacation">🌙 วันลา</option>
+              <option value="unavailable">⛔ ไม่ว่าง</option>
+            </select>
+          </label>
+          <div class="cwf-time-grid">
+            <label>เริ่ม <input id="workDayStart" class="premium-input" type="time" value="09:00"></label>
+            <label>เลิก <input id="workDayEnd" class="premium-input" type="time" value="18:00"></label>
+          </div>
+          <div class="cwf-time-grid">
+            <label>งาน/วัน <input id="workDayMaxJobs" class="premium-input" type="number" min="0" max="20" value="3"></label>
+            <label>เครื่อง/วัน <input id="workDayMaxUnits" class="premium-input" type="number" min="0" max="99" value="8"></label>
+          </div>
+          <label class="cwf-checkline"><input id="workDayAdvance" type="checkbox"> <span>รับงานนัดล่วงหน้า</span></label>
+          <label class="cwf-checkline"><input id="workDayUrgent" type="checkbox"> <span>รับงานด่วน/งานเสนอวันนี้</span></label>
+          <label>หมายเหตุ <textarea id="workDayNote" class="premium-input" rows="3" placeholder="เช่น รับได้ช่วงเช้า / ต้องโทรคอนเฟิร์มก่อน"></textarea></label>
+          <button id="saveWorkDayBtn" class="cwf-save-btn" type="button">💾 บันทึกวันที่เลือก</button>
+          <button id="applyWorkingMonthBtn" class="cwf-soft-btn" type="button">✅ ตั้งวันจันทร์-เสาร์เป็นทำงานทั้งเดือน</button>
+          <button id="applyOffSundaysBtn" class="cwf-soft-btn" type="button">🏖️ ตั้งวันอาทิตย์เป็นวันหยุดทั้งเดือน</button>
+        </div>
       </div>
     </div>
   `;
   document.body.appendChild(wrap);
 
-  wrap.querySelector('#workdays-close').onclick = () => { wrap.style.display = 'none'; };
+  const style = document.createElement('style');
+  style.id = 'cwf-work-calendar-v2-style';
+  style.textContent = `
+    .cwf-calendar-backdrop{position:fixed;inset:0;display:none;align-items:flex-start;justify-content:center;z-index:99999;background:rgba(2,6,23,.72);padding:14px;overflow:auto}
+    .cwf-calendar-panel{width:min(1040px,100%);background:linear-gradient(180deg,#ffffff,#f7fbff);border:1px solid rgba(215,224,238,.95);border-radius:28px;box-shadow:0 32px 110px rgba(2,6,23,.45);padding:14px;color:#08245b}
+    .cwf-calendar-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;background:linear-gradient(135deg,#08245b,#0b62d6 65%,#17bff3);color:#fff;border-radius:24px;padding:16px;box-shadow:0 14px 34px rgba(8,36,91,.25)}
+    .cwf-calendar-head h3{margin:0;font-size:22px}.cwf-calendar-head p{margin:5px 0 0;opacity:.92;font-weight:800;line-height:1.45}.cwf-eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.82;font-weight:1000}
+    .cwf-close{border:0;background:#fff;color:#08245b;border-radius:16px;min-width:44px;min-height:44px;font-weight:1000;box-shadow:0 10px 24px rgba(0,0,0,.18)}
+    .cwf-guide-card{margin:12px 0;background:#fff8d8;border:1px solid #ffe08a;border-radius:20px;padding:10px}.cwf-guide-toggle{width:100%;border:0;background:transparent;color:#513f00;font-weight:1000;text-align:left;font-size:15px}.cwf-guide-body{display:grid;gap:8px;margin-top:10px;color:#463800;font-weight:850;line-height:1.5}
+    .cwf-calendar-toolbar{display:flex;gap:10px;align-items:center;margin:12px 0;flex-wrap:wrap}.cwf-mini-btn,.cwf-month-input{border:1px solid #d7e0ee;background:#fff;color:#08245b;border-radius:16px;min-height:44px;padding:10px 12px;font-weight:1000}.cwf-month-input{flex:1;min-width:170px}
+    .cwf-calendar-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.65fr);gap:12px}.cwf-week-head{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px}.cwf-week-head span{text-align:center;font-size:12px;font-weight:1000;color:#526276}
+    .cwf-month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}.cwf-day-cell{min-height:76px;border:1px solid #d7e0ee;background:#fff;border-radius:16px;padding:8px;text-align:left;color:#08245b;box-shadow:0 8px 18px rgba(8,36,91,.06);position:relative;overflow:hidden}.cwf-day-cell.is-selected{outline:3px solid #0ea5e9}.cwf-day-cell.is-off{background:#fff1f2;border-color:#fecdd3}.cwf-day-cell.is-urgent{background:#fff7ed;border-color:#fed7aa}.cwf-day-cell.is-advance{background:#eff6ff;border-color:#bfdbfe}.cwf-day-cell.is-holiday{background:#fef9c3;border-color:#fde68a}.cwf-day-num{font-size:17px;font-weight:1000}.cwf-day-label{font-size:11px;font-weight:1000;margin-top:4px;line-height:1.25}.cwf-job-dot{position:absolute;right:7px;top:7px;background:#08245b;color:#fff;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:1000}
+    .cwf-day-editor{background:#fff;border:1px solid #d7e0ee;border-radius:22px;padding:12px;display:grid;gap:10px;box-shadow:0 16px 30px rgba(8,36,91,.08)}.cwf-editor-title{display:flex;justify-content:space-between;align-items:center;gap:8px}.cwf-editor-title span{font-size:18px;font-weight:1000}.cwf-editor-title b{background:#e0f2fe;color:#075985;border-radius:999px;padding:6px 10px;font-size:12px}.cwf-day-editor label{display:grid;gap:6px;font-weight:1000;color:#0b2e6d}.cwf-time-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-checkline{display:flex!important;grid-template-columns:none!important;align-items:center;gap:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:10px}.cwf-checkline input{width:18px;height:18px}.cwf-save-btn,.cwf-soft-btn{border:0;border-radius:18px;min-height:50px;padding:12px 14px;font-weight:1000}.cwf-save-btn{background:linear-gradient(135deg,#0b4bb3,#16b9f2);color:#fff}.cwf-soft-btn{background:#fff;border:1px solid #d7e0ee;color:#08245b}.cwf-calendar-status{font-size:12px;font-weight:900;color:#526276;margin-top:8px;min-height:18px}
+    @media(max-width:820px){.cwf-calendar-layout{grid-template-columns:1fr}.cwf-day-cell{min-height:64px;padding:7px}.cwf-day-label{font-size:10px}.cwf-calendar-panel{padding:10px;border-radius:24px}.cwf-calendar-head{border-radius:20px}.cwf-time-grid{grid-template-columns:1fr 1fr}}
+  `;
+  document.head.appendChild(style);
+
+  document.getElementById('workdays-close').onclick = () => { wrap.style.display='none'; document.body.style.overflow=''; };
+  document.getElementById('workCalendarGuideBtn').onclick = () => {
+    const g = document.getElementById('workCalendarGuide'); if(g) g.style.display = g.style.display === 'none' ? 'grid' : 'none';
+  };
+  document.getElementById('calendarPrevMonth').onclick = () => cwfShiftCalendarMonth(-1);
+  document.getElementById('calendarNextMonth').onclick = () => cwfShiftCalendarMonth(1);
+  document.getElementById('workCalendarMonth').onchange = (e) => loadWorkdaysModalData(e.target.value);
+  document.getElementById('saveWorkDayBtn').onclick = () => saveSelectedWorkDay();
+  document.getElementById('applyWorkingMonthBtn').onclick = () => applyMonthPreset('working');
+  document.getElementById('applyOffSundaysBtn').onclick = () => applyMonthPreset('sunday_off');
 }
 
-function toIsoDateLocal(d){
-  const dt = (d instanceof Date) ? d : new Date(d);
-  if (!dt || Number.isNaN(dt.getTime())) return '';
-  const y = dt.getFullYear();
-  const m = String(dt.getMonth()+1).padStart(2,'0');
-  const dd = String(dt.getDate()).padStart(2,'0');
-  return `${y}-${m}-${dd}`;
+function cwfShiftCalendarMonth(delta){
+  const cur = document.getElementById('workCalendarMonth')?.value || __cwfWorkCalendarState.month || cwfMonthText();
+  const d = new Date(cur + '-01T00:00:00'); d.setMonth(d.getMonth()+delta);
+  loadWorkdaysModalData(cwfMonthText(d));
 }
 
-async function loadWorkdaysModalData(){
-  const wrap = document.getElementById('workdays-modal');
-  if (!wrap) return;
-  const weeklyGrid = wrap.querySelector('#weekly-off-grid');
-  const weeklyStatus = wrap.querySelector('#weekly-status');
-  const overrideList = wrap.querySelector('#override-list');
-  const overrideStatus = wrap.querySelector('#override-status');
-  if (weeklyStatus) weeklyStatus.textContent = 'กำลังโหลด...';
-  if (overrideStatus) overrideStatus.textContent = '';
-  if (weeklyGrid) weeklyGrid.innerHTML = '';
-  if (overrideList) overrideList.innerHTML = '';
-
-  const dayLabels = ['อา','จ','อ','พ','พฤ','ศ','ส'];
-
+async function loadWorkdaysModalData(month){
+  ensureWorkdaysModal();
+  const m = month || __cwfWorkCalendarState.month || cwfMonthText();
+  __cwfWorkCalendarState.month = m;
+  const monthInput = document.getElementById('workCalendarMonth'); if(monthInput) monthInput.value = m;
+  const statusEl = document.getElementById('workCalendarStatus'); if(statusEl) statusEl.textContent='กำลังโหลดปฏิทิน...';
   try{
-    // weekly
-    const wres = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/weekly-off-days`);
-    const w = await wres.json().catch(()=>({}));
-    if (!wres.ok) throw new Error(w.error || 'โหลดวันหยุดไม่สำเร็จ');
-    const days = Array.isArray(w.days) ? w.days : [];
-
-    if (weeklyGrid){
-      weeklyGrid.innerHTML = dayLabels.map((lb, idx)=>{
-        const checked = days.includes(idx);
-        return `
-          <label style="display:flex;align-items:center;gap:8px;padding:10px 10px;border-radius:14px;border:1px solid rgba(15,23,42,0.10);background:rgba(15,23,42,0.03);cursor:pointer;">
-            <input type="checkbox" data-day="${idx}" ${checked?'checked':''} style="transform:scale(1.15);"/>
-            <span style="font-weight:900;">${lb}</span>
-          </label>
-        `;
-      }).join('');
-    }
-
-    const saveBtn = wrap.querySelector('#weekly-save');
-    if (saveBtn){
-      saveBtn.onclick = async () => {
-        try{
-          const picks = Array.from(wrap.querySelectorAll('#weekly-off-grid input[type="checkbox"]'))
-            .filter(el=>el.checked)
-            .map(el=>Number(el.getAttribute('data-day')))
-            .filter(n=>Number.isFinite(n));
-          if (weeklyStatus) weeklyStatus.textContent = 'กำลังบันทึก...';
-          const pres = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/weekly-off-days`, {
-            method:'PUT',
-            headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ days: picks })
-          });
-          const pd = await pres.json().catch(()=>({}));
-          if (!pres.ok) throw new Error(pd.error || 'บันทึกไม่สำเร็จ');
-          if (weeklyStatus) weeklyStatus.textContent = '✅ บันทึกแล้ว';
-        }catch(e){
-          if (weeklyStatus) weeklyStatus.textContent = `❌ ${e.message}`;
-        }
-      };
-    }
-
-    if (weeklyStatus) weeklyStatus.textContent = '';
-
-    // overrides (today..+14)
-    const from = toIsoDateLocal(new Date());
-    const to = toIsoDateLocal(new Date(Date.now()+14*86400000));
-    const ores = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/workdays-v2?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
-    const od = await ores.json().catch(()=>({}));
-    if (!ores.ok) throw new Error(od.error || 'โหลดวันหยุดล่วงหน้าไม่สำเร็จ');
-    const items = Array.isArray(od.items) ? od.items : [];
-    const byDate = new Map(items.map(it=>[String(it.work_date), !!it.is_off]));
-
-    // render 15 days
-    const daysToShow = [];
-    const base = new Date(); base.setHours(0,0,0,0);
-    for (let i=0;i<=14;i++){
-      const d = new Date(base.getTime()+i*86400000);
-      const iso = toIsoDateLocal(d);
-      const dow = d.getDay();
-      const weeklyOff = Array.isArray(days) && days.includes(dow);
-      const overrideOff = byDate.has(iso) ? byDate.get(iso) : null; // null = no override
-      daysToShow.push({ iso, d, dow, weeklyOff, overrideOff });
-    }
-
-    if (overrideList){
-      overrideList.innerHTML = daysToShow.map(x=>{
-        const label = x.d.toLocaleDateString('th-TH', { weekday:'short', year:'numeric', month:'2-digit', day:'2-digit' });
-        const effectiveOff = (x.overrideOff===null) ? x.weeklyOff : x.overrideOff;
-        const sub = (x.overrideOff===null)
-          ? (x.weeklyOff ? 'อิงวันหยุดประจำสัปดาห์' : 'อิงวันทำงานปกติ')
-          : 'ตั้งค่า override แล้ว';
-        return `
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:16px;border:1px solid rgba(15,23,42,0.10);background:rgba(255,255,255,0.75);">
-            <div style="min-width:0;">
-              <div style="font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${label}</div>
-              <div class="muted" style="font-size:12px;margin-top:2px;">${sub}</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
-              <span class="badge ${effectiveOff?'wait':'done'}" style="min-width:74px;text-align:center;">${effectiveOff?'วันหยุด':'ทำงาน'}</span>
-              <button class="secondary" type="button" data-date="${x.iso}" style="width:auto;min-height:36px;padding:8px 10px;">${(x.overrideOff===null)?'ตั้งค่า':'เปลี่ยน'}</button>
-            </div>
-          </div>
-        `;
-      }).join('');
-
-      Array.from(overrideList.querySelectorAll('button[data-date]')).forEach(btn=>{
-        btn.onclick = async () => {
-          const date = btn.getAttribute('data-date');
-          if (!date) return;
-          try{
-            const current = byDate.has(date) ? byDate.get(date) : null;
-            // Toggle: null -> true (mark off), true -> false (mark work), false -> true
-            const next = (current===null) ? true : !current;
-            if (overrideStatus) overrideStatus.textContent = `กำลังบันทึก ${date}...`;
-            const pres = await fetch(`${API_BASE}/technicians/${encodeURIComponent(username)}/workdays-v2`, {
-              method:'PUT',
-              headers:{'Content-Type':'application/json'},
-              body: JSON.stringify({ work_date: date, is_off: next })
-            });
-            const pd = await pres.json().catch(()=>({}));
-            if (!pres.ok) throw new Error(pd.error || 'บันทึกไม่สำเร็จ');
-            byDate.set(date, next);
-            if (overrideStatus) overrideStatus.textContent = '✅ บันทึกแล้ว';
-            // re-render quickly
-            loadWorkdaysModalData();
-          }catch(e){
-            if (overrideStatus) overrideStatus.textContent = `❌ ${e.message}`;
-          }
-        };
-      });
-    }
+    const res = await fetch(`${API_BASE}/tech/work-calendar?month=${encodeURIComponent(m)}`, { credentials:'include' });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error || 'โหลดปฏิทินไม่สำเร็จ');
+    __cwfWorkCalendarState.items = new Map((data.items||[]).map(it=>[String(it.work_date), it]));
+    __cwfWorkCalendarState.holidays = new Map((data.holidays||[]).map(it=>[String(it.holiday_date), it]));
+    __cwfWorkCalendarState.jobCounts = new Map((data.job_counts||[]).map(it=>[String(it.work_date), Number(it.job_count||0)]));
+    __cwfWorkCalendarState.employmentType = data.employment_type || 'company';
+    if(!__cwfWorkCalendarState.selectedDate || !__cwfWorkCalendarState.selectedDate.startsWith(m)) __cwfWorkCalendarState.selectedDate = cwfTodayIso().startsWith(m) ? cwfTodayIso() : `${m}-01`;
+    renderWorkCalendarGrid();
+    selectWorkCalendarDate(__cwfWorkCalendarState.selectedDate);
+    if(statusEl) statusEl.textContent = `✅ โหลดแล้ว • ${data.employment_type === 'partner' ? 'พาร์ทเนอร์' : 'ช่างบริษัท'} • ตั้งค่าได้ทั้งเดือน`;
   }catch(e){
-    if (weeklyStatus) weeklyStatus.textContent = `❌ ${e.message}`;
-    if (overrideStatus) overrideStatus.textContent = '';
+    if(statusEl) statusEl.textContent = `❌ ${e.message}`;
   }
+}
+
+function renderWorkCalendarGrid(){
+  const grid = document.getElementById('workCalendarGrid'); if(!grid) return;
+  const days = cwfDaysInMonth(__cwfWorkCalendarState.month);
+  const first = new Date(days[0]+'T00:00:00').getDay();
+  const blanks = Array(first).fill('<div></div>').join('');
+  grid.innerHTML = blanks + days.map(iso=>{
+    const it = cwfEffectiveCalendarItem(iso);
+    const st = it.day_status || 'working';
+    const jobs = __cwfWorkCalendarState.jobCounts.get(iso) || 0;
+    const cls = st==='working' ? '' : (st==='urgent_only' ? 'is-urgent' : (st==='advance_only' ? 'is-advance' : (st==='special_holiday' ? 'is-holiday' : 'is-off')));
+    return `<button type="button" class="cwf-day-cell ${cls} ${iso===__cwfWorkCalendarState.selectedDate?'is-selected':''}" data-date="${iso}">
+      ${jobs ? `<span class="cwf-job-dot">${jobs} งาน</span>` : ''}
+      <div class="cwf-day-num">${Number(iso.slice(-2))}</div>
+      <div class="cwf-day-label">${cwfStatusEmoji(st)} ${cwfStatusLabel(st)}</div>
+      <div class="cwf-day-label">${it.start_time || '09:00'}-${it.end_time || '18:00'}</div>
+    </button>`;
+  }).join('');
+  Array.from(grid.querySelectorAll('[data-date]')).forEach(btn=> btn.onclick = () => selectWorkCalendarDate(btn.getAttribute('data-date')));
+}
+
+function selectWorkCalendarDate(iso){
+  __cwfWorkCalendarState.selectedDate = iso;
+  renderWorkCalendarGrid();
+  const it = cwfEffectiveCalendarItem(iso);
+  const title = document.getElementById('workDayTitle'); if(title) title.textContent = cwfFormatThaiDate(iso);
+  const badge = document.getElementById('workDayBadge'); if(badge) badge.textContent = `${cwfStatusEmoji(it.day_status)} ${cwfStatusLabel(it.day_status)}`;
+  const set = (id,val) => { const el=document.getElementById(id); if(el) el.value=val ?? ''; };
+  set('workDayStatus', it.day_status || 'working'); set('workDayStart', it.start_time || '09:00'); set('workDayEnd', it.end_time || '18:00'); set('workDayMaxJobs', it.max_jobs_per_day ?? 3); set('workDayMaxUnits', it.max_units_per_day ?? 8); set('workDayNote', it.note || '');
+  const adv = document.getElementById('workDayAdvance'); if(adv) adv.checked = it.can_accept_advance_job !== false;
+  const urg = document.getElementById('workDayUrgent'); if(urg) urg.checked = it.can_accept_urgent_job !== false;
+}
+
+function collectSelectedWorkDay(){
+  const iso = __cwfWorkCalendarState.selectedDate || cwfTodayIso();
+  const get = (id, fallback='') => document.getElementById(id)?.value || fallback;
+  return {
+    work_date: iso,
+    day_status: get('workDayStatus','working'),
+    start_time: get('workDayStart','09:00'),
+    end_time: get('workDayEnd','18:00'),
+    max_jobs_per_day: Number(get('workDayMaxJobs','3')),
+    max_units_per_day: Number(get('workDayMaxUnits','8')),
+    can_accept_advance_job: !!document.getElementById('workDayAdvance')?.checked,
+    can_accept_urgent_job: !!document.getElementById('workDayUrgent')?.checked,
+    note: get('workDayNote','')
+  };
+}
+async function saveSelectedWorkDay(){
+  const statusEl = document.getElementById('workCalendarStatus');
+  try{
+    const body = collectSelectedWorkDay();
+    if(statusEl) statusEl.textContent = `กำลังบันทึก ${body.work_date}...`;
+    const res = await fetch(`${API_BASE}/tech/work-calendar/day`, { method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify(body) });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error || 'บันทึกไม่สำเร็จ');
+    __cwfWorkCalendarState.items.set(body.work_date, body);
+    renderWorkCalendarGrid(); selectWorkCalendarDate(body.work_date);
+    if(statusEl) statusEl.textContent = '✅ บันทึกแล้ว';
+  }catch(e){ if(statusEl) statusEl.textContent = `❌ ${e.message}`; }
+}
+async function applyMonthPreset(kind){
+  const statusEl = document.getElementById('workCalendarStatus');
+  const month = __cwfWorkCalendarState.month || cwfMonthText();
+  const days = cwfDaysInMonth(month).map(iso=>{
+    const d = new Date(iso+'T00:00:00');
+    const isSun = d.getDay()===0;
+    if(kind==='sunday_off' && isSun) return { work_date:iso, day_status:'weekly_off', can_accept_advance_job:false, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:0, max_units_per_day:0, note:'หยุดประจำสัปดาห์' };
+    if(kind==='sunday_off') return null;
+    return { work_date:iso, day_status:isSun?'weekly_off':'working', can_accept_advance_job:!isSun, can_accept_urgent_job:!isSun, start_time:'09:00', end_time:'18:00', max_jobs_per_day:isSun?0:3, max_units_per_day:isSun?0:8, note:isSun?'หยุดประจำสัปดาห์':'' };
+  }).filter(Boolean);
+  try{
+    if(statusEl) statusEl.textContent='กำลังบันทึกทั้งเดือน...';
+    const res = await fetch(`${API_BASE}/tech/work-calendar/bulk`, { method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({ days }) });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error || 'บันทึกทั้งเดือนไม่สำเร็จ');
+    await loadWorkdaysModalData(month);
+    if(statusEl) statusEl.textContent = `✅ บันทึกแล้ว ${data.count || days.length} วัน`;
+  }catch(e){ if(statusEl) statusEl.textContent=`❌ ${e.message}`; }
 }
 
 function openWorkdaysModal(){
@@ -4580,9 +4633,52 @@ function openWorkdaysModal(){
   const wrap = document.getElementById('workdays-modal');
   if (!wrap) return;
   wrap.style.display = 'flex';
-  loadWorkdaysModalData();
+  document.body.style.overflow='hidden';
+  loadWorkdaysModalData(cwfMonthText());
 }
 window.openWorkdaysModal = openWorkdaysModal;
+
+async function loadDailyReadinessCard(){
+  const card = document.getElementById('dailyReadinessCard');
+  if(!card) return;
+  const status = document.getElementById('dailyReadinessStatus');
+  try{
+    const res = await fetch(`${API_BASE}/tech/daily-readiness/today`, { credentials:'include' });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error || 'โหลดความพร้อมวันนี้ไม่สำเร็จ');
+    if(!data.has_jobs){ card.style.display='none'; return; }
+    card.style.display='block';
+    const r = data.readiness || {};
+    const firstJob = (data.jobs||[])[0] || {};
+    const firstTime = firstJob.appointment_datetime ? new Date(firstJob.appointment_datetime).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '-';
+    if(status){
+      const label = r.status === 'ready' ? '✅ พร้อมทำงานแล้ว' : (r.status === 'not_ready' ? '⚠️ แจ้งไม่พร้อมแล้ว' : '🌅 รอยืนยันความพร้อม');
+      status.innerHTML = `<b>${label}</b><span>งานแรก ${firstTime} • วันนี้มี ${(data.jobs||[]).length} งาน</span>`;
+    }
+    const readyBtn = document.getElementById('btnDailyReady');
+    const notReadyBtn = document.getElementById('btnDailyNotReady');
+    if(readyBtn) readyBtn.disabled = r.status === 'ready';
+    if(notReadyBtn) notReadyBtn.disabled = r.status === 'not_ready';
+  }catch(e){
+    if(status) status.innerHTML = `<b>โหลดสถานะเช้าไม่สำเร็จ</b><span>${e.message}</span>`;
+  }
+}
+async function submitDailyReadiness(status){
+  try{
+    let reason = '';
+    if(status === 'not_ready'){
+      reason = prompt('ระบุเหตุผลที่ไม่พร้อมทำงานวันนี้ เพื่อให้แอดมินติดตาม/หาคนแทนได้ทันที') || '';
+      if(!reason.trim()) return;
+    }
+    const res = await fetch(`${API_BASE}/tech/daily-readiness`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({ status, reason }) });
+    const data = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(data.error || 'บันทึกไม่สำเร็จ');
+    await loadDailyReadinessCard();
+    alert(status === 'ready' ? '✅ ยืนยันพร้อมทำงานวันนี้แล้ว' : '⚠️ ส่งแจ้งแอดมินแล้ว');
+  }catch(e){ alert(`❌ ${e.message || 'บันทึกไม่สำเร็จ'}`); }
+}
+window.submitDailyReadiness = submitDailyReadiness;
+try{ document.addEventListener('DOMContentLoaded', () => { setTimeout(loadDailyReadinessCard, 500); }); }catch(e){}
 
 // =======================================
 // ✅ FINALIZE (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์
