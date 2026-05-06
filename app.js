@@ -4402,16 +4402,16 @@ function cwfDaysInMonth(month){
   return arr;
 }
 function cwfStatusLabel(st){
-  return ({ working:'ทำงาน', weekly_off:'หยุดประจำ', special_holiday:'วันหยุดพิเศษ', vacation:'วันลา', unavailable:'ไม่ว่าง', urgent_only:'รับงานด่วน', advance_only:'รับล่วงหน้า' })[st] || 'ทำงาน';
+  return ({ working:'รับงานล่วงหน้าได้', advance_only:'รับงานล่วงหน้าได้', weekly_off:'หยุดประจำสัปดาห์', special_holiday:'วันหยุดพิเศษ', vacation:'วันลา', unavailable:'ไม่รับงานล่วงหน้า' })[st] || 'รับงานล่วงหน้าได้';
 }
 function cwfStatusEmoji(st){
-  return ({ working:'✅', weekly_off:'🏖️', special_holiday:'🎌', vacation:'🌙', unavailable:'⛔', urgent_only:'⚡', advance_only:'📅' })[st] || '✅';
+  return ({ working:'📅', advance_only:'📅', weekly_off:'🏖️', special_holiday:'🎌', vacation:'🌙', unavailable:'⛔' })[st] || '📅';
 }
 function cwfGetCalendarItem(iso){ return __cwfWorkCalendarState.items.get(iso) || null; }
 function cwfDefaultCalendarItem(iso){
   const h = __cwfWorkCalendarState.holidays.get(iso);
   if(h) return { work_date:iso, day_status:'special_holiday', can_accept_advance_job:false, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:0, max_units_per_day:0, note:h.holiday_name || 'วันหยุดพิเศษ' };
-  return { work_date:iso, day_status:'working', can_accept_advance_job:true, can_accept_urgent_job:true, start_time:'09:00', end_time:'18:00', max_jobs_per_day:3, max_units_per_day:8, note:'' };
+  return { work_date:iso, day_status:'working', can_accept_advance_job:true, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:3, max_units_per_day:8, note:'' };
 }
 function cwfEffectiveCalendarItem(iso){ return cwfGetCalendarItem(iso) || cwfDefaultCalendarItem(iso); }
 function cwfFormatThaiDate(iso){
@@ -4431,7 +4431,7 @@ function ensureWorkdaysModal(){
         <div>
           <div class="cwf-eyebrow">CWF Work Calendar</div>
           <h3 id="cwfWorkCalendarTitle">🗓️ ปฏิทินรับงานช่าง</h3>
-          <p>ตั้งวันทำงาน/วันหยุด/รับงานล่วงหน้าได้ทั้งเดือน ใช้จริงกับงานนัดหมายและงานด่วน</p>
+          <p>ใช้เฉพาะงานล่วงหน้าที่แอดมินบังคับ/มอบหมายให้ ไม่เกี่ยวกับรับงานด่วน</p>
         </div>
         <button class="cwf-close" type="button" id="techWorkCalendarClose">✕</button>
       </div>
@@ -4439,10 +4439,10 @@ function ensureWorkdaysModal(){
       <div class="cwf-guide-card">
         <button type="button" class="cwf-guide-toggle" id="workCalendarGuideBtn">📘 อ่านวิธีใช้ฟีเจอร์นี้</button>
         <div id="workCalendarGuide" class="cwf-guide-body" style="display:none">
-          <div>✅ <b>ทำงาน</b> = แอดมินส่งงานล่วงหน้าได้ตามช่วงเวลาที่ตั้ง</div>
-          <div>📅 <b>รับล่วงหน้า</b> = เหมาะกับพาร์ทเนอร์ที่รับงานนัดหมายจากบริษัท</div>
-          <div>⚡ <b>รับงานด่วน</b> = ใช้กับงานเสนอวันนี้/งานด่วน ไม่ใช่งานนัดล่วงหน้า</div>
-          <div>🏖️ <b>หยุด</b> = ระบบไม่ควรมองว่าพร้อมรับงานวันนั้น</div>
+          <div>📅 <b>รับงานล่วงหน้าได้</b> = แอดมินสามารถมอบหมาย/บังคับงานล่วงหน้าให้วันนั้นได้</div>
+          <div>🏖️ <b>หยุด</b> = ไม่รับงานล่วงหน้าในวันนั้น</div>
+          <div>⛔ <b>ไม่รับงานล่วงหน้า</b> = ใช้เมื่อไม่สะดวกหรือเต็มวัน</div>
+          <div>⚡ <b>รับงานด่วน</b> = ใช้ปุ่มเปิด/ปิดรับงานหน้าแรกตาม Flow เดิม ไม่เกี่ยวกับปฏิทินนี้</div>
           <div>🌅 <b>พร้อมทำงานวันนี้</b> = ถ้ามีงานวันนี้ ต้องกดยืนยันตอนเช้า แอดมินจะได้รู้ก่อนเกิดปัญหา</div>
         </div>
       </div>
@@ -4464,13 +4464,11 @@ function ensureWorkdaysModal(){
           <div class="cwf-editor-title"><span id="workDayTitle">เลือกวันที่</span><b id="workDayBadge">—</b></div>
           <label>สถานะวันนั้น
             <select id="workDayStatus" class="premium-input">
-              <option value="working">✅ ทำงาน</option>
-              <option value="advance_only">📅 รับงานล่วงหน้า</option>
-              <option value="urgent_only">⚡ รับเฉพาะงานด่วน</option>
+              <option value="working">📅 รับงานล่วงหน้าได้</option>
               <option value="weekly_off">🏖️ หยุดประจำสัปดาห์</option>
               <option value="special_holiday">🎌 วันหยุดพิเศษ</option>
               <option value="vacation">🌙 วันลา</option>
-              <option value="unavailable">⛔ ไม่ว่าง</option>
+              <option value="unavailable">⛔ ไม่รับงานล่วงหน้า</option>
             </select>
           </label>
           <div class="cwf-time-grid">
@@ -4481,11 +4479,10 @@ function ensureWorkdaysModal(){
             <label>งาน/วัน <input id="workDayMaxJobs" class="premium-input" type="number" min="0" max="20" value="3"></label>
             <label>เครื่อง/วัน <input id="workDayMaxUnits" class="premium-input" type="number" min="0" max="99" value="8"></label>
           </div>
-          <label class="cwf-checkline"><input id="workDayAdvance" type="checkbox"> <span>รับงานนัดล่วงหน้า</span></label>
-          <label class="cwf-checkline"><input id="workDayUrgent" type="checkbox"> <span>รับงานด่วน/งานเสนอวันนี้</span></label>
+          <label class="cwf-checkline"><input id="workDayAdvance" type="checkbox"> <span>ให้แอดมินมอบหมายงานล่วงหน้าได้</span></label>
           <label>หมายเหตุ <textarea id="workDayNote" class="premium-input" rows="3" placeholder="เช่น รับได้ช่วงเช้า / ต้องโทรคอนเฟิร์มก่อน"></textarea></label>
           <button id="saveWorkDayBtn" class="cwf-save-btn" type="button">💾 บันทึกวันที่เลือก</button>
-          <button id="applyWorkingMonthBtn" class="cwf-soft-btn" type="button">✅ ตั้งวันจันทร์-เสาร์เป็นทำงานทั้งเดือน</button>
+          <button id="applyWorkingMonthBtn" class="cwf-soft-btn" type="button">📅 ตั้งจันทร์-เสาร์รับงานล่วงหน้าทั้งเดือน</button>
           <button id="applyOffSundaysBtn" class="cwf-soft-btn" type="button">🏖️ ตั้งวันอาทิตย์เป็นวันหยุดทั้งเดือน</button>
         </div>
       </div>
@@ -4545,7 +4542,7 @@ async function loadWorkdaysModalData(month){
     if(!__cwfWorkCalendarState.selectedDate || !__cwfWorkCalendarState.selectedDate.startsWith(m)) __cwfWorkCalendarState.selectedDate = cwfTodayIso().startsWith(m) ? cwfTodayIso() : `${m}-01`;
     renderWorkCalendarGrid();
     selectWorkCalendarDate(__cwfWorkCalendarState.selectedDate);
-    if(statusEl) statusEl.textContent = `✅ โหลดแล้ว • ${data.employment_type === 'partner' ? 'พาร์ทเนอร์' : 'ช่างบริษัท'} • ตั้งค่าได้ทั้งเดือน`;
+    if(statusEl) statusEl.textContent = `✅ โหลดแล้ว • ${data.employment_type === 'partner' ? 'พาร์ทเนอร์' : 'ช่างบริษัท'} • ใช้สำหรับงานล่วงหน้าเท่านั้น`;
   }catch(e){
     if(statusEl) statusEl.textContent = `❌ ${e.message}`;
   }
@@ -4560,7 +4557,7 @@ function renderWorkCalendarGrid(){
     const it = cwfEffectiveCalendarItem(iso);
     const st = it.day_status || 'working';
     const jobs = __cwfWorkCalendarState.jobCounts.get(iso) || 0;
-    const cls = st==='working' ? '' : (st==='urgent_only' ? 'is-urgent' : (st==='advance_only' ? 'is-advance' : (st==='special_holiday' ? 'is-holiday' : 'is-off')));
+    const cls = st==='working' ? '' : (st==='advance_only'||st==='working' ? 'is-advance' : (st==='special_holiday' ? 'is-holiday' : 'is-off'));
     return `<button type="button" class="cwf-day-cell ${cls} ${iso===__cwfWorkCalendarState.selectedDate?'is-selected':''}" data-date="${iso}">
       ${jobs ? `<span class="cwf-job-dot">${jobs} งาน</span>` : ''}
       <div class="cwf-day-num">${Number(iso.slice(-2))}</div>
@@ -4580,7 +4577,7 @@ function selectWorkCalendarDate(iso){
   const set = (id,val) => { const el=document.getElementById(id); if(el) el.value=val ?? ''; };
   set('workDayStatus', it.day_status || 'working'); set('workDayStart', it.start_time || '09:00'); set('workDayEnd', it.end_time || '18:00'); set('workDayMaxJobs', it.max_jobs_per_day ?? 3); set('workDayMaxUnits', it.max_units_per_day ?? 8); set('workDayNote', it.note || '');
   const adv = document.getElementById('workDayAdvance'); if(adv) adv.checked = it.can_accept_advance_job !== false;
-  const urg = document.getElementById('workDayUrgent'); if(urg) urg.checked = it.can_accept_urgent_job !== false;
+  
 }
 
 function collectSelectedWorkDay(){
@@ -4594,7 +4591,7 @@ function collectSelectedWorkDay(){
     max_jobs_per_day: Number(get('workDayMaxJobs','3')),
     max_units_per_day: Number(get('workDayMaxUnits','8')),
     can_accept_advance_job: !!document.getElementById('workDayAdvance')?.checked,
-    can_accept_urgent_job: !!document.getElementById('workDayUrgent')?.checked,
+    can_accept_urgent_job: false,
     note: get('workDayNote','')
   };
 }
@@ -4619,7 +4616,7 @@ async function applyMonthPreset(kind){
     const isSun = d.getDay()===0;
     if(kind==='sunday_off' && isSun) return { work_date:iso, day_status:'weekly_off', can_accept_advance_job:false, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:0, max_units_per_day:0, note:'หยุดประจำสัปดาห์' };
     if(kind==='sunday_off') return null;
-    return { work_date:iso, day_status:isSun?'weekly_off':'working', can_accept_advance_job:!isSun, can_accept_urgent_job:!isSun, start_time:'09:00', end_time:'18:00', max_jobs_per_day:isSun?0:3, max_units_per_day:isSun?0:8, note:isSun?'หยุดประจำสัปดาห์':'' };
+    return { work_date:iso, day_status:isSun?'weekly_off':'working', can_accept_advance_job:!isSun, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:isSun?0:3, max_units_per_day:isSun?0:8, note:isSun?'หยุดประจำสัปดาห์':'' };
   }).filter(Boolean);
   try{
     if(statusEl) statusEl.textContent='กำลังบันทึกทั้งเดือน...';
@@ -4641,6 +4638,25 @@ function openWorkdaysModal(){
 }
 window.openTechWorkCalendarV2 = openWorkdaysModal;
 window.openWorkdaysModal = openWorkdaysModal;
+
+
+function openWorkSettingsMenu(){
+  try { closeTechSettingsModal && closeTechSettingsModal(); } catch(e) {}
+  try { closeTechMenu && closeTechMenu(); } catch(e) {}
+  const modal = document.getElementById('workSettingsMenuModal');
+  if (modal) {
+    modal.style.display = 'flex';
+    modal.removeAttribute('hidden');
+    document.body.style.overflow = 'hidden';
+  }
+}
+function closeWorkSettingsMenu(){
+  const modal = document.getElementById('workSettingsMenuModal');
+  if (modal) modal.style.display = 'none';
+  document.body.style.overflow = '';
+}
+window.openWorkSettingsMenu = openWorkSettingsMenu;
+window.closeWorkSettingsMenu = closeWorkSettingsMenu;
 
 async function loadDailyReadinessCard(){
   const card = document.getElementById('dailyReadinessCard');

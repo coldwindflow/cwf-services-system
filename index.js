@@ -20216,6 +20216,52 @@ app.put('/technicians/:username/workdays-v2', async (req, res) => {
 // - New source of truth for monthly availability, advance jobs, and morning readiness.
 // - Legacy weekly_off_days/workdays-v2 routes remain for compatibility only.
 // =======================================
+
+async function ensureWorkCalendarTablesSafe(){
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.company_holidays (
+      holiday_id BIGSERIAL PRIMARY KEY,
+      holiday_date DATE NOT NULL UNIQUE,
+      holiday_name TEXT NOT NULL,
+      holiday_type TEXT NOT NULL DEFAULT 'government',
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_by TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.technician_monthly_work_calendar (
+      calendar_id BIGSERIAL PRIMARY KEY,
+      technician_username TEXT NOT NULL,
+      work_date DATE NOT NULL,
+      day_status TEXT NOT NULL DEFAULT 'working',
+      can_accept_advance_job BOOLEAN NOT NULL DEFAULT TRUE,
+      can_accept_urgent_job BOOLEAN NOT NULL DEFAULT FALSE,
+      start_time TEXT DEFAULT '09:00',
+      end_time TEXT DEFAULT '18:00',
+      max_jobs_per_day INT DEFAULT 3,
+      max_units_per_day INT DEFAULT 8,
+      note TEXT,
+      source TEXT NOT NULL DEFAULT 'technician',
+      updated_by TEXT,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(technician_username, work_date)
+    )
+  `);
+  await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS can_accept_advance_job BOOLEAN NOT NULL DEFAULT TRUE`);
+  await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS can_accept_urgent_job BOOLEAN NOT NULL DEFAULT FALSE`);
+  await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS start_time TEXT DEFAULT '09:00'`);
+  await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS end_time TEXT DEFAULT '18:00'`);
+  await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS max_jobs_per_day INT DEFAULT 3`);
+  await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS max_units_per_day INT DEFAULT 8`);
+  await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS note TEXT`);
+  await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'technician'`);
+  await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS updated_by TEXT`);
+  await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tmw_calendar_user_date ON public.technician_monthly_work_calendar(technician_username, work_date)`);
+}
+
 function firstDayOfMonthIso(monthText){
   const m = String(monthText || '').trim();
   if (/^\d{4}-\d{2}$/.test(m)) return `${m}-01`;
@@ -20234,7 +20280,7 @@ function endDayOfMonthIso(monthText){
   return toIsoDate(d);
 }
 function normWorkDayPayload(input = {}){
-  const allowed = new Set(['working','weekly_off','special_holiday','vacation','unavailable','urgent_only','advance_only']);
+  const allowed = new Set(['working','weekly_off','special_holiday','vacation','unavailable','advance_only']);
   const day_status = allowed.has(String(input.day_status || '').trim()) ? String(input.day_status).trim() : 'working';
   const start_time = /^\d{2}:\d{2}$/.test(String(input.start_time || '')) ? String(input.start_time) : '09:00';
   const end_time = /^\d{2}:\d{2}$/.test(String(input.end_time || '')) ? String(input.end_time) : '18:00';
@@ -20243,7 +20289,7 @@ function normWorkDayPayload(input = {}){
   return {
     day_status,
     can_accept_advance_job: input.can_accept_advance_job === false ? false : true,
-    can_accept_urgent_job: input.can_accept_urgent_job === false ? false : true,
+    can_accept_urgent_job: false,
     start_time,
     end_time,
     max_jobs_per_day,
@@ -20284,6 +20330,7 @@ async function ensureDailyReadinessRow(username){
 
 app.get('/tech/work-calendar', requireTechnicianSession, async (req, res) => {
   try {
+    await ensureWorkCalendarTablesSafe();
     const username = String(req.effective?.username || '').trim();
     const month = String(req.query?.month || '').trim() || toIsoDate(new Date()).slice(0,7);
     const fromIso = firstDayOfMonthIso(month);
@@ -20322,6 +20369,7 @@ app.get('/tech/work-calendar', requireTechnicianSession, async (req, res) => {
 
 app.put('/tech/work-calendar/day', requireTechnicianSession, async (req, res) => {
   try {
+    await ensureWorkCalendarTablesSafe();
     const username = String(req.effective?.username || '').trim();
     const work_date = toIsoDate(String(req.body?.work_date || '').trim());
     if (!work_date) return res.status(400).json({ error:'ต้องมี work_date' });
@@ -20352,6 +20400,7 @@ app.put('/tech/work-calendar/day', requireTechnicianSession, async (req, res) =>
 app.put('/tech/work-calendar/bulk', requireTechnicianSession, async (req, res) => {
   const client = await pool.connect();
   try {
+    await ensureWorkCalendarTablesSafe();
     const username = String(req.effective?.username || '').trim();
     const days = Array.isArray(req.body?.days) ? req.body.days : [];
     if (!days.length) return res.status(400).json({ error:'ต้องเลือกวันอย่างน้อย 1 วัน' });

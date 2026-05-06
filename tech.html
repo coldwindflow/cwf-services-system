@@ -264,16 +264,6 @@
     .settingsItem strong{font-size:16px;line-height:1.2}
     .settingsItem span{font-size:12px;color:var(--tech-muted);font-weight:900;line-height:1.35}
     .settingsItem.line .sIcon{background:#06c755;color:#fff;font-size:13px;font-weight:1200}
-    .settingsItem.work .sIcon,.settingsItem.workPrimary .sIcon{background:linear-gradient(135deg,#0b4bb3,#16b9f2);color:#fff;box-shadow:0 10px 24px rgba(11,75,179,.22)}
-    #techWorkSettingsModal{display:none;position:fixed;inset:0;z-index:4070;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.78)}
-    #techWorkSettingsModal .workSettingsPanel{width:min(500px,100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:30px;border:1px solid var(--tech-border);box-shadow:0 28px 80px rgba(2,6,23,.38);padding:16px}
-    #techWorkSettingsModal .workSettingsHead{background:linear-gradient(135deg,#eef8ff,#fff 64%,#fff8d8);border:1px solid #d7e0ee;border-radius:24px;padding:14px;margin-bottom:12px;color:var(--tech-navy)}
-    .workSettingsEyebrow{font-size:11px;font-weight:1200;color:#0b62d6;letter-spacing:.06em;text-transform:uppercase;margin-bottom:4px}
-    .workSettingsGuide{display:grid;gap:7px;background:#fff8d8;border:1px solid #ffe08a;color:#513f00;border-radius:20px;padding:12px;margin-bottom:12px;font-weight:950;font-size:13px;line-height:1.45}
-    .workSettingsGrid .settingsItem{min-height:86px}
-    .workSettingsGrid .settingsItem strong{font-size:17px}
-    .workSettingsGrid .settingsItem .sIcon{font-size:24px}
-
     .settingsClose{background:var(--tech-yellow-soft)!important;border-color:rgba(244,196,0,.45)!important;color:#111827!important}
 
     .techMenuSmall{font-size:12px;font-weight:900;color:rgba(15,23,42,0.70)}
@@ -588,6 +578,10 @@
     #techTaxProfileModal .taxDocActions,#techWhtDocsModal .taxDocActions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;margin-top:12px!important}
     @media(max-width:560px){#techTaxProfileModal,#techWhtDocsModal{align-items:flex-start!important;padding:10px!important;overflow:auto!important}#techTaxProfileModal .taxDocPanel,#techWhtDocsModal .taxDocPanel{border-radius:24px!important;margin-top:12px!important}.taxDocActions{grid-template-columns:1fr!important}}
 
+    #workSettingsMenuModal .workSettingsPanel{max-width:720px;width:min(720px,100%);background:linear-gradient(180deg,#ffffff,#f7fbff)!important;color:#08245b!important;border-radius:28px!important;border:1px solid #d7e0ee!important;box-shadow:0 30px 90px rgba(2,6,23,.38)!important;padding:14px!important}
+    #workSettingsMenuModal .workSettingsHero{display:flex;gap:12px;align-items:center;background:linear-gradient(135deg,#08245b,#0b62d6 68%,#17bff3);color:#fff;border-radius:22px;padding:14px;margin:4px 0 12px;box-shadow:0 16px 34px rgba(8,36,91,.22)}
+    #workSettingsMenuModal .workSettingsHero b{display:block;font-size:16px;font-weight:1000;line-height:1.25}#workSettingsMenuModal .workSettingsHero span{display:block;font-size:13px;font-weight:850;opacity:.92;line-height:1.45;margin-top:4px}.workSettingsIcon{width:48px;height:48px;display:grid;place-items:center;background:#fff;color:#08245b;border-radius:18px;font-size:24px;flex:0 0 auto}
+
 </style>
 
 <style id="tax-wht-modal-final-override">
@@ -639,18 +633,18 @@
         </div>
 
         <div class="techMenuList">
+          <button class="techMenuBtn techMenuSetting" type="button" onclick="openWorkSettingsMenu()">
+            <span class="left"><span class="menuIcon">🧭</span><span class="menuText"><strong>ตั้งค่าการรับงาน</strong><span class="sub">ปฏิทินงานล่วงหน้า / ประเภทงาน / พื้นที่ประจำ</span></span></span>
+            <span class="menuArrow">›</span>
+          </button>
+
           <button class="techMenuBtn" type="button" id="notifyBtn">
             <span class="left"><span class="menuIcon">🔔</span><span class="menuText"><strong>แจ้งเตือน / เสียงเตือน</strong><span class="sub" id="notifyStateText">-</span></span></span>
             <span class="menuArrow">›</span>
           </button>
 
-          <button class="techMenuBtn techMenuSetting" type="button" onclick="openTechWorkSettingsModal()">
-            <span class="left"><span class="menuIcon">🧭</span><span class="menuText"><strong>ตั้งค่าการรับงาน</strong><span class="sub">ปฏิทินรับงาน / ประเภทงานที่รับได้ / พื้นที่ประจำของฉัน</span></span></span>
-            <span class="menuArrow">›</span>
-          </button>
-
           <button class="techMenuBtn techMenuSetting" type="button" onclick="openTechSettingsModal()">
-            <span class="left"><span class="menuIcon">⚙️</span><span class="menuText"><strong>ตั้งค่าบัญชี</strong><span class="sub">LINE / โปรไฟล์ / ทวิ50 / รหัสผ่าน / ธีม</span></span></span>
+            <span class="left"><span class="menuIcon">⚙️</span><span class="menuText"><strong>ตั้งค่า</strong><span class="sub">LINE / โปรไฟล์ / รหัสผ่าน / เอกสาร</span></span></span>
             <span class="menuArrow">›</span>
           </button>
 
@@ -670,8 +664,8 @@
       <div class="settingsPanel">
         <div class="settingsHead">
           <div>
-            <h3>ตั้งค่าบัญชี</h3>
-            <p>ข้อมูลบัญชี LINE โปรไฟล์ เอกสาร และรหัสผ่าน</p>
+            <h3>ตั้งค่า</h3>
+            <p>ตั้งค่าบัญชี โปรไฟล์ ความปลอดภัย และเอกสารของช่าง</p>
           </div>
           <button class="tech-icbtn settingsClose" type="button" onclick="closeTechSettingsModal()" aria-label="ปิด">✕</button>
         </div>
@@ -691,8 +685,8 @@
           <button class="settingsItem" type="button" onclick="goChangePassword()">
             <span class="sIcon">🔑</span><span class="sText"><strong>เปลี่ยนรหัสผ่าน</strong><span>ตั้งรหัสผ่านใหม่เพื่อความปลอดภัย</span></span>
           </button>
-          <button class="settingsItem work" type="button" onclick="openTechWorkSettingsModal()">
-            <span class="sIcon">🧭</span><span class="sText"><strong>ตั้งค่าการรับงาน</strong><span>รวมปฏิทินรับงาน ประเภทงานที่รับได้ และพื้นที่ประจำของฉัน</span></span>
+          <button class="settingsItem" type="button" onclick="openWorkSettingsMenu()">
+            <span class="sIcon">🧭</span><span class="sText"><strong>ตั้งค่าการรับงาน</strong><span>รวมปฏิทินงานล่วงหน้า ประเภทงานที่รับได้ และพื้นที่ประจำของฉัน</span></span>
           </button>
           <button class="settingsItem" type="button" onclick="location.href='/tech/base-status'">
             <span class="sIcon">🧬</span><span class="sText"><strong>แบบประเมิน Base Status</strong><span>ตรวจค่าสเตตัสและข้อมูลพื้นฐานช่าง</span></span>
@@ -704,29 +698,31 @@
       </div>
     </div>
 
-    <div id="techWorkSettingsModal">
+    <div id="workSettingsMenuModal" style="display:none;position:fixed;inset:0;z-index:6090;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.76)">
       <div class="settingsPanel workSettingsPanel">
-        <div class="settingsHead workSettingsHead">
+        <div class="settingsHead">
           <div>
-            <div class="workSettingsEyebrow">CWF Work Settings</div>
             <h3>ตั้งค่าการรับงาน</h3>
-            <p>จัดการข้อมูลที่เกี่ยวกับการรับงานทั้งหมดในที่เดียว ชัดเจน ไม่ปนกับตั้งค่าบัญชี</p>
+            <p>จัดการข้อมูลที่เกี่ยวกับการรับงานของช่างทั้งหมดในที่เดียว</p>
           </div>
-          <button class="tech-icbtn settingsClose" type="button" onclick="closeTechWorkSettingsModal()" aria-label="ปิด">✕</button>
+          <button class="tech-icbtn settingsClose" type="button" onclick="closeWorkSettingsMenu()" aria-label="ปิด">✕</button>
         </div>
-        <div class="workSettingsGuide">
-          <div>✅ ใช้ตั้งค่าก่อนรับงานจริง</div>
-          <div>📌 ปุ่ม <b>ตั้งค่าด่วนพื้นที่รับงาน</b> ในหน้ารับงานยังอยู่เหมือนเดิม สำหรับเปลี่ยนโซนเร็ว ๆ ระหว่างวัน</div>
+        <div class="workSettingsHero">
+          <div class="workSettingsIcon">🧭</div>
+          <div>
+            <b>ใช้สำหรับวางแผนงานล่วงหน้าและข้อมูลพื้นที่รับงาน</b>
+            <span>ปุ่มรับงานด่วนด้านหน้ารับงานยังใช้ตาม Flow เดิม ไม่เกี่ยวกับปฏิทินนี้</span>
+          </div>
         </div>
-        <div class="settingsGrid workSettingsGrid">
-          <button class="settingsItem workPrimary" type="button" onclick="openWorkSettingsCalendar()">
-            <span class="sIcon">🗓️</span><span class="sText"><strong>ตั้งค่าปฏิทินรับงาน</strong><span>กำหนดวันทำงาน วันหยุด รับงานล่วงหน้า รับงานด่วน และช่วงเวลาทำงานทั้งเดือน</span></span>
+        <div class="settingsGrid">
+          <button class="settingsItem" type="button" onclick="closeWorkSettingsMenu(); openTechWorkCalendarV2();">
+            <span class="sIcon">🗓️</span><span class="sText"><strong>ตั้งค่าปฏิทินรับงาน</strong><span>ใช้เฉพาะงานล่วงหน้าที่แอดมินบังคับ/มอบหมายให้ ไม่เกี่ยวกับงานด่วน</span></span>
           </button>
-          <button class="settingsItem" type="button" onclick="openWorkSettingsMatrix()">
-            <span class="sIcon">🧩</span><span class="sText"><strong>ประเภทงานที่รับได้</strong><span>เลือกรับงานล้าง ซ่อม ติดตั้ง ประเภทแอร์ และรูปแบบล้างแอร์ผนัง 4 แบบ</span></span>
+          <button class="settingsItem" type="button" onclick="closeWorkSettingsMenu(); document.getElementById('techMatrixBtn')?.click();">
+            <span class="sIcon">🧩</span><span class="sText"><strong>ประเภทงานที่รับได้</strong><span>เลือกงานที่ทำได้ เช่น ล้าง ซ่อม ติดตั้ง และประเภทแอร์</span></span>
           </button>
-          <button class="settingsItem" type="button" onclick="openWorkSettingsZone()">
-            <span class="sIcon">📍</span><span class="sText"><strong>พื้นที่ประจำของฉัน</strong><span>ตั้งจังหวัด/อำเภอ โซนหลัก โซนรอง และระยะทางรับงานประจำ</span></span>
+          <button class="settingsItem" type="button" onclick="closeWorkSettingsMenu(); openServiceZoneModal();">
+            <span class="sIcon">📍</span><span class="sText"><strong>พื้นที่ประจำของฉัน</strong><span>ตั้งพื้นที่หลัก/โซนรองสำหรับการจัดงานและค้นหาช่าง</span></span>
           </button>
         </div>
       </div>
@@ -1787,7 +1783,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260506_work_settings_menu_v2"></script>
+  <script src="app.js?v=20260506_work_settings_advance_v3"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
@@ -1937,29 +1933,6 @@
 
 
 
-    function openTechWorkSettingsModal(){
-      try{ closeTechMenu(); }catch(e){}
-      try{ closeTechSettingsModal(); }catch(e){}
-      const m = document.getElementById('techWorkSettingsModal');
-      if (m) m.style.display = 'flex';
-    }
-    function closeTechWorkSettingsModal(){
-      const m = document.getElementById('techWorkSettingsModal');
-      if (m) m.style.display = 'none';
-    }
-    function openWorkSettingsCalendar(){
-      closeTechWorkSettingsModal();
-      try{ openTechWorkCalendarV2(); }catch(e){ alert('เปิดปฏิทินรับงานไม่สำเร็จ'); }
-    }
-    function openWorkSettingsMatrix(){
-      closeTechWorkSettingsModal();
-      try{ document.getElementById('techMatrixBtn')?.click(); }catch(e){ alert('เปิดประเภทงานที่รับได้ไม่สำเร็จ'); }
-    }
-    function openWorkSettingsZone(){
-      closeTechWorkSettingsModal();
-      try{ openServiceZoneModal(); }catch(e){ alert('เปิดพื้นที่ประจำของฉันไม่สำเร็จ'); }
-    }
-
     function openTechSettingsModal(){
       const m = document.getElementById('techSettingsModal');
       if (m) m.style.display = 'flex';
@@ -1986,11 +1959,6 @@
     window.openTechSettingsModal = openTechSettingsModal;
     window.closeTechSettingsModal = closeTechSettingsModal;
     window.bindCurrentTechLine = bindCurrentTechLine;
-    window.openTechWorkSettingsModal = openTechWorkSettingsModal;
-    window.closeTechWorkSettingsModal = closeTechWorkSettingsModal;
-    window.openWorkSettingsCalendar = openWorkSettingsCalendar;
-    window.openWorkSettingsMatrix = openWorkSettingsMatrix;
-    window.openWorkSettingsZone = openWorkSettingsZone;
 
 
 function logout(){
