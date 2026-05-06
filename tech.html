@@ -670,7 +670,7 @@
           <button class="tech-icbtn settingsClose" type="button" onclick="closeTechWorkSettingsModal()" aria-label="ปิด">✕</button>
         </div>
         <div class="settingsGrid">
-          <button class="settingsItem" type="button" onclick="closeTechWorkSettingsModal(); openTechWorkCalendarV2();">
+          <button class="settingsItem" type="button" onclick="openAdvanceWorkCalendarFromSettings()">
             <span class="sIcon">🗓️</span><span class="sText"><strong>ตั้งค่าปฏิทินรับงาน</strong><span>ใช้เฉพาะงานล่วงหน้าที่แอดมินบังคับ/มอบหมายให้ ไม่เกี่ยวกับงานด่วน</span></span>
           </button>
           <button class="settingsItem" type="button" onclick="closeTechWorkSettingsModal(); document.getElementById('techMatrixBtn')?.click();">
@@ -1773,7 +1773,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260506_payout_deposit1"></script>
+  <script src="app.js?v=work-calendar-open-fix-20260507"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

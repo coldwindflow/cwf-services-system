@@ -20216,6 +20216,61 @@ app.put('/technicians/:username/workdays-v2', async (req, res) => {
 // - New source of truth for monthly availability, advance jobs, and morning readiness.
 // - Legacy weekly_off_days/workdays-v2 routes remain for compatibility only.
 // =======================================
+// Ensure calendar tables exist before every calendar API call.
+// This makes the feature work even when older databases did not run the latest boot-time migration yet.
+async function ensureWorkCalendarRuntimeSchema(){
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.company_holidays (
+      holiday_id BIGSERIAL PRIMARY KEY,
+      holiday_date DATE NOT NULL UNIQUE,
+      holiday_name TEXT NOT NULL DEFAULT 'วันหยุด',
+      holiday_type TEXT NOT NULL DEFAULT 'government',
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_by TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW()
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_company_holidays_date_active ON public.company_holidays(holiday_date, is_active)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.technician_monthly_work_calendar (
+      calendar_id BIGSERIAL PRIMARY KEY,
+      technician_username TEXT NOT NULL,
+      work_date DATE NOT NULL,
+      day_status TEXT NOT NULL DEFAULT 'unavailable',
+      can_accept_advance_job BOOLEAN NOT NULL DEFAULT FALSE,
+      can_accept_urgent_job BOOLEAN NOT NULL DEFAULT FALSE,
+      start_time TEXT DEFAULT '09:00',
+      end_time TEXT DEFAULT '18:00',
+      max_jobs_per_day INT DEFAULT 1,
+      max_units_per_day INT DEFAULT 4,
+      note TEXT,
+      source TEXT NOT NULL DEFAULT 'technician',
+      updated_by TEXT,
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(technician_username, work_date)
+    )
+  `);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tmw_calendar_user_date ON public.technician_monthly_work_calendar(technician_username, work_date)`);
+  await pool.query(`CREATE INDEX IF NOT EXISTS idx_tmw_calendar_date_status ON public.technician_monthly_work_calendar(work_date, day_status)`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.technician_daily_readiness (
+      readiness_id BIGSERIAL PRIMARY KEY,
+      technician_username TEXT NOT NULL,
+      work_date DATE NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending',
+      ready_at TIMESTAMPTZ,
+      not_ready_reason TEXT,
+      first_job_at TIMESTAMPTZ,
+      deadline_at TIMESTAMPTZ,
+      admin_notified_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      updated_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(technician_username, work_date)
+    )
+  `);
+}
+
 function firstDayOfMonthIso(monthText){
   const m = String(monthText || '').trim();
   if (/^\d{4}-\d{2}$/.test(m)) return `${m}-01`;
@@ -20287,6 +20342,7 @@ async function ensureDailyReadinessRow(username){
 
 app.get('/tech/work-calendar', requireTechnicianSession, async (req, res) => {
   try {
+    await ensureWorkCalendarRuntimeSchema();
     const username = String(req.effective?.username || '').trim();
     const month = String(req.query?.month || '').trim() || toIsoDate(new Date()).slice(0,7);
     const fromIso = firstDayOfMonthIso(month);
@@ -20325,6 +20381,7 @@ app.get('/tech/work-calendar', requireTechnicianSession, async (req, res) => {
 
 app.put('/tech/work-calendar/day', requireTechnicianSession, async (req, res) => {
   try {
+    await ensureWorkCalendarRuntimeSchema();
     const username = String(req.effective?.username || '').trim();
     const work_date = toIsoDate(String(req.body?.work_date || '').trim());
     if (!work_date) return res.status(400).json({ error:'ต้องมี work_date' });
@@ -20355,6 +20412,7 @@ app.put('/tech/work-calendar/day', requireTechnicianSession, async (req, res) =>
 app.put('/tech/work-calendar/bulk', requireTechnicianSession, async (req, res) => {
   const client = await pool.connect();
   try {
+    await ensureWorkCalendarRuntimeSchema();
     const username = String(req.effective?.username || '').trim();
     const days = Array.isArray(req.body?.days) ? req.body.days : [];
     if (!days.length) return res.status(400).json({ error:'ต้องเลือกวันอย่างน้อย 1 วัน' });
@@ -20392,6 +20450,7 @@ app.put('/tech/work-calendar/bulk', requireTechnicianSession, async (req, res) =
 
 app.get('/tech/daily-readiness/today', requireTechnicianSession, async (req, res) => {
   try {
+    await ensureWorkCalendarRuntimeSchema();
     const username = String(req.effective?.username || '').trim();
     const data = await ensureDailyReadinessRow(username);
     res.json({ ok:true, username, ...data });
