@@ -254,6 +254,9 @@
     .techMenuHidden{display:none !important;}
     #techSettingsModal{display:none;position:fixed;inset:0;z-index:4050;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.78)}
     #techSettingsModal .settingsPanel{width:min(460px,100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff;border-radius:28px;border:1px solid var(--tech-border);box-shadow:0 28px 80px rgba(2,6,23,.35);padding:16px}
+    #techWorkSettingsModal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(2,6,23,.72);backdrop-filter:blur(8px);z-index:99998;padding:14px;}
+    #techWorkSettingsModal .settingsPanel{width:min(460px,100%);max-height:calc(100vh - 28px);overflow:auto;background:#fff!important;opacity:1!important;border-radius:28px;border:1px solid var(--tech-border);box-shadow:0 28px 80px rgba(2,6,23,.35);padding:16px;color:var(--tech-navy);}
+
     .settingsHead{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;margin-bottom:12px}
     .settingsHead h3{margin:0;color:var(--tech-navy);font-size:24px;line-height:1.15}
     .settingsHead p{margin:5px 0 0;color:var(--tech-muted);font-weight:800;line-height:1.45}
@@ -578,10 +581,6 @@
     #techTaxProfileModal .taxDocActions,#techWhtDocsModal .taxDocActions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;margin-top:12px!important}
     @media(max-width:560px){#techTaxProfileModal,#techWhtDocsModal{align-items:flex-start!important;padding:10px!important;overflow:auto!important}#techTaxProfileModal .taxDocPanel,#techWhtDocsModal .taxDocPanel{border-radius:24px!important;margin-top:12px!important}.taxDocActions{grid-template-columns:1fr!important}}
 
-    #workSettingsMenuModal .workSettingsPanel{max-width:720px;width:min(720px,100%);background:linear-gradient(180deg,#ffffff,#f7fbff)!important;color:#08245b!important;border-radius:28px!important;border:1px solid #d7e0ee!important;box-shadow:0 30px 90px rgba(2,6,23,.38)!important;padding:14px!important}
-    #workSettingsMenuModal .workSettingsHero{display:flex;gap:12px;align-items:center;background:linear-gradient(135deg,#08245b,#0b62d6 68%,#17bff3);color:#fff;border-radius:22px;padding:14px;margin:4px 0 12px;box-shadow:0 16px 34px rgba(8,36,91,.22)}
-    #workSettingsMenuModal .workSettingsHero b{display:block;font-size:16px;font-weight:1000;line-height:1.25}#workSettingsMenuModal .workSettingsHero span{display:block;font-size:13px;font-weight:850;opacity:.92;line-height:1.45;margin-top:4px}.workSettingsIcon{width:48px;height:48px;display:grid;place-items:center;background:#fff;color:#08245b;border-radius:18px;font-size:24px;flex:0 0 auto}
-
 </style>
 
 <style id="tax-wht-modal-final-override">
@@ -633,8 +632,8 @@
         </div>
 
         <div class="techMenuList">
-          <button class="techMenuBtn techMenuSetting" type="button" onclick="openWorkSettingsMenu()">
-            <span class="left"><span class="menuIcon">🧭</span><span class="menuText"><strong>ตั้งค่าการรับงาน</strong><span class="sub">ปฏิทินงานล่วงหน้า / ประเภทงาน / พื้นที่ประจำ</span></span></span>
+          <button class="techMenuBtn techMenuSetting" type="button" onclick="openTechWorkSettingsModal()">
+            <span class="left"><span class="menuIcon">🧭</span><span class="menuText"><strong>ตั้งค่าการรับงาน</strong><span class="sub">ปฏิทินงานล่วงหน้า / ประเภทงาน / พื้นที่รับงาน</span></span></span>
             <span class="menuArrow">›</span>
           </button>
 
@@ -644,7 +643,7 @@
           </button>
 
           <button class="techMenuBtn techMenuSetting" type="button" onclick="openTechSettingsModal()">
-            <span class="left"><span class="menuIcon">⚙️</span><span class="menuText"><strong>ตั้งค่า</strong><span class="sub">LINE / โปรไฟล์ / รหัสผ่าน / เอกสาร</span></span></span>
+            <span class="left"><span class="menuIcon">⚙️</span><span class="menuText"><strong>ตั้งค่าบัญชี</strong><span class="sub">LINE / โปรไฟล์ / เอกสาร / รหัสผ่าน</span></span></span>
             <span class="menuArrow">›</span>
           </button>
 
@@ -660,12 +659,36 @@
       </div>
     </div>
 
+
+    <div id="techWorkSettingsModal">
+      <div class="settingsPanel">
+        <div class="settingsHead">
+          <div>
+            <h3>ตั้งค่าการรับงาน</h3>
+            <p>จัดการปฏิทินงานล่วงหน้า ประเภทงาน และพื้นที่รับงานของช่างในที่เดียว</p>
+          </div>
+          <button class="tech-icbtn settingsClose" type="button" onclick="closeTechWorkSettingsModal()" aria-label="ปิด">✕</button>
+        </div>
+        <div class="settingsGrid">
+          <button class="settingsItem" type="button" onclick="closeTechWorkSettingsModal(); openTechWorkCalendarV2();">
+            <span class="sIcon">🗓️</span><span class="sText"><strong>ตั้งค่าปฏิทินรับงาน</strong><span>ใช้เฉพาะงานล่วงหน้าที่แอดมินบังคับ/มอบหมายให้ ไม่เกี่ยวกับงานด่วน</span></span>
+          </button>
+          <button class="settingsItem" type="button" onclick="closeTechWorkSettingsModal(); document.getElementById('techMatrixBtn')?.click();">
+            <span class="sIcon">🧩</span><span class="sText"><strong>ประเภทงานที่รับได้</strong><span>เลือกงานที่ทำได้ เช่น ล้าง ซ่อม ติดตั้ง และประเภทแอร์</span></span>
+          </button>
+          <button class="settingsItem" type="button" onclick="closeTechWorkSettingsModal(); openServiceZoneModal();">
+            <span class="sIcon">📍</span><span class="sText"><strong>พื้นที่ประจำของฉัน</strong><span>ตั้งพื้นที่หลัก/โซนรองสำหรับการจัดงานและค้นหาช่าง</span></span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div id="techSettingsModal">
       <div class="settingsPanel">
         <div class="settingsHead">
           <div>
-            <h3>ตั้งค่า</h3>
-            <p>ตั้งค่าบัญชี โปรไฟล์ ความปลอดภัย และเอกสารของช่าง</p>
+            <h3>ตั้งค่าบัญชี</h3>
+            <p>จัดการ LINE โปรไฟล์ เอกสาร รหัสผ่าน และธีม</p>
           </div>
           <button class="tech-icbtn settingsClose" type="button" onclick="closeTechSettingsModal()" aria-label="ปิด">✕</button>
         </div>
@@ -685,44 +708,11 @@
           <button class="settingsItem" type="button" onclick="goChangePassword()">
             <span class="sIcon">🔑</span><span class="sText"><strong>เปลี่ยนรหัสผ่าน</strong><span>ตั้งรหัสผ่านใหม่เพื่อความปลอดภัย</span></span>
           </button>
-          <button class="settingsItem" type="button" onclick="openWorkSettingsMenu()">
-            <span class="sIcon">🧭</span><span class="sText"><strong>ตั้งค่าการรับงาน</strong><span>รวมปฏิทินงานล่วงหน้า ประเภทงานที่รับได้ และพื้นที่ประจำของฉัน</span></span>
-          </button>
           <button class="settingsItem" type="button" onclick="location.href='/tech/base-status'">
             <span class="sIcon">🧬</span><span class="sText"><strong>แบบประเมิน Base Status</strong><span>ตรวจค่าสเตตัสและข้อมูลพื้นฐานช่าง</span></span>
           </button>
           <button class="settingsItem" type="button" onclick="document.getElementById('themeToggleBtn')?.click()">
             <span class="sIcon">🎨</span><span class="sText"><strong>สลับธีม</strong><span>โหมดสีหน้าช่าง</span></span>
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div id="workSettingsMenuModal" style="display:none;position:fixed;inset:0;z-index:6090;align-items:center;justify-content:center;padding:14px;background:rgba(2,6,23,.76)">
-      <div class="settingsPanel workSettingsPanel">
-        <div class="settingsHead">
-          <div>
-            <h3>ตั้งค่าการรับงาน</h3>
-            <p>จัดการข้อมูลที่เกี่ยวกับการรับงานของช่างทั้งหมดในที่เดียว</p>
-          </div>
-          <button class="tech-icbtn settingsClose" type="button" onclick="closeWorkSettingsMenu()" aria-label="ปิด">✕</button>
-        </div>
-        <div class="workSettingsHero">
-          <div class="workSettingsIcon">🧭</div>
-          <div>
-            <b>ใช้สำหรับวางแผนงานล่วงหน้าและข้อมูลพื้นที่รับงาน</b>
-            <span>ปุ่มรับงานด่วนด้านหน้ารับงานยังใช้ตาม Flow เดิม ไม่เกี่ยวกับปฏิทินนี้</span>
-          </div>
-        </div>
-        <div class="settingsGrid">
-          <button class="settingsItem" type="button" onclick="closeWorkSettingsMenu(); openTechWorkCalendarV2();">
-            <span class="sIcon">🗓️</span><span class="sText"><strong>ตั้งค่าปฏิทินรับงาน</strong><span>ใช้เฉพาะงานล่วงหน้าที่แอดมินบังคับ/มอบหมายให้ ไม่เกี่ยวกับงานด่วน</span></span>
-          </button>
-          <button class="settingsItem" type="button" onclick="closeWorkSettingsMenu(); document.getElementById('techMatrixBtn')?.click();">
-            <span class="sIcon">🧩</span><span class="sText"><strong>ประเภทงานที่รับได้</strong><span>เลือกงานที่ทำได้ เช่น ล้าง ซ่อม ติดตั้ง และประเภทแอร์</span></span>
-          </button>
-          <button class="settingsItem" type="button" onclick="closeWorkSettingsMenu(); openServiceZoneModal();">
-            <span class="sIcon">📍</span><span class="sText"><strong>พื้นที่ประจำของฉัน</strong><span>ตั้งพื้นที่หลัก/โซนรองสำหรับการจัดงานและค้นหาช่าง</span></span>
           </button>
         </div>
       </div>
@@ -1783,7 +1773,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260506_work_settings_advance_v3"></script>
+  <script src="app.js?v=20260506_payout_deposit1"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
@@ -1933,6 +1923,22 @@
 
 
 
+
+    function openTechWorkSettingsModal(){
+      const d = document.getElementById('techDrawer');
+      const b = document.getElementById('techDrawerBackdrop');
+      if (d) d.classList.remove('open');
+      if (b) b.classList.remove('open');
+      const m = document.getElementById('techWorkSettingsModal');
+      if (m) m.style.display = 'flex';
+    }
+    function closeTechWorkSettingsModal(){
+      const m = document.getElementById('techWorkSettingsModal');
+      if (m) m.style.display = 'none';
+    }
+    window.openTechWorkSettingsModal = openTechWorkSettingsModal;
+    window.closeTechWorkSettingsModal = closeTechWorkSettingsModal;
+
     function openTechSettingsModal(){
       const m = document.getElementById('techSettingsModal');
       if (m) m.style.display = 'flex';
@@ -1959,6 +1965,7 @@
     window.openTechSettingsModal = openTechSettingsModal;
     window.closeTechSettingsModal = closeTechSettingsModal;
     window.bindCurrentTechLine = bindCurrentTechLine;
+    try{ document.getElementById('techWorkSettingsModal')?.addEventListener('click', (e)=>{ if(e.target && e.target.id==='techWorkSettingsModal') closeTechWorkSettingsModal(); }); }catch{}
 
 
 function logout(){

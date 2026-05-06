@@ -4392,8 +4392,16 @@ window.toggleWarrantyMonths = toggleWarrantyMonths;
 // =======================================
 let __cwfWorkCalendarState = { month: '', selectedDate: '', items: new Map(), holidays: new Map(), jobCounts: new Map(), employmentType: 'company' };
 
-function cwfTodayIso(){ return toIsoDateLocal(new Date()); }
-function cwfMonthText(d){ return toIsoDateLocal(d || new Date()).slice(0,7); }
+function cwfIsoDateLocal(d){
+  const dt = (d instanceof Date) ? d : new Date(d || Date.now());
+  if (Number.isNaN(dt.getTime())) return '';
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth()+1).padStart(2,'0');
+  const dd = String(dt.getDate()).padStart(2,'0');
+  return `${y}-${m}-${dd}`;
+}
+function cwfTodayIso(){ return cwfIsoDateLocal(new Date()); }
+function cwfMonthText(d){ return cwfIsoDateLocal(d || new Date()).slice(0,7); }
 function cwfDaysInMonth(month){
   const [y,m] = String(month || cwfMonthText()).split('-').map(Number);
   const last = new Date(y, m, 0).getDate();
@@ -4402,16 +4410,16 @@ function cwfDaysInMonth(month){
   return arr;
 }
 function cwfStatusLabel(st){
-  return ({ working:'รับงานล่วงหน้าได้', advance_only:'รับงานล่วงหน้าได้', weekly_off:'หยุดประจำสัปดาห์', special_holiday:'วันหยุดพิเศษ', vacation:'วันลา', unavailable:'ไม่รับงานล่วงหน้า' })[st] || 'รับงานล่วงหน้าได้';
+  return ({ advance_only:'รับงานล่วงหน้าได้', unavailable:'ไม่รับงานล่วงหน้า', weekly_off:'วันหยุด', special_holiday:'วันหยุดพิเศษ', vacation:'วันลา', working:'รับงานล่วงหน้าได้' })[st] || 'ยังไม่ตั้งค่า';
 }
 function cwfStatusEmoji(st){
-  return ({ working:'📅', advance_only:'📅', weekly_off:'🏖️', special_holiday:'🎌', vacation:'🌙', unavailable:'⛔' })[st] || '📅';
+  return ({ advance_only:'✅', unavailable:'❌', weekly_off:'🏖️', special_holiday:'🎌', vacation:'🌙', working:'✅' })[st] || '▫️';
 }
 function cwfGetCalendarItem(iso){ return __cwfWorkCalendarState.items.get(iso) || null; }
 function cwfDefaultCalendarItem(iso){
   const h = __cwfWorkCalendarState.holidays.get(iso);
   if(h) return { work_date:iso, day_status:'special_holiday', can_accept_advance_job:false, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:0, max_units_per_day:0, note:h.holiday_name || 'วันหยุดพิเศษ' };
-  return { work_date:iso, day_status:'working', can_accept_advance_job:true, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:3, max_units_per_day:8, note:'' };
+  return { work_date:iso, day_status:'unavailable', can_accept_advance_job:false, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:1, max_units_per_day:4, note:'' };
 }
 function cwfEffectiveCalendarItem(iso){ return cwfGetCalendarItem(iso) || cwfDefaultCalendarItem(iso); }
 function cwfFormatThaiDate(iso){
@@ -4431,7 +4439,7 @@ function ensureWorkdaysModal(){
         <div>
           <div class="cwf-eyebrow">CWF Work Calendar</div>
           <h3 id="cwfWorkCalendarTitle">🗓️ ปฏิทินรับงานช่าง</h3>
-          <p>ใช้เฉพาะงานล่วงหน้าที่แอดมินบังคับ/มอบหมายให้ ไม่เกี่ยวกับรับงานด่วน</p>
+          <p>ใช้เฉพาะงานล่วงหน้าที่แอดมินบังคับ/มอบหมายให้ ไม่เกี่ยวกับงานด่วน</p>
         </div>
         <button class="cwf-close" type="button" id="techWorkCalendarClose">✕</button>
       </div>
@@ -4439,11 +4447,10 @@ function ensureWorkdaysModal(){
       <div class="cwf-guide-card">
         <button type="button" class="cwf-guide-toggle" id="workCalendarGuideBtn">📘 อ่านวิธีใช้ฟีเจอร์นี้</button>
         <div id="workCalendarGuide" class="cwf-guide-body" style="display:none">
-          <div>📅 <b>รับงานล่วงหน้าได้</b> = แอดมินสามารถมอบหมาย/บังคับงานล่วงหน้าให้วันนั้นได้</div>
-          <div>🏖️ <b>หยุด</b> = ไม่รับงานล่วงหน้าในวันนั้น</div>
-          <div>⛔ <b>ไม่รับงานล่วงหน้า</b> = ใช้เมื่อไม่สะดวกหรือเต็มวัน</div>
-          <div>⚡ <b>รับงานด่วน</b> = ใช้ปุ่มเปิด/ปิดรับงานหน้าแรกตาม Flow เดิม ไม่เกี่ยวกับปฏิทินนี้</div>
-          <div>🌅 <b>พร้อมทำงานวันนี้</b> = ถ้ามีงานวันนี้ ต้องกดยืนยันตอนเช้า แอดมินจะได้รู้ก่อนเกิดปัญหา</div>
+          <div>✅ <b>รับงานล่วงหน้าได้</b> = แอดมินเห็นว่าสามารถมอบหมายงานนัดล่วงหน้าให้วันนั้นได้</div>
+          <div>❌ <b>ไม่รับงานล่วงหน้า</b> = แอดมินไม่ควรบังคับ/มอบหมายงานล่วงหน้าให้วันนั้น</div>
+          <div>📝 <b>หมายเหตุ</b> = บอกแอดมินได้ เช่น รับได้เฉพาะช่วงเช้า / ต้องโทรคอนเฟิร์มก่อน</div>
+          <div>⚡ <b>งานด่วน</b> = ไม่เกี่ยวกับปฏิทินนี้ ให้ใช้ปุ่มเปิด/ปิดรับงานหน้าแรกตาม Flow เดิม</div>
         </div>
       </div>
 
@@ -4464,11 +4471,10 @@ function ensureWorkdaysModal(){
           <div class="cwf-editor-title"><span id="workDayTitle">เลือกวันที่</span><b id="workDayBadge">—</b></div>
           <label>สถานะวันนั้น
             <select id="workDayStatus" class="premium-input">
-              <option value="working">📅 รับงานล่วงหน้าได้</option>
-              <option value="weekly_off">🏖️ หยุดประจำสัปดาห์</option>
-              <option value="special_holiday">🎌 วันหยุดพิเศษ</option>
+              <option value="advance_only">✅ รับงานล่วงหน้าได้</option>
+              <option value="unavailable">❌ ไม่รับงานล่วงหน้า</option>
+              <option value="weekly_off">🏖️ วันหยุด</option>
               <option value="vacation">🌙 วันลา</option>
-              <option value="unavailable">⛔ ไม่รับงานล่วงหน้า</option>
             </select>
           </label>
           <div class="cwf-time-grid">
@@ -4479,11 +4485,14 @@ function ensureWorkdaysModal(){
             <label>งาน/วัน <input id="workDayMaxJobs" class="premium-input" type="number" min="0" max="20" value="3"></label>
             <label>เครื่อง/วัน <input id="workDayMaxUnits" class="premium-input" type="number" min="0" max="99" value="8"></label>
           </div>
-          <label class="cwf-checkline"><input id="workDayAdvance" type="checkbox"> <span>ให้แอดมินมอบหมายงานล่วงหน้าได้</span></label>
-          <label>หมายเหตุ <textarea id="workDayNote" class="premium-input" rows="3" placeholder="เช่น รับได้ช่วงเช้า / ต้องโทรคอนเฟิร์มก่อน"></textarea></label>
+          <div class="cwf-quick-grid">
+            <button id="markAdvanceDayBtn" class="cwf-save-btn" type="button">✅ รับล่วงหน้า</button>
+            <button id="markUnavailableDayBtn" class="cwf-soft-btn" type="button">❌ ไม่รับ</button>
+          </div>
+          <label>หมายเหตุถึงแอดมิน <textarea id="workDayNote" class="premium-input" rows="3" placeholder="เช่น รับได้เฉพาะช่วงเช้า / วันนี้มีธุระช่วงบ่าย / โทรคอนเฟิร์มก่อนมอบหมาย"></textarea></label>
           <button id="saveWorkDayBtn" class="cwf-save-btn" type="button">💾 บันทึกวันที่เลือก</button>
-          <button id="applyWorkingMonthBtn" class="cwf-soft-btn" type="button">📅 ตั้งจันทร์-เสาร์รับงานล่วงหน้าทั้งเดือน</button>
-          <button id="applyOffSundaysBtn" class="cwf-soft-btn" type="button">🏖️ ตั้งวันอาทิตย์เป็นวันหยุดทั้งเดือน</button>
+          <button id="applyWorkingMonthBtn" class="cwf-soft-btn" type="button">✅ รับงานล่วงหน้า จันทร์-เสาร์ ทั้งเดือน</button>
+          <button id="applyOffSundaysBtn" class="cwf-soft-btn" type="button">🏖️ วันอาทิตย์ไม่รับทั้งเดือน</button>
         </div>
       </div>
     </div>
@@ -4493,16 +4502,16 @@ function ensureWorkdaysModal(){
   const style = document.createElement('style');
   style.id = 'cwf-work-calendar-v2-style';
   style.textContent = `
-    .cwf-calendar-backdrop{position:fixed;inset:0;display:none;align-items:flex-start;justify-content:center;z-index:99999;background:rgba(2,6,23,.72);padding:14px;overflow:auto}
-    .cwf-calendar-panel{width:min(1040px,100%);background:linear-gradient(180deg,#ffffff,#f7fbff);border:1px solid rgba(215,224,238,.95);border-radius:28px;box-shadow:0 32px 110px rgba(2,6,23,.45);padding:14px;color:#08245b}
+    .cwf-calendar-backdrop{position:fixed!important;inset:0!important;display:none;align-items:flex-start;justify-content:center;z-index:99999!important;background:rgba(2,6,23,.82)!important;padding:14px;overflow:auto;backdrop-filter:blur(8px)}
+    .cwf-calendar-panel{width:min(920px,100%);background:#ffffff!important;border:1px solid rgba(215,224,238,.95);border-radius:28px;box-shadow:0 32px 110px rgba(2,6,23,.55);padding:14px;color:#08245b;opacity:1!important}
     .cwf-calendar-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;background:linear-gradient(135deg,#08245b,#0b62d6 65%,#17bff3);color:#fff;border-radius:24px;padding:16px;box-shadow:0 14px 34px rgba(8,36,91,.25)}
     .cwf-calendar-head h3{margin:0;font-size:22px}.cwf-calendar-head p{margin:5px 0 0;opacity:.92;font-weight:800;line-height:1.45}.cwf-eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.82;font-weight:1000}
     .cwf-close{border:0;background:#fff;color:#08245b;border-radius:16px;min-width:44px;min-height:44px;font-weight:1000;box-shadow:0 10px 24px rgba(0,0,0,.18)}
     .cwf-guide-card{margin:12px 0;background:#fff8d8;border:1px solid #ffe08a;border-radius:20px;padding:10px}.cwf-guide-toggle{width:100%;border:0;background:transparent;color:#513f00;font-weight:1000;text-align:left;font-size:15px}.cwf-guide-body{display:grid;gap:8px;margin-top:10px;color:#463800;font-weight:850;line-height:1.5}
     .cwf-calendar-toolbar{display:flex;gap:10px;align-items:center;margin:12px 0;flex-wrap:wrap}.cwf-mini-btn,.cwf-month-input{border:1px solid #d7e0ee;background:#fff;color:#08245b;border-radius:16px;min-height:44px;padding:10px 12px;font-weight:1000}.cwf-month-input{flex:1;min-width:170px}
-    .cwf-calendar-layout{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(320px,.65fr);gap:12px}.cwf-week-head{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px}.cwf-week-head span{text-align:center;font-size:12px;font-weight:1000;color:#526276}
-    .cwf-month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}.cwf-day-cell{min-height:76px;border:1px solid #d7e0ee;background:#fff;border-radius:16px;padding:8px;text-align:left;color:#08245b;box-shadow:0 8px 18px rgba(8,36,91,.06);position:relative;overflow:hidden}.cwf-day-cell.is-selected{outline:3px solid #0ea5e9}.cwf-day-cell.is-off{background:#fff1f2;border-color:#fecdd3}.cwf-day-cell.is-urgent{background:#fff7ed;border-color:#fed7aa}.cwf-day-cell.is-advance{background:#eff6ff;border-color:#bfdbfe}.cwf-day-cell.is-holiday{background:#fef9c3;border-color:#fde68a}.cwf-day-num{font-size:17px;font-weight:1000}.cwf-day-label{font-size:11px;font-weight:1000;margin-top:4px;line-height:1.25}.cwf-job-dot{position:absolute;right:7px;top:7px;background:#08245b;color:#fff;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:1000}
-    .cwf-day-editor{background:#fff;border:1px solid #d7e0ee;border-radius:22px;padding:12px;display:grid;gap:10px;box-shadow:0 16px 30px rgba(8,36,91,.08)}.cwf-editor-title{display:flex;justify-content:space-between;align-items:center;gap:8px}.cwf-editor-title span{font-size:18px;font-weight:1000}.cwf-editor-title b{background:#e0f2fe;color:#075985;border-radius:999px;padding:6px 10px;font-size:12px}.cwf-day-editor label{display:grid;gap:6px;font-weight:1000;color:#0b2e6d}.cwf-time-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-checkline{display:flex!important;grid-template-columns:none!important;align-items:center;gap:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:10px}.cwf-checkline input{width:18px;height:18px}.cwf-save-btn,.cwf-soft-btn{border:0;border-radius:18px;min-height:50px;padding:12px 14px;font-weight:1000}.cwf-save-btn{background:linear-gradient(135deg,#0b4bb3,#16b9f2);color:#fff}.cwf-soft-btn{background:#fff;border:1px solid #d7e0ee;color:#08245b}.cwf-calendar-status{font-size:12px;font-weight:900;color:#526276;margin-top:8px;min-height:18px}
+    .cwf-calendar-layout{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(300px,.9fr);gap:12px}.cwf-week-head{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px}.cwf-week-head span{text-align:center;font-size:12px;font-weight:1000;color:#526276}
+    .cwf-month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}.cwf-day-cell{min-height:52px;border:1px solid #d7e0ee;background:#fff;border-radius:14px;padding:6px 5px;text-align:center;color:#08245b;box-shadow:0 5px 12px rgba(8,36,91,.06);position:relative;overflow:hidden}.cwf-day-cell.is-selected{outline:3px solid #0ea5e9}.cwf-day-cell.is-off{background:#fff1f2;border-color:#fecdd3}.cwf-day-cell.is-advance{background:#eafaf0;border-color:#86efac}.cwf-day-cell.is-holiday{background:#fef9c3;border-color:#fde68a}.cwf-day-num{font-size:16px;font-weight:1000}.cwf-day-label{font-size:10px;font-weight:1000;margin-top:2px;line-height:1.15}.cwf-job-dot{position:absolute;right:4px;top:4px;background:#08245b;color:#fff;border-radius:999px;padding:1px 5px;font-size:9px;font-weight:1000}
+    .cwf-day-editor{background:#fff;border:1px solid #d7e0ee;border-radius:22px;padding:12px;display:grid;gap:10px;box-shadow:0 16px 30px rgba(8,36,91,.08)}.cwf-editor-title{display:flex;justify-content:space-between;align-items:center;gap:8px}.cwf-editor-title span{font-size:18px;font-weight:1000}.cwf-editor-title b{background:#e0f2fe;color:#075985;border-radius:999px;padding:6px 10px;font-size:12px}.cwf-day-editor label{display:grid;gap:6px;font-weight:1000;color:#0b2e6d}.cwf-time-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-checkline{display:flex!important;grid-template-columns:none!important;align-items:center;gap:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:10px}.cwf-checkline input{width:18px;height:18px}.cwf-quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-save-btn,.cwf-soft-btn{border:0;border-radius:18px;min-height:50px;padding:12px 14px;font-weight:1000}.cwf-save-btn{background:linear-gradient(135deg,#0b4bb3,#16b9f2);color:#fff}.cwf-soft-btn{background:#fff;border:1px solid #d7e0ee;color:#08245b}.cwf-calendar-status{font-size:12px;font-weight:900;color:#526276;margin-top:8px;min-height:18px}
     @media(max-width:820px){.cwf-calendar-layout{grid-template-columns:1fr}.cwf-day-cell{min-height:64px;padding:7px}.cwf-day-label{font-size:10px}.cwf-calendar-panel{padding:10px;border-radius:24px}.cwf-calendar-head{border-radius:20px}.cwf-time-grid{grid-template-columns:1fr 1fr}}
   `;
   document.head.appendChild(style);
@@ -4515,6 +4524,8 @@ function ensureWorkdaysModal(){
   document.getElementById('calendarNextMonth').onclick = () => cwfShiftCalendarMonth(1);
   document.getElementById('workCalendarMonth').onchange = (e) => loadWorkdaysModalData(e.target.value);
   document.getElementById('saveWorkDayBtn').onclick = () => saveSelectedWorkDay();
+  document.getElementById('markAdvanceDayBtn').onclick = () => { const s=document.getElementById('workDayStatus'); if(s) s.value='advance_only'; saveSelectedWorkDay(); };
+  document.getElementById('markUnavailableDayBtn').onclick = () => { const s=document.getElementById('workDayStatus'); if(s) s.value='unavailable'; saveSelectedWorkDay(); };
   document.getElementById('applyWorkingMonthBtn').onclick = () => applyMonthPreset('working');
   document.getElementById('applyOffSundaysBtn').onclick = () => applyMonthPreset('sunday_off');
 }
@@ -4542,7 +4553,7 @@ async function loadWorkdaysModalData(month){
     if(!__cwfWorkCalendarState.selectedDate || !__cwfWorkCalendarState.selectedDate.startsWith(m)) __cwfWorkCalendarState.selectedDate = cwfTodayIso().startsWith(m) ? cwfTodayIso() : `${m}-01`;
     renderWorkCalendarGrid();
     selectWorkCalendarDate(__cwfWorkCalendarState.selectedDate);
-    if(statusEl) statusEl.textContent = `✅ โหลดแล้ว • ${data.employment_type === 'partner' ? 'พาร์ทเนอร์' : 'ช่างบริษัท'} • ใช้สำหรับงานล่วงหน้าเท่านั้น`;
+    if(statusEl) statusEl.textContent = `✅ โหลดแล้ว • ${data.employment_type === 'partner' ? 'พาร์ทเนอร์' : 'ช่างบริษัท'} • ใช้ตั้งค่างานล่วงหน้าเท่านั้น`;
   }catch(e){
     if(statusEl) statusEl.textContent = `❌ ${e.message}`;
   }
@@ -4557,12 +4568,12 @@ function renderWorkCalendarGrid(){
     const it = cwfEffectiveCalendarItem(iso);
     const st = it.day_status || 'working';
     const jobs = __cwfWorkCalendarState.jobCounts.get(iso) || 0;
-    const cls = st==='working' ? '' : (st==='advance_only'||st==='working' ? 'is-advance' : (st==='special_holiday' ? 'is-holiday' : 'is-off'));
+    const cls = (st==='advance_only' || st==='working') ? 'is-advance' : (st==='special_holiday' ? 'is-holiday' : 'is-off');
+    const noteIcon = String(it.note||'').trim() ? '📝' : '';
     return `<button type="button" class="cwf-day-cell ${cls} ${iso===__cwfWorkCalendarState.selectedDate?'is-selected':''}" data-date="${iso}">
-      ${jobs ? `<span class="cwf-job-dot">${jobs} งาน</span>` : ''}
+      ${jobs ? `<span class="cwf-job-dot">${jobs}</span>` : ''}
       <div class="cwf-day-num">${Number(iso.slice(-2))}</div>
-      <div class="cwf-day-label">${cwfStatusEmoji(st)} ${cwfStatusLabel(st)}</div>
-      <div class="cwf-day-label">${it.start_time || '09:00'}-${it.end_time || '18:00'}</div>
+      <div class="cwf-day-label">${noteIcon} ${cwfStatusEmoji(st)} ${st==='advance_only'||st==='working'?'รับ':'ไม่รับ'}</div>
     </button>`;
   }).join('');
   Array.from(grid.querySelectorAll('[data-date]')).forEach(btn=> btn.onclick = () => selectWorkCalendarDate(btn.getAttribute('data-date')));
@@ -4575,9 +4586,9 @@ function selectWorkCalendarDate(iso){
   const title = document.getElementById('workDayTitle'); if(title) title.textContent = cwfFormatThaiDate(iso);
   const badge = document.getElementById('workDayBadge'); if(badge) badge.textContent = `${cwfStatusEmoji(it.day_status)} ${cwfStatusLabel(it.day_status)}`;
   const set = (id,val) => { const el=document.getElementById(id); if(el) el.value=val ?? ''; };
-  set('workDayStatus', it.day_status || 'working'); set('workDayStart', it.start_time || '09:00'); set('workDayEnd', it.end_time || '18:00'); set('workDayMaxJobs', it.max_jobs_per_day ?? 3); set('workDayMaxUnits', it.max_units_per_day ?? 8); set('workDayNote', it.note || '');
+  set('workDayStatus', (it.day_status === 'working' ? 'advance_only' : (it.day_status || 'unavailable'))); set('workDayStart', it.start_time || '09:00'); set('workDayEnd', it.end_time || '18:00'); set('workDayMaxJobs', it.max_jobs_per_day ?? 1); set('workDayMaxUnits', it.max_units_per_day ?? 4); set('workDayNote', it.note || '');
   const adv = document.getElementById('workDayAdvance'); if(adv) adv.checked = it.can_accept_advance_job !== false;
-  
+  const urg = document.getElementById('workDayUrgent'); if(urg) urg.checked = it.can_accept_urgent_job !== false;
 }
 
 function collectSelectedWorkDay(){
@@ -4585,12 +4596,12 @@ function collectSelectedWorkDay(){
   const get = (id, fallback='') => document.getElementById(id)?.value || fallback;
   return {
     work_date: iso,
-    day_status: get('workDayStatus','working'),
+    day_status: get('workDayStatus','unavailable'),
     start_time: get('workDayStart','09:00'),
     end_time: get('workDayEnd','18:00'),
-    max_jobs_per_day: Number(get('workDayMaxJobs','3')),
-    max_units_per_day: Number(get('workDayMaxUnits','8')),
-    can_accept_advance_job: !!document.getElementById('workDayAdvance')?.checked,
+    max_jobs_per_day: Number(get('workDayMaxJobs','1')),
+    max_units_per_day: Number(get('workDayMaxUnits','4')),
+    can_accept_advance_job: get('workDayStatus','unavailable') === 'advance_only',
     can_accept_urgent_job: false,
     note: get('workDayNote','')
   };
@@ -4614,9 +4625,9 @@ async function applyMonthPreset(kind){
   const days = cwfDaysInMonth(month).map(iso=>{
     const d = new Date(iso+'T00:00:00');
     const isSun = d.getDay()===0;
-    if(kind==='sunday_off' && isSun) return { work_date:iso, day_status:'weekly_off', can_accept_advance_job:false, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:0, max_units_per_day:0, note:'หยุดประจำสัปดาห์' };
+    if(kind==='sunday_off' && isSun) return { work_date:iso, day_status:'weekly_off', can_accept_advance_job:false, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:0, max_units_per_day:0, note:'ไม่รับงานล่วงหน้า' };
     if(kind==='sunday_off') return null;
-    return { work_date:iso, day_status:isSun?'weekly_off':'working', can_accept_advance_job:!isSun, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:isSun?0:3, max_units_per_day:isSun?0:8, note:isSun?'หยุดประจำสัปดาห์':'' };
+    return { work_date:iso, day_status:isSun?'weekly_off':'advance_only', can_accept_advance_job:!isSun, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:isSun?0:1, max_units_per_day:isSun?0:4, note:isSun?'ไม่รับงานล่วงหน้า':'' };
   }).filter(Boolean);
   try{
     if(statusEl) statusEl.textContent='กำลังบันทึกทั้งเดือน...';
@@ -4638,25 +4649,6 @@ function openWorkdaysModal(){
 }
 window.openTechWorkCalendarV2 = openWorkdaysModal;
 window.openWorkdaysModal = openWorkdaysModal;
-
-
-function openWorkSettingsMenu(){
-  try { closeTechSettingsModal && closeTechSettingsModal(); } catch(e) {}
-  try { closeTechMenu && closeTechMenu(); } catch(e) {}
-  const modal = document.getElementById('workSettingsMenuModal');
-  if (modal) {
-    modal.style.display = 'flex';
-    modal.removeAttribute('hidden');
-    document.body.style.overflow = 'hidden';
-  }
-}
-function closeWorkSettingsMenu(){
-  const modal = document.getElementById('workSettingsMenuModal');
-  if (modal) modal.style.display = 'none';
-  document.body.style.overflow = '';
-}
-window.openWorkSettingsMenu = openWorkSettingsMenu;
-window.closeWorkSettingsMenu = closeWorkSettingsMenu;
 
 async function loadDailyReadinessCard(){
   const card = document.getElementById('dailyReadinessCard');
