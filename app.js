@@ -397,6 +397,7 @@ async function loadAcceptStatusSafe() {
 // ✅ ส่งสถานะไป Server (optimistic UI)
 async function setAcceptStatusSafe(nextStatus) {
   const st = normalizeAcceptStatus(nextStatus);
+  const prevSt = normalizeAcceptStatus(localStorage.getItem(LS_ACCEPT_KEY) || acceptToggleBtn?.dataset?.status || "ready");
 
   // ป้องกันกดรัว
   if (acceptToggleBtn) acceptToggleBtn.disabled = true;
@@ -431,9 +432,9 @@ async function setAcceptStatusSafe(nextStatus) {
   } catch (e) {
     console.warn("setAcceptStatusSafe:", e?.message || e);
 
-    // rollback เป็นค่าสถานะล่าสุดที่เชื่อถือได้ (ก่อนเปลี่ยน)
-    const rollback = normalizeAcceptStatus(localStorage.getItem(LS_ACCEPT_KEY) || "ready");
-    renderAcceptUI(rollback, null, "บันทึกไม่สำเร็จ");
+    // rollback เป็นค่าสถานะก่อนกด ไม่ใช่ค่าสถานะที่เพิ่งเขียน optimistic ลง localStorage
+    localStorage.setItem(LS_ACCEPT_KEY, prevSt);
+    renderAcceptUI(prevSt, null, "บันทึกไม่สำเร็จ");
     alert(`❌ ${e.message || "บันทึกไม่สำเร็จ"}`);
   } finally {
     if (acceptToggleBtn) acceptToggleBtn.disabled = false;
@@ -4418,9 +4419,11 @@ function cwfFormatThaiDate(iso){
 }
 
 function ensureWorkdaysModal(){
-  if (document.getElementById('workdays-modal')) return;
+  // ล้าง DOM ปฏิทินเก่าที่เคยใช้ id=workdays-modal เพื่อไม่ให้ช่างสับสนหรือเปิด UI เก่าซ้อนกัน
+  document.getElementById('workdays-modal')?.remove();
+  if (document.getElementById('tech-work-calendar-v2-modal')) return;
   const wrap = document.createElement('div');
-  wrap.id = 'workdays-modal';
+  wrap.id = 'tech-work-calendar-v2-modal';
   wrap.className = 'cwf-calendar-backdrop';
   wrap.innerHTML = `
     <div class="cwf-calendar-panel" role="dialog" aria-modal="true" aria-labelledby="cwfWorkCalendarTitle">
@@ -4430,7 +4433,7 @@ function ensureWorkdaysModal(){
           <h3 id="cwfWorkCalendarTitle">🗓️ ปฏิทินรับงานช่าง</h3>
           <p>ตั้งวันทำงาน/วันหยุด/รับงานล่วงหน้าได้ทั้งเดือน ใช้จริงกับงานนัดหมายและงานด่วน</p>
         </div>
-        <button class="cwf-close" type="button" id="workdays-close">✕</button>
+        <button class="cwf-close" type="button" id="techWorkCalendarClose">✕</button>
       </div>
 
       <div class="cwf-guide-card">
@@ -4507,7 +4510,7 @@ function ensureWorkdaysModal(){
   `;
   document.head.appendChild(style);
 
-  document.getElementById('workdays-close').onclick = () => { wrap.style.display='none'; document.body.style.overflow=''; };
+  document.getElementById('techWorkCalendarClose').onclick = () => { wrap.style.display='none'; document.body.style.overflow=''; };
   document.getElementById('workCalendarGuideBtn').onclick = () => {
     const g = document.getElementById('workCalendarGuide'); if(g) g.style.display = g.style.display === 'none' ? 'grid' : 'none';
   };
@@ -4630,12 +4633,13 @@ async function applyMonthPreset(kind){
 
 function openWorkdaysModal(){
   ensureWorkdaysModal();
-  const wrap = document.getElementById('workdays-modal');
+  const wrap = document.getElementById('tech-work-calendar-v2-modal');
   if (!wrap) return;
   wrap.style.display = 'flex';
   document.body.style.overflow='hidden';
   loadWorkdaysModalData(cwfMonthText());
 }
+window.openTechWorkCalendarV2 = openWorkdaysModal;
 window.openWorkdaysModal = openWorkdaysModal;
 
 async function loadDailyReadinessCard(){

@@ -635,7 +635,7 @@
           </button>
 
           <button class="techMenuBtn techMenuSetting" type="button" onclick="openTechSettingsModal()">
-            <span class="left"><span class="menuIcon">⚙️</span><span class="menuText"><strong>ตั้งค่า</strong><span class="sub">LINE / โปรไฟล์ / รหัสผ่าน / วันทำงาน / งานที่รับได้</span></span></span>
+            <span class="left"><span class="menuIcon">⚙️</span><span class="menuText"><strong>ตั้งค่า</strong><span class="sub">LINE / โปรไฟล์ / ปฏิทินรับงานใหม่ / งานที่รับได้</span></span></span>
             <span class="menuArrow">›</span>
           </button>
 
@@ -676,8 +676,8 @@
           <button class="settingsItem" type="button" onclick="goChangePassword()">
             <span class="sIcon">🔑</span><span class="sText"><strong>เปลี่ยนรหัสผ่าน</strong><span>ตั้งรหัสผ่านใหม่เพื่อความปลอดภัย</span></span>
           </button>
-          <button class="settingsItem" type="button" onclick="openWorkdaysModal()">
-            <span class="sIcon">🗓️</span><span class="sText"><strong>ปฏิทินรับงาน</strong><span>ตั้งวันหยุด รับงานล่วงหน้า และช่วงเวลาทำงานทั้งเดือน</span></span>
+          <button class="settingsItem" type="button" onclick="openTechWorkCalendarV2()">
+            <span class="sIcon">🗓️</span><span class="sText"><strong>ปฏิทินรับงานใหม่</strong><span>ตั้งวันหยุด รับงานล่วงหน้า และช่วงเวลาทำงานทั้งเดือน</span></span>
           </button>
           <button class="settingsItem" type="button" onclick="openServiceZoneModal()">
             <span class="sIcon">ZONE</span><span class="sText"><strong>พื้นที่ประจำของฉัน</strong><span>เลือกจังหวัด/อำเภอ ระบบกำหนดโซนให้อัตโนมัติ</span></span>
@@ -1438,6 +1438,22 @@
       <div id="att-status" style="display:none;"></div>
     </div>
 
+    <div id="techWorkCalendarV2Entry" class="card" style="margin:10px 0 12px;padding:14px;border-radius:24px;border:1px solid rgba(14,165,233,.28);background:linear-gradient(135deg,#eef8ff,#fff 62%,#fff8d8);box-shadow:0 16px 38px rgba(8,36,91,.12);">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;">
+        <div style="min-width:220px;flex:1;">
+          <div style="font-size:12px;font-weight:1000;color:#0b62d6;letter-spacing:.03em;">🗓️ ระบบใหม่</div>
+          <h3 style="margin:2px 0 4px;color:#08245b;font-size:19px;line-height:1.2;">ปฏิทินรับงานใหม่</h3>
+          <div style="font-size:13px;font-weight:850;color:#526276;line-height:1.45;">ตั้งวันหยุด รับงานล่วงหน้า รับงานด่วน และช่วงเวลาทำงานได้ทั้งเดือน</div>
+        </div>
+        <button type="button" onclick="openTechWorkCalendarV2()" style="border:0;background:linear-gradient(135deg,#0b4bb3,#16b9f2);color:#fff;border-radius:18px;min-height:50px;padding:11px 15px;font-weight:1000;box-shadow:0 12px 28px rgba(11,75,179,.25);">⚙️ ตั้งค่าปฏิทินใหม่</button>
+      </div>
+      <div style="margin-top:10px;display:grid;grid-template-columns:repeat(3,1fr);gap:8px;">
+        <div style="background:#fff;border:1px solid #d7e0ee;border-radius:16px;padding:9px;font-weight:1000;color:#08245b;font-size:12px;">✅ ทำงาน</div>
+        <div style="background:#fff;border:1px solid #d7e0ee;border-radius:16px;padding:9px;font-weight:1000;color:#08245b;font-size:12px;">🏖️ วันหยุด</div>
+        <div style="background:#fff;border:1px solid #d7e0ee;border-radius:16px;padding:9px;font-weight:1000;color:#08245b;font-size:12px;">📅 รับล่วงหน้า</div>
+      </div>
+    </div>
+
     <div id="dailyReadinessCard" class="card" style="display:none;margin:10px 0 12px;padding:12px;border-radius:22px;border:1px solid rgba(251,191,36,.55);background:linear-gradient(135deg,#fff8d8,#fff 65%,#eef8ff);box-shadow:0 16px 38px rgba(8,36,91,.12);">
       <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:10px;flex-wrap:wrap;">
         <div style="min-width:0;">
@@ -1445,7 +1461,7 @@
           <h3 style="margin:2px 0 4px;color:#08245b;font-size:18px;">พร้อมทำงานวันนี้</h3>
           <div id="dailyReadinessStatus" style="display:grid;gap:2px;font-weight:900;color:#526276;line-height:1.45;"><b>กำลังโหลด...</b><span>ถ้ามีงานวันนี้ ให้กดยืนยันเพื่อให้แอดมินรู้ว่าพร้อมออกงานจริง</span></div>
         </div>
-        <button type="button" onclick="openWorkdaysModal()" style="border:1px solid #d7e0ee;background:#fff;color:#08245b;border-radius:16px;min-height:40px;padding:8px 12px;font-weight:1000;">📘 คู่มือ/ปฏิทิน</button>
+        <button type="button" onclick="openTechWorkCalendarV2()" style="border:1px solid #d7e0ee;background:#fff;color:#08245b;border-radius:16px;min-height:40px;padding:8px 12px;font-weight:1000;">📘 คู่มือ/ปฏิทินใหม่</button>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px;">
         <button id="btnDailyReady" type="button" onclick="submitDailyReadiness('ready')" style="border:0;border-radius:18px;min-height:50px;background:linear-gradient(135deg,#16a34a,#22c55e);color:#fff;font-weight:1000;">✅ พร้อมทำงาน</button>

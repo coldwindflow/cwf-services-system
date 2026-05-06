@@ -20035,11 +20035,16 @@ app.put("/technicians/:username/accept-status", async (req, res) => {
     return res.status(400).json({ error: "status ต้องเป็น ready หรือ paused" });
   }
 
+  // Keep these outside the auth try-block because the DB transaction below also needs them.
+  let actorIsAdmin = false;
+  let actorUsername = '';
+
   try {
     const ctx = await getAuthContext(req, res);
     if (!ctx.ok) return res.status(401).json({ error: 'UNAUTHORIZED' });
     const actorRole = String(ctx.actor?.role || '').trim().toLowerCase();
-    const actorIsAdmin = actorRole === 'admin' || actorRole === 'super_admin';
+    actorIsAdmin = actorRole === 'admin' || actorRole === 'super_admin';
+    actorUsername = String(ctx.actor?.username || ctx.effective?.username || '').trim();
     const effectiveUser = String(ctx.effective?.username || '').trim();
     const effectiveIsTech = isTechnicianRole(ctx.effective?.role);
     if (!actorIsAdmin && (!effectiveIsTech || effectiveUser !== String(username || '').trim())) {
