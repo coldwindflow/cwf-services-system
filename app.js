@@ -125,6 +125,11 @@ const techPayoutLinesEl = document.getElementById('techPayoutLines');
 const techPayoutDetailHintEl = document.getElementById('techPayoutDetailHint');
 const techPayoutTotalPillEl = document.getElementById('techPayoutTotalPill');
 const btnReloadIncomePeriodsEl = document.getElementById('btnReloadIncomePeriods');
+const techPayoutMonthSelectEl = document.getElementById('techPayoutMonthSelect');
+const btnLoadPayoutMonthEl = document.getElementById('btnLoadPayoutMonth');
+const depositLedgerModalBackdropEl = document.getElementById('depositLedgerModalBackdrop');
+const depositLedgerSummaryEl = document.getElementById('depositLedgerSummary');
+const depositLedgerListEl = document.getElementById('depositLedgerList');
 const techPayoutModalBackdropEl = document.getElementById('techPayoutModalBackdrop');
 const techPayoutModalTitleEl = document.getElementById('techPayoutModalTitle');
 const techPayoutModalSubEl = document.getElementById('techPayoutModalSub');
@@ -1252,18 +1257,17 @@ function _formatShortThaiDate(iso){
 function renderDepositRemaining(info){
   if (!incomeDepositRemainWrapEl) return;
   const remaining = Number(info?.deposit_remaining_amount ?? info?.deposit?.deposit_remaining_amount ?? 0);
-  const target = Number(info?.deposit_target_amount ?? info?.deposit?.deposit_target_amount ?? 0);
+  const target = Number(info?.deposit_target_amount ?? info?.deposit?.deposit_target_amount ?? 5000);
   const collected = Number(info?.deposit_collected_total ?? info?.deposit?.deposit_collected_total ?? 0);
   const required = info?.deposit_is_required !== false;
-  if (!required || !Number.isFinite(remaining) || remaining <= 0) { incomeDepositRemainWrapEl.style.display = 'none'; return; }
+  if (!required) { incomeDepositRemainWrapEl.style.display = 'none'; return; }
   incomeDepositRemainWrapEl.style.display = 'block';
-  if (incomeDepositRemainValEl) incomeDepositRemainValEl.textContent = formatBaht(remaining);
+  if (incomeDepositRemainValEl) incomeDepositRemainValEl.textContent = formatBaht(Math.max(0, Number.isFinite(remaining) ? remaining : 0));
   if (incomeDepositProgressTextEl) {
-    const left = target > 0 ? `สะสมแล้ว ${formatBaht(collected)} / เป้าหมาย ${formatBaht(target)}` : `สะสมแล้ว ${formatBaht(collected)}`;
-    incomeDepositProgressTextEl.textContent = left;
+    incomeDepositProgressTextEl.textContent = `เก็บแล้ว ${formatBaht(Number.isFinite(collected)?collected:0)} / เป้าหมาย ${formatBaht(target || 5000)} • กดดูรายละเอียด`;
   }
   if (incomeDepositProgressBarEl) {
-    const pct = target > 0 ? Math.max(0, Math.min(100, (collected / target) * 100)) : 0;
+    const pct = target > 0 ? Math.max(0, Math.min(100, ((Number.isFinite(collected)?collected:0) / target) * 100)) : 0;
     incomeDepositProgressBarEl.style.width = pct.toFixed(0) + '%';
   }
 }
@@ -1670,23 +1674,65 @@ function _paidStatusTH(status){
   return map[s] || s || '-';
 }
 
+
+function _thaiMonthOptionLabel(ym){
+  try{
+    const [y,m] = String(ym||'').split('-').map(Number);
+    if (!y || !m) return ym || '';
+    return new Date(y, m-1, 1).toLocaleDateString('th-TH', { year:'numeric', month:'long' });
+  }catch{ return ym || ''; }
+}
+function _currentYm(){
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+}
+function initTechPayoutMonthSelect(){
+  if (!techPayoutMonthSelectEl) return;
+  if (techPayoutMonthSelectEl.dataset.ready === '1') return;
+  const now = new Date();
+  const opts = [];
+  for (let i=0;i<12;i++){
+    const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
+    const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    opts.push(`<option value="${ym}">${_thaiMonthOptionLabel(ym)}</option>`);
+  }
+  techPayoutMonthSelectEl.innerHTML = opts.join('');
+  techPayoutMonthSelectEl.value = localStorage.getItem('cwf_tech_payout_month') || _currentYm();
+  techPayoutMonthSelectEl.dataset.ready = '1';
+}
+function _selectedPayoutMonth(){
+  initTechPayoutMonthSelect();
+  return String(techPayoutMonthSelectEl?.value || _currentYm()).trim();
+}
+function _payoutCycleLabel(p){
+  const t = String(p?.period_type || '').trim();
+  if (t === '10') return 'งวดวันที่ 10';
+  if (t === '25') return 'งวดวันที่ 25';
+  const id = String(p?.payout_id || '');
+  if (id.endsWith('_10')) return 'งวดวันที่ 10';
+  if (id.endsWith('_25')) return 'งวดวันที่ 25';
+  return 'งวดจ่ายเงิน';
+}
+
 async function loadTechPayoutPeriods(force=false){
   if (!techPayoutPeriodsEl) return;
   const now = Date.now();
-  if (!force && __cwfPayoutCache.payouts.length && (now-__cwfPayoutCache.ts)<15000) {
-    // render from cache
+  initTechPayoutMonthSelect();
+  const month = _selectedPayoutMonth();
+  if (!force && __cwfPayoutCache.payouts.length && __cwfPayoutCache.month === month && (now-__cwfPayoutCache.ts)<15000) {
     renderTechPayoutPeriods(__cwfPayoutCache.payouts);
     return;
   }
-  techPayoutPeriodsEl.innerHTML = `<div class="muted">กำลังโหลดงวด...</div>`;
+  techPayoutPeriodsEl.innerHTML = `<div class="muted">กำลังโหลดประวัติงวดจ่ายเงิน...</div>`;
   try{
-    const res = await fetch(`${API_BASE}/tech/payouts`, { credentials: 'include' });
+    localStorage.setItem('cwf_tech_payout_month', month);
+    const res = await fetch(`${API_BASE}/tech/payouts?month=${encodeURIComponent(month)}`, { credentials: 'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
-    __cwfPayoutCache = { ts: now, payouts: data.payouts||[], byId: {} };
+    __cwfPayoutCache = { ts: now, month, payouts: data.payouts||[], byId: {} };
     renderTechPayoutPeriods(__cwfPayoutCache.payouts);
   }catch(e){
-    techPayoutPeriodsEl.innerHTML = `<div class="muted">โหลดงวดไม่สำเร็จ</div>`;
+    techPayoutPeriodsEl.innerHTML = `<div class="muted">โหลดประวัติงวดจ่ายเงินไม่สำเร็จ</div>`;
   }
 }
 window.loadTechPayoutPeriods = loadTechPayoutPeriods;
@@ -1694,7 +1740,8 @@ window.loadTechPayoutPeriods = loadTechPayoutPeriods;
 function renderTechPayoutPeriods(list){
   if (!techPayoutPeriodsEl) return;
   const arr = Array.isArray(list) ? list : [];
-  if (!arr.length) { techPayoutPeriodsEl.innerHTML = `<div class="muted">ยังไม่มีงวดที่สร้าง</div>`; return; }
+  if (!arr.length) { techPayoutPeriodsEl.innerHTML = `<div class="muted">ยังไม่มีประวัติงวดจ่ายเงินของเดือนนี้</div>`; return; }
+  arr.sort((a,b)=>String(a.period_type||'').localeCompare(String(b.period_type||'')));
   techPayoutPeriodsEl.innerHTML = arr.map(p=>{
     const id = _safeText(p.payout_id);
     const type = _safeText(p.period_type);
@@ -1707,7 +1754,7 @@ function renderTechPayoutPeriods(list){
     const paySt = _safeText(_paidStatusTH(p.paid_status||'unpaid'));
     const status = _safeText(_payoutStatusTH(p.status||'draft'));
     const active = (__cwfPayoutActiveId===p.payout_id);
-    return `<button type="button" class="tr" style="width:100%;text-align:left;padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10);margin-bottom:10px;cursor:pointer;background:#fff;${active?'outline:2px solid rgba(11,75,179,0.35)':''}" onclick="window.openTechPayoutDetail('${id}')"><div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start"><div><b>งวด ${type}</b><div class="muted" style="margin-top:4px">${st} - ${en}</div><div class="muted" style="margin-top:4px">สถานะงวด: ${status} • จ่าย: ${paySt}</div></div><div style="text-align:right"><b style="font-size:18px;color:#0B2E6D">${total}</b><div class="muted" style="margin-top:4px">ก่อนหัก ${gross}</div><div class="muted" style="margin-top:3px">หักประกัน ${dep} • คงเหลือ ${rem}</div></div></div></button>`;
+    return `<button type="button" class="tr" style="width:100%;text-align:left;padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10);margin-bottom:10px;cursor:pointer;background:#fff;${active?'outline:2px solid rgba(11,75,179,0.35)':''}" onclick="window.openTechPayoutDetail('${id}')"><div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start"><div><b>${_payoutCycleLabel(p)}</b><div class="muted" style="margin-top:4px">${st} - ${en}</div><div class="muted" style="margin-top:4px">สถานะงวด: ${status} • จ่าย: ${paySt}</div></div><div style="text-align:right"><b style="font-size:18px;color:#0B2E6D">${total}</b><div class="muted" style="margin-top:4px">ก่อนหัก ${gross}</div><div class="muted" style="margin-top:3px">หักประกัน ${dep} • คงเหลือ ${rem}</div></div></div></button>`;
   }).join('');
 }
 function openTechPayoutModal(){ if (techPayoutModalBackdropEl) techPayoutModalBackdropEl.classList.add('show'); try { document.body.style.overflow = 'hidden'; } catch(e) {} }
@@ -1729,7 +1776,7 @@ async function openTechPayoutDetail(payout_id){
     const depTarget = formatBaht(data.deposit_target_amount||0), depCollected = formatBaht(data.deposit_collected_total||0), depRemaining = formatBaht(data.deposit_remaining_amount||0);
     const period = (__cwfPayoutCache.payouts||[]).find(x=>String(x.payout_id)===id) || {};
     const type = _safeText(data.period_type || period.period_type || ''), st = _fmtDateTH(data.period_start || period.period_start), en = _fmtDateTH(data.period_end || period.period_end), paySt = _safeText(_paidStatusTH(data.paid_status||'unpaid'));
-    if (techPayoutModalTitleEl) techPayoutModalTitleEl.textContent = `งวด ${type || ''}`.trim() || 'รายละเอียดงวด';
+    if (techPayoutModalTitleEl) techPayoutModalTitleEl.textContent = _payoutCycleLabel({ period_type: type, payout_id: id });
     if (techPayoutModalSubEl) techPayoutModalSubEl.textContent = `${id} • ${st} - ${en} • ${paySt}`;
     if (techPayoutModalSummaryEl) techPayoutModalSummaryEl.innerHTML = `<div class="payout-kpi"><div class="k">รายได้ก่อนหัก</div><div class="v">${gross}</div></div><div class="payout-kpi"><div class="k">หักเงินประกัน</div><div class="v">${dep}</div></div><div class="payout-kpi net"><div class="k">ยอดสุทธิในงวด</div><div class="v">${total}</div></div><div class="payout-kpi"><div class="k">จ่ายแล้ว</div><div class="v">${paid}</div></div><div class="payout-kpi"><div class="k">คงเหลือ</div><div class="v">${rem}</div></div><div class="payout-kpi"><div class="k">เงินประกันสะสม</div><div class="v">${depCollected}</div></div><div class="payout-kpi"><div class="k">เงินประกันคงเหลือ</div><div class="v">${depRemaining}</div></div><div class="payout-kpi"><div class="k">เป้าหมายประกัน</div><div class="v">${depTarget}</div></div>`;
     const slipUrl = `/tech/payouts/${encodeURIComponent(id)}/slip`;
@@ -1837,10 +1884,60 @@ function renderTechPayoutLines(lines, total, adjustments, payment, payoutId, sum
   renderSlice();
 }
 
+
+function _depositTransactionTH(t){
+  const s = String(t||'').trim();
+  const map = { collect:'หักเงินประกัน', refund:'คืนเงินประกัน', claim_deduct:'หักชดเชยความเสียหาย', manual_adjust:'ปรับยอดเงินประกัน' };
+  return map[s] || s || '-';
+}
+function openDepositLedgerModal(){
+  if (!depositLedgerModalBackdropEl) return;
+  depositLedgerModalBackdropEl.classList.add('show');
+  try { document.body.style.overflow = 'hidden'; } catch(e) {}
+  loadDepositLedger();
+}
+function closeDepositLedgerModal(){
+  if (depositLedgerModalBackdropEl) depositLedgerModalBackdropEl.classList.remove('show');
+  try { document.body.style.overflow = ''; } catch(e) {}
+}
+window.openDepositLedgerModal = openDepositLedgerModal;
+window.closeDepositLedgerModal = closeDepositLedgerModal;
+async function loadDepositLedger(){
+  if (depositLedgerSummaryEl) depositLedgerSummaryEl.innerHTML = `<div class="muted">กำลังโหลด...</div>`;
+  if (depositLedgerListEl) depositLedgerListEl.innerHTML = `<div class="muted">กำลังโหลดประวัติ...</div>`;
+  try{
+    const res = await fetch(`${API_BASE}/tech/deposit_ledger?limit=200`, { credentials:'include' });
+    const data = await res.json().catch(()=>({}));
+    if (!res.ok || !data.ok) throw new Error(data.error || 'LOAD_FAILED');
+    const sm = data.summary || {};
+    const target = formatBaht(sm.deposit_target_amount || 5000);
+    const collected = formatBaht(sm.deposit_collected_total || 0);
+    const remaining = formatBaht(sm.deposit_remaining_amount || 0);
+    if (depositLedgerSummaryEl) {
+      depositLedgerSummaryEl.innerHTML = `<div class="payout-kpi"><div class="k">เป้าหมายประกัน</div><div class="v">${target}</div></div><div class="payout-kpi"><div class="k">สะสมแล้ว</div><div class="v">${collected}</div></div><div class="payout-kpi net"><div class="k">คงเหลือ</div><div class="v">${remaining}</div></div>`;
+    }
+    const rows = Array.isArray(data.ledger) ? data.ledger : [];
+    if (!rows.length) { if (depositLedgerListEl) depositLedgerListEl.innerHTML = `<div class="muted">ยังไม่มีประวัติหักเงินประกัน</div>`; return; }
+    if (depositLedgerListEl) depositLedgerListEl.innerHTML = rows.map(r=>{
+      const type = _safeText(r.transaction_type);
+      const amount = formatBaht(r.amount || 0);
+      const dt = (()=>{ try { return new Date(r.created_at).toLocaleString('th-TH', { dateStyle:'medium', timeStyle:'short' }); } catch { return '-'; } })();
+      const payout = _safeText(r.payout_id || '-').replace(/^payout_/, 'งวด ');
+      const note = _safeText(r.note || '-');
+      return `<div class="deposit-ledger-row ${type}"><div class="top"><div><b>${_safeText(_depositTransactionTH(type))}</b><div class="muted" style="margin-top:4px">${dt}</div></div><div class="amount">${amount}</div></div><div class="muted" style="margin-top:6px">งวด: ${payout}</div><div class="muted" style="margin-top:3px">หมายเหตุ: ${note}</div></div>`;
+    }).join('');
+  }catch(e){
+    if (depositLedgerSummaryEl) depositLedgerSummaryEl.innerHTML = `<div class="muted">โหลดข้อมูลเงินประกันไม่สำเร็จ</div>`;
+    if (depositLedgerListEl) depositLedgerListEl.innerHTML = `<div class="muted">โหลดประวัติไม่สำเร็จ</div>`;
+  }
+}
+
 // Hook reload button
 if (btnReloadIncomePeriodsEl) {
   btnReloadIncomePeriodsEl.addEventListener('click', ()=> loadTechPayoutPeriods(true));
 }
+if (btnLoadPayoutMonthEl) btnLoadPayoutMonthEl.addEventListener('click', ()=> loadTechPayoutPeriods(true));
+if (techPayoutMonthSelectEl) techPayoutMonthSelectEl.addEventListener('change', ()=> loadTechPayoutPeriods(true));
 
 // =======================================
 // 🗃️ IndexedDB (เก็บรูปไว้ในเครื่องก่อนอัปโหลด)

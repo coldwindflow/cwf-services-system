@@ -112,7 +112,7 @@
         1) <b>Admin IDs</b>: สร้าง/แก้ไขแอดมิน, เปลี่ยนคอมมิชชั่น(ตัวเลข), เปลี่ยนรหัสผ่าน<br/>
         2) <b>สวมสิทธิ</b>: เลือกผู้ใช้แล้วกดสวมสิทธิ (มีบันทึก Audit) / หยุดสวมสิทธิ<br/>
         3) <b>Duration</b>: กำหนดเวลาต่อ service_key (นาที)<br/>
-        4) <b>งวดจ่ายช่าง</b>: เลือกงวด ตรวจยอดรายช่าง ล็อกงวด และบันทึกจ่าย
+        4) <b>ประวัติงวดจ่ายเงิน</b>: เดือนละ 2 งวดหลัก วันที่ 10 และ 25 ตรวจยอดรายช่าง ล็อกงวด และบันทึกจ่าย
       </div>
     </div>
 
@@ -240,7 +240,7 @@
     </details>
 
     <details open class="payroll-focus">
-      <summary>💸 จ่ายเงินช่าง</summary>
+      <summary>💸 ประวัติงวดจ่ายเงิน / จ่ายเงินช่าง</summary>
       <div class="card" style="box-shadow:none;border:none;padding:0;margin-top:10px;background:transparent">
         <div class="payout-due-alert" id="payoutDueAlert">กำลังตรวจสอบงวดจ่าย...</div>
         <div class="payout-stepper" aria-label="ขั้นตอนการจ่ายเงิน">
@@ -275,9 +275,9 @@
             <div id="payoutsCards" class="payout-card-list"></div>
 
             <details style="margin-top:14px">
-              <summary><b>ประวัติงวดจ่าย</b></summary>
+              <summary><b>ประวัติงวดจ่ายเงิน</b></summary>
               <div class="payout-history-filters">
-                <input id="payoutFilterMonth" type="month" />
+                <select id="payoutFilterMonth" title="เลือกเดือน เพื่อแสดงงวดวันที่ 10 และ 25"></select>
                 <select id="payoutFilterType"><option value="all">ทุกรอบ</option><option value="10">รอบวันที่ 10</option><option value="25">รอบวันที่ 25</option></select>
                 <select id="payoutFilterStatus"><option value="all">ทุกสถานะ</option><option value="draft">กำลังตรวจยอด</option><option value="locked">พร้อมจ่าย</option><option value="paid">จ่ายแล้ว</option><option value="cancelled">ยกเลิก</option></select>
                 <input id="payoutFilterSearch" placeholder="ค้นหา เช่น username หรือรหัสงวด" />

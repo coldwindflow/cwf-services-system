@@ -472,6 +472,22 @@
     });
   }
 
+
+  function initPayoutMonthDropdown(){
+    const el=$('payoutFilterMonth');
+    if(!el || el.dataset.ready==='1') return;
+    const now=new Date();
+    const opts=['<option value="">ทุกเดือน</option>'];
+    for(let i=0;i<18;i++){
+      const d=new Date(now.getFullYear(), now.getMonth()-i, 1);
+      const ym=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+      const label=d.toLocaleDateString('th-TH',{year:'numeric',month:'long'});
+      opts.push(`<option value="${ym}">${label}</option>`);
+    }
+    el.innerHTML=opts.join('');
+    el.dataset.ready='1';
+  }
+
   function renderPayoutHistory(rows){
     const box=$('payoutHistoryCards');
     if(!box) return;
@@ -1258,12 +1274,14 @@ Call: 098-877-7321`
     }
   }
 
+  initPayoutMonthDropdown();
   if ($('btnGenCurrentPayout')) $('btnGenCurrentPayout').addEventListener('click', ()=> generatePayout(currentPayoutType()));
   if ($('btnGenP10')) $('btnGenP10').addEventListener('click', ()=> generatePayout('10'));
   if ($('btnGenP25')) $('btnGenP25').addEventListener('click', ()=> generatePayout('25'));
   if ($('btnReloadPayouts')) $('btnReloadPayouts').addEventListener('click', loadPayouts);
   if ($('btnLegacySettle')) $('btnLegacySettle').addEventListener('click', legacySettleOldPayouts);
   if ($('btnApplyPayoutHistoryFilter')) $('btnApplyPayoutHistoryFilter').addEventListener('click', ()=> renderPayouts());
+  if ($('payoutFilterMonth')) $('payoutFilterMonth').addEventListener('change', ()=> renderPayouts());
   if ($('btnShowMorePayoutHistory')) $('btnShowMorePayoutHistory').addEventListener('click', ()=> { SHOW_ALL_PAYOUT_HISTORY = true; renderPayouts(); });
   if ($('btnReloadTechRates')) $('btnReloadTechRates').addEventListener('click', loadTechRates);
   if ($('btnCreateTechRateDraft')) $('btnCreateTechRateDraft').addEventListener('click', createTechRateDraft);

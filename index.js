@@ -8321,6 +8321,24 @@ async function _getDepositDeductionForPayout(payout_id, username){
   }
 }
 
+function _calcFlexiblePartnerDepositAmount(gross_amount, remaining_amount){
+  const gross = _money(gross_amount || 0);
+  const remaining = _money(remaining_amount || 0);
+  if (gross <= 0 || remaining <= 0) return 0;
+
+  // กติกาใหม่: หักแบบยืดหยุ่นสำหรับพาร์ทเนอร์ที่ไม่ได้มีงานทุกวัน
+  // - รายได้น้อยมากไม่หัก เพื่อไม่ให้ตึงเกินไป
+  // - รายได้กลาง ๆ หักเป็นขั้น แต่ยังมีเพดาน
+  // - รายได้สูงใช้ 10% แต่เพดาน 500 บาท/งวด
+  // เงินประกันยังแยกจากค่าปรับ/งานเสีย และไม่เกินยอดคงเหลือ 5,000 บาท
+  let deduction = 0;
+  if (gross < 700) deduction = 0;
+  else if (gross < 1500) deduction = Math.min(100, gross * 0.08);
+  else if (gross < 3000) deduction = Math.min(250, Math.max(150, gross * 0.08));
+  else deduction = Math.min(500, gross * 0.10);
+  return _money(Math.min(deduction, remaining));
+}
+
 async function _calcPartnerDepositDeduction({ username, gross_amount } = {}){
   const tech = String(username || '').trim();
   const gross = _money(gross_amount || 0);
@@ -8331,7 +8349,7 @@ async function _calcPartnerDepositDeduction({ username, gross_amount } = {}){
   if (summary.deposit_is_required === false) return 0;
   const remaining = _money(summary.deposit_remaining_amount || 0);
   if (remaining <= 0) return 0;
-  return _money(Math.min(_money(gross * 0.10), 500, remaining));
+  return _calcFlexiblePartnerDepositAmount(gross, remaining);
 }
 
 async function _ensureDepositCollectionForPayout({ payout_id, username, gross_amount, actor } = {}){
@@ -8357,7 +8375,7 @@ async function _ensureDepositCollectionForPayout({ payout_id, username, gross_am
       deduction,
       'Automatic partner work deposit deduction',
       actor || null,
-      JSON.stringify({ gross_amount: _money(gross_amount || 0), formula: 'min(gross*0.10,500,remaining)' })
+      JSON.stringify({ gross_amount: _money(gross_amount || 0), formula: 'flexible_partner_deposit_v2', policy: 'gross<700=0, 700-1499=max 100, 1500-2999=150-250, >=3000=10% max 500, cap remaining' })
     ]
   );
   const after = await _getDepositDeductionForPayout(pid, tech);
