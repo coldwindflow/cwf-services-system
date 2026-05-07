@@ -4492,8 +4492,9 @@ function cwfLockedPopup(iso){
 }
 
 function ensureWorkdaysModal(){
+  const existing = document.getElementById('tech-work-calendar-v2-modal');
+  if (existing) return existing;
   document.getElementById('workdays-modal')?.remove();
-  document.getElementById('tech-work-calendar-v2-modal')?.remove();
   const wrap = document.createElement('div');
   wrap.id = 'tech-work-calendar-v2-modal';
   wrap.className = 'cwf-calendar-backdrop';
@@ -4536,6 +4537,7 @@ function ensureWorkdaysModal(){
           <div id="workCalendarGrid" class="cwf-month-grid"></div>
           <div class="cwf-legend-row"><span class="ok">เขียว=รับ</span><span class="off">แดง=ไม่รับ</span><span class="lock">น้ำเงิน=มีงานแล้ว</span><span class="custom">ส้ม=ค่าพิเศษ</span></div>
           <div id="workCalendarStatus" class="cwf-calendar-status">กำลังโหลด...</div>
+          <button type="button" class="cwf-soft-btn full" id="workCalendarRetryBtn" style="display:none;margin-top:8px">ลองใหม่</button>
         </div>
 
         <div class="cwf-day-editor">
@@ -4612,6 +4614,7 @@ function ensureWorkdaysModal(){
   `;
   document.head.appendChild(style);
 
+  cwfCalendarLog('modal injected');
   document.getElementById('techWorkCalendarClose').onclick = () => { wrap.style.display='none'; document.body.style.overflow=''; };
   document.getElementById('calendarPrevMonth').onclick = () => cwfShiftCalendarMonth(-1);
   document.getElementById('calendarNextMonth').onclick = () => cwfShiftCalendarMonth(1);
@@ -4630,6 +4633,8 @@ function ensureWorkdaysModal(){
   document.getElementById('bulkSetUnavailableBtn').onclick = () => saveBulkSelected(false, false);
   document.getElementById('bulkCustomToggleBtn').onclick = () => { const p=document.getElementById('bulkCustomFields'); if(p) p.style.display = p.style.display === 'none' ? 'block' : 'none'; };
   document.getElementById('bulkSaveCustomBtn').onclick = () => saveBulkSelected(true, true);
+  document.getElementById('workCalendarRetryBtn').onclick = () => loadCwfAdvanceWorkCalendarMonthSafe();
+  return wrap;
 }
 
 function cwfShiftCalendarMonth(delta){
@@ -4638,14 +4643,15 @@ function cwfShiftCalendarMonth(delta){
   loadWorkdaysModalData(cwfMonthText(d));
 }
 async function loadWorkdaysModalData(month){
-  ensureWorkdaysModal();
   const m = month || __cwfWorkCalendarState.month || cwfMonthText();
   __cwfWorkCalendarState.month = m;
   __cwfWorkCalendarState.selectedDates.clear();
   __cwfWorkCalendarState.multiMode = false;
   const monthInput = document.getElementById('workCalendarMonth'); if(monthInput) monthInput.value = m;
+  const retryBtn = document.getElementById('workCalendarRetryBtn'); if(retryBtn) retryBtn.style.display = 'none';
   cwfCalendarNotify('กำลังโหลดปฏิทิน...');
   try{
+    cwfCalendarLog('load month start', { month:m });
     const res = await fetch(`${cwfCalendarApi(`?month=${encodeURIComponent(m)}`)}`, { credentials:'include', cache:'no-store' });
     const data = await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error || 'โหลดปฏิทินไม่สำเร็จ');
@@ -4660,7 +4666,11 @@ async function loadWorkdaysModalData(month){
     selectWorkCalendarDate(__cwfWorkCalendarState.selectedDate, false);
     cwfCalendarLog('loaded month', { month:m, days:monthItems.length });
     cwfCalendarNotify(`✅ โหลดแล้ว • แตะวันที่เพื่อเปิด/ปิดรับงานล่วงหน้า`);
-  }catch(e){ cwfCalendarNotify(`❌ ${e.message}`, 'error'); }
+  }catch(e){
+    cwfCalendarLog('load month failed', e.message || e);
+    cwfCalendarNotify(`ไม่สามารถโหลดข้อมูลได้ กรุณาลองใหม่ (${e.message})`, 'error');
+    const retryBtn = document.getElementById('workCalendarRetryBtn'); if(retryBtn) retryBtn.style.display = 'block';
+  }
 }
 function renderWorkCalendarGrid(){
   const grid = document.getElementById('workCalendarGrid'); if(!grid) return;
@@ -4873,35 +4883,50 @@ async function copyPreviousMonthCalendar(){
     cwfCalendarNotify(`ตั้งค่าเหมือนเดือนก่อนแล้ว ${out.saved || 0} วัน${out.skipped_locked ? ` ข้าม ${out.skipped_locked} วันที่มีงานอยู่แล้ว` : ''}`);
   }catch(e){ cwfCalendarNotify(`❌ ${e.message}`, 'error'); }
 }
-function openWorkdaysModal(){
-  cwfCalendarLog('open');
-  ensureWorkdaysModal();
+function showCwfAdvanceWorkCalendarModal(){
   const wrap = document.getElementById('tech-work-calendar-v2-modal');
   if (!wrap) return;
   wrap.style.display = 'flex';
   document.body.style.overflow='hidden';
-  loadWorkdaysModalData(cwfMonthText());
+  cwfCalendarLog('modal shown');
+}
+async function loadCwfAdvanceWorkCalendarMonthSafe(month){
+  return loadWorkdaysModalData(month || cwfMonthText());
+}
+async function openCwfAdvanceWorkCalendarSafe(ev){
+  try{ if(ev && ev.preventDefault) ev.preventDefault(); }catch{}
+  try{ if(ev && ev.stopPropagation) ev.stopPropagation(); }catch{}
+  cwfCalendarLog('safe opener called');
+  try{ if(typeof closeTechWorkSettingsModal === 'function') closeTechWorkSettingsModal(); }catch{}
+  ensureWorkdaysModal();
+  showCwfAdvanceWorkCalendarModal();
+  await loadCwfAdvanceWorkCalendarMonthSafe();
+  return false;
+}
+function openWorkdaysModal(ev){
+  return openCwfAdvanceWorkCalendarSafe(ev);
 }
 window.openAdvanceWorkCalendarFromMenu = function(ev){
-  try{ if(ev && ev.preventDefault) ev.preventDefault(); }catch{}
-  try{ if(typeof closeTechWorkSettingsModal === 'function') closeTechWorkSettingsModal(); }catch{}
-  openWorkdaysModal();
-  return false;
+  return openCwfAdvanceWorkCalendarSafe(ev);
 };
-window.cwfOpenAdvanceCalendarSafe = window.openAdvanceWorkCalendarFromMenu;
-window.openTechWorkCalendarV2 = openWorkdaysModal;
-window.openWorkdaysModal = openWorkdaysModal;
+window.openCwfAdvanceWorkCalendarSafe = openCwfAdvanceWorkCalendarSafe;
+window.cwfOpenAdvanceCalendarSafe = openCwfAdvanceWorkCalendarSafe;
+window.openTechWorkCalendar = openCwfAdvanceWorkCalendarSafe;
+window.openTechWorkCalendarV2 = openCwfAdvanceWorkCalendarSafe;
+window.openWorkdaysModal = openCwfAdvanceWorkCalendarSafe;
+window.loadCwfAdvanceWorkCalendarMonthSafe = loadCwfAdvanceWorkCalendarMonthSafe;
+window.ensureCwfAdvanceWorkCalendarModal = ensureWorkdaysModal;
+window.showCwfAdvanceWorkCalendarModal = showCwfAdvanceWorkCalendarModal;
 
 try{
-  document.addEventListener('DOMContentLoaded', () => {
-    document.addEventListener('click', (ev) => {
-      const btn = ev.target?.closest?.('[data-cwf-open-advance-calendar], #openAdvanceWorkCalendarBtn');
-      if (!btn) return;
-      if (typeof window.openAdvanceWorkCalendarFromMenu === 'function') {
-        ev.preventDefault();
-        window.openAdvanceWorkCalendarFromMenu(ev);
-      }
-    });
+  document.addEventListener('click', function(event) {
+    const btn = event.target?.closest?.("[data-action='open-work-calendar'], #open-work-calendar-btn, .open-work-calendar-btn, [data-cwf-open-advance-calendar], #openAdvanceWorkCalendarBtn");
+    if (!btn) return;
+    console.log('[CWF_WORK_CALENDAR] click captured');
+    event.preventDefault();
+    event.stopPropagation();
+    if (typeof event.stopImmediatePropagation === 'function') event.stopImmediatePropagation();
+    openCwfAdvanceWorkCalendarSafe(event);
   });
 }catch(e){}
 

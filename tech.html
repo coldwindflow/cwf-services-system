@@ -670,7 +670,7 @@
           <button class="tech-icbtn settingsClose" type="button" onclick="closeTechWorkSettingsModal()" aria-label="ปิด">✕</button>
         </div>
         <div class="settingsGrid">
-          <button class="settingsItem" type="button" id="openAdvanceWorkCalendarBtn" data-cwf-open-advance-calendar="1">
+          <button class="settingsItem open-work-calendar-btn" type="button" id="open-work-calendar-btn" data-action="open-work-calendar" data-cwf-open-advance-calendar="1">
             <span class="sIcon">🗓️</span><span class="sText"><strong>ตั้งค่าปฏิทินรับงาน</strong><span>ใช้เฉพาะงานล่วงหน้าที่แอดมินบังคับ/มอบหมายให้ ไม่เกี่ยวกับงานด่วน</span></span>
           </button>
           <button class="settingsItem" type="button" onclick="closeTechWorkSettingsModal(); document.getElementById('techMatrixBtn')?.click();">
@@ -1772,7 +1772,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260507_work_calendar_v2_open_fix"></script>
+  <script src="app.js?v=20260507_work_calendar_open_button_fix"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
@@ -2173,6 +2173,25 @@ function logout(){
       }
 
       switchTab(initial, { persist: false });
+    });
+  </script>
+  <script>
+    window.CWF_FORCE_OPEN_WORK_CALENDAR = function () {
+      if (typeof window.openCwfAdvanceWorkCalendarSafe === "function") {
+        return window.openCwfAdvanceWorkCalendarSafe();
+      }
+      alert("กำลังโหลดระบบปฏิทิน กรุณาปิดแอพแล้วเปิดใหม่อีกครั้ง");
+      return false;
+    };
+    document.addEventListener("click", function(e) {
+      var btn = e.target && e.target.closest ? e.target.closest("[data-action='open-work-calendar']") : null;
+      if (!btn) return;
+      e.preventDefault();
+      if (typeof window.openCwfAdvanceWorkCalendarSafe === "function") {
+        window.openCwfAdvanceWorkCalendarSafe(e);
+      } else if (typeof window.CWF_FORCE_OPEN_WORK_CALENDAR === "function") {
+        window.CWF_FORCE_OPEN_WORK_CALENDAR();
+      }
     });
   </script>
 </body>
