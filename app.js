@@ -4424,11 +4424,30 @@ function cwfFormatThaiDate(iso){
   try{ return new Date(String(iso)+'T00:00:00').toLocaleDateString('th-TH',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); }catch{ return iso; }
 }
 function cwfGetCalendarItem(iso){ return __cwfWorkCalendarState.items.get(iso) || null; }
-function cwfDayJobCount(iso){ return Number(__cwfWorkCalendarState.jobCounts.get(iso) || 0); }
-function cwfIsLockedDay(iso){ return cwfDayJobCount(iso) > 0; }
+function cwfDayJobCount(iso){
+  const it = cwfGetCalendarItem(iso);
+  return Number(it?.assigned_job_count ?? __cwfWorkCalendarState.jobCounts.get(iso) ?? 0);
+}
+function cwfIsLockedDay(iso){
+  const it = cwfGetCalendarItem(iso);
+  return !!it?.is_locked || cwfDayJobCount(iso) > 0;
+}
+function cwfCalendarUsername(){
+  try {
+    const u = (typeof _bestEffortUsername === 'function' ? _bestEffortUsername() : '') ||
+      (typeof username === 'string' ? username : '') ||
+      localStorage.getItem('username') || '';
+    return String(u || '').trim();
+  } catch { return ''; }
+}
+function cwfCalendarApi(path=''){
+  const u = cwfCalendarUsername();
+  if (!u) return `${API_BASE}/tech/work-calendar${path}`;
+  return `${API_BASE}/technicians/${encodeURIComponent(u)}/work-calendar-v2${path}`;
+}
 function cwfDefaultCalendarItem(iso){
   const h = __cwfWorkCalendarState.holidays.get(iso);
-  if(h) return { work_date:iso, day_status:'unavailable', can_accept_advance_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:0, max_units_per_day:0, note:h.holiday_name || 'วันหยุดพิเศษ' };
+  if(h) return { work_date:iso, day_status:'unavailable', can_accept_advance_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:0, max_units_per_day:0, note:h.holiday_name || '' };
   return { work_date:iso, day_status:'unavailable', can_accept_advance_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:0, max_units_per_day:0, note:'' };
 }
 function cwfEffectiveCalendarItem(iso){
@@ -4462,8 +4481,14 @@ function cwfCalendarNotify(message, type='info'){
     else if (typeof toast === 'function') toast(message);
   }catch{}
 }
+function cwfCalendarLog(message, extra){
+  try {
+    if (extra !== undefined) console.log(`[CWF_WORK_CALENDAR] ${message}`, extra);
+    else console.log(`[CWF_WORK_CALENDAR] ${message}`);
+  } catch {}
+}
 function cwfLockedPopup(iso){
-  alert(`วันที่ ${cwfFormatThaiDate(iso)} มีงานอยู่แล้ว\n\nช่างไม่สามารถปิดรับงานหรือแก้ไขวันทำงานนี้ได้\nกรุณาติดต่อแอดมิน หากมีความจำเป็น`);
+  alert(`วันนี้มีงานที่ได้รับมอบหมายแล้ว\nช่างไม่สามารถปิดรับงานหรือแก้ไขวันทำงานนี้ได้\nหากมีความจำเป็น กรุณาติดต่อแอดมินเพื่อปรับงานหรือหาคนแทน`);
 }
 
 function ensureWorkdaysModal(){
@@ -4491,7 +4516,7 @@ function ensureWorkdaysModal(){
 
       <div class="cwf-calendar-help">
         <div>✅ <b>รับ</b> = แอดมินมอบหมายงานล่วงหน้าให้ได้</div>
-        <div>❌ <b>ไม่รับ</b> = ไม่รับงานล่วงหน้า วันหยุด/ลาให้เขียนในหมายเหตุ</div>
+        <div>❌ <b>ไม่รับ</b> = ไม่รับงานล่วงหน้า หากต้องอธิบายให้เขียนในหมายเหตุ</div>
         <div>📌 <b>มีงาน</b> = ล็อก แก้ไม่ได้ ต้องติดต่อแอดมิน</div>
         <div>⏰ ⚙️ 📝 = วันที่มีค่าพิเศษ</div>
       </div>
@@ -4621,17 +4646,19 @@ async function loadWorkdaysModalData(month){
   const monthInput = document.getElementById('workCalendarMonth'); if(monthInput) monthInput.value = m;
   cwfCalendarNotify('กำลังโหลดปฏิทิน...');
   try{
-    const res = await fetch(`${API_BASE}/tech/work-calendar?month=${encodeURIComponent(m)}`, { credentials:'include' });
+    const res = await fetch(`${cwfCalendarApi(`?month=${encodeURIComponent(m)}`)}`, { credentials:'include', cache:'no-store' });
     const data = await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error || 'โหลดปฏิทินไม่สำเร็จ');
-    __cwfWorkCalendarState.items = new Map((data.items||[]).map(it=>[String(it.work_date).slice(0,10), it]));
+    const monthItems = data.days || data.items || [];
+    __cwfWorkCalendarState.items = new Map(monthItems.map(it=>[String(it.date || it.work_date).slice(0,10), { ...it, work_date:String(it.date || it.work_date).slice(0,10) }]));
     __cwfWorkCalendarState.holidays = new Map((data.holidays||[]).map(it=>[String(it.holiday_date).slice(0,10), it]));
-    __cwfWorkCalendarState.jobCounts = new Map((data.job_counts||[]).map(it=>[String(it.work_date).slice(0,10), Number(it.job_count||0)]));
+    __cwfWorkCalendarState.jobCounts = new Map((data.job_counts||monthItems||[]).map(it=>[String(it.date || it.work_date).slice(0,10), Number(it.assigned_job_count ?? it.job_count ?? 0)]));
     __cwfWorkCalendarState.employmentType = data.employment_type || 'company';
     if(!__cwfWorkCalendarState.selectedDate || !__cwfWorkCalendarState.selectedDate.startsWith(m)) __cwfWorkCalendarState.selectedDate = cwfTodayIso().startsWith(m) ? cwfTodayIso() : `${m}-01`;
     updateMultiModeUI();
     renderWorkCalendarGrid();
     selectWorkCalendarDate(__cwfWorkCalendarState.selectedDate, false);
+    cwfCalendarLog('loaded month', { month:m, days:monthItems.length });
     cwfCalendarNotify(`✅ โหลดแล้ว • แตะวันที่เพื่อเปิด/ปิดรับงานล่วงหน้า`);
   }catch(e){ cwfCalendarNotify(`❌ ${e.message}`, 'error'); }
 }
@@ -4692,9 +4719,38 @@ function selectWorkCalendarDate(iso, rerender=true){
 async function saveCalendarDays(days, label='บันทึก'){
   const clean = days.filter(Boolean).slice(0,62);
   if(!clean.length) throw new Error('ไม่มีวันที่ให้บันทึก');
-  const res = await fetch(`${API_BASE}/tech/work-calendar/bulk`, { method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({ days: clean }) });
+  const useV2 = !!cwfCalendarUsername();
+  let body;
+  if (useV2 && clean.length === 1) {
+    const d = clean[0];
+    body = {
+      date: d.work_date || d.date,
+      can_accept_advance_job: !!d.can_accept_advance_job,
+      start_time: d.start_time,
+      end_time: d.end_time,
+      max_jobs_per_day: d.max_jobs_per_day,
+      max_units_per_day: d.max_units_per_day,
+      note: d.note || null
+    };
+  } else if (useV2) {
+    const first = clean[0] || {};
+    body = {
+      dates: clean.map(d => d.work_date || d.date).filter(Boolean),
+      can_accept_advance_job: !!first.can_accept_advance_job,
+      start_time: first.start_time,
+      end_time: first.end_time,
+      max_jobs_per_day: first.max_jobs_per_day,
+      max_units_per_day: first.max_units_per_day,
+      note: first.note || null
+    };
+  } else {
+    body = { days: clean };
+  }
+  const endpoint = useV2 ? cwfCalendarApi(clean.length === 1 ? '/day' : '/batch') : `${API_BASE}/tech/work-calendar/bulk`;
+  const res = await fetch(endpoint, { method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify(body) });
   const data = await res.json().catch(()=>({}));
   if(!res.ok) throw new Error(data.error || `${label}ไม่สำเร็จ`);
+  cwfCalendarLog('save day', { saved:data.saved ?? data.count ?? clean.length, skipped_locked:data.skipped_locked || 0 });
   return data;
 }
 function buildDayPayload(iso, isAdvance, opts={}){
@@ -4723,7 +4779,7 @@ async function toggleAdvanceDay(iso, userAction=false){
     renderWorkCalendarGrid();
     selectWorkCalendarDate(iso, false);
     const skipped = Number(data.skipped_locked || 0);
-    cwfCalendarNotify(`✅ ${nextAdvance?'เปิด':'ปิด'}รับงานล่วงหน้าแล้ว${skipped ? ` • ข้ามวันที่มีงาน ${skipped} วัน` : ''}`);
+    cwfCalendarNotify(`${nextAdvance?'เปิด':'ปิด'}รับงานล่วงหน้าวันที่ ${cwfFormatThaiDate(iso)} แล้ว${skipped ? ` • ข้ามวันที่มีงาน ${skipped} วัน` : ''}`);
   }catch(e){ cwfCalendarNotify(`❌ ${e.message}`, 'error'); }
 }
 function showSingleEditPanel(){
@@ -4797,37 +4853,28 @@ async function saveBulkSelected(custom=false, isAdvance=true){
     const skipped = Number(data.skipped_locked || 0) + (Array.from(__cwfWorkCalendarState.selectedDates).length - dates.length);
     __cwfWorkCalendarState.selectedDates.clear();
     updateMultiModeUI(); renderWorkCalendarGrid();
-    cwfCalendarNotify(`✅ บันทึกแล้ว ${data.count || days.length} วัน${skipped ? ` • ข้ามวันที่มีงาน ${skipped} วัน` : ''}`);
+    cwfCalendarNotify(`บันทึกแล้ว ${data.saved ?? data.count ?? days.length} วัน${skipped ? ` ข้าม ${skipped} วันที่มีงานอยู่แล้ว` : ''}`);
   }catch(e){ cwfCalendarNotify(`❌ ${e.message}`, 'error'); }
 }
 async function copyPreviousMonthCalendar(){
   const month = __cwfWorkCalendarState.month || cwfMonthText();
   if(!confirm('ต้องการตั้งค่าเหมือนเดือนก่อนหรือไม่?\n\nระบบจะนำรูปแบบ รับ/ไม่รับ เวลา จำนวนงาน จำนวนเครื่อง และหมายเหตุจากเดือนก่อนมาใช้กับเดือนนี้ โดยจะข้ามวันที่มีงานอยู่แล้ว')) return;
-  const [y,m] = month.split('-').map(Number);
-  const prev = new Date(y, m-2, 1);
-  const prevMonth = cwfMonthText(prev);
   try{
-    cwfCalendarNotify('กำลังโหลดเดือนก่อน...');
-    const res = await fetch(`${API_BASE}/tech/work-calendar?month=${encodeURIComponent(prevMonth)}`, { credentials:'include' });
-    const data = await res.json().catch(()=>({}));
-    if(!res.ok) throw new Error(data.error || 'โหลดเดือนก่อนไม่สำเร็จ');
-    const prevItems = new Map((data.items||[]).map(it=>[String(it.work_date).slice(-2), it]));
-    const currentDays = cwfDaysInMonth(month);
-    const days = [];
-    for(const iso of currentDays){
-      if(cwfIsLockedDay(iso)) continue;
-      const source = prevItems.get(iso.slice(-2));
-      if(!source) continue;
-      const isAdv = source.can_accept_advance_job === true || ['advance_only','available_advance','working'].includes(String(source.day_status||''));
-      days.push(buildDayPayload(iso, isAdv, source));
-    }
-    if(!days.length) throw new Error('ไม่พบข้อมูลเดือนก่อนที่นำมาใช้ได้');
-    const out = await saveCalendarDays(days, 'ตั้งค่าเหมือนเดือนก่อน');
+    cwfCalendarNotify('กำลังตั้งค่าเหมือนเดือนก่อน...');
+    const res = await fetch(`${cwfCalendarApi('/copy-previous-month')}`, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      credentials:'include',
+      body:JSON.stringify({ target_month: month })
+    });
+    const out = await res.json().catch(()=>({}));
+    if(!res.ok) throw new Error(out.error || 'ตั้งค่าเหมือนเดือนก่อนไม่สำเร็จ');
     await loadWorkdaysModalData(month);
-    cwfCalendarNotify(`✅ ตั้งค่าเหมือนเดือนก่อนแล้ว ${out.count || days.length} วัน${out.skipped_locked ? ` • ข้ามวันที่มีงาน ${out.skipped_locked} วัน` : ''}`);
+    cwfCalendarNotify(`ตั้งค่าเหมือนเดือนก่อนแล้ว ${out.saved || 0} วัน${out.skipped_locked ? ` ข้าม ${out.skipped_locked} วันที่มีงานอยู่แล้ว` : ''}`);
   }catch(e){ cwfCalendarNotify(`❌ ${e.message}`, 'error'); }
 }
 function openWorkdaysModal(){
+  cwfCalendarLog('open');
   ensureWorkdaysModal();
   const wrap = document.getElementById('tech-work-calendar-v2-modal');
   if (!wrap) return;
@@ -4841,8 +4888,22 @@ window.openAdvanceWorkCalendarFromMenu = function(ev){
   openWorkdaysModal();
   return false;
 };
+window.cwfOpenAdvanceCalendarSafe = window.openAdvanceWorkCalendarFromMenu;
 window.openTechWorkCalendarV2 = openWorkdaysModal;
 window.openWorkdaysModal = openWorkdaysModal;
+
+try{
+  document.addEventListener('DOMContentLoaded', () => {
+    document.addEventListener('click', (ev) => {
+      const btn = ev.target?.closest?.('[data-cwf-open-advance-calendar], #openAdvanceWorkCalendarBtn');
+      if (!btn) return;
+      if (typeof window.openAdvanceWorkCalendarFromMenu === 'function') {
+        ev.preventDefault();
+        window.openAdvanceWorkCalendarFromMenu(ev);
+      }
+    });
+  });
+}catch(e){}
 
 async function loadDailyReadinessCard(){
   const card = document.getElementById('dailyReadinessCard');

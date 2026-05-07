@@ -11633,6 +11633,20 @@ try {
         UNIQUE(technician_username, work_date)
       )
     `);
+    await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS can_accept_advance_job BOOLEAN`);
+    await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS can_accept_urgent_job BOOLEAN`);
+    await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS start_time TEXT`);
+    await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS end_time TEXT`);
+    await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS max_jobs_per_day INT`);
+    await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS max_units_per_day INT`);
+    await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS note TEXT`);
+    await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS updated_by TEXT`);
+    await pool.query(`ALTER TABLE public.technician_monthly_work_calendar ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW()`);
+    await pool.query(`
+      UPDATE public.technician_monthly_work_calendar
+      SET can_accept_advance_job = CASE WHEN day_status IN ('available_advance','advance_only','working') THEN TRUE ELSE FALSE END
+      WHERE can_accept_advance_job IS NULL
+    `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_tmw_calendar_user_date ON public.technician_monthly_work_calendar(technician_username, work_date)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_tmw_calendar_date_status ON public.technician_monthly_work_calendar(work_date, day_status)`);
 
@@ -20233,19 +20247,30 @@ function endDayOfMonthIso(monthText){
   d.setDate(d.getDate()-1);
   return toIsoDate(d);
 }
+function isStrictIsoDate(value){
+  const s = String(value || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  return toIsoDate(s) === s;
+}
+function isStrictMonth(value){
+  const s = String(value || '').trim();
+  return /^\d{4}-\d{2}$/.test(s) && toIsoDate(`${s}-01`).startsWith(s);
+}
 function normWorkDayPayload(input = {}){
   // Advance calendar v3 intentionally has only 2 statuses:
   // advance_only = รับงานล่วงหน้า, unavailable = ไม่รับงานล่วงหน้า
   // Holiday/leave are treated as unavailable and can be explained in note.
   let raw = String(input.day_status || '').trim();
-  if (['advance_only','available_advance','working','available','accept'].includes(raw)) raw = 'advance_only';
+  if (input.can_accept_advance_job === true) raw = 'advance_only';
+  else if (input.can_accept_advance_job === false) raw = 'unavailable';
+  else if (['advance_only','available_advance','working','available','accept'].includes(raw)) raw = 'advance_only';
   else raw = 'unavailable';
   const day_status = raw;
   const canAdvance = day_status === 'advance_only';
-  const start_time = canAdvance && /^\d{2}:\d{2}$/.test(String(input.start_time || '')) ? String(input.start_time) : '09:00';
-  const end_time = canAdvance && /^\d{2}:\d{2}$/.test(String(input.end_time || '')) ? String(input.end_time) : '18:00';
-  const max_jobs_per_day = canAdvance ? Math.max(1, Math.min(20, Number(input.max_jobs_per_day || 1))) : 0;
-  const max_units_per_day = canAdvance ? Math.max(1, Math.min(99, Number(input.max_units_per_day || 5))) : 0;
+  const start_time = canAdvance ? (/^\d{2}:\d{2}$/.test(String(input.start_time || '')) ? String(input.start_time) : '09:00') : null;
+  const end_time = canAdvance ? (/^\d{2}:\d{2}$/.test(String(input.end_time || '')) ? String(input.end_time) : '18:00') : null;
+  const max_jobs_per_day = canAdvance ? Math.max(1, Math.min(20, Number(input.max_jobs_per_day || 1))) : null;
+  const max_units_per_day = canAdvance ? Math.max(1, Math.min(99, Number(input.max_units_per_day || 5))) : null;
   return {
     day_status,
     can_accept_advance_job: canAdvance,
@@ -20285,6 +20310,108 @@ async function getTechTodayJobs(username){
   `, [username]);
   return r.rows || [];
 }
+async function requireCalendarUsernameAccess(req, res, username){
+  const ctx = await getAuthContext(req, res);
+  if (!ctx.ok) {
+    res.status(401).json({ error:'UNAUTHORIZED' });
+    return null;
+  }
+  const actorRole = String(ctx.actor?.role || '').trim().toLowerCase();
+  const actorIsAdmin = actorRole === 'admin' || actorRole === 'super_admin';
+  const effectiveUser = String(ctx.effective?.username || '').trim();
+  const effectiveIsTech = isTechnicianRole(ctx.effective?.role);
+  if (!actorIsAdmin && (!effectiveIsTech || effectiveUser !== String(username || '').trim())) {
+    res.status(403).json({ error:'FORBIDDEN' });
+    return null;
+  }
+  req.actor = ctx.actor;
+  req.effective = ctx.effective;
+  req.auth = ctx.effective;
+  req.impersonating = !!ctx.impersonating;
+  req.session_token = ctx.session_token;
+  return ctx;
+}
+function normalizeCalendarRow(row, iso, jobCount=0){
+  const can = row ? (row.can_accept_advance_job === true || ['advance_only','available_advance','working'].includes(String(row.day_status || ''))) : false;
+  const start = can ? (row?.start_time || '09:00') : null;
+  const end = can ? (row?.end_time || '18:00') : null;
+  const jobs = can ? Number(row?.max_jobs_per_day || 1) : null;
+  const units = can ? Number(row?.max_units_per_day || 5) : null;
+  const note = row?.note || null;
+  const hasCustom = !!(
+    (can && (start !== '09:00' || end !== '18:00' || jobs !== 1 || units !== 5)) ||
+    String(note || '').trim()
+  );
+  return {
+    date: iso,
+    work_date: iso,
+    can_accept_advance_job: can,
+    start_time: start,
+    end_time: end,
+    max_jobs_per_day: jobs,
+    max_units_per_day: units,
+    note,
+    has_assigned_job: Number(jobCount || 0) > 0,
+    assigned_job_count: Number(jobCount || 0),
+    is_locked: Number(jobCount || 0) > 0,
+    has_custom_setting: hasCustom
+  };
+}
+async function loadWorkCalendarV2Month(username, month){
+  const fromIso = firstDayOfMonthIso(month);
+  const toIso = endDayOfMonthIso(month);
+  const [cal, jobs] = await Promise.all([
+    pool.query(`SELECT work_date::date AS work_date, day_status, can_accept_advance_job, start_time, end_time, max_jobs_per_day, max_units_per_day, note, updated_at
+                FROM public.technician_monthly_work_calendar
+                WHERE technician_username=$1 AND work_date BETWEEN $2::date AND $3::date
+                ORDER BY work_date ASC`, [username, fromIso, toIso]),
+    pool.query(`SELECT (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date AS work_date, COUNT(DISTINCT j.job_id)::int AS job_count
+                FROM public.jobs j
+                LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$1
+                WHERE (j.technician_username=$1 OR ja.technician_username=$1)
+                  AND j.appointment_datetime IS NOT NULL
+                  AND (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date BETWEEN $2::date AND $3::date
+                  AND COALESCE(j.job_status,'') NOT IN ('cancelled','canceled')
+                GROUP BY 1`, [username, fromIso, toIso])
+  ]);
+  const calMap = new Map((cal.rows || []).map(x => [toIsoDate(x.work_date), x]));
+  const jobMap = new Map((jobs.rows || []).map(x => [toIsoDate(x.work_date), Number(x.job_count || 0)]));
+  const days = [];
+  for (const iso of cwfDateRange(fromIso, toIso)) {
+    days.push(normalizeCalendarRow(calMap.get(iso), iso, jobMap.get(iso) || 0));
+  }
+  return { fromIso, toIso, days };
+}
+function cwfDateRange(fromIso, toIso){
+  const out = [];
+  const d = new Date(`${fromIso}T00:00:00`);
+  const end = new Date(`${toIso}T00:00:00`);
+  while (d <= end) {
+    out.push(toIsoDate(d));
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+async function upsertCalendarDay(clientOrPool, username, workDate, input){
+  const p = normWorkDayPayload(input || {});
+  const r = await clientOrPool.query(`
+    INSERT INTO public.technician_monthly_work_calendar
+      (technician_username, work_date, day_status, can_accept_advance_job, can_accept_urgent_job, start_time, end_time, max_jobs_per_day, max_units_per_day, note, source, updated_by, updated_at)
+    VALUES($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,'technician',$1,NOW())
+    ON CONFLICT(technician_username, work_date) DO UPDATE SET
+      day_status=EXCLUDED.day_status,
+      can_accept_advance_job=EXCLUDED.can_accept_advance_job,
+      can_accept_urgent_job=EXCLUDED.can_accept_urgent_job,
+      start_time=EXCLUDED.start_time,
+      end_time=EXCLUDED.end_time,
+      max_jobs_per_day=EXCLUDED.max_jobs_per_day,
+      max_units_per_day=EXCLUDED.max_units_per_day,
+      note=EXCLUDED.note,
+      source='technician', updated_by=$1, updated_at=NOW()
+    RETURNING *
+  `, [username, workDate, p.day_status, p.can_accept_advance_job, p.can_accept_urgent_job, p.start_time, p.end_time, p.max_jobs_per_day, p.max_units_per_day, p.note]);
+  return r.rows[0] || null;
+}
 async function ensureDailyReadinessRow(username){
   const jobs = await getTechTodayJobs(username);
   if (!jobs.length) return { has_jobs:false, jobs:[], readiness:null };
@@ -20300,6 +20427,120 @@ async function ensureDailyReadinessRow(username){
   `, [username, first]);
   return { has_jobs:true, jobs, readiness: rr.rows[0] || null };
 }
+
+app.get('/technicians/:username/work-calendar-v2', async (req, res) => {
+  try {
+    const username = String(req.params?.username || '').trim();
+    const ctx = await requireCalendarUsernameAccess(req, res, username);
+    if (!ctx) return;
+    const month = String(req.query?.month || '').trim() || toIsoDate(new Date()).slice(0,7);
+    if (!isStrictMonth(month)) return res.status(400).json({ error:'month ต้องเป็นรูปแบบ YYYY-MM' });
+    const data = await loadWorkCalendarV2Month(username, month);
+    res.json({ ok:true, username, month, from:data.fromIso, to:data.toIso, days:data.days, items:data.days });
+  } catch (e) {
+    console.error('GET /technicians/:username/work-calendar-v2 error:', e);
+    res.status(500).json({ error:'โหลดปฏิทินรับงานล่วงหน้าไม่สำเร็จ' });
+  }
+});
+
+app.put('/technicians/:username/work-calendar-v2/day', async (req, res) => {
+  try {
+    const username = String(req.params?.username || '').trim();
+    const ctx = await requireCalendarUsernameAccess(req, res, username);
+    if (!ctx) return;
+    const workDate = String(req.body?.date || req.body?.work_date || '').trim();
+    if (!isStrictIsoDate(workDate)) return res.status(400).json({ error:'date ต้องเป็นรูปแบบ YYYY-MM-DD' });
+    const lockedJobs = await countLockedAdvanceJobsForDate(pool, username, workDate);
+    if (lockedJobs > 0) {
+      return res.status(409).json({
+        error:'วันนี้มีงานที่ได้รับมอบหมายแล้ว ช่างไม่สามารถปิดรับงานหรือแก้ไขวันทำงานนี้ได้ หากมีความจำเป็น กรุณาติดต่อแอดมินเพื่อปรับงานหรือหาคนแทน',
+        locked:true,
+        job_count: lockedJobs
+      });
+    }
+    const saved = await upsertCalendarDay(pool, username, workDate, { ...req.body, work_date:workDate });
+    res.json({ ok:true, saved:1, skipped_locked:0, item:normalizeCalendarRow(saved, workDate, 0) });
+  } catch (e) {
+    console.error('PUT /technicians/:username/work-calendar-v2/day error:', e);
+    res.status(500).json({ error:'บันทึกปฏิทินรับงานล่วงหน้าไม่สำเร็จ' });
+  }
+});
+
+app.put('/technicians/:username/work-calendar-v2/batch', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const username = String(req.params?.username || '').trim();
+    const ctx = await requireCalendarUsernameAccess(req, res, username);
+    if (!ctx) return;
+    const dates = Array.isArray(req.body?.dates) ? req.body.dates : [];
+    if (!dates.length) return res.status(400).json({ error:'ต้องมี dates อย่างน้อย 1 วัน' });
+    if (dates.length > 62) return res.status(400).json({ error:'เลือกได้สูงสุด 62 วันต่อครั้ง' });
+    await client.query('BEGIN');
+    let saved = 0;
+    let skippedLocked = 0;
+    for (const rawDate of dates) {
+      const workDate = String(rawDate || '').trim();
+      if (!isStrictIsoDate(workDate)) continue;
+      const lockedJobs = await countLockedAdvanceJobsForDate(client, username, workDate);
+      if (lockedJobs > 0) {
+        skippedLocked++;
+        continue;
+      }
+      await upsertCalendarDay(client, username, workDate, { ...req.body, work_date:workDate });
+      saved++;
+    }
+    await client.query('COMMIT');
+    res.json({ ok:true, saved, skipped_locked:skippedLocked });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('PUT /technicians/:username/work-calendar-v2/batch error:', e);
+    res.status(500).json({ error:'บันทึกวันที่เลือกไม่สำเร็จ' });
+  } finally { client.release(); }
+});
+
+app.post('/technicians/:username/work-calendar-v2/copy-previous-month', async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const username = String(req.params?.username || '').trim();
+    const ctx = await requireCalendarUsernameAccess(req, res, username);
+    if (!ctx) return;
+    const targetMonth = String(req.body?.target_month || '').trim();
+    if (!isStrictMonth(targetMonth)) return res.status(400).json({ error:'target_month ต้องเป็นรูปแบบ YYYY-MM' });
+    const [y,m] = targetMonth.split('-').map(Number);
+    const prev = new Date(y, m - 2, 1);
+    const prevMonth = toIsoDate(prev).slice(0,7);
+    const prevData = await loadWorkCalendarV2Month(username, prevMonth);
+    const prevByDay = new Map(prevData.days.map(d => [String(d.date).slice(-2), d]));
+    await client.query('BEGIN');
+    let saved = 0;
+    let skippedLocked = 0;
+    for (const workDate of cwfDateRange(firstDayOfMonthIso(targetMonth), endDayOfMonthIso(targetMonth))) {
+      const source = prevByDay.get(workDate.slice(-2));
+      if (!source) continue;
+      const lockedJobs = await countLockedAdvanceJobsForDate(client, username, workDate);
+      if (lockedJobs > 0) {
+        skippedLocked++;
+        continue;
+      }
+      await upsertCalendarDay(client, username, workDate, {
+        work_date: workDate,
+        can_accept_advance_job: !!source.can_accept_advance_job,
+        start_time: source.start_time,
+        end_time: source.end_time,
+        max_jobs_per_day: source.max_jobs_per_day,
+        max_units_per_day: source.max_units_per_day,
+        note: source.note
+      });
+      saved++;
+    }
+    await client.query('COMMIT');
+    res.json({ ok:true, saved, skipped_locked:skippedLocked });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('POST /technicians/:username/work-calendar-v2/copy-previous-month error:', e);
+    res.status(500).json({ error:'ตั้งค่าเหมือนเดือนก่อนไม่สำเร็จ' });
+  } finally { client.release(); }
+});
 
 app.get('/tech/work-calendar', requireTechnicianSession, async (req, res) => {
   try {
