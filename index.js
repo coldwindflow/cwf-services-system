@@ -20234,10 +20234,12 @@ function endDayOfMonthIso(monthText){
   return toIsoDate(d);
 }
 function normWorkDayPayload(input = {}){
-  const allowed = new Set(['advance_only','available_advance','unavailable','weekly_off','special_holiday','vacation','leave','working']);
-  let day_status = allowed.has(String(input.day_status || '').trim()) ? String(input.day_status).trim() : 'unavailable';
-  if (day_status === 'working' || day_status === 'available_advance') day_status = 'advance_only';
-  if (day_status === 'vacation') day_status = 'leave';
+  // ปฏิทินนี้มีแค่ 2 สถานะ: รับงานล่วงหน้า / ไม่รับงานล่วงหน้า
+  // วันหยุด/ลา/ไม่ว่าง ให้เก็บเป็นหมายเหตุแทน เพื่อลดความสับสนของช่าง
+  let raw = String(input.day_status || '').trim();
+  let day_status = ['advance_only','available_advance','working'].includes(raw) || input.can_accept_advance_job === true
+    ? 'advance_only'
+    : 'unavailable';
   const start_time = /^\d{2}:\d{2}$/.test(String(input.start_time || '')) ? String(input.start_time) : '09:00';
   const end_time = /^\d{2}:\d{2}$/.test(String(input.end_time || '')) ? String(input.end_time) : '18:00';
   const max_jobs_per_day = Math.max(0, Math.min(20, Number(input.max_jobs_per_day || (day_status === 'advance_only' ? 1 : 0))));
@@ -20248,12 +20250,24 @@ function normWorkDayPayload(input = {}){
     can_accept_advance_job: canAdvance,
     // This calendar is NOT for urgent jobs. Urgent jobs continue using accept_status flow only.
     can_accept_urgent_job: false,
-    start_time,
-    end_time,
+    start_time: canAdvance ? start_time : '09:00',
+    end_time: canAdvance ? end_time : '18:00',
     max_jobs_per_day,
     max_units_per_day,
     note: String(input.note || '').slice(0,500)
   };
+}
+async function countAssignedAdvanceJobsForDate(username, workDate, db = pool){
+  const r = await db.query(`
+    SELECT COUNT(DISTINCT j.job_id)::int AS job_count
+    FROM public.jobs j
+    LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$1
+    WHERE (j.technician_username=$1 OR ja.technician_username=$1)
+      AND j.appointment_datetime IS NOT NULL
+      AND (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date = $2::date
+      AND COALESCE(j.job_status,'') NOT IN ('cancelled','canceled','done','finished')
+  `, [username, workDate]);
+  return Number(r.rows?.[0]?.job_count || 0);
 }
 async function getTechTodayJobs(username){
   const r = await pool.query(`
@@ -20329,6 +20343,14 @@ app.put('/tech/work-calendar/day', requireTechnicianSession, async (req, res) =>
     const username = String(req.effective?.username || '').trim();
     const work_date = toIsoDate(String(req.body?.work_date || '').trim());
     if (!work_date) return res.status(400).json({ error:'ต้องมี work_date' });
+    const lockedCount = await countAssignedAdvanceJobsForDate(username, work_date);
+    if (lockedCount > 0) {
+      return res.status(409).json({
+        error: 'วันนี้มีงานอยู่แล้ว ช่างไม่สามารถปิดรับงานหรือแก้ไขวันทำงานนี้ได้ กรุณาติดต่อแอดมิน หากมีความจำเป็น',
+        is_locked: true,
+        assigned_job_count: lockedCount
+      });
+    }
     const p = normWorkDayPayload(req.body || {});
     const r = await pool.query(`
       INSERT INTO public.technician_monthly_work_calendar
@@ -20361,9 +20383,12 @@ app.put('/tech/work-calendar/bulk', requireTechnicianSession, async (req, res) =
     if (!days.length) return res.status(400).json({ error:'ต้องเลือกวันอย่างน้อย 1 วัน' });
     await client.query('BEGIN');
     let count = 0;
+    let skipped_locked = 0;
     for (const d of days.slice(0, 62)) {
       const work_date = toIsoDate(String(d.work_date || '').trim());
       if (!work_date) continue;
+      const lockedCount = await countAssignedAdvanceJobsForDate(username, work_date, client);
+      if (lockedCount > 0) { skipped_locked++; continue; }
       const p = normWorkDayPayload(d);
       await client.query(`
         INSERT INTO public.technician_monthly_work_calendar
@@ -20383,7 +20408,7 @@ app.put('/tech/work-calendar/bulk', requireTechnicianSession, async (req, res) =
       count++;
     }
     await client.query('COMMIT');
-    res.json({ ok:true, count });
+    res.json({ ok:true, count, skipped_locked });
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('PUT /tech/work-calendar/bulk error:', e);
