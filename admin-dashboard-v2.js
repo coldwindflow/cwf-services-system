@@ -609,6 +609,7 @@
 
     $('goAddJob')?.addEventListener('click', ()=> location.href = '/admin-add-v2.html');
     $('goQueue')?.addEventListener('click', ()=> location.href = '/admin-queue-v2.html');
+    $('goWorkReadiness')?.addEventListener('click', ()=> location.href = '/admin-work-readiness-v2.html');
     $('goHistory')?.addEventListener('click', ()=> location.href = '/admin-history-v2.html');
     $('goAccounting')?.addEventListener('click', ()=> location.href = '/admin-accounting-v2.html');
     $('goDeductions')?.addEventListener('click', ()=> location.href = '/admin-deductions-v2.html');

@@ -20734,6 +20734,128 @@ app.get('/admin/technician-readiness/today', requireAdminSession, async (req, re
   }
 });
 
+
+// =======================================
+// 👷 ADMIN: Technician advance work readiness dashboard (read-only)
+// - Phase 1 visibility only: does not block assignment or touch urgent flow.
+// =======================================
+function _adminReadinessServiceLabels(matrix) {
+  try {
+    const obj = (matrix && typeof matrix === 'object') ? matrix : {};
+    const labels = [];
+    const txt = JSON.stringify(obj).toLowerCase();
+    if (txt.includes('clean') || txt.includes('ล้าง')) labels.push('ล้าง');
+    if (txt.includes('repair') || txt.includes('ซ่อม')) labels.push('ซ่อม');
+    if (txt.includes('install') || txt.includes('ติดตั้ง')) labels.push('ติดตั้ง');
+    if (txt.includes('wall') || txt.includes('ผนัง')) labels.push('แอร์ผนัง');
+    if (txt.includes('cassette') || txt.includes('สี่ทิศ')) labels.push('สี่ทิศทาง');
+    if (txt.includes('floor') || txt.includes('แขวน') || txt.includes('ตั้งพื้น')) labels.push('แขวน/ตั้งพื้น');
+    if (txt.includes('concealed') || txt.includes('เปลือย') || txt.includes('ใต้ฝ้า')) labels.push('เปลือย/ใต้ฝ้า');
+    return Array.from(new Set(labels)).slice(0, 8).join(' / ') || (Object.keys(obj).length ? 'ตั้งค่าแล้ว' : 'ยังไม่ตั้งค่า');
+  } catch (_) {
+    return 'ยังไม่ตั้งค่า';
+  }
+}
+
+app.get('/admin/technicians/work-readiness', requireAdminSession, async (req, res) => {
+  try {
+    const date = String(req.query?.date || '').trim() || toIsoDate(new Date());
+    if (!isStrictIsoDate(date)) return res.status(400).json({ error:'date ต้องเป็นรูปแบบ YYYY-MM-DD' });
+
+    const r = await pool.query(`
+      WITH all_techs AS (
+        SELECT username FROM public.users WHERE role='technician'
+        UNION
+        SELECT username FROM public.technician_profiles WHERE username IS NOT NULL
+      ), assigned AS (
+        SELECT COALESCE(ja.technician_username, j.technician_username) AS username,
+               COUNT(DISTINCT j.job_id)::int AS assigned_job_count
+        FROM public.jobs j
+        LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id
+        WHERE j.appointment_datetime IS NOT NULL
+          AND (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date = $1::date
+          AND COALESCE(j.job_status,'') NOT IN ('cancelled','canceled')
+          AND COALESCE(ja.technician_username, j.technician_username) IS NOT NULL
+        GROUP BY 1
+      )
+      SELECT
+        t.username,
+        COALESCE(NULLIF(p.full_name,''), t.username) AS display_name,
+        COALESCE(p.phone,'') AS phone,
+        COALESCE(p.employment_type,'company') AS technician_type,
+        COALESCE(p.accept_status,'paused') AS accept_status,
+        p.accept_status_updated_at,
+        p.home_service_zone_code,
+        p.secondary_service_zone_code,
+        p.preferred_zone,
+        p.home_province,
+        p.home_district,
+        c.work_date,
+        c.can_accept_advance_job,
+        c.start_time,
+        c.end_time,
+        c.max_jobs_per_day,
+        c.max_units_per_day,
+        c.note,
+        c.updated_at AS calendar_updated_at,
+        m.matrix_json,
+        COALESCE(a.assigned_job_count,0)::int AS assigned_job_count
+      FROM all_techs t
+      LEFT JOIN public.technician_profiles p ON p.username=t.username
+      LEFT JOIN public.technician_monthly_work_calendar c ON c.technician_username=t.username AND c.work_date=$1::date
+      LEFT JOIN public.technician_service_matrix m ON m.username=t.username
+      LEFT JOIN assigned a ON a.username=t.username
+      ORDER BY COALESCE(a.assigned_job_count,0) DESC, COALESCE(p.employment_type,'company') ASC, COALESCE(NULLIF(p.full_name,''), t.username) ASC
+    `, [date]);
+
+    const technicians = (r.rows || []).map(row => {
+      const isUnset = !row.work_date;
+      const can = !isUnset && row.can_accept_advance_job === true;
+      const start = can ? (row.start_time || '09:00') : null;
+      const end = can ? (row.end_time || '18:00') : null;
+      const jobs = can ? Number(row.max_jobs_per_day || 1) : null;
+      const units = can ? Number(row.max_units_per_day || 5) : null;
+      const note = row.note || null;
+      const hasCustom = !!((can && (start !== '09:00' || end !== '18:00' || jobs !== 1 || units !== 5)) || String(note || '').trim());
+      const zones = [row.home_service_zone_code, row.secondary_service_zone_code, row.preferred_zone, [row.home_province, row.home_district].filter(Boolean).join(' ')].filter(Boolean);
+      return {
+        username: row.username,
+        display_name: row.display_name || row.username,
+        phone: row.phone || '',
+        technician_type: row.technician_type || 'company',
+        accept_status: row.accept_status || 'paused',
+        can_accept_advance_job: can,
+        is_unset: isUnset,
+        start_time: start,
+        end_time: end,
+        max_jobs_per_day: jobs,
+        max_units_per_day: units,
+        note,
+        has_assigned_job: Number(row.assigned_job_count || 0) > 0,
+        assigned_job_count: Number(row.assigned_job_count || 0),
+        has_custom_setting: hasCustom,
+        service_labels: _adminReadinessServiceLabels(row.matrix_json),
+        zone_labels: Array.from(new Set(zones.map(String).filter(Boolean))).join(' / ') || '-'
+      };
+    });
+
+    const summary = technicians.reduce((acc, t) => {
+      acc.total++;
+      if (t.is_unset) acc.unset++;
+      else if (t.can_accept_advance_job) acc.available_advance++;
+      else acc.unavailable_advance++;
+      if (t.has_assigned_job) acc.assigned_jobs++;
+      if (t.has_custom_setting || t.note) acc.custom++;
+      return acc;
+    }, { total:0, available_advance:0, unavailable_advance:0, assigned_jobs:0, unset:0, custom:0 });
+
+    res.json({ ok:true, date, summary, technicians });
+  } catch (e) {
+    console.error('GET /admin/technicians/work-readiness error:', e);
+    res.status(500).json({ error:'โหลดความพร้อมช่างไม่สำเร็จ' });
+  }
+});
+
 // =======================================
 // 🗺️ TECH: preferred zone (โซนรับงาน)
 // =======================================
