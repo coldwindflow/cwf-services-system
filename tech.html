@@ -670,7 +670,7 @@
           <button class="tech-icbtn settingsClose" type="button" onclick="closeTechWorkSettingsModal()" aria-label="ปิด">✕</button>
         </div>
         <div class="settingsGrid">
-          <button class="settingsItem" type="button" onclick="openAdvanceWorkCalendarFromMenu(event)">
+          <button class="settingsItem" type="button" onclick="return window.cwfOpenAdvanceCalendarSafe ? window.cwfOpenAdvanceCalendarSafe(event) : openAdvanceWorkCalendarFromMenu(event)">
             <span class="sIcon">🗓️</span><span class="sText"><strong>ตั้งค่าปฏิทินรับงาน</strong><span>ใช้เฉพาะงานล่วงหน้าที่แอดมินบังคับ/มอบหมายให้ ไม่เกี่ยวกับงานด่วน</span></span>
           </button>
           <button class="settingsItem" type="button" onclick="closeTechWorkSettingsModal(); document.getElementById('techMatrixBtn')?.click();">
@@ -1772,7 +1772,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260507_work_calendar_open_v2"></script>
+  <script src="app.js?v=20260507_calendar_safe_opener_v1"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
@@ -1935,8 +1935,132 @@
       const m = document.getElementById('techWorkSettingsModal');
       if (m) m.style.display = 'none';
     }
+
     window.openTechWorkSettingsModal = openTechWorkSettingsModal;
     window.closeTechWorkSettingsModal = closeTechWorkSettingsModal;
+
+    // CWF 2026-05-07 FIX: hard-safe opener for the advance work calendar.
+    // Reason: some PWA/cache/runtime states made the hamburger button do nothing.
+    // This opener closes the menu/settings modal, tries the production app.js calendar first,
+    // and falls back to a self-contained modal so the technician can always open and set the calendar.
+    (function(){
+      const API = window.API_BASE || '';
+      const fallbackState = { month:'', items:new Map(), jobs:new Map(), selected:'' };
+      function iso(d){
+        const x = d instanceof Date ? d : new Date(d || Date.now());
+        if (Number.isNaN(x.getTime())) return '';
+        return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,'0')}-${String(x.getDate()).padStart(2,'0')}`;
+      }
+      function monthNow(){ return iso(new Date()).slice(0,7); }
+      function daysOfMonth(month){
+        const [y,m] = String(month || monthNow()).split('-').map(Number);
+        const n = new Date(y, m, 0).getDate();
+        return Array.from({length:n}, (_,i)=>`${y}-${String(m).padStart(2,'0')}-${String(i+1).padStart(2,'0')}`);
+      }
+      function thaiDate(d){ try{return new Date(d+'T00:00:00').toLocaleDateString('th-TH',{weekday:'long', day:'2-digit', month:'long', year:'numeric'});}catch(e){return d;} }
+      function isOn(it){ return !!(it && (it.can_accept_advance_job === true || ['advance_only','available_advance','working'].includes(String(it.day_status||'')))); }
+      function itemFor(d){ return fallbackState.items.get(d) || {work_date:d, day_status:'unavailable', can_accept_advance_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:0, max_units_per_day:0, note:''}; }
+      function locked(d){ return Number(fallbackState.jobs.get(d) || 0) > 0; }
+      function custom(it){
+        if(!isOn(it)) return String(it.note||'').trim().length>0;
+        return (it.start_time && it.start_time !== '09:00') || (it.end_time && it.end_time !== '18:00') || Number(it.max_jobs_per_day||1)!==1 || Number(it.max_units_per_day||5)!==5 || String(it.note||'').trim().length>0;
+      }
+      function payload(d, on, extra){
+        extra = extra || {};
+        return { work_date:d, day_status:on?'advance_only':'unavailable', can_accept_advance_job:!!on, can_accept_urgent_job:false, start_time:on?(extra.start_time||'09:00'):'09:00', end_time:on?(extra.end_time||'18:00'):'18:00', max_jobs_per_day:on?Number(extra.max_jobs_per_day||1):0, max_units_per_day:on?Number(extra.max_units_per_day||5):0, note:extra.note||'' };
+      }
+      function ensureFallbackModal(){
+        if(document.getElementById('cwf-safe-calendar-modal')) return;
+        const st = document.createElement('style');
+        st.id = 'cwf-safe-calendar-style';
+        st.textContent = `
+          #cwf-safe-calendar-modal{position:fixed;inset:0;z-index:999999;background:rgba(2,8,23,.72);display:none;align-items:center;justify-content:center;padding:14px;font-family:system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+          .safeCalPanel{width:min(980px,100%);max-height:92vh;overflow:auto;background:linear-gradient(180deg,#ffffff,#f8fbff);border-radius:24px;box-shadow:0 24px 80px rgba(15,23,42,.35);border:1px solid #dbeafe;color:#0f172a}
+          .safeCalHead{display:flex;justify-content:space-between;gap:12px;padding:18px;border-bottom:1px solid #e5e7eb;background:linear-gradient(135deg,#0f3e73,#0ea5e9);color:#fff;border-radius:24px 24px 0 0}.safeCalHead h3{margin:0;font-size:20px}.safeCalHead p{margin:5px 0 0;color:#dff6ff;font-size:13px;line-height:1.45}.safeClose{border:0;border-radius:14px;background:rgba(255,255,255,.18);color:#fff;font-size:20px;width:44px;height:44px}
+          .safeToolbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:14px 16px;border-bottom:1px solid #e5e7eb}.safeToolbar input{height:42px;border-radius:12px;border:1px solid #cbd5e1;padding:0 12px;font-weight:800}.safeBtn{border:0;border-radius:14px;background:#e0f2fe;color:#075985;padding:11px 13px;font-weight:900}.safeBtn.dark{background:#0f3e73;color:#fff}.safeBtn.red{background:#fee2e2;color:#991b1b}.safeBody{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(280px,.75fr);gap:14px;padding:16px}.safeHelp{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-bottom:12px}.safeHelp div{background:#f1f5f9;border:1px solid #e2e8f0;border-radius:14px;padding:9px;font-size:12px;font-weight:800}.safeWeek,.safeGrid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}.safeWeek span{text-align:center;font-size:12px;color:#64748b;font-weight:900}.safeDay{min-height:64px;border-radius:14px;border:1px solid #e2e8f0;background:#f8fafc;padding:7px;text-align:left;font-weight:900;color:#334155}.safeDay .n{font-size:15px}.safeDay .s{font-size:11px;margin-top:5px}.safeDay.on{background:#dcfce7;border-color:#86efac;color:#166534}.safeDay.off{background:#fee2e2;border-color:#fecaca;color:#991b1b}.safeDay.lock{background:#dbeafe;border-color:#93c5fd;color:#1e3a8a}.safeDay.custom{outline:3px solid #f59e0b}.safeDay.sel{box-shadow:0 0 0 3px #0ea5e9 inset}.safeSide{background:#fff;border:1px solid #e5e7eb;border-radius:18px;padding:14px;align-self:start}.safeSide h4{margin:0 0 8px;font-size:17px}.safeSummary{border-radius:14px;background:#f8fafc;border:1px solid #e2e8f0;padding:11px;font-size:13px;line-height:1.5;margin-bottom:12px}.safeForm{display:grid;gap:10px}.safeForm label{font-size:12px;font-weight:900;color:#475569}.safeForm input,.safeForm textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:12px;padding:10px;font-size:14px}.safeTwo{display:grid;grid-template-columns:1fr 1fr;gap:8px}.safeStatus{font-size:13px;font-weight:900;color:#075985;margin-top:10px}@media(max-width:760px){.safeBody{grid-template-columns:1fr}.safeHelp{grid-template-columns:1fr}.safeDay{min-height:58px;padding:6px}.safeDay .s{font-size:10px}.safeCalPanel{max-height:95vh;border-radius:18px}.safeCalHead{border-radius:18px 18px 0 0}}
+        `;
+        document.head.appendChild(st);
+        const m = document.createElement('div');
+        m.id = 'cwf-safe-calendar-modal';
+        m.innerHTML = `<div class="safeCalPanel"><div class="safeCalHead"><div><h3>🗓️ ปฏิทินรับงานล่วงหน้า</h3><p>ใช้เฉพาะงานล่วงหน้าที่แอดมินมอบหมายให้เท่านั้น งานด่วนยังใช้ปุ่มเปิด/ปิดรับงานหน้าแรกตามปกติ</p></div><button class="safeClose" id="safeCalClose">✕</button></div><div class="safeToolbar"><button class="safeBtn" id="safePrev">‹ เดือนก่อน</button><input type="month" id="safeMonth"><button class="safeBtn" id="safeNext">เดือนถัดไป ›</button><button class="safeBtn dark" id="safeCopyPrev">📋 ตั้งค่าเหมือนเดือนก่อน</button></div><div class="safeBody"><div><div class="safeHelp"><div>✅ รับ = รับงานล่วงหน้า</div><div>❌ ไม่รับ = ไม่รับงานล่วงหน้า</div><div>📌 มีงาน = ล็อก แก้ไม่ได้</div><div>⏰ ⚙️ 📝 = ค่าพิเศษ</div></div><div class="safeWeek"><span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span></div><div id="safeGrid" class="safeGrid"></div><div id="safeStatus" class="safeStatus">พร้อมใช้งาน</div></div><div class="safeSide"><h4 id="safeTitle">เลือกวันที่</h4><div id="safeSummary" class="safeSummary">แตะวันที่เพื่อเปิด/ปิดรับงานล่วงหน้าทันที</div><button class="safeBtn dark" id="safeToggle" style="width:100%;margin-bottom:10px">เลือกวันที่ก่อน</button><div class="safeForm"><div class="safeTwo"><label>เวลาเริ่ม<input id="safeStart" type="time" value="09:00"></label><label>เวลาเลิก<input id="safeEnd" type="time" value="18:00"></label></div><div class="safeTwo"><label>งานสูงสุด/วัน<input id="safeMaxJobs" type="number" min="1" max="20" value="1"></label><label>เครื่องสูงสุด/วัน<input id="safeMaxUnits" type="number" min="1" max="99" value="5"></label></div><label>หมายเหตุถึงแอดมิน<textarea id="safeNote" rows="3" placeholder="เช่น รับได้เฉพาะช่วงบ่าย"></textarea></label><button class="safeBtn dark" id="safeSaveDetail">💾 บันทึกค่าพิเศษ</button></div></div></div></div>`;
+        document.body.appendChild(m);
+        document.getElementById('safeCalClose').onclick = ()=>{ m.style.display='none'; document.body.style.overflow=''; };
+        document.getElementById('safePrev').onclick = ()=>shiftMonth(-1);
+        document.getElementById('safeNext').onclick = ()=>shiftMonth(1);
+        document.getElementById('safeMonth').onchange = e=>loadSafeCalendar(e.target.value);
+        document.getElementById('safeToggle').onclick = ()=>toggleSafeDay();
+        document.getElementById('safeSaveDetail').onclick = ()=>saveSafeDetail();
+        document.getElementById('safeCopyPrev').onclick = ()=>copySafePrev();
+      }
+      function status(t){ const el=document.getElementById('safeStatus'); if(el) el.textContent=t; }
+      function renderSafe(){
+        const grid = document.getElementById('safeGrid'); if(!grid) return;
+        const month = fallbackState.month || monthNow();
+        const days = daysOfMonth(month); const first = new Date(days[0]+'T00:00:00').getDay();
+        grid.innerHTML = '';
+        for(let i=0;i<first;i++){ const e=document.createElement('div'); grid.appendChild(e); }
+        days.forEach(d=>{
+          const it=itemFor(d); const on=isOn(it); const lk=locked(d); const c=custom(it);
+          const b=document.createElement('button'); b.type='button'; b.className=`safeDay ${lk?'lock':(on?'on':'off')} ${c?'custom':''} ${fallbackState.selected===d?'sel':''}`;
+          let icons = lk ? '📌 มีงาน' : (on ? '✅ รับ' : '❌ ไม่รับ');
+          if(c) icons += ' ⏰⚙️📝';
+          b.innerHTML=`<div class="n">${Number(d.slice(-2))}</div><div class="s">${icons}</div>`;
+          b.onclick=()=>{ fallbackState.selected=d; renderSafe(); fillSide(); if(!lk) toggleSafeDay(true); else lockPop(d); };
+          grid.appendChild(b);
+        });
+        fillSide();
+      }
+      function fillSide(){
+        const d=fallbackState.selected; const title=document.getElementById('safeTitle'); const sum=document.getElementById('safeSummary'); const btn=document.getElementById('safeToggle');
+        if(!d){ if(title) title.textContent='เลือกวันที่'; if(sum) sum.textContent='แตะวันที่เพื่อเปิด/ปิดรับงานล่วงหน้าทันที'; if(btn) btn.textContent='เลือกวันที่ก่อน'; return; }
+        const it=itemFor(d); const on=isOn(it); const lk=locked(d);
+        if(title) title.textContent=thaiDate(d);
+        if(sum) sum.innerHTML = lk ? `📌 วันนี้มีงานอยู่แล้ว ${fallbackState.jobs.get(d)} งาน<br>ไม่สามารถปิดหรือแก้ไขได้ กรุณาติดต่อแอดมิน` : `${on?'✅ รับงานล่วงหน้า':'❌ ไม่รับงานล่วงหน้า'}<br>เวลา ${it.start_time||'09:00'}-${it.end_time||'18:00'} • ${Number(it.max_jobs_per_day||0)} งาน / ${Number(it.max_units_per_day||0)} เครื่อง<br>${it.note?`📝 ${it.note}`:'ไม่มีหมายเหตุ'}`;
+        if(btn){ btn.textContent = lk ? '📌 วันนี้มีงานแล้ว' : (on?'❌ ปิดรับงานวันนี้':'✅ เปิดรับงานวันนี้'); btn.disabled=lk; }
+        const set=(id,val)=>{const el=document.getElementById(id); if(el) el.value=val;};
+        set('safeStart',it.start_time||'09:00'); set('safeEnd',it.end_time||'18:00'); set('safeMaxJobs',Number(it.max_jobs_per_day||1)); set('safeMaxUnits',Number(it.max_units_per_day||5)); set('safeNote',it.note||'');
+      }
+      async function saveOne(body){
+        const r=await fetch(`${API}/tech/work-calendar/bulk`,{method:'PUT',headers:{'Content-Type':'application/json'},credentials:'include',body:JSON.stringify({days:[body]})});
+        const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'บันทึกไม่สำเร็จ'); return j;
+      }
+      async function toggleSafeDay(fromCell){
+        const d=fallbackState.selected; if(!d) return; if(locked(d)){ lockPop(d); return; }
+        const it=itemFor(d); const next=!isOn(it); const body=payload(d,next, next?{}:{note:it.note||''});
+        try{ status('กำลังบันทึก...'); await saveOne(body); fallbackState.items.set(d,body); renderSafe(); status(next?'✅ เปิดรับงานล่วงหน้าแล้ว':'✅ ปิดรับงานล่วงหน้าแล้ว'); }catch(e){ status('❌ '+e.message); }
+      }
+      async function saveSafeDetail(){
+        const d=fallbackState.selected; if(!d) return; if(locked(d)){ lockPop(d); return; }
+        const body=payload(d,true,{ start_time:document.getElementById('safeStart')?.value||'09:00', end_time:document.getElementById('safeEnd')?.value||'18:00', max_jobs_per_day:document.getElementById('safeMaxJobs')?.value||1, max_units_per_day:document.getElementById('safeMaxUnits')?.value||5, note:document.getElementById('safeNote')?.value||'' });
+        try{ status('กำลังบันทึกค่าพิเศษ...'); await saveOne(body); fallbackState.items.set(d,body); renderSafe(); status('✅ บันทึกค่าพิเศษแล้ว'); }catch(e){ status('❌ '+e.message); }
+      }
+      async function loadSafeCalendar(month){
+        fallbackState.month=month||monthNow(); fallbackState.items.clear(); fallbackState.jobs.clear(); fallbackState.selected='';
+        const inp=document.getElementById('safeMonth'); if(inp) inp.value=fallbackState.month;
+        try{ status('กำลังโหลด...'); const r=await fetch(`${API}/tech/work-calendar?month=${encodeURIComponent(fallbackState.month)}`,{credentials:'include'}); const j=await r.json().catch(()=>({})); if(!r.ok) throw new Error(j.error||'โหลดไม่สำเร็จ'); (j.items||[]).forEach(it=>fallbackState.items.set(String(it.work_date).slice(0,10),it)); (j.job_counts||[]).forEach(x=>fallbackState.jobs.set(String(x.work_date).slice(0,10),Number(x.job_count||0))); status('พร้อมใช้งาน'); }catch(e){ status('❌ '+e.message); }
+        renderSafe();
+      }
+      function shiftMonth(n){ const [y,m]=(fallbackState.month||monthNow()).split('-').map(Number); const d=new Date(y,m-1+n,1); loadSafeCalendar(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`); }
+      async function copySafePrev(){ alert('ฟังก์ชันตั้งค่าเหมือนเดือนก่อนใช้ได้ในปฏิทินตัวเต็ม หากปุ่มนี้ยังขึ้น แปลว่า app.js ตัวเต็มยังไม่โหลด แต่สามารถเปิด/ปิดรายวันและตั้งค่าพิเศษได้แล้ว'); }
+      function lockPop(d){ alert(`วันที่ ${thaiDate(d)} มีงานอยู่แล้ว\n\nช่างไม่สามารถปิดรับงานหรือแก้ไขวันทำงานนี้ได้\nกรุณาติดต่อแอดมิน หากมีความจำเป็น`); }
+      window.cwfOpenAdvanceCalendarSafe = function(ev){
+        try{ if(ev && ev.preventDefault) ev.preventDefault(); }catch(e){}
+        try{ if(typeof closeTechWorkSettingsModal === 'function') closeTechWorkSettingsModal(); }catch(e){}
+        try{
+          if(typeof window.openWorkdaysModal === 'function' && !window.__forceSafeCalendarFallback){
+            window.openWorkdaysModal();
+            const modal = document.getElementById('tech-work-calendar-v2-modal');
+            if(modal){ return false; }
+          }
+        }catch(e){ console.warn('CWF calendar app opener failed; using safe fallback', e); }
+        ensureFallbackModal();
+        const m=document.getElementById('cwf-safe-calendar-modal'); if(m){ m.style.display='flex'; document.body.style.overflow='hidden'; }
+        loadSafeCalendar(monthNow());
+        return false;
+      };
+      // Keep old handler names working too.
+      window.openAdvanceWorkCalendarFromMenu = window.cwfOpenAdvanceCalendarSafe;
+    })();
 
 
     // CWF 2026-05-07: Calendar opener now lives in app.js only.
