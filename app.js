@@ -4423,6 +4423,12 @@ function cwfDaysInMonth(month){
 function cwfFormatThaiDate(iso){
   try{ return new Date(String(iso)+'T00:00:00').toLocaleDateString('th-TH',{weekday:'long',day:'2-digit',month:'long',year:'numeric'}); }catch{ return iso; }
 }
+function cwfFormatMonthTitle(month){
+  try{
+    const d = new Date(String(month || cwfMonthText()) + '-01T00:00:00');
+    return d.toLocaleDateString('th-TH', { month:'long', year:'numeric' });
+  }catch{ return month || cwfMonthText(); }
+}
 function cwfGetCalendarItem(iso){ return __cwfWorkCalendarState.items.get(iso) || null; }
 function cwfDayJobCount(iso){
   const it = cwfGetCalendarItem(iso);
@@ -4502,35 +4508,36 @@ function ensureWorkdaysModal(){
     <div class="cwf-calendar-panel" role="dialog" aria-modal="true" aria-labelledby="cwfWorkCalendarTitle">
       <div class="cwf-calendar-head">
         <div>
-          <div class="cwf-eyebrow">Advance Work Calendar</div>
           <h3 id="cwfWorkCalendarTitle">🗓️ ปฏิทินรับงานล่วงหน้า</h3>
-          <p>ใช้เฉพาะงานล่วงหน้าที่แอดมินบังคับ/มอบหมายให้เท่านั้น งานด่วนยังใช้ปุ่มเปิด/ปิดรับงานหน้าแรกตามปกติ</p>
+          <p>ใช้สำหรับงานล่วงหน้าที่แอดมินมอบหมายเท่านั้น</p>
         </div>
-        <button class="cwf-close" type="button" id="techWorkCalendarClose">✕</button>
+        <button class="cwf-close" type="button" id="techWorkCalendarClose" aria-label="ปิด">ปิด</button>
       </div>
 
       <div class="cwf-calendar-toolbar">
-        <button type="button" class="cwf-mini-btn" id="calendarPrevMonth">‹ เดือนก่อน</button>
-        <input id="workCalendarMonth" type="month" class="cwf-month-input">
-        <button type="button" class="cwf-mini-btn" id="calendarNextMonth">เดือนถัดไป ›</button>
+        <button type="button" class="cwf-month-nav" id="calendarPrevMonth" aria-label="เดือนก่อน">‹</button>
+        <button type="button" class="cwf-month-title" id="workCalendarMonthLabel">เดือนนี้</button>
+        <input id="workCalendarMonth" type="month" class="cwf-month-input" aria-label="เลือกเดือน">
+        <button type="button" class="cwf-month-nav" id="calendarNextMonth" aria-label="เดือนถัดไป">›</button>
       </div>
 
       <div class="cwf-calendar-help">
-        <div>✅ <b>รับ</b> = แอดมินมอบหมายงานล่วงหน้าให้ได้</div>
-        <div>❌ <b>ไม่รับ</b> = ไม่รับงานล่วงหน้า หากต้องอธิบายให้เขียนในหมายเหตุ</div>
-        <div>📌 <b>มีงาน</b> = ล็อก แก้ไม่ได้ ต้องติดต่อแอดมิน</div>
-        <div>⏰ ⚙️ 📝 = วันที่มีค่าพิเศษ</div>
+        <span>✅ รับ</span>
+        <span>❌ ไม่รับ</span>
+        <span>📌 มีงานแล้ว</span>
+        <span>⚙️ ค่าพิเศษ</span>
       </div>
 
       <div class="cwf-calendar-layout">
         <div class="cwf-calendar-left">
+          <div class="cwf-action-title">ตั้งค่าหลายวัน</div>
           <div class="cwf-calendar-actions">
-            <button type="button" class="cwf-soft-btn" id="toggleMultiSelectBtn">☑️ เลือกหลายวัน</button>
-            <button type="button" class="cwf-soft-btn" id="selectAllMonthBtn">เลือกทั้งเดือน</button>
-            <button type="button" class="cwf-soft-btn" id="selectWeekdaysBtn">จันทร์-ศุกร์</button>
-            <button type="button" class="cwf-soft-btn" id="selectWeekendBtn">เสาร์-อาทิตย์</button>
-            <button type="button" class="cwf-soft-btn" id="copyPrevMonthBtn">📋 ตั้งค่าเหมือนเดือนก่อน</button>
-            <button type="button" class="cwf-soft-btn danger" id="clearSelectedDatesBtn">ล้างที่เลือก</button>
+            <button type="button" class="cwf-chip-btn" id="toggleMultiSelectBtn">เลือกหลายวัน</button>
+            <button type="button" class="cwf-chip-btn" id="selectAllMonthBtn">เลือกทั้งเดือน</button>
+            <button type="button" class="cwf-chip-btn" id="selectWeekdaysBtn">จันทร์-ศุกร์</button>
+            <button type="button" class="cwf-chip-btn" id="selectWeekendBtn">เสาร์-อาทิตย์</button>
+            <button type="button" class="cwf-chip-btn subtle" id="copyPrevMonthBtn">📋 เหมือนเดือนก่อน</button>
+            <button type="button" class="cwf-chip-btn danger" id="clearSelectedDatesBtn">ล้างที่เลือก</button>
           </div>
           <div id="multiSelectHint" class="cwf-multi-hint" style="display:none">เลือกแล้ว <b id="selectedDateCount">0</b> วัน • แตะวันที่เพื่อเลือก/ยกเลิก</div>
           <div class="cwf-week-head"><span>อา</span><span>จ</span><span>อ</span><span>พ</span><span>พฤ</span><span>ศ</span><span>ส</span></div>
@@ -4547,8 +4554,9 @@ function ensureWorkdaysModal(){
           </div>
           <div id="selectedDaySummary" class="cwf-day-summary">แตะวันที่เพื่อเปิด/ปิดรับงานล่วงหน้าทันที หรือกดเลือกหลายวันเพื่อตั้งค่ารวม</div>
           <div class="cwf-quick-grid">
-            <button id="singleToggleDayBtn" class="cwf-save-btn" type="button">แตะวันที่เพื่อเปิด/ปิด</button>
-            <button id="editSelectedDayBtn" class="cwf-soft-btn" type="button">✏️ แก้ไขวันที่เลือก</button>
+            <button id="singleOpenDayBtn" class="cwf-save-btn" type="button">✅ เปิดรับ</button>
+            <button id="singleCloseDayBtn" class="cwf-soft-btn danger" type="button">❌ ปิดรับ</button>
+            <button id="editSelectedDayBtn" class="cwf-soft-btn full" type="button">✏️ ตั้งค่าพิเศษ</button>
           </div>
 
           <div id="singleEditPanel" class="cwf-edit-panel" style="display:none">
@@ -4598,19 +4606,19 @@ function ensureWorkdaysModal(){
   const style = document.createElement('style');
   style.id = 'cwf-work-calendar-v2-style';
   style.textContent = `
-    .cwf-calendar-backdrop{position:fixed!important;inset:0!important;display:none;align-items:flex-start;justify-content:center;z-index:99999!important;background:rgba(2,6,23,.84)!important;padding:14px;overflow:auto;backdrop-filter:blur(8px)}
-    .cwf-calendar-panel{width:min(980px,100%);background:#fff!important;border:1px solid rgba(215,224,238,.95);border-radius:28px;box-shadow:0 32px 110px rgba(2,6,23,.55);padding:14px;color:#08245b;opacity:1!important}
-    .cwf-calendar-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;background:linear-gradient(135deg,#08245b,#0b62d6 65%,#17bff3);color:#fff;border-radius:24px;padding:16px;box-shadow:0 14px 34px rgba(8,36,91,.25)}
-    .cwf-calendar-head h3{margin:0;font-size:22px}.cwf-calendar-head p{margin:5px 0 0;opacity:.94;font-weight:850;line-height:1.45}.cwf-eyebrow{font-size:11px;letter-spacing:.08em;text-transform:uppercase;opacity:.82;font-weight:1000}
-    .cwf-close{border:0;background:#fff;color:#08245b;border-radius:16px;min-width:44px;min-height:44px;font-weight:1000;box-shadow:0 10px 24px rgba(0,0,0,.18)}
-    .cwf-calendar-toolbar{display:flex;gap:10px;align-items:center;margin:12px 0;flex-wrap:wrap}.cwf-mini-btn,.cwf-month-input{border:1px solid #d7e0ee;background:#fff;color:#08245b;border-radius:16px;min-height:44px;padding:10px 12px;font-weight:1000}.cwf-month-input{flex:1;min-width:170px}
-    .cwf-calendar-help{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:10px 0}.cwf-calendar-help div{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:8px;font-size:12px;font-weight:850;line-height:1.35}
-    .cwf-calendar-layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(300px,.85fr);gap:12px}.cwf-calendar-left{min-width:0}.cwf-calendar-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:8px}.cwf-multi-hint{background:#fff8d8;border:1px solid #ffe08a;border-radius:14px;padding:9px 10px;margin-bottom:8px;color:#513f00;font-weight:1000}
-    .cwf-week-head{display:grid;grid-template-columns:repeat(7,1fr);gap:6px;margin-bottom:6px}.cwf-week-head span{text-align:center;font-size:12px;font-weight:1000;color:#526276}
-    .cwf-month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:6px}.cwf-day-cell{min-height:62px;border:1px solid #d7e0ee;background:#fff;border-radius:15px;padding:6px 4px;text-align:center;color:#08245b;box-shadow:0 5px 12px rgba(8,36,91,.06);position:relative;overflow:hidden;font-weight:1000}.cwf-day-cell.is-selected{outline:3px solid #0ea5e9}.cwf-day-cell.is-picked{box-shadow:0 0 0 3px rgba(14,165,233,.38),0 8px 18px rgba(8,36,91,.12)}.cwf-day-cell.is-off{background:#fff1f2;border-color:#fecdd3}.cwf-day-cell.is-advance{background:#eafaf0;border-color:#86efac}.cwf-day-cell.is-custom{background:#fff7ed;border-color:#fdba74}.cwf-day-cell.is-locked{background:#eaf2ff;border-color:#93c5fd;color:#08245b}.cwf-day-num{font-size:17px}.cwf-day-label{font-size:11px;margin-top:2px;line-height:1.15}.cwf-day-icons{font-size:12px;margin-top:2px;min-height:15px}.cwf-job-dot{position:absolute;right:4px;top:4px;background:#08245b;color:#fff;border-radius:999px;padding:1px 5px;font-size:9px;font-weight:1000}
-    .cwf-legend-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}.cwf-legend-row span{font-size:11px;font-weight:1000;border-radius:999px;padding:5px 8px}.cwf-legend-row .ok{background:#dcfce7}.cwf-legend-row .off{background:#ffe4e6}.cwf-legend-row .lock{background:#dbeafe}.cwf-legend-row .custom{background:#ffedd5}
-    .cwf-day-editor{background:#fff;border:1px solid #d7e0ee;border-radius:22px;padding:12px;display:grid;gap:10px;box-shadow:0 14px 34px rgba(8,36,91,.08)}.cwf-editor-title{display:flex;justify-content:space-between;gap:8px;align-items:center;background:#f8fafc;border-radius:16px;padding:10px;font-weight:1000}.cwf-editor-title b{background:#08245b;color:#fff;border-radius:999px;padding:5px 9px;font-size:12px}.cwf-day-summary{background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:10px;font-size:13px;font-weight:850;line-height:1.45}.cwf-section-title{font-weight:1000;color:#08245b;margin:4px 0}.cwf-edit-panel{border:1px solid #e2e8f0;background:#f8fafc;border-radius:18px;padding:10px;display:grid;gap:10px}.cwf-time-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-day-editor label{font-size:13px;font-weight:950;color:#08245b;display:grid;gap:5px}.premium-input{width:100%;border:1px solid #d7e0ee;border-radius:14px;min-height:42px;padding:9px 11px;background:#fff;color:#08245b;font-weight:900;box-sizing:border-box}.cwf-quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-save-btn,.cwf-soft-btn{border:0;border-radius:18px;min-height:48px;padding:11px 12px;font-weight:1000}.cwf-save-btn{background:linear-gradient(135deg,#0b4bb3,#16b9f2);color:#fff}.cwf-soft-btn{background:#fff;border:1px solid #d7e0ee;color:#08245b}.cwf-soft-btn.danger{color:#b91c1c;border-color:#fecaca}.full{width:100%;grid-column:1/-1}.cwf-calendar-status{font-size:12px;font-weight:900;color:#526276;margin-top:8px;min-height:18px}
-    @media(max-width:820px){.cwf-calendar-layout{grid-template-columns:1fr}.cwf-calendar-help{grid-template-columns:1fr 1fr}.cwf-calendar-actions{grid-template-columns:1fr 1fr}.cwf-day-cell{min-height:58px}.cwf-calendar-panel{padding:10px;border-radius:24px}.cwf-calendar-head{border-radius:20px}.cwf-time-grid{grid-template-columns:1fr 1fr}}
+    .cwf-calendar-backdrop{position:fixed!important;inset:0!important;display:none;align-items:flex-start;justify-content:center;z-index:99999!important;background:rgba(15,23,42,.64)!important;padding:10px;overflow:auto;backdrop-filter:blur(6px)}
+    .cwf-calendar-panel{width:min(920px,100%);background:#f8fafc!important;border:1px solid #dbe4f0;border-radius:18px;box-shadow:0 26px 80px rgba(15,23,42,.34);padding:10px;color:#0f2f5f;opacity:1!important}
+    .cwf-calendar-head{display:flex;justify-content:space-between;gap:10px;align-items:center;background:#fff;color:#0f2f5f;border:1px solid #e2e8f0;border-radius:14px;padding:10px 12px;box-shadow:0 8px 20px rgba(15,23,42,.05)}
+    .cwf-calendar-head h3{margin:0;font-size:18px;line-height:1.2;font-weight:950}.cwf-calendar-head p{margin:3px 0 0;color:#64748b;font-size:12px;font-weight:800;line-height:1.35}.cwf-eyebrow{display:none}
+    .cwf-close{border:1px solid #dbe4f0;background:#fff;color:#334155;border-radius:999px;min-width:38px;min-height:34px;padding:0 12px;font-size:12px;font-weight:950;box-shadow:none}
+    .cwf-calendar-toolbar{display:grid;grid-template-columns:40px minmax(0,1fr) 40px;gap:8px;align-items:center;margin:10px 0}.cwf-month-nav{border:1px solid #d7e0ee;background:#fff;color:#0f2f5f;border-radius:12px;min-height:38px;font-size:24px;font-weight:900;line-height:1}.cwf-month-title{border:1px solid #d7e0ee;background:#fff;color:#0f2f5f;border-radius:12px;min-height:38px;padding:8px 10px;font-size:15px;font-weight:950}.cwf-month-input{position:absolute;opacity:0;pointer-events:none;width:1px;height:1px}
+    .cwf-calendar-help{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0}.cwf-calendar-help span{background:#fff;border:1px solid #e2e8f0;border-radius:999px;padding:5px 8px;font-size:11px;font-weight:900;color:#334155;line-height:1}
+    .cwf-calendar-layout{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(280px,.72fr);gap:10px}.cwf-calendar-left{min-width:0}.cwf-action-title{font-size:11px;font-weight:950;color:#64748b;margin:4px 2px 6px}.cwf-calendar-actions{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:8px}.cwf-chip-btn{border:1px solid #d7e0ee;background:#fff;color:#0f2f5f;border-radius:999px;min-height:34px;padding:7px 9px;font-size:12px;font-weight:950}.cwf-chip-btn.subtle{background:#fefce8;border-color:#fde68a}.cwf-chip-btn.danger{background:#fff;color:#b91c1c;border-color:#fecaca}.cwf-multi-hint{background:#fff8d8;border:1px solid #ffe08a;border-radius:12px;padding:7px 9px;margin-bottom:8px;color:#513f00;font-size:12px;font-weight:900}
+    .cwf-week-head{display:grid;grid-template-columns:repeat(7,1fr);gap:4px;margin-bottom:4px}.cwf-week-head span{text-align:center;font-size:11px;font-weight:900;color:#64748b}
+    .cwf-month-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}.cwf-day-cell{height:54px;border:1px solid #dbe4f0;background:#fff;border-radius:10px;padding:5px 3px;text-align:center;color:#0f2f5f;box-shadow:none;position:relative;overflow:hidden;font-weight:950;display:grid;align-content:center;gap:2px}.cwf-day-cell.is-selected{outline:2px solid #0ea5e9;outline-offset:1px}.cwf-day-cell.is-picked{box-shadow:0 0 0 2px rgba(14,165,233,.28) inset}.cwf-day-cell.is-off{background:#fff7f7;border-color:#fecdd3}.cwf-day-cell.is-advance{background:#f0fdf4;border-color:#bbf7d0}.cwf-day-cell.is-custom{background:#fffbeb;border-color:#fde68a}.cwf-day-cell.is-locked{background:#eff6ff;border-color:#bfdbfe;color:#0f2f5f}.cwf-day-num{font-size:15px;line-height:1}.cwf-day-label{font-size:10px;line-height:1;color:#475569}.cwf-day-icons{font-size:10px;line-height:1;min-height:10px;letter-spacing:0}.cwf-job-dot{position:absolute;right:3px;top:3px;background:#1d4ed8;color:#fff;border-radius:999px;padding:1px 4px;font-size:9px;font-weight:950}
+    .cwf-legend-row{display:none}
+    .cwf-day-editor{background:#fff;border:1px solid #dbe4f0;border-radius:14px;padding:10px;display:grid;gap:9px;box-shadow:0 10px 24px rgba(15,23,42,.06);align-self:start}.cwf-editor-title{display:flex;justify-content:space-between;gap:8px;align-items:center;background:#f8fafc;border-radius:10px;padding:8px;font-size:13px;font-weight:950}.cwf-editor-title b{background:#eaf2ff;color:#1d4ed8;border-radius:999px;padding:4px 8px;font-size:11px}.cwf-day-summary{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:9px;font-size:12px;font-weight:800;line-height:1.45;color:#334155}.cwf-detail-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}.cwf-detail-grid div{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:7px}.cwf-detail-grid span{display:block;font-size:10px;color:#64748b;font-weight:900}.cwf-detail-grid b{display:block;margin-top:2px;font-size:12px;color:#0f2f5f}.cwf-detail-note{grid-column:1/-1}.cwf-section-title{font-weight:950;color:#0f2f5f;margin:2px 0;font-size:13px}.cwf-edit-panel{border:1px solid #e2e8f0;background:#f8fafc;border-radius:12px;padding:9px;display:grid;gap:9px}.cwf-time-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.cwf-day-editor label{font-size:12px;font-weight:900;color:#334155;display:grid;gap:4px}.premium-input{width:100%;border:1px solid #d7e0ee;border-radius:10px;min-height:38px;padding:8px 10px;background:#fff;color:#0f2f5f;font-weight:850;box-sizing:border-box}.cwf-quick-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.cwf-save-btn,.cwf-soft-btn{border-radius:12px;min-height:40px;padding:9px 10px;font-size:13px;font-weight:950}.cwf-save-btn{border:0;background:#0b62d6;color:#fff}.cwf-soft-btn{background:#fff;border:1px solid #d7e0ee;color:#0f2f5f}.cwf-soft-btn.danger{color:#b91c1c;border-color:#fecaca;background:#fff}.cwf-save-btn:disabled,.cwf-soft-btn:disabled{opacity:.45;filter:grayscale(.2)}.full{width:100%;grid-column:1/-1}.cwf-calendar-status{font-size:11px;font-weight:850;color:#64748b;margin-top:7px;min-height:16px}
+    @media(max-width:820px){.cwf-calendar-backdrop{padding:8px}.cwf-calendar-panel{border-radius:16px;padding:9px}.cwf-calendar-layout{grid-template-columns:1fr}.cwf-calendar-actions{grid-template-columns:1fr 1fr}.cwf-day-editor{order:2}.cwf-day-cell{height:50px;border-radius:9px}.cwf-calendar-head{border-radius:12px}.cwf-time-grid{grid-template-columns:1fr 1fr}.cwf-calendar-help span{font-size:10px;padding:5px 7px}}
   `;
   document.head.appendChild(style);
 
@@ -4619,13 +4627,18 @@ function ensureWorkdaysModal(){
   document.getElementById('calendarPrevMonth').onclick = () => cwfShiftCalendarMonth(-1);
   document.getElementById('calendarNextMonth').onclick = () => cwfShiftCalendarMonth(1);
   document.getElementById('workCalendarMonth').onchange = (e) => loadWorkdaysModalData(e.target.value);
+  document.getElementById('workCalendarMonthLabel').onclick = () => {
+    const input = document.getElementById('workCalendarMonth');
+    try{ if(input?.showPicker) input.showPicker(); else input?.focus(); }catch{ input?.focus(); }
+  };
   document.getElementById('toggleMultiSelectBtn').onclick = toggleWorkCalendarMultiMode;
   document.getElementById('selectAllMonthBtn').onclick = () => selectWorkCalendarPreset('all');
   document.getElementById('selectWeekdaysBtn').onclick = () => selectWorkCalendarPreset('weekdays');
   document.getElementById('selectWeekendBtn').onclick = () => selectWorkCalendarPreset('weekend');
   document.getElementById('clearSelectedDatesBtn').onclick = clearWorkCalendarSelectedDates;
   document.getElementById('copyPrevMonthBtn').onclick = copyPreviousMonthCalendar;
-  document.getElementById('singleToggleDayBtn').onclick = () => toggleAdvanceDay(__cwfWorkCalendarState.selectedDate, true);
+  document.getElementById('singleOpenDayBtn').onclick = () => setSelectedDayAdvance(true);
+  document.getElementById('singleCloseDayBtn').onclick = () => setSelectedDayAdvance(false);
   document.getElementById('editSelectedDayBtn').onclick = showSingleEditPanel;
   document.getElementById('closeSingleDetailBtn').onclick = () => { const p=document.getElementById('singleEditPanel'); if(p) p.style.display='none'; };
   document.getElementById('saveSingleDetailBtn').onclick = saveSelectedDayCustom;
@@ -4648,6 +4661,7 @@ async function loadWorkdaysModalData(month){
   __cwfWorkCalendarState.selectedDates.clear();
   __cwfWorkCalendarState.multiMode = false;
   const monthInput = document.getElementById('workCalendarMonth'); if(monthInput) monthInput.value = m;
+  const monthLabel = document.getElementById('workCalendarMonthLabel'); if(monthLabel) monthLabel.textContent = cwfFormatMonthTitle(m);
   const retryBtn = document.getElementById('workCalendarRetryBtn'); if(retryBtn) retryBtn.style.display = 'none';
   cwfCalendarNotify('กำลังโหลดปฏิทิน...');
   try{
@@ -4687,7 +4701,7 @@ function renderWorkCalendarGrid(){
     return `<button type="button" class="cwf-day-cell ${cls} ${iso===__cwfWorkCalendarState.selectedDate?'is-selected':''} ${picked?'is-picked':''}" data-date="${iso}">
       ${locked ? `<span class="cwf-job-dot">${cwfDayJobCount(iso)}</span>` : ''}
       <div class="cwf-day-num">${Number(iso.slice(-2))}</div>
-      <div class="cwf-day-label">${locked ? '📌 มีงาน' : (it.can_accept_advance_job ? '✅ รับ' : '❌ ไม่รับ')}</div>
+      <div class="cwf-day-label">${locked ? 'มีงาน' : (it.can_accept_advance_job ? 'รับ' : 'ไม่รับ')}</div>
       <div class="cwf-day-icons">${icons || '&nbsp;'}</div>
     </button>`;
   }).join('');
@@ -4717,14 +4731,21 @@ function selectWorkCalendarDate(iso, rerender=true){
   const badge = document.getElementById('workDayBadge'); if(badge) badge.textContent = locked ? '📌 มีงานแล้ว' : (it.can_accept_advance_job ? '✅ รับ' : '❌ ไม่รับ');
   const summary = document.getElementById('selectedDaySummary');
   if(summary){
-    if(locked) summary.innerHTML = `📌 วันนี้มีงานล่วงหน้า/งานที่ได้รับมอบหมายแล้ว ${cwfDayJobCount(iso)} งาน<br>ไม่สามารถปิดหรือแก้ไขได้ กรุณาติดต่อแอดมินหากมีความจำเป็น`;
-    else if(it.can_accept_advance_job) summary.innerHTML = `✅ รับงานล่วงหน้าได้<br>เวลา ${it.start_time || '09:00'}–${it.end_time || '18:00'} • สูงสุด ${Number(it.max_jobs_per_day||1)} งาน / ${Number(it.max_units_per_day||5)} เครื่อง${it.note ? `<br>📝 ${it.note}` : ''}`;
-    else summary.innerHTML = `❌ ไม่รับงานล่วงหน้า${it.note ? `<br>📝 ${it.note}` : ''}<br>แตะวันนี้อีกครั้งเพื่อเปิดรับงานล่วงหน้า`;
+    const statusText = locked ? `📌 มีงานแล้ว ${cwfDayJobCount(iso)} งาน` : (it.can_accept_advance_job ? '✅ รับงานล่วงหน้า' : '❌ ไม่รับงานล่วงหน้า');
+    summary.innerHTML = `<div class="cwf-detail-grid">
+      <div><span>สถานะ</span><b>${statusText}</b></div>
+      <div><span>เวลา</span><b>${it.can_accept_advance_job ? `${it.start_time || '09:00'}-${it.end_time || '18:00'}` : '-'}</b></div>
+      <div><span>งานสูงสุด</span><b>${it.can_accept_advance_job ? Number(it.max_jobs_per_day||1) : '-'}</b></div>
+      <div><span>เครื่องสูงสุด</span><b>${it.can_accept_advance_job ? Number(it.max_units_per_day||5) : '-'}</b></div>
+      <div class="cwf-detail-note"><span>หมายเหตุ</span><b>${it.note ? String(it.note) : 'ไม่มี'}</b></div>
+    </div>${locked ? '<div style="margin-top:8px;color:#64748b;font-weight:850">วันนี้ล็อกไว้เพราะมีงานที่ได้รับมอบหมายแล้ว</div>' : ''}`;
   }
   const set = (id,val) => { const el=document.getElementById(id); if(el) el.value=val ?? ''; };
   set('workDayStart', it.start_time || '09:00'); set('workDayEnd', it.end_time || '18:00'); set('workDayMaxJobs', Number(it.max_jobs_per_day || 1)); set('workDayMaxUnits', Number(it.max_units_per_day || 5)); set('workDayNote', it.note || '');
   const editPanel = document.getElementById('singleEditPanel'); if(editPanel) editPanel.style.display = 'none';
-  const toggleBtn = document.getElementById('singleToggleDayBtn'); if(toggleBtn) toggleBtn.textContent = locked ? '📌 วันนี้มีงานแล้ว' : (it.can_accept_advance_job ? '❌ ปิดรับงานวันนี้' : '✅ เปิดรับงานวันนี้');
+  const openBtn = document.getElementById('singleOpenDayBtn'); if(openBtn) openBtn.disabled = locked || it.can_accept_advance_job;
+  const closeBtn = document.getElementById('singleCloseDayBtn'); if(closeBtn) closeBtn.disabled = locked || !it.can_accept_advance_job;
+  const editBtn = document.getElementById('editSelectedDayBtn'); if(editBtn) editBtn.disabled = locked;
 }
 async function saveCalendarDays(days, label='บันทึก'){
   const clean = days.filter(Boolean).slice(0,62);
@@ -4792,6 +4813,26 @@ async function toggleAdvanceDay(iso, userAction=false){
     cwfCalendarNotify(`${nextAdvance?'เปิด':'ปิด'}รับงานล่วงหน้าวันที่ ${cwfFormatThaiDate(iso)} แล้ว${skipped ? ` • ข้ามวันที่มีงาน ${skipped} วัน` : ''}`);
   }catch(e){ cwfCalendarNotify(`❌ ${e.message}`, 'error'); }
 }
+async function setSelectedDayAdvance(isAdvance){
+  const iso = __cwfWorkCalendarState.selectedDate;
+  if(!iso) return;
+  if(cwfIsLockedDay(iso)){ cwfLockedPopup(iso); return; }
+  const current = cwfEffectiveCalendarItem(iso);
+  if(!!current.can_accept_advance_job === !!isAdvance){
+    selectWorkCalendarDate(iso, true);
+    return;
+  }
+  const body = buildDayPayload(iso, !!isAdvance, isAdvance ? {} : { note: current.note || '' });
+  try{
+    cwfCalendarNotify(`กำลัง${isAdvance?'เปิด':'ปิด'}รับงาน ${cwfFormatThaiDate(iso)}...`);
+    const data = await saveCalendarDays([body], 'บันทึกวัน');
+    __cwfWorkCalendarState.items.set(iso, body);
+    renderWorkCalendarGrid();
+    selectWorkCalendarDate(iso, false);
+    const skipped = Number(data.skipped_locked || 0);
+    cwfCalendarNotify(`${isAdvance?'เปิด':'ปิด'}รับงานล่วงหน้าวันที่ ${cwfFormatThaiDate(iso)} แล้ว${skipped ? ` • ข้ามวันที่มีงาน ${skipped} วัน` : ''}`);
+  }catch(e){ cwfCalendarNotify(`❌ ${e.message}`, 'error'); }
+}
 function showSingleEditPanel(){
   const iso = __cwfWorkCalendarState.selectedDate;
   if(!iso) return;
@@ -4822,7 +4863,7 @@ function toggleWorkCalendarMultiMode(){
   updateMultiModeUI(); renderWorkCalendarGrid();
 }
 function updateMultiModeUI(){
-  const btn = document.getElementById('toggleMultiSelectBtn'); if(btn) btn.textContent = __cwfWorkCalendarState.multiMode ? '↩️ กลับไปแตะเปิด/ปิด' : '☑️ เลือกหลายวัน';
+  const btn = document.getElementById('toggleMultiSelectBtn'); if(btn) btn.textContent = __cwfWorkCalendarState.multiMode ? 'เลิกเลือกหลายวัน' : 'เลือกหลายวัน';
   const hint = document.getElementById('multiSelectHint'); if(hint) hint.style.display = __cwfWorkCalendarState.multiMode ? 'block' : 'none';
   updateBulkPanel(); updateSelectedCount();
 }
