@@ -11624,8 +11624,8 @@ try {
         can_accept_urgent_job BOOLEAN NOT NULL DEFAULT TRUE,
         start_time TEXT DEFAULT '09:00',
         end_time TEXT DEFAULT '18:00',
-        max_jobs_per_day INT DEFAULT 3,
-        max_units_per_day INT DEFAULT 8,
+        max_jobs_per_day INT DEFAULT 1,
+        max_units_per_day INT DEFAULT 5,
         note TEXT,
         source TEXT NOT NULL DEFAULT 'technician',
         updated_by TEXT,
@@ -20234,13 +20234,14 @@ function endDayOfMonthIso(monthText){
   return toIsoDate(d);
 }
 function normWorkDayPayload(input = {}){
-  const allowed = new Set(['advance_only','unavailable','weekly_off','special_holiday','vacation','working']);
+  const allowed = new Set(['advance_only','available_advance','unavailable','weekly_off','special_holiday','vacation','leave','working']);
   let day_status = allowed.has(String(input.day_status || '').trim()) ? String(input.day_status).trim() : 'unavailable';
-  if (day_status === 'working') day_status = 'advance_only';
+  if (day_status === 'working' || day_status === 'available_advance') day_status = 'advance_only';
+  if (day_status === 'vacation') day_status = 'leave';
   const start_time = /^\d{2}:\d{2}$/.test(String(input.start_time || '')) ? String(input.start_time) : '09:00';
   const end_time = /^\d{2}:\d{2}$/.test(String(input.end_time || '')) ? String(input.end_time) : '18:00';
   const max_jobs_per_day = Math.max(0, Math.min(20, Number(input.max_jobs_per_day || (day_status === 'advance_only' ? 1 : 0))));
-  const max_units_per_day = Math.max(0, Math.min(99, Number(input.max_units_per_day || (day_status === 'advance_only' ? 4 : 0))));
+  const max_units_per_day = Math.max(0, Math.min(99, Number(input.max_units_per_day || (day_status === 'advance_only' ? 5 : 0))));
   const canAdvance = day_status === 'advance_only';
   return {
     day_status,

@@ -4410,16 +4410,16 @@ function cwfDaysInMonth(month){
   return arr;
 }
 function cwfStatusLabel(st){
-  return ({ advance_only:'รับงานล่วงหน้าได้', unavailable:'ไม่รับงานล่วงหน้า', weekly_off:'วันหยุด', special_holiday:'วันหยุดพิเศษ', vacation:'วันลา', working:'รับงานล่วงหน้าได้' })[st] || 'ยังไม่ตั้งค่า';
+  return ({ advance_only:'รับงานล่วงหน้าได้', unavailable:'ไม่รับงานล่วงหน้า', weekly_off:'วันหยุด', special_holiday:'วันหยุดพิเศษ', vacation:'วันลา', leave:'วันลา', working:'รับงานล่วงหน้าได้' })[st] || 'ยังไม่ตั้งค่า';
 }
 function cwfStatusEmoji(st){
-  return ({ advance_only:'✅', unavailable:'❌', weekly_off:'🏖️', special_holiday:'🎌', vacation:'🌙', working:'✅' })[st] || '▫️';
+  return ({ advance_only:'✅', unavailable:'❌', weekly_off:'🏖️', special_holiday:'🎌', vacation:'🌙', leave:'🌙', working:'✅' })[st] || '▫️';
 }
 function cwfGetCalendarItem(iso){ return __cwfWorkCalendarState.items.get(iso) || null; }
 function cwfDefaultCalendarItem(iso){
   const h = __cwfWorkCalendarState.holidays.get(iso);
   if(h) return { work_date:iso, day_status:'special_holiday', can_accept_advance_job:false, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:0, max_units_per_day:0, note:h.holiday_name || 'วันหยุดพิเศษ' };
-  return { work_date:iso, day_status:'unavailable', can_accept_advance_job:false, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:1, max_units_per_day:4, note:'' };
+  return { work_date:iso, day_status:'unavailable', can_accept_advance_job:false, can_accept_urgent_job:false, start_time:'09:00', end_time:'18:00', max_jobs_per_day:1, max_units_per_day:5, note:'' };
 }
 function cwfEffectiveCalendarItem(iso){ return cwfGetCalendarItem(iso) || cwfDefaultCalendarItem(iso); }
 function cwfFormatThaiDate(iso){
@@ -4483,7 +4483,7 @@ function ensureWorkdaysModal(){
           </div>
           <div class="cwf-time-grid">
             <label>งาน/วัน <input id="workDayMaxJobs" class="premium-input" type="number" min="0" max="20" value="3"></label>
-            <label>เครื่อง/วัน <input id="workDayMaxUnits" class="premium-input" type="number" min="0" max="99" value="8"></label>
+            <label>เครื่อง/วัน <input id="workDayMaxUnits" class="premium-input" type="number" min="0" max="99" value="5"></label>
           </div>
           <div class="cwf-quick-grid">
             <button id="markAdvanceDayBtn" class="cwf-save-btn" type="button">✅ รับล่วงหน้า</button>
@@ -4586,7 +4586,7 @@ function selectWorkCalendarDate(iso){
   const title = document.getElementById('workDayTitle'); if(title) title.textContent = cwfFormatThaiDate(iso);
   const badge = document.getElementById('workDayBadge'); if(badge) badge.textContent = `${cwfStatusEmoji(it.day_status)} ${cwfStatusLabel(it.day_status)}`;
   const set = (id,val) => { const el=document.getElementById(id); if(el) el.value=val ?? ''; };
-  set('workDayStatus', (it.day_status === 'working' ? 'advance_only' : (it.day_status || 'unavailable'))); set('workDayStart', it.start_time || '09:00'); set('workDayEnd', it.end_time || '18:00'); set('workDayMaxJobs', it.max_jobs_per_day ?? 1); set('workDayMaxUnits', it.max_units_per_day ?? 4); set('workDayNote', it.note || '');
+  set('workDayStatus', (it.day_status === 'working' ? 'advance_only' : (it.day_status || 'unavailable'))); set('workDayStart', it.start_time || '09:00'); set('workDayEnd', it.end_time || '18:00'); set('workDayMaxJobs', it.max_jobs_per_day ?? 1); set('workDayMaxUnits', it.max_units_per_day ?? 5); set('workDayNote', it.note || '');
   const adv = document.getElementById('workDayAdvance'); if(adv) adv.checked = it.can_accept_advance_job !== false;
   const urg = document.getElementById('workDayUrgent'); if(urg) urg.checked = it.can_accept_urgent_job !== false;
 }
@@ -4600,7 +4600,7 @@ function collectSelectedWorkDay(){
     start_time: get('workDayStart','09:00'),
     end_time: get('workDayEnd','18:00'),
     max_jobs_per_day: Number(get('workDayMaxJobs','1')),
-    max_units_per_day: Number(get('workDayMaxUnits','4')),
+    max_units_per_day: Number(get('workDayMaxUnits','5')),
     can_accept_advance_job: get('workDayStatus','unavailable') === 'advance_only',
     can_accept_urgent_job: false,
     note: get('workDayNote','')
