@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v49-advance-calendar-toggle-lock-20260507";
+const CACHE_NAME = "cwf-cache-v49-advance-calendar-toggle-lock-real-20260507";
 
 const ASSETS = [
   "/",
@@ -9,7 +9,7 @@ const ASSETS = [
   "/index.html",
   "/tech.html",
   "/style.css",
-  "/app.js?v=20260507_work_calendar_multiselect_v1",
+  "/app.js?v=20260507_advance_calendar_toggle_lock_real_v2",
   "/logo.png",
   "/assets/cwf-promptpay-qr.jpg",
   "/manifest.json",

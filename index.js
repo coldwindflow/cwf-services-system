@@ -20234,40 +20234,41 @@ function endDayOfMonthIso(monthText){
   return toIsoDate(d);
 }
 function normWorkDayPayload(input = {}){
-  // ปฏิทินนี้มีแค่ 2 สถานะ: รับงานล่วงหน้า / ไม่รับงานล่วงหน้า
-  // วันหยุด/ลา/ไม่ว่าง ให้เก็บเป็นหมายเหตุแทน เพื่อลดความสับสนของช่าง
+  // Advance calendar v3 intentionally has only 2 statuses:
+  // advance_only = รับงานล่วงหน้า, unavailable = ไม่รับงานล่วงหน้า
+  // Holiday/leave are treated as unavailable and can be explained in note.
   let raw = String(input.day_status || '').trim();
-  let day_status = ['advance_only','available_advance','working'].includes(raw) || input.can_accept_advance_job === true
-    ? 'advance_only'
-    : 'unavailable';
-  const start_time = /^\d{2}:\d{2}$/.test(String(input.start_time || '')) ? String(input.start_time) : '09:00';
-  const end_time = /^\d{2}:\d{2}$/.test(String(input.end_time || '')) ? String(input.end_time) : '18:00';
-  const max_jobs_per_day = Math.max(0, Math.min(20, Number(input.max_jobs_per_day || (day_status === 'advance_only' ? 1 : 0))));
-  const max_units_per_day = Math.max(0, Math.min(99, Number(input.max_units_per_day || (day_status === 'advance_only' ? 5 : 0))));
+  if (['advance_only','available_advance','working','available','accept'].includes(raw)) raw = 'advance_only';
+  else raw = 'unavailable';
+  const day_status = raw;
   const canAdvance = day_status === 'advance_only';
+  const start_time = canAdvance && /^\d{2}:\d{2}$/.test(String(input.start_time || '')) ? String(input.start_time) : '09:00';
+  const end_time = canAdvance && /^\d{2}:\d{2}$/.test(String(input.end_time || '')) ? String(input.end_time) : '18:00';
+  const max_jobs_per_day = canAdvance ? Math.max(1, Math.min(20, Number(input.max_jobs_per_day || 1))) : 0;
+  const max_units_per_day = canAdvance ? Math.max(1, Math.min(99, Number(input.max_units_per_day || 5))) : 0;
   return {
     day_status,
     can_accept_advance_job: canAdvance,
     // This calendar is NOT for urgent jobs. Urgent jobs continue using accept_status flow only.
     can_accept_urgent_job: false,
-    start_time: canAdvance ? start_time : '09:00',
-    end_time: canAdvance ? end_time : '18:00',
+    start_time,
+    end_time,
     max_jobs_per_day,
     max_units_per_day,
     note: String(input.note || '').slice(0,500)
   };
 }
-async function countAssignedAdvanceJobsForDate(username, workDate, db = pool){
-  const r = await db.query(`
+async function countLockedAdvanceJobsForDate(clientOrPool, username, workDate){
+  const q = await clientOrPool.query(`
     SELECT COUNT(DISTINCT j.job_id)::int AS job_count
     FROM public.jobs j
     LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$1
     WHERE (j.technician_username=$1 OR ja.technician_username=$1)
       AND j.appointment_datetime IS NOT NULL
       AND (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date = $2::date
-      AND COALESCE(j.job_status,'') NOT IN ('cancelled','canceled','done','finished')
+      AND COALESCE(j.job_status,'') NOT IN ('cancelled','canceled')
   `, [username, workDate]);
-  return Number(r.rows?.[0]?.job_count || 0);
+  return Number(q.rows?.[0]?.job_count || 0);
 }
 async function getTechTodayJobs(username){
   const r = await pool.query(`
@@ -20343,12 +20344,12 @@ app.put('/tech/work-calendar/day', requireTechnicianSession, async (req, res) =>
     const username = String(req.effective?.username || '').trim();
     const work_date = toIsoDate(String(req.body?.work_date || '').trim());
     if (!work_date) return res.status(400).json({ error:'ต้องมี work_date' });
-    const lockedCount = await countAssignedAdvanceJobsForDate(username, work_date);
-    if (lockedCount > 0) {
+    const lockedJobs = await countLockedAdvanceJobsForDate(pool, username, work_date);
+    if (lockedJobs > 0) {
       return res.status(409).json({
-        error: 'วันนี้มีงานอยู่แล้ว ช่างไม่สามารถปิดรับงานหรือแก้ไขวันทำงานนี้ได้ กรุณาติดต่อแอดมิน หากมีความจำเป็น',
-        is_locked: true,
-        assigned_job_count: lockedCount
+        error:'วันนี้มีงานอยู่แล้ว ช่างไม่สามารถแก้ไขวันทำงานได้ กรุณาติดต่อแอดมิน หากมีความจำเป็น',
+        locked:true,
+        job_count: lockedJobs
       });
     }
     const p = normWorkDayPayload(req.body || {});
@@ -20383,12 +20384,15 @@ app.put('/tech/work-calendar/bulk', requireTechnicianSession, async (req, res) =
     if (!days.length) return res.status(400).json({ error:'ต้องเลือกวันอย่างน้อย 1 วัน' });
     await client.query('BEGIN');
     let count = 0;
-    let skipped_locked = 0;
+    let skippedLocked = 0;
     for (const d of days.slice(0, 62)) {
       const work_date = toIsoDate(String(d.work_date || '').trim());
       if (!work_date) continue;
-      const lockedCount = await countAssignedAdvanceJobsForDate(username, work_date, client);
-      if (lockedCount > 0) { skipped_locked++; continue; }
+      const lockedJobs = await countLockedAdvanceJobsForDate(client, username, work_date);
+      if (lockedJobs > 0) {
+        skippedLocked++;
+        continue;
+      }
       const p = normWorkDayPayload(d);
       await client.query(`
         INSERT INTO public.technician_monthly_work_calendar
@@ -20408,7 +20412,7 @@ app.put('/tech/work-calendar/bulk', requireTechnicianSession, async (req, res) =
       count++;
     }
     await client.query('COMMIT');
-    res.json({ ok:true, count, skipped_locked });
+    res.json({ ok:true, count, skipped_locked: skippedLocked });
   } catch (e) {
     await client.query('ROLLBACK');
     console.error('PUT /tech/work-calendar/bulk error:', e);
