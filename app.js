@@ -359,7 +359,7 @@ function renderAcceptUI(status, updatedAtText, note) {
 // ✅ โหลดสถานะจาก Server (แต่ไม่ให้ค้าง)
 async function loadAcceptStatusSafe() {
   // แสดงสถานะจาก localStorage ก่อน (เร็ว และกันค้าง)
-  const cached = normalizeAcceptStatus(localStorage.getItem(LS_ACCEPT_KEY) || "ready");
+  const cached = normalizeAcceptStatus(localStorage.getItem(LS_ACCEPT_KEY) || "paused");
   renderAcceptUI(cached, null, "กำลังซิงก์...");
 
   try {
@@ -386,7 +386,7 @@ async function loadAcceptStatusSafe() {
   } catch (e) {
     // ❗ ห้ามค้าง: ใช้ค่าสุดท้าย และปล่อยให้กดได้
     console.warn("loadAcceptStatusSafe:", e?.message || e);
-    const st = normalizeAcceptStatus(localStorage.getItem(LS_ACCEPT_KEY) || "ready");
+    const st = normalizeAcceptStatus(localStorage.getItem(LS_ACCEPT_KEY) || "paused");
     renderAcceptUI(st, null, "ออฟไลน์/โหลดไม่สำเร็จ");
   } finally {
     // ปุ่มต้องกดได้เสมอ (ยกเว้นตอนกำลังบันทึกจริงๆ)
@@ -397,7 +397,7 @@ async function loadAcceptStatusSafe() {
 // ✅ ส่งสถานะไป Server (optimistic UI)
 async function setAcceptStatusSafe(nextStatus) {
   const st = normalizeAcceptStatus(nextStatus);
-  const prevSt = normalizeAcceptStatus(localStorage.getItem(LS_ACCEPT_KEY) || acceptToggleBtn?.dataset?.status || "ready");
+  const prevSt = normalizeAcceptStatus(localStorage.getItem(LS_ACCEPT_KEY) || acceptToggleBtn?.dataset?.status || "paused");
 
   // ป้องกันกดรัว
   if (acceptToggleBtn) acceptToggleBtn.disabled = true;
@@ -774,7 +774,7 @@ function bindTechControls() {
   // ปุ่มใหม่
   if (acceptToggleBtn) {
     acceptToggleBtn.onclick = () => {
-      const cur = normalizeAcceptStatus(acceptToggleBtn.dataset.status || localStorage.getItem(LS_ACCEPT_KEY) || "ready");
+      const cur = normalizeAcceptStatus(acceptToggleBtn.dataset.status || localStorage.getItem(LS_ACCEPT_KEY) || "paused");
       const next = (cur === "paused") ? "ready" : "paused";
       setAcceptStatusSafe(next);
     };
@@ -4980,9 +4980,13 @@ async function loadDailyReadinessCard(){
     const res = await fetch(`${API_BASE}/tech/daily-readiness/today`, { credentials:'include' });
     const data = await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error || 'โหลดความพร้อมวันนี้ไม่สำเร็จ');
-    if(!data.has_jobs){ card.style.display='none'; return; }
-    card.style.display='block';
     const r = data.readiness || {};
+    // CWF: การ์ดเช็คความพร้อมแสดงเฉพาะเมื่อมีงานวันนี้ + หลัง 05:00 เวลาไทย + ยังไม่ได้กดพร้อมแล้ว
+    if(!data.has_jobs || data.can_show === false || r.status === 'ready'){
+      card.style.display='none';
+      return;
+    }
+    card.style.display='block';
     const firstJob = (data.jobs||[])[0] || {};
     const firstTime = firstJob.appointment_datetime ? new Date(firstJob.appointment_datetime).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}) : '-';
     if(status){
@@ -5007,7 +5011,12 @@ async function submitDailyReadiness(status){
     const res = await fetch(`${API_BASE}/tech/daily-readiness`, { method:'POST', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify({ status, reason }) });
     const data = await res.json().catch(()=>({}));
     if(!res.ok) throw new Error(data.error || 'บันทึกไม่สำเร็จ');
-    await loadDailyReadinessCard();
+    if(status === 'ready'){
+      const card = document.getElementById('dailyReadinessCard');
+      if(card) card.style.display = 'none';
+    } else {
+      await loadDailyReadinessCard();
+    }
     alert(status === 'ready' ? '✅ ยืนยันพร้อมทำงานวันนี้แล้ว' : '⚠️ ส่งแจ้งแอดมินแล้ว');
   }catch(e){ alert(`❌ ${e.message || 'บันทึกไม่สำเร็จ'}`); }
 }

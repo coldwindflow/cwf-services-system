@@ -4498,10 +4498,11 @@ app.get("/admin/dashboard_v2", requireAdminSession, async (req, res) => {
       partner: { open: 0, closed: 0, total: 0 }
     };
     try {
+      await expireTechnicianAcceptStatuses(pool);
       const tq = await pool.query(
         `SELECT
            CASE WHEN LOWER(COALESCE(p.employment_type,'company')) IN ('partner','พาร์ทเนอร์') THEN 'partner' ELSE 'company' END AS tech_type,
-           CASE WHEN LOWER(COALESCE(p.accept_status,'ready')) IN ('ready','open','available','รับงาน') THEN 'open' ELSE 'closed' END AS bucket,
+           CASE WHEN LOWER(COALESCE(p.accept_status,'paused')) IN ('ready','open','available','รับงาน') AND p.accept_status_expires_at IS NOT NULL AND p.accept_status_expires_at > NOW() THEN 'open' ELSE 'closed' END AS bucket,
            COUNT(*)::int AS count
          FROM public.users u
          LEFT JOIN public.technician_profiles p ON p.username = u.username
@@ -11514,7 +11515,7 @@ try {
 
     // 3) technician_profiles: line_user_id + accept_status + accept_status_updated_at
     await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS line_user_id TEXT`);
-    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS accept_status TEXT DEFAULT 'ready'`);
+    await pool.query(`ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS accept_status TEXT DEFAULT 'paused'`);
     await pool.query(
       `ALTER TABLE public.technician_profiles ADD COLUMN IF NOT EXISTS accept_status_updated_at TIMESTAMPTZ`
     );
@@ -12685,17 +12686,22 @@ async function generateUniqueBookingCode(client) {
 async function isTechReady(username) {
   if (!username) return false;
   try {
+    await expireTechnicianAcceptStatuses(pool, username);
     const r = await pool.query(
-      `SELECT COALESCE(accept_status,'ready') AS accept_status
+      `SELECT CASE
+                WHEN COALESCE(accept_status,'paused')='ready'
+                 AND accept_status_expires_at IS NOT NULL
+                 AND accept_status_expires_at > NOW()
+                THEN 'ready' ELSE 'paused' END AS accept_status
        FROM public.technician_profiles
        WHERE username=$1
        LIMIT 1`,
       [username]
     );
-    const st = (r.rows[0]?.accept_status || "ready").toString().toLowerCase();
-    return st !== "paused";
+    const st = (r.rows[0]?.accept_status || "paused").toString().toLowerCase();
+    return st === "ready";
   } catch (_) {
-    return true; // fallback
+    return false; // fail-closed for urgent offer flow
   }
 }
 
@@ -13272,6 +13278,7 @@ app.put("/jobs/:job_id/assign", async (req, res) => {
 
 
 async function buildUrgentOfferCandidatesForJob(job, techType='partner', db=pool) {
+  await expireTechnicianAcceptStatuses(db);
   const ttype = String(techType || 'partner').trim().toLowerCase();
   const detected = await detectServiceZoneFromText({
     address_text: job.address_text,
@@ -13291,7 +13298,7 @@ async function buildUrgentOfferCandidatesForJob(job, techType='partner', db=pool
        FROM public.users u
        LEFT JOIN public.technician_profiles p ON p.username=u.username
       WHERE u.role='technician'
-        AND COALESCE(p.accept_status,'ready') <> 'paused'
+        AND COALESCE(p.accept_status,'paused')='ready' AND p.accept_status_expires_at IS NOT NULL AND p.accept_status_expires_at > NOW()
         AND (
               $1::text = 'all'
            OR ($1::text = 'company' AND COALESCE(p.employment_type,'company') IN ('company','custom','special_only'))
@@ -13968,6 +13975,7 @@ console.log("[latlng_parse]", { ok: !!parsedAdminLL });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await expireTechnicianAcceptStatuses(client);
 
     // promo
     let promo = null;
@@ -14054,7 +14062,7 @@ if (coerceNumber(override_price, 0) > 0) {
         FROM public.users u
         LEFT JOIN public.technician_profiles p ON p.username=u.username
         WHERE u.role='technician'
-          AND ($2::boolean IS TRUE OR COALESCE(p.accept_status,'ready') <> 'paused')
+          AND ($2::boolean IS TRUE OR COALESCE(p.accept_status,'paused')='ready' AND p.accept_status_expires_at IS NOT NULL AND p.accept_status_expires_at > NOW())
           AND ($3::boolean IS TRUE OR (
                 ($1='company' AND COALESCE(p.employment_type,'company') IN ('company','custom','special_only'))
              OR ($1<>'company' AND COALESCE(p.employment_type,'company') = $1)
@@ -14244,7 +14252,7 @@ if (coerceNumber(override_price, 0) > 0) {
         FROM public.users u
         LEFT JOIN public.technician_profiles p ON p.username=u.username
         WHERE u.role='technician'
-          AND COALESCE(p.accept_status,'ready') <> 'paused'
+          AND COALESCE(p.accept_status,'paused')='ready' AND p.accept_status_expires_at IS NOT NULL AND p.accept_status_expires_at > NOW()
           AND (
                 $1::text = 'all'
              OR ($1::text = 'company' AND COALESCE(p.employment_type,'company') IN ('company','custom','special_only'))
@@ -18886,6 +18894,7 @@ app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await expireTechnicianAcceptStatuses(client, username);
 
     const offerR = await client.query(
       `SELECT offer_id, job_id, technician_username, status, expires_at
@@ -18985,6 +18994,7 @@ app.post("/offers/:offer_id/time-proposal", requireTechnicianSession, async (req
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await expireTechnicianAcceptStatuses(client, username);
 
     const offerR = await client.query(
       `SELECT offer_id, job_id, technician_username, status, expires_at
@@ -19051,6 +19061,7 @@ app.post("/offers/:offer_id/decline", requireTechnicianSession, async (req, res)
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    await expireTechnicianAcceptStatuses(client, username);
 
     const offerR = await client.query(
       `SELECT offer_id, job_id, technician_username, status, expires_at
@@ -20011,24 +20022,53 @@ app.post("/jobs/:job_id/assignment-done", requireTechnicianSession, async (req, 
   }
 });
 
+
+async function expireTechnicianAcceptStatuses(clientOrPool = pool, username = null) {
+  const params = [];
+  let userWhere = '';
+  if (username) {
+    params.push(String(username).trim());
+    userWhere = ` AND username=$${params.length}`;
+  }
+  await clientOrPool.query(
+    `WITH expired AS (
+       UPDATE public.technician_profiles
+       SET accept_status='paused', accept_status_updated_at=NOW(), accept_status_expires_at=NULL
+       WHERE COALESCE(accept_status,'paused')='ready'
+         AND (accept_status_expires_at IS NULL OR accept_status_expires_at <= NOW())
+         ${userWhere}
+       RETURNING username
+     )
+     UPDATE public.job_offers o
+     SET status='expired', responded_at=COALESCE(o.responded_at,NOW())
+     WHERE o.status='pending'
+       AND o.technician_username IN (SELECT username FROM expired)`,
+    params
+  );
+}
+
+function buildAcceptStatusOpenSql(alias = 'p') {
+  return `COALESCE(${alias}.accept_status,'paused')='ready' AND ${alias}.accept_status_expires_at IS NOT NULL AND ${alias}.accept_status_expires_at > NOW()`;
+}
+
+function getBangkokHourSql() {
+  return `EXTRACT(HOUR FROM (NOW() AT TIME ZONE 'Asia/Bangkok'))::int`;
+}
+
 // =======================================
 // 🟢/🔴 TECH: accept status (พร้อมเริ่มงาน / หยุดรับงาน)
 // =======================================
 app.get("/technicians/:username/accept-status", async (req, res) => {
   const { username } = req.params;
   try {
-    // Daily accept-status v2: if a technician opened jobs yesterday, auto-pause after Bangkok midnight.
-    await pool.query(
-      `UPDATE public.technician_profiles
-       SET accept_status='paused', accept_status_updated_at=NOW()
-       WHERE username=$1
-         AND COALESCE(accept_status,'ready')='ready'
-         AND accept_status_expires_at IS NOT NULL
-         AND accept_status_expires_at <= NOW()`,
-      [username]
-    );
+    await expireTechnicianAcceptStatuses(pool, username);
     const r = await pool.query(
-      `SELECT COALESCE(accept_status,'paused') AS accept_status, accept_status_updated_at, accept_status_expires_at, last_daily_ready_at
+      `SELECT CASE
+                WHEN COALESCE(accept_status,'paused')='ready'
+                 AND accept_status_expires_at IS NOT NULL
+                 AND accept_status_expires_at > NOW()
+                THEN 'ready' ELSE 'paused' END AS accept_status,
+              accept_status_updated_at, accept_status_expires_at, last_daily_ready_at
        FROM public.technician_profiles
        WHERE username=$1
        LIMIT 1`,
@@ -20414,7 +20454,10 @@ async function upsertCalendarDay(clientOrPool, username, workDate, input){
 }
 async function ensureDailyReadinessRow(username){
   const jobs = await getTechTodayJobs(username);
-  if (!jobs.length) return { has_jobs:false, jobs:[], readiness:null };
+  const nowQ = await pool.query(`SELECT (NOW() AT TIME ZONE 'Asia/Bangkok') AS now_bkk, ${getBangkokHourSql()} AS hour_bkk`);
+  const hourBkk = Number(nowQ.rows?.[0]?.hour_bkk ?? 0);
+  const nowBkk = nowQ.rows?.[0]?.now_bkk || null;
+  if (!jobs.length) return { has_jobs:false, jobs:[], readiness:null, can_show:false, now_bkk:nowBkk, hour_bkk:hourBkk };
   const first = jobs[0]?.appointment_datetime || null;
   const rr = await pool.query(`
     INSERT INTO public.technician_daily_readiness(technician_username, work_date, status, first_job_at, deadline_at, updated_at)
@@ -20425,7 +20468,10 @@ async function ensureDailyReadinessRow(username){
       updated_at=NOW()
     RETURNING *
   `, [username, first]);
-  return { has_jobs:true, jobs, readiness: rr.rows[0] || null };
+  const readiness = rr.rows[0] || null;
+  const st = String(readiness?.status || 'pending').toLowerCase();
+  const canShow = hourBkk >= 5 && st !== 'ready';
+  return { has_jobs:true, jobs, readiness, can_show:canShow, now_bkk:nowBkk, hour_bkk:hourBkk };
 }
 
 app.get('/technicians/:username/work-calendar-v2', async (req, res) => {
@@ -26195,13 +26241,14 @@ if (itemIdQty.length) {
 
     // CREATE_URGENT_OFFERS_V2
     if (bm === "urgent" && ENABLE_URGENT_FLOW) {
+      await expireTechnicianAcceptStatuses(client);
       const partners = await client.query(
         `
         SELECT u.username
         FROM public.users u
         LEFT JOIN public.technician_profiles p ON p.username=u.username
         WHERE u.role='technician'
-          AND COALESCE(p.accept_status,'ready') <> 'paused'
+          AND COALESCE(p.accept_status,'paused')='ready' AND p.accept_status_expires_at IS NOT NULL AND p.accept_status_expires_at > NOW()
           AND COALESCE(p.employment_type,'company') = 'partner'
         ORDER BY u.username
         `
