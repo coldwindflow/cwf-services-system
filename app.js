@@ -3253,10 +3253,6 @@ function renderRevisitSection(job, keyBase, jobKeyJs, canEdit, isWorking, histor
       </div>
 
       ${historyMode ? '' : `<div style="display:grid;gap:10px;margin-top:14px;"><button type="button" ${canEdit?'':'disabled'} onclick="openRevisitAppointmentModal('${jobKeyJs}')">🕛 แจ้งเวลานัดหมาย</button><button type="button" class="secondary" ${canEdit?'':'disabled'} onclick="openRevisitHubModal('${jobKeyJs}')">📷✅ รูปและเช็คลิสงานแก้ไข</button></div>`}
-      <div style="margin-top:12px;border:1px solid rgba(148,163,184,.35);background:#f8fafc;border-radius:16px;padding:10px 12px;line-height:1.6;">
-        <b>⚠️ ต้องทำให้ครบก่อนปิดงานแก้ไข</b>
-        <div class="muted" style="margin-top:4px;">❌ รูปก่อนแก้ไข · ❌ รูปหลังแก้ไข · ${okCause?'✅':'❌'} สาเหตุ · ${okResult?'✅':'❌'} ผลการแก้ไข</div>
-      </div>
       ${(!historyMode && isWorking) ? `<div class="cwf-final-row" style="margin-top:12px;"><button type="button" onclick="requestFinalize('${jobKeyJs}', 'เสร็จแล้ว')">✅ เสร็จสิ้น</button><button class="danger" type="button" onclick="requestFinalize('${jobKeyJs}', 'ยกเลิก')">⛔ ยกเลิก</button></div>` : ''}
     </section>`;
 }
@@ -5307,12 +5303,16 @@ function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
         const job = getJobFromCache(jobId);
         const revisitFlow = isRevisitJob(job);
         if (revisitFlow) {
+          const missing = [];
           const hasBefore = await hasRevisitEvidence(jobId, 'revisit_before');
-          if (!hasBefore) return alert('กรุณาแนบรูปก่อนแก้ไข');
+          if (!hasBefore) missing.push('กรุณาแนบรูปก่อนแก้ไข');
           const hasAfter = await hasRevisitEvidence(jobId, 'revisit_after');
-          if (!hasAfter) return alert('กรุณาแนบรูปหลังแก้ไข');
-          if (!getRevisitCauseValue(jobId)) return alert('กรุณาเลือกสาเหตุงานแก้ไข');
-          if (!getRevisitResultValue(jobId)) return alert('กรุณาเลือกผลการแก้ไข');
+          if (!hasAfter) missing.push('กรุณาแนบรูปหลังแก้ไข');
+          if (!getRevisitCauseValue(jobId)) missing.push('กรุณาเลือกสาเหตุงานแก้ไข');
+          if (!getRevisitResultValue(jobId)) missing.push('กรุณาเลือกผลการแก้ไข');
+          if (missing.length) {
+            return alert('⚠️ ต้องทำให้ครบก่อนปิดงานแก้ไข\n\n' + missing.map((x) => '• ' + x).join('\n'));
+          }
         } else {
           const closeOk = await cwfValidateCloseRequirements(jobId, targetStatus);
           if (!closeOk) return;
