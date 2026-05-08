@@ -104,6 +104,15 @@ const DEDUCTION_CASE_TYPES = [
   'deposit_damage_offset','manual_adjustment','overpayment_recovery',
 ];
 const REWORK_CASE_REASON_TYPES = ['water_leak','not_clean','customer_complaint','missing_photos','same_issue_not_fixed','poor_work_standard','other'];
+const REWORK_CASE_REASON_LABELS = {
+  water_leak: 'น้ำหยด / น้ำรั่ว',
+  not_clean: 'ล้างไม่สะอาด',
+  customer_complaint: 'ลูกค้าร้องเรียน',
+  missing_photos: 'รูปไม่ครบ',
+  same_issue_not_fixed: 'อาการเดิมยังไม่หาย',
+  poor_work_standard: 'งานไม่ได้มาตรฐาน',
+  other: 'อื่น ๆ',
+};
 const DEDUCTION_WARNING_TEXT = 'ยอดนี้ยังไม่ถูกนำไปรวมในรอบจ่ายเงิน จนกว่าจะกดนำเข้ารอบจ่าย';
 
 function ensureCaseModal(){
@@ -124,7 +133,19 @@ function ensureCaseModal(){
       .caseNotice{background:#fff7cc;border:1px solid #f4c430;color:#5c4300;border-radius:8px;padding:11px 12px;font-weight:900}
       .caseList{display:grid;gap:10px}.caseItem{border:1px solid #d9e5ff;border-radius:8px;padding:11px;background:#f8fbff}
       .caseMeta{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;color:#64748b;font-size:12px;font-weight:800}
-      @media(max-width:720px){.caseModal{margin:8px auto}.caseGrid{grid-template-columns:1fr}.caseActions{justify-content:stretch}.caseBtn{width:100%}}
+      .reworkPanel{border:1px solid rgba(21,88,214,.14);border-radius:18px;background:linear-gradient(180deg,#fff,#f8fbff);padding:14px;box-shadow:0 12px 30px rgba(2,6,23,.06)}
+      .reworkHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+      .reworkTitle{display:flex;flex-direction:column;gap:4px}.reworkTitle b{font-size:18px;color:#071947}
+      .reworkGrid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(180px,.65fr);gap:12px;align-items:end}
+      .reworkGrid label,.reworkMiniCard label{font-size:12px;font-weight:1000;color:#64748b;margin-bottom:5px;display:block}
+      .reworkGrid textarea,.reworkGrid select,.reworkMiniCard input{width:100%;border:1px solid #d9e5ff;border-radius:12px;padding:10px 11px;background:#fff;color:#09152f;font:inherit}
+      .reworkPrimary{border:0;border-radius:14px;background:linear-gradient(135deg,#071947,#1558d6);color:#fff;font-weight:1000;min-height:48px;padding:12px 16px;box-shadow:0 12px 26px rgba(21,88,214,.22)}
+      .reworkSecondary{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.reworkSecondary button,.reworkMiniCard button{width:auto;border:1px solid rgba(21,88,214,.18);border-radius:12px;background:#fff;color:#1558d6;font-weight:1000;padding:9px 12px}
+      .reworkMiniCard{margin-top:12px;border:1px solid rgba(15,23,42,.1);border-radius:14px;background:#fff;padding:12px}
+      .reworkMiniRow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
+      .reworkDanger{margin-top:12px;border:1px solid rgba(239,68,68,.22);border-radius:14px;background:#fff7f7;padding:12px}
+      .reworkDanger b{color:#991b1b}.reworkDanger button{margin-top:8px;width:auto;border:1px solid rgba(239,68,68,.28);background:#fff;color:#991b1b;border-radius:12px;padding:9px 12px;font-weight:1000}
+      @media(max-width:720px){.caseModal{margin:8px auto}.caseGrid,.reworkGrid{grid-template-columns:1fr}.caseActions{justify-content:stretch}.caseBtn,.reworkPrimary,.reworkSecondary button,.reworkMiniCard button,.reworkDanger button{width:100%}}
     `;
     document.head.appendChild(style);
   }
@@ -156,6 +177,15 @@ function closeCaseModal(){
 
 function optionList(values, selected){
   return values.map(v=>`<option value="${escapeHtml(v)}" ${String(selected||'')===v?'selected':''}>${escapeHtml(v)}</option>`).join('');
+}
+
+function labeledOptionList(values, selected, labels){
+  return values.map(v=>`<option value="${escapeHtml(v)}" ${String(selected||'')===v?'selected':''}>${escapeHtml(labels?.[v] || v)}</option>`).join('');
+}
+
+function reworkReasonLabel(value){
+  const v = String(value || '').trim();
+  return REWORK_CASE_REASON_LABELS[v] || (v ? 'อื่น ๆ' : '-');
 }
 
 function normalizeEvidenceNote(note){
@@ -496,6 +526,7 @@ async function loadJob(){
 
   const wOk = inWarranty(job);
   const unitEvidenceHtml = renderUnitEvidence(units, photos);
+  ensureCaseModal();
 
   el('jobCard').innerHTML = `
     <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:flex-start">
@@ -674,31 +705,44 @@ async function loadJob(){
 
 <hr style="margin:12px 0;" />
 
-    <div>
-      <b>🛡️ ประกัน / ตีกลับงานแก้ไข</b>
-      <div style="margin-top:8px">${warrantyLabel(job)}</div>
-      <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:flex-end">
-        <div style="flex:1;min-width:220px">
-          <label>เหตุผล/ปัญหา (จำเป็นเมื่อ “ตีกลับ”)</label>
-          <textarea id="return_reason" rows="2" placeholder="ระบุปัญหาที่ต้องให้ช่างแก้ไข"></textarea>
+    <section class="reworkPanel">
+      <div class="reworkHead">
+        <div class="reworkTitle">
+          <b>🛡️ งานแก้ไข / ประกัน</b>
+          <span class="muted2 mini">ใช้เมื่อต้องส่งงานเดิมกลับให้ช่างแก้ไข พร้อมเก็บประวัติและหลักฐานสำหรับตรวจสอบภายหลัง</span>
         </div>
-        <button id="btnReturnFix" class="danger" type="button" style="width:auto" ${wOk ? '' : 'disabled'} title="${wOk ? '' : 'หมดประกันแล้ว'}">↩️ ตีกลับเป็นงานแก้ไข</button>
-        <button id="btnCreateReworkCase" class="secondary" type="button" style="width:auto">ส่งงานกลับแก้</button>
-        <button id="btnCreateDeductionCase" class="secondary" type="button" style="width:auto">เปิดเคสหักเงิน</button>
-        <button id="btnViewCaseHistory" class="secondary" type="button" style="width:auto">ดูประวัติเคส</button>
+        <div>${warrantyLabel(job)}</div>
       </div>
-      <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:flex-end">
-        <div style="width:220px">
-          <label>Extend ประกัน (วัน)</label>
-          <input id="extend_days" type="number" min="1" step="1" placeholder="เช่น 7" />
+      <div class="reworkGrid">
+        <div>
+          <label>เหตุผล/ปัญหา</label>
+          <textarea id="return_reason" rows="3" placeholder="สรุปปัญหาที่ต้องให้ช่างกลับไปแก้ เช่น น้ำหยดหลังล้าง หรืออาการเดิมยังไม่หาย"></textarea>
         </div>
-        <button id="btnExtend" type="button" style="width:auto">➕ Extend</button>
+        <div>
+          <label>ประเภทงานแก้ไข</label>
+          <select id="rework_reason_type">${labeledOptionList(REWORK_CASE_REASON_TYPES, 'other', REWORK_CASE_REASON_LABELS)}</select>
+          <button id="btnCreateReworkCase" class="reworkPrimary" type="button" style="margin-top:10px">ส่งงานกลับแก้</button>
+        </div>
       </div>
-      <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;align-items:center">
-        <span class="pill">หากงานพ้นระยะเก็บรูปแล้ว สามารถตรวจสอบก่อนล้างข้อมูลหนักได้</span>
-        <button class="secondary" type="button" style="width:auto" onclick="purgeThisJobMedia(${Number(job.job_id||0)})">ล้างรูปและข้อมูลหนักของงานนี้</button>
+      <div class="reworkSecondary">
+        <button id="btnViewCaseHistory" type="button">ดูประวัติเคส</button>
+        <button id="btnCreateDeductionCase" type="button">เปิดเคสหักเงิน</button>
       </div>
-    </div>
+      <div class="reworkMiniCard">
+        <div class="reworkMiniRow">
+          <div style="width:220px;max-width:100%">
+            <label>ขยายวันประกัน</label>
+            <input id="extend_days" type="number" min="1" step="1" placeholder="เช่น 7" />
+          </div>
+          <button id="btnExtend" type="button">ขยายวันประกัน</button>
+        </div>
+      </div>
+      <div class="reworkDanger">
+        <b>ล้างรูปและข้อมูลหนักของงานนี้</b>
+        <div class="muted2 mini" style="margin-top:4px">ใช้เฉพาะกรณีตรวจสอบแล้วว่าล้างข้อมูลสื่อเก่าได้</div>
+        <button type="button" onclick="purgeThisJobMedia(${Number(job.job_id||0)})">ล้างรูปและข้อมูลหนักของงานนี้</button>
+      </div>
+    </section>
 
     <hr style="margin:12px 0;" />
 
@@ -1146,32 +1190,19 @@ async function loadJob(){
     console.warn('admin edit init failed', e);
   }
 
-  const btnReturn = el('btnReturnFix');
-  if (btnReturn) {
-    btnReturn.onclick = async ()=>{
-      const reason = (el('return_reason')?.value||'').trim();
-      if (!reason) return alert('ต้องระบุปัญหา/เหตุผลก่อนตีกลับ');
-      if (!confirm('ตีกลับเป็นงานแก้ไข?')) return;
-      await apiFetch(`/admin/jobs/${encodeURIComponent(String(job.job_id))}/return_for_fix_v2`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ reason, actor_username: actorName() })
-      });
-      showToast('ตีกลับงานแก้ไขแล้ว', 'success');
-      await loadJob();
-    };
-  }
-
   const btnCreateReworkCase = el('btnCreateReworkCase');
   if (btnCreateReworkCase) {
     btnCreateReworkCase.onclick = async ()=>{
+      const prefillReason = (el('return_reason')?.value||'').trim();
+      const prefillType = String(el('rework_reason_type')?.value || 'other').trim();
       openCaseModal('ส่งงานกลับแก้', `
         <div class="caseGrid">
-          <div><label>ประเภทงานแก้ไข</label><select id="caseReworkType">${optionList(REWORK_CASE_REASON_TYPES, 'other')}</select></div>
+          <div><label>ประเภทงานแก้ไข</label><select id="caseReworkType">${labeledOptionList(REWORK_CASE_REASON_TYPES, prefillType, REWORK_CASE_REASON_LABELS)}</select></div>
           <div><label>สถานะประกัน</label><input value="${inWarranty(job) ? 'อยู่ในประกัน' : 'นอกประกัน/ไม่พบข้อมูล'}" disabled></div>
-          <div class="full"><label>เหตุผล/ปัญหา</label><textarea id="caseReworkReason" rows="4" placeholder="ระบุปัญหาที่ต้องให้ช่างแก้ไข">${escapeHtml((el('return_reason')?.value||'').trim())}</textarea></div>
-          <div class="full"><label style="display:flex;gap:8px;align-items:center;color:#09152f"><input id="caseWarrantyChecked" type="checkbox" ${inWarranty(job) ? 'checked' : ''} style="width:auto;min-height:auto"> ตรวจสอบประกันแล้ว</label></div>
-          <div class="full caseActions"><button class="caseBtn yellow" type="button" id="caseCancel">ยกเลิก</button><button class="caseBtn blue" type="button" id="caseSubmitRework">สร้างเคสและส่งกลับแก้</button></div>
+          <div class="full"><label>รายละเอียดปัญหา</label><textarea id="caseReworkReason" rows="4" placeholder="ระบุปัญหาที่ต้องให้ช่างแก้ไข">${escapeHtml(prefillReason)}</textarea></div>
+          <div class="full caseNotice">ระบบจะสร้างเคสงานแก้ไข และเปลี่ยนสถานะงานเป็น “งานแก้ไข” เพื่อส่งกลับไปยังช่าง</div>
+          <div class="full"><label style="display:flex;gap:8px;align-items:center;color:#09152f"><input id="caseWarrantyChecked" type="checkbox" ${inWarranty(job) ? 'checked' : ''} style="width:auto;min-height:auto"> ตรวจสอบสถานะประกันแล้ว</label></div>
+          <div class="full caseActions"><button class="caseBtn yellow" type="button" id="caseCancel">ยกเลิก</button><button class="caseBtn blue" type="button" id="caseSubmitRework">ส่งงานกลับแก้</button></div>
         </div>
       `);
       el('caseCancel').onclick = closeCaseModal;
@@ -1185,7 +1216,7 @@ async function loadJob(){
           body: JSON.stringify({ reason_type, reason_note, warranty_checked: !!el('caseWarrantyChecked')?.checked })
         });
         closeCaseModal();
-        showToast('สร้างเคสงานแก้ไขแล้ว', 'success');
+        showToast('ส่งงานกลับแก้เรียบร้อยแล้ว', 'success');
         await loadJob();
       };
     };
@@ -1251,7 +1282,7 @@ async function loadJob(){
       const reworkHtml = reworks.length ? reworks.map(x=>`
         <div class="caseItem">
           <b>${escapeHtml(x.case_code || '-')}</b>
-          <div>${escapeHtml(x.reason_type || '-')}</div>
+          <div>${escapeHtml(reworkReasonLabel(x.reason_type))}</div>
           <div class="caseMeta"><span>สถานะ: ${escapeHtml(x.status || '-')}</span><span>ผล: ${escapeHtml(x.resolution || '-')}</span><span>${fmtDT(x.created_at)}</span></div>
           <div style="margin-top:6px">${escapeHtml(x.reason_note || '')}</div>
         </div>`).join('') : '<div class="muted2">ยังไม่มีเคสงานแก้ไข</div>';
@@ -1274,13 +1305,13 @@ async function loadJob(){
     btnExtend.onclick = async ()=>{
       const days = Number(el('extend_days')?.value||0);
       if (!Number.isFinite(days) || days <= 0) return alert('กรอกจำนวนวันให้ถูกต้อง');
-      if (!confirm(`Extend ประกัน +${days} วัน?`)) return;
+      if (!confirm(`ยืนยันขยายวันประกัน +${days} วัน?`)) return;
       await apiFetch(`/admin/jobs/${encodeURIComponent(String(job.job_id))}/extend_warranty_v2`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ days, actor_username: actorName() })
       });
-      showToast('Extend ประกันแล้ว', 'success');
+      showToast('ขยายวันประกันแล้ว', 'success');
       await loadJob();
     };
   }
