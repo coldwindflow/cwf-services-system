@@ -3218,39 +3218,25 @@ function cwfEnsureUploadUiStyle() {
 .cwf-inline-upload.bad{border-color:rgba(220,38,38,.22);background:linear-gradient(180deg,#fef2f2,#fff);color:#991b1b}
 .cwf-inline-upload .spin{width:18px;height:18px;border-radius:999px;border:3px solid rgba(21,88,214,.18);border-top-color:#1558d6;animation:cwfTechUploadSpin .75s linear infinite;flex:0 0 18px}
 .cwf-inline-upload.ok .spin,.cwf-inline-upload.bad .spin{display:none}
-.cwf-inline-upload .txt{min-width:0;flex:1}
-#cwfTechUploadOverlay{position:fixed;left:50%;top:calc(8px + env(safe-area-inset-top));transform:translateX(-50%);z-index:120000;width:min(430px,calc(100vw - 22px));pointer-events:none;display:none}
-#cwfTechUploadOverlay .bar{display:flex;align-items:center;gap:10px;border-radius:999px;background:rgba(15,23,42,.88);color:#fff;padding:9px 12px;box-shadow:0 14px 34px rgba(2,6,23,.25);font-weight:1000;font-size:13px;line-height:1.25;backdrop-filter:blur(10px)}
-#cwfTechUploadOverlay .spin{width:18px;height:18px;border-radius:999px;border:3px solid rgba(255,255,255,.28);border-top-color:#fff;animation:cwfTechUploadSpin .75s linear infinite;flex:0 0 18px}
-#cwfTechUploadOverlay .txt{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}`;
+.cwf-inline-upload .txt{min-width:0;flex:1}`;
     document.head.appendChild(st);
   } catch {}
 }
 function cwfShowUploadOverlay(message = 'กำลังอัปโหลดรูป…') {
-  // Non-blocking: แถบเล็กด้านบน ไม่ใช่ modal ไม่บังหน้าจอ ช่างกดอัปโหลดรูปต่อได้ทันที
+  // v8: ห้ามสร้าง overlay / modal / แถบบนที่บังหน้าจออีกต่อไป
+  // สถานะอัปโหลดต้องแสดงแบบ inline ใต้การ์ดรูปหรือสลิปเท่านั้น
   try {
-    cwfEnsureUploadUiStyle();
-    let el = document.getElementById('cwfTechUploadOverlay');
-    if (!el) {
-      el = document.createElement('div');
-      el.id = 'cwfTechUploadOverlay';
-      el.innerHTML = `<div class="bar"><span class="spin"></span><span id="cwfTechUploadOverlayText" class="txt">กำลังอัปโหลดรูป…</span></div>`;
-      document.body.appendChild(el);
-    }
-    el.style.display = 'block';
-    cwfUpdateUploadOverlay(message);
+    const old = document.getElementById('cwfTechUploadOverlay');
+    if (old) old.remove();
   } catch {}
 }
 function cwfUpdateUploadOverlay(message) {
-  try {
-    const t = document.getElementById('cwfTechUploadOverlayText');
-    if (t) t.textContent = String(message || 'กำลังอัปโหลดรูป…');
-  } catch {}
+  // no-op: ใช้ cwfSetInlineUploadStatus(...) แทนเท่านั้น
 }
 function cwfHideUploadOverlay() {
   try {
-    const el = document.getElementById('cwfTechUploadOverlay');
-    if (el) el.style.display = 'none';
+    const old = document.getElementById('cwfTechUploadOverlay');
+    if (old) old.remove();
   } catch {}
 }
 function cwfSetInlineUploadStatus(targetId, message, state = 'loading') {
@@ -3305,8 +3291,8 @@ async function cwfUploadUnitPhotoFiles(jobId, unitId, phase, files, photoNote = 
   if (!unit) throw new Error('กรุณาเลือกเครื่องก่อนอัปโหลดรูป');
   window.__CWF_UPLOAD_BUSY_COUNT = (window.__CWF_UPLOAD_BUSY_COUNT || 0) + 1;
   const uploadTargetId = cwfUploadStatusTarget(phase, unitId);
-  cwfSetInlineUploadStatus(uploadTargetId, `กำลังอัปโหลดรูป 0/${selected.length}`);
-  cwfShowUploadOverlay(`กำลังอัปโหลดรูป 0/${selected.length}`);
+  cwfSetInlineUploadStatus(uploadTargetId, `กำลังส่งรูปไป Cloudinary 0/${selected.length}`);
+  cwfShowUploadOverlay(`กำลังส่งรูปไป Cloudinary 0/${selected.length}`);
   try {
     let done = 0;
     for (const f of selected) {
@@ -3333,8 +3319,8 @@ async function cwfUploadUnitPhotoFiles(jobId, unitId, phase, files, photoNote = 
       console.log('[cwf_unit_photo] meta:done', { jobId, unitId, phase, ok: metaRes.ok, status: metaRes.status, photo_id: meta?.photo_id });
       if (!metaRes.ok || !meta?.photo_id) throw new Error(meta.error || 'สร้างข้อมูลรูปไม่สำเร็จ');
 
-      cwfSetInlineUploadStatus(uploadTargetId, `กำลังอัปโหลดรูป ${done + 1}/${selected.length}`);
-      cwfUpdateUploadOverlay(`กำลังอัปโหลดรูป ${done + 1}/${selected.length}`);
+      cwfSetInlineUploadStatus(uploadTargetId, `กำลังส่งรูปไป Cloudinary ${done + 1}/${selected.length}`);
+      cwfUpdateUploadOverlay(`กำลังส่งรูปไป Cloudinary ${done + 1}/${selected.length}`);
       const form = new FormData();
       form.append('photo', f, f.name || 'photo.jpg');
       console.log('[cwf_unit_photo] upload:start', { jobId, unitId, phase, photo_id: meta.photo_id });
@@ -3343,11 +3329,11 @@ async function cwfUploadUnitPhotoFiles(jobId, unitId, phase, files, photoNote = 
       console.log('[cwf_unit_photo] upload:done', { jobId, unitId, phase, photo_id: meta.photo_id, ok: upRes.ok, status: upRes.status });
       if (!upRes.ok) throw new Error(up.error || 'อัปโหลดรูปไม่สำเร็จ');
       done += 1;
-      cwfSetInlineUploadStatus(uploadTargetId, `อัปโหลดแล้ว ${done}/${selected.length}`);
-      cwfUpdateUploadOverlay(`อัปโหลดแล้ว ${done}/${selected.length}`);
+      cwfSetInlineUploadStatus(uploadTargetId, `อัปโหลดขึ้น Cloudinary แล้ว ${done}/${selected.length}`);
+      cwfUpdateUploadOverlay(`อัปโหลดขึ้น Cloudinary แล้ว ${done}/${selected.length}`);
     }
-    cwfSetInlineUploadStatus(uploadTargetId, `✅ อัปโหลดสำเร็จ ${selected.length} รูป`, 'ok');
-    cwfTechToast(`✅ อัปโหลดรูปสำเร็จ ${selected.length} รูป`);
+    cwfSetInlineUploadStatus(uploadTargetId, `✅ อัปโหลดขึ้น Cloudinary สำเร็จ ${selected.length} รูป`, 'ok');
+    cwfTechToast(`✅ อัปโหลดรูปขึ้น Cloudinary สำเร็จ ${selected.length} รูป`);
     try { await refreshPhotoStatus(jobId); } catch {}
     await openTechPhotoModal(jobId, reopenTab, unitId);
     return true;
@@ -3741,8 +3727,10 @@ async function cwfUploadPaymentSlip(jobId, phase){
     try {
       const p = cwfGetPayment(jobId); p.uploading = true; cwfSavePayment(jobId, p); openTechPaymentModal(jobId, p.method || (phase === 'cash_transfer_slip' ? 'cash':'qr'));
       const targetId = cwfUploadStatusTarget(phase);
-      cwfSetInlineUploadStatus(targetId, phase === 'cash_transfer_slip' ? 'กำลังอัปโหลดสลิปเงินสด…' : 'กำลังอัปโหลดสลิป…');
+      cwfSetInlineUploadStatus(targetId, phase === 'cash_transfer_slip' ? 'กำลังส่งสลิปเงินสดไป Cloudinary…' : 'กำลังส่งสลิปไป Cloudinary…');
       await uploadFilesAsPhotos(jobId, phase, files, { targetId });
+      cwfSetInlineUploadStatus(targetId, '✅ ส่งสลิปขึ้น Cloudinary แล้ว', 'ok');
+      cwfTechToast('✅ ส่งสลิปขึ้น Cloudinary แล้ว');
       const p2 = cwfGetPayment(jobId); p2.slip_uploaded = true; p2.slip_phase = phase; p2.uploading = false; cwfSavePayment(jobId, p2); openTechPaymentModal(jobId, p2.method || (phase === 'cash_transfer_slip' ? 'cash':'qr'));
     } catch(e){ const p3 = cwfGetPayment(jobId); p3.uploading = false; cwfSavePayment(jobId, p3); cwfSetInlineUploadStatus(cwfUploadStatusTarget(phase), e.message || 'อัปโหลดสลิปไม่สำเร็จ', 'bad'); cwfTechToast(e.message || 'อัปโหลดสลิปไม่สำเร็จ', true); openTechPaymentModal(jobId, p3.method); }
   });
@@ -3760,8 +3748,8 @@ async function openTechPaymentModal(jobId, method){
       <button type="button" class="cwf-pay-tab ${active==='cash'?'active':''}" onclick="cwfSetPaymentMethod('${key.replace(/'/g,"\\'")}', 'cash')">💵 เงินสดให้ช่าง</button>
       <button type="button" class="cwf-pay-tab ${active==='admin'?'active':''}" onclick="cwfSetPaymentMethod('${key.replace(/'/g,"\\'")}', 'admin')">👩‍💼 แอดมินจัดการ</button>
     </div>`;
-  const qrHtml = `<div class="cwf-pay-card"><b>ลูกค้าสแกนจ่ายบริษัท</b><div class="muted">ให้ลูกค้าสแกน QR นี้เพื่อโอนเข้าบัญชีบริษัท</div><img class="cwf-qr-img" src="${CWF_COMPANY_QR_URL}" alt="CWF PromptPay QR"><div class="cwf-chip ok">ยอดโดยประมาณ ${cwfMoney(total)} บาท</div><button type="button" onclick="cwfUploadPaymentSlip('${key.replace(/'/g,"\\'")}', 'payment_slip')">📎 แนบสลิปโอนเงิน</button><div id="cwfPaymentUploadStatus_payment_slip" class="cwf-inline-upload ${pay.uploading?'show':''}">${pay.uploading?'<span class="spin"></span><span class="txt">กำลังอัปโหลดสลิป…</span>':''}</div><div class="cwf-mini-status"><span class="cwf-chip ${pay.slip_uploaded?'ok':'warn'}">${pay.slip_uploaded?'แนบสลิปแล้ว':'ยังไม่แนบสลิป'}</span></div></div>`;
-  const cashHtml = `<div class="cwf-pay-card"><b>ลูกค้าจ่ายเงินสดให้ช่าง</b><div class="muted">หลังรับเงินสด ช่างต้องโอนเข้าบริษัทและแนบสลิปก่อนปิดงาน</div><label style="display:block;margin-top:10px;font-weight:900">จำนวนเงินสดที่รับจากลูกค้า</label><input type="number" value="${String(pay.cash_amount||'').replace(/"/g,'&quot;')}" placeholder="เช่น 1200" oninput="cwfUpdatePaymentField('${key.replace(/'/g,"\\'")}', 'cash_amount', this.value)"><label style="display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:900"><input type="checkbox" style="width:22px;height:22px" ${pay.cash_confirmed?'checked':''} onchange="cwfUpdatePaymentField('${key.replace(/'/g,"\\'")}', 'cash_confirmed', this.checked, true)"> ฉันยืนยันว่าได้รับเงินสดจากลูกค้าตามจำนวนที่ระบุแล้ว</label><textarea style="margin-top:10px" placeholder="หมายเหตุการรับเงินสด" oninput="cwfUpdatePaymentField('${key.replace(/'/g,"\\'")}', 'note', this.value)">${String(pay.note||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea><button type="button" onclick="cwfUploadPaymentSlip('${key.replace(/'/g,"\\'")}', 'cash_transfer_slip')">📎 แนบสลิปที่ช่างโอนเข้าบริษัท</button><div id="cwfPaymentUploadStatus_cash_transfer_slip" class="cwf-inline-upload ${pay.uploading?'show':''}">${pay.uploading?'<span class="spin"></span><span class="txt">กำลังอัปโหลดสลิปเงินสด…</span>':''}</div><div class="cwf-mini-status"><span class="cwf-chip ${pay.slip_uploaded?'ok':'warn'}">${pay.slip_uploaded?'แนบสลิปแล้ว':'ยังไม่แนบสลิป'}</span></div></div>`;
+  const qrHtml = `<div class="cwf-pay-card"><b>ลูกค้าสแกนจ่ายบริษัท</b><div class="muted">ให้ลูกค้าสแกน QR นี้เพื่อโอนเข้าบัญชีบริษัท</div><img class="cwf-qr-img" src="${CWF_COMPANY_QR_URL}" alt="CWF PromptPay QR"><div class="cwf-chip ok">ยอดโดยประมาณ ${cwfMoney(total)} บาท</div><button type="button" onclick="cwfUploadPaymentSlip('${key.replace(/'/g,"\\'")}', 'payment_slip')">📎 แนบสลิปโอนเงิน</button><div id="cwfPaymentUploadStatus_payment_slip" class="cwf-inline-upload ${pay.uploading?'show':''}">${pay.uploading?'<span class="spin"></span><span class="txt">กำลังส่งสลิปไป Cloudinary…</span>':''}</div><div class="cwf-mini-status"><span class="cwf-chip ${pay.slip_uploaded?'ok':'warn'}">${pay.slip_uploaded?'แนบสลิปแล้ว':'ยังไม่แนบสลิป'}</span></div></div>`;
+  const cashHtml = `<div class="cwf-pay-card"><b>ลูกค้าจ่ายเงินสดให้ช่าง</b><div class="muted">หลังรับเงินสด ช่างต้องโอนเข้าบริษัทและแนบสลิปก่อนปิดงาน</div><label style="display:block;margin-top:10px;font-weight:900">จำนวนเงินสดที่รับจากลูกค้า</label><input type="number" value="${String(pay.cash_amount||'').replace(/"/g,'&quot;')}" placeholder="เช่น 1200" oninput="cwfUpdatePaymentField('${key.replace(/'/g,"\\'")}', 'cash_amount', this.value)"><label style="display:flex;gap:10px;align-items:flex-start;margin-top:10px;font-weight:900"><input type="checkbox" style="width:22px;height:22px" ${pay.cash_confirmed?'checked':''} onchange="cwfUpdatePaymentField('${key.replace(/'/g,"\\'")}', 'cash_confirmed', this.checked, true)"> ฉันยืนยันว่าได้รับเงินสดจากลูกค้าตามจำนวนที่ระบุแล้ว</label><textarea style="margin-top:10px" placeholder="หมายเหตุการรับเงินสด" oninput="cwfUpdatePaymentField('${key.replace(/'/g,"\\'")}', 'note', this.value)">${String(pay.note||'').replace(/&/g,'&amp;').replace(/</g,'&lt;')}</textarea><button type="button" onclick="cwfUploadPaymentSlip('${key.replace(/'/g,"\\'")}', 'cash_transfer_slip')">📎 แนบสลิปที่ช่างโอนเข้าบริษัท</button><div id="cwfPaymentUploadStatus_cash_transfer_slip" class="cwf-inline-upload ${pay.uploading?'show':''}">${pay.uploading?'<span class="spin"></span><span class="txt">กำลังส่งสลิปเงินสดไป Cloudinary…</span>':''}</div><div class="cwf-mini-status"><span class="cwf-chip ${pay.slip_uploaded?'ok':'warn'}">${pay.slip_uploaded?'แนบสลิปแล้ว':'ยังไม่แนบสลิป'}</span></div></div>`;
   const adminHtml = `<div class="cwf-pay-card"><b>ลูกค้าจ่ายกับแอดมิน / ให้แอดมินจัดการ</b><div class="muted" style="margin-top:6px">ใช้กรณีลูกค้าโอนให้แอดมินโดยตรง หรือแอดมินจะเป็นผู้ลงสลิปและอัปเดตสถานะชำระเงินภายหลัง</div><div class="cwf-mini-status"><span class="cwf-chip warn">ปิดงานได้โดยไม่ต้องแนบสลิป</span><span class="cwf-chip">สถานะ: รอแอดมินอัปเดต</span></div></div>`;
   const body = tabs + (active === 'cash' ? cashHtml : active === 'admin' ? adminHtml : qrHtml);
   cwfOpenModal('💳 เก็บเงินลูกค้า', body, `<button class="secondary" type="button" onclick="cwfCloseModal()">ปิด</button>`);
@@ -4304,7 +4292,7 @@ function openESlip(jobId) {
 window.openESlip = openESlip;
 
 // =======================================
-// ✍️ SIGNATURE MODAL (ลายเซ็นต์ลูกค้า)
+// ✍️ SIGNATURE MODAL (ลายเซ็นต์ช่าง)
 // - ต้องเด้งทุกครั้งเมื่อกด "เสร็จสิ้น" หรือ "ยกเลิก"
 // =======================================
 let __sigModalInited = false;
@@ -4319,7 +4307,7 @@ function ensureSignatureModal() {
   wrap.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,0.6);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px;";
   wrap.innerHTML = `
     <div class="card" style="width:min(520px, 100%);">
-      <h3 style="margin-top:0;">✍️ ลายเซ็นต์ลูกค้า</h3>
+      <h3 style="margin-top:0;">✍️ ลายเซ็นต์ช่าง</h3>
       <div class="muted">ให้ลูกค้าเซ็นเพื่อยืนยัน “เสร็จสิ้น/ยกเลิก” งาน</div>
       <div style="margin-top:10px;border:1px solid rgba(15,23,42,0.15);border-radius:14px;overflow:hidden;background:#fff;">
         <canvas id="sig-canvas" width="480" height="220" style="width:100%;height:auto;touch-action:none;"></canvas>
@@ -5147,7 +5135,7 @@ try{ document.addEventListener('DOMContentLoaded', () => { setTimeout(loadDailyR
 // =======================================
 function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
   // IMPORTANT (production hotfix):
-  // ปิดงานให้เหลือ "เงื่อนไขเดียว" คือ ต้องมีลายเซ็นต์เท่านั้น
+  // ปิดงานให้เหลือ "เงื่อนไขเดียว" คือ ต้องมีลายเซ็นต์ช่างเท่านั้น
   // (ไม่บังคับเลือกประกันในฝั่งช่าง เพื่อกันงานค้าง)
   // เปิดลายเซ็นต์ก่อน (ถ้ากดยกเลิกในลายเซ็นต์ จะต้องกลับไปเลือกใหม่เอง)
   // งานทีม: ช่างแต่ละคนกดเสร็จเฉพาะของตัวเองก่อน
@@ -5250,7 +5238,7 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
         close_cash_amount: closePay.cash_amount || null,
         close_payment_note: closePay.note || '',
         close_cash_confirmed: !!closePay.cash_confirmed,
-        close_signature_type: closeMethod === 'cash_to_technician' ? 'technician_signature' : 'customer_signature',
+        close_signature_type: 'technician_signature',
       }),
     });
 
@@ -5717,8 +5705,8 @@ async function uploadFilesAsPhotos(jobId, phase, files, opts = {}){
   window.__CWF_UPLOAD_BUSY_COUNT = (window.__CWF_UPLOAD_BUSY_COUNT || 0) + 1;
   const uploadTargetId = opts.targetId || cwfUploadStatusTarget(phase);
   let done = 0;
-  cwfSetInlineUploadStatus(uploadTargetId, `กำลังอัปโหลดรูป 0/${selected.length}`);
-  cwfShowUploadOverlay(`กำลังอัปโหลดรูป 0/${selected.length}`);
+  cwfSetInlineUploadStatus(uploadTargetId, `กำลังส่งรูปไป Cloudinary 0/${selected.length}`);
+  cwfShowUploadOverlay(`กำลังส่งรูปไป Cloudinary 0/${selected.length}`);
   try {
     for (const f of selected) {
       cwfSetInlineUploadStatus(uploadTargetId, `กำลังเตรียมรูป ${done + 1}/${selected.length}`);
@@ -5741,8 +5729,8 @@ async function uploadFilesAsPhotos(jobId, phase, files, opts = {}){
       const photo_id = meta.photo_id;
 
       try {
-        cwfSetInlineUploadStatus(uploadTargetId, `กำลังอัปโหลดรูป ${done + 1}/${selected.length}`);
-        cwfUpdateUploadOverlay(`กำลังอัปโหลดรูป ${done + 1}/${selected.length}`);
+        cwfSetInlineUploadStatus(uploadTargetId, `กำลังส่งรูปไป Cloudinary ${done + 1}/${selected.length}`);
+        cwfUpdateUploadOverlay(`กำลังส่งรูปไป Cloudinary ${done + 1}/${selected.length}`);
         const formNow = new FormData();
         formNow.append("photo", f, f.name || "photo.jpg");
         const upRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${photo_id}/upload`, {
@@ -5752,8 +5740,8 @@ async function uploadFilesAsPhotos(jobId, phase, files, opts = {}){
         const up = await upRes.json().catch(() => ({}));
         if (!upRes.ok) throw new Error(up.error || "อัปโหลดรูปไม่สำเร็จ");
         done += 1;
-        cwfSetInlineUploadStatus(uploadTargetId, `อัปโหลดแล้ว ${done}/${selected.length}`);
-        cwfUpdateUploadOverlay(`อัปโหลดแล้ว ${done}/${selected.length}`);
+        cwfSetInlineUploadStatus(uploadTargetId, `อัปโหลดขึ้น Cloudinary แล้ว ${done}/${selected.length}`);
+        cwfUpdateUploadOverlay(`อัปโหลดขึ้น Cloudinary แล้ว ${done}/${selected.length}`);
       } catch (e) {
         // fail-open: เก็บค้างในเครื่อง แล้วให้กดอัปโหลดภายหลัง
         const buffer = await f.arrayBuffer();
@@ -5772,8 +5760,8 @@ async function uploadFilesAsPhotos(jobId, phase, files, opts = {}){
         cwfUpdateUploadOverlay(`เก็บรูปค้างในเครื่องแล้ว ${done}/${selected.length}`);
       }
     }
-    cwfSetInlineUploadStatus(uploadTargetId, `✅ อัปโหลด/รับรูปแล้ว ${selected.length} รูป`, 'ok');
-    cwfTechToast(`✅ อัปโหลด/รับรูปแล้ว ${selected.length} รูป`);
+    cwfSetInlineUploadStatus(uploadTargetId, `✅ อัปโหลด/รับรูปขึ้น Cloudinary แล้ว ${selected.length} รูป`, 'ok');
+    cwfTechToast(`✅ อัปโหลด/รับรูปขึ้น Cloudinary แล้ว ${selected.length} รูป`);
   } catch (e) {
     cwfSetInlineUploadStatus(uploadTargetId, `❌ ${e.message || 'อัปโหลดรูปไม่สำเร็จ'}`, 'bad');
     cwfTechToast(`❌ ${e.message || 'อัปโหลดรูปไม่สำเร็จ'}`, true);
@@ -5798,8 +5786,8 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
       if (!selected.length) return;
       const uploadTargetId = cwfUploadStatusTarget(phase);
       window.__CWF_UPLOAD_BUSY_COUNT = (window.__CWF_UPLOAD_BUSY_COUNT || 0) + 1;
-      cwfSetInlineUploadStatus(uploadTargetId, `กำลังอัปโหลดรูป 0/${selected.length}`);
-      cwfShowUploadOverlay(`กำลังอัปโหลดรูป 0/${selected.length}`);
+      cwfSetInlineUploadStatus(uploadTargetId, `กำลังส่งรูปไป Cloudinary 0/${selected.length}`);
+      cwfShowUploadOverlay(`กำลังส่งรูปไป Cloudinary 0/${selected.length}`);
       let done = 0;
 
       try {
@@ -5824,8 +5812,8 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
           const buffer = await f.arrayBuffer();
 
           try {
-            cwfSetInlineUploadStatus(uploadTargetId, `กำลังอัปโหลดรูป ${done + 1}/${selected.length}`);
-            cwfUpdateUploadOverlay(`กำลังอัปโหลดรูป ${done + 1}/${selected.length}`);
+            cwfSetInlineUploadStatus(uploadTargetId, `กำลังส่งรูปไป Cloudinary ${done + 1}/${selected.length}`);
+            cwfUpdateUploadOverlay(`กำลังส่งรูปไป Cloudinary ${done + 1}/${selected.length}`);
             const formNow = new FormData();
             formNow.append("photo", f, f.name || "photo.jpg");
 
@@ -5837,8 +5825,8 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
             const upData = await upRes.json().catch(() => ({}));
             if (upRes.ok) {
               done += 1;
-              cwfSetInlineUploadStatus(uploadTargetId, `อัปโหลดแล้ว ${done}/${selected.length}`);
-              cwfUpdateUploadOverlay(`อัปโหลดแล้ว ${done}/${selected.length}`);
+              cwfSetInlineUploadStatus(uploadTargetId, `อัปโหลดขึ้น Cloudinary แล้ว ${done}/${selected.length}`);
+              cwfUpdateUploadOverlay(`อัปโหลดขึ้น Cloudinary แล้ว ${done}/${selected.length}`);
               continue;
             } else {
               console.warn("upload-now failed, fallback to idb:", upData.error || upRes.status);
@@ -5862,7 +5850,7 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
           cwfUpdateUploadOverlay(`เก็บรูปค้างในเครื่องแล้ว ${done}/${selected.length}`);
         }
 
-        cwfSetInlineUploadStatus(uploadTargetId, `✅ รับรูปแล้ว ${selected.length} รูป`, 'ok');
+        cwfSetInlineUploadStatus(uploadTargetId, `✅ รับรูป/ส่งขึ้น Cloudinary แล้ว ${selected.length} รูป`, 'ok');
         cwfTechToast("✅ รับรูปแล้ว (อัปโหลดทันทีถ้าเน็ตพร้อม / ถ้าไม่พร้อมจะค้างในเครื่อง)");
         refreshPhotoStatus(jobId);
       } catch (e) {

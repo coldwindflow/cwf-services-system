@@ -19793,7 +19793,7 @@ app.put("/jobs/:job_id/note", async (req, res) => {
 });
 
 // =======================================
-// ✅ FINALIZE JOB (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์ลูกค้า
+// ✅ FINALIZE JOB (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์ช่าง
 // =======================================
 app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) => {
   const { job_id } = req.params;
@@ -19816,7 +19816,7 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
   const close_cash_amount = req.body?.close_cash_amount == null ? null : Number(req.body.close_cash_amount);
   const close_payment_note = String(req.body?.close_payment_note || '').trim();
   const close_cash_confirmed = !!req.body?.close_cash_confirmed;
-  const close_signature_type = String(req.body?.close_signature_type || 'customer_signature').trim();
+  const close_signature_type = String(req.body?.close_signature_type || 'technician_signature').trim();
 
   if (!["เสร็จแล้ว", "ยกเลิก"].includes(status)) {
     return res.status(400).json({ error: "status ต้องเป็น 'เสร็จแล้ว' หรือ 'ยกเลิก'" });
@@ -20007,7 +20007,7 @@ if (status === "เสร็จแล้ว") {
           Number.isFinite(close_cash_amount) ? close_cash_amount : null,
           close_payment_note,
           close_cash_confirmed,
-          close_signature_type || 'customer_signature']
+          close_signature_type || 'technician_signature']
       );
       if (isRevisitFlow && revisitResult) {
         await logJobUpdate(
@@ -20039,7 +20039,7 @@ if (status === "เสร็จแล้ว") {
           revisit_note: revisitNote || null,
           close_payment_method: close_payment_method || null,
           close_payment_status: close_payment_method === 'admin_handles_payment' ? 'pending_admin_update' : (close_payment_status || 'pending_verification'),
-          close_signature_type: close_signature_type || 'customer_signature',
+          close_signature_type: close_signature_type || 'technician_signature',
           photo_acknowledgement_accepted: !!(photo_ack && photo_ack.accepted),
         }
       }, client);
@@ -24353,9 +24353,9 @@ function docHtml(title, data) {
         </div>
         <div style="width:220px;text-align:center;">
           ${j.final_signature_path ? `
-            <div class="muted">ลายเซ็นลูกค้า</div>
+            <div class="muted">ลายเซ็นช่าง</div>
             <img src="${j.final_signature_path}" alt="signature" style="width:220px;height:auto;border:1px solid rgba(15,23,42,.15);border-radius:12px;margin-top:6px;">
-          ` : `<div class="muted">ลายเซ็นลูกค้า: -</div>`}
+          ` : `<div class="muted">ลายเซ็นช่าง: -</div>`}
         </div>
       </div>
     </div>
