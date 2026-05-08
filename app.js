@@ -3221,21 +3221,15 @@ function renderRevisitSection(job, keyBase, jobKeyJs, canEdit, isWorking, histor
     : "ยังไม่มีรายละเอียดปัญหาที่แอดมินระบุไว้";
   return `
     <section class="cwf-revisit-card" style="margin-top:12px;border:1px solid rgba(250,204,21,.55);background:linear-gradient(180deg,#fffbeb,#ffffff);border-radius:22px;padding:14px;box-shadow:0 10px 24px rgba(11,46,109,.08);">
-      <div style="display:flex;gap:12px;align-items:flex-start;">
-        <div style="width:42px;height:42px;border-radius:14px;background:#fff7cc;display:flex;align-items:center;justify-content:center;font-size:22px;flex:0 0 42px;box-shadow:inset 0 0 0 1px rgba(250,204,21,.45);">🔁</div>
-        <div style="min-width:0;flex:1;">
-          <b style="display:block;font-size:20px;line-height:1.25;color:#0f172a;">งานแก้ไข / กลับไปตรวจซ้ำ</b>
-          <div style="margin-top:10px;border:1px solid rgba(11,46,109,.12);background:#ffffff;border-radius:16px;padding:12px;line-height:1.65;">
-            <b style="display:block;color:#0b2e6d;margin-bottom:6px;">📝 รายละเอียดปัญหาที่แอดมินระบุ</b>
-            <div style="font-weight:800;color:#334155;white-space:pre-wrap;overflow-wrap:anywhere;">${problemHtml}</div>
-          </div>
-        </div>
+      <div style="width:min(100%, 440px);margin:0 auto;border:1px solid rgba(11,46,109,.12);background:#ffffff;border-radius:18px;padding:14px;line-height:1.65;text-align:left;box-shadow:0 8px 18px rgba(11,46,109,.05);">
+        <b style="display:flex;align-items:center;justify-content:center;gap:8px;color:#0b2e6d;margin-bottom:8px;font-size:18px;line-height:1.25;text-align:center;">📝 ปัญหาที่รับแจ้ง</b>
+        <div style="font-weight:850;color:#334155;white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;">${problemHtml}</div>
       </div>
 
-      <details style="margin-top:12px;border:1px solid rgba(11,46,109,.14);background:#f8fbff;border-radius:16px;overflow:hidden;">
+      <details style="width:min(100%, 440px);margin:12px auto 0;border:1px solid rgba(11,46,109,.14);background:#f8fbff;border-radius:18px;overflow:hidden;box-shadow:0 8px 18px rgba(11,46,109,.05);">
         <summary style="list-style:none;cursor:pointer;user-select:none;padding:12px 14px;font-weight:1000;color:#0b2e6d;display:flex;align-items:center;justify-content:space-between;gap:10px;">
-          <span>✅ ขั้นตอนที่ช่างต้องดำเนินการ</span>
-          <span style="font-size:18px;color:#64748b;">กดเพื่อดู</span>
+          <span>✅ สิ่งที่ต้องทำ</span>
+          <span style="font-size:15px;color:#64748b;font-weight:900;">กดเพื่อดู</span>
         </summary>
         <div style="padding:0 14px 14px;color:#334155;font-weight:850;line-height:1.7;">
           <ol style="margin:0;padding-left:22px;">
