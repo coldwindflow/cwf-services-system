@@ -2770,7 +2770,6 @@ function renderJobs(jobs) {
   // ✅ cache ไว้ใช้กับ popup เก็บเงินลูกค้า / เปิด e-slip
   window.__JOB_CACHE__ = Array.isArray(jobs) ? jobs : [];
 
-  repairActiveSectionLayout();
   if (activeJobsEl) activeJobsEl.innerHTML = "";
   if (activeUpcomingJobsEl) activeUpcomingJobsEl.innerHTML = "";
   if (historyJobsEl) historyJobsEl.innerHTML = "";
@@ -2848,7 +2847,6 @@ function renderJobs(jobs) {
   if (activeJobsEl) {
     if (!prioritizedActiveToday.length) activeJobsEl.innerHTML = "<p>✅ วันนี้ยังไม่มีงาน</p>";
     prioritizedActiveToday.forEach((job) => activeJobsEl.appendChild(buildJobCard(job, false)));
-    repairActiveSectionLayout();
   }
 
   const upcomingDates = [...new Set(activeUpcoming.map((j)=> ymdBkkFromISO(j.appointment_datetime)).filter(Boolean))].sort();
@@ -2865,7 +2863,6 @@ function renderJobs(jobs) {
         : "<p>ยังไม่มีงานล่วงหน้า</p>";
     }
     filteredUpcoming.forEach((job) => activeUpcomingJobsEl.appendChild(buildJobCard(job, false)));
-    repairActiveSectionLayout();
   }
 
   if (historyJobsEl) {
@@ -4045,46 +4042,6 @@ async function cwfValidateCloseRequirements(jobId, targetStatus){
 
 
 // =======================================
-// 🧩 CWF v7: Repair active section layout
-// Scope: เฉพาะหน้า "งานของฉัน" กันหัวข้อ/ปุ่ม งานวันนี้-ตารางล่วงหน้า
-// หลุดไปอยู่กลางใบงานจาก DOM เก่า/cache หรือ markup ที่ถูก append ผิดจุด
-// =======================================
-function repairActiveSectionLayout(){
-  try {
-    const sec = document.getElementById('sec-active');
-    const todayWrap = document.getElementById('sec-active-today');
-    const upcomingWrap = document.getElementById('sec-active-upcoming');
-    const activeList = document.getElementById('active-list');
-    if (!sec || !todayWrap || !upcomingWrap || !activeList) return;
-
-    let title = sec.querySelector(':scope > h2');
-    if (!title) {
-      title = Array.from(sec.querySelectorAll('h2')).find((el) => /งานของฉัน/.test(String(el.textContent || '')));
-      if (title) sec.insertBefore(title, sec.firstChild);
-    }
-
-    let tabs = document.getElementById('tab-active-today')?.closest('.tabs') || null;
-    if (tabs && tabs.parentElement !== sec) sec.insertBefore(tabs, todayWrap);
-
-    // ถ้ามี job-card ถูก append เป็นลูกตรงของ sec-active ให้ย้ายกลับเข้า active-list
-    Array.from(sec.children).forEach((child) => {
-      if (child === title || child === tabs || child === todayWrap || child === upcomingWrap) return;
-      if (child.classList && child.classList.contains('job-card')) activeList.appendChild(child);
-    });
-
-    // บังคับเรียงลำดับส่วนหัวให้ถูกเสมอ: หัวข้อ > tab > งานวันนี้ > ตารางล่วงหน้า
-    if (title && sec.firstElementChild !== title) sec.insertBefore(title, sec.firstChild);
-    if (tabs) sec.insertBefore(tabs, todayWrap);
-    if (todayWrap && upcomingWrap && todayWrap.nextElementSibling !== upcomingWrap) {
-      sec.insertBefore(upcomingWrap, todayWrap.nextSibling);
-    }
-  } catch (e) {
-    console.warn('repairActiveSectionLayout:', e?.message || e);
-  }
-}
-window.repairActiveSectionLayout = repairActiveSectionLayout;
-
-// =======================================
 // 🧱 BUILD JOB CARD
 // =======================================
 
@@ -4189,86 +4146,70 @@ function buildJobCard(job, historyMode = false) {
   // ✅ แสดงส่วนรูป/หมายเหตุ/ปิดงาน เฉพาะตอนเริ่มทำงานแล้ว
   const showWorkTools = checkedIn || isWorking || historyMode;
 
-  // =======================================
-  // 🔁 REVISIT JOB CARD — card-only layout
-  // แยกใบงานแก้ไขออกจาก markup งานปกติทั้งหมด เพื่อไม่ให้ปุ่ม/section หลุดไปกองกลางใบงาน
-  // =======================================
+  // ✅ CWF revisit card scoped fix:
+  // งานแก้ไขใช้ HTML ของตัวเองให้ปิด wrapper ครบใน job-card เดียว
+  // ห้ามให้ section ถัดไป เช่น “งานของฉัน” / tab งานวันนี้ ไหลเข้ามาใน card
   if (revisitFlow) {
-    const revisitReadyHtml = isWorking
-      ? `<div class="cwf-final-row"><button type="button" onclick="requestFinalize('${jobKeyJs}', 'เสร็จแล้ว')">✅ เสร็จสิ้น</button><button class="danger" type="button" onclick="requestFinalize('${jobKeyJs}', 'ยกเลิก')">⛔ ยกเลิก</button></div>`
-      : `<div class="muted" style="margin-top:10px;font-size:12px;line-height:1.45;">เมื่อเช็คอินและเริ่มทำงานแล้ว จะสามารถกดเสร็จสิ้นด้วยเงื่อนไขงานแก้ไขได้</div>`;
-
+    div.setAttribute("data-revisit-card", "1");
     div.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
-        <div>
-          <b>📌 Booking:<br>${bookingCode}</b>
-          <div class="muted" style="font-size:12px;margin-top:2px;">งานในระบบ: #${jobId}</div>
-        </div>
-        ${badge}
-      </div>
-
-      <p style="margin-top:12px;"><b>ลูกค้า:</b> ${escape(job.customer_name || "-")}</p>
-      <p><b>โทร:</b> ${escape(job.customer_phone || "-")}</p>
-      <p><b>ประเภท:</b> ${escape(job.job_type || "-")}</p>
-      <p><b>นัด:</b> ${appt}</p>
-      <p><b>ที่อยู่:</b> ${addr}</p>
-
-      <section class="cwf-revisit-card" style="margin-top:12px;border:1px solid rgba(14,116,144,.18);background:linear-gradient(180deg,#f0fdfa,#ffffff);border-radius:22px;padding:14px;box-shadow:0 12px 28px rgba(15,23,42,.07);overflow:hidden;">
-        <div style="display:flex;gap:10px;align-items:flex-start;justify-content:space-between;">
+      <div class="cwf-revisit-job-card-inner">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;">
           <div style="min-width:0;">
-            <b style="display:block;font-size:18px;color:#0f172a;line-height:1.25;">🔁 งานแก้ไข / กลับไปตรวจซ้ำ</b>
-            <div class="muted" style="margin-top:6px;line-height:1.55;">งานนี้ไม่มีค่าบริการที่ต้องเก็บจากลูกค้า และไม่มีค่าตอบแทนเพิ่มเติมสำหรับช่าง</div>
-            ${revisitReason ? `<div class="muted" style="margin-top:6px;font-size:12px;line-height:1.45;">เหตุผลจากแอดมิน: ${escapeHTML(revisitReason)}</div>` : ``}
+            <b>📌 Booking: ${bookingCode}</b>
+            <div class="muted" style="font-size:12px;margin-top:2px;">งานในระบบ: #${jobId}</div>
           </div>
-          <span class="cwf-chip ok" style="white-space:nowrap;">REVISIT</span>
+          ${badge}
         </div>
 
-        <div class="cwf-mini-status" style="margin-top:10px;display:grid;gap:8px;">
-          <span class="cwf-chip" style="justify-content:flex-start;">ไม่ต้องแนบสลิป</span>
-          <span class="cwf-chip" style="justify-content:flex-start;">ไม่ต้องเก็บเงิน</span>
-          <span class="cwf-chip" style="justify-content:flex-start;">ไม่ต้องลงเนมเพลทใหม่</span>
+        <div class="cwf-revisit-money" style="margin-top:12px;border:1px solid rgba(14,116,144,.16);background:#f0fdfa;border-radius:18px;padding:12px;display:flex;gap:10px;align-items:flex-start;">
+          <span style="width:42px;height:42px;border-radius:14px;background:#ccfbf1;display:flex;align-items:center;justify-content:center;font-size:22px;flex:0 0 auto;">🔁</span>
+          <div style="min-width:0;">
+            <b style="display:block;color:#0f172a;">งานรับผิดชอบเคสเดิม</b>
+            <span class="muted">งานนี้ไม่มีค่าบริการที่ต้องเก็บจากลูกค้า และไม่มีค่าตอบแทนเพิ่มเติม</span>
+          </div>
         </div>
 
-        ${historyMode ? `` : `
-          <div class="cwf-close-hub" style="margin-top:12px!important;">
-            <button class="cwf-close-action" type="button" ${!canEdit ? "disabled" : ""} onclick="openRevisitScheduleModal('${jobKeyJs}')">
-              <span class="cwf-action-left"><span class="ico">🕛</span><span><b>แจ้งเวลานัดหมาย</b><small>บันทึกวันและเวลาที่ตกลงกับลูกค้า</small></span></span><span class="cwf-action-arrow">›</span>
+        <div style="margin-top:12px;line-height:1.65;">
+          <p style="margin-top:0;"><b>ลูกค้า:</b> ${escape(job.customer_name || "-")}</p>
+          <p><b>โทร:</b> ${escape(job.customer_phone || "-")}</p>
+          <p><b>ประเภท:</b> ${escape(job.job_type || "-")}</p>
+          <p><b>นัด:</b> ${appt}</p>
+          <p><b>ที่อยู่:</b> ${addr}</p>
+        </div>
+
+        ${revisitReason ? `<div class="pill" style="margin-top:10px;background:#fff7ed;border-color:rgba(234,88,12,.18);color:#0f172a;display:block;border-radius:16px;line-height:1.55;"><b>เหตุผลจากแอดมิน:</b> ${escapeHTML(revisitReason)}</div>` : ``}
+
+        ${renderRevisitSection(job, keyBase, jobKeyJs, canEdit, isWorking, historyMode)}
+
+        <details class="cwf-details" style="margin-top:10px;">
+          <summary>👥 ทีมช่างในงานนี้</summary>
+          <div class="cwf-details-body" id="team-${jobId}">กำลังโหลด...</div>
+        </details>
+
+        <div class="cwf-revisit-actions" style="margin-top:10px;">
+          <div class="row" style="gap:10px;flex-wrap:wrap;">
+            <button class="secondary" type="button" style="width:auto;" ${telPhone ? "" : "disabled"} onclick="callCustomer('${jobKeyJs}', '${telPhone}')">📞 โทรลูกค้า</button>
+          </div>
+
+          <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+            <button class="secondary" type="button" style="width:auto;" ${((job.address_text || job.maps_url || (job.gps_latitude != null && job.gps_longitude != null)) ? "" : "disabled")} onclick="openMaps(${job.gps_latitude ?? null}, ${job.gps_longitude ?? null}, '${(job.address_text||"").replace(/'/g,"\\'")}', '${String(job.maps_url||"").replace(/'/g,"\\'")}' )">🧭 แผนที่</button>
+          </div>
+
+          <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
+            <button type="button" style="width:100%;" data-role="workflow" data-jobkey="${escapeAttr(keyBase)}" ${workflowDisabled ? "disabled" : ""} onclick="${workflowOnclick}">
+              ${workflowLabel}
             </button>
-            <button class="cwf-close-action" type="button" ${!canEdit ? "disabled" : ""} onclick="openRevisitHubModal('${jobKeyJs}')">
-              <span class="cwf-action-left"><span class="ico">📷✅</span><span><b>รูปและเช็คลิสงานแก้ไข</b><small>ลงรูปก่อน/หลังแก้ไข และเลือกสาเหตุ/ผลการแก้ไข</small></span></span><span class="cwf-action-arrow">›</span>
-            </button>
           </div>
-          <div class="cwf-note-box" style="margin-top:12px;line-height:1.55;">
-            <b>⚠️ ต้องทำให้ครบก่อนปิดงานแก้ไข</b>
-            <div id="revisit-ready-${jobId}" class="muted" style="margin-top:6px;">❌ รูปก่อนแก้ไข · ❌ รูปหลังแก้ไข · ❌ สาเหตุ · ❌ ผลการแก้ไข</div>
-          </div>
-          ${revisitReadyHtml}
-        `}
-      </section>
 
-      <details class="cwf-details" style="margin-top:10px;">
-        <summary>👥 ทีมช่างในงานนี้</summary>
-        <div class="cwf-details-body" id="team-${jobId}">กำลังโหลด...</div>
-      </details>
-
-      <div style="margin-top:10px;">
-        <div class="row" style="gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" style="width:auto;" ${telPhone ? "" : "disabled"} onclick="callCustomer('${jobKeyJs}', '${telPhone}')">📞 โทรลูกค้า</button>
+          ${historyMode ? "" : `<div id="travel-hint-${jobId}" class="muted" style="margin-top:6px;">${flowHint}</div>`}
         </div>
-        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" style="width:auto;" ${((job.address_text || job.maps_url || (job.gps_latitude != null && job.gps_longitude != null)) ? "" : "disabled")} onclick="openMaps(${job.gps_latitude ?? null}, ${job.gps_longitude ?? null}, '${(job.address_text||"").replace(/'/g,"\'")}', '${String(job.maps_url||"").replace(/'/g,"\'")}' )">🧭 แผนที่</button>
-        </div>
-        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-          <button type="button" style="width:100%;" data-role="workflow" data-jobkey="${escapeAttr(keyBase)}" ${workflowDisabled ? "disabled" : ""} onclick="${workflowOnclick}">${workflowLabel}</button>
-        </div>
-        ${historyMode ? "" : `<div id="travel-hint-${jobId}" class="muted" style="margin-top:6px;">${flowHint}</div>`}
       </div>
     `;
 
     setTimeout(() => {
       loadTeam(jobId);
-      try { refreshPhotoStatus(jobId); } catch (_) {}
     }, 0);
+
     return div;
   }
 
@@ -4324,6 +4265,8 @@ function buildJobCard(job, historyMode = false) {
         </div>
 
         ${historyMode ? "" : `<div id="travel-hint-${jobId}" class="muted" style="margin-top:6px;">${flowHint}</div>`}
+      </div>
+
 
 
 
