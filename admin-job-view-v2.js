@@ -14,7 +14,7 @@
  */
 
 console.info('[admin-job-view] rework UI v3 loaded');
-console.info('[admin-job-edit] price auto-fill v1 loaded');
+console.info('[admin-job-edit] service builder v2 loaded');
 
 function safe(t){ return (t||'').toString(); }
 function fmtDT(iso){
@@ -148,6 +148,21 @@ function ensureCaseModal(){
       .reworkMiniRow{display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap}
       .reworkDanger{margin-top:12px;border:1px solid rgba(239,68,68,.22);border-radius:14px;background:#fff7f7;padding:12px}
       .reworkDanger b{color:#991b1b}.reworkDanger button{margin-top:8px;width:auto;border:1px solid rgba(239,68,68,.28);background:#fff;color:#991b1b;border-radius:12px;padding:9px 12px;font-weight:1000}
+      .editServiceBuilder{border:1px solid rgba(21,88,214,.16);border-radius:20px;background:linear-gradient(180deg,#ffffff,#f8fbff);padding:14px;box-shadow:0 14px 34px rgba(2,6,23,.06)}
+      .editServiceBuilderHead{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap}
+      .editBuilderBadge{border:1px solid rgba(21,88,214,.18);border-radius:999px;background:#fff;color:#1558d6;font-size:12px;font-weight:1000;padding:5px 9px}
+      .editBuilderNotice{margin-top:10px;border:1px solid rgba(34,197,94,.22);background:#f0fdf4;color:#166534;border-radius:14px;padding:10px 12px;font-weight:900;font-size:13px}
+      .editServiceList{display:grid;gap:12px}
+      .editServiceCard{border:1px solid rgba(15,23,42,.10);border-radius:18px;background:#fff;padding:12px;box-shadow:0 8px 22px rgba(2,6,23,.045)}
+      .editServiceCardHead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+      .editServiceTitle{font-weight:1000;color:#071947}.editServiceMeta{font-size:12px;color:#64748b;font-weight:800;margin-top:4px}
+      .editServiceGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+      .editServiceGrid label{font-size:12px;font-weight:1000;color:#64748b;margin-bottom:5px;display:block}
+      .editServiceGrid select,.editServiceGrid input{width:100%;min-height:44px;border:1px solid #d9e5ff;border-radius:13px;padding:10px 11px;background:#fff;color:#09152f;font:inherit;font-weight:800}
+      .editLinePreview{margin-top:10px;border:1px solid rgba(21,88,214,.12);background:#f8fbff;border-radius:14px;padding:10px 11px;color:#0f172a;font-weight:900}
+      .editPriceBox{margin-top:10px;display:flex;gap:8px;align-items:center;justify-content:space-between;flex-wrap:wrap;border:1px solid rgba(255,204,0,.38);background:#fffbeb;border-radius:14px;padding:10px 11px}
+      .editPriceBox b{font-size:18px;color:#0b1b3a}.editPriceStatus{font-size:12px;color:#64748b;font-weight:900}.editManualPrice{margin-top:8px;border:1px dashed rgba(180,83,9,.35);border-radius:13px;padding:9px;background:#fff7ed}
+      .editServiceSummary{margin-top:12px;border-radius:16px;background:#071947;color:#fff;padding:12px 14px}.editTotalText{font-weight:1000;font-size:18px}.editServiceSummary .muted2{color:rgba(255,255,255,.82)}
       @media(max-width:720px){.caseModal{margin:8px auto}.caseGrid,.reworkGrid{grid-template-columns:1fr}.caseActions{justify-content:stretch}.caseBtn,.reworkPrimary,.reworkSecondary button,.reworkMiniCard button,.reworkDanger button{width:100%}}
     `;
     document.head.appendChild(style);
@@ -648,25 +663,29 @@ async function loadJob(){
           <input id="edit_team_members_json" type="hidden" value="${escapeHtml(JSON.stringify(teamInitMembers))}" />
         </div>
 
-        <div style="margin-top:12px">
-          <b>🧾 แก้ไข/เพิ่มรายการบริการ</b>
-          <div class="muted2 mini" style="margin-top:6px">เพิ่ม/ลบ/แก้ไขได้ (เหมือนหน้าเพิ่มงานแบบย่อ)</div>
-          <div class="table-wrap" style="margin-top:10px;overflow:auto">
-            <div class="row" style="gap:10px;flex-wrap:wrap;margin-bottom:8px">
-              <select id="edit_split_mode" style="width:220px">
-                <option value="mixed">แบ่งตามที่กำหนด (assign + ร่วม)</option>
-                <option value="coop_equal">ทำร่วมกันทั้งหมด (หารเท่ากัน)</option>
-              </select>
-              <button id="btnApplySplitMode" class="secondary" type="button" style="width:auto">ใช้โหมดนี้กับทุกรายการ</button>
-              <button id="btnNormalizeItems" class="secondary" type="button" style="width:auto">แปลงจำนวนเครื่องอัตโนมัติ</button>
+        <div class="editServiceBuilder" style="margin-top:14px">
+          <div class="editServiceBuilderHead">
+            <div>
+              <b>🧾 แก้ไข/เพิ่มรายการบริการ</b>
+              <div class="muted2 mini" style="margin-top:6px">เลือกบริการเหมือนหน้าเพิ่มงาน • เพิ่มหลายรายการได้ • ราคาและเวลาคำนวณอัตโนมัติ</div>
             </div>
-            <table>
-              <thead><tr><th>รายการ</th><th style="text-align:right">มอบหมายให้</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th><th></th></tr></thead>
-              <tbody id="items_editor"></tbody>
-            </table>
-            <div id="edit_items_total" class="muted2" style="margin-top:8px;text-align:right;font-weight:700"></div>
+            <span class="editBuilderBadge">Service Builder v2</span>
           </div>
-          <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap">
+          <div class="editBuilderNotice">ระบบจะใช้รายการที่เลือกเป็นหลัก ไม่ต้องกรอกราคาเอง ยกเว้นกด “แก้ราคาเอง” เท่านั้น</div>
+          <div class="row" style="gap:10px;flex-wrap:wrap;margin-top:10px">
+            <select id="edit_split_mode" style="width:260px;max-width:100%">
+              <option value="mixed">มอบหมายแยกตามรายการ</option>
+              <option value="coop_equal">ทำร่วมกันทั้งหมด</option>
+            </select>
+            <button id="btnApplySplitMode" class="secondary" type="button" style="width:auto">ใช้โหมดนี้กับทุกรายการ</button>
+            <button id="btnNormalizeItems" class="secondary" type="button" style="width:auto">แปลงจำนวนเครื่องอัตโนมัติ</button>
+          </div>
+          <div id="items_editor" class="editServiceList" style="margin-top:12px"></div>
+          <div class="editServiceSummary">
+            <div id="edit_items_total" class="editTotalText">รวมรายการบริการ 0 บาท</div>
+            <div id="edit_duration_total" class="muted2 mini"></div>
+          </div>
+          <div class="row" style="margin-top:12px;gap:10px;flex-wrap:wrap">
             <button id="btnAddItem" class="secondary" type="button" style="width:auto">➕ เพิ่มรายการ</button>
             <button id="btnSaveEdit" type="button" style="width:auto">💾 บันทึกใบงาน</button>
           </div>
@@ -880,6 +899,9 @@ async function loadJob(){
       } catch(_e) {}
       return row;
     };
+    const EDIT_JOB_TYPES = { wash:'ล้าง', repair:'ซ่อม', install:'ติดตั้ง' };
+    const EDIT_REPAIR_TYPES = { standard:'ตรวจเช็ค/ซ่อมทั่วไป', leak:'ตรวจเช็ครั่ว', parts:'ซ่อมเปลี่ยนอะไหล่' };
+    const EDIT_REPAIR_PAYLOAD = { standard:'', leak:'ตรวจเช็ครั่ว', parts:'ซ่อมเปลี่ยนอะไหล่' };
     const STD_AC_TYPES = {
       wall: 'แอร์ผนัง',
       fourway: 'แอร์สี่ทิศทาง',
@@ -919,45 +941,65 @@ async function loadJob(){
       if (s.includes('ธรรมดา') || s.includes('ปกติ')) return 'ล้างธรรมดา';
       return s;
     };
+    const normalizeEditJobTypeKey = (value) => {
+      const s = String(value || '').trim();
+      if (s === 'ซ่อม' || s === 'repair') return 'repair';
+      if (s === 'ติดตั้ง' || s === 'install') return 'install';
+      return 'wash';
+    };
+    const jobTypePayload = (key) => EDIT_JOB_TYPES[normalizeEditJobTypeKey(key)] || 'ล้าง';
+    const parseBtuKeyFromNumber = (n) => Number(n || 0) >= 18000 ? 'large' : 'small';
     const standardItemName = (it) => {
+      const jobKey = normalizeEditJobTypeKey(it.job_type_key || it.job_type || 'wash');
       const ac = String(it.ac_type_key || 'wall');
-      const qty = Math.max(0, Math.round(Number(it.qty || 0)));
+      const qty = Math.max(1, Math.round(Number(it.qty || it.machine_count || 1)));
+      const tier = ac === 'wall' ? String(it.btu_tier || 'small') : (String(it.btu_tier || 'all'));
+      const btuText = tier === 'large' ? '18000 BTU' : (tier === 'all' ? '12000 BTU' : '12000 BTU');
+      if (jobKey === 'repair') {
+        const rv = String(it.repair_type_key || 'standard');
+        const rvText = EDIT_REPAIR_TYPES[rv] || EDIT_REPAIR_TYPES.standard;
+        return `ซ่อมแอร์${STD_AC_PAYLOAD[ac] || 'ผนัง'} • ${rvText} • ${btuText} • ${qty} เครื่อง`;
+      }
+      if (jobKey === 'install') {
+        return `ติดตั้งแอร์${STD_AC_PAYLOAD[ac] || 'ผนัง'} • ${btuText} • ${qty} เครื่อง`;
+      }
       if (ac === 'wall') {
         const wash = String(it.wash_type_key || 'normal');
-        const tier = String(it.btu_tier || 'small');
-        const btuText = tier === 'large' ? '18000 BTU' : '12000 BTU';
-        return `ล้างแอร์ผนัง • ${STD_WASH_TYPES[wash] || STD_WASH_TYPES.normal} • ${btuText} • ${qty || 1} เครื่อง`;
+        return `ล้างแอร์ผนัง • ${STD_WASH_TYPES[wash] || STD_WASH_TYPES.normal} • ${btuText} • ${qty} เครื่อง`;
       }
-      return `${STD_AC_TYPES[ac] || STD_AC_TYPES.fourway} • ทุก BTU • ${qty || 1} เครื่อง`;
+      return `ล้างแอร์${STD_AC_PAYLOAD[ac] || 'สี่ทิศทาง'} • ${btuText} • ${qty} เครื่อง`;
     };
     const parseStandardItemName = (name) => {
-      const s = String(name || '').toLowerCase();
+      const raw = String(name || '');
+      const s = raw.toLowerCase();
       if (!s.trim()) return null;
+      const job_type_key = s.includes('ติดตั้ง') ? 'install' : (s.includes('ซ่อม') ? 'repair' : 'wash');
       const hasWallCoil = s.includes('แขวนคอย') || s.includes('coil');
       const ac = s.includes('สี่ทิศ') || s.includes('cassette') || s.includes('four') ? 'fourway'
         : (s.includes('ผนัง') || s.includes('wall') || hasWallCoil || s.includes('ล้างแอร์') ? 'wall'
         : ((s.includes('แขวน') || s.includes('ตั้งพื้น') || s.includes('floor')) && !hasWallCoil ? 'hanging'
-        : (s.includes('เปลือย') || s.includes('ใต้ฝ้า') || s.includes('ceiling') || s.includes('concealed') ? 'ceiling' : null)));
-      if (!ac) return null;
+        : (s.includes('เปลือย') || s.includes('ใต้ฝ้า') || s.includes('ceiling') || s.includes('concealed') ? 'ceiling' : 'wall')));
       const wash = ac !== 'wall' ? 'none'
         : (s.includes('พรีเมียม') || s.includes('พรีเมี่ยม') || s.includes('premium') ? 'premium'
         : (s.includes('แขวนคอย') || s.includes('coil') ? 'coil'
         : (s.includes('ตัดล้าง') || s.includes('overhaul') || s.includes('ใหญ่') ? 'overhaul' : 'normal')));
-      const tier = ac !== 'wall' ? 'all' : ((s.includes('18000') || s.includes('18,000') || s.includes('18 000')) ? 'large' : 'small');
-      return { ac_type_key: ac, wash_type_key: wash, btu_tier: tier, is_standard: true };
+      const repair_type_key = s.includes('รั่ว') ? 'leak' : (s.includes('อะไหล่') ? 'parts' : 'standard');
+      const tier = (s.includes('18000') || s.includes('18,000') || s.includes('18 000')) ? 'large' : 'small';
+      return { job_type_key, job_type: jobTypePayload(job_type_key), ac_type_key: ac, wash_type_key: wash, repair_type_key, btu_tier: tier, is_standard: true };
     };
 
     const getEditStandardPayload = (row) => {
       const acKey = String(row?.ac_type_key || 'wall');
       const qty = Math.max(1, Math.round(Number(row?.qty || 1)));
-      const jobType = String(row?.job_type || el('edit_job_type')?.value || job.job_type || 'ล้าง').trim() || 'ล้าง';
+      const jobKey = normalizeEditJobTypeKey(row?.job_type_key || row?.job_type || el('edit_job_type')?.value || job.job_type || 'wash');
+      const tier = String(row?.btu_tier || (acKey === 'wall' ? 'small' : 'all'));
       return {
-        job_type: jobType === 'ล้าง' ? 'ล้าง' : jobType,
+        job_type: jobTypePayload(jobKey),
         ac_type: STD_AC_PAYLOAD[acKey] || 'ผนัง',
-        btu: Number(STD_BTU_VALUE[String(row?.btu_tier || 'small')] || 12000),
+        btu: Number(STD_BTU_VALUE[tier] || 12000),
         machine_count: qty,
-        wash_variant: acKey === 'wall' ? normalizeEditWashVariant(STD_WASH_PAYLOAD[String(row?.wash_type_key || 'normal')] || 'ล้างธรรมดา') : '',
-        repair_variant: '',
+        wash_variant: (jobKey === 'wash' && acKey === 'wall') ? normalizeEditWashVariant(STD_WASH_PAYLOAD[String(row?.wash_type_key || 'normal')] || 'ล้างธรรมดา') : '',
+        repair_variant: jobKey === 'repair' ? (EDIT_REPAIR_PAYLOAD[String(row?.repair_type_key || 'standard')] || '') : '',
         admin_override_duration_min: 0,
       };
     };
@@ -968,6 +1010,8 @@ async function loadJob(){
       const wash = normalizeEditWashVariant(payload.wash_variant || '');
       const qty = Math.max(1, Number(payload.machine_count || 1));
       const btu = Number(payload.btu || 0);
+      if (jobType === 'ติดตั้ง') return 0;
+      if (jobType === 'ซ่อม') return (String(payload.repair_variant||'') === 'ตรวจเช็ครั่ว') ? 1000 : 700;
       if (jobType !== 'ล้าง') return 0;
       if (acType === 'ผนัง' || !acType) {
         const large = Number.isFinite(btu) && btu >= 18000;
@@ -1003,11 +1047,16 @@ async function loadJob(){
       const total = editorItems.reduce((sum, it) => sum + (Math.max(0, Number(it.qty || 0)) * Math.max(0, Number(it.unit_price || 0))), 0);
       const box = el('edit_items_total');
       if (box) box.textContent = `รวมรายการบริการ ${total.toLocaleString('th-TH')} บาท`;
+      const dBox = el('edit_duration_total');
+      if (dBox) {
+        const d = computeEditDurationMin();
+        dBox.textContent = d ? `เวลางานประมาณ ${Number(d).toLocaleString('th-TH')} นาที (ยังไม่รวมเงื่อนไขหน้างานพิเศษ)` : 'เวลางานจะคำนวณหลังระบบดึงราคามาตรฐานสำเร็จ';
+      }
       return total;
     };
 
     const updatePriceStatusForRow = (idx) => {
-      const tr = tbody?.querySelector(`tr[data-idx="${idx}"]`);
+      const tr = tbody?.querySelector(`[data-idx="${idx}"]`);
       if (!tr) return;
       const row = editorItems[idx];
       const status = tr.querySelector('.it_price_status');
@@ -1067,7 +1116,7 @@ async function loadJob(){
       if (opts.force || !row.price_overridden) {
         row.unit_price = unitPrice;
         row.price_overridden = false;
-        const tr = tbody?.querySelector(`tr[data-idx="${idx}"]`);
+        const tr = tbody?.querySelector(`[data-idx="${idx}"]`);
         const unit = tr?.querySelector('.it_unit');
         if (unit) unit.value = String(unitPrice);
       }
@@ -1138,136 +1187,146 @@ async function loadJob(){
     const renderEditor = () => {
       if (!tbody) return;
       if (!editorItems.length) {
-        tbody.innerHTML = `<tr><td colspan="6" class="muted2">ยังไม่มีรายการ (กด “เพิ่มรายการ”)</td></tr>`;
+        tbody.innerHTML = `<div class="editServiceCard muted2">ยังไม่มีรายการ (กด “เพิ่มรายการ” เพื่อเพิ่มบริการเหมือนหน้าเพิ่มงาน)</div>`;
+        updateEditorTotal();
         return;
       }
       const teamMembers = getCurrentTeamMembers();
       tbody.innerHTML = editorItems.map((it, idx)=>{
-        const line = (Number(it.qty)||0) * (Number(it.unit_price)||0);
+        const q = Math.max(1, Number(it.qty||1));
+        const unitPrice = Math.max(0, Number(it.unit_price||0));
+        const line = q * unitPrice;
         const curAssignee = String(it.assigned_technician_username||'').trim();
+        const jobKey = normalizeEditJobTypeKey(it.job_type_key || it.job_type || 'wash');
         const acKey = String(it.ac_type_key || 'wall');
-        const isStd = !!it.is_standard || !!it.ac_type_key;
         const washKey = acKey === 'wall' ? String(it.wash_type_key || 'normal') : 'none';
-        const btuKey = acKey === 'wall' ? String(it.btu_tier || 'small') : 'all';
-        // Ensure the current assignee is selectable even if not in the team list snapshot (legacy jobs).
+        const repairKey = String(it.repair_type_key || 'standard');
+        const btuKey = String(it.btu_tier || (acKey === 'wall' ? 'small' : 'all'));
+        const isStd = !!it.is_standard || !!it.ac_type_key || !!it.job_type_key;
         const members = teamMembers.slice();
         if (curAssignee && !members.includes(curAssignee)) members.push(curAssignee);
         const assigneeOpts = [''].concat(members).map(u=>{
           const val = String(u||'').trim();
-          if (!val) return `<option value="">-</option>`;
+          if (!val) return `<option value="">ใช้ช่างหลัก/ไม่ระบุ</option>`;
           const label = `${techDisplayName(val)} (${val})`;
           const sel = curAssignee && curAssignee === val ? 'selected' : '';
           return `<option value="${escapeHtml(val)}" ${sel}>${escapeHtml(label)}</option>`;
         }).join('');
+        const jobOpts = Object.entries(EDIT_JOB_TYPES).map(([k,v])=>`<option value="${k}" ${jobKey===k?'selected':''}>${escapeHtml(v)}</option>`).join('');
         const acOpts = Object.entries(STD_AC_TYPES).map(([k,v])=>`<option value="${k}" ${acKey===k?'selected':''}>${escapeHtml(v)}</option>`).join('');
         const washOpts = Object.entries(STD_WASH_TYPES).map(([k,v])=>`<option value="${k}" ${washKey===k?'selected':''}>${escapeHtml(v)}</option>`).join('');
+        const repairOpts = Object.entries(EDIT_REPAIR_TYPES).map(([k,v])=>`<option value="${k}" ${repairKey===k?'selected':''}>${escapeHtml(v)}</option>`).join('');
         const btuOpts = Object.entries(STD_BTU).filter(([k])=>acKey === 'wall' ? k !== 'all' : k === 'all').map(([k,v])=>`<option value="${k}" ${btuKey===k?'selected':''}>${escapeHtml(v)}</option>`).join('');
-        return `<tr data-idx="${idx}">
-          <td style="min-width:280px">
-            <div class="std_editor" style="${isStd?'':'display:none'};display:${isStd?'grid':'none'};gap:6px">
-              <select class="it_ac_type">${acOpts}</select>
-              <select class="it_wash_type" style="${acKey==='wall'?'':'display:none'}">${washOpts}</select>
-              <select class="it_btu_tier">${btuOpts}</select>
-              <div class="muted2" style="font-size:12px">${escapeHtml(standardItemName({ ...it, ac_type_key: acKey, wash_type_key: washKey, btu_tier: btuKey }))}</div>
+        const previewName = isStd ? standardItemName({ ...it, job_type_key: jobKey, ac_type_key: acKey, wash_type_key: washKey, repair_type_key: repairKey, btu_tier: btuKey, qty:q }) : (it.item_name || 'รายการกำหนดเอง');
+        return `<div class="editServiceCard" data-idx="${idx}">
+          <div class="editServiceCardHead">
+            <div>
+              <div class="editServiceTitle">รายการที่ ${idx+1}</div>
+              <div class="editServiceMeta">เลือกบริการเหมือนหน้าเพิ่มงาน แล้วระบบคำนวณราคาให้</div>
             </div>
-            <div class="legacy_editor" style="${isStd?'display:none':''}">
-              <input class="it_name" value="${escapeHtml(it.item_name)}" placeholder="ชื่อรายการ" />
-              <button type="button" class="btn-small it_convert" style="width:auto;margin-top:6px">แปลงเป็นรายการมาตรฐาน</button>
+            <button type="button" class="danger btn-small it_del" style="width:auto">ลบ</button>
+          </div>
+          <div class="editServiceGrid">
+            <div><label>ประเภทงาน</label><select class="it_job_type">${jobOpts}</select></div>
+            <div><label>ประเภทแอร์</label><select class="it_ac_type">${acOpts}</select></div>
+            <div style="${jobKey==='wash' && acKey==='wall'?'':'display:none'}"><label>วิธีล้าง</label><select class="it_wash_type">${washOpts}</select></div>
+            <div style="${jobKey==='repair'?'':'display:none'}"><label>ประเภทงานซ่อม</label><select class="it_repair_type">${repairOpts}</select></div>
+            <div><label>BTU</label><select class="it_btu_tier">${btuOpts}</select></div>
+            <div><label>จำนวนเครื่อง</label><input class="it_qty" type="number" min="1" step="1" value="${escapeHtml(String(q))}" /></div>
+            <div><label>มอบหมายให้</label><select class="it_assignee">${assigneeOpts}</select></div>
+          </div>
+          <div class="editLinePreview">${escapeHtml(previewName)}</div>
+          <div class="editPriceBox">
+            <div>
+              <div class="editPriceStatus it_price_status">${it.price_overridden ? 'แก้ราคาเอง' : 'ระบบคำนวณราคาให้อัตโนมัติจากรายการที่เลือก'}</div>
+              <b><span class="it_line">${Number.isFinite(line) ? line.toLocaleString('th-TH') : '0'}</span> บาท</b>
             </div>
-          </td>
-          <td style="width:210px">
-            <select class="it_assignee" style="width:100%">${assigneeOpts}</select>
-          </td>
-          <td style="width:90px;text-align:right"><input class="it_qty" type="number" min="0" step="1" value="${escapeHtml(String(it.qty))}" /></td>
-          <td style="width:170px;text-align:right">
-            <input class="it_unit" type="number" min="0" step="1" value="${escapeHtml(String(it.unit_price))}" />
-            <div class="it_price_status muted2" style="font-size:11px;margin-top:4px;text-align:left">${it.price_overridden ? 'แก้ราคาเอง' : 'ระบบคำนวณราคาให้อัตโนมัติจากรายการที่เลือก'}</div>
-            <button type="button" class="secondary btn-small it_use_standard" style="width:auto;margin-top:5px;display:${isStd?'inline-flex':'none'}">ใช้ราคามาตรฐาน</button>
-          </td>
-          <td style="width:110px;text-align:right"><b class="it_line">${Number.isFinite(line) ? line.toLocaleString() : '0'}</b></td>
-          <td style="width:70px;text-align:right"><button type="button" class="danger btn-small it_del" style="width:auto">ลบ</button></td>
-        </tr>`;
+            <button type="button" class="secondary btn-small it_use_standard" style="width:auto">ใช้ราคามาตรฐาน</button>
+          </div>
+          <details class="editManualPrice" ${it.price_overridden ? 'open' : ''}>
+            <summary style="font-weight:1000;color:#92400e;cursor:pointer">แก้ราคาเอง (ไม่แนะนำ ใช้เฉพาะเคสพิเศษ)</summary>
+            <label class="mini" style="display:block;margin-top:8px;font-weight:900;color:#92400e">ราคา/หน่วย</label>
+            <input class="it_unit" type="number" min="0" step="1" value="${escapeHtml(String(unitPrice))}" />
+          </details>
+          <div class="legacy_editor" style="${isStd?'display:none':'margin-top:10px'}">
+            <label class="mini" style="font-weight:900">รายการกำหนดเอง/งานเก่า</label>
+            <input class="it_name" value="${escapeHtml(it.item_name||'')}" placeholder="ชื่อรายการ" />
+            <button type="button" class="secondary btn-small it_convert" style="width:auto;margin-top:6px">แปลงเป็นรายการมาตรฐาน</button>
+          </div>
+        </div>`;
       }).join('');
 
-      // bind per-row
-      Array.from(tbody.querySelectorAll('tr')).forEach(tr=>{
-        const idx = Number(tr.getAttribute('data-idx'));
-        const name = tr.querySelector('.it_name');
-        const acSel = tr.querySelector('.it_ac_type');
-        const washSel = tr.querySelector('.it_wash_type');
-        const btuSel = tr.querySelector('.it_btu_tier');
-        const convert = tr.querySelector('.it_convert');
-        const assignee = tr.querySelector('.it_assignee');
+      Array.from(tbody.querySelectorAll('.editServiceCard')).forEach(card=>{
+        const idx = Number(card.getAttribute('data-idx'));
+        const jobSel = card.querySelector('.it_job_type');
+        const acSel = card.querySelector('.it_ac_type');
+        const washSel = card.querySelector('.it_wash_type');
+        const repairSel = card.querySelector('.it_repair_type');
+        const btuSel = card.querySelector('.it_btu_tier');
+        const convert = card.querySelector('.it_convert');
+        const assignee = card.querySelector('.it_assignee');
         const splitMode = String(el('edit_split_mode')?.value || 'mixed');
-        const qty = tr.querySelector('.it_qty');
-        const unit = tr.querySelector('.it_unit');
-        const useStandard = tr.querySelector('.it_use_standard');
-        const lineEl = tr.querySelector('.it_line');
-        const del = tr.querySelector('.it_del');
-
-        const recalc = () => {
-          const qv = Number(qty?.value||0);
-          const uv = Number(unit?.value||0);
-          const ln = (Number.isFinite(qv)?qv:0) * (Number.isFinite(uv)?uv:0);
-          if (lineEl) lineEl.textContent = (Number.isFinite(ln) ? ln : 0).toLocaleString();
-          updateEditorTotal();
-        };
+        const qty = card.querySelector('.it_qty');
+        const unit = card.querySelector('.it_unit');
+        const useStandard = card.querySelector('.it_use_standard');
+        const del = card.querySelector('.it_del');
+        const name = card.querySelector('.it_name');
 
         const syncStandard = () => {
           const row = editorItems[idx];
+          if (!row) return;
           row.is_standard = true;
-          row.ac_type_key = String(acSel?.value || 'wall');
-          if (row.ac_type_key !== 'wall') {
-            row.wash_type_key = 'none';
-            row.btu_tier = 'all';
-          } else {
-            row.wash_type_key = String(washSel?.value || 'normal');
-            row.btu_tier = String(btuSel?.value || 'small');
-          }
+          row.job_type_key = normalizeEditJobTypeKey(jobSel?.value || row.job_type_key || 'wash');
+          row.job_type = jobTypePayload(row.job_type_key);
+          row.ac_type_key = String(acSel?.value || row.ac_type_key || 'wall');
+          if (row.ac_type_key !== 'wall') row.btu_tier = 'all';
+          else row.btu_tier = String(btuSel?.value || row.btu_tier || 'small');
+          if (row.job_type_key === 'wash' && row.ac_type_key === 'wall') row.wash_type_key = String(washSel?.value || row.wash_type_key || 'normal');
+          else row.wash_type_key = row.ac_type_key === 'wall' ? String(row.wash_type_key || 'normal') : 'none';
+          row.repair_type_key = String(repairSel?.value || row.repair_type_key || 'standard');
+          row.qty = Math.max(1, Math.round(Number(qty?.value || row.qty || 1)));
           row.price_overridden = false;
           row.item_name = standardItemName(row);
           renderEditor();
           setTimeout(()=>updateEditItemPriceFromSelection(idx, { force:true }), 0);
         };
-        if (name) name.oninput = ()=>{ editorItems[idx].item_name = name.value; };
+        if (jobSel) jobSel.onchange = syncStandard;
         if (acSel) acSel.onchange = syncStandard;
         if (washSel) washSel.onchange = syncStandard;
+        if (repairSel) repairSel.onchange = syncStandard;
         if (btuSel) btuSel.onchange = syncStandard;
+        if (assignee) {
+          if (splitMode === 'coop_equal') { assignee.value = ''; assignee.disabled = true; }
+          assignee.onchange = ()=>{ editorItems[idx].assigned_technician_username = String(assignee.value||'').trim() || null; };
+        }
+        if (qty) qty.oninput = ()=>{
+          const row = editorItems[idx];
+          row.qty = Math.max(1, Math.round(Number(qty.value||1)));
+          if (row.is_standard) {
+            row.item_name = standardItemName(row);
+            if (!row.price_overridden) updateEditItemPriceFromSelection(idx);
+            else updatePriceStatusForRow(idx);
+          } else updatePriceStatusForRow(idx);
+        };
+        if (unit) unit.oninput = ()=>{
+          editorItems[idx].unit_price = Number(unit.value||0);
+          editorItems[idx].price_overridden = true;
+          updatePriceStatusForRow(idx);
+        };
+        if (useStandard) useStandard.onclick = async ()=>{
+          editorItems[idx].price_overridden = false;
+          await updateEditItemPriceFromSelection(idx, { force:true });
+          renderEditor();
+        };
         if (convert) convert.onclick = () => {
-          const parsed = parseStandardItemName(editorItems[idx].item_name) || { ac_type_key:'wall', wash_type_key:'normal', btu_tier:'small', is_standard:true };
+          const parsed = parseStandardItemName(editorItems[idx].item_name) || { job_type_key:'wash', job_type:'ล้าง', ac_type_key:'wall', wash_type_key:'normal', repair_type_key:'standard', btu_tier:'small', is_standard:true };
           Object.assign(editorItems[idx], parsed);
           editorItems[idx].price_overridden = false;
           editorItems[idx].item_name = standardItemName(editorItems[idx]);
           renderEditor();
           setTimeout(()=>updateEditItemPriceFromSelection(idx, { force:true }), 0);
         };
-        if (assignee) {
-          if (splitMode === 'coop_equal') { assignee.value = ''; assignee.disabled = true; }
-          assignee.onchange = ()=>{
-          const v = String(assignee.value||'').trim();
-          editorItems[idx].assigned_technician_username = v || null;
-        };
-        }
-        if (qty) qty.oninput = ()=>{
-          editorItems[idx].qty = Number(qty.value||0);
-          if (editorItems[idx].is_standard) {
-            editorItems[idx].item_name = standardItemName(editorItems[idx]);
-            if (!editorItems[idx].price_overridden) updateEditItemPriceFromSelection(idx);
-            else recalc();
-          } else {
-            recalc();
-          }
-        };
-        if (unit) unit.oninput = ()=>{
-          editorItems[idx].unit_price = Number(unit.value||0);
-          editorItems[idx].price_overridden = true;
-          updatePriceStatusForRow(idx);
-          recalc();
-        };
-        if (useStandard) useStandard.onclick = async ()=>{
-          editorItems[idx].price_overridden = false;
-          await updateEditItemPriceFromSelection(idx, { force:true });
-        };
+        if (name) name.oninput = ()=>{ editorItems[idx].item_name = name.value; };
         if (del) del.onclick = ()=>{ editorItems.splice(idx,1); renderEditor(); };
         updatePriceStatusForRow(idx);
       });
@@ -1280,7 +1339,8 @@ async function loadJob(){
       editJobTypeEl.onchange = () => {
         editorItems.forEach((row, idx) => {
           if (row?.is_standard) {
-            row.job_type = String(editJobTypeEl.value || 'ล้าง').trim() || 'ล้าง';
+            row.job_type_key = normalizeEditJobTypeKey(editJobTypeEl.value || row.job_type_key || 'wash');
+            row.job_type = jobTypePayload(row.job_type_key);
             row.price_overridden = false;
             updateEditItemPriceFromSelection(idx, { force:true });
           }
@@ -1292,7 +1352,7 @@ async function loadJob(){
     if (btnAddItem) {
       btnAddItem.onclick = ()=>{
         const idx = editorItems.length;
-        editorItems.push({ item_id: null, item_name: 'ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU • 1 เครื่อง', qty: 1, unit_price: 0, ac_type_key:'wall', wash_type_key:'normal', btu_tier:'small', is_standard:true, price_overridden:false });
+        editorItems.push({ item_id: null, item_name: 'ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU • 1 เครื่อง', qty: 1, unit_price: 0, job_type_key:'wash', job_type:'ล้าง', ac_type_key:'wall', wash_type_key:'normal', repair_type_key:'standard', btu_tier:'small', is_standard:true, price_overridden:false });
         renderEditor();
         setTimeout(()=>updateEditItemPriceFromSelection(idx, { force:true }), 0);
       };
@@ -1376,10 +1436,11 @@ async function loadJob(){
               assigned_technician_username: String(it.assigned_technician_username||'').trim() || null,
               is_service: true,
               price_overridden: !!it.price_overridden,
-              job_type: String(it.job_type || payload.job_type || 'ล้าง').trim() || 'ล้าง',
+              job_type: it.is_standard ? jobTypePayload(it.job_type_key || it.job_type || 'wash') : (String(it.job_type || payload.job_type || 'ล้าง').trim() || 'ล้าง'),
               ac_type: it.is_standard ? (STD_AC_PAYLOAD[String(it.ac_type_key || 'wall')] || 'ผนัง') : null,
-              wash_variant: it.is_standard && String(it.ac_type_key || 'wall') === 'wall' ? normalizeEditWashVariant(STD_WASH_PAYLOAD[String(it.wash_type_key || 'normal')] || 'ล้างธรรมดา') : null,
-              btu: it.is_standard ? Number(STD_BTU_VALUE[String(it.btu_tier || 'small')] || 12000) : null,
+              wash_variant: it.is_standard && normalizeEditJobTypeKey(it.job_type_key || it.job_type || 'wash') === 'wash' && String(it.ac_type_key || 'wall') === 'wall' ? normalizeEditWashVariant(STD_WASH_PAYLOAD[String(it.wash_type_key || 'normal')] || 'ล้างธรรมดา') : null,
+              repair_variant: it.is_standard && normalizeEditJobTypeKey(it.job_type_key || it.job_type || 'wash') === 'repair' ? (EDIT_REPAIR_PAYLOAD[String(it.repair_type_key || 'standard')] || '') : null,
+              btu: it.is_standard ? Number(STD_BTU_VALUE[String(it.btu_tier || ((String(it.ac_type_key||'wall')==='wall')?'small':'all'))] || 12000) : null,
               machine_count: Number(it.qty || 0),
             }))
             .filter(it=>it.item_name);
