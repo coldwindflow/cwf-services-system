@@ -13,6 +13,8 @@
  *  - /admin/jobs/:id/clone_v2
  */
 
+console.info('[admin-job-view] rework UI v2 loaded');
+
 function safe(t){ return (t||'').toString(); }
 function fmtDT(iso){
   if (!iso) return '-';
@@ -710,6 +712,7 @@ async function loadJob(){
         <div class="reworkTitle">
           <b>🛡️ งานแก้ไข / ประกัน</b>
           <span class="muted2 mini">ใช้เมื่อต้องส่งงานเดิมกลับให้ช่างแก้ไข พร้อมเก็บประวัติและหลักฐานสำหรับตรวจสอบภายหลัง</span>
+          <span class="muted2 mini" style="display:inline-flex;width:max-content;max-width:100%;border:1px solid rgba(21,88,214,.14);border-radius:999px;padding:3px 8px;background:#fff">UI งานแก้ไข v2</span>
         </div>
         <div>${warrantyLabel(job)}</div>
       </div>
