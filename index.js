@@ -13959,6 +13959,7 @@ async function handleAdminBookV2(req, res) {
     const hasTech = (technician_username || '').toString().trim().length > 0;
     return hasTech ? 'single' : 'auto';
   })();
+  const payloadTechnicianUsername = (technician_username || '').toString().trim();
 
   if (!customer_name || !job_type || !appointment_datetime || !address_text) {
     return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ (ชื่อ/ประเภทงาน/วันนัด/ที่อยู่)" });
@@ -14002,7 +14003,7 @@ async function handleAdminBookV2(req, res) {
   // - team: technician_username required, team_members allowed
   const tmRawArr = Array.isArray(team_members_raw) ? team_members_raw : [];
   const tmAny = tmRawArr.some(x => (x||'').toString().trim());
-  const techProvided = (technician_username || '').toString().trim().length > 0;
+  const techProvided = payloadTechnicianUsername.length > 0;
   if (!isUrgentOffer) {
     if (assign_mode === 'single') {
       if (!techProvided) return res.status(400).json({ error: 'โหมด single ต้องระบุ technician_username' });
@@ -14019,7 +14020,7 @@ async function handleAdminBookV2(req, res) {
     ac_type: (ac_type || "").toString().trim(),
     btu: coerceNumber(btu, 0),
     machine_count: Math.max(1, coerceNumber(machine_count, 1)),
-    wash_variant: (wash_variant || "").toString().trim(),
+    wash_variant: normalizeWashVariantLabel(wash_variant || ""),
     repair_variant: (repair_variant || "").toString().trim(),
     // ✅ รองรับหลายรายการบริการในใบงานเดียว (admin-add-v2 ส่งมาเป็น services[])
     services: Array.isArray(body.services) ? body.services : (Array.isArray(body.service_lines) ? body.service_lines : null),
@@ -14105,6 +14106,13 @@ const serviceLineItems = buildServiceLineItemsFromPayload(
         assigned_to: (isUrgentOffer ? null : (technician_username || null)),
       }] }
 );
+console.log('[admin_book_v2] service lines normalized', serviceLineItems.map((it) => ({
+  item_name: it.item_name,
+  qty: it.qty,
+  unit_price: it.unit_price,
+  line_total: it.line_total,
+  assigned_technician_username: it.assigned_technician_username || null,
+})));
 
 if (coerceNumber(override_price, 0) > 0) {
   // Customer override price only. Payroll must never use this as technician income.
@@ -14139,6 +14147,14 @@ if (coerceNumber(override_price, 0) > 0) {
       }
     }
 
+    console.log('[admin_book_v2] service lines saved', computedItems.map((it) => ({
+      item_name: it.item_name,
+      qty: it.qty,
+      unit_price: it.unit_price,
+      line_total: it.line_total,
+      assigned_technician_username: it.assigned_technician_username || null,
+    })));
+
     // pricing via existing calcPricing
     const pricing = calcPricing(computedItems, promo);
 
@@ -14152,8 +14168,20 @@ if (coerceNumber(override_price, 0) > 0) {
 
     // choose technician
     // Urgent offer must NEVER auto-assign before a technician accepts the offer.
-    let selectedTech = isUrgentOffer ? "" : (technician_username || "").toString().trim();
-    if (!isUrgentOffer && !selectedTech) {
+    let selectedTech = "";
+    if (!isUrgentOffer && assign_mode === 'single') {
+      selectedTech = payloadTechnicianUsername;
+      if (!selectedTech) {
+        const err = new Error('โหมด single ต้องระบุ technician_username');
+        err.statusCode = 400;
+        throw err;
+      }
+    } else if (!isUrgentOffer && assign_mode === 'team') {
+      selectedTech = payloadTechnicianUsername;
+    } else if (!isUrgentOffer && assign_mode === 'auto') {
+      selectedTech = "";
+    }
+    if (!isUrgentOffer && assign_mode === 'auto' && !selectedTech) {
       // list group techs (Admin assign ignores accept_status)
       const isAll = (ttype === 'all');
       const tr = await client.query(
@@ -14209,6 +14237,20 @@ if (coerceNumber(override_price, 0) > 0) {
           console.warn("[admin_book_v2] forced out-of-zone assignment", forced_assignment_zone_warning);
         }
       }
+    }
+
+    console.log('[admin_book_v2] assignment source', {
+      assign_mode,
+      payload_technician_username: payloadTechnicianUsername,
+      selectedTech,
+      isUrgentOffer,
+    });
+
+    if (!isUrgentOffer && assign_mode === 'single' && selectedTech !== payloadTechnicianUsername) {
+      const err = new Error('single assignment mismatch');
+      err.statusCode = 500;
+      err.debug = { payload_technician_username: payloadTechnicianUsername, selectedTech };
+      throw err;
     }
 
     if (!isUrgentOffer && !selectedTech) {
@@ -24793,12 +24835,23 @@ function getNowBangkokMin() {
   const p = getNowBangkokParts();
   return p.hour * 60 + p.minute;
 }
+
+function normalizeWashVariantLabel(value) {
+  const s = String(value || "").trim();
+  if (!s) return "";
+  if (s.includes("แขวนคอย")) return "ล้างแขวนคอยล์";
+  if (s.includes("พรีเมียม")) return "ล้างพรีเมียม";
+  if (s.includes("ตัดล้าง")) return "ล้างแบบตัดล้าง";
+  if (s.includes("ธรรมดา") || s.includes("ปกติ")) return "ล้างธรรมดา";
+  return s;
+}
+
 function computeDurationMin(payload = {}, opts = {}) {
   const src = opts.source || "unknown";
   const job_type_raw = String(payload.job_type || payload.jobType || "").trim();
   const job_type = job_type_raw;
   const ac_type = String(payload.ac_type || payload.acType || "").trim();
-  const wash_variant = String(payload.wash_variant || payload.washVariant || "").trim();
+  const wash_variant = normalizeWashVariantLabel(payload.wash_variant || payload.washVariant || "");
   const repair_variant = String(payload.repair_variant || payload.repairVariant || "").trim();
   const machine_count = Math.max(1, Number(payload.machine_count || payload.machineCount || 1));
   const admin_override = Number(payload.admin_override_duration_min || payload.adminOverrideDurationMin || 0);
@@ -24817,7 +24870,7 @@ function computeDurationMin(payload = {}, opts = {}) {
     // ✅ กติกาเวลางาน CWF (ตามที่ล็อคไว้)
     if (ac_type === "ผนัง" || !ac_type) {
       if (wash_variant === "ล้างพรีเมียม") duration = step(80, 50);
-      else if (wash_variant === "ล้างแขวนคอยน์") duration = step(120, 90);
+      else if (wash_variant === "ล้างแขวนคอยล์") duration = step(120, 90);
       else if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่" || wash_variant === "ล้างแบบตัดล้างใหญ่") duration = step(180, 120);
       else duration = step(60, 40); // ล้างธรรมดา
     } else {
@@ -24845,7 +24898,7 @@ function computeStandardPrice(payload = {}) {
   const job_type = String(payload.job_type || "").trim();
   const ac_type_raw = String(payload.ac_type || "").trim();
   const ac_type = (ac_type_raw === "ใต้ฝ้า") ? "เปลือยใต้ฝ้า" : ac_type_raw;
-  const wash_variant = String(payload.wash_variant || "").trim();
+  const wash_variant = normalizeWashVariantLabel(payload.wash_variant || "");
   const repair_variant = String(payload.repair_variant || "").trim();
   const machine_count = Math.max(1, Number(payload.machine_count || 1));
   const btu = Number(payload.btu || 0);
@@ -24865,12 +24918,12 @@ function computeStandardPrice(payload = {}) {
     const tier18000 = Number.isFinite(btu) && btu >= 18000;
     if (!tier18000) {
       if (wash_variant === "ล้างพรีเมียม") return 900 * qty;
-      if (wash_variant === "ล้างแขวนคอยน์") return 1400 * qty;
+      if (wash_variant === "ล้างแขวนคอยล์") return 1400 * qty;
       if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่") return 2000 * qty;
       return 600 * qty;
     } else {
       if (wash_variant === "ล้างพรีเมียม") return 1100 * qty;
-      if (wash_variant === "ล้างแขวนคอยน์") return 1700 * qty;
+      if (wash_variant === "ล้างแขวนคอยล์") return 1700 * qty;
       if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่") return 2300 * qty;
       return 750 * qty;
     }
@@ -24900,7 +24953,7 @@ function normalizeServicesFromPayload(payload = {}) {
       ac_type: String(s.ac_type || "").trim(),
       btu: Number(s.btu || 0),
       machine_count: Math.max(1, Number(s.machine_count || 1)),
-      wash_variant: String(s.wash_variant || "").trim(),
+      wash_variant: normalizeWashVariantLabel(s.wash_variant || ""),
       repair_variant: String(s.repair_variant || "").trim(),
       admin_override_duration_min: Number(s.admin_override_duration_min || payload.admin_override_duration_min || 0),
       assigned_to: (s.assigned_to || s.assigned_technician_username || null) ? String(s.assigned_to || s.assigned_technician_username).trim() : null,

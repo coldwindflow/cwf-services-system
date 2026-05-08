@@ -7,6 +7,8 @@
 // BTU preset for dropdown
 const BTU_OPTIONS = [9000, 12000, 18000, 24000, 30000, 36000, 38000, 40000, 48000, 60000];
 
+console.info('[admin-add] assignment/service fix loaded v1');
+
 let state = {
   standard_price: 0,
   duration_min: 0,
@@ -523,6 +525,55 @@ function renderTechSelect(allowedIds=null){
   } catch(e) {}
 }
 
+function switchAssignModeToSingleForManualTech() {
+  const uiMode = (el('dispatch_mode_ui')?.value || 'assign').toString();
+  if (uiMode === 'urgent') return;
+  if (el('assign_mode_ui')) el('assign_mode_ui').value = 'single';
+  if (el('assign_mode')) el('assign_mode').value = 'single';
+}
+
+function syncManualTechnicianSelection(opts = {}) {
+  const uiMode = (el('dispatch_mode_ui')?.value || 'assign').toString();
+  const sel = el('technician_username_select');
+  const hidden = el('technician_username');
+  const value = (sel?.value || '').toString().trim();
+  const selectedLabel = sel?.selectedOptions?.[0]?.textContent || value;
+
+  if (uiMode === 'urgent') {
+    if (hidden) hidden.value = '';
+    state.confirmed_tech_username = '';
+    state.confirmed_tech_label = '';
+    return { assign_mode: 'auto', technician_username: '' };
+  }
+
+  let mode = (el('assign_mode')?.value || el('assign_mode_ui')?.value || 'auto').toString();
+  if (mode === 'auto' && value) {
+    switchAssignModeToSingleForManualTech();
+    mode = 'single';
+    if (!opts.forSubmit) showToast('เลือกช่างแล้ว ระบบเปลี่ยนเป็นโหมดเลือกช่างคนเดียว', 'info');
+    try { updateFlowUI(); } catch(e) {}
+    try { updateAssignUIVisibility(); } catch(e) {}
+  }
+
+  if (mode === 'single') {
+    if (hidden) hidden.value = value;
+    state.confirmed_tech_username = value;
+    state.confirmed_tech_label = value ? selectedLabel : '';
+    return { assign_mode: 'single', technician_username: value };
+  }
+
+  if (mode === 'team') {
+    const primary = (state.teamPicker?.primary || hidden?.value || value || '').toString().trim();
+    if (hidden) hidden.value = primary;
+    return { assign_mode: 'team', technician_username: primary };
+  }
+
+  if (hidden) hidden.value = '';
+  state.confirmed_tech_username = '';
+  state.confirmed_tech_label = '';
+  return { assign_mode: 'auto', technician_username: '' };
+}
+
 
 // --- Premium Team Picker (chips + search + primary badge) ---
 function escapeHtml(s){
@@ -846,6 +897,24 @@ function setBtuOptions() {
   sel.value = "12000";
 }
 
+function normalizeWashVariantLabel(value) {
+  const s = String(value || "").trim();
+  if (!s) return "";
+  if (s.includes("แขวนคอย")) return "ล้างแขวนคอยล์";
+  if (s.includes("พรีเมียม")) return "ล้างพรีเมียม";
+  if (s.includes("ตัดล้าง")) return "ล้างแบบตัดล้าง";
+  if (s.includes("ธรรมดา") || s.includes("ปกติ")) return "ล้างธรรมดา";
+  return s;
+}
+
+function normalizeServiceLineForPayload(line = {}) {
+  const out = { ...line };
+  if (String(out.job_type || "").trim() === "ล้าง" && String(out.ac_type || "").trim() === "ผนัง") {
+    out.wash_variant = normalizeWashVariantLabel(out.wash_variant);
+  }
+  return out;
+}
+
 function buildVariantUI() {
   const jt = (el("job_type").value || "").trim();
   const box = el("variant_box");
@@ -860,7 +929,7 @@ function buildVariantUI() {
           <option value="">-- เลือก --</option>
           <option value="ล้างธรรมดา">ล้างธรรมดา</option>
           <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
-          <option value="ล้างแขวนคอยน์">ล้างแขวนคอยน์</option>
+          <option value="ล้างแขวนคอยล์">ล้างแขวนคอยล์</option>
           <option value="ล้างแบบตัดล้าง">ล้างแบบตัดล้าง</option>
         </select>
       `;
@@ -895,7 +964,7 @@ function getPayloadV2() {
   const ac_type = (el("ac_type").value || "").trim();
   const btu = Number(el("btu").value || 0);
   const machine_count = Math.max(1, Number(el("machine_count").value || 1));
-  const wash_variant = (document.getElementById("wash_variant")?.value || "").trim();
+  const wash_variant = normalizeWashVariantLabel(document.getElementById("wash_variant")?.value || "");
   const repair_variant = (document.getElementById("repair_variant")?.value || "").trim();
   const admin_override_duration_min = Math.max(0, Number(el("override_duration_min").value || 0));
   return { job_type, ac_type, btu, machine_count, wash_variant, repair_variant, admin_override_duration_min };
@@ -923,7 +992,7 @@ function sameServiceLine(a,b){
     String(a.ac_type||'')===String(b.ac_type||'') &&
     Number(a.btu||0)===Number(b.btu||0) &&
     Number(a.machine_count||0)===Number(b.machine_count||0) &&
-    String(a.wash_variant||'')===String(b.wash_variant||'') &&
+    normalizeWashVariantLabel(a.wash_variant||'')===normalizeWashVariantLabel(b.wash_variant||'') &&
     String(a.repair_variant||'')===String(b.repair_variant||'') &&
     Number(a.admin_override_duration_min||0)===Number(b.admin_override_duration_min||0);
 }
@@ -953,7 +1022,7 @@ function renderServiceLines(){
     const jt0 = String(ln.job_type||jt||'').trim();
     const base = `${ln.ac_type||'-'} • ${Number(ln.btu||0)} BTU • ${Number(ln.machine_count||1)} เครื่อง`;
     let extra = '';
-    if(jt0 === 'ล้าง' && ln.ac_type==='ผนัง') extra = ` • ${ln.wash_variant||'ล้างธรรมดา'}`;
+    if(jt0 === 'ล้าง' && ln.ac_type==='ผนัง') extra = ` • ${normalizeWashVariantLabel(ln.wash_variant)||'ล้างธรรมดา'}`;
     if(jt0 === 'ซ่อม') extra = ` • ${ln.repair_variant||'-'}`;
     let dur = '';
     if(jt0 === 'ติดตั้ง' || jt0 === 'ซ่อม'){
@@ -1120,7 +1189,7 @@ function getServicesPayload(){
   const pushUnique=(ln)=>{
     if(!ln || !ln.job_type || !ln.ac_type || !ln.btu || !ln.machine_count) return;
     if(all.some(x=>sameServiceLine(x,ln))) return;
-    const out = { ...ln };
+    const out = normalizeServiceLineForPayload(ln);
     // ensure numeric
     out.admin_override_duration_min = Math.max(0, Number(out.admin_override_duration_min || 0));
     // Attach wash allocations (per technician) if user assigned workload in selected slot
@@ -2146,7 +2215,7 @@ function updateAssignSummary(){
   }
   if(mode === 'single'){
     const u = (state.confirmed_tech_username || (el('technician_username_select')?.value || el('technician_username')?.value || '')).trim();
-    t.textContent = u ? `เลือกเดี่ยว • ${techDisplay(u)} • username: ${u}` : 'เลือกเดี่ยว • ต้องกด “ยืนยันเลือกช่างคนนี้” ก่อนบันทึก';
+    t.textContent = u ? `เลือกเดี่ยว • ${techDisplay(u)} • username: ${u}` : 'เลือกเดี่ยว • กรุณาเลือกช่างก่อนบันทึก';
     return;
   }
   t.textContent = 'ยังไม่ได้เลือกช่าง • ระบบจะเลือกช่างว่างให้';
@@ -2460,8 +2529,9 @@ function openSlotModal(slot){
       } else if(mode === 'auto'){
         const sel = body.querySelector('#slotm_single');
         const v = (sel?.value || '').trim();
-        // optional: admin can preselect a tech in auto mode
+        // Manual technician choice is authoritative: switch to single mode.
         if(v){
+          switchAssignModeToSingleForManualTech();
           state.confirmed_tech_username = v;
           state.confirmed_tech_label = techDisplay(v);
           if(el('technician_username_select')) el('technician_username_select').value = v;
@@ -2513,6 +2583,46 @@ function bindMachineCountStepper(){
   set(input.value||1, {silent:true});
 }
 
+function wantsWallCoilWash(payload = {}) {
+  const lines = Array.isArray(payload.services) && payload.services.length
+    ? payload.services
+    : [payload];
+  return lines.some((ln) =>
+    String(ln?.job_type || '').trim() === 'ล้าง' &&
+    String(ln?.ac_type || '').trim() === 'ผนัง' &&
+    normalizeWashVariantLabel(ln?.wash_variant || '') === 'ล้างแขวนคอยล์'
+  );
+}
+
+async function verifyCreatedAdminJob(jobId, payload, expectedSingleTechnician) {
+  if (!jobId) return { ok: true, skipped: true };
+  const detail = await apiFetch(`/admin/job_v2/${jobId}`);
+  const job = detail?.job || detail || {};
+  const items = detail?.items || detail?.job_items || job?.job_items || [];
+  const mismatches = [];
+
+  if (expectedSingleTechnician) {
+    const savedTech = String(job.technician_username || '').trim();
+    if (savedTech !== expectedSingleTechnician) {
+      mismatches.push({ field: 'technician_username', expected: expectedSingleTechnician, actual: savedTech });
+    }
+  }
+
+  if (wantsWallCoilWash(payload)) {
+    const itemNames = items.map((it) => String(it.item_name || '')).filter(Boolean);
+    const hasWallCoil = itemNames.some((name) => name.includes('ล้างแอร์ผนัง') && name.includes('ล้างแขวนคอยล์'));
+    if (!hasWallCoil) {
+      mismatches.push({ field: 'wall_coil_wash_item', expected: 'ล้างแอร์ผนัง • ล้างแขวนคอยล์', actual: itemNames });
+    }
+  }
+
+  if (mismatches.length) {
+    console.warn('[admin-add] post-save verification mismatch', { job_id: jobId, mismatches, payload, detail });
+    return { ok: false, mismatches, detail };
+  }
+  return { ok: true, detail };
+}
+
 async function submitBooking() {
   const name = (el("customer_name").value || "").trim();
   const job_type = (el("job_type").value || "").trim();
@@ -2527,12 +2637,15 @@ async function submitBooking() {
   }
   syncModesFromUI();
   const uiMode = (el('dispatch_mode_ui')?.value || 'normal').toString();
+  const techSource = syncManualTechnicianSelection({ forSubmit: true });
+  const expectedSingleTechnician = (uiMode !== 'urgent' && techSource.assign_mode === 'single')
+    ? String(techSource.technician_username || '').trim()
+    : '';
   // Single mode must have a technician selected (admin adds work directly)
   if (uiMode !== 'urgent') {
     const mode = (el('assign_mode')?.value || 'auto').toString();
     if (mode === 'single') {
-      const chosen = (state.confirmed_tech_username || (el('technician_username')?.value||'') || (el('technician_username_select')?.value||''))
-        .toString().trim();
+      const chosen = expectedSingleTechnician;
       if (!chosen) {
         showToast('โหมดเดี่ยว: กรุณาเลือกช่างก่อนบันทึก', 'error');
         return;
@@ -2574,11 +2687,7 @@ async function submitBooking() {
       const mode = (el('assign_mode')?.value || 'auto').toString();
       if(mode === 'team') return (state.teamPicker.primary || '').trim();
       if(mode === 'single') {
-        const chosen = (state.confirmed_tech_username || (el("technician_username")?.value||"") || (el("technician_username_select")?.value||""))
-          .toString().trim();
-        // Make single-mode behave like "เลือกช่างด้านนอกแล้วจบ" (no extra confirm step)
-        if (chosen) state.confirmed_tech_username = chosen;
-        return chosen;
+        return expectedSingleTechnician;
       }
       return '';
     })(),
@@ -2612,11 +2721,19 @@ async function submitBooking() {
   if(services) payload.services = services;
   // NOTE: split_assignments is optional and backward compatible
 
+  console.info('[admin-add] submit technician source', {
+    assign_mode: payload.assign_mode,
+    technician_username_select: (el('technician_username_select')?.value || '').toString().trim(),
+    hidden_technician_username: (el('technician_username')?.value || '').toString().trim(),
+    confirmed_tech_username: (state.confirmed_tech_username || '').toString().trim(),
+    payload_technician_username: (payload.technician_username || '').toString().trim(),
+  });
+  console.info('[admin-add] service payload', payload.services || payload);
 
   // Client-side guard (UX): single mode requires confirmed technician.
   const amNow = (payload.assign_mode || 'auto').toString();
-  if (uiMode !== 'urgent' && amNow === 'single' && !(state.confirmed_tech_username || '').trim()) {
-    showToast('โหมดเดี่ยว: กรุณาเลือกช่าง แล้วกด “ยืนยันเลือกช่างคนนี้” ก่อนบันทึก', 'error');
+  if (uiMode !== 'urgent' && amNow === 'single' && !String(payload.technician_username||'').trim()) {
+    showToast('โหมดเดี่ยว: กรุณาเลือกช่างก่อนบันทึก', 'error');
     el("btnSubmit").disabled = false;
     return;
   }
@@ -2645,6 +2762,23 @@ async function submitBooking() {
     if (DEBUG_ENABLED) {
       DBG.lastRes = r;
       dbgRender();
+    }
+    if (expectedSingleTechnician && String(r.technician_username || '').trim() !== expectedSingleTechnician) {
+      console.warn('[admin-add] response technician mismatch', {
+        expected: expectedSingleTechnician,
+        actual: r.technician_username || '',
+        response: r,
+      });
+      showToast('บันทึกสำเร็จแต่ข้อมูลไม่ตรงที่เลือก กรุณาตรวจสอบใบงานก่อนส่งลูกค้า', 'error');
+      return;
+    }
+    const verify = await verifyCreatedAdminJob(r.job_id, payload, expectedSingleTechnician).catch((e) => {
+      console.warn('[admin-add] post-save verification failed', e);
+      return { ok: true, skipped: true };
+    });
+    if (!verify.ok) {
+      showToast('บันทึกสำเร็จแต่ข้อมูลไม่ตรงที่เลือก กรุณาตรวจสอบใบงานก่อนส่งลูกค้า', 'error');
+      return;
     }
     if(uiMode === 'urgent') {
       const offersRaw = r.offers_count ?? r.offer_count ?? r.offers_sent ?? r.offers;
@@ -2826,6 +2960,15 @@ function wireEvents() {
   }
   // ensure hidden booking_mode/dispatch_mode are in sync on first load
   syncModesFromUI();
+  const amUI = el('assign_mode_ui');
+  if(amUI){
+    amUI.addEventListener('change', ()=>{
+      syncModesFromUI();
+      syncManualTechnicianSelection();
+      renderSlots();
+      try { renderWashAssign(); } catch(e){}
+    });
+  }
 
   // initial label
   try { updateOverrideDurationLabel(); } catch(e){}
@@ -2869,9 +3012,10 @@ if (copyBtn) copyBtn.addEventListener("click", async () => {
   if(selTech) selTech.addEventListener("change", ()=>{
     if(el("technician_username")) el("technician_username").value = selTech.value||"";
     const mode = (el('assign_mode')?.value || 'auto').toString();
+    syncManualTechnicianSelection();
     // If admin is in single mode, selecting a tech should be enough (fail-open) —
     // still compatible with the explicit "ยืนยันเลือกช่างคนนี้" button.
-    if(mode === 'single'){
+    if((el('assign_mode')?.value || mode).toString() === 'single'){
       const v = (selTech.value||'').trim();
       if(v){
         const opt = selTech.selectedOptions && selTech.selectedOptions[0];
@@ -3029,7 +3173,7 @@ document.addEventListener("DOMContentLoaded", init);
   function normalizeLine(x){
     const jobRaw = String(x?.job_type || 'ล้าง').replace('ล้างแอร์','ล้าง');
     const acRaw = String(x?.ac_type || 'ผนัง').replace('แอร์ผนัง','ผนัง');
-    const washRaw = String(x?.wash_variant || '').replace('ล้างปกติ','ล้างธรรมดา').replace('ล้างแบบแขวนคอยล์','ล้างแขวนคอยน์').replace('ตัดล้างใหญ่','ล้างแบบตัดล้าง');
+    const washRaw = normalizeWashVariantLabel(String(x?.wash_variant || '').replace('ล้างปกติ','ล้างธรรมดา').replace('ตัดล้างใหญ่','ล้างแบบตัดล้าง'));
     return {
       job_type: jobRaw,
       ac_type: acRaw,
