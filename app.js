@@ -3093,14 +3093,19 @@ function getRevisitScheduleDraft(jobKey){
   return cwfReadJsonLS(cwfCloseJsonKey(key, 'revisit_schedule'), {
     revisit_agreed_at: '',
     revisit_schedule_note: '',
+    saved: false,
   }) || {};
 }
 
 function saveRevisitScheduleDraft(jobKey){
   const key = cwfCloseKey(jobKey);
+  const agreedAt = String(document.getElementById(`revisit-agreed-at-${key}`)?.value || '').trim();
+  // UX v11: ช่างต้องใส่เฉพาะวันเวลา ไม่ต้องกรอกสรุปการคุยให้ซับซ้อน
+  // เก็บ note สั้น ๆ อัตโนมัติไว้ให้ backend/audit เดิมทำงานต่อโดยไม่บังคับช่างพิมพ์
   const data = {
-    revisit_agreed_at: String(document.getElementById(`revisit-agreed-at-${key}`)?.value || '').trim(),
-    revisit_schedule_note: String(document.getElementById(`revisit-schedule-note-${key}`)?.value || '').trim(),
+    revisit_agreed_at: agreedAt,
+    revisit_schedule_note: agreedAt ? 'ช่างบันทึกเวลานัดแก้ไขกับลูกค้าแล้ว' : '',
+    saved: false,
   };
   cwfWriteJsonLS(cwfCloseJsonKey(key, 'revisit_schedule'), data);
   return data;
@@ -3111,7 +3116,6 @@ async function saveRevisitSchedule(jobKey){
   const key = cwfCloseKey(jobKey);
   const data = saveRevisitScheduleDraft(key);
   if (!data.revisit_agreed_at) return alert('กรุณาเลือกวันและเวลานัดแก้ไข');
-  if (!data.revisit_schedule_note) return alert('กรุณากรอกสรุปที่ตกลงกับลูกค้า');
   try {
     const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(key))}/revisit-schedule`, {
       method: 'POST',
@@ -3119,7 +3123,19 @@ async function saveRevisitSchedule(jobKey){
       body: JSON.stringify(data),
     });
     const out = await res.json().catch(() => ({}));
-    if (!res.ok || out.ok === false) throw new Error(out.error || 'บันทึกเวลานัดแก้ไขไม่สำเร็จ');
+    if (!res.ok || out.ok === false) {
+      if (out.code === 'REVISIT_SCHEDULE_CONFLICT' || res.status === 409) {
+        alert('เวลานี้ชนกับงานอื่นที่มีอยู่แล้ว\n\nหากจำเป็นต้องเข้าช่วงเวลานี้จริง ๆ\nกรุณาติดต่อแอดมินเพื่อย้ายคิวงานเดิมก่อน\nหรือเลือกเวลานัดแก้ไขใหม่');
+        cwfWriteJsonLS(cwfCloseJsonKey(key, 'revisit_schedule'), { ...data, saved: false });
+        return;
+      }
+      throw new Error(out.error || 'บันทึกเวลานัดแก้ไขไม่สำเร็จ');
+    }
+    cwfWriteJsonLS(cwfCloseJsonKey(key, 'revisit_schedule'), {
+      revisit_agreed_at: out.revisit_agreed_at || data.revisit_agreed_at,
+      revisit_schedule_note: out.revisit_schedule_note || data.revisit_schedule_note,
+      saved: true,
+    });
     const job = cwfGetCachedJob(key);
     if (job) {
       job.revisit_agreed_at = out.revisit_agreed_at || data.revisit_agreed_at;
@@ -3130,6 +3146,7 @@ async function saveRevisitSchedule(jobKey){
     cwfTechToast('✅ บันทึกเวลานัดแก้ไขแล้ว');
     try { loadJobs(); } catch {}
   } catch (e) {
+    alert(e.message || 'บันทึกเวลานัดแก้ไขไม่สำเร็จ');
     cwfTechToast(`❌ ${e.message || 'บันทึกเวลานัดแก้ไขไม่สำเร็จ'}`, true);
   }
 }
@@ -3167,6 +3184,72 @@ function saveRevisitCloseDraft(jobKey){
   return data;
 }
 window.saveRevisitCloseDraft = saveRevisitCloseDraft;
+
+
+function openRevisitScheduleModal(jobKey){
+  const key = cwfCloseKey(jobKey);
+  const job = cwfGetCachedJob(key) || {};
+  const draft = getRevisitScheduleDraft(key);
+  const saved = !!(job.revisit_agreed_at || draft.saved);
+  const agreedAt = String(job.revisit_agreed_at || draft.revisit_agreed_at || '').trim();
+  const body = `
+    <div class="cwf-modal-section">
+      <label>วันและเวลาที่ตกลงกับลูกค้า</label>
+      <input id="revisit-agreed-at-${key}" type="datetime-local" value="${escapeAttr(agreedAt ? agreedAt.slice(0,16) : '')}" oninput="saveRevisitScheduleDraft('${key}')">
+      <div class="muted" style="margin-top:8px;font-size:12px;line-height:1.45">เลือกเฉพาะวันและเวลา ไม่ต้องกรอกสรุปการคุย ระบบจะตรวจคิวช่างก่อนบันทึก ถ้าเวลาชนกับงานอื่นจะไม่ให้บันทึก</div>
+      <div class="cwf-mini-status" style="margin-top:10px"><span class="cwf-chip ${saved ? 'ok':'warn'}">${saved ? 'บันทึกนัดแล้ว' : 'ยังไม่ได้บันทึกเวลานัดแก้ไข'}</span></div>
+    </div>
+  `;
+  const footer = `<button type="button" onclick="saveRevisitSchedule('${key}')">💾 บันทึกเวลานัดแก้ไข</button>`;
+  cwfOpenModal('📞 นัดเวลาแก้ไข', body, footer);
+}
+window.openRevisitScheduleModal = openRevisitScheduleModal;
+
+function openRevisitChecklistModal(jobKey){
+  const key = cwfCloseKey(jobKey);
+  const job = cwfGetCachedJob(key) || {};
+  const draft = getRevisitCloseDraft(key);
+  const causeParty = String(job.revisit_cause_party || draft.revisit_cause_party || '').trim();
+  const causeNote = String(job.revisit_cause_note || draft.revisit_cause_note || '').trim();
+  const resultValue = String(job.revisit_result || draft.revisit_result || '').trim();
+  const noteValue = String(job.revisit_note || draft.revisit_note || job.technician_note || '').trim();
+  const body = `
+    <div class="cwf-modal-section" style="background:#fff7ed;border-color:rgba(234,88,12,.18);color:#7c2d12">
+      <b>ตามสัญญาพาร์ทเนอร์</b>
+      <div style="margin-top:6px;font-size:13px;line-height:1.55">ช่างต้องรับผิดชอบงานที่เกิดจากคุณภาพงานเดิม งานไม่เรียบร้อย หรือการหลีกเลี่ยงงานแก้ไข หากแอดมินตรวจสอบแล้วพบว่าช่างเป็นฝ่ายผิด บริษัทมีสิทธิ์ไม่จ่ายค่าตอบแทนงานนั้น และ/หรือหักเงินตามความเสียหายจริงตามขั้นตอนอนุมัติของบริษัท</div>
+    </div>
+    <div class="cwf-modal-section">
+      <label>สาเหตุเกิดจากใคร</label>
+      <select id="revisit-cause-party-${key}" onchange="saveRevisitCloseDraft('${key}')">
+        <option value="">เลือกสาเหตุงานแก้ไข (จำเป็น)</option>
+        <option value="technician" ${causeParty==='technician'?'selected':''}>เกิดจากช่าง / งานเดิม</option>
+        <option value="customer" ${causeParty==='customer'?'selected':''}>เกิดจากการใช้งานของลูกค้า</option>
+        <option value="company" ${causeParty==='company'?'selected':''}>เกิดจากระบบ / อะไหล่ / เงื่อนไขบริษัท</option>
+        <option value="unclear" ${causeParty==='unclear'?'selected':''}>ยังไม่ชัดเจน ให้แอดมินตรวจ</option>
+      </select>
+    </div>
+    <div class="cwf-modal-section">
+      <label>อธิบายสาเหตุที่พบ</label>
+      <textarea id="revisit-cause-note-${key}" placeholder="เช่น น้ำหยดจากงานเดิม ลูกค้าใช้งานผิดเงื่อนไข หรือยังต้องให้แอดมินตรวจ" oninput="saveRevisitCloseDraft('${key}')">${escape(causeNote)}</textarea>
+      <div class="muted" style="margin-top:7px;font-size:12px">ต้องแนบรูปสาเหตุ/จุดปัญหาในเมนู “ลงรูปงานแก้ไข” ก่อนปิดงาน</div>
+    </div>
+    <div class="cwf-modal-section">
+      <label>ผลการแก้ไข</label>
+      <select id="revisit-result-${key}" onchange="saveRevisitCloseDraft('${key}')">
+        <option value="">เลือกผลการแก้ไข (จำเป็น)</option>
+        <option value="successful" ${resultValue==='successful'?'selected':''}>แก้ไขสำเร็จ ใช้งานได้ปกติ</option>
+        <option value="unsuccessful" ${resultValue==='unsuccessful'?'selected':''}>ยังไม่จบ / ยังมีอาการ ต้องให้แอดมินติดตาม</option>
+      </select>
+    </div>
+    <div class="cwf-modal-section">
+      <label>สรุปผลงานแก้ไข</label>
+      <textarea id="revisit-note-${key}" placeholder="สรุปว่าแก้อะไรไปแล้ว ผลเป็นอย่างไร ยังพบอาการอะไรไหม" oninput="saveRevisitCloseDraft('${key}')">${escape(noteValue)}</textarea>
+    </div>
+  `;
+  const footer = `<button type="button" onclick="saveRevisitCloseDraft('${key}'); cwfTechToast('✅ บันทึกเช็คลิสงานแก้ไขแล้ว'); cwfCloseModal();">💾 บันทึกเช็คลิส</button>`;
+  cwfOpenModal('✅ เช็คลิสงานแก้ไข', body, footer);
+}
+window.openRevisitChecklistModal = openRevisitChecklistModal;
 
 function revisitCausePartyLabel(value){
   const v = String(value || '').trim();
@@ -3314,6 +3397,7 @@ function ensureCwfCloseStyles(){
     .cwf-check-list{display:flex;flex-direction:column;gap:8px}.cwf-check-row{background:#fff;border:1px solid rgba(37,99,235,.13);border-radius:16px;padding:10px}.cwf-check-main{display:flex;align-items:center;gap:10px}.cwf-check-main input{width:22px;height:22px;accent-color:#1558d6}.cwf-check-main label{font-weight:900;color:#0f172a;line-height:1.35}.cwf-check-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-left:32px}.cwf-check-issue-photo{margin:8px 0 0 32px;font-size:12px;color:#475569}.cwf-link-btn{border:1px solid rgba(148,163,184,.3);background:#f8fafc;color:#334155;border-radius:999px;padding:7px 10px;font-weight:900;font-size:12px;width:auto}.cwf-issue-note{margin:8px 0 0 32px}.cwf-issue-note textarea{min-height:74px;border-radius:14px}
     .cwf-pay-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}.cwf-pay-tab{appearance:none!important;border:1px solid rgba(37,99,235,.16)!important;background:#fff!important;color:#0f172a!important;border-radius:17px!important;padding:12px 8px!important;font-weight:1000!important;min-height:62px!important;line-height:1.25!important}.cwf-pay-tab.active{background:linear-gradient(135deg,#1558d6,#05b6d6)!important;color:#fff!important;border-color:transparent!important;box-shadow:0 12px 28px rgba(37,99,235,.23)!important}.cwf-pay-card{background:#fff;border:1px solid rgba(37,99,235,.14);border-radius:20px;padding:13px;box-shadow:0 12px 28px rgba(15,23,42,.06)}.cwf-qr-img{display:block;width:min(300px,100%);margin:12px auto;border-radius:18px;border:1px solid rgba(15,23,42,.12);background:#fff}.cwf-pay-card input,.cwf-pay-card textarea{border-radius:14px}
     .cwf-note-box{background:#fff;border:1px solid rgba(37,99,235,.12);border-radius:18px;padding:12px;margin-top:10px}.cwf-note-box textarea{border-radius:16px;min-height:105px}.cwf-final-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.cwf-final-row button{border-radius:18px;min-height:52px}
+    .cwf-revisit-actions{display:grid;grid-template-columns:1fr;gap:10px;margin-top:10px}.cwf-revisit-card{appearance:none!important;-webkit-appearance:none!important;width:100%!important;display:flex!important;align-items:center!important;justify-content:space-between!important;gap:12px!important;text-align:left!important;border:1px solid rgba(148,163,184,.28)!important;background:#fff!important;color:#0f172a!important;border-radius:22px!important;padding:15px!important;box-shadow:0 10px 22px rgba(15,23,42,.07)!important}.cwf-revisit-card:active{transform:translateY(1px)!important}.cwf-revisit-card .left{display:flex;align-items:center;gap:12px;min-width:0}.cwf-revisit-card .ico{width:44px;height:44px;min-width:44px;border-radius:16px;background:#eef5ff;border:1px solid rgba(37,99,235,.12);display:flex;align-items:center;justify-content:center;font-size:23px}.cwf-revisit-card b{display:block;font-size:16px;color:#0f172a}.cwf-revisit-card small{display:block;margin-top:3px;color:#64748b;font-size:12px;line-height:1.35;font-weight:750}.cwf-revisit-card .arrow{font-size:22px;color:#94a3b8;font-weight:1000}.cwf-revisit-status-row{display:flex;gap:7px;flex-wrap:wrap;margin-top:8px}.cwf-revisit-compact{background:linear-gradient(180deg,#fff7ed,#fff);border:1px solid rgba(234,88,12,.18);border-radius:18px;padding:12px;color:#7c2d12}.cwf-modal-section{background:#fff;border:1px solid rgba(37,99,235,.12);border-radius:18px;padding:12px;margin-bottom:10px}.cwf-modal-section label{display:block;font-weight:1000;color:#0f172a;margin-bottom:6px}.cwf-modal-section input,.cwf-modal-section select,.cwf-modal-section textarea{width:100%;border:1px solid rgba(148,163,184,.35);border-radius:15px;padding:11px 12px;background:#fff;font:inherit}.cwf-modal-section textarea{min-height:110px}
     @media(max-width:560px){.cwf-photo-grid{grid-template-columns:1fr!important}.cwf-pay-tabs{grid-template-columns:1fr!important}.cwf-modal-panel{max-height:90vh!important}.cwf-final-row{grid-template-columns:1fr!important}}
   `;
   document.head.appendChild(style);
@@ -3949,10 +4033,8 @@ async function cwfValidateCloseRequirements(jobId, targetStatus){
   if (isRevisitJob(job)) {
     const key = cwfCloseKey(jobId);
     const schedule = getRevisitScheduleDraft(key);
-    const agreed = String(job.revisit_agreed_at || schedule.revisit_agreed_at || '').trim();
-    const scheduleNote = String(job.revisit_schedule_note || schedule.revisit_schedule_note || '').trim();
+    const agreed = String(job.revisit_agreed_at || (schedule.saved ? schedule.revisit_agreed_at : '') || '').trim();
     if (!agreed) { alert('กรุณาบันทึกวันและเวลานัดแก้ไขกับลูกค้า'); return false; }
-    if (!scheduleNote) { alert('กรุณากรอกสรุปที่ตกลงกับลูกค้า'); return false; }
     if (!getRevisitCausePartyValue(key)) { alert('กรุณาเลือกสาเหตุงานแก้ไข'); return false; }
     if (!getRevisitCauseNoteValue(key)) { alert('กรุณากรอกรายละเอียดสาเหตุงานแก้ไข'); return false; }
     const evidence = await validateRevisitEvidence(jobId);
@@ -4066,8 +4148,9 @@ function buildJobCard(job, historyMode = false) {
   const rawPhone = String(job.customer_phone || "").trim();
   const telPhone = rawPhone.replace(/[^0-9+]/g, "");
   const revisitScheduleDraft = getRevisitScheduleDraft(keyBase);
+  const revisitScheduleSaved = !!(job.revisit_agreed_at || revisitScheduleDraft.saved);
   const revisitAgreedAt = String(job.revisit_agreed_at || revisitScheduleDraft.revisit_agreed_at || '').trim();
-  const revisitScheduleNote = String(job.revisit_schedule_note || revisitScheduleDraft.revisit_schedule_note || '').trim();
+  const revisitScheduleNote = String(job.revisit_schedule_note || (revisitScheduleSaved ? revisitScheduleDraft.revisit_schedule_note : '') || '').trim();
   const revisitCloseDraft = getRevisitCloseDraft(keyBase);
   const revisitCauseParty = String(job.revisit_cause_party || revisitCloseDraft.revisit_cause_party || '').trim();
   const revisitCauseNote = String(job.revisit_cause_note || revisitCloseDraft.revisit_cause_note || '').trim();
@@ -4126,24 +4209,13 @@ function buildJobCard(job, historyMode = false) {
           งานนี้ไม่มีค่าบริการที่ต้องเก็บจากลูกค้า และไม่มีค่าตอบแทนเพิ่มเติม ช่างต้องบันทึกเวลานัดกับลูกค้า พร้อมหลักฐานและผลการแก้ไขให้ครบก่อนปิดงาน
         </div>
       </div>
-      <div class="cwf-note-box" style="margin-top:10px;border-radius:18px;">
-        <b>📞 นัดหมายงานแก้ไขกับลูกค้า</b>
-        <div class="muted" style="margin-top:5px;font-size:12px;">ติดต่อ ลูกค้า แล้วบันทึกวันเวลาและข้อตกลงก่อนเข้าแก้ไข</div>
-        <input id="revisit-agreed-at-${keyBase}" type="datetime-local" style="margin-top:8px" value="${escapeAttr(revisitAgreedAt ? revisitAgreedAt.slice(0,16) : '')}" oninput="saveRevisitScheduleDraft('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
-        <textarea id="revisit-schedule-note-${keyBase}" rows="3" style="margin-top:8px" placeholder="สรุปที่ตกลงกับลูกค้า เช่น ลูกค้าสะดวกวันไหน เวลาไหน โทรคุยกันอย่างไร" oninput="saveRevisitScheduleDraft('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>${escape(revisitScheduleNote)}</textarea>
-        <button type="button" style="margin-top:8px;width:100%" onclick="saveRevisitSchedule('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>💾 บันทึกเวลานัดแก้ไข</button>
-        <div class="cwf-mini-status" style="margin-top:8px"><span class="cwf-chip ${revisitAgreedAt && revisitScheduleNote ? 'ok':'warn'}">${revisitAgreedAt && revisitScheduleNote ? 'บันทึกนัดแล้ว' : 'ยังไม่ได้บันทึกเวลานัดแก้ไข'}</span></div>
-      </div>
-      <div class="cwf-note-box" style="margin-top:10px;background:#f8fbff;border-color:rgba(21,88,214,.14);border-radius:18px;">
-        <b>✅ สิ่งที่ต้องทำก่อนปิดงานแก้ไข</b>
-        <ol style="margin:8px 0 0 20px;padding:0;line-height:1.6;font-size:13px;color:#334155;">
-          <li>บันทึกวันเวลาที่ตกลงกับลูกค้า</li>
-          <li>แนบรูปก่อนแก้ไข</li>
-          <li>แนบรูปสาเหตุ / จุดปัญหา</li>
-          <li>เลือกว่าสาเหตุเกิดจากใคร พร้อมอธิบายเหตุผล</li>
-          <li>แนบรูปหลังแก้ไข</li>
-          <li>เลือกผลการแก้ไขและบันทึกสรุปผลงาน</li>
-        </ol>
+      <div class="cwf-revisit-compact" style="margin-top:10px;">
+        <b>ขั้นตอนงานแก้ไข</b>
+        <div class="muted" style="margin-top:5px;font-size:12px;color:#7c2d12">กดปุ่มแต่ละส่วนเพื่อทำงาน ไม่ต้องกรอกทุกอย่างในหน้าเดียว</div>
+        <div class="cwf-revisit-status-row">
+          <span class="cwf-chip ${revisitScheduleSaved ? 'ok':'warn'}">${revisitScheduleSaved ? 'บันทึกนัดแล้ว' : 'ยังไม่บันทึกนัด'}</span>
+          <span class="cwf-chip warn">ต้องมีรูปก่อนแก้ / สาเหตุ / หลังแก้</span>
+        </div>
       </div>
     ` : ``}
 
@@ -4186,21 +4258,25 @@ function buildJobCard(job, historyMode = false) {
       <details class="cwf-details" style="margin-top:10px;" ${isWorking ? "open" : ""}>
         <summary>${revisitFlow ? "🔁 ปิดงานแก้ไข / หลักฐาน" : "🛠️ ปิดงาน / หลักฐาน"}</summary>
         <div class="cwf-details-body">
-          <div class="cwf-close-hub">
-            <button class="cwf-close-action" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""} aria-label="ลงรูปหลักฐาน">
-              <span class="cwf-action-left"><span class="ico">📷</span><span><b>${revisitFlow ? 'ลงรูปงานแก้ไข' : 'ลงรูปหลักฐาน'}</b><small>${revisitFlow ? 'อัปโหลดรูปก่อนแก้ไข รูปสาเหตุ และรูปหลังแก้ไข' : 'อัปโหลดรูปก่อนทำ หลังทำ และรูปตรวจเช็ค'}</small></span></span><span class="cwf-action-arrow">›</span>
-            </button>
-
+          <div class="${revisitFlow ? 'cwf-revisit-actions' : 'cwf-close-hub'}">
+            ${revisitFlow ? `
+              <button class="cwf-revisit-card" type="button" onclick="openRevisitScheduleModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
+                <span class="left"><span class="ico">📞</span><span><b>นัดเวลาแก้ไข</b><small>เลือกวันและเวลาที่ตกลงกับลูกค้า ระบบจะเช็คคิวก่อนบันทึก</small></span></span><span class="arrow">›</span>
+              </button>
+              <button class="cwf-revisit-card" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
+                <span class="left"><span class="ico">📷</span><span><b>ลงรูปงานแก้ไข</b><small>อัปโหลดรูปก่อนแก้ไข รูปสาเหตุ/จุดปัญหา และรูปหลังแก้ไข</small></span></span><span class="arrow">›</span>
+              </button>
+              <button class="cwf-revisit-card" type="button" onclick="openRevisitChecklistModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
+                <span class="left"><span class="ico">✅</span><span><b>เช็คลิสงานแก้ไข</b><small>เลือกสาเหตุ อธิบายเหตุผล และบันทึกผลการแก้ไข</small></span></span><span class="arrow">›</span>
+              </button>
+            ` : `
+              <button class="cwf-close-action" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""} aria-label="ลงรูปหลักฐาน">
+                <span class="cwf-action-left"><span class="ico">📷</span><span><b>ลงรูปหลักฐาน</b><small>อัปโหลดรูปก่อนทำ หลังทำ และรูปตรวจเช็ค</small></span></span><span class="cwf-action-arrow">›</span>
+              </button>
+            `}
           </div>
 
           <div id="photo-status-${jobId}" style="display:none"></div>
-
-          ${revisitFlow ? `
-            <div class="cwf-note-box cwf-revisit-warning">
-              <b>ตามสัญญาพาร์ทเนอร์</b>
-              <div class="muted" style="margin-top:5px;color:#7c2d12">ช่างต้องรับผิดชอบงานที่เกิดจากคุณภาพงานเดิม งานไม่เรียบร้อย หรือการหลีกเลี่ยงงานแก้ไข หากแอดมินตรวจสอบแล้วพบว่าช่างเป็นฝ่ายผิด บริษัทมีสิทธิ์ไม่จ่ายค่าตอบแทนงานนั้น และ/หรือหักเงินตามความเสียหายจริงตามขั้นตอนอนุมัติของบริษัท</div>
-            </div>
-          ` : ``}
 
           ${revisitFlow ? `` : `<div class="cwf-note-box">
             <b>🛡️ ประกันงาน</b>
@@ -4228,26 +4304,7 @@ function buildJobCard(job, historyMode = false) {
           <div class="cwf-note-box">
             <b>📝 หมายเหตุช่าง</b>
             <textarea id="note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""} oninput="noteDraftChanged('${jobKeyJs}')">${escape(getNoteDraft(keyBase) || job.technician_note || "")}</textarea>
-            ${revisitFlow ? `
-              <div style="margin-top:10px;">
-                <b>🔁 เช็คลิสงานแก้ไข</b>
-                <select id="revisit-cause-party-${keyBase}" style="margin-top:6px;width:100%;" onchange="saveRevisitCloseDraft('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
-                  <option value="">เลือกสาเหตุงานแก้ไข (จำเป็น)</option>
-                  <option value="technician" ${revisitCauseParty==='technician'?'selected':''}>เกิดจากช่าง/งานเดิม</option>
-                  <option value="customer" ${revisitCauseParty==='customer'?'selected':''}>เกิดจากการใช้งานของลูกค้า</option>
-                  <option value="company" ${revisitCauseParty==='company'?'selected':''}>เกิดจากระบบ/อะไหล่/เงื่อนไขบริษัท</option>
-                  <option value="unclear" ${revisitCauseParty==='unclear'?'selected':''}>ยังไม่ชัดเจน ต้องให้แอดมินตรวจ</option>
-                </select>
-                <textarea id="revisit-cause-note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="อธิบายสาเหตุที่พบ เช่น น้ำหยดจากงานเดิม ลูกค้าใช้งานผิดเงื่อนไข หรือยังต้องให้แอดมินตรวจ" oninput="saveRevisitCloseDraft('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>${escape(revisitCauseNote)}</textarea>
-                <div class="muted" style="margin-top:6px;font-size:12px;">ต้องแนบรูปสาเหตุ/จุดปัญหาในหมวด “รูปสาเหตุ/จุดปัญหา” ก่อนปิดงาน</div>
-                <select id="revisit-result-${keyBase}" style="margin-top:6px;width:100%;" onchange="saveRevisitCloseDraft('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
-                  <option value="">เลือกผลการแก้ไข (จำเป็น)</option>
-                  <option value="successful" ${revisitResultValue==='successful'?'selected':''}>แก้ไขสำเร็จ ใช้งานได้ปกติ</option>
-                  <option value="unsuccessful" ${revisitResultValue==='unsuccessful'?'selected':''}>ยังไม่จบ / ยังมีอาการ ต้องให้แอดมินติดตาม</option>
-                </select>
-                <textarea id="revisit-note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="สรุปผลงานแก้ไข เช่น แก้อะไรไปแล้ว ผลเป็นอย่างไร ยังพบอาการอะไรไหม" oninput="saveRevisitCloseDraft('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>${escape(revisitNoteValue)}</textarea>
-              </div>
-            ` : ``}
+            ${revisitFlow ? `<div class="muted" style="margin-top:8px;font-size:12px;">เช็คลิสงานแก้ไขให้กดปุ่ม “เช็คลิสงานแก้ไข” ด้านบน เพื่อไม่ให้หน้าหลักรก</div>` : ``}
             ${historyMode ? "" : ((checkedIn || isWorking) ? `
               <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
                 <button class="secondary" type="button" style="width:auto;" onclick="saveNote('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>💾 บันทึกหมายเหตุ</button>
@@ -5468,8 +5525,8 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
         revisit_note,
         revisit_cause_party,
         revisit_cause_note,
-        revisit_agreed_at: revisitSchedule.revisit_agreed_at || job?.revisit_agreed_at || null,
-        revisit_schedule_note: revisitSchedule.revisit_schedule_note || job?.revisit_schedule_note || '',
+        revisit_agreed_at: job?.revisit_agreed_at || (revisitSchedule.saved ? revisitSchedule.revisit_agreed_at : null),
+        revisit_schedule_note: job?.revisit_schedule_note || ((job?.revisit_agreed_at || revisitSchedule.saved) ? (revisitSchedule.revisit_schedule_note || 'ช่างบันทึกเวลานัดแก้ไขกับลูกค้าแล้ว') : ''),
         pre_cleaning_checklist: toChecklistArray('pre'),
         post_cleaning_checklist: toChecklistArray('post'),
         per_unit_evidence: unitsForFinalize.length > 0,
