@@ -1980,3 +1980,38 @@ a:hover{ text-decoration: underline; }
 .customer-page .svc-line-main{ flex:1; min-width: 0; }
 .customer-page .svc-line-main b{ display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .customer-page .svc-line-del{ width:auto; min-height:40px; padding:10px 12px; border-radius:12px; }
+
+/* Technician job type accents */
+.job-card.cwf-job-type-clean{
+  border-left:6px solid #06b6d4;
+  background:linear-gradient(180deg,#ffffff 0%,#f0fdff 100%);
+}
+.job-card.cwf-job-type-install{
+  border-left:6px solid #4f46e5;
+  background:linear-gradient(180deg,#ffffff 0%,#f4f5ff 100%);
+}
+.job-card.cwf-job-type-repair{
+  border-left:6px solid #f59e0b;
+  background:linear-gradient(180deg,#ffffff 0%,#fff8ed 100%);
+}
+.job-card.cwf-job-type-revisit{
+  border-left:6px solid #f97316;
+  background:linear-gradient(180deg,#ffffff 0%,#fff7ed 100%);
+  box-shadow:0 14px 34px rgba(154,52,18,.12);
+}
+.job-card.cwf-job-type-revisit::before{
+  content:"งานแก้ไข";
+  display:inline-flex;
+  margin:0 0 8px;
+  padding:5px 10px;
+  border-radius:999px;
+  background:#fee2e2;
+  border:1px solid #fed7aa;
+  color:#9a3412;
+  font-size:12px;
+  font-weight:1000;
+}
+.cwf-revisit-warning{
+  border-color:rgba(249,115,22,.28)!important;
+  background:linear-gradient(180deg,#fff7ed,#fff)!important;
+}

@@ -6690,6 +6690,7 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
   const meta = await _loadJobMeta(job_id);
   const includeUnfinished = Boolean(opts && opts.includeUnfinished);
   if (!meta || (!meta.finished_at && !includeUnfinished)) return [];
+  if (isRevisitJobRow(meta)) return [];
 
   const itemsQ = await pool.query(
     `SELECT job_item_id, item_name, qty, unit_price, line_total,
@@ -7145,6 +7146,15 @@ async function _buildTechnicianJobMoneySummary(job, username, opts = {}) {
     technician_income_rate_set_id: null,
     technician_income_rate_set_version: null,
   };
+  if (isRevisitJobRow(job)) {
+    summary.customer_collect_amount = null;
+    summary.customer_collect_label = 'ไม่ต้องเก็บเงินลูกค้า';
+    summary.technician_income_amount = 0;
+    summary.technician_income_label = 'ไม่มีรายได้สำหรับงานแก้ไข';
+    summary.technician_income_source = 'not_applicable_revisit';
+    summary.technician_income_breakdown = { source: 'not_applicable_revisit', rows: [], related_items: [] };
+    return summary;
+  }
   if (!job_id || !tech) return summary;
   try {
     if (context === 'history') {
@@ -10772,6 +10782,15 @@ await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS approved_at T
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_signature_type TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_signature_by TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_signature_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_cause_party TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_cause_note TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_result TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_note TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_agreed_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_schedule_note TEXT`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_customer_contacted_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_original_appointment_datetime TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_schedule_by TEXT`);
 
 
 // 3) users: admin profile + commission rate (dashboard)
@@ -12358,6 +12377,10 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_trc_technician_created ON public.technician_rework_cases(technician_username, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_trc_status_created ON public.technician_rework_cases(status, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_trc_resolution ON public.technician_rework_cases(resolution)`);
+    await pool.query(`ALTER TABLE public.technician_rework_cases ADD COLUMN IF NOT EXISTS revisit_cause_party TEXT`);
+    await pool.query(`ALTER TABLE public.technician_rework_cases ADD COLUMN IF NOT EXISTS revisit_cause_note TEXT`);
+    await pool.query(`ALTER TABLE public.technician_rework_cases ADD COLUMN IF NOT EXISTS revisit_agreed_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE public.technician_rework_cases ADD COLUMN IF NOT EXISTS revisit_schedule_note TEXT`);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.technician_deduction_audit_logs (
@@ -13768,6 +13791,33 @@ async function validatePerUnitCompletion(job_id, db = pool) {
     if (Number(u.photo_counts?.nameplate || 0) < 1) return `${label} ยังไม่มีรูปเนมเพลท`;
     if (Number(u.photo_counts?.before || 0) < 1) return `${label} ยังไม่มีรูปก่อนทำ`;
     if (Number(u.photo_counts?.after || 0) < 1) return `${label} ยังไม่มีรูปหลังทำ`;
+  }
+  return null;
+}
+
+function isRevisitJobRow(job) {
+  return String(job?.job_status || '').trim() === 'งานแก้ไข' || !!job?.returned_at || !!String(job?.return_reason || '').trim();
+}
+
+async function validateRevisitCompletion(job_id, db = pool) {
+  const r = await db.query(
+    `SELECT phase, COUNT(*)::int AS count
+       FROM public.job_photos
+      WHERE job_id=$1
+        AND deleted_at IS NULL
+        AND COALESCE(public_url,'') <> ''
+        AND phase = ANY($2::text[])
+      GROUP BY phase`,
+    [job_id, ['revisit_before', 'revisit_after', 'revisit_defect']]
+  );
+  const counts = Object.fromEntries((r.rows || []).map(x => [String(x.phase || ''), Number(x.count || 0)]));
+  const labels = {
+    revisit_before: 'รูปก่อนแก้ไข',
+    revisit_after: 'รูปหลังแก้ไข',
+    revisit_defect: 'รูปสาเหตุ/จุดปัญหา',
+  };
+  for (const ph of ['revisit_before', 'revisit_after', 'revisit_defect']) {
+    if (Number(counts[ph] || 0) < 1) return `งานแก้ไขยังไม่มี${labels[ph]}`;
   }
   return null;
 }
@@ -15931,6 +15981,11 @@ app.get('/admin/rework_cases/:id', requireAdminSession, async (req, res) => {
       dHas(jobsMeta, 'warranty_end_at') ? 'j.warranty_end_at' : "NULL::timestamptz AS warranty_end_at",
       dHas(jobsMeta, 'return_reason') ? 'j.return_reason' : "NULL::text AS return_reason",
       dHas(jobsMeta, 'returned_at') ? 'j.returned_at' : "NULL::timestamptz AS returned_at",
+      dHas(jobsMeta, 'revisit_cause_party') ? 'j.revisit_cause_party' : "NULL::text AS revisit_cause_party",
+      dHas(jobsMeta, 'revisit_cause_note') ? 'j.revisit_cause_note' : "NULL::text AS revisit_cause_note",
+      dHas(jobsMeta, 'revisit_agreed_at') ? 'j.revisit_agreed_at' : "NULL::timestamptz AS revisit_agreed_at",
+      dHas(jobsMeta, 'revisit_schedule_note') ? 'j.revisit_schedule_note' : "NULL::text AS revisit_schedule_note",
+      dHas(jobsMeta, 'revisit_customer_contacted_at') ? 'j.revisit_customer_contacted_at' : "NULL::timestamptz AS revisit_customer_contacted_at",
       dHas(jobsMeta, 'travel_started_at') ? 'j.travel_started_at' : "NULL::timestamptz AS travel_started_at",
       dHas(jobsMeta, 'checkin_at') ? 'j.checkin_at' : "NULL::timestamptz AS checkin_at",
       dHas(jobsMeta, 'started_at') ? 'j.started_at' : "NULL::timestamptz AS started_at",
@@ -17308,7 +17363,11 @@ async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
       j.pre_cleaning_checklist, j.post_cleaning_checklist,
       j.photo_acknowledgement_required, j.photo_acknowledgement_accepted, j.missing_photo_categories,
       j.close_payment_method, j.close_payment_status, j.close_cash_amount, j.close_payment_note,
-      j.close_cash_confirmed, j.close_signature_type, j.close_signature_by, j.close_signature_at
+      j.close_cash_confirmed, j.close_signature_type, j.close_signature_by, j.close_signature_at,
+      j.returned_at, j.return_reason,
+      j.revisit_cause_party, j.revisit_cause_note, j.revisit_result, j.revisit_note,
+      j.revisit_agreed_at, j.revisit_schedule_note, j.revisit_customer_contacted_at,
+      j.revisit_original_appointment_datetime, j.revisit_schedule_by
     FROM public.jobs j
     WHERE j.job_id = ANY($2::int[])
       AND ${_techVisibilityPredicateSql('$1')}
@@ -17359,6 +17418,10 @@ app.get("/jobs/tech/:username", async (req, res) => {
             j.photo_acknowledgement_required, j.photo_acknowledgement_accepted, j.missing_photo_categories,
             j.close_payment_method, j.close_payment_status, j.close_cash_amount, j.close_payment_note,
             j.close_cash_confirmed, j.close_signature_type, j.close_signature_by, j.close_signature_at,
+            j.returned_at, j.return_reason,
+            j.revisit_cause_party, j.revisit_cause_note, j.revisit_result, j.revisit_note,
+            j.revisit_agreed_at, j.revisit_schedule_note, j.revisit_customer_contacted_at,
+            j.revisit_original_appointment_datetime, j.revisit_schedule_by,
             j.checkin_latitude, j.checkin_longitude,
             ${historyWhere} AS is_history
           FROM public.jobs j
@@ -17398,6 +17461,10 @@ app.get("/jobs/tech/:username", async (req, res) => {
         j.photo_acknowledgement_required, j.photo_acknowledgement_accepted, j.missing_photo_categories,
         j.close_payment_method, j.close_payment_status, j.close_cash_amount, j.close_payment_note,
         j.close_cash_confirmed, j.close_signature_type, j.close_signature_by, j.close_signature_at,
+        j.returned_at, j.return_reason,
+        j.revisit_cause_party, j.revisit_cause_note, j.revisit_result, j.revisit_note,
+        j.revisit_agreed_at, j.revisit_schedule_note, j.revisit_customer_contacted_at,
+        j.revisit_original_appointment_datetime, j.revisit_schedule_by,
         j.checkin_latitude, j.checkin_longitude
       FROM public.jobs j
       WHERE ${_techVisibilityPredicateSql('$1')}
@@ -19792,6 +19859,73 @@ app.put("/jobs/:job_id/note", async (req, res) => {
   }
 });
 
+app.post("/jobs/:job_id/revisit-schedule", requireTechnicianSession, async (req, res) => {
+  const { job_id } = req.params;
+  const revisit_agreed_at = String(req.body?.revisit_agreed_at || '').trim();
+  const revisit_schedule_note = String(req.body?.revisit_schedule_note || '').trim();
+  if (!revisit_agreed_at) return res.status(400).json({ ok: false, error: 'กรุณาระบุวันและเวลานัดแก้ไข' });
+  const agreedDate = new Date(revisit_agreed_at);
+  if (Number.isNaN(agreedDate.getTime())) return res.status(400).json({ ok: false, error: 'วันและเวลานัดแก้ไขไม่ถูกต้อง' });
+  if (!revisit_schedule_note) return res.status(400).json({ ok: false, error: 'กรุณากรอกสรุปที่ตกลงกับลูกค้า' });
+
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const realId = await resolveJobIdAny(client, job_id);
+    if (!realId) throw createHttpError(400, 'job_id ไม่ถูกต้อง');
+    const technician_username = await requireTechOwnsResolvedJob(req, res, realId, client);
+    if (!technician_username) {
+      await client.query('ROLLBACK');
+      return;
+    }
+    const jr = await client.query(
+      `SELECT job_id, job_status, returned_at, return_reason, appointment_datetime, revisit_original_appointment_datetime
+         FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
+      [realId]
+    );
+    const job = jr.rows[0];
+    if (!job) throw createHttpError(404, 'ไม่พบงาน');
+    if (!isRevisitJobRow(job)) throw createHttpError(400, 'งานนี้ไม่ใช่งานแก้ไข');
+    const up = await client.query(
+      `UPDATE public.jobs
+          SET revisit_agreed_at=$2,
+              revisit_schedule_note=$3,
+              revisit_customer_contacted_at=NOW(),
+              revisit_schedule_by=$4,
+              revisit_original_appointment_datetime=COALESCE(revisit_original_appointment_datetime, appointment_datetime),
+              appointment_datetime=$2
+        WHERE job_id=$1
+        RETURNING revisit_agreed_at, revisit_schedule_note, revisit_customer_contacted_at,
+                  revisit_schedule_by, revisit_original_appointment_datetime, appointment_datetime`,
+      [realId, agreedDate.toISOString(), revisit_schedule_note, technician_username]
+    );
+    await client.query(
+      `UPDATE public.technician_rework_cases
+          SET status=CASE WHEN status='open' THEN 'in_progress' ELSE status END,
+              revisit_agreed_at=$2,
+              revisit_schedule_note=$3,
+              updated_at=NOW()
+        WHERE job_id=$1 AND status IN ('open','in_progress')`,
+      [realId, agreedDate.toISOString(), revisit_schedule_note]
+    );
+    await logJobUpdate(realId, {
+      actor_username: technician_username,
+      actor_role: 'tech',
+      action: 'revisit_schedule_agreed',
+      message: revisit_schedule_note,
+      payload: { revisit_agreed_at: agreedDate.toISOString(), revisit_schedule_note },
+    }, client);
+    await client.query('COMMIT');
+    return res.json({ ok: true, ...up.rows[0] });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('POST /jobs/:job_id/revisit-schedule', e);
+    return res.status(Number(e.status || 500)).json({ ok: false, error: e.message || 'บันทึกเวลานัดแก้ไขไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
 // =======================================
 // ✅ FINALIZE JOB (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์ช่าง
 // =======================================
@@ -19805,6 +19939,10 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
   const note = String(req.body?.note || "").trim();
   const revisit_result = String(req.body?.revisit_result || "").trim().toLowerCase();
   const revisit_note = String(req.body?.revisit_note || "").trim();
+  const revisit_cause_party = String(req.body?.revisit_cause_party || "").trim().toLowerCase();
+  const revisit_cause_note = String(req.body?.revisit_cause_note || "").trim();
+  const revisit_agreed_at = String(req.body?.revisit_agreed_at || "").trim();
+  const revisit_schedule_note = String(req.body?.revisit_schedule_note || "").trim();
   const warranty_kind = String(req.body?.warranty_kind || "").trim();
   const warranty_months = req.body?.warranty_months;
 
@@ -19824,16 +19962,6 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
   if (!signature_data) {
     return res.status(400).json({ error: "ต้องมีลายเซ็นปิดงาน" });
   }
-  if (status === 'เสร็จแล้ว') {
-    if (!pre_cleaning_checklist || !pre_cleaning_checklist.length) return res.status(400).json({ error: 'กรุณาตรวจสภาพก่อนล้างให้ครบ' });
-    if (!post_cleaning_checklist || !post_cleaning_checklist.length) return res.status(400).json({ error: 'กรุณาตรวจหลังล้างให้ครบ' });
-    if (!close_payment_method) return res.status(400).json({ error: 'กรุณาเลือกวิธีชำระเงิน' });
-    if (close_payment_method === 'cash_to_technician') {
-      if (!Number.isFinite(close_cash_amount) || close_cash_amount <= 0) return res.status(400).json({ error: 'กรุณาระบุจำนวนเงินสดที่รับ' });
-      if (!close_cash_confirmed) return res.status(400).json({ error: 'กรุณายืนยันการรับเงินสด' });
-      if (close_signature_type !== 'technician_signature') return res.status(400).json({ error: 'กรุณาให้ช่างเซ็นรับรองปิดงาน' });
-    }
-  }
 
   const client = await pool.connect();
   try {
@@ -19849,10 +19977,50 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
       await client.query("ROLLBACK");
       return;
     }
+    const metaR = await client.query(
+      `SELECT job_status, job_type, warranty_end_at, return_reason, returned_at,
+              revisit_agreed_at, revisit_schedule_note
+       FROM public.jobs
+       WHERE job_id=$1
+       FOR UPDATE`,
+      [realId]
+    );
+    const meta = metaR.rows[0] || {};
+    const isRevisitFlow = isRevisitJobRow(meta);
+    const revisitResult = ["successful", "unsuccessful"].includes(revisit_result) ? revisit_result : "";
+    const revisitNote = revisit_note || note;
+    if (status === 'เสร็จแล้ว' && !isRevisitFlow) {
+      if (!pre_cleaning_checklist || !pre_cleaning_checklist.length) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: 'กรุณาตรวจสภาพก่อนล้างให้ครบ' });
+      }
+      if (!post_cleaning_checklist || !post_cleaning_checklist.length) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: 'กรุณาตรวจหลังล้างให้ครบ' });
+      }
+      if (!close_payment_method) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: 'กรุณาเลือกวิธีชำระเงิน' });
+      }
+      if (close_payment_method === 'cash_to_technician') {
+        if (!Number.isFinite(close_cash_amount) || close_cash_amount <= 0) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ error: 'กรุณาระบุจำนวนเงินสดที่รับ' });
+        }
+        if (!close_cash_confirmed) {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ error: 'กรุณายืนยันการรับเงินสด' });
+        }
+        if (close_signature_type !== 'technician_signature') {
+          await client.query("ROLLBACK");
+          return res.status(400).json({ error: 'กรุณาให้ช่างเซ็นรับรองปิดงาน' });
+        }
+      }
+    }
     const perUnitEvidenceRequested = req.body?.per_unit_evidence === true || String(req.body?.per_unit_evidence || '').trim().toLowerCase() === 'true' || String(req.body?.per_unit_evidence || '').trim() === '1';
     const perUnitFlagR = await client.query(`SELECT COALESCE(per_unit_evidence_enabled,FALSE) AS enabled FROM public.jobs WHERE job_id=$1 LIMIT 1`, [realId]);
     const perUnitEnabled = perUnitEvidenceRequested || !!perUnitFlagR.rows?.[0]?.enabled;
-    if (status === "เสร็จแล้ว" && perUnitEnabled) {
+    if (status === "เสร็จแล้ว" && perUnitEnabled && !isRevisitFlow) {
       const unitMissing = await validatePerUnitCompletion(realId, client);
       if (unitMissing) {
         await client.query("ROLLBACK");
@@ -19881,19 +20049,23 @@ if (status === "เสร็จแล้ว") {
   }
 }
 
-    const metaR = await client.query(
-      `SELECT job_status, job_type, warranty_end_at, return_reason, returned_at
-       FROM public.jobs
-       WHERE job_id=$1
-       FOR UPDATE`,
-      [realId]
-    );
-    const meta = metaR.rows[0] || {};
-    const isRevisitFlow = String(meta.job_status || "").trim() === "งานแก้ไข" || !!meta.returned_at || !!meta.return_reason;
-    const revisitResult = ["successful", "unsuccessful"].includes(revisit_result) ? revisit_result : "";
-    const revisitNote = revisit_note || note;
-
     if (isRevisitFlow && status === "เสร็จแล้ว") {
+      if (!String(meta.revisit_agreed_at || revisit_agreed_at || '').trim()) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "งานแก้ไขต้องบันทึกวันและเวลานัดกับลูกค้า" });
+      }
+      if (!String(meta.revisit_schedule_note || revisit_schedule_note || '').trim()) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "งานแก้ไขต้องมีสรุปที่ตกลงกับลูกค้า" });
+      }
+      if (!['technician','customer','company','unclear'].includes(revisit_cause_party)) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "งานแก้ไขต้องระบุสาเหตุ: technician/customer/company/unclear" });
+      }
+      if (!revisit_cause_note) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "งานแก้ไขต้องระบุรายละเอียดสาเหตุ" });
+      }
       if (!revisitResult) {
         await client.query("ROLLBACK");
         return res.status(400).json({ error: "งานแก้ไขต้องระบุ revisit_result เป็น successful หรือ unsuccessful" });
@@ -19901,6 +20073,11 @@ if (status === "เสร็จแล้ว") {
       if (!revisitNote) {
         await client.query("ROLLBACK");
         return res.status(400).json({ error: "งานแก้ไขต้องระบุ revisit_note หรือ note" });
+      }
+      const revisitMissing = await validateRevisitCompletion(realId, client);
+      if (revisitMissing) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: revisitMissing });
       }
     }
 
@@ -20010,6 +20187,55 @@ if (status === "เสร็จแล้ว") {
           close_signature_type || 'technician_signature']
       );
       if (isRevisitFlow && revisitResult) {
+        const evR = await client.query(
+          `SELECT photo_id, phase, public_url, cloud_public_id, uploaded_at, unit_id
+             FROM public.job_photos
+            WHERE job_id=$1
+              AND deleted_at IS NULL
+              AND COALESCE(public_url,'') <> ''
+              AND phase = ANY($2::text[])
+            ORDER BY uploaded_at DESC NULLS LAST, photo_id DESC`,
+          [realId, ['revisit_before', 'revisit_after', 'revisit_defect']]
+        );
+        const evidenceJson = evR.rows || [];
+        const agreedAtForSave = String(meta.revisit_agreed_at || revisit_agreed_at || '').trim() || null;
+        const scheduleNoteForSave = String(meta.revisit_schedule_note || revisit_schedule_note || '').trim() || null;
+        await client.query(
+          `UPDATE public.jobs
+              SET revisit_result=$2,
+                  revisit_note=$3,
+                  revisit_cause_party=$4,
+                  revisit_cause_note=$5,
+                  revisit_agreed_at=COALESCE(revisit_agreed_at, $6::timestamptz),
+                  revisit_schedule_note=COALESCE(NULLIF(revisit_schedule_note,''), NULLIF($7,'')),
+                  close_payment_method='not_required_revisit',
+                  close_payment_status='not_required_revisit',
+                  close_cash_amount=NULL,
+                  close_cash_confirmed=FALSE
+            WHERE job_id=$1`,
+          [realId, revisitResult, revisitNote, revisit_cause_party, revisit_cause_note, agreedAtForSave, scheduleNoteForSave]
+        );
+        const resolution = revisitResult === 'unsuccessful'
+          ? 'failed'
+          : (revisit_cause_party === 'technician' ? 'deduction_required' : (revisit_cause_party === 'company' ? 'company_absorbed' : 'fixed'));
+        await client.query(
+          `UPDATE public.technician_rework_cases
+              SET status='resolved',
+                  resolution=$2,
+                  revisit_result=$3,
+                  revisit_note=$4,
+                  revisit_cause_party=$5,
+                  revisit_cause_note=$6,
+                  revisit_agreed_at=COALESCE(revisit_agreed_at, $7::timestamptz),
+                  revisit_schedule_note=COALESCE(NULLIF(revisit_schedule_note,''), NULLIF($8,'')),
+                  evidence_json=$9::jsonb,
+                  resolved_by=$10,
+                  resolved_at=NOW(),
+                  updated_at=NOW()
+            WHERE job_id=$1 AND status IN ('open','in_progress')
+            RETURNING rework_case_id`,
+          [realId, resolution, revisitResult, revisitNote, revisit_cause_party, revisit_cause_note, agreedAtForSave, scheduleNoteForSave, JSON.stringify(evidenceJson), technician_username]
+        );
         await logJobUpdate(
           realId,
           {
@@ -20020,7 +20246,12 @@ if (status === "เสร็จแล้ว") {
             payload: {
               revisit_result: revisitResult,
               revisit_note: revisitNote || null,
+              revisit_cause_party,
+              revisit_cause_note,
+              revisit_agreed_at: agreedAtForSave,
+              revisit_schedule_note: scheduleNoteForSave,
               evidence_phases: ["revisit_before", "revisit_after", "revisit_defect"],
+              evidence_json: evidenceJson,
             },
           },
           client

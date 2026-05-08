@@ -1081,6 +1081,9 @@ function _techIncomeCardKey(job, context) {
 }
 function renderTechnicianMoneySummary(job, context) {
   try {
+    if (isRevisitJob(job)) {
+      return `<div class="tech-income-chip is-pending"><span class="tech-income-chip-icon">↩</span><span class="tech-income-chip-main"><span class="tech-income-chip-label">งานแก้ไข</span><strong>ไม่มีรายได้สำหรับงานแก้ไข</strong></span></div>`;
+    }
     const ctx = String(context || 'current');
     const jobId = _jobIdOf(job);
     const cached = jobId && __techIncomeSummaryCache.has(jobId) ? __techIncomeSummaryCache.get(jobId) : null;
@@ -3062,11 +3065,73 @@ function noteDraftChanged(jobKey){
 window.noteDraftChanged = noteDraftChanged;
 
 const REVISIT_EVIDENCE_PHASES = ["revisit_before", "revisit_after", "revisit_defect"];
+const REVISIT_EVIDENCE_LABELS = {
+  revisit_before: "รูปก่อนแก้ไข",
+  revisit_after: "รูปหลังแก้ไข",
+  revisit_defect: "รูปสาเหตุ/จุดปัญหา",
+};
 
 function isRevisitJob(job){
   const status = normStatus(job?.job_status);
   return status === "งานแก้ไข" || !!job?.returned_at || !!job?.return_reason;
 }
+
+function getRevisitCausePartyValue(jobKey){
+  const node = document.getElementById(`revisit-cause-party-${jobKey}`);
+  return String(node?.value || "").trim().toLowerCase();
+}
+
+function getRevisitCauseNoteValue(jobKey){
+  const node = document.getElementById(`revisit-cause-note-${jobKey}`);
+  return String(node?.value || "").trim();
+}
+
+function getRevisitScheduleDraft(jobKey){
+  const key = cwfCloseKey(jobKey);
+  return cwfReadJsonLS(cwfCloseJsonKey(key, 'revisit_schedule'), {
+    revisit_agreed_at: '',
+    revisit_schedule_note: '',
+  }) || {};
+}
+
+function saveRevisitScheduleDraft(jobKey){
+  const key = cwfCloseKey(jobKey);
+  const data = {
+    revisit_agreed_at: String(document.getElementById(`revisit-agreed-at-${key}`)?.value || '').trim(),
+    revisit_schedule_note: String(document.getElementById(`revisit-schedule-note-${key}`)?.value || '').trim(),
+  };
+  cwfWriteJsonLS(cwfCloseJsonKey(key, 'revisit_schedule'), data);
+  return data;
+}
+window.saveRevisitScheduleDraft = saveRevisitScheduleDraft;
+
+async function saveRevisitSchedule(jobKey){
+  const key = cwfCloseKey(jobKey);
+  const data = saveRevisitScheduleDraft(key);
+  if (!data.revisit_agreed_at) return alert('กรุณาเลือกวันและเวลานัดแก้ไข');
+  if (!data.revisit_schedule_note) return alert('กรุณากรอกสรุปที่ตกลงกับลูกค้า');
+  try {
+    const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(key))}/revisit-schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const out = await res.json().catch(() => ({}));
+    if (!res.ok || out.ok === false) throw new Error(out.error || 'บันทึกเวลานัดแก้ไขไม่สำเร็จ');
+    const job = cwfGetCachedJob(key);
+    if (job) {
+      job.revisit_agreed_at = out.revisit_agreed_at || data.revisit_agreed_at;
+      job.revisit_schedule_note = out.revisit_schedule_note || data.revisit_schedule_note;
+      job.revisit_customer_contacted_at = out.revisit_customer_contacted_at || job.revisit_customer_contacted_at;
+      if (out.appointment_datetime) job.appointment_datetime = out.appointment_datetime;
+    }
+    cwfTechToast('✅ บันทึกเวลานัดแก้ไขแล้ว');
+    try { loadJobs(); } catch {}
+  } catch (e) {
+    cwfTechToast(`❌ ${e.message || 'บันทึกเวลานัดแก้ไขไม่สำเร็จ'}`, true);
+  }
+}
+window.saveRevisitSchedule = saveRevisitSchedule;
 
 function getRevisitResultValue(jobKey){
   const node = document.getElementById(`revisit-result-${jobKey}`);
@@ -3089,6 +3154,31 @@ async function hasRevisitEvidence(jobId){
   } catch {
     return false;
   }
+}
+
+async function validateRevisitEvidence(jobId){
+  const counts = { revisit_before: 0, revisit_after: 0, revisit_defect: 0 };
+  const localPhotos = await idbGetByJob(jobId).catch(() => []);
+  for (const p of (localPhotos || [])) {
+    const ph = String(p?.phase || "");
+    if (Object.prototype.hasOwnProperty.call(counts, ph)) counts[ph] += 1;
+  }
+  try {
+    const rr = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos`);
+    if (rr.ok) {
+      const uploaded = await rr.json().catch(() => []);
+      for (const p of (uploaded || [])) {
+        const ph = String(p?.phase || "");
+        if (Object.prototype.hasOwnProperty.call(counts, ph) && p?.public_url) counts[ph] += 1;
+      }
+    }
+  } catch {}
+  for (const ph of REVISIT_EVIDENCE_PHASES) {
+    if (Number(counts[ph] || 0) < 1) {
+      return { ok: false, phase: ph, message: `งานแก้ไขยังไม่มี${REVISIT_EVIDENCE_LABELS[ph]}` };
+    }
+  }
+  return { ok: true, counts };
 }
 
 // =======================================
@@ -3291,6 +3381,7 @@ async function cwfUploadUnitPhotoFiles(jobId, unitId, phase, files, photoNote = 
   if (!unit) throw new Error('กรุณาเลือกเครื่องก่อนอัปโหลดรูป');
   window.__CWF_UPLOAD_BUSY_COUNT = (window.__CWF_UPLOAD_BUSY_COUNT || 0) + 1;
   const uploadTargetId = cwfUploadStatusTarget(phase, unitId);
+  console.log('[photo-ui] upload:start', { jobId, unitId, phase, count: selected.length });
   cwfSetInlineUploadStatus(uploadTargetId, `กำลังส่งรูปไป Cloudinary 0/${selected.length}`);
   cwfShowUploadOverlay(`กำลังส่งรูปไป Cloudinary 0/${selected.length}`);
   try {
@@ -3332,20 +3423,21 @@ async function cwfUploadUnitPhotoFiles(jobId, unitId, phase, files, photoNote = 
       cwfSetInlineUploadStatus(uploadTargetId, `อัปโหลดขึ้น Cloudinary แล้ว ${done}/${selected.length}`);
       cwfUpdateUploadOverlay(`อัปโหลดขึ้น Cloudinary แล้ว ${done}/${selected.length}`);
     }
-    cwfSetInlineUploadStatus(uploadTargetId, `✅ อัปโหลดขึ้น Cloudinary สำเร็จ ${selected.length} รูป`, 'ok');
+    cwfSetInlineUploadStatus(uploadTargetId, `ส่งขึ้น Cloudinary แล้ว ${selected.length} รูป`, 'ok');
+    console.log('[photo-ui] upload:done', { jobId, unitId, phase, count: selected.length });
     cwfTechToast(`✅ อัปโหลดรูปขึ้น Cloudinary สำเร็จ ${selected.length} รูป`);
     try { await refreshPhotoStatus(jobId); } catch {}
-    await openTechPhotoModal(jobId, reopenTab, unitId);
     return true;
   } catch (e) {
     console.warn('[cwf_unit_photo] failed', { jobId, unitId, phase, message: e?.message || String(e) });
+    console.log('[photo-ui] upload:error', { jobId, unitId, phase, error: e?.message || String(e) });
     cwfSetInlineUploadStatus(uploadTargetId, `❌ ${e.message || 'อัปโหลดรูปไม่สำเร็จ'}`, 'bad');
     cwfTechToast(`❌ ${e.message || 'อัปโหลดรูปไม่สำเร็จ'}`, true);
     return false;
   } finally {
     window.__CWF_UPLOAD_BUSY_COUNT = Math.max(0, (window.__CWF_UPLOAD_BUSY_COUNT || 1) - 1);
     cwfHideUploadOverlay();
-    if (typeof uploadTargetId !== 'undefined') cwfClearInlineUploadStatus(uploadTargetId, 2200);
+    if (typeof uploadTargetId !== 'undefined') cwfClearInlineUploadStatus(uploadTargetId, 4500);
   }
 }
 window.cwfUploadUnitPhotoFiles = cwfUploadUnitPhotoFiles;
@@ -3403,6 +3495,7 @@ function cwfPickUnitPhoto(jobId, unitId, phase){
   const photo_note = String(noteEl?.value || '').trim().slice(0, 500);
   openFilePicker({ multiple:true, accept:'image/*' }, async (files)=>{
     if (!files || !files.length) return;
+    console.log('[photo-ui] pick', { jobId, unitId, phase, count: files.length });
     cwfTechToast(`เลือกรูปแล้ว ${files.length} รูป กำลังอัปโหลด…`);
     await cwfUploadUnitPhotoFiles(jobId, unitId, phase, files, photo_note, 'photos');
   });
@@ -3426,6 +3519,7 @@ function cwfPickUnitPhotoWithNote(jobId, unitId, phase, photoNote){
   return new Promise((resolve)=>{
     openFilePicker({ multiple:true, accept:'image/*' }, async (files)=>{
       if (!files || !files.length) return resolve(false);
+      console.log('[photo-ui] pick', { jobId, unitId, phase, count: files.length });
       cwfTechToast(`เลือกรูปแล้ว ${files.length} รูป กำลังอัปโหลด…`);
       const ok = await cwfUploadUnitPhotoFiles(jobId, unitId, phase, files, photoNote || '', 'checklist');
       resolve(!!ok);
@@ -3583,7 +3677,6 @@ async function openTechPhotoModal(jobId, tab = 'photos', selectedUnitId = null){
   const job = cwfGetCachedJob(key);
   const canEdit = !job || !isDoneStatusValue(normStatus(job.job_status));
   const revisitFlow = isRevisitJob(job);
-  cwfOpenModal('หลักฐานงาน', `<div class="muted">กำลังโหลดข้อมูลเครื่อง...</div>`);
   const units = await cwfLoadUnits(key);
   if (units.length && !revisitFlow) {
     const selected = selectedUnitId || units[0]?.unit_id;
@@ -3593,14 +3686,29 @@ async function openTechPhotoModal(jobId, tab = 'photos', selectedUnitId = null){
     return;
   }
   const { counts, urls } = await cwfCountPhotos(key);
-  const defs = [
-    ['before','ก่อนทำ','หลักฐานสำคัญ'], ['after','หลังทำ','หลักฐานสำคัญ'],
-    ['pressure','วัดน้ำยา','เพิ่มเติม'], ['current','วัดกระแส','เพิ่มเติม'], ['temp','อุณหภูมิ','เพิ่มเติม'], ['defect','ตำหนิ','เพิ่มเติม'],
-  ].concat(revisitFlow ? [['revisit_before','ก่อนแก้','งานแก้ไข'], ['revisit_after','หลังแก้','งานแก้ไข'], ['revisit_defect','จุดปัญหา','งานแก้ไข']] : []);
+  const defs = revisitFlow
+    ? [
+        ['revisit_before','รูปก่อนแก้ไข','จำเป็น'],
+        ['revisit_after','รูปหลังแก้ไข','จำเป็น'],
+        ['revisit_defect','รูปสาเหตุ/จุดปัญหา','จำเป็น'],
+        ['pressure','วัดน้ำยา','เพิ่มเติม'],
+        ['current','วัดกระแส','เพิ่มเติม'],
+        ['temp','อุณหภูมิ','เพิ่มเติม'],
+      ]
+    : [
+        ['before','ก่อนทำ','หลักฐานสำคัญ'], ['after','หลังทำ','หลักฐานสำคัญ'],
+        ['pressure','วัดน้ำยา','เพิ่มเติม'], ['current','วัดกระแส','เพิ่มเติม'], ['temp','อุณหภูมิ','เพิ่มเติม'], ['defect','ตำหนิ','เพิ่มเติม'],
+      ];
   const html = `
     <div class="cwf-mini-status">
-      <span class="cwf-chip ${counts.before ? 'ok':'warn'}">ก่อนทำ ${counts.before || 0} รูป</span>
-      <span class="cwf-chip ${counts.after ? 'ok':'warn'}">หลังทำ ${counts.after || 0} รูป</span>
+      ${revisitFlow ? `
+        <span class="cwf-chip ${(counts.revisit_before || 0) ? 'ok':'warn'}">ก่อนแก้ไข ${counts.revisit_before || 0} รูป</span>
+        <span class="cwf-chip ${(counts.revisit_after || 0) ? 'ok':'warn'}">หลังแก้ไข ${counts.revisit_after || 0} รูป</span>
+        <span class="cwf-chip ${(counts.revisit_defect || 0) ? 'ok':'warn'}">สาเหตุ/จุดปัญหา ${counts.revisit_defect || 0} รูป</span>
+      ` : `
+        <span class="cwf-chip ${counts.before ? 'ok':'warn'}">ก่อนทำ ${counts.before || 0} รูป</span>
+        <span class="cwf-chip ${counts.after ? 'ok':'warn'}">หลังทำ ${counts.after || 0} รูป</span>
+      `}
       <span class="cwf-chip">กดเพิ่มรูปแล้วรอระบบอัปโหลดให้เสร็จ</span>
     </div>
     <div class="cwf-photo-grid">
@@ -3622,8 +3730,8 @@ async function openTechPhotoModal(jobId, tab = 'photos', selectedUnitId = null){
 window.openTechPhotoModal = openTechPhotoModal;
 function cwfPickPhotoAndRefresh(jobId, phase){
   try {
+    console.log('[photo-ui] pick', { jobId, phase });
     pickPhotos(jobId, phase, 12);
-    setTimeout(()=>openTechPhotoModal(jobId), 900);
   } catch(e){ alert(e.message || 'เลือกรูปไม่สำเร็จ'); }
 }
 window.cwfPickPhotoAndRefresh = cwfPickPhotoAndRefresh;
@@ -3724,15 +3832,16 @@ window.cwfUpdatePaymentField = cwfUpdatePaymentField;
 async function cwfUploadPaymentSlip(jobId, phase){
   openFilePicker({ multiple:false, accept:'image/*' }, async (files)=>{
     if (!files || !files.length) return;
+    console.log('[photo-ui] pick', { jobId, phase, count: files.length });
     try {
-      const p = cwfGetPayment(jobId); p.uploading = true; cwfSavePayment(jobId, p); openTechPaymentModal(jobId, p.method || (phase === 'cash_transfer_slip' ? 'cash':'qr'));
+      const p = cwfGetPayment(jobId); p.uploading = true; cwfSavePayment(jobId, p);
       const targetId = cwfUploadStatusTarget(phase);
-      cwfSetInlineUploadStatus(targetId, phase === 'cash_transfer_slip' ? 'กำลังส่งสลิปเงินสดไป Cloudinary…' : 'กำลังส่งสลิปไป Cloudinary…');
+      cwfSetInlineUploadStatus(targetId, 'กำลังส่งสลิปไป Cloudinary…');
       await uploadFilesAsPhotos(jobId, phase, files, { targetId });
-      cwfSetInlineUploadStatus(targetId, '✅ ส่งสลิปขึ้น Cloudinary แล้ว', 'ok');
+      cwfSetInlineUploadStatus(targetId, 'ส่งสลิปขึ้น Cloudinary แล้ว', 'ok');
       cwfTechToast('✅ ส่งสลิปขึ้น Cloudinary แล้ว');
-      const p2 = cwfGetPayment(jobId); p2.slip_uploaded = true; p2.slip_phase = phase; p2.uploading = false; cwfSavePayment(jobId, p2); openTechPaymentModal(jobId, p2.method || (phase === 'cash_transfer_slip' ? 'cash':'qr'));
-    } catch(e){ const p3 = cwfGetPayment(jobId); p3.uploading = false; cwfSavePayment(jobId, p3); cwfSetInlineUploadStatus(cwfUploadStatusTarget(phase), e.message || 'อัปโหลดสลิปไม่สำเร็จ', 'bad'); cwfTechToast(e.message || 'อัปโหลดสลิปไม่สำเร็จ', true); openTechPaymentModal(jobId, p3.method); }
+      const p2 = cwfGetPayment(jobId); p2.slip_uploaded = true; p2.slip_phase = phase; p2.uploading = false; cwfSavePayment(jobId, p2);
+    } catch(e){ const p3 = cwfGetPayment(jobId); p3.uploading = false; cwfSavePayment(jobId, p3); cwfSetInlineUploadStatus(cwfUploadStatusTarget(phase), e.message || 'อัปโหลดสลิปไม่สำเร็จ', 'bad'); cwfTechToast(e.message || 'อัปโหลดสลิปไม่สำเร็จ', true); }
   });
 }
 window.cwfUploadPaymentSlip = cwfUploadPaymentSlip;
@@ -3780,9 +3889,35 @@ function cwfAskMissingPhotoAck(jobId){
     cwfOpenModal('ยืนยันปิดงานโดยไม่มีรูปหลักฐาน', body, footer);
   });
 }
+
+function cwfJobTypeClass(job){
+  if (isRevisitJob(job)) return 'cwf-job-type-revisit';
+  const text = `${job?.job_type || ''} ${job?.service_items_text || ''}`.toLowerCase();
+  if (text.includes('ติดตั้ง')) return 'cwf-job-type-install';
+  if (text.includes('ซ่อม')) return 'cwf-job-type-repair';
+  if (text.includes('งานล้าง') || text.includes('ล้าง')) return 'cwf-job-type-clean';
+  return '';
+}
+
 async function cwfValidateCloseRequirements(jobId, targetStatus){
   if (targetStatus !== 'เสร็จแล้ว') return true;
   if (window.__CWF_UPLOAD_BUSY_COUNT > 0) { alert('กรุณารอให้อัปโหลดรูปให้เสร็จก่อนปิดงาน'); return false; }
+  const job = cwfGetCachedJob(jobId) || {};
+  if (isRevisitJob(job)) {
+    const key = cwfCloseKey(jobId);
+    const schedule = getRevisitScheduleDraft(key);
+    const agreed = String(job.revisit_agreed_at || schedule.revisit_agreed_at || '').trim();
+    const scheduleNote = String(job.revisit_schedule_note || schedule.revisit_schedule_note || '').trim();
+    if (!agreed) { alert('กรุณาบันทึกวันและเวลานัดแก้ไขกับลูกค้า'); return false; }
+    if (!scheduleNote) { alert('กรุณากรอกสรุปที่ตกลงกับลูกค้า'); return false; }
+    if (!getRevisitCausePartyValue(key)) { alert('กรุณาเลือกสาเหตุงานแก้ไข'); return false; }
+    if (!getRevisitCauseNoteValue(key)) { alert('กรุณากรอกรายละเอียดสาเหตุงานแก้ไข'); return false; }
+    const evidence = await validateRevisitEvidence(jobId);
+    if (!evidence.ok) { alert(evidence.message); openTechPhotoModal(jobId, 'photos'); return false; }
+    if (!['successful', 'unsuccessful'].includes(getRevisitResultValue(key))) { alert('กรุณาเลือกผลการแก้ไข'); return false; }
+    if (!getRevisitNoteValue(key)) { alert('กรุณากรอกสรุปผลงานแก้ไข'); return false; }
+    return true;
+  }
   const units = await cwfLoadUnits(jobId);
   if (units.length) {
     for (const u of units) {
@@ -3842,6 +3977,8 @@ function buildJobCard(job, historyMode = false) {
   const checkedIn = !!job.checkin_at;
   const isWorking = status === "กำลังทำ";
   const revisitFlow = isRevisitJob(job);
+  const jobTypeClass = cwfJobTypeClass(job);
+  if (jobTypeClass) div.classList.add(jobTypeClass);
   const revisitReason = String(job.return_reason || "").trim();
   const canEdit = !historyMode && (status === "รอดำเนินการ" || status === "กำลังทำ" || status === "งานแก้ไข");
   const paymentSettled = revisitFlow ? false : paid;
@@ -3885,6 +4022,11 @@ function buildJobCard(job, historyMode = false) {
   const bookingCode = job.booking_code || ("CWF" + String(jobId).padStart(7, "0"));
   const rawPhone = String(job.customer_phone || "").trim();
   const telPhone = rawPhone.replace(/[^0-9+]/g, "");
+  const revisitScheduleDraft = getRevisitScheduleDraft(keyBase);
+  const revisitAgreedAt = String(job.revisit_agreed_at || revisitScheduleDraft.revisit_agreed_at || '').trim();
+  const revisitScheduleNote = String(job.revisit_schedule_note || revisitScheduleDraft.revisit_schedule_note || '').trim();
+  const revisitCauseParty = String(job.revisit_cause_party || '').trim();
+  const revisitCauseNote = String(job.revisit_cause_note || '').trim();
 
   // ✅ สรุปสถานะเช็คอิน
   const checkinText = checkedIn
@@ -3958,12 +4100,12 @@ function buildJobCard(job, historyMode = false) {
 
 
 
-    <details class="cwf-details" style="margin-top:10px;">
+    ${revisitFlow ? "" : `<details class="cwf-details" style="margin-top:10px;">
       <summary>💳 รายละเอียดยอดเก็บลูกค้า</summary>
       <div class="cwf-details-body">
         <div id="pricing-${jobId}">กำลังโหลด...</div>
       </div>
-    </details>
+    </details>`}
 
     ${showWorkTools ? `
       <details class="cwf-details" style="margin-top:10px;" ${isWorking ? "open" : ""}>
@@ -3978,7 +4120,20 @@ function buildJobCard(job, historyMode = false) {
 
           <div id="photo-status-${jobId}" style="display:none"></div>
 
-          <div class="cwf-note-box">
+          ${revisitFlow ? `
+            <div class="cwf-note-box cwf-revisit-warning">
+              <b>ตามสัญญาพาร์ทเนอร์</b>
+              <div class="muted" style="margin-top:5px;color:#7c2d12">ช่างต้องรับผิดชอบงานที่เกิดจากคุณภาพงานเดิม/งานไม่เรียบร้อย/หลีกเลี่ยงงานแก้ไข หากแอดมินตรวจสอบแล้วพบว่าช่างเป็นฝ่ายผิด บริษัทมีสิทธิ์ไม่จ่ายค่าตอบแทนงานนั้น และ/หรือหักเงินตามความเสียหายจริงตามขั้นตอนอนุมัติของบริษัท</div>
+            </div>
+            <div class="cwf-note-box">
+              <b>📞 นัดหมายงานแก้ไขกับลูกค้า</b>
+              <input id="revisit-agreed-at-${keyBase}" type="datetime-local" style="margin-top:8px" value="${escapeAttr(revisitAgreedAt ? revisitAgreedAt.slice(0,16) : '')}" oninput="saveRevisitScheduleDraft('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
+              <textarea id="revisit-schedule-note-${keyBase}" rows="3" style="margin-top:8px" placeholder="สรุปที่ตกลงกับลูกค้า เช่น ลูกค้าสะดวกวันไหน เวลาไหน / โทรกี่โมง" oninput="saveRevisitScheduleDraft('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>${escape(revisitScheduleNote)}</textarea>
+              <button type="button" style="margin-top:8px;width:100%" onclick="saveRevisitSchedule('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>บันทึกเวลานัดแก้ไข</button>
+            </div>
+          ` : ``}
+
+          ${revisitFlow ? `` : `<div class="cwf-note-box">
             <b>🛡️ ประกันงาน</b>
             <div class="muted" style="margin-top:4px;font-size:12px;">ต้องเลือกก่อนกด “เสร็จสิ้น”</div>
             ${(() => {
@@ -3999,20 +4154,29 @@ function buildJobCard(job, historyMode = false) {
               const kindHidden = (kind && !kindSelect) ? `<input type="hidden" id="warranty-kind-${jobId}" value="${kind}">` : '';
               return `${kindHidden}<div class="pill" style="margin-top:6px;background:#eff6ff;border-color:rgba(37,99,235,0.25);color:#0f172a;">${label}</div>${kindSelect}${monthSelect}`;
             })()}
-          </div>
+          </div>`}
 
           <div class="cwf-note-box">
             <b>📝 หมายเหตุช่าง</b>
             <textarea id="note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""} oninput="noteDraftChanged('${jobKeyJs}')">${escape(getNoteDraft(keyBase) || job.technician_note || "")}</textarea>
             ${revisitFlow ? `
               <div style="margin-top:10px;">
-                <b>🔁 ผลงานแก้ไข</b>
+                <b>🔁 เช็คลิสงานแก้ไข</b>
+                <select id="revisit-cause-party-${keyBase}" style="margin-top:6px;width:100%;" ${!canEdit ? "disabled" : ""}>
+                  <option value="">เลือกสาเหตุงานแก้ไข (จำเป็น)</option>
+                  <option value="technician" ${revisitCauseParty==='technician'?'selected':''}>เกิดจากช่าง/งานเดิม</option>
+                  <option value="customer" ${revisitCauseParty==='customer'?'selected':''}>เกิดจากการใช้งานของลูกค้า</option>
+                  <option value="company" ${revisitCauseParty==='company'?'selected':''}>เกิดจากระบบ/อะไหล่/เงื่อนไขบริษัท</option>
+                  <option value="unclear" ${revisitCauseParty==='unclear'?'selected':''}>ยังไม่ชัดเจน ต้องให้แอดมินตรวจ</option>
+                </select>
+                <textarea id="revisit-cause-note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="อธิบายสาเหตุที่พบ (จำเป็น)">${escape(revisitCauseNote)}</textarea>
+                <div class="muted" style="margin-top:6px;font-size:12px;">ต้องแนบรูปสาเหตุ/จุดปัญหาในหมวด “รูปสาเหตุ/จุดปัญหา” ก่อนปิดงาน</div>
                 <select id="revisit-result-${keyBase}" style="margin-top:6px;width:100%;" ${!canEdit ? "disabled" : ""}>
                   <option value="">เลือกผลการกลับไปแก้ (จำเป็น)</option>
-                  <option value="successful">successful - แก้แล้วใช้งานได้</option>
-                  <option value="unsuccessful">unsuccessful - ยังไม่จบ/ยังมีอาการ</option>
+                  <option value="successful" ${String(job.revisit_result||'')==='successful'?'selected':''}>successful - แก้แล้วใช้งานได้</option>
+                  <option value="unsuccessful" ${String(job.revisit_result||'')==='unsuccessful'?'selected':''}>unsuccessful - ยังไม่จบ/ยังมีอาการ</option>
                 </select>
-                <textarea id="revisit-note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="revisit_note (จำเป็น): สรุปผลการแก้ / เหตุผล / อาการที่ยังพบ" ${!canEdit ? "disabled" : ""}>${escape(job.technician_note || "")}</textarea>
+                <textarea id="revisit-note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="revisit_note (จำเป็น): สรุปผลการแก้ / เหตุผล / อาการที่ยังพบ" ${!canEdit ? "disabled" : ""}>${escape(job.revisit_note || job.technician_note || "")}</textarea>
               </div>
             ` : ``}
             ${historyMode ? "" : ((checkedIn || isWorking) ? `
@@ -4031,7 +4195,7 @@ function buildJobCard(job, historyMode = false) {
   `;
 
   setTimeout(() => {
-    loadPricing(jobId);
+    if (!revisitFlow) loadPricing(jobId);
     loadTeam(jobId);
     if (showWorkTools) refreshPhotoStatus(jobId);
   }, 0);
@@ -4307,8 +4471,8 @@ function ensureSignatureModal() {
   wrap.style.cssText = "position:fixed;inset:0;background:rgba(15,23,42,0.6);display:none;align-items:center;justify-content:center;z-index:9999;padding:16px;";
   wrap.innerHTML = `
     <div class="card" style="width:min(520px, 100%);">
-      <h3 style="margin-top:0;">✍️ ลายเซ็นต์ช่าง</h3>
-      <div class="muted">ให้ลูกค้าเซ็นเพื่อยืนยัน “เสร็จสิ้น/ยกเลิก” งาน</div>
+      <h3 style="margin-top:0;">ลายเซ็นช่าง</h3>
+      <div class="muted">ให้ช่างเซ็นรับรองการปิดงาน/งานแก้ไข</div>
       <div style="margin-top:10px;border:1px solid rgba(15,23,42,0.15);border-radius:14px;overflow:hidden;background:#fff;">
         <canvas id="sig-canvas" width="480" height="220" style="width:100%;height:auto;touch-action:none;"></canvas>
       </div>
@@ -4380,7 +4544,7 @@ function ensureSignatureModal() {
   };
 
   wrap.querySelector("#sig-confirm").onclick = () => {
-    if (!hasStroke) return alert("ให้ลูกค้าเซ็นก่อน");
+    if (!hasStroke) return alert("ให้ช่างเซ็นก่อน");
     const dataUrl = canvas.toDataURL("image/png");
     wrap.style.display = "none";
 
@@ -5155,9 +5319,9 @@ function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
             alert("งานแก้ไขยังปิดงานไม่ได้: ต้องกรอก revisit_note เพื่อสรุปผลการกลับไปแก้");
             return;
           }
-          const hasEvidence = await hasRevisitEvidence(jobId);
-          if (!hasEvidence) {
-            alert("งานแก้ไขยังปิดงานไม่ได้: ต้องมีรูป revisit evidence อย่างน้อย 1 รูปในหมวด ก่อนแก้ / หลังแก้ / จุดปัญหา");
+          const evidence = await validateRevisitEvidence(jobId);
+          if (!evidence.ok) {
+            alert(evidence.message);
             return;
           }
         }
@@ -5196,6 +5360,9 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
     const revisitFlow = isRevisitJob(job);
     const revisit_result = revisitFlow ? getRevisitResultValue(jobId) : "";
     const revisit_note = revisitFlow ? getRevisitNoteValue(jobId) : "";
+    const revisit_cause_party = revisitFlow ? getRevisitCausePartyValue(jobId) : "";
+    const revisit_cause_note = revisitFlow ? getRevisitCauseNoteValue(jobId) : "";
+    const revisitSchedule = revisitFlow ? getRevisitScheduleDraft(jobId) : {};
 
     // อัปโหลดรูปค้างก่อน (แต่ห้ามล็อคการปิดงาน)
     // เคสที่เจอบ่อย: fetch ค้าง/timeout หรือ photo_id ไม่ตรงกับ server ทำให้กดปิดงานแล้วเงียบ
@@ -5214,7 +5381,7 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
     }).catch(() => {});
 
     const closePay = cwfGetPayment(jobId);
-    const closeMethod = closePay.method === 'cash' ? 'cash_to_technician' : (closePay.method === 'admin' ? 'admin_handles_payment' : 'customer_qr_company');
+    const closeMethod = revisitFlow ? 'not_required_revisit' : (closePay.method === 'cash' ? 'cash_to_technician' : (closePay.method === 'admin' ? 'admin_handles_payment' : 'customer_qr_company'));
     const oldChecklist = cwfGetChecklist(jobId);
     const toChecklistArray = (section) => (section === 'pre' ? CWF_PRE_CHECK_ITEMS : CWF_POST_CHECK_ITEMS).map((label, i) => {
       const row = (oldChecklist && oldChecklist[section] && oldChecklist[section][i]) || {};
@@ -5230,14 +5397,18 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
         note,
         revisit_result,
         revisit_note,
+        revisit_cause_party,
+        revisit_cause_note,
+        revisit_agreed_at: revisitSchedule.revisit_agreed_at || job?.revisit_agreed_at || null,
+        revisit_schedule_note: revisitSchedule.revisit_schedule_note || job?.revisit_schedule_note || '',
         pre_cleaning_checklist: toChecklistArray('pre'),
         post_cleaning_checklist: toChecklistArray('post'),
         per_unit_evidence: unitsForFinalize.length > 0,
         close_payment_method: closeMethod,
-        close_payment_status: closeMethod === 'admin_handles_payment' ? 'pending_admin_update' : 'pending_verification',
-        close_cash_amount: closePay.cash_amount || null,
-        close_payment_note: closePay.note || '',
-        close_cash_confirmed: !!closePay.cash_confirmed,
+        close_payment_status: revisitFlow ? 'not_required_revisit' : (closeMethod === 'admin_handles_payment' ? 'pending_admin_update' : 'pending_verification'),
+        close_cash_amount: revisitFlow ? null : (closePay.cash_amount || null),
+        close_payment_note: revisitFlow ? '' : (closePay.note || ''),
+        close_cash_confirmed: revisitFlow ? false : !!closePay.cash_confirmed,
         close_signature_type: 'technician_signature',
       }),
     });
@@ -5705,11 +5876,14 @@ async function uploadFilesAsPhotos(jobId, phase, files, opts = {}){
   window.__CWF_UPLOAD_BUSY_COUNT = (window.__CWF_UPLOAD_BUSY_COUNT || 0) + 1;
   const uploadTargetId = opts.targetId || cwfUploadStatusTarget(phase);
   let done = 0;
-  cwfSetInlineUploadStatus(uploadTargetId, `กำลังส่งรูปไป Cloudinary 0/${selected.length}`);
+  const isSlipUpload = String(phase || '').includes('slip');
+  const uploadNoun = isSlipUpload ? 'สลิป' : 'รูป';
+  console.log('[photo-ui] upload:start', { jobId, phase, count: selected.length });
+  cwfSetInlineUploadStatus(uploadTargetId, `กำลังส่ง${uploadNoun}ไป Cloudinary 0/${selected.length}`);
   cwfShowUploadOverlay(`กำลังส่งรูปไป Cloudinary 0/${selected.length}`);
   try {
     for (const f of selected) {
-      cwfSetInlineUploadStatus(uploadTargetId, `กำลังเตรียมรูป ${done + 1}/${selected.length}`);
+      cwfSetInlineUploadStatus(uploadTargetId, `กำลังเตรียม${uploadNoun} ${done + 1}/${selected.length}`);
       cwfUpdateUploadOverlay(`กำลังเตรียมรูป ${done + 1}/${selected.length}`);
       const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
         method: "POST",
@@ -5729,7 +5903,7 @@ async function uploadFilesAsPhotos(jobId, phase, files, opts = {}){
       const photo_id = meta.photo_id;
 
       try {
-        cwfSetInlineUploadStatus(uploadTargetId, `กำลังส่งรูปไป Cloudinary ${done + 1}/${selected.length}`);
+        cwfSetInlineUploadStatus(uploadTargetId, `กำลังส่ง${uploadNoun}ไป Cloudinary ${done + 1}/${selected.length}`);
         cwfUpdateUploadOverlay(`กำลังส่งรูปไป Cloudinary ${done + 1}/${selected.length}`);
         const formNow = new FormData();
         formNow.append("photo", f, f.name || "photo.jpg");
@@ -5740,7 +5914,7 @@ async function uploadFilesAsPhotos(jobId, phase, files, opts = {}){
         const up = await upRes.json().catch(() => ({}));
         if (!upRes.ok) throw new Error(up.error || "อัปโหลดรูปไม่สำเร็จ");
         done += 1;
-        cwfSetInlineUploadStatus(uploadTargetId, `อัปโหลดขึ้น Cloudinary แล้ว ${done}/${selected.length}`);
+        cwfSetInlineUploadStatus(uploadTargetId, `อัปโหลด${uploadNoun}ขึ้น Cloudinary แล้ว ${done}/${selected.length}`);
         cwfUpdateUploadOverlay(`อัปโหลดขึ้น Cloudinary แล้ว ${done}/${selected.length}`);
       } catch (e) {
         // fail-open: เก็บค้างในเครื่อง แล้วให้กดอัปโหลดภายหลัง
@@ -5756,13 +5930,15 @@ async function uploadFilesAsPhotos(jobId, phase, files, opts = {}){
           created_at: Date.now(),
         });
         done += 1;
-        cwfSetInlineUploadStatus(uploadTargetId, `เก็บรูปค้างในเครื่องแล้ว ${done}/${selected.length}`, 'ok');
+        cwfSetInlineUploadStatus(uploadTargetId, `เก็บ${uploadNoun}ค้างในเครื่องแล้ว ${done}/${selected.length}`, 'ok');
         cwfUpdateUploadOverlay(`เก็บรูปค้างในเครื่องแล้ว ${done}/${selected.length}`);
       }
     }
-    cwfSetInlineUploadStatus(uploadTargetId, `✅ อัปโหลด/รับรูปขึ้น Cloudinary แล้ว ${selected.length} รูป`, 'ok');
+    cwfSetInlineUploadStatus(uploadTargetId, isSlipUpload ? 'ส่งสลิปขึ้น Cloudinary แล้ว' : `ส่งขึ้น Cloudinary แล้ว ${selected.length} รูป`, 'ok');
+    console.log('[photo-ui] upload:done', { jobId, phase, count: selected.length });
     cwfTechToast(`✅ อัปโหลด/รับรูปขึ้น Cloudinary แล้ว ${selected.length} รูป`);
   } catch (e) {
+    console.log('[photo-ui] upload:error', { jobId, phase, error: e?.message || String(e) });
     cwfSetInlineUploadStatus(uploadTargetId, `❌ ${e.message || 'อัปโหลดรูปไม่สำเร็จ'}`, 'bad');
     cwfTechToast(`❌ ${e.message || 'อัปโหลดรูปไม่สำเร็จ'}`, true);
     throw e;
@@ -5770,7 +5946,7 @@ async function uploadFilesAsPhotos(jobId, phase, files, opts = {}){
     try { await refreshPhotoStatus(jobId); } catch {}
     window.__CWF_UPLOAD_BUSY_COUNT = Math.max(0, (window.__CWF_UPLOAD_BUSY_COUNT || 1) - 1);
     cwfHideUploadOverlay();
-    cwfClearInlineUploadStatus(uploadTargetId, 2200);
+    cwfClearInlineUploadStatus(uploadTargetId, 4500);
   }
 }
 
@@ -5786,6 +5962,7 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
       if (!selected.length) return;
       const uploadTargetId = cwfUploadStatusTarget(phase);
       window.__CWF_UPLOAD_BUSY_COUNT = (window.__CWF_UPLOAD_BUSY_COUNT || 0) + 1;
+      console.log('[photo-ui] upload:start', { jobId, phase, count: selected.length });
       cwfSetInlineUploadStatus(uploadTargetId, `กำลังส่งรูปไป Cloudinary 0/${selected.length}`);
       cwfShowUploadOverlay(`กำลังส่งรูปไป Cloudinary 0/${selected.length}`);
       let done = 0;
@@ -5850,16 +6027,18 @@ async function pickPhotos(jobId, phase, maxFiles = 20) {
           cwfUpdateUploadOverlay(`เก็บรูปค้างในเครื่องแล้ว ${done}/${selected.length}`);
         }
 
-        cwfSetInlineUploadStatus(uploadTargetId, `✅ รับรูป/ส่งขึ้น Cloudinary แล้ว ${selected.length} รูป`, 'ok');
+        cwfSetInlineUploadStatus(uploadTargetId, `ส่งขึ้น Cloudinary แล้ว ${selected.length} รูป`, 'ok');
+        console.log('[photo-ui] upload:done', { jobId, phase, count: selected.length });
         cwfTechToast("✅ รับรูปแล้ว (อัปโหลดทันทีถ้าเน็ตพร้อม / ถ้าไม่พร้อมจะค้างในเครื่อง)");
         refreshPhotoStatus(jobId);
       } catch (e) {
+        console.log('[photo-ui] upload:error', { jobId, phase, error: e?.message || String(e) });
         cwfSetInlineUploadStatus(uploadTargetId, `❌ ${e.message || 'อัปโหลดรูปไม่สำเร็จ'}`, 'bad');
         cwfTechToast(`❌ ${e.message || 'อัปโหลดรูปไม่สำเร็จ'}`, true);
       } finally {
         window.__CWF_UPLOAD_BUSY_COUNT = Math.max(0, (window.__CWF_UPLOAD_BUSY_COUNT || 1) - 1);
         cwfHideUploadOverlay();
-        cwfClearInlineUploadStatus(uploadTargetId, 2200);
+        cwfClearInlineUploadStatus(uploadTargetId, 4500);
       }
     };
 
