@@ -19792,104 +19792,6 @@ app.put("/jobs/:job_id/note", async (req, res) => {
   }
 });
 
-
-// =======================================
-// 🔁 TECH REVISIT FLOW V5 (schedule/checklist only, no pricing/payout)
-// =======================================
-function normalizeRevisitResultValue(v) {
-  const s = String(v || '').trim().toLowerCase();
-  return (s === 'successful' || s === 'unsuccessful') ? s : '';
-}
-function normalizeRevisitCauseParty(v) {
-  const s = String(v || '').trim();
-  const allowed = new Set([
-    'เกิดจากช่าง / งานเดิม',
-    'เกิดจากการใช้งานของลูกค้า',
-    'เกิดจากระบบ / อะไหล่ / เงื่อนไขบริษัท',
-    'ยังไม่ชัดเจน ให้แอดมินตรวจ',
-  ]);
-  return allowed.has(s) ? s : '';
-}
-
-app.post('/jobs/:job_id/revisit/checklist', requireTechnicianSession, async (req, res) => {
-  const job_id = req.params.job_id;
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const realId = await resolveJobIdAny(client, job_id);
-    if (!realId) throw new Error('job_id ไม่ถูกต้อง');
-    const technician_username = await requireTechOwnsResolvedJob(req, res, realId, client);
-    if (!technician_username) { await client.query('ROLLBACK'); return; }
-    const cause_party = normalizeRevisitCauseParty(req.body?.cause_party || req.body?.revisit_cause_party);
-    const cause_note = String(req.body?.cause_note || req.body?.revisit_cause_note || '').trim();
-    const result = normalizeRevisitResultValue(req.body?.result || req.body?.revisit_result);
-    const result_note = String(req.body?.result_note || req.body?.revisit_result_note || '').trim();
-    if (!cause_party) throw new Error('กรุณาเลือกสาเหตุงานแก้ไข');
-    if (!result) throw new Error('กรุณาเลือกผลการแก้ไข');
-    await logJobUpdate(realId, {
-      actor_username: technician_username,
-      actor_role: 'tech',
-      action: 'revisit_checklist',
-      message: result === 'successful' ? 'แก้ไขสำเร็จ ใช้งานได้ปกติ' : 'ยังไม่จบ / ยังมีอาการ ต้องให้แอดมินติดตาม',
-      payload: { revisit_cause_party: cause_party, revisit_cause_note: cause_note || null, revisit_result: result, revisit_result_note: result_note || null },
-    }, client);
-    await client.query('COMMIT');
-    res.json({ ok: true, success: true });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    res.status(400).json({ ok: false, error: e.message || 'บันทึกเช็คลิสงานแก้ไขไม่สำเร็จ' });
-  } finally {
-    client.release();
-  }
-});
-
-app.post('/jobs/:job_id/revisit/schedule', requireTechnicianSession, async (req, res) => {
-  const job_id = req.params.job_id;
-  const appointmentRaw = String(req.body?.appointment_datetime || '').trim();
-  if (!appointmentRaw) return res.status(400).json({ ok: false, error: 'กรุณาเลือกวันและเวลาที่ตกลงกับลูกค้า' });
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const realId = await resolveJobIdAny(client, job_id);
-    if (!realId) throw new Error('job_id ไม่ถูกต้อง');
-    const technician_username = await requireTechOwnsResolvedJob(req, res, realId, client);
-    if (!technician_username) { await client.query('ROLLBACK'); return; }
-    const appt = appointmentRaw.length <= 16 ? `${appointmentRaw}:00+07:00` : appointmentRaw;
-    const conflict = await client.query(
-      `SELECT j.job_id, j.booking_code, j.appointment_datetime
-         FROM public.jobs j
-         LEFT JOIN public.job_team_members tm ON tm.job_id=j.job_id AND tm.username=$2
-         LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$2
-        WHERE j.job_id <> $1
-          AND (j.technician_username=$2 OR j.technician_team=$2 OR tm.username IS NOT NULL OR ja.technician_username IS NOT NULL)
-          AND j.appointment_datetime IS NOT NULL
-          AND COALESCE(j.job_status,'') NOT IN ('เสร็จแล้ว','เสร็จสิ้น','ยกเลิก','ปิดงาน')
-          AND j.appointment_datetime BETWEEN ($3::timestamptz - INTERVAL '2 hours') AND ($3::timestamptz + INTERVAL '2 hours')
-        ORDER BY j.appointment_datetime ASC
-        LIMIT 1`,
-      [realId, technician_username, appt]
-    );
-    if (conflict.rows.length) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({ ok: false, code: 'SCHEDULE_CONFLICT', error: 'เวลานี้ชนกับงานอื่นที่มีอยู่แล้ว', conflict: conflict.rows[0] });
-    }
-    await logJobUpdate(realId, {
-      actor_username: technician_username,
-      actor_role: 'tech',
-      action: 'revisit_schedule',
-      message: `แจ้งเวลานัดหมายงานแก้ไข ${appointmentRaw}`,
-      payload: { revisit_appointment_datetime: appointmentRaw, note: 'บันทึกเพื่อให้แอดมินตรวจย้อนหลัง ไม่เปลี่ยน appointment_datetime หลัก' },
-    }, client);
-    await client.query('COMMIT');
-    res.json({ ok: true, success: true, appointment_datetime: appointmentRaw });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    res.status(400).json({ ok: false, error: e.message || 'บันทึกเวลานัดหมายงานแก้ไขไม่สำเร็จ' });
-  } finally {
-    client.release();
-  }
-});
-
 // =======================================
 // ✅ FINALIZE JOB (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์ช่าง
 // =======================================
@@ -19901,11 +19803,7 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
   const status = String(req.body?.status || "").trim();
   const signature_data = req.body?.signature_data;
   const note = String(req.body?.note || "").trim();
-  const revisit_flow_requested = req.body?.revisit_flow === true || String(req.body?.revisit_flow || '').trim() === '1';
-  const revisit_cause_party = String(req.body?.revisit_cause_party || '').trim();
-  const revisit_cause_note = String(req.body?.revisit_cause_note || '').trim();
   const revisit_result = String(req.body?.revisit_result || "").trim().toLowerCase();
-  const revisit_result_note = String(req.body?.revisit_result_note || '').trim();
   const revisit_note = String(req.body?.revisit_note || "").trim();
   const warranty_kind = String(req.body?.warranty_kind || "").trim();
   const warranty_months = req.body?.warranty_months;
@@ -19926,7 +19824,7 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
   if (!signature_data) {
     return res.status(400).json({ error: "ต้องมีลายเซ็นปิดงาน" });
   }
-  if (status === 'เสร็จแล้ว' && !revisit_flow_requested) {
+  if (status === 'เสร็จแล้ว') {
     if (!pre_cleaning_checklist || !pre_cleaning_checklist.length) return res.status(400).json({ error: 'กรุณาตรวจสภาพก่อนล้างให้ครบ' });
     if (!post_cleaning_checklist || !post_cleaning_checklist.length) return res.status(400).json({ error: 'กรุณาตรวจหลังล้างให้ครบ' });
     if (!close_payment_method) return res.status(400).json({ error: 'กรุณาเลือกวิธีชำระเงิน' });
@@ -19954,7 +19852,7 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
     const perUnitEvidenceRequested = req.body?.per_unit_evidence === true || String(req.body?.per_unit_evidence || '').trim().toLowerCase() === 'true' || String(req.body?.per_unit_evidence || '').trim() === '1';
     const perUnitFlagR = await client.query(`SELECT COALESCE(per_unit_evidence_enabled,FALSE) AS enabled FROM public.jobs WHERE job_id=$1 LIMIT 1`, [realId]);
     const perUnitEnabled = perUnitEvidenceRequested || !!perUnitFlagR.rows?.[0]?.enabled;
-    if (status === "เสร็จแล้ว" && perUnitEnabled && !revisit_flow_requested) {
+    if (status === "เสร็จแล้ว" && perUnitEnabled) {
       const unitMissing = await validatePerUnitCompletion(realId, client);
       if (unitMissing) {
         await client.query("ROLLBACK");
@@ -19993,32 +19891,16 @@ if (status === "เสร็จแล้ว") {
     const meta = metaR.rows[0] || {};
     const isRevisitFlow = String(meta.job_status || "").trim() === "งานแก้ไข" || !!meta.returned_at || !!meta.return_reason;
     const revisitResult = ["successful", "unsuccessful"].includes(revisit_result) ? revisit_result : "";
-    const revisitNote = revisit_note || [revisit_cause_note, revisit_result_note].filter(Boolean).join("\n").trim() || note;
+    const revisitNote = revisit_note || note;
 
     if (isRevisitFlow && status === "เสร็จแล้ว") {
-      if (!revisit_cause_party) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: "กรุณาเลือกสาเหตุงานแก้ไข" });
-      }
       if (!revisitResult) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ error: "กรุณาเลือกผลการแก้ไข" });
+        return res.status(400).json({ error: "งานแก้ไขต้องระบุ revisit_result เป็น successful หรือ unsuccessful" });
       }
-      const ph = await client.query(
-        `SELECT phase, COUNT(*)::int AS count
-           FROM public.job_photos
-          WHERE job_id=$1 AND deleted_at IS NULL AND public_url IS NOT NULL AND phase IN ('revisit_before','revisit_after')
-          GROUP BY phase`,
-        [realId]
-      );
-      const phaseCounts = Object.fromEntries((ph.rows || []).map(r => [String(r.phase), Number(r.count || 0)]));
-      if (!phaseCounts.revisit_before) {
+      if (!revisitNote) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ error: "กรุณาแนบรูปก่อนแก้ไข" });
-      }
-      if (!phaseCounts.revisit_after) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: "กรุณาแนบรูปหลังแก้ไข" });
+        return res.status(400).json({ error: "งานแก้ไขต้องระบุ revisit_note หรือ note" });
       }
     }
 
@@ -20080,7 +19962,7 @@ if (status === "เสร็จแล้ว") {
 	      }
       const ackAccepted = !!(photo_ack && photo_ack.accepted);
       const missingPhotos = (photo_ack && Array.isArray(photo_ack.missing)) ? photo_ack.missing : [];
-      const paymentStatusToSave = isRevisitFlow ? null : (close_payment_method === 'admin_handles_payment' ? 'pending_admin_update' : (close_payment_status || 'pending_verification'));
+      const paymentStatusToSave = close_payment_method === 'admin_handles_payment' ? 'pending_admin_update' : (close_payment_status || 'pending_verification');
       await client.query(
         `UPDATE public.jobs
          SET job_status='เสร็จแล้ว',
@@ -20136,10 +20018,7 @@ if (status === "เสร็จแล้ว") {
             action: "revisit_result",
             message: revisitResult === "successful" ? "successful" : "unsuccessful",
             payload: {
-              revisit_cause_party: revisit_cause_party || null,
-              revisit_cause_note: revisit_cause_note || null,
               revisit_result: revisitResult,
-              revisit_result_note: revisit_result_note || null,
               revisit_note: revisitNote || null,
               evidence_phases: ["revisit_before", "revisit_after", "revisit_defect"],
             },
@@ -20156,12 +20035,9 @@ if (status === "เสร็จแล้ว") {
           warranty_kind: wKind || null,
           warranty_months: wMonths || null,
           warranty_end_at: wEndIso || null,
-          revisit_cause_party: revisit_cause_party || null,
-          revisit_cause_note: revisit_cause_note || null,
           revisit_result: revisitResult || null,
-          revisit_result_note: revisit_result_note || null,
           revisit_note: revisitNote || null,
-          close_payment_method: isRevisitFlow ? null : (close_payment_method || null),
+          close_payment_method: close_payment_method || null,
           close_payment_status: close_payment_method === 'admin_handles_payment' ? 'pending_admin_update' : (close_payment_status || 'pending_verification'),
           close_signature_type: close_signature_type || 'technician_signature',
           photo_acknowledgement_accepted: !!(photo_ack && photo_ack.accepted),

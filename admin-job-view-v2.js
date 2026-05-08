@@ -400,42 +400,6 @@ function warrantyLabel(job){
   return `<span class="pill" style="${base}">${title}</span> <span class="muted2" style="font-size:12px">หมด: ${end}${extra}</span>`;
 }
 
-
-function parseMaybeJson(v){
-  if (!v) return null;
-  if (typeof v === 'object') return v;
-  try { return JSON.parse(String(v)); } catch { return null; }
-}
-function renderRevisitAuditPanel(job, photos, updates){
-  const status = String(job?.job_status || '').trim();
-  const isRevisit = status === 'งานแก้ไข' || !!job?.returned_at || !!job?.return_reason || (Array.isArray(photos) && photos.some(p => String(p.phase || '').startsWith('revisit_'))) || (Array.isArray(updates) && updates.some(u => String(u.action || '').startsWith('revisit_')));
-  if (!isRevisit) return '';
-  const byPhase = (ph) => (Array.isArray(photos) ? photos : []).filter(p => String(p.phase || '') === ph && p.public_url);
-  const latestPayload = (action) => {
-    const row = (Array.isArray(updates) ? updates : []).filter(u => String(u.action || '') === action).slice(-1)[0] || null;
-    return row ? (parseMaybeJson(row.payload) || parseMaybeJson(row.details) || row.payload || {}) : {};
-  };
-  const checklist = latestPayload('revisit_checklist');
-  const resultLog = latestPayload('revisit_result');
-  const schedule = latestPayload('revisit_schedule');
-  const val = (a,b='') => safe(a || b || '-');
-  const photoGrid = (label, arr) => arr.length ? arr.map(p => `<a class="secondary btn-small" href="${escapeHtml(safe(p.public_url))}" target="_blank" rel="noopener">${escapeHtml(label)} #${escapeHtml(safe(p.photo_id || ''))}</a>`).join(' ') : `<span class="pill">ยังไม่มี${escapeHtml(label)}</span>`;
-  return `
-    <section style="margin-top:12px;border:1px solid rgba(14,116,144,.20);background:linear-gradient(180deg,#f0fdfa,#fff);border-radius:18px;padding:12px;">
-      <b>🔁 ตรวจย้อนหลังงานแก้ไข</b>
-      <div class="muted2 mini" style="margin-top:5px">ใช้ตรวจคุณภาพงานแก้ไขเท่านั้น ระบบไม่หักเงินอัตโนมัติ</div>
-      <div class="list" style="margin-top:10px">
-        <div class="item"><b>เวลานัดหมายที่ช่างแจ้ง</b><div class="muted2">${escapeHtml(val(schedule.revisit_appointment_datetime || schedule.appointment_datetime))}</div></div>
-        <div class="item"><b>รูปก่อนแก้ไข</b><div style="margin-top:8px">${photoGrid('รูปก่อนแก้ไข', byPhase('revisit_before'))}</div></div>
-        <div class="item"><b>รูปหลังแก้ไข</b><div style="margin-top:8px">${photoGrid('รูปหลังแก้ไข', byPhase('revisit_after'))}</div></div>
-        <div class="item"><b>รูปจุดปัญหา</b><div style="margin-top:8px">${photoGrid('รูปจุดปัญหา', byPhase('revisit_defect'))}</div></div>
-        <div class="item"><b>สาเหตุงานแก้ไข</b><div class="muted2">${escapeHtml(val(checklist.revisit_cause_party || resultLog.revisit_cause_party))}</div>${(checklist.revisit_cause_note || resultLog.revisit_cause_note) ? `<div style="white-space:pre-wrap;margin-top:6px">${escapeHtml(safe(checklist.revisit_cause_note || resultLog.revisit_cause_note))}</div>` : ''}</div>
-        <div class="item"><b>ผลการแก้ไข</b><div class="muted2">${escapeHtml(val(checklist.revisit_result || resultLog.revisit_result))}</div>${(checklist.revisit_result_note || resultLog.revisit_result_note || resultLog.revisit_note) ? `<div style="white-space:pre-wrap;margin-top:6px">${escapeHtml(safe(checklist.revisit_result_note || resultLog.revisit_result_note || resultLog.revisit_note))}</div>` : ''}</div>
-        <div class="item"><b>ช่างที่ดำเนินการ / วันที่ปิด</b><div class="muted2">${escapeHtml(safe(job.technician_username || '-'))} • ${escapeHtml(fmtDT(job.finished_at || job.updated_at || ''))}</div></div>
-      </div>
-    </section>`;
-}
-
 function renderUnitEvidence(units, photos){
   const arr = Array.isArray(units) ? units : [];
   const allPhotos = Array.isArray(photos) ? photos : [];
@@ -606,7 +570,6 @@ async function loadJob(){
     </div>
 
     ${renderCloseFlowSummary(job)}
-    ${renderRevisitAuditPanel(job, photos, updates)}
 
     <div class="row" style="margin-top:12px;gap:10px;flex-wrap:wrap">
       <button id="btnDocQuote" class="secondary" type="button" style="width:auto">🧾 ใบเสนอราคา (เต็ม)</button>
