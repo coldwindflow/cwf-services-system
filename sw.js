@@ -1,7 +1,7 @@
-const CACHE_NAME = "cwf-cache-v75-emergency-no-revisit-v22-20260509";
+const CACHE_NAME = "cwf-cache-v76-fix-active-history-v23-20260509";
 const ASSETS = [
   "/tech.html?v=20260509_emergency_no_revisit_v22",
-  "/app.js?v=20260509_emergency_no_revisit_v22"
+  "/app.js?v=20260509_fix_active_history_v23"
 ];
 
 self.addEventListener("install", event => {
