@@ -2770,6 +2770,7 @@ function renderJobs(jobs) {
   // ✅ cache ไว้ใช้กับ popup เก็บเงินลูกค้า / เปิด e-slip
   window.__JOB_CACHE__ = Array.isArray(jobs) ? jobs : [];
 
+  repairActiveSectionLayout();
   if (activeJobsEl) activeJobsEl.innerHTML = "";
   if (activeUpcomingJobsEl) activeUpcomingJobsEl.innerHTML = "";
   if (historyJobsEl) historyJobsEl.innerHTML = "";
@@ -2847,6 +2848,7 @@ function renderJobs(jobs) {
   if (activeJobsEl) {
     if (!prioritizedActiveToday.length) activeJobsEl.innerHTML = "<p>✅ วันนี้ยังไม่มีงาน</p>";
     prioritizedActiveToday.forEach((job) => activeJobsEl.appendChild(buildJobCard(job, false)));
+    repairActiveSectionLayout();
   }
 
   const upcomingDates = [...new Set(activeUpcoming.map((j)=> ymdBkkFromISO(j.appointment_datetime)).filter(Boolean))].sort();
@@ -2863,6 +2865,7 @@ function renderJobs(jobs) {
         : "<p>ยังไม่มีงานล่วงหน้า</p>";
     }
     filteredUpcoming.forEach((job) => activeUpcomingJobsEl.appendChild(buildJobCard(job, false)));
+    repairActiveSectionLayout();
   }
 
   if (historyJobsEl) {
@@ -4038,6 +4041,48 @@ async function cwfValidateCloseRequirements(jobId, targetStatus){
 // ↩️ RETURN JOB (ช่างตีกลับงาน) - (ปิดใช้งานฝั่งช่างตามคำสั่งล่าสุด)
 // - ยังไม่ลบ endpoint ฝั่ง backend เผื่อใช้งานอนาคต
 // =======================================
+
+
+
+// =======================================
+// 🧩 CWF v7: Repair active section layout
+// Scope: เฉพาะหน้า "งานของฉัน" กันหัวข้อ/ปุ่ม งานวันนี้-ตารางล่วงหน้า
+// หลุดไปอยู่กลางใบงานจาก DOM เก่า/cache หรือ markup ที่ถูก append ผิดจุด
+// =======================================
+function repairActiveSectionLayout(){
+  try {
+    const sec = document.getElementById('sec-active');
+    const todayWrap = document.getElementById('sec-active-today');
+    const upcomingWrap = document.getElementById('sec-active-upcoming');
+    const activeList = document.getElementById('active-list');
+    if (!sec || !todayWrap || !upcomingWrap || !activeList) return;
+
+    let title = sec.querySelector(':scope > h2');
+    if (!title) {
+      title = Array.from(sec.querySelectorAll('h2')).find((el) => /งานของฉัน/.test(String(el.textContent || '')));
+      if (title) sec.insertBefore(title, sec.firstChild);
+    }
+
+    let tabs = document.getElementById('tab-active-today')?.closest('.tabs') || null;
+    if (tabs && tabs.parentElement !== sec) sec.insertBefore(tabs, todayWrap);
+
+    // ถ้ามี job-card ถูก append เป็นลูกตรงของ sec-active ให้ย้ายกลับเข้า active-list
+    Array.from(sec.children).forEach((child) => {
+      if (child === title || child === tabs || child === todayWrap || child === upcomingWrap) return;
+      if (child.classList && child.classList.contains('job-card')) activeList.appendChild(child);
+    });
+
+    // บังคับเรียงลำดับส่วนหัวให้ถูกเสมอ: หัวข้อ > tab > งานวันนี้ > ตารางล่วงหน้า
+    if (title && sec.firstElementChild !== title) sec.insertBefore(title, sec.firstChild);
+    if (tabs) sec.insertBefore(tabs, todayWrap);
+    if (todayWrap && upcomingWrap && todayWrap.nextElementSibling !== upcomingWrap) {
+      sec.insertBefore(upcomingWrap, todayWrap.nextSibling);
+    }
+  } catch (e) {
+    console.warn('repairActiveSectionLayout:', e?.message || e);
+  }
+}
+window.repairActiveSectionLayout = repairActiveSectionLayout;
 
 // =======================================
 // 🧱 BUILD JOB CARD
