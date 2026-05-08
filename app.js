@@ -3084,10 +3084,8 @@ function getRevisitCausePartyValue(jobKey){
 }
 
 function getRevisitCauseNoteValue(jobKey){
-  // v15: ไม่บังคับให้ช่างพิมพ์รายละเอียดสาเหตุแล้ว
-  // ใช้ข้อความอัตโนมัติจาก dropdown เพื่อกันภาษาต่างดาวและลดความซับซ้อน
-  const cause = getRevisitCausePartyValue(jobKey);
-  return cause ? `เลือกสาเหตุงานแก้ไข: ${revisitCausePartyLabel(cause)}` : "";
+  const node = document.getElementById(`revisit-cause-note-${jobKey}`);
+  return String(node?.value || "").trim();
 }
 
 function getRevisitScheduleDraft(jobKey){
@@ -3160,9 +3158,8 @@ function getRevisitResultValue(jobKey){
 }
 
 function getRevisitNoteValue(jobKey){
-  // v15: ผลการแก้ไขใช้ dropdown เป็นหลัก ไม่บังคับกรอกคำอธิบาย
-  const result = getRevisitResultValue(jobKey);
-  return result ? `ผลการแก้ไข: ${revisitResultLabel(result)}` : "";
+  const node = document.getElementById(`revisit-note-${jobKey}`);
+  return String(node?.value || "").trim();
 }
 
 function getRevisitCloseDraft(jobKey){
@@ -3177,13 +3174,11 @@ function getRevisitCloseDraft(jobKey){
 
 function saveRevisitCloseDraft(jobKey){
   const key = cwfCloseKey(jobKey);
-  const cause = String(document.getElementById(`revisit-cause-party-${key}`)?.value || '').trim();
-  const result = String(document.getElementById(`revisit-result-${key}`)?.value || '').trim();
   const data = {
-    revisit_cause_party: cause,
-    revisit_cause_note: cause ? `เลือกสาเหตุงานแก้ไข: ${revisitCausePartyLabel(cause)}` : '',
-    revisit_result: result,
-    revisit_note: result ? `ผลการแก้ไข: ${revisitResultLabel(result)}` : '',
+    revisit_cause_party: String(document.getElementById(`revisit-cause-party-${key}`)?.value || '').trim(),
+    revisit_cause_note: String(document.getElementById(`revisit-cause-note-${key}`)?.value || '').trim(),
+    revisit_result: String(document.getElementById(`revisit-result-${key}`)?.value || '').trim(),
+    revisit_note: String(document.getElementById(`revisit-note-${key}`)?.value || '').trim(),
   };
   cwfWriteJsonLS(cwfCloseJsonKey(key, 'revisit_close'), data);
   return data;
@@ -3215,15 +3210,16 @@ function openRevisitChecklistModal(jobKey){
   const job = cwfGetCachedJob(key) || {};
   const draft = getRevisitCloseDraft(key);
   const causeParty = String(job.revisit_cause_party || draft.revisit_cause_party || '').trim();
+  const causeNote = String(job.revisit_cause_note || draft.revisit_cause_note || '').trim();
   const resultValue = String(job.revisit_result || draft.revisit_result || '').trim();
-
+  const noteValue = String(job.revisit_note || draft.revisit_note || job.technician_note || '').trim();
   const body = `
     <div class="cwf-modal-section" style="background:#fff7ed;border-color:rgba(234,88,12,.18);color:#7c2d12">
       <b>ตามสัญญาพาร์ทเนอร์</b>
-      <div style="margin-top:6px;font-size:13px;line-height:1.55">งานแก้ไขเป็นงานรับผิดชอบจากเคสเดิม หากตรวจสอบแล้วพบว่าเกิดจากคุณภาพงานเดิม บริษัทสามารถพิจารณาตามขั้นตอนของบริษัทได้</div>
+      <div style="margin-top:6px;font-size:13px;line-height:1.55">ช่างต้องรับผิดชอบงานที่เกิดจากคุณภาพงานเดิม งานไม่เรียบร้อย หรือการหลีกเลี่ยงงานแก้ไข หากแอดมินตรวจสอบแล้วพบว่าช่างเป็นฝ่ายผิด บริษัทมีสิทธิ์ไม่จ่ายค่าตอบแทนงานนั้น และ/หรือหักเงินตามความเสียหายจริงตามขั้นตอนอนุมัติของบริษัท</div>
     </div>
     <div class="cwf-modal-section">
-      <label>สาเหตุงานแก้ไข</label>
+      <label>สาเหตุเกิดจากใคร</label>
       <select id="revisit-cause-party-${key}" onchange="saveRevisitCloseDraft('${key}')">
         <option value="">เลือกสาเหตุงานแก้ไข (จำเป็น)</option>
         <option value="technician" ${causeParty==='technician'?'selected':''}>เกิดจากช่าง / งานเดิม</option>
@@ -3231,7 +3227,11 @@ function openRevisitChecklistModal(jobKey){
         <option value="company" ${causeParty==='company'?'selected':''}>เกิดจากระบบ / อะไหล่ / เงื่อนไขบริษัท</option>
         <option value="unclear" ${causeParty==='unclear'?'selected':''}>ยังไม่ชัดเจน ให้แอดมินตรวจ</option>
       </select>
-      <div class="muted" style="margin-top:7px;font-size:12px">เลือกจากรายการนี้พอ ไม่ต้องพิมพ์หมายเหตุ ระบบจะบันทึกข้อความให้เอง</div>
+    </div>
+    <div class="cwf-modal-section">
+      <label>อธิบายสาเหตุที่พบ</label>
+      <textarea id="revisit-cause-note-${key}" placeholder="เช่น น้ำหยดจากงานเดิม ลูกค้าใช้งานผิดเงื่อนไข หรือยังต้องให้แอดมินตรวจ" oninput="saveRevisitCloseDraft('${key}')">${escape(causeNote)}</textarea>
+      <div class="muted" style="margin-top:7px;font-size:12px">ต้องแนบรูปสาเหตุ/จุดปัญหาในเมนู “ลงรูปงานแก้ไข” ก่อนปิดงาน</div>
     </div>
     <div class="cwf-modal-section">
       <label>ผลการแก้ไข</label>
@@ -3240,6 +3240,10 @@ function openRevisitChecklistModal(jobKey){
         <option value="successful" ${resultValue==='successful'?'selected':''}>แก้ไขสำเร็จ ใช้งานได้ปกติ</option>
         <option value="unsuccessful" ${resultValue==='unsuccessful'?'selected':''}>ยังไม่จบ / ยังมีอาการ ต้องให้แอดมินติดตาม</option>
       </select>
+    </div>
+    <div class="cwf-modal-section">
+      <label>สรุปผลงานแก้ไข</label>
+      <textarea id="revisit-note-${key}" placeholder="สรุปว่าแก้อะไรไปแล้ว ผลเป็นอย่างไร ยังพบอาการอะไรไหม" oninput="saveRevisitCloseDraft('${key}')">${escape(noteValue)}</textarea>
     </div>
   `;
   const footer = `<button type="button" onclick="saveRevisitCloseDraft('${key}'); cwfTechToast('✅ บันทึกเช็คลิสงานแก้ไขแล้ว'); cwfCloseModal();">💾 บันทึกเช็คลิส</button>`;
@@ -4032,9 +4036,11 @@ async function cwfValidateCloseRequirements(jobId, targetStatus){
     const agreed = String(job.revisit_agreed_at || (schedule.saved ? schedule.revisit_agreed_at : '') || '').trim();
     if (!agreed) { alert('กรุณาบันทึกวันและเวลานัดแก้ไขกับลูกค้า'); return false; }
     if (!getRevisitCausePartyValue(key)) { alert('กรุณาเลือกสาเหตุงานแก้ไข'); return false; }
+    if (!getRevisitCauseNoteValue(key)) { alert('กรุณากรอกรายละเอียดสาเหตุงานแก้ไข'); return false; }
     const evidence = await validateRevisitEvidence(jobId);
     if (!evidence.ok) { alert(evidence.message); openTechPhotoModal(jobId, 'photos'); return false; }
     if (!['successful', 'unsuccessful'].includes(getRevisitResultValue(key))) { alert('กรุณาเลือกผลการแก้ไข'); return false; }
+    if (!getRevisitNoteValue(key)) { alert('กรุณากรอกสรุปผลงานแก้ไข'); return false; }
     return true;
   }
   const units = await cwfLoadUnits(jobId);
@@ -4261,7 +4267,7 @@ function buildJobCard(job, historyMode = false) {
                 <span class="left"><span class="ico">📷</span><span><b>ลงรูปงานแก้ไข</b><small>อัปโหลดรูปก่อนแก้ไข รูปสาเหตุ/จุดปัญหา และรูปหลังแก้ไข</small></span></span><span class="arrow">›</span>
               </button>
               <button class="cwf-revisit-card" type="button" onclick="openRevisitChecklistModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
-                <span class="left"><span class="ico">✅</span><span><b>เช็คลิสงานแก้ไข</b><small>เลือกสาเหตุและผลการแก้ไข</small></span></span><span class="arrow">›</span>
+                <span class="left"><span class="ico">✅</span><span><b>เช็คลิสงานแก้ไข</b><small>เลือกสาเหตุ อธิบายเหตุผล และบันทึกผลการแก้ไข</small></span></span><span class="arrow">›</span>
               </button>
             ` : `
               <button class="cwf-close-action" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""} aria-label="ลงรูปหลักฐาน">
@@ -4295,19 +4301,18 @@ function buildJobCard(job, historyMode = false) {
             })()}
           </div>`}
 
-          ${revisitFlow ? `` : `
           <div class="cwf-note-box">
             <b>📝 หมายเหตุช่าง</b>
             <textarea id="note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""} oninput="noteDraftChanged('${jobKeyJs}')">${escape(getNoteDraft(keyBase) || job.technician_note || "")}</textarea>
+            ${revisitFlow ? `<div class="muted" style="margin-top:8px;font-size:12px;">เช็คลิสงานแก้ไขให้กดปุ่ม “เช็คลิสงานแก้ไข” ด้านบน เพื่อไม่ให้หน้าหลักรก</div>` : ``}
+            ${historyMode ? "" : ((checkedIn || isWorking) ? `
+              <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
+                <button class="secondary" type="button" style="width:auto;" onclick="saveNote('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>💾 บันทึกหมายเหตุ</button>
+              </div>
+              ${isWorking ? `<div class="cwf-final-row"><button type="button" onclick="requestFinalize('${jobKeyJs}', 'เสร็จแล้ว')">✅ เสร็จสิ้น</button><button class="danger" type="button" onclick="requestFinalize('${jobKeyJs}', 'ยกเลิก')">⛔ ยกเลิก</button></div>` : ``}
+            ` : ``)}
+            <div id="note-status-${jobId}" style="margin-top:6px;"></div>
           </div>
-          `}
-          ${historyMode ? "" : ((checkedIn || isWorking) ? `
-            ${revisitFlow ? `` : `<div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
-              <button class="secondary" type="button" style="width:auto;" onclick="saveNote('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>💾 บันทึกหมายเหตุ</button>
-            </div>`}
-            ${isWorking ? `<div class="cwf-final-row"><button type="button" onclick="requestFinalize('${jobKeyJs}', 'เสร็จแล้ว')">✅ เสร็จสิ้น</button><button class="danger" type="button" onclick="requestFinalize('${jobKeyJs}', 'ยกเลิก')">⛔ ยกเลิก</button></div>` : ``}
-          ` : ``)}
-          <div id="note-status-${jobId}" style="margin-top:6px;"></div>
         </div>
       </details>
     ` : `
@@ -5431,8 +5436,13 @@ function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
         const revisitFlow = isRevisitJob(job);
         if (revisitFlow) {
           const revisitResult = getRevisitResultValue(jobId);
+          const revisitNote = getRevisitNoteValue(jobId);
           if (!['successful', 'unsuccessful'].includes(revisitResult)) {
             alert("งานแก้ไขยังปิดงานไม่ได้: กรุณาเลือกผลการแก้ไขก่อนกดเสร็จสิ้น");
+            return;
+          }
+          if (!revisitNote) {
+            alert("งานแก้ไขยังปิดงานไม่ได้: กรุณากรอกสรุปผลงานแก้ไข");
             return;
           }
           const evidence = await validateRevisitEvidence(jobId);
@@ -6298,5 +6308,3 @@ window.openTechWhtDocumentsModal = openTechWhtDocumentsModal;
 window.closeTechWhtDocumentsModal = closeTechWhtDocumentsModal;
 window.loadTechWhtDocuments = loadTechWhtDocuments;
 window.addEventListener('DOMContentLoaded', () => { document.getElementById('techTaxProfileForm')?.addEventListener('submit', submitTechTaxProfileRequest); });
-
-try { console.info('[tech] revisit checklist v15 loaded'); } catch {}

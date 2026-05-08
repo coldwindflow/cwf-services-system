@@ -20052,8 +20052,7 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
     const meta = metaR.rows[0] || {};
     const isRevisitFlow = isRevisitJobRow(meta);
     const revisitResult = ["successful", "unsuccessful"].includes(revisit_result) ? revisit_result : "";
-    const revisitNote = revisit_note || note || (revisitResult ? `ผลการแก้ไข: ${revisitResult}` : "");
-    const revisitCauseNote = revisit_cause_note || (revisit_cause_party ? `เลือกสาเหตุงานแก้ไข: ${revisit_cause_party}` : "");
+    const revisitNote = revisit_note || note;
     if (status === 'เสร็จแล้ว' && !isRevisitFlow) {
       if (!pre_cleaning_checklist || !pre_cleaning_checklist.length) {
         await client.query("ROLLBACK");
@@ -20123,9 +20122,17 @@ if (status === "เสร็จแล้ว") {
         await client.query("ROLLBACK");
         return res.status(400).json({ error: "งานแก้ไขต้องระบุสาเหตุ: technician/customer/company/unclear" });
       }
+      if (!revisit_cause_note) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "งานแก้ไขต้องระบุรายละเอียดสาเหตุ" });
+      }
       if (!revisitResult) {
         await client.query("ROLLBACK");
         return res.status(400).json({ error: "งานแก้ไขต้องระบุ revisit_result เป็น successful หรือ unsuccessful" });
+      }
+      if (!revisitNote) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: "งานแก้ไขต้องระบุ revisit_note หรือ note" });
       }
       const revisitMissing = await validateRevisitCompletion(realId, client);
       if (revisitMissing) {
@@ -20266,7 +20273,7 @@ if (status === "เสร็จแล้ว") {
                   close_cash_amount=NULL,
                   close_cash_confirmed=FALSE
             WHERE job_id=$1`,
-          [realId, revisitResult, revisitNote, revisit_cause_party, revisitCauseNote, agreedAtForSave, scheduleNoteForSave]
+          [realId, revisitResult, revisitNote, revisit_cause_party, revisit_cause_note, agreedAtForSave, scheduleNoteForSave]
         );
         const resolution = revisitResult === 'unsuccessful'
           ? 'failed'
@@ -20287,7 +20294,7 @@ if (status === "เสร็จแล้ว") {
                   updated_at=NOW()
             WHERE job_id=$1 AND status IN ('open','in_progress')
             RETURNING rework_case_id`,
-          [realId, resolution, revisitResult, revisitNote, revisit_cause_party, revisitCauseNote, agreedAtForSave, scheduleNoteForSave, JSON.stringify(evidenceJson), technician_username]
+          [realId, resolution, revisitResult, revisitNote, revisit_cause_party, revisit_cause_note, agreedAtForSave, scheduleNoteForSave, JSON.stringify(evidenceJson), technician_username]
         );
         await logJobUpdate(
           realId,
@@ -20300,7 +20307,7 @@ if (status === "เสร็จแล้ว") {
               revisit_result: revisitResult,
               revisit_note: revisitNote || null,
               revisit_cause_party,
-              revisit_cause_note: revisitCauseNote,
+              revisit_cause_note,
               revisit_agreed_at: agreedAtForSave,
               revisit_schedule_note: scheduleNoteForSave,
               evidence_phases: ["revisit_before", "revisit_after", "revisit_defect"],
