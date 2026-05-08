@@ -19346,6 +19346,7 @@ app.post("/jobs/:job_id/photos/meta", async (req, res) => {
     "temp",
     "defect",
     "payment_slip",
+    "cash_transfer_slip",
     "revisit_before",
     "revisit_after",
     "revisit_defect",

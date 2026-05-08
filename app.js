@@ -3211,12 +3211,15 @@ function cwfShowUploadOverlay(message = 'กำลังอัปโหลดร
     if (!el) {
       el = document.createElement('div');
       el.id = 'cwfTechUploadOverlay';
-      el.style.cssText = 'position:fixed;inset:0;z-index:120000;background:rgba(2,6,23,.58);display:flex;align-items:center;justify-content:center;padding:18px;';
+      // Non-blocking upload indicator: ห้ามทำ backdrop บังจอ เพื่อให้ช่างกดอัปโหลดรูปถัดไป/เลื่อนหน้าต่อได้ทันที
+      el.style.cssText = 'position:fixed;left:50%;top:calc(78px + env(safe-area-inset-top));transform:translateX(-50%);z-index:120000;width:min(430px,calc(100% - 24px));pointer-events:none;display:flex;justify-content:center;';
       el.innerHTML = `
-        <div style="width:min(360px,92vw);background:#fff;border-radius:26px;padding:24px 20px;text-align:center;box-shadow:0 24px 70px rgba(2,6,23,.35);border:1px solid rgba(148,163,184,.25)">
-          <div style="width:58px;height:58px;border-radius:999px;border:6px solid #e2e8f0;border-top-color:#1558d6;margin:0 auto 14px;animation:cwfTechUploadSpin .8s linear infinite"></div>
-          <div id="cwfTechUploadOverlayText" style="font-size:18px;font-weight:1000;color:#0f172a;line-height:1.35">กำลังอัปโหลดรูป…</div>
-          <div style="font-size:12px;font-weight:850;color:#64748b;margin-top:8px;line-height:1.45">อย่าปิดหน้านี้จนกว่าจะอัปโหลดเสร็จ</div>
+        <div style="width:100%;display:flex;align-items:center;gap:12px;background:rgba(255,255,255,.96);backdrop-filter:blur(10px);border-radius:18px;padding:12px 14px;box-shadow:0 14px 34px rgba(2,6,23,.24);border:1px solid rgba(37,99,235,.20)">
+          <div style="width:30px;height:30px;border-radius:999px;border:4px solid #dbeafe;border-top-color:#1558d6;flex:0 0 30px;animation:cwfTechUploadSpin .75s linear infinite"></div>
+          <div style="min-width:0;text-align:left">
+            <div id="cwfTechUploadOverlayText" style="font-size:14px;font-weight:1000;color:#0f172a;line-height:1.25;white-space:normal">กำลังอัปโหลดรูป…</div>
+            <div style="font-size:11px;font-weight:850;color:#64748b;margin-top:2px;line-height:1.25">อัปโหลดเบื้องหลังได้ ไม่ต้องรอป๊อปอัพ</div>
+          </div>
         </div>`;
       if (!document.getElementById('cwfTechUploadSpinStyle')) {
         const st = document.createElement('style');
@@ -3691,10 +3694,29 @@ async function cwfUploadPaymentSlip(jobId, phase){
   openFilePicker({ multiple:false, accept:'image/*' }, async (files)=>{
     if (!files || !files.length) return;
     try {
-      const p = cwfGetPayment(jobId); p.uploading = true; cwfSavePayment(jobId, p); openTechPaymentModal(jobId, p.method || (phase === 'cash_transfer_slip' ? 'cash':'qr'));
-      await uploadFilesAsPhotos(jobId, phase, files);
-      const p2 = cwfGetPayment(jobId); p2.slip_uploaded = true; p2.slip_phase = phase; p2.uploading = false; cwfSavePayment(jobId, p2); openTechPaymentModal(jobId, p2.method || (phase === 'cash_transfer_slip' ? 'cash':'qr'));
-    } catch(e){ const p3 = cwfGetPayment(jobId); p3.uploading = false; cwfSavePayment(jobId, p3); alert(e.message || 'อัปโหลดสลิปไม่สำเร็จ'); openTechPaymentModal(jobId, p3.method); }
+      const p = cwfGetPayment(jobId);
+      p.uploading = true;
+      cwfSavePayment(jobId, p);
+      openTechPaymentModal(jobId, p.method || (phase === 'cash_transfer_slip' ? 'cash':'qr'));
+      cwfTechToast('กำลังอัปโหลดสลิป…');
+      const summary = await uploadFilesAsPhotos(jobId, phase, files, { requireUploaded: true, label: 'สลิป' });
+      if (!summary || Number(summary.uploadedCount || 0) < 1) throw new Error('อัปโหลดสลิปไม่สำเร็จ');
+      const p2 = cwfGetPayment(jobId);
+      p2.slip_uploaded = true;
+      p2.slip_phase = phase;
+      p2.uploading = false;
+      cwfSavePayment(jobId, p2);
+      cwfTechToast('✅ อัปโหลดสลิปสำเร็จ');
+      openTechPaymentModal(jobId, p2.method || (phase === 'cash_transfer_slip' ? 'cash':'qr'));
+    } catch(e){
+      const p3 = cwfGetPayment(jobId);
+      p3.uploading = false;
+      p3.slip_uploaded = false;
+      cwfSavePayment(jobId, p3);
+      cwfTechToast(`❌ ${e.message || 'อัปโหลดสลิปไม่สำเร็จ'}`, true);
+      alert(e.message || 'อัปโหลดสลิปไม่สำเร็จ');
+      openTechPaymentModal(jobId, p3.method || (phase === 'cash_transfer_slip' ? 'cash':'qr'));
+    }
   });
 }
 window.cwfUploadPaymentSlip = cwfUploadPaymentSlip;
@@ -5661,55 +5683,76 @@ function openFilePicker(opts, onPicked){
 }
 
 // Upload a given File[] as job photos (same flow as pickPhotos)
-async function uploadFilesAsPhotos(jobId, phase, files){
+async function uploadFilesAsPhotos(jobId, phase, files, opts){
+  const options = Object.assign({ requireUploaded: false, label: 'รูป' }, opts || {});
   window.__CWF_UPLOAD_BUSY_COUNT = (window.__CWF_UPLOAD_BUSY_COUNT || 0) + 1;
   const selected = Array.from(files || []);
-  if (!selected.length) return;
+  if (!selected.length) return { total:0, uploadedCount:0, pendingCount:0 };
 
-  for (const f of selected) {
-    const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        phase,
-        mime_type: f.type,
-        original_name: f.name,
-        file_size: f.size,
-        uploaded_by: (typeof username === 'string' ? username : '') || null,
-        photo_category: String(phase || '').includes('slip') ? 'payment_slip' : 'job_evidence',
-      }),
-    });
-
-    const meta = await metaRes.json().catch(() => ({}));
-    if (!metaRes.ok) throw new Error(meta.error || "สร้าง meta ไม่สำเร็จ");
-
-    const photo_id = meta.photo_id;
-    try {
-      const formNow = new FormData();
-      formNow.append("photo", f, f.name || "photo.jpg");
-      const upRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${photo_id}/upload`, {
+  let uploadedCount = 0;
+  let pendingCount = 0;
+  cwfShowUploadOverlay(`กำลังอัปโหลด${options.label || 'รูป'} 0/${selected.length}`);
+  try {
+    for (let i = 0; i < selected.length; i++) {
+      const f = selected[i];
+      cwfUpdateUploadOverlay(`กำลังเตรียม${options.label || 'รูป'} ${i + 1}/${selected.length}`);
+      console.log('[cwf_photo_upload] meta:start', { jobId, phase, name: f?.name, size: f?.size });
+      const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
         method: "POST",
-        body: formNow,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phase,
+          mime_type: f.type,
+          original_name: f.name,
+          file_size: f.size,
+          uploaded_by: (typeof username === 'string' ? username : '') || null,
+          photo_category: String(phase || '').includes('slip') ? 'payment_slip' : 'job_evidence',
+        }),
       });
-      const up = await upRes.json().catch(() => ({}));
-      if (!upRes.ok) throw new Error(up.error || "อัปโหลดรูปไม่สำเร็จ");
-    } catch (e) {
-      // fail-open: เก็บค้างในเครื่อง แล้วให้กดอัปโหลดภายหลัง
-      const buffer = await f.arrayBuffer();
-      await idbPut({
-        photo_id,
-        job_id: Number(jobId),
-        phase,
-        mime_type: f.type,
-        original_name: f.name,
-        file_size: f.size,
-        blob: new Blob([buffer], { type: f.type || 'image/jpeg' }),
-        created_at: Date.now(),
-      });
+
+      const meta = await metaRes.json().catch(() => ({}));
+      console.log('[cwf_photo_upload] meta:done', { jobId, phase, ok: metaRes.ok, status: metaRes.status, photo_id: meta?.photo_id, error: meta?.error });
+      if (!metaRes.ok) throw new Error(meta.error || "สร้าง meta ไม่สำเร็จ");
+
+      const photo_id = meta.photo_id;
+      try {
+        cwfUpdateUploadOverlay(`กำลังอัปโหลด${options.label || 'รูป'} ${i + 1}/${selected.length}`);
+        const formNow = new FormData();
+        formNow.append("photo", f, f.name || "photo.jpg");
+        console.log('[cwf_photo_upload] upload:start', { jobId, phase, photo_id });
+        const upRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${photo_id}/upload`, {
+          method: "POST",
+          body: formNow,
+        });
+        const up = await upRes.json().catch(() => ({}));
+        console.log('[cwf_photo_upload] upload:done', { jobId, phase, photo_id, ok: upRes.ok, status: upRes.status, error: up?.error });
+        if (!upRes.ok) throw new Error(up.error || "อัปโหลดรูปไม่สำเร็จ");
+        uploadedCount += 1;
+        cwfUpdateUploadOverlay(`อัปโหลดแล้ว ${uploadedCount}/${selected.length}`);
+      } catch (e) {
+        if (options.requireUploaded) throw e;
+        // fail-open เฉพาะรูปหลักฐานทั่วไป: เก็บค้างในเครื่อง แล้วให้กดอัปโหลดภายหลัง
+        const buffer = await f.arrayBuffer();
+        await idbPut({
+          photo_id,
+          job_id: Number(jobId),
+          phase,
+          mime_type: f.type,
+          original_name: f.name,
+          file_size: f.size,
+          blob: new Blob([buffer], { type: f.type || 'image/jpeg' }),
+          created_at: Date.now(),
+        });
+        pendingCount += 1;
+        console.warn('[cwf_photo_upload] queued pending', { jobId, phase, photo_id, message: e?.message || String(e) });
+      }
     }
+    return { total:selected.length, uploadedCount, pendingCount };
+  } finally {
+    try { await refreshPhotoStatus(jobId); } catch {}
+    window.__CWF_UPLOAD_BUSY_COUNT = Math.max(0, (window.__CWF_UPLOAD_BUSY_COUNT || 1) - 1);
+    cwfHideUploadOverlay();
   }
-  try { await refreshPhotoStatus(jobId); } catch {}
-  finally { window.__CWF_UPLOAD_BUSY_COUNT = Math.max(0, (window.__CWF_UPLOAD_BUSY_COUNT || 1) - 1); }
 }
 
 async function pickPhotos(jobId, phase, maxFiles = 20) {
