@@ -13808,7 +13808,7 @@ async function validateRevisitCompletion(job_id, db = pool) {
         AND COALESCE(public_url,'') <> ''
         AND phase = ANY($2::text[])
       GROUP BY phase`,
-    [job_id, ['revisit_before', 'revisit_after', 'revisit_defect']]
+    [job_id, ['revisit_before', 'revisit_after']]
   );
   const counts = Object.fromEntries((r.rows || []).map(x => [String(x.phase || ''), Number(x.count || 0)]));
   const labels = {
@@ -13816,7 +13816,7 @@ async function validateRevisitCompletion(job_id, db = pool) {
     revisit_after: 'รูปหลังแก้ไข',
     revisit_defect: 'รูปสาเหตุ/จุดปัญหา',
   };
-  for (const ph of ['revisit_before', 'revisit_after', 'revisit_defect']) {
+  for (const ph of ['revisit_before', 'revisit_after']) {
     if (Number(counts[ph] || 0) < 1) return `งานแก้ไขยังไม่มี${labels[ph]}`;
   }
   return null;
@@ -20052,7 +20052,8 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
     const meta = metaR.rows[0] || {};
     const isRevisitFlow = isRevisitJobRow(meta);
     const revisitResult = ["successful", "unsuccessful"].includes(revisit_result) ? revisit_result : "";
-    const revisitNote = revisit_note || note;
+    const revisitNote = revisit_note || note || (revisitResult ? `ผลการแก้ไข: ${revisitResult}` : "");
+    const revisitCauseNote = revisit_cause_note || (revisit_cause_party ? `เลือกสาเหตุงานแก้ไข: ${revisit_cause_party}` : "");
     if (status === 'เสร็จแล้ว' && !isRevisitFlow) {
       if (!pre_cleaning_checklist || !pre_cleaning_checklist.length) {
         await client.query("ROLLBACK");
@@ -20114,25 +20115,13 @@ if (status === "เสร็จแล้ว") {
 }
 
     if (isRevisitFlow && status === "เสร็จแล้ว") {
-      if (!String(meta.revisit_agreed_at || revisit_agreed_at || '').trim()) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: "งานแก้ไขต้องบันทึกวันและเวลานัดกับลูกค้า" });
-      }
       if (!['technician','customer','company','unclear'].includes(revisit_cause_party)) {
         await client.query("ROLLBACK");
         return res.status(400).json({ error: "งานแก้ไขต้องระบุสาเหตุ: technician/customer/company/unclear" });
       }
-      if (!revisit_cause_note) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: "งานแก้ไขต้องระบุรายละเอียดสาเหตุ" });
-      }
       if (!revisitResult) {
         await client.query("ROLLBACK");
         return res.status(400).json({ error: "งานแก้ไขต้องระบุ revisit_result เป็น successful หรือ unsuccessful" });
-      }
-      if (!revisitNote) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: "งานแก้ไขต้องระบุ revisit_note หรือ note" });
       }
       const revisitMissing = await validateRevisitCompletion(realId, client);
       if (revisitMissing) {
@@ -20273,7 +20262,7 @@ if (status === "เสร็จแล้ว") {
                   close_cash_amount=NULL,
                   close_cash_confirmed=FALSE
             WHERE job_id=$1`,
-          [realId, revisitResult, revisitNote, revisit_cause_party, revisit_cause_note, agreedAtForSave, scheduleNoteForSave]
+          [realId, revisitResult, revisitNote, revisit_cause_party, revisitCauseNote, agreedAtForSave, scheduleNoteForSave]
         );
         const resolution = revisitResult === 'unsuccessful'
           ? 'failed'
@@ -20294,7 +20283,7 @@ if (status === "เสร็จแล้ว") {
                   updated_at=NOW()
             WHERE job_id=$1 AND status IN ('open','in_progress')
             RETURNING rework_case_id`,
-          [realId, resolution, revisitResult, revisitNote, revisit_cause_party, revisit_cause_note, agreedAtForSave, scheduleNoteForSave, JSON.stringify(evidenceJson), technician_username]
+          [realId, resolution, revisitResult, revisitNote, revisit_cause_party, revisitCauseNote, agreedAtForSave, scheduleNoteForSave, JSON.stringify(evidenceJson), technician_username]
         );
         await logJobUpdate(
           realId,
@@ -20307,7 +20296,7 @@ if (status === "เสร็จแล้ว") {
               revisit_result: revisitResult,
               revisit_note: revisitNote || null,
               revisit_cause_party,
-              revisit_cause_note,
+              revisit_cause_note: revisitCauseNote,
               revisit_agreed_at: agreedAtForSave,
               revisit_schedule_note: scheduleNoteForSave,
               evidence_phases: ["revisit_before", "revisit_after", "revisit_defect"],

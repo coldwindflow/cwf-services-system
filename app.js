@@ -3078,17 +3078,74 @@ function getRevisitNoteValue(jobKey){
   return String(node?.value || "").trim();
 }
 
+function getRevisitCausePartyValue(jobKey){
+  const node = document.getElementById(`revisit-cause-party-${jobKey}`);
+  return String(node?.value || "").trim().toLowerCase();
+}
+function getRevisitCauseNoteValue(jobKey){
+  const node = document.getElementById(`revisit-cause-note-${jobKey}`);
+  return String(node?.value || "").trim();
+}
+function revisitCausePartyLabel(v){
+  const map = {
+    technician: 'เกิดจากช่าง / งานเดิม',
+    customer: 'เกิดจากการใช้งานของลูกค้า',
+    company: 'เกิดจากระบบ / อะไหล่ / เงื่อนไขบริษัท',
+    unclear: 'ยังไม่ชัดเจน ให้แอดมินตรวจ'
+  };
+  return map[String(v || '').trim()] || String(v || '').trim();
+}
+function revisitResultLabel(v){
+  const map = {
+    successful: 'แก้ไขสำเร็จ ใช้งานได้ปกติ',
+    unsuccessful: 'ยังไม่จบ / ยังมีอาการ ต้องให้แอดมินติดตาม'
+  };
+  return map[String(v || '').trim()] || String(v || '').trim();
+}
+function getRevisitCloseDraft(jobKey){
+  return cwfReadJsonLS(cwfCloseJsonKey(jobKey, 'revisit_close'), {}) || {};
+}
+function saveRevisitCloseDraft(jobKey){
+  const key = cwfCloseKey(jobKey);
+  const cause = String(document.getElementById(`revisit-cause-party-${key}`)?.value || '').trim();
+  const causeNote = String(document.getElementById(`revisit-cause-note-${key}`)?.value || '').trim();
+  const result = String(document.getElementById(`revisit-result-${key}`)?.value || '').trim();
+  const resultNote = String(document.getElementById(`revisit-note-${key}`)?.value || '').trim();
+  const data = {
+    revisit_cause_party: cause,
+    revisit_cause_note: causeNote,
+    revisit_result: result,
+    revisit_note: resultNote,
+  };
+  cwfWriteJsonLS(cwfCloseJsonKey(key, 'revisit_close'), data);
+  return data;
+}
+window.saveRevisitCloseDraft = saveRevisitCloseDraft;
+
 async function hasRevisitEvidence(jobId){
-  const localPhotos = await idbGetByJob(jobId).catch(() => []);
-  if ((localPhotos || []).some((x) => REVISIT_EVIDENCE_PHASES.includes(String(x?.phase || "")))) return true;
+  const ok = await getRevisitEvidenceCounts(jobId);
+  return Number(ok.revisit_before || 0) > 0 && Number(ok.revisit_after || 0) > 0;
+}
+async function getRevisitEvidenceCounts(jobId){
+  const counts = { revisit_before: 0, revisit_after: 0, revisit_defect: 0 };
+  try {
+    const localPhotos = await idbGetByJob(jobId).catch(() => []);
+    for (const x of (localPhotos || [])) {
+      const ph = String(x?.phase || "");
+      if (Object.prototype.hasOwnProperty.call(counts, ph)) counts[ph] += 1;
+    }
+  } catch (_) {}
   try {
     const rr = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos`);
-    if (!rr.ok) return false;
-    const uploaded = await rr.json().catch(() => []);
-    return (uploaded || []).some((x) => REVISIT_EVIDENCE_PHASES.includes(String(x?.phase || "")) && x?.public_url);
-  } catch {
-    return false;
-  }
+    if (rr.ok) {
+      const uploaded = await rr.json().catch(() => []);
+      for (const x of (uploaded || [])) {
+        const ph = String(x?.phase || "");
+        if (Object.prototype.hasOwnProperty.call(counts, ph) && x?.public_url) counts[ph] += 1;
+      }
+    }
+  } catch (_) {}
+  return counts;
 }
 
 // =======================================
@@ -3163,6 +3220,15 @@ function cwfGetCachedJob(jobId){
   return (window.__JOB_CACHE__ || []).find(j => String(j.job_id) === key || String(j.booking_code || "") === key) || null;
 }
 function cwfMoney(n){ return Number(n || 0).toLocaleString('th-TH', { minimumFractionDigits: 0, maximumFractionDigits: 2 }); }
+function toDateTimeLocalValue(v){
+  if (!v) return '';
+  try {
+    const d = new Date(v);
+    if (!Number.isFinite(d.getTime())) return '';
+    const pad = (n)=> String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  } catch { return ''; }
+}
 
 function ensureCwfCloseStyles(){
   if (document.getElementById('cwfCloseFlowStyles')) return;
@@ -3593,14 +3659,24 @@ async function openTechPhotoModal(jobId, tab = 'photos', selectedUnitId = null){
     return;
   }
   const { counts, urls } = await cwfCountPhotos(key);
-  const defs = [
-    ['before','ก่อนทำ','หลักฐานสำคัญ'], ['after','หลังทำ','หลักฐานสำคัญ'],
-    ['pressure','วัดน้ำยา','เพิ่มเติม'], ['current','วัดกระแส','เพิ่มเติม'], ['temp','อุณหภูมิ','เพิ่มเติม'], ['defect','ตำหนิ','เพิ่มเติม'],
-  ].concat(revisitFlow ? [['revisit_before','ก่อนแก้','งานแก้ไข'], ['revisit_after','หลังแก้','งานแก้ไข'], ['revisit_defect','จุดปัญหา','งานแก้ไข']] : []);
+  const defs = revisitFlow
+    ? [
+        ['revisit_before','ก่อนแก้ไข','บังคับ'],
+        ['revisit_after','หลังแก้ไข','บังคับ'],
+        ['revisit_defect','จุดปัญหา','ถ้ามี'],
+      ]
+    : [
+        ['before','ก่อนทำ','หลักฐานสำคัญ'], ['after','หลังทำ','หลักฐานสำคัญ'],
+        ['pressure','วัดน้ำยา','เพิ่มเติม'], ['current','วัดกระแส','เพิ่มเติม'], ['temp','อุณหภูมิ','เพิ่มเติม'], ['defect','ตำหนิ','เพิ่มเติม'],
+      ];
   const html = `
     <div class="cwf-mini-status">
-      <span class="cwf-chip ${counts.before ? 'ok':'warn'}">ก่อนทำ ${counts.before || 0} รูป</span>
-      <span class="cwf-chip ${counts.after ? 'ok':'warn'}">หลังทำ ${counts.after || 0} รูป</span>
+      ${revisitFlow
+        ? `<span class="cwf-chip ${counts.revisit_before ? 'ok':'warn'}">ก่อนแก้ไข ${counts.revisit_before || 0} รูป</span>
+           <span class="cwf-chip ${counts.revisit_after ? 'ok':'warn'}">หลังแก้ไข ${counts.revisit_after || 0} รูป</span>
+           <span class="cwf-chip">จุดปัญหา ${counts.revisit_defect || 0} รูป</span>`
+        : `<span class="cwf-chip ${counts.before ? 'ok':'warn'}">ก่อนทำ ${counts.before || 0} รูป</span>
+           <span class="cwf-chip ${counts.after ? 'ok':'warn'}">หลังทำ ${counts.after || 0} รูป</span>`}
       <span class="cwf-chip">กดเพิ่มรูปแล้วรอระบบอัปโหลดให้เสร็จ</span>
     </div>
     <div class="cwf-photo-grid">
@@ -3617,9 +3693,110 @@ async function openTechPhotoModal(jobId, tab = 'photos', selectedUnitId = null){
       <button class="secondary" type="button" style="width:auto" onclick="openUploadedPhotos('${key.replace(/'/g,"\\'")}')">🖼️ ดูรูปที่อัปโหลดแล้ว</button>
       <button class="secondary" type="button" style="width:auto" onclick="forceUpload('${key.replace(/'/g,"\\'")}')">⬆️ อัปโหลดค้างในเครื่อง</button>
     </div>`;
-  cwfOpenModal('📷 ลงรูปหลักฐานหน้างาน', html, `<button type="button" class="secondary" onclick="cwfCloseModal()">ปิด</button>`);
+  cwfOpenModal(revisitFlow ? '📷 ลงรูปงานแก้ไข' : '📷 ลงรูปหลักฐานหน้างาน', html, `<button type="button" class="secondary" onclick="cwfCloseModal()">ปิด</button>`);
 }
 window.openTechPhotoModal = openTechPhotoModal;
+
+function openRevisitScheduleModal(jobKey){
+  const key = cwfCloseKey(jobKey);
+  const job = cwfGetCachedJob(key) || {};
+  const currentValue = toDateTimeLocalValue(job.revisit_agreed_at || job.appointment_datetime || '');
+  const body = `
+    <div class="cwf-modal-section">
+      <label>วันและเวลาที่ตกลงกับลูกค้า</label>
+      <input id="revisit-agreed-at-${key}" type="datetime-local" value="${escapeHTML(currentValue)}" />
+      <div class="muted" style="margin-top:8px;font-size:12px;">กรอกเฉพาะเวลานัดหมายที่ตกลงกับลูกค้าแล้ว</div>
+    </div>
+  `;
+  const footer = `<button type="button" onclick="saveRevisitScheduleOnly('${key}')">💾 บันทึกเวลานัดหมาย</button>`;
+  cwfOpenModal('🕛 แจ้งเวลานัดหมาย', body, footer);
+}
+window.openRevisitScheduleModal = openRevisitScheduleModal;
+
+async function saveRevisitScheduleOnly(jobKey){
+  const key = cwfCloseKey(jobKey);
+  const el = document.getElementById(`revisit-agreed-at-${key}`);
+  const value = String(el?.value || '').trim();
+  if (!value) return alert('กรุณาเลือกวันและเวลานัดหมาย');
+  try {
+    const r = await fetch(`${API_BASE}/jobs/${encodeURIComponent(key)}/revisit-schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ revisit_agreed_at: value })
+    });
+    const data = await r.json().catch(()=>({}));
+    if (!r.ok) {
+      if (data && data.error === 'REVISIT_SCHEDULE_CONFLICT') {
+        return alert('เวลานี้ชนกับงานอื่นที่มีอยู่แล้ว\n\nหากจำเป็นต้องเข้าช่วงเวลานี้จริง ๆ\nกรุณาติดต่อแอดมินเพื่อย้ายคิวงานเดิมก่อน\nหรือเลือกเวลานัดหมายใหม่');
+      }
+      throw new Error(data.error || 'บันทึกเวลานัดหมายไม่สำเร็จ');
+    }
+    cwfTechToast('✅ บันทึกเวลานัดหมายแล้ว');
+    cwfCloseModal();
+    loadJobs();
+  } catch(e) {
+    alert(e.message || 'บันทึกเวลานัดหมายไม่สำเร็จ');
+  }
+}
+window.saveRevisitScheduleOnly = saveRevisitScheduleOnly;
+
+function openRevisitEvidenceChecklistHub(jobKey){
+  const key = cwfCloseKey(jobKey);
+  const body = `
+    <div class="cwf-close-hub">
+      <button class="cwf-close-action" type="button" onclick="cwfCloseModal(); setTimeout(()=>openTechPhotoModal('${key}'), 80);">
+        <span class="cwf-action-left"><span class="ico">📷</span><span><b>ลงรูปงานแก้ไข</b><small>มีเฉพาะ ก่อนแก้ไข / หลังแก้ไข / จุดปัญหา</small></span></span><span class="arrow">›</span>
+      </button>
+      <button class="cwf-close-action" type="button" onclick="openRevisitChecklistModal('${key}')">
+        <span class="cwf-action-left"><span class="ico">✅</span><span><b>เช็คลิสงานแก้ไข</b><small>เลือกสาเหตุ ผลการแก้ไข และกรอกคำอธิบายได้ถ้ามี</small></span></span><span class="arrow">›</span>
+      </button>
+    </div>
+  `;
+  cwfOpenModal('📷✅ รูปและเช็คลิสงานแก้ไข', body, `<button type="button" class="secondary" onclick="cwfCloseModal()">ปิด</button>`);
+}
+window.openRevisitEvidenceChecklistHub = openRevisitEvidenceChecklistHub;
+
+function openRevisitChecklistModal(jobKey){
+  const key = cwfCloseKey(jobKey);
+  const job = cwfGetCachedJob(key) || {};
+  const draft = getRevisitCloseDraft(key);
+  const causeParty = String(job.revisit_cause_party || draft.revisit_cause_party || '').trim();
+  const causeNote = String(job.revisit_cause_note || draft.revisit_cause_note || '').trim();
+  const resultValue = String(job.revisit_result || draft.revisit_result || '').trim();
+  const noteValue = String(job.revisit_note || draft.revisit_note || '').trim();
+  const body = `
+    <div class="cwf-modal-section">
+      <label>สาเหตุงานแก้ไข</label>
+      <select id="revisit-cause-party-${key}" onchange="saveRevisitCloseDraft('${key}')">
+        <option value="">เลือกสาเหตุงานแก้ไข (จำเป็น)</option>
+        <option value="technician" ${causeParty==='technician'?'selected':''}>เกิดจากช่าง / งานเดิม</option>
+        <option value="customer" ${causeParty==='customer'?'selected':''}>เกิดจากการใช้งานของลูกค้า</option>
+        <option value="company" ${causeParty==='company'?'selected':''}>เกิดจากระบบ / อะไหล่ / เงื่อนไขบริษัท</option>
+        <option value="unclear" ${causeParty==='unclear'?'selected':''}>ยังไม่ชัดเจน ให้แอดมินตรวจ</option>
+      </select>
+    </div>
+    <div class="cwf-modal-section">
+      <label>คำอธิบายสาเหตุที่พบ <span class="muted">(ถ้ามี)</span></label>
+      <textarea id="revisit-cause-note-${key}" rows="3" placeholder="กรอกคำอธิบายเพิ่มเติมได้ ไม่บังคับ" oninput="saveRevisitCloseDraft('${key}')">${escapeHTML(causeNote)}</textarea>
+    </div>
+    <div class="cwf-modal-section">
+      <label>ผลการแก้ไข</label>
+      <select id="revisit-result-${key}" onchange="saveRevisitCloseDraft('${key}')">
+        <option value="">เลือกผลการแก้ไข (จำเป็น)</option>
+        <option value="successful" ${resultValue==='successful'?'selected':''}>แก้ไขสำเร็จ ใช้งานได้ปกติ</option>
+        <option value="unsuccessful" ${resultValue==='unsuccessful'?'selected':''}>ยังไม่จบ / ยังมีอาการ ต้องให้แอดมินติดตาม</option>
+      </select>
+    </div>
+    <div class="cwf-modal-section">
+      <label>คำอธิบายผลการแก้ไข <span class="muted">(ถ้ามี)</span></label>
+      <textarea id="revisit-note-${key}" rows="3" placeholder="กรอกสรุปเพิ่มเติมได้ ไม่บังคับ">${escapeHTML(noteValue)}</textarea>
+    </div>
+  `;
+  const footer = `<button type="button" onclick="saveRevisitCloseDraft('${key}'); cwfTechToast('✅ บันทึกเช็คลิสแล้ว'); cwfCloseModal();">💾 บันทึกเช็คลิส</button>`;
+  cwfOpenModal('✅ เช็คลิสงานแก้ไข', body, footer);
+}
+window.openRevisitChecklistModal = openRevisitChecklistModal;
+
 function cwfPickPhotoAndRefresh(jobId, phase){
   try {
     pickPhotos(jobId, phase, 12);
@@ -3783,6 +3960,14 @@ function cwfAskMissingPhotoAck(jobId){
 async function cwfValidateCloseRequirements(jobId, targetStatus){
   if (targetStatus !== 'เสร็จแล้ว') return true;
   if (window.__CWF_UPLOAD_BUSY_COUNT > 0) { alert('กรุณารอให้อัปโหลดรูปให้เสร็จก่อนปิดงาน'); return false; }
+  const job = cwfGetCachedJob(jobId);
+  if (isRevisitJob(job)) {
+    if (!getRevisitCausePartyValue(jobId)) { alert('กรุณาเลือกสาเหตุงานแก้ไขในเช็คลิส'); return false; }
+    if (!['successful','unsuccessful'].includes(getRevisitResultValue(jobId))) { alert('กรุณาเลือกผลการแก้ไขในเช็คลิส'); return false; }
+    const ev = await getRevisitEvidenceCounts(jobId);
+    if (!ev.revisit_before || !ev.revisit_after) { alert('กรุณาแนบรูปก่อนแก้ไขและรูปหลังแก้ไขให้ครบ'); openTechPhotoModal(jobId); return false; }
+    return true;
+  }
   const units = await cwfLoadUnits(jobId);
   if (units.length) {
     for (const u of units) {
@@ -3925,7 +4110,7 @@ function buildJobCard(job, historyMode = false) {
         <div><b>งานแก้ไข/กลับไปตรวจซ้ำ</b></div>
         <div style="margin-top:4px;">${escape(revisitReason || "แอดมินส่งงานเดิมกลับมาให้ช่างเข้าดูอาการเพิ่มเติม")}</div>
         <div style="margin-top:6px;font-size:12px;">
-          ก่อนกด “เสร็จสิ้น” ต้องทำ 3 อย่างให้ครบ: เลือก <b>revisit_result</b>, กรอก <b>revisit_note</b>, และแนบรูปหลักฐาน <b>revisit evidence</b>
+          ก่อนกด “เสร็จสิ้น” ต้องมีรูปก่อนแก้ไข รูปหลังแก้ไข และเช็คลิสงานแก้ไขครบ
         </div>
       </div>
     ` : ``}
@@ -3969,60 +4154,60 @@ function buildJobCard(job, historyMode = false) {
       <details class="cwf-details" style="margin-top:10px;" ${isWorking ? "open" : ""}>
         <summary>🛠️ ปิดงาน / หลักฐาน</summary>
         <div class="cwf-details-body">
-          <div class="cwf-close-hub">
-            <button class="cwf-close-action" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""} aria-label="ลงรูปหลักฐาน">
-              <span class="cwf-action-left"><span class="ico">📷</span><span><b>ลงรูปหลักฐาน</b><small>อัปโหลดรูปก่อนทำ หลังทำ และรูปตรวจเช็ค</small></span></span><span class="cwf-action-arrow">›</span>
-            </button>
+          ${revisitFlow ? `
+            <div class="cwf-close-hub">
+              <button class="cwf-close-action" type="button" onclick="openRevisitScheduleModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
+                <span class="cwf-action-left"><span class="ico">🕛</span><span><b>แจ้งเวลานัดหมาย</b><small>บันทึกวันและเวลาที่ตกลงกับลูกค้า</small></span></span><span class="cwf-action-arrow">›</span>
+              </button>
+              <button class="cwf-close-action" type="button" onclick="openRevisitEvidenceChecklistHub('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
+                <span class="cwf-action-left"><span class="ico">📷✅</span><span><b>รูปและเช็คลิสงานแก้ไข</b><small>กดเข้าไปเลือกลงรูป หรือทำเช็คลิส</small></span></span><span class="cwf-action-arrow">›</span>
+              </button>
+            </div>
+          ` : `
+            <div class="cwf-close-hub">
+              <button class="cwf-close-action" type="button" onclick="openTechPhotoModal('${jobKeyJs}')" ${!canEdit ? "disabled" : ""} aria-label="ลงรูปหลักฐาน">
+                <span class="cwf-action-left"><span class="ico">📷</span><span><b>ลงรูปหลักฐาน</b><small>อัปโหลดรูปก่อนทำ หลังทำ และรูปตรวจเช็ค</small></span></span><span class="cwf-action-arrow">›</span>
+              </button>
+            </div>
 
-          </div>
+            <div id="photo-status-${jobId}" style="display:none"></div>
 
-          <div id="photo-status-${jobId}" style="display:none"></div>
+            <div class="cwf-note-box">
+              <b>🛡️ ประกันงาน</b>
+              <div class="muted" style="margin-top:4px;font-size:12px;">ต้องเลือกก่อนกด “เสร็จสิ้น”</div>
+              ${(() => {
+                const jt = getJobTypeText(job);
+                let kind = detectWarrantyKind(jt);
+                let label = '';
+                let kindSelect = '';
+                let monthSelect = '';
+                if (kind === 'clean') label = 'ล้าง: ประกัน 30 วัน';
+                else if (kind === 'install') label = 'ติดตั้ง: ประกัน 3 ปี';
+                else if (kind === 'repair') label = 'ซ่อม: เลือก 3/6/12 เดือน';
+                else {
+                  label = 'โปรดเลือกประเภทประกันก่อนปิดงาน';
+                  kindSelect = `<select id="warranty-kind-${jobId}" style="margin-top:6px;width:100%;" onchange="toggleWarrantyMonths(${jobId})"><option value="">เลือกประเภทประกัน</option><option value="clean">ล้าง (30 วัน)</option><option value="repair">ซ่อม (เลือกเดือน)</option><option value="install">ติดตั้ง (3 ปี)</option></select>`;
+                  monthSelect = `<select id="warranty-months-${jobId}" style="margin-top:6px;width:100%;display:none;"><option value="">เลือกเดือนประกัน</option><option value="3">3 เดือน</option><option value="6">6 เดือน</option><option value="12">12 เดือน</option></select>`;
+                }
+                if (kind === 'repair') monthSelect = `<select id="warranty-months-${jobId}" style="margin-top:6px;width:100%;"><option value="">เลือกเดือนประกัน</option><option value="3">3 เดือน</option><option value="6">6 เดือน</option><option value="12">12 เดือน</option></select>`;
+                const kindHidden = (kind && !kindSelect) ? `<input type="hidden" id="warranty-kind-${jobId}" value="${kind}">` : '';
+                return `${kindHidden}<div class="pill" style="margin-top:6px;background:#eff6ff;border-color:rgba(37,99,235,0.25);color:#0f172a;">${label}</div>${kindSelect}${monthSelect}`;
+              })()}
+            </div>
 
-          <div class="cwf-note-box">
-            <b>🛡️ ประกันงาน</b>
-            <div class="muted" style="margin-top:4px;font-size:12px;">ต้องเลือกก่อนกด “เสร็จสิ้น”</div>
-            ${(() => {
-              const jt = getJobTypeText(job);
-              let kind = detectWarrantyKind(jt);
-              let label = '';
-              let kindSelect = '';
-              let monthSelect = '';
-              if (kind === 'clean') label = 'ล้าง: ประกัน 30 วัน';
-              else if (kind === 'install') label = 'ติดตั้ง: ประกัน 3 ปี';
-              else if (kind === 'repair') label = 'ซ่อม: เลือก 3/6/12 เดือน';
-              else {
-                label = 'โปรดเลือกประเภทประกันก่อนปิดงาน';
-                kindSelect = `<select id="warranty-kind-${jobId}" style="margin-top:6px;width:100%;" onchange="toggleWarrantyMonths(${jobId})"><option value="">เลือกประเภทประกัน</option><option value="clean">ล้าง (30 วัน)</option><option value="repair">ซ่อม (เลือกเดือน)</option><option value="install">ติดตั้ง (3 ปี)</option></select>`;
-                monthSelect = `<select id="warranty-months-${jobId}" style="margin-top:6px;width:100%;display:none;"><option value="">เลือกเดือนประกัน</option><option value="3">3 เดือน</option><option value="6">6 เดือน</option><option value="12">12 เดือน</option></select>`;
-              }
-              if (kind === 'repair') monthSelect = `<select id="warranty-months-${jobId}" style="margin-top:6px;width:100%;"><option value="">เลือกเดือนประกัน</option><option value="3">3 เดือน</option><option value="6">6 เดือน</option><option value="12">12 เดือน</option></select>`;
-              const kindHidden = (kind && !kindSelect) ? `<input type="hidden" id="warranty-kind-${jobId}" value="${kind}">` : '';
-              return `${kindHidden}<div class="pill" style="margin-top:6px;background:#eff6ff;border-color:rgba(37,99,235,0.25);color:#0f172a;">${label}</div>${kindSelect}${monthSelect}`;
-            })()}
-          </div>
+            <div class="cwf-note-box">
+              <b>📝 หมายเหตุช่าง</b>
+              <textarea id="note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""} oninput="noteDraftChanged('${jobKeyJs}')">${escapeHTML(getNoteDraft(keyBase) || job.technician_note || "")}</textarea>
+            </div>
+          `}
 
-          <div class="cwf-note-box">
-            <b>📝 หมายเหตุช่าง</b>
-            <textarea id="note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="เจอปัญหาอะไร ใส่ไว้ได้" ${!canEdit ? "disabled" : ""} oninput="noteDraftChanged('${jobKeyJs}')">${escape(getNoteDraft(keyBase) || job.technician_note || "")}</textarea>
-            ${revisitFlow ? `
-              <div style="margin-top:10px;">
-                <b>🔁 ผลงานแก้ไข</b>
-                <select id="revisit-result-${keyBase}" style="margin-top:6px;width:100%;" ${!canEdit ? "disabled" : ""}>
-                  <option value="">เลือกผลการกลับไปแก้ (จำเป็น)</option>
-                  <option value="successful">successful - แก้แล้วใช้งานได้</option>
-                  <option value="unsuccessful">unsuccessful - ยังไม่จบ/ยังมีอาการ</option>
-                </select>
-                <textarea id="revisit-note-${keyBase}" rows="3" style="margin-top:6px;" placeholder="revisit_note (จำเป็น): สรุปผลการแก้ / เหตุผล / อาการที่ยังพบ" ${!canEdit ? "disabled" : ""}>${escape(job.technician_note || "")}</textarea>
-              </div>
-            ` : ``}
-            ${historyMode ? "" : ((checkedIn || isWorking) ? `
-              <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
-                <button class="secondary" type="button" style="width:auto;" onclick="saveNote('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>💾 บันทึกหมายเหตุ</button>
-              </div>
-              ${isWorking ? `<div class="cwf-final-row"><button type="button" onclick="requestFinalize('${jobKeyJs}', 'เสร็จแล้ว')">✅ เสร็จสิ้น</button><button class="danger" type="button" onclick="requestFinalize('${jobKeyJs}', 'ยกเลิก')">⛔ ยกเลิก</button></div>` : ``}
-            ` : ``)}
-            <div id="note-status-${jobId}" style="margin-top:6px;"></div>
-          </div>
+          ${historyMode ? "" : ((checkedIn || isWorking) ? `
+            ${!revisitFlow ? `<div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
+              <button class="secondary" type="button" style="width:auto;" onclick="saveNote('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>💾 บันทึกหมายเหตุ</button>
+            </div>` : ``}
+            ${isWorking ? `<div class="cwf-final-row"><button type="button" onclick="requestFinalize('${jobKeyJs}', 'เสร็จแล้ว')">✅ เสร็จสิ้น</button><button class="danger" type="button" onclick="requestFinalize('${jobKeyJs}', 'ยกเลิก')">⛔ ยกเลิก</button></div>` : ``}
+          ` : ``)}
+          <div id="note-status-${jobId}" style="margin-top:6px;"></div>
         </div>
       </details>
     ` : `
@@ -5145,19 +5330,19 @@ function requestFinalize(jobId, targetStatus, _skipWarrantyPrompt) {
         const job = getJobFromCache(jobId);
         const revisitFlow = isRevisitJob(job);
         if (revisitFlow) {
+          const revisitCause = getRevisitCausePartyValue(jobId);
           const revisitResult = getRevisitResultValue(jobId);
-          const revisitNote = getRevisitNoteValue(jobId);
+          if (!revisitCause) {
+            alert("งานแก้ไขยังปิดงานไม่ได้: กรุณาเลือกสาเหตุงานแก้ไขในเช็คลิส");
+            return;
+          }
           if (!['successful', 'unsuccessful'].includes(revisitResult)) {
-            alert("งานแก้ไขยังปิดงานไม่ได้: ต้องเลือก revisit_result ก่อนกด “เสร็จสิ้น”");
+            alert("งานแก้ไขยังปิดงานไม่ได้: กรุณาเลือกผลการแก้ไขในเช็คลิส");
             return;
           }
-          if (!revisitNote) {
-            alert("งานแก้ไขยังปิดงานไม่ได้: ต้องกรอก revisit_note เพื่อสรุปผลการกลับไปแก้");
-            return;
-          }
-          const hasEvidence = await hasRevisitEvidence(jobId);
-          if (!hasEvidence) {
-            alert("งานแก้ไขยังปิดงานไม่ได้: ต้องมีรูป revisit evidence อย่างน้อย 1 รูปในหมวด ก่อนแก้ / หลังแก้ / จุดปัญหา");
+          const evCounts = await getRevisitEvidenceCounts(jobId);
+          if (!evCounts.revisit_before || !evCounts.revisit_after) {
+            alert("งานแก้ไขยังปิดงานไม่ได้: กรุณาแนบรูปก่อนแก้ไขและรูปหลังแก้ไขให้ครบ");
             return;
           }
         }
@@ -5195,7 +5380,9 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
     const job = getJobFromCache(jobId);
     const revisitFlow = isRevisitJob(job);
     const revisit_result = revisitFlow ? getRevisitResultValue(jobId) : "";
-    const revisit_note = revisitFlow ? getRevisitNoteValue(jobId) : "";
+    const revisit_note = revisitFlow ? (getRevisitNoteValue(jobId) || (revisit_result ? `ผลการแก้ไข: ${revisitResultLabel(revisit_result)}` : "")) : "";
+    const revisit_cause_party = revisitFlow ? getRevisitCausePartyValue(jobId) : "";
+    const revisit_cause_note = revisitFlow ? (getRevisitCauseNoteValue(jobId) || (revisit_cause_party ? `สาเหตุงานแก้ไข: ${revisitCausePartyLabel(revisit_cause_party)}` : "")) : "";
 
     // อัปโหลดรูปค้างก่อน (แต่ห้ามล็อคการปิดงาน)
     // เคสที่เจอบ่อย: fetch ค้าง/timeout หรือ photo_id ไม่ตรงกับ server ทำให้กดปิดงานแล้วเงียบ
@@ -5230,6 +5417,8 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
         note,
         revisit_result,
         revisit_note,
+        revisit_cause_party,
+        revisit_cause_note,
         pre_cleaning_checklist: toChecklistArray('pre'),
         post_cleaning_checklist: toChecklistArray('post'),
         per_unit_evidence: unitsForFinalize.length > 0,
@@ -6003,3 +6192,5 @@ window.openTechWhtDocumentsModal = openTechWhtDocumentsModal;
 window.closeTechWhtDocumentsModal = closeTechWhtDocumentsModal;
 window.loadTechWhtDocuments = loadTechWhtDocuments;
 window.addEventListener('DOMContentLoaded', () => { document.getElementById('techTaxProfileForm')?.addEventListener('submit', submitTechTaxProfileRequest); });
+
+try { console.info('[tech] revisit correct v20 loaded'); } catch {}
