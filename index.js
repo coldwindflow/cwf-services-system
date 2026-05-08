@@ -19463,45 +19463,72 @@ app.post("/jobs/:job_id/photos/:photo_id/upload", upload.single("photo"), async 
     if (mt.includes("webp")) ext = "webp";
     if (mt.includes("jpeg") || mt.includes("jpg")) ext = "jpg";
 
-    // ✅ Prefer Cloudinary if configured (no local disk dependency)
-    if (CLOUDINARY_ENABLED) {
-      const publicId = `${realId}_${photo_id}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
-      const folder = `cwf/jobs/${realId}/${phase}`;
-      // Cloudinary transformation string
-      // - limit width to 1600
-      // - auto quality & format
-      const transformation = 'c_limit,w_1600/q_auto/f_auto';
-
-      const up = await cloudinaryUploadBuffer({
-        buffer: req.file.buffer,
-        mimetype: req.file.mimetype || meta.rows[0].mime_type || 'image/jpeg',
-        folder,
-        publicId,
-        transformation,
+    // ✅ Job photos MUST go to Cloudinary only.
+    // ห้าม fallback ลง /uploads บน Render เพราะไฟล์หายได้ และไม่ตรง requirement หน้างานจริง
+    if (!CLOUDINARY_ENABLED) {
+      console.error('[photos/upload] Cloudinary is not configured for job photos', {
+        job_id: realId,
+        photo_id,
+        has_cloud_name: Boolean(CLOUDINARY_CLOUD_NAME),
+        has_api_key: Boolean(CLOUDINARY_API_KEY),
+        has_api_secret: Boolean(CLOUDINARY_API_SECRET),
       });
-
-      await pool.query(
-        `UPDATE public.job_photos
-         SET uploaded_at=NOW(), storage_path=$1, public_url=$2, cloud_public_id=$3
-         WHERE photo_id=$4 AND job_id=$5`,
-        [up.public_id || publicId, up.secure_url, up.public_id || publicId, photo_id, realId]
-      );
-
-      return res.json({ success: true, url: up.secure_url, public_id: up.public_id || publicId });
+      return res.status(503).json({
+        success: false,
+        error: 'ระบบรูปต้องอัปโหลดไป Cloudinary แต่ยังไม่ได้ตั้งค่า Cloudinary ENV บน Render ให้ครบ',
+        code: 'CLOUDINARY_NOT_CONFIGURED',
+        required_env: ['CLOUDINARY_CLOUD_NAME', 'CLOUDINARY_API_KEY', 'CLOUDINARY_API_SECRET'],
+      });
     }
 
-    // Fallback: local disk (/uploads)
-    const safeName = `${realId}_${photo_id}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}.${ext}`;
-    const diskPath = path.join(UPLOAD_DIR, safeName);
-    fs.writeFileSync(diskPath, req.file.buffer);
-    const publicUrl = `/uploads/${safeName}`;
+    const publicId = `${realId}_${photo_id}_${Date.now()}_${crypto.randomUUID().slice(0, 8)}`;
+    const folder = `cwf/jobs/${realId}/${phase}`;
+    // Cloudinary transformation string
+    // - limit width to 1600
+    // - auto quality & format
+    const transformation = 'c_limit,w_1600/q_auto/f_auto';
+
+    const up = await cloudinaryUploadBuffer({
+      buffer: req.file.buffer,
+      mimetype: req.file.mimetype || meta.rows[0].mime_type || 'image/jpeg',
+      folder,
+      publicId,
+      transformation,
+    });
 
     await pool.query(
-      `UPDATE public.job_photos SET uploaded_at=NOW(), storage_path=$1, public_url=$2, cloud_public_id=NULL WHERE photo_id=$3 AND job_id=$4`,
-      [diskPath, publicUrl, photo_id, realId]
+      `UPDATE public.job_photos
+       SET uploaded_at=NOW(),
+           storage_path=$1,
+           public_url=$2,
+           cloud_public_id=$3,
+           file_size_bytes=COALESCE($4::bigint, file_size_bytes)
+       WHERE photo_id=$5::bigint AND job_id=$6::bigint`,
+      [
+        up.public_id || publicId,
+        up.secure_url,
+        up.public_id || publicId,
+        Number.isFinite(Number(up.bytes)) ? Number(up.bytes) : null,
+        photo_id,
+        realId,
+      ]
     );
 
-    return res.json({ success: true, url: publicUrl });
+    console.log('[photos/upload] uploaded to Cloudinary', {
+      job_id: realId,
+      photo_id,
+      phase,
+      public_id: up.public_id || publicId,
+      bytes: up.bytes || req.file.size || null,
+    });
+
+    return res.json({
+      success: true,
+      storage: 'cloudinary',
+      url: up.secure_url,
+      public_id: up.public_id || publicId,
+      bytes: up.bytes || req.file.size || null,
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ error: "อัปโหลดรูปไม่สำเร็จ" });
