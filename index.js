@@ -377,6 +377,56 @@ async function cloudinaryUploadBuffer({ buffer, mimetype, folder, publicId, tran
 }
 
 
+async function cloudinaryDestroyPublicId(publicId, { resourceType = 'image', invalidate = true } = {}) {
+  if (!CLOUDINARY_ENABLED) throw new Error('CLOUDINARY_NOT_CONFIGURED');
+  const pid = String(publicId || '').trim();
+  if (!pid) return { ok: true, skipped: true, public_id: pid };
+  const safeResourceType = resourceType === 'raw' ? 'raw' : 'image';
+  const ts = Math.floor(Date.now() / 1000);
+  const params = { public_id: pid, timestamp: ts };
+  if (invalidate) params.invalidate = true;
+  const signature = cloudinarySignParams(params);
+  const body = new URLSearchParams({
+    public_id: pid,
+    timestamp: String(ts),
+    api_key: CLOUDINARY_API_KEY,
+    signature,
+  });
+  if (invalidate) body.set('invalidate', 'true');
+  const url = `https://api.cloudinary.com/v1_1/${encodeURIComponent(CLOUDINARY_CLOUD_NAME)}/${safeResourceType}/destroy`;
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  const json = await resp.json().catch(() => ({}));
+  const result = String(json?.result || '').toLowerCase();
+  const ok = resp.ok && (result === 'ok' || result === 'not found');
+  if (!ok) {
+    const err = new Error(json?.error?.message || `Cloudinary destroy failed (${resp.status})`);
+    err._cloudinary = json;
+    err.public_id = pid;
+    throw err;
+  }
+  return { ok: true, public_id: pid, result: json?.result || 'ok' };
+}
+
+async function cloudinaryDestroyMany(publicIds = []) {
+  const unique = [...new Set((publicIds || []).map(x => String(x || '').trim()).filter(Boolean))];
+  const rows = [];
+  for (const publicId of unique) {
+    try {
+      const r = await cloudinaryDestroyPublicId(publicId);
+      rows.push({ public_id: publicId, ok: true, result: r.result || 'ok' });
+    } catch (e) {
+      console.error('[photos/delete] Cloudinary destroy failed', { public_id: publicId, error: e?.message || e });
+      rows.push({ public_id: publicId, ok: false, error: e?.message || 'Cloudinary destroy failed' });
+    }
+  }
+  return rows;
+}
+
+
 // ==============================
 // 🧭 GPS/Maps Resolver (safe)
 // - รองรับ maps.app.goo.gl (short link)
@@ -19674,15 +19724,41 @@ app.post('/admin/media-retention/purge', requireAdminSession, async (req, res) =
   for (const id of ids) {
     const jobR = await pool.query(`SELECT j.*, (SELECT string_agg(COALESCE(ji.item_name,''), ' ') FROM public.job_items ji WHERE ji.job_id=j.job_id) AS service_items_text FROM public.jobs j WHERE j.job_id=$1`, [id]);
     const el = mediaPurgeEligibility(jobR.rows[0]);
-    const photosR = await pool.query(`SELECT photo_id, phase, photo_category, COALESCE(file_size_bytes,0)::bigint AS bytes FROM public.job_photos WHERE job_id=$1 AND deleted_at IS NULL`, [id]);
+    const photosR = await pool.query(`SELECT photo_id, phase, photo_category, cloud_public_id, storage_path, public_url, COALESCE(file_size_bytes,0)::bigint AS bytes FROM public.job_photos WHERE job_id=$1 AND deleted_at IS NULL`, [id]);
     const evidence = (photosR.rows || []).filter(isEvidencePhotoRow);
     const slips = (photosR.rows || []).filter(p => normalizePhotoCategory(p.phase, p.photo_category) === 'payment_slip' || String(p.phase||'').toLowerCase().includes('slip'));
     const targetPhotos = slipOnly ? slips : evidence;
-    const summary = { eligible: slipOnly ? slips.length > 0 : !!el.eligible, reason: slipOnly ? 'เลือกลบเฉพาะรูปสลิปโดยแอดมิน' : el.reason, photos_count:evidence.length, checklist_count:0, units_count:0, slips_count:slips.length, bytes_estimated:targetPhotos.reduce((s,p)=>s+Number(p.bytes||0),0), purge_type: slipOnly ? 'slips' : 'job_evidence' };
+    const summary = { eligible: slipOnly ? slips.length > 0 : !!el.eligible, reason: slipOnly ? 'เลือกลบเฉพาะรูปสลิปโดยแอดมิน' : el.reason, photos_count:evidence.length, checklist_count:0, units_count:0, slips_count:slips.length, bytes_estimated:targetPhotos.reduce((s,p)=>s+Number(p.bytes||0),0), purge_type: slipOnly ? 'slips' : 'job_evidence', cloudinary_deleted_count:0, cloudinary_delete_failed_count:0 };
     if (summary.eligible && !dryRun && targetPhotos.length) {
-      const photoIds = targetPhotos.map(p => Number(p.photo_id)).filter(Boolean);
-      await pool.query(`UPDATE public.job_photos SET deleted_at=NOW(), deleted_by=$2, public_url=NULL, storage_path=NULL, cloud_public_id=NULL WHERE job_id=$1 AND photo_id=ANY($3::bigint[])`, [id, actor, photoIds]);
-      if (!slipOnly) {
+      const cloudPublicIds = [...new Set(targetPhotos.map(p => String(p.cloud_public_id || p.storage_path || '').trim()).filter(v => v && !/^https?:\/\//i.test(v)))];
+      let destroyRows = [];
+      if (cloudPublicIds.length) {
+        if (!CLOUDINARY_ENABLED) {
+          summary.cloudinary_delete_failed_count = cloudPublicIds.length;
+          summary.reason = 'ยังไม่ได้ตั้งค่า Cloudinary ENV จึงยังลบไฟล์จริงบน Cloudinary ไม่ได้';
+          results.push({ job_id:id, ...summary });
+          await pool.query(`INSERT INTO public.media_retention_logs (run_id, job_id, dry_run, action, photos_count, checklist_count, units_count, slips_count, bytes_estimated, result, created_by) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`, [runId, id, dryRun, dryRun?'dry_run':'purge_cloudinary_not_configured', summary.photos_count, summary.checklist_count, summary.units_count, summary.slips_count, summary.bytes_estimated, summary.reason, actor]).catch(()=>null);
+          continue;
+        }
+        destroyRows = await cloudinaryDestroyMany(cloudPublicIds);
+        summary.cloudinary_deleted_count = destroyRows.filter(r => r.ok).length;
+        summary.cloudinary_delete_failed_count = destroyRows.filter(r => !r.ok).length;
+        if (summary.cloudinary_delete_failed_count) {
+          summary.cloudinary_delete_failures = destroyRows.filter(r => !r.ok).slice(0, 5);
+          summary.reason = `ลบบางรูปบน Cloudinary ไม่สำเร็จ ${summary.cloudinary_delete_failed_count} รูป ระบบจะไม่ตัดรูปที่ลบไม่สำเร็จออกจากฐานข้อมูลเพื่อให้กดลบซ้ำได้`;
+        }
+      }
+      const okCloudIds = new Set(destroyRows.filter(r => r.ok).map(r => r.public_id));
+      const photoIds = targetPhotos
+        .filter(p => {
+          const pid = String(p.cloud_public_id || p.storage_path || '').trim();
+          return !pid || /^https?:\/\//i.test(pid) || okCloudIds.has(pid);
+        })
+        .map(p => Number(p.photo_id)).filter(Boolean);
+      if (photoIds.length) {
+        await pool.query(`UPDATE public.job_photos SET deleted_at=NOW(), deleted_by=$2, public_url=NULL, storage_path=NULL, cloud_public_id=NULL WHERE job_id=$1 AND photo_id=ANY($3::bigint[])`, [id, actor, photoIds]);
+      }
+      if (!slipOnly && photoIds.length && summary.cloudinary_delete_failed_count === 0) {
         await pool.query(`UPDATE public.job_unit_checklists SET checklist_json='[]'::jsonb, updated_at=NOW() WHERE job_id=$1`, [id]);
         await pool.query(`UPDATE public.job_units SET ac_type=NULL, wash_type=NULL, btu=NULL, location_label=NULL, updated_at=NOW() WHERE job_id=$1`, [id]);
         await pool.query(`UPDATE public.jobs SET media_retention_purged_at=NOW(), media_retention_purged_by=$2, media_retention_summary=$3::jsonb WHERE job_id=$1`, [id, actor, JSON.stringify(summary)]);
