@@ -20053,7 +20053,7 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
     const isRevisitFlow = isRevisitJobRow(meta);
     const revisitResult = ["successful", "unsuccessful"].includes(revisit_result) ? revisit_result : "";
     const revisitNote = revisit_note || note || (revisitResult ? `ผลการแก้ไข: ${revisitResult}` : "");
-    const revisitCauseNote = revisit_cause_note || (revisit_cause_party ? `เลือกสาเหตุงานแก้ไข: ${revisit_cause_party}` : "");
+    const revisitCauseNote = revisit_cause_note || (revisit_cause_party ? `สาเหตุงานแก้ไข: ${revisit_cause_party}` : "");
     if (status === 'เสร็จแล้ว' && !isRevisitFlow) {
       if (!pre_cleaning_checklist || !pre_cleaning_checklist.length) {
         await client.query("ROLLBACK");
