@@ -3181,8 +3181,7 @@ function ensureCwfCloseStyles(){
     .cwf-check-list{display:flex;flex-direction:column;gap:8px}.cwf-check-row{background:#fff;border:1px solid rgba(37,99,235,.13);border-radius:16px;padding:10px}.cwf-check-main{display:flex;align-items:center;gap:10px}.cwf-check-main input{width:22px;height:22px;accent-color:#1558d6}.cwf-check-main label{font-weight:900;color:#0f172a;line-height:1.35}.cwf-check-tools{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;padding-left:32px}.cwf-check-issue-photo{margin:8px 0 0 32px;font-size:12px;color:#475569}.cwf-link-btn{border:1px solid rgba(148,163,184,.3);background:#f8fafc;color:#334155;border-radius:999px;padding:7px 10px;font-weight:900;font-size:12px;width:auto}.cwf-issue-note{margin:8px 0 0 32px}.cwf-issue-note textarea{min-height:74px;border-radius:14px}
     .cwf-pay-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:12px}.cwf-pay-tab{appearance:none!important;border:1px solid rgba(37,99,235,.16)!important;background:#fff!important;color:#0f172a!important;border-radius:17px!important;padding:12px 8px!important;font-weight:1000!important;min-height:62px!important;line-height:1.25!important}.cwf-pay-tab.active{background:linear-gradient(135deg,#1558d6,#05b6d6)!important;color:#fff!important;border-color:transparent!important;box-shadow:0 12px 28px rgba(37,99,235,.23)!important}.cwf-pay-card{background:#fff;border:1px solid rgba(37,99,235,.14);border-radius:20px;padding:13px;box-shadow:0 12px 28px rgba(15,23,42,.06)}.cwf-qr-img{display:block;width:min(300px,100%);margin:12px auto;border-radius:18px;border:1px solid rgba(15,23,42,.12);background:#fff}.cwf-pay-card input,.cwf-pay-card textarea{border-radius:14px}
     .cwf-note-box{background:#fff;border:1px solid rgba(37,99,235,.12);border-radius:18px;padding:12px;margin-top:10px}.cwf-note-box textarea{border-radius:16px;min-height:105px}.cwf-final-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}.cwf-final-row button{border-radius:18px;min-height:52px}
-    .cwf-upload-overlay{position:fixed;inset:0;z-index:11050;background:rgba(2,6,23,.56);display:flex;align-items:center;justify-content:center;padding:18px;backdrop-filter:blur(6px)}.cwf-upload-panel{width:min(360px,94vw);background:#fff;border-radius:26px;border:1px solid rgba(148,163,184,.30);box-shadow:0 26px 70px rgba(2,6,23,.36);padding:22px 18px;text-align:center;color:#0f172a}.cwf-upload-spinner{width:52px;height:52px;margin:0 auto 14px;border-radius:999px;border:5px solid #dbeafe;border-top-color:#1558d6;animation:cwfUploadSpin .82s linear infinite}.cwf-upload-title{font-size:18px;font-weight:1000;color:#0b2e6d;margin-bottom:5px}.cwf-upload-msg{font-size:14px;font-weight:850;color:#475569;line-height:1.45}.cwf-upload-bar{height:9px;border-radius:999px;background:#e2e8f0;overflow:hidden;margin-top:14px}.cwf-upload-bar span{display:block;height:100%;width:0%;background:linear-gradient(90deg,#1558d6,#05b6d6);border-radius:999px;transition:width .18s ease}.cwf-toast{position:fixed;left:50%;bottom:calc(92px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:11100;width:min(420px,calc(100% - 28px));background:#0f172a;color:#fff;border-radius:18px;padding:12px 14px;box-shadow:0 18px 44px rgba(2,6,23,.28);font-weight:900;font-size:14px;line-height:1.4;text-align:center}.cwf-toast.ok{background:#047857}.cwf-toast.warn{background:#c2410c}.cwf-photo-status-card{border:1px solid rgba(37,99,235,.15);border-radius:18px;background:linear-gradient(180deg,#fff,#f8fbff);padding:12px;margin-top:8px}.cwf-photo-status-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.cwf-photo-status-head b{color:#0b2e6d;font-size:15px}.cwf-photo-status-note{font-size:12px;font-weight:900;color:#64748b;line-height:1.35}.cwf-photo-kpi{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}.cwf-photo-kpi>div{border:1px solid rgba(15,23,42,.08);border-radius:14px;background:#fff;padding:10px}.cwf-photo-kpi .k{font-size:12px;font-weight:1000;color:#64748b}.cwf-photo-kpi .v{font-size:22px;font-weight:1200;color:#0b2e6d;margin-top:4px}.cwf-photo-status-warn{margin-top:10px;border:1px solid #fed7aa;background:#fff7ed;color:#9a3412;border-radius:14px;padding:10px 12px;font-size:13px;font-weight:900;line-height:1.4}.cwf-phase-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}.cwf-phase-chip{border:1px solid rgba(37,99,235,.12);background:#fff;border-radius:999px;padding:6px 9px;font-size:12px;font-weight:900;color:#334155}.cwf-phase-chip b{color:#0b2e6d}.cwf-phase-chip.pending{border-color:#fed7aa;background:#fff7ed;color:#9a3412}@keyframes cwfUploadSpin{to{transform:rotate(360deg)}}
-    @media(max-width:560px){.cwf-photo-grid{grid-template-columns:1fr!important}.cwf-pay-tabs{grid-template-columns:1fr!important}.cwf-modal-panel{max-height:90vh!important}.cwf-final-row{grid-template-columns:1fr!important}.cwf-photo-kpi{grid-template-columns:1fr}.cwf-phase-grid{grid-template-columns:1fr}}
+    @media(max-width:560px){.cwf-photo-grid{grid-template-columns:1fr!important}.cwf-pay-tabs{grid-template-columns:1fr!important}.cwf-modal-panel{max-height:90vh!important}.cwf-final-row{grid-template-columns:1fr!important}}
   `;
   document.head.appendChild(style);
 }
@@ -3206,95 +3205,117 @@ function cwfOpenModal(title, bodyHtml, footerHtml){
 }
 function cwfCloseModal(){ const el = document.getElementById('cwf-close-flow-modal'); if (el) el.remove(); }
 window.cwfCloseModal = cwfCloseModal;
-
-
-function cwfUploadToast(message, type){
+function cwfShowUploadOverlay(message = 'กำลังอัปโหลดรูป…') {
   try {
-    ensureCwfCloseStyles();
-    const old = document.getElementById('cwf-upload-toast');
-    if (old) old.remove();
-    const el = document.createElement('div');
-    el.id = 'cwf-upload-toast';
-    el.className = 'cwf-toast ' + (type || '');
-    el.textContent = String(message || '');
-    document.body.appendChild(el);
-    setTimeout(()=>{ try { el.remove(); } catch {} }, 3200);
-  } catch {}
-}
-
-function cwfShowUploadOverlay(title, message, done, total){
-  try {
-    ensureCwfCloseStyles();
-    let el = document.getElementById('cwf-upload-overlay');
+    let el = document.getElementById('cwfTechUploadOverlay');
     if (!el) {
       el = document.createElement('div');
-      el.id = 'cwf-upload-overlay';
-      el.className = 'cwf-upload-overlay';
-      el.innerHTML = `<div class="cwf-upload-panel"><div class="cwf-upload-spinner"></div><div class="cwf-upload-title" id="cwfUploadTitle"></div><div class="cwf-upload-msg" id="cwfUploadMsg"></div><div class="cwf-upload-bar"><span id="cwfUploadBar"></span></div></div>`;
+      el.id = 'cwfTechUploadOverlay';
+      el.style.cssText = 'position:fixed;inset:0;z-index:120000;background:rgba(2,6,23,.58);display:flex;align-items:center;justify-content:center;padding:18px;';
+      el.innerHTML = `
+        <div style="width:min(360px,92vw);background:#fff;border-radius:26px;padding:24px 20px;text-align:center;box-shadow:0 24px 70px rgba(2,6,23,.35);border:1px solid rgba(148,163,184,.25)">
+          <div style="width:58px;height:58px;border-radius:999px;border:6px solid #e2e8f0;border-top-color:#1558d6;margin:0 auto 14px;animation:cwfTechUploadSpin .8s linear infinite"></div>
+          <div id="cwfTechUploadOverlayText" style="font-size:18px;font-weight:1000;color:#0f172a;line-height:1.35">กำลังอัปโหลดรูป…</div>
+          <div style="font-size:12px;font-weight:850;color:#64748b;margin-top:8px;line-height:1.45">อย่าปิดหน้านี้จนกว่าจะอัปโหลดเสร็จ</div>
+        </div>`;
+      if (!document.getElementById('cwfTechUploadSpinStyle')) {
+        const st = document.createElement('style');
+        st.id = 'cwfTechUploadSpinStyle';
+        st.textContent = '@keyframes cwfTechUploadSpin{to{transform:rotate(360deg)}}';
+        document.head.appendChild(st);
+      }
       document.body.appendChild(el);
     }
-    const t = el.querySelector('#cwfUploadTitle');
-    const m = el.querySelector('#cwfUploadMsg');
-    const b = el.querySelector('#cwfUploadBar');
-    if (t) t.textContent = title || 'กำลังอัปโหลดรูป...';
-    const hasTotal = Number(total) > 0;
-    if (m) m.textContent = message || (hasTotal ? `กำลังอัปโหลดรูป ${Number(done)||0}/${Number(total)||0}` : 'กรุณารอสักครู่ อย่าเพิ่งปิดหน้านี้');
-    if (b) b.style.width = hasTotal ? `${Math.max(3, Math.min(100, Math.round(((Number(done)||0) / Number(total)) * 100)))}%` : '12%';
+    cwfUpdateUploadOverlay(message);
   } catch {}
 }
-
-function cwfHideUploadOverlay(){
-  try { document.getElementById('cwf-upload-overlay')?.remove(); } catch {}
-}
-
-function cwfSetPhotoStatusNote(jobId, message, type){
+function cwfUpdateUploadOverlay(message) {
   try {
-    const box = document.getElementById(`photo-status-${jobId}`);
-    if (!box) return;
-    let note = box.querySelector('.cwf-photo-status-live-note');
-    if (!note) {
-      note = document.createElement('div');
-      note.className = 'cwf-photo-status-live-note cwf-photo-status-warn';
-      box.prepend(note);
-    }
-    note.textContent = String(message || '');
-    note.style.display = message ? 'block' : 'none';
-    note.style.background = type === 'ok' ? '#ecfdf5' : (type === 'warn' ? '#fff7ed' : '#eef5ff');
-    note.style.color = type === 'ok' ? '#047857' : (type === 'warn' ? '#9a3412' : '#1558d6');
-    note.style.borderColor = type === 'ok' ? '#a7f3d0' : (type === 'warn' ? '#fed7aa' : 'rgba(37,99,235,.18)');
+    const t = document.getElementById('cwfTechUploadOverlayText');
+    if (t) t.textContent = String(message || 'กำลังอัปโหลดรูป…');
   } catch {}
 }
+function cwfHideUploadOverlay() {
+  try { document.getElementById('cwfTechUploadOverlay')?.remove(); } catch {}
+}
+function cwfTechToast(message, isError = false) {
+  try {
+    const old = document.getElementById('cwfTechToast');
+    if (old) old.remove();
+    const el = document.createElement('div');
+    el.id = 'cwfTechToast';
+    el.textContent = String(message || '');
+    el.style.cssText = `position:fixed;left:50%;bottom:calc(22px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:120001;max-width:min(420px,92vw);padding:13px 16px;border-radius:999px;font-weight:1000;font-size:14px;line-height:1.35;box-shadow:0 16px 36px rgba(2,6,23,.22);background:${isError ? '#fee2e2' : '#dcfce7'};color:${isError ? '#991b1b' : '#14532d'};border:1px solid ${isError ? '#fecaca' : '#86efac'};`;
+    document.body.appendChild(el);
+    setTimeout(() => { try { el.remove(); } catch {} }, 2600);
+  } catch {
+    try { alert(message); } catch {}
+  }
+}
+window.cwfShowUploadOverlay = cwfShowUploadOverlay;
+window.cwfUpdateUploadOverlay = cwfUpdateUploadOverlay;
+window.cwfHideUploadOverlay = cwfHideUploadOverlay;
+window.cwfTechToast = cwfTechToast;
 
-async function cwfRunVisiblePendingUpload(jobId, opts){
-  const id = Number(jobId);
-  const options = Object.assign({}, opts || {});
-  return uploadPendingPhotos(id, Object.assign({}, options, {
-    onStart(total){
-      if (total > 0) cwfShowUploadOverlay('กำลังอัปโหลดรูป...', `กำลังอัปโหลดรูป 0/${total}`, 0, total);
-      if (typeof options.onStart === 'function') options.onStart(total);
-    },
-    onProgress(done, total){
-      cwfShowUploadOverlay('กำลังอัปโหลดรูป...', `กำลังอัปโหลดรูป ${done}/${total}`, done, total);
-      if (typeof options.onProgress === 'function') options.onProgress(done, total);
-    },
-    onError(error, item){
-      console.warn('[tech-photo-upload] pending item failed', { jobId:id, photo_id:item?.photo_id, phase:item?.phase, error:error?.message || error });
-      if (typeof options.onError === 'function') options.onError(error, item);
-    },
-    onFinish(summary){
-      if (typeof options.onFinish === 'function') options.onFinish(summary);
+async function cwfUploadUnitPhotoFiles(jobId, unitId, phase, files, photoNote = '', reopenTab = 'photos') {
+  const selected = Array.from(files || []);
+  if (!selected.length) return false;
+  const units = await cwfLoadUnits(jobId);
+  const unit = units.find(u => String(u.unit_id) === String(unitId));
+  if (!unit) throw new Error('กรุณาเลือกเครื่องก่อนอัปโหลดรูป');
+  window.__CWF_UPLOAD_BUSY_COUNT = (window.__CWF_UPLOAD_BUSY_COUNT || 0) + 1;
+  cwfShowUploadOverlay(`กำลังอัปโหลดรูป 0/${selected.length}`);
+  try {
+    let done = 0;
+    for (const f of selected) {
+      cwfUpdateUploadOverlay(`กำลังเตรียมรูป ${done + 1}/${selected.length}`);
+      console.log('[cwf_unit_photo] meta:start', { jobId, unitId, phase, name: f?.name, size: f?.size });
+      const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({
+          phase,
+          mime_type:f.type,
+          original_name:f.name,
+          file_size:f.size,
+          uploaded_by:(typeof username === 'string' ? username : '') || null,
+          unit_id:unit.unit_id,
+          unit_code:unit.unit_code,
+          unit_no:unit.unit_no,
+          photo_category:'job_evidence',
+          photo_note: String(photoNote || '').slice(0, 500)
+        })
+      });
+      const meta = await metaRes.json().catch(()=>({}));
+      console.log('[cwf_unit_photo] meta:done', { jobId, unitId, phase, ok: metaRes.ok, status: metaRes.status, photo_id: meta?.photo_id });
+      if (!metaRes.ok || !meta?.photo_id) throw new Error(meta.error || 'สร้างข้อมูลรูปไม่สำเร็จ');
+
+      cwfUpdateUploadOverlay(`กำลังอัปโหลดรูป ${done + 1}/${selected.length}`);
+      const form = new FormData();
+      form.append('photo', f, f.name || 'photo.jpg');
+      console.log('[cwf_unit_photo] upload:start', { jobId, unitId, phase, photo_id: meta.photo_id });
+      const upRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${meta.photo_id}/upload`, { method:'POST', body:form });
+      const up = await upRes.json().catch(()=>({}));
+      console.log('[cwf_unit_photo] upload:done', { jobId, unitId, phase, photo_id: meta.photo_id, ok: upRes.ok, status: upRes.status });
+      if (!upRes.ok) throw new Error(up.error || 'อัปโหลดรูปไม่สำเร็จ');
+      done += 1;
+      cwfUpdateUploadOverlay(`อัปโหลดแล้ว ${done}/${selected.length}`);
     }
-  }));
+    cwfTechToast(`✅ อัปโหลดรูปสำเร็จ ${selected.length} รูป`);
+    try { await refreshPhotoStatus(jobId); } catch {}
+    await openTechPhotoModal(jobId, reopenTab, unitId);
+    return true;
+  } catch (e) {
+    console.warn('[cwf_unit_photo] failed', { jobId, unitId, phase, message: e?.message || String(e) });
+    cwfTechToast(`❌ ${e.message || 'อัปโหลดรูปไม่สำเร็จ'}`, true);
+    alert(e.message || 'อัปโหลดรูปไม่สำเร็จ');
+    return false;
+  } finally {
+    window.__CWF_UPLOAD_BUSY_COUNT = Math.max(0, (window.__CWF_UPLOAD_BUSY_COUNT || 1) - 1);
+    cwfHideUploadOverlay();
+  }
 }
-
-function cwfConfirmUploadFailure(summary){
-  const failed = Number(summary?.failedCount || 0);
-  if (!failed) return true;
-  return confirm(`มีรูปค้างที่อัปโหลดไม่สำเร็จ ${failed} รูป
-ต้องการปิดงานต่อเลยไหม?
-
-ถ้ากด “ยกเลิก” ระบบจะยังไม่ปิดงาน เพื่อให้กดอัปโหลดรูปใหม่ก่อน`);
-}
+window.cwfUploadUnitPhotoFiles = cwfUploadUnitPhotoFiles;
 
 async function cwfCountPhotos(jobId){
   const phases = ['before','after','pressure','current','temp','defect','payment_slip','cash_transfer_slip','revisit_before','revisit_after','revisit_defect'];
@@ -3342,73 +3363,15 @@ function cwfUnitOptionLabel(u){
 }
 
 
-async function cwfPickUnitPhoto(jobId, unitId, phase){
-  const units = await cwfLoadUnits(jobId);
-  const unit = units.find(u => String(u.unit_id) === String(unitId));
-  if (!unit) return alert('กรุณาเลือกเครื่องก่อนอัปโหลดรูป');
+function cwfPickUnitPhoto(jobId, unitId, phase){
+  // สำคัญมากบนมือถือ/WebView: ต้องเปิด file picker ทันทีใน user gesture
+  // ห้าม await โหลดข้อมูลก่อน input.click() ไม่งั้นบางเครื่องจะกดแล้วไม่เกิดอะไรขึ้น
   const noteEl = document.getElementById(`cwfPhotoNote_${phase}`);
   const photo_note = String(noteEl?.value || '').trim().slice(0, 500);
   openFilePicker({ multiple:true, accept:'image/*' }, async (files)=>{
-    const selected = Array.from(files || []);
-    if (!selected.length) return;
-    window.__CWF_UPLOAD_BUSY_COUNT = (window.__CWF_UPLOAD_BUSY_COUNT || 0) + 1;
-    let uploadedCount = 0;
-    let queuedCount = 0;
-    try {
-      cwfUploadToast(`รับรูปเครื่องนี้แล้ว ${selected.length} รูป กำลังอัปโหลด...`, 'ok');
-      cwfShowUploadOverlay('กำลังอัปโหลดรูปเครื่อง...', `กำลังอัปโหลดรูป 0/${selected.length}`, 0, selected.length);
-      for (let i = 0; i < selected.length; i++) {
-        const f = selected[i];
-        cwfShowUploadOverlay('กำลังอัปโหลดรูปเครื่อง...', `กำลังอัปโหลดรูป ${i + 1}/${selected.length}`, i, selected.length);
-        const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({
-            phase,
-            mime_type:f.type,
-            original_name:f.name,
-            file_size:f.size,
-            uploaded_by:(typeof username === 'string' ? username : '') || null,
-            unit_id:unit.unit_id,
-            unit_code:unit.unit_code,
-            unit_no:unit.unit_no,
-            photo_category:'job_evidence',
-            photo_note
-          })
-        });
-        const meta = await metaRes.json().catch(()=>({}));
-        if (!metaRes.ok) throw new Error(meta.error || 'สร้างข้อมูลรูปไม่สำเร็จ');
-        try {
-          const form = new FormData();
-          form.append('photo', f, f.name || 'photo.jpg');
-          const upRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${meta.photo_id}/upload`, { method:'POST', body:form });
-          const up = await upRes.json().catch(()=>({}));
-          if (!upRes.ok) throw new Error(up.error || 'อัปโหลดรูปไม่สำเร็จ');
-          uploadedCount++;
-        } catch (e) {
-          console.warn('[tech-photo-upload] unit photo upload failed, saved to local queue', { jobId, photo_id:meta.photo_id, phase, unit_id:unit.unit_id, error:e?.message || e });
-          const buffer = await f.arrayBuffer();
-          await idbPut({
-            photo_id: Number(meta.photo_id), job_id: Number(jobId), phase: String(phase),
-            mime_type: f.type, original_name: f.name, file_size: f.size,
-            blob: new Blob([buffer], { type: f.type || 'image/jpeg' }), created_at: Date.now(),
-            unit_id:unit.unit_id, unit_code:unit.unit_code, unit_no:unit.unit_no, photo_note
-          });
-          queuedCount++;
-        }
-      }
-      cwfHideUploadOverlay();
-      cwfUploadToast(queuedCount ? `⚠️ อัปโหลดแล้ว ${uploadedCount} รูป / ค้างในเครื่อง ${queuedCount} รูป` : `✅ อัปโหลดรูปเครื่องนี้แล้ว ${uploadedCount} รูป`, queuedCount ? 'warn' : 'ok');
-      try { await refreshPhotoStatus(jobId); } catch {}
-      openTechPhotoModal(jobId, 'photos', unitId);
-    } catch (e) {
-      console.error(e);
-      cwfUploadToast(`❌ ${e.message || 'อัปโหลดรูปไม่สำเร็จ'}`, 'warn');
-      alert(`❌ ${e.message || 'อัปโหลดรูปไม่สำเร็จ'}`);
-    } finally {
-      cwfHideUploadOverlay();
-      window.__CWF_UPLOAD_BUSY_COUNT = Math.max(0, (window.__CWF_UPLOAD_BUSY_COUNT || 1) - 1);
-    }
+    if (!files || !files.length) return;
+    cwfTechToast(`เลือกรูปแล้ว ${files.length} รูป กำลังอัปโหลด…`);
+    await cwfUploadUnitPhotoFiles(jobId, unitId, phase, files, photo_note, 'photos');
   });
 }
 window.cwfPickUnitPhoto = cwfPickUnitPhoto;
@@ -3425,30 +3388,14 @@ async function cwfAttachChecklistIssuePhoto(checkKey, section, idx, label){
 }
 window.cwfAttachChecklistIssuePhoto = cwfAttachChecklistIssuePhoto;
 
-async function cwfPickUnitPhotoWithNote(jobId, unitId, phase, photoNote){
-  const units = await cwfLoadUnits(jobId);
-  const unit = units.find(u => String(u.unit_id) === String(unitId));
-  if (!unit) return alert('กรุณาเลือกเครื่องก่อนอัปโหลดรูป');
+function cwfPickUnitPhotoWithNote(jobId, unitId, phase, photoNote){
+  // สำคัญ: เปิด file picker ทันทีจากปุ่ม ไม่ await ก่อน เพื่อให้มือถือยอมเปิดกล้อง/แกลเลอรี
   return new Promise((resolve)=>{
     openFilePicker({ multiple:true, accept:'image/*' }, async (files)=>{
       if (!files || !files.length) return resolve(false);
-      try {
-        for (const f of Array.from(files || [])) {
-          const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
-            method:'POST', headers:{'Content-Type':'application/json'},
-            body: JSON.stringify({ phase, mime_type:f.type, original_name:f.name, file_size:f.size, uploaded_by:(typeof username === 'string' ? username : '') || null, unit_id:unit.unit_id, unit_code:unit.unit_code, unit_no:unit.unit_no, photo_category:'job_evidence', photo_note:photoNote || '' })
-          });
-          const meta = await metaRes.json().catch(()=>({}));
-          if (!metaRes.ok) throw new Error(meta.error || 'สร้างข้อมูลรูปไม่สำเร็จ');
-          const form = new FormData(); form.append('photo', f, f.name || 'photo.jpg');
-          const upRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${meta.photo_id}/upload`, { method:'POST', body:form });
-          const up = await upRes.json().catch(()=>({}));
-          if (!upRes.ok) throw new Error(up.error || 'อัปโหลดรูปไม่สำเร็จ');
-        }
-        alert('แนบรูปปัญหาแล้ว');
-        openTechPhotoModal(jobId, 'checklist', unitId);
-        resolve(true);
-      } catch(e) { alert(e.message || 'อัปโหลดรูปไม่สำเร็จ'); resolve(false); }
+      cwfTechToast(`เลือกรูปแล้ว ${files.length} รูป กำลังอัปโหลด…`);
+      const ok = await cwfUploadUnitPhotoFiles(jobId, unitId, phase, files, photoNote || '', 'checklist');
+      resolve(!!ok);
     });
   });
 }
@@ -5212,13 +5159,11 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
     const revisit_result = revisitFlow ? getRevisitResultValue(jobId) : "";
     const revisit_note = revisitFlow ? getRevisitNoteValue(jobId) : "";
 
-    // อัปโหลดรูปค้างก่อน พร้อม loading/progress ให้ช่างเห็นชัดเจน
-    // ถ้าอัปโหลดไม่สำเร็จยังคง fail-open ได้ แต่ต้องให้ช่างยืนยัน ไม่เงียบ
-    const up = await cwfRunVisiblePendingUpload(jobId, { failOpen: true, timeoutMs: 20000 });
-    cwfHideUploadOverlay();
+    // อัปโหลดรูปค้างก่อน (แต่ห้ามล็อคการปิดงาน)
+    // เคสที่เจอบ่อย: fetch ค้าง/timeout หรือ photo_id ไม่ตรงกับ server ทำให้กดปิดงานแล้วเงียบ
+    const up = await uploadPendingPhotos(jobId, { failOpen: true, timeoutMs: 15000 });
     if (up && up.failedCount > 0) {
-      try { await refreshPhotoStatus(jobId); } catch {}
-      const ok = cwfConfirmUploadFailure(up);
+      const ok = confirm(`มีรูปค้างที่อัปโหลดไม่สำเร็จ ${up.failedCount} รูป\nต้องการปิดงานต่อเลยไหม?\n(รูปจะยังค้างในเครื่องและกดอัปโหลดทีหลังได้)`);
       if (!ok) return;
     }
 
@@ -5290,13 +5235,7 @@ function setStatus(jobId, status) {
 
 async function closeJob(jobId) {
   try {
-    const up = await cwfRunVisiblePendingUpload(jobId, { failOpen: true, timeoutMs: 20000 });
-    cwfHideUploadOverlay();
-    if (up && up.failedCount > 0) {
-      try { await refreshPhotoStatus(jobId); } catch {}
-      const ok = cwfConfirmUploadFailure(up);
-      if (!ok) return;
-    }
+    await uploadPendingPhotos(jobId, { failOpen: true, timeoutMs: 15000 });
 
     const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/status`, {
       method: "PUT",
@@ -5488,48 +5427,55 @@ async function refreshPhotoStatus(jobId) {
     const job = getJobFromCache(jobId);
     const revisitFlow = isRevisitJob(job);
     const all = await idbGetByJob(jobId);
-    const pendingTotal = (all || []).length;
-    const byPhase = (ph) => (all || []).filter((x) => x.phase === ph).length;
+    const byPhase = (ph) => all.filter((x) => x.phase === ph).length;
 
     // ✅ นับรูปที่อัปโหลดแล้วจากเซิร์ฟเวอร์ (ให้ช่างรู้ว่าขึ้นจริง)
     let uploaded = [];
     try {
-      const rr = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos`, { cache:'no-store' });
+      const rr = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos`);
       if (rr.ok) uploaded = (await rr.json()) || [];
-    } catch (e) {
-      console.warn('[tech-photo-upload] load uploaded photos failed', { jobId, error:e?.message || e });
+    } catch {
+      // ignore
     }
-    const uploadedTotal = (uploaded || []).filter((x) => x.public_url).length;
     const upByPhase = (ph) => (uploaded || []).filter((x) => x.phase === ph && x.public_url).length;
-    const phases = [
-      ['before','ก่อนทำ'], ['after','หลังทำ'], ['pressure','วัดน้ำยา'], ['current','วัดกระแส'],
-      ['temp','อุณหภูมิ'], ['defect','ตำหนิ'], ['payment_slip','สลิป'], ['cash_transfer_slip','สลิปเงินสด']
-    ];
-    const revisitPhases = [['revisit_before','ก่อนแก้'], ['revisit_after','หลังแก้'], ['revisit_defect','จุดปัญหา']];
-    const phaseHtml = phases.map(([ph,label]) => {
-      const p = byPhase(ph), u = upByPhase(ph);
-      return `<div class="cwf-phase-chip ${p ? 'pending' : ''}">${label}: <b>${u}</b> ขึ้นแล้ว${p ? ` / ค้าง <b>${p}</b>` : ''}</div>`;
-    }).join('');
-    const revisitHtml = revisitFlow ? revisitPhases.map(([ph,label]) => {
-      const p = byPhase(ph), u = upByPhase(ph);
-      return `<div class="cwf-phase-chip ${p ? 'pending' : ''}">งานแก้ไข-${label}: <b>${u}</b> ขึ้นแล้ว${p ? ` / ค้าง <b>${p}</b>` : ''}</div>`;
-    }).join('') : '';
 
     box.innerHTML = `
-      <div class="cwf-photo-status-card">
-        <div class="cwf-photo-status-head">
-          <div><b>📷 สถานะรูปหน้างาน</b><div class="cwf-photo-status-note">ช่างต้องเห็นจำนวนรูปที่ขึ้นเซิร์ฟเวอร์จริง และรูปที่ยังค้างในเครื่อง</div></div>
+      <div class="muted">
+        ค้างในเครื่อง → ก่อนทำ: <b>${byPhase("before")}</b>,
+        หลังทำ: <b>${byPhase("after")}</b>,
+        วัดน้ำยา: <b>${byPhase("pressure")}</b>,
+        วัดกระแส: <b>${byPhase("current")}</b>,
+        อุณหภูมิ: <b>${byPhase("temp")}</b>,
+        ตำหนิ: <b>${byPhase("defect")}</b>,
+        สลิป: <b>${byPhase("payment_slip")}</b>
+      </div>
+
+      <div class="muted" style="margin-top:6px;">
+        อัปโหลดแล้ว → ก่อนทำ: <b>${upByPhase("before")}</b>,
+        หลังทำ: <b>${upByPhase("after")}</b>,
+        วัดน้ำยา: <b>${upByPhase("pressure")}</b>,
+        วัดกระแส: <b>${upByPhase("current")}</b>,
+        อุณหภูมิ: <b>${upByPhase("temp")}</b>,
+        ตำหนิ: <b>${upByPhase("defect")}</b>,
+        สลิป: <b>${upByPhase("payment_slip")}</b>
+      </div>
+
+      ${revisitFlow ? `
+        <div class="muted" style="margin-top:6px;">
+          งานแก้ไข → ค้างในเครื่อง: ก่อนแก้ <b>${byPhase("revisit_before")}</b>,
+          หลังแก้ <b>${byPhase("revisit_after")}</b>,
+          จุดปัญหา <b>${byPhase("revisit_defect")}</b>
         </div>
-        <div class="cwf-photo-kpi">
-          <div><div class="k">อัปโหลดขึ้นระบบแล้ว</div><div class="v">${uploadedTotal}</div></div>
-          <div><div class="k">ยังค้างในเครื่อง</div><div class="v">${pendingTotal}</div></div>
+        <div class="muted" style="margin-top:6px;">
+          งานแก้ไข → อัปโหลดแล้ว: ก่อนแก้ <b>${upByPhase("revisit_before")}</b>,
+          หลังแก้ <b>${upByPhase("revisit_after")}</b>,
+          จุดปัญหา <b>${upByPhase("revisit_defect")}</b>
         </div>
-        ${pendingTotal > 0 ? `<div class="cwf-photo-status-warn">⚠️ มีรูปค้างในเครื่อง ${pendingTotal} รูป กรุณากด “อัปโหลดค้างในเครื่อง” ก่อนปิดงาน หรือระบบจะพยายามอัปโหลดให้อัตโนมัติตอนปิดงาน</div>` : `<div class="cwf-photo-status-warn" style="background:#ecfdf5;color:#047857;border-color:#a7f3d0;">✅ ไม่มีรูปค้างในเครื่อง รูปที่อัปโหลดสำเร็จจะแสดงในปุ่ม “ดูรูปที่อัปโหลดแล้ว”</div>`}
-        <div class="cwf-phase-grid">${phaseHtml}${revisitHtml}</div>
-        <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" style="width:auto;" onclick="openUploadedPhotos(${jobId})">🖼️ ดูรูปที่อัปโหลดแล้ว</button>
-          <button class="secondary" type="button" style="width:auto;" onclick="forceUpload(${jobId})" ${pendingTotal ? '' : 'disabled'}>⬆️ อัปโหลดค้างในเครื่อง${pendingTotal ? ` (${pendingTotal})` : ''}</button>
-        </div>
+      ` : ``}
+
+      <div class="row" style="margin-top:8px;gap:10px;flex-wrap:wrap;">
+        <button class="secondary" type="button" style="width:auto;" onclick="openUploadedPhotos(${jobId})">🖼️ ดูรูปที่อัปโหลดแล้ว</button>
+        <button class="secondary" type="button" style="width:auto;" onclick="forceUpload(${jobId})">⬆️ อัปโหลดค้างในเครื่อง</button>
       </div>
     `;
   } catch (e) {
@@ -5590,35 +5536,18 @@ window.openUploadedPhotos = openUploadedPhotos;
 async function forceUpload(jobId) {
   const id = Number(jobId);
   if (!id) return;
-  let btns = [];
   try {
-    btns = Array.from(document.querySelectorAll(`#photo-status-${id} button`));
-    btns.forEach(btn => { btn.disabled = true; });
-    cwfSetPhotoStatusNote(id, 'กำลังตรวจสอบรูปค้างในเครื่อง...', 'info');
-    const pending = await idbGetByJob(id).catch(()=>[]);
-    if (!pending.length) {
-      cwfSetPhotoStatusNote(id, 'ไม่มีรูปค้างในเครื่องแล้ว', 'ok');
-      cwfUploadToast('✅ ไม่มีรูปค้างในเครื่องแล้ว', 'ok');
-      await refreshPhotoStatus(id);
-      return;
-    }
-    const result = await cwfRunVisiblePendingUpload(id, { failOpen:false, timeoutMs:20000 });
+    const btn = document.querySelector(`#photo-status-${id} button`);
+    if (btn) btn.disabled = true;
+    await uploadPendingPhotos(id);
     await refreshPhotoStatus(id);
-    if (result.failedCount > 0) {
-      cwfSetPhotoStatusNote(id, `ยังมีรูปค้างในเครื่อง ${result.failedCount} รูป กดอัปโหลดใหม่ได้`, 'warn');
-      alert(`⚠️ ยังมีรูปค้างในเครื่อง ${result.failedCount} รูป\nกรุณาตรวจเน็ตแล้วกดอัปโหลดใหม่`);
-    } else {
-      cwfSetPhotoStatusNote(id, `อัปโหลดรูปสำเร็จ ${result.uploadedCount || 0}/${result.total || 0} รูป`, 'ok');
-      cwfUploadToast(`✅ อัปโหลดรูปสำเร็จ ${result.uploadedCount || 0} รูป`, 'ok');
-    }
+    alert("✅ อัปโหลดรูปค้างในเครื่องเรียบร้อย");
   } catch (e) {
     console.error(e);
-    cwfSetPhotoStatusNote(id, `อัปโหลดไม่สำเร็จ: ${e.message || 'ไม่ทราบสาเหตุ'}`, 'warn');
     alert(`❌ ${e.message || "อัปโหลดไม่สำเร็จ"}`);
   } finally {
-    cwfHideUploadOverlay();
-    btns.forEach(btn => { btn.disabled = false; });
-    try { await refreshPhotoStatus(id); } catch {}
+    const btn = document.querySelector(`#photo-status-${id} button`);
+    if (btn) btn.disabled = false;
   }
 }
 window.forceUpload = forceUpload;
@@ -5635,22 +5564,13 @@ async function uploadPendingPhotos(jobId, opts) {
     // IMPORTANT: ถ้า IndexedDB ค้าง/blocked ต้องไม่ทำให้ "ปิดงาน" ค้างเงียบ
     items = await idbGetByJob(jobId);
   } catch (e) {
-    console.warn('[tech-photo-upload] idbGetByJob failed, skip pending upload', { jobId, error:e?.message || e });
-    const summary = { ok: !!options.failOpen, total:0, uploadedCount:0, failedCount:0, skipped:true };
-    if (typeof options.onFinish === 'function') options.onFinish(summary);
-    if (options.failOpen) return summary;
+    console.warn('idbGetByJob failed, skip pending upload', e);
+    if (options.failOpen) return { ok: true, failedCount: 0, skipped: true };
     throw e;
   }
-  const total = items.length;
-  if (typeof options.onStart === 'function') options.onStart(total);
-  if (!total) {
-    const summary = { ok:true, total:0, uploadedCount:0, failedCount:0, skipped:false };
-    if (typeof options.onFinish === 'function') options.onFinish(summary);
-    return summary;
-  }
+  if (!items.length) return { ok: true, failedCount: 0 };
 
   let failedCount = 0;
-  let uploadedCount = 0;
 
   // small helper: fetch with timeout (กัน fetch ค้างแล้วไม่มี popup)
   async function fetchWithTimeout(url, fetchOpts) {
@@ -5664,9 +5584,7 @@ async function uploadPendingPhotos(jobId, opts) {
   }
 
   for (const it of items) {
-    let queuePhotoId = it.photo_id;
     try {
-      console.warn('[tech-photo-upload] pending upload start', { jobId, photo_id: it.photo_id, phase: it.phase });
       // 1) try upload with existing photo_id
       const form = new FormData();
       form.append("photo", it.blob, it.original_name || "photo.jpg");
@@ -5688,15 +5606,13 @@ async function uploadPendingPhotos(jobId, opts) {
             original_name: it.original_name || 'photo.jpg',
             file_size: it.file_size || (it.blob ? it.blob.size : null),
             uploaded_by: (typeof username === 'string' ? username : '') || null,
-            photo_category: String(it.phase || '').includes('slip') ? 'payment_slip' : 'job_evidence',
           }),
         });
         const meta = await metaRes.json().catch(() => ({}));
         if (metaRes.ok && meta?.photo_id) {
           // replace local queue id -> new photo_id (keep blob)
-          const oldId = queuePhotoId;
+          const oldId = it.photo_id;
           const newId = meta.photo_id;
-          queuePhotoId = newId;
           await idbPut(Object.assign({}, it, { photo_id: newId }));
           await idbDelete(oldId);
 
@@ -5712,28 +5628,17 @@ async function uploadPendingPhotos(jobId, opts) {
 
       if (!res.ok) throw new Error(data.error || "อัปโหลดรูปไม่สำเร็จ");
 
-      // success -> remove from queue. Use queuePhotoId because metadata may be recreated.
-      await idbDelete(queuePhotoId);
-      uploadedCount++;
-      console.warn('[tech-photo-upload] pending upload success', { jobId, photo_id: queuePhotoId, phase: it.phase });
+      // success -> remove from queue
+      await idbDelete(it.photo_id);
     } catch (e) {
       failedCount++;
-      console.error('[tech-photo-upload] uploadPendingPhotos item failed', { jobId, photo_id: queuePhotoId || it.photo_id, phase: it.phase, error:e?.message || e });
-      if (typeof options.onError === 'function') options.onError(e, it);
-      if (!options.failOpen) {
-        const summary = { ok:false, total, uploadedCount, failedCount, skipped:false };
-        if (typeof options.onFinish === 'function') options.onFinish(summary);
-        throw e;
-      }
+      console.error('uploadPendingPhotos item failed', e);
+      if (!options.failOpen) throw e;
       // fail-open: keep item queued
-    } finally {
-      if (typeof options.onProgress === 'function') options.onProgress(uploadedCount + failedCount, total);
     }
   }
 
-  const summary = { ok: failedCount === 0, total, uploadedCount, failedCount, skipped:false };
-  if (typeof options.onFinish === 'function') options.onFinish(summary);
-  return summary;
+  return { ok: failedCount === 0, failedCount };
 }
 
 // =======================================
@@ -5759,95 +5664,124 @@ function openFilePicker(opts, onPicked){
 async function uploadFilesAsPhotos(jobId, phase, files){
   window.__CWF_UPLOAD_BUSY_COUNT = (window.__CWF_UPLOAD_BUSY_COUNT || 0) + 1;
   const selected = Array.from(files || []);
-  if (!selected.length) {
-    window.__CWF_UPLOAD_BUSY_COUNT = Math.max(0, (window.__CWF_UPLOAD_BUSY_COUNT || 1) - 1);
-    return { uploadedCount:0, queuedCount:0, total:0 };
-  }
-  let uploadedCount = 0;
-  let queuedCount = 0;
-  try {
-    cwfUploadToast(`รับรูปแล้ว ${selected.length} รูป กำลังอัปโหลด...`, 'ok');
-    cwfShowUploadOverlay('กำลังอัปโหลดรูป...', `กำลังอัปโหลดรูป 0/${selected.length}`, 0, selected.length);
-    for (let i = 0; i < selected.length; i++) {
-      const f = selected[i];
-      cwfShowUploadOverlay('กำลังอัปโหลดรูป...', `กำลังอัปโหลดรูป ${i + 1}/${selected.length}`, i, selected.length);
-      console.warn('[tech-photo-upload] selected file', { jobId, phase, name:f.name, size:f.size, type:f.type });
-      const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
+  if (!selected.length) return;
+
+  for (const f of selected) {
+    const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        phase,
+        mime_type: f.type,
+        original_name: f.name,
+        file_size: f.size,
+        uploaded_by: (typeof username === 'string' ? username : '') || null,
+        photo_category: String(phase || '').includes('slip') ? 'payment_slip' : 'job_evidence',
+      }),
+    });
+
+    const meta = await metaRes.json().catch(() => ({}));
+    if (!metaRes.ok) throw new Error(meta.error || "สร้าง meta ไม่สำเร็จ");
+
+    const photo_id = meta.photo_id;
+    try {
+      const formNow = new FormData();
+      formNow.append("photo", f, f.name || "photo.jpg");
+      const upRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${photo_id}/upload`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phase,
-          mime_type: f.type,
-          original_name: f.name,
-          file_size: f.size,
-          uploaded_by: (typeof username === 'string' ? username : '') || null,
-          photo_category: String(phase || '').includes('slip') ? 'payment_slip' : 'job_evidence',
-        }),
+        body: formNow,
       });
-
-      const meta = await metaRes.json().catch(() => ({}));
-      if (!metaRes.ok) throw new Error(meta.error || "สร้าง meta ไม่สำเร็จ");
-
-      const photo_id = meta.photo_id;
-      try {
-        const formNow = new FormData();
-        formNow.append("photo", f, f.name || "photo.jpg");
-        const upRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${photo_id}/upload`, {
-          method: "POST",
-          body: formNow,
-        });
-        const up = await upRes.json().catch(() => ({}));
-        if (!upRes.ok) throw new Error(up.error || "อัปโหลดรูปไม่สำเร็จ");
-        uploadedCount++;
-        console.warn('[tech-photo-upload] selected file uploaded', { jobId, photo_id, phase });
-      } catch (e) {
-        // fail-open: เก็บค้างในเครื่อง แล้วให้กดอัปโหลดภายหลัง
-        console.warn('[tech-photo-upload] selected upload failed, saved to local queue', { jobId, photo_id, phase, error:e?.message || e });
-        const buffer = await f.arrayBuffer();
-        await idbPut({
-          photo_id,
-          job_id: Number(jobId),
-          phase,
-          mime_type: f.type,
-          original_name: f.name,
-          file_size: f.size,
-          blob: new Blob([buffer], { type: f.type || 'image/jpeg' }),
-          created_at: Date.now(),
-        });
-        queuedCount++;
-      }
+      const up = await upRes.json().catch(() => ({}));
+      if (!upRes.ok) throw new Error(up.error || "อัปโหลดรูปไม่สำเร็จ");
+    } catch (e) {
+      // fail-open: เก็บค้างในเครื่อง แล้วให้กดอัปโหลดภายหลัง
+      const buffer = await f.arrayBuffer();
+      await idbPut({
+        photo_id,
+        job_id: Number(jobId),
+        phase,
+        mime_type: f.type,
+        original_name: f.name,
+        file_size: f.size,
+        blob: new Blob([buffer], { type: f.type || 'image/jpeg' }),
+        created_at: Date.now(),
+      });
     }
-    cwfShowUploadOverlay('กำลังอัปเดตสถานะรูป...', 'กำลังตรวจสอบรูปที่ขึ้นระบบ', selected.length, selected.length);
-    try { await refreshPhotoStatus(jobId); } catch {}
-    if (queuedCount > 0) {
-      cwfUploadToast(`⚠️ อัปโหลดแล้ว ${uploadedCount} รูป / ค้างในเครื่อง ${queuedCount} รูป`, 'warn');
-      cwfSetPhotoStatusNote(jobId, `ยังมีรูปค้างในเครื่อง ${queuedCount} รูป กดอัปโหลดค้างในเครื่องได้`, 'warn');
-    } else {
-      cwfUploadToast(`✅ อัปโหลดรูปสำเร็จ ${uploadedCount} รูป`, 'ok');
-      cwfSetPhotoStatusNote(jobId, `อัปโหลดรูปสำเร็จ ${uploadedCount} รูป`, 'ok');
-    }
-    return { uploadedCount, queuedCount, total:selected.length };
-  } finally {
-    cwfHideUploadOverlay();
-    window.__CWF_UPLOAD_BUSY_COUNT = Math.max(0, (window.__CWF_UPLOAD_BUSY_COUNT || 1) - 1);
   }
+  try { await refreshPhotoStatus(jobId); } catch {}
+  finally { window.__CWF_UPLOAD_BUSY_COUNT = Math.max(0, (window.__CWF_UPLOAD_BUSY_COUNT || 1) - 1); }
 }
 
 async function pickPhotos(jobId, phase, maxFiles = 20) {
   try {
-    openFilePicker({ multiple:true, accept:'image/*' }, async (files)=>{
-      const selected = Array.from(files || []).slice(0, maxFiles);
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = "image/*";
+    input.multiple = true;
+
+    input.onchange = async () => {
+      const selected = Array.from(input.files || []).slice(0, maxFiles);
       if (!selected.length) return;
-      try {
-        await uploadFilesAsPhotos(jobId, phase, selected);
-      } catch (e) {
-        console.error(e);
-        cwfHideUploadOverlay();
-        cwfUploadToast(`❌ ${e.message || 'อัปโหลดรูปไม่สำเร็จ'}`, 'warn');
-        alert(`❌ ${e.message || 'อัปโหลดรูปไม่สำเร็จ'}`);
-        try { await refreshPhotoStatus(jobId); } catch {}
+      window.__CWF_UPLOAD_BUSY_COUNT = (window.__CWF_UPLOAD_BUSY_COUNT || 0) + 1;
+
+      for (const f of selected) {
+        const metaRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/meta`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phase,
+            mime_type: f.type,
+            original_name: f.name,
+            file_size: f.size,
+            uploaded_by: (typeof username === 'string' ? username : '') || null,
+          }),
+        });
+
+        const meta = await metaRes.json().catch(() => ({}));
+        if (!metaRes.ok) throw new Error(meta.error || "สร้าง meta ไม่สำเร็จ");
+
+        const photo_id = meta.photo_id;
+
+        const buffer = await f.arrayBuffer();
+        // ✅ อัปโหลดทันที (ถ้าเน็ตพร้อม) - ถ้าไม่สำเร็จค่อยค้างในเครื่อง
+        try {
+          const formNow = new FormData();
+          formNow.append("photo", f, f.name || "photo.jpg");
+
+          const upRes = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/photos/${photo_id}/upload`, {
+            method: "POST",
+            body: formNow,
+          });
+
+          const upData = await upRes.json().catch(() => ({}));
+          if (upRes.ok) {
+            // อัปโหลดแล้ว ไม่ต้องค้างในเครื่อง
+            continue;
+          } else {
+            console.warn("upload-now failed, fallback to idb:", upData.error || upRes.status);
+          }
+        } catch (e) {
+          console.warn("upload-now error, fallback to idb:", e.message);
+        }
+
+        await idbPut({
+          photo_id: Number(photo_id),
+          job_id: Number(jobId),
+          phase: String(phase),
+          mime_type: f.type,
+          original_name: f.name,
+          file_size: f.size,
+          blob: new Blob([buffer], { type: f.type }),
+          created_at: Date.now(),
+        });
       }
-    });
+
+      alert("✅ รับรูปแล้ว (อัปโหลดทันทีถ้าเน็ตพร้อม / ถ้าไม่พร้อมจะค้างในเครื่อง)");
+      window.__CWF_UPLOAD_BUSY_COUNT = Math.max(0, (window.__CWF_UPLOAD_BUSY_COUNT || 1) - 1);
+      refreshPhotoStatus(jobId);
+    };
+
+    input.click();
   } catch (e) {
     console.error(e);
     alert(`❌ ${e.message}`);
