@@ -3208,43 +3208,48 @@ function renderRevisitSection(job, keyBase, jobKeyJs, canEdit, isWorking, histor
   const okCause = !!data.cause;
   const okResult = !!data.result;
   const problemDetail = String(
-    job.return_reason ||
-    job.rework_reason_note ||
-    job.reason_note ||
-    job.revisit_problem_detail ||
-    job.revisit_note ||
-    "ยังไม่มีรายละเอียดปัญหาจากแอดมิน"
+    job?.return_reason ||
+    job?.revisit_reason ||
+    job?.rework_reason ||
+    job?.issue_detail ||
+    job?.problem_detail ||
+    job?.warranty_issue ||
+    ""
   ).trim();
-
+  const problemHtml = problemDetail
+    ? escapeHTML(problemDetail)
+    : "ยังไม่มีรายละเอียดปัญหาที่แอดมินระบุไว้";
   return `
-    <section class="cwf-revisit-card" style="margin-top:12px;border:1px solid rgba(250,204,21,.55);background:linear-gradient(180deg,#fffdf2,#ffffff);border-radius:22px;padding:14px;box-shadow:0 10px 24px rgba(11,46,109,.08);">
-      <div style="display:flex;gap:10px;align-items:flex-start;">
-        <span style="width:44px;height:44px;border-radius:16px;background:#fff3bf;display:flex;align-items:center;justify-content:center;font-size:24px;flex:0 0 44px;">🔁</span>
-        <div style="min-width:0;">
-          <b style="display:block;font-size:18px;color:#0f172a;line-height:1.25;">งานแก้ไข / กลับไปตรวจซ้ำ</b>
-          <div class="muted" style="margin-top:5px;line-height:1.55;">งานรับผิดชอบเคสเดิม ไม่มีค่าบริการที่ต้องเก็บจากลูกค้า และไม่มีค่าตอบแทนเพิ่มเติมสำหรับช่าง</div>
+    <section class="cwf-revisit-card" style="margin-top:12px;border:1px solid rgba(250,204,21,.55);background:linear-gradient(180deg,#fffbeb,#ffffff);border-radius:22px;padding:14px;box-shadow:0 10px 24px rgba(11,46,109,.08);">
+      <div style="display:flex;gap:12px;align-items:flex-start;">
+        <div style="width:42px;height:42px;border-radius:14px;background:#fff7cc;display:flex;align-items:center;justify-content:center;font-size:22px;flex:0 0 42px;box-shadow:inset 0 0 0 1px rgba(250,204,21,.45);">🔁</div>
+        <div style="min-width:0;flex:1;">
+          <b style="display:block;font-size:20px;line-height:1.25;color:#0f172a;">งานแก้ไข / กลับไปตรวจซ้ำ</b>
+          <div style="margin-top:10px;border:1px solid rgba(11,46,109,.12);background:#ffffff;border-radius:16px;padding:12px;line-height:1.65;">
+            <b style="display:block;color:#0b2e6d;margin-bottom:6px;">📝 รายละเอียดปัญหาที่แอดมินระบุ</b>
+            <div style="font-weight:800;color:#334155;white-space:pre-wrap;overflow-wrap:anywhere;">${problemHtml}</div>
+          </div>
         </div>
       </div>
 
-      <div style="margin-top:12px;border:1px solid rgba(14,116,144,.18);background:#f0fdfa;border-radius:18px;padding:12px;line-height:1.65;">
-        <b style="display:block;color:#0f172a;margin-bottom:4px;">📝 รายละเอียดปัญหาที่แอดมินระบุ</b>
-        <div style="color:#334155;font-weight:800;white-space:pre-wrap;">${escapeHTML(problemDetail)}</div>
-      </div>
+      <details style="margin-top:12px;border:1px solid rgba(11,46,109,.14);background:#f8fbff;border-radius:16px;overflow:hidden;">
+        <summary style="list-style:none;cursor:pointer;user-select:none;padding:12px 14px;font-weight:1000;color:#0b2e6d;display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <span>✅ ขั้นตอนที่ช่างต้องดำเนินการ</span>
+          <span style="font-size:18px;color:#64748b;">กดเพื่อดู</span>
+        </summary>
+        <div style="padding:0 14px 14px;color:#334155;font-weight:850;line-height:1.7;">
+          <ol style="margin:0;padding-left:22px;">
+            <li>ติดต่อหาลูกค้าทันทีหลังได้รับงานแก้ไข</li>
+            <li>ตกลงวันและเวลานัดหมายกับลูกค้าให้ชัดเจน</li>
+            <li>กดปุ่ม “แจ้งเวลานัดหมาย” เพื่อบันทึกเวลาไว้ให้แอดมินตรวจย้อนหลัง</li>
+            <li>เข้าไปดำเนินการแก้ไขตามรายละเอียดปัญหาให้เรียบร้อย</li>
+            <li>แนบรูปก่อนแก้ไข รูปหลังแก้ไข และบันทึกเช็คลิสงานแก้ไขก่อนกดเสร็จสิ้น</li>
+          </ol>
+        </div>
+      </details>
 
-      <div style="margin-top:12px;border:1px solid rgba(37,99,235,.16);background:#eff6ff;border-radius:18px;padding:12px;line-height:1.7;">
-        <b style="display:block;color:#0f172a;margin-bottom:6px;">✅ ขั้นตอนที่ช่างต้องดำเนินการ</b>
-        <ol style="margin:0;padding-left:22px;color:#334155;font-weight:800;">
-          <li>ติดต่อหาลูกค้าทันทีเมื่อได้รับงานแก้ไข</li>
-          <li>ตกลงวันและเวลานัดหมายกับลูกค้าให้ชัดเจน</li>
-          <li>กดปุ่ม “แจ้งเวลานัดหมาย” เพื่อบันทึกให้แอดมินตรวจย้อนหลัง</li>
-          <li>เข้าไปดำเนินการแก้ไขตามเวลาที่ตกลงไว้ให้เสร็จสิ้น</li>
-          <li>แนบรูปก่อนแก้ไข / รูปหลังแก้ไข และบันทึกเช็คลิสงานแก้ไขให้ครบ</li>
-        </ol>
-      </div>
-
-      <div style="margin-top:12px;border:1px solid rgba(220,38,38,.30);background:#fef2f2;border-radius:18px;padding:12px;line-height:1.65;color:#991b1b;">
-        <b style="display:block;color:#b91c1c;margin-bottom:4px;">⚠️ คำเตือน</b>
-        <div style="font-weight:900;">หากช่างไม่ติดต่อประสานงานลูกค้า ไม่แจ้งเวลานัดหมาย หรือไม่เข้าดำเนินการตามเงื่อนไขที่บริษัทกำหนด บริษัทจะพิจารณาดำเนินการตามระเบียบและสัญญาที่ช่างให้ไว้กับบริษัท</div>
+      <div style="margin-top:12px;border:1px solid rgba(220,38,38,.30);background:#fff1f2;color:#991b1b;border-radius:16px;padding:12px;line-height:1.6;font-weight:900;">
+        ⚠️ คำเตือน: หากช่างไม่ติดต่อประสานงานลูกค้า ไม่แจ้งเวลานัดหมาย หรือไม่เข้าดำเนินการตามเงื่อนไข บริษัทจะพิจารณาตามระเบียบและสัญญาที่ช่างให้ไว้กับบริษัท
       </div>
 
       ${historyMode ? '' : `<div style="display:grid;gap:10px;margin-top:14px;"><button type="button" ${canEdit?'':'disabled'} onclick="openRevisitAppointmentModal('${jobKeyJs}')">🕛 แจ้งเวลานัดหมาย</button><button type="button" class="secondary" ${canEdit?'':'disabled'} onclick="openRevisitHubModal('${jobKeyJs}')">📷✅ รูปและเช็คลิสงานแก้ไข</button></div>`}
@@ -4093,6 +4098,7 @@ function buildJobCard(job, historyMode = false) {
     <p><b>ประเภท:</b> ${escape(job.job_type || "-")}</p>
     <p><b>นัด:</b> ${appt}</p>
     <p><b>ที่อยู่:</b> ${addr}</p>
+    ${revisitFlow && revisitReason ? `<div class="pill" style="margin-top:10px;background:#fff7ed;border-color:rgba(234,88,12,0.18);color:#0f172a;display:block;border-radius:16px;line-height:1.55;"><b>เหตุผลจากแอดมิน:</b> ${escapeHTML(revisitReason)}</div>` : ``}
     ${revisitFlow ? renderRevisitSection(job, keyBase, jobKeyJs, canEdit, isWorking, historyMode) : ``}
 
     <details class="cwf-details" style="margin-top:10px;">
