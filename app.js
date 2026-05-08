@@ -3098,9 +3098,12 @@ function getRevisitScheduleDraft(jobKey){
 
 function saveRevisitScheduleDraft(jobKey){
   const key = cwfCloseKey(jobKey);
+  const agreedAt = String(document.getElementById(`revisit-agreed-at-${key}`)?.value || '').trim();
+  // UX v11: ช่างต้องใส่เฉพาะวันเวลา ไม่ต้องกรอกสรุปการคุยให้ซับซ้อน
+  // เก็บ note สั้น ๆ อัตโนมัติไว้ให้ backend/audit เดิมทำงานต่อโดยไม่บังคับช่างพิมพ์
   const data = {
-    revisit_agreed_at: String(document.getElementById(`revisit-agreed-at-${key}`)?.value || '').trim(),
-    revisit_schedule_note: String(document.getElementById(`revisit-schedule-note-${key}`)?.value || '').trim(),
+    revisit_agreed_at: agreedAt,
+    revisit_schedule_note: agreedAt ? 'ช่างบันทึกเวลานัดแก้ไขกับลูกค้าแล้ว' : '',
   };
   cwfWriteJsonLS(cwfCloseJsonKey(key, 'revisit_schedule'), data);
   return data;
@@ -3111,7 +3114,6 @@ async function saveRevisitSchedule(jobKey){
   const key = cwfCloseKey(jobKey);
   const data = saveRevisitScheduleDraft(key);
   if (!data.revisit_agreed_at) return alert('กรุณาเลือกวันและเวลานัดแก้ไข');
-  if (!data.revisit_schedule_note) return alert('กรุณากรอกสรุปที่ตกลงกับลูกค้า');
   try {
     const res = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(key))}/revisit-schedule`, {
       method: 'POST',
@@ -3950,9 +3952,7 @@ async function cwfValidateCloseRequirements(jobId, targetStatus){
     const key = cwfCloseKey(jobId);
     const schedule = getRevisitScheduleDraft(key);
     const agreed = String(job.revisit_agreed_at || schedule.revisit_agreed_at || '').trim();
-    const scheduleNote = String(job.revisit_schedule_note || schedule.revisit_schedule_note || '').trim();
     if (!agreed) { alert('กรุณาบันทึกวันและเวลานัดแก้ไขกับลูกค้า'); return false; }
-    if (!scheduleNote) { alert('กรุณากรอกสรุปที่ตกลงกับลูกค้า'); return false; }
     if (!getRevisitCausePartyValue(key)) { alert('กรุณาเลือกสาเหตุงานแก้ไข'); return false; }
     if (!getRevisitCauseNoteValue(key)) { alert('กรุณากรอกรายละเอียดสาเหตุงานแก้ไข'); return false; }
     const evidence = await validateRevisitEvidence(jobId);
@@ -4128,11 +4128,10 @@ function buildJobCard(job, historyMode = false) {
       </div>
       <div class="cwf-note-box" style="margin-top:10px;border-radius:18px;">
         <b>📞 นัดหมายงานแก้ไขกับลูกค้า</b>
-        <div class="muted" style="margin-top:5px;font-size:12px;">ติดต่อ ลูกค้า แล้วบันทึกวันเวลาและข้อตกลงก่อนเข้าแก้ไข</div>
+        <div class="muted" style="margin-top:5px;font-size:12px;">ติดต่อ ลูกค้า แล้วเลือกเฉพาะวันและเวลาที่ตกลงกัน ไม่ต้องกรอกสรุปการคุย</div>
         <input id="revisit-agreed-at-${keyBase}" type="datetime-local" style="margin-top:8px" value="${escapeAttr(revisitAgreedAt ? revisitAgreedAt.slice(0,16) : '')}" oninput="saveRevisitScheduleDraft('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>
-        <textarea id="revisit-schedule-note-${keyBase}" rows="3" style="margin-top:8px" placeholder="สรุปที่ตกลงกับลูกค้า เช่น ลูกค้าสะดวกวันไหน เวลาไหน โทรคุยกันอย่างไร" oninput="saveRevisitScheduleDraft('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>${escape(revisitScheduleNote)}</textarea>
         <button type="button" style="margin-top:8px;width:100%" onclick="saveRevisitSchedule('${jobKeyJs}')" ${!canEdit ? "disabled" : ""}>💾 บันทึกเวลานัดแก้ไข</button>
-        <div class="cwf-mini-status" style="margin-top:8px"><span class="cwf-chip ${revisitAgreedAt && revisitScheduleNote ? 'ok':'warn'}">${revisitAgreedAt && revisitScheduleNote ? 'บันทึกนัดแล้ว' : 'ยังไม่ได้บันทึกเวลานัดแก้ไข'}</span></div>
+        <div class="cwf-mini-status" style="margin-top:8px"><span class="cwf-chip ${revisitAgreedAt ? 'ok':'warn'}">${revisitAgreedAt ? 'บันทึกนัดแล้ว' : 'ยังไม่ได้บันทึกเวลานัดแก้ไข'}</span></div>
       </div>
       <div class="cwf-note-box" style="margin-top:10px;background:#f8fbff;border-color:rgba(21,88,214,.14);border-radius:18px;">
         <b>✅ สิ่งที่ต้องทำก่อนปิดงานแก้ไข</b>
@@ -5469,7 +5468,7 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
         revisit_cause_party,
         revisit_cause_note,
         revisit_agreed_at: revisitSchedule.revisit_agreed_at || job?.revisit_agreed_at || null,
-        revisit_schedule_note: revisitSchedule.revisit_schedule_note || job?.revisit_schedule_note || '',
+        revisit_schedule_note: revisitSchedule.revisit_schedule_note || job?.revisit_schedule_note || (revisitSchedule.revisit_agreed_at || job?.revisit_agreed_at ? 'ช่างบันทึกเวลานัดแก้ไขกับลูกค้าแล้ว' : ''),
         pre_cleaning_checklist: toChecklistArray('pre'),
         post_cleaning_checklist: toChecklistArray('post'),
         per_unit_evidence: unitsForFinalize.length > 0,
