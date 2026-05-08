@@ -19394,10 +19394,23 @@ app.post("/jobs/:job_id/photos/meta", async (req, res) => {
       `
       INSERT INTO public.job_photos
         (job_id, phase, mime_type, original_name, file_size, file_size_bytes, photo_type, uploaded_by, unit_id, unit_code, unit_no, photo_category, photo_note)
-      VALUES ($1,$2,$3,$4,$5,$5,NULL,$6,$7,$8,$9,$10,$11)
+      VALUES ($1,$2,$3,$4,$5::integer,$12::bigint,NULL,$6,$7,$8,$9,$10,$11)
       RETURNING photo_id
       `,
-      [realId, phase, mime_type, original_name || null, file_size || null, uploaded_by || null, unitMeta.unit_id || null, unitMeta.unit_code || bodyUnitCode || null, unitMeta.unit_no || (Number.isFinite(bodyUnitNo) && bodyUnitNo > 0 ? bodyUnitNo : null), photoCategory, photoNote || null]
+      [
+        realId,
+        phase,
+        mime_type,
+        original_name || null,
+        Number.isFinite(Number(file_size)) ? Math.min(Number(file_size), 2147483647) : null,
+        uploaded_by || null,
+        unitMeta.unit_id || null,
+        unitMeta.unit_code || bodyUnitCode || null,
+        unitMeta.unit_no || (Number.isFinite(bodyUnitNo) && bodyUnitNo > 0 ? bodyUnitNo : null),
+        photoCategory,
+        photoNote || null,
+        Number.isFinite(Number(file_size)) ? Number(file_size) : null,
+      ]
     );
     res.json({ success: true, photo_id: r.rows[0].photo_id });
   } catch (e) {
