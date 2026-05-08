@@ -17554,6 +17554,7 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
     // backward-compatible: some frontend versions send latitude/longitude
     latitude,
     longitude,
+    duration_min,
     technician_username,
     primary_username,
     items,
@@ -17580,6 +17581,7 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
 
   const gpsLat = gps_latitude !== undefined ? toFiniteOrNull(gps_latitude) : toFiniteOrNull(latitude);
   const gpsLng = gps_longitude !== undefined ? toFiniteOrNull(gps_longitude) : toFiniteOrNull(longitude);
+  const requestedDurationMin = toFiniteOrNull(duration_min);
 
   // ✅ FIX TIMEZONE: ถ้ามีการแก้วันนัด ให้ normalize เป็นเวลาไทยก่อนบันทึก
   const appointment_dt =
@@ -17609,7 +17611,7 @@ try {
 
       const cur = curR.rows[0];
       const apptToUse = appointment_dt || cur.appointment_datetime;
-      const durToUse = Number(cur.duration_min || 60);
+      const durToUse = requestedDurationMin && requestedDurationMin > 0 ? Number(requestedDurationMin) : Number(cur.duration_min || 60);
       const jobTypeToUse = (job_type ?? cur.job_type);
       const currentTeamSnapshot = await loadJobTeamSnapshotForAdminEdit(client, job_id);
       const nextTeamSnapshot = wantsTeamSave
@@ -17652,8 +17654,9 @@ try {
           gps_latitude = COALESCE($9, gps_latitude),
           gps_longitude = COALESCE($10, gps_longitude),
           technician_username = COALESCE(NULLIF($11, ''), technician_username),
-          technician_team = COALESCE(NULLIF($11, ''), technician_team)
-      WHERE job_id=$12
+          technician_team = COALESCE(NULLIF($11, ''), technician_team),
+          duration_min = COALESCE($12, duration_min)
+      WHERE job_id=$13
       `,
       [
         customer_name ?? null,
@@ -17667,6 +17670,7 @@ try {
         gpsLat,
         gpsLng,
         headerPrimaryToSave,
+        requestedDurationMin && requestedDurationMin > 0 ? Math.round(requestedDurationMin) : null,
         job_id,
       ]
     );

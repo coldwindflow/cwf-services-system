@@ -14,6 +14,7 @@
  */
 
 console.info('[admin-job-view] rework UI v3 loaded');
+console.info('[admin-job-edit] price auto-fill v1 loaded');
 
 function safe(t){ return (t||'').toString(); }
 function fmtDT(iso){
@@ -663,6 +664,7 @@ async function loadJob(){
               <thead><tr><th>รายการ</th><th style="text-align:right">มอบหมายให้</th><th style="text-align:right">จำนวน</th><th style="text-align:right">ราคา/หน่วย</th><th style="text-align:right">รวม</th><th></th></tr></thead>
               <tbody id="items_editor"></tbody>
             </table>
+            <div id="edit_items_total" class="muted2" style="margin-top:8px;text-align:right;font-weight:700"></div>
           </div>
           <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap">
             <button id="btnAddItem" class="secondary" type="button" style="width:auto">➕ เพิ่มรายการ</button>
@@ -884,16 +886,38 @@ async function loadJob(){
       hanging: 'แอร์แขวน/ตั้งพื้น',
       ceiling: 'แอร์เปลือย/ใต้ฝ้า',
     };
+    const STD_AC_PAYLOAD = {
+      wall: 'ผนัง',
+      fourway: 'สี่ทิศทาง',
+      hanging: 'แขวน',
+      ceiling: 'เปลือยใต้ฝ้า',
+    };
     const STD_WASH_TYPES = {
-      normal: 'ล้างปกติ',
+      normal: 'ล้างธรรมดา',
       premium: 'ล้างพรีเมียม',
-      coil: 'ล้างแบบแขวนคอยล์',
-      overhaul: 'ตัดล้างใหญ่',
+      coil: 'ล้างแขวนคอยล์',
+      overhaul: 'ล้างแบบตัดล้าง',
+    };
+    const STD_WASH_PAYLOAD = {
+      normal: 'ล้างธรรมดา',
+      premium: 'ล้างพรีเมียม',
+      coil: 'ล้างแขวนคอยล์',
+      overhaul: 'ล้างแบบตัดล้าง',
     };
     const STD_BTU = {
       small: 'ไม่เกิน 12,000 BTU',
       large: '18,000 BTU ขึ้นไป',
       all: 'ทุก BTU',
+    };
+    const STD_BTU_VALUE = { small: 12000, large: 18000, all: 12000 };
+    const normalizeEditWashVariant = (value) => {
+      const s = String(value || '').trim();
+      if (!s) return '';
+      if (s.includes('แขวนคอย')) return 'ล้างแขวนคอยล์';
+      if (s.includes('พรีเมียม') || s.includes('พรีเมี่ยม')) return 'ล้างพรีเมียม';
+      if (s.includes('ตัดล้าง')) return 'ล้างแบบตัดล้าง';
+      if (s.includes('ธรรมดา') || s.includes('ปกติ')) return 'ล้างธรรมดา';
+      return s;
     };
     const standardItemName = (it) => {
       const ac = String(it.ac_type_key || 'wall');
@@ -909,17 +933,59 @@ async function loadJob(){
     const parseStandardItemName = (name) => {
       const s = String(name || '').toLowerCase();
       if (!s.trim()) return null;
+      const hasWallCoil = s.includes('แขวนคอย') || s.includes('coil');
       const ac = s.includes('สี่ทิศ') || s.includes('cassette') || s.includes('four') ? 'fourway'
-        : (s.includes('แขวน') || s.includes('ตั้งพื้น') || s.includes('floor') ? 'hanging'
-        : (s.includes('เปลือย') || s.includes('ใต้ฝ้า') || s.includes('ceiling') || s.includes('concealed') ? 'ceiling'
-        : (s.includes('ผนัง') || s.includes('wall') || s.includes('ล้างแอร์') ? 'wall' : null)));
+        : (s.includes('ผนัง') || s.includes('wall') || hasWallCoil || s.includes('ล้างแอร์') ? 'wall'
+        : ((s.includes('แขวน') || s.includes('ตั้งพื้น') || s.includes('floor')) && !hasWallCoil ? 'hanging'
+        : (s.includes('เปลือย') || s.includes('ใต้ฝ้า') || s.includes('ceiling') || s.includes('concealed') ? 'ceiling' : null)));
       if (!ac) return null;
       const wash = ac !== 'wall' ? 'none'
-        : (s.includes('พรีเมียม') || s.includes('premium') ? 'premium'
+        : (s.includes('พรีเมียม') || s.includes('พรีเมี่ยม') || s.includes('premium') ? 'premium'
         : (s.includes('แขวนคอย') || s.includes('coil') ? 'coil'
         : (s.includes('ตัดล้าง') || s.includes('overhaul') || s.includes('ใหญ่') ? 'overhaul' : 'normal')));
       const tier = ac !== 'wall' ? 'all' : ((s.includes('18000') || s.includes('18,000') || s.includes('18 000')) ? 'large' : 'small');
       return { ac_type_key: ac, wash_type_key: wash, btu_tier: tier, is_standard: true };
+    };
+
+    const getEditStandardPayload = (row) => {
+      const acKey = String(row?.ac_type_key || 'wall');
+      const qty = Math.max(1, Math.round(Number(row?.qty || 1)));
+      const jobType = String(row?.job_type || el('edit_job_type')?.value || job.job_type || 'ล้าง').trim() || 'ล้าง';
+      return {
+        job_type: jobType === 'ล้าง' ? 'ล้าง' : jobType,
+        ac_type: STD_AC_PAYLOAD[acKey] || 'ผนัง',
+        btu: Number(STD_BTU_VALUE[String(row?.btu_tier || 'small')] || 12000),
+        machine_count: qty,
+        wash_variant: acKey === 'wall' ? normalizeEditWashVariant(STD_WASH_PAYLOAD[String(row?.wash_type_key || 'normal')] || 'ล้างธรรมดา') : '',
+        repair_variant: '',
+        admin_override_duration_min: 0,
+      };
+    };
+
+    const localEditStandardPrice = (payload) => {
+      const jobType = String(payload.job_type || '').trim();
+      const acType = String(payload.ac_type || '').trim();
+      const wash = normalizeEditWashVariant(payload.wash_variant || '');
+      const qty = Math.max(1, Number(payload.machine_count || 1));
+      const btu = Number(payload.btu || 0);
+      if (jobType !== 'ล้าง') return 0;
+      if (acType === 'ผนัง' || !acType) {
+        const large = Number.isFinite(btu) && btu >= 18000;
+        if (!large) {
+          if (wash === 'ล้างพรีเมียม') return 900 * qty;
+          if (wash === 'ล้างแขวนคอยล์') return 1400 * qty;
+          if (wash === 'ล้างแบบตัดล้าง') return 2000 * qty;
+          return 600 * qty;
+        }
+        if (wash === 'ล้างพรีเมียม') return 1100 * qty;
+        if (wash === 'ล้างแขวนคอยล์') return 1700 * qty;
+        if (wash === 'ล้างแบบตัดล้าง') return 2300 * qty;
+        return 750 * qty;
+      }
+      if (acType === 'สี่ทิศทาง') return 1500 * qty;
+      if (acType === 'แขวน') return 1200 * qty;
+      if (acType === 'เปลือยใต้ฝ้า') return 1200 * qty;
+      return 0;
     };
 
     let editorItems = (Array.isArray(items) ? items : []).map(it=>({
@@ -931,6 +997,129 @@ async function loadJob(){
     })).map(normalizeLegacyServiceRow).map(row => Object.assign(row, parseStandardItemName(row.item_name) || { is_standard:false }));
 
     const tbody = el('items_editor');
+    const editPriceCache = new Map();
+
+    const updateEditorTotal = () => {
+      const total = editorItems.reduce((sum, it) => sum + (Math.max(0, Number(it.qty || 0)) * Math.max(0, Number(it.unit_price || 0))), 0);
+      const box = el('edit_items_total');
+      if (box) box.textContent = `รวมรายการบริการ ${total.toLocaleString('th-TH')} บาท`;
+      return total;
+    };
+
+    const updatePriceStatusForRow = (idx) => {
+      const tr = tbody?.querySelector(`tr[data-idx="${idx}"]`);
+      if (!tr) return;
+      const row = editorItems[idx];
+      const status = tr.querySelector('.it_price_status');
+      if (status) {
+        status.textContent = row?.price_overridden
+          ? 'แก้ราคาเอง'
+          : 'ระบบคำนวณราคาให้อัตโนมัติจากรายการที่เลือก';
+        status.style.color = row?.price_overridden ? '#b45309' : '#64748b';
+      }
+      const lineEl = tr.querySelector('.it_line');
+      if (lineEl) {
+        const line = Math.max(0, Number(row?.qty || 0)) * Math.max(0, Number(row?.unit_price || 0));
+        lineEl.textContent = Number(line || 0).toLocaleString('th-TH');
+      }
+      updateEditorTotal();
+    };
+
+    const getEditPricingPreview = async (row) => {
+      const payload = getEditStandardPayload(row);
+      const key = JSON.stringify(payload);
+      if (editPriceCache.has(key)) return editPriceCache.get(key);
+      try {
+        const r = await apiFetch('/public/pricing_preview', { method:'POST', body: JSON.stringify(payload) });
+        const out = {
+          standard_price: Number(r.standard_price || 0),
+          duration_min: Number(r.duration_min || 0),
+          source: 'public/pricing_preview',
+          payload,
+        };
+        editPriceCache.set(key, out);
+        return out;
+      } catch (e) {
+        const out = {
+          standard_price: localEditStandardPrice(payload),
+          duration_min: 0,
+          source: 'frontend_fallback',
+          payload,
+        };
+        editPriceCache.set(key, out);
+        return out;
+      }
+    };
+
+    const updateEditItemPriceFromSelection = async (idx, opts = {}) => {
+      const row = editorItems[idx];
+      if (!row || !row.is_standard) return null;
+      row.item_name = standardItemName(row);
+      const q = Math.max(1, Math.round(Number(row.qty || 1)));
+      row.qty = q;
+      const preview = await getEditPricingPreview(row);
+      const standardPrice = Math.max(0, Number(preview.standard_price || 0));
+      const unitPrice = q > 0 ? Number((standardPrice / q).toFixed(2)) : standardPrice;
+      row.auto_unit_price = unitPrice;
+      row.auto_line_total = standardPrice;
+      row.duration_min = Number(preview.duration_min || 0);
+      row.pricing_payload = preview.payload;
+      if (opts.force || !row.price_overridden) {
+        row.unit_price = unitPrice;
+        row.price_overridden = false;
+        const tr = tbody?.querySelector(`tr[data-idx="${idx}"]`);
+        const unit = tr?.querySelector('.it_unit');
+        if (unit) unit.value = String(unitPrice);
+      }
+      console.info('[admin-job-edit] price recalculated', {
+        job_type: preview.payload.job_type,
+        ac_type: preview.payload.ac_type,
+        wash_variant: preview.payload.wash_variant,
+        btu: preview.payload.btu,
+        qty: q,
+        unit_price: row.unit_price,
+        line_total: Number(row.unit_price || 0) * q,
+        source: preview.source,
+      });
+      updatePriceStatusForRow(idx);
+      return preview;
+    };
+
+    const computeEditDurationMin = () => {
+      const durations = editorItems.map(it => Number(it.duration_min || 0)).filter(n => Number.isFinite(n) && n > 0);
+      if (!durations.length) return null;
+      return Math.round(durations.reduce((a, n) => a + n, 0));
+    };
+
+    const verifyAdminEditSave = async (jobId, expectedItems) => {
+      const detail = await apiFetch(`/admin/job_v2/${encodeURIComponent(String(jobId))}`);
+      const savedItems = Array.isArray(detail?.items) ? detail.items : [];
+      const mismatches = [];
+      expectedItems.forEach((it, idx) => {
+        const saved = savedItems[idx];
+        if (!saved) {
+          mismatches.push({ index: idx, field: 'item', expected: it.item_name, actual: null });
+          return;
+        }
+        if (String(saved.item_name || '').trim() !== String(it.item_name || '').trim()) {
+          mismatches.push({ index: idx, field: 'item_name', expected: it.item_name, actual: saved.item_name });
+        }
+        if (!it.price_overridden && Math.abs(Number(saved.unit_price || 0) - Number(it.unit_price || 0)) > 0.01) {
+          mismatches.push({ index: idx, field: 'unit_price', expected: it.unit_price, actual: saved.unit_price });
+        }
+        if (String(it.item_name || '').includes('ล้างแอร์ผนัง') && String(it.item_name || '').includes('ล้างแขวนคอยล์')) {
+          const name = String(saved.item_name || '');
+          if (!name.includes('ล้างแอร์ผนัง') || !name.includes('ล้างแขวนคอยล์') || name.includes('แอร์แขวน/ตั้งพื้น')) {
+            mismatches.push({ index: idx, field: 'wall_coil_mapping', expected: it.item_name, actual: saved.item_name });
+          }
+        }
+      });
+      if (mismatches.length) {
+        console.warn('[admin-job-edit] post-save verification mismatch', { job_id: jobId, mismatches, expectedItems, savedItems });
+        return { ok:false, mismatches };
+      }
+      return { ok:true };
+    };
 
     const getCurrentTeamMembers = () => {
       // Prefer current UI selection (hidden json). Fallback to initial team members.
@@ -990,7 +1179,11 @@ async function loadJob(){
             <select class="it_assignee" style="width:100%">${assigneeOpts}</select>
           </td>
           <td style="width:90px;text-align:right"><input class="it_qty" type="number" min="0" step="1" value="${escapeHtml(String(it.qty))}" /></td>
-          <td style="width:130px;text-align:right"><input class="it_unit" type="number" min="0" step="1" value="${escapeHtml(String(it.unit_price))}" /></td>
+          <td style="width:170px;text-align:right">
+            <input class="it_unit" type="number" min="0" step="1" value="${escapeHtml(String(it.unit_price))}" />
+            <div class="it_price_status muted2" style="font-size:11px;margin-top:4px;text-align:left">${it.price_overridden ? 'แก้ราคาเอง' : 'ระบบคำนวณราคาให้อัตโนมัติจากรายการที่เลือก'}</div>
+            <button type="button" class="secondary btn-small it_use_standard" style="width:auto;margin-top:5px;display:${isStd?'inline-flex':'none'}">ใช้ราคามาตรฐาน</button>
+          </td>
           <td style="width:110px;text-align:right"><b class="it_line">${Number.isFinite(line) ? line.toLocaleString() : '0'}</b></td>
           <td style="width:70px;text-align:right"><button type="button" class="danger btn-small it_del" style="width:auto">ลบ</button></td>
         </tr>`;
@@ -1008,6 +1201,7 @@ async function loadJob(){
         const splitMode = String(el('edit_split_mode')?.value || 'mixed');
         const qty = tr.querySelector('.it_qty');
         const unit = tr.querySelector('.it_unit');
+        const useStandard = tr.querySelector('.it_use_standard');
         const lineEl = tr.querySelector('.it_line');
         const del = tr.querySelector('.it_del');
 
@@ -1016,6 +1210,7 @@ async function loadJob(){
           const uv = Number(unit?.value||0);
           const ln = (Number.isFinite(qv)?qv:0) * (Number.isFinite(uv)?uv:0);
           if (lineEl) lineEl.textContent = (Number.isFinite(ln) ? ln : 0).toLocaleString();
+          updateEditorTotal();
         };
 
         const syncStandard = () => {
@@ -1029,8 +1224,10 @@ async function loadJob(){
             row.wash_type_key = String(washSel?.value || 'normal');
             row.btu_tier = String(btuSel?.value || 'small');
           }
+          row.price_overridden = false;
           row.item_name = standardItemName(row);
           renderEditor();
+          setTimeout(()=>updateEditItemPriceFromSelection(idx, { force:true }), 0);
         };
         if (name) name.oninput = ()=>{ editorItems[idx].item_name = name.value; };
         if (acSel) acSel.onchange = syncStandard;
@@ -1039,8 +1236,10 @@ async function loadJob(){
         if (convert) convert.onclick = () => {
           const parsed = parseStandardItemName(editorItems[idx].item_name) || { ac_type_key:'wall', wash_type_key:'normal', btu_tier:'small', is_standard:true };
           Object.assign(editorItems[idx], parsed);
+          editorItems[idx].price_overridden = false;
           editorItems[idx].item_name = standardItemName(editorItems[idx]);
           renderEditor();
+          setTimeout(()=>updateEditItemPriceFromSelection(idx, { force:true }), 0);
         };
         if (assignee) {
           if (splitMode === 'coop_equal') { assignee.value = ''; assignee.disabled = true; }
@@ -1049,19 +1248,53 @@ async function loadJob(){
           editorItems[idx].assigned_technician_username = v || null;
         };
         }
-        if (qty) qty.oninput = ()=>{ editorItems[idx].qty = Number(qty.value||0); if (editorItems[idx].is_standard) editorItems[idx].item_name = standardItemName(editorItems[idx]); recalc(); };
-        if (unit) unit.oninput = ()=>{ editorItems[idx].unit_price = Number(unit.value||0); recalc(); };
+        if (qty) qty.oninput = ()=>{
+          editorItems[idx].qty = Number(qty.value||0);
+          if (editorItems[idx].is_standard) {
+            editorItems[idx].item_name = standardItemName(editorItems[idx]);
+            if (!editorItems[idx].price_overridden) updateEditItemPriceFromSelection(idx);
+            else recalc();
+          } else {
+            recalc();
+          }
+        };
+        if (unit) unit.oninput = ()=>{
+          editorItems[idx].unit_price = Number(unit.value||0);
+          editorItems[idx].price_overridden = true;
+          updatePriceStatusForRow(idx);
+          recalc();
+        };
+        if (useStandard) useStandard.onclick = async ()=>{
+          editorItems[idx].price_overridden = false;
+          await updateEditItemPriceFromSelection(idx, { force:true });
+        };
         if (del) del.onclick = ()=>{ editorItems.splice(idx,1); renderEditor(); };
+        updatePriceStatusForRow(idx);
       });
+      updateEditorTotal();
     };
 
     renderEditor();
+    const editJobTypeEl = el('edit_job_type');
+    if (editJobTypeEl) {
+      editJobTypeEl.onchange = () => {
+        editorItems.forEach((row, idx) => {
+          if (row?.is_standard) {
+            row.job_type = String(editJobTypeEl.value || 'ล้าง').trim() || 'ล้าง';
+            row.price_overridden = false;
+            updateEditItemPriceFromSelection(idx, { force:true });
+          }
+        });
+      };
+    }
 
     const btnAddItem = el('btnAddItem');
     if (btnAddItem) {
       btnAddItem.onclick = ()=>{
-        editorItems.push({ item_id: null, item_name: 'ล้างแอร์ผนัง • ล้างปกติ • 12000 BTU • 1 เครื่อง', qty: 1, unit_price: 0, ac_type_key:'wall', wash_type_key:'normal', btu_tier:'small', is_standard:true });
+        const idx = editorItems.length;
+        editorItems.push({ item_id: null, item_name: 'ล้างแอร์ผนัง • ล้างธรรมดา • 12000 BTU • 1 เครื่อง', qty: 1, unit_price: 0, ac_type_key:'wall', wash_type_key:'normal', btu_tier:'small', is_standard:true, price_overridden:false });
         renderEditor();
+        setTimeout(()=>updateEditItemPriceFromSelection(idx, { force:true }), 0);
       };
     }
 
@@ -1128,16 +1361,30 @@ async function loadJob(){
             // allow change lead / primary technician (backward-compatible)
             technician_username: primaryU,
           };
+          for (let i = 0; i < editorItems.length; i++) {
+            if (editorItems[i]?.is_standard && !editorItems[i]?.price_overridden) {
+              await updateEditItemPriceFromSelection(i);
+            }
+          }
           const cleanItems = editorItems
             .map(it=>({
               item_id: it.item_id ? Number(it.item_id) : null,
-              item_name: String(it.item_name||'').trim(),
+              item_name: String(it.is_standard ? standardItemName(it) : (it.item_name||'')).trim(),
               qty: Number(it.qty||0),
               unit_price: Number(it.unit_price||0),
+              line_total: Number(it.qty||0) * Number(it.unit_price||0),
               assigned_technician_username: String(it.assigned_technician_username||'').trim() || null,
               is_service: true,
+              price_overridden: !!it.price_overridden,
+              job_type: String(it.job_type || payload.job_type || 'ล้าง').trim() || 'ล้าง',
+              ac_type: it.is_standard ? (STD_AC_PAYLOAD[String(it.ac_type_key || 'wall')] || 'ผนัง') : null,
+              wash_variant: it.is_standard && String(it.ac_type_key || 'wall') === 'wall' ? normalizeEditWashVariant(STD_WASH_PAYLOAD[String(it.wash_type_key || 'normal')] || 'ล้างธรรมดา') : null,
+              btu: it.is_standard ? Number(STD_BTU_VALUE[String(it.btu_tier || 'small')] || 12000) : null,
+              machine_count: Number(it.qty || 0),
             }))
             .filter(it=>it.item_name);
+          const nextDurationMin = computeEditDurationMin();
+          if (nextDurationMin && nextDurationMin > 0) payload.duration_min = nextDurationMin;
 
           const hid = el('edit_team_members_json');
           let desired = [];
@@ -1169,6 +1416,16 @@ async function loadJob(){
           if (result?.steps?.header) done.push('ข้อมูลหลัก');
           if (result?.steps?.items) done.push('รายการบริการ');
           if (result?.steps?.team) done.push('ทีมช่าง');
+
+          const verify = await verifyAdminEditSave(job.job_id, cleanItems).catch((e)=>{
+            console.warn('[admin-job-edit] post-save verification failed', e);
+            return { ok:true, skipped:true };
+          });
+          if (!verify.ok) {
+            showToast('บันทึกแล้วแต่รายการ/ราคาไม่ตรงกับที่เลือก กรุณาตรวจสอบก่อนส่งลูกค้า', 'error');
+            if (msg) msg.textContent = '⚠️ บันทึกแล้วแต่รายการ/ราคาไม่ตรงกับที่เลือก กรุณาตรวจสอบก่อนส่งลูกค้า';
+            return;
+          }
 
           showToast('บันทึกใบงานครบแล้ว', 'success');
           if (msg) msg.textContent = `✅ บันทึกใบงานครบแล้ว${done.length ? `: ${done.join(' / ')}` : ''}`;
