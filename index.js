@@ -19908,11 +19908,11 @@ app.put("/jobs/:job_id/note", async (req, res) => {
 app.post("/jobs/:job_id/revisit-schedule", requireTechnicianSession, async (req, res) => {
   const { job_id } = req.params;
   const revisit_agreed_at = String(req.body?.revisit_agreed_at || '').trim();
-  const revisit_schedule_note = String(req.body?.revisit_schedule_note || '').trim();
+  const revisit_schedule_note = String(req.body?.revisit_schedule_note || '').trim() || 'ช่างบันทึกเวลานัดแก้ไขกับลูกค้าแล้ว';
   if (!revisit_agreed_at) return res.status(400).json({ ok: false, error: 'กรุณาระบุวันและเวลานัดแก้ไข' });
-  const agreedDate = new Date(revisit_agreed_at);
+  const agreedIso = normalizeBangkokIso(revisit_agreed_at);
+  const agreedDate = new Date(agreedIso);
   if (Number.isNaN(agreedDate.getTime())) return res.status(400).json({ ok: false, error: 'วันและเวลานัดแก้ไขไม่ถูกต้อง' });
-  if (!revisit_schedule_note) return res.status(400).json({ ok: false, error: 'กรุณากรอกสรุปที่ตกลงกับลูกค้า' });
 
   const client = await pool.connect();
   try {
@@ -19925,13 +19925,31 @@ app.post("/jobs/:job_id/revisit-schedule", requireTechnicianSession, async (req,
       return;
     }
     const jr = await client.query(
-      `SELECT job_id, job_status, returned_at, return_reason, appointment_datetime, revisit_original_appointment_datetime
+      `SELECT job_id, booking_code, customer_name, job_status, returned_at, return_reason,
+              appointment_datetime, revisit_original_appointment_datetime, COALESCE(duration_min,90) AS duration_min
          FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
       [realId]
     );
     const job = jr.rows[0];
     if (!job) throw createHttpError(404, 'ไม่พบงาน');
     if (!isRevisitJobRow(job)) throw createHttpError(400, 'งานนี้ไม่ใช่งานแก้ไข');
+
+    // งานแก้ไข: ช่างบันทึกเวลานัดเองได้ แต่ห้ามชนคิวงานเดิม/งานล่วงหน้าของช่างคนเดียวกัน
+    // ถ้าจำเป็นต้องใช้เวลาที่ชนจริง ๆ ต้องให้แอดมินย้ายคิวงานเดิมก่อน ไม่ให้ช่าง override เอง
+    const durationMin = Math.max(30, Number(job.duration_min || 90) || 90);
+    const conflict = await checkTechCollision(technician_username, agreedIso, durationMin, realId);
+    if (conflict && !conflict.error) {
+      await client.query('ROLLBACK');
+      return res.status(409).json({
+        ok: false,
+        code: 'REVISIT_SCHEDULE_CONFLICT',
+        error: 'เวลานี้ชนกับงานอื่นที่มีอยู่แล้ว',
+        message: 'เวลานี้ชนกับงานอื่นที่มีอยู่แล้ว หากจำเป็นต้องเข้าช่วงเวลานี้จริง ๆ กรุณาติดต่อแอดมินเพื่อย้ายคิวงานเดิมก่อน หรือเลือกเวลานัดแก้ไขใหม่',
+        conflict,
+      });
+    }
+    if (conflict && conflict.error) throw createHttpError(400, 'วันและเวลานัดแก้ไขไม่ถูกต้อง');
+
     const up = await client.query(
       `UPDATE public.jobs
           SET revisit_agreed_at=$2,
@@ -19943,7 +19961,7 @@ app.post("/jobs/:job_id/revisit-schedule", requireTechnicianSession, async (req,
         WHERE job_id=$1
         RETURNING revisit_agreed_at, revisit_schedule_note, revisit_customer_contacted_at,
                   revisit_schedule_by, revisit_original_appointment_datetime, appointment_datetime`,
-      [realId, agreedDate.toISOString(), revisit_schedule_note, technician_username]
+      [realId, agreedIso, revisit_schedule_note, technician_username]
     );
     await client.query(
       `UPDATE public.technician_rework_cases
@@ -19952,14 +19970,14 @@ app.post("/jobs/:job_id/revisit-schedule", requireTechnicianSession, async (req,
               revisit_schedule_note=$3,
               updated_at=NOW()
         WHERE job_id=$1 AND status IN ('open','in_progress')`,
-      [realId, agreedDate.toISOString(), revisit_schedule_note]
+      [realId, agreedIso, revisit_schedule_note]
     );
     await logJobUpdate(realId, {
       actor_username: technician_username,
       actor_role: 'tech',
       action: 'revisit_schedule_agreed',
       message: revisit_schedule_note,
-      payload: { revisit_agreed_at: agreedDate.toISOString(), revisit_schedule_note },
+      payload: { revisit_agreed_at: agreedIso, revisit_schedule_note },
     }, client);
     await client.query('COMMIT');
     return res.json({ ok: true, ...up.rows[0] });
@@ -20099,10 +20117,6 @@ if (status === "เสร็จแล้ว") {
       if (!String(meta.revisit_agreed_at || revisit_agreed_at || '').trim()) {
         await client.query("ROLLBACK");
         return res.status(400).json({ error: "งานแก้ไขต้องบันทึกวันและเวลานัดกับลูกค้า" });
-      }
-      if (!String(meta.revisit_schedule_note || revisit_schedule_note || '').trim()) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: "งานแก้ไขต้องมีสรุปที่ตกลงกับลูกค้า" });
       }
       if (!['technician','customer','company','unclear'].includes(revisit_cause_party)) {
         await client.query("ROLLBACK");
