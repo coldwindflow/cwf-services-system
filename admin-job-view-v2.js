@@ -98,57 +98,53 @@ function escapeHtml(str){
     .replace(/'/g, '&#39;');
 }
 
+
 function parsePayloadJson(v){
-  if (!v) return null;
+  if (!v) return {};
   if (typeof v === 'object') return v;
-  try { return JSON.parse(String(v)); } catch { return null; }
+  try { return JSON.parse(String(v)); } catch { return {}; }
 }
-const REVISIT_CAUSE_LABELS = {
-  tech_original: 'เกิดจากช่าง / งานเดิม',
-  customer_usage: 'เกิดจากการใช้งานของลูกค้า',
-  company_condition: 'เกิดจากระบบ / อะไหล่ / เงื่อนไขบริษัท',
-  unclear_admin_review: 'ยังไม่ชัดเจน ให้แอดมินตรวจ',
-};
-const REVISIT_RESULT_LABELS = {
-  resolved: 'แก้ไขสำเร็จ ใช้งานได้ปกติ',
-  follow_up_required: 'ยังไม่จบ / ยังมีอาการ ต้องให้แอดมินติดตาม',
-};
-function latestUpdatePayload(updates, action){
-  const rows = (Array.isArray(updates) ? updates : []).filter(u => String(u.action || '') === action);
-  if (!rows.length) return null;
-  return parsePayloadJson(rows[0].payload_json) || null;
-}
-function renderRevisitAuditPanel(job, photos, updates, team){
-  const isRevisit = String(job?.job_status || '').includes('แก้ไข') || !!job?.returned_at || !!job?.return_reason || (updates || []).some(u => String(u.action || '').startsWith('revisit_'));
+
+function renderRevisitAuditPanel(job, photos, updates){
+  const isRevisit = String(job?.job_status || '').trim() === 'งานแก้ไข' || !!job?.returned_at || !!job?.return_reason ||
+    (Array.isArray(updates) && updates.some(u => String(u.action || '').startsWith('revisit_')));
   if (!isRevisit) return '';
-  const schedule = latestUpdatePayload(updates, 'revisit_schedule') || {};
-  const checklist = latestUpdatePayload(updates, 'revisit_checklist') || {};
-  const result = latestUpdatePayload(updates, 'revisit_result') || {};
-  const pick = (ph) => (photos || []).filter(p => String(p.phase || '') === ph && p.public_url);
-  const thumbs = (arr, label) => arr.length ? `<div class="revisitAuditThumbs">${arr.map(p=>`<a href="${escapeHtml(p.public_url)}" target="_blank" rel="noopener"><img src="${escapeHtml(p.public_url)}" alt="${escapeHtml(label)}"></a>`).join('')}</div>` : `<div class="muted2 mini">ยังไม่มี${escapeHtml(label)}</div>`;
-  const techNames = Array.from(new Set([safe(job?.technician_username||''), ...(Array.isArray(team)?team.map(t=>safe(t.username||t.full_name||'')):[])]).values()).filter(Boolean).join(', ') || '-';
-  const closedAt = fmtDT(job?.finished_at || job?.closed_at || job?.completed_at || '');
-  const cause = checklist.cause_party || result.revisit_cause_party || '';
-  const finalResult = checklist.result || result.revisit_result || '';
-  const causeNote = checklist.cause_note || result.revisit_cause_note || '';
-  const resultNote = checklist.result_note || result.revisit_result_note || result.revisit_note || '';
-  return `
-    <section class="revisitAuditPanel">
-      <div class="revisitAuditHead"><b>🔁 ตรวจย้อนหลังงานแก้ไข</b><span class="muted2 mini">ข้อมูลนี้ใช้ตรวจสอบคุณภาพงานและประกอบการพิจารณาเคสเท่านั้น ไม่มีการหักเงินอัตโนมัติ</span></div>
-      <div class="revisitAuditGrid">
-        <div><b>ช่างที่รับผิดชอบ</b><span>${escapeHtml(techNames)}</span></div>
-        <div><b>ปิดงานแก้ไข</b><span>${escapeHtml(closedAt)}</span></div>
-        <div><b>เวลานัดหมายที่ช่างแจ้ง</b><span>${escapeHtml(schedule.appointment_datetime ? fmtDT(schedule.appointment_datetime) : '-')}</span></div>
-        <div><b>สาเหตุจาก dropdown</b><span>${escapeHtml(REVISIT_CAUSE_LABELS[cause] || '-')}</span></div>
-        <div><b>ผลการแก้ไขจาก dropdown</b><span>${escapeHtml(REVISIT_RESULT_LABELS[finalResult] || '-')}</span></div>
-        <div><b>หมายเหตุ</b><span>${escapeHtml([causeNote, resultNote].filter(Boolean).join(' / ') || '-')}</span></div>
+  const list = Array.isArray(photos) ? photos : [];
+  const byPhase = (ph) => list.filter(p => String(p.phase || '') === ph && p.public_url);
+  const photoBlock = (title, ph, required) => {
+    const arr = byPhase(ph);
+    return `<div class="item"><b>${escapeHtml(title)} ${required ? '<span class="pill">บังคับ</span>' : '<span class="pill">ถ้ามี</span>'}</b>
+      ${arr.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">${arr.map(p=>`<a class="secondary btn-small" href="${escapeHtml(p.public_url)}" target="_blank" rel="noopener">เปิดรูป</a>`).join('')}</div>` : `<div class="muted2" style="margin-top:6px">ยังไม่มีรูป</div>`}
+    </div>`;
+  };
+  const scheduleUpdate = (updates || []).find(u => String(u.action || '') === 'revisit_schedule');
+  const checklistUpdate = (updates || []).find(u => String(u.action || '') === 'revisit_result') || (updates || []).find(u => String(u.action || '') === 'revisit_checklist');
+  const schedulePayload = parsePayloadJson(scheduleUpdate?.payload_json);
+  const checklistPayload = parsePayloadJson(checklistUpdate?.payload_json);
+  const tech = safe(checklistUpdate?.actor_username || scheduleUpdate?.actor_username || job?.technician_username || '-');
+  const closedAt = job?.finished_at ? fmtDT(job.finished_at) : '-';
+  return `<details class="cwf-details" style="margin-top:10px" open>
+    <summary>🔁 ตรวจย้อนหลังงานแก้ไข</summary>
+    <div class="cwf-details-body">
+      <div class="reworkMiniCard" style="margin-bottom:10px">
+        <b>สถานะงานแก้ไข</b>
+        <div class="muted2 mini" style="margin-top:6px">ช่าง: ${escapeHtml(tech)} • ปิดงาน: ${escapeHtml(closedAt)}</div>
+        <div class="muted2 mini" style="margin-top:6px">เวลานัดหมายที่ช่างแจ้ง: ${escapeHtml(schedulePayload.scheduled_at ? fmtDT(schedulePayload.scheduled_at) : '-')}</div>
       </div>
-      <div class="revisitPhotoGrid">
-        <div><b>รูปก่อนแก้ไข</b>${thumbs(pick('revisit_before'), 'รูปก่อนแก้ไข')}</div>
-        <div><b>รูปหลังแก้ไข</b>${thumbs(pick('revisit_after'), 'รูปหลังแก้ไข')}</div>
-        <div><b>รูปจุดปัญหา</b>${thumbs(pick('revisit_defect'), 'รูปจุดปัญหา')}</div>
+      <div class="list">
+        ${photoBlock('รูปก่อนแก้ไข', 'revisit_before', true)}
+        ${photoBlock('รูปหลังแก้ไข', 'revisit_after', true)}
+        ${photoBlock('รูปจุดปัญหา', 'revisit_defect', false)}
       </div>
-    </section>`;
+      <div class="reworkMiniCard" style="margin-top:10px">
+        <b>เช็คลิสงานแก้ไข</b>
+        <div style="margin-top:8px"><b>สาเหตุ:</b> ${escapeHtml(safe(checklistPayload.revisit_cause_party || '-'))}</div>
+        <div class="muted2" style="margin-top:4px;white-space:pre-wrap"><b>คำอธิบายสาเหตุ:</b> ${escapeHtml(safe(checklistPayload.revisit_cause_note || '-'))}</div>
+        <div style="margin-top:8px"><b>ผลการแก้ไข:</b> ${escapeHtml(safe(checklistPayload.revisit_result || checklistUpdate?.message || '-'))}</div>
+        <div class="muted2" style="margin-top:4px;white-space:pre-wrap"><b>คำอธิบายผล:</b> ${escapeHtml(safe(checklistPayload.revisit_result_note || checklistPayload.revisit_note || '-'))}</div>
+      </div>
+    </div>
+  </details>`;
 }
 
 const DEDUCTION_CASE_TYPES = [
@@ -190,7 +186,6 @@ function ensureCaseModal(){
       .caseList{display:grid;gap:10px}.caseItem{border:1px solid #d9e5ff;border-radius:8px;padding:11px;background:#f8fbff}
       .caseMeta{display:flex;gap:8px;flex-wrap:wrap;margin-top:6px;color:#64748b;font-size:12px;font-weight:800}
       .reworkPanel{border:1px solid rgba(21,88,214,.14);border-radius:18px;background:linear-gradient(180deg,#fff,#f8fbff);padding:14px;box-shadow:0 12px 30px rgba(2,6,23,.06)}
-      .revisitAuditPanel{border:1px solid rgba(234,88,12,.20);border-radius:18px;background:linear-gradient(180deg,#fff7ed,#fff);padding:14px;box-shadow:0 12px 30px rgba(124,45,18,.07);margin-top:12px}.revisitAuditHead{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:12px}.revisitAuditHead b{font-size:16px;color:#7c2d12}.revisitAuditGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.revisitAuditGrid div{border:1px solid rgba(234,88,12,.13);background:#fff;border-radius:14px;padding:10px}.revisitAuditGrid b{display:block;font-size:12px;color:#9a3412}.revisitAuditGrid span{display:block;margin-top:5px;font-weight:900;color:#0f172a;white-space:pre-wrap}.revisitPhotoGrid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:12px}.revisitPhotoGrid>div{border:1px solid rgba(234,88,12,.13);border-radius:14px;background:#fff;padding:10px}.revisitAuditThumbs{display:flex;gap:8px;overflow:auto;margin-top:8px}.revisitAuditThumbs img{width:82px;height:82px;object-fit:cover;border-radius:12px;border:1px solid rgba(15,23,42,.10)}@media(max-width:720px){.revisitAuditGrid,.revisitPhotoGrid{grid-template-columns:1fr}}
       .reworkHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
       .reworkTitle{display:flex;flex-direction:column;gap:4px}.reworkTitle b{font-size:18px;color:#071947}
       .reworkGrid{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(180px,.65fr);gap:12px;align-items:end}
@@ -579,13 +574,10 @@ async function loadJob(){
         const act = safe(u.action);
         const msg = safe(u.message);
         const by = safe(u.actor_username || u.actor_role || '-');
-        const payload = parsePayloadJson(u.payload_json);
-        const payloadText = payload && String(act || '').startsWith('revisit_') ? JSON.stringify(payload, null, 2) : '';
         return `<div class="item">
           <b title="${escapeHtml(act)}">${escapeHtml(act || 'update')}</b>
           <div class="mini">${escapeHtml(when)} • ${escapeHtml(by)}</div>
           ${msg ? `<div class="muted2" style="margin-top:6px;white-space:pre-wrap">${escapeHtml(msg)}</div>` : ''}
-          ${payloadText ? `<pre class="muted2" style="margin-top:8px;white-space:pre-wrap;background:#fff;border:1px solid rgba(15,23,42,.10);border-radius:10px;padding:8px;font-size:12px">${escapeHtml(payloadText)}</pre>` : ''}
         </div>`;
       }).join('')}</div>`
     : `<div class="muted2">ยังไม่มีประวัติอัปเดต</div>`;
@@ -601,7 +593,7 @@ async function loadJob(){
 
   const wOk = inWarranty(job);
   const unitEvidenceHtml = renderUnitEvidence(units, photos);
-  const revisitAuditHtml = renderRevisitAuditPanel(job, photos, updates, team);
+  const revisitAuditHtml = renderRevisitAuditPanel(job, photos, updates);
   ensureCaseModal();
 
   el('jobCard').innerHTML = `
@@ -628,8 +620,6 @@ async function loadJob(){
     </div>
 
     ${renderCloseFlowSummary(job)}
-
-    ${revisitAuditHtml}
 
     <div class="row" style="margin-top:12px;gap:10px;flex-wrap:wrap">
       <button id="btnDocQuote" class="secondary" type="button" style="width:auto">🧾 ใบเสนอราคา (เต็ม)</button>
@@ -865,6 +855,8 @@ async function loadJob(){
     </div>
 
     <hr style="margin:12px 0;" />
+
+    ${revisitAuditHtml}
 
     <details class="cwf-details" style="margin-top:0" open>
       <summary>📷 รูปถ่าย (ดาวน์โหลดได้)</summary>
