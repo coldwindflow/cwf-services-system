@@ -1,52 +1,153 @@
-const CACHE_NAME = "cwf-cache-v76-fix-active-history-v23-20260509";
+// ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
+// - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
+// - bump cache name เพื่อกันไฟล์ค้าง
+const CACHE_NAME = "cwf-cache-v57-photo-inline-v8-20260508";
+
 const ASSETS = [
-  "/tech.html?v=20260509_emergency_no_revisit_v22",
-  "/app.js?v=20260509_fix_active_history_v23"
+  "/",
+  "/login.html",
+  "/index.html",
+  "/tech.html",
+  "/style.css",
+  "/app.js?v=20260508_photo_inline_v8",
+  "/logo.png",
+  "/assets/cwf-promptpay-qr.jpg",
+  "/manifest.json",
+  "/mainfest.json",
+  "/icon-cwf-v34-180.png",
+  "/icon-cwf-v34-192.png",
+  "/icon-cwf-v34-512.png",
+  "/icon-cwf-v34-512-maskable.png",
+  "/icon-180.png",
+  "/icon-192.png",
+  "/icon-512.png",
+  "/icon-512-maskable.png",
+  "/edit-profile.html",
+  "/customer.html",
+  "/track.html",
+  "/admin-review-v2.html",
+  "/admin-review-v2.js",
+  "/admin-add-v2.html",
+  "/admin-add-v2.js",
+  "/admin-queue-v2.html",
+  "/admin-queue-v2.js",
+  "/admin-history-v2.html",
+  "/admin-history-v2.js",
+  "/admin-job-view-v2.html",
+  "/admin-job-view-v2.js",
+  "/admin-promotions-v2.html",
+  "/admin-promotions-v2.js",
+  "/admin-v2-common.js",
+  "/admin-work-readiness-v2.html",
+  "/admin-work-readiness-v2.js",
 ];
 
-self.addEventListener("install", event => {
-  self.skipWaiting();
-  event.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
-      .then(() => caches.open(CACHE_NAME))
-      .then(cache => cache.addAll(ASSETS).catch(() => null))
-  );
+// ติดตั้งแล้ว cache ไฟล์
+self.addEventListener("install", (e) => {
+  self.skipWaiting(); // ✅ ให้ service worker ใหม่ทำงานทันที
+  e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(ASSETS)));
 });
 
-self.addEventListener("activate", event => {
-  event.waitUntil(
-    caches.keys()
-      .then(keys => Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k))))
+// ล้าง cache เก่า
+self.addEventListener("activate", (e) => {
+  e.waitUntil(
+    caches
+      .keys()
+      .then((keys) => Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : null))))
       .then(() => self.clients.claim())
   );
 });
 
-self.addEventListener("fetch", event => {
-  const req = event.request;
-  const url = new URL(req.url);
-
-  if (req.method !== "GET") return;
-
-  // APIs must always go network-first / never stale-cache
-  if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/jobs/") || url.pathname.startsWith("/admin/")) {
-    event.respondWith(fetch(req).catch(() => caches.match(req)));
-    return;
+// ✅ ให้หน้าเว็บส่งคำสั่งมาได้ (เช่นให้ SW ใหม่ข้าม waiting)
+self.addEventListener("message", (event) => {
+  if (!event.data) return;
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
   }
+});
 
-  // HTML/JS/CSS use network-first to escape broken PWA cache fast
-  if (req.mode === "navigate" || /\.(html|js|css)$/i.test(url.pathname)) {
-    event.respondWith(
-      fetch(req, { cache: "no-store" })
-        .then(res => {
-          const copy = res.clone();
-          caches.open(CACHE_NAME).then(cache => cache.put(req, copy)).catch(() => null);
-          return res;
-        })
-        .catch(() => caches.match(req))
-    );
-    return;
-  }
+// ดึงจาก network ก่อน ถ้าไม่ได้ค่อยใช้ cache (กันไฟล์เก่าค้าง)
+self.addEventListener("fetch", (e) => {
+  // ✅ อย่าแตะ request แบบ POST/PUT/DELETE
+  if (e.request.method !== "GET") return;
 
-  event.respondWith(caches.match(req).then(cached => cached || fetch(req)));
+  const url = new URL(e.request.url);
+
+  // ✅ กัน cache API/ข้อมูล dynamic (สำคัญ: ไม่ให้เก็บ response งาน/สถานะไว้ใน cache)
+  // - cache เฉพาะไฟล์ static (html/css/js/png/json) หรือไฟล์ที่อยู่ใน ASSETS
+  const isSameOrigin = url.origin === self.location.origin;
+  const pathname = url.pathname || "/";
+  const isStaticExt = /\.(?:html|css|js|png|jpg|jpeg|webp|svg|ico|json)$/.test(pathname);
+  const isAssetListed = ASSETS.includes(pathname) || (pathname === "/" && ASSETS.includes("/"));
+  const shouldCache = isSameOrigin && (isStaticExt || isAssetListed || e.request.mode === "navigate");
+
+  // ถ้าไม่ควร cache → ปล่อยผ่าน network ตรง ๆ
+  if (!shouldCache) return;
+
+  e.respondWith(
+    fetch(e.request)
+      .then((resp) => {
+        const copy = resp.clone();
+        caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
+        return resp;
+      })
+      .catch(async () => {
+        // Offline fallback (โดยเฉพาะตอนเปิดหน้าแบบ navigate)
+        const cached = await caches.match(e.request);
+        if (cached) return cached;
+
+        if (e.request.mode === "navigate") {
+          // พยายาม fallback ไปหน้าใช้งานหลักที่ถูก cache ไว้
+          return (
+            (await caches.match(url.pathname)) ||
+            (await caches.match("/customer.html")) ||
+            (await caches.match("/track.html")) ||
+            (await caches.match("/login.html")) ||
+            (await caches.match("/index.html"))
+          );
+        }
+        return cached;
+      })
+  );
+});
+
+
+// 🔔 Web Push: แจ้งเตือนงานเข้า แม้ปิดหน้า PWA
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch (_) { data = {}; }
+  const title = data.title || "CWF มีงานใหม่";
+  const options = {
+    body: data.body || "มีงานใหม่เข้ามา กรุณาเปิดแอพเพื่อตรวจสอบ",
+    icon: "/icon-cwf-v34-192.png",
+    badge: "/icon-cwf-v34-192.png",
+    tag: data.tag || "cwf-job-notification",
+    renotify: true,
+    requireInteraction: data.kind === "urgent_offer",
+    timestamp: Date.now(),
+    vibrate: [120, 70, 120],
+    actions: [
+      { action: "open", title: data.kind === "urgent_offer" ? "เปิดดูงาน / รับงาน" : "เปิดดูงาน" }
+    ],
+    data: { url: data.url || "/tech.html", job_id: data.job_id || null, kind: data.kind || "job", income_amount_text: data.income_amount_text || "" }
+  };
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const targetUrl = (event.notification && event.notification.data && event.notification.data.url) || "/tech.html";
+  event.waitUntil((async () => {
+    const allClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const client of allClients) {
+      try {
+        const u = new URL(client.url);
+        if (u.origin === self.location.origin && "focus" in client) {
+          if ("navigate" in client) await client.navigate(targetUrl);
+          return client.focus();
+        }
+      } catch (_) {}
+    }
+    return clients.openWindow(targetUrl);
+  })());
 });
