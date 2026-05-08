@@ -3204,11 +3204,10 @@ async function hasRevisitEvidence(jobId, requiredPhase){
 }
 
 function renderRevisitSection(job, keyBase, jobKeyJs, canEdit, isWorking, historyMode){
-  const data = getRevisitChecklist(keyBase);
-  const okCause = !!data.cause;
-  const okResult = !!data.result;
   const problemDetail = String(
     job?.return_reason ||
+    job?.reason_note ||
+    job?.rework_reason_note ||
     job?.revisit_reason ||
     job?.rework_reason ||
     job?.issue_detail ||
@@ -3221,15 +3220,15 @@ function renderRevisitSection(job, keyBase, jobKeyJs, canEdit, isWorking, histor
     : "ยังไม่มีรายละเอียดปัญหาที่แอดมินระบุไว้";
   return `
     <section class="cwf-revisit-card" style="margin-top:12px;border:1px solid rgba(250,204,21,.55);background:linear-gradient(180deg,#fffbeb,#ffffff);border-radius:22px;padding:14px;box-shadow:0 10px 24px rgba(11,46,109,.08);">
-      <div style="width:min(100%, 440px);margin:0 auto;border:1px solid rgba(11,46,109,.12);background:#ffffff;border-radius:18px;padding:14px;line-height:1.65;text-align:left;box-shadow:0 8px 18px rgba(11,46,109,.05);">
-        <b style="display:flex;align-items:center;justify-content:center;gap:8px;color:#0b2e6d;margin-bottom:8px;font-size:18px;line-height:1.25;text-align:center;">📝 ปัญหาที่รับแจ้ง</b>
-        <div style="font-weight:850;color:#334155;white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;">${problemHtml}</div>
+      <div style="max-width:92%;margin:0 auto;border:1px solid rgba(11,46,109,.14);background:#ffffff;border-radius:18px;padding:16px 16px 15px;line-height:1.65;text-align:center;box-shadow:0 8px 18px rgba(11,46,109,.06);">
+        <b style="display:block;color:#0b2e6d;font-size:20px;line-height:1.25;margin-bottom:8px;">📝 ปัญหาที่รับแจ้ง</b>
+        <div style="font-weight:900;color:#334155;white-space:pre-wrap;overflow-wrap:anywhere;text-align:left;display:inline-block;max-width:100%;font-size:17px;line-height:1.65;">${problemHtml}</div>
       </div>
 
-      <details style="width:min(100%, 440px);margin:12px auto 0;border:1px solid rgba(11,46,109,.14);background:#f8fbff;border-radius:18px;overflow:hidden;box-shadow:0 8px 18px rgba(11,46,109,.05);">
+      <details style="margin:12px auto 0;max-width:92%;border:1px solid rgba(11,46,109,.14);background:#f8fbff;border-radius:16px;overflow:hidden;box-shadow:0 8px 18px rgba(11,46,109,.05);">
         <summary style="list-style:none;cursor:pointer;user-select:none;padding:12px 14px;font-weight:1000;color:#0b2e6d;display:flex;align-items:center;justify-content:space-between;gap:10px;">
           <span>✅ สิ่งที่ต้องทำ</span>
-          <span style="font-size:15px;color:#64748b;font-weight:900;">กดเพื่อดู</span>
+          <span style="font-size:16px;color:#64748b;white-space:nowrap;">กดเพื่อดู</span>
         </summary>
         <div style="padding:0 14px 14px;color:#334155;font-weight:850;line-height:1.7;">
           <ol style="margin:0;padding-left:22px;">
@@ -3242,7 +3241,7 @@ function renderRevisitSection(job, keyBase, jobKeyJs, canEdit, isWorking, histor
         </div>
       </details>
 
-      <div style="margin-top:12px;border:1px solid rgba(220,38,38,.30);background:#fff1f2;color:#991b1b;border-radius:16px;padding:12px;line-height:1.6;font-weight:900;">
+      <div style="margin:12px auto 0;max-width:92%;border:1px solid rgba(220,38,38,.30);background:#fff1f2;color:#991b1b;border-radius:16px;padding:12px;line-height:1.6;font-weight:900;box-shadow:0 8px 18px rgba(220,38,38,.06);">
         ⚠️ คำเตือน: หากช่างไม่ติดต่อประสานงานลูกค้า ไม่แจ้งเวลานัดหมาย หรือไม่เข้าดำเนินการตามเงื่อนไข บริษัทจะพิจารณาตามระเบียบและสัญญาที่ช่างให้ไว้กับบริษัท
       </div>
 
