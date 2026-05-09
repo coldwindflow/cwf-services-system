@@ -412,7 +412,7 @@
 
 
     /* ===== CWF Technician Premium Shell v20260428 =====
-       Match Admin Dashboard visual language without touching app.js?v=20260510_fix26_home_flow_complete"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
+       Match Admin Dashboard visual language without touching app.js?v=20260510_fix27_premium_nav_restore"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
       background:linear-gradient(90deg, rgba(244,196,0,0), rgba(244,196,0,.95), rgba(34,211,238,.65), rgba(244,196,0,0));
       pointer-events:none;
     }
@@ -611,6 +611,109 @@
   #techTaxProfileModal .taxDocActions,#techWhtDocsModal .taxDocActions{display:grid!important;grid-template-columns:1fr 1fr!important;gap:10px!important;margin-top:12px!important;}
   @media(max-width:560px){#techTaxProfileModal .taxDocActions,#techWhtDocsModal .taxDocActions{grid-template-columns:1fr!important}#techTaxProfileModal .taxDocPanel,#techWhtDocsModal .taxDocPanel{padding:18px!important;border-radius:22px!important}}
 </style>
+
+  <style id="cwf-fix27-premium-nav-restore">
+    /*
+      CWF fix27: restore premium top/bottom navigation only.
+      Scope: top nav, page backdrop, bottom nav. No job/profile/income logic.
+    */
+    body{
+      background:
+        radial-gradient(circle at 86px 210px, rgba(20,196,220,.22) 0 110px, transparent 190px),
+        radial-gradient(circle at 92% 120px, rgba(255,211,42,.16) 0 70px, transparent 150px),
+        linear-gradient(180deg,#071b4a 0 172px,#eef5ff 172px 100%)!important;
+    }
+    #techTopNav{
+      background:
+        radial-gradient(circle at 76% 22%, rgba(42,145,255,.28) 0 78px, transparent 150px),
+        linear-gradient(135deg,#06183f 0%,#0b2e6d 42%,#1358c9 100%)!important;
+      border-bottom:1px solid rgba(255,255,255,.16)!important;
+      box-shadow:0 18px 42px rgba(2,13,38,.34), inset 0 -1px 0 rgba(244,196,0,.48)!important;
+    }
+    #techTopNav::after{
+      content:""!important;
+      position:absolute!important;
+      left:0!important;
+      right:0!important;
+      bottom:-1px!important;
+      height:3px!important;
+      background:linear-gradient(90deg,#f4c400 0%,#18c7e7 42%,#1f6dff 100%)!important;
+      opacity:.92!important;
+      pointer-events:none!important;
+    }
+    #techTopNav .in{
+      max-width:460px!important;
+      min-height:74px!important;
+    }
+    #techTopNav .ttl b{
+      color:#fff!important;
+      text-shadow:0 3px 14px rgba(0,0,0,.26)!important;
+      letter-spacing:.01em!important;
+    }
+    #techTopNav .ttl span{
+      color:rgba(255,255,255,.86)!important;
+      text-shadow:0 2px 10px rgba(0,0,0,.18)!important;
+    }
+    .tech-push-icbtn{
+      background:linear-gradient(145deg,rgba(255,255,255,.16),rgba(255,255,255,.07))!important;
+      border:1px solid rgba(255,255,255,.22)!important;
+      box-shadow:0 14px 30px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.20)!important;
+      backdrop-filter:blur(10px)!important;
+    }
+    .tech-push-icbtn.active{
+      background:linear-gradient(135deg,#21d56f,#08a95b)!important;
+      border-color:rgba(255,255,255,.34)!important;
+      box-shadow:0 14px 30px rgba(20,180,95,.28), inset 0 1px 0 rgba(255,255,255,.22)!important;
+    }
+    #techMenuBtn{
+      background:linear-gradient(145deg,#fff16a 0%,#f4c400 58%,#f59e0b 100%)!important;
+      border-color:rgba(255,255,255,.36)!important;
+      color:#071b4a!important;
+      box-shadow:0 15px 32px rgba(244,196,0,.30), inset 0 1px 0 rgba(255,255,255,.48)!important;
+    }
+
+    .bottom-nav{
+      width:min(520px, calc(100% - 18px))!important;
+      padding:10px 10px calc(10px + env(safe-area-inset-bottom))!important;
+      border-radius:28px 28px 0 0!important;
+      background:
+        radial-gradient(circle at 20% 0%, rgba(32,199,232,.20) 0 80px, transparent 160px),
+        radial-gradient(circle at 88% 20%, rgba(31,109,255,.24) 0 70px, transparent 150px),
+        linear-gradient(135deg,rgba(4,18,52,.98) 0%,rgba(8,43,103,.98) 50%,rgba(20,88,214,.97) 100%)!important;
+      border:1px solid rgba(255,255,255,.16)!important;
+      border-bottom:0!important;
+      box-shadow:0 -20px 48px rgba(2,6,23,.28), inset 0 1px 0 rgba(255,255,255,.16)!important;
+      backdrop-filter:blur(14px)!important;
+    }
+    .bottom-nav::before{
+      content:""!important;
+      position:absolute!important;
+      left:26px!important;
+      right:26px!important;
+      top:0!important;
+      height:3px!important;
+      border-radius:999px!important;
+      background:linear-gradient(90deg,#f4c400 0%,#18c7e7 50%,#2d74ff 100%)!important;
+      opacity:.95!important;
+      pointer-events:none!important;
+    }
+    .nav-btn{
+      min-height:56px!important;
+      border-radius:20px!important;
+      background:rgba(255,255,255,.10)!important;
+      color:rgba(255,255,255,.90)!important;
+      border:1px solid rgba(255,255,255,.14)!important;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.12)!important;
+      font-weight:1000!important;
+    }
+    .nav-btn.active{
+      background:linear-gradient(145deg,#fff16a 0%,#f4c400 58%,#f59e0b 100%)!important;
+      color:#071b4a!important;
+      border-color:rgba(255,255,255,.38)!important;
+      box-shadow:0 12px 26px rgba(244,196,0,.28), inset 0 1px 0 rgba(255,255,255,.48)!important;
+    }
+  </style>
+
 </head>
 <body>
   <div class="app">
@@ -1574,7 +1677,7 @@
       </div>
 
       <div class="section active" id="sec-active-today" style="margin-top:10px;">
-        <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix26_home_flow_complete"active-list"></div>
+        <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix27_premium_nav_restore"active-list"></div>
       </div>
 
       <div class="section" id="sec-active-upcoming" style="margin-top:10px;">
@@ -1610,7 +1713,7 @@
       </div>
       <div class="muted" id="history-filter-hint" style="margin-top:8px;">แสดงงานที่ปิดแล้วแบบย่อ</div>
 
-      <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix26_home_flow_complete"history-list" style="margin-top:10px;"></div>
+      <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix27_premium_nav_restore"history-list" style="margin-top:10px;"></div>
     </div>
 
     <div class="card section" id="sec-income">
@@ -2093,7 +2196,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260510_fix26_home_flow_complete"></script>
+  <script src="app.js?v=20260510_fix27_premium_nav_restore"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

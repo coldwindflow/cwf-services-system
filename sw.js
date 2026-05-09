@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v74-fix26-home-flow-complete-20260510";
+const CACHE_NAME = "cwf-cache-v75-fix27-premium-nav-restore-20260510";
 
 const ASSETS = [
   "/",
