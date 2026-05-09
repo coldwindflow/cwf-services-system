@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_profile_row_fix16";
+window.__CWF_TECH_APP_VERSION__ = "20260510_fix32_safe_profile_polish";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -54,7 +54,6 @@ const profileGradeEl = document.getElementById("profile-grade");
 const profilePhotoEl = document.getElementById("profile-photo");
 const ratingEl = document.getElementById("rating");
 const doneCountEl = document.getElementById("doneCount");
-const reworkCountEl = document.getElementById("reworkCount");
 const profileCodeEl = document.getElementById("profile-code");
 const profilePositionEl = document.getElementById("profile-position");
 const profileRankBadgeEl = document.getElementById("profile-rank-badge");
@@ -74,6 +73,7 @@ const homeZoneHintEl = document.getElementById("homeZoneHint");
 const allowOutOfZoneEl = document.getElementById("allowOutOfZone");
 const secondaryServiceZoneEl = document.getElementById("secondaryServiceZone");
 const zoneQuickBtnEl = document.getElementById("zoneQuickBtn");
+const zoneQuickTitleEl = document.getElementById("zoneQuickTitle");
 const btnSaveHomeZoneEl = document.getElementById("btnSaveHomeZone");
 
 const HOME_DISTRICTS_BY_PROVINCE = {
@@ -361,12 +361,11 @@ function renderAcceptUI(status, updatedAtText, note) {
       : "🟢 รับงาน";
   }
 
-  // ข้อความสถานะด้านล่าง (ให้เห็นชัด)
+  // CWF fix32: hide long status row on Home; main accept button remains source of truth.
   if (acceptStatusText) {
-    acceptStatusText.textContent =
-      (st === "paused" ? "⛔ ไม่ได้รับงานอยู่" : "✅ กำลังรับงานอยู่")
-      + (updatedAtText ? ` · อัปเดต: ${updatedAtText}` : "")
-      + (note ? ` · ${note}` : "");
+    acceptStatusText.textContent = "";
+    acceptStatusText.setAttribute("hidden", "hidden");
+    acceptStatusText.style.display = "none";
   }
 
   // att-status เก่า (ซ่อน) เผื่อโค้ดอื่นอ่านค่า
@@ -468,6 +467,35 @@ function setSelectValueSafe(el, value) {
   if (v && el.value !== v) el.value = "";
 }
 
+
+function getPrimaryWorkAreaLabel(profile) {
+  const p = profile || __TECH_ZONE_PROFILE__ || {};
+  const candidates = [
+    p.home_district,
+    p.home_amphoe,
+    p.home_area,
+    p.primary_area,
+    p.service_area,
+    p.home_service_zone_label,
+    p.preferred_zone,
+    p.home_service_zone_code ? `Zone ${p.home_service_zone_code}` : ""
+  ].map(v => String(v || "").trim()).filter(Boolean);
+  const label = candidates[0] || "พื้นที่ประจำ";
+  return label.length > 18 ? `${label.slice(0, 18)}…` : label;
+}
+
+function updateZoneQuickButtonLabel(profile) {
+  const p = profile || __TECH_ZONE_PROFILE__ || {};
+  const titleEl = document.getElementById("zoneQuickTitle") || zoneQuickTitleEl || zoneQuickBtnEl?.querySelector("span");
+  const summaryEl = document.getElementById("zoneQuickSummary");
+  if (titleEl) titleEl.textContent = getPrimaryWorkAreaLabel(p);
+  if (summaryEl) {
+    summaryEl.textContent = p.home_service_zone_code
+      ? `Zone ${p.home_service_zone_code}${p.secondary_service_zone_code ? ` / รอง ${p.secondary_service_zone_code}` : ""}`
+      : (p.service_radius_km ? `รัศมี ${p.service_radius_km} กม.` : "แตะเพื่อตั้งค่าพื้นที่");
+  }
+}
+
 function syncQuickZoneFields() {
   const p = __TECH_ZONE_PROFILE__ || {};
   const secondary = String(p.secondary_service_zone_code || document.getElementById("secondaryServiceZone")?.value || "").toUpperCase();
@@ -483,6 +511,7 @@ function syncQuickZoneFields() {
     const rText = radius ? `ระยะ ${radius} กม.` : "ไม่จำกัดระยะทาง";
     status.textContent = `${primary} • ${sec} • ${rText}`;
   }
+  updateZoneQuickButtonLabel(p);
 }
 
 function openZoneQuickModal() {
@@ -875,29 +904,6 @@ async function loadCompletedCountSummary() {
   }
 }
 
-async function loadReworkCountSummary() {
-  if (!reworkCountEl) return null;
-  const u = String(username || "").trim();
-  if (!u) {
-    reworkCountEl.textContent = "0";
-    return 0;
-  }
-  try {
-    const url = `${API_BASE}/tech/rework_count_summary?username=${encodeURIComponent(u)}&v=rework-count-month-bkk-20260510`;
-    const res = await fetch(url, { credentials: "include", cache: "no-store" });
-    const data = await res.json().catch(() => null);
-    if (!res.ok || !data || data.ok === false) throw new Error(data?.error || "LOAD_REWORK_COUNT_FAILED");
-    const n = Number(data.month_rework_cases || 0);
-    const safe = Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
-    try { if (typeof window !== "undefined") window.__CWF_MONTH_REWORK__ = safe; } catch (_) {}
-    reworkCountEl.textContent = String(safe);
-    return safe;
-  } catch (_) {
-    if (!Number.isFinite(Number(window.__CWF_MONTH_REWORK__))) reworkCountEl.textContent = "0";
-    return null;
-  }
-}
-
 // ✅ แปลงตำแหน่งจากค่าฐานข้อมูล -> ข้อความแสดงผล
 function prettyPosition(pos) {
   const p = String(pos || "").trim();
@@ -955,7 +961,6 @@ async function loadProfile() {
     if (profileGradeEl) profileGradeEl.textContent = `เกรด: ${grade}`;
     if (ratingEl) ratingEl.textContent = (data.rating ?? 0).toString();
     loadCompletedCountSummary();
-    loadReworkCountSummary();
 
     // Photo (serve from /uploads)
     const photo = data.photo_path || "/logo.png";
@@ -973,12 +978,7 @@ async function loadProfile() {
         ? `โซนหลัก: Zone ${data.home_service_zone_code} - ${data.home_service_zone_label || ""}${data.secondary_service_zone_code ? ` • โซนรอง: Zone ${data.secondary_service_zone_code} - ${data.secondary_service_zone_label || ""}` : ""}`
         : "ระบบจะกำหนดโซนให้หลังกรอกเขต/อำเภอ";
     }
-    const zoneQuickSummary = document.getElementById("zoneQuickSummary");
-    if (zoneQuickSummary) {
-      zoneQuickSummary.textContent = data.home_service_zone_code
-        ? `หลัก ${data.home_service_zone_code}${data.secondary_service_zone_code ? ` / รอง ${data.secondary_service_zone_code}` : " / ไม่เลือกโซนรอง"}${data.service_radius_km ? ` / ${data.service_radius_km} กม.` : ""}`
-        : "ยังไม่ได้ตั้งพื้นที่";
-    }
+    updateZoneQuickButtonLabel(data);
 
     // ✅ sync technician compact profile "more" fields (safe no-op if not present)
     try{ if (typeof window !== 'undefined' && typeof window.__cwfSyncTechMore === 'function') window.__cwfSyncTechMore(); }catch(e){}
@@ -1012,7 +1012,6 @@ async function loadProfile() {
     if (profileGradeEl) profileGradeEl.textContent = "เกรด: -";
     if (ratingEl) ratingEl.textContent = "0.0";
     loadCompletedCountSummary();
-    loadReworkCountSummary();
     if (profilePhotoEl) profilePhotoEl.src = "/logo.png";
     try{ if (typeof window !== 'undefined' && typeof window.__cwfSyncTechMore === 'function') window.__cwfSyncTechMore(); }catch(e){}
   }
@@ -3174,7 +3173,6 @@ function renderJobs(jobs) {
     if (activeUpcomingJobsEl) activeUpcomingJobsEl.innerHTML = "<p>ยังไม่มีงานล่วงหน้า</p>";
     if (historyJobsEl) historyJobsEl.innerHTML = "<p>ยังไม่มีประวัติงาน</p>";
     loadCompletedCountSummary();
-    loadReworkCountSummary();
     renderProfile(0);
     return;
   }
@@ -3300,7 +3298,6 @@ function renderJobs(jobs) {
   }
 
   loadCompletedCountSummary();
-  loadReworkCountSummary();
   renderProfile();
 }
 
