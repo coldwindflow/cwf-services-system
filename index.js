@@ -20112,12 +20112,25 @@ if (status === "เสร็จแล้ว") {
     }
 
     await client.query("COMMIT");
-    if (String(status || '').includes('\u0e40\u0e2a\u0e23\u0e47\u0e08') || String(status || '').includes('\u0e1b\u0e34\u0e14\u0e07\u0e32\u0e19') || ['done','completed','closed'].includes(String(status || '').trim().toLowerCase())) {
+    const finalizedStatus = String(status || '').trim();
+    const finalizedStatusLower = finalizedStatus.toLowerCase();
+    if (finalizedStatus.includes('เสร็จ') || finalizedStatus.includes('ปิดงาน') || ['done','completed','closed'].includes(finalizedStatusLower)) {
       try {
         const team = await getTeamForJob(realId);
         await _refreshTechnicianIncomePreviewForJob(realId, team, { source: 'job_closed_preview' });
       } catch (e) {
         try { console.warn('[tech_income_preview] finalize refresh failed', { job_id: realId, error: e.message }); } catch {}
+      }
+    } else if (finalizedStatus.includes('ยกเลิก') || ['cancel','cancelled','canceled'].includes(finalizedStatusLower)) {
+      try {
+        const team = await getTeamForJob(realId);
+        await _syncDisplayForJobState(
+          { job_id: realId, job_status: 'cancelled', canceled_at: new Date(), cancel_reason: note || 'ยกเลิก' },
+          team,
+          { context: 'history' }
+        );
+      } catch (e) {
+        try { console.warn('[tech_income_display] finalize cancel sync failed', { job_id: realId, error: e.message }); } catch {}
       }
     }
     res.json({ success: true, job_id: Number(realId), status });
