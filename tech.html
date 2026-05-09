@@ -412,23 +412,7 @@
 
 
     /* ===== CWF Technician Premium Shell v20260428 =====
-       Match Admin Dashboard visual language without touching app.js?v=unit-evidence-final-v7 logic. */
-    body{
-      min-height:100vh;
-      background:
-        radial-gradient(circle at 18% 0%, rgba(56,189,248,.30), transparent 34%),
-        radial-gradient(circle at 92% 4%, rgba(244,196,0,.22), transparent 30%),
-        linear-gradient(180deg, #071b44 0%, #0B2E6D 142px, #F3F7FF 142px, #EEF4FF 100%) !important;
-      color:#0f172a;
-    }
-    .app{max-width:520px !important;padding:0 16px 128px !important;}
-    #techTopNav{
-      background:linear-gradient(135deg, rgba(5,22,58,.98), rgba(11,46,109,.98) 48%, rgba(21,88,214,.96)) !important;
-      border-bottom:1px solid rgba(255,255,255,.14) !important;
-      box-shadow:0 18px 46px rgba(2,6,23,.28) !important;
-    }
-    #techTopNav:after{
-      content:"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
+       Match Admin Dashboard visual language without touching app.js?v=20260510_fix23_home_compact_zone"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
       background:linear-gradient(90deg, rgba(244,196,0,0), rgba(244,196,0,.95), rgba(34,211,238,.65), rgba(244,196,0,0));
       pointer-events:none;
     }
@@ -1466,17 +1450,115 @@
 
 </style>
 
+  <style id="cwf-fix23-home-tight-layout">
+    /*
+      CWF fix23: tighten home cockpit spacing and make work/profile cards the same visual width.
+      Scope only technician home/profile controls; no job/income logic changes.
+    */
+    #techControlCard.tech-control-card{
+      width:100%!important;
+      box-sizing:border-box!important;
+      margin:4px 0 8px!important;
+      padding:10px!important;
+      border-radius:26px!important;
+      background:
+        radial-gradient(circle at 88% 0%, rgba(255,214,64,.18) 0 18%, transparent 34%),
+        linear-gradient(135deg, rgba(6,27,79,.98) 0%, rgba(10,58,155,.94) 46%, rgba(20,196,220,.88) 100%)!important;
+      border:1px solid rgba(255,255,255,.22)!important;
+      box-shadow:0 16px 34px rgba(4,25,75,.22), inset 0 1px 0 rgba(255,255,255,.18)!important;
+      color:#fff!important;
+    }
+    #techControlCard .tech-ctrl-row{
+      grid-template-columns:minmax(108px,.78fr) minmax(0,1.22fr)!important;
+      gap:10px!important;
+      align-items:stretch!important;
+    }
+    #techControlCard .accept-btn{
+      min-height:46px!important;
+      border-radius:19px!important;
+      font-size:14px!important;
+      padding:8px 10px!important;
+      box-shadow:0 12px 24px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.22)!important;
+    }
+    #techControlCard .accept-btn.paused{
+      background:linear-gradient(135deg,#ff405b 0%,#c51435 100%)!important;
+      color:#fff!important;
+      border-color:rgba(255,255,255,.26)!important;
+    }
+    #techControlCard .accept-btn.ready{
+      background:linear-gradient(135deg,#12c878 0%,#06a96d 100%)!important;
+      color:#fff!important;
+      border-color:rgba(255,255,255,.26)!important;
+    }
+    #techControlCard .zone-wrap::after{
+      content:"พื้นที่ประจำ"!important;
+      color:rgba(255,255,255,.66)!important;
+    }
+    #techControlCard .zone-select{
+      min-height:46px!important;
+      border-radius:19px!important;
+      background:rgba(255,255,255,.92)!important;
+      border:1px solid rgba(255,255,255,.36)!important;
+      box-shadow:0 12px 24px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.35)!important;
+    }
+    #techControlCard .zone-action-btn span{
+      color:#08245b!important;
+      font-size:14px!important;
+      font-weight:1100!important;
+      white-space:nowrap!important;
+      overflow:hidden!important;
+      text-overflow:ellipsis!important;
+    }
+    #techControlCard .zone-action-btn small{
+      color:#526276!important;
+      font-size:10px!important;
+      font-weight:950!important;
+    }
+    #acceptStatusText.accept-hint{
+      display:none!important;
+      margin:0!important;
+      padding:0!important;
+      min-height:0!important;
+    }
+    #sec-new.card.section.active{
+      margin-top:8px!important;
+      padding:0!important;
+      border-radius:28px!important;
+      overflow:hidden!important;
+      background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(238,246,255,.92))!important;
+      border:1px solid rgba(255,255,255,.70)!important;
+      box-shadow:0 20px 44px rgba(4,25,75,.16)!important;
+    }
+    #sec-new .profileHeroV19{
+      width:100%!important;
+      box-sizing:border-box!important;
+      margin:0!important;
+      border-radius:26px!important;
+      border-left:0!important;
+      border-right:0!important;
+    }
+    #sec-new .profileHeroV19 + *{
+      margin-top:10px!important;
+    }
+    @media(max-width:380px){
+      #techControlCard.tech-control-card{margin-top:2px!important;padding:9px!important;border-radius:24px!important;}
+      #techControlCard .tech-ctrl-row{grid-template-columns:minmax(102px,.76fr) minmax(0,1.24fr)!important;gap:8px!important;}
+      #techControlCard .accept-btn,#techControlCard .zone-select{min-height:44px!important;border-radius:17px!important;}
+      #techControlCard .zone-action-btn span{font-size:13px!important;}
+      #techControlCard .zone-action-btn small{font-size:9px!important;}
+    }
+  </style>
+
       <div class="tech-ctrl-row">
         <button id="acceptToggleBtn" class="accept-btn ready" type="button">🟢 รับงาน</button>
 
         <div class="zone-wrap">
-          <button id="zoneQuickBtn" class="zone-select zone-action-btn" type="button" onclick="return window.__cwfOpenZoneQuickModalFallback ? window.__cwfOpenZoneQuickModalFallback(event) : (window.openZoneQuickModal ? (window.openZoneQuickModal(), false) : false)"><span>ตั้งค่าด่วน</span><small id="zoneQuickSummary">โซน / ระยะทาง</small></button>
+          <button id="zoneQuickBtn" class="zone-select zone-action-btn" type="button" onclick="return window.__cwfOpenZoneQuickModalFallback ? window.__cwfOpenZoneQuickModalFallback(event) : (window.openZoneQuickModal ? (window.openZoneQuickModal(), false) : false)"><span id="zoneQuickTitle">พื้นที่ประจำ</span><small id="zoneQuickSummary">แตะเพื่อตั้งค่าพื้นที่</small></button>
           <select id="zoneSelect" class="zone-select" style="display:none"><option value="">ทุกโซน</option></select>
         </div>
       </div>
 
       <div id="acceptStatusText" class="accept-hint">กำลังโหลดสถานะ...</div>
-      <div style="margin-top:6px;font-size:12px;font-weight:900;color:#526276;line-height:1.45;">⏰ ปุ่มรับงานใช้เฉพาะวันนี้ และระบบจะปิดรับงานอัตโนมัติหลังเที่ยงคืน</div>
 
       <!-- รองรับหน้าเก่า/โค้ดเดิม ซ่อนไว้ไม่ให้รก -->
       <select id="acceptStatusSelect" style="display:none;">
@@ -1519,8 +1601,7 @@
           <div class="meta">
             <div class="name" id="profile-name">-</div>
             <div class="code" id="profile-code">รหัสช่าง: -</div>
-            <!-- ซ่อนข้อมูลเยอะ ๆ ตามสเปค แต่ยังคง id ไว้ให้ app.js?v=unit-evidence-final-v7 เติมค่า -->
-            <div style="display:none">
+            <!-- ซ่อนข้อมูลเยอะ ๆ ตามสเปค แต่ยังคง id ไว้ให้ app.js?v=20260510_fix23_home_compact_zone"display:none">
               <div id="profile-rank" style="display:flex;align-items:center;gap:8px;">
                 <img id="profile-rank-badge" src="/assets/ranks/rank_lv1_128.png" alt="rank" style="width:44px;height:auto;display:block;">
                 <div class="muted" id="profile-rank-label">Rank: -</div>
@@ -1586,8 +1667,7 @@
       </div>
 
       <div class="section active" id="sec-active-today" style="margin-top:10px;">
-        <!-- ✅ ต้องตรงกับ app.js?v=unit-evidence-final-v7 (Today) -->
-        <div id="active-list"></div>
+        <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix23_home_compact_zone"active-list"></div>
       </div>
 
       <div class="section" id="sec-active-upcoming" style="margin-top:10px;">
@@ -1623,8 +1703,7 @@
       </div>
       <div class="muted" id="history-filter-hint" style="margin-top:8px;">แสดงงานที่ปิดแล้วแบบย่อ</div>
 
-      <!-- ✅ ต้องตรงกับ app.js?v=unit-evidence-final-v7 -->
-      <div id="history-list" style="margin-top:10px;"></div>
+      <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix23_home_compact_zone"history-list" style="margin-top:10px;"></div>
     </div>
 
     <div class="card section" id="sec-income">
@@ -1824,168 +1903,6 @@
     @media(max-width:380px){#sec-new .profileHeroV19{padding:16px 12px 12px!important;border-radius:26px!important;}#sec-new .profileHeroV19 .profile-compact .chips{gap:6px!important;}#sec-new .profileHeroV19 .chipStat{min-height:72px!important;border-radius:17px!important;}#sec-new .profileHeroV19 .chipStat .k{font-size:9px!important;}#sec-new .profileHeroV19 .chipStat .v{font-size:20px!important;}}
   </style>
 
-
-  <style id="cwf-home-fix22-premium-cockpit">
-    /* CWF fix22: make the new-job home screen feel like one premium high-tech cockpit.
-       Visual-only override. No job/income/history logic is changed. */
-    body{
-      background:
-        radial-gradient(circle at 84px 150px, rgba(22,185,242,.18), transparent 210px),
-        radial-gradient(circle at calc(100% - 42px) 260px, rgba(244,196,0,.16), transparent 210px),
-        linear-gradient(180deg,#071f52 0 150px,#eef5ff 150px 100%) !important;
-    }
-    .app{padding-left:13px!important;padding-right:13px!important;}
-
-    /* One soft shell behind the home tab, so the profile/offers do not feel like separate random blocks. */
-    #sec-new.card{
-      position:relative!important;
-      margin-top:12px!important;
-      padding:14px 12px 18px!important;
-      border-radius:30px!important;
-      overflow:hidden!important;
-      background:
-        linear-gradient(180deg,rgba(255,255,255,.94),rgba(244,249,255,.88))!important;
-      border:1px solid rgba(255,255,255,.76)!important;
-      box-shadow:0 22px 55px rgba(6,31,82,.17), inset 0 1px 0 rgba(255,255,255,.95)!important;
-    }
-    #sec-new.card:before{
-      content:'';position:absolute;inset:0;pointer-events:none;opacity:.52;
-      background:
-        linear-gradient(90deg,rgba(8,145,178,.10) 1px,transparent 1px),
-        linear-gradient(180deg,rgba(37,99,235,.07) 1px,transparent 1px);
-      background-size:38px 38px;
-      mask-image:linear-gradient(180deg,transparent 0%,#000 18%,#000 84%,transparent 100%);
-    }
-    #sec-new.card>*{position:relative;z-index:1;}
-
-    /* Work-mode card: refined cockpit glass, not another oversized colorful block. */
-    #techControlCard.tech-control-card{
-      position:relative!important;
-      margin:10px 0 12px!important;
-      padding:13px!important;
-      border-radius:28px!important;
-      overflow:hidden!important;
-      color:#fff!important;
-      background:
-        radial-gradient(circle at 92% 0%,rgba(244,196,0,.28),transparent 34%),
-        radial-gradient(circle at 10% 20%,rgba(20,196,220,.22),transparent 32%),
-        linear-gradient(135deg,#081d4d 0%,#0a3a86 48%,#087fb1 100%)!important;
-      border:1px solid rgba(255,255,255,.22)!important;
-      box-shadow:0 18px 44px rgba(5,27,75,.26), inset 0 1px 0 rgba(255,255,255,.18)!important;
-    }
-    #techControlCard.tech-control-card:before{
-      content:'CWF WORK MODE';display:block;margin:0 0 9px 4px;
-      color:#f6dd64;font-size:10px;font-weight:1100;letter-spacing:.28em;line-height:1;
-    }
-    #techControlCard .tech-ctrl-row{grid-template-columns:1fr 1fr!important;gap:10px!important;}
-    #techControlCard .accept-btn,
-    #techControlCard .zone-select{
-      min-height:54px!important;border-radius:20px!important;border:1px solid rgba(255,255,255,.24)!important;
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.24),0 12px 25px rgba(0,0,0,.16)!important;
-      font-size:15px!important;
-    }
-    #techControlCard .accept-btn.paused{background:linear-gradient(135deg,#ff365d,#c9153f)!important;color:#fff!important;}
-    #techControlCard .accept-btn.ready{background:linear-gradient(135deg,#15c882,#02b2a8)!important;color:#fff!important;}
-    #techControlCard .zone-select{background:rgba(255,255,255,.94)!important;color:#09275f!important;}
-    #techControlCard .zone-wrap::after{color:rgba(9,39,95,.48)!important;}
-    #techControlCard .accept-hint{
-      margin-top:10px!important;border-radius:18px!important;border:1px solid rgba(255,255,255,.18)!important;
-      background:rgba(255,255,255,.13)!important;color:rgba(255,255,255,.92)!important;
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.12)!important;
-    }
-    #techControlCard .accept-hint + div{
-      color:rgba(255,255,255,.78)!important;margin:9px 4px 1px!important;font-size:12px!important;
-    }
-
-    /* Profile: premium, but less toy-like. Same cockpit language as the work card. */
-    #sec-new .profileHeroV19{
-      margin:0 0 16px!important;
-      padding:16px 14px 14px!important;
-      border-radius:28px!important;
-      background:
-        radial-gradient(circle at 92% 4%,rgba(244,196,0,.48),transparent 26%),
-        radial-gradient(circle at 12% 24%,rgba(45,212,191,.26),transparent 34%),
-        linear-gradient(145deg,#081b47 0%,#0b347f 50%,#0a94bb 100%)!important;
-      border:1px solid rgba(255,255,255,.24)!important;
-      box-shadow:0 20px 45px rgba(6,31,82,.22), inset 0 1px 0 rgba(255,255,255,.18)!important;
-    }
-    #sec-new .profileHeroV19:before{
-      left:auto!important;right:12px!important;top:12px!important;width:120px!important;height:120px!important;
-      background:linear-gradient(135deg,rgba(255,255,255,.12),rgba(255,255,255,0))!important;filter:none!important;
-      border:1px solid rgba(255,255,255,.08);
-    }
-    #sec-new .profileHeroV19:after{
-      content:''!important;position:absolute!important;inset:12px!important;border-radius:23px!important;
-      background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,0) 38%,rgba(255,255,255,.07))!important;
-      filter:none!important;pointer-events:none!important;
-    }
-    #sec-new .profileHeroV19>h2{
-      font-size:clamp(25px,6.6vw,34px)!important;line-height:1!important;margin:0 66px 12px 0!important;
-      color:#fff!important;-webkit-text-fill-color:#fff!important;text-shadow:0 5px 16px rgba(0,0,0,.28)!important;
-    }
-    #sec-new .profileHeroV19>h2:before{color:#f6dd64!important;-webkit-text-fill-color:#f6dd64!important;}
-    #sec-new .profileHeroV19 .profile-settings-icon{
-      width:52px!important;height:52px!important;right:14px!important;top:14px!important;border-radius:18px!important;
-      background:linear-gradient(145deg,#fff16a,#ffc400 62%,#f59e0b)!important;color:#07245b!important;
-      box-shadow:0 14px 30px rgba(244,196,0,.34), inset 0 1px 0 rgba(255,255,255,.65)!important;
-    }
-    #sec-new .profileHeroV19 .profile-compact .left{
-      padding:10px!important;border-radius:22px!important;
-      background:rgba(255,255,255,.14)!important;border:1px solid rgba(255,255,255,.20)!important;
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.18)!important;
-    }
-    #sec-new .profileHeroV19 .tech-avatar{width:68px!important;height:68px!important;border-radius:20px!important;}
-    #sec-new .profileHeroV19 .profile-compact .chips{gap:9px!important;}
-    #sec-new .profileHeroV19 .chipStat{
-      min-height:72px!important;border-radius:19px!important;padding:9px 4px!important;
-      box-shadow:0 12px 24px rgba(0,0,0,.14), inset 0 1px 0 rgba(255,255,255,.24)!important;
-    }
-    #sec-new .profileHeroV19 .chipStat.income{background:linear-gradient(145deg,#07a76a,#14d9a6)!important;}
-    #sec-new .profileHeroV19 .chipStat.done{background:linear-gradient(145deg,#2e7bf0,#1750bd)!important;}
-    #sec-new .profileHeroV19 .chipStat.rework{background:linear-gradient(145deg,#ff4d66,#be1836)!important;}
-    #sec-new .profileHeroV19 .chipStat.rating{background:linear-gradient(145deg,#ffdc48,#f5a400)!important;}
-    #sec-new .profileHeroV19 details.tech-more summary{
-      min-height:54px!important;border-radius:19px!important;background:rgba(255,255,255,.15)!important;
-    }
-
-    /* Offer section: integrated premium panel instead of a plain white leftover. */
-    #sec-new>hr{display:none!important;}
-    #sec-new>h2:not(:first-child){
-      display:flex!important;align-items:center!important;gap:10px!important;margin:18px 2px 8px!important;
-      color:#08245b!important;-webkit-text-fill-color:#08245b!important;font-size:28px!important;letter-spacing:-.02em!important;
-    }
-    #sec-new>h2:not(:first-child):before{
-      content:'';width:5px;height:42px;border-radius:99px;background:linear-gradient(180deg,#f4c400,#10bfe8);box-shadow:0 0 18px rgba(16,191,232,.35);
-    }
-    #sec-new>h2:not(:first-child)+.muted{
-      margin:0 0 10px!important;padding:12px 14px!important;border-radius:18px!important;
-      background:linear-gradient(135deg,rgba(255,255,255,.86),rgba(255,249,224,.78))!important;
-      border:1px solid rgba(244,196,0,.22)!important;color:#475569!important;font-weight:900!important;line-height:1.45!important;
-    }
-    #availableJobs{
-      padding:14px!important;border-radius:22px!important;
-      background:rgba(255,255,255,.62)!important;border:1px solid rgba(215,224,238,.75)!important;
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.78)!important;
-    }
-    #availableJobs:empty{display:none!important;}
-    #availableJobs .muted, #availableJobs div{font-weight:850;}
-
-    /* Bottom nav matches cockpit without looking like a separate sticker. */
-    .bottom-nav{
-      background:linear-gradient(180deg,rgba(8,30,78,.96),rgba(10,56,139,.96))!important;
-      border-color:rgba(255,255,255,.16)!important;box-shadow:0 -18px 40px rgba(5,27,75,.24)!important;
-    }
-    .nav-btn{background:rgba(255,255,255,.10)!important;border-color:rgba(255,255,255,.14)!important;}
-    .nav-btn.active{background:linear-gradient(145deg,#ffdc35,#f4b400)!important;color:#111827!important;}
-
-    @media(max-width:380px){
-      #techControlCard.tech-control-card{padding:12px!important;border-radius:26px!important;}
-      #sec-new.card{padding:12px 10px 16px!important;border-radius:28px!important;}
-      #sec-new .profileHeroV19{padding:15px 12px 13px!important;border-radius:26px!important;}
-      #sec-new .profileHeroV19 .chipStat{min-height:68px!important;}
-    }
-  </style>
-
   <div class="payout-modal-backdrop" id="depositLedgerModalBackdrop" onclick="if(event.target===this) window.closeDepositLedgerModal && window.closeDepositLedgerModal()">
     <div class="payout-modal" role="dialog" aria-modal="true" aria-labelledby="depositLedgerTitle">
       <div class="payout-modal-head">
@@ -2006,7 +1923,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260510_home_cockpit_fix22"></script>
+  <script src="app.js?v=20260510_fix23_home_compact_zone"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
