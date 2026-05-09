@@ -8685,7 +8685,7 @@ function _technicianRollingDisplayMonthWindow(nowBkk = _bkkNow()){
     period10: b10,
     period25: b25,
     is_current_month: true,
-    policy: 'payout_month_10_plus_25_live_completed_jobs',
+    policy: 'income_month_first_second_half_live_completed_jobs',
   };
 }
 
@@ -8705,70 +8705,61 @@ function _parsePayoutMonthYm(ym = ''){
   return { y, m: mm, ym: `${y}-${String(mm).padStart(2, '0')}` };
 }
 
+function _incomeMonthNextParts(y, m){
+  let ny = Number(y);
+  let nm = Number(m) + 1;
+  if (nm > 12) { nm = 1; ny += 1; }
+  return { y: ny, m: nm, ym: `${ny}-${String(nm).padStart(2, '0')}` };
+}
+
+function _incomeMonthPreviousParts(y, m){
+  let py = Number(y);
+  let pm = Number(m) - 1;
+  if (pm <= 0) { pm = 12; py -= 1; }
+  return { y: py, m: pm, ym: `${py}-${String(pm).padStart(2, '0')}` };
+}
+
+function _incomeMonthPeriodDefs(parsed){
+  const ym = parsed?.ym || '';
+  const firstHalf = _periodBoundsForYm('25', parsed.y, parsed.m);
+  const next = _incomeMonthNextParts(parsed.y, parsed.m);
+  const secondHalf = _periodBoundsForYm('10', next.y, next.m);
+  return [
+    {
+      ...firstHalf,
+      payout_id: `payout_${firstHalf.label_ym}_25`,
+      income_month: ym,
+      income_bucket: 'first_half',
+      income_bucket_label: '1-15',
+      display_order: 1,
+    },
+    {
+      ...secondHalf,
+      payout_id: `payout_${secondHalf.label_ym}_10`,
+      income_month: ym,
+      income_bucket: 'second_half',
+      income_bucket_label: '16-end',
+      display_order: 2,
+    },
+  ];
+}
+
 function _periodEndDisplayIso(endEx){
   try { return new Date(new Date(endEx).getTime() - 1000).toISOString(); }
   catch { return endEx?.toISOString?.() || null; }
-}
-
-function _thaiPayoutMonthLabel(ym){
-  const m = String(ym || '').match(/^(\d{4})-(\d{2})$/);
-  if (!m) return String(ym || '');
-  try {
-    return new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', month: 'short', year: 'numeric' })
-      .format(new Date(`${m[1]}-${m[2]}-01T12:00:00+07:00`));
-  } catch (_) {
-    return String(ym || '');
-  }
-}
-function _thaiPayoutDateShort(value){
-  if (!value) return '';
-  try {
-    const d = new Date(value);
-    if (Number.isNaN(d.getTime())) return '';
-    return new Intl.DateTimeFormat('th-TH', { timeZone: 'Asia/Bangkok', day: 'numeric', month: 'short' }).format(d);
-  } catch (_) { return ''; }
-}
-function _payoutPeriodRangeLabelTH(start, endEx){
-  const endDisplay = _periodEndDisplayIso(endEx);
-  const a = _thaiPayoutDateShort(start);
-  const b = _thaiPayoutDateShort(endDisplay || endEx);
-  return (a && b) ? `งานปิด ${a}–${b}` : 'งานปิดตามช่วงงวด';
-}
-function _payoutPeriodTitleTH(periodType, ym){
-  const t = String(periodType || '').trim();
-  return `งวด ${t || '-'} ${_thaiPayoutMonthLabel(ym)}`;
-}
-function _payoutPeriodStatusTH(status, mode){
-  const s = String(status || '').trim().toLowerCase();
-  const paidMap = { paid: 'จ่ายแล้ว', locked: 'พร้อมจ่าย', draft: 'กำลังตรวจยอด', cancelled: 'ยกเลิก', unpaid: 'รอจ่าย', partial: 'จ่ายบางส่วน' };
-  if (paidMap[s]) return paidMap[s];
-  if (String(mode || '') === 'current_period_to_date') return 'ประมาณการ';
-  return 'ตามรอบจ่าย';
-}
-function _decoratePayoutPeriodForTech(period, payoutMonthYm, status){
-  const p = period || {};
-  const ym = p.label_ym || payoutMonthYm || '';
-  const t = String(p.period_type || '').trim();
-  const endEx = p.endEx || p.period_end || p.period_end_exclusive;
-  const start = p.start || p.period_start;
-  return {
-    payout_month_label_th: _thaiPayoutMonthLabel(ym),
-    payout_period_title: _payoutPeriodTitleTH(t, ym),
-    payout_period_range_label: _payoutPeriodRangeLabelTH(start, endEx),
-    payout_period_status_label: _payoutPeriodStatusTH(status || p.status || p.paid_status, p.mode),
-  };
 }
 
 async function _computeTechnicianPayoutMonthTotal(username, ym = ''){
   const tech = String(username || '').trim();
   if (!tech) return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', periods: [] };
   try {
-    const parsed = _parsePayoutMonthYm(ym);
+    // The month selected in the technician payout UI is the payout anchor month.
+    // To avoid confusion, the summary itself shows the actual work/income month.
+    // Example: payout anchor 2026-05 => income month 2026-04, split 1-15 Apr + 16-30 Apr.
+    const payoutParsed = _parsePayoutMonthYm(ym);
+    const parsed = _incomeMonthPreviousParts(payoutParsed.y, payoutParsed.m);
     const nowUtc = new Date();
-    const defs = [
-      _periodBoundsForYm('10', parsed.y, parsed.m),
-      _periodBoundsForYm('25', parsed.y, parsed.m),
-    ];
+    const defs = _incomeMonthPeriodDefs(parsed);
     const periods = [];
     let total = 0;
     for (const def of defs) {
@@ -8778,42 +8769,43 @@ async function _computeTechnicianPayoutMonthTotal(username, ym = ''){
       let amount = 0;
       if (effectiveEnd > def.start) {
         lines = await _computeTechLinesInRange(tech, def.start, effectiveEnd, {
-          payout_id: `payout_${def.label_ym}_${def.period_type}`,
+          payout_id: def.payout_id || `payout_${def.label_ym}_${def.period_type}`,
           period_type: def.period_type,
           label_ym: def.label_ym,
         });
         amount = _money((lines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
       }
       total += amount;
-      const mode = effectiveEnd < def.endEx ? 'current_period_to_date' : 'full_period';
-      const payoutId = `payout_${def.label_ym}_${def.period_type}`;
-      const decorated = _decoratePayoutPeriodForTech({ ...def, mode }, parsed.ym, mode === 'current_period_to_date' ? 'estimated' : 'draft');
       periods.push({
-        payout_id: payoutId,
+        payout_id: def.payout_id || `payout_${def.label_ym}_${def.period_type}`,
         period_type: def.period_type,
+        label_ym: def.label_ym,
+        income_month: def.income_month || parsed.ym,
+        income_bucket: def.income_bucket || '',
+        income_bucket_label: def.income_bucket_label || '',
+        display_order: def.display_order || 0,
         period_start: def.start.toISOString(),
         period_end: def.endEx.toISOString(),
         period_end_display: _periodEndDisplayIso(def.endEx),
         period_effective_end: effectiveEnd.toISOString(),
         source: 'live_completed_jobs',
-        mode,
+        mode: effectiveEnd < def.endEx ? 'current_period_to_date' : 'full_period',
         gross_amount: amount,
         adj_total: 0,
         deposit_deduction_amount: 0,
         payout_month_amount: amount,
         payout_month_net_amount: amount,
         jobs_count: (lines || []).length,
-        ...decorated,
       });
     }
     total = _money(total);
     return {
-      payout_month: parsed.ym,
-      payout_month_label_th: _thaiPayoutMonthLabel(parsed.ym),
-      payout_month_title: `รวมรอบจ่าย ${_thaiPayoutMonthLabel(parsed.ym)}`,
+      payout_month: payoutParsed.ym,
+      payout_anchor_month: payoutParsed.ym,
+      income_month: parsed.ym,
       payout_month_total: total,
       payout_month_net_total: total,
-      payout_month_policy: 'payout_month_10_plus_25_live_completed_jobs',
+      payout_month_policy: 'income_month_first_second_half_live_completed_jobs',
       monthly_income_display_amount: total,
       monthly_income_display_label: parsed.ym,
       monthly_income_period_start: defs[0].start.toISOString(),
@@ -9830,21 +9822,17 @@ app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
     const qMonth = String(req.query.month || '').trim();
     let periods;
     if (/^\d{4}-\d{2}$/.test(qMonth)) {
-      const [yy, mm] = qMonth.split('-').map(Number);
-      const b25 = _periodBoundsForYm('25', yy, mm);
-      const b10 = _periodBoundsForYm('10', yy, mm);
-      periods = [
-        { ...b25, payout_id: `payout_${b25.label_ym}_25` },
-        { ...b10, payout_id: `payout_${b10.label_ym}_10` },
-      ];
-      periods.sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
+      const payoutAnchor = _parsePayoutMonthYm(qMonth);
+      const incomeMonth = _incomeMonthPreviousParts(payoutAnchor.y, payoutAnchor.m);
+      // Technician UI selects the payout anchor month, but displays the real income/work month.
+      // Example: selected 2026-05 => work closed 1-15 Apr (paid 25 Apr) + 16-30 Apr (paid 10 May).
+      periods = _incomeMonthPeriodDefs(incomeMonth);
+      periods = periods.map((p) => ({ ...p, payout_anchor_month: payoutAnchor.ym }));
+      periods.sort((a, b) => (a.display_order || 0) - (b.display_order || 0));
     } else {
       // backward compatible สำหรับ client เก่า
       periods = _recentPeriods(6, _bkkNow());
     }
-
-    const liveMonthSummary = /^\d{4}-\d{2}$/.test(qMonth) ? await _computeTechnicianPayoutMonthTotal(tech, qMonth) : null;
-    const liveById = new Map((liveMonthSummary?.periods || []).map((period) => [String(period.payout_id || ''), period]));
 
     const rows = [];
     for (const p of periods) {
@@ -9908,33 +9896,22 @@ app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
       const paid_amount = Number(payment?.paid_amount || 0);
       const paid_status = String(payment?.paid_status || (paid_amount > 0 ? 'partial' : 'unpaid'));
 
-      const livePeriod = liveById.get(String(p.payout_id || '')) || null;
-      if (livePeriod) {
-        gross_amount = Number(livePeriod.payout_month_amount ?? livePeriod.gross_amount ?? gross_amount ?? 0);
-        lines_count = Number(livePeriod.jobs_count ?? lines_count ?? 0);
-      }
-
       const deposit_deduction_amount = await _getDepositDeductionForPayout(p.payout_id, tech);
       const deposit = await _getDepositSummary(tech);
       const net_amount = _money(gross_amount + adj_total - deposit_deduction_amount);
       const remaining_amount = _money(net_amount - paid_amount);
       const paid_status_calc = _paidStatus(net_amount, paid_amount);
 
-      const decorated = livePeriod
-        ? {
-            payout_month_label_th: liveMonthSummary?.payout_month_label_th || _thaiPayoutMonthLabel(qMonth),
-            payout_period_title: livePeriod.payout_period_title,
-            payout_period_range_label: livePeriod.payout_period_range_label,
-            payout_period_status_label: _payoutPeriodStatusTH(paid_status_calc || status, livePeriod.mode),
-          }
-        : _decoratePayoutPeriodForTech({ ...p, period_start, period_end }, qMonth, paid_status_calc || status);
-
       rows.push({
         payout_id: p.payout_id,
         period_type: p.period_type,
+        label_ym: p.label_ym,
+        income_month: p.income_month || qMonth || '',
+        income_bucket: p.income_bucket || '',
+        income_bucket_label: p.income_bucket_label || '',
+        display_order: p.display_order || 0,
         period_start,
         period_end,
-        period_end_display: _periodEndDisplayIso(period_end),
         status,
         gross_amount,
         adj_total,
@@ -9943,7 +9920,6 @@ app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
         paid_amount,
         paid_status: paid_status_calc,
         remaining_amount,
-        ...decorated,
         ...deposit,
         latest_deposit_deduction: deposit_deduction_amount,
         lines_count,
@@ -9952,19 +9928,9 @@ app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
       });
     }
 
-    // Keep the technician history consistent with the summary card: งวด 10 first, then งวด 25.
-    rows.sort((a, b) => {
-      const order = { '10': 10, '25': 25 };
-      return (order[String(a.period_type)] || 99) - (order[String(b.period_type)] || 99);
-    });
-    return res.json({
-      ok: true,
-      username: tech,
-      payout_month: liveMonthSummary?.payout_month || qMonth || '',
-      payout_month_title: liveMonthSummary?.payout_month_title || (qMonth ? `รวมรอบจ่าย ${_thaiPayoutMonthLabel(qMonth)}` : ''),
-      payout_month_total: liveMonthSummary?.payout_month_total ?? rows.reduce((sum, row) => sum + Number(row.net_amount || 0), 0),
-      payouts: rows,
-    });
+    // sort latest first by period_start
+    rows.sort((a, b) => new Date(b.period_start).getTime() - new Date(a.period_start).getTime());
+    return res.json({ ok: true, username: tech, payouts: rows });
   } catch (e) {
     console.error('GET /tech/payouts', e);
     return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
@@ -10304,7 +10270,8 @@ async function _computeTechnicianIncomeSummary(username, opts = {}) {
   const month_total = _money((monthLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
   const computedJobs = await _buildTechnicianIncomeComputedJobs(tech, dayStart, dayEnd);
 
-  const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, ymKey);
+  const selectedIncomeMonth = _parsePayoutMonthYm(opts.month || ymKey).ym;
+  const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, selectedIncomeMonth);
   const monthlyStart = payoutMonth.monthly_income_period_start ? new Date(payoutMonth.monthly_income_period_start) : null;
   const monthlyEnd = payoutMonth.monthly_income_period_end ? new Date(payoutMonth.monthly_income_period_end) : null;
   const workSummary = (monthlyStart && monthlyEnd && !Number.isNaN(monthlyStart.getTime()) && !Number.isNaN(monthlyEnd.getTime()))
@@ -10659,7 +10626,7 @@ app.get('/tech/payments_total', requireTechnicianSession, async (req, res) => {
       [tech]
     );
     const paid_total = Number(q.rows?.[0]?.paid_total || 0);
-    const summary = await _computeTechnicianIncomeSummary(tech);
+    const summary = await _computeTechnicianIncomeSummary(tech, { month: req.query.month });
     return res.json({
       ...summary,
       ok:true,

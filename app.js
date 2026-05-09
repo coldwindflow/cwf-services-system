@@ -102,8 +102,8 @@ const incomePeriodEstValEl = document.getElementById('incomePeriodEstVal');
 const incomeOutstandingValEl = document.getElementById('incomeOutstandingVal');
 const incomePeriodRangeEl = document.getElementById('incomePeriodRange');
 const incomeMonthRangeEl = document.getElementById('incomeMonthRange');
-const incomeMonthTitleEl = document.getElementById('incomeMonthTitle');
-const incomeMonthBreakdownEl = document.getElementById('incomeMonthBreakdown');
+const incomeOutstandingTitleEl = document.getElementById('incomeOutstandingTitle');
+const incomePayoutMonthBreakdownEl = document.getElementById('incomePayoutMonthBreakdown');
 const incomeWorkSummaryWrapEl = document.getElementById('incomeWorkSummaryWrap');
 const incomeWorkSummaryGridEl = document.getElementById('incomeWorkSummaryGrid');
 const incomeWorkSummaryPeriodEl = document.getElementById('incomeWorkSummaryPeriod');
@@ -1021,6 +1021,29 @@ function _incomeThaiMonth(value){
     return new Intl.DateTimeFormat('th-TH', { timeZone:'Asia/Bangkok', month:'short', year:'numeric' }).format(d);
   }catch{ return String(value || 'เดือนนี้'); }
 }
+function _incomeThaiMonthFull(value){
+  const ym = String(value || '').match(/^(\d{4})-(\d{2})/);
+  if (!ym) return 'เดือนนี้';
+  try{
+    const d = new Date(`${ym[1]}-${ym[2]}-01T12:00:00+07:00`);
+    return new Intl.DateTimeFormat('th-TH', { timeZone:'Asia/Bangkok', month:'short', year:'numeric' }).format(d);
+  }catch{ return String(value || 'เดือนนี้'); }
+}
+function _incomeEndDayLabel(startValue, endValue){
+  const a = _incomeYmdFromAny(startValue);
+  const b = _incomeYmdFromAny(endValue);
+  if (!a || !b) return '';
+  try{
+    const sd = new Date(`${a}T12:00:00+07:00`);
+    const ed = new Date(`${b}T12:00:00+07:00`);
+    const sameMonth = sd.getFullYear() === ed.getFullYear() && sd.getMonth() === ed.getMonth();
+    const startDay = new Intl.DateTimeFormat('th-TH', { timeZone:'Asia/Bangkok', day:'numeric' }).format(sd);
+    const endFmt = new Intl.DateTimeFormat('th-TH', { timeZone:'Asia/Bangkok', day:'numeric', month:'short' }).format(ed);
+    if (sameMonth) return `${startDay}–${endFmt}`;
+    return `${_incomeThaiDateShort(startValue)}–${endFmt}`;
+  }catch{ return `${a} - ${b}`; }
+}
+
 function _incomePayLabelFromPeriod(data){
   const periodType = String(data?.period_type || '').trim();
   const pid = String(data?.payout_id || '');
@@ -1045,82 +1068,47 @@ function _incomeRangeText(startValue, endValue){
 }
 function _incomeMonthRangeText(data){
   const periods = Array.isArray(data?.payout_month_periods) ? data.payout_month_periods : (Array.isArray(data?.periods) ? data.periods : []);
-  const p10 = periods.find(p => String(p.period_type) === '10');
-  const p25 = periods.find(p => String(p.period_type) === '25');
-  const ym = data?.monthly_income_display_label || data?.payout_month || data?.month || '';
-  if (p10 && p25) {
-    const r10 = _incomeRangeText(p10.period_start, p10.period_end_display || p10.period_end || p10.period_end_exclusive);
-    const r25 = _incomeRangeText(p25.period_start, p25.period_end_display || p25.period_end || p25.period_end_exclusive);
-    const month = _incomeThaiMonth(ym);
-    if (r10 && r25) return `รวมงวด 10 + 25 ${month} • งวด 10: ${r10} • งวด 25: ${r25}`;
-    return `รวมงวด 10 + 25 ${month}`;
+  const ym = data?.income_month || data?.monthly_income_display_label || data?.payout_month || data?.month || _selectedPayoutMonth?.() || '';
+  const month = _incomeThaiMonthFull(ym);
+  const pFirst = periods.find(p => String(p.income_bucket || '') === 'first_half') || periods.find(p => String(p.period_type) === '25');
+  const pSecond = periods.find(p => String(p.income_bucket || '') === 'second_half') || periods.find(p => String(p.period_type) === '10');
+  if (pFirst && pSecond) {
+    const r1 = _incomeEndDayLabel(pFirst.period_start, pFirst.period_end_display || pFirst.period_end || pFirst.period_end_exclusive);
+    const r2 = _incomeEndDayLabel(pSecond.period_start, pSecond.period_end_display || pSecond.period_end || pSecond.period_end_exclusive);
+    if (r1 && r2) return `รวมงานปิด ${r1} และ ${r2}`;
+    return `รวมรายได้งานปิดเดือน ${month}`;
   }
-  const r = _incomeRangeText(data?.monthly_income_period_start, data?.monthly_income_period_end);
-  return r ? `รวมรอบจ่าย ${r}` : 'รวมงวด 10 + 25 ของเดือนที่กำลังแสดง';
+  const r = _incomeRangeText(data?.monthly_income_period_start, data?.monthly_income_period_end_display || data?.monthly_income_period_end);
+  return r ? `รวมงานปิด ${r}` : `รวมรายได้งานปิดเดือน ${month}`;
 }
 
 function _incomePayoutMonthTitle(data){
-  if (data?.payout_month_title) return String(data.payout_month_title);
-  const ym = data?.monthly_income_display_label || data?.payout_month || data?.month || _currentYm();
-  return `รวมรอบจ่าย ${_incomeThaiMonth(ym)}`;
-}
-function _incomePeriodMonthFromData(period, data){
-  const id = String(period?.payout_id || '');
-  const m = id.match(/payout_(\d{4}-\d{2})_(10|25)/);
-  if (m) return m[1];
-  return String(data?.monthly_income_display_label || data?.payout_month || data?.month || _currentYm()).slice(0,7);
-}
-function _incomePeriodLabel(period, data){
-  if (period?.payout_period_title) return String(period.payout_period_title);
-  const t = String(period?.period_type || '').trim();
-  const ym = _incomePeriodMonthFromData(period, data);
-  if (t === '10' || t === '25') return `งวด ${t} ${_incomeThaiMonth(ym)}`;
-  return `งวดจ่าย ${_incomeThaiMonth(ym)}`;
-}
-function _incomePeriodRangeLabel(period){
-  if (period?.payout_period_range_label) return String(period.payout_period_range_label);
-  const r = _incomeRangeText(period?.period_start, period?.period_end_display || period?.period_end || period?.period_end_exclusive);
-  return r ? `งานปิด ${r}` : 'งานปิดตามช่วงงวด';
-}
-function _incomePeriodAmount(period){
-  return Number((period?.payout_month_amount ?? period?.payout_month_net_amount ?? period?.gross_amount ?? period?.amount ?? 0) || 0);
-}
-function _incomePeriodStatusText(period){
-  if (period?.payout_period_status_label) return String(period.payout_period_status_label);
-  const raw = String(period?.paid_status || period?.payout_status || period?.status || '').trim().toLowerCase();
-  if (raw) return _paidStatusTH(raw);
-  const mode = String(period?.mode || '').trim();
-  if (mode === 'current_period_to_date') return 'ประมาณการ';
-  return 'ตามรอบจ่าย';
-}
-function renderPayoutMonthCard(data){
-  if (incomeMonthTitleEl) incomeMonthTitleEl.textContent = _incomePayoutMonthTitle(data);
-  if (incomeMonthRangeEl) incomeMonthRangeEl.textContent = _incomeMonthRangeText(data);
-  if (!incomeMonthBreakdownEl) return;
-  const periods = Array.isArray(data?.payout_month_periods) ? data.payout_month_periods : (Array.isArray(data?.periods) ? data.periods : []);
-  const ordered = ['10','25'].map(t => periods.find(p => String(p.period_type) === t)).filter(Boolean);
-  if (!ordered.length) {
-    incomeMonthBreakdownEl.innerHTML = '';
-    return;
-  }
-  incomeMonthBreakdownEl.innerHTML = ordered.map((p)=>{
-    const label = _safeText(_incomePeriodLabel(p, data));
-    const range = _safeText(_incomePeriodRangeLabel(p));
-    const amount = _safeText(formatBaht(_incomePeriodAmount(p)));
-    const status = _safeText(_incomePeriodStatusText(p));
-    return `<div class="payout-period-row">
-      <div class="payout-period-main">
-        <div class="payout-period-title">${label}</div>
-        <div class="payout-period-range">${range}</div>
-      </div>
-      <div class="payout-period-side">
-        <div class="payout-period-amount">${amount}</div>
-        <div class="payout-period-badge">${status}</div>
-      </div>
-    </div>`;
-  }).join('');
+  const ym = data?.income_month || data?.monthly_income_display_label || data?.payout_month || data?.month || _selectedPayoutMonth?.() || '';
+  return `สรุปรายได้เดือน ${_incomeThaiMonthFull(ym)}`;
 }
 
+function _incomePayoutStatusBadge(status){
+  const s = String(status || '').toLowerCase();
+  if (s === 'paid') return '<span class="income-period-badge paid">จ่ายแล้ว</span>';
+  if (s === 'locked') return '<span class="income-period-badge locked">พร้อมจ่าย</span>';
+  if (s === 'partial') return '<span class="income-period-badge locked">จ่ายบางส่วน</span>';
+  return '<span class="income-period-badge estimated">ประมาณการ</span>';
+}
+
+function _renderIncomePayoutMonthBreakdown(data){
+  if (!incomePayoutMonthBreakdownEl) return;
+  const periods = Array.isArray(data?.payout_month_periods) ? data.payout_month_periods : (Array.isArray(data?.periods) ? data.periods : []);
+  if (!periods.length) { incomePayoutMonthBreakdownEl.innerHTML = ''; return; }
+  const sorted = periods.slice().sort((a,b)=> Number(a.display_order || 0) - Number(b.display_order || 0));
+  incomePayoutMonthBreakdownEl.innerHTML = sorted.map((p, idx)=>{
+    const title = String(p.income_bucket || '') === 'second_half' ? 'ช่วง 16–สิ้นเดือน' : 'ช่วง 1–15';
+    const range = _incomeEndDayLabel(p.period_start, p.period_end_display || p.period_end || p.period_end_exclusive) || _incomeRangeText(p.period_start, p.period_end_display || p.period_end);
+    const amount = formatBaht(Number(p.payout_month_net_amount ?? p.payout_month_amount ?? p.gross_amount ?? p.net_amount ?? 0));
+    const badge = _incomePayoutStatusBadge(p.status || p.paid_status || p.mode);
+    const payoutLabel = _incomePayLabelFromPeriod(p).replace(/^จ่าย\s*/, 'จ่ายวันที่ ');
+    return `<div class="income-period-row"><div><div class="income-period-title">${title}</div><div class="income-period-sub">งานปิด ${_safeText(range)} • ${_safeText(payoutLabel)}</div></div><div class="income-period-right"><b>${amount}</b>${badge}</div></div>`;
+  }).join('');
+}
 
 function _bkkYmdNow(){
   try{
@@ -1605,12 +1593,16 @@ async function loadNextPeriodEstimate(){
 async function loadOutstandingTotal(){
   if (!incomeOutstandingValEl && !incomeMonthRangeEl) return;
   try{
-    const res = await fetch(`${API_BASE}/tech/payments_total?month=${encodeURIComponent(_selectedPayoutMonth())}&v=payout-month-labels-v3`, { credentials:'include', cache:'no-store' });
+    const selectedMonth = (typeof _selectedPayoutMonth === 'function') ? _selectedPayoutMonth() : '';
+    const monthParam = selectedMonth ? `&month=${encodeURIComponent(selectedMonth)}` : '';
+    const res = await fetch(`${API_BASE}/tech/payments_total?v=income-month-summary-v2${monthParam}`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     const payoutMonthTotal = Number(data.monthly_income_display_amount ?? data.payout_month_total ?? 0);
+    if (incomeOutstandingTitleEl) incomeOutstandingTitleEl.textContent = _incomePayoutMonthTitle(data);
     if (incomeOutstandingValEl) incomeOutstandingValEl.textContent = formatBaht(Math.max(0, payoutMonthTotal));
-    renderPayoutMonthCard(data);
+    if (incomeMonthRangeEl) incomeMonthRangeEl.textContent = _incomeMonthRangeText(data);
+    _renderIncomePayoutMonthBreakdown(data);
     renderTechWorkSummary(data.work_summary);
     renderDepositRemaining(data);
   }catch(e){
@@ -1618,17 +1610,18 @@ async function loadOutstandingTotal(){
       await loadIncomeSummary();
       const c = _readIncomeCache();
       if (c && Number.isFinite(Number(c.payout_month_total ?? c.true_outstanding_amount))) {
+        if (incomeOutstandingTitleEl) incomeOutstandingTitleEl.textContent = _incomePayoutMonthTitle(c);
         if (incomeOutstandingValEl) incomeOutstandingValEl.textContent = formatBaht(Math.max(0, Number((c.monthly_income_display_amount ?? c.payout_month_total ?? c.true_outstanding_amount) || 0)));
-        renderPayoutMonthCard(c);
+        if (incomeMonthRangeEl) incomeMonthRangeEl.textContent = _incomeMonthRangeText(c);
+        _renderIncomePayoutMonthBreakdown(c);
         renderTechWorkSummary(c.work_summary);
         renderDepositRemaining(c);
         return;
       }
     } catch {}
     if (incomeOutstandingValEl) incomeOutstandingValEl.textContent = '-';
-    if (incomeMonthTitleEl) incomeMonthTitleEl.textContent = `รวมรอบจ่าย ${_incomeThaiMonth(_selectedPayoutMonth())}`;
-    if (incomeMonthRangeEl) incomeMonthRangeEl.textContent = 'รวมงวด 10 + 25 ของเดือนที่กำลังแสดง';
-    if (incomeMonthBreakdownEl) incomeMonthBreakdownEl.innerHTML = '';
+    if (incomeMonthRangeEl) incomeMonthRangeEl.textContent = 'รวมงานปิด 1–15 และ 16–สิ้นเดือน';
+    if (incomePayoutMonthBreakdownEl) incomePayoutMonthBreakdownEl.innerHTML = '';
   }
 }
 
@@ -1833,7 +1826,7 @@ function renderProfile(doneCount = 0) {
 // - fast list + lazy detail
 // =======================================
 
-let __cwfPayoutCache = { ts: 0, month: '', payouts: [], byId: {}, meta: null };
+let __cwfPayoutCache = { ts: 0, payouts: [], byId: {} };
 let __cwfPayoutActiveId = '';
 
 function _fmtDateTH(iso){
@@ -1865,11 +1858,22 @@ function _paidStatusTH(status){
 }
 
 
+function _incomeMonthFromPayoutAnchorYm(ym){
+  try{
+    let [y,m] = String(ym||'').split('-').map(Number);
+    if (!y || !m) return ym || '';
+    m -= 1;
+    if (m <= 0) { m = 12; y -= 1; }
+    return `${y}-${String(m).padStart(2,'0')}`;
+  }catch{ return ym || ''; }
+}
 function _thaiMonthOptionLabel(ym){
   try{
-    const [y,m] = String(ym||'').split('-').map(Number);
+    const incomeYm = _incomeMonthFromPayoutAnchorYm(ym);
+    const [y,m] = String(incomeYm||'').split('-').map(Number);
     if (!y || !m) return ym || '';
-    return new Date(y, m-1, 1).toLocaleDateString('th-TH', { year:'numeric', month:'long' });
+    const label = new Date(y, m-1, 1).toLocaleDateString('th-TH', { year:'numeric', month:'long' });
+    return `สรุปรายได้ ${label}`;
   }catch{ return ym || ''; }
 }
 function _currentYm(){
@@ -1881,7 +1885,9 @@ function initTechPayoutMonthSelect(){
   if (techPayoutMonthSelectEl.dataset.ready === '1') return;
   const now = new Date();
   const opts = [];
-  for (let i=0;i<12;i++){
+  // Value is payout-anchor month; label is the income month.
+  // Start at next month so the current income month is selectable immediately.
+  for (let i=-1;i<11;i++){
     const d = new Date(now.getFullYear(), now.getMonth()-i, 1);
     const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
     opts.push(`<option value="${ym}">${_thaiMonthOptionLabel(ym)}</option>`);
@@ -1894,100 +1900,60 @@ function _selectedPayoutMonth(){
   initTechPayoutMonthSelect();
   return String(techPayoutMonthSelectEl?.value || _currentYm()).trim();
 }
+function _payoutCycleLabel(p){
+  const t = String(p?.period_type || '').trim();
+  if (t === '10') return 'งวดวันที่ 10';
+  if (t === '25') return 'งวดวันที่ 25';
+  const id = String(p?.payout_id || '');
+  if (id.endsWith('_10')) return 'งวดวันที่ 10';
+  if (id.endsWith('_25')) return 'งวดวันที่ 25';
+  return 'งวดจ่ายเงิน';
+}
+
 async function loadTechPayoutPeriods(force=false){
   if (!techPayoutPeriodsEl) return;
   const now = Date.now();
   initTechPayoutMonthSelect();
   const month = _selectedPayoutMonth();
   if (!force && __cwfPayoutCache.payouts.length && __cwfPayoutCache.month === month && (now-__cwfPayoutCache.ts)<15000) {
-    renderTechPayoutPeriods(__cwfPayoutCache.payouts, __cwfPayoutCache.meta);
+    renderTechPayoutPeriods(__cwfPayoutCache.payouts);
     return;
   }
   techPayoutPeriodsEl.innerHTML = `<div class="muted">กำลังโหลดประวัติงวดจ่ายเงิน...</div>`;
   try{
     localStorage.setItem('cwf_tech_payout_month', month);
-    const res = await fetch(`${API_BASE}/tech/payouts?month=${encodeURIComponent(month)}&v=payout-month-labels-v2`, { credentials: 'include', cache: 'no-store' });
+    const res = await fetch(`${API_BASE}/tech/payouts?month=${encodeURIComponent(month)}`, { credentials: 'include' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error||'LOAD_FAILED');
-    __cwfPayoutCache = { ts: now, month, payouts: data.payouts||[], byId: {}, meta: data };
-    renderTechPayoutPeriods(__cwfPayoutCache.payouts, data);
-    // Keep the summary card and the payout history tied to the same selected month.
-    if (data?.payout_month_title && incomeMonthTitleEl) incomeMonthTitleEl.textContent = data.payout_month_title;
+    __cwfPayoutCache = { ts: now, month, payouts: data.payouts||[], byId: {} };
+    renderTechPayoutPeriods(__cwfPayoutCache.payouts);
+    try { await loadOutstandingTotal(); } catch(_) {}
   }catch(e){
     techPayoutPeriodsEl.innerHTML = `<div class="muted">โหลดประวัติงวดจ่ายเงินไม่สำเร็จ</div>`;
   }
 }
 window.loadTechPayoutPeriods = loadTechPayoutPeriods;
 
-function _payoutCycleLabel(p){
-  if (p?.payout_period_title) return String(p.payout_period_title);
-  const t = String(p?.period_type || '').trim();
-  const ym = String(p?.payout_month_label_th || '').trim();
-  if (t === '10') return ym ? `งวด 10 ${ym}` : 'งวดวันที่ 10';
-  if (t === '25') return ym ? `งวด 25 ${ym}` : 'งวดวันที่ 25';
-  const id = String(p?.payout_id || '');
-  if (id.endsWith('_10')) return 'งวดวันที่ 10';
-  if (id.endsWith('_25')) return 'งวดวันที่ 25';
-  return 'งวดจ่ายเงิน';
-}
-function _payoutRangeLabel(p){
-  if (p?.payout_period_range_label) return String(p.payout_period_range_label);
-  const st = _fmtDateTH(p?.period_start);
-  const en = _fmtDateTH(p?.period_end_display || p?.period_end);
-  return (st && en && st !== '-' && en !== '-') ? `งานปิด ${st} - ${en}` : 'งานปิดตามช่วงงวด';
-}
-function _payoutHistoryStatusLabel(p){
-  if (p?.payout_period_status_label) return String(p.payout_period_status_label);
-  return `${_payoutStatusTH(p?.status || 'draft')} • ${_paidStatusTH(p?.paid_status || 'unpaid')}`;
-}
-function renderTechPayoutPeriods(list, meta){
+function renderTechPayoutPeriods(list){
   if (!techPayoutPeriodsEl) return;
-  const arr = Array.isArray(list) ? list.slice() : [];
-  if (!arr.length) {
-    const m = _thaiMonthOptionLabel(_selectedPayoutMonth());
-    techPayoutPeriodsEl.innerHTML = `<div class="muted">ยังไม่มีประวัติงวดจ่ายเงินของ ${_safeText(m)}</div>`;
-    return;
-  }
-  arr.sort((a,b)=>{
-    const order = { '10': 10, '25': 25 };
-    return (order[String(a.period_type)]||99) - (order[String(b.period_type)]||99);
-  });
-  const total = Number(meta?.payout_month_total ?? arr.reduce((sum,p)=>sum + Number((p.net_amount ?? p.total_amount ?? 0) || 0),0));
-  const title = _safeText(meta?.payout_month_title || `รวมรอบจ่าย ${_thaiMonthOptionLabel(_selectedPayoutMonth())}`);
-  const header = `<div class="payout-history-month-card">
-    <div>
-      <b>${title}</b>
-      <div class="muted" style="margin-top:4px">ประวัติงวดจ่ายเงินต้องตรงกับการ์ดรวมรอบจ่ายด้านบน</div>
-    </div>
-    <div class="payout-history-month-total">${_safeText(formatBaht(total))}</div>
-  </div>`;
-  techPayoutPeriodsEl.innerHTML = header + arr.map(p=>{
+  const arr = Array.isArray(list) ? list : [];
+  if (!arr.length) { techPayoutPeriodsEl.innerHTML = `<div class="muted">ยังไม่มีประวัติงวดจ่ายเงินของเดือนนี้</div>`; return; }
+  arr.sort((a,b)=> Number(a.display_order || 0) - Number(b.display_order || 0) || new Date(a.period_start).getTime() - new Date(b.period_start).getTime());
+  techPayoutPeriodsEl.innerHTML = arr.map(p=>{
     const id = _safeText(p.payout_id);
-    const title = _safeText(_payoutCycleLabel(p));
-    const range = _safeText(_payoutRangeLabel(p));
+    const type = _safeText(p.period_type);
+    const st = _fmtDateTH(p.period_start);
+    const en = _fmtDateTH(p.period_end);
     const gross = formatBaht(p.gross_amount||0);
     const dep = formatBaht(p.deposit_deduction_amount||0);
-    const adj = formatBaht(p.adj_total||0);
     const total = formatBaht(p.net_amount||p.total_amount||0);
     const rem = formatBaht(p.remaining_amount||0);
-    const status = _safeText(_payoutHistoryStatusLabel(p));
+    const paySt = _safeText(_paidStatusTH(p.paid_status||'unpaid'));
+    const status = _safeText(_payoutStatusTH(p.status||'draft'));
     const active = (__cwfPayoutActiveId===p.payout_id);
-    return `<button type="button" class="payout-history-card ${active?'active':''}" onclick="window.openTechPayoutDetail('${id}')">
-      <div class="payout-history-main">
-        <div>
-          <b>${title}</b>
-          <div class="payout-history-range">${range}</div>
-        </div>
-        <span class="payout-history-badge">${status}</span>
-      </div>
-      <div class="payout-history-money">
-        <div>
-          <div class="muted">ยอดงวดนี้</div>
-          <strong>${_safeText(total)}</strong>
-        </div>
-        <div class="payout-history-mini">ก่อนหัก ${_safeText(gross)} • ปรับ ${_safeText(adj)} • หักประกัน ${_safeText(dep)} • คงเหลือ ${_safeText(rem)}</div>
-      </div>
-    </button>`;
+    const bucketTitle = String(p.income_bucket||'') === 'second_half' ? 'ช่วง 16–สิ้นเดือน' : (String(p.income_bucket||'') === 'first_half' ? 'ช่วง 1–15' : _payoutCycleLabel(p));
+    const payLabel = _incomePayLabelFromPeriod(p).replace(/^จ่าย\s*/, 'จ่ายวันที่ ');
+    return `<button type="button" class="tr" style="width:100%;text-align:left;padding:12px;border-radius:18px;border:1px solid rgba(15,23,42,0.10);margin-bottom:10px;cursor:pointer;background:#fff;${active?'outline:2px solid rgba(11,75,179,0.35)':''}" onclick="window.openTechPayoutDetail('${id}')"><div class="row" style="justify-content:space-between;gap:10px;align-items:flex-start"><div><b>${bucketTitle}</b><div class="muted" style="margin-top:4px">งานปิด ${st} - ${en} • ${_safeText(payLabel)}</div><div class="muted" style="margin-top:4px">สถานะงวด: ${status} • จ่าย: ${paySt}</div></div><div style="text-align:right"><b style="font-size:18px;color:#0B2E6D">${total}</b><div class="muted" style="margin-top:4px">ก่อนหัก ${gross}</div><div class="muted" style="margin-top:3px">หักประกัน ${dep} • คงเหลือ ${rem}</div></div></div></button>`;
   }).join('');
 }
 function openTechPayoutModal(){ if (techPayoutModalBackdropEl) techPayoutModalBackdropEl.classList.add('show'); try { document.body.style.overflow = 'hidden'; } catch(e) {} }
@@ -2169,8 +2135,8 @@ async function loadDepositLedger(){
 if (btnReloadIncomePeriodsEl) {
   btnReloadIncomePeriodsEl.addEventListener('click', ()=> loadTechPayoutPeriods(true));
 }
-if (btnLoadPayoutMonthEl) btnLoadPayoutMonthEl.addEventListener('click', ()=> Promise.allSettled([loadOutstandingTotal(), loadTechPayoutPeriods(true)]));
-if (techPayoutMonthSelectEl) techPayoutMonthSelectEl.addEventListener('change', ()=> Promise.allSettled([loadOutstandingTotal(), loadTechPayoutPeriods(true)]));
+if (btnLoadPayoutMonthEl) btnLoadPayoutMonthEl.addEventListener('click', ()=> loadTechPayoutPeriods(true));
+if (techPayoutMonthSelectEl) techPayoutMonthSelectEl.addEventListener('change', ()=> loadTechPayoutPeriods(true));
 
 // =======================================
 // 🗃️ IndexedDB (เก็บรูปไว้ในเครื่องก่อนอัปโหลด)
