@@ -1232,14 +1232,23 @@ function _incomeFetchUsername() {
 }
 function _hasIncomeAmount(job) {
   const n = Number(job?.technician_income_amount);
-  // 0 บาททำให้ช่างเข้าใจผิดในงานจริง ถ้าคำนวณไม่ได้ให้แสดง fallback แทน
-  return Number.isFinite(n) && n > 0;
+  // 0 บาทเป็นยอดจริงได้ เช่น งานยกเลิก แต่ต้องมี state/source จาก backend
+  const state = String(job?.technician_income_display_state || '').trim();
+  const source = String(job?.technician_income_source || '').trim();
+  if (!Number.isFinite(n)) return false;
+  if (n === 0) return Boolean(state && state !== 'pending_review') || source === 'cancelled_job';
+  return n > 0;
 }
 function _mergeTechIncomeIntoJob(job, income) {
   if (!job || !income) return job;
   const next = { ...(job || {}) };
   if (Object.prototype.hasOwnProperty.call(income, 'technician_income_amount')) next.technician_income_amount = income.technician_income_amount;
+  if (income.technician_income_label) next.technician_income_label = income.technician_income_label;
   if (income.technician_income_source) next.technician_income_source = income.technician_income_source;
+  if (income.technician_income_display_state) next.technician_income_display_state = income.technician_income_display_state;
+  if (income.technician_income_display_note !== undefined) next.technician_income_display_note = income.technician_income_display_note;
+  if (income.technician_income_is_final !== undefined) next.technician_income_is_final = income.technician_income_is_final;
+  if (income.technician_income_is_stale !== undefined) next.technician_income_is_stale = income.technician_income_is_stale;
   if (income.technician_income_rate_set_id !== undefined) next.technician_income_rate_set_id = income.technician_income_rate_set_id;
   if (income.technician_income_rate_set_version !== undefined) next.technician_income_rate_set_version = income.technician_income_rate_set_version;
   if (income.technician_income_breakdown) next.technician_income_breakdown = income.technician_income_breakdown;
@@ -1257,6 +1266,7 @@ function renderTechnicianMoneySummary(job, context) {
     const displayJob = cached ? _mergeTechIncomeIntoJob(job, cached) : job;
     const key = _techIncomeCardKey(displayJob, ctx);
     __techIncomeModalJobStore.set(key, { ...(displayJob || {}), __incomeContext: ctx, __incomeKey: key });
+    const backendIncomeLabel = displayJob?.technician_income_label || '';
     const label = ctx === 'offered'
       ? 'ที่ช่างจะได้รับ'
       : (ctx === 'history' ? 'ได้รับ' : 'ที่ช่างจะได้รับ');
@@ -1266,12 +1276,14 @@ function renderTechnicianMoneySummary(job, context) {
     const hasAmount = _hasIncomeAmount(displayJob);
     const isLoading = !hasAmount && String(displayJob?.technician_income_source || '') === 'loading';
     const amount = hasAmount ? _techMoneyAmountText(displayJob?.technician_income_amount, 'รอคำนวณรายได้') : (isLoading ? 'กำลังคำนวณ…' : 'รอตรวจสอบรายได้');
-    const pendingClass = hasAmount ? '' : 'is-pending';
+    const state = String(displayJob?.technician_income_display_state || '').trim();
+    const stateClass = state ? ` state-${state.replace(/[^a-z0-9_-]/gi, '-')}` : '';
+    const pendingClass = hasAmount ? stateClass : `is-pending${stateClass}`;
     return `
       <button type="button" class="tech-income-chip ${pendingClass}" data-tech-income-chip="${escapeAttr(key)}" data-job-id="${escapeAttr(jobId)}" data-income-context="${escapeAttr(ctx)}" onclick="openTechnicianIncomeModal('${escapeHTML(key)}')" aria-label="ดูรายละเอียดที่ช่างจะได้รับ">
         <span class="tech-income-chip-icon">💲</span>
         <span class="tech-income-chip-main">
-          <span class="tech-income-chip-label">${escapeHTML(label)}</span>
+          <span class="tech-income-chip-label">${escapeHTML(backendIncomeLabel || label)}</span>
           <strong data-income-amount>${escapeHTML(amount)}</strong>
         </span>
         <span class="tech-income-chip-hint">${escapeHTML(helper)}</span>
@@ -2282,8 +2294,13 @@ function _updateIncomeChipDom(jobId, income) {
   chips.forEach((chip) => {
     try {
       chip.classList.toggle('is-pending', !hasAmount);
+      [...chip.classList].forEach((cls) => { if (cls.startsWith('state-')) chip.classList.remove(cls); });
+      const state = String(income?.technician_income_display_state || '').trim();
+      if (state) chip.classList.add(`state-${state.replace(/[^a-z0-9_-]/gi, '-')}`);
       const amountEl = chip.querySelector('[data-income-amount]');
       if (amountEl) amountEl.textContent = amountText;
+      const labelEl = chip.querySelector('.tech-income-chip-label');
+      if (labelEl && income?.technician_income_label) labelEl.textContent = income.technician_income_label;
       const key = chip.getAttribute('data-tech-income-chip') || '';
       const oldJob = __techIncomeModalJobStore.get(key) || { job_id: id };
       __techIncomeModalJobStore.set(key, _mergeTechIncomeIntoJob(oldJob, income));
@@ -2305,7 +2322,12 @@ function scheduleTechnicianIncomeSummaryLoad(jobs, context) {
       __techIncomeSummaryCache.set(id, {
         job_id: Number(id),
         technician_income_amount: job.technician_income_amount,
+        technician_income_label: job.technician_income_label || null,
         technician_income_source: job.technician_income_source || 'preloaded',
+        technician_income_display_state: job.technician_income_display_state || null,
+        technician_income_display_note: job.technician_income_display_note || null,
+        technician_income_is_final: job.technician_income_is_final,
+        technician_income_is_stale: job.technician_income_is_stale,
         technician_income_rate_set_id: job.technician_income_rate_set_id || null,
         technician_income_rate_set_version: job.technician_income_rate_set_version || null,
       });
@@ -4362,9 +4384,12 @@ function buildJobCard(job, historyMode = false) {
 // =======================================
 function buildHistorySummary(job){
   const div = document.createElement('div');
-  div.className = 'job-card';
 
   const st = normStatus(job?.job_status);
+  const incomeState = String(job?.technician_income_display_state || '').trim();
+  const isCancelledHistory = isCancelStatusValue(st) || incomeState === 'cancelled';
+  const isReworkHistory = incomeState.startsWith('rework_') || isRevisitJob(job);
+  div.className = `job-card history-card${isCancelledHistory ? ' is-cancelled' : ''}${isReworkHistory ? ' is-rework' : ''}`;
   const bookingCode = job?.booking_code || (job?.job_id != null ? ("CWF" + String(job.job_id).padStart(7,'0')) : '-');
   const apYmd = ymdBkkFromISO(job?.appointment_datetime);
   const apTxt = job?.appointment_datetime ? new Date(job.appointment_datetime).toLocaleString('th-TH') : '-';
