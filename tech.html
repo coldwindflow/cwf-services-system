@@ -1587,15 +1587,13 @@
         <button id="acceptToggleBtn" class="accept-btn ready" type="button">🟢 รับงาน</button>
 
         <div class="zone-wrap">
-          <button id="zoneQuickBtn" class="zone-select zone-action-btn" type="button" onclick="return window.__cwfOpenZoneQuickModalFallback ? window.__cwfOpenZoneQuickModalFallback(event) : (window.openZoneQuickModal ? (window.openZoneQuickModal(), false) : false)"><span>ตั้งค่าด่วน</span><small id="zoneQuickSummary">โซน / ระยะทาง</small></button>
+          <button id="zoneQuickBtn" class="zone-select zone-action-btn" type="button" onclick="return window.__cwfOpenZoneQuickModalFallback ? window.__cwfOpenZoneQuickModalFallback(event) : (window.openZoneQuickModal ? (window.openZoneQuickModal(), false) : false)"><span id="zoneQuickTitle">พื้นที่ประจำ</span><small id="zoneQuickSummary">แตะเพื่อตั้งค่าพื้นที่</small></button>
           <select id="zoneSelect" class="zone-select" style="display:none"><option value="">ทุกโซน</option></select>
         </div>
       </div>
 
       <div id="acceptStatusText" class="accept-hint">กำลังโหลดสถานะ...</div>
-      <div style="margin-top:6px;font-size:12px;font-weight:900;color:#526276;line-height:1.45;">⏰ ปุ่มรับงานใช้เฉพาะวันนี้ และระบบจะปิดรับงานอัตโนมัติหลังเที่ยงคืน</div>
-
-      <!-- รองรับหน้าเก่า/โค้ดเดิม ซ่อนไว้ไม่ให้รก -->
+<!-- รองรับหน้าเก่า/โค้ดเดิม ซ่อนไว้ไม่ให้รก -->
       <select id="acceptStatusSelect" style="display:none;">
         <option value="ready">ready</option>
         <option value="paused">paused</option>
@@ -1923,10 +1921,10 @@
   </div>
 
   
-  <style id="cwf-fix36-premium-minimal-home">
+  <style id="cwf-fix37-premium-cohesive-home">
     /*
-      CWF fix36: premium minimal high-tech home UI.
-      CSS-only polish. No JS logic, no tab display rules, no backend.
+      CWF fix37: cohesive premium home UI.
+      CSS-only + one static text removal. No app logic / tabs / backend.
     */
 
     #techControlCard.tech-control-card{
@@ -1934,8 +1932,8 @@
       padding:10px!important;
       border-radius:26px!important;
       background:
-        radial-gradient(circle at 88% 10%, rgba(255,214,64,.14) 0 54px, transparent 118px),
-        radial-gradient(circle at 5% 12%, rgba(20,199,232,.11) 0 48px, transparent 124px),
+        radial-gradient(circle at 88% 10%, rgba(255,214,64,.12) 0 54px, transparent 118px),
+        radial-gradient(circle at 5% 12%, rgba(20,199,232,.10) 0 48px, transparent 124px),
         linear-gradient(135deg,rgba(255,255,255,.96) 0%,rgba(246,250,255,.92) 100%)!important;
       border:1px solid rgba(255,255,255,.86)!important;
       box-shadow:0 18px 42px rgba(8,36,91,.14), inset 0 1px 0 rgba(255,255,255,.90)!important;
@@ -1954,7 +1952,7 @@
     }
     #techControlCard .accept-btn.ready{
       background:
-        radial-gradient(circle at 20% 30%, rgba(255,255,255,.26), transparent 35%),
+        radial-gradient(circle at 20% 30%, rgba(255,255,255,.24), transparent 35%),
         linear-gradient(135deg,#12b76a 0%,#07864f 100%)!important;
       color:#fff!important;
       border-color:rgba(255,255,255,.36)!important;
@@ -1965,11 +1963,26 @@
       border:1px solid rgba(8,36,91,.12)!important;
       box-shadow:0 12px 26px rgba(8,36,91,.09), inset 0 1px 0 rgba(255,255,255,.88)!important;
     }
+    #techControlCard .zone-wrap::after{
+      content:"พื้นที่ประจำ"!important;
+    }
+    #techControlCard .zone-action-btn span{
+      max-width:100%!important;
+      overflow:hidden!important;
+      text-overflow:ellipsis!important;
+      white-space:nowrap!important;
+    }
+    #acceptStatusText.accept-hint{
+      display:none!important;
+      margin:0!important;
+      padding:0!important;
+      min-height:0!important;
+    }
 
     #sec-new.card{
       background:
-        radial-gradient(circle at 94% 0%, rgba(255,214,64,.12) 0 74px, transparent 166px),
-        radial-gradient(circle at 5% 12%, rgba(23,200,232,.10) 0 86px, transparent 190px),
+        radial-gradient(circle at 94% 0%, rgba(255,214,64,.10) 0 74px, transparent 166px),
+        radial-gradient(circle at 5% 12%, rgba(23,200,232,.08) 0 86px, transparent 190px),
         linear-gradient(180deg,#ffffff 0%,#f8fbff 52%,#eef7ff 100%)!important;
       border:1px solid rgba(255,255,255,.92)!important;
       box-shadow:0 24px 56px rgba(8,36,91,.15), inset 0 1px 0 rgba(255,255,255,.86)!important;
@@ -1981,7 +1994,7 @@
       text-shadow:0 2px 0 rgba(255,255,255,.84)!important;
     }
 
-    /* Gear: icon-only, transparent, but keeps the original button hit area */
+    /* Gear: icon-only, transparent, clickable button remains */
     #sec-new .profile-settings-icon{
       width:46px!important;
       height:46px!important;
@@ -1993,12 +2006,9 @@
       box-shadow:none!important;
       color:#0b2e6d!important;
       -webkit-text-fill-color:#0b2e6d!important;
-      font-size:29px!important;
+      font-size:28px!important;
       line-height:1!important;
-      text-shadow:
-        0 1px 0 rgba(255,255,255,.96),
-        0 0 10px rgba(23,200,232,.35),
-        0 8px 18px rgba(8,36,91,.18)!important;
+      text-shadow:0 1px 0 rgba(255,255,255,.96),0 0 8px rgba(23,200,232,.24),0 8px 18px rgba(8,36,91,.16)!important;
       outline:none!important;
       overflow:visible!important;
       z-index:6!important;
@@ -2019,60 +2029,57 @@
       -webkit-text-fill-color:#0ea5e9!important;
     }
 
+    /* Profile name band: softer, premium, not overly dominant */
     #sec-new .profile-compact{
       gap:14px!important;
     }
-
-    /* Name band: premium, less toy-like, integrated with profile card */
     #sec-new .profile-compact .left{
       position:relative!important;
       isolation:isolate!important;
       overflow:hidden!important;
-      border-radius:28px!important;
-      padding:13px!important;
+      border-radius:26px!important;
+      padding:12px!important;
       background:
-        radial-gradient(circle at 12% 16%, rgba(23,200,232,.24) 0 44px, transparent 115px),
-        radial-gradient(circle at 86% 12%, rgba(255,214,64,.09) 0 42px, transparent 112px),
-        linear-gradient(132deg,#061b4f 0%,#0a2e78 40%,#0b69d6 74%,#12b7d9 100%)!important;
-      border:1px solid rgba(255,255,255,.30)!important;
+        radial-gradient(circle at 10% 18%, rgba(23,200,232,.14) 0 42px, transparent 112px),
+        linear-gradient(135deg,rgba(255,255,255,.92) 0%,rgba(231,242,255,.84) 100%)!important;
+      border:1px solid rgba(255,255,255,.88)!important;
       box-shadow:
-        0 18px 38px rgba(8,36,91,.23),
-        inset 0 1px 0 rgba(255,255,255,.22),
-        inset 0 -1px 0 rgba(23,200,232,.30)!important;
+        0 16px 34px rgba(8,36,91,.14),
+        inset 0 1px 0 rgba(255,255,255,.88)!important;
     }
     #sec-new .profile-compact .left::before{
       content:""!important;
       position:absolute!important;
-      inset:0!important;
-      z-index:-1!important;
-      background:
-        linear-gradient(120deg, rgba(255,255,255,.16) 0%, transparent 24%, transparent 60%, rgba(255,255,255,.08) 100%)!important;
-      pointer-events:none!important;
+      left:0!important;
+      top:0!important;
+      bottom:0!important;
+      width:7px!important;
+      background:linear-gradient(180deg,#f4c400 0%,#17c8e8 52%,#2d74ff 100%)!important;
+      border-radius:26px 0 0 26px!important;
+      opacity:.95!important;
     }
     #sec-new .profile-compact .left::after{
       content:""!important;
       position:absolute!important;
-      left:14px!important;
-      right:14px!important;
+      left:16px!important;
+      right:16px!important;
       bottom:0!important;
-      height:3px!important;
+      height:2px!important;
       border-radius:999px 999px 0 0!important;
-      background:linear-gradient(90deg,#f4c400 0%,#17c8e8 52%,#2d74ff 100%)!important;
-      opacity:.95!important;
+      background:linear-gradient(90deg,rgba(244,196,0,.55),rgba(23,200,232,.55),rgba(45,116,255,.45))!important;
     }
     #sec-new .profile-compact .meta .name{
-      color:#fff!important;
-      -webkit-text-fill-color:#fff!important;
-      text-shadow:0 3px 14px rgba(0,0,0,.28)!important;
+      color:#061b4f!important;
+      -webkit-text-fill-color:#061b4f!important;
+      text-shadow:0 1px 0 rgba(255,255,255,.90)!important;
       letter-spacing:-.04em!important;
     }
     #sec-new .profile-compact .meta .code{
-      color:rgba(255,255,255,.88)!important;
-      -webkit-text-fill-color:rgba(255,255,255,.88)!important;
-      text-shadow:0 2px 10px rgba(0,0,0,.20)!important;
+      color:#526276!important;
+      -webkit-text-fill-color:#526276!important;
+      text-shadow:none!important;
     }
 
-    /* Profile photo: rounded rectangle, premium frame */
     #sec-new .tech-avatar{
       width:74px!important;
       height:74px!important;
@@ -2080,10 +2087,7 @@
       object-fit:cover!important;
       border:3px solid #f4c400!important;
       background:#fff!important;
-      box-shadow:
-        0 14px 26px rgba(0,0,0,.25),
-        0 0 0 5px rgba(255,255,255,.16),
-        0 0 0 7px rgba(244,196,0,.10)!important;
+      box-shadow:0 12px 24px rgba(8,36,91,.18),0 0 0 5px rgba(255,255,255,.72)!important;
       flex:0 0 74px!important;
     }
 
@@ -2131,7 +2135,7 @@
       color:#061b4f!important;
     }
 
-    /* Offer area: premium white/glass card with a controlled gradient accent, not a dark block */
+    /* Offer panel: one cohesive card containing title, description and empty state */
     #sec-new h2:nth-of-type(2){
       position:relative!important;
       margin-top:24px!important;
@@ -2141,12 +2145,12 @@
       color:#061b4f!important;
       -webkit-text-fill-color:initial!important;
       background:
-        radial-gradient(circle at 92% 12%, rgba(255,214,64,.12) 0 56px, transparent 128px),
-        linear-gradient(135deg,rgba(255,255,255,.94) 0%,rgba(239,247,255,.92) 100%)!important;
-      border:1px solid rgba(255,255,255,.82)!important;
+        radial-gradient(circle at 94% 14%, rgba(255,214,64,.12) 0 58px, transparent 132px),
+        linear-gradient(135deg,rgba(255,255,255,.96),rgba(239,247,255,.94))!important;
+      border:1px solid rgba(255,255,255,.88)!important;
       border-bottom:0!important;
-      box-shadow:0 16px 36px rgba(8,36,91,.10), inset 0 1px 0 rgba(255,255,255,.88)!important;
-      text-shadow:0 2px 0 rgba(255,255,255,.82)!important;
+      box-shadow:0 16px 36px rgba(8,36,91,.10), inset 0 1px 0 rgba(255,255,255,.90)!important;
+      text-shadow:0 2px 0 rgba(255,255,255,.86)!important;
     }
     #sec-new h2:nth-of-type(2)::before{
       content:""!important;
@@ -2157,23 +2161,23 @@
       width:7px!important;
       border-radius:0 999px 999px 0!important;
       background:linear-gradient(180deg,#f4c400 0%,#17c8e8 52%,#2d74ff 100%)!important;
-      box-shadow:0 0 14px rgba(23,200,232,.26)!important;
+      box-shadow:0 0 14px rgba(23,200,232,.22)!important;
     }
     #sec-new h2:nth-of-type(2) + p{
       margin-top:0!important;
       margin-bottom:0!important;
       padding:6px 18px 12px 28px!important;
       color:#526276!important;
-      background:linear-gradient(135deg,rgba(255,255,255,.94),rgba(239,247,255,.92))!important;
-      border-left:1px solid rgba(255,255,255,.82)!important;
-      border-right:1px solid rgba(255,255,255,.82)!important;
+      background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(239,247,255,.94))!important;
+      border-left:1px solid rgba(255,255,255,.88)!important;
+      border-right:1px solid rgba(255,255,255,.88)!important;
     }
     #sec-new #offer-list{
       margin-top:0!important;
       padding:0 18px 18px 28px!important;
       border-radius:0 0 28px 28px!important;
-      background:linear-gradient(135deg,rgba(255,255,255,.94),rgba(239,247,255,.92))!important;
-      border:1px solid rgba(255,255,255,.82)!important;
+      background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(239,247,255,.94))!important;
+      border:1px solid rgba(255,255,255,.88)!important;
       border-top:0!important;
       box-shadow:0 16px 36px rgba(8,36,91,.10), inset 0 -1px 0 rgba(23,200,232,.12)!important;
     }
@@ -2188,8 +2192,9 @@
       font-size:18px!important;
       line-height:1.45!important;
       border-radius:20px!important;
-      background:rgba(255,255,255,.72)!important;
+      background:rgba(255,255,255,.74)!important;
       border:1px solid rgba(8,36,91,.08)!important;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.86)!important;
     }
 
     @media(max-width:380px){
@@ -2201,7 +2206,7 @@
     }
   </style>
 
-<script src="app.js?v=20260510_fix36_premium_minimal_home"></script>
+<script src="app.js?v=20260510_fix37_premium_cohesive_home"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
