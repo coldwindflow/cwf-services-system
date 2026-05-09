@@ -1824,6 +1824,168 @@
     @media(max-width:380px){#sec-new .profileHeroV19{padding:16px 12px 12px!important;border-radius:26px!important;}#sec-new .profileHeroV19 .profile-compact .chips{gap:6px!important;}#sec-new .profileHeroV19 .chipStat{min-height:72px!important;border-radius:17px!important;}#sec-new .profileHeroV19 .chipStat .k{font-size:9px!important;}#sec-new .profileHeroV19 .chipStat .v{font-size:20px!important;}}
   </style>
 
+
+  <style id="cwf-home-fix22-premium-cockpit">
+    /* CWF fix22: make the new-job home screen feel like one premium high-tech cockpit.
+       Visual-only override. No job/income/history logic is changed. */
+    body{
+      background:
+        radial-gradient(circle at 84px 150px, rgba(22,185,242,.18), transparent 210px),
+        radial-gradient(circle at calc(100% - 42px) 260px, rgba(244,196,0,.16), transparent 210px),
+        linear-gradient(180deg,#071f52 0 150px,#eef5ff 150px 100%) !important;
+    }
+    .app{padding-left:13px!important;padding-right:13px!important;}
+
+    /* One soft shell behind the home tab, so the profile/offers do not feel like separate random blocks. */
+    #sec-new.card{
+      position:relative!important;
+      margin-top:12px!important;
+      padding:14px 12px 18px!important;
+      border-radius:30px!important;
+      overflow:hidden!important;
+      background:
+        linear-gradient(180deg,rgba(255,255,255,.94),rgba(244,249,255,.88))!important;
+      border:1px solid rgba(255,255,255,.76)!important;
+      box-shadow:0 22px 55px rgba(6,31,82,.17), inset 0 1px 0 rgba(255,255,255,.95)!important;
+    }
+    #sec-new.card:before{
+      content:'';position:absolute;inset:0;pointer-events:none;opacity:.52;
+      background:
+        linear-gradient(90deg,rgba(8,145,178,.10) 1px,transparent 1px),
+        linear-gradient(180deg,rgba(37,99,235,.07) 1px,transparent 1px);
+      background-size:38px 38px;
+      mask-image:linear-gradient(180deg,transparent 0%,#000 18%,#000 84%,transparent 100%);
+    }
+    #sec-new.card>*{position:relative;z-index:1;}
+
+    /* Work-mode card: refined cockpit glass, not another oversized colorful block. */
+    #techControlCard.tech-control-card{
+      position:relative!important;
+      margin:10px 0 12px!important;
+      padding:13px!important;
+      border-radius:28px!important;
+      overflow:hidden!important;
+      color:#fff!important;
+      background:
+        radial-gradient(circle at 92% 0%,rgba(244,196,0,.28),transparent 34%),
+        radial-gradient(circle at 10% 20%,rgba(20,196,220,.22),transparent 32%),
+        linear-gradient(135deg,#081d4d 0%,#0a3a86 48%,#087fb1 100%)!important;
+      border:1px solid rgba(255,255,255,.22)!important;
+      box-shadow:0 18px 44px rgba(5,27,75,.26), inset 0 1px 0 rgba(255,255,255,.18)!important;
+    }
+    #techControlCard.tech-control-card:before{
+      content:'CWF WORK MODE';display:block;margin:0 0 9px 4px;
+      color:#f6dd64;font-size:10px;font-weight:1100;letter-spacing:.28em;line-height:1;
+    }
+    #techControlCard .tech-ctrl-row{grid-template-columns:1fr 1fr!important;gap:10px!important;}
+    #techControlCard .accept-btn,
+    #techControlCard .zone-select{
+      min-height:54px!important;border-radius:20px!important;border:1px solid rgba(255,255,255,.24)!important;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.24),0 12px 25px rgba(0,0,0,.16)!important;
+      font-size:15px!important;
+    }
+    #techControlCard .accept-btn.paused{background:linear-gradient(135deg,#ff365d,#c9153f)!important;color:#fff!important;}
+    #techControlCard .accept-btn.ready{background:linear-gradient(135deg,#15c882,#02b2a8)!important;color:#fff!important;}
+    #techControlCard .zone-select{background:rgba(255,255,255,.94)!important;color:#09275f!important;}
+    #techControlCard .zone-wrap::after{color:rgba(9,39,95,.48)!important;}
+    #techControlCard .accept-hint{
+      margin-top:10px!important;border-radius:18px!important;border:1px solid rgba(255,255,255,.18)!important;
+      background:rgba(255,255,255,.13)!important;color:rgba(255,255,255,.92)!important;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.12)!important;
+    }
+    #techControlCard .accept-hint + div{
+      color:rgba(255,255,255,.78)!important;margin:9px 4px 1px!important;font-size:12px!important;
+    }
+
+    /* Profile: premium, but less toy-like. Same cockpit language as the work card. */
+    #sec-new .profileHeroV19{
+      margin:0 0 16px!important;
+      padding:16px 14px 14px!important;
+      border-radius:28px!important;
+      background:
+        radial-gradient(circle at 92% 4%,rgba(244,196,0,.48),transparent 26%),
+        radial-gradient(circle at 12% 24%,rgba(45,212,191,.26),transparent 34%),
+        linear-gradient(145deg,#081b47 0%,#0b347f 50%,#0a94bb 100%)!important;
+      border:1px solid rgba(255,255,255,.24)!important;
+      box-shadow:0 20px 45px rgba(6,31,82,.22), inset 0 1px 0 rgba(255,255,255,.18)!important;
+    }
+    #sec-new .profileHeroV19:before{
+      left:auto!important;right:12px!important;top:12px!important;width:120px!important;height:120px!important;
+      background:linear-gradient(135deg,rgba(255,255,255,.12),rgba(255,255,255,0))!important;filter:none!important;
+      border:1px solid rgba(255,255,255,.08);
+    }
+    #sec-new .profileHeroV19:after{
+      content:''!important;position:absolute!important;inset:12px!important;border-radius:23px!important;
+      background:linear-gradient(135deg,rgba(255,255,255,.10),rgba(255,255,255,0) 38%,rgba(255,255,255,.07))!important;
+      filter:none!important;pointer-events:none!important;
+    }
+    #sec-new .profileHeroV19>h2{
+      font-size:clamp(25px,6.6vw,34px)!important;line-height:1!important;margin:0 66px 12px 0!important;
+      color:#fff!important;-webkit-text-fill-color:#fff!important;text-shadow:0 5px 16px rgba(0,0,0,.28)!important;
+    }
+    #sec-new .profileHeroV19>h2:before{color:#f6dd64!important;-webkit-text-fill-color:#f6dd64!important;}
+    #sec-new .profileHeroV19 .profile-settings-icon{
+      width:52px!important;height:52px!important;right:14px!important;top:14px!important;border-radius:18px!important;
+      background:linear-gradient(145deg,#fff16a,#ffc400 62%,#f59e0b)!important;color:#07245b!important;
+      box-shadow:0 14px 30px rgba(244,196,0,.34), inset 0 1px 0 rgba(255,255,255,.65)!important;
+    }
+    #sec-new .profileHeroV19 .profile-compact .left{
+      padding:10px!important;border-radius:22px!important;
+      background:rgba(255,255,255,.14)!important;border:1px solid rgba(255,255,255,.20)!important;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.18)!important;
+    }
+    #sec-new .profileHeroV19 .tech-avatar{width:68px!important;height:68px!important;border-radius:20px!important;}
+    #sec-new .profileHeroV19 .profile-compact .chips{gap:9px!important;}
+    #sec-new .profileHeroV19 .chipStat{
+      min-height:72px!important;border-radius:19px!important;padding:9px 4px!important;
+      box-shadow:0 12px 24px rgba(0,0,0,.14), inset 0 1px 0 rgba(255,255,255,.24)!important;
+    }
+    #sec-new .profileHeroV19 .chipStat.income{background:linear-gradient(145deg,#07a76a,#14d9a6)!important;}
+    #sec-new .profileHeroV19 .chipStat.done{background:linear-gradient(145deg,#2e7bf0,#1750bd)!important;}
+    #sec-new .profileHeroV19 .chipStat.rework{background:linear-gradient(145deg,#ff4d66,#be1836)!important;}
+    #sec-new .profileHeroV19 .chipStat.rating{background:linear-gradient(145deg,#ffdc48,#f5a400)!important;}
+    #sec-new .profileHeroV19 details.tech-more summary{
+      min-height:54px!important;border-radius:19px!important;background:rgba(255,255,255,.15)!important;
+    }
+
+    /* Offer section: integrated premium panel instead of a plain white leftover. */
+    #sec-new>hr{display:none!important;}
+    #sec-new>h2:not(:first-child){
+      display:flex!important;align-items:center!important;gap:10px!important;margin:18px 2px 8px!important;
+      color:#08245b!important;-webkit-text-fill-color:#08245b!important;font-size:28px!important;letter-spacing:-.02em!important;
+    }
+    #sec-new>h2:not(:first-child):before{
+      content:'';width:5px;height:42px;border-radius:99px;background:linear-gradient(180deg,#f4c400,#10bfe8);box-shadow:0 0 18px rgba(16,191,232,.35);
+    }
+    #sec-new>h2:not(:first-child)+.muted{
+      margin:0 0 10px!important;padding:12px 14px!important;border-radius:18px!important;
+      background:linear-gradient(135deg,rgba(255,255,255,.86),rgba(255,249,224,.78))!important;
+      border:1px solid rgba(244,196,0,.22)!important;color:#475569!important;font-weight:900!important;line-height:1.45!important;
+    }
+    #availableJobs{
+      padding:14px!important;border-radius:22px!important;
+      background:rgba(255,255,255,.62)!important;border:1px solid rgba(215,224,238,.75)!important;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.78)!important;
+    }
+    #availableJobs:empty{display:none!important;}
+    #availableJobs .muted, #availableJobs div{font-weight:850;}
+
+    /* Bottom nav matches cockpit without looking like a separate sticker. */
+    .bottom-nav{
+      background:linear-gradient(180deg,rgba(8,30,78,.96),rgba(10,56,139,.96))!important;
+      border-color:rgba(255,255,255,.16)!important;box-shadow:0 -18px 40px rgba(5,27,75,.24)!important;
+    }
+    .nav-btn{background:rgba(255,255,255,.10)!important;border-color:rgba(255,255,255,.14)!important;}
+    .nav-btn.active{background:linear-gradient(145deg,#ffdc35,#f4b400)!important;color:#111827!important;}
+
+    @media(max-width:380px){
+      #techControlCard.tech-control-card{padding:12px!important;border-radius:26px!important;}
+      #sec-new.card{padding:12px 10px 16px!important;border-radius:28px!important;}
+      #sec-new .profileHeroV19{padding:15px 12px 13px!important;border-radius:26px!important;}
+      #sec-new .profileHeroV19 .chipStat{min-height:68px!important;}
+    }
+  </style>
+
   <div class="payout-modal-backdrop" id="depositLedgerModalBackdrop" onclick="if(event.target===this) window.closeDepositLedgerModal && window.closeDepositLedgerModal()">
     <div class="payout-modal" role="dialog" aria-modal="true" aria-labelledby="depositLedgerTitle">
       <div class="payout-modal-head">
@@ -1844,139 +2006,7 @@
     </div>
   </div>
 
-
-
-  <style id="cwf-tech-home-premium-fix21">
-    /* CWF fix21: make the New Jobs home feel like one premium high-tech cockpit, not separated color blocks */
-    body{
-      background:
-        radial-gradient(circle at 86px 118px,rgba(21,196,220,.28),transparent 170px),
-        radial-gradient(circle at 92% 255px,rgba(255,211,42,.20),transparent 160px),
-        linear-gradient(180deg,#06245d 0 178px,#eaf3ff 178px 100%)!important;
-    }
-    #sec-new{
-      margin-top:12px!important;
-      padding:14px!important;
-      border-radius:34px!important;
-      background:
-        linear-gradient(180deg,rgba(255,255,255,.96),rgba(239,247,255,.94))!important;
-      border:1px solid rgba(255,255,255,.88)!important;
-      box-shadow:0 24px 56px rgba(7,32,84,.20), inset 0 1px 0 rgba(255,255,255,.96)!important;
-      overflow:hidden!important;
-    }
-    #sec-new:before{
-      content:'';display:block;height:5px;margin:-14px -14px 14px;border-radius:34px 34px 0 0;
-      background:linear-gradient(90deg,#ffd21f 0%,#20d8ff 34%,#1266dc 68%,#ffd21f 100%);
-    }
-    .tech-control-card{
-      position:relative!important;overflow:hidden!important;margin:10px 0 14px!important;padding:14px!important;border-radius:30px!important;
-      background:
-        radial-gradient(circle at 8% 10%,rgba(255,211,42,.30),transparent 110px),
-        radial-gradient(circle at 94% 88%,rgba(32,216,255,.32),transparent 140px),
-        linear-gradient(135deg,#092a68 0%,#0b4fb8 50%,#0fb6d8 100%)!important;
-      border:1px solid rgba(255,255,255,.34)!important;
-      box-shadow:0 22px 52px rgba(7,32,84,.30), inset 0 1px 0 rgba(255,255,255,.30)!important;
-      color:#fff!important;
-    }
-    .tech-control-card:before{
-      content:'CWF WORK MODE';position:absolute;left:18px;top:10px;font-size:9px;font-weight:1100;letter-spacing:.22em;color:rgba(255,232,105,.92);pointer-events:none;
-    }
-    .tech-control-card .tech-ctrl-row{margin-top:14px!important;gap:10px!important;grid-template-columns:1fr 1fr!important;}
-    .tech-control-card .accept-btn,
-    .tech-control-card .zone-select,
-    .tech-control-card .zone-action-btn{
-      min-height:60px!important;border-radius:22px!important;border:1px solid rgba(255,255,255,.34)!important;
-      box-shadow:0 14px 28px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.34)!important;
-      backdrop-filter:blur(10px)!important;-webkit-backdrop-filter:blur(10px)!important;
-    }
-    .tech-control-card .accept-btn.ready{background:linear-gradient(135deg,#19d389,#09a66b)!important;color:#052b1b!important;}
-    .tech-control-card .accept-btn.paused{background:linear-gradient(135deg,#ff416c,#c81e42)!important;color:#fff!important;text-shadow:0 2px 10px rgba(0,0,0,.18)!important;}
-    .tech-control-card .zone-select,
-    .tech-control-card .zone-action-btn{background:rgba(255,255,255,.92)!important;color:#08245b!important;}
-    .tech-control-card .zone-action-btn span{color:#08245b!important;font-size:14px!important;font-weight:1100!important;}
-    .tech-control-card .zone-action-btn small{color:#526276!important;font-size:10px!important;}
-    .tech-control-card .zone-wrap:after{color:rgba(8,36,91,.54)!important;}
-    .tech-control-card .accept-hint{
-      margin-top:12px!important;border-radius:20px!important;padding:11px 12px!important;
-      background:rgba(255,255,255,.14)!important;border:1px solid rgba(255,255,255,.22)!important;
-      color:#fff!important;-webkit-text-fill-color:#fff!important;text-shadow:0 2px 10px rgba(0,0,0,.16)!important;
-    }
-    .tech-control-card .accept-hint + div{
-      color:rgba(255,255,255,.82)!important;-webkit-text-fill-color:rgba(255,255,255,.82)!important;
-      background:rgba(255,255,255,.10)!important;border:1px solid rgba(255,255,255,.14)!important;border-radius:17px!important;padding:9px 11px!important;
-    }
-    #sec-new .profileHeroV19{
-      margin:0 0 14px!important;padding:16px 14px 14px!important;border-radius:30px!important;
-      background:
-        radial-gradient(circle at 92% 4%,rgba(255,211,42,.40),transparent 118px),
-        radial-gradient(circle at 12% 96%,rgba(32,216,255,.30),transparent 148px),
-        linear-gradient(145deg,#07265f 0%,#0a4aa9 42%,#0a86d7 72%,#11c5d6 100%)!important;
-      border:1px solid rgba(255,255,255,.36)!important;
-      box-shadow:0 20px 48px rgba(7,32,84,.28), inset 0 1px 0 rgba(255,255,255,.28)!important;
-    }
-    #sec-new .profileHeroV19>h2{font-size:clamp(26px,6.5vw,35px)!important;margin-right:58px!important;text-shadow:0 4px 18px rgba(0,0,0,.28)!important;}
-    #sec-new .profileHeroV19 .profile-settings-icon{
-      width:52px!important;height:52px!important;border-radius:19px!important;right:13px!important;top:13px!important;
-      background:linear-gradient(145deg,#fff47a 0%,#ffc400 58%,#ff9a00 100%)!important;
-      box-shadow:0 16px 32px rgba(255,196,0,.34),0 0 0 7px rgba(255,255,255,.12)!important;
-    }
-    #sec-new .profileHeroV19 .profile-compact .left{
-      background:rgba(255,255,255,.14)!important;border:1px solid rgba(255,255,255,.24)!important;border-radius:23px!important;
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.24),0 10px 24px rgba(0,0,0,.12)!important;
-    }
-    #sec-new .profileHeroV19 .profile-compact .chips{gap:8px!important;}
-    #sec-new .profileHeroV19 .chipStat{
-      min-height:76px!important;border-radius:21px!important;padding:9px 5px!important;
-      border:1px solid rgba(255,255,255,.30)!important;
-      box-shadow:0 16px 30px rgba(2,16,43,.24), inset 0 1px 0 rgba(255,255,255,.30)!important;
-    }
-    #sec-new .profileHeroV19 .chipStat.income{background:linear-gradient(145deg,#15d784 0%,#06a86c 100%)!important;}
-    #sec-new .profileHeroV19 .chipStat.done{background:linear-gradient(145deg,#53a6ff 0%,#1254cc 100%)!important;}
-    #sec-new .profileHeroV19 .chipStat.rework{background:linear-gradient(145deg,#ff586f 0%,#c31338 100%)!important;}
-    #sec-new .profileHeroV19 .chipStat.rating{background:linear-gradient(145deg,#ffe166 0%,#ffae14 100%)!important;}
-    #sec-new .profileHeroV19 details.tech-more summary{
-      min-height:56px!important;background:rgba(255,255,255,.18)!important;border:1px solid rgba(255,255,255,.26)!important;border-radius:22px!important;
-      color:#fff!important;-webkit-text-fill-color:#fff!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 10px 26px rgba(0,0,0,.10)!important;
-    }
-    #sec-new>hr{margin:16px 2px!important;background:linear-gradient(90deg,transparent,rgba(11,46,109,.20),transparent)!important;}
-    #sec-new>h2:not(.profileHeroV19 h2){
-      position:relative;margin:10px 0 4px!important;padding:0 0 0 12px!important;color:#08245b!important;
-      font-size:clamp(26px,6.8vw,34px)!important;letter-spacing:-.025em!important;
-    }
-    #sec-new>h2:not(.profileHeroV19 h2):before{
-      content:'';position:absolute;left:0;top:.22em;width:5px;height:1.05em;border-radius:999px;background:linear-gradient(180deg,#ffd21f,#16c7e9);
-      box-shadow:0 0 16px rgba(22,199,233,.42);
-    }
-    #sec-new>h2 + .muted{
-      margin:8px 0 14px!important;padding:12px 14px!important;border-radius:20px!important;
-      background:linear-gradient(135deg,#eef7ff,#fff8d6)!important;border:1px solid rgba(11,46,109,.10)!important;
-      color:#526276!important;
-    }
-    #offer-list .empty,
-    #offer-list:empty:before{
-      border-radius:24px!important;background:linear-gradient(145deg,#ffffff,#eef7ff)!important;border:1px solid rgba(11,46,109,.12)!important;
-      box-shadow:0 14px 34px rgba(8,36,91,.10)!important;
-    }
-    .bottom-nav{
-      background:
-        radial-gradient(circle at 82% 0,rgba(32,216,255,.22),transparent 120px),
-        linear-gradient(180deg,rgba(7,33,88,.98),rgba(8,64,148,.98))!important;
-      border-color:rgba(255,255,255,.22)!important;box-shadow:0 -16px 42px rgba(5,26,74,.32)!important;
-    }
-    .bottom-nav .nav-btn{border-radius:20px!important;background:rgba(255,255,255,.10)!important;}
-    .bottom-nav .nav-btn.active{background:linear-gradient(145deg,#ffe159,#ffc400)!important;color:#13213a!important;box-shadow:0 14px 26px rgba(255,196,0,.26)!important;}
-    @media(max-width:380px){
-      .tech-control-card{padding:12px!important;border-radius:27px!important;}
-      #sec-new{padding:12px!important;border-radius:30px!important;}
-      #sec-new:before{margin:-12px -12px 12px!important;}
-      #sec-new .profileHeroV19{padding:15px 12px 12px!important;border-radius:27px!important;}
-      #sec-new .profileHeroV19 .chipStat{min-height:72px!important;border-radius:18px!important;}
-      #sec-new .profileHeroV19 .chipStat .k{font-size:9px!important;}
-      #sec-new .profileHeroV19 .chipStat .v{font-size:20px!important;}
-    }
-  </style>
-
-  <script src="app.js?v=20260510_home_premium_fix21"></script>
+  <script src="app.js?v=20260510_home_cockpit_fix22"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
