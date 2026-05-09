@@ -606,6 +606,123 @@
     #sec-new .chipStat.rework{background:linear-gradient(180deg,#fff0f0,#ffffff)!important;border-color:rgba(239,68,68,.24)!important;}
     #sec-new .chipStat.rework .k,#sec-new .chipStat.rework .v{color:#b91c1c!important;}
     #sec-new .chipStat.rating{background:linear-gradient(180deg,#fff9db,#ffffff)!important;border-color:rgba(244,196,0,.28)!important;}
+
+    /* CWF fix17: colorful premium technician profile card */
+    #sec-new{
+      position:relative!important;
+      border-radius:30px!important;
+      overflow:hidden!important;
+      background:
+        radial-gradient(circle at 8% 0%, rgba(255,210,30,.34) 0 22%, transparent 46%),
+        radial-gradient(circle at 96% 10%, rgba(18,181,208,.28) 0 22%, transparent 44%),
+        linear-gradient(155deg,#ffffff 0%,#f7fbff 42%,#eaf5ff 100%)!important;
+      box-shadow:0 22px 56px rgba(8,36,91,.18)!important;
+      border:1px solid rgba(47,114,201,.14)!important;
+    }
+    #sec-new::before{
+      content:'';position:absolute;left:0;right:0;top:0;height:8px;
+      background:linear-gradient(90deg,#ffd21e 0%,#22c55e 28%,#16b9f2 58%,#0b56d8 100%);
+      z-index:1;
+    }
+    #sec-new>h2:first-child{
+      margin:8px 54px 12px 0!important;
+      background:linear-gradient(120deg,#05245c 0%,#0b56d8 38%,#15b8d6 70%,#f4c400 108%)!important;
+      -webkit-background-clip:text!important;background-clip:text!important;color:transparent!important;
+      text-shadow:none!important;
+    }
+    #sec-new>h2:first-child::before{
+      color:#0b56d8!important;-webkit-text-fill-color:#0b56d8!important;
+      letter-spacing:.30em!important;
+    }
+    #sec-new .profile-settings-icon{
+      top:18px!important;right:18px!important;width:42px!important;height:42px!important;border-radius:15px!important;
+      background:linear-gradient(135deg,#ffe66d 0%,#ffc107 42%,#ff9f1c 100%)!important;
+      border:1px solid rgba(255,193,7,.72)!important;
+      box-shadow:0 12px 26px rgba(244,196,0,.30),0 0 0 5px rgba(255,210,30,.13)!important;
+      font-size:21px!important;
+    }
+    #sec-new .profile-compact .left{
+      padding:6px 4px 2px!important;
+      align-items:center!important;
+    }
+    #sec-new .tech-avatar{
+      width:66px!important;height:66px!important;border-radius:22px!important;
+      border:4px solid #ffd21e!important;
+      box-shadow:0 12px 28px rgba(11,86,216,.22),0 0 0 5px rgba(255,210,30,.18)!important;
+    }
+    #sec-new .profile-compact .meta .name{
+      color:#08245b!important;
+      text-shadow:0 1px 0 rgba(255,255,255,.75)!important;
+    }
+    #sec-new .profile-compact .meta .code{
+      color:#51647d!important;
+      font-weight:1000!important;
+    }
+    #sec-new .profile-compact .chips{
+      grid-template-columns:repeat(4,minmax(0,1fr))!important;
+      gap:8px!important;
+      margin-top:4px!important;
+    }
+    #sec-new .chipStat{
+      min-height:64px!important;
+      padding:8px 4px 7px!important;
+      border-radius:18px!important;
+      border-width:1px!important;
+      box-shadow:0 13px 26px rgba(8,36,91,.12), inset 0 1px 0 rgba(255,255,255,.70)!important;
+      transform:translateZ(0);
+    }
+    #sec-new .chipStat::before{
+      background:linear-gradient(140deg,rgba(255,255,255,.70),rgba(255,255,255,.08) 54%,rgba(255,255,255,0))!important;
+    }
+    #sec-new .chipStat::after{
+      content:'';position:absolute;left:10px;right:10px;top:0;height:3px;border-radius:99px;opacity:.9;
+    }
+    #sec-new .chipStat .k{
+      font-size:9.5px!important;line-height:1.08!important;font-weight:1200!important;
+      color:rgba(8,36,91,.74)!important;
+      white-space:nowrap!important;
+    }
+    #sec-new .chipStat .v{
+      margin-top:2px!important;font-size:clamp(19px,4.7vw,25px)!important;font-weight:1200!important;
+      letter-spacing:-.03em!important;
+    }
+    #sec-new .chipStat.income{
+      background:linear-gradient(160deg,#e6fff4 0%,#ffffff 52%,#d7ffee 100%)!important;
+      border-color:rgba(22,163,74,.32)!important;
+    }
+    #sec-new .chipStat.income::after{background:#16a34a!important;}
+    #sec-new .chipStat.income .v{color:#087f3d!important;}
+    #sec-new .chipStat.done{
+      background:linear-gradient(160deg,#e8f2ff 0%,#ffffff 52%,#dcecff 100%)!important;
+      border-color:rgba(11,86,216,.30)!important;
+    }
+    #sec-new .chipStat.done::after{background:#0b56d8!important;}
+    #sec-new .chipStat.done .v{color:#0b56d8!important;}
+    #sec-new .chipStat.rework{
+      background:linear-gradient(160deg,#fff0f0 0%,#ffffff 52%,#ffe2e2 100%)!important;
+      border-color:rgba(239,68,68,.34)!important;
+    }
+    #sec-new .chipStat.rework::after{background:#ef4444!important;}
+    #sec-new .chipStat.rework .k,#sec-new .chipStat.rework .v{color:#b91c1c!important;}
+    #sec-new .chipStat.rating{
+      background:linear-gradient(160deg,#fff7cf 0%,#ffffff 52%,#ffef9a 100%)!important;
+      border-color:rgba(245,158,11,.36)!important;
+    }
+    #sec-new .chipStat.rating::after{background:#f59e0b!important;}
+    #sec-new .chipStat.rating .v{color:#8a5a00!important;}
+    #sec-new details.tech-more summary{
+      border-radius:18px!important;
+      background:linear-gradient(135deg,#ffffff,#eef6ff)!important;
+      border-color:rgba(47,114,201,.18)!important;
+      box-shadow:0 10px 24px rgba(8,36,91,.08)!important;
+    }
+    @media(max-width:390px){
+      #sec-new .profile-compact .chips{gap:6px!important;}
+      #sec-new .chipStat{min-height:60px!important;border-radius:16px!important;padding:7px 3px 6px!important;}
+      #sec-new .chipStat .k{font-size:8.8px!important;}
+      #sec-new .chipStat .v{font-size:20px!important;}
+      #sec-new .profile-settings-icon{width:40px!important;height:40px!important;}
+    }
 </style>
 
 <style id="tax-wht-modal-final-override">
@@ -1805,7 +1922,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260510_profile_row_fix16"></script>
+  <script src="app.js?v=20260510_profile_color_fix17"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
