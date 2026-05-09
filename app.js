@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_fix35_premium_offer_gradient";
+window.__CWF_TECH_APP_VERSION__ = "20260510_fix41_technician_theme_center";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -74,7 +74,6 @@ const homeZoneHintEl = document.getElementById("homeZoneHint");
 const allowOutOfZoneEl = document.getElementById("allowOutOfZone");
 const secondaryServiceZoneEl = document.getElementById("secondaryServiceZone");
 const zoneQuickBtnEl = document.getElementById("zoneQuickBtn");
-const zoneQuickTitleEl = document.getElementById("zoneQuickTitle");
 const btnSaveHomeZoneEl = document.getElementById("btnSaveHomeZone");
 
 const HOME_DISTRICTS_BY_PROVINCE = {
@@ -203,39 +202,186 @@ if (!username || !role) {
 }
 
 // =======================================
-// 🎨 THEME (Theme 2/3/4)
-// - theme-2: ของเดิม (ห้ามแตะ)
-// - theme-3: เหลือง #FFFD01 ชัด + ไล่น้ำเงิน ~70% + Header Glossy
-// - theme-4: พรีเมี่ยม (โทนทอง/น้ำเงินเข้ม)
-// หมายเหตุ: ใช้ class ที่ <body> เพื่อไม่ไปกระทบส่วนอื่น
+// 🎨 TECH THEME CENTER (6 presets + custom colors)
+// - Frontend only: localStorage
+// - No backend / no income / no job logic
 // =======================================
 
 const THEME_KEY = "cwf_theme";
+const THEME_CUSTOM_KEY = "cwf_theme_custom_v1";
 const themeToggleBtn = document.getElementById("themeToggleBtn");
+const themeStateText = document.getElementById("themeStateText");
+const themeModal = document.getElementById("techThemeModal");
+const themePresetGrid = document.getElementById("themePresetGrid");
+const themeCloseBtn = document.getElementById("themeCloseBtn");
+const themeDoneBtn = document.getElementById("themeDoneBtn");
+const themeResetBtn = document.getElementById("themeResetBtn");
+const themeApplyCustomBtn = document.getElementById("themeApplyCustomBtn");
+const themeColorPrimary = document.getElementById("themeColorPrimary");
+const themeColorAccent = document.getElementById("themeColorAccent");
+const themeColorButton = document.getElementById("themeColorButton");
+const themeColorSurface = document.getElementById("themeColorSurface");
 
-// ✅ วน 2 -> 3 -> 4 -> 2 (ตามที่คุย: Theme 2 ไม่แตะ, เพิ่ม 3/4)
-const THEMES = [2, 3, 4];
+const CWF_THEME_PRESETS = [
+  { id:"cwf-classic", name:"CWF Classic", desc:"น้ำเงิน-ทอง มืออาชีพ", primary:"#0b2e6d", primary2:"#1358c9", accent:"#18c7e7", button:"#f4c400", button2:"#f59e0b", surface:"#f4f8ff", card:"#ffffff", text:"#061b4f", muted:"#667085" },
+  { id:"aurora-tech", name:"Aurora Tech", desc:"ฟ้า-ม่วง ไฮเทค", primary:"#172554", primary2:"#6d5dfc", accent:"#22d3ee", button:"#a3e635", button2:"#84cc16", surface:"#f2f7ff", card:"#ffffff", text:"#101b4d", muted:"#64748b" },
+  { id:"emerald-pro", name:"Emerald Pro", desc:"เขียวเข้ม สะอาด", primary:"#064e3b", primary2:"#0f766e", accent:"#2dd4bf", button:"#facc15", button2:"#eab308", surface:"#f0fdf7", card:"#ffffff", text:"#052e2b", muted:"#5f716f" },
+  { id:"royal-gold", name:"Royal Gold", desc:"กรมท่า-ทอง พรีเมียม", primary:"#111827", primary2:"#1e3a8a", accent:"#38bdf8", button:"#fbbf24", button2:"#d97706", surface:"#f8fafc", card:"#ffffff", text:"#111827", muted:"#64748b" },
+  { id:"sunset-service", name:"Sunset Service", desc:"อุ่นขึ้น แต่สุภาพ", primary:"#7c2d12", primary2:"#c2410c", accent:"#fb7185", button:"#facc15", button2:"#fb923c", surface:"#fff7ed", card:"#ffffff", text:"#431407", muted:"#78716c" },
+  { id:"midnight-neon", name:"Midnight Neon", desc:"เข้ม เท่ สายกลางคืน", primary:"#020617", primary2:"#1d4ed8", accent:"#06b6d4", button:"#22c55e", button2:"#16a34a", surface:"#eef6ff", card:"#ffffff", text:"#07142f", muted:"#64748b" }
+];
 
-function applyTheme(themeNo) {
-  const n = Number(themeNo) || 2;
-  // ลบทุก theme class ก่อน เพื่อกันซ้อน
-  document.body.classList.remove("theme-1", "theme-2", "theme-3", "theme-4");
-  document.body.classList.add(`theme-${n}`);
-  localStorage.setItem(THEME_KEY, String(n));
+function shadeHexColor(hex, percent) {
+  const clean = String(hex || "").replace("#", "");
+  if (clean.length !== 6) return hex;
+  const num = parseInt(clean, 16);
+  let r = (num >> 16) + percent;
+  let g = ((num >> 8) & 0x00FF) + percent;
+  let b = (num & 0x0000FF) + percent;
+  r = Math.max(0, Math.min(255, r));
+  g = Math.max(0, Math.min(255, g));
+  b = Math.max(0, Math.min(255, b));
+  return `#${(b | (g << 8) | (r << 16)).toString(16).padStart(6, "0")}`;
 }
 
-// ✅ init theme (ค่าเริ่มต้น = 2)
-applyTheme(localStorage.getItem(THEME_KEY) || 2);
+function normalizeTheme(raw) {
+  if (!raw) return CWF_THEME_PRESETS[0];
+  if (typeof raw === "string") {
+    if (raw === "custom") {
+      try { return JSON.parse(localStorage.getItem(THEME_CUSTOM_KEY) || "") || CWF_THEME_PRESETS[0]; }
+      catch (_) { return CWF_THEME_PRESETS[0]; }
+    }
+    return CWF_THEME_PRESETS.find(t => t.id === raw) || CWF_THEME_PRESETS[0];
+  }
+  return raw;
+}
 
-// ✅ ปุ่มสลับธีม (ไอคอน)
-if (themeToggleBtn) {
-  themeToggleBtn.addEventListener("click", () => {
-    const current = Number(localStorage.getItem(THEME_KEY) || 2);
-    const idx = THEMES.indexOf(current);
-    const next = THEMES[(idx + 1 + THEMES.length) % THEMES.length];
-    applyTheme(next);
+function setThemeVars(theme) {
+  const t = normalizeTheme(theme);
+  const root = document.documentElement;
+  root.style.setProperty("--cwf-theme-primary", t.primary);
+  root.style.setProperty("--cwf-theme-primary-2", t.primary2 || shadeHexColor(t.primary, 28));
+  root.style.setProperty("--cwf-theme-accent", t.accent);
+  root.style.setProperty("--cwf-theme-button", t.button);
+  root.style.setProperty("--cwf-theme-button-2", t.button2 || shadeHexColor(t.button, -28));
+  root.style.setProperty("--cwf-theme-surface", t.surface);
+  root.style.setProperty("--cwf-theme-card", t.card || "#ffffff");
+  root.style.setProperty("--cwf-theme-text", t.text || "#061b4f");
+  root.style.setProperty("--cwf-theme-muted", t.muted || "#667085");
+}
+
+function applyTheme(themeIdOrObject, options = {}) {
+  const isCustomObj = typeof themeIdOrObject === "object" && themeIdOrObject;
+  const theme = normalizeTheme(themeIdOrObject);
+  setThemeVars(theme);
+  document.body.dataset.cwfTheme = isCustomObj ? "custom" : (theme.id || "custom");
+  if (!options.preview) {
+    if (isCustomObj) {
+      localStorage.setItem(THEME_CUSTOM_KEY, JSON.stringify(theme));
+      localStorage.setItem(THEME_KEY, "custom");
+    } else {
+      localStorage.setItem(THEME_KEY, theme.id);
+    }
+  }
+  if (themeStateText) {
+    themeStateText.textContent = isCustomObj || localStorage.getItem(THEME_KEY) === "custom"
+      ? "ธีมปรับเอง"
+      : `${theme.name} • ${theme.desc}`;
+  }
+  updateThemePresetActive();
+}
+
+function getCurrentThemeId() {
+  return localStorage.getItem(THEME_KEY) || "cwf-classic";
+}
+
+function renderThemePresets() {
+  if (!themePresetGrid) return;
+  themePresetGrid.innerHTML = CWF_THEME_PRESETS.map(t => `
+    <button type="button" class="themePresetBtn" data-theme-id="${t.id}">
+      <div class="themePreview" style="background:linear-gradient(135deg,${t.primary},${t.primary2},${t.accent});box-shadow:inset 0 -4px 0 ${t.button};"></div>
+      <strong>${t.name}</strong>
+      <span>${t.desc}</span>
+    </button>
+  `).join("");
+  themePresetGrid.querySelectorAll("[data-theme-id]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-theme-id");
+      applyTheme(id);
+      loadThemeInputs(normalizeTheme(id));
+    });
+  });
+  updateThemePresetActive();
+}
+
+function updateThemePresetActive() {
+  if (!themePresetGrid) return;
+  const current = getCurrentThemeId();
+  themePresetGrid.querySelectorAll("[data-theme-id]").forEach(btn => {
+    btn.classList.toggle("active", btn.getAttribute("data-theme-id") === current);
   });
 }
+
+function loadThemeInputs(theme) {
+  const t = normalizeTheme(theme || getCurrentThemeId());
+  if (themeColorPrimary) themeColorPrimary.value = t.primary || "#0b2e6d";
+  if (themeColorAccent) themeColorAccent.value = t.accent || "#18c7e7";
+  if (themeColorButton) themeColorButton.value = t.button || "#f4c400";
+  if (themeColorSurface) themeColorSurface.value = t.surface || "#f4f8ff";
+}
+
+function buildCustomThemeFromInputs() {
+  const primary = themeColorPrimary?.value || "#0b2e6d";
+  const accent = themeColorAccent?.value || "#18c7e7";
+  const button = themeColorButton?.value || "#f4c400";
+  const surface = themeColorSurface?.value || "#f4f8ff";
+  return {
+    id:"custom", name:"Custom", desc:"ปรับเอง",
+    primary, primary2:shadeHexColor(primary, 34), accent, button, button2:shadeHexColor(button, -28), surface,
+    card:"#ffffff", text:"#061b4f", muted:"#667085"
+  };
+}
+
+function openTechThemeModal() {
+  renderThemePresets();
+  loadThemeInputs(normalizeTheme(getCurrentThemeId()));
+  themeModal?.classList.add("open");
+  themeModal?.setAttribute("aria-hidden", "false");
+}
+
+function closeTechThemeModal() {
+  themeModal?.classList.remove("open");
+  themeModal?.setAttribute("aria-hidden", "true");
+}
+
+window.openTechThemeModal = openTechThemeModal;
+window.closeTechThemeModal = closeTechThemeModal;
+
+renderThemePresets();
+applyTheme(getCurrentThemeId());
+
+if (themeToggleBtn) {
+  themeToggleBtn.addEventListener("click", () => {
+    closeTechDrawer?.();
+    openTechThemeModal();
+  });
+}
+themeCloseBtn?.addEventListener("click", closeTechThemeModal);
+themeDoneBtn?.addEventListener("click", closeTechThemeModal);
+themeResetBtn?.addEventListener("click", () => {
+  localStorage.removeItem(THEME_CUSTOM_KEY);
+  applyTheme("cwf-classic");
+  loadThemeInputs(CWF_THEME_PRESETS[0]);
+});
+themeApplyCustomBtn?.addEventListener("click", () => {
+  applyTheme(buildCustomThemeFromInputs());
+});
+[themeColorPrimary, themeColorAccent, themeColorButton, themeColorSurface].forEach(input => {
+  input?.addEventListener("input", () => applyTheme(buildCustomThemeFromInputs(), { preview: true }));
+});
+themeModal?.addEventListener("click", (ev) => {
+  if (ev.target === themeModal) closeTechThemeModal();
+});
 
 
 // =======================================
@@ -362,11 +508,12 @@ function renderAcceptUI(status, updatedAtText, note) {
       : "🟢 รับงาน";
   }
 
-  // CWF fix35: hide long status line; the main button is the visible status.
+  // ข้อความสถานะด้านล่าง (ให้เห็นชัด)
   if (acceptStatusText) {
-    acceptStatusText.textContent = "";
-    acceptStatusText.setAttribute("hidden", "hidden");
-    acceptStatusText.style.display = "none";
+    acceptStatusText.textContent =
+      (st === "paused" ? "⛔ ไม่ได้รับงานอยู่" : "✅ กำลังรับงานอยู่")
+      + (updatedAtText ? ` · อัปเดต: ${updatedAtText}` : "")
+      + (note ? ` · ${note}` : "");
   }
 
   // att-status เก่า (ซ่อน) เผื่อโค้ดอื่นอ่านค่า
@@ -468,35 +615,6 @@ function setSelectValueSafe(el, value) {
   if (v && el.value !== v) el.value = "";
 }
 
-
-function getPrimaryWorkAreaLabel(profile) {
-  const p = profile || __TECH_ZONE_PROFILE__ || {};
-  const candidates = [
-    p.home_district,
-    p.home_amphoe,
-    p.home_area,
-    p.primary_area,
-    p.service_area,
-    p.home_service_zone_label,
-    p.preferred_zone,
-    p.home_service_zone_code ? `Zone ${p.home_service_zone_code}` : ""
-  ].map(v => String(v || "").trim()).filter(Boolean);
-  const label = candidates[0] || "พื้นที่ประจำ";
-  return label.length > 18 ? `${label.slice(0, 18)}…` : label;
-}
-
-function updateZoneQuickButtonLabel(profile) {
-  const p = profile || __TECH_ZONE_PROFILE__ || {};
-  const titleEl = document.getElementById("zoneQuickTitle") || zoneQuickTitleEl || zoneQuickBtnEl?.querySelector("span");
-  const summaryEl = document.getElementById("zoneQuickSummary");
-  if (titleEl) titleEl.textContent = getPrimaryWorkAreaLabel(p);
-  if (summaryEl) {
-    summaryEl.textContent = p.home_service_zone_code
-      ? `Zone ${p.home_service_zone_code}${p.secondary_service_zone_code ? ` / รอง ${p.secondary_service_zone_code}` : ""}`
-      : (p.service_radius_km ? `รัศมี ${p.service_radius_km} กม.` : "แตะเพื่อตั้งค่าพื้นที่");
-  }
-}
-
 function syncQuickZoneFields() {
   const p = __TECH_ZONE_PROFILE__ || {};
   const secondary = String(p.secondary_service_zone_code || document.getElementById("secondaryServiceZone")?.value || "").toUpperCase();
@@ -512,7 +630,6 @@ function syncQuickZoneFields() {
     const rText = radius ? `ระยะ ${radius} กม.` : "ไม่จำกัดระยะทาง";
     status.textContent = `${primary} • ${sec} • ${rText}`;
   }
-  updateZoneQuickButtonLabel(p);
 }
 
 function openZoneQuickModal() {
@@ -1003,7 +1120,12 @@ async function loadProfile() {
         ? `โซนหลัก: Zone ${data.home_service_zone_code} - ${data.home_service_zone_label || ""}${data.secondary_service_zone_code ? ` • โซนรอง: Zone ${data.secondary_service_zone_code} - ${data.secondary_service_zone_label || ""}` : ""}`
         : "ระบบจะกำหนดโซนให้หลังกรอกเขต/อำเภอ";
     }
-    updateZoneQuickButtonLabel(data);
+    const zoneQuickSummary = document.getElementById("zoneQuickSummary");
+    if (zoneQuickSummary) {
+      zoneQuickSummary.textContent = data.home_service_zone_code
+        ? `หลัก ${data.home_service_zone_code}${data.secondary_service_zone_code ? ` / รอง ${data.secondary_service_zone_code}` : " / ไม่เลือกโซนรอง"}${data.service_radius_km ? ` / ${data.service_radius_km} กม.` : ""}`
+        : "ยังไม่ได้ตั้งพื้นที่";
+    }
 
     // ✅ sync technician compact profile "more" fields (safe no-op if not present)
     try{ if (typeof window !== 'undefined' && typeof window.__cwfSyncTechMore === 'function') window.__cwfSyncTechMore(); }catch(e){}

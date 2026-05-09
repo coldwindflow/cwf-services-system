@@ -789,7 +789,10 @@
             <span class="menuArrow">›</span>
           </button>
 
-          <button class="techMenuBtn techMenuHidden" type="button" id="themeToggleBtn">theme</button>
+          <button class="techMenuBtn techThemeMenuBtn" type="button" id="themeToggleBtn">
+            <span class="left"><span class="menuIcon">🎨</span><span class="menuText"><strong>ธีมหน้าช่าง</strong><span class="sub" id="themeStateText">เลือกสีแอพ / ปรับแต่งเอง</span></span></span>
+            <span class="menuArrow">›</span>
+          </button>
           <button class="techMenuBtn techMenuHidden" type="button" id="techMatrixBtn">matrix</button>
 
           <div class="techMenuSmall" style="margin-top:4px;padding:0 2px;">อื่นๆ</div>
@@ -797,6 +800,44 @@
             <span class="left"><span class="menuIcon">🚪</span><span class="menuText"><strong>ออกจากระบบ</strong><span class="sub">Logout</span></span></span>
             <span class="menuArrow">›</span>
           </button>
+        </div>
+      </div>
+    </div>
+
+
+    
+    <div id="techThemeModal" aria-hidden="true">
+      <div class="themePanel" role="dialog" aria-modal="true" aria-labelledby="techThemeTitle">
+        <div class="themeHead">
+          <div>
+            <p class="themeEyebrow">CWF TECH THEME</p>
+            <h3 id="techThemeTitle">เลือกธีมหน้าช่าง</h3>
+            <p>เลือกโทนสำเร็จรูป หรือปรับสีเองให้เข้ากับสไตล์การทำงานของคุณ</p>
+          </div>
+          <button class="tech-icbtn themeClose" type="button" id="themeCloseBtn" aria-label="ปิด">✕</button>
+        </div>
+
+        <div class="themePresetGrid" id="themePresetGrid" aria-label="ธีมสำเร็จรูป"></div>
+
+        <div class="themeCustomCard">
+          <div class="themeCustomHead">
+            <div>
+              <strong>ปรับสีเอง</strong>
+              <span>เลือกสีหลัก สีรอง สีปุ่ม และพื้นหลัง</span>
+            </div>
+            <button type="button" class="themeMiniBtn" id="themeApplyCustomBtn">ใช้สีนี้</button>
+          </div>
+          <div class="themeColorGrid">
+            <label>สีหลัก <input type="color" id="themeColorPrimary" value="#0b2e6d"></label>
+            <label>สีรอง <input type="color" id="themeColorAccent" value="#18c7e7"></label>
+            <label>สีปุ่ม <input type="color" id="themeColorButton" value="#f4c400"></label>
+            <label>พื้นหลัง <input type="color" id="themeColorSurface" value="#f4f8ff"></label>
+          </div>
+        </div>
+
+        <div class="themeActions">
+          <button type="button" class="themeGhostBtn" id="themeResetBtn">กลับค่าเริ่มต้น</button>
+          <button type="button" class="themeDoneBtn" id="themeDoneBtn">เสร็จสิ้น</button>
         </div>
       </div>
     </div>
@@ -2241,7 +2282,148 @@
     }
   </style>
 
-<script src="app.js?v=20260510_fix40_offer_panel_cohesive"></script>
+
+  <style id="cwf-fix41-tech-theme-system">
+    :root{
+      --cwf-theme-primary:#0b2e6d;
+      --cwf-theme-primary-2:#1358c9;
+      --cwf-theme-accent:#18c7e7;
+      --cwf-theme-button:#f4c400;
+      --cwf-theme-button-2:#f59e0b;
+      --cwf-theme-surface:#f4f8ff;
+      --cwf-theme-card:#ffffff;
+      --cwf-theme-text:#061b4f;
+      --cwf-theme-muted:#667085;
+    }
+
+    body{
+      background:
+        radial-gradient(circle at 92% 142px, color-mix(in srgb, var(--cwf-theme-button) 18%, transparent) 0 72px, transparent 160px),
+        radial-gradient(circle at 10% 190px, color-mix(in srgb, var(--cwf-theme-accent) 16%, transparent) 0 92px, transparent 190px),
+        linear-gradient(180deg,var(--cwf-theme-primary) 0 168px,var(--cwf-theme-surface) 168px 100%)!important;
+    }
+    #techTopNav{
+      background:
+        radial-gradient(circle at 78% 18%, color-mix(in srgb, var(--cwf-theme-accent) 22%, transparent) 0 72px, transparent 150px),
+        linear-gradient(135deg,color-mix(in srgb, var(--cwf-theme-primary) 92%, #000 8%) 0%,var(--cwf-theme-primary) 46%,var(--cwf-theme-primary-2) 100%)!important;
+      box-shadow:0 18px 42px rgba(2,13,38,.30), inset 0 -1px 0 color-mix(in srgb, var(--cwf-theme-button) 44%, transparent)!important;
+    }
+    #techTopNav::after{
+      background:linear-gradient(90deg,var(--cwf-theme-button),var(--cwf-theme-accent),var(--cwf-theme-primary-2))!important;
+    }
+    #techMenuBtn,
+    .nav-btn.active{
+      background:linear-gradient(145deg,color-mix(in srgb, var(--cwf-theme-button) 82%, #fff 18%),var(--cwf-theme-button),var(--cwf-theme-button-2))!important;
+      color:#061b4f!important;
+      border-color:color-mix(in srgb, var(--cwf-theme-button) 52%, #fff 48%)!important;
+      box-shadow:0 12px 26px color-mix(in srgb, var(--cwf-theme-button) 26%, transparent), inset 0 1px 0 rgba(255,255,255,.46)!important;
+    }
+    .bottom-nav{
+      background:
+        radial-gradient(circle at 20% 0%, color-mix(in srgb, var(--cwf-theme-accent) 18%, transparent) 0 80px, transparent 160px),
+        linear-gradient(135deg,color-mix(in srgb, var(--cwf-theme-primary) 88%, #000 12%) 0%,var(--cwf-theme-primary) 52%,var(--cwf-theme-primary-2) 100%)!important;
+    }
+    .bottom-nav::before{
+      background:linear-gradient(90deg,var(--cwf-theme-button),var(--cwf-theme-accent),var(--cwf-theme-primary-2))!important;
+    }
+
+    #techControlCard.tech-control-card,
+    #sec-new.card{
+      background:
+        radial-gradient(circle at 94% 0%, color-mix(in srgb, var(--cwf-theme-button) 10%, transparent) 0 72px, transparent 166px),
+        radial-gradient(circle at 5% 12%, color-mix(in srgb, var(--cwf-theme-accent) 8%, transparent) 0 86px, transparent 190px),
+        linear-gradient(180deg,var(--cwf-theme-card),color-mix(in srgb, var(--cwf-theme-surface) 72%, #fff 28%))!important;
+    }
+    #sec-new>h2:first-child,
+    #sec-new .profile-compact .meta .name,
+    #sec-new .chipStat .v,
+    #sec-new h2:nth-of-type(2),
+    #sec-new #offer-list:empty::after{
+      color:var(--cwf-theme-text)!important;
+      -webkit-text-fill-color:var(--cwf-theme-text)!important;
+    }
+    #sec-new .profile-compact .left{
+      background:linear-gradient(135deg,rgba(255,255,255,.96),color-mix(in srgb, var(--cwf-theme-surface) 78%, #fff 22%))!important;
+    }
+    #sec-new .profile-compact .meta .code,
+    #sec-new h2:nth-of-type(2) + p{
+      color:var(--cwf-theme-muted)!important;
+      -webkit-text-fill-color:var(--cwf-theme-muted)!important;
+    }
+    #sec-new .profile-settings-icon{
+      color:color-mix(in srgb, var(--cwf-theme-primary) 68%, #667085 32%)!important;
+      -webkit-text-fill-color:color-mix(in srgb, var(--cwf-theme-primary) 68%, #667085 32%)!important;
+    }
+    #sec-new h2:nth-of-type(2),
+    #sec-new h2:nth-of-type(2) + p,
+    #sec-new #offer-list{
+      background:linear-gradient(180deg,var(--cwf-theme-card),color-mix(in srgb, var(--cwf-theme-surface) 78%, #fff 22%))!important;
+    }
+
+    #techThemeModal{
+      position:fixed;
+      inset:0;
+      z-index:5200;
+      display:none;
+      align-items:flex-end;
+      justify-content:center;
+      padding:16px;
+      background:rgba(2,6,23,.52);
+      backdrop-filter:blur(12px);
+    }
+    #techThemeModal.open{display:flex;}
+    #techThemeModal .themePanel{
+      width:min(520px,100%);
+      max-height:min(86vh,760px);
+      overflow:auto;
+      border-radius:30px;
+      padding:16px;
+      background:
+        radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--cwf-theme-button) 14%, transparent) 0 86px, transparent 170px),
+        linear-gradient(180deg,#ffffff 0%,#f7fbff 100%);
+      border:1px solid rgba(255,255,255,.86);
+      box-shadow:0 28px 78px rgba(2,13,38,.38), inset 0 1px 0 rgba(255,255,255,.88);
+    }
+    .themeHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:12px;}
+    .themeHead h3{margin:0;color:var(--cwf-theme-text);font-size:26px;font-weight:1200;letter-spacing:-.04em;}
+    .themeHead p{margin:4px 0 0;color:#667085;font-weight:850;line-height:1.45;}
+    .themeEyebrow{margin:0!important;color:var(--cwf-theme-primary-2)!important;font-size:11px!important;letter-spacing:.22em!important;font-weight:1100!important;}
+    .themeClose{background:rgba(8,36,91,.06)!important;color:var(--cwf-theme-text)!important;border-color:rgba(8,36,91,.08)!important;}
+
+    .themePresetGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0;}
+    .themePresetBtn{
+      min-height:96px;border-radius:24px;border:1px solid rgba(8,36,91,.10);background:#fff;padding:12px;text-align:left;
+      box-shadow:0 12px 28px rgba(8,36,91,.08), inset 0 1px 0 rgba(255,255,255,.88);
+      position:relative;overflow:hidden;cursor:pointer;-webkit-tap-highlight-color:transparent;
+    }
+    .themePresetBtn.active{
+      border-color:color-mix(in srgb, var(--cwf-theme-button) 60%, #fff 40%);
+      box-shadow:0 16px 34px color-mix(in srgb, var(--cwf-theme-accent) 18%, rgba(8,36,91,.08)), inset 0 1px 0 rgba(255,255,255,.92);
+    }
+    .themePresetBtn .themePreview{height:38px;border-radius:18px;margin-bottom:10px;box-shadow:inset 0 1px 0 rgba(255,255,255,.35);}
+    .themePresetBtn strong{display:block;color:#061b4f;font-weight:1150;font-size:15px;}
+    .themePresetBtn span{display:block;color:#667085;font-weight:800;font-size:12px;margin-top:2px;}
+
+    .themeCustomCard{border-radius:24px;background:rgba(255,255,255,.78);border:1px solid rgba(8,36,91,.09);padding:12px;box-shadow:0 12px 28px rgba(8,36,91,.07), inset 0 1px 0 rgba(255,255,255,.90);}
+    .themeCustomHead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px;}
+    .themeCustomHead strong{display:block;color:#061b4f;font-size:17px;font-weight:1150;}
+    .themeCustomHead span{display:block;color:#667085;font-size:12px;font-weight:850;margin-top:2px;}
+    .themeColorGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;}
+    .themeColorGrid label{display:flex;align-items:center;justify-content:space-between;gap:10px;color:#061b4f;font-weight:950;font-size:13px;padding:10px;border-radius:18px;background:#fff;border:1px solid rgba(8,36,91,.08);}
+    .themeColorGrid input{width:44px;height:34px;border:0;background:transparent;padding:0;}
+    .themeMiniBtn,.themeGhostBtn,.themeDoneBtn{border:0;border-radius:18px;font-weight:1100;min-height:44px;padding:0 16px;cursor:pointer;}
+    .themeMiniBtn,.themeDoneBtn{background:linear-gradient(145deg,color-mix(in srgb, var(--cwf-theme-button) 82%, #fff 18%),var(--cwf-theme-button));color:#061b4f;box-shadow:0 12px 24px color-mix(in srgb, var(--cwf-theme-button) 18%, transparent);}
+    .themeGhostBtn{background:#fff;color:#061b4f;border:1px solid rgba(8,36,91,.10);}
+    .themeActions{display:flex;gap:10px;margin-top:12px;}
+    .themeActions>*{flex:1;}
+
+    @media(max-width:380px){
+      .themePresetGrid{grid-template-columns:1fr;}
+      #techThemeModal{padding:10px;}
+    }
+  </style>
+
+<script src="app.js?v=20260510_fix41_technician_theme_center"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
