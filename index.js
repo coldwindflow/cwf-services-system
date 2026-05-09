@@ -7187,6 +7187,7 @@ const {
   _upsertDisplayRowForPreview,
   _syncDisplayForJobState,
   _buildTechnicianJobMoneySummary,
+  _buildTechnicianJobMoneySummaryBatch,
 } = createTechnicianJobMoneyHelpers({
   pool,
   money: _money,
@@ -7195,6 +7196,7 @@ const {
   getCustomerCollectAmountForTechJob: _getCustomerCollectAmountForTechJob,
   loadTechnicianIncomePreview: _loadTechnicianIncomePreview,
   loadFinalizedTechPayoutLineForJob: _loadFinalizedTechPayoutLineForJob,
+  getTechnicianVisibilityAliases: _getTechnicianVisibilityAliases,
   techJobContextFromRow: _techJobContextFromRow,
 });
 
@@ -7309,7 +7311,7 @@ async function _getOrCalculateTechnicianIncomePreview(job_id, username, context 
     technician_income_rate_set_id: made.rate_set_id || null,
     technician_income_rate_set_version: made.rate_set_version || null,
     technician_income_breakdown: made.technician_income_breakdown || { source: made.technician_income_source, rows: [], related_items: [] },
-    technician_income_label: context === 'offered' ? 'ที่ช่างจะได้รับ' : (context === 'history' ? 'ที่ช่างได้รับ' : 'ที่ช่างจะได้รับ'),
+    technician_income_label: context === 'offered' ? 'ที่ช่างจะได้รับ' : (context === 'history' ? 'ได้รับ' : 'ที่ช่างจะได้รับ'),
   };
 }
 
@@ -17212,7 +17214,7 @@ function _techJobMoneyFallback(row, username, context) {
     customer_collect_amount: Number(row?.job_price || 0) || null,
     customer_collect_label: ctx === 'history' ? 'ยอดที่ลูกค้าจ่าย' : 'ยอดเก็บลูกค้า',
     technician_income_amount: null,
-    technician_income_label: ctx === 'offered' ? 'ที่ช่างจะได้รับ' : (ctx === 'history' ? 'ที่ช่างได้รับ' : 'ที่ช่างจะได้รับ'),
+    technician_income_label: ctx === 'offered' ? 'ที่ช่างจะได้รับ' : (ctx === 'history' ? 'ได้รับ' : 'ที่ช่างจะได้รับ'),
     technician_income_source: 'loading',
     technician_income_breakdown: { source: 'loading', rows: [], related_items: [] },
     technician_income_rate_set_id: null,
@@ -18806,37 +18808,27 @@ app.post("/tech/income-summary-batch", requireTechnicianSession, async (req, res
 
   try {
     const visibleRows = await _loadTechnicianVisibleJobsByIds(username, jobIds);
+    const moneyMap = await _buildTechnicianJobMoneySummaryBatch(visibleRows, username, {
+      contextForJob: (row) => _techJobContextFromRow(row, 'current'),
+    });
     const items = {};
     for (const row of visibleRows) {
       const context = _techJobContextFromRow(row, 'current');
-      try {
-        const money = await _buildTechnicianJobMoneySummary(row, username, { context });
-        items[String(row.job_id)] = {
-          job_id: row.job_id,
-          context,
-          status: money?.technician_income_amount == null ? 'unavailable' : 'ready',
-          technician_income_amount: money?.technician_income_amount ?? null,
-          technician_income_label: money?.technician_income_label || null,
-          technician_income_source: money?.technician_income_source || 'unavailable',
-          technician_income_display_state: money?.technician_income_display_state || null,
-          technician_income_display_note: money?.technician_income_display_note || null,
-          technician_income_is_final: Boolean(money?.technician_income_is_final),
-          technician_income_is_stale: Boolean(money?.technician_income_is_stale),
-          technician_income_rate_set_id: money?.technician_income_rate_set_id || null,
-          technician_income_rate_set_version: money?.technician_income_rate_set_version || null,
-        };
-      } catch (e) {
-        try { console.warn('[tech_income_batch] item failed', { username, job_id: row.job_id, error: e.message }); } catch {}
-        items[String(row.job_id)] = {
-          job_id: row.job_id,
-          context,
-          status: 'unavailable',
-          technician_income_amount: null,
-          technician_income_source: 'unavailable',
-          technician_income_rate_set_id: null,
-          technician_income_rate_set_version: null,
-        };
-      }
+      const money = moneyMap.get(String(row.job_id)) || null;
+      items[String(row.job_id)] = {
+        job_id: row.job_id,
+        context,
+        status: money?.technician_income_amount == null ? 'unavailable' : 'ready',
+        technician_income_amount: money?.technician_income_amount ?? null,
+        technician_income_label: money?.technician_income_label || null,
+        technician_income_source: money?.technician_income_source || 'unavailable',
+        technician_income_display_state: money?.technician_income_display_state || null,
+        technician_income_display_note: money?.technician_income_display_note || null,
+        technician_income_is_final: Boolean(money?.technician_income_is_final),
+        technician_income_is_stale: Boolean(money?.technician_income_is_stale),
+        technician_income_rate_set_id: money?.technician_income_rate_set_id || null,
+        technician_income_rate_set_version: money?.technician_income_rate_set_version || null,
+      };
     }
     return res.json({ ok: true, items });
   } catch (e) {
