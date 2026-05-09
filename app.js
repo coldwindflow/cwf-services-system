@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_fix25_home_flow_repair";
+window.__CWF_TECH_APP_VERSION__ = "20260510_fix26_home_flow_complete";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -362,7 +362,7 @@ function renderAcceptUI(status, updatedAtText, note) {
       : "🟢 รับงาน";
   }
 
-  // CWF fix25: hide the long status row; the button itself is the visible status.
+  // CWF fix26: hide long status row; main accept button remains the visible status control.
   if (acceptStatusText) {
     acceptStatusText.textContent = "";
     acceptStatusText.setAttribute("hidden", "hidden");
