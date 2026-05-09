@@ -1,7 +1,7 @@
 
 
-// CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260509_history20_fix12";
+// CWF Technician App Stable fix14: hide load-more for day/month when visible rows are below 20
+window.__CWF_TECH_APP_VERSION__ = "20260509_history_filter_loadmore_fix14";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -3095,7 +3095,7 @@ function renderUpcomingHint(filteredCount, totalCount){
   activeUpcomingHintEl.textContent = `มีงานล่วงหน้าทั้งหมด ${totalCount} งาน • เลือกดูทีละวันได้เพื่อลดความสับสน`;
 }
 
-function renderHistoryLoadMoreControl(container, visibleCount){
+function renderHistoryLoadMoreControl(container, visibleCount, filteredTotalCount){
   if (!container) return;
   const wrap = document.createElement('div');
   wrap.className = 'cwf-history-load-more';
@@ -3105,17 +3105,34 @@ function renderHistoryLoadMoreControl(container, visibleCount){
   note.className = 'muted';
   note.style.cssText = 'font-size:12px;text-align:center;';
 
-  const loadedHistoryCount = _loadedHistoryRows().length;
-  const canShowMoreFromCache = loadedHistoryCount > __HISTORY_VISIBLE_LIMIT__;
-  const canLoadMore = canShowMoreFromCache || __HISTORY_HAS_MORE__;
+  // สำคัญ: ปุ่มดูเพิ่มต้องอิงจำนวนของ filter ที่กำลังดู ไม่ใช่จำนวน history ทั้ง cache
+  // เคสจริง: tab วัน/เดือนมีแค่ 7 งาน แต่ cache มี history 20+ และ __HISTORY_HAS_MORE__ = true
+  // แบบเดิมเลยแสดงปุ่ม “ดูเพิ่มอีก 20 งาน” ทั้งที่ช่วงวัน/เดือนนั้นไม่มีถึง 20 งาน
+  const visibleLimit = Math.max(HISTORY_PAGE_SIZE, Number(__HISTORY_VISIBLE_LIMIT__ || HISTORY_PAGE_SIZE));
+  const filteredCount = Math.max(0, Number(filteredTotalCount || 0));
+  const canShowMoreFromFilteredCache = filteredCount > visibleLimit;
+  const isAllFilter = __HISTORY_FILTER__ === 'all';
+
+  // หน้า “ทั้งหมด” โหลดเพิ่มได้ตาม backend has-more
+  // หน้า “วัน/เดือน” จะแสดงปุ่มเฉพาะกรณีที่ filter นี้มีเต็มอย่างน้อย 20 งานแล้วเท่านั้น
+  // ถ้ามี 1-19 งาน ให้จบที่ข้อความสรุป ไม่ต้องโชว์ปุ่มให้กดแล้วงง
+  const canLoadMore = isAllFilter
+    ? (canShowMoreFromFilteredCache || __HISTORY_HAS_MORE__)
+    : (visibleCount >= HISTORY_PAGE_SIZE && (canShowMoreFromFilteredCache || __HISTORY_HAS_MORE__));
 
   if (__HISTORY_LOAD_ERROR__) {
     note.textContent = `โหลดประวัติเพิ่มไม่สำเร็จ: ${__HISTORY_LOAD_ERROR__}`;
     wrap.appendChild(note);
   } else if (visibleCount > 0) {
-    note.textContent = canLoadMore
-      ? `กำลังแสดง ${visibleCount} งานล่าสุด • กดดูเพิ่มเพื่อโหลดอีก ${HISTORY_PAGE_SIZE} งาน`
-      : `แสดงประวัติที่โหลดแล้ว ${visibleCount} งาน`;
+    if (canLoadMore) {
+      note.textContent = `กำลังแสดง ${visibleCount} งานล่าสุด • กดดูเพิ่มเพื่อโหลดอีก ${HISTORY_PAGE_SIZE} งาน`;
+    } else if (__HISTORY_FILTER__ === 'day') {
+      note.textContent = `แสดงงานวันนี้ทั้งหมด ${visibleCount} งาน`;
+    } else if (__HISTORY_FILTER__ === 'month') {
+      note.textContent = `แสดงงานเดือนนี้ทั้งหมด ${visibleCount} งาน`;
+    } else {
+      note.textContent = `แสดงประวัติที่โหลดแล้ว ${visibleCount} งาน`;
+    }
     wrap.appendChild(note);
   }
 
@@ -3255,7 +3272,7 @@ function renderJobs(jobs) {
       } catch (_) {}
     }
 
-    renderHistoryLoadMoreControl(historyJobsEl, visibleHistoryRows.length);
+    renderHistoryLoadMoreControl(historyJobsEl, visibleHistoryRows.length, sortedHistoryAll.length);
   }
 
 
