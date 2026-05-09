@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v83-fix37-premium-cohesive-home-20260510";
+const CACHE_NAME = "cwf-cache-v84-fix38-clean-premium-home-20260510";
 
 const ASSETS = [
   "/",
@@ -9,7 +9,7 @@ const ASSETS = [
   "/index.html",
   "/tech.html",
   "/style.css",
-  "/app.js?v=20260510_fix37_premium_cohesive_home",
+  "/app.js?v=20260510_fix38_clean_premium_home",
   "/logo.png",
   "/assets/cwf-promptpay-qr.jpg",
   "/manifest.json",

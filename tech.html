@@ -1921,22 +1921,20 @@
   </div>
 
   
-  <style id="cwf-fix37-premium-cohesive-home">
+  <style id="cwf-fix38-clean-premium-home">
     /*
-      CWF fix37: cohesive premium home UI.
-      CSS-only + one static text removal. No app logic / tabs / backend.
+      CWF fix38: clean premium home UI.
+      Remove awkward color strips/profile frame. Offer area uses the same surface as main card.
+      CSS-only + static clock text removal. No app logic / tabs / backend.
     */
 
     #techControlCard.tech-control-card{
       margin:8px 0 12px!important;
       padding:10px!important;
       border-radius:26px!important;
-      background:
-        radial-gradient(circle at 88% 10%, rgba(255,214,64,.12) 0 54px, transparent 118px),
-        radial-gradient(circle at 5% 12%, rgba(20,199,232,.10) 0 48px, transparent 124px),
-        linear-gradient(135deg,rgba(255,255,255,.96) 0%,rgba(246,250,255,.92) 100%)!important;
-      border:1px solid rgba(255,255,255,.86)!important;
-      box-shadow:0 18px 42px rgba(8,36,91,.14), inset 0 1px 0 rgba(255,255,255,.90)!important;
+      background:linear-gradient(135deg,rgba(255,255,255,.97),rgba(247,250,255,.94))!important;
+      border:1px solid rgba(255,255,255,.88)!important;
+      box-shadow:0 16px 38px rgba(8,36,91,.13), inset 0 1px 0 rgba(255,255,255,.92)!important;
       backdrop-filter:blur(10px)!important;
     }
     #techControlCard .tech-ctrl-row{
@@ -1951,17 +1949,15 @@
       font-weight:1100!important;
     }
     #techControlCard .accept-btn.ready{
-      background:
-        radial-gradient(circle at 20% 30%, rgba(255,255,255,.24), transparent 35%),
-        linear-gradient(135deg,#12b76a 0%,#07864f 100%)!important;
+      background:linear-gradient(135deg,#12b76a 0%,#07864f 100%)!important;
       color:#fff!important;
       border-color:rgba(255,255,255,.36)!important;
-      box-shadow:0 14px 30px rgba(16,185,100,.24), inset 0 1px 0 rgba(255,255,255,.20)!important;
+      box-shadow:0 12px 26px rgba(16,185,100,.22), inset 0 1px 0 rgba(255,255,255,.20)!important;
     }
     #techControlCard .zone-select{
-      background:linear-gradient(145deg,#ffffff 0%,#f3f8ff 100%)!important;
-      border:1px solid rgba(8,36,91,.12)!important;
-      box-shadow:0 12px 26px rgba(8,36,91,.09), inset 0 1px 0 rgba(255,255,255,.88)!important;
+      background:linear-gradient(145deg,#ffffff 0%,#f4f8ff 100%)!important;
+      border:1px solid rgba(8,36,91,.10)!important;
+      box-shadow:0 10px 22px rgba(8,36,91,.08), inset 0 1px 0 rgba(255,255,255,.90)!important;
     }
     #techControlCard .zone-wrap::after{
       content:"พื้นที่ประจำ"!important;
@@ -1980,18 +1976,15 @@
     }
 
     #sec-new.card{
-      background:
-        radial-gradient(circle at 94% 0%, rgba(255,214,64,.10) 0 74px, transparent 166px),
-        radial-gradient(circle at 5% 12%, rgba(23,200,232,.08) 0 86px, transparent 190px),
-        linear-gradient(180deg,#ffffff 0%,#f8fbff 52%,#eef7ff 100%)!important;
+      background:linear-gradient(180deg,#ffffff 0%,#f9fbff 54%,#f2f8ff 100%)!important;
       border:1px solid rgba(255,255,255,.92)!important;
-      box-shadow:0 24px 56px rgba(8,36,91,.15), inset 0 1px 0 rgba(255,255,255,.86)!important;
+      box-shadow:0 22px 52px rgba(8,36,91,.14), inset 0 1px 0 rgba(255,255,255,.90)!important;
     }
     #sec-new>h2:first-child{
       color:#061b4f!important;
       -webkit-text-fill-color:initial!important;
       background:none!important;
-      text-shadow:0 2px 0 rgba(255,255,255,.84)!important;
+      text-shadow:0 2px 0 rgba(255,255,255,.86)!important;
     }
 
     /* Gear: icon-only, transparent, clickable button remains */
@@ -2004,11 +1997,11 @@
       border-radius:999px!important;
       background:transparent!important;
       box-shadow:none!important;
-      color:#0b2e6d!important;
-      -webkit-text-fill-color:#0b2e6d!important;
-      font-size:28px!important;
+      color:#50657d!important;
+      -webkit-text-fill-color:#50657d!important;
+      font-size:27px!important;
       line-height:1!important;
-      text-shadow:0 1px 0 rgba(255,255,255,.96),0 0 8px rgba(23,200,232,.24),0 8px 18px rgba(8,36,91,.16)!important;
+      text-shadow:0 1px 0 rgba(255,255,255,.96)!important;
       outline:none!important;
       overflow:visible!important;
       z-index:6!important;
@@ -2025,48 +2018,26 @@
     }
     #sec-new .profile-settings-icon:active{
       transform:scale(.92)!important;
-      color:#0ea5e9!important;
-      -webkit-text-fill-color:#0ea5e9!important;
+      color:#0b2e6d!important;
+      -webkit-text-fill-color:#0b2e6d!important;
     }
 
-    /* Profile name band: softer, premium, not overly dominant */
+    /* Profile name area: no color strip, no decorative bars, soft premium panel */
     #sec-new .profile-compact{
       gap:14px!important;
     }
     #sec-new .profile-compact .left{
       position:relative!important;
-      isolation:isolate!important;
       overflow:hidden!important;
       border-radius:26px!important;
       padding:12px!important;
-      background:
-        radial-gradient(circle at 10% 18%, rgba(23,200,232,.14) 0 42px, transparent 112px),
-        linear-gradient(135deg,rgba(255,255,255,.92) 0%,rgba(231,242,255,.84) 100%)!important;
-      border:1px solid rgba(255,255,255,.88)!important;
-      box-shadow:
-        0 16px 34px rgba(8,36,91,.14),
-        inset 0 1px 0 rgba(255,255,255,.88)!important;
+      background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(239,247,255,.86))!important;
+      border:1px solid rgba(8,36,91,.08)!important;
+      box-shadow:0 12px 28px rgba(8,36,91,.10), inset 0 1px 0 rgba(255,255,255,.88)!important;
     }
-    #sec-new .profile-compact .left::before{
-      content:""!important;
-      position:absolute!important;
-      left:0!important;
-      top:0!important;
-      bottom:0!important;
-      width:7px!important;
-      background:linear-gradient(180deg,#f4c400 0%,#17c8e8 52%,#2d74ff 100%)!important;
-      border-radius:26px 0 0 26px!important;
-      opacity:.95!important;
-    }
+    #sec-new .profile-compact .left::before,
     #sec-new .profile-compact .left::after{
-      content:""!important;
-      position:absolute!important;
-      left:16px!important;
-      right:16px!important;
-      bottom:0!important;
-      height:2px!important;
-      border-radius:999px 999px 0 0!important;
-      background:linear-gradient(90deg,rgba(244,196,0,.55),rgba(23,200,232,.55),rgba(45,116,255,.45))!important;
+      content:none!important;
     }
     #sec-new .profile-compact .meta .name{
       color:#061b4f!important;
@@ -2075,19 +2046,20 @@
       letter-spacing:-.04em!important;
     }
     #sec-new .profile-compact .meta .code{
-      color:#526276!important;
-      -webkit-text-fill-color:#526276!important;
+      color:#667085!important;
+      -webkit-text-fill-color:#667085!important;
       text-shadow:none!important;
     }
 
+    /* Profile photo: rounded rectangle, no colored frame */
     #sec-new .tech-avatar{
       width:74px!important;
       height:74px!important;
       border-radius:22px!important;
       object-fit:cover!important;
-      border:3px solid #f4c400!important;
+      border:0!important;
       background:#fff!important;
-      box-shadow:0 12px 24px rgba(8,36,91,.18),0 0 0 5px rgba(255,255,255,.72)!important;
+      box-shadow:0 10px 22px rgba(8,36,91,.16)!important;
       flex:0 0 74px!important;
     }
 
@@ -2097,89 +2069,80 @@
     #sec-new .chipStat{
       min-height:72px!important;
       border-radius:20px!important;
-      border:1px solid rgba(255,255,255,.74)!important;
-      box-shadow:0 14px 28px rgba(8,36,91,.10), inset 0 1px 0 rgba(255,255,255,.88)!important;
+      border:1px solid rgba(8,36,91,.08)!important;
+      box-shadow:0 12px 24px rgba(8,36,91,.08), inset 0 1px 0 rgba(255,255,255,.90)!important;
     }
     #sec-new .chipStat .k{
       font-size:10px!important;
       font-weight:1150!important;
-      color:rgba(6,27,79,.68)!important;
+      color:rgba(6,27,79,.66)!important;
     }
     #sec-new .chipStat .v{
       color:#061b4f!important;
       font-weight:1200!important;
     }
     #sec-new .chipStat.income{
-      background:linear-gradient(160deg,#f2fff9 0%,#ffffff 56%,#e1fff0 100%)!important;
-      border-color:rgba(22,163,74,.24)!important;
+      background:linear-gradient(160deg,#f6fffb 0%,#ffffff 58%,#edfdf5 100%)!important;
+      border-color:rgba(22,163,74,.16)!important;
     }
     #sec-new .chipStat.done{
-      background:linear-gradient(160deg,#f1f7ff 0%,#ffffff 56%,#e3efff 100%)!important;
-      border-color:rgba(11,86,216,.22)!important;
+      background:linear-gradient(160deg,#f5f9ff 0%,#ffffff 58%,#edf5ff 100%)!important;
+      border-color:rgba(11,86,216,.14)!important;
     }
     #sec-new .chipStat.rework{
-      background:linear-gradient(160deg,#fff6f6 0%,#ffffff 56%,#ffe9e9 100%)!important;
-      border-color:rgba(239,68,68,.24)!important;
+      background:linear-gradient(160deg,#fff8f8 0%,#ffffff 58%,#fff0f0 100%)!important;
+      border-color:rgba(239,68,68,.16)!important;
     }
     #sec-new .chipStat.rating{
-      background:linear-gradient(160deg,#fff9df 0%,#ffffff 56%,#fff0a8 100%)!important;
-      border-color:rgba(245,158,11,.26)!important;
+      background:linear-gradient(160deg,#fffbed 0%,#ffffff 58%,#fff6cc 100%)!important;
+      border-color:rgba(245,158,11,.18)!important;
     }
 
     #sec-new details.tech-more summary{
       min-height:54px!important;
       border-radius:20px!important;
-      background:linear-gradient(135deg,rgba(255,255,255,.92),rgba(239,247,255,.97))!important;
-      border:1px solid rgba(8,36,91,.12)!important;
-      box-shadow:0 12px 26px rgba(8,36,91,.08), inset 0 1px 0 rgba(255,255,255,.88)!important;
+      background:linear-gradient(135deg,rgba(255,255,255,.94),rgba(245,249,255,.96))!important;
+      border:1px solid rgba(8,36,91,.09)!important;
+      box-shadow:0 10px 22px rgba(8,36,91,.07), inset 0 1px 0 rgba(255,255,255,.90)!important;
       color:#061b4f!important;
     }
 
-    /* Offer panel: one cohesive card containing title, description and empty state */
+    /* Offer panel: same surface as main card, one cohesive clean block */
     #sec-new h2:nth-of-type(2){
       position:relative!important;
       margin-top:24px!important;
       margin-bottom:0!important;
-      padding:22px 18px 6px 28px!important;
-      border-radius:28px 28px 0 0!important;
+      padding:22px 18px 6px!important;
+      border-radius:26px 26px 0 0!important;
       color:#061b4f!important;
       -webkit-text-fill-color:initial!important;
-      background:
-        radial-gradient(circle at 94% 14%, rgba(255,214,64,.12) 0 58px, transparent 132px),
-        linear-gradient(135deg,rgba(255,255,255,.96),rgba(239,247,255,.94))!important;
-      border:1px solid rgba(255,255,255,.88)!important;
+      background:linear-gradient(180deg,#ffffff 0%,#f9fbff 100%)!important;
+      border:1px solid rgba(8,36,91,.08)!important;
       border-bottom:0!important;
-      box-shadow:0 16px 36px rgba(8,36,91,.10), inset 0 1px 0 rgba(255,255,255,.90)!important;
+      box-shadow:0 12px 26px rgba(8,36,91,.08), inset 0 1px 0 rgba(255,255,255,.90)!important;
       text-shadow:0 2px 0 rgba(255,255,255,.86)!important;
     }
-    #sec-new h2:nth-of-type(2)::before{
-      content:""!important;
-      position:absolute!important;
-      left:0!important;
-      top:22px!important;
-      bottom:8px!important;
-      width:7px!important;
-      border-radius:0 999px 999px 0!important;
-      background:linear-gradient(180deg,#f4c400 0%,#17c8e8 52%,#2d74ff 100%)!important;
-      box-shadow:0 0 14px rgba(23,200,232,.22)!important;
+    #sec-new h2:nth-of-type(2)::before,
+    #sec-new h2:nth-of-type(2)::after{
+      content:none!important;
     }
     #sec-new h2:nth-of-type(2) + p{
       margin-top:0!important;
       margin-bottom:0!important;
-      padding:6px 18px 12px 28px!important;
-      color:#526276!important;
-      background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(239,247,255,.94))!important;
-      border-left:1px solid rgba(255,255,255,.88)!important;
-      border-right:1px solid rgba(255,255,255,.88)!important;
+      padding:6px 18px 12px!important;
+      color:#667085!important;
+      background:linear-gradient(180deg,#f9fbff 0%,#f9fbff 100%)!important;
+      border-left:1px solid rgba(8,36,91,.08)!important;
+      border-right:1px solid rgba(8,36,91,.08)!important;
     }
     #sec-new #offer-list{
       margin-top:0!important;
-      padding:0 18px 18px 28px!important;
-      border-radius:0 0 28px 28px!important;
-      background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(239,247,255,.94))!important;
-      border:1px solid rgba(255,255,255,.88)!important;
+      padding:0 18px 18px!important;
+      border-radius:0 0 26px 26px!important;
+      background:linear-gradient(180deg,#f9fbff 0%,#f2f8ff 100%)!important;
+      border:1px solid rgba(8,36,91,.08)!important;
       border-top:0!important;
-      box-shadow:0 16px 36px rgba(8,36,91,.10), inset 0 -1px 0 rgba(23,200,232,.12)!important;
+      box-shadow:0 12px 26px rgba(8,36,91,.08), inset 0 -1px 0 rgba(255,255,255,.80)!important;
     }
     #sec-new #offer-list:empty::after{
       content:"ยังไม่มีงานที่เสนอให้ตอนนี้"!important;
@@ -2191,10 +2154,10 @@
       font-weight:1000!important;
       font-size:18px!important;
       line-height:1.45!important;
-      border-radius:20px!important;
-      background:rgba(255,255,255,.74)!important;
-      border:1px solid rgba(8,36,91,.08)!important;
-      box-shadow:inset 0 1px 0 rgba(255,255,255,.86)!important;
+      border-radius:18px!important;
+      background:rgba(255,255,255,.72)!important;
+      border:1px solid rgba(8,36,91,.07)!important;
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.90)!important;
     }
 
     @media(max-width:380px){
@@ -2206,7 +2169,7 @@
     }
   </style>
 
-<script src="app.js?v=20260510_fix37_premium_cohesive_home"></script>
+<script src="app.js?v=20260510_fix38_clean_premium_home"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
