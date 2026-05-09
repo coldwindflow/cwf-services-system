@@ -383,16 +383,12 @@
     .income-summary-card .value{margin-top:10px;font-size:28px;font-weight:1100;color:var(--tech-navy);line-height:1.05;white-space:nowrap;overflow:visible;font-variant-numeric:tabular-nums;}
     .income-summary-card.primary{background:linear-gradient(180deg,#FFFFFF 0%, #EEF4FF 100%);border-color:#C7D8FB;}
     .income-summary-card.highlight{background:linear-gradient(180deg,#FFFDF5 0%, #FFF6CC 100%);border-color:#F4C400;}
-    .income-period-breakdown{margin-top:12px;display:grid;gap:10px;}
-    .income-period-row{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:12px;border-radius:16px;background:rgba(255,255,255,0.72);border:1px solid rgba(15,23,42,0.08);box-shadow:0 8px 18px rgba(15,23,42,0.05);}
-    .income-period-title{font-size:13px;font-weight:1000;color:var(--tech-navy);}
-    .income-period-sub{margin-top:4px;font-size:12px;line-height:1.35;color:var(--tech-muted);}
-    .income-period-right{text-align:right;min-width:92px;}
-    .income-period-right b{display:block;font-size:18px;color:var(--tech-navy);font-variant-numeric:tabular-nums;white-space:nowrap;}
-    .income-period-badge{display:inline-block;margin-top:5px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:900;white-space:nowrap;}
-    .income-period-badge.paid{background:#DCFCE7;color:#166534;}
-    .income-period-badge.locked{background:#DBEAFE;color:#1D4ED8;}
-    .income-period-badge.estimated{background:#FEF3C7;color:#92400E;}
+    .income-period-breakdown{display:grid;gap:8px;margin-top:12px;}
+    .income-period-mini{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.72);border:1px solid rgba(11,75,179,.10);}
+    .income-period-mini b{display:block;color:var(--tech-navy);font-size:13px;font-weight:1100;}
+    .income-period-mini span{display:inline-flex;margin-top:4px;padding:2px 8px;border-radius:999px;background:#eef6ff;color:#0b4bb3;font-size:11px;font-weight:1000;}
+    .income-period-mini small{display:block;margin-top:5px;color:var(--tech-muted);font-size:11px;font-weight:850;line-height:1.35;}
+    .income-period-mini strong{color:var(--tech-navy);font-size:16px;font-weight:1100;white-space:nowrap;}
     .income-toolbar{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
     .btn, button.btn{border-radius:16px !important; min-height:44px; padding:10px 14px; border:1px solid var(--tech-border); background:#fff; color:var(--tech-navy); font-weight:900; box-shadow:none !important;}
     .btn.blue, button.btn.blue{background:var(--tech-navy); color:#fff; border-color:var(--tech-navy);}
@@ -1612,7 +1608,7 @@
       <div class="grid" style="margin-top:12px">
         <div class="card" style="margin-top:0">
           <b style="color:#0b1b3a">ภาพรวม</b>
-          <div class="muted" style="margin-top:6px">ยอดหลักที่ช่างถามบ่อย: วันนี้ / งวดถัดไป / สรุปรายได้เดือนที่เลือก</div>
+          <div class="muted" style="margin-top:6px">ยอดหลักที่ช่างถามบ่อย: วันนี้ / งวดถัดไป / สรุปรายได้เดือนนี้</div>
 
           <div class="income-stack">
             <div class="income-summary-card primary">
@@ -1631,7 +1627,7 @@
               <div class="title" id="incomeOutstandingTitle">สรุปรายได้เดือนนี้</div>
               <div class="desc" id="incomeMonthRange">รวมงานปิด 1–15 และ 16–สิ้นเดือน</div>
               <div class="value" id="incomeOutstandingVal">-</div>
-              <div class="income-period-breakdown" id="incomePayoutMonthBreakdown"></div>
+              <div class="income-period-breakdown" id="incomePayoutBreakdown"></div>
             </div>
           </div>
 
@@ -1639,7 +1635,7 @@
             <div class="work-summary-head">
               <div>
                 <b>สรุปงานที่ทำ</b>
-                <div class="hint" id="incomeWorkSummaryPeriod">รอบเดียวกับสรุปรายได้เดือนที่เลือก</div>
+                <div class="hint" id="incomeWorkSummaryPeriod">รอบเดียวกับสรุปรายได้เดือนนี้</div>
               </div>
             </div>
             <div class="work-grid" id="incomeWorkSummaryGrid"></div>
@@ -1783,7 +1779,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260509_income_month_summary_v3"></script>
+  <script src="app.js?v=20260509_income_work_month_ui_v22"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
