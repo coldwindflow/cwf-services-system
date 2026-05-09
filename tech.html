@@ -412,7 +412,7 @@
 
 
     /* ===== CWF Technician Premium Shell v20260428 =====
-       Match Admin Dashboard visual language without touching app.js?v=20260510_fix23_home_compact_zone"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
+       Match Admin Dashboard visual language without touching app.js?v=20260510_fix24_targeted_restore"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
       background:linear-gradient(90deg, rgba(244,196,0,0), rgba(244,196,0,.95), rgba(34,211,238,.65), rgba(244,196,0,0));
       pointer-events:none;
     }
@@ -1450,69 +1450,44 @@
 
 </style>
 
-  <style id="cwf-fix23-home-tight-layout">
+  <style id="cwf-fix24-targeted-home-spacing">
     /*
-      CWF fix23: tighten home cockpit spacing and make work/profile cards the same visual width.
-      Scope only technician home/profile controls; no job/income logic changes.
+      CWF fix24: targeted repair only.
+      Keep top bar/profile/job offer structure intact. Adjust only card width/gap,
+      compact accept row, hide noisy status line, and show work area label.
     */
     #techControlCard.tech-control-card{
-      width:100%!important;
-      box-sizing:border-box!important;
-      margin:4px 0 8px!important;
+      margin:6px 0 8px!important;
       padding:10px!important;
       border-radius:26px!important;
-      background:
-        radial-gradient(circle at 88% 0%, rgba(255,214,64,.18) 0 18%, transparent 34%),
-        linear-gradient(135deg, rgba(6,27,79,.98) 0%, rgba(10,58,155,.94) 46%, rgba(20,196,220,.88) 100%)!important;
-      border:1px solid rgba(255,255,255,.22)!important;
-      box-shadow:0 16px 34px rgba(4,25,75,.22), inset 0 1px 0 rgba(255,255,255,.18)!important;
-      color:#fff!important;
+      box-sizing:border-box!important;
+      width:100%!important;
     }
     #techControlCard .tech-ctrl-row{
       grid-template-columns:minmax(108px,.78fr) minmax(0,1.22fr)!important;
       gap:10px!important;
-      align-items:stretch!important;
+    }
+    #techControlCard .accept-btn,
+    #techControlCard .zone-select{
+      min-height:46px!important;
+      border-radius:18px!important;
+      font-size:14px!important;
     }
     #techControlCard .accept-btn{
-      min-height:46px!important;
-      border-radius:19px!important;
-      font-size:14px!important;
       padding:8px 10px!important;
-      box-shadow:0 12px 24px rgba(0,0,0,.18), inset 0 1px 0 rgba(255,255,255,.22)!important;
     }
-    #techControlCard .accept-btn.paused{
-      background:linear-gradient(135deg,#ff405b 0%,#c51435 100%)!important;
-      color:#fff!important;
-      border-color:rgba(255,255,255,.26)!important;
-    }
-    #techControlCard .accept-btn.ready{
-      background:linear-gradient(135deg,#12c878 0%,#06a96d 100%)!important;
-      color:#fff!important;
-      border-color:rgba(255,255,255,.26)!important;
+    #techControlCard .zone-select{
+      padding-top:19px!important;
+      padding-bottom:7px!important;
     }
     #techControlCard .zone-wrap::after{
       content:"พื้นที่ประจำ"!important;
-      color:rgba(255,255,255,.66)!important;
-    }
-    #techControlCard .zone-select{
-      min-height:46px!important;
-      border-radius:19px!important;
-      background:rgba(255,255,255,.92)!important;
-      border:1px solid rgba(255,255,255,.36)!important;
-      box-shadow:0 12px 24px rgba(0,0,0,.12), inset 0 1px 0 rgba(255,255,255,.35)!important;
     }
     #techControlCard .zone-action-btn span{
-      color:#08245b!important;
-      font-size:14px!important;
-      font-weight:1100!important;
-      white-space:nowrap!important;
+      max-width:100%!important;
       overflow:hidden!important;
       text-overflow:ellipsis!important;
-    }
-    #techControlCard .zone-action-btn small{
-      color:#526276!important;
-      font-size:10px!important;
-      font-weight:950!important;
+      white-space:nowrap!important;
     }
     #acceptStatusText.accept-hint{
       display:none!important;
@@ -1522,30 +1497,19 @@
     }
     #sec-new.card.section.active{
       margin-top:8px!important;
-      padding:0!important;
-      border-radius:28px!important;
-      overflow:hidden!important;
-      background:linear-gradient(180deg,rgba(255,255,255,.96),rgba(238,246,255,.92))!important;
-      border:1px solid rgba(255,255,255,.70)!important;
-      box-shadow:0 20px 44px rgba(4,25,75,.16)!important;
     }
     #sec-new .profileHeroV19{
+      margin-top:0!important;
+      margin-left:0!important;
+      margin-right:0!important;
       width:100%!important;
       box-sizing:border-box!important;
-      margin:0!important;
-      border-radius:26px!important;
-      border-left:0!important;
-      border-right:0!important;
-    }
-    #sec-new .profileHeroV19 + *{
-      margin-top:10px!important;
     }
     @media(max-width:380px){
-      #techControlCard.tech-control-card{margin-top:2px!important;padding:9px!important;border-radius:24px!important;}
-      #techControlCard .tech-ctrl-row{grid-template-columns:minmax(102px,.76fr) minmax(0,1.24fr)!important;gap:8px!important;}
-      #techControlCard .accept-btn,#techControlCard .zone-select{min-height:44px!important;border-radius:17px!important;}
-      #techControlCard .zone-action-btn span{font-size:13px!important;}
-      #techControlCard .zone-action-btn small{font-size:9px!important;}
+      #techControlCard.tech-control-card{margin-top:4px!important;padding:9px!important;}
+      #techControlCard .tech-ctrl-row{gap:8px!important;}
+      #techControlCard .accept-btn,
+      #techControlCard .zone-select{min-height:44px!important;font-size:13px!important;}
     }
   </style>
 
@@ -1601,7 +1565,7 @@
           <div class="meta">
             <div class="name" id="profile-name">-</div>
             <div class="code" id="profile-code">รหัสช่าง: -</div>
-            <!-- ซ่อนข้อมูลเยอะ ๆ ตามสเปค แต่ยังคง id ไว้ให้ app.js?v=20260510_fix23_home_compact_zone"display:none">
+            <!-- ซ่อนข้อมูลเยอะ ๆ ตามสเปค แต่ยังคง id ไว้ให้ app.js?v=20260510_fix24_targeted_restore"display:none">
               <div id="profile-rank" style="display:flex;align-items:center;gap:8px;">
                 <img id="profile-rank-badge" src="/assets/ranks/rank_lv1_128.png" alt="rank" style="width:44px;height:auto;display:block;">
                 <div class="muted" id="profile-rank-label">Rank: -</div>
@@ -1667,7 +1631,7 @@
       </div>
 
       <div class="section active" id="sec-active-today" style="margin-top:10px;">
-        <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix23_home_compact_zone"active-list"></div>
+        <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix24_targeted_restore"active-list"></div>
       </div>
 
       <div class="section" id="sec-active-upcoming" style="margin-top:10px;">
@@ -1703,7 +1667,7 @@
       </div>
       <div class="muted" id="history-filter-hint" style="margin-top:8px;">แสดงงานที่ปิดแล้วแบบย่อ</div>
 
-      <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix23_home_compact_zone"history-list" style="margin-top:10px;"></div>
+      <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix24_targeted_restore"history-list" style="margin-top:10px;"></div>
     </div>
 
     <div class="card section" id="sec-income">
@@ -1923,7 +1887,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260510_fix23_home_compact_zone"></script>
+  <script src="app.js?v=20260510_fix24_targeted_restore"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_fix23_home_compact_zone";
+window.__CWF_TECH_APP_VERSION__ = "20260510_fix24_targeted_restore";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -362,7 +362,7 @@ function renderAcceptUI(status, updatedAtText, note) {
       : "🟢 รับงาน";
   }
 
-  // CWF fix23: ไม่โชว์บรรทัดสถานะยาวในหน้า Home แล้ว เพื่อลดความรกของการ์ดรับงาน
+  // CWF fix24: hide the long status row; button color/text remains the source of status on Home.
   if (acceptStatusText) {
     acceptStatusText.textContent = "";
     acceptStatusText.setAttribute("hidden", "hidden");
@@ -471,18 +471,18 @@ function setSelectValueSafe(el, value) {
 
 function getPrimaryWorkAreaLabel(profile) {
   const p = profile || __TECH_ZONE_PROFILE__ || {};
-  const parts = [
+  const candidates = [
     p.home_district,
     p.home_amphoe,
     p.home_area,
     p.primary_area,
     p.service_area,
-    p.preferred_zone,
     p.home_service_zone_label,
+    p.preferred_zone,
     p.home_service_zone_code ? `Zone ${p.home_service_zone_code}` : ""
   ].map(v => String(v || "").trim()).filter(Boolean);
-  const raw = parts[0] || "ตั้งพื้นที่ประจำ";
-  return raw.length > 18 ? `${raw.slice(0, 18)}…` : raw;
+  const label = candidates[0] || "พื้นที่ประจำ";
+  return label.length > 18 ? `${label.slice(0, 18)}…` : label;
 }
 
 function updateZoneQuickButtonLabel(profile) {
@@ -491,10 +491,9 @@ function updateZoneQuickButtonLabel(profile) {
   const summaryEl = document.getElementById("zoneQuickSummary");
   if (titleEl) titleEl.textContent = getPrimaryWorkAreaLabel(p);
   if (summaryEl) {
-    const zone = p.home_service_zone_code
+    summaryEl.textContent = p.home_service_zone_code
       ? `Zone ${p.home_service_zone_code}${p.secondary_service_zone_code ? ` / รอง ${p.secondary_service_zone_code}` : ""}`
-      : (p.service_radius_km ? `รัศมี ${p.service_radius_km} กม.` : "แตะเพื่อแก้ไขพื้นที่");
-    summaryEl.textContent = zone;
+      : (p.service_radius_km ? `รัศมี ${p.service_radius_km} กม.` : "แตะเพื่อตั้งค่าพื้นที่");
   }
 }
 
