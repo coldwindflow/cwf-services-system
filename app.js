@@ -1189,6 +1189,29 @@ function _writeIncomeCache(data){
   }catch{}
 }
 
+function _clearIncomeCaches(reason){
+  try{
+    localStorage.removeItem(CWF_INCOME_CACHE_KEY);
+    for (const k of CWF_OLD_INCOME_CACHE_KEYS) localStorage.removeItem(k);
+  }catch{}
+  try{ __techIncomeSummaryCache?.clear?.(); }catch{}
+  try{ __techIncomeDetailCache?.clear?.(); }catch{}
+  try{ __techIncomeBatchPending?.clear?.(); }catch{}
+  try{ console.info('[tech-income] cleared income caches', reason || 'manual'); }catch{}
+}
+
+async function _refreshAfterTechJobClose(reason){
+  _clearIncomeCaches(reason || 'job-close');
+  await Promise.allSettled([
+    loadIncomeTodayMonthFast(),
+    loadIncomeSummary(),
+    loadNextPeriodEstimate(),
+    loadOutstandingTotal(),
+    loadCompletedCountSummary(),
+  ]);
+  loadJobs();
+}
+
 function _renderIncomeSummaryValues(data){
   const d = data || {};
   if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(d.day_total);
@@ -5703,14 +5726,7 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
 
     alert(targetStatus === "ยกเลิก" ? "⛔ ยกเลิกงานเรียบร้อย" : "✅ เสร็จสิ้นงานเรียบร้อย");
 
-    await Promise.allSettled([
-      loadIncomeTodayMonthFast(),
-      loadIncomeSummary(),
-      loadNextPeriodEstimate(),
-      loadOutstandingTotal(),
-      loadCompletedCountSummary(),
-    ]);
-    loadJobs();
+    await _refreshAfterTechJobClose(targetStatus === "ยกเลิก" ? 'finalize-cancel' : 'finalize-complete');
   } catch (e) {
     alert(`❌ ${e.message}`);
   }
@@ -5749,14 +5765,7 @@ async function closeJob(jobId) {
     if (!res.ok) throw new Error(data.error || "ปิดงานไม่สำเร็จ");
 
     alert("✅ ปิดงานเรียบร้อย");
-    await Promise.allSettled([
-      loadIncomeTodayMonthFast(),
-      loadIncomeSummary(),
-      loadNextPeriodEstimate(),
-      loadOutstandingTotal(),
-      loadCompletedCountSummary(),
-    ]);
-    loadJobs(); // ✅ จะหายจาก “งานปัจจุบัน” และไป “ประวัติงาน”
+    await _refreshAfterTechJobClose('legacy-close-job'); // ✅ จะหายจาก “งานปัจจุบัน” และไป “ประวัติงาน”
   } catch (e) {
     console.error(e);
     alert(`❌ ${e.message}`);
