@@ -25,6 +25,7 @@ let __HISTORY_OFFSET__ = 0;
 let __HISTORY_HAS_MORE__ = false;
 let __HISTORY_LOADING_MORE__ = false;
 let __HISTORY_LOAD_ERROR__ = "";
+let __HISTORY_VISIBLE_LIMIT__ = HISTORY_PAGE_SIZE;
 // =======================================
 // 🔧 CONFIG
 // =======================================
@@ -2306,7 +2307,7 @@ try{
 loadOffers();
 loadJobs();
 setInterval(() => loadOffers(), 15000);
-setInterval(() => loadJobs({ preserveHistoryWindow: true }), 45000); // keep active/history in sync without resetting loaded history pages
+setInterval(() => loadJobs({ preserveHistoryWindow: true }), 45000); // keep active/history in sync without resetting loaded history
 setInterval(() => loadIncomeSummary(), 5 * 60 * 1000);
 setInterval(() => loadIncomeOverview(), 90 * 1000);
 
@@ -2725,36 +2726,50 @@ function mergeJobsById(primaryRows, extraRows) {
   return Array.from(map.values());
 }
 
-function buildTechJobsUrl(options = {}) {
+function buildTechJobsUrl(historyOffset, historyLimit) {
   const url = new URL(`${API_BASE}/jobs/tech/${encodeURIComponent(username)}`);
-  const historyLimit = Math.max(1, Number(options.historyLimit || HISTORY_FETCH_LIMIT));
-  const historyOffset = Math.max(0, Number(options.historyOffset || 0));
-  url.searchParams.set('history_limit', String(historyLimit));
-  url.searchParams.set('history_offset', String(historyOffset));
+  const limit = Math.max(1, Number(historyLimit || HISTORY_FETCH_LIMIT));
+  url.searchParams.set('history_limit', String(limit));
+  url.searchParams.set('history_offset', String(Math.max(0, Number(historyOffset || 0))));
   return url.toString();
+}
+
+function _historySortValue(job){
+  return new Date(job?.finished_at || job?.completed_at || job?.closed_at || job?.paid_at || job?.canceled_at || job?.appointment_datetime || 0).getTime() || 0;
+}
+function _sortHistoryRows(rows){
+  return (Array.isArray(rows) ? rows : []).slice().sort((a, b) => {
+    const diff = _historySortValue(b) - _historySortValue(a);
+    if (diff) return diff;
+    return Number(b?.job_id || 0) - Number(a?.job_id || 0);
+  });
+}
+function _loadedHistoryRows(){
+  return _sortHistoryRows((window.__JOB_CACHE__ || []).filter((j) => isHistoryJobRow(j)));
+}
+function _applyHistoryVisibleLimit(nextLimit){
+  const n = Math.max(HISTORY_PAGE_SIZE, Number(nextLimit || HISTORY_PAGE_SIZE));
+  __HISTORY_VISIBLE_LIMIT__ = Math.min(500, n);
 }
 
 function loadJobs(options = {}) {
   const appendHistory = !!options.appendHistory;
   const preserveHistoryWindow = !!options.preserveHistoryWindow;
   const historyOffset = appendHistory ? __HISTORY_OFFSET__ : 0;
-  // เวลา auto refresh ห้ามรีเซ็ตประวัติที่ผู้ใช้กดดูเพิ่มแล้วกลับไปเหลือ 20 งาน
-  // จึง fetch ตั้งแต่ offset 0 ด้วย limit เท่าจำนวนที่โหลดไว้ + 1 แถวสำหรับเช็ค has_more
-  const requestedHistoryLimit = appendHistory
-    ? HISTORY_FETCH_LIMIT
-    : (preserveHistoryWindow && __HISTORY_OFFSET__ > HISTORY_PAGE_SIZE
-        ? Math.min(101, __HISTORY_OFFSET__ + 1)
-        : HISTORY_FETCH_LIMIT);
-  const visibleHistoryLimit = Math.max(HISTORY_PAGE_SIZE, requestedHistoryLimit - 1);
   if (appendHistory && __HISTORY_LOADING_MORE__) return Promise.resolve();
   if (appendHistory) __HISTORY_LOADING_MORE__ = true;
-  if (!appendHistory && !preserveHistoryWindow) {
+  if (!appendHistory) {
     __HISTORY_OFFSET__ = 0;
     __HISTORY_HAS_MORE__ = false;
     __HISTORY_LOAD_ERROR__ = "";
+    if (!preserveHistoryWindow) _applyHistoryVisibleLimit(HISTORY_PAGE_SIZE);
   }
 
-  return fetch(buildTechJobsUrl({ historyOffset, historyLimit: requestedHistoryLimit }), { cache: "no-store" })
+  const requestedHistoryLimit = appendHistory
+    ? HISTORY_FETCH_LIMIT
+    : Math.max(HISTORY_FETCH_LIMIT, (preserveHistoryWindow ? __HISTORY_VISIBLE_LIMIT__ + 1 : HISTORY_FETCH_LIMIT));
+
+  return fetch(buildTechJobsUrl(historyOffset, requestedHistoryLimit), { cache: "no-store" })
     .then((res) => {
       if (!res.ok) throw new Error("โหลดข้อมูลงานไม่สำเร็จ");
       return res.json();
@@ -2762,16 +2777,14 @@ function loadJobs(options = {}) {
     .then((rows) => {
       const jobs = Array.isArray(rows) ? rows : [];
       const activeRows = jobs.filter((j) => !isHistoryJobRow(j));
-      const fetchedHistoryRows = jobs
-        .filter((j) => isHistoryJobRow(j))
-        .sort((a, b) => {
-          const aa = new Date(a?.finished_at || a?.completed_at || a?.closed_at || a?.paid_at || a?.canceled_at || a?.appointment_datetime || 0).getTime() || 0;
-          const bb = new Date(b?.finished_at || b?.completed_at || b?.closed_at || b?.paid_at || b?.canceled_at || b?.appointment_datetime || 0).getTime() || 0;
-          return bb - aa;
-        });
-      __HISTORY_HAS_MORE__ = fetchedHistoryRows.length > visibleHistoryLimit;
-      const historyPage = fetchedHistoryRows.slice(0, visibleHistoryLimit);
-      __HISTORY_OFFSET__ = appendHistory ? historyOffset + historyPage.length : historyPage.length;
+      const fetchedHistoryRows = _sortHistoryRows(jobs.filter((j) => isHistoryJobRow(j)));
+      const fetchPageSize = appendHistory ? HISTORY_PAGE_SIZE : Math.max(HISTORY_PAGE_SIZE, requestedHistoryLimit - 1);
+      __HISTORY_HAS_MORE__ = fetchedHistoryRows.length > fetchPageSize;
+      const historyPage = fetchedHistoryRows.slice(0, fetchPageSize);
+      __HISTORY_OFFSET__ = appendHistory ? (historyOffset + historyPage.length) : historyPage.length;
+      if (appendHistory) _applyHistoryVisibleLimit(__HISTORY_VISIBLE_LIMIT__ + HISTORY_PAGE_SIZE);
+      else if (preserveHistoryWindow) _applyHistoryVisibleLimit(Math.max(HISTORY_PAGE_SIZE, __HISTORY_VISIBLE_LIMIT__));
+      else _applyHistoryVisibleLimit(HISTORY_PAGE_SIZE);
 
       const previousRows = appendHistory ? (window.__JOB_CACHE__ || []) : [];
       const previousHistory = previousRows.filter((j) => isHistoryJobRow(j));
@@ -2799,7 +2812,14 @@ function loadJobs(options = {}) {
 }
 
 function loadMoreHistoryJobs() {
-  if (!__HISTORY_HAS_MORE__ || __HISTORY_LOADING_MORE__) return;
+  if (__HISTORY_LOADING_MORE__) return;
+  const loadedHistory = _loadedHistoryRows();
+  if (loadedHistory.length > __HISTORY_VISIBLE_LIMIT__) {
+    _applyHistoryVisibleLimit(__HISTORY_VISIBLE_LIMIT__ + HISTORY_PAGE_SIZE);
+    renderJobs(window.__JOB_CACHE__ || []);
+    return;
+  }
+  if (!__HISTORY_HAS_MORE__) return;
   loadJobs({ appendHistory: true });
 }
 window.loadMoreHistoryJobs = loadMoreHistoryJobs;
@@ -2888,7 +2908,8 @@ function setHistoryFilter(f){
   if (typeof historyFilterHintEl !== "undefined" && historyFilterHintEl) {
     historyFilterHintEl.textContent = (v === "day") ? "แสดงงานปิดแล้ว: วันนี้" : (v === "month") ? "แสดงงานปิดแล้ว: เดือนนี้" : "แสดงงานปิดแล้ว: ทั้งหมด";
   }
-  // re-render from cache (ไม่เรียก API ซ้ำ)
+  // reset เฉพาะจำนวนที่แสดง ไม่ให้แท็บ “ทั้งหมด” โชว์ cache เก่าทั้งก้อน เช่น 89 งาน
+  _applyHistoryVisibleLimit(HISTORY_PAGE_SIZE);
   try { renderJobs(window.__JOB_CACHE__ || []); } catch(e) {}
 }
 window.setHistoryFilter = setHistoryFilter;
@@ -3075,17 +3096,21 @@ function renderHistoryLoadMoreControl(container, visibleCount){
   note.className = 'muted';
   note.style.cssText = 'font-size:12px;text-align:center;';
 
+  const loadedHistoryCount = _loadedHistoryRows().length;
+  const canShowMoreFromCache = loadedHistoryCount > __HISTORY_VISIBLE_LIMIT__;
+  const canLoadMore = canShowMoreFromCache || __HISTORY_HAS_MORE__;
+
   if (__HISTORY_LOAD_ERROR__) {
     note.textContent = `โหลดประวัติเพิ่มไม่สำเร็จ: ${__HISTORY_LOAD_ERROR__}`;
     wrap.appendChild(note);
   } else if (visibleCount > 0) {
-    note.textContent = __HISTORY_HAS_MORE__
+    note.textContent = canLoadMore
       ? `กำลังแสดง ${visibleCount} งานล่าสุด • กดดูเพิ่มเพื่อโหลดอีก ${HISTORY_PAGE_SIZE} งาน`
       : `แสดงประวัติที่โหลดแล้ว ${visibleCount} งาน`;
     wrap.appendChild(note);
   }
 
-  if (__HISTORY_HAS_MORE__) {
+  if (canLoadMore) {
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'secondary';
@@ -3209,17 +3234,13 @@ function renderJobs(jobs) {
           : "ยังไม่มีงานที่ปิดแล้ว";
       historyJobsEl.innerHTML = `<p>${emptyText}</p>`;
     } else {
-      historyAll
-        .slice()
-        .sort((a, b) => {
-          const aa = new Date(a?.finished_at || a?.completed_at || a?.closed_at || a?.paid_at || a?.canceled_at || a?.appointment_datetime || 0).getTime() || 0;
-          const bb = new Date(b?.finished_at || b?.completed_at || b?.closed_at || b?.paid_at || b?.canceled_at || b?.appointment_datetime || 0).getTime() || 0;
-          return bb - aa;
-        })
+      _sortHistoryRows(historyAll)
+        .slice(0, __HISTORY_VISIBLE_LIMIT__)
         .forEach((job) => historyJobsEl.appendChild(buildHistorySummary(job)));
     }
 
-    renderHistoryLoadMoreControl(historyJobsEl, historyAll.length);
+    const visibleHistoryCount = Math.min(_sortHistoryRows(historyAll).length, __HISTORY_VISIBLE_LIMIT__);
+    renderHistoryLoadMoreControl(historyJobsEl, visibleHistoryCount);
   }
 
 

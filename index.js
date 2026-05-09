@@ -5900,50 +5900,6 @@ function _buildNonCommissionLine({ payout_id, username, finished_at, earn_amount
   };
 }
 
-
-function _techIncomeLineDetail(line){
-  const raw = line && line.detail_json;
-  if (!raw) return {};
-  if (typeof raw === 'object') return raw || {};
-  if (typeof raw === 'string') {
-    try { return JSON.parse(raw) || {}; } catch (_) { return {}; }
-  }
-  return {};
-}
-
-function _isApprovedReworkCompensationLine(line){
-  const detail = _techIncomeLineDetail(line);
-  const step = String(line?.step_rule_key || '').trim();
-  return Boolean(detail.approved_rework_compensation || step === 'approved_rework_compensation');
-}
-
-function _isExcludedFromNormalTechIncomeLine(line){
-  const detail = _techIncomeLineDetail(line);
-  const step = String(line?.step_rule_key || '').trim();
-  return Boolean(
-    detail.excluded_from_normal_income ||
-    step === 'excluded_revisit_warranty_rework' ||
-    step.includes('revisit') ||
-    step.includes('rework') ||
-    step.includes('warranty')
-  );
-}
-
-function _isCountableTechIncomeLine(line, opts = {}){
-  const amount = Number(line?.earn_amount || 0);
-  if (!Number.isFinite(amount) || amount <= 0) return false;
-  if (!_isExcludedFromNormalTechIncomeLine(line)) return true;
-  return Boolean(opts.allowApprovedReworkCompensation && _isApprovedReworkCompensationLine(line));
-}
-
-function _normalTechIncomeLines(lines){
-  return (Array.isArray(lines) ? lines : []).filter((line) => _isCountableTechIncomeLine(line, { allowApprovedReworkCompensation: false }));
-}
-
-function _payableTechIncomeLines(lines){
-  return (Array.isArray(lines) ? lines : []).filter((line) => _isCountableTechIncomeLine(line, { allowApprovedReworkCompensation: true }));
-}
-
 async function _computeTechLinesInRange(tech, start, endEx, opts = null) {
   // คำนวณสดเฉพาะช่วงนั้น (กันช้า)
   // - commission: ดึงเฉพาะงานที่ tech เกี่ยวข้อง แล้วใช้ _buildPayoutLinesForJob
@@ -8702,9 +8658,7 @@ async function _computeTechnicianPayoutMonthTotal(username, ym = ''){
           label_ym: def.label_ym,
           work_month: parsed.ym,
         });
-        const payableLines = _payableTechIncomeLines(lines);
-        amount = _money((payableLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
-        lines = payableLines;
+        amount = _money((lines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
       }
       total += amount;
       periods.push({
@@ -10184,13 +10138,10 @@ async function _computeTechnicianIncomeSummary(username, opts = {}) {
   const ymKey = dateKey.slice(0, 7);
   const payoutYmKey = /^\d{4}-\d{2}$/.test(String(opts.month || '').trim()) ? String(opts.month).trim() : ymKey;
 
-  const rawMonthLines = await _computeTechLinesInRange(tech, monthStart, nextMonthStart, {
+  const monthLines = await _computeTechLinesInRange(tech, monthStart, nextMonthStart, {
     payout_id: `summary_month_${ymKey}`,
     label_ym: ymKey,
   });
-  // Today/month cards are normal technician income only.
-  // Rework/warranty/revisit lines and 0-baht excluded lines must not become "วันนี้ได้" or job counts.
-  const monthLines = _normalTechIncomeLines(rawMonthLines);
   const dayLines = (monthLines || []).filter((line) => {
     const f = line?.finished_at ? new Date(line.finished_at) : null;
     return f && !Number.isNaN(f.getTime()) && f >= dayStart && f < dayEnd;
@@ -10272,9 +10223,8 @@ async function _computeTechnicianCurrentPeriodEstimate(username) {
     period_type: bounds.period_type,
     label_ym: bounds.label_ym,
   });
-  const payableLines = _payableTechIncomeLines(lines);
-  const total = _money((payableLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
-  return { ok:true, username: tech, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: total, jobs_count: payableLines.length, computed_jobs: payableLines.length, capped: false };
+  const total = _money((lines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
+  return { ok:true, username: tech, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: total, jobs_count: lines.length, computed_jobs: lines.length, capped: false };
 }
 
 async function _buildTechnicianIncomeComputedJobs(tech, start, endEx) {
@@ -10389,15 +10339,6 @@ app.get('/tech/completed_count_summary', async (req, res) => {
           AND j.canceled_at IS NULL
           AND COALESCE(j.job_status,'') NOT ILIKE '%cancel%'
           AND COALESCE(j.job_status,'') NOT ILIKE '%ยกเลิก%'
-          AND COALESCE(j.job_status,'') NOT ILIKE '%แก้ไข%'
-          AND COALESCE(j.job_type,'') NOT ILIKE '%งานแก้ไข%'
-          AND COALESCE(j.job_type,'') NOT ILIKE '%งานกลับไปแก้%'
-          AND COALESCE(j.job_type,'') NOT ILIKE '%งานในประกัน%'
-          AND COALESCE(j.job_type,'') NOT ILIKE '%เคลม%'
-          AND COALESCE(j.return_reason,'') = ''
-          AND j.returned_at IS NULL
-          AND j.returned_by IS NULL
-          AND NOT EXISTS (SELECT 1 FROM public.technician_rework_cases rc WHERE rc.job_id=j.job_id)
           AND (
             j.technician_username = $3
             OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$3)
@@ -10426,14 +10367,13 @@ app.get('/tech/income_summary', requireTechnicianSession, async (req, res) => {
     const allLines = await _computeTechLinesInRange(tech, new Date('2000-01-01T00:00:00.000Z'), new Date('2999-01-01T00:00:00.000Z'), {
       payout_id: 'summary_lifetime',
     });
-    const payableAllLines = _payableTechIncomeLines(allLines);
-    const all_total = _money((payableAllLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
+    const all_total = _money((allLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
 
     return res.json({
       ...summary,
       all_total,
       lifetime_income_total: all_total,
-      all_jobs_count: payableAllLines.length,
+      all_jobs_count: allLines.length,
     });
   } catch (e) {
     console.error('GET /tech/income_summary', e);
