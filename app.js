@@ -16,6 +16,15 @@ const historyFilterHintEl = document.getElementById("history-filter-hint");
 
 const ACTIVE_UPCOMING_FILTER_KEY = "cwf_tech_upcoming_filter";
 let __ACTIVE_UPCOMING_FILTER__ = "";
+
+// ✅ ประวัติงานต้องโหลดเร็ว: backend รองรับ history_limit/history_offset แล้ว
+// frontend จึงโหลดประวัติล่าสุดทีละ 20 และค่อยกด “ดูเพิ่ม”
+const HISTORY_PAGE_SIZE = 20;
+const HISTORY_FETCH_LIMIT = HISTORY_PAGE_SIZE + 1; // ขอเกิน 1 แถวเพื่อรู้ว่ายังมีหน้าถัดไปหรือไม่
+let __HISTORY_OFFSET__ = 0;
+let __HISTORY_HAS_MORE__ = false;
+let __HISTORY_LOADING_MORE__ = false;
+let __HISTORY_LOAD_ERROR__ = "";
 // =======================================
 // 🔧 CONFIG
 // =======================================
@@ -2676,20 +2685,90 @@ function declineOffer(offerId) {
 // =======================================
 // 📡 LOAD JOBS
 // =======================================
-function loadJobs() {
-  fetch(`${API_BASE}/jobs/tech/${username}`, { cache: "no-store" })
+function isHistoryJobRow(job) {
+  return isDoneStatusValue(job?.job_status) || isCancelStatusValue(job?.job_status) || !!job?.finished_at || !!job?.paid_at || !!job?.canceled_at;
+}
+
+function mergeJobsById(primaryRows, extraRows) {
+  const map = new Map();
+  const add = (job) => {
+    if (!job) return;
+    const key = String(job.job_id || job.booking_code || Math.random());
+    if (!map.has(key)) map.set(key, job);
+    else map.set(key, { ...map.get(key), ...job });
+  };
+  (Array.isArray(primaryRows) ? primaryRows : []).forEach(add);
+  (Array.isArray(extraRows) ? extraRows : []).forEach(add);
+  return Array.from(map.values());
+}
+
+function buildTechJobsUrl(historyOffset) {
+  const url = new URL(`${API_BASE}/jobs/tech/${encodeURIComponent(username)}`);
+  url.searchParams.set('history_limit', String(HISTORY_FETCH_LIMIT));
+  url.searchParams.set('history_offset', String(Math.max(0, Number(historyOffset || 0))));
+  return url.toString();
+}
+
+function loadJobs(options = {}) {
+  const appendHistory = !!options.appendHistory;
+  const historyOffset = appendHistory ? __HISTORY_OFFSET__ : 0;
+  if (appendHistory && __HISTORY_LOADING_MORE__) return Promise.resolve();
+  if (appendHistory) __HISTORY_LOADING_MORE__ = true;
+  if (!appendHistory) {
+    __HISTORY_OFFSET__ = 0;
+    __HISTORY_HAS_MORE__ = false;
+    __HISTORY_LOAD_ERROR__ = "";
+  }
+
+  return fetch(buildTechJobsUrl(historyOffset), { cache: "no-store" })
     .then((res) => {
       if (!res.ok) throw new Error("โหลดข้อมูลงานไม่สำเร็จ");
       return res.json();
     })
-    .then((jobs) => renderJobs(jobs))
+    .then((rows) => {
+      const jobs = Array.isArray(rows) ? rows : [];
+      const activeRows = jobs.filter((j) => !isHistoryJobRow(j));
+      const fetchedHistoryRows = jobs
+        .filter((j) => isHistoryJobRow(j))
+        .sort((a, b) => {
+          const aa = new Date(a?.finished_at || a?.completed_at || a?.closed_at || a?.paid_at || a?.canceled_at || a?.appointment_datetime || 0).getTime() || 0;
+          const bb = new Date(b?.finished_at || b?.completed_at || b?.closed_at || b?.paid_at || b?.canceled_at || b?.appointment_datetime || 0).getTime() || 0;
+          return bb - aa;
+        });
+      __HISTORY_HAS_MORE__ = fetchedHistoryRows.length > HISTORY_PAGE_SIZE;
+      const historyPage = fetchedHistoryRows.slice(0, HISTORY_PAGE_SIZE);
+      __HISTORY_OFFSET__ = historyOffset + historyPage.length;
+
+      const previousRows = appendHistory ? (window.__JOB_CACHE__ || []) : [];
+      const previousHistory = previousRows.filter((j) => isHistoryJobRow(j));
+      const combinedHistory = appendHistory ? mergeJobsById(previousHistory, historyPage) : historyPage;
+      const combinedJobs = mergeJobsById(activeRows, combinedHistory);
+      __HISTORY_LOAD_ERROR__ = "";
+      if (appendHistory) __HISTORY_LOADING_MORE__ = false;
+      renderJobs(combinedJobs);
+    })
     .catch((err) => {
       console.error(err);
+      __HISTORY_LOAD_ERROR__ = err?.message || "โหลดงานไม่สำเร็จ";
+      if (appendHistory) {
+        __HISTORY_LOADING_MORE__ = false;
+        renderJobs(window.__JOB_CACHE__ || []);
+        return;
+      }
       if (activeJobsEl) activeJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
       if (historyJobsEl) historyJobsEl.innerHTML = "<p>❌ โหลดงานไม่สำเร็จ</p>";
       renderProfile(0);
+    })
+    .finally(() => {
+      if (appendHistory) __HISTORY_LOADING_MORE__ = false;
     });
 }
+
+function loadMoreHistoryJobs() {
+  if (!__HISTORY_HAS_MORE__ || __HISTORY_LOADING_MORE__) return;
+  loadJobs({ appendHistory: true });
+}
+window.loadMoreHistoryJobs = loadMoreHistoryJobs;
 
 // =======================================
 // 🧩 RENDER JOBS
@@ -2952,6 +3031,42 @@ function renderUpcomingHint(filteredCount, totalCount){
   activeUpcomingHintEl.textContent = `มีงานล่วงหน้าทั้งหมด ${totalCount} งาน • เลือกดูทีละวันได้เพื่อลดความสับสน`;
 }
 
+function renderHistoryLoadMoreControl(container, visibleCount){
+  if (!container) return;
+  const wrap = document.createElement('div');
+  wrap.className = 'cwf-history-load-more';
+  wrap.style.cssText = 'display:grid;gap:8px;margin:14px 0 4px;';
+
+  const note = document.createElement('div');
+  note.className = 'muted';
+  note.style.cssText = 'font-size:12px;text-align:center;';
+
+  if (__HISTORY_LOAD_ERROR__) {
+    note.textContent = `โหลดประวัติเพิ่มไม่สำเร็จ: ${__HISTORY_LOAD_ERROR__}`;
+    wrap.appendChild(note);
+  } else if (visibleCount > 0) {
+    note.textContent = __HISTORY_HAS_MORE__
+      ? `กำลังแสดง ${visibleCount} งานล่าสุด • กดดูเพิ่มเพื่อโหลดอีก ${HISTORY_PAGE_SIZE} งาน`
+      : `แสดงประวัติที่โหลดแล้ว ${visibleCount} งาน`;
+    wrap.appendChild(note);
+  }
+
+  if (__HISTORY_HAS_MORE__) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'secondary';
+    btn.textContent = __HISTORY_LOADING_MORE__ ? 'กำลังโหลด...' : 'ดูเพิ่มอีก 20 งาน';
+    btn.disabled = __HISTORY_LOADING_MORE__;
+    btn.addEventListener('click', (ev)=>{
+      ev.preventDefault();
+      loadMoreHistoryJobs();
+    });
+    wrap.appendChild(btn);
+  }
+
+  if (wrap.childNodes.length) container.appendChild(wrap);
+}
+
 function renderJobs(jobs) {
   // ✅ cache ไว้ใช้กับ popup เก็บเงินลูกค้า / เปิด e-slip
   window.__JOB_CACHE__ = Array.isArray(jobs) ? jobs : [];
@@ -3063,12 +3178,14 @@ function renderJobs(jobs) {
       historyAll
         .slice()
         .sort((a, b) => {
-          const aa = new Date(a?.finished_at || a?.completed_at || a?.closed_at || a?.paid_at || a?.appointment_datetime || 0).getTime() || 0;
-          const bb = new Date(b?.finished_at || b?.completed_at || b?.closed_at || b?.paid_at || b?.appointment_datetime || 0).getTime() || 0;
+          const aa = new Date(a?.finished_at || a?.completed_at || a?.closed_at || a?.paid_at || a?.canceled_at || a?.appointment_datetime || 0).getTime() || 0;
+          const bb = new Date(b?.finished_at || b?.completed_at || b?.closed_at || b?.paid_at || b?.canceled_at || b?.appointment_datetime || 0).getTime() || 0;
           return bb - aa;
         })
         .forEach((job) => historyJobsEl.appendChild(buildHistorySummary(job)));
     }
+
+    renderHistoryLoadMoreControl(historyJobsEl, historyAll.length);
   }
 
 
