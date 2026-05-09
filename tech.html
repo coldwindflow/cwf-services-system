@@ -1485,7 +1485,7 @@
     <div class="card section active" id="sec-new">
       <h2>โปรไฟล์ช่าง</h2>
 
-      <!-- ✅ โปรไฟล์ช่าง (แสดงเฉพาะ: รูป / รหัส / ยอดวันนี้ / งานสะสม / คะแนน) -->
+      <!-- ✅ โปรไฟล์ช่าง (แสดงเฉพาะ: รูป / รหัส / วันนี้ได้ / งานสะสม / คะแนน) -->
       <div class="profile-compact">
         <div class="left">
           <img id="profile-photo" class="tech-avatar" src="/logo.png" alt="photo">
@@ -1506,7 +1506,7 @@
 
         <div class="chips">
           <div class="chipStat clickable" role="button" tabindex="0" onclick="switchTab('income')" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();switchTab('income')}">
-            <div class="k">💲 ยอดวันนี้</div>
+            <div class="k">💲 วันนี้ได้</div>
             <div class="v" id="incomeDaily">-</div>
           </div>
           <div class="chipStat" title="จำนวนงานที่ช่างปิดสำเร็จในเดือนปัจจุบัน">
@@ -1596,30 +1596,30 @@
     </div>
 
     <div class="card section" id="sec-income">
-      <h2>รายได้ของฉัน</h2>
-      <div class="muted" style="margin-top:6px">สรุปยอดให้อ่านง่ายก่อน แล้วค่อยกดดูรายละเอียดรายวัน/งวด</div>
+      <h2>ที่ช่างจะได้รับ</h2>
+      <div class="muted" style="margin-top:6px">สรุปยอดตามรอบจ่ายจริง เห็นช่วงวันที่ชัดเจน ไม่รวมงานแก้ไขเป็นรายได้ใหม่</div>
 
       <div class="grid" style="margin-top:12px">
         <div class="card" style="margin-top:0">
           <b style="color:#0b1b3a">ภาพรวม</b>
-          <div class="muted" style="margin-top:6px">ยอดหลักที่ช่างถามบ่อย: วันนี้ / งวดถัดไป / รวมรายได้รอบเดือน</div>
+          <div class="muted" style="margin-top:6px">ยอดหลักที่ช่างถามบ่อย: วันนี้ / งวดถัดไป / รวมรอบจ่ายเดือนนี้</div>
 
           <div class="income-stack">
             <div class="income-summary-card primary">
               <div class="title">วันนี้ได้</div>
-              <div class="desc">รวมจากงานที่ปิดวันนี้</div>
+              <div class="desc">เฉพาะงานปกติที่ปิดวันนี้</div>
               <div class="value" id="incomeTodayVal">-</div>
             </div>
 
             <div class="income-summary-card">
-              <div class="title">คาดว่าจะได้งวดถัดไป</div>
+              <div class="title">งวดถัดไปที่จะได้รับ</div>
               <div class="desc" id="incomePeriodRange">-</div>
               <div class="value" id="incomePeriodEstVal">-</div>
             </div>
 
             <div class="income-summary-card highlight">
-              <div class="title">รวมรายได้รอบเดือน</div>
-              <div class="desc">รวมงวด 10 + 25 ของรอบเดือนที่กำลังแสดง</div>
+              <div class="title">รวมรอบจ่ายเดือนนี้</div>
+              <div class="desc" id="incomeMonthRange">รวมงวด 10 + 25 ของเดือนที่กำลังแสดง</div>
               <div class="value" id="incomeOutstandingVal">-</div>
             </div>
           </div>
@@ -1628,7 +1628,7 @@
             <div class="work-summary-head">
               <div>
                 <b>สรุปงานที่ทำ</b>
-                <div class="hint" id="incomeWorkSummaryPeriod">รอบเดียวกับรวมรายได้รอบเดือน</div>
+                <div class="hint" id="incomeWorkSummaryPeriod">รอบเดียวกับรวมรอบจ่ายเดือนนี้</div>
               </div>
             </div>
             <div class="work-grid" id="incomeWorkSummaryGrid"></div>
