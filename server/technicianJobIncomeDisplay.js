@@ -223,7 +223,7 @@ function buildReworkDisplay(job, username, reworkDisplay, context = "history") {
     display_note: reworkDisplay.display_note,
     income_source: "technician_rework_cases",
     source_table: "technician_rework_cases",
-    source_id: null,
+    source_id: reworkDisplay.source_id || reworkDisplay.rework_case_id || null,
     is_final: Boolean(reworkDisplay.is_final),
     is_stale: false,
   };

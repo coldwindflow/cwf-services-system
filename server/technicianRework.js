@@ -89,6 +89,8 @@ function buildReworkDisplay(job, reworkCase, heldAmount) {
       display_amount: amount,
       display_note: "แก้ไขสำเร็จ คืนรายได้เดิม",
       is_final: true,
+      rework_case_id: reworkCase && reworkCase.rework_case_id,
+      source_id: reworkCase && reworkCase.rework_case_id,
     };
   }
   if (state === "failed") {
@@ -98,6 +100,8 @@ function buildReworkDisplay(job, reworkCase, heldAmount) {
       display_amount: amount,
       display_note: "งานแก้ไขยังไม่สำเร็จ หรือรอหักตามที่แอดมินอนุมัติ",
       is_final: true,
+      rework_case_id: reworkCase && reworkCase.rework_case_id,
+      source_id: reworkCase && reworkCase.rework_case_id,
     };
   }
   return {
@@ -106,6 +110,8 @@ function buildReworkDisplay(job, reworkCase, heldAmount) {
     display_amount: amount,
     display_note: "งานมีปัญหา รายได้เดิมถูกพักไว้",
     is_final: false,
+    rework_case_id: reworkCase && reworkCase.rework_case_id,
+    source_id: reworkCase && reworkCase.rework_case_id,
   };
 }
 
