@@ -1,153 +1,80 @@
-// ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
-// - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
-// - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v77-fix30-restore-stable26-ui-20260510";
-
-const ASSETS = [
+const CACHE_NAME = "cwf-cache-v78-fix31-emergency-purge-stable26-20260510";
+const STATIC_ASSETS = [
   "/",
-  "/login.html",
-  "/index.html",
   "/tech.html",
+  "/app.js?v=20260510_fix31_emergency_purge_stable26",
   "/style.css",
-  "/app.js?v=20260509_history20_fix12",
-  "/logo.png",
-  "/assets/cwf-promptpay-qr.jpg",
   "/manifest.json",
-  "/mainfest.json",
-  "/icon-cwf-v34-180.png",
-  "/icon-cwf-v34-192.png",
-  "/icon-cwf-v34-512.png",
-  "/icon-cwf-v34-512-maskable.png",
-  "/icon-180.png",
-  "/icon-192.png",
-  "/icon-512.png",
-  "/icon-512-maskable.png",
-  "/edit-profile.html",
-  "/customer.html",
-  "/track.html",
-  "/admin-review-v2.html",
-  "/admin-review-v2.js",
-  "/admin-add-v2.html",
-  "/admin-add-v2.js?v=20260508_assignment_service_fix_v1",
-  "/admin-queue-v2.html",
-  "/admin-queue-v2.js",
-  "/admin-history-v2.html",
-  "/admin-history-v2.js",
-  "/admin-job-view-v2.html",
-  "/admin-job-view-v2.js?v=20260508_edit_service_builder_v2",
-  "/admin-promotions-v2.html",
-  "/admin-promotions-v2.js",
-  "/admin-v2-common.js",
-  "/admin-work-readiness-v2.html",
-  "/admin-work-readiness-v2.js",
+  "/logo.png"
 ];
 
-// ติดตั้งแล้ว cache ไฟล์
-self.addEventListener("install", (e) => {
-  self.skipWaiting(); // ✅ ให้ service worker ใหม่ทำงานทันที
-  e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(ASSETS)));
-});
-
-// ล้าง cache เก่า
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches
-      .keys()
-      .then((keys) => Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : null))))
-      .then(() => self.clients.claim())
+self.addEventListener("install", (event) => {
+  self.skipWaiting();
+  event.waitUntil(
+    caches.open(CACHE_NAME).then((cache) => cache.addAll(STATIC_ASSETS).catch(() => undefined))
   );
 });
 
-// ✅ ให้หน้าเว็บส่งคำสั่งมาได้ (เช่นให้ SW ใหม่ข้าม waiting)
-self.addEventListener("message", (event) => {
-  if (!event.data) return;
-  if (event.data && event.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
-});
-
-// ดึงจาก network ก่อน ถ้าไม่ได้ค่อยใช้ cache (กันไฟล์เก่าค้าง)
-self.addEventListener("fetch", (e) => {
-  // ✅ อย่าแตะ request แบบ POST/PUT/DELETE
-  if (e.request.method !== "GET") return;
-
-  const url = new URL(e.request.url);
-
-  // ✅ กัน cache API/ข้อมูล dynamic (สำคัญ: ไม่ให้เก็บ response งาน/สถานะไว้ใน cache)
-  // - cache เฉพาะไฟล์ static (html/css/js/png/json) หรือไฟล์ที่อยู่ใน ASSETS
-  const isSameOrigin = url.origin === self.location.origin;
-  const pathname = url.pathname || "/";
-  const isStaticExt = /\.(?:html|css|js|png|jpg|jpeg|webp|svg|ico|json)$/.test(pathname);
-  const isAssetListed = ASSETS.includes(pathname) || (pathname === "/" && ASSETS.includes("/"));
-  const shouldCache = isSameOrigin && (isStaticExt || isAssetListed || e.request.mode === "navigate");
-
-  // ถ้าไม่ควร cache → ปล่อยผ่าน network ตรง ๆ
-  if (!shouldCache) return;
-
-  e.respondWith(
-    fetch(e.request)
-      .then((resp) => {
-        const copy = resp.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
-        return resp;
-      })
-      .catch(async () => {
-        // Offline fallback (โดยเฉพาะตอนเปิดหน้าแบบ navigate)
-        const cached = await caches.match(e.request);
-        if (cached) return cached;
-
-        if (e.request.mode === "navigate") {
-          // พยายาม fallback ไปหน้าใช้งานหลักที่ถูก cache ไว้
-          return (
-            (await caches.match(url.pathname)) ||
-            (await caches.match("/customer.html")) ||
-            (await caches.match("/track.html")) ||
-            (await caches.match("/login.html")) ||
-            (await caches.match("/index.html"))
-          );
-        }
-        return cached;
-      })
-  );
-});
-
-
-// 🔔 Web Push: แจ้งเตือนงานเข้า แม้ปิดหน้า PWA
-self.addEventListener("push", (event) => {
-  let data = {};
-  try { data = event.data ? event.data.json() : {}; } catch (_) { data = {}; }
-  const title = data.title || "CWF มีงานใหม่";
-  const options = {
-    body: data.body || "มีงานใหม่เข้ามา กรุณาเปิดแอพเพื่อตรวจสอบ",
-    icon: "/icon-cwf-v34-192.png",
-    badge: "/icon-cwf-v34-192.png",
-    tag: data.tag || "cwf-job-notification",
-    renotify: true,
-    requireInteraction: data.kind === "urgent_offer",
-    timestamp: Date.now(),
-    vibrate: [120, 70, 120],
-    actions: [
-      { action: "open", title: data.kind === "urgent_offer" ? "เปิดดูงาน / รับงาน" : "เปิดดูงาน" }
-    ],
-    data: { url: data.url || "/tech.html", job_id: data.job_id || null, kind: data.kind || "job", income_amount_text: data.income_amount_text || "" }
-  };
-  event.waitUntil(self.registration.showNotification(title, options));
-});
-
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-  const targetUrl = (event.notification && event.notification.data && event.notification.data.url) || "/tech.html";
+self.addEventListener("activate", (event) => {
   event.waitUntil((async () => {
-    const allClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
-    for (const client of allClients) {
-      try {
-        const u = new URL(client.url);
-        if (u.origin === self.location.origin && "focus" in client) {
-          if ("navigate" in client) await client.navigate(targetUrl);
-          return client.focus();
-        }
-      } catch (_) {}
+    const keys = await caches.keys();
+    await Promise.all(
+      keys
+        .filter((key) => key !== CACHE_NAME && /^cwf-cache-/i.test(key))
+        .map((key) => caches.delete(key))
+    );
+    await self.clients.claim();
+    const clients = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const client of clients) {
+      client.postMessage({ type: "CWF_CACHE_PURGED", cache: CACHE_NAME });
     }
-    return clients.openWindow(targetUrl);
+  })());
+});
+
+function shouldNetworkFirst(request) {
+  if (request.method !== "GET") return true;
+  const url = new URL(request.url);
+  const path = url.pathname;
+  if (request.mode === "navigate") return true;
+  if (path === "/" || path.endsWith(".html") || path.endsWith(".js") || path.endsWith(".css")) return true;
+  if (path.startsWith("/tech/")) return true;
+  if (path.startsWith("/api/")) return true;
+  return false;
+}
+
+self.addEventListener("fetch", (event) => {
+  const request = event.request;
+  const url = new URL(request.url);
+
+  if (request.method !== "GET") return;
+
+  if (shouldNetworkFirst(request)) {
+    event.respondWith((async () => {
+      try {
+        const fresh = await fetch(request, { cache: "no-store" });
+        // Cache only static app shell files, not dynamic API/tech data.
+        if (fresh && fresh.ok && (request.mode === "navigate" || url.pathname.endsWith(".html") || url.pathname.endsWith(".js") || url.pathname.endsWith(".css"))) {
+          const cache = await caches.open(CACHE_NAME);
+          cache.put(request, fresh.clone()).catch(() => undefined);
+        }
+        return fresh;
+      } catch (err) {
+        const cached = await caches.match(request);
+        if (cached) return cached;
+        throw err;
+      }
+    })());
+    return;
+  }
+
+  event.respondWith((async () => {
+    const cached = await caches.match(request);
+    if (cached) return cached;
+    const fresh = await fetch(request);
+    if (fresh && fresh.ok) {
+      const cache = await caches.open(CACHE_NAME);
+      cache.put(request, fresh.clone()).catch(() => undefined);
+    }
+    return fresh;
   })());
 });
