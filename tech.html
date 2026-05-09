@@ -412,7 +412,7 @@
 
 
     /* ===== CWF Technician Premium Shell v20260428 =====
-       Match Admin Dashboard visual language without touching app.js?v=20260510_fix27_premium_nav_restore"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
+       Match Admin Dashboard visual language without touching app.js?v=20260510_fix28_section_switch_repair"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
       background:linear-gradient(90deg, rgba(244,196,0,0), rgba(244,196,0,.95), rgba(34,211,238,.65), rgba(244,196,0,0));
       pointer-events:none;
     }
@@ -612,10 +612,33 @@
   @media(max-width:560px){#techTaxProfileModal .taxDocActions,#techWhtDocsModal .taxDocActions{grid-template-columns:1fr!important}#techTaxProfileModal .taxDocPanel,#techWhtDocsModal .taxDocPanel{padding:18px!important;border-radius:22px!important}}
 </style>
 
-  <style id="cwf-fix27-premium-nav-restore">
+  <style id="cwf-fix28-section-switch-repair">
     /*
-      CWF fix27: restore premium top/bottom navigation only.
-      Scope: top nav, page backdrop, bottom nav. No job/profile/income logic.
+      CWF fix28: restore tab switching. The home section must NOT be forced visible.
+      This fixes งานปัจจุบัน / ประวัติงาน / รายได้ being covered by รับงานใหม่.
+    */
+    #sec-new.tech-home-section-v26:not(.active){
+      display:none!important;
+    }
+    #sec-new.tech-home-section-v26.active{
+      display:block!important;
+    }
+    #sec-active.section:not(.active),
+    #sec-history.section:not(.active),
+    #sec-income.section:not(.active){
+      display:none!important;
+    }
+    #sec-active.section.active,
+    #sec-history.section.active,
+    #sec-income.section.active{
+      display:block!important;
+    }
+  </style>
+
+
+  <style id="cwf-fix28-premium-nav-restore">
+    /*
+      CWF fix28: premium top/bottom nav only. No forced home section display.
     */
     body{
       background:
@@ -671,7 +694,6 @@
       color:#071b4a!important;
       box-shadow:0 15px 32px rgba(244,196,0,.30), inset 0 1px 0 rgba(255,255,255,.48)!important;
     }
-
     .bottom-nav{
       width:min(520px, calc(100% - 18px))!important;
       padding:10px 10px calc(10px + env(safe-area-inset-bottom))!important;
@@ -1677,7 +1699,7 @@
       </div>
 
       <div class="section active" id="sec-active-today" style="margin-top:10px;">
-        <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix27_premium_nav_restore"active-list"></div>
+        <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix28_section_switch_repair"active-list"></div>
       </div>
 
       <div class="section" id="sec-active-upcoming" style="margin-top:10px;">
@@ -1713,7 +1735,7 @@
       </div>
       <div class="muted" id="history-filter-hint" style="margin-top:8px;">แสดงงานที่ปิดแล้วแบบย่อ</div>
 
-      <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix27_premium_nav_restore"history-list" style="margin-top:10px;"></div>
+      <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix28_section_switch_repair"history-list" style="margin-top:10px;"></div>
     </div>
 
     <div class="card section" id="sec-income">
@@ -1833,7 +1855,6 @@
     #acceptStatusText.accept-hint{display:none!important;margin:0!important;padding:0!important;min-height:0!important;}
 
     #sec-new.tech-home-section-v26{
-      display:block!important;
       position:relative!important;
       overflow:visible!important;
       box-sizing:border-box!important;
@@ -2196,7 +2217,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260510_fix27_premium_nav_restore"></script>
+  <script src="app.js?v=20260510_fix28_section_switch_repair"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
