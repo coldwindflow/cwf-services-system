@@ -6505,20 +6505,32 @@ async function _classifyRevisitWarrantyReworkJob(meta) {
   try {
     if (jobId > 0) {
       const q = await pool.query(
-        `SELECT rework_case_id, reason_type, status, resolution
+        `SELECT rework_case_id, reason_type, status, resolution, revisit_result
            FROM public.technician_rework_cases
           WHERE job_id=$1
           ORDER BY created_at DESC NULLS LAST, rework_case_id DESC
           LIMIT 1`,
         [jobId]
       );
-      if (q.rows?.[0]) reasons.push('technician_rework_cases');
+      const rw = q.rows?.[0] || null;
+      if (rw) {
+        meta._latest_rework_case = rw;
+        const rwStatus = String(rw.status || '').trim().toLowerCase();
+        const rwResolution = String(rw.resolution || '').trim().toLowerCase();
+        const rwResult = String(rw.revisit_result || '').trim().toLowerCase();
+        const isActiveRework = ['open','in_progress','pending','pending_approval'].includes(rwStatus);
+        const isFailedRework = ['failed','deduction_required'].includes(rwResolution) || ['unsuccessful','failed','ไม่สำเร็จ'].includes(rwResult);
+        // Hold back the original job income while a rework case is active/failed.
+        // Resolved/voided successful rework should release the original income again.
+        if (isActiveRework || isFailedRework) reasons.push('technician_rework_cases');
+      }
     }
   } catch (_) {}
   return {
     is_excluded: reasons.length > 0,
     exclusion_reason: reasons.length ? 'revisit/warranty/rework job excluded from normal income' : '',
     detection_fields: [...new Set(reasons)],
+    rework_case: meta._latest_rework_case || null,
   };
 }
 
@@ -8686,39 +8698,98 @@ function _technicianRollingDisplayMonthWindow(nowBkk = _bkkNow()){
   };
 }
 
+
+function _effectiveIncomeRangeEnd(start, endEx, nowUtc = new Date()){
+  const s = start instanceof Date ? start : new Date(start);
+  const e = endEx instanceof Date ? endEx : new Date(endEx);
+  const n = nowUtc instanceof Date ? nowUtc : new Date(nowUtc);
+  if (!(s instanceof Date) || Number.isNaN(s.getTime())) return e;
+  if (!(e instanceof Date) || Number.isNaN(e.getTime())) return n;
+  if (!(n instanceof Date) || Number.isNaN(n.getTime())) return e;
+  if (n <= s) return s;
+  return n < e ? n : e;
+}
+
+function _sumTechIncomeLines(lines){
+  return _money((Array.isArray(lines) ? lines : []).reduce((sum, line) => sum + Number(line?.earn_amount || 0), 0));
+}
+
+function _countPositiveIncomeLines(lines){
+  return (Array.isArray(lines) ? lines : []).filter(line => Number(line?.earn_amount || 0) > 0).length;
+}
+
 async function _computeTechnicianPayoutMonthTotal(username, ym = ''){
   const tech = String(username || '').trim();
   if (!tech) return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', periods: [] };
   try {
-    void ym; // The display month follows CWF rolling payout-month rule, not caller input.
-    const win = _technicianRollingDisplayMonthWindow(_bkkNow());
-    const lines = await _computeTechLinesInRange(tech, win.start, win.endEx, {
-      payout_id: `virtual_month_${win.ym}`,
-      label_ym: win.ym,
-    });
-    const total = _money((lines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
-    return {
-      payout_month: win.ym,
-      payout_month_total: total,
-      payout_month_net_total: total,
-      payout_month_policy: win.policy,
-      monthly_income_display_amount: total,
-      monthly_income_display_label: win.ym,
-      monthly_income_period_start: win.start.toISOString(),
-      monthly_income_period_end: win.endEx.toISOString(),
-      periods: [{
-        payout_id: `virtual_month_${win.ym}`,
-        period_type: 'month_display',
-        period_start: win.start.toISOString(),
-        period_end: win.endEx.toISOString(),
-        source: 'live_completed_jobs',
-        mode: win.is_current_month ? 'current_month_to_date' : 'previous_full_month',
-        gross_amount: total,
+    const nowBkk = _bkkNow();
+    const nowUtc = new Date();
+    let { y, m } = _bkkYmd(nowBkk);
+    const requestedYm = String(ym || '').trim();
+    const parsed = /^(\d{4})-(\d{2})$/.exec(requestedYm);
+    if (parsed) {
+      y = Number(parsed[1]);
+      m = Number(parsed[2]);
+    }
+    const displayYm = `${y}-${String(m).padStart(2, '0')}`;
+    const periodDefs = [
+      { bucket: 'period10', ..._periodBoundsForYm('10', y, m) },
+      { bucket: 'period25', ..._periodBoundsForYm('25', y, m) },
+    ];
+    const periodResults = [];
+    let total = 0;
+    const allDebug = [];
+    for (const p of periodDefs) {
+      const effectiveEnd = _effectiveIncomeRangeEnd(p.start, p.endEx, nowUtc);
+      let lines = [];
+      let debugRows = [];
+      if (effectiveEnd > p.start) {
+        lines = await _computeTechLinesInRange(tech, p.start, effectiveEnd, {
+          payout_id: `payout_${p.label_ym}_${p.period_type}`,
+          period_type: p.period_type,
+          label_ym: p.label_ym,
+        });
+        debugRows = await _buildTechnicianIncomeComputedJobs(tech, p.start, effectiveEnd, p.bucket);
+      }
+      const gross = _sumTechIncomeLines(lines);
+      total += gross;
+      allDebug.push(...debugRows);
+      periodResults.push({
+        payout_id: `payout_${p.label_ym}_${p.period_type}`,
+        period_type: p.period_type,
+        period_start: p.start.toISOString(),
+        period_end: p.endEx.toISOString(),
+        effective_period_end: effectiveEnd.toISOString(),
+        source: 'live_completed_jobs_contract_filtered',
+        mode: p.period_type === '10' ? 'payout_10_previous_16_to_month_1' : 'payout_25_month_1_to_16',
+        gross_amount: gross,
         adj_total: 0,
         deposit_deduction_amount: 0,
-        payout_month_amount: total,
-        payout_month_net_amount: total,
-      }],
+        payout_month_amount: gross,
+        payout_month_net_amount: gross,
+        jobs_count: _countPositiveIncomeLines(lines),
+        computed_jobs: (lines || []).length,
+        computed_jobs_debug: debugRows,
+      });
+    }
+    total = _money(total);
+    const firstStart = periodDefs[0].start;
+    const lastEnd = periodDefs[1].endEx;
+    const effectiveMonthlyEnd = _effectiveIncomeRangeEnd(firstStart, lastEnd, nowUtc);
+    return {
+      payout_month: displayYm,
+      payout_month_total: total,
+      payout_month_net_total: total,
+      payout_month_policy: 'payout_10_plus_25_live_completed_jobs_contract_filtered',
+      monthly_income_display_amount: total,
+      monthly_income_display_label: displayYm,
+      monthly_income_period_start: firstStart.toISOString(),
+      monthly_income_period_end: lastEnd.toISOString(),
+      monthly_income_effective_period_end: effectiveMonthlyEnd.toISOString(),
+      periods: periodResults,
+      computed_jobs_debug_month: allDebug,
+      computed_jobs_debug_period10: periodResults[0]?.computed_jobs_debug || [],
+      computed_jobs_debug_period25: periodResults[1]?.computed_jobs_debug || [],
     };
   } catch (e) {
     console.error('_computeTechnicianPayoutMonthTotal', e);
@@ -10211,6 +10282,10 @@ async function _computeTechnicianIncomeSummary(username, opts = {}) {
     jobs_count: monthLines.length,
     computed_jobs: monthLines.length,
     computed_jobs_debug: computedJobs,
+    computed_jobs_debug_today: computedJobs,
+    computed_jobs_debug_month: payoutMonth.computed_jobs_debug_month || [],
+    computed_jobs_debug_period10: payoutMonth.computed_jobs_debug_period10 || [],
+    computed_jobs_debug_period25: payoutMonth.computed_jobs_debug_period25 || [],
     capped: false,
   };
 }
@@ -10235,22 +10310,23 @@ async function _computeTechnicianCurrentPeriodEstimate(username) {
   const start = bounds.start;
   const endEx = bounds.endEx;
   const nowUtc = new Date();
-  const effectiveEnd = nowUtc < endEx ? nowUtc : endEx;
+  const effectiveEnd = _effectiveIncomeRangeEnd(start, endEx, nowUtc);
   const fmtStart = (new Date(start.getTime() + 7*60*60*1000)).toISOString().slice(0,10);
   const fmtEnd = (new Date(endEx.getTime() + 7*60*60*1000 - 1)).toISOString().slice(0,10);
   if (effectiveEnd <= start) {
-    return { ok:true, username: tech, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: 0, jobs_count: 0, computed_jobs: 0, capped: false };
+    return { ok:true, username: tech, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: 0, jobs_count: 0, computed_jobs: 0, computed_jobs_debug_period: [], capped: false };
   }
   const lines = await _computeTechLinesInRange(tech, start, effectiveEnd, {
     payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`,
     period_type: bounds.period_type,
     label_ym: bounds.label_ym,
   });
-  const total = _money((lines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
-  return { ok:true, username: tech, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: total, jobs_count: lines.length, computed_jobs: lines.length, capped: false };
+  const debugRows = await _buildTechnicianIncomeComputedJobs(tech, start, effectiveEnd, 'active_period');
+  const total = _sumTechIncomeLines(lines);
+  return { ok:true, username: tech, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, effective_period_end: effectiveEnd, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: total, jobs_count: _countPositiveIncomeLines(lines), computed_jobs: lines.length, computed_jobs_debug_period: debugRows, capped: false };
 }
 
-async function _buildTechnicianIncomeComputedJobs(tech, start, endEx) {
+async function _buildTechnicianIncomeComputedJobs(tech, start, endEx, periodBucket = '') {
   const username = String(tech || '').trim();
   if (!username) return [];
   try {
@@ -10291,6 +10367,7 @@ async function _buildTechnicianIncomeComputedJobs(tech, start, endEx) {
               is_excluded: true,
               exclusion_reason: detail.exclusion_reason || exclusion.exclusion_reason || 'revisit/warranty/rework job excluded from normal income',
               detection_fields: detail.exclusion_fields || exclusion.detection_fields || [],
+              rework_case: exclusion.rework_case || null,
             };
           }
           included = income > 0 && !exclusion.is_excluded;
@@ -10303,6 +10380,11 @@ async function _buildTechnicianIncomeComputedJobs(tech, start, endEx) {
         job_type: row.job_type || null,
         is_revisit: Boolean(exclusion.is_excluded && (exclusion.detection_fields || []).some(x => ['job_status','return_reason','returned_at','returned_by','technician_rework_cases','text_marker'].includes(x))),
         is_warranty: Boolean(exclusion.is_excluded && (String(row.job_type || '').includes('ประกัน') || String(row.return_reason || '').includes('ประกัน'))),
+        is_rework: Boolean(exclusion.is_excluded && (exclusion.detection_fields || []).some(x => ['technician_rework_cases','text_marker','job_type','job_status'].includes(x))),
+        has_rework_case: Boolean(exclusion.rework_case),
+        rework_case_id: exclusion.rework_case?.rework_case_id || null,
+        rework_status: exclusion.rework_case?.status || null,
+        rework_resolution: exclusion.rework_case?.resolution || null,
         source_job_id: row.source_job_id || null,
         original_job_id: row.original_job_id || null,
         parent_job_id: row.parent_job_id || null,
@@ -10312,7 +10394,9 @@ async function _buildTechnicianIncomeComputedJobs(tech, start, endEx) {
         technician_id: username,
         income_amount: income,
         included_in_day_total: included,
+        included,
         exclusion_reason: exclusion.is_excluded ? exclusion.exclusion_reason : '',
+        period_bucket: String(periodBucket || ''),
       });
     }
     return out;
@@ -16641,6 +16725,29 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
       try { console.warn('[admin_force_finish_v2] job_assignments sync failed', e.message); } catch {}
     }
 
+    // If this force-finish is closing a revisit/rework case for an old job, resolve the rework
+    // case instead of making the old job look like a new paid job. The original finished_at is
+    // already protected by COALESCE above.
+    let resolvedReworkCount = 0;
+    try {
+      const rw = await client.query(
+        `UPDATE public.technician_rework_cases
+            SET status='resolved',
+                resolution=COALESCE(resolution, 'fixed'),
+                revisit_result=COALESCE(revisit_result, 'successful'),
+                resolved_by=COALESCE($2, resolved_by),
+                resolved_at=COALESCE(resolved_at, NOW()),
+                updated_at=NOW()
+          WHERE job_id=$1
+            AND status IN ('open','in_progress')
+          RETURNING rework_case_id`,
+        [realId, actor_username]
+      );
+      resolvedReworkCount = Number(rw.rowCount || 0);
+    } catch (e) {
+      try { console.warn('[admin_force_finish_v2] rework resolve sync failed', { job_id: realId, error: e.message }); } catch {}
+    }
+
     await logJobUpdate(realId, {
       actor_username,
       actor_role: 'admin',
@@ -16650,6 +16757,7 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
         force_closed_from_status: String(cur.job_status || ''),
         warranty_kind: wKind || null,
         warranty_end_at: wEndIso || null,
+        resolved_rework_cases: resolvedReworkCount,
       }
     }, client);
 
@@ -20040,6 +20148,23 @@ if (status === "เสร็จแล้ว") {
           close_signature_type || 'technician_signature']
       );
       if (isRevisitFlow && revisitResult) {
+        try {
+          await client.query(
+            `UPDATE public.technician_rework_cases
+                SET status='resolved',
+                    resolution=CASE WHEN $2='successful' THEN 'fixed' ELSE 'failed' END,
+                    revisit_result=$2,
+                    revisit_note=COALESCE(NULLIF($3,''), revisit_note),
+                    resolved_by=$4,
+                    resolved_at=COALESCE(resolved_at, NOW()),
+                    updated_at=NOW()
+              WHERE job_id=$1
+                AND status IN ('open','in_progress')`,
+            [realId, revisitResult, revisitNote || null, technician_username]
+          );
+        } catch (e) {
+          try { console.warn('[rework] finalize rework resolve sync failed', { job_id: realId, error: e.message }); } catch {}
+        }
         await logJobUpdate(
           realId,
           {
