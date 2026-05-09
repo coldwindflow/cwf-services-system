@@ -8526,28 +8526,18 @@ async function _computeTechnicianTrueOutstanding(username){
 
 function _technicianRollingDisplayMonthWindow(nowBkk = _bkkNow()){
   const ymd = _bkkYmd(nowBkk);
-  let displayY = ymd.y;
-  let displayM = ymd.m;
-  if (ymd.d <= 15) {
-    displayM -= 1;
-    if (displayM <= 0) { displayM = 12; displayY -= 1; }
-  }
+  const displayY = ymd.y;
+  const displayM = ymd.m;
   const displayYm = `${displayY}-${String(displayM).padStart(2, '0')}`;
   const start = _bangkokMidnightUTC(displayY, displayM, 1);
-  let nextY = displayY;
-  let nextM = displayM + 1;
-  if (nextM > 12) { nextM = 1; nextY += 1; }
-  const nextMonthStart = _bangkokMidnightUTC(nextY, nextM, 1);
-  const isCurrentDisplayMonth = displayY === ymd.y && displayM === ymd.m;
-  const endEx = isCurrentDisplayMonth ? nowBkk : nextMonthStart;
   return {
     y: displayY,
     m: displayM,
     ym: displayYm,
     start,
-    endEx,
-    is_current_month: isCurrentDisplayMonth,
-    policy: 'day_1_15_show_previous_month_day_16_end_show_current_month_to_date',
+    endEx: nowBkk,
+    is_current_month: true,
+    policy: 'current_bangkok_month_to_date_live_completed_jobs',
   };
 }
 
@@ -9995,6 +9985,124 @@ function parseDateYMD(s) {
   return x;
 }
 
+async function _resolveTechnicianIncomeUsername(req, fallbackUsername = '') {
+  try {
+    const ctx = await getAuthContext(req);
+    if (ctx.ok && isTechnicianRole(ctx.effective?.role)) {
+      const u = String(ctx.effective.username || '').trim();
+      if (u) return u;
+    }
+  } catch (_) {}
+  return String(fallbackUsername || '').trim();
+}
+
+async function _computeTechnicianIncomeSummary(username, opts = {}) {
+  const tech = String(username || '').trim();
+  if (!tech) {
+    const err = new Error('UNAUTHORIZED');
+    err.statusCode = 401;
+    throw err;
+  }
+
+  const qDate = parseDateYMD(opts.date);
+  const todayKey = toBangkokDateKey(new Date());
+  const dateKey = qDate || todayKey;
+  const [dy, dm, dd] = dateKey.split('-').map(Number);
+  const dayStart = _bangkokMidnightUTC(dy, dm, dd);
+  const dayEnd = _bangkokMidnightUTC(dy, dm, dd + 1);
+  const monthStart = _bangkokMidnightUTC(dy, dm, 1);
+  let ny = dy, nm = dm + 1;
+  if (nm > 12) { nm = 1; ny += 1; }
+  const nextMonthStart = _bangkokMidnightUTC(ny, nm, 1);
+  const ymKey = dateKey.slice(0, 7);
+
+  const monthLines = await _computeTechLinesInRange(tech, monthStart, nextMonthStart, {
+    payout_id: `summary_month_${ymKey}`,
+    label_ym: ymKey,
+  });
+  const dayLines = (monthLines || []).filter((line) => {
+    const f = line?.finished_at ? new Date(line.finished_at) : null;
+    return f && !Number.isNaN(f.getTime()) && f >= dayStart && f < dayEnd;
+  });
+  const day_total = _money(dayLines.reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
+  const month_total = _money((monthLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
+
+  const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, ymKey);
+  const monthlyStart = payoutMonth.monthly_income_period_start ? new Date(payoutMonth.monthly_income_period_start) : null;
+  const monthlyEnd = payoutMonth.monthly_income_period_end ? new Date(payoutMonth.monthly_income_period_end) : null;
+  const workSummary = (monthlyStart && monthlyEnd && !Number.isNaN(monthlyStart.getTime()) && !Number.isNaN(monthlyEnd.getTime()))
+    ? await _computeTechnicianWorkSummary(tech, monthlyStart, monthlyEnd, payoutMonth.payout_month || ymKey)
+    : { cards: [], groups: [], total_machines: 0, jobs_count: 0 };
+  const outstanding = await _computeTechnicianTrueOutstanding(tech);
+  const depositSummary = await _getDepositSummary(tech);
+
+  return {
+    ok: true,
+    username: tech,
+    date: dateKey,
+    month: ymKey,
+    day_total,
+    month_total,
+    payout_month: payoutMonth.payout_month || ymKey,
+    payout_month_total: payoutMonth.payout_month_total || 0,
+    payout_month_net_total: payoutMonth.payout_month_net_total || 0,
+    payout_month_policy: payoutMonth.payout_month_policy || 'live_completed_jobs_rolling_month',
+    payout_month_periods: payoutMonth.periods || [],
+    monthly_income_display_amount: payoutMonth.monthly_income_display_amount ?? payoutMonth.payout_month_total ?? 0,
+    monthly_income_display_label: payoutMonth.monthly_income_display_label || payoutMonth.payout_month || ymKey,
+    monthly_income_period_start: payoutMonth.monthly_income_period_start || null,
+    monthly_income_period_end: payoutMonth.monthly_income_period_end || null,
+    work_summary: workSummary,
+    deposit_target_amount: depositSummary.deposit_target_amount || 0,
+    deposit_collected_total: depositSummary.deposit_collected_total || 0,
+    deposit_remaining_amount: depositSummary.deposit_remaining_amount || 0,
+    deposit_is_required: depositSummary.deposit_is_required !== false,
+    true_outstanding_amount: outstanding.true_outstanding_amount,
+    pending_payout_remaining_total: outstanding.true_outstanding_amount,
+    paid_total: outstanding.paid_total,
+    outstanding_policy: outstanding.outstanding_policy || 'locked_pending_only',
+    outstanding_periods_count: outstanding.periods_count,
+    jobs_count: monthLines.length,
+    computed_jobs: monthLines.length,
+    capped: false,
+  };
+}
+
+async function _computeTechnicianCurrentPeriodEstimate(username) {
+  const tech = String(username || '').trim();
+  if (!tech) {
+    const err = new Error('UNAUTHORIZED');
+    err.statusCode = 401;
+    throw err;
+  }
+  const nowBkk = _bkkNow();
+  const { y, m, d } = _bkkYmd(nowBkk);
+  let bounds;
+  if (d <= 15) {
+    bounds = _periodBoundsForYm('25', y, m);
+  } else {
+    let ny = y, nm = m + 1;
+    if (nm > 12) { nm = 1; ny += 1; }
+    bounds = _periodBoundsForYm('10', ny, nm);
+  }
+  const start = bounds.start;
+  const endEx = bounds.endEx;
+  const nowUtc = new Date();
+  const effectiveEnd = nowUtc < endEx ? nowUtc : endEx;
+  const fmtStart = (new Date(start.getTime() + 7*60*60*1000)).toISOString().slice(0,10);
+  const fmtEnd = (new Date(endEx.getTime() + 7*60*60*1000 - 1)).toISOString().slice(0,10);
+  if (effectiveEnd <= start) {
+    return { ok:true, username: tech, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: 0, jobs_count: 0, computed_jobs: 0, capped: false };
+  }
+  const lines = await _computeTechLinesInRange(tech, start, effectiveEnd, {
+    payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`,
+    period_type: bounds.period_type,
+    label_ym: bounds.label_ym,
+  });
+  const total = _money((lines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
+  return { ok:true, username: tech, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: total, jobs_count: lines.length, computed_jobs: lines.length, capped: false };
+}
+
 // NOTE: some tech clients may lose cookie/session in PWA webview.
 // Fail-open by allowing ?username= for technicians only (validated against DB).
 app.get('/tech/completed_count_summary', async (req, res) => {
@@ -10058,108 +10166,22 @@ app.get('/tech/completed_count_summary', async (req, res) => {
 
 app.get('/tech/income_summary', requireTechnicianSession, async (req, res) => {
   try {
-    // Always use the authenticated/effective technician from the server session.
-    // Do not trust ?username from localStorage because stale PWA storage can show another technician's income.
     const tech = String(req.auth?.username || req.effective?.username || '').trim();
-    if (!tech) return res.status(401).json({ ok:false, error: 'UNAUTHORIZED' });
-
-    const qDate = parseDateYMD(req.query.date);
-    const todayKey = toBangkokDateKey(new Date());
-    const dateKey = qDate || todayKey;
-    const ymKey = dateKey.slice(0, 7); // YYYY-MM
-
-    // Fetch finished jobs where technician is in the job team/assignments
-    const donePred = _sqlDonePredicate('j');
-    const jobsQ = await pool.query(
-      `SELECT j.job_id, j.finished_at
-       FROM public.jobs j
-       WHERE ${donePred}
-         AND j.finished_at IS NOT NULL
-         AND (
-           j.technician_username = $1
-           OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$1)
-           OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$1)
-         )
-       ORDER BY j.finished_at DESC`,
-      [tech]
-    );
-    const jobs = jobsQ.rows || [];
-
-    let day_total = 0;
-    let month_total = 0;
-    let all_total = 0;
-    let computed = 0;
-
-    // Safety cap (กันระบบตันถ้ามีงานเยอะผิดปกติ)
-    // NOTE: "สะสมทั้งหมด" ต้องคิดจากงานที่เสร็จสิ้นทั้งหมด
-    // ตั้ง cap สูงมากเพื่อใช้งานจริง และยังกันเคสผิดปกติแบบสุดโต่ง
-    const HARD_CAP = 50000;
-    const slice = jobs.length > HARD_CAP ? jobs.slice(0, HARD_CAP) : jobs;
-
-    for (const row of slice) {
-      const job_id = Number(row.job_id);
-      const fKey = toBangkokDateKey(row.finished_at);
-      const fYm = fKey ? fKey.slice(0, 7) : '';
-      let inc = 0;
-      try {
-        // ✅ ใช้เครื่องยนต์เดียวกับ "งวดเงินเดือน" เพื่อให้ % ขั้นบันไดตรงกัน (แก้รายได้ไม่ตรง)
-        const lines = await _buildPayoutLinesForJob(job_id);
-        const meLine = (lines || []).find(x => String(x.technician_username) === tech);
-        inc = Number(meLine?.earn_amount || 0);
-      } catch (e) {
-        continue;
-      }
-all_total += inc;
-      if (fYm === ymKey) month_total += inc;
-      if (fKey === dateKey) day_total += inc;
-      computed++;
-    }
-
-    const outstanding = await _computeTechnicianTrueOutstanding(tech);
-    const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, ymKey);
-    const monthlyStart = payoutMonth.monthly_income_period_start ? new Date(payoutMonth.monthly_income_period_start) : null;
-    const monthlyEnd = payoutMonth.monthly_income_period_end ? new Date(payoutMonth.monthly_income_period_end) : null;
-    const workSummary = (monthlyStart && monthlyEnd && !Number.isNaN(monthlyStart.getTime()) && !Number.isNaN(monthlyEnd.getTime()))
-      ? await _computeTechnicianWorkSummary(tech, monthlyStart, monthlyEnd, payoutMonth.payout_month || ymKey)
-      : { cards: [], groups: [], total_machines: 0, jobs_count: 0 };
-    const depositSummary = await _getDepositSummary(tech);
+    const summary = await _computeTechnicianIncomeSummary(tech, { date: req.query.date });
+    const allLines = await _computeTechLinesInRange(tech, new Date('2000-01-01T00:00:00.000Z'), new Date('2999-01-01T00:00:00.000Z'), {
+      payout_id: 'summary_lifetime',
+    });
+    const all_total = _money((allLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
 
     return res.json({
-      ok: true,
-      username: tech,
-      date: dateKey,
-      month: ymKey,
-      day_total,
-      month_total,
+      ...summary,
       all_total,
       lifetime_income_total: all_total,
-      payout_month: payoutMonth.payout_month || ymKey,
-      payout_month_total: payoutMonth.payout_month_total || 0,
-      payout_month_net_total: payoutMonth.payout_month_net_total || 0,
-      payout_month_policy: payoutMonth.payout_month_policy || 'sum_payout_10_and_25_for_label_month',
-      payout_month_periods: payoutMonth.periods || [],
-      monthly_income_display_amount: payoutMonth.monthly_income_display_amount ?? payoutMonth.payout_month_total ?? 0,
-      monthly_income_display_label: payoutMonth.monthly_income_display_label || payoutMonth.payout_month || ymKey,
-      monthly_income_period_start: payoutMonth.monthly_income_period_start || null,
-      monthly_income_period_end: payoutMonth.monthly_income_period_end || null,
-      work_summary: workSummary,
-      deposit_target_amount: depositSummary.deposit_target_amount || 0,
-      deposit_collected_total: depositSummary.deposit_collected_total || 0,
-      deposit_remaining_amount: depositSummary.deposit_remaining_amount || 0,
-      deposit_is_required: depositSummary.deposit_is_required !== false,
-      // Backward-compatible fields kept for old clients, but the new income card no longer uses them.
-      true_outstanding_amount: outstanding.true_outstanding_amount,
-      pending_payout_remaining_total: outstanding.true_outstanding_amount,
-      paid_total: outstanding.paid_total,
-      outstanding_policy: outstanding.outstanding_policy || 'locked_pending_only',
-      outstanding_periods_count: outstanding.periods_count,
-      jobs_count: jobs.length,
-      computed_jobs: computed,
-      capped: jobs.length > HARD_CAP
+      all_jobs_count: allLines.length,
     });
   } catch (e) {
     console.error('GET /tech/income_summary', e);
-    return res.status(500).json({ error: 'LOAD_FAILED' });
+    return res.status(e.statusCode || 500).json({ ok:false, error: e.message || 'LOAD_FAILED' });
   }
 });
 
@@ -10171,71 +10193,11 @@ all_total += inc;
  */
 app.get('/tech/income_today_month', requireTechnicianSession, async (req, res) => {
   try {
-    // Always use the authenticated/effective technician from the server session.
-    // This prevents wrong "today income" when localStorage has a stale username.
     const tech = String(req.auth?.username || req.effective?.username || '').trim();
-    if (!tech) return res.status(401).json({ ok:false, error: 'UNAUTHORIZED' });
-
-    const nowBkk = _bkkNow();
-    const { y, m, d } = _bkkYmd(nowBkk);
-    const todayStart = _bangkokMidnightUTC(y, m, d);
-    const tomorrowStart = _bangkokMidnightUTC(y, m, d + 1);
-
-    // month range
-    const monthStart = _bangkokMidnightUTC(y, m, 1);
-    let ny = y, nm = m + 1;
-    if (nm > 12) { nm = 1; ny = y + 1; }
-    const nextMonthStart = _bangkokMidnightUTC(ny, nm, 1);
-
-    const donePred = _sqlDonePredicate('j');
-    const jobsQ = await pool.query(
-      `SELECT j.job_id, j.finished_at
-         FROM public.jobs j
-        WHERE ${donePred}
-          AND j.finished_at IS NOT NULL
-          AND j.finished_at >= $1 AND j.finished_at < $2
-          AND (
-            j.technician_username = $3
-            OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$3)
-            OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$3)
-          )
-        ORDER BY j.finished_at DESC`,
-      [monthStart.toISOString(), nextMonthStart.toISOString(), tech]
-    );
-    const rows = jobsQ.rows || [];
-
-    let day_total = 0;
-    let month_total = 0;
-    let computed = 0;
-
-    // cap เฉพาะเดือน (กันเคสผิดปกติ)
-    const HARD_CAP = 2000;
-    const slice = rows.length > HARD_CAP ? rows.slice(0, HARD_CAP) : rows;
-
-    for (const row of slice) {
-      const job_id = Number(row.job_id);
-      let inc = 0;
-      try {
-        const lines = await _buildPayoutLinesForJob(job_id);
-        const meLine = (lines || []).find(x => String(x.technician_username) === tech);
-        inc = Number(meLine?.earn_amount || 0);
-      } catch (e) {
-        continue;
-      }
-      month_total += inc;
-      computed++;
-      const finishedAt = row.finished_at ? new Date(row.finished_at) : null;
-      if (finishedAt && finishedAt >= todayStart && finishedAt < tomorrowStart) {
-        day_total += inc;
-      }
-    }
-
-    const dateKey = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
-    const monthKey = `${y}-${String(m).padStart(2, '0')}`;
-    return res.json({ ok:true, username: tech, date: dateKey, month: monthKey, day_total, month_total, jobs_count: rows.length, computed_jobs: computed, capped: rows.length > HARD_CAP });
+    return res.json(await _computeTechnicianIncomeSummary(tech));
   } catch (e) {
     console.error('GET /tech/income_today_month', e);
-    return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
+    return res.status(e.statusCode || 500).json({ ok:false, error:e.message || 'LOAD_FAILED' });
   }
 });
 
@@ -10247,71 +10209,11 @@ app.get('/tech/income_today_month', requireTechnicianSession, async (req, res) =
 // Current rule: Bangkok day 1-15 => current month 25 cycle; day 16-end => next month 10 cycle.
 app.get('/tech/income_next_period_estimate', requireTechnicianSession, async (req, res) => {
   try {
-    const tech = String(req.auth?.username || '').trim();
-    const nowBkk = _bkkNow();
-    const { y, m, d } = _bkkYmd(nowBkk);
-
-    let bounds;
-    if (d <= 15) {
-      bounds = _periodBoundsForYm('25', y, m);
-    } else {
-      // 16..end => งวด 10 ของเดือนหน้า
-      let ny = y, nm = m + 1;
-      if (nm > 12) { nm = 1; ny = y + 1; }
-      bounds = _periodBoundsForYm('10', ny, nm);
-    }
-
-    const start = bounds.start;
-    const endEx = bounds.endEx;
-    const nowUtc = new Date();
-    const effectiveEnd = nowUtc < endEx ? nowUtc : endEx;
-
-    // ยังไม่ถึงช่วงงวด -> estimate = 0
-    if (effectiveEnd <= start) {
-      const fmtStart = (new Date(start.getTime() + 7*60*60*1000)).toISOString().slice(0,10);
-      const fmtEnd = (new Date(endEx.getTime() + 7*60*60*1000 - 1)).toISOString().slice(0,10);
-      return res.json({ ok:true, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: 0 });
-    }
-
-    const donePred = _sqlDonePredicate('j');
-    const jobsQ = await pool.query(
-      `SELECT j.job_id
-         FROM public.jobs j
-        WHERE ${donePred}
-          AND j.finished_at IS NOT NULL
-          AND j.finished_at >= $1 AND j.finished_at < $2
-          AND (
-            j.technician_username = $3
-            OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$3)
-            OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$3)
-          )
-        ORDER BY j.finished_at DESC`,
-      [start.toISOString(), effectiveEnd.toISOString(), tech]
-    );
-    const rows = jobsQ.rows || [];
-
-    let total = 0;
-    let computed = 0;
-    const HARD_CAP = 2000;
-    const slice = rows.length > HARD_CAP ? rows.slice(0, HARD_CAP) : rows;
-    for (const row of slice) {
-      const job_id = Number(row.job_id);
-      try {
-        const lines = await _buildPayoutLinesForJob(job_id);
-        const meLine = (lines || []).find(x => String(x.technician_username) === tech);
-        total += Number(meLine?.earn_amount || 0);
-        computed++;
-      } catch (e) {
-        continue;
-      }
-    }
-
-    const fmtStart = (new Date(start.getTime() + 7*60*60*1000)).toISOString().slice(0,10);
-    const fmtEnd = (new Date(endEx.getTime() + 7*60*60*1000 - 1)).toISOString().slice(0,10);
-    return res.json({ ok:true, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: total, jobs_count: rows.length, computed_jobs: computed, capped: rows.length > HARD_CAP });
+    const tech = String(req.auth?.username || req.effective?.username || '').trim();
+    return res.json(await _computeTechnicianCurrentPeriodEstimate(tech));
   } catch (e) {
     console.error('GET /tech/income_next_period_estimate', e);
-    return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
+    return res.status(e.statusCode || 500).json({ ok:false, error:e.message || 'LOAD_FAILED' });
   }
 });
 
@@ -10407,43 +10309,16 @@ app.get('/tech/payments_total', requireTechnicianSession, async (req, res) => {
       [tech]
     );
     const paid_total = Number(q.rows?.[0]?.paid_total || 0);
-    const outstanding = await _computeTechnicianTrueOutstanding(tech);
-    const nowYmd = _bkkYmd(_bkkNow());
-    const ymKey = `${nowYmd.y}-${String(nowYmd.m).padStart(2, '0')}`;
-    const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, ymKey);
-    const monthlyStart = payoutMonth.monthly_income_period_start ? new Date(payoutMonth.monthly_income_period_start) : null;
-    const monthlyEnd = payoutMonth.monthly_income_period_end ? new Date(payoutMonth.monthly_income_period_end) : null;
-    const workSummary = (monthlyStart && monthlyEnd && !Number.isNaN(monthlyStart.getTime()) && !Number.isNaN(monthlyEnd.getTime()))
-      ? await _computeTechnicianWorkSummary(tech, monthlyStart, monthlyEnd, payoutMonth.payout_month || ymKey)
-      : { cards: [], groups: [], total_machines: 0, jobs_count: 0 };
-    const depositSummary = await _getDepositSummary(tech);
+    const summary = await _computeTechnicianIncomeSummary(tech);
     return res.json({
+      ...summary,
       ok:true,
       username: tech,
       paid_total,
-      payout_month: payoutMonth.payout_month || ymKey,
-      payout_month_total: payoutMonth.payout_month_total || 0,
-      payout_month_net_total: payoutMonth.payout_month_net_total || 0,
-      payout_month_policy: payoutMonth.payout_month_policy || 'sum_payout_10_and_25_for_label_month',
-      payout_month_periods: payoutMonth.periods || [],
-      monthly_income_display_amount: payoutMonth.monthly_income_display_amount ?? payoutMonth.payout_month_total ?? 0,
-      monthly_income_display_label: payoutMonth.monthly_income_display_label || payoutMonth.payout_month || ymKey,
-      monthly_income_period_start: payoutMonth.monthly_income_period_start || null,
-      monthly_income_period_end: payoutMonth.monthly_income_period_end || null,
-      work_summary: workSummary,
-      deposit_target_amount: depositSummary.deposit_target_amount || 0,
-      deposit_collected_total: depositSummary.deposit_collected_total || 0,
-      deposit_remaining_amount: depositSummary.deposit_remaining_amount || 0,
-      deposit_is_required: depositSummary.deposit_is_required !== false,
-      // Backward-compatible fields kept for old clients.
-      true_outstanding_amount: outstanding.true_outstanding_amount,
-      pending_payout_remaining_total: outstanding.true_outstanding_amount,
-      outstanding_policy: outstanding.outstanding_policy || 'locked_pending_only',
-      outstanding_periods_count: outstanding.periods_count
     });
   } catch (e) {
     console.error('GET /tech/payments_total', e);
-    return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
+    return res.status(e.statusCode || 500).json({ ok:false, error:e.message || 'LOAD_FAILED' });
   }
 });
 
@@ -18659,7 +18534,8 @@ async function autoFinalizeUrgentJobs() {
 }
 
 app.post("/tech/income-summary-batch", async (req, res) => {
-  const username = String(req.body?.username || req.query?.username || '').trim();
+  const requestedUsername = String(req.body?.username || req.query?.username || '').trim();
+  const username = await _resolveTechnicianIncomeUsername(req, requestedUsername);
   const jobIds = _sanitizeTechJobIds(req.body?.job_ids || req.body?.jobIds || []);
   if (!username) return res.status(400).json({ ok: false, error: "username_required" });
   if (!jobIds.length) return res.json({ ok: true, items: {} });
@@ -18702,7 +18578,8 @@ app.post("/tech/income-summary-batch", async (req, res) => {
 
 app.get("/tech/jobs/:job_id/income-detail", async (req, res) => {
   const jobId = Number(req.params.job_id);
-  const username = String(req.query?.username || req.body?.username || '').trim();
+  const requestedUsername = String(req.query?.username || req.body?.username || '').trim();
+  const username = await _resolveTechnicianIncomeUsername(req, requestedUsername);
   if (!Number.isInteger(jobId) || jobId <= 0) return res.status(400).json({ ok: false, error: "invalid_job_id" });
   if (!username) return res.status(400).json({ ok: false, error: "username_required" });
 

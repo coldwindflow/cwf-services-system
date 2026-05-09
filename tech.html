@@ -285,10 +285,10 @@
     .profile-compact .meta{min-width:0}
     .profile-compact .meta .name{font-size:16px;font-weight:1200;line-height:1.15;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:240px;}
     .profile-compact .meta .code{font-size:13px;font-weight:1000;color:rgba(15,23,42,0.70)}
-    .profile-compact .chips{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;flex:1 1 100%;}
-    .chipStat{border-radius:16px;border:1px solid rgba(15,23,42,0.10);background:rgba(255,255,255,0.80);padding:10px;display:flex;flex-direction:column;gap:4px;}
+    .profile-compact .chips{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;flex:1 1 100%;min-width:0;}
+    .chipStat{border-radius:16px;border:1px solid rgba(15,23,42,0.10);background:rgba(255,255,255,0.80);padding:10px;display:flex;flex-direction:column;gap:4px;min-width:0;overflow:visible;}
     .chipStat .k{font-size:11px;font-weight:1000;color:rgba(15,23,42,0.60)}
-    .chipStat .v{font-size:16px;font-weight:1200;color:#0f172a}
+    .chipStat .v{font-size:clamp(14px,4vw,18px);font-weight:1200;color:#0f172a;line-height:1.15;white-space:nowrap;overflow:visible;font-variant-numeric:tabular-nums;}
     details.tech-more{margin-top:10px}
     details.tech-more summary{list-style:none;cursor:pointer;user-select:none;border-radius:14px;border:1px solid rgba(15,23,42,0.10);background:rgba(15,23,42,0.04);padding:10px 12px;font-weight:1000;display:flex;align-items:center;justify-content:space-between;gap:10px;}
     details.tech-more summary::-webkit-details-marker{display:none}
@@ -309,7 +309,7 @@
     .tech-avatar{width:68px;height:68px;border:4px solid var(--tech-yellow); box-shadow:0 8px 18px rgba(11,46,109,0.16);}
     .chipStat{border-radius:18px;border:1px solid var(--tech-border);background:#fff;padding:12px;box-shadow:none;}
     .chipStat .k{font-size:11px;font-weight:1000;color:var(--tech-muted)}
-    .chipStat .v{font-size:18px;font-weight:1200;color:var(--tech-navy)}
+    .chipStat .v{font-size:clamp(14px,4vw,18px);font-weight:1200;color:var(--tech-navy);line-height:1.15;white-space:nowrap;overflow:visible;font-variant-numeric:tabular-nums;}
     .chipStat.clickable{cursor:pointer;transition:transform .16s ease, border-color .16s ease, background .16s ease;}
     .chipStat.clickable:active{transform:scale(.985);}
     .chipStat.clickable .k::after{content:'';}
@@ -380,7 +380,7 @@
     .income-summary-card{padding:14px 16px;border-radius:20px;border:1px solid var(--tech-border);background:#fff;box-shadow:none;}
     .income-summary-card .title{font-size:13px;font-weight:900;color:var(--tech-muted);}
     .income-summary-card .desc{margin-top:4px;font-size:12px;color:var(--tech-muted);}
-    .income-summary-card .value{margin-top:10px;font-size:28px;font-weight:1100;color:var(--tech-navy);line-height:1.05;}
+    .income-summary-card .value{margin-top:10px;font-size:28px;font-weight:1100;color:var(--tech-navy);line-height:1.05;white-space:nowrap;overflow:visible;font-variant-numeric:tabular-nums;}
     .income-summary-card.primary{background:linear-gradient(180deg,#FFFFFF 0%, #EEF4FF 100%);border-color:#C7D8FB;}
     .income-summary-card.highlight{background:linear-gradient(180deg,#FFFDF5 0%, #FFF6CC 100%);border-color:#F4C400;}
     .income-toolbar{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
