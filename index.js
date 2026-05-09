@@ -17340,7 +17340,7 @@ app.get("/jobs/tech/:username", requireTechnicianSession, async (req, res) => {
       try { console.warn("[tech_jobs_identity] ignored path username mismatch", { requestedUsername, sessionUsername: username }); } catch {}
     }
     const aliases = await _getTechnicianVisibilityAliases(username);
-    const historyLimit = Math.min(Math.max(Number(req.query.history_limit || 0), 0), 100);
+    const historyLimit = Math.min(Math.max(Number(req.query.history_limit || 0), 0), 501);
     const historyOffset = Math.max(Number(req.query.history_offset || 0), 0);
     const historyWhere = `(
       ${_sqlDonePredicate('j')}

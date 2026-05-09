@@ -2306,7 +2306,7 @@ try{
 loadOffers();
 loadJobs();
 setInterval(() => loadOffers(), 15000);
-setInterval(() => loadJobs(), 45000); // keep active/history in sync without making technician app feel heavy
+setInterval(() => loadJobs({ preserveHistoryWindow: true }), 45000); // keep active/history in sync without resetting loaded history pages
 setInterval(() => loadIncomeSummary(), 5 * 60 * 1000);
 setInterval(() => loadIncomeOverview(), 90 * 1000);
 
@@ -2725,25 +2725,36 @@ function mergeJobsById(primaryRows, extraRows) {
   return Array.from(map.values());
 }
 
-function buildTechJobsUrl(historyOffset) {
+function buildTechJobsUrl(options = {}) {
   const url = new URL(`${API_BASE}/jobs/tech/${encodeURIComponent(username)}`);
-  url.searchParams.set('history_limit', String(HISTORY_FETCH_LIMIT));
-  url.searchParams.set('history_offset', String(Math.max(0, Number(historyOffset || 0))));
+  const historyLimit = Math.max(1, Number(options.historyLimit || HISTORY_FETCH_LIMIT));
+  const historyOffset = Math.max(0, Number(options.historyOffset || 0));
+  url.searchParams.set('history_limit', String(historyLimit));
+  url.searchParams.set('history_offset', String(historyOffset));
   return url.toString();
 }
 
 function loadJobs(options = {}) {
   const appendHistory = !!options.appendHistory;
+  const preserveHistoryWindow = !!options.preserveHistoryWindow;
   const historyOffset = appendHistory ? __HISTORY_OFFSET__ : 0;
+  // เวลา auto refresh ห้ามรีเซ็ตประวัติที่ผู้ใช้กดดูเพิ่มแล้วกลับไปเหลือ 20 งาน
+  // จึง fetch ตั้งแต่ offset 0 ด้วย limit เท่าจำนวนที่โหลดไว้ + 1 แถวสำหรับเช็ค has_more
+  const requestedHistoryLimit = appendHistory
+    ? HISTORY_FETCH_LIMIT
+    : (preserveHistoryWindow && __HISTORY_OFFSET__ > HISTORY_PAGE_SIZE
+        ? Math.min(101, __HISTORY_OFFSET__ + 1)
+        : HISTORY_FETCH_LIMIT);
+  const visibleHistoryLimit = Math.max(HISTORY_PAGE_SIZE, requestedHistoryLimit - 1);
   if (appendHistory && __HISTORY_LOADING_MORE__) return Promise.resolve();
   if (appendHistory) __HISTORY_LOADING_MORE__ = true;
-  if (!appendHistory) {
+  if (!appendHistory && !preserveHistoryWindow) {
     __HISTORY_OFFSET__ = 0;
     __HISTORY_HAS_MORE__ = false;
     __HISTORY_LOAD_ERROR__ = "";
   }
 
-  return fetch(buildTechJobsUrl(historyOffset), { cache: "no-store" })
+  return fetch(buildTechJobsUrl({ historyOffset, historyLimit: requestedHistoryLimit }), { cache: "no-store" })
     .then((res) => {
       if (!res.ok) throw new Error("โหลดข้อมูลงานไม่สำเร็จ");
       return res.json();
@@ -2758,9 +2769,9 @@ function loadJobs(options = {}) {
           const bb = new Date(b?.finished_at || b?.completed_at || b?.closed_at || b?.paid_at || b?.canceled_at || b?.appointment_datetime || 0).getTime() || 0;
           return bb - aa;
         });
-      __HISTORY_HAS_MORE__ = fetchedHistoryRows.length > HISTORY_PAGE_SIZE;
-      const historyPage = fetchedHistoryRows.slice(0, HISTORY_PAGE_SIZE);
-      __HISTORY_OFFSET__ = historyOffset + historyPage.length;
+      __HISTORY_HAS_MORE__ = fetchedHistoryRows.length > visibleHistoryLimit;
+      const historyPage = fetchedHistoryRows.slice(0, visibleHistoryLimit);
+      __HISTORY_OFFSET__ = appendHistory ? historyOffset + historyPage.length : historyPage.length;
 
       const previousRows = appendHistory ? (window.__JOB_CACHE__ || []) : [];
       const previousHistory = previousRows.filter((j) => isHistoryJobRow(j));
