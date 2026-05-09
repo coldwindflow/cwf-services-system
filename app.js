@@ -1,5 +1,9 @@
 
 
+// CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
+window.__CWF_TECH_APP_VERSION__ = "20260509_history20_fix12";
+try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
+
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
 const activeUpcomingJobsEl = document.getElementById("active-upcoming-list");
 const activeUpcomingHintEl = document.getElementById("activeUpcomingHint");
@@ -2911,6 +2915,11 @@ function setHistoryFilter(f){
   // reset เฉพาะจำนวนที่แสดง ไม่ให้แท็บ “ทั้งหมด” โชว์ cache เก่าทั้งก้อน เช่น 89 งาน
   _applyHistoryVisibleLimit(HISTORY_PAGE_SIZE);
   try { renderJobs(window.__JOB_CACHE__ || []); } catch(e) {}
+  // เมื่อกดแท็บ “ทั้งหมด” ให้ดึงหน้าแรกใหม่ทันทีด้วย history_limit=21
+  // กันกรณี cache/runtime เก่ามีประวัติ 98/100 งานแล้ว render ออกมาทั้งก้อน
+  if (v === 'all') {
+    try { loadJobs({ preserveHistoryWindow: false }); } catch(e) {}
+  }
 }
 window.setHistoryFilter = setHistoryFilter;
 
@@ -3225,8 +3234,11 @@ function renderJobs(jobs) {
     filteredUpcoming.forEach((job) => activeUpcomingJobsEl.appendChild(buildJobCard(job, false)));
   }
 
+  const sortedHistoryAll = _sortHistoryRows(historyAll);
+  const visibleHistoryRows = sortedHistoryAll.slice(0, Math.max(HISTORY_PAGE_SIZE, Number(__HISTORY_VISIBLE_LIMIT__ || HISTORY_PAGE_SIZE)));
+
   if (historyJobsEl) {
-    if (!historyAll.length) {
+    if (!sortedHistoryAll.length) {
       const emptyText = (__HISTORY_FILTER__ === "day")
         ? "ยังไม่มีงานที่ปิดแล้วในวันนี้"
         : (__HISTORY_FILTER__ === "month")
@@ -3234,19 +3246,23 @@ function renderJobs(jobs) {
           : "ยังไม่มีงานที่ปิดแล้ว";
       historyJobsEl.innerHTML = `<p>${emptyText}</p>`;
     } else {
-      _sortHistoryRows(historyAll)
-        .slice(0, __HISTORY_VISIBLE_LIMIT__)
-        .forEach((job) => historyJobsEl.appendChild(buildHistorySummary(job)));
+      visibleHistoryRows.forEach((job) => historyJobsEl.appendChild(buildHistorySummary(job)));
+      // production guard: ไม่ว่า cache จะมี 98/100 งานก็ตาม DOM ต้องไม่เกิน limit ที่เห็นจริง
+      try {
+        const cards = Array.from(historyJobsEl.querySelectorAll('.history-card'));
+        const maxCards = Math.max(HISTORY_PAGE_SIZE, Number(__HISTORY_VISIBLE_LIMIT__ || HISTORY_PAGE_SIZE));
+        cards.slice(maxCards).forEach((el) => el.remove());
+      } catch (_) {}
     }
 
-    const visibleHistoryCount = Math.min(_sortHistoryRows(historyAll).length, __HISTORY_VISIBLE_LIMIT__);
-    renderHistoryLoadMoreControl(historyJobsEl, visibleHistoryCount);
+    renderHistoryLoadMoreControl(historyJobsEl, visibleHistoryRows.length);
   }
 
 
   // โหลดที่ช่างจะได้รับแบบ async หลังใบงานแสดงแล้ว ใบงานจึงไม่ต้องรอ payout/rate engine
+  // สำคัญ: ส่งเฉพาะประวัติที่แสดงจริง ไม่ส่ง historyAll ทั้งก้อน เพราะจะทำให้เหมือนยังโหลด 98/100 ใบ
   try {
-    scheduleTechnicianIncomeSummaryLoad([...prioritizedActiveToday, ...filteredUpcoming, ...historyAll], 'jobs');
+    scheduleTechnicianIncomeSummaryLoad([...prioritizedActiveToday, ...filteredUpcoming, ...visibleHistoryRows], 'jobs');
   } catch (_) {}
 
   // 🔔 เตือนก่อนถึงเวลานัด 30 นาที (เฉพาะงานวันนี้)
