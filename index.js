@@ -24,6 +24,10 @@ const cors = require("cors");
 const path = require("path");
 const crypto = require("crypto");
 const fs = require("fs");
+const normalizerHelpers = require("./server/normalizers");
+const pricingHelpers = require("./server/pricing");
+const technicianIncomeHelpers = require("./server/technicianIncome");
+const customerLookupHelpers = require("./server/customerLookup");
 
 // =======================================
 // 🔔 Web Push Notifications (optional / fail-open)
@@ -1114,17 +1118,11 @@ app.post('/public/register', requireCustomerJwt, async (req, res) => {
 });
 
 function normalizePhoneLookupDigits(phone) {
-  return String(phone || "").replace(/\D/g, "").trim();
+  return normalizerHelpers.normalizePhone(phone);
 }
 
 function buildPhoneLookupCandidates(phone) {
-  const digits = normalizePhoneLookupDigits(phone);
-  if (!digits) return [];
-  const set = new Set([digits]);
-  if (digits.startsWith("66") && digits.length >= 9) set.add(`0${digits.slice(2)}`);
-  if (digits.startsWith("0066") && digits.length >= 11) set.add(`0${digits.slice(4)}`);
-  if (digits.startsWith("0") && digits.length >= 9) set.add(`66${digits.slice(1)}`);
-  return [...set].filter(Boolean);
+  return customerLookupHelpers.buildPhoneLookupCandidates(phone);
 }
 
 // =======================================
@@ -6167,30 +6165,13 @@ async function _buildPayoutTechSummaryRows(payout_id){
 }
 
 function _normJobKey(s) {
-  const v = String(s || '').toLowerCase();
-  if (!v) return null;
-  if (v.includes('ติดตั้ง') || v.includes('install')) return 'install';
-  if (v.includes('ซ่อม') || v.includes('repair')) return 'repair';
-  if (v.includes('ล้าง') || v.includes('wash') || v.includes('clean')) return 'wash';
-  return null;
+  return technicianIncomeHelpers._normJobKey(s);
 }
 function _normAcKey(s) {
-  const v = String(s || '').toLowerCase();
-  if (!v) return null;
-  if (v.includes('ผนัง') || v.includes('wall')) return 'wall';
-  if (v.includes('สี่ทิศ') || v.includes('ฝังฝ้า') || v.includes('cassette') || v.includes('four') || v.includes('4')) return 'fourway';
-  if (v.includes('แขวน') || v.includes('ตั้งพื้น') || v.includes('floor')) return 'hanging';
-  if (v.includes('ใต้ฝ้า') || v.includes('เปลือย') || v.includes('ceiling') || v.includes('concealed')) return 'ceiling';
-  return null;
+  return technicianIncomeHelpers._normAcKey(s);
 }
 function _normWashKey(s) {
-  const v = String(s || '').toLowerCase();
-  if (!v) return null;
-  if (v.includes('ธรรมดา') || v.includes('normal')) return 'normal';
-  if (v.includes('พรีเมียม') || v.includes('premium')) return 'premium';
-  if (v.includes('แขวนคอย') || v.includes('coil')) return 'coil';
-  if (v.includes('ตัดล้าง') || v.includes('overhaul') || v.includes('ใหญ่')) return 'overhaul';
-  return null;
+  return technicianIncomeHelpers._normWashKey(s);
 }
 
 function _thaiLabelJob(k){
@@ -6207,11 +6188,7 @@ function _thaiLabelAc(k){
   return '';
 }
 function _thaiLabelWash(k){
-  if (k==='normal') return 'ธรรมดา';
-  if (k==='premium') return 'พรีเมียม';
-  if (k==='coil') return 'แขวนคอยน์';
-  if (k==='overhaul') return 'ตัดล้าง';
-  return '';
+  return technicianIncomeHelpers._thaiLabelWash(k);
 }
 
 
@@ -6279,10 +6256,7 @@ function _contractTechType(employmentType, incomeType){
   return 'company';
 }
 function _contractBtuTierFromText(text){
-  const v = String(text || '');
-  const m = v.match(/([0-9][0-9,\.]{2,})\s*BTU/i);
-  const btu = m ? Number(String(m[1]).replace(/[,]/g,'')) : 0;
-  return { btu: Number.isFinite(btu) ? btu : 0, btu_tier: (Number.isFinite(btu) && btu >= 18000) ? 'large' : 'small' };
+  return technicianIncomeHelpers._contractBtuTierFromText(text);
 }
 function _contractRateAt(techType, washKey, btuTier, machineIndex){
   const t = techType === 'partner' ? 'partner' : 'company';
@@ -6436,15 +6410,7 @@ function _buildPartnerAgreementV4RateHtml(items = CWF_TECHNICIAN_INCOME_DEFAULT_
     </section>`;
 }
 function _contractServiceKeyFromItem(it){
-  const nm = String(it?.item_name || '');
-  const ac_key = _normAcKey(nm) || 'wall';
-  let wash_key = _normWashKey(nm);
-  if (ac_key !== 'wall') wash_key = 'none';
-  else if (!wash_key) wash_key = 'normal';
-  if (ac_key === 'wall' && !['normal','premium','coil','overhaul'].includes(wash_key)) wash_key = 'normal';
-  const { btu, btu_tier } = _contractBtuTierFromText(nm);
-  const tier = ac_key === 'wall' ? btu_tier : 'all';
-  return { ac_key, wash_key, btu, btu_tier: tier, group_key: `${ac_key}|${wash_key}|${tier}` };
+  return technicianIncomeHelpers._contractServiceKeyFromItem(it);
 }
 
 function _contractIsVagueServiceItem(it){
@@ -6538,10 +6504,7 @@ function _contractMachineRates(spec, startIndex, qty, techType, rateContext){
 }
 
 function _contractSingleRateBracketIndex(groupQty){
-  const n = Math.max(0, Math.round(Number(groupQty || 0)));
-  if (n >= 4) return 4;
-  if (n >= 2) return 2;
-  return 1;
+  return technicianIncomeHelpers._contractSingleRateBracketIndex(groupQty);
 }
 function _contractSingleRateForGroup(spec, groupQty, techType, rateContext){
   // New partner contract: one rate per unit for the whole same-service group in the job.
@@ -14455,71 +14418,10 @@ async function handleInternalBookFromAi(req, res) {
 app.get("/admin/customer_lookup_by_phone_v2", requireAdminSoft, async (req, res) => {
   try {
     const rawPhone = String(req.query.phone || "").trim();
-    const candidates = buildPhoneLookupCandidates(rawPhone);
-    if (!candidates.length || normalizePhoneLookupDigits(rawPhone).length < 8) {
-      return res.json({ found: false, source: null });
-    }
-
-    const profileR = await pool.query(
-      `
-      SELECT
-        COALESCE(NULLIF(display_name, ''), NULLIF(phone, ''), 'ลูกค้าเดิม') AS customer_name,
-        phone AS customer_phone,
-        address AS address_text,
-        maps_url
-      FROM public.customer_profiles
-      WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ANY($1::text[])
-      ORDER BY updated_at DESC NULLS LAST
-      LIMIT 1
-      `,
-      [candidates]
-    );
-    if (profileR.rows.length) {
-      const row = profileR.rows[0];
-      return res.json({
-        found: true,
-        source: "customer_profiles",
-        customer_name: row.customer_name || null,
-        customer_phone: row.customer_phone || null,
-        address_text: row.address_text || null,
-        maps_url: row.maps_url || null,
-      });
-    }
-
-    const jobR = await pool.query(
-      `
-      SELECT
-        customer_name,
-        customer_phone,
-        address_text,
-        maps_url,
-        booking_code,
-        job_id
-      FROM public.jobs
-      WHERE regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g') = ANY($1::text[])
-      ORDER BY COALESCE(finished_at, appointment_datetime, created_at) DESC NULLS LAST, job_id DESC
-      LIMIT 1
-      `,
-      [candidates]
-    );
-    if (jobR.rows.length) {
-      const row = jobR.rows[0];
-      return res.json({
-        found: true,
-        source: "latest_job",
-        customer_name: row.customer_name || null,
-        customer_phone: row.customer_phone || null,
-        address_text: row.address_text || null,
-        maps_url: row.maps_url || null,
-        booking_code: row.booking_code || null,
-        job_id: row.job_id || null,
-      });
-    }
-
-    return res.json({ found: false, source: null });
+    return res.json(await customerLookupHelpers.lookupCustomerByPhoneV2(pool, rawPhone));
   } catch (e) {
     console.error("GET /admin/customer_lookup_by_phone_v2", e);
-    return res.status(500).json({ error: "ค้นหาข้อมูลลูกค้าเก่าไม่สำเร็จ" });
+    return res.json({ found: false });
   }
 });
 
@@ -16289,7 +16191,7 @@ async function saveJobItemsAdminWithClient(client, job_id, items, options = {}) 
       const assignee = rawAssignee && (allowedAssignees.size === 0 || allowedAssignees.has(rawAssignee)) ? rawAssignee : null;
       const explicitIsService = (typeof it.is_service === 'boolean') ? it.is_service : null;
       const inferredIsService = inferIsServiceLine({ item_name: String(it.item_name || '').trim() });
-      const nameForNorm = String(it.item_name || "").trim();
+      const nameForNorm = normalizerHelpers.canonicalizeWashText(String(it.item_name || "").trim());
       let qtyN = Math.max(0, Number(it.qty || 0));
       let unitN = Math.max(0, Number(it.unit_price || 0));
       try {
@@ -16300,6 +16202,30 @@ async function saveJobItemsAdminWithClient(client, job_id, items, options = {}) 
           if (Number.isFinite(per) && per > 0) {
             unitN = Number(per.toFixed(2));
             qtyN = mc;
+          }
+        }
+      } catch (_) {}
+      try {
+        const serviceLike = (explicitIsService != null) ? explicitIsService : inferredIsService;
+        const parsedSpec = serviceLike ? _contractServiceKeyFromItem({ item_name: nameForNorm }) : null;
+        const isWash = serviceLike && /ล้างแอร์|AC Cleaning/i.test(nameForNorm);
+        const isRepair = serviceLike && /ซ่อมแอร์|AC Repair/i.test(nameForNorm);
+        const isInstall = serviceLike && /ติดตั้งแอร์|AC Installation/i.test(nameForNorm);
+        if ((isWash || isRepair || isInstall) && parsedSpec) {
+          const acType = parsedSpec.ac_key === 'fourway' ? 'สี่ทิศทาง'
+            : (parsedSpec.ac_key === 'hanging' ? 'แขวน'
+            : (parsedSpec.ac_key === 'ceiling' ? 'เปลือยใต้ฝ้า' : 'ผนัง'));
+          const payload = {
+            job_type: isRepair ? 'ซ่อม' : (isInstall ? 'ติดตั้ง' : 'ล้าง'),
+            ac_type: acType,
+            btu: Number(parsedSpec.btu || 0) || (parsedSpec.btu_tier === 'large' ? 18000 : 12000),
+            machine_count: Math.max(1, Math.round(Number(qtyN || 1))),
+            wash_variant: parsedSpec.ac_key === 'wall' ? (_thaiLabelWash(parsedSpec.wash_key) || 'ธรรมดา') : '',
+            repair_variant: nameForNorm.includes('ตรวจเช็ครั่ว') ? 'ตรวจเช็ครั่ว' : '',
+          };
+          const recalculated = computeStandardPrice(payload);
+          if (Number.isFinite(recalculated) && recalculated > 0 && qtyN > 0) {
+            unitN = Number((recalculated / qtyN).toFixed(2));
           }
         }
       } catch (_) {}
@@ -16887,7 +16813,7 @@ function promoMatchesPayloadV2(promo, payload){
   if(Number.isFinite(mmax) && mmax !== null && mc > mmax) return false;
 
   if(String(payload.job_type||'').trim()==='ล้าง'){
-    if(!__isBlank(promo.wash_variant) && String(promo.wash_variant).trim() !== String(payload.wash_variant||'').trim()) return false;
+    if(!__isBlank(promo.wash_variant) && normalizerHelpers.normalizeWashVariantLabel(promo.wash_variant) !== normalizerHelpers.normalizeWashVariantLabel(payload.wash_variant)) return false;
   }
 
   return true;
@@ -18257,7 +18183,8 @@ function translateServiceItemNameEN(name){
 
     [/ล้างธรรมดา/g, 'Standard Wash'],
     [/ล้างพรีเมียม/g, 'Premium Wash'],
-    [/ล้างแขวนคอยน์/g, 'Ceiling Cassette Wash'],
+    [/ล้างแขวนคอยล์/g, 'Coil Hanging Wash'],
+    [/ล้างแขวนคอยน์/g, 'Coil Hanging Wash'],
     [/ล้างแบบตัดล้างใหญ่/g, 'Deep Clean (Major)'],
     [/ตัดล้างใหญ่/g, 'Deep Clean (Major)'],
     [/ล้างแบบตัดล้าง/g, 'Deep Clean (Disassemble)'],
@@ -24548,244 +24475,27 @@ function getNowBangkokMin() {
   return p.hour * 60 + p.minute;
 }
 function computeDurationMin(payload = {}, opts = {}) {
-  const src = opts.source || "unknown";
-  const job_type_raw = String(payload.job_type || payload.jobType || "").trim();
-  const job_type = job_type_raw;
-  const ac_type = String(payload.ac_type || payload.acType || "").trim();
-  const wash_variant = String(payload.wash_variant || payload.washVariant || "").trim();
-  const repair_variant = String(payload.repair_variant || payload.repairVariant || "").trim();
-  const machine_count = Math.max(1, Number(payload.machine_count || payload.machineCount || 1));
-  const admin_override = Number(payload.admin_override_duration_min || payload.adminOverrideDurationMin || 0);
-
-  let duration = 0;
-
-  // Helper: step-rate for "บ้านเดียวหลายเครื่อง"
-  // duration = first + (n-1)*next
-  const step = (first, next) => {
-    const n = machine_count;
-    if (n <= 1) return first;
-    return first + (n - 1) * next;
-  };
-
-  if (job_type === "ล้าง") {
-    // ✅ กติกาเวลางาน CWF (ตามที่ล็อคไว้)
-    if (ac_type === "ผนัง" || !ac_type) {
-      if (wash_variant === "ล้างพรีเมียม") duration = step(80, 50);
-      else if (wash_variant === "ล้างแขวนคอยน์") duration = step(120, 90);
-      else if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่" || wash_variant === "ล้างแบบตัดล้างใหญ่") duration = step(180, 120);
-      else duration = step(60, 40); // ล้างธรรมดา
-    } else {
-      // แอร์สี่ทิศทาง / แขวน / เปลือยใต้ฝ้า
-      duration = step(120, 90);
-    }
-  } else if (job_type === "ซ่อม") {
-    if (repair_variant === "ซ่อมเปลี่ยนอะไหล่") duration = admin_override > 0 ? admin_override : 0;
-    else duration = 60;
-  } else if (job_type === "ติดตั้ง") {
-    duration = admin_override > 0 ? admin_override : 0;
-  }
-
-  if (!Number.isFinite(duration) || duration <= 0) {
-    if (job_type === "ซ่อม" && repair_variant === "ซ่อมเปลี่ยนอะไหล่") return 0;
-    if (job_type === "ติดตั้ง") return 0;
-    duration = 60;
-  }
-
-  console.log("[computeDurationMin]", { src, job_type, ac_type, wash_variant, repair_variant, machine_count, duration });
-  return Math.round(duration);
+  return pricingHelpers.computeDurationMin(payload, opts);
 }
 
 function computeStandardPrice(payload = {}) {
-  const job_type = String(payload.job_type || "").trim();
-  const ac_type_raw = String(payload.ac_type || "").trim();
-  const ac_type = (ac_type_raw === "ใต้ฝ้า") ? "เปลือยใต้ฝ้า" : ac_type_raw;
-  const wash_variant = String(payload.wash_variant || "").trim();
-  const repair_variant = String(payload.repair_variant || "").trim();
-  const machine_count = Math.max(1, Number(payload.machine_count || 1));
-  const btu = Number(payload.btu || 0);
-
-  if (job_type === "ติดตั้ง") return 0;
-
-  if (job_type === "ซ่อม") {
-    if (repair_variant === "ตรวจเช็ครั่ว") return 1000;
-    return 700;
-  }
-
-  if (job_type !== "ล้าง") return 0;
-
-  const qty = machine_count;
-
-  if (ac_type === "ผนัง" || !ac_type) {
-    const tier18000 = Number.isFinite(btu) && btu >= 18000;
-    if (!tier18000) {
-      if (wash_variant === "ล้างพรีเมียม") return 900 * qty;
-      if (wash_variant === "ล้างแขวนคอยน์") return 1400 * qty;
-      if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่") return 2000 * qty;
-      return 600 * qty;
-    } else {
-      if (wash_variant === "ล้างพรีเมียม") return 1100 * qty;
-      if (wash_variant === "ล้างแขวนคอยน์") return 1700 * qty;
-      if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่") return 2300 * qty;
-      return 750 * qty;
-    }
-  }
-
-  if (ac_type === "สี่ทิศทาง") {
-    return 1500 * qty;
-  }
-
-  if (ac_type === "แขวน") {
-    return 1200 * qty;
-  }
-
-  if (ac_type === "เปลือยใต้ฝ้า") {
-    return 1200 * qty;
-  }
-
-  return 0;
+  return pricingHelpers.computeStandardPrice(payload);
 }
 
 function normalizeServicesFromPayload(payload = {}) {
-  const services = Array.isArray(payload.services) ? payload.services : null;
-  if (!services || !services.length) return null;
-  return services
-    .map((s) => ({
-      job_type: String(s.job_type || payload.job_type || "").trim() || String(payload.job_type || "").trim(),
-      ac_type: String(s.ac_type || "").trim(),
-      btu: Number(s.btu || 0),
-      machine_count: Math.max(1, Number(s.machine_count || 1)),
-      wash_variant: String(s.wash_variant || "").trim(),
-      repair_variant: String(s.repair_variant || "").trim(),
-      admin_override_duration_min: Number(s.admin_override_duration_min || payload.admin_override_duration_min || 0),
-      assigned_to: (s.assigned_to || s.assigned_technician_username || null) ? String(s.assigned_to || s.assigned_technician_username).trim() : null,
-      // IMPORTANT: keep allocations from admin-add-v2.js so server can split job_items per technician.
-      // Backward-compatible: accept both `allocations` and legacy `allocation`.
-      allocations: (() => {
-        const a = s && (s.allocations || s.allocation || null);
-        return (a && typeof a === 'object') ? a : null;
-      })(),
-    }))
-    .filter((s) => s.job_type && s.ac_type && Number.isFinite(s.btu) && s.btu > 0 && Number.isFinite(s.machine_count) && s.machine_count > 0);
+  return pricingHelpers.normalizeServicesFromPayload(payload);
 }
 
 function computeDurationMinMulti(payload = {}, opts = {}) {
-  const services = normalizeServicesFromPayload(payload);
-  if (!services) return computeDurationMin(payload, opts);
-
-  // If services are assigned to multiple technicians and parallel mode is on,
-  // compute duration as max(total duration per tech) to reflect "ทำพร้อมกัน".
-  // IMPORTANT (CWF Spec): Availability/Collision must be conservative.
-  // - Do NOT reduce duration by team/crew/parallel tricks when deciding "ว่างจริง".
-  // - We still keep parallel_by_tech for legacy UI preview, but callers can force conservative.
-  const conservative = opts && opts.conservative === true;
-  const parallel = !conservative && payload && (payload.parallel_by_tech === true || payload.parallel_by_tech === "true" || payload.parallel_by_tech === 1 || payload.parallel_by_tech === "1");
-  const byTech = new Map();
-  let total = 0;
-
-  for (const s of services) {
-    if (s.job_type === "ล้าง" && (s.ac_type === "ผนัง" || !s.ac_type) && !s.wash_variant) s.wash_variant = "ล้างธรรมดา";
-    const d = computeDurationMin(s, opts);
-    if (d <= 0) return 0;
-    total += d;
-
-    const mc = Math.max(1, Number(s.machine_count || 1));
-    const allocations = s && (s.allocations || s.allocation || null);
-    if (allocations && typeof allocations === "object") {
-      // distribute line duration proportionally by machine count per tech
-      const perMachine = d / mc;
-      for (const [tech, qty] of Object.entries(allocations)) {
-        const q = Math.max(0, Number(qty || 0));
-        if (!tech || q <= 0) continue;
-        byTech.set(tech, (byTech.get(tech) || 0) + perMachine * q);
-      }
-    } else {
-      const tech = (s.assigned_to || s.assigned_technician_username || "").toString().trim();
-      if (tech) byTech.set(tech, (byTech.get(tech) || 0) + d);
-    }
-  }
-
-  const distinctTech = byTech.size;
-  if (parallel && distinctTech >= 2) {
-    let mx = 0;
-    for (const v of byTech.values()) mx = Math.max(mx, Number(v || 0));
-    console.log("[computeDurationMinMulti]", { src: opts.source || "unknown", lines: services.length, parallel: true, distinctTech, max: mx, sum: total });
-    return Math.round(mx);
-  }
-
-  console.log("[computeDurationMinMulti]", { src: opts.source || "unknown", lines: services.length, parallel: false, conservative, total });
-  return Math.round(total);
+  return pricingHelpers.computeDurationMinMulti(payload, opts);
 }
 
 function computeStandardPriceMulti(payload = {}) {
-  const services = normalizeServicesFromPayload(payload);
-  if (!services) return computeStandardPrice(payload);
-  let total = 0;
-  for (const s of services) {
-    if (s.job_type === "ล้าง" && (s.ac_type === "ผนัง" || !s.ac_type) && !s.wash_variant) s.wash_variant = "ล้างธรรมดา";
-    total += Number(computeStandardPrice(s) || 0);
-  }
-  return Number(total || 0);
+  return pricingHelpers.computeStandardPriceMulti(payload);
 }
 
 function buildServiceLineItemsFromPayload(payload = {}) {
-  const services = normalizeServicesFromPayload(payload);
-  if (!services) return [];
-  const items = [];
-  for (const s of services) {
-    const linePrice = Number(computeStandardPrice(s) || 0);
-    const mc = Math.max(1, Number(s.machine_count || 1));
-    const labelParts = [];
-    // Build a user-friendly service label per job type (backward compatible)
-    if (s.job_type === "ซ่อม") {
-      labelParts.push(`ซ่อมแอร์${s.ac_type || ""}`.trim());
-      if (s.repair_variant) labelParts.push(s.repair_variant);
-    } else if (s.job_type === "ติดตั้ง") {
-      labelParts.push(`ติดตั้งแอร์${s.ac_type || ""}`.trim());
-    } else {
-      // default: wash
-      labelParts.push(`ล้างแอร์${s.ac_type || ""}`.trim());
-      if (s.ac_type === "ผนัง") labelParts.push(s.wash_variant || "ล้างธรรมดา");
-    }
-    labelParts.push(`${Number(s.btu || 0)} BTU`);
-    labelParts.push(`${Number(s.machine_count || 1)} เครื่อง`);
-    const item_name = labelParts.join(" • ");
-    const allocations = s && (s.allocations || s.allocation || null);
-    if (allocations && typeof allocations === "object") {
-      // Split by technician (per-machine), but keep the base item_name stable.
-      // The assignee is stored in `assigned_technician_username` (so admin edit UI can show it clearly).
-      const perMachine = (mc > 0) ? (linePrice / mc) : linePrice;
-      for (const [tech, qty] of Object.entries(allocations)) {
-        const q = Math.max(0, Number(qty || 0));
-        if (!tech || q <= 0) continue;
-        // Keep numeric precision (do not over-round; NUMERIC column supports decimals).
-        const unit = Number((Number(perMachine) || 0).toFixed(2));
-        items.push({
-          item_id: null,
-          item_name,
-          qty: q,
-          unit_price: unit,
-          line_total: unit * q,
-          is_service: true,
-          assigned_technician_username: tech,
-        });
-      }
-    } else {
-      // Single assignee or unallocated line: store per-machine pricing for clarity in admin edit/history.
-      // This ensures qty reflects machine_count and total remains correct.
-      const perMachine = (mc > 0) ? (linePrice / mc) : linePrice;
-      const unit = Number((Number(perMachine) || 0).toFixed(2));
-      items.push({
-        item_id: null,
-        item_name,
-        qty: mc,
-        unit_price: unit,
-        line_total: unit * mc,
-        is_service: true,
-        assigned_technician_username: (s.assigned_to || s.assigned_technician_username || null),
-      });
-    }
-  }
-  return items;
+  return pricingHelpers.buildServiceLineItemsFromPayload(payload);
 }
 
 

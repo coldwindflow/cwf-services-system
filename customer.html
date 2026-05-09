@@ -859,6 +859,15 @@ function getSelectedPromoCustomer() {
 function promoMatchesPayloadCustomer(promo, payload){
   if(!promo) return false;
   const isBlank = (v)=> v === undefined || v === null || String(v).trim()==='';
+  const normWash = (v)=>{
+    const s = String(v || '').trim();
+    const lower = s.toLowerCase();
+    if (s.includes('แขวนคอย') || lower.includes('coil')) return 'ล้างแขวนคอยล์';
+    if (s.includes('พรีเมียม') || lower.includes('premium')) return 'ล้างพรีเมียม';
+    if (s.includes('ตัดล้าง') || s.includes('ล้างใหญ่') || lower.includes('overhaul')) return 'ล้างแบบตัดล้าง';
+    if (s.includes('ธรรมดา') || s.includes('ปกติ') || lower.includes('normal')) return 'ล้างธรรมดา';
+    return s;
+  };
 
   if(!isBlank(promo.job_type) && String(promo.job_type).trim() !== String(payload.job_type||'').trim()) return false;
   if(!isBlank(promo.ac_type) && String(promo.ac_type).trim() !== String(payload.ac_type||'').trim()) return false;
@@ -876,7 +885,7 @@ function promoMatchesPayloadCustomer(promo, payload){
   if(Number.isFinite(mmax) && mmax !== null && mc > mmax) return false;
 
   if(String(payload.job_type||'').trim()==='ล้าง'){
-    if(!isBlank(promo.wash_variant) && String(promo.wash_variant).trim() !== String(payload.wash_variant||'').trim()) return false;
+    if(!isBlank(promo.wash_variant) && normWash(promo.wash_variant) !== normWash(payload.wash_variant)) return false;
   }
 
   return true;
@@ -1031,7 +1040,7 @@ function updateWashOptionsByAcType(){
     wash.innerHTML = `
       <option value="ล้างธรรมดา">ล้างธรรมดา</option>
       <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
-      <option value="ล้างแขวนคอยน์">ล้างแบบแขวนคอยล์</option>
+      <option value="ล้างแขวนคอยล์">ล้างแบบแขวนคอยล์</option>
       <option value="ล้างแบบตัดล้าง">ตัดล้างใหญ่</option>
     `.trim();
     if(prev && Array.from(wash.options).some(o=>o.value===prev)) wash.value = prev;

@@ -141,6 +141,7 @@ function resetCustomerLookupUI(message){
   state.customer_lookup = { query: "", data: null };
   const btn = el("btnUseLatestCustomerData");
   const hint = el("customer_lookup_hint");
+  if (el("customer_id")) el("customer_id").value = "";
   if (btn) btn.style.display = "none";
   if (hint) hint.textContent = message || "กรอกเบอร์ลูกค้าเก่าแล้วออกจากช่องนี้ ระบบจะค้นหาข้อมูลล่าสุดให้ก่อน โดยยังไม่เติมค่าให้อัตโนมัติ";
 }
@@ -236,8 +237,14 @@ function applyLatestCustomerData(){
     showToast("ยังไม่มีข้อมูลลูกค้าเก่าที่พร้อมใช้", "error");
     return;
   }
+  const currentQuery = normalizePhoneLookupClient(el("customer_phone")?.value || "");
+  if (state.customer_lookup?.query && currentQuery !== state.customer_lookup.query) {
+    showToast("เบอร์โทรเปลี่ยนแล้ว กรุณาค้นหาข้อมูลลูกค้าอีกครั้ง", "error");
+    return;
+  }
   if (data.customer_name) el("customer_name").value = data.customer_name;
   if (data.customer_phone) el("customer_phone").value = data.customer_phone;
+  if (el("customer_id")) el("customer_id").value = data.customer_id || "";
   if (data.address_text) el("address_text").value = data.address_text;
   if (data.maps_url) el("maps_url").value = data.maps_url;
   try { el("address_text").dispatchEvent(new Event("input", { bubbles: true })); } catch(e){}
@@ -2666,6 +2673,7 @@ async function submitBooking() {
   const payload = Object.assign({}, getPayloadV2(), {
     customer_name: name,
     customer_phone: (el("customer_phone").value || "").trim(),
+    customer_id: (el("customer_id")?.value || "").trim() || null,
     job_type,
     // Always send a Bangkok-offset ISO string to the backend (avoid UTC shift).
     appointment_datetime: (uiMode === 'urgent'

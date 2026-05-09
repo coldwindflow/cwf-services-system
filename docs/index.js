@@ -18385,7 +18385,8 @@ function translateServiceItemNameEN(name){
 
     [/ล้างธรรมดา/g, 'Standard Wash'],
     [/ล้างพรีเมียม/g, 'Premium Wash'],
-    [/ล้างแขวนคอยน์/g, 'Ceiling Cassette Wash'],
+    [/ล้างแขวนคอยล์/g, 'Coil Hanging Wash'],
+    [/ล้างแขวนคอยน์/g, 'Coil Hanging Wash'],
     [/ล้างแบบตัดล้างใหญ่/g, 'Deep Clean (Major)'],
     [/ตัดล้างใหญ่/g, 'Deep Clean (Major)'],
     [/ล้างแบบตัดล้าง/g, 'Deep Clean (Disassemble)'],
