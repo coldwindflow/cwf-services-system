@@ -2124,9 +2124,20 @@ function logout(){
         techControlCard.style.display = (k0 === 'new') ? '' : 'none';
       }
 
-      // lazy load income periods
+      // lazy load income data only when the user opens the Income tab.
+      // This keeps the technician home screen fast and avoids duplicate income API calls.
       if (k0 === 'income') {
         try { if (typeof window.loadTechPayoutPeriods === 'function') window.loadTechPayoutPeriods(); } catch(e) {}
+        try { if (typeof window.loadIncomeOverview === 'function') window.loadIncomeOverview(); } catch(e) {}
+        try {
+          const list = document.getElementById('techIncomeDayList');
+          const picker = document.getElementById('incomeDatePicker');
+          const empty = !list || !String(list.innerHTML || '').trim();
+          if (empty && typeof window.loadIncomeDayDetail === 'function') {
+            const d = (picker && picker.value) ? picker.value : new Date(Date.now() + 7*60*60*1000).toISOString().slice(0,10);
+            window.loadIncomeDayDetail(d);
+          }
+        } catch(e) {}
       }
 
       if (persist) {

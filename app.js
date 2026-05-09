@@ -1021,6 +1021,73 @@ function _bestEffortUsername() {
 }
 
 
+const CWF_INCOME_CACHE_KEY = '__cwf_income_cache_v10_3__';
+const CWF_OLD_INCOME_CACHE_KEYS = ['__cwf_income_cache__','__cwf_income_cache_v9__','__cwf_income_cache_v10__','__cwf_income_cache_v10_2__'];
+
+function _incomeCacheMeta(){
+  const date = _bkkYmdNow();
+  return {
+    username: String(_bestEffortUsername() || '').trim(),
+    date,
+    month: date.slice(0, 7),
+  };
+}
+
+function _isValidIncomeCache(c){
+  try{
+    if (!c || typeof c !== 'object') return false;
+    const m = _incomeCacheMeta();
+    if (String(c.date || '') !== m.date) return false;
+    if (String(c.month || '') !== m.month) return false;
+    if (m.username && String(c.username || '') && String(c.username || '') !== m.username) return false;
+    const ageMs = Date.now() - Number(c.ts || 0);
+    return Number.isFinite(ageMs) && ageMs >= 0 && ageMs < 10 * 60 * 1000;
+  }catch{ return false; }
+}
+
+function _readIncomeCache(){
+  try{
+    const c = JSON.parse(localStorage.getItem(CWF_INCOME_CACHE_KEY) || 'null');
+    return _isValidIncomeCache(c) ? c : null;
+  }catch{ return null; }
+}
+
+function _writeIncomeCache(data){
+  try{
+    const m = _incomeCacheMeta();
+    localStorage.setItem(CWF_INCOME_CACHE_KEY, JSON.stringify({
+      ts: Date.now(),
+      username: String(data?.username || m.username || '').trim(),
+      date: String(data?.date || m.date),
+      month: String(data?.month || m.month),
+      day_total: Number(data?.day_total||0),
+      month_total: Number(data?.month_total||0),
+      all_total: Number(data?.all_total||0),
+      payout_month_total: Number((data?.monthly_income_display_amount ?? data?.payout_month_total) || 0),
+      monthly_income_display_amount: Number((data?.monthly_income_display_amount ?? data?.payout_month_total) || 0),
+      monthly_income_display_label: String(data?.monthly_income_display_label || data?.payout_month || ''),
+      work_summary: data?.work_summary || null,
+      deposit_target_amount: Number(data?.deposit_target_amount||0),
+      deposit_collected_total: Number(data?.deposit_collected_total||0),
+      deposit_remaining_amount: Number(data?.deposit_remaining_amount||0),
+      deposit_is_required: data?.deposit_is_required !== false,
+      true_outstanding_amount: Number(data?.true_outstanding_amount||data?.pending_payout_remaining_total||0)
+    }));
+    for (const k of CWF_OLD_INCOME_CACHE_KEYS) localStorage.removeItem(k);
+  }catch{}
+}
+
+function _renderIncomeSummaryValues(data){
+  const d = data || {};
+  if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(d.day_total);
+  if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(d.month_total);
+  if (incomeAllEl) incomeAllEl.textContent = formatBaht(d.all_total);
+  if (incomeDaily2El) incomeDaily2El.textContent = formatBaht(d.day_total);
+  if (incomeMonth2El) incomeMonth2El.textContent = formatBaht(d.month_total);
+  if (incomeAll2El) incomeAll2El.textContent = formatBaht(d.all_total);
+}
+
+
 function escapeHTML(s){
   return String(s ?? '').replace(/[&<>"']/g, (c)=>({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -1316,52 +1383,21 @@ function renderTechWorkSummary(summary){
 async function loadIncomeSummary() {
   if (!incomeDailyEl && !incomeMonthEl && !incomeAllEl && !incomeDaily2El && !incomeMonth2El && !incomeAll2El) return; // UI ไม่ได้มีส่วนนี้
   try {
-    // Fail-open for PWA/webview that loses cookies: also send ?username=
-    const u = _bestEffortUsername();
-    const url = `${API_BASE}/tech/income_summary${u ? `?username=${encodeURIComponent(u)}&` : '?'}v=contract-v10-2`;
-    try { localStorage.removeItem('__cwf_income_cache__'); localStorage.removeItem('__cwf_income_cache_v9__'); localStorage.removeItem('__cwf_income_cache_v10_2__'); localStorage.removeItem('__cwf_income_cache_v10__'); } catch {}
-    const res = await fetch(url, { credentials: 'include', cache: 'no-store' });
+    const res = await fetch(`${API_BASE}/tech/income_summary?v=contract-v10-3`, { credentials: 'include', cache: 'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
 
-    // cache last good values (so UI won't look "empty" when temporary failures happen)
-    try {
-      localStorage.setItem('__cwf_income_cache_v10_2__', JSON.stringify({
-        ts: Date.now(),
-        day_total: Number(data.day_total||0),
-        month_total: Number(data.month_total||0),
-        all_total: Number(data.all_total||0),
-        payout_month_total: Number((data.monthly_income_display_amount ?? data.payout_month_total) || 0),
-        monthly_income_display_amount: Number((data.monthly_income_display_amount ?? data.payout_month_total) || 0),
-        monthly_income_display_label: String(data.monthly_income_display_label || data.payout_month || ''),
-        work_summary: data.work_summary || null,
-        deposit_target_amount: Number(data.deposit_target_amount||0),
-        deposit_collected_total: Number(data.deposit_collected_total||0),
-        deposit_remaining_amount: Number(data.deposit_remaining_amount||0),
-        deposit_is_required: data.deposit_is_required !== false,
-        true_outstanding_amount: Number(data.true_outstanding_amount||data.pending_payout_remaining_total||0)
-      }));
-    } catch {}
-
-    if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(data.day_total);
-    if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(data.month_total);
-    if (incomeAllEl) incomeAllEl.textContent = formatBaht(data.all_total);
-    if (incomeDaily2El) incomeDaily2El.textContent = formatBaht(data.day_total);
-    if (incomeMonth2El) incomeMonth2El.textContent = formatBaht(data.month_total);
-    if (incomeAll2El) incomeAll2El.textContent = formatBaht(data.all_total);
+    // cache last good values only with username/date/month metadata.
+    _writeIncomeCache(data);
+    _renderIncomeSummaryValues(data);
     renderTechWorkSummary(data.work_summary);
     renderDepositRemaining(data);
   } catch (e) {
     // fail-open (ไม่ให้หน้า tech พัง) + show cached value if available
     try {
-      const c = JSON.parse(localStorage.getItem('__cwf_income_cache_v10_2__') || 'null');
-      if (c && typeof c === 'object') {
-        if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(c.day_total);
-        if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(c.month_total);
-        if (incomeAllEl) incomeAllEl.textContent = formatBaht(c.all_total);
-        if (incomeDaily2El) incomeDaily2El.textContent = formatBaht(c.day_total);
-        if (incomeMonth2El) incomeMonth2El.textContent = formatBaht(c.month_total);
-        if (incomeAll2El) incomeAll2El.textContent = formatBaht(c.all_total);
+      const c = _readIncomeCache();
+      if (c) {
+        _renderIncomeSummaryValues(c);
         renderTechWorkSummary(c.work_summary);
         renderDepositRemaining(c);
         return;
@@ -1388,19 +1424,30 @@ async function loadIncomeSummary() {
 
 async function loadIncomeTodayMonthFast(){
   // ถ้าไม่มีการ์ดใหม่ ให้ fail-open (ไม่พังหน้า)
-  if (!incomeTodayValEl && !incomeDaily2El && !incomeMonth2El) return;
+  if (!incomeTodayValEl && !incomeDailyEl && !incomeDaily2El && !incomeMonth2El) return;
   try{
-    const u = _bestEffortUsername();
-    const url = `${API_BASE}/tech/income_today_month${u ? `?username=${encodeURIComponent(u)}&` : '?'}v=contract-v10-2`;
-    const res = await fetch(url, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/income_today_month?v=contract-v10-3`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     if (incomeTodayValEl) incomeTodayValEl.textContent = formatBaht(data.day_total||0);
-    // sync legacy hidden ids
+    // sync top profile chip + legacy hidden ids from the same fast source
+    if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(data.day_total||0);
     if (incomeDaily2El) incomeDaily2El.textContent = formatBaht(data.day_total||0);
+    if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(data.month_total||0);
     if (incomeMonth2El) incomeMonth2El.textContent = formatBaht(data.month_total||0);
+    _writeIncomeCache({ ...(_readIncomeCache() || {}), ...data });
   }catch(e){
+    const c = _readIncomeCache();
+    if (c) {
+      if (incomeTodayValEl) incomeTodayValEl.textContent = formatBaht(c.day_total||0);
+      if (incomeDailyEl) incomeDailyEl.textContent = formatBaht(c.day_total||0);
+      if (incomeDaily2El) incomeDaily2El.textContent = formatBaht(c.day_total||0);
+      if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(c.month_total||0);
+      if (incomeMonth2El) incomeMonth2El.textContent = formatBaht(c.month_total||0);
+      return;
+    }
     if (incomeTodayValEl) incomeTodayValEl.textContent = '-';
+    if (incomeDailyEl) incomeDailyEl.textContent = '-';
   }
 }
 
@@ -1431,7 +1478,7 @@ async function loadOutstandingTotal(){
   }catch(e){
     try {
       await loadIncomeSummary();
-      const c = JSON.parse(localStorage.getItem('__cwf_income_cache_v10_2__')||'null');
+      const c = _readIncomeCache();
       if (c && Number.isFinite(Number(c.payout_month_total ?? c.true_outstanding_amount))) {
         incomeOutstandingValEl.textContent = formatBaht(Math.max(0, Number((c.monthly_income_display_amount ?? c.payout_month_total ?? c.true_outstanding_amount) || 0)));
         renderTechWorkSummary(c.work_summary);
@@ -2037,8 +2084,10 @@ async function idbDelete(photoId) {
 // 🔁 REFRESH LOOP
 // =======================================
 loadProfile();
-loadIncomeSummary();
+// Load lightweight income cards first so the technician page feels fast.
+// The full lifetime summary is heavier, so run it shortly after initial paint.
 loadIncomeOverview();
+setTimeout(() => { try { loadIncomeSummary(); } catch(e) {} }, 1800);
 
 // ✅ รายละเอียดรายวัน (วันนี้ทำอะไรไป)
 try{
@@ -2058,8 +2107,12 @@ try{
       if (!v) setUpcomingFilter("");
     });
   }
-  // โหลดของวันนี้อัตโนมัติครั้งแรก (กันช่างต้องกดหลายที)
-  if (techIncomeDayListEl) loadIncomeDayDetail(_bkkYmdNow());
+  // โหลดรายละเอียดรายวันเฉพาะเมื่อเริ่มจากแท็บรายได้ เพื่อลดงานตอนเปิดหน้าแรก
+  const shouldPreloadIncomeDay = (()=>{
+    try { return location.hash === '#income' || localStorage.getItem('cwf_tech_active_tab') === 'income'; } catch(e){ return false; }
+  })();
+  if (techIncomeDayListEl && shouldPreloadIncomeDay) setTimeout(() => loadIncomeDayDetail(_bkkYmdNow()), 700);
+  else if (techIncomeDayHintEl) techIncomeDayHintEl.textContent = 'เลือกวันที่หรือกด “วันนี้” เพื่อดูรายละเอียดรายได้';
 
   if (btnReloadIncomeOverviewEl) btnReloadIncomeOverviewEl.addEventListener('click', async ()=>{
     await loadIncomeOverview();
@@ -2099,14 +2152,14 @@ loadOffers();
 loadJobs();
 setInterval(() => loadOffers(), 15000);
 setInterval(() => loadJobs(), 45000); // keep active/history in sync without making technician app feel heavy
-setInterval(() => loadIncomeSummary(), 60000);
-setInterval(() => loadIncomeOverview(), 90000);
+setInterval(() => loadIncomeSummary(), 5 * 60 * 1000);
+setInterval(() => loadIncomeOverview(), 90 * 1000);
 
 // ✅ มือถือ: กดโทรแล้วกลับมา/สลับแอพ -> รีเฟรชสถานะทันที
 window.addEventListener("focus", () => {
   try { loadJobs(); } catch(e) {}
-  try { loadIncomeSummary(); } catch(e) {}
   try { loadIncomeOverview(); } catch(e) {}
+  setTimeout(() => { try { loadIncomeSummary(); } catch(e) {} }, 1200);
 });
 
 function _updateIncomeChipDom(jobId, income) {
@@ -2204,8 +2257,8 @@ async function fetchTechnicianIncomeDetail(jobId, storeKey) {
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible") {
     try { loadJobs(); } catch(e) {}
-    try { loadIncomeSummary(); } catch(e) {}
     try { loadIncomeOverview(); } catch(e) {}
+    setTimeout(() => { try { loadIncomeSummary(); } catch(e) {} }, 1200);
   }
 });
 

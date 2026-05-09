@@ -10093,23 +10093,12 @@ app.get('/tech/completed_count_summary', async (req, res) => {
   }
 });
 
-app.get('/tech/income_summary', async (req, res) => {
+app.get('/tech/income_summary', requireTechnicianSession, async (req, res) => {
   try {
-    let tech = String(req.effective?.username || '').trim();
-    if (!tech) {
-      const qUser = String(req.query.username || '').trim();
-      if (!qUser) return res.status(401).json({ error: 'UNAUTHORIZED' });
-      // Validate that this username is a real technician account (fail-closed).
-      const vr = await pool.query(
-        `SELECT username
-         FROM public.technician_profiles
-         WHERE username=$1
-         LIMIT 1`,
-        [qUser]
-      );
-      if (!vr.rows || !vr.rows.length) return res.status(403).json({ error: 'FORBIDDEN' });
-      tech = qUser;
-    }
+    // Always use the authenticated/effective technician from the server session.
+    // Do not trust ?username from localStorage because stale PWA storage can show another technician's income.
+    const tech = String(req.auth?.username || req.effective?.username || '').trim();
+    if (!tech) return res.status(401).json({ ok:false, error: 'UNAUTHORIZED' });
 
     const qDate = parseDateYMD(req.query.date);
     const todayKey = toBangkokDateKey(new Date());
@@ -10217,20 +10206,12 @@ all_total += inc;
  * - ยังใช้ engine เดียวกับงวด (step ladder) ผ่าน _buildPayoutLinesForJob
  * GET /tech/income_today_month
  */
-app.get('/tech/income_today_month', async (req, res) => {
+app.get('/tech/income_today_month', requireTechnicianSession, async (req, res) => {
   try {
-    // fail-open like /tech/income_summary (some PWA lose cookie)
-    let tech = String(req.effective?.username || '').trim();
-    if (!tech) {
-      const qUser = String(req.query.username || '').trim();
-      if (!qUser) return res.status(401).json({ ok:false, error: 'UNAUTHORIZED' });
-      const vr = await pool.query(
-        `SELECT username FROM public.technician_profiles WHERE username=$1 LIMIT 1`,
-        [qUser]
-      );
-      if (!vr.rows || !vr.rows.length) return res.status(403).json({ ok:false, error: 'FORBIDDEN' });
-      tech = qUser;
-    }
+    // Always use the authenticated/effective technician from the server session.
+    // This prevents wrong "today income" when localStorage has a stale username.
+    const tech = String(req.auth?.username || req.effective?.username || '').trim();
+    if (!tech) return res.status(401).json({ ok:false, error: 'UNAUTHORIZED' });
 
     const nowBkk = _bkkNow();
     const { y, m, d } = _bkkYmd(nowBkk);
@@ -10286,7 +10267,9 @@ app.get('/tech/income_today_month', async (req, res) => {
       }
     }
 
-    return res.json({ ok:true, username: tech, day_total, month_total, jobs_count: rows.length, computed_jobs: computed, capped: rows.length > HARD_CAP });
+    const dateKey = `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const monthKey = `${y}-${String(m).padStart(2, '0')}`;
+    return res.json({ ok:true, username: tech, date: dateKey, month: monthKey, day_total, month_total, jobs_count: rows.length, computed_jobs: computed, capped: rows.length > HARD_CAP });
   } catch (e) {
     console.error('GET /tech/income_today_month', e);
     return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
