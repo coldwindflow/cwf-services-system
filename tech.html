@@ -1921,29 +1921,52 @@
   </div>
 
   
-  <style id="cwf-fix33-safe-tech-ui-polish">
+  <style id="cwf-fix34-premium-tech-home-ui">
     /*
-      CWF fix33: safe UI polish only.
-      This block does not control tab visibility or page switching.
+      CWF fix34: premium technician home UI only.
+      Safe scope: top accept card, profile card, stats, more button, offer title.
+      No tab visibility / page switching / backend logic.
     */
 
     #techControlCard.tech-control-card{
-      margin:8px 0 10px!important;
-      padding:8px!important;
-      border-radius:24px!important;
+      margin:8px 0 12px!important;
+      padding:10px!important;
+      border-radius:28px!important;
+      background:
+        radial-gradient(circle at 86% 8%, rgba(255,215,64,.20) 0 54px, transparent 112px),
+        radial-gradient(circle at 8% 18%, rgba(20,199,232,.16) 0 48px, transparent 120px),
+        linear-gradient(135deg, rgba(255,255,255,.94) 0%, rgba(246,250,255,.90) 100%)!important;
+      border:1px solid rgba(255,255,255,.78)!important;
+      box-shadow:0 18px 42px rgba(8,36,91,.16), inset 0 1px 0 rgba(255,255,255,.82)!important;
+      backdrop-filter:blur(10px)!important;
     }
     #techControlCard .tech-ctrl-row{
-      gap:8px!important;
-      grid-template-columns:minmax(112px,.80fr) minmax(0,1.20fr)!important;
+      gap:10px!important;
+      grid-template-columns:minmax(112px,.78fr) minmax(0,1.22fr)!important;
     }
     #techControlCard .accept-btn,
     #techControlCard .zone-select{
-      min-height:46px!important;
-      border-radius:18px!important;
+      min-height:48px!important;
+      border-radius:20px!important;
       font-size:14px!important;
+      font-weight:1100!important;
+    }
+    #techControlCard .accept-btn.ready{
+      background:
+        radial-gradient(circle at 20% 30%, rgba(255,255,255,.30), transparent 36%),
+        linear-gradient(135deg,#10b964 0%,#0b8f53 100%)!important;
+      color:#fff!important;
+      border-color:rgba(255,255,255,.35)!important;
+      box-shadow:0 14px 30px rgba(16,185,100,.28), inset 0 1px 0 rgba(255,255,255,.22)!important;
     }
     #techControlCard .zone-wrap::after{
       content:"พื้นที่ประจำ"!important;
+      letter-spacing:.02em!important;
+    }
+    #techControlCard .zone-select{
+      background:linear-gradient(145deg,#ffffff 0%,#f4f8ff 100%)!important;
+      border:1px solid rgba(8,36,91,.12)!important;
+      box-shadow:0 12px 26px rgba(8,36,91,.10), inset 0 1px 0 rgba(255,255,255,.88)!important;
     }
     #techControlCard .zone-action-btn span{
       max-width:100%!important;
@@ -1952,70 +1975,187 @@
       white-space:nowrap!important;
     }
     #acceptStatusText.accept-hint{
-      display:none!important;
-      margin:0!important;
-      padding:0!important;
-      min-height:0!important;
+      margin-top:8px!important;
+      border-radius:18px!important;
+      background:rgba(255,255,255,.70)!important;
+      border-color:rgba(8,36,91,.10)!important;
     }
 
+    #sec-new.card{
+      background:
+        radial-gradient(circle at 91% 0%, rgba(255,211,42,.13) 0 78px, transparent 165px),
+        radial-gradient(circle at 8% 10%, rgba(22,185,242,.12) 0 86px, transparent 190px),
+        linear-gradient(180deg,#ffffff 0%,#f8fbff 52%,#eef7ff 100%)!important;
+      border:1px solid rgba(255,255,255,.88)!important;
+      box-shadow:0 24px 56px rgba(8,36,91,.16), inset 0 1px 0 rgba(255,255,255,.78)!important;
+    }
+    #sec-new>h2:first-child{
+      color:#061b4f!important;
+      -webkit-text-fill-color:initial!important;
+      background:none!important;
+      text-shadow:0 2px 0 rgba(255,255,255,.80)!important;
+    }
+
+    /* Gear: icon-only, still clickable via the original button hit area */
     #sec-new .profile-settings-icon{
-      width:42px!important;
-      height:42px!important;
-      border-radius:15px!important;
-      background:linear-gradient(135deg,#fff36a 0%,#f4c400 55%,#f59e0b 100%)!important;
-      border:1px solid rgba(255,255,255,.72)!important;
-      box-shadow:0 12px 26px rgba(244,196,0,.30), inset 0 1px 0 rgba(255,255,255,.52)!important;
+      width:44px!important;
+      height:44px!important;
+      right:18px!important;
+      top:18px!important;
+      border:0!important;
+      border-radius:999px!important;
+      background:transparent!important;
+      box-shadow:none!important;
+      color:#f4c400!important;
+      -webkit-text-fill-color:#f4c400!important;
+      font-size:28px!important;
+      line-height:1!important;
+      text-shadow:
+        0 2px 0 rgba(255,255,255,.88),
+        0 0 14px rgba(244,196,0,.55),
+        0 10px 22px rgba(8,36,91,.20)!important;
+      outline:none!important;
+      overflow:visible!important;
+      z-index:5!important;
+      cursor:pointer!important;
+      -webkit-tap-highlight-color:transparent!important;
+    }
+    #sec-new .profile-settings-icon::before{
+      content:""!important;
+      position:absolute!important;
+      inset:-8px!important;
+      border-radius:999px!important;
+      background:transparent!important;
+    }
+    #sec-new .profile-settings-icon:active{
+      transform:scale(.92)!important;
+      filter:brightness(1.08)!important;
+    }
+
+    #sec-new .profile-compact{
+      gap:13px!important;
     }
     #sec-new .profile-compact .left{
-      border-radius:22px!important;
-      padding:10px!important;
-      background:linear-gradient(135deg,rgba(8,36,91,.96) 0%,rgba(11,86,216,.88) 58%,rgba(22,185,242,.76) 100%)!important;
-      border:1px solid rgba(255,255,255,.26)!important;
-      box-shadow:0 14px 28px rgba(8,36,91,.16), inset 0 1px 0 rgba(255,255,255,.18)!important;
+      position:relative!important;
+      overflow:hidden!important;
+      border-radius:26px!important;
+      padding:12px!important;
+      background:
+        radial-gradient(circle at 88% 12%, rgba(255,211,42,.18) 0 48px, transparent 115px),
+        linear-gradient(135deg,#061b4f 0%,#0b3f9c 46%,#13bde2 100%)!important;
+      border:1px solid rgba(255,255,255,.32)!important;
+      box-shadow:
+        0 18px 38px rgba(8,36,91,.22),
+        inset 0 1px 0 rgba(255,255,255,.20)!important;
     }
-    #sec-new .profile-compact .left .name,
-    #sec-new .profile-compact .left .code{
+    #sec-new .profile-compact .left::after{
+      content:""!important;
+      position:absolute!important;
+      left:0!important;
+      right:0!important;
+      bottom:0!important;
+      height:3px!important;
+      background:linear-gradient(90deg,#f4c400 0%,#17c8e8 48%,#2d74ff 100%)!important;
+      opacity:.95!important;
+    }
+    #sec-new .profile-compact .meta .name{
       color:#fff!important;
       -webkit-text-fill-color:#fff!important;
-      text-shadow:0 2px 10px rgba(0,0,0,.24)!important;
+      text-shadow:0 3px 14px rgba(0,0,0,.28)!important;
+      letter-spacing:-.04em!important;
     }
-    #sec-new .profile-compact .left .code{
+    #sec-new .profile-compact .meta .code{
       color:rgba(255,255,255,.86)!important;
       -webkit-text-fill-color:rgba(255,255,255,.86)!important;
+      text-shadow:0 2px 10px rgba(0,0,0,.22)!important;
     }
+
+    /* Profile photo: rounded rectangle, not circle */
     #sec-new .tech-avatar{
-      border-color:#f4c400!important;
-      box-shadow:0 12px 24px rgba(0,0,0,.22),0 0 0 5px rgba(244,196,0,.16)!important;
+      width:74px!important;
+      height:74px!important;
+      border-radius:22px!important;
+      object-fit:cover!important;
+      border:3px solid #f4c400!important;
+      background:#fff!important;
+      box-shadow:
+        0 14px 26px rgba(0,0,0,.26),
+        0 0 0 5px rgba(255,255,255,.16),
+        0 0 0 7px rgba(244,196,0,.12)!important;
+      flex:0 0 74px!important;
+    }
+
+    #sec-new .profile-compact .chips{
+      gap:8px!important;
     }
     #sec-new .chipStat{
-      min-height:66px!important;
-      border-radius:18px!important;
-      box-shadow:0 12px 24px rgba(8,36,91,.10), inset 0 1px 0 rgba(255,255,255,.70)!important;
+      min-height:72px!important;
+      border-radius:20px!important;
+      border:1px solid rgba(255,255,255,.70)!important;
+      box-shadow:0 16px 32px rgba(8,36,91,.13), inset 0 1px 0 rgba(255,255,255,.85)!important;
+    }
+    #sec-new .chipStat .k{
+      font-size:10px!important;
+      font-weight:1150!important;
+      color:rgba(6,27,79,.70)!important;
+    }
+    #sec-new .chipStat .v{
+      color:#061b4f!important;
+      font-weight:1200!important;
     }
     #sec-new .chipStat.income{
-      background:linear-gradient(155deg,#dbfff1 0%,#ffffff 52%,#c9ffe7 100%)!important;
-      border-color:rgba(22,163,74,.32)!important;
+      background:
+        radial-gradient(circle at 20% 14%, rgba(34,197,94,.24), transparent 48%),
+        linear-gradient(160deg,#ecfff7 0%,#ffffff 52%,#d7ffe9 100%)!important;
+      border-color:rgba(22,163,74,.28)!important;
     }
     #sec-new .chipStat.done{
-      background:linear-gradient(155deg,#e8f2ff 0%,#ffffff 52%,#d6e9ff 100%)!important;
-      border-color:rgba(11,86,216,.28)!important;
+      background:
+        radial-gradient(circle at 20% 14%, rgba(47,114,201,.22), transparent 48%),
+        linear-gradient(160deg,#eef7ff 0%,#ffffff 52%,#d9eaff 100%)!important;
+      border-color:rgba(11,86,216,.24)!important;
     }
     #sec-new .chipStat.rework{
-      background:linear-gradient(155deg,#fff0f0 0%,#ffffff 52%,#ffe0e0 100%)!important;
-      border-color:rgba(239,68,68,.34)!important;
+      background:
+        radial-gradient(circle at 20% 14%, rgba(239,68,68,.20), transparent 48%),
+        linear-gradient(160deg,#fff2f2 0%,#ffffff 52%,#ffe1e1 100%)!important;
+      border-color:rgba(239,68,68,.28)!important;
     }
     #sec-new .chipStat.rating{
-      background:linear-gradient(155deg,#fff7cf 0%,#ffffff 52%,#ffef9a 100%)!important;
-      border-color:rgba(245,158,11,.36)!important;
+      background:
+        radial-gradient(circle at 20% 14%, rgba(245,158,11,.24), transparent 48%),
+        linear-gradient(160deg,#fff7d6 0%,#ffffff 52%,#ffec8b 100%)!important;
+      border-color:rgba(245,158,11,.32)!important;
     }
+
+    #sec-new details.tech-more summary{
+      min-height:54px!important;
+      border-radius:20px!important;
+      background:
+        linear-gradient(135deg,rgba(255,255,255,.88),rgba(238,247,255,.94))!important;
+      border:1px solid rgba(8,36,91,.12)!important;
+      box-shadow:0 12px 26px rgba(8,36,91,.09), inset 0 1px 0 rgba(255,255,255,.88)!important;
+      color:#061b4f!important;
+    }
+    #sec-new h2 + p,
+    #sec-new .offerHint{
+      color:#526276!important;
+    }
+    #sec-new #offer-list{
+      position:relative!important;
+      z-index:1!important;
+    }
+
     @media(max-width:380px){
-      #techControlCard .tech-ctrl-row{grid-template-columns:minmax(105px,.78fr) minmax(0,1.22fr)!important;}
-      #sec-new .profile-compact .left{padding:8px!important;}
-      #sec-new .chipStat{min-height:62px!important;}
+      #sec-new .tech-avatar{width:66px!important;height:66px!important;border-radius:20px!important;flex-basis:66px!important;}
+      #sec-new .profile-compact .left{padding:10px!important;border-radius:23px!important;}
+      #sec-new .chipStat{min-height:66px!important;border-radius:18px!important;}
+      #sec-new .chipStat .k{font-size:9px!important;}
+      #techControlCard .tech-ctrl-row{grid-template-columns:minmax(106px,.78fr) minmax(0,1.22fr)!important;}
     }
   </style>
 
-<script src="app.js?v=20260510_fix33_safe_ui_polish"></script>
+<script src="app.js?v=20260510_fix34_premium_home_icon_only"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
