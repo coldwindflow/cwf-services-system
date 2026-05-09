@@ -1,7 +1,7 @@
 
 
-// CWF Technician App Stable fix15: premium profile + rework count card
-window.__CWF_TECH_APP_VERSION__ = "20260509_profile_rework_fix15";
+// CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
+window.__CWF_TECH_APP_VERSION__ = "20260510_profile_row_fix16";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -54,7 +54,7 @@ const profileGradeEl = document.getElementById("profile-grade");
 const profilePhotoEl = document.getElementById("profile-photo");
 const ratingEl = document.getElementById("rating");
 const doneCountEl = document.getElementById("doneCount");
-const reworkMonthCountEl = document.getElementById("reworkMonthCount");
+const reworkCountEl = document.getElementById("reworkCount");
 const profileCodeEl = document.getElementById("profile-code");
 const profilePositionEl = document.getElementById("profile-position");
 const profileRankBadgeEl = document.getElementById("profile-rank-badge");
@@ -875,25 +875,25 @@ async function loadCompletedCountSummary() {
   }
 }
 
-async function loadReworkMonthSummary() {
-  if (!reworkMonthCountEl) return null;
+async function loadReworkCountSummary() {
+  if (!reworkCountEl) return null;
   const u = String(username || "").trim();
   if (!u) {
-    reworkMonthCountEl.textContent = "0";
+    reworkCountEl.textContent = "0";
     return 0;
   }
   try {
-    const url = `${API_BASE}/tech/rework_count_summary?username=${encodeURIComponent(u)}&v=rework-month-profile-fix15`;
+    const url = `${API_BASE}/tech/rework_count_summary?username=${encodeURIComponent(u)}&v=rework-count-month-bkk-20260510`;
     const res = await fetch(url, { credentials: "include", cache: "no-store" });
     const data = await res.json().catch(() => null);
     if (!res.ok || !data || data.ok === false) throw new Error(data?.error || "LOAD_REWORK_COUNT_FAILED");
-    const n = Number(data.month_rework_jobs ?? data.month_rework_cases ?? 0);
+    const n = Number(data.month_rework_cases || 0);
     const safe = Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
     try { if (typeof window !== "undefined") window.__CWF_MONTH_REWORK__ = safe; } catch (_) {}
-    reworkMonthCountEl.textContent = String(safe);
+    reworkCountEl.textContent = String(safe);
     return safe;
   } catch (_) {
-    if (!Number.isFinite(Number(window.__CWF_MONTH_REWORK__))) reworkMonthCountEl.textContent = "0";
+    if (!Number.isFinite(Number(window.__CWF_MONTH_REWORK__))) reworkCountEl.textContent = "0";
     return null;
   }
 }
@@ -955,6 +955,7 @@ async function loadProfile() {
     if (profileGradeEl) profileGradeEl.textContent = `เกรด: ${grade}`;
     if (ratingEl) ratingEl.textContent = (data.rating ?? 0).toString();
     loadCompletedCountSummary();
+    loadReworkCountSummary();
 
     // Photo (serve from /uploads)
     const photo = data.photo_path || "/logo.png";
@@ -1011,6 +1012,7 @@ async function loadProfile() {
     if (profileGradeEl) profileGradeEl.textContent = "เกรด: -";
     if (ratingEl) ratingEl.textContent = "0.0";
     loadCompletedCountSummary();
+    loadReworkCountSummary();
     if (profilePhotoEl) profilePhotoEl.src = "/logo.png";
     try{ if (typeof window !== 'undefined' && typeof window.__cwfSyncTechMore === 'function') window.__cwfSyncTechMore(); }catch(e){}
   }
@@ -1237,7 +1239,6 @@ async function _refreshAfterTechJobClose(reason){
     loadNextPeriodEstimate(),
     loadOutstandingTotal(),
     loadCompletedCountSummary(),
-    loadReworkMonthSummary(),
   ]);
   loadJobs();
 }
@@ -3173,7 +3174,7 @@ function renderJobs(jobs) {
     if (activeUpcomingJobsEl) activeUpcomingJobsEl.innerHTML = "<p>ยังไม่มีงานล่วงหน้า</p>";
     if (historyJobsEl) historyJobsEl.innerHTML = "<p>ยังไม่มีประวัติงาน</p>";
     loadCompletedCountSummary();
-    loadReworkMonthSummary();
+    loadReworkCountSummary();
     renderProfile(0);
     return;
   }
@@ -3299,6 +3300,7 @@ function renderJobs(jobs) {
   }
 
   loadCompletedCountSummary();
+  loadReworkCountSummary();
   renderProfile();
 }
 

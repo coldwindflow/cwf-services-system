@@ -10361,7 +10361,6 @@ app.get('/tech/completed_count_summary', async (req, res) => {
 });
 
 
-// Technician profile card: monthly rework count (does not affect income totals)
 app.get('/tech/rework_count_summary', async (req, res) => {
   try {
     let tech = '';
@@ -10381,13 +10380,6 @@ app.get('/tech/rework_count_summary', async (req, res) => {
       tech = qUser;
     }
 
-    const tableCheck = await pool.query(`SELECT to_regclass('public.technician_rework_cases') AS table_name`);
-    if (!tableCheck.rows?.[0]?.table_name) {
-      const nowBkk = _bkkNow();
-      const { y, m } = _bkkYmd(nowBkk);
-      return res.json({ ok:true, username: tech, month: `${y}-${String(m).padStart(2,'0')}`, month_rework_jobs: 0, month_rework_cases: 0, open_rework_cases: 0, source: 'no_rework_table' });
-    }
-
     const nowBkk = _bkkNow();
     const { y, m } = _bkkYmd(nowBkk);
     const monthStart = _bangkokMidnightUTC(y, m, 1);
@@ -10396,28 +10388,32 @@ app.get('/tech/rework_count_summary', async (req, res) => {
     const nextMonthStart = _bangkokMidnightUTC(ny, nm, 1);
     const month = `${y}-${String(m).padStart(2, '0')}`;
 
+    const exists = await pool.query(`SELECT to_regclass('public.technician_rework_cases') AS tbl`);
+    if (!exists.rows?.[0]?.tbl) {
+      return res.json({ ok:true, username:tech, month, month_rework_cases:0, source:'technician_rework_cases_missing' });
+    }
+
     const q = await pool.query(
-      `SELECT
-          COUNT(DISTINCT rc.rework_case_id)::int AS month_rework_cases,
-          COUNT(DISTINCT rc.job_id)::int AS month_rework_jobs,
-          COUNT(DISTINCT rc.rework_case_id) FILTER (WHERE COALESCE(rc.status,'') IN ('open','in_progress'))::int AS open_rework_cases
+      `SELECT COUNT(DISTINCT rc.rework_case_id)::int AS month_rework_cases
          FROM public.technician_rework_cases rc
-        WHERE COALESCE(rc.status,'') NOT IN ('voided','cancelled','canceled')
-          AND COALESCE(rc.created_at, rc.updated_at, NOW()) >= $1
+         LEFT JOIN public.jobs j ON j.job_id = rc.job_id
+        WHERE COALESCE(rc.created_at, rc.updated_at, NOW()) >= $1
           AND COALESCE(rc.created_at, rc.updated_at, NOW()) < $2
-          AND rc.technician_username = $3`,
+          AND (
+            rc.technician_username = $3
+            OR j.technician_username = $3
+            OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=rc.job_id AND tm.username=$3)
+            OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=rc.job_id AND a.technician_username=$3)
+          )`,
       [monthStart.toISOString(), nextMonthStart.toISOString(), tech]
     );
 
-    const row = q.rows?.[0] || {};
     return res.json({
       ok: true,
       username: tech,
       month,
-      month_rework_jobs: Number(row.month_rework_jobs || 0),
-      month_rework_cases: Number(row.month_rework_cases || 0),
-      open_rework_cases: Number(row.open_rework_cases || 0),
-      source: 'technician_rework_cases',
+      month_rework_cases: Number(q.rows?.[0]?.month_rework_cases || 0),
+      source: 'technician_rework_cases_created_at',
     });
   } catch (e) {
     console.error('GET /tech/rework_count_summary', e);
