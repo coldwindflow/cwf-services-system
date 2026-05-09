@@ -6283,6 +6283,27 @@ function _validTechRateItemShape(it){
   if (ac === 'wall') return wash !== 'none' && tier !== 'all';
   return wash === 'none' && tier === 'all' && from === 1 && to == null;
 }
+function _partnerRateItemsMatchContract(items = []) {
+  const rows = Array.isArray(items) ? items : [];
+  for (const it of rows) {
+    if (!_validTechRateItemShape(it)) return false;
+  }
+  for (const expected of CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS) {
+    const hit = rows.find((r) => {
+      const toRaw = r.step_to;
+      const to = toRaw == null || toRaw === '' ? null : Number(toRaw);
+      const expectedTo = expected.step_to == null ? null : Number(expected.step_to);
+      return String(r.ac_type_key) === expected.ac_type_key
+        && String(r.wash_type_key) === expected.wash_type_key
+        && String(r.btu_tier) === expected.btu_tier
+        && Number(r.step_from) === Number(expected.step_from)
+        && to === expectedTo
+        && Number(r.amount) === Number(expected.amount);
+    });
+    if (!hit) return false;
+  }
+  return true;
+}
 function _rateSetRowsToContext(rateSet, items){
   return {
     rate_set_id: rateSet?.id || null,
@@ -6319,6 +6340,10 @@ async function _loadActiveTechnicianIncomeRateSet(contractType = 'partner'){
     );
     if (!items.rows?.length) {
       console.warn('[tech_income_rates] active DB rate set has no items, using fallback rates', rateSet.id);
+      return _rateSetRowsToContext(null, []);
+    }
+    if (contractType === 'partner' && !_partnerRateItemsMatchContract(items.rows)) {
+      console.warn('[tech_income_rates] active DB partner rate set differs from contract, using fallback rates', rateSet.id);
       return _rateSetRowsToContext(null, []);
     }
     return _rateSetRowsToContext(rateSet, items.rows);
@@ -17566,6 +17591,22 @@ app.put("/jobs/:job_id/status", async (req, res) => {
          WHERE job_id=$2`,
         [status, realId]
       );
+    } else if (status === 'à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§') {
+      await pool.query(
+        `UPDATE public.jobs
+         SET job_status=$1,
+             finished_at = COALESCE(finished_at, NOW()),
+             completed_at = COALESCE(completed_at, NOW()),
+             closed_at = COALESCE(closed_at, NOW())
+         WHERE job_id=$2`,
+        [status, realId]
+      );
+      try {
+        const team = await getTeamForJob(realId);
+        await _refreshTechnicianIncomePreviewForJob(realId, team, { source: 'job_closed_preview' });
+      } catch (e) {
+        try { console.warn('[tech_income_preview] close status refresh failed', { job_id: realId, error: e.message }); } catch {}
+      }
     } else {
       await pool.query(`UPDATE public.jobs SET job_status=$1 WHERE job_id=$2`, [status, realId]);
     }
@@ -19848,6 +19889,14 @@ if (status === "เสร็จแล้ว") {
     }
 
     await client.query("COMMIT");
+    if (String(status || '').includes('\u0e40\u0e2a\u0e23\u0e47\u0e08') || String(status || '').includes('\u0e1b\u0e34\u0e14\u0e07\u0e32\u0e19') || ['done','completed','closed'].includes(String(status || '').trim().toLowerCase())) {
+      try {
+        const team = await getTeamForJob(realId);
+        await _refreshTechnicianIncomePreviewForJob(realId, team, { source: 'job_closed_preview' });
+      } catch (e) {
+        try { console.warn('[tech_income_preview] finalize refresh failed', { job_id: realId, error: e.message }); } catch {}
+      }
+    }
     res.json({ success: true, job_id: Number(realId), status });
   } catch (e) {
     await client.query("ROLLBACK");

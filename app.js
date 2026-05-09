@@ -5449,6 +5449,14 @@ async function finalizeJob(jobId, targetStatus, signatureDataUrl) {
     if (!res.ok) throw new Error(data.error || "ปิดงาน/ยกเลิกไม่สำเร็จ");
 
     alert(targetStatus === "ยกเลิก" ? "⛔ ยกเลิกงานเรียบร้อย" : "✅ เสร็จสิ้นงานเรียบร้อย");
+
+    await Promise.allSettled([
+      loadIncomeTodayMonthFast(),
+      loadIncomeSummary(),
+      loadNextPeriodEstimate(),
+      loadOutstandingTotal(),
+      loadCompletedCountSummary(),
+    ]);
     loadJobs();
   } catch (e) {
     alert(`❌ ${e.message}`);
@@ -5488,6 +5496,13 @@ async function closeJob(jobId) {
     if (!res.ok) throw new Error(data.error || "ปิดงานไม่สำเร็จ");
 
     alert("✅ ปิดงานเรียบร้อย");
+    await Promise.allSettled([
+      loadIncomeTodayMonthFast(),
+      loadIncomeSummary(),
+      loadNextPeriodEstimate(),
+      loadOutstandingTotal(),
+      loadCompletedCountSummary(),
+    ]);
     loadJobs(); // ✅ จะหายจาก “งานปัจจุบัน” และไป “ประวัติงาน”
   } catch (e) {
     console.error(e);
