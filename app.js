@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_fix41_technician_theme_center";
+window.__CWF_TECH_APP_VERSION__ = "20260510_fix42_theme_modal_open";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -345,13 +345,19 @@ function buildCustomThemeFromInputs() {
 function openTechThemeModal() {
   renderThemePresets();
   loadThemeInputs(normalizeTheme(getCurrentThemeId()));
-  themeModal?.classList.add("open");
-  themeModal?.setAttribute("aria-hidden", "false");
+  if (themeModal) {
+    themeModal.classList.add("open");
+    themeModal.setAttribute("aria-hidden", "false");
+    themeModal.style.display = "flex";
+  }
 }
 
 function closeTechThemeModal() {
-  themeModal?.classList.remove("open");
-  themeModal?.setAttribute("aria-hidden", "true");
+  if (themeModal) {
+    themeModal.classList.remove("open");
+    themeModal.setAttribute("aria-hidden", "true");
+    themeModal.style.display = "";
+  }
 }
 
 window.openTechThemeModal = openTechThemeModal;
@@ -360,9 +366,21 @@ window.closeTechThemeModal = closeTechThemeModal;
 renderThemePresets();
 applyTheme(getCurrentThemeId());
 
+function safelyCloseTechDrawerForTheme() {
+  try {
+    const drawer = document.getElementById("techDrawer");
+    const backdrop = document.getElementById("techDrawerBackdrop");
+    if (drawer) drawer.style.display = "none";
+    if (backdrop) backdrop.style.display = "none";
+    document.body?.classList?.remove("techDrawerOpen", "drawer-open", "menu-open");
+  } catch (_) {}
+}
+
 if (themeToggleBtn) {
-  themeToggleBtn.addEventListener("click", () => {
-    closeTechDrawer?.();
+  themeToggleBtn.addEventListener("click", (ev) => {
+    ev?.preventDefault?.();
+    ev?.stopPropagation?.();
+    safelyCloseTechDrawerForTheme();
     openTechThemeModal();
   });
 }
