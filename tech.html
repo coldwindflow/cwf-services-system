@@ -1587,15 +1587,13 @@
         <button id="acceptToggleBtn" class="accept-btn ready" type="button">🟢 รับงาน</button>
 
         <div class="zone-wrap">
-          <button id="zoneQuickBtn" class="zone-select zone-action-btn" type="button" onclick="return window.__cwfOpenZoneQuickModalFallback ? window.__cwfOpenZoneQuickModalFallback(event) : (window.openZoneQuickModal ? (window.openZoneQuickModal(), false) : false)"><span>ตั้งค่าด่วน</span><small id="zoneQuickSummary">โซน / ระยะทาง</small></button>
+          <button id="zoneQuickBtn" class="zone-select zone-action-btn" type="button" onclick="return window.__cwfOpenZoneQuickModalFallback ? window.__cwfOpenZoneQuickModalFallback(event) : (window.openZoneQuickModal ? (window.openZoneQuickModal(), false) : false)"><span id="zoneQuickTitle">พื้นที่ประจำ</span><small id="zoneQuickSummary">แตะเพื่อตั้งค่าพื้นที่</small></button>
           <select id="zoneSelect" class="zone-select" style="display:none"><option value="">ทุกโซน</option></select>
         </div>
       </div>
 
       <div id="acceptStatusText" class="accept-hint">กำลังโหลดสถานะ...</div>
-      <div style="margin-top:6px;font-size:12px;font-weight:900;color:#526276;line-height:1.45;">⏰ ปุ่มรับงานใช้เฉพาะวันนี้ และระบบจะปิดรับงานอัตโนมัติหลังเที่ยงคืน</div>
-
-      <!-- รองรับหน้าเก่า/โค้ดเดิม ซ่อนไว้ไม่ให้รก -->
+<!-- รองรับหน้าเก่า/โค้ดเดิม ซ่อนไว้ไม่ให้รก -->
       <select id="acceptStatusSelect" style="display:none;">
         <option value="ready">ready</option>
         <option value="paused">paused</option>
@@ -1922,7 +1920,102 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260510_profile_color_fix17"></script>
+  
+  <style id="cwf-fix33-safe-tech-ui-polish">
+    /*
+      CWF fix33: safe UI polish only.
+      This block does not control tab visibility or page switching.
+    */
+
+    #techControlCard.tech-control-card{
+      margin:8px 0 10px!important;
+      padding:8px!important;
+      border-radius:24px!important;
+    }
+    #techControlCard .tech-ctrl-row{
+      gap:8px!important;
+      grid-template-columns:minmax(112px,.80fr) minmax(0,1.20fr)!important;
+    }
+    #techControlCard .accept-btn,
+    #techControlCard .zone-select{
+      min-height:46px!important;
+      border-radius:18px!important;
+      font-size:14px!important;
+    }
+    #techControlCard .zone-wrap::after{
+      content:"พื้นที่ประจำ"!important;
+    }
+    #techControlCard .zone-action-btn span{
+      max-width:100%!important;
+      overflow:hidden!important;
+      text-overflow:ellipsis!important;
+      white-space:nowrap!important;
+    }
+    #acceptStatusText.accept-hint{
+      display:none!important;
+      margin:0!important;
+      padding:0!important;
+      min-height:0!important;
+    }
+
+    #sec-new .profile-settings-icon{
+      width:42px!important;
+      height:42px!important;
+      border-radius:15px!important;
+      background:linear-gradient(135deg,#fff36a 0%,#f4c400 55%,#f59e0b 100%)!important;
+      border:1px solid rgba(255,255,255,.72)!important;
+      box-shadow:0 12px 26px rgba(244,196,0,.30), inset 0 1px 0 rgba(255,255,255,.52)!important;
+    }
+    #sec-new .profile-compact .left{
+      border-radius:22px!important;
+      padding:10px!important;
+      background:linear-gradient(135deg,rgba(8,36,91,.96) 0%,rgba(11,86,216,.88) 58%,rgba(22,185,242,.76) 100%)!important;
+      border:1px solid rgba(255,255,255,.26)!important;
+      box-shadow:0 14px 28px rgba(8,36,91,.16), inset 0 1px 0 rgba(255,255,255,.18)!important;
+    }
+    #sec-new .profile-compact .left .name,
+    #sec-new .profile-compact .left .code{
+      color:#fff!important;
+      -webkit-text-fill-color:#fff!important;
+      text-shadow:0 2px 10px rgba(0,0,0,.24)!important;
+    }
+    #sec-new .profile-compact .left .code{
+      color:rgba(255,255,255,.86)!important;
+      -webkit-text-fill-color:rgba(255,255,255,.86)!important;
+    }
+    #sec-new .tech-avatar{
+      border-color:#f4c400!important;
+      box-shadow:0 12px 24px rgba(0,0,0,.22),0 0 0 5px rgba(244,196,0,.16)!important;
+    }
+    #sec-new .chipStat{
+      min-height:66px!important;
+      border-radius:18px!important;
+      box-shadow:0 12px 24px rgba(8,36,91,.10), inset 0 1px 0 rgba(255,255,255,.70)!important;
+    }
+    #sec-new .chipStat.income{
+      background:linear-gradient(155deg,#dbfff1 0%,#ffffff 52%,#c9ffe7 100%)!important;
+      border-color:rgba(22,163,74,.32)!important;
+    }
+    #sec-new .chipStat.done{
+      background:linear-gradient(155deg,#e8f2ff 0%,#ffffff 52%,#d6e9ff 100%)!important;
+      border-color:rgba(11,86,216,.28)!important;
+    }
+    #sec-new .chipStat.rework{
+      background:linear-gradient(155deg,#fff0f0 0%,#ffffff 52%,#ffe0e0 100%)!important;
+      border-color:rgba(239,68,68,.34)!important;
+    }
+    #sec-new .chipStat.rating{
+      background:linear-gradient(155deg,#fff7cf 0%,#ffffff 52%,#ffef9a 100%)!important;
+      border-color:rgba(245,158,11,.36)!important;
+    }
+    @media(max-width:380px){
+      #techControlCard .tech-ctrl-row{grid-template-columns:minmax(105px,.78fr) minmax(0,1.22fr)!important;}
+      #sec-new .profile-compact .left{padding:8px!important;}
+      #sec-new .chipStat{min-height:62px!important;}
+    }
+  </style>
+
+<script src="app.js?v=20260510_fix33_safe_ui_polish"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

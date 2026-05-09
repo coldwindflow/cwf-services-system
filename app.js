@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_profile_color_fix17";
+window.__CWF_TECH_APP_VERSION__ = "20260510_fix33_safe_ui_polish";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -74,6 +74,7 @@ const homeZoneHintEl = document.getElementById("homeZoneHint");
 const allowOutOfZoneEl = document.getElementById("allowOutOfZone");
 const secondaryServiceZoneEl = document.getElementById("secondaryServiceZone");
 const zoneQuickBtnEl = document.getElementById("zoneQuickBtn");
+const zoneQuickTitleEl = document.getElementById("zoneQuickTitle");
 const btnSaveHomeZoneEl = document.getElementById("btnSaveHomeZone");
 
 const HOME_DISTRICTS_BY_PROVINCE = {
@@ -361,12 +362,11 @@ function renderAcceptUI(status, updatedAtText, note) {
       : "🟢 รับงาน";
   }
 
-  // ข้อความสถานะด้านล่าง (ให้เห็นชัด)
+  // CWF fix33: hide long status line; the button itself is the visible status.
   if (acceptStatusText) {
-    acceptStatusText.textContent =
-      (st === "paused" ? "⛔ ไม่ได้รับงานอยู่" : "✅ กำลังรับงานอยู่")
-      + (updatedAtText ? ` · อัปเดต: ${updatedAtText}` : "")
-      + (note ? ` · ${note}` : "");
+    acceptStatusText.textContent = "";
+    acceptStatusText.setAttribute("hidden", "hidden");
+    acceptStatusText.style.display = "none";
   }
 
   // att-status เก่า (ซ่อน) เผื่อโค้ดอื่นอ่านค่า
@@ -468,6 +468,35 @@ function setSelectValueSafe(el, value) {
   if (v && el.value !== v) el.value = "";
 }
 
+
+function getPrimaryWorkAreaLabel(profile) {
+  const p = profile || __TECH_ZONE_PROFILE__ || {};
+  const candidates = [
+    p.home_district,
+    p.home_amphoe,
+    p.home_area,
+    p.primary_area,
+    p.service_area,
+    p.home_service_zone_label,
+    p.preferred_zone,
+    p.home_service_zone_code ? `Zone ${p.home_service_zone_code}` : ""
+  ].map(v => String(v || "").trim()).filter(Boolean);
+  const label = candidates[0] || "พื้นที่ประจำ";
+  return label.length > 18 ? `${label.slice(0, 18)}…` : label;
+}
+
+function updateZoneQuickButtonLabel(profile) {
+  const p = profile || __TECH_ZONE_PROFILE__ || {};
+  const titleEl = document.getElementById("zoneQuickTitle") || zoneQuickTitleEl || zoneQuickBtnEl?.querySelector("span");
+  const summaryEl = document.getElementById("zoneQuickSummary");
+  if (titleEl) titleEl.textContent = getPrimaryWorkAreaLabel(p);
+  if (summaryEl) {
+    summaryEl.textContent = p.home_service_zone_code
+      ? `Zone ${p.home_service_zone_code}${p.secondary_service_zone_code ? ` / รอง ${p.secondary_service_zone_code}` : ""}`
+      : (p.service_radius_km ? `รัศมี ${p.service_radius_km} กม.` : "แตะเพื่อตั้งค่าพื้นที่");
+  }
+}
+
 function syncQuickZoneFields() {
   const p = __TECH_ZONE_PROFILE__ || {};
   const secondary = String(p.secondary_service_zone_code || document.getElementById("secondaryServiceZone")?.value || "").toUpperCase();
@@ -483,6 +512,7 @@ function syncQuickZoneFields() {
     const rText = radius ? `ระยะ ${radius} กม.` : "ไม่จำกัดระยะทาง";
     status.textContent = `${primary} • ${sec} • ${rText}`;
   }
+  updateZoneQuickButtonLabel(p);
 }
 
 function openZoneQuickModal() {
@@ -973,12 +1003,7 @@ async function loadProfile() {
         ? `โซนหลัก: Zone ${data.home_service_zone_code} - ${data.home_service_zone_label || ""}${data.secondary_service_zone_code ? ` • โซนรอง: Zone ${data.secondary_service_zone_code} - ${data.secondary_service_zone_label || ""}` : ""}`
         : "ระบบจะกำหนดโซนให้หลังกรอกเขต/อำเภอ";
     }
-    const zoneQuickSummary = document.getElementById("zoneQuickSummary");
-    if (zoneQuickSummary) {
-      zoneQuickSummary.textContent = data.home_service_zone_code
-        ? `หลัก ${data.home_service_zone_code}${data.secondary_service_zone_code ? ` / รอง ${data.secondary_service_zone_code}` : " / ไม่เลือกโซนรอง"}${data.service_radius_km ? ` / ${data.service_radius_km} กม.` : ""}`
-        : "ยังไม่ได้ตั้งพื้นที่";
-    }
+    updateZoneQuickButtonLabel(data);
 
     // ✅ sync technician compact profile "more" fields (safe no-op if not present)
     try{ if (typeof window !== 'undefined' && typeof window.__cwfSyncTechMore === 'function') window.__cwfSyncTechMore(); }catch(e){}
