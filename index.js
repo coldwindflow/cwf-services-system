@@ -16460,6 +16460,12 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
     }, client);
 
     await client.query('COMMIT');
+    try {
+      const team = await getTeamForJob(realId);
+      await _refreshTechnicianIncomePreviewForJob(realId, team, { source: 'job_closed_preview' });
+    } catch (e) {
+      try { console.warn('[tech_income_preview] admin force finish refresh failed', { job_id: realId, error: e.message }); } catch {}
+    }
     return res.json({ success: true, job_id: Number(realId), status: 'เสร็จแล้ว' });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
