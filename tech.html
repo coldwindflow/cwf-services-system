@@ -412,7 +412,7 @@
 
 
     /* ===== CWF Technician Premium Shell v20260428 =====
-       Match Admin Dashboard visual language without touching app.js?v=20260510_fix24_targeted_restore"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
+       Match Admin Dashboard visual language without touching app.js?v=20260510_fix25_home_flow_repair"";position:absolute;left:0;right:0;bottom:-1px;height:2px;
       background:linear-gradient(90deg, rgba(244,196,0,0), rgba(244,196,0,.95), rgba(34,211,238,.65), rgba(244,196,0,0));
       pointer-events:none;
     }
@@ -1450,69 +1450,6 @@
 
 </style>
 
-  <style id="cwf-fix24-targeted-home-spacing">
-    /*
-      CWF fix24: targeted repair only.
-      Keep top bar/profile/job offer structure intact. Adjust only card width/gap,
-      compact accept row, hide noisy status line, and show work area label.
-    */
-    #techControlCard.tech-control-card{
-      margin:6px 0 8px!important;
-      padding:10px!important;
-      border-radius:26px!important;
-      box-sizing:border-box!important;
-      width:100%!important;
-    }
-    #techControlCard .tech-ctrl-row{
-      grid-template-columns:minmax(108px,.78fr) minmax(0,1.22fr)!important;
-      gap:10px!important;
-    }
-    #techControlCard .accept-btn,
-    #techControlCard .zone-select{
-      min-height:46px!important;
-      border-radius:18px!important;
-      font-size:14px!important;
-    }
-    #techControlCard .accept-btn{
-      padding:8px 10px!important;
-    }
-    #techControlCard .zone-select{
-      padding-top:19px!important;
-      padding-bottom:7px!important;
-    }
-    #techControlCard .zone-wrap::after{
-      content:"พื้นที่ประจำ"!important;
-    }
-    #techControlCard .zone-action-btn span{
-      max-width:100%!important;
-      overflow:hidden!important;
-      text-overflow:ellipsis!important;
-      white-space:nowrap!important;
-    }
-    #acceptStatusText.accept-hint{
-      display:none!important;
-      margin:0!important;
-      padding:0!important;
-      min-height:0!important;
-    }
-    #sec-new.card.section.active{
-      margin-top:8px!important;
-    }
-    #sec-new .profileHeroV19{
-      margin-top:0!important;
-      margin-left:0!important;
-      margin-right:0!important;
-      width:100%!important;
-      box-sizing:border-box!important;
-    }
-    @media(max-width:380px){
-      #techControlCard.tech-control-card{margin-top:4px!important;padding:9px!important;}
-      #techControlCard .tech-ctrl-row{gap:8px!important;}
-      #techControlCard .accept-btn,
-      #techControlCard .zone-select{min-height:44px!important;font-size:13px!important;}
-    }
-  </style>
-
       <div class="tech-ctrl-row">
         <button id="acceptToggleBtn" class="accept-btn ready" type="button">🟢 รับงาน</button>
 
@@ -1565,7 +1502,7 @@
           <div class="meta">
             <div class="name" id="profile-name">-</div>
             <div class="code" id="profile-code">รหัสช่าง: -</div>
-            <!-- ซ่อนข้อมูลเยอะ ๆ ตามสเปค แต่ยังคง id ไว้ให้ app.js?v=20260510_fix24_targeted_restore"display:none">
+            <!-- ซ่อนข้อมูลเยอะ ๆ ตามสเปค แต่ยังคง id ไว้ให้ app.js?v=20260510_fix25_home_flow_repair"display:none">
               <div id="profile-rank" style="display:flex;align-items:center;gap:8px;">
                 <img id="profile-rank-badge" src="/assets/ranks/rank_lv1_128.png" alt="rank" style="width:44px;height:auto;display:block;">
                 <div class="muted" id="profile-rank-label">Rank: -</div>
@@ -1631,7 +1568,7 @@
       </div>
 
       <div class="section active" id="sec-active-today" style="margin-top:10px;">
-        <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix24_targeted_restore"active-list"></div>
+        <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix25_home_flow_repair"active-list"></div>
       </div>
 
       <div class="section" id="sec-active-upcoming" style="margin-top:10px;">
@@ -1667,7 +1604,7 @@
       </div>
       <div class="muted" id="history-filter-hint" style="margin-top:8px;">แสดงงานที่ปิดแล้วแบบย่อ</div>
 
-      <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix24_targeted_restore"history-list" style="margin-top:10px;"></div>
+      <!-- ✅ ต้องตรงกับ app.js?v=20260510_fix25_home_flow_repair"history-list" style="margin-top:10px;"></div>
     </div>
 
     <div class="card section" id="sec-income">
@@ -1866,6 +1803,84 @@
     #sec-new .profileHeroV19 .tech-more .moreBox{background:rgba(255,255,255,.92)!important;border-color:rgba(255,255,255,.40)!important;}
     @media(max-width:380px){#sec-new .profileHeroV19{padding:16px 12px 12px!important;border-radius:26px!important;}#sec-new .profileHeroV19 .profile-compact .chips{gap:6px!important;}#sec-new .profileHeroV19 .chipStat{min-height:72px!important;border-radius:17px!important;}#sec-new .profileHeroV19 .chipStat .k{font-size:9px!important;}#sec-new .profileHeroV19 .chipStat .v{font-size:20px!important;}}
   </style>
+  <style id="cwf-fix25-home-flow-repair">
+    /* CWF fix25: repair home layout flow only. No top bar / bottom nav / job logic changes. */
+    #techControlCard.tech-control-card{
+      width:100%!important;
+      box-sizing:border-box!important;
+      margin:6px 0 10px!important;
+      padding:10px!important;
+      border-radius:26px!important;
+    }
+    #techControlCard .tech-ctrl-row{
+      grid-template-columns:minmax(110px,.78fr) minmax(0,1.22fr)!important;
+      gap:10px!important;
+      align-items:stretch!important;
+    }
+    #techControlCard .accept-btn,
+    #techControlCard .zone-select{
+      min-height:46px!important;
+      border-radius:18px!important;
+      font-size:14px!important;
+    }
+    #techControlCard .accept-btn{padding:8px 10px!important;}
+    #techControlCard .zone-select{padding-top:19px!important;padding-bottom:7px!important;}
+    #techControlCard .zone-wrap::after{content:"พื้นที่ประจำ"!important;}
+    #techControlCard .zone-action-btn span{
+      max-width:100%!important;
+      overflow:hidden!important;
+      text-overflow:ellipsis!important;
+      white-space:nowrap!important;
+    }
+    #acceptStatusText.accept-hint{
+      display:none!important;
+      margin:0!important;
+      padding:0!important;
+      min-height:0!important;
+    }
+    #sec-new.card.section.active{
+      position:relative!important;
+      display:block!important;
+      overflow:visible!important;
+      margin-top:8px!important;
+    }
+    #sec-new .profileHeroV19{
+      position:relative!important;
+      display:block!important;
+      width:100%!important;
+      box-sizing:border-box!important;
+      margin:0 0 12px!important;
+      clear:both!important;
+    }
+    #sec-new .profileHeroV19 .profile-compact,
+    #sec-new .profileHeroV19 .chips,
+    #sec-new .profileHeroV19 details.tech-more{
+      display:grid!important;
+      visibility:visible!important;
+      opacity:1!important;
+    }
+    #sec-new .profileHeroV19 .profile-compact .left{display:flex!important;}
+    #sec-new .profileHeroV19 details.tech-more{display:block!important;}
+    #sec-new .profileHeroV19 + .pushNotifyBox,
+    #sec-new .profileHeroV19 + .pushNotifyBox + hr,
+    #sec-new > h2,
+    #sec-new > .muted,
+    #sec-new > #offer-list{
+      position:relative!important;
+      z-index:3!important;
+      clear:both!important;
+    }
+    #sec-new > hr{
+      margin:12px 0!important;
+      border:0!important;
+      border-top:1px solid rgba(8,36,91,.10)!important;
+    }
+    @media(max-width:380px){
+      #techControlCard.tech-control-card{margin-top:4px!important;padding:9px!important;}
+      #techControlCard .tech-ctrl-row{grid-template-columns:minmax(104px,.76fr) minmax(0,1.24fr)!important;gap:8px!important;}
+      #techControlCard .accept-btn,#techControlCard .zone-select{min-height:44px!important;font-size:13px!important;}
+    }
+  </style>
 
   <div class="payout-modal-backdrop" id="depositLedgerModalBackdrop" onclick="if(event.target===this) window.closeDepositLedgerModal && window.closeDepositLedgerModal()">
     <div class="payout-modal" role="dialog" aria-modal="true" aria-labelledby="depositLedgerTitle">
@@ -1887,7 +1902,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260510_fix24_targeted_restore"></script>
+  <script src="app.js?v=20260510_fix25_home_flow_repair"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
