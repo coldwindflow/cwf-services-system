@@ -2172,7 +2172,76 @@
     }
   </style>
 
-<script src="app.js?v=20260510_fix39_offer_subtitle_color"></script>
+
+  <style id="cwf-fix40-offer-panel-cohesive">
+    /*
+      CWF fix40: make "งานที่เสนอให้คุณ" one smooth cohesive panel.
+      Scope only: offer title, offer instruction, offer-list empty state.
+      No tab switching, no backend, no job/history/income logic.
+    */
+    #sec-new h2:nth-of-type(2){
+      margin-top:24px!important;
+      margin-bottom:0!important;
+      padding:22px 22px 4px!important;
+      border-radius:26px 26px 0 0!important;
+      background:linear-gradient(180deg,#fbfdff 0%,#f6faff 100%)!important;
+      border:1px solid rgba(8,36,91,.08)!important;
+      border-bottom:0!important;
+      box-shadow:0 14px 30px rgba(8,36,91,.08)!important;
+      color:#061b4f!important;
+      -webkit-text-fill-color:#061b4f!important;
+      text-shadow:0 1px 0 rgba(255,255,255,.88)!important;
+    }
+    #sec-new h2:nth-of-type(2)::before,
+    #sec-new h2:nth-of-type(2)::after{
+      content:none!important;
+      display:none!important;
+    }
+    #sec-new h2:nth-of-type(2) + p{
+      margin:0!important;
+      padding:6px 22px 10px!important;
+      background:linear-gradient(180deg,#f6faff 0%,#f6faff 100%)!important;
+      border-left:1px solid rgba(8,36,91,.08)!important;
+      border-right:1px solid rgba(8,36,91,.08)!important;
+      color:#526276!important;
+      -webkit-text-fill-color:#526276!important;
+      font-weight:850!important;
+      line-height:1.55!important;
+      text-shadow:none!important;
+      box-shadow:none!important;
+    }
+    #sec-new #offer-list{
+      margin:0!important;
+      padding:0 22px 22px!important;
+      border-radius:0 0 26px 26px!important;
+      background:linear-gradient(180deg,#f6faff 0%,#f2f7ff 100%)!important;
+      border:1px solid rgba(8,36,91,.08)!important;
+      border-top:0!important;
+      box-shadow:0 14px 30px rgba(8,36,91,.08), inset 0 -1px 0 rgba(255,255,255,.88)!important;
+      overflow:hidden!important;
+    }
+    #sec-new #offer-list:empty::after{
+      content:"ยังไม่มีงานที่เสนอให้ตอนนี้"!important;
+      display:flex!important;
+      align-items:center!important;
+      justify-content:center!important;
+      min-height:54px!important;
+      padding:10px 8px!important;
+      border-radius:18px!important;
+      background:transparent!important;
+      border:0!important;
+      box-shadow:none!important;
+      color:#061b4f!important;
+      -webkit-text-fill-color:#061b4f!important;
+      font-weight:950!important;
+      font-size:17px!important;
+      line-height:1.45!important;
+      text-align:center!important;
+      opacity:.92!important;
+    }
+  </style>
+
+<script src="app.js?v=20260510_fix40_offer_panel_cohesive"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
