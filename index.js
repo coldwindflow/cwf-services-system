@@ -6489,6 +6489,86 @@ function _contractTopLevelItemFromPayloadLike(meta){
   };
 }
 
+async function _classifyRevisitWarrantyReworkJob(meta) {
+  const jobId = Number(meta?.job_id || 0);
+  const status = String(meta?.job_status || '').trim();
+  const jobType = String(meta?.job_type || '').trim();
+  const returnReason = String(meta?.return_reason || '').trim();
+  const lower = [status, jobType, returnReason].join(' ').toLowerCase();
+  const reasons = [];
+  if (status === 'งานแก้ไข' || status.includes('แก้ไข')) reasons.push('job_status');
+  if (jobType.includes('งานแก้ไข') || jobType.includes('งานกลับไปแก้') || jobType.includes('งานในประกัน') || jobType.includes('เคลม')) reasons.push('job_type');
+  if (returnReason) reasons.push('return_reason');
+  if (meta?.returned_at) reasons.push('returned_at');
+  if (meta?.returned_by) reasons.push('returned_by');
+  if (lower.includes('revisit') || lower.includes('rework') || lower.includes('warranty') || lower.includes('claim')) reasons.push('text_marker');
+  try {
+    if (jobId > 0) {
+      const q = await pool.query(
+        `SELECT rework_case_id, reason_type, status, resolution
+           FROM public.technician_rework_cases
+          WHERE job_id=$1
+          ORDER BY created_at DESC NULLS LAST, rework_case_id DESC
+          LIMIT 1`,
+        [jobId]
+      );
+      if (q.rows?.[0]) reasons.push('technician_rework_cases');
+    }
+  } catch (_) {}
+  return {
+    is_excluded: reasons.length > 0,
+    exclusion_reason: reasons.length ? 'revisit/warranty/rework job excluded from normal income' : '',
+    detection_fields: [...new Set(reasons)],
+  };
+}
+
+async function _loadApprovedReworkCompensationLines(job_id, team, meta, exclusion) {
+  const jid = Number(job_id);
+  const usernames = [...new Set((Array.isArray(team) ? team : []).map(x => String(x || '').trim()).filter(Boolean))];
+  if (!Number.isInteger(jid) || jid <= 0 || !usernames.length) return [];
+  try {
+    const q = await pool.query(
+      `SELECT technician_username, COALESCE(SUM(adj_amount),0)::numeric AS amount
+         FROM public.technician_payout_adjustments
+        WHERE job_id::text=$1::text
+          AND technician_username = ANY($2::text[])
+          AND adj_amount > 0
+        GROUP BY technician_username`,
+      [String(jid), usernames]
+    );
+    return (q.rows || []).map((r) => {
+      const amount = _money(r.amount || 0);
+      return {
+        technician_username: String(r.technician_username || '').trim(),
+        job_id: String(jid),
+        finished_at: meta.finished_at || meta.closed_at || meta.completed_at || null,
+        earn_amount: amount,
+        base_amount: amount,
+        percent_final: null,
+        machine_count_for_tech: 0,
+        step_rule_key: 'approved_rework_compensation',
+        detail_json: {
+          payroll_version: CWF_CONTRACT_PAYROLL_VERSION,
+          contract_only: true,
+          excluded_from_normal_income: true,
+          exclusion_reason: exclusion.exclusion_reason,
+          exclusion_fields: exclusion.detection_fields,
+          approved_rework_compensation: true,
+          source: 'technician_payout_adjustments',
+          total_income: amount,
+          contract_rate_rows: [],
+          related_items: [],
+          items: [],
+        },
+        setting_snapshot: { approved_rework_compensation: true, computed_at: new Date().toISOString() },
+      };
+    }).filter(x => x.technician_username && Number(x.earn_amount || 0) > 0);
+  } catch (e) {
+    try { console.warn('[tech_income] approved rework compensation lookup failed', { job_id: jid, error: e.message }); } catch {}
+    return [];
+  }
+}
+
 function _contractNormalizeServiceItems(meta, items){
   const arr = Array.isArray(items) ? items : [];
   const service = [];
@@ -6715,6 +6795,39 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
   );
   const profileMap = new Map();
   (profQ.rows || []).forEach(r => profileMap.set(String(r.username), r));
+
+  const exclusion = await _classifyRevisitWarrantyReworkJob(meta);
+  if (exclusion.is_excluded) {
+    const approved = await _loadApprovedReworkCompensationLines(job_id, team, meta, exclusion);
+    if (approved.length) return approved;
+    return team.map((tech) => ({
+      technician_username: tech,
+      job_id: String(job_id),
+      finished_at: meta.finished_at || meta.closed_at || meta.completed_at || null,
+      earn_amount: 0,
+      base_amount: 0,
+      percent_final: null,
+      machine_count_for_tech: 0,
+      step_rule_key: 'excluded_revisit_warranty_rework',
+      detail_json: {
+        payroll_version: CWF_CONTRACT_PAYROLL_VERSION,
+        contract_only: true,
+        excluded_from_normal_income: true,
+        exclusion_reason: exclusion.exclusion_reason,
+        exclusion_fields: exclusion.detection_fields,
+        job_type: String(meta.job_type || '').trim(),
+        job_status: String(meta.job_status || '').trim(),
+        return_reason: String(meta.return_reason || '').trim() || null,
+        returned_at: meta.returned_at || null,
+        returned_by: meta.returned_by || null,
+        contract_rate_rows: [],
+        related_items: [],
+        items: [],
+        total_income: 0,
+      },
+      setting_snapshot: { excluded_from_normal_income: true, computed_at: new Date().toISOString() },
+    }));
+  }
 
   const assignedSvc = svcItems.filter(it => String(it.assigned_technician_username || '').trim());
   const unassignedSvc = svcItems.filter(it => !String(it.assigned_technician_username || '').trim());
@@ -7268,6 +7381,13 @@ async function _calculateAndStoreTechnicianIncomePreview(job_id, username, opts 
 }
 
 async function _getOrCalculateTechnicianIncomePreview(job_id, username, context = 'current') {
+  try {
+    const meta = await _loadJobMeta(job_id);
+    const exclusion = await _classifyRevisitWarrantyReworkJob(meta);
+    if (exclusion.is_excluded) {
+      await _markTechnicianIncomePreviewStale(job_id);
+    }
+  } catch (_) {}
   const cached = await _loadTechnicianIncomePreview(job_id, username);
   if (cached) return _moneySummaryFromPreview(cached, context);
   const made = await _calculateAndStoreTechnicianIncomePreview(job_id, username, { source: context === 'offered' ? 'offer_preview' : 'job_preview' });
@@ -10051,6 +10171,7 @@ async function _computeTechnicianIncomeSummary(username, opts = {}) {
   });
   const day_total = _money(dayLines.reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
   const month_total = _money((monthLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
+  const computedJobs = await _buildTechnicianIncomeComputedJobs(tech, dayStart, dayEnd);
 
   const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, ymKey);
   const monthlyStart = payoutMonth.monthly_income_period_start ? new Date(payoutMonth.monthly_income_period_start) : null;
@@ -10089,6 +10210,7 @@ async function _computeTechnicianIncomeSummary(username, opts = {}) {
     outstanding_periods_count: outstanding.periods_count,
     jobs_count: monthLines.length,
     computed_jobs: monthLines.length,
+    computed_jobs_debug: computedJobs,
     capped: false,
   };
 }
@@ -10126,6 +10248,78 @@ async function _computeTechnicianCurrentPeriodEstimate(username) {
   });
   const total = _money((lines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
   return { ok:true, username: tech, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: total, jobs_count: lines.length, computed_jobs: lines.length, capped: false };
+}
+
+async function _buildTechnicianIncomeComputedJobs(tech, start, endEx) {
+  const username = String(tech || '').trim();
+  if (!username) return [];
+  try {
+    const donePred = _sqlDonePredicate('j');
+    const jobsQ = await pool.query(
+      `SELECT j.job_id, j.booking_code, j.job_status, j.job_type,
+              j.finished_at, j.completed_at, j.closed_at,
+              j.technician_username,
+              j.return_reason, j.returned_at, j.returned_by,
+              NULL::text AS source_job_id,
+              NULL::text AS original_job_id,
+              NULL::text AS parent_job_id
+         FROM public.jobs j
+        WHERE ${donePred}
+          AND j.finished_at IS NOT NULL
+          AND j.finished_at >= $1 AND j.finished_at < $2
+          AND (
+            j.technician_username = $3
+            OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$3)
+            OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$3)
+          )
+        ORDER BY j.finished_at ASC, j.job_id ASC`,
+      [start.toISOString(), endEx.toISOString(), username]
+    );
+    const out = [];
+    for (const row of (jobsQ.rows || [])) {
+      let income = 0;
+      let included = false;
+      let exclusion = await _classifyRevisitWarrantyReworkJob(row);
+      try {
+        const lines = await _buildPayoutLinesForJob(row.job_id);
+        const me = (lines || []).find((ln) => String(ln.technician_username || '') === username) || null;
+        if (me) {
+          income = _money(me.earn_amount || 0);
+          const detail = (me.detail_json && typeof me.detail_json === 'object') ? me.detail_json : {};
+          if (detail.excluded_from_normal_income) {
+            exclusion = {
+              is_excluded: true,
+              exclusion_reason: detail.exclusion_reason || exclusion.exclusion_reason || 'revisit/warranty/rework job excluded from normal income',
+              detection_fields: detail.exclusion_fields || exclusion.detection_fields || [],
+            };
+          }
+          included = income > 0 && !exclusion.is_excluded;
+        }
+      } catch (_) {}
+      out.push({
+        job_id: row.job_id,
+        booking_code: row.booking_code || null,
+        job_status: row.job_status || null,
+        job_type: row.job_type || null,
+        is_revisit: Boolean(exclusion.is_excluded && (exclusion.detection_fields || []).some(x => ['job_status','return_reason','returned_at','returned_by','technician_rework_cases','text_marker'].includes(x))),
+        is_warranty: Boolean(exclusion.is_excluded && (String(row.job_type || '').includes('ประกัน') || String(row.return_reason || '').includes('ประกัน'))),
+        source_job_id: row.source_job_id || null,
+        original_job_id: row.original_job_id || null,
+        parent_job_id: row.parent_job_id || null,
+        return_reason: row.return_reason || null,
+        revisit_reason: row.return_reason || null,
+        finished_at: row.finished_at,
+        technician_id: username,
+        income_amount: income,
+        included_in_day_total: included,
+        exclusion_reason: exclusion.is_excluded ? exclusion.exclusion_reason : '',
+      });
+    }
+    return out;
+  } catch (e) {
+    try { console.warn('[tech_income] computed_jobs debug failed', { username, error: e.message }); } catch {}
+    return [];
+  }
 }
 
 // NOTE: some tech clients may lose cookie/session in PWA webview.
