@@ -1,7 +1,7 @@
 
 
-// CWF Technician App Stable fix14: hide load-more for day/month when visible rows are below 20
-window.__CWF_TECH_APP_VERSION__ = "20260509_history_filter_loadmore_fix14";
+// CWF Technician App Stable fix15: premium profile + rework count card
+window.__CWF_TECH_APP_VERSION__ = "20260509_profile_rework_fix15";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -54,6 +54,7 @@ const profileGradeEl = document.getElementById("profile-grade");
 const profilePhotoEl = document.getElementById("profile-photo");
 const ratingEl = document.getElementById("rating");
 const doneCountEl = document.getElementById("doneCount");
+const reworkMonthCountEl = document.getElementById("reworkMonthCount");
 const profileCodeEl = document.getElementById("profile-code");
 const profilePositionEl = document.getElementById("profile-position");
 const profileRankBadgeEl = document.getElementById("profile-rank-badge");
@@ -874,6 +875,29 @@ async function loadCompletedCountSummary() {
   }
 }
 
+async function loadReworkMonthSummary() {
+  if (!reworkMonthCountEl) return null;
+  const u = String(username || "").trim();
+  if (!u) {
+    reworkMonthCountEl.textContent = "0";
+    return 0;
+  }
+  try {
+    const url = `${API_BASE}/tech/rework_count_summary?username=${encodeURIComponent(u)}&v=rework-month-profile-fix15`;
+    const res = await fetch(url, { credentials: "include", cache: "no-store" });
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || data.ok === false) throw new Error(data?.error || "LOAD_REWORK_COUNT_FAILED");
+    const n = Number(data.month_rework_jobs ?? data.month_rework_cases ?? 0);
+    const safe = Number.isFinite(n) && n >= 0 ? Math.round(n) : 0;
+    try { if (typeof window !== "undefined") window.__CWF_MONTH_REWORK__ = safe; } catch (_) {}
+    reworkMonthCountEl.textContent = String(safe);
+    return safe;
+  } catch (_) {
+    if (!Number.isFinite(Number(window.__CWF_MONTH_REWORK__))) reworkMonthCountEl.textContent = "0";
+    return null;
+  }
+}
+
 // ✅ แปลงตำแหน่งจากค่าฐานข้อมูล -> ข้อความแสดงผล
 function prettyPosition(pos) {
   const p = String(pos || "").trim();
@@ -1213,6 +1237,7 @@ async function _refreshAfterTechJobClose(reason){
     loadNextPeriodEstimate(),
     loadOutstandingTotal(),
     loadCompletedCountSummary(),
+    loadReworkMonthSummary(),
   ]);
   loadJobs();
 }
@@ -3095,7 +3120,7 @@ function renderUpcomingHint(filteredCount, totalCount){
   activeUpcomingHintEl.textContent = `มีงานล่วงหน้าทั้งหมด ${totalCount} งาน • เลือกดูทีละวันได้เพื่อลดความสับสน`;
 }
 
-function renderHistoryLoadMoreControl(container, visibleCount, filteredTotalCount){
+function renderHistoryLoadMoreControl(container, visibleCount){
   if (!container) return;
   const wrap = document.createElement('div');
   wrap.className = 'cwf-history-load-more';
@@ -3105,34 +3130,17 @@ function renderHistoryLoadMoreControl(container, visibleCount, filteredTotalCoun
   note.className = 'muted';
   note.style.cssText = 'font-size:12px;text-align:center;';
 
-  // สำคัญ: ปุ่มดูเพิ่มต้องอิงจำนวนของ filter ที่กำลังดู ไม่ใช่จำนวน history ทั้ง cache
-  // เคสจริง: tab วัน/เดือนมีแค่ 7 งาน แต่ cache มี history 20+ และ __HISTORY_HAS_MORE__ = true
-  // แบบเดิมเลยแสดงปุ่ม “ดูเพิ่มอีก 20 งาน” ทั้งที่ช่วงวัน/เดือนนั้นไม่มีถึง 20 งาน
-  const visibleLimit = Math.max(HISTORY_PAGE_SIZE, Number(__HISTORY_VISIBLE_LIMIT__ || HISTORY_PAGE_SIZE));
-  const filteredCount = Math.max(0, Number(filteredTotalCount || 0));
-  const canShowMoreFromFilteredCache = filteredCount > visibleLimit;
-  const isAllFilter = __HISTORY_FILTER__ === 'all';
-
-  // หน้า “ทั้งหมด” โหลดเพิ่มได้ตาม backend has-more
-  // หน้า “วัน/เดือน” จะแสดงปุ่มเฉพาะกรณีที่ filter นี้มีเต็มอย่างน้อย 20 งานแล้วเท่านั้น
-  // ถ้ามี 1-19 งาน ให้จบที่ข้อความสรุป ไม่ต้องโชว์ปุ่มให้กดแล้วงง
-  const canLoadMore = isAllFilter
-    ? (canShowMoreFromFilteredCache || __HISTORY_HAS_MORE__)
-    : (visibleCount >= HISTORY_PAGE_SIZE && (canShowMoreFromFilteredCache || __HISTORY_HAS_MORE__));
+  const loadedHistoryCount = _loadedHistoryRows().length;
+  const canShowMoreFromCache = loadedHistoryCount > __HISTORY_VISIBLE_LIMIT__;
+  const canLoadMore = canShowMoreFromCache || __HISTORY_HAS_MORE__;
 
   if (__HISTORY_LOAD_ERROR__) {
     note.textContent = `โหลดประวัติเพิ่มไม่สำเร็จ: ${__HISTORY_LOAD_ERROR__}`;
     wrap.appendChild(note);
   } else if (visibleCount > 0) {
-    if (canLoadMore) {
-      note.textContent = `กำลังแสดง ${visibleCount} งานล่าสุด • กดดูเพิ่มเพื่อโหลดอีก ${HISTORY_PAGE_SIZE} งาน`;
-    } else if (__HISTORY_FILTER__ === 'day') {
-      note.textContent = `แสดงงานวันนี้ทั้งหมด ${visibleCount} งาน`;
-    } else if (__HISTORY_FILTER__ === 'month') {
-      note.textContent = `แสดงงานเดือนนี้ทั้งหมด ${visibleCount} งาน`;
-    } else {
-      note.textContent = `แสดงประวัติที่โหลดแล้ว ${visibleCount} งาน`;
-    }
+    note.textContent = canLoadMore
+      ? `กำลังแสดง ${visibleCount} งานล่าสุด • กดดูเพิ่มเพื่อโหลดอีก ${HISTORY_PAGE_SIZE} งาน`
+      : `แสดงประวัติที่โหลดแล้ว ${visibleCount} งาน`;
     wrap.appendChild(note);
   }
 
@@ -3165,6 +3173,7 @@ function renderJobs(jobs) {
     if (activeUpcomingJobsEl) activeUpcomingJobsEl.innerHTML = "<p>ยังไม่มีงานล่วงหน้า</p>";
     if (historyJobsEl) historyJobsEl.innerHTML = "<p>ยังไม่มีประวัติงาน</p>";
     loadCompletedCountSummary();
+    loadReworkMonthSummary();
     renderProfile(0);
     return;
   }
@@ -3272,7 +3281,7 @@ function renderJobs(jobs) {
       } catch (_) {}
     }
 
-    renderHistoryLoadMoreControl(historyJobsEl, visibleHistoryRows.length, sortedHistoryAll.length);
+    renderHistoryLoadMoreControl(historyJobsEl, visibleHistoryRows.length);
   }
 
 

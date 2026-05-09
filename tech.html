@@ -298,6 +298,49 @@
     .tech-more .row .k{font-size:12px;font-weight:1000;color:rgba(15,23,42,0.60)}
     .tech-more .row .v{font-size:13px;font-weight:1100;color:#0f172a}
 
+
+
+    /* CWF fix15: premium compact profile card on รับงานใหม่ */
+    .tech-new-home{
+      position:relative;
+      overflow:hidden;
+      padding:20px 18px 18px !important;
+      border-radius:30px !important;
+      border:1px solid rgba(215,224,238,.98) !important;
+      background:
+        radial-gradient(circle at 10% 0%, rgba(255,214,10,.22), transparent 28%),
+        radial-gradient(circle at 100% 8%, rgba(22,185,242,.18), transparent 34%),
+        linear-gradient(180deg,#ffffff 0%,#f7fbff 100%) !important;
+      box-shadow:0 22px 52px rgba(8,36,91,.14) !important;
+    }
+    .tech-new-home::before{
+      content:"";
+      position:absolute;inset:0 0 auto 0;height:5px;
+      background:linear-gradient(90deg,#ffd60a,#16b9f2,#0b4bb3);
+    }
+    .tech-profile-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:0 0 14px;}
+    .tech-profile-head h2{margin:0!important;font-size:clamp(26px,7vw,34px)!important;line-height:1.02!important;color:#08245b!important;letter-spacing:-.03em!important;}
+    .tech-profile-eyebrow{font-size:10px;font-weight:1100;letter-spacing:.14em;color:#0b62d6;text-transform:uppercase;margin-bottom:4px;}
+    .profile-settings-btn{width:48px;height:48px;border-radius:18px;border:1px solid rgba(11,75,179,.18);background:linear-gradient(135deg,#fff7c2,#ffd60a);color:#08245b;font-size:23px;display:grid;place-items:center;box-shadow:0 12px 28px rgba(244,196,0,.25);cursor:pointer;flex:0 0 48px;}
+    .profile-settings-btn:active{transform:translateY(1px) scale(.985)}
+    .tech-new-home .profile-compact{display:grid!important;grid-template-columns:1fr!important;gap:14px!important;}
+    .tech-new-home .profile-compact .left{display:grid!important;grid-template-columns:64px 1fr!important;align-items:center!important;gap:14px!important;min-width:0!important;}
+    .tech-new-home .tech-avatar{width:64px!important;height:64px!important;border:4px solid #ffd60a!important;box-shadow:0 12px 26px rgba(8,36,91,.16)!important;}
+    .tech-new-home .profile-compact .meta .name{font-size:clamp(20px,5.5vw,26px)!important;line-height:1.08!important;max-width:100%!important;color:#08245b!important;letter-spacing:-.02em!important;}
+    .tech-new-home .profile-compact .meta .code{font-size:13px!important;color:#64748b!important;font-weight:1000!important;margin-top:4px;}
+    .tech-new-home .profile-compact .chips{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important;width:100%!important;}
+    .tech-new-home .chipStat{min-height:82px!important;padding:12px 12px!important;border-radius:22px!important;box-shadow:0 14px 32px rgba(8,36,91,.10)!important;border:1px solid rgba(215,224,238,.95)!important;justify-content:center!important;}
+    .tech-new-home .chipStat .k{font-size:13px!important;line-height:1.15!important;color:rgba(8,36,91,.72)!important;}
+    .tech-new-home .chipStat .v{font-size:clamp(22px,6vw,30px)!important;line-height:1.05!important;color:#08245b!important;letter-spacing:-.02em!important;}
+    .tech-new-home .chipStat.clickable{background:linear-gradient(135deg,#ecfdf5,#fff)!important;border-color:rgba(34,197,94,.25)!important;}
+    .tech-new-home .chipDone{background:linear-gradient(135deg,#f0fdf4,#ffffff)!important;border-color:rgba(34,197,94,.23)!important;}
+    .tech-new-home .chipRework{background:linear-gradient(135deg,#fff1f2,#ffffff)!important;border-color:rgba(239,68,68,.28)!important;}
+    .tech-new-home .chipRework .k,.tech-new-home .chipRework .v{color:#b91c1c!important;}
+    .tech-new-home .chipRating{background:linear-gradient(135deg,#fffbeb,#ffffff)!important;border-color:rgba(245,158,11,.28)!important;}
+    .tech-new-home details.tech-more summary{border-radius:20px!important;background:#fff!important;min-height:54px!important;font-size:17px!important;box-shadow:0 10px 26px rgba(8,36,91,.08)!important;}
+    .tech-new-home hr{border:0!important;height:1px!important;background:linear-gradient(90deg,transparent,rgba(8,36,91,.16),transparent)!important;margin:18px 0!important;}
+    @media(max-width:380px){.tech-new-home .profile-compact .chips{grid-template-columns:1fr 1fr!important;gap:8px!important}.tech-new-home .chipStat{min-height:78px!important;padding:10px!important}.profile-settings-btn{width:44px;height:44px;border-radius:16px}}
+
     .techMenuBtn .menuIcon{width:38px;height:38px;border-radius:12px;display:inline-flex;align-items:center;justify-content:center;background:var(--tech-yellow-soft);color:#111827;font-size:18px;flex:0 0 38px;}
     .techMenuBtn .menuText{display:flex;flex-direction:column;align-items:flex-start;gap:2px;min-width:0;}
     .techMenuBtn .menuText strong{font-size:14px;line-height:1.2;white-space:normal;text-align:left;}
@@ -1488,10 +1531,16 @@
       <button class="tab-btn" id="tab-income" onclick="switchTab('income')">รายได้</button>
     </div>
 
-    <div class="card section active" id="sec-new">
-      <h2>โปรไฟล์ช่าง</h2>
+    <div class="card section active tech-new-home" id="sec-new">
+      <div class="tech-profile-head">
+        <div>
+          <div class="tech-profile-eyebrow">CWF TECHNICIAN</div>
+          <h2>โปรไฟล์ช่าง</h2>
+        </div>
+        <button class="profile-settings-btn" type="button" onclick="openTechSettingsModal()" aria-label="ตั้งค่าบัญชี">⚙️</button>
+      </div>
 
-      <!-- ✅ โปรไฟล์ช่าง (แสดงเฉพาะ: รูป / รหัส / วันนี้ได้ / งานสะสม / คะแนน) -->
+      <!-- ✅ โปรไฟล์ช่าง (แสดงเฉพาะ: รูป / รหัส / วันนี้ได้ / เสร็จสิ้น / งานแก้ไข / คะแนน) -->
       <div class="profile-compact">
         <div class="left">
           <img id="profile-photo" class="tech-avatar" src="/logo.png" alt="photo">
@@ -1515,11 +1564,15 @@
             <div class="k">💲 วันนี้ได้</div>
             <div class="v" id="incomeDaily">-</div>
           </div>
-          <div class="chipStat" title="จำนวนงานที่ช่างปิดสำเร็จในเดือนปัจจุบัน">
-            <div class="k">✅ งานปิดเดือนนี้</div>
+          <div class="chipStat chipDone" title="จำนวนงานที่ช่างปิดสำเร็จในเดือนปัจจุบัน">
+            <div class="k">✅ เสร็จสิ้น</div>
             <div class="v" id="doneCount">-</div>
           </div>
-          <div class="chipStat">
+          <div class="chipStat chipRework" title="จำนวนงานแก้ไขของเดือนนี้">
+            <div class="k">🔴 งานแก้ไข</div>
+            <div class="v" id="reworkMonthCount">-</div>
+          </div>
+          <div class="chipStat chipRating">
             <div class="k">⭐ คะแนน</div>
             <div class="v" id="rating">-</div>
           </div>
@@ -1781,7 +1834,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260509_history_filter_loadmore_fix14"></script>
+  <script src="app.js?v=20260509_profile_rework_fix15"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

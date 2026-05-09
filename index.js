@@ -10360,6 +10360,71 @@ app.get('/tech/completed_count_summary', async (req, res) => {
   }
 });
 
+
+// Technician profile card: monthly rework count (does not affect income totals)
+app.get('/tech/rework_count_summary', async (req, res) => {
+  try {
+    let tech = '';
+    try {
+      const ctx = await getAuthContext(req, res);
+      if (ctx.ok && isTechnicianRole(ctx.effective?.role)) tech = String(ctx.effective.username || '').trim();
+    } catch (_) {}
+
+    if (!tech) {
+      const qUser = String(req.query.username || '').trim();
+      if (!qUser) return res.status(401).json({ ok:false, error:'UNAUTHORIZED' });
+      const vr = await pool.query(
+        `SELECT username FROM public.technician_profiles WHERE username=$1 LIMIT 1`,
+        [qUser]
+      );
+      if (!vr.rows || !vr.rows.length) return res.status(403).json({ ok:false, error:'FORBIDDEN' });
+      tech = qUser;
+    }
+
+    const tableCheck = await pool.query(`SELECT to_regclass('public.technician_rework_cases') AS table_name`);
+    if (!tableCheck.rows?.[0]?.table_name) {
+      const nowBkk = _bkkNow();
+      const { y, m } = _bkkYmd(nowBkk);
+      return res.json({ ok:true, username: tech, month: `${y}-${String(m).padStart(2,'0')}`, month_rework_jobs: 0, month_rework_cases: 0, open_rework_cases: 0, source: 'no_rework_table' });
+    }
+
+    const nowBkk = _bkkNow();
+    const { y, m } = _bkkYmd(nowBkk);
+    const monthStart = _bangkokMidnightUTC(y, m, 1);
+    let ny = y, nm = m + 1;
+    if (nm > 12) { nm = 1; ny = y + 1; }
+    const nextMonthStart = _bangkokMidnightUTC(ny, nm, 1);
+    const month = `${y}-${String(m).padStart(2, '0')}`;
+
+    const q = await pool.query(
+      `SELECT
+          COUNT(DISTINCT rc.rework_case_id)::int AS month_rework_cases,
+          COUNT(DISTINCT rc.job_id)::int AS month_rework_jobs,
+          COUNT(DISTINCT rc.rework_case_id) FILTER (WHERE COALESCE(rc.status,'') IN ('open','in_progress'))::int AS open_rework_cases
+         FROM public.technician_rework_cases rc
+        WHERE COALESCE(rc.status,'') NOT IN ('voided','cancelled','canceled')
+          AND COALESCE(rc.created_at, rc.updated_at, NOW()) >= $1
+          AND COALESCE(rc.created_at, rc.updated_at, NOW()) < $2
+          AND rc.technician_username = $3`,
+      [monthStart.toISOString(), nextMonthStart.toISOString(), tech]
+    );
+
+    const row = q.rows?.[0] || {};
+    return res.json({
+      ok: true,
+      username: tech,
+      month,
+      month_rework_jobs: Number(row.month_rework_jobs || 0),
+      month_rework_cases: Number(row.month_rework_cases || 0),
+      open_rework_cases: Number(row.open_rework_cases || 0),
+      source: 'technician_rework_cases',
+    });
+  } catch (e) {
+    console.error('GET /tech/rework_count_summary', e);
+    return res.status(500).json({ ok:false, error:'REWORK_COUNT_SUMMARY_FAILED' });
+  }
+});
+
 app.get('/tech/income_summary', requireTechnicianSession, async (req, res) => {
   try {
     const tech = String(req.auth?.username || req.effective?.username || '').trim();
