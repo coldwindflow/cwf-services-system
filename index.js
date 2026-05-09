@@ -17329,9 +17329,14 @@ async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
 // =======================================
 // 👨‍🔧 JOBS: technician sees only own jobs
 // =======================================
-app.get("/jobs/tech/:username", async (req, res) => {
-  const { username } = req.params;
+app.get("/jobs/tech/:username", requireTechnicianSession, async (req, res) => {
+  const requestedUsername = String(req.params?.username || "").trim();
+  const username = _authUsername(req);
+  if (!username) return res.status(401).json({ error: "UNAUTHORIZED" });
   try {
+    if (requestedUsername && requestedUsername !== "me" && requestedUsername !== username) {
+      try { console.warn("[tech_jobs_identity] ignored path username mismatch", { requestedUsername, sessionUsername: username }); } catch {}
+    }
     const aliases = await _getTechnicianVisibilityAliases(username);
     const historyLimit = Math.min(Math.max(Number(req.query.history_limit || 0), 0), 100);
     const historyOffset = Math.max(Number(req.query.history_offset || 0), 0);
@@ -18789,11 +18794,14 @@ async function autoFinalizeUrgentJobs() {
   }
 }
 
-app.post("/tech/income-summary-batch", async (req, res) => {
+app.post("/tech/income-summary-batch", requireTechnicianSession, async (req, res) => {
   const requestedUsername = String(req.body?.username || req.query?.username || '').trim();
-  const username = await _resolveTechnicianIncomeUsername(req, requestedUsername);
+  const username = _authUsername(req);
   const jobIds = _sanitizeTechJobIds(req.body?.job_ids || req.body?.jobIds || []);
-  if (!username) return res.status(400).json({ ok: false, error: "username_required" });
+  if (!username) return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+  if (requestedUsername && requestedUsername !== username) {
+    try { console.warn("[tech_income_batch_identity] ignored requested username mismatch", { requestedUsername, sessionUsername: username }); } catch {}
+  }
   if (!jobIds.length) return res.json({ ok: true, items: {} });
 
   try {
@@ -18837,12 +18845,15 @@ app.post("/tech/income-summary-batch", async (req, res) => {
   }
 });
 
-app.get("/tech/jobs/:job_id/income-detail", async (req, res) => {
+app.get("/tech/jobs/:job_id/income-detail", requireTechnicianSession, async (req, res) => {
   const jobId = Number(req.params.job_id);
   const requestedUsername = String(req.query?.username || req.body?.username || '').trim();
-  const username = await _resolveTechnicianIncomeUsername(req, requestedUsername);
+  const username = _authUsername(req);
   if (!Number.isInteger(jobId) || jobId <= 0) return res.status(400).json({ ok: false, error: "invalid_job_id" });
-  if (!username) return res.status(400).json({ ok: false, error: "username_required" });
+  if (!username) return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+  if (requestedUsername && requestedUsername !== username) {
+    try { console.warn("[tech_income_detail_identity] ignored requested username mismatch", { requestedUsername, sessionUsername: username, jobId }); } catch {}
+  }
 
   try {
     const visibleRows = await _loadTechnicianVisibleJobsByIds(username, [jobId]);
