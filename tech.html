@@ -384,7 +384,7 @@
     .income-summary-card.primary{background:linear-gradient(180deg,#FFFFFF 0%, #EEF4FF 100%);border-color:#C7D8FB;}
     .income-summary-card.highlight{background:linear-gradient(180deg,#FFFDF5 0%, #FFF6CC 100%);border-color:#F4C400;}
     .payout-month-breakdown{display:grid;gap:9px;margin-top:12px;}
-    .payout-period-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 11px;border-radius:16px;background:rgba(255,255,255,.72);border:1px solid rgba(244,196,0,.35);box-shadow:0 8px 22px rgba(8,36,91,.06);}
+    .payout-period-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 11px;border-radius:16px;background:rgba(255,255,255,.78);border:1px solid rgba(244,196,0,.35);box-shadow:0 8px 22px rgba(8,36,91,.06);}
     .payout-period-main{min-width:0;display:grid;gap:2px;}
     .payout-period-title{font-size:13px;font-weight:1000;color:var(--tech-navy);line-height:1.25;}
     .payout-period-range{font-size:11px;font-weight:850;color:var(--tech-muted);line-height:1.35;}
@@ -392,6 +392,19 @@
     .payout-period-amount{font-size:15px;font-weight:1000;color:var(--tech-navy);font-variant-numeric:tabular-nums;white-space:nowrap;}
     .payout-period-badge{justify-self:end;width:max-content;padding:3px 8px;border-radius:999px;background:#0b4bb3;color:#fff;font-size:10px;font-weight:1000;line-height:1.15;box-shadow:0 6px 14px rgba(11,75,179,.18);}
     @media(max-width:380px){.payout-period-row{align-items:flex-start;flex-direction:column}.payout-period-side{text-align:left}.payout-period-badge{justify-self:start}}
+
+    .payout-history-month-card{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 15px;border-radius:20px;background:linear-gradient(135deg,#0B2E6D 0%,#0B4BB3 100%);color:#fff;box-shadow:0 14px 34px rgba(11,46,109,.18);margin-bottom:12px;}
+    .payout-history-month-card .muted{color:rgba(255,255,255,.75)!important;font-size:12px;}
+    .payout-history-month-total{font-size:20px;font-weight:1100;white-space:nowrap;font-variant-numeric:tabular-nums;}
+    .payout-history-card{width:100%;text-align:left;padding:13px 14px;border-radius:20px;border:1px solid rgba(11,75,179,.13);margin-bottom:10px;cursor:pointer;background:linear-gradient(180deg,#fff 0%,#F8FBFF 100%);box-shadow:0 12px 28px rgba(8,36,91,.06);color:var(--tech-navy);}
+    .payout-history-card.active{outline:2px solid rgba(11,75,179,.35);}
+    .payout-history-main{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
+    .payout-history-range{font-size:12px;font-weight:850;color:var(--tech-muted);margin-top:4px;}
+    .payout-history-badge{flex:0 0 auto;display:inline-flex;align-items:center;justify-content:center;padding:4px 9px;border-radius:999px;background:rgba(244,196,0,.22);border:1px solid rgba(244,196,0,.42);font-size:10px;font-weight:1000;color:#6b5200;}
+    .payout-history-money{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin-top:10px;padding-top:10px;border-top:1px dashed rgba(11,75,179,.16);}
+    .payout-history-money strong{display:block;font-size:21px;font-weight:1100;color:var(--tech-navy);font-variant-numeric:tabular-nums;margin-top:2px;}
+    .payout-history-mini{text-align:right;font-size:11px;font-weight:800;color:var(--tech-muted);line-height:1.45;}
+    @media(max-width:420px){.payout-history-month-card,.payout-history-money{align-items:flex-start;flex-direction:column}.payout-history-mini{text-align:left}.payout-history-main{align-items:flex-start}.payout-history-badge{max-width:42%;text-align:center}}
     .income-toolbar{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
     .btn, button.btn{border-radius:16px !important; min-height:44px; padding:10px 14px; border:1px solid var(--tech-border); background:#fff; color:var(--tech-navy); font-weight:900; box-shadow:none !important;}
     .btn.blue, button.btn.blue{background:var(--tech-navy); color:#fff; border-color:var(--tech-navy);}
@@ -1683,7 +1696,7 @@
           </div>
           <div class="payout-month-toolbar">
             <select id="techPayoutMonthSelect" aria-label="เลือกเดือนประวัติงวดจ่ายเงิน"></select>
-            <button class="btn blue" type="button" id="btnLoadPayoutMonth">โหลดเดือนนี้</button>
+            <button class="btn blue" type="button" id="btnLoadPayoutMonth">โหลดเดือนที่เลือก</button>
           </div>
           <div id="techPayoutPeriods" style="margin-top:10px"></div>
         </div>
@@ -1782,7 +1795,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260509_revisit_problem_visible_v16"></script>
+  <script src="app.js?v=20260509_payout_month_labels_v3"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
