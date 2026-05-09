@@ -16,6 +16,7 @@ function createTechnicianJobMoneyHelpers(deps = {}) {
     getCustomerCollectAmountForTechJob,
     loadTechnicianIncomePreview,
     loadFinalizedTechPayoutLineForJob,
+    getTechnicianVisibilityAliases,
   } = deps;
 
   if (!pool) throw new Error('pool_required');
@@ -109,7 +110,7 @@ function createTechnicianJobMoneyHelpers(deps = {}) {
       technician_income_rate_set_id: row.rate_set_id || detail.rate_set_id || null,
       technician_income_rate_set_version: row.rate_set_version || detail.rate_set_version || null,
       technician_income_breakdown: detail.technician_income_breakdown || detail.breakdown || detail || { source: row.income_source || 'preview', rows: [], related_items: [] },
-      technician_income_label: context === 'offered' ? 'ที่ช่างจะได้รับ' : (context === 'history' ? 'ที่ช่างได้รับ' : 'ที่ช่างจะได้รับ'),
+      technician_income_label: context === 'offered' ? 'ที่ช่างจะได้รับ' : (context === 'history' ? 'ได้รับ' : 'ที่ช่างจะได้รับ'),
     };
   }
 
@@ -204,7 +205,7 @@ function createTechnicianJobMoneyHelpers(deps = {}) {
       customer_collect_amount: customerCollectAmount,
       customer_collect_label: context === 'history' ? 'ยอดที่ลูกค้าจ่าย' : 'ยอดเก็บลูกค้า',
       technician_income_amount: null,
-      technician_income_label: context === 'offered' ? 'ที่ช่างจะได้รับ' : (context === 'history' ? 'ที่ช่างได้รับ' : 'ที่ช่างจะได้รับ'),
+      technician_income_label: context === 'offered' ? 'ที่ช่างจะได้รับ' : (context === 'history' ? 'ได้รับ' : 'ที่ช่างจะได้รับ'),
       technician_income_source: 'unavailable',
       technician_income_breakdown: { source: 'unavailable', rows: [], related_items: [] },
       technician_income_rate_set_id: null,
@@ -310,6 +311,205 @@ function createTechnicianJobMoneyHelpers(deps = {}) {
     }
   }
 
+
+  function _pickDisplayRowForContext(displayMap, jobId, context) {
+    if (!displayMap || !jobId) return null;
+    const jid = String(jobId);
+    const ctx = String(context || 'current').trim() || 'current';
+    return displayMap.get(`${jid}:${ctx}`)
+      || (ctx === 'history' ? displayMap.get(`${jid}:current`) : null)
+      || (ctx !== 'offered' ? displayMap.get(`${jid}:offered`) : null)
+      || displayMap.get(jid)
+      || null;
+  }
+
+  async function _loadIncomePreviewBatch(jobIds, username) {
+    const ids = [...new Set((Array.isArray(jobIds) ? jobIds : [jobIds]).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+    const tech = String(username || '').trim();
+    const map = new Map();
+    if (!ids.length || !tech) return map;
+    try {
+      const r = await pool.query(
+        `SELECT DISTINCT ON (job_id) job_id, technician_username, income_amount, income_source, rate_set_id, rate_set_version,
+                breakdown_json, is_stale, calculated_at, updated_at
+           FROM public.job_technician_income_preview
+          WHERE job_id = ANY($1::bigint[])
+            AND technician_username=$2
+            AND COALESCE(is_stale,FALSE)=FALSE
+          ORDER BY job_id, updated_at DESC`,
+        [ids, tech]
+      );
+      for (const row of r.rows || []) map.set(String(row.job_id), row);
+    } catch (e) {
+      try { console.warn('[tech_income_preview_batch] load failed', { username: tech, count: ids.length, error: e.message }); } catch (_) {}
+    }
+    return map;
+  }
+
+  async function _loadFinalizedPayoutLinesBatch(jobIds, username) {
+    const ids = [...new Set((Array.isArray(jobIds) ? jobIds : [jobIds]).map(Number).filter((n) => Number.isInteger(n) && n > 0))];
+    const tech = String(username || '').trim();
+    const map = new Map();
+    if (!ids.length || !tech) return map;
+    try {
+      const aliases = typeof getTechnicianVisibilityAliases === 'function'
+        ? await getTechnicianVisibilityAliases(tech).catch(() => [tech])
+        : [tech];
+      const r = await pool.query(
+        `SELECT DISTINCT ON (l.job_id::text)
+                l.payout_id, l.technician_username, l.job_id, l.earn_amount, l.detail_json,
+                p.status AS payout_status, p.period_start, p.period_end
+           FROM public.technician_payout_lines l
+           JOIN public.technician_payout_periods p ON p.payout_id = l.payout_id
+          WHERE l.job_id::text = ANY($1::text[])
+            AND l.technician_username = ANY($2::text[])
+            AND COALESCE(p.status,'draft') IN ('locked','paid')
+          ORDER BY l.job_id::text,
+                   CASE WHEN l.technician_username=$3 THEN 0 ELSE 1 END,
+                   CASE WHEN p.status='paid' THEN 0 ELSE 1 END,
+                   p.period_end DESC, l.line_id DESC`,
+        [ids.map(String), aliases, tech]
+      );
+      for (const row of r.rows || []) map.set(String(row.job_id), row);
+    } catch (e) {
+      try { console.warn('[tech_payout_lines_batch] load failed', { username: tech, count: ids.length, error: e.message }); } catch (_) {}
+    }
+    return map;
+  }
+
+  async function _buildTechnicianJobMoneySummaryBatch(jobs, username, opts = {}) {
+    const rows = Array.isArray(jobs) ? jobs : [];
+    const tech = String(username || '').trim();
+    const out = new Map();
+    if (!rows.length || !tech) return out;
+
+    const jobIds = [...new Set(rows.map((job) => Number(job?.job_id)).filter((n) => Number.isInteger(n) && n > 0))];
+    const contextForJob = new Map();
+    for (const job of rows) {
+      const jid = Number(job?.job_id);
+      if (!Number.isInteger(jid) || jid <= 0) continue;
+      const ctx = typeof opts.contextForJob === 'function'
+        ? opts.contextForJob(job)
+        : (opts.context || 'current');
+      contextForJob.set(String(jid), String(ctx || 'current').trim() || 'current');
+    }
+
+    const displayMap = await technicianJobIncomeDisplayHelpers.getTechnicianJobIncomeDisplayBatch(pool, jobIds, tech).catch(() => new Map());
+    const reworkCases = await technicianReworkHelpers.getLatestReworkCasesForJobs(pool, jobIds).catch(() => new Map());
+    const historyIds = jobIds.filter((jid) => (contextForJob.get(String(jid)) || 'current') === 'history');
+    const finalizedMap = historyIds.length ? await _loadFinalizedPayoutLinesBatch(historyIds, tech) : new Map();
+    const previewMap = await _loadIncomePreviewBatch(jobIds, tech);
+
+    for (const job of rows) {
+      const jid = Number(job?.job_id);
+      const key = String(jid);
+      const context = contextForJob.get(key) || String(opts.context || 'current').trim() || 'current';
+      const summary = {
+        customer_collect_amount: Number(job?.job_price || 0) || null,
+        customer_collect_label: context === 'history' ? 'ยอดที่ลูกค้าจ่าย' : 'ยอดเก็บลูกค้า',
+        technician_income_amount: null,
+        technician_income_label: context === 'history' ? 'ได้รับ' : 'ที่ช่างจะได้รับ',
+        technician_income_source: 'pending_review',
+        technician_income_breakdown: { source: 'pending_review', rows: [], related_items: [] },
+        technician_income_rate_set_id: null,
+        technician_income_rate_set_version: null,
+        technician_income_display_state: 'pending_review',
+        technician_income_display_note: 'รอตรวจสอบรายได้',
+        technician_income_is_final: false,
+        technician_income_is_stale: false,
+      };
+      if (!Number.isInteger(jid) || jid <= 0) {
+        out.set(key, summary);
+        continue;
+      }
+
+      try {
+        if (technicianReworkHelpers.isCancelledJob(job)) {
+          const row = technicianJobIncomeDisplayHelpers.buildCancelledDisplay(job, tech, context || 'history');
+          try { await technicianJobIncomeDisplayHelpers.upsertTechnicianJobIncomeDisplay(pool, row); } catch (_) {}
+          Object.assign(summary, _moneySummaryFromDisplayRow(row, context) || {});
+          out.set(key, summary);
+          continue;
+        }
+
+        const reworkCase = reworkCases.get(jid) || null;
+        if (technicianReworkHelpers.detectReworkJob(job, reworkCase)) {
+          const existing = _pickDisplayRowForContext(displayMap, jid, context || 'history');
+          const preview = previewMap.get(key) || null;
+          const heldAmount = (existing && existing.display_state && !String(existing.display_state).startsWith('rework_'))
+            ? Number(existing.display_amount || 0)
+            : Number(preview?.income_amount || 0);
+          const reworkDisplay = technicianReworkHelpers.buildReworkDisplay(job, reworkCase, heldAmount);
+          const row = technicianJobIncomeDisplayHelpers.buildReworkDisplay(job, tech, reworkDisplay, context || 'history');
+          try { await technicianJobIncomeDisplayHelpers.upsertTechnicianJobIncomeDisplay(pool, row); } catch (_) {}
+          Object.assign(summary, _moneySummaryFromDisplayRow(row, context) || {});
+          out.set(key, summary);
+          continue;
+        }
+
+        const display = _pickDisplayRowForContext(displayMap, jid, context || 'current');
+        if (display) {
+          Object.assign(summary, _moneySummaryFromDisplayRow(display, context) || {});
+          out.set(key, summary);
+          continue;
+        }
+
+        if (context === 'history') {
+          const stored = finalizedMap.get(key) || null;
+          if (stored) {
+            summary.technician_income_amount = toMoney(stored.earn_amount || 0);
+            summary.technician_income_source = 'finalized_payout';
+            summary.technician_income_breakdown = _techIncomeBreakdownFromLine(stored, 'finalized_payout');
+            summary.technician_income_rate_set_id = summary.technician_income_breakdown.rate_set_id || null;
+            summary.technician_income_rate_set_version = summary.technician_income_breakdown.rate_set_version || null;
+            summary.technician_income_label = 'ได้รับ';
+            summary.technician_income_display_state = 'finalized';
+            summary.technician_income_display_note = null;
+            summary.technician_income_is_final = true;
+            try {
+              await technicianJobIncomeDisplayHelpers.upsertTechnicianJobIncomeDisplay(pool, {
+                job_id: jid,
+                technician_username: tech,
+                context: 'history',
+                card_type: 'history',
+                display_state: 'finalized',
+                display_label: 'ได้รับ',
+                display_amount: summary.technician_income_amount,
+                income_source: 'finalized_payout',
+                rate_set_id: summary.technician_income_rate_set_id,
+                rate_set_version: summary.technician_income_rate_set_version,
+                source_table: 'technician_payout_lines',
+                source_id: stored.payout_id,
+                is_final: true,
+              });
+            } catch (_) {}
+            out.set(key, summary);
+            continue;
+          }
+        }
+
+        const preview = previewMap.get(key) || null;
+        if (preview && preview.income_amount != null) {
+          Object.assign(summary, _moneySummaryFromPreview(preview, context || 'current'));
+          summary.technician_income_display_state = context === 'history' ? 'finalized' : 'estimated';
+          summary.technician_income_is_final = context === 'history';
+          try {
+            const displayRow = await _upsertDisplayRowForPreview(jid, tech, preview, preview.income_source || 'preview', { context: context || 'current' });
+            const displaySummary = _moneySummaryFromDisplayRow(displayRow, context);
+            if (displaySummary) Object.assign(summary, displaySummary);
+          } catch (_) {}
+          out.set(key, summary);
+          continue;
+        }
+      } catch (e) {
+        try { console.warn('[tech_money_batch] item failed', { job_id: jid, username: tech, context, error: e.message }); } catch (_) {}
+      }
+      out.set(key, summary);
+    }
+
+    return out;
+  }
+
   return {
     _techIncomeBreakdownFromLine,
     _mapTechIncomeSourceFromLine,
@@ -319,6 +519,7 @@ function createTechnicianJobMoneyHelpers(deps = {}) {
     _upsertDisplayRowForPreview,
     _syncDisplayForJobState,
     _buildTechnicianJobMoneySummary,
+    _buildTechnicianJobMoneySummaryBatch,
   };
 }
 
