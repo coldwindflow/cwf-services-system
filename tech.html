@@ -606,142 +606,6 @@
     #sec-new .chipStat.rework{background:linear-gradient(180deg,#fff0f0,#ffffff)!important;border-color:rgba(239,68,68,.24)!important;}
     #sec-new .chipStat.rework .k,#sec-new .chipStat.rework .v{color:#b91c1c!important;}
     #sec-new .chipStat.rating{background:linear-gradient(180deg,#fff9db,#ffffff)!important;border-color:rgba(244,196,0,.28)!important;}
-
-    /* CWF fix18: lively premium technician profile UI (visible override) */
-    #sec-new{
-      position:relative!important;
-      overflow:hidden!important;
-      border:1px solid rgba(255,255,255,.92)!important;
-      background:
-        radial-gradient(circle at 10% 0%, rgba(255,210,30,.34) 0 18%, transparent 34%),
-        radial-gradient(circle at 94% 10%, rgba(19,211,255,.34) 0 18%, transparent 36%),
-        radial-gradient(circle at 50% 110%, rgba(11,86,216,.16) 0 28%, transparent 58%),
-        linear-gradient(180deg,#ffffff 0%,#f6fbff 48%,#eef7ff 100%)!important;
-      box-shadow:0 28px 64px rgba(8,36,91,.18), inset 0 1px 0 rgba(255,255,255,.88)!important;
-    }
-    #sec-new::before{
-      content:''!important;
-      position:absolute!important;
-      left:0!important;right:0!important;top:0!important;height:10px!important;
-      background:linear-gradient(90deg,#ffd21e 0%,#18c8ff 36%,#0b56d8 72%,#ff4d4d 100%)!important;
-      opacity:1!important;z-index:0!important;
-    }
-    #sec-new::after{
-      content:''!important;
-      position:absolute!important;
-      right:-68px!important;top:54px!important;width:190px!important;height:190px!important;
-      border-radius:999px!important;
-      background:radial-gradient(circle,rgba(255,210,30,.35),rgba(24,200,255,.16) 46%,transparent 70%)!important;
-      pointer-events:none!important;z-index:0!important;
-      filter:blur(1px)!important;
-    }
-    #sec-new > *{position:relative!important;z-index:1!important;}
-    #sec-new>h2:first-child{
-      margin-top:4px!important;
-      margin-bottom:14px!important;
-      padding-left:2px!important;
-      color:#08245b!important;
-      background:none!important;
-      -webkit-text-fill-color:#08245b!important;
-      text-shadow:0 8px 24px rgba(8,36,91,.13)!important;
-    }
-    #sec-new>h2:first-child::before{
-      color:#0b72e7!important;
-      -webkit-text-fill-color:#0b72e7!important;
-      letter-spacing:.30em!important;
-    }
-    #sec-new .profile-settings-icon{
-      right:16px!important;top:18px!important;width:48px!important;height:48px!important;
-      border-radius:18px!important;border:1px solid rgba(255,210,30,.88)!important;
-      background:linear-gradient(135deg,#fff8a8 0%,#ffd21e 48%,#ffb000 100%)!important;
-      box-shadow:0 18px 34px rgba(255,176,0,.34),0 0 0 6px rgba(255,210,30,.16),inset 0 1px 0 rgba(255,255,255,.88)!important;
-      color:#08245b!important;font-size:24px!important;
-    }
-    #sec-new .profile-compact{
-      border-radius:26px!important;
-      padding:14px!important;
-      background:linear-gradient(135deg,rgba(255,255,255,.88),rgba(239,248,255,.78))!important;
-      border:1px solid rgba(14,116,231,.13)!important;
-      box-shadow:0 18px 38px rgba(8,36,91,.10), inset 0 1px 0 rgba(255,255,255,.92)!important;
-    }
-    #sec-new .profile-compact .left{
-      padding:2px 58px 2px 0!important;
-      align-items:center!important;
-    }
-    #sec-new .tech-avatar{
-      width:68px!important;height:68px!important;border:4px solid #ffd21e!important;
-      box-shadow:0 14px 28px rgba(8,36,91,.18),0 0 0 5px rgba(255,210,30,.18)!important;
-    }
-    #sec-new .profile-compact .meta .name{
-      font-size:clamp(22px,5.8vw,30px)!important;
-      color:#061f52!important;
-      -webkit-text-fill-color:#061f52!important;
-      text-shadow:0 8px 18px rgba(8,36,91,.10)!important;
-    }
-    #sec-new .profile-compact .meta .code{
-      color:#667085!important;
-      font-size:13px!important;
-      font-weight:1000!important;
-    }
-    #sec-new .profile-compact .chips{
-      grid-template-columns:repeat(4,minmax(0,1fr))!important;
-      gap:8px!important;
-      margin-top:4px!important;
-    }
-    #sec-new .chipStat{
-      min-height:72px!important;
-      border:0!important;
-      border-radius:20px!important;
-      padding:9px 5px!important;
-      box-shadow:0 16px 28px rgba(8,36,91,.14), inset 0 1px 0 rgba(255,255,255,.42)!important;
-      transform:translateZ(0)!important;
-    }
-    #sec-new .chipStat::before{
-      background:linear-gradient(135deg,rgba(255,255,255,.35),rgba(255,255,255,0) 58%)!important;
-    }
-    #sec-new .chipStat .k{
-      font-size:10px!important;
-      font-weight:1200!important;
-      opacity:.96!important;
-      color:rgba(255,255,255,.96)!important;
-      -webkit-text-fill-color:rgba(255,255,255,.96)!important;
-      text-shadow:0 1px 1px rgba(0,0,0,.12)!important;
-    }
-    #sec-new .chipStat .v{
-      font-size:clamp(19px,5.2vw,25px)!important;
-      font-weight:1200!important;
-      color:#fff!important;
-      -webkit-text-fill-color:#fff!important;
-      text-shadow:0 2px 8px rgba(0,0,0,.18)!important;
-    }
-    #sec-new .chipStat.income{
-      background:linear-gradient(145deg,#00a85a 0%,#16d992 58%,#a7f3d0 118%)!important;
-    }
-    #sec-new .chipStat.done{
-      background:linear-gradient(145deg,#0b56d8 0%,#18a8ff 68%,#c7efff 118%)!important;
-    }
-    #sec-new .chipStat.rework{
-      background:linear-gradient(145deg,#e11d48 0%,#ff5b6e 62%,#ffd0d6 118%)!important;
-    }
-    #sec-new .chipStat.rework .k,#sec-new .chipStat.rework .v{color:#fff!important;-webkit-text-fill-color:#fff!important;}
-    #sec-new .chipStat.rating{
-      background:linear-gradient(145deg,#f59e0b 0%,#ffd21e 62%,#fff1a6 118%)!important;
-    }
-    #sec-new .chipStat.rating .k,#sec-new .chipStat.rating .v{color:#08245b!important;-webkit-text-fill-color:#08245b!important;text-shadow:0 1px 0 rgba(255,255,255,.28)!important;}
-    #sec-new details.tech-more summary{
-      border:1px solid rgba(11,86,216,.16)!important;
-      background:linear-gradient(135deg,#ffffff,#eff7ff)!important;
-      box-shadow:0 12px 24px rgba(8,36,91,.08)!important;
-    }
-    @media(max-width:390px){
-      #sec-new .profile-compact{padding:12px!important;border-radius:24px!important;}
-      #sec-new .profile-compact .chips{gap:6px!important;}
-      #sec-new .chipStat{min-height:66px!important;border-radius:17px!important;padding:8px 3px!important;}
-      #sec-new .chipStat .k{font-size:9px!important;}
-      #sec-new .chipStat .v{font-size:20px!important;}
-      #sec-new .tech-avatar{width:62px!important;height:62px!important;}
-    }
-
 </style>
 
 <style id="tax-wht-modal-final-override">
@@ -1644,11 +1508,12 @@
     </div>
 
     <div class="card section active" id="sec-new">
-      <h2>โปรไฟล์ช่าง</h2>
-      <button class="profile-settings-icon" type="button" onclick="openTechSettingsModal()" aria-label="ตั้งค่าบัญชี">⚙️</button>
+      <div class="profileHeroV19">
+        <h2>โปรไฟล์ช่าง</h2>
+        <button class="profile-settings-icon" type="button" onclick="openTechSettingsModal()" aria-label="ตั้งค่าบัญชี">⚙️</button>
 
-      <!-- ✅ โปรไฟล์ช่าง (แสดงเฉพาะ: รูป / รหัส / วันนี้ได้ / เสร็จสิ้น / งานแก้ไข / คะแนน) -->
-      <div class="profile-compact">
+        <!-- ✅ โปรไฟล์ช่าง (แสดงเฉพาะ: รูป / รหัส / วันนี้ได้ / เสร็จสิ้น / งานแก้ไข / คะแนน) -->
+        <div class="profile-compact">
         <div class="left">
           <img id="profile-photo" class="tech-avatar" src="/logo.png" alt="photo">
           <div class="meta">
@@ -1696,7 +1561,8 @@
           <div class="row"><span class="k">Rank</span><span class="v" id="profile-rank-more">-</span></div>
           <div class="row"><span class="k">เกรด</span><span class="v" id="profile-grade-more">-</span></div>
         </div>
-      </details>
+        </details>
+      </div>
 
       <div class="pushNotifyBox" id="pushNotifyBox" aria-hidden="true">
         <span id="pushNotifyHint">เปิดไว้เพื่อรับงานใหม่แม้ปิดหน้า PWA</span>
@@ -1921,6 +1787,43 @@
     @media(max-width:420px){.tech-income-chip{grid-template-columns:auto minmax(0,1fr) auto}.tech-income-chip-hint{display:none}.tech-income-chip-main strong{font-size:19px}.tech-income-modal-backdrop{padding:10px}.tech-income-modal-card{border-radius:24px;padding:18px}.tech-income-modal-summary .v{font-size:30px}.tech-income-modal-row{grid-template-columns:1fr}.tech-income-modal-row-money{text-align:left;white-space:normal}}
   </style>
 
+
+  <style id="cwf-profile-v19-vivid-override">
+    /* CWF fix19: real visible profile redesign - isolated hero, not global */
+    #sec-new .profileHeroV19{
+      position:relative!important;overflow:hidden!important;margin:-8px -6px 16px!important;padding:18px 14px 14px!important;border-radius:30px!important;
+      color:#fff!important;background:
+        radial-gradient(circle at 92% 8%,rgba(255,211,42,.95) 0 9%,rgba(255,211,42,.34) 10% 22%,transparent 32%),
+        radial-gradient(circle at 10% 16%,rgba(16,217,232,.55) 0 18%,transparent 42%),
+        linear-gradient(135deg,#061b4f 0%,#0a3a9b 36%,#0d68d8 64%,#14c4dc 100%)!important;
+      border:1px solid rgba(255,255,255,.36)!important;box-shadow:0 22px 44px rgba(4,25,75,.28),inset 0 1px 0 rgba(255,255,255,.32)!important;
+    }
+    #sec-new .profileHeroV19:before{content:'';position:absolute;left:-26px;top:-34px;width:142px;height:142px;border-radius:999px;background:rgba(255,202,40,.22);filter:blur(3px);pointer-events:none;}
+    #sec-new .profileHeroV19:after{content:'';position:absolute;right:-42px;bottom:-50px;width:180px;height:180px;border-radius:999px;background:rgba(255,255,255,.15);filter:blur(2px);pointer-events:none;}
+    #sec-new .profileHeroV19>h2{position:relative!important;z-index:1!important;margin:0 62px 12px 0!important;font-size:clamp(27px,7vw,38px)!important;line-height:.96!important;letter-spacing:-.04em!important;color:#fff!important;-webkit-text-fill-color:#fff!important;background:none!important;text-shadow:0 4px 16px rgba(0,0,0,.25)!important;}
+    #sec-new .profileHeroV19>h2:before{content:'CWF TECHNICIAN'!important;display:block!important;margin:0 0 4px 2px!important;font-size:10px!important;line-height:1!important;letter-spacing:.28em!important;font-weight:1100!important;color:#ffe46a!important;-webkit-text-fill-color:#ffe46a!important;text-shadow:none!important;}
+    #sec-new .profileHeroV19 .profile-settings-icon{right:14px!important;top:14px!important;width:54px!important;height:54px!important;border-radius:20px!important;background:linear-gradient(145deg,#fff58a 0%,#ffc400 55%,#ff9d00 100%)!important;border:1px solid rgba(255,255,255,.68)!important;color:#06245d!important;font-size:24px!important;box-shadow:0 14px 28px rgba(255,196,0,.40),0 0 0 6px rgba(255,255,255,.12)!important;z-index:4!important;}
+    #sec-new .profileHeroV19 .profile-compact{position:relative!important;z-index:2!important;gap:12px!important;margin:0!important;}
+    #sec-new .profileHeroV19 .profile-compact .left{background:rgba(255,255,255,.16)!important;border:1px solid rgba(255,255,255,.22)!important;border-radius:24px!important;padding:10px!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.22)!important;backdrop-filter:blur(8px)!important;}
+    #sec-new .profileHeroV19 .tech-avatar{width:70px!important;height:70px!important;border-radius:22px!important;border:4px solid #ffd321!important;box-shadow:0 12px 24px rgba(0,0,0,.28),0 0 0 5px rgba(255,255,255,.15)!important;}
+    #sec-new .profileHeroV19 .profile-compact .meta .name{color:#fff!important;-webkit-text-fill-color:#fff!important;font-size:clamp(21px,5.7vw,30px)!important;text-shadow:0 3px 12px rgba(0,0,0,.25)!important;max-width:calc(100vw - 178px)!important;}
+    #sec-new .profileHeroV19 .profile-compact .meta .code{color:rgba(255,255,255,.88)!important;font-size:13px!important;font-weight:1000!important;}
+    #sec-new .profileHeroV19 .profile-compact .chips{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:8px!important;width:100%!important;}
+    #sec-new .profileHeroV19 .chipStat{min-height:78px!important;border-radius:20px!important;padding:9px 5px!important;border:1px solid rgba(255,255,255,.30)!important;box-shadow:0 16px 28px rgba(0,0,0,.18),inset 0 1px 0 rgba(255,255,255,.25)!important;transform:translateZ(0)!important;}
+    #sec-new .profileHeroV19 .chipStat:before{background:linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,0))!important;}
+    #sec-new .profileHeroV19 .chipStat .k{font-size:10px!important;color:rgba(255,255,255,.92)!important;-webkit-text-fill-color:rgba(255,255,255,.92)!important;text-shadow:0 1px 8px rgba(0,0,0,.18)!important;}
+    #sec-new .profileHeroV19 .chipStat .v{font-size:clamp(20px,5.4vw,27px)!important;color:#fff!important;-webkit-text-fill-color:#fff!important;text-shadow:0 3px 12px rgba(0,0,0,.22)!important;}
+    #sec-new .profileHeroV19 .chipStat.income{background:linear-gradient(145deg,#08b56f 0%,#04d9a5 100%)!important;}
+    #sec-new .profileHeroV19 .chipStat.done{background:linear-gradient(145deg,#2f7cf6 0%,#0b4fbd 100%)!important;}
+    #sec-new .profileHeroV19 .chipStat.rework{background:linear-gradient(145deg,#ff3d52 0%,#b4142f 100%)!important;}
+    #sec-new .profileHeroV19 .chipStat.rating{background:linear-gradient(145deg,#ffd43b 0%,#ff9f0a 100%)!important;}
+    #sec-new .profileHeroV19 .chipStat.rating .k,#sec-new .profileHeroV19 .chipStat.rating .v{color:#2b2100!important;-webkit-text-fill-color:#2b2100!important;text-shadow:0 1px 0 rgba(255,255,255,.22)!important;}
+    #sec-new .profileHeroV19 details.tech-more{position:relative!important;z-index:2!important;margin-top:12px!important;}
+    #sec-new .profileHeroV19 details.tech-more summary{border-radius:20px!important;border:1px solid rgba(255,255,255,.28)!important;background:rgba(255,255,255,.18)!important;color:#fff!important;-webkit-text-fill-color:#fff!important;box-shadow:inset 0 1px 0 rgba(255,255,255,.18)!important;backdrop-filter:blur(8px)!important;}
+    #sec-new .profileHeroV19 .tech-more .moreBox{background:rgba(255,255,255,.92)!important;border-color:rgba(255,255,255,.40)!important;}
+    @media(max-width:380px){#sec-new .profileHeroV19{padding:16px 12px 12px!important;border-radius:26px!important;}#sec-new .profileHeroV19 .profile-compact .chips{gap:6px!important;}#sec-new .profileHeroV19 .chipStat{min-height:72px!important;border-radius:17px!important;}#sec-new .profileHeroV19 .chipStat .k{font-size:9px!important;}#sec-new .profileHeroV19 .chipStat .v{font-size:20px!important;}}
+  </style>
+
   <div class="payout-modal-backdrop" id="depositLedgerModalBackdrop" onclick="if(event.target===this) window.closeDepositLedgerModal && window.closeDepositLedgerModal()">
     <div class="payout-modal" role="dialog" aria-modal="true" aria-labelledby="depositLedgerTitle">
       <div class="payout-modal-head">
@@ -1941,7 +1844,7 @@
     </div>
   </div>
 
-  <script src="app.js?v=20260510_profile_color_fix18"></script>
+  <script src="app.js?v=20260510_profile_vivid_fix19"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
