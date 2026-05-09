@@ -383,6 +383,15 @@
     .income-summary-card .value{margin-top:10px;font-size:28px;font-weight:1100;color:var(--tech-navy);line-height:1.05;white-space:nowrap;overflow:visible;font-variant-numeric:tabular-nums;}
     .income-summary-card.primary{background:linear-gradient(180deg,#FFFFFF 0%, #EEF4FF 100%);border-color:#C7D8FB;}
     .income-summary-card.highlight{background:linear-gradient(180deg,#FFFDF5 0%, #FFF6CC 100%);border-color:#F4C400;}
+    .payout-month-breakdown{display:grid;gap:9px;margin-top:12px;}
+    .payout-period-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 11px;border-radius:16px;background:rgba(255,255,255,.72);border:1px solid rgba(244,196,0,.35);box-shadow:0 8px 22px rgba(8,36,91,.06);}
+    .payout-period-main{min-width:0;display:grid;gap:2px;}
+    .payout-period-title{font-size:13px;font-weight:1000;color:var(--tech-navy);line-height:1.25;}
+    .payout-period-range{font-size:11px;font-weight:850;color:var(--tech-muted);line-height:1.35;}
+    .payout-period-side{text-align:right;display:grid;gap:4px;flex:0 0 auto;}
+    .payout-period-amount{font-size:15px;font-weight:1000;color:var(--tech-navy);font-variant-numeric:tabular-nums;white-space:nowrap;}
+    .payout-period-badge{justify-self:end;width:max-content;padding:3px 8px;border-radius:999px;background:#0b4bb3;color:#fff;font-size:10px;font-weight:1000;line-height:1.15;box-shadow:0 6px 14px rgba(11,75,179,.18);}
+    @media(max-width:380px){.payout-period-row{align-items:flex-start;flex-direction:column}.payout-period-side{text-align:left}.payout-period-badge{justify-self:start}}
     .income-toolbar{display:flex; gap:8px; flex-wrap:wrap; margin-top:10px;}
     .btn, button.btn{border-radius:16px !important; min-height:44px; padding:10px 14px; border:1px solid var(--tech-border); background:#fff; color:var(--tech-navy); font-weight:900; box-shadow:none !important;}
     .btn.blue, button.btn.blue{background:var(--tech-navy); color:#fff; border-color:var(--tech-navy);}
@@ -1618,9 +1627,10 @@
             </div>
 
             <div class="income-summary-card highlight">
-              <div class="title">รวมรอบจ่ายเดือนนี้</div>
+              <div class="title" id="incomeMonthTitle">รวมรอบจ่ายเดือนนี้</div>
               <div class="desc" id="incomeMonthRange">รวมงวด 10 + 25 ของเดือนที่กำลังแสดง</div>
               <div class="value" id="incomeOutstandingVal">-</div>
+              <div class="payout-month-breakdown" id="incomeMonthBreakdown"></div>
             </div>
           </div>
 

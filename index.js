@@ -10219,7 +10219,8 @@ async function _computeTechnicianIncomeSummary(username, opts = {}) {
   const month_total = _money((monthLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
   const computedJobs = await _buildTechnicianIncomeComputedJobs(tech, dayStart, dayEnd);
 
-  const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, ymKey);
+  const payoutYm = _parsePayoutMonthYm(opts.payout_month || opts.month || ymKey).ym;
+  const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, payoutYm);
   const monthlyStart = payoutMonth.monthly_income_period_start ? new Date(payoutMonth.monthly_income_period_start) : null;
   const monthlyEnd = payoutMonth.monthly_income_period_end ? new Date(payoutMonth.monthly_income_period_end) : null;
   const workSummary = (monthlyStart && monthlyEnd && !Number.isNaN(monthlyStart.getTime()) && !Number.isNaN(monthlyEnd.getTime()))
@@ -10432,7 +10433,7 @@ app.get('/tech/completed_count_summary', async (req, res) => {
 app.get('/tech/income_summary', requireTechnicianSession, async (req, res) => {
   try {
     const tech = String(req.auth?.username || req.effective?.username || '').trim();
-    const summary = await _computeTechnicianIncomeSummary(tech, { date: req.query.date });
+    const summary = await _computeTechnicianIncomeSummary(tech, { date: req.query.date, payout_month: req.query.month || req.query.payout_month });
     const allLines = await _computeTechLinesInRange(tech, new Date('2000-01-01T00:00:00.000Z'), new Date('2999-01-01T00:00:00.000Z'), {
       payout_id: 'summary_lifetime',
     });
@@ -10459,7 +10460,7 @@ app.get('/tech/income_summary', requireTechnicianSession, async (req, res) => {
 app.get('/tech/income_today_month', requireTechnicianSession, async (req, res) => {
   try {
     const tech = String(req.auth?.username || req.effective?.username || '').trim();
-    return res.json(await _computeTechnicianIncomeSummary(tech));
+    return res.json(await _computeTechnicianIncomeSummary(tech, { date: req.query.date, payout_month: req.query.month || req.query.payout_month }));
   } catch (e) {
     console.error('GET /tech/income_today_month', e);
     return res.status(e.statusCode || 500).json({ ok:false, error:e.message || 'LOAD_FAILED' });
@@ -10574,7 +10575,7 @@ app.get('/tech/payments_total', requireTechnicianSession, async (req, res) => {
       [tech]
     );
     const paid_total = Number(q.rows?.[0]?.paid_total || 0);
-    const summary = await _computeTechnicianIncomeSummary(tech);
+    const summary = await _computeTechnicianIncomeSummary(tech, { date: req.query.date, payout_month: req.query.month || req.query.payout_month });
     return res.json({
       ...summary,
       ok:true,
