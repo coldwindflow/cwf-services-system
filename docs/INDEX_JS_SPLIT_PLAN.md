@@ -117,6 +117,14 @@ Phase 1B status:
   - Other `status` routes are partner, technician, admin, attendance, or job business-flow routes.
 - Rollback: no runtime rollback is needed for Phase 1B because it is docs-only. Revert the Phase 1B docs commit if the finding needs to be removed.
 
+### Phase 2A: DB Pool Preparation
+
+- Root `db.js` remains the single source of truth and still exports the pool object directly.
+- `server/db/pool.js` re-exports `../../db` for future route/service modules.
+- `index.js` was not changed in Phase 2A to avoid startup behavior risk.
+- Do not create another `new Pool(...)` anywhere else.
+- See `docs/DB_POOL_EXTRACTION_PLAN.md` before moving DB-backed routes.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
