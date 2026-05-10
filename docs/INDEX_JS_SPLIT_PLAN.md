@@ -159,6 +159,18 @@ Phase 1B status:
 - Risk remains medium because the route is catalog/pricing-adjacent and used by the admin add-job flow.
 - Rollback: remove the `createCatalogItemRoutes` import and mount from `index.js`, restore the original inline `app.get("/catalog/items", ...)` block before `POST /catalog/items`, delete `server/routes/catalog/items.js`, then run syntax checks.
 
+### Phase 2I: Service Zones Route
+
+- `GET /service_zones` has been extracted to `server/routes/serviceZones/index.js`.
+- Old location: `index.js:21281`, immediately before `POST /service_zones/detect`.
+- Current mount: `app.use(createServiceZoneRoutes({ getServiceZones, SERVICE_ZONE_SEEDS, ENABLE_SERVICE_ZONE_FILTER }))` at the same old inline route location.
+- Dependencies are passed from `index.js`: `getServiceZones`, `SERVICE_ZONE_SEEDS`, and `ENABLE_SERVICE_ZONE_FILTER`.
+- Success response remains `{ ok: true, zones, filter_enabled }`.
+- Error response remains HTTP 500 with `{ error: "LOAD_SERVICE_ZONES_FAILED" }`, and `console.error("GET /service_zones", e)` is preserved.
+- `getServiceZones()`, `SERVICE_ZONE_SEEDS`, `ENABLE_SERVICE_ZONE_FILTER`, and `POST /service_zones/detect` were not moved or changed.
+- Risk remains medium-high because service zones affect admin add-job and technician zone detection flows.
+- Rollback: remove the `createServiceZoneRoutes` import and mount from `index.js`, restore the original inline `app.get("/service_zones", ...)` block immediately before `POST /service_zones/detect`, delete `server/routes/serviceZones/index.js`, then run syntax checks.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
