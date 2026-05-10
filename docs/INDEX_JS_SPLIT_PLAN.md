@@ -125,6 +125,16 @@ Phase 1B status:
 - Do not create another `new Pool(...)` anywhere else.
 - See `docs/DB_POOL_EXTRACTION_PLAN.md` before moving DB-backed routes.
 
+### Phase 2C: Small DB Health Route
+
+- `GET /test-db` has been extracted into `server/routes/system/index.js`.
+- `index.js` now mounts the system router with the existing pool: `app.use(createSystemRoutes({ pool }))`.
+- SQL and response shapes are unchanged:
+  - success: `{ ok: true, now }`
+  - error: HTTP 500 with `{ ok: false, error: "db connection failed" }`
+- No new PostgreSQL pool was created.
+- Rollback: remove the `/test-db` route from `server/routes/system/index.js`, restore the old inline `app.get("/test-db", ...)` block at the `TEST DB` marker in `index.js`, and restore `app.use(createSystemRoutes({}))` if the system router no longer needs the pool.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.

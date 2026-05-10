@@ -67,13 +67,20 @@ from files under `server/routes/...`, adjusting the relative path as needed.
 
 ## index.js Status
 
-`index.js` was not changed in Phase 2A.
+Phase 2A did not change `index.js`.
 
 Reason:
 
 - Keeping `const pool = require("./db")` avoids any startup behavior change.
 - Future modules can use `server/db/pool.js` without forcing a large `index.js` diff.
 - A later cleanup may switch `index.js` to `require("./server/db/pool")`, but only after a focused check confirms shape and startup behavior.
+
+Phase 2C update:
+
+- `index.js` still imports the root pool with `const pool = require("./db")`.
+- `index.js` now passes that existing pool into the system router with `app.use(createSystemRoutes({ pool }))`.
+- `server/routes/system/index.js` can fall back to `server/db/pool.js`, but the production mount receives the existing pool explicitly.
+- No second pool was created.
 
 ## Recommended Future Import Style
 
@@ -130,4 +137,3 @@ Do not migrate first:
 - close-job/finalize/unit evidence
 - accounting/tax/VAT
 - `cwf-revisit-tech-preload.js`
-
