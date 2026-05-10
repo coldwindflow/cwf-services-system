@@ -139,12 +139,14 @@ Phase 1B status:
 
 - `GET /users/technicians` was audited as the next smallest DB-backed read-only candidate.
 - No route was moved and no runtime file was changed in Phase 2D.
-- Current location: `index.js:12906`, between the password change route block and the `CATALOG` marker.
+- Phase 2E extracted `GET /users/technicians` to `server/routes/users/technicians.js`.
+- Old location: `index.js:12906`, between the password change route block and the `CATALOG` marker.
+- Current mount: `app.use(createTechnicianDirectoryRoutes({ pool }))` at the same old inline route location.
 - Dependencies: `pool.query` and `console.error`.
 - SQL: `SELECT username FROM public.users WHERE role='technician' ORDER BY username`.
 - This route should not be added to `server/routes/system/index.js` because it is a technician directory endpoint, not a health/status endpoint.
-- Recommended future target: `server/routes/users/technicians.js`, mounted at the old inline route location with `app.use(createUserTechnicianRoutes({ pool }))`.
-- See `docs/PHASE2D_TECHNICIAN_DIRECTORY_ROUTE_MAP.md` before extracting.
+- Rollback: remove the `createTechnicianDirectoryRoutes` import and mount from `index.js`, restore the original inline `app.get("/users/technicians", ...)` block at the same location, delete `server/routes/users/technicians.js`, then run syntax checks.
+- See `docs/PHASE2D_TECHNICIAN_DIRECTORY_ROUTE_MAP.md` for the Phase 2E extraction notes, manual test checklist, and rollback steps.
 
 ### Phase 2: Read-Only Technician Routes
 

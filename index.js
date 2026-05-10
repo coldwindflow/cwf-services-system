@@ -32,6 +32,7 @@ const technicianJobIncomeDisplayHelpers = require("./server/technicianJobIncomeD
 const technicianReworkHelpers = require("./server/technicianRework");
 const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoneySummary");
 const createSystemRoutes = require("./server/routes/system");
+const createTechnicianDirectoryRoutes = require("./server/routes/users/technicians");
 
 // =======================================
 // 🔔 Web Push Notifications (optional / fail-open)
@@ -12903,17 +12904,7 @@ app.post("/auth/change-password", async (req, res) => {
   }
 });
 
-app.get("/users/technicians", async (req, res) => {
-  try {
-    const r = await pool.query(
-      `SELECT username FROM public.users WHERE role='technician' ORDER BY username`
-    );
-    res.json(r.rows);
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "โหลดรายชื่อช่างไม่สำเร็จ" });
-  }
-});
+app.use(createTechnicianDirectoryRoutes({ pool }));
 
 // =======================================
 // 📦 CATALOG
