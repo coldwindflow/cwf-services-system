@@ -107,6 +107,16 @@ Phase 1A status:
 - `index.js` imports `./server/routes/system` and mounts it at the existing `Health / Version` location before `/api/maps/resolve`.
 - Rollback: remove the system route import and mount from `index.js`, restore the original inline `app.get("/api/version", ...)` block at the same marker, delete `server/routes/system/index.js`, then run `node --check index.js`.
 
+Phase 1B status:
+
+- No additional route was extracted.
+- Rechecked the next apparent health/status candidates:
+  - `/test-db` uses DB access.
+  - `/admin/debug/status` uses admin middleware and runtime debug state.
+  - `/public/line_config` is LINE-adjacent configuration.
+  - Other `status` routes are partner, technician, admin, attendance, or job business-flow routes.
+- Rollback: no runtime rollback is needed for Phase 1B because it is docs-only. Revert the Phase 1B docs commit if the finding needs to be removed.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.

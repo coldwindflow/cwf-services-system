@@ -6,6 +6,8 @@ This document prepared the first safe route extraction from `index.js`.
 
 Phase 1A status: `GET /api/version` has been extracted to `server/routes/system/index.js` and mounted from the existing `Health / Version` location in `index.js`.
 
+Phase 1B status: no additional route was extracted. The next visible health/status candidates all require DB, auth/session, LINE-adjacent config, or business-flow context, so moving them would exceed the Phase 1 low-risk boundary.
+
 ## Scope
 
 Recommended first route group:
@@ -20,6 +22,7 @@ Current audit result:
 - `/test-db` exists but uses the database, so it is not the first extraction candidate.
 - `/admin/debug/status` exists but uses admin middleware and availability debug state, so it should not move before `/api/version`.
 - `/public/line_config`, `/public/me`, and `/api/auth/me` are read-like routes, but they touch LINE config, JWT/session, or auth context and are not Phase 1 first candidates.
+- Phase 1B rechecked health/status/system candidates after Phase 1A and found no next route that meets all constraints: no DB, no auth/session, no upload, no pricing, no external APIs, no state mutation, and no technician/admin/customer/business-flow impact.
 
 ## Candidate Route Matrix
 
@@ -31,6 +34,32 @@ Current audit result:
 | `GET /public/line_config` | `index.js:1011` | `Public LINE config (debug only - no secrets)` | `process.env`, `getReqBaseUrl(req)` | No | No | No | No | No direct call, but LINE env/callback config | Do not move in Phase 1. LINE-adjacent. |
 | `GET /public/me` | `index.js:969` | public customer session area | `getJwtSecret`, `parseCookieValue`, `jwtVerify`, `pool.query` for customer profile | Yes, conditional profile read | Yes, customer JWT/cookie | No | No | No | Frozen. Auth/session/customer profile. |
 | `GET /api/auth/me` | `index.js:4312` | `Session check for frontend guards` | `getAuthContext`, `isSuperAdmin` | Possible through auth context | Yes | No | No | No | Frozen. Auth/session. |
+
+## Phase 1B Finding
+
+No route was moved in Phase 1B.
+
+Rejected candidates:
+
+- `GET /test-db` at previous `index.js:12840`: uses `pool.query("SELECT NOW() as now")`, returns database time, and may fail based on DB connectivity. It is read-only but not DB-free.
+- `GET /admin/debug/status` at previous `index.js:25200`: uses `requireAdminSoft`, `ENABLE_AVAILABILITY_DEBUG`, `RUNTIME_AVAILABILITY_DEBUG`, and `process.env.TZ`. It is read-only but auth/session and runtime debug-state adjacent.
+- `GET /public/line_config` at `index.js:1012`: reads LINE/JWT environment configuration and builds callback/base URLs through `getReqBaseUrl(req)`. It is LINE-adjacent and should stay frozen for now.
+- Other `status` routes found by grep are partner, technician, admin, attendance, or job business-flow routes. They are outside the system/health scope.
+
+Dependencies used by the route extracted so far:
+
+- `GET /api/version`: `Date`, `res.json`.
+- DB: no.
+- Auth/session: no.
+- Upload: no.
+- Pricing: no.
+- External APIs: no.
+- State mutation: no.
+
+Phase 1B rollback instruction:
+
+- No runtime rollback is needed because Phase 1B did not move a route.
+- To roll back the documentation-only Phase 1B note, revert this docs commit.
 
 ## Safest First Extraction Candidate
 
@@ -134,6 +163,14 @@ For Phase 1A and future checks:
 - Confirm login page still loads.
 - Confirm no PWA/cache bump is needed because no frontend JS changed.
 - Confirm runtime `git diff` touches only `index.js` and `server/routes/system/index.js` for the extraction task.
+
+For Phase 1B:
+
+- Run `node --check index.js`.
+- Run `node --check server/routes/system/index.js`.
+- Confirm no runtime route diff exists.
+- Confirm `server/routes/system/index.js` still exposes only `GET /api/version`.
+- Confirm no PWA/cache bump is needed because no frontend JS changed.
 
 ## Rollback Plan
 
