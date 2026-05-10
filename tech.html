@@ -825,6 +825,17 @@
         <div class="themeScrollArea">
           <div class="themePresetGrid" id="themePresetGrid" aria-label="ธีมสำเร็จรูป"></div>
 
+          <div class="themeLayoutCard">
+            <div class="themeCustomHead">
+              <div>
+                <strong>เค้าโครงหน้าช่าง</strong>
+                <span>เลือกการจัดวางหน้ารับงานใหม่ โดยไม่กระทบงาน/รายได้</span>
+              </div>
+            </div>
+            <div class="themeLayoutGrid" id="themeLayoutGrid" aria-label="เค้าโครงหน้าช่าง"></div>
+          </div>
+
+
           <div class="themeCustomCard">
             <div class="themeCustomHead">
               <div>
@@ -2798,7 +2809,235 @@
     }
   </style>
 
-<script src="app.js?v=20260510_fix45_theme_panel_position"></script>
+
+  <style id="cwf-fix46-layout-presets">
+    /*
+      CWF fix46: technician home layout presets.
+      Safe approach: CSS-only layout variations via body[data-cwf-layout].
+      No DOM id changes, no backend, no income/job/history logic.
+    */
+
+    .themeLayoutCard{
+      border-radius:24px;
+      background:rgba(255,255,255,.78);
+      border:1px solid rgba(8,36,91,.09);
+      padding:12px;
+      margin:10px 0 12px;
+      box-shadow:0 12px 28px rgba(8,36,91,.07), inset 0 1px 0 rgba(255,255,255,.90);
+    }
+    .themeLayoutGrid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:8px;
+      margin-top:10px;
+    }
+    .layoutPresetBtn{
+      min-height:78px;
+      border-radius:20px;
+      border:1px solid rgba(8,36,91,.10);
+      background:#fff;
+      padding:10px;
+      text-align:left;
+      box-shadow:0 10px 22px rgba(8,36,91,.07), inset 0 1px 0 rgba(255,255,255,.88);
+      cursor:pointer;
+      -webkit-tap-highlight-color:transparent;
+    }
+    .layoutPresetBtn.active{
+      border-color:color-mix(in srgb, var(--cwf-theme-button) 62%, #fff 38%);
+      box-shadow:0 14px 28px color-mix(in srgb, var(--cwf-theme-accent) 16%, rgba(8,36,91,.08)), inset 0 1px 0 rgba(255,255,255,.92);
+    }
+    .layoutMiniPreview{
+      height:30px;
+      border-radius:14px;
+      margin-bottom:8px;
+      background:
+        linear-gradient(90deg,var(--cwf-theme-primary) 0 32%,var(--cwf-theme-accent) 32% 64%,var(--cwf-theme-button) 64% 100%);
+      opacity:.92;
+      position:relative;
+      overflow:hidden;
+    }
+    .layoutMiniPreview::after{
+      content:"";
+      position:absolute;
+      inset:7px;
+      border-radius:9px;
+      background:rgba(255,255,255,.72);
+    }
+    .layoutPresetBtn strong{
+      display:block;
+      color:#061b4f;
+      font-weight:1150;
+      font-size:13px;
+      line-height:1.15;
+    }
+    .layoutPresetBtn span{
+      display:block;
+      color:#667085;
+      font-weight:800;
+      font-size:10px;
+      line-height:1.2;
+      margin-top:2px;
+    }
+
+    #sec-new.card,
+    #techControlCard.tech-control-card{
+      transition:transform .22s ease, box-shadow .22s ease, border-radius .22s ease, margin .22s ease, padding .22s ease;
+    }
+
+    body[data-cwf-layout="classic"] #sec-new.card{
+      --layout-note:"classic";
+    }
+
+    body[data-cwf-layout="compact"] #techControlCard.tech-control-card{
+      margin-top:4px!important;
+      margin-bottom:8px!important;
+      padding:8px!important;
+      border-radius:22px!important;
+    }
+    body[data-cwf-layout="compact"] #techControlCard .tech-ctrl-row{
+      gap:8px!important;
+    }
+    body[data-cwf-layout="compact"] #techControlCard .accept-btn,
+    body[data-cwf-layout="compact"] #techControlCard .zone-select{
+      min-height:42px!important;
+      border-radius:17px!important;
+      font-size:13px!important;
+    }
+    body[data-cwf-layout="compact"] #sec-new.card{
+      padding:18px 16px 22px!important;
+      border-radius:24px!important;
+    }
+    body[data-cwf-layout="compact"] #sec-new>h2:first-child{
+      font-size:34px!important;
+      margin-bottom:10px!important;
+    }
+    body[data-cwf-layout="compact"] #sec-new .profile-compact .left{
+      padding:9px!important;
+      border-radius:21px!important;
+    }
+    body[data-cwf-layout="compact"] #sec-new .tech-avatar{
+      width:58px!important;
+      height:58px!important;
+      border-radius:18px!important;
+      flex-basis:58px!important;
+    }
+    body[data-cwf-layout="compact"] #sec-new .profile-compact .meta .name{
+      font-size:22px!important;
+      line-height:1.15!important;
+    }
+    body[data-cwf-layout="compact"] #sec-new .chipStat{
+      min-height:60px!important;
+      border-radius:17px!important;
+    }
+    body[data-cwf-layout="compact"] #sec-new details.tech-more summary{
+      min-height:48px!important;
+      border-radius:17px!important;
+    }
+
+    body[data-cwf-layout="dashboard"] #sec-new.card{
+      padding-top:22px!important;
+      border-radius:32px!important;
+      box-shadow:0 28px 64px rgba(8,36,91,.18), inset 0 1px 0 rgba(255,255,255,.92)!important;
+    }
+    body[data-cwf-layout="dashboard"] #sec-new .profile-compact{
+      gap:10px!important;
+    }
+    body[data-cwf-layout="dashboard"] #sec-new .profile-compact .left{
+      border-radius:30px!important;
+      min-height:112px!important;
+      align-items:center!important;
+      background:
+        radial-gradient(circle at 88% 6%, color-mix(in srgb, var(--cwf-theme-button) 14%, transparent) 0 70px, transparent 150px),
+        linear-gradient(135deg,var(--cwf-profile-card-bg),color-mix(in srgb, var(--cwf-theme-surface) 72%, #fff 28%))!important;
+    }
+    body[data-cwf-layout="dashboard"] #sec-new .chipStat{
+      min-height:84px!important;
+      border-radius:22px!important;
+    }
+    body[data-cwf-layout="dashboard"] #sec-new .chipStat .v{
+      font-size:25px!important;
+    }
+
+    body[data-cwf-layout="focus"] #techControlCard.tech-control-card{
+      transform:scale(1.012);
+      margin-top:2px!important;
+      margin-bottom:14px!important;
+      padding:12px!important;
+      box-shadow:0 22px 48px rgba(8,36,91,.18), inset 0 1px 0 rgba(255,255,255,.92)!important;
+    }
+    body[data-cwf-layout="focus"] #techControlCard .accept-btn{
+      min-height:58px!important;
+      font-size:17px!important;
+      border-radius:23px!important;
+    }
+    body[data-cwf-layout="focus"] #techControlCard .zone-select{
+      min-height:58px!important;
+      border-radius:23px!important;
+    }
+    body[data-cwf-layout="focus"] #sec-new.card{
+      padding-top:18px!important;
+    }
+    body[data-cwf-layout="focus"] #sec-new>h2:first-child{
+      font-size:34px!important;
+    }
+    body[data-cwf-layout="focus"] #sec-new .profile-compact .left{
+      background:rgba(255,255,255,.70)!important;
+    }
+
+    body[data-cwf-layout="hero"] #sec-new.card{
+      padding-top:24px!important;
+    }
+    body[data-cwf-layout="hero"] #sec-new>h2:first-child{
+      font-size:42px!important;
+      margin-bottom:14px!important;
+    }
+    body[data-cwf-layout="hero"] #sec-new .profile-compact .left{
+      min-height:132px!important;
+      border-radius:34px!important;
+      padding:16px!important;
+      background:
+        radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--cwf-theme-button) 16%, transparent) 0 90px, transparent 190px),
+        linear-gradient(135deg,var(--cwf-profile-card-bg),color-mix(in srgb, var(--cwf-theme-surface) 70%, #fff 30%))!important;
+    }
+    body[data-cwf-layout="hero"] #sec-new .tech-avatar{
+      width:86px!important;
+      height:86px!important;
+      border-radius:26px!important;
+      flex-basis:86px!important;
+    }
+    body[data-cwf-layout="hero"] #sec-new .profile-compact .meta .name{
+      font-size:30px!important;
+    }
+
+    body[data-cwf-layout="minimal"] #techControlCard.tech-control-card,
+    body[data-cwf-layout="minimal"] #sec-new.card{
+      box-shadow:0 10px 28px rgba(8,36,91,.08), inset 0 1px 0 rgba(255,255,255,.92)!important;
+      border-radius:24px!important;
+    }
+    body[data-cwf-layout="minimal"] #sec-new .profile-compact .left,
+    body[data-cwf-layout="minimal"] #sec-new .chipStat,
+    body[data-cwf-layout="minimal"] #sec-new details.tech-more summary,
+    body[data-cwf-layout="minimal"] #sec-new h2:nth-of-type(2),
+    body[data-cwf-layout="minimal"] #sec-new #offer-list{
+      box-shadow:0 6px 18px rgba(8,36,91,.06), inset 0 1px 0 rgba(255,255,255,.90)!important;
+      border-color:rgba(8,36,91,.06)!important;
+    }
+
+    @media(max-width:390px){
+      .themeLayoutGrid{grid-template-columns:1fr!important;}
+      .layoutPresetBtn{min-height:70px!important;}
+      body[data-cwf-layout="hero"] #sec-new .tech-avatar{
+        width:74px!important;
+        height:74px!important;
+        flex-basis:74px!important;
+      }
+      body[data-cwf-layout="hero"] #sec-new .profile-compact .meta .name{
+        font-size:26px!important;
+      }
+    }
+  </style>
+
+<script src="app.js?v=20260510_fix46_layout_presets"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

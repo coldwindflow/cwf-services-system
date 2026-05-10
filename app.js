@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_fix45_theme_panel_position";
+window.__CWF_TECH_APP_VERSION__ = "20260510_fix46_layout_presets";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -387,6 +387,7 @@ function setThemePreviewMode(isPreview) {
 
 function openTechThemeModal() {
   renderThemePresets();
+  renderTechLayoutPresets();
   loadThemeInputs(normalizeTheme(getCurrentThemeId()));
   if (themeModal) {
     themeModal.classList.add("open");
@@ -409,6 +410,61 @@ window.closeTechThemeModal = closeTechThemeModal;
 
 renderThemePresets();
 applyTheme(getCurrentThemeId());
+
+// =======================================
+// 🧩 TECH HOME LAYOUT PRESETS
+// Frontend only: localStorage + body.dataset
+// =======================================
+
+const TECH_LAYOUT_KEY = "cwf_tech_layout_v1";
+const themeLayoutGrid = document.getElementById("themeLayoutGrid");
+
+const CWF_LAYOUT_PRESETS = [
+  { id: "classic", name: "Classic", desc: "แบบเดิม ปลอดภัยสุด" },
+  { id: "compact", name: "Compact", desc: "จอกะทัดรัด โหลดดูง่าย" },
+  { id: "dashboard", name: "Dashboard", desc: "การ์ดชัดแบบแผงควบคุม" },
+  { id: "focus", name: "Focus Work", desc: "เน้นปุ่มรับงานก่อน" },
+  { id: "hero", name: "Profile Hero", desc: "โปรไฟล์เด่น ดูพรีเมียม" },
+  { id: "minimal", name: "Minimal", desc: "สะอาด เงาน้อย อ่านง่าย" }
+];
+
+function getCurrentTechLayout() {
+  return localStorage.getItem(TECH_LAYOUT_KEY) || "classic";
+}
+
+function applyTechLayout(layoutId, options = {}) {
+  const found = CWF_LAYOUT_PRESETS.find(x => x.id === layoutId) || CWF_LAYOUT_PRESETS[0];
+  document.body.dataset.cwfLayout = found.id;
+  if (!options.preview) localStorage.setItem(TECH_LAYOUT_KEY, found.id);
+  updateTechLayoutActive();
+}
+
+function renderTechLayoutPresets() {
+  if (!themeLayoutGrid) return;
+  themeLayoutGrid.innerHTML = CWF_LAYOUT_PRESETS.map(item => `
+    <button type="button" class="layoutPresetBtn" data-layout-id="${item.id}">
+      <div class="layoutMiniPreview" aria-hidden="true"></div>
+      <strong>${item.name}</strong>
+      <span>${item.desc}</span>
+    </button>
+  `).join("");
+  themeLayoutGrid.querySelectorAll("[data-layout-id]").forEach(btn => {
+    btn.addEventListener("click", () => applyTechLayout(btn.getAttribute("data-layout-id")));
+  });
+  updateTechLayoutActive();
+}
+
+function updateTechLayoutActive() {
+  if (!themeLayoutGrid) return;
+  const current = getCurrentTechLayout();
+  themeLayoutGrid.querySelectorAll("[data-layout-id]").forEach(btn => {
+    btn.classList.toggle("active", btn.getAttribute("data-layout-id") === current);
+  });
+}
+
+renderTechLayoutPresets();
+applyTechLayout(getCurrentTechLayout());
+
 
 function safelyCloseTechDrawerForTheme() {
   try {
