@@ -24,6 +24,13 @@ const cors = require("cors");
 const path = require("path");
 const crypto = require("crypto");
 const fs = require("fs");
+const normalizerHelpers = require("./server/normalizers");
+const pricingHelpers = require("./server/pricing");
+const technicianIncomeHelpers = require("./server/technicianIncome");
+const customerLookupHelpers = require("./server/customerLookup");
+const technicianJobIncomeDisplayHelpers = require("./server/technicianJobIncomeDisplay");
+const technicianReworkHelpers = require("./server/technicianRework");
+const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoneySummary");
 
 // =======================================
 // 🔔 Web Push Notifications (optional / fail-open)
@@ -1114,17 +1121,11 @@ app.post('/public/register', requireCustomerJwt, async (req, res) => {
 });
 
 function normalizePhoneLookupDigits(phone) {
-  return String(phone || "").replace(/\D/g, "").trim();
+  return normalizerHelpers.normalizePhone(phone);
 }
 
 function buildPhoneLookupCandidates(phone) {
-  const digits = normalizePhoneLookupDigits(phone);
-  if (!digits) return [];
-  const set = new Set([digits]);
-  if (digits.startsWith("66") && digits.length >= 9) set.add(`0${digits.slice(2)}`);
-  if (digits.startsWith("0066") && digits.length >= 11) set.add(`0${digits.slice(4)}`);
-  if (digits.startsWith("0") && digits.length >= 9) set.add(`66${digits.slice(1)}`);
-  return [...set].filter(Boolean);
+  return customerLookupHelpers.buildPhoneLookupCandidates(phone);
 }
 
 // =======================================
@@ -6167,30 +6168,13 @@ async function _buildPayoutTechSummaryRows(payout_id){
 }
 
 function _normJobKey(s) {
-  const v = String(s || '').toLowerCase();
-  if (!v) return null;
-  if (v.includes('ติดตั้ง') || v.includes('install')) return 'install';
-  if (v.includes('ซ่อม') || v.includes('repair')) return 'repair';
-  if (v.includes('ล้าง') || v.includes('wash') || v.includes('clean')) return 'wash';
-  return null;
+  return technicianIncomeHelpers._normJobKey(s);
 }
 function _normAcKey(s) {
-  const v = String(s || '').toLowerCase();
-  if (!v) return null;
-  if (v.includes('ผนัง') || v.includes('wall')) return 'wall';
-  if (v.includes('สี่ทิศ') || v.includes('ฝังฝ้า') || v.includes('cassette') || v.includes('four') || v.includes('4')) return 'fourway';
-  if (v.includes('แขวน') || v.includes('ตั้งพื้น') || v.includes('floor')) return 'hanging';
-  if (v.includes('ใต้ฝ้า') || v.includes('เปลือย') || v.includes('ceiling') || v.includes('concealed')) return 'ceiling';
-  return null;
+  return technicianIncomeHelpers._normAcKey(s);
 }
 function _normWashKey(s) {
-  const v = String(s || '').toLowerCase();
-  if (!v) return null;
-  if (v.includes('ธรรมดา') || v.includes('normal')) return 'normal';
-  if (v.includes('พรีเมียม') || v.includes('premium')) return 'premium';
-  if (v.includes('แขวนคอย') || v.includes('coil')) return 'coil';
-  if (v.includes('ตัดล้าง') || v.includes('overhaul') || v.includes('ใหญ่')) return 'overhaul';
-  return null;
+  return technicianIncomeHelpers._normWashKey(s);
 }
 
 function _thaiLabelJob(k){
@@ -6207,11 +6191,7 @@ function _thaiLabelAc(k){
   return '';
 }
 function _thaiLabelWash(k){
-  if (k==='normal') return 'ธรรมดา';
-  if (k==='premium') return 'พรีเมียม';
-  if (k==='coil') return 'แขวนคอยน์';
-  if (k==='overhaul') return 'ตัดล้าง';
-  return '';
+  return technicianIncomeHelpers._thaiLabelWash(k);
 }
 
 
@@ -6279,10 +6259,7 @@ function _contractTechType(employmentType, incomeType){
   return 'company';
 }
 function _contractBtuTierFromText(text){
-  const v = String(text || '');
-  const m = v.match(/([0-9][0-9,\.]{2,})\s*BTU/i);
-  const btu = m ? Number(String(m[1]).replace(/[,]/g,'')) : 0;
-  return { btu: Number.isFinite(btu) ? btu : 0, btu_tier: (Number.isFinite(btu) && btu >= 18000) ? 'large' : 'small' };
+  return technicianIncomeHelpers._contractBtuTierFromText(text);
 }
 function _contractRateAt(techType, washKey, btuTier, machineIndex){
   const t = techType === 'partner' ? 'partner' : 'company';
@@ -6308,6 +6285,27 @@ function _validTechRateItemShape(it){
   if (!Number.isFinite(amount) || amount < 0) return false;
   if (ac === 'wall') return wash !== 'none' && tier !== 'all';
   return wash === 'none' && tier === 'all' && from === 1 && to == null;
+}
+function _partnerRateItemsMatchContract(items = []) {
+  const rows = Array.isArray(items) ? items : [];
+  for (const it of rows) {
+    if (!_validTechRateItemShape(it)) return false;
+  }
+  for (const expected of CWF_TECHNICIAN_INCOME_DEFAULT_ITEMS) {
+    const hit = rows.find((r) => {
+      const toRaw = r.step_to;
+      const to = toRaw == null || toRaw === '' ? null : Number(toRaw);
+      const expectedTo = expected.step_to == null ? null : Number(expected.step_to);
+      return String(r.ac_type_key) === expected.ac_type_key
+        && String(r.wash_type_key) === expected.wash_type_key
+        && String(r.btu_tier) === expected.btu_tier
+        && Number(r.step_from) === Number(expected.step_from)
+        && to === expectedTo
+        && Number(r.amount) === Number(expected.amount);
+    });
+    if (!hit) return false;
+  }
+  return true;
 }
 function _rateSetRowsToContext(rateSet, items){
   return {
@@ -6345,6 +6343,10 @@ async function _loadActiveTechnicianIncomeRateSet(contractType = 'partner'){
     );
     if (!items.rows?.length) {
       console.warn('[tech_income_rates] active DB rate set has no items, using fallback rates', rateSet.id);
+      return _rateSetRowsToContext(null, []);
+    }
+    if (contractType === 'partner' && !_partnerRateItemsMatchContract(items.rows)) {
+      console.warn('[tech_income_rates] active DB partner rate set differs from contract, using fallback rates', rateSet.id);
       return _rateSetRowsToContext(null, []);
     }
     return _rateSetRowsToContext(rateSet, items.rows);
@@ -6436,15 +6438,7 @@ function _buildPartnerAgreementV4RateHtml(items = CWF_TECHNICIAN_INCOME_DEFAULT_
     </section>`;
 }
 function _contractServiceKeyFromItem(it){
-  const nm = String(it?.item_name || '');
-  const ac_key = _normAcKey(nm) || 'wall';
-  let wash_key = _normWashKey(nm);
-  if (ac_key !== 'wall') wash_key = 'none';
-  else if (!wash_key) wash_key = 'normal';
-  if (ac_key === 'wall' && !['normal','premium','coil','overhaul'].includes(wash_key)) wash_key = 'normal';
-  const { btu, btu_tier } = _contractBtuTierFromText(nm);
-  const tier = ac_key === 'wall' ? btu_tier : 'all';
-  return { ac_key, wash_key, btu, btu_tier: tier, group_key: `${ac_key}|${wash_key}|${tier}` };
+  return technicianIncomeHelpers._contractServiceKeyFromItem(it);
 }
 
 function _contractIsVagueServiceItem(it){
@@ -6498,6 +6492,86 @@ function _contractTopLevelItemFromPayloadLike(meta){
   };
 }
 
+async function _classifyRevisitWarrantyReworkJob(meta) {
+  const jobId = Number(meta?.job_id || 0);
+  const status = String(meta?.job_status || '').trim();
+  const jobType = String(meta?.job_type || '').trim();
+  const returnReason = String(meta?.return_reason || '').trim();
+  const lower = [status, jobType, returnReason].join(' ').toLowerCase();
+  const reasons = [];
+  if (status === 'งานแก้ไข' || status.includes('แก้ไข')) reasons.push('job_status');
+  if (jobType.includes('งานแก้ไข') || jobType.includes('งานกลับไปแก้') || jobType.includes('งานในประกัน') || jobType.includes('เคลม')) reasons.push('job_type');
+  if (returnReason) reasons.push('return_reason');
+  if (meta?.returned_at) reasons.push('returned_at');
+  if (meta?.returned_by) reasons.push('returned_by');
+  if (lower.includes('revisit') || lower.includes('rework') || lower.includes('warranty') || lower.includes('claim')) reasons.push('text_marker');
+  try {
+    if (jobId > 0) {
+      const q = await pool.query(
+        `SELECT rework_case_id, reason_type, status, resolution
+           FROM public.technician_rework_cases
+          WHERE job_id=$1
+          ORDER BY created_at DESC NULLS LAST, rework_case_id DESC
+          LIMIT 1`,
+        [jobId]
+      );
+      if (q.rows?.[0]) reasons.push('technician_rework_cases');
+    }
+  } catch (_) {}
+  return {
+    is_excluded: reasons.length > 0,
+    exclusion_reason: reasons.length ? 'revisit/warranty/rework job excluded from normal income' : '',
+    detection_fields: [...new Set(reasons)],
+  };
+}
+
+async function _loadApprovedReworkCompensationLines(job_id, team, meta, exclusion) {
+  const jid = Number(job_id);
+  const usernames = [...new Set((Array.isArray(team) ? team : []).map(x => String(x || '').trim()).filter(Boolean))];
+  if (!Number.isInteger(jid) || jid <= 0 || !usernames.length) return [];
+  try {
+    const q = await pool.query(
+      `SELECT technician_username, COALESCE(SUM(adj_amount),0)::numeric AS amount
+         FROM public.technician_payout_adjustments
+        WHERE job_id::text=$1::text
+          AND technician_username = ANY($2::text[])
+          AND adj_amount > 0
+        GROUP BY technician_username`,
+      [String(jid), usernames]
+    );
+    return (q.rows || []).map((r) => {
+      const amount = _money(r.amount || 0);
+      return {
+        technician_username: String(r.technician_username || '').trim(),
+        job_id: String(jid),
+        finished_at: meta.finished_at || meta.closed_at || meta.completed_at || null,
+        earn_amount: amount,
+        base_amount: amount,
+        percent_final: null,
+        machine_count_for_tech: 0,
+        step_rule_key: 'approved_rework_compensation',
+        detail_json: {
+          payroll_version: CWF_CONTRACT_PAYROLL_VERSION,
+          contract_only: true,
+          excluded_from_normal_income: true,
+          exclusion_reason: exclusion.exclusion_reason,
+          exclusion_fields: exclusion.detection_fields,
+          approved_rework_compensation: true,
+          source: 'technician_payout_adjustments',
+          total_income: amount,
+          contract_rate_rows: [],
+          related_items: [],
+          items: [],
+        },
+        setting_snapshot: { approved_rework_compensation: true, computed_at: new Date().toISOString() },
+      };
+    }).filter(x => x.technician_username && Number(x.earn_amount || 0) > 0);
+  } catch (e) {
+    try { console.warn('[tech_income] approved rework compensation lookup failed', { job_id: jid, error: e.message }); } catch {}
+    return [];
+  }
+}
+
 function _contractNormalizeServiceItems(meta, items){
   const arr = Array.isArray(items) ? items : [];
   const service = [];
@@ -6538,10 +6612,7 @@ function _contractMachineRates(spec, startIndex, qty, techType, rateContext){
 }
 
 function _contractSingleRateBracketIndex(groupQty){
-  const n = Math.max(0, Math.round(Number(groupQty || 0)));
-  if (n >= 4) return 4;
-  if (n >= 2) return 2;
-  return 1;
+  return technicianIncomeHelpers._contractSingleRateBracketIndex(groupQty);
 }
 function _contractSingleRateForGroup(spec, groupQty, techType, rateContext){
   // New partner contract: one rate per unit for the whole same-service group in the job.
@@ -6690,7 +6761,6 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
   const meta = await _loadJobMeta(job_id);
   const includeUnfinished = Boolean(opts && opts.includeUnfinished);
   if (!meta || (!meta.finished_at && !includeUnfinished)) return [];
-  if (isRevisitJobRow(meta)) return [];
 
   const itemsQ = await pool.query(
     `SELECT job_item_id, item_name, qty, unit_price, line_total,
@@ -6728,6 +6798,39 @@ async function _buildPayoutLinesForJob(job_id, opts = {}){
   );
   const profileMap = new Map();
   (profQ.rows || []).forEach(r => profileMap.set(String(r.username), r));
+
+  const exclusion = await _classifyRevisitWarrantyReworkJob(meta);
+  if (exclusion.is_excluded) {
+    const approved = await _loadApprovedReworkCompensationLines(job_id, team, meta, exclusion);
+    if (approved.length) return approved;
+    return team.map((tech) => ({
+      technician_username: tech,
+      job_id: String(job_id),
+      finished_at: meta.finished_at || meta.closed_at || meta.completed_at || null,
+      earn_amount: 0,
+      base_amount: 0,
+      percent_final: null,
+      machine_count_for_tech: 0,
+      step_rule_key: 'excluded_revisit_warranty_rework',
+      detail_json: {
+        payroll_version: CWF_CONTRACT_PAYROLL_VERSION,
+        contract_only: true,
+        excluded_from_normal_income: true,
+        exclusion_reason: exclusion.exclusion_reason,
+        exclusion_fields: exclusion.detection_fields,
+        job_type: String(meta.job_type || '').trim(),
+        job_status: String(meta.job_status || '').trim(),
+        return_reason: String(meta.return_reason || '').trim() || null,
+        returned_at: meta.returned_at || null,
+        returned_by: meta.returned_by || null,
+        contract_rate_rows: [],
+        related_items: [],
+        items: [],
+        total_income: 0,
+      },
+      setting_snapshot: { excluded_from_normal_income: true, computed_at: new Date().toISOString() },
+    }));
+  }
 
   const assignedSvc = svcItems.filter(it => String(it.assigned_technician_username || '').trim());
   const unassignedSvc = svcItems.filter(it => !String(it.assigned_technician_username || '').trim());
@@ -7075,125 +7178,27 @@ async function _loadFinalizedTechPayoutLineForJob(job_id, username) {
   return r.rows?.[0] || null;
 }
 
-function _techIncomeBreakdownFromLine(line, source) {
-  const detail = (line && typeof line.detail_json === 'object' && line.detail_json) ? line.detail_json : {};
-  const rows = Array.isArray(detail.contract_rate_rows) ? detail.contract_rate_rows : [];
-  const items = Array.isArray(detail.related_items) ? detail.related_items : (Array.isArray(detail.items) ? detail.items : []);
-  return {
-    source,
-    mode: detail.mode || detail.split_mode || null,
-    rate_source: detail.rate_source || null,
-    rate_set_id: detail.rate_set_id || null,
-    rate_set_version: detail.rate_set_version || null,
-    rows: rows.slice(0, 80).map((r) => {
-      const qty = Number(r.qty == null ? 1 : r.qty);
-      const paidRate = Number(r.paid_rate ?? r.rate_per_unit ?? r.rate ?? 0);
-      const share = Number(r.share == null ? 1 : r.share);
-      const total = Number(r.total ?? r.base_amount ?? (paidRate * (Number.isFinite(qty) ? qty : 1)));
-      return {
-        item_name: String(r.item_name || 'รายการบริการ').trim(),
-        ac_type_key: r.ac_type_key || null,
-        wash_type_key: r.wash_key || r.wash_type_key || null,
-        btu_tier: r.btu_tier || null,
-        machine_index: r.machine_index == null ? null : Number(r.machine_index),
-        group_qty: r.group_qty == null ? null : Number(r.group_qty),
-        qty: Number.isFinite(qty) ? qty : 1,
-        share: Number.isFinite(share) ? share : 1,
-        rate: _money(r.rate_per_unit ?? r.rate ?? 0),
-        paid_rate: _money(paidRate),
-        total: _money(total),
-        reason: r.reason || null,
-        single_rate_contract: Boolean(r.single_rate_contract),
-      };
-    }),
-    related_items: items.slice(0, 30).map((it) => ({
-      item_name: it.item_name || '',
-      qty: Number(it.qty || 0),
-      assigned_technician_username: it.assigned_technician_username || null,
-      contract_reason: it.contract_reason || null,
-    })),
-  };
-}
-
-function _mapTechIncomeSourceFromLine(line, fallbackSource) {
-  const detail = (line && typeof line.detail_json === 'object' && line.detail_json) ? line.detail_json : {};
-  const raw = String(detail.rate_source || '').trim().toLowerCase();
-  if (raw === 'fallback') return 'fallback_v4';
-  if (raw === 'database') return fallbackSource || 'calculated_active_rate';
-  if (raw === 'contract') return fallbackSource || 'calculated_contract';
-  return fallbackSource || 'calculated_active_rate';
-}
-
-async function _buildTechnicianJobMoneySummary(job, username, opts = {}) {
-  const job_id = job?.job_id;
-  const tech = String(username || '').trim();
-  const context = String(opts?.context || '').trim();
-  let customerCollectAmount = null;
-  try {
-    customerCollectAmount = await _getCustomerCollectAmountForTechJob(job_id, Number(job?.job_price || 0));
-  } catch (e) {
-    // Regression guard: money display must never control job visibility.
-    try { console.warn('[tech_money] customer collect unavailable', { job_id, username: tech, error: e.message }); } catch {}
-    customerCollectAmount = Number(job?.job_price || 0) || null;
-  }
-  const summary = {
-    customer_collect_amount: customerCollectAmount,
-    customer_collect_label: context === 'history' ? 'ยอดที่ลูกค้าจ่าย' : 'ยอดเก็บลูกค้า',
-    technician_income_amount: null,
-    technician_income_label: context === 'offered' ? 'ที่ช่างจะได้รับ' : (context === 'history' ? 'ที่ช่างได้รับ' : 'ที่ช่างจะได้รับ'),
-    technician_income_source: 'unavailable',
-    technician_income_breakdown: { source: 'unavailable', rows: [], related_items: [] },
-    technician_income_rate_set_id: null,
-    technician_income_rate_set_version: null,
-  };
-  if (isRevisitJobRow(job)) {
-    summary.customer_collect_amount = null;
-    summary.customer_collect_label = 'ไม่ต้องเก็บเงินลูกค้า';
-    summary.technician_income_amount = 0;
-    summary.technician_income_label = 'ไม่มีรายได้สำหรับงานแก้ไข';
-    summary.technician_income_source = 'not_applicable_revisit';
-    summary.technician_income_breakdown = { source: 'not_applicable_revisit', rows: [], related_items: [] };
-    return summary;
-  }
-  if (!job_id || !tech) return summary;
-  try {
-    if (context === 'history') {
-      const stored = await _loadFinalizedTechPayoutLineForJob(job_id, tech);
-      if (stored) {
-        summary.technician_income_amount = _money(stored.earn_amount || 0);
-        summary.technician_income_source = 'finalized_payout';
-        summary.technician_income_breakdown = _techIncomeBreakdownFromLine(stored, 'finalized_payout');
-        summary.technician_income_rate_set_id = summary.technician_income_breakdown.rate_set_id || null;
-        summary.technician_income_rate_set_version = summary.technician_income_breakdown.rate_set_version || null;
-        return summary;
-      }
-    }
-
-    // Fast path: read per-job preview/cache first. This is what technician cards use.
-    // If missing, calculate only this job+technician and store it for next time.
-    const preview = await _getOrCalculateTechnicianIncomePreview(job_id, tech, context || 'current');
-    if (preview && preview.technician_income_amount != null) {
-      Object.assign(summary, preview);
-      return summary;
-    }
-
-    const lines = await _buildPayoutLinesForJob(job_id, { includeUnfinished: true, assumeTechnician: tech });
-    const line = (lines || []).find((ln) => String(ln.technician_username || '') === tech) || null;
-    if (!line) return summary;
-    const calculatedSource = context === 'history' ? 'calculated_active_rate' : 'active_rate';
-    summary.technician_income_amount = _money(line.earn_amount || 0);
-    summary.technician_income_source = _mapTechIncomeSourceFromLine(line, calculatedSource);
-    summary.technician_income_breakdown = _techIncomeBreakdownFromLine(line, summary.technician_income_source);
-    summary.technician_income_rate_set_id = line.detail_json?.rate_set_id || summary.technician_income_breakdown.rate_set_id || null;
-    summary.technician_income_rate_set_version = line.detail_json?.rate_set_version || summary.technician_income_breakdown.rate_set_version || null;
-    return summary;
-  } catch (e) {
-    try { console.warn('[tech_money] income unavailable', { job_id, username: tech, context, error: e.message, code: e.code }); } catch {}
-    return summary;
-  }
-}
-
-
+const {
+  _techIncomeBreakdownFromLine,
+  _mapTechIncomeSourceFromLine,
+  _techIncomeDisplayContextFromSource,
+  _moneySummaryFromDisplayRow,
+  _moneySummaryFromPreview,
+  _upsertDisplayRowForPreview,
+  _syncDisplayForJobState,
+  _buildTechnicianJobMoneySummary,
+  _buildTechnicianJobMoneySummaryBatch,
+} = createTechnicianJobMoneyHelpers({
+  pool,
+  money: _money,
+  technicianJobIncomeDisplayHelpers,
+  technicianReworkHelpers,
+  getCustomerCollectAmountForTechJob: _getCustomerCollectAmountForTechJob,
+  loadTechnicianIncomePreview: _loadTechnicianIncomePreview,
+  loadFinalizedTechPayoutLineForJob: _loadFinalizedTechPayoutLineForJob,
+  getTechnicianVisibilityAliases: _getTechnicianVisibilityAliases,
+  techJobContextFromRow: _techJobContextFromRow,
+});
 
 async function _loadTechnicianIncomePreview(job_id, username) {
   const tech = String(username || '').trim();
@@ -7215,19 +7220,6 @@ async function _loadTechnicianIncomePreview(job_id, username) {
     try { console.warn('[tech_income_preview] load failed', { job_id: jid, username: tech, error: e.message }); } catch {}
     return null;
   }
-}
-
-function _moneySummaryFromPreview(row, context) {
-  if (!row) return null;
-  const detail = (row.breakdown_json && typeof row.breakdown_json === 'object') ? row.breakdown_json : {};
-  return {
-    technician_income_amount: _money(row.income_amount || 0),
-    technician_income_source: row.income_source || 'preview',
-    technician_income_rate_set_id: row.rate_set_id || detail.rate_set_id || null,
-    technician_income_rate_set_version: row.rate_set_version || detail.rate_set_version || null,
-    technician_income_breakdown: detail.technician_income_breakdown || detail.breakdown || detail || { source: row.income_source || 'preview', rows: [], related_items: [] },
-    technician_income_label: context === 'offered' ? 'ที่ช่างจะได้รับ' : (context === 'history' ? 'ที่ช่างได้รับ' : 'ที่ช่างจะได้รับ'),
-  };
 }
 
 async function _upsertTechnicianIncomePreview(job_id, username, line, source = 'preview') {
@@ -7257,9 +7249,21 @@ async function _upsertTechnicianIncomePreview(job_id, username, line, source = '
        breakdown_json=EXCLUDED.breakdown_json,
        is_stale=FALSE,
        calculated_at=NOW(),
-       updated_at=NOW()`,
+     updated_at=NOW()`,
     [jid, tech, _money(line.earn_amount || 0), source, detail.rate_set_id, detail.rate_set_version, JSON.stringify(detail)]
   );
+  try {
+    await _upsertDisplayRowForPreview(jid, tech, {
+      job_id: jid,
+      technician_username: tech,
+      income_amount: detail.technician_income_amount,
+      income_source: source,
+      rate_set_id: detail.rate_set_id,
+      rate_set_version: detail.rate_set_version,
+    }, source);
+  } catch (e) {
+    try { console.warn('[tech_income_display] preview sync failed', { job_id: jid, username: tech, source, error: e.message }); } catch {}
+  }
   return { job_id: jid, technician_username: tech, ...detail };
 }
 
@@ -7290,6 +7294,13 @@ async function _calculateAndStoreTechnicianIncomePreview(job_id, username, opts 
 }
 
 async function _getOrCalculateTechnicianIncomePreview(job_id, username, context = 'current') {
+  try {
+    const meta = await _loadJobMeta(job_id);
+    const exclusion = await _classifyRevisitWarrantyReworkJob(meta);
+    if (exclusion.is_excluded) {
+      await _markTechnicianIncomePreviewStale(job_id);
+    }
+  } catch (_) {}
   const cached = await _loadTechnicianIncomePreview(job_id, username);
   if (cached) return _moneySummaryFromPreview(cached, context);
   const made = await _calculateAndStoreTechnicianIncomePreview(job_id, username, { source: context === 'offered' ? 'offer_preview' : 'job_preview' });
@@ -7300,7 +7311,7 @@ async function _getOrCalculateTechnicianIncomePreview(job_id, username, context 
     technician_income_rate_set_id: made.rate_set_id || null,
     technician_income_rate_set_version: made.rate_set_version || null,
     technician_income_breakdown: made.technician_income_breakdown || { source: made.technician_income_source, rows: [], related_items: [] },
-    technician_income_label: context === 'offered' ? 'ที่ช่างจะได้รับ' : (context === 'history' ? 'ที่ช่างได้รับ' : 'ที่ช่างจะได้รับ'),
+    technician_income_label: context === 'offered' ? 'ที่ช่างจะได้รับ' : (context === 'history' ? 'ได้รับ' : 'ที่ช่างจะได้รับ'),
   };
 }
 
@@ -7309,6 +7320,7 @@ async function _markTechnicianIncomePreviewStale(job_id) {
   if (!Number.isInteger(jid) || jid <= 0) return;
   try {
     await pool.query(`UPDATE public.job_technician_income_preview SET is_stale=TRUE, updated_at=NOW() WHERE job_id=$1`, [jid]);
+    await pool.query(`UPDATE public.technician_job_income_display SET is_stale=TRUE, updated_at=NOW() WHERE job_id=$1`, [jid]);
   } catch (e) {
     try { console.warn('[tech_income_preview] mark stale failed', { job_id: jid, error: e.message }); } catch {}
   }
@@ -8573,68 +8585,118 @@ async function _computeTechnicianTrueOutstanding(username){
 
 function _technicianRollingDisplayMonthWindow(nowBkk = _bkkNow()){
   const ymd = _bkkYmd(nowBkk);
-  let displayY = ymd.y;
-  let displayM = ymd.m;
-  if (ymd.d <= 15) {
-    displayM -= 1;
-    if (displayM <= 0) { displayM = 12; displayY -= 1; }
-  }
+  const displayY = ymd.y;
+  const displayM = ymd.m;
   const displayYm = `${displayY}-${String(displayM).padStart(2, '0')}`;
-  const start = _bangkokMidnightUTC(displayY, displayM, 1);
-  let nextY = displayY;
-  let nextM = displayM + 1;
-  if (nextM > 12) { nextM = 1; nextY += 1; }
-  const nextMonthStart = _bangkokMidnightUTC(nextY, nextM, 1);
-  const isCurrentDisplayMonth = displayY === ymd.y && displayM === ymd.m;
-  const endEx = isCurrentDisplayMonth ? nowBkk : nextMonthStart;
+  const b10 = _periodBoundsForYm('10', displayY, displayM);
+  const b25 = _periodBoundsForYm('25', displayY, displayM);
   return {
     y: displayY,
     m: displayM,
     ym: displayYm,
-    start,
-    endEx,
-    is_current_month: isCurrentDisplayMonth,
-    policy: 'day_1_15_show_previous_month_day_16_end_show_current_month_to_date',
+    start: b10.start,
+    endEx: b25.endEx,
+    period10: b10,
+    period25: b25,
+    is_current_month: true,
+    policy: 'payout_month_10_plus_25_live_completed_jobs',
   };
+}
+
+function _parsePayoutMonthYm(ym = ''){
+  const raw = String(ym || '').trim();
+  const m = raw.match(/^(\d{4})-(\d{2})$/);
+  if (!m) {
+    const now = _bkkYmd(_bkkNow());
+    return { y: now.y, m: now.m, ym: `${now.y}-${String(now.m).padStart(2, '0')}` };
+  }
+  const y = Number(m[1]);
+  const mm = Number(m[2]);
+  if (!Number.isFinite(y) || !Number.isFinite(mm) || mm < 1 || mm > 12) {
+    const now = _bkkYmd(_bkkNow());
+    return { y: now.y, m: now.m, ym: `${now.y}-${String(now.m).padStart(2, '0')}` };
+  }
+  return { y, m: mm, ym: `${y}-${String(mm).padStart(2, '0')}` };
+}
+
+function _periodEndDisplayIso(endEx){
+  try { return new Date(new Date(endEx).getTime() - 1000).toISOString(); }
+  catch { return endEx?.toISOString?.() || null; }
+}
+
+function _nextMonthParts(y, m){
+  let ny = Number(y), nm = Number(m) + 1;
+  if (nm > 12) { nm = 1; ny += 1; }
+  return { y: ny, m: nm, ym: `${ny}-${String(nm).padStart(2, '0')}` };
+}
+
+function _workMonthPayoutPeriodDefs(y, m){
+  const p25 = _periodBoundsForYm('25', y, m); // งานปิด 1-15 ของเดือนที่ทำงาน จ่าย 25 เดือนเดียวกัน
+  const next = _nextMonthParts(y, m);
+  const p10 = _periodBoundsForYm('10', next.y, next.m); // งานปิด 16-สิ้นเดือนที่ทำงาน จ่าย 10 เดือนถัดไป
+  return [p25, p10];
 }
 
 async function _computeTechnicianPayoutMonthTotal(username, ym = ''){
   const tech = String(username || '').trim();
-  if (!tech) return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', periods: [] };
+  if (!tech) return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', work_month: '', periods: [] };
   try {
-    void ym; // The display month follows CWF rolling payout-month rule, not caller input.
-    const win = _technicianRollingDisplayMonthWindow(_bkkNow());
-    const lines = await _computeTechLinesInRange(tech, win.start, win.endEx, {
-      payout_id: `virtual_month_${win.ym}`,
-      label_ym: win.ym,
-    });
-    const total = _money((lines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
-    return {
-      payout_month: win.ym,
-      payout_month_total: total,
-      payout_month_net_total: total,
-      payout_month_policy: win.policy,
-      monthly_income_display_amount: total,
-      monthly_income_display_label: win.ym,
-      monthly_income_period_start: win.start.toISOString(),
-      monthly_income_period_end: win.endEx.toISOString(),
-      periods: [{
-        payout_id: `virtual_month_${win.ym}`,
-        period_type: 'month_display',
-        period_start: win.start.toISOString(),
-        period_end: win.endEx.toISOString(),
+    const parsed = _parsePayoutMonthYm(ym);
+    const nowUtc = new Date();
+    const defs = _workMonthPayoutPeriodDefs(parsed.y, parsed.m);
+    const periods = [];
+    let total = 0;
+    for (const def of defs) {
+      const periodEnd = def.endEx;
+      const effectiveEnd = nowUtc < periodEnd ? nowUtc : periodEnd;
+      let lines = [];
+      let amount = 0;
+      if (effectiveEnd > def.start) {
+        lines = await _computeTechLinesInRange(tech, def.start, effectiveEnd, {
+          payout_id: `payout_${def.label_ym}_${def.period_type}`,
+          period_type: def.period_type,
+          label_ym: def.label_ym,
+          work_month: parsed.ym,
+        });
+        amount = _money((lines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
+      }
+      total += amount;
+      periods.push({
+        payout_id: `payout_${def.label_ym}_${def.period_type}`,
+        period_type: def.period_type,
+        label_ym: def.label_ym,
+        work_month: parsed.ym,
+        period_start: def.start.toISOString(),
+        period_end: def.endEx.toISOString(),
+        period_end_display: _periodEndDisplayIso(def.endEx),
+        period_effective_end: effectiveEnd.toISOString(),
         source: 'live_completed_jobs',
-        mode: win.is_current_month ? 'current_month_to_date' : 'previous_full_month',
-        gross_amount: total,
+        mode: effectiveEnd < def.endEx ? 'current_period_to_date' : 'full_period',
+        gross_amount: amount,
         adj_total: 0,
         deposit_deduction_amount: 0,
-        payout_month_amount: total,
-        payout_month_net_amount: total,
-      }],
+        payout_month_amount: amount,
+        payout_month_net_amount: amount,
+        jobs_count: (lines || []).length,
+      });
+    }
+    total = _money(total);
+    return {
+      payout_month: parsed.ym,
+      work_month: parsed.ym,
+      payout_month_total: total,
+      payout_month_net_total: total,
+      payout_month_policy: 'work_month_1_15_and_16_end_live_completed_jobs',
+      monthly_income_display_amount: total,
+      monthly_income_display_label: parsed.ym,
+      monthly_income_period_start: defs[0].start.toISOString(),
+      monthly_income_period_end: defs[1].endEx.toISOString(),
+      monthly_income_period_end_display: _periodEndDisplayIso(defs[1].endEx),
+      periods,
     };
   } catch (e) {
     console.error('_computeTechnicianPayoutMonthTotal', e);
-    return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', periods: [] };
+    return { payout_month_total: 0, payout_month_net_total: 0, payout_month: '', work_month: '', periods: [] };
   }
 }
 
@@ -9642,13 +9704,15 @@ app.get('/tech/payouts', requireTechnicianSession, async (req, res) => {
     let periods;
     if (/^\d{4}-\d{2}$/.test(qMonth)) {
       const [yy, mm] = qMonth.split('-').map(Number);
-      const b25 = _periodBoundsForYm('25', yy, mm);
-      const b10 = _periodBoundsForYm('10', yy, mm);
-      periods = [
-        { ...b25, payout_id: `payout_${b25.label_ym}_25` },
-        { ...b10, payout_id: `payout_${b10.label_ym}_10` },
-      ];
-      periods.sort((a, b) => new Date(b.start).getTime() - new Date(a.start).getTime());
+      // หน้าแอพช่างเลือกเดือนตาม “เดือนที่ทำงานจริง”:
+      // 1-15 ของเดือนนั้น = จ่าย 25 เดือนเดียวกัน
+      // 16-สิ้นเดือนของเดือนนั้น = จ่าย 10 เดือนถัดไป
+      periods = _workMonthPayoutPeriodDefs(yy, mm).map((p) => ({
+        ...p,
+        payout_id: `payout_${p.label_ym}_${p.period_type}`,
+        work_month: `${yy}-${String(mm).padStart(2, '0')}`,
+      }));
+      periods.sort((a, b) => new Date(a.start).getTime() - new Date(b.start).getTime());
     } else {
       // backward compatible สำหรับ client เก่า
       periods = _recentPeriods(6, _bkkNow());
@@ -10042,6 +10106,199 @@ function parseDateYMD(s) {
   return x;
 }
 
+async function _resolveTechnicianIncomeUsername(req, fallbackUsername = '') {
+  try {
+    const ctx = await getAuthContext(req);
+    if (ctx.ok && isTechnicianRole(ctx.effective?.role)) {
+      const u = String(ctx.effective.username || '').trim();
+      if (u) return u;
+    }
+  } catch (_) {}
+  return String(fallbackUsername || '').trim();
+}
+
+async function _computeTechnicianIncomeSummary(username, opts = {}) {
+  const tech = String(username || '').trim();
+  if (!tech) {
+    const err = new Error('UNAUTHORIZED');
+    err.statusCode = 401;
+    throw err;
+  }
+
+  const qDate = parseDateYMD(opts.date);
+  const todayKey = toBangkokDateKey(new Date());
+  const dateKey = qDate || todayKey;
+  const [dy, dm, dd] = dateKey.split('-').map(Number);
+  const dayStart = _bangkokMidnightUTC(dy, dm, dd);
+  const dayEnd = _bangkokMidnightUTC(dy, dm, dd + 1);
+  const monthStart = _bangkokMidnightUTC(dy, dm, 1);
+  let ny = dy, nm = dm + 1;
+  if (nm > 12) { nm = 1; ny += 1; }
+  const nextMonthStart = _bangkokMidnightUTC(ny, nm, 1);
+  const ymKey = dateKey.slice(0, 7);
+  const payoutYmKey = /^\d{4}-\d{2}$/.test(String(opts.month || '').trim()) ? String(opts.month).trim() : ymKey;
+
+  const monthLines = await _computeTechLinesInRange(tech, monthStart, nextMonthStart, {
+    payout_id: `summary_month_${ymKey}`,
+    label_ym: ymKey,
+  });
+  const dayLines = (monthLines || []).filter((line) => {
+    const f = line?.finished_at ? new Date(line.finished_at) : null;
+    return f && !Number.isNaN(f.getTime()) && f >= dayStart && f < dayEnd;
+  });
+  const day_total = _money(dayLines.reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
+  const month_total = _money((monthLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
+  const computedJobs = await _buildTechnicianIncomeComputedJobs(tech, dayStart, dayEnd);
+
+  const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, payoutYmKey);
+  const monthlyStart = payoutMonth.monthly_income_period_start ? new Date(payoutMonth.monthly_income_period_start) : null;
+  const monthlyEnd = payoutMonth.monthly_income_period_end ? new Date(payoutMonth.monthly_income_period_end) : null;
+  const workSummary = (monthlyStart && monthlyEnd && !Number.isNaN(monthlyStart.getTime()) && !Number.isNaN(monthlyEnd.getTime()))
+    ? await _computeTechnicianWorkSummary(tech, monthlyStart, monthlyEnd, payoutMonth.payout_month || ymKey)
+    : { cards: [], groups: [], total_machines: 0, jobs_count: 0 };
+  const outstanding = await _computeTechnicianTrueOutstanding(tech);
+  const depositSummary = await _getDepositSummary(tech);
+
+  return {
+    ok: true,
+    username: tech,
+    date: dateKey,
+    month: ymKey,
+    day_total,
+    month_total,
+    payout_month: payoutMonth.payout_month || ymKey,
+    payout_month_total: payoutMonth.payout_month_total || 0,
+    payout_month_net_total: payoutMonth.payout_month_net_total || 0,
+    payout_month_policy: payoutMonth.payout_month_policy || 'live_completed_jobs_rolling_month',
+    payout_month_periods: payoutMonth.periods || [],
+    monthly_income_display_amount: payoutMonth.monthly_income_display_amount ?? payoutMonth.payout_month_total ?? 0,
+    monthly_income_display_label: payoutMonth.monthly_income_display_label || payoutMonth.payout_month || ymKey,
+    monthly_income_period_start: payoutMonth.monthly_income_period_start || null,
+    monthly_income_period_end: payoutMonth.monthly_income_period_end || null,
+    work_summary: workSummary,
+    deposit_target_amount: depositSummary.deposit_target_amount || 0,
+    deposit_collected_total: depositSummary.deposit_collected_total || 0,
+    deposit_remaining_amount: depositSummary.deposit_remaining_amount || 0,
+    deposit_is_required: depositSummary.deposit_is_required !== false,
+    true_outstanding_amount: outstanding.true_outstanding_amount,
+    pending_payout_remaining_total: outstanding.true_outstanding_amount,
+    paid_total: outstanding.paid_total,
+    outstanding_policy: outstanding.outstanding_policy || 'locked_pending_only',
+    outstanding_periods_count: outstanding.periods_count,
+    jobs_count: monthLines.length,
+    computed_jobs: monthLines.length,
+    computed_jobs_debug: computedJobs,
+    capped: false,
+  };
+}
+
+async function _computeTechnicianCurrentPeriodEstimate(username) {
+  const tech = String(username || '').trim();
+  if (!tech) {
+    const err = new Error('UNAUTHORIZED');
+    err.statusCode = 401;
+    throw err;
+  }
+  const nowBkk = _bkkNow();
+  const { y, m, d } = _bkkYmd(nowBkk);
+  let bounds;
+  if (d <= 15) {
+    bounds = _periodBoundsForYm('25', y, m);
+  } else {
+    let ny = y, nm = m + 1;
+    if (nm > 12) { nm = 1; ny += 1; }
+    bounds = _periodBoundsForYm('10', ny, nm);
+  }
+  const start = bounds.start;
+  const endEx = bounds.endEx;
+  const nowUtc = new Date();
+  const effectiveEnd = nowUtc < endEx ? nowUtc : endEx;
+  const fmtStart = (new Date(start.getTime() + 7*60*60*1000)).toISOString().slice(0,10);
+  const fmtEnd = (new Date(endEx.getTime() + 7*60*60*1000 - 1)).toISOString().slice(0,10);
+  if (effectiveEnd <= start) {
+    return { ok:true, username: tech, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: 0, jobs_count: 0, computed_jobs: 0, capped: false };
+  }
+  const lines = await _computeTechLinesInRange(tech, start, effectiveEnd, {
+    payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`,
+    period_type: bounds.period_type,
+    label_ym: bounds.label_ym,
+  });
+  const total = _money((lines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
+  return { ok:true, username: tech, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: total, jobs_count: lines.length, computed_jobs: lines.length, capped: false };
+}
+
+async function _buildTechnicianIncomeComputedJobs(tech, start, endEx) {
+  const username = String(tech || '').trim();
+  if (!username) return [];
+  try {
+    const donePred = _sqlDonePredicate('j');
+    const jobsQ = await pool.query(
+      `SELECT j.job_id, j.booking_code, j.job_status, j.job_type,
+              j.finished_at, j.completed_at, j.closed_at,
+              j.technician_username,
+              j.return_reason, j.returned_at, j.returned_by,
+              NULL::text AS source_job_id,
+              NULL::text AS original_job_id,
+              NULL::text AS parent_job_id
+         FROM public.jobs j
+        WHERE ${donePred}
+          AND j.finished_at IS NOT NULL
+          AND j.finished_at >= $1 AND j.finished_at < $2
+          AND (
+            j.technician_username = $3
+            OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$3)
+            OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$3)
+          )
+        ORDER BY j.finished_at ASC, j.job_id ASC`,
+      [start.toISOString(), endEx.toISOString(), username]
+    );
+    const out = [];
+    for (const row of (jobsQ.rows || [])) {
+      let income = 0;
+      let included = false;
+      let exclusion = await _classifyRevisitWarrantyReworkJob(row);
+      try {
+        const lines = await _buildPayoutLinesForJob(row.job_id);
+        const me = (lines || []).find((ln) => String(ln.technician_username || '') === username) || null;
+        if (me) {
+          income = _money(me.earn_amount || 0);
+          const detail = (me.detail_json && typeof me.detail_json === 'object') ? me.detail_json : {};
+          if (detail.excluded_from_normal_income) {
+            exclusion = {
+              is_excluded: true,
+              exclusion_reason: detail.exclusion_reason || exclusion.exclusion_reason || 'revisit/warranty/rework job excluded from normal income',
+              detection_fields: detail.exclusion_fields || exclusion.detection_fields || [],
+            };
+          }
+          included = income > 0 && !exclusion.is_excluded;
+        }
+      } catch (_) {}
+      out.push({
+        job_id: row.job_id,
+        booking_code: row.booking_code || null,
+        job_status: row.job_status || null,
+        job_type: row.job_type || null,
+        is_revisit: Boolean(exclusion.is_excluded && (exclusion.detection_fields || []).some(x => ['job_status','return_reason','returned_at','returned_by','technician_rework_cases','text_marker'].includes(x))),
+        is_warranty: Boolean(exclusion.is_excluded && (String(row.job_type || '').includes('ประกัน') || String(row.return_reason || '').includes('ประกัน'))),
+        source_job_id: row.source_job_id || null,
+        original_job_id: row.original_job_id || null,
+        parent_job_id: row.parent_job_id || null,
+        return_reason: row.return_reason || null,
+        revisit_reason: row.return_reason || null,
+        finished_at: row.finished_at,
+        technician_id: username,
+        income_amount: income,
+        included_in_day_total: included,
+        exclusion_reason: exclusion.is_excluded ? exclusion.exclusion_reason : '',
+      });
+    }
+    return out;
+  } catch (e) {
+    try { console.warn('[tech_income] computed_jobs debug failed', { username, error: e.message }); } catch {}
+    return [];
+  }
+}
+
 // NOTE: some tech clients may lose cookie/session in PWA webview.
 // Fail-open by allowing ?username= for technicians only (validated against DB).
 app.get('/tech/completed_count_summary', async (req, res) => {
@@ -10103,121 +10360,85 @@ app.get('/tech/completed_count_summary', async (req, res) => {
   }
 });
 
-app.get('/tech/income_summary', async (req, res) => {
+
+app.get('/tech/rework_count_summary', async (req, res) => {
   try {
-    let tech = String(req.effective?.username || '').trim();
+    let tech = '';
+    try {
+      const ctx = await getAuthContext(req, res);
+      if (ctx.ok && isTechnicianRole(ctx.effective?.role)) tech = String(ctx.effective.username || '').trim();
+    } catch (_) {}
+
     if (!tech) {
       const qUser = String(req.query.username || '').trim();
-      if (!qUser) return res.status(401).json({ error: 'UNAUTHORIZED' });
-      // Validate that this username is a real technician account (fail-closed).
+      if (!qUser) return res.status(401).json({ ok:false, error:'UNAUTHORIZED' });
       const vr = await pool.query(
-        `SELECT username
-         FROM public.technician_profiles
-         WHERE username=$1
-         LIMIT 1`,
+        `SELECT username FROM public.technician_profiles WHERE username=$1 LIMIT 1`,
         [qUser]
       );
-      if (!vr.rows || !vr.rows.length) return res.status(403).json({ error: 'FORBIDDEN' });
+      if (!vr.rows || !vr.rows.length) return res.status(403).json({ ok:false, error:'FORBIDDEN' });
       tech = qUser;
     }
 
-    const qDate = parseDateYMD(req.query.date);
-    const todayKey = toBangkokDateKey(new Date());
-    const dateKey = qDate || todayKey;
-    const ymKey = dateKey.slice(0, 7); // YYYY-MM
+    const nowBkk = _bkkNow();
+    const { y, m } = _bkkYmd(nowBkk);
+    const monthStart = _bangkokMidnightUTC(y, m, 1);
+    let ny = y, nm = m + 1;
+    if (nm > 12) { nm = 1; ny = y + 1; }
+    const nextMonthStart = _bangkokMidnightUTC(ny, nm, 1);
+    const month = `${y}-${String(m).padStart(2, '0')}`;
 
-    // Fetch finished jobs where technician is in the job team/assignments
-    const donePred = _sqlDonePredicate('j');
-    const jobsQ = await pool.query(
-      `SELECT j.job_id, j.finished_at
-       FROM public.jobs j
-       WHERE ${donePred}
-         AND j.finished_at IS NOT NULL
-         AND (
-           j.technician_username = $1
-           OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$1)
-           OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$1)
-         )
-       ORDER BY j.finished_at DESC`,
-      [tech]
-    );
-    const jobs = jobsQ.rows || [];
-
-    let day_total = 0;
-    let month_total = 0;
-    let all_total = 0;
-    let computed = 0;
-
-    // Safety cap (กันระบบตันถ้ามีงานเยอะผิดปกติ)
-    // NOTE: "สะสมทั้งหมด" ต้องคิดจากงานที่เสร็จสิ้นทั้งหมด
-    // ตั้ง cap สูงมากเพื่อใช้งานจริง และยังกันเคสผิดปกติแบบสุดโต่ง
-    const HARD_CAP = 50000;
-    const slice = jobs.length > HARD_CAP ? jobs.slice(0, HARD_CAP) : jobs;
-
-    for (const row of slice) {
-      const job_id = Number(row.job_id);
-      const fKey = toBangkokDateKey(row.finished_at);
-      const fYm = fKey ? fKey.slice(0, 7) : '';
-      let inc = 0;
-      try {
-        // ✅ ใช้เครื่องยนต์เดียวกับ "งวดเงินเดือน" เพื่อให้ % ขั้นบันไดตรงกัน (แก้รายได้ไม่ตรง)
-        const lines = await _buildPayoutLinesForJob(job_id);
-        const meLine = (lines || []).find(x => String(x.technician_username) === tech);
-        inc = Number(meLine?.earn_amount || 0);
-      } catch (e) {
-        continue;
-      }
-all_total += inc;
-      if (fYm === ymKey) month_total += inc;
-      if (fKey === dateKey) day_total += inc;
-      computed++;
+    const exists = await pool.query(`SELECT to_regclass('public.technician_rework_cases') AS tbl`);
+    if (!exists.rows?.[0]?.tbl) {
+      return res.json({ ok:true, username:tech, month, month_rework_cases:0, source:'technician_rework_cases_missing' });
     }
 
-    const outstanding = await _computeTechnicianTrueOutstanding(tech);
-    const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, ymKey);
-    const monthlyStart = payoutMonth.monthly_income_period_start ? new Date(payoutMonth.monthly_income_period_start) : null;
-    const monthlyEnd = payoutMonth.monthly_income_period_end ? new Date(payoutMonth.monthly_income_period_end) : null;
-    const workSummary = (monthlyStart && monthlyEnd && !Number.isNaN(monthlyStart.getTime()) && !Number.isNaN(monthlyEnd.getTime()))
-      ? await _computeTechnicianWorkSummary(tech, monthlyStart, monthlyEnd, payoutMonth.payout_month || ymKey)
-      : { cards: [], groups: [], total_machines: 0, jobs_count: 0 };
-    const depositSummary = await _getDepositSummary(tech);
+    const q = await pool.query(
+      `SELECT COUNT(DISTINCT rc.rework_case_id)::int AS month_rework_cases
+         FROM public.technician_rework_cases rc
+         LEFT JOIN public.jobs j ON j.job_id = rc.job_id
+        WHERE COALESCE(rc.created_at, rc.updated_at, NOW()) >= $1
+          AND COALESCE(rc.created_at, rc.updated_at, NOW()) < $2
+          AND (
+            rc.technician_username = $3
+            OR j.technician_username = $3
+            OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=rc.job_id AND tm.username=$3)
+            OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=rc.job_id AND a.technician_username=$3)
+          )`,
+      [monthStart.toISOString(), nextMonthStart.toISOString(), tech]
+    );
 
     return res.json({
       ok: true,
       username: tech,
-      date: dateKey,
-      month: ymKey,
-      day_total,
-      month_total,
+      month,
+      month_rework_cases: Number(q.rows?.[0]?.month_rework_cases || 0),
+      source: 'technician_rework_cases_created_at',
+    });
+  } catch (e) {
+    console.error('GET /tech/rework_count_summary', e);
+    return res.status(500).json({ ok:false, error:'REWORK_COUNT_SUMMARY_FAILED' });
+  }
+});
+
+app.get('/tech/income_summary', requireTechnicianSession, async (req, res) => {
+  try {
+    const tech = String(req.auth?.username || req.effective?.username || '').trim();
+    const summary = await _computeTechnicianIncomeSummary(tech, { date: req.query.date });
+    const allLines = await _computeTechLinesInRange(tech, new Date('2000-01-01T00:00:00.000Z'), new Date('2999-01-01T00:00:00.000Z'), {
+      payout_id: 'summary_lifetime',
+    });
+    const all_total = _money((allLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
+
+    return res.json({
+      ...summary,
       all_total,
       lifetime_income_total: all_total,
-      payout_month: payoutMonth.payout_month || ymKey,
-      payout_month_total: payoutMonth.payout_month_total || 0,
-      payout_month_net_total: payoutMonth.payout_month_net_total || 0,
-      payout_month_policy: payoutMonth.payout_month_policy || 'sum_payout_10_and_25_for_label_month',
-      payout_month_periods: payoutMonth.periods || [],
-      monthly_income_display_amount: payoutMonth.monthly_income_display_amount ?? payoutMonth.payout_month_total ?? 0,
-      monthly_income_display_label: payoutMonth.monthly_income_display_label || payoutMonth.payout_month || ymKey,
-      monthly_income_period_start: payoutMonth.monthly_income_period_start || null,
-      monthly_income_period_end: payoutMonth.monthly_income_period_end || null,
-      work_summary: workSummary,
-      deposit_target_amount: depositSummary.deposit_target_amount || 0,
-      deposit_collected_total: depositSummary.deposit_collected_total || 0,
-      deposit_remaining_amount: depositSummary.deposit_remaining_amount || 0,
-      deposit_is_required: depositSummary.deposit_is_required !== false,
-      // Backward-compatible fields kept for old clients, but the new income card no longer uses them.
-      true_outstanding_amount: outstanding.true_outstanding_amount,
-      pending_payout_remaining_total: outstanding.true_outstanding_amount,
-      paid_total: outstanding.paid_total,
-      outstanding_policy: outstanding.outstanding_policy || 'locked_pending_only',
-      outstanding_periods_count: outstanding.periods_count,
-      jobs_count: jobs.length,
-      computed_jobs: computed,
-      capped: jobs.length > HARD_CAP
+      all_jobs_count: allLines.length,
     });
   } catch (e) {
     console.error('GET /tech/income_summary', e);
-    return res.status(500).json({ error: 'LOAD_FAILED' });
+    return res.status(e.statusCode || 500).json({ ok:false, error: e.message || 'LOAD_FAILED' });
   }
 });
 
@@ -10227,79 +10448,13 @@ all_total += inc;
  * - ยังใช้ engine เดียวกับงวด (step ladder) ผ่าน _buildPayoutLinesForJob
  * GET /tech/income_today_month
  */
-app.get('/tech/income_today_month', async (req, res) => {
+app.get('/tech/income_today_month', requireTechnicianSession, async (req, res) => {
   try {
-    // fail-open like /tech/income_summary (some PWA lose cookie)
-    let tech = String(req.effective?.username || '').trim();
-    if (!tech) {
-      const qUser = String(req.query.username || '').trim();
-      if (!qUser) return res.status(401).json({ ok:false, error: 'UNAUTHORIZED' });
-      const vr = await pool.query(
-        `SELECT username FROM public.technician_profiles WHERE username=$1 LIMIT 1`,
-        [qUser]
-      );
-      if (!vr.rows || !vr.rows.length) return res.status(403).json({ ok:false, error: 'FORBIDDEN' });
-      tech = qUser;
-    }
-
-    const nowBkk = _bkkNow();
-    const { y, m, d } = _bkkYmd(nowBkk);
-    const todayStart = _bangkokMidnightUTC(y, m, d);
-    const tomorrowStart = _bangkokMidnightUTC(y, m, d + 1);
-
-    // month range
-    const monthStart = _bangkokMidnightUTC(y, m, 1);
-    let ny = y, nm = m + 1;
-    if (nm > 12) { nm = 1; ny = y + 1; }
-    const nextMonthStart = _bangkokMidnightUTC(ny, nm, 1);
-
-    const donePred = _sqlDonePredicate('j');
-    const jobsQ = await pool.query(
-      `SELECT j.job_id, j.finished_at
-         FROM public.jobs j
-        WHERE ${donePred}
-          AND j.finished_at IS NOT NULL
-          AND j.finished_at >= $1 AND j.finished_at < $2
-          AND (
-            j.technician_username = $3
-            OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$3)
-            OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$3)
-          )
-        ORDER BY j.finished_at DESC`,
-      [monthStart.toISOString(), nextMonthStart.toISOString(), tech]
-    );
-    const rows = jobsQ.rows || [];
-
-    let day_total = 0;
-    let month_total = 0;
-    let computed = 0;
-
-    // cap เฉพาะเดือน (กันเคสผิดปกติ)
-    const HARD_CAP = 2000;
-    const slice = rows.length > HARD_CAP ? rows.slice(0, HARD_CAP) : rows;
-
-    for (const row of slice) {
-      const job_id = Number(row.job_id);
-      let inc = 0;
-      try {
-        const lines = await _buildPayoutLinesForJob(job_id);
-        const meLine = (lines || []).find(x => String(x.technician_username) === tech);
-        inc = Number(meLine?.earn_amount || 0);
-      } catch (e) {
-        continue;
-      }
-      month_total += inc;
-      computed++;
-      const finishedAt = row.finished_at ? new Date(row.finished_at) : null;
-      if (finishedAt && finishedAt >= todayStart && finishedAt < tomorrowStart) {
-        day_total += inc;
-      }
-    }
-
-    return res.json({ ok:true, username: tech, day_total, month_total, jobs_count: rows.length, computed_jobs: computed, capped: rows.length > HARD_CAP });
+    const tech = String(req.auth?.username || req.effective?.username || '').trim();
+    return res.json(await _computeTechnicianIncomeSummary(tech));
   } catch (e) {
     console.error('GET /tech/income_today_month', e);
-    return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
+    return res.status(e.statusCode || 500).json({ ok:false, error:e.message || 'LOAD_FAILED' });
   }
 });
 
@@ -10311,71 +10466,11 @@ app.get('/tech/income_today_month', async (req, res) => {
 // Current rule: Bangkok day 1-15 => current month 25 cycle; day 16-end => next month 10 cycle.
 app.get('/tech/income_next_period_estimate', requireTechnicianSession, async (req, res) => {
   try {
-    const tech = String(req.auth?.username || '').trim();
-    const nowBkk = _bkkNow();
-    const { y, m, d } = _bkkYmd(nowBkk);
-
-    let bounds;
-    if (d <= 15) {
-      bounds = _periodBoundsForYm('25', y, m);
-    } else {
-      // 16..end => งวด 10 ของเดือนหน้า
-      let ny = y, nm = m + 1;
-      if (nm > 12) { nm = 1; ny = y + 1; }
-      bounds = _periodBoundsForYm('10', ny, nm);
-    }
-
-    const start = bounds.start;
-    const endEx = bounds.endEx;
-    const nowUtc = new Date();
-    const effectiveEnd = nowUtc < endEx ? nowUtc : endEx;
-
-    // ยังไม่ถึงช่วงงวด -> estimate = 0
-    if (effectiveEnd <= start) {
-      const fmtStart = (new Date(start.getTime() + 7*60*60*1000)).toISOString().slice(0,10);
-      const fmtEnd = (new Date(endEx.getTime() + 7*60*60*1000 - 1)).toISOString().slice(0,10);
-      return res.json({ ok:true, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: 0 });
-    }
-
-    const donePred = _sqlDonePredicate('j');
-    const jobsQ = await pool.query(
-      `SELECT j.job_id
-         FROM public.jobs j
-        WHERE ${donePred}
-          AND j.finished_at IS NOT NULL
-          AND j.finished_at >= $1 AND j.finished_at < $2
-          AND (
-            j.technician_username = $3
-            OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$3)
-            OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$3)
-          )
-        ORDER BY j.finished_at DESC`,
-      [start.toISOString(), effectiveEnd.toISOString(), tech]
-    );
-    const rows = jobsQ.rows || [];
-
-    let total = 0;
-    let computed = 0;
-    const HARD_CAP = 2000;
-    const slice = rows.length > HARD_CAP ? rows.slice(0, HARD_CAP) : rows;
-    for (const row of slice) {
-      const job_id = Number(row.job_id);
-      try {
-        const lines = await _buildPayoutLinesForJob(job_id);
-        const meLine = (lines || []).find(x => String(x.technician_username) === tech);
-        total += Number(meLine?.earn_amount || 0);
-        computed++;
-      } catch (e) {
-        continue;
-      }
-    }
-
-    const fmtStart = (new Date(start.getTime() + 7*60*60*1000)).toISOString().slice(0,10);
-    const fmtEnd = (new Date(endEx.getTime() + 7*60*60*1000 - 1)).toISOString().slice(0,10);
-    return res.json({ ok:true, period_type: bounds.period_type, payout_id: `payout_${bounds.label_ym}_${bounds.period_type}`, period_start: start, period_end_exclusive: endEx, period_start_th: fmtStart, period_end_th: fmtEnd, estimate_total: total, jobs_count: rows.length, computed_jobs: computed, capped: rows.length > HARD_CAP });
+    const tech = String(req.auth?.username || req.effective?.username || '').trim();
+    return res.json(await _computeTechnicianCurrentPeriodEstimate(tech));
   } catch (e) {
     console.error('GET /tech/income_next_period_estimate', e);
-    return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
+    return res.status(e.statusCode || 500).json({ ok:false, error:e.message || 'LOAD_FAILED' });
   }
 });
 
@@ -10471,43 +10566,17 @@ app.get('/tech/payments_total', requireTechnicianSession, async (req, res) => {
       [tech]
     );
     const paid_total = Number(q.rows?.[0]?.paid_total || 0);
-    const outstanding = await _computeTechnicianTrueOutstanding(tech);
-    const nowYmd = _bkkYmd(_bkkNow());
-    const ymKey = `${nowYmd.y}-${String(nowYmd.m).padStart(2, '0')}`;
-    const payoutMonth = await _computeTechnicianPayoutMonthTotal(tech, ymKey);
-    const monthlyStart = payoutMonth.monthly_income_period_start ? new Date(payoutMonth.monthly_income_period_start) : null;
-    const monthlyEnd = payoutMonth.monthly_income_period_end ? new Date(payoutMonth.monthly_income_period_end) : null;
-    const workSummary = (monthlyStart && monthlyEnd && !Number.isNaN(monthlyStart.getTime()) && !Number.isNaN(monthlyEnd.getTime()))
-      ? await _computeTechnicianWorkSummary(tech, monthlyStart, monthlyEnd, payoutMonth.payout_month || ymKey)
-      : { cards: [], groups: [], total_machines: 0, jobs_count: 0 };
-    const depositSummary = await _getDepositSummary(tech);
+    const month = String(req.query.month || '').trim();
+    const summary = await _computeTechnicianIncomeSummary(tech, /^\d{4}-\d{2}$/.test(month) ? { month } : {});
     return res.json({
+      ...summary,
       ok:true,
       username: tech,
       paid_total,
-      payout_month: payoutMonth.payout_month || ymKey,
-      payout_month_total: payoutMonth.payout_month_total || 0,
-      payout_month_net_total: payoutMonth.payout_month_net_total || 0,
-      payout_month_policy: payoutMonth.payout_month_policy || 'sum_payout_10_and_25_for_label_month',
-      payout_month_periods: payoutMonth.periods || [],
-      monthly_income_display_amount: payoutMonth.monthly_income_display_amount ?? payoutMonth.payout_month_total ?? 0,
-      monthly_income_display_label: payoutMonth.monthly_income_display_label || payoutMonth.payout_month || ymKey,
-      monthly_income_period_start: payoutMonth.monthly_income_period_start || null,
-      monthly_income_period_end: payoutMonth.monthly_income_period_end || null,
-      work_summary: workSummary,
-      deposit_target_amount: depositSummary.deposit_target_amount || 0,
-      deposit_collected_total: depositSummary.deposit_collected_total || 0,
-      deposit_remaining_amount: depositSummary.deposit_remaining_amount || 0,
-      deposit_is_required: depositSummary.deposit_is_required !== false,
-      // Backward-compatible fields kept for old clients.
-      true_outstanding_amount: outstanding.true_outstanding_amount,
-      pending_payout_remaining_total: outstanding.true_outstanding_amount,
-      outstanding_policy: outstanding.outstanding_policy || 'locked_pending_only',
-      outstanding_periods_count: outstanding.periods_count
     });
   } catch (e) {
     console.error('GET /tech/payments_total', e);
-    return res.status(500).json({ ok:false, error:'LOAD_FAILED' });
+    return res.status(e.statusCode || 500).json({ ok:false, error:e.message || 'LOAD_FAILED' });
   }
 });
 
@@ -10782,15 +10851,6 @@ await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS approved_at T
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_signature_type TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_signature_by TEXT`);
     await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS close_signature_at TIMESTAMPTZ`);
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_cause_party TEXT`);
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_cause_note TEXT`);
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_result TEXT`);
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_note TEXT`);
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_agreed_at TIMESTAMPTZ`);
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_schedule_note TEXT`);
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_customer_contacted_at TIMESTAMPTZ`);
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_original_appointment_datetime TIMESTAMPTZ`);
-    await pool.query(`ALTER TABLE public.jobs ADD COLUMN IF NOT EXISTS revisit_schedule_by TEXT`);
 
 
 // 3) users: admin profile + commission rate (dashboard)
@@ -11913,6 +11973,7 @@ await pool.query(`
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_tech_income_preview_job ON public.job_technician_income_preview(job_id)`);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_tech_income_preview_tech ON public.job_technician_income_preview(technician_username)`);
+await technicianJobIncomeDisplayHelpers.ensureTechnicianJobIncomeDisplaySchema(pool);
 
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.job_promotions (
@@ -12377,10 +12438,6 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_trc_technician_created ON public.technician_rework_cases(technician_username, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_trc_status_created ON public.technician_rework_cases(status, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_trc_resolution ON public.technician_rework_cases(resolution)`);
-    await pool.query(`ALTER TABLE public.technician_rework_cases ADD COLUMN IF NOT EXISTS revisit_cause_party TEXT`);
-    await pool.query(`ALTER TABLE public.technician_rework_cases ADD COLUMN IF NOT EXISTS revisit_cause_note TEXT`);
-    await pool.query(`ALTER TABLE public.technician_rework_cases ADD COLUMN IF NOT EXISTS revisit_agreed_at TIMESTAMPTZ`);
-    await pool.query(`ALTER TABLE public.technician_rework_cases ADD COLUMN IF NOT EXISTS revisit_schedule_note TEXT`);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.technician_deduction_audit_logs (
@@ -13706,6 +13763,125 @@ async function normalizeJobUnitCodes(jobId, db = pool) {
   return finalRows.rows || [];
 }
 
+const JOB_UNIT_INACTIVE_STATUSES = ['cancelled', 'removed', 'deleted', 'void', 'inactive'];
+function isActiveJobUnitStatus(status) {
+  const st = String(status || 'pending').trim().toLowerCase() || 'pending';
+  return !JOB_UNIT_INACTIVE_STATUSES.includes(st);
+}
+function activeJobUnitWhere(alias = '') {
+  const p = alias ? `${alias}.` : '';
+  return `LOWER(COALESCE(NULLIF(${p}status,''),'pending')) NOT IN ('cancelled','removed','deleted','void','inactive')`;
+}
+function activeJobUnits(rows) {
+  return (Array.isArray(rows) ? rows : []).filter((u) => isActiveJobUnitStatus(u?.status));
+}
+
+async function buildJobUnitTargetsFromJobItems(jobId, db = pool) {
+  const realId = Number(jobId);
+  if (!Number.isFinite(realId) || realId <= 0) return [];
+  const itemR = await db.query(
+    `SELECT item_name, qty, assigned_technician_username
+       FROM public.job_items
+      WHERE job_id=$1
+      ORDER BY job_item_id ASC`,
+    [realId]
+  );
+  const jobR = await db.query(`SELECT job_type, technician_username FROM public.jobs WHERE job_id=$1 LIMIT 1`, [realId]);
+  const job = jobR.rows[0] || {};
+  const rowsToCreate = [];
+  for (const it of itemR.rows || []) {
+    const qtyRaw = Number(it.qty || 0);
+    if (!Number.isFinite(qtyRaw) || qtyRaw <= 0) continue;
+    const qty = Math.max(1, Math.min(99, Math.floor(qtyRaw)));
+    for (let i = 0; i < qty; i++) {
+      rowsToCreate.push({
+        item_name: unitDisplayItemName(it.item_name || job.job_type || 'เครื่องปรับอากาศ'),
+        assigned_technician: it.assigned_technician_username || job.technician_username || null,
+      });
+    }
+  }
+  // Legacy fallback: jobs created before job_items existed still need one unit.
+  if (!rowsToCreate.length && !(itemR.rows || []).length) {
+    rowsToCreate.push({
+      item_name: unitDisplayItemName(job.job_type || 'เครื่องปรับอากาศ'),
+      assigned_technician: job.technician_username || null,
+    });
+  }
+  return rowsToCreate;
+}
+
+async function syncJobUnitsFromJobItems(jobId, db = pool) {
+  const realId = Number(jobId);
+  if (!Number.isFinite(realId) || realId <= 0) return [];
+
+  const targets = await buildJobUnitTargetsFromJobItems(realId, db);
+  const existingR = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
+  const existing = existingR.rows || [];
+  const itemCountR = await db.query(`SELECT COUNT(*)::int AS count FROM public.job_items WHERE job_id=$1`, [realId]);
+  const itemCount = Number(itemCountR.rows?.[0]?.count || 0);
+  if (itemCount === 0 && activeJobUnits(existing).length > 0) {
+    // No current job_items to reconcile against (legacy/partial data): preserve existing active units.
+    await normalizeJobUnitCodes(realId, db);
+    const keepR = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 AND ${activeJobUnitWhere()} ORDER BY unit_no ASC, unit_id ASC`, [realId]);
+    return keepR.rows || [];
+  }
+  const byUnitNo = new Map();
+  for (const u of existing) {
+    const no = Number(u.unit_no || 0);
+    if (no > 0 && !byUnitNo.has(no)) byUnitNo.set(no, u);
+  }
+
+  for (let i = 0; i < targets.length; i++) {
+    const unitNo = i + 1;
+    const target = targets[i] || {};
+    const code = generateUnitCode(realId, unitNo);
+    const itemName = unitDisplayItemName(target.item_name || 'เครื่องปรับอากาศ');
+    const assignee = target.assigned_technician || null;
+    const current = byUnitNo.get(unitNo);
+    if (current?.unit_id) {
+      await db.query(
+        `UPDATE public.job_units
+            SET unit_code=$3,
+                item_name=$4,
+                assigned_technician=$5,
+                status=CASE
+                  WHEN LOWER(COALESCE(NULLIF(status,''),'pending')) IN ('cancelled','removed','deleted','void','inactive') THEN 'pending'
+                  ELSE COALESCE(NULLIF(status,''),'pending')
+                END,
+                updated_at=NOW()
+          WHERE job_id=$1 AND unit_id=$2`,
+        [realId, current.unit_id, code, itemName, assignee]
+      );
+    } else {
+      await db.query(
+        `INSERT INTO public.job_units (job_id, unit_code, unit_no, item_name, assigned_technician, status)
+         VALUES ($1,$2,$3,$4,$5,'pending')
+         ON CONFLICT (job_id, unit_no) DO NOTHING`,
+        [realId, code, unitNo, itemName, assignee]
+      );
+    }
+  }
+
+  // If admin reduces job_items quantity, keep historical evidence rows but make extra units inactive.
+  await db.query(
+    `UPDATE public.job_units
+        SET status='cancelled', updated_at=NOW()
+      WHERE job_id=$1
+        AND unit_no > $2
+        AND ${activeJobUnitWhere()}`,
+    [realId, targets.length]
+  );
+
+  await normalizeJobUnitCodes(realId, db);
+  const finalRows = await db.query(
+    `SELECT * FROM public.job_units
+      WHERE job_id=$1 AND ${activeJobUnitWhere()}
+      ORDER BY unit_no ASC, unit_id ASC`,
+    [realId]
+  );
+  return finalRows.rows || [];
+}
+
 
 function normalizePhotoCategory(phase, category) {
   const raw = String(category || '').trim();
@@ -13719,34 +13895,7 @@ function normalizePhotoCategory(phase, category) {
 async function ensureJobUnits(job_id, db = pool) {
   const realId = Number(job_id);
   if (!Number.isFinite(realId) || realId <= 0) return [];
-  const existing = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
-  if (existing.rows.length) return await normalizeJobUnitCodes(realId, db);
-  const itemR = await db.query(
-    `SELECT item_name, qty, assigned_technician_username FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
-    [realId]
-  );
-  const jobR = await db.query(`SELECT job_type, technician_username FROM public.jobs WHERE job_id=$1 LIMIT 1`, [realId]);
-  const job = jobR.rows[0] || {};
-  const rowsToCreate = [];
-  for (const it of itemR.rows || []) {
-    const qty = Math.max(1, Math.min(99, Math.floor(Number(it.qty || 1) || 1)));
-    for (let i = 0; i < qty; i++) rowsToCreate.push({ item_name: unitDisplayItemName(it.item_name || job.job_type || 'เครื่องปรับอากาศ'), assigned_technician: it.assigned_technician_username || job.technician_username || null });
-  }
-  if (!rowsToCreate.length) rowsToCreate.push({ item_name: unitDisplayItemName(job.job_type || 'เครื่องปรับอากาศ'), assigned_technician: job.technician_username || null });
-  let unitNo = 1;
-  for (const row of rowsToCreate) {
-    for (let attempt = 0; attempt < 12; attempt++) {
-      const ins = await db.query(
-        `INSERT INTO public.job_units (job_id, unit_code, unit_no, item_name, assigned_technician)
-         VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT DO NOTHING RETURNING unit_id`,
-        [realId, generateUnitCode(realId, unitNo), unitNo, unitDisplayItemName(row.item_name || 'เครื่องปรับอากาศ'), row.assigned_technician || null]
-      );
-      if (ins.rows.length) break;
-    }
-    unitNo += 1;
-  }
-  return await normalizeJobUnitCodes(realId, db);
+  return await syncJobUnitsFromJobItems(realId, db);
 }
 
 async function getUnitsWithEvidence(job_id, db = pool) {
@@ -13791,33 +13940,6 @@ async function validatePerUnitCompletion(job_id, db = pool) {
     if (Number(u.photo_counts?.nameplate || 0) < 1) return `${label} ยังไม่มีรูปเนมเพลท`;
     if (Number(u.photo_counts?.before || 0) < 1) return `${label} ยังไม่มีรูปก่อนทำ`;
     if (Number(u.photo_counts?.after || 0) < 1) return `${label} ยังไม่มีรูปหลังทำ`;
-  }
-  return null;
-}
-
-function isRevisitJobRow(job) {
-  return String(job?.job_status || '').trim() === 'งานแก้ไข' || !!job?.returned_at || !!String(job?.return_reason || '').trim();
-}
-
-async function validateRevisitCompletion(job_id, db = pool) {
-  const r = await db.query(
-    `SELECT phase, COUNT(*)::int AS count
-       FROM public.job_photos
-      WHERE job_id=$1
-        AND deleted_at IS NULL
-        AND COALESCE(public_url,'') <> ''
-        AND phase = ANY($2::text[])
-      GROUP BY phase`,
-    [job_id, ['revisit_before', 'revisit_after', 'revisit_defect']]
-  );
-  const counts = Object.fromEntries((r.rows || []).map(x => [String(x.phase || ''), Number(x.count || 0)]));
-  const labels = {
-    revisit_before: 'รูปก่อนแก้ไข',
-    revisit_after: 'รูปหลังแก้ไข',
-    revisit_defect: 'รูปสาเหตุ/จุดปัญหา',
-  };
-  for (const ph of ['revisit_before', 'revisit_after', 'revisit_defect']) {
-    if (Number(counts[ph] || 0) < 1) return `งานแก้ไขยังไม่มี${labels[ph]}`;
   }
   return null;
 }
@@ -13959,7 +14081,6 @@ async function handleAdminBookV2(req, res) {
     const hasTech = (technician_username || '').toString().trim().length > 0;
     return hasTech ? 'single' : 'auto';
   })();
-  const payloadTechnicianUsername = (technician_username || '').toString().trim();
 
   if (!customer_name || !job_type || !appointment_datetime || !address_text) {
     return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ (ชื่อ/ประเภทงาน/วันนัด/ที่อยู่)" });
@@ -14003,7 +14124,7 @@ async function handleAdminBookV2(req, res) {
   // - team: technician_username required, team_members allowed
   const tmRawArr = Array.isArray(team_members_raw) ? team_members_raw : [];
   const tmAny = tmRawArr.some(x => (x||'').toString().trim());
-  const techProvided = payloadTechnicianUsername.length > 0;
+  const techProvided = (technician_username || '').toString().trim().length > 0;
   if (!isUrgentOffer) {
     if (assign_mode === 'single') {
       if (!techProvided) return res.status(400).json({ error: 'โหมด single ต้องระบุ technician_username' });
@@ -14020,7 +14141,7 @@ async function handleAdminBookV2(req, res) {
     ac_type: (ac_type || "").toString().trim(),
     btu: coerceNumber(btu, 0),
     machine_count: Math.max(1, coerceNumber(machine_count, 1)),
-    wash_variant: normalizeWashVariantLabel(wash_variant || ""),
+    wash_variant: (wash_variant || "").toString().trim(),
     repair_variant: (repair_variant || "").toString().trim(),
     // ✅ รองรับหลายรายการบริการในใบงานเดียว (admin-add-v2 ส่งมาเป็น services[])
     services: Array.isArray(body.services) ? body.services : (Array.isArray(body.service_lines) ? body.service_lines : null),
@@ -14106,13 +14227,6 @@ const serviceLineItems = buildServiceLineItemsFromPayload(
         assigned_to: (isUrgentOffer ? null : (technician_username || null)),
       }] }
 );
-console.log('[admin_book_v2] service lines normalized', serviceLineItems.map((it) => ({
-  item_name: it.item_name,
-  qty: it.qty,
-  unit_price: it.unit_price,
-  line_total: it.line_total,
-  assigned_technician_username: it.assigned_technician_username || null,
-})));
 
 if (coerceNumber(override_price, 0) > 0) {
   // Customer override price only. Payroll must never use this as technician income.
@@ -14147,14 +14261,6 @@ if (coerceNumber(override_price, 0) > 0) {
       }
     }
 
-    console.log('[admin_book_v2] service lines saved', computedItems.map((it) => ({
-      item_name: it.item_name,
-      qty: it.qty,
-      unit_price: it.unit_price,
-      line_total: it.line_total,
-      assigned_technician_username: it.assigned_technician_username || null,
-    })));
-
     // pricing via existing calcPricing
     const pricing = calcPricing(computedItems, promo);
 
@@ -14168,20 +14274,8 @@ if (coerceNumber(override_price, 0) > 0) {
 
     // choose technician
     // Urgent offer must NEVER auto-assign before a technician accepts the offer.
-    let selectedTech = "";
-    if (!isUrgentOffer && assign_mode === 'single') {
-      selectedTech = payloadTechnicianUsername;
-      if (!selectedTech) {
-        const err = new Error('โหมด single ต้องระบุ technician_username');
-        err.statusCode = 400;
-        throw err;
-      }
-    } else if (!isUrgentOffer && assign_mode === 'team') {
-      selectedTech = payloadTechnicianUsername;
-    } else if (!isUrgentOffer && assign_mode === 'auto') {
-      selectedTech = "";
-    }
-    if (!isUrgentOffer && assign_mode === 'auto' && !selectedTech) {
+    let selectedTech = isUrgentOffer ? "" : (technician_username || "").toString().trim();
+    if (!isUrgentOffer && !selectedTech) {
       // list group techs (Admin assign ignores accept_status)
       const isAll = (ttype === 'all');
       const tr = await client.query(
@@ -14237,20 +14331,6 @@ if (coerceNumber(override_price, 0) > 0) {
           console.warn("[admin_book_v2] forced out-of-zone assignment", forced_assignment_zone_warning);
         }
       }
-    }
-
-    console.log('[admin_book_v2] assignment source', {
-      assign_mode,
-      payload_technician_username: payloadTechnicianUsername,
-      selectedTech,
-      isUrgentOffer,
-    });
-
-    if (!isUrgentOffer && assign_mode === 'single' && selectedTech !== payloadTechnicianUsername) {
-      const err = new Error('single assignment mismatch');
-      err.statusCode = 500;
-      err.debug = { payload_technician_username: payloadTechnicianUsername, selectedTech };
-      throw err;
     }
 
     if (!isUrgentOffer && !selectedTech) {
@@ -14564,71 +14644,10 @@ async function handleInternalBookFromAi(req, res) {
 app.get("/admin/customer_lookup_by_phone_v2", requireAdminSoft, async (req, res) => {
   try {
     const rawPhone = String(req.query.phone || "").trim();
-    const candidates = buildPhoneLookupCandidates(rawPhone);
-    if (!candidates.length || normalizePhoneLookupDigits(rawPhone).length < 8) {
-      return res.json({ found: false, source: null });
-    }
-
-    const profileR = await pool.query(
-      `
-      SELECT
-        COALESCE(NULLIF(display_name, ''), NULLIF(phone, ''), 'ลูกค้าเดิม') AS customer_name,
-        phone AS customer_phone,
-        address AS address_text,
-        maps_url
-      FROM public.customer_profiles
-      WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ANY($1::text[])
-      ORDER BY updated_at DESC NULLS LAST
-      LIMIT 1
-      `,
-      [candidates]
-    );
-    if (profileR.rows.length) {
-      const row = profileR.rows[0];
-      return res.json({
-        found: true,
-        source: "customer_profiles",
-        customer_name: row.customer_name || null,
-        customer_phone: row.customer_phone || null,
-        address_text: row.address_text || null,
-        maps_url: row.maps_url || null,
-      });
-    }
-
-    const jobR = await pool.query(
-      `
-      SELECT
-        customer_name,
-        customer_phone,
-        address_text,
-        maps_url,
-        booking_code,
-        job_id
-      FROM public.jobs
-      WHERE regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g') = ANY($1::text[])
-      ORDER BY COALESCE(finished_at, appointment_datetime, created_at) DESC NULLS LAST, job_id DESC
-      LIMIT 1
-      `,
-      [candidates]
-    );
-    if (jobR.rows.length) {
-      const row = jobR.rows[0];
-      return res.json({
-        found: true,
-        source: "latest_job",
-        customer_name: row.customer_name || null,
-        customer_phone: row.customer_phone || null,
-        address_text: row.address_text || null,
-        maps_url: row.maps_url || null,
-        booking_code: row.booking_code || null,
-        job_id: row.job_id || null,
-      });
-    }
-
-    return res.json({ found: false, source: null });
+    return res.json(await customerLookupHelpers.lookupCustomerByPhoneV2(pool, rawPhone));
   } catch (e) {
     console.error("GET /admin/customer_lookup_by_phone_v2", e);
-    return res.status(500).json({ error: "ค้นหาข้อมูลลูกค้าเก่าไม่สำเร็จ" });
+    return res.json({ found: false });
   }
 });
 
@@ -15970,6 +15989,15 @@ app.post('/admin/jobs/:job_id/rework_case', requireAdminSession, async (req, res
     }, client);
     await logDeductionAudit(client, req, { action: 'REWORK_CASE_CREATE', entity_type: 'rework_case', entity_id: ins.rows[0].rework_case_id, after: ins.rows[0] });
     await client.query('COMMIT');
+    try {
+      await _syncDisplayForJobState(
+        { ...job, job_id: realId, return_reason: reason_note || reason_type, returned_at: new Date() },
+        [technician_username].filter(Boolean),
+        { context: 'current' }
+      );
+    } catch (e) {
+      try { console.warn('[tech_income_display] rework create sync failed', { job_id: realId, error: e.message }); } catch {}
+    }
     return res.json({ ok: true, row: ins.rows[0] });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -16023,11 +16051,6 @@ app.get('/admin/rework_cases/:id', requireAdminSession, async (req, res) => {
       dHas(jobsMeta, 'warranty_end_at') ? 'j.warranty_end_at' : "NULL::timestamptz AS warranty_end_at",
       dHas(jobsMeta, 'return_reason') ? 'j.return_reason' : "NULL::text AS return_reason",
       dHas(jobsMeta, 'returned_at') ? 'j.returned_at' : "NULL::timestamptz AS returned_at",
-      dHas(jobsMeta, 'revisit_cause_party') ? 'j.revisit_cause_party' : "NULL::text AS revisit_cause_party",
-      dHas(jobsMeta, 'revisit_cause_note') ? 'j.revisit_cause_note' : "NULL::text AS revisit_cause_note",
-      dHas(jobsMeta, 'revisit_agreed_at') ? 'j.revisit_agreed_at' : "NULL::timestamptz AS revisit_agreed_at",
-      dHas(jobsMeta, 'revisit_schedule_note') ? 'j.revisit_schedule_note' : "NULL::text AS revisit_schedule_note",
-      dHas(jobsMeta, 'revisit_customer_contacted_at') ? 'j.revisit_customer_contacted_at' : "NULL::timestamptz AS revisit_customer_contacted_at",
       dHas(jobsMeta, 'travel_started_at') ? 'j.travel_started_at' : "NULL::timestamptz AS travel_started_at",
       dHas(jobsMeta, 'checkin_at') ? 'j.checkin_at' : "NULL::timestamptz AS checkin_at",
       dHas(jobsMeta, 'started_at') ? 'j.started_at' : "NULL::timestamptz AS started_at",
@@ -16214,6 +16237,12 @@ app.post('/admin/rework_cases/:id/resolve', requireAdminSession, async (req, res
       payload: { rework_case_id: id, resolution, linked_deduction_case_id: linkedDeductionId },
     }, client);
     await client.query('COMMIT');
+    try {
+      const jr = await pool.query(`SELECT * FROM public.jobs WHERE job_id=$1 LIMIT 1`, [before.job_id]);
+      await _syncDisplayForJobState(jr.rows[0] || { job_id: before.job_id }, [before.technician_username].filter(Boolean), { context: 'history' });
+    } catch (e) {
+      try { console.warn('[tech_income_display] rework resolve sync failed', { job_id: before.job_id, error: e.message }); } catch {}
+    }
     return res.json({ ok: true, row: up.rows[0], linked_deduction_case: linkedDeduction, message: PAYOUT_DEDUCTION_WARNING });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -16403,7 +16432,7 @@ async function saveJobItemsAdminWithClient(client, job_id, items, options = {}) 
       const assignee = rawAssignee && (allowedAssignees.size === 0 || allowedAssignees.has(rawAssignee)) ? rawAssignee : null;
       const explicitIsService = (typeof it.is_service === 'boolean') ? it.is_service : null;
       const inferredIsService = inferIsServiceLine({ item_name: String(it.item_name || '').trim() });
-      const nameForNorm = String(it.item_name || "").trim();
+      const nameForNorm = normalizerHelpers.canonicalizeWashText(String(it.item_name || "").trim());
       let qtyN = Math.max(0, Number(it.qty || 0));
       let unitN = Math.max(0, Number(it.unit_price || 0));
       try {
@@ -16414,6 +16443,30 @@ async function saveJobItemsAdminWithClient(client, job_id, items, options = {}) 
           if (Number.isFinite(per) && per > 0) {
             unitN = Number(per.toFixed(2));
             qtyN = mc;
+          }
+        }
+      } catch (_) {}
+      try {
+        const serviceLike = (explicitIsService != null) ? explicitIsService : inferredIsService;
+        const parsedSpec = serviceLike ? _contractServiceKeyFromItem({ item_name: nameForNorm }) : null;
+        const isWash = serviceLike && /ล้างแอร์|AC Cleaning/i.test(nameForNorm);
+        const isRepair = serviceLike && /ซ่อมแอร์|AC Repair/i.test(nameForNorm);
+        const isInstall = serviceLike && /ติดตั้งแอร์|AC Installation/i.test(nameForNorm);
+        if ((isWash || isRepair || isInstall) && parsedSpec) {
+          const acType = parsedSpec.ac_key === 'fourway' ? 'สี่ทิศทาง'
+            : (parsedSpec.ac_key === 'hanging' ? 'แขวน'
+            : (parsedSpec.ac_key === 'ceiling' ? 'เปลือยใต้ฝ้า' : 'ผนัง'));
+          const payload = {
+            job_type: isRepair ? 'ซ่อม' : (isInstall ? 'ติดตั้ง' : 'ล้าง'),
+            ac_type: acType,
+            btu: Number(parsedSpec.btu || 0) || (parsedSpec.btu_tier === 'large' ? 18000 : 12000),
+            machine_count: Math.max(1, Math.round(Number(qtyN || 1))),
+            wash_variant: parsedSpec.ac_key === 'wall' ? (_thaiLabelWash(parsedSpec.wash_key) || 'ธรรมดา') : '',
+            repair_variant: nameForNorm.includes('ตรวจเช็ครั่ว') ? 'ตรวจเช็ครั่ว' : '',
+          };
+          const recalculated = computeStandardPrice(payload);
+          if (Number.isFinite(recalculated) && recalculated > 0 && qtyN > 0) {
+            unitN = Number((recalculated / qtyN).toFixed(2));
           }
         }
       } catch (_) {}
@@ -16466,6 +16519,12 @@ async function saveJobItemsAdminWithClient(client, job_id, items, options = {}) 
   }
 
   await client.query(`UPDATE public.jobs SET job_price=$1 WHERE job_id=$2`, [pricing.total, job_id]);
+
+  // Keep per-unit evidence requirements in sync with the latest admin-edited job_items.
+  // When admin reduces 2 machines to 1 on-site, the extra job_unit is marked cancelled
+  // so technician close validation no longer requires photos/checklists for it.
+  await syncJobUnitsFromJobItems(job_id, client);
+
   return { pricing, safeItems, promotion: promo };
 }
 
@@ -16748,6 +16807,12 @@ app.post('/admin/jobs/:job_id/force_finish_v2', requireAdminSoft, async (req, re
     }, client);
 
     await client.query('COMMIT');
+    try {
+      const team = await getTeamForJob(realId);
+      await _refreshTechnicianIncomePreviewForJob(realId, team, { source: 'job_closed_preview' });
+    } catch (e) {
+      try { console.warn('[tech_income_preview] admin force finish refresh failed', { job_id: realId, error: e.message }); } catch {}
+    }
     return res.json({ success: true, job_id: Number(realId), status: 'เสร็จแล้ว' });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -16856,6 +16921,12 @@ app.post('/admin/jobs/:job_id/return_for_fix_v2', requireAdminSoft, async (req, 
       [job_id]
     );
     await logJobUpdate(job_id, { actor_username, actor_role: 'admin', action: 'return_for_fix', message: reason });
+    try {
+      const team = await getTeamForJob(job_id);
+      await _syncDisplayForJobState({ job_id, return_reason: reason, returned_at: new Date() }, team, { context: 'current' });
+    } catch (e) {
+      try { console.warn('[tech_income_display] return_for_fix sync failed', { job_id, error: e.message }); } catch {}
+    }
     return res.json({ success: true });
   } catch (e) {
     console.error('return_for_fix_v2 error', e);
@@ -17001,7 +17072,7 @@ function promoMatchesPayloadV2(promo, payload){
   if(Number.isFinite(mmax) && mmax !== null && mc > mmax) return false;
 
   if(String(payload.job_type||'').trim()==='ล้าง'){
-    if(!__isBlank(promo.wash_variant) && String(promo.wash_variant).trim() !== String(payload.wash_variant||'').trim()) return false;
+    if(!__isBlank(promo.wash_variant) && normalizerHelpers.normalizeWashVariantLabel(promo.wash_variant) !== normalizerHelpers.normalizeWashVariantLabel(payload.wash_variant)) return false;
   }
 
   return true;
@@ -17302,7 +17373,7 @@ function _techJobMoneyFallback(row, username, context) {
     customer_collect_amount: Number(row?.job_price || 0) || null,
     customer_collect_label: ctx === 'history' ? 'ยอดที่ลูกค้าจ่าย' : 'ยอดเก็บลูกค้า',
     technician_income_amount: null,
-    technician_income_label: ctx === 'offered' ? 'ที่ช่างจะได้รับ' : (ctx === 'history' ? 'ที่ช่างได้รับ' : 'ที่ช่างจะได้รับ'),
+    technician_income_label: ctx === 'offered' ? 'ที่ช่างจะได้รับ' : (ctx === 'history' ? 'ได้รับ' : 'ที่ช่างจะได้รับ'),
     technician_income_source: 'loading',
     technician_income_breakdown: { source: 'loading', rows: [], related_items: [] },
     technician_income_rate_set_id: null,
@@ -17405,11 +17476,7 @@ async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
       j.pre_cleaning_checklist, j.post_cleaning_checklist,
       j.photo_acknowledgement_required, j.photo_acknowledgement_accepted, j.missing_photo_categories,
       j.close_payment_method, j.close_payment_status, j.close_cash_amount, j.close_payment_note,
-      j.close_cash_confirmed, j.close_signature_type, j.close_signature_by, j.close_signature_at,
-      j.returned_at, j.return_reason,
-      j.revisit_cause_party, j.revisit_cause_note, j.revisit_result, j.revisit_note,
-      j.revisit_agreed_at, j.revisit_schedule_note, j.revisit_customer_contacted_at,
-      j.revisit_original_appointment_datetime, j.revisit_schedule_by
+      j.close_cash_confirmed, j.close_signature_type, j.close_signature_by, j.close_signature_at
     FROM public.jobs j
     WHERE j.job_id = ANY($2::int[])
       AND ${_techVisibilityPredicateSql('$1')}
@@ -17423,11 +17490,16 @@ async function _loadTechnicianVisibleJobsByIds(username, jobIds) {
 // =======================================
 // 👨‍🔧 JOBS: technician sees only own jobs
 // =======================================
-app.get("/jobs/tech/:username", async (req, res) => {
-  const { username } = req.params;
+app.get("/jobs/tech/:username", requireTechnicianSession, async (req, res) => {
+  const requestedUsername = String(req.params?.username || "").trim();
+  const username = _authUsername(req);
+  if (!username) return res.status(401).json({ error: "UNAUTHORIZED" });
   try {
+    if (requestedUsername && requestedUsername !== "me" && requestedUsername !== username) {
+      try { console.warn("[tech_jobs_identity] ignored path username mismatch", { requestedUsername, sessionUsername: username }); } catch {}
+    }
     const aliases = await _getTechnicianVisibilityAliases(username);
-    const historyLimit = Math.min(Math.max(Number(req.query.history_limit || 0), 0), 100);
+    const historyLimit = Math.min(Math.max(Number(req.query.history_limit || 0), 0), 501);
     const historyOffset = Math.max(Number(req.query.history_offset || 0), 0);
     const historyWhere = `(
       ${_sqlDonePredicate('j')}
@@ -17453,6 +17525,7 @@ app.get("/jobs/tech/:username", async (req, res) => {
             j.technician_team, j.technician_username, j.created_at,
             j.maps_url, j.job_zone,
             j.travel_started_at, j.started_at, j.finished_at, j.canceled_at, j.cancel_reason,
+            j.return_reason, j.returned_at, j.returned_by,
             j.checkin_at,
             j.technician_note, j.technician_note_at,
             j.final_signature_path, j.final_signature_status, j.final_signature_at,
@@ -17460,10 +17533,6 @@ app.get("/jobs/tech/:username", async (req, res) => {
             j.photo_acknowledgement_required, j.photo_acknowledgement_accepted, j.missing_photo_categories,
             j.close_payment_method, j.close_payment_status, j.close_cash_amount, j.close_payment_note,
             j.close_cash_confirmed, j.close_signature_type, j.close_signature_by, j.close_signature_at,
-            j.returned_at, j.return_reason,
-            j.revisit_cause_party, j.revisit_cause_note, j.revisit_result, j.revisit_note,
-            j.revisit_agreed_at, j.revisit_schedule_note, j.revisit_customer_contacted_at,
-            j.revisit_original_appointment_datetime, j.revisit_schedule_by,
             j.checkin_latitude, j.checkin_longitude,
             ${historyWhere} AS is_history
           FROM public.jobs j
@@ -17496,6 +17565,7 @@ app.get("/jobs/tech/:username", async (req, res) => {
         j.technician_team, j.technician_username, j.created_at,
         j.maps_url, j.job_zone,
         j.travel_started_at, j.started_at, j.finished_at, j.canceled_at, j.cancel_reason,
+        j.return_reason, j.returned_at, j.returned_by,
         j.checkin_at,
         j.technician_note, j.technician_note_at,
         j.final_signature_path, j.final_signature_status, j.final_signature_at,
@@ -17503,10 +17573,6 @@ app.get("/jobs/tech/:username", async (req, res) => {
         j.photo_acknowledgement_required, j.photo_acknowledgement_accepted, j.missing_photo_categories,
         j.close_payment_method, j.close_payment_status, j.close_cash_amount, j.close_payment_note,
         j.close_cash_confirmed, j.close_signature_type, j.close_signature_by, j.close_signature_at,
-        j.returned_at, j.return_reason,
-        j.revisit_cause_party, j.revisit_cause_note, j.revisit_result, j.revisit_note,
-        j.revisit_agreed_at, j.revisit_schedule_note, j.revisit_customer_contacted_at,
-        j.revisit_original_appointment_datetime, j.revisit_schedule_by,
         j.checkin_latitude, j.checkin_longitude
       FROM public.jobs j
       WHERE ${_techVisibilityPredicateSql('$1')}
@@ -17554,7 +17620,6 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
     // backward-compatible: some frontend versions send latitude/longitude
     latitude,
     longitude,
-    duration_min,
     technician_username,
     primary_username,
     items,
@@ -17581,7 +17646,6 @@ app.put("/jobs/:job_id/admin-edit", async (req, res) => {
 
   const gpsLat = gps_latitude !== undefined ? toFiniteOrNull(gps_latitude) : toFiniteOrNull(latitude);
   const gpsLng = gps_longitude !== undefined ? toFiniteOrNull(gps_longitude) : toFiniteOrNull(longitude);
-  const requestedDurationMin = toFiniteOrNull(duration_min);
 
   // ✅ FIX TIMEZONE: ถ้ามีการแก้วันนัด ให้ normalize เป็นเวลาไทยก่อนบันทึก
   const appointment_dt =
@@ -17611,7 +17675,7 @@ try {
 
       const cur = curR.rows[0];
       const apptToUse = appointment_dt || cur.appointment_datetime;
-      const durToUse = requestedDurationMin && requestedDurationMin > 0 ? Number(requestedDurationMin) : Number(cur.duration_min || 60);
+      const durToUse = Number(cur.duration_min || 60);
       const jobTypeToUse = (job_type ?? cur.job_type);
       const currentTeamSnapshot = await loadJobTeamSnapshotForAdminEdit(client, job_id);
       const nextTeamSnapshot = wantsTeamSave
@@ -17654,9 +17718,8 @@ try {
           gps_latitude = COALESCE($9, gps_latitude),
           gps_longitude = COALESCE($10, gps_longitude),
           technician_username = COALESCE(NULLIF($11, ''), technician_username),
-          technician_team = COALESCE(NULLIF($11, ''), technician_team),
-          duration_min = COALESCE($12, duration_min)
-      WHERE job_id=$13
+          technician_team = COALESCE(NULLIF($11, ''), technician_team)
+      WHERE job_id=$12
       `,
       [
         customer_name ?? null,
@@ -17670,7 +17733,6 @@ try {
         gpsLat,
         gpsLng,
         headerPrimaryToSave,
-        requestedDurationMin && requestedDurationMin > 0 ? Math.round(requestedDurationMin) : null,
         job_id,
       ]
     );
@@ -17786,10 +17848,22 @@ app.post("/jobs/:job_id/admin-cancel", async (req, res) => {
   if (!job_id) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
 
   const reason = String(req.body?.reason || "admin_cancel").trim();
+  let cancelTeam = [];
 
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    const cancelTeamRows = await client.query(
+      `SELECT technician_username
+         FROM public.job_assignments
+        WHERE job_id=$1 AND technician_username IS NOT NULL
+        UNION
+       SELECT technician_username
+         FROM public.jobs
+        WHERE job_id=$1 AND technician_username IS NOT NULL`,
+      [job_id]
+    );
+    cancelTeam = (cancelTeamRows.rows || []).map(r => String(r.technician_username || '').trim()).filter(Boolean);
 
     // expire offers ที่ค้าง
     await client.query(`UPDATE public.job_offers SET status='expired', responded_at=NOW() WHERE job_id=$1 AND status='pending'`, [job_id]);
@@ -17810,6 +17884,11 @@ app.post("/jobs/:job_id/admin-cancel", async (req, res) => {
     );
 
     await client.query("COMMIT");
+    try {
+      await _syncDisplayForJobState({ job_id, job_status: 'cancelled', canceled_at: new Date(), cancel_reason: reason }, cancelTeam, { context: 'history' });
+    } catch (e) {
+      try { console.warn('[tech_income_display] cancel sync failed', { job_id, error: e.message }); } catch {}
+    }
     res.json({ success: true });
   } catch (e) {
     await client.query("ROLLBACK");
@@ -17893,6 +17972,22 @@ app.put("/jobs/:job_id/status", async (req, res) => {
          WHERE job_id=$2`,
         [status, realId]
       );
+    } else if (status === 'à¹€à¸ªà¸£à¹‡à¸ˆà¹à¸¥à¹‰à¸§') {
+      await pool.query(
+        `UPDATE public.jobs
+         SET job_status=$1,
+             finished_at = COALESCE(finished_at, NOW()),
+             completed_at = COALESCE(completed_at, NOW()),
+             closed_at = COALESCE(closed_at, NOW())
+         WHERE job_id=$2`,
+        [status, realId]
+      );
+      try {
+        const team = await getTeamForJob(realId);
+        await _refreshTechnicianIncomePreviewForJob(realId, team, { source: 'job_closed_preview' });
+      } catch (e) {
+        try { console.warn('[tech_income_preview] close status refresh failed', { job_id: realId, error: e.message }); } catch {}
+      }
     } else {
       await pool.query(`UPDATE public.jobs SET job_status=$1 WHERE job_id=$2`, [status, realId]);
     }
@@ -18860,40 +18955,39 @@ async function autoFinalizeUrgentJobs() {
   }
 }
 
-app.post("/tech/income-summary-batch", async (req, res) => {
-  const username = String(req.body?.username || req.query?.username || '').trim();
+app.post("/tech/income-summary-batch", requireTechnicianSession, async (req, res) => {
+  const requestedUsername = String(req.body?.username || req.query?.username || '').trim();
+  const username = _authUsername(req);
   const jobIds = _sanitizeTechJobIds(req.body?.job_ids || req.body?.jobIds || []);
-  if (!username) return res.status(400).json({ ok: false, error: "username_required" });
+  if (!username) return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+  if (requestedUsername && requestedUsername !== username) {
+    try { console.warn("[tech_income_batch_identity] ignored requested username mismatch", { requestedUsername, sessionUsername: username }); } catch {}
+  }
   if (!jobIds.length) return res.json({ ok: true, items: {} });
 
   try {
     const visibleRows = await _loadTechnicianVisibleJobsByIds(username, jobIds);
+    const moneyMap = await _buildTechnicianJobMoneySummaryBatch(visibleRows, username, {
+      contextForJob: (row) => _techJobContextFromRow(row, 'current'),
+    });
     const items = {};
     for (const row of visibleRows) {
       const context = _techJobContextFromRow(row, 'current');
-      try {
-        const money = await _buildTechnicianJobMoneySummary(row, username, { context });
-        items[String(row.job_id)] = {
-          job_id: row.job_id,
-          context,
-          status: money?.technician_income_amount == null ? 'unavailable' : 'ready',
-          technician_income_amount: money?.technician_income_amount ?? null,
-          technician_income_source: money?.technician_income_source || 'unavailable',
-          technician_income_rate_set_id: money?.technician_income_rate_set_id || null,
-          technician_income_rate_set_version: money?.technician_income_rate_set_version || null,
-        };
-      } catch (e) {
-        try { console.warn('[tech_income_batch] item failed', { username, job_id: row.job_id, error: e.message }); } catch {}
-        items[String(row.job_id)] = {
-          job_id: row.job_id,
-          context,
-          status: 'unavailable',
-          technician_income_amount: null,
-          technician_income_source: 'unavailable',
-          technician_income_rate_set_id: null,
-          technician_income_rate_set_version: null,
-        };
-      }
+      const money = moneyMap.get(String(row.job_id)) || null;
+      items[String(row.job_id)] = {
+        job_id: row.job_id,
+        context,
+        status: money?.technician_income_amount == null ? 'unavailable' : 'ready',
+        technician_income_amount: money?.technician_income_amount ?? null,
+        technician_income_label: money?.technician_income_label || null,
+        technician_income_source: money?.technician_income_source || 'unavailable',
+        technician_income_display_state: money?.technician_income_display_state || null,
+        technician_income_display_note: money?.technician_income_display_note || null,
+        technician_income_is_final: Boolean(money?.technician_income_is_final),
+        technician_income_is_stale: Boolean(money?.technician_income_is_stale),
+        technician_income_rate_set_id: money?.technician_income_rate_set_id || null,
+        technician_income_rate_set_version: money?.technician_income_rate_set_version || null,
+      };
     }
     return res.json({ ok: true, items });
   } catch (e) {
@@ -18902,11 +18996,15 @@ app.post("/tech/income-summary-batch", async (req, res) => {
   }
 });
 
-app.get("/tech/jobs/:job_id/income-detail", async (req, res) => {
+app.get("/tech/jobs/:job_id/income-detail", requireTechnicianSession, async (req, res) => {
   const jobId = Number(req.params.job_id);
-  const username = String(req.query?.username || req.body?.username || '').trim();
+  const requestedUsername = String(req.query?.username || req.body?.username || '').trim();
+  const username = _authUsername(req);
   if (!Number.isInteger(jobId) || jobId <= 0) return res.status(400).json({ ok: false, error: "invalid_job_id" });
-  if (!username) return res.status(400).json({ ok: false, error: "username_required" });
+  if (!username) return res.status(401).json({ ok: false, error: "UNAUTHORIZED" });
+  if (requestedUsername && requestedUsername !== username) {
+    try { console.warn("[tech_income_detail_identity] ignored requested username mismatch", { requestedUsername, sessionUsername: username, jobId }); } catch {}
+  }
 
   try {
     const visibleRows = await _loadTechnicianVisibleJobsByIds(username, [jobId]);
@@ -19030,14 +19128,14 @@ app.get("/offers/tech/:username", async (req, res) => {
       [aliases]
     );
 
-    // Offered job cards should show income immediately when possible.
-    // Calculate only each offered job for this technician, never the whole payout system.
+    // Offered job cards read persisted display/preview rows only.
+    // Missing legacy rows stay pending instead of recalculating income during render.
     const rows = [];
     for (const row of (r.rows || [])) {
       const base = { ...row, ..._techJobMoneyFallback(row, username, 'offered') };
       try {
-        const money = await _getOrCalculateTechnicianIncomePreview(row.job_id, username, 'offered');
-        if (money && money.technician_income_amount != null) Object.assign(base, money);
+        const money = await _buildTechnicianJobMoneySummary(row, username, { context: 'offered' });
+        if (money) Object.assign(base, money);
       } catch (e) {
         try { console.warn('[offers_income_preview] skip', { username, job_id: row.job_id, error: e.message }); } catch {}
       }
@@ -19525,7 +19623,7 @@ app.post("/jobs/:job_id/photos/meta", async (req, res) => {
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
     let unitMeta = { unit_id: null, unit_code: null, unit_no: null };
     if (Number.isFinite(bodyUnitId) && bodyUnitId > 0) {
-      const unitR = await pool.query(`SELECT unit_id, unit_code, unit_no FROM public.job_units WHERE job_id=$1 AND unit_id=$2 LIMIT 1`, [realId, bodyUnitId]);
+      const unitR = await pool.query(`SELECT unit_id, unit_code, unit_no FROM public.job_units WHERE job_id=$1 AND unit_id=$2 AND ${activeJobUnitWhere()} LIMIT 1`, [realId, bodyUnitId]);
       if (!unitR.rows.length) return res.status(400).json({ error: "กรุณาเลือกเครื่องที่อยู่ในงานนี้ก่อนอัปโหลดรูป" });
       unitMeta = unitR.rows[0];
     }
@@ -19749,7 +19847,7 @@ app.put("/jobs/:job_id/units/:unit_id/checklist", requireTechnicianSession, asyn
     const type = String(req.body?.checklist_type || '').trim();
     if (!['pre','post'].includes(type)) return res.status(400).json({ error: "ประเภทเช็คลิสไม่ถูกต้อง" });
     const list = Array.isArray(req.body?.checklist_json) ? req.body.checklist_json : [];
-    const unitR = await pool.query(`SELECT unit_id FROM public.job_units WHERE job_id=$1 AND unit_id=$2 LIMIT 1`, [realId, unitId]);
+    const unitR = await pool.query(`SELECT unit_id FROM public.job_units WHERE job_id=$1 AND unit_id=$2 AND ${activeJobUnitWhere()} LIMIT 1`, [realId, unitId]);
     if (!unitR.rows.length) return res.status(404).json({ error: "ไม่พบเครื่องนี้ในงาน" });
     await pool.query(
       `INSERT INTO public.job_unit_checklists (job_id, unit_id, technician_username, checklist_type, checklist_json, completed_at, updated_at)
@@ -19906,91 +20004,6 @@ app.put("/jobs/:job_id/note", async (req, res) => {
   }
 });
 
-app.post("/jobs/:job_id/revisit-schedule", requireTechnicianSession, async (req, res) => {
-  const { job_id } = req.params;
-  const revisit_agreed_at = String(req.body?.revisit_agreed_at || '').trim();
-  const revisit_schedule_note = String(req.body?.revisit_schedule_note || '').trim() || 'ช่างบันทึกเวลานัดแก้ไขกับลูกค้าแล้ว';
-  if (!revisit_agreed_at) return res.status(400).json({ ok: false, error: 'กรุณาระบุวันและเวลานัดแก้ไข' });
-  const agreedIso = normalizeBangkokIso(revisit_agreed_at);
-  const agreedDate = new Date(agreedIso);
-  if (Number.isNaN(agreedDate.getTime())) return res.status(400).json({ ok: false, error: 'วันและเวลานัดแก้ไขไม่ถูกต้อง' });
-
-  const client = await pool.connect();
-  try {
-    await client.query('BEGIN');
-    const realId = await resolveJobIdAny(client, job_id);
-    if (!realId) throw createHttpError(400, 'job_id ไม่ถูกต้อง');
-    const technician_username = await requireTechOwnsResolvedJob(req, res, realId, client);
-    if (!technician_username) {
-      await client.query('ROLLBACK');
-      return;
-    }
-    const jr = await client.query(
-      `SELECT job_id, booking_code, customer_name, job_status, returned_at, return_reason,
-              appointment_datetime, revisit_original_appointment_datetime, COALESCE(duration_min,90) AS duration_min
-         FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
-      [realId]
-    );
-    const job = jr.rows[0];
-    if (!job) throw createHttpError(404, 'ไม่พบงาน');
-    if (!isRevisitJobRow(job)) throw createHttpError(400, 'งานนี้ไม่ใช่งานแก้ไข');
-
-    // งานแก้ไข: ช่างบันทึกเวลานัดเองได้ แต่ห้ามชนคิวงานเดิม/งานล่วงหน้าของช่างคนเดียวกัน
-    // ถ้าจำเป็นต้องใช้เวลาที่ชนจริง ๆ ต้องให้แอดมินย้ายคิวงานเดิมก่อน ไม่ให้ช่าง override เอง
-    const durationMin = Math.max(30, Number(job.duration_min || 90) || 90);
-    const conflict = await checkTechCollision(technician_username, agreedIso, durationMin, realId);
-    if (conflict && !conflict.error) {
-      await client.query('ROLLBACK');
-      return res.status(409).json({
-        ok: false,
-        code: 'REVISIT_SCHEDULE_CONFLICT',
-        error: 'เวลานี้ชนกับงานอื่นที่มีอยู่แล้ว',
-        message: 'เวลานี้ชนกับงานอื่นที่มีอยู่แล้ว หากจำเป็นต้องเข้าช่วงเวลานี้จริง ๆ กรุณาติดต่อแอดมินเพื่อย้ายคิวงานเดิมก่อน หรือเลือกเวลานัดแก้ไขใหม่',
-        conflict,
-      });
-    }
-    if (conflict && conflict.error) throw createHttpError(400, 'วันและเวลานัดแก้ไขไม่ถูกต้อง');
-
-    const up = await client.query(
-      `UPDATE public.jobs
-          SET revisit_agreed_at=$2,
-              revisit_schedule_note=$3,
-              revisit_customer_contacted_at=NOW(),
-              revisit_schedule_by=$4,
-              revisit_original_appointment_datetime=COALESCE(revisit_original_appointment_datetime, appointment_datetime),
-              appointment_datetime=$2
-        WHERE job_id=$1
-        RETURNING revisit_agreed_at, revisit_schedule_note, revisit_customer_contacted_at,
-                  revisit_schedule_by, revisit_original_appointment_datetime, appointment_datetime`,
-      [realId, agreedIso, revisit_schedule_note, technician_username]
-    );
-    await client.query(
-      `UPDATE public.technician_rework_cases
-          SET status=CASE WHEN status='open' THEN 'in_progress' ELSE status END,
-              revisit_agreed_at=$2,
-              revisit_schedule_note=$3,
-              updated_at=NOW()
-        WHERE job_id=$1 AND status IN ('open','in_progress')`,
-      [realId, agreedIso, revisit_schedule_note]
-    );
-    await logJobUpdate(realId, {
-      actor_username: technician_username,
-      actor_role: 'tech',
-      action: 'revisit_schedule_agreed',
-      message: revisit_schedule_note,
-      payload: { revisit_agreed_at: agreedIso, revisit_schedule_note },
-    }, client);
-    await client.query('COMMIT');
-    return res.json({ ok: true, ...up.rows[0] });
-  } catch (e) {
-    try { await client.query('ROLLBACK'); } catch {}
-    console.error('POST /jobs/:job_id/revisit-schedule', e);
-    return res.status(Number(e.status || 500)).json({ ok: false, error: e.message || 'บันทึกเวลานัดแก้ไขไม่สำเร็จ' });
-  } finally {
-    client.release();
-  }
-});
-
 // =======================================
 // ✅ FINALIZE JOB (เสร็จสิ้น / ยกเลิก) + ลายเซ็นต์ช่าง
 // =======================================
@@ -20004,10 +20017,6 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
   const note = String(req.body?.note || "").trim();
   const revisit_result = String(req.body?.revisit_result || "").trim().toLowerCase();
   const revisit_note = String(req.body?.revisit_note || "").trim();
-  const revisit_cause_party = String(req.body?.revisit_cause_party || "").trim().toLowerCase();
-  const revisit_cause_note = String(req.body?.revisit_cause_note || "").trim();
-  const revisit_agreed_at = String(req.body?.revisit_agreed_at || "").trim();
-  const revisit_schedule_note = String(req.body?.revisit_schedule_note || "").trim();
   const warranty_kind = String(req.body?.warranty_kind || "").trim();
   const warranty_months = req.body?.warranty_months;
 
@@ -20027,6 +20036,16 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
   if (!signature_data) {
     return res.status(400).json({ error: "ต้องมีลายเซ็นปิดงาน" });
   }
+  if (status === 'เสร็จแล้ว') {
+    if (!pre_cleaning_checklist || !pre_cleaning_checklist.length) return res.status(400).json({ error: 'กรุณาตรวจสภาพก่อนล้างให้ครบ' });
+    if (!post_cleaning_checklist || !post_cleaning_checklist.length) return res.status(400).json({ error: 'กรุณาตรวจหลังล้างให้ครบ' });
+    if (!close_payment_method) return res.status(400).json({ error: 'กรุณาเลือกวิธีชำระเงิน' });
+    if (close_payment_method === 'cash_to_technician') {
+      if (!Number.isFinite(close_cash_amount) || close_cash_amount <= 0) return res.status(400).json({ error: 'กรุณาระบุจำนวนเงินสดที่รับ' });
+      if (!close_cash_confirmed) return res.status(400).json({ error: 'กรุณายืนยันการรับเงินสด' });
+      if (close_signature_type !== 'technician_signature') return res.status(400).json({ error: 'กรุณาให้ช่างเซ็นรับรองปิดงาน' });
+    }
+  }
 
   const client = await pool.connect();
   try {
@@ -20042,51 +20061,10 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
       await client.query("ROLLBACK");
       return;
     }
-    const metaR = await client.query(
-      `SELECT job_status, job_type, warranty_end_at, return_reason, returned_at,
-              revisit_agreed_at, revisit_schedule_note
-       FROM public.jobs
-       WHERE job_id=$1
-       FOR UPDATE`,
-      [realId]
-    );
-    const meta = metaR.rows[0] || {};
-    const isRevisitFlow = isRevisitJobRow(meta);
-    const revisitResult = ["successful", "unsuccessful"].includes(revisit_result) ? revisit_result : "";
-    const revisitNote = revisit_note || note || (revisitResult ? `ผลการแก้ไข: ${revisitResult}` : "");
-    const revisitCauseNote = revisit_cause_note || (revisit_cause_party ? `เลือกสาเหตุงานแก้ไข: ${revisit_cause_party}` : "");
-    if (status === 'เสร็จแล้ว' && !isRevisitFlow) {
-      if (!pre_cleaning_checklist || !pre_cleaning_checklist.length) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: 'กรุณาตรวจสภาพก่อนล้างให้ครบ' });
-      }
-      if (!post_cleaning_checklist || !post_cleaning_checklist.length) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: 'กรุณาตรวจหลังล้างให้ครบ' });
-      }
-      if (!close_payment_method) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: 'กรุณาเลือกวิธีชำระเงิน' });
-      }
-      if (close_payment_method === 'cash_to_technician') {
-        if (!Number.isFinite(close_cash_amount) || close_cash_amount <= 0) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({ error: 'กรุณาระบุจำนวนเงินสดที่รับ' });
-        }
-        if (!close_cash_confirmed) {
-          await client.query("ROLLBACK");
-          return res.status(400).json({ error: 'กรุณายืนยันการรับเงินสด' });
-        }
-        if (close_signature_type !== 'technician_signature') {
-          await client.query("ROLLBACK");
-          return res.status(400).json({ error: 'กรุณาให้ช่างเซ็นรับรองปิดงาน' });
-        }
-      }
-    }
     const perUnitEvidenceRequested = req.body?.per_unit_evidence === true || String(req.body?.per_unit_evidence || '').trim().toLowerCase() === 'true' || String(req.body?.per_unit_evidence || '').trim() === '1';
     const perUnitFlagR = await client.query(`SELECT COALESCE(per_unit_evidence_enabled,FALSE) AS enabled FROM public.jobs WHERE job_id=$1 LIMIT 1`, [realId]);
     const perUnitEnabled = perUnitEvidenceRequested || !!perUnitFlagR.rows?.[0]?.enabled;
-    if (status === "เสร็จแล้ว" && perUnitEnabled && !isRevisitFlow) {
+    if (status === "เสร็จแล้ว" && perUnitEnabled) {
       const unitMissing = await validatePerUnitCompletion(realId, client);
       if (unitMissing) {
         await client.query("ROLLBACK");
@@ -20115,23 +20093,26 @@ if (status === "เสร็จแล้ว") {
   }
 }
 
+    const metaR = await client.query(
+      `SELECT job_status, job_type, warranty_end_at, return_reason, returned_at
+       FROM public.jobs
+       WHERE job_id=$1
+       FOR UPDATE`,
+      [realId]
+    );
+    const meta = metaR.rows[0] || {};
+    const isRevisitFlow = String(meta.job_status || "").trim() === "งานแก้ไข" || !!meta.returned_at || !!meta.return_reason;
+    const revisitResult = ["successful", "unsuccessful"].includes(revisit_result) ? revisit_result : "";
+    const revisitNote = revisit_note || note;
+
     if (isRevisitFlow && status === "เสร็จแล้ว") {
-      if (!String(meta.revisit_agreed_at || revisit_agreed_at || '').trim()) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: "งานแก้ไขต้องบันทึกวันและเวลานัดกับลูกค้า" });
-      }
-      if (!['technician','customer','company','unclear'].includes(revisit_cause_party)) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: "งานแก้ไขต้องระบุสาเหตุ: technician/customer/company/unclear" });
-      }
       if (!revisitResult) {
         await client.query("ROLLBACK");
         return res.status(400).json({ error: "งานแก้ไขต้องระบุ revisit_result เป็น successful หรือ unsuccessful" });
       }
-      const revisitMissing = await validateRevisitCompletion(realId, client);
-      if (revisitMissing) {
+      if (!revisitNote) {
         await client.query("ROLLBACK");
-        return res.status(400).json({ error: revisitMissing });
+        return res.status(400).json({ error: "งานแก้ไขต้องระบุ revisit_note หรือ note" });
       }
     }
 
@@ -20241,55 +20222,6 @@ if (status === "เสร็จแล้ว") {
           close_signature_type || 'technician_signature']
       );
       if (isRevisitFlow && revisitResult) {
-        const evR = await client.query(
-          `SELECT photo_id, phase, public_url, cloud_public_id, uploaded_at, unit_id
-             FROM public.job_photos
-            WHERE job_id=$1
-              AND deleted_at IS NULL
-              AND COALESCE(public_url,'') <> ''
-              AND phase = ANY($2::text[])
-            ORDER BY uploaded_at DESC NULLS LAST, photo_id DESC`,
-          [realId, ['revisit_before', 'revisit_after', 'revisit_defect']]
-        );
-        const evidenceJson = evR.rows || [];
-        const agreedAtForSave = String(meta.revisit_agreed_at || revisit_agreed_at || '').trim() || null;
-        const scheduleNoteForSave = String(meta.revisit_schedule_note || revisit_schedule_note || '').trim() || null;
-        await client.query(
-          `UPDATE public.jobs
-              SET revisit_result=$2,
-                  revisit_note=$3,
-                  revisit_cause_party=$4,
-                  revisit_cause_note=$5,
-                  revisit_agreed_at=COALESCE(revisit_agreed_at, $6::timestamptz),
-                  revisit_schedule_note=COALESCE(NULLIF(revisit_schedule_note,''), NULLIF($7,'')),
-                  close_payment_method='not_required_revisit',
-                  close_payment_status='not_required_revisit',
-                  close_cash_amount=NULL,
-                  close_cash_confirmed=FALSE
-            WHERE job_id=$1`,
-          [realId, revisitResult, revisitNote, revisit_cause_party, revisitCauseNote, agreedAtForSave, scheduleNoteForSave]
-        );
-        const resolution = revisitResult === 'unsuccessful'
-          ? 'failed'
-          : (revisit_cause_party === 'technician' ? 'deduction_required' : (revisit_cause_party === 'company' ? 'company_absorbed' : 'fixed'));
-        await client.query(
-          `UPDATE public.technician_rework_cases
-              SET status='resolved',
-                  resolution=$2,
-                  revisit_result=$3,
-                  revisit_note=$4,
-                  revisit_cause_party=$5,
-                  revisit_cause_note=$6,
-                  revisit_agreed_at=COALESCE(revisit_agreed_at, $7::timestamptz),
-                  revisit_schedule_note=COALESCE(NULLIF(revisit_schedule_note,''), NULLIF($8,'')),
-                  evidence_json=$9::jsonb,
-                  resolved_by=$10,
-                  resolved_at=NOW(),
-                  updated_at=NOW()
-            WHERE job_id=$1 AND status IN ('open','in_progress')
-            RETURNING rework_case_id`,
-          [realId, resolution, revisitResult, revisitNote, revisit_cause_party, revisitCauseNote, agreedAtForSave, scheduleNoteForSave, JSON.stringify(evidenceJson), technician_username]
-        );
         await logJobUpdate(
           realId,
           {
@@ -20300,12 +20232,7 @@ if (status === "เสร็จแล้ว") {
             payload: {
               revisit_result: revisitResult,
               revisit_note: revisitNote || null,
-              revisit_cause_party,
-              revisit_cause_note: revisitCauseNote,
-              revisit_agreed_at: agreedAtForSave,
-              revisit_schedule_note: scheduleNoteForSave,
               evidence_phases: ["revisit_before", "revisit_after", "revisit_defect"],
-              evidence_json: evidenceJson,
             },
           },
           client
@@ -20344,6 +20271,27 @@ if (status === "เสร็จแล้ว") {
     }
 
     await client.query("COMMIT");
+    const finalizedStatus = String(status || '').trim();
+    const finalizedStatusLower = finalizedStatus.toLowerCase();
+    if (finalizedStatus.includes('เสร็จ') || finalizedStatus.includes('ปิดงาน') || ['done','completed','closed'].includes(finalizedStatusLower)) {
+      try {
+        const team = await getTeamForJob(realId);
+        await _refreshTechnicianIncomePreviewForJob(realId, team, { source: 'job_closed_preview' });
+      } catch (e) {
+        try { console.warn('[tech_income_preview] finalize refresh failed', { job_id: realId, error: e.message }); } catch {}
+      }
+    } else if (finalizedStatus.includes('ยกเลิก') || ['cancel','cancelled','canceled'].includes(finalizedStatusLower)) {
+      try {
+        const team = await getTeamForJob(realId);
+        await _syncDisplayForJobState(
+          { job_id: realId, job_status: 'cancelled', canceled_at: new Date(), cancel_reason: note || 'ยกเลิก' },
+          team,
+          { context: 'history' }
+        );
+      } catch (e) {
+        try { console.warn('[tech_income_display] finalize cancel sync failed', { job_id: realId, error: e.message }); } catch {}
+      }
+    }
     res.json({ success: true, job_id: Number(realId), status });
   } catch (e) {
     await client.query("ROLLBACK");
@@ -24847,256 +24795,28 @@ function getNowBangkokMin() {
   const p = getNowBangkokParts();
   return p.hour * 60 + p.minute;
 }
-
-function normalizeWashVariantLabel(value) {
-  const s = String(value || "").trim();
-  if (!s) return "";
-  if (s.includes("แขวนคอย")) return "ล้างแขวนคอยล์";
-  if (s.includes("พรีเมียม")) return "ล้างพรีเมียม";
-  if (s.includes("ตัดล้าง")) return "ล้างแบบตัดล้าง";
-  if (s.includes("ธรรมดา") || s.includes("ปกติ")) return "ล้างธรรมดา";
-  return s;
-}
-
 function computeDurationMin(payload = {}, opts = {}) {
-  const src = opts.source || "unknown";
-  const job_type_raw = String(payload.job_type || payload.jobType || "").trim();
-  const job_type = job_type_raw;
-  const ac_type = String(payload.ac_type || payload.acType || "").trim();
-  const wash_variant = normalizeWashVariantLabel(payload.wash_variant || payload.washVariant || "");
-  const repair_variant = String(payload.repair_variant || payload.repairVariant || "").trim();
-  const machine_count = Math.max(1, Number(payload.machine_count || payload.machineCount || 1));
-  const admin_override = Number(payload.admin_override_duration_min || payload.adminOverrideDurationMin || 0);
-
-  let duration = 0;
-
-  // Helper: step-rate for "บ้านเดียวหลายเครื่อง"
-  // duration = first + (n-1)*next
-  const step = (first, next) => {
-    const n = machine_count;
-    if (n <= 1) return first;
-    return first + (n - 1) * next;
-  };
-
-  if (job_type === "ล้าง") {
-    // ✅ กติกาเวลางาน CWF (ตามที่ล็อคไว้)
-    if (ac_type === "ผนัง" || !ac_type) {
-      if (wash_variant === "ล้างพรีเมียม") duration = step(80, 50);
-      else if (wash_variant === "ล้างแขวนคอยล์") duration = step(120, 90);
-      else if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่" || wash_variant === "ล้างแบบตัดล้างใหญ่") duration = step(180, 120);
-      else duration = step(60, 40); // ล้างธรรมดา
-    } else {
-      // แอร์สี่ทิศทาง / แขวน / เปลือยใต้ฝ้า
-      duration = step(120, 90);
-    }
-  } else if (job_type === "ซ่อม") {
-    if (repair_variant === "ซ่อมเปลี่ยนอะไหล่") duration = admin_override > 0 ? admin_override : 0;
-    else duration = 60;
-  } else if (job_type === "ติดตั้ง") {
-    duration = admin_override > 0 ? admin_override : 0;
-  }
-
-  if (!Number.isFinite(duration) || duration <= 0) {
-    if (job_type === "ซ่อม" && repair_variant === "ซ่อมเปลี่ยนอะไหล่") return 0;
-    if (job_type === "ติดตั้ง") return 0;
-    duration = 60;
-  }
-
-  console.log("[computeDurationMin]", { src, job_type, ac_type, wash_variant, repair_variant, machine_count, duration });
-  return Math.round(duration);
+  return pricingHelpers.computeDurationMin(payload, opts);
 }
 
 function computeStandardPrice(payload = {}) {
-  const job_type = String(payload.job_type || "").trim();
-  const ac_type_raw = String(payload.ac_type || "").trim();
-  const ac_type = (ac_type_raw === "ใต้ฝ้า") ? "เปลือยใต้ฝ้า" : ac_type_raw;
-  const wash_variant = normalizeWashVariantLabel(payload.wash_variant || "");
-  const repair_variant = String(payload.repair_variant || "").trim();
-  const machine_count = Math.max(1, Number(payload.machine_count || 1));
-  const btu = Number(payload.btu || 0);
-
-  if (job_type === "ติดตั้ง") return 0;
-
-  if (job_type === "ซ่อม") {
-    if (repair_variant === "ตรวจเช็ครั่ว") return 1000;
-    return 700;
-  }
-
-  if (job_type !== "ล้าง") return 0;
-
-  const qty = machine_count;
-
-  if (ac_type === "ผนัง" || !ac_type) {
-    const tier18000 = Number.isFinite(btu) && btu >= 18000;
-    if (!tier18000) {
-      if (wash_variant === "ล้างพรีเมียม") return 900 * qty;
-      if (wash_variant === "ล้างแขวนคอยล์") return 1400 * qty;
-      if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่") return 2000 * qty;
-      return 600 * qty;
-    } else {
-      if (wash_variant === "ล้างพรีเมียม") return 1100 * qty;
-      if (wash_variant === "ล้างแขวนคอยล์") return 1700 * qty;
-      if (wash_variant === "ล้างแบบตัดล้าง" || wash_variant === "ตัดล้างใหญ่") return 2300 * qty;
-      return 750 * qty;
-    }
-  }
-
-  if (ac_type === "สี่ทิศทาง") {
-    return 1500 * qty;
-  }
-
-  if (ac_type === "แขวน") {
-    return 1200 * qty;
-  }
-
-  if (ac_type === "เปลือยใต้ฝ้า") {
-    return 1200 * qty;
-  }
-
-  return 0;
+  return pricingHelpers.computeStandardPrice(payload);
 }
 
 function normalizeServicesFromPayload(payload = {}) {
-  const services = Array.isArray(payload.services) ? payload.services : null;
-  if (!services || !services.length) return null;
-  return services
-    .map((s) => ({
-      job_type: String(s.job_type || payload.job_type || "").trim() || String(payload.job_type || "").trim(),
-      ac_type: String(s.ac_type || "").trim(),
-      btu: Number(s.btu || 0),
-      machine_count: Math.max(1, Number(s.machine_count || 1)),
-      wash_variant: normalizeWashVariantLabel(s.wash_variant || ""),
-      repair_variant: String(s.repair_variant || "").trim(),
-      admin_override_duration_min: Number(s.admin_override_duration_min || payload.admin_override_duration_min || 0),
-      assigned_to: (s.assigned_to || s.assigned_technician_username || null) ? String(s.assigned_to || s.assigned_technician_username).trim() : null,
-      // IMPORTANT: keep allocations from admin-add-v2.js so server can split job_items per technician.
-      // Backward-compatible: accept both `allocations` and legacy `allocation`.
-      allocations: (() => {
-        const a = s && (s.allocations || s.allocation || null);
-        return (a && typeof a === 'object') ? a : null;
-      })(),
-    }))
-    .filter((s) => s.job_type && s.ac_type && Number.isFinite(s.btu) && s.btu > 0 && Number.isFinite(s.machine_count) && s.machine_count > 0);
+  return pricingHelpers.normalizeServicesFromPayload(payload);
 }
 
 function computeDurationMinMulti(payload = {}, opts = {}) {
-  const services = normalizeServicesFromPayload(payload);
-  if (!services) return computeDurationMin(payload, opts);
-
-  // If services are assigned to multiple technicians and parallel mode is on,
-  // compute duration as max(total duration per tech) to reflect "ทำพร้อมกัน".
-  // IMPORTANT (CWF Spec): Availability/Collision must be conservative.
-  // - Do NOT reduce duration by team/crew/parallel tricks when deciding "ว่างจริง".
-  // - We still keep parallel_by_tech for legacy UI preview, but callers can force conservative.
-  const conservative = opts && opts.conservative === true;
-  const parallel = !conservative && payload && (payload.parallel_by_tech === true || payload.parallel_by_tech === "true" || payload.parallel_by_tech === 1 || payload.parallel_by_tech === "1");
-  const byTech = new Map();
-  let total = 0;
-
-  for (const s of services) {
-    if (s.job_type === "ล้าง" && (s.ac_type === "ผนัง" || !s.ac_type) && !s.wash_variant) s.wash_variant = "ล้างธรรมดา";
-    const d = computeDurationMin(s, opts);
-    if (d <= 0) return 0;
-    total += d;
-
-    const mc = Math.max(1, Number(s.machine_count || 1));
-    const allocations = s && (s.allocations || s.allocation || null);
-    if (allocations && typeof allocations === "object") {
-      // distribute line duration proportionally by machine count per tech
-      const perMachine = d / mc;
-      for (const [tech, qty] of Object.entries(allocations)) {
-        const q = Math.max(0, Number(qty || 0));
-        if (!tech || q <= 0) continue;
-        byTech.set(tech, (byTech.get(tech) || 0) + perMachine * q);
-      }
-    } else {
-      const tech = (s.assigned_to || s.assigned_technician_username || "").toString().trim();
-      if (tech) byTech.set(tech, (byTech.get(tech) || 0) + d);
-    }
-  }
-
-  const distinctTech = byTech.size;
-  if (parallel && distinctTech >= 2) {
-    let mx = 0;
-    for (const v of byTech.values()) mx = Math.max(mx, Number(v || 0));
-    console.log("[computeDurationMinMulti]", { src: opts.source || "unknown", lines: services.length, parallel: true, distinctTech, max: mx, sum: total });
-    return Math.round(mx);
-  }
-
-  console.log("[computeDurationMinMulti]", { src: opts.source || "unknown", lines: services.length, parallel: false, conservative, total });
-  return Math.round(total);
+  return pricingHelpers.computeDurationMinMulti(payload, opts);
 }
 
 function computeStandardPriceMulti(payload = {}) {
-  const services = normalizeServicesFromPayload(payload);
-  if (!services) return computeStandardPrice(payload);
-  let total = 0;
-  for (const s of services) {
-    if (s.job_type === "ล้าง" && (s.ac_type === "ผนัง" || !s.ac_type) && !s.wash_variant) s.wash_variant = "ล้างธรรมดา";
-    total += Number(computeStandardPrice(s) || 0);
-  }
-  return Number(total || 0);
+  return pricingHelpers.computeStandardPriceMulti(payload);
 }
 
 function buildServiceLineItemsFromPayload(payload = {}) {
-  const services = normalizeServicesFromPayload(payload);
-  if (!services) return [];
-  const items = [];
-  for (const s of services) {
-    const linePrice = Number(computeStandardPrice(s) || 0);
-    const mc = Math.max(1, Number(s.machine_count || 1));
-    const labelParts = [];
-    // Build a user-friendly service label per job type (backward compatible)
-    if (s.job_type === "ซ่อม") {
-      labelParts.push(`ซ่อมแอร์${s.ac_type || ""}`.trim());
-      if (s.repair_variant) labelParts.push(s.repair_variant);
-    } else if (s.job_type === "ติดตั้ง") {
-      labelParts.push(`ติดตั้งแอร์${s.ac_type || ""}`.trim());
-    } else {
-      // default: wash
-      labelParts.push(`ล้างแอร์${s.ac_type || ""}`.trim());
-      if (s.ac_type === "ผนัง") labelParts.push(s.wash_variant || "ล้างธรรมดา");
-    }
-    labelParts.push(`${Number(s.btu || 0)} BTU`);
-    labelParts.push(`${Number(s.machine_count || 1)} เครื่อง`);
-    const item_name = labelParts.join(" • ");
-    const allocations = s && (s.allocations || s.allocation || null);
-    if (allocations && typeof allocations === "object") {
-      // Split by technician (per-machine), but keep the base item_name stable.
-      // The assignee is stored in `assigned_technician_username` (so admin edit UI can show it clearly).
-      const perMachine = (mc > 0) ? (linePrice / mc) : linePrice;
-      for (const [tech, qty] of Object.entries(allocations)) {
-        const q = Math.max(0, Number(qty || 0));
-        if (!tech || q <= 0) continue;
-        // Keep numeric precision (do not over-round; NUMERIC column supports decimals).
-        const unit = Number((Number(perMachine) || 0).toFixed(2));
-        items.push({
-          item_id: null,
-          item_name,
-          qty: q,
-          unit_price: unit,
-          line_total: unit * q,
-          is_service: true,
-          assigned_technician_username: tech,
-        });
-      }
-    } else {
-      // Single assignee or unallocated line: store per-machine pricing for clarity in admin edit/history.
-      // This ensures qty reflects machine_count and total remains correct.
-      const perMachine = (mc > 0) ? (linePrice / mc) : linePrice;
-      const unit = Number((Number(perMachine) || 0).toFixed(2));
-      items.push({
-        item_id: null,
-        item_name,
-        qty: mc,
-        unit_price: unit,
-        line_total: unit * mc,
-        is_service: true,
-        assigned_technician_username: (s.assigned_to || s.assigned_technician_username || null),
-      });
-    }
-  }
-  return items;
+  return pricingHelpers.buildServiceLineItemsFromPayload(payload);
 }
 
 
