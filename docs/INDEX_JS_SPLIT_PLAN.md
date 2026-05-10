@@ -148,6 +148,17 @@ Phase 1B status:
 - Rollback: remove the `createTechnicianDirectoryRoutes` import and mount from `index.js`, restore the original inline `app.get("/users/technicians", ...)` block at the same location, delete `server/routes/users/technicians.js`, then run syntax checks.
 - See `docs/PHASE2D_TECHNICIAN_DIRECTORY_ROUTE_MAP.md` for the Phase 2E extraction notes, manual test checklist, and rollback steps.
 
+### Phase 2G: Catalog Items Route
+
+- `GET /catalog/items` has been extracted to `server/routes/catalog/items.js`.
+- Old location: `index.js:12916`, before `POST /catalog/items`.
+- Current mount: `app.use(createCatalogItemRoutes({ pool }))` at the same old inline route location.
+- Dependencies: `pool.query`, request query filters, local `where`/`params`, and `console.error`.
+- SQL, query filter behavior, ordering, success response `res.json(r.rows)`, and HTTP 500 error response are unchanged.
+- `GET /promotions`, `GET /service_zones`, and `POST /catalog/items` were not moved.
+- Risk remains medium because the route is catalog/pricing-adjacent and used by the admin add-job flow.
+- Rollback: remove the `createCatalogItemRoutes` import and mount from `index.js`, restore the original inline `app.get("/catalog/items", ...)` block before `POST /catalog/items`, delete `server/routes/catalog/items.js`, then run syntax checks.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.

@@ -4,6 +4,8 @@ Date: 2026-05-10
 
 Scope: audit only. No route was moved in Phase 2F, and no runtime file was changed.
 
+Phase 2G status: `GET /catalog/items` has been extracted to `server/routes/catalog/items.js`.
+
 This audit compares the next three small read-only route candidates after `GET /users/technicians` was extracted in Phase 2E.
 
 ## Summary Recommendation
@@ -33,7 +35,7 @@ Do **not** extract `GET /service_zones` next unless the service-zone helper boun
 
 | Route | Method | Current location | SQL used | Dependencies | Auth/session | DB mutation | Pricing touch | Public booking/customer flow | Admin add/edit job flow | Technician app use | Side effects | Risk | Safe next PR? |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `/catalog/items` | GET | `index.js:12916` | Dynamic `SELECT item_id, item_name, item_category, base_price, unit_label, is_active, job_category, ac_type, btu_min, btu_max, is_customer_visible FROM public.catalog_items WHERE ... ORDER BY item_category, item_name` | `req.query`, local `where`/`params`, `pool.query`, `console.error` | No | No | Yes, catalog/pricing-adjacent because it returns `base_price` and item filters | No direct current caller found in customer files | Yes, `admin-add-v2.js` calls `/catalog/items` for add-job extra item selection | No direct caller found in `app.js` or `tech.html` | No state mutation | Medium | Yes, first among these candidates, with focused tests |
+| `/catalog/items` | GET | Was `index.js:12916`; now `server/routes/catalog/items.js` | Dynamic `SELECT item_id, item_name, item_category, base_price, unit_label, is_active, job_category, ac_type, btu_min, btu_max, is_customer_visible FROM public.catalog_items WHERE ... ORDER BY item_category, item_name` | `req.query`, local `where`/`params`, `pool.query`, `console.error` | No | No | Yes, catalog/pricing-adjacent because it returns `base_price` and item filters | No direct current caller found in customer files | Yes, `admin-add-v2.js` calls `/catalog/items` for add-job extra item selection | No direct caller found in `app.js` or `tech.html` | No state mutation | Medium | Extracted in Phase 2G |
 | `/promotions` | GET | `index.js:12981` | `getPromotionColumns()` reads `information_schema.columns`; route queries `public.promotions` with dynamic selected columns, active/customer visibility filter, and dynamic priority/created ordering | `req.query.customer`, `getPromotionColumns`, `__promoColsCache`, `pool.query`, `console.error` | No | No DB mutation | Yes, promotion/pricing-adjacent | Yes, `customer.html` calls `/promotions?customer=1` | Indirectly related to admin promotion management, though admin v2 uses `/admin/promotions_v2` | No direct caller found in technician app | Mutates in-memory `__promoColsCache` through `getPromotionColumns()` | High | No |
 | `/service_zones` | GET | `index.js:21314` | Via `getServiceZones()`: `SELECT zone_code, zone_name, zone_label, province_group, color_hex, is_active, sort_order FROM public.service_zones WHERE is_active=TRUE ORDER BY sort_order, zone_code`; fallback to `SERVICE_ZONE_SEEDS` | `getServiceZones`, `SERVICE_ZONE_SEEDS`, `ENABLE_SERVICE_ZONE_FILTER`, `pool.query`, `console.error` | No | No | No direct pricing logic | Not a customer booking route, but service zones influence booking/assignment behavior elsewhere | Yes, `admin-add-v2.js` calls `/service_zones` and `/service_zones/detect` | `app.js` calls `/service_zones/detect`, not this GET route; helpers are shared with technician zone behavior | No DB mutation; fallback seed behavior if DB unavailable | Medium-high | Not before helper boundary audit |
 
@@ -44,8 +46,16 @@ Do **not** extract `GET /service_zones` next unless the service-zone helper boun
 Current location:
 
 ```text
-index.js:12916
+Was `index.js:12916`; now `server/routes/catalog/items.js`
 ```
+
+Current mount location:
+
+```js
+app.use(createCatalogItemRoutes({ pool }));
+```
+
+The mount remains at the old inline route location before `POST /catalog/items`.
 
 Current route shape:
 
@@ -78,18 +88,18 @@ Risk notes:
 - It is not itself a pricing calculator, but it feeds admin add-job UI item selection.
 - Keep the POST `/catalog/items` route in `index.js` for now.
 
-Future target path:
+Current module path:
 
 ```text
 server/routes/catalog/items.js
 ```
 
-Required dependencies for future extraction:
+Dependencies:
 
 - `pool`
 - `express`
 
-Recommended future factory:
+Current factory:
 
 ```js
 module.exports = function createCatalogItemRoutes(deps = {}) {
@@ -105,10 +115,12 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 };
 ```
 
-Future mount location:
+Phase 2G extraction notes:
 
-- Mount at the exact old inline location before the `POST /catalog/items` route.
-- Remove only the old inline `app.get("/catalog/items", ...)` block.
+- `index.js` imports `createCatalogItemRoutes` near the other route module imports.
+- `index.js` mounts `app.use(createCatalogItemRoutes({ pool }))` at the exact old inline location before `POST /catalog/items`.
+- The old inline `app.get("/catalog/items", ...)` block was removed.
+- `GET /promotions`, `GET /service_zones`, and `POST /catalog/items` were not moved.
 
 ### GET /promotions
 
@@ -252,6 +264,12 @@ For `GET /catalog/items` extraction:
 - Admin add-job save flow still works if extra items are selected.
 - Public booking still opens.
 - Technician page still opens.
+- Syntax checks:
+  - `node --check index.js`
+  - `node --check server/routes/catalog/items.js`
+  - `node --check server/routes/system/index.js`
+  - `node --check server/routes/users/technicians.js`
+  - `node --check server/db/pool.js`
 
 For `GET /promotions` extraction:
 
@@ -286,6 +304,13 @@ node --check server/routes/system/index.js
 node --check server/routes/users/technicians.js
 node --check server/db/pool.js
 ```
+
+For Phase 2G rollback specifically:
+
+1. Remove `const createCatalogItemRoutes = require("./server/routes/catalog/items");` from `index.js`.
+2. Replace `app.use(createCatalogItemRoutes({ pool }));` with the original inline `app.get("/catalog/items", ...)` block at the same location before `POST /catalog/items`.
+3. Delete `server/routes/catalog/items.js`.
+4. Run the syntax checks listed above.
 
 ## Risks And Protections
 
