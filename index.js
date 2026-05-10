@@ -31,6 +31,7 @@ const customerLookupHelpers = require("./server/customerLookup");
 const technicianJobIncomeDisplayHelpers = require("./server/technicianJobIncomeDisplay");
 const technicianReworkHelpers = require("./server/technicianRework");
 const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoneySummary");
+const createSystemRoutes = require("./server/routes/system");
 
 // =======================================
 // 🔔 Web Push Notifications (optional / fail-open)
@@ -10662,9 +10663,7 @@ async function requireAdminForRank(req, res, next) {
 // =======================================
 // 🔎 Health / Version (ใช้เช็คว่า deploy ล่าสุดจริง)
 // =======================================
-app.get("/api/version", (req, res) => {
-  res.json({ ok: true, version: "gps-v4", ts: new Date().toISOString() });
-});
+app.use(createSystemRoutes({ pool }));
 
 // =======================================
 // 📍 Resolve Google Maps URL -> lat/lng (best-effort)
@@ -12834,19 +12833,6 @@ async function isTechReady(username) {
     return false; // fail-closed for urgent offer flow
   }
 }
-
-// =======================================
-// ✅ TEST DB
-// =======================================
-app.get("/test-db", async (req, res) => {
-  try {
-    const r = await pool.query("SELECT NOW() as now");
-    res.json({ ok: true, now: r.rows[0].now });
-  } catch (e) {
-    console.error(e);
-    res.status(500).json({ ok: false, error: "db connection failed" });
-  }
-});
 
 // =======================================
 // 🔐 LOGIN
