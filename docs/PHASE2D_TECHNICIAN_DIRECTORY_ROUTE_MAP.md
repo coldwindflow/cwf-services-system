@@ -4,6 +4,8 @@ Date: 2026-05-10
 
 Scope: audit and preparation only. No route was moved in Phase 2D, and no runtime file was changed.
 
+Phase 2E status: `GET /users/technicians` has been extracted to `server/routes/users/technicians.js`.
+
 ## Candidate Summary
 
 Recommended future candidate:
@@ -19,13 +21,14 @@ This is the smallest currently inline DB-backed read-only route after `/test-db`
 Current route location:
 
 ```text
-index.js:12906
+Was `index.js:12906`; now `server/routes/users/technicians.js`
 ```
 
 Nearby markers:
 
 - Immediately after the password change route block.
 - Immediately before the `CATALOG` section marker.
+- `index.js` now mounts `app.use(createTechnicianDirectoryRoutes({ pool }))` at the old inline route location.
 
 Current handler:
 
@@ -116,26 +119,20 @@ Product risk is medium because it exposes a technician directory from `public.us
 
 ## Recommendation
 
-Do not move this route in the same patch as this audit.
+Phase 2E completed the extraction for only this route.
 
-If Phase 2E proceeds, extract only `GET /users/technicians` after confirming no hidden caller relies on route placement or startup ordering.
+If this route needs future edits, keep changes isolated to `server/routes/users/technicians.js` unless the mount location or dependency injection must be changed.
 
-Recommended target path:
+Current module path:
 
 ```text
 server/routes/users/technicians.js
 ```
 
-If the repo wants folder boundaries first, create:
-
-```text
-server/routes/users/README.md
-```
-
-## Proposed Factory Pattern
+## Current Factory Pattern
 
 ```js
-module.exports = function createUserTechnicianRoutes(deps = {}) {
+module.exports = function createTechnicianDirectoryRoutes(deps = {}) {
   const express = require("express");
   const router = express.Router();
   const pool = deps.pool || require("../../db/pool");
@@ -158,31 +155,32 @@ module.exports = function createUserTechnicianRoutes(deps = {}) {
 
 ## Exact Mount Plan For A Future Extraction
 
-In `index.js`:
+Phase 2E mount in `index.js`:
 
-1. Import the future route factory near other route module imports:
-
-```js
-const createUserTechnicianRoutes = require("./server/routes/users/technicians");
-```
-
-2. Mount the new router at the exact old route location, between the password change route block and the `CATALOG` marker:
+1. Import the route factory near other route module imports:
 
 ```js
-app.use(createUserTechnicianRoutes({ pool }));
+const createTechnicianDirectoryRoutes = require("./server/routes/users/technicians");
 ```
 
-3. Remove only the old inline `app.get("/users/technicians", ...)` block.
+2. Mount the router at the exact old route location, between the password change route block and the `CATALOG` marker:
+
+```js
+app.use(createTechnicianDirectoryRoutes({ pool }));
+```
+
+3. The old inline `app.get("/users/technicians", ...)` block was removed.
 
 Do not change route path, SQL, response shape, middleware behavior, or surrounding business routes.
 
-## Tests For A Future Extraction
+## Tests For Phase 2E
 
 Syntax checks:
 
 ```bash
 node --check index.js
 node --check server/routes/users/technicians.js
+node --check server/routes/system/index.js
 node --check server/db/pool.js
 ```
 
@@ -197,17 +195,19 @@ Route behavior checks in a safe environment:
 Regression smoke checklist:
 
 - App starts with `node index.js`.
+- `GET /users/technicians` still returns an array of `{ username }` rows in a safe environment.
+- If DB is unavailable, `GET /users/technicians` still returns HTTP 500 with `{ error: "โหลดรายชื่อช่างไม่สำเร็จ" }`.
 - Admin technician list still loads through `/admin/technicians`.
 - Admin add-job technician selection still works.
 - Technician page still opens.
 - Public booking still opens.
 
-## Rollback Plan For A Future Extraction
+## Rollback Plan For Phase 2E
 
 If extraction causes any issue:
 
-1. Remove the `createUserTechnicianRoutes` import from `index.js`.
-2. Remove the `app.use(createUserTechnicianRoutes({ pool }))` mount from `index.js`.
+1. Remove the `createTechnicianDirectoryRoutes` import from `index.js`.
+2. Remove the `app.use(createTechnicianDirectoryRoutes({ pool }))` mount from `index.js`.
 3. Restore the original inline `app.get("/users/technicians", ...)` block at the old location.
 4. Delete `server/routes/users/technicians.js` if it is no longer used.
 5. Run syntax checks again.
