@@ -34,6 +34,7 @@ const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoney
 const createSystemRoutes = require("./server/routes/system");
 const createTechnicianDirectoryRoutes = require("./server/routes/users/technicians");
 const createCatalogItemRoutes = require("./server/routes/catalog/items");
+const createServiceZoneRoutes = require("./server/routes/serviceZones");
 
 // =======================================
 // 🔔 Web Push Notifications (optional / fail-open)
@@ -21278,14 +21279,11 @@ app.put("/technicians/:username/zone", async (req, res) => {
 // =======================================
 // 👤 TECHNICIAN PROFILE (v4)
 // =======================================
-app.get("/service_zones", async (req, res) => {
-  try {
-    res.json({ ok: true, zones: await getServiceZones(), filter_enabled: ENABLE_SERVICE_ZONE_FILTER });
-  } catch (e) {
-    console.error("GET /service_zones", e);
-    res.status(500).json({ error: "LOAD_SERVICE_ZONES_FAILED" });
-  }
-});
+app.use(createServiceZoneRoutes({
+  getServiceZones,
+  SERVICE_ZONE_SEEDS,
+  ENABLE_SERVICE_ZONE_FILTER
+}));
 
 app.post("/service_zones/detect", async (req, res) => {
   try {

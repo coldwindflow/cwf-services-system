@@ -2,13 +2,15 @@
 
 Date: 2026-05-11
 
-Scope: audit only. No route was moved in Phase 2H, and no runtime file was changed.
+Scope: Phase 2H was audit only. No route was moved in Phase 2H, and no runtime file was changed.
+
+Phase 2I update: `GET /service_zones` has been extracted to `server/routes/serviceZones/index.js`. The mount remains in `index.js` immediately before `POST /service_zones/detect`, and the route receives `getServiceZones`, `SERVICE_ZONE_SEEDS`, and `ENABLE_SERVICE_ZONE_FILTER` from `index.js`.
 
 This audit compares the two remaining read-only candidates from Phase 2F after `GET /catalog/items` was extracted in Phase 2G.
 
 ## Summary Recommendation
 
-Recommended next extraction candidate:
+Recommended Phase 2I extraction candidate:
 
 ```text
 GET /service_zones
@@ -23,7 +25,7 @@ Reason:
 - It does not call pricing or promotion helpers.
 - It is not directly called by the customer booking promotion UI.
 
-Risk remains **medium-high**, not low. The route depends on top-level service-zone helpers and flags that are shared with admin add-job, technician home-zone detection, and service-zone assignment behavior. Extract it only if the next PR moves **only** `GET /service_zones`, injects existing dependencies, keeps the old mount location, and does not move `POST /service_zones/detect`.
+Risk remains **medium-high**, not low. The route depends on top-level service-zone helpers and flags that are shared with admin add-job, technician home-zone detection, and service-zone assignment behavior. Phase 2I moved **only** `GET /service_zones`, injected existing dependencies, kept the old mount location, and did not move `POST /service_zones/detect`.
 
 Do **not** extract `GET /promotions` next. It is customer-public, promotion/pricing-adjacent, calls `getPromotionColumns()`, and mutates the in-memory `__promoColsCache`.
 
@@ -129,6 +131,17 @@ app.get("/service_zones", async (req, res) => {
 });
 ```
 
+Phase 2I extraction status:
+
+- New module: `server/routes/serviceZones/index.js`.
+- Current mount in `index.js`: immediately before `POST /service_zones/detect`.
+- Dependencies passed from `index.js`:
+  - `getServiceZones`
+  - `SERVICE_ZONE_SEEDS`
+  - `ENABLE_SERVICE_ZONE_FILTER`
+- `getServiceZones()`, `SERVICE_ZONE_SEEDS`, `ENABLE_SERVICE_ZONE_FILTER`, and detection helpers remain in `index.js`.
+- `POST /service_zones/detect` was not moved.
+
 Helper:
 
 ```text
@@ -167,16 +180,18 @@ server/routes/serviceZones/index.js
 Required dependencies for future extraction:
 
 - `getServiceZones`
+- `SERVICE_ZONE_SEEDS`
 - `ENABLE_SERVICE_ZONE_FILTER`
 - `express`
 
-Recommended future factory:
+Current factory pattern:
 
 ```js
 module.exports = function createServiceZoneRoutes(deps = {}) {
   const express = require("express");
   const router = express.Router();
   const getServiceZones = deps.getServiceZones;
+  const SERVICE_ZONE_SEEDS = deps.SERVICE_ZONE_SEEDS;
   const ENABLE_SERVICE_ZONE_FILTER = deps.ENABLE_SERVICE_ZONE_FILTER;
 
   router.get("/service_zones", async (req, res) => {
@@ -187,10 +202,10 @@ module.exports = function createServiceZoneRoutes(deps = {}) {
 };
 ```
 
-Future mount location:
+Current mount location:
 
-- Mount at the exact old inline route location before `POST /service_zones/detect`.
-- Remove only the old inline `app.get("/service_zones", ...)` block.
+- Mounted at the exact old inline route location before `POST /service_zones/detect`.
+- Only the old inline `app.get("/service_zones", ...)` block was removed.
 
 Extraction protection:
 
@@ -202,7 +217,7 @@ Extraction protection:
 
 ## Manual Test Checklist
 
-For a future `GET /service_zones` extraction:
+For the Phase 2I `GET /service_zones` extraction:
 
 - App starts with `node index.js`.
 - `GET /service_zones` returns `{ ok: true, zones, filter_enabled }`.
@@ -253,7 +268,7 @@ node --check server/db/pool.js
 
 For `GET /service_zones` specifically:
 
-1. Remove the future `createServiceZoneRoutes` import and mount from `index.js`.
+1. Remove the `createServiceZoneRoutes` import and mount from `index.js`.
 2. Restore the original inline `app.get("/service_zones", ...)` block before `POST /service_zones/detect`.
 3. Delete `server/routes/serviceZones/index.js`.
 4. Confirm `POST /service_zones/detect` was never moved.
