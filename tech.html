@@ -806,32 +806,57 @@
 
 
     
-    <div id="techThemeModal" aria-hidden="true">
-      <div class="themePanel" role="dialog" aria-modal="true" aria-labelledby="techThemeTitle">
+    
+    <div id="techThemeModal" aria-hidden="true" class="previewMode">
+      <div class="themePanel" role="dialog" aria-modal="false" aria-labelledby="techThemeTitle">
+        <div class="themeGrabber"></div>
         <div class="themeHead">
           <div>
             <p class="themeEyebrow">CWF TECH THEME</p>
-            <h3 id="techThemeTitle">เลือกธีมหน้าช่าง</h3>
-            <p>เลือกโทนสำเร็จรูป หรือปรับสีเองให้เข้ากับสไตล์การทำงานของคุณ</p>
+            <h3 id="techThemeTitle">ธีมหน้าช่าง</h3>
+            <p>เลือกธีมแล้วดูพรีวิวหน้าจริงได้ทันที แผงนี้ไม่บังทั้งหน้าจอ</p>
           </div>
-          <button class="tech-icbtn themeClose" type="button" id="themeCloseBtn" aria-label="ปิด">✕</button>
+          <div class="themeHeadActions">
+            <button class="themeIconBtn" type="button" id="themePreviewToggleBtn" aria-label="ย่อ/ขยายแผงธีม">ดูพรีวิว</button>
+            <button class="themeIconBtn themeClose" type="button" id="themeCloseBtn" aria-label="ปิด">✕</button>
+          </div>
         </div>
 
-        <div class="themePresetGrid" id="themePresetGrid" aria-label="ธีมสำเร็จรูป"></div>
+        <div class="themeScrollArea">
+          <div class="themePresetGrid" id="themePresetGrid" aria-label="ธีมสำเร็จรูป"></div>
 
-        <div class="themeCustomCard">
-          <div class="themeCustomHead">
-            <div>
-              <strong>ปรับสีเอง</strong>
-              <span>เลือกสีหลัก สีรอง สีปุ่ม และพื้นหลัง</span>
+          <div class="themeCustomCard">
+            <div class="themeCustomHead">
+              <div>
+                <strong>ปรับสีเอง</strong>
+                <span>โหมดง่าย + สีการ์ดสำคัญของหน้ารับงาน</span>
+              </div>
+              <button type="button" class="themeMiniBtn" id="themeApplyCustomBtn">ใช้สีนี้</button>
             </div>
-            <button type="button" class="themeMiniBtn" id="themeApplyCustomBtn">ใช้สีนี้</button>
-          </div>
-          <div class="themeColorGrid">
-            <label>สีหลัก <input type="color" id="themeColorPrimary" value="#0b2e6d"></label>
-            <label>สีรอง <input type="color" id="themeColorAccent" value="#18c7e7"></label>
-            <label>สีปุ่ม <input type="color" id="themeColorButton" value="#f4c400"></label>
-            <label>พื้นหลัง <input type="color" id="themeColorSurface" value="#f4f8ff"></label>
+
+            <div class="themeGroupTitle">สีหลัก</div>
+            <div class="themeColorGrid">
+              <label>สีหลัก <input type="color" id="themeColorPrimary" value="#0b2e6d"></label>
+              <label>สีรอง <input type="color" id="themeColorAccent" value="#18c7e7"></label>
+              <label>สีปุ่ม <input type="color" id="themeColorButton" value="#f4c400"></label>
+              <label>พื้นหลัง <input type="color" id="themeColorSurface" value="#f4f8ff"></label>
+            </div>
+
+            <div class="themeGroupTitle">สีการ์ดหน้ารับงาน</div>
+            <div class="themeColorGrid">
+              <label>โปรไฟล์ <input type="color" id="themeColorProfileCard" value="#ffffff"></label>
+              <label>รับงาน <input type="color" id="themeColorAcceptCard" value="#ffffff"></label>
+              <label>งานเสนอ <input type="color" id="themeColorOfferCard" value="#f9fbff"></label>
+              <label>ตัวอักษร <input type="color" id="themeColorText" value="#061b4f"></label>
+            </div>
+
+            <div class="themeGroupTitle">สีการ์ดสรุป 4 ช่อง</div>
+            <div class="themeColorGrid">
+              <label>วันนี้ได้ <input type="color" id="themeColorStatIncome" value="#f2fff9"></label>
+              <label>เสร็จสิ้น <input type="color" id="themeColorStatDone" value="#f1f7ff"></label>
+              <label>งานแก้ไข <input type="color" id="themeColorStatRework" value="#fff6f6"></label>
+              <label>คะแนน <input type="color" id="themeColorStatRating" value="#fff9df"></label>
+            </div>
           </div>
         </div>
 
@@ -841,7 +866,6 @@
         </div>
       </div>
     </div>
-
 
     <div id="techWorkSettingsModal">
       <div class="settingsPanel">
@@ -2435,7 +2459,192 @@
     }
   </style>
 
-<script src="app.js?v=20260510_fix43_remove_offer_hint"></script>
+
+  <style id="cwf-fix44-theme-preview-panel">
+    /*
+      CWF fix44: theme preview panel + detailed card colors.
+      Bottom-sheet style so the technician can see the real page preview while editing.
+      Does not touch tab visibility, income logic, job/history render logic, or backend.
+    */
+    :root{
+      --cwf-profile-card-bg:#ffffff;
+      --cwf-accept-card-bg:#ffffff;
+      --cwf-offer-card-bg:#f9fbff;
+      --cwf-stat-income-bg:#f2fff9;
+      --cwf-stat-done-bg:#f1f7ff;
+      --cwf-stat-rework-bg:#fff6f6;
+      --cwf-stat-rating-bg:#fff9df;
+    }
+
+    #techControlCard.tech-control-card{
+      background:linear-gradient(135deg,var(--cwf-accept-card-bg),color-mix(in srgb, var(--cwf-accept-card-bg) 82%, var(--cwf-theme-surface) 18%))!important;
+      border-color:color-mix(in srgb, var(--cwf-theme-primary) 10%, #fff 90%)!important;
+    }
+    #sec-new .profile-compact .left{
+      background:linear-gradient(135deg,var(--cwf-profile-card-bg),color-mix(in srgb, var(--cwf-profile-card-bg) 80%, var(--cwf-theme-surface) 20%))!important;
+      border-color:color-mix(in srgb, var(--cwf-theme-primary) 9%, #fff 91%)!important;
+    }
+    #sec-new h2:nth-of-type(2),
+    #sec-new h2:nth-of-type(2) + p,
+    #sec-new #offer-list{
+      background:linear-gradient(180deg,var(--cwf-offer-card-bg),color-mix(in srgb, var(--cwf-offer-card-bg) 78%, var(--cwf-theme-surface) 22%))!important;
+    }
+    #sec-new .chipStat.income{background:linear-gradient(160deg,var(--cwf-stat-income-bg),#fff 56%,color-mix(in srgb, var(--cwf-stat-income-bg) 80%, #fff 20%))!important;}
+    #sec-new .chipStat.done{background:linear-gradient(160deg,var(--cwf-stat-done-bg),#fff 56%,color-mix(in srgb, var(--cwf-stat-done-bg) 80%, #fff 20%))!important;}
+    #sec-new .chipStat.rework{background:linear-gradient(160deg,var(--cwf-stat-rework-bg),#fff 56%,color-mix(in srgb, var(--cwf-stat-rework-bg) 80%, #fff 20%))!important;}
+    #sec-new .chipStat.rating{background:linear-gradient(160deg,var(--cwf-stat-rating-bg),#fff 56%,color-mix(in srgb, var(--cwf-stat-rating-bg) 80%, #fff 20%))!important;}
+
+    #techThemeModal{
+      background:transparent!important;
+      backdrop-filter:none!important;
+      align-items:flex-end!important;
+      justify-content:center!important;
+      padding:0 10px max(10px, env(safe-area-inset-bottom))!important;
+      pointer-events:none!important;
+      z-index:5200!important;
+    }
+    #techThemeModal.open{
+      display:flex!important;
+    }
+    #techThemeModal .themePanel{
+      pointer-events:auto!important;
+      width:min(540px,100%)!important;
+      max-height:52vh!important;
+      border-radius:30px 30px 24px 24px!important;
+      padding:12px!important;
+      background:
+        radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--cwf-theme-button) 16%, transparent) 0 82px, transparent 174px),
+        linear-gradient(180deg,rgba(255,255,255,.97),rgba(247,251,255,.96))!important;
+      border:1px solid rgba(255,255,255,.88)!important;
+      box-shadow:0 -18px 52px rgba(2,13,38,.24), inset 0 1px 0 rgba(255,255,255,.92)!important;
+      transform:translateY(0)!important;
+    }
+    #techThemeModal.previewMode .themePanel{
+      max-height:108px!important;
+      overflow:hidden!important;
+    }
+    #techThemeModal.previewMode .themeScrollArea,
+    #techThemeModal.previewMode .themeActions{
+      display:none!important;
+    }
+    #techThemeModal.previewMode .themeHead{
+      margin-bottom:0!important;
+    }
+    .themeGrabber{
+      width:48px;
+      height:5px;
+      border-radius:999px;
+      background:rgba(8,36,91,.16);
+      margin:0 auto 10px;
+    }
+    .themeHead{
+      margin-bottom:10px!important;
+    }
+    .themeHead h3{
+      font-size:22px!important;
+    }
+    .themeHead p{
+      font-size:12px!important;
+      line-height:1.35!important;
+    }
+    .themeHeadActions{
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex:0 0 auto;
+    }
+    .themeIconBtn{
+      min-height:38px;
+      border:1px solid rgba(8,36,91,.09);
+      border-radius:999px;
+      padding:0 12px;
+      background:#fff;
+      color:var(--cwf-theme-text);
+      font-weight:1000;
+      box-shadow:0 8px 18px rgba(8,36,91,.08), inset 0 1px 0 rgba(255,255,255,.88);
+      cursor:pointer;
+    }
+    .themeClose{
+      width:38px;
+      padding:0!important;
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+    }
+    .themeScrollArea{
+      max-height:calc(52vh - 138px);
+      overflow:auto;
+      padding:0 2px 2px;
+    }
+    .themePresetGrid{
+      grid-template-columns:repeat(3,minmax(0,1fr))!important;
+      gap:8px!important;
+    }
+    .themePresetBtn{
+      min-height:84px!important;
+      border-radius:20px!important;
+      padding:10px!important;
+    }
+    .themePresetBtn .themePreview{
+      height:30px!important;
+      border-radius:14px!important;
+      margin-bottom:8px!important;
+    }
+    .themePresetBtn strong{
+      font-size:13px!important;
+      line-height:1.15!important;
+    }
+    .themePresetBtn span{
+      font-size:10px!important;
+      line-height:1.2!important;
+    }
+    .themeGroupTitle{
+      margin:12px 2px 8px;
+      color:var(--cwf-theme-text);
+      font-size:13px;
+      font-weight:1150;
+      letter-spacing:-.01em;
+    }
+    .themeColorGrid{
+      grid-template-columns:repeat(2,minmax(0,1fr))!important;
+    }
+    .themeColorGrid label{
+      min-height:48px;
+    }
+
+    @media(min-width:760px){
+      #techThemeModal{
+        justify-content:flex-end!important;
+        align-items:stretch!important;
+        padding:14px!important;
+      }
+      #techThemeModal .themePanel{
+        width:min(392px,34vw)!important;
+        max-height:calc(100vh - 28px)!important;
+        border-radius:30px!important;
+      }
+      #techThemeModal.previewMode .themePanel{
+        max-height:calc(100vh - 28px)!important;
+      }
+      #techThemeModal.previewMode .themeScrollArea,
+      #techThemeModal.previewMode .themeActions{
+        display:block!important;
+      }
+      .themeScrollArea{
+        max-height:calc(100vh - 190px);
+      }
+      .themePresetGrid{
+        grid-template-columns:repeat(2,minmax(0,1fr))!important;
+      }
+    }
+    @media(max-width:390px){
+      #techThemeModal .themePanel{max-height:56vh!important;}
+      #techThemeModal.previewMode .themePanel{max-height:104px!important;}
+      .themePresetGrid{grid-template-columns:repeat(2,minmax(0,1fr))!important;}
+    }
+  </style>
+
+<script src="app.js?v=20260510_fix44_theme_preview_panel"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

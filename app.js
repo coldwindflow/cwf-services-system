@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_fix42_theme_modal_open";
+window.__CWF_TECH_APP_VERSION__ = "20260510_fix44_theme_preview_panel";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -202,13 +202,13 @@ if (!username || !role) {
 }
 
 // =======================================
-// 🎨 TECH THEME CENTER (6 presets + custom colors)
+// 🎨 TECH THEME CENTER (preview panel + card colors)
 // - Frontend only: localStorage
 // - No backend / no income / no job logic
 // =======================================
 
 const THEME_KEY = "cwf_theme";
-const THEME_CUSTOM_KEY = "cwf_theme_custom_v1";
+const THEME_CUSTOM_KEY = "cwf_theme_custom_v2";
 const themeToggleBtn = document.getElementById("themeToggleBtn");
 const themeStateText = document.getElementById("themeStateText");
 const themeModal = document.getElementById("techThemeModal");
@@ -217,18 +217,28 @@ const themeCloseBtn = document.getElementById("themeCloseBtn");
 const themeDoneBtn = document.getElementById("themeDoneBtn");
 const themeResetBtn = document.getElementById("themeResetBtn");
 const themeApplyCustomBtn = document.getElementById("themeApplyCustomBtn");
+const themePreviewToggleBtn = document.getElementById("themePreviewToggleBtn");
+
 const themeColorPrimary = document.getElementById("themeColorPrimary");
 const themeColorAccent = document.getElementById("themeColorAccent");
 const themeColorButton = document.getElementById("themeColorButton");
 const themeColorSurface = document.getElementById("themeColorSurface");
+const themeColorProfileCard = document.getElementById("themeColorProfileCard");
+const themeColorAcceptCard = document.getElementById("themeColorAcceptCard");
+const themeColorOfferCard = document.getElementById("themeColorOfferCard");
+const themeColorText = document.getElementById("themeColorText");
+const themeColorStatIncome = document.getElementById("themeColorStatIncome");
+const themeColorStatDone = document.getElementById("themeColorStatDone");
+const themeColorStatRework = document.getElementById("themeColorStatRework");
+const themeColorStatRating = document.getElementById("themeColorStatRating");
 
 const CWF_THEME_PRESETS = [
-  { id:"cwf-classic", name:"CWF Classic", desc:"น้ำเงิน-ทอง มืออาชีพ", primary:"#0b2e6d", primary2:"#1358c9", accent:"#18c7e7", button:"#f4c400", button2:"#f59e0b", surface:"#f4f8ff", card:"#ffffff", text:"#061b4f", muted:"#667085" },
-  { id:"aurora-tech", name:"Aurora Tech", desc:"ฟ้า-ม่วง ไฮเทค", primary:"#172554", primary2:"#6d5dfc", accent:"#22d3ee", button:"#a3e635", button2:"#84cc16", surface:"#f2f7ff", card:"#ffffff", text:"#101b4d", muted:"#64748b" },
-  { id:"emerald-pro", name:"Emerald Pro", desc:"เขียวเข้ม สะอาด", primary:"#064e3b", primary2:"#0f766e", accent:"#2dd4bf", button:"#facc15", button2:"#eab308", surface:"#f0fdf7", card:"#ffffff", text:"#052e2b", muted:"#5f716f" },
-  { id:"royal-gold", name:"Royal Gold", desc:"กรมท่า-ทอง พรีเมียม", primary:"#111827", primary2:"#1e3a8a", accent:"#38bdf8", button:"#fbbf24", button2:"#d97706", surface:"#f8fafc", card:"#ffffff", text:"#111827", muted:"#64748b" },
-  { id:"sunset-service", name:"Sunset Service", desc:"อุ่นขึ้น แต่สุภาพ", primary:"#7c2d12", primary2:"#c2410c", accent:"#fb7185", button:"#facc15", button2:"#fb923c", surface:"#fff7ed", card:"#ffffff", text:"#431407", muted:"#78716c" },
-  { id:"midnight-neon", name:"Midnight Neon", desc:"เข้ม เท่ สายกลางคืน", primary:"#020617", primary2:"#1d4ed8", accent:"#06b6d4", button:"#22c55e", button2:"#16a34a", surface:"#eef6ff", card:"#ffffff", text:"#07142f", muted:"#64748b" }
+  { id:"cwf-classic", name:"CWF Classic", desc:"น้ำเงิน-ทอง", primary:"#0b2e6d", primary2:"#1358c9", accent:"#18c7e7", button:"#f4c400", button2:"#f59e0b", surface:"#f4f8ff", card:"#ffffff", text:"#061b4f", muted:"#667085", profileCard:"#ffffff", acceptCard:"#ffffff", offerCard:"#f9fbff", statIncome:"#f2fff9", statDone:"#f1f7ff", statRework:"#fff6f6", statRating:"#fff9df" },
+  { id:"aurora-tech", name:"Aurora Tech", desc:"ฟ้า-ม่วง", primary:"#172554", primary2:"#6d5dfc", accent:"#22d3ee", button:"#a3e635", button2:"#84cc16", surface:"#f2f7ff", card:"#ffffff", text:"#101b4d", muted:"#64748b", profileCard:"#f7f5ff", acceptCard:"#f4fbff", offerCard:"#f8f7ff", statIncome:"#f2fff4", statDone:"#eef6ff", statRework:"#fff3f8", statRating:"#f8ffe8" },
+  { id:"emerald-pro", name:"Emerald Pro", desc:"เขียวสะอาด", primary:"#064e3b", primary2:"#0f766e", accent:"#2dd4bf", button:"#facc15", button2:"#eab308", surface:"#f0fdf7", card:"#ffffff", text:"#052e2b", muted:"#5f716f", profileCard:"#f3fff9", acceptCard:"#effdf6", offerCard:"#f6fffb", statIncome:"#eafff5", statDone:"#effaf8", statRework:"#fff4f4", statRating:"#fff9d7" },
+  { id:"royal-gold", name:"Royal Gold", desc:"กรมท่า-ทอง", primary:"#111827", primary2:"#1e3a8a", accent:"#38bdf8", button:"#fbbf24", button2:"#d97706", surface:"#f8fafc", card:"#ffffff", text:"#111827", muted:"#64748b", profileCard:"#ffffff", acceptCard:"#fffdf5", offerCard:"#f8fafc", statIncome:"#f5fff9", statDone:"#f3f7ff", statRework:"#fff7f7", statRating:"#fff7d7" },
+  { id:"sunset-service", name:"Sunset", desc:"อุ่น สุภาพ", primary:"#7c2d12", primary2:"#c2410c", accent:"#fb7185", button:"#facc15", button2:"#fb923c", surface:"#fff7ed", card:"#ffffff", text:"#431407", muted:"#78716c", profileCard:"#fff8f1", acceptCard:"#fff7ed", offerCard:"#fff9f3", statIncome:"#f4fff1", statDone:"#fff4ed", statRework:"#fff1f2", statRating:"#fff7d6" },
+  { id:"midnight-neon", name:"Midnight", desc:"เข้ม เท่", primary:"#020617", primary2:"#1d4ed8", accent:"#06b6d4", button:"#22c55e", button2:"#16a34a", surface:"#eef6ff", card:"#ffffff", text:"#07142f", muted:"#64748b", profileCard:"#f7fbff", acceptCard:"#f6faff", offerCard:"#f4f8ff", statIncome:"#effff7", statDone:"#eef5ff", statRework:"#fff4f6", statRating:"#f7ffe9" }
 ];
 
 function shadeHexColor(hex, percent) {
@@ -268,6 +278,13 @@ function setThemeVars(theme) {
   root.style.setProperty("--cwf-theme-card", t.card || "#ffffff");
   root.style.setProperty("--cwf-theme-text", t.text || "#061b4f");
   root.style.setProperty("--cwf-theme-muted", t.muted || "#667085");
+  root.style.setProperty("--cwf-profile-card-bg", t.profileCard || t.card || "#ffffff");
+  root.style.setProperty("--cwf-accept-card-bg", t.acceptCard || t.card || "#ffffff");
+  root.style.setProperty("--cwf-offer-card-bg", t.offerCard || t.surface || "#f9fbff");
+  root.style.setProperty("--cwf-stat-income-bg", t.statIncome || "#f2fff9");
+  root.style.setProperty("--cwf-stat-done-bg", t.statDone || "#f1f7ff");
+  root.style.setProperty("--cwf-stat-rework-bg", t.statRework || "#fff6f6");
+  root.style.setProperty("--cwf-stat-rating-bg", t.statRating || "#fff9df");
 }
 
 function applyTheme(themeIdOrObject, options = {}) {
@@ -322,12 +339,24 @@ function updateThemePresetActive() {
   });
 }
 
+function setInputValue(el, value) {
+  if (el) el.value = value;
+}
+
 function loadThemeInputs(theme) {
   const t = normalizeTheme(theme || getCurrentThemeId());
-  if (themeColorPrimary) themeColorPrimary.value = t.primary || "#0b2e6d";
-  if (themeColorAccent) themeColorAccent.value = t.accent || "#18c7e7";
-  if (themeColorButton) themeColorButton.value = t.button || "#f4c400";
-  if (themeColorSurface) themeColorSurface.value = t.surface || "#f4f8ff";
+  setInputValue(themeColorPrimary, t.primary || "#0b2e6d");
+  setInputValue(themeColorAccent, t.accent || "#18c7e7");
+  setInputValue(themeColorButton, t.button || "#f4c400");
+  setInputValue(themeColorSurface, t.surface || "#f4f8ff");
+  setInputValue(themeColorProfileCard, t.profileCard || t.card || "#ffffff");
+  setInputValue(themeColorAcceptCard, t.acceptCard || t.card || "#ffffff");
+  setInputValue(themeColorOfferCard, t.offerCard || t.surface || "#f9fbff");
+  setInputValue(themeColorText, t.text || "#061b4f");
+  setInputValue(themeColorStatIncome, t.statIncome || "#f2fff9");
+  setInputValue(themeColorStatDone, t.statDone || "#f1f7ff");
+  setInputValue(themeColorStatRework, t.statRework || "#fff6f6");
+  setInputValue(themeColorStatRating, t.statRating || "#fff9df");
 }
 
 function buildCustomThemeFromInputs() {
@@ -335,11 +364,25 @@ function buildCustomThemeFromInputs() {
   const accent = themeColorAccent?.value || "#18c7e7";
   const button = themeColorButton?.value || "#f4c400";
   const surface = themeColorSurface?.value || "#f4f8ff";
+  const text = themeColorText?.value || "#061b4f";
   return {
     id:"custom", name:"Custom", desc:"ปรับเอง",
     primary, primary2:shadeHexColor(primary, 34), accent, button, button2:shadeHexColor(button, -28), surface,
-    card:"#ffffff", text:"#061b4f", muted:"#667085"
+    card:"#ffffff", text, muted:"#667085",
+    profileCard: themeColorProfileCard?.value || "#ffffff",
+    acceptCard: themeColorAcceptCard?.value || "#ffffff",
+    offerCard: themeColorOfferCard?.value || "#f9fbff",
+    statIncome: themeColorStatIncome?.value || "#f2fff9",
+    statDone: themeColorStatDone?.value || "#f1f7ff",
+    statRework: themeColorStatRework?.value || "#fff6f6",
+    statRating: themeColorStatRating?.value || "#fff9df"
   };
+}
+
+function setThemePreviewMode(isPreview) {
+  if (!themeModal) return;
+  themeModal.classList.toggle("previewMode", !!isPreview);
+  if (themePreviewToggleBtn) themePreviewToggleBtn.textContent = isPreview ? "ตั้งค่า" : "ดูพรีวิว";
 }
 
 function openTechThemeModal() {
@@ -349,6 +392,7 @@ function openTechThemeModal() {
     themeModal.classList.add("open");
     themeModal.setAttribute("aria-hidden", "false");
     themeModal.style.display = "flex";
+    setThemePreviewMode(false);
   }
 }
 
@@ -384,6 +428,9 @@ if (themeToggleBtn) {
     openTechThemeModal();
   });
 }
+themePreviewToggleBtn?.addEventListener("click", () => {
+  setThemePreviewMode(!themeModal?.classList.contains("previewMode"));
+});
 themeCloseBtn?.addEventListener("click", closeTechThemeModal);
 themeDoneBtn?.addEventListener("click", closeTechThemeModal);
 themeResetBtn?.addEventListener("click", () => {
@@ -394,7 +441,11 @@ themeResetBtn?.addEventListener("click", () => {
 themeApplyCustomBtn?.addEventListener("click", () => {
   applyTheme(buildCustomThemeFromInputs());
 });
-[themeColorPrimary, themeColorAccent, themeColorButton, themeColorSurface].forEach(input => {
+[
+  themeColorPrimary, themeColorAccent, themeColorButton, themeColorSurface,
+  themeColorProfileCard, themeColorAcceptCard, themeColorOfferCard, themeColorText,
+  themeColorStatIncome, themeColorStatDone, themeColorStatRework, themeColorStatRating
+].forEach(input => {
   input?.addEventListener("input", () => applyTheme(buildCustomThemeFromInputs(), { preview: true }));
 });
 themeModal?.addEventListener("click", (ev) => {
