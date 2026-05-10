@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_fix51_cap_units_to_current_pricing";
+window.__CWF_TECH_APP_VERSION__ = "20260510_fix52_disable_noisy_gadgets";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -518,23 +518,22 @@ const TECH_GADGET_KEY = "cwf_tech_gadgets_v1";
 const CWF_GADGET_PRESETS = [
   { id: "clock", name: "นาฬิกา", desc: "เวลาไทยบนหน้าแรก" },
   { id: "accept", name: "สถานะรับงาน", desc: "รับงาน/หยุดรับงาน" },
-  { id: "income", name: "วันนี้ได้", desc: "อ่านจากการ์ดเดิม" },
-  { id: "done", name: "เสร็จสิ้น", desc: "งานปิดเดือนนี้" },
-  { id: "rework", name: "งานแก้ไข", desc: "จำนวนงานแก้ไข" },
-  { id: "rating", name: "คะแนน", desc: "คะแนนช่าง" },
-  { id: "theme", name: "ธีม", desc: "ธีมและเค้าโครงที่ใช้" }
+  { id: "zone", name: "พื้นที่ประจำ", desc: "พื้นที่รับงานหลักของช่าง" }
 ];
 
 function getEnabledGadgets() {
+  const allowed = new Set(CWF_GADGET_PRESETS.map(g => g.id));
   try {
     const saved = JSON.parse(localStorage.getItem(TECH_GADGET_KEY) || "[]");
-    if (Array.isArray(saved) && saved.length) return saved;
+    if (Array.isArray(saved)) return saved.filter(id => allowed.has(id));
   } catch (_) {}
-  return ["clock", "accept", "theme"];
+  return [];
 }
 
 function setEnabledGadgets(ids) {
-  localStorage.setItem(TECH_GADGET_KEY, JSON.stringify(ids));
+  const allowed = new Set(CWF_GADGET_PRESETS.map(g => g.id));
+  const clean = (Array.isArray(ids) ? ids : []).filter(id => allowed.has(id));
+  localStorage.setItem(TECH_GADGET_KEY, JSON.stringify(clean));
 }
 
 function getTextById(id, fallback = "-") {
@@ -562,6 +561,20 @@ function getCurrentLayoutNameForGadget() {
   }
 }
 
+function getCurrentZoneTextForGadget() {
+  const candidates = [
+    document.getElementById("techZoneName"),
+    document.getElementById("zoneLabel"),
+    document.querySelector("#techControlCard .zone-select strong"),
+    document.querySelector("#techControlCard .zone-select"),
+  ];
+  for (const el of candidates) {
+    const text = (el?.textContent || "").replace(/\s+/g, " ").trim();
+    if (text && text !== "-" && !/แตะเพื่อตั้งค่า/i.test(text)) return text;
+  }
+  return "ยังไม่ได้ตั้งค่า";
+}
+
 function buildGadgetData(id) {
   const now = new Date();
   const time = now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
@@ -577,7 +590,8 @@ function buildGadgetData(id) {
     done: { icon: "✅", k: "เสร็จสิ้น", v: getTextById("doneCount", "-"), s: "เดือนนี้" },
     rework: { icon: "🔴", k: "งานแก้ไข", v: getTextById("reworkCount", "-"), s: "เดือนนี้" },
     rating: { icon: "⭐", k: "คะแนน", v: getTextById("rating", "-"), s: "คะแนนช่าง" },
-    theme: { icon: "🎨", k: "ธีม", v: getCurrentThemeNameForGadget(), s: getCurrentLayoutNameForGadget() }
+    theme: { icon: "🎨", k: "ธีม", v: getCurrentThemeNameForGadget(), s: getCurrentLayoutNameForGadget() },
+    zone: { icon: "📍", k: "พื้นที่ประจำ", v: getCurrentZoneTextForGadget(), s: "แตะการ์ดพื้นที่ด้านบนเพื่อตั้งค่า" }
   };
   return map[id] || null;
 }
@@ -585,16 +599,27 @@ function buildGadgetData(id) {
 function renderTechGadgets() {
   if (typeof techGadgetDock === "undefined" || !techGadgetDock) return;
   const enabled = getEnabledGadgets();
+  if (!enabled.length) {
+    techGadgetDock.innerHTML = "";
+    techGadgetDock.hidden = true;
+    return;
+  }
+  techGadgetDock.hidden = false;
   techGadgetDock.innerHTML = enabled.map(id => {
     const g = buildGadgetData(id);
     if (!g) return "";
-    const wide = id === "theme" || id === "accept" ? " wide" : "";
+    const value = String(g.v || "").trim();
+    if (!value || value === "-") return "";
+    const wide = id === "accept" || id === "zone" ? " wide" : "";
     return `<div class="techGadget${wide}" data-gadget-id="${id}">
       <div class="gK"><span>${g.icon}</span><span>${g.k}</span></div>
       <div class="gV">${g.v}</div>
       <div class="gS">${g.s}</div>
     </div>`;
   }).join("");
+  if (!techGadgetDock.innerHTML.trim()) {
+    techGadgetDock.hidden = true;
+  }
 }
 
 function renderGadgetPicker() {

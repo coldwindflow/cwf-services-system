@@ -3409,7 +3409,29 @@
     }
   </style>
 
-<script src="app.js?v=20260510_fix51_cap_units_to_current_pricing"></script>
+
+  <style id="cwf-fix52-disable-noisy-gadgets">
+    /*
+      CWF fix52: disable noisy duplicated gadgets by default.
+      Safe scope: gadget dock + theme gadget picker only.
+      No backend, no index, no job/income/history logic.
+    */
+    .techGadgetDock[hidden],
+    .techGadgetDock:empty{
+      display:none!important;
+    }
+    .techGadgetDock{
+      margin:8px 0 0!important;
+    }
+    .themeGadgetCard{
+      background:linear-gradient(135deg,rgba(255,255,255,.92),rgba(248,251,255,.86))!important;
+    }
+    .themeGadgetCard .themeCustomHead span::after{
+      content:" • ค่าเริ่มต้นจะไม่แสดง Gadget บนหน้าแรก";
+    }
+  </style>
+
+<script src="app.js?v=20260510_fix52_disable_noisy_gadgets"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
