@@ -6,11 +6,25 @@ CWF is a production app. Future Codex tasks must treat this repository as high r
 
 - Always pull/read the latest repo files directly.
 - Always read `CODEX_INSTRUCTIONS.md`, `README.md`, `package.json`, and relevant docs.
+- Every AI/Codex task touching technician app files or technician-related routes/services must read `CWF_Technician_App_Master_Spec.md` first.
 - Always grep the route before editing.
 - Always identify the exact route and function.
 - Always identify frontend callers if the change touches an API.
 - Always state files to edit before editing.
 - Always inspect `git diff` before finishing.
+
+Technician-related files include:
+
+- `tech.html`
+- `app.js`
+- `sw.js`
+- `index.js` routes used by the technician app
+- `server/technicianIncome.js`
+- `server/technicianJobIncomeDisplay.js`
+- `server/technicianRework.js`
+- `server/routes/technician/*`
+- `server/services/technician/*`
+- `server/services/jobs/*` close-job, evidence, and unit logic.
 
 ## Hard Rules
 
