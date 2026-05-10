@@ -1726,8 +1726,7 @@
 
       <!-- ✅ กันหัวข้อซ้อน ให้เหลืออันเดียว -->
       <h2 style="margin-top:6px;">งานที่เสนอให้คุณ</h2>
-      <div class="muted" style="font-weight:900;line-height:1.55;margin:8px 0 12px;">หากมีงานใหม่ ระบบจะแสดงที่นี่ ให้กดรับงานจากหน้านี้เท่านั้น</div>
-      <div id="offer-list"></div>
+<div id="offer-list"></div>
     </div>
 
     <div class="card section" id="sec-active">
@@ -2423,7 +2422,20 @@
     }
   </style>
 
-<script src="app.js?v=20260510_fix42_theme_modal_open"></script>
+
+  <style id="cwf-fix43-remove-offer-hint">
+    /*
+      CWF fix43: remove offer instruction text and keep the offer block visually clean.
+      Scope only: offer block in new-job tab.
+    */
+    #sec-new h2:nth-of-type(2) + #offer-list{
+      margin-top:0!important;
+      padding-top:10px!important;
+      border-radius:0 0 26px 26px!important;
+    }
+  </style>
+
+<script src="app.js?v=20260510_fix43_remove_offer_hint"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
