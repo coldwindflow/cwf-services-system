@@ -6,6 +6,8 @@ This document audits small DB-backed GET routes for extraction. No route was mov
 
 Phase 2C status: `GET /test-db` has been extracted into `server/routes/system/index.js` and is mounted through the existing system router from `index.js`.
 
+Phase 2D status: `GET /users/technicians` was audited in `docs/PHASE2D_TECHNICIAN_DIRECTORY_ROUTE_MAP.md`. No route was moved in Phase 2D.
+
 ## Summary
 
 Recommended Phase 2C candidate:
@@ -29,7 +31,7 @@ Why:
 | Route | Method | Current location | SQL used | Dependencies | Auth/session | Side effects | Response shape | Risk | Recommendation |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `/test-db` | GET | Was `index.js:12840`; now `server/routes/system/index.js` | `SELECT NOW() as now` | `pool.query`, `console.error` | No | No DB mutation; does require DB connectivity | Success: `{ ok: true, now }`; failure: `{ ok: false, error: "db connection failed" }` | Low | Extracted in Phase 2C. |
-| `/users/technicians` | GET | `index.js:12919` | `SELECT username FROM public.users WHERE role='technician' ORDER BY username` | `pool.query`, `console.error` | No | No mutation | Array of `{ username }`; failure `{ error }` | Medium | Do not move yet. User/technician directory may affect admin booking/assignment UI. |
+| `/users/technicians` | GET | `index.js:12906` | `SELECT username FROM public.users WHERE role='technician' ORDER BY username` | `pool.query`, `console.error` | No | No mutation | Array of `{ username }`; failure `{ error }` | Low-to-medium | Audited in Phase 2D. Candidate for a future dedicated users route module only after confirming no hidden caller depends on the legacy endpoint. |
 | `/catalog/items` | GET | `index.js:12938` | Dynamic `SELECT item_id, item_name, item_category, base_price, unit_label, is_active, job_category, ac_type, btu_min, btu_max, is_customer_visible FROM public.catalog_items WHERE ... ORDER BY item_category, item_name` | `pool.query`, request query filters | No | No mutation | Array of catalog item rows; failure `{ error }` | High | Do not move yet. Catalog/pricing-adjacent and customer-visible. |
 | `/promotions` | GET | `index.js:13003` | `getPromotionColumns()` reads `information_schema.columns`; route then queries `public.promotions` with dynamic selected columns | `pool.query`, `getPromotionColumns`, in-memory column cache, request query filters | No | No DB mutation; mutates in-memory column cache | Array of promotion rows; failure `{ error }` | High | Do not move yet. Promotion/pricing/customer-visible behavior. |
 | `/service_zones` | GET | `index.js:21336` | Via `getServiceZones()`: `SELECT zone_code, zone_name, zone_label, province_group, color_hex, is_active, sort_order FROM public.service_zones WHERE is_active=TRUE ORDER BY sort_order, zone_code` | `getServiceZones`, `pool.query`, `SERVICE_ZONE_SEEDS`, `ENABLE_SERVICE_ZONE_FILTER` | No | No mutation; has fallback seed behavior | `{ ok: true, zones, filter_enabled }`; failure `{ error }` | Medium | Do not move yet. Availability/service-zone behavior affects booking and technician assignment. |
@@ -130,3 +132,7 @@ Do not move:
 - `/public/line_config`
 - `/admin/debug/status`
 - Any technician, admin, customer booking, pricing, availability, LINE, accounting, income, close-job, or unit evidence route.
+
+## Phase 2D Follow-Up
+
+`GET /users/technicians` is the next smallest DB-backed read-only candidate, but it should not be placed in the existing system router. See `docs/PHASE2D_TECHNICIAN_DIRECTORY_ROUTE_MAP.md` for the dedicated future mount plan, dependency notes, caller audit, manual tests, and rollback steps.

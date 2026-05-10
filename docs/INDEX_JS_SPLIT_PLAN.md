@@ -135,6 +135,17 @@ Phase 1B status:
 - No new PostgreSQL pool was created.
 - Rollback: remove the `/test-db` route from `server/routes/system/index.js`, restore the old inline `app.get("/test-db", ...)` block at the `TEST DB` marker in `index.js`, and restore `app.use(createSystemRoutes({}))` if the system router no longer needs the pool.
 
+### Phase 2D: Technician Directory Route Map
+
+- `GET /users/technicians` was audited as the next smallest DB-backed read-only candidate.
+- No route was moved and no runtime file was changed in Phase 2D.
+- Current location: `index.js:12906`, between the password change route block and the `CATALOG` marker.
+- Dependencies: `pool.query` and `console.error`.
+- SQL: `SELECT username FROM public.users WHERE role='technician' ORDER BY username`.
+- This route should not be added to `server/routes/system/index.js` because it is a technician directory endpoint, not a health/status endpoint.
+- Recommended future target: `server/routes/users/technicians.js`, mounted at the old inline route location with `app.use(createUserTechnicianRoutes({ pool }))`.
+- See `docs/PHASE2D_TECHNICIAN_DIRECTORY_ROUTE_MAP.md` before extracting.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
