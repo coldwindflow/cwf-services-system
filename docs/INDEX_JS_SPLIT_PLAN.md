@@ -101,6 +101,12 @@ Rules:
 - No business calculations.
 - Confirm `node index.js` still starts.
 
+Phase 1A status:
+
+- `GET /api/version` has been extracted to `server/routes/system/index.js`.
+- `index.js` imports `./server/routes/system` and mounts it at the existing `Health / Version` location before `/api/maps/resolve`.
+- Rollback: remove the system route import and mount from `index.js`, restore the original inline `app.get("/api/version", ...)` block at the same marker, delete `server/routes/system/index.js`, then run `node --check index.js`.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
@@ -157,4 +163,3 @@ Before extracting any route:
 - Add or update a focused test/checklist.
 - Run `node --check index.js` and `node --check` on every changed JS file.
 - Run manual smoke tests for the relevant user flow.
-

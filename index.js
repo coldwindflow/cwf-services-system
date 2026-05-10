@@ -31,6 +31,7 @@ const customerLookupHelpers = require("./server/customerLookup");
 const technicianJobIncomeDisplayHelpers = require("./server/technicianJobIncomeDisplay");
 const technicianReworkHelpers = require("./server/technicianRework");
 const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoneySummary");
+const createSystemRoutes = require("./server/routes/system");
 
 // =======================================
 // 🔔 Web Push Notifications (optional / fail-open)
@@ -10662,9 +10663,7 @@ async function requireAdminForRank(req, res, next) {
 // =======================================
 // 🔎 Health / Version (ใช้เช็คว่า deploy ล่าสุดจริง)
 // =======================================
-app.get("/api/version", (req, res) => {
-  res.json({ ok: true, version: "gps-v4", ts: new Date().toISOString() });
-});
+app.use(createSystemRoutes({}));
 
 // =======================================
 // 📍 Resolve Google Maps URL -> lat/lng (best-effort)

@@ -2,7 +2,9 @@
 
 Date: 2026-05-10
 
-This document prepares the first safe route extraction from `index.js`. It is a route map only. Do not move routes in this phase.
+This document prepared the first safe route extraction from `index.js`.
+
+Phase 1A status: `GET /api/version` has been extracted to `server/routes/system/index.js` and mounted from the existing `Health / Version` location in `index.js`.
 
 ## Scope
 
@@ -23,7 +25,7 @@ Current audit result:
 
 | Route | Current location | Nearby marker | Dependencies | DB | Auth/session | Upload | Pricing | External APIs | Phase 1 recommendation |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `GET /api/version` | `index.js:10665` | `Health / Version` marker | `res`, `Date` | No | No | No | No | No | Move first. Lowest risk. |
+| `GET /api/version` | `index.js` `Health / Version` marker | `Health / Version` marker | `res`, `Date` | No | No | No | No | No | Extracted in Phase 1A to `server/routes/system/index.js`. |
 | `GET /test-db` | `index.js:12841` | `TEST DB` | `pool.query`, `console.error` | Yes, read-only `SELECT NOW()` | No | No | No | No | Do not move first. Candidate only after `/api/version`. |
 | `GET /admin/debug/status` | `index.js:25201` | `Admin Debug Controls (availability logging)` | `requireAdminSoft`, `ENABLE_AVAILABILITY_DEBUG`, `RUNTIME_AVAILABILITY_DEBUG`, `process.env.TZ` | No | Yes, admin soft guard | No | No | No | Do not move first. Requires middleware dependency mapping. |
 | `GET /public/line_config` | `index.js:1011` | `Public LINE config (debug only - no secrets)` | `process.env`, `getReqBaseUrl(req)` | No | No | No | No | No direct call, but LINE env/callback config | Do not move in Phase 1. LINE-adjacent. |
@@ -32,7 +34,7 @@ Current audit result:
 
 ## Safest First Extraction Candidate
 
-Move only:
+Moved only:
 
 ```text
 GET /api/version
@@ -56,19 +58,20 @@ Risk note: the timestamp is intentionally dynamic. Future tests should validate 
 
 ## Proposed New File Path
 
-Use this path for the first extraction patch:
+Phase 1A uses this path:
 
 ```text
 server/routes/system/index.js
 ```
 
-Do not create or import this runtime file until the actual extraction task.
+This runtime file now exists and is mounted from `index.js`.
 
 ## Proposed Factory Pattern
 
 ```js
-module.exports = function createSystemRoutes(deps) {
-  const router = deps.express.Router();
+module.exports = function createSystemRoutes(deps = {}) {
+  const express = require("express");
+  const router = express.Router();
 
   router.get("/api/version", (req, res) => {
     res.json({ ok: true, version: "gps-v4", ts: new Date().toISOString() });
@@ -88,16 +91,16 @@ Notes:
 
 ## Exact index.js Mount Plan For Future Extraction
 
-Future extraction patch should do exactly this and no more:
+Phase 1A did exactly this and no more:
 
-1. Add `server/routes/system/index.js`.
-2. Near the existing route dependencies in `index.js`, add:
+1. Added `server/routes/system/index.js`.
+2. Near the existing route dependencies in `index.js`, added:
 
 ```js
 const createSystemRoutes = require("./server/routes/system");
 ```
 
-3. Replace only the current inline route at `index.js:10665`:
+3. Replaced only the previous inline route:
 
 ```js
 app.get("/api/version", (req, res) => {
@@ -108,17 +111,17 @@ app.get("/api/version", (req, res) => {
 with:
 
 ```js
-app.use(createSystemRoutes({ express }));
+app.use(createSystemRoutes({}));
 ```
 
-4. Keep the mount in the same general location as the current `Health / Version` marker, before `/api/maps/resolve`.
-5. Do not move `/api/maps/resolve`.
-6. Do not touch `/test-db`.
-7. Do not touch auth/session, LINE login, pricing, booking, availability, accounting/tax/VAT, public tracking, technician income, payout, or close-job/finalize logic.
+4. The mount remains in the same general location as the current `Health / Version` marker, before `/api/maps/resolve`.
+5. `/api/maps/resolve` was not moved.
+6. `/test-db` was not touched.
+7. Auth/session, LINE login, pricing, booking, availability, accounting/tax/VAT, public tracking, technician income, payout, and close-job/finalize logic were not touched.
 
 ## Manual Test Checklist
 
-For the future extraction patch:
+For Phase 1A and future checks:
 
 - Run `node --check index.js`.
 - Run `node --check server/routes/system/index.js`.
@@ -130,14 +133,14 @@ For the future extraction patch:
   - `ts` as a valid ISO timestamp string.
 - Confirm login page still loads.
 - Confirm no PWA/cache bump is needed because no frontend JS changed.
-- Confirm `git diff` touches only `index.js` and `server/routes/system/index.js` for the extraction task.
+- Confirm runtime `git diff` touches only `index.js` and `server/routes/system/index.js` for the extraction task.
 
 ## Rollback Plan
 
-If the future extraction causes any startup or routing issue:
+If the Phase 1A extraction causes any startup or routing issue:
 
 1. Remove the `createSystemRoutes` require from `index.js`.
-2. Remove the `app.use(createSystemRoutes({ express }))` mount.
+2. Remove the `app.use(createSystemRoutes({}))` mount.
 3. Restore the original inline `app.get("/api/version", ...)` block in the same location.
 4. Delete `server/routes/system/index.js`.
 5. Run `node --check index.js`.
