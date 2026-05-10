@@ -861,6 +861,26 @@
               <label>ตัวอักษร <input type="color" id="themeColorText" value="#061b4f"></label>
             </div>
 
+            <div class="themeGroupTitle">ไล่เฉดสีการ์ด</div>
+            <div class="themeColorGrid themeGradientGrid">
+              <label>โปรไฟล์ เริ่ม <input type="color" id="themeGradProfileStart" value="#ffffff"></label>
+              <label>โปรไฟล์ จบ <input type="color" id="themeGradProfileEnd" value="#eef7ff"></label>
+              <label>รับงาน เริ่ม <input type="color" id="themeGradAcceptStart" value="#ffffff"></label>
+              <label>รับงาน จบ <input type="color" id="themeGradAcceptEnd" value="#f2fff9"></label>
+              <label>งานเสนอ เริ่ม <input type="color" id="themeGradOfferStart" value="#ffffff"></label>
+              <label>งานเสนอ จบ <input type="color" id="themeGradOfferEnd" value="#f2f7ff"></label>
+            </div>
+            <div class="themeAngleRow">
+              <label>ทิศทางไล่เฉด
+                <select id="themeGradientAngle">
+                  <option value="135deg">เฉียงบนซ้าย → ล่างขวา</option>
+                  <option value="90deg">ซ้าย → ขวา</option>
+                  <option value="180deg">บน → ล่าง</option>
+                  <option value="45deg">ล่างซ้าย → บนขวา</option>
+                </select>
+              </label>
+            </div>
+
             <div class="themeGroupTitle">สีการ์ดสรุป 4 ช่อง</div>
             <div class="themeColorGrid">
               <label>วันนี้ได้ <input type="color" id="themeColorStatIncome" value="#f2fff9"></label>
@@ -3037,7 +3057,171 @@
     }
   </style>
 
-<script src="app.js?v=20260510_fix46_layout_presets"></script>
+
+  <style id="cwf-fix47-phase3-gradient-layouts">
+    /*
+      CWF fix47 phase 3:
+      - Gradient controls for important cards.
+      - Layout presets become more visually different.
+      Safe scope: technician new-job home UI only. No route/backend/income/history logic.
+    */
+    :root{
+      --cwf-gradient-angle:135deg;
+      --cwf-profile-grad-start:var(--cwf-profile-card-bg);
+      --cwf-profile-grad-end:color-mix(in srgb, var(--cwf-profile-card-bg) 78%, var(--cwf-theme-surface) 22%);
+      --cwf-accept-grad-start:var(--cwf-accept-card-bg);
+      --cwf-accept-grad-end:color-mix(in srgb, var(--cwf-accept-card-bg) 78%, var(--cwf-theme-surface) 22%);
+      --cwf-offer-grad-start:var(--cwf-offer-card-bg);
+      --cwf-offer-grad-end:color-mix(in srgb, var(--cwf-offer-card-bg) 78%, var(--cwf-theme-surface) 22%);
+    }
+
+    .themeGradientGrid{
+      margin-bottom:8px;
+    }
+    .themeAngleRow{
+      margin:8px 0 2px;
+    }
+    .themeAngleRow label{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      padding:10px;
+      border-radius:18px;
+      background:#fff;
+      border:1px solid rgba(8,36,91,.08);
+      color:#061b4f;
+      font-weight:950;
+      font-size:13px;
+    }
+    .themeAngleRow select{
+      max-width:58%;
+      min-height:34px;
+      border:1px solid rgba(8,36,91,.10);
+      border-radius:14px;
+      background:#f8fbff;
+      color:#061b4f;
+      font-weight:900;
+      padding:0 8px;
+    }
+
+    #techControlCard.tech-control-card{
+      background:
+        radial-gradient(circle at 94% 4%, color-mix(in srgb, var(--cwf-theme-button) 10%, transparent) 0 70px, transparent 152px),
+        linear-gradient(var(--cwf-gradient-angle),var(--cwf-accept-grad-start),var(--cwf-accept-grad-end))!important;
+    }
+    #sec-new .profile-compact .left{
+      background:
+        radial-gradient(circle at 92% 0%, color-mix(in srgb, var(--cwf-theme-accent) 9%, transparent) 0 72px, transparent 155px),
+        linear-gradient(var(--cwf-gradient-angle),var(--cwf-profile-grad-start),var(--cwf-profile-grad-end))!important;
+    }
+    #sec-new h2:nth-of-type(2),
+    #sec-new h2:nth-of-type(2) + p,
+    #sec-new #offer-list{
+      background:linear-gradient(var(--cwf-gradient-angle),var(--cwf-offer-grad-start),var(--cwf-offer-grad-end))!important;
+    }
+
+    /* Phase 3 layout differentiation */
+    body[data-cwf-layout="compact"] #sec-new .profile-compact{
+      display:grid!important;
+      grid-template-columns:1fr!important;
+      gap:8px!important;
+    }
+    body[data-cwf-layout="compact"] #sec-new .profile-compact .chips{
+      grid-template-columns:repeat(4,minmax(0,1fr))!important;
+      gap:6px!important;
+    }
+    body[data-cwf-layout="compact"] #sec-new h2:nth-of-type(2){
+      margin-top:14px!important;
+    }
+
+    body[data-cwf-layout="dashboard"] #sec-new .profile-compact .left{
+      border:1px solid color-mix(in srgb, var(--cwf-theme-accent) 24%, #fff 76%)!important;
+    }
+    body[data-cwf-layout="dashboard"] #sec-new .profile-compact .chips{
+      display:grid!important;
+      grid-template-columns:repeat(2,minmax(0,1fr))!important;
+      gap:10px!important;
+    }
+    body[data-cwf-layout="dashboard"] #sec-new .chipStat{
+      position:relative!important;
+      overflow:hidden!important;
+    }
+    body[data-cwf-layout="dashboard"] #sec-new .chipStat::after{
+      content:"";
+      position:absolute;
+      inset:auto 12px 8px 12px;
+      height:3px;
+      border-radius:999px;
+      background:linear-gradient(90deg,var(--cwf-theme-button),var(--cwf-theme-accent));
+      opacity:.55;
+    }
+
+    body[data-cwf-layout="focus"] #sec-new h2:nth-of-type(2){
+      margin-top:18px!important;
+      border-radius:28px 28px 0 0!important;
+      font-size:34px!important;
+      text-align:center!important;
+      padding-top:26px!important;
+    }
+    body[data-cwf-layout="focus"] #sec-new #offer-list{
+      min-height:96px!important;
+    }
+    body[data-cwf-layout="focus"] #sec-new #offer-list:empty::after{
+      min-height:74px!important;
+      font-size:19px!important;
+      border:1px dashed color-mix(in srgb, var(--cwf-theme-primary) 16%, #fff 84%)!important;
+      background:rgba(255,255,255,.48)!important;
+    }
+
+    body[data-cwf-layout="hero"] #sec-new .profile-compact{
+      display:grid!important;
+      grid-template-columns:1fr!important;
+    }
+    body[data-cwf-layout="hero"] #sec-new .profile-compact .left{
+      justify-content:center!important;
+      text-align:left!important;
+      box-shadow:0 22px 52px color-mix(in srgb, var(--cwf-theme-primary) 16%, transparent), inset 0 1px 0 rgba(255,255,255,.92)!important;
+    }
+    body[data-cwf-layout="hero"] #sec-new .profile-compact .chips{
+      grid-template-columns:repeat(4,minmax(0,1fr))!important;
+      margin-top:2px!important;
+    }
+
+    body[data-cwf-layout="minimal"] #techControlCard.tech-control-card,
+    body[data-cwf-layout="minimal"] #sec-new.card,
+    body[data-cwf-layout="minimal"] #sec-new .profile-compact .left,
+    body[data-cwf-layout="minimal"] #sec-new .chipStat,
+    body[data-cwf-layout="minimal"] #sec-new #offer-list{
+      background:#fff!important;
+    }
+    body[data-cwf-layout="minimal"] #sec-new>h2:first-child{
+      font-size:35px!important;
+    }
+    body[data-cwf-layout="minimal"] #sec-new .profile-settings-icon{
+      opacity:.72!important;
+    }
+
+    @media(max-width:390px){
+      body[data-cwf-layout="hero"] #sec-new .profile-compact .chips,
+      body[data-cwf-layout="compact"] #sec-new .profile-compact .chips{
+        gap:6px!important;
+      }
+      body[data-cwf-layout="dashboard"] #sec-new .profile-compact .chips{
+        grid-template-columns:repeat(2,minmax(0,1fr))!important;
+      }
+      .themeAngleRow label{
+        align-items:flex-start;
+        flex-direction:column;
+      }
+      .themeAngleRow select{
+        max-width:100%;
+        width:100%;
+      }
+    }
+  </style>
+
+<script src="app.js?v=20260510_fix47_phase3_gradient_layouts"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_fix46_layout_presets";
+window.__CWF_TECH_APP_VERSION__ = "20260510_fix47_phase3_gradient_layouts";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -231,6 +231,13 @@ const themeColorStatIncome = document.getElementById("themeColorStatIncome");
 const themeColorStatDone = document.getElementById("themeColorStatDone");
 const themeColorStatRework = document.getElementById("themeColorStatRework");
 const themeColorStatRating = document.getElementById("themeColorStatRating");
+const themeGradProfileStart = document.getElementById("themeGradProfileStart");
+const themeGradProfileEnd = document.getElementById("themeGradProfileEnd");
+const themeGradAcceptStart = document.getElementById("themeGradAcceptStart");
+const themeGradAcceptEnd = document.getElementById("themeGradAcceptEnd");
+const themeGradOfferStart = document.getElementById("themeGradOfferStart");
+const themeGradOfferEnd = document.getElementById("themeGradOfferEnd");
+const themeGradientAngle = document.getElementById("themeGradientAngle");
 
 const CWF_THEME_PRESETS = [
   { id:"cwf-classic", name:"CWF Classic", desc:"น้ำเงิน-ทอง", primary:"#0b2e6d", primary2:"#1358c9", accent:"#18c7e7", button:"#f4c400", button2:"#f59e0b", surface:"#f4f8ff", card:"#ffffff", text:"#061b4f", muted:"#667085", profileCard:"#ffffff", acceptCard:"#ffffff", offerCard:"#f9fbff", statIncome:"#f2fff9", statDone:"#f1f7ff", statRework:"#fff6f6", statRating:"#fff9df" },
@@ -263,6 +270,15 @@ function normalizeTheme(raw) {
     }
     return CWF_THEME_PRESETS.find(t => t.id === raw) || CWF_THEME_PRESETS[0];
   }
+  if (raw && typeof raw === "object") {
+    raw.profileGradStart = raw.profileGradStart || raw.profileCard || raw.card || "#ffffff";
+    raw.profileGradEnd = raw.profileGradEnd || shadeHexColor(raw.profileGradStart, -6);
+    raw.acceptGradStart = raw.acceptGradStart || raw.acceptCard || raw.card || "#ffffff";
+    raw.acceptGradEnd = raw.acceptGradEnd || shadeHexColor(raw.acceptGradStart, -6);
+    raw.offerGradStart = raw.offerGradStart || raw.offerCard || raw.surface || "#f9fbff";
+    raw.offerGradEnd = raw.offerGradEnd || shadeHexColor(raw.offerGradStart, -6);
+    raw.gradientAngle = raw.gradientAngle || "135deg";
+  }
   return raw;
 }
 
@@ -285,6 +301,13 @@ function setThemeVars(theme) {
   root.style.setProperty("--cwf-stat-done-bg", t.statDone || "#f1f7ff");
   root.style.setProperty("--cwf-stat-rework-bg", t.statRework || "#fff6f6");
   root.style.setProperty("--cwf-stat-rating-bg", t.statRating || "#fff9df");
+  root.style.setProperty("--cwf-gradient-angle", t.gradientAngle || "135deg");
+  root.style.setProperty("--cwf-profile-grad-start", t.profileGradStart || t.profileCard || t.card || "#ffffff");
+  root.style.setProperty("--cwf-profile-grad-end", t.profileGradEnd || shadeHexColor(t.profileGradStart || t.profileCard || "#ffffff", -6));
+  root.style.setProperty("--cwf-accept-grad-start", t.acceptGradStart || t.acceptCard || t.card || "#ffffff");
+  root.style.setProperty("--cwf-accept-grad-end", t.acceptGradEnd || shadeHexColor(t.acceptGradStart || t.acceptCard || "#ffffff", -6));
+  root.style.setProperty("--cwf-offer-grad-start", t.offerGradStart || t.offerCard || t.surface || "#f9fbff");
+  root.style.setProperty("--cwf-offer-grad-end", t.offerGradEnd || shadeHexColor(t.offerGradStart || t.offerCard || "#f9fbff", -6));
 }
 
 function applyTheme(themeIdOrObject, options = {}) {
@@ -357,6 +380,13 @@ function loadThemeInputs(theme) {
   setInputValue(themeColorStatDone, t.statDone || "#f1f7ff");
   setInputValue(themeColorStatRework, t.statRework || "#fff6f6");
   setInputValue(themeColorStatRating, t.statRating || "#fff9df");
+  setInputValue(themeGradProfileStart, t.profileGradStart || t.profileCard || "#ffffff");
+  setInputValue(themeGradProfileEnd, t.profileGradEnd || shadeHexColor(t.profileCard || "#ffffff", -6));
+  setInputValue(themeGradAcceptStart, t.acceptGradStart || t.acceptCard || "#ffffff");
+  setInputValue(themeGradAcceptEnd, t.acceptGradEnd || shadeHexColor(t.acceptCard || "#ffffff", -6));
+  setInputValue(themeGradOfferStart, t.offerGradStart || t.offerCard || "#f9fbff");
+  setInputValue(themeGradOfferEnd, t.offerGradEnd || shadeHexColor(t.offerCard || "#f9fbff", -6));
+  if (themeGradientAngle) themeGradientAngle.value = t.gradientAngle || "135deg";
 }
 
 function buildCustomThemeFromInputs() {
@@ -375,7 +405,14 @@ function buildCustomThemeFromInputs() {
     statIncome: themeColorStatIncome?.value || "#f2fff9",
     statDone: themeColorStatDone?.value || "#f1f7ff",
     statRework: themeColorStatRework?.value || "#fff6f6",
-    statRating: themeColorStatRating?.value || "#fff9df"
+    statRating: themeColorStatRating?.value || "#fff9df",
+    profileGradStart: themeGradProfileStart?.value || themeColorProfileCard?.value || "#ffffff",
+    profileGradEnd: themeGradProfileEnd?.value || "#eef7ff",
+    acceptGradStart: themeGradAcceptStart?.value || themeColorAcceptCard?.value || "#ffffff",
+    acceptGradEnd: themeGradAcceptEnd?.value || "#f2fff9",
+    offerGradStart: themeGradOfferStart?.value || themeColorOfferCard?.value || "#f9fbff",
+    offerGradEnd: themeGradOfferEnd?.value || "#f2f7ff",
+    gradientAngle: themeGradientAngle?.value || "135deg"
   };
 }
 
@@ -500,7 +537,9 @@ themeApplyCustomBtn?.addEventListener("click", () => {
 [
   themeColorPrimary, themeColorAccent, themeColorButton, themeColorSurface,
   themeColorProfileCard, themeColorAcceptCard, themeColorOfferCard, themeColorText,
-  themeColorStatIncome, themeColorStatDone, themeColorStatRework, themeColorStatRating
+  themeColorStatIncome, themeColorStatDone, themeColorStatRework, themeColorStatRating,
+  themeGradProfileStart, themeGradProfileEnd, themeGradAcceptStart, themeGradAcceptEnd,
+  themeGradOfferStart, themeGradOfferEnd, themeGradientAngle
 ].forEach(input => {
   input?.addEventListener("input", () => applyTheme(buildCustomThemeFromInputs(), { preview: true }));
 });
