@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_fix48_gradient_gadgets";
+window.__CWF_TECH_APP_VERSION__ = "20260510_fix49_runtime_gadget_guard";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -329,7 +329,6 @@ function applyTheme(themeIdOrObject, options = {}) {
       : `${theme.name} • ${theme.desc}`;
   }
   updateThemePresetActive();
-  renderTechGadgets?.();
 }
 
 function getCurrentThemeId() {
@@ -350,6 +349,7 @@ function renderThemePresets() {
       const id = btn.getAttribute("data-theme-id");
       applyTheme(id);
       loadThemeInputs(normalizeTheme(id));
+      renderTechGadgets();
     });
   });
   updateThemePresetActive();
@@ -478,7 +478,6 @@ function applyTechLayout(layoutId, options = {}) {
   document.body.dataset.cwfLayout = found.id;
   if (!options.preview) localStorage.setItem(TECH_LAYOUT_KEY, found.id);
   updateTechLayoutActive();
-  renderTechGadgets?.();
 }
 
 function renderTechLayoutPresets() {
@@ -491,7 +490,10 @@ function renderTechLayoutPresets() {
     </button>
   `).join("");
   themeLayoutGrid.querySelectorAll("[data-layout-id]").forEach(btn => {
-    btn.addEventListener("click", () => applyTechLayout(btn.getAttribute("data-layout-id")));
+    btn.addEventListener("click", () => {
+      applyTechLayout(btn.getAttribute("data-layout-id"));
+      renderTechGadgets();
+    });
   });
   updateTechLayoutActive();
 }
@@ -581,7 +583,7 @@ function buildGadgetData(id) {
 }
 
 function renderTechGadgets() {
-  if (!techGadgetDock) return;
+  if (typeof techGadgetDock === "undefined" || !techGadgetDock) return;
   const enabled = getEnabledGadgets();
   techGadgetDock.innerHTML = enabled.map(id => {
     const g = buildGadgetData(id);
@@ -662,9 +664,15 @@ themeApplyCustomBtn?.addEventListener("click", () => {
   themeGradProfileStart, themeGradProfileEnd, themeGradAcceptStart, themeGradAcceptEnd,
   themeGradOfferStart, themeGradOfferEnd, themeGradientAngle
 ].forEach(input => {
-  input?.addEventListener("input", () => applyTheme(buildCustomThemeFromInputs()));
+  input?.addEventListener("input", () => {
+    applyTheme(buildCustomThemeFromInputs());
+    renderTechGadgets();
+  });
 });
-themeGradientAngle?.addEventListener("change", () => applyTheme(buildCustomThemeFromInputs()));
+themeGradientAngle?.addEventListener("change", () => {
+  applyTheme(buildCustomThemeFromInputs());
+  renderTechGadgets();
+});
 
 themeModal?.addEventListener("click", (ev) => {
   if (ev.target === themeModal) closeTechThemeModal();
