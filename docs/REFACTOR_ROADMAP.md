@@ -2,8 +2,6 @@
 
 This roadmap prepares CWF for safer modularization. It intentionally starts with documentation and folder boundaries only.
 
-Note: the filename uses `REFRACTOR` because that was the requested deliverable name. The intended topic is the repository refactor roadmap.
-
 ## Goal
 
 Make the repository easier for humans and Codex to read before extracting routes from the very large `index.js`.
@@ -151,4 +149,3 @@ Use this checklist for every future extraction phase:
 - Public booking still works.
 - Close job still works.
 - PWA cache refreshed if frontend JS changed.
-
