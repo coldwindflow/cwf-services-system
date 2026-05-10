@@ -13763,6 +13763,182 @@ async function normalizeJobUnitCodes(jobId, db = pool) {
   return finalRows.rows || [];
 }
 
+const JOB_UNIT_INACTIVE_STATUSES = ['cancelled', 'removed', 'deleted', 'void', 'inactive'];
+function isActiveJobUnitStatus(status) {
+  const st = String(status || 'pending').trim().toLowerCase() || 'pending';
+  return !JOB_UNIT_INACTIVE_STATUSES.includes(st);
+}
+function activeJobUnitWhere(alias = '') {
+  const p = alias ? `${alias}.` : '';
+  return `LOWER(COALESCE(NULLIF(${p}status,''),'pending')) NOT IN ('cancelled','removed','deleted','void','inactive')`;
+}
+function activeJobUnits(rows) {
+  return (Array.isArray(rows) ? rows : []).filter((u) => isActiveJobUnitStatus(u?.status));
+}
+
+async function buildJobUnitTargetsFromJobItems(jobId, db = pool) {
+  const realId = Number(jobId);
+  if (!Number.isFinite(realId) || realId <= 0) return [];
+  const itemR = await db.query(
+    `SELECT item_name, qty, assigned_technician_username
+       FROM public.job_items
+      WHERE job_id=$1
+      ORDER BY job_item_id ASC`,
+    [realId]
+  );
+  const jobR = await db.query(`SELECT job_type, technician_username FROM public.jobs WHERE job_id=$1 LIMIT 1`, [realId]);
+  const job = jobR.rows[0] || {};
+  const rowsToCreate = [];
+  for (const it of itemR.rows || []) {
+    const qtyRaw = Number(it.qty || 0);
+    if (!Number.isFinite(qtyRaw) || qtyRaw <= 0) continue;
+    const qty = Math.max(1, Math.min(99, Math.floor(qtyRaw)));
+    for (let i = 0; i < qty; i++) {
+      rowsToCreate.push({
+        item_name: unitDisplayItemName(it.item_name || job.job_type || 'เครื่องปรับอากาศ'),
+        assigned_technician: it.assigned_technician_username || job.technician_username || null,
+      });
+    }
+  }
+  // Legacy fallback: jobs created before job_items existed still need one unit.
+  if (!rowsToCreate.length && !(itemR.rows || []).length) {
+    rowsToCreate.push({
+      item_name: unitDisplayItemName(job.job_type || 'เครื่องปรับอากาศ'),
+      assigned_technician: job.technician_username || null,
+    });
+  }
+  return rowsToCreate;
+}
+
+async function getExpectedActiveUnitCountFromJobItems(jobId, db = pool) {
+  const realId = Number(jobId);
+  if (!Number.isFinite(realId) || realId <= 0) return null;
+  const r = await db.query(
+    `SELECT COUNT(*)::int AS row_count,
+            COALESCE(SUM(
+              CASE
+                WHEN qty IS NULL THEN 0
+                WHEN qty::numeric > 0 THEN FLOOR(qty::numeric)
+                ELSE 0
+              END
+            ),0)::int AS unit_count
+       FROM public.job_items
+      WHERE job_id=$1`,
+    [realId]
+  );
+  const rowCount = Number(r.rows?.[0]?.row_count || 0);
+  if (rowCount <= 0) return null; // legacy fallback: no current job_items source
+  const unitCount = Math.max(0, Math.min(99, Number(r.rows?.[0]?.unit_count || 0)));
+  return unitCount;
+}
+
+async function capActiveJobUnitsToCurrentItems(jobId, units, db = pool) {
+  const realId = Number(jobId);
+  const rows = Array.isArray(units) ? units : [];
+  const expected = await getExpectedActiveUnitCountFromJobItems(realId, db);
+  if (expected === null) return rows;
+  if (expected <= 0) {
+    await db.query(
+      `UPDATE public.job_units
+          SET status='cancelled', updated_at=NOW()
+        WHERE job_id=$1 AND ${activeJobUnitWhere()}`,
+      [realId]
+    ).catch(()=>{});
+    return [];
+  }
+
+  // Strong production guard: even if old active rows survive, never expose/validate above the current job_items qty.
+  const sorted = [...rows].sort((a,b)=>{
+    const an = Number(a?.unit_no || 0) || 999999;
+    const bn = Number(b?.unit_no || 0) || 999999;
+    if (an !== bn) return an - bn;
+    return Number(a?.unit_id || 0) - Number(b?.unit_id || 0);
+  });
+  const allowedIds = new Set(sorted.slice(0, expected).map(u => Number(u.unit_id)).filter(Number.isFinite));
+  const extraIds = sorted.slice(expected).map(u => Number(u.unit_id)).filter(Number.isFinite);
+  if (extraIds.length) {
+    await db.query(
+      `UPDATE public.job_units
+          SET status='cancelled', updated_at=NOW()
+        WHERE job_id=$1 AND unit_id = ANY($2::bigint[])`,
+      [realId, extraIds]
+    ).catch(()=>{});
+  }
+  return sorted.filter(u => allowedIds.has(Number(u.unit_id))).slice(0, expected);
+}
+
+async function syncJobUnitsFromJobItems(jobId, db = pool) {
+  const realId = Number(jobId);
+  if (!Number.isFinite(realId) || realId <= 0) return [];
+
+  const targets = await buildJobUnitTargetsFromJobItems(realId, db);
+  const existingR = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
+  const existing = existingR.rows || [];
+  const itemCountR = await db.query(`SELECT COUNT(*)::int AS count FROM public.job_items WHERE job_id=$1`, [realId]);
+  const itemCount = Number(itemCountR.rows?.[0]?.count || 0);
+  if (itemCount === 0 && activeJobUnits(existing).length > 0) {
+    // No current job_items to reconcile against (legacy/partial data): preserve existing active units.
+    await normalizeJobUnitCodes(realId, db);
+    const keepR = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 AND ${activeJobUnitWhere()} ORDER BY unit_no ASC, unit_id ASC`, [realId]);
+    return keepR.rows || [];
+  }
+  const byUnitNo = new Map();
+  for (const u of existing) {
+    const no = Number(u.unit_no || 0);
+    if (no > 0 && !byUnitNo.has(no)) byUnitNo.set(no, u);
+  }
+
+  for (let i = 0; i < targets.length; i++) {
+    const unitNo = i + 1;
+    const target = targets[i] || {};
+    const code = generateUnitCode(realId, unitNo);
+    const itemName = unitDisplayItemName(target.item_name || 'เครื่องปรับอากาศ');
+    const assignee = target.assigned_technician || null;
+    const current = byUnitNo.get(unitNo);
+    if (current?.unit_id) {
+      await db.query(
+        `UPDATE public.job_units
+            SET unit_code=$3,
+                item_name=$4,
+                assigned_technician=$5,
+                status=CASE
+                  WHEN LOWER(COALESCE(NULLIF(status,''),'pending')) IN ('cancelled','removed','deleted','void','inactive') THEN 'pending'
+                  ELSE COALESCE(NULLIF(status,''),'pending')
+                END,
+                updated_at=NOW()
+          WHERE job_id=$1 AND unit_id=$2`,
+        [realId, current.unit_id, code, itemName, assignee]
+      );
+    } else {
+      await db.query(
+        `INSERT INTO public.job_units (job_id, unit_code, unit_no, item_name, assigned_technician, status)
+         VALUES ($1,$2,$3,$4,$5,'pending')
+         ON CONFLICT (job_id, unit_no) DO NOTHING`,
+        [realId, code, unitNo, itemName, assignee]
+      );
+    }
+  }
+
+  // If admin reduces job_items quantity, keep historical evidence rows but make extra units inactive.
+  await db.query(
+    `UPDATE public.job_units
+        SET status='cancelled', updated_at=NOW()
+      WHERE job_id=$1
+        AND unit_no > $2
+        AND ${activeJobUnitWhere()}`,
+    [realId, targets.length]
+  );
+
+  await normalizeJobUnitCodes(realId, db);
+  const finalRows = await db.query(
+    `SELECT * FROM public.job_units
+      WHERE job_id=$1 AND ${activeJobUnitWhere()}
+      ORDER BY unit_no ASC, unit_id ASC`,
+    [realId]
+  );
+  return await capActiveJobUnitsToCurrentItems(realId, finalRows.rows || [], db);
+}
+
 
 function normalizePhotoCategory(phase, category) {
   const raw = String(category || '').trim();
@@ -13776,38 +13952,12 @@ function normalizePhotoCategory(phase, category) {
 async function ensureJobUnits(job_id, db = pool) {
   const realId = Number(job_id);
   if (!Number.isFinite(realId) || realId <= 0) return [];
-  const existing = await db.query(`SELECT * FROM public.job_units WHERE job_id=$1 ORDER BY unit_no ASC, unit_id ASC`, [realId]);
-  if (existing.rows.length) return await normalizeJobUnitCodes(realId, db);
-  const itemR = await db.query(
-    `SELECT item_name, qty, assigned_technician_username FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
-    [realId]
-  );
-  const jobR = await db.query(`SELECT job_type, technician_username FROM public.jobs WHERE job_id=$1 LIMIT 1`, [realId]);
-  const job = jobR.rows[0] || {};
-  const rowsToCreate = [];
-  for (const it of itemR.rows || []) {
-    const qty = Math.max(1, Math.min(99, Math.floor(Number(it.qty || 1) || 1)));
-    for (let i = 0; i < qty; i++) rowsToCreate.push({ item_name: unitDisplayItemName(it.item_name || job.job_type || 'เครื่องปรับอากาศ'), assigned_technician: it.assigned_technician_username || job.technician_username || null });
-  }
-  if (!rowsToCreate.length) rowsToCreate.push({ item_name: unitDisplayItemName(job.job_type || 'เครื่องปรับอากาศ'), assigned_technician: job.technician_username || null });
-  let unitNo = 1;
-  for (const row of rowsToCreate) {
-    for (let attempt = 0; attempt < 12; attempt++) {
-      const ins = await db.query(
-        `INSERT INTO public.job_units (job_id, unit_code, unit_no, item_name, assigned_technician)
-         VALUES ($1,$2,$3,$4,$5)
-         ON CONFLICT DO NOTHING RETURNING unit_id`,
-        [realId, generateUnitCode(realId, unitNo), unitNo, unitDisplayItemName(row.item_name || 'เครื่องปรับอากาศ'), row.assigned_technician || null]
-      );
-      if (ins.rows.length) break;
-    }
-    unitNo += 1;
-  }
-  return await normalizeJobUnitCodes(realId, db);
+  return await syncJobUnitsFromJobItems(realId, db);
 }
 
 async function getUnitsWithEvidence(job_id, db = pool) {
-  const units = await ensureJobUnits(job_id, db);
+  let units = await ensureJobUnits(job_id, db);
+  units = await capActiveJobUnitsToCurrentItems(job_id, units, db);
   if (!units.length) return [];
   const ids = units.map(u => Number(u.unit_id));
   const photosR = await db.query(
@@ -16427,6 +16577,12 @@ async function saveJobItemsAdminWithClient(client, job_id, items, options = {}) 
   }
 
   await client.query(`UPDATE public.jobs SET job_price=$1 WHERE job_id=$2`, [pricing.total, job_id]);
+
+  // Keep per-unit evidence requirements in sync with the latest admin-edited job_items.
+  // When admin reduces 2 machines to 1 on-site, the extra job_unit is marked cancelled
+  // so technician close validation no longer requires photos/checklists for it.
+  await syncJobUnitsFromJobItems(job_id, client);
+
   return { pricing, safeItems, promotion: promo };
 }
 
@@ -19525,7 +19681,7 @@ app.post("/jobs/:job_id/photos/meta", async (req, res) => {
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
     let unitMeta = { unit_id: null, unit_code: null, unit_no: null };
     if (Number.isFinite(bodyUnitId) && bodyUnitId > 0) {
-      const unitR = await pool.query(`SELECT unit_id, unit_code, unit_no FROM public.job_units WHERE job_id=$1 AND unit_id=$2 LIMIT 1`, [realId, bodyUnitId]);
+      const unitR = await pool.query(`SELECT unit_id, unit_code, unit_no FROM public.job_units WHERE job_id=$1 AND unit_id=$2 AND ${activeJobUnitWhere()} LIMIT 1`, [realId, bodyUnitId]);
       if (!unitR.rows.length) return res.status(400).json({ error: "กรุณาเลือกเครื่องที่อยู่ในงานนี้ก่อนอัปโหลดรูป" });
       unitMeta = unitR.rows[0];
     }
@@ -19749,7 +19905,7 @@ app.put("/jobs/:job_id/units/:unit_id/checklist", requireTechnicianSession, asyn
     const type = String(req.body?.checklist_type || '').trim();
     if (!['pre','post'].includes(type)) return res.status(400).json({ error: "ประเภทเช็คลิสไม่ถูกต้อง" });
     const list = Array.isArray(req.body?.checklist_json) ? req.body.checklist_json : [];
-    const unitR = await pool.query(`SELECT unit_id FROM public.job_units WHERE job_id=$1 AND unit_id=$2 LIMIT 1`, [realId, unitId]);
+    const unitR = await pool.query(`SELECT unit_id FROM public.job_units WHERE job_id=$1 AND unit_id=$2 AND ${activeJobUnitWhere()} LIMIT 1`, [realId, unitId]);
     if (!unitR.rows.length) return res.status(404).json({ error: "ไม่พบเครื่องนี้ในงาน" });
     await pool.query(
       `INSERT INTO public.job_unit_checklists (job_id, unit_id, technician_username, checklist_type, checklist_json, completed_at, updated_at)

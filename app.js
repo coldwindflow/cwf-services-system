@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_fix47_phase3_gradient_layouts";
+window.__CWF_TECH_APP_VERSION__ = "20260510_fix51_cap_units_to_current_pricing";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -349,6 +349,7 @@ function renderThemePresets() {
       const id = btn.getAttribute("data-theme-id");
       applyTheme(id);
       loadThemeInputs(normalizeTheme(id));
+      renderTechGadgets();
     });
   });
   updateThemePresetActive();
@@ -425,6 +426,7 @@ function setThemePreviewMode(isPreview) {
 function openTechThemeModal() {
   renderThemePresets();
   renderTechLayoutPresets();
+  renderGadgetPicker();
   loadThemeInputs(normalizeTheme(getCurrentThemeId()));
   if (themeModal) {
     themeModal.classList.add("open");
@@ -455,6 +457,8 @@ applyTheme(getCurrentThemeId());
 
 const TECH_LAYOUT_KEY = "cwf_tech_layout_v1";
 const themeLayoutGrid = document.getElementById("themeLayoutGrid");
+const themeGadgetGrid = document.getElementById("themeGadgetGrid");
+const techGadgetDock = document.getElementById("techGadgetDock");
 
 const CWF_LAYOUT_PRESETS = [
   { id: "classic", name: "Classic", desc: "แบบเดิม ปลอดภัยสุด" },
@@ -486,7 +490,10 @@ function renderTechLayoutPresets() {
     </button>
   `).join("");
   themeLayoutGrid.querySelectorAll("[data-layout-id]").forEach(btn => {
-    btn.addEventListener("click", () => applyTechLayout(btn.getAttribute("data-layout-id")));
+    btn.addEventListener("click", () => {
+      applyTechLayout(btn.getAttribute("data-layout-id"));
+      renderTechGadgets();
+    });
   });
   updateTechLayoutActive();
 }
@@ -501,6 +508,122 @@ function updateTechLayoutActive() {
 
 renderTechLayoutPresets();
 applyTechLayout(getCurrentTechLayout());
+
+// =======================================
+// 🧩 TECH HOME GADGETS
+// Frontend only: reads existing DOM/text, saves preferences in localStorage.
+// =======================================
+
+const TECH_GADGET_KEY = "cwf_tech_gadgets_v1";
+const CWF_GADGET_PRESETS = [
+  { id: "clock", name: "นาฬิกา", desc: "เวลาไทยบนหน้าแรก" },
+  { id: "accept", name: "สถานะรับงาน", desc: "รับงาน/หยุดรับงาน" },
+  { id: "income", name: "วันนี้ได้", desc: "อ่านจากการ์ดเดิม" },
+  { id: "done", name: "เสร็จสิ้น", desc: "งานปิดเดือนนี้" },
+  { id: "rework", name: "งานแก้ไข", desc: "จำนวนงานแก้ไข" },
+  { id: "rating", name: "คะแนน", desc: "คะแนนช่าง" },
+  { id: "theme", name: "ธีม", desc: "ธีมและเค้าโครงที่ใช้" }
+];
+
+function getEnabledGadgets() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(TECH_GADGET_KEY) || "[]");
+    if (Array.isArray(saved) && saved.length) return saved;
+  } catch (_) {}
+  return ["clock", "accept", "theme"];
+}
+
+function setEnabledGadgets(ids) {
+  localStorage.setItem(TECH_GADGET_KEY, JSON.stringify(ids));
+}
+
+function getTextById(id, fallback = "-") {
+  const el = document.getElementById(id);
+  const text = (el?.textContent || "").trim();
+  return text || fallback;
+}
+
+function getCurrentThemeNameForGadget() {
+  try {
+    const key = localStorage.getItem(THEME_KEY) || "cwf-classic";
+    if (key === "custom") return "Custom";
+    return (CWF_THEME_PRESETS.find(t => t.id === key)?.name) || "Classic";
+  } catch (_) {
+    return "Classic";
+  }
+}
+
+function getCurrentLayoutNameForGadget() {
+  try {
+    const key = localStorage.getItem(TECH_LAYOUT_KEY) || "classic";
+    return (CWF_LAYOUT_PRESETS.find(t => t.id === key)?.name) || "Classic";
+  } catch (_) {
+    return "Classic";
+  }
+}
+
+function buildGadgetData(id) {
+  const now = new Date();
+  const time = now.toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
+  const day = now.toLocaleDateString("th-TH", { day: "2-digit", month: "short" });
+  const acceptBtn = document.getElementById("acceptToggleBtn") || document.querySelector("#techControlCard .accept-btn");
+  const acceptText = (acceptBtn?.textContent || "").trim() || "สถานะ";
+  const acceptStatus = (document.getElementById("acceptStatusText")?.textContent || "").trim();
+
+  const map = {
+    clock: { icon: "🕒", k: "เวลา", v: time, s: day },
+    accept: { icon: "🟢", k: "รับงาน", v: acceptText.replace(/\\s+/g, " "), s: acceptStatus || "แตะปุ่มด้านบนเพื่อเปลี่ยน" },
+    income: { icon: "$", k: "วันนี้ได้", v: getTextById("incomeDaily", "-"), s: "จากข้อมูลรายได้เดิม" },
+    done: { icon: "✅", k: "เสร็จสิ้น", v: getTextById("doneCount", "-"), s: "เดือนนี้" },
+    rework: { icon: "🔴", k: "งานแก้ไข", v: getTextById("reworkCount", "-"), s: "เดือนนี้" },
+    rating: { icon: "⭐", k: "คะแนน", v: getTextById("rating", "-"), s: "คะแนนช่าง" },
+    theme: { icon: "🎨", k: "ธีม", v: getCurrentThemeNameForGadget(), s: getCurrentLayoutNameForGadget() }
+  };
+  return map[id] || null;
+}
+
+function renderTechGadgets() {
+  if (typeof techGadgetDock === "undefined" || !techGadgetDock) return;
+  const enabled = getEnabledGadgets();
+  techGadgetDock.innerHTML = enabled.map(id => {
+    const g = buildGadgetData(id);
+    if (!g) return "";
+    const wide = id === "theme" || id === "accept" ? " wide" : "";
+    return `<div class="techGadget${wide}" data-gadget-id="${id}">
+      <div class="gK"><span>${g.icon}</span><span>${g.k}</span></div>
+      <div class="gV">${g.v}</div>
+      <div class="gS">${g.s}</div>
+    </div>`;
+  }).join("");
+}
+
+function renderGadgetPicker() {
+  if (!themeGadgetGrid) return;
+  const enabled = new Set(getEnabledGadgets());
+  themeGadgetGrid.innerHTML = CWF_GADGET_PRESETS.map(g => `
+    <button type="button" class="gadgetToggleBtn ${enabled.has(g.id) ? "active" : ""}" data-gadget-id="${g.id}">
+      <strong>${g.name}</strong>
+      <span>${g.desc}</span>
+    </button>
+  `).join("");
+  themeGadgetGrid.querySelectorAll("[data-gadget-id]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const id = btn.getAttribute("data-gadget-id");
+      const current = new Set(getEnabledGadgets());
+      if (current.has(id)) current.delete(id);
+      else current.add(id);
+      const next = CWF_GADGET_PRESETS.map(g => g.id).filter(x => current.has(x));
+      setEnabledGadgets(next);
+      renderGadgetPicker();
+      renderTechGadgets();
+    });
+  });
+}
+
+renderGadgetPicker();
+renderTechGadgets();
+setInterval(renderTechGadgets, 30000);
+
 
 
 function safelyCloseTechDrawerForTheme() {
@@ -541,8 +664,16 @@ themeApplyCustomBtn?.addEventListener("click", () => {
   themeGradProfileStart, themeGradProfileEnd, themeGradAcceptStart, themeGradAcceptEnd,
   themeGradOfferStart, themeGradOfferEnd, themeGradientAngle
 ].forEach(input => {
-  input?.addEventListener("input", () => applyTheme(buildCustomThemeFromInputs(), { preview: true }));
+  input?.addEventListener("input", () => {
+    applyTheme(buildCustomThemeFromInputs());
+    renderTechGadgets();
+  });
 });
+themeGradientAngle?.addEventListener("change", () => {
+  applyTheme(buildCustomThemeFromInputs());
+  renderTechGadgets();
+});
+
 themeModal?.addEventListener("click", (ev) => {
   if (ev.target === themeModal) closeTechThemeModal();
 });
@@ -4244,11 +4375,54 @@ async function cwfCountPhotos(jobId){
   return { counts, urls };
 }
 
+function cwfIsActiveJobUnit(u){
+  const st = String(u?.status || 'pending').trim().toLowerCase() || 'pending';
+  return !['cancelled','removed','deleted','void','inactive'].includes(st);
+}
+const __CWF_EXPECTED_UNIT_COUNT_CACHE__ = new Map();
+async function cwfExpectedUnitCountFromPricing(jobId){
+  const key = cwfCloseKey(jobId);
+  const cached = __CWF_EXPECTED_UNIT_COUNT_CACHE__.get(key);
+  if (cached && Date.now() - Number(cached.at || 0) < 15000) return cached.count;
+  try {
+    const r = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(key))}/pricing?unit_count_guard=1`, { cache:'no-store' });
+    const d = await r.json().catch(()=>({}));
+    if (r.ok && Array.isArray(d.items)) {
+      const count = d.items.reduce((sum, it) => {
+        const qty = Math.floor(Number(it?.qty || 0));
+        return sum + (Number.isFinite(qty) && qty > 0 ? qty : 0);
+      }, 0);
+      if (count > 0) {
+        const safe = Math.max(1, Math.min(99, count));
+        __CWF_EXPECTED_UNIT_COUNT_CACHE__.set(key, { count:safe, at:Date.now() });
+        return safe;
+      }
+    }
+  } catch {}
+  return null;
+}
+function cwfCapUnitsToExpected(units, expectedCount){
+  const rows = (Array.isArray(units) ? units : []).filter(cwfIsActiveJobUnit);
+  const expected = Number(expectedCount || 0);
+  if (!Number.isFinite(expected) || expected <= 0) return rows;
+  return rows
+    .slice()
+    .sort((a,b)=>{
+      const an = Number(a?.unit_no || 0) || 999999;
+      const bn = Number(b?.unit_no || 0) || 999999;
+      if (an !== bn) return an - bn;
+      return Number(a?.unit_id || 0) - Number(b?.unit_id || 0);
+    })
+    .slice(0, Math.max(1, Math.min(99, Math.floor(expected))));
+}
 async function cwfLoadUnits(jobId){
   try {
     const r = await fetch(`${API_BASE}/jobs/${encodeURIComponent(String(jobId))}/units`, { cache:'no-store' });
     const d = await r.json().catch(()=>({}));
-    if (r.ok && Array.isArray(d.units)) return d.units;
+    if (r.ok && Array.isArray(d.units)) {
+      const expected = await cwfExpectedUnitCountFromPricing(jobId);
+      return cwfCapUnitsToExpected(d.units, expected);
+    }
   } catch {}
   return [];
 }
@@ -4459,7 +4633,8 @@ async function openTechPhotoModal(jobId, tab = 'photos', selectedUnitId = null){
   cwfOpenModal('หลักฐานงาน', `<div class="muted">กำลังโหลดข้อมูลเครื่อง...</div>`);
   const units = await cwfLoadUnits(key);
   if (units.length && !revisitFlow) {
-    const selected = selectedUnitId || units[0]?.unit_id;
+    const selectedExists = selectedUnitId && units.some(u => String(u.unit_id) === String(selectedUnitId));
+    const selected = selectedExists ? selectedUnitId : units[0]?.unit_id;
     const photos = selected ? await cwfLoadUnitPhotos(key, selected) : [];
     const html = cwfRenderUnitEvidenceModal(key, units, tab, selected, photos);
     cwfOpenModal('หลักฐานแยกตามเครื่อง', html, `<button type="button" class="secondary" onclick="cwfCloseModal()">ปิด</button>`);

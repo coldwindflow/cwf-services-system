@@ -835,6 +835,16 @@
             <div class="themeLayoutGrid" id="themeLayoutGrid" aria-label="เค้าโครงหน้าช่าง"></div>
           </div>
 
+          <div class="themeGadgetCard">
+            <div class="themeCustomHead">
+              <div>
+                <strong>Gadget หน้าแรก</strong>
+                <span>เพิ่มการ์ดเล็ก ๆ บนหน้ารับงานใหม่ เปิด/ปิดได้เอง</span>
+              </div>
+            </div>
+            <div class="themeGadgetGrid" id="themeGadgetGrid" aria-label="เลือก Gadget หน้าแรก"></div>
+          </div>
+
 
           <div class="themeCustomCard">
             <div class="themeCustomHead">
@@ -1772,6 +1782,8 @@
           <div class="row"><span class="k">เกรด</span><span class="v" id="profile-grade-more">-</span></div>
         </div>
       </details>
+
+      <div id="techGadgetDock" class="techGadgetDock" aria-label="Gadget หน้าช่าง"></div>
 
       <div class="pushNotifyBox" id="pushNotifyBox" aria-hidden="true">
         <span id="pushNotifyHint">เปิดไว้เพื่อรับงานใหม่แม้ปิดหน้า PWA</span>
@@ -3221,7 +3233,183 @@
     }
   </style>
 
-<script src="app.js?v=20260510_fix47_phase3_gradient_layouts"></script>
+
+  <style id="cwf-fix48-gradient-gadgets">
+    /*
+      CWF fix48:
+      - Make gradient custom colors persist immediately and apply to real card surfaces.
+      - Add safe frontend-only gadgets on technician new-job home.
+      Scope: new-job UI/theme only. No backend/index/income route changes.
+    */
+
+    #sec-new .profile-compact .left,
+    #techControlCard.tech-control-card,
+    #sec-new h2:nth-of-type(2),
+    #sec-new h2:nth-of-type(2) + p,
+    #sec-new #offer-list{
+      background-size:160% 160%!important;
+      background-position:center!important;
+    }
+
+    .themeGadgetCard{
+      border-radius:24px;
+      background:rgba(255,255,255,.78);
+      border:1px solid rgba(8,36,91,.09);
+      padding:12px;
+      margin:10px 0 12px;
+      box-shadow:0 12px 28px rgba(8,36,91,.07), inset 0 1px 0 rgba(255,255,255,.90);
+    }
+    .themeGadgetGrid{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:8px;
+      margin-top:10px;
+    }
+    .gadgetToggleBtn{
+      min-height:68px;
+      border-radius:20px;
+      border:1px solid rgba(8,36,91,.10);
+      background:#fff;
+      color:#061b4f;
+      padding:10px;
+      text-align:left;
+      box-shadow:0 10px 22px rgba(8,36,91,.07), inset 0 1px 0 rgba(255,255,255,.88);
+      cursor:pointer;
+      -webkit-tap-highlight-color:transparent;
+      position:relative;
+      overflow:hidden;
+    }
+    .gadgetToggleBtn.active{
+      border-color:color-mix(in srgb, var(--cwf-theme-button) 62%, #fff 38%);
+      background:linear-gradient(135deg,#fff,color-mix(in srgb, var(--cwf-theme-button) 12%, #fff 88%));
+    }
+    .gadgetToggleBtn.active::after{
+      content:"เปิด";
+      position:absolute;
+      top:8px;
+      right:8px;
+      padding:3px 8px;
+      border-radius:999px;
+      font-size:10px;
+      font-weight:1100;
+      color:#064e3b;
+      background:#dcfce7;
+    }
+    .gadgetToggleBtn strong{
+      display:block;
+      font-size:13px;
+      font-weight:1150;
+      line-height:1.2;
+      padding-right:42px;
+    }
+    .gadgetToggleBtn span{
+      display:block;
+      margin-top:4px;
+      font-size:10px;
+      color:#667085;
+      font-weight:850;
+      line-height:1.25;
+    }
+
+    .techGadgetDock{
+      display:grid;
+      grid-template-columns:repeat(2,minmax(0,1fr));
+      gap:8px;
+      margin:12px 0 4px;
+    }
+    .techGadgetDock:empty{
+      display:none;
+    }
+    .techGadget{
+      min-height:66px;
+      border-radius:20px;
+      padding:10px;
+      background:
+        radial-gradient(circle at 90% 0%, color-mix(in srgb, var(--cwf-theme-button) 10%, transparent) 0 58px, transparent 120px),
+        linear-gradient(135deg,#fff,color-mix(in srgb, var(--cwf-theme-surface) 76%, #fff 24%));
+      border:1px solid rgba(8,36,91,.08);
+      box-shadow:0 10px 22px rgba(8,36,91,.07), inset 0 1px 0 rgba(255,255,255,.90);
+      color:var(--cwf-theme-text);
+      overflow:hidden;
+    }
+    .techGadget .gK{
+      display:flex;
+      align-items:center;
+      gap:5px;
+      color:var(--cwf-theme-muted);
+      font-size:10px;
+      font-weight:1050;
+      line-height:1.1;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .techGadget .gV{
+      margin-top:6px;
+      color:var(--cwf-theme-text);
+      font-size:20px;
+      line-height:1;
+      font-weight:1200;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .techGadget .gS{
+      margin-top:4px;
+      color:var(--cwf-theme-muted);
+      font-size:10px;
+      font-weight:850;
+      white-space:nowrap;
+      overflow:hidden;
+      text-overflow:ellipsis;
+    }
+    .techGadget.wide{
+      grid-column:1 / -1;
+    }
+
+    body[data-cwf-layout="compact"] .techGadgetDock{
+      grid-template-columns:repeat(4,minmax(0,1fr));
+      gap:6px;
+    }
+    body[data-cwf-layout="compact"] .techGadget{
+      min-height:56px;
+      padding:8px;
+      border-radius:17px;
+    }
+    body[data-cwf-layout="compact"] .techGadget .gK{
+      font-size:9px;
+    }
+    body[data-cwf-layout="compact"] .techGadget .gV{
+      font-size:16px;
+    }
+    body[data-cwf-layout="compact"] .techGadget .gS{
+      display:none;
+    }
+    body[data-cwf-layout="compact"] .techGadget.wide{
+      grid-column:auto;
+    }
+
+    body[data-cwf-layout="dashboard"] .techGadgetDock{
+      grid-template-columns:repeat(3,minmax(0,1fr));
+    }
+    body[data-cwf-layout="dashboard"] .techGadget.wide{
+      grid-column:span 2;
+    }
+
+    @media(max-width:390px){
+      .themeGadgetGrid{
+        grid-template-columns:1fr;
+      }
+      .techGadgetDock{
+        gap:7px;
+      }
+      .techGadget .gV{
+        font-size:18px;
+      }
+    }
+  </style>
+
+<script src="app.js?v=20260510_fix51_cap_units_to_current_pricing"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }
