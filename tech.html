@@ -2644,7 +2644,161 @@
     }
   </style>
 
-<script src="app.js?v=20260510_fix44_theme_preview_panel"></script>
+
+  <style id="cwf-fix45-theme-panel-position">
+    /*
+      CWF fix45: keep theme panel above bottom nav and make preview mode compact.
+      Scope only: theme modal/panel. No tab display, no income/job/history logic.
+    */
+    #techThemeModal{
+      align-items:flex-end!important;
+      justify-content:center!important;
+      padding:0 12px calc(112px + env(safe-area-inset-bottom))!important;
+      pointer-events:none!important;
+      background:transparent!important;
+      backdrop-filter:none!important;
+    }
+    #techThemeModal.open{
+      display:flex!important;
+    }
+    #techThemeModal .themePanel{
+      pointer-events:auto!important;
+      width:min(540px,100%)!important;
+      max-height:42vh!important;
+      min-height:0!important;
+      border-radius:26px!important;
+      padding:10px 12px 12px!important;
+      box-shadow:0 -16px 46px rgba(2,13,38,.22), inset 0 1px 0 rgba(255,255,255,.9)!important;
+    }
+    #techThemeModal .themeHead{
+      align-items:center!important;
+      margin-bottom:8px!important;
+      gap:10px!important;
+    }
+    #techThemeModal .themeHead h3{
+      font-size:20px!important;
+      line-height:1.1!important;
+      margin:0!important;
+    }
+    #techThemeModal .themeHead p{
+      font-size:11px!important;
+      line-height:1.35!important;
+      margin-top:3px!important;
+      max-width:260px!important;
+    }
+    #techThemeModal .themeEyebrow{
+      font-size:10px!important;
+      line-height:1.1!important;
+      margin:0 0 3px!important;
+    }
+    #techThemeModal .themeHeadActions{
+      gap:7px!important;
+    }
+    #techThemeModal .themeIconBtn{
+      min-height:34px!important;
+      height:34px!important;
+      padding:0 11px!important;
+      font-size:13px!important;
+      white-space:nowrap!important;
+    }
+    #techThemeModal .themeClose{
+      width:34px!important;
+      min-width:34px!important;
+      padding:0!important;
+    }
+    #techThemeModal .themeScrollArea{
+      max-height:calc(42vh - 124px)!important;
+      overflow:auto!important;
+    }
+
+    /* Compact preview bar: only a slim control strip above bottom nav */
+    #techThemeModal.previewMode{
+      padding-bottom:calc(112px + env(safe-area-inset-bottom))!important;
+    }
+    #techThemeModal.previewMode .themePanel{
+      max-height:66px!important;
+      height:66px!important;
+      overflow:hidden!important;
+      border-radius:22px!important;
+      padding:8px 12px!important;
+      background:rgba(255,255,255,.92)!important;
+      backdrop-filter:blur(14px)!important;
+    }
+    #techThemeModal.previewMode .themeGrabber,
+    #techThemeModal.previewMode .themeEyebrow,
+    #techThemeModal.previewMode .themeHead p,
+    #techThemeModal.previewMode .themeScrollArea,
+    #techThemeModal.previewMode .themeActions{
+      display:none!important;
+    }
+    #techThemeModal.previewMode .themeHead{
+      margin:0!important;
+      height:50px!important;
+    }
+    #techThemeModal.previewMode .themeHead h3{
+      font-size:16px!important;
+      line-height:1.1!important;
+    }
+    #techThemeModal.previewMode .themeHead h3::after{
+      content:" • กำลังพรีวิว";
+      font-size:12px;
+      color:#667085;
+      font-weight:900;
+    }
+
+    @media(max-width:390px){
+      #techThemeModal{
+        padding-left:10px!important;
+        padding-right:10px!important;
+        padding-bottom:calc(108px + env(safe-area-inset-bottom))!important;
+      }
+      #techThemeModal .themePanel{
+        max-height:44vh!important;
+      }
+      #techThemeModal .themeScrollArea{
+        max-height:calc(44vh - 122px)!important;
+      }
+      #techThemeModal .themeHead h3{
+        font-size:19px!important;
+      }
+      #techThemeModal .themeHead p{
+        max-width:210px!important;
+      }
+    }
+
+    @media(min-width:760px){
+      #techThemeModal{
+        align-items:stretch!important;
+        justify-content:flex-end!important;
+        padding:14px!important;
+      }
+      #techThemeModal .themePanel{
+        width:min(392px,34vw)!important;
+        max-height:calc(100vh - 28px)!important;
+        height:auto!important;
+        border-radius:30px!important;
+      }
+      #techThemeModal.previewMode .themePanel{
+        max-height:calc(100vh - 28px)!important;
+        height:auto!important;
+      }
+      #techThemeModal.previewMode .themeGrabber,
+      #techThemeModal.previewMode .themeEyebrow,
+      #techThemeModal.previewMode .themeHead p,
+      #techThemeModal.previewMode .themeScrollArea,
+      #techThemeModal.previewMode .themeActions{
+        display:initial!important;
+      }
+      #techThemeModal.previewMode .themeHead{
+        height:auto!important;
+      }
+      #techThemeModal.previewMode .themeHead h3::after{
+        content:""!important;
+      }
+    }
+  </style>
+
+<script src="app.js?v=20260510_fix45_theme_panel_position"></script>
   <script src="tech-onboarding.js?v=phase2a-fix-restore-onboarding-panel"></script>
   <script>
         function goEditProfile(){ location.href = '/edit-profile.html'; }

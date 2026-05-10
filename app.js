@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_fix44_theme_preview_panel";
+window.__CWF_TECH_APP_VERSION__ = "20260510_fix45_theme_panel_position";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
