@@ -2,7 +2,9 @@
 
 Date: 2026-05-11
 
-Scope: audit only. No runtime code was changed, no route was moved, and no new module was created.
+Scope: Phase 2L was audit only. No runtime code was changed, no route was moved, and no new module was created.
+
+Phase 2M update: `GET /admin-legacy` and `GET /admin-legacy.html` have been extracted to `server/routes/pages/index.js`. Both routes remain redirect-only and still return HTTP 302 to `/admin-review-v2.html`.
 
 This audit reviews the remaining `index.js` route groups after:
 
@@ -40,9 +42,9 @@ The safest remaining candidates are still in the bottom static page route area a
 | `/partner-status` + `/partner-status.html` | GET | `index.js:26888`, `index.js:26911` | Sends `partner-status.html` | `sendHtml`, `res.sendFile` | Medium | Move as a pair only if Partner project resumes | `server/routes/pages/index.js` | Not part of Technician App Stable |
 | `/partner-academy` + `/partner-academy.html` | GET | `index.js:26890`, `index.js:26913` | Sends `partner-academy.html` | `sendHtml`, `res.sendFile` | Medium | Move as a pair only if Partner project resumes | `server/routes/pages/index.js` | Do not select for this project |
 
-## Recommended Phase 2M Candidate
+## Phase 2M Extracted Candidate
 
-Recommended next extraction:
+Extracted routes:
 
 ```text
 GET /admin-legacy
@@ -65,7 +67,7 @@ app.get(/^\/admin-[^\s]+\.html$/i, requireAdminSession, (req, res, next) => next
 
 That guard must remain in `index.js` and must not be moved in Phase 2M. The future page-router mount should stay after both static middlewares, in the same bottom route area, and should only add these redirect handlers to `server/routes/pages/index.js`.
 
-## Proposed Phase 2M Target
+## Phase 2M Target
 
 Target module:
 
@@ -73,7 +75,7 @@ Target module:
 server/routes/pages/index.js
 ```
 
-Proposed factory addition:
+Factory addition:
 
 ```js
 router.get("/admin-legacy", (req, res) => res.redirect(302, "/admin-review-v2.html"));
@@ -85,7 +87,7 @@ Mount plan:
 - Keep the existing `app.use(createPageRoutes({ sendHtml }))` mount after:
   - `if (fs.existsSync(FRONTEND_DIR)) app.use(express.static(FRONTEND_DIR));`
   - `app.use(express.static(ROOT_DIR));`
-- Remove only the old inline `app.get("/admin-legacy", ...)` and `app.get("/admin-legacy.html", ...)` handlers from `index.js`.
+- Removed only the old inline `app.get("/admin-legacy", ...)` and `app.get("/admin-legacy.html", ...)` handlers from `index.js`.
 - Do not move `GET /admin`, `GET /admin.html`, `GET /admin-add`, `GET /admin-review`, `GET /admin-tech`, protected admin/partner pages, or any admin API route.
 
 ## Manual Smoke Checklist For Phase 2M
