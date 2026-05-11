@@ -171,6 +171,21 @@ Phase 1B status:
 - Risk remains medium-high because service zones affect admin add-job and technician zone detection flows.
 - Rollback: remove the `createServiceZoneRoutes` import and mount from `index.js`, restore the original inline `app.get("/service_zones", ...)` block immediately before `POST /service_zones/detect`, delete `server/routes/serviceZones/index.js`, then run syntax checks.
 
+### Phase 2K: Login Static Page Routes
+
+- `GET /login` and `GET /login.html` have been extracted to `server/routes/pages/index.js`.
+- Old locations:
+  - `GET /login`: `index.js:26872`
+  - `GET /login.html`: `index.js:26898`
+- Current mount: `app.use(createPageRoutes({ sendHtml }))` in the bottom static page route area, after `express.static(FRONTEND_DIR)` and `express.static(ROOT_DIR)`.
+- Dependencies are passed from `index.js`: `sendHtml`.
+- The new page router contains only:
+  - `GET /login`
+  - `GET /login.html`
+- `sendHtml()`, `POST /login`, `GET /`, `GET /tech`, `GET /tech.html`, protected admin/partner pages, and frontend files were not changed.
+- Risk is low for `/login` and low-medium for `/login.html` because `express.static(ROOT_DIR)` is mounted before the explicit static page route area.
+- Rollback: remove the `createPageRoutes` import and mount from `index.js`, restore the original inline `app.get("/login", ...)` and `app.get("/login.html", ...)` handlers at the bottom static page route area, delete `server/routes/pages/index.js`, then run syntax checks.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
