@@ -198,6 +198,21 @@ Phase 1B status:
 - Risk is low, but `/admin-legacy.html` still depends on the existing earlier admin HTML guard behavior staying in `index.js`.
 - Rollback: remove only `/admin-legacy` and `/admin-legacy.html` handlers from `server/routes/pages/index.js`, restore the two original inline redirect handlers in the bottom static page route area, then run syntax checks.
 
+### Phase 2N: Static Page Redirect Batch
+
+- Six redirect-only page aliases have been extracted to `server/routes/pages/index.js`.
+- Moved routes:
+  - `GET /admin` -> `/admin-review-v2.html`
+  - `GET /admin.html` -> `/admin-review-v2.html`
+  - `GET /admin-tech` -> `/admin-review-v2.html`
+  - `GET /admin-tech.html` -> `/admin-review-v2.html`
+  - `GET /add-job` -> `/admin-add-v2.html`
+  - `GET /add-job.html` -> `/admin-add-v2.html`
+- Current mount remains `app.use(createPageRoutes({ sendHtml }))` in the bottom static page route area, after `express.static(FRONTEND_DIR)` and `express.static(ROOT_DIR)`.
+- These routes use only `res.redirect(302, ...)`; no DB, request body, auth/session core, pricing, booking, technician income, job close, customer flow, external API, or mutable cache was touched.
+- Skipped active sendFile/static pages, customer/track/register/quote pages, partner pages, `/`, `/tech`, `/tech.html`, `POST /login`, and all API/business routes.
+- Rollback: remove only the six Phase 2N handlers from `server/routes/pages/index.js`, restore the six original inline redirect handlers in `index.js`, then run syntax checks.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
