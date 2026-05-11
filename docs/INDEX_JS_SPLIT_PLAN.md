@@ -213,6 +213,23 @@ Phase 1B status:
 - Skipped active sendFile/static pages, customer/track/register/quote pages, partner pages, `/`, `/tech`, `/tech.html`, `POST /login`, and all API/business routes.
 - Rollback: remove only the six Phase 2N handlers from `server/routes/pages/index.js`, restore the six original inline redirect handlers in `index.js`, then run syntax checks.
 
+### Phase 2O: Admin Static Page SendFile Batch
+
+- Eight admin static page aliases have been extracted to `server/routes/pages/index.js`.
+- Moved routes:
+  - `GET /admin-add` -> `sendHtml("admin-add-v2.html")`
+  - `GET /admin-review` -> `sendHtml("admin-review-v2.html")`
+  - `GET /admin-queue` -> `sendHtml("admin-queue-v2.html")`
+  - `GET /admin-history` -> `sendHtml("admin-history-v2.html")`
+  - `GET /admin-add-v2.html` -> `sendHtml("admin-add-v2.html")`
+  - `GET /admin-review-v2.html` -> `sendHtml("admin-review-v2.html")`
+  - `GET /admin-queue-v2.html` -> `sendHtml("admin-queue-v2.html")`
+  - `GET /admin-history-v2.html` -> `sendHtml("admin-history-v2.html")`
+- Current mount remains `app.use(createPageRoutes({ sendHtml }))` in the bottom static page route area, after the existing admin HTML guard and static middleware.
+- These routes use only `res.sendFile(sendHtml(...))`; no DB, request body, auth/session core, pricing, booking, technician income, job close, customer flow, external API, or mutable cache was touched.
+- Skipped `/`, `/tech`, `/tech.html`, `POST /login`, customer/track/install quote/register pages, partner pages, service zone detect, profile, attendance, maps, and all API/business routes.
+- Rollback: remove only the eight Phase 2O handlers from `server/routes/pages/index.js`, restore the eight original inline sendFile handlers in `index.js`, then run syntax checks and smoke tests.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.

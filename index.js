@@ -26872,10 +26872,6 @@ app.use(express.static(ROOT_DIR));
 // - ตัวอย่าง: /tech, /admin, /track, /customer
 app.use(createPageRoutes({ sendHtml }));
 // Admin landing: ใช้ V2 เป็นหลัก (หน้าเก่าเลิกใช้แล้ว)
-app.get("/admin-add", (req, res) => res.sendFile(sendHtml("admin-add-v2.html")));
-app.get("/admin-review", (req, res) => res.sendFile(sendHtml("admin-review-v2.html")));
-app.get("/admin-queue", (req, res) => res.sendFile(sendHtml("admin-queue-v2.html")));
-app.get("/admin-history", (req, res) => res.sendFile(sendHtml("admin-history-v2.html")));
 // หน้า legacy เลิกใช้แล้ว ให้ redirect ไป V2
 app.get("/edit-profile", (req, res) => res.sendFile(sendHtml("edit-profile.html")));
 app.get("/tech", (req, res) => res.sendFile(sendHtml("tech.html")));
@@ -26892,10 +26888,6 @@ app.get("/register", (req, res) => res.sendFile(sendHtml("register.html")));
 app.get("/track", (req, res) => res.sendFile(sendHtml("track.html")));
 app.get("/home", (req, res) => res.sendFile(sendHtml("index.html")));
 
-app.get("/admin-add-v2.html", (req, res) => res.sendFile(sendHtml("admin-add-v2.html")));
-app.get("/admin-review-v2.html", (req, res) => res.sendFile(sendHtml("admin-review-v2.html")));
-app.get("/admin-queue-v2.html", (req, res) => res.sendFile(sendHtml("admin-queue-v2.html")));
-app.get("/admin-history-v2.html", (req, res) => res.sendFile(sendHtml("admin-history-v2.html")));
 app.get("/edit-profile.html", (req, res) => res.sendFile(sendHtml("edit-profile.html")));
 app.get("/tech.html", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/register.html", (req, res) => res.sendFile(sendHtml("register.html")));
