@@ -35,6 +35,7 @@ const createSystemRoutes = require("./server/routes/system");
 const createTechnicianDirectoryRoutes = require("./server/routes/users/technicians");
 const createCatalogItemRoutes = require("./server/routes/catalog/items");
 const createServiceZoneRoutes = require("./server/routes/serviceZones");
+const createPageRoutes = require("./server/routes/pages");
 
 // =======================================
 // 🔔 Web Push Notifications (optional / fail-open)
@@ -26869,7 +26870,7 @@ app.use(express.static(ROOT_DIR));
 
 // ✅ รองรับ Refresh/Deep-link แบบ "ไม่ต้องมี .html" (กันรีเฟรชเด้งไปหน้าแรก)
 // - ตัวอย่าง: /tech, /admin, /track, /customer
-app.get("/login", (req, res) => res.sendFile(sendHtml("login.html")));
+app.use(createPageRoutes({ sendHtml }));
 // Admin landing: ใช้ V2 เป็นหลัก (หน้าเก่าเลิกใช้แล้ว)
 app.get("/admin", (req, res) => res.redirect(302, "/admin-review-v2.html"));
 app.get("/admin-add", (req, res) => res.sendFile(sendHtml("admin-add-v2.html")));
@@ -26895,7 +26896,6 @@ app.get("/register", (req, res) => res.sendFile(sendHtml("register.html")));
 app.get("/track", (req, res) => res.sendFile(sendHtml("track.html")));
 app.get("/home", (req, res) => res.sendFile(sendHtml("index.html")));
 
-app.get("/login.html", (req, res) => res.sendFile(sendHtml("login.html")));
 app.get("/admin.html", (req, res) => res.redirect(302, "/admin-review-v2.html"));
 app.get("/admin-add-v2.html", (req, res) => res.sendFile(sendHtml("admin-add-v2.html")));
 app.get("/admin-review-v2.html", (req, res) => res.sendFile(sendHtml("admin-review-v2.html")));
