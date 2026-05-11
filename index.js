@@ -26879,7 +26879,6 @@ app.get("/admin-queue", (req, res) => res.sendFile(sendHtml("admin-queue-v2.html
 app.get("/admin-history", (req, res) => res.sendFile(sendHtml("admin-history-v2.html")));
 app.get("/admin-tech", (req, res) => res.redirect(302, "/admin-review-v2.html"));
 // หน้า legacy เลิกใช้แล้ว ให้ redirect ไป V2
-app.get("/admin-legacy", (req, res) => res.redirect(302, "/admin-review-v2.html"));
 app.get("/edit-profile", (req, res) => res.sendFile(sendHtml("edit-profile.html")));
 app.get("/tech", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/add-job", (req, res) => res.redirect(302, "/admin-add-v2.html"));
@@ -26902,7 +26901,6 @@ app.get("/admin-review-v2.html", (req, res) => res.sendFile(sendHtml("admin-revi
 app.get("/admin-queue-v2.html", (req, res) => res.sendFile(sendHtml("admin-queue-v2.html")));
 app.get("/admin-history-v2.html", (req, res) => res.sendFile(sendHtml("admin-history-v2.html")));
 app.get("/admin-tech.html", (req, res) => res.redirect(302, "/admin-review-v2.html"));
-app.get("/admin-legacy.html", (req, res) => res.redirect(302, "/admin-review-v2.html"));
 app.get("/edit-profile.html", (req, res) => res.sendFile(sendHtml("edit-profile.html")));
 app.get("/tech.html", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/add-job.html", (req, res) => res.redirect(302, "/admin-add-v2.html"));

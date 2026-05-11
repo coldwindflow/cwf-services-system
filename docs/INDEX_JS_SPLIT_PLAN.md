@@ -186,6 +186,18 @@ Phase 1B status:
 - Risk is low for `/login` and low-medium for `/login.html` because `express.static(ROOT_DIR)` is mounted before the explicit static page route area.
 - Rollback: remove the `createPageRoutes` import and mount from `index.js`, restore the original inline `app.get("/login", ...)` and `app.get("/login.html", ...)` handlers at the bottom static page route area, delete `server/routes/pages/index.js`, then run syntax checks.
 
+### Phase 2M: Admin Legacy Redirect Routes
+
+- `GET /admin-legacy` and `GET /admin-legacy.html` have been extracted to `server/routes/pages/index.js`.
+- Old locations:
+  - `GET /admin-legacy`: `index.js:26882`
+  - `GET /admin-legacy.html`: `index.js:26905`
+- Current mount remains `app.use(createPageRoutes({ sendHtml }))` in the bottom static page route area, after `express.static(FRONTEND_DIR)` and `express.static(ROOT_DIR)`.
+- The extracted routes are redirect-only and preserve the exact target: HTTP 302 to `/admin-review-v2.html`.
+- No auth middleware, admin HTML guard, protected admin page route, frontend file, `sendHtml()`, `POST /login`, `GET /`, `GET /tech`, or `GET /tech.html` behavior was changed.
+- Risk is low, but `/admin-legacy.html` still depends on the existing earlier admin HTML guard behavior staying in `index.js`.
+- Rollback: remove only `/admin-legacy` and `/admin-legacy.html` handlers from `server/routes/pages/index.js`, restore the two original inline redirect handlers in the bottom static page route area, then run syntax checks.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
