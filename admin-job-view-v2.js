@@ -902,6 +902,15 @@ async function loadJob(){
     const EDIT_JOB_TYPES = { wash:'ล้าง', repair:'ซ่อม', install:'ติดตั้ง' };
     const EDIT_REPAIR_TYPES = { standard:'ตรวจเช็ค/ซ่อมทั่วไป', leak:'ตรวจเช็ครั่ว', parts:'ซ่อมเปลี่ยนอะไหล่' };
     const EDIT_REPAIR_PAYLOAD = { standard:'', leak:'ตรวจเช็ครั่ว', parts:'ซ่อมเปลี่ยนอะไหล่' };
+    const isPartsRepairRow = (row) => normalizeEditJobTypeKey(row?.job_type_key || row?.job_type || 'wash') === 'repair' && String(row?.repair_type_key || 'standard') === 'parts';
+    const cleanRepairDetail = (value) => String(value || '').replace(/[•\n\r]+/g, ' ').replace(/\s+/g, ' ').trim();
+    const parseRepairDetailFromName = (name) => {
+      const parts = String(name || '').split('•').map(x => x.trim()).filter(Boolean);
+      const idx = parts.findIndex(x => x.includes('ซ่อมเปลี่ยนอะไหล่') || x.includes('ซ่อมตามจริง'));
+      if (idx < 0) return '';
+      const detail = parts.slice(idx + 1).find(x => x && !/BTU/i.test(x) && !/\d+\s*เครื่อง/.test(x));
+      return cleanRepairDetail(detail || '');
+    };
     const STD_AC_TYPES = {
       wall: 'แอร์ผนัง',
       fourway: 'แอร์สี่ทิศทาง',
@@ -958,7 +967,9 @@ async function loadJob(){
       if (jobKey === 'repair') {
         const rv = String(it.repair_type_key || 'standard');
         const rvText = EDIT_REPAIR_TYPES[rv] || EDIT_REPAIR_TYPES.standard;
-        return `ซ่อมแอร์${STD_AC_PAYLOAD[ac] || 'ผนัง'} • ${rvText} • ${btuText} • ${qty} เครื่อง`;
+        const detail = rv === 'parts' ? cleanRepairDetail(it.repair_detail || '') : '';
+        const detailPart = detail ? ` • ${detail}` : '';
+        return `ซ่อมแอร์${STD_AC_PAYLOAD[ac] || 'ผนัง'} • ${rvText}${detailPart} • ${btuText} • ${qty} เครื่อง`;
       }
       if (jobKey === 'install') {
         return `ติดตั้งแอร์${STD_AC_PAYLOAD[ac] || 'ผนัง'} • ${btuText} • ${qty} เครื่อง`;
@@ -985,7 +996,7 @@ async function loadJob(){
         : (s.includes('ตัดล้าง') || s.includes('overhaul') || s.includes('ใหญ่') ? 'overhaul' : 'normal')));
       const repair_type_key = s.includes('รั่ว') ? 'leak' : (s.includes('อะไหล่') ? 'parts' : 'standard');
       const tier = (s.includes('18000') || s.includes('18,000') || s.includes('18 000')) ? 'large' : 'small';
-      return { job_type_key, job_type: jobTypePayload(job_type_key), ac_type_key: ac, wash_type_key: wash, repair_type_key, btu_tier: tier, is_standard: true };
+      return { job_type_key, job_type: jobTypePayload(job_type_key), ac_type_key: ac, wash_type_key: wash, repair_type_key, repair_detail: repair_type_key === 'parts' ? parseRepairDetailFromName(raw) : '', btu_tier: tier, is_standard: true, price_overridden: repair_type_key === 'parts' ? true : undefined };
     };
 
     const getEditStandardPayload = (row) => {
@@ -1011,7 +1022,10 @@ async function loadJob(){
       const qty = Math.max(1, Number(payload.machine_count || 1));
       const btu = Number(payload.btu || 0);
       if (jobType === 'ติดตั้ง') return 0;
-      if (jobType === 'ซ่อม') return (String(payload.repair_variant||'') === 'ตรวจเช็ครั่ว') ? 1000 : 700;
+      if (jobType === 'ซ่อม') {
+        if (String(payload.repair_variant||'') === 'ซ่อมเปลี่ยนอะไหล่') return 0;
+        return (String(payload.repair_variant||'') === 'ตรวจเช็ครั่ว') ? 1000 : 700;
+      }
       if (jobType !== 'ล้าง') return 0;
       if (acType === 'ผนัง' || !acType) {
         const large = Number.isFinite(btu) && btu >= 18000;
@@ -1038,7 +1052,12 @@ async function loadJob(){
       qty: Number(it.qty||1) || 1,
       unit_price: Number(it.unit_price||0) || 0,
       assigned_technician_username: (String(it.assigned_technician_username||'').trim() || inferAssigneeFromItemName(it.item_name) || null),
-    })).map(normalizeLegacyServiceRow).map(row => Object.assign(row, parseStandardItemName(row.item_name) || { is_standard:false }));
+    })).map(normalizeLegacyServiceRow).map(row => {
+      const parsed = parseStandardItemName(row.item_name) || { is_standard:false };
+      const merged = Object.assign(row, parsed);
+      if (isPartsRepairRow(merged)) merged.price_overridden = true;
+      return merged;
+    });
 
     const tbody = el('items_editor');
     const editPriceCache = new Map();
@@ -1103,6 +1122,13 @@ async function loadJob(){
     const updateEditItemPriceFromSelection = async (idx, opts = {}) => {
       const row = editorItems[idx];
       if (!row || !row.is_standard) return null;
+      if (isPartsRepairRow(row)) {
+        row.price_overridden = true;
+        row.item_name = standardItemName(row);
+        row.duration_min = 0;
+        updatePriceStatusForRow(idx);
+        return { standard_price: 0, duration_min: 0, source: 'manual_parts_repair', payload: getEditStandardPayload(row) };
+      }
       row.item_name = standardItemName(row);
       const q = Math.max(1, Math.round(Number(row.qty || 1)));
       row.qty = q;
@@ -1231,6 +1257,7 @@ async function loadJob(){
             <div><label>ประเภทแอร์</label><select class="it_ac_type">${acOpts}</select></div>
             <div style="${jobKey==='wash' && acKey==='wall'?'':'display:none'}"><label>วิธีล้าง</label><select class="it_wash_type">${washOpts}</select></div>
             <div style="${jobKey==='repair'?'':'display:none'}"><label>ประเภทงานซ่อม</label><select class="it_repair_type">${repairOpts}</select></div>
+            <div style="${jobKey==='repair' && repairKey==='parts'?'':'display:none'}"><label>เปลี่ยน/ซ่อมอะไร</label><input class="it_repair_detail" value="${escapeHtml(cleanRepairDetail(it.repair_detail || parseRepairDetailFromName(it.item_name) || ''))}" placeholder="เช่น เปลี่ยนแคปรัน 35uF" /></div>
             <div><label>BTU</label><select class="it_btu_tier">${btuOpts}</select></div>
             <div><label>จำนวนเครื่อง</label><input class="it_qty" type="number" min="1" step="1" value="${escapeHtml(String(q))}" /></div>
             <div><label>มอบหมายให้</label><select class="it_assignee">${assigneeOpts}</select></div>
@@ -1244,7 +1271,7 @@ async function loadJob(){
             <button type="button" class="secondary btn-small it_use_standard" style="width:auto">ใช้ราคามาตรฐาน</button>
           </div>
           <details class="editManualPrice" ${it.price_overridden ? 'open' : ''}>
-            <summary style="font-weight:1000;color:#92400e;cursor:pointer">แก้ราคาเอง (ไม่แนะนำ ใช้เฉพาะเคสพิเศษ)</summary>
+            <summary style="font-weight:1000;color:#92400e;cursor:pointer">แก้ราคาเอง / ราคาซ่อมตามจริง</summary>
             <label class="mini" style="display:block;margin-top:8px;font-weight:900;color:#92400e">ราคา/หน่วย</label>
             <input class="it_unit" type="number" min="0" step="1" value="${escapeHtml(String(unitPrice))}" />
           </details>
@@ -1262,6 +1289,7 @@ async function loadJob(){
         const acSel = card.querySelector('.it_ac_type');
         const washSel = card.querySelector('.it_wash_type');
         const repairSel = card.querySelector('.it_repair_type');
+        const repairDetail = card.querySelector('.it_repair_detail');
         const btuSel = card.querySelector('.it_btu_tier');
         const convert = card.querySelector('.it_convert');
         const assignee = card.querySelector('.it_assignee');
@@ -1284,16 +1312,25 @@ async function loadJob(){
           if (row.job_type_key === 'wash' && row.ac_type_key === 'wall') row.wash_type_key = String(washSel?.value || row.wash_type_key || 'normal');
           else row.wash_type_key = row.ac_type_key === 'wall' ? String(row.wash_type_key || 'normal') : 'none';
           row.repair_type_key = String(repairSel?.value || row.repair_type_key || 'standard');
+          row.repair_detail = cleanRepairDetail(repairDetail?.value || row.repair_detail || '');
           row.qty = Math.max(1, Math.round(Number(qty?.value || row.qty || 1)));
-          row.price_overridden = false;
+          row.price_overridden = isPartsRepairRow(row);
           row.item_name = standardItemName(row);
           renderEditor();
-          setTimeout(()=>updateEditItemPriceFromSelection(idx, { force:true }), 0);
+          if (!isPartsRepairRow(row)) setTimeout(()=>updateEditItemPriceFromSelection(idx, { force:true }), 0);
         };
         if (jobSel) jobSel.onchange = syncStandard;
         if (acSel) acSel.onchange = syncStandard;
         if (washSel) washSel.onchange = syncStandard;
         if (repairSel) repairSel.onchange = syncStandard;
+        if (repairDetail) repairDetail.oninput = ()=>{
+          const row = editorItems[idx];
+          if (!row) return;
+          row.repair_detail = cleanRepairDetail(repairDetail.value || '');
+          row.price_overridden = isPartsRepairRow(row) ? true : !!row.price_overridden;
+          row.item_name = standardItemName(row);
+          updatePriceStatusForRow(idx);
+        };
         if (btuSel) btuSel.onchange = syncStandard;
         if (assignee) {
           if (splitMode === 'coop_equal') { assignee.value = ''; assignee.disabled = true; }
@@ -1314,6 +1351,10 @@ async function loadJob(){
           updatePriceStatusForRow(idx);
         };
         if (useStandard) useStandard.onclick = async ()=>{
+          if (isPartsRepairRow(editorItems[idx])) {
+            editorItems[idx].repair_type_key = 'standard';
+            editorItems[idx].repair_detail = '';
+          }
           editorItems[idx].price_overridden = false;
           await updateEditItemPriceFromSelection(idx, { force:true });
           renderEditor();
@@ -1435,11 +1476,12 @@ async function loadJob(){
               line_total: Number(it.qty||0) * Number(it.unit_price||0),
               assigned_technician_username: String(it.assigned_technician_username||'').trim() || null,
               is_service: true,
-              price_overridden: !!it.price_overridden,
+              price_overridden: !!it.price_overridden || isPartsRepairRow(it),
               job_type: it.is_standard ? jobTypePayload(it.job_type_key || it.job_type || 'wash') : (String(it.job_type || payload.job_type || 'ล้าง').trim() || 'ล้าง'),
               ac_type: it.is_standard ? (STD_AC_PAYLOAD[String(it.ac_type_key || 'wall')] || 'ผนัง') : null,
               wash_variant: it.is_standard && normalizeEditJobTypeKey(it.job_type_key || it.job_type || 'wash') === 'wash' && String(it.ac_type_key || 'wall') === 'wall' ? normalizeEditWashVariant(STD_WASH_PAYLOAD[String(it.wash_type_key || 'normal')] || 'ล้างธรรมดา') : null,
               repair_variant: it.is_standard && normalizeEditJobTypeKey(it.job_type_key || it.job_type || 'wash') === 'repair' ? (EDIT_REPAIR_PAYLOAD[String(it.repair_type_key || 'standard')] || '') : null,
+              repair_detail: it.is_standard && isPartsRepairRow(it) ? cleanRepairDetail(it.repair_detail || parseRepairDetailFromName(it.item_name) || '') : null,
               btu: it.is_standard ? Number(STD_BTU_VALUE[String(it.btu_tier || ((String(it.ac_type_key||'wall')==='wall')?'small':'all'))] || 12000) : null,
               machine_count: Number(it.qty || 0),
             }))

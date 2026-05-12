@@ -30,6 +30,7 @@ const technicianIncomeHelpers = require("./server/technicianIncome");
 const customerLookupHelpers = require("./server/customerLookup");
 const technicianJobIncomeDisplayHelpers = require("./server/technicianJobIncomeDisplay");
 const technicianReworkHelpers = require("./server/technicianRework");
+const adminJobItemsHelpers = require("./server/adminJobItems");
 const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoneySummary");
 const createSystemRoutes = require("./server/routes/system");
 const createTechnicianDirectoryRoutes = require("./server/routes/users/technicians");
@@ -16430,61 +16431,7 @@ async function saveJobItemsAdminWithClient(client, job_id, items, options = {}) 
 
   }
 
-  const safeItems = (Array.isArray(items) ? items : [])
-    .map((it) => {
-      const rawAssignee = String(it.assigned_technician_username || "").trim();
-      const assignee = rawAssignee && (allowedAssignees.size === 0 || allowedAssignees.has(rawAssignee)) ? rawAssignee : null;
-      const explicitIsService = (typeof it.is_service === 'boolean') ? it.is_service : null;
-      const inferredIsService = inferIsServiceLine({ item_name: String(it.item_name || '').trim() });
-      const nameForNorm = normalizerHelpers.canonicalizeWashText(String(it.item_name || "").trim());
-      let qtyN = Math.max(0, Number(it.qty || 0));
-      let unitN = Math.max(0, Number(it.unit_price || 0));
-      try {
-        const mm = nameForNorm.match(/(\d+)\s*เครื่อง/);
-        const mc = mm ? Number(mm[1]) : 0;
-        if (Number.isFinite(mc) && mc > 1 && (qtyN <= 1) && Number.isFinite(unitN) && unitN >= (mc * 100)) {
-          const per = unitN / mc;
-          if (Number.isFinite(per) && per > 0) {
-            unitN = Number(per.toFixed(2));
-            qtyN = mc;
-          }
-        }
-      } catch (_) {}
-      try {
-        const serviceLike = (explicitIsService != null) ? explicitIsService : inferredIsService;
-        const parsedSpec = serviceLike ? _contractServiceKeyFromItem({ item_name: nameForNorm }) : null;
-        const isWash = serviceLike && /ล้างแอร์|AC Cleaning/i.test(nameForNorm);
-        const isRepair = serviceLike && /ซ่อมแอร์|AC Repair/i.test(nameForNorm);
-        const isInstall = serviceLike && /ติดตั้งแอร์|AC Installation/i.test(nameForNorm);
-        if ((isWash || isRepair || isInstall) && parsedSpec) {
-          const acType = parsedSpec.ac_key === 'fourway' ? 'สี่ทิศทาง'
-            : (parsedSpec.ac_key === 'hanging' ? 'แขวน'
-            : (parsedSpec.ac_key === 'ceiling' ? 'เปลือยใต้ฝ้า' : 'ผนัง'));
-          const payload = {
-            job_type: isRepair ? 'ซ่อม' : (isInstall ? 'ติดตั้ง' : 'ล้าง'),
-            ac_type: acType,
-            btu: Number(parsedSpec.btu || 0) || (parsedSpec.btu_tier === 'large' ? 18000 : 12000),
-            machine_count: Math.max(1, Math.round(Number(qtyN || 1))),
-            wash_variant: parsedSpec.ac_key === 'wall' ? (_thaiLabelWash(parsedSpec.wash_key) || 'ธรรมดา') : '',
-            repair_variant: nameForNorm.includes('ตรวจเช็ครั่ว') ? 'ตรวจเช็ครั่ว' : '',
-          };
-          const recalculated = computeStandardPrice(payload);
-          if (Number.isFinite(recalculated) && recalculated > 0 && qtyN > 0) {
-            unitN = Number((recalculated / qtyN).toFixed(2));
-          }
-        }
-      } catch (_) {}
-
-      return {
-        item_id: it.item_id || null,
-        item_name: nameForNorm,
-        qty: qtyN,
-        unit_price: unitN,
-        assigned_technician_username: assignee,
-        is_service: (explicitIsService != null) ? explicitIsService : inferredIsService,
-      };
-    })
-    .filter((it) => it.item_name);
+  const safeItems = adminJobItemsHelpers.normalizeAdminJobItemsForSave(items, { allowedAssignees });
 
   const pricing = safeItems.length
     ? calcPricing(safeItems, promo)

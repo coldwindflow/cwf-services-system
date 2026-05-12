@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v97-fix52-disable-noisy-gadgets-20260510";
+const CACHE_NAME = "cwf-cache-v98-admin-repair-parts-override-20260512";
 
 const ASSETS = [
   "/",
