@@ -213,6 +213,23 @@ Phase 1B status:
 - Skipped active sendFile/static pages, customer/track/register/quote pages, partner pages, `/`, `/tech`, `/tech.html`, `POST /login`, and all API/business routes.
 - Rollback: remove only the six Phase 2N handlers from `server/routes/pages/index.js`, restore the six original inline redirect handlers in `index.js`, then run syntax checks.
 
+### Phase 3A: Major Page Route Extraction Pass
+
+- The latest `main` audit found that only eight remaining page routes were clearly safe to move under the current production constraints.
+- Moved routes:
+  - `GET /admin-add`
+  - `GET /admin-review`
+  - `GET /admin-queue`
+  - `GET /admin-history`
+  - `GET /admin-add-v2.html`
+  - `GET /admin-review-v2.html`
+  - `GET /admin-queue-v2.html`
+  - `GET /admin-history-v2.html`
+- All eight routes remain in the existing `server/routes/pages/index.js` router and use only `res.sendFile(sendHtml(...))`.
+- Estimated `index.js` reduction for this pass: 8 route lines removed.
+- Routes intentionally not moved in this pass include `/edit-profile*`, `/home`, `/index.html`, `/register*`, customer/track pages, install quote pages, partner pages, `/tech*`, `/`, protected admin pages, and all API/business routes.
+- Rollback: remove only the eight Phase 3A handlers from `server/routes/pages/index.js`, restore the original inline handlers in `index.js`, then run syntax checks and smoke tests.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
