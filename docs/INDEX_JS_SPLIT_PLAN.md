@@ -213,6 +213,21 @@ Phase 1B status:
 - Skipped active sendFile/static pages, customer/track/register/quote pages, partner pages, `/`, `/tech`, `/tech.html`, `POST /login`, and all API/business routes.
 - Rollback: remove only the six Phase 2N handlers from `server/routes/pages/index.js`, restore the six original inline redirect handlers in `index.js`, then run syntax checks.
 
+### Phase 3A: Major Index Reduction
+
+- The page router is now split into domain-focused modules:
+  - `server/routes/pages/admin.js`
+  - `server/routes/pages/technician.js`
+  - `server/routes/pages/public.js`
+- Sixteen safe page routes moved out of `index.js` in one batch:
+  - 8 admin static page aliases
+  - 4 technician static page aliases
+  - 4 public neutral static aliases
+- `index.js` keeps only `app.use(createPageRoutes({ sendHtml }))` for these page routes.
+- `sendHtml()`, guard order, static middleware order, DB code, frontend files, and business routes were not changed.
+- Routes intentionally skipped include customer/track pages, install quote pages, partner pages, `/`, `POST /login`, protected admin pages, and all business/API routes.
+- Rollback: restore the 16 original inline handlers to `index.js`, remove the three new page submodules, and collapse `server/routes/pages/index.js` back to the prior single-file router.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.

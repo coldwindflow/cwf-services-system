@@ -26819,13 +26819,7 @@ app.use(express.static(ROOT_DIR));
 // - ตัวอย่าง: /tech, /admin, /track, /customer
 app.use(createPageRoutes({ sendHtml }));
 // Admin landing: ใช้ V2 เป็นหลัก (หน้าเก่าเลิกใช้แล้ว)
-app.get("/admin-add", (req, res) => res.sendFile(sendHtml("admin-add-v2.html")));
-app.get("/admin-review", (req, res) => res.sendFile(sendHtml("admin-review-v2.html")));
-app.get("/admin-queue", (req, res) => res.sendFile(sendHtml("admin-queue-v2.html")));
-app.get("/admin-history", (req, res) => res.sendFile(sendHtml("admin-history-v2.html")));
 // หน้า legacy เลิกใช้แล้ว ให้ redirect ไป V2
-app.get("/edit-profile", (req, res) => res.sendFile(sendHtml("edit-profile.html")));
-app.get("/tech", (req, res) => res.sendFile(sendHtml("tech.html")));
 app.get("/customer", (req, res) => res.sendFile(sendHtml("customer.html")));
 app.get("/partner-apply", (req, res) => res.sendFile(sendHtml("partner-apply.html")));
 app.get("/partner-status", (req, res) => res.sendFile(sendHtml("partner-status.html")));
@@ -26835,22 +26829,12 @@ app.get("/partner-academy", (req, res) => res.sendFile(sendHtml("partner-academy
 app.get("/install-quote", (req, res) => res.sendFile(sendHtml("install-quote.html")));
 // Canonical path: keep short URL, redirect direct-file access
 app.get("/install-quote.html", (req, res) => res.redirect(302, "/install-quote"));
-app.get("/register", (req, res) => res.sendFile(sendHtml("register.html")));
 app.get("/track", (req, res) => res.sendFile(sendHtml("track.html")));
-app.get("/home", (req, res) => res.sendFile(sendHtml("index.html")));
 
-app.get("/admin-add-v2.html", (req, res) => res.sendFile(sendHtml("admin-add-v2.html")));
-app.get("/admin-review-v2.html", (req, res) => res.sendFile(sendHtml("admin-review-v2.html")));
-app.get("/admin-queue-v2.html", (req, res) => res.sendFile(sendHtml("admin-queue-v2.html")));
-app.get("/admin-history-v2.html", (req, res) => res.sendFile(sendHtml("admin-history-v2.html")));
-app.get("/edit-profile.html", (req, res) => res.sendFile(sendHtml("edit-profile.html")));
-app.get("/tech.html", (req, res) => res.sendFile(sendHtml("tech.html")));
-app.get("/register.html", (req, res) => res.sendFile(sendHtml("register.html")));
 app.get("/partner-apply.html", (req, res) => res.sendFile(sendHtml("partner-apply.html")));
 app.get("/partner-status.html", (req, res) => res.sendFile(sendHtml("partner-status.html")));
 app.get("/partner-agreement.html", (req, res) => res.sendFile(sendHtml("partner-agreement.html")));
 app.get("/partner-academy.html", (req, res) => res.sendFile(sendHtml("partner-academy.html")));
-app.get("/index.html", (req, res) => res.sendFile(sendHtml("index.html")));
 app.get("/", (req, res) => res.sendFile(sendHtml("login.html")));
 
 // =======================================
