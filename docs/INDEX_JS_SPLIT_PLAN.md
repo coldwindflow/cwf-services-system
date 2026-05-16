@@ -243,6 +243,28 @@ Phase 1B status:
 - Additional `index.js` reduction in this phase: about 376 net lines.
 - Rollback: restore the five Phase 3C GET handlers in `index.js`, remove them from `server/routes/adminDeductionsReadOnly.js`, then run syntax checks and smoke tests.
 
+### Phase 3D: Document Rendering Route Extraction
+
+- Extracted the isolated documents block into `server/routes/docs.js`.
+- Moved helper functions:
+  - `money`
+  - `getJobDocData`
+  - `docHtml`
+  - `eSlipHtml`
+- Moved read-only routes:
+  - `GET /docs/quote/:job_id`
+  - `GET /docs/receipt/:job_id`
+  - `GET /docs/eslip/:job_id`
+- `index.js` now mounts the documents router at the old document block location with explicit dependencies:
+  - `pool`
+  - `_accountingOwnerSignaturePublicUrl`
+  - `_accountingSignaturePublicUrl`
+  - `_accountingOwnerSignerName`
+  - `_accountingOwnerSignerPosition`
+- SQL, HTML output, content type headers, status codes, and error bodies were preserved.
+- `index.js` line count reduced from `24,295` to `24,019` lines.
+- Rollback: remove the `createDocumentRoutes` import and mount from `index.js`, restore the four helper functions plus the three original inline document routes at the old block location, delete `server/routes/docs.js`, then run syntax checks and smoke-test all three document endpoints.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
