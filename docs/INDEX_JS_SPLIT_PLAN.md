@@ -213,6 +213,23 @@ Phase 1B status:
 - Skipped active sendFile/static pages, customer/track/register/quote pages, partner pages, `/`, `/tech`, `/tech.html`, `POST /login`, and all API/business routes.
 - Rollback: remove only the six Phase 2N handlers from `server/routes/pages/index.js`, restore the six original inline redirect handlers in `index.js`, then run syntax checks.
 
+### Phase 3B: Prep Admin Rework / Deductions Extraction
+
+- The mixed deductions/rework block has been split conservatively instead of moving mutations.
+- Extracted:
+  - shared schema-aware helper factory: `server/helpers/adminReworkDeductionsHelpers.js`
+  - read-only deductions routes: `server/routes/adminDeductionsReadOnly.js`
+    - `GET /admin/deductions`
+    - `GET /admin/deductions/summary`
+    - `GET /admin/deductions/audit`
+  - read-only rework routes: `server/routes/adminReworkReadOnly.js`
+    - `GET /admin/rework_cases`
+    - `GET /admin/rework_cases/:id`
+- Write routes, approval/reject/void transitions, rework creation, and rework resolution remain inline in `index.js`.
+- Estimated `index.js` reduction for this prep pass: about 288 net lines.
+- Remaining deductions lookup/detail routes stay inline for a later pass after this seam is verified in production.
+- Rollback: restore the original helper block plus five extracted GET handlers in `index.js`, remove the new helper/router modules, then run syntax checks and smoke tests.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
