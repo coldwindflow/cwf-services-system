@@ -230,6 +230,19 @@ Phase 1B status:
 - Remaining deductions lookup/detail routes stay inline for a later pass after this seam is verified in production.
 - Rollback: restore the original helper block plus five extracted GET handlers in `index.js`, remove the new helper/router modules, then run syntax checks and smoke tests.
 
+### Phase 3C: Admin Deductions Read-Only Extraction
+
+- Continued the Phase 3B seam by moving the remaining admin deductions GET-only routes into `server/routes/adminDeductionsReadOnly.js`:
+  - `GET /admin/deductions/technician_search`
+  - `GET /admin/deductions/job_search`
+  - `GET /admin/deductions/warranty_jobs`
+  - `GET /admin/deductions/suggestions`
+  - `GET /admin/deductions/:id`
+- Reused the existing helper seam from `server/helpers/adminReworkDeductionsHelpers.js`.
+- Mutation/state routes remain inline in `index.js`, including create, patch, submit, approve, reject, void, and `transitionDeductionCase`.
+- Additional `index.js` reduction in this phase: about 376 net lines.
+- Rollback: restore the five Phase 3C GET handlers in `index.js`, remove them from `server/routes/adminDeductionsReadOnly.js`, then run syntax checks and smoke tests.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
