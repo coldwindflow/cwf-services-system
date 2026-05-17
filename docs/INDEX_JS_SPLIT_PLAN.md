@@ -284,6 +284,41 @@ Phase 1B status:
 - `index.js` line count reduced from `24,019` to `23,716` lines.
 - Rollback: remove the accounting read-only import/mount, restore the six inline GET handlers, delete `server/routes/accountingReadOnly.js`, then run syntax checks and smoke-test all six routes.
 
+### Phase 3F: Audit for the Next Large Safe Block
+
+- Audited the next large `index.js` candidates after the accounting read-only extraction.
+- No runtime extraction was opened because every candidate large enough to remove at least `200` lines still crossed a forbidden seam:
+  - admin dashboard v2 has hidden side effects inside a GET path
+  - payout views remain coupled to payout mutation/finalization logic
+  - technician work-calendar/readiness mixes read paths with write helpers and upsert behavior
+  - technician base-status has a pure-helper subset, but the safe subset is still below the phase size threshold
+  - remaining accounting-adjacent routes are tied to schema ensure, auto-create, audit writes, or tax/document flows
+- See `docs/PHASE3F_NEXT_SAFE_INDEX_REDUCTION.md` for the full candidate inventory and skip rationale.
+- Runtime code changed in Phase 3F: none.
+- Future backend extraction PRs must include a startup smoke check in addition to syntax checks.
+
+### Phase 3G: Technician Base Status Prep Seam
+
+- Extracted the read-only technician base-status seam while keeping POST/write behavior frozen in `index.js`.
+- New helper module:
+  - `server/helpers/technicianBaseStatusDataHelpers.js`
+- New read-only route module:
+  - `server/routes/technicianBaseStatusReadOnly.js`
+- Moved read-only routes:
+  - `GET /admin/api/team-status`
+  - `GET /admin/api/technicians/:username/base-status`
+  - `GET /admin/api/technicians/:username/status`
+  - `GET /tech/api/base-status`
+- Kept in place:
+  - `POST /admin/api/technicians/:username/base-status`
+  - `POST /tech/api/base-status`
+  - pure scoring helpers shared by the retained write routes
+- This prep phase intentionally reduces less than the normal target because it creates the safe dependency seam needed before any later POST/write extraction.
+- `index.js` line counts changed:
+  - physical lines: `25,567` -> `25,468`
+  - non-empty lines: `23,717` -> `23,623`
+- See `docs/PHASE3G_TECHNICIAN_BASE_STATUS_PREP.md` for the full route inventory, rationale, checklist, and rollback plan.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
@@ -339,4 +374,5 @@ Before extracting any route:
 - Identify frontend callers and expected response shape.
 - Add or update a focused test/checklist.
 - Run `node --check index.js` and `node --check` on every changed JS file.
+- Run a runtime startup smoke such as `timeout 5s node index.js` (or equivalent) and verify no boot-time `ReferenceError`, missing import, or undefined route factory occurs before timeout.
 - Run manual smoke tests for the relevant user flow.
