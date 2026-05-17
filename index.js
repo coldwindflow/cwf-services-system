@@ -42,6 +42,8 @@ const createAccountingReadOnlyRoutes = require("./server/routes/accountingReadOn
 const createAdminReworkDeductionsHelpers = require("./server/helpers/adminReworkDeductionsHelpers");
 const createAdminReworkReadOnlyRoutes = require("./server/routes/adminReworkReadOnly");
 const createAdminDeductionsReadOnlyRoutes = require("./server/routes/adminDeductionsReadOnly");
+const createTechnicianBaseStatusDataHelpers = require("./server/helpers/technicianBaseStatusDataHelpers");
+const createTechnicianBaseStatusReadOnlyRoutes = require("./server/routes/technicianBaseStatusReadOnly");
 
 // =======================================
 // 🔔 Web Push Notifications (optional / fail-open)
@@ -21037,94 +21039,21 @@ function buildTechnicianCharacterPrompt({ technician = {}, stats = {}, level, ra
   return `Create a premium 9:16 RPG-style Thai character status card for Coldwindflow Air Services. Use the technician profile photo as identity reference only, not for judging ability. Character name: ${name}. Class/Role: ${role}. Level: ${level}. Rank: ${rank}. Use navy blue, electric blue, white, and yellow CWF branding. Include stats: SKILL ${stats.SKILL}, END ${stats.END}, WIS ${stats.WIS}, INT ${stats.INT}, DISC ${stats.DISC}, SERVICE ${stats.SERVICE}, COMM ${stats.COMM}, TEAM ${stats.TEAM}, TRUST ${stats.TRUST}, GROWTH ${stats.GROWTH}. Passive skills/strengths: ${strengths.join(', ')}. Upgrade points: ${dev.join(', ')}. Risk warnings: ${restricted.join(', ')}. Add Thai footer: "Base Status ก่อนเริ่มงาน / คะแนนจริงต้องปรับด้วยผลงานจริง". Make it look like a premium game status screen, clean readable Thai typography, stat bars, badges, and Coldwindflow technician theme.`;
 }
 
-async function getTechnicianForStatus(username) {
-  const r = await pool.query(
-    `SELECT u.username, u.role, COALESCE(p.full_name, u.full_name, u.username) AS full_name,
-            p.technician_code, p.position, p.photo_path, p.phone,
-            COALESCE(p.employment_type,'company') AS employment_type,
-            p.rating, p.grade, p.done_count
-     FROM public.users u
-     LEFT JOIN public.technician_profiles p ON p.username=u.username
-     WHERE u.username=$1 AND u.role='technician'
-     LIMIT 1`,
-    [username]
-  );
-  return (r.rows || [])[0] || null;
-}
-
-async function getLatestBaseStatus(username, opts = {}) {
-  const values = [username];
-  let where = `technician_username=$1`;
-  if (opts.review_status) {
-    values.push(String(opts.review_status));
-    where += ` AND COALESCE(review_status,'verified')=$${values.length}`;
-  }
-  const r = await pool.query(
-    `SELECT * FROM public.technician_base_status_assessments
-     WHERE ${where}
-     ORDER BY created_at DESC
-     LIMIT 1`,
-    values
-  );
-  return (r.rows || [])[0] || null;
-}
+const {
+  getTechnicianForStatus,
+  getLatestBaseStatus,
+} = createTechnicianBaseStatusDataHelpers({ pool });
 
 app.get('/admin/team-status', requireAdminSession, (req, res) => res.sendFile(sendHtml('admin-team-status.html')));
 app.get('/admin/team-status.html', requireAdminSession, (req, res) => res.redirect(302, '/admin/team-status'));
 app.get('/admin-team-status.html', requireAdminSession, (req, res) => res.sendFile(sendHtml('admin-team-status.html')));
-
-app.get('/admin/api/team-status', requireAdminSession, async (req, res) => {
-  try {
-    const techs = await pool.query(
-      `SELECT u.username, COALESCE(p.full_name, u.full_name, u.username) AS full_name,
-              p.photo_path, p.phone, p.technician_code, COALESCE(p.employment_type,'company') AS employment_type,
-              p.rating, p.grade, p.done_count
-       FROM public.users u
-       LEFT JOIN public.technician_profiles p ON p.username=u.username
-       WHERE u.role='technician'
-       ORDER BY COALESCE(p.full_name, u.username) ASC`
-    );
-    const latest = await pool.query(
-      `SELECT DISTINCT ON (technician_username)
-          id, technician_username, level, rank, stats_json, suitable_jobs_json, restricted_jobs_json,
-          strengths_json, risk_points_json, development_plan_json, generated_prompt,
-          COALESCE(assessment_source,'admin') AS assessment_source,
-          COALESCE(review_status,'verified') AS review_status,
-          assessed_by, reviewed_by, reviewed_at, created_at
-       FROM public.technician_base_status_assessments
-       ORDER BY technician_username, created_at DESC`
-    );
-    const pending = await pool.query(
-      `SELECT DISTINCT ON (technician_username)
-          id, technician_username, level, rank, created_at,
-          COALESCE(assessment_source,'self') AS assessment_source,
-          COALESCE(review_status,'pending_review') AS review_status
-       FROM public.technician_base_status_assessments
-       WHERE COALESCE(review_status,'verified')='pending_review'
-       ORDER BY technician_username, created_at DESC`
-    );
-    const map = new Map((latest.rows || []).map(r => [String(r.technician_username), r]));
-    const pendingMap = new Map((pending.rows || []).map(r => [String(r.technician_username), r]));
-    const people = (techs.rows || []).map(t => ({ ...t, latest_status: map.get(String(t.username)) || null, pending_status: pendingMap.get(String(t.username)) || null }));
-    return res.json({ ok: true, people });
-  } catch (e) {
-    console.error('GET team-status error:', e);
-    return res.status(500).json({ error: 'โหลด Team Status ไม่สำเร็จ' });
-  }
-});
-
-app.get('/admin/api/technicians/:username/base-status', requireAdminSession, async (req, res) => {
-  try {
-    const username = String(req.params.username || '').trim();
-    const technician = await getTechnicianForStatus(username);
-    if (!technician) return res.status(404).json({ error: 'ไม่พบช่าง' });
-    const latest = await getLatestBaseStatus(username);
-    return res.json({ ok: true, technician, latest });
-  } catch (e) {
-    console.error('GET base-status error:', e);
-    return res.status(500).json({ error: 'โหลด Base Status ไม่สำเร็จ' });
-  }
-});
+app.use(createTechnicianBaseStatusReadOnlyRoutes({
+  pool,
+  requireAdminSession,
+  requireTechnicianSession,
+  getTechnicianForStatus,
+  getLatestBaseStatus,
+}));
 
 app.post('/admin/api/technicians/:username/base-status', requireAdminSession, async (req, res) => {
   try {
@@ -21162,39 +21091,11 @@ app.post('/admin/api/technicians/:username/base-status', requireAdminSession, as
   }
 });
 
-app.get('/admin/api/technicians/:username/status', requireAdminSession, async (req, res) => {
-  try {
-    const username = String(req.params.username || '').trim();
-    const technician = await getTechnicianForStatus(username);
-    if (!technician) return res.status(404).json({ error: 'ไม่พบช่าง' });
-    const latest = await getLatestBaseStatus(username);
-    return res.json({ ok: true, technician, latest, future_work_adjustment: ['Completed jobs','On-time check-in','Status update completeness','Before/after photos','Customer reviews','Complaints','Rework','Admin override notes'] });
-  } catch (e) {
-    console.error('GET tech status error:', e);
-    return res.status(500).json({ error: 'โหลด Status ไม่สำเร็จ' });
-  }
-});
-
 // Technician Self Assessment entrypoint (Phase 1.1)
 // - ช่างทำแบบประเมินเองได้จากเมนูช่าง
 // - บันทึกเป็น pending_review เพื่อให้ Admin/Super Admin ตรวจต่อ ไม่ใช่คะแนน official อัตโนมัติ
 app.get('/tech/base-status', requireTechnicianSession, (req, res) => res.sendFile(sendHtml('tech-base-status.html')));
 app.get('/tech/base-status.html', requireTechnicianSession, (req, res) => res.redirect(302, '/tech/base-status'));
-
-app.get('/tech/api/base-status', requireTechnicianSession, async (req, res) => {
-  try {
-    const username = String(req.auth?.username || req.effective?.username || '').trim();
-    const technician = await getTechnicianForStatus(username);
-    if (!technician) return res.status(404).json({ error: 'ไม่พบข้อมูลช่างของคุณ' });
-    const latest = await getLatestBaseStatus(username);
-    const latest_self = await getLatestBaseStatus(username, { review_status: 'pending_review' });
-    const latest_verified = await getLatestBaseStatus(username, { review_status: 'verified' });
-    return res.json({ ok: true, technician, latest, latest_self, latest_verified });
-  } catch (e) {
-    console.error('GET tech self base-status error:', e);
-    return res.status(500).json({ error: 'โหลดแบบประเมินของช่างไม่สำเร็จ' });
-  }
-});
 
 app.post('/tech/api/base-status', requireTechnicianSession, async (req, res) => {
   try {
