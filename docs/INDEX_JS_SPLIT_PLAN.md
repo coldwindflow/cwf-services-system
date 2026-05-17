@@ -319,6 +319,23 @@ Phase 1B status:
   - non-empty lines: `23,717` -> `23,623`
 - See `docs/PHASE3G_TECHNICIAN_BASE_STATUS_PREP.md` for the full route inventory, rationale, checklist, and rollback plan.
 
+### Phase 3H: Technician Base Status Scoring Prep
+
+- Extracted the remaining pure scoring seam into `server/helpers/technicianBaseStatusScoring.js`.
+- Moved:
+  - `TECH_BASE_STATUS_CAPS`
+  - the small scoring helpers
+  - `calculateTechnicianBaseStatus`
+  - `buildTechnicianCharacterPrompt`
+- Kept in place:
+  - `POST /admin/api/technicians/:username/base-status`
+  - `POST /tech/api/base-status`
+- Ran a temporary parity compare against the original inline helper block with three sample inputs; all outputs matched.
+- `index.js` line counts changed:
+  - physical lines: `25,468` -> `25,354`
+  - non-empty lines: `23,619` -> `23,517`
+- See `docs/PHASE3H_TECHNICIAN_BASE_STATUS_SCORING_PREP.md` for the detailed inventory, parity check, checklist, and rollback plan.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
