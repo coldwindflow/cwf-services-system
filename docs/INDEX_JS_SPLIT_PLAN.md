@@ -265,6 +265,25 @@ Phase 1B status:
 - `index.js` line count reduced from `24,295` to `24,019` lines.
 - Rollback: remove the `createDocumentRoutes` import and mount from `index.js`, restore the four helper functions plus the three original inline document routes at the old block location, delete `server/routes/docs.js`, then run syntax checks and smoke-test all three document endpoints.
 
+### Phase 3E: Accounting Read-Only Views
+
+- Extracted the safe accounting GET-only subset into `server/routes/accountingReadOnly.js`.
+- Moved routes:
+  - `GET /admin/accounting/summary`
+  - `GET /admin/accounting/revenue`
+  - `GET /admin/accounting/reports/summary`
+  - `GET /admin/accounting/payouts/:payout_id/techs`
+  - `GET /admin/accounting/deposits`
+  - `GET /admin/accounting/audit`
+- `index.js` now mounts `createAccountingReadOnlyRoutes({...})` at the old accounting read-only seam before `POST /admin/accounting/revenue/:job_id/mark-paid`.
+- Explicitly skipped:
+  - `GET /admin/accounting/settings` because its helper can ensure schema
+  - `GET /admin/accounting/payouts` because it can auto-create payout periods
+  - `GET /admin/accounting/reports/:report_key.csv` because it writes audit logs
+  - tax/withholding/document-print routes and all accounting mutation routes
+- `index.js` line count reduced from `24,019` to `23,716` lines.
+- Rollback: remove the accounting read-only import/mount, restore the six inline GET handlers, delete `server/routes/accountingReadOnly.js`, then run syntax checks and smoke-test all six routes.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
