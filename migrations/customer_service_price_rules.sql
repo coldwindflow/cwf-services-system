@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS public.customer_service_price_rules (
   label TEXT,
   campaign_name TEXT,
   campaign_copy TEXT,
+  seed_key TEXT,
   effective_from TIMESTAMPTZ,
   effective_to TIMESTAMPTZ,
   is_active BOOLEAN DEFAULT TRUE,
@@ -26,6 +27,12 @@ CREATE INDEX IF NOT EXISTS idx_customer_price_rules_lookup
 
 CREATE INDEX IF NOT EXISTS idx_customer_price_rules_dates
   ON public.customer_service_price_rules(effective_from, effective_to);
+
+ALTER TABLE public.customer_service_price_rules ADD COLUMN IF NOT EXISTS seed_key TEXT;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_price_rules_seed_key
+  ON public.customer_service_price_rules(seed_key)
+  WHERE seed_key IS NOT NULL;
 
 ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS customer_price_rule_id BIGINT;
 ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS normal_unit_price NUMERIC(12,2);

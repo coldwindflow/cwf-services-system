@@ -119,6 +119,7 @@ async function ensureCustomerPriceBookSchema(db) {
       label TEXT,
       campaign_name TEXT,
       campaign_copy TEXT,
+      seed_key TEXT,
       effective_from TIMESTAMPTZ,
       effective_to TIMESTAMPTZ,
       is_active BOOLEAN DEFAULT TRUE,
@@ -129,8 +130,10 @@ async function ensureCustomerPriceBookSchema(db) {
     )
   `);
   await db.query(`ALTER TABLE public.customer_service_price_rules ADD COLUMN IF NOT EXISTS campaign_copy TEXT`);
+  await db.query(`ALTER TABLE public.customer_service_price_rules ADD COLUMN IF NOT EXISTS seed_key TEXT`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_customer_price_rules_lookup ON public.customer_service_price_rules(is_active, job_type, ac_type, wash_variant, priority)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_customer_price_rules_dates ON public.customer_service_price_rules(effective_from, effective_to)`);
+  await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_customer_price_rules_seed_key ON public.customer_service_price_rules(seed_key) WHERE seed_key IS NOT NULL`);
   await db.query(`ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS customer_price_rule_id BIGINT`);
   await db.query(`ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS normal_unit_price NUMERIC(12,2)`);
   await db.query(`ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS customer_price_label TEXT`);
@@ -141,7 +144,7 @@ async function ensureCustomerPriceBookSchema(db) {
 async function loadCandidateRules(db) {
   const r = await db.query(`
     SELECT rule_id, job_type, ac_type, wash_variant, btu_min, btu_max, machine_min, machine_max,
-           normal_price, active_price, label, campaign_name, campaign_copy, effective_from, effective_to,
+           normal_price, active_price, label, campaign_name, campaign_copy, seed_key, effective_from, effective_to,
            is_active, priority, created_at, updated_at, updated_by
       FROM public.customer_service_price_rules
      WHERE COALESCE(is_active, TRUE)=TRUE
@@ -274,38 +277,73 @@ function rainySeasonRows(updatedBy) {
     updated_by: updatedBy || "system",
   };
   return [
-    { ...base, wash_variant: "ล้างธรรมดา", btu_min: 0, btu_max: 12000, normal_price: 600, active_price: 550 },
-    { ...base, wash_variant: "ล้างพรีเมียม", btu_min: 0, btu_max: 12000, normal_price: 900, active_price: 790 },
-    { ...base, wash_variant: "ล้างแขวนคอยล์", btu_min: 0, btu_max: 12000, normal_price: 1400, active_price: 1290 },
-    { ...base, wash_variant: "ล้างแบบตัดล้าง", btu_min: 0, btu_max: 12000, normal_price: 2000, active_price: 1850 },
-    { ...base, wash_variant: "ล้างธรรมดา", btu_min: 18000, btu_max: null, normal_price: 750, active_price: 690 },
-    { ...base, wash_variant: "ล้างพรีเมียม", btu_min: 18000, btu_max: null, normal_price: 1100, active_price: 990 },
-    { ...base, wash_variant: "ล้างแขวนคอยล์", btu_min: 18000, btu_max: null, normal_price: 1700, active_price: 1550 },
-    { ...base, wash_variant: "ล้างแบบตัดล้าง", btu_min: 18000, btu_max: null, normal_price: 2300, active_price: 2150 },
+    { ...base, seed_key: "rainy_2026_wall_small_normal", wash_variant: "ล้างธรรมดา", btu_min: 0, btu_max: 12000, normal_price: 600, active_price: 550 },
+    { ...base, seed_key: "rainy_2026_wall_small_premium", wash_variant: "ล้างพรีเมียม", btu_min: 0, btu_max: 12000, normal_price: 900, active_price: 790 },
+    { ...base, seed_key: "rainy_2026_wall_small_coil", wash_variant: "ล้างแขวนคอยล์", btu_min: 0, btu_max: 12000, normal_price: 1400, active_price: 1290 },
+    { ...base, seed_key: "rainy_2026_wall_small_overhaul", wash_variant: "ล้างแบบตัดล้าง", btu_min: 0, btu_max: 12000, normal_price: 2000, active_price: 1850 },
+    { ...base, seed_key: "rainy_2026_wall_large_normal", wash_variant: "ล้างธรรมดา", btu_min: 18000, btu_max: null, normal_price: 750, active_price: 690 },
+    { ...base, seed_key: "rainy_2026_wall_large_premium", wash_variant: "ล้างพรีเมียม", btu_min: 18000, btu_max: null, normal_price: 1100, active_price: 990 },
+    { ...base, seed_key: "rainy_2026_wall_large_coil", wash_variant: "ล้างแขวนคอยล์", btu_min: 18000, btu_max: null, normal_price: 1700, active_price: 1550 },
+    { ...base, seed_key: "rainy_2026_wall_large_overhaul", wash_variant: "ล้างแบบตัดล้าง", btu_min: 18000, btu_max: null, normal_price: 2300, active_price: 2150 },
   ];
+}
+
+function sameBtuRange(a, b) {
+  const amin = a.btu_min == null ? null : Number(a.btu_min);
+  const amax = a.btu_max == null ? null : Number(a.btu_max);
+  const bmin = b.btu_min == null ? null : Number(b.btu_min);
+  const bmax = b.btu_max == null ? null : Number(b.btu_max);
+  return (amin ?? null) === (bmin ?? null) && (amax ?? null) === (bmax ?? null);
+}
+
+function sameRainySeedSlot(existing, seed) {
+  if (!existing) return false;
+  if (existing.seed_key && existing.seed_key === seed.seed_key) return true;
+  const campaign = String(existing.campaign_name || "");
+  const label = String(existing.label || "");
+  const rainyLike = campaign === CAMPAIGN_NAME || label === seed.label || /rainy/i.test(campaign) || /rainy/i.test(label);
+  if (!rainyLike) return false;
+  return normalizeServiceType(existing.job_type || "") === seed.job_type
+    && normalizeAcType(existing.ac_type || "") === seed.ac_type
+    && normalizeWashKey(existing.wash_variant || "") === normalizeWashKey(seed.wash_variant || "")
+    && sameBtuRange(existing, seed);
 }
 
 async function seedRainySeasonPromo(db, updatedBy, options = {}) {
   const forceUpdate = options.forceUpdate === true;
   await ensureCustomerPriceBookSchema(db);
   const rows = rainySeasonRows(updatedBy);
+  const existingRows = (await db.query(
+    `SELECT rule_id, job_type, ac_type, wash_variant, btu_min, btu_max, label, campaign_name, seed_key
+       FROM public.customer_service_price_rules`
+  )).rows || [];
   for (const row of rows) {
-    const existing = await db.query(
-      `SELECT rule_id FROM public.customer_service_price_rules
-        WHERE campaign_name=$1 AND job_type=$2 AND ac_type=$3 AND wash_variant=$4
-          AND COALESCE(btu_min, -1)=COALESCE($5::int, -1)
-          AND COALESCE(btu_max, -1)=COALESCE($6::int, -1)
-        LIMIT 1`,
-      [row.campaign_name, row.job_type, row.ac_type, row.wash_variant, row.btu_min, row.btu_max]
-    );
-    if (existing.rows?.[0]?.rule_id) {
+    const matchingLegacy = existingRows.filter((existing) => sameRainySeedSlot(existing, row));
+    const existingRuleId = matchingLegacy[0]?.rule_id || null;
+    if (existingRuleId) {
       if (forceUpdate) {
         await db.query(
           `UPDATE public.customer_service_price_rules
-              SET normal_price=$2, active_price=$3, label=$4, campaign_copy=$5,
-                  is_active=TRUE, priority=$6, updated_by=$7, updated_at=NOW()
+              SET normal_price=$2, active_price=$3, label=$4, campaign_name=$5, campaign_copy=$6,
+                  seed_key=$7, is_active=TRUE, priority=$8, updated_by=$9, updated_at=NOW()
             WHERE rule_id=$1`,
-          [existing.rows[0].rule_id, row.normal_price, row.active_price, row.label, row.campaign_copy, row.priority, row.updated_by]
+          [existingRuleId, row.normal_price, row.active_price, row.label, row.campaign_name, row.campaign_copy, row.seed_key, row.priority, row.updated_by]
+        );
+      } else {
+        await db.query(
+          `UPDATE public.customer_service_price_rules
+              SET seed_key=COALESCE(seed_key, $2), campaign_name=COALESCE(campaign_name, $3),
+                  label=COALESCE(label, $4), is_active=TRUE, updated_by=$5, updated_at=NOW()
+            WHERE rule_id=$1`,
+          [existingRuleId, row.seed_key, row.campaign_name, row.label, row.updated_by]
+        );
+      }
+      for (const dup of matchingLegacy.slice(1)) {
+        await db.query(
+          `UPDATE public.customer_service_price_rules
+              SET is_active=FALSE, updated_by=$2, updated_at=NOW()
+            WHERE rule_id=$1 AND seed_key IS NULL`,
+          [dup.rule_id, row.updated_by]
         );
       }
       continue;
@@ -313,12 +351,16 @@ async function seedRainySeasonPromo(db, updatedBy, options = {}) {
     await db.query(
       `INSERT INTO public.customer_service_price_rules
         (job_type, ac_type, wash_variant, btu_min, btu_max, machine_min, machine_max,
-         normal_price, active_price, label, campaign_name, campaign_copy, is_active, priority, updated_by, updated_at)
-       VALUES ($1,$2,$3,$4,$5,NULL,NULL,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,
+         normal_price, active_price, label, campaign_name, campaign_copy, seed_key, is_active, priority, updated_by, updated_at)
+       VALUES ($1,$2,$3,$4,$5,NULL,NULL,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())
+       ON CONFLICT (seed_key) WHERE seed_key IS NOT NULL
+       DO UPDATE SET normal_price=EXCLUDED.normal_price, active_price=EXCLUDED.active_price,
+         label=EXCLUDED.label, campaign_name=EXCLUDED.campaign_name, campaign_copy=EXCLUDED.campaign_copy,
+         is_active=TRUE, priority=EXCLUDED.priority, updated_by=EXCLUDED.updated_by, updated_at=NOW()`,
       [
         row.job_type, row.ac_type, row.wash_variant, row.btu_min, row.btu_max,
         row.normal_price, row.active_price, row.label, row.campaign_name,
-        row.campaign_copy, row.is_active, row.priority, row.updated_by,
+        row.campaign_copy, row.seed_key, row.is_active, row.priority, row.updated_by,
       ]
     );
   }

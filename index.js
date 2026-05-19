@@ -14246,7 +14246,8 @@ const serviceLineItems = await customerPricingHelpers.buildCustomerServiceLineIt
         wash_variant: payloadV2.wash_variant,
         repair_variant: payloadV2.repair_variant,
         assigned_to: (isUrgentOffer ? null : (technician_username || null)),
-      }] }
+      }] },
+  client
 );
 
 if (coerceNumber(override_price, 0) > 0) {
@@ -24695,7 +24696,8 @@ const serviceLineItems = await customerPricingHelpers.buildCustomerServiceLineIt
         machine_count: payloadV2.machine_count,
         wash_variant: payloadV2.wash_variant,
         repair_variant: payloadV2.repair_variant,
-      }] }
+      }] },
+  client
 );
 
 // fallback (single service)
