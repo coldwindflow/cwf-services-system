@@ -308,13 +308,17 @@
           <div style="text-align:right">
             <div><span class="muted2">เวลา:</span> <b id="pv_duration">-</b> นาที</div>
             <div><span class="muted2">บล็อกเวลา:</span> <b id="pv_block">-</b> นาที</div>
-            <div><span class="muted2">ค่าบริการมาตรฐาน:</span> <b id="pv_price">-</b> บาท</div>
+            <div><span class="muted2">ราคาปกติ:</span> <b id="pv_normal_price">-</b> บาท</div>
+            <div><span class="muted2">ราคาที่ใช้ตอนนี้:</span> <b id="pv_price">-</b> บาท</div>
+            <div class="muted2 mini" id="pv_price_source">-</div>
+            <div class="muted2 mini">จำนวน × ราคาปัจจุบัน = <b id="pv_line_total">-</b> บาท</div>
           </div>
         </div>
         <div class="grid2" style="margin-top:10px">
           <div>
-            <label>Override ราคา (บาท)</label>
-            <input id="override_price" type="number" min="0" step="1" placeholder="0 = ใช้ราคามาตรฐาน">
+            <label>Override ราคา (กรณีพิเศษเท่านั้น)</label>
+            <input id="override_price" type="number" min="0" step="1" placeholder="0 = ใช้ราคาจากสมุดราคา">
+            <div class="muted2 mini">ใช้เฉพาะเคสพิเศษ เช่น ราคาเหมา/อนุมัติเฉพาะหน้า</div>
           </div>
           <div>
             <label id="override_duration_label">Override เวลา (นาที)</label>
@@ -577,6 +581,6 @@
   </div>
 
   <script src="admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="admin-add-v2.js?v=20260508_assignment_service_fix_v1"></script>
+  <script src="admin-add-v2.js?v=20260519_customer_price_book_v1"></script>
 </body>
 </html>

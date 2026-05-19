@@ -26,6 +26,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const normalizerHelpers = require("./server/normalizers");
 const pricingHelpers = require("./server/pricing");
+const customerPricingHelpers = require("./server/customerPricing");
 const technicianIncomeHelpers = require("./server/technicianIncome");
 const customerLookupHelpers = require("./server/customerLookup");
 const technicianJobIncomeDisplayHelpers = require("./server/technicianJobIncomeDisplay");
@@ -11966,6 +11967,8 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_job_items_job_id ON public.job_
     // job_items: support assigning each service line to a technician (backward compatible)
     await pool.query(`ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS assigned_technician_username TEXT`);
     await pool.query(`ALTER TABLE public.job_items ADD COLUMN IF NOT EXISTS is_service BOOLEAN DEFAULT FALSE`);
+    await customerPricingHelpers.ensureCustomerPriceBookSchema(pool);
+    await customerPricingHelpers.seedRainySeasonPromo(pool, "startup_seed", { forceUpdate: false });
 
 // ✅ Technician income preview/cache per job + technician
 // ใช้ให้หน้าใบงานช่างแสดงรายได้เร็ว โดยไม่ต้องรอ payout engine ทุกครั้งที่เปิดหน้า
@@ -13634,6 +13637,8 @@ function requireAdminSoft(req, res, next) {
   }
 }
 
+app.use(customerPricingHelpers.createCustomerPricingRoutes({ pool, requireAdminSoft }));
+
 // =======================================
 // 🔎 Resolve job identifier
 // - รับทั้ง job_id (ตัวเลข) และ booking_code (ตัวอักษร)
@@ -14174,7 +14179,8 @@ async function handleAdminBookV2(req, res) {
     duration_min = Math.max(1, Math.floor(coerceNumber(override_duration_min, duration_min)));
   }
 
-  const standard_price = computeStandardPriceMulti(payloadV2);
+  const customerPrice = await customerPricingHelpers.resolveCustomerPricingMulti(payloadV2, pool);
+  const standard_price = Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
 
 
 // ✅ Parse lat/lng from maps_url or address_text (fail-open)
@@ -14229,7 +14235,7 @@ console.log("[latlng_parse]", { ok: !!parsedAdminLL });
     // resolve items
 const computedItems = [];
 
-const serviceLineItems = buildServiceLineItemsFromPayload(
+const serviceLineItems = await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
   (payloadV2.services && Array.isArray(payloadV2.services))
     ? payloadV2
     : { ...payloadV2, services: [{
@@ -14454,8 +14460,10 @@ if (coerceNumber(override_price, 0) > 0) {
     // job_items
     for (const it of computedItems) {
       await client.query(
-        `INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+        `INSERT INTO public.job_items
+          (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service,
+           customer_price_rule_id, normal_unit_price, customer_price_label, customer_campaign_name, customer_price_source)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
         [
           job_id,
           it.item_id || null,
@@ -14465,6 +14473,11 @@ if (coerceNumber(override_price, 0) > 0) {
           Number(it.line_total || 0),
           (it.assigned_technician_username || null),
           !!it.is_service,
+          it.customer_price_rule_id || null,
+          it.normal_unit_price || null,
+          it.customer_price_label || null,
+          it.customer_campaign_name || null,
+          it.customer_price_source || null,
         ]
       );
     }
@@ -23858,7 +23871,8 @@ app.post("/public/pricing_preview", async (req, res) => {
     // CWF Spec: pricing preview should match conservative schedule duration
     const duration_min = computeDurationMinMulti(payload, { source: "pricing_preview", conservative: true });
     if (duration_min <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
-    const standard_price = computeStandardPriceMulti(payload);
+    const customerPrice = await customerPricingHelpers.resolveCustomerPricingMulti(payload, pool);
+    const standard_price = Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
 
     // customer promo auto-apply (preview)
     const promoPick = await findBestCustomerPromotion(payload, standard_price, pool);
@@ -23867,6 +23881,12 @@ app.post("/public/pricing_preview", async (req, res) => {
     const total_after_discount = Math.max(0, Number(standard_price || 0) - Math.min(Number(standard_price || 0), promo_discount));
     res.json({
       standard_price,
+      normal_price: Number(customerPrice.normal_price ?? standard_price),
+      active_price: Number(customerPrice.active_price ?? standard_price),
+      customer_price_label: customerPrice.label || null,
+      campaign_name: customerPrice.campaign_name || null,
+      customer_price_source: customerPrice.source || "fallback_pricing_js",
+      price_lines: customerPrice.lines || [],
       promo: promo ? {
         promo_id: promo.promo_id,
         promo_name: promo.promo_name,
@@ -24551,7 +24571,8 @@ app.post("/public/book", async (req, res) => {
   // CWF Spec: conservative duration for schedule/collision
   const duration_min_v2 = computeDurationMinMulti(payloadV2, { source: "public_book", conservative: true });
   if (duration_min_v2 <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
-  const standard_price = computeStandardPriceMulti(payloadV2);
+  const customerPrice = await customerPricingHelpers.resolveCustomerPricingMulti(payloadV2, pool);
+  const standard_price = Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
 
 // ✅ Parse lat/lng from maps_url or address_text (fail-open)
 const parsedLL = parseLatLngFromText(maps_url) || parseLatLngFromText(address_text);
@@ -24664,7 +24685,7 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
     await client.query("BEGIN");
 
     // 1) ดึงราคา base_price จาก DB
-const serviceLineItems = buildServiceLineItemsFromPayload(
+const serviceLineItems = await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
   (payloadV2.services && Array.isArray(payloadV2.services))
     ? payloadV2
     : { ...payloadV2, services: [{
@@ -24833,10 +24854,26 @@ if (itemIdQty.length) {
     for (const it of computedItems) {
       await client.query(
         `
-        INSERT INTO public.job_items (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        INSERT INTO public.job_items
+          (job_id, item_id, item_name, qty, unit_price, line_total, assigned_technician_username, is_service,
+           customer_price_rule_id, normal_unit_price, customer_price_label, customer_campaign_name, customer_price_source)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
         `,
-        [job_id, it.item_id, it.item_name, it.qty, it.unit_price, it.line_total]
+        [
+          job_id,
+          it.item_id || null,
+          it.item_name,
+          Number(it.qty || 0),
+          Number(it.unit_price || 0),
+          Number(it.line_total || 0),
+          it.assigned_technician_username || null,
+          !!it.is_service,
+          it.customer_price_rule_id || null,
+          it.normal_unit_price || null,
+          it.customer_price_label || null,
+          it.customer_campaign_name || null,
+          it.customer_price_source || null,
+        ]
       );
     }
 

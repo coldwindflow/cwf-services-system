@@ -13,6 +13,89 @@
 
   <div class="container">
     <div class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div>
+          <b>จัดการราคาบริการ</b>
+          <div class="muted2 mini">สมุดราคานี้เป็นราคาที่ระบบใช้คำนวณให้แอดมินอัตโนมัติ ราคาที่บันทึกในใบงานเดิมจะไม่ถูกแก้ย้อนหลัง</div>
+        </div>
+        <button id="btnSeedRainy" class="primary" type="button">เพิ่มราคาโปรหน้าฝน</button>
+      </div>
+
+      <div class="grid2" style="margin-top:12px">
+        <div>
+          <label>ประเภทงาน</label>
+          <select id="price_job_type">
+            <option value="ล้าง">ล้าง</option>
+            <option value="ซ่อม">ซ่อม</option>
+            <option value="ติดตั้ง">ติดตั้ง</option>
+          </select>
+        </div>
+        <div>
+          <label>ประเภทแอร์</label>
+          <select id="price_ac_type">
+            <option value="ผนัง">ผนัง</option>
+            <option value="สี่ทิศทาง">สี่ทิศทาง</option>
+            <option value="แขวน">แขวน</option>
+            <option value="เปลือยใต้ฝ้า">เปลือยใต้ฝ้า</option>
+          </select>
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>วิธีล้าง</label>
+          <select id="price_wash_variant">
+            <option value="ล้างธรรมดา">ล้างธรรมดา</option>
+            <option value="ล้างพรีเมียม">ล้างพรีเมียม</option>
+            <option value="ล้างแขวนคอยล์">ล้างแขวนคอยล์</option>
+            <option value="ล้างแบบตัดล้าง">ตัดล้างใหญ่</option>
+            <option value="">ไม่ระบุ</option>
+          </select>
+        </div>
+        <div>
+          <label>ชื่อแคมเปญ/ป้ายราคา</label>
+          <input id="price_campaign_name" placeholder="เช่น โปรดูแลแอร์รับหน้าฝน">
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>BTU ต่ำสุด</label>
+          <input id="price_btu_min" type="number" step="1000" placeholder="เช่น 0 หรือ 18000">
+        </div>
+        <div>
+          <label>BTU สูงสุด</label>
+          <input id="price_btu_max" type="number" step="1000" placeholder="ว่าง = ไม่จำกัด">
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>ราคาปกติ / เครื่อง</label>
+          <input id="price_normal_price" type="number" step="1" placeholder="เช่น 600">
+        </div>
+        <div>
+          <label>ราคาที่ใช้ตอนนี้ / เครื่อง</label>
+          <input id="price_active_price" type="number" step="1" placeholder="เช่น 550">
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>ป้ายแสดงผล</label>
+          <input id="price_label" placeholder="เช่น โปรหน้าฝน">
+        </div>
+        <div>
+          <label>Priority</label>
+          <input id="price_priority" type="number" step="1" value="10">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <button id="btnSavePriceRule" class="primary" type="button">บันทึกราคา</button>
+        <button id="btnResetPriceRule" class="secondary" type="button">ล้างฟอร์ม</button>
+      </div>
+
+      <div class="divider" style="margin:14px 0;"></div>
+      <div id="price_rule_list"></div>
+    </div>
+
+    <div class="card">
       <b>เพิ่มโปรโมชัน</b>
       <div class="grid2" style="margin-top:10px">
         <div>
@@ -127,6 +210,6 @@
   </div>
 
   <script src="/admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="/admin-promotions-v2.js"></script>
+  <script src="/admin-promotions-v2.js?v=20260519_customer_price_book_v1"></script>
 </body>
 </html>

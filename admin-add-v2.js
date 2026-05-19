@@ -11,6 +11,11 @@ console.info('[admin-add] assignment/service fix loaded v1');
 
 let state = {
   standard_price: 0,
+  normal_price: 0,
+  active_price: 0,
+  customer_price_label: "",
+  campaign_name: "",
+  customer_price_source: "",
   duration_min: 0,
   effective_block_min: 0,
   travel_buffer_min: 30,
@@ -1271,6 +1276,9 @@ async function refreshPreview() {
     el("pv_duration").textContent = "-";
     el("pv_block").textContent = "-";
     el("pv_price").textContent = "-";
+    if (el("pv_normal_price")) el("pv_normal_price").textContent = "-";
+    if (el("pv_price_source")) el("pv_price_source").textContent = "-";
+    if (el("pv_line_total")) el("pv_line_total").textContent = "-";
     // pv_total removed (use total_preview)
 
     return;
@@ -1280,7 +1288,12 @@ async function refreshPreview() {
     const services = getServicesPayload();
     if (services) payload.services = services;
     const r = await apiFetch("/public/pricing_preview", { method: "POST", body: JSON.stringify(payload) });
-    state.standard_price = Number(r.standard_price || 0);
+    state.normal_price = Number(r.normal_price ?? r.standard_price ?? 0);
+    state.active_price = Number(r.active_price ?? r.standard_price ?? 0);
+    state.standard_price = state.active_price;
+    state.customer_price_label = r.customer_price_label || "";
+    state.campaign_name = r.campaign_name || "";
+    state.customer_price_source = r.customer_price_source || "";
     state.duration_min = Number(r.duration_min || 0);
     state.effective_block_min = Number(r.effective_block_min || 0);
     state.travel_buffer_min = Number(r.travel_buffer_min || 30);
@@ -1288,6 +1301,13 @@ async function refreshPreview() {
     el("pv_duration").textContent = String(state.duration_min);
     el("pv_block").textContent = String(state.effective_block_min);
     el("pv_price").textContent = fmtMoney(state.standard_price);
+    if (el("pv_normal_price")) el("pv_normal_price").textContent = fmtMoney(state.normal_price);
+    if (el("pv_price_source")) {
+      const src = state.customer_price_source === "customer_service_price_rules" ? "สมุดราคาบริการ" : "ราคา fallback เดิม";
+      const promo = state.campaign_name || state.customer_price_label || "";
+      el("pv_price_source").textContent = promo ? `${src} • ${promo}` : src;
+    }
+    if (el("pv_line_total")) el("pv_line_total").textContent = fmtMoney(state.standard_price);
     updateTotalPreview();
 
     // auto refresh availability if already selected date
@@ -1298,6 +1318,9 @@ async function refreshPreview() {
     el("pv_duration").textContent = "-";
     el("pv_block").textContent = "-";
     el("pv_price").textContent = "-";
+    if (el("pv_normal_price")) el("pv_normal_price").textContent = "-";
+    if (el("pv_price_source")) el("pv_price_source").textContent = "-";
+    if (el("pv_line_total")) el("pv_line_total").textContent = "-";
     // pv_total removed (use total_preview)
 
     showToast(e.message || "คำนวณไม่สำเร็จ", "error");
@@ -1386,29 +1409,7 @@ function wirePromotionControls(){
   });
 
   el("btnPromoQuickAdd")?.addEventListener("click", async ()=>{
-    // Quick add: ใช้ prompt แบบปลอดภัย (ไม่พังหน้า) และสร้างใน DB จริง
-    const name = prompt("ชื่อโปรโมชัน (เช่น ลด 10%)");
-    if(!name) return;
-    const typeRaw = (prompt("ประเภทโปร: percent หรือ amount", "percent")||"percent").trim().toLowerCase();
-    const type = (typeRaw === "fixed" || typeRaw === "baht" || typeRaw === "บาท") ? "amount" : typeRaw;
-    if(!["percent","amount"].includes(type)){
-      showToast("ประเภทโปรไม่ถูกต้อง", "error");
-      return;
-    }
-    const vRaw = prompt(type==="percent" ? "จำนวนเปอร์เซ็นต์ (เช่น 10)" : "จำนวนบาท (เช่น 200)");
-    const val = Number(vRaw);
-    if(!Number.isFinite(val) || val <= 0){
-      showToast("ค่าโปรไม่ถูกต้อง", "error");
-      return;
-    }
-    try{
-      await apiFetch("/admin/promotions_v2", { method:"POST", body: JSON.stringify({ promo_name:name.trim(), promo_type:type, promo_value: val, is_active:true }) });
-      await loadPromotions();
-      showToast("เพิ่มโปรโมชันแล้ว", "success");
-    }catch(err){
-      console.warn(err);
-      showToast("เพิ่มโปรโมชันไม่สำเร็จ", "error");
-    }
+    location.href = "/admin-promotions-v2.html";
   });
 }
 

@@ -80,7 +80,7 @@ function normalizeAdminJobItemsForSave(items, options = {}) {
 
         // Admin repair-after-inspection lines are customer-price overrides.
         // Keep the admin-entered unit_price and NEVER recalculate them back to the 700/1000 inspection fee.
-        const shouldRecalculateStandardPrice = !priceOverridden && !(isRepair && repairVariant === "ซ่อมเปลี่ยนอะไหล่");
+        const shouldRecalculateStandardPrice = !priceOverridden && rawUnitN <= 0 && !(isRepair && repairVariant === "ซ่อมเปลี่ยนอะไหล่");
 
         if (shouldRecalculateStandardPrice && (isWash || isRepair || isInstall) && parsedSpec) {
           const acType = parsedSpec.ac_key === "fourway" ? "สี่ทิศทาง"

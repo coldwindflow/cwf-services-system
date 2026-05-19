@@ -13,6 +13,130 @@ function logoutNow(){
   location.replace('/login.html');
 }
 
+let editingRuleId = null;
+
+function fmtMoney(v){
+  const n = Number(v || 0);
+  return n.toLocaleString('th-TH', { maximumFractionDigits: 0 });
+}
+
+function pricePayload(){
+  return {
+    job_type: (el('price_job_type').value || '').trim(),
+    ac_type: (el('price_ac_type').value || '').trim(),
+    wash_variant: (el('price_wash_variant').value || '').trim() || null,
+    btu_min: (el('price_btu_min').value || '').trim() || null,
+    btu_max: (el('price_btu_max').value || '').trim() || null,
+    normal_price: Number(el('price_normal_price').value || 0),
+    active_price: Number(el('price_active_price').value || 0),
+    label: (el('price_label').value || '').trim() || null,
+    campaign_name: (el('price_campaign_name').value || '').trim() || null,
+    priority: Number(el('price_priority').value || 0),
+    is_active: true,
+  };
+}
+
+function resetPriceForm(){
+  editingRuleId = null;
+  el('price_job_type').value = 'ล้าง';
+  el('price_ac_type').value = 'ผนัง';
+  el('price_wash_variant').value = 'ล้างธรรมดา';
+  el('price_btu_min').value = '';
+  el('price_btu_max').value = '';
+  el('price_normal_price').value = '';
+  el('price_active_price').value = '';
+  el('price_label').value = '';
+  el('price_campaign_name').value = '';
+  el('price_priority').value = '10';
+  el('btnSavePriceRule').textContent = 'บันทึกราคา';
+}
+
+function priceRuleCard(r){
+  const active = !!r.is_active;
+  const range = `${r.btu_min || 0}${r.btu_max ? `-${r.btu_max}` : '+'} BTU`;
+  const promo = r.campaign_name || r.label || '';
+  return `
+  <div class="svc-row" style="align-items:flex-start">
+    <div class="svc-main" style="flex:1">
+      <div class="svc-title"><b>${r.job_type || '-'} / ${r.ac_type || '-'} ${r.wash_variant || ''}</b></div>
+      <div class="muted2 mini">${range} • ปกติ ${fmtMoney(r.normal_price)} บาท • ใช้จริง ${fmtMoney(r.active_price)} บาท</div>
+      <div class="muted2 mini">${promo ? `แคมเปญ: ${promo} • ` : ''}priority ${Number(r.priority || 0)} • สถานะ: <b>${active ? 'เปิดใช้' : 'ปิด'}</b></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+      <button class="secondary btn-small" data-price-act="edit" data-id="${r.rule_id}">แก้ไข</button>
+      <button class="secondary btn-small" data-price-act="toggle" data-id="${r.rule_id}" data-active="${active ? '1' : '0'}">${active ? 'ปิด' : 'เปิด'}</button>
+    </div>
+  </div>`;
+}
+
+async function loadPriceRules(){
+  const box = el('price_rule_list');
+  if (!box) return;
+  box.innerHTML = 'กำลังโหลดราคา...';
+  try{
+    const r = await apiFetch('/admin/customer-pricing/rules');
+    const rules = r.rules || [];
+    window.__priceRules = rules;
+    box.innerHTML = rules.map(priceRuleCard).join('') || `<div class="muted2">ยังไม่มีราคาบริการ</div>`;
+  }catch(e){
+    box.innerHTML = `<div class="muted2">โหลดราคาบริการไม่สำเร็จ: ${e.message}</div>`;
+  }
+}
+
+async function savePriceRule(){
+  const body = pricePayload();
+  if(!body.job_type || !body.ac_type || !body.normal_price || !body.active_price){
+    showToast('กรอกประเภทงาน ประเภทแอร์ ราคาปกติ และราคาที่ใช้จริง', 'error');
+    return;
+  }
+  try{
+    const url = editingRuleId ? `/admin/customer-pricing/rules/${editingRuleId}` : '/admin/customer-pricing/rules';
+    await apiFetch(url, { method: editingRuleId ? 'PUT' : 'POST', body: JSON.stringify(body) });
+    showToast('บันทึกราคาแล้ว', 'success');
+    resetPriceForm();
+    await loadPriceRules();
+  }catch(e){
+    showToast(e.message, 'error');
+  }
+}
+
+function editPriceRule(id){
+  const r = (window.__priceRules || []).find(x => Number(x.rule_id) === Number(id));
+  if(!r) return;
+  editingRuleId = Number(id);
+  el('price_job_type').value = r.job_type || 'ล้าง';
+  el('price_ac_type').value = r.ac_type || 'ผนัง';
+  el('price_wash_variant').value = r.wash_variant || '';
+  el('price_btu_min').value = r.btu_min || '';
+  el('price_btu_max').value = r.btu_max || '';
+  el('price_normal_price').value = Number(r.normal_price || 0);
+  el('price_active_price').value = Number(r.active_price || 0);
+  el('price_label').value = r.label || '';
+  el('price_campaign_name').value = r.campaign_name || '';
+  el('price_priority').value = Number(r.priority || 0);
+  el('btnSavePriceRule').textContent = 'บันทึกการแก้ไข';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+async function togglePriceRule(id, currentActive){
+  try{
+    await apiFetch(`/admin/customer-pricing/rules/${id}/toggle`, { method:'PATCH', body: JSON.stringify({ is_active: !currentActive }) });
+    await loadPriceRules();
+  }catch(e){
+    showToast(e.message, 'error');
+  }
+}
+
+async function seedRainySeason(){
+  try{
+    await apiFetch('/admin/customer-pricing/seed-rainy-season-promo', { method:'POST', body: JSON.stringify({}) });
+    showToast('เพิ่มราคาโปรหน้าฝนแล้ว', 'success');
+    await loadPriceRules();
+  }catch(e){
+    showToast(e.message, 'error');
+  }
+}
+
 function rowCard(p){
   const active = !!p.is_active;
   const visible = !!p.is_customer_visible;
@@ -117,10 +241,21 @@ async function deletePromo(id){
 
 function wire(){
   document.getElementById('btnLogout')?.addEventListener('click', logoutNow);
+  document.getElementById('btnSeedRainy')?.addEventListener('click', seedRainySeason);
+  document.getElementById('btnSavePriceRule')?.addEventListener('click', savePriceRule);
+  document.getElementById('btnResetPriceRule')?.addEventListener('click', resetPriceForm);
   document.getElementById('btnCreatePromo')?.addEventListener('click', createPromo);
   document.getElementById('btnReload')?.addEventListener('click', loadPromos);
 
   document.addEventListener('click', (e)=>{
+    const priceBtn = e.target.closest('button[data-price-act]');
+    if(priceBtn){
+      const act = priceBtn.getAttribute('data-price-act');
+      const id = Number(priceBtn.getAttribute('data-id'));
+      if(act === 'edit') editPriceRule(id);
+      if(act === 'toggle') togglePriceRule(id, priceBtn.getAttribute('data-active') === '1');
+      return;
+    }
     const btn = e.target.closest('button[data-act]');
     if(!btn) return;
     const act = btn.getAttribute('data-act');
@@ -137,5 +272,6 @@ function wire(){
 
 document.addEventListener('DOMContentLoaded', async ()=>{
   wire();
+  await loadPriceRules();
   await loadPromos();
 });

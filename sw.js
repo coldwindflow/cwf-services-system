@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v98-admin-repair-parts-override-20260512";
+const CACHE_NAME = "cwf-cache-v99-customer-price-book-20260519";
 
 const ASSETS = [
   "/",
@@ -28,7 +28,7 @@ const ASSETS = [
   "/admin-review-v2.html",
   "/admin-review-v2.js",
   "/admin-add-v2.html",
-  "/admin-add-v2.js?v=20260508_assignment_service_fix_v1",
+  "/admin-add-v2.js?v=20260519_customer_price_book_v1",
   "/admin-queue-v2.html",
   "/admin-queue-v2.js",
   "/admin-history-v2.html",
@@ -36,7 +36,7 @@ const ASSETS = [
   "/admin-job-view-v2.html",
   "/admin-job-view-v2.js?v=20260508_edit_service_builder_v2",
   "/admin-promotions-v2.html",
-  "/admin-promotions-v2.js",
+  "/admin-promotions-v2.js?v=20260519_customer_price_book_v1",
   "/admin-v2-common.js",
   "/admin-work-readiness-v2.html",
   "/admin-work-readiness-v2.js",
