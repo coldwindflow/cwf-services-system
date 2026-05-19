@@ -1303,9 +1303,12 @@ async function refreshPreview() {
     el("pv_price").textContent = fmtMoney(state.standard_price);
     if (el("pv_normal_price")) el("pv_normal_price").textContent = fmtMoney(state.normal_price);
     if (el("pv_price_source")) {
-      const src = state.customer_price_source === "customer_service_price_rules" ? "สมุดราคาบริการ" : "ราคา fallback เดิม";
-      const promo = state.campaign_name || state.customer_price_label || "";
-      el("pv_price_source").textContent = promo ? `${src} • ${promo}` : src;
+      const overridePrice = Math.max(0, Number(el("override_price")?.value || 0));
+      const src = overridePrice > 0
+        ? "Override"
+        : (state.customer_price_source === "customer_service_price_rules" ? "Service Price Book" : "Fallback");
+      const campaign = state.campaign_name || state.customer_price_label || "-";
+      el("pv_price_source").textContent = `แคมเปญที่ใช้: ${campaign} • แหล่งราคา: ${src}`;
     }
     if (el("pv_line_total")) el("pv_line_total").textContent = fmtMoney(state.standard_price);
     updateTotalPreview();
@@ -1346,6 +1349,15 @@ function updateTotalPreview() {
   }
   const total = Math.max(0, subtotal - discount);
   // pv_total removed (use total_preview)
+
+  const srcBox = el("pv_price_source");
+  if (srcBox && state.duration_min > 0) {
+    const src = overridePrice > 0
+      ? "Override"
+      : (state.customer_price_source === "customer_service_price_rules" ? "Service Price Book" : "Fallback");
+    const campaign = state.campaign_name || state.customer_price_label || "-";
+    srcBox.textContent = `แคมเปญที่ใช้: ${campaign} • แหล่งราคา: ${src}`;
+  }
 
   const pd = el("pv_discount"); if(pd) pd.textContent = fmtMoney(discount);
   const ps = el("pv_subtotal"); if(ps) ps.textContent = fmtMoney(subtotal);

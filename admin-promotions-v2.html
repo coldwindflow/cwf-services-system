@@ -16,9 +16,9 @@
       <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
         <div>
           <b>จัดการราคาบริการ</b>
-          <div class="muted2 mini">สมุดราคานี้เป็นราคาที่ระบบใช้คำนวณให้แอดมินอัตโนมัติ ราคาที่บันทึกในใบงานเดิมจะไม่ถูกแก้ย้อนหลัง</div>
+          <div class="muted2 mini">ใช้สำหรับตั้งราคาขายลูกค้าที่ระบบดึงไปใช้ตอนเพิ่มงาน แก้ราคาในนี้จะไม่กระทบงานเดิมย้อนหลัง</div>
         </div>
-        <button id="btnSeedRainy" class="primary" type="button">เพิ่มราคาโปรหน้าฝน</button>
+        <button id="btnNewPriceCampaign" class="primary" type="button">+ เพิ่มชุดราคาโปร</button>
       </div>
 
       <div class="grid2" style="margin-top:12px">
@@ -52,8 +52,8 @@
           </select>
         </div>
         <div>
-          <label>ชื่อแคมเปญ/ป้ายราคา</label>
-          <input id="price_campaign_name" placeholder="เช่น โปรดูแลแอร์รับหน้าฝน">
+          <label>ชื่อแคมเปญ</label>
+          <input id="price_campaign_name" placeholder="เช่น โปรหน้าร้อน, โปรปีใหม่, Flash Sale 7 วัน">
         </div>
       </div>
       <div class="grid2" style="margin-top:10px">
@@ -78,17 +78,49 @@
       </div>
       <div class="grid2" style="margin-top:10px">
         <div>
-          <label>ป้ายแสดงผล</label>
-          <input id="price_label" placeholder="เช่น โปรหน้าฝน">
+          <label>ชื่อที่แสดงบนหน้าเพิ่มงาน</label>
+          <input id="price_label" placeholder="เช่น ราคาโปร, โปรลูกค้าเก่า, โปรคอนโดพระโขนง">
         </div>
         <div>
           <label>Priority</label>
           <input id="price_priority" type="number" step="1" value="10">
         </div>
       </div>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>วันที่เริ่ม</label>
+          <input id="price_effective_from" type="date">
+        </div>
+        <div>
+          <label>วันที่หมดอายุ</label>
+          <input id="price_effective_to" type="date">
+        </div>
+      </div>
+      <div class="grid2" style="margin-top:10px">
+        <div>
+          <label>สถานะ</label>
+          <select id="price_is_active">
+            <option value="1">เปิดใช้งาน</option>
+            <option value="0">ปิดไว้ก่อน</option>
+          </select>
+        </div>
+        <div>
+          <label>ตัวอย่างชื่อแคมเปญ</label>
+          <input disabled value="โปรหน้าฝน 2569 / โปรหน้าร้อน / โปรลูกค้าเก่า">
+        </div>
+      </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
         <button id="btnSavePriceRule" class="primary" type="button">บันทึกราคา</button>
         <button id="btnResetPriceRule" class="secondary" type="button">ล้างฟอร์ม</button>
+      </div>
+
+      <div class="divider" style="margin:14px 0;"></div>
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div>
+          <b>เครื่องมือช่วยตั้งค่า</b>
+          <div class="muted2 mini">เทมเพลตช่วยเริ่มต้นเท่านั้น แอดมินยังแก้ชื่อแคมเปญ ราคา วันที่ และสถานะได้เอง</div>
+        </div>
+        <button id="btnSeedRainy" class="secondary" type="button">นำเข้าราคาโปรหน้าฝน</button>
       </div>
 
       <div class="divider" style="margin:14px 0;"></div>
@@ -210,6 +242,6 @@
   </div>
 
   <script src="/admin-v2-common.js?v=20260428_allpages_ui1"></script>
-  <script src="/admin-promotions-v2.js?v=20260519_customer_price_book_v1"></script>
+  <script src="/admin-promotions-v2.js?v=20260520_generic_price_campaign_v1"></script>
 </body>
 </html>

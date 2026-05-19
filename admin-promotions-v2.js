@@ -21,6 +21,8 @@ function fmtMoney(v){
 }
 
 function pricePayload(){
+  const from = (el('price_effective_from')?.value || '').trim();
+  const to = (el('price_effective_to')?.value || '').trim();
   return {
     job_type: (el('price_job_type').value || '').trim(),
     ac_type: (el('price_ac_type').value || '').trim(),
@@ -31,8 +33,10 @@ function pricePayload(){
     active_price: Number(el('price_active_price').value || 0),
     label: (el('price_label').value || '').trim() || null,
     campaign_name: (el('price_campaign_name').value || '').trim() || null,
+    effective_from: from ? `${from}T00:00:00+07:00` : null,
+    effective_to: to ? `${to}T23:59:59+07:00` : null,
     priority: Number(el('price_priority').value || 0),
-    is_active: true,
+    is_active: el('price_is_active')?.value !== '0',
   };
 }
 
@@ -47,20 +51,30 @@ function resetPriceForm(){
   el('price_active_price').value = '';
   el('price_label').value = '';
   el('price_campaign_name').value = '';
+  if(el('price_effective_from')) el('price_effective_from').value = '';
+  if(el('price_effective_to')) el('price_effective_to').value = '';
+  if(el('price_is_active')) el('price_is_active').value = '1';
   el('price_priority').value = '10';
   el('btnSavePriceRule').textContent = 'บันทึกราคา';
+}
+
+function dateInputValue(value){
+  const s = String(value || '').trim();
+  if(!s) return '';
+  return s.slice(0, 10);
 }
 
 function priceRuleCard(r){
   const active = !!r.is_active;
   const range = `${r.btu_min || 0}${r.btu_max ? `-${r.btu_max}` : '+'} BTU`;
   const promo = r.campaign_name || r.label || '';
+  const dates = [dateInputValue(r.effective_from), dateInputValue(r.effective_to)].filter(Boolean).join(' ถึง ');
   return `
   <div class="svc-row" style="align-items:flex-start">
     <div class="svc-main" style="flex:1">
       <div class="svc-title"><b>${r.job_type || '-'} / ${r.ac_type || '-'} ${r.wash_variant || ''}</b></div>
       <div class="muted2 mini">${range} • ปกติ ${fmtMoney(r.normal_price)} บาท • ใช้จริง ${fmtMoney(r.active_price)} บาท</div>
-      <div class="muted2 mini">${promo ? `แคมเปญ: ${promo} • ` : ''}priority ${Number(r.priority || 0)} • สถานะ: <b>${active ? 'เปิดใช้' : 'ปิด'}</b></div>
+      <div class="muted2 mini">${promo ? `แคมเปญ: ${promo} • ` : ''}${dates ? `ช่วงเวลา: ${dates} • ` : ''}priority ${Number(r.priority || 0)} • สถานะ: <b>${active ? 'เปิดใช้' : 'ปิด'}</b></div>
     </div>
     <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
       <button class="secondary btn-small" data-price-act="edit" data-id="${r.rule_id}">แก้ไข</button>
@@ -113,6 +127,9 @@ function editPriceRule(id){
   el('price_active_price').value = Number(r.active_price || 0);
   el('price_label').value = r.label || '';
   el('price_campaign_name').value = r.campaign_name || '';
+  if(el('price_effective_from')) el('price_effective_from').value = dateInputValue(r.effective_from);
+  if(el('price_effective_to')) el('price_effective_to').value = dateInputValue(r.effective_to);
+  if(el('price_is_active')) el('price_is_active').value = r.is_active === false ? '0' : '1';
   el('price_priority').value = Number(r.priority || 0);
   el('btnSavePriceRule').textContent = 'บันทึกการแก้ไข';
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -241,6 +258,10 @@ async function deletePromo(id){
 
 function wire(){
   document.getElementById('btnLogout')?.addEventListener('click', logoutNow);
+  document.getElementById('btnNewPriceCampaign')?.addEventListener('click', ()=>{
+    resetPriceForm();
+    document.getElementById('price_campaign_name')?.focus();
+  });
   document.getElementById('btnSeedRainy')?.addEventListener('click', seedRainySeason);
   document.getElementById('btnSavePriceRule')?.addEventListener('click', savePriceRule);
   document.getElementById('btnResetPriceRule')?.addEventListener('click', resetPriceForm);
