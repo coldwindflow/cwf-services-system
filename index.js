@@ -14252,7 +14252,7 @@ const serviceLineItems = await customerPricingHelpers.buildCustomerServiceLineIt
 
 if (coerceNumber(override_price, 0) > 0) {
   // Customer override price only. Payroll must never use this as technician income.
-  computedItems.push({ item_id: null, item_name: `ค่าบริการ (override)`, qty: 1, unit_price: coerceNumber(override_price, 0), line_total: coerceNumber(override_price, 0), is_service: false });
+  computedItems.push({ item_id: null, item_name: `ค่าบริการ (override)`, qty: 1, unit_price: coerceNumber(override_price, 0), line_total: coerceNumber(override_price, 0), is_service: false, customer_price_source: 'manual_override' });
 } else if (serviceLineItems.length) {
   for (const it of serviceLineItems) computedItems.push(it);
 } else if (standard_price > 0) {
@@ -17880,6 +17880,11 @@ function _formatMoney2(n) {
   const x = Number(n || 0);
   return Number.isFinite(x) ? x.toFixed(2) : '0.00';
 }
+function _formatMoneyMsg(n) {
+  const x = Number(n || 0);
+  if (!Number.isFinite(x)) return '0';
+  return Number.isInteger(x) ? String(x) : x.toFixed(2);
+}
 async function getCustomerConfirmationTemplate(lang='th') {
   const key = CUSTOMER_CONFIRMATION_TEMPLATE_KEY;
   const lng = String(lang || 'th').toLowerCase() === 'en' ? 'en' : 'th';
@@ -17908,17 +17913,49 @@ function renderCustomerConfirmationTemplate(template, vars) {
 }
 function buildCustomerConfirmationVars({ job, items, origin, ddTH, ttTH, ddEN, ttEN }) {
   const booking = _safeMsgText(job.booking_code || (job.job_id ? `#${job.job_id}` : '-'));
+  const promoLinesTH = (it) => {
+    const unit = Number(it.unit_price || 0);
+    const normal = Number(it.normal_unit_price || 0);
+    const source = String(it.customer_price_source || it.pricing_source || '').trim();
+    const isOverride = source === 'manual_override' || /override/i.test(String(it.item_name || ''));
+    if (isOverride) return ['  ราคาพิเศษเฉพาะงานนี้'];
+    const campaign = String(it.customer_campaign_name || it.campaign_name || it.customer_price_label || it.display_label || '').trim();
+    if (!(source === 'customer_service_price_rules' && campaign && normal > unit && unit > 0)) return [];
+    return [
+      `  🏷️ ราคาโปร: ${_safeMsgText(campaign)}`,
+      `  ราคาปกติ ${_formatMoneyMsg(normal)} บาท → ราคาโปร ${_formatMoneyMsg(unit)} บาท`,
+    ];
+  };
+  const promoLinesEN = (it) => {
+    const unit = Number(it.unit_price || 0);
+    const normal = Number(it.normal_unit_price || 0);
+    const source = String(it.customer_price_source || it.pricing_source || '').trim();
+    const isOverride = source === 'manual_override' || /override/i.test(String(it.item_name || ''));
+    if (isOverride) return ['  Special price for this job only'];
+    const campaign = String(it.customer_campaign_name || it.campaign_name || it.customer_price_label || it.display_label || '').trim();
+    if (!(source === 'customer_service_price_rules' && campaign && normal > unit && unit > 0)) return [];
+    return [
+      `  Promo price: ${_safeMsgText(campaign)}`,
+      `  Normal ${_formatMoneyMsg(normal)} THB → Promo ${_formatMoneyMsg(unit)} THB`,
+    ];
+  };
   const itemRows = (items || []).map((it) => {
     const qty = Number(it.qty || 0);
     const up = Number(it.unit_price || 0);
     const lt = Number(it.line_total || 0);
-    return `- ${_safeMsgText(it.item_name)} x${qty} @ ${_formatMoney2(up)} บาท = ${_formatMoney2(lt)} บาท`;
+    return [
+      `- ${_safeMsgText(it.item_name)} x${qty} @ ${_formatMoneyMsg(up)} บาท = ${_formatMoneyMsg(lt)} บาท`,
+      ...promoLinesTH(it),
+    ].join('\n');
   });
   const itemRowsEN = (items || []).map((it) => {
     const qty = Number(it.qty || 0);
     const up = Number(it.unit_price || 0);
     const lt = Number(it.line_total || 0);
-    return `- ${translateServiceItemNameEN(it.item_name)} x${qty} @ ${_formatMoney2(up)} THB = ${_formatMoney2(lt)} THB`;
+    return [
+      `- ${translateServiceItemNameEN(it.item_name)} x${qty} @ ${_formatMoneyMsg(up)} THB = ${_formatMoneyMsg(lt)} THB`,
+      ...promoLinesEN(it),
+    ].join('\n');
   });
   return {
     booking_code: booking,
@@ -17954,10 +17991,21 @@ app.get("/jobs/:job_id/summary", async (req, res) => {
     // ✅ ใช้ทำลิงก์ Tracking ให้ลูกค้า
     const origin = `${req.protocol}://${req.get("host")}`;
 
-    const itemsR = await pool.query(
-      `SELECT item_name, qty, unit_price, line_total FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
-      [job_id]
-    );
+    let itemsR;
+    try {
+      itemsR = await pool.query(
+        `SELECT item_name, qty, unit_price, line_total,
+                normal_unit_price, customer_price_label, customer_campaign_name, customer_price_source
+           FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
+        [job_id]
+      );
+    } catch (e) {
+      if (String(e.code || '') !== '42703') throw e;
+      itemsR = await pool.query(
+        `SELECT item_name, qty, unit_price, line_total FROM public.job_items WHERE job_id=$1 ORDER BY job_item_id ASC`,
+        [job_id]
+      );
+    }
 
     const dt = new Date(job.appointment_datetime);
     const ddTH = dt.toLocaleDateString("th-TH", { timeZone: "Asia/Bangkok" });
