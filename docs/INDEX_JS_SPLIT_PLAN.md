@@ -336,6 +336,17 @@ Phase 1B status:
   - non-empty lines: `23,619` -> `23,517`
 - See `docs/PHASE3H_TECHNICIAN_BASE_STATUS_SCORING_PREP.md` for the detailed inventory, parity check, checklist, and rollback plan.
 
+### Phase 3I: Technician Base Status POST Audit
+
+- Audited the two remaining base-status write routes without moving runtime code:
+  - `POST /admin/api/technicians/:username/base-status`
+  - `POST /tech/api/base-status`
+- Found both routes now have a small, explicit dependency surface after Phases 3G-3H, but they remain **Medium** risk because they are production write paths and preserve identity-sensitive behavior.
+- Decision for Phase 3I: audit only; no runtime extraction yet.
+- Proposed future module once a dedicated extraction pass is approved:
+  - `server/routes/technicianBaseStatusWrite.js`
+- See `docs/PHASE3I_TECHNICIAN_BASE_STATUS_POST_AUDIT.md` for the full behavior inventory, dependency list, risks, and future move conditions.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
