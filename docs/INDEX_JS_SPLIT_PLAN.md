@@ -362,6 +362,22 @@ Phase 1B status:
   - non-empty lines: `23,603` -> `23,430`
 - See `docs/PHASE3J_NEXT_SAFE_INDEX_REDUCTION.md` for candidate inventory, risk notes, tests, smoke checklist, and rollback plan.
 
+### Phase 3L: Technician Count Summary Read-Only Extraction
+
+- Extracted the two technician count summary endpoints into `server/routes/technicianCountSummaryReadOnly.js`.
+- Moved:
+  - `GET /tech/completed_count_summary`
+  - `GET /tech/rework_count_summary`
+- Preserved the existing identity fallback behavior:
+  - try `getAuthContext(req, res)` first
+  - allow `?username=` only after validating the username in `public.technician_profiles`
+- Kept all technician income routes and formulas in `index.js`.
+- Kept close-job, job mutation, booking, pricing, customer flow, and frontend files untouched.
+- `index.js` line counts changed:
+  - physical lines: `25,260` -> `25,149`
+  - non-empty lines: `23,430` -> `23,330`
+- See `docs/PHASE3L_TECHNICIAN_COUNT_SUMMARY_READONLY.md` for the route audit, dependencies, tests, smoke checklist, and rollback plan.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
