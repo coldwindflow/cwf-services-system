@@ -347,6 +347,21 @@ Phase 1B status:
   - `server/routes/technicianBaseStatusWrite.js`
 - See `docs/PHASE3I_TECHNICIAN_BASE_STATUS_POST_AUDIT.md` for the full behavior inventory, dependency list, risks, and future move conditions.
 
+### Phase 3J: Technician Calendar Read-Only Extraction
+
+- Extracted the next safe read-only seam into `server/routes/technicianCalendarReadOnly.js`.
+- Moved:
+  - `GET /tech/work-calendar`
+  - `GET /admin/technician-readiness/today`
+  - `GET /admin/technicians/work-readiness`
+  - `_adminReadinessServiceLabels`
+- Kept all readiness/work-calendar write routes in `index.js`.
+- Skipped `GET /tech/daily-readiness/today` because it calls `ensureDailyReadinessRow()` and may create/update readiness state.
+- `index.js` line counts changed:
+  - physical lines: `25,441` -> `25,260`
+  - non-empty lines: `23,603` -> `23,430`
+- See `docs/PHASE3J_NEXT_SAFE_INDEX_REDUCTION.md` for candidate inventory, risk notes, tests, smoke checklist, and rollback plan.
+
 ### Phase 2: Read-Only Technician Routes
 
 - Move read-only technician routes with no DB writes.
