@@ -37,6 +37,7 @@ module.exports = function createAdminDeductionsReadOnlyRoutes(deps = {}) {
             COUNT(*) FILTER (WHERE status='pending_approval')::int AS pending_count,
             COALESCE(SUM(amount) FILTER (WHERE status='pending_approval'),0)::numeric AS pending_amount,
             COALESCE(SUM(amount) FILTER (WHERE status='approved'),0)::numeric AS approved_amount,
+            COALESCE(SUM(amount) FILTER (WHERE status='applied'),0)::numeric AS applied_amount,
             COUNT(*) FILTER (WHERE severity IN ('high','critical') AND status NOT IN ('rejected','voided'))::int AS high_critical_count
           FROM public.technician_deduction_cases
         ),
@@ -514,13 +515,24 @@ module.exports = function createAdminDeductionsReadOnlyRoutes(deps = {}) {
         );
         job = jr.rows[0] || null;
       }
+      let applied_adjustment = null;
+      if (row.applied_adjustment_id) {
+        const ar = await pool.query(
+          `SELECT adj_id, payout_id, technician_username, job_id, adj_amount, reason, created_at, created_by
+             FROM public.technician_payout_adjustments
+            WHERE adj_id=$1
+            LIMIT 1`,
+          [row.applied_adjustment_id]
+        );
+        applied_adjustment = ar.rows[0] || null;
+      }
       const audit = await pool.query(
         `SELECT * FROM public.technician_deduction_audit_logs
          WHERE entity_type='deduction_case' AND entity_id=$1
          ORDER BY created_at DESC, audit_id DESC`,
         [String(id)]
       );
-      return res.json({ ok: true, row, job, audit_logs: audit.rows, message: PAYOUT_DEDUCTION_WARNING });
+      return res.json({ ok: true, row, job, applied_adjustment, audit_logs: audit.rows, message: PAYOUT_DEDUCTION_WARNING });
     } catch (e) {
       console.error('GET /admin/deductions/:id', e);
       return res.status(500).json({ ok: false, error: 'โหลดรายละเอียดเคสไม่สำเร็จ' });
