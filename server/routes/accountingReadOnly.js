@@ -20,6 +20,7 @@ module.exports = function createAccountingReadOnlyRoutes(deps = {}) {
     money: _money,
     paidStatus: _paidStatus,
     sqlDonePredicate: _sqlDonePredicate,
+    technicianPayoutLedger,
   } = deps;
 
 router.get('/admin/accounting/summary', requireAccountingPermission('accounting.read.summary'), async (req, res) => {
@@ -68,24 +69,13 @@ router.get('/admin/accounting/summary', requireAccountingPermission('accounting.
        )
        SELECT COUNT(*)::int AS count, COALESCE(SUM(total_amount),0)::numeric AS total_amount FROM gross`);
 
-    const payoutPending = await _accountingSafeQuery(soft_errors, 'pending_payout_periods',
-      `WITH period_sum AS (
-         SELECT p.payout_id,
-                COALESCE(SUM(l.earn_amount),0) AS gross_amount,
-                COALESCE(adj.adj_total,0) AS adj_total,
-                COALESCE(dep.deposit_deduction_amount,0) AS deposit_deduction_amount,
-                COALESCE(pay.paid_amount,0) AS paid_amount
-           FROM public.technician_payout_periods p
-           LEFT JOIN public.technician_payout_lines l ON l.payout_id=p.payout_id
-           LEFT JOIN (SELECT payout_id, SUM(adj_amount) AS adj_total FROM public.technician_payout_adjustments GROUP BY payout_id) adj ON adj.payout_id=p.payout_id
-           LEFT JOIN (SELECT payout_id, SUM(amount) AS deposit_deduction_amount FROM public.technician_deposit_ledger WHERE transaction_type='collect' GROUP BY payout_id) dep ON dep.payout_id=p.payout_id
-           LEFT JOIN (SELECT payout_id, SUM(paid_amount) AS paid_amount FROM public.technician_payout_payments GROUP BY payout_id) pay ON pay.payout_id=p.payout_id
-          WHERE COALESCE(p.status,'draft') <> 'paid'
-          GROUP BY p.payout_id, adj.adj_total, dep.deposit_deduction_amount, pay.paid_amount
-       )
-       SELECT COUNT(*)::int AS count,
-              COALESCE(SUM(gross_amount + adj_total - deposit_deduction_amount - paid_amount),0)::numeric AS total_amount
-         FROM period_sum`);
+    const payoutRows = technicianPayoutLedger ? await technicianPayoutLedger.listPeriods(80) : [];
+    const payoutPending = {
+      rows: [{
+        count: payoutRows.filter(r => String(r.status || 'draft') !== 'paid').length,
+        total_amount: payoutRows.reduce((sum, r) => sum + (String(r.status || 'draft') !== 'paid' ? Number(r.remaining_amount || 0) : 0), 0),
+      }],
+    };
 
     const pendingExpenses = await _accountingSafeQuery(soft_errors, 'pending_expenses',
       `SELECT COUNT(*)::int AS count, COALESCE(SUM(amount),0)::numeric AS total_amount FROM public.accounting_expenses WHERE status IN ('draft','submitted')`);
@@ -207,11 +197,7 @@ router.get('/admin/accounting/reports/summary', requireAccountingPermission('acc
          ) x ON x.job_id=j.job_id`);
     const expenses = await _accountingSafeQuery(soft_errors, 'report_expenses',
       `SELECT COUNT(*)::int AS count, COALESCE(SUM(amount),0)::numeric AS total_amount, COALESCE(SUM(vat_amount),0)::numeric AS vat_amount, COALESCE(SUM(withholding_amount),0)::numeric AS withholding_amount FROM public.accounting_expenses WHERE COALESCE(status,'') <> 'voided'`);
-    const payouts = await _accountingSafeQuery(soft_errors, 'report_payouts',
-      `WITH line_sum AS (SELECT payout_id, COALESCE(SUM(earn_amount),0)::numeric AS gross_amount FROM public.technician_payout_lines GROUP BY payout_id),
-       pay AS (SELECT payout_id, COALESCE(SUM(paid_amount),0)::numeric AS paid_amount FROM public.technician_payout_payments GROUP BY payout_id)
-       SELECT COUNT(p.payout_id)::int AS count, COALESCE(SUM(line_sum.gross_amount),0)::numeric AS net_payable, COALESCE(SUM(pay.paid_amount),0)::numeric AS paid_amount
-         FROM public.technician_payout_periods p LEFT JOIN line_sum ON line_sum.payout_id=p.payout_id LEFT JOIN pay ON pay.payout_id=p.payout_id`);
+    const payouts = { rows: [technicianPayoutLedger ? await technicianPayoutLedger.reportSummary() : { count: 0, net_payable: 0, paid_amount: 0 }] };
     const docs = await _accountingSafeQuery(soft_errors, 'report_documents',
       `SELECT COUNT(*)::int AS count, COALESCE(SUM(total_amount),0)::numeric AS total_amount FROM public.accounting_documents WHERE COALESCE(status,'') <> 'voided'`);
     const r = revenue.rows[0] || {}, e = expenses.rows[0] || {}, py = payouts.rows[0] || {}, d = docs.rows[0] || {};
@@ -222,6 +208,27 @@ router.get('/admin/accounting/reports/summary', requireAccountingPermission('acc
   }
 });
 
+router.get('/admin/accounting/payouts', requireAccountingPermission('accounting.read.payouts'), async (req, res) => {
+  const soft_errors = [];
+  try {
+    const rows = technicianPayoutLedger ? await technicianPayoutLedger.listPeriods(80) : [];
+    return res.json({
+      ok: true,
+      rows: rows.map(r => ({
+        ...r,
+        payment_rule_note: String(r.period_type) === '10'
+          ? 'งวดวันที่ 10: รวมงานที่เสร็จตั้งแต่วันที่ 16 เดือนก่อน ถึงวันที่ 1 เดือนนี้'
+          : 'งวดวันที่ 25: รวมงานที่เสร็จตั้งแต่วันที่ 1 ถึงวันที่ 16 เดือนนี้',
+      })),
+      note: 'ยอดจ่ายช่างมาจาก technician payout ledger กลาง',
+      soft_errors,
+    });
+  } catch (e) {
+    console.error('GET /admin/accounting/payouts', e);
+    return res.status(500).json({ ok: false, rows: [], note: '', soft_errors: [{ scope: 'payouts', message: e.message }] });
+  }
+});
+
 router.get('/admin/accounting/payouts/:payout_id/techs', requireAccountingPermission('accounting.read.payouts'), async (req, res) => {
   const soft_errors = [];
   try {
@@ -229,14 +236,16 @@ router.get('/admin/accounting/payouts/:payout_id/techs', requireAccountingPermis
     if (!payout_id) return res.status(400).json({ ok: false, error: 'MISSING_PAYOUT_ID', rows: [] });
     let payload = null;
     try {
-      payload = await _buildPayoutTechSummaryRows(payout_id);
+      payload = technicianPayoutLedger ? await technicianPayoutLedger.buildTechnicianRows(payout_id) : await _buildPayoutTechSummaryRows(payout_id);
     } catch (e) {
-      soft_errors.push({ scope: 'live_payout_techs', message: e.message });
+      soft_errors.push({ scope: 'payout_ledger', message: e.message });
     }
     const period = payload?.period || await _getPayoutPeriod(payout_id);
     if (!period) return res.status(404).json({ ok: false, error: 'PAYOUT_NOT_FOUND', rows: [], soft_errors });
     let rows = [];
-    if (payload?.techs?.length) {
+    if (payload?.rows?.length) {
+      rows = payload.rows;
+    } else if (payload?.techs?.length) {
       const pays = await pool.query(
         `SELECT technician_username, paid_amount, paid_status, paid_at, paid_by, slip_url, note,
                 payment_method, payment_reference

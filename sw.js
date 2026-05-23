@@ -1,15 +1,15 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v100-generic-price-campaign-20260520";
+const CACHE_NAME = "cwf-cache-v101-payout-ledger-income-day-20260523";
 
 const ASSETS = [
   "/",
   "/login.html",
   "/index.html",
   "/tech.html",
-  "/style.css",
-  "/app.js?v=20260510_fix52_disable_noisy_gadgets",
+  "/style.css?v=20260523_slot_modal_scroll_v1",
+  "/app.js?v=20260523_income_day_direct_v1",
   "/logo.png",
   "/assets/cwf-promptpay-qr.jpg",
   "/manifest.json",
@@ -28,7 +28,7 @@ const ASSETS = [
   "/admin-review-v2.html",
   "/admin-review-v2.js",
   "/admin-add-v2.html",
-  "/admin-add-v2.js?v=20260520_generic_price_campaign_v1",
+  "/admin-add-v2.js?v=20260523_slot_modal_scroll_v1",
   "/admin-queue-v2.html",
   "/admin-queue-v2.js",
   "/admin-history-v2.html",
@@ -40,6 +40,8 @@ const ASSETS = [
   "/admin-v2-common.js",
   "/admin-work-readiness-v2.html",
   "/admin-work-readiness-v2.js",
+  "/admin-accounting-v2.js?v=20260523_payout_ledger_v1",
+  "/admin-deductions-v2.js?v=20260523_deduction_apply_v1",
 ];
 
 // ติดตั้งแล้ว cache ไฟล์

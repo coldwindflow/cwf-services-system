@@ -1508,6 +1508,17 @@ a:hover{ text-decoration: underline; }
 .team-sheet .btn-primary{ background:#0d6efd; color:#fff; border-color:rgba(13,110,253,.55); }
 .team-sheet .btn-danger{ background: var(--danger); color:#fff; border-color:rgba(176,42,55,.35); }
 .team-sheet .btn-close{ background:#f7f7f7; color:#111; }
+#slot_modal_overlay .team-sheet{
+  max-height:min(92dvh,720px);
+  display:flex;
+  flex-direction:column;
+  overflow:hidden;
+}
+#slot_modal_overlay #slot_modal_body{
+  overflow-y:auto;
+  max-height:calc(92dvh - 210px);
+  -webkit-overflow-scrolling:touch;
+}
 
 /* TEAM_PICKER_V2 END */
 

@@ -40,6 +40,8 @@ const createServiceZoneRoutes = require("./server/routes/serviceZones");
 const createPageRoutes = require("./server/routes/pages");
 const createDocumentRoutes = require("./server/routes/docs");
 const createAccountingReadOnlyRoutes = require("./server/routes/accountingReadOnly");
+const { createTechnicianPayoutLedger } = require("./server/services/technicianPayoutLedger");
+const { createTechnicianDeductionPayoutApply } = require("./server/services/technicianDeductionPayoutApply");
 const createAdminReworkDeductionsHelpers = require("./server/helpers/adminReworkDeductionsHelpers");
 const createAdminReworkReadOnlyRoutes = require("./server/routes/adminReworkReadOnly");
 const createAdminDeductionsReadOnlyRoutes = require("./server/routes/adminDeductionsReadOnly");
@@ -10136,6 +10138,28 @@ async function _resolveTechnicianIncomeUsername(req, fallbackUsername = '') {
   return String(fallbackUsername || '').trim();
 }
 
+async function _computeTechnicianDayIncome(tech, dateYmd) {
+  const dateKey = parseDateYMD(dateYmd) || toBangkokDateKey(new Date());
+  const [dy, dm, dd] = dateKey.split('-').map(Number);
+  const start = _bangkokMidnightUTC(dy, dm, dd);
+  const endEx = _bangkokMidnightUTC(dy, dm, dd + 1);
+  const lines = await _computeTechLinesInRange(tech, start, endEx, {
+    payout_id: `summary_day_${dateKey}`,
+    label_ym: dateKey.slice(0, 7),
+  });
+  return {
+    date: dateKey,
+    start,
+    endEx,
+    lines: lines || [],
+    day_total: _money((lines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0)),
+    day_jobs_count: (lines || []).length,
+    day_range_start: start.toISOString(),
+    day_range_end: endEx.toISOString(),
+    day_source: 'direct_day_range',
+  };
+}
+
 async function _computeTechnicianIncomeSummary(username, opts = {}) {
   const tech = String(username || '').trim();
   if (!tech) {
@@ -10157,15 +10181,11 @@ async function _computeTechnicianIncomeSummary(username, opts = {}) {
   const ymKey = dateKey.slice(0, 7);
   const payoutYmKey = /^\d{4}-\d{2}$/.test(String(opts.month || '').trim()) ? String(opts.month).trim() : ymKey;
 
+  const dayIncome = await _computeTechnicianDayIncome(tech, dateKey);
   const monthLines = await _computeTechLinesInRange(tech, monthStart, nextMonthStart, {
     payout_id: `summary_month_${ymKey}`,
     label_ym: ymKey,
   });
-  const dayLines = (monthLines || []).filter((line) => {
-    const f = line?.finished_at ? new Date(line.finished_at) : null;
-    return f && !Number.isNaN(f.getTime()) && f >= dayStart && f < dayEnd;
-  });
-  const day_total = _money(dayLines.reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
   const month_total = _money((monthLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
   const computedJobs = await _buildTechnicianIncomeComputedJobs(tech, dayStart, dayEnd);
 
@@ -10183,8 +10203,12 @@ async function _computeTechnicianIncomeSummary(username, opts = {}) {
     username: tech,
     date: dateKey,
     month: ymKey,
-    day_total,
+    day_total: dayIncome.day_total,
     month_total,
+    day_jobs_count: dayIncome.day_jobs_count,
+    day_range_start: dayIncome.day_range_start,
+    day_range_end: dayIncome.day_range_end,
+    day_source: dayIncome.day_source,
     payout_month: payoutMonth.payout_month || ymKey,
     payout_month_total: payoutMonth.payout_month_total || 0,
     payout_month_net_total: payoutMonth.payout_month_net_total || 0,
@@ -10340,6 +10364,7 @@ app.get('/tech/income_summary', requireTechnicianSession, async (req, res) => {
     return res.json({
       ...summary,
       all_total,
+      accumulated_total: all_total,
       lifetime_income_total: all_total,
       all_jobs_count: allLines.length,
     });
@@ -10358,7 +10383,12 @@ app.get('/tech/income_summary', requireTechnicianSession, async (req, res) => {
 app.get('/tech/income_today_month', requireTechnicianSession, async (req, res) => {
   try {
     const tech = String(req.auth?.username || req.effective?.username || '').trim();
-    return res.json(await _computeTechnicianIncomeSummary(tech));
+    const summary = await _computeTechnicianIncomeSummary(tech);
+    const allLines = await _computeTechLinesInRange(tech, new Date('2000-01-01T00:00:00.000Z'), new Date('2999-01-01T00:00:00.000Z'), {
+      payout_id: 'summary_lifetime',
+    });
+    const accumulated_total = _money((allLines || []).reduce((sum, line) => sum + Number(line.earn_amount || 0), 0));
+    return res.json({ ...summary, accumulated_total, all_total: accumulated_total, all_jobs_count: allLines.length });
   } catch (e) {
     console.error('GET /tech/income_today_month', e);
     return res.status(e.statusCode || 500).json({ ok:false, error:e.message || 'LOAD_FAILED' });
@@ -10498,50 +10528,18 @@ app.get('/tech/income_day_detail', requireTechnicianSession, async (req, res) =>
     const limit = Math.min(Math.max(Number(req.query.limit || 50), 1), 200);
     const offset = Math.max(Number(req.query.offset || 0), 0);
 
-    // bangkok date -> UTC range
-    const [yy, mm, dd] = qDate.split('-').map(x => Number(x));
-    const start = _bangkokMidnightUTC(yy, mm, dd);
-    const endEx = _bangkokMidnightUTC(yy, mm, dd + 1);
-
-    const donePred = _sqlDonePredicate('j');
-    const jobsQ = await pool.query(
-      `SELECT j.job_id, j.finished_at
-         FROM public.jobs j
-        WHERE ${donePred}
-          AND j.finished_at IS NOT NULL
-          AND j.finished_at >= $1 AND j.finished_at < $2
-          AND (
-            j.technician_username = $3
-            OR EXISTS (SELECT 1 FROM public.job_team_members tm WHERE tm.job_id=j.job_id AND tm.username=$3)
-            OR EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id AND a.technician_username=$3)
-          )
-        ORDER BY j.finished_at DESC
-        LIMIT $4 OFFSET $5`,
-      [start.toISOString(), endEx.toISOString(), tech, limit, offset]
-    );
-
-    const out = [];
-    for (const row of (jobsQ.rows || [])) {
-      const job_id = Number(row.job_id);
-      try {
-        const lines = await _buildPayoutLinesForJob(job_id);
-        const me = (lines || []).find(x => String(x.technician_username) === tech);
-        if (!me) continue;
-        out.push({
-          job_id: String(job_id),
-          finished_at: row.finished_at,
-          earn_amount: Number(me.earn_amount || 0),
-          percent_final: me.percent_final,
-          machine_count_for_tech: Number(me.machine_count_for_tech || 0),
-          detail_json: me.detail_json || null,
-        });
-      } catch (e) {
-        continue;
-      }
-    }
+    const day = await _computeTechnicianDayIncome(tech, qDate);
+    const out = (day.lines || []).slice(offset, offset + limit).map(me => ({
+      job_id: String(me.job_id),
+      finished_at: me.finished_at,
+      earn_amount: Number(me.earn_amount || 0),
+      percent_final: me.percent_final,
+      machine_count_for_tech: Number(me.machine_count_for_tech || 0),
+      detail_json: me.detail_json || null,
+    }));
 
     const total = out.reduce((a, it) => a + Number(it.earn_amount || 0), 0);
-    return res.json({ ok: true, username: tech, date: qDate, total_amount: total, limit, offset, items: out });
+    return res.json({ ok: true, username: tech, date: qDate, total_amount: total, day_total: day.day_total, day_jobs_count: day.day_jobs_count, day_range_start: day.day_range_start, day_range_end: day.day_range_end, day_source: day.day_source, limit, offset, items: out });
   } catch (e) {
     console.error('GET /tech/income_day_detail', e);
     return res.status(500).json({ ok: false, error: 'LOAD_FAILED' });
@@ -12237,6 +12235,13 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
       )
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_payout_adjustments_pid_tech ON public.technician_payout_adjustments(payout_id, technician_username, created_at DESC)`);
+    await pool.query(`ALTER TABLE public.technician_payout_adjustments ADD COLUMN IF NOT EXISTS source_type TEXT`);
+    await pool.query(`ALTER TABLE public.technician_payout_adjustments ADD COLUMN IF NOT EXISTS source_id TEXT`);
+    await pool.query(`
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_payout_adjustments_source_once
+      ON public.technician_payout_adjustments(source_type, source_id)
+      WHERE source_type IS NOT NULL AND source_id IS NOT NULL
+    `);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.technician_deposit_accounts (
@@ -12314,6 +12319,9 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdc_status_created ON public.technician_deduction_cases(status, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdc_deduction_type ON public.technician_deduction_cases(deduction_type)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdc_severity ON public.technician_deduction_cases(severity)`);
+    await pool.query(`ALTER TABLE public.technician_deduction_cases ADD COLUMN IF NOT EXISTS recovery_status TEXT NOT NULL DEFAULT 'pending'`);
+    await pool.query(`ALTER TABLE public.technician_deduction_cases ADD COLUMN IF NOT EXISTS recovered_amount NUMERIC(12,2) NOT NULL DEFAULT 0`);
+    await pool.query(`ALTER TABLE public.technician_deduction_cases ADD COLUMN IF NOT EXISTS outstanding_amount NUMERIC(12,2) NOT NULL DEFAULT 0`);
 
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.technician_rework_cases (
@@ -15321,7 +15329,15 @@ async function transitionDeductionCase(req, res, toStatus, action) {
 }
 
 app.post('/admin/deductions/:id/submit', requireAdminSession, (req, res) => transitionDeductionCase(req, res, 'pending_approval', 'DEDUCTION_CASE_SUBMIT'));
-app.post('/admin/deductions/:id/approve', requireSuperAdmin, (req, res) => transitionDeductionCase(req, res, 'approved', 'DEDUCTION_CASE_APPROVE'));
+app.post('/admin/deductions/:id/approve', requireSuperAdmin, async (req, res) => {
+  try {
+    const result = await technicianDeductionPayoutApply.applyApprovedCase(req, req.params.id);
+    return res.json({ ...result, message: PAYOUT_DEDUCTION_WARNING });
+  } catch (e) {
+    console.error('POST /admin/deductions/:id/approve', e);
+    return res.status(Number(e.status || 500)).json({ ok: false, error: e.message || 'DEDUCTION_APPROVE_APPLY_FAILED' });
+  }
+});
 app.post('/admin/deductions/:id/reject', requireSuperAdmin, (req, res) => transitionDeductionCase(req, res, 'rejected', 'DEDUCTION_CASE_REJECT'));
 app.post('/admin/deductions/:id/void', requireSuperAdmin, (req, res) => transitionDeductionCase(req, res, 'voided', 'DEDUCTION_CASE_VOID'));
 
@@ -21907,6 +21923,30 @@ app.post('/admin/accounting/settings', requireAdminSession, upload.fields([
   }
 });
 
+const technicianPayoutLedger = createTechnicianPayoutLedger({
+  pool,
+  computePayoutTechSummaryLive: _computePayoutTechSummaryLive,
+  periodBoundsForYm: _periodBoundsForYm,
+  getPayoutPeriod: _getPayoutPeriod,
+  getDepositDeductionForPayout: _getDepositDeductionForPayout,
+  getDepositSummary: _getDepositSummary,
+  paidStatus: _paidStatus,
+  recentPeriods: _recentPeriods,
+  accountingPayoutDueDate: _accountingPayoutDueDate,
+  accountingThaiDate: _accountingThaiDate,
+  accountingPayoutCutoffLabel: _accountingPayoutCutoffLabel,
+});
+
+const technicianDeductionPayoutApply = createTechnicianDeductionPayoutApply({
+  pool,
+  periodBoundsForYm: _periodBoundsForYm,
+  bkkNow: _bkkNow,
+  bkkYmd: _bkkYmd,
+  getActorUsername,
+  ledger: technicianPayoutLedger,
+  logDeductionAudit,
+});
+
 app.use(createAccountingReadOnlyRoutes({
   pool,
   requireAccountingPermission,
@@ -21926,6 +21966,7 @@ app.use(createAccountingReadOnlyRoutes({
   money: _money,
   paidStatus: _paidStatus,
   sqlDonePredicate: _sqlDonePredicate,
+  technicianPayoutLedger,
 }));
 
 app.post('/admin/accounting/revenue/:job_id/mark-paid', requireAccountingPermission('accounting_manage_revenue'), async (req, res) => {
@@ -22911,8 +22952,25 @@ app.get('/admin/accounting/reports/:report_key.csv', requireAccountingPermission
   const report = ACCOUNTING_REPORTS[reportKey];
   if (!report) return res.status(404).json({ ok: false, error: 'ACCOUNTING_REPORT_NOT_FOUND' });
   try {
-    const q = await pool.query(report.sql(), []);
-    const rows = typeof report.transform === 'function' ? report.transform(q.rows || []) : (q.rows || []);
+    let rows;
+    if (reportKey === 'payouts') {
+      rows = (await technicianPayoutLedger.listPeriods(5000)).map(r => ({
+        ...r,
+        status_th: Number(r.remaining_amount || 0) <= 0 ? 'จ่ายช่างแล้ว' : (Number(r.paid_amount || 0) > 0 ? 'จ่ายช่างบางส่วน' : 'ยังไม่จ่ายช่าง'),
+      }));
+    } else if (reportKey === 'gross-profit') {
+      const q = await pool.query(report.sql(), []);
+      rows = q.rows || [];
+      const payout = await technicianPayoutLedger.reportSummary();
+      rows = rows.map(r => ({
+        ...r,
+        technician_payable_total: _money(payout.net_payable || 0),
+        estimated_gross_profit: _money(Number(r.revenue_total || 0) - Number(r.expense_total || 0) - Number(payout.net_payable || 0)),
+      }));
+    } else {
+      const q = await pool.query(report.sql(), []);
+      rows = typeof report.transform === 'function' ? report.transform(q.rows || []) : (q.rows || []);
+    }
     await logAccountingAudit(req, {
       action: 'REPORT_EXPORT',
       entity_type: 'accounting_report',

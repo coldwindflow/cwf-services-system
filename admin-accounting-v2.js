@@ -377,7 +377,7 @@
                     <div class="acctMiniStat"><span>คงเหลือ</span><b>${money(t.remaining_amount)} ฿</b></div>
                     <div class="acctMiniStat"><span>ทวิ50โดยประมาณ</span><b>${money(t.wht_tax_amount)} ฿</b></div>
                   </div>
-                  <small>รายได้ก่อนหัก ${money(t.gross_amount)} บาท • หักประกัน ${money(t.deposit_deduction_amount)} บาท • ปรับยอด ${money(t.adj_total)} บาท • จ่ายแล้ว ${money(t.paid_amount)} บาท</small>
+                  <small>รายได้ก่อนหัก ${money(t.gross_amount)} บาท • หักประกัน ${money(t.deposit_deduction_amount)} บาท • ปรับยอด ${money(t.adj_total)} บาท • จ่ายแล้ว ${money(t.paid_amount)} บาท${Number(t.outstanding_amount||0)>0?` • ค้างหัก ${money(t.outstanding_amount)} บาท`:''}</small>
                   <small>สถานะจ่ายเงินช่าง: ${esc(payoutStatusLabel(t.paid_status))}${t.paid_at ? ` • จ่ายเมื่อ ${esc(dateTH(t.paid_at))}` : ''}</small>
                   <div class="acctTaxHint ${profile.is_complete ? 'ok' : 'warn'}">ข้อมูลทวิ50: ${esc(missingProfileText(profile))}</div>
                 </div>

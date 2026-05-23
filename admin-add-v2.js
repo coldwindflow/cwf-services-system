@@ -2319,7 +2319,7 @@ function openSlotModal(slot){
         reasonDiv.className = 'muted2 mini';
         reasonDiv.style.marginTop = '10px';
         reasonDiv.innerHTML = '<b>เหตุผล (Debug)</b>:<br>' + reasons.map(r=>`• ${String(r.code||'')}: ${String(r.message||'')}`).join('<br>');
-        wrap.appendChild(reasonDiv);
+        body.appendChild(reasonDiv);
       }
     }catch(e){}
     setTimeout(()=>{

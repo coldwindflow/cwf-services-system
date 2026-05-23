@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_fix52_disable_noisy_gadgets";
+window.__CWF_TECH_APP_VERSION__ = "20260523_income_day_direct_v1";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -1631,8 +1631,8 @@ function _bestEffortUsername() {
 }
 
 
-const CWF_INCOME_CACHE_KEY = '__cwf_income_cache_v10_3__';
-const CWF_OLD_INCOME_CACHE_KEYS = ['__cwf_income_cache__','__cwf_income_cache_v9__','__cwf_income_cache_v10__','__cwf_income_cache_v10_2__'];
+const CWF_INCOME_CACHE_KEY = '__cwf_income_cache_v10_4__';
+const CWF_OLD_INCOME_CACHE_KEYS = ['__cwf_income_cache__','__cwf_income_cache_v9__','__cwf_income_cache_v10__','__cwf_income_cache_v10_2__','__cwf_income_cache_v10_3__'];
 
 function _incomeCacheMeta(){
   const date = _bkkYmdNow();
@@ -1672,7 +1672,9 @@ function _writeIncomeCache(data){
       month: String(data?.month || m.month),
       day_total: Number(data?.day_total||0),
       month_total: Number(data?.month_total||0),
-      all_total: Number(data?.all_total||0),
+      all_total: Number(data?.all_total ?? data?.accumulated_total ?? 0),
+      accumulated_total: Number(data?.accumulated_total ?? data?.all_total ?? 0),
+      day_source: String(data?.day_source || ''),
       payout_month_total: Number((data?.monthly_income_display_amount ?? data?.payout_month_total) || 0),
       monthly_income_display_amount: Number((data?.monthly_income_display_amount ?? data?.payout_month_total) || 0),
       monthly_income_display_label: String(data?.monthly_income_display_label || data?.payout_month || ''),
@@ -2028,7 +2030,7 @@ function renderTechWorkSummary(summary){
 async function loadIncomeSummary() {
   if (!incomeDailyEl && !incomeMonthEl && !incomeAllEl && !incomeDaily2El && !incomeMonth2El && !incomeAll2El) return; // UI ไม่ได้มีส่วนนี้
   try {
-    const res = await fetch(`${API_BASE}/tech/income_summary?v=contract-v10-3`, { credentials: 'include', cache: 'no-store' });
+    const res = await fetch(`${API_BASE}/tech/income_summary?v=contract-v10-4`, { credentials: 'include', cache: 'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
 
@@ -2071,7 +2073,7 @@ async function loadIncomeTodayMonthFast(){
   // ถ้าไม่มีการ์ดใหม่ ให้ fail-open (ไม่พังหน้า)
   if (!incomeTodayValEl && !incomeDailyEl && !incomeDaily2El && !incomeMonth2El) return;
   try{
-    const res = await fetch(`${API_BASE}/tech/income_today_month?v=contract-v10-3`, { credentials:'include', cache:'no-store' });
+    const res = await fetch(`${API_BASE}/tech/income_today_month?v=contract-v10-4`, { credentials:'include', cache:'no-store' });
     const data = await res.json();
     if (!data || !data.ok) throw new Error(data?.error || 'LOAD_FAILED');
     if (incomeTodayValEl) incomeTodayValEl.textContent = formatBaht(data.day_total||0);
@@ -2081,6 +2083,7 @@ async function loadIncomeTodayMonthFast(){
     if (incomeMonthEl) incomeMonthEl.textContent = formatBaht(data.month_total||0);
     if (incomeMonth2El) incomeMonth2El.textContent = formatBaht(data.month_total||0);
     _writeIncomeCache({ ...(_readIncomeCache() || {}), ...data });
+    try { renderTechGadgets(); } catch {}
   }catch(e){
     const c = _readIncomeCache();
     if (c) {
