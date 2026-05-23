@@ -43,6 +43,7 @@ const createAccountingReadOnlyRoutes = require("./server/routes/accountingReadOn
 const { ensurePayoutPeriodAndSnapshotForPayment } = require("./server/services/technicianPayoutPrepay");
 const { buildAccountingPayoutCalendar, isPeriodCutoffClosed } = require("./server/services/technicianPayoutPeriods");
 const { createTechnicianCashCollectionService } = require("./server/services/technicianCashCollections");
+const { createTechnicianDeductionPayoutApplyService } = require("./server/services/technicianDeductionPayoutApply");
 const createAdminReworkDeductionsHelpers = require("./server/helpers/adminReworkDeductionsHelpers");
 const createAdminReworkReadOnlyRoutes = require("./server/routes/adminReworkReadOnly");
 const createAdminDeductionsReadOnlyRoutes = require("./server/routes/adminDeductionsReadOnly");
@@ -616,6 +617,7 @@ const multer = require("multer");
 
 const pool = require("./db");
 const technicianCashCollections = createTechnicianCashCollectionService({ pool, periodBoundsForYm: _periodBoundsForYm, money: _money });
+const technicianDeductionPayoutApply = createTechnicianDeductionPayoutApplyService();
 
 const app = express();
 // Render/Reverse-proxy: allow req.protocol to reflect X-Forwarded-Proto
@@ -1589,7 +1591,7 @@ const DEDUCTION_TYPES = new Set([
 const DEDUCTION_SEVERITIES = new Set(['low','medium','high','critical']);
 const REWORK_REASON_TYPES = new Set(['water_leak','not_clean','customer_complaint','missing_photos','same_issue_not_fixed','poor_work_standard','other']);
 const REWORK_RESOLUTIONS = new Set(['fixed','failed','changed_technician','company_absorbed','deduction_required']);
-const PAYOUT_DEDUCTION_WARNING = 'ยอดนี้ยังไม่ถูกนำไปรวมในรอบจ่ายเงิน จนกว่าจะกดนำเข้ารอบจ่าย';
+const PAYOUT_DEDUCTION_WARNING = 'เมื่ออนุมัติแล้ว ระบบจะหักจริงในงวดจ่ายช่างผ่าน payout adjustment แบบ audit ได้ทันที';
 
 function getActorUsername(req) {
   const actor = req?.actor || req?.auth || req?.effective || {};
@@ -6147,6 +6149,46 @@ async function _buildPayoutTechSummaryRows(payout_id){
     baseRows = live.rows || [];
   }
 
+  // Adjustment-only technicians must still appear in payout screens.
+  // Example: a deduction/rework case is approved before the technician has gross income
+  // in that period. Without this union the adjustment exists in DB but Admin cannot see
+  // that it is really deducted from the technician account.
+  const rowMap = new Map();
+  for (const r of (baseRows || [])) {
+    const tech = String(r.technician_username || '').trim();
+    if (!tech) continue;
+    rowMap.set(tech, {
+      technician_username: tech,
+      gross_amount: Number(r.gross_amount || 0),
+      jobs_count: Number(r.jobs_count || 0),
+    });
+  }
+  const adjTechsQ = await pool.query(
+    `SELECT technician_username,
+            COALESCE(SUM(adj_amount),0)::numeric AS adj_total
+       FROM public.technician_payout_adjustments
+      WHERE payout_id=$1
+      GROUP BY technician_username`,
+    [payout_id]
+  );
+  for (const r of (adjTechsQ.rows || [])) {
+    const tech = String(r.technician_username || '').trim();
+    if (!tech || rowMap.has(tech)) continue;
+    rowMap.set(tech, { technician_username: tech, gross_amount: 0, jobs_count: 0, adjustment_only: true });
+  }
+  const payTechsQ = await pool.query(
+    `SELECT technician_username
+       FROM public.technician_payout_payments
+      WHERE payout_id=$1`,
+    [payout_id]
+  );
+  for (const r of (payTechsQ.rows || [])) {
+    const tech = String(r.technician_username || '').trim();
+    if (!tech || rowMap.has(tech)) continue;
+    rowMap.set(tech, { technician_username: tech, gross_amount: 0, jobs_count: 0, payment_only: true });
+  }
+  baseRows = Array.from(rowMap.values());
+
   const out = [];
   for (const r of baseRows) {
     const tech = String(r.technician_username || '').trim();
@@ -6183,6 +6225,8 @@ async function _buildPayoutTechSummaryRows(payout_id){
       ...deposit,
       latest_deposit_deduction: deposit_deduction_amount,
       jobs_count: Number(r.jobs_count || 0),
+      adjustment_only: !!r.adjustment_only,
+      payment_only: !!r.payment_only,
       source,
     });
   }
@@ -7781,6 +7825,7 @@ async function _listPayoutPeriodsLiveAware({ limit = 24 } = {}) {
     let lines_count = 0;
     let techs_count = 0;
     let source = 'live_contract_recompute_draft';
+    const techSet = new Set();
     if (_payoutCanUseStoredLines(status)) {
       const stored = await pool.query(
         `SELECT COALESCE(SUM(earn_amount),0)::numeric AS total_amount,
@@ -7802,7 +7847,6 @@ async function _listPayoutPeriodsLiveAware({ limit = 24 } = {}) {
         period_type: String(p.period_type || ''),
         label_ym: String(p.label_ym || p.period_start || '').slice(0,7),
       });
-      const techSet = new Set();
       for (const ln of (live.lines || [])) {
         total_amount += Number(ln.earn_amount || 0);
         lines_count += 1;
@@ -7811,10 +7855,26 @@ async function _listPayoutPeriodsLiveAware({ limit = 24 } = {}) {
       }
       techs_count = techSet.size;
     }
+    const adjQ = await pool.query(
+      `SELECT COALESCE(SUM(adj_amount),0)::numeric AS adj_total,
+              COUNT(DISTINCT technician_username)::int AS adj_techs_count,
+              ARRAY_REMOVE(ARRAY_AGG(DISTINCT technician_username), NULL) AS adj_techs
+         FROM public.technician_payout_adjustments
+        WHERE payout_id=$1`,
+      [p.payout_id]
+    );
+    const adj_total = Number(adjQ.rows?.[0]?.adj_total || 0);
+    for (const u of (adjQ.rows?.[0]?.adj_techs || [])) {
+      const v = String(u || '').trim();
+      if (v) techSet.add(v);
+    }
+    if (techSet.size) techs_count = Math.max(techs_count, techSet.size);
+    total_amount += adj_total;
     const cutoff_closed = isPeriodCutoffClosed(p);
     rows.push({
       ...p,
       total_amount: Number(total_amount.toFixed ? total_amount.toFixed(2) : total_amount),
+      adj_total,
       lines_count,
       techs_count,
       source,
@@ -12349,6 +12409,14 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
         updated_at TIMESTAMPTZ DEFAULT NOW()
       )
     `);
+    await pool.query(`ALTER TABLE public.technician_deduction_cases ADD COLUMN IF NOT EXISTS applied_by TEXT`);
+    await pool.query(`ALTER TABLE public.technician_deduction_cases ADD COLUMN IF NOT EXISTS applied_at TIMESTAMPTZ`);
+    await pool.query(`ALTER TABLE public.technician_deduction_cases ADD COLUMN IF NOT EXISTS applied_payout_id TEXT NULL`);
+    await pool.query(`ALTER TABLE public.technician_deduction_cases ADD COLUMN IF NOT EXISTS applied_adjustment_id BIGINT NULL`);
+    await pool.query(`ALTER TABLE public.technician_deduction_cases DROP CONSTRAINT IF EXISTS technician_deduction_cases_status_check`);
+    await pool.query(`ALTER TABLE public.technician_deduction_cases ADD CONSTRAINT technician_deduction_cases_status_check CHECK (status IN ('open','pending_approval','approved','applied','rejected','voided'))`);
+    await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdc_applied_payout ON public.technician_deduction_cases(applied_payout_id, technician_username)`);
+
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdc_technician_created ON public.technician_deduction_cases(technician_username, created_at DESC)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdc_job_id ON public.technician_deduction_cases(job_id)`);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_tdc_status_created ON public.technician_deduction_cases(status, created_at DESC)`);
@@ -15348,9 +15416,25 @@ async function transitionDeductionCase(req, res, toStatus, action) {
     if (toStatus === 'rejected') { sets.push(`rejected_by=$${p++}`, 'rejected_at=NOW()'); params.push(actor); }
     if (toStatus === 'voided') { sets.push(`voided_by=$${p++}`, 'voided_at=NOW()'); params.push(actor); }
     const up = await client.query(`UPDATE public.technician_deduction_cases SET ${sets.join(', ')} WHERE case_id=$1 RETURNING *`, params);
-    await logDeductionAudit(client, req, { action, entity_type: 'deduction_case', entity_id: id, before, after: up.rows[0], note: note || PAYOUT_DEDUCTION_WARNING });
+    let row = up.rows[0];
+    let payout_apply = null;
+    await logDeductionAudit(client, req, { action, entity_type: 'deduction_case', entity_id: id, before, after: row, note: note || PAYOUT_DEDUCTION_WARNING });
+
+    if (toStatus === 'approved') {
+      payout_apply = await technicianDeductionPayoutApply.applyDeductionCaseToPayout(client, row, { actor });
+      row = payout_apply.row || row;
+      await logDeductionAudit(client, req, {
+        action: 'DEDUCTION_CASE_APPLY_TO_PAYOUT',
+        entity_type: 'deduction_case',
+        entity_id: id,
+        before: up.rows[0],
+        after: row,
+        note: `สร้าง adjustment หักจริงในงวด ${payout_apply.payout_id} adj_id=${payout_apply.adjustment?.adj_id || ''}`,
+      });
+    }
+
     await client.query('COMMIT');
-    return res.json({ ok: true, row: up.rows[0], message: PAYOUT_DEDUCTION_WARNING });
+    return res.json({ ok: true, row, payout_apply, message: toStatus === 'approved' ? 'อนุมัติและหักเงินในงวดจ่ายช่างแล้ว' : PAYOUT_DEDUCTION_WARNING });
   } catch (e) {
     try { await client.query('ROLLBACK'); } catch {}
     console.error(`POST /admin/deductions/:id/${toStatus}`, e);
@@ -15362,6 +15446,44 @@ async function transitionDeductionCase(req, res, toStatus, action) {
 
 app.post('/admin/deductions/:id/submit', requireAdminSession, (req, res) => transitionDeductionCase(req, res, 'pending_approval', 'DEDUCTION_CASE_SUBMIT'));
 app.post('/admin/deductions/:id/approve', requireSuperAdmin, (req, res) => transitionDeductionCase(req, res, 'approved', 'DEDUCTION_CASE_APPROVE'));
+
+app.post('/admin/deductions/:id/apply', requireSuperAdmin, async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isFinite(id) || id <= 0) return res.status(400).json({ ok: false, error: 'case_id ไม่ถูกต้อง' });
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const cur = await client.query(`SELECT * FROM public.technician_deduction_cases WHERE case_id=$1 FOR UPDATE`, [id]);
+    if (!cur.rows.length) throw createHttpError(404, 'ไม่พบเคส');
+    const before = cur.rows[0];
+    const st = String(before.status || '').trim();
+    if (st === 'applied' && before.applied_adjustment_id) {
+      await client.query('COMMIT');
+      return res.json({ ok: true, row: before, already_applied: true, message: 'เคสนี้ถูกหักในงวดจ่ายแล้ว' });
+    }
+    if (st !== 'approved') throw createHttpError(409, 'นำเข้าหักเงินได้เฉพาะเคสสถานะ approved ที่ยังไม่ applied');
+    const actor = getActorUsername(req);
+    const payout_apply = await technicianDeductionPayoutApply.applyDeductionCaseToPayout(client, before, { actor });
+    const row = payout_apply.row || before;
+    await logDeductionAudit(client, req, {
+      action: 'DEDUCTION_CASE_APPLY_TO_PAYOUT',
+      entity_type: 'deduction_case',
+      entity_id: id,
+      before,
+      after: row,
+      note: `นำเคส approved ไปหักจริงในงวด ${payout_apply.payout_id} adj_id=${payout_apply.adjustment?.adj_id || ''}`,
+    });
+    await client.query('COMMIT');
+    return res.json({ ok: true, row, payout_apply, message: 'หักเงินในงวดจ่ายช่างแล้ว' });
+  } catch (e) {
+    try { await client.query('ROLLBACK'); } catch {}
+    console.error('POST /admin/deductions/:id/apply', e);
+    return res.status(Number(e.status || 500)).json({ ok: false, error: e.message || 'นำเคสเข้าหักเงินจริงไม่สำเร็จ' });
+  } finally {
+    client.release();
+  }
+});
+
 app.post('/admin/deductions/:id/reject', requireSuperAdmin, (req, res) => transitionDeductionCase(req, res, 'rejected', 'DEDUCTION_CASE_REJECT'));
 app.post('/admin/deductions/:id/void', requireSuperAdmin, (req, res) => transitionDeductionCase(req, res, 'voided', 'DEDUCTION_CASE_VOID'));
 
