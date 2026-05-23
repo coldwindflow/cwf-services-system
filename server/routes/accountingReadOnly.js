@@ -1,6 +1,7 @@
 module.exports = function createAccountingReadOnlyRoutes(deps = {}) {
   const express = require("express");
   const router = express.Router();
+  const { buildAccountingPayoutCalendar, isPeriodCutoffClosed } = require("../services/technicianPayoutPeriods");
   const {
     pool,
     requireAccountingPermission,
@@ -20,6 +21,7 @@ module.exports = function createAccountingReadOnlyRoutes(deps = {}) {
     money: _money,
     paidStatus: _paidStatus,
     sqlDonePredicate: _sqlDonePredicate,
+    ensureDuePayoutPeriodsBangkok: _ensureDuePayoutPeriodsBangkok,
   } = deps;
 
 router.get('/admin/accounting/summary', requireAccountingPermission('accounting.read.summary'), async (req, res) => {
@@ -222,6 +224,128 @@ router.get('/admin/accounting/reports/summary', requireAccountingPermission('acc
   }
 });
 
+
+function _accountingPayoutPaymentRuleNote(period = {}) {
+  return String(period.period_type) === '10'
+    ? 'งวดวันที่ 10: รวมงานที่เสร็จในช่วงครึ่งหลังของเดือนก่อนถึงต้นเดือนนี้ • จ่ายก่อนกำหนดได้หลังปิด cutoff แล้ว'
+    : 'งวดวันที่ 25: รวมงานที่เสร็จในช่วงครึ่งแรกของเดือนนี้ • จ่ายก่อนกำหนดได้หลังปิด cutoff แล้ว';
+}
+
+function _accountingDecoratePayoutPeriod(period = {}, { now = new Date() } = {}) {
+  const due = _accountingPayoutDueDate(period);
+  const dueIso = due ? due.toISOString() : (period.due_date || null);
+  const cutoffClosed = isPeriodCutoffClosed(period, now);
+  const isDue = due ? due.getTime() <= now.getTime() : false;
+  return {
+    ...period,
+    due_date: dueIso,
+    due_label: _accountingThaiDate(dueIso),
+    cutoff_label: _accountingPayoutCutoffLabel(period),
+    is_due: isDue,
+    is_upcoming: !isDue,
+    cutoff_closed: cutoffClosed,
+    can_pay_early: cutoffClosed && !isDue,
+    can_pay: cutoffClosed,
+    payment_rule_note: _accountingPayoutPaymentRuleNote(period),
+  };
+}
+
+async function _accountingPayoutRowsLiveAware(req, soft_errors, { limit = 36 } = {}) {
+  const now = new Date();
+  let auto_ensure = { created: [], checked_types: [] };
+  if (typeof _ensureDuePayoutPeriodsBangkok === 'function') {
+    try { auto_ensure = await _ensureDuePayoutPeriodsBangkok(req?.actor?.username || req?.auth?.username || null); }
+    catch (e) { soft_errors.push({ scope: 'auto_ensure_payouts', message: e.message }); }
+  }
+
+  const existingQ = await _accountingSafeQuery(soft_errors, 'payout_periods_existing',
+    `SELECT p.payout_id, p.period_type, p.period_start, p.period_end, p.status, p.created_at, p.created_by
+       FROM public.technician_payout_periods p
+      ORDER BY p.period_start DESC, p.payout_id DESC
+      LIMIT $1`,
+    [Math.min(Math.max(Number(limit || 36), 1), 80)]);
+
+  const map = new Map();
+  for (const p of buildAccountingPayoutCalendar({ now, pastMonths: 2, futureMonths: 2 })) {
+    map.set(String(p.payout_id), { ...p, status: 'draft', source: 'virtual_upcoming_period' });
+  }
+  for (const p of existingQ.rows || []) {
+    map.set(String(p.payout_id), { ...p, is_virtual: false, source: 'stored_period' });
+  }
+
+  const rows = [];
+  for (const base of Array.from(map.values())) {
+    const period = _accountingDecoratePayoutPeriod(base, { now });
+    let technician_count = 0;
+    let line_count = 0;
+    let gross_amount = 0;
+    let deposit_deduction_amount = 0;
+    let adj_total = 0;
+    let net_payable = 0;
+    let paid_amount = 0;
+    let remaining_amount = 0;
+    let calcSource = period.source || '';
+    try {
+      const payload = await _buildPayoutTechSummaryRows(period.payout_id);
+      const techs = payload?.techs || [];
+      technician_count = techs.length;
+      line_count = techs.reduce((a, t) => a + Number(t.jobs_count || t.job_count || 0), 0);
+      gross_amount = techs.reduce((a, t) => a + Number(t.gross_amount || 0), 0);
+      deposit_deduction_amount = techs.reduce((a, t) => a + Number(t.deposit_deduction_amount || 0), 0);
+      adj_total = techs.reduce((a, t) => a + Number(t.adj_total || 0), 0);
+      net_payable = techs.reduce((a, t) => a + Number(t.net_amount || 0), 0);
+      paid_amount = techs.reduce((a, t) => a + Number(t.paid_amount || 0), 0);
+      remaining_amount = techs.reduce((a, t) => a + Number(t.remaining_amount || 0), 0);
+      calcSource = payload?.source || calcSource;
+    } catch (e) {
+      soft_errors.push({ scope: `payout_live_${period.payout_id}`, message: e.message });
+    }
+    rows.push({
+      ...period,
+      technician_count,
+      line_count,
+      gross_amount: _money(gross_amount),
+      deposit_deduction_amount: _money(deposit_deduction_amount),
+      adj_total: _money(adj_total),
+      net_payable: _money(net_payable),
+      paid_amount: _money(paid_amount),
+      remaining_amount: _money(Math.max(0, remaining_amount)),
+      source: calcSource,
+      preview_note: period.is_virtual
+        ? 'งวด preview ยังไม่ถูก lock; เมื่อกดจ่าย ระบบจะสร้างงวดและ snapshot ยอดก่อนบันทึกจ่าย'
+        : '',
+    });
+  }
+
+  rows.sort((a, b) => {
+    const openA = String(a.status || 'draft') !== 'paid' && Number(a.remaining_amount || 0) > 0;
+    const openB = String(b.status || 'draft') !== 'paid' && Number(b.remaining_amount || 0) > 0;
+    if (openA !== openB) return openA ? -1 : 1;
+    const canA = a.can_pay ? 1 : 0;
+    const canB = b.can_pay ? 1 : 0;
+    if (canA !== canB) return canB - canA;
+    return new Date(b.period_start).getTime() - new Date(a.period_start).getTime();
+  });
+  return { rows: rows.slice(0, Math.min(Math.max(Number(limit || 36), 1), 80)), auto_ensure };
+}
+
+router.get('/admin/accounting/payouts', requireAccountingPermission('accounting.read.payouts'), async (req, res) => {
+  const soft_errors = [];
+  try {
+    const { rows, auto_ensure } = await _accountingPayoutRowsLiveAware(req, soft_errors, { limit: req.query.limit || 36 });
+    return res.json({
+      ok: true,
+      rows,
+      auto_ensure,
+      note: 'แสดงทั้งงวดที่สร้างแล้วและงวดใกล้ถึงแบบ preview; จ่ายก่อนกำหนดได้หลังช่วงตัดยอดปิดแล้ว ระบบจะ snapshot และ lock ก่อนบันทึกจ่ายจริง',
+      soft_errors,
+    });
+  } catch (e) {
+    console.error('GET /admin/accounting/payouts', e);
+    return res.status(500).json({ ok: false, rows: [], note: '', soft_errors: [{ scope: 'payouts', message: e.message }] });
+  }
+});
+
 router.get('/admin/accounting/payouts/:payout_id/techs', requireAccountingPermission('accounting.read.payouts'), async (req, res) => {
   const soft_errors = [];
   try {
@@ -271,19 +395,18 @@ router.get('/admin/accounting/payouts/:payout_id/techs', requireAccountingPermis
       rows = await _accountingStoredPayoutTechRows(payout_id);
       if (!rows.length) soft_errors.push({ scope: 'payout_techs_empty', message: 'ยังไม่มีรายช่างในงวดนี้ อาจยังไม่มีงานเสร็จในช่วงตัดยอดนี้' });
     }
-    rows = await _accountingEnrichPayoutTechRows(payout_id, period, rows);
-    const due = _accountingPayoutDueDate(period);
+    const decoratedPeriod = _accountingDecoratePayoutPeriod(period);
+    rows = (await _accountingEnrichPayoutTechRows(payout_id, period, rows)).map((r) => ({
+      ...r,
+      can_pay: decoratedPeriod.can_pay,
+      can_pay_early: decoratedPeriod.can_pay_early,
+      cutoff_closed: decoratedPeriod.cutoff_closed,
+    }));
     return res.json({
       ok: true,
       payout_id,
       period: {
-        ...period,
-        due_date: due ? due.toISOString() : null,
-        due_label: _accountingThaiDate(due ? due.toISOString() : null),
-        cutoff_label: _accountingPayoutCutoffLabel(period),
-        payment_rule_note: String(period.period_type) === '10'
-          ? 'งวดวันที่ 10: รวมงานที่เสร็จตั้งแต่วันที่ 26 เดือนก่อน ถึงวันที่ 1 เดือนนี้'
-          : 'งวดวันที่ 25: รวมงานที่เสร็จตั้งแต่วันที่ 11 ถึงวันที่ 16 เดือนนี้',
+        ...decoratedPeriod,
         wht_month: _accountingWhtMonthKeyFromPeriod(period),
         wht_month_label: _accountingWhtMonthLabel(_accountingWhtMonthKeyFromPeriod(period)),
       },
