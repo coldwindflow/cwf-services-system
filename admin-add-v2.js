@@ -575,9 +575,9 @@ function syncManualTechnicianSelection(opts = {}) {
   }
 
   if (mode === 'team') {
-    const primary = (state.teamPicker?.primary || hidden?.value || value || '').toString().trim();
-    if (hidden) hidden.value = primary;
-    return { assign_mode: 'team', technician_username: primary };
+    const representative = (getTeamListForAssign()[0] || '').toString().trim();
+    if (hidden) hidden.value = representative;
+    return { assign_mode: 'team', technician_username: representative };
   }
 
   if (hidden) hidden.value = '';
@@ -587,14 +587,14 @@ function syncManualTechnicianSelection(opts = {}) {
 }
 
 
-// --- Premium Team Picker (chips + search + primary badge) ---
+// --- Premium Team Picker (chips + search, no manual primary required) ---
 function escapeHtml(s){
   return String(s||'').replace(/[&<>'"]/g, (c)=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
 }
 
 state.teamPicker = {
   q: "",
-  selected: new Set(),   // includes primary too for display
+  selected: new Set(),   // all selected technicians
   primary: "",
 };
 
@@ -608,8 +608,9 @@ function updateAssignUIVisibility(){
   const help = el('tech_select_help');
 
   const techSel = el('technician_username_select');
+  const techSelectWrap = techSel ? techSel.closest('div') : null;
   const allowPick = !!state.slots_loaded;
-  if(techSel) techSel.disabled = !allowPick || (mode === 'auto');
+  if(techSel) techSel.disabled = !allowPick || (mode === 'auto') || (mode === 'team');
   if(help) help.innerHTML = (uiMode==='urgent') ? 'งานด่วน: ส่งข้อเสนอให้ช่างที่ว่างและเปิดรับงาน' : 'นัดงาน: แอดมินมอบหมายงานได้ทันที แต่ห้ามชนคิว';
   const timeProposalWrap = el('allow_time_proposal_wrap');
   if (timeProposalWrap) timeProposalWrap.style.display = (uiMode === 'urgent') ? 'flex' : 'none';
@@ -630,8 +631,13 @@ function updateAssignUIVisibility(){
   if(mode === 'team'){
     if(teamWrap) teamWrap.style.display = 'block';
     if(hint) hint.style.display = 'none';
-    if(lbl) lbl.textContent = 'ช่างหลัก';
+    if(lbl) lbl.textContent = 'ทีมช่าง';
+    if(techSelectWrap) techSelectWrap.style.display = 'none';
+    if(techSel) techSel.value = '';
+    if(el('technician_username')) el('technician_username').value = '';
+    state.teamPicker.primary = '';
   }else if(mode === 'single'){
+    if(techSelectWrap) techSelectWrap.style.display = '';
     if(teamWrap) teamWrap.style.display = 'none';
     if(hint) hint.style.display = 'none';
     if(lbl) lbl.textContent = 'เลือกเดี่ยว';
@@ -641,6 +647,7 @@ function updateAssignUIVisibility(){
     if(el('team_members_csv')) el('team_members_csv').value = '';
   }else{
     // auto
+    if(techSelectWrap) techSelectWrap.style.display = '';
     if(teamWrap) teamWrap.style.display = 'none';
     if(hint) hint.style.display = 'block';
     if(lbl) lbl.textContent = 'ช่าง';
@@ -668,23 +675,18 @@ function updateAssignUIVisibility(){
 }
 
 function syncPrimaryFromSelect(){
-  const u = (el("technician_username_select")?.value || "").trim();
-  state.teamPicker.primary = u;
-  if (u) state.teamPicker.selected.add(u);
+  // Team mode no longer requires a manually selected primary technician.
+  // Keep this function for legacy event handlers, but do not mutate team selection.
   renderTeamPicker();
 }
 
 function setPrimary(username){
+  // Deprecated: a team job uses the selected members directly.
+  // Add the technician to the team instead of forcing a ทีม role in the UI.
   const u = String(username||"").trim();
   if(!u) return;
-  state.teamPicker.primary = u;
   state.teamPicker.selected.add(u);
-  // push to select (backward compatible)
-  const sel = el("technician_username_select");
-  if(sel){
-    sel.value = u;
-    if(el("technician_username")) el("technician_username").value = u;
-  }
+  state.teamPicker.primary = '';
   renderTeamPicker();
 }
 
@@ -692,31 +694,27 @@ function addTeamMember(username){
   const u = String(username||"").trim();
   if(!u) return;
   state.teamPicker.selected.add(u);
-  // if no primary selected, set this one as primary for safety
-  if(!state.teamPicker.primary){
-    setPrimary(u);
-    return;
-  }
+  state.teamPicker.primary = '';
   renderTeamPicker();
 }
 
 function removeTeamMember(username){
   const u = String(username||"").trim();
   if(!u) return;
-  // never remove primary (force user to change primary first)
-  if(u === state.teamPicker.primary) return;
   state.teamPicker.selected.delete(u);
+  if(u === state.teamPicker.primary) state.teamPicker.primary = '';
   renderTeamPicker();
 }
 
 function getTeamMembersForPayload(){
-  // return assistants only (exclude primary)
-  const primary = state.teamPicker.primary;
-  const arr = Array.from(state.teamPicker.selected).filter(u=>u && u!==primary);
-  // sync hidden csv (optional)
+  // Return all selected technicians. The backend will choose the first member
+  // as an internal compatibility representative, but the admin no longer needs
+  // to pick a Primary technician.
+  const arr = Array.from(state.teamPicker.selected).map(u=>String(u||'').trim()).filter(Boolean);
+  const uniq = Array.from(new Set(arr));
   const csvEl = el("team_members_csv");
-  if(csvEl) csvEl.value = arr.join(",");
-  return arr;
+  if(csvEl) csvEl.value = uniq.join(",");
+  return uniq;
 }
 
 function renderTeamPicker(allowedIds=null){
@@ -734,11 +732,7 @@ function renderTeamPicker(allowedIds=null){
     : state.techs;
 
   const q = (searchEl.value||"").trim().toLowerCase();
-  const primary = state.teamPicker.primary || (el("technician_username_select")?.value||"").trim();
-  if(primary){
-    state.teamPicker.primary = primary;
-    state.teamPicker.selected.add(primary);
-  }
+  state.teamPicker.primary = '';
 
   // Suggestions: top 30 matches that are not selected
   const suggestions = techList
@@ -752,49 +746,30 @@ function renderTeamPicker(allowedIds=null){
     return `<button type="button" class="team-chip team-chip-add" data-u="${t.username}">+ ${escapeHtml(t.display_name || t.full_name || t.username)}</button>`;
   }).join("") || `<div class="team-empty">ไม่พบช่าง</div>`;
 
-  // Selected chips: show primary first, then others
+  // Selected chips: all selected technicians are team members (no Primary UI).
   const selected = Array.from(state.teamPicker.selected).filter(Boolean);
-  selected.sort((a,b)=>{
-    if(a===state.teamPicker.primary) return -1;
-    if(b===state.teamPicker.primary) return 1;
-    return a.localeCompare(b);
-  });
+  selected.sort((a,b)=>a.localeCompare(b));
 
   selectedBox.innerHTML = selected.map(u=>{
-    const isPrimary = (u===state.teamPicker.primary);
-    if(isPrimary){
-      return `
-        <div class="team-chip team-chip-primary" data-u="${u}" role="button" tabindex="0" title="แตะเพื่อจัดการ">
-          <span class="team-name">${escapeHtml(techDisplay(u))}</span>
-          <span class="team-badge">Primary</span>
-        </div>`;
-    }
     return `
       <div class="team-chip" data-u="${u}" role="button" tabindex="0" title="แตะเพื่อจัดการ">
         <span class="team-name">${escapeHtml(techDisplay(u))}</span>
-        <span class="team-badge">ร่วม</span>
+        <span class="team-badge">ทีม</span>
       </div>`;
-  }).join("") || `<div class="team-empty">ยังไม่ได้เลือกช่างร่วม</div>`;
+  }).join("") || `<div class="team-empty">ยังไม่ได้เลือกช่างทีม</div>`;
 
   // sync hidden csv for payload
   getTeamMembersForPayload();
 }
 
 function getTeamListForAssign(){
-  // prefer selected team (primary first)
-  const selected = Array.from(state.teamPicker.selected||[]).filter(Boolean);
-  const primary = state.teamPicker.primary || "";
-  const out = [];
-  if(primary && !out.includes(primary)) out.push(primary);
-  for(const u of selected){
-    if(u && !out.includes(u)) out.push(u);
-  }
-  return out;
+  const selected = Array.from(state.teamPicker.selected||[]).map(u=>String(u||'').trim()).filter(Boolean);
+  return Array.from(new Set(selected));
 }
 
  
 
-// Team action sheet (tap chip -> set primary / remove)
+// Team action sheet (tap chip -> remove)
 state.teamPicker.active = "";
 function openTeamSheet(username){
   const u = String(username||"").trim();
@@ -806,13 +781,12 @@ function openTeamSheet(username){
   const sub = el("team_sheet_sub");
   if(title) title.textContent = `จัดการทีมช่าง: ${u}`;
   if(sub){
-    sub.textContent = (u === state.teamPicker.primary)
-      ? "ช่างหลัก (แตะเพื่อเปลี่ยนช่างหลักหรือปิด)"
-      : "ช่างร่วม (ตั้งเป็นช่างหลักหรือเอาออกได้)";
+    sub.textContent = "ช่างในทีม • เอาออกจากทีมได้";
   }
-  // disable remove if primary
+  const setBtn = el("team_sheet_set_primary");
+  if(setBtn) setBtn.style.display = 'none';
   const rm = el("team_sheet_remove");
-  if(rm) rm.disabled = (u === state.teamPicker.primary);
+  if(rm) rm.disabled = false;
   overlay.style.display = "flex";
 }
 function closeTeamSheet(){
@@ -846,17 +820,13 @@ function wireTeamPickerEvents(){
     if(e.target && e.target.id === "team_sheet_overlay") closeTeamSheet();
   });
   el("team_sheet_set_primary")?.addEventListener("click", ()=>{
-    if(!state.teamPicker.active) return;
-    setPrimary(state.teamPicker.active);
+    // Deprecated in team mode without ทีม. Keep listener for cached HTML safety.
+    if(state.teamPicker.active) addTeamMember(state.teamPicker.active);
     closeTeamSheet();
   });
   el("team_sheet_remove")?.addEventListener("click", ()=>{
     const u = state.teamPicker.active;
     if(!u) return;
-    if(u === state.teamPicker.primary){
-      showToast("ต้องเปลี่ยนช่างหลักก่อน", "error");
-      return;
-    }
     removeTeamMember(u);
     closeTeamSheet();
   });
@@ -1590,13 +1560,7 @@ function getConstraintTechs(){
     return u ? [u] : [];
   }
   if(mode === 'team'){
-    const out = [];
-    const p = (state.teamPicker.primary || '').trim();
-    if(p) out.push(p);
-    for(const u of getTeamListForAssign()){
-      if(u && !out.includes(u)) out.push(u);
-    }
-    return out;
+    return getTeamListForAssign();
   }
   return [];
 }
@@ -1631,7 +1595,6 @@ function serviceKey(s){
 function ensureDefaultAllocations(){
   state.wash_alloc = state.wash_alloc || {}; // { [serviceKey]: { [tech]: qty } }
   const techs = getWorkloadTechs();
-  const primary = (state.teamPicker.primary || '').trim();
   const services = getWashServicesForAssignment();
   for(const s of services){
     const k = serviceKey(s);
@@ -1639,12 +1602,11 @@ function ensureDefaultAllocations(){
     const row = state.wash_alloc[k];
     // clean unknown techs
     for(const t of Object.keys(row)) if(!techs.includes(t)) delete row[t];
-    // default: put all qty to primary (team) or the only tech (single)
+    // default: put all qty to the first selected tech (team) or the only tech (single)
     const total = Math.max(0, Number(s.machine_count||0));
     const hasAny = Object.values(row).some(v=>Number(v)>0);
     if(!hasAny && techs.length){
-      const target = primary && techs.includes(primary) ? primary : techs[0];
-      row[target] = total;
+      row[techs[0]] = total;
     }
   }
 }
@@ -2185,14 +2147,12 @@ function selectSlot(startHHMM, slotOverride){
       const team = getTeamListForAssign();
       const bad = team.filter(u=>u && !ids.includes(u));
       if(bad.length){
-        // keep primary if possible, otherwise clear all
-        const p = (state.teamPicker.primary||'').trim();
-        const keepPrimary = p && ids.includes(p);
-        state.teamPicker.selected = new Set(keepPrimary ? [p] : []);
-        state.teamPicker.primary = keepPrimary ? p : '';
+        const kept = team.filter(u=>u && ids.includes(u));
+        state.teamPicker.selected = new Set(kept);
+        state.teamPicker.primary = '';
         getTeamMembersForPayload();
         renderTeamPicker(ids);
-        showToast('สล็อตนี้ไม่ว่างครบทีม • รีเซ็ตทีมให้แล้ว', 'info');
+        showToast('สล็อตนี้ไม่ว่างครบทีม • เหลือเฉพาะช่างที่ว่างในสล็อตนี้', 'info');
       }
     }
   }
@@ -2225,12 +2185,11 @@ function updateAssignSummary(){
   }
   const mode = (el('assign_mode')?.value || 'auto').toString();
   if(mode === 'team'){
-    const primary = (state.teamPicker.primary || '').trim();
-    const members = Array.from(state.teamPicker.selected || []);
+    const members = getTeamListForAssign();
     const count = members.length;
-    t.textContent = primary
-      ? `ทีม • ช่างหลัก: ${techDisplay(primary)} • ทีมรวม ${count} คน`
-      : `ทีม • ยังไม่เลือกช่างหลัก • ทีมรวม ${count} คน`;
+    t.textContent = count
+      ? `ทีม • เลือกแล้ว ${count} คน: ${members.map(techDisplay).join(', ')}`
+      : 'ทีม • กรุณาเลือกช่างอย่างน้อย 1 คน';
     return;
   }
   if(mode === 'single'){
@@ -2377,31 +2336,15 @@ function openSlotModal(slot){
     }
 
     if(mode === 'team'){
-      const primary = (state.teamPicker.primary || '').trim();
       const selected = new Set(Array.from(state.teamPicker.selected || []));
+      state.teamPicker.primary = '';
       body.innerHTML = timeSeg + modeInfo + `
-        <div class="grid2">
-          <div>
-            <label>ช่างหลัก (Primary)</label>
-            <select id="slotm_primary" class="grow"></select>
-            <div class="muted2 mini" style="margin-top:6px">เลือกช่างหลักในสล็อตนี้</div>
-          </div>
-          <div>
-            <label>ช่างร่วม</label>
-            <div id="slotm_team" style="display:flex;flex-wrap:wrap;gap:8px"></div>
-            <div class="muted2 mini" style="margin-top:6px">แตะเพื่อเลือก/ยกเลิกช่างร่วม</div>
-          </div>
+        <div>
+          <label>ทีมช่าง</label>
+          <div id="slotm_team" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+          <div class="muted2 mini" style="margin-top:6px">แตะเพื่อเลือก/ยกเลิกช่างในทีม • ไม่ต้องเลือกช่างหลัก</div>
         </div>
       `;
-      const selEl = body.querySelector('#slotm_primary');
-      // Primary should be chosen only from "selected co-tech" to avoid confusion
-      const selectedArr = Array.from(selected);
-      if(primary && !selectedArr.includes(primary)){
-        state.teamPicker.primary = '';
-      }
-      selEl.innerHTML = `<option value="">-- เลือกช่างหลัก (จากช่างร่วมที่เลือก) --</option>` +
-        selectedArr.map(u=>`<option value="${escapeHtml(u)}">${escapeHtml(techDisplay(u))}</option>`).join('');
-      if(state.teamPicker.primary && selectedArr.includes(state.teamPicker.primary)) selEl.value = state.teamPicker.primary;
 
       const wrap = body.querySelector('#slotm_team');
       for(const u of ids){
@@ -2413,8 +2356,13 @@ function openSlotModal(slot){
         b.addEventListener('click', ()=>{
           if(selected.has(u)) selected.delete(u); else selected.add(u);
           state.teamPicker.selected = new Set(Array.from(selected));
-          // keep hidden fields synced (do not change assign_mode here; it is chosen in the main form)
+          state.teamPicker.primary = '';
+          const leg = el('technician_username_select');
+          if(leg) leg.value = '';
+          const hid = el('technician_username');
+          if(hid) hid.value = '';
           getTeamMembersForPayload();
+          renderTeamPicker(ids);
           renderSlots();
           try { renderWashAssign(); } catch(e){}
           updateAssignSummary();
@@ -2422,25 +2370,6 @@ function openSlotModal(slot){
         });
         wrap.appendChild(b);
       }
-
-      selEl.addEventListener('change', ()=>{
-        const p = (selEl.value||'').trim();
-        state.teamPicker.primary = p;
-        if(p) selected.add(p);
-        state.teamPicker.selected = new Set(Array.from(selected));
-        // sync legacy primary field for payload (username)
-        const leg = el('technician_username_select');
-        if(leg) leg.value = p;
-        const hid = el('technician_username');
-        if(hid) hid.value = p;
-        // do not change assign_mode here
-        getTeamMembersForPayload();
-        renderTeamPicker(ids);
-        renderSlots();
-        try { renderWashAssign(); } catch(e){}
-        updateAssignSummary();
-        renderBody();
-      });
 
       bindTimePicker();
       return;
@@ -2706,7 +2635,7 @@ async function submitBooking() {
     technician_username: (()=>{
       if(uiMode === 'urgent') return '';
       const mode = (el('assign_mode')?.value || 'auto').toString();
-      if(mode === 'team') return (state.teamPicker.primary || '').trim();
+      if(mode === 'team') return (getTeamListForAssign()[0] || '').trim();
       if(mode === 'single') {
         return expectedSingleTechnician;
       }
@@ -2759,9 +2688,9 @@ async function submitBooking() {
     return;
   }
 
-  // Client-side guard (UX): team mode requires primary technician.
-  if (uiMode !== 'urgent' && amNow === 'team' && !String(payload.technician_username||'').trim()) {
-    showToast('โหมดทีม: กรุณาเลือก “ช่างหลัก” ก่อนบันทึก', 'error');
+  // Client-side guard (UX): team mode requires selected technicians, not a Primary technician.
+  if (uiMode !== 'urgent' && amNow === 'team' && getTeamMembersForPayload().length < 1) {
+    showToast('โหมดทีม: กรุณาเลือกช่างอย่างน้อย 1 คนก่อนบันทึก', 'error');
     el("btnSubmit").disabled = false;
     return;
   }
@@ -3049,7 +2978,7 @@ if (copyBtn) copyBtn.addEventListener("click", async () => {
         state.confirmed_tech_label = '';
       }
     }
-    if(mode === 'team') syncPrimaryFromSelect();
+    if(mode === 'team') renderTeamPicker();
     renderSlots();
     try { renderWashAssign(); } catch(e){}
   });

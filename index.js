@@ -14139,10 +14139,17 @@ async function handleAdminBookV2(req, res) {
   // ✅ Enforce assign_mode contract (R2)
   // - single: technician_username required, team_members must be empty
   // - auto: technician_username optional, team_members must be empty
-  // - team: technician_username required, team_members allowed
+  // - team: selected team members are enough; no manual primary technician is required.
+  //   For legacy columns, the backend will use technician_username or the first selected
+  //   team member as an internal representative only.
   const tmRawArr = Array.isArray(team_members_raw) ? team_members_raw : [];
-  const tmAny = tmRawArr.some(x => (x||'').toString().trim());
-  const techProvided = (technician_username || '').toString().trim().length > 0;
+  const tmSelectedList = [...new Set(tmRawArr.map(x => (x||'').toString().trim()).filter(Boolean))].slice(0, 10);
+  const tmAny = tmSelectedList.length > 0;
+  const requestedTech = (technician_username || '').toString().trim();
+  const techProvided = requestedTech.length > 0;
+  const teamRepresentative = assign_mode === 'team'
+    ? (requestedTech || tmSelectedList[0] || '')
+    : requestedTech;
   if (!isUrgentOffer) {
     if (assign_mode === 'single') {
       if (!techProvided) return res.status(400).json({ error: 'โหมด single ต้องระบุ technician_username' });
@@ -14150,7 +14157,7 @@ async function handleAdminBookV2(req, res) {
     } else if (assign_mode === 'auto') {
       if (tmAny) return res.status(400).json({ error: 'โหมด auto ห้ามส่ง team_members' });
     } else if (assign_mode === 'team') {
-      if (!techProvided) return res.status(400).json({ error: 'โหมด team ต้องระบุ technician_username (ช่างหลัก)' });
+      if (!teamRepresentative) return res.status(400).json({ error: 'โหมดทีมต้องเลือกช่างอย่างน้อย 1 คน' });
     }
   }
 
@@ -14294,7 +14301,7 @@ if (coerceNumber(override_price, 0) > 0) {
 
     // choose technician
     // Urgent offer must NEVER auto-assign before a technician accepts the offer.
-    let selectedTech = isUrgentOffer ? "" : (technician_username || "").toString().trim();
+    let selectedTech = isUrgentOffer ? "" : (assign_mode === 'team' ? teamRepresentative : requestedTech);
     if (!isUrgentOffer && !selectedTech) {
       // list group techs (Admin assign ignores accept_status)
       const isAll = (ttype === 'all');
@@ -14358,10 +14365,10 @@ if (coerceNumber(override_price, 0) > 0) {
     }
 
     // ✅ Team members collision check (including buffer) - backward compatible
-    const tmIn = (!isUrgentOffer && assign_mode === 'team') ? (Array.isArray(team_members_raw) ? team_members_raw : []) : [];
-    const tmList = [...new Set(tmIn.map(x => (x||"").toString().trim()).filter(Boolean))].slice(0, 10);
+    const tmList = (!isUrgentOffer && assign_mode === 'team')
+      ? [...new Set(tmSelectedList.filter(u => u && u !== selectedTech))].slice(0, 10)
+      : [];
     for (const u of tmList) {
-      if (u === selectedTech) continue;
       const conflict = await checkTechCollision(u, apptIso, duration_min, null);
       if (conflict) {
         return http409Conflict(res, conflict);
