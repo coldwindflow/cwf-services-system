@@ -87,6 +87,33 @@ function createTechnicianPayoutLedger(deps = {}) {
     return q.rows || [];
   }
 
+  async function carryForwardRows(payoutId) {
+    const q = await pool.query(
+      `WITH cur AS (
+         SELECT payout_id, period_start FROM public.technician_payout_periods WHERE payout_id=$1 LIMIT 1
+       )
+       SELECT dc.technician_username,
+              COALESCE(SUM(dc.outstanding_amount),0)::numeric AS carry_forward_amount,
+              COUNT(*)::int AS carry_forward_count
+         FROM cur
+         JOIN public.technician_deduction_cases dc
+           ON dc.status='applied'
+          AND COALESCE(dc.outstanding_amount,0) > 0
+          AND COALESCE(dc.applied_payout_id,'') <> cur.payout_id
+         JOIN public.technician_payout_periods ap ON ap.payout_id=dc.applied_payout_id
+        WHERE cur.period_start > ap.period_start
+          AND NOT EXISTS (
+            SELECT 1
+              FROM public.technician_payout_periods mid
+             WHERE mid.period_start > ap.period_start
+               AND mid.period_start < cur.period_start
+          )
+        GROUP BY dc.technician_username`,
+      [payoutId]
+    );
+    return q.rows || [];
+  }
+
   async function snapshotGrossRows(payoutId) {
     const q = await pool.query(
       `SELECT technician_username,
@@ -126,11 +153,12 @@ function createTechnicianPayoutLedger(deps = {}) {
     if (!period) return { period: null, source: "invalid", rows: [] };
     const status = String(period.status || "draft").toLowerCase();
     const source = canUseSnapshot(status) ? "stored_locked_or_paid" : "live_contract_recompute_draft";
-    const [grossRows, adjRows, depRows, payRows] = await Promise.all([
+    const [grossRows, adjRows, depRows, payRows, cfRows] = await Promise.all([
       canUseSnapshot(status) ? snapshotGrossRows(payoutId) : liveGrossRows(payoutId, period),
       adjustmentRows(payoutId),
       depositRows(payoutId),
       paymentRows(payoutId),
+      carryForwardRows(payoutId),
     ]);
 
     const byTech = new Map();
@@ -173,6 +201,15 @@ function createTechnicianPayoutLedger(deps = {}) {
       payment_method: r.payment_method || null,
       payment_reference: r.payment_reference || null,
     });
+    for (const r of cfRows) {
+      const row = ensure(r.technician_username);
+      if (!row) continue;
+      const carry = money(r.carry_forward_amount);
+      row.carry_forward_amount = carry;
+      row.carry_forward_count = Number(r.carry_forward_count || 0);
+      row.adj_total = money(Number(row.adj_total || 0) - carry);
+      row.deduction_adjustment_amount = money(Number(row.deduction_adjustment_amount || 0) - carry);
+    }
 
     const rows = [];
     for (const row of byTech.values()) {
