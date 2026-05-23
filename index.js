@@ -40,6 +40,8 @@ const createServiceZoneRoutes = require("./server/routes/serviceZones");
 const createPageRoutes = require("./server/routes/pages");
 const createDocumentRoutes = require("./server/routes/docs");
 const createAccountingReadOnlyRoutes = require("./server/routes/accountingReadOnly");
+const { ensurePayoutPeriodAndSnapshotForPayment } = require("./server/services/technicianPayoutPrepay");
+const { buildAccountingPayoutCalendar, isPeriodCutoffClosed } = require("./server/services/technicianPayoutPeriods");
 const createAdminReworkDeductionsHelpers = require("./server/helpers/adminReworkDeductionsHelpers");
 const createAdminReworkReadOnlyRoutes = require("./server/routes/adminReworkReadOnly");
 const createAdminDeductionsReadOnlyRoutes = require("./server/routes/adminDeductionsReadOnly");
@@ -7750,17 +7752,28 @@ async function _ensureDuePayoutPeriodsBangkok(actorUsername = null) {
 }
 
 async function _listPayoutPeriodsLiveAware({ limit = 24 } = {}) {
-  // v10.2: draft payout_lines are disposable cache only.
-  // Super Admin list must never show old 350/1400 stored rows for draft periods.
+  // v10.3: show stored periods plus virtual current/upcoming periods.
+  // Draft/virtual periods are always computed live from the contract engine;
+  // locked/paid periods use stored snapshot lines.
+  const max = Math.min(Math.max(Number(limit || 24), 1), 60);
   const q = await pool.query(
     `SELECT p.payout_id, p.period_type, p.period_start, p.period_end, p.status, p.created_at, p.created_by
        FROM public.technician_payout_periods p
       ORDER BY p.period_start DESC, p.payout_id DESC
       LIMIT $1`,
-    [Math.min(Math.max(Number(limit || 24), 1), 60)]
+    [max]
   );
-  const rows = [];
+
+  const map = new Map();
+  for (const v of buildAccountingPayoutCalendar({ now: new Date(), pastMonths: 2, futureMonths: 2 })) {
+    map.set(String(v.payout_id), { ...v, status: 'draft', source: 'virtual_upcoming_period' });
+  }
   for (const p of (q.rows || [])) {
+    map.set(String(p.payout_id), { ...p, is_virtual: false, source: 'stored_period' });
+  }
+
+  const rows = [];
+  for (const p of Array.from(map.values())) {
     const status = String(p.status || 'draft');
     let total_amount = 0;
     let lines_count = 0;
@@ -7785,7 +7798,7 @@ async function _listPayoutPeriodsLiveAware({ limit = 24 } = {}) {
         start: new Date(p.period_start),
         endEx: new Date(p.period_end),
         period_type: String(p.period_type || ''),
-        label_ym: String(p.period_start || '').slice(0,7),
+        label_ym: String(p.label_ym || p.period_start || '').slice(0,7),
       });
       const techSet = new Set();
       for (const ln of (live.lines || [])) {
@@ -7796,20 +7809,32 @@ async function _listPayoutPeriodsLiveAware({ limit = 24 } = {}) {
       }
       techs_count = techSet.size;
     }
+    const cutoff_closed = isPeriodCutoffClosed(p);
     rows.push({
       ...p,
       total_amount: Number(total_amount.toFixed ? total_amount.toFixed(2) : total_amount),
       lines_count,
       techs_count,
       source,
+      cutoff_closed,
+      can_pay: cutoff_closed,
+      can_pay_early: cutoff_closed && String(status) === 'draft',
       cache_note: source === 'live_contract_recompute_draft'
-        ? 'draft uses live contract engine; stored legacy lines ignored'
+        ? 'draft/virtual uses live contract engine; stored legacy lines ignored'
         : 'locked/paid uses stored lines',
     });
   }
-  return rows;
+  rows.sort((a,b) => {
+    const openA = String(a.status || 'draft') !== 'paid' && Number(a.total_amount || 0) > 0;
+    const openB = String(b.status || 'draft') !== 'paid' && Number(b.total_amount || 0) > 0;
+    if (openA !== openB) return openA ? -1 : 1;
+    const canA = a.can_pay ? 1 : 0;
+    const canB = b.can_pay ? 1 : 0;
+    if (canA !== canB) return canB - canA;
+    return new Date(b.period_start).getTime() - new Date(a.period_start).getTime();
+  });
+  return rows.slice(0, max);
 }
-
 app.get('/admin/super/payouts', requireSuperAdmin, async (req, res) => {
   try {
     const auto_ensure = await _ensureDuePayoutPeriodsBangkok(req.actor?.username || null);
@@ -8910,8 +8935,16 @@ async function _requireWithdrawIfPartner(payout_id, tech, actor){
   return r.request_id;
 }
 
-async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip_url, note, actor){
-  const period = await _getPayoutPeriod(payout_id);
+async function _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip_url, note, actor, reqForAudit, opts = {}){
+  const prep = opts && opts.preparedPeriod ? { period: opts.preparedPeriod, already_prepared: true } : await ensurePayoutPeriodAndSnapshotForPayment({
+    pool,
+    payout_id,
+    actor_username: actor || null,
+    getPayoutPeriod: _getPayoutPeriod,
+    regenerateDraftPayoutContractLines: _regenerateDraftPayoutContractLines,
+    req: reqForAudit || null,
+  });
+  const period = prep.period;
   if (!period) {
     const err = new Error('PAYOUT_NOT_FOUND'); err.code='PAYOUT_NOT_FOUND'; throw err;
   }
@@ -9107,12 +9140,14 @@ app.post('/admin/super/payouts/:payout_id/pay', requireSuperAdmin, async (req, r
 
     if (!payout_id || !tech) return res.status(400).json({ ok:false, error:'MISSING_PARAMS' });
 
-    const r = await _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip_url, note, req.actor?.username || null);
+    const r = await _upsertPaymentAndMaybeMarkPaid(payout_id, tech, paid_amount, slip_url, note, req.actor?.username || null, req);
     return res.json({ ok:true, payout_id, technician_username: tech, paid_amount, paid_status: r.paid_status, net_amount: r.net_amount });
   } catch (e) {
     console.error('POST /admin/super/payouts/:payout_id/pay', e);
     if (String(e.code||'') === 'PAYOUT_NOT_FOUND') return res.status(404).json({ ok:false, error:'PAYOUT_NOT_FOUND' });
     if (String(e.code||'') === 'PAYOUT_ALREADY_PAID') return res.status(409).json({ ok:false, error:'PAYOUT_ALREADY_PAID' });
+    if (String(e.code||'') === 'PAYOUT_PERIOD_NOT_CLOSED') return res.status(409).json({ ok:false, error:'PAYOUT_PERIOD_NOT_CLOSED', period_end: e.period_end || null });
+    if (String(e.message||'').includes('CANNOT_REGENERATE')) return res.status(409).json({ ok:false, error:String(e.message || 'CANNOT_REGENERATE') });
     return res.status(500).json({ ok:false, error:'PAY_FAILED' });
   }
 });
@@ -21926,6 +21961,7 @@ app.use(createAccountingReadOnlyRoutes({
   money: _money,
   paidStatus: _paidStatus,
   sqlDonePredicate: _sqlDonePredicate,
+  ensureDuePayoutPeriodsBangkok: _ensureDuePayoutPeriodsBangkok,
 }));
 
 app.post('/admin/accounting/revenue/:job_id/mark-paid', requireAccountingPermission('accounting_manage_revenue'), async (req, res) => {
@@ -22581,6 +22617,14 @@ app.post('/admin/accounting/payouts/:payout_id/pay', requireAccountingPermission
     if (body.confirm_paid !== true) return res.status(400).json({ ok: false, error: 'CONFIRM_PAID_REQUIRED' });
     if (Number(paidNow || 0) <= 0) return res.status(400).json({ ok: false, error: 'INVALID_PAID_AMOUNT' });
 
+    const prepared = await ensurePayoutPeriodAndSnapshotForPayment({
+      pool,
+      payout_id,
+      actor_username: _accountingActor(req).username || null,
+      getPayoutPeriod: _getPayoutPeriod,
+      regenerateDraftPayoutContractLines: _regenerateDraftPayoutContractLines,
+      req,
+    });
     const beforeTotals = await _getTechGrossAdjNet(payout_id, tech);
     const beforePayQ = await pool.query(
       `SELECT paid_amount, paid_status, paid_at, paid_by, slip_url, note, payment_method, payment_reference
@@ -22600,7 +22644,7 @@ app.post('/admin/accounting/payouts/:payout_id/pay', requireAccountingPermission
     const note = String(body.note || '').trim() || null;
     const slip_url = String(body.slip_url || '').trim() || null;
     const cumulativePaid = _money(currentPaid + Number(paidNow));
-    const result = await _upsertPaymentAndMaybeMarkPaid(payout_id, tech, cumulativePaid, slip_url, note, _accountingActor(req).username || null);
+    const result = await _upsertPaymentAndMaybeMarkPaid(payout_id, tech, cumulativePaid, slip_url, note, _accountingActor(req).username || null, req, { preparedPeriod: prepared.period });
 
     await pool.query(
       `UPDATE public.technician_payout_payments
@@ -22640,6 +22684,8 @@ app.post('/admin/accounting/payouts/:payout_id/pay', requireAccountingPermission
     console.error('POST /admin/accounting/payouts/:payout_id/pay', e);
     if (String(e.code || '') === 'PAYOUT_NOT_FOUND') return res.status(404).json({ ok: false, error: 'PAYOUT_NOT_FOUND' });
     if (String(e.code || '') === 'PAYOUT_ALREADY_PAID') return res.status(409).json({ ok: false, error: 'PAYOUT_ALREADY_PAID' });
+    if (String(e.code || '') === 'PAYOUT_PERIOD_NOT_CLOSED') return res.status(409).json({ ok: false, error: 'PAYOUT_PERIOD_NOT_CLOSED', period_end: e.period_end || null });
+    if (String(e.message || '').includes('CANNOT_REGENERATE')) return res.status(409).json({ ok: false, error: String(e.message || 'CANNOT_REGENERATE') });
     return res.status(500).json({ ok: false, error: 'MARK_PAYOUT_PAID_FAILED' });
   }
 });

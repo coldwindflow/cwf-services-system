@@ -124,6 +124,7 @@
     if (msg.includes('CONFIRM_PAID_REQUIRED')) return 'กรุณาติ๊กยืนยันว่าได้โอน/จ่ายเงินจริงแล้ว';
     if (msg.includes('PAID_AMOUNT_EXCEEDS_REMAINING')) return 'ยอดที่จ่ายมากกว่ายอดคงเหลือ';
     if (msg.includes('PAYOUT_ALREADY_PAID')) return 'รายการนี้จ่ายครบแล้ว';
+    if (msg.includes('PAYOUT_PERIOD_NOT_CLOSED')) return 'งวดนี้ยังไม่ปิดช่วงตัดยอด จึงยังบันทึกจ่ายก่อนไม่ได้';
     if (msg.includes('ACCOUNTING_PERMISSION_REQUIRED')) return 'บัญชีนี้ยังไม่มีสิทธิ์ทำรายการนี้ กรุณาให้ Super Admin เพิ่มสิทธิ์บัญชี';
     if (msg.includes('JOB_NOT_COMPLETED')) return 'งานนี้ยังไม่เสร็จ จึงบันทึกรับเงินจากหน้านี้ไม่ได้';
     if (msg.includes('CANNOT_MARK_CANCELED_JOB_PAID')) return 'งานที่ยกเลิกแล้วไม่สามารถบันทึกรับเงินได้';
@@ -317,13 +318,14 @@
     const rows = (state.payouts || []).slice();
     el.innerHTML = rows.length ? rows.map((p) => {
       const selected = String(state.selectedPayoutId || '') === String(p.payout_id || '');
-      const dueTone = p.is_due && Number(p.remaining_amount || 0) > 0 ? 'bad' : (Number(p.remaining_amount || 0) <= 0 ? 'ok' : 'warn');
+      const dueTone = p.is_due && Number(p.remaining_amount || 0) > 0 ? 'bad' : (Number(p.remaining_amount || 0) <= 0 ? 'ok' : (p.can_pay_early ? 'sky' : 'warn'));
+      const payReadyLabel = p.can_pay_early ? 'จ่ายก่อนได้' : (p.cutoff_closed ? (p.is_due ? 'ถึงกำหนดแล้ว' : 'ปิดยอดแล้ว') : 'ยังไม่ปิดยอด');
       return `
         <div class="acctRow" style="border-color:${selected ? 'rgba(11,75,179,.36)' : 'rgba(15,23,42,.08)'};background:${selected ? '#eef6ff' : '#fbfdff'}">
           <div>
             <b>งวดวันที่ ${esc(p.period_type)} • กำหนดจ่าย ${esc(p.due_label || simpleDateTH(p.due_date))}</b>
             <small>${esc(p.cutoff_label || `${dateTH(p.period_start)} - ${dateTH(p.period_end)}`)} • ${esc(p.payment_rule_note || '')}</small>
-            <small>ช่าง ${money(p.technician_count)} คน • รายการ ${money(p.line_count || 0)} • ID ${esc(p.payout_id)}</small>
+            <small>ช่าง ${money(p.technician_count)} คน • รายการ ${money(p.line_count || 0)} • ID ${esc(p.payout_id)}${p.is_virtual ? ' • preview' : ''}</small>
             <div class="acctMiniStats">
               <div class="acctMiniStat"><span>ยอดสุทธิต้องจ่าย</span><b>${money(p.net_payable)} ฿</b></div>
               <div class="acctMiniStat"><span>จ่ายแล้ว</span><b>${money(p.paid_amount)} ฿</b></div>
@@ -331,7 +333,7 @@
             </div>
           </div>
           <div class="acctActionsCol">
-            ${badge(p.is_due ? 'ถึงกำหนดแล้ว' : 'ยังไม่ถึงกำหนด', dueTone)}
+            ${badge(payReadyLabel, dueTone)}
             ${statusBadge(p.status)}
             <button class="acctPrimaryBtn" type="button" data-load-payout-techs="${esc(p.payout_id)}">ดู/จ่ายรายช่าง</button>
           </div>
@@ -358,7 +360,7 @@
       <div class="acctBox">
         <h3>รายละเอียดงวดวันที่ ${esc(period.period_type || '')}</h3>
         <div class="acctDueBanner">กำหนดจ่าย ${esc(period.due_label || simpleDateTH(period.due_date))}<br>${esc(period.cutoff_label || '')}<br>${esc(period.payment_rule_note || 'บันทึกได้หลังโอนเงินจริงเท่านั้น')}</div>
-        <div class="acctMuted" style="margin:10px 0">ระบบไม่โอนเงินอัตโนมัติ บัญชีต้องโอนเงินจริงก่อน แล้วจึงกดบันทึกจ่ายแล้ว</div>
+        <div class="acctMuted" style="margin:10px 0">${period.cutoff_closed === false ? 'งวดนี้ยังไม่ปิดช่วงตัดยอด จึงดูยอดสะสมได้ก่อน แต่ยังบันทึกจ่ายไม่ได้' : 'ระบบไม่โอนเงินอัตโนมัติ บัญชีต้องโอนเงินจริงก่อน แล้วจึงกดบันทึกจ่ายแล้ว'}${period.can_pay_early ? ' • งวดนี้จ่ายก่อนกำหนดได้ ระบบจะ snapshot + lock ตอนบันทึกจ่าย' : ''}</div>
         <div class="acctList">
           ${rows.length ? rows.map((t) => {
             const remaining = Number(t.remaining_amount || 0);
@@ -383,7 +385,7 @@
                 </div>
                 <div class="acctActionsCol">
                   ${payoutStatusBadge(t.paid_status)}
-                  ${paid ? `<button class="acctDisabledBtn" type="button" disabled>จ่ายช่างแล้ว</button>` : `<button class="acctPrimaryBtn" type="button" data-pay-payout="${esc(payoutId)}" data-tech="${esc(t.technician_username)}" data-remaining="${esc(t.remaining_amount)}">บันทึกจ่ายแล้ว</button>`}
+                  ${paid ? `<button class="acctDisabledBtn" type="button" disabled>จ่ายช่างแล้ว</button>` : (t.can_pay === false ? `<button class="acctDisabledBtn" type="button" disabled>ยังไม่ปิดตัดยอด</button>` : `<button class="acctPrimaryBtn" type="button" data-pay-payout="${esc(payoutId)}" data-tech="${esc(t.technician_username)}" data-remaining="${esc(t.remaining_amount)}">บันทึกจ่ายแล้ว</button>`)}
                   ${existingWht ? `<a class="acctSecondaryBtn" href="/admin/accounting/documents/${esc(existingWht.document_id)}/print" target="_blank" rel="noopener">พิมพ์ทวิ50 ${esc(existingWht.document_no || '')}</a>` : ''}
                   <button class="acctSecondaryBtn" type="button" data-edit-tech-tax="${esc(t.technician_username)}">เติมข้อมูลทวิ50</button>
                   ${whtReady && !existingWht ? `<button class="acctPrimaryBtn acctWhtBtn" type="button" data-issue-wht="${esc(payoutId)}" data-tech="${esc(t.technician_username)}">ออกทวิ50เดือนนี้</button>` : ''}
