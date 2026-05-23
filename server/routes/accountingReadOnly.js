@@ -150,6 +150,12 @@ router.get('/admin/accounting/revenue', requireAccountingPermission('accounting.
            FROM public.accounting_documents
           WHERE COALESCE(status,'') <> 'voided'
           GROUP BY job_id
+       ),
+       cash AS (
+         SELECT DISTINCT ON (job_id) job_id, collection_id, technician_username, payout_id, amount, status, offset_adj_id, updated_at
+           FROM public.technician_cash_collections
+          WHERE COALESCE(status,'') <> 'voided'
+          ORDER BY job_id, updated_at DESC, collection_id DESC
        )
        SELECT j.job_id, j.booking_code, j.finished_at,
               COALESCE(j.customer_name,'') AS customer_name,
@@ -160,12 +166,24 @@ router.get('/admin/accounting/revenue', requireAccountingPermission('accounting.
               j.paid_by,
               j.payment_method,
               j.payment_reference,
+              j.close_payment_method,
+              j.close_payment_status,
+              j.close_cash_amount,
+              j.close_cash_confirmed,
+              j.close_cash_confirmed_by,
               COALESCE(doc.document_status, '{}'::jsonb) AS document_status,
-              proof.public_url AS payment_proof_url
+              proof.public_url AS payment_proof_url,
+              cash.collection_id AS cash_collection_id,
+              cash.technician_username AS cash_technician_username,
+              cash.payout_id AS cash_payout_id,
+              cash.amount AS cash_collection_amount,
+              cash.status AS cash_collection_status,
+              cash.offset_adj_id AS cash_offset_adj_id
          FROM gross g
          JOIN public.jobs j ON j.job_id=g.job_id
          LEFT JOIN proof ON proof.job_id=j.job_id
          LEFT JOIN doc ON doc.job_id=j.job_id
+         LEFT JOIN cash ON cash.job_id=j.job_id
         ORDER BY j.finished_at DESC
         LIMIT 200`);
     const rows = q.rows.map(r => {
@@ -183,6 +201,17 @@ router.get('/admin/accounting/revenue', requireAccountingPermission('accounting.
         paid_by: r.paid_by,
         payment_method: r.payment_method,
         payment_reference: r.payment_reference,
+        close_payment_method: r.close_payment_method,
+        close_payment_status: r.close_payment_status,
+        close_cash_amount: r.close_cash_amount,
+        close_cash_confirmed: r.close_cash_confirmed,
+        close_cash_confirmed_by: r.close_cash_confirmed_by,
+        cash_collection_id: r.cash_collection_id,
+        cash_technician_username: r.cash_technician_username,
+        cash_payout_id: r.cash_payout_id,
+        cash_collection_amount: r.cash_collection_amount,
+        cash_collection_status: r.cash_collection_status,
+        cash_offset_adj_id: r.cash_offset_adj_id,
         document_status: doc,
         payment_proof_url: r.payment_proof_url,
         action_label: Object.keys(doc).length ? 'ดูรายละเอียด' : 'ออกเอกสาร',
