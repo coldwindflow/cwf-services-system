@@ -42,6 +42,7 @@ const createDocumentRoutes = require("./server/routes/docs");
 const createAccountingReadOnlyRoutes = require("./server/routes/accountingReadOnly");
 const { ensurePayoutPeriodAndSnapshotForPayment } = require("./server/services/technicianPayoutPrepay");
 const { buildAccountingPayoutCalendar, isPeriodCutoffClosed } = require("./server/services/technicianPayoutPeriods");
+const { createTechnicianCashCollectionService } = require("./server/services/technicianCashCollections");
 const createAdminReworkDeductionsHelpers = require("./server/helpers/adminReworkDeductionsHelpers");
 const createAdminReworkReadOnlyRoutes = require("./server/routes/adminReworkReadOnly");
 const createAdminDeductionsReadOnlyRoutes = require("./server/routes/adminDeductionsReadOnly");
@@ -614,6 +615,7 @@ const https = require("https");
 const multer = require("multer");
 
 const pool = require("./db");
+const technicianCashCollections = createTechnicianCashCollectionService({ pool, periodBoundsForYm: _periodBoundsForYm, money: _money });
 
 const app = express();
 // Render/Reverse-proxy: allow req.protocol to reflect X-Forwarded-Proto
@@ -12273,6 +12275,9 @@ await pool.query(`CREATE INDEX IF NOT EXISTS idx_income_tech_overrides_enabled O
     `);
     await pool.query(`CREATE INDEX IF NOT EXISTS idx_payout_adjustments_pid_tech ON public.technician_payout_adjustments(payout_id, technician_username, created_at DESC)`);
 
+    // 💵 เงินสดที่ลูกค้าจ่ายให้ช่างถือไว้: ledger แยกจากเงินประกัน แล้ว offset เป็น adjustment ติดลบในงวดจ่าย
+    await technicianCashCollections.ensureSchema(pool);
+
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.technician_deposit_accounts (
         technician_username TEXT PRIMARY KEY,
@@ -19507,6 +19512,34 @@ if (status === "เสร็จแล้ว") {
           photo_acknowledgement_accepted: !!(photo_ack && photo_ack.accepted),
         }
       }, client);
+
+      // ถ้าลูกค้าจ่ายเงินสดให้ช่างถือไว้ ให้บันทึก ledger แยก และหักออกจากยอดจ่ายช่างในงวดทันที
+      if (String(close_payment_method || '').trim() === 'cash_to_technician') {
+        try {
+          const cashOffset = await technicianCashCollections.ensureOffsetForJob({
+            client,
+            job_id: realId,
+            actor_username: technician_username,
+            source: 'job_finalize',
+          });
+          await logJobUpdate(realId, {
+            actor_username: technician_username,
+            actor_role: 'tech',
+            action: 'tech_cash_collection_offset',
+            message: cashOffset.skipped ? `tech cash offset skipped: ${cashOffset.reason || ''}` : 'บันทึกเงินสดที่ช่างถือไว้และหักจากงวดจ่ายแล้ว',
+            payload: cashOffset,
+          }, client);
+        } catch (cashErr) {
+          await logJobUpdate(realId, {
+            actor_username: technician_username,
+            actor_role: 'tech',
+            action: 'tech_cash_collection_offset_failed',
+            message: String(cashErr?.code || cashErr?.message || 'TECH_CASH_OFFSET_FAILED'),
+            payload: { error: String(cashErr?.message || cashErr), code: cashErr?.code || null },
+          }, client);
+          throw cashErr;
+        }
+      }
     } else {
       await client.query(
         `UPDATE public.jobs
@@ -21467,6 +21500,18 @@ async function _accountingEnrichPayoutTechRows(payout_id, period, rows = []) {
   for (const r of rows || []) {
     const tech = String(r.technician_username || '').trim();
     const profile = await _accountingGetTechTaxProfile(tech);
+    let cashHeldAmount = 0;
+    let cashHeldJobs = 0;
+    try {
+      const cashQ = await pool.query(
+        `SELECT COALESCE(SUM(amount),0)::numeric AS amount, COUNT(*)::int AS jobs
+           FROM public.technician_cash_collections
+          WHERE payout_id=$1 AND technician_username=$2 AND status IN ('held','offset')`,
+        [payout_id, tech]
+      );
+      cashHeldAmount = _money(cashQ.rows?.[0]?.amount || 0);
+      cashHeldJobs = Number(cashQ.rows?.[0]?.jobs || 0);
+    } catch (_) {}
     const rate = _money(profile?.wht_default_rate || 3);
     const paid = _money(r.paid_amount || 0);
     const base = paid > 0 ? paid : _money(r.net_amount || 0);
@@ -21496,6 +21541,8 @@ async function _accountingEnrichPayoutTechRows(payout_id, period, rows = []) {
       wht_tax_amount: _money(base * rate / 100),
       withholding_document: existing,
       can_issue_withholding: !!(profile?.is_complete && paid > 0),
+      cash_held_amount: cashHeldAmount,
+      cash_held_jobs: cashHeldJobs,
     });
   }
   return out;
@@ -22020,18 +22067,65 @@ app.post('/admin/accounting/revenue/:job_id/mark-paid', requireAccountingPermiss
       [job_id]
     );
     const after = afterQ.rows[0] || null;
+
+    let tech_cash_offset = null;
+    try {
+      tech_cash_offset = await technicianCashCollections.ensureOffsetForJob({
+        job_id,
+        actor_username: actor.username || null,
+        source: 'accounting_mark_revenue_paid',
+      });
+    } catch (cashErr) {
+      tech_cash_offset = { ok: false, error: String(cashErr?.code || cashErr?.message || 'TECH_CASH_OFFSET_FAILED') };
+    }
+
     await logAccountingAudit(req, {
       action: 'MARK_REVENUE_PAID',
       entity_type: 'job',
       entity_id: job_id,
       before_json: before,
-      after_json: after,
+      after_json: { row: after, tech_cash_offset },
       note: payment_note || payment_reference || payment_method || null,
     });
-    return res.json({ ok: true, job_id, payment_status: 'paid', row: after });
+    return res.json({ ok: true, job_id, payment_status: 'paid', row: after, tech_cash_offset });
   } catch (e) {
     console.error('POST /admin/accounting/revenue/:job_id/mark-paid', e);
     return res.status(500).json({ ok: false, error: 'MARK_REVENUE_PAID_FAILED' });
+  }
+});
+
+app.post('/admin/accounting/revenue/:job_id/sync-tech-cash', requireAccountingPermission('accounting_manage_revenue'), async (req, res) => {
+  try {
+    const job_id = String(req.params.job_id || '').trim();
+    if (!job_id || !/^\d+$/.test(job_id)) return res.status(400).json({ ok: false, error: 'INVALID_JOB_ID' });
+    const beforeQ = await pool.query(
+      `SELECT job_id, booking_code, close_payment_method, close_cash_amount, close_cash_confirmed, payment_status
+         FROM public.jobs
+        WHERE job_id=$1
+        LIMIT 1`,
+      [job_id]
+    );
+    const before = beforeQ.rows[0] || null;
+    if (!before) return res.status(404).json({ ok: false, error: 'JOB_NOT_FOUND' });
+
+    const result = await technicianCashCollections.ensureOffsetForJob({
+      job_id,
+      actor_username: _accountingActor(req).username || null,
+      source: 'accounting_manual_sync_tech_cash',
+    });
+
+    await logAccountingAudit(req, {
+      action: 'SYNC_TECH_CASH_COLLECTION',
+      entity_type: 'job',
+      entity_id: job_id,
+      before_json: before,
+      after_json: result,
+      note: result.skipped ? `skip: ${result.reason || ''}` : `offset ${result.amount || 0} to ${result.payout_id || ''}`,
+    });
+    return res.json({ ok: true, job_id, result });
+  } catch (e) {
+    console.error('POST /admin/accounting/revenue/:job_id/sync-tech-cash', e);
+    return res.status(500).json({ ok: false, error: e.code || 'SYNC_TECH_CASH_FAILED', message: e.message });
   }
 });
 

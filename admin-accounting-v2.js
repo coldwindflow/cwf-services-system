@@ -64,6 +64,19 @@
     const s = String(status || '').toLowerCase();
     return badge(payoutStatusLabel(s), s === 'paid' ? 'ok' : (s === 'partial' ? 'warn' : 'bad'));
   }
+  function isTechCashRevenue(row) {
+    return String(row?.close_payment_method || '').trim() === 'cash_to_technician'
+      || String(row?.payment_method || '').trim() === 'cash_to_technician'
+      || !!row?.cash_collection_id;
+  }
+  function techCashBadge(row) {
+    if (!isTechCashRevenue(row)) return '';
+    const amount = Number(row?.cash_collection_amount || row?.close_cash_amount || 0);
+    const st = String(row?.cash_collection_status || '').trim();
+    if (st === 'offset') return badge(`หักเงินสดช่างแล้ว ${money(amount)} ฿`, 'ok');
+    if (st === 'held') return badge(`เงินสดอยู่กับช่าง ${money(amount)} ฿`, 'warn');
+    return badge(`รอหักเงินสดช่าง ${money(amount)} ฿`, 'warn');
+  }
   function missingProfileText(profile) {
     const xs = profile?.missing_fields || [];
     return xs.length ? `ยังขาด: ${xs.join(', ')}` : 'ข้อมูลพร้อมออกทวิ50';
@@ -72,6 +85,7 @@
     const v = String(action || '');
     if (v === 'MARK_REVENUE_PAID') return 'บันทึกรับเงินลูกค้า';
     if (v === 'MARK_PAYOUT_PAID') return 'บันทึกจ่ายเงินช่าง';
+    if (v === 'SYNC_TECH_CASH_COLLECTION') return 'หักเงินสดที่ช่างถือไว้';
     if (v === 'REPORT_EXPORT') return 'Export รายงาน';
     return v || '-';
   }
@@ -128,6 +142,7 @@
     if (msg.includes('ACCOUNTING_PERMISSION_REQUIRED')) return 'บัญชีนี้ยังไม่มีสิทธิ์ทำรายการนี้ กรุณาให้ Super Admin เพิ่มสิทธิ์บัญชี';
     if (msg.includes('JOB_NOT_COMPLETED')) return 'งานนี้ยังไม่เสร็จ จึงบันทึกรับเงินจากหน้านี้ไม่ได้';
     if (msg.includes('CANNOT_MARK_CANCELED_JOB_PAID')) return 'งานที่ยกเลิกแล้วไม่สามารถบันทึกรับเงินได้';
+    if (msg.includes('SYNC_TECH_CASH_FAILED')) return 'บันทึกหักเงินสดที่ช่างถือไว้ไม่สำเร็จ';
     if (msg.includes('EXPENSE_DATE_REQUIRED')) return 'กรุณาระบุวันที่รายจ่าย';
     if (msg.includes('EXPENSE_CATEGORY_REQUIRED')) return 'กรุณาเลือกหมวดรายจ่าย';
     if (msg.includes('INVALID_EXPENSE_AMOUNT')) return 'จำนวนเงินรายจ่ายต้องมากกว่า 0';
@@ -272,18 +287,22 @@
               <div class="acctMiniStat"><span>ยอดขาย</span><b>${money(r.gross_sales_amount)} ฿</b></div>
               <div class="acctMiniStat"><span>ช่องทาง</span><b>${esc(r.payment_method || '-')}</b></div>
               <div class="acctMiniStat"><span>อ้างอิง</span><b>${esc(r.payment_reference || '-')}</b></div>
+              ${isTechCashRevenue(r) ? `<div class="acctMiniStat"><span>เงินสดช่างถือไว้</span><b>${money(r.cash_collection_amount || r.close_cash_amount)} ฿</b></div>` : ''}
             </div>
-            <small>สถานะรับเงินลูกค้า: ${esc(revenueStatusLabel(r.payment_status))}${r.paid_at ? ` • รับเมื่อ ${esc(dateTH(r.paid_at))}` : ''}</small>
+            <small>สถานะรับเงินลูกค้า: ${esc(revenueStatusLabel(r.payment_status))}${r.paid_at ? ` • รับเมื่อ ${esc(dateTH(r.paid_at))}` : ''}${isTechCashRevenue(r) && r.cash_payout_id ? ` • หักในงวด ${esc(r.cash_payout_id)}` : ''}</small>
           </div>
           <div class="acctActionsCol">
             ${revenueStatusBadge(r.payment_status)}
+            ${techCashBadge(r)}
             ${badge(r.payment_proof_url ? 'มีหลักฐานรับเงิน' : 'ยังไม่มีหลักฐาน', r.payment_proof_url ? 'ok' : 'warn')}
             ${paid ? `<button class="acctDisabledBtn" type="button" disabled>รับเงินแล้ว</button>` : `<button class="acctPrimaryBtn" type="button" data-mark-revenue-paid="${esc(r.job_id)}">บันทึกรับเงินแล้ว</button>`}
+            ${isTechCashRevenue(r) && String(r.cash_collection_status || '') !== 'offset' ? `<button class="acctSecondaryBtn" type="button" data-sync-tech-cash="${esc(r.job_id)}">หักเงินสดจากบัญชีช่าง</button>` : ''}
             <button class="acctSecondaryBtn" type="button" data-create-doc-from-job="${esc(r.job_id)}">สร้างเอกสาร</button><button class="acctSecondaryBtn" type="button" data-job-id="${esc(r.job_id)}">ดูรายละเอียดงาน</button>
           </div>
         </div>`;
     }).join('') : empty('ไม่พบรายรับตามเงื่อนไข');
     el.querySelectorAll('[data-mark-revenue-paid]').forEach((btn) => btn.addEventListener('click', () => openRevenuePaidModal(btn.dataset.markRevenuePaid)));
+    el.querySelectorAll('[data-sync-tech-cash]').forEach((btn) => btn.addEventListener('click', () => syncTechCash(btn.dataset.syncTechCash)));
     el.querySelectorAll('[data-create-doc-from-job]').forEach((btn) => btn.addEventListener('click', () => openCreateDocumentModal(btn.dataset.createDocFromJob)));
     el.querySelectorAll('[data-job-id]').forEach((btn) => btn.addEventListener('click', () => { location.href = `/admin-job-view-v2.html?job_id=${encodeURIComponent(btn.dataset.jobId)}`; }));
   }
@@ -379,12 +398,13 @@
                     <div class="acctMiniStat"><span>คงเหลือ</span><b>${money(t.remaining_amount)} ฿</b></div>
                     <div class="acctMiniStat"><span>ทวิ50โดยประมาณ</span><b>${money(t.wht_tax_amount)} ฿</b></div>
                   </div>
-                  <small>รายได้ก่อนหัก ${money(t.gross_amount)} บาท • หักประกัน ${money(t.deposit_deduction_amount)} บาท • ปรับยอด ${money(t.adj_total)} บาท • จ่ายแล้ว ${money(t.paid_amount)} บาท</small>
+                  <small>รายได้ก่อนหัก ${money(t.gross_amount)} บาท • หักประกัน ${money(t.deposit_deduction_amount)} บาท • ปรับยอด ${money(t.adj_total)} บาท${Number(t.cash_held_amount || 0) > 0 ? ` • เงินสดช่างถือไว้ ${money(t.cash_held_amount)} บาท` : ''} • จ่ายแล้ว ${money(t.paid_amount)} บาท</small>
                   <small>สถานะจ่ายเงินช่าง: ${esc(payoutStatusLabel(t.paid_status))}${t.paid_at ? ` • จ่ายเมื่อ ${esc(dateTH(t.paid_at))}` : ''}</small>
                   <div class="acctTaxHint ${profile.is_complete ? 'ok' : 'warn'}">ข้อมูลทวิ50: ${esc(missingProfileText(profile))}</div>
                 </div>
                 <div class="acctActionsCol">
                   ${payoutStatusBadge(t.paid_status)}
+                  ${Number(t.cash_held_amount || 0) > 0 ? badge(`หักเงินสด ${money(t.cash_held_amount)} ฿`, 'warn') : ''}
                   ${paid ? `<button class="acctDisabledBtn" type="button" disabled>จ่ายช่างแล้ว</button>` : (t.can_pay === false ? `<button class="acctDisabledBtn" type="button" disabled>ยังไม่ปิดตัดยอด</button>` : `<button class="acctPrimaryBtn" type="button" data-pay-payout="${esc(payoutId)}" data-tech="${esc(t.technician_username)}" data-remaining="${esc(t.remaining_amount)}">บันทึกจ่ายแล้ว</button>`)}
                   ${existingWht ? `<a class="acctSecondaryBtn" href="/admin/accounting/documents/${esc(existingWht.document_id)}/print" target="_blank" rel="noopener">พิมพ์ทวิ50 ${esc(existingWht.document_no || '')}</a>` : ''}
                   <button class="acctSecondaryBtn" type="button" data-edit-tech-tax="${esc(t.technician_username)}">เติมข้อมูลทวิ50</button>
@@ -602,13 +622,23 @@
       });
   }
 
+  async function syncTechCash(jobId) {
+    try {
+      await postJson(`/admin/accounting/revenue/${encodeURIComponent(jobId)}/sync-tech-cash`, {});
+      await Promise.all([loadSummary(), loadRevenue(), loadPayouts(), loadAudit()]);
+      if (state.selectedPayoutId) await loadPayoutTechs(state.selectedPayoutId, { keepPosition: true });
+    } catch (e) {
+      alert(cleanError(e));
+    }
+  }
+
   function openRevenuePaidModal(jobId) {
     const row = (state.revenue || []).find((r) => String(r.job_id) === String(jobId));
     openModal(`
       <form class="acctFormGrid">
         <h3>ยืนยันการรับเงิน</h3>
-        <p>งาน ${esc(row?.booking_code || `#${jobId}`)} • ยอด ${money(row?.gross_sales_amount)} บาท<br>กรุณายืนยันว่าได้รับเงินจริงจากลูกค้าแล้ว ก่อนบันทึกสถานะรับเงิน</p>
-        <label>ช่องทางรับเงิน<input class="acctInput" name="payment_method" placeholder="เช่น โอน, เงินสด, QR" value="${esc(row?.payment_method || '')}"></label>
+        <p>งาน ${esc(row?.booking_code || `#${jobId}`)} • ยอด ${money(row?.gross_sales_amount)} บาท<br>กรุณายืนยันว่าได้รับเงินจริงจากลูกค้าแล้ว ก่อนบันทึกสถานะรับเงิน${isTechCashRevenue(row) ? `<br><b>เคสนี้เป็นเงินสดที่ช่างถือไว้ ${money(row?.close_cash_amount || row?.cash_collection_amount)} บาท ระบบจะหักจากบัญชีช่างอัตโนมัติ</b>` : ''}</p>
+        <label>ช่องทางรับเงิน<input class="acctInput" name="payment_method" placeholder="เช่น โอน, เงินสด, QR" value="${esc(isTechCashRevenue(row) ? 'cash_to_technician' : (row?.payment_method || ''))}"></label>
         <label>เลขอ้างอิง/หมายเหตุ<input class="acctInput" name="payment_reference" placeholder="เลขสลิป / เลขรายการ" value="${esc(row?.payment_reference || '')}"></label>
         <label>หมายเหตุ<textarea class="acctInput" name="note" placeholder="รายละเอียดเพิ่มเติม"></textarea></label>
         <label class="acctCheckLine"><input type="checkbox" name="confirm_received" value="1"><span>ยืนยันว่าได้รับเงินจริงแล้ว</span></label>
