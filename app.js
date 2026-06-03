@@ -3009,7 +3009,7 @@ function offerMapUrl(o) {
 function openOfferMap(btn) {
   const url = btn?.dataset?.url || "";
   if (!url) return;
-  window.open(url, "_blank", "noopener");
+  openMaps(null, null, "", url);
 }
 
 function openTimeProposalModal(offerId, originalIso) {
@@ -3847,60 +3847,96 @@ function _normalizeMapsUrl(input){
   let s = String(input || '').trim();
   if (!s) return '';
 
-  // sanitize invisible whitespace/newlines that break navigation on mobile
+  // sanitize invisible chars/newlines that often come from copied Google Maps links
   s = s.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
 
-  // If it looks like a URL host/path, remove inner whitespace (copy/paste issue)
-  if (/(maps\.app\.goo\.gl|goo\.gl|google\.com\/maps|www\.google\.com\/maps)/i.test(s)) {
+  const looksLikeMapsUrl = /(maps\.app\.goo\.gl|goo\.gl\/maps|google\.com\/maps|www\.google\.com\/maps|maps\.google\.com|maps\.googleapis\.com)/i.test(s);
+  if (looksLikeMapsUrl) {
+    // Google Maps URL must not contain whitespace; copied links sometimes wrap on mobile
     s = s.replace(/\s+/g, '');
   }
 
-  // If already a geo: URL or has protocol -> keep
+  // geo: and fully-qualified URLs should be opened as-is
   if (/^geo:/i.test(s) || /^[a-z][a-z0-9+.-]*:\/\//i.test(s)) return s;
 
-  // Common cases without scheme
-  if (/^(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps)/i.test(s)) {
+  // Plain coordinate pasted by admin, e.g. 13.72123,100.51234
+  const ll = s.match(/^(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)$/);
+  if (ll) {
+    return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(ll[1] + ',' + ll[2])}`;
+  }
+
+  // Common Google Maps hosts without protocol
+  if (/^(maps\.app\.goo\.gl|goo\.gl\/maps|www\.google\.com\/maps|google\.com\/maps|maps\.google\.com)($|\/|\?)/i.test(s)) {
     return `https://${s}`;
   }
 
-  // Some users paste "maps.google.com/?q=..." without scheme
-  if (/^maps\.google\.com\//i.test(s)) return `https://${s}`;
-
-  // If it still looks like a URL host/path, add https
-  if (/^\w+[\w.-]*\.[a-z]{2,}\//i.test(s)) return `https://${s}`;
-
-  // If user pasted a short host without protocol
-  if (/^(maps\.app\.goo\.gl|goo\.gl)\//i.test(s)) {
-    return `https://${s}`;
-  }
+  // Any other domain/path pasted without protocol
+  if (/^[a-z0-9][a-z0-9.-]*\.[a-z]{2,}($|[\/?#])/i.test(s)) return `https://${s}`;
 
   // Otherwise treat as a query/address
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(s)}`;
 }
 
+function _hasUsableLatLng(lat, lng) {
+  const a = Number(lat);
+  const b = Number(lng);
+  return Number.isFinite(a) && Number.isFinite(b) && Math.abs(a) <= 90 && Math.abs(b) <= 180;
+}
+
+function _findJobForMap(jobKey) {
+  const key = String(jobKey || '').trim();
+  if (!key) return null;
+  const rows = Array.isArray(window.__JOB_CACHE__) ? window.__JOB_CACHE__ : [];
+  return rows.find((j) =>
+    String(j?.job_id ?? '').trim() === key ||
+    String(j?.booking_code ?? '').trim() === key ||
+    String(j?.id ?? '').trim() === key
+  ) || null;
+}
+
 function openMaps(lat, lng, address, mapsUrl) {
   try {
-    let url = "";
     const directRaw = String(mapsUrl || "").trim();
     if (directRaw) {
-      _safeOpenUrl(_normalizeMapsUrl(directRaw));
+      const normalized = _normalizeMapsUrl(directRaw);
+      if (normalized) {
+        _safeOpenUrl(normalized);
+        return;
+      }
+    }
+
+    if (_hasUsableLatLng(lat, lng)) {
+      _safeOpenUrl(`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(Number(lat) + "," + Number(lng))}`);
       return;
     }
 
-    const hasLatLng = (lat !== null && lat !== undefined && lng !== null && lng !== undefined);
-    if (hasLatLng && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lng))) {
-      url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(lat + "," + lng)}`;
-    } else if (address) {
-      url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(address)}`;
-    } else {
-      return alert("ไม่มีพิกัด/ที่อยู่สำหรับนำทาง");
+    const q = String(address || "").trim();
+    if (q) {
+      _safeOpenUrl(`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`);
+      return;
     }
-    _safeOpenUrl(url);
+
+    alert("ไม่มีลิงก์แผนที่/พิกัด/ที่อยู่สำหรับนำทาง");
   } catch (e) {
+    console.error("openMaps failed", e);
     alert("เปิดแผนที่ไม่สำเร็จ");
   }
 }
+
+function openJobMap(jobKey) {
+  const job = _findJobForMap(jobKey);
+  if (!job) {
+    alert("ไม่พบข้อมูลงานสำหรับเปิดแผนที่ กรุณารีเฟรชหน้างานแล้วลองใหม่");
+    return;
+  }
+
+  // Admin-entered maps_url is the source of truth for technician navigation.
+  // Fallback to GPS/address only for legacy rows that have no maps_url.
+  openMaps(job.gps_latitude, job.gps_longitude, job.address_text, job.maps_url);
+}
+
 window.openMaps = openMaps;
+window.openJobMap = openJobMap;
 
 // =======================================
 // 📝 NOTE DRAFT (กันข้อความหายตอน auto-refresh)
@@ -4909,6 +4945,7 @@ function buildJobCard(job, historyMode = false) {
   const jobId = Number(job.job_id);
   const keyBase = jobKey || String(jobId || "");
   const jobKeyJs = keyBase.replace(/'/g, "\\'");
+  const jobKeyArg = escapeAttr(JSON.stringify(String(keyBase || "")));
 
   const travelKey = `cwf_travel_${keyBase}`;
   const travelStarted = !!localStorage.getItem(travelKey) || !!job.travel_started_at;
@@ -5016,7 +5053,7 @@ function buildJobCard(job, historyMode = false) {
 
         <!-- ✅ แถวปุ่มแผนที่: อยู่ใต้ปุ่มโทร และกดดูได้ตลอด -->
         <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" style="width:auto;" ${((job.address_text || job.maps_url || (job.gps_latitude != null && job.gps_longitude != null)) ? "" : "disabled")} onclick="openMaps(${job.gps_latitude ?? null}, ${job.gps_longitude ?? null}, '${(job.address_text||"").replace(/'/g,"\\'")}', '${String(job.maps_url||"").replace(/'/g,"\\'")}' )">🧭 แผนที่</button>
+          <button class="secondary" type="button" style="width:auto;" data-role="job-map" data-jobkey="${escapeAttr(keyBase)}" ${((job.address_text || job.maps_url || (job.gps_latitude != null && job.gps_longitude != null)) ? "" : "disabled")} onclick="openJobMap(${jobKeyArg})">🧭 แผนที่</button>
         </div>
 
         <!-- ✅ ปุ่มอัปเดตสถานะ / e-slip (ปุ่มเดียว) -->
@@ -5176,30 +5213,12 @@ window.requestFinalize = requestFinalize;
 // - ถ้ามีพิกัด: เปิดแบบ lat,lng
 // - ถ้าไม่มีพิกัด: ใช้ค้นหาจากที่อยู่
 // =======================================
-function openNav(lat, lng, addressText) {
-  try {
-    let url = "";
-    const direct = String(mapsUrl || "").trim();
-    if (direct) {
-      window.open(direct, "_blank");
-      return;
-    }
-
-    const hasLatLng = lat !== null && lng !== null && lat !== "null" && lng !== "null" && !Number.isNaN(Number(lat)) && !Number.isNaN(Number(lng));
-
-    if (hasLatLng) {
-      url = `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(lat + "," + lng)}&travelmode=driving`;
-    } else {
-      const q = (addressText || "").toString().trim();
-      if (!q) return alert("ไม่มีพิกัด/ที่อยู่สำหรับนำทาง");
-      url = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(q)}`;
-    }
-
-    window.open(url, "_blank");
-  } catch (e) {
-    alert("เปิดแผนที่ไม่สำเร็จ");
-  }
+function openNav(lat, lng, addressText, mapsUrl) {
+  // Backward-compatible alias for old cached buttons.
+  // Do not reference an undefined mapsUrl; use the same robust opener as the job cards.
+  openMaps(lat, lng, addressText, mapsUrl);
 }
+window.openNav = openNav;
 
 
 // =======================================
