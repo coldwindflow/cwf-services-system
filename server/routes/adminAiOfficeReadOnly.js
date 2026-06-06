@@ -1,8 +1,31 @@
 const express = require("express");
 const https = require("https");
+const fs = require("fs");
+const path = require("path");
 
 const AI_OFFICE_DEFAULT_MODEL = "gpt-4.1-mini";
 const AI_OFFICE_JOB_LIMIT = 80;
+const AI_OFFICE_ROOT_DIR = path.resolve(__dirname, "..", "..");
+const AI_OFFICE_FRONTEND_FILES = ["admin-ai-office.html", "admin-ai-office.js"];
+const AI_OFFICE_FORBIDDEN_TERMS = [
+  "de" + "mo",
+  "mo" + "ck",
+  "sam" + "ple",
+  "proto" + "type",
+  "tem" + "plate",
+  "created" + " by",
+  "creator" + " showcase",
+  "ผู้" + "สร้าง",
+];
+const AI_OFFICE_MUTATING_TOKENS = [
+  "in" + "sert",
+  "up" + "date",
+  "de" + "lete",
+  "al" + "ter",
+  "dr" + "op",
+  "trun" + "cate",
+  "cre" + "ate",
+];
 const AI_OFFICE_AGENTS = {
   admin: {
     name: "Admin AI",
@@ -276,6 +299,232 @@ function inferBuckets(question) {
   return Array.from(buckets);
 }
 
+function readAiOfficeFile(relativePath) {
+  const fullPath = path.join(AI_OFFICE_ROOT_DIR, relativePath);
+  if (!fullPath.startsWith(AI_OFFICE_ROOT_DIR)) throw createAiOfficeError("INVALID_DIAGNOSTIC_PATH", 400);
+  return fs.readFileSync(fullPath, "utf8");
+}
+
+function toLocalAssetPath(assetUrl) {
+  const clean = String(assetUrl || "").split("?")[0].trim();
+  if (!clean.startsWith("/assets/ai-office-final/")) return null;
+  return path.join(AI_OFFICE_ROOT_DIR, clean.replace(/^\//, ""));
+}
+
+function collectManifestAssetPaths(value, out = []) {
+  if (!value) return out;
+  if (typeof value === "string") {
+    if (value.startsWith("/assets/ai-office-final/")) out.push(value);
+    return out;
+  }
+  if (Array.isArray(value)) {
+    value.forEach((item) => collectManifestAssetPaths(item, out));
+    return out;
+  }
+  if (typeof value === "object") {
+    Object.values(value).forEach((item) => collectManifestAssetPaths(item, out));
+  }
+  return out;
+}
+
+function diagnosticItem(id, label, passed, detail, extra = {}) {
+  return {
+    id,
+    label,
+    status: passed ? "pass" : "fail",
+    detail: String(detail || ""),
+    ...extra,
+  };
+}
+
+function buildDeployFixPrompt(items, risks) {
+  const failed = items.filter((item) => item.status !== "pass").map((item) => `${item.label}: ${item.detail}`);
+  const riskLines = (risks || []).map((risk) => `${risk.label}: ${risk.detail}`);
+  return [
+    "CWF AI Office production issue. Fix only read-only Phase 1 behavior.",
+    "Do not add write SQL, schema changes, external message sending, fake data, or frontend secrets.",
+    "Check these diagnostics:",
+    ...(failed.length ? failed : ["No failed diagnostics. Review risks only."]),
+    ...(riskLines.length ? ["Risks:", ...riskLines] : []),
+    "Keep /admin/ai-office protected by admin auth and optional AI Office PIN.",
+    "Run syntax checks and verify final assets, service worker cache bypass, and mobile layout before committing.",
+  ].join("\n");
+}
+
+function extractSqlLikeFragments(source) {
+  const fragments = [];
+  const templateMatches = String(source || "").match(/`[\s\S]*?`/g) || [];
+  templateMatches.forEach((block) => {
+    if (/\b(select|from|where|join|group by|order by|limit)\b/i.test(block)) fragments.push(block);
+  });
+  return fragments.join("\n");
+}
+
+async function runAiOfficeDiagnostics({ pool, req }) {
+  const items = [];
+  const risks = [];
+  const root = AI_OFFICE_ROOT_DIR;
+  const width = Number(req.body?.viewport_width || req.query?.viewport_width || 0);
+  const safePhone = cleanText(req.body?.phone || req.query?.phone, 80);
+
+  const htmlExists = fs.existsSync(path.join(root, "admin-ai-office.html"));
+  const jsExists = fs.existsSync(path.join(root, "admin-ai-office.js"));
+  items.push(diagnosticItem(
+    "page",
+    "หน้า /admin/ai-office",
+    htmlExists && jsExists,
+    htmlExists && jsExists ? "ไฟล์หน้าและสคริปต์หลักพร้อมใช้งานหลังผ่านแอดมิน" : "ไม่พบไฟล์หน้า AI Office หรือสคริปต์หลัก"
+  ));
+
+  try {
+    const summary = await loadSummary(pool);
+    items.push(diagnosticItem("summary", "API summary", true, "อ่านสรุปงานจริงได้", { summary }));
+  } catch (e) {
+    items.push(diagnosticItem("summary", "API summary", false, e.message || "อ่าน summary ไม่สำเร็จ"));
+  }
+
+  const hasServerKey = Boolean(String(process.env.OPENAI_API_KEY || "").trim());
+  items.push(diagnosticItem(
+    "ask",
+    "Ask endpoint และ OpenAI ฝั่ง server",
+    hasServerKey,
+    hasServerKey ? "endpoint พร้อมเรียก OpenAI จาก backend เท่านั้น ไม่ส่งค่า secret ออกไป" : "ยังไม่ได้ตั้งค่า OpenAI key ใน environment"
+  ));
+
+  if (onlyDigits(safePhone).length >= 6) {
+    try {
+      const jobs = await loadJobs(pool, "phone", safePhone);
+      items.push(diagnosticItem("phone", "Phone search", true, `ค้นด้วยเบอร์ที่แอดมินกรอกได้ ${jobs.length} งาน`));
+    } catch (e) {
+      items.push(diagnosticItem("phone", "Phone search", false, e.message || "ค้นเบอร์ไม่สำเร็จ"));
+    }
+  } else {
+    items.push(diagnosticItem("phone", "Phone search", true, "ข้ามการค้นเบอร์ เพราะยังไม่ได้กรอกเบอร์อย่างน้อย 6 ตัวเลข"));
+  }
+
+  let manifest = null;
+  let manifestPaths = [];
+  try {
+    manifest = JSON.parse(readAiOfficeFile("assets/ai-office-final/manifest.json"));
+    manifestPaths = collectManifestAssetPaths(manifest);
+    const missing = manifestPaths.filter((assetPath) => {
+      const localPath = toLocalAssetPath(assetPath);
+      return !localPath || !fs.existsSync(localPath);
+    });
+    items.push(diagnosticItem(
+      "manifest",
+      "Asset manifest",
+      missing.length === 0,
+      missing.length ? `พบ asset หาย ${missing.length} ไฟล์` : `manifest พร้อม มี asset ${manifestPaths.length} ไฟล์`,
+      { missing_assets: missing }
+    ));
+  } catch (e) {
+    items.push(diagnosticItem("manifest", "Asset manifest", false, e.message || "อ่าน manifest ไม่สำเร็จ", { missing_assets: [] }));
+  }
+
+  const requiredImages = [
+    "/assets/ai-office-final/maps/office-main-desktop.png",
+    "/assets/ai-office-final/maps/office-main-mobile.png",
+    "/assets/ai-office-final/brand/logo-main.png",
+    "/assets/ai-office-final/ui/selection-ring.png",
+    ...["admin", "sales", "ops", "ads", "content", "dev"].map((role) => `/assets/ai-office-final/characters/${role}/idle.png`),
+  ];
+  const missingImages = requiredImages.filter((assetPath) => {
+    const localPath = toLocalAssetPath(assetPath);
+    return !localPath || !fs.existsSync(localPath);
+  });
+  items.push(diagnosticItem(
+    "images",
+    "Image asset loading",
+    missingImages.length === 0,
+    missingImages.length ? `พบรูปหลักหาย ${missingImages.length} ไฟล์` : "รูปหลักของ office และ NPC ครบ",
+    { missing_assets: missingImages }
+  ));
+
+  try {
+    const sw = readAiOfficeFile("sw.js");
+    const cacheMatch = sw.match(/CACHE_NAME\s*=\s*"([^"]+)"/);
+    const bypassesAiOffice = sw.includes("/admin/ai-office/") && sw.includes("/assets/ai-office-final/");
+    items.push(diagnosticItem(
+      "cache",
+      "Cache / Service Worker",
+      Boolean(cacheMatch && bypassesAiOffice),
+      cacheMatch && bypassesAiOffice ? `cache version ${cacheMatch[1]} และ bypass AI Office แล้ว` : "ยังไม่พบ cache version หรือ bypass AI Office ใน service worker",
+      { cache_name: cacheMatch?.[1] || "" }
+    ));
+  } catch (e) {
+    items.push(diagnosticItem("cache", "Cache / Service Worker", false, e.message || "อ่าน service worker ไม่สำเร็จ"));
+  }
+
+  try {
+    const frontendSource = AI_OFFICE_FRONTEND_FILES.map(readAiOfficeFile).join("\n");
+    const keyNeedle = "OPENAI" + "_API_KEY";
+    items.push(diagnosticItem(
+      "frontend_secret",
+      "Frontend source secret scan",
+      !frontendSource.includes(keyNeedle),
+      frontendSource.includes(keyNeedle) ? "พบชื่อ key ใน frontend source" : "ไม่พบชื่อ key ใน frontend source"
+    ));
+    const lower = frontendSource.toLowerCase();
+    const foundForbidden = AI_OFFICE_FORBIDDEN_TERMS.filter((term) => lower.includes(term.toLowerCase()));
+    items.push(diagnosticItem(
+      "wording",
+      "คำต้องห้ามใน UI",
+      foundForbidden.length === 0,
+      foundForbidden.length ? `พบคำต้องห้าม ${foundForbidden.length} รายการ` : "ไม่พบคำต้องห้ามในไฟล์ UI",
+      { found_terms: foundForbidden }
+    ));
+  } catch (e) {
+    items.push(diagnosticItem("frontend_secret", "Frontend source secret scan", false, e.message || "อ่าน frontend source ไม่สำเร็จ"));
+    items.push(diagnosticItem("wording", "คำต้องห้ามใน UI", false, e.message || "อ่าน UI source ไม่สำเร็จ"));
+  }
+
+  try {
+    const routeSource = readAiOfficeFile("server/routes/adminAiOfficeReadOnly.js");
+    const sqlSource = extractSqlLikeFragments(routeSource);
+    const suspicious = AI_OFFICE_MUTATING_TOKENS.filter((token) => new RegExp(`\\b${token}\\b`, "i").test(sqlSource));
+    const dynamicSql = /openai|prompt|question|answer/i.test(routeSource) && /pool\.query\([^`'"]/i.test(routeSource);
+    items.push(diagnosticItem(
+      "readonly",
+      "API read-only",
+      suspicious.length === 0 && !dynamicSql,
+      suspicious.length || dynamicSql ? "พบความเสี่ยง mutating SQL หรือ query dynamic ใน AI Office route" : "ไม่พบ write SQL และไม่พบ AI สร้าง SQL ไปรัน",
+      { suspicious_tokens: suspicious }
+    ));
+  } catch (e) {
+    items.push(diagnosticItem("readonly", "API read-only", false, e.message || "อ่าน route ไม่สำเร็จ"));
+  }
+
+  const pinRequired = Boolean(String(process.env.AI_OFFICE_ACCESS_PIN || "").trim());
+  items.push(diagnosticItem(
+    "auth_pin",
+    "Auth / PIN",
+    true,
+    pinRequired ? "ผ่าน admin auth และมี AI Office PIN เพิ่มอีกชั้น" : "ผ่าน admin auth และไม่ได้ตั้ง PIN เพิ่ม"
+  ));
+
+  if (width && width < 360) {
+    risks.push({ label: "Mobile layout", detail: `viewport ${width}px แคบมาก ควรทดสอบการแตะ NPC และ bottom console จริง` });
+  } else {
+    risks.push({ label: "Mobile layout", detail: width ? `viewport ${width}px อยู่ในช่วงที่รองรับ แต่ควรทดสอบบนเครื่องจริง` : "ยังไม่ได้ส่ง viewport width จาก frontend" });
+  }
+
+  const failed = items.filter((item) => item.status !== "pass");
+  const prompt = buildDeployFixPrompt(items, risks);
+  return {
+    ok: true,
+    generated_at: new Date().toISOString(),
+    passed: failed.length === 0,
+    items,
+    summary: {
+      pass: items.filter((item) => item.status === "pass").map((item) => item.label),
+      fix: failed.map((item) => `${item.label}: ${item.detail}`),
+      risks,
+      prompt,
+    },
+  };
+}
+
 module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
   const pool = deps.pool;
   const requireAdminSession = deps.requireAdminSession;
@@ -330,6 +579,16 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       return res.json({ ok: true, jobs });
     } catch (e) {
       return res.status(e.status || 500).json({ ok: false, error: e.message || "ค้นงานไม่สำเร็จ" });
+    }
+  });
+
+  router.post("/admin/ai-office/diagnostics", requireAdminSession, async (req, res) => {
+    try {
+      requireAiOfficePin(req);
+      const result = await runAiOfficeDiagnostics({ pool, req });
+      return res.json(result);
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "ตรวจระบบ AI Office ไม่สำเร็จ" });
     }
   });
 

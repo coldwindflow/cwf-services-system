@@ -1,5 +1,5 @@
 (function(){
-  const VERSION = "ai-office-final-aicwf-20260607";
+  const VERSION = "ai-office-dev-diagnostics-20260607";
   const ASSET_ROOT = "/assets/ai-office-final";
   const roleOrder = ["admin","sales","ops","ads","content","dev"];
   const states = ["base","idle","thinking","talking","working","walk-1","walk-2","walk-3","walk-4"];
@@ -73,6 +73,8 @@
     },
   };
 
+  agents.dev.commands = ["ตรวจระบบ AI Office", "ตรวจ API read-only", "ตรวจ Asset 404", "ตรวจ Cache / Service Worker", "ตรวจ OpenAI server-side", "ตรวจ Auth / PIN", "ตรวจคำต้องห้ามใน UI", "ตรวจความเสี่ยงก่อน Deploy", "สร้าง Prompt แก้ปัญหาให้ Codex"];
+
   const zones = {
     adminDesk: { x: 20, y: 52 }, salesDesk: { x: 78, y: 52 }, opsBoard: { x: 50, y: 32 },
     adsDesk: { x: 19, y: 31 }, contentDesk: { x: 28, y: 72 }, devDesk: { x: 82, y: 31 }, meetingTable: { x: 51, y: 67 },
@@ -82,7 +84,7 @@
     adsDesk: { x: 21, y: 32 }, contentDesk: { x: 29, y: 73 }, devDesk: { x: 79, y: 32 }, meetingTable: { x: 51, y: 66 },
   };
 
-  const state = { pin: "", pinRequired: false, activeAgent: "admin", loadingAsk: false, greeted: new Set(), agentStates: {}, walkTimers: {}, lastAnswer: "" };
+  const state = { pin: "", pinRequired: false, activeAgent: "admin", loadingAsk: false, loadingDiagnostics: false, greeted: new Set(), agentStates: {}, walkTimers: {}, lastAnswer: "", lastDiagnostics: null };
   const $ = (id) => document.getElementById(id);
   const isMobile = () => window.matchMedia("(max-width: 720px)").matches;
   const pointFor = (key, zone) => (isMobile() ? mobileZones[zone] : zones[zone]) || agents[key].home;
@@ -267,8 +269,16 @@
   function renderCommands(){
     const box = $("quickCommands");
     if (!box) return;
-    box.innerHTML = activeAgent().commands.map((cmd) => `<button class="quickBtn" type="button">${esc(cmd)}</button>`).join("");
-    box.querySelectorAll("button").forEach((btn) => btn.addEventListener("click", () => ask(btn.textContent || "")));
+    const isDev = state.activeAgent === "dev";
+    box.classList.toggle("diagnosticList", isDev);
+    box.innerHTML = activeAgent().commands.map((cmd) => {
+      const mode = isDev ? diagnosticModeFor(cmd) : "";
+      return `<button class="quickBtn${isDev ? " diagCard" : ""}" type="button" data-diag="${esc(mode)}">${esc(cmd)}</button>`;
+    }).join("");
+    box.querySelectorAll("button").forEach((btn) => btn.addEventListener("click", () => {
+      if (state.activeAgent === "dev") runDiagnostics(btn.dataset.diag || "full", btn.textContent || "");
+      else ask(btn.textContent || "");
+    }));
   }
 
   function addMessage(role, text, copyable){
@@ -321,6 +331,91 @@
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
     return div;
+  }
+
+  function diagnosticModeFor(label){
+    const text = String(label || "");
+    if (text.includes("API")) return "api";
+    if (text.includes("Asset")) return "assets";
+    if (text.includes("Cache")) return "cache";
+    if (text.includes("OpenAI")) return "openai";
+    if (text.includes("Auth")) return "auth";
+    if (text.includes("คำต้องห้าม")) return "wording";
+    if (text.includes("ความเสี่ยง")) return "risk";
+    if (text.includes("Prompt")) return "prompt";
+    return "full";
+  }
+
+  function linesFromDiagnostics(data, mode){
+    const summary = data?.summary || {};
+    const items = Array.isArray(data?.items) ? data.items : [];
+    const missing = items.flatMap((item) => Array.isArray(item.missing_assets) ? item.missing_assets : []);
+    const endpointFailures = items.filter((item) => item.status !== "pass").map((item) => `${item.label}: ${item.detail}`);
+    const passLines = (summary.pass || []).map((label) => `- ${label}`);
+    const fixLines = (summary.fix || []).map((line) => `- ${line}`);
+    const riskLines = (summary.risks || []).map((risk) => `- ${risk.label}: ${risk.detail}`);
+    const prompt = summary.prompt || "ยังไม่มี prompt สำหรับแก้ปัญหา";
+
+    if (mode === "prompt") return `Prompt ส่ง Codex ถ้าต้องแก้\n${prompt}`;
+    if (mode === "assets") {
+      return [
+        "ตรวจ Asset 404",
+        missing.length ? `ต้องแก้\n${missing.map((p) => `- ${p}`).join("\n")}` : "ผ่าน\n- asset หลักและ manifest ครบ",
+        endpointFailures.length ? `API failures\n${endpointFailures.map((line) => `- ${line}`).join("\n")}` : "",
+      ].filter(Boolean).join("\n\n");
+    }
+    if (mode === "risk") {
+      return [
+        "ตรวจความเสี่ยงก่อน Deploy",
+        riskLines.length ? `ความเสี่ยง\n${riskLines.join("\n")}` : "ความเสี่ยง\n- ไม่พบความเสี่ยงจาก diagnostics",
+        fixLines.length ? `ต้องแก้\n${fixLines.join("\n")}` : "ผ่าน\n- ไม่พบรายการต้องแก้",
+        `Prompt ส่ง Codex ถ้าต้องแก้\n${prompt}`,
+      ].join("\n\n");
+    }
+    return [
+      "ผลตรวจระบบ AI Office",
+      passLines.length ? `ผ่าน\n${passLines.join("\n")}` : "ผ่าน\n- ยังไม่มีรายการผ่าน",
+      fixLines.length ? `ต้องแก้\n${fixLines.join("\n")}` : "ต้องแก้\n- ไม่มี",
+      riskLines.length ? `ความเสี่ยง\n${riskLines.join("\n")}` : "ความเสี่ยง\n- ไม่มี",
+      missing.length ? `Missing assets\n${missing.map((p) => `- ${p}`).join("\n")}` : "",
+      `Prompt ส่ง Codex ถ้าต้องแก้\n${prompt}`,
+    ].filter(Boolean).join("\n\n");
+  }
+
+  async function runDiagnostics(mode = "full", label = "ตรวจระบบ AI Office"){
+    if (state.loadingDiagnostics) return;
+    state.loadingDiagnostics = true;
+    const agentKey = "dev";
+    if (state.activeAgent !== "dev") selectAgent("dev", false, true);
+    expandConsole();
+    addMessage("user", `Dev AI: ${label}`, false);
+    showAgentBubble(agentKey, "กำลังตรวจระบบแบบอ่านอย่างเดียว");
+    await moveAgent(agentKey, agentConfig(agentKey).workstation);
+    setAgentState(agentKey, "thinking");
+    const pending = addThinkingMessage(agentKey);
+    try {
+      const data = await apiPost("/admin/ai-office/diagnostics", {
+        mode,
+        phone: $("phoneInput")?.value || "",
+        viewport_width: Math.round(window.innerWidth || 0),
+      });
+      state.lastDiagnostics = data;
+      if (pending) pending.remove();
+      const text = linesFromDiagnostics(data, mode);
+      state.lastAnswer = text;
+      addMessage("ai", text, true);
+      setAgentState(agentKey, "talking");
+      showAgentBubble(agentKey, data.passed ? "ระบบหลักผ่าน พร้อมให้ทดสอบต่อ" : "พบรายการที่ต้องแก้ในผลตรวจ");
+      setTimeout(() => { setAgentState(agentKey, "working"); showAgentBubble(agentKey, "พร้อมตรวจต่อ"); }, 3600);
+    } catch (e) {
+      if (pending) pending.remove();
+      const msg = e.message || "ตรวจระบบ AI Office ไม่สำเร็จ";
+      addMessage("ai", `ต้องแก้\n- ${msg}`, false);
+      setAgentState(agentKey, "talking");
+      showAgentBubble(agentKey, "ตรวจระบบไม่สำเร็จ");
+    } finally {
+      state.loadingDiagnostics = false;
+    }
   }
 
   function responsePreview(text, agentKey){
