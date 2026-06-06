@@ -1,33 +1,41 @@
 (function(){
+  const VERSION = "ai-office-game-9f4c2d1";
+
   const agents = {
     admin: {
       name: "Admin AI",
       color: "#1558d6",
       role: "ผู้ช่วยแอดมินสำหรับสรุปงาน ร่างข้อความลูกค้า ข้อความช่าง และแปลภาษา",
       status: "พร้อมช่วยงานแอดมิน",
-      greeting: "สวัสดีครับ ผมช่วยสรุปงานจริง ร่างข้อความลูกค้า และช่วยแอดมินตอบงานประจำวันได้",
+      greeting: "ผมอยู่ที่โต๊ะแอดมิน พร้อมสรุปงานจริงและร่างข้อความให้ใช้งานต่อได้ทันที",
       thinking: "กำลังตรวจข้อมูลงานจริง",
       talking: "สรุปให้แล้วครับ",
+      workstation: "adminDesk",
+      home: { x: 22, y: 58 },
       commands: ["วันนี้มีงานอะไรบ้าง", "ร่างข้อความยืนยันนัดลูกค้า", "ร่างข้อความแจ้งช่าง", "แปลข้อความลูกค้าให้สุภาพ"],
     },
     sales: {
       name: "Sales AI",
       color: "#f0b400",
-      role: "ผู้ช่วยฝ่ายขายสำหรับปิดการขาย แนะนำแพ็กเกจ และตอบเมื่อลูกค้าบอกว่าแพง",
+      role: "ผู้ช่วยฝ่ายขายสำหรับปิดการขาย แนะนำแพ็กเกจ และตอบเรื่องราคา",
       status: "พร้อมช่วยปิดการขาย",
-      greeting: "ผมจะช่วยตอบลูกค้าให้ดูมั่นใจ สุภาพ และปิดงานได้ดีขึ้นจากข้อมูลจริงที่มี",
+      greeting: "ผมพร้อมช่วยตอบลูกค้าให้สุภาพ ชัดเจน และเพิ่มโอกาสปิดงาน",
       thinking: "กำลังดูมุมปิดการขาย",
       talking: "ได้แนวตอบฝ่ายขายแล้วครับ",
-      commands: ["ลูกค้าบอกว่าแพง ตอบยังไงดี", "แนะนำแพ็กเกจจากงานที่มี", "ช่วยเขียนข้อความปิดการขาย", "เหตุผลที่ยอดปิดการขายอาจต่ำ"],
+      workstation: "salesDesk",
+      home: { x: 39, y: 55 },
+      commands: ["ลูกค้าบอกว่าแพง ตอบยังไงดี", "แนะนำแพ็กเกจจากงานที่มี", "ช่วยเขียนข้อความปิดการขาย", "ทำไมยอดปิดการขายอาจต่ำ"],
     },
     ops: {
       name: "Ops AI",
       color: "#13a46b",
-      role: "ผู้ควบคุมงานสำหรับวันนี้ พรุ่งนี้ งานค้างชำระ งานยังไม่ปิด และความเสี่ยงต้องติดตาม",
+      role: "ผู้ควบคุมงานสำหรับคิววันนี้ พรุ่งนี้ งานค้างชำระ งานยังไม่ปิด และจุดเสี่ยง",
       status: "พร้อมคุมคิวงาน",
-      greeting: "ผมจะช่วยดูคิววันนี้ งานพรุ่งนี้ งานค้าง และจุดที่ควรระวังจากระบบจริง",
+      greeting: "ผมอยู่หน้า Operations Board พร้อมดูคิว งานค้าง และความเสี่ยงจากข้อมูลจริง",
       thinking: "กำลังตรวจคิวและความเสี่ยง",
       talking: "เจอประเด็นที่ต้องดูแล้วครับ",
+      workstation: "opsBoard",
+      home: { x: 67, y: 56 },
       commands: ["วันนี้มีอะไรต้องระวังไหม", "พรุ่งนี้มีงานอะไรบ้าง", "งานไหนยังไม่จ่าย", "งานไหนยังไม่ปิด"],
     },
     ads: {
@@ -35,9 +43,11 @@
       color: "#ef5aa3",
       role: "ผู้ช่วยการตลาดสำหรับ Google Ads, Facebook Ads, TikTok Ads, keyword และพื้นที่บริการ",
       status: "พร้อมคิดแคมเปญ",
-      greeting: "ผมช่วยเปลี่ยนข้อมูลงานจริงให้เป็นไอเดียโฆษณา คำค้น และพื้นที่ยิงแอดได้",
+      greeting: "ผมจะช่วยมองงานจริงให้เป็นไอเดียโฆษณา คำค้น และพื้นที่ยิงแอด",
       thinking: "กำลังหาโอกาสการตลาด",
       talking: "ได้ไอเดียแคมเปญแล้วครับ",
+      workstation: "adsDesk",
+      home: { x: 23, y: 82 },
       commands: ["ช่วยคิด keyword จากงานจริง", "พื้นที่ไหนควรยิงแอด", "เขียนข้อความโฆษณาล้างแอร์", "ไอเดีย TikTok Ads จากงานช่วงนี้"],
     },
     content: {
@@ -45,28 +55,74 @@
       color: "#8b5cf6",
       role: "ผู้ช่วยทำคอนเทนต์สำหรับโพสต์ แคปชัน รีวิว และสคริปต์ Reels/TikTok",
       status: "พร้อมสร้างคอนเทนต์",
-      greeting: "ผมช่วยทำคอนเทนต์จากงานจริงให้อ่านดี ดูน่าเชื่อถือ และใช้ต่อได้ทันที",
+      greeting: "ผมพร้อมเรียบเรียงงานจริงให้เป็นโพสต์ แคปชัน หรือสคริปต์ที่ใช้ได้ทันที",
       thinking: "กำลังเรียบเรียงคอนเทนต์",
       talking: "ร่างคอนเทนต์ให้แล้วครับ",
+      workstation: "contentDesk",
+      home: { x: 48, y: 84 },
       commands: ["เขียนแคปชันจากงานวันนี้", "ทำสคริปต์ Reels 30 วินาที", "ไอเดียโพสต์จากงานจริง", "ร่างข้อความรีวิวให้ลูกค้า"],
     },
     dev: {
       name: "Dev AI",
       color: "#334155",
-      role: "ผู้ช่วยระบบสำหรับ prompt, สรุปบั๊ก, checklist deploy และ review ความเสี่ยง",
+      role: "ผู้ช่วยระบบสำหรับ prompt สรุปบั๊ก checklist deploy และตรวจความเสี่ยง",
       status: "พร้อมตรวจระบบ",
-      greeting: "ผมช่วยคิดเช็กลิสต์ ตรวจความเสี่ยง และสรุปงานระบบแบบไม่แตะข้อมูลจริง",
+      greeting: "ผมพร้อมช่วยทำเช็กลิสต์ระบบ สรุปความเสี่ยง และเขียน prompt สำหรับงานภายใน",
       thinking: "กำลังตรวจมุมระบบ",
       talking: "ได้ข้อสรุประบบแล้วครับ",
+      workstation: "devDesk",
+      home: { x: 77, y: 84 },
       commands: ["ทำ checklist ก่อน deploy", "สรุปความเสี่ยงของ AI Office", "ช่วยเขียน prompt สำหรับแอดมิน", "ตรวจว่ามีอะไรห้ามแก้ข้อมูลไหม"],
     },
   };
 
-  const state = { pin: "", pinRequired: false, activeAgent: "admin", loadingAsk: false, greeted: new Set() };
+  const zones = {
+    adminDesk: { x: 18, y: 47 },
+    salesDesk: { x: 42, y: 45 },
+    opsBoard: { x: 72, y: 48 },
+    adsDesk: { x: 19, y: 75 },
+    contentDesk: { x: 43, y: 80 },
+    devDesk: { x: 78, y: 78 },
+    meetingTable: { x: 59, y: 66 },
+  };
+
+  const state = {
+    pin: "",
+    pinRequired: false,
+    activeAgent: "admin",
+    loadingAsk: false,
+    greeted: new Set(),
+    agentStates: {},
+    lastAnswer: "",
+  };
+
   const $ = (id) => document.getElementById(id);
+
+  function esc(value){
+    return String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ({
+      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+    }[c]));
+  }
+
+  function money(value){
+    return Number(value || 0).toLocaleString("th-TH", { maximumFractionDigits: 0 });
+  }
+
+  function agentConfig(agentKey){
+    return agents[agentKey] || agents.admin;
+  }
+
+  function agentElement(agentKey){
+    return document.querySelector(`.npc[data-agent="${agentKey}"]`);
+  }
+
+  function activeAgent(){
+    return agentConfig(state.activeAgent);
+  }
 
   function refreshAiOfficeCache(){
     try {
+      console.info(`CWF AI Office ${VERSION}`);
       if ("serviceWorker" in navigator) {
         navigator.serviceWorker.getRegistration().then((reg) => {
           if (reg) {
@@ -89,43 +145,72 @@
     } catch (_) {}
   }
 
-  function esc(value){
-    return String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ({
-      "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
-    }[c]));
+  function placeAgent(agentKey, point){
+    const el = agentElement(agentKey);
+    if (!el || !point) return;
+    el.style.setProperty("--x", `${point.x}%`);
+    el.style.setProperty("--y", `${point.y}%`);
+    el.style.setProperty("--c", agentConfig(agentKey).color);
   }
 
-  function money(value){
-    return Number(value || 0).toLocaleString("th-TH", { maximumFractionDigits: 0 });
+  function setAgentState(agentKey, nextState){
+    const el = agentElement(agentKey);
+    if (!el) return;
+    ["idle","walking","thinking","talking","working"].forEach((name) => el.classList.toggle(name, name === nextState));
+    state.agentStates[agentKey] = nextState;
+    if (agentKey === state.activeAgent) updateConsoleAgent();
   }
 
-  function activeAgent(){
-    return agents[state.activeAgent] || agents.admin;
+  function showAgentBubble(agentKey, message){
+    const bubble = agentElement(agentKey)?.querySelector(".npcBubble");
+    if (bubble) bubble.textContent = message || "";
   }
 
-  function activeAgentElement(){
-    return document.querySelector(`.agent[data-agent="${state.activeAgent}"]`);
-  }
-
-  function setBubble(agentKey, text){
-    const el = document.querySelector(`.agent[data-agent="${agentKey}"] .agentBubble`);
-    if (el) el.textContent = text || "";
-  }
-
-  function setAgentVisual(agentKey, mode, bubbleText){
-    document.querySelectorAll(".agent").forEach((el) => {
-      const isCurrent = el.dataset.agent === agentKey;
-      el.classList.toggle("thinking", isCurrent && mode === "thinking");
-      el.classList.toggle("talking", isCurrent && mode === "talking");
-      el.classList.toggle("tapped", isCurrent && mode === "tapped");
+  function moveAgent(agentKey, targetKey){
+    const target = zones[targetKey] || agentConfig(agentKey).home;
+    setAgentState(agentKey, "walking");
+    placeAgent(agentKey, target);
+    return new Promise((resolve) => {
+      window.setTimeout(() => {
+        if (state.agentStates[agentKey] === "walking") setAgentState(agentKey, "idle");
+        resolve();
+      }, 880);
     });
-    if (bubbleText) setBubble(agentKey, bubbleText);
-    const status = $("agentStatus");
-    if (status && agentKey === state.activeAgent) {
-      const agent = activeAgent();
-      status.textContent = mode === "thinking" ? agent.thinking : (mode === "talking" ? agent.talking : agent.status);
+  }
+
+  function moveSelectedAgentToWorkstation(){
+    return moveAgent(state.activeAgent, activeAgent().workstation);
+  }
+
+  function selectOrchestratedAgent(commandText){
+    const text = String(commandText || "").toLowerCase();
+    if (/แพง|ปิดการขาย|ราคา|package|แพ็ก/.test(text)) return "sales";
+    if (/ยังไม่จ่าย|ยังไม่ปิด|พรุ่งนี้|ระวัง|คิว|open|unpaid|today|tomorrow/.test(text)) return "ops";
+    if (/โพสต์|คอนเทนต์|caption|แคปชัน|reels|tiktok script|รีวิว/.test(text)) return "content";
+    if (/แอด|ads|keyword|facebook|google|tiktok ads|พื้นที่/.test(text)) return "ads";
+    if (/codex|prompt|deploy|bug|บั๊ก|checklist|ระบบ/.test(text)) return "dev";
+    return state.activeAgent || "admin";
+  }
+
+  function coordinateRelatedAgent(agentKey, commandText){
+    const text = String(commandText || "").toLowerCase();
+    let partner = "";
+    let target = "meetingTable";
+    if (agentKey === "ops" && /ยังไม่จ่าย|ยังไม่ปิด|ระวัง/.test(text)) partner = "admin";
+    if (agentKey === "admin" && /วันนี้|พรุ่งนี้|ยังไม่จ่าย|ยังไม่ปิด/.test(text)) { partner = "ops"; target = "opsBoard"; }
+    if (agentKey === "sales" && /คอนเทนต์|โพสต์|แคปชัน/.test(text)) partner = "content";
+    if (partner && partner !== agentKey) {
+      showAgentBubble(partner, "เข้ามาช่วยประสานข้อมูล");
+      moveAgent(partner, target).then(() => setAgentState(partner, "working"));
     }
-    if (mode === "tapped") setTimeout(() => activeAgentElement()?.classList.remove("tapped"), 180);
+  }
+
+  function orchestrateCommand(agentKey, commandText){
+    const chosen = selectOrchestratedAgent(commandText);
+    const finalAgent = agents[chosen] ? chosen : agentKey;
+    if (finalAgent !== state.activeAgent) selectAgent(finalAgent, false, true);
+    coordinateRelatedAgent(finalAgent, commandText);
+    return finalAgent;
   }
 
   function apiHeaders(extra){
@@ -134,19 +219,27 @@
     return headers;
   }
 
+  async function apiFetchJson(url, options){
+    if (typeof window.apiFetch === "function") return window.apiFetch(url, options || {});
+    const res = await fetch(url, options || {});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok && data && !data.error) data.error = `HTTP ${res.status}`;
+    return data;
+  }
+
   async function apiGet(url){
-    const data = await apiFetch(url, { headers: apiHeaders() });
-    if (data && data.ok === false) throw new Error(data.error || "โหลดข้อมูลไม่สำเร็จ");
+    const data = await apiFetchJson(url, { headers: apiHeaders() });
+    if (data && (data.ok === false || data.error)) throw new Error(data.error || "โหลดข้อมูลไม่สำเร็จ");
     return data;
   }
 
   async function apiPost(url, body){
-    const data = await apiFetch(url, {
+    const data = await apiFetchJson(url, {
       method: "POST",
       headers: apiHeaders(),
       body: JSON.stringify(body || {}),
     });
-    if (data && data.ok === false) throw new Error(data.error || "ส่งคำถามไม่สำเร็จ");
+    if (data && (data.ok === false || data.error)) throw new Error(data.error || "ส่งคำถามไม่สำเร็จ");
     return data;
   }
 
@@ -162,13 +255,32 @@
     $("statOpen").textContent = money(summary?.open_count);
     $("statUnpaid").textContent = money(summary?.unpaid_count);
     const board = $("boardText");
-    if (board) board.textContent = `วันนี้ ${money(summary?.today_count)} งาน • พรุ่งนี้ ${money(summary?.tomorrow_count)} งาน • ยังไม่ปิด ${money(summary?.open_count)} • ยังไม่จ่าย ${money(summary?.unpaid_count)}`;
+    if (board) {
+      board.textContent = `วันนี้ ${money(summary?.today_count)} งาน | พรุ่งนี้ ${money(summary?.tomorrow_count)} งาน | ยังไม่ปิด ${money(summary?.open_count)} | ยังไม่จ่าย ${money(summary?.unpaid_count)}`;
+    }
+  }
+
+  function updateConsoleAgent(){
+    const agent = activeAgent();
+    const statusMap = {
+      idle: agent.status,
+      walking: "กำลังเดินไปที่จุดทำงาน",
+      thinking: agent.thinking,
+      talking: agent.talking,
+      working: "กำลังทำงานที่โต๊ะ",
+    };
+    $("agentName").textContent = agent.name;
+    $("agentRole").textContent = agent.role;
+    $("agentStatus").textContent = statusMap[state.agentStates[state.activeAgent]] || agent.status;
+    $("agentAvatar")?.style.setProperty("--selected", agent.color);
+    $("askInput")?.setAttribute("placeholder", `ถาม ${agent.name}`);
+    renderCommands();
   }
 
   function renderCommands(){
     const box = $("quickCommands");
     if (!box) return;
-    box.innerHTML = activeAgent().commands.map((cmd) => `<button class="chip" type="button">${esc(cmd)}</button>`).join("");
+    box.innerHTML = activeAgent().commands.map((cmd) => `<button class="quickBtn" type="button">${esc(cmd)}</button>`).join("");
     box.querySelectorAll("button").forEach((btn) => btn.addEventListener("click", () => ask(btn.textContent || "")));
   }
 
@@ -202,40 +314,40 @@
     return div;
   }
 
-  function addThinkingMessage(){
+  function addThinkingMessage(agentKey){
     const box = $("messages");
     if (!box) return null;
     const div = document.createElement("div");
     div.className = "msg ai";
-    div.innerHTML = `<span class="thinkingLine"><i></i><i></i><i></i></span> ${esc(activeAgent().thinking)}`;
+    div.innerHTML = `<span class="thinkingLine"><i></i><i></i><i></i></span> ${esc(agentConfig(agentKey).thinking)}`;
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
     return div;
   }
 
-  function responsePreview(text){
+  function responsePreview(text, agentKey){
     const clean = String(text || "").replace(/\s+/g, " ").trim();
-    if (!clean) return activeAgent().talking;
-    return clean.length > 84 ? `${clean.slice(0, 84)}...` : clean;
+    if (!clean) return agentConfig(agentKey).talking;
+    return clean.length > 78 ? `${clean.slice(0, 78)}...` : clean;
   }
 
-  function selectAgent(agentKey, userTriggered = true){
+  function expandConsole(){
+    $("commandConsole")?.classList.add("expanded");
+  }
+
+  function selectAgent(agentKey, userTriggered = true, silent = false){
     const key = agents[agentKey] ? agentKey : "admin";
     state.activeAgent = key;
-    const agent = activeAgent();
-    document.documentElement.style.setProperty("--agent-color", agent.color);
-    document.querySelectorAll(".agent").forEach((el) => el.classList.toggle("active", el.dataset.agent === key));
-    $("agentName").textContent = agent.name;
-    $("agentRole").textContent = agent.role;
-    $("agentStatus").textContent = agent.status;
-    $("agentAvatar")?.style.setProperty("--selected-agent", agent.color);
-    setBubble(key, agent.greeting);
-    renderCommands();
-    const input = $("askInput");
-    if (input) input.placeholder = `ถาม ${agent.name}`;
-    setAgentVisual(key, "tapped", agent.greeting);
-    if (userTriggered || !state.greeted.has(key)) {
-      addMessage("ai", `${agent.name}: ${agent.greeting}`, false);
+    document.querySelectorAll(".npc").forEach((el) => el.classList.toggle("selected", el.dataset.agent === key));
+    updateConsoleAgent();
+    showAgentBubble(key, agentConfig(key).greeting);
+    if (!state.agentStates[key]) setAgentState(key, "idle");
+    if (userTriggered) {
+      expandConsole();
+      moveAgent(key, agentConfig(key).workstation).then(() => setAgentState(key, "working"));
+    }
+    if (!silent && (userTriggered || !state.greeted.has(key))) {
+      addMessage("ai", `${agentConfig(key).name}: ${agentConfig(key).greeting}`, false);
       state.greeted.add(key);
     }
   }
@@ -246,33 +358,43 @@
   }
 
   async function ask(question){
-    const q = String(question || $("askInput")?.value || "").trim();
-    if (!q || state.loadingAsk) return;
-    const agentKey = state.activeAgent;
-    const agent = activeAgent();
+    const rawQuestion = String(question || $("askInput")?.value || "").trim();
+    if (!rawQuestion || state.loadingAsk) return;
+    const agentKey = orchestrateCommand(state.activeAgent, rawQuestion);
+    const agent = agentConfig(agentKey);
     state.loadingAsk = true;
+    expandConsole();
     if ($("askInput")) $("askInput").value = "";
-    addMessage("user", `${agent.name}: ${q}`, false);
-    setAgentVisual(agentKey, "thinking", agent.thinking);
-    const pending = addThinkingMessage();
+    addMessage("user", `${agent.name}: ${rawQuestion}`, false);
+    showAgentBubble(agentKey, "กำลังเดินไปที่โต๊ะทำงาน");
+    await moveAgent(agentKey, agent.workstation);
+    setAgentState(agentKey, "thinking");
+    showAgentBubble(agentKey, agent.thinking);
+    const pending = addThinkingMessage(agentKey);
     try {
       const data = await apiPost("/admin/ai-office/ask", {
         agent: agentKey,
-        question: q,
+        question: rawQuestion,
         phone: $("phoneInput")?.value || "",
       });
       if (pending) pending.remove();
-      const answer = data.answer || "ไม่มีคำตอบ";
+      const answer = data.answer || "ไม่มีคำตอบจากข้อมูลที่มี";
+      state.lastAnswer = answer;
       addMessage("ai", answer, true);
       if (data.context?.summary) setSummary(data.context.summary);
-      setAgentVisual(agentKey, "talking", responsePreview(answer));
-      setTimeout(() => setAgentVisual(agentKey, "idle", agent.status), 3600);
+      setAgentState(agentKey, "talking");
+      showAgentBubble(agentKey, responsePreview(answer, agentKey));
+      setTimeout(() => {
+        setAgentState(agentKey, "working");
+        showAgentBubble(agentKey, agent.talking);
+      }, 3600);
     } catch (e) {
       if (pending) pending.remove();
       const msg = e.message || "AI Office ตอบไม่ได้ในขณะนี้";
       addMessage("ai", msg, false);
-      setAgentVisual(agentKey, "talking", msg);
-      setTimeout(() => setAgentVisual(agentKey, "idle", agent.status), 3600);
+      setAgentState(agentKey, "talking");
+      showAgentBubble(agentKey, msg);
+      setTimeout(() => setAgentState(agentKey, "working"), 3600);
     } finally {
       state.loadingAsk = false;
     }
@@ -280,22 +402,26 @@
 
   async function searchPhone(){
     const phone = String($("phoneInput")?.value || "").trim();
+    expandConsole();
+    const agentKey = orchestrateCommand("admin", "ค้นงานจากเบอร์ลูกค้า");
     if (!phone) {
       addMessage("ai", "กรุณาใส่เบอร์ลูกค้าก่อนค้นงาน", false);
-      setAgentVisual(state.activeAgent, "talking", "ใส่เบอร์ลูกค้าก่อนนะครับ");
+      showAgentBubble(agentKey, "ใส่เบอร์ลูกค้าก่อนนะครับ");
       return;
     }
-    const agentKey = state.activeAgent;
     addMessage("user", `ค้นงานจากเบอร์ลูกค้า ${phone}`, false);
-    setAgentVisual(agentKey, "thinking", "กำลังค้นใบงานจากเบอร์นี้");
-    const pending = addThinkingMessage();
+    await moveAgent(agentKey, agentConfig(agentKey).workstation);
+    setAgentState(agentKey, "thinking");
+    showAgentBubble(agentKey, "กำลังค้นใบงานจากเบอร์นี้");
+    const pending = addThinkingMessage(agentKey);
     try {
       const data = await apiGet(`/admin/ai-office/search-by-phone?phone=${encodeURIComponent(phone)}`);
       if (pending) pending.remove();
       const jobs = data.jobs || [];
       if (!jobs.length) {
         addMessage("ai", "ไม่พบงานจากเบอร์นี้ในระบบ", false);
-        setAgentVisual(agentKey, "talking", "ไม่พบงานจากเบอร์นี้");
+        setAgentState(agentKey, "talking");
+        showAgentBubble(agentKey, "ไม่พบงานจากเบอร์นี้");
         return;
       }
       const lines = jobs.slice(0, 12).map((j) => {
@@ -303,21 +429,27 @@
         return `${j.booking_code || "#" + j.job_id} • ${j.customer_name || "-"} • ${j.job_type || "-"} • ${when} • ${j.job_status || "-"}`;
       });
       addMessage("ai", lines.join("\n"), true);
-      setAgentVisual(agentKey, "talking", `พบ ${money(jobs.length)} งานจากเบอร์นี้`);
-      setTimeout(() => setAgentVisual(agentKey, "idle", activeAgent().status), 3000);
+      setAgentState(agentKey, "talking");
+      showAgentBubble(agentKey, `พบ ${money(jobs.length)} งานจากเบอร์นี้`);
+      setTimeout(() => setAgentState(agentKey, "working"), 3000);
     } catch (e) {
       if (pending) pending.remove();
       const msg = e.message || "ค้นงานไม่สำเร็จ";
       addMessage("ai", msg, false);
-      setAgentVisual(agentKey, "talking", msg);
+      setAgentState(agentKey, "talking");
+      showAgentBubble(agentKey, msg);
     }
   }
 
   async function refreshAll(options = {}){
     try {
       const board = $("boardText");
-      if (board) board.textContent = "กำลังโหลดข้อมูลจริงจากระบบ";
+      if (board) board.textContent = "กำลังโหลดข้อมูลงานจริงจากระบบ";
+      setAgentState("ops", "thinking");
+      showAgentBubble("ops", "กำลังอ่านสถานะงานจริง");
       await loadSummary();
+      setAgentState("ops", "idle");
+      showAgentBubble("ops", "สถานะงานอัปเดตแล้ว");
     } catch (e) {
       if (options.throwOnError) throw e;
       if (String(e.message || "").includes("AI_OFFICE_PIN_REQUIRED")) showOverlay(true);
@@ -332,14 +464,25 @@
     if (!state.pinRequired) await refreshAll();
   }
 
+  function initAgents(){
+    Object.keys(agents).forEach((key) => {
+      placeAgent(key, agents[key].home);
+      setAgentState(key, "idle");
+      showAgentBubble(key, agents[key].status);
+    });
+  }
+
   function bind(){
-    document.querySelectorAll(".agent").forEach((el) => {
+    document.querySelectorAll(".npc").forEach((el) => {
       el.addEventListener("click", () => selectAgent(el.dataset.agent, true));
     });
+    $("consoleToggle")?.addEventListener("click", () => $("commandConsole")?.classList.toggle("expanded"));
     $("btnRefresh")?.addEventListener("click", refreshAll);
     $("btnPhone")?.addEventListener("click", searchPhone);
+    $("phoneInput")?.addEventListener("focus", expandConsole);
     $("phoneInput")?.addEventListener("keydown", (e) => { if (e.key === "Enter") searchPhone(); });
     $("btnAsk")?.addEventListener("click", () => ask());
+    $("askInput")?.addEventListener("focus", expandConsole);
     $("askInput")?.addEventListener("keydown", (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
         e.preventDefault();
@@ -366,8 +509,15 @@
     $("pinInput")?.addEventListener("keydown", (e) => { if (e.key === "Enter") $("btnPin")?.click(); });
   }
 
+  window.setAgentState = setAgentState;
+  window.moveAgent = moveAgent;
+  window.moveSelectedAgentToWorkstation = moveSelectedAgentToWorkstation;
+  window.showAgentBubble = showAgentBubble;
+  window.orchestrateCommand = orchestrateCommand;
+
   document.addEventListener("DOMContentLoaded", () => {
     refreshAiOfficeCache();
+    initAgents();
     bind();
     selectAgent("admin", false);
     loadConfig().catch((e) => addMessage("ai", e.message || "โหลด AI Office ไม่สำเร็จ", false));
