@@ -1,12 +1,13 @@
 (function(){
-  const VERSION = "ai-office-line-inbox-20260607";
+  const VERSION = "ai-office-mobile-polish-20260607";
   const ASSET_ROOT = "/assets/ai-office-final";
+  const CLEAN_CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
   const roleOrder = ["admin","sales","ops","ads","content","dev"];
   const states = ["base","idle","thinking","talking","working","walk-1","walk-2","walk-3","walk-4"];
 
   function characterAssets(role){
     const out = {};
-    states.forEach((state) => { out[state] = `${ASSET_ROOT}/characters/${role}/${state}.png`; });
+    states.forEach((state) => { out[state] = `${CLEAN_CHARACTER_ROOT}/${role}/idle.png`; });
     return out;
   }
 
@@ -74,17 +75,30 @@
   };
 
   agents.dev.commands = ["ตรวจระบบ AI Office", "ตรวจ API read-only", "ตรวจ Asset 404", "ตรวจ Cache / Service Worker", "ตรวจ OpenAI server-side", "ตรวจ Auth / PIN", "ตรวจคำต้องห้ามใน UI", "ตรวจความเสี่ยงก่อน Deploy", "สร้าง Prompt แก้ปัญหาให้ Codex"];
-  agents.admin.commands = ["????? LINE ??????", "?????????????", "????????????????????", "????????????????????????????", ...agents.admin.commands];
-  agents.sales.commands = ["???????????????? LINE", "????????????? ??????????", "??????????????? ??????????", "???? follow-up ???????????????", ...agents.sales.commands];
-  agents.ops.commands = ["??????????????????????????", "???????????????????", "????????????????????????????????", "?????????????????????????", ...agents.ops.commands];
+  agents.admin.commands = ["\u0e27\u0e31\u0e19\u0e19\u0e35\u0e49\u0e21\u0e35\u0e07\u0e32\u0e19\u0e2d\u0e30\u0e44\u0e23\u0e1a\u0e49\u0e32\u0e07", "\u0e23\u0e48\u0e32\u0e07\u0e02\u0e49\u0e2d\u0e04\u0e27\u0e32\u0e21\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19\u0e19\u0e31\u0e14\u0e25\u0e39\u0e01\u0e04\u0e49\u0e32", "\u0e23\u0e48\u0e32\u0e07\u0e02\u0e49\u0e2d\u0e04\u0e27\u0e32\u0e21\u0e41\u0e08\u0e49\u0e07\u0e0a\u0e48\u0e32\u0e07", "\u0e14\u0e39\u0e41\u0e0a\u0e17 LINE \u0e25\u0e48\u0e32\u0e2a\u0e38\u0e14"];
+  agents.sales.commands = ["\u0e25\u0e39\u0e01\u0e04\u0e49\u0e32\u0e1a\u0e2d\u0e01\u0e27\u0e48\u0e32\u0e41\u0e1e\u0e07 \u0e15\u0e2d\u0e1a\u0e22\u0e31\u0e07\u0e44\u0e07\u0e14\u0e35", "\u0e0a\u0e48\u0e27\u0e22\u0e40\u0e02\u0e35\u0e22\u0e19\u0e02\u0e49\u0e2d\u0e04\u0e27\u0e32\u0e21\u0e1b\u0e34\u0e14\u0e01\u0e32\u0e23\u0e02\u0e32\u0e22", "\u0e23\u0e48\u0e32\u0e07\u0e15\u0e2d\u0e1a\u0e25\u0e39\u0e01\u0e04\u0e49\u0e32\u0e08\u0e32\u0e01 LINE", "\u0e27\u0e34\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e1b\u0e34\u0e14\u0e01\u0e32\u0e23\u0e02\u0e32\u0e22\u0e19\u0e49\u0e2d\u0e22"];
+  agents.ops.commands = ["\u0e1e\u0e23\u0e38\u0e48\u0e07\u0e19\u0e35\u0e49\u0e21\u0e35\u0e07\u0e32\u0e19\u0e2d\u0e30\u0e44\u0e23\u0e1a\u0e49\u0e32\u0e07", "\u0e07\u0e32\u0e19\u0e44\u0e2b\u0e19\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e1b\u0e34\u0e14", "\u0e07\u0e32\u0e19\u0e44\u0e2b\u0e19\u0e22\u0e31\u0e07\u0e44\u0e21\u0e48\u0e08\u0e48\u0e32\u0e22", "\u0e1c\u0e39\u0e49\u0e0a\u0e48\u0e27\u0e22\u0e40\u0e15\u0e23\u0e35\u0e22\u0e21\u0e25\u0e07\u0e04\u0e34\u0e27"];
+  agents.ads.commands = ["\u0e0a\u0e48\u0e27\u0e22\u0e04\u0e34\u0e14 keyword \u0e08\u0e32\u0e01\u0e07\u0e32\u0e19\u0e08\u0e23\u0e34\u0e07", "\u0e1e\u0e37\u0e49\u0e19\u0e17\u0e35\u0e48\u0e44\u0e2b\u0e19\u0e04\u0e27\u0e23\u0e22\u0e34\u0e07\u0e41\u0e2d\u0e14", "\u0e40\u0e02\u0e35\u0e22\u0e19\u0e02\u0e49\u0e2d\u0e04\u0e27\u0e32\u0e21\u0e42\u0e06\u0e29\u0e13\u0e32\u0e25\u0e49\u0e32\u0e07\u0e41\u0e2d\u0e23\u0e4c", "\u0e44\u0e2d\u0e40\u0e14\u0e35\u0e22 TikTok Ads"];
+  agents.content.commands = ["\u0e40\u0e02\u0e35\u0e22\u0e19\u0e41\u0e04\u0e1b\u0e0a\u0e31\u0e19\u0e08\u0e32\u0e01\u0e07\u0e32\u0e19\u0e27\u0e31\u0e19\u0e19\u0e35\u0e49", "\u0e17\u0e33\u0e2a\u0e04\u0e23\u0e34\u0e1b\u0e15\u0e4c Reels 30 \u0e27\u0e34\u0e19\u0e32\u0e17\u0e35", "\u0e44\u0e2d\u0e40\u0e14\u0e35\u0e22\u0e42\u0e1e\u0e2a\u0e15\u0e4c\u0e08\u0e32\u0e01\u0e07\u0e32\u0e19\u0e08\u0e23\u0e34\u0e07", "\u0e23\u0e48\u0e32\u0e07\u0e42\u0e1e\u0e2a\u0e15\u0e4c\u0e23\u0e35\u0e27\u0e34\u0e27"];
+  agents.dev.commands = [
+    "\u0e15\u0e23\u0e27\u0e08\u0e23\u0e30\u0e1a\u0e1a AI Office",
+    "\u0e15\u0e23\u0e27\u0e08 API read-only",
+    "\u0e15\u0e23\u0e27\u0e08 Asset 404",
+    "\u0e15\u0e23\u0e27\u0e08 Cache / Service Worker",
+    "\u0e15\u0e23\u0e27\u0e08 OpenAI server-side",
+    "\u0e15\u0e23\u0e27\u0e08 Auth / PIN",
+    "\u0e15\u0e23\u0e27\u0e08\u0e04\u0e33\u0e15\u0e49\u0e2d\u0e07\u0e2b\u0e49\u0e32\u0e21\u0e43\u0e19 UI",
+    "\u0e15\u0e23\u0e27\u0e08\u0e04\u0e27\u0e32\u0e21\u0e40\u0e2a\u0e35\u0e48\u0e22\u0e07\u0e01\u0e48\u0e2d\u0e19 Deploy",
+    "\u0e2a\u0e23\u0e49\u0e32\u0e07 Prompt \u0e41\u0e01\u0e49\u0e1b\u0e31\u0e0d\u0e2b\u0e32\u0e43\u0e2b\u0e49 Codex"
+  ];
 
   const zones = {
     adminDesk: { x: 20, y: 52 }, salesDesk: { x: 78, y: 52 }, opsBoard: { x: 50, y: 32 },
     adsDesk: { x: 19, y: 31 }, contentDesk: { x: 28, y: 72 }, devDesk: { x: 82, y: 31 }, meetingTable: { x: 51, y: 67 },
   };
   const mobileZones = {
-    adminDesk: { x: 22, y: 53 }, salesDesk: { x: 76, y: 53 }, opsBoard: { x: 50, y: 31 },
-    adsDesk: { x: 21, y: 32 }, contentDesk: { x: 29, y: 73 }, devDesk: { x: 79, y: 32 }, meetingTable: { x: 51, y: 66 },
+    adminDesk: { x: 27, y: 53 }, salesDesk: { x: 70, y: 54 }, opsBoard: { x: 50, y: 31 },
+    adsDesk: { x: 28, y: 32 }, contentDesk: { x: 34, y: 73 }, devDesk: { x: 72, y: 33 }, meetingTable: { x: 51, y: 66 },
   };
 
   const state = { pin: "", pinRequired: false, activeAgent: "admin", loadingAsk: false, loadingDiagnostics: false, loadingLine: false, greeted: new Set(), agentStates: {}, walkTimers: {}, lastAnswer: "", lastDiagnostics: null, lineConversations: [], selectedLineConversation: null, selectedLineMessages: [] };
@@ -120,7 +134,7 @@
 
   function preloadCoreAssets(){
     const urls = [
-      `${ASSET_ROOT}/maps/office-main-desktop.png`, `${ASSET_ROOT}/maps/office-main-mobile.png`,
+      `${ASSET_ROOT}/maps-clean/office-main-desktop.png`, `${ASSET_ROOT}/maps-clean/office-main-mobile.png`,
       `${ASSET_ROOT}/ui/selection-ring.png`, `${ASSET_ROOT}/ui/empty-state.png`,
       ...roleOrder.map((key) => agents[key].assets.idle),
     ];
@@ -265,7 +279,7 @@
     $("agentStatus").textContent = statusMap[state.agentStates[state.activeAgent]] || agent.status;
     $("agentAvatar")?.style.setProperty("background-image", `url("${agent.assets.idle}")`);
     document.documentElement.style.setProperty("--selected", agent.color);
-    $("askInput")?.setAttribute("placeholder", `ถาม ${agent.name}`);
+    $("askInput")?.setAttribute("placeholder", "\u0e1e\u0e34\u0e21\u0e1e\u0e4c\u0e16\u0e32\u0e21\u0e07\u0e32\u0e19\u0e15\u0e23\u0e07\u0e19\u0e35\u0e49...");
     renderCommands();
   }
 

@@ -71,10 +71,20 @@
   "maps": {
     "officeMainDesktop": "/assets/ai-office-final/maps/office-main-desktop.png",
     "officeMainMobile": "/assets/ai-office-final/maps/office-main-mobile.png",
+    "officeMainDesktopClean": "/assets/ai-office-final/maps-clean/office-main-desktop.png",
+    "officeMainMobileClean": "/assets/ai-office-final/maps-clean/office-main-mobile.png",
     "roomAdmin": "/assets/ai-office-final/maps/room-admin.png",
     "roomSales": "/assets/ai-office-final/maps/room-sales.png",
     "roomOps": "/assets/ai-office-final/maps/room-ops.png",
     "roomMeeting": "/assets/ai-office-final/maps/room-meeting.png"
+  },
+  "cleanCharacters": {
+    "adminIdle": "/assets/ai-office-final/characters-clean/admin/idle.png",
+    "salesIdle": "/assets/ai-office-final/characters-clean/sales/idle.png",
+    "opsIdle": "/assets/ai-office-final/characters-clean/ops/idle.png",
+    "adsIdle": "/assets/ai-office-final/characters-clean/ads/idle.png",
+    "contentIdle": "/assets/ai-office-final/characters-clean/content/idle.png",
+    "devIdle": "/assets/ai-office-final/characters-clean/dev/idle.png"
   },
   "props": {
     "deskAdmin": "/assets/ai-office-final/props/desk-admin.png",
