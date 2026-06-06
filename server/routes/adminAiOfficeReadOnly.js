@@ -283,6 +283,16 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
 
   const router = express.Router();
 
+  router.use("/admin/ai-office", (req, res, next) => {
+    res.set({
+      "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+      "Pragma": "no-cache",
+      "Expires": "0",
+      "Surrogate-Control": "no-store",
+    });
+    next();
+  });
+
   router.get("/admin/ai-office/config", requireAdminSession, (req, res) => {
     return res.json({
       ok: true,

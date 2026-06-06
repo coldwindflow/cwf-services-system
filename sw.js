@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v101-tech-map-url-fix-20260603";
+const CACHE_NAME = "cwf-cache-v102-ai-office-live-17a6305";
 
 const ASSETS = [
   "/",
@@ -77,6 +77,19 @@ self.addEventListener("fetch", (e) => {
   // - cache เฉพาะไฟล์ static (html/css/js/png/json) หรือไฟล์ที่อยู่ใน ASSETS
   const isSameOrigin = url.origin === self.location.origin;
   const pathname = url.pathname || "/";
+
+  const isAiOffice = (
+    pathname === "/admin/ai-office" ||
+    pathname === "/admin/ai-office.html" ||
+    pathname === "/admin-ai-office.html" ||
+    pathname === "/admin-ai-office.js" ||
+    pathname.startsWith("/admin/ai-office/")
+  );
+  if (isSameOrigin && isAiOffice) {
+    e.respondWith(fetch(e.request));
+    return;
+  }
+
   const isStaticExt = /\.(?:html|css|js|png|jpg|jpeg|webp|svg|ico|json)$/.test(pathname);
   const isAssetListed = ASSETS.includes(pathname) || (pathname === "/" && ASSETS.includes("/"));
   const shouldCache = isSameOrigin && (isStaticExt || isAssetListed || e.request.mode === "navigate");

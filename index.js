@@ -4369,6 +4369,13 @@ app.post('/api/logout', async (req, res) => {
   clearAuthCookies(res);
   return res.json({ ok: true });
 });
+
+app.use(createAdminAiOfficeReadOnlyRoutes({ pool, requireAdminSession }));
+app.get("/admin/ai-office", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
+app.get("/admin/ai-office.html", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
+app.get("/admin-ai-office.html", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
+app.get("/admin-ai-office.js", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.js")));
+
 // Protect ALL /admin/* endpoints with server-side session validation
 // (prevents bypassing by faking x-user-role header)
 app.use("/admin", requireAdminSession);
@@ -25338,14 +25345,24 @@ function sendHtml(file) {
   return fs.existsSync(p1) ? p1 : p2;
 }
 
+function setAiOfficeNoCache(res) {
+  res.set({
+    "Cache-Control": "no-store, no-cache, must-revalidate, proxy-revalidate",
+    "Pragma": "no-cache",
+    "Expires": "0",
+    "Surrogate-Control": "no-store",
+  });
+}
+
+function aiOfficeNoCache(req, res, next) {
+  setAiOfficeNoCache(res);
+  next();
+}
+
 // Protected admin pages that also exist as root static files must be registered
 // before express.static(ROOT_DIR), otherwise static serving can bypass auth.
 app.get("/admin-partner-onboarding", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-partner-onboarding.html")));
 app.get("/admin-partner-onboarding.html", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-partner-onboarding.html")));
-app.use(createAdminAiOfficeReadOnlyRoutes({ pool, requireAdminSession }));
-app.get("/admin/ai-office", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
-app.get("/admin/ai-office.html", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
-app.get("/admin-ai-office.html", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
 
 if (fs.existsSync(FRONTEND_DIR)) app.use(express.static(FRONTEND_DIR));
 app.use(express.static(ROOT_DIR));

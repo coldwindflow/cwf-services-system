@@ -65,6 +65,30 @@
   const state = { pin: "", pinRequired: false, activeAgent: "admin", loadingAsk: false, greeted: new Set() };
   const $ = (id) => document.getElementById(id);
 
+  function refreshAiOfficeCache(){
+    try {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.getRegistration().then((reg) => {
+          if (reg) {
+            reg.update().catch(() => {});
+            if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+          }
+        }).catch(() => {});
+      }
+      if ("caches" in window) {
+        caches.keys().then((keys) => Promise.all(keys.map(async (key) => {
+          const cache = await caches.open(key);
+          await Promise.all([
+            cache.delete("/admin/ai-office"),
+            cache.delete("/admin/ai-office.html"),
+            cache.delete("/admin-ai-office.html"),
+            cache.delete("/admin-ai-office.js"),
+          ]);
+        }))).catch(() => {});
+      }
+    } catch (_) {}
+  }
+
   function esc(value){
     return String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ({
       "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
@@ -343,6 +367,7 @@
   }
 
   document.addEventListener("DOMContentLoaded", () => {
+    refreshAiOfficeCache();
     bind();
     selectAgent("admin", false);
     loadConfig().catch((e) => addMessage("ai", e.message || "โหลด AI Office ไม่สำเร็จ", false));
