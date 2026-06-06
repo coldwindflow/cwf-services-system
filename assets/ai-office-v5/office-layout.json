@@ -1,0 +1,89 @@
+{
+  "version": "ai-office-v5-pixel-engine",
+  "canvas": {
+    "width": 1600,
+    "height": 920,
+    "grid": 40
+  },
+  "workstations": {
+    "adminDesk": {
+      "x": 285,
+      "y": 420,
+      "label": "Admin Desk"
+    },
+    "salesDesk": {
+      "x": 610,
+      "y": 400,
+      "label": "Sales Desk"
+    },
+    "opsBoard": {
+      "x": 1220,
+      "y": 385,
+      "label": "Ops Board"
+    },
+    "adsDesk": {
+      "x": 285,
+      "y": 650,
+      "label": "Ads Desk"
+    },
+    "contentDesk": {
+      "x": 640,
+      "y": 680,
+      "label": "Content Desk"
+    },
+    "devDesk": {
+      "x": 1245,
+      "y": 680,
+      "label": "Dev Desk"
+    },
+    "meetingTable": {
+      "x": 840,
+      "y": 570,
+      "label": "Meeting Table"
+    }
+  },
+  "blockedRects": [
+    {
+      "x": 135,
+      "y": 335,
+      "w": 300,
+      "h": 145
+    },
+    {
+      "x": 470,
+      "y": 315,
+      "w": 300,
+      "h": 145
+    },
+    {
+      "x": 1080,
+      "y": 295,
+      "w": 310,
+      "h": 160
+    },
+    {
+      "x": 135,
+      "y": 575,
+      "w": 300,
+      "h": 145
+    },
+    {
+      "x": 500,
+      "y": 600,
+      "w": 300,
+      "h": 145
+    },
+    {
+      "x": 1095,
+      "y": 600,
+      "w": 300,
+      "h": 150
+    },
+    {
+      "x": 690,
+      "y": 500,
+      "w": 320,
+      "h": 120
+    }
+  ]
+}

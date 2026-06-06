@@ -1,7 +1,5 @@
-// ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
-// - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
-// - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v105-ai-office-v3-real-game-mobile";
+// CWF PWA cache — AI Office v5 pixel engine
+const CACHE_NAME = "cwf-cache-v106-ai-office-v5-pixel-engine";
 
 const ASSETS = [
   "/",
@@ -57,37 +55,30 @@ self.addEventListener("activate", (e) => {
 });
 
 self.addEventListener("message", (event) => {
-  if (!event.data) return;
-  if (event.data && event.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
 });
 
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
-
   const url = new URL(e.request.url);
   const isSameOrigin = url.origin === self.location.origin;
   const pathname = url.pathname || "/";
-
   const isAiOffice = (
     pathname === "/admin/ai-office" ||
     pathname === "/admin/ai-office.html" ||
     pathname === "/admin-ai-office.html" ||
     pathname === "/admin-ai-office.js" ||
-    pathname.startsWith("/admin/ai-office/")
+    pathname.startsWith("/admin/ai-office/") ||
+    pathname.startsWith("/assets/ai-office-v5/")
   );
   if (isSameOrigin && isAiOffice) {
     e.respondWith(fetch(e.request, { cache: "no-store" }));
     return;
   }
-
   const isStaticExt = /\.(?:html|css|js|png|jpg|jpeg|webp|svg|ico|json)$/.test(pathname);
   const isAssetListed = ASSETS.includes(pathname) || (pathname === "/" && ASSETS.includes("/"));
   const shouldCache = isSameOrigin && (isStaticExt || isAssetListed || e.request.mode === "navigate");
-
   if (!shouldCache) return;
-
   e.respondWith(
     fetch(e.request)
       .then((resp) => {
@@ -98,7 +89,6 @@ self.addEventListener("fetch", (e) => {
       .catch(async () => {
         const cached = await caches.match(e.request);
         if (cached) return cached;
-
         if (e.request.mode === "navigate") {
           return (
             (await caches.match(url.pathname)) ||
