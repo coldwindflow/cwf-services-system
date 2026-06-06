@@ -52,6 +52,7 @@ const createTechnicianBaseStatusReadOnlyRoutes = require("./server/routes/techni
 const createTechnicianCalendarReadOnlyRoutes = require("./server/routes/technicianCalendarReadOnly");
 const createTechnicianCountSummaryReadOnlyRoutes = require("./server/routes/technicianCountSummaryReadOnly");
 const createAdminAiOfficeReadOnlyRoutes = require("./server/routes/adminAiOfficeReadOnly");
+const { createLineWebhookRoutes, ensureLineInboxSchema } = require("./server/routes/lineWebhook");
 const {
   calculateTechnicianBaseStatus,
 } = require("./server/helpers/technicianBaseStatusScoring");
@@ -624,6 +625,7 @@ const app = express();
 // Render/Reverse-proxy: allow req.protocol to reflect X-Forwarded-Proto
 app.set('trust proxy', 1);
 app.use(cors());
+app.use(createLineWebhookRoutes({ pool }));
 app.use(express.json());
 
 // =======================================
@@ -10765,6 +10767,8 @@ async function notifyTechnician(username, text) {
 // =======================================
 async function ensureSchema() {
   try {
+    await ensureLineInboxSchema(pool);
+
     // 1) attendance
     await pool.query(`
       CREATE TABLE IF NOT EXISTS public.technician_attendance (

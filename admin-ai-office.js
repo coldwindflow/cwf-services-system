@@ -1,5 +1,5 @@
 (function(){
-  const VERSION = "ai-office-dev-diagnostics-20260607";
+  const VERSION = "ai-office-line-inbox-20260607";
   const ASSET_ROOT = "/assets/ai-office-final";
   const roleOrder = ["admin","sales","ops","ads","content","dev"];
   const states = ["base","idle","thinking","talking","working","walk-1","walk-2","walk-3","walk-4"];
@@ -74,6 +74,9 @@
   };
 
   agents.dev.commands = ["ตรวจระบบ AI Office", "ตรวจ API read-only", "ตรวจ Asset 404", "ตรวจ Cache / Service Worker", "ตรวจ OpenAI server-side", "ตรวจ Auth / PIN", "ตรวจคำต้องห้ามใน UI", "ตรวจความเสี่ยงก่อน Deploy", "สร้าง Prompt แก้ปัญหาให้ Codex"];
+  agents.admin.commands = ["????? LINE ??????", "?????????????", "????????????????????", "????????????????????????????", ...agents.admin.commands];
+  agents.sales.commands = ["???????????????? LINE", "????????????? ??????????", "??????????????? ??????????", "???? follow-up ???????????????", ...agents.sales.commands];
+  agents.ops.commands = ["??????????????????????????", "???????????????????", "????????????????????????????????", "?????????????????????????", ...agents.ops.commands];
 
   const zones = {
     adminDesk: { x: 20, y: 52 }, salesDesk: { x: 78, y: 52 }, opsBoard: { x: 50, y: 32 },
@@ -84,7 +87,7 @@
     adsDesk: { x: 21, y: 32 }, contentDesk: { x: 29, y: 73 }, devDesk: { x: 79, y: 32 }, meetingTable: { x: 51, y: 66 },
   };
 
-  const state = { pin: "", pinRequired: false, activeAgent: "admin", loadingAsk: false, loadingDiagnostics: false, greeted: new Set(), agentStates: {}, walkTimers: {}, lastAnswer: "", lastDiagnostics: null };
+  const state = { pin: "", pinRequired: false, activeAgent: "admin", loadingAsk: false, loadingDiagnostics: false, loadingLine: false, greeted: new Set(), agentStates: {}, walkTimers: {}, lastAnswer: "", lastDiagnostics: null, lineConversations: [], selectedLineConversation: null, selectedLineMessages: [] };
   const $ = (id) => document.getElementById(id);
   const isMobile = () => window.matchMedia("(max-width: 720px)").matches;
   const pointFor = (key, zone) => (isMobile() ? mobileZones[zone] : zones[zone]) || agents[key].home;
@@ -277,6 +280,7 @@
     }).join("");
     box.querySelectorAll("button").forEach((btn) => btn.addEventListener("click", () => {
       if (state.activeAgent === "dev") runDiagnostics(btn.dataset.diag || "full", btn.textContent || "");
+      else if (isLineCommand(btn.textContent || "")) handleLineCommand(btn.textContent || "");
       else ask(btn.textContent || "");
     }));
   }
@@ -331,6 +335,173 @@
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
     return div;
+  }
+
+  function isLineCommand(text){
+    const value = String(text || "");
+    return /LINE|แชท|ลูกค้าถามราคา|แพง|follow-up|ลงคิว|แจ้งช่างจากแชท|ตอบลูกค้า|ข้อมูลที่ยังขาด/.test(value);
+  }
+
+  function lineDraftInstruction(label){
+    const value = String(label || "");
+    if (/ลงคิว|ข้อมูลที่ยังขาด|เช็กข้อมูล|เวลา/.test(value)) return "สรุปแชทและดึงข้อมูลสำหรับเตรียมลงคิว พร้อมระบุข้อมูลที่ยังขาด";
+    if (/ราคา|แพง|follow-up|Sales/.test(value)) return "ช่วยร่างข้อความฝ่ายขายเพื่อตอบลูกค้าอย่างสุภาพและเพิ่มโอกาสปิดงาน";
+    if (/แจ้งช่าง/.test(value)) return "ดึงข้อมูลจากแชทและร่างข้อความแจ้งช่างแบบแอดมินต้องคัดลอกส่งเอง";
+    if (/สรุป/.test(value)) return "สรุปแชทลูกค้าและข้อมูลที่จับได้";
+    return "ร่างข้อความตอบลูกค้าจากแชท LINE โดยให้แอดมินตรวจสอบและคัดลอกส่งเอง";
+  }
+
+  function addHtmlMessage(html){
+    const box = $("messages");
+    if (!box) return null;
+    const div = document.createElement("div");
+    div.className = "msg ai linePanel";
+    div.innerHTML = html;
+    box.appendChild(div);
+    box.scrollTop = box.scrollHeight;
+    return div;
+  }
+
+  function formatDate(value){
+    if (!value) return "-";
+    try { return new Date(value).toLocaleString("th-TH"); } catch (_) { return "-"; }
+  }
+
+  function renderLineInboxPanel(){
+    const rows = state.lineConversations || [];
+    if (!rows.length) {
+      return addHtmlMessage(`<div class="lineInbox"><b>LINE Inbox</b><p>ยังไม่มีข้อความ LINE ที่ได้รับหลังตั้งค่า webhook</p></div>`);
+    }
+    const html = [
+      `<div class="lineInbox"><b>LINE Inbox</b><p>เลือกแชทเพื่อดูข้อความล่าสุดและให้ AI ช่วยร่างคำตอบ</p><div class="lineList">`,
+      ...rows.map((c) => `
+        <button class="lineConversation" type="button" data-line-conversation="${esc(c.id)}">
+          <span>${esc(c.display_name || c.line_user_id_masked || "LINE user")}</span>
+          <em>${esc(c.last_message_text || c.last_message_type || "-")}</em>
+          <small>${esc(formatDate(c.last_message_at))} · ${money(c.message_count)} ข้อความ</small>
+        </button>
+      `),
+      `</div></div>`,
+    ].join("");
+    const panel = addHtmlMessage(html);
+    panel?.querySelectorAll("[data-line-conversation]").forEach((btn) => {
+      btn.addEventListener("click", () => loadLineMessages(btn.dataset.lineConversation));
+    });
+    return panel;
+  }
+
+  function renderLineMessagesPanel(){
+    const convo = state.selectedLineConversation;
+    const messages = state.selectedLineMessages || [];
+    const title = esc(convo?.display_name || convo?.line_user_id_masked || "LINE user");
+    const html = [
+      `<div class="lineInbox"><b>${title}</b><p>ข้อความล่าสุดจาก LINE OA</p><div class="lineMessages">`,
+      ...messages.map((m) => `
+        <div class="lineBubble ${esc(m.direction || "inbound")}">
+          <span>${esc(m.message_text || `[${m.message_type || "message"}]`)}</span>
+          <small>${esc(formatDate(m.received_at))}</small>
+        </div>
+      `),
+      messages.length ? "" : `<p>ยังไม่มีข้อความในแชทนี้</p>`,
+      `</div><div class="lineActions">
+        <button class="ghost" type="button" data-line-draft="สรุปแชทลูกค้า">สรุปแชท</button>
+        <button class="ghost" type="button" data-line-draft="ร่างข้อความตอบลูกค้า">ร่างตอบลูกค้า</button>
+        <button class="ghost" type="button" data-line-draft="ดึงข้อมูลเตรียมลงคิวจากแชท">ดึงข้อมูลเตรียมลงคิว</button>
+        <button class="ghost" type="button" data-line-draft="ถามข้อมูลที่ยังขาดก่อนลงคิว">ถามข้อมูลที่ยังขาด</button>
+      </div></div>`,
+    ].join("");
+    const panel = addHtmlMessage(html);
+    panel?.querySelectorAll("[data-line-draft]").forEach((btn) => {
+      btn.addEventListener("click", () => draftLineReply(btn.dataset.lineDraft || btn.textContent || ""));
+    });
+    return panel;
+  }
+
+  async function handleLineCommand(label){
+    if (state.loadingLine) return;
+    expandConsole();
+    const agentKey = ["admin", "sales", "ops"].includes(state.activeAgent) ? state.activeAgent : "admin";
+    showAgentBubble(agentKey, "กำลังเปิด LINE Inbox");
+    if (/สรุป|ร่าง|ราคา|แพง|follow-up|ลงคิว|แจ้งช่าง|ข้อมูลที่ยังขาด|เช็กข้อมูล|เวลา/.test(String(label || "")) && state.selectedLineConversation) {
+      await draftLineReply(label);
+      return;
+    }
+    await loadLineInbox();
+  }
+
+  async function loadLineInbox(){
+    state.loadingLine = true;
+    const agentKey = ["admin", "sales", "ops"].includes(state.activeAgent) ? state.activeAgent : "admin";
+    setAgentState(agentKey, "thinking");
+    const pending = addThinkingMessage(agentKey);
+    try {
+      const data = await apiGet("/admin/ai-office/line-inbox?limit=30");
+      state.lineConversations = data.conversations || [];
+      if (pending) pending.remove();
+      renderLineInboxPanel();
+      setAgentState(agentKey, "talking");
+      showAgentBubble(agentKey, state.lineConversations.length ? "เลือกแชทที่ต้องการให้ช่วยดู" : "ยังไม่มีข้อความ LINE ใหม่");
+      setTimeout(() => setAgentState(agentKey, "working"), 2200);
+    } catch (e) {
+      if (pending) pending.remove();
+      addMessage("ai", e.message || "โหลด LINE Inbox ไม่สำเร็จ", false);
+      showAgentBubble(agentKey, "โหลด LINE Inbox ไม่สำเร็จ");
+    } finally {
+      state.loadingLine = false;
+    }
+  }
+
+  async function loadLineMessages(conversationId){
+    const id = Number(conversationId || 0);
+    if (!id) return;
+    const agentKey = ["admin", "sales", "ops"].includes(state.activeAgent) ? state.activeAgent : "admin";
+    setAgentState(agentKey, "thinking");
+    const pending = addThinkingMessage(agentKey);
+    try {
+      const data = await apiGet(`/admin/ai-office/line-conversations/${encodeURIComponent(id)}/messages?limit=50`);
+      state.selectedLineConversation = data.conversation || null;
+      state.selectedLineMessages = data.messages || [];
+      if (pending) pending.remove();
+      renderLineMessagesPanel();
+      setAgentState(agentKey, "talking");
+      showAgentBubble(agentKey, "เปิดแชทแล้ว เลือกงานที่ให้ AI ช่วยได้");
+    } catch (e) {
+      if (pending) pending.remove();
+      addMessage("ai", e.message || "โหลดข้อความ LINE ไม่สำเร็จ", false);
+      showAgentBubble(agentKey, "โหลดข้อความไม่สำเร็จ");
+    }
+  }
+
+  async function draftLineReply(label){
+    const convo = state.selectedLineConversation;
+    if (!convo?.id) {
+      addMessage("ai", "กรุณาเลือกแชท LINE ก่อนให้ AI สรุปหรือร่างข้อความ", false);
+      await loadLineInbox();
+      return;
+    }
+    const agentKey = ["admin", "sales", "ops"].includes(state.activeAgent) ? state.activeAgent : "admin";
+    addMessage("user", `${agentConfig(agentKey).name}: ${label}`, false);
+    setAgentState(agentKey, "thinking");
+    showAgentBubble(agentKey, "กำลังอ่านแชทและร่างข้อความ");
+    const pending = addThinkingMessage(agentKey);
+    try {
+      const data = await apiPost("/admin/ai-office/line-draft-reply", {
+        conversation_id: convo.id,
+        agent: agentKey,
+        instruction: lineDraftInstruction(label),
+      });
+      if (pending) pending.remove();
+      const answer = data.answer || "ยังไม่มีคำตอบจากข้อมูลแชทนี้";
+      state.lastAnswer = answer;
+      addMessage("ai", answer, true);
+      setAgentState(agentKey, "talking");
+      showAgentBubble(agentKey, responsePreview(answer, agentKey));
+      setTimeout(() => setAgentState(agentKey, "working"), 3200);
+    } catch (e) {
+      if (pending) pending.remove();
+      addMessage("ai", e.message || "ร่างข้อความจาก LINE ไม่สำเร็จ", false);
+      showAgentBubble(agentKey, "ร่างข้อความไม่สำเร็จ");
+    }
   }
 
   function diagnosticModeFor(label){

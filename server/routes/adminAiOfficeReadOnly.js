@@ -61,6 +61,18 @@ function onlyDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
+function clampLimit(value, def = 30, max = 100) {
+  const n = Math.floor(Number(value || def));
+  if (!Number.isFinite(n) || n <= 0) return def;
+  return Math.min(n, max);
+}
+
+function maskLineUserId(value) {
+  const s = String(value || "");
+  if (s.length <= 8) return s ? "LINE-USER" : "";
+  return `${s.slice(0, 4)}...${s.slice(-4)}`;
+}
+
 function isDoneStatusExpr(alias = "j") {
   return `(
     ${alias}.finished_at IS NOT NULL
@@ -222,6 +234,13 @@ function getAgent(agentKey) {
   return AI_OFFICE_AGENTS[key] || AI_OFFICE_AGENTS.admin;
 }
 
+function getLineAgent(agentKey) {
+  const key = String(agentKey || "").trim().toLowerCase();
+  if (key === "sales") return AI_OFFICE_AGENTS.sales;
+  if (key === "ops") return AI_OFFICE_AGENTS.ops;
+  return AI_OFFICE_AGENTS.admin;
+}
+
 function buildGroundedPrompt(question, context, agent) {
   return [
     "คุณคือผู้ช่วยออฟฟิศภายในของ Coldwindflow Air Services สำหรับแอดมินเท่านั้น",
@@ -237,6 +256,45 @@ function buildGroundedPrompt(question, context, agent) {
     "",
     "ข้อมูลจริงจากระบบ:",
     JSON.stringify(context, null, 2),
+  ].join("\n");
+}
+
+function buildLineDraftPrompt({ conversation, messages, agent, instruction }) {
+  return [
+    "คุณคือผู้ช่วย AI ภายในของ Coldwindflow Air Services สำหรับช่วยแอดมินอ่านแชท LINE OA เท่านั้น",
+    `บทบาทที่เลือก: ${agent.name}`,
+    `หน้าที่: ${agent.role}`,
+    "ใช้เฉพาะข้อมูลแชท LINE ที่ส่งมาใน JSON นี้ ห้ามแต่งข้อมูลเพิ่ม",
+    "ห้ามบอกว่าระบบส่งข้อความแล้ว ห้ามสร้างงาน ห้ามแก้ใบงาน ห้ามเปลี่ยนสถานะ",
+    "ตอบเป็นภาษาไทยแบบมืออาชีพ กระชับ ใช้งานจริงได้",
+    "ต้องใส่ประโยคนี้ให้ชัดเจน: แอดมินต้องตรวจสอบและกดส่ง/กดบันทึกเอง ระบบยังไม่ส่งข้อความหรือสร้างงานให้อัตโนมัติ",
+    "",
+    "รูปแบบคำตอบ:",
+    "- สรุปลูกค้า",
+    "- สิ่งที่ลูกค้าต้องการ",
+    "- ข้อมูลที่จับได้",
+    "- ข้อมูลที่ยังขาด",
+    "- ความเร่งด่วน",
+    "- ข้อความพร้อมตอบ",
+    "- หมายเหตุสำหรับแอดมิน",
+    "",
+    "ถ้าเป็นงานเตรียมลงคิว ให้เพิ่มหัวข้อ:",
+    "- ชื่อ ถ้ามี",
+    "- เบอร์ ถ้ามี",
+    "- พื้นที่ / ที่อยู่",
+    "- ประเภทงาน",
+    "- ประเภทแอร์",
+    "- BTU",
+    "- จำนวนเครื่อง",
+    "- วันที่/เวลาที่ลูกค้าต้องการ",
+    "- หมายเหตุ",
+    "- ข้อมูลที่ต้องถามเพิ่ม",
+    "- draft พร้อมกรอกในฟอร์มเพิ่มงาน",
+    "",
+    `คำสั่งแอดมินเพิ่มเติม: ${cleanText(instruction, 1000) || "-"}`,
+    "",
+    "ข้อมูลแชทจริง:",
+    JSON.stringify({ conversation, messages }, null, 2),
   ].join("\n");
 }
 
@@ -525,6 +583,74 @@ async function runAiOfficeDiagnostics({ pool, req }) {
   };
 }
 
+async function loadLineInbox(pool, limit) {
+  const r = await pool.query(
+    `SELECT c.id, c.line_user_id, c.display_name, c.picture_url, c.last_message_text,
+            c.last_message_type, c.last_message_at, COUNT(m.id)::int AS message_count
+       FROM public.line_conversations c
+       LEFT JOIN public.line_messages m ON m.conversation_id = c.id
+      GROUP BY c.id
+      ORDER BY c.last_message_at DESC NULLS LAST, c.updated_at DESC
+      LIMIT $1`,
+    [limit]
+  );
+  return (r.rows || []).map((row) => ({
+    id: row.id,
+    line_user_id_masked: maskLineUserId(row.line_user_id),
+    display_name: row.display_name || "",
+    picture_url: row.picture_url || "",
+    last_message_text: row.last_message_text || "",
+    last_message_type: row.last_message_type || "",
+    last_message_at: row.last_message_at || null,
+    message_count: Number(row.message_count || 0),
+  }));
+}
+
+async function loadLineConversation(pool, conversationId) {
+  const id = Number(conversationId || 0);
+  if (!Number.isFinite(id) || id <= 0) throw createAiOfficeError("LINE_CONVERSATION_NOT_FOUND", 404);
+  const r = await pool.query(
+    `SELECT id, line_user_id, display_name, picture_url, last_message_text, last_message_type, last_message_at
+       FROM public.line_conversations
+      WHERE id=$1
+      LIMIT 1`,
+    [id]
+  );
+  const row = r.rows?.[0];
+  if (!row) throw createAiOfficeError("LINE_CONVERSATION_NOT_FOUND", 404);
+  return {
+    id: row.id,
+    line_user_id_masked: maskLineUserId(row.line_user_id),
+    display_name: row.display_name || "",
+    picture_url: row.picture_url || "",
+    last_message_text: row.last_message_text || "",
+    last_message_type: row.last_message_type || "",
+    last_message_at: row.last_message_at || null,
+  };
+}
+
+async function loadLineMessages(pool, conversationId, limit) {
+  const id = Number(conversationId || 0);
+  if (!Number.isFinite(id) || id <= 0) throw createAiOfficeError("LINE_CONVERSATION_NOT_FOUND", 404);
+  const r = await pool.query(
+    `SELECT id, conversation_id, direction, event_type, message_type, message_text, received_at, created_at
+       FROM public.line_messages
+      WHERE conversation_id=$1
+      ORDER BY received_at DESC NULLS LAST, created_at DESC
+      LIMIT $2`,
+    [id, limit]
+  );
+  return (r.rows || []).reverse().map((row) => ({
+    id: row.id,
+    conversation_id: row.conversation_id,
+    direction: row.direction || "inbound",
+    event_type: row.event_type || "",
+    message_type: row.message_type || "",
+    message_text: row.message_text || "",
+    received_at: row.received_at || row.created_at || null,
+  }));
+}
+
 module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
   const pool = deps.pool;
   const requireAdminSession = deps.requireAdminSession;
@@ -589,6 +715,58 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       return res.json(result);
     } catch (e) {
       return res.status(e.status || 500).json({ ok: false, error: e.message || "ตรวจระบบ AI Office ไม่สำเร็จ" });
+    }
+  });
+
+  router.get("/admin/ai-office/line-inbox", requireAdminSession, async (req, res) => {
+    try {
+      requireAiOfficePin(req);
+      const limit = clampLimit(req.query.limit, 30, 100);
+      const conversations = await loadLineInbox(pool, limit);
+      return res.json({ ok: true, conversations });
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "โหลด LINE inbox ไม่สำเร็จ" });
+    }
+  });
+
+  router.get("/admin/ai-office/line-conversations/:id/messages", requireAdminSession, async (req, res) => {
+    try {
+      requireAiOfficePin(req);
+      const limit = clampLimit(req.query.limit, 50, 100);
+      const conversation = await loadLineConversation(pool, req.params.id);
+      const messages = await loadLineMessages(pool, req.params.id, limit);
+      return res.json({ ok: true, conversation, messages });
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "โหลดข้อความ LINE ไม่สำเร็จ" });
+    }
+  });
+
+  router.post("/admin/ai-office/line-draft-reply", requireAdminSession, async (req, res) => {
+    try {
+      requireAiOfficePin(req);
+      const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+      if (!apiKey) return res.status(503).json({ ok: false, error: "ยังไม่ได้ตั้งค่า OPENAI_API_KEY สำหรับ AI Office" });
+
+      const conversationId = Number(req.body?.conversation_id || 0);
+      if (!Number.isFinite(conversationId) || conversationId <= 0) {
+        return res.status(400).json({ ok: false, error: "กรุณาเลือกแชท LINE ก่อน" });
+      }
+      const agent = getLineAgent(req.body?.agent);
+      const instruction = cleanText(req.body?.instruction, 1000);
+      const conversation = await loadLineConversation(pool, conversationId);
+      const messages = await loadLineMessages(pool, conversationId, 80);
+      if (!messages.length) return res.status(400).json({ ok: false, error: "ยังไม่มีข้อความในแชทนี้" });
+
+      const model = String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim() || AI_OFFICE_DEFAULT_MODEL;
+      const answer = await callOpenAI({
+        apiKey,
+        model,
+        prompt: buildLineDraftPrompt({ conversation, messages, agent, instruction }),
+      });
+      return res.json({ ok: true, answer, conversation, messages, agent });
+    } catch (e) {
+      console.error("POST /admin/ai-office/line-draft-reply error:", e.message);
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "ร่างข้อความจาก LINE ไม่สำเร็จ" });
     }
   });
 
