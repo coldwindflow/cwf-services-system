@@ -8,50 +8,51 @@
   <link rel="manifest" href="/manifest.json">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="cwf-ai-office-version" content="ai-office-v5-pixel-engine">
+  <meta name="cwf-ai-office-version" content="ai-office-final-aicwf-20260607">
   <title>CWF AI Office</title>
   <link rel="stylesheet" href="/style.css">
   <style>
-    :root{
-      --ink:#07152f;--muted:#66728a;--blue:#1558d6;--navy:#06163d;--gold:#ffcc00;--line:rgba(15,23,42,.12);
-      --safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--console-h:238px;
-    }
+    :root{--ink:#07152f;--muted:#66728a;--blue:#1558d6;--gold:#ffcc00;--line:rgba(15,23,42,.12);--safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);--console-h:250px}
     *{box-sizing:border-box}
-    html,body{width:100%;max-width:100%;min-height:100%;overflow-x:hidden}
-    body{margin:0;min-height:100vh;min-height:100dvh;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#06163d}
+    html,body{width:100%;max-width:100%;overflow-x:hidden}
+    body{margin:0;min-height:100vh;min-height:100dvh;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#07152f}
     button,input,textarea{font:inherit}
-    button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-    .aiApp{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:radial-gradient(700px 300px at 16% -90px,rgba(255,204,0,.26),transparent 62%),radial-gradient(700px 320px at 96% 10px,rgba(58,130,255,.26),transparent 64%),linear-gradient(180deg,#06163d 0,#0a2b70 46%,#10284f 100%)}
-    .topBar{min-height:70px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(10px + var(--safe-top)) max(14px,env(safe-area-inset-left,14px)) 9px max(14px,env(safe-area-inset-right,14px));color:#fff;border-bottom:1px solid rgba(255,255,255,.12);background:rgba(4,14,38,.58);backdrop-filter:blur(16px);z-index:30}
-    .brand{min-width:0}.brand h1{margin:0;font-size:clamp(20px,4.8vw,28px);line-height:1;font-weight:1000;letter-spacing:-.02em}.brand p{margin:5px 0 0;color:rgba(255,255,255,.78);font-size:12px;font-weight:760;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .topActions{display:flex;align-items:center;gap:8px}.livePill{display:inline-flex;align-items:center;gap:7px;min-height:40px;padding:0 11px;border-radius:999px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.14);font-size:11px;font-weight:950;white-space:nowrap}.livePill:before{content:"";width:8px;height:8px;border-radius:999px;background:#3ee58c;box-shadow:0 0 0 5px rgba(62,229,140,.13);animation:pulse 1.9s ease-in-out infinite}
-    .iconBtn,.primary,.ghost,.quickBtn,.copy,.chip{appearance:none;border:0;cursor:pointer;font-weight:950}.iconBtn{width:42px;height:42px;border-radius:14px;color:#08245c;background:linear-gradient(180deg,#fff,#eaf3ff);box-shadow:0 12px 24px rgba(0,0,0,.16)}.primary{min-height:46px;border-radius:15px;padding:0 16px;background:linear-gradient(135deg,#fff5b8,#ffcc00 58%,#f2ae00);color:#06163d;box-shadow:0 12px 22px rgba(162,116,0,.18)}.ghost,.copy,.chip{min-height:42px;border-radius:14px;padding:0 13px;color:#0d3d8d;background:#edf5ff;border:1px solid rgba(21,88,214,.12)}button:active{transform:translateY(1px)}
-    .statusStrip{display:flex;gap:8px;align-items:stretch;padding:9px 14px;color:#fff;z-index:24;overflow-x:auto;scrollbar-width:none}.statusStrip::-webkit-scrollbar{display:none}.metric{min-width:118px;flex:1 0 118px;border-radius:14px;padding:10px 12px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.13);box-shadow:0 14px 26px rgba(0,0,0,.14)}.metric span{display:block;color:rgba(255,255,255,.72);font-size:11px;font-weight:850}.metric b{display:block;margin-top:3px;font-size:23px;line-height:1;font-weight:1000}
+    button{touch-action:manipulation}
+    .aiApp{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;overflow:hidden;background:radial-gradient(700px 300px at 15% -70px,rgba(255,204,0,.28),transparent 62%),radial-gradient(700px 340px at 92% 10px,rgba(21,88,214,.32),transparent 64%),linear-gradient(180deg,#06163d 0,#0b2b70 45%,#102344 100%)}
+    .topBar{min-height:72px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:calc(12px + var(--safe-top)) max(14px,env(safe-area-inset-left,14px)) 10px max(14px,env(safe-area-inset-right,14px));color:#fff;border-bottom:1px solid rgba(255,255,255,.12);background:rgba(4,14,38,.62);backdrop-filter:blur(16px);z-index:8}
+    .brand{display:flex;align-items:center;gap:11px;min-width:0}.brandLogo{width:54px;height:42px;object-fit:contain;border-radius:10px;background:#fff;padding:4px;box-shadow:0 12px 24px rgba(0,0,0,.18)}.brandText{min-width:0}.brandText h1{margin:0;font-size:22px;line-height:1;font-weight:1000;letter-spacing:0}.brandText p{margin:5px 0 0;color:rgba(255,255,255,.78);font-size:12px;font-weight:760;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .topActions{display:flex;align-items:center;gap:8px}.livePill{display:inline-flex;align-items:center;gap:7px;min-height:40px;padding:8px 10px;border-radius:999px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.14);font-size:11px;font-weight:950;white-space:nowrap}.livePill:before{content:"";width:8px;height:8px;border-radius:999px;background:#3ee58c;box-shadow:0 0 0 5px rgba(62,229,140,.13);animation:pulse 1.9s ease-in-out infinite}
+    .iconBtn,.primary,.ghost,.quickBtn,.copy{appearance:none;border:0;cursor:pointer;font-weight:950}.iconBtn{width:44px;height:44px;border-radius:14px;color:#08245c;background:linear-gradient(180deg,#fff,#eaf3ff);box-shadow:0 12px 24px rgba(0,0,0,.16)}.primary{min-height:46px;border-radius:15px;padding:0 16px;background:linear-gradient(135deg,#fff5b8,#ffcc00 58%,#f2ae00);color:#06163d;box-shadow:0 12px 22px rgba(162,116,0,.18)}.ghost,.copy{min-height:44px;border-radius:14px;padding:0 13px;color:#0d3d8d;background:#edf5ff;border:1px solid rgba(21,88,214,.12)}button:active{transform:translateY(1px)}
+    .statusStrip{display:flex;gap:8px;align-items:stretch;padding:10px 14px;color:#fff;z-index:7;overflow-x:auto;scrollbar-width:none}.statusStrip::-webkit-scrollbar{display:none}.metric{min-width:118px;flex:1 0 118px;border-radius:14px;padding:10px 12px;background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.13);box-shadow:0 14px 26px rgba(0,0,0,.14)}.metric span{display:block;color:rgba(255,255,255,.72);font-size:11px;font-weight:850}.metric b{display:block;margin-top:3px;font-size:24px;line-height:1;font-weight:1000}
     .gameShell{position:relative;flex:1;min-height:0;padding:0 14px calc(var(--console-h) + 18px + var(--safe-bottom))}
-    .stageFrame{position:relative;width:100%;height:100%;min-height:560px;border-radius:28px;overflow:hidden;border:1px solid rgba(255,255,255,.13);box-shadow:0 28px 70px rgba(0,0,0,.28);background:#07152f;isolation:isolate}
-    .stageCanvas{display:block;width:100%;height:100%;min-height:560px;background:#dbe7f4;touch-action:manipulation}
-    .stageHint{position:absolute;left:14px;bottom:14px;z-index:5;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,.86);border:1px solid rgba(15,23,42,.1);box-shadow:0 12px 24px rgba(7,21,47,.12);font-size:12px;font-weight:900;color:#0d3d8d;pointer-events:none}
-    .console{position:fixed;left:14px;right:14px;bottom:max(12px,var(--safe-bottom));height:var(--console-h);max-height:calc(100dvh - 110px - var(--safe-top) - var(--safe-bottom));z-index:40;border-radius:24px;background:rgba(255,255,255,.97);border:1px solid rgba(255,255,255,.72);box-shadow:0 24px 70px rgba(0,0,0,.34);overflow:hidden;display:flex;flex-direction:column;backdrop-filter:blur(18px);transition:height .22s ease}.console.full{height:min(78dvh,650px)}.console.peek{height:var(--console-h)}.consoleHandle{height:44px;min-height:44px;display:flex;align-items:center;justify-content:center;border:0;background:linear-gradient(180deg,#fff,#f1f6ff);cursor:pointer;touch-action:manipulation}.consoleHandle:before{content:"";width:54px;height:5px;border-radius:999px;background:#b8c6da}.consoleBody{display:flex;min-height:0;flex:1}.agentConsole{width:322px;flex:0 0 322px;padding:12px 14px;border-right:1px solid var(--line);min-width:0}.selectedLine{display:flex;align-items:center;gap:10px}.avatarDot{width:44px;height:44px;border-radius:15px;background:var(--selected,#1558d6);box-shadow:0 12px 20px rgba(7,21,47,.12);border:3px solid #fff;flex:0 0 auto}.selectedText{min-width:0}.selectedText b{display:block;font-size:15px}.selectedText span{display:block;margin-top:2px;color:var(--muted);font-size:11px;font-weight:760;line-height:1.35}.agentState{display:inline-flex;align-items:center;gap:7px;margin-top:7px;padding:6px 9px;border-radius:999px;background:#eef6ff;color:#0d3d8d;font-size:11px;font-weight:1000}.agentState:before{content:"";width:8px;height:8px;border-radius:999px;background:var(--selected,#1558d6);animation:pulse 1.5s ease-in-out infinite}.quickList{display:flex;gap:7px;margin-top:11px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}.quickList::-webkit-scrollbar{display:none}.quickBtn{flex:0 0 auto;min-height:44px;border-radius:999px;padding:0 12px;background:#edf5ff;color:#0d3d8d;border:1px solid rgba(21,88,214,.12);font-size:12px;white-space:nowrap}
-    .workConsole{display:flex;flex-direction:column;min-width:0;flex:1}.phoneRow{display:flex;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}.input,.ask{width:100%;border:1px solid rgba(15,23,42,.13);border-radius:14px;background:#fff;color:var(--ink);padding:11px 12px;font-size:16px;font-weight:760;outline:none}.input:focus,.ask:focus{border-color:rgba(21,88,214,.45);box-shadow:0 0 0 4px rgba(21,88,214,.1)}.messages{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;padding:12px;display:flex;flex-direction:column;gap:10px;background:linear-gradient(180deg,#f7fbff,#eef5ff)}.msg{max-width:94%;border-radius:17px;padding:12px 13px;white-space:pre-wrap;line-height:1.55;font-size:14px;box-shadow:0 10px 22px rgba(7,21,47,.07)}.msg.user{align-self:flex-end;background:#0d3d8d;color:#fff;border-bottom-right-radius:6px}.msg.ai{align-self:flex-start;background:#fff;color:#07152f;border:1px solid var(--line);border-bottom-left-radius:6px}.copyRow{display:flex;justify-content:flex-end;margin-top:9px}.copy{min-height:44px;font-size:12px}.composer{display:flex;gap:8px;padding:10px 12px calc(10px + var(--safe-bottom));border-top:1px solid var(--line);background:#fff}.ask{min-height:46px;max-height:120px;resize:vertical}.thinkingLine{display:inline-flex;gap:5px;align-items:center}.thinkingLine i{width:7px;height:7px;border-radius:999px;background:#1558d6;animation:pulse .9s ease-in-out infinite}.thinkingLine i:nth-child(2){animation-delay:.15s}.thinkingLine i:nth-child(3){animation-delay:.3s}
-    .manager{position:fixed;inset:0;z-index:6000;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(4,14,38,.76);backdrop-filter:blur(18px)}.manager.show{display:flex}.managerBox{width:min(900px,100%);max-height:86dvh;overflow:auto;background:#fff;border-radius:24px;padding:18px;box-shadow:0 30px 90px rgba(0,0,0,.3)}.managerTop{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.manager h2{margin:0 0 6px}.manager p{margin:0;color:var(--muted);font-weight:750;line-height:1.45}.agentGrid{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px}.agentGrid .agentItem{flex:1 1 320px}.agentItem{border:1px solid var(--line);border-radius:16px;padding:12px;background:#f8fbff}.agentItem b{display:block}.agentItem small{display:block;color:var(--muted);font-weight:750;margin-top:3px}.managerActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
-    .lock{position:fixed;inset:0;z-index:5000;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(4,14,38,.75);backdrop-filter:blur(18px)}.lock.show{display:flex}.lockBox{width:min(430px,100%);background:#fff;border-radius:24px;padding:20px;box-shadow:0 30px 90px rgba(0,0,0,.28)}.lockBox h2{margin:0 0 8px;font-size:22px}.lockBox p{margin:0 0 14px;color:var(--muted);font-weight:750;line-height:1.5}.lockActions{display:flex;gap:9px;margin-top:10px}.error{padding:12px;color:#9b2323;background:#fff0f0;border:1px solid #ffd7d7;margin:12px;border-radius:16px;font-weight:800;line-height:1.5}
-    @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.65;transform:scale(1.12)}}
-    @media (min-width:980px){.gameShell{padding-bottom:18px;padding-right:404px}.console{left:auto;right:18px;top:calc(92px + var(--safe-top));bottom:18px;width:386px;height:auto;max-height:none;border-radius:26px}.console.full,.console.peek{height:auto}.consoleHandle{display:none}.consoleBody{display:flex;flex-direction:column}.agentConsole{width:auto;flex:0 0 auto;border-right:0;border-bottom:1px solid var(--line)}.stageFrame,.stageCanvas{min-height:calc(100dvh - 162px - var(--safe-top))}}
-    @media (max-width:720px){.topBar{min-height:67px}.brand h1{font-size:20px}.brand p{max-width:calc(100vw - 118px)}.livePill span{display:none}.statusStrip{padding:8px 10px}.metric{min-width:104px;padding:9px 10px}.metric b{font-size:21px}.gameShell{padding:0 8px calc(var(--console-h) + 18px + var(--safe-bottom))}.stageFrame,.stageCanvas{min-height:calc(100dvh - var(--console-h) - 176px - var(--safe-top));border-radius:22px}.console{left:8px;right:8px;--console-h:244px}.console.full{height:min(78dvh,620px)}.consoleBody{display:flex;flex-direction:column}.agentConsole{width:auto;flex:0 0 auto;border-right:0;border-bottom:1px solid var(--line);padding:10px 12px}.phoneRow{padding:9px;gap:7px;flex-wrap:wrap}.phoneRow .input{flex:1 1 170px}.phoneRow .primary{flex:0 0 auto}.composer{padding:9px 9px calc(9px + var(--safe-bottom));gap:7px}.messages{padding:10px}.msg{max-width:100%;font-size:13px}.selectedText span{display:none}.quickBtn{min-height:42px}.agentGrid .agentItem{flex-basis:100%}.stageHint{font-size:11px;left:10px;bottom:10px}}
-    @media (max-height:690px) and (max-width:720px){:root{--console-h:210px}.metric{padding:7px 10px}.statusStrip{padding-top:6px;padding-bottom:6px}}
-    @media (prefers-reduced-motion:reduce){.livePill:before,.agentState:before,.thinkingLine i{animation:none!important;transition:none!important}}
+    .officeMap{position:relative;width:100%;height:100%;min-height:560px;border-radius:28px;overflow:hidden;border:1px solid rgba(255,255,255,.13);box-shadow:0 28px 70px rgba(0,0,0,.3);background-image:url("/assets/ai-office-final/maps/office-main-desktop.png");background-size:100% 100%;background-position:center;background-repeat:no-repeat;isolation:isolate}
+    .officeMap:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(6,22,61,.05),rgba(6,22,61,.15));pointer-events:none;z-index:1}
+    .brandMark{position:absolute;left:50%;top:5%;transform:translateX(-50%);z-index:3;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:18px;background:rgba(255,255,255,.9);border:2px solid rgba(255,204,0,.78);box-shadow:0 18px 34px rgba(0,0,0,.16);font-size:13px;font-weight:1000;color:#0d3d8d}.brandMark img{width:82px;max-height:34px;object-fit:contain}.prop{position:absolute;z-index:2;object-fit:contain;pointer-events:none;filter:drop-shadow(0 14px 18px rgba(7,21,47,.2))}.propAdmin{left:11%;top:42%;width:15%}.propSales{right:10%;top:43%;width:15%}.propOps{left:38%;top:20%;width:20%}.propMeeting{left:40%;top:58%;width:22%}.propDecor{left:4%;top:17%;width:16%;opacity:.92}.propShadow{left:12%;bottom:5%;width:76%;opacity:.42;filter:none}
+    .npc{position:absolute;left:var(--x);top:var(--y);width:clamp(70px,8.2vw,128px);height:clamp(98px,11vw,168px);border:0;background:transparent;padding:0;cursor:pointer;transform:translate(-50%,-70%);z-index:5;transition:left .82s cubic-bezier(.22,.9,.22,1),top .82s cubic-bezier(.22,.9,.22,1),filter .16s ease}.npc:focus-visible{outline:3px solid var(--gold);outline-offset:8px;border-radius:20px}.npcSprite{position:absolute;left:50%;bottom:12px;width:100%;height:100%;object-fit:contain;transform:translateX(-50%);filter:drop-shadow(0 14px 13px rgba(7,21,47,.22));animation:idleBob 3.4s ease-in-out infinite}.npcRing{position:absolute;left:50%;bottom:0;width:86%;height:42%;transform:translateX(-50%);object-fit:contain;opacity:0;filter:drop-shadow(0 8px 10px rgba(7,21,47,.18))}.npc.selected .npcRing{opacity:1;animation:pulse 1.6s ease-in-out infinite}.npc.walking .npcSprite{animation:walkBob .32s ease-in-out infinite}.npc.thinking .npcSprite{animation:thinkBob 1.1s ease-in-out infinite}.npc.talking .npcSprite{animation:talkBob .85s ease-in-out infinite}.npc.working .npcSprite{animation:workBob 1.2s ease-in-out infinite}
+    .npcBubble{position:absolute;left:50%;bottom:92%;width:176px;min-height:44px;padding:10px 12px;border-radius:16px;background:rgba(255,255,255,.94);border:1px solid rgba(15,23,42,.1);box-shadow:0 16px 30px rgba(7,21,47,.18);font-size:12px;line-height:1.35;font-weight:850;text-align:left;opacity:0;pointer-events:none;transform:translateX(-50%) translateY(8px);transition:opacity .18s ease,transform .18s ease;z-index:8}.npcBubble:after{content:"";position:absolute;left:23px;bottom:-8px;width:14px;height:14px;background:rgba(255,255,255,.94);transform:rotate(45deg);border-right:1px solid rgba(15,23,42,.1);border-bottom:1px solid rgba(15,23,42,.1)}.npc.selected .npcBubble,.npc.thinking .npcBubble,.npc.talking .npcBubble,.npc.working .npcBubble{opacity:1;transform:translateX(-50%) translateY(0)}.npc.thinking .npcBubble:before{content:"";display:inline-block;width:18px;color:#1558d6;font-weight:1000;animation:dots 1.1s steps(1,end) infinite}
+    .npcName{position:absolute;left:50%;bottom:-16px;transform:translateX(-50%);white-space:nowrap;padding:6px 9px;border-radius:999px;background:rgba(255,255,255,.93);font-size:11px;font-weight:1000;color:#07152f;box-shadow:0 8px 14px rgba(7,21,47,.12)}.npcRole{display:none}
+    .console{position:fixed;left:14px;right:14px;bottom:max(12px,var(--safe-bottom));height:var(--console-h);max-height:calc(100dvh - 110px - var(--safe-top) - var(--safe-bottom));z-index:20;border-radius:24px;background:rgba(255,255,255,.96) url("/assets/ai-office-final/ui/bottom-sheet-bg.png") center/cover no-repeat;border:1px solid rgba(255,255,255,.72);box-shadow:0 24px 70px rgba(0,0,0,.34);overflow:hidden;display:flex;flex-direction:column;backdrop-filter:blur(18px);transition:height .22s ease}.console.expanded{height:min(78dvh,660px)}.consoleHandle{height:44px;display:flex;align-items:center;justify-content:center;border:0;background:linear-gradient(180deg,rgba(255,255,255,.88),rgba(241,246,255,.86));cursor:pointer}.consoleHandle:before{content:"";width:54px;height:5px;border-radius:999px;background:#b8c6da}.consoleBody{display:grid;grid:1fr / 320px 1fr;min-height:0;flex:1}.agentConsole{padding:12px 14px;border-right:1px solid var(--line);min-width:0;background:rgba(255,255,255,.78)}.selectedLine{display:flex;align-items:center;gap:10px}.avatarDot{width:48px;height:48px;border-radius:16px;background:#edf5ff center/cover no-repeat;box-shadow:0 12px 20px rgba(7,21,47,.12);border:3px solid #fff;flex:0 0 auto}.selectedText{min-width:0}.selectedText b{display:block;font-size:15px}.selectedText span{display:block;margin-top:2px;color:var(--muted);font-size:11px;font-weight:760;line-height:1.35}.agentState{display:inline-flex;align-items:center;gap:7px;margin-top:7px;padding:6px 9px;border-radius:999px;background:#eef6ff;color:#0d3d8d;font-size:11px;font-weight:1000}.agentState:before{content:"";width:8px;height:8px;border-radius:999px;background:var(--selected,#1558d6);animation:pulse 1.5s ease-in-out infinite}.quickList{display:flex;gap:7px;margin-top:11px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}.quickList::-webkit-scrollbar{display:none}.quickBtn{flex:0 0 auto;min-height:44px;border-radius:999px;padding:0 12px;background:rgba(237,245,255,.94);color:#0d3d8d;border:1px solid rgba(21,88,214,.12);font-size:12px;white-space:nowrap}
+    .workConsole{display:flex;flex-direction:column;min-width:0;background:rgba(255,255,255,.82)}.phoneRow{display:flex;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}.input,.ask{width:100%;border:1px solid rgba(15,23,42,.13);border-radius:14px;background:#fff;color:var(--ink);padding:11px 12px;font-size:16px;font-weight:760;outline:none}.input:focus,.ask:focus{border-color:rgba(21,88,214,.45);box-shadow:0 0 0 4px rgba(21,88,214,.1)}.messages{flex:1;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;padding:12px;display:flex;flex-direction:column;gap:10px;background:rgba(247,251,255,.86)}.msg{max-width:94%;border-radius:17px;padding:12px 13px;white-space:pre-wrap;line-height:1.55;font-size:14px;box-shadow:0 10px 22px rgba(7,21,47,.07)}.msg.user{align-self:flex-end;background:#0d3d8d;color:#fff;border-bottom-right-radius:6px}.msg.ai{align-self:flex-start;background:#fff;color:#07152f;border:1px solid var(--line);border-bottom-left-radius:6px}.emptyMsg{display:flex;gap:10px;align-items:center}.emptyMsg img{width:54px;height:54px;object-fit:contain;border-radius:12px}.copyRow{display:flex;justify-content:flex-end;margin-top:9px}.copy{min-height:44px;font-size:12px}.composer{display:flex;gap:8px;padding:10px 12px calc(10px + var(--safe-bottom));border-top:1px solid var(--line);background:rgba(255,255,255,.92)}.ask{min-height:46px;max-height:120px;resize:vertical}.thinkingLine{display:inline-flex;gap:5px;align-items:center}.thinkingLine i{width:7px;height:7px;border-radius:999px;background:#1558d6;animation:pulse .9s ease-in-out infinite}.thinkingLine i:nth-child(2){animation-delay:.15s}.thinkingLine i:nth-child(3){animation-delay:.3s}
+    .lock{position:fixed;inset:0;z-index:5000;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(4,14,38,.76);backdrop-filter:blur(18px)}.lock.show{display:flex}.lockBox{width:min(430px,100%);background:#fff;border-radius:24px;padding:20px;box-shadow:0 30px 90px rgba(0,0,0,.28)}.lockBox h2{margin:0 0 8px;font-size:22px}.lockBox p{margin:0 0 14px;color:var(--muted);font-weight:750;line-height:1.5}.lockActions{display:flex;gap:9px;margin-top:10px}.error{padding:12px;color:#9b2323;background:#fff0f0;border:1px solid #ffd7d7;margin:12px;border-radius:16px;font-weight:800;line-height:1.5}
+    @keyframes idleBob{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-4px)}}@keyframes walkBob{0%,100%{transform:translateX(-50%) translateY(0) rotate(-1deg)}50%{transform:translateX(-50%) translateY(-8px) rotate(1deg)}}@keyframes thinkBob{0%,100%{transform:translateX(-50%) scale(1)}50%{transform:translateX(-50%) scale(1.025)}}@keyframes talkBob{0%,100%{transform:translateX(-50%) scaleY(1)}50%{transform:translateX(-50%) scaleY(1.055)}}@keyframes workBob{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-3px)}}@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.66;transform:scale(1.08)}}@keyframes dots{0%,100%{content:""}33%{content:"."}66%{content:".."}}
+    @media (min-width:980px){.gameShell{padding-bottom:18px;padding-right:390px}.console{left:auto;right:18px;top:calc(92px + var(--safe-top));bottom:18px;width:370px;height:auto;max-height:none;border-radius:26px}.console.expanded{height:auto}.consoleHandle{display:none}.consoleBody{display:flex;flex-direction:column}.agentConsole{border-right:0;border-bottom:1px solid var(--line)}.officeMap{min-height:calc(100dvh - 166px - var(--safe-top))}}
+    @media (max-width:720px){:root{--console-h:246px}.topBar{min-height:68px}.brandLogo{width:44px;height:36px}.brandText h1{font-size:20px}.brandText p{max-width:calc(100vw - 138px)}.livePill span{display:none}.statusStrip{padding:8px 10px}.metric{min-width:104px;padding:9px 10px}.metric b{font-size:21px}.gameShell{padding:0 8px calc(var(--console-h) + 18px + var(--safe-bottom))}.officeMap{min-height:calc(100dvh - var(--console-h) - 176px - var(--safe-top));border-radius:22px;background-image:url("/assets/ai-office-final/maps/office-main-mobile.png")}.brandMark{top:4%;padding:6px 9px}.brandMark img{width:62px;max-height:28px}.brandMark span{font-size:11px}.prop{transform:scale(.8)}.propAdmin{left:8%;top:44%;width:18%}.propSales{right:7%;top:44%;width:18%}.propOps{left:34%;top:20%;width:28%}.propMeeting{left:36%;top:58%;width:30%}.propDecor{display:none}.npc{width:clamp(62px,17vw,82px);height:clamp(86px,24vw,112px)}.npcBubble{width:min(152px,44vw);max-width:calc(100vw - 28px);font-size:11px;bottom:88%}.npcName{font-size:9px;bottom:-12px}.console{left:8px;right:8px}.console.expanded{height:min(78dvh,620px)}.consoleBody{display:flex;flex-direction:column}.agentConsole{border-right:0;border-bottom:1px solid var(--line);padding:10px 12px}.phoneRow{padding:9px;gap:7px;flex-wrap:wrap}.composer{padding:9px 9px calc(9px + var(--safe-bottom));gap:7px}.phoneRow .input{flex:1 1 170px}.phoneRow .primary{flex:0 0 auto}.messages{padding:10px}.msg{max-width:100%;font-size:13px}.selectedText span{display:none}}
+    @media (max-width:420px){.topActions{gap:6px}.iconBtn{width:40px;height:40px}.statusStrip{gap:6px}.metric{min-width:96px}.officeMap{min-height:430px}.brandText p{display:none}.npcBubble{width:min(138px,44vw)}}
+    @media (prefers-reduced-motion:reduce){.npc,.npcSprite,.npcRing,.livePill:before,.agentState:before,.thinkingLine i{animation:none!important;transition:none!important}}
   </style>
 </head>
 <body>
   <div class="aiApp">
     <header class="topBar">
       <div class="brand">
-        <h1>CWF AI Office</h1>
-        <p>ผู้ช่วย AI สำหรับถามตอบงานจริงและบริหารร้าน Coldwindflow</p>
+        <img class="brandLogo" src="/assets/ai-office-final/brand/logo-mark.png" alt="Coldwindflow">
+        <div class="brandText">
+          <h1>CWF AI Office</h1>
+          <p>ผู้ช่วย AI สำหรับถามตอบงานจริงและบริหารร้าน Coldwindflow</p>
+        </div>
       </div>
       <div class="topActions">
         <div class="livePill"><span>อ่านข้อมูลงานจริง</span></div>
-        <button class="iconBtn" type="button" id="btnManager" aria-label="จัดการ Agent">⚙</button>
         <button class="iconBtn" type="button" id="btnRefresh" aria-label="โหลดข้อมูลใหม่">↻</button>
       </div>
     </header>
@@ -64,56 +65,63 @@
     </section>
 
     <main class="gameShell">
-      <section class="stageFrame" aria-label="CWF AI pixel office">
-        <canvas class="stageCanvas" id="officeCanvas"></canvas>
-        <div class="stageHint">แตะตัวละครเพื่อสั่งงาน • ตัวละครจะเดินไปประสานงานในออฟฟิศ</div>
+      <section class="officeMap" id="officeScene" aria-label="CWF AI command office">
+        <div class="brandMark"><img src="/assets/ai-office-final/brand/logo-main.png" alt="Coldwindflow"><span>AI Office</span></div>
+        <img class="prop propShadow" src="/assets/ai-office-final/props/floor-shadow.png" alt="">
+        <img class="prop propDecor" src="/assets/ai-office-final/props/decor-set.png" alt="">
+        <img class="prop propAdmin" src="/assets/ai-office-final/props/desk-admin.png" alt="">
+        <img class="prop propSales" src="/assets/ai-office-final/props/desk-sales.png" alt="">
+        <img class="prop propOps" src="/assets/ai-office-final/props/ops-board.png" alt="">
+        <img class="prop propMeeting" src="/assets/ai-office-final/props/meeting-table.png" alt="">
+
+        <button class="npc selected" type="button" data-agent="admin" aria-label="Admin AI">
+          <span class="npcBubble">พร้อมช่วยสรุปงานและร่างข้อความ</span><img class="npcRing" src="/assets/ai-office-final/ui/selection-ring.png" alt=""><img class="npcSprite" alt=""><span class="npcName">Admin AI</span><span class="npcRole">สรุปงานและข้อความ</span>
+        </button>
+        <button class="npc" type="button" data-agent="sales" aria-label="Sales AI">
+          <span class="npcBubble">พร้อมช่วยปิดการขาย</span><img class="npcRing" src="/assets/ai-office-final/ui/selection-ring.png" alt=""><img class="npcSprite" alt=""><span class="npcName">Sales AI</span><span class="npcRole">ราคาและการปิดงาน</span>
+        </button>
+        <button class="npc" type="button" data-agent="ops" aria-label="Ops AI">
+          <span class="npcBubble">พร้อมคุมคิวและดูความเสี่ยง</span><img class="npcRing" src="/assets/ai-office-final/ui/selection-ring.png" alt=""><img class="npcSprite" alt=""><span class="npcName">Ops AI</span><span class="npcRole">คิวงานและความเสี่ยง</span>
+        </button>
+        <button class="npc" type="button" data-agent="ads" aria-label="Ads AI">
+          <span class="npcBubble">พร้อมคิดแคมเปญ</span><img class="npcRing" src="/assets/ai-office-final/ui/selection-ring.png" alt=""><img class="npcSprite" alt=""><span class="npcName">Ads AI</span><span class="npcRole">โฆษณาและพื้นที่บริการ</span>
+        </button>
+        <button class="npc" type="button" data-agent="content" aria-label="Content AI">
+          <span class="npcBubble">พร้อมทำคอนเทนต์</span><img class="npcRing" src="/assets/ai-office-final/ui/selection-ring.png" alt=""><img class="npcSprite" alt=""><span class="npcName">Content AI</span><span class="npcRole">โพสต์และสคริปต์</span>
+        </button>
+        <button class="npc" type="button" data-agent="dev" aria-label="Dev AI">
+          <span class="npcBubble">พร้อมตรวจระบบ</span><img class="npcRing" src="/assets/ai-office-final/ui/selection-ring.png" alt=""><img class="npcSprite" alt=""><span class="npcName">Dev AI</span><span class="npcRole">ระบบและเช็กลิสต์</span>
+        </button>
       </section>
     </main>
 
-    <section class="console peek" id="commandConsole" aria-label="โต๊ะสั่งงาน AI">
-      <button class="consoleHandle" type="button" id="consoleToggle" aria-label="ย่อหรือขยายแผงสั่งงาน"></button>
+    <section class="console" id="commandConsole" aria-label="AI command console">
+      <button class="consoleHandle" type="button" id="consoleToggle" aria-label="เปิดหรือย่อแผงคำสั่ง"></button>
       <div class="consoleBody">
-        <aside class="agentConsole">
+        <div class="agentConsole">
           <div class="selectedLine">
             <div class="avatarDot" id="agentAvatar"></div>
             <div class="selectedText">
               <b id="agentName">Admin AI</b>
-              <span id="agentRole">แอดมินประจำออฟฟิศ</span>
+              <span id="agentRole">ผู้ช่วยแอดมินสำหรับสรุปงาน ร่างข้อความลูกค้า ข้อความช่าง และแปลภาษา</span>
               <em class="agentState" id="agentStatus">พร้อมช่วย</em>
             </div>
           </div>
           <div class="quickList" id="quickCommands"></div>
-        </aside>
+        </div>
         <div class="workConsole">
           <div class="phoneRow">
             <input class="input" id="phoneInput" inputmode="tel" autocomplete="off" placeholder="เบอร์ลูกค้า">
             <button class="primary" type="button" id="btnPhone">ค้นงาน</button>
           </div>
-          <div class="messages" id="messages"><div class="msg ai">แตะตัวละครในออฟฟิศ แล้วสั่งงานจากข้อมูลจริงได้เลย</div></div>
+          <div class="messages" id="messages"><div class="msg ai">เลือก AI ในออฟฟิศ แล้วถามงานจริงในระบบได้เลย</div></div>
           <div class="composer">
-            <textarea class="ask" id="askInput" rows="2" placeholder="พิมพ์คำถาม"></textarea>
+            <textarea class="ask" id="askInput" rows="2" placeholder="พิมพ์คำถามสำหรับ AI ที่เลือก"></textarea>
             <button class="primary" type="button" id="btnAsk">ถาม</button>
           </div>
         </div>
       </div>
     </section>
-  </div>
-
-  <div class="manager" id="agentManager">
-    <div class="managerBox">
-      <div class="managerTop">
-        <div>
-          <h2>จัดการ Agent</h2>
-          <p>แก้ชื่อ บทบาท และคำสั่งด่วนเฉพาะหน้า AI Office ได้แบบปลอดภัย ไม่แตะข้อมูลงานจริง</p>
-        </div>
-        <button class="ghost" type="button" id="btnCloseManager">ปิด</button>
-      </div>
-      <div class="agentGrid" id="agentManagerList"></div>
-      <div class="managerActions">
-        <button class="primary" type="button" id="btnAddLocalAgent">เพิ่ม Agent ในเครื่องนี้</button>
-        <button class="ghost" type="button" id="btnResetAgents">คืนค่าเริ่มต้น</button>
-      </div>
-    </div>
   </div>
 
   <div class="lock" id="pinOverlay">
@@ -123,12 +131,13 @@
       <input class="input" id="pinInput" type="password" inputmode="numeric" autocomplete="off" placeholder="รหัสเข้าใช้งาน">
       <div class="lockActions">
         <button class="primary" type="button" id="btnPin">เข้าใช้งาน</button>
-        <button class="ghost" type="button" onclick="location.href='/admin-dashboard-v2.html'">กลับแดชบอร์ด</button>
+        <button class="ghost" type="button" onclick="location.href='/admin-dashboard-v2.html'">กลับหน้าแอดมิน</button>
       </div>
       <div id="pinError" class="error" style="display:none;margin:12px 0 0"></div>
     </div>
   </div>
-  <script src="/admin-v2-common.js?v=ai-office-v5-pixel-engine"></script>
-  <script src="/admin-ai-office.js?v=ai-office-v5-pixel-engine"></script>
+  <script>console.info("CWF AI Office version ai-office-final-aicwf-20260607");</script>
+  <script src="/admin-v2-common.js?v=ai-office-final-aicwf-20260607"></script>
+  <script src="/admin-ai-office.js?v=ai-office-final-aicwf-20260607"></script>
 </body>
 </html>

@@ -1,5 +1,7 @@
-// CWF PWA cache — AI Office v5 pixel engine
-const CACHE_NAME = "cwf-cache-v106-ai-office-v5-pixel-engine";
+// ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
+// - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
+// - bump cache name เพื่อกันไฟล์ค้าง
+const CACHE_NAME = "cwf-cache-v105-ai-office-final-aicwf-20260607";
 
 const ASSETS = [
   "/",
@@ -40,11 +42,13 @@ const ASSETS = [
   "/admin-work-readiness-v2.js",
 ];
 
+// ติดตั้งแล้ว cache ไฟล์
 self.addEventListener("install", (e) => {
-  self.skipWaiting();
+  self.skipWaiting(); // ✅ ให้ service worker ใหม่ทำงานทันที
   e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(ASSETS)));
 });
 
+// ล้าง cache เก่า
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches
@@ -54,31 +58,46 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+// ✅ ให้หน้าเว็บส่งคำสั่งมาได้ (เช่นให้ SW ใหม่ข้าม waiting)
 self.addEventListener("message", (event) => {
-  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
+  if (!event.data) return;
+  if (event.data && event.data.type === "SKIP_WAITING") {
+    self.skipWaiting();
+  }
 });
 
+// ดึงจาก network ก่อน ถ้าไม่ได้ค่อยใช้ cache (กันไฟล์เก่าค้าง)
 self.addEventListener("fetch", (e) => {
+  // ✅ อย่าแตะ request แบบ POST/PUT/DELETE
   if (e.request.method !== "GET") return;
+
   const url = new URL(e.request.url);
+
+  // ✅ กัน cache API/ข้อมูล dynamic (สำคัญ: ไม่ให้เก็บ response งาน/สถานะไว้ใน cache)
+  // - cache เฉพาะไฟล์ static (html/css/js/png/json) หรือไฟล์ที่อยู่ใน ASSETS
   const isSameOrigin = url.origin === self.location.origin;
   const pathname = url.pathname || "/";
+
   const isAiOffice = (
     pathname === "/admin/ai-office" ||
     pathname === "/admin/ai-office.html" ||
     pathname === "/admin-ai-office.html" ||
     pathname === "/admin-ai-office.js" ||
-    pathname.startsWith("/admin/ai-office/") ||
-    pathname.startsWith("/assets/ai-office-v5/")
+    pathname.startsWith("/assets/ai-office-final/") ||
+    pathname.startsWith("/admin/ai-office/")
   );
   if (isSameOrigin && isAiOffice) {
-    e.respondWith(fetch(e.request, { cache: "no-store" }));
+    e.respondWith(fetch(e.request));
     return;
   }
+
   const isStaticExt = /\.(?:html|css|js|png|jpg|jpeg|webp|svg|ico|json)$/.test(pathname);
   const isAssetListed = ASSETS.includes(pathname) || (pathname === "/" && ASSETS.includes("/"));
   const shouldCache = isSameOrigin && (isStaticExt || isAssetListed || e.request.mode === "navigate");
+
+  // ถ้าไม่ควร cache → ปล่อยผ่าน network ตรง ๆ
   if (!shouldCache) return;
+
   e.respondWith(
     fetch(e.request)
       .then((resp) => {
@@ -87,9 +106,12 @@ self.addEventListener("fetch", (e) => {
         return resp;
       })
       .catch(async () => {
+        // Offline fallback (โดยเฉพาะตอนเปิดหน้าแบบ navigate)
         const cached = await caches.match(e.request);
         if (cached) return cached;
+
         if (e.request.mode === "navigate") {
+          // พยายาม fallback ไปหน้าใช้งานหลักที่ถูก cache ไว้
           return (
             (await caches.match(url.pathname)) ||
             (await caches.match("/customer.html")) ||
@@ -103,6 +125,8 @@ self.addEventListener("fetch", (e) => {
   );
 });
 
+
+// 🔔 Web Push: แจ้งเตือนงานเข้า แม้ปิดหน้า PWA
 self.addEventListener("push", (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; } catch (_) { data = {}; }
