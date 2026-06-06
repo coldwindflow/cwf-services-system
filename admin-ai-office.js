@@ -1,102 +1,75 @@
 (function(){
-  const VERSION = "ai-office-v2-cross-device-4b8e91";
+  const VERSION = "ai-office-v3-real-game-mobile";
 
   const agents = {
     admin: {
-      name: "Admin AI",
-      color: "#1558d6",
+      name: "Admin AI", color: "#1558d6", dark: "#0d3d8d",
       role: "ผู้ช่วยแอดมินสำหรับสรุปงาน ร่างข้อความลูกค้า ข้อความช่าง และแปลภาษา",
-      status: "พร้อมช่วยงานแอดมิน",
-      greeting: "ผมอยู่ที่โต๊ะแอดมิน พร้อมสรุปงานจริงและร่างข้อความให้ใช้งานต่อได้ทันที",
-      thinking: "กำลังตรวจข้อมูลงานจริง",
-      talking: "สรุปให้แล้วครับ",
-      workstation: "adminDesk",
-      home: { x: 22, y: 58 },
+      status: "พร้อมช่วยงานแอดมิน", greeting: "ผมอยู่ที่โต๊ะแอดมิน พร้อมสรุปงานจริงและร่างข้อความให้ใช้ต่อได้ทันที",
+      thinking: "กำลังตรวจข้อมูลงานจริง", talking: "สรุปให้แล้วครับ", workstation: "adminDesk",
+      home: { x: 24, y: 57 },
       commands: ["วันนี้มีงานอะไรบ้าง", "ร่างข้อความยืนยันนัดลูกค้า", "ร่างข้อความแจ้งช่าง", "แปลข้อความลูกค้าให้สุภาพ"],
     },
     sales: {
-      name: "Sales AI",
-      color: "#f0b400",
+      name: "Sales AI", color: "#f0b400", dark: "#ba7b00",
       role: "ผู้ช่วยฝ่ายขายสำหรับปิดการขาย แนะนำแพ็กเกจ และตอบเรื่องราคา",
-      status: "พร้อมช่วยปิดการขาย",
-      greeting: "ผมพร้อมช่วยตอบลูกค้าให้สุภาพ ชัดเจน และเพิ่มโอกาสปิดงาน",
-      thinking: "กำลังดูมุมปิดการขาย",
-      talking: "ได้แนวตอบฝ่ายขายแล้วครับ",
-      workstation: "salesDesk",
-      home: { x: 39, y: 55 },
+      status: "พร้อมช่วยปิดการขาย", greeting: "ผมพร้อมช่วยตอบลูกค้าให้สุภาพ ชัดเจน และเพิ่มโอกาสปิดงาน",
+      thinking: "กำลังดูมุมปิดการขาย", talking: "ได้แนวตอบฝ่ายขายแล้วครับ", workstation: "salesDesk",
+      home: { x: 39, y: 56 },
       commands: ["ลูกค้าบอกว่าแพง ตอบยังไงดี", "แนะนำแพ็กเกจจากงานที่มี", "ช่วยเขียนข้อความปิดการขาย", "ทำไมยอดปิดการขายอาจต่ำ"],
     },
     ops: {
-      name: "Ops AI",
-      color: "#13a46b",
+      name: "Ops AI", color: "#13a46b", dark: "#087445",
       role: "ผู้ควบคุมงานสำหรับคิววันนี้ พรุ่งนี้ งานค้างชำระ งานยังไม่ปิด และจุดเสี่ยง",
-      status: "พร้อมคุมคิวงาน",
-      greeting: "ผมอยู่หน้า Operations Board พร้อมดูคิว งานค้าง และความเสี่ยงจากข้อมูลจริง",
-      thinking: "กำลังตรวจคิวและความเสี่ยง",
-      talking: "เจอประเด็นที่ต้องดูแล้วครับ",
-      workstation: "opsBoard",
-      home: { x: 67, y: 56 },
+      status: "พร้อมคุมคิวงาน", greeting: "ผมอยู่หน้า Operations Board พร้อมดูคิว งานค้าง และความเสี่ยงจากข้อมูลจริง",
+      thinking: "กำลังตรวจคิวและความเสี่ยง", talking: "เจอประเด็นที่ต้องดูแล้วครับ", workstation: "opsBoard",
+      home: { x: 66, y: 55 },
       commands: ["วันนี้มีอะไรต้องระวังไหม", "พรุ่งนี้มีงานอะไรบ้าง", "งานไหนยังไม่จ่าย", "งานไหนยังไม่ปิด"],
     },
     ads: {
-      name: "Ads AI",
-      color: "#ef5aa3",
+      name: "Ads AI", color: "#ef5aa3", dark: "#be2370",
       role: "ผู้ช่วยการตลาดสำหรับ Google Ads, Facebook Ads, TikTok Ads, keyword และพื้นที่บริการ",
-      status: "พร้อมคิดแคมเปญ",
-      greeting: "ผมจะช่วยมองงานจริงให้เป็นไอเดียโฆษณา คำค้น และพื้นที่ยิงแอด",
-      thinking: "กำลังหาโอกาสการตลาด",
-      talking: "ได้ไอเดียแคมเปญแล้วครับ",
-      workstation: "adsDesk",
-      home: { x: 23, y: 82 },
+      status: "พร้อมคิดแคมเปญ", greeting: "ผมจะช่วยมองงานจริงให้เป็นไอเดียโฆษณา คำค้น และพื้นที่ยิงแอด",
+      thinking: "กำลังหาโอกาสการตลาด", talking: "ได้ไอเดียแคมเปญแล้วครับ", workstation: "adsDesk",
+      home: { x: 22, y: 83 },
       commands: ["ช่วยคิด keyword จากงานจริง", "พื้นที่ไหนควรยิงแอด", "เขียนข้อความโฆษณาล้างแอร์", "ไอเดีย TikTok Ads จากงานช่วงนี้"],
     },
     content: {
-      name: "Content AI",
-      color: "#8b5cf6",
+      name: "Content AI", color: "#8b5cf6", dark: "#5b35b8",
       role: "ผู้ช่วยทำคอนเทนต์สำหรับโพสต์ แคปชัน รีวิว และสคริปต์ Reels/TikTok",
-      status: "พร้อมสร้างคอนเทนต์",
-      greeting: "ผมพร้อมเรียบเรียงงานจริงให้เป็นโพสต์ แคปชัน หรือสคริปต์ที่ใช้ได้ทันที",
-      thinking: "กำลังเรียบเรียงคอนเทนต์",
-      talking: "ร่างคอนเทนต์ให้แล้วครับ",
-      workstation: "contentDesk",
+      status: "พร้อมสร้างคอนเทนต์", greeting: "ผมพร้อมเรียบเรียงงานจริงให้เป็นโพสต์ แคปชัน หรือสคริปต์ที่ใช้ได้ทันที",
+      thinking: "กำลังเรียบเรียงคอนเทนต์", talking: "ร่างคอนเทนต์ให้แล้วครับ", workstation: "contentDesk",
       home: { x: 48, y: 84 },
       commands: ["เขียนแคปชันจากงานวันนี้", "ทำสคริปต์ Reels 30 วินาที", "ไอเดียโพสต์จากงานจริง", "ร่างข้อความรีวิวให้ลูกค้า"],
     },
     dev: {
-      name: "Dev AI",
-      color: "#334155",
+      name: "Dev AI", color: "#334155", dark: "#172033",
       role: "ผู้ช่วยระบบสำหรับ prompt สรุปบั๊ก checklist deploy และตรวจความเสี่ยง",
-      status: "พร้อมตรวจระบบ",
-      greeting: "ผมพร้อมช่วยทำเช็กลิสต์ระบบ สรุปความเสี่ยง และเขียน prompt สำหรับงานภายใน",
-      thinking: "กำลังตรวจมุมระบบ",
-      talking: "ได้ข้อสรุประบบแล้วครับ",
-      workstation: "devDesk",
+      status: "พร้อมตรวจระบบ", greeting: "ผมพร้อมช่วยทำเช็กลิสต์ระบบ สรุปความเสี่ยง และเขียน prompt สำหรับงานภายใน",
+      thinking: "กำลังตรวจมุมระบบ", talking: "ได้ข้อสรุประบบแล้วครับ", workstation: "devDesk",
       home: { x: 77, y: 84 },
       commands: ["ทำ checklist ก่อน deploy", "สรุปความเสี่ยงของ AI Office", "ช่วยเขียน prompt สำหรับแอดมิน", "ตรวจว่ามีอะไรห้ามแก้ข้อมูลไหม"],
     },
   };
 
   const zones = {
-    adminDesk: { x: 18, y: 47 },
-    salesDesk: { x: 42, y: 45 },
-    opsBoard: { x: 72, y: 48 },
+    adminDesk: { x: 18, y: 45 },
+    salesDesk: { x: 42, y: 41 },
+    opsBoard: { x: 72, y: 45 },
     adsDesk: { x: 19, y: 75 },
-    contentDesk: { x: 43, y: 80 },
-    devDesk: { x: 78, y: 78 },
-    meetingTable: { x: 59, y: 66 },
+    contentDesk: { x: 43, y: 78 },
+    devDesk: { x: 78, y: 76 },
+    meetingTable: { x: 59, y: 62 },
   };
 
   const state = {
-    pin: "",
-    pinRequired: false,
-    activeAgent: "admin",
-    loadingAsk: false,
-    greeted: new Set(),
-    agentStates: {},
-    lastAnswer: "",
+    pin: "", pinRequired: false, activeAgent: "admin", loadingAsk: false,
+    greeted: new Set(), agentStates: {}, positions: {}, lastAnswer: "",
+    movementFrames: {}, consoleFull: false,
   };
 
   const $ = (id) => document.getElementById(id);
+  const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
 
   function esc(value){
     return String(value == null ? "" : value).replace(/[&<>"']/g, (c) => ({
@@ -104,21 +77,10 @@
     }[c]));
   }
 
-  function money(value){
-    return Number(value || 0).toLocaleString("th-TH", { maximumFractionDigits: 0 });
-  }
-
-  function agentConfig(agentKey){
-    return agents[agentKey] || agents.admin;
-  }
-
-  function agentElement(agentKey){
-    return document.querySelector(`.npc[data-agent="${agentKey}"]`);
-  }
-
-  function activeAgent(){
-    return agentConfig(state.activeAgent);
-  }
+  function money(value){ return Number(value || 0).toLocaleString("th-TH", { maximumFractionDigits: 0 }); }
+  function agentConfig(agentKey){ return agents[agentKey] || agents.admin; }
+  function agentElement(agentKey){ return document.querySelector(`.npc[data-agent="${agentKey}"]`); }
+  function activeAgent(){ return agentConfig(state.activeAgent); }
 
   function refreshAiOfficeCache(){
     try {
@@ -145,12 +107,32 @@
     } catch (_) {}
   }
 
+  function setAgentColor(agentKey){
+    const el = agentElement(agentKey);
+    const agent = agentConfig(agentKey);
+    if (!el) return;
+    el.style.setProperty("--agent-main", agent.color);
+    el.style.setProperty("--agent-dark", agent.dark || agent.color);
+  }
+
   function placeAgent(agentKey, point){
     const el = agentElement(agentKey);
     if (!el || !point) return;
-    el.style.setProperty("--x", `${point.x}%`);
-    el.style.setProperty("--y", `${point.y}%`);
-    el.style.setProperty("--c", agentConfig(agentKey).color);
+    const x = clamp(Number(point.x), 4, 96);
+    const y = clamp(Number(point.y), 12, 92);
+    state.positions[agentKey] = { x, y };
+    el.style.setProperty("--agent-x", `${x}%`);
+    el.style.setProperty("--agent-y", `${y}%`);
+    el.style.zIndex = String(50 + Math.round(y));
+    setAgentColor(agentKey);
+    clampBubble(agentKey, x);
+  }
+
+  function clampBubble(agentKey, x){
+    const el = agentElement(agentKey);
+    if (!el) return;
+    el.classList.toggle("bubbleLeft", x < 18);
+    el.classList.toggle("bubbleRight", x > 82);
   }
 
   function setAgentState(agentKey, nextState){
@@ -166,37 +148,72 @@
     if (bubble) bubble.textContent = message || "";
   }
 
-  function moveAgent(agentKey, targetKey){
-    const target = zones[targetKey] || agentConfig(agentKey).home;
-    setAgentState(agentKey, "walking");
-    placeAgent(agentKey, target);
+  function drawRoute(agentKey, from, to){
+    const layer = $("routeLayer");
+    if (!layer || !from || !to) return;
+    const old = layer.querySelector(`[data-route="${agentKey}"]`);
+    if (old) old.remove();
+    const midX = (from.x + to.x) / 2;
+    const midY = Math.min(from.y, to.y) - 8;
+    const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    path.setAttribute("class", "routeLine");
+    path.setAttribute("data-route", agentKey);
+    path.setAttribute("d", `M ${from.x} ${from.y} Q ${midX} ${midY} ${to.x} ${to.y}`);
+    layer.appendChild(path);
+  }
+
+  function clearRoute(agentKey){
+    const route = $("routeLayer")?.querySelector(`[data-route="${agentKey}"]`);
+    if (route) route.remove();
+  }
+
+  function animateAgent(agentKey, from, to, duration = 880){
+    if (state.movementFrames[agentKey]) cancelAnimationFrame(state.movementFrames[agentKey]);
+    drawRoute(agentKey, from, to);
+    const start = performance.now();
+    const ease = (t) => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
     return new Promise((resolve) => {
-      window.setTimeout(() => {
-        if (state.agentStates[agentKey] === "walking") setAgentState(agentKey, "idle");
-        resolve();
-      }, 880);
+      const step = (now) => {
+        const raw = clamp((now - start) / duration, 0, 1);
+        const t = ease(raw);
+        const wave = Math.sin(t * Math.PI);
+        const x = from.x + (to.x - from.x) * t;
+        const y = from.y + (to.y - from.y) * t - wave * 1.7;
+        placeAgent(agentKey, { x, y });
+        if (raw < 1) state.movementFrames[agentKey] = requestAnimationFrame(step);
+        else {
+          placeAgent(agentKey, to);
+          clearRoute(agentKey);
+          Reflect.deleteProperty(state.movementFrames, agentKey);
+          resolve();
+        }
+      };
+      state.movementFrames[agentKey] = requestAnimationFrame(step);
     });
+  }
+
+  async function moveAgent(agentKey, targetKey){
+    const agent = agentConfig(agentKey);
+    const target = zones[targetKey] || agent.home;
+    const from = state.positions[agentKey] || agent.home;
+    setAgentState(agentKey, "walking");
+    showAgentBubble(agentKey, "กำลังเดินไปที่จุดทำงาน");
+    await animateAgent(agentKey, from, target, 860);
+    if (state.agentStates[agentKey] === "walking") setAgentState(agentKey, "idle");
+  }
+
+  function moveAgentToHome(agentKey){
+    return moveAgent(agentKey, "home");
   }
 
   function moveSelectedAgentToWorkstation(){
     return moveAgent(state.activeAgent, activeAgent().workstation);
   }
 
-  function moveAgentToHome(agentKey){
-    setAgentState(agentKey, "walking");
-    placeAgent(agentKey, agentConfig(agentKey).home);
-    return new Promise((resolve) => {
-      window.setTimeout(() => {
-        if (state.agentStates[agentKey] === "walking") setAgentState(agentKey, "idle");
-        resolve();
-      }, 880);
-    });
-  }
-
   function choosePrimaryAgentForCommand(commandText){
     const text = String(commandText || "").toLowerCase();
     if (/แพง|ปิดการขาย|ราคา|package|แพ็ก/.test(text)) return "sales";
-    if (/ยังไม่จ่าย|ยังไม่ปิด|พรุ่งนี้|ระวัง|คิว|open|unpaid|today|tomorrow/.test(text)) return "ops";
+    if (/ยังไม่จ่าย|ยังไม่ปิด|พรุ่งนี้|วันนี้|ระวัง|คิว|open|unpaid|today|tomorrow/.test(text)) return "ops";
     if (/โพสต์|คอนเทนต์|caption|แคปชัน|reels|tiktok script|รีวิว/.test(text)) return "content";
     if (/แอด|ads|keyword|facebook|google|tiktok ads|พื้นที่/.test(text)) return "ads";
     if (/codex|prompt|deploy|bug|บั๊ก|checklist|ระบบ/.test(text)) return "dev";
@@ -208,12 +225,21 @@
     const text = String(commandText || "").toLowerCase();
     let partner = "";
     let target = "meetingTable";
-    if (agentKey === "ops" && /ยังไม่จ่าย|ยังไม่ปิด|ระวัง/.test(text)) partner = "admin";
-    if (agentKey === "admin" && /วันนี้|พรุ่งนี้|ยังไม่จ่าย|ยังไม่ปิด/.test(text)) { partner = "ops"; target = "opsBoard"; }
-    if (agentKey === "sales" && /คอนเทนต์|โพสต์|แคปชัน/.test(text)) partner = "content";
+    if (agentKey === "ops" && /วันนี้|พรุ่งนี้|ยังไม่จ่าย|ยังไม่ปิด|ระวัง|คิว/.test(text)) partner = "admin";
+    if (agentKey === "admin" && /วันนี้|พรุ่งนี้|ยังไม่จ่าย|ยังไม่ปิด|คิว/.test(text)) { partner = "ops"; target = "opsBoard"; }
+    if (agentKey === "sales" && /ราคา|แพง|ปิดการขาย/.test(text)) partner = "admin";
+    if (agentKey === "ads" && /โพสต์|คอนเทนต์|รีวิว/.test(text)) partner = "content";
+    if (agentKey === "content" && /แอด|ads|keyword/.test(text)) partner = "ads";
     if (partner && partner !== agentKey) {
-      showAgentBubble(partner, "เข้ามาช่วยประสานข้อมูล");
-      moveAgent(partner, target).then(() => setAgentState(partner, "working"));
+      showAgentBubble(partner, "เข้ามาช่วยประสานงาน");
+      moveAgent(partner, target).then(() => {
+        setAgentState(partner, "working");
+        setTimeout(() => {
+          if (partner !== state.activeAgent) {
+            moveAgent(partner, agents[partner].home).then(() => setAgentState(partner, "idle"));
+          }
+        }, 3600);
+      });
     }
   }
 
@@ -267,9 +293,7 @@
     $("statOpen").textContent = money(summary?.open_count);
     $("statUnpaid").textContent = money(summary?.unpaid_count);
     const board = $("boardText");
-    if (board) {
-      board.textContent = `วันนี้ ${money(summary?.today_count)} งาน | พรุ่งนี้ ${money(summary?.tomorrow_count)} งาน | ยังไม่ปิด ${money(summary?.open_count)} | ยังไม่จ่าย ${money(summary?.unpaid_count)}`;
-    }
+    if (board) board.textContent = `วันนี้ ${money(summary?.today_count)} งาน | พรุ่งนี้ ${money(summary?.tomorrow_count)} งาน | ยังไม่ปิด ${money(summary?.open_count)} | ยังไม่จ่าย ${money(summary?.unpaid_count)}`;
   }
 
   function updateConsoleAgent(){
@@ -344,7 +368,15 @@
   }
 
   function expandConsole(){
-    $("commandConsole")?.classList.add("expanded");
+    state.consoleFull = true;
+    $("commandConsole")?.classList.add("full");
+    $("commandConsole")?.classList.remove("peek");
+  }
+
+  function peekConsole(){
+    state.consoleFull = false;
+    $("commandConsole")?.classList.add("peek");
+    $("commandConsole")?.classList.remove("full");
   }
 
   function selectAgent(agentKey, userTriggered = true, silent = false){
@@ -355,7 +387,7 @@
     showAgentBubble(key, agentConfig(key).greeting);
     if (!state.agentStates[key]) setAgentState(key, "idle");
     if (userTriggered) {
-      expandConsole();
+      peekConsole();
       moveAgent(key, agentConfig(key).workstation).then(() => setAgentState(key, "working"));
     }
     if (!silent && (userTriggered || !state.greeted.has(key))) {
@@ -488,7 +520,7 @@
     document.querySelectorAll(".npc").forEach((el) => {
       el.addEventListener("click", () => selectAgent(el.dataset.agent, true));
     });
-    $("consoleToggle")?.addEventListener("click", () => $("commandConsole")?.classList.toggle("expanded"));
+    $("consoleToggle")?.addEventListener("click", () => state.consoleFull ? peekConsole() : expandConsole());
     $("btnRefresh")?.addEventListener("click", refreshAll);
     $("btnPhone")?.addEventListener("click", searchPhone);
     $("phoneInput")?.addEventListener("focus", expandConsole);
@@ -519,6 +551,7 @@
       }
     });
     $("pinInput")?.addEventListener("keydown", (e) => { if (e.key === "Enter") $("btnPin")?.click(); });
+    window.addEventListener("resize", () => Object.keys(state.positions).forEach((key) => placeAgent(key, state.positions[key])));
   }
 
   window.setAgentState = setAgentState;
