@@ -12,36 +12,14 @@
   <link rel="stylesheet" href="/style.css">
   <style>
     :root{
-      --ink:#07152f;
-      --muted:#63708a;
-      --blue:#1558d6;
-      --navy:#06163d;
-      --gold:#ffcc00;
-      --green:#13a46b;
-      --red:#d94141;
-      --card:#ffffff;
-      --line:rgba(15,23,42,.1);
-      --shadow:0 18px 48px rgba(7,21,47,.12);
-      --soft:0 10px 26px rgba(7,21,47,.08);
+      --ink:#07152f;--muted:#63708a;--blue:#1558d6;--navy:#06163d;--gold:#ffcc00;--line:rgba(15,23,42,.1);
+      --shadow:0 18px 48px rgba(7,21,47,.12);--soft:0 10px 26px rgba(7,21,47,.08);--agent-color:#1558d6;
     }
     *{box-sizing:border-box}
     html,body{max-width:100%;overflow-x:hidden}
-    body{
-      margin:0;color:var(--ink);
-      font-family:Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background:
-        radial-gradient(760px 360px at 12% -90px, rgba(255,204,0,.28), transparent 62%),
-        radial-gradient(620px 360px at 100% 10px, rgba(57,132,255,.25), transparent 60%),
-        linear-gradient(180deg,#06163d 0,#0b317e 238px,#eef4fb 239px,#f5f8fd 100%);
-    }
+    body{margin:0;color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:radial-gradient(760px 360px at 12% -90px,rgba(255,204,0,.28),transparent 62%),radial-gradient(620px 360px at 100% 10px,rgba(57,132,255,.25),transparent 60%),linear-gradient(180deg,#06163d 0,#0b317e 238px,#eef4fb 239px,#f5f8fd 100%)}
     .officeWrap{width:min(1240px,calc(100vw - 24px));margin:0 auto;padding:78px 0 112px}
-    .hero{
-      position:relative;overflow:hidden;border-radius:28px;padding:20px;color:#fff;
-      background:
-        radial-gradient(360px 240px at 88% 10%,rgba(255,204,0,.22),transparent 64%),
-        linear-gradient(135deg,rgba(6,22,61,.98),rgba(11,49,126,.96) 56%,rgba(21,88,214,.92));
-      border:1px solid rgba(255,255,255,.13);box-shadow:0 28px 72px rgba(3,7,18,.25)
-    }
+    .hero{position:relative;overflow:hidden;border-radius:28px;padding:20px;color:#fff;background:radial-gradient(360px 240px at 88% 10%,rgba(255,204,0,.22),transparent 64%),linear-gradient(135deg,rgba(6,22,61,.98),rgba(11,49,126,.96) 56%,rgba(21,88,214,.92));border:1px solid rgba(255,255,255,.13);box-shadow:0 28px 72px rgba(3,7,18,.25)}
     .heroTop{display:flex;justify-content:space-between;align-items:flex-start;gap:16px}
     .kicker{display:inline-flex;align-items:center;gap:8px;padding:7px 11px;border-radius:999px;background:rgba(255,255,255,.12);font-size:12px;font-weight:900;color:rgba(255,255,255,.88)}
     h1{margin:12px 0 0;font-size:clamp(30px,5vw,50px);line-height:1;letter-spacing:0;font-weight:1000}
@@ -49,92 +27,33 @@
     .readOnly{flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:11px 13px;border-radius:16px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.16);font-size:12px;font-weight:950}
     .dot{width:9px;height:9px;border-radius:999px;background:#54d68a;box-shadow:0 0 0 5px rgba(84,214,138,.14)}
     .stats{display:flex;gap:12px;margin-top:18px}
-    .stat{
-      flex:1 1 0;min-width:0;padding:15px;border-radius:20px;background:rgba(255,255,255,.12);
-      border:1px solid rgba(255,255,255,.14);box-shadow:0 16px 32px rgba(0,0,0,.13);backdrop-filter:blur(10px)
-    }
-    .stat span{display:block;color:rgba(255,255,255,.76);font-size:12px;font-weight:850}
-    .stat b{display:block;margin-top:4px;font-size:28px;line-height:1;font-weight:1000;color:#fff}
-    .workspace{display:flex;gap:16px;margin-top:16px;align-items:flex-start}
-    .scenePanel,.workPanel{background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);overflow:hidden}
-    .scenePanel{flex:1.12 1 0;min-width:0}.workPanel{flex:.88 1 340px;min-width:0}
-    .panelHead{padding:16px 16px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}
-    .panelHead h2{margin:0;font-size:16px;line-height:1.2;font-weight:1000}
-    .panelHead p{margin:4px 0 0;color:var(--muted);font-size:12px;font-weight:760}
-    .scene{
-      position:relative;min-height:590px;margin:14px;border-radius:22px;overflow:hidden;
-      background:
-        linear-gradient(180deg,rgba(255,255,255,.84) 0 49%,transparent 49%),
-        linear-gradient(135deg,#dbeafe 0 35%,#f8fbff 35% 100%);
-      border:1px solid rgba(15,23,42,.08)
-    }
-    .scene:before{
-      content:"";position:absolute;left:0;right:0;bottom:0;height:48%;
-      background:
-        linear-gradient(90deg,rgba(8,36,92,.05) 1px,transparent 1px) 0 0/46px 46px,
-        linear-gradient(0deg,rgba(8,36,92,.05) 1px,transparent 1px) 0 0/46px 46px,
-        linear-gradient(180deg,#e7edf7,#d8e5f5);
-      transform:skewY(-2deg);transform-origin:left top
-    }
-    .window{position:absolute;top:30px;left:28px;width:170px;height:104px;border-radius:18px;background:linear-gradient(180deg,#9fd7ff,#e8f8ff);border:8px solid #fff;box-shadow:var(--soft)}
-    .window:after{content:"";position:absolute;left:50%;top:0;bottom:0;width:6px;background:#fff;transform:translateX(-50%)}
-    .board{position:absolute;top:34px;right:28px;width:205px;min-height:98px;border-radius:18px;background:#092765;color:#fff;padding:14px;border:1px solid rgba(255,255,255,.2);box-shadow:var(--soft)}
-    .board b{display:block;font-size:13px}.board span{display:block;margin-top:8px;font-size:12px;color:rgba(255,255,255,.78);line-height:1.45}
-    .rug{position:absolute;left:50%;bottom:32px;width:54%;height:100px;border-radius:999px;background:radial-gradient(ellipse,#bed8ff,#8fb9f5);transform:translateX(-50%);opacity:.8}
-    .agent{
-      position:absolute;width:150px;min-height:178px;border:0;background:transparent;padding:0;cursor:pointer;text-align:center;color:var(--ink);
-      transform:translate(-50%,-50%);transition:transform .16s ease, filter .16s ease
-    }
-    .agent:hover,.agent.active{transform:translate(-50%,-54%);filter:drop-shadow(0 18px 22px rgba(7,21,47,.16))}
-    .agent.active .body{box-shadow:0 0 0 4px rgba(255,204,0,.5),0 18px 34px rgba(7,21,47,.2)}
-    .agent .body{position:relative;width:86px;height:96px;margin:0 auto;border-radius:28px 28px 24px 24px;background:var(--agent);box-shadow:var(--soft);border:3px solid rgba(255,255,255,.86)}
-    .agent .body:before{content:"";position:absolute;left:50%;top:-48px;width:66px;height:66px;border-radius:24px;background:linear-gradient(180deg,#fff7df,#f4be7a);transform:translateX(-50%);border:3px solid rgba(255,255,255,.95);box-shadow:0 8px 18px rgba(7,21,47,.1)}
-    .agent .body:after{content:"";position:absolute;left:50%;top:-24px;width:30px;height:11px;border-radius:999px;background:#172554;transform:translateX(-50%);box-shadow:-18px -2px 0 -3px #172554,18px -2px 0 -3px #172554}
-    .desk{width:118px;height:34px;margin:-16px auto 0;border-radius:12px;background:linear-gradient(180deg,#9b6a37,#74461f);box-shadow:0 14px 24px rgba(78,45,17,.18)}
-    .label{margin:9px auto 0;width:min(150px,100%);border-radius:16px;background:rgba(255,255,255,.92);border:1px solid var(--line);padding:8px;box-shadow:var(--soft)}
-    .label b{display:block;font-size:13px}.label span{display:block;margin-top:2px;font-size:11px;color:var(--muted);font-weight:800;line-height:1.25}
-    .status{display:inline-flex;margin-top:6px;padding:4px 7px;border-radius:999px;background:#e9f8ef;color:#087445;font-size:10px;font-weight:1000}
-    .admin{--agent:#1558d6;left:18%;top:47%}.sales{--agent:#f0b400;left:43%;top:44%}.ops{--agent:#13a46b;left:70%;top:47%}
-    .ads{--agent:#ef5aa3;left:23%;top:76%}.content{--agent:#8b5cf6;left:52%;top:75%}.dev{--agent:#334155;left:78%;top:75%}
-    .refresh,.ghost,.primary,.chip,.copy{
-      appearance:none;border:0;cursor:pointer;font:inherit;font-weight:950;transition:transform .14s ease,box-shadow .14s ease,opacity .14s ease
-    }
-    .refresh:active,.ghost:active,.primary:active,.chip:active,.copy:active{transform:translateY(1px)}
-    .refresh,.ghost{padding:10px 12px;border-radius:14px;color:#0d3d8d;background:#edf5ff;border:1px solid rgba(21,88,214,.12)}
-    .primary{padding:12px 15px;border-radius:15px;color:#07152f;background:linear-gradient(135deg,#fff3ad,#ffcc00 55%,#f5b400);box-shadow:0 12px 24px rgba(185,132,0,.18)}
-    .workPanel{display:flex;flex-direction:column;min-height:650px}
-    .agentCard{padding:14px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center}
-    .agentAvatar{width:58px;height:58px;border-radius:20px;background:var(--selected-agent,#1558d6);box-shadow:var(--soft);border:3px solid #fff}
-    .agentCard b{display:block;font-size:16px}.agentCard span{display:block;margin-top:3px;color:var(--muted);font-size:12px;font-weight:780;line-height:1.4}
-    .quick{display:flex;flex-wrap:wrap;gap:8px;padding:13px;border-bottom:1px solid var(--line)}
-    .chip{padding:10px 12px;border-radius:999px;background:#edf5ff;color:#0d3d8d;border:1px solid rgba(21,88,214,.1);font-size:12px}
-    .phoneSearch{display:flex;gap:8px;padding:13px;border-bottom:1px solid var(--line)}
-    .input,.ask{
-      width:100%;border:1px solid rgba(15,23,42,.12);background:#fff;border-radius:15px;padding:12px 13px;color:var(--ink);font:inherit;font-weight:760;outline:none
-    }
-    .input:focus,.ask:focus{border-color:rgba(21,88,214,.42);box-shadow:0 0 0 4px rgba(21,88,214,.1)}
-    .messages{flex:1;min-height:330px;max-height:560px;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px;background:linear-gradient(180deg,#f8fbff,#eef5ff)}
-    .msg{max-width:94%;border-radius:18px;padding:13px 14px;line-height:1.58;font-size:14px;white-space:pre-wrap;box-shadow:var(--soft)}
-    .msg.user{align-self:flex-end;background:#0d3d8d;color:#fff;border-bottom-right-radius:7px}
-    .msg.ai{align-self:flex-start;background:#fff;color:var(--ink);border:1px solid var(--line);border-bottom-left-radius:7px}
-    .composer{padding:12px;border-top:1px solid var(--line);background:#fff;display:flex;gap:9px}
-    .ask{min-height:48px;max-height:130px;resize:vertical}
-    .copyRow{display:flex;justify-content:flex-end;margin-top:10px}.copy{padding:8px 10px;border-radius:12px;background:#edf5ff;color:#0d3d8d;font-size:12px}
-    .error{padding:12px;color:#9b2323;background:#fff0f0;border:1px solid #ffd7d7;margin:12px;border-radius:16px;font-weight:800;line-height:1.5}
-    .lock{position:fixed;inset:0;z-index:5000;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(4,14,38,.72);backdrop-filter:blur(18px)}
-    .lock.show{display:flex}.lockBox{width:min(430px,100%);background:#fff;border-radius:24px;padding:20px;box-shadow:0 30px 90px rgba(0,0,0,.28)}
-    .lockBox h2{margin:0 0 8px;font-size:22px}.lockBox p{margin:0 0 14px;color:var(--muted);font-weight:750;line-height:1.5}.lockActions{display:flex;gap:9px;margin-top:10px}
-    @media (max-width:980px){
-      .heroTop{flex-direction:column}.readOnly{align-self:flex-start}.stats{flex-wrap:wrap}.stat{flex:1 1 calc(50% - 8px)}.workspace{flex-direction:column}.scenePanel,.workPanel{width:100%}
-      .workPanel{min-height:620px}.scene{min-height:560px}
-    }
-    @media (max-width:620px){
-      .officeWrap{width:min(100vw - 16px,1240px);padding-top:72px}.hero,.scenePanel,.workPanel{border-radius:20px}.hero{padding:16px}
-      .scene{min-height:740px;margin:10px}.board{left:20px;right:20px;top:145px;width:auto}.window{left:18px;top:24px;width:145px;height:92px}
-      .agent{width:132px}.agent .body{width:78px;height:86px}.agent .body:before{width:58px;height:58px;top:-43px}
-      .admin{left:29%;top:39%}.sales{left:72%;top:39%}.ops{left:29%;top:58%}.ads{left:72%;top:58%}.content{left:29%;top:78%}.dev{left:72%;top:78%}
-      .phoneSearch,.composer{flex-direction:column}.quick{flex-wrap:nowrap;overflow:auto}.chip{white-space:nowrap}.msg{max-width:100%}
-    }
+    .stat{flex:1 1 0;min-width:0;padding:15px;border-radius:20px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.14);box-shadow:0 16px 32px rgba(0,0,0,.13);backdrop-filter:blur(10px)}
+    .stat span{display:block;color:rgba(255,255,255,.76);font-size:12px;font-weight:850}.stat b{display:block;margin-top:4px;font-size:28px;line-height:1;font-weight:1000;color:#fff}
+    .workspace{display:flex;gap:16px;margin-top:16px;align-items:flex-start}.scenePanel,.workPanel{background:rgba(255,255,255,.94);border:1px solid var(--line);border-radius:24px;box-shadow:var(--shadow);overflow:hidden}.scenePanel{flex:1.12 1 0;min-width:0}.workPanel{flex:.88 1 340px;min-width:0}
+    .panelHead{padding:16px 16px 12px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:12px}.panelHead h2{margin:0;font-size:16px;line-height:1.2;font-weight:1000}.panelHead p{margin:4px 0 0;color:var(--muted);font-size:12px;font-weight:760}
+    .scene{position:relative;min-height:610px;margin:14px;border-radius:22px;overflow:hidden;background:linear-gradient(180deg,rgba(255,255,255,.86) 0 48%,transparent 48%),linear-gradient(135deg,#dbeafe 0 35%,#f8fbff 35% 100%);border:1px solid rgba(15,23,42,.08)}
+    .scene:before{content:"";position:absolute;left:0;right:0;bottom:0;height:48%;background:linear-gradient(90deg,rgba(8,36,92,.05) 1px,transparent 1px) 0 0/46px 46px,linear-gradient(0deg,rgba(8,36,92,.05) 1px,transparent 1px) 0 0/46px 46px,linear-gradient(180deg,#e7edf7,#d8e5f5);transform:skewY(-2deg);transform-origin:left top}
+    .window{position:absolute;top:30px;left:28px;width:170px;height:104px;border-radius:18px;background:linear-gradient(180deg,#9fd7ff,#e8f8ff);border:8px solid #fff;box-shadow:var(--soft)}.window:after{content:"";position:absolute;left:50%;top:0;bottom:0;width:6px;background:#fff;transform:translateX(-50%)}
+    .shelf{position:absolute;left:235px;top:52px;width:210px;height:78px;border-radius:18px;background:rgba(255,255,255,.72);border:1px solid rgba(15,23,42,.08);box-shadow:var(--soft)}.shelf:before{content:"";position:absolute;left:18px;right:18px;top:36px;height:8px;border-radius:999px;background:#d59b4b;box-shadow:0 -18px 0 #f6c453,52px -18px 0 #1558d6,104px -18px 0 #13a46b,150px -18px 0 #ef5aa3}
+    .board{position:absolute;top:34px;right:28px;width:205px;min-height:98px;border-radius:18px;background:#092765;color:#fff;padding:14px;border:1px solid rgba(255,255,255,.2);box-shadow:var(--soft)}.board b{display:block;font-size:13px}.board span{display:block;margin-top:8px;font-size:12px;color:rgba(255,255,255,.78);line-height:1.45}
+    .plant{position:absolute;left:34px;bottom:92px;width:58px;height:104px;border-radius:14px;background:linear-gradient(180deg,#0f9f6e,#0d7d59);box-shadow:var(--soft)}.plant:before{content:"";position:absolute;left:-14px;right:-14px;top:-34px;height:62px;border-radius:999px;background:radial-gradient(circle at 28% 55%,#37c980 0 22%,transparent 24%),radial-gradient(circle at 58% 28%,#1fa46d 0 28%,transparent 30%),radial-gradient(circle at 76% 62%,#69d694 0 23%,transparent 25%)}
+    .rug{position:absolute;left:50%;bottom:32px;width:54%;height:100px;border-radius:999px;background:radial-gradient(ellipse,#bed8ff,#8fb9f5);transform:translateX(-50%);opacity:.8}.floorGlow{position:absolute;inset:auto 10% 16px 10%;height:180px;border-radius:999px;background:radial-gradient(ellipse,rgba(255,204,0,.18),transparent 68%);pointer-events:none}
+    @keyframes npcFloat{0%,100%{margin-top:0}50%{margin-top:-7px}}@keyframes npcBreathe{0%,100%{transform:scaleY(1)}50%{transform:scaleY(1.035)}}@keyframes npcBlink{0%,88%,100%{opacity:1;transform:translateX(-50%) scaleY(1)}92%{opacity:.35;transform:translateX(-50%) scaleY(.25)}}@keyframes npcPulse{0%,100%{box-shadow:0 0 0 4px rgba(255,204,0,.46),0 18px 34px rgba(7,21,47,.2)}50%{box-shadow:0 0 0 8px rgba(255,204,0,.16),0 22px 38px rgba(7,21,47,.24)}}@keyframes statusPulse{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(1.05);opacity:.78}}@keyframes talkPop{0%,100%{transform:translateX(-50%) translateY(0)}50%{transform:translateX(-50%) translateY(-4px)}}@keyframes thinkDots{0%,100%{content:""}33%{content:"."}66%{content:".."}}
+    .agent{position:absolute;width:150px;min-height:178px;border:0;background:transparent;padding:0;cursor:pointer;text-align:center;color:var(--ink);transform:translate(-50%,-50%);transition:transform .16s ease,filter .16s ease;animation:npcFloat 4.8s ease-in-out infinite;z-index:4}.agent:hover,.agent.active{transform:translate(-50%,-54%);filter:drop-shadow(0 18px 22px rgba(7,21,47,.16))}.agent.tapped{transform:translate(-50%,-58%) scale(1.03)}
+    .agent .body{position:relative;width:86px;height:96px;margin:0 auto;border-radius:28px 28px 24px 24px;background:var(--agent);box-shadow:var(--soft);border:3px solid rgba(255,255,255,.86);transform-origin:bottom center;animation:npcBreathe 3.6s ease-in-out infinite}.agent.active .body{animation:npcBreathe 2.4s ease-in-out infinite,npcPulse 2.8s ease-in-out infinite}.agent.thinking .body{filter:saturate(1.05);box-shadow:0 0 0 5px rgba(21,88,214,.18),0 18px 34px rgba(7,21,47,.2)}.agent.talking .body{animation:npcBreathe 1.1s ease-in-out infinite,npcPulse 1.8s ease-in-out infinite}
+    .agent .body:before{content:"";position:absolute;left:50%;top:-48px;width:66px;height:66px;border-radius:24px;background:linear-gradient(180deg,#fff7df,#f4be7a);transform:translateX(-50%);border:3px solid rgba(255,255,255,.95);box-shadow:0 8px 18px rgba(7,21,47,.1)}.agent .body:after{content:"";position:absolute;left:50%;top:-24px;width:30px;height:11px;border-radius:999px;background:#172554;transform:translateX(-50%);box-shadow:-18px -2px 0 -3px #172554,18px -2px 0 -3px #172554;animation:npcBlink 5.2s ease-in-out infinite}
+    .desk{width:118px;height:34px;margin:-16px auto 0;border-radius:12px;background:linear-gradient(180deg,#9b6a37,#74461f);box-shadow:0 14px 24px rgba(78,45,17,.18)}.computer{display:block;width:54px;height:34px;margin:-44px auto 10px;border-radius:8px;background:linear-gradient(180deg,#0b2e6d,#07152f);border:3px solid rgba(255,255,255,.88);box-shadow:0 8px 16px rgba(7,21,47,.18);position:relative;z-index:2}.computer:after{content:"";position:absolute;left:17px;right:17px;bottom:-11px;height:9px;border-radius:0 0 8px 8px;background:#475569}
+    .label{margin:9px auto 0;width:min(150px,100%);border-radius:16px;background:rgba(255,255,255,.92);border:1px solid var(--line);padding:8px;box-shadow:var(--soft)}.label b{display:block;font-size:13px}.label span{display:block;margin-top:2px;font-size:11px;color:var(--muted);font-weight:800;line-height:1.25}.status{display:inline-flex;margin-top:6px;padding:4px 7px;border-radius:999px;background:#e9f8ef;color:#087445;font-size:10px;font-weight:1000;animation:statusPulse 2.8s ease-in-out infinite}
+    .agentBubble{position:absolute;left:50%;top:-86px;width:184px;min-height:46px;padding:10px 12px;border-radius:16px 16px 16px 6px;background:#fff;color:var(--ink);border:1px solid rgba(15,23,42,.1);box-shadow:0 16px 32px rgba(7,21,47,.16);font-size:12px;font-weight:850;line-height:1.35;text-align:left;opacity:0;pointer-events:none;transform:translateX(-50%) translateY(8px);transition:opacity .18s ease,transform .18s ease;z-index:10}.agentBubble:after{content:"";position:absolute;left:24px;bottom:-8px;width:14px;height:14px;background:#fff;border-right:1px solid rgba(15,23,42,.1);border-bottom:1px solid rgba(15,23,42,.1);transform:rotate(45deg)}.agent.active .agentBubble,.agent.thinking .agentBubble,.agent.talking .agentBubble{opacity:1;transform:translateX(-50%) translateY(0)}.agent.talking .agentBubble{animation:talkPop 1.4s ease-in-out infinite}.agent.thinking .agentBubble:before{content:"";display:inline-block;width:18px;color:var(--blue);font-weight:1000;animation:thinkDots 1.1s steps(1,end) infinite}
+    .admin{--agent:#1558d6;left:18%;top:47%}.sales{--agent:#f0b400;left:43%;top:44%}.ops{--agent:#13a46b;left:70%;top:47%}.ads{--agent:#ef5aa3;left:23%;top:76%}.content{--agent:#8b5cf6;left:52%;top:75%}.dev{--agent:#334155;left:78%;top:75%}
+    .refresh,.ghost,.primary,.chip,.copy{appearance:none;border:0;cursor:pointer;font:inherit;font-weight:950;transition:transform .14s ease,box-shadow .14s ease,opacity .14s ease}.refresh:active,.ghost:active,.primary:active,.chip:active,.copy:active{transform:translateY(1px)}.refresh,.ghost{padding:10px 12px;border-radius:14px;color:#0d3d8d;background:#edf5ff;border:1px solid rgba(21,88,214,.12)}.primary{padding:12px 15px;border-radius:15px;color:#07152f;background:linear-gradient(135deg,#fff3ad,#ffcc00 55%,#f5b400);box-shadow:0 12px 24px rgba(185,132,0,.18)}
+    .workPanel{display:flex;flex-direction:column;min-height:650px}.agentCard{padding:14px;border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:center;background:linear-gradient(180deg,#fff,#f8fbff)}.agentAvatar{width:58px;height:58px;border-radius:20px;background:var(--selected-agent,#1558d6);box-shadow:var(--soft);border:3px solid #fff;position:relative;animation:npcBreathe 2.8s ease-in-out infinite}.agentAvatar:after{content:"";position:absolute;left:14px;right:14px;top:25px;height:7px;border-radius:999px;background:#172554;box-shadow:-13px -1px 0 -2px #172554,13px -1px 0 -2px #172554}.agentCard b{display:block;font-size:16px}.agentCard span{display:block;margin-top:3px;color:var(--muted);font-size:12px;font-weight:780;line-height:1.4}.consoleStatus{display:inline-flex;align-items:center;gap:7px;margin-top:7px;padding:7px 10px;border-radius:999px;background:#eef6ff;color:#0d3d8d;font-size:11px;font-style:normal;font-weight:1000}.consoleStatus:before{content:"";width:8px;height:8px;border-radius:999px;background:var(--selected-agent,#1558d6);animation:statusPulse 1.6s ease-in-out infinite}
+    .quick{display:flex;flex-wrap:wrap;gap:8px;padding:13px;border-bottom:1px solid var(--line)}.chip{padding:10px 12px;border-radius:999px;background:#edf5ff;color:#0d3d8d;border:1px solid rgba(21,88,214,.1);font-size:12px}.phoneSearch{display:flex;gap:8px;padding:13px;border-bottom:1px solid var(--line)}.input,.ask{width:100%;border:1px solid rgba(15,23,42,.12);background:#fff;border-radius:15px;padding:12px 13px;color:var(--ink);font:inherit;font-weight:760;outline:none}.input:focus,.ask:focus{border-color:rgba(21,88,214,.42);box-shadow:0 0 0 4px rgba(21,88,214,.1)}
+    .messages{flex:1;min-height:330px;max-height:560px;overflow:auto;padding:14px;display:flex;flex-direction:column;gap:12px;background:linear-gradient(180deg,#f8fbff,#eef5ff)}.msg{max-width:94%;border-radius:18px;padding:13px 14px;line-height:1.58;font-size:14px;white-space:pre-wrap;box-shadow:var(--soft)}.msg.user{align-self:flex-end;background:#0d3d8d;color:#fff;border-bottom-right-radius:7px}.msg.ai{align-self:flex-start;background:#fff;color:var(--ink);border:1px solid var(--line);border-bottom-left-radius:7px}.composer{padding:12px;border-top:1px solid var(--line);background:#fff;display:flex;gap:9px}.ask{min-height:48px;max-height:130px;resize:vertical}.copyRow{display:flex;justify-content:flex-end;margin-top:10px}.copy{padding:8px 10px;border-radius:12px;background:#edf5ff;color:#0d3d8d;font-size:12px}.thinkingLine{display:inline-flex;gap:5px;align-items:center}.thinkingLine i{display:block;width:7px;height:7px;border-radius:999px;background:var(--blue);animation:statusPulse .9s ease-in-out infinite}.thinkingLine i:nth-child(2){animation-delay:.15s}.thinkingLine i:nth-child(3){animation-delay:.3s}
+    .error{padding:12px;color:#9b2323;background:#fff0f0;border:1px solid #ffd7d7;margin:12px;border-radius:16px;font-weight:800;line-height:1.5}.lock{position:fixed;inset:0;z-index:5000;display:none;align-items:center;justify-content:center;padding:18px;background:rgba(4,14,38,.72);backdrop-filter:blur(18px)}.lock.show{display:flex}.lockBox{width:min(430px,100%);background:#fff;border-radius:24px;padding:20px;box-shadow:0 30px 90px rgba(0,0,0,.28)}.lockBox h2{margin:0 0 8px;font-size:22px}.lockBox p{margin:0 0 14px;color:var(--muted);font-weight:750;line-height:1.5}.lockActions{display:flex;gap:9px;margin-top:10px}
+    @media (max-width:980px){.heroTop{flex-direction:column}.readOnly{align-self:flex-start}.stats{flex-wrap:wrap}.stat{flex:1 1 calc(50% - 8px)}.workspace{flex-direction:column}.scenePanel,.workPanel{width:100%}.workPanel{min-height:620px}.scene{min-height:580px}}
+    @media (max-width:620px){.officeWrap{width:min(100vw - 16px,1240px);padding-top:72px}.hero,.scenePanel,.workPanel{border-radius:20px}.hero{padding:16px}.scene{min-height:760px;margin:10px}.board{left:20px;right:20px;top:145px;width:auto}.window{left:18px;top:24px;width:145px;height:92px}.agent{width:132px}.agent .body{width:78px;height:86px}.agent .body:before{width:58px;height:58px;top:-43px}.agentBubble{width:136px;top:-78px;font-size:11px;padding:8px 9px}.admin{left:29%;top:39%}.sales{left:72%;top:39%}.ops{left:29%;top:58%}.ads{left:72%;top:58%}.content{left:29%;top:78%}.dev{left:72%;top:78%}.phoneSearch,.composer{flex-direction:column}.quick{flex-wrap:nowrap;overflow:auto}.chip{white-space:nowrap}.msg{max-width:100%}.plant,.shelf{display:none}}
+    @media (prefers-reduced-motion:reduce){.agent,.agent .body,.agent .body:after,.agent.active .body,.agent.talking .body,.status,.consoleStatus:before,.thinkingLine i{animation:none!important}}
   </style>
 </head>
 <body>
@@ -155,60 +74,36 @@
         <div class="stat"><span>งานยังไม่จ่าย</span><b id="statUnpaid">-</b></div>
       </div>
     </section>
-
     <main class="workspace">
       <section class="scenePanel">
         <div class="panelHead">
-          <div>
-            <h2>ออฟฟิศ AI</h2>
-            <p>แตะตัวละครเพื่อเลือกผู้ช่วยเฉพาะงาน</p>
-          </div>
+          <div><h2>ออฟฟิศ AI</h2><p>แตะตัวละครเพื่อเลือกผู้ช่วยเฉพาะงาน</p></div>
           <button class="refresh" type="button" id="btnRefresh">โหลดข้อมูลใหม่</button>
         </div>
         <div class="scene" id="officeScene">
-          <div class="window"></div>
+          <div class="window"></div><div class="shelf"></div>
           <div class="board"><b>สถานะวันนี้</b><span id="boardText">กำลังโหลดข้อมูลจริงจากระบบ</span></div>
-          <div class="rug"></div>
-          <button class="agent admin active" type="button" data-agent="admin">
-            <span class="body"></span><span class="desk"></span><span class="label"><b>Admin AI</b><span>สรุปงานและข้อความ</span><i class="status">พร้อมช่วย</i></span>
-          </button>
-          <button class="agent sales" type="button" data-agent="sales">
-            <span class="body"></span><span class="desk"></span><span class="label"><b>Sales AI</b><span>ปิดการขายและราคา</span><i class="status">พร้อมช่วย</i></span>
-          </button>
-          <button class="agent ops" type="button" data-agent="ops">
-            <span class="body"></span><span class="desk"></span><span class="label"><b>Ops AI</b><span>คุมงานและความเสี่ยง</span><i class="status">พร้อมช่วย</i></span>
-          </button>
-          <button class="agent ads" type="button" data-agent="ads">
-            <span class="body"></span><span class="desk"></span><span class="label"><b>Ads AI</b><span>โฆษณาและพื้นที่บริการ</span><i class="status">พร้อมช่วย</i></span>
-          </button>
-          <button class="agent content" type="button" data-agent="content">
-            <span class="body"></span><span class="desk"></span><span class="label"><b>Content AI</b><span>โพสต์และสคริปต์</span><i class="status">พร้อมช่วย</i></span>
-          </button>
-          <button class="agent dev" type="button" data-agent="dev">
-            <span class="body"></span><span class="desk"></span><span class="label"><b>Dev AI</b><span>ระบบและเช็กลิสต์</span><i class="status">พร้อมช่วย</i></span>
-          </button>
+          <div class="rug"></div><div class="plant"></div><div class="floorGlow"></div>
+          <button class="agent admin active" type="button" data-agent="admin"><span class="agentBubble">พร้อมช่วยสรุปงานและร่างข้อความ</span><span class="body"></span><span class="desk"></span><span class="computer"></span><span class="label"><b>Admin AI</b><span>สรุปงานและข้อความ</span><i class="status">พร้อมช่วย</i></span></button>
+          <button class="agent sales" type="button" data-agent="sales"><span class="agentBubble">พร้อมช่วยปิดการขายแบบมืออาชีพ</span><span class="body"></span><span class="desk"></span><span class="computer"></span><span class="label"><b>Sales AI</b><span>ปิดการขายและราคา</span><i class="status">พร้อมช่วย</i></span></button>
+          <button class="agent ops" type="button" data-agent="ops"><span class="agentBubble">พร้อมดูคิวและจุดเสี่ยงวันนี้</span><span class="body"></span><span class="desk"></span><span class="computer"></span><span class="label"><b>Ops AI</b><span>คุมงานและความเสี่ยง</span><i class="status">พร้อมช่วย</i></span></button>
+          <button class="agent ads" type="button" data-agent="ads"><span class="agentBubble">พร้อมช่วยคิดแคมเปญจากงานจริง</span><span class="body"></span><span class="desk"></span><span class="computer"></span><span class="label"><b>Ads AI</b><span>โฆษณาและพื้นที่บริการ</span><i class="status">พร้อมช่วย</i></span></button>
+          <button class="agent content" type="button" data-agent="content"><span class="agentBubble">พร้อมทำคอนเทนต์ให้แบรนด์ดูดี</span><span class="body"></span><span class="desk"></span><span class="computer"></span><span class="label"><b>Content AI</b><span>โพสต์และสคริปต์</span><i class="status">พร้อมช่วย</i></span></button>
+          <button class="agent dev" type="button" data-agent="dev"><span class="agentBubble">พร้อมตรวจระบบและความเสี่ยง</span><span class="body"></span><span class="desk"></span><span class="computer"></span><span class="label"><b>Dev AI</b><span>ระบบและเช็กลิสต์</span><i class="status">พร้อมช่วย</i></span></button>
         </div>
       </section>
-
       <section class="workPanel">
-        <div class="panelHead">
-          <div>
-            <h2>โต๊ะทำงาน AI</h2>
-            <p>คำตอบอ้างอิงข้อมูลจริงที่ backend ดึงให้เท่านั้น</p>
-          </div>
-        </div>
+        <div class="panelHead"><div><h2>โต๊ะทำงาน AI</h2><p>คำตอบอ้างอิงข้อมูลจริงที่ backend ดึงให้เท่านั้น</p></div></div>
         <div class="agentCard">
           <div class="agentAvatar" id="agentAvatar"></div>
-          <div><b id="agentName">Admin AI</b><span id="agentRole">ผู้ช่วยแอดมินสำหรับสรุปงาน ร่างข้อความลูกค้า ข้อความช่าง และแปลภาษา</span></div>
+          <div><b id="agentName">Admin AI</b><span id="agentRole">ผู้ช่วยแอดมินสำหรับสรุปงาน ร่างข้อความลูกค้า ข้อความช่าง และแปลภาษา</span><em class="consoleStatus" id="agentStatus">พร้อมช่วย</em></div>
         </div>
         <div class="quick" id="quickCommands"></div>
         <div class="phoneSearch">
           <input class="input" id="phoneInput" inputmode="tel" autocomplete="off" placeholder="เบอร์ลูกค้า สำหรับค้นงานหรือใช้ประกอบคำถาม">
           <button class="primary" type="button" id="btnPhone">ค้นงาน</button>
         </div>
-        <div class="messages" id="messages">
-          <div class="msg ai">เลือกตัวละคร AI แล้วถามงานจริงในระบบได้เลย</div>
-        </div>
+        <div class="messages" id="messages"><div class="msg ai">เลือกตัวละคร AI แล้วถามงานจริงในระบบได้เลย</div></div>
         <div class="composer">
           <textarea class="ask" id="askInput" rows="2" placeholder="พิมพ์คำถามสำหรับ AI ที่เลือก"></textarea>
           <button class="primary" type="button" id="btnAsk">ถาม</button>
@@ -216,7 +111,6 @@
       </section>
     </main>
   </div>
-
   <div class="lock" id="pinOverlay">
     <div class="lockBox">
       <h2>ยืนยันสิทธิ์ AI Office</h2>
@@ -229,8 +123,7 @@
       <div id="pinError" class="error" style="display:none;margin:12px 0 0"></div>
     </div>
   </div>
-
-  <script src="/admin-v2-common.js?v=ai-office-v1"></script>
-  <script src="/admin-ai-office.js?v=ai-office-v1"></script>
+  <script src="/admin-v2-common.js?v=ai-office-v2"></script>
+  <script src="/admin-ai-office.js?v=ai-office-v2"></script>
 </body>
 </html>
