@@ -51,6 +51,7 @@ const createTechnicianBaseStatusDataHelpers = require("./server/helpers/technici
 const createTechnicianBaseStatusReadOnlyRoutes = require("./server/routes/technicianBaseStatusReadOnly");
 const createTechnicianCalendarReadOnlyRoutes = require("./server/routes/technicianCalendarReadOnly");
 const createTechnicianCountSummaryReadOnlyRoutes = require("./server/routes/technicianCountSummaryReadOnly");
+const createAdminAiOfficeReadOnlyRoutes = require("./server/routes/adminAiOfficeReadOnly");
 const {
   calculateTechnicianBaseStatus,
 } = require("./server/helpers/technicianBaseStatusScoring");
@@ -25341,6 +25342,10 @@ function sendHtml(file) {
 // before express.static(ROOT_DIR), otherwise static serving can bypass auth.
 app.get("/admin-partner-onboarding", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-partner-onboarding.html")));
 app.get("/admin-partner-onboarding.html", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-partner-onboarding.html")));
+app.use(createAdminAiOfficeReadOnlyRoutes({ pool, requireAdminSession }));
+app.get("/admin/ai-office", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
+app.get("/admin/ai-office.html", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
+app.get("/admin-ai-office.html", requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
 
 if (fs.existsSync(FRONTEND_DIR)) app.use(express.static(FRONTEND_DIR));
 app.use(express.static(ROOT_DIR));

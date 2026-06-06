@@ -451,6 +451,7 @@ function injectAdminMenu(){
           <div class="t">ศูนย์กลาง</div>
           <div class="i">
             <div class="cwf-link primary" data-href="/admin-dashboard-v2.html">📊 Dashboard <small>Admin</small></div>
+            <div class="cwf-link" data-href="/admin/ai-office">AI Office <small>ผู้ช่วย AI ภายใน</small></div>
             <div class="cwf-link" data-href="/admin-accounting-v2.html">📘 งานบัญชี <small>รายรับ/เอกสาร/รายจ่าย</small></div>
             <div class="cwf-link" data-href="/admin-deductions-v2.html">หักเงินและงานแก้ไข <small>Deduction/Rework</small></div>
             <div class="cwf-link" data-href="/admin-profile-v2.html">👤 Profile Admin <small>รูป + ชื่อ</small></div>

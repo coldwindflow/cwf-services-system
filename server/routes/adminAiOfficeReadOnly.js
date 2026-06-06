@@ -1,0 +1,357 @@
+const express = require("express");
+const https = require("https");
+
+const AI_OFFICE_DEFAULT_MODEL = "gpt-4.1-mini";
+const AI_OFFICE_JOB_LIMIT = 80;
+const AI_OFFICE_AGENTS = {
+  admin: {
+    name: "Admin AI",
+    role: "ผู้ช่วยแอดมินสำหรับสรุปงาน ร่างข้อความลูกค้า ข้อความช่าง และแปลภาษา",
+  },
+  sales: {
+    name: "Sales AI",
+    role: "ผู้ช่วยฝ่ายขายสำหรับปิดการขาย แนะนำแพ็กเกจ และตอบเมื่อลูกค้าบอกว่าแพง",
+  },
+  ops: {
+    name: "Ops AI",
+    role: "ผู้ควบคุมงานสำหรับงานวันนี้ พรุ่งนี้ งานยังไม่จ่าย งานยังไม่ปิด และความเสี่ยงต้องติดตาม",
+  },
+  ads: {
+    name: "Ads AI",
+    role: "ผู้ช่วยการตลาดสำหรับ Google Ads, Facebook Ads, TikTok Ads, keyword และพื้นที่บริการ โดยอ้างอิงงานจริงที่มี",
+  },
+  content: {
+    name: "Content AI",
+    role: "ผู้ช่วยทำคอนเทนต์สำหรับโพสต์ แคปชัน รีวิว และสคริปต์ Reels/TikTok จากบริบทงานจริง",
+  },
+  dev: {
+    name: "Dev AI",
+    role: "ผู้ช่วยระบบสำหรับ prompt, สรุปบั๊ก, checklist deploy และ review ความเสี่ยงแบบอ่านข้อมูลอย่างเดียว",
+  },
+};
+
+function cleanText(value, max = 2000) {
+  return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function onlyDigits(value) {
+  return String(value || "").replace(/\D/g, "");
+}
+
+function isDoneStatusExpr(alias = "j") {
+  return `(
+    ${alias}.finished_at IS NOT NULL
+    OR COALESCE(${alias}.job_status,'') ILIKE '%ปิด%'
+    OR COALESCE(${alias}.job_status,'') ILIKE '%เสร็จ%'
+    OR COALESCE(${alias}.job_status,'') ILIKE '%done%'
+    OR COALESCE(${alias}.job_status,'') ILIKE '%closed%'
+    OR COALESCE(${alias}.job_status,'') ILIKE '%complete%'
+  )`;
+}
+
+function isCanceledStatusExpr(alias = "j") {
+  return `(
+    ${alias}.canceled_at IS NOT NULL
+    OR COALESCE(${alias}.job_status,'') ILIKE '%ยกเลิก%'
+    OR COALESCE(${alias}.job_status,'') ILIKE '%cancel%'
+  )`;
+}
+
+function mapJob(row) {
+  return {
+    job_id: row.job_id,
+    booking_code: row.booking_code || null,
+    customer_name: row.customer_name || "",
+    customer_phone: row.customer_phone || "",
+    job_type: row.job_type || "",
+    appointment_datetime: row.appointment_datetime || null,
+    job_status: row.job_status || "",
+    payment_status: row.payment_status || "unpaid",
+    job_price: Number(row.job_price || 0),
+    address_text: row.address_text || "",
+    job_zone: row.job_zone || "",
+    technician_username: row.technician_username || "",
+    technician_team: row.technician_team || "",
+    duration_min: Number(row.duration_min || 0),
+    created_at: row.created_at || null,
+    finished_at: row.finished_at || null,
+    paid_at: row.paid_at || null,
+    close_payment_status: row.close_payment_status || "",
+    item_summary: row.item_summary || "",
+  };
+}
+
+function createAiOfficeError(message, status = 400) {
+  const err = new Error(message);
+  err.status = status;
+  return err;
+}
+
+function requireAiOfficePin(req) {
+  const expected = String(process.env.AI_OFFICE_ACCESS_PIN || "").trim();
+  if (!expected) return;
+  const supplied = String(req.headers["x-ai-office-pin"] || req.body?.pin || req.query?.pin || "").trim();
+  if (!supplied || supplied !== expected) {
+    throw createAiOfficeError("AI_OFFICE_PIN_REQUIRED", 403);
+  }
+}
+
+function baseJobSelect() {
+  return `
+    SELECT
+      j.job_id, j.booking_code, j.customer_name, j.customer_phone, j.job_type,
+      j.appointment_datetime, j.job_status, COALESCE(j.payment_status,'unpaid') AS payment_status,
+      j.job_price, j.address_text, j.job_zone, j.technician_username, j.technician_team,
+      j.duration_min, j.created_at, j.finished_at, j.paid_at, j.close_payment_status,
+      COALESCE(
+        STRING_AGG(
+          DISTINCT NULLIF(CONCAT_WS(' ', ji.item_name, NULLIF(ji.qty::text,''), NULLIF(ji.line_total::text,'')), ''),
+          ' | '
+        ) FILTER (WHERE ji.job_id IS NOT NULL),
+        ''
+      ) AS item_summary
+    FROM public.jobs j
+    LEFT JOIN public.job_items ji ON CAST(ji.job_id AS TEXT)=CAST(j.job_id AS TEXT)
+  `;
+}
+
+function baseJobGroupOrder(order = "j.appointment_datetime ASC NULLS LAST, j.job_id ASC") {
+  return `
+    GROUP BY j.job_id, j.booking_code, j.customer_name, j.customer_phone, j.job_type,
+      j.appointment_datetime, j.job_status, j.payment_status, j.job_price, j.address_text,
+      j.job_zone, j.technician_username, j.technician_team, j.duration_min, j.created_at,
+      j.finished_at, j.paid_at, j.close_payment_status
+    ORDER BY ${order}
+    LIMIT ${AI_OFFICE_JOB_LIMIT}
+  `;
+}
+
+async function loadJobs(pool, bucket, phone) {
+  const params = [];
+  let where = "";
+  let order = "j.appointment_datetime ASC NULLS LAST, j.job_id ASC";
+  const done = isDoneStatusExpr("j");
+  const canceled = isCanceledStatusExpr("j");
+
+  if (bucket === "today" || bucket === "tomorrow") {
+    const offset = bucket === "tomorrow" ? " + INTERVAL '1 day'" : "";
+    where = `
+      WHERE j.appointment_datetime IS NOT NULL
+        AND (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date = ((NOW() AT TIME ZONE 'Asia/Bangkok')::date${offset})
+        AND NOT ${canceled}
+    `;
+  } else if (bucket === "unpaid") {
+    where = `
+      WHERE NOT ${canceled}
+        AND NOT (COALESCE(j.payment_status,'unpaid') = 'paid' OR j.paid_at IS NOT NULL)
+    `;
+    order = "j.appointment_datetime ASC NULLS LAST, j.job_id DESC";
+  } else if (bucket === "open") {
+    where = `
+      WHERE NOT ${canceled}
+        AND NOT ${done}
+    `;
+    order = "j.appointment_datetime ASC NULLS LAST, j.job_id DESC";
+  } else if (bucket === "phone") {
+    const digits = onlyDigits(phone);
+    if (digits.length < 6) throw createAiOfficeError("กรุณาใส่เบอร์ลูกค้าอย่างน้อย 6 ตัวเลข");
+    params.push(digits);
+    where = `WHERE regexp_replace(COALESCE(j.customer_phone,''), '[^0-9]', '', 'g') LIKE '%' || $1 || '%'`;
+    order = "COALESCE(j.appointment_datetime, j.created_at) DESC NULLS LAST, j.job_id DESC";
+  } else {
+    throw createAiOfficeError("ประเภทข้อมูลไม่ถูกต้อง");
+  }
+
+  const r = await pool.query(`${baseJobSelect()} ${where} ${baseJobGroupOrder(order)}`, params);
+  return (r.rows || []).map(mapJob);
+}
+
+async function loadSummary(pool) {
+  const done = isDoneStatusExpr("j");
+  const canceled = isCanceledStatusExpr("j");
+  const r = await pool.query(`
+    SELECT
+      COUNT(*) FILTER (
+        WHERE j.appointment_datetime IS NOT NULL
+          AND (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date = (NOW() AT TIME ZONE 'Asia/Bangkok')::date
+          AND NOT ${canceled}
+      )::int AS today_count,
+      COUNT(*) FILTER (
+        WHERE j.appointment_datetime IS NOT NULL
+          AND (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date = ((NOW() AT TIME ZONE 'Asia/Bangkok')::date + INTERVAL '1 day')
+          AND NOT ${canceled}
+      )::int AS tomorrow_count,
+      COUNT(*) FILTER (
+        WHERE NOT ${canceled}
+          AND NOT (COALESCE(j.payment_status,'unpaid') = 'paid' OR j.paid_at IS NOT NULL)
+      )::int AS unpaid_count,
+      COUNT(*) FILTER (
+        WHERE NOT ${canceled}
+          AND NOT ${done}
+      )::int AS open_count
+    FROM public.jobs j
+  `);
+  return r.rows[0] || { today_count: 0, tomorrow_count: 0, unpaid_count: 0, open_count: 0 };
+}
+
+function getAgent(agentKey) {
+  const key = String(agentKey || "").trim().toLowerCase();
+  return AI_OFFICE_AGENTS[key] || AI_OFFICE_AGENTS.admin;
+}
+
+function buildGroundedPrompt(question, context, agent) {
+  return [
+    "คุณคือผู้ช่วยออฟฟิศภายในของ Coldwindflow Air Services สำหรับแอดมินเท่านั้น",
+    `ตัวละครที่ถูกเลือก: ${agent.name}`,
+    `บทบาท: ${agent.role}`,
+    "ตอบเป็นภาษาไทยแบบมืออาชีพ กระชับ ใช้งานได้จริง",
+    "ใช้เฉพาะข้อมูลจริงใน JSON ด้านล่าง ห้ามแต่งข้อมูลเพิ่ม ห้ามอ้างว่ามีข้อมูลที่ไม่มีใน JSON",
+    "ถ้าข้อมูลไม่พอให้บอกว่าข้อมูลไม่พอและถามแอดมินว่าต้องการค้นเบอร์/เปิดใบงานใดเพิ่ม",
+    "ถ้าร่างข้อความลูกค้าหรือช่าง ให้เขียนเป็นข้อความพร้อมคัดลอก ไม่ใส่คำอธิบายเชิงระบบ",
+    "ห้ามสั่งแก้สถานะ ห้ามบอกว่าระบบส่งข้อความแล้ว เพราะ Phase 1 เป็นอ่านอย่างเดียว",
+    "",
+    `คำถามแอดมิน: ${cleanText(question, 1200)}`,
+    "",
+    "ข้อมูลจริงจากระบบ:",
+    JSON.stringify(context, null, 2),
+  ].join("\n");
+}
+
+function callOpenAI({ apiKey, model, prompt }) {
+  const payload = JSON.stringify({
+    model,
+    messages: [
+      { role: "system", content: "ตอบเป็นภาษาไทยสำหรับงานแอดมิน CWF โดยยึดข้อมูลจริงที่ให้มาเท่านั้น" },
+      { role: "user", content: prompt },
+    ],
+    temperature: 0.2,
+  });
+
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      method: "POST",
+      hostname: "api.openai.com",
+      path: "/v1/chat/completions",
+      headers: {
+        "Content-Type": "application/json",
+        "Content-Length": Buffer.byteLength(payload),
+        "Authorization": `Bearer ${apiKey}`,
+      },
+      timeout: 30000,
+    }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", (chunk) => { body += chunk; });
+      res.on("end", () => {
+        let parsed = null;
+        try { parsed = JSON.parse(body); } catch (_) {}
+        if (res.statusCode < 200 || res.statusCode >= 300) {
+          return reject(createAiOfficeError(parsed?.error?.message || "OPENAI_REQUEST_FAILED", 502));
+        }
+        const answer = parsed?.choices?.[0]?.message?.content;
+        if (!answer) return reject(createAiOfficeError("OPENAI_EMPTY_RESPONSE", 502));
+        return resolve(String(answer).trim());
+      });
+    });
+    req.on("timeout", () => req.destroy(createAiOfficeError("OPENAI_TIMEOUT", 504)));
+    req.on("error", reject);
+    req.write(payload);
+    req.end();
+  });
+}
+
+function inferBuckets(question) {
+  const q = String(question || "").toLowerCase();
+  const buckets = new Set();
+  if (q.includes("พรุ่งนี้") || q.includes("tomorrow")) buckets.add("tomorrow");
+  if (q.includes("วันนี้") || q.includes("today") || q.includes("ระวัง")) buckets.add("today");
+  if (q.includes("ยังไม่จ่าย") || q.includes("ไม่จ่าย") || q.includes("unpaid") || q.includes("payment")) buckets.add("unpaid");
+  if (q.includes("ยังไม่ปิด") || q.includes("เปิด") || q.includes("open") || q.includes("ค้าง")) buckets.add("open");
+  if (!buckets.size) {
+    buckets.add("today");
+    buckets.add("tomorrow");
+    buckets.add("unpaid");
+    buckets.add("open");
+  }
+  return Array.from(buckets);
+}
+
+module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
+  const pool = deps.pool;
+  const requireAdminSession = deps.requireAdminSession;
+  if (!pool || !requireAdminSession) throw new Error("createAdminAiOfficeReadOnlyRoutes requires pool and requireAdminSession");
+
+  const router = express.Router();
+
+  router.get("/admin/ai-office/config", requireAdminSession, (req, res) => {
+    return res.json({
+      ok: true,
+      pin_required: Boolean(String(process.env.AI_OFFICE_ACCESS_PIN || "").trim()),
+      model: String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim(),
+    });
+  });
+
+  router.get("/admin/ai-office/summary", requireAdminSession, async (req, res) => {
+    try {
+      requireAiOfficePin(req);
+      const summary = await loadSummary(pool);
+      return res.json({ ok: true, summary });
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "โหลดข้อมูลไม่สำเร็จ" });
+    }
+  });
+
+  router.get("/admin/ai-office/jobs", requireAdminSession, async (req, res) => {
+    try {
+      requireAiOfficePin(req);
+      const bucket = cleanText(req.query.bucket, 40);
+      const jobs = await loadJobs(pool, bucket, req.query.phone);
+      return res.json({ ok: true, bucket, jobs });
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "โหลดข้อมูลงานไม่สำเร็จ" });
+    }
+  });
+
+  router.get("/admin/ai-office/search-by-phone", requireAdminSession, async (req, res) => {
+    try {
+      requireAiOfficePin(req);
+      const phone = cleanText(req.query.phone, 80);
+      const jobs = await loadJobs(pool, "phone", phone);
+      return res.json({ ok: true, jobs });
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "ค้นงานไม่สำเร็จ" });
+    }
+  });
+
+  router.post("/admin/ai-office/ask", requireAdminSession, async (req, res) => {
+    try {
+      requireAiOfficePin(req);
+      const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+      if (!apiKey) return res.status(503).json({ ok: false, error: "ยังไม่ได้ตั้งค่า OPENAI_API_KEY สำหรับ AI Office" });
+
+      const question = cleanText(req.body?.question, 1200);
+      const agent = getAgent(req.body?.agent);
+      const phone = cleanText(req.body?.phone, 80);
+      if (!question) return res.status(400).json({ ok: false, error: "กรุณาพิมพ์คำถาม" });
+
+      const summary = await loadSummary(pool);
+      const buckets = inferBuckets(question);
+      const context = { summary, buckets: {}, phone_search: null, generated_at: new Date().toISOString() };
+      for (const bucket of buckets) {
+        context.buckets[bucket] = await loadJobs(pool, bucket);
+      }
+      if (onlyDigits(phone).length >= 6 || onlyDigits(question).length >= 6) {
+        context.phone_search = await loadJobs(pool, "phone", phone || question);
+      }
+
+      const model = String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim() || AI_OFFICE_DEFAULT_MODEL;
+      const answer = await callOpenAI({ apiKey, model, prompt: buildGroundedPrompt(question, context, agent) });
+      return res.json({ ok: true, answer, context, agent });
+    } catch (e) {
+      console.error("POST /admin/ai-office/ask error:", e);
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "AI Office ตอบไม่ได้ในขณะนี้" });
+    }
+  });
+
+  return router;
+};
