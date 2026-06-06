@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v103-ai-office-game-9f4c2d1";
+const CACHE_NAME = "cwf-cache-v104-ai-office-v2-cross-device-4b8e91";
 
 const ASSETS = [
   "/",

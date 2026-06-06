@@ -1,5 +1,5 @@
 (function(){
-  const VERSION = "ai-office-game-9f4c2d1";
+  const VERSION = "ai-office-v2-cross-device-4b8e91";
 
   const agents = {
     admin: {
@@ -182,7 +182,18 @@
     return moveAgent(state.activeAgent, activeAgent().workstation);
   }
 
-  function selectOrchestratedAgent(commandText){
+  function moveAgentToHome(agentKey){
+    setAgentState(agentKey, "walking");
+    placeAgent(agentKey, agentConfig(agentKey).home);
+    return new Promise((resolve) => {
+      window.setTimeout(() => {
+        if (state.agentStates[agentKey] === "walking") setAgentState(agentKey, "idle");
+        resolve();
+      }, 880);
+    });
+  }
+
+  function choosePrimaryAgentForCommand(commandText){
     const text = String(commandText || "").toLowerCase();
     if (/แพง|ปิดการขาย|ราคา|package|แพ็ก/.test(text)) return "sales";
     if (/ยังไม่จ่าย|ยังไม่ปิด|พรุ่งนี้|ระวัง|คิว|open|unpaid|today|tomorrow/.test(text)) return "ops";
@@ -192,7 +203,8 @@
     return state.activeAgent || "admin";
   }
 
-  function coordinateRelatedAgent(agentKey, commandText){
+  function coordinateAgentsForCommand(commandText, primaryAgent){
+    const agentKey = primaryAgent || choosePrimaryAgentForCommand(commandText);
     const text = String(commandText || "").toLowerCase();
     let partner = "";
     let target = "meetingTable";
@@ -206,10 +218,10 @@
   }
 
   function orchestrateCommand(agentKey, commandText){
-    const chosen = selectOrchestratedAgent(commandText);
+    const chosen = choosePrimaryAgentForCommand(commandText);
     const finalAgent = agents[chosen] ? chosen : agentKey;
     if (finalAgent !== state.activeAgent) selectAgent(finalAgent, false, true);
-    coordinateRelatedAgent(finalAgent, commandText);
+    coordinateAgentsForCommand(commandText, finalAgent);
     return finalAgent;
   }
 
@@ -511,9 +523,12 @@
 
   window.setAgentState = setAgentState;
   window.moveAgent = moveAgent;
+  window.moveAgentToHome = moveAgentToHome;
   window.moveSelectedAgentToWorkstation = moveSelectedAgentToWorkstation;
   window.showAgentBubble = showAgentBubble;
   window.orchestrateCommand = orchestrateCommand;
+  window.choosePrimaryAgentForCommand = choosePrimaryAgentForCommand;
+  window.coordinateAgentsForCommand = coordinateAgentsForCommand;
 
   document.addEventListener("DOMContentLoaded", () => {
     refreshAiOfficeCache();
