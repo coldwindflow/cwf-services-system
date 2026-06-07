@@ -1,152 +1,258 @@
 (function(){
-  const VERSION = "ai-office-agent-first-20260607c";
+  const VERSION = "ai-office-fullscreen-chat-v4-brain-20260607";
   const ASSET_ROOT = "/assets/ai-office-final";
-  const CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
-  const roles = ["admin","sales","ops","ads","content","dev"];
-  const state = { activeAgent:null, activeTab:"commands", summary:null, walkTimers:{}, bubbleTimers:{}, expanded:false };
+  const CLEAN_CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
+  const order = ["admin","sales","ops","ads","content","dev"];
+  const stateNames = ["base","idle","thinking","talking","working","walk-1","walk-2","walk-3","walk-4"];
+  const qs = (s, root=document) => root.querySelector(s);
+  const qsa = (s, root=document) => Array.from(root.querySelectorAll(s));
 
-  const roleLabels = { admin:"Admin", sales:"Sales", ops:"Ops", ads:"Ads", content:"Content", dev:"Dev" };
+  function assets(role){
+    const out = {};
+    stateNames.forEach((name) => out[name] = `${CLEAN_CHARACTER_ROOT}/${role}/${name}.png`);
+    return out;
+  }
+
   const agents = {
-    admin:{name:"Admin AI",color:"#1558d6",role:"ผู้ช่วยแอดมิน: สรุปงาน ร่างข้อความลูกค้า แจ้งช่าง แปลภาษา",status:"พร้อมช่วยงานแอดมิน",home:{x:25,y:58},mobile:{x:22,y:56},work:{x:27,y:55},commands:["วันนี้มีงานอะไรบ้าง","ร่างข้อความยืนยันนัดลูกค้า","ร่างข้อความแจ้งช่าง","ดูแชท LINE ล่าสุด"]},
-    sales:{name:"Sales AI",color:"#f0b400",role:"ผู้ช่วยฝ่ายขาย: ปิดการขาย ตอบราคา แนะนำแพ็กเกจ",status:"พร้อมช่วยปิดการขาย",home:{x:73,y:61},mobile:{x:74,y:56},work:{x:70,y:56},commands:["ลูกค้าบอกว่าแพง ตอบยังไงดี","ช่วยเขียนข้อความปิดการขาย","ร่างตอบลูกค้าจาก LINE","วิเคราะห์ปิดการขายน้อย"]},
-    ops:{name:"Ops AI",color:"#13a46b",role:"ผู้ช่วยคิวงาน: วันนี้ พรุ่งนี้ งานค้าง งานยังไม่จ่าย",status:"พร้อมคุมคิวงาน",home:{x:50,y:42},mobile:{x:50,y:38},work:{x:50,y:51},commands:["พรุ่งนี้มีงานอะไรบ้าง","งานไหนยังไม่ปิด","งานไหนยังไม่จ่าย","ผู้ช่วยเตรียมลงคิว"]},
-    ads:{name:"Ads AI",color:"#ef5aa3",role:"ผู้ช่วยโฆษณา: keyword พื้นที่ยิงแอด ข้อความโฆษณา",status:"พร้อมคิดแคมเปญ",home:{x:19,y:35},mobile:{x:21,y:36},work:{x:23,y:43},commands:["ช่วยคิด keyword จากงานจริง","พื้นที่ไหนควรยิงแอด","เขียนข้อความโฆษณาล้างแอร์","ไอเดีย TikTok Ads"]},
-    content:{name:"Content AI",color:"#8b5cf6",role:"ผู้ช่วยคอนเทนต์: โพสต์ แคปชัน รีวิว สคริปต์",status:"พร้อมสร้างคอนเทนต์",home:{x:29,y:77},mobile:{x:30,y:70},work:{x:32,y:63},commands:["เขียนแคปชันจากงานวันนี้","ทำสคริปต์ Reels 30 วินาที","ไอเดียโพสต์จากงานจริง","ร่างโพสต์รีวิว"]},
-    dev:{name:"Dev AI",color:"#334155",role:"ผู้ช่วยระบบ: ตรวจระบบ checklist rollback และ prompt Codex",status:"พร้อมตรวจระบบ",home:{x:82,y:37},mobile:{x:79,y:36},work:{x:76,y:44},commands:["ตรวจระบบทั้งหมด","ทำ Checklist ก่อน Deploy","ทำ Rollback Notes","เขียน Prompt ส่ง Codex"]}
-  };
-  function asset(role,stateName){ return `${CHARACTER_ROOT}/${role}/${stateName}.png`; }
-  function isMobile(){ return window.matchMedia("(max-width: 899px)").matches; }
-  function $(sel,root=document){ return root.querySelector(sel); }
-  function $all(sel,root=document){ return Array.from(root.querySelectorAll(sel)); }
-  function agentEl(role){ return $(`.agent[data-agent="${role}"]`); }
-  function agentConfig(role){ return agents[role] || agents.admin; }
-  function safeText(v){ return String(v==null?"":v); }
-
-  function preload(){
-    const urls = [`${ASSET_ROOT}/maps-clean/office-main-mobile.png`, `${ASSET_ROOT}/maps-clean/office-main-desktop.png`, `${ASSET_ROOT}/brand/logo-mark.png`];
-    roles.forEach(r => ["idle","thinking","talking","working","walk-1","walk-2","walk-3","walk-4"].forEach(s => urls.push(asset(r,s))));
-    urls.forEach(src => { const img = new Image(); img.decoding="async"; img.src=src; });
-  }
-  function placeAgent(role,point){
-    const el = agentEl(role); if(!el || !point) return;
-    const sizeMapMobile = {admin:54,sales:52,ops:54,ads:52,content:54,dev:52};
-    const sizeMapDesktop = {admin:82,sales:82,ops:86,ads:78,content:80,dev:78};
-    const size = isMobile() ? sizeMapMobile[role] : sizeMapDesktop[role];
-    el.style.setProperty("--x", `${point.x}%`); el.style.setProperty("--y", `${point.y}%`); el.style.setProperty("--depth", Math.round(point.y)); el.style.setProperty("--agent-size", `${size}px`); el.style.setProperty("--agent-size-desktop", `${size}px`);
-  }
-  function setSprite(role,stateName){
-    const img = agentEl(role)?.querySelector(".npcSprite"); if(!img) return;
-    img.src = asset(role,stateName || "idle");
-    img.onerror = () => { if(!img.dataset.fallback){ img.dataset.fallback="1"; img.src = `${ASSET_ROOT}/characters/${role}/idle.png`; } };
-  }
-  function setupAgents(){
-    roles.forEach(role => { const point = isMobile() ? agents[role].mobile : agents[role].home; placeAgent(role,point); setSprite(role,"idle"); const el = agentEl(role); if(el){ el.querySelector(".npcName").textContent = agents[role].name; el.style.setProperty("--selected", agents[role].color); } });
-  }
-  function setupSelector(){
-    const row = $("#agentSelector"); if(!row) return;
-    row.innerHTML = roles.map(role => `<button class="agent-chip" type="button" data-agent-chip="${role}"><span class="agent-chip-avatar" style="background-image:url('${asset(role,"idle")}')"></span>${roleLabels[role]}</button>`).join("");
-    row.addEventListener("click", e => { const btn = e.target.closest("[data-agent-chip]"); if(btn) selectAgent(btn.dataset.agentChip, true); });
-  }
-  function setTab(tab){
-    state.activeTab = tab || "commands";
-    $all(".consoleTab").forEach(b => b.classList.toggle("active", b.dataset.tab === state.activeTab));
-    $all(".tabPane").forEach(p => p.classList.remove("active"));
-    const pane = state.activeTab === "chat" ? "chatPane" : state.activeTab === "phone" ? "phonePane" : "commandsPane";
-    $(`#${pane}`)?.classList.add("active");
-    openConsole(state.activeTab === "chat" ? "expanded" : "open");
-  }
-  function openConsole(mode="open"){
-    const panel = $("#commandConsole"); if(!panel) return;
-    panel.classList.add("open"); panel.classList.toggle("expanded", mode === "expanded"); state.expanded = mode === "expanded";
-  }
-  function collapseConsole(){
-    const panel = $("#commandConsole"); if(!panel) return;
-    panel.classList.toggle("expanded"); state.expanded = panel.classList.contains("expanded");
-  }
-  function updateConsoleAgent(){
-    const role = state.activeAgent || "admin"; const a = agentConfig(role);
-    $("#agentName").textContent = a.name; $("#agentRole").textContent = a.role; $("#agentStatus").textContent = a.status;
-    const avatar = $("#agentAvatar"); if(avatar){ avatar.style.backgroundImage = `url('${asset(role,"idle")}')`; }
-    document.documentElement.style.setProperty("--selected", a.color);
-    $all(".agent-chip").forEach(ch => ch.classList.toggle("active", ch.dataset.agentChip === role));
-    renderQuickActions();
-  }
-  function renderQuickActions(){
-    const box = $("#quickCommands"); if(!box) return; const role = state.activeAgent || "admin"; const a = agentConfig(role);
-    box.innerHTML = a.commands.map(text => `<button class="quickBtn" type="button" data-command="${escapeAttr(text)}">${escapeHtml(text)}</button>`).join("");
-  }
-  function escapeHtml(s){ return safeText(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
-  function escapeAttr(s){ return escapeHtml(s).replace(/'/g,"&#39;"); }
-  function hideBubbles(except){ roles.forEach(role => { if(role!==except) agentEl(role)?.classList.remove("has-bubble"); if(state.bubbleTimers[role]) clearTimeout(state.bubbleTimers[role]); }); }
-  function showBubble(role,text,ms=2300){
-    if(role !== state.activeAgent) return; hideBubbles(role); const el=agentEl(role), b=el?.querySelector(".npcBubble"); if(!el||!b) return;
-    b.textContent = shorten(text || "พร้อมช่วยครับ", 44); el.classList.add("has-bubble"); if(state.bubbleTimers[role]) clearTimeout(state.bubbleTimers[role]); state.bubbleTimers[role]=setTimeout(()=> el.classList.remove("has-bubble"),ms);
-  }
-  function shorten(s,max){ s=safeText(s).replace(/\s+/g," ").trim(); return s.length>max ? `${s.slice(0,max-1)}…` : s; }
-  function clearWalk(role){ if(state.walkTimers[role]){ clearInterval(state.walkTimers[role]); state.walkTimers[role]=null; } }
-  function setAgentState(role,next){
-    const el=agentEl(role); if(!el) return; ["idle","walking","thinking","talking","working"].forEach(n=>el.classList.toggle(n,n===next));
-    if(next==="walking"){ let i=1; setSprite(role,"walk-1"); clearWalk(role); state.walkTimers[role]=setInterval(()=>{ i=i>=4?1:i+1; setSprite(role,`walk-${i}`); },170); }
-    else { clearWalk(role); setSprite(role,next==="idle"?"idle":next); }
-  }
-  function moveAgent(role,target="work"){
-    const a=agentConfig(role); const point = target==="home" ? (isMobile()?a.mobile:a.home) : a.work || a.home;
-    setAgentState(role,"walking"); placeAgent(role,point);
-    return new Promise(res => setTimeout(()=>{ setAgentState(role,"idle"); res(); },760));
-  }
-  async function selectAgent(role,fromChip=false){
-    if(!agents[role]) role="admin"; state.activeAgent=role;
-    $all(".agent").forEach(el => el.classList.toggle("selected", el.dataset.agent===role));
-    updateConsoleAgent(); openConsole("open"); setTab("commands"); hideBubbles(role); showBubble(role, agents[role].status, 2200);
-    if(!fromChip) moveAgent(role,"work");
-  }
-  function addMessage(kind,text){
-    const box=$("#messages"); if(!box) return null;
-    if(box.children.length===1 && box.textContent.includes("เลือกตัวละคร")) box.innerHTML="";
-    const msg=document.createElement("div"); msg.className=`msg ${kind}`; msg.textContent=text;
-    if(kind==="ai" && text && !text.includes("กำลังอ่าน")){
-      const btn=document.createElement("button"); btn.type="button"; btn.className="copy"; btn.textContent="คัดลอก"; btn.addEventListener("click",()=>copyText(text)); msg.appendChild(btn);
+    admin: {
+      name:"Admin AI", color:"#1558d6", short:"Admin",
+      role:"ผู้ช่วยแอดมิน: สรุปงาน ร่างข้อความลูกค้า ร่างข้อความแจ้งช่าง แปลภาษา และจัดข้อมูลให้พร้อมคัดลอก",
+      status:"พร้อมช่วยงานแอดมิน", bubble:"พร้อมช่วยงานแอดมิน",
+      home:{x:24,y:62}, mobile:{x:24,y:61}, center:{x:44,y:58}, size:{desktop:64,mobile:54}, assets:assets("admin")
+    },
+    sales: {
+      name:"Sales AI", color:"#f0b400", short:"Sales",
+      role:"ผู้ช่วยฝ่ายขาย: ตอบลูกค้าบอกว่าแพง ช่วยปิดการขาย ร่าง follow-up และอธิบายราคาให้ลูกค้าเข้าใจ",
+      status:"พร้อมช่วยฝ่ายขาย", bubble:"พร้อมช่วยปิดการขาย",
+      home:{x:74,y:62}, mobile:{x:73,y:61}, center:{x:60,y:58}, size:{desktop:64,mobile:53}, assets:assets("sales")
+    },
+    ops: {
+      name:"Ops AI", color:"#13a46b", short:"Ops",
+      role:"ผู้ช่วยคุมคิว: งานวันนี้ งานพรุ่งนี้ งานยังไม่ปิด งานยังไม่จ่าย และงานเสี่ยงที่ต้องตาม",
+      status:"พร้อมดูคิวงาน", bubble:"พร้อมคุมคิวงาน",
+      home:{x:49,y:40}, mobile:{x:50,y:38}, center:{x:50,y:55}, size:{desktop:68,mobile:56}, assets:assets("ops")
+    },
+    ads: {
+      name:"Ads AI", color:"#ef5aa3", short:"Ads",
+      role:"ผู้ช่วยโฆษณา: Google Ads, Facebook Ads, TikTok Ads, keyword, พื้นที่ยิงแอด และมุมขายจากงานจริง",
+      status:"พร้อมช่วยโฆษณา", bubble:"พร้อมคิดแคมเปญ",
+      home:{x:18,y:35}, mobile:{x:20,y:36}, center:{x:39,y:50}, size:{desktop:60,mobile:52}, assets:assets("ads")
+    },
+    content: {
+      name:"Content AI", color:"#8b5cf6", short:"Content",
+      role:"ผู้ช่วยคอนเทนต์: โพสต์ แคปชัน รีวิว สคริปต์ Reels/TikTok และไอเดียภาพหรือวิดีโอ",
+      status:"พร้อมทำคอนเทนต์", bubble:"พร้อมทำคอนเทนต์",
+      home:{x:28,y:80}, mobile:{x:28,y:77}, center:{x:44,y:66}, size:{desktop:62,mobile:53}, assets:assets("content")
+    },
+    dev: {
+      name:"Dev AI", color:"#334155", short:"Dev",
+      role:"ผู้ช่วยระบบ: สรุปบั๊ก เขียน prompt ส่ง Codex ทำ checklist ก่อน deploy ทำ rollback notes และตรวจความเสี่ยง",
+      status:"พร้อมช่วยระบบ", bubble:"พร้อมช่วยระบบ",
+      home:{x:82,y:36}, mobile:{x:80,y:36}, center:{x:61,y:50}, size:{desktop:60,mobile:52}, assets:assets("dev")
     }
-    box.appendChild(msg); box.scrollTop=box.scrollHeight; return msg;
+  };
+
+  const STORAGE_KEY = "cwf_ai_office_chat_v4_session";
+  const app = { active:"admin", conversations:{}, walkTimers:{}, bubbleTimers:{}, loading:false, open:false };
+  const isMobile = () => window.matchMedia("(max-width: 860px)").matches;
+  const agentEl = (key) => qs(`.agent[data-agent="${key}"]`);
+  const cfg = (key) => agents[key] || agents.admin;
+
+  function cleanText(value){ return String(value || "").trim(); }
+  function safeSlice(value, max=1600){ return String(value || "").replace(/\s+/g, " ").trim().slice(0, max); }
+  function loadSavedConversations(){
+    try {
+      const saved = JSON.parse(sessionStorage.getItem(STORAGE_KEY) || "{}");
+      if (saved && typeof saved === "object") app.conversations = saved;
+    } catch (_) {}
   }
-  async function copyText(text){ try{ await navigator.clipboard.writeText(text); }catch(_){ const ta=document.createElement("textarea"); ta.value=text; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove(); } }
-  async function requestJson(url,options={}){
-    const res = await fetch(url,{credentials:"include",...options,headers:{"Content-Type":"application/json",...(options.headers||{})}});
-    const data = await res.json().catch(()=>({ok:false,error:"อ่านข้อมูลไม่สำเร็จ"}));
-    if(!res.ok || data.ok===false) throw new Error(data.error || `HTTP ${res.status}`); return data;
+  function saveConversations(){
+    try { sessionStorage.setItem(STORAGE_KEY, JSON.stringify(app.conversations)); } catch (_) {}
+  }
+  function showToast(text){ const el = qs("#toast"); if (!el) return; el.textContent = text; el.classList.add("show"); setTimeout(() => el.classList.remove("show"), 2600); }
+  function autoGrow(textarea){ if (!textarea) return; textarea.style.height = "auto"; textarea.style.height = Math.min(138, textarea.scrollHeight) + "px"; }
+  function escapeHtml(value){ return String(value || "").replace(/[&<>"']/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c])); }
+
+  function setSprite(key, mode="idle"){
+    const a = cfg(key); const img = agentEl(key)?.querySelector(".sprite");
+    if (img) img.src = a.assets[mode] || a.assets.idle || a.assets.base;
+  }
+  function setChatAvatar(){
+    const a = cfg(app.active); const avatar = qs("#chatAvatar");
+    if (avatar) avatar.src = a.assets.idle || a.assets.base;
+  }
+  function placeAgent(key, point){
+    const el = agentEl(key); if (!el || !point) return;
+    const a = cfg(key); const mobile = isMobile(); const size = mobile ? a.size.mobile : a.size.desktop;
+    el.style.setProperty("--x", `${point.x}%`);
+    el.style.setProperty("--y", `${point.y}%`);
+    el.style.setProperty("--depth", String(Math.round(point.y)));
+    el.style.setProperty("--agent-size", `${size}px`);
+    el.style.setProperty("--agent-size-mobile", `${size}px`);
+  }
+  function homeFor(key){ return isMobile() ? cfg(key).mobile : cfg(key).home; }
+  function placeAll(){ order.forEach((key) => placeAgent(key, homeFor(key))); }
+
+  function clearWalk(key){ if (app.walkTimers[key]) { clearInterval(app.walkTimers[key]); app.walkTimers[key] = null; } }
+  function startWalk(key){
+    clearWalk(key); let i = 1; setSprite(key, "walk-1");
+    app.walkTimers[key] = setInterval(() => { i = i >= 4 ? 1 : i + 1; setSprite(key, `walk-${i}`); }, 170);
+  }
+  function setAgentMode(key, mode){
+    const el = agentEl(key); if (!el) return;
+    ["walking","thinking","talking"].forEach((m) => el.classList.toggle(m, mode === m));
+    if (mode === "walking") startWalk(key); else { clearWalk(key); setSprite(key, mode === "idle" ? "idle" : mode); }
+  }
+  function hideBubbles(except){
+    order.forEach((key) => { if (key === except) return; const el = agentEl(key); if (el) el.classList.remove("has-bubble"); if (app.bubbleTimers[key]) clearTimeout(app.bubbleTimers[key]); });
+  }
+  function bubble(key, text, ms=2400){
+    hideBubbles(key); const el = agentEl(key); const b = el?.querySelector(".bubble"); if (!el || !b) return;
+    b.textContent = String(text || "").slice(0, 58); el.classList.add("has-bubble");
+    if (app.bubbleTimers[key]) clearTimeout(app.bubbleTimers[key]);
+    if (ms > 0) app.bubbleTimers[key] = setTimeout(() => el.classList.remove("has-bubble"), ms);
+  }
+  function moveAgent(key, point){
+    setAgentMode(key, "walking"); placeAgent(key, point);
+    return new Promise((resolve) => setTimeout(() => { setAgentMode(key, "idle"); resolve(); }, 760));
+  }
+
+  function selectAgent(key, openChat=false){
+    if (!agents[key]) key = "admin"; app.active = key;
+    qsa(".agent").forEach((el) => el.classList.toggle("selected", el.dataset.agent === key));
+    qsa(".rolechip,.switch").forEach((el) => el.classList.toggle("active", el.dataset.agent === key));
+    const a = cfg(key);
+    const chatName = qs("#chatName"), chatRole = qs("#chatRole");
+    if (chatName) chatName.textContent = a.name;
+    if (chatRole) chatRole.textContent = a.role;
+    setChatAvatar();
+    bubble(key, a.bubble, 2200);
+    moveAgent(key, a.center).then(() => setTimeout(() => { if (!app.open) moveAgent(key, homeFor(key)); }, 900));
+    renderMessages();
+    if (openChat) openChatView();
+  }
+
+  function buildSelectors(){
+    const rolebar = qs("#rolebar"), sw = qs("#chatSwitchers");
+    if (rolebar) rolebar.innerHTML = ""; if (sw) sw.innerHTML = "";
+    order.forEach((key) => {
+      const a = cfg(key);
+      const chip = document.createElement("button"); chip.type = "button"; chip.className = "rolechip"; chip.dataset.agent = key;
+      chip.innerHTML = `<img alt="" src="${a.assets.idle}"><span>${escapeHtml(a.short)}</span>`;
+      chip.addEventListener("click", () => selectAgent(key, true)); rolebar?.appendChild(chip);
+      const btn = document.createElement("button"); btn.type = "button"; btn.className = "switch"; btn.dataset.agent = key; btn.textContent = a.short;
+      btn.addEventListener("click", () => selectAgent(key, false)); sw?.appendChild(btn);
+    });
+  }
+
+  function messagesFor(){ if (!app.conversations[app.active]) app.conversations[app.active] = []; return app.conversations[app.active]; }
+  function historyForRequest(limit=12){
+    return messagesFor()
+      .filter((m) => m && (m.type === "user" || m.type === "ai") && m.text && m.text !== "กำลังอ่านข้อมูลจริง...")
+      .slice(-limit)
+      .map((m) => ({ role: m.type === "user" ? "user" : "assistant", content: safeSlice(m.text, 1600) }));
+  }
+  function renderMessages(){
+    const box = qs("#messages"); if (!box) return;
+    const list = messagesFor();
+    if (!list.length) {
+      box.innerHTML = `<div class="empty"><b>${escapeHtml(cfg(app.active).name)} พร้อมคุยต่อเนื่อง</b><p>${escapeHtml(cfg(app.active).role)}<br>ถามได้เหมือนคุยกับผู้ช่วยจริง ระบบจะจำบริบทในแชทนี้ เช่น ถามต่อว่า “งานไหนเสี่ยงสุด” หรือ “ร่างข้อความให้ลูกค้าคนนั้น”</p></div>`;
+      return;
+    }
+    box.innerHTML = list.map((m, idx) => {
+      const cls = m.type === "user" ? "user" : (m.type === "error" ? "error" : "ai");
+      const copy = m.type === "ai" ? `<div class="copyWrap"><button class="copyBtn" type="button" data-copy-index="${idx}">คัดลอก</button></div>` : "";
+      return `<div class="message ${cls}">${escapeHtml(m.text)}</div>${copy}`;
+    }).join("");
+    qsa("[data-copy-index]", box).forEach((btn) => btn.addEventListener("click", () => {
+      const m = messagesFor()[Number(btn.dataset.copyIndex)];
+      navigator.clipboard?.writeText(m?.text || "").then(() => showToast("คัดลอกแล้ว")).catch(() => showToast("คัดลอกไม่สำเร็จ"));
+    }));
+    requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
+  }
+  function addMessage(type, text){ messagesFor().push({type, text:String(text || "")}); saveConversations(); renderMessages(); }
+
+  async function api(path, options={}){
+    const res = await fetch(path, { credentials:"same-origin", headers:{"Content-Type":"application/json", ...(options.headers || {})}, ...options });
+    let data = null; try { data = await res.json(); } catch (_) {}
+    if (!res.ok || !data?.ok) throw new Error(data?.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  function applySummary(summary){
+    qs("#statToday").textContent = summary?.today_count ?? "-";
+    qs("#statTomorrow").textContent = summary?.tomorrow_count ?? "-";
+    qs("#statOpen").textContent = summary?.open_count ?? "-";
+    qs("#statUnpaid").textContent = summary?.unpaid_count ?? "-";
   }
   async function loadSummary(){
-    try{ const data=await requestJson("/admin/ai-office/summary"); const s=data.summary||{}; state.summary=s; $("#statToday").textContent=s.today_count ?? 0; $("#statTomorrow").textContent=s.tomorrow_count ?? 0; $("#statOpen").textContent=s.open_count ?? 0; $("#statUnpaid").textContent=s.unpaid_count ?? 0; }
-    catch(e){ addMessage("system",`โหลดสถานะงานไม่ได้: ${e.message}`); }
+    try { const data = await api("/admin/ai-office/summary"); applySummary(data.summary || {}); }
+    catch(e){ showToast(e.message === "AI_OFFICE_PIN_REQUIRED" ? "ต้องปรับ backend ให้ใช้ admin login ครั้งเดียว" : `โหลดสถานะไม่ได้: ${e.message}`); }
   }
-  async function ask(question){
-    question = safeText(question).trim(); if(!question) return; const role = state.activeAgent || "admin"; if(!state.activeAgent) selectAgent(role,true); setTab("chat"); addMessage("user",question); const loading=addMessage("ai","กำลังอ่านข้อมูลจริง..."); setAgentState(role,"thinking"); showBubble(role,"กำลังอ่านข้อมูลจริง...",2400);
-    try{
-      const phone = $("#phoneInput")?.value || "";
-      const data = await requestJson("/admin/ai-office/ask",{method:"POST",body:JSON.stringify({question,agent:role,phone})});
-      loading.remove(); const answer = data.answer || "ไม่มีคำตอบจาก AI Office"; addMessage("ai",answer); setAgentState(role,"talking"); showBubble(role,"ดูคำตอบเต็มในแชท",2600); setTimeout(()=>setAgentState(role,"idle"),2300);
-    }catch(e){ loading.remove(); addMessage("system",`AI Office ตอบไม่ได้: ${e.message}`); setAgentState(role,"idle"); showBubble(role,"ต้องตรวจเพิ่มครับ",2200); }
+
+  async function ask(){
+    if (app.loading) return;
+    const input = qs("#askInput"); const question = cleanText(input?.value);
+    if (!question) return;
+    const conversation_history = historyForRequest();
+    input.value = ""; autoGrow(input); addMessage("user", question);
+    const key = app.active; const a = cfg(key); app.loading = true;
+    qs("#btnAsk").disabled = true; setAgentMode(key, "thinking"); bubble(key, "กำลังอ่านข้อมูลจริง...", 0);
+    addMessage("ai", "กำลังอ่านข้อมูลจริง...");
+    const list = messagesFor(); const loadingIndex = list.length - 1;
+    try {
+      const data = await api("/admin/ai-office/ask", { method:"POST", body:JSON.stringify({ agent:key, question, conversation_history }) });
+      list.splice(loadingIndex, 1);
+      setAgentMode(key, "talking"); bubble(key, "ตอบในแชทแล้ว", 2200);
+      addMessage("ai", data.answer || "ไม่มีคำตอบ");
+      setTimeout(() => setAgentMode(key, "idle"), 1600);
+    } catch(e) {
+      list.splice(loadingIndex, 1);
+      setAgentMode(key, "idle");
+      const msg = e.message === "AI_OFFICE_PIN_REQUIRED" ? "AI Office ยังติด PIN ซ้ำหลัง admin login ต้อง patch backend route ก่อนใช้งาน" : e.message;
+      addMessage("error", msg);
+      bubble(key, "ระบบตอบไม่ได้", 1800);
+    } finally {
+      app.loading = false; qs("#btnAsk").disabled = false; renderMessages();
+    }
   }
-  async function searchPhone(){
-    setTab("phone"); const phone = safeText($("#phoneInput")?.value).trim(); const box=$("#phoneResult"); if(!box) return; box.innerHTML=`<div class="msg ai">กำลังค้นงานจริง...</div>`;
-    try{ const data=await requestJson(`/admin/ai-office/search-by-phone?phone=${encodeURIComponent(phone)}`); const jobs=data.jobs||[]; if(!jobs.length){ box.innerHTML=`<div class="msg ai">ไม่พบงานจากเบอร์นี้ หรือข้อมูลยังไม่พอ</div>`; return; }
-      box.innerHTML = jobs.map(j => `<div class="resultCard"><b>${escapeHtml(j.booking_code || j.job_id || "งาน")}</b>${escapeHtml(j.customer_name||"-")} · ${escapeHtml(j.customer_phone||"-")}<br>${escapeHtml(j.job_type||"-")} · ${escapeHtml(j.appointment_datetime||"ไม่ระบุวันเวลา")}<br>สถานะ: ${escapeHtml(j.job_status||"-")} / ชำระ: ${escapeHtml(j.payment_status||"-")}</div>`).join("");
-    }catch(e){ box.innerHTML=`<div class="msg system">ค้นงานไม่ได้: ${escapeHtml(e.message)}</div>`; }
+
+  function openChatView(){
+    app.open = true; const view = qs("#chatView"); if (view) { view.classList.add("open"); view.setAttribute("aria-hidden","false"); }
+    document.body.style.overflow = "hidden"; setChatAvatar(); renderMessages(); setTimeout(() => qs("#askInput")?.focus(), 120);
+  }
+  function closeChatView(){
+    app.open = false; const view = qs("#chatView"); if (view) { view.classList.remove("open"); view.setAttribute("aria-hidden","true"); }
+    document.body.style.overflow = ""; order.forEach((key) => moveAgent(key, homeFor(key)));
+  }
+
+  function initAgents(){
+    order.forEach((key) => { const el = agentEl(key); const a = cfg(key); if (!el) return; el.querySelector(".sprite").src = a.assets.idle; el.addEventListener("click", () => selectAgent(key, true)); });
+    placeAll(); selectAgent("admin", false);
+  }
+  function preload(){
+    [`${ASSET_ROOT}/maps-clean/office-main-desktop.png`,`${ASSET_ROOT}/maps-clean/office-main-mobile.png`, ...order.map(k => cfg(k).assets.idle)].forEach((src) => { const img = new Image(); img.decoding = "async"; img.src = src; });
   }
   function bind(){
-    $all(".agent").forEach(el => el.addEventListener("click",()=>selectAgent(el.dataset.agent)));
-    $("#consoleToggle")?.addEventListener("click",collapseConsole); $("#btnRefresh")?.addEventListener("click",loadSummary);
-    $all(".consoleTab").forEach(btn => btn.addEventListener("click",()=>setTab(btn.dataset.tab)));
-    $("#quickCommands")?.addEventListener("click",e=>{ const btn=e.target.closest("[data-command]"); if(btn) ask(btn.dataset.command); });
-    $("#btnAsk")?.addEventListener("click",()=>{ const input=$("#askInput"); const q=input.value.trim(); if(q){ input.value=""; ask(q); } });
-    $("#askInput")?.addEventListener("focus",()=>setTab("chat"));
-    $("#askInput")?.addEventListener("keydown",e=>{ if(e.key==="Enter" && !e.shiftKey){ e.preventDefault(); $("#btnAsk")?.click(); } });
-    $("#btnPhone")?.addEventListener("click",searchPhone); $("#phoneInput")?.addEventListener("focus",()=>setTab("phone")); $("#phoneInput")?.addEventListener("keydown",e=>{ if(e.key==="Enter") searchPhone(); });
-    window.addEventListener("resize",()=>{ setupAgents(); if(state.activeAgent){ agentEl(state.activeAgent)?.classList.add("selected"); } });
+    qs("#btnRefresh")?.addEventListener("click", loadSummary);
+    qs("#btnBack")?.addEventListener("click", closeChatView);
+    qs("#btnAsk")?.addEventListener("click", ask);
+    const input = qs("#askInput");
+    input?.addEventListener("input", () => autoGrow(input));
+    input?.addEventListener("keydown", (ev) => { if (ev.key === "Enter" && !ev.shiftKey) { ev.preventDefault(); ask(); } });
+    window.addEventListener("resize", placeAll);
   }
-  async function init(){
-    preload(); setupSelector(); setupAgents(); bind(); updateConsoleAgent(); await loadSummary();
-    setTimeout(()=>{ if(!state.activeAgent) { $("#commandConsole")?.classList.remove("open","expanded"); } },100);
+  function nudgeIdle(){
+    setInterval(() => {
+      if (app.open || document.hidden) return;
+      const choices = order.filter(k => k !== app.active);
+      const key = choices[Math.floor(Math.random() * choices.length)]; if (!key) return;
+      const p = homeFor(key); const next = { x:p.x + (Math.random() > .5 ? 2 : -2), y:p.y + (Math.random() > .5 ? 1 : -1) };
+      moveAgent(key, next).then(() => setTimeout(() => moveAgent(key, p), 700));
+    }, 19000);
   }
-  if(document.readyState === "loading") document.addEventListener("DOMContentLoaded",init); else init();
+  document.addEventListener("DOMContentLoaded", () => {
+    console.info(`CWF AI Office ${VERSION}`);
+    loadSavedConversations(); bind(); buildSelectors(); initAgents(); preload(); loadSummary(); nudgeIdle();
+  });
 })();
