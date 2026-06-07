@@ -286,6 +286,82 @@ function sanitizeChatText(value) {
     .slice(0, 700);
 }
 
+function formatBangkokChatTime(value) {
+  return formatThaiDateTime(value);
+}
+
+function detectCustomerIntent(text) {
+  const q = String(text || "").toLowerCase();
+  if (/แพง|ลด|ส่วนลด/.test(q)) return "price_objection";
+  if (/ราคา|เท่าไหร่|กี่บาท|btu|ล้าง/.test(q)) return "price_inquiry";
+  if (/จอง|นัด|สะดวก|พรุ่งนี้|วันนี้|คิว|ว่าง/.test(q)) return "booking";
+  if (/ด่วน|วันนี้|ตอนนี้|เร็ว/.test(q)) return "urgent_job";
+  if (/ร้องเรียน|ไม่พอใจ|เสียหาย|แย่|ช้า|ยังไม่มา/.test(q)) return "complaint";
+  if (/โอน|จ่าย|ชำระ|สลิป|ใบเสร็จ|receipt|payment/.test(q)) return "payment";
+  if (/ติดตาม|เรียบร้อย|หลังบริการ|ขอบคุณ/.test(q)) return "follow_up";
+  return "general";
+}
+
+function deriveConversationStatus({ latestText, hasInboundLatest, linkedJob }) {
+  const intent = detectCustomerIntent(latestText);
+  if (linkedJob?.finished_at) return "job_done";
+  if (linkedJob?.job_id) return "booked";
+  if (intent === "payment") return "follow_up";
+  if (intent === "booking") return hasInboundLatest ? "checking_schedule" : "booking_pending";
+  if (intent === "price_inquiry" || intent === "price_objection") return hasInboundLatest ? "needs_reply" : "quoted";
+  if (intent === "complaint") return "needs_reply";
+  return hasInboundLatest ? "unread" : "new";
+}
+
+function detectPriorityFlags({ latestText, lastMessageAt, isForeign }) {
+  const q = String(latestText || "").toLowerCase();
+  const flags = [];
+  if (/ด่วน|วันนี้|ตอนนี้|เร็ว/.test(q)) flags.push("urgent_today");
+  if (/ราคา|เท่าไหร่|กี่บาท|btu/.test(q)) flags.push("customer_asking_price");
+  if (/จอง|นัด|ตกลง|เอา|พร้อม/.test(q)) flags.push("customer_ready_to_book");
+  if (/ร้องเรียน|ไม่พอใจ|เสียหาย|แย่|ช้า|ยังไม่มา/.test(q)) flags.push("complaint");
+  if (/โอน|จ่าย|ชำระ|สลิป|ใบเสร็จ|receipt|payment/.test(q)) flags.push("payment_receipt");
+  if (isForeign) flags.push("foreign_customer");
+  if (/ช่าง.*ช้า|ยังไม่มา|เลื่อน|delay/.test(q)) flags.push("technician_delay");
+  const d = toDate(lastMessageAt);
+  if (d && Date.now() - d.getTime() > 60 * 60 * 1000) flags.push("customer_waiting_too_long");
+  return flags;
+}
+
+function extractCustomerContextFromMessages(messages, linkedJobs = []) {
+  const text = (messages || []).map((m) => m.message_text || "").join("\n");
+  const phone = (text.match(/0\d[\d\s.-]{7,12}\d/) || [])[0] || "";
+  const btu = (text.match(/(\d{4,5})\s*BTU/i) || [])[1] || "";
+  const units = (text.match(/(\d{1,2})\s*(เครื่อง|ตัว)/) || [])[1] || "";
+  const quoted = (text.match(/(\d{3,5})\s*บาท/) || [])[1] || "";
+  const booking = (text.match(/\b([A-Z]{2,5}[-_]?\d{3,})\b/i) || [])[1] || "";
+  const area = (text.match(/(?:แถว|ย่าน|อยู่|ที่)\s*([ก-๙A-Za-z0-9\s.-]{2,40})/) || [])[1] || "";
+  const service = /พรีเมียม/.test(text) ? "ล้างพรีเมียม"
+    : /แขวนคอยล์/.test(text) ? "ล้างแบบแขวนคอยล์"
+    : /ตัดล้าง|ล้างใหญ่/.test(text) ? "ตัดล้างใหญ่"
+    : /ล้าง/.test(text) ? "ล้างปกติ" : "";
+  const latestJob = linkedJobs[0] || null;
+  const missing = [];
+  if (!phone && !latestJob?.customer_phone) missing.push("เบอร์ลูกค้า");
+  if (!area && !latestJob?.job_zone && !latestJob?.address_text) missing.push("พื้นที่/ที่อยู่");
+  if (!service && !latestJob?.job_type) missing.push("ประเภทงาน");
+  if (!units) missing.push("จำนวนเครื่อง");
+  return {
+    customer_name: latestJob?.customer_name || "",
+    phone: phone || latestJob?.customer_phone || "",
+    area: area || latestJob?.job_zone || latestJob?.address_text || "",
+    linked_job_id: latestJob?.job_id || null,
+    service_type: service || latestJob?.job_type || "",
+    units,
+    btu,
+    quoted_price: quoted || (latestJob?.job_price ? String(latestJob.job_price) : ""),
+    requested_datetime: "",
+    current_status: "",
+    booking_code: booking || latestJob?.booking_code || "",
+    missing_information: missing,
+  };
+}
+
 function filterReplyExample(customerMessage, adminReply) {
   const c = sanitizeChatText(customerMessage);
   const a = sanitizeChatText(adminReply);
@@ -308,4 +384,9 @@ module.exports = {
   routeOfficeIntent,
   sanitizeChatText,
   filterReplyExample,
+  formatBangkokChatTime,
+  detectCustomerIntent,
+  deriveConversationStatus,
+  detectPriorityFlags,
+  extractCustomerContextFromMessages,
 };

@@ -13,6 +13,11 @@ const {
   looksLikeAvailabilityQuestion,
   routeOfficeIntent,
   filterReplyExample,
+  formatBangkokChatTime,
+  detectCustomerIntent,
+  deriveConversationStatus,
+  detectPriorityFlags,
+  extractCustomerContextFromMessages,
 } = require("../cwfAiKnowledge");
 
 const AI_OFFICE_DEFAULT_MODEL = "gpt-4.1-mini";
@@ -350,10 +355,13 @@ function buildGroundedPrompt(question, context, agent) {
   ].join("\n");
 }
 
-function buildLineDraftPrompt({ conversation, messages, agent, instruction }) {
+function buildLineDraftPrompt({ conversation, messages, agent, instruction, threadContext }) {
   return [
     `Business timezone: ${BANGKOK_TZ}. Use Thai local time only; never show raw UTC timestamps.`,
     "Use current CWF service/pricing knowledge and short LINE admin tone. Do not use old chat prices as facts.",
+    "Customer Inbox isolation rule: use only this selected conversation, selected customer context, CWF knowledge, and linked jobs in this JSON. Do not use any other customer's conversation.",
+    "Phase 1 rule: draft copy-ready replies only. Do not claim a LINE message was sent, do not open a booking, and do not change any job/customer status.",
+    "Reply style: short, natural Thai, polite, usually 1-4 lines. Ask only one missing question at a time.",
     JSON.stringify({ cwf_knowledge: serviceKnowledge() }, null, 2),
     "คุณคือผู้ช่วย AI ภายในของ Coldwindflow Air Services สำหรับช่วยแอดมินอ่านแชท LINE OA เท่านั้น",
     `บทบาทที่เลือก: ${agent.name}`,
@@ -388,7 +396,7 @@ function buildLineDraftPrompt({ conversation, messages, agent, instruction }) {
     `คำสั่งแอดมินเพิ่มเติม: ${cleanText(instruction, 1000) || "-"}`,
     "",
     "ข้อมูลแชทจริง:",
-    JSON.stringify({ conversation, messages }, null, 2),
+    JSON.stringify({ conversation, messages, thread_context: threadContext }, null, 2),
   ].join("\n");
 }
 
@@ -865,7 +873,80 @@ async function loadLineMessages(pool, conversationId, limit) {
     message_type: row.message_type || "",
     message_text: row.message_text || "",
     received_at: row.received_at || row.created_at || null,
+    received_at_display: formatBangkokChatTime(row.received_at || row.created_at),
   }));
+}
+
+function extractThreadLookup(messages) {
+  const text = (messages || []).map((m) => m.message_text || "").join("\n");
+  const phone = onlyDigits((text.match(/0\d[\d\s.-]{7,12}\d/) || [])[0] || "");
+  const bookingCode = cleanText((text.match(/\b([A-Z]{2,5}[-_]?\d{3,})\b/i) || [])[1] || "", 40);
+  return { phone, bookingCode };
+}
+
+async function loadLinkedJobsForThread(pool, messages) {
+  const { phone, bookingCode } = extractThreadLookup(messages);
+  const params = [];
+  const clauses = [];
+  if (phone.length >= 6) {
+    params.push(phone);
+    clauses.push(`regexp_replace(COALESCE(j.customer_phone,''), '[^0-9]', '', 'g') LIKE '%' || $${params.length} || '%'`);
+  }
+  if (bookingCode) {
+    params.push(bookingCode);
+    clauses.push(`COALESCE(j.booking_code,'') ILIKE '%' || $${params.length} || '%'`);
+  }
+  if (!clauses.length) return [];
+  const r = await pool.query(
+    `${baseJobSelect()}
+      WHERE (${clauses.join(" OR ")})
+      ${baseJobGroupOrder("COALESCE(j.appointment_datetime, j.created_at) DESC NULLS LAST, j.job_id DESC")}`,
+    params
+  );
+  return (r.rows || []).map(mapJob).slice(0, 8);
+}
+
+async function buildCustomerThreadContext(pool, conversation, messages) {
+  const linkedJobs = await loadLinkedJobsForThread(pool, messages).catch(() => []);
+  const card = extractCustomerContextFromMessages(messages, linkedJobs);
+  const latest = [...(messages || [])].reverse().find((m) => m.message_text) || {};
+  const hasInboundLatest = latest.direction === "inbound";
+  const status = deriveConversationStatus({ latestText: latest.message_text || conversation.last_message_text, hasInboundLatest, linkedJob: linkedJobs[0] });
+  card.customer_name = card.customer_name || conversation.display_name || "";
+  card.current_status = status;
+  return {
+    thread_key: conversation.line_user_id_masked || `conversation-${conversation.id}`,
+    conversation_id: conversation.id,
+    conversation,
+    customer_context: card,
+    linked_jobs: linkedJobs,
+    detected_intent: detectCustomerIntent(latest.message_text || conversation.last_message_text),
+    priority_flags: detectPriorityFlags({
+      latestText: latest.message_text || conversation.last_message_text,
+      lastMessageAt: latest.received_at || conversation.last_message_at,
+      isForeign: Boolean(latest.is_foreign_customer || conversation.is_foreign_customer),
+    }),
+    status,
+  };
+}
+
+async function enrichLineInboxMetadata(pool, conversations, deps) {
+  const out = [];
+  for (const conversation of conversations || []) {
+    const messages = await loadLineMessages(pool, conversation.id, 8).catch(() => []);
+    const enrichedMessages = await enrichLineMessagesForAdmin(messages, conversation, deps);
+    const thread = await buildCustomerThreadContext(pool, conversation, enrichedMessages);
+    out.push({
+      ...conversation,
+      last_message_at_display: formatBangkokChatTime(conversation.last_message_at),
+      unread: thread.status === "unread" || thread.status === "needs_reply",
+      conversation_status: thread.status,
+      detected_intent: thread.detected_intent,
+      priority_flags: thread.priority_flags,
+      customer_context: thread.customer_context,
+    });
+  }
+  return out;
 }
 
 async function getLineConnectorStatus(pool) {
@@ -1015,7 +1096,7 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       const limit = clampLimit(req.query.limit, 30, 100);
       const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
       const model = String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim() || AI_OFFICE_DEFAULT_MODEL;
-      const conversations = await enrichLineInboxForAdmin(await loadLineInbox(pool, limit), { apiKey, model });
+      const conversations = await enrichLineInboxMetadata(pool, await enrichLineInboxForAdmin(await loadLineInbox(pool, limit), { apiKey, model }), { apiKey, model });
       return res.json({ ok: true, conversations });
     } catch (e) {
       return res.status(e.status || 500).json({ ok: false, error: e.message || "โหลด LINE inbox ไม่สำเร็จ" });
@@ -1030,7 +1111,8 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       const model = String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim() || AI_OFFICE_DEFAULT_MODEL;
       const conversation = await loadLineConversation(pool, req.params.id);
       const messages = await enrichLineMessagesForAdmin(await loadLineMessages(pool, req.params.id, limit), conversation, { apiKey, model });
-      return res.json({ ok: true, conversation, messages });
+      const thread_context = await buildCustomerThreadContext(pool, conversation, messages);
+      return res.json({ ok: true, conversation, messages, thread_context });
     } catch (e) {
       return res.status(e.status || 500).json({ ok: false, error: e.message || "โหลดข้อความ LINE ไม่สำเร็จ" });
     }
@@ -1052,13 +1134,14 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       const model = String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim() || AI_OFFICE_DEFAULT_MODEL;
       const messages = await enrichLineMessagesForAdmin(await loadLineMessages(pool, conversationId, 80), conversation, { apiKey, model });
       if (!messages.length) return res.status(400).json({ ok: false, error: "ยังไม่มีข้อความในแชทนี้" });
+      const threadContext = await buildCustomerThreadContext(pool, conversation, messages);
 
       const answer = await callOpenAI({
         apiKey,
         model,
-        prompt: buildLineDraftPrompt({ conversation, messages, agent, instruction }),
+        prompt: buildLineDraftPrompt({ conversation, messages, agent, instruction, threadContext }),
       });
-      return res.json({ ok: true, answer, conversation, messages, agent });
+      return res.json({ ok: true, answer, conversation, messages, thread_context: threadContext, agent });
     } catch (e) {
       console.error("POST /admin/ai-office/line-draft-reply error:", e.message);
       return res.status(e.status || 500).json({ ok: false, error: e.message || "ร่างข้อความจาก LINE ไม่สำเร็จ" });

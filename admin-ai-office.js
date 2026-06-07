@@ -1,5 +1,5 @@
 (function(){
-  const VERSION = "ai-office-production-v7-bangkok-availability-20260607";
+  const VERSION = "ai-office-production-v8-customer-inbox-20260607";
   const ASSET_ROOT = "/assets/ai-office-final";
   const CLEAN_CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
   const order = ["admin","sales","ops","ads","content","dev"];
@@ -59,6 +59,7 @@
 
   const app = {
     active:"admin", open:false, loading:false, conversations:{}, walkTimers:{}, bubbleTimers:{}, ambientTimer:null,
+    inboxOpen:false, inboxFilter:"all", inboxConversations:[], selectedConversation:null, selectedMessages:[], selectedThreadContext:null, draftText:"",
   };
 
   const quickCommands = [
@@ -74,6 +75,12 @@
     "ร่างข้อความแจ้งช่างกำลังเดินทาง",
     "งานไหนยังไม่ปิด",
     "งานไหนยังไม่จ่าย",
+  ];
+  const inboxFilters = [
+    ["all","ทั้งหมด"],["unread","ยังไม่อ่าน"],["needs_reply","ต้องตอบ"],["waiting_customer_info","รอลูกค้า"],["checking_schedule","เช็กคิว"],["quoted","เสนอราคา"],["booked","จองแล้ว"],["urgent","ด่วน"],["closed","ปิดแล้ว"],
+  ];
+  const inboxTools = [
+    ["summarize","สรุปแชทนี้"],["short_reply","ร่างตอบสั้น"],["closing","ร่างปิดการขาย"],["price","ตอบเรื่องราคา"],["expensive","ลูกค้าบอกว่าแพง"],["schedule","เช็กคิว/ช่าง"],["missing","ข้อมูลที่ยังขาด"],["next_action","แนะนำขั้นต่อไป"],
   ];
 
   function qs(sel, root=document){ return root.querySelector(sel); }
@@ -236,6 +243,98 @@
     return data;
   }
 
+  function renderInboxFilters(){
+    const box = qs("#inboxFilters"); if (!box) return;
+    box.innerHTML = inboxFilters.map(([key,label]) => `<button type="button" data-filter="${key}" class="${app.inboxFilter===key?"active":""}">${escapeHtml(label)}</button>`).join("");
+    qsa("[data-filter]", box).forEach((btn) => btn.addEventListener("click", () => { app.inboxFilter = btn.dataset.filter; renderInboxFilters(); renderConversationList(); }));
+  }
+  function renderInboxTools(){
+    const box = qs("#inboxTools"); if (!box) return;
+    box.innerHTML = inboxTools.map(([key,label]) => `<button type="button" class="toolBtn" data-tool="${key}">${escapeHtml(label)}</button>`).join("");
+    qsa("[data-tool]", box).forEach((btn) => btn.addEventListener("click", () => draftForSelected(btn.dataset.tool, btn.textContent || "")));
+  }
+  function filterConversation(c){
+    const f = app.inboxFilter;
+    if (f === "all") return true;
+    if (f === "urgent") return (c.priority_flags || []).some((x) => /urgent|complaint|delay/.test(x));
+    if (f === "closed") return c.conversation_status === "closed";
+    return c.conversation_status === f || (f === "unread" && c.unread);
+  }
+  function renderConversationList(){
+    const box = qs("#conversationList"); if (!box) return;
+    const list = app.inboxConversations.filter(filterConversation);
+    if (!list.length) { box.innerHTML = `<div class="inboxEmpty">ไม่มีแชทในตัวกรองนี้</div>`; return; }
+    box.innerHTML = list.map((c) => {
+      const active = app.selectedConversation?.id === c.id ? "active" : "";
+      const flags = (c.priority_flags || []).slice(0,2).map((x) => `<span class="badge warn">${escapeHtml(x)}</span>`).join("");
+      return `<button type="button" class="conv ${active}" data-id="${c.id}">
+        <div class="convTop"><span class="convName">${escapeHtml(c.display_name || "LINE Customer")}</span><span class="convTime">${escapeHtml(c.last_message_at_display || "")}</span></div>
+        <div class="convMsg">${escapeHtml(c.message_text_for_admin || c.last_message_text || "")}</div>
+        <div class="badges"><span class="badge">${escapeHtml(c.conversation_status || "new")}</span><span class="badge">${escapeHtml(c.detected_intent || "general")}</span>${flags}</div>
+      </button>`;
+    }).join("");
+    qsa(".conv", box).forEach((btn) => btn.addEventListener("click", () => selectConversation(btn.dataset.id)));
+  }
+  function renderThread(){
+    const title = qs("#threadTitle"), msgs = qs("#threadMessages");
+    const c = app.selectedConversation;
+    if (title) title.textContent = c ? `${c.display_name || "LINE Customer"} · ${c.conversation_status || ""}` : "เลือกแชทลูกค้า";
+    if (!msgs) return;
+    if (!c) { msgs.innerHTML = `<div class="inboxEmpty">เลือกหนึ่งแชทเพื่อดูข้อความของลูกค้าคนนั้นเท่านั้น</div>`; return; }
+    msgs.innerHTML = (app.selectedMessages || []).map((m) => {
+      const side = m.direction === "inbound" ? "inbound" : "outbound";
+      const text = m.message_text_for_admin || m.message_text || "";
+      return `<div class="lineMsg ${side}">${escapeHtml(text)}<span class="lineTime">${escapeHtml(m.received_at_display || "")}</span></div>`;
+    }).join("") || `<div class="inboxEmpty">ยังไม่มีข้อความในแชทนี้</div>`;
+    requestAnimationFrame(() => { msgs.scrollTop = msgs.scrollHeight; });
+  }
+  function renderCustomerContext(){
+    const box = qs("#customerContext"); if (!box) return;
+    const ctx = app.selectedThreadContext?.customer_context || app.selectedConversation?.customer_context;
+    if (!ctx) { box.innerHTML = `<div>ยังไม่ได้เลือกแชท</div>`; return; }
+    const rows = [
+      ["ชื่อ", ctx.customer_name || app.selectedConversation?.display_name || "-"],["เบอร์", ctx.phone || "-"],["พื้นที่", ctx.area || "-"],["Job ID", ctx.linked_job_id || "-"],["บริการ", ctx.service_type || "-"],["จำนวน", ctx.units || "-"],["BTU", ctx.btu || "-"],["ราคา", ctx.quoted_price ? `${ctx.quoted_price} บาท` : "-"],["สถานะ", ctx.current_status || "-"],["ข้อมูลที่ขาด", (ctx.missing_information || []).join(", ") || "-"],
+    ];
+    box.innerHTML = rows.map(([k,v]) => `<div><b>${escapeHtml(k)}:</b> ${escapeHtml(v)}</div>`).join("");
+  }
+  async function loadInbox(){
+    const box = qs("#conversationList"); if (box) box.innerHTML = `<div class="inboxEmpty">กำลังโหลดแชทลูกค้า...</div>`;
+    const data = await api("/admin/ai-office/line-inbox?limit=80");
+    app.inboxConversations = data.conversations || [];
+    renderInboxFilters(); renderConversationList();
+  }
+  async function selectConversation(id){
+    const c = app.inboxConversations.find((x) => String(x.id) === String(id));
+    app.selectedConversation = c || null; app.selectedMessages = []; app.selectedThreadContext = null; app.draftText = "";
+    qs("#draftAnswer").textContent = "เลือกเครื่องมือ AI เพื่อร่างข้อความตอบลูกค้า";
+    renderConversationList(); renderThread(); renderCustomerContext();
+    if (!c) return;
+    const data = await api(`/admin/ai-office/line-conversations/${encodeURIComponent(c.id)}/messages?limit=100`);
+    app.selectedMessages = data.messages || [];
+    app.selectedThreadContext = data.thread_context || null;
+    renderThread(); renderCustomerContext();
+  }
+  async function draftForSelected(tool, label){
+    if (!app.selectedConversation) return showToast("กรุณาเลือกแชทลูกค้าก่อน");
+    const box = qs("#draftAnswer"); if (box) box.textContent = "กำลังร่างข้อความจากแชทลูกค้าคนนี้...";
+    try {
+      const instruction = `${label || tool}. ใช้เฉพาะแชทลูกค้าคนนี้ ตอบสั้นแบบแอดมิน LINE และห้ามบอกว่าส่งข้อความแล้ว`;
+      const data = await api("/admin/ai-office/line-draft-reply", { method:"POST", body:JSON.stringify({ conversation_id: app.selectedConversation.id, agent:"sales", instruction }) });
+      app.draftText = data.answer || "";
+      if (box) box.textContent = app.draftText || "ไม่มีคำตอบ";
+    } catch(e) {
+      if (box) box.textContent = e.message;
+    }
+  }
+  function openInbox(){
+    app.inboxOpen = true; const view = qs("#customerInbox"); if (view) { view.classList.add("open"); view.setAttribute("aria-hidden","false"); }
+    document.body.style.overflow = "hidden"; renderInboxFilters(); renderInboxTools(); loadInbox().catch((e) => showToast(`โหลด Customer Inbox ไม่ได้: ${e.message}`));
+  }
+  function closeInbox(){
+    app.inboxOpen = false; const view = qs("#customerInbox"); if (view) { view.classList.remove("open"); view.setAttribute("aria-hidden","true"); }
+    document.body.style.overflow = "";
+  }
+
   function applySummary(summary){
     qs("#statToday").textContent = summary?.today_count ?? "-";
     qs("#statTomorrow").textContent = summary?.tomorrow_count ?? "-";
@@ -309,6 +408,9 @@
   }
   function bind(){
     qs("#btnRefresh")?.addEventListener("click", loadSummary);
+    qs("#btnInbox")?.addEventListener("click", openInbox);
+    qs("#btnInboxBack")?.addEventListener("click", closeInbox);
+    qs("#btnCopyDraft")?.addEventListener("click", () => navigator.clipboard?.writeText(app.draftText || qs("#draftAnswer")?.textContent || "").then(() => showToast("คัดลอกแล้ว")).catch(() => showToast("คัดลอกไม่สำเร็จ")));
     qs("#btnBack")?.addEventListener("click", closeChatView);
     qs("#chatForm")?.addEventListener("submit", (ev) => { ev.preventDefault(); ask(); });
     const input = qs("#askInput");
