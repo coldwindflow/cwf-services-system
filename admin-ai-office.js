@@ -1,5 +1,5 @@
 (function(){
-  const VERSION = "ai-office-mobile-polish-20260607";
+  const VERSION = "ai-office-stage-motion-20260607";
   const ASSET_ROOT = "/assets/ai-office-final";
   const CLEAN_CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
   const roleOrder = ["admin","sales","ops","ads","content","dev"];
@@ -7,7 +7,7 @@
 
   function characterAssets(role){
     const out = {};
-    states.forEach((state) => { out[state] = `${CLEAN_CHARACTER_ROOT}/${role}/idle.png`; });
+    states.forEach((state) => { out[state] = `${CLEAN_CHARACTER_ROOT}/${role}/${state}.png`; });
     return out;
   }
 
@@ -101,7 +101,7 @@
     adsDesk: { x: 28, y: 32 }, contentDesk: { x: 34, y: 73 }, devDesk: { x: 72, y: 33 }, meetingTable: { x: 51, y: 66 },
   };
 
-  const state = { pin: "", pinRequired: false, activeAgent: "admin", loadingAsk: false, loadingDiagnostics: false, loadingLine: false, greeted: new Set(), agentStates: {}, walkTimers: {}, lastAnswer: "", lastDiagnostics: null, lineConversations: [], selectedLineConversation: null, selectedLineMessages: [] };
+  const state = { pin: "", pinRequired: false, activeAgent: "admin", loadingAsk: false, loadingDiagnostics: false, loadingLine: false, greeted: new Set(), agentStates: {}, walkTimers: {}, bubbleTimers: {}, agentPositions: {}, idlePatrolTimer: null, lastAnswer: "", lastDiagnostics: null, lineConversations: [], selectedLineConversation: null, selectedLineMessages: [] };
   const $ = (id) => document.getElementById(id);
   const isMobile = () => window.matchMedia("(max-width: 720px)").matches;
   const pointFor = (key, zone) => (isMobile() ? mobileZones[zone] : zones[zone]) || agents[key].home;
@@ -144,8 +144,15 @@
   function placeAgent(agentKey, point){
     const el = agentElement(agentKey);
     if (!el || !point) return;
+    const mobile = isMobile();
+    const size = mobile ? ({ admin: 44, sales: 43, ops: 46, ads: 42, content: 43, dev: 42 }[agentKey] || 44) : ({ admin: 58, sales: 58, ops: 62, ads: 54, content: 56, dev: 54 }[agentKey] || 56);
     el.style.setProperty("--x", `${point.x}%`);
     el.style.setProperty("--y", `${point.y}%`);
+    el.style.setProperty("--depth", `${Math.round(point.y)}`);
+    el.style.setProperty("--agent-size", `${size}px`);
+    el.style.setProperty("--agent-size-mobile", `${size}px`);
+    el.style.setProperty("--agent-size-desktop", `${size}px`);
+    state.agentPositions[agentKey] = { x: point.x, y: point.y };
   }
 
   function setSprite(agentKey, assetKey){
@@ -184,9 +191,32 @@
     if (agentKey === state.activeAgent) updateConsoleAgent();
   }
 
-  function showAgentBubble(agentKey, message){
-    const bubble = agentElement(agentKey)?.querySelector(".npcBubble");
-    if (bubble) bubble.textContent = message || "";
+  function hideAgentBubbles(exceptKey){
+    roleOrder.forEach((key) => {
+      if (key === exceptKey) return;
+      const el = agentElement(key);
+      if (el) el.classList.remove("has-bubble");
+      if (state.bubbleTimers[key]) {
+        window.clearTimeout(state.bubbleTimers[key]);
+        state.bubbleTimers[key] = null;
+      }
+    });
+  }
+
+  function showAgentBubble(agentKey, message, durationMs = 3400){
+    if (agentKey !== state.activeAgent) return;
+    hideAgentBubbles(agentKey);
+    const el = agentElement(agentKey);
+    const bubble = el?.querySelector(".npcBubble");
+    if (!el || !bubble) return;
+    bubble.textContent = message || "";
+    el.classList.add("has-bubble");
+    if (state.bubbleTimers[agentKey]) window.clearTimeout(state.bubbleTimers[agentKey]);
+    if (durationMs > 0) {
+      state.bubbleTimers[agentKey] = window.setTimeout(() => {
+        if (state.activeAgent === agentKey && !["thinking","talking"].includes(state.agentStates[agentKey])) el.classList.remove("has-bubble");
+      }, durationMs);
+    }
   }
 
   function moveAgent(agentKey, targetKey){
@@ -202,6 +232,22 @@
   }
   function moveAgentToHome(agentKey){ return moveAgent(agentKey, "home"); }
   function moveSelectedAgentToWorkstation(){ return moveAgent(state.activeAgent, activeAgent().workstation); }
+
+  function scheduleIdlePatrol(){
+    if (state.idlePatrolTimer) window.clearTimeout(state.idlePatrolTimer);
+    const delay = 12000 + Math.floor(Math.random() * 13000);
+    state.idlePatrolTimer = window.setTimeout(async () => {
+      if (!state.loadingAsk && !state.loadingDiagnostics && !state.loadingLine) {
+        const candidates = roleOrder.filter((key) => key !== state.activeAgent && !["thinking","talking","walking"].includes(state.agentStates[key]));
+        const agentKey = candidates[Math.floor(Math.random() * candidates.length)];
+        if (agentKey) {
+          await moveAgent(agentKey, agentConfig(agentKey).workstation);
+          window.setTimeout(() => moveAgentToHome(agentKey), 900);
+        }
+      }
+      scheduleIdlePatrol();
+    }, delay);
+  }
 
   function choosePrimaryAgentForCommand(commandText){
     const text = String(commandText || "").toLowerCase();
@@ -222,7 +268,6 @@
     if (agentKey === "admin" && /วันนี้|พรุ่งนี้|ยังไม่จ่าย|ยังไม่ปิด/.test(text)) { partner = "ops"; target = "opsBoard"; }
     if (agentKey === "sales" && /โพสต์|แคปชัน|คอนเทนต์/.test(text)) partner = "content";
     if (partner && partner !== agentKey) {
-      showAgentBubble(partner, "เข้ามาช่วยประสานข้อมูล");
       moveAgent(partner, target).then(() => setAgentState(partner, "working"));
     }
   }
@@ -735,7 +780,6 @@
     roleOrder.forEach((key) => {
       placeAgent(key, homeFor(key));
       setAgentState(key, "idle");
-      showAgentBubble(key, agents[key].status);
     });
   }
 
@@ -785,6 +829,7 @@
     initAgents();
     bind();
     selectAgent("admin", false);
+    scheduleIdlePatrol();
     loadConfig().catch((e) => addMessage("ai", e.message || "โหลด AI Office ไม่สำเร็จ", false));
   });
 })();

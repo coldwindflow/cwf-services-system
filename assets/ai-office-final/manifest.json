@@ -79,12 +79,72 @@
     "roomMeeting": "/assets/ai-office-final/maps/room-meeting.png"
   },
   "cleanCharacters": {
-    "adminIdle": "/assets/ai-office-final/characters-clean/admin/idle.png",
-    "salesIdle": "/assets/ai-office-final/characters-clean/sales/idle.png",
-    "opsIdle": "/assets/ai-office-final/characters-clean/ops/idle.png",
-    "adsIdle": "/assets/ai-office-final/characters-clean/ads/idle.png",
-    "contentIdle": "/assets/ai-office-final/characters-clean/content/idle.png",
-    "devIdle": "/assets/ai-office-final/characters-clean/dev/idle.png"
+    "admin": {
+      "base": "/assets/ai-office-final/characters-clean/admin/base.png",
+      "idle": "/assets/ai-office-final/characters-clean/admin/idle.png",
+      "thinking": "/assets/ai-office-final/characters-clean/admin/thinking.png",
+      "talking": "/assets/ai-office-final/characters-clean/admin/talking.png",
+      "working": "/assets/ai-office-final/characters-clean/admin/working.png",
+      "walk-1": "/assets/ai-office-final/characters-clean/admin/walk-1.png",
+      "walk-2": "/assets/ai-office-final/characters-clean/admin/walk-2.png",
+      "walk-3": "/assets/ai-office-final/characters-clean/admin/walk-3.png",
+      "walk-4": "/assets/ai-office-final/characters-clean/admin/walk-4.png"
+    },
+    "sales": {
+      "base": "/assets/ai-office-final/characters-clean/sales/base.png",
+      "idle": "/assets/ai-office-final/characters-clean/sales/idle.png",
+      "thinking": "/assets/ai-office-final/characters-clean/sales/thinking.png",
+      "talking": "/assets/ai-office-final/characters-clean/sales/talking.png",
+      "working": "/assets/ai-office-final/characters-clean/sales/working.png",
+      "walk-1": "/assets/ai-office-final/characters-clean/sales/walk-1.png",
+      "walk-2": "/assets/ai-office-final/characters-clean/sales/walk-2.png",
+      "walk-3": "/assets/ai-office-final/characters-clean/sales/walk-3.png",
+      "walk-4": "/assets/ai-office-final/characters-clean/sales/walk-4.png"
+    },
+    "ops": {
+      "base": "/assets/ai-office-final/characters-clean/ops/base.png",
+      "idle": "/assets/ai-office-final/characters-clean/ops/idle.png",
+      "thinking": "/assets/ai-office-final/characters-clean/ops/thinking.png",
+      "talking": "/assets/ai-office-final/characters-clean/ops/talking.png",
+      "working": "/assets/ai-office-final/characters-clean/ops/working.png",
+      "walk-1": "/assets/ai-office-final/characters-clean/ops/walk-1.png",
+      "walk-2": "/assets/ai-office-final/characters-clean/ops/walk-2.png",
+      "walk-3": "/assets/ai-office-final/characters-clean/ops/walk-3.png",
+      "walk-4": "/assets/ai-office-final/characters-clean/ops/walk-4.png"
+    },
+    "ads": {
+      "base": "/assets/ai-office-final/characters-clean/ads/base.png",
+      "idle": "/assets/ai-office-final/characters-clean/ads/idle.png",
+      "thinking": "/assets/ai-office-final/characters-clean/ads/thinking.png",
+      "talking": "/assets/ai-office-final/characters-clean/ads/talking.png",
+      "working": "/assets/ai-office-final/characters-clean/ads/working.png",
+      "walk-1": "/assets/ai-office-final/characters-clean/ads/walk-1.png",
+      "walk-2": "/assets/ai-office-final/characters-clean/ads/walk-2.png",
+      "walk-3": "/assets/ai-office-final/characters-clean/ads/walk-3.png",
+      "walk-4": "/assets/ai-office-final/characters-clean/ads/walk-4.png"
+    },
+    "content": {
+      "base": "/assets/ai-office-final/characters-clean/content/base.png",
+      "idle": "/assets/ai-office-final/characters-clean/content/idle.png",
+      "thinking": "/assets/ai-office-final/characters-clean/content/thinking.png",
+      "talking": "/assets/ai-office-final/characters-clean/content/talking.png",
+      "working": "/assets/ai-office-final/characters-clean/content/working.png",
+      "walk-1": "/assets/ai-office-final/characters-clean/content/walk-1.png",
+      "walk-2": "/assets/ai-office-final/characters-clean/content/walk-2.png",
+      "walk-3": "/assets/ai-office-final/characters-clean/content/walk-3.png",
+      "walk-4": "/assets/ai-office-final/characters-clean/content/walk-4.png"
+    },
+    "dev": {
+      "base": "/assets/ai-office-final/characters-clean/dev/base.png",
+      "idle": "/assets/ai-office-final/characters-clean/dev/idle.png",
+      "thinking": "/assets/ai-office-final/characters-clean/dev/thinking.png",
+      "talking": "/assets/ai-office-final/characters-clean/dev/talking.png",
+      "working": "/assets/ai-office-final/characters-clean/dev/working.png",
+      "walk-1": "/assets/ai-office-final/characters-clean/dev/walk-1.png",
+      "walk-2": "/assets/ai-office-final/characters-clean/dev/walk-2.png",
+      "walk-3": "/assets/ai-office-final/characters-clean/dev/walk-3.png",
+      "walk-4": "/assets/ai-office-final/characters-clean/dev/walk-4.png"
+    }
   },
   "props": {
     "deskAdmin": "/assets/ai-office-final/props/desk-admin.png",
