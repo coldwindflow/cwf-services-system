@@ -1,12 +1,22 @@
 (() => {
   "use strict";
-  const VERSION = "CWF AI Office Mobile Chat UX Reset v20 loaded";
+  const VERSION = "CWF AI Office Admin Usability + Agent Memory v21 loaded";
   console.info(VERSION);
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
   const clean = (v) => String(v || "").replace(/\s+/g, " ").trim();
+
+  function showToast(text) {
+    const el = $("#toast");
+    if (!el) return;
+    el.textContent = text;
+    el.classList.add("show");
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => el.classList.remove("show"), 1800);
+  }
+
 
   const api = async (url, opts = {}) => {
     const res = await fetch(url, {
@@ -35,11 +45,13 @@
     selectedConversation: null,
     selectedMessages: [],
     lastCustomerMessage: "",
-    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV20") || "{}"),
+    lastAgentRetry: null,
+    lastLineRetry: null,
+    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV21") || "{}"),
   };
 
   function saveHistory() {
-    localStorage.setItem("cwfAiOfficeAgentHistoryV20", JSON.stringify(state.agentHistory));
+    localStorage.setItem("cwfAiOfficeAgentHistoryV21", JSON.stringify(state.agentHistory));
   }
 
   function currentAgent() {
@@ -100,17 +112,67 @@
     const a = currentAgent();
     const list = state.agentHistory[a.key] || [];
     const welcome = `<div class="welcomeBubble">${esc(welcomeFor(a))}</div>`;
-    box.innerHTML = welcome + list.map((m) => `<div class="msg ${m.role === "user" ? "user" : "ai"}">${esc(m.text)}</div>`).join("");
+    box.innerHTML = welcome + list.map((m) => {
+      const klass = m.role === "user" ? "user" : (m.loading ? "ai loading" : (m.error ? "error" : "ai"));
+      const body = m.loading ? `<span class="typingDots"><i></i><i></i><i></i></span> ${esc(m.text || "กำลังคิดคำตอบ")}` : esc(m.text);
+      const retry = m.error ? `<br><button class="whiteBtn retryBtn" type="button" data-retry-agent>ลองอีกครั้ง</button>` : "";
+      return `<div class="msg ${klass}">${body}${retry}</div>`;
+    }).join("");
     box.scrollTop = box.scrollHeight;
   }
 
-  function addAgentMessage(role, text) {
+  function addAgentMessage(role, text, extra = {}) {
     const a = currentAgent();
     const list = state.agentHistory[a.key] || [];
-    list.push({ role, text: String(text || ""), at: Date.now() });
+    list.push({ role, text: String(text || ""), at: Date.now(), ...extra });
     state.agentHistory[a.key] = list.slice(-30);
     saveHistory();
     renderAgentMessages();
+  }
+
+
+  async function tryLoadAgentHistoryFromServer(agentKey) {
+    try {
+      const data = await api(`/admin/ai-office/agent-chat-history?agent_key=${encodeURIComponent(agentKey)}&limit=20`);
+      const rows = data.messages || [];
+      if (rows.length) {
+        state.agentHistory[agentKey] = rows.map((m) => ({
+          role: m.message_role === "assistant" ? "ai" : "user",
+          text: m.message_text || "",
+          at: m.created_at ? new Date(m.created_at).getTime() : Date.now()
+        })).slice(-30);
+        saveHistory();
+      }
+    } catch (_) {
+      // Optional v21 backend endpoint may not be mounted yet. Local history still works.
+    }
+  }
+
+  async function persistAgentMessage(role, text, extra = {}) {
+    const a = currentAgent();
+    // Existing production endpoint already persists events; new v21 endpoint is optional.
+    api("/admin/ai-office/reply-learning/event", {
+      method: "POST",
+      body: JSON.stringify({
+        event_type: role === "user" ? "agent_user_question" : "agent_ai_answer",
+        agent_key: a.key,
+        situation_type: "agent_chat",
+        source: "ai_office_agent_chat_v21",
+        customer_message: role === "user" ? text : extra.question || "",
+        ai_reply: role === "ai" ? text : "",
+        metadata: { agent_name: a.name, role: a.role, ...extra.metadata }
+      })
+    }).catch(() => {});
+    api("/admin/ai-office/agent-chat-history", {
+      method: "POST",
+      body: JSON.stringify({
+        agent_key: a.key,
+        message_role: role === "ai" ? "assistant" : "user",
+        message_text: text,
+        source_page: "admin-ai-office",
+        metadata: { agent_name: a.name, role: a.role, ...extra.metadata }
+      })
+    }).catch(() => {});
   }
 
   function openAgentChat() {
@@ -121,7 +183,7 @@
     $("#agentOverlay").classList.add("open");
     $("#agentOverlay").setAttribute("aria-hidden", "false");
     renderAgentMessages();
-    setTimeout(() => $("#agentQuestion")?.focus(), 160);
+    tryLoadAgentHistoryFromServer(a.key).then(renderAgentMessages).finally(() => setTimeout(() => $("#agentQuestion")?.focus(), 160));
   }
 
   function closeAgentChat() {
@@ -150,13 +212,16 @@
     }).catch(() => {});
   }
 
-  async function submitAgentQuestion(e) {
-    e.preventDefault();
+  async function submitAgentQuestion(e, retryText = "") {
+    if (e?.preventDefault) e.preventDefault();
     const input = $("#agentQuestion");
-    const raw = clean(input.value);
+    const raw = clean(retryText || input.value);
     if (!raw) return;
+    const submitBtn = $("#agentForm .sendBtn");
+    if (submitBtn) submitBtn.disabled = true;
+    state.lastAgentRetry = raw;
     const agentInfo = currentAgent();
-    const recent = (state.agentHistory[state.agent] || []).slice(-10).map((m) => `${m.role === "user" ? "แอดมิน" : "AI"}: ${m.text}`).join("\n");
+    const recent = (state.agentHistory[state.agent] || []).filter((m) => !m.loading).slice(-10).map((m) => `${m.role === "user" ? "แอดมิน" : "AI"}: ${m.text}`).join("\n");
     const question = [
       `โหมด ${agentInfo.name}`,
       agentInfo.brain || agentInfo.role,
@@ -165,28 +230,38 @@
       recent ? `\nประวัติคุยล่าสุด:\n${recent}` : "",
       `\nคำถามใหม่:\n${raw}`
     ].filter(Boolean).join("\n");
-    input.value = "";
-    autoGrow(input);
-    addAgentMessage("user", raw);
-    logAgentChatEvent("agent_user_question", { question: raw });
-    addAgentMessage("ai", "กำลังอ่านข้อมูลจริงและคิดคำตอบ...");
+    if (!retryText) {
+      input.value = "";
+      autoGrow(input);
+      addAgentMessage("user", raw);
+      persistAgentMessage("user", raw);
+    }
+    addAgentMessage("ai", "กำลังคิดคำตอบ", { loading: true });
     try {
       const data = await api("/admin/ai-office/ask", {
         method: "POST",
         body: JSON.stringify({ agent: state.agent, question })
       });
       const list = state.agentHistory[state.agent] || [];
-      if (list.length && list[list.length - 1].text.includes("กำลังอ่านข้อมูลจริง")) list.pop();
+      if (list.length && list[list.length - 1].loading) list.pop();
       state.agentHistory[state.agent] = list;
-      addAgentMessage("ai", data.answer || "ยังไม่ได้คำตอบจาก AI");
-      logAgentChatEvent("agent_ai_answer", { question: raw, answer: data.answer || "" });
+      const answer = data.answer || "ยังไม่ได้คำตอบจาก AI";
+      addAgentMessage("ai", answer);
+      persistAgentMessage("ai", answer, { question: raw });
     } catch (err) {
       const list = state.agentHistory[state.agent] || [];
-      if (list.length && list[list.length - 1].text.includes("กำลังอ่านข้อมูลจริง")) list.pop();
+      if (list.length && list[list.length - 1].loading) list.pop();
       state.agentHistory[state.agent] = list;
-      addAgentMessage("ai", `ยังใช้งาน AI ไม่ได้: ${err.message}`);
-      logAgentChatEvent("agent_ai_error", { question: raw, metadata: { error: err.message } });
+      addAgentMessage("ai", `ยังใช้งาน AI ไม่ได้: ${err.message}`, { error: true });
+      persistAgentMessage("ai", `ERROR: ${err.message}`, { question: raw, metadata: { error: err.message } });
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
+  }
+
+  async function openAgentWithQuestion(agentKey, question) {
+    setAgent(agentKey, true);
+    setTimeout(() => submitAgentQuestion(null, question), 220);
   }
 
   async function loadSummary() {
@@ -339,6 +414,9 @@
     const input = $("#lineAiQuestion");
     const question = clean(input.value);
     if (!conv?.id || !question) return;
+    state.lastLineRetry = question;
+    const submitBtn = $("#lineAiForm .sendBtn");
+    if (submitBtn) submitBtn.disabled = true;
     input.value = "";
     autoGrow(input);
     $("#lineMessages").insertAdjacentHTML("beforeend", `<div class="lineBubble ai"><div class="bubbleTitle">AI กำลังร่างข้อความ...</div></div>`);
@@ -359,6 +437,8 @@
     } catch (err) {
       removeLatestLoadingBubble();
       renderAiBubble({ customer_reply: `ขออภัยค่ะ ตอนนี้ระบบ AI ยังร่างคำตอบไม่ได้ (${err.message})` });
+    } finally {
+      if (submitBtn) submitBtn.disabled = false;
     }
   }
 
@@ -368,6 +448,7 @@
     if (!clean(text)) return;
     await navigator.clipboard.writeText(text);
     button.textContent = "คัดลอกแล้ว";
+    showToast("คัดลอกแล้ว นำไปวางใน LINE OA ได้เลย");
     setTimeout(() => { button.textContent = "คัดลอกข้อความนี้"; }, 1200);
     api("/admin/ai-office/reply-learning/event", {
       method: "POST",
@@ -464,11 +545,25 @@
     }
   }
 
+
+  function handleComposerKeydown(formSelector) {
+    return (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        const form = e.target.closest(formSelector);
+        form?.requestSubmit();
+      }
+    };
+  }
+
   function bind() {
     document.addEventListener("click", (e) => {
+      const quick = e.target.closest("[data-quick-agent]");
+      if (quick) return openAgentWithQuestion(quick.dataset.quickAgent, quick.dataset.quickQuestion || "");
       if (e.target.closest("[data-open-inbox]")) return openInbox();
       if (e.target.closest("[data-close-agent]")) return closeAgentChat();
       if (e.target.closest("[data-close-inbox]")) return closeInbox();
+      if (e.target.closest("[data-retry-agent]")) return submitAgentQuestion(null, state.lastAgentRetry || "");
       if (e.target.closest("[data-back-list]")) return showInboxList();
       if (e.target.closest("[data-open-memory]")) return openMemoryPanel();
       if (e.target.closest("[data-prefill-memory]")) return prefillMemoryFromChat();
@@ -486,7 +581,9 @@
     $("#lineRefresh")?.addEventListener("click", loadInbox);
     $("#conversationSearch")?.addEventListener("input", renderConversationList);
     $("#agentForm")?.addEventListener("submit", submitAgentQuestion);
+    $("#agentQuestion")?.addEventListener("keydown", handleComposerKeydown("#agentForm"));
     $("#lineAiForm")?.addEventListener("submit", submitLineQuestion);
+    $("#lineAiQuestion")?.addEventListener("keydown", handleComposerKeydown("#lineAiForm"));
     $("#memoryForm")?.addEventListener("submit", saveMemoryExample);
     $("#memoryClose")?.addEventListener("click", closeMemoryPanel);
     $("#memoryReload")?.addEventListener("click", loadMemoryExamples);
