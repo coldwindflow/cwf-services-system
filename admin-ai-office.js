@@ -1,10 +1,13 @@
 (() => {
   "use strict";
-  const VERSION = "CWF AI Office Stable Agent Chat + Memory v19 loaded";
+  const VERSION = "CWF AI Office Mobile Chat UX Reset v20 loaded";
   console.info(VERSION);
 
   const $ = (sel, root = document) => root.querySelector(sel);
   const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+  const clean = (v) => String(v || "").replace(/\s+/g, " ").trim();
+
   const api = async (url, opts = {}) => {
     const res = await fetch(url, {
       credentials: "same-origin",
@@ -13,35 +16,40 @@
     });
     let data = null;
     try { data = await res.json(); } catch (_) {}
-    if (!res.ok || data?.ok === false) {
-      throw new Error(data?.error || `HTTP_${res.status}`);
-    }
+    if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP_${res.status}`);
     return data || {};
   };
-  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
-  const clean = (v) => String(v || "").replace(/\s+/g, " ").trim();
 
   const agentDefs = [
-    { key:"admin", name:"Admin AI", role:"หัวหน้าแอดมิน ช่วยสรุปงาน ร่างข้อความลูกค้าและข้อความช่าง", brain:"คิดแบบหัวหน้าแอดมิน CWF: ตอบสั้น ใช้งานจริง ตรวจข้อมูลก่อน ไม่แต่งข้อมูล ไม่ส่งข้อความแทนแอดมิน", x:"26%", y:"58%", size:"112px", m:"100px", avatar:"/assets/ai-office-final/characters-clean/admin/idle.png" },
-    { key:"sales", name:"Sales AI", role:"เซลส์ปิดงาน ตอบราคา ตอบลูกค้าบอกแพง และช่วยปิดการขาย", brain:"คิดแบบเซลส์มืออาชีพ CWF: ราคา/คุณค่า/ความเชื่อมั่น/ปิดนัด ใช้ภาษาสุภาพ ไม่เวอร์ ไม่กดดันลูกค้า", x:"66%", y:"68%", size:"108px", m:"98px", avatar:"/assets/ai-office-final/characters-clean/sales/idle.png" },
-    { key:"ops", name:"Ops AI", role:"ควบคุมคิวงาน งานวันนี้ พรุ่งนี้ งานค้าง และความเสี่ยงหน้างาน", brain:"คิดแบบหัวหน้าคิวงาน: สรุปงานจริง ตรวจความเสี่ยง คิว เวลา ช่าง งานค้าง งานไม่จ่าย โดยไม่แก้ข้อมูลเอง", x:"51%", y:"45%", size:"118px", m:"102px", avatar:"/assets/ai-office-final/characters-clean/ops/idle.png" },
-    { key:"ads", name:"Ads AI", role:"วิเคราะห์แอด พื้นที่ คีย์เวิร์ด และเหตุผลที่ปิดการขายน้อย", brain:"คิดแบบ performance marketer: วิเคราะห์จากข้อมูลจริง แยกปัญหา lead/call/LINE/landing/ราคา/พื้นที่ พร้อม action ที่แอดมินทำเอง", x:"42%", y:"66%", size:"100px", m:"92px", avatar:"/assets/ai-office-final/characters-clean/ads/idle.png" },
-    { key:"content", name:"Content AI", role:"เขียนโพสต์ แคปชัน รีวิว สคริปต์ และคอนเทนต์สั้น", brain:"คิดแบบ creative director ของ CWF: คอนเทนต์สั้น น่าเชื่อถือ สะอาด พรีเมียม ไม่โม้เกินจริง พร้อมคัดลอกใช้", x:"44%", y:"83%", size:"98px", m:"90px", avatar:"/assets/ai-office-final/characters-clean/content/idle.png" },
-    { key:"dev", name:"Dev AI", role:"ช่วยเขียน prompt ส่ง Codex ตรวจบั๊ก checklist และ rollback", brain:"คิดแบบ senior production engineer: จำกัด scope, ตรวจ regression, ห้าม rewrite, ห้าม mock/demo, ต้อง rollback ได้", x:"78%", y:"55%", size:"112px", m:"96px", avatar:"/assets/ai-office-final/characters-clean/dev/idle.png" },
+    { key:"admin", name:"Admin AI", role:"หัวหน้าแอดมิน / ใช้ข้อมูลงานจริง", brain:"คิดแบบหัวหน้าแอดมิน CWF: ตอบสั้น ใช้งานจริง ตรวจข้อมูลก่อน ไม่แต่งข้อมูล ไม่ส่งข้อความแทนแอดมิน", x:"26%", y:"60%", size:"66px", d:"78px", avatar:"/assets/ai-office-final/characters-clean/admin/idle.png" },
+    { key:"sales", name:"Sales AI", role:"เซลส์ปิดงาน / ราคา / ลูกค้าบอกแพง", brain:"คิดแบบเซลส์มืออาชีพ CWF: ราคา/คุณค่า/ความเชื่อมั่น/ปิดนัด ใช้ภาษาสุภาพ ไม่เวอร์ ไม่กดดันลูกค้า", x:"69%", y:"72%", size:"64px", d:"76px", avatar:"/assets/ai-office-final/characters-clean/sales/idle.png" },
+    { key:"ops", name:"Ops AI", role:"คิวงาน / งานวันนี้ / งานค้าง", brain:"คิดแบบหัวหน้าคิวงาน: สรุปงานจริง ตรวจความเสี่ยง คิว เวลา ช่าง งานค้าง งานไม่จ่าย โดยไม่แก้ข้อมูลเอง", x:"51%", y:"50%", size:"70px", d:"82px", avatar:"/assets/ai-office-final/characters-clean/ops/idle.png" },
+    { key:"ads", name:"Ads AI", role:"โฆษณา / พื้นที่ / ปิดการขาย", brain:"คิดแบบ performance marketer: วิเคราะห์จากข้อมูลจริง แยกปัญหา lead/call/LINE/landing/ราคา/พื้นที่ พร้อม action ที่แอดมินทำเอง", x:"43%", y:"68%", size:"60px", d:"72px", avatar:"/assets/ai-office-final/characters-clean/ads/idle.png" },
+    { key:"content", name:"Content AI", role:"โพสต์ / รีวิว / สคริปต์", brain:"คิดแบบ creative director ของ CWF: คอนเทนต์สั้น น่าเชื่อถือ สะอาด พรีเมียม ไม่โม้เกินจริง พร้อมคัดลอกใช้", x:"45%", y:"86%", size:"59px", d:"70px", avatar:"/assets/ai-office-final/characters-clean/content/idle.png" },
+    { key:"dev", name:"Dev AI", role:"Codex prompt / QA / rollback", brain:"คิดแบบ senior production engineer: จำกัด scope, ตรวจ regression, ห้าม rewrite, ห้าม mock/demo, ต้อง rollback ได้", x:"78%", y:"60%", size:"65px", d:"76px", avatar:"/assets/ai-office-final/characters-clean/dev/idle.png" },
   ];
 
   const state = {
     agent: "admin",
-    summary: null,
     conversations: [],
     selectedConversation: null,
     selectedMessages: [],
     lastCustomerMessage: "",
-    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV19") || "{}"),
+    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV20") || "{}"),
   };
 
   function saveHistory() {
-    localStorage.setItem("cwfAiOfficeAgentHistoryV19", JSON.stringify(state.agentHistory));
+    localStorage.setItem("cwfAiOfficeAgentHistoryV20", JSON.stringify(state.agentHistory));
+  }
+
+  function currentAgent() {
+    return agentDefs.find((a) => a.key === state.agent) || agentDefs[0];
+  }
+
+  function autoGrow(el) {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(el.scrollHeight, 118)}px`;
   }
 
   function renderAgents() {
@@ -49,7 +57,7 @@
     const bar = $("#rolebar");
     if (!wrap || !bar) return;
     wrap.innerHTML = agentDefs.map((a, idx) => `
-      <button class="agent ${a.key === state.agent ? "selected" : ""}" data-agent="${a.key}" aria-label="คุยกับ ${esc(a.name)}" style="--x:${a.x};--y:${a.y};--size:${a.size};--m-size:${a.m};--depth:${30+idx}">
+      <button class="agent ${a.key === state.agent ? "selected" : ""}" data-agent="${a.key}" aria-label="คุยกับ ${esc(a.name)}" style="--x:${a.x};--y:${a.y};--size:${a.size};--d-size:${a.d};--depth:${30+idx}">
         <img class="sprite" src="${a.avatar}" alt="${esc(a.name)}">
         <span class="agentLabel">${esc(a.name)}</span>
       </button>
@@ -59,21 +67,12 @@
         <img src="${a.avatar}" alt=""> ${esc(a.name.replace(" AI",""))}
       </button>
     `).join("");
-    // Direct listeners are added after each render to avoid map/rolebar tap bugs from delegated handlers.
-    $$(".agent", wrap).forEach((btn) => {
-      btn.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        setAgent(btn.dataset.agent, true);
-      });
-    });
-    $$(".rolechip", bar).forEach((btn) => {
-      btn.addEventListener("click", (ev) => {
-        ev.preventDefault();
-        ev.stopPropagation();
-        setAgent(btn.dataset.agent, true);
-      });
-    });
+    $$(".agent", wrap).forEach((btn) => btn.addEventListener("click", (ev) => {
+      ev.preventDefault(); ev.stopPropagation(); setAgent(btn.dataset.agent, true);
+    }));
+    $$(".rolechip", bar).forEach((btn) => btn.addEventListener("click", (ev) => {
+      ev.preventDefault(); ev.stopPropagation(); setAgent(btn.dataset.agent, true);
+    }));
   }
 
   function setAgent(key, open = false) {
@@ -83,8 +82,26 @@
     if (open) openAgentChat();
   }
 
-  function currentAgent() {
-    return agentDefs.find((a) => a.key === state.agent) || agentDefs[0];
+  function welcomeFor(agent) {
+    const map = {
+      admin:"สวัสดีค่ะ ให้ Admin AI ช่วยดูงานวันนี้ งานค้าง หรือร่างข้อความลูกค้าได้เลยค่ะ",
+      sales:"สวัสดีค่ะ ให้ Sales AI ช่วยตอบราคา ปิดการขาย หรือตอบลูกค้าบอกแพงได้เลยค่ะ",
+      ops:"สวัสดีค่ะ ให้ Ops AI ช่วยดูคิวงาน งานค้าง งานยังไม่จ่าย และความเสี่ยงหน้างานได้เลยค่ะ",
+      ads:"สวัสดีค่ะ ให้ Ads AI ช่วยวิเคราะห์แอด พื้นที่ ลูกค้าทักน้อย หรือปิดการขายน้อยได้เลยค่ะ",
+      content:"สวัสดีค่ะ ให้ Content AI ช่วยเขียนโพสต์ แคปชัน รีวิว หรือสคริปต์วิดีโอได้เลยค่ะ",
+      dev:"สวัสดีค่ะ ให้ Dev AI ช่วยเขียน prompt ส่ง Codex ตรวจบั๊ก และทำ checklist deploy ได้เลยค่ะ",
+    };
+    return map[agent.key] || "สวัสดีค่ะ ให้ AI ช่วยงานส่วนไหนพิมพ์มาได้เลยค่ะ";
+  }
+
+  function renderAgentMessages() {
+    const box = $("#agentMessages");
+    if (!box) return;
+    const a = currentAgent();
+    const list = state.agentHistory[a.key] || [];
+    const welcome = `<div class="welcomeBubble">${esc(welcomeFor(a))}</div>`;
+    box.innerHTML = welcome + list.map((m) => `<div class="msg ${m.role === "user" ? "user" : "ai"}">${esc(m.text)}</div>`).join("");
+    box.scrollTop = box.scrollHeight;
   }
 
   function addAgentMessage(role, text) {
@@ -96,19 +113,6 @@
     renderAgentMessages();
   }
 
-  function renderAgentMessages() {
-    const box = $("#agentMessages");
-    if (!box) return;
-    const a = currentAgent();
-    const list = state.agentHistory[a.key] || [];
-    if (!list.length) {
-      box.innerHTML = `<div class="emptyState">ถาม ${esc(a.name)} ได้เลย ระบบจะใช้บริบทงานจริงและประวัติคุยล่าสุดในหน้านี้ช่วยให้ตอบต่อเนื่องขึ้น</div>`;
-      return;
-    }
-    box.innerHTML = list.map((m) => `<div class="msg ${m.role === "user" ? "user" : "ai"}">${esc(m.text)}</div>`).join("");
-    box.scrollTop = box.scrollHeight;
-  }
-
   function openAgentChat() {
     const a = currentAgent();
     $("#agentAvatar").src = a.avatar;
@@ -117,7 +121,7 @@
     $("#agentOverlay").classList.add("open");
     $("#agentOverlay").setAttribute("aria-hidden", "false");
     renderAgentMessages();
-    setTimeout(() => $("#agentQuestion")?.focus(), 80);
+    setTimeout(() => $("#agentQuestion")?.focus(), 160);
   }
 
   function closeAgentChat() {
@@ -153,19 +157,16 @@
     if (!raw) return;
     const agentInfo = currentAgent();
     const recent = (state.agentHistory[state.agent] || []).slice(-10).map((m) => `${m.role === "user" ? "แอดมิน" : "AI"}: ${m.text}`).join("\n");
-    const brainContext = [
-      `โหมดสมองเสริมของ ${agentInfo.name}`,
-      agentInfo.brain || agentInfo.role,
-      "ใช้ประวัติสนทนาล่าสุดเพื่อไม่ตอบซ้ำและเข้าใจบริบทต่อเนื่อง",
-      "ตอบให้พร้อมใช้งานจริงกับร้าน Coldwindflow ไม่ใช่คำตอบกว้าง ๆ",
-      "ห้ามบอกว่าส่งข้อความแล้ว ห้ามแก้ข้อมูล ห้ามสร้างงาน ห้ามใช้ข้อมูลปลอม"
-    ].join("\n");
     const question = [
-      brainContext,
-      recent ? `\nประวัติคุยล่าสุดในแผนกนี้:\n${recent}` : "",
-      `\nคำถามใหม่จากแอดมิน:\n${raw}`
+      `โหมด ${agentInfo.name}`,
+      agentInfo.brain || agentInfo.role,
+      "ใช้ประวัติสนทนาล่าสุดเพื่อเข้าใจบริบทต่อเนื่อง และตอบให้ใช้งานจริงกับ Coldwindflow",
+      "ห้ามบอกว่าส่งข้อความแล้ว ห้ามแก้ข้อมูล ห้ามสร้างงาน ห้ามใช้ข้อมูลปลอม",
+      recent ? `\nประวัติคุยล่าสุด:\n${recent}` : "",
+      `\nคำถามใหม่:\n${raw}`
     ].filter(Boolean).join("\n");
     input.value = "";
+    autoGrow(input);
     addAgentMessage("user", raw);
     logAgentChatEvent("agent_user_question", { question: raw });
     addAgentMessage("ai", "กำลังอ่านข้อมูลจริงและคิดคำตอบ...");
@@ -275,7 +276,7 @@
       $("#inboxTitle").textContent = state.selectedConversation.display_name || "แชทลูกค้า";
       $("#inboxSub").textContent = "ถาม AI จากบริบทลูกค้าคนนี้เท่านั้น";
       renderLineMessages();
-      setTimeout(() => $("#lineAiQuestion")?.focus(), 80);
+      setTimeout(() => $("#lineAiQuestion")?.focus(), 120);
     } catch (err) {
       $("#lineMessages").innerHTML = `<div class="emptyState">โหลดข้อความไม่ได้: ${esc(err.message)}</div>`;
     }
@@ -305,12 +306,21 @@
     box.scrollTop = box.scrollHeight;
   }
 
+  function removeLatestLoadingBubble() {
+    const bubbles = $$(".lineBubble.ai");
+    for (let i = bubbles.length - 1; i >= 0; i--) {
+      if (bubbles[i].textContent.includes("AI กำลังร่างข้อความ")) {
+        bubbles[i].remove();
+        return;
+      }
+    }
+  }
+
   function renderAiBubble(draft) {
     const reply = clean(draft?.customer_reply || draft?.answer || "");
     const text = reply || "ยังไม่ได้ข้อความพร้อมส่งลูกค้า";
-    const id = `reply_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     $("#lineMessages").insertAdjacentHTML("beforeend", `
-      <div class="lineBubble ai" data-ai-bubble="${id}">
+      <div class="lineBubble ai">
         <div class="bubbleTitle">ข้อความพร้อมส่งลูกค้า</div>
         <textarea class="replyText" data-reply-text>${esc(text)}</textarea>
         <div class="bubbleActions">
@@ -330,6 +340,7 @@
     const question = clean(input.value);
     if (!conv?.id || !question) return;
     input.value = "";
+    autoGrow(input);
     $("#lineMessages").insertAdjacentHTML("beforeend", `<div class="lineBubble ai"><div class="bubbleTitle">AI กำลังร่างข้อความ...</div></div>`);
     const box = $("#lineMessages");
     box.scrollTop = box.scrollHeight;
@@ -343,12 +354,10 @@
           agent: state.agent === "sales" ? "sales" : "admin"
         })
       });
-      const loading = $$(".lineBubble.ai").findLast?.((el) => el.textContent.includes("AI กำลังร่างข้อความ"));
-      if (loading) loading.remove();
+      removeLatestLoadingBubble();
       renderAiBubble(data.draft || { customer_reply: data.answer });
     } catch (err) {
-      const loading = $$(".lineBubble.ai").findLast?.((el) => el.textContent.includes("AI กำลังร่างข้อความ"));
-      if (loading) loading.remove();
+      removeLatestLoadingBubble();
       renderAiBubble({ customer_reply: `ขออภัยค่ะ ตอนนี้ระบบ AI ยังร่างคำตอบไม่ได้ (${err.message})` });
     }
   }
@@ -457,8 +466,6 @@
 
   function bind() {
     document.addEventListener("click", (e) => {
-      const agentBtn = e.target.closest("[data-agent]");
-      if (agentBtn) return setAgent(agentBtn.dataset.agent, true);
       if (e.target.closest("[data-open-inbox]")) return openInbox();
       if (e.target.closest("[data-close-agent]")) return closeAgentChat();
       if (e.target.closest("[data-close-inbox]")) return closeInbox();
@@ -483,11 +490,20 @@
     $("#memoryForm")?.addEventListener("submit", saveMemoryExample);
     $("#memoryClose")?.addEventListener("click", closeMemoryPanel);
     $("#memoryReload")?.addEventListener("click", loadMemoryExamples);
+    $$("textarea").forEach((ta) => ta.addEventListener("input", () => autoGrow(ta)));
+  }
+
+  function handleViewport() {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    document.documentElement.style.setProperty("--vvh", `${vv.height}px`);
   }
 
   document.addEventListener("DOMContentLoaded", () => {
     renderAgents();
     bind();
     loadSummary();
+    handleViewport();
+    window.visualViewport?.addEventListener("resize", handleViewport);
   });
 })();
