@@ -1,5 +1,5 @@
 (function(){
-  const VERSION = "ai-office-game-stage-console-20260607b";
+  const VERSION = "ai-office-mobile-tabs-20260607";
   const ASSET_ROOT = "/assets/ai-office-final";
   const CLEAN_CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
   const roleOrder = ["admin","sales","ops","ads","content","dev"];
@@ -13,7 +13,7 @@
 
   const agents = {
     admin: {
-      name: "Admin AI", color: "#1558d6", workstation: "adminDesk", home: { x: 24, y: 62 }, mobileHome: { x: 24, y: 61 },
+      name: "Admin AI", color: "#1558d6", workstation: "adminDesk", home: { x: 24, y: 62 }, mobileHome: { x: 25, y: 57 },
       role: "สรุปงาน ร่างข้อความลูกค้า แจ้งช่าง แปลภาษา",
       status: "พร้อมช่วยงานแอดมิน",
       greeting: "พร้อมสรุปงานจริง ร่างข้อความลูกค้า และประสานช่าง",
@@ -23,7 +23,7 @@
       commands: ["วันนี้มีงานอะไรบ้าง", "ร่างข้อความยืนยันนัดลูกค้า", "ร่างข้อความแจ้งช่าง", "แปลข้อความลูกค้าให้สุภาพ"],
     },
     sales: {
-      name: "Sales AI", color: "#f0b400", workstation: "salesDesk", home: { x: 74, y: 62 }, mobileHome: { x: 73, y: 61 },
+      name: "Sales AI", color: "#f0b400", workstation: "salesDesk", home: { x: 74, y: 62 }, mobileHome: { x: 72, y: 58 },
       role: "ปิดการขาย ตอบลูกค้าบอกว่าแพง แนะนำแพ็กเกจ",
       status: "พร้อมช่วยปิดการขาย",
       greeting: "พร้อมช่วยตอบเรื่องราคาและเพิ่มโอกาสปิดงาน",
@@ -33,7 +33,7 @@
       commands: ["ลูกค้าบอกว่าแพง ตอบยังไงดี", "ช่วยเขียนข้อความปิดการขาย", "แนะนำแพ็กเกจจากงานที่มี", "วิเคราะห์ทำไมปิดการขายได้น้อย"],
     },
     ops: {
-      name: "Ops AI", color: "#13a46b", workstation: "opsBoard", home: { x: 49, y: 40 }, mobileHome: { x: 50, y: 38 },
+      name: "Ops AI", color: "#13a46b", workstation: "opsBoard", home: { x: 49, y: 40 }, mobileHome: { x: 50, y: 35 },
       role: "ดูคิว งานวันนี้ งานพรุ่งนี้ งานยังไม่ปิด งานยังไม่จ่าย",
       status: "พร้อมคุมคิวงาน",
       greeting: "พร้อมดูคิว งานค้าง และจุดที่ต้องระวัง",
@@ -43,7 +43,7 @@
       commands: ["พรุ่งนี้มีงานอะไรบ้าง", "งานไหนยังไม่ปิด", "งานไหนยังไม่จ่าย", "วันนี้มีอะไรต้องระวังไหม"],
     },
     ads: {
-      name: "Ads AI", color: "#ef5aa3", workstation: "adsDesk", home: { x: 18, y: 35 }, mobileHome: { x: 20, y: 36 },
+      name: "Ads AI", color: "#ef5aa3", workstation: "adsDesk", home: { x: 18, y: 35 }, mobileHome: { x: 20, y: 34 },
       role: "Google Ads, Facebook Ads, TikTok Ads, keyword, พื้นที่ยิงแอด",
       status: "พร้อมคิดแคมเปญ",
       greeting: "พร้อมเปลี่ยนงานจริงให้เป็นไอเดียโฆษณา",
@@ -53,7 +53,7 @@
       commands: ["ช่วยคิด keyword จากงานจริง", "พื้นที่ไหนควรยิงแอด", "เขียนข้อความโฆษณาล้างแอร์", "ไอเดีย TikTok Ads จากงานช่วงนี้"],
     },
     content: {
-      name: "Content AI", color: "#8b5cf6", workstation: "contentDesk", home: { x: 27, y: 80 }, mobileHome: { x: 28, y: 80 },
+      name: "Content AI", color: "#8b5cf6", workstation: "contentDesk", home: { x: 27, y: 80 }, mobileHome: { x: 30, y: 70 },
       role: "โพสต์ แคปชัน รีวิว สคริปต์ Reels/TikTok",
       status: "พร้อมสร้างคอนเทนต์",
       greeting: "พร้อมทำโพสต์ แคปชัน และสคริปต์จากงานจริง",
@@ -63,7 +63,7 @@
       commands: ["เขียนแคปชันจากงานวันนี้", "ทำสคริปต์ Reels 30 วินาที", "ไอเดียโพสต์จากงานจริง", "ร่างโพสต์รีวิวจากงานจริง"],
     },
     dev: {
-      name: "Dev AI", color: "#334155", workstation: "devDesk", home: { x: 82, y: 36 }, mobileHome: { x: 80, y: 36 },
+      name: "Dev AI", color: "#334155", workstation: "devDesk", home: { x: 82, y: 36 }, mobileHome: { x: 78, y: 34 },
       role: "prompt Codex, bug summary, deploy checklist, risk review",
       status: "พร้อมตรวจระบบ",
       greeting: "พร้อมช่วยทำเช็กลิสต์ระบบและตรวจความเสี่ยง",
@@ -97,11 +97,11 @@
     adsDesk: { x: 19, y: 31 }, contentDesk: { x: 28, y: 72 }, devDesk: { x: 82, y: 31 }, meetingTable: { x: 51, y: 67 },
   };
   const mobileZones = {
-    adminDesk: { x: 27, y: 53 }, salesDesk: { x: 70, y: 54 }, opsBoard: { x: 50, y: 31 },
-    adsDesk: { x: 28, y: 32 }, contentDesk: { x: 34, y: 73 }, devDesk: { x: 72, y: 33 }, meetingTable: { x: 51, y: 66 },
+    adminDesk: { x: 28, y: 50 }, salesDesk: { x: 69, y: 51 }, opsBoard: { x: 50, y: 30 },
+    adsDesk: { x: 28, y: 31 }, contentDesk: { x: 35, y: 68 }, devDesk: { x: 72, y: 31 }, meetingTable: { x: 51, y: 61 },
   };
 
-  const state = { pin: "", pinRequired: false, activeAgent: "admin", loadingAsk: false, loadingDiagnostics: false, loadingLine: false, greeted: new Set(), agentStates: {}, walkTimers: {}, bubbleTimers: {}, agentPositions: {}, idlePatrolTimer: null, lastAnswer: "", lastDiagnostics: null, lineConversations: [], selectedLineConversation: null, selectedLineMessages: [] };
+  const state = { pin: "", pinRequired: false, activeAgent: "admin", activeTab: "commands", loadingAsk: false, loadingDiagnostics: false, loadingLine: false, greeted: new Set(), agentStates: {}, walkTimers: {}, bubbleTimers: {}, agentPositions: {}, idlePatrolTimer: null, lastAnswer: "", lastDiagnostics: null, lineConversations: [], selectedLineConversation: null, selectedLineMessages: [] };
   const $ = (id) => document.getElementById(id);
   const isMobile = () => window.matchMedia("(max-width: 720px)").matches;
   const pointFor = (key, zone) => (isMobile() ? mobileZones[zone] : zones[zone]) || agents[key].home;
@@ -203,7 +203,7 @@
     });
   }
 
-  function showAgentBubble(agentKey, message, durationMs = 3400){
+  function showAgentBubble(agentKey, message, durationMs = 2600){
     if (agentKey !== state.activeAgent) return;
     hideAgentBubbles(agentKey);
     const el = agentElement(agentKey);
@@ -326,6 +326,39 @@
     document.documentElement.style.setProperty("--selected", agent.color);
     $("askInput")?.setAttribute("placeholder", "\u0e1e\u0e34\u0e21\u0e1e\u0e4c\u0e16\u0e32\u0e21\u0e07\u0e32\u0e19\u0e15\u0e23\u0e07\u0e19\u0e35\u0e49...");
     renderCommands();
+    renderAgentChips();
+  }
+
+  function tabLabel(tab){
+    return ({ commands: "คำสั่ง", chat: "แชท", phone: "ค้นเบอร์" })[tab] || "คำสั่ง";
+  }
+
+  function setConsoleTab(tab){
+    const key = ["commands", "chat", "phone"].includes(tab) ? tab : "commands";
+    state.activeTab = key;
+    document.querySelectorAll(".console-tab").forEach((btn) => {
+      const active = btn.dataset.tab === key;
+      btn.classList.toggle("active", active);
+      btn.setAttribute("aria-selected", active ? "true" : "false");
+    });
+    document.querySelectorAll(".console-view").forEach((view) => {
+      view.classList.toggle("active", view.dataset.view === key);
+    });
+  }
+
+  function renderAgentChips(){
+    const box = $("agentSelector");
+    if (!box) return;
+    box.innerHTML = roleOrder.map((key) => {
+      const agent = agentConfig(key);
+      const label = agent.name.replace(" AI", "");
+      return `<button class="agent-chip${key === state.activeAgent ? " active" : ""}" type="button" data-agent-chip="${esc(key)}" aria-label="${esc(agent.name)}">
+        <img src="${esc(agent.assets.idle)}" alt=""> <span>${esc(label)}</span>
+      </button>`;
+    }).join("");
+    box.querySelectorAll("[data-agent-chip]").forEach((btn) => {
+      btn.addEventListener("click", () => selectAgent(btn.dataset.agentChip, true));
+    });
   }
 
   function renderCommands(){
@@ -338,6 +371,7 @@
       return `<button class="quickBtn${isDev ? " diagCard" : ""}" type="button" data-diag="${esc(mode)}">${esc(cmd)}</button>`;
     }).join("");
     box.querySelectorAll("button").forEach((btn) => btn.addEventListener("click", () => {
+      setConsoleTab("chat");
       if (state.activeAgent === "dev") runDiagnostics(btn.dataset.diag || "full", btn.textContent || "");
       else if (isLineCommand(btn.textContent || "")) handleLineCommand(btn.textContent || "");
       else ask(btn.textContent || "");
@@ -394,6 +428,13 @@
     box.appendChild(div);
     box.scrollTop = box.scrollHeight;
     return div;
+  }
+
+  function setPhoneResult(text, kind = ""){
+    const box = $("phoneResults");
+    if (!box) return;
+    box.className = `phone-results${kind ? " " + kind : ""}`;
+    box.textContent = text || "";
   }
 
   function isLineCommand(text){
@@ -478,6 +519,7 @@
 
   async function handleLineCommand(label){
     if (state.loadingLine) return;
+    setConsoleTab("chat");
     expandConsole();
     const agentKey = ["admin", "sales", "ops"].includes(state.activeAgent) ? state.activeAgent : "admin";
     showAgentBubble(agentKey, "กำลังเปิด LINE Inbox");
@@ -614,6 +656,7 @@
 
   async function runDiagnostics(mode = "full", label = "ตรวจระบบ AI Office"){
     if (state.loadingDiagnostics) return;
+    setConsoleTab("chat");
     state.loadingDiagnostics = true;
     const agentKey = "dev";
     if (state.activeAgent !== "dev") selectAgent("dev", false, true);
@@ -651,7 +694,7 @@
   function responsePreview(text, agentKey){
     const clean = String(text || "").replace(/\s+/g, " ").trim();
     if (!clean) return agentConfig(agentKey).talking;
-    return clean.length > 78 ? `${clean.slice(0, 78)}...` : clean;
+    return clean.length > 34 ? "ดูคำตอบเต็มในแชท" : clean;
   }
 
   function expandConsole(){ $("commandConsole")?.classList.add("expanded"); }
@@ -661,6 +704,7 @@
     state.activeAgent = key;
     document.querySelectorAll(".npc").forEach((el) => el.classList.toggle("selected", el.dataset.agent === key));
     updateConsoleAgent();
+    if (userTriggered && !silent) setConsoleTab("commands");
     showAgentBubble(key, agentConfig(key).greeting);
     if (!state.agentStates[key]) setAgentState(key, "idle");
     if (userTriggered) {
@@ -681,6 +725,7 @@
   async function ask(question){
     const rawQuestion = String(question || $("askInput")?.value || "").trim();
     if (!rawQuestion || state.loadingAsk) return;
+    setConsoleTab("chat");
     const agentKey = orchestrateCommand(state.activeAgent, rawQuestion);
     const agent = agentConfig(agentKey);
     state.loadingAsk = true;
@@ -716,42 +761,40 @@
 
   async function searchPhone(){
     const phone = String($("phoneInput")?.value || "").trim();
+    setConsoleTab("phone");
     expandConsole();
-    const agentKey = orchestrateCommand("admin", "ค้นงานจากเบอร์ลูกค้า");
+    const agentKey = orchestrateCommand("admin", "\u0e04\u0e49\u0e19\u0e07\u0e32\u0e19\u0e08\u0e32\u0e01\u0e40\u0e1a\u0e2d\u0e23\u0e4c\u0e25\u0e39\u0e01\u0e04\u0e49\u0e32");
     if (!phone) {
-      addMessage("ai", "กรุณาใส่เบอร์ลูกค้าก่อนค้นงาน", false);
-      showAgentBubble(agentKey, "ใส่เบอร์ลูกค้าก่อนนะครับ");
+      setPhoneResult("\u0e01\u0e23\u0e38\u0e13\u0e32\u0e43\u0e2a\u0e48\u0e40\u0e1a\u0e2d\u0e23\u0e4c\u0e25\u0e39\u0e01\u0e04\u0e49\u0e32\u0e01\u0e48\u0e2d\u0e19\u0e04\u0e49\u0e19\u0e07\u0e32\u0e19", "error");
+      showAgentBubble(agentKey, "\u0e43\u0e2a\u0e48\u0e40\u0e1a\u0e2d\u0e23\u0e4c\u0e25\u0e39\u0e01\u0e04\u0e49\u0e32\u0e01\u0e48\u0e2d\u0e19\u0e19\u0e30\u0e04\u0e23\u0e31\u0e1a");
       return;
     }
-    addMessage("user", `ค้นงานจากเบอร์ลูกค้า ${phone}`, false);
+    setPhoneResult("\u0e01\u0e33\u0e25\u0e31\u0e07\u0e04\u0e49\u0e19\u0e07\u0e32\u0e19\u0e08\u0e32\u0e01\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e08\u0e23\u0e34\u0e07...", "loading");
     await moveAgent(agentKey, agentConfig(agentKey).workstation);
     setAgentState(agentKey, "thinking");
-    showAgentBubble(agentKey, "กำลังค้นใบงานจากเบอร์นี้");
-    const pending = addThinkingMessage(agentKey);
+    showAgentBubble(agentKey, "\u0e01\u0e33\u0e25\u0e31\u0e07\u0e04\u0e49\u0e19\u0e07\u0e32\u0e19\u0e08\u0e23\u0e34\u0e07...");
     try {
       const data = await apiGet(`/admin/ai-office/search-by-phone?phone=${encodeURIComponent(phone)}`);
-      if (pending) pending.remove();
       const jobs = data.jobs || [];
       if (!jobs.length) {
-        addEmptyMessage("ไม่พบงานจากเบอร์นี้ในระบบ");
+        setPhoneResult("\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e07\u0e32\u0e19\u0e08\u0e32\u0e01\u0e40\u0e1a\u0e2d\u0e23\u0e4c\u0e19\u0e35\u0e49\u0e43\u0e19\u0e23\u0e30\u0e1a\u0e1a", "empty");
         setAgentState(agentKey, "talking");
-        showAgentBubble(agentKey, "ไม่พบงานจากเบอร์นี้");
+        showAgentBubble(agentKey, "\u0e44\u0e21\u0e48\u0e1e\u0e1a\u0e07\u0e32\u0e19\u0e08\u0e32\u0e01\u0e40\u0e1a\u0e2d\u0e23\u0e4c\u0e19\u0e35\u0e49");
         return;
       }
       const lines = jobs.slice(0, 12).map((j) => {
         const when = j.appointment_datetime ? new Date(j.appointment_datetime).toLocaleString("th-TH") : "-";
-        return `${j.booking_code || "#" + j.job_id} • ${j.customer_name || "-"} • ${j.job_type || "-"} • ${when} • ${j.job_status || "-"}`;
+        return `${j.booking_code || "#" + j.job_id} - ${j.customer_name || "-"} - ${j.job_type || "-"} - ${when} - ${j.job_status || "-"}`;
       });
-      addMessage("ai", lines.join("\n"), true);
+      setPhoneResult(lines.join("\n"), "success");
       setAgentState(agentKey, "talking");
-      showAgentBubble(agentKey, `พบ ${money(jobs.length)} งานจากเบอร์นี้`);
+      showAgentBubble(agentKey, `\u0e1e\u0e1a ${money(jobs.length)} \u0e07\u0e32\u0e19`);
       setTimeout(() => setAgentState(agentKey, "working"), 3000);
     } catch (e) {
-      if (pending) pending.remove();
-      const msg = e.message || "ค้นงานไม่สำเร็จ";
-      addMessage("ai", msg, false);
+      const msg = e.message || "\u0e04\u0e49\u0e19\u0e07\u0e32\u0e19\u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08";
+      setPhoneResult(msg, "error");
       setAgentState(agentKey, "talking");
-      showAgentBubble(agentKey, msg);
+      showAgentBubble(agentKey, "\u0e04\u0e49\u0e19\u0e07\u0e32\u0e19\u0e44\u0e21\u0e48\u0e2a\u0e33\u0e40\u0e23\u0e47\u0e08");
     }
   }
 
@@ -785,13 +828,14 @@
 
   function bind(){
     document.querySelectorAll(".npc").forEach((el) => el.addEventListener("click", () => selectAgent(el.dataset.agent, true)));
+    document.querySelectorAll(".console-tab").forEach((btn) => btn.addEventListener("click", () => setConsoleTab(btn.dataset.tab)));
     $("consoleToggle")?.addEventListener("click", () => $("commandConsole")?.classList.toggle("expanded"));
     $("btnRefresh")?.addEventListener("click", refreshAll);
     $("btnPhone")?.addEventListener("click", searchPhone);
-    $("phoneInput")?.addEventListener("focus", expandConsole);
+    $("phoneInput")?.addEventListener("focus", () => { setConsoleTab("phone"); expandConsole(); });
     $("phoneInput")?.addEventListener("keydown", (e) => { if (e.key === "Enter") searchPhone(); });
     $("btnAsk")?.addEventListener("click", () => ask());
-    $("askInput")?.addEventListener("focus", expandConsole);
+    $("askInput")?.addEventListener("focus", () => { setConsoleTab("chat"); expandConsole(); });
     $("askInput")?.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); ask(); } });
     $("btnPin")?.addEventListener("click", async () => {
       const pin = String($("pinInput")?.value || "").trim();
