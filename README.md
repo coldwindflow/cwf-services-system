@@ -1,39 +1,65 @@
-# CWF AI Office Practical Admin UX v13
+# CWF AI Office Customer Chat v14
 
-แก้ตาม production scope:
+แพ็กนี้เป็น patch สำหรับแก้แอพจริงใน repo CWF โดยไม่สร้าง mock/demo
 
-- ปุ่ม AI Office อยู่บนแถบเมนูจริง ข้างปุ่ม hamburger ไม่ใช่อยู่แค่ใน drawer menu
-- ใช้ไอคอน AI ที่แนบเป็น asset จริง: `/assets/icons/cwf-ai-office-entry.png`
-- กล่องแชทลูกค้าเลือกแชทแล้วร่างคำตอบให้อัตโนมัติ
-- หน้าหลักแสดงเฉพาะ `customer_reply`
-- ปุ่มคัดลอกคัดลอกเฉพาะข้อความตอบลูกค้า ไม่ติดสรุป/คำแปล/ข้อมูลขาด
-- ซ่อนรายละเอียดแอดมินไว้ใน `ดูรายละเอียดสำหรับแอดมิน`
-- เพิ่ม prompt/sanitizer/fallback ให้ AI ตอบธรรมชาติขึ้น ไม่ใช่รายงานยาว
-- อัปเกรด Agent roles เป็นระดับ expert เฉพาะตำแหน่ง
+## สิ่งที่แก้
 
-## วิธีใช้
+1. ปุ่ม AI Office บนแถบเมนูจริงของแอดมิน
+   - อยู่ข้างปุ่ม hamburger ใน topbar
+   - ใช้ asset `assets/icons/cwf-ai-office-entry.png`
+   - กดเข้า `/admin/ai-office`
 
-แตก zip ที่ root repo แล้วรัน:
+2. กล่องแชทลูกค้าให้ใช้งานเหมือนแชทจริงมากขึ้น
+   - เลือกลูกค้าแล้วระบบร่างคำตอบให้อัตโนมัติ
+   - เพิ่มช่อง “ถาม AI สำหรับแชทนี้” ให้แอดมินพิมพ์ถามว่า “ควรตอบยังไง”
+   - AI ตอบกลับเป็นข้อความพร้อมส่งลูกค้า
+   - แอดมินคัดลอกไปส่ง LINE เอง
+
+3. ข้อความส่งลูกค้าเป็นโทนแอดมินผู้หญิง
+   - ภาษาไทยใช้ “ค่ะ / นะคะ” อย่างเป็นธรรมชาติ
+   - ไม่ใช่รายงาน ไม่ใช่ bullet ไม่ใช่สรุปหลังบ้าน
+
+4. คัดลอกเฉพาะข้อความส่งลูกค้า
+   - ไม่ติดสรุป
+   - ไม่ติดคำแปล
+   - ไม่ติดข้อมูลที่ยังขาด
+   - ไม่ติด next step
+
+5. อัปเกรดบุคลิก AI แต่ละตำแหน่ง
+   - Admin AI = Senior Admin Manager
+   - Sales AI = Master Closer
+   - Ops AI = Dispatch & Operations Commander
+   - Ads AI = Elite Performance Marketer
+   - Content AI = Creative Director
+   - Dev AI = Senior Production Engineer
+   - Office Chat = AI Chief of Staff
+
+## วิธีลง
+
+แตก ZIP ที่ root repo แล้วรัน:
 
 ```bash
-bash cwf-ai-office-practical-admin-ux-v13/tools/apply-cwf-ai-office-practical-admin-ux-v13.sh .
+bash cwf-ai-office-customer-chat-v14/tools/apply-cwf-ai-office-customer-chat-v14.sh .
 ```
 
 จากนั้น commit/push:
 
 ```bash
 git add admin-v2-common.js admin-ai-office.js admin-ai-office.html server/routes/adminAiOfficeReadOnly.js assets/icons/cwf-ai-office-entry.png
-git commit -m "Improve AI Office topbar entry and customer reply quality"
+git commit -m "Improve AI Office topbar shortcut and customer chat replies"
 git push
 ```
 
 แล้วให้ Render deploy ใหม่
 
-## เช็กหลัง deploy
+## ทดสอบหลัง deploy
 
-- ทุกหน้าแอดมินที่ใช้ admin-v2-common.js ต้องมีปุ่ม AI ข้าง hamburger บนแถบเมนู
+- ทุกหน้าแอดมินต้องเห็นปุ่ม AI ข้าง hamburger บน topbar
 - กดปุ่ม AI แล้วเข้า `/admin/ai-office`
-- กล่องแชทลูกค้าเลือกแชทแล้วร่างคำตอบเอง
-- คัดลอกแล้วได้เฉพาะข้อความส่งลูกค้า
-- ไม่มีการส่ง LINE เอง
-- `/line/webhook` ยัง verify ได้
+- เข้า “กล่องแชทลูกค้า”
+- เลือกลูกค้า 1 คน
+- ระบบร่างข้อความให้อัตโนมัติ
+- แอดมินพิมพ์ในช่อง “ถาม AI สำหรับแชทนี้” ได้
+- กดคัดลอกแล้วได้เฉพาะข้อความส่งลูกค้า
+- ข้อความไทยต้องเป็นโทนผู้หญิง เช่น ค่ะ / นะคะ
+- ระบบยังไม่ส่ง LINE เอง
