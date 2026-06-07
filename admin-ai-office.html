@@ -1,147 +1,191 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
+  <link rel="apple-touch-icon" href="/icon-cwf-v32-180.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#06163d">
+  <link rel="manifest" href="/manifest.json">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#06163d" />
-  <meta name="cwf-ai-office-version" content="customer-chat-ux-v18-20260608" />
+  <meta name="cwf-ai-office-version" content="ai-office-v18-clean-chat-memory-20260608" />
   <title>CWF AI Office</title>
-  <link rel="apple-touch-icon" href="/icon-cwf-v32-180.png" />
-  <link rel="manifest" href="/manifest.json" />
+  <link rel="stylesheet" href="/style.css">
   <style>
     :root{
       --navy:#06163d;--navy2:#0b2e72;--blue:#1558d6;--blue2:#0d3d8d;--gold:#ffcc00;
-      --ink:#07152f;--muted:#64748b;--line:rgba(15,23,42,.12);--paper:#fff;--soft:#eef6ff;
+      --ink:#07152f;--muted:#63718a;--line:rgba(15,23,42,.13);--paper:#fff;--soft:#eef6ff;
       --safe-top:env(safe-area-inset-top,0px);--safe-bottom:env(safe-area-inset-bottom,0px);
-      --safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px);
+      --safe-left:env(safe-area-inset-left,0px);--safe-right:env(safe-area-inset-right,0px)
     }
     *{box-sizing:border-box}
-    html,body{width:100%;max-width:100%;min-height:100%;margin:0;overflow-x:hidden;background:var(--navy);color:var(--ink);font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-    body{overscroll-behavior-x:none}
-    button,input,textarea,select{font:inherit}button{touch-action:manipulation}.hidden{display:none!important}
-    .page{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;background:linear-gradient(180deg,#06163d 0,#0b2e72 28%,#eaf3ff 28%,#f7fbff 100%);overflow-x:hidden}
-    .topbar{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:calc(12px + var(--safe-top)) max(14px,var(--safe-right)) 12px max(14px,var(--safe-left));background:linear-gradient(135deg,#06163d 0,#0d3d8d 72%,#1769ff 100%);color:#fff;box-shadow:0 14px 34px rgba(3,12,35,.32);position:relative;z-index:5}
-    .brand{display:flex;align-items:center;gap:12px;min-width:0}.brand img{width:52px;height:52px;object-fit:contain;border-radius:18px;background:#fff;padding:6px;box-shadow:0 12px 24px rgba(0,0,0,.22)}
-    .brandText{min-width:0}.brand h1{margin:0;font-size:24px;line-height:1.04;font-weight:1000;letter-spacing:.1px}.brand p{margin:4px 0 0;color:rgba(255,255,255,.78);font-size:12px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:46vw}
-    .topActions{display:flex;align-items:center;gap:8px;flex:0 0 auto;min-width:0}.inboxBtn,.reloadBtn{appearance:none;border:0;min-height:52px;border-radius:19px;font-weight:1000;box-shadow:0 12px 26px rgba(0,0,0,.18);cursor:pointer}.inboxBtn{background:linear-gradient(135deg,#ffe875,#ffcc00);color:#06163d;padding:0 15px;white-space:nowrap}.reloadBtn{width:52px;background:#fff;color:#0d3d8d;font-size:23px}.inboxBtn:active,.reloadBtn:active{transform:translateY(1px)}
-    .stats{display:flex;gap:10px;overflow-x:auto;scrollbar-width:none;padding:12px max(14px,var(--safe-right)) 10px max(14px,var(--safe-left));background:rgba(6,22,61,.96)}.stats::-webkit-scrollbar{display:none}.stat{flex:1 0 132px;min-width:132px;border-radius:20px;padding:12px 14px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.13);color:#fff}.stat span{display:block;color:rgba(255,255,255,.72);font-size:12px;font-weight:850}.stat b{display:block;margin-top:5px;font-size:24px;line-height:1;font-weight:1000}
-    .office{flex:1 1 auto;min-height:0;padding:12px max(14px,var(--safe-right)) calc(14px + var(--safe-bottom)) max(14px,var(--safe-left));background:linear-gradient(180deg,#e7f0ff 0,#f7fbff 100%);display:flex;flex-direction:column;gap:10px;overflow-x:hidden}.stage{position:relative;flex:1 1 auto;min-height:420px;border-radius:30px;overflow:hidden;border:3px solid rgba(255,255,255,.98);box-shadow:0 24px 62px rgba(7,21,47,.25);background:#eaf4ff;isolation:isolate}.map{position:absolute;inset:0;z-index:0;background:url("/assets/ai-office-final/maps-clean/office-main-desktop.png") center/cover no-repeat,linear-gradient(135deg,#eaf4ff,#fff)}.stage:before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.04),rgba(6,22,61,.10) 74%,rgba(6,22,61,.18))}.hint{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:4;padding:8px 14px;border-radius:999px;background:rgba(255,255,255,.95);border:2px solid rgba(255,204,0,.86);box-shadow:0 12px 26px rgba(7,21,47,.18);color:#0d3d8d;font-size:13px;font-weight:1000;white-space:nowrap;text-align:center}.officeStatus{position:absolute;left:14px;bottom:14px;right:14px;z-index:6;pointer-events:none}.statusPill{display:inline-flex;align-items:center;gap:8px;max-width:100%;padding:8px 12px;border-radius:999px;background:rgba(6,22,61,.78);color:#fff;border:1px solid rgba(255,255,255,.16);box-shadow:0 12px 28px rgba(0,0,0,.22);font-size:12px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.statusPill:before{content:"";width:8px;height:8px;border-radius:99px;background:#3ee58c;box-shadow:0 0 0 5px rgba(62,229,140,.16)}
-    .agents{position:absolute;inset:0;z-index:5;pointer-events:none}.agent{position:absolute;left:var(--x);top:var(--y);width:var(--size,72px);border:0;background:transparent;transform:translate(-50%,-100%);cursor:pointer;pointer-events:auto;padding:0}.agent img{width:100%;height:auto;object-fit:contain;filter:drop-shadow(0 12px 12px rgba(7,21,47,.26))}.agent .label{position:absolute;left:50%;bottom:-30px;transform:translateX(-50%);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:6px 11px;border-radius:999px;background:#0d3d8d;color:#fff;border:2px solid rgba(255,255,255,.92);box-shadow:0 10px 18px rgba(7,21,47,.24);font-size:11px;font-weight:1000;line-height:1}.agent.active .label{background:linear-gradient(135deg,#ffe875,#ffcc00);color:#06163d}.rolebar{display:flex;align-items:center;gap:8px;overflow-x:auto;scrollbar-width:none;padding:0 2px 2px}.rolebar::-webkit-scrollbar{display:none}.rolechip{appearance:none;border:1px solid rgba(21,88,214,.13);background:#fff;color:#0d3d8d;min-height:42px;border-radius:999px;padding:5px 12px 5px 6px;display:inline-flex;align-items:center;gap:8px;box-shadow:0 10px 20px rgba(7,21,47,.08);font-weight:1000;white-space:nowrap;cursor:pointer}.rolechip img{width:29px;height:29px;object-fit:contain;border-radius:999px;background:#edf5ff}.rolechip.active{background:linear-gradient(135deg,#0d3d8d,#1769ff);color:#fff;border-color:rgba(255,255,255,.18)}
+    html,body{width:100%;max-width:100%;min-height:100%;margin:0;overflow-x:hidden}
+    body{font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:#06163d}
+    button,input,textarea,select{font:inherit}
+    button{touch-action:manipulation;cursor:pointer}
+    #cwfTopNav,#cwfTopNavSpacer,#cwfNavSpacer{display:none!important}
 
-    .lineModal{position:fixed;inset:0;z-index:2000;display:none;background:#eef6ff;color:var(--ink);overflow:hidden}.lineModal.open{display:flex;flex-direction:column}.lineTop{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:calc(12px + var(--safe-top)) max(14px,var(--safe-right)) 12px max(14px,var(--safe-left));background:linear-gradient(135deg,#06163d,#0d3d8d 70%,#1769ff);color:#fff;box-shadow:0 12px 30px rgba(3,12,35,.28);min-width:0}.lineClose{appearance:none;border:0;width:52px;height:52px;border-radius:18px;background:rgba(255,255,255,.14);color:#fff;font-size:25px;font-weight:1000;cursor:pointer}.lineTitle{min-width:0;flex:1}.lineTitle b{display:block;font-size:22px;line-height:1.05;font-weight:1000}.lineTitle span{display:block;margin-top:4px;max-width:100%;font-size:12px;color:rgba(255,255,255,.78);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lineBody{flex:1 1 auto;min-height:0;width:100%;max-width:100%;overflow:hidden}.screen{height:100%;width:100%;max-width:100%;min-width:0;overflow:hidden;display:flex;flex-direction:column}.screen.hidden{display:none!important}.listHeader{flex:0 0 auto;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px max(14px,var(--safe-right)) 8px max(14px,var(--safe-left));background:#eef6ff;min-width:0}.listHeader h2{margin:0;font-size:15px;font-weight:1000;color:#10223f}.smallBtn{appearance:none;border:1px solid rgba(21,88,214,.14);background:#fff;color:#0d3d8d;min-height:42px;border-radius:15px;padding:0 12px;font-weight:1000;box-shadow:0 8px 16px rgba(7,21,47,.06);cursor:pointer;white-space:nowrap}.convList{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:8px max(14px,var(--safe-right)) calc(18px + var(--safe-bottom)) max(14px,var(--safe-left));display:flex;flex-direction:column;gap:10px}.convItem{width:100%;text-align:left;border:1px solid rgba(21,88,214,.12);background:#fff;border-radius:20px;padding:13px;box-shadow:0 10px 22px rgba(7,21,47,.08);cursor:pointer;min-height:76px}.convItem strong{display:block;font-size:15px;font-weight:1000;color:#10223f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.convItem p{margin:6px 0 0;color:#53627a;font-size:13px;line-height:1.45;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}.convMeta{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:8px;color:#7b8799;font-size:11px;font-weight:800}.memoryPanel{flex:0 0 auto;margin:0 max(14px,var(--safe-right)) 12px max(14px,var(--safe-left));border:1px solid rgba(21,88,214,.12);border-radius:22px;background:#fff;box-shadow:0 12px 28px rgba(7,21,47,.08);overflow:hidden}.memoryHead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:12px 13px;border-bottom:1px solid rgba(15,23,42,.08)}.memoryHead b{font-size:14px}.memoryForm{display:none;padding:12px;gap:9px;flex-direction:column}.memoryPanel.open .memoryForm{display:flex}.memoryForm label{font-size:12px;font-weight:1000;color:#10223f}.memoryForm input,.memoryForm select,.memoryForm textarea{width:100%;max-width:100%;border:1px solid rgba(15,23,42,.12);border-radius:15px;padding:11px 12px;background:#f8fbff;color:#10223f;outline:none}.memoryForm textarea{min-height:84px;resize:vertical}.memoryActions{display:flex;gap:8px;flex-wrap:wrap}.primaryBtn{appearance:none;border:0;background:linear-gradient(135deg,#0d3d8d,#1769ff);color:#fff;min-height:44px;border-radius:16px;padding:0 14px;font-weight:1000;box-shadow:0 12px 24px rgba(21,88,214,.22);cursor:pointer}
+    .page{min-height:100vh;min-height:100dvh;background:linear-gradient(180deg,#06163d 0,#0b2e72 29%,#eaf3ff 29%,#f7fbff 100%);display:flex;flex-direction:column;overflow:hidden}
+    .topbar{flex:0 0 auto;display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:12px;padding:calc(14px + var(--safe-top)) max(14px,var(--safe-right)) 14px max(14px,var(--safe-left));color:#fff;background:linear-gradient(135deg,#06163d 0,#0d3d8d 72%,#1769ff 100%);box-shadow:0 14px 34px rgba(3,12,35,.32);z-index:8}
+    .brandLogo{width:58px;height:58px;border-radius:20px;background:#fff;padding:7px;box-shadow:0 12px 24px rgba(0,0,0,.22);object-fit:contain}
+    .brandTitle{min-width:0}.brandTitle h1{margin:0;font-size:clamp(26px,6vw,42px);line-height:.95;font-weight:1000;letter-spacing:.1px}.brandTitle p{margin:5px 0 0;color:rgba(255,255,255,.78);font-size:12px;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .topActions{display:flex;align-items:center;gap:8px;min-width:0}.topBtn{appearance:none;border:0;min-height:54px;border-radius:20px;padding:0 15px;font-weight:1000;box-shadow:0 12px 26px rgba(0,0,0,.18);white-space:nowrap}.topBtn.inbox{background:var(--gold);color:#06163d}.topBtn.reload{width:54px;padding:0;background:#fff;color:#0d3d8d;font-size:24px}
+    .stats{flex:0 0 auto;display:flex;gap:12px;padding:12px max(14px,var(--safe-right)) 12px max(14px,var(--safe-left));background:rgba(6,22,61,.96);overflow-x:auto;scrollbar-width:none}.stats::-webkit-scrollbar{display:none}.stat{flex:1 0 180px;min-width:150px;border-radius:24px;padding:15px 18px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.13);color:#fff;box-shadow:0 12px 24px rgba(0,0,0,.12)}.stat span{display:block;color:rgba(255,255,255,.72);font-size:14px;font-weight:900}.stat b{display:block;margin-top:6px;font-size:34px;line-height:1;font-weight:1000}
+    .office{flex:1 1 auto;min-height:0;padding:18px max(14px,var(--safe-right)) calc(18px + var(--safe-bottom)) max(14px,var(--safe-left));background:linear-gradient(180deg,#e7f0ff 0,#f7fbff 100%);display:flex;flex-direction:column;gap:14px}
+    .stage{position:relative;flex:1 1 auto;min-height:520px;border-radius:30px;overflow:hidden;border:3px solid rgba(255,255,255,.98);box-shadow:0 24px 62px rgba(7,21,47,.25);background:#eaf4ff;isolation:isolate}
+    .map{position:absolute;inset:0;z-index:0;background:url("/assets/ai-office-final/maps-clean/office-main-desktop.png") center/cover no-repeat,linear-gradient(135deg,#eaf4ff,#fff)}
+    .stage:before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(6,22,61,.11) 80%,rgba(6,22,61,.20))}
+    .hint{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:4;max-width:calc(100% - 26px);padding:9px 18px;border-radius:999px;background:rgba(255,255,255,.97);border:2px solid rgba(255,204,0,.9);box-shadow:0 12px 26px rgba(7,21,47,.18);color:#0d3d8d;font-size:16px;font-weight:1000;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .officeStatus{position:absolute;left:18px;bottom:18px;right:18px;z-index:6;display:flex;align-items:center;gap:8px;pointer-events:none}.statusPill{display:inline-flex;align-items:center;gap:10px;max-width:100%;padding:10px 14px;border-radius:999px;background:rgba(6,22,61,.78);color:#fff;border:1px solid rgba(255,255,255,.16);box-shadow:0 12px 28px rgba(0,0,0,.22);font-size:14px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.statusPill:before{content:"";width:10px;height:10px;border-radius:99px;background:#3ee58c;box-shadow:0 0 0 7px rgba(62,229,140,.16)}
+    .agents{position:absolute;inset:0;z-index:5;pointer-events:none}.agent{position:absolute;left:var(--x);top:var(--y);width:var(--size,106px);min-width:68px;min-height:92px;padding:0;border:0;background:transparent;transform:translate(-50%,-100%);pointer-events:auto;z-index:calc(20 + var(--depth,50));filter:drop-shadow(0 14px 12px rgba(7,21,47,.25))}.agent:focus-visible{outline:3px solid var(--gold);outline-offset:10px;border-radius:22px}.agent.selected{filter:drop-shadow(0 0 18px rgba(255,204,0,.58)) drop-shadow(0 14px 12px rgba(7,21,47,.25))}.sprite{display:block;width:100%;height:auto;object-fit:contain;animation:idleBob 3.2s ease-in-out infinite}.agentLabel{position:absolute;left:50%;bottom:-28px;transform:translateX(-50%);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:8px 14px;border-radius:999px;background:#0d3d8d;color:#fff;border:2px solid rgba(255,255,255,.92);box-shadow:0 10px 18px rgba(7,21,47,.24);font-size:14px;font-weight:1000;line-height:1;pointer-events:none}.agent.selected .agentLabel{background:#ffcc00;color:#06163d}
+    @keyframes idleBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
+    .rolebar{flex:0 0 auto;display:flex;align-items:center;gap:12px;overflow-x:auto;scrollbar-width:none;padding:0 2px 2px}.rolebar::-webkit-scrollbar{display:none}.rolechip{appearance:none;border:1px solid rgba(21,88,214,.13);background:#fff;color:#0d3d8d;min-height:58px;border-radius:999px;padding:6px 22px 6px 8px;display:inline-flex;align-items:center;gap:12px;box-shadow:0 10px 20px rgba(7,21,47,.08);font-size:20px;font-weight:1000;white-space:nowrap}.rolechip img{width:42px;height:42px;object-fit:contain;border-radius:999px;background:#edf5ff}.rolechip.active{background:linear-gradient(135deg,#0d3d8d,#1769ff);color:#fff;border-color:rgba(255,255,255,.18)}
 
-    .chatView{height:100%;display:flex;flex-direction:column;background:#f7fbff;overflow:hidden}.chatHeader{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:10px max(14px,var(--safe-right)) 10px max(14px,var(--safe-left));background:#fff;border-bottom:1px solid rgba(15,23,42,.08);box-shadow:0 8px 20px rgba(7,21,47,.06);min-width:0}.backBtn{appearance:none;border:0;min-width:76px;height:44px;border-radius:16px;background:#eef6ff;color:#0d3d8d;font-weight:1000;cursor:pointer}.chatName{min-width:0;flex:1}.chatName b{display:block;font-size:17px;font-weight:1000;color:#10223f;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.chatName span{display:block;margin-top:2px;font-size:12px;color:#69778e;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.messages{flex:1 1 auto;min-height:0;width:100%;max-width:100%;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px max(14px,var(--safe-right)) 14px max(14px,var(--safe-left));display:flex;flex-direction:column;gap:10px;background:linear-gradient(180deg,#f7fbff,#edf5ff)}.msg{max-width:min(84%,680px);border-radius:20px;padding:12px 13px;line-height:1.55;font-size:15px;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;box-shadow:0 10px 22px rgba(7,21,47,.08)}.msg.customer{align-self:flex-start;background:#fff;border:1px solid rgba(21,88,214,.10)}.msg.admin{align-self:flex-end;background:#e9f1ff;border:1px solid rgba(21,88,214,.13)}.msg.ask{align-self:flex-end;background:linear-gradient(135deg,#0d3d8d,#1769ff);color:#fff}.msg.ai{align-self:flex-start;background:#fff;border:1px solid rgba(255,204,0,.38);max-width:min(92%,760px)}.msg small{display:block;margin-top:7px;color:#7b8799;font-size:11px;font-weight:800}.aiTitle{display:block;font-weight:1000;color:#0d3d8d;margin-bottom:8px}.replyEdit{width:100%;max-width:100%;min-height:92px;border:1px solid rgba(21,88,214,.14);background:#f8fbff;border-radius:16px;padding:11px 12px;line-height:1.55;resize:vertical;color:#10223f;outline:none}.aiActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}.ghostBtn{appearance:none;border:1px solid rgba(21,88,214,.14);background:#fff;color:#0d3d8d;min-height:40px;border-radius:14px;padding:0 12px;font-weight:1000;box-shadow:0 8px 16px rgba(7,21,47,.05);cursor:pointer}.composer{flex:0 0 auto;background:rgba(255,255,255,.96);border-top:1px solid rgba(15,23,42,.09);padding:10px max(14px,var(--safe-right)) calc(10px + var(--safe-bottom)) max(14px,var(--safe-left));display:flex;gap:8px;align-items:flex-end}.composer textarea{flex:1 1 auto;min-width:0;max-width:100%;height:48px;max-height:140px;resize:none;border:1px solid rgba(21,88,214,.16);border-radius:17px;padding:12px;background:#fff;color:#10223f;outline:none;line-height:1.45}.composer button{flex:0 0 auto;min-width:78px;height:48px;border-radius:17px;border:0;background:linear-gradient(135deg,#0d3d8d,#1769ff);color:#fff;font-weight:1000;box-shadow:0 12px 24px rgba(21,88,214,.22);cursor:pointer}.composer button:disabled{opacity:.58;cursor:not-allowed}.toast{position:fixed;left:12px;right:12px;bottom:calc(14px + var(--safe-bottom));z-index:3000;background:#06163d;color:#fff;padding:12px 14px;border-radius:16px;box-shadow:0 18px 40px rgba(0,0,0,.28);font-weight:900;text-align:center}.loading{opacity:.75}.emptyState{margin:auto;color:#69778e;font-weight:900;text-align:center;padding:30px 12px}
+    .overlay{position:fixed;inset:0;z-index:100;display:none;flex-direction:column;background:#f7fbff;color:var(--ink);overflow:hidden}.overlay.open{display:flex}
+    .overlayTop{flex:0 0 auto;padding:calc(10px + var(--safe-top)) max(12px,var(--safe-right)) 10px max(12px,var(--safe-left));background:linear-gradient(135deg,#06163d,#0d3d8d 72%,#1769ff);color:#fff;box-shadow:0 12px 30px rgba(3,12,35,.28)}.overlayHead{display:flex;align-items:center;gap:12px;min-width:0}.squareBtn{appearance:none;border:0;width:48px;height:48px;border-radius:16px;background:rgba(255,255,255,.14);color:#fff;font-size:24px;font-weight:1000}.overlayTitle{min-width:0;flex:1}.overlayTitle b{display:block;font-size:24px;line-height:1.05;font-weight:1000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.overlayTitle span{display:block;margin-top:4px;font-size:13px;color:rgba(255,255,255,.78);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.smallAction{appearance:none;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.14);color:#fff;min-height:42px;border-radius:999px;padding:0 12px;font-weight:1000;white-space:nowrap}
+    .overlayBody{flex:1 1 auto;min-height:0;overflow:auto;-webkit-overflow-scrolling:touch;background:linear-gradient(180deg,#f7fbff,#edf5ff);padding:14px max(12px,var(--safe-right)) calc(14px + var(--safe-bottom)) max(12px,var(--safe-left))}
+    .agentChat{height:100%;display:flex;flex-direction:column;gap:12px}.agentMessages{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px}.msg{max-width:min(760px,92vw);border-radius:22px;padding:14px 16px;line-height:1.58;font-size:16px;white-space:pre-wrap;overflow-wrap:anywhere;box-shadow:0 10px 22px rgba(7,21,47,.08)}.msg.ai{align-self:flex-start;background:#fff;border:1px solid rgba(21,88,214,.12)}.msg.user{align-self:flex-end;background:linear-gradient(135deg,#0d3d8d,#1769ff);color:#fff}.composer{flex:0 0 auto;display:flex;gap:8px;align-items:flex-end;background:#fff;border:1px solid rgba(21,88,214,.13);border-radius:22px;padding:8px;box-shadow:0 -8px 28px rgba(7,21,47,.08)}.composer textarea{flex:1;min-height:48px;max-height:128px;resize:none;border:0;outline:0;padding:12px;font-size:16px;background:transparent;color:var(--ink)}.composer button{appearance:none;border:0;min-height:48px;border-radius:16px;background:linear-gradient(135deg,#0d3d8d,#1769ff);color:#fff;font-weight:1000;padding:0 18px}
 
-    @media(max-width:720px){.brand h1{font-size:21px}.brand img{width:46px;height:46px}.brand p{max-width:36vw}.inboxBtn{min-height:48px;padding:0 12px}.reloadBtn{width:48px;height:48px}.stage{min-height:calc(100dvh - 245px);border-radius:26px}.agent{width:58px}.hint{font-size:12px}.statusPill{font-size:11.5px}.msg{max-width:92%}.lineTitle b{font-size:20px}}
-    @media(max-width:430px){.topbar{gap:8px}.brand h1{font-size:20px}.brand p{display:none}.brand img{width:44px;height:44px;border-radius:16px}.inboxBtn{font-size:12px;min-height:46px;padding:0 11px}.reloadBtn{width:46px;height:46px}.topActions{gap:7px}.stat{flex-basis:124px;min-width:124px}.office{padding-left:10px;padding-right:10px}.stage{min-height:400px;border-width:2px}.agent{width:54px}.agent .label{font-size:10px;padding:6px 9px}.map{background-position:center}.chatHeader{padding-left:10px;padding-right:10px}.messages{padding-left:10px;padding-right:10px}.composer{padding-left:10px;padding-right:10px}.lineTop{padding-left:10px;padding-right:10px}.lineClose{width:48px;height:48px}.lineTitle b{font-size:19px}.memoryPanel{margin-left:10px;margin-right:10px}.listHeader,.convList{padding-left:10px;padding-right:10px}}
+    .inboxRoot{height:100%;min-width:0;display:flex;flex-direction:column}.view{display:none;height:100%;min-height:0}.view.active{display:flex;flex-direction:column}.searchBox{display:flex;gap:8px;margin-bottom:10px}.searchBox input{width:100%;min-height:46px;border:1px solid var(--line);border-radius:18px;padding:0 14px;background:#fff;font-weight:800}.conversationList{display:flex;flex-direction:column;gap:10px;min-height:0}.conversationCard{appearance:none;text-align:left;border:1px solid rgba(21,88,214,.12);border-radius:22px;background:#fff;padding:14px;box-shadow:0 12px 26px rgba(7,21,47,.08);min-height:84px}.conversationCard b{display:block;font-size:17px;color:#10223f}.conversationCard p{margin:6px 0 0;color:#53637d;line-height:1.45;font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.conversationCard .meta{display:flex;justify-content:space-between;gap:8px;margin-top:8px;color:#8090aa;font-size:12px;font-weight:850}.dot{display:inline-flex;width:10px;height:10px;border-radius:99px;background:#3ee58c;margin-right:6px}
+    .lineChat{height:100%;min-height:0;display:flex;flex-direction:column;overflow:hidden}.lineChatHeader{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:10px;border-radius:22px;background:#fff;border:1px solid rgba(21,88,214,.13);box-shadow:0 10px 22px rgba(7,21,47,.07);margin-bottom:10px}.lineBack{appearance:none;border:0;background:#eef6ff;color:#0d3d8d;border-radius:16px;min-height:44px;padding:0 13px;font-weight:1000}.lineChatName{min-width:0;flex:1}.lineChatName b{display:block;font-size:18px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.lineChatName span{display:block;color:#63718a;font-size:12px;font-weight:850}.lineChatMessages{flex:1 1 auto;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:10px;padding:4px 2px 12px}.lineBubble{max-width:88%;border-radius:22px;padding:13px 15px;line-height:1.56;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;box-shadow:0 10px 22px rgba(7,21,47,.07)}.lineBubble.customer{align-self:flex-start;background:#fff;border:1px solid rgba(15,23,42,.10);color:#10223f}.lineBubble.admin{align-self:flex-end;background:#dfeeff;border:1px solid rgba(21,88,214,.13);color:#10223f}.lineBubble.ai{align-self:flex-start;background:#fffbe6;border:1px solid rgba(255,204,0,.45);max-width:96%}.bubbleTitle{font-weight:1000;color:#0d3d8d;margin-bottom:8px}.replyText{width:100%;min-height:110px;border:1px solid rgba(21,88,214,.15);border-radius:16px;padding:12px;resize:vertical;background:#fff;color:#10223f;line-height:1.55}.bubbleActions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}.blueBtn,.whiteBtn,.dangerBtn{appearance:none;border:0;min-height:42px;border-radius:999px;padding:0 14px;font-weight:1000}.blueBtn{background:linear-gradient(135deg,#0d3d8d,#1769ff);color:#fff}.whiteBtn{background:#fff;color:#0d3d8d;border:1px solid rgba(21,88,214,.16)}.dangerBtn{background:#fff1f2;color:#b42318;border:1px solid rgba(180,35,24,.15)}
+    .chatInput{flex:0 0 auto;display:flex;gap:8px;align-items:flex-end;background:#fff;border:1px solid rgba(21,88,214,.13);border-radius:22px;padding:8px;box-shadow:0 -8px 28px rgba(7,21,47,.08)}.chatInput textarea{flex:1;min-height:50px;max-height:132px;resize:none;border:0;outline:0;background:transparent;padding:12px;font-size:16px}.chatInput button{appearance:none;border:0;min-height:50px;border-radius:17px;background:linear-gradient(135deg,#0d3d8d,#1769ff);color:#fff;font-weight:1000;padding:0 18px}
+    .memoryPanel{position:fixed;inset:auto 0 0 0;z-index:120;display:none;max-height:88vh;background:#f7fbff;border-radius:30px 30px 0 0;box-shadow:0 -18px 48px rgba(7,21,47,.28);overflow:hidden}.memoryPanel.open{display:flex;flex-direction:column}.memoryTop{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:14px 16px;background:#06163d;color:#fff}.memoryTop b{font-size:20px;flex:1}.memoryBody{padding:14px;overflow:auto}.memoryForm{display:grid;grid-template-columns:1fr 1fr;gap:10px;background:#fff;border:1px solid rgba(21,88,214,.13);border-radius:22px;padding:12px;box-shadow:0 10px 22px rgba(7,21,47,.07)}.memoryForm label{display:flex;flex-direction:column;gap:5px;color:#33435f;font-size:12px;font-weight:950}.memoryForm input,.memoryForm select,.memoryForm textarea{border:1px solid var(--line);border-radius:14px;padding:10px;background:#fff;color:#10223f}.memoryForm textarea{min-height:90px;resize:vertical}.memoryForm .wide{grid-column:1/-1}.memoryList{display:flex;flex-direction:column;gap:10px;margin-top:12px}.memoryItem{background:#fff;border:1px solid rgba(21,88,214,.13);border-radius:18px;padding:12px;box-shadow:0 8px 18px rgba(7,21,47,.06)}.memoryItem b{display:block;color:#0d3d8d}.memoryItem p{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}.emptyState{margin:auto;text-align:center;color:#63718a;font-weight:850;padding:34px 16px}
+
+    @media(max-width:760px){
+      .topbar{grid-template-columns:52px minmax(0,1fr) auto;padding-top:calc(10px + var(--safe-top));gap:9px}.brandLogo{width:52px;height:52px;border-radius:18px}.brandTitle h1{font-size:28px}.brandTitle p{display:none}.topBtn.inbox{min-height:52px;padding:0 13px;font-size:15px}.topBtn.reload{width:52px;min-width:52px}.stats{gap:10px}.stat{flex:0 0 205px}.office{padding:12px}.stage{min-height:470px;border-radius:26px}.map{background-image:url("/assets/ai-office-final/maps-clean/office-main-mobile.png")}.hint{font-size:15px;top:10px}.agent{width:var(--m-size,var(--size,92px))}.agentLabel{font-size:12px;padding:7px 12px}.rolechip{min-height:56px;font-size:19px}.overlayBody{padding:12px}.memoryForm{grid-template-columns:1fr}.lineBubble{max-width:96%}.smallAction{min-height:40px;padding:0 10px}
+    }
   </style>
 </head>
 <body>
-  <div id="aiOfficeApp" class="page">
+  <div class="page" id="app">
     <header class="topbar">
-      <div class="brand">
-        <img src="/icon-cwf-v32-180.png" alt="CWF" />
-        <div class="brandText">
-          <h1>CWF AI Office</h1>
-          <p>ผู้ช่วยออฟฟิศ Coldwindflow</p>
-        </div>
+      <img class="brandLogo" src="/icon-cwf-v32-180.png" alt="CWF">
+      <div class="brandTitle">
+        <h1>CWF AI<br>Office</h1>
+        <p>ผู้ช่วยออฟฟิศ Coldwindflow อ่านข้อมูลจริงและร่างข้อความให้แอดมิน</p>
       </div>
       <div class="topActions">
-        <button id="btnOpenInbox" class="inboxBtn" type="button">กล่องแชทลูกค้า</button>
-        <button id="btnReload" class="reloadBtn" type="button" aria-label="รีเฟรช">↻</button>
+        <button class="topBtn inbox" type="button" data-open-inbox>กล่องแชทลูกค้า</button>
+        <button class="topBtn reload" type="button" id="reloadBtn" aria-label="โหลดข้อมูลใหม่">↻</button>
       </div>
     </header>
 
     <section class="stats" aria-label="สรุปงาน">
-      <div class="stat"><span>งานวันนี้</span><b id="statToday">—</b></div>
-      <div class="stat"><span>งานพรุ่งนี้</span><b id="statTomorrow">—</b></div>
-      <div class="stat"><span>ยังไม่ปิด</span><b id="statOpen">—</b></div>
-      <div class="stat"><span>ยังไม่จ่าย</span><b id="statUnpaid">—</b></div>
+      <div class="stat"><span>งานวันนี้</span><b id="statToday">-</b></div>
+      <div class="stat"><span>งานพรุ่งนี้</span><b id="statTomorrow">-</b></div>
+      <div class="stat"><span>ยังไม่ปิด</span><b id="statOpen">-</b></div>
+      <div class="stat"><span>ยังไม่จ่าย</span><b id="statUnpaid">-</b></div>
     </section>
 
     <main class="office">
-      <section class="stage" aria-label="CWF AI Office">
+      <section class="stage" aria-label="CWF AI Office Map">
         <div class="map"></div>
-        <div class="hint">แตะตัวละคร AI เพื่อเลือกแผนก</div>
-        <div id="agents" class="agents"></div>
-        <div class="officeStatus"><span class="statusPill" id="officeStatus">โหลดข้อมูลงานจริงแล้ว ทีม AI พร้อมช่วยงาน</span></div>
+        <div class="hint">แตะตัวละคร AI เพื่อเริ่มคุย</div>
+        <div class="agents" id="agents"></div>
+        <div class="officeStatus"><div class="statusPill" id="officeStatus">โหลดข้อมูลงานจริงแล้ว ทีม AI พร้อมช่วยงาน</div></div>
       </section>
-      <nav id="rolebar" class="rolebar" aria-label="เลือก AI Agent"></nav>
+      <nav class="rolebar" id="rolebar" aria-label="เลือกแผนก AI"></nav>
     </main>
   </div>
 
-  <section id="customerInboxModal" class="lineModal" aria-label="กล่องแชทลูกค้า" aria-modal="true" role="dialog">
-    <header class="lineTop">
-      <button id="btnCloseInbox" class="lineClose" type="button" aria-label="ปิด">‹</button>
-      <div class="lineTitle">
-        <b>กล่องแชทลูกค้า</b>
-        <span id="lineTopSubtitle">แชทลูกค้า LINE OA แบบอ่านจริง ร่างคำตอบ และคัดลอกเอง</span>
+  <section class="overlay" id="agentOverlay" aria-hidden="true">
+    <div class="overlayTop">
+      <div class="overlayHead">
+        <button class="squareBtn" type="button" data-close-agent>‹</button>
+        <img class="brandLogo" id="agentAvatar" src="/assets/ai-office-final/characters-clean/admin/idle.png" alt="">
+        <div class="overlayTitle"><b id="agentName">Admin AI</b><span id="agentRole">ผู้ช่วยแอดมิน</span></div>
       </div>
-    </header>
-
-    <div class="lineBody">
-      <section id="customerListScreen" class="screen">
-        <div class="listHeader">
-          <h2>แชทลูกค้า LINE OA</h2>
-          <button id="btnReloadInbox" class="smallBtn" type="button">รีเฟรช</button>
-        </div>
-        <div id="conversationList" class="convList">
-          <div class="emptyState">กำลังโหลดแชทลูกค้า...</div>
-        </div>
-        <aside id="replyMemoryPanel" class="memoryPanel">
-          <div class="memoryHead">
-            <b>คลังคำตอบแอดมิน</b>
-            <button id="btnToggleMemory" class="smallBtn" type="button">เพิ่มคำตอบ</button>
-          </div>
-          <form id="replyExampleForm" class="memoryForm">
-            <label>สถานการณ์</label>
-            <select id="exSituation">
-              <option value="general">ทั่วไป</option>
-              <option value="price_question">ถามราคา</option>
-              <option value="expensive">ลูกค้าบอกแพง</option>
-              <option value="appointment">นัดคิว / ยืนยันคิว</option>
-              <option value="missing_info">ถามข้อมูลที่ขาด</option>
-              <option value="cleaning_package">ถามแพ็กเกจล้าง</option>
-              <option value="bad_smell">แอร์มีกลิ่นอับ</option>
-              <option value="air_not_cold">แอร์ไม่เย็น</option>
-              <option value="water_leak">แอร์น้ำหยด</option>
-              <option value="foreign_customer">ลูกค้าต่างชาติ</option>
-            </select>
-            <label>ข้อความลูกค้าตัวอย่าง</label>
-            <textarea id="exCustomer" placeholder="เช่น แอร์มีกลิ่นอับแต่ยังเย็นปกติ ควรล้างแบบไหนคะ"></textarea>
-            <label>คำตอบแอดมินที่ใช้จริง</label>
-            <textarea id="exReply" placeholder="วางคำตอบจริงของแอดมินที่อยากให้ AI เรียนรู้"></textarea>
-            <label>แท็ก</label>
-            <input id="exTags" placeholder="เช่น กลิ่นอับ, พรีเมียม, แขวนคอยล์" />
-            <div class="memoryActions">
-              <button class="primaryBtn" type="submit">บันทึกเข้าคลังคำตอบ</button>
-              <button id="btnLoadExamples" class="ghostBtn" type="button">ดูจำนวนตัวอย่าง</button>
-            </div>
-          </form>
-        </aside>
-      </section>
-
-      <section id="selectedChatScreen" class="screen hidden">
-        <div class="chatView">
-          <header class="chatHeader">
-            <button id="btnBackToList" class="backBtn" type="button">← กลับ</button>
-            <div class="chatName">
-              <b id="selectedCustomerName">ลูกค้า</b>
-              <span id="selectedCustomerSubtitle">แชทลูกค้า LINE OA</span>
-            </div>
-          </header>
-          <main id="chatMessages" class="messages">
-            <div class="emptyState">กำลังโหลดข้อความ...</div>
-          </main>
-          <footer class="composer">
-            <textarea id="aiQuestion" rows="1" placeholder="ถาม AI สำหรับแชทนี้ เช่น ควรตอบลูกค้ายังไงดี"></textarea>
-            <button id="btnAskAi" type="button">ถาม AI</button>
-          </footer>
-        </div>
-      </section>
+    </div>
+    <div class="overlayBody">
+      <div class="agentChat">
+        <div class="agentMessages" id="agentMessages"></div>
+        <form class="composer" id="agentForm">
+          <textarea id="agentQuestion" placeholder="ถาม AI เช่น วันนี้มีงานอะไรบ้าง / ร่างข้อความยืนยันนัดลูกค้า"></textarea>
+          <button type="submit">ถาม AI</button>
+        </form>
+      </div>
     </div>
   </section>
 
-  <script src="/admin-ai-office.js?v=customer-chat-ux-v18-20260608" defer></script>
+  <section class="overlay" id="inboxOverlay" aria-hidden="true">
+    <div class="overlayTop">
+      <div class="overlayHead">
+        <button class="squareBtn" type="button" data-close-inbox>‹</button>
+        <div class="overlayTitle"><b id="inboxTitle">กล่องแชทลูกค้า</b><span id="inboxSub">เลือกแชทลูกค้า แล้วถาม AI จากบริบทแชทนั้น</span></div>
+        <button class="smallAction" type="button" data-open-memory>สมองเสริม</button>
+        <button class="smallAction" type="button" id="lineRefresh">รีเฟรช</button>
+      </div>
+    </div>
+    <div class="overlayBody">
+      <div class="inboxRoot">
+        <section class="view active" id="conversationListView">
+          <div class="searchBox"><input id="conversationSearch" type="search" placeholder="ค้นหาชื่อลูกค้าหรือข้อความล่าสุด"></div>
+          <div class="conversationList" id="conversationList"></div>
+        </section>
+        <section class="view" id="selectedChatView">
+          <div class="lineChat">
+            <header class="lineChatHeader">
+              <button class="lineBack" type="button" data-back-list>← กลับ</button>
+              <div class="lineChatName"><b id="selectedCustomerName">ลูกค้า</b><span id="selectedCustomerMeta">แชทลูกค้า LINE OA</span></div>
+              <button class="whiteBtn" type="button" data-prefill-memory>เพิ่มคำตอบ</button>
+            </header>
+            <main class="lineChatMessages" id="lineMessages"></main>
+            <form class="chatInput" id="lineAiForm">
+              <textarea id="lineAiQuestion" placeholder="ถาม AI สำหรับแชทนี้ เช่น ควรตอบลูกค้ายังไงดี"></textarea>
+              <button type="submit">ถาม AI</button>
+            </form>
+          </div>
+        </section>
+      </div>
+    </div>
+  </section>
+
+  <section class="memoryPanel" id="memoryPanel" aria-hidden="true">
+    <div class="memoryTop">
+      <b>สมองเสริม / คลังคำตอบแอดมิน</b>
+      <button class="smallAction" type="button" id="memoryClose">ปิด</button>
+    </div>
+    <div class="memoryBody">
+      <form class="memoryForm" id="memoryForm">
+        <label>สถานการณ์
+          <select id="memSituation">
+            <option value="general">ทั่วไป</option>
+            <option value="price_question">ถามราคา</option>
+            <option value="expensive">ลูกค้าบอกแพง</option>
+            <option value="appointment">นัดคิว</option>
+            <option value="missing_info">ถามข้อมูลที่ขาด</option>
+            <option value="bad_smell">แอร์มีกลิ่นอับ</option>
+            <option value="air_not_cold">แอร์ไม่เย็น</option>
+            <option value="water_leak">แอร์น้ำหยด</option>
+            <option value="cleaning_package">เลือกรูปแบบล้าง</option>
+            <option value="foreign_customer">ลูกค้าต่างชาติ</option>
+            <option value="complaint">เคลม/ร้องเรียน</option>
+          </select>
+        </label>
+        <label>ภาษา
+          <select id="memLanguage"><option value="th">ไทย</option><option value="en">English</option><option value="ja">日本語</option><option value="unknown">ไม่ระบุ</option></select>
+        </label>
+        <label class="wide">ข้อความลูกค้าตัวอย่าง
+          <textarea id="memCustomer" required placeholder="วางข้อความลูกค้าจริง"></textarea>
+        </label>
+        <label class="wide">คำตอบแอดมินที่ใช้จริง
+          <textarea id="memReply" required placeholder="วางคำตอบแอดมินจริงที่อยากให้ AI เรียนรู้"></textarea>
+        </label>
+        <label>หมวดบริการ
+          <input id="memService" placeholder="air_cleaning / repair">
+        </label>
+        <label>แท็ก
+          <input id="memTags" placeholder="ราคา, กลิ่นอับ, พรีเมียม">
+        </label>
+        <div class="wide">
+          <button class="blueBtn" type="submit">บันทึกเข้าสมองเสริม</button>
+          <button class="whiteBtn" type="button" id="memoryReload">โหลดคลังคำตอบ</button>
+        </div>
+      </form>
+      <div class="memoryList" id="memoryList"></div>
+    </div>
+  </section>
+
+  <script src="/admin-ai-office.js?v=ai-office-v18-clean-chat-memory-20260608"></script>
 </body>
 </html>
