@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const VERSION = "CWF AI Office ChatGPT Reply Card UX v24 loaded";
+  const VERSION = "CWF AI Office Select Question + Persistent Context v25 loaded";
   console.info(VERSION);
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -45,13 +45,47 @@
     selectedConversation: null,
     selectedMessages: [],
     lastCustomerMessage: "",
+    selectedCustomerQuestion: "",
+    selectedCustomerMessageId: null,
+    lineDraftMemory: JSON.parse(localStorage.getItem("cwfAiOfficeLineDraftMemoryV25") || "{}"),
     lastAgentRetry: null,
     lastLineRetry: null,
-    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV24") || "{}"),
+    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV25") || "{}"),
   };
 
+
+  function saveLineDraftMemory() {
+    try {
+      localStorage.setItem("cwfAiOfficeLineDraftMemoryV25", JSON.stringify(state.lineDraftMemory || {}));
+    } catch (_) {}
+  }
+
+  function draftsForConversation(conversationId) {
+    if (!conversationId) return [];
+    return Array.isArray(state.lineDraftMemory[String(conversationId)]) ? state.lineDraftMemory[String(conversationId)] : [];
+  }
+
+  function addDraftToConversation(conversationId, draft) {
+    if (!conversationId || !draft?.customer_reply) return;
+    const key = String(conversationId);
+    const list = draftsForConversation(key);
+    list.push({
+      id: `draft_${Date.now()}_${Math.random().toString(16).slice(2)}`,
+      customer_reply: String(draft.customer_reply || ""),
+      customer_question: String(draft.customer_question || state.selectedCustomerQuestion || state.lastCustomerMessage || ""),
+      admin_question: String(draft.admin_question || ""),
+      created_at: new Date().toISOString(),
+    });
+    state.lineDraftMemory[key] = list.slice(-20);
+    saveLineDraftMemory();
+  }
+
+  function selectedQuestionForLearning() {
+    return clean(state.selectedCustomerQuestion || state.lastCustomerMessage || "");
+  }
+
   function saveHistory() {
-    localStorage.setItem("cwfAiOfficeAgentHistoryV24", JSON.stringify(state.agentHistory));
+    localStorage.setItem("cwfAiOfficeAgentHistoryV25", JSON.stringify(state.agentHistory));
   }
 
   function currentAgent() {
@@ -373,19 +407,86 @@
     const messages = state.selectedMessages || [];
     if (!messages.length) {
       box.innerHTML = `<div class="emptyState">ยังไม่มีข้อความในแชทนี้</div>`;
+      renderPersistedDrafts();
       return;
     }
     let latestInbound = "";
-    box.innerHTML = messages.map((m) => {
+    box.innerHTML = messages.map((m, idx) => {
       const inbound = (m.direction || "inbound") === "inbound";
       const text = messageText(m);
+      const messageId = m.id || m.message_id || `msg_${idx}`;
       if (inbound && clean(text)) latestInbound = clean(text);
       const klass = inbound ? "customer" : "admin";
       const time = m.received_at_display || "";
-      return `<div class="lineBubble ${klass}">${esc(text)}${time ? `<div style="margin-top:8px;color:#7a879a;font-size:12px;font-weight:800">${esc(time)}</div>` : ""}</div>`;
+      return `<div class="lineBubble ${klass}" ${inbound ? `data-customer-message-id="${esc(messageId)}" data-customer-question="${esc(text)}"` : ""}>${esc(text)}${time ? `<div style="margin-top:8px;color:#7a879a;font-size:12px;font-weight:800">${esc(time)}</div>` : ""}</div>`;
     }).join("");
+    $$(".lineBubble.customer", box).forEach(bindLongPressQuestion);
     state.lastCustomerMessage = latestInbound;
+    clearSelectedQuestion(false);
+    renderPersistedDrafts();
     box.scrollTop = box.scrollHeight;
+  }
+
+  function renderPersistedDrafts() {
+    const box = $("#lineMessages");
+    const convId = state.selectedConversation?.id;
+    const drafts = draftsForConversation(convId);
+    if (!box || !drafts.length) return;
+    drafts.forEach((draft) => {
+      renderAiBubble({
+        customer_reply: draft.customer_reply,
+        customer_question: draft.customer_question,
+        persisted: true,
+        skip_persist: true,
+      });
+    });
+  }
+
+
+  function setSelectedQuestion(text, id = "") {
+    const question = clean(text);
+    if (!question) return;
+    state.selectedCustomerQuestion = question;
+    state.selectedCustomerMessageId = id || null;
+    $$(".lineBubble.customer").forEach((el) => {
+      el.classList.toggle("selectedQuestion", String(el.dataset.customerMessageId || "") === String(id || ""));
+    });
+    const bar = $("#selectedQuestionBar");
+    const label = $("#selectedQuestionText");
+    if (label) label.textContent = `เลือกคำถาม: ${question}`;
+    if (bar) bar.classList.add("show");
+    showToast("เลือกคำถามลูกค้าแล้ว");
+  }
+
+  function clearSelectedQuestion(updateUi = true) {
+    state.selectedCustomerQuestion = "";
+    state.selectedCustomerMessageId = null;
+    if (updateUi) {
+      $$(".lineBubble.customer").forEach((el) => el.classList.remove("selectedQuestion"));
+      $("#selectedQuestionBar")?.classList.remove("show");
+    }
+  }
+
+  function bindLongPressQuestion(el) {
+    let timer = null;
+    const start = (ev) => {
+      timer = setTimeout(() => {
+        setSelectedQuestion(el.dataset.customerQuestion || el.textContent || "", el.dataset.customerMessageId || "");
+      }, 430);
+    };
+    const cancel = () => {
+      if (timer) clearTimeout(timer);
+      timer = null;
+    };
+    el.addEventListener("pointerdown", start);
+    el.addEventListener("pointerup", cancel);
+    el.addEventListener("pointercancel", cancel);
+    el.addEventListener("pointerleave", cancel);
+    el.addEventListener("contextmenu", (ev) => {
+      ev.preventDefault();
+      setSelectedQuestion(el.dataset.customerQuestion || el.textContent || "", el.dataset.customerMessageId || "");
+    });
+    el.addEventListener("dblclick", () => setSelectedQuestion(el.dataset.customerQuestion || el.textContent || "", el.dataset.customerMessageId || ""));
   }
 
   function removeLatestLoadingBubble() {
@@ -401,14 +502,24 @@
   function renderAiBubble(draft) {
     const reply = clean(draft?.customer_reply || draft?.answer || "");
     const text = reply || "ยังไม่ได้ข้อความพร้อมส่งลูกค้า";
+    const sourceQuestion = clean(draft?.customer_question || selectedQuestionForLearning());
+    const persisted = Boolean(draft?.persisted);
+    if (!draft?.skip_persist && state.selectedConversation?.id && reply) {
+      addDraftToConversation(state.selectedConversation.id, {
+        customer_reply: reply,
+        customer_question: sourceQuestion,
+        admin_question: draft?.admin_question || state.lastLineRetry || "",
+      });
+    }
     $("#lineMessages").insertAdjacentHTML("beforeend", `
-      <div class="lineBubble ai">
+      <div class="lineBubble ai ${persisted ? "persisted" : ""}">
         <article class="aiDraftCard">
           <header class="aiDraftHeader">
             <div class="bubbleTitle">ข้อความพร้อมส่งลูกค้า</div>
-            <div class="aiDraftHint">แก้ก่อนคัดลอกได้</div>
+            <div class="aiDraftHint">${persisted ? "จากประวัติก่อนหน้า" : "แก้ก่อนคัดลอกได้"}</div>
           </header>
-          <textarea class="replyText" data-reply-text>${esc(text)}</textarea>
+          ${sourceQuestion ? `<div class="aiDraftSource">อ้างอิงคำถาม: ${esc(sourceQuestion)}</div>` : ""}
+          <textarea class="replyText" data-reply-text data-source-question="${esc(sourceQuestion)}">${esc(text)}</textarea>
           <div class="aiDraftActions" aria-label="จัดการคำตอบ AI">
             <button class="iconBtn copyIcon" type="button" data-copy-reply aria-label="คัดลอกข้อความนี้" title="คัดลอกข้อความนี้">⧉</button>
             <button class="iconBtn likeIcon" type="button" data-save-from-reply aria-label="บันทึกเป็นตัวอย่างคำตอบ" title="บันทึกเป็นตัวอย่างคำตอบ">👍</button>
@@ -430,6 +541,7 @@
     const input = $("#lineAiQuestion");
     const question = clean(input.value);
     if (!conv?.id || !question) return;
+    const sourceQuestion = selectedQuestionForLearning();
     state.lastLineRetry = question;
     const submitBtn = $("#lineAiForm .sendBtn");
     if (submitBtn) submitBtn.disabled = true;
@@ -444,12 +556,13 @@
         body: JSON.stringify({
           conversation_id: conv.id,
           admin_question: question,
-          instruction: question,
+          selected_customer_question: sourceQuestion,
+          instruction: sourceQuestion ? `${question}\n\nคำถามลูกค้าที่แอดมินเลือกให้ตอบ: ${sourceQuestion}` : question,
           agent: state.agent === "sales" ? "sales" : "admin"
         })
       });
       removeLatestLoadingBubble();
-      renderAiBubble(data.draft || { customer_reply: data.answer });
+      renderAiBubble({ ...(data.draft || { customer_reply: data.answer }), customer_question: sourceQuestion, admin_question: question });
     } catch (err) {
       removeLatestLoadingBubble();
       renderAiBubble({ customer_reply: `ขออภัยค่ะ ตอนนี้ระบบ AI ยังร่างคำตอบไม่ได้ (${err.message})` });
@@ -473,7 +586,7 @@
         conversation_id: state.selectedConversation?.id || null,
         agent_key: state.agent || "admin",
         situation_type: "general",
-        customer_message: state.lastCustomerMessage,
+        customer_message: bubble?.querySelector("[data-reply-text]")?.dataset?.sourceQuestion || selectedQuestionForLearning(),
         final_admin_reply: text,
         source: "customer_chat_copy"
       })
@@ -494,7 +607,7 @@
         conversation_id: state.selectedConversation?.id || null,
         agent_key: state.agent || "admin",
         situation_type: "general",
-        customer_message: state.lastCustomerMessage,
+        customer_message: bubble?.querySelector("[data-reply-text]")?.dataset?.sourceQuestion || selectedQuestionForLearning(),
         ai_reply: text,
         final_admin_reply: "",
         source: "customer_chat_dislike"
@@ -519,7 +632,7 @@
 
   function prefillMemoryFromChat(replyText = "") {
     openMemoryPanel({
-      customer_message: state.lastCustomerMessage || "",
+      customer_message: selectedQuestionForLearning() || "",
       final_admin_reply: replyText || "",
       situation_type: "general",
       language: "th"
@@ -598,6 +711,7 @@
     document.addEventListener("click", (e) => {
       const quick = e.target.closest("[data-quick-agent]");
       if (quick) return openAgentWithQuestion(quick.dataset.quickAgent, quick.dataset.quickQuestion || "");
+      if (e.target.closest("[data-clear-selected-question]")) return clearSelectedQuestion(true);
       if (e.target.closest("[data-open-inbox]")) return openInbox();
       if (e.target.closest("[data-close-agent]")) return closeAgentChat();
       if (e.target.closest("[data-close-inbox]")) return closeInbox();
@@ -610,7 +724,9 @@
       if (e.target.closest("[data-dislike-reply]")) return dislikeReply(e.target.closest("[data-dislike-reply]"));
       if (e.target.closest("[data-save-from-reply]")) {
         const bubble = e.target.closest(".lineBubble.ai");
-        return prefillMemoryFromChat(bubble?.querySelector("[data-reply-text]")?.value || "");
+        const ta = bubble?.querySelector("[data-reply-text]");
+        if (ta?.dataset?.sourceQuestion) state.selectedCustomerQuestion = ta.dataset.sourceQuestion;
+        return prefillMemoryFromChat(ta?.value || "");
       }
       const conv = e.target.closest("[data-conversation-id]");
       if (conv) return selectConversation(conv.dataset.conversationId);

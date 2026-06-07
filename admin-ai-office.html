@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.json">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="cwf-ai-office-version" content="ai-office-v24-chatgpt-reply-card-20260608" />
+  <meta name="cwf-ai-office-version" content="ai-office-v25-select-question-memory-context-20260608" />
   <title>CWF AI Office</title>
   <link rel="stylesheet" href="/style.css">
   <style>
@@ -239,6 +239,76 @@
       .aiDraftActions .iconBtn{width:48px;height:48px;min-width:48px;min-height:48px}
     }
 
+
+    /* v25: select customer question + persistent context */
+    .lineBubble.customer{
+      position:relative;
+      cursor:pointer;
+    }
+    .lineBubble.customer.selectedQuestion{
+      outline:3px solid rgba(255,204,0,.95);
+      box-shadow:0 0 0 6px rgba(255,204,0,.18), 0 10px 22px rgba(7,21,47,.08);
+    }
+    .lineBubble.customer.selectedQuestion::after{
+      content:"เลือกเป็นคำถาม";
+      position:absolute;
+      right:10px;
+      bottom:-13px;
+      background:#ffcc00;
+      color:#06163d;
+      border-radius:999px;
+      padding:4px 9px;
+      font-size:11px;
+      font-weight:1000;
+      box-shadow:0 6px 14px rgba(7,21,47,.16);
+    }
+    .selectedQuestionBar{
+      display:none;
+      align-items:center;
+      justify-content:space-between;
+      gap:8px;
+      margin:0 12px 8px;
+      padding:9px 10px;
+      border-radius:18px;
+      background:#fff8da;
+      border:1px solid rgba(255,204,0,.55);
+      color:#0f2a55;
+      font-size:13px;
+      font-weight:900;
+      box-shadow:0 8px 18px rgba(7,21,47,.06);
+    }
+    .selectedQuestionBar.show{display:flex}
+    .selectedQuestionBar span{
+      min-width:0;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+    .selectedQuestionBar button{
+      appearance:none;
+      border:0;
+      background:#06163d;
+      color:#fff;
+      width:30px;
+      height:30px;
+      border-radius:999px;
+      font-weight:1000;
+      flex:0 0 auto;
+    }
+    .lineBubble.ai.persisted .aiDraftCard{
+      border-color:rgba(21,88,214,.10);
+      background:#ffffff;
+    }
+    .aiDraftSource{
+      margin:-2px 0 10px;
+      color:#64748b;
+      font-size:12px;
+      font-weight:850;
+      overflow:hidden;
+      text-overflow:ellipsis;
+      white-space:nowrap;
+    }
+
     @media(min-width:760px){
       .brandLogo{width:56px;height:56px}.brandTitle p{display:block}.topBtn.inbox{font-size:16px;padding:0 20px}.topBtn,.topBtn.reload{min-height:54px}.topBtn.reload{width:54px}.office{padding:16px}.stage{min-height:560px}.map{background-image:url("/assets/ai-office-final/maps-clean/office-main-desktop.png")}.agent{width:var(--d-size,var(--size,92px))}.agentLabel{font-size:13px}.memoryForm{grid-template-columns:1fr 1fr}.memoryForm .wide{grid-column:1/-1}
     }
@@ -326,6 +396,10 @@
         </section>
         <section class="view" id="selectedChatView">
           <div class="lineChat">
+            <div class="selectedQuestionBar" id="selectedQuestionBar">
+              <span id="selectedQuestionText">เลือกคำถามลูกค้าแล้ว</span>
+              <button type="button" data-clear-selected-question aria-label="ยกเลิกคำถามที่เลือก">×</button>
+            </div>
             <main class="lineChatMessages" id="lineMessages"></main>
             <div class="chatComposerWrap">
               <form class="chatComposer" id="lineAiForm">
@@ -386,6 +460,6 @@
   </section>
 
   <div class="toast" id="toast"></div>
-  <script src="/admin-ai-office.js?v=ai-office-v24-chatgpt-reply-card-20260608"></script>
+  <script src="/admin-ai-office.js?v=ai-office-v25-select-question-memory-context-20260608"></script>
 </body>
 </html>
