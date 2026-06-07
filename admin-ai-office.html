@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.json">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="cwf-ai-office-version" content="ai-office-v18-clean-chat-memory-20260608" />
+  <meta name="cwf-ai-office-version" content="ai-office-v19-stable-agent-chat-memory-20260608" />
   <title>CWF AI Office</title>
   <link rel="stylesheet" href="/style.css">
   <style>
@@ -37,7 +37,7 @@
     .stage:before{content:"";position:absolute;inset:0;z-index:1;pointer-events:none;background:linear-gradient(180deg,rgba(255,255,255,.02),rgba(6,22,61,.11) 80%,rgba(6,22,61,.20))}
     .hint{position:absolute;left:50%;top:12px;transform:translateX(-50%);z-index:4;max-width:calc(100% - 26px);padding:9px 18px;border-radius:999px;background:rgba(255,255,255,.97);border:2px solid rgba(255,204,0,.9);box-shadow:0 12px 26px rgba(7,21,47,.18);color:#0d3d8d;font-size:16px;font-weight:1000;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     .officeStatus{position:absolute;left:18px;bottom:18px;right:18px;z-index:6;display:flex;align-items:center;gap:8px;pointer-events:none}.statusPill{display:inline-flex;align-items:center;gap:10px;max-width:100%;padding:10px 14px;border-radius:999px;background:rgba(6,22,61,.78);color:#fff;border:1px solid rgba(255,255,255,.16);box-shadow:0 12px 28px rgba(0,0,0,.22);font-size:14px;font-weight:900;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.statusPill:before{content:"";width:10px;height:10px;border-radius:99px;background:#3ee58c;box-shadow:0 0 0 7px rgba(62,229,140,.16)}
-    .agents{position:absolute;inset:0;z-index:5;pointer-events:none}.agent{position:absolute;left:var(--x);top:var(--y);width:var(--size,106px);min-width:68px;min-height:92px;padding:0;border:0;background:transparent;transform:translate(-50%,-100%);pointer-events:auto;z-index:calc(20 + var(--depth,50));filter:drop-shadow(0 14px 12px rgba(7,21,47,.25))}.agent:focus-visible{outline:3px solid var(--gold);outline-offset:10px;border-radius:22px}.agent.selected{filter:drop-shadow(0 0 18px rgba(255,204,0,.58)) drop-shadow(0 14px 12px rgba(7,21,47,.25))}.sprite{display:block;width:100%;height:auto;object-fit:contain;animation:idleBob 3.2s ease-in-out infinite}.agentLabel{position:absolute;left:50%;bottom:-28px;transform:translateX(-50%);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:8px 14px;border-radius:999px;background:#0d3d8d;color:#fff;border:2px solid rgba(255,255,255,.92);box-shadow:0 10px 18px rgba(7,21,47,.24);font-size:14px;font-weight:1000;line-height:1;pointer-events:none}.agent.selected .agentLabel{background:#ffcc00;color:#06163d}
+    .agents{position:absolute;inset:0;z-index:30;pointer-events:none}.agent{position:absolute;left:var(--x);top:var(--y);width:var(--size,106px);min-width:76px;min-height:126px;padding:0 0 34px;border:0;background:transparent;transform:translate(-50%,-100%);pointer-events:auto;z-index:calc(50 + var(--depth,50));filter:drop-shadow(0 14px 12px rgba(7,21,47,.25));display:block;touch-action:manipulation;-webkit-tap-highlight-color:transparent}.agent::after{content:"";position:absolute;left:-26px;right:-26px;top:-18px;bottom:-52px;border-radius:28px;z-index:1;pointer-events:auto}.agent:focus-visible{outline:3px solid var(--gold);outline-offset:10px;border-radius:22px}.agent.selected{filter:drop-shadow(0 0 18px rgba(255,204,0,.58)) drop-shadow(0 14px 12px rgba(7,21,47,.25))}.sprite{display:block;position:relative;z-index:2;width:100%;height:auto;object-fit:contain;animation:idleBob 3.2s ease-in-out infinite;pointer-events:none}.agentLabel{position:absolute;left:50%;bottom:-28px;transform:translateX(-50%);max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:8px 14px;border-radius:999px;background:#0d3d8d;color:#fff;border:2px solid rgba(255,255,255,.92);box-shadow:0 10px 18px rgba(7,21,47,.24);font-size:14px;font-weight:1000;line-height:1;pointer-events:none}.agent.selected .agentLabel{background:#ffcc00;color:#06163d}
     @keyframes idleBob{0%,100%{transform:translateY(0)}50%{transform:translateY(-5px)}}
     .rolebar{flex:0 0 auto;display:flex;align-items:center;gap:12px;overflow-x:auto;scrollbar-width:none;padding:0 2px 2px}.rolebar::-webkit-scrollbar{display:none}.rolechip{appearance:none;border:1px solid rgba(21,88,214,.13);background:#fff;color:#0d3d8d;min-height:58px;border-radius:999px;padding:6px 22px 6px 8px;display:inline-flex;align-items:center;gap:12px;box-shadow:0 10px 20px rgba(7,21,47,.08);font-size:20px;font-weight:1000;white-space:nowrap}.rolechip img{width:42px;height:42px;object-fit:contain;border-radius:999px;background:#edf5ff}.rolechip.active{background:linear-gradient(135deg,#0d3d8d,#1769ff);color:#fff;border-color:rgba(255,255,255,.18)}
 
@@ -80,7 +80,7 @@
     <main class="office">
       <section class="stage" aria-label="CWF AI Office Map">
         <div class="map"></div>
-        <div class="hint">แตะตัวละคร AI เพื่อเริ่มคุย</div>
+        <div class="hint">แตะตัวละครหรือแถบล่าง เพื่อเปิดแชท AI</div>
         <div class="agents" id="agents"></div>
         <div class="officeStatus"><div class="statusPill" id="officeStatus">โหลดข้อมูลงานจริงแล้ว ทีม AI พร้อมช่วยงาน</div></div>
       </section>
@@ -186,6 +186,6 @@
     </div>
   </section>
 
-  <script src="/admin-ai-office.js?v=ai-office-v18-clean-chat-memory-20260608"></script>
+  <script src="/admin-ai-office.js?v=ai-office-v19-stable-agent-chat-memory-20260608"></script>
 </body>
 </html>

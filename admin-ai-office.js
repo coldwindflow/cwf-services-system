@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const VERSION = "CWF AI Office Customer Chat UX v18 loaded";
+  const VERSION = "CWF AI Office Stable Agent Chat + Memory v19 loaded";
   console.info(VERSION);
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -22,12 +22,12 @@
   const clean = (v) => String(v || "").replace(/\s+/g, " ").trim();
 
   const agentDefs = [
-    { key:"admin", name:"Admin AI", role:"หัวหน้าแอดมิน ช่วยสรุปงาน ร่างข้อความลูกค้าและข้อความช่าง", x:"26%", y:"58%", size:"112px", m:"100px", avatar:"/assets/ai-office-final/characters-clean/admin/idle.png" },
-    { key:"sales", name:"Sales AI", role:"เซลส์ปิดงาน ตอบราคา ตอบลูกค้าบอกแพง และช่วยปิดการขาย", x:"66%", y:"68%", size:"108px", m:"98px", avatar:"/assets/ai-office-final/characters-clean/sales/idle.png" },
-    { key:"ops", name:"Ops AI", role:"ควบคุมคิวงาน งานวันนี้ พรุ่งนี้ งานค้าง และความเสี่ยงหน้างาน", x:"51%", y:"45%", size:"118px", m:"102px", avatar:"/assets/ai-office-final/characters-clean/ops/idle.png" },
-    { key:"ads", name:"Ads AI", role:"วิเคราะห์แอด พื้นที่ คีย์เวิร์ด และเหตุผลที่ปิดการขายน้อย", x:"42%", y:"66%", size:"100px", m:"92px", avatar:"/assets/ai-office-final/characters-clean/ads/idle.png" },
-    { key:"content", name:"Content AI", role:"เขียนโพสต์ แคปชัน รีวิว สคริปต์ และคอนเทนต์สั้น", x:"44%", y:"83%", size:"98px", m:"90px", avatar:"/assets/ai-office-final/characters-clean/content/idle.png" },
-    { key:"dev", name:"Dev AI", role:"ช่วยเขียน prompt ส่ง Codex ตรวจบั๊ก checklist และ rollback", x:"78%", y:"55%", size:"112px", m:"96px", avatar:"/assets/ai-office-final/characters-clean/dev/idle.png" },
+    { key:"admin", name:"Admin AI", role:"หัวหน้าแอดมิน ช่วยสรุปงาน ร่างข้อความลูกค้าและข้อความช่าง", brain:"คิดแบบหัวหน้าแอดมิน CWF: ตอบสั้น ใช้งานจริง ตรวจข้อมูลก่อน ไม่แต่งข้อมูล ไม่ส่งข้อความแทนแอดมิน", x:"26%", y:"58%", size:"112px", m:"100px", avatar:"/assets/ai-office-final/characters-clean/admin/idle.png" },
+    { key:"sales", name:"Sales AI", role:"เซลส์ปิดงาน ตอบราคา ตอบลูกค้าบอกแพง และช่วยปิดการขาย", brain:"คิดแบบเซลส์มืออาชีพ CWF: ราคา/คุณค่า/ความเชื่อมั่น/ปิดนัด ใช้ภาษาสุภาพ ไม่เวอร์ ไม่กดดันลูกค้า", x:"66%", y:"68%", size:"108px", m:"98px", avatar:"/assets/ai-office-final/characters-clean/sales/idle.png" },
+    { key:"ops", name:"Ops AI", role:"ควบคุมคิวงาน งานวันนี้ พรุ่งนี้ งานค้าง และความเสี่ยงหน้างาน", brain:"คิดแบบหัวหน้าคิวงาน: สรุปงานจริง ตรวจความเสี่ยง คิว เวลา ช่าง งานค้าง งานไม่จ่าย โดยไม่แก้ข้อมูลเอง", x:"51%", y:"45%", size:"118px", m:"102px", avatar:"/assets/ai-office-final/characters-clean/ops/idle.png" },
+    { key:"ads", name:"Ads AI", role:"วิเคราะห์แอด พื้นที่ คีย์เวิร์ด และเหตุผลที่ปิดการขายน้อย", brain:"คิดแบบ performance marketer: วิเคราะห์จากข้อมูลจริง แยกปัญหา lead/call/LINE/landing/ราคา/พื้นที่ พร้อม action ที่แอดมินทำเอง", x:"42%", y:"66%", size:"100px", m:"92px", avatar:"/assets/ai-office-final/characters-clean/ads/idle.png" },
+    { key:"content", name:"Content AI", role:"เขียนโพสต์ แคปชัน รีวิว สคริปต์ และคอนเทนต์สั้น", brain:"คิดแบบ creative director ของ CWF: คอนเทนต์สั้น น่าเชื่อถือ สะอาด พรีเมียม ไม่โม้เกินจริง พร้อมคัดลอกใช้", x:"44%", y:"83%", size:"98px", m:"90px", avatar:"/assets/ai-office-final/characters-clean/content/idle.png" },
+    { key:"dev", name:"Dev AI", role:"ช่วยเขียน prompt ส่ง Codex ตรวจบั๊ก checklist และ rollback", brain:"คิดแบบ senior production engineer: จำกัด scope, ตรวจ regression, ห้าม rewrite, ห้าม mock/demo, ต้อง rollback ได้", x:"78%", y:"55%", size:"112px", m:"96px", avatar:"/assets/ai-office-final/characters-clean/dev/idle.png" },
   ];
 
   const state = {
@@ -37,11 +37,11 @@
     selectedConversation: null,
     selectedMessages: [],
     lastCustomerMessage: "",
-    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV18") || "{}"),
+    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV19") || "{}"),
   };
 
   function saveHistory() {
-    localStorage.setItem("cwfAiOfficeAgentHistoryV18", JSON.stringify(state.agentHistory));
+    localStorage.setItem("cwfAiOfficeAgentHistoryV19", JSON.stringify(state.agentHistory));
   }
 
   function renderAgents() {
@@ -49,16 +49,31 @@
     const bar = $("#rolebar");
     if (!wrap || !bar) return;
     wrap.innerHTML = agentDefs.map((a, idx) => `
-      <button class="agent ${a.key === state.agent ? "selected" : ""}" data-agent="${a.key}" style="--x:${a.x};--y:${a.y};--size:${a.size};--m-size:${a.m};--depth:${30+idx}">
+      <button class="agent ${a.key === state.agent ? "selected" : ""}" data-agent="${a.key}" aria-label="คุยกับ ${esc(a.name)}" style="--x:${a.x};--y:${a.y};--size:${a.size};--m-size:${a.m};--depth:${30+idx}">
         <img class="sprite" src="${a.avatar}" alt="${esc(a.name)}">
         <span class="agentLabel">${esc(a.name)}</span>
       </button>
     `).join("");
     bar.innerHTML = agentDefs.map((a) => `
-      <button class="rolechip ${a.key === state.agent ? "active" : ""}" data-agent="${a.key}">
+      <button class="rolechip ${a.key === state.agent ? "active" : ""}" data-agent="${a.key}" aria-label="คุยกับ ${esc(a.name)}">
         <img src="${a.avatar}" alt=""> ${esc(a.name.replace(" AI",""))}
       </button>
     `).join("");
+    // Direct listeners are added after each render to avoid map/rolebar tap bugs from delegated handlers.
+    $$(".agent", wrap).forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        setAgent(btn.dataset.agent, true);
+      });
+    });
+    $$(".rolechip", bar).forEach((btn) => {
+      btn.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        ev.stopPropagation();
+        setAgent(btn.dataset.agent, true);
+      });
+    });
   }
 
   function setAgent(key, open = false) {
@@ -76,7 +91,7 @@
     const a = currentAgent();
     const list = state.agentHistory[a.key] || [];
     list.push({ role, text: String(text || ""), at: Date.now() });
-    state.agentHistory[a.key] = list.slice(-18);
+    state.agentHistory[a.key] = list.slice(-30);
     saveHistory();
     renderAgentMessages();
   }
@@ -110,15 +125,49 @@
     $("#agentOverlay").setAttribute("aria-hidden", "true");
   }
 
+  function logAgentChatEvent(eventType, payload = {}) {
+    return api("/admin/ai-office/reply-learning/event", {
+      method: "POST",
+      body: JSON.stringify({
+        event_type: eventType,
+        agent_key: state.agent || "admin",
+        situation_type: "agent_chat",
+        source: "ai_office_agent_chat",
+        customer_message: payload.question || "",
+        ai_reply: payload.answer || "",
+        final_admin_reply: payload.final_admin_reply || "",
+        metadata: {
+          agent: state.agent,
+          agent_name: currentAgent().name,
+          role: currentAgent().role,
+          ...payload.metadata
+        }
+      })
+    }).catch(() => {});
+  }
+
   async function submitAgentQuestion(e) {
     e.preventDefault();
     const input = $("#agentQuestion");
     const raw = clean(input.value);
     if (!raw) return;
-    const recent = (state.agentHistory[state.agent] || []).slice(-6).map((m) => `${m.role === "user" ? "แอดมิน" : "AI"}: ${m.text}`).join("\n");
-    const question = recent ? `บริบทคุยล่าสุด:\n${recent}\n\nคำถามใหม่:\n${raw}` : raw;
+    const agentInfo = currentAgent();
+    const recent = (state.agentHistory[state.agent] || []).slice(-10).map((m) => `${m.role === "user" ? "แอดมิน" : "AI"}: ${m.text}`).join("\n");
+    const brainContext = [
+      `โหมดสมองเสริมของ ${agentInfo.name}`,
+      agentInfo.brain || agentInfo.role,
+      "ใช้ประวัติสนทนาล่าสุดเพื่อไม่ตอบซ้ำและเข้าใจบริบทต่อเนื่อง",
+      "ตอบให้พร้อมใช้งานจริงกับร้าน Coldwindflow ไม่ใช่คำตอบกว้าง ๆ",
+      "ห้ามบอกว่าส่งข้อความแล้ว ห้ามแก้ข้อมูล ห้ามสร้างงาน ห้ามใช้ข้อมูลปลอม"
+    ].join("\n");
+    const question = [
+      brainContext,
+      recent ? `\nประวัติคุยล่าสุดในแผนกนี้:\n${recent}` : "",
+      `\nคำถามใหม่จากแอดมิน:\n${raw}`
+    ].filter(Boolean).join("\n");
     input.value = "";
     addAgentMessage("user", raw);
+    logAgentChatEvent("agent_user_question", { question: raw });
     addAgentMessage("ai", "กำลังอ่านข้อมูลจริงและคิดคำตอบ...");
     try {
       const data = await api("/admin/ai-office/ask", {
@@ -129,11 +178,13 @@
       if (list.length && list[list.length - 1].text.includes("กำลังอ่านข้อมูลจริง")) list.pop();
       state.agentHistory[state.agent] = list;
       addAgentMessage("ai", data.answer || "ยังไม่ได้คำตอบจาก AI");
+      logAgentChatEvent("agent_ai_answer", { question: raw, answer: data.answer || "" });
     } catch (err) {
       const list = state.agentHistory[state.agent] || [];
       if (list.length && list[list.length - 1].text.includes("กำลังอ่านข้อมูลจริง")) list.pop();
       state.agentHistory[state.agent] = list;
       addAgentMessage("ai", `ยังใช้งาน AI ไม่ได้: ${err.message}`);
+      logAgentChatEvent("agent_ai_error", { question: raw, metadata: { error: err.message } });
     }
   }
 
@@ -145,7 +196,7 @@
       $("#statTomorrow").textContent = s.tomorrow_count ?? "-";
       $("#statOpen").textContent = s.open_count ?? "-";
       $("#statUnpaid").textContent = s.unpaid_count ?? "-";
-      $("#officeStatus").textContent = "โหลดข้อมูลงานจริงแล้ว ทีม AI พร้อมช่วยงาน";
+      $("#officeStatus").textContent = "โหลดข้อมูลงานจริงแล้ว แตะตัวละคร/แถบล่างเพื่อเปิดแชท AI";
     } catch (err) {
       $("#officeStatus").textContent = `โหลดข้อมูลงานไม่ได้: ${err.message}`;
     }
@@ -407,7 +458,7 @@
   function bind() {
     document.addEventListener("click", (e) => {
       const agentBtn = e.target.closest("[data-agent]");
-      if (agentBtn) return setAgent(agentBtn.dataset.agent, agentBtn.classList.contains("agent"));
+      if (agentBtn) return setAgent(agentBtn.dataset.agent, true);
       if (e.target.closest("[data-open-inbox]")) return openInbox();
       if (e.target.closest("[data-close-agent]")) return closeAgentChat();
       if (e.target.closest("[data-close-inbox]")) return closeInbox();
