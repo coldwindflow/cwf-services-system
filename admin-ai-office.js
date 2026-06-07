@@ -1,5 +1,5 @@
 (function(){
-  const VERSION = "ai-office-game-console-20260607";
+  const VERSION = "ai-office-game-stage-console-20260607b";
   const ASSET_ROOT = "/assets/ai-office-final";
   const CLEAN_CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
   const roleOrder = ["admin","sales","ops","ads","content","dev"];
