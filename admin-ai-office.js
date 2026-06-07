@@ -1,5 +1,5 @@
 (function(){
-  const VERSION = "ai-office-production-v5-live-office-full-chat-20260607";
+  const VERSION = "ai-office-production-v6-office-ux-polish-20260607";
   const ASSET_ROOT = "/assets/ai-office-final";
   const CLEAN_CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
   const order = ["admin","sales","ops","ads","content","dev"];
@@ -15,38 +15,38 @@
     admin: {
       name:"Admin AI", short:"Admin", color:"#1558d6",
       role:"ผู้ช่วยแอดมิน: สรุปงาน ร่างข้อความลูกค้า ร่างข้อความแจ้งช่าง แปลข้อความ และจัดข้อมูลให้พร้อมใช้",
-      bubble:"พร้อมช่วยงานแอดมิน", thinking:"กำลังตรวจข้อมูลงานจริง", talking:"สรุปให้แล้ว", working:"กำลังจัดงานแอดมิน",
-      home:{x:25,y:62}, mobile:{x:25,y:59}, center:{x:39,y:58}, size:{desktop:66,mobile:58}, assets:characterAssets("admin"),
+      bubble:"พร้อมช่วยงานแอดมิน", thinking:"กำลังตรวจข้อมูลงานจริง", talking:"สรุปให้แล้ว", working:"จัดงานแอดมิน",
+      home:{x:24,y:62}, mobile:{x:22,y:70}, center:{x:24,y:62}, size:{desktop:64,mobile:52}, assets:characterAssets("admin"),
     },
     sales: {
       name:"Sales AI", short:"Sales", color:"#f0b400",
       role:"ผู้ช่วยฝ่ายขาย: ตอบลูกค้าบอกว่าแพง ช่วยปิดการขาย อธิบายราคา แพ็กเกจ และร่าง follow-up",
-      bubble:"พร้อมช่วยปิดงาน", thinking:"กำลังวิเคราะห์มุมขาย", talking:"ได้แนวตอบฝ่ายขายแล้ว", working:"กำลังดูโอกาสปิดงาน",
-      home:{x:75,y:62}, mobile:{x:73,y:58}, center:{x:61,y:59}, size:{desktop:66,mobile:58}, assets:characterAssets("sales"),
+      bubble:"พร้อมช่วยปิดงาน", thinking:"กำลังวิเคราะห์มุมขาย", talking:"ได้แนวตอบฝ่ายขายแล้ว", working:"ดูโอกาสขาย",
+      home:{x:74,y:62}, mobile:{x:66,y:70}, center:{x:74,y:62}, size:{desktop:64,mobile:52}, assets:characterAssets("sales"),
     },
     ops: {
       name:"Ops AI", short:"Ops", color:"#13a46b",
       role:"ผู้ช่วยปฏิบัติการ: ดูคิว งานวันนี้ งานพรุ่งนี้ งานค้าง งานยังไม่จ่าย งานเสี่ยง และจุดที่ต้องตาม",
-      bubble:"พร้อมดูคิวงาน", thinking:"กำลังตรวจคิวและความเสี่ยง", talking:"เจอประเด็นที่ต้องดูแล้ว", working:"กำลังประสานคิวงาน",
-      home:{x:50,y:42}, mobile:{x:50,y:37}, center:{x:50,y:50}, size:{desktop:70,mobile:60}, assets:characterAssets("ops"),
+      bubble:"พร้อมดูคิวงาน", thinking:"กำลังตรวจคิวและความเสี่ยง", talking:"เจอประเด็นที่ต้องดูแล้ว", working:"ประสานคิวงาน",
+      home:{x:50,y:42}, mobile:{x:51,y:45}, center:{x:50,y:42}, size:{desktop:66,mobile:54}, assets:characterAssets("ops"),
     },
     ads: {
       name:"Ads AI", short:"Ads", color:"#ef5aa3",
       role:"ผู้ช่วยโฆษณา: วิเคราะห์แอด คิด keyword พื้นที่ยิงแอด Hook ข้อความโฆษณา และโอกาสจากงานจริง",
-      bubble:"พร้อมคิดแอด", thinking:"กำลังหาโอกาสโฆษณา", talking:"ได้มุมแคมเปญแล้ว", working:"กำลังดูแผนโฆษณา",
-      home:{x:19,y:36}, mobile:{x:20,y:34}, center:{x:36,y:43}, size:{desktop:62,mobile:55}, assets:characterAssets("ads"),
+      bubble:"พร้อมคิดแอด", thinking:"กำลังหาโอกาสโฆษณา", talking:"ได้มุมแคมเปญแล้ว", working:"ดูแผนโฆษณา",
+      home:{x:19,y:36}, mobile:{x:34,y:61}, center:{x:19,y:36}, size:{desktop:60,mobile:50}, assets:characterAssets("ads"),
     },
     content: {
       name:"Content AI", short:"Content", color:"#8b5cf6",
       role:"ผู้ช่วยคอนเทนต์: เขียนโพสต์ แคปชัน รีวิว สคริปต์ Reels/TikTok และไอเดียภาพจากงานจริง",
-      bubble:"พร้อมทำคอนเทนต์", thinking:"กำลังเรียบเรียงคอนเทนต์", talking:"ร่างคอนเทนต์ให้แล้ว", working:"กำลังจัดไอเดียโพสต์",
-      home:{x:31,y:80}, mobile:{x:30,y:74}, center:{x:44,y:66}, size:{desktop:64,mobile:56}, assets:characterAssets("content"),
+      bubble:"พร้อมทำคอนเทนต์", thinking:"กำลังเรียบเรียงคอนเทนต์", talking:"ร่างคอนเทนต์ให้แล้ว", working:"จัดไอเดียโพสต์",
+      home:{x:31,y:80}, mobile:{x:43,y:78}, center:{x:31,y:80}, size:{desktop:60,mobile:50}, assets:characterAssets("content"),
     },
     dev: {
       name:"Dev AI", short:"Dev", color:"#334155",
       role:"ผู้ช่วยระบบ: สรุปบั๊ก เขียน prompt ส่ง Codex ทำ checklist ก่อน deploy ตรวจความเสี่ยง และ rollback notes",
-      bubble:"พร้อมช่วยระบบ", thinking:"กำลังตรวจมุมระบบ", talking:"สรุปทางแก้ให้แล้ว", working:"กำลังเช็กระบบ",
-      home:{x:82,y:37}, mobile:{x:80,y:34}, center:{x:64,y:43}, size:{desktop:62,mobile:55}, assets:characterAssets("dev"),
+      bubble:"พร้อมช่วยระบบ", thinking:"กำลังตรวจมุมระบบ", talking:"สรุปทางแก้ให้แล้ว", working:"เช็กระบบ",
+      home:{x:82,y:37}, mobile:{x:80,y:47}, center:{x:82,y:37}, size:{desktop:60,mobile:50}, assets:characterAssets("dev"),
     },
   };
 
@@ -68,11 +68,11 @@
   function autoGrow(el){ if(!el) return; el.style.height="auto"; el.style.height = `${Math.min(el.scrollHeight, 158)}px`; }
 
   function loadSavedConversations(){
-    try { app.conversations = JSON.parse(sessionStorage.getItem("cwf_ai_office_v5_conversations") || "{}"); }
+    try { app.conversations = JSON.parse(sessionStorage.getItem("cwf_ai_office_v6_conversations") || "{}"); }
     catch(_) { app.conversations = {}; }
   }
   function saveConversations(){
-    try { sessionStorage.setItem("cwf_ai_office_v5_conversations", JSON.stringify(app.conversations)); } catch(_) {}
+    try { sessionStorage.setItem("cwf_ai_office_v6_conversations", JSON.stringify(app.conversations)); } catch(_) {}
   }
 
   function setSprite(key, assetKey){
@@ -136,11 +136,16 @@
     if (chatRole) chatRole.textContent = a.role;
     setChatAvatar();
     bubble(key, a.bubble, 1900);
-    updateOfficeStatus(`${a.name} พร้อมช่วยงาน กดแล้วคุยเต็มจอได้ทันที`);
+    updateOfficeStatus(`${a.name} พร้อมช่วยงาน แตะตัวละครเพื่อเปิดแชทเต็มจอ`);
     updateTeamStatus(`${a.name} พร้อมช่วยตอบจากข้อมูลงานจริง`);
     renderMessages();
-    moveAgent(key, a.center).then(() => setTimeout(() => { if (!app.open && !app.loading) moveAgent(key, homeFor(key)); }, 850));
-    if (openChat) setTimeout(openChatView, 160);
+    if (openChat) {
+      setAgentMode(key, "talking");
+      bubble(key, "พร้อมคุยแล้ว", 1200);
+      setTimeout(openChatView, 120);
+    } else {
+      moveAgent(key, a.center).then(() => setTimeout(() => { if (!app.open && !app.loading) moveAgent(key, homeFor(key)); }, 650));
+    }
   }
 
   function buildSelectors(){
@@ -271,13 +276,21 @@
     window.addEventListener("resize", () => { if (!app.open) placeAllHome(); });
   }
 
+  function pointForDevice(point, mobilePoint){
+    return isMobile() && mobilePoint ? mobilePoint : point;
+  }
+  function eventPoint(event, key){
+    const p = isMobile() && event.mobilePoints && event.mobilePoints[key] ? event.mobilePoints[key] : event.points[key];
+    return p || homeFor(key);
+  }
+
   function ambientWorkCycle(){
     if (app.ambientTimer) clearInterval(app.ambientTimer);
     const events = [
-      { lead:"ops", helpers:["admin","sales"], text:"Ops AI กำลังประสานคิวกับ Admin และ Sales", points:{ops:{x:50,y:50},admin:{x:42,y:58},sales:{x:58,y:58}} },
-      { lead:"ads", helpers:["content","sales"], text:"Ads AI กำลังคุยกับ Content และ Sales เรื่องงานขาย", points:{ads:{x:38,y:44},content:{x:44,y:61},sales:{x:58,y:58}} },
-      { lead:"dev", helpers:["ops","admin"], text:"Dev AI กำลังเช็กระบบกับ Ops และ Admin", points:{dev:{x:64,y:44},ops:{x:52,y:48},admin:{x:41,y:58}} },
-      { lead:"content", helpers:["ads"], text:"Content AI กำลังเตรียมไอเดียจากงานจริง", points:{content:{x:43,y:66},ads:{x:36,y:46}} },
+      { lead:"ops", helpers:["admin","sales"], text:"Ops AI ประสาน Admin และ Sales เรื่องคิวงาน", points:{ops:{x:50,y:44},admin:{x:27,y:62},sales:{x:71,y:62}}, mobilePoints:{ops:{x:51,y:45},admin:{x:22,y:70},sales:{x:66,y:70}} },
+      { lead:"ads", helpers:["content","sales"], text:"Ads AI คุยกับ Content และ Sales เรื่องงานขาย", points:{ads:{x:24,y:44},content:{x:34,y:76},sales:{x:73,y:62}}, mobilePoints:{ads:{x:34,y:61},content:{x:43,y:78},sales:{x:66,y:70}} },
+      { lead:"dev", helpers:["ops","admin"], text:"Dev AI เช็กระบบกับ Ops และ Admin", points:{dev:{x:80,y:39},ops:{x:53,y:45},admin:{x:24,y:63}}, mobilePoints:{dev:{x:80,y:47},ops:{x:51,y:45},admin:{x:22,y:70}} },
+      { lead:"content", helpers:["ads"], text:"Content AI เตรียมไอเดียจากงานจริง", points:{content:{x:34,y:78},ads:{x:25,y:45}}, mobilePoints:{content:{x:43,y:78},ads:{x:34,y:61}} },
     ];
     let idx = 0;
     app.ambientTimer = setInterval(() => {
@@ -286,10 +299,10 @@
       const movers = [event.lead, ...event.helpers]; updateOfficeStatus(event.text);
       movers.forEach((key, i) => setTimeout(() => {
         if (app.open || app.loading) return;
-        moveAgent(key, event.points[key] || cfg(key).center).then(() => { setAgentMode(key, "working"); bubble(key, cfg(key).working, 1900); });
+        moveAgent(key, eventPoint(event, key)).then(() => { setAgentMode(key, "working"); bubble(key, cfg(key).working, 1900); });
       }, i * 140));
       setTimeout(() => { if (!app.open && !app.loading) { movers.forEach((key) => moveAgent(key, homeFor(key))); updateOfficeStatus("ทีม AI กลับเข้าประจำจุด พร้อมช่วยงาน"); } }, 3600);
-    }, 6200);
+    }, 7400);
   }
 
   document.addEventListener("DOMContentLoaded", () => {
