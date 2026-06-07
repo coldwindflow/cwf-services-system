@@ -3,6 +3,7 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const { ensureLineInboxSchema } = require("./lineWebhook");
+const { loadSavedReplyExamples, saveReplyFeedback, getReplyLearningStatus } = require("../aiReplyLearning");
 const {
   BANGKOK_TZ,
   formatThaiDateTime,
@@ -532,11 +533,18 @@ async function loadRecentLineContext(pool, deps) {
 }
 
 async function loadReplyStyleMemory(pool, question) {
+  const intent = detectCustomerIntent(question);
   const memory = {
     approved_examples: serviceKnowledge().approved_reply_style,
+    saved_examples: [],
     sanitized_real_examples: [],
     source_note: "Current CWF knowledge is factual source of truth. Real chat examples are sanitized weak style references only.",
   };
+  try {
+    memory.saved_examples = await loadSavedReplyExamples(pool, intent, 8);
+  } catch (_) {
+    memory.saved_examples = [];
+  }
   try {
     await ensureLineInboxSchemaOnce(pool);
     const r = await pool.query(`
@@ -562,6 +570,7 @@ async function loadReplyStyleMemory(pool, question) {
   } catch (_) {
     memory.source_note = "No readable admin reply history found; using approved examples and current CWF knowledge only.";
   }
+  memory.intent = intent;
   memory.intent_agents = routeOfficeIntent(question);
   return memory;
 }
@@ -1087,6 +1096,23 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       return res.json(result);
     } catch (e) {
       return res.status(e.status || 500).json({ ok: false, error: e.message || "ตรวจระบบ AI Office ไม่สำเร็จ" });
+    }
+  });
+
+  router.get("/admin/ai-office/reply-learning/status", requireAdminSession, async (req, res) => {
+    try {
+      return res.json(await getReplyLearningStatus(pool));
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "ตรวจระบบเรียนรู้คำตอบแอดมินไม่สำเร็จ" });
+    }
+  });
+
+  router.post("/admin/ai-office/reply-learning/feedback", requireAdminSession, async (req, res) => {
+    try {
+      const result = await saveReplyFeedback(pool, req.body || {});
+      return res.json(result);
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "บันทึก feedback ไม่สำเร็จ" });
     }
   });
 

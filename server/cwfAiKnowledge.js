@@ -281,6 +281,7 @@ function sanitizeChatText(value) {
     .replace(/https?:\/\/\S+/gi, "[link]")
     .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]")
     .replace(/\b[A-Z]{2,5}[-_]?\d{3,}\b/gi, "[code]")
+    .replace(/(?:condo|building|room)\s*[\w .-]{1,40}/gi, "[location]")
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 700);
@@ -292,6 +293,11 @@ function formatBangkokChatTime(value) {
 
 function detectCustomerIntent(text) {
   const q = String(text || "").toLowerCase();
+  if (/not cold/.test(q)) return "air_not_cold";
+  if (/water dripping|dripping|leak/.test(q)) return "water_dripping";
+  if (/smell|mold/.test(q)) return "smell";
+  if (/on the way|arrived/.test(q)) return "technician_on_the_way";
+  if (/schedule|available|queue/.test(q)) return "schedule_inquiry";
   if (/แพง|ลด|ส่วนลด/.test(q)) return "price_objection";
   if (/ราคา|เท่าไหร่|กี่บาท|btu|ล้าง/.test(q)) return "price_inquiry";
   if (/จอง|นัด|สะดวก|พรุ่งนี้|วันนี้|คิว|ว่าง/.test(q)) return "booking";

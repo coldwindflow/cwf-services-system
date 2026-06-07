@@ -1,5 +1,5 @@
 (function(){
-  const VERSION = "ai-office-production-v8-customer-inbox-20260607";
+  const VERSION = "ai-office-production-v9-reply-learning-20260607";
   const ASSET_ROOT = "/assets/ai-office-final";
   const CLEAN_CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
   const order = ["admin","sales","ops","ads","content","dev"];
@@ -326,6 +326,29 @@
       if (box) box.textContent = e.message;
     }
   }
+  function latestInboundText(){
+    const msg = [...(app.selectedMessages || [])].reverse().find((m) => m.direction === "inbound" && (m.message_text || m.message_text_for_admin));
+    return msg?.message_text || msg?.message_text_for_admin || "";
+  }
+  async function sendReplyFeedback(type){
+    if (!app.draftText) return showToast("ยังไม่มีข้อความร่างให้ให้คะแนน");
+    try {
+      await api("/admin/ai-office/reply-learning/feedback", {
+        method:"POST",
+        body:JSON.stringify({
+          feedback_type:type,
+          conversation_id:app.selectedConversation?.id || null,
+          customer_message:latestInboundText(),
+          ai_reply:app.draftText,
+          intent:app.selectedConversation?.detected_intent || "general",
+          source:"customer_inbox",
+        }),
+      });
+      showToast(type === "save_example" ? "บันทึกเป็นตัวอย่างแล้ว" : "บันทึก feedback แล้ว");
+    } catch(e) {
+      showToast(`บันทึก feedback ไม่ได้: ${e.message}`);
+    }
+  }
   function openInbox(){
     app.inboxOpen = true; const view = qs("#customerInbox"); if (view) { view.classList.add("open"); view.setAttribute("aria-hidden","false"); }
     document.body.style.overflow = "hidden"; renderInboxFilters(); renderInboxTools(); loadInbox().catch((e) => showToast(`โหลด Customer Inbox ไม่ได้: ${e.message}`));
@@ -411,6 +434,7 @@
     qs("#btnInbox")?.addEventListener("click", openInbox);
     qs("#btnInboxBack")?.addEventListener("click", closeInbox);
     qs("#btnCopyDraft")?.addEventListener("click", () => navigator.clipboard?.writeText(app.draftText || qs("#draftAnswer")?.textContent || "").then(() => showToast("คัดลอกแล้ว")).catch(() => showToast("คัดลอกไม่สำเร็จ")));
+    qsa("[data-feedback]").forEach((btn) => btn.addEventListener("click", () => sendReplyFeedback(btn.dataset.feedback)));
     qs("#btnBack")?.addEventListener("click", closeChatView);
     qs("#chatForm")?.addEventListener("submit", (ev) => { ev.preventDefault(); ask(); });
     const input = qs("#askInput");
