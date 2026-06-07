@@ -1,5 +1,5 @@
 (function(){
-  const VERSION = "ai-office-production-v12-chat-bubbles-mobile-20260608";
+  const VERSION = "ai-office-production-v13-clean-mobile-chat-20260608";
   const ASSET_ROOT = "/assets/ai-office-final";
   const CLEAN_CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
   const order = ["admin","sales","ops","ads","content","dev"];
@@ -79,10 +79,6 @@
   const inboxFilters = [
     ["all","ทั้งหมด"],["unread","ยังไม่อ่าน"],["needs_reply","ต้องตอบ"],["waiting_customer_info","รอลูกค้า"],["checking_schedule","เช็กคิว/ช่าง"],["price_objection","ลูกค้าบอกแพง"],
   ];
-  const inboxTools = [
-    ["recommended","ร่างคำตอบแนะนำ"],["shorter","ตอบสั้นลง"],["polite","สุภาพขึ้น"],["closing","ช่วยปิดการขาย"],["missing","ถามข้อมูลที่ขาด"],["expensive","ลูกค้าบอกแพง"],
-  ];
-
   function qs(sel, root=document){ return root.querySelector(sel); }
   function qsa(sel, root=document){ return Array.from(root.querySelectorAll(sel)); }
   function isMobile(){ return window.matchMedia("(max-width: 860px)").matches; }
@@ -261,8 +257,7 @@
   }
   function renderInboxTools(){
     const box = qs("#inboxTools"); if (!box) return;
-    box.innerHTML = inboxTools.map(([key,label]) => `<button type="button" class="toolBtn" data-tool="${key}">${escapeHtml(label)}</button>`).join("");
-    qsa("[data-tool]", box).forEach((btn) => btn.addEventListener("click", () => submitCustomerAiQuestion(btn.textContent || "", btn.dataset.tool)));
+    box.innerHTML = "";
   }
   function filterConversation(c){
     const f = app.inboxFilter;
@@ -477,6 +472,7 @@
   }
   function closeInbox(){
     app.inboxOpen = false; const view = qs("#customerInbox"); if (view) { view.classList.remove("open"); view.setAttribute("aria-hidden","true"); }
+    qs("#customerInbox")?.classList.remove("has-selected");
     document.body.style.overflow = "";
   }
 

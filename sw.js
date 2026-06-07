@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v118-ai-office-chat-bubbles-mobile-20260608";
+const CACHE_NAME = "cwf-cache-v119-ai-office-clean-mobile-chat-20260608";
 
 const ASSETS = [
   "/",
