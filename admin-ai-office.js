@@ -1,5 +1,5 @@
 (function(){
-  const VERSION = "ai-office-production-v11-customer-chat-workflow-20260608";
+  const VERSION = "ai-office-production-v12-chat-bubbles-mobile-20260608";
   const ASSET_ROOT = "/assets/ai-office-final";
   const CLEAN_CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
   const order = ["admin","sales","ops","ads","content","dev"];
@@ -59,7 +59,7 @@
 
   const app = {
     active:"admin", open:false, loading:false, conversations:{}, walkTimers:{}, bubbleTimers:{}, ambientTimer:null,
-    inboxOpen:false, inboxFilter:"all", inboxConversations:[], selectedConversation:null, selectedMessages:[], selectedThreadContext:null, draftText:"", currentDraft:null, inboxDraftLoading:false,
+    inboxOpen:false, inboxFilter:"all", inboxConversations:[], selectedConversation:null, selectedMessages:[], selectedThreadContext:null, draftText:"", currentDraft:null, inboxDraftLoading:false, customerAiReplies:{},
   };
 
   const quickCommands = [
@@ -262,7 +262,7 @@
   function renderInboxTools(){
     const box = qs("#inboxTools"); if (!box) return;
     box.innerHTML = inboxTools.map(([key,label]) => `<button type="button" class="toolBtn" data-tool="${key}">${escapeHtml(label)}</button>`).join("");
-    qsa("[data-tool]", box).forEach((btn) => btn.addEventListener("click", () => draftForSelected(btn.dataset.tool, btn.textContent || "")));
+    qsa("[data-tool]", box).forEach((btn) => btn.addEventListener("click", () => submitCustomerAiQuestion(btn.textContent || "", btn.dataset.tool)));
   }
   function filterConversation(c){
     const f = app.inboxFilter;
@@ -283,7 +283,21 @@
         <div class="badges"><span class="badge">${escapeHtml(statusLabel(c.conversation_status))}</span><span class="badge">${escapeHtml(intentLabel(c.detected_intent))}</span>${flags}</div>
       </button>`;
     }).join("");
-    qsa(".conv", box).forEach((btn) => btn.addEventListener("click", () => selectConversation(btn.dataset.id)));
+    qsa(".conv", box).forEach((btn) => btn.addEventListener("click", () => openCustomerChat(btn.dataset.id)));
+  }
+  function repliesForSelected(){
+    const id = app.selectedConversation?.id;
+    if (!id) return [];
+    if (!app.customerAiReplies[id]) app.customerAiReplies[id] = [];
+    return app.customerAiReplies[id];
+  }
+  function renderAiReplyBubble(item, idx){
+    return `<div class="lineMsg aiReply">
+      <span class="aiReplyTitle">ข้อความพร้อมส่งลูกค้า</span>
+      <div class="aiReplyText">${escapeHtml(item.reply || "")}</div>
+      <div class="aiReplyActions"><button type="button" class="aiReplyCopy" data-reply-index="${idx}">คัดลอกข้อความตอบลูกค้า</button></div>
+      <span class="lineTime">${escapeHtml(item.time || "")}</span>
+    </div>`;
   }
   function renderThread(){
     const title = qs("#threadTitle"), msgs = qs("#threadMessages");
@@ -291,11 +305,17 @@
     if (title) title.textContent = c ? `${c.display_name || "ลูกค้า LINE"} · ${statusLabel(c.conversation_status)}` : "เลือกแชทลูกค้า";
     if (!msgs) return;
     if (!c) { msgs.innerHTML = `<div class="inboxEmpty">เลือกหนึ่งแชทเพื่อดูข้อความของลูกค้าคนนั้นเท่านั้น</div>`; return; }
-    msgs.innerHTML = (app.selectedMessages || []).map((m) => {
+    const lineHtml = (app.selectedMessages || []).map((m) => {
       const side = m.direction === "inbound" ? "inbound" : "outbound";
       const text = m.message_text_for_admin || m.message_text || "";
       return `<div class="lineMsg ${side}">${escapeHtml(text)}<span class="lineTime">${escapeHtml(m.received_at_display || "")}</span></div>`;
-    }).join("") || `<div class="inboxEmpty">ยังไม่มีข้อความในแชทนี้</div>`;
+    }).join("");
+    const aiHtml = repliesForSelected().map(renderAiReplyBubble).join("");
+    msgs.innerHTML = lineHtml || aiHtml ? `${lineHtml}${aiHtml}` : `<div class="inboxEmpty">ยังไม่มีข้อความในแชทนี้</div>`;
+    qsa("[data-reply-index]", msgs).forEach((btn) => btn.addEventListener("click", () => {
+      const item = repliesForSelected()[Number(btn.dataset.replyIndex)];
+      copyCustomerReply(item?.reply || "");
+    }));
     requestAnimationFrame(() => { msgs.scrollTop = msgs.scrollHeight; });
   }
   function renderCustomerContext(){
@@ -366,8 +386,10 @@
     app.selectedMessages = data.messages || [];
     app.selectedThreadContext = data.thread_context || null;
     renderThread(); renderCustomerContext();
-    draftForSelected("recommended", "ร่างคำตอบแนะนำแบบแอดมินผู้หญิงของ Coldwindflow สั้น สุภาพ พร้อมคัดลอกส่งลูกค้า").catch(() => {});
+    if (!repliesForSelected().length) submitCustomerAiQuestion("ร่างคำตอบแนะนำแบบแอดมินผู้หญิงของ Coldwindflow สั้น สุภาพ พร้อมคัดลอกส่งลูกค้า", "recommended").catch(() => {});
   }
+  function openCustomerChat(conversationId){ return selectConversation(conversationId); }
+  function renderCustomerChatView(){ renderConversationList(); renderThread(); renderCustomerContext(); renderDraft(app.currentDraft); }
   async function draftForSelected(tool, label, adminQuestion){
     if (!app.selectedConversation) return showToast("กรุณาเลือกแชทลูกค้าก่อน");
     if (app.inboxDraftLoading) return;
@@ -384,6 +406,7 @@
       const data = await api("/admin/ai-office/line-draft-reply", { method:"POST", body:JSON.stringify({ conversation_id: app.selectedConversation.id, agent:"sales", instruction, admin_question: adminQuestion || "" }) });
       app.currentDraft = data.draft || { customer_reply: data.answer || "" };
       app.draftText = app.currentDraft.customer_reply || data.answer || "";
+      addAiReplyBubble(app.draftText, app.currentDraft);
       renderDraft(app.currentDraft);
     } catch(e) {
       app.currentDraft = null; app.draftText = "";
@@ -392,17 +415,38 @@
       app.inboxDraftLoading = false;
     }
   }
+  function addAiReplyBubble(reply, draft){
+    const text = cleanText(reply);
+    if (!text || !app.selectedConversation?.id) return;
+    const list = repliesForSelected();
+    if (list[0]?.reply !== text) {
+      list.unshift({ reply:text, draft:draft || null, time:new Date().toLocaleTimeString("th-TH", { hour:"2-digit", minute:"2-digit" }) });
+      if (list.length > 12) list.length = 12;
+    }
+    renderThread();
+  }
   function showInboxList(){
     app.selectedConversation = null; app.selectedMessages = []; app.selectedThreadContext = null; app.draftText = ""; app.currentDraft = null;
     qs("#customerInbox")?.classList.remove("has-selected");
     renderDraft(null); renderConversationList(); renderThread(); renderCustomerContext();
+  }
+  function submitCustomerAiQuestion(question, tool="custom"){
+    if (!app.selectedConversation) return showToast("กรุณาเลือกแชทลูกค้าก่อน");
+    const text = cleanText(question);
+    if (!text) return showToast("พิมพ์คำถามสำหรับ AI ก่อน");
+    return draftForSelected(tool, text, text);
   }
   function submitInboxQuestion(){
     const input = qs("#inboxAskInput");
     const question = cleanText(input?.value);
     if (!question) return showToast("พิมพ์คำถามสำหรับ AI ก่อน");
     if (input) input.value = "";
-    draftForSelected("custom", question, question);
+    submitCustomerAiQuestion(question, "custom");
+  }
+  function copyCustomerReply(replyText){
+    const text = cleanText(replyText);
+    if (!text) return showToast("ยังไม่มีข้อความพร้อมส่งลูกค้า");
+    return navigator.clipboard?.writeText(text).then(() => showToast("คัดลอกแล้ว")).catch(() => showToast("คัดลอกไม่สำเร็จ"));
   }
   function latestInboundText(){
     const msg = [...(app.selectedMessages || [])].reverse().find((m) => m.direction === "inbound" && (m.message_text || m.message_text_for_admin));
@@ -514,8 +558,7 @@
     qs("#btnInboxList")?.addEventListener("click", showInboxList);
     qs("#inboxAiForm")?.addEventListener("submit", (ev) => { ev.preventDefault(); submitInboxQuestion(); });
     qs("#btnCopyDraft")?.addEventListener("click", () => {
-      if (!app.draftText) return showToast("ยังไม่มีข้อความพร้อมส่งลูกค้า");
-      return navigator.clipboard?.writeText(app.draftText).then(() => showToast("คัดลอกแล้ว")).catch(() => showToast("คัดลอกไม่สำเร็จ"));
+      return copyCustomerReply(app.draftText);
     });
     qsa("[data-feedback]").forEach((btn) => btn.addEventListener("click", () => sendReplyFeedback(btn.dataset.feedback)));
     qs("#btnBack")?.addEventListener("click", closeChatView);

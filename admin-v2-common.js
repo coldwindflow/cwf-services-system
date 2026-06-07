@@ -222,7 +222,7 @@ function injectAdminMenu(){
       border-bottom:1px solid rgba(255,204,0,0.22);
       box-shadow:0 12px 32px rgba(2,6,23,0.34);} 
     #cwfTopNav:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,transparent,rgba(255,204,0,.72),rgba(71,139,255,.55),transparent);pointer-events:none}
-    #cwfTopNav .in{max-width:1220px;margin:0 auto;display:flex;align-items:center;justify-content:flex-start;
+    #cwfTopNav .in{max-width:1220px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;
       gap:12px;padding:8px 18px 9px;}
     #cwfTopNav .ttl{min-width:0;display:flex;flex:1 1 auto;flex-direction:column;gap:2px;padding-left:2px}
     #cwfTopNav .ttl b{font-size:16px;line-height:1.05;color:#fff;font-weight:1050;letter-spacing:.15px;text-shadow:0 8px 18px rgba(0,0,0,.28)}
@@ -420,17 +420,17 @@ function injectAdminMenu(){
   nav.id = 'cwfTopNav';
   nav.innerHTML = `
     <div class="in">
-      <div class="btns">
-        <div id="cwfMenuBtn" class="cwf-icbtn" title="เมนู" aria-label="เมนู">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Z"/></svg>
-        </div>
-        <a id="cwfAiOfficeTopbarBtn" class="cwf-ai-office-entry-btn" href="/admin/ai-office" title="AI Office" aria-label="AI Office">
-          <img src="/assets/icons/cwf-ai-office-entry.png" alt="">
-        </a>
-      </div>
       <div class="ttl">
         <b>CWF Admin</b>
         <span>${pageTitle}</span>
+      </div>
+      <div class="btns">
+        <a id="cwfAiOfficeTopbarBtn" class="cwf-ai-office-entry-btn" href="/admin/ai-office" title="AI Office" aria-label="AI Office">
+          <img src="/assets/icons/cwf-ai-office-entry.png" alt="">
+        </a>
+        <div id="cwfMenuBtn" class="cwf-icbtn" title="เมนู" aria-label="เมนู">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Z"/></svg>
+        </div>
       </div>
     </div>
   `;
