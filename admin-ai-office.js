@@ -1,8 +1,9 @@
 (function(){
-  const VERSION = "ai-office-production-v6-office-ux-polish-20260607";
+  const VERSION = "ai-office-production-v7-bangkok-availability-20260607";
   const ASSET_ROOT = "/assets/ai-office-final";
   const CLEAN_CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
   const order = ["admin","sales","ops","ads","content","dev"];
+  const switchOrder = ["office", ...order];
   const stateNames = ["base","idle","thinking","talking","working","walk-1","walk-2","walk-3","walk-4"];
 
   function characterAssets(role){
@@ -12,6 +13,12 @@
   }
 
   const agents = {
+    office: {
+      name:"Office Chat", short:"Office", color:"#0d3d8d",
+      role:"รวมทุกแผนก: วิเคราะห์คำถามแล้วให้ Admin, Sales, Ops, Ads, Content หรือ Dev AI ช่วยตอบร่วมกัน",
+      bubble:"รวมทุกแผนกพร้อมช่วย", thinking:"กำลังแยกงานให้ทีม AI", talking:"รวมคำตอบให้แล้ว", working:"รวมงานทุกแผนก",
+      home:{x:50,y:42}, mobile:{x:51,y:45}, center:{x:50,y:42}, size:{desktop:66,mobile:54}, assets:characterAssets("admin"),
+    },
     admin: {
       name:"Admin AI", short:"Admin", color:"#1558d6",
       role:"ผู้ช่วยแอดมิน: สรุปงาน ร่างข้อความลูกค้า ร่างข้อความแจ้งช่าง แปลข้อความ และจัดข้อมูลให้พร้อมใช้",
@@ -53,6 +60,21 @@
   const app = {
     active:"admin", open:false, loading:false, conversations:{}, walkTimers:{}, bubbleTimers:{}, ambientTimer:null,
   };
+
+  const quickCommands = [
+    "รวมทุกแผนก",
+    "ตอบลูกค้ายังไงดี",
+    "ลูกค้าบอกว่าแพง",
+    "อธิบายล้างปกติ/พรีเมียมแบบสั้น",
+    "พรุ่งนี้บ่ายโมงมีคิวไหม",
+    "พรุ่งนี้ 13:00 มีช่างว่างไหม",
+    "วันนี้รับงานเพิ่มได้ไหม",
+    "งานไหนชนคิว",
+    "ร่างข้อความยืนยันนัด",
+    "ร่างข้อความแจ้งช่างกำลังเดินทาง",
+    "งานไหนยังไม่ปิด",
+    "งานไหนยังไม่จ่าย",
+  ];
 
   function qs(sel, root=document){ return root.querySelector(sel); }
   function qsa(sel, root=document){ return Array.from(root.querySelectorAll(sel)); }
@@ -151,14 +173,33 @@
   function buildSelectors(){
     const rolebar = qs("#rolebar"), sw = qs("#chatSwitchers");
     if (rolebar) rolebar.innerHTML = ""; if (sw) sw.innerHTML = "";
-    order.forEach((key) => {
+    if (rolebar) {
+      const office = cfg("office");
+      const chip = document.createElement("button"); chip.type = "button"; chip.className = "rolechip"; chip.dataset.agent = "office";
+      chip.innerHTML = `<img alt="" src="${office.assets.idle}"><span>${escapeHtml(office.short)}</span>`;
+      chip.addEventListener("click", () => selectAgent("office", true)); rolebar.appendChild(chip);
+    }
+    switchOrder.forEach((key) => {
       const a = cfg(key);
-      const chip = document.createElement("button"); chip.type = "button"; chip.className = "rolechip"; chip.dataset.agent = key;
-      chip.innerHTML = `<img alt="" src="${a.assets.idle}"><span>${escapeHtml(a.short)}</span>`;
-      chip.addEventListener("click", () => selectAgent(key, true)); rolebar?.appendChild(chip);
+      if (key !== "office") {
+        const chip = document.createElement("button"); chip.type = "button"; chip.className = "rolechip"; chip.dataset.agent = key;
+        chip.innerHTML = `<img alt="" src="${a.assets.idle}"><span>${escapeHtml(a.short)}</span>`;
+        chip.addEventListener("click", () => selectAgent(key, true)); rolebar?.appendChild(chip);
+      }
       const btn = document.createElement("button"); btn.type = "button"; btn.className = "switch"; btn.dataset.agent = key; btn.textContent = a.short;
       btn.addEventListener("click", () => selectAgent(key, false)); sw?.appendChild(btn);
     });
+  }
+
+  function buildQuickCommands(){
+    const bar = qs("#quickbar"); if (!bar) return;
+    bar.innerHTML = quickCommands.map((text) => `<button type="button" class="quickcmd">${escapeHtml(text)}</button>`).join("");
+    qsa(".quickcmd", bar).forEach((btn) => btn.addEventListener("click", () => {
+      const text = btn.textContent || "";
+      if (text === "รวมทุกแผนก") selectAgent("office", true);
+      const input = qs("#askInput");
+      if (input) { input.value = text === "รวมทุกแผนก" ? "" : text; autoGrow(input); input.focus(); }
+    }));
   }
 
   function messagesFor(){ if (!app.conversations[app.active]) app.conversations[app.active] = []; return app.conversations[app.active]; }
@@ -307,6 +348,6 @@
 
   document.addEventListener("DOMContentLoaded", () => {
     console.info(`CWF AI Office ${VERSION}`);
-    loadSavedConversations(); bind(); buildSelectors(); initAgents(); preload(); loadSummary(); ambientWorkCycle();
+    loadSavedConversations(); bind(); buildSelectors(); buildQuickCommands(); initAgents(); preload(); loadSummary(); ambientWorkCycle();
   });
 })();

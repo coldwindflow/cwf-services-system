@@ -3,6 +3,17 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const { ensureLineInboxSchema } = require("./lineWebhook");
+const {
+  BANGKOK_TZ,
+  formatThaiDateTime,
+  formatThaiTime,
+  parseThaiRelativeDate,
+  serviceKnowledge,
+  analyzeAvailability,
+  looksLikeAvailabilityQuestion,
+  routeOfficeIntent,
+  filterReplyExample,
+} = require("../cwfAiKnowledge");
 
 const AI_OFFICE_DEFAULT_MODEL = "gpt-4.1-mini";
 const AI_OFFICE_JOB_LIMIT = 80;
@@ -51,6 +62,10 @@ const AI_OFFICE_AGENTS = {
   dev: {
     name: "Dev AI",
     role: "ผู้ช่วยระบบสำหรับ prompt, สรุปบั๊ก, checklist deploy และ review ความเสี่ยงแบบอ่านข้อมูลอย่างเดียว",
+  },
+  office: {
+    name: "Office Chat",
+    role: "โหมดรวมทุกแผนกสำหรับแยกเจตนาคำถามและรวมคำตอบจากทีม AI ที่เกี่ยวข้อง",
   },
 };
 
@@ -120,6 +135,7 @@ function isCanceledStatusExpr(alias = "j") {
 }
 
 function mapJob(row) {
+  const appointmentDisplay = formatThaiDateTime(row.appointment_datetime);
   return {
     job_id: row.job_id,
     booking_code: row.booking_code || null,
@@ -127,6 +143,9 @@ function mapJob(row) {
     customer_phone: row.customer_phone || "",
     job_type: row.job_type || "",
     appointment_datetime: row.appointment_datetime || null,
+    appointment_display: appointmentDisplay,
+    appointment_time_th: formatThaiTime(row.appointment_datetime),
+    business_timezone: BANGKOK_TZ,
     job_status: row.job_status || "",
     payment_status: row.payment_status || "unpaid",
     job_price: Number(row.job_price || 0),
@@ -228,6 +247,42 @@ async function loadJobs(pool, bucket, phone) {
   return (r.rows || []).map(mapJob);
 }
 
+async function loadJobsForBangkokDate(pool, dateIso) {
+  const canceled = isCanceledStatusExpr("j");
+  const r = await pool.query(
+    `${baseJobSelect()}
+      WHERE j.appointment_datetime IS NOT NULL
+        AND (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date = $1::date
+        AND NOT ${canceled}
+      ${baseJobGroupOrder("j.appointment_datetime ASC NULLS LAST, j.job_id ASC")}`,
+    [dateIso]
+  );
+  return (r.rows || []).map(mapJob);
+}
+
+async function loadTechniciansForAvailability(pool) {
+  try {
+    const r = await pool.query(`
+      SELECT DISTINCT username, full_name
+      FROM (
+        SELECT username, COALESCE(full_name, username) AS full_name
+          FROM public.users
+         WHERE role IN ('technician','tech','senior_technician','lead_technician')
+        UNION
+        SELECT username, COALESCE(full_name, username) AS full_name
+          FROM public.technician_profiles
+         WHERE username IS NOT NULL
+      ) t
+      WHERE username IS NOT NULL
+      ORDER BY username
+      LIMIT 120
+    `);
+    return (r.rows || []).map((row) => ({ username: row.username, full_name: row.full_name || row.username }));
+  } catch (_) {
+    return [];
+  }
+}
+
 async function loadSummary(pool) {
   const done = isDoneStatusExpr("j");
   const canceled = isCanceledStatusExpr("j");
@@ -269,7 +324,16 @@ function getLineAgent(agentKey) {
 }
 
 function buildGroundedPrompt(question, context, agent) {
+  const officeInstructions = [
+    `Business timezone: ${BANGKOK_TZ}. All user-facing dates and times must use appointment_display or appointment_time_th. Never show raw UTC timestamps to the admin or customer.`,
+    "For queue/technician availability questions, use context.availability as the deterministic source. If it says job_schedule_only or missing data, do not confirm exact availability.",
+    "For service, price, objection, and customer-reply questions, use context.cwf_knowledge as the current source of truth. It overrides old chat history.",
+    "If agent is Office Chat, detect and combine relevant departments from context.office_chat_agents, then include a short line starting with แผนกที่เกี่ยวข้อง:",
+    "Sales/customer replies must sound like a real LINE admin: short, natural Thai, usually 1-4 lines, price first when asked, one missing question at a time.",
+    "Never reveal raw retrieved customer chat examples or private customer data.",
+  ];
   return [
+    ...officeInstructions,
     "คุณคือผู้ช่วยออฟฟิศภายในของ Coldwindflow Air Services สำหรับแอดมินเท่านั้น",
     `ตัวละครที่ถูกเลือก: ${agent.name}`,
     `บทบาท: ${agent.role}`,
@@ -288,6 +352,9 @@ function buildGroundedPrompt(question, context, agent) {
 
 function buildLineDraftPrompt({ conversation, messages, agent, instruction }) {
   return [
+    `Business timezone: ${BANGKOK_TZ}. Use Thai local time only; never show raw UTC timestamps.`,
+    "Use current CWF service/pricing knowledge and short LINE admin tone. Do not use old chat prices as facts.",
+    JSON.stringify({ cwf_knowledge: serviceKnowledge() }, null, 2),
     "คุณคือผู้ช่วย AI ภายในของ Coldwindflow Air Services สำหรับช่วยแอดมินอ่านแชท LINE OA เท่านั้น",
     `บทบาทที่เลือก: ${agent.name}`,
     `หน้าที่: ${agent.role}`,
@@ -454,6 +521,41 @@ async function loadRecentLineContext(pool, deps) {
     });
   }
   return { available: true, conversations, recent_conversations: detailed };
+}
+
+async function loadReplyStyleMemory(pool, question) {
+  const memory = {
+    approved_examples: serviceKnowledge().approved_reply_style,
+    sanitized_real_examples: [],
+    source_note: "Current CWF knowledge is factual source of truth. Real chat examples are sanitized weak style references only.",
+  };
+  try {
+    await ensureLineInboxSchemaOnce(pool);
+    const r = await pool.query(`
+      WITH ordered AS (
+        SELECT conversation_id, direction, message_text, received_at,
+               LEAD(direction) OVER (PARTITION BY conversation_id ORDER BY received_at ASC NULLS LAST, created_at ASC) AS next_direction,
+               LEAD(message_text) OVER (PARTITION BY conversation_id ORDER BY received_at ASC NULLS LAST, created_at ASC) AS next_text
+          FROM public.line_messages
+         WHERE message_text IS NOT NULL
+      )
+      SELECT message_text AS customer_message, next_text AS admin_reply
+        FROM ordered
+       WHERE direction='inbound'
+         AND next_direction IN ('outbound','admin','reply')
+         AND next_text IS NOT NULL
+       ORDER BY received_at DESC NULLS LAST
+       LIMIT 24
+    `);
+    memory.sanitized_real_examples = (r.rows || [])
+      .map((row) => filterReplyExample(row.customer_message, row.admin_reply))
+      .filter(Boolean)
+      .slice(0, 8);
+  } catch (_) {
+    memory.source_note = "No readable admin reply history found; using approved examples and current CWF knowledge only.";
+  }
+  memory.intent_agents = routeOfficeIntent(question);
+  return memory;
 }
 
 function inferBuckets(question) {
@@ -975,7 +1077,15 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
 
       const summary = await loadSummary(pool);
       const buckets = inferBuckets(question);
-      const context = { summary, buckets: {}, phone_search: null, generated_at: new Date().toISOString() };
+      const context = {
+        summary,
+        buckets: {},
+        phone_search: null,
+        business_timezone: BANGKOK_TZ,
+        generated_at: new Date().toISOString(),
+        generated_at_display: formatThaiDateTime(new Date()),
+        cwf_knowledge: serviceKnowledge(),
+      };
       for (const bucket of buckets) {
         context.buckets[bucket] = await loadJobs(pool, bucket);
       }
@@ -984,6 +1094,18 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       }
 
       const model = String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim() || AI_OFFICE_DEFAULT_MODEL;
+      if (agent.name === "Office Chat") {
+        context.office_chat_agents = routeOfficeIntent(question);
+      }
+      if (looksLikeAvailabilityQuestion(question)) {
+        const targetDate = parseThaiRelativeDate(question);
+        const jobsForDate = await loadJobsForBangkokDate(pool, targetDate);
+        const technicians = await loadTechniciansForAvailability(pool);
+        context.availability = analyzeAvailability({ question, targetDate, jobs: jobsForDate, technicians });
+      }
+      if (["Admin AI", "Sales AI", "Office Chat"].includes(agent.name) || /ตอบลูกค้า|ลูกค้า|แพง|ราคา|reply|LINE|ไลน์/i.test(question)) {
+        context.reply_style_memory = await loadReplyStyleMemory(pool, question);
+      }
       if (shouldAttachLineContext(req.body?.agent, question)) {
         try {
           context.line = await loadRecentLineContext(pool, { apiKey, model });
