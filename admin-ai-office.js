@@ -1,5 +1,5 @@
 (function(){
-  const VERSION = "ai-office-production-v10-line-inbox-ux-20260607";
+  const VERSION = "ai-office-production-v11-customer-chat-workflow-20260608";
   const ASSET_ROOT = "/assets/ai-office-final";
   const CLEAN_CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
   const order = ["admin","sales","ops","ads","content","dev"];
@@ -59,7 +59,7 @@
 
   const app = {
     active:"admin", open:false, loading:false, conversations:{}, walkTimers:{}, bubbleTimers:{}, ambientTimer:null,
-    inboxOpen:false, inboxFilter:"all", inboxConversations:[], selectedConversation:null, selectedMessages:[], selectedThreadContext:null, draftText:"", currentDraft:null,
+    inboxOpen:false, inboxFilter:"all", inboxConversations:[], selectedConversation:null, selectedMessages:[], selectedThreadContext:null, draftText:"", currentDraft:null, inboxDraftLoading:false,
   };
 
   const quickCommands = [
@@ -80,7 +80,7 @@
     ["all","ทั้งหมด"],["unread","ยังไม่อ่าน"],["needs_reply","ต้องตอบ"],["waiting_customer_info","รอลูกค้า"],["checking_schedule","เช็กคิว/ช่าง"],["price_objection","ลูกค้าบอกแพง"],
   ];
   const inboxTools = [
-    ["summarize","สรุปแชทนี้"],["short_reply","ร่างตอบสั้น"],["closing","ร่างปิดการขาย"],["price","ตอบเรื่องราคา"],["expensive","ลูกค้าบอกว่าแพง"],["schedule","เช็กคิว/ช่าง"],["missing","ข้อมูลที่ยังขาด"],["next_action","แนะนำขั้นต่อไป"],
+    ["recommended","ร่างคำตอบแนะนำ"],["shorter","ตอบสั้นลง"],["polite","สุภาพขึ้น"],["closing","ช่วยปิดการขาย"],["missing","ถามข้อมูลที่ขาด"],["expensive","ลูกค้าบอกแพง"],
   ];
 
   function qs(sel, root=document){ return root.querySelector(sel); }
@@ -309,8 +309,11 @@
   }
   function renderDraft(draft){
     const box = qs("#draftAnswer"); if (!box) return;
+    const detailBox = qs("#draftInternalDetails");
     if (!draft) {
-      box.textContent = "เลือกเครื่องมือ AI เพื่อร่างข้อความตอบลูกค้า";
+      box.classList.remove("loading");
+      box.textContent = "เลือกแชทลูกค้า หรือถาม AI เพื่อร่างข้อความตอบลูกค้า";
+      if (detailBox) detailBox.innerHTML = `<div class="contextCard"><h3>ข้อมูลลูกค้า</h3><div class="ctxGrid" id="customerContext"><div>ยังไม่ได้เลือกแชท</div></div></div>`;
       return;
     }
     const summary = Array.isArray(draft.admin_summary) ? draft.admin_summary : [];
@@ -318,28 +321,32 @@
     const list = (items, emptyText) => items.length
       ? `<ul>${items.map((x) => `<li>${escapeHtml(x)}</li>`).join("")}</ul>`
       : `<div>${escapeHtml(emptyText)}</div>`;
-    const foreign = draft.is_foreign_customer ? `<div class="foreignBox">
+    box.classList.remove("loading");
+    box.innerHTML = `<div class="suggestedReply">${escapeHtml(draft.customer_reply || "ยังไม่มีข้อความพร้อมส่ง")}</div>`;
+    if (!detailBox) return;
+    const foreign = draft.is_foreign_customer ? `<div class="foreignBox internalBlock">
       <b>${escapeHtml(draft.foreign_customer_label || "ลูกค้าต่างชาติ")}</b>
       <span>ข้อความต้นฉบับ: ${escapeHtml(draft.original_message || "-")}</span>
       <span>แปลไทยให้แอดมิน: ${escapeHtml(draft.thai_translation || "ยังไม่มีคำแปลไทย")}</span>
     </div>` : "";
-    box.innerHTML = `${foreign}
-      <section class="draftSection replyMain">
-        <h4>ข้อความพร้อมส่งลูกค้า</h4>
-        <div>${escapeHtml(draft.customer_reply || "ยังไม่มีข้อความพร้อมส่ง")}</div>
-      </section>
-      <section class="draftSection">
-        <h4>สรุปให้แอดมิน</h4>
+    detailBox.innerHTML = `${foreign}
+      <div class="contextCard">
+        <h3>ข้อมูลลูกค้า</h3>
+        <div class="ctxGrid" id="customerContext"></div>
+      </div>
+      <section class="internalBlock">
+        <h4>สรุปสำหรับแอดมิน</h4>
         ${list(summary, "ยังไม่มีสรุปเพิ่มเติม")}
       </section>
-      <section class="draftSection">
+      <section class="internalBlock">
         <h4>ข้อมูลที่ยังขาด</h4>
         ${list(missing, "ยังไม่พบข้อมูลที่ต้องถามเพิ่ม")}
       </section>
-      <section class="draftSection">
+      <section class="internalBlock">
         <h4>แนะนำขั้นต่อไป</h4>
         <div>${escapeHtml(draft.next_step || "ตรวจข้อความและคัดลอกไปตอบลูกค้า")}</div>
       </section>`;
+    renderCustomerContext();
   }
   async function loadInbox(){
     const box = qs("#conversationList"); if (box) box.innerHTML = `<div class="inboxEmpty">กำลังโหลดแชทลูกค้า...</div>`;
@@ -350,6 +357,8 @@
   async function selectConversation(id){
     const c = app.inboxConversations.find((x) => String(x.id) === String(id));
     app.selectedConversation = c || null; app.selectedMessages = []; app.selectedThreadContext = null; app.draftText = ""; app.currentDraft = null;
+    qs("#customerInbox")?.classList.toggle("has-selected", Boolean(c));
+    const askInput = qs("#inboxAskInput"); if (askInput) askInput.value = "";
     renderDraft(null);
     renderConversationList(); renderThread(); renderCustomerContext();
     if (!c) return;
@@ -357,20 +366,43 @@
     app.selectedMessages = data.messages || [];
     app.selectedThreadContext = data.thread_context || null;
     renderThread(); renderCustomerContext();
+    draftForSelected("recommended", "ร่างคำตอบแนะนำแบบแอดมินผู้หญิงของ Coldwindflow สั้น สุภาพ พร้อมคัดลอกส่งลูกค้า").catch(() => {});
   }
-  async function draftForSelected(tool, label){
+  async function draftForSelected(tool, label, adminQuestion){
     if (!app.selectedConversation) return showToast("กรุณาเลือกแชทลูกค้าก่อน");
-    const box = qs("#draftAnswer"); if (box) box.textContent = "กำลังร่างข้อความจากแชทลูกค้าคนนี้...";
+    if (app.inboxDraftLoading) return;
+    app.inboxDraftLoading = true;
+    const box = qs("#draftAnswer"); if (box) { box.classList.add("loading"); box.textContent = "กำลังร่างข้อความพร้อมส่งจากแชทลูกค้าคนนี้..."; }
     try {
-      const instruction = `${label || tool}. ใช้เฉพาะแชทลูกค้าคนนี้ ตอบสั้นแบบแอดมิน LINE และห้ามบอกว่าส่งข้อความแล้ว`;
-      const data = await api("/admin/ai-office/line-draft-reply", { method:"POST", body:JSON.stringify({ conversation_id: app.selectedConversation.id, agent:"sales", instruction }) });
+      const instruction = [
+        adminQuestion || label || tool,
+        "ใช้เฉพาะแชทลูกค้าคนนี้เท่านั้น",
+        "ตอบเป็นข้อความพร้อมส่งลูกค้าแบบแอดมินผู้หญิงของ Coldwindflow",
+        "ถ้าเป็นภาษาไทยต้องใช้ ค่ะ / นะคะ และห้ามใช้ ครับ",
+        "ห้ามบอกว่าส่งข้อความแล้ว ห้ามบอกว่าสร้างงานหรือเปลี่ยนสถานะแล้ว",
+      ].filter(Boolean).join(". ");
+      const data = await api("/admin/ai-office/line-draft-reply", { method:"POST", body:JSON.stringify({ conversation_id: app.selectedConversation.id, agent:"sales", instruction, admin_question: adminQuestion || "" }) });
       app.currentDraft = data.draft || { customer_reply: data.answer || "" };
       app.draftText = app.currentDraft.customer_reply || data.answer || "";
       renderDraft(app.currentDraft);
     } catch(e) {
       app.currentDraft = null; app.draftText = "";
-      if (box) box.textContent = e.message;
+      if (box) { box.classList.remove("loading"); box.textContent = e.message; }
+    } finally {
+      app.inboxDraftLoading = false;
     }
+  }
+  function showInboxList(){
+    app.selectedConversation = null; app.selectedMessages = []; app.selectedThreadContext = null; app.draftText = ""; app.currentDraft = null;
+    qs("#customerInbox")?.classList.remove("has-selected");
+    renderDraft(null); renderConversationList(); renderThread(); renderCustomerContext();
+  }
+  function submitInboxQuestion(){
+    const input = qs("#inboxAskInput");
+    const question = cleanText(input?.value);
+    if (!question) return showToast("พิมพ์คำถามสำหรับ AI ก่อน");
+    if (input) input.value = "";
+    draftForSelected("custom", question, question);
   }
   function latestInboundText(){
     const msg = [...(app.selectedMessages || [])].reverse().find((m) => m.direction === "inbound" && (m.message_text || m.message_text_for_admin));
@@ -479,6 +511,8 @@
     qs("#btnRefresh")?.addEventListener("click", loadSummary);
     qs("#btnInbox")?.addEventListener("click", openInbox);
     qs("#btnInboxBack")?.addEventListener("click", closeInbox);
+    qs("#btnInboxList")?.addEventListener("click", showInboxList);
+    qs("#inboxAiForm")?.addEventListener("submit", (ev) => { ev.preventDefault(); submitInboxQuestion(); });
     qs("#btnCopyDraft")?.addEventListener("click", () => {
       if (!app.draftText) return showToast("ยังไม่มีข้อความพร้อมส่งลูกค้า");
       return navigator.clipboard?.writeText(app.draftText).then(() => showToast("คัดลอกแล้ว")).catch(() => showToast("คัดลอกไม่สำเร็จ"));

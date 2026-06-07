@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.json">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="cwf-ai-office-version" content="ai-office-production-v10-line-inbox-ux-20260607" />
+  <meta name="cwf-ai-office-version" content="ai-office-production-v11-customer-chat-workflow-20260608" />
   <title>CWF AI Office</title>
   <link rel="stylesheet" href="/style.css">
   <style>
@@ -45,6 +45,43 @@
     @media (max-width:860px){.topbar{padding-top:calc(12px + var(--safe-top));padding-bottom:12px}.brand img{width:46px;height:46px;border-radius:16px}.brand h1{font-size:23px}.brand p{display:none}.reload{width:48px;height:48px}.inboxBtn{min-height:48px;padding:0 10px;font-size:12px}.stats{padding:10px 10px 9px}.stat{flex:1 0 118px;min-width:118px;padding:11px 12px;border-radius:18px}.stat b{font-size:21px}.office{padding:10px 10px calc(10px + var(--safe-bottom));gap:9px}.stage{min-height:calc(100dvh - 265px);border-radius:24px}.map{background-image:url("/assets/ai-office-final/maps-clean/office-main-mobile.png"),linear-gradient(135deg,#eaf4ff,#fff)}.hint{top:10px;font-size:12px;padding:7px 11px}.agent{width:var(--agent-size-mobile,54px);min-width:60px;min-height:84px}.label{bottom:-28px;font-size:10px;max-width:100px;padding:5px 8px}.bubble{min-width:146px;max-width:min(210px,64vw);font-size:11px;padding:8px 10px}.rolechip{min-height:40px;padding-right:11px;font-size:13px}.rolechip img{width:27px;height:27px}.chatTitle b{font-size:20px}.chatTitle span{max-width:calc(100vw - 132px)}.message{font-size:15px}.ask{font-size:16px}.send{width:50px;height:50px;flex-basis:50px}.inboxGrid{flex-direction:column;overflow:auto}.inboxGrid>.panel:first-child,.inboxGrid>.panel:last-child,.inboxGrid>.thread{flex:0 0 auto;width:100%;min-height:220px}.inboxGrid>.thread{min-height:300px}.lineMsg{max-width:90%}}
     @media (max-width:430px){.stats{gap:7px}.stat{flex-basis:106px;min-width:106px}.stat span{font-size:11px}.stat b{font-size:20px}.stage{min-height:calc(100dvh - 252px)}.officeStatus{bottom:10px;left:10px;right:10px}.statusPill{font-size:11px;padding:7px 10px}.agent{min-width:58px;min-height:80px}.chatTop{padding-bottom:9px}.switch{padding:5px 10px}.composer{border-radius:22px}.ask{min-height:44px}.send{width:48px;height:48px;flex-basis:48px}}
     @media (prefers-reduced-motion:reduce){.sprite,.agent,.agent-ring{animation:none!important;transition:none!important}}
+  </style>
+  <style>
+    .inboxGrid{display:grid;grid:auto / minmax(280px,330px) minmax(360px,1fr) minmax(320px,380px)}
+    .conversationPanel,.threadPanel,.assistantColumn{display:flex;flex-direction:column}
+    .threadTop{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid rgba(15,23,42,.08)}
+    .threadTop .threadTitle{padding:0;border:0;flex:1;min-width:0}
+    .threadBack{display:none;appearance:none;border:1px solid rgba(21,88,214,.16);background:#fff;color:#0d3d8d;border-radius:999px;min-height:38px;padding:0 12px;font-weight:1000}
+    .assistantColumn{min-height:0;overflow:auto}
+    .assistantPanel h3,.draftBox h3{margin:0 0 10px;font-size:15px;color:#10223f}
+    .inboxComposer{margin-top:10px;display:flex;gap:8px;align-items:flex-end}
+    .inboxComposer textarea{flex:1;min-width:0;min-height:48px;max-height:120px;resize:none;border:1px solid rgba(21,88,214,.16);border-radius:17px;padding:11px 12px;font-size:15px;line-height:1.35;color:#10223f;background:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.8)}
+    .inboxComposer button{appearance:none;border:0;min-width:88px;min-height:48px;border-radius:17px;background:linear-gradient(135deg,#0d3d8d,#1769ff);color:#fff;font-weight:1000;box-shadow:0 12px 24px rgba(21,88,214,.22)}
+    .draftAnswer{font-size:16px;font-weight:850;color:#10223f}
+    .draftAnswer.loading{color:#0d3d8d;background:#edf5ff}
+    .suggestedReply{padding:12px;border-radius:16px;background:#fff;border:1px solid rgba(21,88,214,.14);box-shadow:0 12px 24px rgba(7,21,47,.08);white-space:pre-wrap}
+    .adminDetails{margin-top:10px;border:1px solid rgba(15,23,42,.10);border-radius:16px;background:#f8fbff;overflow:hidden}
+    .adminDetails summary{cursor:pointer;padding:11px 12px;font-weight:1000;color:#0d3d8d}
+    .draftInternalDetails{padding:0 12px 12px;display:flex;flex-direction:column;gap:10px}
+    .internalBlock{padding:10px;border-radius:14px;background:#fff;border:1px solid rgba(15,23,42,.08)}
+    .internalBlock h4{margin:0 0 7px;font-size:13px;color:#0d3d8d}
+    .internalBlock ul{margin:0;padding-left:18px}
+    .foreignBox span{display:block;margin-top:5px}
+    .conv{cursor:pointer}
+    @media (max-width:860px){
+      .inboxGrid{display:flex;flex-direction:column;overflow:hidden}
+      .conversationPanel,.threadPanel,.assistantColumn{width:100%;min-height:0}
+      .inbox:not(.has-selected) .threadPanel,.inbox:not(.has-selected) .assistantColumn{display:none}
+      .inbox.has-selected .conversationPanel{display:none}
+      .inbox.has-selected .threadBack{display:inline-flex;align-items:center;justify-content:center}
+      .inbox.has-selected .threadPanel{flex:1 1 auto;min-height:42dvh}
+      .inbox.has-selected .assistantColumn{flex:0 0 auto;max-height:46dvh}
+      .convList{height:auto;max-height:calc(100dvh - 132px)}
+      .threadMsgs{min-height:0}
+      .inboxComposer{flex-direction:column;align-items:stretch}
+      .inboxComposer button{width:100%}
+      .draftBox{padding-bottom:calc(14px + var(--safe-bottom))}
+    }
   </style>
 </head>
 <body>
@@ -110,26 +147,39 @@
       </div>
     </div>
     <div class="inboxGrid">
-      <aside class="panel">
+      <aside class="panel conversationPanel">
         <div class="filterbar" id="inboxFilters"></div>
         <div class="convList" id="conversationList"><div class="inboxEmpty">กำลังโหลดแชทลูกค้า...</div></div>
       </aside>
-      <section class="panel thread">
-        <div class="threadTitle" id="threadTitle">เลือกแชทลูกค้า</div>
+      <section class="panel thread threadPanel">
+        <div class="threadTop">
+          <button class="threadBack" type="button" id="btnInboxList">แชททั้งหมด</button>
+          <div class="threadTitle" id="threadTitle">เลือกแชทลูกค้า</div>
+        </div>
         <div class="threadMsgs" id="threadMessages"><div class="inboxEmpty">เลือกหนึ่งแชทเพื่อดูข้อความของลูกค้าคนนั้นเท่านั้น</div></div>
       </section>
-      <aside class="panel">
-        <div class="contextCard">
-          <h3>ข้อมูลลูกค้า</h3>
-          <div class="ctxGrid" id="customerContext"><div>ยังไม่ได้เลือกแชท</div></div>
-        </div>
+      <aside class="panel assistantColumn">
         <div class="assistantPanel">
-          <h3>ผู้ช่วยร่างคำตอบ</h3>
+          <h3>ถาม AI สำหรับแชทนี้</h3>
           <div class="tools" id="inboxTools"></div>
+          <form class="inboxComposer" id="inboxAiForm">
+            <textarea id="inboxAskInput" rows="2" placeholder="ถาม AI สำหรับแชทนี้ เช่น ควรตอบลูกค้ายังไงดี"></textarea>
+            <button type="submit" id="btnInboxAsk">ถาม AI</button>
+          </form>
         </div>
         <div class="draftBox">
-          <div class="draftAnswer" id="draftAnswer">เลือกเครื่องมือ AI เพื่อร่างข้อความตอบลูกค้า</div>
+          <h3>ข้อความพร้อมส่งลูกค้า</h3>
+          <div class="draftAnswer" id="draftAnswer">เลือกแชทลูกค้า หรือถาม AI เพื่อร่างข้อความตอบลูกค้า</div>
           <button class="draftCopy" type="button" id="btnCopyDraft">คัดลอกข้อความตอบลูกค้า</button>
+          <details class="adminDetails" id="draftDetails">
+            <summary>ดูรายละเอียดสำหรับแอดมิน</summary>
+            <div id="draftInternalDetails" class="draftInternalDetails">
+              <div class="contextCard">
+                <h3>ข้อมูลลูกค้า</h3>
+                <div class="ctxGrid" id="customerContext"><div>ยังไม่ได้เลือกแชท</div></div>
+              </div>
+            </div>
+          </details>
           <div class="feedbackRow" id="replyFeedback">
             <button class="feedbackBtn" type="button" data-feedback="usable">ใช้ได้</button>
             <button class="feedbackBtn" type="button" data-feedback="too_long">ยาวไป</button>
@@ -142,8 +192,8 @@
     </div>
   </section>
   <div class="toast" id="toast"></div>
-  <script>console.info("CWF AI Office ai-office-production-v10-line-inbox-ux-20260607");</script>
-  <script src="/admin-v2-common.js?v=ai-office-production-v10-line-inbox-ux-20260607"></script>
-  <script src="/admin-ai-office.js?v=ai-office-production-v10-line-inbox-ux-20260607"></script>
+  <script>console.info("CWF AI Office ai-office-production-v11-customer-chat-workflow-20260608");</script>
+  <script src="/admin-v2-common.js?v=ai-office-production-v11-customer-chat-workflow-20260608"></script>
+  <script src="/admin-ai-office.js?v=ai-office-production-v11-customer-chat-workflow-20260608"></script>
 </body>
 </html>

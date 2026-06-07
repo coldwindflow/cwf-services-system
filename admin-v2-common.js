@@ -222,9 +222,9 @@ function injectAdminMenu(){
       border-bottom:1px solid rgba(255,204,0,0.22);
       box-shadow:0 12px 32px rgba(2,6,23,0.34);} 
     #cwfTopNav:after{content:"";position:absolute;left:0;right:0;bottom:0;height:2px;background:linear-gradient(90deg,transparent,rgba(255,204,0,.72),rgba(71,139,255,.55),transparent);pointer-events:none}
-    #cwfTopNav .in{max-width:1220px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;
+    #cwfTopNav .in{max-width:1220px;margin:0 auto;display:flex;align-items:center;justify-content:flex-start;
       gap:12px;padding:8px 18px 9px;}
-    #cwfTopNav .ttl{min-width:0;display:flex;flex-direction:column;gap:2px;padding-left:2px}
+    #cwfTopNav .ttl{min-width:0;display:flex;flex:1 1 auto;flex-direction:column;gap:2px;padding-left:2px}
     #cwfTopNav .ttl b{font-size:16px;line-height:1.05;color:#fff;font-weight:1050;letter-spacing:.15px;text-shadow:0 8px 18px rgba(0,0,0,.28)}
     #cwfTopNav .ttl span{font-size:11px;font-weight:850;color:rgba(255,255,255,0.76);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
     #cwfTopNav .btns{display:flex;align-items:center;gap:8px}
@@ -233,8 +233,15 @@ function injectAdminMenu(){
       box-shadow:inset 0 1px 0 rgba(255,255,255,.16),0 16px 34px rgba(0,0,0,0.24);cursor:pointer;user-select:none}
     .cwf-icbtn:active{transform: translateY(1px) scale(0.99)}
     .cwf-icbtn svg{width:22px;height:22px;fill:#ffffff}
+    .cwf-ai-office-entry-btn{width:48px;height:48px;min-width:48px;border-radius:20px;display:inline-flex;align-items:center;justify-content:center;
+      border:1px solid rgba(255,204,0,.42);background:linear-gradient(145deg, rgba(255,204,0,.26), rgba(21,88,214,.20));
+      box-shadow:inset 0 1px 0 rgba(255,255,255,.18),0 16px 34px rgba(0,0,0,.26),0 0 0 1px rgba(255,255,255,.06);
+      text-decoration:none;overflow:hidden;cursor:pointer;user-select:none}
+    .cwf-ai-office-entry-btn img{width:38px;height:38px;object-fit:contain;display:block;filter:drop-shadow(0 7px 10px rgba(0,0,0,.28))}
+    .cwf-ai-office-entry-btn:active{transform:translateY(1px) scale(.99)}
+    .cwf-ai-office-entry-btn.active{border-color:rgba(255,224,80,.9);box-shadow:0 0 0 3px rgba(255,204,0,.18),0 0 24px rgba(255,204,0,.32),0 16px 34px rgba(0,0,0,.28)}
     #cwfTopNavSpacer{height:62px}
-    @media (max-width:420px){#cwfTopNavSpacer{height:60px}#cwfTopNav .in{padding:8px 16px 9px}.cwf-icbtn{width:46px;height:46px;border-radius:19px}}
+    @media (max-width:420px){#cwfTopNavSpacer{height:60px}#cwfTopNav .in{padding:8px 12px 9px;gap:8px}.cwf-icbtn,.cwf-ai-office-entry-btn{width:46px;height:46px;min-width:46px;border-radius:19px}.cwf-ai-office-entry-btn img{width:36px;height:36px}}
 
 
     /* ===== CWF Admin v2 Shared Premium Visual Layer =====
@@ -413,18 +420,25 @@ function injectAdminMenu(){
   nav.id = 'cwfTopNav';
   nav.innerHTML = `
     <div class="in">
-      <div class="ttl">
-        <b>CWF Admin</b>
-        <span>${pageTitle}</span>
-      </div>
       <div class="btns">
         <div id="cwfMenuBtn" class="cwf-icbtn" title="เมนู" aria-label="เมนู">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Zm0 5.5a1 1 0 0 1 1-1h14a1 1 0 1 1 0 2H5a1 1 0 0 1-1-1Z"/></svg>
         </div>
+        <a id="cwfAiOfficeTopbarBtn" class="cwf-ai-office-entry-btn" href="/admin/ai-office" title="AI Office" aria-label="AI Office">
+          <img src="/assets/icons/cwf-ai-office-entry.png" alt="">
+        </a>
+      </div>
+      <div class="ttl">
+        <b>CWF Admin</b>
+        <span>${pageTitle}</span>
       </div>
     </div>
   `;
   document.body.insertBefore(nav, document.body.firstChild);
+  try{
+    const aiTopBtn = document.getElementById('cwfAiOfficeTopbarBtn');
+    if (aiTopBtn && location.pathname === '/admin/ai-office') aiTopBtn.classList.add('active');
+  }catch(_e){}
 
   // Spacer to prevent the fixed bar from covering page content
   const sp = document.createElement('div');
