@@ -1,23 +1,39 @@
-# CWF AI Office LINE Reading + Foreign Customer Translation Fix v2
+# CWF AI Office Practical Admin UX v13
 
-แพ็กนี้แก้ปัญหา:
-- `/admin/ai-office/connectors/status` ขึ้น `Cannot GET`
-- AI Office ยังไม่ดึง LINE OA inbox เข้าไปในคำตอบ
-- LINE tables อาจยังไม่ถูกสร้างตอนมีข้อความเข้า
-- ลูกค้าต่างชาติพิมพ์ LINE แล้วแอดมินอ่านยาก
+แก้ตาม production scope:
 
-สิ่งที่แพ็กนี้ทำ:
-- เพิ่ม endpoint `/admin/ai-office/connectors/status` ใน route ที่มีอยู่แล้ว
-- ให้ `/admin/ai-office/line-inbox` อ่านแชท LINE จริงจาก `line_conversations`
-- ให้ `/admin/ai-office/line-conversations/:id/messages` อ่านข้อความจริงจาก `line_messages`
-- ถ้าข้อความลูกค้าเป็นภาษาต่างประเทศ ระบบจะเพิ่ม field แปลไทยให้แอดมิน พร้อมกำกับชื่อ LINE ของลูกค้า
-- ให้ `/admin/ai-office/ask` แนบ LINE inbox ล่าสุดเข้า context ของ Admin/Sales/Ops/Content AI
-- ปิด PIN ซ้ำหลัง admin login
-- ทำให้ webhook สร้างตาราง LINE อัตโนมัติก่อนเก็บข้อความเข้า DB
+- ปุ่ม AI Office อยู่บนแถบเมนูจริง ข้างปุ่ม hamburger ไม่ใช่อยู่แค่ใน drawer menu
+- ใช้ไอคอน AI ที่แนบเป็น asset จริง: `/assets/icons/cwf-ai-office-entry.png`
+- กล่องแชทลูกค้าเลือกแชทแล้วร่างคำตอบให้อัตโนมัติ
+- หน้าหลักแสดงเฉพาะ `customer_reply`
+- ปุ่มคัดลอกคัดลอกเฉพาะข้อความตอบลูกค้า ไม่ติดสรุป/คำแปล/ข้อมูลขาด
+- ซ่อนรายละเอียดแอดมินไว้ใน `ดูรายละเอียดสำหรับแอดมิน`
+- เพิ่ม prompt/sanitizer/fallback ให้ AI ตอบธรรมชาติขึ้น ไม่ใช่รายงานยาว
+- อัปเกรด Agent roles เป็นระดับ expert เฉพาะตำแหน่ง
 
-ยังคง Phase 1 read-only:
-- ไม่ส่ง LINE เอง
-- ไม่สร้างงาน
-- ไม่แก้งาน
-- ไม่เปลี่ยนสถานะ
-- ไม่ปรับแอด
+## วิธีใช้
+
+แตก zip ที่ root repo แล้วรัน:
+
+```bash
+bash cwf-ai-office-practical-admin-ux-v13/tools/apply-cwf-ai-office-practical-admin-ux-v13.sh .
+```
+
+จากนั้น commit/push:
+
+```bash
+git add admin-v2-common.js admin-ai-office.js admin-ai-office.html server/routes/adminAiOfficeReadOnly.js assets/icons/cwf-ai-office-entry.png
+git commit -m "Improve AI Office topbar entry and customer reply quality"
+git push
+```
+
+แล้วให้ Render deploy ใหม่
+
+## เช็กหลัง deploy
+
+- ทุกหน้าแอดมินที่ใช้ admin-v2-common.js ต้องมีปุ่ม AI ข้าง hamburger บนแถบเมนู
+- กดปุ่ม AI แล้วเข้า `/admin/ai-office`
+- กล่องแชทลูกค้าเลือกแชทแล้วร่างคำตอบเอง
+- คัดลอกแล้วได้เฉพาะข้อความส่งลูกค้า
+- ไม่มีการส่ง LINE เอง
+- `/line/webhook` ยัง verify ได้
