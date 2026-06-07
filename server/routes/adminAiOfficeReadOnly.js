@@ -359,10 +359,14 @@ function buildGroundedPrompt(question, context, agent) {
 function buildLineDraftPrompt({ conversation, messages, agent, instruction, threadContext }) {
   return [
     `Business timezone: ${BANGKOK_TZ}. Use Thai local time only; never show raw UTC timestamps.`,
+    "Return STRICT JSON only. No markdown, no prose outside JSON.",
+    "JSON schema: {\"customer_reply\":\"string\",\"admin_summary\":[\"short bullet\"],\"missing_info\":[\"short bullet\"],\"next_step\":\"string\",\"customer_language\":\"th|en|ja|zh|ko|unknown\",\"is_foreign_customer\":true,\"foreign_customer_label\":\"string\",\"original_message\":\"string\",\"thai_translation\":\"string\"}",
     "Use current CWF service/pricing knowledge and short LINE admin tone. Do not use old chat prices as facts.",
     "Customer Inbox isolation rule: use only this selected conversation, selected customer context, CWF knowledge, and linked jobs in this JSON. Do not use any other customer's conversation.",
     "Phase 1 rule: draft copy-ready replies only. Do not claim a LINE message was sent, do not open a booking, and do not change any job/customer status.",
     "Reply style: short, natural Thai, polite, usually 1-4 lines. Ask only one missing question at a time.",
+    "customer_reply must contain only the final customer-facing message. Do not include admin_summary, missing_info, next_step, or internal notes inside customer_reply.",
+    "If the latest customer message is English, customer_reply must be English. If Japanese, reply Japanese if possible, otherwise English. For foreign customers, include thai_translation for admin.",
     JSON.stringify({ cwf_knowledge: serviceKnowledge() }, null, 2),
     "คุณคือผู้ช่วย AI ภายในของ Coldwindflow Air Services สำหรับช่วยแอดมินอ่านแชท LINE OA เท่านั้น",
     `บทบาทที่เลือก: ${agent.name}`,
@@ -370,30 +374,6 @@ function buildLineDraftPrompt({ conversation, messages, agent, instruction, thre
     "ใช้เฉพาะข้อมูลแชท LINE ที่ส่งมาใน JSON นี้ ห้ามแต่งข้อมูลเพิ่ม",
     "ห้ามบอกว่าระบบส่งข้อความแล้ว ห้ามสร้างงาน ห้ามแก้ใบงาน ห้ามเปลี่ยนสถานะ",
     "ตอบเป็นภาษาไทยแบบมืออาชีพ กระชับ ใช้งานจริงได้",
-    "ต้องใส่ประโยคนี้ให้ชัดเจน: แอดมินต้องตรวจสอบและกดส่ง/กดบันทึกเอง ระบบยังไม่ส่งข้อความหรือสร้างงานให้อัตโนมัติ",
-    "",
-    "รูปแบบคำตอบ:",
-    "- สรุปลูกค้า",
-    "- สิ่งที่ลูกค้าต้องการ",
-    "- ข้อมูลที่จับได้",
-    "- ข้อมูลที่ยังขาด",
-    "- ความเร่งด่วน",
-    "- ข้อความพร้อมตอบ",
-    "- หมายเหตุสำหรับแอดมิน",
-    "",
-    "ถ้าเป็นงานเตรียมลงคิว ให้เพิ่มหัวข้อ:",
-    "- ชื่อ ถ้ามี",
-    "- เบอร์ ถ้ามี",
-    "- พื้นที่ / ที่อยู่",
-    "- ประเภทงาน",
-    "- ประเภทแอร์",
-    "- BTU",
-    "- จำนวนเครื่อง",
-    "- วันที่/เวลาที่ลูกค้าต้องการ",
-    "- หมายเหตุ",
-    "- ข้อมูลที่ต้องถามเพิ่ม",
-    "- draft พร้อมกรอกในฟอร์มเพิ่มงาน",
-    "",
     `คำสั่งแอดมินเพิ่มเติม: ${cleanText(instruction, 1000) || "-"}`,
     "",
     "ข้อมูลแชทจริง:",
@@ -401,11 +381,11 @@ function buildLineDraftPrompt({ conversation, messages, agent, instruction, thre
   ].join("\n");
 }
 
-function callOpenAI({ apiKey, model, prompt }) {
+function callOpenAI({ apiKey, model, prompt, system }) {
   const payload = JSON.stringify({
     model,
     messages: [
-      { role: "system", content: "ตอบเป็นภาษาไทยสำหรับงานแอดมิน CWF โดยยึดข้อมูลจริงที่ให้มาเท่านั้น" },
+      { role: "system", content: system || "ตอบเป็นภาษาไทยสำหรับงานแอดมิน CWF โดยยึดข้อมูลจริงที่ให้มาเท่านั้น" },
       { role: "user", content: prompt },
     ],
     temperature: 0.2,
@@ -442,6 +422,70 @@ function callOpenAI({ apiKey, model, prompt }) {
     req.write(payload);
     req.end();
   });
+}
+
+function detectCustomerLanguage(text) {
+  const value = String(text || "");
+  if (/[\u3040-\u30ff]/.test(value)) return "ja";
+  if (/[\u3400-\u9fff]/.test(value)) return "zh";
+  if (/[\uac00-\ud7af]/.test(value)) return "ko";
+  if (/[A-Za-z]/.test(value) && !/[\u0E00-\u0E7F]/.test(value)) return "en";
+  if (/[\u0E00-\u0E7F]/.test(value)) return "th";
+  return "unknown";
+}
+
+function latestCustomerMessage(messages) {
+  return [...(messages || [])].reverse().find((m) => m.direction === "inbound" && (m.message_text || m.message_text_for_admin)) || {};
+}
+
+function fallbackLineDraft({ conversation, messages, threadContext }) {
+  const latest = latestCustomerMessage(messages);
+  const original = cleanText(latest.message_text || latest.message_text_for_admin || conversation?.last_message_text, 1000);
+  const language = detectCustomerLanguage(original);
+  const isForeign = Boolean(latest.is_foreign_customer || language !== "th" && language !== "unknown");
+  const missing = threadContext?.customer_context?.missing_information || ["พื้นที่/ที่อยู่", "ประเภทงาน", "จำนวนเครื่อง", "วันเวลาที่สะดวก"];
+  const reply = ["en", "ja", "zh", "ko"].includes(language)
+    ? "Hello, could you please share the service area, number of air conditioners, and preferred date/time? Our admin will check the queue and details for you."
+    : "สวัสดีครับ รบกวนแจ้งพื้นที่ให้บริการ จำนวนเครื่อง และวันเวลาที่ต้องการรับบริการเพิ่มเติมได้ไหมครับ แอดมินจะตรวจสอบคิวและแจ้งรายละเอียดให้ครับ";
+  return {
+    customer_reply: reply,
+    admin_summary: [original ? "ลูกค้าส่งข้อความเข้ามา ต้องรอข้อมูลเพิ่มเติมก่อนตอบราคา/คิวให้ชัดเจน" : "ยังไม่มีข้อความลูกค้าที่อ่านได้"],
+    missing_info: missing,
+    next_step: "ขอข้อมูลที่จำเป็นจากลูกค้าก่อนเสนอราคาและนัดหมาย",
+    customer_language: language,
+    is_foreign_customer: isForeign,
+    foreign_customer_label: isForeign ? foreignCustomerLabel(conversation) : "",
+    original_message: original,
+    thai_translation: latest.thai_translation || "",
+  };
+}
+
+function normalizeLineDraftPayload(payload, fallback) {
+  const out = {
+    customer_reply: cleanText(payload?.customer_reply, 2000) || fallback.customer_reply,
+    admin_summary: Array.isArray(payload?.admin_summary) ? payload.admin_summary.map((x) => cleanText(x, 300)).filter(Boolean).slice(0, 6) : fallback.admin_summary,
+    missing_info: Array.isArray(payload?.missing_info) ? payload.missing_info.map((x) => cleanText(x, 200)).filter(Boolean).slice(0, 8) : fallback.missing_info,
+    next_step: cleanText(payload?.next_step, 500) || fallback.next_step,
+    customer_language: cleanText(payload?.customer_language, 20) || fallback.customer_language,
+    is_foreign_customer: Boolean(payload?.is_foreign_customer ?? fallback.is_foreign_customer),
+    foreign_customer_label: cleanText(payload?.foreign_customer_label, 200) || fallback.foreign_customer_label,
+    original_message: cleanText(payload?.original_message, 1000) || fallback.original_message,
+    thai_translation: cleanText(payload?.thai_translation, 1000) || fallback.thai_translation,
+  };
+  return out;
+}
+
+function parseLineDraftAnswer(answer, fallback) {
+  const raw = String(answer || "").trim();
+  try {
+    return normalizeLineDraftPayload(JSON.parse(raw), fallback);
+  } catch (_) {
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (match) {
+      try { return normalizeLineDraftPayload(JSON.parse(match[0]), fallback); } catch (__) {}
+    }
+  }
+  return normalizeLineDraftPayload({}, fallback);
 }
 
 async function translateLineMessageToThai(text, { apiKey, model }) {
@@ -1162,12 +1206,20 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       if (!messages.length) return res.status(400).json({ ok: false, error: "ยังไม่มีข้อความในแชทนี้" });
       const threadContext = await buildCustomerThreadContext(pool, conversation, messages);
 
-      const answer = await callOpenAI({
+      const rawAnswer = await callOpenAI({
         apiKey,
         model,
+        system: [
+          "You draft Coldwindflow LINE OA customer replies for an authenticated admin.",
+          "Return strict JSON only.",
+          "Use only the selected customer conversation and provided CWF data.",
+          "Do not claim messages were sent, bookings were created, or statuses were changed.",
+          "The customer_reply language must match the latest customer message language when possible.",
+        ].join(" "),
         prompt: buildLineDraftPrompt({ conversation, messages, agent, instruction, threadContext }),
       });
-      return res.json({ ok: true, answer, conversation, messages, thread_context: threadContext, agent });
+      const draft = parseLineDraftAnswer(rawAnswer, fallbackLineDraft({ conversation, messages, threadContext }));
+      return res.json({ ok: true, answer: draft.customer_reply, draft, conversation, messages, thread_context: threadContext, agent });
     } catch (e) {
       console.error("POST /admin/ai-office/line-draft-reply error:", e.message);
       return res.status(e.status || 500).json({ ok: false, error: e.message || "ร่างข้อความจาก LINE ไม่สำเร็จ" });
