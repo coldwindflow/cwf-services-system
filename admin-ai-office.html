@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.json">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="cwf-ai-office-version" content="ai-office-v21-admin-usability-persistence-20260608" />
+  <meta name="cwf-ai-office-version" content="ai-office-v22-clean-line-chat-mounted-memory-20260608" />
   <title>CWF AI Office</title>
   <link rel="stylesheet" href="/style.css">
   <style>
@@ -113,11 +113,11 @@
     .overlay{position:fixed;inset:0;z-index:100;display:none;flex-direction:column;background:#f7fbff;color:var(--ink);overflow:hidden}
     .overlay.open{display:flex}
     .overlayTop{flex:0 0 auto;padding:calc(9px + var(--safe-top)) max(11px,var(--safe-right)) 9px max(11px,var(--safe-left));background:linear-gradient(135deg,#06163d,#0d3d8d 72%,#1769ff);color:#fff;box-shadow:0 10px 26px rgba(3,12,35,.26)}
-    .overlayHead{display:flex;align-items:center;gap:9px;min-width:0}
+    .overlayHead{display:flex;align-items:center;gap:9px;min-width:0;overflow:hidden}
     .squareBtn{appearance:none;border:0;width:44px;height:44px;border-radius:15px;background:rgba(255,255,255,.14);color:#fff;font-size:24px;font-weight:1000}
     .overlayAvatar{width:44px;height:44px;object-fit:contain;border-radius:15px;background:#fff;padding:3px}
     .overlayTitle{min-width:0;flex:1}.overlayTitle b{display:block;font-size:20px;line-height:1.1;font-weight:1000;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.overlayTitle span{display:block;margin-top:2px;font-size:12px;color:rgba(255,255,255,.78);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .smallAction{appearance:none;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.14);color:#fff;min-height:38px;border-radius:999px;padding:0 10px;font-size:12px;font-weight:1000;white-space:nowrap}
+    .smallAction{appearance:none;border:1px solid rgba(255,255,255,.22);background:rgba(255,255,255,.14);color:#fff;min-height:38px;border-radius:999px;padding:0 10px;font-size:12px;font-weight:1000;white-space:nowrap;flex:0 0 auto}
     .overlayBody{flex:1 1 auto;min-height:0;overflow:hidden;background:linear-gradient(180deg,#f7fbff,#edf5ff);padding:0}
 
     .chatScreen{height:100%;min-height:0;display:flex;flex-direction:column}
@@ -214,7 +214,7 @@
   <section class="overlay" id="inboxOverlay" aria-hidden="true">
     <div class="overlayTop">
       <div class="overlayHead">
-        <button class="squareBtn" type="button" data-close-inbox>‹</button>
+        <button class="squareBtn" type="button" data-inbox-back>‹</button>
         <div class="overlayTitle"><b id="inboxTitle">กล่องแชทลูกค้า</b><span id="inboxSub">เลือกแชทลูกค้า แล้วถาม AI จากบริบทแชทนั้น</span></div>
         <button class="smallAction" type="button" data-open-memory>สมองเสริม</button>
         <button class="smallAction" type="button" id="lineRefresh">รีเฟรช</button>
@@ -228,11 +228,6 @@
         </section>
         <section class="view" id="selectedChatView">
           <div class="lineChat">
-            <header class="lineChatHeader">
-              <button class="lineBack" type="button" data-back-list>← กลับ</button>
-              <div class="lineChatName"><b id="selectedCustomerName">ลูกค้า</b><span id="selectedCustomerMeta">แชทลูกค้า LINE OA</span></div>
-              <button class="whiteBtn" type="button" data-prefill-memory>เพิ่มคำตอบ</button>
-            </header>
             <main class="lineChatMessages" id="lineMessages"></main>
             <div class="chatComposerWrap">
               <form class="chatComposer" id="lineAiForm">
@@ -293,6 +288,6 @@
   </section>
 
   <div class="toast" id="toast"></div>
-  <script src="/admin-ai-office.js?v=ai-office-v21-admin-usability-persistence-20260608"></script>
+  <script src="/admin-ai-office.js?v=ai-office-v22-clean-line-chat-mounted-memory-20260608"></script>
 </body>
 </html>

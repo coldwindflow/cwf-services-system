@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const VERSION = "CWF AI Office Admin Usability + Agent Memory v21 loaded";
+  const VERSION = "CWF AI Office Clean LINE Chat + Mounted Memory v22 loaded";
   console.info(VERSION);
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -47,11 +47,11 @@
     lastCustomerMessage: "",
     lastAgentRetry: null,
     lastLineRetry: null,
-    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV21") || "{}"),
+    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV22") || "{}"),
   };
 
   function saveHistory() {
-    localStorage.setItem("cwfAiOfficeAgentHistoryV21", JSON.stringify(state.agentHistory));
+    localStorage.setItem("cwfAiOfficeAgentHistoryV22", JSON.stringify(state.agentHistory));
   }
 
   function currentAgent() {
@@ -285,6 +285,11 @@
     loadInbox();
   }
 
+  function handleInboxBack() {
+    if ($("#selectedChatView")?.classList.contains("active")) return showInboxList();
+    return closeInbox();
+  }
+
   function closeInbox() {
     $("#inboxOverlay").classList.remove("open");
     $("#inboxOverlay").setAttribute("aria-hidden", "true");
@@ -346,8 +351,10 @@
       const data = await api(`/admin/ai-office/line-conversations/${conversationId}/messages?limit=80`);
       state.selectedConversation = data.conversation || state.conversations.find((c) => Number(c.id) === conversationId) || { id: conversationId };
       state.selectedMessages = data.messages || [];
-      $("#selectedCustomerName").textContent = state.selectedConversation.display_name || "ลูกค้า LINE";
-      $("#selectedCustomerMeta").textContent = `${data.thread_context?.status || "แชทลูกค้า LINE OA"} · ${state.selectedConversation.last_message_at_display || ""}`;
+      const selectedNameEl = $("#selectedCustomerName");
+      const selectedMetaEl = $("#selectedCustomerMeta");
+      if (selectedNameEl) selectedNameEl.textContent = state.selectedConversation.display_name || "ลูกค้า LINE";
+      if (selectedMetaEl) selectedMetaEl.textContent = `${data.thread_context?.status || "แชทลูกค้า LINE OA"} · ${state.selectedConversation.last_message_at_display || ""}`;
       $("#inboxTitle").textContent = state.selectedConversation.display_name || "แชทลูกค้า";
       $("#inboxSub").textContent = "ถาม AI จากบริบทลูกค้าคนนี้เท่านั้น";
       renderLineMessages();
@@ -563,6 +570,7 @@
       if (e.target.closest("[data-open-inbox]")) return openInbox();
       if (e.target.closest("[data-close-agent]")) return closeAgentChat();
       if (e.target.closest("[data-close-inbox]")) return closeInbox();
+      if (e.target.closest("[data-inbox-back]")) return handleInboxBack();
       if (e.target.closest("[data-retry-agent]")) return submitAgentQuestion(null, state.lastAgentRetry || "");
       if (e.target.closest("[data-back-list]")) return showInboxList();
       if (e.target.closest("[data-open-memory]")) return openMemoryPanel();
