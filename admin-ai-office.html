@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.json">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="cwf-ai-office-version" content="ai-office-production-v13-clean-mobile-chat-20260608" />
+  <meta name="cwf-ai-office-version" content="ai-office-customer-chat-ux-v17-20260608" />
   <title>CWF AI Office</title>
   <link rel="stylesheet" href="/style.css">
   <style>
@@ -26,7 +26,7 @@
     .page{min-height:100vh;min-height:100dvh;background:linear-gradient(180deg,#06163d 0,#0b2e72 30%,#eaf3ff 30%,#f7fbff 100%);display:flex;flex-direction:column;overflow:hidden}
     .topbar{flex:0 0 auto;padding:calc(14px + var(--safe-top)) max(16px,var(--safe-right)) 14px max(16px,var(--safe-left));display:flex;align-items:center;justify-content:space-between;gap:12px;color:#fff;background:linear-gradient(135deg,#06163d 0,#0d3d8d 72%,#1769ff 100%);box-shadow:0 14px 34px rgba(3,12,35,.32);z-index:8}
     .brand{display:flex;align-items:center;gap:13px;min-width:0}.brand img{width:52px;height:52px;object-fit:contain;border-radius:18px;background:#fff;padding:6px;box-shadow:0 12px 24px rgba(0,0,0,.22)}.brand h1{margin:0;font-size:25px;line-height:1;font-weight:1000;letter-spacing:.1px}.brand p{margin:5px 0 0;color:rgba(255,255,255,.78);font-size:12px;font-weight:750;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:68vw}
-    .topActions{display:flex;align-items:center;gap:8px}.inboxBtn{appearance:none;border:0;min-height:52px;border-radius:18px;background:#ffcc00;color:#06163d;padding:0 14px;font-size:13px;font-weight:1000;box-shadow:0 12px 26px rgba(0,0,0,.18);cursor:pointer;white-space:nowrap}.reload{appearance:none;border:0;width:52px;height:52px;border-radius:18px;background:#fff;color:#0d3d8d;font-size:22px;font-weight:1000;box-shadow:0 12px 26px rgba(0,0,0,.18);cursor:pointer}.reload:active,.inboxBtn:active{transform:translateY(1px)}
+    .topActions{display:flex;align-items:center;gap:8px;min-width:0;overflow-x:auto;scrollbar-width:none}.topActions::-webkit-scrollbar{display:none}.inboxBtn,.memoryBtn{appearance:none;border:0;min-height:52px;border-radius:18px;background:#ffcc00;color:#06163d;padding:0 14px;font-size:13px;font-weight:1000;box-shadow:0 12px 26px rgba(0,0,0,.18);cursor:pointer;white-space:nowrap}.memoryBtn{background:#fff;color:#0d3d8d}.reload{appearance:none;border:0;width:52px;height:52px;border-radius:18px;background:#fff;color:#0d3d8d;font-size:22px;font-weight:1000;box-shadow:0 12px 26px rgba(0,0,0,.18);cursor:pointer}.reload:active,.inboxBtn:active,.memoryBtn:active{transform:translateY(1px)}
     .stats{flex:0 0 auto;display:flex;gap:10px;padding:12px max(14px,var(--safe-right)) 10px max(14px,var(--safe-left));background:rgba(6,22,61,.96);overflow-x:auto;scrollbar-width:none}.stats::-webkit-scrollbar{display:none}.stat{flex:1 0 132px;min-width:132px;border-radius:20px;padding:12px 14px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.13);color:#fff;box-shadow:0 12px 24px rgba(0,0,0,.12)}.stat span{display:block;color:rgba(255,255,255,.72);font-size:12px;font-weight:850}.stat b{display:block;margin-top:5px;font-size:24px;line-height:1;font-weight:1000}
     .office{flex:1 1 auto;min-height:0;padding:12px max(14px,var(--safe-right)) calc(14px + var(--safe-bottom)) max(14px,var(--safe-left));background:linear-gradient(180deg,#e7f0ff 0,#f7fbff 100%);display:flex;flex-direction:column;gap:10px}
     .stage{position:relative;flex:1 1 auto;min-height:420px;border-radius:30px;overflow:hidden;border:3px solid rgba(255,255,255,.98);box-shadow:0 24px 62px rgba(7,21,47,.25);background:#eaf4ff;isolation:isolate}
@@ -61,6 +61,18 @@
     .inboxComposer{margin-top:0;display:flex;gap:8px;align-items:flex-end}
     .inboxComposer textarea{flex:1;min-width:0;min-height:48px;max-height:120px;resize:none;border:1px solid rgba(21,88,214,.16);border-radius:17px;padding:11px 12px;font-size:15px;line-height:1.35;color:#10223f;background:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,.8)}
     .inboxComposer button{appearance:none;border:0;min-width:88px;min-height:48px;border-radius:17px;background:linear-gradient(135deg,#0d3d8d,#1769ff);color:#fff;font-weight:1000;box-shadow:0 12px 24px rgba(21,88,214,.22)}
+    .memoryView{position:fixed;inset:0;z-index:140;display:none;flex-direction:column;background:#f7fbff;color:#10223f}
+    .memoryView.open{display:flex}
+    .memoryTop{flex:0 0 auto;padding:calc(10px + var(--safe-top)) max(12px,var(--safe-right)) 10px max(12px,var(--safe-left));background:linear-gradient(135deg,#06163d,#0d3d8d);color:#fff}
+    .memoryHead{display:flex;align-items:center;gap:12px}.memoryHead b{font-size:21px}
+    .memoryBody{flex:1 1 auto;min-height:0;display:grid;grid-template-columns:minmax(320px,420px) minmax(0,1fr);gap:10px;padding:10px;background:#eaf3ff;overflow:hidden}
+    .memoryPanel{min-width:0;min-height:0;background:#fff;border:1px solid rgba(15,23,42,.12);border-radius:18px;box-shadow:0 12px 26px rgba(7,21,47,.08);overflow:auto;padding:14px}
+    .memoryForm{display:flex;flex-direction:column;gap:9px}.memoryForm label{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:1000;color:#0d3d8d}.memoryForm input,.memoryForm textarea,.memoryForm select{width:100%;border:1px solid rgba(21,88,214,.16);border-radius:14px;padding:10px 11px;font-size:15px;color:#10223f;background:#fff}.memoryForm textarea{min-height:86px;resize:vertical}
+    .memoryActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:4px}.memoryActions button,.memoryAction{appearance:none;border:0;border-radius:999px;min-height:42px;padding:0 14px;background:#0d3d8d;color:#fff;font-weight:1000}.memoryActions .secondary,.memoryAction.secondary{background:#edf5ff;color:#0d3d8d}.memoryActions .warn,.memoryAction.warn{background:#ffcc00;color:#06163d}
+    .memoryList{display:flex;flex-direction:column;gap:10px}.memoryItem{border:1px solid rgba(15,23,42,.10);border-radius:16px;padding:12px;background:#fff}.memoryItem.off{opacity:.62}.memoryItemTop{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}.memoryItem b{color:#10223f}.memoryMeta{font-size:12px;color:#63718a;font-weight:850}.memoryText{margin-top:8px;padding:9px;border-radius:12px;background:#f3f8ff;white-space:pre-wrap;overflow-wrap:anywhere}.memoryItemActions{display:flex;gap:7px;flex-wrap:wrap;margin-top:9px}
+    .aiReplySave{appearance:none;border:1px solid rgba(21,88,214,.18);border-radius:999px;min-height:44px;padding:0 14px;background:#fff;color:#0d3d8d;font-weight:1000}
+    .customer-inbox>.inboxGrid,.customer-inbox .conversationPanel,.customer-inbox .threadPanel,.customer-inbox .assistantColumn,.customer-inbox .draftBox,.customer-inbox .assistantPanel{display:none!important}
+    .customer-inbox .cwf-line-inbox-root{display:flex!important;width:100%;max-width:100%;height:100dvh;min-width:0;overflow-x:hidden}
     .draftAnswer{font-size:16px;font-weight:850;color:#10223f}
     .draftAnswer.loading{color:#0d3d8d;background:#edf5ff}
     .suggestedReply{padding:12px;border-radius:16px;background:#fff;border:1px solid rgba(21,88,214,.14);box-shadow:0 12px 24px rgba(7,21,47,.08);white-space:pre-wrap}
@@ -91,6 +103,9 @@
       .inboxComposer textarea{min-height:50px;max-height:110px}
       .inboxComposer button{min-width:72px;min-height:50px}
       .draftBox{display:none}
+      .memoryBtn{display:inline-block;max-width:98px;overflow:hidden;text-overflow:ellipsis;padding:0 9px;font-size:11px}
+      .memoryBody{display:flex;flex-direction:column;overflow:auto}
+      .memoryPanel{flex:0 0 auto;overflow:visible}
       .assistantPanel{border-bottom:0;padding-bottom:calc(14px + var(--safe-bottom))}
       .lineMsg{max-width:94%}
     }
@@ -151,60 +166,12 @@
       </div>
     </form>
   </section>
-  <section class="inbox" id="customerInbox" aria-hidden="true" aria-label="กล่องแชทลูกค้า">
-    <div class="inboxTop">
-      <div class="inboxHead">
-        <button class="back" type="button" id="btnInboxBack" aria-label="กลับออฟฟิศ">‹</button>
-        <div><b>กล่องแชทลูกค้า</b><div class="teamLine"><span class="teamDot"></span><span>แชทลูกค้า LINE OA รายคน</span></div></div>
-      </div>
-    </div>
-    <div class="inboxGrid">
-      <aside class="panel conversationPanel">
-        <div class="filterbar" id="inboxFilters"></div>
-        <div class="convList" id="conversationList"><div class="inboxEmpty">กำลังโหลดแชทลูกค้า...</div></div>
-      </aside>
-      <section class="panel thread threadPanel">
-        <div class="threadTop">
-          <button class="threadBack" type="button" id="btnInboxList">← กลับ</button>
-          <div class="threadTitle" id="threadTitle">เลือกแชทลูกค้า</div>
-        </div>
-        <div class="threadMsgs" id="threadMessages"><div class="inboxEmpty">เลือกหนึ่งแชทเพื่อดูข้อความของลูกค้าคนนั้นเท่านั้น</div></div>
-      </section>
-      <aside class="panel assistantColumn">
-        <div class="assistantPanel">
-          <h3>ถาม AI สำหรับแชทนี้</h3>
-          <form class="inboxComposer" id="inboxAiForm">
-            <textarea id="inboxAskInput" rows="2" placeholder="ถาม AI สำหรับแชทนี้ เช่น ควรตอบลูกค้ายังไงดี"></textarea>
-            <button type="submit" id="btnInboxAsk">ถาม AI</button>
-          </form>
-        </div>
-        <div class="draftBox">
-          <h3>ข้อความพร้อมส่งลูกค้า</h3>
-          <div class="draftAnswer" id="draftAnswer">เลือกแชทลูกค้า หรือถาม AI เพื่อร่างข้อความตอบลูกค้า</div>
-          <button class="draftCopy" type="button" id="btnCopyDraft">คัดลอกข้อความตอบลูกค้า</button>
-          <details class="adminDetails" id="draftDetails">
-            <summary>ดูรายละเอียดสำหรับแอดมิน</summary>
-            <div id="draftInternalDetails" class="draftInternalDetails">
-              <div class="contextCard">
-                <h3>ข้อมูลลูกค้า</h3>
-                <div class="ctxGrid" id="customerContext"><div>ยังไม่ได้เลือกแชท</div></div>
-              </div>
-            </div>
-          </details>
-          <div class="feedbackRow" id="replyFeedback">
-            <button class="feedbackBtn" type="button" data-feedback="usable">ใช้ได้</button>
-            <button class="feedbackBtn" type="button" data-feedback="too_long">ยาวไป</button>
-            <button class="feedbackBtn" type="button" data-feedback="not_admin_style">ไม่เหมือนแอดมิน</button>
-            <button class="feedbackBtn" type="button" data-feedback="wrong_info">ข้อมูลผิด</button>
-            <button class="feedbackBtn save" type="button" data-feedback="save_example">บันทึกเป็นคำตอบอ้างอิง</button>
-          </div>
-        </div>
-      </aside>
-    </div>
+  <section class="inbox customer-inbox" id="customerInbox" aria-hidden="true" aria-label="กล่องแชทลูกค้า">
+    <div id="customerInboxRoot" class="cwf-line-inbox-root"></div>
   </section>
   <div class="toast" id="toast"></div>
-  <script>console.info("CWF AI Office ai-office-production-v13-clean-mobile-chat-20260608");</script>
-  <script src="/admin-v2-common.js?v=ai-office-production-v13-clean-mobile-chat-20260608"></script>
-  <script src="/admin-ai-office.js?v=ai-office-production-v13-clean-mobile-chat-20260608"></script>
+  <script>console.info("CWF AI Office Customer Chat UX v17 loaded");</script>
+  <script src="/admin-v2-common.js?v=ai-office-customer-chat-ux-v17-20260608"></script>
+  <script src="/admin-ai-office.js?v=ai-office-customer-chat-ux-v17-20260608"></script>
 </body>
 </html>

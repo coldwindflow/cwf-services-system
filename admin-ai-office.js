@@ -1,5 +1,5 @@
 (function(){
-  const VERSION = "ai-office-production-v13-clean-mobile-chat-20260608";
+  const VERSION = "ai-office-customer-chat-ux-v17-20260608";
   const ASSET_ROOT = "/assets/ai-office-final";
   const CLEAN_CHARACTER_ROOT = `${ASSET_ROOT}/characters-clean`;
   const order = ["admin","sales","ops","ads","content","dev"];
@@ -60,6 +60,7 @@
   const app = {
     active:"admin", open:false, loading:false, conversations:{}, walkTimers:{}, bubbleTimers:{}, ambientTimer:null,
     inboxOpen:false, inboxFilter:"all", inboxConversations:[], selectedConversation:null, selectedMessages:[], selectedThreadContext:null, draftText:"", currentDraft:null, inboxDraftLoading:false, customerAiReplies:{},
+    replyMemoryOpen:false, replyExamples:[], editingReplyExampleId:null, currentInboxView:"list", selectedConversationId:null,
   };
 
   const quickCommands = [
@@ -250,6 +251,213 @@
     return data;
   }
 
+  function ensureReplyMemoryUi(){
+    if (!qs("#btnReplyMemory")) {
+      const topActions = qs(".topActions");
+      const btn = document.createElement("button");
+      btn.className = "memoryBtn";
+      btn.type = "button";
+      btn.id = "btnReplyMemory";
+      btn.textContent = "คลังคำตอบแอดมิน";
+      btn.addEventListener("click", () => openReplyMemory());
+      topActions?.insertBefore(btn, qs("#btnInbox"));
+    }
+    if (qs("#replyMemoryView")) return;
+    const section = document.createElement("section");
+    section.className = "memoryView";
+    section.id = "replyMemoryView";
+    section.setAttribute("aria-hidden", "true");
+    section.setAttribute("aria-label", "คลังคำตอบแอดมิน");
+    section.innerHTML = `
+      <div class="memoryTop">
+        <div class="memoryHead">
+          <button class="back" type="button" id="btnReplyMemoryBack" aria-label="กลับออฟฟิศ">‹</button>
+          <div><b>คลังคำตอบแอดมิน</b><div class="teamLine"><span class="teamDot"></span><span>ตัวอย่างคำตอบจริงที่ใช้เป็นสไตล์ให้ Sales AI</span></div></div>
+        </div>
+      </div>
+      <div class="memoryBody">
+        <aside class="memoryPanel">
+          <form class="memoryForm" id="replyExampleForm">
+            <label>สถานการณ์
+              <select id="replySituation">
+                <option value="price_inquiry">ถามราคา</option>
+                <option value="price_objection">ลูกค้าบอกว่าแพง</option>
+                <option value="schedule_inquiry">ถามคิว/เวลาว่าง</option>
+                <option value="urgent_job">งานด่วน</option>
+                <option value="air_not_cold">แอร์ไม่เย็น</option>
+                <option value="water_dripping">น้ำหยด</option>
+                <option value="smell">มีกลิ่น</option>
+                <option value="booking">จองงาน</option>
+                <option value="payment">ชำระเงิน</option>
+                <option value="complaint">ร้องเรียน</option>
+                <option value="follow_up">ติดตามผล</option>
+                <option value="general">ทั่วไป</option>
+              </select>
+            </label>
+            <label>ข้อความลูกค้าตัวอย่าง<textarea id="replyCustomerMessage" rows="3"></textarea></label>
+            <label>คำตอบแอดมินที่ใช้จริง<textarea id="replyAdminAnswer" rows="4"></textarea></label>
+            <label>ภาษา
+              <select id="replyLanguage"><option value="th">ไทย</option><option value="en">English</option><option value="ja">Japanese</option><option value="zh">Chinese</option><option value="ko">Korean</option><option value="unknown">ไม่ระบุ</option></select>
+            </label>
+            <label>บริการ/หมวดงาน<input id="replyServiceType" type="text" placeholder="เช่น ล้างพรีเมียม / เช็กคิว"></label>
+            <label>แท็ก<input id="replyTags" type="text" placeholder="คั่นด้วย comma"></label>
+            <label><span>สถานะ</span><select id="replyActive"><option value="true">เปิดใช้งาน</option><option value="false">ปิดใช้งาน</option></select></label>
+            <div class="memoryActions">
+              <button type="submit" id="btnSaveReplyExample">บันทึก</button>
+              <button type="button" class="secondary" id="btnNewReplyExample">เพิ่มตัวอย่างคำตอบ</button>
+              <button type="button" class="warn" id="btnTestReplyExample">ทดสอบกับ AI</button>
+            </div>
+          </form>
+        </aside>
+        <section class="memoryPanel">
+          <div class="memoryActions" style="margin-bottom:10px">
+            <button type="button" class="secondary" id="btnReloadReplyExamples">โหลดใหม่</button>
+          </div>
+          <div class="memoryList" id="replyExamplesList"><div class="inboxEmpty">กำลังโหลดคลังคำตอบ...</div></div>
+        </section>
+      </div>`;
+    document.body.appendChild(section);
+    qs("#btnReplyMemoryBack")?.addEventListener("click", closeReplyMemory);
+    qs("#btnNewReplyExample")?.addEventListener("click", () => resetReplyExampleForm());
+    qs("#btnReloadReplyExamples")?.addEventListener("click", () => loadReplyExamples().catch((e) => showToast(e.message)));
+    qs("#btnTestReplyExample")?.addEventListener("click", testReplyExampleWithAi);
+    qs("#replyExampleForm")?.addEventListener("submit", (ev) => { ev.preventDefault(); saveReplyExample().catch((e) => showToast(e.message)); });
+  }
+
+  function replyExamplePayload(){
+    return {
+      agent_key:"sales",
+      situation_type:qs("#replySituation")?.value || "general",
+      customer_message:cleanText(qs("#replyCustomerMessage")?.value),
+      final_admin_reply:cleanText(qs("#replyAdminAnswer")?.value),
+      language:qs("#replyLanguage")?.value || "th",
+      service_type:cleanText(qs("#replyServiceType")?.value),
+      tags:cleanText(qs("#replyTags")?.value),
+      is_active:qs("#replyActive")?.value !== "false",
+    };
+  }
+
+  function fillReplyExampleForm(example={}){
+    app.editingReplyExampleId = example.id || null;
+    const set = (id, value) => { const el = qs(id); if (el) el.value = value ?? ""; };
+    set("#replySituation", example.situation_type || example.intent || "general");
+    set("#replyCustomerMessage", example.customer_message || "");
+    set("#replyAdminAnswer", example.final_admin_reply || example.admin_reply || "");
+    set("#replyLanguage", example.language || "th");
+    set("#replyServiceType", example.service_type || "");
+    set("#replyTags", Array.isArray(example.tags) ? example.tags.join(", ") : (example.tags || ""));
+    set("#replyActive", example.is_active === false ? "false" : "true");
+  }
+
+  function resetReplyExampleForm(prefill={}){
+    fillReplyExampleForm({
+      situation_type:app.selectedConversation?.detected_intent || "general",
+      customer_message:latestInboundText(),
+      final_admin_reply:"",
+      language:"th",
+      service_type:app.selectedThreadContext?.customer_context?.service_type || "",
+      tags:"",
+      is_active:true,
+      ...prefill,
+    });
+  }
+
+  async function openReplyMemory(prefill){
+    ensureReplyMemoryUi();
+    app.replyMemoryOpen = true;
+    const view = qs("#replyMemoryView");
+    if (view) { view.classList.add("open"); view.setAttribute("aria-hidden","false"); }
+    document.body.style.overflow = "hidden";
+    resetReplyExampleForm(prefill || {});
+    await loadReplyExamples().catch((e) => showToast(`โหลดคลังคำตอบไม่สำเร็จ: ${e.message}`));
+  }
+
+  function closeReplyMemory(){
+    app.replyMemoryOpen = false;
+    const view = qs("#replyMemoryView");
+    if (view) { view.classList.remove("open"); view.setAttribute("aria-hidden","true"); }
+    document.body.style.overflow = app.inboxOpen || app.open ? "hidden" : "";
+  }
+
+  async function loadReplyExamples(){
+    const box = qs("#replyExamplesList");
+    if (box) box.innerHTML = `<div class="inboxEmpty">กำลังโหลดคลังคำตอบ...</div>`;
+    const data = await api("/admin/ai-office/reply-examples?active_only=false&limit=120");
+    app.replyExamples = data.examples || [];
+    renderReplyExamples();
+  }
+
+  function renderReplyExamples(){
+    const box = qs("#replyExamplesList"); if (!box) return;
+    if (!app.replyExamples.length) {
+      box.innerHTML = `<div class="inboxEmpty">ยังไม่มีคำตอบแอดมินในคลัง</div>`;
+      return;
+    }
+    box.innerHTML = app.replyExamples.map((ex) => `
+      <article class="memoryItem ${ex.is_active ? "" : "off"}">
+        <div class="memoryItemTop"><b>${escapeHtml(intentLabel(ex.situation_type))}</b><span class="memoryMeta">${ex.is_active ? "เปิดใช้งาน" : "ปิดใช้งาน"} · ใช้ ${Number(ex.usage_count || 0)} ครั้ง</span></div>
+        <div class="memoryText">${escapeHtml(ex.final_admin_reply || ex.admin_reply || "")}</div>
+        <div class="memoryMeta">${escapeHtml(ex.service_type || "ไม่ระบุบริการ")} ${Array.isArray(ex.tags) && ex.tags.length ? `· ${escapeHtml(ex.tags.join(", "))}` : ""}</div>
+        <div class="memoryItemActions">
+          <button type="button" class="memoryAction secondary" data-edit-reply="${ex.id}">แก้ไข</button>
+          <button type="button" class="memoryAction warn" data-disable-reply="${ex.id}">ปิดใช้งาน</button>
+        </div>
+      </article>`).join("");
+    qsa("[data-edit-reply]", box).forEach((btn) => btn.addEventListener("click", () => {
+      const ex = app.replyExamples.find((item) => String(item.id) === String(btn.dataset.editReply));
+      if (ex) fillReplyExampleForm(ex);
+    }));
+    qsa("[data-disable-reply]", box).forEach((btn) => btn.addEventListener("click", () => disableReplyExample(btn.dataset.disableReply)));
+  }
+
+  async function saveReplyExample(){
+    const payload = replyExamplePayload();
+    if (!payload.customer_message || !payload.final_admin_reply) return showToast("กรุณาใส่ข้อความลูกค้าและคำตอบแอดมิน");
+    const id = app.editingReplyExampleId;
+    await api(id ? `/admin/ai-office/reply-examples/${encodeURIComponent(id)}` : "/admin/ai-office/reply-examples", {
+      method:id ? "PATCH" : "POST",
+      body:JSON.stringify(payload),
+    });
+    showToast("บันทึกคลังคำตอบแล้ว");
+    resetReplyExampleForm();
+    await loadReplyExamples();
+  }
+
+  async function disableReplyExample(id){
+    await api(`/admin/ai-office/reply-examples/${encodeURIComponent(id)}/disable`, { method:"PATCH", body:JSON.stringify({}) });
+    showToast("ปิดใช้งานคำตอบนี้แล้ว");
+    await loadReplyExamples();
+  }
+
+  function testReplyExampleWithAi(){
+    const payload = replyExamplePayload();
+    if (!payload.customer_message) return showToast("ใส่ข้อความลูกค้าก่อนทดสอบ");
+    closeReplyMemory();
+    if (app.selectedConversation) {
+      const input = qs("#inboxAskInput");
+      if (input) input.value = `ใช้สไตล์จากคลังคำตอบแอดมินและร่างคำตอบสำหรับข้อความนี้: ${payload.customer_message}`;
+      submitCustomerAiQuestion(input?.value || payload.customer_message, "memory_test");
+    } else {
+      selectAgent("sales", true);
+      const askInput = qs("#askInput");
+      if (askInput) askInput.value = `ลูกค้าถามว่า "${payload.customer_message}" ตอบแบบแอดมิน Coldwindflow ยังไงดี`;
+      ask();
+    }
+  }
+
+  function prefillReplyExampleFromDraft(item){
+    const draft = item?.draft || {};
+    return openReplyMemory({
+      situation_type:app.selectedConversation?.detected_intent || draft.detected_intent || "general",
+      customer_message:latestInboundText(),
+      final_admin_reply:item?.reply || draft.customer_reply || app.draftText || "",
+      language:draft.customer_language || "th",
+      service_type:app.selectedThreadContext?.customer_context?.service_type || "",
+      tags:["customer_inbox","sales_ai"],
+      is_active:true,
+    });
+  }
+
   function renderInboxFilters(){
     const box = qs("#inboxFilters"); if (!box) return;
     box.innerHTML = inboxFilters.map(([key,label]) => `<button type="button" data-filter="${key}" class="${app.inboxFilter===key?"active":""}">${escapeHtml(label)}</button>`).join("");
@@ -307,9 +515,37 @@
     }).join("");
     const aiHtml = repliesForSelected().map(renderAiReplyBubble).join("");
     msgs.innerHTML = lineHtml || aiHtml ? `${lineHtml}${aiHtml}` : `<div class="inboxEmpty">ยังไม่มีข้อความในแชทนี้</div>`;
+    qsa(".aiReplyActions", msgs).forEach((row, idx) => {
+      const copyBtn = row.querySelector("[data-reply-index]");
+      if (copyBtn) copyBtn.textContent = "คัดลอกข้อความนี้";
+      if (!row.querySelector("[data-save-reply-index]")) {
+        const saveBtn = document.createElement("button");
+        saveBtn.type = "button";
+        saveBtn.className = "aiReplySave";
+        saveBtn.dataset.saveReplyIndex = String(idx);
+        saveBtn.textContent = "บันทึกเป็นตัวอย่างคำตอบ";
+        row.appendChild(saveBtn);
+      }
+    });
     qsa("[data-reply-index]", msgs).forEach((btn) => btn.addEventListener("click", () => {
       const item = repliesForSelected()[Number(btn.dataset.replyIndex)];
+      api("/admin/ai-office/reply-learning/event", {
+        method:"POST",
+        body:JSON.stringify({
+          event_type:"copied",
+          conversation_id:app.selectedConversation?.id || null,
+          agent_key:"sales",
+          situation_type:app.selectedConversation?.detected_intent || "general",
+          customer_message:latestInboundText(),
+          final_admin_reply:item?.reply || "",
+          source:"customer_inbox_copy",
+        }),
+      }).catch(() => {});
       copyCustomerReply(item?.reply || "");
+    }));
+    qsa("[data-save-reply-index]", msgs).forEach((btn) => btn.addEventListener("click", () => {
+      const item = repliesForSelected()[Number(btn.dataset.saveReplyIndex)];
+      prefillReplyExampleFromDraft(item);
     }));
     requestAnimationFrame(() => { msgs.scrollTop = msgs.scrollHeight; });
   }
@@ -381,7 +617,6 @@
     app.selectedMessages = data.messages || [];
     app.selectedThreadContext = data.thread_context || null;
     renderThread(); renderCustomerContext();
-    if (!repliesForSelected().length) submitCustomerAiQuestion("ร่างคำตอบแนะนำแบบแอดมินผู้หญิงของ Coldwindflow สั้น สุภาพ พร้อมคัดลอกส่งลูกค้า", "recommended").catch(() => {});
   }
   function openCustomerChat(conversationId){ return selectConversation(conversationId); }
   function renderCustomerChatView(){ renderConversationList(); renderThread(); renderCustomerContext(); renderDraft(app.currentDraft); }
@@ -488,7 +723,7 @@
       applySummary(data.summary || {});
       updateOfficeStatus("โหลดข้อมูลงานจริงแล้ว ทีม AI พร้อมช่วยงาน");
     } catch(e) {
-      const msg = e.message === "AI_OFFICE_PIN_REQUIRED" ? "backend ยังบังคับ PIN ซ้ำ ต้อง apply v5 backend patch หรือเอา AI_OFFICE_ACCESS_PIN ออกจาก Render" : `โหลดสถานะไม่ได้: ${e.message}`;
+      const msg = e.message === "AI_OFFICE_PIN_REQUIRED" ? "AI Office ต้องยืนยัน PIN ก่อนใช้งาน" : `โหลดสถานะไม่ได้: ${e.message}`;
       showToast(msg); updateOfficeStatus(msg);
     }
   }
@@ -520,7 +755,7 @@
     } catch(e) {
       list.splice(loadingIndex, 1);
       setAgentMode(key, "idle");
-      const msg = e.message === "AI_OFFICE_PIN_REQUIRED" ? "AI Office ยังติด PIN ซ้ำหลัง admin login ต้อง apply v5 backend patch หรือเอา AI_OFFICE_ACCESS_PIN ออกจาก Render ก่อนใช้งาน" : e.message;
+      const msg = e.message === "AI_OFFICE_PIN_REQUIRED" ? "AI Office ต้องยืนยัน PIN ก่อนถาม AI" : e.message;
       addMessage("error", msg); updateTeamStatus("ระบบยังตอบไม่ได้ ต้องแก้ backend ก่อน"); bubble(key, "ระบบตอบไม่ได้", 1800);
     } finally {
       app.loading = false; qs("#btnAsk").disabled = false; order.forEach((item) => { if (item !== key) setAgentMode(item, "idle"); }); renderMessages();
@@ -548,7 +783,9 @@
     [`${ASSET_ROOT}/maps-clean/office-main-desktop.png`,`${ASSET_ROOT}/maps-clean/office-main-mobile.png`, ...order.flatMap(k => [cfg(k).assets.idle, cfg(k).assets["walk-1"], cfg(k).assets.working])].forEach((src) => { const img = new Image(); img.decoding = "async"; img.src = src; });
   }
   function bind(){
+    ensureReplyMemoryUi();
     qs("#btnRefresh")?.addEventListener("click", loadSummary);
+    qs("#btnReplyMemory")?.addEventListener("click", () => openReplyMemory());
     qs("#btnInbox")?.addEventListener("click", openInbox);
     qs("#btnInboxBack")?.addEventListener("click", closeInbox);
     qs("#btnInboxList")?.addEventListener("click", showInboxList);
@@ -594,7 +831,291 @@
     }, 7400);
   }
 
+  function ensureCustomerInboxStyles(){
+    if (qs("#cwfLineChatV17Styles")) return;
+    const style = document.createElement("style");
+    style.id = "cwfLineChatV17Styles";
+    style.textContent = `
+      *{box-sizing:border-box}
+      html,body,#aiOfficeApp,.ai-office-shell,.ai-office-main,.customer-inbox,.cwf-line-inbox-root,.cwf-line-chat-view,.cwf-line-chat-messages,.cwf-line-ai-composer{width:100%;max-width:100%;min-width:0;overflow-x:hidden}
+      .inbox.customer-inbox{position:fixed;inset:0;z-index:120;display:none;flex-direction:column;background:#f7fbff;color:#10223f}
+      .inbox.customer-inbox.open{display:flex}
+      .cwf-line-inbox-root{height:100dvh;min-height:0;display:flex;flex-direction:column;background:#eef6ff}
+      .cwf-line-list-view{height:100%;min-height:0;display:flex;flex-direction:column;background:#eef6ff}
+      .cwf-line-list-header,.cwf-line-chat-header{flex:0 0 auto;display:flex;align-items:center;gap:12px;padding:calc(10px + var(--safe-top)) max(12px,var(--safe-right)) 10px max(12px,var(--safe-left));background:linear-gradient(135deg,#06163d,#0d3d8d);color:#fff;box-shadow:0 12px 28px rgba(7,21,47,.20)}
+      .cwf-line-close-btn,.cwf-line-back-btn{appearance:none;border:0;border-radius:15px;min-width:46px;min-height:46px;padding:0 12px;background:rgba(255,255,255,.14);color:#fff;font-size:18px;font-weight:1000}
+      .cwf-line-list-title,.cwf-line-chat-name{font-size:20px;font-weight:1000;line-height:1.1}
+      .cwf-line-list-subtitle,.cwf-line-chat-subtitle{margin-top:4px;font-size:12px;font-weight:850;color:rgba(255,255,255,.78)}
+      .cwf-line-filterbar{flex:0 0 auto;display:flex;gap:7px;overflow-x:auto;padding:10px;background:#eaf3ff;border-bottom:1px solid rgba(15,23,42,.08);scrollbar-width:none}
+      .cwf-line-filterbar::-webkit-scrollbar{display:none}
+      .cwf-line-filterbar button{appearance:none;border:1px solid rgba(21,88,214,.15);background:#fff;color:#0d3d8d;border-radius:999px;min-height:38px;padding:7px 12px;font-size:12px;font-weight:1000;white-space:nowrap}
+      .cwf-line-filterbar button.active{background:#0d3d8d;color:#fff}
+      .cwf-line-conversation-list{flex:1 1 auto;min-height:0;overflow-y:auto;background:#fff}
+      .cwf-line-conversation{width:100%;border:0;border-bottom:1px solid rgba(15,23,42,.08);background:#fff;text-align:left;padding:13px 14px;display:block}
+      .cwf-line-conversation:active{background:#edf5ff}
+      .cwf-line-conversation-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+      .cwf-line-conversation-name{font-weight:1000;color:#10223f}
+      .cwf-line-conversation-time{font-size:11px;color:#63718a;white-space:nowrap}
+      .cwf-line-conversation-preview{margin-top:6px;color:#43516a;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .cwf-line-badges{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+      .cwf-line-badge{font-size:10px;font-weight:950;border-radius:999px;padding:4px 7px;background:#eef6ff;color:#0d3d8d}
+      .cwf-line-badge.warn{background:#fff3cd;color:#7a5600}
+      .cwf-line-chat-view{height:100%;min-height:0;display:flex;flex-direction:column;background:linear-gradient(180deg,#f7fbff,#edf5ff)}
+      .cwf-line-chat-header{padding-bottom:11px}
+      .cwf-line-chat-messages{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;display:flex;flex-direction:column;gap:10px;padding:14px max(12px,var(--safe-right)) 14px max(12px,var(--safe-left))}
+      .customer-message-bubble,.line-message-bubble,.cwf-ai-reply-bubble{max-width:100%;overflow-wrap:anywhere;word-break:break-word}
+      .line-message-bubble{width:fit-content;max-width:min(86%,720px);border-radius:18px;padding:10px 12px;line-height:1.45;white-space:pre-wrap;box-shadow:0 8px 18px rgba(7,21,47,.06)}
+      .line-message-bubble.inbound{align-self:flex-start;background:#fff;border:1px solid rgba(15,23,42,.12)}
+      .line-message-bubble.outbound{align-self:flex-end;background:#0d3d8d;color:#fff}
+      .cwf-line-time{display:block;margin-top:5px;font-size:10px;opacity:.62}
+      .cwf-ai-reply-bubble{align-self:flex-start;width:min(100%,760px);border-radius:20px;padding:12px;background:#f8fbff;border:1px solid rgba(21,88,214,.22);box-shadow:0 12px 24px rgba(7,21,47,.08)}
+      .cwf-ai-reply-bubble .bubble-title{font-size:12px;font-weight:1000;color:#0d3d8d;margin-bottom:8px}
+      .customer-reply-editable{width:100%;min-height:86px;border:1px solid rgba(21,88,214,.16);border-radius:15px;background:#fff;color:#10223f;padding:10px 11px;font-size:15px;line-height:1.45;resize:vertical}
+      .cwf-ai-reply-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:9px}
+      .cwf-ai-reply-actions button,.cwf-line-ai-composer button{appearance:none;border:0;border-radius:999px;min-height:44px;padding:0 14px;background:#0d3d8d;color:#fff;font-weight:1000}
+      .cwf-ai-reply-actions button.secondary{background:#fff;color:#0d3d8d;border:1px solid rgba(21,88,214,.18)}
+      .cwf-line-ai-composer{flex:0 0 auto;display:flex;gap:8px;align-items:flex-end;padding:10px max(12px,var(--safe-right)) calc(10px + var(--safe-bottom)) max(12px,var(--safe-left));background:rgba(247,251,255,.96);border-top:1px solid rgba(15,23,42,.10);box-shadow:0 -12px 28px rgba(7,21,47,.08)}
+      .cwf-line-ai-composer textarea{flex:1;min-width:0;min-height:50px;max-height:122px;border:1px solid rgba(21,88,214,.16);border-radius:17px;padding:11px 12px;background:#fff;color:#10223f;font-size:15px;line-height:1.35;resize:none}
+      .cwf-line-ai-composer button{min-width:86px;border-radius:17px;background:linear-gradient(135deg,#0d3d8d,#1769ff)}
+      .cwf-line-empty{padding:24px;color:#63718a;font-weight:850;text-align:center}
+      @media (min-width:769px){.cwf-line-inbox-root{max-width:980px;margin:0 auto;border-left:1px solid rgba(15,23,42,.08);border-right:1px solid rgba(15,23,42,.08)}}
+      @media (max-width:768px){.inboxGrid,.conversationPanel,.threadPanel,.assistantColumn,.draftBox,.assistantPanel,.threadTop,.threadBack{display:none!important}.cwf-line-inbox-root,.cwf-line-list-view,.cwf-line-chat-view{width:100vw;max-width:100vw}.line-message-bubble{max-width:92%}.cwf-line-ai-composer button{min-width:72px}}
+    `;
+    document.head.appendChild(style);
+  }
+
+  function resetCustomerInboxDom(){
+    ensureCustomerInboxStyles();
+    const view = qs("#customerInbox");
+    if (!view) return null;
+    view.className = "inbox customer-inbox";
+    view.innerHTML = `<div id="customerInboxRoot" class="cwf-line-inbox-root"></div>`;
+    return qs("#customerInboxRoot");
+  }
+
+  function renderInboxFilters(){
+    const filters = inboxFilters.map(([key,label]) => `<button type="button" data-cwf-line-filter="${key}" class="${app.inboxFilter===key?"active":""}">${escapeHtml(label)}</button>`).join("");
+    return `<div class="cwf-line-filterbar">${filters}</div>`;
+  }
+
+  function renderCustomerListView(){
+    const list = app.inboxConversations.filter(filterConversation);
+    const rows = list.length ? list.map((c) => {
+      const flags = (c.priority_flags || []).slice(0,2).map((x) => `<span class="cwf-line-badge warn">${escapeHtml(intentLabel(x))}</span>`).join("");
+      return `<button type="button" class="cwf-line-conversation" data-cwf-line-conversation="${c.id}">
+        <div class="cwf-line-conversation-top"><span class="cwf-line-conversation-name">${escapeHtml(c.display_name || "ลูกค้า LINE")}</span><span class="cwf-line-conversation-time">${escapeHtml(c.last_message_at_display || "")}</span></div>
+        <div class="cwf-line-conversation-preview">${escapeHtml(c.message_text_for_admin || c.last_message_text || "")}</div>
+        <div class="cwf-line-badges"><span class="cwf-line-badge">${escapeHtml(statusLabel(c.conversation_status))}</span><span class="cwf-line-badge">${escapeHtml(intentLabel(c.detected_intent))}</span>${flags}</div>
+      </button>`;
+    }).join("") : `<div class="cwf-line-empty">ไม่มีแชทในตัวกรองนี้</div>`;
+    return `<section class="cwf-line-list-view">
+      <header class="cwf-line-list-header">
+        <button class="cwf-line-close-btn" type="button" id="btnInboxBack" aria-label="กลับออฟฟิศ">‹</button>
+        <div><div class="cwf-line-list-title">กล่องแชทลูกค้า</div><div class="cwf-line-list-subtitle">แชทลูกค้า LINE OA รายคน</div></div>
+      </header>
+      ${renderInboxFilters()}
+      <main class="cwf-line-conversation-list">${rows}</main>
+    </section>`;
+  }
+
+  function renderAiReplyBubble(item, idx){
+    const text = item?.reply || item?.draft?.customer_reply || "";
+    return `<div class="cwf-ai-reply-bubble" data-ai-reply-bubble="${idx}">
+      <div class="bubble-title">ข้อความพร้อมส่งลูกค้า</div>
+      <textarea class="customer-reply-editable" data-reply-edit="${idx}">${escapeHtml(text)}</textarea>
+      <div class="cwf-ai-reply-actions">
+        <button type="button" data-copy-ai-reply="${idx}">คัดลอกข้อความนี้</button>
+        <button type="button" class="secondary" data-save-ai-reply="${idx}">บันทึกเป็นตัวอย่างคำตอบ</button>
+      </div>
+      <span class="cwf-line-time">${escapeHtml(item?.time || "")}</span>
+    </div>`;
+  }
+
+  function renderSelectedChatView(){
+    const c = app.selectedConversation;
+    if (!c) return renderCustomerListView();
+    const lineHtml = (app.selectedMessages || []).map((m) => {
+      const side = m.direction === "inbound" ? "inbound" : "outbound";
+      const text = m.message_text_for_admin || m.message_text || "";
+      return `<div class="line-message-bubble customer-message-bubble ${side}">${escapeHtml(text)}<span class="cwf-line-time">${escapeHtml(m.received_at_display || "")}</span></div>`;
+    }).join("");
+    const aiHtml = repliesForSelected().map(renderAiReplyBubble).join("");
+    const body = lineHtml || aiHtml ? `${lineHtml}${aiHtml}` : `<div class="cwf-line-empty">ยังไม่มีข้อความในแชทนี้</div>`;
+    return `<section class="cwf-line-chat-view">
+      <header class="cwf-line-chat-header">
+        <button class="cwf-line-back-btn" type="button" id="btnInboxList">← กลับ</button>
+        <div>
+          <div class="cwf-line-chat-name">${escapeHtml(c.display_name || "ลูกค้า LINE")}</div>
+          <div class="cwf-line-chat-subtitle">แชทลูกค้า LINE OA / ${escapeHtml(statusLabel(c.conversation_status))}</div>
+        </div>
+      </header>
+      <main class="cwf-line-chat-messages" id="threadMessages">${body}</main>
+      <form class="cwf-line-ai-composer" id="inboxAiForm">
+        <textarea id="inboxAskInput" rows="2" placeholder="ถาม AI สำหรับแชทนี้ เช่น ควรตอบลูกค้ายังไงดี"></textarea>
+        <button type="submit" id="btnInboxAsk">ถาม AI</button>
+      </form>
+    </section>`;
+  }
+
+  function bindInboxRootEvents(root){
+    root.querySelector("#btnInboxBack")?.addEventListener("click", closeInbox);
+    root.querySelector("#btnInboxList")?.addEventListener("click", showInboxList);
+    root.querySelectorAll("[data-cwf-line-filter]").forEach((btn) => btn.addEventListener("click", () => {
+      app.inboxFilter = btn.dataset.cwfLineFilter;
+      app.currentInboxView = "list";
+      renderInbox();
+    }));
+    root.querySelectorAll("[data-cwf-line-conversation]").forEach((btn) => btn.addEventListener("click", () => openCustomerChat(btn.dataset.cwfLineConversation)));
+    root.querySelector("#inboxAiForm")?.addEventListener("submit", (ev) => { ev.preventDefault(); submitInboxQuestion(); });
+    root.querySelectorAll("[data-copy-ai-reply]").forEach((btn) => btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.copyAiReply);
+      const textarea = root.querySelector(`[data-reply-edit="${idx}"]`);
+      const text = cleanText(textarea?.value || repliesForSelected()[idx]?.reply || "");
+      logCustomerReplyEvent("copied", text);
+      copyCustomerReply(text);
+    }));
+    root.querySelectorAll("[data-save-ai-reply]").forEach((btn) => btn.addEventListener("click", () => {
+      const idx = Number(btn.dataset.saveAiReply);
+      const textarea = root.querySelector(`[data-reply-edit="${idx}"]`);
+      saveReplyExampleFromBubble(cleanText(textarea?.value || repliesForSelected()[idx]?.reply || ""));
+    }));
+  }
+
+  function renderInbox(){
+    const root = qs("#customerInboxRoot") || resetCustomerInboxDom();
+    if (!root) return;
+    root.innerHTML = app.currentInboxView === "chat" && app.selectedConversationId ? renderSelectedChatView() : renderCustomerListView();
+    bindInboxRootEvents(root);
+    const msgs = root.querySelector("#threadMessages");
+    if (msgs) requestAnimationFrame(() => { msgs.scrollTop = msgs.scrollHeight; });
+  }
+
+  function renderConversationList(){ renderInbox(); }
+  function renderThread(){ renderInbox(); }
+  function renderDraft(){ return; }
+  function renderCustomerContext(){ return; }
+  function renderInboxTools(){ return; }
+
+  async function loadInbox(){
+    resetCustomerInboxDom();
+    const root = qs("#customerInboxRoot");
+    if (root) root.innerHTML = `<div class="cwf-line-empty">กำลังโหลดแชทลูกค้า...</div>`;
+    const data = await api("/admin/ai-office/line-inbox?limit=80");
+    app.inboxConversations = data.conversations || [];
+    renderInbox();
+  }
+
+  async function selectConversation(id){
+    const c = app.inboxConversations.find((x) => String(x.id) === String(id));
+    app.selectedConversation = c || null;
+    app.selectedConversationId = c?.id || null;
+    app.currentInboxView = c ? "chat" : "list";
+    app.selectedMessages = [];
+    app.selectedThreadContext = null;
+    app.draftText = "";
+    app.currentDraft = null;
+    renderInbox();
+    if (!c) return;
+    const data = await api(`/admin/ai-office/line-conversations/${encodeURIComponent(c.id)}/messages?limit=100`);
+    app.selectedMessages = data.messages || [];
+    app.selectedThreadContext = data.thread_context || null;
+    renderInbox();
+  }
+
+  function openCustomerChat(conversationId){ return selectConversation(conversationId); }
+
+  function showInboxList(){
+    app.selectedConversation = null;
+    app.selectedConversationId = null;
+    app.selectedMessages = [];
+    app.selectedThreadContext = null;
+    app.draftText = "";
+    app.currentDraft = null;
+    app.currentInboxView = "list";
+    renderInbox();
+  }
+
+  function openInbox(){
+    app.inboxOpen = true;
+    app.currentInboxView = app.selectedConversationId ? "chat" : "list";
+    const view = qs("#customerInbox");
+    if (view) { view.classList.add("open"); view.setAttribute("aria-hidden","false"); }
+    document.body.style.overflow = "hidden";
+    resetCustomerInboxDom();
+    loadInbox().catch((e) => {
+      const root = qs("#customerInboxRoot");
+      if (root) root.innerHTML = `<div class="cwf-line-empty">โหลดกล่องแชทลูกค้าไม่ได้: ${escapeHtml(e.message)}</div>`;
+      showToast(`โหลดกล่องแชทลูกค้าไม่ได้: ${e.message}`);
+    });
+  }
+
+  function closeInbox(){
+    app.inboxOpen = false;
+    app.currentInboxView = "list";
+    const view = qs("#customerInbox");
+    if (view) { view.classList.remove("open"); view.setAttribute("aria-hidden","true"); }
+    document.body.style.overflow = app.open || app.replyMemoryOpen ? "hidden" : "";
+  }
+
+  function submitInboxQuestion(){
+    const input = qs("#inboxAskInput");
+    const question = cleanText(input?.value);
+    if (!question) return showToast("พิมพ์คำถามสำหรับ AI ก่อน");
+    if (input) input.value = "";
+    submitCustomerAiQuestion(question, "custom");
+  }
+
+  function addAiReplyBubble(reply, draft){
+    const text = cleanText(reply);
+    if (!text || !app.selectedConversation?.id) return;
+    const list = repliesForSelected();
+    if (list[0]?.reply !== text) {
+      list.unshift({ reply:text, draft:draft || null, time:new Date().toLocaleTimeString("th-TH", { hour:"2-digit", minute:"2-digit" }) });
+      if (list.length > 12) list.length = 12;
+    }
+    renderInbox();
+  }
+
+  function logCustomerReplyEvent(eventType, replyText){
+    api("/admin/ai-office/reply-learning/event", {
+      method:"POST",
+      body:JSON.stringify({
+        event_type:eventType,
+        conversation_id:app.selectedConversation?.id || null,
+        agent_key:"sales",
+        situation_type:app.selectedConversation?.detected_intent || "general",
+        customer_message:latestInboundText(),
+        final_admin_reply:replyText,
+        source:"customer_inbox",
+      }),
+    }).catch(() => {});
+  }
+
+  async function saveReplyExampleFromBubble(replyText){
+    const finalReply = cleanText(replyText);
+    if (!finalReply) return showToast("ยังไม่มีข้อความพร้อมบันทึก");
+    try {
+      await api("/admin/ai-office/reply-examples", {
+        method:"POST",
+        body:JSON.stringify({
+          agent_key:"sales",
+          situation_type:app.selectedConversation?.detected_intent || "general",
+          customer_message:latestInboundText(),
+          final_admin_reply:finalReply,
+          language:"th",
+          service_type:app.selectedThreadContext?.customer_context?.service_type || "",
+          tags:["customer_inbox"],
+          is_active:true,
+        }),
+      });
+      showToast("บันทึกเป็นตัวอย่างคำตอบแล้ว");
+    } catch(e) {
+      showToast(`บันทึกตัวอย่างคำตอบไม่สำเร็จ: ${e.message}`);
+    }
+  }
+
   document.addEventListener("DOMContentLoaded", () => {
+    console.info("CWF AI Office Customer Chat UX v17 loaded");
     console.info(`CWF AI Office ${VERSION}`);
     loadSavedConversations(); bind(); buildSelectors(); buildQuickCommands(); initAgents(); preload(); loadSummary(); ambientWorkCycle();
   });

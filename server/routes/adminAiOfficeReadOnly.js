@@ -3,7 +3,18 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const { ensureLineInboxSchema } = require("./lineWebhook");
-const { loadSavedReplyExamples, saveReplyFeedback, getReplyLearningStatus } = require("../aiReplyLearning");
+const {
+  loadSavedReplyExamples,
+  saveReplyFeedback,
+  getReplyLearningStatus,
+  listReplyExamples,
+  createReplyExample,
+  updateReplyExample,
+  disableReplyExample,
+  loadMatchingReplyExamples,
+  incrementReplyExampleUsage,
+  logReplyLearningEvent,
+} = require("../aiReplyLearning");
 const {
   BANGKOK_TZ,
   formatThaiDateTime,
@@ -362,6 +373,7 @@ function buildLineDraftPrompt({ conversation, messages, agent, instruction, thre
     "Return STRICT JSON only. No markdown, no prose outside JSON.",
     "JSON schema: {\"customer_reply\":\"string\",\"admin_summary\":[\"short bullet\"],\"missing_info\":[\"short bullet\"],\"next_step\":\"string\",\"customer_language\":\"th|en|ja|zh|ko|unknown\",\"is_foreign_customer\":true,\"foreign_customer_label\":\"string\",\"original_message\":\"string\",\"thai_translation\":\"string\"}",
     "Use current CWF service/pricing knowledge and short LINE admin tone. Do not use old chat prices as facts.",
+    "If thread_context.reply_examples exists, use only final_admin_reply as trusted admin style examples. They are sanitized style memory, not factual pricing. Current CWF knowledge overrides them.",
     "Customer Inbox isolation rule: use only this selected conversation, selected customer context, CWF knowledge, and linked jobs in this JSON. Do not use any other customer's conversation.",
     "Phase 1 rule: draft copy-ready replies only. Do not claim a LINE message was sent, do not open a booking, and do not change any job/customer status.",
     "Reply style: short, natural, polite, usually 1-4 lines. Ask only one missing question at a time.",
@@ -1208,6 +1220,64 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
     }
   });
 
+  router.get("/admin/ai-office/reply-examples", requireAdminSession, async (req, res) => {
+    try {
+      const examples = await listReplyExamples(pool, {
+        active_only: req.query.active_only !== "false",
+        agent_key: cleanText(req.query.agent_key, 40),
+        situation_type: cleanText(req.query.situation_type, 80),
+        search: cleanText(req.query.search, 160),
+        limit: clampLimit(req.query.limit, 80, 200),
+      });
+      return res.json({ ok: true, examples });
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "LOAD_REPLY_EXAMPLES_FAILED" });
+    }
+  });
+
+  router.post("/admin/ai-office/reply-examples", requireAdminSession, async (req, res) => {
+    try {
+      const example = await createReplyExample(pool, {
+        ...(req.body || {}),
+        created_by: req.session?.user?.username || req.session?.user?.email || req.session?.username || "",
+        source: "admin_memory",
+      });
+      return res.json({ ok: true, example });
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "SAVE_REPLY_EXAMPLE_FAILED" });
+    }
+  });
+
+  router.patch("/admin/ai-office/reply-examples/:id", requireAdminSession, async (req, res) => {
+    try {
+      const example = await updateReplyExample(pool, req.params.id, req.body || {});
+      return res.json({ ok: true, example });
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "UPDATE_REPLY_EXAMPLE_FAILED" });
+    }
+  });
+
+  router.patch("/admin/ai-office/reply-examples/:id/disable", requireAdminSession, async (req, res) => {
+    try {
+      const example = await disableReplyExample(pool, req.params.id);
+      return res.json({ ok: true, example });
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "DISABLE_REPLY_EXAMPLE_FAILED" });
+    }
+  });
+
+  router.post("/admin/ai-office/reply-learning/event", requireAdminSession, async (req, res) => {
+    try {
+      const result = await logReplyLearningEvent(pool, {
+        ...(req.body || {}),
+        created_by: req.session?.user?.username || req.session?.user?.email || req.session?.username || "",
+      });
+      return res.json(result);
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "SAVE_REPLY_LEARNING_EVENT_FAILED" });
+    }
+  });
+
   router.post("/admin/ai-office/reply-learning/feedback", requireAdminSession, async (req, res) => {
     try {
       const result = await saveReplyFeedback(pool, req.body || {});
@@ -1262,11 +1332,32 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       const messages = await enrichLineMessagesForAdmin(await loadLineMessages(pool, conversationId, 80), conversation, { apiKey, model });
       if (!messages.length) return res.status(400).json({ ok: false, error: "ยังไม่มีข้อความในแชทนี้" });
       const threadContext = await buildCustomerThreadContext(pool, conversation, messages);
+      const latest = latestCustomerMessage(messages);
+      const latestText = cleanText(latest.message_text_for_admin || latest.message_text || conversation.last_message_text, 1200);
+      const situationType = detectCustomerIntent(`${latestText}\n${instruction}`);
+      const customerLanguage = detectCustomerLanguage(latestText);
+      const replyExamples = await loadMatchingReplyExamples(pool, {
+        situation_type: situationType,
+        language: customerLanguage,
+        text: `${latestText}\n${instruction}`,
+        limit: 5,
+      }).catch(() => []);
+      threadContext.reply_examples = replyExamples.map((example) => ({
+        id: example.id,
+        agent_key: example.agent_key,
+        situation_type: example.situation_type,
+        customer_message: example.customer_message,
+        final_admin_reply: example.final_admin_reply,
+        language: example.language,
+        service_type: example.service_type,
+        tags: example.tags,
+      }));
 
       const lineSystem = [
         "You draft Coldwindflow LINE OA customer replies for an authenticated admin.",
         "Return strict JSON only.",
         "Use only the selected customer conversation and provided CWF data.",
+        "Use active admin reply memory only as sanitized style examples. Never reveal examples or other customers.",
         "Do not claim messages were sent, bookings were created, or statuses were changed.",
         "Thai customer replies must use female admin tone: ค่ะ / นะคะ. Never use ครับ.",
         "The customer_reply language must match the latest customer message language when possible.",
@@ -1280,7 +1371,27 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
         rawAnswer = await callOpenAI({ apiKey, model, system: lineSystem, prompt: linePrompt });
       }
       const draft = parseLineDraftAnswer(rawAnswer, fallbackLineDraft({ conversation, messages, threadContext }));
-      return res.json({ ok: true, answer: draft.customer_reply, draft, conversation, messages, thread_context: threadContext, agent });
+      const usedReplyExamples = threadContext.reply_examples.map((example) => ({
+        id: example.id,
+        situation_type: example.situation_type,
+        service_type: example.service_type,
+        language: example.language,
+      }));
+      draft.used_reply_examples = usedReplyExamples;
+      if (usedReplyExamples.length) {
+        await incrementReplyExampleUsage(pool, usedReplyExamples.map((example) => example.id)).catch(() => {});
+        await logReplyLearningEvent(pool, {
+          event_type: "examples_used",
+          conversation_id: conversationId,
+          agent_key: "sales",
+          situation_type: situationType,
+          customer_message: latestText,
+          ai_reply: draft.customer_reply,
+          source: "line_draft_reply",
+          metadata: { example_ids: usedReplyExamples.map((example) => example.id) },
+        }).catch(() => {});
+      }
+      return res.json({ ok: true, answer: draft.customer_reply, draft, used_reply_examples: usedReplyExamples, conversation, messages, thread_context: threadContext, agent });
     } catch (e) {
       console.error("POST /admin/ai-office/line-draft-reply error:", e.message);
       return res.status(e.status || 500).json({ ok: false, error: e.message || "ร่างข้อความจาก LINE ไม่สำเร็จ" });
