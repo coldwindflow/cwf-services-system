@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const VERSION = "CWF AI Office Icon Actions + Compact Chat v23 loaded";
+  const VERSION = "CWF AI Office ChatGPT Reply Card UX v24 loaded";
   console.info(VERSION);
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -47,11 +47,11 @@
     lastCustomerMessage: "",
     lastAgentRetry: null,
     lastLineRetry: null,
-    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV23") || "{}"),
+    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV24") || "{}"),
   };
 
   function saveHistory() {
-    localStorage.setItem("cwfAiOfficeAgentHistoryV23", JSON.stringify(state.agentHistory));
+    localStorage.setItem("cwfAiOfficeAgentHistoryV24", JSON.stringify(state.agentHistory));
   }
 
   function currentAgent() {
@@ -61,7 +61,7 @@
   function autoGrow(el) {
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${Math.min(el.scrollHeight, 118)}px`;
+    el.style.height = `${Math.min(el.scrollHeight, el.classList?.contains("replyText") ? 360 : 118)}px`;
   }
 
   function renderAgents() {
@@ -403,17 +403,23 @@
     const text = reply || "ยังไม่ได้ข้อความพร้อมส่งลูกค้า";
     $("#lineMessages").insertAdjacentHTML("beforeend", `
       <div class="lineBubble ai">
-        <div class="bubbleTitleRow">
-          <div class="bubbleTitle">ข้อความพร้อมส่งลูกค้า</div>
-          <div class="bubbleActions" aria-label="จัดการคำตอบ AI">
+        <article class="aiDraftCard">
+          <header class="aiDraftHeader">
+            <div class="bubbleTitle">ข้อความพร้อมส่งลูกค้า</div>
+            <div class="aiDraftHint">แก้ก่อนคัดลอกได้</div>
+          </header>
+          <textarea class="replyText" data-reply-text>${esc(text)}</textarea>
+          <div class="aiDraftActions" aria-label="จัดการคำตอบ AI">
             <button class="iconBtn copyIcon" type="button" data-copy-reply aria-label="คัดลอกข้อความนี้" title="คัดลอกข้อความนี้">⧉</button>
             <button class="iconBtn likeIcon" type="button" data-save-from-reply aria-label="บันทึกเป็นตัวอย่างคำตอบ" title="บันทึกเป็นตัวอย่างคำตอบ">👍</button>
             <button class="iconBtn dislikeIcon" type="button" data-dislike-reply aria-label="ไม่ใช้คำตอบนี้" title="ไม่ใช้คำตอบนี้">👎</button>
           </div>
-        </div>
-        <textarea class="replyText" data-reply-text>${esc(text)}</textarea>
+        </article>
       </div>
     `);
+    const bubble = $("#lineMessages .lineBubble.ai:last-child");
+    const ta = bubble?.querySelector("[data-reply-text]");
+    if (ta) autoGrow(ta);
     const box = $("#lineMessages");
     box.scrollTop = box.scrollHeight;
   }
@@ -478,6 +484,7 @@
     const bubble = button.closest(".lineBubble.ai");
     const text = bubble?.querySelector("[data-reply-text]")?.value || "";
     bubble?.classList.add("not-used");
+    bubble?.querySelector(".aiDraftCard")?.classList.add("not-used");
     button.textContent = "✓";
     showToast("บันทึกว่าไม่ใช้คำตอบนี้แล้ว");
     api("/admin/ai-office/reply-learning/event", {

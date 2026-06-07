@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.json">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="cwf-ai-office-version" content="ai-office-v23-icon-actions-compact-chat-20260608" />
+  <meta name="cwf-ai-office-version" content="ai-office-v24-chatgpt-reply-card-20260608" />
   <title>CWF AI Office</title>
   <link rel="stylesheet" href="/style.css">
   <style>
@@ -152,6 +152,92 @@
     .lineBubble.ai.not-used .replyText{background:#f8fafc;color:#64748b}
     .bubbleTitleRow{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
     .bubbleTitleRow .bubbleTitle{margin:0}
+
+
+    /* v24: ChatGPT-style customer reply card */
+    .lineBubble.ai{
+      align-self:stretch;
+      width:100%;
+      max-width:100%;
+      background:transparent;
+      border:0;
+      box-shadow:none;
+      padding:0;
+      border-radius:0;
+    }
+    .aiDraftCard{
+      width:100%;
+      background:#fff;
+      border:1px solid rgba(21,88,214,.13);
+      border-radius:24px;
+      padding:14px;
+      box-shadow:0 12px 28px rgba(7,21,47,.08);
+    }
+    .aiDraftHeader{
+      display:flex;
+      align-items:center;
+      justify-content:space-between;
+      gap:10px;
+      margin-bottom:10px;
+    }
+    .aiDraftHeader .bubbleTitle{
+      margin:0;
+      font-size:14px;
+      line-height:1.25;
+      color:#0d3d8d;
+      font-weight:1000;
+    }
+    .aiDraftHint{
+      color:#64748b;
+      font-size:12px;
+      font-weight:850;
+      white-space:nowrap;
+    }
+    .aiDraftCard .replyText{
+      display:block;
+      width:100%;
+      min-height:190px;
+      max-height:42vh;
+      border:1px solid rgba(21,88,214,.16);
+      border-radius:18px;
+      padding:14px;
+      resize:vertical;
+      background:#fff;
+      color:#10223f;
+      line-height:1.62;
+      font-size:16px;
+      box-shadow:inset 0 1px 0 rgba(15,23,42,.03);
+    }
+    .aiDraftActions{
+      display:flex;
+      align-items:center;
+      justify-content:flex-end;
+      gap:10px;
+      margin-top:12px;
+    }
+    .aiDraftActions .iconBtn{
+      width:46px;
+      height:46px;
+      min-width:46px;
+      min-height:46px;
+    }
+    .aiDraftCard.not-used,
+    .lineBubble.ai.not-used .aiDraftCard{
+      opacity:.74;
+      background:#f8fafc;
+      border-color:rgba(100,116,139,.25);
+    }
+    .lineBubble.ai.not-used .replyText{
+      background:#f8fafc;
+      color:#64748b;
+    }
+    @media(max-width:420px){
+      .aiDraftCard{padding:12px;border-radius:22px}
+      .aiDraftCard .replyText{min-height:210px;font-size:16px;padding:13px}
+      .aiDraftHint{display:none}
+      .aiDraftActions{justify-content:space-between}
+      .aiDraftActions .iconBtn{width:48px;height:48px;min-width:48px;min-height:48px}
+    }
 
     @media(min-width:760px){
       .brandLogo{width:56px;height:56px}.brandTitle p{display:block}.topBtn.inbox{font-size:16px;padding:0 20px}.topBtn,.topBtn.reload{min-height:54px}.topBtn.reload{width:54px}.office{padding:16px}.stage{min-height:560px}.map{background-image:url("/assets/ai-office-final/maps-clean/office-main-desktop.png")}.agent{width:var(--d-size,var(--size,92px))}.agentLabel{font-size:13px}.memoryForm{grid-template-columns:1fr 1fr}.memoryForm .wide{grid-column:1/-1}
@@ -300,6 +386,6 @@
   </section>
 
   <div class="toast" id="toast"></div>
-  <script src="/admin-ai-office.js?v=ai-office-v23-icon-actions-compact-chat-20260608"></script>
+  <script src="/admin-ai-office.js?v=ai-office-v24-chatgpt-reply-card-20260608"></script>
 </body>
 </html>
