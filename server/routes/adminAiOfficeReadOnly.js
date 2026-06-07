@@ -2,6 +2,7 @@ const express = require("express");
 const https = require("https");
 const fs = require("fs");
 const path = require("path");
+const { ensureLineInboxSchema } = require("./lineWebhook");
 
 const AI_OFFICE_DEFAULT_MODEL = "gpt-4.1-mini";
 const AI_OFFICE_JOB_LIMIT = 80;
@@ -53,6 +54,9 @@ const AI_OFFICE_AGENTS = {
   },
 };
 
+let lineInboxSchemaReady = false;
+const lineTranslationCache = new Map();
+
 function cleanText(value, max = 2000) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 }
@@ -71,6 +75,29 @@ function maskLineUserId(value) {
   const s = String(value || "");
   if (s.length <= 8) return s ? "LINE-USER" : "";
   return `${s.slice(0, 4)}...${s.slice(-4)}`;
+}
+
+async function ensureLineInboxSchemaOnce(pool) {
+  if (lineInboxSchemaReady) return;
+  await ensureLineInboxSchema(pool);
+  lineInboxSchemaReady = true;
+}
+
+function hasThaiText(value) {
+  return /[\u0E00-\u0E7F]/.test(String(value || ""));
+}
+
+function isLikelyForeignCustomerText(value) {
+  const text = String(value || "").trim();
+  if (!text) return false;
+  if (/[\u3040-\u30ff\u3400-\u9fff\uac00-\ud7af]/.test(text)) return true;
+  const latinCount = (text.match(/[A-Za-z]/g) || []).length;
+  return latinCount >= 6 && !hasThaiText(text);
+}
+
+function foreignCustomerLabel(conversation) {
+  const name = cleanText(conversation?.display_name, 120);
+  return `\u0e25\u0e39\u0e01\u0e04\u0e49\u0e32\u0e15\u0e48\u0e32\u0e07\u0e0a\u0e32\u0e15\u0e34${name ? `: ${name}` : ""}`;
 }
 
 function isDoneStatusExpr(alias = "j") {
@@ -339,6 +366,94 @@ function callOpenAI({ apiKey, model, prompt }) {
     req.write(payload);
     req.end();
   });
+}
+
+async function translateLineMessageToThai(text, { apiKey, model }) {
+  const source = cleanText(text, 2000);
+  if (!source || !apiKey || hasThaiText(source)) return "";
+  const cacheKey = `${model}:${source}`;
+  if (lineTranslationCache.has(cacheKey)) return lineTranslationCache.get(cacheKey);
+  try {
+    const translated = await callOpenAI({
+      apiKey,
+      model,
+      prompt: [
+        "Translate this customer LINE message into Thai for a CWF admin.",
+        "Return only the Thai translation. Do not add facts, actions, or formatting.",
+        "",
+        source,
+      ].join("\n"),
+    });
+    const safe = cleanText(translated, 2000);
+    lineTranslationCache.set(cacheKey, safe);
+    if (lineTranslationCache.size > 200) lineTranslationCache.clear();
+    return safe;
+  } catch (_) {
+    return "";
+  }
+}
+
+async function enrichLineMessageForAdmin(message, conversation, deps) {
+  const original = cleanText(message?.message_text, 4000);
+  const isForeign = message?.direction === "inbound" && isLikelyForeignCustomerText(original);
+  const thaiTranslation = isForeign ? await translateLineMessageToThai(original, deps) : "";
+  const label = isForeign ? foreignCustomerLabel(conversation) : "";
+  return {
+    ...message,
+    is_foreign_customer: isForeign,
+    foreign_customer_label: label,
+    original_message_text: isForeign ? original : "",
+    thai_translation: thaiTranslation,
+    message_text_for_admin: isForeign
+      ? [label, thaiTranslation ? `Thai translation: ${thaiTranslation}` : "", `Original: ${original}`].filter(Boolean).join("\n")
+      : original,
+  };
+}
+
+async function enrichLineMessagesForAdmin(messages, conversation, deps) {
+  const out = [];
+  for (const message of messages || []) {
+    out.push(await enrichLineMessageForAdmin(message, conversation, deps));
+  }
+  return out;
+}
+
+async function enrichLineInboxForAdmin(conversations, deps) {
+  const out = [];
+  for (const conversation of conversations || []) {
+    const probe = { direction: "inbound", message_text: conversation.last_message_text || "" };
+    const enriched = await enrichLineMessageForAdmin(probe, conversation, deps);
+    out.push({
+      ...conversation,
+      is_foreign_customer: enriched.is_foreign_customer,
+      foreign_customer_label: enriched.foreign_customer_label,
+      original_message_text: enriched.original_message_text,
+      thai_translation: enriched.thai_translation,
+      message_text_for_admin: enriched.message_text_for_admin,
+    });
+  }
+  return out;
+}
+
+function shouldAttachLineContext(agentKey, question) {
+  const key = String(agentKey || "").trim().toLowerCase();
+  const q = String(question || "").trim().toLowerCase();
+  if (["admin", "sales", "ops", "content"].includes(key)) return true;
+  return /line|ไลน์|แชท|chat|inbox|ลูกค้าทัก|ต่างชาติ|แปล|translation/.test(q);
+}
+
+async function loadRecentLineContext(pool, deps) {
+  await ensureLineInboxSchemaOnce(pool);
+  const conversations = await loadLineInbox(pool, 5);
+  const detailed = [];
+  for (const conversation of conversations.slice(0, 3)) {
+    const messages = await loadLineMessages(pool, conversation.id, 12);
+    detailed.push({
+      conversation,
+      messages: await enrichLineMessagesForAdmin(messages, conversation, deps),
+    });
+  }
+  return { available: true, conversations, recent_conversations: detailed };
 }
 
 function inferBuckets(question) {
@@ -651,6 +766,76 @@ async function loadLineMessages(pool, conversationId, limit) {
   }));
 }
 
+async function getLineConnectorStatus(pool) {
+  await ensureLineInboxSchemaOnce(pool);
+  const r = await pool.query(
+    `SELECT COUNT(*)::int AS conversation_count, MAX(last_message_at) AS latest_message_at
+       FROM public.line_conversations`
+  );
+  const row = r.rows?.[0] || {};
+  return {
+    configured: Boolean(String(process.env.LINE_CHANNEL_SECRET || "").trim()),
+    channel_secret_present: Boolean(String(process.env.LINE_CHANNEL_SECRET || "").trim()),
+    access_token_present: Boolean(String(process.env.LINE_CHANNEL_ACCESS_TOKEN || "").trim()),
+    webhook_path: "/line/webhook",
+    schema_ready: true,
+    conversation_count: Number(row.conversation_count || 0),
+    latest_message_at: row.latest_message_at || null,
+  };
+}
+
+async function buildConnectorStatus(pool) {
+  const connectors = {
+    cwf_database: { connected: false, summary_readable: false },
+    line_oa: { configured: false, schema_ready: false },
+    openai: {
+      configured: Boolean(String(process.env.OPENAI_API_KEY || "").trim()),
+      model: String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim() || AI_OFFICE_DEFAULT_MODEL,
+    },
+    google_ads: {
+      configured: Boolean(
+        String(process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "").trim()
+        && String(process.env.GOOGLE_ADS_CUSTOMER_ID || "").trim()
+      ),
+      developer_token_present: Boolean(String(process.env.GOOGLE_ADS_DEVELOPER_TOKEN || "").trim()),
+      customer_id_present: Boolean(String(process.env.GOOGLE_ADS_CUSTOMER_ID || "").trim()),
+      refresh_token_present: Boolean(String(process.env.GOOGLE_ADS_REFRESH_TOKEN || "").trim()),
+    },
+    github: {
+      configured: Boolean(String(process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "").trim()),
+      token_present: Boolean(String(process.env.GITHUB_TOKEN || process.env.GH_TOKEN || "").trim()),
+    },
+    render: {
+      configured: Boolean(String(process.env.RENDER_API_KEY || process.env.RENDER_TOKEN || "").trim()),
+      api_key_present: Boolean(String(process.env.RENDER_API_KEY || process.env.RENDER_TOKEN || "").trim()),
+      service_id_present: Boolean(String(process.env.RENDER_SERVICE_ID || process.env.RENDER_SERVICE_IDS || "").trim()),
+    },
+  };
+
+  try {
+    await pool.query("SELECT 1");
+    await loadSummary(pool);
+    connectors.cwf_database = { connected: true, summary_readable: true };
+  } catch (e) {
+    connectors.cwf_database = { connected: false, summary_readable: false, error: e.message || "database unavailable" };
+  }
+
+  try {
+    connectors.line_oa = await getLineConnectorStatus(pool);
+  } catch (e) {
+    connectors.line_oa = {
+      configured: Boolean(String(process.env.LINE_CHANNEL_SECRET || "").trim()),
+      channel_secret_present: Boolean(String(process.env.LINE_CHANNEL_SECRET || "").trim()),
+      access_token_present: Boolean(String(process.env.LINE_CHANNEL_ACCESS_TOKEN || "").trim()),
+      webhook_path: "/line/webhook",
+      schema_ready: false,
+      error: e.message || "LINE inbox unavailable",
+    };
+  }
+
+  return { ok: true, generated_at: new Date().toISOString(), connectors };
+}
+
 module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
   const pool = deps.pool;
   const requireAdminSession = deps.requireAdminSession;
@@ -671,14 +856,21 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
   router.get("/admin/ai-office/config", requireAdminSession, (req, res) => {
     return res.json({
       ok: true,
-      pin_required: Boolean(String(process.env.AI_OFFICE_ACCESS_PIN || "").trim()),
+      pin_required: false,
       model: String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim(),
     });
   });
 
+  router.get("/admin/ai-office/connectors/status", requireAdminSession, async (req, res) => {
+    try {
+      return res.json(await buildConnectorStatus(pool));
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "AI Office connector status failed" });
+    }
+  });
+
   router.get("/admin/ai-office/summary", requireAdminSession, async (req, res) => {
     try {
-      requireAiOfficePin(req);
       const summary = await loadSummary(pool);
       return res.json({ ok: true, summary });
     } catch (e) {
@@ -688,7 +880,6 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
 
   router.get("/admin/ai-office/jobs", requireAdminSession, async (req, res) => {
     try {
-      requireAiOfficePin(req);
       const bucket = cleanText(req.query.bucket, 40);
       const jobs = await loadJobs(pool, bucket, req.query.phone);
       return res.json({ ok: true, bucket, jobs });
@@ -699,7 +890,6 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
 
   router.get("/admin/ai-office/search-by-phone", requireAdminSession, async (req, res) => {
     try {
-      requireAiOfficePin(req);
       const phone = cleanText(req.query.phone, 80);
       const jobs = await loadJobs(pool, "phone", phone);
       return res.json({ ok: true, jobs });
@@ -710,7 +900,6 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
 
   router.post("/admin/ai-office/diagnostics", requireAdminSession, async (req, res) => {
     try {
-      requireAiOfficePin(req);
       const result = await runAiOfficeDiagnostics({ pool, req });
       return res.json(result);
     } catch (e) {
@@ -720,9 +909,11 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
 
   router.get("/admin/ai-office/line-inbox", requireAdminSession, async (req, res) => {
     try {
-      requireAiOfficePin(req);
+      await ensureLineInboxSchemaOnce(pool);
       const limit = clampLimit(req.query.limit, 30, 100);
-      const conversations = await loadLineInbox(pool, limit);
+      const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+      const model = String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim() || AI_OFFICE_DEFAULT_MODEL;
+      const conversations = await enrichLineInboxForAdmin(await loadLineInbox(pool, limit), { apiKey, model });
       return res.json({ ok: true, conversations });
     } catch (e) {
       return res.status(e.status || 500).json({ ok: false, error: e.message || "โหลด LINE inbox ไม่สำเร็จ" });
@@ -731,10 +922,12 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
 
   router.get("/admin/ai-office/line-conversations/:id/messages", requireAdminSession, async (req, res) => {
     try {
-      requireAiOfficePin(req);
+      await ensureLineInboxSchemaOnce(pool);
       const limit = clampLimit(req.query.limit, 50, 100);
+      const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
+      const model = String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim() || AI_OFFICE_DEFAULT_MODEL;
       const conversation = await loadLineConversation(pool, req.params.id);
-      const messages = await loadLineMessages(pool, req.params.id, limit);
+      const messages = await enrichLineMessagesForAdmin(await loadLineMessages(pool, req.params.id, limit), conversation, { apiKey, model });
       return res.json({ ok: true, conversation, messages });
     } catch (e) {
       return res.status(e.status || 500).json({ ok: false, error: e.message || "โหลดข้อความ LINE ไม่สำเร็จ" });
@@ -743,7 +936,7 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
 
   router.post("/admin/ai-office/line-draft-reply", requireAdminSession, async (req, res) => {
     try {
-      requireAiOfficePin(req);
+      await ensureLineInboxSchemaOnce(pool);
       const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
       if (!apiKey) return res.status(503).json({ ok: false, error: "ยังไม่ได้ตั้งค่า OPENAI_API_KEY สำหรับ AI Office" });
 
@@ -754,10 +947,10 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       const agent = getLineAgent(req.body?.agent);
       const instruction = cleanText(req.body?.instruction, 1000);
       const conversation = await loadLineConversation(pool, conversationId);
-      const messages = await loadLineMessages(pool, conversationId, 80);
+      const model = String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim() || AI_OFFICE_DEFAULT_MODEL;
+      const messages = await enrichLineMessagesForAdmin(await loadLineMessages(pool, conversationId, 80), conversation, { apiKey, model });
       if (!messages.length) return res.status(400).json({ ok: false, error: "ยังไม่มีข้อความในแชทนี้" });
 
-      const model = String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim() || AI_OFFICE_DEFAULT_MODEL;
       const answer = await callOpenAI({
         apiKey,
         model,
@@ -772,7 +965,6 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
 
   router.post("/admin/ai-office/ask", requireAdminSession, async (req, res) => {
     try {
-      requireAiOfficePin(req);
       const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
       if (!apiKey) return res.status(503).json({ ok: false, error: "ยังไม่ได้ตั้งค่า OPENAI_API_KEY สำหรับ AI Office" });
 
@@ -792,6 +984,13 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       }
 
       const model = String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim() || AI_OFFICE_DEFAULT_MODEL;
+      if (shouldAttachLineContext(req.body?.agent, question)) {
+        try {
+          context.line = await loadRecentLineContext(pool, { apiKey, model });
+        } catch (lineError) {
+          context.line = { available: false, error: lineError.message || "LINE context unavailable" };
+        }
+      }
       const answer = await callOpenAI({ apiKey, model, prompt: buildGroundedPrompt(question, context, agent) });
       return res.json({ ok: true, answer, context, agent });
     } catch (e) {

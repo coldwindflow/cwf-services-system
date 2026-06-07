@@ -70,6 +70,14 @@ function normalizeLineEvent(event) {
   };
 }
 
+let lineInboxSchemaReady = false;
+
+async function ensureLineInboxSchemaOnce(pool) {
+  if (lineInboxSchemaReady) return;
+  await ensureLineInboxSchema(pool);
+  lineInboxSchemaReady = true;
+}
+
 async function storeInboundLineMessage(pool, event, profile = null) {
   const data = normalizeLineEvent(event);
   if (!data.line_user_id) return { stored: false, reason: "missing_user_id" };
@@ -180,6 +188,7 @@ function createLineWebhookRoutes({ pool }) {
 
       res.status(200).json({ ok: true });
 
+      await ensureLineInboxSchemaOnce(pool);
       for (const event of events) {
         try {
           const lineUserId = safeText(event?.source?.userId, 255);
