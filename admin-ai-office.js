@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const VERSION = "CWF AI Office Clean LINE Chat + Mounted Memory v22 loaded";
+  const VERSION = "CWF AI Office Icon Actions + Compact Chat v23 loaded";
   console.info(VERSION);
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -47,11 +47,11 @@
     lastCustomerMessage: "",
     lastAgentRetry: null,
     lastLineRetry: null,
-    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV22") || "{}"),
+    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV23") || "{}"),
   };
 
   function saveHistory() {
-    localStorage.setItem("cwfAiOfficeAgentHistoryV22", JSON.stringify(state.agentHistory));
+    localStorage.setItem("cwfAiOfficeAgentHistoryV23", JSON.stringify(state.agentHistory));
   }
 
   function currentAgent() {
@@ -403,12 +403,15 @@
     const text = reply || "ยังไม่ได้ข้อความพร้อมส่งลูกค้า";
     $("#lineMessages").insertAdjacentHTML("beforeend", `
       <div class="lineBubble ai">
-        <div class="bubbleTitle">ข้อความพร้อมส่งลูกค้า</div>
-        <textarea class="replyText" data-reply-text>${esc(text)}</textarea>
-        <div class="bubbleActions">
-          <button class="blueBtn" type="button" data-copy-reply>คัดลอกข้อความนี้</button>
-          <button class="whiteBtn" type="button" data-save-from-reply>บันทึกเป็นตัวอย่างคำตอบ</button>
+        <div class="bubbleTitleRow">
+          <div class="bubbleTitle">ข้อความพร้อมส่งลูกค้า</div>
+          <div class="bubbleActions" aria-label="จัดการคำตอบ AI">
+            <button class="iconBtn copyIcon" type="button" data-copy-reply aria-label="คัดลอกข้อความนี้" title="คัดลอกข้อความนี้">⧉</button>
+            <button class="iconBtn likeIcon" type="button" data-save-from-reply aria-label="บันทึกเป็นตัวอย่างคำตอบ" title="บันทึกเป็นตัวอย่างคำตอบ">👍</button>
+            <button class="iconBtn dislikeIcon" type="button" data-dislike-reply aria-label="ไม่ใช้คำตอบนี้" title="ไม่ใช้คำตอบนี้">👎</button>
+          </div>
         </div>
+        <textarea class="replyText" data-reply-text>${esc(text)}</textarea>
       </div>
     `);
     const box = $("#lineMessages");
@@ -454,9 +457,9 @@
     const text = bubble?.querySelector("[data-reply-text]")?.value || "";
     if (!clean(text)) return;
     await navigator.clipboard.writeText(text);
-    button.textContent = "คัดลอกแล้ว";
+    button.textContent = "✓";
     showToast("คัดลอกแล้ว นำไปวางใน LINE OA ได้เลย");
-    setTimeout(() => { button.textContent = "คัดลอกข้อความนี้"; }, 1200);
+    setTimeout(() => { button.textContent = "⧉"; }, 1200);
     api("/admin/ai-office/reply-learning/event", {
       method: "POST",
       body: JSON.stringify({
@@ -467,6 +470,27 @@
         customer_message: state.lastCustomerMessage,
         final_admin_reply: text,
         source: "customer_chat_copy"
+      })
+    }).catch(() => {});
+  }
+
+  function dislikeReply(button) {
+    const bubble = button.closest(".lineBubble.ai");
+    const text = bubble?.querySelector("[data-reply-text]")?.value || "";
+    bubble?.classList.add("not-used");
+    button.textContent = "✓";
+    showToast("บันทึกว่าไม่ใช้คำตอบนี้แล้ว");
+    api("/admin/ai-office/reply-learning/event", {
+      method: "POST",
+      body: JSON.stringify({
+        event_type: "disliked",
+        conversation_id: state.selectedConversation?.id || null,
+        agent_key: state.agent || "admin",
+        situation_type: "general",
+        customer_message: state.lastCustomerMessage,
+        ai_reply: text,
+        final_admin_reply: "",
+        source: "customer_chat_dislike"
       })
     }).catch(() => {});
   }
@@ -576,6 +600,7 @@
       if (e.target.closest("[data-open-memory]")) return openMemoryPanel();
       if (e.target.closest("[data-prefill-memory]")) return prefillMemoryFromChat();
       if (e.target.closest("[data-copy-reply]")) return copyReply(e.target.closest("[data-copy-reply]"));
+      if (e.target.closest("[data-dislike-reply]")) return dislikeReply(e.target.closest("[data-dislike-reply]"));
       if (e.target.closest("[data-save-from-reply]")) {
         const bubble = e.target.closest(".lineBubble.ai");
         return prefillMemoryFromChat(bubble?.querySelector("[data-reply-text]")?.value || "");

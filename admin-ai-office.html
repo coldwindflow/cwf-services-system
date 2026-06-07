@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.json">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="cwf-ai-office-version" content="ai-office-v22-clean-line-chat-mounted-memory-20260608" />
+  <meta name="cwf-ai-office-version" content="ai-office-v23-icon-actions-compact-chat-20260608" />
   <title>CWF AI Office</title>
   <link rel="stylesheet" href="/style.css">
   <style>
@@ -141,6 +141,18 @@
 
     .memoryPanel{position:fixed;inset:auto 0 0 0;z-index:120;display:none;max-height:88vh;background:#f7fbff;border-radius:28px 28px 0 0;box-shadow:0 -18px 48px rgba(7,21,47,.28);overflow:hidden}.memoryPanel.open{display:flex;flex-direction:column}.memoryTop{flex:0 0 auto;display:flex;align-items:center;gap:10px;padding:14px 16px;background:#06163d;color:#fff}.memoryTop b{font-size:18px;flex:1}.memoryBody{padding:12px;overflow:auto}.memoryForm{display:grid;grid-template-columns:1fr;gap:9px;background:#fff;border:1px solid rgba(21,88,214,.13);border-radius:22px;padding:12px;box-shadow:0 10px 22px rgba(7,21,47,.07)}.memoryForm label{display:flex;flex-direction:column;gap:5px;color:#33435f;font-size:12px;font-weight:950}.memoryForm input,.memoryForm select,.memoryForm textarea{border:1px solid var(--line);border-radius:14px;padding:10px;background:#fff;color:#10223f}.memoryForm textarea{min-height:82px;resize:vertical}.memoryList{display:flex;flex-direction:column;gap:10px;margin-top:12px}.memoryItem{background:#fff;border:1px solid rgba(21,88,214,.13);border-radius:18px;padding:12px;box-shadow:0 8px 18px rgba(7,21,47,.06)}.memoryItem b{display:block;color:#0d3d8d}.memoryItem p{margin:6px 0 0;white-space:pre-wrap;overflow-wrap:anywhere}.emptyState{margin:auto;text-align:center;color:#63718a;font-weight:850;padding:24px 14px}
 
+
+    .smallAction.iconOnly{width:42px;min-width:42px;height:38px;padding:0;font-size:20px;display:grid;place-items:center;line-height:1}
+    .bubbleActions{justify-content:flex-end;align-items:center}
+    .iconBtn{appearance:none;border:1px solid rgba(21,88,214,.14);width:44px;height:44px;min-width:44px;min-height:44px;border-radius:999px;padding:0;display:grid;place-items:center;font-size:20px;font-weight:1000;box-shadow:0 8px 18px rgba(7,21,47,.08);line-height:1}
+    .iconBtn.copyIcon{background:linear-gradient(135deg,#0d3d8d,#1769ff);color:#fff;border:0}
+    .iconBtn.likeIcon{background:#ecfdf3;color:#067647;border-color:rgba(6,118,71,.16)}
+    .iconBtn.dislikeIcon{background:#fff1f2;color:#b42318;border-color:rgba(180,35,24,.16)}
+    .lineBubble.ai.not-used{opacity:.72;background:#f8fafc;border-color:rgba(100,116,139,.25)}
+    .lineBubble.ai.not-used .replyText{background:#f8fafc;color:#64748b}
+    .bubbleTitleRow{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px}
+    .bubbleTitleRow .bubbleTitle{margin:0}
+
     @media(min-width:760px){
       .brandLogo{width:56px;height:56px}.brandTitle p{display:block}.topBtn.inbox{font-size:16px;padding:0 20px}.topBtn,.topBtn.reload{min-height:54px}.topBtn.reload{width:54px}.office{padding:16px}.stage{min-height:560px}.map{background-image:url("/assets/ai-office-final/maps-clean/office-main-desktop.png")}.agent{width:var(--d-size,var(--size,92px))}.agentLabel{font-size:13px}.memoryForm{grid-template-columns:1fr 1fr}.memoryForm .wide{grid-column:1/-1}
     }
@@ -216,8 +228,8 @@
       <div class="overlayHead">
         <button class="squareBtn" type="button" data-inbox-back>‹</button>
         <div class="overlayTitle"><b id="inboxTitle">กล่องแชทลูกค้า</b><span id="inboxSub">เลือกแชทลูกค้า แล้วถาม AI จากบริบทแชทนั้น</span></div>
-        <button class="smallAction" type="button" data-open-memory>สมองเสริม</button>
-        <button class="smallAction" type="button" id="lineRefresh">รีเฟรช</button>
+        <button class="smallAction iconOnly" type="button" data-open-memory aria-label="สมองเสริม" title="สมองเสริม">🧠</button>
+        <button class="smallAction iconOnly" type="button" id="lineRefresh" aria-label="รีเฟรช" title="รีเฟรช">↻</button>
       </div>
     </div>
     <div class="overlayBody">
@@ -288,6 +300,6 @@
   </section>
 
   <div class="toast" id="toast"></div>
-  <script src="/admin-ai-office.js?v=ai-office-v22-clean-line-chat-mounted-memory-20260608"></script>
+  <script src="/admin-ai-office.js?v=ai-office-v23-icon-actions-compact-chat-20260608"></script>
 </body>
 </html>
