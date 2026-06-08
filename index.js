@@ -55,6 +55,7 @@ const createAdminAiOfficeReadOnlyRoutes = require("./server/routes/adminAiOffice
 const createAdminAiOfficeSharedMemoryV27Routes = require("./server/routes/adminAiOfficeSharedMemoryV27");
 const createAdminAiOfficeLineDraftV27Routes = require("./server/routes/adminAiOfficeLineDraftV27");
 const createAdminAiOfficeSmartAssistantV28Routes = require("./server/routes/adminAiOfficeSmartAssistantV28");
+const createAdminAiOfficeBrainManagerRoutes = require("./server/routes/adminAiOfficeBrainManager");
 const { createLineWebhookRoutes, ensureLineInboxSchema } = require("./server/routes/lineWebhook");
 const {
   calculateTechnicianBaseStatus,
@@ -4386,6 +4387,7 @@ app.use(createAdminAiOfficeSharedMemoryV27Routes({ pool, requireAdminSession }))
 app.use(createAdminAiOfficeLineDraftV27Routes({ pool, requireAdminSession })); // CWF AI Office selected-question LINE draft override
 app.use(createAdminAiOfficeSmartAssistantV28Routes({ pool, requireAdminSession, accounting: aiOfficeAccountingDeps })); // CWF AI Office deterministic payout + availability
 app.use(createAdminAiOfficeReadOnlyRoutes({ pool, requireAdminSession, accounting: aiOfficeAccountingDeps }));
+app.use(createAdminAiOfficeBrainManagerRoutes({ pool, requireAdminSession })); // CWF AI Office Brain Manager
 app.get("/admin/ai-office", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
 app.get("/admin/ai-office.html", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
 app.get("/admin-ai-office.html", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));

@@ -502,6 +502,50 @@
           <button class="whiteBtn" type="button" id="memoryReload">โหลดคลังคำตอบ</button>
         </div>
       </form>
+      <form class="memoryForm" id="brainImportForm" style="margin-top:12px">
+        <label>สมอง AI
+          <input id="brainFile" type="file" accept=".json,.jsonl,.csv,application/json,text/csv">
+        </label>
+        <label>โหมดบันทึก
+          <select id="brainCommitMode"><option value="append">append</option><option value="replace_same_source">replace_same_source</option></select>
+        </label>
+        <label>source
+          <input id="brainSource" placeholder="manual_import">
+        </label>
+        <div class="wide bubbleActions">
+          <button class="whiteBtn" type="submit">Preview import</button>
+          <button class="blueBtn" type="button" id="brainCommit" disabled>Commit import</button>
+          <button class="whiteBtn" type="button" id="brainExport">Export brain</button>
+        </div>
+        <div class="wide" id="brainWarnings"></div>
+        <div class="memoryList wide" id="brainPreview"></div>
+      </form>
+      <form class="memoryForm" id="brainSearchForm" style="margin-top:12px">
+        <label class="wide">ค้นหาสมอง AI
+          <input id="brainSearch" placeholder="price, warranty, objection">
+        </label>
+        <label>item_type
+          <select id="brainTypeFilter">
+            <option value="">all</option>
+            <option value="service_fact">service_fact</option>
+            <option value="pricing_rule">pricing_rule</option>
+            <option value="sales_playbook">sales_playbook</option>
+            <option value="objection_handler">objection_handler</option>
+            <option value="approved_reply">approved_reply</option>
+            <option value="bad_reply_pattern">bad_reply_pattern</option>
+            <option value="admin_correction">admin_correction</option>
+            <option value="policy_rule">policy_rule</option>
+            <option value="workflow_rule">workflow_rule</option>
+            <option value="technician_rule">technician_rule</option>
+            <option value="customer_stage_rule">customer_stage_rule</option>
+          </select>
+        </label>
+        <label>agent_key
+          <select id="brainAgentFilter"><option value="">all</option><option value="all">all</option><option value="admin">admin</option><option value="sales">sales</option><option value="ops">ops</option><option value="line">line</option></select>
+        </label>
+        <div class="wide"><button class="whiteBtn" type="submit">ค้นหา</button></div>
+      </form>
+      <div class="memoryList" id="brainList"></div>
       <div class="memoryList" id="memoryList"></div>
     </div>
   </section>

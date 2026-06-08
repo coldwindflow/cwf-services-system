@@ -1,4 +1,5 @@
 const express = require("express");
+const { loadAiBrainContext } = require("./adminAiOfficeBrainManager");
 
 const BANGKOK_TZ = "Asia/Bangkok";
 const DEFAULT_WORK_START = "09:00";
@@ -592,6 +593,7 @@ module.exports = function createAdminAiOfficeSmartAssistantV28Routes(deps = {}) 
       if (isPayoutQuestion(question)) {
         const payoutId = cleanText(req.body?.payout_id || req.query?.payout_id, 80) || currentBangkokPayoutId();
         const summary = await buildPayoutSummary({ accounting, payoutId });
+        const brain = await loadAiBrainContext(pool, { query: question, agent_key: cleanText(req.body?.agent || "admin", 40), intent: "payout_logic", service_type: "", customer_stage: "", language: "th", limit: 6 }).catch(() => ({ items: [] }));
         const answer = formatPayoutAnswer(summary);
         await logMemory(pool, req, {
           source: "accounting_payout_summary",
@@ -602,14 +604,14 @@ module.exports = function createAdminAiOfficeSmartAssistantV28Routes(deps = {}) 
           action_status: summary.ok ? "answered" : "diagnostic",
           situation_type: "payout_logic",
           tags: ["deterministic", "payout", "read_only"],
-          metadata: { payout_summary: summary },
+          metadata: { payout_summary: summary, used_ai_brain_item_ids: (brain.items || []).map((b) => b.id) },
         });
         return res.json({
           ok: true,
           answer,
           payout_summary: summary,
           agent: { key: req.body?.agent || "admin", name: "Admin AI", role: "deterministic accounting payout summary" },
-          context: { payout_summary: summary },
+          context: { payout_summary: summary, ai_brain: brain },
         });
       }
 
@@ -619,6 +621,7 @@ module.exports = function createAdminAiOfficeSmartAssistantV28Routes(deps = {}) 
       const jobs = await loadDayJobs(pool, dateInfo.iso);
       const activeTechnicians = /ช่างทั้งหมด/.test(question) ? await loadActiveTechnicians(pool) : [];
       const result = analyzeAvailability({ jobs, question, activeTechnicians });
+      const brain = await loadAiBrainContext(pool, { query: question, agent_key: cleanText(req.body?.agent || "ops", 40), intent: "booking_request", service_type: "", customer_stage: "", language: "th", limit: 6 }).catch(() => ({ items: [] }));
       const answer = answerAvailability(result);
 
       await logMemory(pool, req, {
@@ -630,14 +633,14 @@ module.exports = function createAdminAiOfficeSmartAssistantV28Routes(deps = {}) 
         action_status: "answered",
         situation_type: "availability_logic",
         tags: ["deterministic", "availability", "v28"],
-        metadata: { availability_result: result },
+        metadata: { availability_result: result, used_ai_brain_item_ids: (brain.items || []).map((b) => b.id) },
       });
 
       return res.json({
         ok: true,
         answer,
         agent: { key: req.body?.agent || "admin", name: "Admin AI", role: "deterministic availability engine" },
-        context: { availability_result: result },
+        context: { availability_result: result, ai_brain: brain },
       });
     } catch (e) {
       console.error("V28 /admin/ai-office/ask availability error:", e);

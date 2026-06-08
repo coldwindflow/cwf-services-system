@@ -117,6 +117,7 @@
     lastAgentRetry: null,
     lastLineRetry: null,
     agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV28") || "{}"),
+    brainPreviewItems: [],
   };
 
 
@@ -861,6 +862,7 @@
     if (prefill.situation_type) $("#memSituation").value = prefill.situation_type;
     if (prefill.language) $("#memLanguage").value = prefill.language;
     loadMemoryExamples();
+    loadBrainItems();
   }
 
   function closeMemoryPanel() {
@@ -945,6 +947,115 @@
   }
 
 
+  function renderBrainPreview(data = {}) {
+    const box = $("#brainPreview");
+    const warnings = $("#brainWarnings");
+    state.brainPreviewItems = data.preview_items || [];
+    if ($("#brainCommit")) $("#brainCommit").disabled = !state.brainPreviewItems.length;
+    if (warnings) {
+      const warn = data.warnings || [];
+      warnings.innerHTML = warn.length ? `<div class="memoryItem"><b>Warnings</b><p>${esc(warn.join("\n"))}</p></div>` : "";
+    }
+    if (!box) return;
+    if (!state.brainPreviewItems.length) {
+      box.innerHTML = `<div class="emptyState">No valid brain items to import</div>`;
+      return;
+    }
+    box.innerHTML = state.brainPreviewItems.slice(0, 20).map((item) => `
+      <article class="memoryItem">
+        <b>${esc(item.item_type)} · ${esc(item.agent_key || "all")} · ${esc(item.intent || "general")}</b>
+        <p><strong>${esc(item.title || "(no title)")}</strong></p>
+        <p>${esc(item.content || "")}</p>
+        ${item.warnings?.length ? `<p><strong>Warnings:</strong> ${esc(item.warnings.join(", "))}</p>` : ""}
+      </article>
+    `).join("");
+  }
+
+  async function previewBrainImport(e) {
+    e.preventDefault();
+    const file = $("#brainFile")?.files?.[0];
+    if (!file) return alert("Please choose a JSON, JSONL, or CSV brain file");
+    const form = new FormData();
+    form.append("file", file);
+    form.append("source", $("#brainSource")?.value || "manual_import");
+    try {
+      const res = await fetch("/admin/ai-office/brain/import-preview", { method:"POST", body:form });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) throw new Error(data.error || "IMPORT_PREVIEW_FAILED");
+      renderBrainPreview(data);
+      showToast(`Preview ${data.valid_count || 0} valid / ${data.invalid_count || 0} rejected`);
+    } catch (err) {
+      alert(`Preview failed: ${err.message}`);
+    }
+  }
+
+  async function commitBrainImport() {
+    if (!state.brainPreviewItems.length) return;
+    try {
+      const data = await api("/admin/ai-office/brain/import-commit", {
+        method:"POST",
+        body:JSON.stringify({
+          mode: $("#brainCommitMode")?.value || "append",
+          source: $("#brainSource")?.value || "manual_import",
+          items: state.brainPreviewItems,
+        })
+      });
+      renderBrainPreview({ preview_items: [], warnings: [] });
+      await loadBrainItems();
+      showToast(`Imported ${data.saved_count || 0} brain items`);
+    } catch (err) {
+      alert(`Commit failed: ${err.message}`);
+    }
+  }
+
+  function exportBrain() {
+    window.location.href = "/admin/ai-office/brain/export?format=json";
+  }
+
+  async function loadBrainItems(e) {
+    if (e?.preventDefault) e.preventDefault();
+    const box = $("#brainList");
+    if (!box) return;
+    box.innerHTML = `<div class="emptyState">Loading AI brain...</div>`;
+    const qs = new URLSearchParams();
+    const q = clean($("#brainSearch")?.value || "");
+    const itemType = $("#brainTypeFilter")?.value || "";
+    const agentKey = $("#brainAgentFilter")?.value || "";
+    if (q) qs.set("q", q);
+    if (itemType) qs.set("item_type", itemType);
+    if (agentKey) qs.set("agent_key", agentKey);
+    qs.set("active", "true");
+    try {
+      const data = await api(`/admin/ai-office/brain/items?${qs.toString()}`);
+      const items = data.items || [];
+      if (!items.length) {
+        box.innerHTML = `<div class="emptyState">No active AI brain items found</div>`;
+        return;
+      }
+      box.innerHTML = items.map((item) => `
+        <article class="memoryItem" data-brain-id="${esc(item.id)}">
+          <b>${esc(item.item_type)} · ${esc(item.agent_key || "all")} · P${esc(item.priority || "")}</b>
+          <p><strong>${esc(item.title || "(no title)")}</strong></p>
+          <p>${esc(item.content || "")}</p>
+          <div class="bubbleActions"><button class="dangerBtn" type="button" data-disable-brain="${esc(item.id)}">Disable</button></div>
+        </article>
+      `).join("");
+    } catch (err) {
+      box.innerHTML = `<div class="emptyState">Load failed: ${esc(err.message)}</div>`;
+    }
+  }
+
+  async function disableBrainItem(id) {
+    if (!id) return;
+    try {
+      await api(`/admin/ai-office/brain/items/${id}/disable`, { method:"PATCH", body:"{}" });
+      await loadBrainItems();
+      showToast("Brain item disabled");
+    } catch (err) {
+      alert(`Disable failed: ${err.message}`);
+    }
+  }
+
   function handleComposerKeydown(formSelector) {
     return (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -967,6 +1078,7 @@
       if (e.target.closest("[data-retry-agent]")) return submitAgentQuestion(null, state.lastAgentRetry || "");
       if (e.target.closest("[data-back-list]")) return showInboxList();
       if (e.target.closest("[data-open-memory]")) return openMemoryPanel();
+      if (e.target.closest("[data-disable-brain]")) return disableBrainItem(e.target.closest("[data-disable-brain]").dataset.disableBrain);
       if (e.target.closest("[data-prefill-memory]")) return prefillMemoryFromChat();
       if (e.target.closest("[data-edit-reply]")) return toggleEditReply(e.target.closest("[data-edit-reply]"));
       if (e.target.closest("[data-jump-source-message]")) return jumpToCustomerMessage(e.target.closest("[data-jump-source-message]").dataset.jumpSourceMessage);
@@ -997,6 +1109,10 @@
     $("#memoryForm")?.addEventListener("submit", saveMemoryExample);
     $("#memoryClose")?.addEventListener("click", closeMemoryPanel);
     $("#memoryReload")?.addEventListener("click", loadMemoryExamples);
+    $("#brainImportForm")?.addEventListener("submit", previewBrainImport);
+    $("#brainCommit")?.addEventListener("click", commitBrainImport);
+    $("#brainExport")?.addEventListener("click", exportBrain);
+    $("#brainSearchForm")?.addEventListener("submit", loadBrainItems);
     $$("textarea").forEach((ta) => ta.addEventListener("input", () => autoGrow(ta)));
   }
 
