@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.json">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="cwf-ai-office-version" content="ai-office-v25-select-question-memory-context-20260608" />
+  <meta name="cwf-ai-office-version" content="ai-office-v28-availability-autolearn-20260608" />
   <title>CWF AI Office</title>
   <link rel="stylesheet" href="/style.css">
   <style>
@@ -309,6 +309,46 @@
       white-space:nowrap;
     }
 
+
+    /* v26: natural ChatGPT/LINE style AI reply bubble */
+    .lineBubble.ai{
+      align-self:stretch;
+      width:100%;
+      max-width:100%;
+      background:transparent!important;
+      border:0!important;
+      box-shadow:none!important;
+      padding:0!important;
+      border-radius:0!important;
+    }
+    .aiNaturalBubble{
+      width:100%;
+      background:#fff;
+      border:1px solid rgba(21,88,214,.12);
+      border-radius:24px;
+      padding:14px;
+      box-shadow:0 10px 24px rgba(7,21,47,.07);
+    }
+    .aiNaturalTop{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px;color:#64748b;font-size:12px;font-weight:900}
+    .aiNaturalLabel{color:#0d3d8d;font-weight:1000;font-size:13px}
+    .aiNaturalSource{color:#94a3b8;font-size:12px;font-weight:850;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:65%}
+    .replyDisplay{white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.62;font-size:16px;color:#10223f;padding:2px 2px 4px}
+    .aiNaturalBubble .replyText{display:none;width:100%;min-height:180px;max-height:42vh;border:1px solid rgba(21,88,214,.16);border-radius:18px;padding:14px;resize:vertical;background:#fff;color:#10223f;line-height:1.62;font-size:16px;margin-top:8px}
+    .aiNaturalBubble.editing .replyDisplay{display:none}
+    .aiNaturalBubble.editing .replyText{display:block}
+    .aiNaturalActions{display:flex;align-items:center;justify-content:flex-end;gap:9px;margin-top:12px;padding-top:10px;border-top:1px solid rgba(15,23,42,.07)}
+    .iconBtn.editIcon{background:#eef6ff;color:#0d3d8d;border-color:rgba(21,88,214,.16)}
+    .aiNaturalBubble.not-used{opacity:.68;background:#f8fafc;border-color:rgba(100,116,139,.25)}
+    .aiNaturalBubble.not-used .replyDisplay{color:#64748b}
+    .selectedQuestionBar button[data-selected-question-add-reply]{background:#0d3d8d;color:#fff}
+    @media(max-width:420px){
+      .aiNaturalBubble{border-radius:22px;padding:13px}
+      .replyDisplay{font-size:16px}
+      .aiNaturalActions{justify-content:space-between}
+      .aiNaturalActions .iconBtn{width:46px;height:46px;min-width:46px;min-height:46px}
+      .aiNaturalSource{max-width:52%}
+    }
+
     @media(min-width:760px){
       .brandLogo{width:56px;height:56px}.brandTitle p{display:block}.topBtn.inbox{font-size:16px;padding:0 20px}.topBtn,.topBtn.reload{min-height:54px}.topBtn.reload{width:54px}.office{padding:16px}.stage{min-height:560px}.map{background-image:url("/assets/ai-office-final/maps-clean/office-main-desktop.png")}.agent{width:var(--d-size,var(--size,92px))}.agentLabel{font-size:13px}.memoryForm{grid-template-columns:1fr 1fr}.memoryForm .wide{grid-column:1/-1}
     }
@@ -398,6 +438,7 @@
           <div class="lineChat">
             <div class="selectedQuestionBar" id="selectedQuestionBar">
               <span id="selectedQuestionText">เลือกคำถามลูกค้าแล้ว</span>
+              <button type="button" data-selected-question-add-reply aria-label="เพิ่มคำตอบจริงเป็นสมองเสริม" title="เพิ่มคำตอบจริง">＋</button>
               <button type="button" data-clear-selected-question aria-label="ยกเลิกคำถามที่เลือก">×</button>
             </div>
             <main class="lineChatMessages" id="lineMessages"></main>
@@ -460,6 +501,6 @@
   </section>
 
   <div class="toast" id="toast"></div>
-  <script src="/admin-ai-office.js?v=ai-office-v25-select-question-memory-context-20260608"></script>
+  <script src="/admin-ai-office.js?v=ai-office-v28-availability-autolearn-20260608"></script>
 </body>
 </html>

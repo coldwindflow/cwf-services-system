@@ -1,6 +1,6 @@
 (() => {
   "use strict";
-  const VERSION = "CWF AI Office Select Question + Persistent Context v25 loaded";
+  const VERSION = "CWF AI Office Availability Engine + Auto Learning v28 loaded";
   console.info(VERSION);
 
   const $ = (sel, root = document) => root.querySelector(sel);
@@ -30,6 +30,72 @@
     return data || {};
   };
 
+  async function loadSharedMemoryContext(payload = {}) {
+    try {
+      const data = await api("/admin/ai-office/shared-memory/context", {
+        method: "POST",
+        body: JSON.stringify({
+          query: payload.query || "",
+          agent_key: payload.agent_key || state.agent || "admin",
+          conversation_id: payload.conversation_id || state.selectedConversation?.id || null,
+          selected_customer_question: payload.selected_customer_question || state.selectedCustomerQuestion || "",
+          limit: payload.limit || 8,
+        }),
+      });
+      return data.context || null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function formatSharedMemoryForPrompt(context) {
+    if (!context || !Array.isArray(context.items) || !context.items.length) return "";
+    const lines = context.items.slice(0, 8).map((m, idx) => {
+      const source = m.source || "memory";
+      const sit = m.situation_type || "general";
+      const customer = m.selected_customer_question || m.customer_message || "";
+      const reply = m.final_admin_reply || m.ai_reply || "";
+      return `${idx + 1}. [${source}/${sit}] ลูกค้า: ${customer}\n   คำตอบ/บทเรียน: ${reply}`;
+    });
+    return `\nสมองกลาง CWF ที่เกี่ยวข้อง:\n${lines.join("\n")}\n`;
+  }
+
+  function logSharedMemoryEvent(eventType, payload = {}) {
+    return api("/admin/ai-office/shared-memory/event", {
+      method: "POST",
+      body: JSON.stringify({
+        source: payload.source || "frontend",
+        event_type: eventType,
+        agent_key: payload.agent_key || state.agent || "admin",
+        conversation_id: payload.conversation_id || state.selectedConversation?.id || null,
+        selected_customer_question: payload.selected_customer_question || state.selectedCustomerQuestion || "",
+        customer_message: payload.customer_message || state.lastCustomerMessage || "",
+        ai_reply: payload.ai_reply || "",
+        final_admin_reply: payload.final_admin_reply || "",
+        action_status: payload.action_status || eventType,
+        situation_type: payload.situation_type || "general",
+        service_type: payload.service_type || "",
+        tags: payload.tags || [],
+        metadata: payload.metadata || {},
+      }),
+    }).catch(() => {});
+  }
+
+
+  function looksLikeAdminCorrection(text) {
+    const t = String(text || "").toLowerCase();
+    return /(ผิด|ไม่ใช่|อย่าบอก|ห้ามบอก|ยังว่าง|ยังไม่ควร|ควรตอบ|ต้องตอบ|จำไว้|คราวหน้า|งง|มั่ว|โง่|ไม่ตรง|ตอบผิด)/.test(t);
+  }
+
+  function correctionSituation(text) {
+    const t = String(text || "").toLowerCase();
+    if (/(คิว|ว่าง|ช่าง|เวลา|บ่าย|เช้า|เย็น|นัด|เต็ม)/.test(t)) return "availability_logic";
+    if (/(ราคา|แพง|ส่วนลด|โปร)/.test(t)) return "sales_reply_logic";
+    if (/(ลูกค้า|แชท|ตอบ|line|ไลน์)/.test(t)) return "customer_reply_style";
+    return "admin_correction";
+  }
+
+
   const agentDefs = [
     { key:"admin", name:"Admin AI", role:"หัวหน้าแอดมิน / ใช้ข้อมูลงานจริง", brain:"คิดแบบหัวหน้าแอดมิน CWF: ตอบสั้น ใช้งานจริง ตรวจข้อมูลก่อน ไม่แต่งข้อมูล ไม่ส่งข้อความแทนแอดมิน", x:"26%", y:"60%", size:"66px", d:"78px", avatar:"/assets/ai-office-final/characters-clean/admin/idle.png" },
     { key:"sales", name:"Sales AI", role:"เซลส์ปิดงาน / ราคา / ลูกค้าบอกแพง", brain:"คิดแบบเซลส์มืออาชีพ CWF: ราคา/คุณค่า/ความเชื่อมั่น/ปิดนัด ใช้ภาษาสุภาพ ไม่เวอร์ ไม่กดดันลูกค้า", x:"69%", y:"72%", size:"64px", d:"76px", avatar:"/assets/ai-office-final/characters-clean/sales/idle.png" },
@@ -47,16 +113,16 @@
     lastCustomerMessage: "",
     selectedCustomerQuestion: "",
     selectedCustomerMessageId: null,
-    lineDraftMemory: JSON.parse(localStorage.getItem("cwfAiOfficeLineDraftMemoryV25") || "{}"),
+    lineDraftMemory: JSON.parse(localStorage.getItem("cwfAiOfficeLineDraftMemoryV28") || "{}"),
     lastAgentRetry: null,
     lastLineRetry: null,
-    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV25") || "{}"),
+    agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV28") || "{}"),
   };
 
 
   function saveLineDraftMemory() {
     try {
-      localStorage.setItem("cwfAiOfficeLineDraftMemoryV25", JSON.stringify(state.lineDraftMemory || {}));
+      localStorage.setItem("cwfAiOfficeLineDraftMemoryV28", JSON.stringify(state.lineDraftMemory || {}));
     } catch (_) {}
   }
 
@@ -85,7 +151,7 @@
   }
 
   function saveHistory() {
-    localStorage.setItem("cwfAiOfficeAgentHistoryV25", JSON.stringify(state.agentHistory));
+    localStorage.setItem("cwfAiOfficeAgentHistoryV28", JSON.stringify(state.agentHistory));
   }
 
   function currentAgent() {
@@ -207,6 +273,14 @@
         metadata: { agent_name: a.name, role: a.role, ...extra.metadata }
       })
     }).catch(() => {});
+    logSharedMemoryEvent(role === "ai" ? "agent_ai_answer" : "agent_user_question", {
+      source: "agent_chat",
+      agent_key: a.key,
+      customer_message: role === "user" ? text : (extra.question || ""),
+      ai_reply: role === "ai" ? text : "",
+      action_status: role === "ai" ? "answered" : "asked",
+      metadata: { agent_name: a.name, role: a.role, ...extra.metadata },
+    });
   }
 
   function openAgentChat() {
@@ -254,14 +328,28 @@
     const submitBtn = $("#agentForm .sendBtn");
     if (submitBtn) submitBtn.disabled = true;
     state.lastAgentRetry = raw;
+    if (looksLikeAdminCorrection(raw)) {
+      logSharedMemoryEvent("admin_correction", {
+        source: "agent_chat",
+        agent_key: state.agent,
+        customer_message: raw,
+        final_admin_reply: raw,
+        action_status: "correction",
+        situation_type: correctionSituation(raw),
+        tags: ["auto_learn", "admin_correction"],
+        metadata: { auto_detected: true }
+      });
+    }
     const agentInfo = currentAgent();
     const recent = (state.agentHistory[state.agent] || []).filter((m) => !m.loading).slice(-10).map((m) => `${m.role === "user" ? "แอดมิน" : "AI"}: ${m.text}`).join("\n");
+    const sharedMemory = await loadSharedMemoryContext({ query: raw, agent_key: state.agent, limit: 8 });
     const question = [
       `โหมด ${agentInfo.name}`,
       agentInfo.brain || agentInfo.role,
-      "ใช้ประวัติสนทนาล่าสุดเพื่อเข้าใจบริบทต่อเนื่อง และตอบให้ใช้งานจริงกับ Coldwindflow",
+      "ใช้ประวัติสนทนาล่าสุดและสมองกลาง CWF เพื่อเข้าใจบริบทต่อเนื่อง และตอบให้ใช้งานจริงกับ Coldwindflow",
       "ห้ามบอกว่าส่งข้อความแล้ว ห้ามแก้ข้อมูล ห้ามสร้างงาน ห้ามใช้ข้อมูลปลอม",
       recent ? `\nประวัติคุยล่าสุด:\n${recent}` : "",
+      formatSharedMemoryForPrompt(sharedMemory),
       `\nคำถามใหม่:\n${raw}`
     ].filter(Boolean).join("\n");
     if (!retryText) {
@@ -513,14 +601,16 @@
     }
     $("#lineMessages").insertAdjacentHTML("beforeend", `
       <div class="lineBubble ai ${persisted ? "persisted" : ""}">
-        <article class="aiDraftCard">
-          <header class="aiDraftHeader">
-            <div class="bubbleTitle">ข้อความพร้อมส่งลูกค้า</div>
-            <div class="aiDraftHint">${persisted ? "จากประวัติก่อนหน้า" : "แก้ก่อนคัดลอกได้"}</div>
-          </header>
-          ${sourceQuestion ? `<div class="aiDraftSource">อ้างอิงคำถาม: ${esc(sourceQuestion)}</div>` : ""}
+        <article class="aiNaturalBubble">
+          <div class="aiNaturalTop">
+            <span class="aiNaturalLabel">AI แนะนำ</span>
+            ${sourceQuestion ? `<span class="aiNaturalSource">ตอบจากคำถามที่เลือก</span>` : `<span class="aiNaturalSource">${persisted ? "จากประวัติก่อนหน้า" : "พร้อมส่งลูกค้า"}</span>`}
+          </div>
+          ${sourceQuestion ? `<div class="aiDraftSource">อ้างอิง: ${esc(sourceQuestion)}</div>` : ""}
+          <div class="replyDisplay" data-reply-display>${esc(text)}</div>
           <textarea class="replyText" data-reply-text data-source-question="${esc(sourceQuestion)}">${esc(text)}</textarea>
-          <div class="aiDraftActions" aria-label="จัดการคำตอบ AI">
+          <div class="aiNaturalActions" aria-label="จัดการคำตอบ AI">
+            <button class="iconBtn editIcon" type="button" data-edit-reply aria-label="แก้ไขข้อความ" title="แก้ไขข้อความ">✎</button>
             <button class="iconBtn copyIcon" type="button" data-copy-reply aria-label="คัดลอกข้อความนี้" title="คัดลอกข้อความนี้">⧉</button>
             <button class="iconBtn likeIcon" type="button" data-save-from-reply aria-label="บันทึกเป็นตัวอย่างคำตอบ" title="บันทึกเป็นตัวอย่างคำตอบ">👍</button>
             <button class="iconBtn dislikeIcon" type="button" data-dislike-reply aria-label="ไม่ใช้คำตอบนี้" title="ไม่ใช้คำตอบนี้">👎</button>
@@ -557,12 +647,24 @@
           conversation_id: conv.id,
           admin_question: question,
           selected_customer_question: sourceQuestion,
-          instruction: sourceQuestion ? `${question}\n\nคำถามลูกค้าที่แอดมินเลือกให้ตอบ: ${sourceQuestion}` : question,
+          prior_drafts: draftsForConversation(conv.id).slice(-6),
+          use_shared_memory: true,
+          instruction: sourceQuestion ? `${question}\n\nต้องตอบเฉพาะคำถามลูกค้าที่แอดมินเลือกนี้เป็นหลัก: ${sourceQuestion}` : question,
           agent: state.agent === "sales" ? "sales" : "admin"
         })
       });
       removeLatestLoadingBubble();
       renderAiBubble({ ...(data.draft || { customer_reply: data.answer }), customer_question: sourceQuestion, admin_question: question });
+      logSharedMemoryEvent("line_drafted", {
+        source: "line_chat",
+        conversation_id: conv.id,
+        selected_customer_question: sourceQuestion,
+        customer_message: sourceQuestion,
+        ai_reply: (data.draft?.customer_reply || data.answer || ""),
+        action_status: "drafted",
+        situation_type: data.draft?.situation_type || "general",
+        metadata: { saved_draft_id: data.draft?.saved_draft_id || null }
+      });
     } catch (err) {
       removeLatestLoadingBubble();
       renderAiBubble({ customer_reply: `ขออภัยค่ะ ตอนนี้ระบบ AI ยังร่างคำตอบไม่ได้ (${err.message})` });
@@ -571,10 +673,39 @@
     }
   }
 
+  function getReplyTextFromBubble(bubble) {
+    const ta = bubble?.querySelector("[data-reply-text]");
+    const display = bubble?.querySelector("[data-reply-display]");
+    return clean(ta?.value || display?.textContent || "");
+  }
+
+  function syncReplyDisplay(bubble) {
+    const ta = bubble?.querySelector("[data-reply-text]");
+    const display = bubble?.querySelector("[data-reply-display]");
+    if (ta && display) display.textContent = ta.value || "";
+  }
+
+  function toggleEditReply(button) {
+    const card = button.closest(".aiNaturalBubble");
+    if (!card) return;
+    const entering = !card.classList.contains("editing");
+    card.classList.toggle("editing", entering);
+    const ta = card.querySelector("[data-reply-text]");
+    if (entering) {
+      button.textContent = "✓";
+      setTimeout(() => ta?.focus(), 60);
+      autoGrow(ta);
+    } else {
+      syncReplyDisplay(card);
+      button.textContent = "✎";
+    }
+  }
+
   async function copyReply(button) {
     const bubble = button.closest(".lineBubble.ai");
-    const text = bubble?.querySelector("[data-reply-text]")?.value || "";
+    const text = getReplyTextFromBubble(bubble);
     if (!clean(text)) return;
+    syncReplyDisplay(bubble);
     await navigator.clipboard.writeText(text);
     button.textContent = "✓";
     showToast("คัดลอกแล้ว นำไปวางใน LINE OA ได้เลย");
@@ -591,13 +722,19 @@
         source: "customer_chat_copy"
       })
     }).catch(() => {});
+    logSharedMemoryEvent("copied", {
+      source: "line_chat",
+      selected_customer_question: bubble?.querySelector("[data-reply-text]")?.dataset?.sourceQuestion || selectedQuestionForLearning(),
+      final_admin_reply: text,
+      action_status: "copied",
+    });
   }
 
   function dislikeReply(button) {
     const bubble = button.closest(".lineBubble.ai");
-    const text = bubble?.querySelector("[data-reply-text]")?.value || "";
+    const text = getReplyTextFromBubble(bubble);
     bubble?.classList.add("not-used");
-    bubble?.querySelector(".aiDraftCard")?.classList.add("not-used");
+    bubble?.querySelector(".aiNaturalBubble")?.classList.add("not-used");
     button.textContent = "✓";
     showToast("บันทึกว่าไม่ใช้คำตอบนี้แล้ว");
     api("/admin/ai-office/reply-learning/event", {
@@ -613,6 +750,12 @@
         source: "customer_chat_dislike"
       })
     }).catch(() => {});
+    logSharedMemoryEvent("disliked", {
+      source: "line_chat",
+      selected_customer_question: bubble?.querySelector("[data-reply-text]")?.dataset?.sourceQuestion || selectedQuestionForLearning(),
+      ai_reply: text,
+      action_status: "disliked",
+    });
   }
 
   function openMemoryPanel(prefill = {}) {
@@ -656,6 +799,16 @@
       await api("/admin/ai-office/reply-examples", { method:"POST", body:JSON.stringify(payload) });
       $("#memReply").value = "";
       await loadMemoryExamples();
+      logSharedMemoryEvent("saved_reply_example", {
+        source: "reply_example",
+        selected_customer_question: payload.customer_message,
+        customer_message: payload.customer_message,
+        final_admin_reply: payload.final_admin_reply,
+        action_status: "saved",
+        situation_type: payload.situation_type,
+        service_type: payload.service_type,
+        tags: payload.tags,
+      });
       alert("บันทึกเข้าสมองเสริมแล้ว");
     } catch (err) {
       alert(`บันทึกไม่ได้: ${err.message}`);
@@ -720,13 +873,16 @@
       if (e.target.closest("[data-back-list]")) return showInboxList();
       if (e.target.closest("[data-open-memory]")) return openMemoryPanel();
       if (e.target.closest("[data-prefill-memory]")) return prefillMemoryFromChat();
+      if (e.target.closest("[data-edit-reply]")) return toggleEditReply(e.target.closest("[data-edit-reply]"));
+      if (e.target.closest("[data-selected-question-add-reply]")) return prefillMemoryFromChat("");
       if (e.target.closest("[data-copy-reply]")) return copyReply(e.target.closest("[data-copy-reply]"));
       if (e.target.closest("[data-dislike-reply]")) return dislikeReply(e.target.closest("[data-dislike-reply]"));
       if (e.target.closest("[data-save-from-reply]")) {
         const bubble = e.target.closest(".lineBubble.ai");
         const ta = bubble?.querySelector("[data-reply-text]");
-        if (ta?.dataset?.sourceQuestion) state.selectedCustomerQuestion = ta.dataset.sourceQuestion;
-        return prefillMemoryFromChat(ta?.value || "");
+        const source = ta?.dataset?.sourceQuestion || "";
+        if (source) state.selectedCustomerQuestion = source;
+        return prefillMemoryFromChat(getReplyTextFromBubble(bubble));
       }
       const conv = e.target.closest("[data-conversation-id]");
       if (conv) return selectConversation(conv.dataset.conversationId);
