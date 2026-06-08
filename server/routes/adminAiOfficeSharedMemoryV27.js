@@ -124,6 +124,7 @@ async function loadSharedMemoryContext(pool, body = {}) {
        AND action_status <> 'disliked'
        AND event_type <> 'disliked'
      ORDER BY
+       CASE WHEN event_type='admin_correction' OR action_status='correction' THEN 0 ELSE 1 END,
        CASE WHEN action_status IN ('saved','copied','liked') THEN 0 ELSE 1 END,
        CASE WHEN source='reply_example' THEN 0 ELSE 1 END,
        created_at DESC

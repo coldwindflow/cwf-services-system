@@ -52,6 +52,9 @@ const createTechnicianBaseStatusReadOnlyRoutes = require("./server/routes/techni
 const createTechnicianCalendarReadOnlyRoutes = require("./server/routes/technicianCalendarReadOnly");
 const createTechnicianCountSummaryReadOnlyRoutes = require("./server/routes/technicianCountSummaryReadOnly");
 const createAdminAiOfficeReadOnlyRoutes = require("./server/routes/adminAiOfficeReadOnly");
+const createAdminAiOfficeSharedMemoryV27Routes = require("./server/routes/adminAiOfficeSharedMemoryV27");
+const createAdminAiOfficeLineDraftV27Routes = require("./server/routes/adminAiOfficeLineDraftV27");
+const createAdminAiOfficeSmartAssistantV28Routes = require("./server/routes/adminAiOfficeSmartAssistantV28");
 const { createLineWebhookRoutes, ensureLineInboxSchema } = require("./server/routes/lineWebhook");
 const {
   calculateTechnicianBaseStatus,
@@ -4372,7 +4375,17 @@ app.post('/api/logout', async (req, res) => {
   return res.json({ ok: true });
 });
 
-app.use(createAdminAiOfficeReadOnlyRoutes({ pool, requireAdminSession }));
+const aiOfficeAccountingDeps = {
+  buildPayoutTechSummaryRows: _buildPayoutTechSummaryRows,
+  accountingEnrichPayoutTechRows: _accountingEnrichPayoutTechRows,
+  getPayoutPeriod: _getPayoutPeriod,
+  money: _money,
+  paidStatus: _paidStatus,
+};
+app.use(createAdminAiOfficeSharedMemoryV27Routes({ pool, requireAdminSession })); // CWF AI Office shared memory
+app.use(createAdminAiOfficeLineDraftV27Routes({ pool, requireAdminSession })); // CWF AI Office selected-question LINE draft override
+app.use(createAdminAiOfficeSmartAssistantV28Routes({ pool, requireAdminSession, accounting: aiOfficeAccountingDeps })); // CWF AI Office deterministic payout + availability
+app.use(createAdminAiOfficeReadOnlyRoutes({ pool, requireAdminSession, accounting: aiOfficeAccountingDeps }));
 app.get("/admin/ai-office", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
 app.get("/admin/ai-office.html", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
 app.get("/admin-ai-office.html", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
