@@ -106,6 +106,28 @@ function payoutPeriodLabel(period = {}) {
   if (!start && !end) return String(period.payout_id || "");
   return `${start || "-"} ถึง ${end || "-"}`;
 }
+function normalizePayoutJobRow(row = {}) {
+  return {
+    job_id: row.job_id || row.jobId || null,
+    booking_code: row.booking_code || row.bookingCode || "",
+    finished_at: row.finished_at || row.finishedAt || null,
+    payable_amount: money(row.earn_amount ?? row.payable_amount ?? row.net_amount ?? row.amount ?? 0),
+    source: row.source || row.step_rule_key || "",
+    detail: row.detail_json || row.detail || row.metadata || null,
+  };
+}
+function payoutJobRowsForTech(row = {}, payload = {}) {
+  const direct = row.rows || row.jobs || row.lines || row.payout_lines || row.job_rows;
+  if (Array.isArray(direct) && direct.length) return direct.map(normalizePayoutJobRow);
+  const tech = String(row.technician_username || row.technician_key || "").trim();
+  const payloadLines = payload.lines || payload.rows || payload.job_rows || payload.payout_lines;
+  if (Array.isArray(payloadLines) && payloadLines.length) {
+    return payloadLines
+      .filter((line) => String(line.technician_username || line.technician_key || "").trim() === tech)
+      .map(normalizePayoutJobRow);
+  }
+  return [];
+}
 async function buildPayoutSummary({ accounting, payoutId }) {
   const warnings = [];
   if (!accounting?.buildPayoutTechSummaryRows) {
@@ -141,12 +163,15 @@ async function buildPayoutSummary({ accounting, payoutId }) {
   if (accounting.accountingEnrichPayoutTechRows) {
     rows = await accounting.accountingEnrichPayoutTechRows(payoutId, period, rows);
   }
+  let hasAnyJobRows = false;
   const technicians = rows.map((row) => {
     const payable = money(row.net_amount);
     const paid = money(row.paid_amount);
     const unpaid = money(Math.max(0, payable - paid));
     const paidStatus = String(row.paid_status || (accounting.paidStatus ? accounting.paidStatus(payable, paid) : "") || "").trim() || (paid >= payable && payable > 0 ? "paid" : paid > 0 ? "partial" : "unpaid");
     const jobCount = Number(row.jobs_count || row.job_count || 0);
+    const jobRows = payoutJobRowsForTech(row, payload);
+    if (jobRows.length) hasAnyJobRows = true;
     return {
       technician_key: row.technician_username || "",
       technician_name: row.technician_full_name || row.technician_username || "",
@@ -160,7 +185,7 @@ async function buildPayoutSummary({ accounting, payoutId }) {
       paid_job_count: paidStatus === "paid" ? jobCount : 0,
       unpaid_job_count: paidStatus === "unpaid" ? jobCount : 0,
       partial_job_count: paidStatus === "partial" ? jobCount : 0,
-      rows: [],
+      rows: jobRows,
       source: row.source || payload?.source || "",
     };
   });
@@ -182,6 +207,7 @@ async function buildPayoutSummary({ accounting, payoutId }) {
   });
   Object.keys(totals).forEach((key) => { totals[key] = money(totals[key]); });
   if (!technicians.length) warnings.push("ไม่พบรายช่างในงวดนี้จากแหล่ง accounting payout");
+  if (technicians.length && !hasAnyJobRows) warnings.push("ยังไม่มีรายละเอียดระดับงานจาก payout helper");
   return {
     ok: true,
     payout_id: payoutId,
@@ -579,7 +605,7 @@ module.exports = function createAdminAiOfficeSmartAssistantV28Routes(deps = {}) 
           metadata: { payout_summary: summary },
         });
         return res.json({
-          ok: summary.ok,
+          ok: true,
           answer,
           payout_summary: summary,
           agent: { key: req.body?.agent || "admin", name: "Admin AI", role: "deterministic accounting payout summary" },

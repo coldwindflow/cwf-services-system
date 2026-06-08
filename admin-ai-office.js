@@ -140,6 +140,8 @@
       customer_reply: String(draft.customer_reply || ""),
       customer_question: String(draft.customer_question || state.selectedCustomerQuestion || state.lastCustomerMessage || ""),
       customer_message_id: String(draft.customer_message_id || state.selectedCustomerMessageId || ""),
+      customer_message_received_at: String(draft.customer_message_received_at || ""),
+      explicit_selected: Boolean(draft.explicit_selected),
       admin_question: String(draft.admin_question || ""),
       created_at: new Date().toISOString(),
     });
@@ -147,8 +149,16 @@
     saveLineDraftMemory();
   }
 
+  function explicitSelectedCustomerQuestion() {
+    return clean(state.selectedCustomerQuestion || "");
+  }
+
+  function fallbackLatestCustomerQuestion() {
+    return clean(state.lastCustomerMessage || "");
+  }
+
   function selectedQuestionForLearning() {
-    return clean(state.selectedCustomerQuestion || state.lastCustomerMessage || "");
+    return clean(explicitSelectedCustomerQuestion() || fallbackLatestCustomerQuestion());
   }
 
   function latestInboundMessage() {
@@ -161,9 +171,20 @@
 
   function latestInboundTimeMs() {
     const m = latestInboundMessage();
+    const t = messageTimeMs(m);
+    return Number.isFinite(t) ? t : 0;
+  }
+
+  function messageTimeMs(m) {
     const raw = m?.received_at || m?.created_at || "";
     const t = raw ? new Date(raw).getTime() : 0;
     return Number.isFinite(t) ? t : 0;
+  }
+
+  function findCustomerMessageById(id) {
+    const sid = String(id || "");
+    if (!sid) return null;
+    return (state.selectedMessages || []).find((m, idx) => String(messageIdFor(m, `msg_${idx}`)) === sid) || null;
   }
 
   function excerpt(text, max = 120) {
@@ -546,6 +567,8 @@
         customer_reply: draft.customer_reply,
         customer_question: draft.customer_question,
         customer_message_id: draft.customer_message_id,
+        customer_message_received_at: draft.customer_message_received_at,
+        explicit_selected: draft.explicit_selected,
         created_at: draft.created_at,
         persisted: true,
         skip_persist: true,
@@ -613,18 +636,27 @@
   function renderAiBubble(draft) {
     const reply = clean(draft?.customer_reply || draft?.answer || "");
     const text = reply || "ยังไม่ได้ข้อความพร้อมส่งลูกค้า";
-    const sourceQuestion = clean(draft?.customer_question || selectedQuestionForLearning());
+    const explicitSelected = Object.prototype.hasOwnProperty.call(draft || {}, "explicit_selected")
+      ? Boolean(draft.explicit_selected)
+      : Boolean(explicitSelectedCustomerQuestion());
+    const sourceQuestion = clean(draft?.customer_question || (explicitSelected ? explicitSelectedCustomerQuestion() : fallbackLatestCustomerQuestion()));
     const latestInbound = latestInboundMessage();
-    const sourceMessageId = String(draft?.customer_message_id || (sourceQuestion && state.selectedCustomerMessageId) || (sourceQuestion ? messageIdFor(latestInbound) : "") || "");
-    const sourceLabel = sourceQuestion ? `ตอบจาก:\n“${excerpt(sourceQuestion)}”` : "ตอบจากข้อความล่าสุด";
+    const sourceMessageId = String(draft?.customer_message_id || (explicitSelected ? state.selectedCustomerMessageId : messageIdFor(latestInbound)) || "");
+    const sourceMsg = findCustomerMessageById(sourceMessageId) || (!explicitSelected ? latestInbound : null);
+    const sourceReceivedAt = String(draft?.customer_message_received_at || sourceMsg?.received_at || sourceMsg?.created_at || "");
+    const sourceLabel = explicitSelected && sourceQuestion ? `ตอบจาก:\n“${excerpt(sourceQuestion)}”` : "ตอบจากข้อความล่าสุด";
     const persisted = Boolean(draft?.persisted);
     const draftTime = draft?.created_at ? new Date(draft.created_at).getTime() : Date.now();
-    const hasNewerInbound = Boolean(persisted && latestInboundTimeMs() > draftTime);
+    const sourceTime = sourceReceivedAt ? new Date(sourceReceivedAt).getTime() : 0;
+    const latestTime = latestInboundTimeMs();
+    const hasNewerInbound = Boolean(latestTime && ((sourceTime && latestTime > sourceTime) || latestTime > draftTime));
     if (!draft?.skip_persist && state.selectedConversation?.id && reply) {
       addDraftToConversation(state.selectedConversation.id, {
         customer_reply: reply,
         customer_question: sourceQuestion,
         customer_message_id: sourceMessageId,
+        customer_message_received_at: sourceReceivedAt,
+        explicit_selected: explicitSelected,
         admin_question: draft?.admin_question || state.lastLineRetry || "",
       });
     }
@@ -633,7 +665,7 @@
         <article class="aiNaturalBubble">
           <div class="aiNaturalTop">
             <span class="aiNaturalLabel">AI แนะนำ</span>
-            ${sourceQuestion ? `<span class="aiNaturalSource">ตอบจากคำถามที่เลือก</span>` : `<span class="aiNaturalSource">${persisted ? "จากประวัติก่อนหน้า" : "พร้อมส่งลูกค้า"}</span>`}
+            ${explicitSelected ? `<span class="aiNaturalSource">ตอบจากคำถามที่เลือก</span>` : `<span class="aiNaturalSource">ตอบจากข้อความล่าสุด</span>`}
           </div>
           <div class="aiDraftSource" data-source-message-id="${esc(sourceMessageId)}">
             <span>${esc(sourceLabel)}</span>
@@ -641,7 +673,7 @@
           </div>
           ${hasNewerInbound ? `<div class="newCustomerContextBar">มีข้อความลูกค้าใหม่ <button type="button" data-use-latest-customer>ใช้ข้อความล่าสุด</button><button type="button" data-pick-customer-message>เลือกเอง</button></div>` : ""}
           <div class="replyDisplay" data-reply-display>${esc(text)}</div>
-          <textarea class="replyText" data-reply-text data-source-question="${esc(sourceQuestion)}" data-source-message-id="${esc(sourceMessageId)}">${esc(text)}</textarea>
+          <textarea class="replyText" data-reply-text data-source-question="${esc(sourceQuestion)}" data-source-message-id="${esc(sourceMessageId)}" data-explicit-selected="${explicitSelected ? "1" : "0"}">${esc(text)}</textarea>
           <div class="aiNaturalActions" aria-label="จัดการคำตอบ AI">
             <button class="iconBtn editIcon" type="button" data-edit-reply aria-label="แก้ไขข้อความ" title="แก้ไขข้อความ">✎</button>
             <button class="iconBtn copyIcon" type="button" data-copy-reply aria-label="คัดลอกข้อความนี้" title="คัดลอกข้อความนี้">⧉</button>
@@ -664,7 +696,11 @@
     const input = $("#lineAiQuestion");
     const question = clean(input.value);
     if (!conv?.id || !question) return;
-    const sourceQuestion = selectedQuestionForLearning();
+    const explicitQuestion = explicitSelectedCustomerQuestion();
+    const sourceQuestion = explicitQuestion || fallbackLatestCustomerQuestion();
+    const sourceMessage = explicitQuestion ? findCustomerMessageById(state.selectedCustomerMessageId) : latestInboundMessage();
+    const sourceMessageId = explicitQuestion ? (state.selectedCustomerMessageId || "") : messageIdFor(sourceMessage);
+    const sourceReceivedAt = String(sourceMessage?.received_at || sourceMessage?.created_at || "");
     state.lastLineRetry = question;
     const submitBtn = $("#lineAiForm .sendBtn");
     if (submitBtn) submitBtn.disabled = true;
@@ -679,19 +715,26 @@
         body: JSON.stringify({
           conversation_id: conv.id,
           admin_question: question,
-          selected_customer_question: sourceQuestion,
+          selected_customer_question: explicitQuestion ? sourceQuestion : "",
           prior_drafts: draftsForConversation(conv.id).slice(-6),
           use_shared_memory: true,
-          instruction: sourceQuestion ? `${question}\n\nต้องตอบเฉพาะคำถามลูกค้าที่แอดมินเลือกนี้เป็นหลัก: ${sourceQuestion}` : question,
+          instruction: explicitQuestion ? `${question}\n\nต้องตอบเฉพาะคำถามลูกค้าที่แอดมินเลือกนี้เป็นหลัก: ${sourceQuestion}` : question,
           agent: state.agent === "sales" ? "sales" : "admin"
         })
       });
       removeLatestLoadingBubble();
-      renderAiBubble({ ...(data.draft || { customer_reply: data.answer }), customer_question: sourceQuestion, customer_message_id: state.selectedCustomerMessageId || "", admin_question: question });
+      renderAiBubble({
+        ...(data.draft || { customer_reply: data.answer }),
+        customer_question: sourceQuestion,
+        customer_message_id: sourceMessageId,
+        customer_message_received_at: sourceReceivedAt,
+        explicit_selected: Boolean(explicitQuestion),
+        admin_question: question
+      });
       logSharedMemoryEvent("line_drafted", {
         source: "line_chat",
         conversation_id: conv.id,
-        selected_customer_question: sourceQuestion,
+        selected_customer_question: explicitQuestion ? sourceQuestion : "",
         customer_message: sourceQuestion,
         ai_reply: (data.draft?.customer_reply || data.answer || ""),
         action_status: "drafted",
