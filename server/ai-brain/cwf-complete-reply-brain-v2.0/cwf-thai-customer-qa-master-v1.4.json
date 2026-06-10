@@ -1,0 +1,1228 @@
+{
+  "kb_name": "CWF Thai Customer Q&A Master",
+  "version": "v1.4",
+  "updated_at": "2026-06-09",
+  "scope": "Thai customer Q&A master for CWF AI Office / Sales AI / Admin Reply Assistant",
+  "admin_persona": {
+    "gender": "female",
+    "style": [
+      "สุภาพ",
+      "ธรรมชาติ",
+      "เหมือนแอดมิน LINE",
+      "สั้น กระชับ",
+      "มี next step"
+    ],
+    "default_particles": [
+      "ค่ะ",
+      "นะคะ"
+    ],
+    "avoid": [
+      "ครับ",
+      "ครับผม",
+      "จบทุกปัญหาแน่นอน",
+      "ฟันธงซ่อมก่อนตรวจ"
+    ]
+  },
+  "phase": "reply_draft_only",
+  "rules": [
+    "AI ร่างเท่านั้น แอดมินตรวจแล้วส่งเอง",
+    "ห้ามส่งข้อความลูกค้าอัตโนมัติ",
+    "ห้ามเดา error code",
+    "ห้ามฟันธงงานซ่อมจากแชทอย่างเดียว",
+    "ราคาเป็นราคาเริ่มต้นสำหรับงานมาตรฐาน",
+    "ถ้ามีค่าใช้จ่ายเพิ่ม ต้องแจ้งลูกค้าและขอยืนยันก่อน",
+    "เคส admin_only / technician_only ห้าม AI ตอบเองเต็มรูปแบบ"
+  ],
+  "risk_labels": {
+    "safe_reply": "AI ร่างคำตอบให้แอดมินตรวจและส่งได้",
+    "needs_admin_check": "AI ร่างได้ แต่แอดมินควรตรวจให้รอบคอบ",
+    "technician_review": "ต้องส่งต่อช่างหรือนัดตรวจเช็ค ห้ามฟันธง",
+    "admin_only": "เคสเสี่ยง ให้แอดมิน/เจ้าของตอบเอง",
+    "technician_only": "คำถามเทคนิคอันตราย ห้าม AI ให้ขั้นตอน"
+  },
+  "items_count": 66,
+  "items": [
+    {
+      "id": "th_qa_001",
+      "category": "เริ่มคุย / ทักทาย",
+      "intent": "customer_says_hello",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "สวัสดีค่ะ",
+        "สอบถามหน่อยค่ะ",
+        "มีใครอยู่ไหม",
+        "ล้างแอร์ไหม"
+      ],
+      "admin_reply_th": "สวัสดีค่ะ แอดมิน Coldwindflow ยินดีให้บริการนะคะ ลูกค้าสนใจล้างแอร์ ซ่อมแอร์ ติดตั้ง หรือให้ช่างตรวจเช็คอาการคะ",
+      "next_action": "ถามประเภทบริการ",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_002",
+      "category": "เริ่มคุย / ทักทาย",
+      "intent": "customer_sends_location_first",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ส่งโลเคชันมาเลย",
+        "นี่โลเคชันค่ะ",
+        "อยู่ตรงนี้ค่ะ"
+      ],
+      "admin_reply_th": "ขอบคุณค่ะ แอดมินได้รับโลเคชันแล้วนะคะ ลูกค้าสนใจบริการด้านไหนคะ ล้างแอร์ ซ่อมแอร์ หรือตรวจเช็คอาการคะ",
+      "next_action": "ถามบริการ/จำนวนเครื่อง",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_003",
+      "category": "เริ่มคุย / ทักทาย",
+      "intent": "customer_sends_photo_first",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ส่งรูปแอร์",
+        "แบบนี้ล้างได้ไหม",
+        "นี่คือแอร์แบบไหน"
+      ],
+      "admin_reply_th": "ได้รับรูปแล้วค่ะ จากรูปเบื้องต้นแอดมินช่วยดูให้ได้ค่ะ รบกวนลูกค้าแจ้งอาการหรือบริการที่สนใจเพิ่มเติมนิดนึงนะคะ",
+      "next_action": "ถามอาการ/บริการ",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_004",
+      "category": "ราคา / โปร",
+      "intent": "ask_starting_price",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ล้างแอร์เท่าไหร่",
+        "ราคาเท่าไหร่",
+        "ขอราคาค่ะ",
+        "เริ่มต้นเท่าไหร่"
+      ],
+      "admin_reply_th": "ล้างแอร์ผนังราคาเริ่มต้น 550 บาทค่ะ ราคาจะขึ้นอยู่กับขนาด BTU และประเภทการล้างนะคะ ลูกค้าล้างกี่เครื่องคะ",
+      "next_action": "ถามจำนวนเครื่อง",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_005",
+      "category": "ราคา / โปร",
+      "intent": "ask_all_price_menu",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ขอราคาแบบทั้งหมด",
+        "มีราคาแบบไหนบ้าง",
+        "ส่งเมนูราคาได้ไหม"
+      ],
+      "admin_reply_th": "ได้เลยค่ะ ราคาแอร์ผนังไม่เกิน 12,000 BTU: ล้างปกติ 550 / พรีเมียม 790 / แขวนคอยล์ 1,290 / ตัดล้างใหญ่ 1,850 บาทค่ะ\n\nถ้า 18,000 BTU ขึ้นไป: ล้างปกติ 690 / พรีเมียม 990 / แขวนคอยล์ 1,550 / ตัดล้างใหญ่ 2,150 บาทค่ะ",
+      "next_action": "ถามจำนวนเครื่อง/BTU",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_006",
+      "category": "ราคา / โปร",
+      "intent": "ask_total_price_missing_service_type",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "รวมทั้งหมดเท่าไหร่",
+        "สรุปราคาให้หน่อย",
+        "ทั้งหมดเท่าไหร่คะ"
+      ],
+      "admin_reply_th": "แอดมินสรุปราคาให้ได้ค่ะ รบกวนขอจำนวนเครื่อง ขนาด BTU และประเภทล้างที่สนใจก่อนนะคะ เพราะแต่ละแบบราคาจะไม่เท่ากันค่ะ",
+      "next_action": "ถามข้อมูลที่ขาด",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_007",
+      "category": "ราคา / โปร",
+      "intent": "ask_why_price_not_fixed",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ทำไมราคาขึ้นอยู่กับหน้างาน",
+        "มีบวกเพิ่มไหม",
+        "ราคานี้จบไหม"
+      ],
+      "admin_reply_th": "ราคาที่แจ้งเป็นราคาเริ่มต้นสำหรับหน้างานมาตรฐานนะคะ ถ้าหน้างานถอดยาก เข้าถึงยาก เครื่องสกปรกมาก หรือมีข้อจำกัดในการทำงาน ช่างจะแจ้งประเมินเพิ่มเติมก่อนเริ่มงานค่ะ ทางร้านจะไม่ซ่อมหรือเปลี่ยนอะไหล่เพิ่มโดยไม่ได้รับการยืนยันจากลูกค้าก่อนนะคะ",
+      "next_action": "ยืนยันความเข้าใจ/เก็บข้อมูล",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_008",
+      "category": "เปรียบเทียบประเภทล้าง",
+      "intent": "standard_vs_premium",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "550 กับ 790 ต่างกันยังไง",
+        "ล้างปกติกับพรีเมียมต่างกันยังไง",
+        "พรีเมียมต่างจากธรรมดายังไง"
+      ],
+      "admin_reply_th": "ล้างปกติ 550 บาท เหมาะกับแอร์ที่ล้างตามรอบทุก 4–6 เดือน และยังไม่สกปรกมากค่ะ\n\nส่วนพรีเมียม 790 บาท จะล้างละเอียดกว่า มีถอดรางน้ำทิ้ง ถอดโพรงกระรอก และล้างคอยล์ร้อนละเอียดกว่า เหมาะกับแอร์ที่ฝุ่นเยอะ ลมเบา หรือไม่ได้ล้างมานานค่ะ",
+      "next_action": "ถามอาการ/ช่วยเลือก",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_009",
+      "category": "เปรียบเทียบประเภทล้าง",
+      "intent": "premium_vs_hang_coil",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "พรีเมียมกับแขวนคอยล์ต่างกันยังไง",
+        "แขวนคอยล์คืออะไร",
+        "1290 ต่างจาก 790 ยังไง"
+      ],
+      "admin_reply_th": "พรีเมียมจะล้างละเอียดกว่าปกติค่ะ แต่แขวนคอยล์จะลึกกว่าอีกระดับ เพราะช่างจะถอดแผงไฟและถาดหลังออก ทำให้เข้าถึงจุดถาดน้ำและมุมลึก ๆ ได้ดีกว่าค่ะ เหมาะกับอาการน้ำหยด กลิ่นอับ หรืออยากล้างเชิงลึกค่ะ",
+      "next_action": "แนะนำตามอาการ",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_010",
+      "category": "เปรียบเทียบประเภทล้าง",
+      "intent": "full_disassembly_explain",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ตัดล้างใหญ่คืออะไร",
+        "ตัดล้างต่างจากแขวนคอยล์ยังไง",
+        "ล้างใหญ่คืออะไร"
+      ],
+      "admin_reply_th": "ตัดล้างใหญ่จะเป็นการถอดเครื่องออกมาล้างเต็มระบบค่ะ เหมาะกับแอร์ที่คราบหนัก มีเชื้อรา หรือไม่ได้ล้างมานานมาก จะล้างได้ลึกที่สุดในกลุ่มงานล้างค่ะ",
+      "next_action": "ถามอาการ/สภาพเครื่อง",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_011",
+      "category": "เปรียบเทียบประเภทล้าง",
+      "intent": "which_cleaning_should_i_choose",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ควรเลือกแบบไหนดี",
+        "ไม่รู้ต้องล้างแบบไหน",
+        "ช่วยแนะนำหน่อย"
+      ],
+      "admin_reply_th": "ได้ค่ะ ถ้าแอร์ล้างตามรอบและไม่มีอาการอะไร เลือกล้างปกติได้ค่ะ\nถ้าฝุ่นเยอะ ลมเบา หรือไม่ได้ล้างมานาน แนะนำพรีเมียมค่ะ\nถ้ามีน้ำหยด กลิ่นอับ หรืออยากล้างลึกถึงถาดหลัง แนะนำแขวนคอยล์ค่ะ\nถ้าคราบหนักมากหรือไม่ได้ล้างมาหลายปี แนะนำตัดล้างใหญ่ค่ะ",
+      "next_action": "ถามอาการเพื่อแนะนำให้ตรง",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_012",
+      "category": "เปรียบเทียบประเภทล้าง",
+      "intent": "customer_chooses_standard_after_comparison",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "เอาล้างปกติค่ะ",
+        "ล้างตามรอบอยู่แล้ว เอา 550",
+        "ปกติก็พอค่ะ"
+      ],
+      "admin_reply_th": "ได้เลยค่ะ ถ้าลูกค้าล้างตามรอบอยู่แล้ว ล้างปกติก็เหมาะค่ะ เดี๋ยวแอดมินขอข้อมูลเพื่อนัดคิวต่อได้เลยนะคะ",
+      "next_action": "เก็บข้อมูลจอง",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_013",
+      "category": "เปรียบเทียบประเภทล้าง",
+      "intent": "deep_clean_every_3_years",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ต้องแขวนคอยล์บ่อยแค่ไหน",
+        "ล้างใหญ่ควรทำทุกกี่ปี",
+        "ทำไมต้องล้างลึก"
+      ],
+      "admin_reply_th": "โดยปกติแอดมินจะแนะนำให้ทำแขวนคอยล์หรือตัดล้างใหญ่ประมาณทุก 3 ปีนะคะ เพราะจะช่วยทำความสะอาดจุดลึก ๆ เช่นถาดน้ำหลังและจุดที่ล้างปกติเข้าไม่ถึง ช่วยลดโอกาสน้ำหยด กลิ่นอับ และเชื้อราสะสมค่ะ",
+      "next_action": "แนะนำตามอาการ",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_014",
+      "category": "แนะนำตามอาการ",
+      "intent": "water_dripping",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "น้ำหยด",
+        "น้ำแอร์ไหล",
+        "เปิดแล้วน้ำไหล",
+        "มีน้ำหยดจากแอร์"
+      ],
+      "admin_reply_th": "จากอาการน้ำหยด เบื้องต้นอาจเกี่ยวกับทางน้ำทิ้งหรือถาดน้ำด้านหลังนะคะ ถ้าอยากลดโอกาสน้ำหยดซ้ำ แอดมินแนะนำล้างแบบแขวนคอยล์ค่ะ เพราะจะถอดถาดหลังและทำความสะอาดลึกกว่าปกติค่ะ",
+      "next_action": "ถามรูป/วิดีโอ/คิว",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_015",
+      "category": "แนะนำตามอาการ",
+      "intent": "water_dripping_light_vs_deep",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ถ้าน้ำหยดนิดเดียวต้องแขวนไหม",
+        "น้ำหยดไม่เยอะ พรีเมียมได้ไหม"
+      ],
+      "admin_reply_th": "ถ้าน้ำหยดไม่มาก พรีเมียมอาจช่วยได้ค่ะ แต่ถ้าอยากลดโอกาสเป็นซ้ำ หรือไม่แน่ใจว่าตันลึกแค่ไหน แอดมินจะแนะนำแขวนคอยล์มากกว่า เพราะล้างถึงถาดหลังและทางน้ำทิ้งได้ลึกกว่าค่ะ",
+      "next_action": "ถามความถี่/รูปจุดหยด",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_016",
+      "category": "แนะนำตามอาการ",
+      "intent": "bad_smell",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "แอร์มีกลิ่นอับ",
+        "เปิดแล้วเหม็น",
+        "กลิ่นเหม็นอับ"
+      ],
+      "admin_reply_th": "กลิ่นอับส่วนใหญ่มักเกิดจากฝุ่น ความชื้น หรือเชื้อราสะสมในตัวเครื่องค่ะ ถ้ากลิ่นค่อนข้างชัด แอดมินแนะนำพรีเมียมหรือแขวนคอยล์มากกว่าล้างปกติ เพราะจะล้างลึกกว่าและช่วยลดโอกาสกลิ่นกลับมาไวค่ะ",
+      "next_action": "ถามไม่ได้ล้างมานานแค่ไหน",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_017",
+      "category": "แนะนำตามอาการ",
+      "intent": "weak_airflow",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ลมออกเบา",
+        "ลมไม่แรง",
+        "แอร์ลมเบา"
+      ],
+      "admin_reply_th": "ถ้าลมออกเบา อาจเกิดจากฝุ่นสะสมที่ฟิลเตอร์ คอยล์เย็น หรือโพรงกระรอกค่ะ แอดมินแนะนำล้างพรีเมียม เพราะจะล้างละเอียดกว่าปกติและมีถอดโพรงกระรอกล้างค่ะ",
+      "next_action": "ถามล้างล่าสุด",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_018",
+      "category": "แนะนำตามอาการ",
+      "intent": "not_cleaned_long_time",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ไม่ได้ล้างมานาน",
+        "ไม่ได้ล้างมา 1 ปี",
+        "ไม่ได้ล้างมา 2 ปี"
+      ],
+      "admin_reply_th": "ถ้าไม่ได้ล้างมานาน แอดมินแนะนำพรีเมียมขึ้นไปค่ะ ถ้ามีฝุ่นเยอะ ลมเบา หรือไม่ค่อยเย็น เลือกพรีเมียมได้ แต่ถ้ามีน้ำหยด กลิ่นอับ หรืออยากล้างลึกถึงถาดหลัง แนะนำแขวนคอยล์จะเหมาะกว่าค่ะ",
+      "next_action": "ถามอาการร่วม",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_019",
+      "category": "แนะนำตามอาการ",
+      "intent": "heavy_mold",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "มีเชื้อรา",
+        "คราบดำเยอะ",
+        "สกปรกหนักมาก"
+      ],
+      "admin_reply_th": "ถ้ามีคราบหนักหรือเชื้อราเยอะ แอดมินแนะนำตัดล้างใหญ่หรือแขวนคอยล์ตามสภาพเครื่องค่ะ เพราะล้างปกติอาจเข้าไม่ถึงจุดลึก ๆ ช่างจะช่วยประเมินหน้างานให้ก่อนเริ่มงานนะคะ",
+      "next_action": "ขอรูปเครื่อง",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_020",
+      "category": "แอร์ไม่เย็น / คัดกรองซ่อม",
+      "intent": "not_cold_basic",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "แอร์ไม่เย็น",
+        "แอร์มีแต่ลม",
+        "เปิดแล้วไม่เย็น"
+      ],
+      "admin_reply_th": "เดี๋ยวแอดมินช่วยคัดกรองเบื้องต้นให้นะคะ ลูกค้าล้างแอร์ล่าสุดเมื่อไหร่คะ แล้วตอนเปิดแอร์มีลมเย็นออกมาบ้างไหมคะ ตัวคอยล์ร้อนด้านนอกทำงานปกติไหมคะ",
+      "next_action": "ถามล้างล่าสุด/คอยล์ร้อน",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_021",
+      "category": "แอร์ไม่เย็น / คัดกรองซ่อม",
+      "intent": "recent_cleaned_not_cold",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "เพิ่งล้างมาแต่ไม่เย็น",
+        "ล้างมา 2 เดือน ยังไม่เย็น",
+        "เพิ่งล้างแล้วมีแต่ลม"
+      ],
+      "admin_reply_th": "ถ้าเพิ่งล้างไม่นานแต่ยังไม่เย็น อาจต้องให้ช่างเช็กอาการก่อนนะคะ ไม่อยากให้ลูกค้าเสียค่าล้างโดยที่ปัญหาไม่ได้มาจากความสกปรกค่ะ",
+      "next_action": "เสนอค่าตรวจเช็ค/ขอวิดีโอ",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_022",
+      "category": "แอร์ไม่เย็น / คัดกรองซ่อม",
+      "intent": "outdoor_unit_not_running",
+      "risk": "technician_review",
+      "customer_questions": [
+        "คอยล์ร้อนไม่ทำงาน",
+        "ใบพัดนอกไม่หมุน",
+        "มีแต่เสียงแต่ใบพัดไม่หมุน"
+      ],
+      "admin_reply_th": "ถ้าคอยล์ร้อนด้านนอกไม่ทำงาน อาการนี้อาจเกี่ยวกับระบบไฟ บอร์ด มอเตอร์ หรือคอมเพรสเซอร์ค่ะ แนะนำเป็นงานตรวจเช็ค 700 บาท ให้ช่างวัดระบบและประเมินหน้างานก่อนนะคะ ถ้ามีซ่อมต่อ สามารถนำค่าตรวจเช็คไปรวมกับค่าซ่อมได้ค่ะ",
+      "next_action": "นัดตรวจเช็ค",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_023",
+      "category": "แอร์ไม่เย็น / คัดกรองซ่อม",
+      "intent": "need_refrigerant_question",
+      "risk": "technician_review",
+      "customer_questions": [
+        "ต้องเติมน้ำยาไหม",
+        "น้ำยาแอร์หมดไหม",
+        "เติมน้ำยาแล้วจบไหม"
+      ],
+      "admin_reply_th": "ถ้าแอร์ไม่รั่ว ปกติไม่จำเป็นต้องเติมน้ำยาบ่อย ๆ นะคะ ถ้าน้ำยาขาด อาจต้องตรวจหาสาเหตุว่ามีรั่วหรือไม่ แนะนำให้ช่างตรวจเช็คก่อนค่ะ",
+      "next_action": "เสนอค่าตรวจเช็ค",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_024",
+      "category": "แอร์ไม่เย็น / คัดกรองซ่อม",
+      "intent": "leak_repair_question",
+      "risk": "technician_review",
+      "customer_questions": [
+        "ซ่อมรั่วเท่าไหร่",
+        "แอร์รั่วซ่อมได้ไหม",
+        "น้ำยารั่ว"
+      ],
+      "admin_reply_th": "งานซ่อมรั่วต้องให้ช่างตรวจหาจุดรั่วก่อนนะคะ เพราะตำแหน่งรั่วและความยากของหน้างานมีผลกับราคา เบื้องต้นมีค่าตรวจเช็ค 700 บาท หากซ่อมต่อสามารถนำไปรวมกับค่าซ่อมได้ค่ะ",
+      "next_action": "ถามอาการ/นัดตรวจเช็ค",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_025",
+      "category": "ตรวจเช็ค 700 / งานซ่อม",
+      "intent": "inspection_fee_explain",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ค่าตรวจเช็คคืออะไร",
+        "ตรวจเช็ค 700 รวมอะไร",
+        "ตรวจเช็คเท่าไหร่"
+      ],
+      "admin_reply_th": "ค่าตรวจเช็ค 700 บาท เป็นการตรวจวิเคราะห์อาการเสียแบบลึกนะคะ เหมาะกับแอร์ไม่เย็น มีโค้ด error สงสัยรั่ว หรืออาการที่ไม่ใช่แค่สกปรก ถ้ามีซ่อมต่อ สามารถนำค่าตรวจเช็คไปรวมกับค่าซ่อมได้ค่ะ",
+      "next_action": "เสนอคิวนัดตรวจ",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_026",
+      "category": "ตรวจเช็ค 700 / งานซ่อม",
+      "intent": "basic_check_vs_deep_inspection",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "งานล้างมีตรวจอยู่แล้ว ทำไมต้องเสียค่าตรวจ",
+        "ตรวจเบื้องต้นกับตรวจเช็คต่างกันยังไง"
+      ],
+      "admin_reply_th": "งานล้างจะมีตรวจเช็คเบื้องต้นให้ค่ะ เช่น ดูอาการทั่วไป วัดน้ำยาเบื้องต้น หรือดูความผิดปกติที่เห็นหน้างาน แต่ถ้าเป็นอาการเสียลึก เช่น บอร์ด เซนเซอร์ ระบบไฟ หรือหาจุดรั่ว ต้องใช้เวลาวิเคราะห์และเครื่องมือเพิ่ม จึงเป็นงานตรวจเช็คแยกค่ะ",
+      "next_action": "อธิบาย/นัดตรวจ",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_027",
+      "category": "ตรวจเช็ค 700 / งานซ่อม",
+      "intent": "if_no_repair_after_inspection",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ถ้าตรวจแล้วไม่ซ่อมต้องจ่ายไหม",
+        "ไม่ซ่อมหลังตรวจได้ไหม"
+      ],
+      "admin_reply_th": "ค่าตรวจเช็คเป็นค่าช่างเข้าไปตรวจวิเคราะห์อาการและประเมินแนวทางแก้ไขนะคะ หากลูกค้าซ่อมต่อ สามารถนำค่าตรวจเช็คไปรวมกับค่าซ่อมได้ค่ะ ถ้ายังไม่สะดวกซ่อม ช่างจะแจ้งอาการและแนวทางไว้ให้ก่อนค่ะ",
+      "next_action": "ยืนยันนัดตรวจ",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_028",
+      "category": "ตรวจเช็ค 700 / งานซ่อม",
+      "intent": "repair_price_before_check",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "ซ่อมประมาณเท่าไหร่",
+        "ขอราคาซ่อม",
+        "ถ้าบอร์ดเสียเท่าไหร่"
+      ],
+      "admin_reply_th": "ราคาซ่อมจะขึ้นอยู่กับสาเหตุจริงและอะไหล่ที่ต้องใช้ค่ะ แอดมินประเมินคร่าว ๆ ได้หลังทราบอาการ ยี่ห้อ รุ่น และรูป/วิดีโอเพิ่มเติม แต่ราคาสุดท้ายช่างต้องตรวจเช็คและแจ้งให้ลูกค้ายืนยันก่อนซ่อมนะคะ",
+      "next_action": "ขอรุ่น/อาการ/รูป",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_029",
+      "category": "Error Code / ไฟกระพริบ",
+      "intent": "error_code_general",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "ขึ้นโค้ด",
+        "ไฟกระพริบ",
+        "ขึ้น E7",
+        "ขึ้น H11"
+      ],
+      "admin_reply_th": "รบกวนลูกค้าถ่ายรูปหรือวิดีโอไฟกระพริบ/โค้ดที่ขึ้นให้แอดมินหน่อยนะคะ พร้อมส่งรูปยี่ห้อและรุ่นแอร์ หรือสติ๊กเกอร์ข้างเครื่องถ้าถ่ายได้สะดวกค่ะ โค้ดแต่ละรุ่นอาจแปลไม่เหมือนกัน แอดมินจะช่วยเช็คเบื้องต้นให้ก่อนค่ะ",
+      "next_action": "ขอรูปโค้ด/ยี่ห้อ/รุ่น",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_030",
+      "category": "Error Code / ไฟกระพริบ",
+      "intent": "how_to_send_blinking_video",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ถ่ายยังไง",
+        "ให้ถ่ายอะไร",
+        "ไฟกระพริบดูยังไง"
+      ],
+      "admin_reply_th": "รบกวนถ่ายวิดีโอไฟกระพริบประมาณ 10–20 วินาทีให้เห็นชัด ๆ นะคะ และถ่ายรูปรีโมทหรือหน้าจอแอร์มาด้วยค่ะ ถ้าถ่ายรูปสติ๊กเกอร์รุ่นเครื่องได้แบบปลอดภัย ส่งมาเพิ่มได้เลยค่ะ",
+      "next_action": "รอข้อมูล",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_031",
+      "category": "Error Code / ไฟกระพริบ",
+      "intent": "unknown_error_code",
+      "risk": "technician_review",
+      "customer_questions": [
+        "โค้ดนี้คืออะไร",
+        "แปลโค้ดให้หน่อย",
+        "ขึ้นโค้ดแต่ไม่รู้รุ่น"
+      ],
+      "admin_reply_th": "ขอแอดมินเช็คข้อมูลเพิ่มก่อนนะคะ เพราะโค้ดแต่ละยี่ห้อและแต่ละรุ่นอาจแปลไม่เหมือนกันค่ะ ถ้ายังไม่มีรุ่นเครื่อง แอดมินจะยังไม่ฟันธงอาการนะคะ",
+      "next_action": "ขอรุ่น",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_032",
+      "category": "จองคิว / เก็บข้อมูล",
+      "intent": "today_available",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "วันนี้ว่างไหม",
+        "วันนี้เข้าได้ไหม",
+        "ช่วงเย็นมีคิวไหม"
+      ],
+      "admin_reply_th": "รบกวนขอโลเคชันก่อนนะคะ เดี๋ยวแอดมินเช็กคิวช่างให้ก่อน แล้วจะแจ้งช่วงเวลาที่ว่างให้อีกครั้งค่ะ",
+      "next_action": "ขอโลเคชัน",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_033",
+      "category": "จองคิว / เก็บข้อมูล",
+      "intent": "tomorrow_available",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "พรุ่งนี้ว่างไหม",
+        "พรุ่งนี้มีคิวไหม",
+        "จองพรุ่งนี้ได้ไหม"
+      ],
+      "admin_reply_th": "พรุ่งนี้เดี๋ยวแอดมินช่วยเช็กคิวให้ได้ค่ะ รบกวนขอโลเคชัน จำนวนเครื่อง ประเภทล้างที่สนใจ และช่วงเวลาที่สะดวกด้วยนะคะ",
+      "next_action": "ขอข้อมูลจอง",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_034",
+      "category": "จองคิว / เก็บข้อมูล",
+      "intent": "booking_details_needed",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "จองต้องใช้อะไรบ้าง",
+        "ต้องส่งข้อมูลอะไร",
+        "จองยังไง"
+      ],
+      "admin_reply_th": "ถ้าจองคิว รบกวนขอชื่อ เบอร์โทร โลเคชัน จำนวนเครื่อง ขนาด BTU ถ้าทราบ ประเภทล้าง และวันเวลาที่สะดวกค่ะ ถ้าเป็นคอนโด ขอเลขห้อง/ชั้น/อาคารเพิ่มเติมด้วยนะคะ",
+      "next_action": "รอข้อมูล",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_035",
+      "category": "จองคิว / เก็บข้อมูล",
+      "intent": "customer_not_ready_to_send_location",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "เดี๋ยวส่งโลให้",
+        "ขับรถอยู่",
+        "ยังไม่สะดวกส่ง"
+      ],
+      "admin_reply_th": "ได้ค่ะ เมื่อลูกค้าสะดวกส่งโลเคชันหรือรายละเอียดมาได้เลยนะคะ",
+      "next_action": "รอลูกค้า",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_036",
+      "category": "จองคิว / เก็บข้อมูล",
+      "intent": "customer_requests_reschedule",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ขอเลื่อนนัด",
+        "เลื่อนเป็นวันอื่นได้ไหม",
+        "วันนี้ไม่สะดวกแล้ว"
+      ],
+      "admin_reply_th": "ได้เลยค่ะ ลูกค้าสะดวกเป็นวันไหนแทนคะ เดี๋ยวแอดมินเช็กคิวให้ค่ะ",
+      "next_action": "เช็กคิวใหม่",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_037",
+      "category": "จองคิว / เก็บข้อมูล",
+      "intent": "technician_delay_notice",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ช่างจะช้า",
+        "แจ้งลูกค้าช่างติดงาน"
+      ],
+      "admin_reply_th": "ขออภัยด้วยนะคะ ช่างติดปัญหาหน้างานก่อนหน้า อาจจะเข้าหน้างานลูกค้าได้ประมาณ [เวลา] ค่ะ",
+      "next_action": "แจ้ง ETA",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_038",
+      "category": "จองคิว / เก็บข้อมูล",
+      "intent": "confirm_booking_message",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "สรุปนัดให้หน่อย",
+        "ส่งยืนยันนัด",
+        "คอนเฟิร์มคิว"
+      ],
+      "admin_reply_th": "แอดมินสรุปนัดให้นะคะ\n\nวันที่: [วัน/เวลา]\nบริการ: [ประเภทบริการ]\nจำนวน: [จำนวนเครื่อง]\nสถานที่: [พื้นที่/คอนโด]\nยอดประมาณการ: [ราคา]\n\nถ้าข้อมูลถูกต้อง แอดมินลงคิวให้ได้เลยค่ะ",
+      "next_action": "ให้ลูกค้ายืนยัน",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_039",
+      "category": "คอนโด / อาคาร / นิติ / ที่จอดรถ",
+      "intent": "condo_details",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "อยู่คอนโด",
+        "คอนโดต้องแจ้งอะไร",
+        "ต้องใช้ข้อมูลอะไร"
+      ],
+      "admin_reply_th": "ถ้าเป็นคอนโด รบกวนขอชื่อคอนโด เลขห้อง ชั้น อาคาร เบอร์โทร และโลเคชันไว้ด้วยนะคะ เพื่อใช้ติดต่อหน้างานค่ะ",
+      "next_action": "เก็บข้อมูลคอนโด",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_040",
+      "category": "คอนโด / อาคาร / นิติ / ที่จอดรถ",
+      "intent": "juristic_notification",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ต้องแจ้งนิติไหม",
+        "ช่างเข้าคอนโดได้ไหม",
+        "ต้องทำเอกสารนิติไหม"
+      ],
+      "admin_reply_th": "ถ้าคอนโดมีระบบแจ้งช่างเข้าทำงาน รบกวนลูกค้าแจ้งนิติไว้ล่วงหน้าได้เลยนะคะ ถ้ามีเอกสารหรือเงื่อนไขอาคาร แจ้งแอดมินได้เลยค่ะ",
+      "next_action": "ถามเงื่อนไขอาคาร",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_041",
+      "category": "คอนโด / อาคาร / นิติ / ที่จอดรถ",
+      "intent": "parking_fee",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ค่าจอดรถใครจ่าย",
+        "ค่าจอดรถรวมไหม",
+        "ค่าผ่านทางรวมไหม"
+      ],
+      "admin_reply_th": "ค่าจอดรถ ค่าผ่านทาง หรือค่าธรรมเนียมเข้าอาคาร ลูกค้าเป็นผู้รับผิดชอบตามจริงนะคะ",
+      "next_action": "ยืนยันเงื่อนไข",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_042",
+      "category": "คอนโด / อาคาร / นิติ / ที่จอดรถ",
+      "intent": "call_before_arrival",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ให้ช่างโทรก่อนมา",
+        "ก่อนมาช่วยโทรหาหน่อย",
+        "โทรก่อนถึงได้ไหม"
+      ],
+      "admin_reply_th": "ได้เลยค่ะ เดี๋ยวแอดมินใส่โน้ตให้ช่างโทรก่อนเข้าหน้างานให้นะคะ",
+      "next_action": "บันทึก job note",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_043",
+      "category": "คอนโด / อาคาร / นิติ / ที่จอดรถ",
+      "intent": "alternate_phone",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "มีเบอร์สำรอง",
+        "ใช้อีกเบอร์นึง",
+        "โทรเบอร์นี้แทน"
+      ],
+      "admin_reply_th": "รับทราบค่ะ เดี๋ยวแอดมินใส่เบอร์สำรองไว้ในใบงานให้ค่ะ",
+      "next_action": "บันทึกเบอร์สำรอง",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_044",
+      "category": "ชำระเงิน / ใบเสร็จ",
+      "intent": "payment_after_service",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ชำระตอนไหน",
+        "จ่ายหลังล้างเสร็จไหม",
+        "ต้องมัดจำไหม"
+      ],
+      "admin_reply_th": "ปกติชำระหลังงานเสร็จได้เลยค่ะ ถ้าเป็นงานที่ต้องมีมัดจำหรือเงื่อนไขพิเศษ แอดมินจะแจ้งให้ทราบก่อนนัดนะคะ",
+      "next_action": "ยืนยันจอง",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_045",
+      "category": "ชำระเงิน / ใบเสร็จ",
+      "intent": "payment_methods",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "จ่ายยังไง",
+        "โอนได้ไหม",
+        "จ่าย QR ได้ไหม"
+      ],
+      "admin_reply_th": "หลังงานเสร็จ ลูกค้าสามารถชำระผ่านโอน/QR ได้ค่ะ เดี๋ยวแอดมินส่งช่องทางชำระให้หลังช่างจบงานนะคะ",
+      "next_action": "หลังจบงาน",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_046",
+      "category": "ชำระเงิน / ใบเสร็จ",
+      "intent": "receipt_request",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ขอใบเสร็จ",
+        "ออกใบเสร็จได้ไหม",
+        "ขอใบกำกับ"
+      ],
+      "admin_reply_th": "ได้ค่ะ หลังชำระเงินแล้ว แอดมินออกใบเสร็จให้ได้ค่ะ รบกวนส่งชื่อ/รายละเอียดที่ต้องการให้ออกในใบเสร็จไว้ได้เลยนะคะ",
+      "next_action": "ขอข้อมูลใบเสร็จ",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_047",
+      "category": "ชำระเงิน / ใบเสร็จ",
+      "intent": "after_payment_received",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "โอนแล้ว",
+        "ส่งสลิปแล้ว",
+        "ชำระแล้ว"
+      ],
+      "admin_reply_th": "ได้รับสลิปแล้วค่ะ ขอบคุณมากนะคะ 🙏 เดี๋ยวแอดมินดำเนินการออกใบเสร็จ/ปิดงานให้ค่ะ",
+      "next_action": "ปิดงาน/ใบเสร็จ",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_048",
+      "category": "รับประกัน / เคลม",
+      "intent": "cleaning_warranty",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "รับประกันไหม",
+        "ประกันกี่วัน",
+        "งานล้างมีประกันไหม"
+      ],
+      "admin_reply_th": "งานล้างรับประกัน 30 วัน เฉพาะอาการที่เกี่ยวข้องกับการให้บริการนะคะ ถ้ามีปัญหา รบกวนส่งรูปหรือวิดีโอให้แอดมินตรวจสอบก่อนค่ะ",
+      "next_action": "อธิบายเงื่อนไข",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_049",
+      "category": "รับประกัน / เคลม",
+      "intent": "warranty_claim",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "ล้างแล้วน้ำยังหยด",
+        "เพิ่งล้างไปแล้วเป็นอีก",
+        "อยู่ในประกันไหม"
+      ],
+      "admin_reply_th": "เดี๋ยวแอดมินตรวจสอบให้ก่อนนะคะ รบกวนลูกค้าส่งวิดีโอตำแหน่งที่เกิดปัญหา พร้อมแจ้งเลขงานหรือวันที่เข้าบริการเดิมให้หน่อยค่ะ ถ้าอยู่ในเงื่อนไขรับประกัน ทางร้านจะดูแลให้ค่ะ",
+      "next_action": "ขอหลักฐาน/เลขงาน",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_050",
+      "category": "รับประกัน / เคลม",
+      "intent": "not_covered_cases",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "อะไรไม่รับประกัน",
+        "กรณีไหนไม่อยู่ในประกัน",
+        "ประกันไม่ครอบคลุมอะไร"
+      ],
+      "admin_reply_th": "งานรับประกันจะไม่ครอบคลุมกรณีไฟตก ไฟเกิน ไฟกระชาก ฟ้าผ่า น้ำท่วม ไฟไหม้ ภัยธรรมชาติ สัตว์หรือแมลงทำความเสียหาย การใช้งานผิดวิธี มีบุคคลอื่นแก้ไขภายหลัง หรืออาการเสียใหม่คนละจุดจากงานเดิมนะคะ",
+      "next_action": "อธิบาย/ขอข้อมูล",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_051",
+      "category": "รับประกัน / เคลม",
+      "intent": "someone_else_repaired_after_us",
+      "risk": "admin_only",
+      "customer_questions": [
+        "มีช่างอื่นมาแก้แล้ว",
+        "เจ้าของห้องเรียกช่างอื่นแล้ว",
+        "ช่างอื่นถอดดูแล้ว"
+      ],
+      "admin_reply_th": "เคสนี้แอดมินขอตรวจสอบรายละเอียดกับทีมก่อนนะคะ รบกวนลูกค้าส่งรายละเอียดงานที่มีช่างอื่นเข้าแก้ไข พร้อมรูป/วิดีโอที่เกี่ยวข้องให้แอดมินก่อนค่ะ",
+      "next_action": "ส่งให้ผู้จัดการตรวจ",
+      "notes": "admin_only เพราะเสี่ยงข้อพิพาท",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_052",
+      "category": "ลูกค้าบอกแพง / ต่อราคา",
+      "intent": "too_expensive",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "แพงจัง",
+        "ทำไมแพง",
+        "ร้านอื่นถูกกว่า"
+      ],
+      "admin_reply_th": "เข้าใจเลยค่ะ ราคาของทางร้านจะรวมขั้นตอนการล้างตามมาตรฐาน ช่างมีประสบการณ์ และมีรับประกันงานล้าง 30 วันนะคะ ถ้าลูกค้าแจ้งอาการกับจำนวนเครื่อง แอดมินช่วยแนะนำแบบที่เหมาะที่สุดให้ได้ค่ะ จะได้ไม่ต้องจ่ายเกินความจำเป็นนะคะ",
+      "next_action": "เสนอแพ็กเกจเหมาะสม",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_053",
+      "category": "ลูกค้าบอกแพง / ต่อราคา",
+      "intent": "ask_discount",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "ลดได้ไหม",
+        "มีส่วนลดไหม",
+        "ราคานี้ลดอีกได้ไหม"
+      ],
+      "admin_reply_th": "แอดมินขอเช็กจำนวนเครื่องและพื้นที่ให้ก่อนนะคะ ถ้ามีหลายเครื่องหรือคิวใกล้ทีมช่าง อาจช่วยดูราคาให้เหมาะสมได้ค่ะ",
+      "next_action": "ถามจำนวนเครื่อง/พื้นที่",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_054",
+      "category": "ลูกค้าบอกแพง / ต่อราคา",
+      "intent": "compare_with_cheap_shop",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "ร้านอื่นถูกกว่า",
+        "อีกเจ้าคิดถูกกว่า",
+        "ต่างกันตรงไหน"
+      ],
+      "admin_reply_th": "เข้าใจค่ะ แต่ละร้านอาจมีขั้นตอนและรายละเอียดงานไม่เหมือนกันนะคะ ของทางร้านจะเน้นล้างตามขั้นตอน แจ้งราคาก่อนเริ่ม และมีรับประกันงานล้าง 30 วันค่ะ ถ้าลูกค้าแจ้งอาการ แอดมินช่วยเลือกแบบที่คุ้มและเหมาะกับอาการให้ได้ค่ะ",
+      "next_action": "แนะนำแบบเหมาะสม",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_055",
+      "category": "ลูกค้าบอกแพง / ต่อราคา",
+      "intent": "customer_has_budget",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "งบน้อย",
+        "อยากประหยัด",
+        "เอาถูกสุด"
+      ],
+      "admin_reply_th": "ได้ค่ะ ถ้าแอร์ล้างตามรอบและยังไม่มีอาการหนัก ล้างปกติเริ่มต้น 550 บาทก็ได้ค่ะ แต่ถ้ามีน้ำหยด กลิ่นอับ หรือไม่ได้ล้างมานาน แอดมินขอแนะนำแบบที่เหมาะกว่าเพื่อไม่ให้ปัญหากลับมาไวค่ะ",
+      "next_action": "ถามอาการ",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_056",
+      "category": "ติดตามลูกค้า / Follow-up",
+      "intent": "follow_up_after_price",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ลูกค้าเงียบหลังส่งราคา"
+      ],
+      "admin_reply_th": "สวัสดีค่ะ แอดมินขอติดตามเรื่องล้างแอร์นะคะ ถ้าลูกค้ายังสนใจ เดี๋ยวแอดมินช่วยเช็กคิวใกล้สุดให้ได้ค่ะ",
+      "next_action": "ติดตาม lead",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_057",
+      "category": "ติดตามลูกค้า / Follow-up",
+      "intent": "follow_up_after_slot_offer",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ลูกค้าเงียบหลังเสนอคิว"
+      ],
+      "admin_reply_th": "ถ้าลูกค้าสะดวกวันไหน แจ้งแอดมินได้เลยนะคะ ช่วงนี้คิวมีขยับบ้าง เดี๋ยวแอดมินช่วยดูช่วงเวลาที่เหมาะให้ค่ะ",
+      "next_action": "รอเลือกคิว",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_058",
+      "category": "ติดตามลูกค้า / Follow-up",
+      "intent": "soft_close_after_recommendation",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "หลังแนะนำบริการแล้วลูกค้าเงียบ"
+      ],
+      "admin_reply_th": "ถ้าลูกค้าต้องการลดโอกาสอาการกลับมาเป็นซ้ำ แอดมินแนะนำตามอาการที่แจ้งไว้ได้เลยค่ะ เดี๋ยวช่วยเช็กคิวช่างใกล้สุดให้ได้นะคะ",
+      "next_action": "soft close",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_059",
+      "category": "ติดตามลูกค้า / Follow-up",
+      "intent": "last_follow_up",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ติดตามครั้งสุดท้าย"
+      ],
+      "admin_reply_th": "แอดมินขออนุญาตติดตามอีกครั้งนะคะ ถ้าลูกค้ายังสนใจใช้บริการ สามารถส่งวันเวลาที่สะดวกมาได้เลยค่ะ เดี๋ยวแอดมินช่วยเช็กคิวให้ค่ะ",
+      "next_action": "ปิดการติดตาม",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_060",
+      "category": "หลังจบงาน / ขอรีวิว",
+      "intent": "ask_review",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ขอรีวิว",
+        "หลังงานเสร็จ",
+        "ขอบคุณลูกค้า"
+      ],
+      "admin_reply_th": "ขอบคุณที่ใช้บริการ Coldwindflow นะคะ 🙏 หากสะดวก รบกวนช่วยรีวิวให้ทีมงานเป็นกำลังใจได้เลยค่ะ",
+      "next_action": "ส่งลิงก์รีวิว",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_061",
+      "category": "หลังจบงาน / ขอรีวิว",
+      "intent": "customer_positive_feedback",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ช่างบริการดี",
+        "เย็นขึ้นแล้ว",
+        "ล้างละเอียดมาก"
+      ],
+      "admin_reply_th": "ขอบคุณมากนะคะที่ไว้วางใจใช้บริการกับ Coldwindflow ดีใจมากเลยค่ะที่ลูกค้าพอใจกับงานและการบริการของช่างค่ะ 🙏",
+      "next_action": "ขอรีวิว",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_062",
+      "category": "หลังจบงาน / ขอรีวิว",
+      "intent": "customer_reports_problem_after_service",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "ล้างแล้วมีปัญหา",
+        "ช่างทำไม่ดี",
+        "ยังไม่หาย"
+      ],
+      "admin_reply_th": "แอดมินต้องขออภัยจริง ๆ นะคะ เดี๋ยวขอตรวจสอบรายละเอียดงานกับทีมช่างให้ก่อนค่ะ รบกวนลูกค้าส่งรูป/วิดีโอจุดที่กังวลให้แอดมินได้เลยนะคะ",
+      "next_action": "ส่งให้แอดมิน/ช่างตรวจ",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_063",
+      "category": "คำถามเสี่ยง / Admin Only",
+      "intent": "legal_dispute_landlord",
+      "risk": "admin_only",
+      "customer_questions": [
+        "จะฟ้องเจ้าของห้อง",
+        "ขอให้ช่างเป็นพยาน",
+        "ขอเอกสารใช้ฟ้อง",
+        "มีข้อพิพาท"
+      ],
+      "admin_reply_th": "เคสนี้แอดมินขอตรวจสอบรายละเอียดกับทีมก่อนนะคะ เดี๋ยวจะรีบประสานกลับให้ค่ะ",
+      "next_action": "ส่งผู้จัดการ",
+      "notes": "ไม่ให้ AI ตอบรายละเอียดเอง",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_064",
+      "category": "คำถามเสี่ยง / Admin Only",
+      "intent": "damage_claim",
+      "risk": "admin_only",
+      "customer_questions": [
+        "ช่างทำของเสียหาย",
+        "ช่างทำแอร์พัง",
+        "จะรีวิวเสียหาย"
+      ],
+      "admin_reply_th": "แอดมินต้องขออภัยจริง ๆ นะคะ เดี๋ยวขอตรวจสอบรายละเอียดกับทีมช่างให้ก่อนค่ะ รบกวนลูกค้าส่งรูป/วิดีโอและรายละเอียดเหตุการณ์ให้แอดมินได้เลยนะคะ",
+      "next_action": "ส่งผู้จัดการ",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_065",
+      "category": "คำถามเสี่ยง / Admin Only",
+      "intent": "unsafe_diy_question",
+      "risk": "technician_only",
+      "customer_questions": [
+        "ต่อไฟตรงยังไง",
+        "บายพาสบอร์ดยังไง",
+        "เติมน้ำยาเองได้ไหม",
+        "จับสายไหน"
+      ],
+      "admin_reply_th": "อาการนี้เกี่ยวกับระบบไฟฟ้าหรือระบบน้ำยา แอดมินไม่แนะนำให้ลูกค้าทำเองนะคะ เพื่อความปลอดภัย แนะนำให้ช่างเข้าไปตรวจเช็คหน้างานค่ะ",
+      "next_action": "เสนอช่างตรวจ",
+      "notes": "ห้ามสอนขั้นตอนอันตราย",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "id": "th_qa_066",
+      "category": "คำถามเสี่ยง / Admin Only",
+      "intent": "part_replacement_without_check",
+      "risk": "technician_review",
+      "customer_questions": [
+        "เปลี่ยนบอร์ดเท่าไหร่",
+        "คอมเสียไหม",
+        "เซนเซอร์เสียใช่ไหม"
+      ],
+      "admin_reply_th": "แอดมินยังไม่อยากฟันธงจากแชทอย่างเดียวนะคะ เพราะต้องดูรุ่นและวัดอาการจริงก่อน ถ้าสงสัยอะไหล่เสีย แนะนำให้ช่างเข้าตรวจเช็คก่อน แล้วจะแจ้งราคาให้ลูกค้ายืนยันก่อนซ่อมค่ะ",
+      "next_action": "เสนอค่าตรวจเช็ค",
+      "notes": "",
+      "tags": [],
+      "language": "th",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    }
+  ]
+}

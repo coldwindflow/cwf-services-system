@@ -1,0 +1,160 @@
+{
+  "kb_name": "CWF Non-Wall AC Cleaning Price & Reply Update",
+  "version": "v1.8",
+  "updated_at": "2026-06-09",
+  "purpose": "เพิ่มราคาแอร์ประเภทอื่นนอกจากแอร์ผนังเข้า CWF AI Office / Thai Q&A / Admin Reply Brain",
+  "phase": "reply_draft_only",
+  "admin_persona": {
+    "gender": "female",
+    "tone": [
+      "สุภาพ",
+      "ธรรมชาติ",
+      "สั้นแบบ LINE",
+      "ตอบราคาให้ชัด",
+      "มี next step"
+    ],
+    "particles": [
+      "ค่ะ",
+      "นะคะ"
+    ]
+  },
+  "service_prices": {
+    "wall_ac": {
+      "note": "ราคาโปรหน้าฝน ใช้กับแอร์ผนัง",
+      "up_to_12000_btu": {
+        "normal": 550,
+        "premium": 790,
+        "hang_coil": 1290,
+        "deep_disassembly": 1850
+      },
+      "from_18000_btu_up": {
+        "normal": 690,
+        "premium": 990,
+        "hang_coil": 1550,
+        "deep_disassembly": 2150
+      }
+    },
+    "non_wall_ac": {
+      "four_way_cassette": {
+        "thai_name": "แอร์สี่ทิศทาง",
+        "cleaning_price": 1500,
+        "unit": "บาท/เครื่อง",
+        "customer_reply_name": "แอร์สี่ทิศทาง"
+      },
+      "ceiling_suspended": {
+        "thai_name": "แอร์แขวน",
+        "cleaning_price": 1200,
+        "unit": "บาท/เครื่อง",
+        "customer_reply_name": "แอร์แขวน"
+      },
+      "concealed_duct": {
+        "thai_name": "แอร์เปลือย",
+        "cleaning_price": 1200,
+        "unit": "บาท/เครื่อง",
+        "customer_reply_name": "แอร์เปลือย"
+      }
+    }
+  },
+  "pricing_conditions": [
+    "ราคาที่แจ้งเป็นราคาเริ่มต้นสำหรับหน้างานมาตรฐาน",
+    "หากหน้างานเข้าถึงยาก อยู่ที่สูง ถอดยาก สกปรกมาก หรือมีข้อจำกัดในการทำงาน อาจมีค่าใช้จ่ายเพิ่มเติม",
+    "หากมีค่าจอดรถ ค่าผ่านทาง หรือค่าธรรมเนียมอาคาร ลูกค้าเป็นผู้รับผิดชอบตามจริง",
+    "ถ้ามีค่าใช้จ่ายเพิ่มเติม ช่างจะแจ้งให้ลูกค้าทราบก่อนเริ่มงาน",
+    "ทางร้านจะไม่ซ่อมหรือเปลี่ยนอะไหล่เพิ่มเติมโดยไม่ได้รับการยืนยันจากลูกค้าก่อน"
+  ],
+  "reply_rules": [
+    "ถ้าลูกค้าถามแอร์ประเภทอื่น ให้ตอบราคาเฉพาะประเภทนั้นก่อน ไม่ต้องส่งเมนูแอร์ผนังยาว",
+    "ถ้าลูกค้าไม่แน่ใจว่าเป็นแอร์ประเภทไหน ให้ขอรูปเครื่องก่อน",
+    "ถ้าลูกค้าส่งรูป ให้ AI ช่วยระบุเบื้องต้นได้ แต่ถ้าไม่ชัดให้ถามต่อ",
+    "แอร์สี่ทิศทาง/แอร์แขวน/แอร์เปลือย มักต้องถามหน้างานเพิ่ม เช่น ความสูง การเข้าถึง ฝ้า หรืออาคาร",
+    "ห้ามใช้ราคาแอร์ผนังไปตอบแอร์สี่ทิศทาง/แขวน/เปลือย",
+    "ถ้ามีอาการเสีย เช่น ไม่เย็น น้ำหยด โค้ด error ให้แยกว่าต้องล้างหรือตรวจเช็ค ไม่ขายล้างอย่างเดียว"
+  ],
+  "intents": [
+    {
+      "id": "ask_four_way_cleaning_price",
+      "category": "ราคาแอร์ประเภทอื่น",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "แอร์สี่ทิศทางล้างเท่าไหร่",
+        "cassette aircon cleaning price",
+        "แอร์ 4 ทิศทาง ราคา"
+      ],
+      "admin_reply_th": "แอร์สี่ทิศทาง ล้างราคา 1,500 บาท/เครื่องค่ะ ราคานี้เป็นราคาเริ่มต้นสำหรับหน้างานมาตรฐานนะคะ ลูกค้าล้างกี่เครื่องคะ",
+      "next_action": "ถามจำนวนเครื่อง/โลเคชัน"
+    },
+    {
+      "id": "ask_ceiling_suspended_cleaning_price",
+      "category": "ราคาแอร์ประเภทอื่น",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "แอร์แขวนล้างเท่าไหร่",
+        "ล้างแอร์แขวนราคา",
+        "แอร์แขวนกี่บาท"
+      ],
+      "admin_reply_th": "แอร์แขวน ล้างราคา 1,200 บาท/เครื่องค่ะ ราคานี้เป็นราคาเริ่มต้นสำหรับหน้างานมาตรฐานนะคะ ลูกค้าล้างกี่เครื่องคะ",
+      "next_action": "ถามจำนวนเครื่อง/โลเคชัน"
+    },
+    {
+      "id": "ask_concealed_duct_cleaning_price",
+      "category": "ราคาแอร์ประเภทอื่น",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "แอร์เปลือยล้างเท่าไหร่",
+        "ล้างแอร์เปลือยราคา",
+        "แอร์ซ่อนในฝ้า"
+      ],
+      "admin_reply_th": "แอร์เปลือย ล้างราคา 1,200 บาท/เครื่องค่ะ ราคานี้เป็นราคาเริ่มต้นสำหรับหน้างานมาตรฐานนะคะ ถ้าหน้างานเข้าถึงยากหรืออยู่ในฝ้า ช่างจะประเมินก่อนเริ่มงานค่ะ",
+      "next_action": "ขอรูป/โลเคชัน/จำนวนเครื่อง"
+    },
+    {
+      "id": "ask_non_wall_price_menu",
+      "category": "ราคาแอร์ประเภทอื่น",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "แอร์แบบอื่นราคาเท่าไหร่",
+        "มีราคาแอร์แขวนกับสี่ทิศทางไหม",
+        "แอร์ไม่ใช่ผนัง"
+      ],
+      "admin_reply_th": "ได้ค่ะ ราคาล้างแอร์ประเภทอื่น ๆ นะคะ\n\nแอร์สี่ทิศทาง 1,500 บาท/เครื่อง\nแอร์แขวน 1,200 บาท/เครื่อง\nแอร์เปลือย 1,200 บาท/เครื่องค่ะ\n\nราคานี้เป็นราคาเริ่มต้นสำหรับหน้างานมาตรฐานนะคะ ลูกค้าล้างกี่เครื่องคะ",
+      "next_action": "ถามจำนวนเครื่อง/รูปเครื่อง/โลเคชัน"
+    },
+    {
+      "id": "customer_unsure_ac_type",
+      "category": "คัดกรองประเภทแอร์",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "ไม่รู้ว่าเป็นแอร์แบบไหน",
+        "แอร์แบบนี้คิดราคาอะไร",
+        "ส่งรูปแอร์"
+      ],
+      "admin_reply_th": "ลูกค้าส่งรูปตัวแอร์ให้แอดมินดูเบื้องต้นได้เลยค่ะ เดี๋ยวแอดมินช่วยดูว่าเป็นแอร์ผนัง แอร์แขวน แอร์สี่ทิศทาง หรือแอร์เปลือยนะคะ",
+      "next_action": "ขอรูปเครื่อง"
+    },
+    {
+      "id": "non_wall_with_access_condition",
+      "category": "เงื่อนไขหน้างาน",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "แอร์อยู่สูงคิดเพิ่มไหม",
+        "แอร์อยู่ในฝ้าล้างได้ไหม",
+        "หน้างานเข้าถึงยาก"
+      ],
+      "admin_reply_th": "ล้างได้ค่ะ แต่ถ้าหน้างานอยู่สูง เข้าถึงยาก ต้องเปิดฝ้า หรือมีข้อจำกัดในการทำงาน อาจมีค่าใช้จ่ายเพิ่มเติมนะคะ ช่างจะแจ้งประเมินให้ลูกค้าทราบก่อนเริ่มงานค่ะ",
+      "next_action": "ขอรูปหน้างาน"
+    },
+    {
+      "id": "non_wall_symptom_not_cold",
+      "category": "อาการเสียแอร์ประเภทอื่น",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "แอร์สี่ทิศทางไม่เย็น",
+        "แอร์แขวนไม่เย็น",
+        "แอร์เปลือยไม่เย็น"
+      ],
+      "admin_reply_th": "ถ้าเป็นอาการไม่เย็น เบื้องต้นอาจเกิดได้ทั้งจากความสกปรก น้ำยา ระบบไฟ หรือคอยล์ร้อนทำงานผิดปกตินะคะ รบกวนลูกค้าแจ้งว่าล้างล่าสุดเมื่อไหร่ และตัวเครื่องด้านนอกทำงานไหมคะ เดี๋ยวแอดมินช่วยคัดกรองให้ก่อนค่ะ",
+      "next_action": "ถามอาการ/ล้างล่าสุด/คอยล์ร้อน"
+    }
+  ],
+  "codex_prompt": "Update CWF AI Office knowledge base with non-wall AC cleaning prices: four-way cassette 1,500 THB/unit, ceiling suspended 1,200 THB/unit, concealed duct 1,200 THB/unit. Use only these verified prices. Add reply rules so AI does not apply wall AC pricing to non-wall AC. For uncertain AC type, ask for a photo. For difficult access/high/ceiling/dirty jobs, state that extra charges may apply and technicians will inform before work. Keep customer replies short, natural Thai female admin style. Phase 1 remains reply-draft/read-only; do not auto-send LINE or modify jobs."
+}

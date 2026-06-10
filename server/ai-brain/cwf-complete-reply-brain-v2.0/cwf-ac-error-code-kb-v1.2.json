@@ -1,0 +1,3611 @@
+{
+  "kb_name": "CWF AC Error Code Knowledge Base",
+  "version": "v1.2",
+  "updated_at": "2026-06-09",
+  "scope": "starter verified seed for CWF AI Office / Sales AI / Technician AI Assistant",
+  "rules": {
+    "no_guessing": true,
+    "phase_1_mode": "read_only_reply_assist",
+    "human_approval_required": true,
+    "never_send_to_customer_automatically": true,
+    "require_source_before_answering_code_meaning": true,
+    "if_brand_or_model_unknown": "ask_for_brand_model_code_photo_video",
+    "safety": [
+      "ห้ามให้ลูกค้าถอดฝาครอบบอร์ดไฟ",
+      "ห้ามให้ลูกค้าจับสายไฟ",
+      "ห้ามให้ลูกค้าปีนดูคอยล์ร้อนในจุดเสี่ยง",
+      "ห้ามให้ลูกค้าเติมน้ำยาเอง",
+      "ห้ามให้ลูกค้ารีเซ็ตเบรกเกอร์ซ้ำเมื่อมีกลิ่นไหม้หรือเบรกเกอร์ตัด"
+    ]
+  },
+  "coverage_summary": {
+    "Daikin": "verified check method only; code meanings require per-model lookup/manual",
+    "Carrier": "verified check method + PDF reference for selected ceiling series; full table needs normalization",
+    "Mitsubishi Electric": "verified seed code table from official Mitsubishi Electric Malaysia troubleshooting page",
+    "Panasonic": "verified common code table from official Panasonic Philippines self-diagnosis page",
+    "Samsung": "verified common display/service codes from Samsung Philippines support pages",
+    "Haier": "verified code list from Haier Malaysia troubleshooting page",
+    "LG": "verified CH61 article from LG official support; full code table still pending"
+  },
+  "records_count": 124,
+  "records": [
+    {
+      "brand": "Daikin",
+      "record_type": "check_method",
+      "model_family": "Residential Air Conditioner",
+      "remote_type": "ARC447A",
+      "code": null,
+      "code_display_method": "กดปุ่ม CANCEL ค้างประมาณ 5 วินาที โดยหันรีโมทไปทางแอร์ ระบบจะแสดงรหัสข้อผิดพลาดบนรีโมท",
+      "meaning_en": "Remote self-diagnosis method",
+      "meaning_th": "วิธีเช็คโค้ดด้วยรีโมทไดกิ้น",
+      "customer_safe_checks": [
+        "ให้ลูกค้ากด CANCEL ค้างประมาณ 5 วินาที หากเป็นรีโมทรุ่นที่รองรับ",
+        "ถ่ายรูปโค้ดหรือวิดีโอเสียง beep ส่งให้แอดมิน",
+        "ถ้าขึ้นโค้ดแล้ว ให้ส่งยี่ห้อ รุ่น และอาการประกอบ",
+        "ห้ามเปิดแผงไฟหรือรีเซ็ตเบรกเกอร์ซ้ำเมื่อมีกลิ่นไหม้/เบรกเกอร์ตัด"
+      ],
+      "admin_reply_template": "ถ้าเป็นไดกิ้น รบกวนลูกค้าลองกดปุ่ม CANCEL ค้างประมาณ 5 วินาทีโดยหันรีโมทไปที่แอร์นะคะ ถ้ามีโค้ดขึ้น รบกวนถ่ายรูปส่งให้แอดมิน พร้อมแจ้งอาการที่เป็น เดี๋ยวแอดมินช่วยเช็คเบื้องต้นให้ค่ะ",
+      "severity": "info",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.daikin.co.th/th/article/errorCode",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified_method_only",
+      "safety_note": "หน้านี้ยืนยันวิธีเช็คโค้ด ไม่ได้ใช้เป็นตารางความหมายโค้ดทั้งหมด"
+    },
+    {
+      "brand": "Daikin",
+      "record_type": "check_method",
+      "model_family": "Inverter / Non-Inverter",
+      "remote_type": "DGS01/BRC52B65/ARC480A36/ARC466A19/ARC433B/BRC1E63 and others",
+      "code": null,
+      "code_display_method": "กด ON TIMER CANCEL หรือ OFF TIMER CANCEL ค้าง 5 วินาทีให้ 00 กระพริบ แล้วกดซ้ำจนมีเสียง beep ต่อเนื่อง",
+      "meaning_en": "Remote self-diagnosis method",
+      "meaning_th": "วิธีเช็คโค้ดด้วยรีโมทไดกิ้นตามหน้า Daikin Malaysia",
+      "customer_safe_checks": [
+        "เลือกรุ่นรีโมทให้ตรงก่อนเช็ค",
+        "จดโค้ดที่แสดงหลังมีเสียง beep ต่อเนื่อง",
+        "ส่งรูปโค้ดและรุ่นแอร์ให้แอดมิน",
+        "หากเบรกเกอร์/ELCB ตัด ห้าม reset ทันทีโดยไม่ตรวจสอบ"
+      ],
+      "admin_reply_template": "ไดกิ้นบางรุ่นต้องกดปุ่ม TIMER CANCEL ค้างประมาณ 5 วินาทีให้ขึ้น 00 แล้วกดเลื่อนไปจนมีเสียง beep ต่อเนื่องค่ะ รบกวนถ่ายรูปโค้ดที่ขึ้นกับรุ่นแอร์ส่งมาให้แอดมินนะคะ",
+      "severity": "info",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.daikin.com.my/service/error-codes/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified_method_only",
+      "safety_note": "โค้ดจริงต้องเทียบรุ่นก่อน ไม่ให้ AI เดา"
+    },
+    {
+      "brand": "Carrier",
+      "record_type": "check_method",
+      "model_family": "general residential / selected remote controllers",
+      "remote_type": "remote with CHECK pinhole/service mode",
+      "code": null,
+      "code_display_method": "ใช้วัสดุปลายแหลมกดช่อง CHECK เพื่อเข้า Service mode เห็น 00 แล้วกด TEMP เพื่อเลื่อนโค้ด",
+      "meaning_en": "Remote service mode error-code check method",
+      "meaning_th": "วิธีเช็ค Error Code แคเรียร์จากรีโมทบางรุ่น",
+      "customer_safe_checks": [
+        "ให้ลูกค้าถ่ายรูปรีโมทก่อนว่ามีช่อง CHECK หรือไม่",
+        "ถ้าลูกค้ากดไม่เป็น ให้ขอรูป/วิดีโอไฟกระพริบแทน",
+        "ห้ามล้าง memory หรือ CLEAR ถ้าไม่แน่ใจ",
+        "ส่งรุ่นเครื่องและอาการให้แอดมิน"
+      ],
+      "admin_reply_template": "แคเรียร์บางรุ่นสามารถเช็คโค้ดจากช่อง CHECK บนรีโมทได้ค่ะ รบกวนลูกค้าถ่ายรูปรีโมทและหน้าจอแอร์ให้แอดมินก่อนนะคะ ถ้ามีโค้ดหรือไฟกระพริบ เดี๋ยวแอดมินช่วยคัดกรองเบื้องต้นให้ค่ะ",
+      "severity": "info",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://carrierthailand.com/carrier-article/%E0%B8%A7%E0%B8%98%E0%B9%80%E0%B8%8A%E0%B8%81-error-code/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified_method_only",
+      "safety_note": "Carrier มีตารางแยกตามซีรีส์ ต้องเทียบรุ่นก่อน"
+    },
+    {
+      "brand": "Carrier",
+      "record_type": "source_reference",
+      "model_family": "DISCOVERY Ceiling Series TSF-CP/TGF-CP, X POWER Ceiling Series TSV-CP/TGV-CP",
+      "remote_type": "wired/wireless controller",
+      "code": null,
+      "code_display_method": "PDF ตาราง Error Code สำหรับ Ceiling Series",
+      "meaning_en": "Carrier Thailand PDF contains error-code table for selected ceiling series",
+      "meaning_th": "แหล่งตารางโค้ดสำหรับแอร์แขวน/ฝังฝ้าบางซีรีส์ของ Carrier",
+      "customer_safe_checks": [
+        "ต้องขอรุ่นเครื่องก่อนเทียบตาราง",
+        "ถ่ายรูปหน้าจอรีโมท/ไฟกระพริบ",
+        "ให้ช่างตรวจสอบเมื่อเป็นโค้ดหยุดเครื่อง"
+      ],
+      "admin_reply_template": "รุ่นนี้ต้องเทียบตารางโค้ดตามซีรีส์ของ Carrier ก่อนค่ะ รบกวนลูกค้าส่งรุ่นเครื่องหรือรูปสติ๊กเกอร์ข้างเครื่อง พร้อมรูปโค้ด/ไฟกระพริบให้แอดมินนะคะ",
+      "severity": "info",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_pdf",
+      "source_reference": "https://carrierthailand.com/wp-content/uploads/2023/03/error-code-ceiling-series-2021.pdf",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified_reference_only",
+      "safety_note": "ยังไม่แตกทุกโค้ดจาก PDF เพราะต้อง normalize ตาราง OCR/ข้อความก่อนนำเข้าระบบจริง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "00",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "None (Normal)",
+      "meaning_th": "ไม่พบความผิดปกติ",
+      "likely_causes": [
+        "ไม่พบความผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด 00 ของ Mitsubishi Electric เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E6",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Serial Signal",
+      "meaning_th": "สัญญาณ Serial ผิดปกติ",
+      "likely_causes": [
+        "สัญญาณ Serial ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E6 ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ สัญญาณ Serial ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E7",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Serial Signal",
+      "meaning_th": "สัญญาณ Serial ผิดปกติ",
+      "likely_causes": [
+        "สัญญาณ Serial ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E7 ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ สัญญาณ Serial ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "Fb",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Indoor control system",
+      "meaning_th": "ระบบควบคุมเครื่องในผิดปกติ",
+      "likely_causes": [
+        "ระบบควบคุมเครื่องในผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด Fb ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ ระบบควบคุมเครื่องในผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "P1",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Room temperature thermistor",
+      "meaning_th": "เทอร์มิสเตอร์วัดอุณหภูมิห้องผิดปกติ",
+      "likely_causes": [
+        "เทอร์มิสเตอร์วัดอุณหภูมิห้องผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด P1 ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ เทอร์มิสเตอร์วัดอุณหภูมิห้องผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "P2",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Indoor coil thermistor",
+      "meaning_th": "เทอร์มิสเตอร์คอยล์เย็นผิดปกติ",
+      "likely_causes": [
+        "เทอร์มิสเตอร์คอยล์เย็นผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด P2 ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ เทอร์มิสเตอร์คอยล์เย็นผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "P9",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Indoor coil thermistor",
+      "meaning_th": "เทอร์มิสเตอร์คอยล์เย็นผิดปกติ",
+      "likely_causes": [
+        "เทอร์มิสเตอร์คอยล์เย็นผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด P9 ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ เทอร์มิสเตอร์คอยล์เย็นผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "Pb",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Indoor fan motor",
+      "meaning_th": "มอเตอร์พัดลมเครื่องในผิดปกติ",
+      "likely_causes": [
+        "มอเตอร์พัดลมเครื่องในผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด Pb ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ มอเตอร์พัดลมเครื่องในผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E8",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Indoor/outdoor communication, receiving error",
+      "meaning_th": "การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E8 ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E9",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Indoor/outdoor communication, receiving error",
+      "meaning_th": "การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E9 ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "EC",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Indoor/outdoor communication, receiving error",
+      "meaning_th": "การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด EC ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "FC",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Nonvolatile memory data",
+      "meaning_th": "ข้อมูลหน่วยความจำเครื่องผิดปกติ",
+      "likely_causes": [
+        "ข้อมูลหน่วยความจำเครื่องผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด FC ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ ข้อมูลหน่วยความจำเครื่องผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "Fd",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Different voltage",
+      "meaning_th": "แรงดันไฟไม่ตรงหรือผิดปกติ",
+      "likely_causes": [
+        "แรงดันไฟไม่ตรงหรือผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด Fd ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ แรงดันไฟไม่ตรงหรือผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "P8",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "4-way valve/Pipe temperature",
+      "meaning_th": "วาล์ว 4 ทางหรืออุณหภูมิท่อผิดปกติ",
+      "likely_causes": [
+        "วาล์ว 4 ทางหรืออุณหภูมิท่อผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด P8 ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ วาล์ว 4 ทางหรืออุณหภูมิท่อผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "PL",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Outdoor refrigerant system",
+      "meaning_th": "ระบบน้ำยา/วงจรสารทำความเย็นเครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "ระบบน้ำยา/วงจรสารทำความเย็นเครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด PL ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ ระบบน้ำยา/วงจรสารทำความเย็นเครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "U3",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Discharge temperature thermistor",
+      "meaning_th": "เทอร์มิสเตอร์อุณหภูมิท่อจ่ายผิดปกติ",
+      "likely_causes": [
+        "เทอร์มิสเตอร์อุณหภูมิท่อจ่ายผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด U3 ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ เทอร์มิสเตอร์อุณหภูมิท่อจ่ายผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "U4",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Defrost thermistor / outdoor thermistor group",
+      "meaning_th": "เทอร์มิสเตอร์ละลายน้ำแข็งหรือกลุ่มเซนเซอร์เครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "เทอร์มิสเตอร์ละลายน้ำแข็งหรือกลุ่มเซนเซอร์เครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด U4 ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ เทอร์มิสเตอร์ละลายน้ำแข็งหรือกลุ่มเซนเซอร์เครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "UE",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Stop valve (Closed valve)",
+      "meaning_th": "วาล์วปิด/สต็อปวาล์วอาจปิดอยู่",
+      "likely_causes": [
+        "วาล์วปิด/สต็อปวาล์วอาจปิดอยู่"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด UE ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ วาล์วปิด/สต็อปวาล์วอาจปิดอยู่ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Mitsubishi Electric",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "UP",
+      "code_display_method": "remote controller / operation indicator blinking",
+      "meaning_en": "Outdoor power system",
+      "meaning_th": "ระบบไฟเครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "ระบบไฟเครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด UP ของ Mitsubishi Electric เบื้องต้นเกี่ยวกับ ระบบไฟเครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.mitsubishielectricmalaysia.com/troubleshooting-ac/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H00",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "No memory of failure",
+      "meaning_th": "ไม่พบประวัติความผิดปกติ",
+      "likely_causes": [
+        "ไม่พบประวัติความผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H00 ของ Panasonic เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H11",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor / Outdoor abnormal communication",
+      "meaning_th": "การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H11 ของ Panasonic เบื้องต้นเกี่ยวกับ การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H12",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor unit capacity unmatched",
+      "meaning_th": "ขนาด/ความจุเครื่องในไม่ตรงระบบ",
+      "likely_causes": [
+        "ขนาด/ความจุเครื่องในไม่ตรงระบบ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H12 ของ Panasonic เบื้องต้นเกี่ยวกับ ขนาด/ความจุเครื่องในไม่ตรงระบบ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H14",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor intake air temperature sensor abnormality",
+      "meaning_th": "เซนเซอร์อุณหภูมิอากาศเข้าเครื่องในผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิอากาศเข้าเครื่องในผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H14 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิอากาศเข้าเครื่องในผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H15",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Compressor temperature sensor abnormality",
+      "meaning_th": "เซนเซอร์อุณหภูมิคอมเพรสเซอร์ผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิคอมเพรสเซอร์ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H15 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิคอมเพรสเซอร์ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H16",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Outdoor current transformer abnormality",
+      "meaning_th": "ตัววัดกระแสเครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "ตัววัดกระแสเครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H16 ของ Panasonic เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H17",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Outdoor suction temperature sensor abnormality",
+      "meaning_th": "เซนเซอร์อุณหภูมิท่อดูดเครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิท่อดูดเครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H17 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิท่อดูดเครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H19",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor fan motor mechanism lock",
+      "meaning_th": "มอเตอร์พัดลมเครื่องในติด/ล็อก",
+      "likely_causes": [
+        "มอเตอร์พัดลมเครื่องในติด/ล็อก"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H19 ของ Panasonic เบื้องต้นเกี่ยวกับ มอเตอร์พัดลมเครื่องในติด/ล็อก ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H21",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor float switch operation abnormality",
+      "meaning_th": "สวิตช์ลูกลอยเครื่องในผิดปกติ",
+      "likely_causes": [
+        "สวิตช์ลูกลอยเครื่องในผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H21 ของ Panasonic เบื้องต้นเกี่ยวกับ สวิตช์ลูกลอยเครื่องในผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H23",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor heat exchanger temperature sensor 1 abnormality",
+      "meaning_th": "เซนเซอร์คอยล์เย็น 1 ผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์คอยล์เย็น 1 ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H23 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์คอยล์เย็น 1 ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H24",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor heat exchanger temperature sensor 2 abnormality",
+      "meaning_th": "เซนเซอร์คอยล์เย็น 2 ผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์คอยล์เย็น 2 ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H24 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์คอยล์เย็น 2 ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H25",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor ion device abnormality",
+      "meaning_th": "อุปกรณ์ไอออนเครื่องในผิดปกติ",
+      "likely_causes": [
+        "อุปกรณ์ไอออนเครื่องในผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H25 ของ Panasonic เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H26",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Minus ION abnormality",
+      "meaning_th": "ระบบ Minus Ion ผิดปกติ",
+      "likely_causes": [
+        "ระบบ Minus Ion ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H26 ของ Panasonic เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H27",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Outdoor air temperature sensor abnormality",
+      "meaning_th": "เซนเซอร์อุณหภูมิอากาศภายนอกผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิอากาศภายนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H27 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิอากาศภายนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H28",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Outdoor heat exchanger temperature sensor 1 abnormality",
+      "meaning_th": "เซนเซอร์คอยล์ร้อน 1 ผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์คอยล์ร้อน 1 ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H28 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์คอยล์ร้อน 1 ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H30",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Outdoor discharge pipe temperature sensor abnormality",
+      "meaning_th": "เซนเซอร์อุณหภูมิท่อดิสชาร์จเครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิท่อดิสชาร์จเครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H30 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิท่อดิสชาร์จเครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H31",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Abnormal swimming pool sensor",
+      "meaning_th": "เซนเซอร์ระบบสระว่ายน้ำผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์ระบบสระว่ายน้ำผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H31 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์ระบบสระว่ายน้ำผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H32",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Outdoor heat exchanger temperature sensor 2 abnormality",
+      "meaning_th": "เซนเซอร์คอยล์ร้อน 2 ผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์คอยล์ร้อน 2 ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H32 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์คอยล์ร้อน 2 ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H33",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor / outdoor misconnection abnormality",
+      "meaning_th": "การต่อสายเครื่องใน/เครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "การต่อสายเครื่องใน/เครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H33 ของ Panasonic เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H34",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Outdoor heat sink temperature sensor abnormality",
+      "meaning_th": "เซนเซอร์ฮีตซิงก์เครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์ฮีตซิงก์เครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H34 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์ฮีตซิงก์เครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H35",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor / outdoor water adverse current abnormality",
+      "meaning_th": "กระแสน้ำย้อน/ระบบน้ำเครื่องใน/เครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "กระแสน้ำย้อน/ระบบน้ำเครื่องใน/เครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H35 ของ Panasonic เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H36",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Outdoor gas pipe temperature sensor abnormality",
+      "meaning_th": "เซนเซอร์ท่อก๊าซเครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์ท่อก๊าซเครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H36 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์ท่อก๊าซเครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H37",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Outdoor liquid pipe temperature sensor abnormality",
+      "meaning_th": "เซนเซอร์ท่อน้ำยาเหลวเครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์ท่อน้ำยาเหลวเครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H37 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์ท่อน้ำยาเหลวเครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H38",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor / outdoor mismatch (brand code)",
+      "meaning_th": "เครื่องใน/เครื่องนอกไม่เข้ากัน",
+      "likely_causes": [
+        "เครื่องใน/เครื่องนอกไม่เข้ากัน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H38 ของ Panasonic เบื้องต้นเกี่ยวกับ เครื่องใน/เครื่องนอกไม่เข้ากัน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H39",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Abnormal indoor operating unit or standby units",
+      "meaning_th": "เครื่องในที่ทำงานหรือสแตนด์บายผิดปกติ",
+      "likely_causes": [
+        "เครื่องในที่ทำงานหรือสแตนด์บายผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H39 ของ Panasonic เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H41",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Abnormal wiring or piping connection",
+      "meaning_th": "การต่อสายไฟหรือท่อผิดปกติ",
+      "likely_causes": [
+        "การต่อสายไฟหรือท่อผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H41 ของ Panasonic เบื้องต้นเกี่ยวกับ การต่อสายไฟหรือท่อผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H50",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Ventilation fan motor locked",
+      "meaning_th": "มอเตอร์พัดลมระบายอากาศล็อก",
+      "likely_causes": [
+        "มอเตอร์พัดลมระบายอากาศล็อก"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H50 ของ Panasonic เบื้องต้นเกี่ยวกับ มอเตอร์พัดลมระบายอากาศล็อก ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H51",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Ventilation fan motor locked",
+      "meaning_th": "มอเตอร์พัดลมระบายอากาศล็อก",
+      "likely_causes": [
+        "มอเตอร์พัดลมระบายอากาศล็อก"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H51 ของ Panasonic เบื้องต้นเกี่ยวกับ มอเตอร์พัดลมระบายอากาศล็อก ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H52",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Left-right limit switch fixing abnormality",
+      "meaning_th": "ลิมิตสวิตช์ซ้าย-ขวาผิดปกติ",
+      "likely_causes": [
+        "ลิมิตสวิตช์ซ้าย-ขวาผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H52 ของ Panasonic เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H58",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor gas sensor abnormality",
+      "meaning_th": "เซนเซอร์ก๊าซเครื่องในผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์ก๊าซเครื่องในผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H58 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์ก๊าซเครื่องในผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H59",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Eco sensor abnormality",
+      "meaning_th": "เซนเซอร์ Eco ผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์ Eco ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H59 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์ Eco ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H64",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Outdoor high pressure sensor abnormality",
+      "meaning_th": "เซนเซอร์แรงดันสูงเครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์แรงดันสูงเครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H64 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์แรงดันสูงเครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H67",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "nanoe™ abnormality",
+      "meaning_th": "ระบบ nanoe™ ผิดปกติ",
+      "likely_causes": [
+        "ระบบ nanoe™ ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H67 ของ Panasonic เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H70",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Light sensor abnormality",
+      "meaning_th": "เซนเซอร์แสงผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์แสงผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H70 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์แสงผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H71",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "DC cooling fan inside control board abnormality",
+      "meaning_th": "พัดลม DC บนแผงควบคุมผิดปกติ",
+      "likely_causes": [
+        "พัดลม DC บนแผงควบคุมผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H71 ของ Panasonic เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H72",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Abnormality tank temperature sensor",
+      "meaning_th": "เซนเซอร์อุณหภูมิถังผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิถังผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H72 ของ Panasonic เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิถังผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H79",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Wireless LAN module write error",
+      "meaning_th": "โมดูล Wireless LAN เขียนข้อมูลผิดปกติ",
+      "likely_causes": [
+        "โมดูล Wireless LAN เขียนข้อมูลผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H79 ของ Panasonic เบื้องต้นเกี่ยวกับ โมดูล Wireless LAN เขียนข้อมูลผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H85",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Abnormal communication between indoor & wireless LAN module",
+      "meaning_th": "การสื่อสารระหว่างเครื่องในกับโมดูล Wireless LAN ผิดปกติ",
+      "likely_causes": [
+        "การสื่อสารระหว่างเครื่องในกับโมดูล Wireless LAN ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H85 ของ Panasonic เบื้องต้นเกี่ยวกับ การสื่อสารระหว่างเครื่องในกับโมดูล Wireless LAN ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H97",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Outdoor fan motor mechanism lock",
+      "meaning_th": "มอเตอร์พัดลมเครื่องนอกล็อก",
+      "likely_causes": [
+        "มอเตอร์พัดลมเครื่องนอกล็อก"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H97 ของ Panasonic เบื้องต้นเกี่ยวกับ มอเตอร์พัดลมเครื่องนอกล็อก ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H98",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor high-pressure protection",
+      "meaning_th": "ระบบป้องกันแรงดันสูงฝั่งเครื่องในทำงาน",
+      "likely_causes": [
+        "ระบบป้องกันแรงดันสูงฝั่งเครื่องในทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H98 ของ Panasonic เบื้องต้นเกี่ยวกับ ระบบป้องกันแรงดันสูงฝั่งเครื่องในทำงาน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "H99",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor operating unit freeze protection",
+      "meaning_th": "ระบบป้องกันคอยล์เย็นเป็นน้ำแข็งทำงาน",
+      "likely_causes": [
+        "ระบบป้องกันคอยล์เย็นเป็นน้ำแข็งทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด H99 ของ Panasonic เบื้องต้นเกี่ยวกับ ระบบป้องกันคอยล์เย็นเป็นน้ำแข็งทำงาน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F11",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "4-way valve switching abnormality",
+      "meaning_th": "วาล์ว 4 ทางสลับผิดปกติ",
+      "likely_causes": [
+        "วาล์ว 4 ทางสลับผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F11 ของ Panasonic เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F16",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Total running current protection",
+      "meaning_th": "ระบบป้องกันกระแสรวมทำงาน",
+      "likely_causes": [
+        "ระบบป้องกันกระแสรวมทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F16 ของ Panasonic เบื้องต้นเกี่ยวกับ ระบบป้องกันกระแสรวมทำงาน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F17",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Indoor standby units freezing abnormality",
+      "meaning_th": "เครื่องในสแตนด์บายเกิดการแช่แข็งผิดปกติ",
+      "likely_causes": [
+        "เครื่องในสแตนด์บายเกิดการแช่แข็งผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F17 ของ Panasonic เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F18",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Dry circuit blocked abnormality",
+      "meaning_th": "วงจร Dry อุดตันผิดปกติ",
+      "likely_causes": [
+        "วงจร Dry อุดตันผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F18 ของ Panasonic เบื้องต้นเกี่ยวกับ วงจร Dry อุดตันผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F87",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Control box overheat protection",
+      "meaning_th": "กล่องควบคุมร้อนเกิน ระบบป้องกันทำงาน",
+      "likely_causes": [
+        "กล่องควบคุมร้อนเกิน ระบบป้องกันทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F87 ของ Panasonic เบื้องต้นเกี่ยวกับ กล่องควบคุมร้อนเกิน ระบบป้องกันทำงาน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F90",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Power factor correction (PFC) circuit protection / system and compressor microcomputer communication error",
+      "meaning_th": "วงจร PFC หรือการสื่อสารไมโครคอมพิวเตอร์ระบบ/คอมเพรสเซอร์ผิดปกติ",
+      "likely_causes": [
+        "วงจร PFC หรือการสื่อสารไมโครคอมพิวเตอร์ระบบ/คอมเพรสเซอร์ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F90 ของ Panasonic เบื้องต้นเกี่ยวกับ วงจร PFC หรือการสื่อสารไมโครคอมพิวเตอร์ระบบ/คอมเพรสเซอร์ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F91",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Refrigerant cycle abnormality",
+      "meaning_th": "วงจรสารทำความเย็นผิดปกติ",
+      "likely_causes": [
+        "วงจรสารทำความเย็นผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F91 ของ Panasonic เบื้องต้นเกี่ยวกับ วงจรสารทำความเย็นผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F93",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Compressor abnormal revolution",
+      "meaning_th": "รอบคอมเพรสเซอร์ผิดปกติ",
+      "likely_causes": [
+        "รอบคอมเพรสเซอร์ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F93 ของ Panasonic เบื้องต้นเกี่ยวกับ รอบคอมเพรสเซอร์ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F94",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Compressor discharge pressure protection",
+      "meaning_th": "ระบบป้องกันแรงดันดิสชาร์จคอมเพรสเซอร์ทำงาน",
+      "likely_causes": [
+        "ระบบป้องกันแรงดันดิสชาร์จคอมเพรสเซอร์ทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F94 ของ Panasonic เบื้องต้นเกี่ยวกับ ระบบป้องกันแรงดันดิสชาร์จคอมเพรสเซอร์ทำงาน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F95",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Outdoor cooling high pressure protection",
+      "meaning_th": "ระบบป้องกันแรงดันสูงเครื่องนอกขณะทำความเย็น",
+      "likely_causes": [
+        "ระบบป้องกันแรงดันสูงเครื่องนอกขณะทำความเย็น"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F95 ของ Panasonic เบื้องต้นเกี่ยวกับ ระบบป้องกันแรงดันสูงเครื่องนอกขณะทำความเย็น ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F96",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Power transistor module overheating protection",
+      "meaning_th": "โมดูล Power Transistor ร้อนเกิน ระบบป้องกันทำงาน",
+      "likely_causes": [
+        "โมดูล Power Transistor ร้อนเกิน ระบบป้องกันทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F96 ของ Panasonic เบื้องต้นเกี่ยวกับ โมดูล Power Transistor ร้อนเกิน ระบบป้องกันทำงาน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F97",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Compressor overheating protection",
+      "meaning_th": "คอมเพรสเซอร์ร้อนเกิน ระบบป้องกันทำงาน",
+      "likely_causes": [
+        "คอมเพรสเซอร์ร้อนเกิน ระบบป้องกันทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F97 ของ Panasonic เบื้องต้นเกี่ยวกับ คอมเพรสเซอร์ร้อนเกิน ระบบป้องกันทำงาน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F98",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Total running current protection",
+      "meaning_th": "ระบบป้องกันกระแสรวมทำงาน",
+      "likely_causes": [
+        "ระบบป้องกันกระแสรวมทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F98 ของ Panasonic เบื้องต้นเกี่ยวกับ ระบบป้องกันกระแสรวมทำงาน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Panasonic",
+      "model_family": "Inverter models / common codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F99",
+      "code_display_method": "remote control / Panasonic Comfort Cloud app",
+      "meaning_en": "Outdoor direct current (DC) peak detection",
+      "meaning_th": "ตรวจพบกระแส DC peak ฝั่งเครื่องนอก",
+      "likely_causes": [
+        "ตรวจพบกระแส DC peak ฝั่งเครื่องนอก"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F99 ของ Panasonic เบื้องต้นเกี่ยวกับ ตรวจพบกระแส DC peak ฝั่งเครื่องนอก ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.panasonic.com/ph/air-solutions/learn-more/panasonic-air-conditioner-error-codes-using-the-self-diagnosis-function.html",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "CF",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Filter cleaning reminder or Filter reset indicator",
+      "meaning_th": "แจ้งเตือนทำความสะอาด/รีเซ็ตฟิลเตอร์",
+      "likely_causes": [
+        "แจ้งเตือนทำความสะอาด/รีเซ็ตฟิลเตอร์"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด CF ของ Samsung เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/error-codes-on-your-samsung-indoor-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "CI",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Auto clean function",
+      "meaning_th": "ระบบ Auto clean กำลังทำงาน",
+      "likely_causes": [
+        "ระบบ Auto clean กำลังทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด CI ของ Samsung เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/error-codes-on-your-samsung-indoor-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "dF",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Auto Defrost function",
+      "meaning_th": "ระบบละลายน้ำแข็งอัตโนมัติกำลังทำงาน",
+      "likely_causes": [
+        "ระบบละลายน้ำแข็งอัตโนมัติกำลังทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด dF ของ Samsung เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/error-codes-on-your-samsung-indoor-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "C1/21",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Defective room temperature sensor error",
+      "meaning_th": "เซนเซอร์อุณหภูมิห้องผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิห้องผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด C1/21 ของ Samsung เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิห้องผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/error-codes-on-your-samsung-indoor-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "C1/22",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Defective heat exchanger temperature sensor",
+      "meaning_th": "เซนเซอร์อุณหภูมิแผงแลกเปลี่ยนความร้อนผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิแผงแลกเปลี่ยนความร้อนผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด C1/22 ของ Samsung เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิแผงแลกเปลี่ยนความร้อนผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/error-codes-on-your-samsung-indoor-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "C1/54",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Fan is not rotating",
+      "meaning_th": "พัดลมไม่หมุน",
+      "likely_causes": [
+        "พัดลมไม่หมุน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด C1/54 ของ Samsung เบื้องต้นเกี่ยวกับ พัดลมไม่หมุน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/error-codes-on-your-samsung-indoor-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "C1/63",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Incorrect or deleted data of EEPROM for main control board",
+      "meaning_th": "ข้อมูล EEPROM เมนบอร์ดผิดปกติหรือหาย",
+      "likely_causes": [
+        "ข้อมูล EEPROM เมนบอร์ดผิดปกติหรือหาย"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด C1/63 ของ Samsung เบื้องต้นเกี่ยวกับ ข้อมูล EEPROM เมนบอร์ดผิดปกติหรือหาย ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/error-codes-on-your-samsung-indoor-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E1/21",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Defective of the room temperature sensor",
+      "meaning_th": "เซนเซอร์อุณหภูมิห้องผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิห้องผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E1/21 ของ Samsung เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิห้องผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/check-out-the-displayed-error-codes-on-the-indoor-unit-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E1/22",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Defective of the heat exchanger temperature sensor",
+      "meaning_th": "เซนเซอร์แผงแลกเปลี่ยนความร้อนผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์แผงแลกเปลี่ยนความร้อนผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E1/22 ของ Samsung เบื้องต้นเกี่ยวกับ เซนเซอร์แผงแลกเปลี่ยนความร้อนผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/check-out-the-displayed-error-codes-on-the-indoor-unit-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E1/54",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Defective of fan motor or capacitor",
+      "meaning_th": "มอเตอร์พัดลมหรือคาปาซิเตอร์ผิดปกติ",
+      "likely_causes": [
+        "มอเตอร์พัดลมหรือคาปาซิเตอร์ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E1/54 ของ Samsung เบื้องต้นเกี่ยวกับ มอเตอร์พัดลมหรือคาปาซิเตอร์ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/check-out-the-displayed-error-codes-on-the-indoor-unit-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E1/63",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Defective of the EEPROM",
+      "meaning_th": "EEPROM ผิดปกติ",
+      "likely_causes": [
+        "EEPROM ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E1/63 ของ Samsung เบื้องต้นเกี่ยวกับ EEPROM ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/check-out-the-displayed-error-codes-on-the-indoor-unit-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E5",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Short/open indoor heat exchanger sensor",
+      "meaning_th": "เซนเซอร์คอยล์เย็นลัดวงจรหรือขาด",
+      "likely_causes": [
+        "เซนเซอร์คอยล์เย็นลัดวงจรหรือขาด"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E5 ของ Samsung เบื้องต้นเกี่ยวกับ เซนเซอร์คอยล์เย็นลัดวงจรหรือขาด ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/check-out-the-displayed-error-codes-on-the-indoor-unit-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E6",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Short/open outdoor heat exchanger sensor",
+      "meaning_th": "เซนเซอร์คอยล์ร้อนลัดวงจรหรือขาด",
+      "likely_causes": [
+        "เซนเซอร์คอยล์ร้อนลัดวงจรหรือขาด"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E6 ของ Samsung เบื้องต้นเกี่ยวกับ เซนเซอร์คอยล์ร้อนลัดวงจรหรือขาด ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/check-out-the-displayed-error-codes-on-the-indoor-unit-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Samsung",
+      "model_family": "Indoor unit / common displayed codes",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E7",
+      "code_display_method": "indoor unit display panel",
+      "meaning_en": "Short/open heater temperature sensor",
+      "meaning_th": "เซนเซอร์อุณหภูมิฮีตเตอร์ลัดวงจรหรือขาด",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิฮีตเตอร์ลัดวงจรหรือขาด"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E7 ของ Samsung เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิฮีตเตอร์ลัดวงจรหรือขาด ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.samsung.com/ph/support/home-appliances/check-out-the-displayed-error-codes-on-the-indoor-unit-air-conditioner/",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E7",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Communication fault between indoor and outdoor units",
+      "meaning_th": "การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ",
+      "likely_causes": [
+        "การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E7 ของ Haier เบื้องต้นเกี่ยวกับ การสื่อสารเครื่องใน/เครื่องนอกผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E1",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Indoor temperature sensor failure",
+      "meaning_th": "เซนเซอร์อุณหภูมิห้องเครื่องในเสีย",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิห้องเครื่องในเสีย"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E1 ของ Haier เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิห้องเครื่องในเสีย ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E2",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Pipe temperature sensor failure",
+      "meaning_th": "เซนเซอร์อุณหภูมิท่อเสีย",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิท่อเสีย"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E2 ของ Haier เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิท่อเสีย ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E4",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Indoor EEPROM failure",
+      "meaning_th": "EEPROM เครื่องในผิดปกติ",
+      "likely_causes": [
+        "EEPROM เครื่องในผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E4 ของ Haier เบื้องต้นเกี่ยวกับ EEPROM เครื่องในผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E5",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Indoor anti-frosting protection",
+      "meaning_th": "ระบบป้องกันคอยล์เย็นเป็นน้ำแข็งทำงาน",
+      "likely_causes": [
+        "ระบบป้องกันคอยล์เย็นเป็นน้ำแข็งทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E5 ของ Haier เบื้องต้นเกี่ยวกับ ระบบป้องกันคอยล์เย็นเป็นน้ำแข็งทำงาน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E9",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Indoor unit overload in heating mode",
+      "meaning_th": "เครื่องในโหลดเกินในโหมดทำความร้อน",
+      "likely_causes": [
+        "เครื่องในโหลดเกินในโหมดทำความร้อน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E9 ของ Haier เบื้องต้นเกี่ยวกับ เครื่องในโหลดเกินในโหมดทำความร้อน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "E14",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Indoor fan motor malfunction",
+      "meaning_th": "มอเตอร์พัดลมเครื่องในผิดปกติ",
+      "likely_causes": [
+        "มอเตอร์พัดลมเครื่องในผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด E14 ของ Haier เบื้องต้นเกี่ยวกับ มอเตอร์พัดลมเครื่องในผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F1",
+      "code_display_method": "unit display error code",
+      "meaning_en": "IPM protection",
+      "meaning_th": "ระบบป้องกัน IPM ทำงาน",
+      "likely_causes": [
+        "ระบบป้องกัน IPM ทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F1 ของ Haier เบื้องต้นเกี่ยวกับ ระบบป้องกัน IPM ทำงาน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F2",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Instantaneous over-current protection of the compressor",
+      "meaning_th": "ระบบป้องกันกระแสเกินฉับพลันของคอมเพรสเซอร์",
+      "likely_causes": [
+        "ระบบป้องกันกระแสเกินฉับพลันของคอมเพรสเซอร์"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F2 ของ Haier เบื้องต้นเกี่ยวกับ ระบบป้องกันกระแสเกินฉับพลันของคอมเพรสเซอร์ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F3",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Communication error between power module and main PCB board",
+      "meaning_th": "การสื่อสารระหว่าง Power Module กับเมนบอร์ดผิดปกติ",
+      "likely_causes": [
+        "การสื่อสารระหว่าง Power Module กับเมนบอร์ดผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F3 ของ Haier เบื้องต้นเกี่ยวกับ การสื่อสารระหว่าง Power Module กับเมนบอร์ดผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F4",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Compressor discharging temperature protection",
+      "meaning_th": "ระบบป้องกันอุณหภูมิดิสชาร์จคอมเพรสเซอร์ทำงาน",
+      "likely_causes": [
+        "ระบบป้องกันอุณหภูมิดิสชาร์จคอมเพรสเซอร์ทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F4 ของ Haier เบื้องต้นเกี่ยวกับ ระบบป้องกันอุณหภูมิดิสชาร์จคอมเพรสเซอร์ทำงาน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F6",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Outdoor ambient sensor failure",
+      "meaning_th": "เซนเซอร์อุณหภูมิภายนอกเสีย",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิภายนอกเสีย"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F6 ของ Haier เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิภายนอกเสีย ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F7",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Suction temperature sensor failure",
+      "meaning_th": "เซนเซอร์อุณหภูมิท่อดูดเสีย",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิท่อดูดเสีย"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F7 ของ Haier เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิท่อดูดเสีย ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F8",
+      "code_display_method": "unit display error code",
+      "meaning_en": "DC fan motor malfunction",
+      "meaning_th": "มอเตอร์พัดลม DC ผิดปกติ",
+      "likely_causes": [
+        "มอเตอร์พัดลม DC ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F8 ของ Haier เบื้องต้นเกี่ยวกับ มอเตอร์พัดลม DC ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F9",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Module reset",
+      "meaning_th": "โมดูลรีเซ็ต",
+      "likely_causes": [
+        "โมดูลรีเซ็ต"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F9 ของ Haier เบื้องต้นเกี่ยวกับ โมดูลรีเซ็ต ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F11",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Loss of synchronism detection",
+      "meaning_th": "ตรวจพบการสูญเสีย synchronism",
+      "likely_causes": [
+        "ตรวจพบการสูญเสีย synchronism"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F11 ของ Haier เบื้องต้นเกี่ยวกับ ตรวจพบการสูญเสีย synchronism ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F12",
+      "code_display_method": "unit display error code",
+      "meaning_en": "EEPROM failure",
+      "meaning_th": "EEPROM ผิดปกติ",
+      "likely_causes": [
+        "EEPROM ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F12 ของ Haier เบื้องต้นเกี่ยวกับ EEPROM ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F13",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Lack of refrigerant",
+      "meaning_th": "สารทำความเย็นไม่เพียงพอ",
+      "likely_causes": [
+        "สารทำความเย็นไม่เพียงพอ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F13 ของ Haier เบื้องต้นเกี่ยวกับ สารทำความเย็นไม่เพียงพอ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F14",
+      "code_display_method": "unit display error code",
+      "meaning_en": "4-way valve reverse failure",
+      "meaning_th": "วาล์ว 4 ทางกลับทิศผิดปกติ",
+      "likely_causes": [
+        "วาล์ว 4 ทางกลับทิศผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F14 ของ Haier เบื้องต้นเกี่ยวกับ วาล์ว 4 ทางกลับทิศผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F19",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Power over/under voltage protection",
+      "meaning_th": "ระบบป้องกันไฟเกิน/ไฟตกทำงาน",
+      "likely_causes": [
+        "ระบบป้องกันไฟเกิน/ไฟตกทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F19 ของ Haier เบื้องต้นเกี่ยวกับ ระบบป้องกันไฟเกิน/ไฟตกทำงาน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F20",
+      "code_display_method": "unit display error code",
+      "meaning_en": "High pressure protection",
+      "meaning_th": "ระบบป้องกันแรงดันสูงทำงาน",
+      "likely_causes": [
+        "ระบบป้องกันแรงดันสูงทำงาน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F20 ของ Haier เบื้องต้นเกี่ยวกับ ระบบป้องกันแรงดันสูงทำงาน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F21",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Outdoor coil temperature sensor",
+      "meaning_th": "เซนเซอร์อุณหภูมิคอยล์ร้อนผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์อุณหภูมิคอยล์ร้อนผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F21 ของ Haier เบื้องต้นเกี่ยวกับ เซนเซอร์อุณหภูมิคอยล์ร้อนผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F22",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Outdoor alternating current over current protection",
+      "meaning_th": "ระบบป้องกันกระแส AC เครื่องนอกเกิน",
+      "likely_causes": [
+        "ระบบป้องกันกระแส AC เครื่องนอกเกิน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F22 ของ Haier เบื้องต้นเกี่ยวกับ ระบบป้องกันกระแส AC เครื่องนอกเกิน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F23",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Compressor U/V/W phase overcurrent",
+      "meaning_th": "กระแสเฟส U/V/W ของคอมเพรสเซอร์เกิน",
+      "likely_causes": [
+        "กระแสเฟส U/V/W ของคอมเพรสเซอร์เกิน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F23 ของ Haier เบื้องต้นเกี่ยวกับ กระแสเฟส U/V/W ของคอมเพรสเซอร์เกิน ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F24",
+      "code_display_method": "unit display error code",
+      "meaning_en": "CT detection current abnormal protection",
+      "meaning_th": "ระบบตรวจจับกระแส CT ผิดปกติ",
+      "likely_causes": [
+        "ระบบตรวจจับกระแส CT ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F24 ของ Haier เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F25",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Abnormal compressor discharge sensor",
+      "meaning_th": "เซนเซอร์ดิสชาร์จคอมเพรสเซอร์ผิดปกติ",
+      "likely_causes": [
+        "เซนเซอร์ดิสชาร์จคอมเพรสเซอร์ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F25 ของ Haier เบื้องต้นเกี่ยวกับ เซนเซอร์ดิสชาร์จคอมเพรสเซอร์ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F27",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Compressor current sampling circuit fault",
+      "meaning_th": "วงจรวัดกระแสคอมเพรสเซอร์ผิดปกติ",
+      "likely_causes": [
+        "วงจรวัดกระแสคอมเพรสเซอร์ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F27 ของ Haier เบื้องต้นเกี่ยวกับ วงจรวัดกระแสคอมเพรสเซอร์ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F28",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Compressor position detection circuit fault",
+      "meaning_th": "วงจรตรวจจับตำแหน่งคอมเพรสเซอร์ผิดปกติ",
+      "likely_causes": [
+        "วงจรตรวจจับตำแหน่งคอมเพรสเซอร์ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F28 ของ Haier เบื้องต้นเกี่ยวกับ วงจรตรวจจับตำแหน่งคอมเพรสเซอร์ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F35",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Compressor driver board failure",
+      "meaning_th": "บอร์ดขับคอมเพรสเซอร์เสีย",
+      "likely_causes": [
+        "บอร์ดขับคอมเพรสเซอร์เสีย"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F35 ของ Haier เบื้องต้นเกี่ยวกับ บอร์ดขับคอมเพรสเซอร์เสีย ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "F43",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Model matching abnormality",
+      "meaning_th": "รุ่นเครื่อง/ระบบไม่ตรงกัน",
+      "likely_causes": [
+        "รุ่นเครื่อง/ระบบไม่ตรงกัน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด F43 ของ Haier เบื้องต้นเป็นสถานะ/การแจ้งเตือนของเครื่อง ไม่จำเป็นต้องเป็นอาการเสียเสมอไปค่ะ รบกวนลูกค้าส่งรูปหน้าจอและรุ่นแอร์ให้แอดมินเช็คอีกครั้งนะคะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "low",
+      "warranty_related": "no",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "Haier",
+      "model_family": "selected Haier AC models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "FE",
+      "code_display_method": "unit display error code",
+      "meaning_en": "Fixed frequency AC refrigerant leaking detection malfunction",
+      "meaning_th": "ระบบตรวจจับน้ำยารั่วของแอร์ Fixed frequency ผิดปกติ",
+      "likely_causes": [
+        "ระบบตรวจจับน้ำยารั่วของแอร์ Fixed frequency ผิดปกติ"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูปหรือวิดีโอรหัส/ไฟกระพริบ",
+        "แจ้งยี่ห้อ รุ่น และอาการที่เกิดขึ้น",
+        "ถ่ายรูปสติ๊กเกอร์รุ่นที่ตัวเครื่องถ้าทำได้อย่างปลอดภัย",
+        "ห้ามถอดฝาครอบบอร์ดหรือจับสายไฟเอง"
+      ],
+      "admin_reply_template": "โค้ด FE ของ Haier เบื้องต้นเกี่ยวกับ ระบบตรวจจับน้ำยารั่วของแอร์ Fixed frequency ผิดปกติ ค่ะ รบกวนลูกค้าส่งรูปโค้ด รุ่นแอร์ และอาการที่เกิดขึ้นให้แอดมินก่อนนะคะ อาการนี้ควรให้ช่างตรวจเช็คหน้างาน ไม่แนะนำให้ถอดหรือแก้ไขเองค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "high",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.haier.com/my/service-support/self-service/20250402_259027.shtml",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    },
+    {
+      "brand": "LG",
+      "model_family": "Wall-mounted / selected models",
+      "indoor_model": null,
+      "outdoor_model": null,
+      "remote_type": null,
+      "code": "CH61",
+      "code_display_method": "display shows CH and 61 alternately",
+      "meaning_en": "Outdoor unit temperature rises high during cooling / indoor unit temperature rises high during heating; may relate to outdoor ventilation or dirty indoor filter",
+      "meaning_th": "อุณหภูมิเครื่องนอกสูงในโหมดเย็น หรือเครื่องในร้อนสูงในโหมดทำความร้อน อาจเกี่ยวกับการระบายอากาศเครื่องนอกหรือฟิลเตอร์สกปรก",
+      "likely_causes": [
+        "ช่องระบายคอยล์ร้อนปิดหรือระบายอากาศไม่ดี",
+        "มีสิ่งกีดขวางรอบคอยล์ร้อน",
+        "ฟิลเตอร์เครื่องในสกปรกมากในโหมดทำความร้อน"
+      ],
+      "customer_safe_checks": [
+        "ถ่ายรูป/วิดีโอหน้าจอโค้ด CH61",
+        "ถ่ายรูปตำแหน่งคอยล์ร้อนว่าระบายอากาศได้ไหม",
+        "เช็คว่ามีของบังหน้าเครื่องนอกหรือไม่",
+        "ทำความสะอาดฟิลเตอร์ได้เฉพาะถอดได้ง่ายและปลอดภัย",
+        "ถ้ายังขึ้นซ้ำ ให้ช่างตรวจเช็ค"
+      ],
+      "admin_reply_template": "โค้ด CH61 ของ LG เบื้องต้นมักเกี่ยวกับอุณหภูมิสูง/การระบายอากาศของเครื่องนอก หรือฟิลเตอร์สกปรกในบางกรณีค่ะ รบกวนลูกค้าส่งรูปตำแหน่งคอยล์ร้อนกับวิดีโอโค้ดให้แอดมินหน่อยนะคะ ถ้าโค้ดยังขึ้นซ้ำ แนะนำให้ช่างเข้าตรวจเช็คค่ะ",
+      "technician_notes": "ใช้เป็นข้อมูลคัดกรองเบื้องต้น ต้องตรวจสอบกับรุ่นจริง/คู่มือจริงก่อนสรุปงานซ่อม",
+      "severity": "medium",
+      "warranty_related": "depends",
+      "source_type": "manufacturer_page",
+      "source_reference": "https://www.lg.com/levant_en/support/product-help/CT20158041-20153301509114",
+      "last_verified_at": "2026-06-09",
+      "confidence": "source_verified",
+      "safety_note": "ไม่ใช่คำวินิจฉัยสุดท้าย ห้ามให้ลูกค้าซ่อมระบบไฟฟ้า/น้ำยา/บอร์ดเอง"
+    }
+  ]
+}

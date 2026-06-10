@@ -1,0 +1,193 @@
+{
+  "kb_name": "CWF AI Office Complete Reply Brain",
+  "version": "v2.0",
+  "updated_at": "2026-06-09",
+  "business": {
+    "name": "Coldwindflow Air Services",
+    "website": "www.cwf-air.com",
+    "line_oa": "@cwfair",
+    "phone": "098-877-7321",
+    "services": [
+      "ล้างแอร์",
+      "ซ่อมแอร์",
+      "ติดตั้งแอร์",
+      "ตรวจเช็คแอร์"
+    ]
+  },
+  "purpose": "รวมสมองตอบแชทลูกค้าภาษาไทย/อังกฤษ + งานล้าง + งานซ่อม + error code + รับประกัน + ราคา + สไตล์แอดมินจริง + sales closing",
+  "phase": "reply_draft_first",
+  "customer_facing_style": {
+    "thai_admin_persona": "female_natural_line_admin",
+    "english_admin_persona": "polite_natural_whatsapp_admin",
+    "principle": "AI รู้ลึกได้ แต่ลูกค้าเห็นเฉพาะคำตอบสั้น ธรรมชาติ มีเหตุผล และมี next step",
+    "reply_formula": [
+      "ตอบคำถามลูกค้าก่อน",
+      "สรุป/คัดกรองอาการแบบไม่ฟันธง",
+      "แนะนำบริการที่เหมาะ",
+      "อธิบายเหตุผลสั้น ๆ",
+      "ปิดด้วย next step เช่น เช็กคิว ขอโลเคชัน จองตรวจเช็ค ส่งรูป/วิดีโอ"
+    ],
+    "avoid": [
+      "ตอบยาวเหมือนโบรชัวร์",
+      "ใช้ครับ/ครับผมในข้อความแอดมินหญิง",
+      "จบทุกปัญหา",
+      "หายแน่นอน",
+      "เดา error code",
+      "ฟันธงอะไหล่เสียจากแชท",
+      "ลดราคาเอง",
+      "ยืนยันคิวโดยไม่ดูคิวจริง"
+    ]
+  },
+  "price_book": {
+    "wall_ac_up_to_12000_btu": {
+      "normal": 550,
+      "premium": 790,
+      "hang_coil": 1290,
+      "deep_disassembly": 1850
+    },
+    "wall_ac_18000_btu_up": {
+      "normal": 690,
+      "premium": 990,
+      "hang_coil": 1550,
+      "deep_disassembly": 2150
+    },
+    "non_wall_ac": {
+      "four_way_cassette": 1500,
+      "ceiling_suspended": 1200,
+      "concealed_duct": 1200
+    },
+    "inspection": 700,
+    "move_aircon_starting": 4500
+  },
+  "risk_labels": {
+    "safe_reply": "ร่างตอบได้ / อาจใช้ auto เฉพาะเมื่อระบบ gate มั่นใจ",
+    "sales_reply": "ร่างตอบเชียร์ขายได้ แต่ยังให้แอดมินตรวจ",
+    "needs_admin_check": "ร่างได้ แต่แอดมินต้องตรวจ",
+    "technician_review": "ต้องให้ช่างตรวจ/เสนอคิวตรวจเช็ค",
+    "admin_only": "แอดมิน/เจ้าของตอบเอง",
+    "technician_only": "ห้ามบอกวิธีทำ ให้ส่งต่อช่างเท่านั้น"
+  },
+  "modules": [
+    {
+      "name": "Admin Reply Brain",
+      "files": [
+        "cwf-admin-reply-brain-v0.9.md",
+        "cwf-admin-reply-rules-v0.9.json"
+      ],
+      "use_for": "สไตล์แอดมินจริงจากแชทตัวอย่าง v0.1-v0.9"
+    },
+    {
+      "name": "Service Cleaning Differences",
+      "files": [
+        "cwf-admin-reply-brain-v1.0.md",
+        "cwf-admin-reply-rules-v1.0.json"
+      ],
+      "use_for": "อธิบายล้างปกติ/พรีเมียม/แขวนคอยล์/ตัดล้างใหญ่ + ตรวจเช็ค 700"
+    },
+    {
+      "name": "Warranty + Fault Triage",
+      "files": [
+        "cwf-admin-reply-brain-v1.1.md",
+        "cwf-admin-reply-rules-v1.1.json"
+      ],
+      "use_for": "รับประกัน/ไม่รับประกัน + อาการเสียเบื้องต้น"
+    },
+    {
+      "name": "AC Error Code KB",
+      "files": [
+        "cwf-ac-error-code-brain-v1.2.md",
+        "cwf-ac-error-code-kb-v1.2.json"
+      ],
+      "use_for": "โค้ดแอร์แบบมีแหล่งอ้างอิง ไม่ให้ AI เดา"
+    },
+    {
+      "name": "English Q&A",
+      "files": [
+        "cwf-foreign-customer-english-qa-v1.3.md",
+        "cwf-foreign-customer-english-qa-v1.3.json"
+      ],
+      "use_for": "ตอบลูกค้าต่างชาติ"
+    },
+    {
+      "name": "Thai Q&A Master",
+      "files": [
+        "cwf-thai-customer-qa-master-v1.4.md",
+        "cwf-thai-customer-qa-master-v1.4.json"
+      ],
+      "use_for": "Q&A ภาษาไทยพร้อมใช้ 66 รายการ"
+    },
+    {
+      "name": "Repair Sales Strategy",
+      "files": [
+        "cwf-repair-sales-reply-strategy-v1.5.md",
+        "cwf-repair-sales-reply-strategy-v1.5.json"
+      ],
+      "use_for": "ตอบงานซ่อมแล้วเชียร์ปิดคิวตรวจเช็ค/ซ่อม/ล้าง"
+    },
+    {
+      "name": "Full Cleaning Options Strategy",
+      "files": [
+        "cwf-full-cleaning-options-strategy-v1.6.md",
+        "cwf-full-cleaning-options-strategy-v1.6.json"
+      ],
+      "use_for": "แนะนำล้างแบบครบ แต่ให้ลูกค้าเลือกเอง"
+    },
+    {
+      "name": "Thai Admin Real Reply Style Layer",
+      "files": [
+        "cwf-thai-admin-real-reply-style-pack-v1.7.md",
+        "cwf-thai-admin-real-reply-style-pack-v1.7.json"
+      ],
+      "use_for": "แปลงคำตอบให้สั้น ธรรมชาติ เหมือนแอดมิน LINE จริง"
+    },
+    {
+      "name": "Non-Wall AC Price Update",
+      "files": [
+        "cwf-non-wall-ac-cleaning-price-update-v1.8.md",
+        "cwf-non-wall-ac-cleaning-price-update-v1.8.json"
+      ],
+      "use_for": "แอร์สี่ทิศทาง/แอร์แขวน/แอร์เปลือย"
+    }
+  ],
+  "implementation_priority": [
+    "1) โหลด Thai Admin Real Reply Style Layer v1.7 เป็น output style ทุกครั้ง",
+    "2) ใช้ Thai Q&A Master v1.4 / English Q&A v1.3 เป็น intent answer base",
+    "3) ใช้ Repair Sales Strategy v1.5 เมื่อเป็นงานซ่อม ไม่เย็น โค้ด error น้ำยา รั่ว",
+    "4) ใช้ Full Cleaning Options Strategy v1.6 เมื่อแนะนำแพ็กเกจล้าง",
+    "5) ใช้ Non-Wall AC Price Update v1.8 เมื่อไม่ใช่แอร์ผนัง",
+    "6) ใช้ Warranty/Fault v1.1 และ Error Code KB v1.2 เป็น safety/risk layer"
+  ],
+  "files_included": [
+    "cwf-admin-reply-brain-v0.9.md",
+    "cwf-admin-reply-rules-v0.9.json",
+    "cwf-admin-reply-brain-changelog-v0.9.md",
+    "cwf-admin-reply-brain-v1.0.md",
+    "cwf-admin-reply-rules-v1.0.json",
+    "cwf-admin-reply-brain-changelog-v1.0.md",
+    "cwf-admin-reply-brain-v1.1.md",
+    "cwf-admin-reply-rules-v1.1.json",
+    "cwf-admin-reply-brain-changelog-v1.1.md",
+    "cwf-ac-error-code-brain-v1.2.md",
+    "cwf-ac-error-code-kb-v1.2.json",
+    "cwf-ac-error-code-changelog-v1.2.md",
+    "cwf-foreign-customer-english-qa-v1.3.md",
+    "cwf-foreign-customer-english-qa-v1.3.json",
+    "cwf-foreign-customer-english-qa-changelog-v1.3.md",
+    "cwf-thai-customer-qa-master-v1.4.md",
+    "cwf-thai-customer-qa-master-v1.4.json",
+    "cwf-thai-customer-qa-master-changelog-v1.4.md",
+    "cwf-repair-sales-reply-strategy-v1.5.md",
+    "cwf-repair-sales-reply-strategy-v1.5.json",
+    "cwf-repair-sales-reply-strategy-changelog-v1.5.md",
+    "cwf-full-cleaning-options-strategy-v1.6.md",
+    "cwf-full-cleaning-options-strategy-v1.6.json",
+    "cwf-full-cleaning-options-strategy-changelog-v1.6.md",
+    "cwf-thai-admin-real-reply-style-pack-v1.7.md",
+    "cwf-thai-admin-real-reply-style-pack-v1.7.json",
+    "cwf-thai-admin-real-reply-style-pack-changelog-v1.7.md",
+    "cwf-non-wall-ac-cleaning-price-update-v1.8.md",
+    "cwf-non-wall-ac-cleaning-price-update-v1.8.json",
+    "cwf-non-wall-ac-cleaning-price-update-changelog-v1.8.md"
+  ],
+  "files_missing_when_packaged": []
+}

@@ -1,0 +1,626 @@
+{
+  "kb_name": "CWF Foreign Customer English Q&A",
+  "version": "v1.3",
+  "updated_at": "2026-06-09",
+  "scope": "English reply templates for foreign customers; draft-only for admin review",
+  "rules": {
+    "admin_persona": "female_natural_admin",
+    "default_tone": [
+      "polite",
+      "natural",
+      "short LINE/WhatsApp style",
+      "not overpromising"
+    ],
+    "phase_1_mode": "AI drafts only; admin reviews and sends",
+    "do_not_answer_directly_when_risk": [
+      "admin_only",
+      "technician_only"
+    ],
+    "no_final_diagnosis": true,
+    "no_error_code_guessing": true,
+    "no_automatic_sending": true
+  },
+  "risk_labels": {
+    "safe_reply": "AI can draft directly for admin to copy",
+    "needs_admin_check": "AI can draft but admin should review carefully",
+    "technician_review": "AI should route to technician/inspection; no final diagnosis",
+    "admin_only": "AI should not draft a full answer; ask admin/owner to respond",
+    "technician_only": "AI must not provide instructions; only safety refusal/technician handoff"
+  },
+  "items_count": 38,
+  "items": [
+    {
+      "category": "Greeting / Lead Start",
+      "intent": "customer_says_hello",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "Hello",
+        "Hi",
+        "Do you speak English?",
+        "Can I ask about aircon cleaning?"
+      ],
+      "admin_reply_en": "Hello 😊 Yes, we can help in English. May I know what service you need: aircon cleaning, repair, installation, or inspection?",
+      "notes_th": "เปิดบทสนทนาสั้น ไม่ยาว",
+      "id": "en_qa_001",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Price / Cleaning",
+      "intent": "ask_cleaning_price",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "How much is aircon cleaning?",
+        "What is your price?",
+        "Cleaning price please"
+      ],
+      "admin_reply_en": "Our wall-type aircon cleaning starts from 550 THB for standard cleaning. The final price depends on the BTU size and cleaning type. May I know how many units you have and the BTU size if you know it?",
+      "notes_th": "ตอบราคาก่อน แล้วถามจำนวนเครื่อง/BTU",
+      "id": "en_qa_002",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Price / Cleaning",
+      "intent": "ask_all_cleaning_prices",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "Can you send me all cleaning prices?",
+        "What are the cleaning options?"
+      ],
+      "admin_reply_en": "Sureค่ะ. For wall-type aircons up to 12,000 BTU: standard cleaning 550 THB, premium cleaning 790 THB, hang-coil deep cleaning 1,290 THB, and full disassembly cleaning 1,850 THB. For 18,000 BTU and above: standard 690 THB, premium 990 THB, hang-coil 1,550 THB, and full disassembly 2,150 THB.",
+      "notes_th": "ใส่ค่ะนิดเดียวได้ แต่ภาษาอังกฤษหลัก",
+      "id": "en_qa_003",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Cleaning Type Difference",
+      "intent": "standard_vs_premium",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "What is the difference between standard and premium cleaning?",
+        "550 and 790 difference?"
+      ],
+      "admin_reply_en": "Standard cleaning is suitable for aircons cleaned regularly every 4–6 months and not very dirty. Premium cleaning is more detailed. It includes deeper cleaning of the indoor coil, outdoor unit, drain tray, blower wheel, and drain pipe. It is better if the aircon has weak airflow, dust buildup, or has not been cleaned for a long time.",
+      "notes_th": "อธิบายแบบแอดมิน ไม่ยาวเกิน",
+      "id": "en_qa_004",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Cleaning Type Difference",
+      "intent": "premium_vs_hang_coil",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "What is hang-coil cleaning?",
+        "What is the difference between premium and hang-coil cleaning?"
+      ],
+      "admin_reply_en": "Premium cleaning is detailed, but hang-coil cleaning is deeper. For hang-coil cleaning, the technician removes the electrical panel and rear drain tray so the inner parts can be cleaned more thoroughly. It is recommended for water leaking, bad smell, noise, or when you want a deeper clean.",
+      "notes_th": "ระวังไม่พูด guaranteed fix",
+      "id": "en_qa_005",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Cleaning Type Difference",
+      "intent": "full_disassembly_cleaning",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "What is full disassembly cleaning?",
+        "When do I need full cleaning?"
+      ],
+      "admin_reply_en": "Full disassembly cleaning is the deepest cleaning option. The unit is removed and cleaned more thoroughly outside the wall. It is suitable for heavy dirt, mold buildup, or aircons that have not been cleaned for a very long time.",
+      "notes_th": "",
+      "id": "en_qa_006",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Symptom / Water Leak",
+      "intent": "water_leak_which_cleaning",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "My aircon is leaking water. Which cleaning should I choose?",
+        "Water is dripping from my aircon"
+      ],
+      "admin_reply_en": "For water leaking, we usually recommend hang-coil deep cleaning because it allows the technician to clean the rear drain tray and drain path more thoroughly. If the blockage is light, premium cleaning may help, but hang-coil is better to reduce the chance of the leak coming back.",
+      "notes_th": "ปิดไป 1,290 แบบมีเหตุผล",
+      "id": "en_qa_007",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Symptom / Water Leak",
+      "intent": "water_leak_warranty_question",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "If it leaks again after cleaning, is it under warranty?",
+        "Do you guarantee water leaking?"
+      ],
+      "admin_reply_en": "Our cleaning work has a 30-day service warranty for issues related to the cleaning service. If the same issue happens within the warranty period, please send us a photo or video first, and our team will check whether it is covered under the warranty conditions.",
+      "notes_th": "ไม่รับประกันเกินจริง",
+      "id": "en_qa_008",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Symptom / Bad Smell",
+      "intent": "bad_smell",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "My aircon has a bad smell",
+        "Why does my aircon smell moldy?"
+      ],
+      "admin_reply_en": "A bad smell is often caused by dust, moisture, mold, or dirt buildup inside the indoor unit or drain tray. For this symptom, we usually recommend premium cleaning or hang-coil cleaning rather than standard cleaning, because it cleans deeper and helps reduce the smell from coming back quickly.",
+      "notes_th": "",
+      "id": "en_qa_009",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Symptom / Not Cold",
+      "intent": "not_cold_triage",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "My aircon is not cold",
+        "Only fan comes out",
+        "The air is not cooling"
+      ],
+      "admin_reply_en": "It may be caused by dirt buildup, low refrigerant, leakage, outdoor unit problem, sensor, board, or compressor issue. May I ask when it was last cleaned? Also, does the outdoor unit turn on normally? If it was cleaned recently but still not cold, we recommend an inspection service first.",
+      "notes_th": "AI ร่างได้ แต่แอดมินตรวจ ถ้าเข้าทางซ่อม",
+      "id": "en_qa_010",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Symptom / Not Cold",
+      "intent": "recently_cleaned_not_cold",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "It was cleaned 2 months ago but still not cold",
+        "I cleaned it recently but it is not cooling"
+      ],
+      "admin_reply_en": "If it was cleaned recently and still does not cool, the problem may not be only dirt. It could be related to refrigerant, leakage, the outdoor unit, sensor, board, or compressor. We recommend a diagnostic inspection first so the technician can find the cause before suggesting a repair.",
+      "notes_th": "แยกซ่อม ไม่ขายล้าง",
+      "id": "en_qa_011",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Symptom / Outdoor Unit",
+      "intent": "outdoor_not_working",
+      "risk": "technician_review",
+      "customer_questions": [
+        "The outdoor unit is not working",
+        "The outdoor fan is not spinning",
+        "It makes sound but the fan does not spin"
+      ],
+      "admin_reply_en": "This sounds more like a repair/diagnostic case than a cleaning case. It may be related to the electrical system, motor, board, or compressor. We recommend a diagnostic inspection by a technician. Please do not open the electrical cover or touch any wiring by yourself.",
+      "notes_th": "เสี่ยง ต้องช่าง",
+      "id": "en_qa_012",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Symptom / Error Code",
+      "intent": "customer_has_error_code",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "My aircon shows an error code",
+        "It shows E7",
+        "The light is blinking"
+      ],
+      "admin_reply_en": "Please send us a photo or short video of the error code or blinking light, together with the aircon brand and model if possible. Error codes can mean different things depending on the brand and model, so we need to check the correct reference first before advising.",
+      "notes_th": "ห้ามเดาโค้ด",
+      "id": "en_qa_013",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Symptom / Error Code",
+      "intent": "how_to_check_error_code",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "How can I check the error code?",
+        "Can I check the code myself?"
+      ],
+      "admin_reply_en": "You can safely take a photo or video of the display or blinking light for 10–20 seconds. You can also send a photo of the remote control and the model sticker on the unit if it is easy and safe to access. Please do not open any electrical cover, touch wiring, or climb to unsafe areas.",
+      "notes_th": "ไม่บอกวิธีแต่ละยี่ห้อถ้าไม่รู้รุ่น",
+      "id": "en_qa_014",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Inspection / Repair",
+      "intent": "inspection_fee",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "How much is inspection?",
+        "Do you charge for checking?",
+        "What is the diagnostic fee?"
+      ],
+      "admin_reply_en": "The diagnostic inspection fee starts from 700 THB. The technician will check the problem and advise the repair solution. If you proceed with the repair, the inspection fee can be included in the repair cost.",
+      "notes_th": "",
+      "id": "en_qa_015",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Inspection / Repair",
+      "intent": "why_pay_inspection_if_cleaning_includes_check",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "Why do I need to pay inspection if cleaning includes checking?",
+        "Is basic checking included in cleaning?"
+      ],
+      "admin_reply_en": "Cleaning includes only a basic visual check, such as general operation, visible dirt, airflow, and basic symptoms. A diagnostic inspection is different. It is for deeper problems such as error codes, refrigerant leakage, electrical parts, sensors, board, or compressor issues.",
+      "notes_th": "",
+      "id": "en_qa_016",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Inspection / Repair",
+      "intent": "refrigerant_leak",
+      "risk": "technician_review",
+      "customer_questions": [
+        "Do I need refrigerant refill?",
+        "Is my aircon leaking gas?",
+        "Can you repair a refrigerant leak?"
+      ],
+      "admin_reply_en": "If the aircon has a refrigerant leak, refilling alone may not solve the problem. The technician needs to inspect and find the leak first. The inspection fee starts from 700 THB, and if repair is needed, we will inform you of the price before doing any repair.",
+      "notes_th": "เสี่ยงซ่อม ต้องช่าง",
+      "id": "en_qa_017",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Inspection / Repair",
+      "intent": "repair_price_before_check",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "How much to repair?",
+        "Can you tell me the repair price now?"
+      ],
+      "admin_reply_en": "The repair price depends on the actual cause and parts needed. We can give a rough idea only after checking the symptom, brand, model, and sometimes photos/videos. The technician will confirm the price before doing any repair or replacing any parts.",
+      "notes_th": "ห้ามฟันราคาอะไหล่",
+      "id": "en_qa_018",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Booking",
+      "intent": "available_today",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "Are you available today?",
+        "Can you come today?",
+        "Any slot this evening?"
+      ],
+      "admin_reply_en": "May I have your location first? The available time depends on the technician’s route and schedule. Once we have the location, we can check the nearest available slot for you.",
+      "notes_th": "เช็กโลเคชันก่อนรับปาก",
+      "id": "en_qa_019",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Booking",
+      "intent": "tomorrow_available",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "Are you available tomorrow?",
+        "Can I book tomorrow?"
+      ],
+      "admin_reply_en": "Yes, we can check tomorrow’s schedule for you. May I have your location, number of units, cleaning type, and preferred time?",
+      "notes_th": "",
+      "id": "en_qa_020",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Booking",
+      "intent": "booking_details_needed",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "What information do you need to book?",
+        "How can I book?"
+      ],
+      "admin_reply_en": "To book a service, please send your name, phone number, location, building/room/floor if it is a condo, number of units, BTU size if known, service type, and preferred date/time.",
+      "notes_th": "",
+      "id": "en_qa_021",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Booking",
+      "intent": "condo_details",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "It is a condo",
+        "What details do you need for condo service?"
+      ],
+      "admin_reply_en": "For condo service, please send the condo name, room number, floor, building if any, phone number, and location. If you need the technician to call before arrival, please let us know and we will add it to the job note.",
+      "notes_th": "",
+      "id": "en_qa_022",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Booking",
+      "intent": "call_before_arrival",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "Please call before arriving",
+        "Can the technician call me before coming?"
+      ],
+      "admin_reply_en": "Yes, sure. We will add a note for the technician to call you before arrival.",
+      "notes_th": "",
+      "id": "en_qa_023",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Booking",
+      "intent": "unknown_btu",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "I don’t know the BTU",
+        "How do I know the BTU?",
+        "Can technician check BTU?"
+      ],
+      "admin_reply_en": "No problem. If you are not sure about the BTU, you can send us a photo of the aircon sticker or the technician can check it on-site. The final price depends on the actual BTU size.",
+      "notes_th": "",
+      "id": "en_qa_024",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Payment",
+      "intent": "payment_timing",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "When do I pay?",
+        "Do I pay after cleaning?",
+        "Do you need deposit?"
+      ],
+      "admin_reply_en": "For most standard cleaning jobs, you can pay after the service is completed. If any deposit is required for a specific job, we will inform you clearly before booking.",
+      "notes_th": "",
+      "id": "en_qa_025",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Payment",
+      "intent": "payment_methods",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "Can I pay by bank transfer?",
+        "Do you accept QR payment?",
+        "Can I pay cash?"
+      ],
+      "admin_reply_en": "You can pay by bank transfer/QR after the job is completed. If you prefer another payment method, please let us know before the service.",
+      "notes_th": "ถ้ารองรับ cash ให้แอดมินยืนยันเอง",
+      "id": "en_qa_026",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Payment",
+      "intent": "receipt_request",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "Can I get a receipt?",
+        "Can you issue an invoice?",
+        "I need a receipt for my landlord"
+      ],
+      "admin_reply_en": "Yes, we can issue a receipt after payment. Please send the name and details you want on the receipt, and we will prepare it for you.",
+      "notes_th": "",
+      "id": "en_qa_027",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Payment / Extra Charges",
+      "intent": "extra_charges",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "Are there any extra charges?",
+        "Is this final price?",
+        "Will you charge more on-site?"
+      ],
+      "admin_reply_en": "The price we quote is the starting price for a standard job. If the unit is very dirty, difficult to access, installed in a high area, hard to remove, or requires special equipment, the technician will inform you of any additional charge before starting. We will not do any extra repair or part replacement without your confirmation.",
+      "notes_th": "",
+      "id": "en_qa_028",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Payment / Extra Charges",
+      "intent": "parking_toll_building_fee",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "Who pays parking fee?",
+        "Is parking fee included?",
+        "Do I need to pay building access fee?"
+      ],
+      "admin_reply_en": "Parking fees, toll fees, or building access fees are paid by the customer based on the actual cost.",
+      "notes_th": "",
+      "id": "en_qa_029",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Warranty",
+      "intent": "cleaning_warranty",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "Do you provide warranty?",
+        "How long is the cleaning warranty?"
+      ],
+      "admin_reply_en": "Our cleaning service has a 30-day warranty for issues related to the cleaning service. If there is a problem, please send us a photo or video first so our team can check whether it is covered.",
+      "notes_th": "",
+      "id": "en_qa_030",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Warranty",
+      "intent": "warranty_claim",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "You cleaned it and now it leaks again",
+        "Is this covered by warranty?",
+        "Can you come back for free?"
+      ],
+      "admin_reply_en": "Please send us a photo or video of the issue, together with the job number or service date. We will check the details first. If it is related to our previous service and still within the warranty conditions, we will take care of it accordingly.",
+      "notes_th": "ต้องตรวจเลขงาน",
+      "id": "en_qa_031",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Warranty",
+      "intent": "not_covered_cases",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "What is not covered by warranty?",
+        "What voids the warranty?"
+      ],
+      "admin_reply_en": "The warranty does not cover damage from power surge, lightning, flood, fire, natural disasters, animals or insects, improper use, lack of maintenance, modification, repair by another technician after our service, or a new issue unrelated to the original service.",
+      "notes_th": "",
+      "id": "en_qa_032",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Warranty",
+      "intent": "someone_else_repaired_after_us",
+      "risk": "admin_only",
+      "customer_questions": [
+        "Another technician checked it after your service. Is it still under warranty?",
+        "My landlord called another company after your repair"
+      ],
+      "admin_reply_en": null,
+      "admin_only_note": "ให้แอดมินตอบเองหรือให้ผู้จัดการตรวจ เพราะมีความเสี่ยงเรื่องข้อพิพาท/ความรับผิดชอบ ควรขอรายละเอียดก่อน: ใครแก้ อะไรถูกถอด/เปลี่ยน มีหลักฐานไหม",
+      "notes_th": "เสี่ยง dispute",
+      "id": "en_qa_033",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Risky / Admin Only",
+      "intent": "legal_dispute_landlord",
+      "risk": "admin_only",
+      "customer_questions": [
+        "I have a dispute with my landlord",
+        "I may need your technician as witness",
+        "Can you write a statement for lawsuit?"
+      ],
+      "admin_reply_en": null,
+      "admin_only_note": "ไม่ให้ AI ตอบเอง ต้องให้เจ้าของ/แอดมินอาวุโสตอบ เพราะเกี่ยวกับข้อพิพาท/กฎหมาย/พยาน ควรตอบสุภาพและ factual เท่านั้น",
+      "notes_th": "เสี่ยงกฎหมาย",
+      "id": "en_qa_034",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Risky / Technician Only",
+      "intent": "ask_to_force_power_or_bypass",
+      "risk": "technician_only",
+      "customer_questions": [
+        "Can I bypass the board?",
+        "Can I connect power directly?",
+        "Which wire should I connect?",
+        "Can I refill gas by myself?"
+      ],
+      "admin_reply_en": null,
+      "admin_only_note": "ห้าม AI ตอบวิธีทำ เพราะเป็นงานไฟฟ้า/น้ำยา/ความปลอดภัย ให้ตอบว่าไม่แนะนำให้ทำเองและให้ช่างตรวจเช็ค",
+      "notes_th": "ห้ามตอบขั้นตอน",
+      "id": "en_qa_035",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Risky / Price Dispute",
+      "intent": "customer_says_expensive",
+      "risk": "needs_admin_check",
+      "customer_questions": [
+        "Why is it so expensive?",
+        "Another shop is cheaper",
+        "Can you discount?"
+      ],
+      "admin_reply_en": "I understandค่ะ. Our price includes proper cleaning steps, experienced technicians, and service warranty under the service conditions. If you send us the symptoms and number of units, I can recommend the most suitable option so you don’t have to pay for a service that is more than necessary.",
+      "notes_th": "ควรให้แอดมินตรวจถ้าลูกค้าแรง",
+      "id": "en_qa_036",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "Follow-up / No Reply",
+      "intent": "follow_up_after_quote",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "Customer has not replied after quote"
+      ],
+      "admin_reply_en": "Helloค่ะ, may I follow up on the aircon service? If you are still interested, I can help check the nearest available schedule for you.",
+      "notes_th": "ใช้ติดตาม lead",
+      "id": "en_qa_037",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    },
+    {
+      "category": "After Service",
+      "intent": "thank_you_review",
+      "risk": "safe_reply",
+      "customer_questions": [
+        "Thank you",
+        "Service completed",
+        "I transferred already"
+      ],
+      "admin_reply_en": "Thank you for using Coldwindflow Air Servicesค่ะ 🙏 If everything is okay and you are satisfied with our service, we would really appreciate a Google review. It helps support our team a lot.",
+      "notes_th": "",
+      "id": "en_qa_038",
+      "language": "en",
+      "admin_persona": "female_natural_admin",
+      "phase": "reply_draft_only"
+    }
+  ]
+}
