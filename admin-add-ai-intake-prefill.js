@@ -173,7 +173,16 @@
     STATE.intakeId = id;
     try {
       await waitFor(()=>typeof apiFetch === "function" && byId("customer_name") && byId("job_type"), 5000);
-      const data = await api(`/admin/ai-office/booking-intakes/${encodeURIComponent(STATE.intakeId)}`);
+      let data = null;
+      try {
+        data = await api(`/admin/ai-office/booking-intakes/${encodeURIComponent(STATE.intakeId)}`);
+      } catch (apiErr) {
+        const cached = localStorage.getItem("cwf_line_ai_intake_pending_payload");
+        if (cached) {
+          try { data = { intake: JSON.parse(cached) }; } catch(_) {}
+        }
+        if (!data) throw apiErr;
+      }
       STATE.intake = data.intake || null;
       if (!STATE.intake) throw new Error("ไม่พบรายการ LINE AI");
       applyIntake(STATE.intake);

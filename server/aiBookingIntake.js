@@ -524,6 +524,7 @@ function buildAdminCopyText(intake) {
 module.exports = {
   ensureAiBookingIntakeSchema,
   ingestLineBookingIntakeFromEvent,
+  upsertAiBookingIntake,
   listAiBookingIntakes,
   getAiBookingIntake,
   patchAiBookingIntake,

@@ -52,6 +52,7 @@ const createTechnicianBaseStatusReadOnlyRoutes = require("./server/routes/techni
 const createTechnicianCalendarReadOnlyRoutes = require("./server/routes/technicianCalendarReadOnly");
 const createTechnicianCountSummaryReadOnlyRoutes = require("./server/routes/technicianCountSummaryReadOnly");
 const createAdminAiOfficeReadOnlyRoutes = require("./server/routes/adminAiOfficeReadOnly");
+const createAdminAiBookingIntakeRoutes = require("./server/routes/adminAiBookingIntake");
 const { createLineWebhookRoutes, ensureLineInboxSchema } = require("./server/routes/lineWebhook");
 const {
   calculateTechnicianBaseStatus,
@@ -4373,6 +4374,7 @@ app.post('/api/logout', async (req, res) => {
 });
 
 app.use(createAdminAiOfficeReadOnlyRoutes({ pool, requireAdminSession }));
+app.use(createAdminAiBookingIntakeRoutes({ pool, requireAdminSession }));
 app.get("/admin/ai-office", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
 app.get("/admin/ai-office.html", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
 app.get("/admin-ai-office.html", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));

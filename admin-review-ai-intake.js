@@ -8,6 +8,7 @@
     apiStatus: "checking",
     apiError: "",
     lastLoadedAt: "",
+    health: null,
   };
 
   function byId(id){ return document.getElementById(id); }
@@ -89,6 +90,7 @@
       .ai-intake-badge{display:inline-flex;align-items:center;gap:6px;background:#ffcc00;color:#081c4b;border-radius:999px;padding:7px 10px;font-weight:1000;white-space:nowrap}
       .ai-notify-btn{border:none;border-radius:999px;padding:8px 10px;background:#fff;color:#081c4b;font-weight:1000;min-height:38px}
       .ai-health{font-size:12px;margin-top:8px;color:rgba(255,255,255,.76);font-weight:800}
+      .ai-health-detail{margin-top:8px;padding:8px 10px;border-radius:14px;background:rgba(255,255,255,.10);font-size:12px;color:rgba(255,255,255,.84);font-weight:850;line-height:1.35}
       .ai-intake-empty,.ai-intake-error{border-radius:18px;padding:12px 13px;background:#fff;border:1px solid rgba(21,88,214,.18);box-shadow:0 10px 28px rgba(2,6,23,.08);color:#0f172a}
       .ai-intake-empty b,.ai-intake-error b{color:#081c4b}.ai-intake-error{border-color:rgba(239,68,68,.35);background:#fff7f7}
       .ai-intake-card{border-radius:20px;padding:13px;background:linear-gradient(180deg,#fff,#f8fbff);border:1px solid rgba(21,88,214,.22);box-shadow:0 16px 38px rgba(2,6,23,.10)}
@@ -119,6 +121,14 @@
     return panel;
   }
 
+  function healthHtml(){
+    const h = STATE.health;
+    if (!h || !h.counts) return "";
+    const c = h.counts || {};
+    const latest = h.latest_intake ? ` • ล่าสุด #${h.latest_intake.id || "-"} ${h.latest_intake.status || ""}` : "";
+    return `<div class="ai-health-detail">ระบบ: table ${h.table_ready ? "พร้อม" : "ยังไม่พร้อม"} • ทั้งหมด ${c.total_count || 0} • พร้อมเพิ่มงาน ${c.ready_count || 0} • ต้องถามเพิ่ม ${c.need_info_count || 0} • แอดมินตอบเอง ${c.admin_required_count || 0}${esc(latest)}</div>`;
+  }
+
   function headerHtml(count){
     const apiText = STATE.apiStatus === "ok"
       ? "API พร้อม"
@@ -128,12 +138,17 @@
       <section class="ai-intake-head">
         <div class="top">
           <div>
-            <b>🤖 งานจาก LINE AI รอแอดมิน</b>
-            <small>AI เก็บข้อมูลจากแชทจริง แอดมินเป็นคนตรวจและเพิ่มงานเอง</small>
+            <b>🤖 แผงควบคุม LINE AI</b>
+            <small>รับข้อความจาก LINE OA → เก็บข้อมูลจอง → ส่งให้แอดมินตรวจในหน้างานจอง</small>
             <div class="ai-health">Frontend พร้อม • ${esc(apiText)} • ${Number(count || 0)} รายการ${esc(loaded)}</div>
+            ${healthHtml()}
           </div>
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <button class="ai-notify-btn" type="button" id="btnAiNotifyEnable">${esc(notificationLabel())}</button>
+            <button class="ai-notify-btn" type="button" data-ai-reload>โหลด LINE AI</button>
+            <button class="ai-notify-btn" type="button" data-ai-health>ตรวจ API</button>
+            <button class="ai-notify-btn" type="button" data-ai-create-from-text>สร้างจากข้อความลูกค้าจริง</button>
+            <button class="ai-notify-btn" type="button" data-ai-open-inbox>เปิด Inbox</button>
             <span class="ai-intake-badge">${Number(count || 0)} รายการ</span>
           </div>
         </div>
@@ -176,7 +191,7 @@
     STATE.lastLoadedAt = new Date().toLocaleTimeString("th-TH", { hour:"2-digit", minute:"2-digit" });
 
     if (!actionable.length) {
-      panel.innerHTML = headerHtml(0) + `<div class="ai-intake-empty"><b>ยังไม่มีลูกค้าจาก LINE AI ที่รอเพิ่มงาน</b><div class="muted" style="margin-top:4px">ถ้าลูกค้าส่งข้อมูลจองครบ ระบบจะขึ้นการ์ดตรงนี้ทันที</div></div>`;
+      panel.innerHTML = headerHtml(0) + `<div class="ai-intake-empty"><b>ยังไม่มีลูกค้าจาก LINE AI ที่รอเพิ่มงาน</b><div class="muted" style="margin-top:4px">ถ้าลูกค้าส่งข้อมูลจองครบ ระบบจะขึ้นการ์ดตรงนี้ทันที หรือกด “สร้างจากข้อความลูกค้าจริง” เพื่อบันทึกข้อความที่แอดมินมีอยู่แล้ว</div></div>`;
       bindNotifyButton();
       updateTopCounts(actionable);
       return;
@@ -273,8 +288,45 @@
     } catch (_) {}
   }
 
+  async function checkAiHealth(showResult){
+    try {
+      const data = await api("/admin/ai-office/booking-intakes/health");
+      STATE.apiStatus = "ok";
+      STATE.apiError = "";
+      STATE.health = data || null;
+      if (showResult) toast("LINE AI API พร้อมใช้งาน", "success");
+      return data;
+    } catch (e) {
+      STATE.apiStatus = "error";
+      STATE.apiError = e.message || "ตรวจ API ไม่สำเร็จ";
+      STATE.health = null;
+      if (showResult) toast(STATE.apiError, "error");
+      throw e;
+    }
+  }
+
+  async function createFromRealLineText(){
+    const text = window.prompt("วางข้อความลูกค้าจริงจาก LINE เพื่อสร้างรายการรอแอดมิน");
+    if (!text || !clean(text)) return;
+    const data = await api("/admin/ai-office/booking-intakes/from-line-text", {
+      method: "POST",
+      body: JSON.stringify({ text: clean(text) }),
+    });
+    toast("สร้างรายการจากข้อความลูกค้าจริงแล้ว", "success");
+    await checkAiHealth(false).catch(()=>{});
+    await loadAiIntakes();
+    const id = data?.intake?.id;
+    if (id) {
+      setTimeout(() => {
+        const card = document.querySelector(`[data-ai-intake-id="${CSS.escape(String(id))}"]`);
+        if (card) card.scrollIntoView({ behavior:"smooth", block:"center" });
+      }, 400);
+    }
+  }
+
   async function loadAiIntakes(){
     try {
+      await checkAiHealth(false).catch(()=>{});
       const data = await api("/admin/ai-office/booking-intakes?status=open&limit=80");
       const items = Array.isArray(data.intakes) ? data.intakes : [];
       render(items, "");
@@ -387,7 +439,15 @@
       const admin = e.target.closest("[data-ai-admin]");
       const close = e.target.closest("[data-ai-close]");
       const created = e.target.closest("[data-ai-job-created]");
+      const reload = e.target.closest("[data-ai-reload]");
+      const health = e.target.closest("[data-ai-health]");
+      const createFromText = e.target.closest("[data-ai-create-from-text]");
+      const openInbox = e.target.closest("[data-ai-open-inbox]");
       try {
+        if (reload) return loadAiIntakes();
+        if (health) { await checkAiHealth(true); return loadAiIntakes(); }
+        if (createFromText) return createFromRealLineText();
+        if (openInbox) { location.href = "/admin-ai-office.html"; return; }
         if (openAdd) return openAddFromIntake(openAdd.getAttribute("data-ai-open-add"));
         if (copyOnly) return copyIntake(copyOnly.getAttribute("data-ai-copy"));
         if (ask) return copyAskMissing(ask.getAttribute("data-ai-ask"));
