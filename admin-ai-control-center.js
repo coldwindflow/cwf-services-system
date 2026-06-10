@@ -1,7 +1,19 @@
 (function(){
   "use strict";
 
-  const STATE = { settings: [], values: {}, drafts: [], approvals: [], decisions: [], decisionResult: null, examples: [], activeTab: "overview", open: false };
+  const STATE = {
+    settings: [],
+    values: {},
+    drafts: [],
+    approvals: [],
+    approvalCounts: { total: 0 },
+    lastApprovalError: "",
+    decisions: [],
+    decisionResult: null,
+    examples: [],
+    activeTab: "overview",
+    open: false
+  };
   const CATEGORY_LABELS = { main:"สถานะหลัก", line:"LINE OA", reply:"การตอบลูกค้า", safety:"ความปลอดภัย" };
 
   function $(sel, root){ return (root || document).querySelector(sel); }
@@ -110,6 +122,18 @@
   async function loadDrafts(){
     try { const data = await api("/admin/ai-office/control/pending-drafts"); STATE.drafts = data.drafts || []; } catch(_) { STATE.drafts = []; }
   }
+  async function loadApprovals(){
+    try {
+      const data = await api("/admin/ai-office/control/approvals?status=open&limit=80");
+      STATE.approvals = Array.isArray(data.approvals) ? data.approvals : [];
+      STATE.approvalCounts = data.counts || { total: STATE.approvals.length };
+      STATE.lastApprovalError = "";
+    } catch (err) {
+      STATE.approvals = [];
+      STATE.approvalCounts = { total: 0 };
+      STATE.lastApprovalError = err?.message || "โหลดคิวอนุมัติไม่ได้";
+    }
+  }
   async function loadDecisionLogs(){
     try { const data = await api("/admin/ai-office/control/reply-decision/logs?limit=40"); STATE.decisions = data.decisions || []; } catch(_) { STATE.decisions = []; }
   }
@@ -165,6 +189,7 @@
           <div class="ai-metric"><span>LINE Intake</span><b>${v.line_intake_enabled ? "เปิด" : "ปิด"}</b></div>
           <div class="ai-metric"><span>Auto Send LINE</span><b>ล็อกปิด</b></div>
         </div>
+        ${STATE.lastApprovalError ? `<div class="ai-error" style="margin-top:10px">คิวอนุมัติยังโหลดไม่ได้: ${esc(STATE.lastApprovalError)}</div>` : ""}
         ${openIntake ? `<div class="hint2" style="margin-top:10px">เปิดมาจากการ์ด LINE AI intake #${esc(openIntake)} — ใช้แท็บสวิตช์/ร่างตอบ/คลังสมองได้จากหน้านี้</div>` : ""}
       </section>
       <section class="ai-panel-card"><h3>ปุ่มลัด</h3><div class="ai-actions-row"><button class="primary" type="button" data-ai-tab-go="switches">ตั้งค่าสวิตช์</button><button type="button" data-ai-tab-go="drafts">ดูร่างตอบ</button><button type="button" data-ai-tab-go="approvals">คิวอนุมัติ</button><button type="button" data-ai-tab-go="decision">ตรวจคำตอบ</button><button type="button" data-ai-tab-go="brain">แก้คลังสมอง</button><button type="button" onclick="location.href='/admin-review-v2.html'">กลับหน้างานจอง</button></div></section>
@@ -203,6 +228,7 @@
   }
   function renderApprovals(){
     const canSend = STATE.values?.admin_approved_line_send_enabled === true && STATE.values?.kill_switch !== true && STATE.values?.ai_office_enabled !== false;
+    if (STATE.lastApprovalError) return `<div class="ai-error">คิวอนุมัติยังโหลดไม่ได้: ${esc(STATE.lastApprovalError)}<div class="ai-actions-row"><button type="button" data-ai-control-refresh>รีเฟรช</button></div></div>`;
     if (!STATE.approvals.length) return `<div class="ai-empty">ยังไม่มีข้อความรออนุมัติ</div>`;
     return `<section class="ai-panel-card"><h3>คิวอนุมัติข้อความตอบลูกค้า</h3><div class="hint2">AI ยังไม่ส่ง LINE เอง ข้อความในหน้านี้ต้องให้แอดมินอนุมัติ/แก้/ส่งเองเท่านั้น • ปุ่มส่ง LINE จะใช้ได้เมื่อเปิดสวิตช์ “แอดมินกดส่ง LINE จากคิวอนุมัติ”</div>${STATE.approvals.map(a => `
       <article class="ai-draft-card" data-approval-id="${esc(a.id)}">
