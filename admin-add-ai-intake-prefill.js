@@ -6,10 +6,10 @@
   function qs(){ return new URLSearchParams(window.location.search || ""); }
   function clean(v){ return String(v == null ? "" : v).replace(/\s+/g, " ").trim(); }
   function byId(id){ return document.getElementById(id); }
-  function toast(msg, type){ try { if (typeof showToast === "function") showToast(msg, type || "info"); } catch(_){} }
+  function toast(msg, type){ try { if (typeof showToast === "function") showToast(msg, type || "info"); else console.log(msg); } catch(_){} }
   function api(url, options){
     if (typeof apiFetch === "function") return apiFetch(url, options || {});
-    return fetch(url, Object.assign({ credentials:"include", headers:{"Content-Type":"application/json"}}, options || {})).then(async (res)=>{
+    return fetch(url, Object.assign({ credentials:"same-origin", headers:{"Content-Type":"application/json"}}, options || {})).then(async (res)=>{
       const data = await res.json().catch(()=>null);
       if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP_${res.status}`);
       return data || {};
@@ -168,8 +168,9 @@
   }
   async function loadAndApply(){
     const p = qs();
-    if (p.get("source") !== "line_ai" || !p.get("ai_intake_id")) return;
-    STATE.intakeId = p.get("ai_intake_id");
+    const id = p.get("ai_intake_id") || localStorage.getItem("cwf_line_ai_intake_pending_id");
+    if (p.get("source") !== "line_ai" && !id) return;
+    STATE.intakeId = id;
     try {
       await waitFor(()=>typeof apiFetch === "function" && byId("customer_name") && byId("job_type"), 5000);
       const data = await api(`/admin/ai-office/booking-intakes/${encodeURIComponent(STATE.intakeId)}`);
@@ -186,7 +187,7 @@
     return Number(payload.job_id || payload.id || payload.job?.job_id || payload.job?.id || payload.data?.job_id || 0) || null;
   }
   function wrapFetchForJobCreated(){
-    if (STATE.fetchWrapped || !STATE.intakeId || typeof window.fetch !== "function") return;
+    if (STATE.fetchWrapped || typeof window.fetch !== "function") return;
     STATE.fetchWrapped = true;
     const originalFetch = window.fetch.bind(window);
     window.fetch = async function(input, init){
@@ -194,23 +195,31 @@
       const method = String((init && init.method) || (input && input.method) || "GET").toUpperCase();
       const isBook = /\/admin\/book_v2(?:\?|$)/.test(url) && method === "POST";
       const res = await originalFetch(input, init);
-      if (isBook && res && res.ok && !STATE.marked) {
+      const intakeId = STATE.intakeId || localStorage.getItem("cwf_line_ai_intake_pending_id");
+      if (isBook && res && res.ok && !STATE.marked && intakeId) {
         STATE.marked = true;
         let body = null;
         try { body = await res.clone().json(); } catch(_) {}
         const jobId = extractJobId(body);
-        api(`/admin/ai-office/booking-intakes/${encodeURIComponent(STATE.intakeId)}/job-created`, {
+        api(`/admin/ai-office/booking-intakes/${encodeURIComponent(intakeId)}/job-created`, {
           method:"POST",
           body: JSON.stringify({ job_id: jobId, admin_note:"แอดมินสร้างงานจาก LINE AI intake แล้ว" }),
-        }).then(()=>toast("อัปเดต LINE AI เป็นสร้างงานแล้ว", "success")).catch(()=>{});
+        }).then(()=>{
+          try {
+            localStorage.removeItem("cwf_line_ai_intake_pending_id");
+            localStorage.removeItem("cwf_line_ai_intake_pending_payload");
+          } catch(_){}
+          toast("อัปเดต LINE AI เป็นสร้างงานแล้ว", "success");
+        }).catch(()=>{});
       }
       return res;
     };
   }
   function init(){
     const p = qs();
-    if (p.get("source") !== "line_ai" || !p.get("ai_intake_id")) return;
-    STATE.intakeId = p.get("ai_intake_id");
+    const id = p.get("ai_intake_id") || localStorage.getItem("cwf_line_ai_intake_pending_id");
+    if (p.get("source") !== "line_ai" && !id) return;
+    STATE.intakeId = id;
     wrapFetchForJobCreated();
     setTimeout(loadAndApply, 700);
   }
