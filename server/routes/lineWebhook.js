@@ -1,6 +1,7 @@
 const express = require("express");
 const crypto = require("crypto");
 const https = require("https");
+const { ingestLineBookingIntakeFromEvent } = require("../aiBookingIntake");
 
 function safeText(value, max = 2000) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -193,7 +194,14 @@ function createLineWebhookRoutes({ pool }) {
         try {
           const lineUserId = safeText(event?.source?.userId, 255);
           const profile = token && lineUserId ? await fetchLineProfile(lineUserId, token) : null;
-          await storeInboundLineMessage(pool, event, profile);
+          const stored = await storeInboundLineMessage(pool, event, profile);
+          ingestLineBookingIntakeFromEvent(pool, event, stored).then((result) => {
+            if (result && result.ok === false && !result.skipped) {
+              console.warn("[line-webhook] ai booking intake failed:", result.error || result.reason || "unknown");
+            }
+          }).catch((e) => {
+            console.warn("[line-webhook] ai booking intake failed:", e.message);
+          });
         } catch (e) {
           console.warn("[line-webhook] store inbound event failed:", e.message);
         }
