@@ -1,200 +1,148 @@
 (function(){
   "use strict";
 
-  const STATE = { intakeId: null, intake: null, marked: false, fetchWrapped: false };
+  const STATE = { intakeId: null, intake: null, marked: false, fetchWrapped: false, lastJobId: null, markError: "" };
 
   function qs(){ return new URLSearchParams(window.location.search || ""); }
   function clean(v){ return String(v == null ? "" : v).replace(/\s+/g, " ").trim(); }
   function byId(id){ return document.getElementById(id); }
-  function toast(msg, type){ try { if (typeof showToast === "function") showToast(msg, type || "info"); else console.log(msg); } catch(_){} }
+  function toast(msg, type){ try { if (typeof showToast === "function") showToast(msg, type || "info"); } catch(_){} }
   function api(url, options){
     if (typeof apiFetch === "function") return apiFetch(url, options || {});
-    return fetch(url, Object.assign({ credentials:"same-origin", headers:{"Content-Type":"application/json"}}, options || {})).then(async (res)=>{
+    return fetch(url, Object.assign({ credentials:"include", headers:{"Content-Type":"application/json"}}, options || {})).then(async (res)=>{
       const data = await res.json().catch(()=>null);
       if (!res.ok || data?.ok === false) throw new Error(data?.error || `HTTP_${res.status}`);
       return data || {};
     });
   }
-  function dispatch(el){
-    if(!el) return;
-    try { el.dispatchEvent(new Event("input", { bubbles:true })); } catch(_){}
-    try { el.dispatchEvent(new Event("change", { bubbles:true })); } catch(_){}
-  }
-  function safeSet(id, value){
-    const el = byId(id);
-    const v = clean(value);
-    if (!el || !v) return false;
-    el.value = v;
-    dispatch(el);
-    return true;
-  }
-  function appendSet(id, value){
-    const el = byId(id);
-    const v = clean(value);
-    if (!el || !v) return false;
-    const cur = clean(el.value);
-    el.value = cur ? `${cur}\n${v}` : v;
-    dispatch(el);
-    return true;
-  }
-  function normalizeJobType(serviceType){
-    const s = clean(serviceType);
-    if (/ติดตั้ง/.test(s)) return "ติดตั้ง";
-    if (/ซ่อม|ตรวจ/.test(s)) return "ซ่อม";
-    if (/ล้าง/.test(s)) return "ล้าง";
-    return "";
-  }
-  function normalizeBtu(value){
-    const n = Number((String(value || "").replace(/,/g, "").match(/\d+/) || [""])[0]);
-    if (!Number.isFinite(n) || n <= 0) return "";
-    return String(n);
-  }
+  function dispatch(el){ if(!el) return; try { el.dispatchEvent(new Event("input", { bubbles:true })); } catch(_){} try { el.dispatchEvent(new Event("change", { bubbles:true })); } catch(_){} }
+  function safeSet(id, value){ const el = byId(id); const v = clean(value); if (!el || !v) return false; el.value = v; dispatch(el); return true; }
+  function appendSet(id, value){ const el = byId(id); const v = clean(value); if (!el || !v) return false; const cur = clean(el.value); el.value = cur ? `${cur}\n${v}` : v; dispatch(el); return true; }
+  function normalizeJobType(serviceType){ const s = clean(serviceType); if (/ติดตั้ง/.test(s)) return "ติดตั้ง"; if (/ซ่อม|ตรวจ/.test(s)) return "ซ่อม"; if (/ล้าง/.test(s)) return "ล้าง"; return ""; }
+  function normalizeBtu(value){ const n = Number((String(value || "").replace(/,/g, "").match(/\d+/) || [""])[0]); if (!Number.isFinite(n) || n <= 0) return ""; return String(n); }
   function bangkokYmd(offsetDays){
-    const d = new Date();
-    d.setDate(d.getDate() + Number(offsetDays || 0));
-    try {
-      return new Intl.DateTimeFormat("sv-SE", { timeZone:"Asia/Bangkok", year:"numeric", month:"2-digit", day:"2-digit" }).format(d);
-    } catch(_) {
-      const y = d.getFullYear();
-      const m = String(d.getMonth()+1).padStart(2,"0");
-      const day = String(d.getDate()).padStart(2,"0");
-      return `${y}-${m}-${day}`;
-    }
+    const d = new Date(); d.setDate(d.getDate() + Number(offsetDays || 0));
+    try { return new Intl.DateTimeFormat("sv-SE", { timeZone:"Asia/Bangkok", year:"numeric", month:"2-digit", day:"2-digit" }).format(d); }
+    catch(_) { const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,"0"); const day = String(d.getDate()).padStart(2,"0"); return `${y}-${m}-${day}`; }
   }
   function normalizeDate(value){
-    const s = clean(value);
-    if (!s) return "";
-    if (s === "วันนี้") return bangkokYmd(0);
-    if (s === "พรุ่งนี้") return bangkokYmd(1);
-    if (s === "มะรืน") return bangkokYmd(2);
+    const s = clean(value); if (!s) return "";
+    if (s === "วันนี้") return bangkokYmd(0); if (s === "พรุ่งนี้") return bangkokYmd(1); if (s === "มะรืน") return bangkokYmd(2);
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-    let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
-    if (m) return `${m[3]}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`;
-    m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})$/);
-    if (m) {
-      const y = bangkokYmd(0).slice(0,4);
-      return `${y}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`;
-    }
+    let m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/); if (m) return `${m[3]}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`;
+    m = s.match(/^(\d{1,2})[\/\-.](\d{1,2})$/); if (m) { const y = bangkokYmd(0).slice(0,4); return `${y}-${String(m[2]).padStart(2,"0")}-${String(m[1]).padStart(2,"0")}`; }
     return "";
   }
-  function normalizeTime(value){
-    const s = clean(value);
-    const m = s.match(/^(\d{1,2}):(\d{2})$/);
-    if (m) return `${String(m[1]).padStart(2,"0")}:${m[2]}`;
-    return "";
-  }
-  function waitFor(condition, timeoutMs){
-    const started = Date.now();
-    return new Promise((resolve)=>{
-      const tick = ()=>{
-        let ok = false;
-        try { ok = !!condition(); } catch(_) { ok = false; }
-        if (ok || Date.now() - started > (timeoutMs || 3500)) return resolve(ok);
-        setTimeout(tick, 120);
-      };
-      tick();
-    });
-  }
-  function showPrefillBanner(intake){
-    if (byId("aiIntakePrefillBanner")) return;
-    const app = document.querySelector(".app");
-    const h2 = app ? app.querySelector("h2") : null;
-    const box = document.createElement("div");
-    box.id = "aiIntakePrefillBanner";
-    box.className = "card section-card";
-    box.style.background = "linear-gradient(135deg,#081c4b,#1558d6)";
-    box.style.color = "#fff";
-    box.style.border = "1px solid rgba(255,204,0,.42)";
-    box.innerHTML = `
+  function normalizeTime(value){ const s = clean(value); const m = s.match(/^(\d{1,2}):(\d{2})$/); if (m) return `${String(m[1]).padStart(2,"0")}:${m[2]}`; return ""; }
+  function waitFor(condition, timeoutMs){ const started = Date.now(); return new Promise((resolve)=>{ const tick = ()=>{ let ok = false; try { ok = !!condition(); } catch(_) { ok = false; } if (ok || Date.now() - started > (timeoutMs || 3500)) return resolve(ok); setTimeout(tick, 120); }; tick(); }); }
+
+  function bannerHtml(intake){
+    const status = intake.status || "-";
+    const jobPart = STATE.lastJobId || intake.job_id ? ` • Job #${STATE.lastJobId || intake.job_id}` : "";
+    const err = STATE.markError ? `<div style="font-size:12px;margin-top:6px;color:#fecaca;font-weight:900">อัปเดตสถานะไม่สำเร็จ: ${STATE.markError}</div>` : "";
+    return `
       <b style="color:#ffcc00">🤖 เติมข้อมูลจาก LINE AI แล้ว</b>
-      <div style="font-size:13px;font-weight:800;margin-top:6px;color:rgba(255,255,255,.86)">
-        แอดมินต้องตรวจราคา คิว ช่าง และกดบันทึกงานเอง • AI ไม่ได้สร้างงานแทน
-      </div>
-      <div style="font-size:12px;margin-top:6px;color:rgba(255,255,255,.72)">
-        รายการ #${intake.id || "-"} • ${intake.ai_summary || "รอตรวจข้อมูล"}
+      <div style="font-size:13px;font-weight:800;margin-top:6px;color:rgba(255,255,255,.86)">แอดมินต้องตรวจราคา คิว ช่าง และกดบันทึกงานเอง • AI ไม่ได้สร้างงานแทน</div>
+      <div style="font-size:12px;margin-top:6px;color:rgba(255,255,255,.76)">รายการ #${intake.id || "-"} • สถานะ ${status}${jobPart} • ${intake.ai_summary || "รอตรวจข้อมูล"}</div>
+      ${err}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+        <button id="btnAiIntakeMarkJobCreated" type="button" style="border:0;border-radius:999px;padding:9px 12px;background:#22c55e;color:#052e16;font-weight:1000">อัปเดตว่า “สร้างงานแล้ว”</button>
+        <button id="btnAiIntakeReload" type="button" style="border:0;border-radius:999px;padding:9px 12px;background:#fff;color:#081c4b;font-weight:1000">โหลดสถานะใหม่</button>
       </div>
     `;
-    if (h2 && h2.parentNode) h2.parentNode.parentNode.insertBefore(box, h2.parentNode.nextSibling);
-    else if (app) app.insertBefore(box, app.firstChild);
   }
-  function applyService(intake){
-    const jt = normalizeJobType(intake.service_type);
-    if (jt) safeSet("job_type", jt);
-    if (jt === "ล้าง") safeSet("ac_type", "ผนัง");
-    const btu = normalizeBtu(intake.btu);
-    if (btu) {
-      waitFor(()=>byId("btu") && byId("btu").options && byId("btu").options.length, 3000).then(()=>{
-        const el = byId("btu");
-        if (!el) return;
-        const exact = Array.from(el.options || []).find((o)=>String(o.value) === btu || String(o.textContent || "").includes(btu));
-        if (exact) el.value = exact.value;
-        else el.value = btu;
-        dispatch(el);
+
+  function ensurePrefillBanner(intake){
+    let box = byId("aiIntakePrefillBanner");
+    if (!box) {
+      const app = document.querySelector(".app");
+      const h2 = app ? app.querySelector("h2") : null;
+      box = document.createElement("div");
+      box.id = "aiIntakePrefillBanner";
+      box.className = "card section-card";
+      box.style.background = "linear-gradient(135deg,#081c4b,#1558d6)";
+      box.style.color = "#fff";
+      box.style.border = "1px solid rgba(255,204,0,.42)";
+      if (h2 && h2.parentNode) h2.parentNode.parentNode.insertBefore(box, h2.parentNode.nextSibling);
+      else if (app) app.insertBefore(box, app.firstChild);
+    }
+    box.innerHTML = bannerHtml(intake || STATE.intake || {});
+    bindBannerButtons();
+  }
+
+  function bindBannerButtons(){
+    const mark = byId("btnAiIntakeMarkJobCreated");
+    if (mark && !mark.__bound) {
+      mark.__bound = true;
+      mark.addEventListener("click", async ()=>{
+        if (!confirm("อัปเดตรายการ LINE AI นี้เป็นสร้างงานแล้ว?")) return;
+        await markJobCreated(STATE.lastJobId, "admin_add_manual_button");
       });
     }
+    const reload = byId("btnAiIntakeReload");
+    if (reload && !reload.__bound) {
+      reload.__bound = true;
+      reload.addEventListener("click", async ()=>{ await reloadIntakeStatus(); });
+    }
+  }
+
+  function applyService(intake){
+    const jt = normalizeJobType(intake.service_type); if (jt) safeSet("job_type", jt); if (jt === "ล้าง") safeSet("ac_type", "ผนัง");
+    const btu = normalizeBtu(intake.btu);
+    if (btu) waitFor(()=>byId("btu") && byId("btu").options && byId("btu").options.length, 3000).then(()=>{ const el = byId("btu"); if (!el) return; const exact = Array.from(el.options || []).find((o)=>String(o.value) === btu || String(o.textContent || "").includes(btu)); el.value = exact ? exact.value : btu; dispatch(el); });
     if (Number(intake.unit_count || 0) > 0) safeSet("machine_count", String(Number(intake.unit_count)));
     try { if (typeof buildVariantUI === "function") buildVariantUI(); } catch(_){}
     setTimeout(()=>{ try { if (typeof refreshPreviewDebounced === "function") refreshPreviewDebounced(); } catch(_){} }, 500);
   }
-  function applySchedule(intake){
-    const ymd = normalizeDate(intake.preferred_date);
-    const hm = normalizeTime(intake.preferred_time);
-    if (ymd) safeSet("appt_date", ymd);
-    if (ymd && hm) safeSet("appointment_datetime", `${ymd}T${hm}`);
-    else if (ymd) {
-      const help = byId("appointment_datetime_help");
-      if (help && intake.preferred_time) help.textContent = `LINE AI จับช่วงเวลา: ${intake.preferred_time} • กรุณาเลือกเวลาจริงก่อนบันทึก`;
-    }
-  }
+  function applySchedule(intake){ const ymd = normalizeDate(intake.preferred_date); const hm = normalizeTime(intake.preferred_time); if (ymd) safeSet("appt_date", ymd); if (ymd && hm) safeSet("appointment_datetime", `${ymd}T${hm}`); else if (ymd) { const help = byId("appointment_datetime_help"); if (help && intake.preferred_time) help.textContent = `LINE AI จับช่วงเวลา: ${intake.preferred_time} • กรุณาเลือกเวลาจริงก่อนบันทึก`; } }
+
   function applyIntake(intake){
-    showPrefillBanner(intake);
+    STATE.intake = intake;
+    ensurePrefillBanner(intake);
     safeSet("customer_name", intake.customer_name);
     safeSet("customer_phone", intake.customer_phone);
     safeSet("address_text", intake.address_text || intake.area_text);
     safeSet("maps_url", intake.map_url);
     safeSet("job_zone", intake.area_text);
-    appendSet("customer_note", [
-      `จาก LINE AI intake #${intake.id}`,
-      intake.latest_customer_message ? `ข้อความล่าสุด: ${intake.latest_customer_message}` : "",
-      intake.ai_summary ? `AI note: ${intake.ai_summary}` : "",
-    ].filter(Boolean).join("\n"));
-    applyService(intake);
-    applySchedule(intake);
+    appendSet("customer_note", [`จาก LINE AI intake #${intake.id}`, intake.latest_customer_message ? `ข้อความล่าสุด: ${intake.latest_customer_message}` : "", intake.ai_summary ? `AI note: ${intake.ai_summary}` : ""].filter(Boolean).join("\n"));
+    applyService(intake); applySchedule(intake);
     try { byId("customer_phone")?.dispatchEvent(new Event("blur", { bubbles:true })); } catch(_){}
-    setTimeout(()=>{
-      try { if (typeof detectAdminServiceZone === "function") detectAdminServiceZone(); } catch(_){}
-      try { if (typeof refreshPreviewDebounced === "function") refreshPreviewDebounced(); } catch(_){}
-    }, 900);
+    setTimeout(()=>{ try { if (typeof detectAdminServiceZone === "function") detectAdminServiceZone(); } catch(_){} try { if (typeof refreshPreviewDebounced === "function") refreshPreviewDebounced(); } catch(_){} }, 900);
   }
+
   async function loadAndApply(){
-    const p = qs();
-    const id = p.get("ai_intake_id") || localStorage.getItem("cwf_line_ai_intake_pending_id");
+    const p = qs(); const id = p.get("ai_intake_id") || localStorage.getItem("cwf_line_ai_intake_pending_id");
     if (p.get("source") !== "line_ai" && !id) return;
     STATE.intakeId = id;
     try {
       await waitFor(()=>typeof apiFetch === "function" && byId("customer_name") && byId("job_type"), 5000);
       let data = null;
-      try {
-        data = await api(`/admin/ai-office/booking-intakes/${encodeURIComponent(STATE.intakeId)}`);
-      } catch (apiErr) {
-        const cached = localStorage.getItem("cwf_line_ai_intake_pending_payload");
-        if (cached) {
-          try { data = { intake: JSON.parse(cached) }; } catch(_) {}
-        }
-        if (!data) throw apiErr;
-      }
+      try { data = await api(`/admin/ai-office/booking-intakes/${encodeURIComponent(STATE.intakeId)}`); }
+      catch (apiErr) { const cached = localStorage.getItem("cwf_line_ai_intake_pending_payload"); if (cached) { try { data = { intake: JSON.parse(cached) }; } catch(_) {} } if (!data) throw apiErr; }
       STATE.intake = data.intake || null;
       if (!STATE.intake) throw new Error("ไม่พบรายการ LINE AI");
       applyIntake(STATE.intake);
       toast("เติมข้อมูลจาก LINE AI แล้ว กรุณาตรวจและบันทึกเอง", "success");
-    } catch (e) {
-      toast(e.message || "โหลดข้อมูล LINE AI ไม่สำเร็จ", "error");
+    } catch (e) { toast(e.message || "โหลดข้อมูล LINE AI ไม่สำเร็จ", "error"); }
+  }
+  async function reloadIntakeStatus(){ if (!STATE.intakeId) return; try { const data = await api(`/admin/ai-office/booking-intakes/${encodeURIComponent(STATE.intakeId)}`); STATE.intake = data.intake || STATE.intake; ensurePrefillBanner(STATE.intake); toast("โหลดสถานะ LINE AI แล้ว", "success"); } catch(e){ toast(e.message || "โหลดสถานะไม่สำเร็จ", "error"); } }
+  function extractJobId(payload){ if (!payload || typeof payload !== "object") return null; return Number(payload.job_id || payload.id || payload.job_id_v2 || payload.job?.job_id || payload.job?.id || payload.data?.job_id || payload.data?.id || 0) || null; }
+
+  async function markJobCreated(jobId, source){
+    const intakeId = STATE.intakeId || localStorage.getItem("cwf_line_ai_intake_pending_id");
+    if (!intakeId) return;
+    try {
+      STATE.markError = "";
+      const data = await api(`/admin/ai-office/booking-intakes/${encodeURIComponent(intakeId)}/job-created`, { method:"POST", body: JSON.stringify({ job_id: jobId || STATE.lastJobId || null, admin_note:"แอดมินสร้างงานจาก LINE AI intake แล้ว", source: source || "admin_add" }) });
+      STATE.marked = true; STATE.intake = data.intake || STATE.intake; STATE.lastJobId = jobId || STATE.lastJobId || STATE.intake?.job_id || null;
+      try { localStorage.removeItem("cwf_line_ai_intake_pending_id"); localStorage.removeItem("cwf_line_ai_intake_pending_payload"); } catch(_){}
+      ensurePrefillBanner(STATE.intake || {});
+      toast("อัปเดต LINE AI เป็นสร้างงานแล้ว", "success");
+    } catch(e) {
+      STATE.marked = false; STATE.markError = e.message || "MARK_JOB_CREATED_FAILED"; ensurePrefillBanner(STATE.intake || {}); toast("บันทึกงานแล้ว แต่อัปเดต LINE AI ไม่สำเร็จ กดปุ่มอัปเดตซ้ำได้", "error");
     }
   }
-  function extractJobId(payload){
-    if (!payload || typeof payload !== "object") return null;
-    return Number(payload.job_id || payload.id || payload.job?.job_id || payload.job?.id || payload.data?.job_id || 0) || null;
-  }
+
   function wrapFetchForJobCreated(){
     if (STATE.fetchWrapped || typeof window.fetch !== "function") return;
     STATE.fetchWrapped = true;
@@ -206,32 +154,13 @@
       const res = await originalFetch(input, init);
       const intakeId = STATE.intakeId || localStorage.getItem("cwf_line_ai_intake_pending_id");
       if (isBook && res && res.ok && !STATE.marked && intakeId) {
-        STATE.marked = true;
-        let body = null;
-        try { body = await res.clone().json(); } catch(_) {}
-        const jobId = extractJobId(body);
-        api(`/admin/ai-office/booking-intakes/${encodeURIComponent(intakeId)}/job-created`, {
-          method:"POST",
-          body: JSON.stringify({ job_id: jobId, admin_note:"แอดมินสร้างงานจาก LINE AI intake แล้ว" }),
-        }).then(()=>{
-          try {
-            localStorage.removeItem("cwf_line_ai_intake_pending_id");
-            localStorage.removeItem("cwf_line_ai_intake_pending_payload");
-          } catch(_){}
-          toast("อัปเดต LINE AI เป็นสร้างงานแล้ว", "success");
-        }).catch(()=>{});
+        let body = null; try { body = await res.clone().json(); } catch(_) {}
+        STATE.lastJobId = extractJobId(body);
+        await markJobCreated(STATE.lastJobId, "admin_book_v2_auto_detect");
       }
       return res;
     };
   }
-  function init(){
-    const p = qs();
-    const id = p.get("ai_intake_id") || localStorage.getItem("cwf_line_ai_intake_pending_id");
-    if (p.get("source") !== "line_ai" && !id) return;
-    STATE.intakeId = id;
-    wrapFetchForJobCreated();
-    setTimeout(loadAndApply, 700);
-  }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
-  else init();
+  function init(){ const p = qs(); const id = p.get("ai_intake_id") || localStorage.getItem("cwf_line_ai_intake_pending_id"); if (p.get("source") !== "line_ai" && !id) return; STATE.intakeId = id; wrapFetchForJobCreated(); setTimeout(loadAndApply, 700); }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();

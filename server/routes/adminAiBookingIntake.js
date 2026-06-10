@@ -8,6 +8,7 @@ const {
   upsertAiBookingIntake,
   detectIntent,
   classifyRisk,
+  getAiBookingIntakeHealth,
 } = require("../aiBookingIntake");
 
 function cleanText(value, max = 2000) {
@@ -45,31 +46,8 @@ function createAdminAiBookingIntakeRoutes(deps = {}) {
 
   router.get("/admin/ai-office/booking-intakes/health", requireAdminSession, async (req, res) => {
     try {
-      await ensureAiBookingIntakeSchema(pool);
-      const totals = await pool.query(`
-        SELECT
-          COUNT(*)::int AS total_count,
-          COUNT(*) FILTER (WHERE status = 'READY_TO_CREATE_JOB')::int AS ready_count,
-          COUNT(*) FILTER (WHERE status = 'NEED_INFO')::int AS need_info_count,
-          COUNT(*) FILTER (WHERE status = 'ADMIN_REQUIRED')::int AS admin_required_count,
-          MAX(updated_at) AS latest_updated_at
-        FROM public.ai_booking_intakes
-      `);
-      const latest = await pool.query(`
-        SELECT id, status, customer_name, customer_phone, service_type, updated_at
-        FROM public.ai_booking_intakes
-        ORDER BY updated_at DESC
-        LIMIT 1
-      `);
-      return res.json({
-        ok: true,
-        route: "admin-ai-booking-intake",
-        table_ready: true,
-        protected: true,
-        can_create_from_line_text: true,
-        counts: totals.rows?.[0] || {},
-        latest_intake: latest.rows?.[0] || null,
-      });
+      const health = await getAiBookingIntakeHealth(pool);
+      return res.json({ ok: true, ...health });
     } catch (e) {
       return res.status(e.status || 500).json({ ok: false, error: e.message || "AI_BOOKING_INTAKE_HEALTH_FAILED" });
     }
@@ -77,7 +55,7 @@ function createAdminAiBookingIntakeRoutes(deps = {}) {
 
   router.post("/admin/ai-office/booking-intakes/from-line-text", requireAdminSession, async (req, res) => {
     try {
-      const text = cleanText(req.body?.text, 4000);
+      const text = cleanText(req.body?.text, 8000);
       if (!text) return res.status(400).json({ ok: false, error: "LINE_TEXT_REQUIRED" });
       const givenLineUserId = cleanText(req.body?.line_user_id, 255);
       const lineUserId = givenLineUserId || `ADMIN_LINE_TEXT_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -88,11 +66,14 @@ function createAdminAiBookingIntakeRoutes(deps = {}) {
         line_user_id: lineUserId,
         last_message_id: `admin-line-text-${Date.now()}`,
         latest_customer_message: text,
+        thread_context: text,
+        thread_message_count: 1,
         intent,
         risk_label: risk,
         metadata: {
           source: "admin_line_text",
           note: "admin_line_text_input",
+          intake_engine: "manual_thread_v4",
         },
       });
       return res.json({ ok: true, intake });
@@ -135,6 +116,20 @@ function createAdminAiBookingIntakeRoutes(deps = {}) {
     }
   });
 
+  router.post("/admin/ai-office/booking-intakes/:id/waiting-customer", requireAdminSession, async (req, res) => {
+    try {
+      const intake = await patchAiBookingIntake(pool, req.params.id, {
+        status: "WAITING_CUSTOMER_REPLY",
+        admin_note: cleanText(req.body?.admin_note, 1000) || "แอดมินถามข้อมูลเพิ่มแล้ว รอลูกค้าตอบกลับ",
+        metadata: { waiting_customer_from: "admin_review_queue" },
+      });
+      if (!intake) return res.status(404).json({ ok: false, error: "AI_BOOKING_INTAKE_NOT_FOUND" });
+      return res.json({ ok: true, intake });
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "MARK_WAITING_CUSTOMER_FAILED" });
+    }
+  });
+
   router.post("/admin/ai-office/booking-intakes/:id/close", requireAdminSession, async (req, res) => {
     try {
       const intake = await patchAiBookingIntake(pool, req.params.id, {
@@ -155,6 +150,7 @@ function createAdminAiBookingIntakeRoutes(deps = {}) {
         status: "JOB_CREATED",
         job_id: jobId,
         admin_note: cleanText(req.body?.admin_note, 1000) || "แอดมินสร้างงานจากข้อมูลนี้แล้ว",
+        metadata: { job_created_from: cleanText(req.body?.source, 100) || "admin" },
       });
       if (!intake) return res.status(404).json({ ok: false, error: "AI_BOOKING_INTAKE_NOT_FOUND" });
       return res.json({ ok: true, intake });
