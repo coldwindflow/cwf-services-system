@@ -6,7 +6,11 @@ cd "$ROOT"
 python3 - <<'PY'
 from pathlib import Path
 
-candidates = [Path("index.js"), Path("server.js"), Path("server/index.js"), Path("src/index.js"), Path("src/server.js"), Path("api/index.js")]
+candidates = [
+    Path("index.js"), Path("server.js"), Path("server/index.js"),
+    Path("src/index.js"), Path("src/server.js"), Path("api/index.js"),
+    Path("app.js"), Path("server/app.js")
+]
 target = None
 for p in candidates:
     if not p.exists() or p.stat().st_size <= 0:
@@ -30,7 +34,7 @@ req = f'const createAdminAiBookingIntakeRoutes = require("{prefix}server/routes/
 if "createAdminAiBookingIntakeRoutes" not in s:
     lines = s.splitlines()
     idx = 0
-    for i, line in enumerate(lines[:140]):
+    for i, line in enumerate(lines[:160]):
         if "require(" in line:
             idx = i + 1
     lines.insert(idx, req)
@@ -64,3 +68,5 @@ node --check server/aiBookingIntake.js
 node --check server/routes/adminAiBookingIntake.js
 node --check server/routes/lineWebhook.js
 node --check admin-review-ai-intake.js
+node --check admin-add-ai-intake-prefill.js
+node --check admin-review-ai-notifications.js

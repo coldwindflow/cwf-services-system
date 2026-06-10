@@ -7,6 +7,9 @@ const KNOWN_AREAS = [
   "ช่องนนทรี", "บางพลี", "ลาดกระบัง", "เทพารักษ์", "สาทร", "พระราม 9", "รัชดา", "ดินแดง", "ห้วยขวาง"
 ];
 
+const CLOSED_STATUSES = new Set(["CLOSED", "JOB_CREATED"]);
+const OPEN_STATUSES = ["READY_TO_CREATE_JOB", "NEED_INFO", "ADMIN_REQUIRED", "CUSTOMER_INTERESTED"];
+
 function cleanText(value, max = 2000) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 }
@@ -15,14 +18,32 @@ function onlyDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
 
-function uniqueList(values) {
-  return Array.from(new Set((values || []).map((v) => cleanText(v, 80)).filter(Boolean)));
-}
-
 function clampInt(value, min, max, fallback) {
   const n = Math.round(Number(value));
   if (!Number.isFinite(n)) return fallback;
   return Math.max(min, Math.min(max, n));
+}
+
+function parseJsonArray(value) {
+  if (Array.isArray(value)) return value.map((x) => cleanText(x, 120)).filter(Boolean);
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map((x) => cleanText(x, 120)).filter(Boolean);
+    } catch (_) {}
+  }
+  return [];
+}
+
+function parseJsonObject(value) {
+  if (value && typeof value === "object" && !Array.isArray(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) return parsed;
+    } catch (_) {}
+  }
+  return {};
 }
 
 function extractPhone(text) {
@@ -43,7 +64,9 @@ function extractName(text) {
   ];
   for (const p of patterns) {
     const m = s.match(p);
-    if (m && m[1]) return cleanText(m[1].replace(/(เบอร์|โทร|อยู่|ที่อยู่|ล้าง|ซ่อม).*$/i, ""), 80);
+    if (m && m[1]) {
+      return cleanText(m[1].replace(/(เบอร์|โทร|อยู่|ที่อยู่|ล้าง|ซ่อม|ติดตั้ง|ตรวจ|คอนโด|บ้าน|พรุ่งนี้|วันนี้).*$/i, ""), 80);
+    }
   }
   return "";
 }
@@ -61,17 +84,24 @@ function extractUnitCount(text) {
   const s = String(text || "");
   const m = s.match(/(\d{1,2})\s*(?:เครื่อง|ตัว|unit|units)/i);
   if (m) return clampInt(m[1], 1, 99, null);
-  if (/(หนึ่ง|1)\s*(?:เครื่อง|ตัว)/.test(s)) return 1;
+  const words = [
+    [/(หนึ่ง|1)\s*(?:เครื่อง|ตัว)/, 1],
+    [/(สอง|2)\s*(?:เครื่อง|ตัว)/, 2],
+    [/(สาม|3)\s*(?:เครื่อง|ตัว)/, 3],
+    [/(สี่|4)\s*(?:เครื่อง|ตัว)/, 4],
+    [/(ห้า|5)\s*(?:เครื่อง|ตัว)/, 5],
+  ];
+  for (const [re, n] of words) if (re.test(s)) return n;
   return null;
 }
 
 function extractBtu(text) {
   const s = String(text || "");
-  const m = s.match(/(9,?000|12,?000|13,?000|15,?000|18,?000|24,?000|30,?000|36,?000|\d{2})\s*(?:btu|บีทียู)?/i);
-  if (!m) return "";
-  const raw = String(m[1]).replace(/,/g, "");
-  if (/^\d{2}$/.test(raw)) return `${raw},000 BTU`;
-  return `${Number(raw).toLocaleString("en-US")} BTU`;
+  const explicit = s.match(/(9,?000|12,?000|13,?000|15,?000|18,?000|24,?000|30,?000|36,?000|38,?000|40,?000|48,?000|60,?000)\s*(?:btu|บีทียู)?/i);
+  if (explicit) return `${Number(String(explicit[1]).replace(/,/g, "")).toLocaleString("en-US")} BTU`;
+  const short = s.match(/\b(9|12|13|15|18|24|30|36|38|40|48|60)\s*(?:k|พัน|000)\s*(?:btu|บีทียู)?\b/i);
+  if (short) return `${Number(short[1]) * 1000 .toLocaleString ? (Number(short[1]) * 1000).toLocaleString("en-US") : Number(short[1]) * 1000} BTU`;
+  return "";
 }
 
 function extractMapUrl(text) {
@@ -92,7 +122,7 @@ function extractAddress(text) {
   const m = s.match(/(?:ที่อยู่|อยู่|address|คอนโด|หมู่บ้าน|ซอย|ถนน)\s*[:：-]?\s*([^\n\r]{6,180})/i);
   if (m && m[1]) return cleanText(m[1], 220);
   const area = extractArea(s);
-  return area ? area : "";
+  return area || "";
 }
 
 function extractPreferredDate(text) {
@@ -138,14 +168,9 @@ function classifyRisk(text, intent) {
   return "LOW";
 }
 
-function estimateQuotedPrice(fields) {
-  const service = cleanText(fields.service_type, 80);
-  const count = Number(fields.unit_count || 0);
-  if (!service.includes("ล้าง") || count <= 0) return null;
-  const btuText = String(fields.btu || "").replace(/,/g, "");
-  const btu = Number((btuText.match(/\d+/) || [""])[0]);
-  const unitPrice = btu >= 18000 ? 690 : 550;
-  return unitPrice * count;
+function estimateQuotedPrice() {
+  // Do not guess prices here. Admin Add Job uses the real pricing preview / service price book after prefill.
+  return null;
 }
 
 function extractFieldsFromText(text) {
@@ -173,9 +198,9 @@ function mergeFields(previous = {}, next = {}) {
   return merged;
 }
 
-function bookingMissingFields(fields) {
+function bookingMissingFields(fields, options = {}) {
   const missing = [];
-  if (!cleanText(fields.customer_name)) missing.push("ชื่อลูกค้า");
+  if (!cleanText(fields.customer_name) && !options.criticalOnly) missing.push("ชื่อลูกค้า");
   if (!cleanText(fields.customer_phone)) missing.push("เบอร์โทร");
   if (!cleanText(fields.service_type)) missing.push("ประเภทงาน");
   if (!Number(fields.unit_count || 0)) missing.push("จำนวนเครื่อง");
@@ -188,22 +213,21 @@ function bookingMissingFields(fields) {
 
 function readinessScore(fields) {
   const total = 8;
-  const missing = bookingMissingFields(fields).length;
+  const missing = bookingMissingFields(fields, { criticalOnly: true }).length;
   return Math.max(0, Math.min(100, Math.round(((total - missing) / total) * 100)));
 }
 
-function decideStatus({ text, intent, risk, fields }) {
+function decideStatus({ intent, risk, fields }) {
   if (risk === "ADMIN_ONLY") return "ADMIN_REQUIRED";
-  const missing = bookingMissingFields(fields);
-  const score = readinessScore(fields);
-  if (intent === "booking_ready" && score >= 88 && missing.length <= 1) return "READY_TO_CREATE_JOB";
-  if (intent === "booking_ready") return "NEED_INFO";
   if (intent === "price_objection") return "CUSTOMER_INTERESTED";
+  const criticalMissing = bookingMissingFields(fields, { criticalOnly: true });
+  if (intent === "booking_ready" && criticalMissing.length === 0) return "READY_TO_CREATE_JOB";
+  if (intent === "booking_ready") return "NEED_INFO";
   if (cleanText(fields.customer_phone) || cleanText(fields.map_url) || cleanText(fields.preferred_date)) return "NEED_INFO";
   return "WATCHING";
 }
 
-function shouldCreateOrUpdateIntake({ text, intent, fields, risk }) {
+function shouldCreateOrUpdateIntake({ text, intent, fields }) {
   if (!cleanText(text)) return false;
   if (["booking_ready", "price_objection", "complaint", "tax_invoice", "refund"].includes(intent)) return true;
   if (cleanText(fields.customer_phone) || cleanText(fields.map_url)) return true;
@@ -218,9 +242,10 @@ function buildAiSummary(fields, status, intent, risk) {
   if (fields.area_text || fields.address_text) parts.push(fields.area_text || fields.address_text);
   if (fields.preferred_date || fields.preferred_time) parts.push([fields.preferred_date, fields.preferred_time].filter(Boolean).join(" "));
   const base = parts.length ? parts.join(" • ") : "รอตรวจข้อมูลจาก LINE";
-  if (status === "READY_TO_CREATE_JOB") return `ข้อมูลใกล้ครบ พร้อมให้แอดมินตรวจและเพิ่มงาน: ${base}`;
+  if (status === "READY_TO_CREATE_JOB") return `ข้อมูลครบพอให้แอดมินตรวจและเพิ่มงาน: ${base}`;
   if (status === "ADMIN_REQUIRED") return `ต้องให้แอดมินตอบเอง: ${base}`;
   if (intent === "price_objection") return "ลูกค้าต่อราคา ให้ยืนยันราคาตามระบบ ไม่เปิดอนุมัติส่วนลด";
+  if (risk === "APPROVAL_REQUIRED") return `ต้องตรวจโดยแอดมินก่อนตอบ/ลงงาน: ${base}`;
   return `ต้องถามข้อมูลเพิ่ม: ${base}`;
 }
 
@@ -278,7 +303,7 @@ function mapRow(row) {
     preferred_date: row.preferred_date || "",
     preferred_time: row.preferred_time || "",
     quoted_price: row.quoted_price == null ? null : Number(row.quoted_price),
-    missing_fields: Array.isArray(row.missing_fields) ? row.missing_fields : [],
+    missing_fields: parseJsonArray(row.missing_fields),
     readiness_score: Number(row.readiness_score || 0),
     status: row.status || "NEED_INFO",
     risk_label: row.risk_label || "LOW",
@@ -286,7 +311,7 @@ function mapRow(row) {
     ai_summary: row.ai_summary || "",
     admin_note: row.admin_note || "",
     last_message_id: row.last_message_id || "",
-    metadata: row.metadata || {},
+    metadata: parseJsonObject(row.metadata),
     job_id: row.job_id == null ? null : Number(row.job_id),
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -304,20 +329,28 @@ async function upsertAiBookingIntake(pool, payload) {
   if (!lineUserId) return null;
 
   const existing = await loadExistingIntake(pool, lineUserId);
+  if (existing && CLOSED_STATUSES.has(cleanText(existing.status, 80))) {
+    return mapRow(existing);
+  }
+
   const nextFields = extractFieldsFromText(payload.latest_customer_message || "");
   const merged = mergeFields(existing || {}, nextFields);
   const intent = payload.intent || detectIntent(payload.latest_customer_message);
   const risk = payload.risk_label || classifyRisk(payload.latest_customer_message, intent);
-  const missing = bookingMissingFields(merged);
+  const missing = bookingMissingFields(merged, { criticalOnly: false });
+  const criticalMissing = bookingMissingFields(merged, { criticalOnly: true });
   const score = readinessScore(merged);
-  const status = decideStatus({ text: payload.latest_customer_message, intent, risk, fields: merged });
+  const status = decideStatus({ intent, risk, fields: merged });
   const aiSummary = buildAiSummary(merged, status, intent, risk);
-  const quotedPrice = merged.quoted_price || estimateQuotedPrice(merged);
-  const meta = Object.assign({}, existing?.metadata || {}, payload.metadata || {}, {
+  const quotedPrice = null;
+  const meta = Object.assign({}, parseJsonObject(existing?.metadata), payload.metadata || {}, {
     intent,
+    critical_missing_fields: criticalMissing,
     business_timezone: BANGKOK_TZ,
     last_decision_at: new Date().toISOString(),
-    price_rule: intent === "price_objection" ? "ใช้ราคาตามระบบเท่านั้น ไม่เปิดอนุมัติส่วนลด" : undefined,
+    price_rule: intent === "price_objection"
+      ? "ใช้ราคาตามระบบเท่านั้น ไม่เปิดอนุมัติส่วนลด"
+      : "ให้หน้าเพิ่มงานคำนวณราคาจากระบบราคา/แคมเปญจริง",
   });
 
   const saved = await pool.query(
@@ -338,13 +371,10 @@ async function upsertAiBookingIntake(pool, payload) {
        map_url=COALESCE(NULLIF(EXCLUDED.map_url,''), public.ai_booking_intakes.map_url),
        preferred_date=COALESCE(NULLIF(EXCLUDED.preferred_date,''), public.ai_booking_intakes.preferred_date),
        preferred_time=COALESCE(NULLIF(EXCLUDED.preferred_time,''), public.ai_booking_intakes.preferred_time),
-       quoted_price=COALESCE(EXCLUDED.quoted_price, public.ai_booking_intakes.quoted_price),
+       quoted_price=NULL,
        missing_fields=EXCLUDED.missing_fields,
        readiness_score=EXCLUDED.readiness_score,
-       status=CASE
-         WHEN public.ai_booking_intakes.status IN ('JOB_CREATED','CLOSED') THEN EXCLUDED.status
-         ELSE EXCLUDED.status
-       END,
+       status=EXCLUDED.status,
        risk_label=EXCLUDED.risk_label,
        latest_customer_message=EXCLUDED.latest_customer_message,
        ai_summary=EXCLUDED.ai_summary,
@@ -365,7 +395,7 @@ async function upsertAiBookingIntake(pool, payload) {
       cleanText(merged.map_url, 1000) || null,
       cleanText(merged.preferred_date, 80) || null,
       cleanText(merged.preferred_time, 80) || null,
-      quotedPrice || null,
+      quotedPrice,
       JSON.stringify(missing),
       score,
       status,
@@ -413,14 +443,13 @@ async function listAiBookingIntakes(pool, options = {}) {
   await ensureAiBookingIntakeSchema(pool);
   const limit = clampInt(options.limit, 1, 200, 80);
   const status = cleanText(options.status, 80);
-  const openStatuses = ["READY_TO_CREATE_JOB", "NEED_INFO", "ADMIN_REQUIRED", "CUSTOMER_INTERESTED"];
   const params = [];
   let where = "WHERE status <> 'CLOSED'";
   if (status && status !== "all" && status !== "open") {
     params.push(status);
     where = `WHERE status = $${params.length}`;
   } else if (status === "open" || !status) {
-    params.push(openStatuses);
+    params.push(OPEN_STATUSES);
     where = `WHERE status = ANY($${params.length})`;
   }
   params.push(limit);
@@ -439,7 +468,7 @@ async function patchAiBookingIntake(pool, id, patch = {}) {
   const current = await getAiBookingIntake(pool, id);
   if (!current) return null;
   const merged = mergeFields(current, patch);
-  const missing = Array.isArray(patch.missing_fields) ? patch.missing_fields : bookingMissingFields(merged);
+  const missing = Array.isArray(patch.missing_fields) ? patch.missing_fields : bookingMissingFields(merged, { criticalOnly: false });
   const score = patch.readiness_score == null ? readinessScore(merged) : clampInt(patch.readiness_score, 0, 100, current.readiness_score);
   const status = cleanText(patch.status, 80) || current.status;
   const saved = await pool.query(
@@ -486,7 +515,7 @@ function buildAdminCopyText(intake) {
     `พื้นที่/ที่อยู่: ${[i.area_text, i.address_text].filter(Boolean).join(" ") || "-"}`,
     `โลเคชั่น: ${i.map_url || "-"}`,
     `วันเวลา: ${[i.preferred_date, i.preferred_time].filter(Boolean).join(" ") || "-"}`,
-    `ราคาตามระบบ: ${i.quoted_price ? `${Number(i.quoted_price).toLocaleString("th-TH")} บาท` : "ให้ระบบคำนวณอีกครั้ง"}`,
+    `ราคาตามระบบ: ให้หน้าเพิ่มงานคำนวณจากระบบราคา/แคมเปญจริง`,
     `ข้อมูลที่ยังขาด: ${(i.missing_fields || []).join(", ") || "ครบพอให้ตรวจ"}`,
     `ข้อความล่าสุด: ${i.latest_customer_message || "-"}`,
   ].join("\n");
