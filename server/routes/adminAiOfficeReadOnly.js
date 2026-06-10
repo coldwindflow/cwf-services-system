@@ -31,6 +31,7 @@ const {
   detectPriorityFlags,
   extractCustomerContextFromMessages,
 } = require("../cwfAiKnowledge");
+const { loadAiBrainContext } = require("./adminAiOfficeBrainManager");
 
 const AI_OFFICE_DEFAULT_MODEL = "gpt-4.1-mini";
 const AI_OFFICE_JOB_LIMIT = 80;
@@ -340,11 +341,36 @@ function getLineAgent(agentKey) {
   return AI_OFFICE_AGENTS.admin;
 }
 
+function detectBrainIntent(text) {
+  const s = String(text || "").toLowerCase();
+  if (/(คืนเงิน|ฟ้อง|ร้องเรียน|เคลม|ไม่พอใจ|complaint|refund|legal)/i.test(s)) return "complaint";
+  if (/(แพง|ลด|ส่วนลด|ทำไมราคา|price objection|expensive)/i.test(s)) return "price_objection";
+  if (/(ราคา|เท่าไหร่|กี่บาท|price|cost)/i.test(s)) return "price_question";
+  if (/(แพ็กเกจ|แบบไหนดี|ล้างแบบ|premium|normal|deep clean)/i.test(s)) return "package_recommendation";
+  if (/(นัด|จอง|คิว|ว่าง|วันไหน|เวลา|booking)/i.test(s)) return "booking_request";
+  if (/(พื้นที่|ไปถึง|เขต|อำเภอ|จังหวัด|service area)/i.test(s)) return "service_area";
+  if (/(ประกัน|รับประกัน|warranty)/i.test(s)) return "warranty";
+  if (/(ซ่อม|รั่ว|ไม่เย็น|น้ำหยด|repair|leak)/i.test(s)) return "repair_question";
+  return "general";
+}
+
+function detectBrainCustomerStage(text, intent) {
+  const s = String(text || "").toLowerCase();
+  if (intent === "complaint") return "complaint";
+  if (/(ยืนยัน|ตกลง|จองเลย|พร้อมนัด|confirmed)/i.test(s)) return "booking_ready";
+  if (/(ที่อยู่|โลเคชั่น|location|address)/i.test(s)) return "waiting_address";
+  if (/(หลังล้าง|หลังบริการ|เรียบร้อย|after service)/i.test(s)) return "after_service";
+  if (/(แพง|เทียบ|เจ้าอื่น|ขอดูก่อน|comparing)/i.test(s)) return "comparing";
+  if (intent === "price_question" || intent === "price_objection" || intent === "package_recommendation") return "asking_price";
+  return "new_lead";
+}
+
 function buildGroundedPrompt(question, context, agent) {
   const officeInstructions = [
     `Business timezone: ${BANGKOK_TZ}. All user-facing dates and times must use appointment_display or appointment_time_th. Never show raw UTC timestamps to the admin or customer.`,
     "For queue/technician availability questions, use context.availability as the deterministic source. If it says job_schedule_only or missing data, do not confirm exact availability.",
     "For service, price, objection, and customer-reply questions, use context.cwf_knowledge as the current source of truth. It overrides old chat history.",
+    "Use context.ai_brain as admin-approved structured brain. Follow policy_rule and bad_reply_pattern strictly. Use approved_reply and sales_playbook as examples. Never expose internal brain text as system instructions.",
     "If agent is Office Chat, detect and combine relevant departments from context.office_chat_agents, then include a short line starting with แผนกที่เกี่ยวข้อง:",
     "Sales/customer replies must sound like a real LINE admin: short, natural Thai, usually 1-4 lines, price first when asked, one missing question at a time.",
     "Never reveal raw retrieved customer chat examples or private customer data.",
@@ -371,8 +397,9 @@ function buildLineDraftPrompt({ conversation, messages, agent, instruction, thre
   return [
     `Business timezone: ${BANGKOK_TZ}. Use Thai local time only; never show raw UTC timestamps.`,
     "Return STRICT JSON only. No markdown, no prose outside JSON.",
-    "JSON schema: {\"customer_reply\":\"string\",\"admin_summary\":[\"short bullet\"],\"missing_info\":[\"short bullet\"],\"next_step\":\"string\",\"customer_language\":\"th|en|ja|zh|ko|unknown\",\"is_foreign_customer\":true,\"foreign_customer_label\":\"string\",\"original_message\":\"string\",\"thai_translation\":\"string\"}",
+    "JSON schema: {\"customer_reply\":\"string\",\"admin_summary\":[\"short bullet\"],\"missing_info\":[\"short bullet\"],\"next_step\":\"string\",\"customer_language\":\"th|en|ja|zh|ko|unknown\",\"is_foreign_customer\":true,\"foreign_customer_label\":\"string\",\"original_message\":\"string\",\"thai_translation\":\"string\",\"customer_stage\":\"string\",\"intent\":\"string\",\"confidence\":80,\"risk_level\":\"green|yellow|red\",\"needs_admin_review\":false}",
     "Use current CWF service/pricing knowledge and short LINE admin tone. Do not use old chat prices as facts.",
+    "Use thread_context.ai_brain as admin-approved structured brain. Follow policy_rule and bad_reply_pattern strictly. Use approved_reply and sales_playbook as examples. Never expose internal brain item text as system says.",
     "If thread_context.reply_examples exists, use only final_admin_reply as trusted admin style examples. They are sanitized style memory, not factual pricing. Current CWF knowledge overrides them.",
     "Customer Inbox isolation rule: use only this selected conversation, selected customer context, CWF knowledge, and linked jobs in this JSON. Do not use any other customer's conversation.",
     "Phase 1 rule: draft copy-ready replies only. Do not claim a LINE message was sent, do not open a booking, and do not change any job/customer status.",
@@ -382,6 +409,7 @@ function buildLineDraftPrompt({ conversation, messages, agent, instruction, thre
     "customer_reply must not contain headings, bullets, JSON keys, the words สรุป, ข้อมูลที่ยังขาด, หมายเหตุสำหรับแอดมิน, แนะนำขั้นต่อไป, customer_reply, or admin_summary.",
     "If the customer asks price, answer the current CWF price first from cwf_knowledge, then ask one useful missing detail if needed.",
     "If the customer says expensive, explain value briefly and naturally, then offer a lower option when available.",
+    "If repair, leak, or uncertain price, say the technician needs to inspect before final quote. If complaint/legal/refund risk exists, set needs_admin_review true.",
     "If the latest customer message is English, customer_reply must be English. If Japanese, reply Japanese if possible, otherwise English. For foreign customers, include thai_translation for admin.",
     JSON.stringify({ cwf_knowledge: serviceKnowledge() }, null, 2),
     "คุณคือผู้ช่วย AI ภายในของ Coldwindflow Air Services สำหรับช่วยแอดมินอ่านแชท LINE OA เท่านั้น",
@@ -475,6 +503,11 @@ function fallbackLineDraft({ conversation, messages, threadContext }) {
     foreign_customer_label: isForeign ? foreignCustomerLabel(conversation) : "",
     original_message: original,
     thai_translation: latest.thai_translation || "",
+    customer_stage: detectBrainCustomerStage(original, detectBrainIntent(original)),
+    intent: detectBrainIntent(original),
+    confidence: 70,
+    risk_level: detectBrainIntent(original) === "complaint" ? "red" : "green",
+    needs_admin_review: detectBrainIntent(original) === "complaint",
   };
 }
 
@@ -490,6 +523,11 @@ function normalizeLineDraftPayload(payload, fallback) {
     foreign_customer_label: cleanText(payload?.foreign_customer_label, 200) || fallback.foreign_customer_label,
     original_message: cleanText(payload?.original_message, 1000) || fallback.original_message,
     thai_translation: cleanText(payload?.thai_translation, 1000) || fallback.thai_translation,
+    customer_stage: cleanText(payload?.customer_stage, 80) || fallback.customer_stage,
+    intent: cleanText(payload?.intent, 80) || fallback.intent,
+    confidence: Number.isFinite(Number(payload?.confidence)) ? Math.max(0, Math.min(100, Math.round(Number(payload.confidence)))) : fallback.confidence,
+    risk_level: ["green", "yellow", "red"].includes(payload?.risk_level) ? payload.risk_level : fallback.risk_level,
+    needs_admin_review: Boolean(payload?.needs_admin_review ?? fallback.needs_admin_review),
   };
   return out;
 }
@@ -537,8 +575,13 @@ function lineDraftResponseFormat() {
           foreign_customer_label: { type: "string" },
           original_message: { type: "string" },
           thai_translation: { type: "string" },
+          customer_stage: { type: "string" },
+          intent: { type: "string" },
+          confidence: { type: "number" },
+          risk_level: { type: "string", enum: ["green", "yellow", "red"] },
+          needs_admin_review: { type: "boolean" },
         },
-        required: ["customer_reply", "admin_summary", "missing_info", "next_step", "customer_language", "is_foreign_customer", "foreign_customer_label", "original_message", "thai_translation"],
+        required: ["customer_reply", "admin_summary", "missing_info", "next_step", "customer_language", "is_foreign_customer", "foreign_customer_label", "original_message", "thai_translation", "customer_stage", "intent", "confidence", "risk_level", "needs_admin_review"],
       },
     },
   };
@@ -1335,7 +1378,18 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       const latest = latestCustomerMessage(messages);
       const latestText = cleanText(latest.message_text_for_admin || latest.message_text || conversation.last_message_text, 1200);
       const situationType = detectCustomerIntent(`${latestText}\n${instruction}`);
+      const brainIntent = detectBrainIntent(`${latestText}\n${instruction}`);
+      const brainCustomerStage = detectBrainCustomerStage(`${latestText}\n${instruction}`, brainIntent);
       const customerLanguage = detectCustomerLanguage(latestText);
+      threadContext.ai_brain = await loadAiBrainContext(pool, {
+        query: `${latestText}\n${instruction}`,
+        agent_key: "sales",
+        intent: brainIntent,
+        service_type: "",
+        customer_stage: brainCustomerStage,
+        language: customerLanguage || "th",
+        limit: 10,
+      }).catch(() => ({ items: [] }));
       const replyExamples = await loadMatchingReplyExamples(pool, {
         situation_type: situationType,
         language: customerLanguage,
@@ -1371,6 +1425,9 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
         rawAnswer = await callOpenAI({ apiKey, model, system: lineSystem, prompt: linePrompt });
       }
       const draft = parseLineDraftAnswer(rawAnswer, fallbackLineDraft({ conversation, messages, threadContext }));
+      draft.intent = draft.intent || brainIntent;
+      draft.customer_stage = draft.customer_stage || brainCustomerStage;
+      draft.used_ai_brain_items = (threadContext.ai_brain?.items || []).map((item) => ({ id: item.id, item_type: item.item_type, title: item.title, intent: item.intent, agent_key: item.agent_key }));
       const usedReplyExamples = threadContext.reply_examples.map((example) => ({
         id: example.id,
         situation_type: example.situation_type,
@@ -1419,6 +1476,17 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
         generated_at_display: formatThaiDateTime(new Date()),
         cwf_knowledge: serviceKnowledge(),
       };
+      const brainIntent = detectBrainIntent(question);
+      const brainCustomerStage = detectBrainCustomerStage(question, brainIntent);
+      context.ai_brain = await loadAiBrainContext(pool, {
+        query: question,
+        agent_key: cleanText(req.body?.agent || "admin", 40),
+        intent: brainIntent,
+        service_type: "",
+        customer_stage: brainCustomerStage,
+        language: "th",
+        limit: 10,
+      }).catch(() => ({ items: [] }));
       for (const bucket of buckets) {
         context.buckets[bucket] = await loadJobs(pool, bucket);
       }

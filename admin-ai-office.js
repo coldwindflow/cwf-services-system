@@ -117,6 +117,7 @@
     lastAgentRetry: null,
     lastLineRetry: null,
     agentHistory: JSON.parse(localStorage.getItem("cwfAiOfficeAgentHistoryV28") || "{}"),
+    brainPreviewItems: [],
   };
 
 
@@ -139,6 +140,9 @@
       id: `draft_${Date.now()}_${Math.random().toString(16).slice(2)}`,
       customer_reply: String(draft.customer_reply || ""),
       customer_question: String(draft.customer_question || state.selectedCustomerQuestion || state.lastCustomerMessage || ""),
+      customer_message_id: String(draft.customer_message_id || state.selectedCustomerMessageId || ""),
+      customer_message_received_at: String(draft.customer_message_received_at || ""),
+      explicit_selected: Boolean(draft.explicit_selected),
       admin_question: String(draft.admin_question || ""),
       created_at: new Date().toISOString(),
     });
@@ -146,8 +150,47 @@
     saveLineDraftMemory();
   }
 
+  function explicitSelectedCustomerQuestion() {
+    return clean(state.selectedCustomerQuestion || "");
+  }
+
+  function fallbackLatestCustomerQuestion() {
+    return clean(state.lastCustomerMessage || "");
+  }
+
   function selectedQuestionForLearning() {
-    return clean(state.selectedCustomerQuestion || state.lastCustomerMessage || "");
+    return clean(explicitSelectedCustomerQuestion() || fallbackLatestCustomerQuestion());
+  }
+
+  function latestInboundMessage() {
+    return [...(state.selectedMessages || [])].reverse().find((m) => (m.direction || "inbound") === "inbound" && clean(messageText(m)));
+  }
+
+  function messageIdFor(m, fallback = "") {
+    return String(m?.id || m?.message_id || fallback || "");
+  }
+
+  function latestInboundTimeMs() {
+    const m = latestInboundMessage();
+    const t = messageTimeMs(m);
+    return Number.isFinite(t) ? t : 0;
+  }
+
+  function messageTimeMs(m) {
+    const raw = m?.received_at || m?.created_at || "";
+    const t = raw ? new Date(raw).getTime() : 0;
+    return Number.isFinite(t) ? t : 0;
+  }
+
+  function findCustomerMessageById(id) {
+    const sid = String(id || "");
+    if (!sid) return null;
+    return (state.selectedMessages || []).find((m, idx) => String(messageIdFor(m, `msg_${idx}`)) === sid) || null;
+  }
+
+  function excerpt(text, max = 120) {
+    const s = clean(text);
+    return s.length > max ? `${s.slice(0, max - 1)}…` : s;
   }
 
   function saveHistory() {
@@ -524,6 +567,10 @@
       renderAiBubble({
         customer_reply: draft.customer_reply,
         customer_question: draft.customer_question,
+        customer_message_id: draft.customer_message_id,
+        customer_message_received_at: draft.customer_message_received_at,
+        explicit_selected: draft.explicit_selected,
+        created_at: draft.created_at,
         persisted: true,
         skip_persist: true,
       });
@@ -590,12 +637,27 @@
   function renderAiBubble(draft) {
     const reply = clean(draft?.customer_reply || draft?.answer || "");
     const text = reply || "ยังไม่ได้ข้อความพร้อมส่งลูกค้า";
-    const sourceQuestion = clean(draft?.customer_question || selectedQuestionForLearning());
+    const explicitSelected = Object.prototype.hasOwnProperty.call(draft || {}, "explicit_selected")
+      ? Boolean(draft.explicit_selected)
+      : Boolean(explicitSelectedCustomerQuestion());
+    const sourceQuestion = clean(draft?.customer_question || (explicitSelected ? explicitSelectedCustomerQuestion() : fallbackLatestCustomerQuestion()));
+    const latestInbound = latestInboundMessage();
+    const sourceMessageId = String(draft?.customer_message_id || (explicitSelected ? state.selectedCustomerMessageId : messageIdFor(latestInbound)) || "");
+    const sourceMsg = findCustomerMessageById(sourceMessageId) || (!explicitSelected ? latestInbound : null);
+    const sourceReceivedAt = String(draft?.customer_message_received_at || sourceMsg?.received_at || sourceMsg?.created_at || "");
+    const sourceLabel = explicitSelected && sourceQuestion ? `ตอบจาก:\n“${excerpt(sourceQuestion)}”` : "ตอบจากข้อความล่าสุด";
     const persisted = Boolean(draft?.persisted);
+    const draftTime = draft?.created_at ? new Date(draft.created_at).getTime() : Date.now();
+    const sourceTime = sourceReceivedAt ? new Date(sourceReceivedAt).getTime() : 0;
+    const latestTime = latestInboundTimeMs();
+    const hasNewerInbound = Boolean(latestTime && ((sourceTime && latestTime > sourceTime) || latestTime > draftTime));
     if (!draft?.skip_persist && state.selectedConversation?.id && reply) {
       addDraftToConversation(state.selectedConversation.id, {
         customer_reply: reply,
         customer_question: sourceQuestion,
+        customer_message_id: sourceMessageId,
+        customer_message_received_at: sourceReceivedAt,
+        explicit_selected: explicitSelected,
         admin_question: draft?.admin_question || state.lastLineRetry || "",
       });
     }
@@ -604,11 +666,15 @@
         <article class="aiNaturalBubble">
           <div class="aiNaturalTop">
             <span class="aiNaturalLabel">AI แนะนำ</span>
-            ${sourceQuestion ? `<span class="aiNaturalSource">ตอบจากคำถามที่เลือก</span>` : `<span class="aiNaturalSource">${persisted ? "จากประวัติก่อนหน้า" : "พร้อมส่งลูกค้า"}</span>`}
+            ${explicitSelected ? `<span class="aiNaturalSource">ตอบจากคำถามที่เลือก</span>` : `<span class="aiNaturalSource">ตอบจากข้อความล่าสุด</span>`}
           </div>
-          ${sourceQuestion ? `<div class="aiDraftSource">อ้างอิง: ${esc(sourceQuestion)}</div>` : ""}
+          <div class="aiDraftSource" data-source-message-id="${esc(sourceMessageId)}">
+            <span>${esc(sourceLabel)}</span>
+            ${sourceMessageId ? `<button class="miniJumpBtn" type="button" data-jump-source-message="${esc(sourceMessageId)}" aria-label="ไปที่ข้อความลูกค้า" title="ไปที่ข้อความลูกค้า">↩</button>` : ""}
+          </div>
+          ${hasNewerInbound ? `<div class="newCustomerContextBar">มีข้อความลูกค้าใหม่ <button type="button" data-use-latest-customer>ใช้ข้อความล่าสุด</button><button type="button" data-pick-customer-message>เลือกเอง</button></div>` : ""}
           <div class="replyDisplay" data-reply-display>${esc(text)}</div>
-          <textarea class="replyText" data-reply-text data-source-question="${esc(sourceQuestion)}">${esc(text)}</textarea>
+          <textarea class="replyText" data-reply-text data-source-question="${esc(sourceQuestion)}" data-source-message-id="${esc(sourceMessageId)}" data-explicit-selected="${explicitSelected ? "1" : "0"}">${esc(text)}</textarea>
           <div class="aiNaturalActions" aria-label="จัดการคำตอบ AI">
             <button class="iconBtn editIcon" type="button" data-edit-reply aria-label="แก้ไขข้อความ" title="แก้ไขข้อความ">✎</button>
             <button class="iconBtn copyIcon" type="button" data-copy-reply aria-label="คัดลอกข้อความนี้" title="คัดลอกข้อความนี้">⧉</button>
@@ -631,7 +697,11 @@
     const input = $("#lineAiQuestion");
     const question = clean(input.value);
     if (!conv?.id || !question) return;
-    const sourceQuestion = selectedQuestionForLearning();
+    const explicitQuestion = explicitSelectedCustomerQuestion();
+    const sourceQuestion = explicitQuestion || fallbackLatestCustomerQuestion();
+    const sourceMessage = explicitQuestion ? findCustomerMessageById(state.selectedCustomerMessageId) : latestInboundMessage();
+    const sourceMessageId = explicitQuestion ? (state.selectedCustomerMessageId || "") : messageIdFor(sourceMessage);
+    const sourceReceivedAt = String(sourceMessage?.received_at || sourceMessage?.created_at || "");
     state.lastLineRetry = question;
     const submitBtn = $("#lineAiForm .sendBtn");
     if (submitBtn) submitBtn.disabled = true;
@@ -646,19 +716,26 @@
         body: JSON.stringify({
           conversation_id: conv.id,
           admin_question: question,
-          selected_customer_question: sourceQuestion,
+          selected_customer_question: explicitQuestion ? sourceQuestion : "",
           prior_drafts: draftsForConversation(conv.id).slice(-6),
           use_shared_memory: true,
-          instruction: sourceQuestion ? `${question}\n\nต้องตอบเฉพาะคำถามลูกค้าที่แอดมินเลือกนี้เป็นหลัก: ${sourceQuestion}` : question,
+          instruction: explicitQuestion ? `${question}\n\nต้องตอบเฉพาะคำถามลูกค้าที่แอดมินเลือกนี้เป็นหลัก: ${sourceQuestion}` : question,
           agent: state.agent === "sales" ? "sales" : "admin"
         })
       });
       removeLatestLoadingBubble();
-      renderAiBubble({ ...(data.draft || { customer_reply: data.answer }), customer_question: sourceQuestion, admin_question: question });
+      renderAiBubble({
+        ...(data.draft || { customer_reply: data.answer }),
+        customer_question: sourceQuestion,
+        customer_message_id: sourceMessageId,
+        customer_message_received_at: sourceReceivedAt,
+        explicit_selected: Boolean(explicitQuestion),
+        admin_question: question
+      });
       logSharedMemoryEvent("line_drafted", {
         source: "line_chat",
         conversation_id: conv.id,
-        selected_customer_question: sourceQuestion,
+        selected_customer_question: explicitQuestion ? sourceQuestion : "",
         customer_message: sourceQuestion,
         ai_reply: (data.draft?.customer_reply || data.answer || ""),
         action_status: "drafted",
@@ -699,6 +776,25 @@
       syncReplyDisplay(card);
       button.textContent = "✎";
     }
+  }
+
+  function jumpToCustomerMessage(id) {
+    const target = $(`.lineBubble.customer[data-customer-message-id="${CSS.escape(String(id || ""))}"]`);
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    target.classList.add("jumpHighlight");
+    setTimeout(() => target.classList.remove("jumpHighlight"), 1400);
+  }
+
+  function useLatestCustomerMessage() {
+    const latest = latestInboundMessage();
+    if (!latest) return;
+    setSelectedQuestion(messageText(latest), messageIdFor(latest));
+  }
+
+  function pickCustomerMessage() {
+    clearSelectedQuestion(true);
+    showToast("เลือกข้อความลูกค้าด้วยการกดค้างหรือดับเบิลคลิก");
   }
 
   async function copyReply(button) {
@@ -766,6 +862,7 @@
     if (prefill.situation_type) $("#memSituation").value = prefill.situation_type;
     if (prefill.language) $("#memLanguage").value = prefill.language;
     loadMemoryExamples();
+    loadBrainItems();
   }
 
   function closeMemoryPanel() {
@@ -850,6 +947,115 @@
   }
 
 
+  function renderBrainPreview(data = {}) {
+    const box = $("#brainPreview");
+    const warnings = $("#brainWarnings");
+    state.brainPreviewItems = data.preview_items || [];
+    if ($("#brainCommit")) $("#brainCommit").disabled = !state.brainPreviewItems.length;
+    if (warnings) {
+      const warn = data.warnings || [];
+      warnings.innerHTML = warn.length ? `<div class="memoryItem"><b>Warnings</b><p>${esc(warn.join("\n"))}</p></div>` : "";
+    }
+    if (!box) return;
+    if (!state.brainPreviewItems.length) {
+      box.innerHTML = `<div class="emptyState">No valid brain items to import</div>`;
+      return;
+    }
+    box.innerHTML = state.brainPreviewItems.slice(0, 20).map((item) => `
+      <article class="memoryItem">
+        <b>${esc(item.item_type)} · ${esc(item.agent_key || "all")} · ${esc(item.intent || "general")}</b>
+        <p><strong>${esc(item.title || "(no title)")}</strong></p>
+        <p>${esc(item.content || "")}</p>
+        ${item.warnings?.length ? `<p><strong>Warnings:</strong> ${esc(item.warnings.join(", "))}</p>` : ""}
+      </article>
+    `).join("");
+  }
+
+  async function previewBrainImport(e) {
+    e.preventDefault();
+    const file = $("#brainFile")?.files?.[0];
+    if (!file) return alert("Please choose a JSON, JSONL, or CSV brain file");
+    const form = new FormData();
+    form.append("file", file);
+    form.append("source", $("#brainSource")?.value || "manual_import");
+    try {
+      const res = await fetch("/admin/ai-office/brain/import-preview", { method:"POST", body:form });
+      const data = await res.json();
+      if (!res.ok || data.ok === false) throw new Error(data.error || "IMPORT_PREVIEW_FAILED");
+      renderBrainPreview(data);
+      showToast(`Preview ${data.valid_count || 0} valid / ${data.invalid_count || 0} rejected`);
+    } catch (err) {
+      alert(`Preview failed: ${err.message}`);
+    }
+  }
+
+  async function commitBrainImport() {
+    if (!state.brainPreviewItems.length) return;
+    try {
+      const data = await api("/admin/ai-office/brain/import-commit", {
+        method:"POST",
+        body:JSON.stringify({
+          mode: $("#brainCommitMode")?.value || "append",
+          source: $("#brainSource")?.value || "manual_import",
+          items: state.brainPreviewItems,
+        })
+      });
+      renderBrainPreview({ preview_items: [], warnings: [] });
+      await loadBrainItems();
+      showToast(`Imported ${data.saved_count || 0} brain items`);
+    } catch (err) {
+      alert(`Commit failed: ${err.message}`);
+    }
+  }
+
+  function exportBrain() {
+    window.location.href = "/admin/ai-office/brain/export?format=json";
+  }
+
+  async function loadBrainItems(e) {
+    if (e?.preventDefault) e.preventDefault();
+    const box = $("#brainList");
+    if (!box) return;
+    box.innerHTML = `<div class="emptyState">Loading AI brain...</div>`;
+    const qs = new URLSearchParams();
+    const q = clean($("#brainSearch")?.value || "");
+    const itemType = $("#brainTypeFilter")?.value || "";
+    const agentKey = $("#brainAgentFilter")?.value || "";
+    if (q) qs.set("q", q);
+    if (itemType) qs.set("item_type", itemType);
+    if (agentKey) qs.set("agent_key", agentKey);
+    qs.set("active", "true");
+    try {
+      const data = await api(`/admin/ai-office/brain/items?${qs.toString()}`);
+      const items = data.items || [];
+      if (!items.length) {
+        box.innerHTML = `<div class="emptyState">No active AI brain items found</div>`;
+        return;
+      }
+      box.innerHTML = items.map((item) => `
+        <article class="memoryItem" data-brain-id="${esc(item.id)}">
+          <b>${esc(item.item_type)} · ${esc(item.agent_key || "all")} · P${esc(item.priority || "")}</b>
+          <p><strong>${esc(item.title || "(no title)")}</strong></p>
+          <p>${esc(item.content || "")}</p>
+          <div class="bubbleActions"><button class="dangerBtn" type="button" data-disable-brain="${esc(item.id)}">Disable</button></div>
+        </article>
+      `).join("");
+    } catch (err) {
+      box.innerHTML = `<div class="emptyState">Load failed: ${esc(err.message)}</div>`;
+    }
+  }
+
+  async function disableBrainItem(id) {
+    if (!id) return;
+    try {
+      await api(`/admin/ai-office/brain/items/${id}/disable`, { method:"PATCH", body:"{}" });
+      await loadBrainItems();
+      showToast("Brain item disabled");
+    } catch (err) {
+      alert(`Disable failed: ${err.message}`);
+    }
+  }
+
   function handleComposerKeydown(formSelector) {
     return (e) => {
       if (e.key === "Enter" && !e.shiftKey) {
@@ -872,8 +1078,12 @@
       if (e.target.closest("[data-retry-agent]")) return submitAgentQuestion(null, state.lastAgentRetry || "");
       if (e.target.closest("[data-back-list]")) return showInboxList();
       if (e.target.closest("[data-open-memory]")) return openMemoryPanel();
+      if (e.target.closest("[data-disable-brain]")) return disableBrainItem(e.target.closest("[data-disable-brain]").dataset.disableBrain);
       if (e.target.closest("[data-prefill-memory]")) return prefillMemoryFromChat();
       if (e.target.closest("[data-edit-reply]")) return toggleEditReply(e.target.closest("[data-edit-reply]"));
+      if (e.target.closest("[data-jump-source-message]")) return jumpToCustomerMessage(e.target.closest("[data-jump-source-message]").dataset.jumpSourceMessage);
+      if (e.target.closest("[data-use-latest-customer]")) return useLatestCustomerMessage();
+      if (e.target.closest("[data-pick-customer-message]")) return pickCustomerMessage();
       if (e.target.closest("[data-selected-question-add-reply]")) return prefillMemoryFromChat("");
       if (e.target.closest("[data-copy-reply]")) return copyReply(e.target.closest("[data-copy-reply]"));
       if (e.target.closest("[data-dislike-reply]")) return dislikeReply(e.target.closest("[data-dislike-reply]"));
@@ -899,6 +1109,10 @@
     $("#memoryForm")?.addEventListener("submit", saveMemoryExample);
     $("#memoryClose")?.addEventListener("click", closeMemoryPanel);
     $("#memoryReload")?.addEventListener("click", loadMemoryExamples);
+    $("#brainImportForm")?.addEventListener("submit", previewBrainImport);
+    $("#brainCommit")?.addEventListener("click", commitBrainImport);
+    $("#brainExport")?.addEventListener("click", exportBrain);
+    $("#brainSearchForm")?.addEventListener("submit", loadBrainItems);
     $$("textarea").forEach((ta) => ta.addEventListener("input", () => autoGrow(ta)));
   }
 
