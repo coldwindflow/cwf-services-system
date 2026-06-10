@@ -28,6 +28,16 @@ function inferSituation(text) {
   if (/ล้างแบบ|แบบไหน|พรีเมียม|ปกติ|แขวนคอยล์|ตัดล้าง/.test(s)) return "cleaning_package";
   return "general";
 }
+function isAdminCorrection(text) {
+  return /(ผิด|ไม่ใช่|ยังว่าง|อย่าบอกว่าคิวเต็ม|ตอบแบบนี้ไม่ดี|ควรตอบแบบนี้|มั่ว|งง)/i.test(String(text || ""));
+}
+function correctionSituation(text) {
+  const s = String(text || "").toLowerCase();
+  if (/(คิว|ว่าง|ช่าง|เวลา|เต็ม)/.test(s)) return "availability_logic";
+  if (/(รายได้ช่าง|ยอดช่าง|ต้องจ่ายช่าง|ยังไม่จ่ายช่าง|จ่ายช่าง|payout|commission|technician income)/i.test(s)) return "payout_logic";
+  if (/(ราคา|แพง|แบบไหนดี|โปร|ส่วนลด)/.test(s)) return "sales_reply_logic";
+  return "customer_reply_style";
+}
 function getAdminUser(req) {
   return cleanText(req.session?.user?.username || req.session?.user?.email || req.session?.username || req.user?.username || req.user?.email || "", 120);
 }
@@ -83,7 +93,8 @@ async function loadSharedMemoryForDraft(pool, { conversationId, selectedQuestion
          AND action_status <> 'disliked'
          AND event_type <> 'disliked'
          AND (final_admin_reply <> '' OR ai_reply <> '')
-       ORDER BY CASE WHEN action_status IN ('saved','copied','liked') THEN 0 ELSE 1 END,
+       ORDER BY CASE WHEN event_type='admin_correction' OR action_status='correction' THEN 0 ELSE 1 END,
+                CASE WHEN action_status IN ('saved','copied','liked') THEN 0 ELSE 1 END,
                 CASE WHEN source='reply_example' THEN 0 ELSE 1 END,
                 created_at DESC
        LIMIT 8
@@ -271,11 +282,29 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
       const messages = await loadMessages(pool, conversationId);
       if (!messages.length) return res.status(400).json({ ok:false, error:"ยังไม่มีข้อความในแชทนี้" });
 
-      const selectedQuestion = cleanText(req.body?.selected_customer_question, 2000)
-        || cleanText([...messages].reverse().find((m) => m.direction === "inbound" && m.message_text)?.message_text || conversation.last_message_text, 2000);
+      const selectedQuestionFromRequest = cleanText(req.body?.selected_customer_question, 2000);
+      const latestInbound = [...messages].reverse().find((m) => m.direction === "inbound" && m.message_text);
+      const latestCustomerMessage = cleanText(latestInbound?.message_text || conversation.last_message_text, 2000);
+      const selectedQuestion = selectedQuestionFromRequest || latestCustomerMessage;
+      const selectedQuestionUsed = Boolean(selectedQuestionFromRequest);
+      const draftSource = selectedQuestionUsed ? "selected_customer_question" : "latest_customer_message";
       const adminQuestion = cleanText(req.body?.admin_question || req.body?.instruction || "ควรตอบลูกค้ายังไง", 1200);
       const language = detectLanguage(selectedQuestion);
       const situationType = inferSituation(`${selectedQuestion}\n${adminQuestion}`);
+      if (isAdminCorrection(adminQuestion)) {
+        await logSharedDraftMemory(pool, req, {
+          source: "line_chat",
+          event_type: "admin_correction",
+          agent_key: "admin",
+          conversation_id: conversationId,
+          selected_customer_question: selectedQuestion,
+          customer_message: selectedQuestion,
+          final_admin_reply: adminQuestion,
+          action_status: "correction",
+          situation_type: correctionSituation(`${selectedQuestion}\n${adminQuestion}`),
+          metadata: { auto_detected: true },
+        });
+      }
       const examples = await loadExamples(pool, { situationType, language });
       const sharedMemory = await loadSharedMemoryForDraft(pool, { conversationId, selectedQuestion, situationType, language });
       const priorDrafts = Array.isArray(req.body?.prior_drafts) ? req.body.prior_drafts.slice(-5) : [];
@@ -293,7 +322,9 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
       ].join(" ");
 
       const prompt = [
-        "selected_customer_question:", selectedQuestion, "",
+        "draft_source:", draftSource, "",
+        "selected_customer_question_main:", selectedQuestion, "",
+        "latest_customer_message_context_only:", latestCustomerMessage, "",
         "admin_instruction:", adminQuestion, "",
         "conversation:",
         JSON.stringify({ display_name: conversation.display_name || "", messages: messages.map((m) => ({ direction:m.direction, text:m.message_text, at:m.received_at || m.created_at })).slice(-20) }, null, 2),
@@ -341,6 +372,9 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
         thai_translation: cleanText(parsed.thai_translation, 1000),
         selected_customer_question: selectedQuestion,
         situation_type: situationType,
+        selected_question_used: selectedQuestionUsed,
+        draft_source: draftSource,
+        latest_customer_message: latestCustomerMessage,
         used_reply_examples: examples.map((e) => ({ id:e.id, situation_type:e.situation_type, language:e.language, service_type:e.service_type })),
       };
       const saved = await saveDraft(pool, req, { conversation_id: conversationId, selected_customer_message: selectedQuestion, admin_instruction: adminQuestion, ai_draft: customerReply, metadata: { situation_type: situationType, language, used_example_ids: draft.used_reply_examples.map((e) => e.id) } }).catch(() => null);
@@ -357,7 +391,18 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
         situation_type: situationType,
         metadata: { saved_draft_id: saved?.id || null, used_example_ids: draft.used_reply_examples.map((e) => e.id) },
       });
-      return res.json({ ok:true, answer:customerReply, draft, used_reply_examples:draft.used_reply_examples, conversation, messages });
+      return res.json({
+        ok:true,
+        answer:customerReply,
+        draft,
+        used_reply_examples:draft.used_reply_examples,
+        conversation,
+        messages,
+        selected_question_used: selectedQuestionUsed,
+        selected_customer_question: selectedQuestion,
+        latest_customer_message: latestCustomerMessage,
+        draft_source: draftSource,
+      });
     } catch (e) {
       console.error("V27 /line-draft-reply error:", e);
       return res.status(e.status || 500).json({ ok:false, error:e.message || "ร่างข้อความจาก LINE ไม่สำเร็จ" });

@@ -81,10 +81,171 @@ function isCorrectionQuestion(question) {
 }
 function correctionSituation(question) {
   const q = String(question || "").toLowerCase();
+  if (/(รายได้ช่าง|ยอดช่าง|ต้องจ่ายช่าง|ยังไม่จ่ายช่าง|จ่ายช่าง|payout|technician income|commission)/i.test(q)) return "payout_logic";
   if (/(คิว|ว่าง|ช่าง|เวลา|บ่าย|เช้า|เย็น|นัด|เต็ม)/.test(q)) return "availability_logic";
   if (/(ราคา|แพง|ส่วนลด|โปร)/.test(q)) return "sales_reply_logic";
   if (/(ลูกค้า|แชท|ตอบ|line|ไลน์)/.test(q)) return "customer_reply_style";
+  if (/(รายได้ช่าง|ยอดช่าง|ต้องจ่ายช่าง|ยังไม่จ่ายช่าง|จ่ายช่าง|payout|technician income|commission)/i.test(q)) return "payout_logic";
   return "admin_correction";
+}
+function isPayoutQuestion(question) {
+  return /(รายได้ช่าง|ยอดช่าง|ต้องจ่ายช่าง|ยังไม่จ่ายช่าง|จ่ายช่าง|payout|technician income|commission)/i.test(String(question || ""));
+}
+function currentBangkokPayoutId(date = new Date()) {
+  const parts = bangkokDateParts(date);
+  const type = parts.d <= 10 ? "10" : "25";
+  return `payout_${parts.y}-${pad(parts.m)}_${type}`;
+}
+function money(value) {
+  const n = Number(value || 0);
+  return Number.isFinite(n) ? Math.round((n + Number.EPSILON) * 100) / 100 : 0;
+}
+function payoutPeriodLabel(period = {}) {
+  const start = String(period.period_start || "").slice(0, 10);
+  const end = String(period.period_end || "").slice(0, 10);
+  if (!start && !end) return String(period.payout_id || "");
+  return `${start || "-"} ถึง ${end || "-"}`;
+}
+function normalizePayoutJobRow(row = {}) {
+  return {
+    job_id: row.job_id || row.jobId || null,
+    booking_code: row.booking_code || row.bookingCode || "",
+    finished_at: row.finished_at || row.finishedAt || null,
+    payable_amount: money(row.earn_amount ?? row.payable_amount ?? row.net_amount ?? row.amount ?? 0),
+    source: row.source || row.step_rule_key || "",
+    detail: row.detail_json || row.detail || row.metadata || null,
+  };
+}
+function payoutJobRowsForTech(row = {}, payload = {}) {
+  const direct = row.rows || row.jobs || row.lines || row.payout_lines || row.job_rows;
+  if (Array.isArray(direct) && direct.length) return direct.map(normalizePayoutJobRow);
+  const tech = String(row.technician_username || row.technician_key || "").trim();
+  const payloadLines = payload.lines || payload.rows || payload.job_rows || payload.payout_lines;
+  if (Array.isArray(payloadLines) && payloadLines.length) {
+    return payloadLines
+      .filter((line) => String(line.technician_username || line.technician_key || "").trim() === tech)
+      .map(normalizePayoutJobRow);
+  }
+  return [];
+}
+async function buildPayoutSummary({ accounting, payoutId }) {
+  const warnings = [];
+  if (!accounting?.buildPayoutTechSummaryRows) {
+    return {
+      ok: false,
+      error: "MISSING_ACCOUNTING_PAYOUT_SOURCE",
+      diagnostics: {
+        missing_dependency: "accounting.buildPayoutTechSummaryRows",
+        expected_source: "index.js _buildPayoutTechSummaryRows / server/routes/accountingReadOnly.js buildPayoutTechSummaryRows",
+      },
+      period: { date_from: "", date_to: "", label: "" },
+      totals: {},
+      technicians: [],
+      warnings: ["AI Office payout summary cannot read the accounting payout helper."],
+    };
+  }
+
+  const payload = await accounting.buildPayoutTechSummaryRows(payoutId);
+  const period = payload?.period || await accounting.getPayoutPeriod?.(payoutId);
+  if (!period) {
+    return {
+      ok: false,
+      error: "PAYOUT_PERIOD_NOT_FOUND",
+      diagnostics: { payout_id: payoutId, source: payload?.source || "none" },
+      period: { date_from: "", date_to: "", label: payoutId },
+      totals: {},
+      technicians: [],
+      warnings: [`No payout period or virtual payout bounds found for ${payoutId}.`],
+    };
+  }
+
+  let rows = payload?.techs || [];
+  if (accounting.accountingEnrichPayoutTechRows) {
+    rows = await accounting.accountingEnrichPayoutTechRows(payoutId, period, rows);
+  }
+  let hasAnyJobRows = false;
+  const technicians = rows.map((row) => {
+    const payable = money(row.net_amount);
+    const paid = money(row.paid_amount);
+    const unpaid = money(Math.max(0, payable - paid));
+    const paidStatus = String(row.paid_status || (accounting.paidStatus ? accounting.paidStatus(payable, paid) : "") || "").trim() || (paid >= payable && payable > 0 ? "paid" : paid > 0 ? "partial" : "unpaid");
+    const jobCount = Number(row.jobs_count || row.job_count || 0);
+    const jobRows = payoutJobRowsForTech(row, payload);
+    if (jobRows.length) hasAnyJobRows = true;
+    return {
+      technician_key: row.technician_username || "",
+      technician_name: row.technician_full_name || row.technician_username || "",
+      payable_total: payable,
+      paid_total: paid,
+      unpaid_total: paidStatus === "paid" ? 0 : unpaid,
+      partial_total: paidStatus === "partial" ? unpaid : 0,
+      cash_held_total: money(row.cash_held_amount),
+      cash_offset_total: money(Math.abs(Number(row.adj_total || 0)) || 0),
+      job_count: jobCount,
+      paid_job_count: paidStatus === "paid" ? jobCount : 0,
+      unpaid_job_count: paidStatus === "unpaid" ? jobCount : 0,
+      partial_job_count: paidStatus === "partial" ? jobCount : 0,
+      rows: jobRows,
+      source: row.source || payload?.source || "",
+    };
+  });
+  const totals = technicians.reduce((acc, t) => {
+    acc.total_payable += t.payable_total;
+    acc.total_paid += t.paid_total;
+    acc.total_unpaid += t.unpaid_total;
+    acc.total_partial += t.partial_total;
+    acc.total_cash_held_by_technicians += t.cash_held_total;
+    acc.total_cash_offset += t.cash_offset_total;
+    return acc;
+  }, {
+    total_payable: 0,
+    total_paid: 0,
+    total_unpaid: 0,
+    total_partial: 0,
+    total_cash_held_by_technicians: 0,
+    total_cash_offset: 0,
+  });
+  Object.keys(totals).forEach((key) => { totals[key] = money(totals[key]); });
+  if (!technicians.length) warnings.push("ไม่พบรายช่างในงวดนี้จากแหล่ง accounting payout");
+  if (technicians.length && !hasAnyJobRows) warnings.push("ยังไม่มีรายละเอียดระดับงานจาก payout helper");
+  return {
+    ok: true,
+    payout_id: payoutId,
+    source: payload?.source || "accounting_payout_helper",
+    period: {
+      date_from: String(period.period_start || "").slice(0, 10),
+      date_to: String(period.period_end || "").slice(0, 10),
+      label: payoutPeriodLabel(period),
+    },
+    totals,
+    technicians,
+    warnings,
+  };
+}
+function formatPayoutAnswer(summary) {
+  if (!summary?.ok) {
+    const diagnostics = summary?.diagnostics ? JSON.stringify(summary.diagnostics) : summary?.error || "unknown";
+    return `ยังสรุปยอดช่างจากข้อมูลจริงไม่ได้ค่ะ\n\nสาเหตุ: ${summary?.error || "PAYOUT_SUMMARY_FAILED"}\nDiagnostics: ${diagnostics}`;
+  }
+  const lines = [
+    `สรุปยอดช่างงวด ${summary.period?.label || summary.payout_id || ""} ค่ะ`,
+    "",
+    `ยอดต้องจ่ายช่างรวม ${summary.totals.total_payable} บาท`,
+    `จ่ายแล้ว ${summary.totals.total_paid} บาท`,
+    `ยังไม่จ่าย ${summary.totals.total_unpaid} บาท`,
+  ];
+  if (summary.totals.total_cash_held_by_technicians) lines.push(`เงินสดที่ช่างถือไว้ ${summary.totals.total_cash_held_by_technicians} บาท`);
+  lines.push("", "แยกรายช่าง:");
+  for (const t of (summary.technicians || []).slice(0, 12)) {
+    lines.push(`- ${t.technician_name || t.technician_key}: ต้องจ่าย ${t.payable_total} / จ่ายแล้ว ${t.paid_total} / คงเหลือ ${t.unpaid_total} บาท (${t.job_count} งาน)`);
+  }
+  const follow = (summary.technicians || []).filter((t) => Number(t.unpaid_total || 0) > 0).slice(0, 8);
+  if (follow.length) {
+    lines.push("", "รายการที่ต้องตาม:");
+    follow.forEach((t) => lines.push(`- ${t.technician_name || t.technician_key} / คงเหลือ ${t.unpaid_total} บาท / ${t.unpaid_job_count || t.partial_job_count || t.job_count} งาน`));
+  }
+  if (summary.warnings?.length) lines.push("", `หมายเหตุ: ${summary.warnings.join(" | ")}`);
+  return lines.join("\n");
 }
 function normalizeTechName(value) {
   return String(value || "").toLowerCase().replace(/\s+/g, "").replace(/[^a-z0-9ก-๙]/g, "");
@@ -209,6 +370,30 @@ async function loadDayJobs(pool, isoDate) {
   `, [isoDate]);
   return (r.rows || []).filter((row) => !hasDoneOrCanceled(row));
 }
+async function loadActiveTechnicians(pool) {
+  try {
+    const r = await pool.query(`
+      SELECT DISTINCT username, COALESCE(NULLIF(full_name,''), username) AS full_name
+      FROM (
+        SELECT username, full_name
+          FROM public.users
+         WHERE role IN ('technician','tech','senior_technician','lead_technician')
+        UNION
+        SELECT username, full_name
+          FROM public.technician_profiles
+         WHERE username IS NOT NULL
+           AND COALESCE(partner_status,'active') NOT IN ('rejected','suspended','inactive')
+           AND COALESCE(accept_status,'ready') NOT IN ('paused','suspended')
+      ) t
+      WHERE username IS NOT NULL
+      ORDER BY username
+      LIMIT 180
+    `);
+    return r.rows || [];
+  } catch (_) {
+    return [];
+  }
+}
 
 function buildBusySlots(jobs) {
   const busyByTech = new Map();
@@ -280,16 +465,26 @@ function computeGaps(busySlots, constraint) {
     .map((g) => ({ ...g, start_display: formatMins(g.start), end_display: formatMins(g.end), minutes: g.end - g.start }));
 }
 
-function analyzeAvailability({ jobs, question }) {
+function analyzeAvailability({ jobs, question, activeTechnicians = [] }) {
   const dateInfo = parseTargetDate(question);
   const constraint = parseTimeConstraint(question);
   const requestedTech = extractRequestedTech(question);
   const requestedNorm = normalizeTechName(requestedTech);
+  const includeAllActive = /ช่างทั้งหมด/.test(String(question || "")) && !/เฉพาะช่างที่มีงานวันนี้/.test(String(question || ""));
+  const onlyWithJobsToday = /เฉพาะช่างที่มีงานวันนี้/.test(String(question || ""));
   const { busyByTech, all } = buildBusySlots(jobs);
+  if (includeAllActive) {
+    for (const tech of activeTechnicians || []) {
+      const name = cleanText(tech.full_name || tech.username, 120);
+      const key = normalizeTechName(tech.username || name);
+      if (key && !busyByTech.has(key)) busyByTech.set(key, { name, slots: [] });
+    }
+  }
   const techRows = Array.from(busyByTech.values()).filter((v) => v.name && v.name !== "ไม่ระบุช่าง");
+  const filteredTechRows = onlyWithJobsToday ? techRows.filter((v) => (v.slots || []).length > 0) : techRows;
   const targetTechs = requestedNorm
-    ? techRows.filter((v) => normalizeTechName(v.name).includes(requestedNorm.replace(/^ช่าง/, "")) || requestedNorm.includes(normalizeTechName(v.name)))
-    : techRows;
+    ? filteredTechRows.filter((v) => normalizeTechName(v.name).includes(requestedNorm.replace(/^ช่าง/, "")) || requestedNorm.includes(normalizeTechName(v.name)))
+    : filteredTechRows;
 
   const analyses = (targetTechs.length ? targetTechs : techRows).map((tech) => ({
     technician: tech.name,
@@ -319,6 +514,9 @@ function analyzeAvailability({ jobs, question }) {
     overall_available_slots: allGaps.map((g) => ({ start: g.start_display, end: g.end_display, minutes: g.minutes })),
     has_available_slot: hasAnySlot,
     confidence: jobs.some((j) => !Number(j.duration_min || 0)) ? "medium" : "high",
+    confidence_warning: jobs.some((j) => !Number(j.duration_min || 0)) ? "มีบางงานไม่มี duration_min ระบบจึงใช้เวลาประเมินตามประเภทงาน" : "",
+    include_all_active_technicians: includeAllActive,
+    only_technicians_with_jobs_today: onlyWithJobsToday,
     warning: "คำนวณจากงานในระบบและ buffer เดินทาง 30 นาที ถ้าจะรับงานจริงควรเช็กพื้นที่และจำนวนเครื่องก่อนยืนยันลูกค้า",
   };
 }
@@ -352,8 +550,27 @@ function answerAvailability(result) {
 module.exports = function createAdminAiOfficeSmartAssistantV28Routes(deps = {}) {
   const pool = deps.pool;
   const requireAdminSession = deps.requireAdminSession;
+  const accounting = deps.accounting || {};
   if (!pool || !requireAdminSession) throw new Error("createAdminAiOfficeSmartAssistantV28Routes requires pool and requireAdminSession");
   const router = express.Router();
+
+  router.get("/admin/ai-office/accounting/payout-summary", requireAdminSession, async (req, res) => {
+    try {
+      const payoutId = cleanText(req.query?.payout_id, 80) || currentBangkokPayoutId();
+      const summary = await buildPayoutSummary({ accounting, payoutId });
+      return res.status(summary.ok ? 200 : 500).json(summary);
+    } catch (e) {
+      return res.status(e.status || 500).json({
+        ok: false,
+        error: e.message || "PAYOUT_SUMMARY_FAILED",
+        diagnostics: { route: "/admin/ai-office/accounting/payout-summary", source: "accounting.buildPayoutTechSummaryRows" },
+        period: { date_from: "", date_to: "", label: "" },
+        totals: {},
+        technicians: [],
+        warnings: [String(e.message || e)],
+      });
+    }
+  });
 
   router.post("/admin/ai-office/ask", requireAdminSession, async (req, res, next) => {
     const question = cleanText(req.body?.question, 2000);
@@ -372,11 +589,36 @@ module.exports = function createAdminAiOfficeSmartAssistantV28Routes(deps = {}) 
         });
       }
 
+      if (isPayoutQuestion(question)) {
+        const payoutId = cleanText(req.body?.payout_id || req.query?.payout_id, 80) || currentBangkokPayoutId();
+        const summary = await buildPayoutSummary({ accounting, payoutId });
+        const answer = formatPayoutAnswer(summary);
+        await logMemory(pool, req, {
+          source: "accounting_payout_summary",
+          event_type: summary.ok ? "payout_answered" : "payout_diagnostic",
+          agent_key: cleanText(req.body?.agent || "admin", 40),
+          customer_message: question,
+          ai_reply: answer,
+          action_status: summary.ok ? "answered" : "diagnostic",
+          situation_type: "payout_logic",
+          tags: ["deterministic", "payout", "read_only"],
+          metadata: { payout_summary: summary },
+        });
+        return res.json({
+          ok: true,
+          answer,
+          payout_summary: summary,
+          agent: { key: req.body?.agent || "admin", name: "Admin AI", role: "deterministic accounting payout summary" },
+          context: { payout_summary: summary },
+        });
+      }
+
       if (!isAvailabilityQuestion(question)) return next();
 
       const dateInfo = parseTargetDate(question);
       const jobs = await loadDayJobs(pool, dateInfo.iso);
-      const result = analyzeAvailability({ jobs, question });
+      const activeTechnicians = /ช่างทั้งหมด/.test(question) ? await loadActiveTechnicians(pool) : [];
+      const result = analyzeAvailability({ jobs, question, activeTechnicians });
       const answer = answerAvailability(result);
 
       await logMemory(pool, req, {
@@ -408,7 +650,8 @@ module.exports = function createAdminAiOfficeSmartAssistantV28Routes(deps = {}) 
       const question = cleanText(req.body?.question || req.query?.question, 2000);
       const dateInfo = parseTargetDate(question);
       const jobs = await loadDayJobs(pool, dateInfo.iso);
-      const result = analyzeAvailability({ jobs, question });
+      const activeTechnicians = /ช่างทั้งหมด/.test(question) ? await loadActiveTechnicians(pool) : [];
+      const result = analyzeAvailability({ jobs, question, activeTechnicians });
       return res.json({ ok: true, result, answer: answerAvailability(result) });
     } catch (e) {
       return res.status(e.status || 500).json({ ok: false, error: e.message || "ANALYZE_AVAILABILITY_FAILED" });
