@@ -312,6 +312,8 @@ function mapRow(row) {
     id: Number(row.id),
     conversation_id: row.conversation_id == null ? null : Number(row.conversation_id),
     line_user_id: row.line_user_id,
+    line_display_name: row.line_display_name || row.display_name || parseJsonObject(row.metadata).line_display_name || "",
+    line_picture_url: row.line_picture_url || row.picture_url || "",
     source: row.source || "LINE_AI",
     customer_name: row.customer_name || "",
     customer_phone: row.customer_phone || "",
@@ -390,6 +392,28 @@ async function loadLineThreadContext(pool, { lineUserId, conversationId, limit =
     };
   } catch (e) {
     return { text: "", message_count: 0, latest_line_message_at: null, error: e.message || "LOAD_THREAD_FAILED" };
+  }
+}
+
+async function loadAiControlFlags(pool) {
+  try {
+    const r = await pool.query(`
+      SELECT key, value
+      FROM public.ai_office_control_settings
+      WHERE key IN ('ai_office_enabled','line_intake_enabled')
+    `);
+    const values = {};
+    for (const row of r.rows || []) {
+      let v = row.value;
+      if (typeof v === "string") { try { v = JSON.parse(v); } catch (_) {} }
+      values[row.key] = v;
+    }
+    return {
+      ai_office_enabled: values.ai_office_enabled !== false,
+      line_intake_enabled: values.line_intake_enabled !== false,
+    };
+  } catch (_) {
+    return { ai_office_enabled: true, line_intake_enabled: true };
   }
 }
 
@@ -502,6 +526,11 @@ async function ingestLineBookingIntakeFromEvent(pool, event, stored = {}) {
     const lineUserId = cleanText(event?.source?.userId, 255);
     if (!pool || !lineUserId || !text) return { ok: false, skipped: true, reason: "not_text_or_missing_user" };
 
+    const controlFlags = await loadAiControlFlags(pool);
+    if (!controlFlags.ai_office_enabled || !controlFlags.line_intake_enabled) {
+      return { ok: true, skipped: true, reason: "line_intake_disabled_by_ai_control" };
+    }
+
     await ensureAiBookingIntakeSchema(pool);
     const thread = await loadLineThreadContext(pool, {
       lineUserId,
@@ -544,22 +573,41 @@ async function listAiBookingIntakes(pool, options = {}) {
   const limit = clampInt(options.limit, 1, 200, 80);
   const status = cleanText(options.status, 80);
   const params = [];
-  let where = "WHERE status <> 'CLOSED'";
+  let where = "WHERE a.status <> 'CLOSED'";
   if (status && status !== "all" && status !== "open") {
     params.push(status);
-    where = `WHERE status = $${params.length}`;
+    where = `WHERE a.status = $${params.length}`;
   } else if (status === "open" || !status) {
     params.push(OPEN_STATUSES);
-    where = `WHERE status = ANY($${params.length})`;
+    where = `WHERE a.status = ANY($${params.length})`;
   }
   params.push(limit);
-  const rows = await pool.query(`SELECT * FROM public.ai_booking_intakes ${where} ORDER BY updated_at DESC LIMIT $${params.length}`, params);
+  const rows = await pool.query(
+    `SELECT a.*, c.display_name AS line_display_name, c.picture_url AS line_picture_url
+     FROM public.ai_booking_intakes a
+     LEFT JOIN public.line_conversations c
+       ON (a.conversation_id IS NOT NULL AND c.id = a.conversation_id)
+       OR (a.conversation_id IS NULL AND c.line_user_id = a.line_user_id)
+     ${where}
+     ORDER BY a.updated_at DESC
+     LIMIT $${params.length}`,
+    params
+  );
   return rows.rows.map(mapRow);
 }
 
 async function getAiBookingIntake(pool, id) {
   await ensureAiBookingIntakeSchema(pool);
-  const rows = await pool.query(`SELECT * FROM public.ai_booking_intakes WHERE id=$1 LIMIT 1`, [Number(id)]);
+  const rows = await pool.query(
+    `SELECT a.*, c.display_name AS line_display_name, c.picture_url AS line_picture_url
+     FROM public.ai_booking_intakes a
+     LEFT JOIN public.line_conversations c
+       ON (a.conversation_id IS NOT NULL AND c.id = a.conversation_id)
+       OR (a.conversation_id IS NULL AND c.line_user_id = a.line_user_id)
+     WHERE a.id=$1
+     LIMIT 1`,
+    [Number(id)]
+  );
   return mapRow(rows.rows?.[0]);
 }
 
