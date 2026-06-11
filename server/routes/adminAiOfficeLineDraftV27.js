@@ -206,11 +206,41 @@ async function loadExamples(pool, { situationType, language }) {
     return [];
   }
 }
+
+function customerReplyTone() {
+  const tone = String(process.env.AI_OFFICE_REPLY_TONE || process.env.CWF_REPLY_TONE || "female").trim().toLowerCase();
+  if (["male", "female", "neutral", "auto"].includes(tone)) return tone;
+  return "female";
+}
+function thaiToneInstruction() {
+  const tone = customerReplyTone();
+  if (tone === "male") return "Write like a real Thai LINE admin: short, warm, natural, ready to send. Use ครับ/นะครับ consistently. Avoid ค่ะ/นะคะ.";
+  if (tone === "neutral") return "Write like a real Thai LINE admin: short, warm, natural, ready to send. Use polite Thai without forcing gendered endings when unnatural.";
+  if (tone === "auto") return "Write like a real Thai LINE admin: short, warm, natural, ready to send. Follow saved admin style examples if clear; otherwise use neutral polite Thai.";
+  return "Write like a real Thai LINE admin: short, warm, natural, ready to send. Use ค่ะ/นะคะ consistently. Avoid ครับ/นะครับ.";
+}
+function applyThaiReplyTone(text) {
+  let out = cleanText(text, 1500);
+  if (!hasThai(out)) return out;
+  const tone = customerReplyTone();
+  if (tone === "male") {
+    out = out.replace(/นะคะ/g, "นะครับ").replace(/ค่ะ/g, "ครับ").replace(/คะ/g, "ครับ").replace(/ครับครับ/g, "ครับ").trim();
+    if (!/ครับ/.test(out)) out += "ครับ";
+    return out;
+  }
+  if (tone === "female") {
+    out = out.replace(/นะครับ/g, "นะคะ").replace(/ครับ/g, "ค่ะ").replace(/ค่ะค่ะ/g, "ค่ะ").trim();
+    if (!/(ค่ะ|นะคะ|คะ)/.test(out)) out += "ค่ะ";
+    return out;
+  }
+  return out.replace(/ค่ะค่ะ/g, "ค่ะ").replace(/ครับครับ/g, "ครับ").trim();
+}
+
 function fallbackReply(selectedQuestion) {
   const q = String(selectedQuestion || "");
-  if (/กลิ่น|เหม็น|อับ/.test(q)) return "สวัสดีค่ะ ถ้าแอร์เริ่มมีกลิ่นอับแต่ยังเย็นปกติ เบื้องต้นแนะนำล้างพรีเมียมค่ะ รบกวนแจ้งขนาด BTU จำนวนเครื่อง และพื้นที่ให้แอดมินเช็กคิวให้นะคะ 🙏";
-  if (/ราคา|เท่าไหร่|กี่บาท/.test(q)) return "สวัสดีค่ะ ราคาล้างแอร์ผนังเริ่มต้น 550 บาทค่ะ รบกวนแจ้งขนาด BTU จำนวนเครื่อง และพื้นที่ให้แอดมินเช็กคิวให้นะคะ 🙏";
-  return "สวัสดีค่ะ รบกวนแจ้งรายละเอียดเพิ่มเติมนิดนึงนะคะ เดี๋ยวแอดมินช่วยตรวจสอบและแนะนำให้เหมาะกับหน้างานค่ะ 🙏";
+  if (/กลิ่น|เหม็น|อับ/.test(q)) return applyThaiReplyTone("สวัสดีค่ะ ถ้าแอร์เริ่มมีกลิ่นอับแต่ยังเย็นปกติ เบื้องต้นแนะนำล้างพรีเมียมค่ะ รบกวนแจ้งขนาด BTU จำนวนเครื่อง และพื้นที่ให้แอดมินเช็กคิวให้นะคะ 🙏");
+  if (/ราคา|เท่าไหร่|กี่บาท/.test(q)) return applyThaiReplyTone("สวัสดีค่ะ ราคาล้างแอร์ผนังเริ่มต้น 550 บาทค่ะ รบกวนแจ้งขนาด BTU จำนวนเครื่อง และพื้นที่ให้แอดมินเช็กคิวให้นะคะ 🙏");
+  return applyThaiReplyTone("สวัสดีค่ะ รบกวนแจ้งรายละเอียดเพิ่มเติมนิดนึงนะคะ เดี๋ยวแอดมินช่วยตรวจสอบและแนะนำให้เหมาะกับหน้างานค่ะ 🙏");
 }
 function sanitizeCustomerReply(text, selectedQuestion) {
   let out = cleanText(text, 1500)
@@ -219,10 +249,7 @@ function sanitizeCustomerReply(text, selectedQuestion) {
     .replace(/(?:สรุป|ข้อมูลที่ยังขาด|หมายเหตุสำหรับแอดมิน|แนะนำขั้นต่อไป)\s*[:：][\s\S]*$/i, "")
     .trim();
   if (!out || /สรุป|ข้อมูลที่ยังขาด|หมายเหตุสำหรับแอดมิน|admin_summary|missing_info/i.test(out)) out = fallbackReply(selectedQuestion);
-  if (hasThai(out)) {
-    out = out.replace(/นะครับ/g, "นะคะ").replace(/ครับ/g, "ค่ะ");
-    if (!/(ค่ะ|นะคะ)/.test(out)) out += "ค่ะ";
-  }
+  if (hasThai(out)) out = applyThaiReplyTone(out);
   return out;
 }
 async function saveDraft(pool, req, payload) {
@@ -285,7 +312,7 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
         "Return strict JSON only with keys: customer_reply, admin_summary, missing_info, next_step, customer_language, is_foreign_customer, original_message, thai_translation.",
         "selected_customer_question is the MAIN customer question to answer. Other LINE messages are context only.",
         "Do not answer from the latest customer message if selected_customer_question exists.",
-        "Write like a real Thai female LINE admin: short, warm, natural, ready to send. Use ค่ะ/นะคะ. Never use ครับ.",
+        thaiToneInstruction(),
         "No headings, no bullets, no report format, no JSON visible inside customer_reply.",
         "Do not repeat questions for details already present in selected_customer_question/context.",
         "Do not claim any LINE message was sent or any booking/status was created.",

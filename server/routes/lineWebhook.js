@@ -174,7 +174,7 @@ function createLineWebhookRoutes({ pool }) {
 
   router.post("/line/webhook", express.raw({ type: "application/json", limit: "1mb" }), async (req, res) => {
     try {
-      const secret = String(process.env.LINE_CHANNEL_SECRET || "").trim();
+      const secret = String(process.env.LINE_MESSAGING_CHANNEL_SECRET || process.env.LINE_CHANNEL_SECRET || "").trim();
       if (!secret) return res.status(500).json({ ok: false, error: "LINE webhook is not configured" });
 
       const rawBody = Buffer.isBuffer(req.body) ? req.body : Buffer.from(req.body || "");

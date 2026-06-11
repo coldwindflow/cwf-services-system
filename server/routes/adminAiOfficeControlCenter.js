@@ -4,6 +4,33 @@ function cleanText(value, max = 2000) {
   return String(value == null ? "" : value).replace(/\s+/g, " ").trim().slice(0, max);
 }
 
+function hasThaiText(value) {
+  return /[\u0E00-\u0E7F]/.test(String(value || ""));
+}
+
+function configuredReplyTone(values = {}) {
+  const tone = cleanText(values.ai_office_customer_reply_tone || process.env.AI_OFFICE_REPLY_TONE || process.env.CWF_REPLY_TONE || "female", 20).toLowerCase();
+  if (["male", "female", "neutral", "auto"].includes(tone)) return tone;
+  return "female";
+}
+
+function applyCustomerReplyTone(text, values = {}) {
+  let out = cleanText(text, 5000);
+  if (!hasThaiText(out)) return out;
+  const tone = configuredReplyTone(values);
+  if (tone === "male") {
+    out = out.replace(/นะคะ/g, "นะครับ").replace(/ค่ะ/g, "ครับ").replace(/คะ/g, "ครับ").replace(/ครับครับ/g, "ครับ").trim();
+    if (!/ครับ(\s|$|[.!?…🙏])/.test(out)) out = `${out}ครับ`;
+    return out;
+  }
+  if (tone === "female") {
+    out = out.replace(/นะครับ/g, "นะคะ").replace(/ครับ/g, "ค่ะ").replace(/ค่ะค่ะ/g, "ค่ะ").replace(/คะค่ะ/g, "คะ").trim();
+    if (!/(ค่ะ|คะ)(\s|$|[.!?…🙏])/.test(out)) out = `${out}ค่ะ`;
+    return out;
+  }
+  return out.replace(/ค่ะค่ะ/g, "ค่ะ").replace(/ครับครับ/g, "ครับ").trim();
+}
+
 function boolValue(value, fallback = false) {
   if (typeof value === "boolean") return value;
   if (typeof value === "number") return value !== 0;
@@ -886,8 +913,8 @@ async function selectAutoSafePlaybook(pool, text, safety = {}, values = {}) {
   return { matched:true, playbook:normalizePlaybookRow(best), score:bestScore };
 }
 
-function renderPlaybookReply(playbook, _text, _safety = {}) {
-  return cleanText(playbook?.response_text || "", 5000);
+function renderPlaybookReply(playbook, _text, _safety = {}, values = {}) {
+  return applyCustomerReplyTone(playbook?.response_text || "", values);
 }
 
 async function upsertAutoSafePlaybook(pool, payload = {}, adminUser = "") {
@@ -1628,7 +1655,7 @@ async function handleAutoSafeLineReplyFromWebhook(pool, event, stored = {}) {
       return { ok:false, skipped:true, reason:"DAILY_LIMIT_REACHED", safety };
     }
     const selectedPlaybook = playbookMatch.matched ? playbookMatch.playbook : null;
-    const replyText = selectedPlaybook ? renderPlaybookReply(selectedPlaybook, customerMessage, safety) : buildSafeRecommendedReply(customerMessage, safety);
+    const replyText = selectedPlaybook ? renderPlaybookReply(selectedPlaybook, customerMessage, safety, values) : applyCustomerReplyTone(buildSafeRecommendedReply(customerMessage, safety), values);
     const raw = await pushLineMessageToUser(lineUserId, replyText);
     await storeAutoSafeOutboundLineMessage(pool, conversationId, lineUserId, replyText, raw);
     const decision = await saveReplyDecisionLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, customer_message: customerMessage, safety, recommended_reply: replyText, source:"auto_safe_webhook", values, metadata:{ auto_sent:true, message_id: messageId, playbook_id: selectedPlaybook?.id || null, playbook_title: selectedPlaybook?.title || null } }, "ai_auto_safe").catch(()=>null);
@@ -2030,7 +2057,7 @@ function createAdminAiOfficeControlCenterRoutes(deps = {}) {
       const safety = decideReplySafety(customerMessage, values);
       const gate = autoSafeGate(customerMessage, safety, values);
       const playbookMatch = gate.ok ? await selectAutoSafePlaybook(pool, customerMessage, safety, values) : { matched:false, reason:"GATE_BLOCKED" };
-      const replyText = gate.ok && playbookMatch.matched ? renderPlaybookReply(playbookMatch.playbook, customerMessage, safety) : (gate.ok && !boolValue(values.auto_safe_playbook_required, true) ? buildSafeRecommendedReply(customerMessage, safety) : "");
+      const replyText = gate.ok && playbookMatch.matched ? renderPlaybookReply(playbookMatch.playbook, customerMessage, safety, values) : (gate.ok && !boolValue(values.auto_safe_playbook_required, true) ? applyCustomerReplyTone(buildSafeRecommendedReply(customerMessage, safety), values) : "");
       return res.json({ ok:true, safety, gate, playbook:playbookMatch, reply_text: replyText });
     } catch (e) {
       return res.status(e.status || 500).json({ ok:false, error:e.message || "AUTO_SAFE_TEST_FAILED" });
@@ -2136,7 +2163,7 @@ function createAdminAiOfficeControlCenterRoutes(deps = {}) {
         line:{
           latest_message_at: latestLine.rows?.[0]?.latest || null,
           webhook_ready: true,
-          channel_secret_configured: Boolean(String(process.env.LINE_CHANNEL_SECRET || "").trim()),
+          channel_secret_configured: Boolean(String(process.env.LINE_MESSAGING_CHANNEL_SECRET || process.env.LINE_CHANNEL_SECRET || "").trim()),
           channel_access_token_configured: Boolean(String(process.env.LINE_CHANNEL_ACCESS_TOKEN || "").trim())
         },
         openai:{

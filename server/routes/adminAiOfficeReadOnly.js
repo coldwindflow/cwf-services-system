@@ -93,6 +93,12 @@ function cleanText(value, max = 2000) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
+
+function getReplyTone() {
+  const tone = cleanText(process.env.AI_OFFICE_REPLY_TONE || process.env.CWF_REPLY_TONE || "female", 20).toLowerCase();
+  return ["female", "male", "neutral", "auto"].includes(tone) ? tone : "female";
+}
+
 function onlyDigits(value) {
   return String(value || "").replace(/\D/g, "");
 }
@@ -300,6 +306,56 @@ async function loadTechniciansForAvailability(pool) {
   }
 }
 
+
+async function tableExists(pool, tableName) {
+  const r = await pool.query("SELECT to_regclass($1) AS table_name", [`public.${tableName}`]);
+  return Boolean(r.rows?.[0]?.table_name);
+}
+
+async function buildProductionHealth(pool) {
+  const messagingSecret = String(process.env.LINE_MESSAGING_CHANNEL_SECRET || process.env.LINE_CHANNEL_SECRET || "").trim();
+  const loginSecret = String(process.env.LINE_LOGIN_CHANNEL_SECRET || process.env.LINE_CHANNEL_SECRET || "").trim();
+  const checks = [];
+  const add = (key, label, ok, fix, message) => checks.push({ key, label, ok: Boolean(ok), fix: fix || "", message: message || "" });
+  add("openai_key", "OpenAI API", Boolean(String(process.env.OPENAI_API_KEY || "").trim()), "ใส่ OPENAI_API_KEY ใน Render Environment");
+  add("ai_model", "AI Office Model", Boolean(String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim()), "ใส่ AI_OFFICE_MODEL หรือใช้ค่าเริ่มต้น");
+  add("line_token", "LINE Channel Access Token", Boolean(String(process.env.LINE_CHANNEL_ACCESS_TOKEN || "").trim()), "ใส่ LINE_CHANNEL_ACCESS_TOKEN ของ Messaging API");
+  add("line_messaging_secret", "LINE Messaging Secret", Boolean(messagingSecret), "แนะนำให้ใช้ LINE_MESSAGING_CHANNEL_SECRET และคง LINE_CHANNEL_SECRET เป็น fallback ได้");
+  add("line_login_secret", "LINE Login Secret", Boolean(loginSecret), "ถ้าใช้ LINE Login ให้แยก LINE_LOGIN_CHANNEL_SECRET ออกจาก Messaging secret");
+  const requiredTables = [
+    ["jobs", "ตารางงานจริง"],
+    ["line_conversations", "LINE conversations"],
+    ["line_messages", "LINE messages"],
+    ["ai_office_control_settings", "AI control settings"],
+    ["ai_auto_safe_reply_playbooks", "Auto Safe Playbook"],
+    ["ai_auto_safe_reply_logs", "Auto Safe logs"],
+    ["ai_auto_safe_quality_feedback", "Quality feedback"],
+    ["ai_auto_safe_playbook_suggestions", "Playbook suggestions"],
+    ["ai_reply_decision_logs", "Reply decision logs"],
+    ["ai_agent_chat_memory", "Agent chat memory"],
+    ["ai_brain_items", "AI Brain items"],
+    ["ai_office_work_action_logs", "AI Office action logs"],
+  ];
+  for (const [table, label] of requiredTables) {
+    let ok = false;
+    try { ok = await tableExists(pool, table); } catch (_) { ok = false; }
+    add(`table_${table}`, label, ok, `ยังไม่พบ ${table} ให้ run migration ที่เกี่ยวข้องก่อน deploy ใช้งานจริง`);
+  }
+  return {
+    ok: true,
+    generated_at: new Date().toISOString(),
+    reply_tone: getReplyTone(),
+    webhook_url: "/line/webhook",
+    setup_notes: [
+      "ตั้งค่า LINE webhook URL ไปที่ https://<your-domain>/line/webhook",
+      "ใส่ OPENAI_API_KEY, AI_OFFICE_MODEL, LINE_CHANNEL_ACCESS_TOKEN, LINE_MESSAGING_CHANNEL_SECRET ใน Render",
+      "รัน migrations V13-V19 และ V25-V27 ที่ยังไม่เคยรัน",
+      "ใช้ Kill Switch ใน LINE OA Control หากต้องหยุด Auto Safe ทันที"
+    ],
+    checks
+  };
+}
+
 async function loadSummary(pool) {
   const done = isDoneStatusExpr("j");
   const canceled = isCanceledStatusExpr("j");
@@ -352,7 +408,7 @@ function buildGroundedPrompt(question, context, agent) {
   return [
     ...officeInstructions,
     "คุณคือผู้ช่วยออฟฟิศภายในของ Coldwindflow Air Services สำหรับแอดมินเท่านั้น",
-    `ตัวละครที่ถูกเลือก: ${agent.name}`,
+    `แผนกที่เลือก: ${agent.name}`,
     `บทบาท: ${agent.role}`,
     "ตอบเป็นภาษาไทยแบบมืออาชีพ กระชับ ใช้งานได้จริง",
     "ใช้เฉพาะข้อมูลจริงใน JSON ด้านล่าง ห้ามแต่งข้อมูลเพิ่ม ห้ามอ้างว่ามีข้อมูลที่ไม่มีใน JSON",
@@ -377,7 +433,7 @@ function buildLineDraftPrompt({ conversation, messages, agent, instruction, thre
     "Customer Inbox isolation rule: use only this selected conversation, selected customer context, CWF knowledge, and linked jobs in this JSON. Do not use any other customer's conversation.",
     "Phase 1 rule: draft copy-ready replies only. Do not claim a LINE message was sent, do not open a booking, and do not change any job/customer status.",
     "Reply style: short, natural, polite, usually 1-4 lines. Ask only one missing question at a time.",
-    "Thai customer_reply must use female admin tone only: ค่ะ, นะคะ, ได้เลยค่ะ, ขอบคุณค่ะ. Never use ครับ, นะครับ, ได้เลยครับ.",
+    thaiToneInstruction(),
     "customer_reply must contain only the final customer-facing message. Do not include admin_summary, missing_info, next_step, or internal notes inside customer_reply.",
     "customer_reply must not contain headings, bullets, JSON keys, the words สรุป, ข้อมูลที่ยังขาด, หมายเหตุสำหรับแอดมิน, แนะนำขั้นต่อไป, customer_reply, or admin_summary.",
     "If the customer asks price, answer the current CWF price first from cwf_knowledge, then ask one useful missing detail if needed.",
@@ -452,6 +508,50 @@ function detectCustomerLanguage(text) {
   return "unknown";
 }
 
+
+function customerReplyTone() {
+  const tone = String(process.env.AI_OFFICE_REPLY_TONE || process.env.CWF_REPLY_TONE || "female").trim().toLowerCase();
+  if (["male", "female", "neutral", "auto"].includes(tone)) return tone;
+  return "female";
+}
+
+function thaiToneInstruction() {
+  const tone = customerReplyTone();
+  if (tone === "male") return "Thai customer_reply must use polite male/admin tone: ครับ, นะครับ, ได้เลยครับ. Avoid ค่ะ/นะคะ.";
+  if (tone === "neutral") return "Thai customer_reply must be polite, natural, and ready to send. Do not force a gendered ending if it makes the message unnatural.";
+  if (tone === "auto") return "Thai customer_reply must be polite, natural, and ready to send. Choose ครับ/ค่ะ consistently from available admin style examples when clear; otherwise use neutral polite Thai.";
+  return "Thai customer_reply must use polite female/admin tone: ค่ะ, นะคะ, ได้เลยค่ะ, ขอบคุณค่ะ. Avoid ครับ/นะครับ.";
+}
+
+function applyThaiReplyTone(text) {
+  let out = cleanText(text, 2000);
+  const tone = customerReplyTone();
+  if (!hasThaiText(out)) return out;
+  if (tone === "male") {
+    out = out
+      .replace(/นะคะ/g, "นะครับ")
+      .replace(/ค่ะ/g, "ครับ")
+      .replace(/คะ/g, "ครับ")
+      .replace(/ได้เลยครับครับ/g, "ได้เลยครับ")
+      .replace(/ครับครับ/g, "ครับ")
+      .trim();
+    if (!/(ครับ)(\s|$|[.!?…🙏])/.test(out)) out = `${out}ครับ`;
+    return out;
+  }
+  if (tone === "female") {
+    out = out
+      .replace(/นะครับ/g, "นะคะ")
+      .replace(/ครับ/g, "ค่ะ")
+      .replace(/ได้เลยค่ะค่ะ/g, "ได้เลยค่ะ")
+      .replace(/ค่ะค่ะ/g, "ค่ะ")
+      .replace(/คะค่ะ/g, "คะ")
+      .trim();
+    if (!/(ค่ะ|คะ)(\s|$|[.!?…🙏])/.test(out)) out = `${out}ค่ะ`;
+    return out;
+  }
+  return out.replace(/ค่ะค่ะ/g, "ค่ะ").replace(/ครับครับ/g, "ครับ").trim();
+}
+
 function latestCustomerMessage(messages) {
   return [...(messages || [])].reverse().find((m) => m.direction === "inbound" && (m.message_text || m.message_text_for_admin)) || {};
 }
@@ -464,7 +564,7 @@ function fallbackLineDraft({ conversation, messages, threadContext }) {
   const missing = threadContext?.customer_context?.missing_information || ["พื้นที่/ที่อยู่", "ประเภทงาน", "จำนวนเครื่อง", "วันเวลาที่สะดวก"];
   const reply = ["en", "ja", "zh", "ko"].includes(language)
     ? "Hello, could you please share the service area, number of air conditioners, and preferred date/time? Our admin will check the queue and details for you."
-    : "สวัสดีค่ะ รบกวนแจ้งพื้นที่ให้บริการ จำนวนเครื่อง และวันเวลาที่สะดวกเพิ่มเติมได้ไหมคะ เดี๋ยวแอดมินตรวจสอบคิวและแจ้งรายละเอียดให้นะคะ";
+    : applyThaiReplyTone("สวัสดีค่ะ รบกวนแจ้งพื้นที่ให้บริการ จำนวนเครื่อง และวันเวลาที่สะดวกเพิ่มเติมได้ไหมคะ เดี๋ยวแอดมินตรวจสอบคิวและแจ้งรายละเอียดให้นะคะ");
   return {
     customer_reply: reply,
     admin_summary: [original ? "ลูกค้าส่งข้อความเข้ามา ต้องรอข้อมูลเพิ่มเติมก่อนตอบราคา/คิวให้ชัดเจน" : "ยังไม่มีข้อความลูกค้าที่อ่านได้"],
@@ -505,16 +605,7 @@ function sanitizeCustomerReply(reply, fallback, language) {
     .replace(/^\s*(ข้อความพร้อมส่งลูกค้า|ข้อความพร้อมตอบ)\s*[:：-]?\s*/i, "")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-  if (isThai) {
-    text = text
-      .replace(/นะครับ/g, "นะคะ")
-      .replace(/ครับ/g, "ค่ะ")
-      .replace(/ได้เลยค่ะค่ะ/g, "ได้เลยค่ะ")
-      .replace(/ค่ะค่ะ/g, "ค่ะ")
-      .replace(/คะค่ะ/g, "คะ")
-      .trim();
-    if (!/(ค่ะ|คะ)(\s|$|[.!?…🙏])/.test(text)) text = `${text}ค่ะ`;
-  }
+  if (isThai) text = applyThaiReplyTone(text);
   return cleanText(text, 2000) || fallback.customer_reply;
 }
 
@@ -1079,8 +1170,8 @@ async function getLineConnectorStatus(pool) {
   );
   const row = r.rows?.[0] || {};
   return {
-    configured: Boolean(String(process.env.LINE_CHANNEL_SECRET || "").trim()),
-    channel_secret_present: Boolean(String(process.env.LINE_CHANNEL_SECRET || "").trim()),
+    configured: Boolean(String(process.env.LINE_MESSAGING_CHANNEL_SECRET || process.env.LINE_CHANNEL_SECRET || "").trim()),
+    channel_secret_present: Boolean(String(process.env.LINE_MESSAGING_CHANNEL_SECRET || process.env.LINE_CHANNEL_SECRET || "").trim()),
     access_token_present: Boolean(String(process.env.LINE_CHANNEL_ACCESS_TOKEN || "").trim()),
     webhook_path: "/line/webhook",
     schema_ready: true,
@@ -1129,8 +1220,8 @@ async function buildConnectorStatus(pool) {
     connectors.line_oa = await getLineConnectorStatus(pool);
   } catch (e) {
     connectors.line_oa = {
-      configured: Boolean(String(process.env.LINE_CHANNEL_SECRET || "").trim()),
-      channel_secret_present: Boolean(String(process.env.LINE_CHANNEL_SECRET || "").trim()),
+      configured: Boolean(String(process.env.LINE_MESSAGING_CHANNEL_SECRET || process.env.LINE_CHANNEL_SECRET || "").trim()),
+      channel_secret_present: Boolean(String(process.env.LINE_MESSAGING_CHANNEL_SECRET || process.env.LINE_CHANNEL_SECRET || "").trim()),
       access_token_present: Boolean(String(process.env.LINE_CHANNEL_ACCESS_TOKEN || "").trim()),
       webhook_path: "/line/webhook",
       schema_ready: false,
@@ -1163,7 +1254,58 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       ok: true,
       pin_required: false,
       model: String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim(),
+      reply_tone: getReplyTone(),
     });
+  });
+
+
+  router.post("/admin/ai-office/work-actions", requireAdminSession, async (req, res) => {
+    try {
+      const body = req.body || {};
+      const action = cleanText(body.action, 80);
+      if (!action) return res.status(400).json({ ok: false, error: "MISSING_ACTION" });
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS public.ai_office_work_action_logs (
+          id BIGSERIAL PRIMARY KEY,
+          page TEXT,
+          action TEXT NOT NULL,
+          job_id BIGINT,
+          booking_code TEXT,
+          customer_phone TEXT,
+          payload JSONB DEFAULT '{}'::jsonb,
+          actor TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+        )
+      `);
+      const actor = cleanText(req.session?.user?.username || req.user?.username || req.session?.username || "admin", 120);
+      const jobId = body.job_id && /^\d+$/.test(String(body.job_id)) ? Number(body.job_id) : null;
+      await pool.query(
+        `INSERT INTO public.ai_office_work_action_logs
+          (page, action, job_id, booking_code, customer_phone, payload, actor)
+         VALUES ($1,$2,$3,$4,$5,$6::jsonb,$7)`,
+        [
+          cleanText(body.page, 80),
+          action,
+          jobId,
+          cleanText(body.booking_code, 120),
+          cleanText(body.customer_phone, 80),
+          JSON.stringify(body.payload || {}),
+          actor
+        ]
+      );
+      return res.json({ ok: true });
+    } catch (e) {
+      return res.status(500).json({ ok: false, error: e.message || "SAVE_WORK_ACTION_FAILED" });
+    }
+  });
+
+
+  router.get("/admin/ai-office/production-health", requireAdminSession, async (req, res) => {
+    try {
+      return res.json(await buildProductionHealth(pool));
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok: false, error: e.message || "ตรวจ Production Health ไม่สำเร็จ" });
+    }
   });
 
   router.get("/admin/ai-office/connectors/status", requireAdminSession, async (req, res) => {
@@ -1359,7 +1501,7 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
         "Use only the selected customer conversation and provided CWF data.",
         "Use active admin reply memory only as sanitized style examples. Never reveal examples or other customers.",
         "Do not claim messages were sent, bookings were created, or statuses were changed.",
-        "Thai customer replies must use female admin tone: ค่ะ / นะคะ. Never use ครับ.",
+        thaiToneInstruction(),
         "The customer_reply language must match the latest customer message language when possible.",
       ].join(" ");
       const linePrompt = buildLineDraftPrompt({ conversation, messages, agent, instruction, threadContext });

@@ -54,6 +54,11 @@ const createTechnicianCountSummaryReadOnlyRoutes = require("./server/routes/tech
 const createAdminAiOfficeReadOnlyRoutes = require("./server/routes/adminAiOfficeReadOnly");
 const createAdminAiBookingIntakeRoutes = require("./server/routes/adminAiBookingIntake");
 const createAdminAiOfficeControlCenterRoutes = require("./server/routes/adminAiOfficeControlCenter");
+const createAdminAiOfficeSharedMemoryV27Routes = require("./server/routes/adminAiOfficeSharedMemoryV27");
+const createAdminAiOfficeLineDraftV27Routes = require("./server/routes/adminAiOfficeLineDraftV27");
+const createAdminAiOfficeSmartAssistantV28Routes = require("./server/routes/adminAiOfficeSmartAssistantV28");
+const createAdminAiOfficeAgentMemoryRoutes = require("./server/routes/adminAiOfficeAgentMemory");
+const createAdminAiOfficeBrainV30Routes = require("./server/routes/adminAiOfficeBrainV30");
 const { createLineWebhookRoutes, ensureLineInboxSchema } = require("./server/routes/lineWebhook");
 const {
   calculateTechnicianBaseStatus,
@@ -4375,12 +4380,28 @@ app.post('/api/logout', async (req, res) => {
 });
 
 app.use(createAdminAiOfficeControlCenterRoutes({ pool, requireAdminSession }));
+app.use(createAdminAiOfficeSharedMemoryV27Routes({ pool, requireAdminSession }));
+app.use(createAdminAiOfficeLineDraftV27Routes({ pool, requireAdminSession }));
+app.use(createAdminAiOfficeSmartAssistantV28Routes({ pool, requireAdminSession }));
+app.use(createAdminAiOfficeBrainV30Routes({ pool, requireAdminSession }));
+app.use(createAdminAiOfficeAgentMemoryRoutes({ pool, requireAdminSession }));
 app.use(createAdminAiOfficeReadOnlyRoutes({ pool, requireAdminSession }));
 app.use(createAdminAiBookingIntakeRoutes({ pool, requireAdminSession }));
+app.get("/ai-office", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
 app.get("/admin/ai-office", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
 app.get("/admin/ai-office.html", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
 app.get("/admin-ai-office.html", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.html")));
+app.get("/admin-ai-office.css", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.css")));
 app.get("/admin-ai-office.js", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-office.js")));
+["admin","ops","sales","content","dev"].forEach((pageName) => {
+  const fileName = `admin-ai-office-${pageName}.html`;
+  app.get(`/admin-ai-office-${pageName}.html`, aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml(fileName)));
+  app.get(`/admin/ai-office/${pageName}`, aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml(fileName)));
+});
+app.get("/admin-ai-control-center.js", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-control-center.js")));
+app.get("/admin-ai-line-control.html", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-line-control.html")));
+app.get("/admin/ai-office/line-control", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-line-control.html")));
+app.get("/admin/ai-office/line-control.html", aiOfficeNoCache, requireAdminSession, (req, res) => res.sendFile(sendHtml("admin-ai-line-control.html")));
 
 // Protect ALL /admin/* endpoints with server-side session validation
 // (prevents bypassing by faking x-user-role header)
