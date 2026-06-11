@@ -1,6 +1,6 @@
 (function(){
   "use strict";
-  const BUILD="ai-office-v29-chat-first";
+  const BUILD="ai-office-v30-premium-redesign";
   const $=(s,r=document)=>r.querySelector(s);
   const $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
   const esc=(v)=>String(v==null?"":v).replace(/[&<>'"]/g,(c)=>({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;","\"":"&quot;"}[c]));
