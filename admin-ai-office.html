@@ -8,26 +8,28 @@
   <link rel="manifest" href="/manifest.json">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="cwf-ai-office-version" content="ai-office-v27-production-hardening-20260612" />
+  <meta name="cwf-ai-office-version" content="ai-office-v29-chat-first-20260612" />
   <title>CWF AI Office</title>
-  <link rel="stylesheet" href="/admin-ai-office.css?v=ai-office-v27-production-hardening" />
+  <link rel="stylesheet" href="/admin-ai-office.css?v=ai-office-v29-chat-first" />
 </head>
 <body data-ai-office-page="home">
   <div class="ai-shell">
     <header class="ai-head">
       <div class="ai-head-inner">
         <img class="ai-logo" src="/icon-cwf-v32-180.png" alt="CWF">
-        <div class="ai-title"><h1>CWF AI Office</h1><p>ศูนย์จัดการงาน AI ภายในร้าน แยกหน้าแผนกชัดเจน และใช้ข้อมูลจริง</p></div>
-        <div class="head-actions" id="headActions"></div>
+        <div class="ai-title"><h1>CWF AI Office</h1><p>พิมพ์ถาม AI ได้เลย ช่วยงานจริงของ Coldwindflow</p></div>
+        <nav class="ai-nav" id="aiNav" aria-label="เมนูแผนก"></nav>
       </div>
     </header>
     <main class="ai-main" id="aiOfficeApp">
-      <section class="panel top-panel" id="topPanel"></section>
-      <section class="section" id="mainPanel"></section>
-      <section class="section" id="secondaryPanel"></section>
+      <div class="chat-layout">
+        <section class="chat-col" id="chatCol"></section>
+        <aside class="side-col" id="sideCol"></aside>
+      </div>
+      <section class="dept-context" id="deptContext"></section>
     </main>
   </div>
   <div class="toast" id="toast"></div>
-  <script src="/admin-ai-office.js?v=ai-office-v27-production-hardening"></script>
+  <script src="/admin-ai-office.js?v=ai-office-v29-chat-first"></script>
 </body>
 </html>
