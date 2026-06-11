@@ -8,7 +8,7 @@
   <link rel="manifest" href="/manifest.json">
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="cwf-ai-office-version" content="ai-office-v28-availability-autolearn-20260608" />
+  <meta name="cwf-ai-office-version" content="ai-office-v22-department-workspace-20260611" />
   <title>CWF AI Office</title>
   <link rel="stylesheet" href="/style.css">
   <style>
@@ -355,46 +355,235 @@
     @media(max-width:390px){
       .brandTitle h1{font-size:24px}.topBtn.inbox{font-size:14px;padding:0 12px}.topBtn.reload{width:46px;min-width:46px}.stat{flex-basis:148px;min-width:148px}.stage{min-height:340px}.rolechip{font-size:15px}
     }
+
+
+    /* V20: real office card layout - no game map, no cartoon AI characters */
+    body{background:#f4f8ff!important;color:#07152f}
+    .page{min-height:100vh;min-height:100dvh;display:block;overflow:visible;background:linear-gradient(180deg,#06163d 0,#0a2d70 270px,#f4f8ff 270px,#f4f8ff 100%)!important}
+    .officeHome{width:min(1180px,100%);margin:0 auto;padding:calc(14px + var(--safe-top)) max(14px,var(--safe-right)) calc(34px + var(--safe-bottom)) max(14px,var(--safe-left))}
+    .officeHero{display:grid;grid-template-columns:1fr;gap:14px;color:#fff;margin-bottom:14px}
+    .heroMain{display:flex;align-items:center;gap:12px;min-width:0}
+    .heroLogo{width:56px;height:56px;border-radius:18px;background:#fff;box-shadow:0 16px 32px rgba(0,0,0,.18);object-fit:cover;padding:6px;flex:0 0 auto}
+    .heroTitle{min-width:0}.heroTitle h1{margin:0;font-size:28px;line-height:.98;letter-spacing:-.03em;font-weight:1000}.heroTitle p{margin:7px 0 0;color:rgba(255,255,255,.78);font-size:13px;font-weight:850;line-height:1.35}
+    .heroTools{display:grid;grid-template-columns:1fr 1fr;gap:8px}.heroTools .topBtn{width:100%;min-height:44px;border:1px solid rgba(255,255,255,.16);border-radius:16px;background:rgba(255,255,255,.10);color:#fff;font-weight:1000;box-shadow:0 10px 22px rgba(0,0,0,.12)}
+    .heroTools .topBtn.primary{background:#ffcc00;color:#06163d;border-color:#ffcc00}.heroTools .topBtn.reload{width:auto;min-width:0}
+    .officeGrid{display:grid;gap:14px}.summaryCards{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;padding:0!important;background:transparent!important;overflow:visible!important}.summaryCards .stat{min-width:0!important;flex-basis:auto!important;border:1px solid rgba(15,23,42,.08);border-radius:22px;background:#fff!important;box-shadow:0 12px 28px rgba(2,6,23,.07);padding:14px}.summaryCards .stat span{color:#64748b;font-size:12px;font-weight:950}.summaryCards .stat b{display:block;color:#06163d;font-size:28px;font-weight:1000;line-height:1;margin-top:6px}
+    .officeStatusCard{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;border:1px solid rgba(255,255,255,.12);border-radius:24px;padding:14px;background:rgba(255,255,255,.10);box-shadow:0 18px 34px rgba(0,0,0,.12);backdrop-filter:blur(12px)}
+    .officeStatusCard b{display:block;color:#fff;font-size:15px}.officeStatusCard span{display:block;margin-top:4px;color:rgba(255,255,255,.74);font-size:12px;font-weight:850;line-height:1.35}.liveDot{width:11px;height:11px;border-radius:999px;background:#22c55e;box-shadow:0 0 0 6px rgba(34,197,94,.14);margin-top:5px;flex:0 0 auto}
+    .sectionHead{display:flex;align-items:flex-end;justify-content:space-between;gap:10px;margin:6px 0 10px}.sectionHead h2{margin:0;color:#06163d;font-size:20px;letter-spacing:-.02em}.sectionHead p{margin:5px 0 0;color:#64748b;font-size:12px;font-weight:850;line-height:1.35}.sectionHead .mini{color:#0d3d8d;font-size:12px;font-weight:1000;white-space:nowrap}
+    .departmentGrid{display:grid;grid-template-columns:1fr;gap:12px}.departmentCard{position:relative;overflow:hidden;min-height:148px;border:1px solid rgba(15,23,42,.08);border-radius:26px;background:#fff;box-shadow:0 14px 34px rgba(2,6,23,.075);padding:16px;text-align:left;color:#07152f;display:flex;flex-direction:column;gap:12px;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}.departmentCard:active{transform:scale(.99)}.departmentCard.active{border-color:rgba(255,204,0,.75);box-shadow:0 18px 42px rgba(13,61,141,.16)}.departmentCard::before{content:"";position:absolute;inset:0 0 auto 0;height:5px;background:linear-gradient(90deg,#0d3d8d,#1769ff,#ffcc00)}
+    .deptTop{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.deptIcon{width:46px;height:46px;border-radius:18px;display:grid;place-items:center;background:#eef6ff;color:#0d3d8d;font-size:15px;font-weight:1000;letter-spacing:.02em;box-shadow:inset 0 0 0 1px rgba(21,88,214,.10)}.deptTag{border-radius:999px;background:#f8fafc;border:1px solid rgba(15,23,42,.08);padding:6px 9px;color:#64748b;font-size:11px;font-weight:1000;white-space:nowrap}.deptTitle h3{margin:0;color:#06163d;font-size:19px;line-height:1.1}.deptTitle p{margin:7px 0 0;color:#64748b;font-size:13px;font-weight:800;line-height:1.45}.deptActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto}.cardBtn{appearance:none;border:1px solid rgba(21,88,214,.14);border-radius:14px;min-height:38px;padding:0 11px;background:#f8fbff;color:#0d3d8d;font-size:12px;font-weight:1000}.cardBtn.primary{background:#0d3d8d;color:#fff;border-color:#0d3d8d}.cardBtn.gold{background:#ffcc00;color:#06163d;border-color:#ffcc00}.cardBtn.danger{background:#fff1f2;color:#be123c;border-color:#fecdd3}
+    .workbenchGrid{display:grid;grid-template-columns:1fr;gap:12px}.workPanel{border:1px solid rgba(15,23,42,.08);border-radius:26px;background:#fff;box-shadow:0 14px 34px rgba(2,6,23,.065);padding:15px}.workPanel h3{margin:0;color:#06163d;font-size:18px}.workPanel p{margin:6px 0 12px;color:#64748b;font-size:13px;font-weight:800;line-height:1.45}.actionList{display:grid;grid-template-columns:1fr;gap:8px}.actionRow{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid rgba(15,23,42,.07);border-radius:18px;background:#f8fbff;padding:11px;text-align:left;color:#07152f}.actionRow b{display:block;font-size:14px;color:#06163d}.actionRow span{display:block;margin-top:3px;font-size:12px;color:#64748b;font-weight:800;line-height:1.3}.actionRow em{font-style:normal;color:#0d3d8d;font-weight:1000;font-size:18px}.quickActions{display:none!important}.office{display:none!important}.stage,.map,.agents,.agent,.sprite,.agentLabel,.rolebar,.rolechip,.hint{display:none!important}
+    .overlayAvatar{display:none!important}.agentGlyph{width:46px;height:46px;border-radius:17px;display:grid;place-items:center;background:#ffcc00;color:#06163d;font-weight:1000;box-shadow:0 10px 22px rgba(0,0,0,.13);flex:0 0 auto}.overlayTitle b{font-size:17px}.overlayTitle span{font-size:12px;font-weight:850;color:#64748b}
+    .mainNotice{border:1px solid rgba(255,204,0,.30);background:#fff8d6;border-radius:22px;padding:12px;color:#6b4e00;font-size:12px;font-weight:900;line-height:1.45}.mainNotice b{color:#06163d}
+
+    /* V21: inline command center - no stacked control overlay for daily use */
+    .ai-control-open{display:none!important}
+    .replyCommandCenter{border:1px solid rgba(15,23,42,.08);border-radius:30px;background:linear-gradient(180deg,#ffffff,#f8fbff);box-shadow:0 18px 42px rgba(2,6,23,.075);padding:16px;margin-top:4px;scroll-margin-top:18px}
+    .commandHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}.commandHead h2{margin:0;color:#06163d;font-size:22px;letter-spacing:-.03em}.commandHead p{margin:6px 0 0;color:#64748b;font-size:13px;font-weight:850;line-height:1.45}.commandBadges{display:flex;gap:8px;flex-wrap:wrap}.commandBadge{border:1px solid rgba(15,23,42,.08);border-radius:999px;background:#f8fafc;color:#475569;padding:7px 10px;font-size:12px;font-weight:1000}.commandBadge.on{background:#dcfce7;color:#166534;border-color:#bbf7d0}.commandBadge.off{background:#fff7ed;color:#9a3412;border-color:#fed7aa}.commandBadge.stop{background:#ffe4e6;color:#be123c;border-color:#fecdd3}
+    .commandTabs{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:8px -2px 14px;padding:2px}.commandTabs::-webkit-scrollbar{display:none}.commandTab{appearance:none;border:1px solid rgba(21,88,214,.13);border-radius:999px;background:#fff;color:#0d3d8d;min-height:40px;padding:0 13px;font-size:12px;font-weight:1000;white-space:nowrap}.commandTab.active{background:#0d3d8d;color:#fff;border-color:#0d3d8d}
+    .commandMetrics{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-bottom:12px}.commandMetric{border:1px solid rgba(15,23,42,.07);border-radius:22px;background:#fff;padding:13px;box-shadow:0 10px 24px rgba(2,6,23,.05)}.commandMetric span{display:block;color:#64748b;font-size:11px;font-weight:950}.commandMetric b{display:block;margin-top:6px;color:#06163d;font-size:25px;line-height:1;font-weight:1000}.commandMetric small{display:block;margin-top:5px;color:#94a3b8;font-size:11px;font-weight:850;line-height:1.3}
+    .commandGrid{display:grid;grid-template-columns:1fr;gap:12px}.commandCard{border:1px solid rgba(15,23,42,.08);border-radius:24px;background:#fff;padding:14px;box-shadow:0 12px 28px rgba(2,6,23,.055)}.commandCard h3{margin:0;color:#06163d;font-size:17px}.commandCard p{margin:6px 0 12px;color:#64748b;font-size:12px;font-weight:850;line-height:1.42}.commandRows{display:grid;gap:8px}.commandRow{display:flex;align-items:center;justify-content:space-between;gap:10px;border:1px solid rgba(15,23,42,.07);border-radius:18px;background:#f8fbff;padding:10px}.commandRow .txt{min-width:0}.commandRow b{display:block;color:#07152f;font-size:13px}.commandRow span{display:block;margin-top:3px;color:#64748b;font-size:11px;font-weight:850;line-height:1.35}.toggleBtn{appearance:none;border:0;border-radius:999px;min-width:74px;min-height:34px;padding:0 12px;font-size:12px;font-weight:1000;background:#e2e8f0;color:#334155}.toggleBtn.on{background:#22c55e;color:#fff}.toggleBtn.off{background:#e2e8f0;color:#334155}.toggleBtn.stop{background:#e11d48;color:#fff}.toggleBtn[disabled]{opacity:.45;cursor:not-allowed}.commandActions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.commandActions .cardBtn{min-height:40px}.commandList{display:grid;gap:8px}.commandItem{border:1px solid rgba(15,23,42,.07);border-radius:18px;background:#f8fbff;padding:10px}.commandItem b{display:block;color:#06163d;font-size:13px}.commandItem span{display:block;color:#64748b;font-size:11px;font-weight:850;line-height:1.4;margin-top:4px}.commandEmpty{border:1px dashed rgba(21,88,214,.22);border-radius:20px;background:#f8fbff;color:#64748b;padding:14px;font-size:12px;font-weight:900;text-align:center}.inlineError{border:1px solid #fecdd3;background:#fff1f2;color:#be123c;border-radius:20px;padding:12px;font-size:12px;font-weight:900}.controlInlineLoading{border:1px dashed rgba(21,88,214,.25);border-radius:22px;background:#fff;padding:18px;color:#0d3d8d;font-weight:1000;text-align:center}
+    @media(min-width:760px){.commandMetrics{grid-template-columns:repeat(4,minmax(0,1fr))}.commandGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.commandCard.wide{grid-column:1/-1}}
+    @media(min-width:1060px){.commandGrid{grid-template-columns:repeat(3,minmax(0,1fr))}.commandCard.wide{grid-column:span 2}}
+
+    @media(min-width:760px){.officeHome{padding-top:24px}.officeHero{grid-template-columns:1fr 360px;align-items:start}.heroTitle h1{font-size:38px}.summaryCards{grid-template-columns:repeat(4,minmax(0,1fr))}.departmentGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.workbenchGrid{grid-template-columns:1.1fr .95fr .95fr}.heroTools{grid-template-columns:1fr 1fr}.actionList{gap:10px}}
+    @media(min-width:1060px){.departmentGrid{grid-template-columns:repeat(3,minmax(0,1fr))}.departmentCard{min-height:176px}}
+    @media(max-width:420px){.officeHome{padding-left:12px;padding-right:12px}.heroTitle h1{font-size:25px}.heroTools{grid-template-columns:1fr}.summaryCards .stat b{font-size:24px}.departmentCard{border-radius:22px;padding:14px}.deptActions .cardBtn{flex:1 1 auto}.sectionHead{align-items:flex-start;flex-direction:column}}
+
+
+
+    /* V22: department workspace - inline AI work area, no daily chat overlay */
+    .departmentWorkspace{
+      border:1px solid rgba(15,23,42,.08);
+      border-radius:30px;
+      background:linear-gradient(180deg,#ffffff,#f8fbff);
+      box-shadow:0 18px 42px rgba(2,6,23,.075);
+      padding:16px;
+      margin-top:2px;
+      scroll-margin-top:18px;
+    }
+    .workspaceHead{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+    .workspaceTitle{display:flex;align-items:flex-start;gap:12px;min-width:0}
+    .workspaceGlyph{width:50px;height:50px;border-radius:19px;display:grid;place-items:center;background:#ffcc00;color:#06163d;font-weight:1000;box-shadow:0 12px 26px rgba(2,6,23,.12);flex:0 0 auto}
+    .workspaceTitle h2{margin:0;color:#06163d;font-size:22px;letter-spacing:-.03em;line-height:1.1}
+    .workspaceTitle p{margin:6px 0 0;color:#64748b;font-size:13px;font-weight:850;line-height:1.45}
+    .workspaceStatus{display:flex;gap:8px;flex-wrap:wrap}.workspaceStatus span{border:1px solid rgba(15,23,42,.08);border-radius:999px;background:#f8fafc;color:#475569;padding:7px 10px;font-size:12px;font-weight:1000}.workspaceStatus .active{background:#dcfce7;color:#166534;border-color:#bbf7d0}
+    .workspaceAgentNav{display:flex;gap:8px;overflow-x:auto;scrollbar-width:none;margin:4px -2px 12px;padding:2px}.workspaceAgentNav::-webkit-scrollbar{display:none}
+    .workspaceAgentBtn{appearance:none;border:1px solid rgba(21,88,214,.13);border-radius:999px;background:#fff;color:#0d3d8d;min-height:40px;padding:0 13px;font-size:12px;font-weight:1000;white-space:nowrap}.workspaceAgentBtn.active{background:#0d3d8d;color:#fff;border-color:#0d3d8d}
+    .workspacePromptGrid{display:grid;grid-template-columns:1fr;gap:8px;margin-bottom:12px}.workspacePrompt{appearance:none;border:1px solid rgba(15,23,42,.07);border-radius:18px;background:#f8fbff;padding:11px;text-align:left;color:#07152f}.workspacePrompt b{display:block;color:#06163d;font-size:13px}.workspacePrompt span{display:block;margin-top:4px;color:#64748b;font-size:11px;font-weight:850;line-height:1.35}
+    .workspaceChat{border:1px solid rgba(15,23,42,.07);border-radius:24px;background:#fff;padding:12px;min-height:220px;max-height:420px;overflow:auto;display:grid;align-content:start;gap:10px;box-shadow:inset 0 1px 0 rgba(15,23,42,.03)}
+    .workspaceMsg{max-width:92%;border-radius:20px;padding:11px 13px;font-size:14px;font-weight:850;line-height:1.55;white-space:pre-wrap;box-shadow:0 8px 18px rgba(2,6,23,.055)}
+    .workspaceMsg.user{justify-self:end;background:#0d3d8d;color:#fff;border-bottom-right-radius:8px}.workspaceMsg.ai{justify-self:start;background:#f8fbff;color:#07152f;border:1px solid rgba(21,88,214,.10);border-bottom-left-radius:8px}.workspaceMsg.error{background:#fff1f2;color:#be123c;border-color:#fecdd3}.workspaceMsg.loading{color:#0d3d8d}
+    .workspaceComposer{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:10px}.workspaceComposer textarea{min-height:52px;max-height:160px;border:1px solid rgba(15,23,42,.12);border-radius:20px;background:#fff;color:#07152f;padding:14px;resize:none;outline:none;font-size:15px;font-weight:850}.workspaceComposer textarea:focus{border-color:rgba(13,61,141,.45);box-shadow:0 0 0 4px rgba(21,88,214,.10)}
+    .workspaceSend{appearance:none;border:0;border-radius:18px;background:#ffcc00;color:#06163d;font-size:18px;font-weight:1000;width:54px;min-height:52px;box-shadow:0 12px 24px rgba(255,204,0,.22)}.workspaceSend:disabled{opacity:.55;cursor:not-allowed}
+    .workspaceFooter{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:10px;color:#64748b;font-size:12px;font-weight:850}.workspaceFooter button{appearance:none;border:1px solid rgba(21,88,214,.14);background:#fff;color:#0d3d8d;border-radius:999px;min-height:34px;padding:0 12px;font-size:12px;font-weight:1000}
+    @media(min-width:760px){.workspacePromptGrid{grid-template-columns:repeat(2,minmax(0,1fr))}.workspaceChat{max-height:500px}.workspaceMsg{max-width:78%}}
+
   </style>
 </head>
 <body>
   <div class="page" id="app">
-    <header class="topbar">
-      <img class="brandLogo" src="/icon-cwf-v32-180.png" alt="CWF">
-      <div class="brandTitle">
-        <h1>CWF AI<br>Office</h1>
-        <p>ผู้ช่วยออฟฟิศ Coldwindflow ใช้ข้อมูลงานจริงและสมองเสริม</p>
-      </div>
-      <div class="topActions">
-        <button class="topBtn inbox" type="button" data-open-inbox>กล่องแชทลูกค้า</button>
-        <button class="topBtn reload" type="button" id="reloadBtn" aria-label="โหลดข้อมูลใหม่">↻</button>
-      </div>
-    </header>
-
-    <section class="stats" aria-label="สรุปงาน">
-      <div class="stat"><span>งานวันนี้</span><b id="statToday">-</b></div>
-      <div class="stat"><span>งานพรุ่งนี้</span><b id="statTomorrow">-</b></div>
-      <div class="stat"><span>ยังไม่ปิด</span><b id="statOpen">-</b></div>
-      <div class="stat"><span>ยังไม่จ่าย</span><b id="statUnpaid">-</b></div>
-    </section>
-
-    <nav class="quickActions" aria-label="งานด่วนสำหรับแอดมิน">
-      <button class="quickAction primary" type="button" data-quick-agent="ops" data-quick-question="วันนี้มีงานอะไรบ้าง สรุปแบบแอดมินใช้งานจริง">วันนี้</button>
-      <button class="quickAction" type="button" data-quick-agent="ops" data-quick-question="พรุ่งนี้มีงานอะไรบ้าง สรุปคิวและจุดที่ต้องเตรียม">พรุ่งนี้</button>
-      <button class="quickAction" type="button" data-quick-agent="ops" data-quick-question="งานไหนยังไม่ปิด สรุปงานค้างและความเสี่ยง">ยังไม่ปิด</button>
-      <button class="quickAction" type="button" data-quick-agent="admin" data-quick-question="งานไหนยังไม่จ่าย สรุปให้แอดมินตามงานได้">ยังไม่จ่าย</button>
-      <button class="quickAction" type="button" data-open-inbox>แชทลูกค้า</button>
-      <button class="quickAction" type="button" data-quick-agent="sales" data-quick-question="ช่วยเตรียมวิธีตอบลูกค้าถามราคาและลูกค้าบอกแพง แบบสั้นพร้อมใช้">ตอบลูกค้า</button>
-    </nav>
-
-    <main class="office">
-      <section class="stage" aria-label="CWF AI Office Map">
-        <div class="map"></div>
-        <div class="hint">แตะตัวละครหรือแถบล่างเพื่อเปิดแชท AI</div>
-        <div class="agents" id="agents"></div>
-        <div class="officeStatus"><div class="statusPill" id="officeStatus">โหลดข้อมูลงานจริงแล้ว ทีม AI พร้อมช่วยงาน</div></div>
+    <main class="officeHome" aria-label="CWF AI Office">
+      <section class="officeHero">
+        <div class="heroMain">
+          <img class="heroLogo" src="/icon-cwf-v32-180.png" alt="CWF">
+          <div class="heroTitle">
+            <h1>CWF AI Office</h1>
+            <p>ศูนย์จัดการงาน AI ภายในร้าน แยกตามแผนก ใช้ข้อมูลงานจริง และควบคุมการตอบลูกค้าได้จากที่เดียว</p>
+          </div>
+        </div>
+        <div class="officeStatusCard">
+          <div>
+            <b>สถานะระบบ</b>
+            <span id="officeStatus">กำลังโหลดข้อมูลงานจริง</span>
+          </div>
+          <i class="liveDot" aria-hidden="true"></i>
+        </div>
       </section>
-      <nav class="rolebar" id="rolebar" aria-label="เลือกแผนก AI"></nav>
+
+      <section class="heroTools" aria-label="คำสั่งหลัก">
+        <button class="topBtn primary" type="button" data-open-control="reply">ควบคุม AI ตอบ LINE</button>
+        <button class="topBtn" type="button" data-open-control="dashboard">แดชบอร์ด Auto Safe</button>
+        <button class="topBtn" type="button" data-open-inbox>กล่องแชทลูกค้า</button>
+        <button class="topBtn reload" type="button" id="reloadBtn">รีเฟรชข้อมูล</button>
+      </section>
+
+      <section class="stats summaryCards" aria-label="สรุปงานจริง">
+        <div class="stat"><span>งานวันนี้</span><b id="statToday">-</b></div>
+        <div class="stat"><span>งานพรุ่งนี้</span><b id="statTomorrow">-</b></div>
+        <div class="stat"><span>ยังไม่ปิด</span><b id="statOpen">-</b></div>
+        <div class="stat"><span>ยังไม่จ่าย</span><b id="statUnpaid">-</b></div>
+      </section>
+
+      <section class="officeGrid" aria-label="หมวดงาน AI Office">
+        <div class="sectionHead">
+          <div><h2>แผนกงานหลัก</h2><p>เลือกการ์ดตามงานที่ต้องการ ไม่ใช้แผนที่เกม ไม่ใช้ตัวละคร AI</p></div>
+          <span class="mini">Read-only / Admin controlled</span>
+        </div>
+        <div class="departmentGrid" id="departmentGrid">
+          <article class="departmentCard" data-agent-card="admin">
+            <div class="deptTop"><div class="deptIcon">AD</div><span class="deptTag">แอดมิน</span></div>
+            <div class="deptTitle"><h3>Admin Office</h3><p>ถามงานวันนี้ งานค้าง งานยังไม่จ่าย สรุปให้แอดมินใช้ตัดสินใจ</p></div>
+            <div class="deptActions">
+              <button class="cardBtn primary" type="button" data-quick-agent="admin" data-quick-question="งานไหนยังไม่จ่าย สรุปให้แอดมินตามงานได้แบบใช้งานจริง">งานยังไม่จ่าย</button>
+              <button class="cardBtn" type="button" data-quick-agent="admin" data-quick-question="สรุปภาพรวมงานทั้งหมดที่แอดมินควรรู้วันนี้">สรุปภาพรวม</button>
+            </div>
+          </article>
+          <article class="departmentCard" data-agent-card="ops">
+            <div class="deptTop"><div class="deptIcon">OP</div><span class="deptTag">คิวงาน</span></div>
+            <div class="deptTitle"><h3>Ops & Queue</h3><p>ดูคิววันนี้ พรุ่งนี้ งานยังไม่ปิด และความเสี่ยงที่ต้องตามก่อนเกิดปัญหา</p></div>
+            <div class="deptActions">
+              <button class="cardBtn primary" type="button" data-quick-agent="ops" data-quick-question="วันนี้มีงานอะไรบ้าง สรุปแบบแอดมินใช้งานจริง">วันนี้</button>
+              <button class="cardBtn" type="button" data-quick-agent="ops" data-quick-question="พรุ่งนี้มีงานอะไรบ้าง สรุปคิวและจุดที่ต้องเตรียม">พรุ่งนี้</button>
+              <button class="cardBtn" type="button" data-quick-agent="ops" data-quick-question="งานไหนยังไม่ปิด สรุปงานค้างและความเสี่ยง">ยังไม่ปิด</button>
+            </div>
+          </article>
+          <article class="departmentCard" data-agent-card="sales">
+            <div class="deptTop"><div class="deptIcon">SA</div><span class="deptTag">ขายงาน</span></div>
+            <div class="deptTitle"><h3>Sales Reply</h3><p>ร่างคำตอบราคา ลูกค้าบอกแพง ปิดนัดแบบสุภาพ ไม่เวอร์ และไม่ส่งเองถ้าเสี่ยง</p></div>
+            <div class="deptActions">
+              <button class="cardBtn primary" type="button" data-quick-agent="sales" data-quick-question="ช่วยเตรียมวิธีตอบลูกค้าถามราคาและลูกค้าบอกแพง แบบสั้นพร้อมใช้">ตอบราคา</button>
+              <button class="cardBtn" type="button" data-quick-agent="sales" data-quick-question="ช่วยร่างข้อความปิดนัดลูกค้าล้างแอร์ แบบมืออาชีพ สั้น และพร้อมคัดลอก">ปิดนัด</button>
+            </div>
+          </article>
+          <article class="departmentCard" data-agent-card="line">
+            <div class="deptTop"><div class="deptIcon">LN</div><span class="deptTag">LINE OA</span></div>
+            <div class="deptTitle"><h3>LINE Auto Safe</h3><p>ควบคุม AI ตอบ LINE เองเฉพาะคำถามปลอดภัย Playbook และคิวอนุมัติ</p></div>
+            <div class="deptActions">
+              <button class="cardBtn gold" type="button" data-open-control="reply">ตั้งค่า Auto Safe</button>
+              <button class="cardBtn" type="button" data-open-control="dashboard">ดูผลลัพธ์</button>
+              <button class="cardBtn" type="button" data-open-control="line">งาน LINE</button>
+            </div>
+          </article>
+          <article class="departmentCard" data-agent-card="content">
+            <div class="deptTop"><div class="deptIcon">CT</div><span class="deptTag">คอนเทนต์</span></div>
+            <div class="deptTitle"><h3>Content & Ads</h3><p>ช่วยเขียนโพสต์ แอด รีวิว สคริปต์ และวิเคราะห์ว่าปิดการขายน้อยเพราะอะไร</p></div>
+            <div class="deptActions">
+              <button class="cardBtn primary" type="button" data-quick-agent="content" data-quick-question="ช่วยเขียนโพสต์โปรล้างแอร์ Coldwindflow แบบสั้น สุภาพ น่าเชื่อถือ พร้อมใช้">เขียนโพสต์</button>
+              <button class="cardBtn" type="button" data-quick-agent="ads" data-quick-question="ช่วยวิเคราะห์ว่าปิดการขายน้อยเพราะอะไร แยกปัญหา lead โทร LINE ราคา พื้นที่ และหน้าเว็บ">วิเคราะห์แอด</button>
+            </div>
+          </article>
+          <article class="departmentCard" data-agent-card="dev">
+            <div class="deptTop"><div class="deptIcon">QA</div><span class="deptTag">ระบบ</span></div>
+            <div class="deptTitle"><h3>Dev / QA / Codex</h3><p>ช่วยเขียน prompt ส่ง Codex ตรวจ regression วาง rollback และจำกัด scope งาน</p></div>
+            <div class="deptActions">
+              <button class="cardBtn primary" type="button" data-quick-agent="dev" data-quick-question="ช่วยเขียน prompt ส่ง Codex สำหรับแก้ระบบ CWF แบบจำกัด scope มี checklist และ rollback">Prompt Codex</button>
+              <button class="cardBtn" type="button" data-quick-agent="dev" data-quick-question="ช่วยทำ checklist ตรวจ deploy และ regression สำหรับ AI Office">Checklist</button>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <section class="departmentWorkspace" id="departmentWorkspace" aria-label="Department Workspace">
+        <div class="workspaceHead">
+          <div class="workspaceTitle">
+            <div class="workspaceGlyph" id="workspaceGlyph">AD</div>
+            <div><h2 id="workspaceName">Admin Office</h2><p id="workspaceRole">เลือกแผนกแล้วสั่งงาน AI ได้จากหน้านี้ ไม่ต้องเปิดหน้าต่างซ้อน</p></div>
+          </div>
+          <div class="workspaceStatus"><span class="active">Inline Workspace</span><span>Read-only / Admin controlled</span></div>
+        </div>
+        <div class="workspaceAgentNav" id="workspaceAgentNav" aria-label="เลือกแผนกทำงาน"></div>
+        <div class="workspacePromptGrid" id="workspacePromptGrid"></div>
+        <div class="workspaceChat" id="workspaceMessages"></div>
+        <form class="workspaceComposer" id="workspaceForm">
+          <textarea id="workspaceQuestion" rows="1" placeholder="พิมพ์คำสั่งให้ AI ของแผนกนี้..."></textarea>
+          <button class="workspaceSend" type="submit" aria-label="ถาม AI">↑</button>
+        </form>
+        <div class="workspaceFooter"><span>คำตอบเป็นร่างให้แอดมินตรวจ/คัดลอกเอง ไม่สร้างงาน ไม่แก้ฐานข้อมูล และไม่ส่งลูกค้าเองจากช่องนี้</span><button type="button" data-open-legacy-chat>เปิดแชทแบบเต็ม</button></div>
+      </section>
+
+      <section class="replyCommandCenter" id="replyCommandCenter" aria-label="AI Reply Command Center">
+        <div class="commandHead">
+          <div>
+            <h2>AI Reply Command Center</h2>
+            <p>รวมปุ่มควบคุม AI ตอบ LINE แบบใช้งานจริงไว้ในหน้าเดียว ไม่ต้องเปิดแผงซ้อนหลายชั้น</p>
+          </div>
+          <div class="commandBadges" id="v21CommandBadges">
+            <span class="commandBadge">กำลังโหลด</span>
+          </div>
+        </div>
+        <div class="commandTabs" role="tablist" aria-label="หมวดควบคุม AI ตอบลูกค้า">
+          <button class="commandTab active" type="button" data-v21-tab="overview">ภาพรวม</button>
+          <button class="commandTab" type="button" data-v21-tab="auto-safe">Auto Safe</button>
+          <button class="commandTab" type="button" data-v21-tab="approval">คิวอนุมัติ</button>
+          <button class="commandTab" type="button" data-v21-tab="playbook">Playbook</button>
+          <button class="commandTab" type="button" data-v21-tab="quality">Quality</button>
+        </div>
+        <div id="v21CommandBody"><div class="controlInlineLoading">กำลังโหลดสถานะ AI Reply...</div></div>
+      </section>
+
+      <section class="workbenchGrid" aria-label="เครื่องมือด่วน">
+        <article class="workPanel">
+          <h3>งานที่ถามบ่อย</h3>
+          <p>คำสั่งที่ใช้ทุกวัน เปิดเป็นแชท AI พร้อมคำถามให้ทันที</p>
+          <div class="actionList">
+            <button class="actionRow" type="button" data-quick-agent="ops" data-quick-question="วันนี้มีงานอะไรบ้าง สรุปแบบแอดมินใช้งานจริง"><span><b>วันนี้มีงานอะไรบ้าง</b><span>สรุปคิววันนี้จากข้อมูลงานจริง</span></span><em>›</em></button>
+            <button class="actionRow" type="button" data-quick-agent="ops" data-quick-question="งานไหนยังไม่ปิด สรุปงานค้างและความเสี่ยง"><span><b>งานไหนยังไม่ปิด</b><span>ดูงานค้างและจุดเสี่ยง</span></span><em>›</em></button>
+            <button class="actionRow" type="button" data-quick-agent="admin" data-quick-question="ค้นงานจากเบอร์ลูกค้า ช่วยบอกวิธีค้นและสิ่งที่ควรตรวจ"><span><b>ค้นงานจากเบอร์ลูกค้า</b><span>ช่วยแอดมินไล่ข้อมูลให้เป็นระบบ</span></span><em>›</em></button>
+          </div>
+        </article>
+        <article class="workPanel">
+          <h3>ควบคุม AI ตอบลูกค้า</h3>
+          <p>เปิด/ปิด Auto Safe, Playbook, Feedback และคิวอนุมัติจากศูนย์เดียว</p>
+          <div class="actionList">
+            <button class="actionRow" type="button" data-open-control="reply"><span><b>ตั้งค่า Auto Safe</b><span>AI ส่ง LINE เองเฉพาะคำถามไม่เสี่ยง</span></span><em>›</em></button>
+            <button class="actionRow" type="button" data-open-control="approvals"><span><b>คิวอนุมัติ</b><span>ตรวจคำตอบก่อนใช้หรือส่งเอง</span></span><em>›</em></button>
+            <button class="actionRow" type="button" data-open-control="brain"><span><b>คลังสมอง / Playbook</b><span>จัดคำตอบที่อนุมัติแล้ว</span></span><em>›</em></button>
+          </div>
+        </article>
+        <article class="workPanel">
+          <h3>หน้าระบบที่เกี่ยวข้อง</h3>
+          <p>ไปยังหน้าทำงานจริงของแอดมินโดยไม่ต้องค้นเมนู</p>
+          <div class="actionList">
+            <button class="actionRow" type="button" data-open-inbox><span><b>LINE Inbox</b><span>ดูแชทลูกค้าและให้ AI ช่วยร่าง</span></span><em>›</em></button>
+            <button class="actionRow" type="button" data-open-page="/admin-review-v2.html"><span><b>หน้างานจองจาก AI</b><span>ตรวจ booking intake และเพิ่มงานเอง</span></span><em>›</em></button>
+            <button class="actionRow" type="button" data-open-page="/admin-add-v2.html"><span><b>เพิ่มงาน</b><span>แอดมินเพิ่มงานเองตามข้อมูลจริง</span></span><em>›</em></button>
+          </div>
+        </article>
+      </section>
+
+      <div class="mainNotice"><b>ขอบเขตการทำงาน:</b> หน้านี้จัดการและร่างคำตอบจากข้อมูลจริงเท่านั้น งานเสี่ยง เช่น จองคิว ยืนยันช่าง ลดราคา เคลม หรือใบกำกับภาษี ต้องให้แอดมินตรวจเอง</div>
     </main>
   </div>
 
@@ -402,7 +591,7 @@
     <div class="overlayTop">
       <div class="overlayHead">
         <button class="squareBtn" type="button" data-close-agent>‹</button>
-        <img class="overlayAvatar" id="agentAvatar" src="/assets/ai-office-final/characters-clean/admin/idle.png" alt="">
+        <div class="agentGlyph" id="agentGlyph" aria-hidden="true">AD</div>
         <div class="overlayTitle"><b id="agentName">Admin AI</b><span id="agentRole">ผู้ช่วยแอดมิน</span></div>
       </div>
     </div>
@@ -501,7 +690,7 @@
   </section>
 
   <div class="toast" id="toast"></div>
-  <script src="/admin-ai-office.js?v=ai-office-v28-availability-autolearn-20260608"></script>
-  <script src="/admin-ai-control-center.js?v=ai-control-center-v19-auto-safe-dashboard"></script>
+  <script src="/admin-ai-office.js?v=ai-office-v22-department-workspace"></script>
+  <script src="/admin-ai-control-center.js?v=ai-control-center-v19-auto-safe-dashboard-v22-inline"></script>
 </body>
 </html>
