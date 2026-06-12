@@ -56,6 +56,7 @@ const createAdminAiBookingIntakeRoutes = require("./server/routes/adminAiBooking
 const createAdminAiOfficeControlCenterRoutes = require("./server/routes/adminAiOfficeControlCenter");
 const createAdminAiOfficeSharedMemoryV27Routes = require("./server/routes/adminAiOfficeSharedMemoryV27");
 const createAdminAiOfficeLineDraftV27Routes = require("./server/routes/adminAiOfficeLineDraftV27");
+const createAdminAiOfficeTrainingCenterV35BRoutes = require("./server/routes/adminAiOfficeTrainingCenterV35B");
 const createAdminAiOfficeSmartAssistantV28Routes = require("./server/routes/adminAiOfficeSmartAssistantV28");
 const createAdminAiOfficeAgentMemoryRoutes = require("./server/routes/adminAiOfficeAgentMemory");
 const createAdminAiOfficeBrainV30Routes = require("./server/routes/adminAiOfficeBrainV30");
@@ -4382,6 +4383,7 @@ app.post('/api/logout', async (req, res) => {
 app.use(createAdminAiOfficeControlCenterRoutes({ pool, requireAdminSession }));
 app.use(createAdminAiOfficeSharedMemoryV27Routes({ pool, requireAdminSession }));
 app.use(createAdminAiOfficeLineDraftV27Routes({ pool, requireAdminSession }));
+app.use(createAdminAiOfficeTrainingCenterV35BRoutes({ pool, requireAdminSession }));
 app.use(createAdminAiOfficeSmartAssistantV28Routes({ pool, requireAdminSession }));
 app.use(createAdminAiOfficeBrainV30Routes({ pool, requireAdminSession }));
 app.use(createAdminAiOfficeAgentMemoryRoutes({ pool, requireAdminSession }));
