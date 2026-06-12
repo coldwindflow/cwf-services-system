@@ -310,10 +310,10 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
   const system = [
     "You are CWF AI trainee generating an INTERNAL draft for review, not sending LINE.",
     "Return strict JSON only.",
-    "JSON keys: customer_reply, confidence, decision, decision_reason, missing_info, skill_category, should_auto_reply, service_type.",
-    "Use CWF Core Brain as the shared source of truth before any role-specific behavior.",
+    "JSON keys: customer_reply, confidence, decision, decision_reason, known_info, missing_info, next_best_action, skill_category, should_auto_reply, service_type.",
+    "Use CWF Core Brain and CWF Professional Sales Admin Brain v2.8 as the shared source of truth before any role-specific behavior.",
     "Do not invent booking confirmation, queue availability, payment, discount, tax invoice, or repair diagnosis.",
-    "Use real Thai LINE admin style: natural, concise, useful. If the customer uses English, answer simple English.",
+    "Use real CWF sales admin style: natural, concise, useful, not robotic, and move the sale to the next step. Infer known_info from the full thread first. Do not ask for location again if map/location already exists. If the customer truly uses English, answer simple English; do not infer English from URL/map/display name.",
     "This is internal-only. Never claim a message was sent. Never trigger LINE sending.",
   ].join(" ");
   const prompt = [
@@ -323,6 +323,8 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
     formatCoreBrainForPrompt(coreBrain), "",
     "RECENT_LINE_CONTEXT:", JSON.stringify({ display_name: conversation?.display_name || "", messages: messages.map((m) => ({ direction: m.direction, text: m.message_text, at: m.received_at || m.created_at })).slice(-20) }, null, 2), "",
     "APPROVED_SHARED_REPLY_EXAMPLES:", JSON.stringify(examples.map((e) => ({ id: e.id, situation_type: e.situation_type, customer_message: e.customer_message, final_admin_reply: e.final_admin_reply, language: e.language, service_type: e.service_type, tags: e.tags })), null, 2), "",
+    "TASK:",
+    "Auto Internal Training must create the answer immediately for later review. It should look like a real chat reply, not an AI report. First infer known_info/missing_info and next_best_action from RECENT_LINE_CONTEXT. Ask only 1-2 missing fields; if info is enough, close toward booking/check queue.", "",
     "CWF_STATIC_SAFETY_FACTS:", JSON.stringify({
       services: ["ล้างแอร์", "ซ่อมแอร์", "ติดตั้งแอร์", "ตรวจเช็คแอร์"],
       rainy_promo: { wall_under_12000: { normal: 550, premium: 790, hanging_coil: 1290, deep_clean: 1850 }, wall_18000_up: { normal: 690, premium: 990, hanging_coil: 1550, deep_clean: 2150 } },
@@ -362,7 +364,9 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
     metadata: {
       decision,
       decision_reason: cleanText(parsed.decision_reason || "", 1000),
+      known_info: parsed.known_info && typeof parsed.known_info === "object" ? parsed.known_info : {},
       missing_info: safeJsonArray(parsed.missing_info),
+      next_best_action: cleanText(parsed.next_best_action || "", 500),
       should_auto_reply: false,
       internal_only: true,
       no_line_send: true,
@@ -383,7 +387,9 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
     metadata: { auto_answer_id: autoAnswer?.id || null, confidence, decision, internal_only: true, no_line_send: true, used_core_brain_item_ids: (coreBrain.summary || []).map((x) => x.id).filter(Boolean) },
     created_by: "ai_auto_training",
   }).catch(() => {});
-  return { ok: true, auto_answer: autoAnswer, answer: aiReply, draft: { customer_reply: aiReply, confidence, decision, decision_reason: parsed.decision_reason || "", missing_info: safeJsonArray(parsed.missing_info), selected_customer_question: customerMessage, situation_type: situationType, internal_only: true, no_line_send: true, core_brain_used: coreBrain.summary || [] }, core_brain: coreBrain, used_reply_examples: examples, conversation, messages };
+  return { ok: true, auto_answer: autoAnswer, answer: aiReply, draft: { customer_reply: aiReply, confidence, decision, decision_reason: parsed.decision_reason || "", known_info: parsed.known_info && typeof parsed.known_info === "object" ? parsed.known_info : {},
+      missing_info: safeJsonArray(parsed.missing_info),
+      next_best_action: cleanText(parsed.next_best_action || "", 500), selected_customer_question: customerMessage, situation_type: situationType, internal_only: true, no_line_send: true, core_brain_used: coreBrain.summary || [] }, core_brain: coreBrain, used_reply_examples: examples, conversation, messages };
 }
 
 async function handleAutoInternalTrainingFromWebhook(pool, event, stored = {}) {

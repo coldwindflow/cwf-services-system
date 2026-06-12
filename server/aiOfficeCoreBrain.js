@@ -18,12 +18,22 @@ function boolValue(value, fallback = false) {
   return /^(1|true|yes|on|active)$/i.test(String(value).trim());
 }
 
+function languageProbe(text = "") {
+  return String(text || "")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/www\.\S+/gi, " ")
+    .replace(/goo\.gl\/maps\S*/gi, " ")
+    .replace(/maps\.app\.goo\.gl\/\S+/gi, " ")
+    .replace(/[0-9+().,/:@_-]+/g, " ")
+    .trim();
+}
+
 function detectLanguage(text = "") {
-  const s = String(text || "");
+  const s = languageProbe(text);
   if (/[\u0E00-\u0E7F]/.test(s)) return "th";
   if (/[ぁ-ゟ゠-ヿ]/.test(s)) return "ja";
   if (/[\u4e00-\u9fff]/.test(s)) return "zh";
-  if (/[A-Za-z]/.test(s)) return "en";
+  if (/[A-Za-z]{2,}/.test(s)) return "en";
   return "unknown";
 }
 
@@ -183,16 +193,27 @@ async function buildCoreBrainContext(pool, params = {}) {
 
 function formatCoreBrainForPrompt(coreBrain = {}) {
   const items = Array.isArray(coreBrain.summary) ? coreBrain.summary : [];
-  if (!items.length) return "CWF_CORE_BRAIN: no active item matched; use static CWF facts and ask admin when unsure.";
-  return [
+  const baseRules = [
     "CWF_CORE_BRAIN_SINGLE_SOURCE_OF_TRUTH:",
     "- All customer-facing agents must use this shared core brain first.",
+    "- CWF Professional Sales Admin Brain v2.8 is the customer-runtime sales brain: natural admin style, anti-loop, known_info/missing_info, and closing next step.",
     "- Role-specific expertise is only an overlay; do not ignore core rules/prices/style.",
     "- Approved/corrected training lessons are shared across agents.",
     "- item_type=bad_reply_pattern means DO NOT copy that answer; use it only as an avoid/negative lesson.",
-    "- If facts conflict, policy_rule/pricing_rule/admin_correction with higher priority wins.",
+    "- If facts conflict, policy_rule/pricing_rule/admin_correction/sales_admin_brain_v2_8 with higher priority wins.",
+    "CUSTOMER_RUNTIME_HARD_RULES:",
+    "- Reply like a real Coldwindflow sales admin, not AI, not a report, not a draft note.",
+    "- Customer must see only customer_reply. Never expose confidence, risk, admin_note, JSON, phase, endpoint, or internal reasoning.",
+    "- Before replying, infer known_info from the whole thread and ask only missing_info that is truly needed.",
+    "- Do not ask for location again if map/location/address is already in the thread. Ask for date/time or aircon count instead.",
+    "- Do not judge language from LINE display name, URL, emoji, phone number, or Google Maps link. If the thread has Thai, answer Thai. If location-only, use prior thread language.",
+    "- Every safe customer reply must move the sale forward: price -> count/area/time, symptom -> inspection/needed info, booking -> missing booking field, location -> time/count.",
+    "- Keep it short, warm, and natural: normally 1 bubble, no long bullets unless customer asked for full price details.",
+  ];
+  if (!items.length) return baseRules.concat(["CWF_CORE_BRAIN: no active item matched; use static CWF facts and ask admin when unsure."]).join("\n");
+  return baseRules.concat([
     JSON.stringify({ inferred: coreBrain.inferred || {}, items }, null, 2),
-  ].join("\n");
+  ]).join("\n");
 }
 
 async function saveCoreBrainLesson(pool, input = {}) {

@@ -235,6 +235,7 @@ module.exports = function createAdminAiOfficeBrainV30Routes(deps = {}) {
           COUNT(*) FILTER (WHERE is_active=true)::int AS active_total,
           COUNT(*) FILTER (WHERE is_active=true AND source='cwf_brain_v2')::int AS package_total,
           COUNT(*) FILTER (WHERE is_active=true AND source_file='cwf-ai-main-brain-v1.1.json')::int AS main_brain_v11_total,
+          COUNT(*) FILTER (WHERE is_active=true AND source_file='cwf-professional-sales-admin-brain-v2.8-runtime.json')::int AS sales_admin_brain_v28_total,
           COUNT(*) FILTER (WHERE is_active=true AND item_type='pricing_rule')::int AS pricing_rules,
           COUNT(*) FILTER (WHERE is_active=true AND item_type='policy_rule')::int AS policy_rules,
           COUNT(*) FILTER (WHERE is_active=true AND item_type='style_rule')::int AS style_rules,
@@ -251,8 +252,8 @@ module.exports = function createAdminAiOfficeBrainV30Routes(deps = {}) {
          LIMIT 30
       `);
       const c = counts.rows?.[0] || {};
-      const ready = Number(c.active_total || 0) >= 20 && Number(c.main_brain_v11_total || 0) >= 10 && Number(c.pricing_rules || 0) >= 2 && Number(c.policy_rules || 0) >= 3 && Number(c.style_rules || 0) >= 1;
-      return res.json({ ok:true, ready, counts:c, source_files:sourceRows.rows || [], required:{ main_brain_v11_min:10, pricing_rules_min:2, policy_rules_min:3, style_rules_min:1 }, warning: ready ? '' : 'สมองกลางยังไม่พร้อมหรือยังไม่ได้ seed CWF Main Brain v1.1 เข้า ai_brain_items' });
+      const ready = Number(c.active_total || 0) >= 30 && Number(c.main_brain_v11_total || 0) >= 10 && Number(c.sales_admin_brain_v28_total || 0) >= 8 && Number(c.pricing_rules || 0) >= 2 && Number(c.policy_rules || 0) >= 3 && Number(c.style_rules || 0) >= 1;
+      return res.json({ ok:true, ready, counts:c, source_files:sourceRows.rows || [], required:{ main_brain_v11_min:10, sales_admin_brain_v28_min:8, pricing_rules_min:2, policy_rules_min:3, style_rules_min:1 }, warning: ready ? '' : 'สมองกลางยังไม่พร้อม: ต้อง seed CWF Main Brain v1.1 และ Professional Sales Admin Brain v2.8 เข้า ai_brain_items ก่อนใช้ตอบลูกค้าจริง' });
     } catch (e) {
       return res.status(e.status || 500).json({ ok:false, ready:false, error:e.message || "LOAD_AI_BRAIN_HEALTH_FAILED" });
     }

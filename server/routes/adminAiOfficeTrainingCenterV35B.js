@@ -18,11 +18,16 @@ function cleanText(value, max = 4000) {
 }
 function hasThai(value) { return /[\u0E00-\u0E7F]/.test(String(value || "")); }
 function detectLanguage(text) {
-  const s = String(text || "");
+  const s = String(text || "")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/www\.\S+/gi, " ")
+    .replace(/goo\.gl\/maps\S*/gi, " ")
+    .replace(/maps\.app\.goo\.gl\/\S+/gi, " ")
+    .replace(/[0-9+().,/:@_-]+/g, " ");
   if (hasThai(s)) return "th";
   if (/[ぁ-ゟ゠-ヿ]/.test(s)) return "ja";
   if (/[\u4e00-\u9fff]/.test(s)) return "zh";
-  if (/[A-Za-z]/.test(s)) return "en";
+  if (/[A-Za-z]{2,}/.test(s)) return "en";
   return "unknown";
 }
 function inferSituation(text) {
@@ -514,12 +519,12 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
   const system = [
     "You are CWF AI trainee inside an internal training classroom, not a live LINE sender.",
     "Return strict JSON only.",
-    "JSON keys: customer_reply, confidence, decision, decision_reason, missing_info, skill_category, should_auto_reply, teacher_question.",
+    "JSON keys: customer_reply, confidence, decision, decision_reason, known_info, missing_info, next_best_action, skill_category, should_auto_reply, teacher_question.",
     "decision must be one of: ส่งได้, ต้องตรวจ, ห้ามส่ง, AI ยังไม่รู้.",
     "This is internal-only. Never claim a message was sent. Never trigger LINE sending.",
-    "If facts are missing, set decision='AI ยังไม่รู้' or 'ต้องตรวจ' and ask the teacher what should be taught.",
+    "Infer known_info from the whole LINE thread first. If facts are missing, set decision='AI ยังไม่รู้' or 'ต้องตรวจ' and ask the teacher what should be taught. Never ask the customer for information already present in the thread.",
     "Use CWF Core Brain as the shared source of truth before saved examples. Do not invent tax invoice, discounts, booking confirmation, technician availability, or repair diagnosis.",
-    "Use Thai LINE admin style: concise, warm, natural. If customer uses English, answer in simple English.",
+    "Use CWF Professional Sales Admin Brain v2.8: natural Thai LINE sales admin style, short, warm, closes the next step. If the customer really uses English, answer simple English; do not infer English from URL/map/display name.",
   ].join(" ");
   const prompt = [
     "REAL_CUSTOMER_QUESTION:", selectedQuestion, "",
@@ -529,6 +534,8 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
     "RECENT_LINE_CONTEXT:", JSON.stringify({ display_name: conversation.display_name || "", messages: messages.map((m) => ({ direction:m.direction, text:m.message_text, at:m.received_at || m.created_at })).slice(-20) }, null, 2), "",
     "SAVED_TEACHER_EXAMPLES:", JSON.stringify(examples.map((e) => ({ id:e.id, situation_type:e.situation_type, customer_message:e.customer_message, final_admin_reply:e.final_admin_reply, language:e.language, tags:e.tags })), null, 2), "",
     "TRAINING_MEMORY:", JSON.stringify(trainingMemory.map((m) => ({ event_type:m.event_type, action_status:m.action_status, customer_message:m.customer_message, ai_reply:m.ai_reply, final_admin_reply:m.final_admin_reply, situation_type:m.situation_type })), null, 2), "",
+    "TASK:",
+    "Generate the internal answer as if the AI were really chatting with this customer, but internal-only. Use conversation turns, known_info/missing_info, and next_best_action. Do not answer like a report or generic AI. If map/location already exists, do not ask for location again.", "",
     "CWF_TRUSTED_FACTS:", JSON.stringify({
       services:["ล้างแอร์","ซ่อมแอร์","ติดตั้งแอร์","ตรวจเช็คแอร์"],
       rainy_promo:{ wall_under_12000:{ normal:550, premium:790, hanging_coil:1290, deep_clean:1850 }, wall_18000_up:{ normal:690, premium:990, hanging_coil:1550, deep_clean:2150 } },
@@ -550,7 +557,9 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
     confidence,
     decision,
     decision_reason: cleanText(parsed.decision_reason || "", 800),
+    known_info: parsed.known_info && typeof parsed.known_info === "object" ? parsed.known_info : {},
     missing_info: missingInfo,
+    next_best_action: cleanText(parsed.next_best_action || "", 500),
     next_step: decision === "AI ยังไม่รู้" ? cleanText(parsed.teacher_question || "ควรตอบลูกค้าว่าอย่างไรดี?", 500) : "ให้ผู้สอนตรวจคำตอบก่อนใช้งานจริง",
     customer_language: parsed.customer_language || language,
     is_foreign_customer: language !== "th" && language !== "unknown",
@@ -575,7 +584,9 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
       confidence,
       decision,
       decision_reason: draft.decision_reason,
-      missing_info: missingInfo,
+      known_info: parsed.known_info && typeof parsed.known_info === "object" ? parsed.known_info : {},
+    missing_info: missingInfo,
+    next_best_action: cleanText(parsed.next_best_action || "", 500),
       used_example_ids: draft.used_reply_examples.map((e) => e.id),
       used_core_brain_item_ids: (coreBrain.summary || []).map((e) => e.id).filter(Boolean),
       should_auto_reply: Boolean(parsed.should_auto_reply) && decision === "ส่งได้" && confidence >= 85,

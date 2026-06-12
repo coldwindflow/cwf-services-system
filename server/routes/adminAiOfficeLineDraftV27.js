@@ -11,11 +11,16 @@ function hasThai(value) {
   return /[\u0E00-\u0E7F]/.test(String(value || ""));
 }
 function detectLanguage(text) {
-  const s = String(text || "");
+  const s = String(text || "")
+    .replace(/https?:\/\/\S+/gi, " ")
+    .replace(/www\.\S+/gi, " ")
+    .replace(/goo\.gl\/maps\S*/gi, " ")
+    .replace(/maps\.app\.goo\.gl\/\S+/gi, " ")
+    .replace(/[0-9+().,/:@_-]+/g, " ");
   if (hasThai(s)) return "th";
   if (/[ぁ-ゟ゠-ヿ]/.test(s)) return "ja";
   if (/[\u4e00-\u9fff]/.test(s)) return "zh";
-  if (/[A-Za-z]/.test(s)) return "en";
+  if (/[A-Za-z]{2,}/.test(s)) return "en";
   return "unknown";
 }
 function inferSituation(text) {
@@ -311,14 +316,14 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
 
       const system = [
         "You are Sales/Admin AI for Coldwindflow LINE OA.",
-        "Return strict JSON only with keys: customer_reply, admin_summary, missing_info, next_step, customer_language, is_foreign_customer, original_message, thai_translation.",
-        "selected_customer_question is the MAIN customer question to answer. Other LINE messages are context only.",
+        "Return strict JSON only with keys: customer_reply, admin_summary, known_info, missing_info, next_best_action, next_step, customer_language, is_foreign_customer, original_message, thai_translation.",
+        "selected_customer_question is the MAIN customer turn, but answer from the whole LINE thread. Treat prior LINE messages as known_info and do not ask for information already given.",
         "Do not answer from the latest customer message if selected_customer_question exists.",
         thaiToneInstruction(),
         "No headings, no bullets, no report format, no JSON visible inside customer_reply.",
-        "Do not repeat questions for details already present in selected_customer_question/context.",
+        "Do not repeat questions for details already present in selected_customer_question/context. If location/map is already present, never ask for location again; ask only date/time or aircon count if missing.",
         "Do not claim any LINE message was sent or any booking/status was created.",
-        "Use CWF Core Brain as the single shared source of truth. Use saved final_admin_reply examples as style reference only."
+        "Use CWF Core Brain and CWF Professional Sales Admin Brain v2.8 as the customer-runtime brain. Reply like a real CWF sales admin who closes the next step, not like AI/copilot/draft. Customer sees only customer_reply."
       ].join(" ");
 
       const prompt = [
@@ -345,6 +350,8 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
           situation_type:m.situation_type
         })), null, 2),
         "",
+        "TASK:",
+        "Create one natural customer_reply that moves the sale forward. First infer known_info/missing_info internally. Ask only 1-2 truly missing things. If info is enough, close toward booking/check queue. Do not show internal metadata in customer_reply.", "",
         "CWF facts:",
         JSON.stringify({ wall_under_12000: { normal:550, premium:790, hanging_coil:1290, deep_clean:1850 }, wall_18000_up: { normal:690, premium:990, hanging_coil:1550, deep_clean:2150 }, check_fee:700, warranty_cleaning_days:30, services:["ล้างแอร์","ซ่อมแอร์","ติดตั้งแอร์","ตรวจเช็คแอร์"] }, null, 2)
       ].join("\n");
@@ -362,7 +369,9 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
       const draft = {
         customer_reply: customerReply,
         admin_summary: Array.isArray(parsed.admin_summary) ? parsed.admin_summary : [],
+        known_info: parsed.known_info && typeof parsed.known_info === "object" ? parsed.known_info : {},
         missing_info: Array.isArray(parsed.missing_info) ? parsed.missing_info : [],
+        next_best_action: cleanText(parsed.next_best_action || "", 500),
         next_step: cleanText(parsed.next_step, 500),
         customer_language: parsed.customer_language || language,
         is_foreign_customer: Boolean(parsed.is_foreign_customer || (language !== "th" && language !== "unknown")),

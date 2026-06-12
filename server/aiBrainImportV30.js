@@ -124,10 +124,12 @@ function tagsFromItem(item, extra = []) {
 function buildQaContent(item) {
   const q = item.customer_questions || item.questions || item.question || item.customer_message || item.customer_question || "";
   const reply = item.admin_reply_th || item.admin_reply_en || item.reply || item.answer || item.admin_reply || item.final_admin_reply || "";
+  const directContent = item.content || item.body || item.text || "";
   const parts = [];
   if (Array.isArray(q)) parts.push(`ลูกค้าถาม: ${q.join(" | ")}`);
   else if (q) parts.push(`ลูกค้าถาม: ${q}`);
   if (reply) parts.push(`คำตอบแอดมิน: ${reply}`);
+  if (!parts.length && directContent) parts.push(typeof directContent === "string" ? directContent : JSON.stringify(directContent, null, 2));
   if (item.next_action) parts.push(`ขั้นต่อไป: ${item.next_action}`);
   if (item.notes || item.notes_th) parts.push(`หมายเหตุ: ${item.notes || item.notes_th}`);
   return cleanText(parts.join("\n"), 12000);
