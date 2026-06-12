@@ -29,6 +29,7 @@
     trainingResult: null,
     trainingBusy: false,
     trainingLastKey: "",
+    selectedTrainingKey: "",
     trainingQuestions: [],
     trainingSkills: [],
     trainingCounts: {},
@@ -336,7 +337,13 @@
   }
   function closePanel(){ if (EMBEDDED) return; STATE.open = false; $("#aiControlOverlay")?.classList.remove("open"); }
 
-  async function loadSettings(){ const data = await api("/admin/ai-office/control/settings"); STATE.settings = data.settings || []; STATE.values = data.values || {}; }
+  async function loadSettings(){
+    const data = await api("/admin/ai-office/control/settings");
+    STATE.settings = data.settings || [];
+    STATE.values = data.values || {};
+    STATE.trainingEnabled = !!getValue("auto_internal_training_enabled", STATE.trainingEnabled);
+    STATE.trainingAutoAnswer = !!getValue("auto_internal_training_auto_answer", STATE.trainingAutoAnswer);
+  }
   async function loadDrafts(){ try { const data = await api("/admin/ai-office/control/pending-drafts"); STATE.drafts = data.drafts || []; } catch(_) { STATE.drafts = []; } }
   async function loadApprovals(){
     if (_loadApprovalsBusy) return;  // guard: กัน parallel call จาก action handlers
@@ -350,7 +357,46 @@
   async function loadAutoSafeAnalytics(){ try { const data = await api("/admin/ai-office/control/auto-safe/playbook-analytics"); STATE.autoSafeAnalytics = data.analytics || null; } catch(_) { STATE.autoSafeAnalytics = null; } }
   async function loadAutoSafeDashboard(){ try { const data = await api("/admin/ai-office/control/auto-safe/dashboard"); STATE.autoSafeDashboard = data.dashboard || null; } catch(_) { STATE.autoSafeDashboard = null; } }
   async function loadExamples(){ try { const data = await api("/admin/ai-office/reply-examples?limit=100&active_only=false"); STATE.examples = data.examples || []; } catch(_) { STATE.examples = []; } }
-  async function loadTrainingQuestions(){ try { const data = await api("/admin/ai-office/training-center/questions?limit=80"); STATE.trainingQuestions = data.questions || data.conversations || []; } catch(_) { STATE.trainingQuestions = []; } }
+  function normalizeAutoTrainingAnswer(a){
+    if (!a) return null;
+    const autoId = a.id || a.auto_answer_id;
+    const convId = a.conversation_id || a.conversationId;
+    if (!autoId || !convId) return null;
+    return {
+      id: `auto_${autoId}`,
+      training_key: `auto:${autoId}`,
+      conversation_id: convId,
+      line_user_id: a.line_user_id || '',
+      display_name: a.display_name || 'ลูกค้า LINE',
+      picture_url: a.picture_url || '',
+      line_message_id: a.line_message_id || (a.line_message_pk ? String(a.line_message_pk) : ''),
+      line_message_pk: a.line_message_pk || null,
+      customer_message: a.customer_message || '',
+      last_message_text: a.customer_message || '',
+      last_message_at: a.created_at || a.last_message_at || '',
+      situation_type: a.situation_type || a.intent || inferTrainingSituation(a.customer_message || ''),
+      latest_training_status: a.status || 'pending_review',
+      auto_answer_id: autoId,
+      auto_ai_reply: a.ai_reply || '',
+      auto_confidence: a.confidence == null ? null : Number(a.confidence || 0),
+      auto_status: a.status || null,
+      auto_metadata: a.metadata || {},
+      auto_created_at: a.created_at || null,
+      training_conversation_mode: a.conversation_mode || 'inherit',
+    };
+  }
+  async function loadTrainingQuestions(){
+    try {
+      const [autoData, questionData] = await Promise.all([
+        api("/admin/ai-office/training-center/auto-answers?limit=120").catch(()=>({ answers:[] })),
+        api("/admin/ai-office/training-center/questions?limit=80").catch(()=>({ questions:[] })),
+      ]);
+      const autoRows = (autoData.answers || []).map(normalizeAutoTrainingAnswer).filter(Boolean);
+      const baseRows = (questionData.questions || questionData.conversations || []).map((q) => Object.assign({ training_key:`conv:${q.conversation_id || q.id}:${q.line_message_id || ''}` }, q));
+      const seen = new Set(autoRows.map((q) => `${q.conversation_id}:${q.line_message_id || q.customer_message}`));
+      STATE.trainingQuestions = autoRows.concat(baseRows.filter((q) => !seen.has(`${q.conversation_id || q.id}:${q.line_message_id || q.customer_message || q.last_message_text || ''}`)));
+    } catch(_) { STATE.trainingQuestions = []; }
+  }
   async function loadTrainingSkills(){ try { const data = await api("/admin/ai-office/training-center/skills"); STATE.trainingSkills = data.skills || []; STATE.trainingCounts = data.counts || {}; } catch(_) { STATE.trainingSkills = []; STATE.trainingCounts = {}; } }
   async function loadLineIntakes(){ try { const data = await api("/admin/ai-office/booking-intakes?status=open&limit=30"); STATE.lineIntakes = data.intakes || []; STATE.lineCounts = data.counts || {}; } catch(_) { STATE.lineIntakes = []; STATE.lineCounts = {}; } }
   async function loadHealth(){ try { const data = await api("/admin/ai-office/control/health"); STATE.health = data || null; } catch(_) { STATE.health = null; } }
@@ -807,29 +853,76 @@
     ];
     return `<div class="training-score-list">${rows.map(([key,label]) => { const skill = skillForSituation(key); const score = scoreFromExamples(key); const examples = skill ? Number(skill.examples || 0) : examplesForSituation(key).length; const trained = skill ? Number(skill.training_total || 0) : 0; return `<div class="training-score-row"><header><b>${esc(label)}</b><span>${score}% · ${esc(skill?.readiness || trainingDecisionForScore(score))}</span></header><div class="dash-progress"><i style="width:${score}%"></i></div><small style="display:block;margin-top:6px;color:#64748b;font-weight:850">บทเรียน: ${examples} · เคสฝึก: ${trained}</small></div>`; }).join('')}</div>`;
   }
+  function selectedTrainingQuestion(){
+    const selectedId = Number(STATE.selectedConversation?.id || 0);
+    if (!selectedId) return null;
+    if (STATE.selectedTrainingKey) {
+      const byKey = (STATE.trainingQuestions || []).find((q) => String(q.training_key || q.id || '') === String(STATE.selectedTrainingKey));
+      if (byKey) return byKey;
+    }
+    return (STATE.trainingQuestions || []).find((q) => Number(q.conversation_id || q.id || 0) === selectedId) || null;
+  }
+  function autoTrainingResultFromQuestion(q){
+    if (!q || (!q.auto_answer_id && !q.auto_ai_reply)) return null;
+    const answer = q.auto_ai_reply || '';
+    return {
+      auto_answer_id: q.auto_answer_id || null,
+      answer,
+      confidence: Number(q.auto_confidence || 0) || 0,
+      decision: q.auto_status || 'pending_review',
+      draft: {
+        customer_reply: answer,
+        confidence: Number(q.auto_confidence || 0) || 0,
+        decision: q.auto_status || 'pending_review',
+        selected_customer_question: q.customer_message || q.last_message_text || '',
+        situation_type: q.situation_type || inferTrainingSituation(q.customer_message || q.last_message_text || ''),
+        metadata: q.auto_metadata || {},
+      }
+    };
+  }
+  function currentTrainingResult(){
+    return STATE.trainingResult || autoTrainingResultFromQuestion(selectedTrainingQuestion()) || null;
+  }
+  function currentTrainingAnswer(){
+    const result = currentTrainingResult();
+    return result?.answer || result?.draft?.customer_reply || '';
+  }
   function renderTrainingQueueCard(conversation){
-    const active = STATE.selectedConversation && Number(STATE.selectedConversation.id) === Number(conversation.id || conversation.conversation_id);
     const msg = conversation.customer_message || conversation.last_message_text || '';
-    const sit = inferTrainingSituation(msg);
-    return `<button class="training-qcard ${active ? 'active' : ''}" type="button" data-training-select-conv="${esc(conversation.id || conversation.conversation_id)}" data-training-line-message-id="${esc(conversation.line_message_id || '')}"><b>${esc(conversation.display_name || 'ลูกค้า LINE')}</b><small>${esc(trainingSituationLabel(sit))} · ${esc(conversation.last_message_at || conversation.customer_message_at || '')}</small><p>${esc(msg || 'ยังไม่มีข้อความล่าสุด')}</p></button>`;
+    const sit = conversation.situation_type || inferTrainingSituation(msg);
+    const hasAuto = !!conversation.auto_answer_id || !!conversation.auto_ai_reply;
+    const autoLabel = hasAuto ? `AI ร่างแล้ว ${Number(conversation.auto_confidence || 0) || 0}%` : 'รอ AI ร่าง';
+    const mode = conversation.training_conversation_mode ? ` · รายคน: ${conversation.training_conversation_mode}` : '';
+    const preview = hasAuto ? `<small style="display:block;margin-top:6px;color:#0f766e">${esc(autoLabel)}${esc(mode)}</small><p style="opacity:.85">${esc(String(conversation.auto_ai_reply || '').slice(0,160))}</p>` : `<small style="display:block;margin-top:6px;color:#64748b">${esc(autoLabel)}${esc(mode)}</small>`;
+    const convId = conversation.conversation_id || conversation.id;
+    const trainingKey = conversation.training_key || `conv:${convId}:${conversation.line_message_id || ''}`;
+    const active = STATE.selectedTrainingKey ? String(STATE.selectedTrainingKey) === String(trainingKey) : (STATE.selectedConversation && Number(STATE.selectedConversation.id) === Number(convId));
+    return `<button class="training-qcard ${active ? 'active' : ''}" type="button" data-training-select-conv="${esc(convId)}" data-training-select-key="${esc(trainingKey)}" data-training-line-message-id="${esc(conversation.line_message_id || '')}"><b>${esc(conversation.display_name || 'ลูกค้า LINE')}</b><small>${esc(trainingSituationLabel(sit))} · ${esc(conversation.last_message_at || conversation.customer_message_at || '')}</small><p>${esc(msg || 'ยังไม่มีข้อความล่าสุด')}</p>${preview}</button>`;
   }
   function renderTrainingResult(){
-    const result = STATE.trainingResult;
-    if (!result) return `<div class="training-answer"><h4>AI ยังไม่ได้ลองตอบคำถามนี้</h4><p>เลือกคำถามจริงจากลูกค้าทางซ้าย แล้วกด “ให้ AI ลองตอบภายใน” ระบบจะใช้เฉพาะภายในศูนย์ฝึก ไม่ส่ง LINE จริง</p></div>`;
+    const result = currentTrainingResult();
+    if (!result) return `<div class="training-answer"><h4>AI ยังไม่ได้ร่างคำตอบในเคสนี้</h4><p>ถ้าเปิด Auto ตอบภายในไว้ ข้อความ LINE ใหม่จะมีคำตอบรอให้ตรวจทันที โดยไม่ส่งหาลูกค้าจริง</p></div>`;
     const draft = result.draft || {};
     const answer = result.answer || draft.customer_reply || '';
     const confidence = Number(draft.confidence || result.confidence || 0) || (draft.missing_info && draft.missing_info.length ? 58 : 72);
-    const decision = draft.decision || result.decision || (confidence >= 70 ? 'ต้องตรวจก่อนใช้จริง' : 'AI ยังไม่รู้ / ต้องให้ผู้สอนแก้');
-    return `<div class="training-answer"><h4>AI ลองตอบภายใน · ${confidence}% · ${esc(decision)}</h4><p>${esc(answer || 'AI ยังไม่รู้คำตอบนี้')}</p>${draft.decision_reason ? `<p><strong>เหตุผล:</strong> ${esc(draft.decision_reason)}</p>` : ''}${draft.missing_info && draft.missing_info.length ? `<p><strong>ข้อมูลที่ยังขาด:</strong> ${esc(draft.missing_info.join(', '))}</p>` : ''}<div class="cc-actions" style="margin-top:10px"><button class="cc-btn primary" type="button" data-training-copy-ai>คัดลอกไปช่องผู้สอน</button><button class="cc-btn" type="button" data-copy-text="${esc(answer)}">คัดลอกคำตอบ</button><button class="cc-btn soft-danger" type="button" data-training-mark-bad>ไม่ผ่าน / AI มั่ว</button></div></div>`;
+    const decision = draft.decision || result.decision || (confidence >= 70 ? 'pending_review' : 'needs_teacher');
+    const source = result.auto_answer_id ? 'Auto Internal Training' : 'Manual Internal Training';
+    return `<div class="training-answer"><h4>${esc(source)} · ${confidence}% · ${esc(decision)}</h4><p>${esc(answer || 'AI ยังไม่รู้คำตอบนี้')}</p>${draft.decision_reason ? `<p><strong>เหตุผล:</strong> ${esc(draft.decision_reason)}</p>` : ''}${draft.missing_info && draft.missing_info.length ? `<p><strong>ข้อมูลที่ยังขาด:</strong> ${esc(draft.missing_info.join(', '))}</p>` : ''}<div class="cc-actions" style="margin-top:10px"><button class="cc-btn primary" type="button" data-training-mark-good ${answer ? '' : 'disabled'}>ถูก / ให้จำเข้าคลังสมอง</button><button class="cc-btn" type="button" data-training-copy-ai ${answer ? '' : 'disabled'}>คัดลอกไปช่องผู้สอน</button><button class="cc-btn" type="button" data-copy-text="${esc(answer)}" ${answer ? '' : 'disabled'}>คัดลอกคำตอบ</button><button class="cc-btn soft-danger" type="button" data-training-mark-bad>ไม่ถูก / ให้ครูแก้</button></div></div>`;
   }
   function renderTrainingCenter(){
-    const selectedText = latestInboundText();
-    const situation = inferTrainingSituation(selectedText);
-    const answer = STATE.trainingResult?.answer || STATE.trainingResult?.draft?.customer_reply || '';
-    return `<section class="training-banner"><h3>ศูนย์ฝึก AI</h3><p class="sub">เอาคำถามจริงจากลูกค้า LINE มาให้ AI ซ้อมตอบภายในก่อนออกไปเจอหน้างานจริง — หน้านี้ไม่ส่ง LINE จริง</p><div class="training-switch-grid"><div class="training-switch-card"><div><b>โหมดฝึก AI ภายใน</b><small>เปิดเพื่อให้ใช้คำถามจริงมาฝึกตอบภายใน</small></div><label class="cc-switch"><input type="checkbox" data-training-toggle="enabled" ${STATE.trainingEnabled ? 'checked' : ''}><span class="cc-slider"></span></label></div><div class="training-switch-card"><div><b>ลองตอบอัตโนมัติเมื่อเลือกคำถาม</b><small>ใช้ token เฉพาะตอนเปิดและเลือกเคสจริง</small></div><label class="cc-switch"><input type="checkbox" data-training-toggle="auto" ${STATE.trainingAutoAnswer ? 'checked' : ''} ${STATE.trainingEnabled ? '' : 'disabled'}><span class="cc-slider"></span></label></div><div class="training-switch-card"><div><b>AI Auto Reply จริง</b><small>แยกจากโหมดฝึกชัดเจน</small></div><span class="mode-badge ${getValue('auto_safe_reply_send_enabled', false) ? 'approval' : 'off'}">${getValue('auto_safe_reply_send_enabled', false) ? 'เปิด' : 'ปิด'}</span></div></div></section>
+    const selectedQ = selectedTrainingQuestion();
+    const selectedText = selectedQ?.customer_message || latestInboundText();
+    const situation = selectedQ?.situation_type || inferTrainingSituation(selectedText);
+    const answer = currentTrainingAnswer();
+    const autoAnswerId = selectedQ?.auto_answer_id || currentTrainingResult()?.auto_answer_id || '';
+    const convMode = selectedQ?.training_conversation_mode || 'inherit';
+    const perPersonControls = STATE.selectedConversation ? `<div class="cc-actions" style="margin:8px 0 10px"><button class="cc-btn ${convMode === 'on' ? 'primary' : ''}" type="button" data-training-conv-mode="on">เปิด AI รายคน</button><button class="cc-btn soft-danger ${convMode === 'off' ? 'primary' : ''}" type="button" data-training-conv-mode="off">พัก AI แชทนี้</button><button class="cc-btn" type="button" data-training-conv-mode="inherit">ตามค่า Global</button></div>` : '';
+    const threadHtml = STATE.lineThread.length ? STATE.lineThread.map(m => `<div class="thread-msg ${esc(m.direction)}"><small>${m.direction === 'outbound' ? 'แอดมิน/ระบบ' : 'ลูกค้า'} · ${esc(m.received_at || m.created_at || '')}</small>${esc(m.message_text || `[${m.message_type || 'message'}]`)}</div>`).join('') : '<div class="ai-empty">ยังไม่มีข้อความใน thread นี้</div>';
+    return `<section class="training-banner"><h3>ศูนย์ฝึก AI</h3><p class="sub">ลูกค้าทักมา → AI ร่างคำตอบภายในรอไว้ → แอดมินมากดถูก/ไม่ถูก/สอนเพิ่ม ทุกบทเรียนเข้าคลังสมองกลางเดียวกัน และหน้านี้ไม่ส่ง LINE จริง</p><div class="training-switch-grid"><div class="training-switch-card"><div><b>Auto Training ภายใน</b><small>เปิดให้ระบบเตรียมคำตอบจากข้อความ LINE จริง</small></div><label class="cc-switch"><input type="checkbox" data-training-toggle="enabled" ${STATE.trainingEnabled ? 'checked' : ''}><span class="cc-slider"></span></label></div><div class="training-switch-card"><div><b>Auto ตอบภายในเมื่อ LINE เข้า</b><small>เปิดไว้แล้ว AI จะร่างคำตอบให้เอง ไม่ต้องกดทีละคำถาม</small></div><label class="cc-switch"><input type="checkbox" data-training-toggle="auto" ${STATE.trainingAutoAnswer ? 'checked' : ''} ${STATE.trainingEnabled ? '' : 'disabled'}><span class="cc-slider"></span></label></div><div class="training-switch-card"><div><b>AI Auto Reply จริง</b><small>แยกจากโหมดฝึกชัดเจน ยังไม่ควรเปิดส่งเอง</small></div><span class="mode-badge ${getValue('auto_safe_reply_send_enabled', false) ? 'approval' : 'off'}">${getValue('auto_safe_reply_send_enabled', false) ? 'เปิด' : 'ปิด'}</span></div></div></section>
     <section class="cc-card"><div class="cc-section-title"><h3>คะแนนความสามารถ AI</h3><button class="cc-btn" type="button" data-ai-tab-go="brain">เปิดคลังบทเรียน</button></div><p class="sub">คำนวณจากบทเรียนที่ผู้สอนบันทึก + ผลฝึกภายในจริง แยกตามหมวด เพื่อดูความพร้อมก่อนปล่อยให้ตอบจริง</p>${renderTrainingScoreBars()}</section>
-    <section class="cc-card"><div class="cc-section-title"><h3>ห้องเรียนจากคำถามจริง</h3><button class="cc-btn" type="button" data-ai-control-refresh>รีเฟรช</button></div><div class="training-layout"><div><p class="sub">คิวคำถามจริงจาก LINE</p><div class="training-queue">${STATE.trainingQuestions.length ? STATE.trainingQuestions.map(renderTrainingQueueCard).join('') : '<div class="ai-empty">ยังไม่พบคำถามจริงจาก LINE</div>'}</div></div><div>${STATE.selectedConversation ? `<h3>${esc(STATE.selectedConversation.display_name || 'ลูกค้า LINE')}</h3><p class="sub">คำถามนี้ใช้ฝึกภายในเท่านั้น ไม่ส่ง LINE จริง</p><div class="thread-box">${STATE.lineThread.length ? STATE.lineThread.map(m => `<div class="thread-msg ${esc(m.direction)}"><small>${m.direction === 'outbound' ? 'แอดมิน/ระบบ' : 'ลูกค้า'} · ${esc(m.received_at || m.created_at || '')}</small>${esc(m.message_text || `[${m.message_type || 'message'}]`)}</div>`).join('') : '<div class="ai-empty">ยังไม่มีข้อความใน thread นี้</div>'}</div><form class="ai-control-form" data-training-draft-form style="margin-top:10px"><input type="hidden" name="conversation_id" value="${esc(STATE.selectedConversation.id)}"><input type="hidden" name="line_message_id" value="${esc((STATE.trainingQuestions || []).find(q => Number(q.conversation_id || q.id) === Number(STATE.selectedConversation.id))?.line_message_id || '')}"><input type="hidden" name="training_mode_enabled" value="${STATE.trainingEnabled ? 'true' : 'false'}"><input type="hidden" name="situation_type" value="${esc(situation)}"><label class="wide">คำถามลูกค้าจริงที่จะใช้ฝึก<textarea name="selected_customer_question" required>${esc(selectedText)}</textarea></label><label class="wide">คำสั่งการฝึก<textarea name="admin_question">ศูนย์ฝึก AI: ลองตอบภายในเท่านั้น ห้ามส่ง LINE จริง ตอบแบบแอดมิน CWF สุภาพ ตรงประเด็น ถ้าไม่มั่นใจให้บอกข้อมูลที่ควรถามเพิ่ม</textarea></label><div class="wide cc-actions"><button class="cc-btn primary" type="submit" ${STATE.trainingEnabled && !STATE.trainingBusy ? '' : 'disabled'}>${STATE.trainingBusy ? 'AI กำลังฝึก...' : 'ให้ AI ลองตอบภายใน'}</button><button class="cc-btn" type="button" data-open-line-conv="${esc(STATE.selectedConversation.id)}">เปิดแชทจริง</button></div></form>${renderTrainingResult()}` : '<div class="ai-empty">เลือกคำถามจริงจากลูกค้าทางซ้ายเพื่อเริ่มฝึก</div>'}</div><div><h3>ผู้สอนแก้คำตอบ</h3><p class="sub">ถ้า AI ตอบไม่ได้ ให้กรอกคำตอบที่ควรใช้จริง แล้วบันทึกเป็นบทเรียน</p><form class="ai-control-form" data-training-lesson-form><input type="hidden" name="situation_type" value="${esc(situation)}"><label class="wide">ข้อความลูกค้า<textarea name="customer_message" required>${esc(selectedText)}</textarea></label><label>หมวด<select name="situation_type_select"><option value="${esc(situation)}">${esc(trainingSituationLabel(situation))}</option><option value="price_question">ราคา / โปรโมชัน</option><option value="appointment">นัดหมาย / คิวช่าง</option><option value="repair_symptom">อาการเสียแอร์</option><option value="complaint">รับมือคำโวยวาย</option><option value="foreign_customer">ภาษาอังกฤษ / ลูกค้าต่างชาติ</option><option value="general">ทั่วไป</option></select></label><label>ภาษา<select name="language"><option value="th">ไทย</option><option value="en">English</option><option value="unknown">ไม่ระบุ</option></select></label><label class="wide">ควรตอบลูกค้าว่าอะไร<textarea name="final_admin_reply" required placeholder="ถ้า AI ยังไม่รู้ ให้ผู้สอนกรอกคำตอบที่ถูกต้องตรงนี้">${esc(answer)}</textarea></label><label class="wide">แท็ก<input name="tags" value="ศูนย์ฝึก AI, training_center, ${esc(situation)}" placeholder="ราคา, นัดหมาย, ซ่อม"></label><div class="wide cc-actions"><button class="cc-btn primary" type="submit">บันทึกเป็นบทเรียน</button><button class="cc-btn" type="button" data-training-copy-ai ${answer ? '' : 'disabled'}>ใช้คำตอบ AI เป็นฐาน</button><button class="cc-btn soft-danger" type="button" data-training-unknown>AI ยังไม่รู้ ให้ครูสอน</button></div></form><div class="training-note">Phase 35B-2: มี backend ศูนย์ฝึก AI แล้ว — คำตอบภายในถูกบันทึกเป็น training memory, บทเรียนถูกบันทึกเข้าคลังคำตอบ, คะแนน skill คำนวณจากบทเรียนและผลฝึกจริง โดยไม่ส่ง LINE จริง</div></div></div></section>`;
+    <section class="cc-card"><div class="cc-section-title"><h3>ห้องเรียนจากคำถามจริง</h3><button class="cc-btn" type="button" data-ai-control-refresh>รีเฟรช</button></div><div class="training-layout"><div><p class="sub">คิวคำถามจริงจาก LINE</p><div class="training-queue">${STATE.trainingQuestions.length ? STATE.trainingQuestions.map(renderTrainingQueueCard).join('') : '<div class="ai-empty">ยังไม่พบคำถามจริงจาก LINE</div>'}</div></div><div>${STATE.selectedConversation ? `<h3>${esc(STATE.selectedConversation.display_name || 'ลูกค้า LINE')}</h3><p class="sub">คำถามนี้ใช้ฝึกภายในเท่านั้น ไม่ส่ง LINE จริง</p>${perPersonControls}<div class="thread-box">${threadHtml}</div><form class="ai-control-form" data-training-draft-form style="margin-top:10px"><input type="hidden" name="conversation_id" value="${esc(STATE.selectedConversation.id)}"><input type="hidden" name="line_message_id" value="${esc(selectedQ?.line_message_id || '')}"><input type="hidden" name="auto_answer_id" value="${esc(autoAnswerId)}"><input type="hidden" name="training_mode_enabled" value="${STATE.trainingEnabled ? 'true' : 'false'}"><input type="hidden" name="situation_type" value="${esc(situation)}"><label class="wide">คำถามลูกค้าจริงที่จะใช้ฝึก<textarea name="selected_customer_question" required>${esc(selectedText)}</textarea></label><label class="wide">คำสั่งการฝึก<textarea name="admin_question">ศูนย์ฝึก AI: ลองตอบภายในเท่านั้น ห้ามส่ง LINE จริง ใช้ CWF Core Brain เป็นสมองกลาง ตอบแบบแอดมิน CWF สุภาพ ตรงประเด็น ถ้าไม่มั่นใจให้ถามข้อมูลที่ขาด</textarea></label><div class="wide cc-actions"><button class="cc-btn primary" type="submit" ${STATE.trainingEnabled && !STATE.trainingBusy ? '' : 'disabled'}>${STATE.trainingBusy ? 'AI กำลังฝึก...' : 'ให้ AI ลองตอบภายใน'}</button><button class="cc-btn" type="button" data-open-line-conv="${esc(STATE.selectedConversation.id)}">เปิดแชทจริง</button></div></form>${renderTrainingResult()}` : '<div class="ai-empty">เลือกคำถามจริงจากลูกค้าทางซ้ายเพื่อเริ่มฝึก</div>'}</div><div><h3>ผู้สอนแก้คำตอบ</h3><p class="sub">ถ้า AI ตอบไม่ได้ ให้กรอกคำตอบที่ควรใช้จริง แล้วบันทึกเข้าคลังสมองกลาง</p><form class="ai-control-form" data-training-lesson-form><input type="hidden" name="situation_type" value="${esc(situation)}"><input type="hidden" name="auto_answer_id" value="${esc(autoAnswerId)}"><label class="wide">ข้อความลูกค้า<textarea name="customer_message" required>${esc(selectedText)}</textarea></label><label>หมวด<select name="situation_type_select"><option value="${esc(situation)}">${esc(trainingSituationLabel(situation))}</option><option value="price_question">ราคา / โปรโมชัน</option><option value="appointment">นัดหมาย / คิวช่าง</option><option value="repair_symptom">อาการเสียแอร์</option><option value="complaint">รับมือคำโวยวาย</option><option value="foreign_customer">ภาษาอังกฤษ / ลูกค้าต่างชาติ</option><option value="general">ทั่วไป</option></select></label><label>ภาษา<select name="language"><option value="th">ไทย</option><option value="en">English</option><option value="unknown">ไม่ระบุ</option></select></label><label class="wide">ควรตอบลูกค้าว่าอะไร<textarea name="final_admin_reply" required placeholder="ถ้า AI ยังไม่รู้ ให้ผู้สอนกรอกคำตอบที่ถูกต้องตรงนี้">${esc(answer)}</textarea></label><label class="wide">แท็ก<input name="tags" value="ศูนย์ฝึก AI, training_center, core_brain, ${esc(situation)}" placeholder="ราคา, นัดหมาย, ซ่อม"></label><div class="wide cc-actions"><button class="cc-btn primary" type="submit">บันทึกเป็นบทเรียน</button><button class="cc-btn" type="button" data-training-copy-ai ${answer ? '' : 'disabled'}>ใช้คำตอบ AI เป็นฐาน</button><button class="cc-btn soft-danger" type="button" data-training-unknown>AI ยังไม่รู้ ให้ครูสอน</button></div></form><div class="training-note">ระบบนี้ใช้สมองกลางเดียว: คำตอบที่กดถูก/สอนเพิ่มจะถูกบันทึกเป็นความรู้ร่วมสำหรับ Admin AI, Sales AI, Repair AI และ Agent ลูกค้าทุกตัว</div></div></div></section>`;
   }
+
 
   function renderLineWork(){
     return `
@@ -1018,32 +1111,68 @@
     await runTrainingFromCurrentQuestion();
   }
   function copyTrainingAiToTeacher(){
-    const answer = STATE.trainingResult?.answer || STATE.trainingResult?.draft?.customer_reply || '';
+    const answer = currentTrainingAnswer();
     const area = $('[data-training-lesson-form] textarea[name="final_admin_reply"]');
     if (area && answer) { area.value = answer; toast('ใส่คำตอบ AI ลงช่องผู้สอนแล้ว', 'success'); }
   }
-  function markTrainingBad(){
-    const answer = STATE.trainingResult?.answer || STATE.trainingResult?.draft?.customer_reply || '';
+  async function markTrainingGood(){
+    const q = selectedTrainingQuestion();
+    const result = currentTrainingResult();
+    const answer = currentTrainingAnswer();
+    if (!STATE.selectedConversation || !clean(answer)) return toast('ยังไม่มีคำตอบ AI ให้บันทึก', 'error');
+    const payload = {
+      verdict:'approved',
+      final_admin_reply:answer,
+      conversation_id:STATE.selectedConversation.id,
+      customer_message:q?.customer_message || latestInboundText(),
+      ai_reply:answer,
+      situation_type:q?.situation_type || inferTrainingSituation(q?.customer_message || latestInboundText()),
+      reason:'approved_from_training_center',
+    };
+    if (result?.auto_answer_id || q?.auto_answer_id) {
+      await api(`/admin/ai-office/training-center/auto-answers/${encodeURIComponent(result?.auto_answer_id || q?.auto_answer_id)}/feedback`, { method:'POST', body:JSON.stringify(payload) });
+    } else {
+      await api('/admin/ai-office/training-center/feedback', { method:'POST', body:JSON.stringify(payload) });
+    }
+    await Promise.all([loadExamples(), loadTrainingSkills(), loadTrainingQuestions()]);
+    STATE.trainingResult = null;
+    render();
+    toast('บันทึกว่าถูก และจำเข้าคลังสมองกลางแล้ว', 'success');
+  }
+  async function markTrainingBad(){
+    const q = selectedTrainingQuestion();
+    const result = currentTrainingResult();
+    const answer = currentTrainingAnswer();
     const area = $('[data-training-lesson-form] textarea[name="final_admin_reply"]');
     if (area) area.value = answer ? `AI ตอบไว้ว่า:\n${answer}\n\nควรแก้เป็น:\n` : 'ควรตอบลูกค้าว่า: ';
-    if (STATE.selectedConversation) { api('/admin/ai-office/training-center/feedback', { method:'POST', body:JSON.stringify({ verdict:'failed', conversation_id:STATE.selectedConversation.id, customer_message:latestInboundText(), ai_reply:answer, situation_type:inferTrainingSituation(latestInboundText()), reason:'marked_bad_from_training_center' }) }).then(()=>loadTrainingSkills()).catch(()=>{}); }
+    const payload = { verdict:'rejected', conversation_id:STATE.selectedConversation?.id || '', customer_message:q?.customer_message || latestInboundText(), ai_reply:answer, situation_type:q?.situation_type || inferTrainingSituation(q?.customer_message || latestInboundText()), reason:'marked_bad_from_training_center' };
+    if (result?.auto_answer_id || q?.auto_answer_id) {
+      await api(`/admin/ai-office/training-center/auto-answers/${encodeURIComponent(result?.auto_answer_id || q?.auto_answer_id)}/feedback`, { method:'POST', body:JSON.stringify(payload) }).catch(()=>{});
+    } else if (STATE.selectedConversation) {
+      await api('/admin/ai-office/training-center/feedback', { method:'POST', body:JSON.stringify(payload) }).catch(()=>{});
+    }
+    await Promise.all([loadTrainingSkills(), loadTrainingQuestions()]).catch(()=>{});
+    render();
     toast('ทำเครื่องหมายว่า AI ต้องให้ครูแก้คำตอบ', 'info');
   }
   async function saveTrainingLesson(form){
     const fd = new FormData(form);
     const payload = Object.fromEntries(fd.entries());
+    const q = selectedTrainingQuestion();
     payload.situation_type = payload.situation_type_select || payload.situation_type || inferTrainingSituation(payload.customer_message);
     delete payload.situation_type_select;
-    payload.tags = clean(payload.tags || `ศูนย์ฝึก AI, training_center, ${payload.situation_type}`);
+    payload.tags = clean(payload.tags || `ศูนย์ฝึก AI, training_center, core_brain, ${payload.situation_type}`);
     payload.conversation_id = STATE.selectedConversation?.id || payload.conversation_id || '';
-    payload.line_message_id = (STATE.trainingQuestions || []).find(q => Number(q.conversation_id || q.id) === Number(STATE.selectedConversation?.id || 0))?.line_message_id || '';
-    payload.ai_reply = STATE.trainingResult?.answer || STATE.trainingResult?.draft?.customer_reply || '';
+    payload.line_message_id = q?.line_message_id || payload.line_message_id || '';
+    payload.auto_answer_id = payload.auto_answer_id || q?.auto_answer_id || currentTrainingResult()?.auto_answer_id || '';
+    payload.ai_reply = currentTrainingAnswer();
     payload.teacher_verdict = 'lesson_saved';
     if (!clean(payload.customer_message) || !clean(payload.final_admin_reply)) return toast('กรุณาใส่คำถามลูกค้าและคำตอบที่ถูกต้อง', 'error');
     await api('/admin/ai-office/training-center/lessons', { method:'POST', body:JSON.stringify(payload) });
     await Promise.all([loadExamples(), loadTrainingSkills(), loadTrainingQuestions()]);
+    STATE.trainingResult = null;
     render();
-    toast('บันทึกเป็นบทเรียนให้ AI แล้ว', 'success');
+    toast('บันทึกเป็นบทเรียนเข้าคลังสมองกลางแล้ว', 'success');
   }
 
   async function saveAutoSafeConfig(form){
@@ -1215,6 +1344,37 @@
   function openBookingReview(intakeId){ const suffix = intakeId ? `?ai_intake_id=${encodeURIComponent(intakeId)}` : ''; window.location.href = `/admin-review-v2.html${suffix}`; }
   function openAddFromIntake(id){ window.location.href = `/admin-add-v2.html?source=line_ai&ai_intake_id=${encodeURIComponent(id)}&t=${Date.now()}`; }
 
+  async function updateTrainingToggle(kind, checked){
+    if (kind === 'enabled') {
+      STATE.trainingEnabled = !!checked;
+      if (!STATE.trainingEnabled) STATE.trainingAutoAnswer = false;
+      saveTrainingPref('cwf_ai_training_enabled', STATE.trainingEnabled);
+      saveTrainingPref('cwf_ai_training_auto_answer', STATE.trainingAutoAnswer);
+      await bulkUpdate([
+        { key:'auto_internal_training_enabled', value:STATE.trainingEnabled },
+        { key:'auto_internal_training_auto_answer', value:STATE.trainingAutoAnswer },
+      ], 'training_toggle_from_control_center');
+    } else if (kind === 'auto') {
+      STATE.trainingAutoAnswer = !!checked;
+      if (STATE.trainingAutoAnswer) STATE.trainingEnabled = true;
+      saveTrainingPref('cwf_ai_training_enabled', STATE.trainingEnabled);
+      saveTrainingPref('cwf_ai_training_auto_answer', STATE.trainingAutoAnswer);
+      await bulkUpdate([
+        { key:'auto_internal_training_enabled', value:STATE.trainingEnabled },
+        { key:'auto_internal_training_auto_answer', value:STATE.trainingAutoAnswer },
+      ], 'training_auto_answer_toggle_from_control_center');
+      if (STATE.trainingAutoAnswer) await maybeAutoRunTraining().catch((err)=>toast(err.message,'error'));
+    }
+    toast('อัปเดตโหมดฝึก AI แล้ว', 'success');
+  }
+  async function setTrainingConversationMode(mode){
+    if (!STATE.selectedConversation?.id) return toast('ยังไม่ได้เลือกแชท', 'error');
+    await api(`/admin/ai-office/training-center/conversations/${encodeURIComponent(STATE.selectedConversation.id)}/settings`, { method:'POST', body:JSON.stringify({ mode, auto_internal_answer_enabled: mode === 'on' ? true : mode === 'off' ? false : null, reason:'set_from_training_center' }) });
+    await loadTrainingQuestions();
+    render();
+    toast(mode === 'off' ? 'พัก AI สำหรับแชทนี้แล้ว' : mode === 'on' ? 'เปิด AI รายคนแล้ว' : 'ตั้งเป็นตามค่า Global แล้ว', 'success');
+  }
+
   function handleClick(e){
     if (e.target.closest('[data-ai-control-close]')) return closePanel();
     if (e.target.closest('[data-ai-control-refresh]')) return loadAll();
@@ -1234,9 +1394,12 @@
     const mode = e.target.closest('[data-reply-mode]');
     if (mode) return setReplyMode(mode.dataset.replyMode).catch((err) => toast(err.message, 'error'));
     const trainingSelect = e.target.closest('[data-training-select-conv]');
-    if (trainingSelect) { STATE.lineDraftResult = null; STATE.trainingResult = null; return loadLineThread(trainingSelect.dataset.trainingSelectConv).then(()=>{ render(); return maybeAutoRunTraining(); }).catch((err)=>toast(err.message,'error')); }
+    if (trainingSelect) { STATE.lineDraftResult = null; STATE.trainingResult = null; STATE.selectedTrainingKey = trainingSelect.dataset.trainingSelectKey || ''; return loadLineThread(trainingSelect.dataset.trainingSelectConv).then(()=>{ STATE.trainingResult = autoTrainingResultFromQuestion(selectedTrainingQuestion()); render(); return maybeAutoRunTraining(); }).catch((err)=>toast(err.message,'error')); }
     if (e.target.closest('[data-training-copy-ai]')) return copyTrainingAiToTeacher();
-    if (e.target.closest('[data-training-mark-bad]')) return markTrainingBad();
+    if (e.target.closest('[data-training-mark-good]')) return markTrainingGood().catch((err)=>toast(err.message,'error'));
+    if (e.target.closest('[data-training-mark-bad]')) return markTrainingBad().catch((err)=>toast(err.message,'error'));
+    const trainingConvMode = e.target.closest('[data-training-conv-mode]');
+    if (trainingConvMode) return setTrainingConversationMode(trainingConvMode.dataset.trainingConvMode).catch((err)=>toast(err.message,'error'));
     if (e.target.closest('[data-training-unknown]')) { const area = $('[data-training-lesson-form] textarea[name="final_admin_reply"]'); if (area) { area.value = 'AI ยังไม่รู้คำตอบนี้ ควรตอบลูกค้าว่า: '; area.focus(); } return toast('กรอกคำตอบจริงเพื่อสอน AI', 'info'); }
     const selectConv = e.target.closest('[data-select-line-conv]');
     if (selectConv) { STATE.lineDraftResult = null; return loadLineThread(selectConv.dataset.selectLineConv).then(()=>render()).catch((err)=>toast(err.message,'error')); }
@@ -1294,8 +1457,7 @@
   function handleChange(e){
     const trainingToggle = e.target.closest('[data-training-toggle]');
     if (trainingToggle) {
-      if (trainingToggle.dataset.trainingToggle === 'enabled') { STATE.trainingEnabled = !!trainingToggle.checked; if (!STATE.trainingEnabled) STATE.trainingAutoAnswer = false; saveTrainingPref('cwf_ai_training_enabled', STATE.trainingEnabled); saveTrainingPref('cwf_ai_training_auto_answer', STATE.trainingAutoAnswer); }
-      if (trainingToggle.dataset.trainingToggle === 'auto') { STATE.trainingAutoAnswer = !!trainingToggle.checked; saveTrainingPref('cwf_ai_training_auto_answer', STATE.trainingAutoAnswer); if (STATE.trainingAutoAnswer) maybeAutoRunTraining().catch((err)=>toast(err.message,'error')); }
+      updateTrainingToggle(trainingToggle.dataset.trainingToggle, !!trainingToggle.checked).catch((err) => { toast(err.message, 'error'); loadAll(); });
       render();
       return;
     }
