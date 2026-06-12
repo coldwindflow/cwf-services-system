@@ -1,7 +1,7 @@
 (function(){
   "use strict";
-
   var BUILD="ai-line-control-v32-daylight";
+
   var EMBEDDED = !!(
     (typeof window !== 'undefined' && window.CWF_AI_CONTROL_EMBEDDED === true) ||
     (document.body && document.body.getAttribute('data-ai-control-embedded') === '1') ||
@@ -28,18 +28,16 @@
     autoSafePlaybooks: [],
     autoSafeAnalytics: null,
     autoSafeDashboard: null,
-    activeTab: "overview",
+    activeTab: "line",
     open: false,
   };
 
   const TABS = [
-    ["overview", "ภาพรวม"],
-    ["dashboard", "แดชบอร์ด"],
-    ["reply", "ตอบลูกค้า"],
-    ["line", "งาน LINE"],
-    ["approvals", "คิวอนุมัติ"],
-    ["decision", "ตรวจคำตอบ"],
-    ["brain", "คลังสมอง"],
+    ["line",      "กล่องแชทลูกค้า"],
+    ["approvals", "คิวรออนุมัติ"],
+    ["decision",  "AI ช่วยร่างคำตอบ"],
+    ["reply",     "ตั้งค่าการตอบ AI"],
+    ["advanced",  "ขั้นสูง"],
   ];
 
   const REPLY_TOGGLE_KEYS = [
@@ -110,7 +108,7 @@
       .ai-chip.danger{background:rgba(239,68,68,.18);color:#fee2e2;border:1px solid rgba(248,113,113,.25)}
       .ai-control-tabs{display:flex;gap:8px;overflow-x:auto;padding:10px max(12px,env(safe-area-inset-right)) 8px max(12px,env(safe-area-inset-left));background:#072050;scrollbar-width:none}
       .ai-control-tabs::-webkit-scrollbar{display:none}
-      .ai-control-tab{flex:0 0 auto;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.10);color:#fff;min-height:38px;padding:0 12px;font-size:13px;font-weight:1000}
+      .ai-control-tab{flex:0 0 auto;border:1px solid rgba(255,255,255,.14);border-radius:999px;background:rgba(255,255,255,.10);color:#fff;min-height:42px;padding:0 14px;font-size:12.5px;font-weight:800;white-space:nowrap;cursor:pointer}
       .ai-control-tab.active{background:#ffcc00;color:#06163d;border-color:#ffcc00}
       .ai-control-body{flex:1 1 auto;overflow:auto;padding:12px max(12px,env(safe-area-inset-right)) calc(24px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left));display:flex;flex-direction:column;gap:12px}
       .cc-card{border-radius:24px;background:rgba(255,255,255,.98);border:1px solid rgba(15,23,42,.08);box-shadow:0 12px 34px rgba(2,6,23,.08);padding:14px}
@@ -296,7 +294,8 @@
     STATE.open = true;
     const paramTab = new URLSearchParams(location.search).get("panel");
     if (typeof tab === "string") STATE.activeTab = tab;
-    else if (["dashboard","reply","line","approvals","decision","brain"].includes(paramTab)) STATE.activeTab = paramTab;
+    else if (["line","approvals","decision","reply","advanced"].includes(paramTab)) STATE.activeTab = paramTab;
+    else if (["dashboard","brain","overview"].includes(paramTab)) STATE.activeTab = "advanced";
     else if (paramTab === "switches") STATE.activeTab = "reply";
     var _ov = $("#aiControlOverlay"); if (_ov) _ov.classList.add("open");
     loadAll();
@@ -377,6 +376,7 @@
     else if (STATE.activeTab === "approvals") body.innerHTML = renderApprovals();
     else if (STATE.activeTab === "decision") body.innerHTML = renderDecisionLab();
     else if (STATE.activeTab === "brain") body.innerHTML = renderBrain();
+    else if (STATE.activeTab === "advanced") body.innerHTML = renderAdvanced();
     else body.innerHTML = renderOverview();
   }
 
@@ -783,8 +783,7 @@
       </article>`).join('')}</section>`;
   }
 
-  function renderBrain(){
-    return `<section class="cc-card"><h3>เพิ่ม/แก้คลังสมองคำตอบ</h3><p class="sub">ใช้แก้แนวคำตอบที่ไม่ชอบ หรือเพิ่มตัวอย่างคำตอบแอดมินจริงให้ AI จำ</p>${brainForm()}</section>
+  function renderBrain(){    return `<section class="cc-card"><h3>เพิ่ม/แก้คลังสมองคำตอบ</h3><p class="sub">ใช้แก้แนวคำตอบที่ไม่ชอบ หรือเพิ่มตัวอย่างคำตอบแอดมินจริงให้ AI จำ</p>${brainForm()}</section>
       <section class="cc-card"><h3>รายการในคลังสมอง</h3><p class="sub">กดแก้เพื่อปรับคำตอบเดิม หรือปิดใช้งานคำตอบที่ไม่อยากให้ AI อ้างอิง</p>${STATE.examples.length ? STATE.examples.map(renderExample).join('') : '<div class="ai-empty">ยังไม่มีรายการในคลังสมอง</div>'}</section>`;
   }
   function brainForm(ex){
@@ -804,6 +803,23 @@
   }
 
   function approvalReply(id){ const el = Array.from(document.querySelectorAll('[data-approval-reply]')).find((x) => String(x.dataset.approvalReply) === String(id)); return el?.value || ''; }
+  function renderAdvanced(){
+    return `<section class="cc-card">
+      <h3>ฟีเจอร์ขั้นสูง</h3>
+      <p class="cc-desc">เครื่องมือเสริมสำหรับผู้ดูแลระบบ — ไม่จำเป็นต้องใช้ทุกวัน</p>
+      <div class="cc-actions" style="flex-direction:column;gap:10px;margin-top:14px">
+        <button class="cc-btn" type="button" data-ai-tab-go="overview" style="justify-content:flex-start;gap:10px;padding:12px 16px;font-size:13.5px">
+          📊 ภาพรวมระบบ AI Reply
+        </button>
+        <button class="cc-btn" type="button" data-ai-tab-go="dashboard" style="justify-content:flex-start;gap:10px;padding:12px 16px;font-size:13.5px">
+          📈 แดชบอร์ดผลลัพธ์ Auto Safe
+        </button>
+        <button class="cc-btn" type="button" data-ai-tab-go="brain" style="justify-content:flex-start;gap:10px;padding:12px 16px;font-size:13.5px">
+          🧠 คลังสมอง / Playbook
+        </button>
+      </div>
+    </section>`;
+  }
   async function createApprovalFromDraft(id){ if (!id) return toast('ไม่พบร่างคำตอบ', 'error'); await api(`/admin/ai-office/control/approvals/from-draft/${encodeURIComponent(id)}`, { method:'POST', body:'{}' }); STATE.activeTab = 'approvals'; await loadAll(); toast('ส่งเข้าคิวอนุมัติแล้ว', 'success'); }
   async function saveApproval(id){ const final_reply = approvalReply(id); await api(`/admin/ai-office/control/approvals/${encodeURIComponent(id)}`, { method:'PATCH', body:JSON.stringify({ final_reply, status:'edited', admin_note:'edited_from_control_center' }) }); await loadApprovals(); render(); toast('บันทึกข้อความแล้ว', 'success'); }
   async function approveApproval(id){ const final_reply = approvalReply(id); await api(`/admin/ai-office/control/approvals/${encodeURIComponent(id)}/approve`, { method:'POST', body:JSON.stringify({ final_reply, admin_note:'approved_from_control_center' }) }); await loadApprovals(); render(); toast('อนุมัติข้อความแล้ว', 'success'); }
@@ -999,7 +1015,7 @@
   async function disableExample(id){ if (!confirm('ปิดใช้งานคำตอบนี้ใช่ไหม')) return; await api(`/admin/ai-office/reply-examples/${encodeURIComponent(id)}/disable`, { method:'PATCH', body:'{}' }); await loadExamples(); render(); }
   function editExample(id){ const ex = STATE.examples.find((x) => String(x.id) === String(id)); if (!ex) return; const first = $('[data-brain-form]'); if (first) { first.outerHTML = brainForm(ex); const form = $('[data-brain-form]'); if (form) { if (ex.situation_type) form.elements.situation_type.value = ex.situation_type; if (ex.language) form.elements.language.value = ex.language; form.scrollIntoView({ behavior:'smooth', block:'start' }); } } }
 
-  function openInbox(){ if (EMBEDDED) { STATE.activeTab = 'line'; loadAll(); return; } const btn = $('#lineInboxBtn'); if (btn) { closePanel(); btn.click(); } else window.location.href = '/admin-ai-line-control.html?panel=line'; }
+  function openInbox(){ const btn = $('#lineInboxBtn'); if (btn) { closePanel(); btn.click(); } else window.location.href = '/admin-ai-office.html'; }
   function openBookingReview(intakeId){ const suffix = intakeId ? `?ai_intake_id=${encodeURIComponent(intakeId)}` : ''; window.location.href = `/admin-review-v2.html${suffix}`; }
   function openAddFromIntake(id){ window.location.href = `/admin-add-v2.html?source=line_ai&ai_intake_id=${encodeURIComponent(id)}&t=${Date.now()}`; }
 
@@ -1081,15 +1097,14 @@
     ensureDom();
     const qs = new URLSearchParams(location.search);
     const panel = qs.get('panel');
-    if (panel === "dashboard") STATE.activeTab = 'dashboard';
+    if (["dashboard","overview","brain"].includes(panel)) STATE.activeTab = 'advanced';
     else if (["approvals","approval"].includes(panel)) STATE.activeTab = 'approvals';
     else if (panel === 'drafts') STATE.activeTab = 'approvals';
     else if (panel === 'decision' || panel === 'reply-decision') STATE.activeTab = 'decision';
-    else if (panel === 'brain') STATE.activeTab = 'brain';
     else if (panel === 'line' || panel === 'line-ai') STATE.activeTab = 'line';
     else if (panel === 'reply' || panel === 'switches') STATE.activeTab = 'reply';
     if (EMBEDDED) { openPanel(STATE.activeTab); return; }
-    if (["line-ai","dashboard","reply","line","approvals","approval","drafts","decision","reply-decision","brain","switches"].includes(panel) || qs.get('ai_intake_id')) setTimeout(()=>openPanel(), 500);
+    if (["line-ai","dashboard","reply","line","approvals","approval","drafts","decision","reply-decision","brain","switches","advanced"].includes(panel) || qs.get('ai_intake_id')) setTimeout(()=>openPanel(), 500);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

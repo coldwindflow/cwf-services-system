@@ -339,6 +339,24 @@ body::before{
 }
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 
+/* ── AI CTA Buttons (home welcome, user-triggered only) ─── */
+.ai-cta-row{display:flex;gap:8px;margin-bottom:18px}
+.ai-cta-btn{
+  flex:1;min-height:52px;border-radius:var(--r16);
+  font-size:14px;font-weight:800;cursor:pointer;
+  background:var(--s1);border:1px solid var(--bd);color:var(--tx);
+  box-shadow:0 2px 12px rgba(59,130,246,.08);
+  transition:transform .12s,box-shadow .12s;
+  line-height:1.35;padding:0 12px;
+}
+.ai-cta-btn:active{transform:scale(.97);box-shadow:none}
+.ai-cta-primary{
+  background:linear-gradient(135deg,var(--blue),#1d4ed8);
+  color:#fff;border-color:transparent;
+  box-shadow:0 6px 18px rgba(59,130,246,.28);
+}
+.ai-cta-primary:active{box-shadow:none}
+
 /* ── Responsive ─────────────────────────────────────────── */
 @media(max-width:390px){
   .hero-stats{gap:6px}.hs-n{font-size:34px}

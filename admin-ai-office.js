@@ -5,7 +5,6 @@
    JS fills content into guaranteed containers — never creates layout.
 ================================================================ */
 var V="ai-office-v32-daylight";
-var BUILD=V;
 var page=(document.body.dataset.page||"home").trim();
 
 function $(s,r){return(r||document).querySelector(s);}
@@ -389,15 +388,7 @@ function preloadPage(){
   if(page==="sales"){renderSalesCard();return Promise.resolve();}
   if(page==="content"){renderContentCard();return Promise.resolve();}
   if(page==="dev"){renderDevCard();return Promise.resolve();}
-  if(page==="home"){
-    var key="cwf_briefed_"+new Date().toDateString();
-    if(!sessionStorage.getItem(key)){
-      sessionStorage.setItem(key,"1");
-      return new Promise(function(res){
-        setTimeout(function(){ask("สรุปสถานการณ์วันนี้ให้หน่อย มีงานกี่งาน มีอะไรต้องตามก่อนหรือระวัง");res();},400);
-      });
-    }
-  }
+  // home: ไม่ auto-ask — user-triggered เท่านั้น
   return Promise.resolve();
 }
 
@@ -416,6 +407,9 @@ function bind(){
   }
   document.addEventListener("click",function(e){
     var pill=e.target.closest("[data-pill]");if(pill){var list=PILLS[page]||PILLS.home;var item=list[Number(pill.dataset.pill)];if(item)ask(item.q);return;}
+    // ปุ่ม AI CTA บน welcome screen
+    var qa=e.target.closest("[data-quick-ask]");if(qa){ask(qa.dataset.quickAsk);return;}
+    var fc=e.target.closest("[data-focus-chat]");if(fc){var t=$("#q");if(t){t.focus();try{t.scrollIntoView({behavior:"smooth",block:"end"});}catch(_){}}return;}
     var cp=e.target.closest("[data-copy]");if(cp){copyText(cp.dataset.copy);return;}
     var po=e.target.closest("[data-polish]");if(po){ask("ช่วยเกลาข้อความนี้ให้พร้อมส่งลูกค้า กระชับ สุภาพ ไม่เพิ่มข้อมูลใหม่:\n"+po.dataset.polish);return;}
     var ja=e.target.closest("[data-jact]");if(ja){try{handleJobAct(ja.dataset.jact,JSON.parse(ja.dataset.j||"{}"));}catch(_){toast("อ่านข้อมูลงานไม่ได้");}return;}

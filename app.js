@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260510_fix52_disable_noisy_gadgets";
+window.__CWF_TECH_APP_VERSION__ = "20260612_phase34_tech_api_dedup";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -35,6 +35,55 @@ let __HISTORY_VISIBLE_LIMIT__ = HISTORY_PAGE_SIZE;
 // =======================================
 // ใช้ origin เดียวกับเว็บที่เปิดอยู่ (เสถียรสุด ไม่ต้องแก้ IP)
 const API_BASE = window.location.origin;
+
+
+// CWF Phase 34: prevent duplicate Technician Jobs API calls on mobile resume / repeated init.
+// Keep this frontend-only: no endpoint contract or business logic changes.
+const CWF_TECH_API_DEDUP_MS = 800;
+const __CWF_TECH_API_DEDUP__ = window.__CWF_TECH_API_DEDUP__ || (window.__CWF_TECH_API_DEDUP__ = {
+  jobsInFlight: false,
+  jobsPromise: null,
+  jobsLastStartAt: 0,
+  offersInFlight: false,
+  offersPromise: null,
+  offersLastStartAt: 0,
+  jobsPollTimer: null,
+  offersPollTimer: null,
+  incomeSummaryTimer: null,
+  incomeOverviewTimer: null,
+  resumeTimer: null,
+});
+function cwfTechShouldSkipDuplicate(kind, minMs = CWF_TECH_API_DEDUP_MS) {
+  const st = __CWF_TECH_API_DEDUP__;
+  const now = Date.now();
+  const key = kind === 'offers' ? 'offersLastStartAt' : 'jobsLastStartAt';
+  const inFlightKey = kind === 'offers' ? 'offersInFlight' : 'jobsInFlight';
+  const promiseKey = kind === 'offers' ? 'offersPromise' : 'jobsPromise';
+  if (st[inFlightKey]) return st[promiseKey] || Promise.resolve();
+  if (now - Number(st[key] || 0) < minMs) return st[promiseKey] || Promise.resolve();
+  st[key] = now;
+  return null;
+}
+function cwfTechScheduleResumeRefresh() {
+  const st = __CWF_TECH_API_DEDUP__;
+  clearTimeout(st.resumeTimer);
+  st.resumeTimer = setTimeout(() => {
+    try { loadJobs({ preserveHistoryWindow: true }); } catch(e) {}
+    try { loadIncomeOverview(); } catch(e) {}
+    setTimeout(() => { try { loadIncomeSummary(); } catch(e) {} }, 1200);
+  }, 350);
+}
+function cwfTechStartPollingTimers() {
+  const st = __CWF_TECH_API_DEDUP__;
+  clearInterval(st.offersPollTimer);
+  clearInterval(st.jobsPollTimer);
+  clearInterval(st.incomeSummaryTimer);
+  clearInterval(st.incomeOverviewTimer);
+  st.offersPollTimer = setInterval(() => loadOffers(), 15000);
+  st.jobsPollTimer = setInterval(() => loadJobs({ preserveHistoryWindow: true }), 45000);
+  st.incomeSummaryTimer = setInterval(() => loadIncomeSummary(), 5 * 60 * 1000);
+  st.incomeOverviewTimer = setInterval(() => loadIncomeOverview(), 90 * 1000);
+}
 
 // =======================================
 // 📦 DOM (ต้องตรงกับ tech.html)
@@ -2803,17 +2852,11 @@ try{
 
 loadOffers();
 loadJobs();
-setInterval(() => loadOffers(), 15000);
-setInterval(() => loadJobs({ preserveHistoryWindow: true }), 45000); // keep active/history in sync without resetting loaded history
-setInterval(() => loadIncomeSummary(), 5 * 60 * 1000);
-setInterval(() => loadIncomeOverview(), 90 * 1000);
+cwfTechStartPollingTimers();
 
 // ✅ มือถือ: กดโทรแล้วกลับมา/สลับแอพ -> รีเฟรชสถานะทันที
-window.addEventListener("focus", () => {
-  try { loadJobs(); } catch(e) {}
-  try { loadIncomeOverview(); } catch(e) {}
-  setTimeout(() => { try { loadIncomeSummary(); } catch(e) {} }, 1200);
-});
+// Phase 34: debounce focus/visibility so the same resume does not hit jobs API 2-4 times.
+window.addEventListener("focus", cwfTechScheduleResumeRefresh);
 
 function _updateIncomeChipDom(jobId, income) {
   const id = String(jobId || '');
@@ -2918,18 +2961,17 @@ async function fetchTechnicianIncomeDetail(jobId, storeKey) {
 }
 
 document.addEventListener("visibilitychange", () => {
-  if (document.visibilityState === "visible") {
-    try { loadJobs(); } catch(e) {}
-    try { loadIncomeOverview(); } catch(e) {}
-    setTimeout(() => { try { loadIncomeSummary(); } catch(e) {} }, 1200);
-  }
+  if (document.visibilityState === "visible") cwfTechScheduleResumeRefresh();
 });
 
 // =======================================
 // 📨 LOAD OFFERS
 // =======================================
 function loadOffers() {
-  fetch(`${API_BASE}/offers/tech/${username}`, { cache: "no-store" })
+  const duplicate = cwfTechShouldSkipDuplicate('offers');
+  if (duplicate) return duplicate;
+  __CWF_TECH_API_DEDUP__.offersInFlight = true;
+  const promise = fetch(`${API_BASE}/offers/tech/${username}`, { cache: "no-store" })
     .then((res) => res.json())
     .then((offers) => {
       const list = Array.isArray(offers) ? offers : [];
@@ -2963,7 +3005,12 @@ function loadOffers() {
     .catch((err) => {
       console.error(err);
       if (offerList) offerList.innerHTML = "<p>❌ โหลดข้อเสนองานไม่สำเร็จ</p>";
+    })
+    .finally(() => {
+      __CWF_TECH_API_DEDUP__.offersInFlight = false;
     });
+  __CWF_TECH_API_DEDUP__.offersPromise = promise;
+  return promise;
 }
 
 function offerHumanText(v) {
@@ -3253,6 +3300,11 @@ function loadJobs(options = {}) {
   const appendHistory = !!options.appendHistory;
   const preserveHistoryWindow = !!options.preserveHistoryWindow;
   const historyOffset = appendHistory ? __HISTORY_OFFSET__ : 0;
+  if (!appendHistory) {
+    const duplicate = cwfTechShouldSkipDuplicate('jobs');
+    if (duplicate) return duplicate;
+    __CWF_TECH_API_DEDUP__.jobsInFlight = true;
+  }
   if (appendHistory && __HISTORY_LOADING_MORE__) return Promise.resolve();
   if (appendHistory) __HISTORY_LOADING_MORE__ = true;
   if (!appendHistory) {
@@ -3266,7 +3318,7 @@ function loadJobs(options = {}) {
     ? HISTORY_FETCH_LIMIT
     : Math.max(HISTORY_FETCH_LIMIT, (preserveHistoryWindow ? __HISTORY_VISIBLE_LIMIT__ + 1 : HISTORY_FETCH_LIMIT));
 
-  return fetch(buildTechJobsUrl(historyOffset, requestedHistoryLimit), { cache: "no-store" })
+  const promise = fetch(buildTechJobsUrl(historyOffset, requestedHistoryLimit), { cache: "no-store" })
     .then((res) => {
       if (!res.ok) throw new Error("โหลดข้อมูลงานไม่สำเร็จ");
       return res.json();
@@ -3305,7 +3357,10 @@ function loadJobs(options = {}) {
     })
     .finally(() => {
       if (appendHistory) __HISTORY_LOADING_MORE__ = false;
+      if (!appendHistory) __CWF_TECH_API_DEDUP__.jobsInFlight = false;
     });
+  if (!appendHistory) __CWF_TECH_API_DEDUP__.jobsPromise = promise;
+  return promise;
 }
 
 function loadMoreHistoryJobs() {
