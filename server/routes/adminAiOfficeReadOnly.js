@@ -3,6 +3,7 @@ const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const { ensureLineInboxSchema } = require("./lineWebhook");
+const { buildCoreBrainContext, formatCoreBrainForPrompt } = require("../aiOfficeCoreBrain");
 const {
   loadSavedReplyExamples,
   saveReplyFeedback,
@@ -334,6 +335,8 @@ async function buildProductionHealth(pool) {
     ["ai_reply_decision_logs", "Reply decision logs"],
     ["ai_agent_chat_memory", "Agent chat memory"],
     ["ai_brain_items", "AI Brain items"],
+    ["ai_training_auto_answers", "AI auto internal training answers"],
+    ["ai_training_conversation_settings", "AI per-conversation training settings"],
     ["ai_office_work_action_logs", "AI Office action logs"],
   ];
   for (const [table, label] of requiredTables) {
@@ -400,7 +403,7 @@ function buildGroundedPrompt(question, context, agent) {
   const officeInstructions = [
     `Business timezone: ${BANGKOK_TZ}. All user-facing dates and times must use appointment_display or appointment_time_th. Never show raw UTC timestamps to the admin or customer.`,
     "For queue/technician availability questions, use context.availability as the deterministic source. If it says job_schedule_only or missing data, do not confirm exact availability.",
-    "For service, price, objection, and customer-reply questions, use context.cwf_knowledge as the current source of truth. It overrides old chat history.",
+    "For service, price, objection, and customer-reply questions, use context.cwf_core_brain as the first source of truth, then context.cwf_knowledge as static fallback. It overrides old chat history.",
     "If agent is Office Chat, detect and combine relevant departments from context.office_chat_agents, then include a short line starting with แผนกที่เกี่ยวข้อง:",
     "Sales/customer replies must sound like a real LINE admin: short, natural Thai, usually 1-4 lines, price first when asked, one missing question at a time.",
     "Never reveal raw retrieved customer chat examples or private customer data.",
@@ -428,7 +431,7 @@ function buildLineDraftPrompt({ conversation, messages, agent, instruction, thre
     `Business timezone: ${BANGKOK_TZ}. Use Thai local time only; never show raw UTC timestamps.`,
     "Return STRICT JSON only. No markdown, no prose outside JSON.",
     "JSON schema: {\"customer_reply\":\"string\",\"admin_summary\":[\"short bullet\"],\"missing_info\":[\"short bullet\"],\"next_step\":\"string\",\"customer_language\":\"th|en|ja|zh|ko|unknown\",\"is_foreign_customer\":true,\"foreign_customer_label\":\"string\",\"original_message\":\"string\",\"thai_translation\":\"string\"}",
-    "Use current CWF service/pricing knowledge and short LINE admin tone. Do not use old chat prices as facts.",
+    "Use CWF Core Brain and current CWF service/pricing knowledge with short LINE admin tone. Do not use old chat prices as facts.",
     "If thread_context.reply_examples exists, use only final_admin_reply as trusted admin style examples. They are sanitized style memory, not factual pricing. Current CWF knowledge overrides them.",
     "Customer Inbox isolation rule: use only this selected conversation, selected customer context, CWF knowledge, and linked jobs in this JSON. Do not use any other customer's conversation.",
     "Phase 1 rule: draft copy-ready replies only. Do not claim a LINE message was sent, do not open a booking, and do not change any job/customer status.",
@@ -439,6 +442,7 @@ function buildLineDraftPrompt({ conversation, messages, agent, instruction, thre
     "If the customer asks price, answer the current CWF price first from cwf_knowledge, then ask one useful missing detail if needed.",
     "If the customer says expensive, explain value briefly and naturally, then offer a lower option when available.",
     "If the latest customer message is English, customer_reply must be English. If Japanese, reply Japanese if possible, otherwise English. For foreign customers, include thai_translation for admin.",
+    threadContext?.cwf_core_brain ? formatCoreBrainForPrompt(threadContext.cwf_core_brain) : "CWF_CORE_BRAIN: not loaded",
     JSON.stringify({ cwf_knowledge: serviceKnowledge() }, null, 2),
     "คุณคือผู้ช่วย AI ภายในของ Coldwindflow Air Services สำหรับช่วยแอดมินอ่านแชท LINE OA เท่านั้น",
     `บทบาทที่เลือก: ${agent.name}`,
@@ -1494,6 +1498,13 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
         service_type: example.service_type,
         tags: example.tags,
       }));
+      threadContext.cwf_core_brain = await buildCoreBrainContext(pool, {
+        query: latestText,
+        agent_key: req.body?.agent || "sales",
+        language: customerLanguage,
+        intent: situationType,
+        limit: 14,
+      });
 
       const lineSystem = [
         "You draft Coldwindflow LINE OA customer replies for an authenticated admin.",
@@ -1530,10 +1541,11 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
           customer_message: latestText,
           ai_reply: draft.customer_reply,
           source: "line_draft_reply",
-          metadata: { example_ids: usedReplyExamples.map((example) => example.id) },
+          metadata: { example_ids: usedReplyExamples.map((example) => example.id), used_core_brain_item_ids: (threadContext.cwf_core_brain?.summary || []).map((x) => x.id).filter(Boolean) },
         }).catch(() => {});
       }
-      return res.json({ ok: true, answer: draft.customer_reply, draft, used_reply_examples: usedReplyExamples, conversation, messages, thread_context: threadContext, agent });
+      draft.core_brain_used = (threadContext.cwf_core_brain?.summary || []).map((x) => ({ id:x.id, type:x.type, title:x.title, source:x.source }));
+      return res.json({ ok: true, answer: draft.customer_reply, draft, used_reply_examples: usedReplyExamples, core_brain: threadContext.cwf_core_brain, conversation, messages, thread_context: threadContext, agent });
     } catch (e) {
       console.error("POST /admin/ai-office/line-draft-reply error:", e.message);
       return res.status(e.status || 500).json({ ok: false, error: e.message || "ร่างข้อความจาก LINE ไม่สำเร็จ" });
@@ -1560,6 +1572,7 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
         generated_at: new Date().toISOString(),
         generated_at_display: formatThaiDateTime(new Date()),
         cwf_knowledge: serviceKnowledge(),
+        cwf_core_brain: null,
       };
       for (const bucket of buckets) {
         context.buckets[bucket] = await loadJobs(pool, bucket);
@@ -1569,6 +1582,7 @@ module.exports = function createAdminAiOfficeReadOnlyRoutes(deps = {}) {
       }
 
       const model = String(process.env.AI_OFFICE_MODEL || AI_OFFICE_DEFAULT_MODEL).trim() || AI_OFFICE_DEFAULT_MODEL;
+      context.cwf_core_brain = await buildCoreBrainContext(pool, { query: question, agent_key: req.body?.agent || "admin", language: "th", limit: 16 });
       if (agent.name === "Office Chat") {
         context.office_chat_agents = routeOfficeIntent(question);
       }
