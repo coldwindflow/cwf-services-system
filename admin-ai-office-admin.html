@@ -1,35 +1,43 @@
 <!DOCTYPE html>
 <html lang="th">
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="cwf-ai-office-version" content="ai-office-v32-daylight-20260612">
+  <meta name="theme-color" content="#edf3ff">
+  <title>📋 Admin · CWF</title>
   <link rel="apple-touch-icon" href="/icon-cwf-v32-180.png">
+  <link rel="manifest" href="/manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="theme-color" content="#06163d">
-  <link rel="manifest" href="/manifest.json">
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="cwf-ai-office-version" content="ai-office-v30-premium-redesign-20260612" />
-  <title>Admin Office</title>
-  <link rel="stylesheet" href="/admin-ai-office.css?v=ai-office-v30-premium-redesign" />
+  <link rel="stylesheet" href="/admin-ai-office.css?v=ai-office-v32-daylight">
 </head>
-<body data-ai-office-page="admin">
-  <div class="ai-shell">
-    <header class="ai-head">
-      <div class="ai-head-inner">
-        <img class="ai-logo" src="/icon-cwf-v32-180.png" alt="CWF">
-        <div class="ai-title"><h1>Admin Office</h1><p>ตามงานค้าง ยอดค้างชำระ และร่างข้อความให้แอดมิน</p></div>
-        <nav class="ai-nav" id="aiNav" aria-label="เมนูแผนก"></nav>
-      </div>
-    </header>
-    <main class="ai-main" id="aiOfficeApp">
-      <div class="chat-layout">
-        <section class="chat-col" id="chatCol"></section>
-        <aside class="side-col" id="sideCol"></aside>
-      </div>
-      <section class="dept-context" id="deptContext"></section>
-    </main>
-  </div>
+<body data-page="admin">
+  <header class="top-bar">
+    <img class="logo" src="/icon-cwf-v32-180.png" alt="CWF">
+    <h1 class="top-name">📋 Admin</h1>
+    <div class="top-stat-row" id="statRow"><span class="bpill bpill-muted">โหลด…</span></div>
+  </header>
+  <main class="stream" id="stream">
+    <div class="lnote" id="initNote">กำลังโหลด งานค้าง · ยอดค้างชำระ…</div>
+  </main>
+  <div class="pills" id="pills"></div>
+  <footer class="dock">
+    <nav class="tabs">
+      <a class="tab" href="/admin-ai-office.html"><span class="ti">🏠</span>หน้าหลัก</a>
+      <a class="tab on" href="/admin-ai-office-admin.html"><span class="ti">📋</span>Admin</a>
+      <a class="tab" href="/admin-ai-office-ops.html"><span class="ti">🗓</span>คิวงาน</a>
+      <a class="tab" href="/admin-ai-office-sales.html"><span class="ti">💬</span>Sales</a>
+      <a class="tab" href="/admin-ai-office-content.html"><span class="ti">✍️</span>Content</a>
+      <a class="tab" href="/admin-ai-office-dev.html"><span class="ti">⚙️</span>Dev</a>
+      <a class="tab ltab" href="/admin-ai-line-control.html?panel=dashboard"><span class="ti">🟢</span>LINE OA</a>
+    </nav>
+    <form class="composer" id="form">
+      <textarea id="q" placeholder="พิมพ์ถาม AI…" rows="1" autocomplete="off"></textarea>
+      <button class="send" id="send" type="submit" disabled>➤</button>
+    </form>
+  </footer>
   <div class="toast" id="toast"></div>
-  <script src="/admin-ai-office.js?v=ai-office-v30-premium-redesign"></script>
+  <script src="/admin-ai-office.js?v=ai-office-v32-daylight"></script>
 </body>
 </html>

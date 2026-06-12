@@ -1,6 +1,12 @@
 (function(){
   "use strict";
-  const BUILD="ai-line-control-v30-premium-redesign";
+
+  var BUILD="ai-line-control-v32-daylight";
+  var EMBEDDED = !!(
+    (typeof window !== 'undefined' && window.CWF_AI_CONTROL_EMBEDDED === true) ||
+    (document.body && document.body.getAttribute('data-ai-control-embedded') === '1') ||
+    document.getElementById('aiControlMount')
+  );
 
   const STATE = {
     settings: [],
@@ -203,26 +209,41 @@
       @media(max-width:680px){.ai-control-form{grid-template-columns:1fr}}
       .ai-empty{border-radius:18px;background:#fff;border:1px dashed rgba(21,88,214,.22);padding:18px;color:#64748b;font-weight:850;text-align:center}
       .ai-error{border-radius:18px;background:#fff7f7;border:1px solid rgba(239,68,68,.28);padding:12px;color:#7f1d1d;font-weight:900}
-
-
-      /* v30 premium control polish — fixes mobile overlap and old blocky look */
-      .ai-control-overlay{background:radial-gradient(circle at 94% 0,rgba(37,99,235,.22),transparent 28%),linear-gradient(180deg,#eef5ff 0,#f8fbff 100%)}
-      .ai-control-overlay.open{display:flex;flex-direction:column}
-      .ai-control-top{position:relative;z-index:2;flex:0 0 auto;background:radial-gradient(circle at 84% 0,rgba(255,210,31,.16),transparent 28%),linear-gradient(135deg,#050b1b,#071b45 60%,#0b43a3);padding:calc(13px + env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 14px max(14px,env(safe-area-inset-left));box-shadow:0 18px 44px rgba(3,13,35,.28)}
-      .ai-control-head{align-items:flex-start;gap:12px}.ai-control-close{width:54px;height:54px;border-radius:20px;background:rgba(255,255,255,.12);backdrop-filter:blur(14px);box-shadow:inset 0 1px 0 rgba(255,255,255,.16)}
-      .ai-control-title b{font-size:clamp(28px,7vw,42px);letter-spacing:-.9px}.ai-control-title span{font-size:clamp(13px,3vw,16px);max-width:720px}.ai-control-actions{gap:9px;margin-top:14px}.ai-head-btn{min-height:42px;padding:0 15px;border-radius:999px;background:rgba(255,255,255,.12);backdrop-filter:blur(12px)}.ai-head-btn.primary{background:linear-gradient(135deg,#ffe477,#ffc400);box-shadow:0 12px 26px rgba(255,196,0,.22)}
-      .ai-status-strip{gap:8px;margin-top:13px}.ai-chip{min-height:34px;font-size:12px;padding:0 11px;border-radius:999px;box-shadow:inset 0 1px 0 rgba(255,255,255,.10)}
-      .ai-control-tabs{position:relative;z-index:2;flex:0 0 auto;display:flex;gap:10px;overflow-x:auto;padding:12px max(14px,env(safe-area-inset-right)) 12px max(14px,env(safe-area-inset-left));background:#061735;box-shadow:0 12px 28px rgba(3,13,35,.18);scroll-padding-inline:14px}.ai-control-tab{min-height:44px;padding:0 16px;border-radius:999px;background:rgba(255,255,255,.10);border:1px solid rgba(255,255,255,.16);font-size:13px}.ai-control-tab.active{background:linear-gradient(135deg,#ffe477,#ffc400);box-shadow:0 10px 26px rgba(255,196,0,.22)}
-      .ai-control-body{flex:1 1 auto;overflow:auto;padding:16px max(14px,env(safe-area-inset-right)) calc(30px + env(safe-area-inset-bottom)) max(14px,env(safe-area-inset-left));gap:14px;scrollbar-width:thin}.cc-card{border-radius:28px;background:rgba(255,255,255,.90);backdrop-filter:blur(16px);border:1px solid rgba(8,20,42,.08);box-shadow:0 18px 48px rgba(3,13,35,.10);padding:17px}.mode-panel{background:linear-gradient(135deg,rgba(255,255,255,.92),rgba(239,245,255,.92));border-color:rgba(37,99,235,.10)}.cc-card h3{font-size:clamp(21px,5vw,30px);letter-spacing:-.45px;color:#07122a}.cc-card p.sub{font-size:13.5px;color:#60718d}.cc-grid{gap:12px}.cc-metric{border-radius:22px;background:linear-gradient(180deg,#fff,#f7faff);box-shadow:0 10px 26px rgba(3,13,35,.06);padding:14px}.cc-metric b{font-size:clamp(25px,6vw,36px);letter-spacing:-.5px}.cc-actions{gap:9px}.cc-btn{min-height:43px;padding:0 15px;border-radius:999px;background:#f8fbff;border-color:rgba(8,20,42,.10);box-shadow:0 8px 20px rgba(3,13,35,.05)}.cc-btn.primary{background:linear-gradient(135deg,#ffe477,#ffc400);box-shadow:0 12px 26px rgba(255,196,0,.20)}.cc-btn.secondary{background:linear-gradient(135deg,#0b2f78,#2563eb)}.cc-switch{width:62px;height:36px}.cc-slider:after{width:30px;height:30px}.cc-switch input:checked + .cc-slider:after{transform:translateX(26px)}.policy-item,.line-card,.draft-card,.brain-item,.conversation-card,.thread-box,.draft-result,.quality-box{border-radius:22px;border-color:rgba(8,20,42,.08);box-shadow:0 10px 26px rgba(3,13,35,.06)}.conversation-list{max-height:min(430px,58vh)}.thread-box{max-height:min(380px,54vh)}.ai-empty,.ai-error{border-radius:22px}
-      @media(max-width:680px){.ai-control-top{padding-left:16px;padding-right:16px}.ai-control-close{width:50px;height:50px;border-radius:18px}.ai-control-title b{font-size:30px}.ai-control-actions{display:grid;grid-template-columns:1fr 1fr;align-items:stretch}.ai-head-btn{width:100%}.ai-status-strip{display:flex;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px;scrollbar-width:none}.ai-status-strip::-webkit-scrollbar{display:none}.ai-chip{flex:0 0 auto}.ai-control-tabs{padding-left:16px;padding-right:16px}.ai-control-body{padding-left:14px;padding-right:14px}.cc-section-title{align-items:flex-start;flex-direction:column}.cc-actions{display:grid;grid-template-columns:1fr 1fr}.cc-btn{width:100%}.cc-grid{grid-template-columns:1fr}.policy-item{flex-direction:column}.policy-badges{justify-content:flex-start}.dash-row{align-items:flex-start}.dash-row span{text-align:left}.ai-control-form{grid-template-columns:1fr}.copilot-layout{grid-template-columns:1fr}}
-      @media(max-width:420px){.ai-control-actions,.cc-actions{grid-template-columns:1fr}.ai-control-title b{font-size:27px}.ai-control-tab{min-height:42px;padding:0 14px}.cc-card{padding:14px;border-radius:24px}.cc-metric b{font-size:30px}}
-
     `;
     document.head.appendChild(style);
   }
 
   function ensureDom(){
     injectStyle();
+    if (EMBEDDED) {
+      var mount = document.getElementById("aiControlMount");
+      if (!mount || $("#aiControlOverlay")) return;
+      var overlay = document.createElement("section");
+      overlay.id = "aiControlOverlay";
+      overlay.className = "ai-control-overlay embedded open";
+      overlay.innerHTML =
+        '<div class="ai-control-top">' +
+          '<div class="ai-control-head">' +
+            '<div class="ai-control-title">' +
+              '<b>AI Reply Control</b>' +
+              '<span>ควบคุม AI ตอบลูกค้าจาก LINE OA</span>' +
+              '<div class="ai-control-actions">' +
+                '<button class="ai-head-btn primary" type="button" data-ai-control-refresh>รีเฟรช</button>' +
+                '<button class="ai-head-btn" type="button" data-quick-action="open-inbox">LINE Inbox</button>' +
+                '<button class="ai-head-btn" type="button" data-quick-action="open-review">หน้างานจอง</button>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="ai-status-strip" id="aiControlStatusStrip"></div>' +
+        '</div>' +
+        '<nav class="ai-control-tabs">' + TABS.map(function(t){ return '<button class="ai-control-tab" data-ai-tab="' + t[0] + '">' + t[1] + '</button>'; }).join("") + '</nav>' +
+        '<main class="ai-control-body" id="aiControlBody"></main>';
+      mount.appendChild(overlay);
+      overlay.addEventListener("click", handleClick);
+      overlay.addEventListener("change", handleChange);
+      overlay.addEventListener("submit", handleSubmit);
+      return;
+    }
     if (!$("#aiControlOpen")) {
       const btn = document.createElement("button");
       btn.id = "aiControlOpen";
@@ -243,10 +264,10 @@
       }
     }
     if ($("#aiControlOverlay")) return;
-    const overlay = document.createElement("section");
-    overlay.id = "aiControlOverlay";
-    overlay.className = "ai-control-overlay";
-    overlay.innerHTML = `
+    const overlayEl = document.createElement("section");
+    overlayEl.id = "aiControlOverlay";
+    overlayEl.className = "ai-control-overlay";
+    overlayEl.innerHTML = `
       <div class="ai-control-top">
         <div class="ai-control-head">
           <button class="ai-control-close" type="button" data-ai-control-close>‹</button>
@@ -264,10 +285,10 @@
       </div>
       <nav class="ai-control-tabs">${TABS.map(([key,label]) => `<button class="ai-control-tab" data-ai-tab="${key}">${label}</button>`).join("")}</nav>
       <main class="ai-control-body" id="aiControlBody"></main>`;
-    document.body.appendChild(overlay);
-    overlay.addEventListener("click", handleClick);
-    overlay.addEventListener("change", handleChange);
-    overlay.addEventListener("submit", handleSubmit);
+    document.body.appendChild(overlayEl);
+    overlayEl.addEventListener("click", handleClick);
+    overlayEl.addEventListener("change", handleChange);
+    overlayEl.addEventListener("submit", handleSubmit);
   }
 
   function openPanel(tab){
@@ -277,10 +298,10 @@
     if (typeof tab === "string") STATE.activeTab = tab;
     else if (["dashboard","reply","line","approvals","decision","brain"].includes(paramTab)) STATE.activeTab = paramTab;
     else if (paramTab === "switches") STATE.activeTab = "reply";
-    $("#aiControlOverlay").classList.add("open");
+    var _ov = $("#aiControlOverlay"); if (_ov) _ov.classList.add("open");
     loadAll();
   }
-  function closePanel(){ STATE.open = false; $("#aiControlOverlay")?.classList.remove("open"); }
+  function closePanel(){ if (EMBEDDED) return; STATE.open = false; $("#aiControlOverlay")?.classList.remove("open"); }
 
   async function loadSettings(){ const data = await api("/admin/ai-office/control/settings"); STATE.settings = data.settings || []; STATE.values = data.values || {}; }
   async function loadDrafts(){ try { const data = await api("/admin/ai-office/control/pending-drafts"); STATE.drafts = data.drafts || []; } catch(_) { STATE.drafts = []; } }
@@ -978,7 +999,7 @@
   async function disableExample(id){ if (!confirm('ปิดใช้งานคำตอบนี้ใช่ไหม')) return; await api(`/admin/ai-office/reply-examples/${encodeURIComponent(id)}/disable`, { method:'PATCH', body:'{}' }); await loadExamples(); render(); }
   function editExample(id){ const ex = STATE.examples.find((x) => String(x.id) === String(id)); if (!ex) return; const first = $('[data-brain-form]'); if (first) { first.outerHTML = brainForm(ex); const form = $('[data-brain-form]'); if (form) { if (ex.situation_type) form.elements.situation_type.value = ex.situation_type; if (ex.language) form.elements.language.value = ex.language; form.scrollIntoView({ behavior:'smooth', block:'start' }); } } }
 
-  function openInbox(){ const btn = $('#lineInboxBtn'); if (btn) { closePanel(); btn.click(); } else window.location.href = '/admin-ai-office.html'; }
+  function openInbox(){ if (EMBEDDED) { STATE.activeTab = 'line'; loadAll(); return; } const btn = $('#lineInboxBtn'); if (btn) { closePanel(); btn.click(); } else window.location.href = '/admin-ai-line-control.html?panel=line'; }
   function openBookingReview(intakeId){ const suffix = intakeId ? `?ai_intake_id=${encodeURIComponent(intakeId)}` : ''; window.location.href = `/admin-review-v2.html${suffix}`; }
   function openAddFromIntake(id){ window.location.href = `/admin-add-v2.html?source=line_ai&ai_intake_id=${encodeURIComponent(id)}&t=${Date.now()}`; }
 
@@ -1067,6 +1088,7 @@
     else if (panel === 'brain') STATE.activeTab = 'brain';
     else if (panel === 'line' || panel === 'line-ai') STATE.activeTab = 'line';
     else if (panel === 'reply' || panel === 'switches') STATE.activeTab = 'reply';
+    if (EMBEDDED) { openPanel(STATE.activeTab); return; }
     if (["line-ai","dashboard","reply","line","approvals","approval","drafts","decision","reply-decision","brain","switches"].includes(panel) || qs.get('ai_intake_id')) setTimeout(()=>openPanel(), 500);
   }
 
