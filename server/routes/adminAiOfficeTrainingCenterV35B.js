@@ -1,14 +1,6 @@
 const express = require("express");
 const https = require("https");
 const { createReplyExample, logReplyLearningEvent, listReplyExamples } = require("../aiReplyLearning");
-const { buildCoreBrainContext, formatCoreBrainForPrompt, saveCoreBrainLesson } = require("../aiOfficeCoreBrain");
-const {
-  ensureAutoTrainingSchema,
-  setTrainingConversationMode,
-  buildAndSaveInternalAnswer,
-  listAutoTrainingAnswers,
-  updateAutoTrainingFeedback,
-} = require("../aiTrainingAutoReplyV36");
 
 const BUILD = "phase35b2_training_backend_20260612";
 const DEFAULT_MODEL = "gpt-4.1-mini";
@@ -66,7 +58,6 @@ async function tableExists(pool, tableName) {
 }
 
 async function ensureTrainingMemorySchema(pool) {
-  await ensureAutoTrainingSchema(pool);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS public.ai_memory_events (
       id BIGSERIAL PRIMARY KEY,
@@ -127,13 +118,11 @@ async function listRealCustomerQuestions(pool, opts = {}) {
   const r = await pool.query(`
     SELECT c.id AS conversation_id, c.id, c.line_user_id, c.display_name, c.picture_url,
            c.last_message_text, c.last_message_at,
-           lm.id AS line_message_pk, lm.message_id AS line_message_id, lm.message_text AS customer_message, lm.received_at AS customer_message_at,
-           latest.event_type AS latest_training_event, latest.action_status AS latest_training_status, latest.created_at AS latest_training_at,
-           aa.id AS auto_answer_id, aa.ai_reply AS auto_ai_reply, aa.confidence AS auto_confidence, aa.status AS auto_status, aa.metadata AS auto_metadata, aa.created_at AS auto_created_at,
-           cs.mode AS training_conversation_mode
+           lm.id AS line_message_id, lm.message_text AS customer_message, lm.received_at AS customer_message_at,
+           latest.event_type AS latest_training_event, latest.action_status AS latest_training_status, latest.created_at AS latest_training_at
       FROM public.line_conversations c
       LEFT JOIN LATERAL (
-        SELECT id, message_id, message_text, received_at, created_at
+        SELECT id, message_text, received_at, created_at
           FROM public.line_messages
          WHERE conversation_id=c.id
            AND direction='inbound'
@@ -146,19 +135,10 @@ async function listRealCustomerQuestions(pool, opts = {}) {
           FROM public.ai_memory_events me
          WHERE me.source='training_center'
            AND me.conversation_id=c.id
-           AND (me.metadata->>'line_message_id' = COALESCE(lm.message_id, lm.id::text) OR me.customer_message = lm.message_text OR me.selected_customer_question = lm.message_text)
+           AND (me.metadata->>'line_message_id' = lm.id::text OR me.customer_message = lm.message_text OR me.selected_customer_question = lm.message_text)
          ORDER BY me.created_at DESC
          LIMIT 1
       ) latest ON TRUE
-      LEFT JOIN LATERAL (
-        SELECT id, ai_reply, confidence, status, metadata, created_at
-          FROM public.ai_training_auto_answers a
-         WHERE a.conversation_id=c.id
-           AND (a.line_message_id = COALESCE(lm.message_id, lm.id::text) OR a.customer_message = lm.message_text)
-         ORDER BY a.created_at DESC
-         LIMIT 1
-      ) aa ON TRUE
-      LEFT JOIN public.ai_training_conversation_settings cs ON cs.conversation_id=c.id
      WHERE COALESCE(lm.message_text, c.last_message_text, '') <> ''
      ORDER BY COALESCE(lm.received_at, c.last_message_at) DESC NULLS LAST, c.updated_at DESC NULLS LAST
      LIMIT $1
@@ -172,8 +152,7 @@ async function listRealCustomerQuestions(pool, opts = {}) {
       line_user_id: row.line_user_id,
       display_name: row.display_name,
       picture_url: row.picture_url,
-      line_message_id: row.line_message_id || (row.line_message_pk ? String(row.line_message_pk) : ""),
-      line_message_pk: row.line_message_pk,
+      line_message_id: row.line_message_id,
       customer_message: message,
       last_message_text: message,
       last_message_at: row.customer_message_at || row.last_message_at,
@@ -181,13 +160,6 @@ async function listRealCustomerQuestions(pool, opts = {}) {
       latest_training_event: row.latest_training_event || null,
       latest_training_status: row.latest_training_status || "new_customer_question",
       latest_training_at: row.latest_training_at || null,
-      auto_answer_id: row.auto_answer_id || null,
-      auto_ai_reply: row.auto_ai_reply || "",
-      auto_confidence: row.auto_confidence == null ? null : Number(row.auto_confidence || 0),
-      auto_status: row.auto_status || null,
-      auto_metadata: row.auto_metadata || {},
-      auto_created_at: row.auto_created_at || null,
-      training_conversation_mode: row.training_conversation_mode || "inherit",
     };
   });
   return { questions, counts: { total: questions.length } };
@@ -318,7 +290,6 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
   const situationType = cleanText(body.situation_type || inferSituation(`${selectedQuestion}\n${body.admin_question || ""}`), 80);
   const examples = await loadExamplesForTraining(pool, situationType, language, selectedQuestion);
   const trainingMemory = await loadTrainingMemory(pool, { conversationId, situationType, selectedQuestion });
-  const coreBrain = await buildCoreBrainContext(pool, { query: selectedQuestion, agent_key: body.agent_key || "sales", language, intent: situationType, limit: 14 });
   const system = [
     "You are CWF AI trainee inside an internal training classroom, not a live LINE sender.",
     "Return strict JSON only.",
@@ -326,14 +297,13 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
     "decision must be one of: ส่งได้, ต้องตรวจ, ห้ามส่ง, AI ยังไม่รู้.",
     "This is internal-only. Never claim a message was sent. Never trigger LINE sending.",
     "If facts are missing, set decision='AI ยังไม่รู้' or 'ต้องตรวจ' and ask the teacher what should be taught.",
-    "Use CWF Core Brain as the shared source of truth before saved examples. Do not invent tax invoice, discounts, booking confirmation, technician availability, or repair diagnosis.",
+    "Use CWF facts and saved examples only. Do not invent tax invoice, discounts, booking confirmation, technician availability, or repair diagnosis.",
     "Use Thai LINE admin style: concise, warm, natural. If customer uses English, answer in simple English.",
   ].join(" ");
   const prompt = [
     "REAL_CUSTOMER_QUESTION:", selectedQuestion, "",
     "SITUATION_TYPE:", situationType, "",
     "ADMIN_TRAINING_INSTRUCTION:", cleanText(body.admin_question || "ศูนย์ฝึก AI: ลองตอบภายในเท่านั้น ห้ามส่ง LINE จริง ถ้าไม่มั่นใจให้บอกผู้สอนว่าควรสอนอะไรเพิ่ม", 1400), "",
-    formatCoreBrainForPrompt(coreBrain), "",
     "RECENT_LINE_CONTEXT:", JSON.stringify({ display_name: conversation.display_name || "", messages: messages.map((m) => ({ direction:m.direction, text:m.message_text, at:m.received_at || m.created_at })).slice(-20) }, null, 2), "",
     "SAVED_TEACHER_EXAMPLES:", JSON.stringify(examples.map((e) => ({ id:e.id, situation_type:e.situation_type, customer_message:e.customer_message, final_admin_reply:e.final_admin_reply, language:e.language, tags:e.tags })), null, 2), "",
     "TRAINING_MEMORY:", JSON.stringify(trainingMemory.map((m) => ({ event_type:m.event_type, action_status:m.action_status, customer_message:m.customer_message, ai_reply:m.ai_reply, final_admin_reply:m.final_admin_reply, situation_type:m.situation_type })), null, 2), "",
@@ -385,7 +355,6 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
       decision_reason: draft.decision_reason,
       missing_info: missingInfo,
       used_example_ids: draft.used_reply_examples.map((e) => e.id),
-      used_core_brain_item_ids: (coreBrain.summary || []).map((e) => e.id).filter(Boolean),
       should_auto_reply: Boolean(parsed.should_auto_reply) && decision === "ส่งได้" && confidence >= 85,
       model: String(process.env.AI_OFFICE_MODEL || DEFAULT_MODEL).trim() || DEFAULT_MODEL,
     },
@@ -401,9 +370,7 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
     metadata: { memory_event_id: event?.id || null, confidence, decision, internal_only: true, no_line_send: true },
     created_by: getAdminUser(req),
   }).catch(()=>{});
-  // v36.2: do not call OpenAI a second time just to save a manual classroom draft.
-  // Teacher feedback below saves approved/rejected lessons into the shared brain.
-  return { ok:true, answer, draft, training_event:event, used_reply_examples:draft.used_reply_examples, core_brain:coreBrain, conversation, messages };
+  return { ok:true, answer, draft, training_event:event, used_reply_examples:draft.used_reply_examples, conversation, messages };
 }
 
 async function getTrainingSkills(pool) {
@@ -528,26 +495,8 @@ module.exports = function createAdminAiOfficeTrainingCenterV35BRoutes(deps = {})
         tags: ["ศูนย์ฝึก AI", "training_center", situationType],
         metadata: { reply_example_id: example?.id || null, line_message_id: body.line_message_id || null, teacher_verdict: body.teacher_verdict || "lesson_saved" },
       });
-      let brainItem = null;
-      brainItem = await saveCoreBrainLesson(pool, {
-        auto_answer_id: body.auto_answer_id || null,
-        conversation_id: body.conversation_id || null,
-        line_message_id: body.line_message_id || null,
-        customer_message: customerMessage,
-        ai_reply: body.ai_reply || "",
-        final_admin_reply: finalReply,
-        verdict: body.teacher_verdict || "lesson_saved",
-        situation_type: situationType,
-        service_type: body.service_type || "",
-        source: "training_center_lesson",
-        created_by: getAdminUser(req),
-        metadata: { reply_example_id: example?.id || null }
-      }).catch(()=>null);
-      if (body.auto_answer_id) {
-        await updateAutoTrainingFeedback(pool, body.auto_answer_id, { verdict:"corrected", final_admin_reply:finalReply, reason:"teacher_saved_lesson" }, getAdminUser(req)).catch(()=>{});
-      }
       const skills = await getTrainingSkills(pool).catch(()=>null);
-      return res.json({ ok:true, example, event, brain_item:brainItem, skills: skills?.skills || [] });
+      return res.json({ ok:true, example, event, skills: skills?.skills || [] });
     } catch (e) {
       return res.status(e.status || 500).json({ ok:false, error:e.message || "SAVE_TRAINING_LESSON_FAILED" });
     }
@@ -557,104 +506,34 @@ module.exports = function createAdminAiOfficeTrainingCenterV35BRoutes(deps = {})
     try {
       const body = req.body || {};
       const verdict = cleanText(body.verdict || "teacher_review_needed", 80);
-      const customerMessage = cleanText(body.customer_message || body.selected_customer_question || "", 4000);
-      const aiReply = cleanText(body.ai_reply || "", 4000);
-      const isReject = /reject|wrong|ไม่ถูก|failed|bad|มั่ว|rejected/i.test(verdict);
-      const finalReply = cleanText(body.final_admin_reply || (!isReject ? aiReply : ""), 4000);
-      const situationType = cleanText(body.situation_type || inferSituation(`${customerMessage}
-${aiReply}
-${finalReply}`), 80);
       const event = await saveTrainingMemoryEvent(pool, req, {
         event_type: "training_feedback",
         action_status: verdict,
         agent_key: body.agent_key || "sales",
         conversation_id: body.conversation_id || null,
-        selected_customer_question: customerMessage,
-        customer_message: customerMessage,
-        ai_reply: aiReply,
-        final_admin_reply: finalReply,
-        situation_type: situationType,
-        service_type: body.service_type || "",
-        tags: ["ศูนย์ฝึก AI", "training_center", verdict, situationType],
+        selected_customer_question: body.customer_message || body.selected_customer_question || "",
+        customer_message: body.customer_message || body.selected_customer_question || "",
+        ai_reply: body.ai_reply || "",
+        final_admin_reply: body.final_admin_reply || "",
+        situation_type: body.situation_type || inferSituation(`${body.customer_message || ""}\n${body.ai_reply || ""}`),
+        tags: ["ศูนย์ฝึก AI", "training_center", verdict],
         metadata: { line_message_id: body.line_message_id || null, reason: body.reason || "", internal_only: true, no_line_send: true },
       });
-      let example = null;
-      if (!isReject && customerMessage && finalReply) {
-        example = await createReplyExample(pool, {
-          agent_key: body.agent_key || "sales",
-          situation_type: situationType,
-          customer_message: customerMessage,
-          final_admin_reply: finalReply,
-          language: body.language || detectLanguage(`${customerMessage}
-${finalReply}`),
-          service_type: body.service_type || "",
-          tags: body.tags || ["ศูนย์ฝึก AI", "training_center_feedback", situationType],
-          source: "training_center_feedback",
-          source_conversation_id: body.conversation_id || null,
-          created_by: getAdminUser(req),
-          quality: "teacher_approved_feedback",
-        }).catch(()=>null);
-      }
-      let brainItem = null;
-      if (customerMessage && (aiReply || finalReply)) {
-        brainItem = await saveCoreBrainLesson(pool, {
-          conversation_id: body.conversation_id || null,
-          line_message_id: body.line_message_id || null,
-          customer_message: customerMessage,
-          ai_reply: aiReply,
-          final_admin_reply: finalReply,
-          verdict,
-          reason: body.reason || "",
-          situation_type: situationType,
-          service_type: body.service_type || "",
-          source: "training_center_feedback",
-          created_by: getAdminUser(req),
-          metadata: { reply_example_id: example?.id || null, memory_event_id: event?.id || null },
-        }).catch(()=>null);
-      }
       await logReplyLearningEvent(pool, {
         event_type: verdict,
         conversation_id: body.conversation_id || null,
         agent_key: body.agent_key || "sales",
-        situation_type: situationType,
-        customer_message: customerMessage,
-        ai_reply: aiReply,
-        final_admin_reply: finalReply,
+        situation_type: body.situation_type || inferSituation(`${body.customer_message || ""}\n${body.ai_reply || ""}`),
+        customer_message: body.customer_message || body.selected_customer_question || "",
+        ai_reply: body.ai_reply || "",
+        final_admin_reply: body.final_admin_reply || "",
         source: "training_center",
         created_by: getAdminUser(req),
-        metadata: { memory_event_id: event?.id || null, reply_example_id: example?.id || null, brain_item_id: brainItem?.id || null, verdict, internal_only: true, no_line_send: true },
+        metadata: { memory_event_id: event?.id || null, verdict, internal_only: true, no_line_send: true },
       }).catch(()=>{});
-      return res.json({ ok:true, event, example, brain_item:brainItem });
+      return res.json({ ok:true, event });
     } catch (e) {
       return res.status(e.status || 500).json({ ok:false, error:e.message || "SAVE_TRAINING_FEEDBACK_FAILED" });
-    }
-  });
-
-
-  router.get("/admin/ai-office/training-center/auto-answers", requireAdminSession, async (req, res) => {
-    try {
-      const answers = await listAutoTrainingAnswers(pool, { limit: req.query.limit || 80, status: req.query.status || "" });
-      return res.json({ ok:true, build:BUILD, answers, counts:{ total:answers.length } });
-    } catch (e) {
-      return res.status(e.status || 500).json({ ok:false, error:e.message || "LOAD_AUTO_TRAINING_ANSWERS_FAILED" });
-    }
-  });
-
-  router.post("/admin/ai-office/training-center/auto-answers/:id/feedback", requireAdminSession, async (req, res) => {
-    try {
-      const result = await updateAutoTrainingFeedback(pool, req.params.id, req.body || {}, getAdminUser(req));
-      return res.json(result);
-    } catch (e) {
-      return res.status(e.status || 500).json({ ok:false, error:e.message || "SAVE_AUTO_TRAINING_FEEDBACK_FAILED" });
-    }
-  });
-
-  router.post("/admin/ai-office/training-center/conversations/:id/settings", requireAdminSession, async (req, res) => {
-    try {
-      const setting = await setTrainingConversationMode(pool, req.params.id, req.body?.mode || "inherit", req.body || {}, getAdminUser(req));
-      return res.json({ ok:true, setting });
-    } catch (e) {
-      return res.status(e.status || 500).json({ ok:false, error:e.message || "SAVE_TRAINING_CONVERSATION_SETTING_FAILED" });
     }
   });
 
