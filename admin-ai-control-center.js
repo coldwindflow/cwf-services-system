@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const BUILD = "phase35b2_training_backend_20260612";
+  const BUILD = "phase35b5_chat_mirror_20260612";
   try { window.__CWF_AI_TRAINING_CENTER_BUILD__ = BUILD; } catch(_) {}
 
   var EMBEDDED = !!(
@@ -33,6 +33,9 @@
     trainingQuestions: [],
     trainingSkills: [],
     trainingCounts: {},
+    tc5MobileStep: 1,
+    tc5RightTab: "skills",
+    tc5TeachOpen: false,
     health: null,
     autoSafeLogs: [],
     autoSafeQuality: null,
@@ -242,6 +245,142 @@
       @media(max-width:680px){.ai-control-form{grid-template-columns:1fr}}
       .ai-empty{border-radius:18px;background:#fff;border:1px dashed rgba(21,88,214,.22);padding:18px;color:#64748b;font-weight:850;text-align:center}
       .ai-error{border-radius:18px;background:#fff7f7;border:1px solid rgba(239,68,68,.28);padding:12px;color:#7f1d1d;font-weight:900}
+
+      /* ===== Phase 35B-5: Chat Mirror ===== */
+      .tc5-wrap{display:flex;flex-direction:column;gap:12px}
+      .tc5-controls{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;padding:14px 16px;background:linear-gradient(135deg,#06163d 0%,#0d3d8d 55%,#16a34a 100%);border-radius:20px;color:#fff}
+      @media(max-width:860px){.tc5-controls{grid-template-columns:1fr}}
+      .tc5-ctrl-card{border:1px solid rgba(255,255,255,.18);border-radius:16px;background:rgba(255,255,255,.10);padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:10px}
+      .tc5-ctrl-card b{display:block;font-size:13px;font-weight:850;color:#fff}
+      .tc5-ctrl-card small{display:block;margin-top:2px;font-size:11px;font-weight:700;color:rgba(255,255,255,.72);line-height:1.35}
+      .tc5-shell{display:grid;grid-template-columns:260px 1fr 296px;height:690px;border-radius:20px;overflow:hidden;border:1px solid rgba(6,199,85,.18);box-shadow:0 16px 48px rgba(6,199,85,.10);background:#f0fdf4}
+      @media(max-width:1140px){.tc5-shell{grid-template-columns:220px 1fr 260px;height:640px}}
+      @media(max-width:900px){.tc5-shell{grid-template-columns:200px 1fr 240px;height:600px}}
+
+      /* LEFT sidebar */
+      .tc5-left{display:flex;flex-direction:column;border-right:1px solid rgba(6,199,85,.15);background:#fff;overflow:hidden}
+      .tc5-left-head{flex:0 0 auto;padding:11px 12px;background:rgba(6,199,85,.06);border-bottom:1px solid rgba(6,199,85,.12);display:flex;align-items:center;justify-content:space-between;gap:6px}
+      .tc5-left-head b{font-size:12.5px;font-weight:900;color:#0f2419}
+      .tc5-left-badge{display:inline-flex;padding:2px 8px;border-radius:999px;background:rgba(6,199,85,.15);color:#166534;font-size:10px;font-weight:900}
+      .tc5-left-scroll{flex:1;overflow-y:auto;padding:6px;scrollbar-width:thin;scrollbar-color:rgba(6,199,85,.2) transparent}
+      .tc5-cust-card{width:100%;text-align:left;padding:9px 11px;border-radius:13px;border:1px solid transparent;background:transparent;cursor:pointer;transition:all .12s;margin-bottom:3px}
+      .tc5-cust-card:hover{background:rgba(6,199,85,.07);border-color:rgba(6,199,85,.15)}
+      .tc5-cust-card.active{background:linear-gradient(180deg,rgba(6,199,85,.14),rgba(6,199,85,.07));border-color:rgba(6,199,85,.32);box-shadow:0 3px 10px rgba(6,199,85,.12)}
+      .tc5-cust-name{display:block;font-size:13px;font-weight:850;color:#0f2419;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+      .tc5-cust-tags{display:flex;gap:4px;flex-wrap:wrap;margin-top:4px}
+      .tc5-cust-sit{display:inline-block;font-size:9.5px;font-weight:900;padding:2px 7px;border-radius:999px;background:rgba(6,199,85,.12);color:#1a6e3a}
+      .tc5-cust-preview{display:block;margin-top:4px;font-size:11px;font-weight:700;color:#64748b;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+      .tc5-cust-foot{display:flex;align-items:center;justify-content:space-between;margin-top:5px}
+      .tc5-cust-time{font-size:9.5px;font-weight:700;color:#94a3b8}
+      .tc5-status-dot{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+      .tc5-status-dot.pending{background:#f59e0b}.tc5-status-dot.passed{background:#22c55e}.tc5-status-dot.failed{background:#dc2626}.tc5-status-dot.unknown{background:#8b5cf6}
+
+      /* CENTER chat */
+      .tc5-center{display:flex;flex-direction:column;overflow:hidden}
+      .tc5-center-head{flex:0 0 auto;padding:11px 14px;background:#fff;border-bottom:1px solid rgba(6,199,85,.12);display:flex;align-items:center;gap:10px;min-height:52px}
+      .tc5-chead-info{flex:1;min-width:0}
+      .tc5-chead-name{font-size:14px;font-weight:900;color:#0f2419;line-height:1.2}
+      .tc5-chead-sub{font-size:10.5px;font-weight:700;color:#64748b;margin-top:1px}
+      .tc5-per-controls{display:flex;gap:5px;flex-wrap:wrap}
+      .tc5-per-btn{display:inline-flex;align-items:center;gap:3px;padding:5px 10px;border-radius:999px;font-size:10.5px;font-weight:900;border:1px solid;cursor:pointer;background:#fff;transition:all .12s}
+      .tc5-per-btn.on{border-color:rgba(22,163,74,.3);color:#166534;background:rgba(22,163,74,.08)}
+      .tc5-per-btn.off{border-color:rgba(220,38,38,.28);color:#7f1d1d;background:rgba(220,38,38,.07)}
+      .tc5-per-btn.inherit{border-color:rgba(100,116,139,.2);color:#475569;background:rgba(100,116,139,.06)}
+      .tc5-center-scroll{flex:1;overflow-y:auto;padding:14px 16px;display:flex;flex-direction:column;gap:10px;background:linear-gradient(180deg,#f0fdf4 0%,#f8fffe 100%);scrollbar-width:thin;scrollbar-color:rgba(6,199,85,.2) transparent}
+      .tc5-center-foot{flex:0 0 auto;padding:10px 14px;background:#fff;border-top:1px solid rgba(6,199,85,.12);display:flex;align-items:center;gap:8px}
+      .tc5-center-empty{display:grid;place-items:center;flex:1;min-height:300px;color:#94a3b8;font-size:13px;font-weight:800;text-align:center;padding:24px}
+      .tc5-center-empty span{display:block;font-size:32px;margin-bottom:8px}
+
+      /* Chat bubbles */
+      .tc5-bubble-row{display:flex;align-items:flex-end;gap:8px;animation:tc5BubbleFade .2s ease}
+      @keyframes tc5BubbleFade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
+      .tc5-bubble-row.customer{justify-content:flex-start}
+      .tc5-bubble-row.ai-row{justify-content:flex-end}
+      .tc5-avatar{width:30px;height:30px;border-radius:50%;flex:0 0 auto;display:grid;place-items:center;font-size:10px;font-weight:900;color:#fff;box-shadow:0 2px 8px rgba(0,0,0,.12)}
+      .tc5-avatar.cust-av{background:linear-gradient(135deg,#06c755,#22c55e)}
+      .tc5-avatar.ai-av{background:linear-gradient(135deg,#0d3d8d,#1769ff)}
+      .tc5-bubble{max-width:75%;border-radius:18px;position:relative;word-break:break-word}
+      .tc5-bubble.customer-bubble{background:#dcfce7;border:1px solid rgba(6,199,85,.22);border-bottom-left-radius:4px;padding:10px 14px;color:#0f2419}
+      .tc5-bubble.ai-bubble{background:#fff;border:1px solid rgba(59,130,246,.2);border-bottom-right-radius:4px;padding:10px 14px;color:#0f2419;box-shadow:0 4px 16px rgba(59,130,246,.08)}
+      .tc5-bubble-text{font-size:13.5px;font-weight:700;line-height:1.58;white-space:pre-wrap}
+      .tc5-bubble-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;margin-top:7px;padding-top:6px;border-top:1px solid rgba(15,23,42,.06)}
+      .tc5-time{font-size:10px;font-weight:700;color:#94a3b8}
+      .tc5-internal-badge{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:999px;background:rgba(245,158,11,.12);border:1px solid rgba(245,158,11,.24);color:#b45309;font-size:9.5px;font-weight:900}
+      .tc5-conf-bar{display:inline-flex;align-items:center;gap:3px;padding:2px 7px;border-radius:999px;font-size:9.5px;font-weight:900;border:1px solid}
+      .tc5-conf-bar.high{background:rgba(22,163,74,.1);border-color:rgba(22,163,74,.2);color:#166534}
+      .tc5-conf-bar.mid{background:rgba(245,158,11,.1);border-color:rgba(245,158,11,.2);color:#92400e}
+      .tc5-conf-bar.low{background:rgba(220,38,38,.09);border-color:rgba(220,38,38,.15);color:#7f1d1d}
+      .tc5-decision{display:inline-flex;padding:2px 8px;border-radius:999px;font-size:9.5px;font-weight:900;border:1px solid}
+      .tc5-decision.ready{background:rgba(22,163,74,.1);color:#166534;border-color:rgba(22,163,74,.2)}
+      .tc5-decision.check{background:rgba(245,158,11,.1);color:#92400e;border-color:rgba(245,158,11,.2)}
+      .tc5-decision.block{background:rgba(220,38,38,.09);color:#7f1d1d;border-color:rgba(220,38,38,.15)}
+      .tc5-decision.unknown{background:rgba(124,58,237,.09);color:#6d28d9;border-color:rgba(124,58,237,.18)}
+      .tc5-bubble-actions{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px;padding-top:7px;border-top:1px solid rgba(15,23,42,.06)}
+      .tc5-act-btn{display:inline-flex;align-items:center;gap:4px;padding:5px 10px;border-radius:999px;font-size:11px;font-weight:900;border:1px solid;cursor:pointer;transition:all .12s;background:#fff;line-height:1}
+      .tc5-act-btn:hover{transform:scale(1.03)}
+      .tc5-act-btn:active{transform:scale(.96)}
+      .tc5-act-btn.good{border-color:rgba(22,163,74,.32);color:#166534;background:rgba(22,163,74,.07)}
+      .tc5-act-btn.bad{border-color:rgba(220,38,38,.28);color:#7f1d1d;background:rgba(220,38,38,.07)}
+      .tc5-act-btn.teach{border-color:rgba(59,130,246,.28);color:#1d4ed8;background:rgba(59,130,246,.07)}
+      .tc5-act-btn.pause{border-color:rgba(245,158,11,.28);color:#92400e;background:rgba(245,158,11,.07)}
+      .tc5-act-btn.block-ai{border-color:rgba(220,38,38,.4);color:#991b1b;background:rgba(220,38,38,.1)}
+      .tc5-act-btn.save-lesson{border-color:rgba(13,148,136,.28);color:#0f766e;background:rgba(13,148,136,.07)}
+      .tc5-ai-unknown-box{border-radius:16px;background:linear-gradient(135deg,#faf5ff,#f5f3ff);border:1px solid rgba(124,58,237,.2);padding:12px 14px;margin-top:6px}
+      .tc5-ai-unknown-title{font-size:12.5px;font-weight:900;color:#6d28d9;margin:0 0 6px}
+      .tc5-teach-inline{background:#eff6ff;border:1px solid rgba(59,130,246,.2);border-radius:16px;padding:12px;margin-top:8px}
+      .tc5-teach-inline h5{margin:0 0 8px;font-size:12px;font-weight:900;color:#1d4ed8}
+      .tc5-teach-inline textarea{width:100%;border:1px solid rgba(59,130,246,.25);border-radius:12px;padding:9px;font:inherit;font-size:12.5px;min-height:80px;resize:vertical;color:#07152f;background:#fff;box-sizing:border-box}
+      .tc5-teach-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+
+      /* RIGHT panel */
+      .tc5-right{display:flex;flex-direction:column;border-left:1px solid rgba(6,199,85,.15);background:#fff;overflow:hidden}
+      .tc5-right-tabs{flex:0 0 auto;display:flex;border-bottom:1px solid rgba(6,199,85,.12);background:rgba(6,199,85,.04)}
+      .tc5-right-tab{flex:1;padding:10px 4px;font-size:11.5px;font-weight:900;border:0;background:transparent;color:#64748b;cursor:pointer;border-bottom:2px solid transparent;transition:all .12s}
+      .tc5-right-tab.active{color:#16a34a;border-bottom-color:#16a34a;background:rgba(6,199,85,.07)}
+      .tc5-right-scroll{flex:1;overflow-y:auto;padding:12px;scrollbar-width:thin;scrollbar-color:rgba(6,199,85,.2) transparent}
+
+      /* Skill bars */
+      .tc5-skill-item{margin-bottom:10px;padding:9px 10px;border-radius:14px;background:#f8fffe;border:1px solid rgba(6,199,85,.1)}
+      .tc5-skill-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px}
+      .tc5-skill-label{font-size:12px;font-weight:900;color:#0f2419;line-height:1.25}
+      .tc5-skill-pct{font-size:12px;font-weight:900}
+      .tc5-skill-bar-bg{height:7px;background:#e2e8f0;border-radius:999px;overflow:hidden}
+      .tc5-skill-bar-fill{height:100%;border-radius:999px;transition:width .6s ease}
+      .tc5-skill-foot{display:flex;align-items:center;justify-content:space-between;margin-top:5px}
+      .tc5-skill-ready{display:inline-flex;padding:2px 7px;border-radius:999px;font-size:9.5px;font-weight:900}
+      .tc5-skill-ready.r4{background:rgba(22,163,74,.12);color:#166534;border:1px solid rgba(22,163,74,.15)}
+      .tc5-skill-ready.r3{background:rgba(34,197,94,.08);color:#15803d;border:1px solid rgba(34,197,94,.15)}
+      .tc5-skill-ready.r2{background:rgba(245,158,11,.1);color:#92400e;border:1px solid rgba(245,158,11,.18)}
+      .tc5-skill-ready.r1{background:rgba(220,38,38,.08);color:#7f1d1d;border:1px solid rgba(220,38,38,.13)}
+      .tc5-skill-sub{font-size:9.5px;font-weight:800;color:#94a3b8}
+      .tc5-brain-note{border-radius:14px;background:linear-gradient(135deg,rgba(6,199,85,.07),rgba(13,148,136,.07));border:1px solid rgba(6,199,85,.15);padding:10px 12px;margin-top:10px;font-size:11.5px;font-weight:800;color:#0f766e;line-height:1.5}
+
+      /* Teacher form in right panel */
+      .tc5-teach-form{display:flex;flex-direction:column;gap:10px}
+      .tc5-teach-form label{display:flex;flex-direction:column;gap:4px;font-size:11.5px;font-weight:900;color:#64748b}
+      .tc5-teach-form input,.tc5-teach-form select,.tc5-teach-form textarea{border:1px solid rgba(21,88,214,.16);border-radius:12px;padding:9px 10px;font:inherit;font-size:12.5px;color:#07152f;background:#fff;width:100%;box-sizing:border-box}
+      .tc5-teach-form textarea{min-height:90px;resize:vertical}
+      .tc5-teach-form .tc5-teach-actions{display:flex;gap:6px;flex-wrap:wrap}
+      .tc5-section-title{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;padding-bottom:6px;border-bottom:1px solid rgba(6,199,85,.1)}
+      .tc5-section-title h4{margin:0;font-size:13px;font-weight:900;color:#0f2419}
+
+      /* Safety banner */
+      .tc5-safety-note{border-radius:14px;background:rgba(220,38,38,.06);border:1px solid rgba(220,38,38,.18);padding:9px 12px;font-size:11px;font-weight:900;color:#7f1d1d;line-height:1.45;display:flex;align-items:flex-start;gap:6px}
+
+      /* Mobile step nav */
+      .tc5-mobile-steps{display:none;gap:0;border-radius:14px;overflow:hidden;border:1px solid rgba(6,199,85,.18);margin-bottom:10px}
+      .tc5-mobile-step-btn{flex:1;padding:10px 4px;font-size:11.5px;font-weight:900;border:0;background:#fff;color:#64748b;cursor:pointer;border-right:1px solid rgba(6,199,85,.12);transition:all .12s}
+      .tc5-mobile-step-btn:last-child{border-right:0}
+      .tc5-mobile-step-btn.active{background:rgba(6,199,85,.1);color:#16a34a}
+
+      @media(max-width:800px){
+        .tc5-mobile-steps{display:flex}
+        .tc5-shell{display:block;height:auto}
+        .tc5-left{border-right:0;border-bottom:1px solid rgba(6,199,85,.12);max-height:280px}
+        .tc5-center{min-height:400px}
+        .tc5-center-scroll{min-height:320px}
+        .tc5-right{border-left:0;border-top:1px solid rgba(6,199,85,.12);max-height:400px}
+      }
     `;
     document.head.appendChild(style);
   }
@@ -465,7 +604,7 @@
     if (STATE.activeTab === "dashboard") body.innerHTML = renderAutoSafeDashboard();
     else if (STATE.activeTab === "reply") body.innerHTML = renderReplyControl();
     else if (STATE.activeTab === "line") body.innerHTML = renderLineWork();
-    else if (STATE.activeTab === "training") body.innerHTML = renderTrainingCenter();
+    else if (STATE.activeTab === "training") { body.innerHTML = renderTrainingCenter(); requestAnimationFrame(()=>{ const sc = document.getElementById('tc5ChatScroll'); if (sc) sc.scrollTop = sc.scrollHeight; }); }
     else if (STATE.activeTab === "approvals") body.innerHTML = renderApprovals();
     else if (STATE.activeTab === "decision") body.innerHTML = renderDecisionLab();
     else if (STATE.activeTab === "brain") body.innerHTML = renderBrain();
@@ -847,6 +986,342 @@
     if (!n) return 0;
     return Math.min(95, Math.round(28 + Math.sqrt(n) * 22));
   }
+  /* ---- TC5 helpers ---- */
+  function tc5DecisionClass(decision){
+    if (!decision) return 'check';
+    const s = String(decision).toLowerCase();
+    if (/ส่งได้|ready|safe/.test(s)) return 'ready';
+    if (/ห้ามส่ง|block|unsafe/.test(s)) return 'block';
+    if (/ยังไม่รู้|unknown/.test(s)) return 'unknown';
+    return 'check';
+  }
+  function tc5ConfClass(conf){ const n = Number(conf||0); return n >= 75 ? 'high' : n >= 50 ? 'mid' : 'low'; }
+  function tc5FormatTime(ts){
+    if (!ts) return '';
+    try { const d = new Date(ts); return d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}); } catch(_){ return ''; }
+  }
+  function tc5SkillReadinessClass(readiness){
+    if (!readiness) return 'r2';
+    if (readiness === 'พร้อมตอบจริง') return 'r4';
+    if (readiness === 'เกือบพร้อม') return 'r3';
+    if (readiness === 'ต้องฝึกเพิ่ม') return 'r2';
+    return 'r1';
+  }
+  function tc5SkillBarColor(score){
+    if (score >= 80) return 'linear-gradient(90deg,#16a34a,#22c55e)';
+    if (score >= 60) return 'linear-gradient(90deg,#0d3d8d,#22c55e)';
+    if (score >= 40) return 'linear-gradient(90deg,#d97706,#f59e0b)';
+    return 'linear-gradient(90deg,#dc2626,#f87171)';
+  }
+
+  function renderTC5Controls(){
+    const autoReplyOn = getValue('auto_safe_reply_send_enabled', false);
+    return `<div class="tc5-controls">
+      <div class="tc5-ctrl-card">
+        <div><b>Auto Training ภายใน</b><small>เปิดให้ระบบเตรียมคำตอบจาก LINE จริง ยังไม่ส่งลูกค้า</small></div>
+        <label class="cc-switch"><input type="checkbox" data-training-toggle="enabled" ${STATE.trainingEnabled ? 'checked' : ''}><span class="cc-slider"></span></label>
+      </div>
+      <div class="tc5-ctrl-card">
+        <div><b>Auto ตอบภายในเมื่อ LINE เข้า</b><small>AI ร่างคำตอบรอไว้โดยไม่ต้องกดเอง</small></div>
+        <label class="cc-switch"><input type="checkbox" data-training-toggle="auto" ${STATE.trainingAutoAnswer ? 'checked' : ''} ${STATE.trainingEnabled ? '' : 'disabled'}><span class="cc-slider"></span></label>
+      </div>
+      <div class="tc5-ctrl-card">
+        <div><b>AI Auto Reply จริง</b><small>แยกชัดจากโหมดฝึก — ศูนย์ฝึกไม่เคยส่ง LINE จริง</small></div>
+        <span class="mode-badge ${autoReplyOn ? 'approval' : 'off'}" style="flex:0 0 auto">${autoReplyOn ? '🟢 เปิด' : '🔒 ปิด'}</span>
+      </div>
+    </div>`;
+  }
+
+  function renderTC5Left(mobileStep){
+    const qs = STATE.trainingQuestions || [];
+    const hide = mobileStep !== 1 ? 'style="display:none"' : '';
+    return `<div class="tc5-left" ${hide}>
+      <div class="tc5-left-head">
+        <b>ลูกค้า LINE</b>
+        <span class="tc5-left-badge">${qs.length} แชท</span>
+      </div>
+      <div class="tc5-left-scroll">
+        ${qs.length ? qs.map(renderTC5CustomerCard).join('') : `<div class="ai-empty" style="margin:8px;padding:14px;font-size:12px">ยังไม่พบลูกค้า LINE<br><small>หรือยังไม่ได้เปิด Training</small></div>`}
+      </div>
+    </div>`;
+  }
+
+  function renderTC5CustomerCard(q){
+    const convId = q.conversation_id || q.id;
+    const trainingKey = q.training_key || `conv:${convId}:${q.line_message_id || ''}`;
+    const active = STATE.selectedTrainingKey ? String(STATE.selectedTrainingKey) === String(trainingKey) : (STATE.selectedConversation && Number(STATE.selectedConversation.id) === Number(convId));
+    const msg = q.customer_message || q.last_message_text || '';
+    const sit = q.situation_type || inferTrainingSituation(msg);
+    const status = q.latest_training_status || q.auto_status || 'new_customer_question';
+    const hasAiReply = !!(q.auto_ai_reply);
+    const dotClass = hasAiReply ? (status === 'passed' || status === 'approved' ? 'passed' : status === 'failed' || status === 'rejected' ? 'failed' : status === 'ai_unknown' ? 'unknown' : 'pending') : '';
+    return `<button class="tc5-cust-card ${active ? 'active' : ''}" type="button"
+      data-training-select-conv="${esc(convId)}"
+      data-training-select-key="${esc(trainingKey)}"
+      data-training-line-message-id="${esc(q.line_message_id || '')}"
+      data-tc5-step-go="2">
+      <span class="tc5-cust-name">${esc(q.display_name || 'ลูกค้า LINE')}</span>
+      <div class="tc5-cust-tags">
+        <span class="tc5-cust-sit">${esc(trainingSituationLabel(sit))}</span>
+        ${hasAiReply ? `<span class="tc5-cust-sit" style="background:rgba(59,130,246,.1);color:#1d4ed8">AI รอตรวจ</span>` : ''}
+      </div>
+      <span class="tc5-cust-preview">${esc(msg || 'ยังไม่มีข้อความ')}</span>
+      <div class="tc5-cust-foot">
+        <span class="tc5-cust-time">${esc(tc5FormatTime(q.last_message_at || q.customer_message_at || ''))}</span>
+        ${dotClass ? `<span class="tc5-status-dot ${dotClass}"></span>` : ''}
+      </div>
+    </button>`;
+  }
+
+  function renderTC5Center(selectedQ, selectedText, situation, autoAnswerId, convMode, mobileStep){
+    const hide = mobileStep !== 2 ? 'style="display:none"' : '';
+    if (!STATE.selectedConversation) {
+      return `<div class="tc5-center" ${hide}>
+        <div class="tc5-center-empty">
+          <span>💬</span>
+          เลือกลูกค้าจากซ้ายเพื่อดูแชทภายใน<br>
+          <small style="display:block;margin-top:4px;font-size:11px;color:#94a3b8">AI ฝึกภายใน — ไม่ส่ง LINE จริง</small>
+        </div>
+      </div>`;
+    }
+    const conv = STATE.selectedConversation;
+    const result = currentTrainingResult();
+    const threadHtml = renderTC5ChatThread(selectedQ, result);
+    const footBtns = STATE.trainingEnabled
+      ? `<button class="cc-btn primary" type="button" data-tc5-ask-ai style="min-height:38px;font-size:12.5px;flex:1" ${STATE.trainingBusy ? 'disabled' : ''}>${STATE.trainingBusy ? '⏳ AI กำลังคิด...' : '🤖 ให้ AI ลองตอบ'}</button>`
+      : `<span style="font-size:12px;font-weight:800;color:#94a3b8">เปิด Auto Training ด้านบนเพื่อให้ AI ลองตอบ</span>`;
+    return `<div class="tc5-center" ${hide}>
+      <div class="tc5-center-head">
+        <div class="tc5-chead-info">
+          <div class="tc5-chead-name">${esc(conv.display_name || 'ลูกค้า LINE')}</div>
+          <div class="tc5-chead-sub">${esc(trainingSituationLabel(situation))} · ${result ? `AI ตอบแล้ว (${Number(result?.draft?.confidence || result?.confidence || 0)}%)` : 'รอ AI ตอบ'}</div>
+        </div>
+        <div class="tc5-per-controls">
+          <button class="tc5-per-btn ${convMode === 'on' ? 'on' : 'inherit'}" type="button" data-training-conv-mode="on" title="เปิด AI สำหรับแชทนี้">▶</button>
+          <button class="tc5-per-btn ${convMode === 'off' ? 'off' : 'inherit'}" type="button" data-training-conv-mode="off" title="พัก AI สำหรับแชทนี้">⏸</button>
+          <button class="tc5-per-btn inherit" type="button" data-training-conv-mode="inherit" title="ตามค่า Global">≡</button>
+        </div>
+      </div>
+      <div class="tc5-center-scroll" id="tc5ChatScroll">
+        ${threadHtml}
+      </div>
+      <div class="tc5-center-foot">
+        ${footBtns}
+        <button class="cc-btn" type="button" data-ai-control-refresh style="min-height:38px;font-size:12px">รีเฟรช</button>
+      </div>
+      <form data-training-draft-form style="display:none">
+        <input type="hidden" name="conversation_id" value="${esc(conv.id)}">
+        <input type="hidden" name="line_message_id" value="${esc(selectedQ?.line_message_id || '')}">
+        <input type="hidden" name="auto_answer_id" value="${esc(autoAnswerId)}">
+        <input type="hidden" name="training_mode_enabled" value="${STATE.trainingEnabled ? 'true' : 'false'}">
+        <input type="hidden" name="situation_type" value="${esc(situation)}">
+        <input type="hidden" name="selected_customer_question" value="${esc(selectedText)}">
+        <input type="hidden" name="admin_question" value="ศูนย์ฝึก AI: ลองตอบภายในเท่านั้น ห้ามส่ง LINE จริง ใช้ CWF Core Brain เป็นสมองกลาง ตอบแบบแอดมิน CWF สุภาพ ตรงประเด็น ถ้าไม่มั่นใจให้บอกข้อมูลที่ขาด">
+      </form>
+    </div>`;
+  }
+
+  function renderTC5ChatThread(selectedQ, result){
+    const messages = STATE.lineThread || [];
+    const bubbles = [];
+    messages.forEach((m) => {
+      if (!m.message_text && m.message_type !== 'image') return;
+      bubbles.push(m.direction === 'inbound'
+        ? renderTC5CustomerBubble(m)
+        : renderTC5OutboundBubble(m)
+      );
+    });
+    if (!messages.length && selectedQ) {
+      const msg = selectedQ.customer_message || selectedQ.last_message_text || '';
+      if (msg) bubbles.push(renderTC5CustomerBubble({ message_text: msg, received_at: selectedQ.last_message_at || '' }));
+    }
+    if (result) {
+      bubbles.push(renderTC5AiBubble(result, selectedQ));
+    } else if (selectedQ?.auto_ai_reply) {
+      const syntheticResult = { answer: selectedQ.auto_ai_reply, confidence: selectedQ.auto_confidence, decision: selectedQ.auto_status === 'passed' ? 'ส่งได้' : selectedQ.auto_status === 'failed' ? 'ห้ามส่ง' : 'ต้องตรวจ', draft: { confidence: selectedQ.auto_confidence, decision: selectedQ.auto_status === 'passed' ? 'ส่งได้' : 'ต้องตรวจ', decision_reason: '' }, auto_answer_id: selectedQ.auto_answer_id };
+      bubbles.push(renderTC5AiBubble(syntheticResult, selectedQ));
+    }
+    if (!bubbles.length) {
+      return `<div class="ai-empty" style="margin:auto;max-width:260px;text-align:center;padding:24px 16px">
+        <div style="font-size:28px;margin-bottom:8px">🤖</div>
+        <div style="font-weight:900;font-size:12.5px;color:#64748b">ยังไม่มีข้อความในแชทนี้</div>
+        <small style="font-size:11px;color:#94a3b8">กด "ให้ AI ลองตอบ" ด้านล่างเพื่อเริ่มฝึก</small>
+      </div>`;
+    }
+    return bubbles.join('');
+  }
+
+  function renderTC5CustomerBubble(msg){
+    const text = msg.message_text || '[ไฟล์/รูปภาพ]';
+    return `<div class="tc5-bubble-row customer">
+      <div class="tc5-avatar cust-av">👤</div>
+      <div class="tc5-bubble customer-bubble">
+        <div class="tc5-bubble-text">${esc(text)}</div>
+        <div class="tc5-bubble-meta">
+          <span class="tc5-time">${esc(tc5FormatTime(msg.received_at || msg.created_at || ''))}</span>
+        </div>
+      </div>
+    </div>`;
+  }
+
+  function renderTC5OutboundBubble(msg){
+    const text = msg.message_text || '[ข้อความ]';
+    return `<div class="tc5-bubble-row ai-row">
+      <div class="tc5-bubble ai-bubble" style="background:#f0f9ff;border-color:rgba(14,165,233,.2)">
+        <div class="tc5-bubble-text" style="color:#0c4a6e">${esc(text)}</div>
+        <div class="tc5-bubble-meta">
+          <span class="tc5-time">${esc(tc5FormatTime(msg.received_at || msg.created_at || ''))}</span>
+          <span style="font-size:9.5px;font-weight:800;color:#0369a1">แอดมิน/ระบบ</span>
+        </div>
+      </div>
+      <div class="tc5-avatar ai-av">📤</div>
+    </div>`;
+  }
+
+  function renderTC5AiBubble(result, selectedQ){
+    if (!result) return '';
+    const draft = result.draft || {};
+    const answer = result.answer || draft.customer_reply || '';
+    const confidence = Number(draft.confidence || result.confidence || 0);
+    const decision = draft.decision || result.decision || 'ต้องตรวจ';
+    const decisionReason = draft.decision_reason || '';
+    const missingInfo = Array.isArray(draft.missing_info) ? draft.missing_info : [];
+    const source = result.auto_answer_id ? 'Auto Training' : 'Manual Training';
+    const confClass = tc5ConfClass(confidence);
+    const decClass = tc5DecisionClass(decision);
+    const isUnknown = /ยังไม่รู้|unknown/i.test(decision);
+    const aiReplyId = result.training_event?.id || result.auto_answer_id || '';
+    const teachOpen = STATE.tc5TeachOpen;
+    return `<div class="tc5-bubble-row ai-row" data-ai-bubble-result>
+      <div class="tc5-bubble ai-bubble" style="max-width:82%">
+        <div class="tc5-bubble-meta" style="padding-top:0;border-top:0;margin-top:0;margin-bottom:7px">
+          <span class="tc5-internal-badge">🤖 AI ฝึกภายใน — ยังไม่ส่งลูกค้าจริง</span>
+          <span class="tc5-conf-bar ${confClass}">🎯 ${confidence}%</span>
+          <span class="tc5-decision ${decClass}">${esc(decision)}</span>
+          <span style="font-size:9.5px;font-weight:800;color:#94a3b8">${esc(source)}</span>
+        </div>
+        ${isUnknown ? `<div class="tc5-ai-unknown-box">
+            <p class="tc5-ai-unknown-title">❓ AI ยังไม่รู้คำตอบนี้ ควรตอบลูกค้าว่าอย่างไร?</p>
+            ${decisionReason ? `<p style="font-size:12px;font-weight:800;color:#7c3aed;margin:0 0 6px">${esc(decisionReason)}</p>` : ''}
+          </div>`
+          : `<div class="tc5-bubble-text">${esc(answer || 'AI ยังไม่มีคำตอบ')}</div>`
+        }
+        ${missingInfo.length ? `<div style="margin-top:6px;font-size:11.5px;font-weight:800;color:#92400e">⚠️ ข้อมูลที่ขาด: ${esc(missingInfo.join(', '))}</div>` : ''}
+        ${decisionReason && !isUnknown ? `<div style="margin-top:5px;font-size:11px;font-weight:800;color:#64748b">เหตุผล: ${esc(decisionReason)}</div>` : ''}
+        <div class="tc5-bubble-actions">
+          <button class="tc5-act-btn good" type="button" data-training-mark-good title="ถูก — บันทึกเป็นตัวอย่างดีเข้าสมองกลาง" ${answer ? '' : 'disabled'}>✓ ถูก</button>
+          <button class="tc5-act-btn bad" type="button" data-training-mark-bad title="ไม่ถูก — บันทึก feedback ลบ">✗ ไม่ถูก</button>
+          <button class="tc5-act-btn teach" type="button" data-tc5-teach-open title="สอนคำตอบที่ถูกต้อง">📝 สอนคำตอบ</button>
+          <button class="tc5-act-btn save-lesson" type="button" data-tc5-save-from-bubble title="บันทึกเป็นบทเรียนตรงนี้" ${answer ? '' : 'disabled'}>💾 บันทึกบทเรียน</button>
+          <button class="tc5-act-btn block-ai" type="button" data-training-conv-mode="off" title="ห้าม AI ตอบเองในแชทนี้">⏸ พัก AI แชทนี้</button>
+        </div>
+        ${teachOpen ? renderTC5TeachInline(answer, selectedQ) : ''}
+      </div>
+      <div class="tc5-avatar ai-av">🤖</div>
+    </div>`;
+  }
+
+  function renderTC5TeachInline(aiAnswer, selectedQ){
+    const text = selectedQ?.customer_message || latestInboundText() || '';
+    return `<div class="tc5-teach-inline" data-tc5-teach-inline-form>
+      <h5>📝 สอนคำตอบที่ถูกต้อง — บันทึกเข้าสมองกลาง</h5>
+      <textarea data-tc5-teach-reply placeholder="กรอกคำตอบที่ถูกต้องที่ควรใช้จริง...">${esc(aiAnswer)}</textarea>
+      <div class="tc5-teach-actions">
+        <button class="tc5-act-btn good" type="button" data-tc5-teach-save>💾 บันทึกเป็นบทเรียน</button>
+        <button class="tc5-act-btn bad" type="button" data-tc5-teach-close>✕ ปิด</button>
+      </div>
+    </div>`;
+  }
+
+  function renderTC5Right(selectedText, situation, answer, autoAnswerId, mobileStep){
+    const hide = mobileStep !== 3 ? 'style="display:none"' : '';
+    const rightTab = STATE.tc5RightTab || 'skills';
+    return `<div class="tc5-right" ${hide}>
+      <div class="tc5-right-tabs">
+        <button class="tc5-right-tab ${rightTab === 'skills' ? 'active' : ''}" type="button" data-tc5-right-tab="skills">📊 คะแนน AI</button>
+        <button class="tc5-right-tab ${rightTab === 'teach' ? 'active' : ''}" type="button" data-tc5-right-tab="teach">📝 สอน AI</button>
+      </div>
+      <div class="tc5-right-scroll">
+        ${rightTab === 'skills' ? renderTC5SkillBars() : renderTC5TeachForm(selectedText, situation, answer, autoAnswerId)}
+      </div>
+    </div>`;
+  }
+
+  function renderTC5SkillBars(){
+    const skills = STATE.trainingSkills || [];
+    if (!skills.length) return `<div class="ai-empty" style="font-size:12px;padding:20px">ยังไม่มีข้อมูล skill<br><small>โหลดหลังเลือกแชทแล้ว</small></div>`;
+    const counts = STATE.trainingCounts || {};
+    return `<div>
+      <div class="tc5-section-title">
+        <h4>ความพร้อม AI รายหมวด</h4>
+        <span style="font-size:10px;font-weight:800;color:#94a3b8">${counts.examples || 0} บทเรียน</span>
+      </div>
+      ${skills.map((s) => {
+        const score = Number(s.score || 0);
+        const rClass = tc5SkillReadinessClass(s.readiness);
+        return `<div class="tc5-skill-item">
+          <div class="tc5-skill-head">
+            <span class="tc5-skill-label">${esc(s.label)}</span>
+            <span class="tc5-skill-pct" style="color:${score >= 80 ? '#16a34a' : score >= 50 ? '#d97706' : '#dc2626'}">${score}%</span>
+          </div>
+          <div class="tc5-skill-bar-bg"><div class="tc5-skill-bar-fill" style="width:${score}%;background:${tc5SkillBarColor(score)}"></div></div>
+          <div class="tc5-skill-foot">
+            <span class="tc5-skill-ready ${rClass}">${esc(s.readiness || 'ต้องฝึกเพิ่ม')}</span>
+            <span class="tc5-skill-sub">${s.passed || 0}✓ ${s.failed || 0}✗ ${s.unknowns || 0}?</span>
+          </div>
+        </div>`;
+      }).join('')}
+      <div class="tc5-brain-note">🧠 บทเรียนทุกชิ้นกลับเข้าสมองกลางเดียว ทุก AI ในองค์กรจะฉลาดขึ้นร่วมกัน</div>
+      <button class="cc-btn" type="button" data-ai-tab-go="brain" style="width:100%;margin-top:8px;font-size:12px">เปิดคลังบทเรียน →</button>
+    </div>`;
+  }
+
+  function renderTC5TeachForm(selectedText, situation, answer, autoAnswerId){
+    return `<div>
+      <div class="tc5-section-title"><h4>สอนคำตอบที่ถูก</h4></div>
+      <div class="tc5-safety-note">🔒 ทุกสิ่งที่สอนในหน้านี้ไม่ส่ง LINE จริง บันทึกเข้าสมองกลางเท่านั้น</div>
+      <form class="tc5-teach-form" data-training-lesson-form style="margin-top:10px">
+        <input type="hidden" name="situation_type" value="${esc(situation)}">
+        <input type="hidden" name="auto_answer_id" value="${esc(autoAnswerId)}">
+        <label>ข้อความลูกค้า
+          <textarea name="customer_message" required rows="3">${esc(selectedText)}</textarea>
+        </label>
+        <label>หมวด
+          <select name="situation_type_select">
+            <option value="${esc(situation)}">${esc(trainingSituationLabel(situation))}</option>
+            <option value="price_question">ราคา / โปรโมชัน</option>
+            <option value="appointment">นัดหมาย / คิวช่าง</option>
+            <option value="repair_symptom">อาการเสียแอร์</option>
+            <option value="cleaning_package">แพ็กเกจล้างแอร์</option>
+            <option value="complaint">รับมือคำโวยวาย</option>
+            <option value="foreign_customer">ภาษาอังกฤษ / ลูกค้าต่างชาติ</option>
+            <option value="closing">ปิดการขาย</option>
+            <option value="safety">ความปลอดภัย</option>
+            <option value="general">ทั่วไป</option>
+          </select>
+        </label>
+        <label>ภาษา
+          <select name="language">
+            <option value="th">ไทย</option>
+            <option value="en">English</option>
+            <option value="unknown">ไม่ระบุ</option>
+          </select>
+        </label>
+        <label>ควรตอบลูกค้าว่าอะไร
+          <textarea name="final_admin_reply" required placeholder="ถ้า AI ยังไม่รู้ ให้กรอกคำตอบที่ถูกต้องตรงนี้">${esc(answer)}</textarea>
+        </label>
+        <label>แท็ก
+          <input name="tags" value="ศูนย์ฝึก AI, training_center, core_brain, ${esc(situation)}">
+        </label>
+        <div class="tc5-teach-actions">
+          <button class="cc-btn primary" type="submit" style="flex:1">💾 บันทึกเป็นบทเรียน</button>
+          <button class="cc-btn" type="button" data-training-copy-ai ${answer ? '' : 'disabled'}>ใช้คำตอบ AI</button>
+        </div>
+        <button class="cc-btn soft-danger" type="button" data-training-unknown style="width:100%;margin-top:4px;font-size:12px">❓ AI ยังไม่รู้ — ให้ผู้สอนกรอก</button>
+      </form>
+    </div>`;
+  }
+
   function renderTrainingScoreBars(){
     const rows = [
       ['price_question','ราคา / โปรโมชัน'], ['appointment','นัดหมาย / คิวช่าง'], ['repair_symptom','อาการเสียแอร์'], ['general','ทั่วไป / ถามข้อมูล'], ['complaint','รับมือคำโวยวาย'], ['foreign_customer','ภาษาอังกฤษ / ลูกค้าต่างชาติ'], ['closing','ปิดการขาย'], ['safety','ความปลอดภัย / ไม่มั่ว']
@@ -916,11 +1391,20 @@
     const answer = currentTrainingAnswer();
     const autoAnswerId = selectedQ?.auto_answer_id || currentTrainingResult()?.auto_answer_id || '';
     const convMode = selectedQ?.training_conversation_mode || 'inherit';
-    const perPersonControls = STATE.selectedConversation ? `<div class="cc-actions" style="margin:8px 0 10px"><button class="cc-btn ${convMode === 'on' ? 'primary' : ''}" type="button" data-training-conv-mode="on">เปิด AI รายคน</button><button class="cc-btn soft-danger ${convMode === 'off' ? 'primary' : ''}" type="button" data-training-conv-mode="off">พัก AI แชทนี้</button><button class="cc-btn" type="button" data-training-conv-mode="inherit">ตามค่า Global</button></div>` : '';
-    const threadHtml = STATE.lineThread.length ? STATE.lineThread.map(m => `<div class="thread-msg ${esc(m.direction)}"><small>${m.direction === 'outbound' ? 'แอดมิน/ระบบ' : 'ลูกค้า'} · ${esc(m.received_at || m.created_at || '')}</small>${esc(m.message_text || `[${m.message_type || 'message'}]`)}</div>`).join('') : '<div class="ai-empty">ยังไม่มีข้อความใน thread นี้</div>';
-    return `<section class="training-banner"><h3>ศูนย์ฝึก AI</h3><p class="sub">ลูกค้าทักมา → AI ร่างคำตอบภายในรอไว้ → แอดมินมากดถูก/ไม่ถูก/สอนเพิ่ม ทุกบทเรียนเข้าคลังสมองกลางเดียวกัน และหน้านี้ไม่ส่ง LINE จริง</p><div class="training-switch-grid"><div class="training-switch-card"><div><b>Auto Training ภายใน</b><small>เปิดให้ระบบเตรียมคำตอบจากข้อความ LINE จริง</small></div><label class="cc-switch"><input type="checkbox" data-training-toggle="enabled" ${STATE.trainingEnabled ? 'checked' : ''}><span class="cc-slider"></span></label></div><div class="training-switch-card"><div><b>Auto ตอบภายในเมื่อ LINE เข้า</b><small>เปิดไว้แล้ว AI จะร่างคำตอบให้เอง ไม่ต้องกดทีละคำถาม</small></div><label class="cc-switch"><input type="checkbox" data-training-toggle="auto" ${STATE.trainingAutoAnswer ? 'checked' : ''} ${STATE.trainingEnabled ? '' : 'disabled'}><span class="cc-slider"></span></label></div><div class="training-switch-card"><div><b>AI Auto Reply จริง</b><small>แยกจากโหมดฝึกชัดเจน ยังไม่ควรเปิดส่งเอง</small></div><span class="mode-badge ${getValue('auto_safe_reply_send_enabled', false) ? 'approval' : 'off'}">${getValue('auto_safe_reply_send_enabled', false) ? 'เปิด' : 'ปิด'}</span></div></div></section>
-    <section class="cc-card"><div class="cc-section-title"><h3>คะแนนความสามารถ AI</h3><button class="cc-btn" type="button" data-ai-tab-go="brain">เปิดคลังบทเรียน</button></div><p class="sub">คำนวณจากบทเรียนที่ผู้สอนบันทึก + ผลฝึกภายในจริง แยกตามหมวด เพื่อดูความพร้อมก่อนปล่อยให้ตอบจริง</p>${renderTrainingScoreBars()}</section>
-    <section class="cc-card"><div class="cc-section-title"><h3>ห้องเรียนจากคำถามจริง</h3><button class="cc-btn" type="button" data-ai-control-refresh>รีเฟรช</button></div><div class="training-layout"><div><p class="sub">คิวคำถามจริงจาก LINE</p><div class="training-queue">${STATE.trainingQuestions.length ? STATE.trainingQuestions.map(renderTrainingQueueCard).join('') : '<div class="ai-empty">ยังไม่พบคำถามจริงจาก LINE</div>'}</div></div><div>${STATE.selectedConversation ? `<h3>${esc(STATE.selectedConversation.display_name || 'ลูกค้า LINE')}</h3><p class="sub">คำถามนี้ใช้ฝึกภายในเท่านั้น ไม่ส่ง LINE จริง</p>${perPersonControls}<div class="thread-box">${threadHtml}</div><form class="ai-control-form" data-training-draft-form style="margin-top:10px"><input type="hidden" name="conversation_id" value="${esc(STATE.selectedConversation.id)}"><input type="hidden" name="line_message_id" value="${esc(selectedQ?.line_message_id || '')}"><input type="hidden" name="auto_answer_id" value="${esc(autoAnswerId)}"><input type="hidden" name="training_mode_enabled" value="${STATE.trainingEnabled ? 'true' : 'false'}"><input type="hidden" name="situation_type" value="${esc(situation)}"><label class="wide">คำถามลูกค้าจริงที่จะใช้ฝึก<textarea name="selected_customer_question" required>${esc(selectedText)}</textarea></label><label class="wide">คำสั่งการฝึก<textarea name="admin_question">ศูนย์ฝึก AI: ลองตอบภายในเท่านั้น ห้ามส่ง LINE จริง ใช้ CWF Core Brain เป็นสมองกลาง ตอบแบบแอดมิน CWF สุภาพ ตรงประเด็น ถ้าไม่มั่นใจให้ถามข้อมูลที่ขาด</textarea></label><div class="wide cc-actions"><button class="cc-btn primary" type="submit" ${STATE.trainingEnabled && !STATE.trainingBusy ? '' : 'disabled'}>${STATE.trainingBusy ? 'AI กำลังฝึก...' : 'ให้ AI ลองตอบภายใน'}</button><button class="cc-btn" type="button" data-open-line-conv="${esc(STATE.selectedConversation.id)}">เปิดแชทจริง</button></div></form>${renderTrainingResult()}` : '<div class="ai-empty">เลือกคำถามจริงจากลูกค้าทางซ้ายเพื่อเริ่มฝึก</div>'}</div><div><h3>ผู้สอนแก้คำตอบ</h3><p class="sub">ถ้า AI ตอบไม่ได้ ให้กรอกคำตอบที่ควรใช้จริง แล้วบันทึกเข้าคลังสมองกลาง</p><form class="ai-control-form" data-training-lesson-form><input type="hidden" name="situation_type" value="${esc(situation)}"><input type="hidden" name="auto_answer_id" value="${esc(autoAnswerId)}"><label class="wide">ข้อความลูกค้า<textarea name="customer_message" required>${esc(selectedText)}</textarea></label><label>หมวด<select name="situation_type_select"><option value="${esc(situation)}">${esc(trainingSituationLabel(situation))}</option><option value="price_question">ราคา / โปรโมชัน</option><option value="appointment">นัดหมาย / คิวช่าง</option><option value="repair_symptom">อาการเสียแอร์</option><option value="complaint">รับมือคำโวยวาย</option><option value="foreign_customer">ภาษาอังกฤษ / ลูกค้าต่างชาติ</option><option value="general">ทั่วไป</option></select></label><label>ภาษา<select name="language"><option value="th">ไทย</option><option value="en">English</option><option value="unknown">ไม่ระบุ</option></select></label><label class="wide">ควรตอบลูกค้าว่าอะไร<textarea name="final_admin_reply" required placeholder="ถ้า AI ยังไม่รู้ ให้ผู้สอนกรอกคำตอบที่ถูกต้องตรงนี้">${esc(answer)}</textarea></label><label class="wide">แท็ก<input name="tags" value="ศูนย์ฝึก AI, training_center, core_brain, ${esc(situation)}" placeholder="ราคา, นัดหมาย, ซ่อม"></label><div class="wide cc-actions"><button class="cc-btn primary" type="submit">บันทึกเป็นบทเรียน</button><button class="cc-btn" type="button" data-training-copy-ai ${answer ? '' : 'disabled'}>ใช้คำตอบ AI เป็นฐาน</button><button class="cc-btn soft-danger" type="button" data-training-unknown>AI ยังไม่รู้ ให้ครูสอน</button></div></form><div class="training-note">ระบบนี้ใช้สมองกลางเดียว: คำตอบที่กดถูก/สอนเพิ่มจะถูกบันทึกเป็นความรู้ร่วมสำหรับ Admin AI, Sales AI, Repair AI และ Agent ลูกค้าทุกตัว</div></div></div></section>`;
+    const mobileStep = STATE.tc5MobileStep || 1;
+    return `<div class="tc5-wrap">
+      ${renderTC5Controls()}
+      <div class="tc5-mobile-steps">
+        <button class="tc5-mobile-step-btn ${mobileStep===1?'active':''}" type="button" data-tc5-step="1">1 เลือกลูกค้า</button>
+        <button class="tc5-mobile-step-btn ${mobileStep===2?'active':''}" type="button" data-tc5-step="2">2 แชทภายใน</button>
+        <button class="tc5-mobile-step-btn ${mobileStep===3?'active':''}" type="button" data-tc5-step="3">3 สอน AI</button>
+      </div>
+      <div class="tc5-shell">
+        ${renderTC5Left(mobileStep)}
+        ${renderTC5Center(selectedQ, selectedText, situation, autoAnswerId, convMode, mobileStep)}
+        ${renderTC5Right(selectedText, situation, answer, autoAnswerId, mobileStep)}
+      </div>
+    </div>`;
   }
 
 
@@ -1393,8 +1877,56 @@
     }
     const mode = e.target.closest('[data-reply-mode]');
     if (mode) return setReplyMode(mode.dataset.replyMode).catch((err) => toast(err.message, 'error'));
+    const tc5Step = e.target.closest('[data-tc5-step]');
+    if (tc5Step) { STATE.tc5MobileStep = Number(tc5Step.dataset.tc5Step) || 1; render(); return; }
+    const tc5RightTabBtn = e.target.closest('[data-tc5-right-tab]');
+    if (tc5RightTabBtn) { STATE.tc5RightTab = tc5RightTabBtn.dataset.tc5RightTab || 'skills'; render(); return; }
+    if (e.target.closest('[data-tc5-ask-ai]')) { const form = $('[data-training-draft-form]'); if (form) return draftTrainingFromForm(form).catch((err)=>toast(err.message,'error')); return; }
+    if (e.target.closest('[data-tc5-teach-open]')) { STATE.tc5TeachOpen = !STATE.tc5TeachOpen; if (!STATE.tc5TeachOpen) { STATE.tc5RightTab = 'teach'; } render(); return; }
+    if (e.target.closest('[data-tc5-teach-close]')) { STATE.tc5TeachOpen = false; render(); return; }
+    if (e.target.closest('[data-tc5-teach-save]')) {
+      const textarea = $('[data-tc5-teach-reply]');
+      const teachReply = textarea?.value?.trim();
+      if (!teachReply) return toast('กรุณากรอกคำตอบที่ถูกต้อง', 'error');
+      const lessonForm = $('[data-training-lesson-form]');
+      if (lessonForm) {
+        const area = lessonForm.querySelector('textarea[name="final_admin_reply"]');
+        if (area) area.value = teachReply;
+        return saveTrainingLesson(lessonForm).then(()=>{ STATE.tc5TeachOpen = false; }).catch((err)=>toast(err.message,'error'));
+      }
+      return;
+    }
+    if (e.target.closest('[data-tc5-save-from-bubble]')) {
+      const answer = currentTrainingAnswer();
+      if (!answer) return toast('ยังไม่มีคำตอบ AI ให้บันทึก', 'error');
+      const q = selectedTrainingQuestion();
+      const situation = q?.situation_type || inferTrainingSituation(q?.customer_message || latestInboundText());
+      const payload = {
+        customer_message: q?.customer_message || latestInboundText(),
+        final_admin_reply: answer,
+        situation_type: situation,
+        conversation_id: STATE.selectedConversation?.id || '',
+        line_message_id: q?.line_message_id || '',
+        auto_answer_id: q?.auto_answer_id || currentTrainingResult()?.auto_answer_id || '',
+        ai_reply: answer,
+        teacher_verdict: 'lesson_saved_from_bubble',
+        tags: `ศูนย์ฝึก AI, training_center, core_brain, ${situation}`,
+        language: 'th',
+      };
+      if (!payload.customer_message || !payload.final_admin_reply) return toast('ไม่มีข้อมูลเพียงพอ', 'error');
+      return api('/admin/ai-office/training-center/lessons', { method:'POST', body:JSON.stringify(payload) })
+        .then(()=>{ STATE.trainingResult = null; return Promise.all([loadExamples(), loadTrainingSkills(), loadTrainingQuestions()]); })
+        .then(()=>{ render(); toast('บันทึกเป็นบทเรียนเข้าสมองกลางแล้ว', 'success'); })
+        .catch((err)=>toast(err.message,'error'));
+    }
     const trainingSelect = e.target.closest('[data-training-select-conv]');
-    if (trainingSelect) { STATE.lineDraftResult = null; STATE.trainingResult = null; STATE.selectedTrainingKey = trainingSelect.dataset.trainingSelectKey || ''; return loadLineThread(trainingSelect.dataset.trainingSelectConv).then(()=>{ STATE.trainingResult = autoTrainingResultFromQuestion(selectedTrainingQuestion()); render(); return maybeAutoRunTraining(); }).catch((err)=>toast(err.message,'error')); }
+    if (trainingSelect) {
+      STATE.lineDraftResult = null; STATE.trainingResult = null; STATE.tc5TeachOpen = false;
+      STATE.selectedTrainingKey = trainingSelect.dataset.trainingSelectKey || '';
+      const stepGo = trainingSelect.dataset.tc5StepGo;
+      if (stepGo) STATE.tc5MobileStep = Number(stepGo);
+      return loadLineThread(trainingSelect.dataset.trainingSelectConv).then(()=>{ STATE.trainingResult = autoTrainingResultFromQuestion(selectedTrainingQuestion()); render(); return maybeAutoRunTraining(); }).catch((err)=>toast(err.message,'error'));
+    }
     if (e.target.closest('[data-training-copy-ai]')) return copyTrainingAiToTeacher();
     if (e.target.closest('[data-training-mark-good]')) return markTrainingGood().catch((err)=>toast(err.message,'error'));
     if (e.target.closest('[data-training-mark-bad]')) return markTrainingBad().catch((err)=>toast(err.message,'error'));
