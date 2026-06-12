@@ -1,7 +1,7 @@
 (function(){
   "use strict";
 
-  const BUILD = "phase35b5_chat_mirror_20260612";
+  const BUILD = "phase35b6_core_brain_chat_history_20260612";
   try { window.__CWF_AI_TRAINING_CENTER_BUILD__ = BUILD; } catch(_) {}
 
   var EMBEDDED = !!(
@@ -23,6 +23,7 @@
     lineConversations: [],
     selectedConversation: null,
     lineThread: [],
+    trainingThread: [],
     lineDraftResult: null,
     trainingEnabled: false,
     trainingAutoAnswer: false,
@@ -542,10 +543,19 @@
   async function loadLineConversations(){ try { const data = await api("/admin/ai-office/control/line-conversations?limit=60"); STATE.lineConversations = data.conversations || []; } catch(_) { STATE.lineConversations = []; } }
   async function loadLineThread(conversationId){
     const id = Number(conversationId || 0);
-    if (!id) { STATE.selectedConversation = null; STATE.lineThread = []; return; }
+    if (!id) { STATE.selectedConversation = null; STATE.lineThread = []; STATE.trainingThread = []; return; }
+    if (STATE.activeTab === "training") {
+      const data = await api(`/admin/ai-office/training-center/conversations/${encodeURIComponent(id)}/thread?limit=90`)
+        .catch(() => api(`/admin/ai-office/control/line-conversations/${encodeURIComponent(id)}/thread?limit=50`));
+      STATE.selectedConversation = data.conversation || null;
+      STATE.lineThread = data.messages || [];
+      STATE.trainingThread = data.training_thread || [];
+      return;
+    }
     const data = await api(`/admin/ai-office/control/line-conversations/${encodeURIComponent(id)}/thread?limit=50`);
     STATE.selectedConversation = data.conversation || null;
     STATE.lineThread = data.messages || [];
+    STATE.trainingThread = [];
   }
 
   async function loadAll(){
@@ -1122,24 +1132,59 @@
   }
 
   function renderTC5ChatThread(selectedQ, result){
-    const messages = STATE.lineThread || [];
+    const trainingItems = STATE.trainingThread || [];
     const bubbles = [];
-    messages.forEach((m) => {
-      if (!m.message_text && m.message_type !== 'image') return;
-      bubbles.push(m.direction === 'inbound'
-        ? renderTC5CustomerBubble(m)
-        : renderTC5OutboundBubble(m)
-      );
-    });
-    if (!messages.length && selectedQ) {
-      const msg = selectedQ.customer_message || selectedQ.last_message_text || '';
-      if (msg) bubbles.push(renderTC5CustomerBubble({ message_text: msg, received_at: selectedQ.last_message_at || '' }));
-    }
-    if (result) {
-      bubbles.push(renderTC5AiBubble(result, selectedQ));
-    } else if (selectedQ?.auto_ai_reply) {
-      const syntheticResult = { answer: selectedQ.auto_ai_reply, confidence: selectedQ.auto_confidence, decision: selectedQ.auto_status === 'passed' ? 'ส่งได้' : selectedQ.auto_status === 'failed' ? 'ห้ามส่ง' : 'ต้องตรวจ', draft: { confidence: selectedQ.auto_confidence, decision: selectedQ.auto_status === 'passed' ? 'ส่งได้' : 'ต้องตรวจ', decision_reason: '' }, auto_answer_id: selectedQ.auto_answer_id };
-      bubbles.push(renderTC5AiBubble(syntheticResult, selectedQ));
+    if (trainingItems.length) {
+      trainingItems.forEach((item) => {
+        if (item.kind === 'customer') bubbles.push(renderTC5CustomerBubble({ message_text:item.message_text, received_at:item.received_at || item.created_at, message_type:item.message_type }));
+        else if (item.kind === 'outbound') bubbles.push(renderTC5OutboundBubble({ message_text:item.message_text, received_at:item.received_at || item.created_at, message_type:item.message_type }));
+        else if (item.kind === 'internal_ai') {
+          bubbles.push(renderTC5AiBubble({
+            auto_answer_id:item.auto_answer_id || null,
+            memory_event_id:item.memory_event_id || null,
+            answer:item.ai_reply || item.message_text || '',
+            confidence:Number(item.confidence || 0),
+            decision:item.decision || 'ต้องตรวจ',
+            draft:{
+              customer_reply:item.ai_reply || item.message_text || '',
+              confidence:Number(item.confidence || 0),
+              decision:item.decision || 'ต้องตรวจ',
+              decision_reason:item.decision_reason || '',
+              missing_info:Array.isArray(item.missing_info) ? item.missing_info : [],
+              selected_customer_question:item.customer_message || '',
+              situation_type:item.situation_type || inferTrainingSituation(item.customer_message || ''),
+            },
+            source:item.source || 'auto_internal_training',
+            created_at:item.created_at || item.received_at || '',
+          }, {
+            conversation_id:item.conversation_id || selectedQ?.conversation_id || STATE.selectedConversation?.id || '',
+            line_message_id:item.line_message_id || selectedQ?.line_message_id || '',
+            customer_message:item.customer_message || selectedQ?.customer_message || latestInboundText(),
+            situation_type:item.situation_type || selectedQ?.situation_type || inferTrainingSituation(item.customer_message || selectedQ?.customer_message || latestInboundText()),
+            auto_answer_id:item.auto_answer_id || '',
+            memory_event_id:item.memory_event_id || '',
+          }));
+        }
+      });
+    } else {
+      const messages = STATE.lineThread || [];
+      messages.forEach((m) => {
+        if (!m.message_text && m.message_type !== 'image') return;
+        bubbles.push(m.direction === 'inbound'
+          ? renderTC5CustomerBubble(m)
+          : renderTC5OutboundBubble(m)
+        );
+      });
+      if (!messages.length && selectedQ) {
+        const msg = selectedQ.customer_message || selectedQ.last_message_text || '';
+        if (msg) bubbles.push(renderTC5CustomerBubble({ message_text: msg, received_at: selectedQ.last_message_at || '' }));
+      }
+      if (result) {
+        bubbles.push(renderTC5AiBubble(result, selectedQ));
+      } else if (selectedQ?.auto_ai_reply) {
+        const syntheticResult = { answer: selectedQ.auto_ai_reply, confidence: selectedQ.auto_confidence, decision: selectedQ.auto_status === 'passed' ? 'ส่งได้' : selectedQ.auto_status === 'failed' ? 'ห้ามส่ง' : 'ต้องตรวจ', draft: { confidence: selectedQ.auto_confidence, decision: selectedQ.auto_status === 'passed' ? 'ส่งได้' : 'ต้องตรวจ', decision_reason: '' }, auto_answer_id: selectedQ.auto_answer_id };
+        bubbles.push(renderTC5AiBubble(syntheticResult, selectedQ));
+      }
     }
     if (!bubbles.length) {
       return `<div class="ai-empty" style="margin:auto;max-width:260px;text-align:center;padding:24px 16px">
@@ -1186,13 +1231,22 @@
     const decision = draft.decision || result.decision || 'ต้องตรวจ';
     const decisionReason = draft.decision_reason || '';
     const missingInfo = Array.isArray(draft.missing_info) ? draft.missing_info : [];
-    const source = result.auto_answer_id ? 'Auto Training' : 'Manual Training';
+    const source = result.source === 'teacher_lesson' ? 'Teacher Lesson' : result.auto_answer_id ? 'Auto Training' : 'Manual Training';
     const confClass = tc5ConfClass(confidence);
     const decClass = tc5DecisionClass(decision);
     const isUnknown = /ยังไม่รู้|unknown/i.test(decision);
-    const aiReplyId = result.training_event?.id || result.auto_answer_id || '';
     const teachOpen = STATE.tc5TeachOpen;
-    return `<div class="tc5-bubble-row ai-row" data-ai-bubble-result>
+    const customerMessage = selectedQ?.customer_message || draft.selected_customer_question || latestInboundText() || '';
+    const situationType = selectedQ?.situation_type || draft.situation_type || inferTrainingSituation(customerMessage);
+    const attrs = [
+      ['data-training-auto-id', result.auto_answer_id || selectedQ?.auto_answer_id || ''],
+      ['data-training-memory-event-id', result.memory_event_id || result.training_event?.id || selectedQ?.memory_event_id || ''],
+      ['data-training-line-message-id', selectedQ?.line_message_id || draft.line_message_id || ''],
+      ['data-training-customer-message', customerMessage],
+      ['data-training-ai-reply', answer],
+      ['data-training-situation-type', situationType],
+    ].map(([k,v]) => `${k}="${esc(v)}"`).join(' ');
+    return `<div class="tc5-bubble-row ai-row" data-ai-bubble-result ${attrs}>
       <div class="tc5-bubble ai-bubble" style="max-width:82%">
         <div class="tc5-bubble-meta" style="padding-top:0;border-top:0;margin-top:0;margin-bottom:7px">
           <span class="tc5-internal-badge">🤖 AI ฝึกภายใน — ยังไม่ส่งลูกค้าจริง</span>
@@ -1215,7 +1269,7 @@
           <button class="tc5-act-btn save-lesson" type="button" data-tc5-save-from-bubble title="บันทึกเป็นบทเรียนตรงนี้" ${answer ? '' : 'disabled'}>💾 บันทึกบทเรียน</button>
           <button class="tc5-act-btn block-ai" type="button" data-training-conv-mode="off" title="ห้าม AI ตอบเองในแชทนี้">⏸ พัก AI แชทนี้</button>
         </div>
-        ${teachOpen ? renderTC5TeachInline(answer, selectedQ) : ''}
+        ${teachOpen ? renderTC5TeachInline(answer, Object.assign({}, selectedQ || {}, { customer_message: customerMessage, situation_type: situationType })) : ''}
       </div>
       <div class="tc5-avatar ai-av">🤖</div>
     </div>`;
@@ -1572,9 +1626,9 @@
       const data = await api('/admin/ai-office/training-center/internal-answer', { method:'POST', body:JSON.stringify(payload) });
       STATE.trainingResult = data;
       STATE.trainingLastKey = `${payload.conversation_id}:${clean(payload.selected_customer_question).slice(0,120)}`;
-      await loadTrainingSkills();
+      await Promise.all([loadTrainingSkills(), loadTrainingQuestions(), payload.conversation_id ? loadLineThread(payload.conversation_id) : Promise.resolve()]);
       render();
-      toast('AI ลองตอบภายในแล้ว ยังไม่ส่ง LINE จริง', 'success');
+      toast('AI ลองตอบภายในแล้ว ยังไม่ส่ง LINE จริง และบันทึกไว้ให้ย้อนดูแล้ว', 'success');
     } finally {
       _trainingDraftBusy = false;
       STATE.trainingBusy = false;
@@ -1599,43 +1653,56 @@
     const area = $('[data-training-lesson-form] textarea[name="final_admin_reply"]');
     if (area && answer) { area.value = answer; toast('ใส่คำตอบ AI ลงช่องผู้สอนแล้ว', 'success'); }
   }
-  async function markTrainingGood(){
+  function trainingBubblePayload(sourceEl){
+    const bubble = sourceEl?.closest?.('[data-ai-bubble-result]');
     const q = selectedTrainingQuestion();
     const result = currentTrainingResult();
-    const answer = currentTrainingAnswer();
+    const ds = bubble?.dataset || {};
+    return {
+      auto_answer_id: ds.trainingAutoId || result?.auto_answer_id || q?.auto_answer_id || '',
+      memory_event_id: ds.trainingMemoryEventId || result?.training_event?.id || '',
+      line_message_id: ds.trainingLineMessageId || q?.line_message_id || '',
+      customer_message: ds.trainingCustomerMessage || q?.customer_message || latestInboundText(),
+      ai_reply: ds.trainingAiReply || currentTrainingAnswer(),
+      situation_type: ds.trainingSituationType || q?.situation_type || inferTrainingSituation(ds.trainingCustomerMessage || q?.customer_message || latestInboundText()),
+    };
+  }
+  async function markTrainingGood(sourceEl){
+    const src = trainingBubblePayload(sourceEl);
+    const answer = src.ai_reply;
     if (!STATE.selectedConversation || !clean(answer)) return toast('ยังไม่มีคำตอบ AI ให้บันทึก', 'error');
     const payload = {
       verdict:'approved',
       final_admin_reply:answer,
       conversation_id:STATE.selectedConversation.id,
-      customer_message:q?.customer_message || latestInboundText(),
+      customer_message:src.customer_message,
       ai_reply:answer,
-      situation_type:q?.situation_type || inferTrainingSituation(q?.customer_message || latestInboundText()),
+      line_message_id:src.line_message_id,
+      situation_type:src.situation_type,
       reason:'approved_from_training_center',
     };
-    if (result?.auto_answer_id || q?.auto_answer_id) {
-      await api(`/admin/ai-office/training-center/auto-answers/${encodeURIComponent(result?.auto_answer_id || q?.auto_answer_id)}/feedback`, { method:'POST', body:JSON.stringify(payload) });
+    if (src.auto_answer_id) {
+      await api(`/admin/ai-office/training-center/auto-answers/${encodeURIComponent(src.auto_answer_id)}/feedback`, { method:'POST', body:JSON.stringify(payload) });
     } else {
       await api('/admin/ai-office/training-center/feedback', { method:'POST', body:JSON.stringify(payload) });
     }
-    await Promise.all([loadExamples(), loadTrainingSkills(), loadTrainingQuestions()]);
+    await Promise.all([loadExamples(), loadTrainingSkills(), loadTrainingQuestions(), STATE.selectedConversation?.id ? loadLineThread(STATE.selectedConversation.id) : Promise.resolve()]);
     STATE.trainingResult = null;
     render();
     toast('บันทึกว่าถูก และจำเข้าคลังสมองกลางแล้ว', 'success');
   }
-  async function markTrainingBad(){
-    const q = selectedTrainingQuestion();
-    const result = currentTrainingResult();
-    const answer = currentTrainingAnswer();
+  async function markTrainingBad(sourceEl){
+    const src = trainingBubblePayload(sourceEl);
+    const answer = src.ai_reply;
     const area = $('[data-training-lesson-form] textarea[name="final_admin_reply"]');
     if (area) area.value = answer ? `AI ตอบไว้ว่า:\n${answer}\n\nควรแก้เป็น:\n` : 'ควรตอบลูกค้าว่า: ';
-    const payload = { verdict:'rejected', conversation_id:STATE.selectedConversation?.id || '', customer_message:q?.customer_message || latestInboundText(), ai_reply:answer, situation_type:q?.situation_type || inferTrainingSituation(q?.customer_message || latestInboundText()), reason:'marked_bad_from_training_center' };
-    if (result?.auto_answer_id || q?.auto_answer_id) {
-      await api(`/admin/ai-office/training-center/auto-answers/${encodeURIComponent(result?.auto_answer_id || q?.auto_answer_id)}/feedback`, { method:'POST', body:JSON.stringify(payload) }).catch(()=>{});
+    const payload = { verdict:'rejected', conversation_id:STATE.selectedConversation?.id || '', customer_message:src.customer_message, ai_reply:answer, line_message_id:src.line_message_id, situation_type:src.situation_type, reason:'marked_bad_from_training_center' };
+    if (src.auto_answer_id) {
+      await api(`/admin/ai-office/training-center/auto-answers/${encodeURIComponent(src.auto_answer_id)}/feedback`, { method:'POST', body:JSON.stringify(payload) }).catch(()=>{});
     } else if (STATE.selectedConversation) {
       await api('/admin/ai-office/training-center/feedback', { method:'POST', body:JSON.stringify(payload) }).catch(()=>{});
     }
-    await Promise.all([loadTrainingSkills(), loadTrainingQuestions()]).catch(()=>{});
+    await Promise.all([loadTrainingSkills(), loadTrainingQuestions(), STATE.selectedConversation?.id ? loadLineThread(STATE.selectedConversation.id) : Promise.resolve()]).catch(()=>{});
     render();
     toast('ทำเครื่องหมายว่า AI ต้องให้ครูแก้คำตอบ', 'info');
   }
@@ -1884,30 +1951,44 @@
     if (e.target.closest('[data-tc5-ask-ai]')) { const form = $('[data-training-draft-form]'); if (form) return draftTrainingFromForm(form).catch((err)=>toast(err.message,'error')); return; }
     if (e.target.closest('[data-tc5-teach-open]')) { STATE.tc5TeachOpen = !STATE.tc5TeachOpen; if (!STATE.tc5TeachOpen) { STATE.tc5RightTab = 'teach'; } render(); return; }
     if (e.target.closest('[data-tc5-teach-close]')) { STATE.tc5TeachOpen = false; render(); return; }
-    if (e.target.closest('[data-tc5-teach-save]')) {
-      const textarea = $('[data-tc5-teach-reply]');
+    const teachSaveBtn = e.target.closest('[data-tc5-teach-save]');
+    if (teachSaveBtn) {
+      const textarea = teachSaveBtn.closest('[data-tc5-teach-inline-form]')?.querySelector('[data-tc5-teach-reply]') || $('[data-tc5-teach-reply]');
       const teachReply = textarea?.value?.trim();
       if (!teachReply) return toast('กรุณากรอกคำตอบที่ถูกต้อง', 'error');
-      const lessonForm = $('[data-training-lesson-form]');
-      if (lessonForm) {
-        const area = lessonForm.querySelector('textarea[name="final_admin_reply"]');
-        if (area) area.value = teachReply;
-        return saveTrainingLesson(lessonForm).then(()=>{ STATE.tc5TeachOpen = false; }).catch((err)=>toast(err.message,'error'));
-      }
-      return;
-    }
-    if (e.target.closest('[data-tc5-save-from-bubble]')) {
-      const answer = currentTrainingAnswer();
-      if (!answer) return toast('ยังไม่มีคำตอบ AI ให้บันทึก', 'error');
-      const q = selectedTrainingQuestion();
-      const situation = q?.situation_type || inferTrainingSituation(q?.customer_message || latestInboundText());
+      const src = trainingBubblePayload(teachSaveBtn);
+      const situation = src.situation_type || inferTrainingSituation(src.customer_message || latestInboundText());
       const payload = {
-        customer_message: q?.customer_message || latestInboundText(),
+        customer_message: src.customer_message || latestInboundText(),
+        final_admin_reply: teachReply,
+        situation_type: situation,
+        conversation_id: STATE.selectedConversation?.id || '',
+        line_message_id: src.line_message_id || '',
+        auto_answer_id: src.auto_answer_id || '',
+        ai_reply: src.ai_reply || '',
+        teacher_verdict: 'teacher_corrected_from_bubble',
+        tags: `ศูนย์ฝึก AI, training_center, core_brain, ${situation}`,
+        language: 'th',
+      };
+      if (!payload.customer_message || !payload.final_admin_reply) return toast('ไม่มีข้อมูลเพียงพอสำหรับบันทึกบทเรียน', 'error');
+      return api('/admin/ai-office/training-center/lessons', { method:'POST', body:JSON.stringify(payload) })
+        .then(()=>{ STATE.tc5TeachOpen = false; STATE.trainingResult = null; return Promise.all([loadExamples(), loadTrainingSkills(), loadTrainingQuestions(), STATE.selectedConversation?.id ? loadLineThread(STATE.selectedConversation.id) : Promise.resolve()]); })
+        .then(()=>{ render(); toast('สอนคำตอบที่ถูก และบันทึกเข้าสมองกลางแล้ว', 'success'); })
+        .catch((err)=>toast(err.message,'error'));
+    }
+    const saveBubbleBtn = e.target.closest('[data-tc5-save-from-bubble]');
+    if (saveBubbleBtn) {
+      const src = trainingBubblePayload(saveBubbleBtn);
+      const answer = src.ai_reply;
+      if (!answer) return toast('ยังไม่มีคำตอบ AI ให้บันทึก', 'error');
+      const situation = src.situation_type || inferTrainingSituation(src.customer_message || latestInboundText());
+      const payload = {
+        customer_message: src.customer_message || latestInboundText(),
         final_admin_reply: answer,
         situation_type: situation,
         conversation_id: STATE.selectedConversation?.id || '',
-        line_message_id: q?.line_message_id || '',
-        auto_answer_id: q?.auto_answer_id || currentTrainingResult()?.auto_answer_id || '',
+        line_message_id: src.line_message_id || '',
+        auto_answer_id: src.auto_answer_id || '',
         ai_reply: answer,
         teacher_verdict: 'lesson_saved_from_bubble',
         tags: `ศูนย์ฝึก AI, training_center, core_brain, ${situation}`,
@@ -1915,7 +1996,7 @@
       };
       if (!payload.customer_message || !payload.final_admin_reply) return toast('ไม่มีข้อมูลเพียงพอ', 'error');
       return api('/admin/ai-office/training-center/lessons', { method:'POST', body:JSON.stringify(payload) })
-        .then(()=>{ STATE.trainingResult = null; return Promise.all([loadExamples(), loadTrainingSkills(), loadTrainingQuestions()]); })
+        .then(()=>{ STATE.trainingResult = null; return Promise.all([loadExamples(), loadTrainingSkills(), loadTrainingQuestions(), STATE.selectedConversation?.id ? loadLineThread(STATE.selectedConversation.id) : Promise.resolve()]); })
         .then(()=>{ render(); toast('บันทึกเป็นบทเรียนเข้าสมองกลางแล้ว', 'success'); })
         .catch((err)=>toast(err.message,'error'));
     }
@@ -1928,8 +2009,8 @@
       return loadLineThread(trainingSelect.dataset.trainingSelectConv).then(()=>{ STATE.trainingResult = autoTrainingResultFromQuestion(selectedTrainingQuestion()); render(); return maybeAutoRunTraining(); }).catch((err)=>toast(err.message,'error'));
     }
     if (e.target.closest('[data-training-copy-ai]')) return copyTrainingAiToTeacher();
-    if (e.target.closest('[data-training-mark-good]')) return markTrainingGood().catch((err)=>toast(err.message,'error'));
-    if (e.target.closest('[data-training-mark-bad]')) return markTrainingBad().catch((err)=>toast(err.message,'error'));
+    { const btn = e.target.closest('[data-training-mark-good]'); if (btn) return markTrainingGood(btn).catch((err)=>toast(err.message,'error')); }
+    { const btn = e.target.closest('[data-training-mark-bad]'); if (btn) return markTrainingBad(btn).catch((err)=>toast(err.message,'error')); }
     const trainingConvMode = e.target.closest('[data-training-conv-mode]');
     if (trainingConvMode) return setTrainingConversationMode(trainingConvMode.dataset.trainingConvMode).catch((err)=>toast(err.message,'error'));
     if (e.target.closest('[data-training-unknown]')) { const area = $('[data-training-lesson-form] textarea[name="final_admin_reply"]'); if (area) { area.value = 'AI ยังไม่รู้คำตอบนี้ ควรตอบลูกค้าว่า: '; area.focus(); } return toast('กรอกคำตอบจริงเพื่อสอน AI', 'info'); }

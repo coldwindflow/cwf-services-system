@@ -10,7 +10,7 @@ const {
   updateAutoTrainingFeedback,
 } = require("../aiTrainingAutoReplyV36");
 
-const BUILD = "phase35b2_training_backend_20260612";
+const BUILD = "phase35b6_core_brain_chat_history_20260612";
 const DEFAULT_MODEL = "gpt-4.1-mini";
 
 function cleanText(value, max = 4000) {
@@ -191,6 +191,198 @@ async function listRealCustomerQuestions(pool, opts = {}) {
     };
   });
   return { questions, counts: { total: questions.length } };
+}
+
+
+function asTimeValue(value) {
+  const t = value ? new Date(value).getTime() : 0;
+  return Number.isFinite(t) ? t : 0;
+}
+
+function normalizeTrainingDecision(status, metadata = {}, confidence = 0) {
+  const meta = metadata && typeof metadata === "object" ? metadata : {};
+  return normalizeDecision(meta.decision || status || "ต้องตรวจ", confidence);
+}
+
+function matchTrainingAnswerToLine(answer, lineRow) {
+  if (!answer || !lineRow) return false;
+  const answerLineId = cleanText(answer.line_message_id || answer.metadata?.line_message_id || "", 255);
+  const lineMsgId = cleanText(lineRow.message_id || "", 255);
+  if (answerLineId && lineMsgId && answerLineId === lineMsgId) return true;
+  if (answer.line_message_pk && Number(answer.line_message_pk) === Number(lineRow.id)) return true;
+  const aText = cleanText(answer.customer_message || answer.selected_customer_question || "", 4000);
+  const lText = cleanText(lineRow.message_text || "", 4000);
+  return Boolean(aText && lText && aText === lText && Number(answer.conversation_id || 0) === Number(lineRow.conversation_id || 0));
+}
+
+async function loadTrainingChatMirrorThread(pool, conversationId, { limit = 80 } = {}) {
+  await ensureTrainingMemorySchema(pool);
+  const id = Number(conversationId || 0);
+  if (!id) { const err = new Error("TRAINING_CONVERSATION_ID_REQUIRED"); err.status = 400; throw err; }
+  const hasConversations = await tableExists(pool, "public.line_conversations");
+  const hasMessages = await tableExists(pool, "public.line_messages");
+  if (!hasConversations || !hasMessages) return { conversation: null, messages: [], training_thread: [], auto_answers: [], missing: { line_conversations: !hasConversations, line_messages: !hasMessages } };
+  const convRes = await pool.query(`SELECT * FROM public.line_conversations WHERE id=$1 LIMIT 1`, [id]);
+  const conversation = convRes.rows?.[0] || null;
+  if (!conversation) { const err = new Error("LINE_CONVERSATION_NOT_FOUND"); err.status = 404; throw err; }
+  const n = clamp(limit || 80, 20, 160);
+  const msgRes = await pool.query(`
+    SELECT id, conversation_id, line_user_id, message_id, direction, event_type, message_type, message_text, received_at, created_at
+      FROM public.line_messages
+     WHERE conversation_id=$1
+     ORDER BY COALESCE(received_at,created_at) DESC
+     LIMIT $2
+  `, [id, n]);
+  const messages = (msgRes.rows || []).reverse();
+
+  const autoRes = await pool.query(`
+    SELECT a.*, c.display_name, c.picture_url, s.mode AS conversation_mode
+      FROM public.ai_training_auto_answers a
+      LEFT JOIN public.line_conversations c ON c.id=a.conversation_id
+      LEFT JOIN public.ai_training_conversation_settings s ON s.conversation_id=a.conversation_id
+     WHERE a.conversation_id=$1
+     ORDER BY COALESCE(a.created_at,a.updated_at) ASC, a.id ASC
+     LIMIT $2
+  `, [id, Math.max(n, 120)]).catch(() => ({ rows: [] }));
+  const autoAnswers = (autoRes.rows || []).map((row) => {
+    const metadata = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
+    const confidence = Number(row.confidence || 0);
+    return Object.assign({}, row, {
+      metadata,
+      decision: normalizeTrainingDecision(row.status, metadata, confidence),
+      decision_reason: cleanText(metadata.decision_reason || "", 1000),
+      missing_info: safeJsonArray(metadata.missing_info),
+      customer_message: cleanText(row.customer_message || "", 4000),
+      ai_reply: cleanText(row.ai_reply || "", 4000),
+    });
+  });
+
+  const memRes = await pool.query(`
+    SELECT id, event_type, action_status, agent_key, conversation_id, selected_customer_question, customer_message, ai_reply,
+           final_admin_reply, situation_type, service_type, tags, metadata, created_by, created_at
+      FROM public.ai_memory_events
+     WHERE conversation_id=$1
+       AND source='training_center'
+       AND event_type IN ('training_answered','training_feedback','lesson_saved')
+     ORDER BY created_at ASC, id ASC
+     LIMIT $2
+  `, [id, Math.max(n, 120)]).catch(() => ({ rows: [] }));
+  const memoryAnswers = (memRes.rows || []).map((row) => {
+    const metadata = row.metadata && typeof row.metadata === "object" ? row.metadata : {};
+    const confidence = Number(metadata.confidence || 0);
+    return {
+      id: row.id,
+      memory_event_id: row.id,
+      conversation_id: row.conversation_id,
+      line_message_id: cleanText(metadata.line_message_id || "", 255),
+      line_message_pk: null,
+      customer_message: cleanText(row.customer_message || row.selected_customer_question || "", 4000),
+      ai_reply: cleanText(row.ai_reply || row.final_admin_reply || "", 4000),
+      confidence,
+      status: row.action_status || row.event_type,
+      situation_type: row.situation_type || inferSituation(`${row.customer_message || ""}\n${row.ai_reply || ""}\n${row.final_admin_reply || ""}`),
+      service_type: row.service_type || "",
+      metadata,
+      created_at: row.created_at,
+      source: row.event_type === "lesson_saved" ? "teacher_lesson" : "manual_internal_training",
+      decision: normalizeTrainingDecision(row.action_status, metadata, confidence),
+      decision_reason: cleanText(metadata.decision_reason || (row.event_type === "lesson_saved" ? "บทเรียนที่ผู้สอนบันทึก" : ""), 1000),
+      missing_info: safeJsonArray(metadata.missing_info),
+      final_admin_reply: cleanText(row.final_admin_reply || "", 4000),
+    };
+  }).filter((row) => row.ai_reply || row.final_admin_reply);
+
+  const allAnswers = autoAnswers.concat(memoryAnswers).sort((a,b) => asTimeValue(a.created_at) - asTimeValue(b.created_at));
+  const used = new Set();
+  const thread = [];
+  for (const m of messages) {
+    thread.push({
+      kind: m.direction === "inbound" ? "customer" : "outbound",
+      id: `line_${m.id}`,
+      line_message_pk: m.id,
+      line_message_id: m.message_id || "",
+      conversation_id: m.conversation_id,
+      direction: m.direction,
+      message_type: m.message_type || "text",
+      message_text: cleanText(m.message_text || "", 4000),
+      received_at: m.received_at || m.created_at,
+      created_at: m.created_at,
+      source: "line_messages",
+    });
+    if (m.direction === "inbound") {
+      allAnswers.forEach((a, idx) => {
+        if (used.has(idx)) return;
+        if (!matchTrainingAnswerToLine(a, m)) return;
+        used.add(idx);
+        thread.push({
+          kind: "internal_ai",
+          id: a.auto_answer_id ? `auto_${a.auto_answer_id}` : a.memory_event_id ? `memory_${a.memory_event_id}` : `internal_${idx}`,
+          auto_answer_id: a.id && !a.memory_event_id ? a.id : a.auto_answer_id || null,
+          memory_event_id: a.memory_event_id || null,
+          conversation_id: id,
+          line_message_id: a.line_message_id || m.message_id || "",
+          line_message_pk: a.line_message_pk || m.id || null,
+          customer_message: a.customer_message || m.message_text || "",
+          message_text: a.ai_reply || a.final_admin_reply || "",
+          ai_reply: a.ai_reply || a.final_admin_reply || "",
+          confidence: Number(a.confidence || 0),
+          decision: a.decision || normalizeTrainingDecision(a.status, a.metadata, a.confidence),
+          decision_reason: a.decision_reason || "",
+          missing_info: a.missing_info || [],
+          situation_type: a.situation_type || inferSituation(a.customer_message || m.message_text || ""),
+          service_type: a.service_type || "",
+          status: a.status || "pending_review",
+          source: a.memory_event_id ? a.source || "manual_internal_training" : "auto_internal_training",
+          created_at: a.created_at,
+          metadata: a.metadata || {},
+          internal_only: true,
+          no_line_send: true,
+        });
+      });
+    }
+  }
+  allAnswers.forEach((a, idx) => {
+    if (used.has(idx)) return;
+    thread.push({
+      kind: "internal_ai",
+      id: a.auto_answer_id ? `auto_${a.auto_answer_id}` : a.memory_event_id ? `memory_${a.memory_event_id}` : `internal_orphan_${idx}`,
+      auto_answer_id: a.id && !a.memory_event_id ? a.id : a.auto_answer_id || null,
+      memory_event_id: a.memory_event_id || null,
+      conversation_id: id,
+      line_message_id: a.line_message_id || "",
+      line_message_pk: a.line_message_pk || null,
+      customer_message: a.customer_message || "",
+      message_text: a.ai_reply || a.final_admin_reply || "",
+      ai_reply: a.ai_reply || a.final_admin_reply || "",
+      confidence: Number(a.confidence || 0),
+      decision: a.decision || normalizeTrainingDecision(a.status, a.metadata, a.confidence),
+      decision_reason: a.decision_reason || "",
+      missing_info: a.missing_info || [],
+      situation_type: a.situation_type || inferSituation(a.customer_message || a.ai_reply || ""),
+      service_type: a.service_type || "",
+      status: a.status || "pending_review",
+      source: a.memory_event_id ? a.source || "manual_internal_training" : "auto_internal_training",
+      created_at: a.created_at,
+      metadata: a.metadata || {},
+      internal_only: true,
+      no_line_send: true,
+    });
+  });
+  thread.sort((a,b) => asTimeValue(a.received_at || a.created_at) - asTimeValue(b.received_at || b.created_at));
+  return {
+    conversation: {
+      id: conversation.id,
+      line_user_id: conversation.line_user_id || "",
+      display_name: conversation.display_name || "",
+      picture_url: conversation.picture_url || "",
+      last_message_text: conversation.last_message_text || "",
+      last_message_at: conversation.last_message_at || null,
+    },
+    messages,
+    training_thread: thread,
+    auto_answers: autoAnswers,
+    counts: { line_messages: messages.length, internal_ai_answers: allAnswers.length, thread_items: thread.length },
+  };
 }
 
 async function loadConversation(pool, id) {
@@ -474,6 +666,15 @@ module.exports = function createAdminAiOfficeTrainingCenterV35BRoutes(deps = {})
       return res.json({ ok:true, build:BUILD, ...data });
     } catch (e) {
       return res.status(e.status || 500).json({ ok:false, error:e.message || "LOAD_TRAINING_QUESTIONS_FAILED" });
+    }
+  });
+
+  router.get("/admin/ai-office/training-center/conversations/:id/thread", requireAdminSession, async (req, res) => {
+    try {
+      const thread = await loadTrainingChatMirrorThread(pool, req.params.id, { limit: req.query.limit || 80 });
+      return res.json({ ok:true, build:BUILD, ...thread });
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok:false, error:e.message || "LOAD_TRAINING_CHAT_MIRROR_THREAD_FAILED" });
     }
   });
 

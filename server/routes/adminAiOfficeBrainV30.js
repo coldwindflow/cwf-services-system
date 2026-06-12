@@ -227,6 +227,37 @@ module.exports = function createAdminAiOfficeBrainV30Routes(deps = {}) {
     }
   });
 
+  router.get("/admin/ai-office/brain/health", requireAdminSession, async (_req, res) => {
+    try {
+      await ensureAiBrainItemsTable(pool);
+      const counts = await pool.query(`
+        SELECT
+          COUNT(*) FILTER (WHERE is_active=true)::int AS active_total,
+          COUNT(*) FILTER (WHERE is_active=true AND source='cwf_brain_v2')::int AS package_total,
+          COUNT(*) FILTER (WHERE is_active=true AND source_file='cwf-ai-main-brain-v1.1.json')::int AS main_brain_v11_total,
+          COUNT(*) FILTER (WHERE is_active=true AND item_type='pricing_rule')::int AS pricing_rules,
+          COUNT(*) FILTER (WHERE is_active=true AND item_type='policy_rule')::int AS policy_rules,
+          COUNT(*) FILTER (WHERE is_active=true AND item_type='style_rule')::int AS style_rules,
+          COUNT(*) FILTER (WHERE is_active=true AND item_type IN ('approved_reply','admin_correction'))::int AS approved_or_corrected_replies,
+          COUNT(*) FILTER (WHERE is_active=true AND item_type='bad_reply_pattern')::int AS bad_reply_patterns
+        FROM public.ai_brain_items
+      `);
+      const sourceRows = await pool.query(`
+        SELECT source_file, COUNT(*)::int AS count
+          FROM public.ai_brain_items
+         WHERE is_active=true
+         GROUP BY source_file
+         ORDER BY count DESC, source_file ASC
+         LIMIT 30
+      `);
+      const c = counts.rows?.[0] || {};
+      const ready = Number(c.active_total || 0) >= 20 && Number(c.main_brain_v11_total || 0) >= 10 && Number(c.pricing_rules || 0) >= 2 && Number(c.policy_rules || 0) >= 3 && Number(c.style_rules || 0) >= 1;
+      return res.json({ ok:true, ready, counts:c, source_files:sourceRows.rows || [], required:{ main_brain_v11_min:10, pricing_rules_min:2, policy_rules_min:3, style_rules_min:1 }, warning: ready ? '' : 'สมองกลางยังไม่พร้อมหรือยังไม่ได้ seed CWF Main Brain v1.1 เข้า ai_brain_items' });
+    } catch (e) {
+      return res.status(e.status || 500).json({ ok:false, ready:false, error:e.message || "LOAD_AI_BRAIN_HEALTH_FAILED" });
+    }
+  });
+
   router.get("/admin/ai-office/brain/package-preview", requireAdminSession, async (_req, res) => {
     try {
       const normalized = normalizeBrainPackageFromFolder();
