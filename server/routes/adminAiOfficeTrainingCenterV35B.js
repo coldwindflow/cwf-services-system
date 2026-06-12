@@ -529,22 +529,34 @@ module.exports = function createAdminAiOfficeTrainingCenterV35BRoutes(deps = {})
         metadata: { reply_example_id: example?.id || null, line_message_id: body.line_message_id || null, teacher_verdict: body.teacher_verdict || "lesson_saved" },
       });
       let brainItem = null;
-      brainItem = await saveCoreBrainLesson(pool, {
-        auto_answer_id: body.auto_answer_id || null,
-        conversation_id: body.conversation_id || null,
-        line_message_id: body.line_message_id || null,
-        customer_message: customerMessage,
-        ai_reply: body.ai_reply || "",
-        final_admin_reply: finalReply,
-        verdict: body.teacher_verdict || "lesson_saved",
-        situation_type: situationType,
-        service_type: body.service_type || "",
-        source: "training_center_lesson",
-        created_by: getAdminUser(req),
-        metadata: { reply_example_id: example?.id || null }
-      }).catch(()=>null);
       if (body.auto_answer_id) {
-        await updateAutoTrainingFeedback(pool, body.auto_answer_id, { verdict:"corrected", final_admin_reply:finalReply, reason:"teacher_saved_lesson" }, getAdminUser(req)).catch(()=>{});
+        // For auto-answer lessons, updateAutoTrainingFeedback is the single path that
+        // promotes the corrected/approved answer into the shared Core Brain.
+        // Do not call saveCoreBrainLesson here too, otherwise the same lesson is
+        // inserted into ai_brain_items twice.
+        const autoFeedback = await updateAutoTrainingFeedback(pool, body.auto_answer_id, {
+          verdict:"corrected",
+          final_admin_reply:finalReply,
+          reason:"teacher_saved_lesson",
+          agent_key: body.agent_key || "sales",
+          language: body.language || detectLanguage(`${customerMessage}\n${finalReply}`),
+        }, getAdminUser(req)).catch(()=>null);
+        brainItem = autoFeedback?.brain_item || null;
+      } else {
+        brainItem = await saveCoreBrainLesson(pool, {
+          auto_answer_id: null,
+          conversation_id: body.conversation_id || null,
+          line_message_id: body.line_message_id || null,
+          customer_message: customerMessage,
+          ai_reply: body.ai_reply || "",
+          final_admin_reply: finalReply,
+          verdict: body.teacher_verdict || "lesson_saved",
+          situation_type: situationType,
+          service_type: body.service_type || "",
+          source: "training_center_lesson",
+          created_by: getAdminUser(req),
+          metadata: { reply_example_id: example?.id || null }
+        }).catch(()=>null);
       }
       const skills = await getTrainingSkills(pool).catch(()=>null);
       return res.json({ ok:true, example, event, brain_item:brainItem, skills: skills?.skills || [] });

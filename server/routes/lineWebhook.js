@@ -3,6 +3,7 @@ const crypto = require("crypto");
 const https = require("https");
 const { ingestLineBookingIntakeFromEvent } = require("../aiBookingIntake");
 const { handleAutoSafeLineReplyFromWebhook } = require("./adminAiOfficeControlCenter");
+const { handleAutoInternalTrainingFromWebhook } = require("../aiTrainingAutoReplyV36");
 
 function safeText(value, max = 2000) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -203,6 +204,14 @@ function createLineWebhookRoutes({ pool }) {
           }).catch((e) => {
             console.warn("[line-webhook] ai booking intake failed:", e.message);
           });
+          if (typeof handleAutoInternalTrainingFromWebhook === "function") {
+            handleAutoInternalTrainingFromWebhook(pool, event, stored).then((result) => {
+              if (result?.auto_answer?.id) console.log("[line-webhook] auto internal training drafted", { conversation_id: stored.conversation_id, auto_answer_id: result.auto_answer.id });
+              else if (result && result.error) console.warn("[line-webhook] auto internal training failed:", result.error);
+            }).catch((e) => {
+              console.warn("[line-webhook] auto internal training failed:", e.message);
+            });
+          }
           if (typeof handleAutoSafeLineReplyFromWebhook === "function") {
             handleAutoSafeLineReplyFromWebhook(pool, event, stored).then((result) => {
               if (result?.sent) console.log("[line-webhook] auto safe reply sent", { conversation_id: stored.conversation_id, log_id: result.log_id });

@@ -1,4 +1,5 @@
 const express = require("express");
+const { buildCoreBrainContext } = require("../aiOfficeCoreBrain");
 
 function cleanText(value, max = 2000) {
   return String(value == null ? "" : value).replace(/\s+/g, " ").trim().slice(0, max);
@@ -74,6 +75,9 @@ const DEFAULT_SETTINGS = [
   { key:"auto_safe_playbook_enabled", category:"reply", label:"ใช้ Playbook ที่อนุมัติแล้วก่อน AI ร่างเอง", description:"ให้ Auto Safe Reply ใช้คำตอบที่ผ่านการอนุมัติแล้วสำหรับราคา พื้นที่บริการ และคำอธิบายแพ็กเกจ เพื่อลดการตอบเพี้ยน", value:true, locked:false },
   { key:"auto_safe_playbook_required", category:"reply", label:"ส่งเองเฉพาะเมื่อมี Playbook ตรงเคส", description:"ถ้าเปิด AI จะส่ง LINE เองเฉพาะคำถามที่ match playbook ที่อนุมัติแล้ว ถ้าไม่ match จะกันไว้ให้แอดมิน", value:true, locked:false },
   { key:"auto_safe_playbook_seed_enabled", category:"reply", label:"เปิดชุด Playbook หลักของ CWF", description:"เปิดชุดคำตอบหลักที่ seed จากข้อมูลธุรกิจ CWF เช่น ราคา พื้นที่ และความต่างบริการ", value:true, locked:false },
+  { key:"auto_internal_training_enabled", category:"training", label:"Auto Training ภายใน", description:"ให้ระบบสร้างคำตอบ AI ภายในทันทีเมื่อข้อความ LINE ลูกค้าเข้า ยังไม่ส่งหาลูกค้าจริง", value:false, locked:false },
+  { key:"auto_internal_training_auto_answer", category:"training", label:"Auto ตอบภายในเมื่อ LINE เข้า", description:"เมื่อลูกค้าส่งข้อความ ให้ AI ร่างคำตอบไว้ใน Training Queue อัตโนมัติ เพื่อให้แอดมินมากดถูก/ไม่ถูก/สอนเพิ่ม", value:false, locked:false },
+  { key:"auto_internal_training_learn_to_core_brain", category:"training", label:"บันทึกบทเรียนเข้าคลังสมองกลาง", description:"เมื่อแอดมินกดถูกหรือสอนคำตอบ ให้บันทึกเป็นความรู้กลางที่ทุก Agent ใช้ร่วมกัน", value:true, locked:false },
   { key:"auto_safe_playbook_suggestions_enabled", category:"reply", label:"แนะนำ Playbook จากคำถามที่พบบ่อย", description:"ให้ระบบดูคำถามจริงที่ Auto Safe กันไว้เพราะไม่มี Playbook แล้วเสนอให้แอดมินสร้างชุดคำตอบใหม่", value:true, locked:false },
   { key:"auto_safe_playbook_suggestion_min_count", category:"reply", label:"จำนวนคำถามซ้ำก่อนเสนอ Playbook", description:"คำถามแนวเดียวกันต้องพบอย่างน้อยกี่ครั้งก่อนเสนอให้สร้าง Playbook", value:2, locked:false },
   { key:"auto_safe_playbook_suggestion_window_days", category:"reply", label:"ช่วงวันที่ใช้หา Playbook แนะนำ", description:"ดูคำถามย้อนหลังตามจำนวนวันนี้เพื่อเสนอ Playbook ใหม่", value:14, locked:false },
@@ -1623,44 +1627,56 @@ async function handleAutoSafeLineReplyFromWebhook(pool, event, stored = {}) {
     await ensureAiOfficeControlSchema(pool);
     const values = await getControlValues(pool);
     const safety = decideReplySafety(customerMessage, values);
+    const coreBrain = await buildCoreBrainContext(pool, {
+      query: customerMessage,
+      agent_key: "admin",
+      intent: safety.intent,
+      language: hasThaiText(customerMessage) ? "th" : "auto",
+      limit: 10,
+    }).catch(() => null);
+    const coreBrainMeta = {
+      core_brain_used: !!coreBrain,
+      used_core_brain_item_ids: (coreBrain?.summary || []).map((item) => item.id).filter(Boolean),
+      core_brain_sources: (coreBrain?.summary || []).slice(0, 6).map((item) => item.source || item.item_type || "core_brain"),
+    };
     const gate = autoSafeGate(customerMessage, safety, values);
     if (!gate.ok) {
-      await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"skipped", skipped_reason: gate.reason, metadata:{ source:"webhook" } });
+      await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"skipped", skipped_reason: gate.reason, metadata:{ source:"webhook", ...coreBrainMeta } });
       return { ok:false, skipped:true, reason: gate.reason, safety };
     }
     const contextGate = await autoSafeContextGate(pool, conversationId, lineUserId, values);
     if (!contextGate.ok) {
-      await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"skipped", skipped_reason: contextGate.reason, metadata:{ source:"webhook", contextGate } });
+      await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"skipped", skipped_reason: contextGate.reason, metadata:{ source:"webhook", contextGate, ...coreBrainMeta } });
       return { ok:false, skipped:true, reason: contextGate.reason, safety, contextGate };
     }
     const qualityGate = await autoSafeQualityGate(pool, customerMessage, safety, values);
     if (!qualityGate.ok) {
-      await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"skipped", skipped_reason: qualityGate.reason, metadata:{ source:"webhook", qualityGate } });
+      await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"skipped", skipped_reason: qualityGate.reason, metadata:{ source:"webhook", qualityGate, ...coreBrainMeta } });
       return { ok:false, skipped:true, reason: qualityGate.reason, safety, qualityGate };
     }
     const playbookMatch = await selectAutoSafePlaybook(pool, customerMessage, safety, values);
     const playbookRequired = boolValue(values.auto_safe_playbook_required, true);
     if (playbookRequired && !playbookMatch.matched) {
-      await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"skipped", skipped_reason:"PLAYBOOK_NOT_MATCHED", metadata:{ source:"webhook", playbookMatch } });
+      await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"skipped", skipped_reason:"PLAYBOOK_NOT_MATCHED", metadata:{ source:"webhook", playbookMatch, ...coreBrainMeta } });
       return { ok:false, skipped:true, reason:"PLAYBOOK_NOT_MATCHED", safety, playbookMatch };
     }
     const limits = await countAutoSafeWindow(pool, conversationId, values);
     const dailyLimit = Math.max(1, Math.min(50, Number(values.auto_safe_reply_daily_limit || 5)));
     if (limits.cooldown_count > 0) {
-      await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"skipped", skipped_reason:"COOLDOWN_ACTIVE", metadata:{ source:"webhook", limits } });
+      await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"skipped", skipped_reason:"COOLDOWN_ACTIVE", metadata:{ source:"webhook", limits, ...coreBrainMeta } });
       return { ok:false, skipped:true, reason:"COOLDOWN_ACTIVE", safety };
     }
     if (limits.daily_count >= dailyLimit) {
-      await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"skipped", skipped_reason:"DAILY_LIMIT_REACHED", metadata:{ source:"webhook", limits, dailyLimit } });
+      await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"skipped", skipped_reason:"DAILY_LIMIT_REACHED", metadata:{ source:"webhook", limits, dailyLimit, ...coreBrainMeta } });
       return { ok:false, skipped:true, reason:"DAILY_LIMIT_REACHED", safety };
     }
     const selectedPlaybook = playbookMatch.matched ? playbookMatch.playbook : null;
     const replyText = selectedPlaybook ? renderPlaybookReply(selectedPlaybook, customerMessage, safety, values) : applyCustomerReplyTone(buildSafeRecommendedReply(customerMessage, safety), values);
     const raw = await pushLineMessageToUser(lineUserId, replyText);
     await storeAutoSafeOutboundLineMessage(pool, conversationId, lineUserId, replyText, raw);
-    const decision = await saveReplyDecisionLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, customer_message: customerMessage, safety, recommended_reply: replyText, source:"auto_safe_webhook", values, metadata:{ auto_sent:true, message_id: messageId, playbook_id: selectedPlaybook?.id || null, playbook_title: selectedPlaybook?.title || null } }, "ai_auto_safe").catch(()=>null);
-    const approval = await createAutoSafeSentApproval(pool, { conversation_id: conversationId, line_user_id: lineUserId, customer_message: customerMessage, reply_text: replyText, risk_label: safety.risk_label, decision_reason: safety.reason, line_response: raw, metadata:{ decision_log_id: decision?.id || null, message_id: messageId, intent: safety.intent, playbook_id: selectedPlaybook?.id || null, playbook_title: selectedPlaybook?.title || null } }).catch(()=>null);
-    const log = await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, reply_text: replyText, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"sent", line_response: raw, metadata:{ source:"webhook", decision_log_id: decision?.id || null, approval_id: approval?.id || null, playbook_id: selectedPlaybook?.id || null, playbook_title: selectedPlaybook?.title || null }, playbook_id: selectedPlaybook?.id || null, playbook_title: selectedPlaybook?.title || null });
+    const decision = await saveReplyDecisionLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, customer_message: customerMessage, safety, recommended_reply: replyText, source:"auto_safe_webhook", values, metadata:{ auto_sent:true, message_id: messageId, ...coreBrainMeta, playbook_id: selectedPlaybook?.id || null, playbook_title: selectedPlaybook?.title || null } }, "ai_auto_safe").catch(()=>null);
+    const approval = await createAutoSafeSentApproval(pool, { conversation_id: conversationId, line_user_id: lineUserId, customer_message: customerMessage, reply_text: replyText, risk_label: safety.risk_label, decision_reason: safety.reason, line_response: raw, metadata:{ decision_log_id: decision?.id || null, message_id: messageId, ...coreBrainMeta, intent: safety.intent, playbook_id: selectedPlaybook?.id || null, playbook_title: selectedPlaybook?.title || null } }).catch(()=>null);
+    const log = await insertAutoSafeLog(pool, { conversation_id: conversationId, line_user_id: lineUserId, message_id: messageId, customer_message: customerMessage, reply_text: replyText, intent: safety.intent, decision: safety.decision, risk_label: safety.risk_label, confidence: safety.confidence, status:"sent", line_response: raw, metadata:{ source:"webhook", ...coreBrainMeta, decision_log_id: decision?.id || null, approval_id: approval?.id || null, playbook_id: selectedPlaybook?.id || null, playbook_title: selectedPlaybook?.title || null }, playbook_id: selectedPlaybook?.id || null, playbook_title: selectedPlaybook?.title || null });
     return { ok:true, sent:true, safety, reply_text: replyText, log_id: log?.id || null, approval_id: approval?.id || null };
   } catch (e) {
     try { await insertAutoSafeLog(pool, { conversation_id: stored?.conversation_id, line_user_id: event?.source?.userId, message_id: event?.message?.id, customer_message: event?.message?.text, status:"failed", skipped_reason:e.message || "AUTO_SAFE_REPLY_FAILED", metadata:{ source:"webhook_error" } }); } catch (_) {}

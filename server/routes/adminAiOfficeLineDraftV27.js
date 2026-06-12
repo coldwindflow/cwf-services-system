@@ -1,5 +1,6 @@
 const express = require("express");
 const https = require("https");
+const { buildCoreBrainContext, formatCoreBrainForPrompt } = require("../aiOfficeCoreBrain");
 
 const DEFAULT_MODEL = "gpt-4.1-mini";
 
@@ -305,6 +306,7 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
       const situationType = inferSituation(`${selectedQuestion}\n${adminQuestion}`);
       const examples = await loadExamples(pool, { situationType, language });
       const sharedMemory = await loadSharedMemoryForDraft(pool, { conversationId, selectedQuestion, situationType, language });
+      const coreBrain = await buildCoreBrainContext(pool, { query: selectedQuestion, agent_key: req.body?.agent || "sales", language, intent: situationType, limit: 14 });
       const priorDrafts = Array.isArray(req.body?.prior_drafts) ? req.body.prior_drafts.slice(-5) : [];
 
       const system = [
@@ -316,12 +318,13 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
         "No headings, no bullets, no report format, no JSON visible inside customer_reply.",
         "Do not repeat questions for details already present in selected_customer_question/context.",
         "Do not claim any LINE message was sent or any booking/status was created.",
-        "Use saved final_admin_reply examples as style reference only."
+        "Use CWF Core Brain as the single shared source of truth. Use saved final_admin_reply examples as style reference only."
       ].join(" ");
 
       const prompt = [
         "selected_customer_question:", selectedQuestion, "",
         "admin_instruction:", adminQuestion, "",
+        formatCoreBrainForPrompt(coreBrain), "",
         "conversation:",
         JSON.stringify({ display_name: conversation.display_name || "", messages: messages.map((m) => ({ direction:m.direction, text:m.message_text, at:m.received_at || m.created_at })).slice(-20) }, null, 2),
         "",
@@ -369,8 +372,9 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
         selected_customer_question: selectedQuestion,
         situation_type: situationType,
         used_reply_examples: examples.map((e) => ({ id:e.id, situation_type:e.situation_type, language:e.language, service_type:e.service_type })),
+        core_brain_used: (coreBrain.summary || []).map((e) => ({ id:e.id, type:e.type, title:e.title, source:e.source })),
       };
-      const saved = await saveDraft(pool, req, { conversation_id: conversationId, selected_customer_message: selectedQuestion, admin_instruction: adminQuestion, ai_draft: customerReply, metadata: { situation_type: situationType, language, used_example_ids: draft.used_reply_examples.map((e) => e.id) } }).catch(() => null);
+      const saved = await saveDraft(pool, req, { conversation_id: conversationId, selected_customer_message: selectedQuestion, admin_instruction: adminQuestion, ai_draft: customerReply, metadata: { situation_type: situationType, language, used_example_ids: draft.used_reply_examples.map((e) => e.id), used_core_brain_item_ids: draft.core_brain_used.map((e) => e.id).filter(Boolean) } }).catch(() => null);
       if (saved) draft.saved_draft_id = saved.id;
       await logSharedDraftMemory(pool, req, {
         source: "line_chat",
@@ -382,9 +386,9 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
         ai_reply: customerReply,
         action_status: "drafted",
         situation_type: situationType,
-        metadata: { saved_draft_id: saved?.id || null, used_example_ids: draft.used_reply_examples.map((e) => e.id) },
+        metadata: { saved_draft_id: saved?.id || null, used_example_ids: draft.used_reply_examples.map((e) => e.id), used_core_brain_item_ids: draft.core_brain_used.map((e) => e.id).filter(Boolean) },
       });
-      return res.json({ ok:true, answer:customerReply, draft, used_reply_examples:draft.used_reply_examples, conversation, messages });
+      return res.json({ ok:true, answer:customerReply, draft, used_reply_examples:draft.used_reply_examples, core_brain:coreBrain, conversation, messages });
     } catch (e) {
       console.error("V27 /line-draft-reply error:", e);
       return res.status(e.status || 500).json({ ok:false, error:e.message || "ร่างข้อความจาก LINE ไม่สำเร็จ" });
