@@ -57,13 +57,14 @@ a{color:inherit;text-decoration:none}
 .btxt a{color:var(--ln);font-weight:850;text-decoration:underline}
 
 /* Quick grid */
-.qgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:16px}
+.qgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-bottom:16px}
 .qtile{
   display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:6px;padding:14px 8px;border-radius:14px;text-align:center;
+  gap:6px;padding:16px 8px;border-radius:14px;text-align:center;
   background:var(--s1);border:1px solid var(--bd);
   box-shadow:0 2px 10px rgba(6,199,85,.07);
   transition:transform .12s,box-shadow .15s;
+  min-height:72px;
 }
 .qtile:active{transform:scale(.96);box-shadow:none}
 .qtile .qi{font-size:18px;line-height:1}
@@ -78,7 +79,7 @@ a{color:inherit;text-decoration:none}
 .ai-control-overlay.embedded .ai-control-tabs{position:sticky!important;top:0!important;z-index:5!important;border-radius:12px!important;margin-bottom:12px!important}
 .ai-control-overlay.embedded .ai-control-body{display:flex!important;flex-direction:column!important;gap:12px!important;overflow:visible!important;padding:0!important;flex:none!important}
 
-@media(max-width:520px){.qgrid{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:600px){.qgrid{grid-template-columns:repeat(2,1fr)}}
   </style>
 </head>
 <body data-ai-control-embedded="1">

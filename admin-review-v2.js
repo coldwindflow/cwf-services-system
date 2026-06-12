@@ -1,9 +1,12 @@
-﻿/**
+/**
  * Admin Review Queue v2 (matches admin-review-v2.html)
  * - ดูงาน "รอตรวจสอบ/ตีกลับ/ไม่พบช่างรับงาน"
  * - แอดมินแก้ไขข้อมูล + โหลดเวลาว่างจาก availability_v2 + เลือกช่างหลัก/ทีม + dispatch_v2
  * - Production-safe: fail-open, ไม่กระทบ endpoint เดิม
  */
+
+const ADMIN_REVIEW_V2_DEDUP_BUILD = "20260612_phase35a_review_queue_dedup";
+window.__CWF_ADMIN_REVIEW_V2_VERSION__ = ADMIN_REVIEW_V2_DEDUP_BUILD;
 
 let TECHS = [];
 let CURRENT = null;
@@ -105,7 +108,35 @@ function mapFilterStatus(v){
   return m[v] || "all";
 }
 
-async function loadQueue(){
+
+const REVIEW_QUEUE_LOAD_GUARD = {
+  inFlight: null,
+  pending: false,
+  lastStartAt: 0,
+  debounceTimer: null,
+};
+const REVIEW_QUEUE_MIN_GAP_MS = 900;
+
+async function loadQueue(opts = {}){
+  const force = !!(opts && opts.force);
+  if (REVIEW_QUEUE_LOAD_GUARD.inFlight) {
+    REVIEW_QUEUE_LOAD_GUARD.pending = true;
+    return REVIEW_QUEUE_LOAD_GUARD.inFlight;
+  }
+
+  const now = Date.now();
+  const elapsed = now - REVIEW_QUEUE_LOAD_GUARD.lastStartAt;
+  if (!force && REVIEW_QUEUE_LOAD_GUARD.lastStartAt && elapsed < REVIEW_QUEUE_MIN_GAP_MS) {
+    clearTimeout(REVIEW_QUEUE_LOAD_GUARD.debounceTimer);
+    return new Promise((resolve, reject) => {
+      REVIEW_QUEUE_LOAD_GUARD.debounceTimer = setTimeout(() => {
+        loadQueue({ force: true, reason: "debounced" }).then(resolve).catch(reject);
+      }, Math.max(80, REVIEW_QUEUE_MIN_GAP_MS - elapsed));
+    });
+  }
+
+  REVIEW_QUEUE_LOAD_GUARD.lastStartAt = now;
+  const runLoadQueue = async () => {
   const f = $("filterStatus")?.value || "all";
   const status = mapFilterStatus(f);
 
@@ -171,6 +202,21 @@ async function loadQueue(){
   }catch(e){
     console.error(e);
     $("list").innerHTML = `<div class="card"><div class="muted">โหลดไม่สำเร็จ: ${safe(e.message||e)}</div></div>`;
+  }
+  };
+
+  REVIEW_QUEUE_LOAD_GUARD.inFlight = runLoadQueue();
+  try {
+    return await REVIEW_QUEUE_LOAD_GUARD.inFlight;
+  } finally {
+    REVIEW_QUEUE_LOAD_GUARD.inFlight = null;
+    if (REVIEW_QUEUE_LOAD_GUARD.pending) {
+      REVIEW_QUEUE_LOAD_GUARD.pending = false;
+      clearTimeout(REVIEW_QUEUE_LOAD_GUARD.debounceTimer);
+      REVIEW_QUEUE_LOAD_GUARD.debounceTimer = setTimeout(() => {
+        loadQueue({ force: true, reason: "pending" }).catch((e) => console.warn("[admin-review-v2] pending reload failed", e));
+      }, 120);
+    }
   }
 }
 
@@ -585,7 +631,7 @@ async function cancelJob(){
 
 (async function init(){
   await loadTechs();
-  await loadQueue();
+  await loadQueue({ force:true, reason:"init" });
 
   // PATCH: เปิดใบงานเต็มหน้า จากหน้าอื่น (?open=job_id)
   try{
@@ -598,8 +644,8 @@ async function cancelJob(){
     }
   }catch(e){ console.warn('auto open job', e); }
 
-  $("btnReload").addEventListener("click", loadQueue);
-  $("filterStatus").addEventListener("change", loadQueue);
+  $("btnReload").addEventListener("click", () => loadQueue({ reason:"manual_reload" }));
+  $("filterStatus").addEventListener("change", () => loadQueue({ reason:"filter_change" }));
 
   $("btnLoadSlots").addEventListener("click", loadSlots);
   $("btnSave").addEventListener("click", saveJob);
