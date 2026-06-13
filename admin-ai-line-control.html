@@ -3,119 +3,105 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="cwf-ai-office-version" content="phase35b6-core-brain-chat-history-20260612">
-  <meta name="theme-color" content="#f0fdf4">
+  <meta name="cwf-ai-office-version" content="ai-line-control-v32-cool-precision-20260613">
+  <meta name="theme-color" content="#f4f7fb">
   <title>AI Reply Control · ศูนย์ฝึก AI · CWF</title>
   <link rel="apple-touch-icon" href="/icon-cwf-v32-180.png">
   <link rel="manifest" href="/manifest.json">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Thai:wght@400;500;600;700&family=Sora:wght@700;800&display=swap" rel="stylesheet">
   <style>
 :root{
-  --bg:#f0fdf4; --s1:#ffffff; --s2:#f0fdf8; --s3:#dcfce7;
-  --bd:rgba(6,199,85,.14); --bd2:rgba(6,199,85,.28);
-  --tx:#0f2419; --t2:#4b7a59;
-  --ln:#06c755; --ln-d:rgba(6,199,85,.10);
-  --tl:#0d9488; --tl-d:rgba(13,148,136,.10);
-  --gold:#f59e0b;
-  --blue:#3b82f6; --blue-d:rgba(59,130,246,.10);
-  --red:#dc2626; --red-d:rgba(220,38,38,.10);
-  --amber:#b45309;
-  --st:env(safe-area-inset-top,0px); --sb:env(safe-area-inset-bottom,0px);
-  --sl:env(safe-area-inset-left,0px); --sr:env(safe-area-inset-right,0px);
+  --paper:#f4f7fb;--card:#fff;--ink:#0d1b2a;--ink2:#5a6b80;--ink3:#93a1b3;
+  --hair:#e6edf5;
+  --brand:#1257d6;--brand-d:#0a3da3;--brand-w:rgba(18,87,214,.08);
+  --ok:#16a34a;--line:#06c755;--gold:#f59e0b;
+  --sh1:0 1px 3px rgba(13,27,42,.04),0 2px 8px rgba(13,27,42,.05);
+  --sh2:0 4px 12px rgba(13,27,42,.06),0 8px 24px rgba(13,27,42,.07);
+  --sh3:0 8px 32px rgba(18,87,214,.20);
+  --r8:8px;--r12:12px;--r14:14px;--r16:16px;
+  --st:env(safe-area-inset-top,0px);--sb:env(safe-area-inset-bottom,0px);
+  --sl:env(safe-area-inset-left,0px);--sr:env(safe-area-inset-right,0px);
 }
 *,::before,::after{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;min-height:100%;background:var(--bg);color:var(--tx)}
-body{font-family:Inter,"Noto Sans Thai",ui-sans-serif,system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;background-image:radial-gradient(ellipse 70% 50% at 15% 0%,rgba(6,199,85,.08),transparent 55%),radial-gradient(ellipse 60% 40% at 85% 0%,rgba(13,148,136,.06),transparent 50%)}
+html,body{margin:0;min-height:100%;background:var(--paper);color:var(--ink)}
+body{font-family:'IBM Plex Sans Thai',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased}
 button,input,textarea,select{font:inherit;color:inherit;border:0;background:none}
 button{cursor:pointer;touch-action:manipulation}
 a{color:inherit;text-decoration:none}
 #cwfTopNav,#cwfTopNavSpacer,#cwfNavSpacer{display:none!important}
-
-/* Header */
 .head{
-  padding:calc(14px + var(--st)) max(16px,var(--sr)) 14px max(16px,var(--sl));
-  background:rgba(255,255,255,.88);border-bottom:1px solid var(--bd);
+  position:sticky;top:0;z-index:20;
+  padding:calc(10px + var(--st)) max(16px,var(--sr)) 10px max(16px,var(--sl));
+  background:rgba(255,255,255,.92);border-bottom:1px solid var(--hair);
   backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
-  box-shadow:0 1px 12px rgba(6,199,85,.10);
+  box-shadow:0 1px 8px rgba(13,27,42,.06);
 }
-.head-inner{display:flex;align-items:center;gap:12px;max-width:900px;margin:0 auto}
-.logo{width:36px;height:36px;border-radius:10px;object-fit:contain;flex:0 0 auto;background:var(--s2);box-shadow:0 0 0 1px var(--bd)}
-.head-title h1{margin:0;font-size:17px;font-weight:850;letter-spacing:-.3px;color:var(--tx)}
-.head-title p{margin:3px 0 0;font-size:11.5px;font-weight:600;color:var(--t2);line-height:1.4}
-.back-btn{display:flex;align-items:center;gap:5px;padding:8px 13px;border-radius:999px;font-size:12.5px;font-weight:800;background:var(--s2);border:1px solid var(--bd);color:var(--tx)}
+.head-inner{display:flex;align-items:center;gap:12px;max-width:960px;margin:0 auto}
+.logo{width:36px;height:36px;border-radius:var(--r8);object-fit:contain;flex:0 0 auto;background:var(--paper);box-shadow:0 0 0 1px var(--hair)}
+.head-title{flex:1;min-width:0}
+.head-title h1{margin:0;font-family:'Sora',sans-serif;font-size:17px;font-weight:800;letter-spacing:-.3px;color:var(--ink)}
+.head-title p{margin:2px 0 0;font-size:11.5px;font-weight:500;color:var(--ink2)}
+.back-btn{display:flex;align-items:center;gap:5px;padding:7px 13px;border-radius:999px;font-size:12.5px;font-weight:700;background:var(--paper);border:1px solid var(--hair);color:var(--ink2);box-shadow:var(--sh1);white-space:nowrap}
 .back-btn:active{opacity:.75}
-
-/* Wrap */
-.wrap{padding:16px max(14px,var(--sr)) calc(24px + var(--sb)) max(14px,var(--sl));max-width:900px;margin:0 auto}
-
-/* Banner */
-.banner{display:flex;align-items:flex-start;gap:11px;background:rgba(6,199,85,.08);border:1px solid var(--bd2);border-radius:16px;padding:13px;margin-bottom:16px}
-.bmark{flex:0 0 auto;width:36px;height:36px;border-radius:10px;background:var(--ln);display:grid;place-items:center;font-size:9.5px;font-weight:850;color:#fff;box-shadow:0 4px 12px rgba(6,199,85,.3)}
-.btxt strong{display:block;font-size:13px;font-weight:800;margin-bottom:2px;color:var(--tx)}
-.btxt span{font-size:11.5px;font-weight:600;color:var(--t2);line-height:1.45}
-.btxt a{color:var(--ln);font-weight:850;text-decoration:underline}
-
-/* Quick grid */
-.qgrid{display:grid;grid-template-columns:repeat(5,1fr);gap:9px;margin-bottom:16px}
-.qtile{
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  gap:6px;padding:16px 8px;border-radius:14px;text-align:center;
-  background:var(--s1);border:1px solid var(--bd);
-  box-shadow:0 2px 10px rgba(6,199,85,.07);
-  transition:transform .12s,box-shadow .15s;
-  min-height:72px;
-}
-.qtile:active{transform:scale(.96);box-shadow:none}
-.qtile .qi{font-size:18px;line-height:1}
-.qtile .ql{font-size:11.5px;font-weight:800;color:var(--tx);line-height:1.3}
-
-/* Mount + embedded overrides */
+.wrap{padding:16px max(14px,var(--sr)) calc(32px + var(--sb)) max(14px,var(--sl));max-width:960px;margin:0 auto}
+.banner{display:flex;align-items:flex-start;gap:12px;background:var(--brand-w);border:1px solid rgba(18,87,214,.16);border-radius:var(--r14);padding:13px;margin-bottom:16px}
+.bmark{flex:0 0 auto;width:36px;height:36px;border-radius:var(--r8);background:var(--brand);display:grid;place-items:center;font-size:9.5px;font-weight:800;color:#fff;box-shadow:var(--sh3)}
+.btxt strong{display:block;font-size:13px;font-weight:700;margin-bottom:3px;color:var(--ink)}
+.btxt span{font-size:11.5px;font-weight:500;color:var(--ink2);line-height:1.45}
+.btxt a{color:var(--brand);font-weight:700;text-decoration:underline}
+.qgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+@media(min-width:480px){.qgrid{grid-template-columns:repeat(6,1fr)}}
+.qtile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:7px;padding:16px 8px;border-radius:var(--r14);text-align:center;background:var(--card);border:1px solid var(--hair);box-shadow:var(--sh1);transition:transform .12s;min-height:76px}
+.qtile:active{transform:scale(.95)}
+.qtile .qi{font-size:20px;line-height:1}
+.qtile .ql{font-size:11.5px;font-weight:700;color:var(--ink);line-height:1.3}
+.qtile-primary{background:linear-gradient(135deg,var(--brand),var(--brand-d));border-color:transparent;box-shadow:var(--sh3)}
+.qtile-primary .qi,.qtile-primary .ql{color:#fff}
+.qtile-train{background:linear-gradient(135deg,#065f31,var(--line));border-color:transparent;box-shadow:0 6px 20px rgba(6,199,85,.25)}
+.qtile-train .qi,.qtile-train .ql{color:#fff}
 #aiControlMount{display:block}
 .ai-control-open,#aiControlTopButton{display:none!important}
 .ai-control-overlay.embedded{position:static!important;inset:auto!important;display:block!important;background:transparent!important;overflow:visible!important;z-index:auto!important;flex:none!important}
-.ai-control-overlay.embedded .ai-control-top{border-radius:16px!important;margin-bottom:12px!important;box-shadow:0 4px 20px rgba(6,199,85,.12)!important}
+.ai-control-overlay.embedded .ai-control-top{border-radius:var(--r16)!important;margin-bottom:12px!important;box-shadow:var(--sh3)!important}
 .ai-control-overlay.embedded .ai-control-close{display:none!important}
-.ai-control-overlay.embedded .ai-control-tabs{position:sticky!important;top:0!important;z-index:5!important;border-radius:12px!important;margin-bottom:12px!important}
+.ai-control-overlay.embedded .ai-control-tabs{position:sticky!important;top:0!important;z-index:5!important;border-radius:var(--r14)!important;margin-bottom:12px!important}
 .ai-control-overlay.embedded .ai-control-body{display:flex!important;flex-direction:column!important;gap:12px!important;overflow:visible!important;padding:0!important;flex:none!important}
-
-@media(max-width:600px){.qgrid{grid-template-columns:repeat(2,1fr)}}
   </style>
 </head>
 <body data-ai-control-embedded="1">
   <header class="head">
     <div class="head-inner">
       <img class="logo" src="/icon-cwf-v32-180.png" alt="CWF">
-      <div class="head-title" style="flex:1;min-width:0">
+      <div class="head-title">
         <h1>AI Reply Control</h1>
         <p>กล่องแชทลูกค้า · ศูนย์ฝึก AI · Auto Reply</p>
       </div>
       <a class="back-btn" href="/admin-ai-office.html">‹ AI Office</a>
     </div>
   </header>
-
   <main class="wrap">
     <div class="banner">
-      <div class="bmark">LINE</div>
+      <div class="bmark">AI</div>
       <div class="btxt">
-        <strong>โมดูล LINE OA / Auto Reply / Settings (แยกจาก AI Chat)</strong>
-        <span>หน้านี้ใช้จัดการแชทลูกค้า LINE, ศูนย์ฝึก AI, คิวอนุมัติ และตั้งค่าการตอบ AI — ถ้าต้องการคุยกับ AI ช่วยงาน <a href="/admin-ai-office.html">กลับไป AI Chat Office</a></span>
+        <strong>LINE OA / ศูนย์ฝึก AI / Auto Reply (แยกจาก AI Chat Office)</strong>
+        <span>หน้านี้ใช้จัดการแชทลูกค้า LINE, ฝึก AI ภายใน, คิวอนุมัติ และตั้งค่าการตอบ — คำตอบในศูนย์ฝึกไม่ส่ง LINE จริง · ถ้าต้องการ AI ช่วยงาน <a href="/admin-ai-office.html">กลับไป AI Chat Office</a></span>
       </div>
     </div>
-
-    <nav class="qgrid qgrid-main">
-      <a class="qtile" href="?panel=line"><span class="qi">💬</span><span class="ql">กล่องแชทลูกค้า</span></a>
-      <a class="qtile" href="?panel=training"><span class="qi">🎓</span><span class="ql">ศูนย์ฝึก AI</span></a>
+    <nav class="qgrid">
+      <a class="qtile qtile-primary" href="?panel=line"><span class="qi">💬</span><span class="ql">กล่องแชทลูกค้า</span></a>
+      <a class="qtile qtile-train" href="?panel=training"><span class="qi">🎓</span><span class="ql">ศูนย์ฝึก AI</span></a>
       <a class="qtile" href="?panel=approvals"><span class="qi">✅</span><span class="ql">คิวรออนุมัติ</span></a>
-      <a class="qtile" href="?panel=decision"><span class="qi">✨</span><span class="ql">AI ช่วยร่างคำตอบ</span></a>
-      <a class="qtile" href="?panel=reply"><span class="qi">⚙️</span><span class="ql">ตั้งค่าการตอบ AI</span></a>
+      <a class="qtile" href="?panel=decision"><span class="qi">✨</span><span class="ql">AI ร่างคำตอบ</span></a>
+      <a class="qtile" href="?panel=reply"><span class="qi">⚙️</span><span class="ql">ตั้งค่า AI</span></a>
       <a class="qtile" href="?panel=advanced"><span class="qi">🧩</span><span class="ql">ขั้นสูง</span></a>
     </nav>
-
     <section id="aiControlMount"></section>
   </main>
-
-  <script>window.CWF_AI_CONTROL_EMBEDDED=true;</script>
-  <script src="/admin-ai-control-center.js?v=phase35b6_core_brain_chat_history_20260612"></script>
+  <script>window.CWF_AI_CONTROL_EMBEDDED = true;</script>
+  <script src="/admin-ai-control-center.js?v=ai-line-control-v32-cool-precision"></script>
 </body>
 </html>
