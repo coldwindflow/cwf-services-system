@@ -484,6 +484,196 @@ function formatThreadAnalysisForPrompt(a = {}) {
   ].join("\n");
 }
 
+function uniqueArray(values = []) {
+  return Array.from(new Set((Array.isArray(values) ? values : []).map((x) => cleanText(x, 120)).filter(Boolean)));
+}
+
+function hasCoreBrainEvidence(coreBrain = {}) {
+  if (Array.isArray(coreBrain.summary) && coreBrain.summary.length) return true;
+  if (Array.isArray(coreBrain.items) && coreBrain.items.length) return true;
+  if (coreBrain.inferred && Object.keys(coreBrain.inferred).length) return true;
+  return false;
+}
+
+function buildTrainingCard(reason = "", nextBestAction = "") {
+  return {
+    title: "AI ยังไม่ควรตอบเคสนี้",
+    reason: cleanText(reason || "เคสนี้ต้องให้แอดมินตรวจและสอนก่อน", 800),
+    instruction: "ควรให้แอดมินสอนคำตอบที่ถูกต้อง",
+    customer_reply: "",
+    next_best_action: cleanText(nextBestAction || "เปิดช่องสอนคำตอบที่ถูกต้องก่อนนำไปใช้จริง", 500),
+    internal_only: true,
+    no_line_send: true,
+  };
+}
+
+function replyDecisionBadge(mode = "") {
+  if (mode === "safe_reply") return "ตอบได้";
+  if (mode === "guided_reply") return "ต้องถามต่อ";
+  if (mode === "admin_only") return "AI ยังไม่ควรตอบ";
+  if (mode === "needs_teaching") return "ต้องสอนก่อน";
+  return "ต้องตรวจ";
+}
+
+function buildReplyDecisionGuard(input = {}) {
+  const threadAnalysis = input.threadAnalysis || {};
+  const coreBrain = input.coreBrain || {};
+  const language = cleanText(input.language || "", 30);
+  const text = cleanText(input.customerMessage || input.customer_message || input.selected_customer_question || "", 6000);
+  const low = text.toLowerCase();
+  const intent = cleanText(threadAnalysis.intent || input.intent || "general", 80);
+  const knownInfo = Object.assign({}, threadAnalysis.known_info || {});
+  let missingInfo = uniqueArray(threadAnalysis.missing_info || []);
+  const nextBestAction = cleanText(threadAnalysis.next_best_action || "", 800);
+  const priceQuote = threadAnalysis.price_quote || null;
+  const priceAsk = intent === "price_question" || /ราคา|เท่าไหร่|เท่าไร|กี่บาท|ราคาทั้งหมด|price|how much/i.test(low);
+
+  const adminOnlyRules = [
+    { key: "complaint_or_claim", re: /ร้องเรียน|ไม่พอใจ|โวย|เสียหาย|เคลม|รับผิดชอบ|งานเสีย|ทำ.*เสีย|complain|complaint|claim|damage/i, reason: "ลูกค้าร้องเรียน/งานเสียหาย/เคลม ต้องให้แอดมินรับเรื่องเอง" },
+    { key: "legal_threat", re: /คืนเงิน|ขอคืนเงิน|แจ้งตำรวจ|ตำรวจ|ฟ้อง|ทนาย|รีวิวเสีย|รีวิวไม่ดี|refund|police|lawsuit|lawyer|bad review/i, reason: "มีความเสี่ยงด้านกฎหมายหรือชื่อเสียง ต้องให้แอดมินจัดการ" },
+    { key: "technician_conflict", re: /ช่าง.*(ผิด|สาย|พูดไม่ดี|ทะเลาะ|ด่า|ไม่สุภาพ)|มาสาย|technician.*(late|rude|wrong)|conflict/i, reason: "เป็นประเด็นช่าง/ความขัดแย้งกับลูกค้า ต้องให้แอดมินตรวจสอบ" },
+    { key: "money_exception", re: /โอนเงินผิด|เงินผิด|ยอดผิด|มัดจำ|คืนมัดจำ|deposit|wrong transfer|payment error/i, reason: "เรื่องเงินผิดปกติหรือมัดจำ ห้าม AI เดา ต้องให้แอดมินตรวจสอบ" },
+    { key: "tax_invoice", re: /ใบกำกับภาษี|ใบเสร็จภาษี|tax invoice|vat invoice/i, reason: "เรื่องใบกำกับภาษีเป็น policy เฉพาะ ต้องให้แอดมินตอบตามนโยบายจริง" },
+    { key: "special_discount", re: /ลดพิเศษ|ส่วนลดพิเศษ|ราคาพิเศษ|ลดนอกโปร|ถูกกว่านี้|ต่ำกว่านโยบาย|special discount|lower price|below policy/i, reason: "ลูกค้าขอส่วนลดพิเศษนอกโปร ห้าม AI ต่อรองเอง" },
+    { key: "real_queue_confirm", re: /ยืนยันคิว|คิวจริง|คอนเฟิร์มคิว|confirm.*(booking|queue)|available slot/i, reason: "การยืนยันคิวจริงต้องอ่านคิวจากระบบก่อน ห้าม AI ยืนยันเอง" },
+    { key: "deep_repair_diagnosis", re: /อะไหล่เสีย|คอมเพรสเซอร์|แผงวงจร|มอเตอร์เสีย|น้ำยาแอร์หมดแน่|ฟันธง|compressor|pcb|control board|part.*broken/i, reason: "งานซ่อมลึกหรือฟันธงอะไหล่เสียต้องให้ช่าง/แอดมินตรวจ" },
+    { key: "electrical_safety", re: /ไฟฟ้า|ไฟช็อต|ช็อต|ไหม้|กลิ่นไหม้|ประกายไฟ|ไฟรั่ว|เบรกเกอร์|อันตราย|electric|shock|burning smell|spark|breaker|safety/i, reason: "มีความเสี่ยงไฟฟ้าหรือความปลอดภัย ต้องให้แอดมินจัดการอย่างระมัดระวัง" },
+    { key: "sensitive_info", re: /บัตรประชาชน|เลขบัตร|เลขบัญชี|ข้อมูลส่วนตัว|รหัสผ่าน|otp|password|id card|bank account|personal data/i, reason: "เกี่ยวข้องกับข้อมูลส่วนตัวหรือข้อมูลที่ไม่ควรเดา ต้องให้แอดมินดูแล" },
+  ];
+
+  const matchedAdminOnly = adminOnlyRules.find((rule) => rule.re.test(low));
+  if (intent === "complaint" || matchedAdminOnly) {
+    const reason = matchedAdminOnly?.reason || "ลูกค้าร้องเรียนหรือมีความเสี่ยงสูง ต้องให้แอดมินตอบเอง";
+    return {
+      can_answer: false,
+      mode: "admin_only",
+      reason,
+      missing_info: missingInfo,
+      known_info: knownInfo,
+      next_best_action: "ส่งให้แอดมินตรวจเคสและสอนคำตอบที่ถูกต้อง ห้ามสร้างคำตอบขายให้ลูกค้า",
+      intent,
+      sales_stage: threadAnalysis.sales_stage || "admin_review",
+      price_quote: priceQuote,
+      badge_label: replyDecisionBadge("admin_only"),
+      training_card: buildTrainingCard(reason, "ส่งให้แอดมินตรวจเคสและสอนคำตอบที่ถูกต้อง"),
+    };
+  }
+
+  if (priceAsk) {
+    if (priceQuote) {
+      return {
+        can_answer: true,
+        mode: "safe_reply",
+        reason: "ลูกค้าถามราคาและมีข้อมูลพอคำนวณ ต้องตอบราคาโปรก่อนถามวันเวลา",
+        missing_info: missingInfo,
+        known_info: knownInfo,
+        next_best_action: nextBestAction || "ตอบราคาโปรครบทุกประเภท รวมยอดตามจำนวนเครื่อง แล้วถามวันเวลาปิดการขาย",
+        intent: "price_question",
+        sales_stage: threadAnalysis.sales_stage || "qualifying",
+        price_quote: priceQuote,
+        badge_label: replyDecisionBadge("safe_reply"),
+      };
+    }
+    missingInfo = uniqueArray(missingInfo.length ? missingInfo : ["aircon_count", "aircon_type_or_btu"]).slice(0, 2);
+    return {
+      can_answer: true,
+      mode: "guided_reply",
+      reason: "ลูกค้าถามราคาแต่ข้อมูลยังไม่พอคำนวณ ต้องถามเฉพาะจำนวนเครื่องหรือประเภท/BTU ก่อน ห้ามถามวันเวลา",
+      missing_info: missingInfo,
+      known_info: knownInfo,
+      next_best_action: "ถามเฉพาะข้อมูลที่ขาดสำหรับคำนวณราคา 1-2 อย่าง ห้ามถามวันเวลา/คิวก่อนตอบราคา",
+      intent: "price_question",
+      sales_stage: threadAnalysis.sales_stage || "discovery",
+      price_quote: null,
+      badge_label: replyDecisionBadge("guided_reply"),
+    };
+  }
+
+  if (language && !["th", "en"].includes(language)) {
+    const reason = "ลูกค้าถามด้วยภาษาที่ระบบยังไม่มั่นใจ";
+    return {
+      can_answer: false,
+      mode: "needs_teaching",
+      reason,
+      missing_info: missingInfo,
+      known_info: knownInfo,
+      next_best_action: "ให้แอดมินสอนแนวตอบหรือยืนยันภาษาที่ควรใช้",
+      intent,
+      sales_stage: threadAnalysis.sales_stage || "discovery",
+      price_quote: priceQuote,
+      badge_label: replyDecisionBadge("needs_teaching"),
+      training_card: buildTrainingCard(reason, "ให้แอดมินสอนแนวตอบหรือยืนยันภาษาที่ควรใช้"),
+    };
+  }
+
+  if (missingInfo.length >= 3 || (intent === "general" && missingInfo.includes("service_type") && !hasCoreBrainEvidence(coreBrain))) {
+    const reason = missingInfo.length >= 3
+      ? "ข้อมูลที่ขาดมากเกินไป เสี่ยงถามยาวหรือเดาคำตอบ"
+      : "brain ยังไม่มีข้อมูลพอและคำถามยังกำกวม";
+    return {
+      can_answer: false,
+      mode: "needs_teaching",
+      reason,
+      missing_info: missingInfo.slice(0, 3),
+      known_info: knownInfo,
+      next_best_action: "ให้แอดมินสอนคำตอบหรือกรอบคำถามสั้น ๆ ที่ถูกต้องก่อน",
+      intent,
+      sales_stage: threadAnalysis.sales_stage || "discovery",
+      price_quote: priceQuote,
+      badge_label: replyDecisionBadge("needs_teaching"),
+      training_card: buildTrainingCard(reason, "ให้แอดมินสอนคำตอบหรือกรอบคำถามสั้น ๆ ที่ถูกต้องก่อน"),
+    };
+  }
+
+  if (intent === "repair_symptom") {
+    const guided = missingInfo.length > 0;
+    return {
+      can_answer: true,
+      mode: guided ? "guided_reply" : "safe_reply",
+      reason: "ตอบคัดกรองอาการสั้น ๆ ได้ แต่ห้ามฟันธงอะไหล่เสีย และต้องเสนอค่าตรวจ 700",
+      missing_info: missingInfo.slice(0, 2),
+      known_info: knownInfo,
+      next_best_action: nextBestAction || "คัดกรองอาการสั้น ๆ เสนอค่าตรวจ 700 และถามข้อมูลที่ขาดเท่านั้น",
+      intent,
+      sales_stage: threadAnalysis.sales_stage || "diagnose",
+      price_quote: priceQuote,
+      badge_label: replyDecisionBadge(guided ? "guided_reply" : "safe_reply"),
+    };
+  }
+
+  return {
+    can_answer: true,
+    mode: missingInfo.length ? "guided_reply" : "safe_reply",
+    reason: missingInfo.length ? "ตอบได้แบบถามต่อ โดยถามเฉพาะข้อมูลที่ยังขาด 1-2 อย่าง" : "ข้อมูลพอสำหรับตอบสั้น ๆ และพาไปขั้นตอนถัดไป",
+    missing_info: missingInfo.slice(0, 2),
+    known_info: knownInfo,
+    next_best_action: nextBestAction || "ตอบแบบแอดมินขายงานจริง สั้น กระชับ และพาไปขั้นตอนถัดไป",
+    intent,
+    sales_stage: threadAnalysis.sales_stage || "discovery",
+    price_quote: priceQuote,
+    badge_label: replyDecisionBadge(missingInfo.length ? "guided_reply" : "safe_reply"),
+  };
+}
+
+function formatReplyDecisionGuardForPrompt(guard = {}) {
+  return [
+    "REPLY_DECISION_GUARD (authoritative):",
+    JSON.stringify({
+      can_answer: guard.can_answer === true,
+      mode: guard.mode || "guided_reply",
+      reason: guard.reason || "",
+      missing_info: guard.missing_info || [],
+      known_info: guard.known_info || {},
+      next_best_action: guard.next_best_action || "",
+      price_quote: guard.price_quote || null,
+    }, null, 2),
+    "GUARD RULES:",
+    "- If mode is admin_only or needs_teaching, do not write a customer reply. Show the training card for admin teaching instead.",
+    "- If mode is guided_reply, ask only the listed missing_info, max 1-2 items, and never repeat known_info.",
+    "- If mode is safe_reply, answer naturally and keep it short.",
+  ].join("\n");
+}
+
 async function saveCoreBrainLesson(pool, input = {}) {
   if (!pool) return null;
   await ensureAiBrainItemsTable(pool);
@@ -537,6 +727,8 @@ module.exports = {
   detectThreadLanguage,
   analyzeThread,
   formatThreadAnalysisForPrompt,
+  buildReplyDecisionGuard,
+  formatReplyDecisionGuardForPrompt,
   mapAgentToBrainKey,
   boolValue,
 };

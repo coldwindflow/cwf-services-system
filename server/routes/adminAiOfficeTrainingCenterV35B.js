@@ -8,6 +8,8 @@ const {
   detectThreadLanguage,
   analyzeThread,
   formatThreadAnalysisForPrompt,
+  buildReplyDecisionGuard,
+  formatReplyDecisionGuardForPrompt,
 } = require("../aiOfficeCoreBrain");
 const {
   ensureAutoTrainingSchema,
@@ -532,6 +534,73 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
   const examples = await loadExamplesForTraining(pool, situationType, language, selectedQuestion);
   const trainingMemory = await loadTrainingMemory(pool, { conversationId, situationType, selectedQuestion });
   const coreBrain = await buildCoreBrainContext(pool, { query: selectedQuestion, agent_key: body.agent_key || "sales", language, intent: situationType, limit: 14 });
+  const replyGuard = buildReplyDecisionGuard({
+    threadAnalysis,
+    coreBrain,
+    language,
+    customerMessage: selectedQuestion,
+    source: "training_center_manual",
+  });
+  if (!replyGuard.can_answer) {
+    const decision = replyGuard.mode === "admin_only" ? "AI ยังไม่ควรตอบ" : "ต้องสอนก่อน";
+    const draft = {
+      customer_reply: "",
+      confidence: 0,
+      decision,
+      decision_reason: replyGuard.reason,
+      known_info: replyGuard.known_info || {},
+      missing_info: replyGuard.missing_info || [],
+      next_best_action: replyGuard.next_best_action || "",
+      next_step: "ให้ผู้สอนกรอกคำตอบที่ถูกต้องก่อนนำไปใช้จริง",
+      customer_language: language,
+      is_foreign_customer: language === "en",
+      selected_customer_question: selectedQuestion,
+      situation_type: situationType,
+      reply_guard: replyGuard,
+      training_card: replyGuard.training_card,
+      used_reply_examples: examples.map((e) => ({ id:e.id, situation_type:e.situation_type, language:e.language, service_type:e.service_type })),
+      internal_only: true,
+      no_line_send: true,
+    };
+    const event = await saveTrainingMemoryEvent(pool, req, {
+      event_type: "training_guarded",
+      action_status: replyGuard.mode === "admin_only" ? "admin_only" : "ai_unknown",
+      agent_key: "sales",
+      conversation_id: conversationId,
+      selected_customer_question: selectedQuestion,
+      customer_message: selectedQuestion,
+      ai_reply: "",
+      situation_type: situationType,
+      tags: ["ศูนย์ฝึก AI", "reply_guard", replyGuard.mode, situationType],
+      metadata: {
+        confidence: 0,
+        decision,
+        decision_reason: replyGuard.reason,
+        known_info: replyGuard.known_info || {},
+        missing_info: replyGuard.missing_info || [],
+        next_best_action: replyGuard.next_best_action || "",
+        reply_guard: replyGuard,
+        training_card: replyGuard.training_card,
+        used_example_ids: draft.used_reply_examples.map((e) => e.id),
+        used_core_brain_item_ids: (coreBrain.summary || []).map((e) => e.id).filter(Boolean),
+        should_auto_reply: false,
+        internal_only: true,
+        no_line_send: true,
+      },
+    });
+    await logReplyLearningEvent(pool, {
+      event_type: "training_guarded",
+      conversation_id: conversationId,
+      agent_key: "sales",
+      situation_type: situationType,
+      customer_message: selectedQuestion,
+      ai_reply: "",
+      source: "training_center",
+      metadata: { memory_event_id: event?.id || null, decision, reply_guard: replyGuard, internal_only: true, no_line_send: true },
+      created_by: getAdminUser(req),
+    }).catch(()=>{});
+    return { ok:true, guarded:true, answer:"", draft, training_event:event, reply_guard:replyGuard, used_reply_examples:draft.used_reply_examples, core_brain:coreBrain, conversation, messages };
+  }
   const system = [
     "You are CWF AI trainee inside an internal training classroom, not a live LINE sender.",
     "Return strict JSON only.",
@@ -549,6 +618,7 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
     "SITUATION_TYPE:", situationType, "",
     "ADMIN_TRAINING_INSTRUCTION:", cleanText(body.admin_question || "ศูนย์ฝึก AI: ลองตอบภายในเท่านั้น ห้ามส่ง LINE จริง ถ้าไม่มั่นใจให้บอกผู้สอนว่าควรสอนอะไรเพิ่ม", 1400), "",
     formatThreadAnalysisForPrompt(threadAnalysis), "",
+    formatReplyDecisionGuardForPrompt(replyGuard), "",
     formatCoreBrainForPrompt(coreBrain), "",
     "RECENT_LINE_CONTEXT:", JSON.stringify({ display_name: conversation.display_name || "", messages: messages.map((m) => ({ direction:m.direction, text:m.message_text, at:m.received_at || m.created_at })).slice(-20) }, null, 2), "",
     "SAVED_TEACHER_EXAMPLES:", JSON.stringify(examples.map((e) => ({ id:e.id, situation_type:e.situation_type, customer_message:e.customer_message, final_admin_reply:e.final_admin_reply, language:e.language, tags:e.tags })), null, 2), "",
@@ -587,6 +657,7 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
     used_reply_examples: examples.map((e) => ({ id:e.id, situation_type:e.situation_type, language:e.language, service_type:e.service_type })),
     internal_only: true,
     no_line_send: true,
+    reply_guard: replyGuard,
   };
   const event = await saveTrainingMemoryEvent(pool, req, {
     event_type: "training_answered",
@@ -606,6 +677,7 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
       known_info: Object.assign({}, threadAnalysis.known_info || {}, (parsed.known_info && typeof parsed.known_info === "object" ? parsed.known_info : {})),
     missing_info: (missingInfo.length ? missingInfo : (threadAnalysis.missing_info || [])),
     next_best_action: cleanText(parsed.next_best_action || threadAnalysis.next_best_action || "", 500),
+      reply_guard: replyGuard,
       used_example_ids: draft.used_reply_examples.map((e) => e.id),
       used_core_brain_item_ids: (coreBrain.summary || []).map((e) => e.id).filter(Boolean),
       should_auto_reply: Boolean(parsed.should_auto_reply) && decision === "ส่งได้" && confidence >= 85,

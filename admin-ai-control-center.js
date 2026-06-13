@@ -1096,9 +1096,10 @@
   function tc5DecisionClass(decision){
     if (!decision) return 'check';
     const s = String(decision).toLowerCase();
-    if (/ส่งได้|ready|safe/.test(s)) return 'ready';
-    if (/ห้ามส่ง|block|unsafe/.test(s)) return 'block';
-    if (/ยังไม่รู้|unknown/.test(s)) return 'unknown';
+    if (/ส่งได้|ตอบได้|ready|safe_reply|safe/.test(s)) return 'ready';
+    if (/ห้ามส่ง|ยังไม่ควรตอบ|admin_only|block|unsafe/.test(s)) return 'block';
+    if (/ต้องสอน|needs_teaching|needs_teacher|ยังไม่รู้|unknown/.test(s)) return 'unknown';
+    if (/ต้องถามต่อ|guided_reply|pending|ตรวจ/.test(s)) return 'check';
     return 'check';
   }
   function tc5ConfClass(conf){ const n = Number(conf||0); return n >= 75 ? 'high' : n >= 50 ? 'mid' : 'low'; }
@@ -1326,12 +1327,27 @@
     const confidence = Number(draft.confidence || result.confidence || 0);
     const decision = draft.decision || result.decision || 'ต้องตรวจ';
     const decisionReason = draft.decision_reason || '';
+    const replyGuard =
+      (draft && draft.reply_guard && typeof draft.reply_guard === "object" && draft.reply_guard) ||
+      (result && result.reply_guard && typeof result.reply_guard === "object" && result.reply_guard) ||
+      (draft && draft.metadata && draft.metadata.reply_guard && typeof draft.metadata.reply_guard === "object" && draft.metadata.reply_guard) ||
+      {};
+    const guardMode = String(replyGuard.mode || '').toLowerCase();
+    const guardBlocked = guardMode === 'admin_only' || guardMode === 'needs_teaching';
+    const guardBadge = replyGuard.badge_label || (guardMode === 'admin_only' ? 'AI ยังไม่ควรตอบ' : guardMode === 'needs_teaching' ? 'ต้องสอนก่อน' : guardMode === 'guided_reply' ? 'ต้องถามต่อ' : guardMode === 'safe_reply' ? 'ตอบได้' : decision);
+    const trainingCard =
+      (replyGuard.training_card && typeof replyGuard.training_card === "object" && replyGuard.training_card) ||
+      (draft.training_card && typeof draft.training_card === "object" && draft.training_card) ||
+      (result.training_card && typeof result.training_card === "object" && result.training_card) ||
+      {};
     const knownInfo =
       (draft && typeof draft.known_info === "object" && draft.known_info) ||
+      (replyGuard && typeof replyGuard.known_info === "object" && replyGuard.known_info) ||
       (draft && draft.metadata && typeof draft.metadata.known_info === "object" && draft.metadata.known_info) ||
       {};
     const missingInfo =
       Array.isArray(draft?.missing_info) ? draft.missing_info :
+      Array.isArray(replyGuard?.missing_info) ? replyGuard.missing_info :
       Array.isArray(draft?.metadata?.missing_info) ? draft.metadata.missing_info :
       [];
     const knownKeys = Object.keys(knownInfo).filter(k => knownInfo[k] && String(knownInfo[k]) !== 'undefined');
@@ -1345,8 +1361,13 @@
     </div>` : '';
     const source = result.source === 'teacher_lesson' ? 'Teacher Lesson' : result.auto_answer_id ? 'Auto Training' : 'Manual Training';
     const confClass = tc5ConfClass(confidence);
-    const decClass = tc5DecisionClass(decision);
-    const isUnknown = /ยังไม่รู้|unknown/i.test(decision);
+    const decClass = tc5DecisionClass(guardMode || decision);
+    const isUnknown = guardBlocked || /ยังไม่รู้|unknown/i.test(decision);
+    const blockedCardHtml = guardBlocked ? `<div class="tc5-ai-unknown-box">
+            <p class="tc5-ai-unknown-title">${esc(trainingCard.title || 'AI ยังไม่ควรตอบเคสนี้')}</p>
+            <p style="font-size:12px;font-weight:700;color:#7c3aed;margin:0 0 6px">เหตุผล: ${esc(trainingCard.reason || replyGuard.reason || decisionReason || 'ต้องให้แอดมินตรวจและสอนก่อน')}</p>
+            <p style="font-size:12px;font-weight:800;color:#475569;margin:0">${esc(trainingCard.instruction || 'ควรให้แอดมินสอนคำตอบที่ถูกต้อง')}</p>
+          </div>` : '';
     const teachOpen = STATE.tc5TeachOpen;
     const customerMessage = selectedQ?.customer_message || draft.selected_customer_question || latestInboundText() || '';
     const situationType = selectedQ?.situation_type || draft.situation_type || inferTrainingSituation(customerMessage);
@@ -1363,10 +1384,10 @@
         <div class="tc5-bubble-meta" style="padding-top:0;border-top:0;margin-top:0;margin-bottom:7px">
           <span class="tc5-internal-badge">🤖 AI ฝึกภายใน — ยังไม่ส่งลูกค้าจริง</span>
           <span class="tc5-conf-bar ${confClass}">🎯 ${confidence}%</span>
-          <span class="tc5-decision ${decClass}">${esc(decision)}</span>
+          <span class="tc5-decision ${decClass}">${esc(guardBadge)}</span>
           <span style="font-size:9.5px;font-weight:800;color:#94a3b8">${esc(source)}</span>
         </div>
-        ${isUnknown ? `<div class="tc5-ai-unknown-box">
+        ${guardBlocked ? blockedCardHtml : isUnknown ? `<div class="tc5-ai-unknown-box">
             <p class="tc5-ai-unknown-title">❓ AI ยังไม่รู้คำตอบนี้ ควรตอบลูกค้าว่าอย่างไร?</p>
             ${decisionReason ? `<p style="font-size:12px;font-weight:700;color:#7c3aed;margin:0 0 6px">${esc(decisionReason)}</p>` : ''}
           </div>`
@@ -1376,10 +1397,10 @@
         ${missingHtml}
         ${decisionReason && !isUnknown ? `<div style="margin-top:5px;font-size:11px;font-weight:700;color:var(--ink3)">เหตุผล: ${esc(decisionReason)}</div>` : ''}
         <div class="tc5-bubble-actions">
-          <button class="tc5-act-btn good" type="button" data-training-mark-good title="ถูก — บันทึกเป็นตัวอย่างดีเข้าสมองกลาง" ${answer ? '' : 'disabled'}>✓ ถูก</button>
+          ${guardBlocked ? '' : `<button class="tc5-act-btn good" type="button" data-training-mark-good title="ถูก — บันทึกเป็นตัวอย่างดีเข้าสมองกลาง" ${answer ? '' : 'disabled'}>✓ ถูก</button>`}
           <button class="tc5-act-btn bad" type="button" data-training-mark-bad title="ไม่ถูก — บันทึก feedback ลบ">✗ ไม่ถูก</button>
-          <button class="tc5-act-btn teach" type="button" data-tc5-teach-open title="สอนคำตอบที่ถูกต้อง">📝 สอนคำตอบ</button>
-          <button class="tc5-act-btn save-lesson" type="button" data-tc5-save-from-bubble title="บันทึกเป็นบทเรียนตรงนี้" ${answer ? '' : 'disabled'}>💾 บันทึกบทเรียน</button>
+          <button class="tc5-act-btn teach" type="button" data-tc5-teach-open title="สอนคำตอบที่ถูกต้อง">${guardBlocked ? '📝 สอนคำตอบที่ถูก' : '📝 สอนคำตอบ'}</button>
+          ${guardBlocked ? '' : `<button class="tc5-act-btn save-lesson" type="button" data-tc5-save-from-bubble title="บันทึกเป็นบทเรียนตรงนี้" ${answer ? '' : 'disabled'}>💾 บันทึกบทเรียน</button>`}
           <button class="tc5-act-btn block-ai" type="button" data-training-conv-mode="off" title="ห้าม AI ตอบเองในแชทนี้">⏸ พัก AI แชทนี้</button>
         </div>
         ${teachOpen ? renderTC5TeachInline(answer, Object.assign({}, selectedQ || {}, { customer_message: customerMessage, situation_type: situationType })) : ''}

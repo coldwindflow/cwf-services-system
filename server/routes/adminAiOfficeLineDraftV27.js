@@ -6,6 +6,8 @@ const {
   analyzeThread,
   formatThreadAnalysisForPrompt,
   detectThreadLanguage,
+  buildReplyDecisionGuard,
+  formatReplyDecisionGuardForPrompt,
 } = require("../aiOfficeCoreBrain");
 
 const DEFAULT_MODEL = "gpt-4.1-mini";
@@ -250,6 +252,7 @@ function applyThaiReplyTone(text) {
 
 function fallbackReply(selectedQuestion) {
   const q = String(selectedQuestion || "");
+  if (/ไม่เย็น|ซ่อม|น้ำหยด|รั่ว|เสียงดัง|error|เสีย/.test(q)) return applyThaiReplyTone("อาการนี้ต้องให้ช่างเช็กหน้างานก่อนค่ะ ยังไม่ฟันธงว่าอะไหล่ตัวไหนเสียได้ ค่าตรวจเช็ก 700 บาท รบกวนแจ้งพื้นที่หรือโลเคชัน และอาการหลักที่เจอได้เลยค่ะ");
   if (/กลิ่น|เหม็น|อับ/.test(q)) return applyThaiReplyTone("สวัสดีค่ะ ถ้าแอร์เริ่มมีกลิ่นอับแต่ยังเย็นปกติ เบื้องต้นแนะนำล้างพรีเมียมค่ะ รบกวนแจ้งขนาด BTU จำนวนเครื่อง และพื้นที่ให้แอดมินเช็กคิวให้นะคะ 🙏");
   if (/ราคา|เท่าไหร่|กี่บาท/.test(q)) return applyThaiReplyTone("สวัสดีค่ะ ราคาล้างแอร์ผนังเริ่มต้น 550 บาทค่ะ รบกวนแจ้งขนาด BTU จำนวนเครื่อง และพื้นที่ให้แอดมินเช็กคิวให้นะคะ 🙏");
   return applyThaiReplyTone("สวัสดีค่ะ รบกวนแจ้งรายละเอียดเพิ่มเติมนิดนึงนะคะ เดี๋ยวแอดมินช่วยตรวจสอบและแนะนำให้เหมาะกับหน้างานค่ะ 🙏");
@@ -331,6 +334,55 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
       const sharedMemory = await loadSharedMemoryForDraft(pool, { conversationId, selectedQuestion, situationType, language });
       const coreBrain = await buildCoreBrainContext(pool, { query: selectedQuestion, agent_key: req.body?.agent || "sales", language, intent: situationType, limit: 14 });
       const priorDrafts = Array.isArray(req.body?.prior_drafts) ? req.body.prior_drafts.slice(-5) : [];
+      const replyGuard = buildReplyDecisionGuard({
+        threadAnalysis,
+        coreBrain,
+        language,
+        customerMessage: selectedQuestion,
+        source: "line_draft_reply",
+      });
+      if (!replyGuard.can_answer) {
+        const decision = replyGuard.mode === "admin_only" ? "AI ยังไม่ควรตอบ" : "ต้องสอนก่อน";
+        const draft = {
+          customer_reply: "",
+          admin_summary: [],
+          known_info: replyGuard.known_info || {},
+          missing_info: replyGuard.missing_info || [],
+          next_best_action: replyGuard.next_best_action || "",
+          next_step: "ให้แอดมินสอนคำตอบที่ถูกต้องก่อนใช้จริง",
+          decision,
+          decision_reason: replyGuard.reason,
+          intent: replyGuard.intent || threadAnalysis.intent,
+          sales_stage: replyGuard.sales_stage || threadAnalysis.sales_stage,
+          already_has_location: threadAnalysis.already_has_location,
+          customer_language: language,
+          is_foreign_customer: Boolean(language === "en"),
+          foreign_customer_label: "",
+          original_message: selectedQuestion,
+          thai_translation: "",
+          selected_customer_question: selectedQuestion,
+          situation_type: situationType,
+          reply_guard: replyGuard,
+          training_card: replyGuard.training_card,
+          used_reply_examples: examples.map((e) => ({ id:e.id, situation_type:e.situation_type, language:e.language, service_type:e.service_type })),
+          core_brain_used: (coreBrain.summary || []).map((e) => ({ id:e.id, type:e.type, title:e.title, source:e.source })),
+          internal_only: true,
+          no_line_send: true,
+        };
+        await logSharedDraftMemory(pool, req, {
+          source: "line_chat",
+          event_type: "line_draft_guarded",
+          agent_key: "admin",
+          conversation_id: conversationId,
+          selected_customer_question: selectedQuestion,
+          customer_message: selectedQuestion,
+          ai_reply: "",
+          action_status: replyGuard.mode === "admin_only" ? "admin_only" : "needs_teacher",
+          situation_type: situationType,
+          metadata: { reply_guard: replyGuard, training_card: replyGuard.training_card, used_example_ids: draft.used_reply_examples.map((e) => e.id), used_core_brain_item_ids: draft.core_brain_used.map((e) => e.id).filter(Boolean), internal_only: true, no_line_send: true },
+        }).catch(() => null);
+        return res.json({ ok:true, guarded:true, answer:"", draft, reply_guard:replyGuard, used_reply_examples:draft.used_reply_examples, core_brain:coreBrain, conversation, messages, auto_send_line_enabled:false });
+      }
 
       const system = [
         "You are the real Sales/Admin (female voice) of Coldwindflow LINE OA, not an AI assistant and not a draft tool.",
@@ -351,6 +403,7 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
         "selected_customer_question:", selectedQuestion, "",
         "admin_instruction:", adminQuestion, "",
         formatThreadAnalysisForPrompt(threadAnalysis), "",
+        formatReplyDecisionGuardForPrompt(replyGuard), "",
         formatCoreBrainForPrompt(coreBrain), "",
         "conversation:",
         JSON.stringify({ display_name: conversation.display_name || "", messages: messages.map((m) => ({ direction:m.direction, text:m.message_text, at:m.received_at || m.created_at })).slice(-20) }, null, 2),
@@ -412,8 +465,9 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
         situation_type: situationType,
         used_reply_examples: examples.map((e) => ({ id:e.id, situation_type:e.situation_type, language:e.language, service_type:e.service_type })),
         core_brain_used: (coreBrain.summary || []).map((e) => ({ id:e.id, type:e.type, title:e.title, source:e.source })),
+        reply_guard: replyGuard,
       };
-      const saved = await saveDraft(pool, req, { conversation_id: conversationId, selected_customer_message: selectedQuestion, admin_instruction: adminQuestion, ai_draft: customerReply, metadata: { situation_type: situationType, language, used_example_ids: draft.used_reply_examples.map((e) => e.id), used_core_brain_item_ids: draft.core_brain_used.map((e) => e.id).filter(Boolean) } }).catch(() => null);
+      const saved = await saveDraft(pool, req, { conversation_id: conversationId, selected_customer_message: selectedQuestion, admin_instruction: adminQuestion, ai_draft: customerReply, metadata: { situation_type: situationType, language, reply_guard: replyGuard, used_example_ids: draft.used_reply_examples.map((e) => e.id), used_core_brain_item_ids: draft.core_brain_used.map((e) => e.id).filter(Boolean) } }).catch(() => null);
       if (saved) draft.saved_draft_id = saved.id;
       await logSharedDraftMemory(pool, req, {
         source: "line_chat",
@@ -425,9 +479,9 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
         ai_reply: customerReply,
         action_status: "drafted",
         situation_type: situationType,
-        metadata: { saved_draft_id: saved?.id || null, used_example_ids: draft.used_reply_examples.map((e) => e.id), used_core_brain_item_ids: draft.core_brain_used.map((e) => e.id).filter(Boolean) },
+        metadata: { saved_draft_id: saved?.id || null, reply_guard: replyGuard, used_example_ids: draft.used_reply_examples.map((e) => e.id), used_core_brain_item_ids: draft.core_brain_used.map((e) => e.id).filter(Boolean) },
       });
-      return res.json({ ok:true, answer:customerReply, draft, used_reply_examples:draft.used_reply_examples, core_brain:coreBrain, conversation, messages });
+      return res.json({ ok:true, answer:customerReply, draft, reply_guard:replyGuard, used_reply_examples:draft.used_reply_examples, core_brain:coreBrain, conversation, messages });
     } catch (e) {
       console.error("V27 /line-draft-reply error:", e);
       return res.status(e.status || 500).json({ ok:false, error:e.message || "ร่างข้อความจาก LINE ไม่สำเร็จ" });

@@ -9,6 +9,8 @@ const {
   detectThreadLanguage,
   analyzeThread,
   formatThreadAnalysisForPrompt,
+  buildReplyDecisionGuard,
+  formatReplyDecisionGuardForPrompt,
   boolValue,
 } = require("./aiOfficeCoreBrain");
 const {
@@ -427,6 +429,94 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
   try {
     examples = await loadMatchingReplyExamples(pool, { situation_type: situationType, language, text: customerMessage, limit: 6 });
   } catch (_) { examples = []; }
+  const replyGuard = buildReplyDecisionGuard({
+    threadAnalysis,
+    coreBrain,
+    language,
+    customerMessage,
+    source: "auto_internal_training",
+  });
+  if (!replyGuard.can_answer) {
+    const blockedDecision = replyGuard.mode === "admin_only" ? "AI ยังไม่ควรตอบ" : "ต้องสอนก่อน";
+    const blockedStatus = replyGuard.mode === "admin_only" ? "admin_only" : "needs_teacher";
+    const metadata = {
+      decision: blockedDecision,
+      decision_reason: replyGuard.reason,
+      known_info: replyGuard.known_info || {},
+      missing_info: replyGuard.missing_info || [],
+      next_best_action: replyGuard.next_best_action || "",
+      intent: replyGuard.intent || threadAnalysis.intent,
+      sales_stage: replyGuard.sales_stage || threadAnalysis.sales_stage,
+      already_has_location: threadAnalysis.already_has_location,
+      reply_guard: replyGuard,
+      training_card: replyGuard.training_card,
+      reply_language: language,
+      should_auto_reply: false,
+      internal_only: true,
+      no_line_send: true,
+      used_core_brain_item_ids: (coreBrain.summary || []).map((x) => x.id).filter(Boolean),
+      used_reply_example_ids: examples.map((x) => x.id).filter(Boolean),
+      source_event: input.source_event || "manual_or_webhook",
+      guard: {
+        reserved_auto_answer_id: reserved?.id || null,
+        cooldown_seconds: input.guard_settings?.cooldown_seconds ?? null,
+        concurrency_limit: input.guard_settings?.concurrency_limit ?? null,
+      },
+    };
+    const autoAnswer = await saveAutoAnswer(pool, {
+      conversation_id: conversationId,
+      line_user_id: input.line_user_id || conversation?.line_user_id || "",
+      line_message_id: lineMessageId,
+      line_message_pk: input.line_message_pk || null,
+      customer_message: customerMessage,
+      ai_reply: "",
+      confidence: 0,
+      intent: situationType,
+      situation_type: situationType,
+      service_type: cleanText(coreBrain.inferred?.service_type || "", 120),
+      status: blockedStatus,
+      source: input.source || "brain_v2_auto_training",
+      metadata,
+    });
+    await logReplyLearningEvent(pool, {
+      event_type: "auto_internal_training_guarded",
+      conversation_id: conversationId,
+      agent_key: input.agent_key || "sales",
+      situation_type: situationType,
+      customer_message: customerMessage,
+      ai_reply: "",
+      source: "auto_internal_training",
+      metadata: Object.assign({ auto_answer_id: autoAnswer?.id || null }, metadata),
+      created_by: "ai_auto_training",
+    }).catch(() => {});
+    return {
+      ok: true,
+      guarded: true,
+      auto_answer: autoAnswer,
+      answer: "",
+      draft: {
+        customer_reply: "",
+        confidence: 0,
+        decision: blockedDecision,
+        decision_reason: replyGuard.reason,
+        known_info: replyGuard.known_info || {},
+        missing_info: replyGuard.missing_info || [],
+        next_best_action: replyGuard.next_best_action || "",
+        selected_customer_question: customerMessage,
+        situation_type: situationType,
+        reply_guard: replyGuard,
+        training_card: replyGuard.training_card,
+        internal_only: true,
+        no_line_send: true,
+        core_brain_used: coreBrain.summary || [],
+      },
+      reply_guard: replyGuard,
+      core_brain: coreBrain,
+      used_reply_examples: examples,
+      conversation,
+      messages,
+    };
+  }
 
   const system = [
     "You are the real CWF Sales/Admin (female voice) generating an INTERNAL draft for review. You are not sending LINE.",
@@ -450,6 +540,7 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
     "APPROVED_SHARED_REPLY_EXAMPLES:", JSON.stringify(examples.map((e) => ({ id: e.id, situation_type: e.situation_type, customer_message: e.customer_message, final_admin_reply: e.final_admin_reply, language: e.language, service_type: e.service_type, tags: e.tags })), null, 2), "",
     "TASK:",
     "Auto Internal Training must create the answer immediately for later review. It should look like a real chat reply, not an AI report. First infer known_info/missing_info and next_best_action from RECENT_LINE_CONTEXT. For price_question, answer price first and never ask schedule before the price. Ask only 1-2 missing fields; if info is enough, close toward booking/check queue.", "",
+    formatReplyDecisionGuardForPrompt(replyGuard), "",
     "CWF_STATIC_SAFETY_FACTS:", JSON.stringify({
       services: ["ล้างแอร์", "ซ่อมแอร์", "ติดตั้งแอร์", "ตรวจเช็คแอร์"],
       rainy_promo: { wall_under_12000: { normal: 550, premium: 790, hanging_coil: 1290, deep_clean: 1850 }, wall_18000_up: { normal: 690, premium: 990, hanging_coil: 1550, deep_clean: 2150 } },
@@ -496,6 +587,7 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
       intent: threadAnalysis.intent,
       sales_stage: threadAnalysis.sales_stage,
       already_has_location: threadAnalysis.already_has_location,
+      reply_guard: replyGuard,
       reply_language: language,
       should_auto_reply: false,
       internal_only: true,
@@ -524,7 +616,7 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
   }).catch(() => {});
   return { ok: true, auto_answer: autoAnswer, answer: aiReply, draft: { customer_reply: aiReply, confidence, decision, decision_reason: parsed.decision_reason || "", known_info: parsed.known_info && typeof parsed.known_info === "object" ? parsed.known_info : {},
       missing_info: safeJsonArray(parsed.missing_info),
-      next_best_action: cleanText(parsed.next_best_action || "", 500), selected_customer_question: customerMessage, situation_type: situationType, internal_only: true, no_line_send: true, core_brain_used: coreBrain.summary || [] }, core_brain: coreBrain, used_reply_examples: examples, conversation, messages };
+      next_best_action: cleanText(parsed.next_best_action || "", 500), selected_customer_question: customerMessage, situation_type: situationType, reply_guard: replyGuard, internal_only: true, no_line_send: true, core_brain_used: coreBrain.summary || [] }, reply_guard: replyGuard, core_brain: coreBrain, used_reply_examples: examples, conversation, messages };
 }
 
 async function handleAutoInternalTrainingFromWebhook(pool, event, stored = {}) {

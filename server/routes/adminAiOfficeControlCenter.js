@@ -1,5 +1,10 @@
 const express = require("express");
-const { buildCoreBrainContext } = require("../aiOfficeCoreBrain");
+const {
+  buildCoreBrainContext,
+  detectThreadLanguage,
+  analyzeThread,
+  buildReplyDecisionGuard,
+} = require("../aiOfficeCoreBrain");
 
 function cleanText(value, max = 2000) {
   return String(value == null ? "" : value).replace(/\s+/g, " ").trim().slice(0, max);
@@ -1227,11 +1232,9 @@ function buildSafeRecommendedReply(text, safety) {
 
 รบกวนแจ้งจำนวนเครื่อง พื้นที่/โลเคชั่น และวัน-ช่วงเวลาที่สะดวกนะคะ ถ้ามีเบอร์ติดต่อส่งมาพร้อมกันได้เลยค่ะ`;
   }
-  if (intent === "repair_diagnosis") {
-    return `อาการนี้ต้องให้ช่างเช็กหน้างานนิดนึงค่ะ เพราะอาจเกิดได้หลายสาเหตุ
+  if (intent === "repair_diagnosis") return `อาการนี้ต้องให้ช่างเช็กหน้างานก่อนค่ะ ยังไม่ฟันธงว่าอะไหล่ตัวไหนเสียได้
 
-รบกวนแจ้งอาการหลัก เช่น ไม่เย็น/น้ำหยด/มีโค้ด และส่งรูปเครื่องหรือโค้ด error มาได้เลยค่ะ เดี๋ยวช่วยดูเบื้องต้นให้ก่อนนะคะ`;
-  }
+ค่าตรวจเช็ก 700 บาท ถ้าต้องการให้ช่างเข้าเช็ก รบกวนแจ้งพื้นที่หรือโลเคชัน และอาการหลัก เช่น ไม่เย็น/น้ำหยด/มีโค้ด error ได้เลยค่ะ`;
   if (intent === "complaint") {
     return "ขออภัยด้วยค่ะ เคสนี้เดี๋ยวให้ผู้ดูแลตรวจสอบและตอบกลับโดยตรงนะคะ";
   }
@@ -1244,7 +1247,7 @@ function buildSafeRecommendedReply(text, safety) {
 async function saveReplyDecisionLog(pool, payload = {}, adminUser = "") {
   await ensureAiOfficeControlSchema(pool);
   const safety = payload.safety || decideReplySafety(payload.customer_message || "", payload.values || {});
-  const recommendedReply = cleanText(payload.recommended_reply || buildSafeRecommendedReply(payload.customer_message || "", safety), 5000);
+  const recommendedReply = cleanText(Object.prototype.hasOwnProperty.call(payload, "recommended_reply") ? payload.recommended_reply : buildSafeRecommendedReply(payload.customer_message || "", safety), 5000);
   const meta = await loadConversationMeta(pool, Number(payload.conversation_id || 0) || null);
   const lineUserId = cleanText(payload.line_user_id || pickLineUserId(meta), 255);
   const lineDisplayName = cleanText(payload.line_display_name || pickDisplayName(meta), 255);
@@ -1306,6 +1309,12 @@ async function createApprovalFromDecisionLog(pool, decisionId, adminUser = "") {
   if (!d) {
     const err = new Error("REPLY_DECISION_NOT_FOUND");
     err.status = 404;
+    throw err;
+  }
+  const guard = d.metadata?.reply_guard || {};
+  if (["ADMIN_ONLY", "NEEDS_TEACHING"].includes(d.decision) || guard.can_answer === false) {
+    const err = new Error("REPLY_DECISION_REQUIRES_ADMIN_TEACHING");
+    err.status = 423;
     throw err;
   }
   const approval = await createApproval(pool, {
@@ -1933,8 +1942,31 @@ function createAdminAiOfficeControlCenterRoutes(deps = {}) {
       if (!boolValue(values.safe_reply_preview_enabled, true)) return res.status(423).json({ ok:false, error:"SAFE_REPLY_PREVIEW_DISABLED" });
       const customerMessage = cleanText(req.body?.customer_message || req.body?.message || "", 5000);
       if (!customerMessage) return res.status(400).json({ ok:false, error:"CUSTOMER_MESSAGE_REQUIRED" });
-      const safety = decideReplySafety(customerMessage, values);
-      const recommended_reply = buildSafeRecommendedReply(customerMessage, safety);
+      const language = detectThreadLanguage([], customerMessage);
+      const threadAnalysis = analyzeThread([], customerMessage);
+      const coreBrain = await buildCoreBrainContext(pool, {
+        query: customerMessage,
+        agent_key: req.body?.agent || "sales",
+        language,
+        intent: threadAnalysis.intent,
+        limit: 10,
+      }).catch(() => ({ summary: [] }));
+      const replyGuard = buildReplyDecisionGuard({
+        threadAnalysis,
+        coreBrain,
+        language,
+        customerMessage,
+        source: "ai_reply_control_decision",
+      });
+      const legacySafety = decideReplySafety(customerMessage, values);
+      const safety = replyGuard.can_answer ? legacySafety : {
+        intent: replyGuard.intent || legacySafety.intent || "unknown",
+        decision: replyGuard.mode === "admin_only" ? "ADMIN_ONLY" : "NEEDS_TEACHING",
+        risk_label: replyGuard.mode === "admin_only" ? "HIGH" : "MEDIUM",
+        confidence: 100,
+        reason: replyGuard.reason || legacySafety.reason || "",
+      };
+      const recommended_reply = replyGuard.can_answer ? buildSafeRecommendedReply(customerMessage, safety) : "";
       const decision = await saveReplyDecisionLog(pool, {
         conversation_id: req.body?.conversation_id,
         line_user_id: req.body?.line_user_id,
@@ -1944,15 +1976,24 @@ function createAdminAiOfficeControlCenterRoutes(deps = {}) {
         recommended_reply,
         source: req.body?.source || "control_center_v8",
         values,
-        metadata: { requested_create_approval: !!req.body?.create_approval },
+        metadata: {
+          requested_create_approval: !!req.body?.create_approval,
+          reply_guard: replyGuard,
+          training_card: replyGuard.training_card || null,
+          known_info: replyGuard.known_info || {},
+          missing_info: replyGuard.missing_info || [],
+          next_best_action: replyGuard.next_best_action || "",
+          internal_only: true,
+          no_line_send: true,
+        },
       }, adminUser);
       let approval = null;
-      if (req.body?.create_approval) {
+      if (req.body?.create_approval && replyGuard.can_answer) {
         if (!boolValue(values.approval_queue_enabled, true)) return res.status(423).json({ ok:false, error:"APPROVAL_QUEUE_DISABLED", decision });
         if (!boolValue(values.auto_create_approval_from_safe_reply, true)) return res.status(423).json({ ok:false, error:"CREATE_APPROVAL_FROM_SAFE_REPLY_DISABLED", decision });
         approval = await createApprovalFromDecisionLog(pool, decision.id, adminUser);
       }
-      return res.json({ ok:true, decision, approval, auto_send_line_enabled:false, message:"V8 วิเคราะห์และส่งเข้าคิวอนุมัติได้ แต่ยังไม่ส่ง LINE เอง" });
+      return res.json({ ok:true, decision, approval, reply_guard:replyGuard, training_card:replyGuard.training_card || null, auto_send_line_enabled:false, message:"V8 วิเคราะห์และส่งเข้าคิวอนุมัติได้ แต่ยังไม่ส่ง LINE เอง" });
     } catch (e) {
       return res.status(e.status || 500).json({ ok:false, error:e.message || "REPLY_DECISION_FAILED" });
     }
