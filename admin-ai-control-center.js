@@ -1326,7 +1326,14 @@
     const confidence = Number(draft.confidence || result.confidence || 0);
     const decision = draft.decision || result.decision || 'ต้องตรวจ';
     const decisionReason = draft.decision_reason || '';
-    const knownInfo = draft.known_info || result.known_info || {};
+    const knownInfo =
+      (draft && typeof draft.known_info === "object" && draft.known_info) ||
+      (draft && draft.metadata && typeof draft.metadata.known_info === "object" && draft.metadata.known_info) ||
+      {};
+    const missingInfo =
+      Array.isArray(draft?.missing_info) ? draft.missing_info :
+      Array.isArray(draft?.metadata?.missing_info) ? draft.metadata.missing_info :
+      [];
     const knownKeys = Object.keys(knownInfo).filter(k => knownInfo[k] && String(knownInfo[k]) !== 'undefined');
     const knownHtml = knownKeys.length ? `<div class="tc5-known-strip">
       <span class="tc5-known-label">✅ รู้แล้ว</span>
