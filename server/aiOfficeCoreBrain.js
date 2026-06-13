@@ -318,7 +318,8 @@ function analyzeThread(messages = [], latestText = "") {
   else if (/ย้าย|move|relocat/i.test(low)) { known.service_type = "relocate"; has.service = true; }
 
   // date / time preference
-  has.datetime = /วันนี้|พรุ่งนี้|มะรืน|เสาร์|อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เช้า|บ่าย|เย็น|โมง|ทุ่ม|\d{1,2}[:.]\d{2}|วันที่\s*\d+|today|tomorrow|am|pm|\d+\s*(โมง|นาฬิกา)/i.test(low);
+  const datetimeProbe = low.replace(/ไม่ค่อยเย็น|ไม่เย็น|ลมไม่เย็น|แอร์ไม่เย็น|not cold/gi, " ");
+  has.datetime = /วันนี้|พรุ่งนี้|มะรืน|เสาร์|อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เช้า|บ่าย|เย็น|โมง|ทุ่ม|\d{1,2}[:.]\d{2}|วันที่\s*\d+|today|tomorrow|am|pm|\d+\s*(โมง|นาฬิกา)/i.test(datetimeProbe);
   if (has.datetime) known.preferred_time = "mentioned";
 
   // phone number
@@ -327,7 +328,8 @@ function analyzeThread(messages = [], latestText = "") {
 
   // ── intent / sales stage ──
   let intent = "general";
-  if (/แพง|ลด|ส่วนลด|ทำไมราคา|expensive|discount/i.test(low)) intent = "price_objection";
+  if (/ร้องเรียน|ไม่พอใจ|เสียหาย|เคลม|คืนเงิน|refund|police|ตำรวจ|ฟ้อง|lawsuit|ทนาย/i.test(low)) intent = "complaint";
+  else if (/แพง|ลด|ส่วนลด|ทำไมราคา|expensive|discount/i.test(low)) intent = "price_objection";
   else if (/ราคา|เท่าไหร่|เท่าไร|กี่บาท|โปร|price|cost|how much/i.test(low)) intent = "price_question";
   else if (/ไม่เย็น|น้ำหยด|รั่ว|เสียงดัง|กลิ่น|เหม็น|error|[eEhHfF]\d/i.test(low)) intent = "repair_symptom";
   else if (/นัด|คิว|ว่าง|จอง|book|appointment|reserve/i.test(low)) intent = "booking";
@@ -339,6 +341,7 @@ function analyzeThread(messages = [], latestText = "") {
   if (has.count && (has.service || intent === "price_question")) stage = "qualifying";
   if ((has.count || has.service) && has.datetime) stage = "ready_to_book";
   if (intent === "repair_symptom") stage = "diagnose";
+  if (intent === "complaint") stage = "admin_review";
   if (intent === "price_objection") stage = "objection";
 
   // ── missing_info: only what is TRULY needed for the next step ──
@@ -346,6 +349,8 @@ function analyzeThread(messages = [], latestText = "") {
   if (intent === "repair_symptom") {
     if (!has.type) missing.push("aircon_type");
     if (!has.location && !has.address) missing.push("area_or_location");
+  } else if (intent === "complaint") {
+    // Risk cases must not be handled as normal sales discovery.
   } else if (intent === "price_question" || intent === "package_question" || known.service_type === "cleaning") {
     if (!has.count) missing.push("aircon_count");
     if (!has.type && !has.btu) missing.push("aircon_type_or_btu");
@@ -362,7 +367,9 @@ function analyzeThread(messages = [], latestText = "") {
 
   // ── next_best_action: single most useful step ──
   let nextBestAction = "";
-  if (intent === "repair_symptom") {
+  if (intent === "complaint") {
+    nextBestAction = "หยุดตอบเชิงขาย รับเรื่องสั้น ๆ อย่างสุภาพ และส่งให้แอดมินจริงตรวจสอบ";
+  } else if (intent === "repair_symptom") {
     nextBestAction = "ช่วยคัดกรองอาการเบื้องต้น ไม่ฟันธง แล้วเสนอให้ช่างตรวจเช็ค (ค่าตรวจ 700) พร้อมถามพื้นที่/รุ่นถ้ายังไม่มี";
   } else if (intent === "price_objection") {
     nextBestAction = "ย้ำคุณค่า/มาตรฐานงาน ไม่ลดราคาเอง แล้วพาไปเช็กคิวหรือเริ่มจากแพ็กเกจปกติ";

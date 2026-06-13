@@ -19,6 +19,8 @@ const {
 
 const BUILD = "v36_shared_core_brain_auto_internal_training_20260612";
 const DEFAULT_MODEL = "gpt-4.1-mini";
+const DEFAULT_AUTO_TRAINING_COOLDOWN_SECONDS = 30;
+const DEFAULT_AUTO_TRAINING_CONCURRENCY_LIMIT = 2;
 
 function cleanText(value, max = 4000) {
   return String(value ?? "").replace(/\s+/g, " ").trim().slice(0, max);
@@ -40,6 +42,16 @@ function safeJsonArray(value) {
   if (Array.isArray(value)) return value.map((x) => cleanText(x, 240)).filter(Boolean).slice(0, 12);
   if (!value) return [];
   return [cleanText(value, 240)].filter(Boolean);
+}
+function settingNumber(value, fallback, min, max) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.max(min, Math.min(max, Math.round(n)));
+}
+function parseSettingValue(value, fallback = null) {
+  if (value === undefined || value === null) return fallback;
+  if (typeof value !== "string") return value;
+  try { return JSON.parse(value); } catch (_) { return value; }
 }
 function inferSituation(text = "") {
   const s = String(text || "").toLowerCase();
@@ -158,6 +170,8 @@ async function ensureAutoTrainingSchema(pool) {
     ["auto_internal_training_enabled", "training", "Auto Training ภายใน", "เปิดให้ระบบสร้างคำตอบภายในจากข้อความ LINE ลูกค้า", false, false],
     ["auto_internal_training_auto_answer", "training", "ให้ AI ลองตอบเองเมื่อข้อความเข้า", "เมื่อเปิด ระบบจะสร้างคำตอบภายในไว้ให้แอดมินตรวจ โดยไม่ส่ง LINE จริง", false, false],
     ["auto_internal_training_learn_to_core_brain", "training", "บันทึกบทเรียนเข้าคลังสมองกลาง", "คำตอบที่แอดมินกดถูก/สอนเพิ่ม จะเก็บเข้าคลังสมองกลางที่ทุก Agent ใช้ร่วมกัน", true, false],
+    ["auto_internal_training_cooldown_seconds", "training", "พักก่อนสร้างคำตอบซ้ำในแชทเดิม", "จำนวนวินาทีขั้นต่ำก่อน Auto Internal Training จะสร้างคำตอบใหม่ให้แชทเดิม", DEFAULT_AUTO_TRAINING_COOLDOWN_SECONDS, false],
+    ["auto_internal_training_concurrency_limit", "training", "จำกัดจำนวน AI training ที่ประมวลผลพร้อมกัน", "กัน webhook ยิง AI หลายงานพร้อมกันเกินควบคุม", DEFAULT_AUTO_TRAINING_CONCURRENCY_LIMIT, false],
   ];
   for (const row of defaults) {
     await pool.query(`
@@ -170,8 +184,8 @@ async function ensureAutoTrainingSchema(pool) {
 
 async function getAutoTrainingSettings(pool, conversationId = null) {
   await ensureAutoTrainingSchema(pool);
-  const rows = await pool.query(`SELECT key,value FROM public.ai_office_control_settings WHERE key IN ('auto_internal_training_enabled','auto_internal_training_auto_answer','auto_internal_training_learn_to_core_brain')`);
-  const values = Object.fromEntries((rows.rows || []).map((r) => [r.key, typeof r.value === "string" ? JSON.parse(r.value) : r.value]));
+  const rows = await pool.query(`SELECT key,value FROM public.ai_office_control_settings WHERE key IN ('kill_switch','auto_internal_training_enabled','auto_internal_training_auto_answer','auto_internal_training_learn_to_core_brain','auto_internal_training_cooldown_seconds','auto_internal_training_concurrency_limit')`);
+  const values = Object.fromEntries((rows.rows || []).map((r) => [r.key, parseSettingValue(r.value, null)]));
   let conv = null;
   const id = Number(conversationId || 0);
   if (id) {
@@ -180,12 +194,18 @@ async function getAutoTrainingSettings(pool, conversationId = null) {
   }
   const masterEnabled = boolValue(values.auto_internal_training_enabled, false);
   const globalAutoAnswer = boolValue(values.auto_internal_training_auto_answer, false);
+  const killSwitch = boolValue(values.kill_switch, false);
+  const cooldownSeconds = settingNumber(values.auto_internal_training_cooldown_seconds, DEFAULT_AUTO_TRAINING_COOLDOWN_SECONDS, 0, 3600);
+  const concurrencyLimit = settingNumber(values.auto_internal_training_concurrency_limit, DEFAULT_AUTO_TRAINING_CONCURRENCY_LIMIT, 1, 20);
   const mode = cleanText(conv?.mode || "inherit", 20) || "inherit";
-  const enabledForConversation = mode === "off" ? false : (mode === "on" ? masterEnabled : (masterEnabled && globalAutoAnswer));
+  const enabledForConversation = killSwitch ? false : (mode === "off" ? false : (mode === "on" ? masterEnabled : (masterEnabled && globalAutoAnswer)));
   return {
     master_enabled: masterEnabled,
     global_auto_answer: globalAutoAnswer,
     learn_to_core_brain: boolValue(values.auto_internal_training_learn_to_core_brain, true),
+    kill_switch: killSwitch,
+    cooldown_seconds: cooldownSeconds,
+    concurrency_limit: concurrencyLimit,
     conversation_mode: mode,
     enabled_for_conversation: enabledForConversation,
     conversation_setting: conv,
@@ -245,6 +265,87 @@ async function findExistingAutoAnswer(pool, lineMessageId, conversationId, custo
   return null;
 }
 
+async function reserveAutoTrainingJob(pool, input = {}, settings = {}) {
+  await ensureAutoTrainingSchema(pool);
+  const conversationId = Number(input.conversation_id || 0);
+  const customerMessage = cleanText(input.customer_message || input.selected_customer_question || "", 4000);
+  const lineMessageId = cleanText(input.line_message_id || "", 255);
+  if (!conversationId || !customerMessage) return { ok: false, skipped: true, reason: "MISSING_CONTEXT" };
+
+  const existing = await findExistingAutoAnswer(pool, lineMessageId, conversationId, customerMessage);
+  if (existing) {
+    const isProcessing = String(existing.status || "").toLowerCase() === "processing";
+    const updatedAt = existing.updated_at ? new Date(existing.updated_at).getTime() : 0;
+    const stillFresh = updatedAt && Date.now() - updatedAt < 2 * 60 * 1000;
+    if (!isProcessing || stillFresh) return { ok: true, skipped: true, reason: isProcessing ? "ALREADY_IN_PROGRESS" : "ALREADY_EXISTS", auto_answer: existing };
+  }
+
+  const concurrencyLimit = settingNumber(settings.concurrency_limit, DEFAULT_AUTO_TRAINING_CONCURRENCY_LIMIT, 1, 20);
+  const inFlight = await pool.query(`
+    SELECT COUNT(*)::int AS count
+      FROM public.ai_training_auto_answers
+     WHERE status='processing'
+       AND updated_at > NOW() - INTERVAL '2 minutes'
+  `);
+  if (Number(inFlight.rows?.[0]?.count || 0) >= concurrencyLimit) {
+    return { ok: false, skipped: true, reason: "CONCURRENCY_LIMIT", concurrency_limit: concurrencyLimit };
+  }
+
+  const cooldownSeconds = settingNumber(settings.cooldown_seconds, DEFAULT_AUTO_TRAINING_COOLDOWN_SECONDS, 0, 3600);
+  if (cooldownSeconds > 0) {
+    const cooldown = await pool.query(`
+      SELECT id, created_at
+        FROM public.ai_training_auto_answers
+       WHERE conversation_id=$1
+         AND source IN ('brain_v2_auto_training','brain_v2_auto_training_webhook')
+         AND created_at > NOW() - ($2::int * INTERVAL '1 second')
+         AND ($3='' OR COALESCE(line_message_id,'') <> $3)
+       ORDER BY created_at DESC
+       LIMIT 1
+    `, [conversationId, cooldownSeconds, lineMessageId]);
+    if (cooldown.rows?.[0]) return { ok: false, skipped: true, reason: "COOLDOWN", cooldown_seconds: cooldownSeconds, latest_auto_answer_id: cooldown.rows[0].id };
+  }
+
+  const reserved = await saveAutoAnswer(pool, {
+    conversation_id: conversationId,
+    line_user_id: input.line_user_id || "",
+    line_message_id: lineMessageId,
+    line_message_pk: input.line_message_pk || null,
+    customer_message: customerMessage,
+    ai_reply: "",
+    confidence: 0,
+    intent: input.situation_type || "general",
+    situation_type: input.situation_type || "general",
+    service_type: "",
+    status: "processing",
+    source: input.source || "brain_v2_auto_training",
+    metadata: {
+      guard: {
+        reserved_at: new Date().toISOString(),
+        cooldown_seconds: cooldownSeconds,
+        concurrency_limit: concurrencyLimit,
+      },
+      internal_only: true,
+      no_line_send: true,
+    },
+  });
+  return { ok: true, skipped: false, auto_answer: reserved };
+}
+
+async function markAutoTrainingJobFailed(pool, autoAnswerId, reason, metadata = {}) {
+  const id = Number(autoAnswerId || 0);
+  if (!id) return null;
+  const r = await pool.query(`
+    UPDATE public.ai_training_auto_answers
+       SET status='failed',
+           metadata=metadata || $2::jsonb,
+           updated_at=NOW()
+     WHERE id=$1
+     RETURNING *
+  `, [id, safeJson(Object.assign({ failure_reason: cleanText(reason || "AUTO_TRAINING_FAILED", 240), failed_at: new Date().toISOString() }, metadata || {}))]);
+  return r.rows?.[0] || null;
+}
+
 async function saveAutoAnswer(pool, payload = {}) {
   await ensureAutoTrainingSchema(pool);
   const lineMessageId = cleanText(payload.line_message_id || "", 255) || null;
@@ -262,6 +363,8 @@ async function saveAutoAnswer(pool, payload = {}) {
       intent=COALESCE(NULLIF(EXCLUDED.intent,''), public.ai_training_auto_answers.intent),
       situation_type=COALESCE(NULLIF(EXCLUDED.situation_type,''), public.ai_training_auto_answers.situation_type),
       service_type=COALESCE(NULLIF(EXCLUDED.service_type,''), public.ai_training_auto_answers.service_type),
+      status=COALESCE(NULLIF(EXCLUDED.status,''), public.ai_training_auto_answers.status),
+      source=COALESCE(NULLIF(EXCLUDED.source,''), public.ai_training_auto_answers.source),
       metadata=public.ai_training_auto_answers.metadata || EXCLUDED.metadata,
       updated_at=NOW()
     RETURNING *
@@ -289,11 +392,17 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
   const customerMessage = cleanText(input.customer_message || input.selected_customer_question || "", 4000);
   const lineMessageId = cleanText(input.line_message_id || "", 255);
   if (!conversationId || !customerMessage) return { ok: false, skipped: true, reason: "MISSING_CONTEXT" };
-  const existing = await findExistingAutoAnswer(pool, lineMessageId, conversationId, customerMessage);
-  if (existing && !input.force) return { ok: true, skipped: true, reason: "ALREADY_EXISTS", auto_answer: existing };
-
   const apiKey = String(process.env.OPENAI_API_KEY || "").trim();
   if (!apiKey) return { ok: false, skipped: true, reason: "OPENAI_API_KEY_MISSING" };
+  let reserved = null;
+  if (!input.force) {
+    const reserve = await reserveAutoTrainingJob(pool, input, input.guard_settings || {});
+    if (reserve.skipped) return reserve;
+    reserved = reserve.auto_answer || null;
+  } else {
+    const existing = await findExistingAutoAnswer(pool, lineMessageId, conversationId, customerMessage);
+    if (existing && !input.force) return { ok: true, skipped: true, reason: "ALREADY_EXISTS", auto_answer: existing };
+  }
   const conversation = await loadConversation(pool, conversationId);
   const messages = await loadMessages(pool, conversationId);
   const language = detectThreadLanguage(messages, customerMessage);
@@ -347,6 +456,7 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
   try {
     raw = await callOpenAI({ apiKey, model, messages: [{ role: "system", content: system }, { role: "user", content: prompt }] });
   } catch (e) {
+    await markAutoTrainingJobFailed(pool, reserved?.id, "OPENAI_FAILED", { error: e.message || "OPENAI_FAILED" }).catch(() => null);
     return { ok: false, skipped: false, reason: "OPENAI_FAILED", error: e.message || "OPENAI_FAILED" };
   }
   let parsed = {};
@@ -385,6 +495,11 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
       used_core_brain_item_ids: (coreBrain.summary || []).map((x) => x.id).filter(Boolean),
       used_reply_example_ids: examples.map((x) => x.id).filter(Boolean),
       source_event: input.source_event || "manual_or_webhook",
+      guard: {
+        reserved_auto_answer_id: reserved?.id || null,
+        cooldown_seconds: input.guard_settings?.cooldown_seconds ?? null,
+        concurrency_limit: input.guard_settings?.concurrency_limit ?? null,
+      },
     },
   });
   await logReplyLearningEvent(pool, {
@@ -419,6 +534,7 @@ async function handleAutoInternalTrainingFromWebhook(pool, event, stored = {}) {
       customer_message: customerMessage,
       source: "brain_v2_auto_training_webhook",
       source_event: "line_webhook",
+      guard_settings: settings,
     });
   } catch (e) {
     return { ok: false, skipped: false, error: e.message || "AUTO_INTERNAL_TRAINING_FAILED" };

@@ -252,8 +252,28 @@ module.exports = function createAdminAiOfficeBrainV30Routes(deps = {}) {
          LIMIT 30
       `);
       const c = counts.rows?.[0] || {};
-      const ready = Number(c.active_total || 0) >= 30 && Number(c.main_brain_v11_total || 0) >= 10 && Number(c.sales_admin_brain_v28_total || 0) >= 8 && Number(c.pricing_rules || 0) >= 2 && Number(c.policy_rules || 0) >= 3 && Number(c.style_rules || 0) >= 1;
-      return res.json({ ok:true, ready, counts:c, source_files:sourceRows.rows || [], required:{ main_brain_v11_min:10, sales_admin_brain_v28_min:8, pricing_rules_min:2, policy_rules_min:3, style_rules_min:1 }, warning: ready ? '' : 'สมองกลางยังไม่พร้อม: ต้อง seed CWF Main Brain v1.1 และ Professional Sales Admin Brain v2.8 เข้า ai_brain_items ก่อนใช้ตอบลูกค้าจริง' });
+      const required = { active_total_min:30, main_brain_v11_min:10, sales_admin_brain_v28_min:8, pricing_rules_min:2, policy_rules_min:3, style_rules_min:1 };
+      const checks = [
+        { key:"active_total", label:"Active shared brain items", actual:Number(c.active_total || 0), min:required.active_total_min },
+        { key:"main_brain_v11", label:"CWF AI Main Brain v1.1 seeded", actual:Number(c.main_brain_v11_total || 0), min:required.main_brain_v11_min },
+        { key:"sales_admin_brain_v28", label:"Sales Admin Brain v2.8 seeded", actual:Number(c.sales_admin_brain_v28_total || 0), min:required.sales_admin_brain_v28_min },
+        { key:"pricing_rules", label:"Pricing rules available", actual:Number(c.pricing_rules || 0), min:required.pricing_rules_min },
+        { key:"policy_rules", label:"Policy/safety rules available", actual:Number(c.policy_rules || 0), min:required.policy_rules_min },
+        { key:"style_rules", label:"Customer style rules available", actual:Number(c.style_rules || 0), min:required.style_rules_min },
+      ].map((item) => Object.assign(item, { ok:item.actual >= item.min }));
+      const missing_requirements = checks.filter((item) => !item.ok).map((item) => ({ key:item.key, label:item.label, actual:item.actual, required_min:item.min }));
+      const ready = missing_requirements.length === 0;
+      return res.json({
+        ok:true,
+        ready,
+        ready_to_reply: ready,
+        counts:c,
+        checks,
+        missing_requirements,
+        source_files:sourceRows.rows || [],
+        required,
+        warning: ready ? '' : 'สมองกลางยังไม่พร้อม: ต้อง seed CWF Main Brain v1.1 และ Professional Sales Admin Brain v2.8 เข้า ai_brain_items ก่อนใช้ตอบลูกค้าจริง'
+      });
     } catch (e) {
       return res.status(e.status || 500).json({ ok:false, ready:false, error:e.message || "LOAD_AI_BRAIN_HEALTH_FAILED" });
     }
