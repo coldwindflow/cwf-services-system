@@ -1,6 +1,12 @@
 const express = require("express");
 const https = require("https");
-const { buildCoreBrainContext, formatCoreBrainForPrompt } = require("../aiOfficeCoreBrain");
+const {
+  buildCoreBrainContext,
+  formatCoreBrainForPrompt,
+  analyzeThread,
+  formatThreadAnalysisForPrompt,
+  detectThreadLanguage,
+} = require("../aiOfficeCoreBrain");
 
 const DEFAULT_MODEL = "gpt-4.1-mini";
 
@@ -307,7 +313,11 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
       const selectedQuestion = cleanText(req.body?.selected_customer_question, 2000)
         || cleanText([...messages].reverse().find((m) => m.direction === "inbound" && m.message_text)?.message_text || conversation.last_message_text, 2000);
       const adminQuestion = cleanText(req.body?.admin_question || req.body?.instruction || "ควรตอบลูกค้ายังไง", 1200);
-      const language = detectLanguage(selectedQuestion);
+      // Thread-aware language: a TH customer who later pastes a romanized map pin stays TH.
+      const language = detectThreadLanguage(messages, selectedQuestion);
+      // Deterministic pre-analysis so the model never re-asks for given info and always
+      // knows the single best next step (anti-loop + closing).
+      const threadAnalysis = analyzeThread(messages, selectedQuestion);
       const situationType = inferSituation(`${selectedQuestion}\n${adminQuestion}`);
       const examples = await loadExamples(pool, { situationType, language });
       const sharedMemory = await loadSharedMemoryForDraft(pool, { conversationId, selectedQuestion, situationType, language });
@@ -315,20 +325,23 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
       const priorDrafts = Array.isArray(req.body?.prior_drafts) ? req.body.prior_drafts.slice(-5) : [];
 
       const system = [
-        "You are Sales/Admin AI for Coldwindflow LINE OA.",
+        "You are the real Sales/Admin (female voice) of Coldwindflow LINE OA, not an AI assistant and not a draft tool.",
         "Return strict JSON only with keys: customer_reply, admin_summary, known_info, missing_info, next_best_action, next_step, customer_language, is_foreign_customer, original_message, thai_translation.",
         "selected_customer_question is the MAIN customer turn, but answer from the whole LINE thread. Treat prior LINE messages as known_info and do not ask for information already given.",
-        "Do not answer from the latest customer message if selected_customer_question exists.",
+        "A PRE_COMPUTED_THREAD_ANALYSIS block is provided. Its known_info / missing_info / next_best_action are authoritative. Obey them: never ask for anything in known_info; ask only missing_info (max 1-2); follow next_best_action.",
+        "Do not answer from the latest customer message alone if selected_customer_question exists.",
         thaiToneInstruction(),
-        "No headings, no bullets, no report format, no JSON visible inside customer_reply.",
-        "Do not repeat questions for details already present in selected_customer_question/context. If location/map is already present, never ask for location again; ask only date/time or aircon count if missing.",
-        "Do not claim any LINE message was sent or any booking/status was created.",
-        "Use CWF Core Brain and CWF Professional Sales Admin Brain v2.8 as the customer-runtime brain. Reply like a real CWF sales admin who closes the next step, not like AI/copilot/draft. Customer sees only customer_reply."
+        "No headings, no bullets, no report format, no JSON visible inside customer_reply. Normally 1 short bubble.",
+        "Never re-ask for location/address/map if already_has_location is true — acknowledge it warmly ('ได้รับโลเคชั่นแล้วค่ะ') and ask the next missing field or move to checking the queue.",
+        "Every reply must move the sale one concrete step forward (price→count/area/time, symptom→inspection, booking→missing field, location→time/count). Avoid textbook explanations with no next step.",
+        "Do not claim any LINE message was sent or any booking/status was created. Do not promise discounts, tax invoices, or a firm diagnosis.",
+        "Use CWF Core Brain and CWF Professional Sales Admin Brain v2.8 as the customer-runtime brain. Customer sees only customer_reply; never expose confidence, risk, admin_note, known_info, missing_info, JSON, or reasoning."
       ].join(" ");
 
       const prompt = [
         "selected_customer_question:", selectedQuestion, "",
         "admin_instruction:", adminQuestion, "",
+        formatThreadAnalysisForPrompt(threadAnalysis), "",
         formatCoreBrainForPrompt(coreBrain), "",
         "conversation:",
         JSON.stringify({ display_name: conversation.display_name || "", messages: messages.map((m) => ({ direction:m.direction, text:m.message_text, at:m.received_at || m.created_at })).slice(-20) }, null, 2),
@@ -366,15 +379,23 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
       let parsed = {};
       try { parsed = JSON.parse(raw); } catch (_) { parsed = { customer_reply: raw }; }
       const customerReply = sanitizeCustomerReply(parsed.customer_reply, selectedQuestion);
+      // Merge model output with deterministic analysis: computed facts are the floor,
+      // so the admin always sees correct known/missing even if the model under-reports.
+      const mergedKnown = Object.assign({}, threadAnalysis.known_info || {}, (parsed.known_info && typeof parsed.known_info === "object" ? parsed.known_info : {}));
+      const modelMissing = Array.isArray(parsed.missing_info) ? parsed.missing_info : [];
+      const mergedMissing = (modelMissing.length ? modelMissing : (threadAnalysis.missing_info || []));
       const draft = {
         customer_reply: customerReply,
         admin_summary: Array.isArray(parsed.admin_summary) ? parsed.admin_summary : [],
-        known_info: parsed.known_info && typeof parsed.known_info === "object" ? parsed.known_info : {},
-        missing_info: Array.isArray(parsed.missing_info) ? parsed.missing_info : [],
-        next_best_action: cleanText(parsed.next_best_action || "", 500),
+        known_info: mergedKnown,
+        missing_info: mergedMissing,
+        next_best_action: cleanText(parsed.next_best_action || threadAnalysis.next_best_action || "", 500),
         next_step: cleanText(parsed.next_step, 500),
+        intent: threadAnalysis.intent,
+        sales_stage: threadAnalysis.sales_stage,
+        already_has_location: threadAnalysis.already_has_location,
         customer_language: parsed.customer_language || language,
-        is_foreign_customer: Boolean(parsed.is_foreign_customer || (language !== "th" && language !== "unknown")),
+        is_foreign_customer: Boolean(language === "en"),
         foreign_customer_label: "",
         original_message: selectedQuestion,
         thai_translation: cleanText(parsed.thai_translation, 1000),

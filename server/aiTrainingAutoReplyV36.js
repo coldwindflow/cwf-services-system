@@ -6,6 +6,9 @@ const {
   formatCoreBrainForPrompt,
   saveCoreBrainLesson,
   detectLanguage,
+  detectThreadLanguage,
+  analyzeThread,
+  formatThreadAnalysisForPrompt,
   boolValue,
 } = require("./aiOfficeCoreBrain");
 const {
@@ -293,7 +296,8 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
   if (!apiKey) return { ok: false, skipped: true, reason: "OPENAI_API_KEY_MISSING" };
   const conversation = await loadConversation(pool, conversationId);
   const messages = await loadMessages(pool, conversationId);
-  const language = detectLanguage(customerMessage);
+  const language = detectThreadLanguage(messages, customerMessage);
+  const threadAnalysis = analyzeThread(messages, customerMessage);
   const situationType = cleanText(input.situation_type || inferSituation(`${customerMessage}\n${input.admin_instruction || ""}`), 80);
   const coreBrain = await buildCoreBrainContext(pool, {
     query: customerMessage,
@@ -308,18 +312,21 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
   } catch (_) { examples = []; }
 
   const system = [
-    "You are CWF AI trainee generating an INTERNAL draft for review, not sending LINE.",
+    "You are the real CWF Sales/Admin (female voice) generating an INTERNAL draft for review. You are not sending LINE.",
     "Return strict JSON only.",
     "JSON keys: customer_reply, confidence, decision, decision_reason, known_info, missing_info, next_best_action, skill_category, should_auto_reply, service_type.",
+    "A PRE_COMPUTED_THREAD_ANALYSIS block is provided. Its known_info / missing_info / next_best_action are authoritative: never ask for anything in known_info, ask only missing_info (max 1-2), follow next_best_action.",
     "Use CWF Core Brain and CWF Professional Sales Admin Brain v2.8 as the shared source of truth before any role-specific behavior.",
     "Do not invent booking confirmation, queue availability, payment, discount, tax invoice, or repair diagnosis.",
-    "Use real CWF sales admin style: natural, concise, useful, not robotic, and move the sale to the next step. Infer known_info from the full thread first. Do not ask for location again if map/location already exists. If the customer truly uses English, answer simple English; do not infer English from URL/map/display name.",
-    "This is internal-only. Never claim a message was sent. Never trigger LINE sending.",
+    "Real CWF admin style: natural, concise, warm, 1 short bubble, not robotic, and always move the sale one concrete step forward. Infer known_info from the full thread first.",
+    "If already_has_location is true, acknowledge it and never ask for location again. If the customer truly uses English across the thread, answer simple English; never infer English from URL/map/display name/romanized address.",
+    "This is internal-only. Never claim a message was sent. Never trigger LINE sending. customer_reply must contain no metadata.",
   ].join(" ");
   const prompt = [
     "REAL_CUSTOMER_MESSAGE:", customerMessage, "",
     "SITUATION_TYPE:", situationType, "",
     "ADMIN_INSTRUCTION:", cleanText(input.admin_instruction || "Auto Internal Training: draft internally for admin review only. Do not send LINE.", 1400), "",
+    formatThreadAnalysisForPrompt(threadAnalysis), "",
     formatCoreBrainForPrompt(coreBrain), "",
     "RECENT_LINE_CONTEXT:", JSON.stringify({ display_name: conversation?.display_name || "", messages: messages.map((m) => ({ direction: m.direction, text: m.message_text, at: m.received_at || m.created_at })).slice(-20) }, null, 2), "",
     "APPROVED_SHARED_REPLY_EXAMPLES:", JSON.stringify(examples.map((e) => ({ id: e.id, situation_type: e.situation_type, customer_message: e.customer_message, final_admin_reply: e.final_admin_reply, language: e.language, service_type: e.service_type, tags: e.tags })), null, 2), "",
@@ -364,9 +371,13 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
     metadata: {
       decision,
       decision_reason: cleanText(parsed.decision_reason || "", 1000),
-      known_info: parsed.known_info && typeof parsed.known_info === "object" ? parsed.known_info : {},
-      missing_info: safeJsonArray(parsed.missing_info),
-      next_best_action: cleanText(parsed.next_best_action || "", 500),
+      known_info: Object.assign({}, threadAnalysis.known_info || {}, (parsed.known_info && typeof parsed.known_info === "object" ? parsed.known_info : {})),
+      missing_info: (safeJsonArray(parsed.missing_info).length ? safeJsonArray(parsed.missing_info) : (threadAnalysis.missing_info || [])),
+      next_best_action: cleanText(parsed.next_best_action || threadAnalysis.next_best_action || "", 500),
+      intent: threadAnalysis.intent,
+      sales_stage: threadAnalysis.sales_stage,
+      already_has_location: threadAnalysis.already_has_location,
+      reply_language: language,
       should_auto_reply: false,
       internal_only: true,
       no_line_send: true,

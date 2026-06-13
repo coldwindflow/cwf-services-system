@@ -18,23 +18,76 @@ function boolValue(value, fallback = false) {
   return /^(1|true|yes|on|active)$/i.test(String(value).trim());
 }
 
+// Romanized Thai place/address tokens that must NOT be counted as "English".
+// A Thai customer sharing a Google Maps pin often writes "Sukhumvit Soi 11, Bangkok"
+// which previously tripped English detection. Strip these before judging language.
+const ROMANIZED_TH_PLACE = new RegExp(
+  "\\b(" +
+  "soi|thanon|rd|road|alley|moo|mu|tambon|amphoe|amphur|khwaeng|khet|" +
+  "bangkok|krung\\s*thep|nonthaburi|pathum|samut|prakan|sakhon|chon\\s*buri|" +
+  "chiang\\s*mai|chiang\\s*rai|phuket|pattaya|rayong|nakhon|ratchasima|khon\\s*kaen|" +
+  "sukhumvit|silom|sathorn|sathon|ratchada|ladprao|lat\\s*phrao|phaholyothin|" +
+  "phahon\\s*yothin|rama|ratchaprarop|onnut|on\\s*nut|bearing|bangna|bang\\s*na|" +
+  "ari|asok|asoke|thonglor|thong\\s*lor|ekkamai|phrom\\s*phong|chatuchak|" +
+  "condo|tower|village|mansion|residence|building|floor|bldg|" +
+  "google|maps|location|pin|map" +
+  ")\\b", "gi"
+);
+
 function languageProbe(text = "") {
   return String(text || "")
+    // strip links first (any URL, map link, www)
     .replace(/https?:\/\/\S+/gi, " ")
     .replace(/www\.\S+/gi, " ")
-    .replace(/goo\.gl\/maps\S*/gi, " ")
+    .replace(/goo\.gl\/\S*/gi, " ")
     .replace(/maps\.app\.goo\.gl\/\S+/gi, " ")
-    .replace(/[0-9+().,/:@_-]+/g, " ")
+    .replace(/line\.me\/\S+/gi, " ")
+    // strip romanized Thai place/address words so they don't read as English
+    .replace(ROMANIZED_TH_PLACE, " ")
+    // strip numbers, punctuation, symbols, emoji
+    .replace(/[0-9+().,/:@_#&%*'"!?-]+/g, " ")
+    .replace(/[\u{1F000}-\u{1FAFF}\u{2600}-\u{27BF}\u2190-\u21FF\u2B00-\u2BFF]/gu, " ")
     .trim();
 }
 
+// Single-message detection. "th" wins if any Thai char remains.
+// Real English requires a few alphabetic words remaining AFTER place names are stripped.
 function detectLanguage(text = "") {
   const s = languageProbe(text);
   if (/[\u0E00-\u0E7F]/.test(s)) return "th";
   if (/[ぁ-ゟ゠-ヿ]/.test(s)) return "ja";
+  if (/[\uAC00-\uD7AF]/.test(s)) return "ko";
   if (/[\u4e00-\u9fff]/.test(s)) return "zh";
-  if (/[A-Za-z]{2,}/.test(s)) return "en";
+  // require 2+ real alphabetic words (not just one leftover token) to call it English,
+  // so a stray romanized fragment never flips a Thai customer to English.
+  const words = (s.match(/[A-Za-z]{2,}/g) || []);
+  if (words.length >= 2) return "en";
+  if (words.length === 1 && words[0].length >= 4) return "en";
   return "unknown";
+}
+
+// Thread-aware detection: decide the reply language from the WHOLE inbound thread,
+// not just the latest bubble. If the customer has ever written real Thai, stay Thai
+// (a later location/map/English-looking pin must not flip the language). Only commit
+// to English when inbound text is consistently English and has no Thai at all.
+function detectThreadLanguage(messages = [], latestText = "") {
+  const inbound = (Array.isArray(messages) ? messages : [])
+    .filter((m) => m && (m.direction === "inbound") && m.message_text)
+    .map((m) => String(m.message_text));
+  if (latestText) inbound.push(String(latestText));
+  if (!inbound.length) return detectLanguage(latestText);
+
+  let thai = 0, english = 0;
+  for (const msg of inbound) {
+    const lang = detectLanguage(msg);
+    if (lang === "th") thai += 1;
+    else if (lang === "en") english += 1;
+  }
+  // Any genuine Thai in the thread -> reply Thai (covers TH customer who pasted a map pin).
+  if (thai > 0) return "th";
+  if (english > 0) return "en";
+  // Nothing decisive (location-only / number-only thread): fall back to latest, else unknown.
+  return detectLanguage(latestText) || "unknown";
 }
 
 function dedupeItems(rows = []) {
@@ -216,6 +269,144 @@ function formatCoreBrainForPrompt(coreBrain = {}) {
   ]).join("\n");
 }
 
+// ── Deterministic conversation analysis (runs BEFORE the LLM) ──────────────
+// This gives the model a hard, pre-computed view of what the thread already
+// contains so it never re-asks for something the customer already gave, and
+// always knows the single most useful next step. The LLM still writes the
+// natural reply, but it is anchored to these facts instead of re-deriving them.
+
+function analyzeThread(messages = [], latestText = "") {
+  const inbound = (Array.isArray(messages) ? messages : [])
+    .filter((m) => m && m.direction === "inbound" && m.message_text)
+    .map((m) => String(m.message_text));
+  if (latestText) inbound.push(String(latestText));
+  const blob = inbound.join("\n");
+  const low = blob.toLowerCase();
+
+  const known = {};
+  const has = {};
+
+  // location / map pin already shared?
+  has.location = /https?:\/\/\S*(goo\.gl|maps\.app|google\.[a-z.]+\/maps)/i.test(blob)
+    || /พิกัด|โลเคชั่น|โลเคชัน|ตำแหน่ง|แชร์location|ส่งแผนที่|ปักหมุด|location/i.test(low);
+  if (has.location) known.location = "shared";
+
+  // explicit address text (Thai address keywords) or a known BKK zone name
+  has.address = /บ้านเลขที่|หมู่บ้าน|ซอย|ถนน|ต\.|อ\.|จ\.|แขวง|เขต|ตำบล|อำเภอ|จังหวัด|คอนโด|หมู่ที่/i.test(blob)
+    || /บางนา|สุขุมวิท|สีลม|สาทร|รัชดา|ลาดพร้าว|พหลโยธิน|อ่อนนุช|บางกะปิ|รามคำแหง|พระราม\s*\d|ทองหล่อ|เอกมัย|อโศก|จตุจักร|ดอนเมือง|นนทบุรี|ปทุมธานี|สมุทรปราการ|บางแค|บางซื่อ|ดินแดง|ห้วยขวาง|ประเวศ|บางเขน/i.test(blob);
+  if (has.address) known.area = "given";
+
+  // aircon count (เครื่อง / units)
+  const countMatch = blob.match(/(\d+)\s*(เครื่อง|ตัว|units?|เคส)/i);
+  if (countMatch) { has.count = true; known.aircon_count = Number(countMatch[1]); }
+
+  // BTU / size
+  const btuMatch = blob.match(/(\d{4,6})\s*(btu|บีทียู)/i);
+  if (btuMatch) { has.btu = true; known.btu = Number(btuMatch[1]); }
+  if (/\b(9000|12000|18000|24000|36000|48000)\b/.test(blob)) { has.btu = true; }
+
+  // aircon type
+  if (/ติดผนัง|ผนัง|wall/i.test(low)) { known.aircon_type = "wall"; has.type = true; }
+  else if (/แขวน|ceiling|hanging/i.test(low)) { known.aircon_type = "hanging"; has.type = true; }
+  else if (/ตู้ตั้ง|ตั้งพื้น|floor/i.test(low)) { known.aircon_type = "floor"; has.type = true; }
+  else if (/สี่ทิศ|4 ?ทิศ|cassette|fourway|four-way/i.test(low)) { known.aircon_type = "cassette"; has.type = true; }
+
+  // service type
+  if (/ล้าง|clean|wash/i.test(low)) { known.service_type = "cleaning"; has.service = true; }
+  else if (/ซ่อม|เสีย|ไม่เย็น|repair|fix/i.test(low)) { known.service_type = "repair"; has.service = true; }
+  else if (/ติดตั้ง|install/i.test(low)) { known.service_type = "install"; has.service = true; }
+  else if (/ย้าย|move|relocat/i.test(low)) { known.service_type = "relocate"; has.service = true; }
+
+  // date / time preference
+  has.datetime = /วันนี้|พรุ่งนี้|มะรืน|เสาร์|อาทิตย์|จันทร์|อังคาร|พุธ|พฤหัส|ศุกร์|เช้า|บ่าย|เย็น|โมง|ทุ่ม|\d{1,2}[:.]\d{2}|วันที่\s*\d+|today|tomorrow|am|pm|\d+\s*(โมง|นาฬิกา)/i.test(low);
+  if (has.datetime) known.preferred_time = "mentioned";
+
+  // phone number
+  const phoneMatch = blob.match(/0\d{1,2}[-\s]?\d{3}[-\s]?\d{3,4}/);
+  if (phoneMatch) { has.phone = true; known.phone = "given"; }
+
+  // ── intent / sales stage ──
+  let intent = "general";
+  if (/แพง|ลด|ส่วนลด|ทำไมราคา|expensive|discount/i.test(low)) intent = "price_objection";
+  else if (/ราคา|เท่าไหร่|เท่าไร|กี่บาท|โปร|price|cost|how much/i.test(low)) intent = "price_question";
+  else if (/ไม่เย็น|น้ำหยด|รั่ว|เสียงดัง|กลิ่น|เหม็น|error|[eEhHfF]\d/i.test(low)) intent = "repair_symptom";
+  else if (/นัด|คิว|ว่าง|จอง|book|appointment|reserve/i.test(low)) intent = "booking";
+  else if (/แบบไหน|พรีเมียม|ปกติ|แขวนคอยล์|ตัดล้าง|package/i.test(low)) intent = "package_question";
+
+  // sales stage from accumulated info
+  let stage = "discovery";
+  if (has.location || has.address) stage = "has_location";
+  if (has.count && (has.service || intent === "price_question")) stage = "qualifying";
+  if ((has.count || has.service) && has.datetime) stage = "ready_to_book";
+  if (intent === "repair_symptom") stage = "diagnose";
+  if (intent === "price_objection") stage = "objection";
+
+  // ── missing_info: only what is TRULY needed for the next step ──
+  const missing = [];
+  if (intent === "repair_symptom") {
+    if (!has.type) missing.push("aircon_type");
+    if (!has.location && !has.address) missing.push("area_or_location");
+  } else if (intent === "price_question" || intent === "package_question" || known.service_type === "cleaning") {
+    if (!has.count) missing.push("aircon_count");
+    if (!has.type && !has.btu) missing.push("aircon_type_or_btu");
+    if (!has.location && !has.address) missing.push("area_or_location");
+    if (!has.datetime && (has.count || has.location)) missing.push("preferred_datetime");
+  } else if (intent === "booking" || stage === "ready_to_book") {
+    if (!has.count) missing.push("aircon_count");
+    if (!has.datetime) missing.push("preferred_datetime");
+    if (!has.location && !has.address) missing.push("area_or_location");
+    if (!has.phone) missing.push("phone");
+  } else {
+    if (!has.service) missing.push("service_type");
+  }
+
+  // ── next_best_action: single most useful step ──
+  let nextBestAction = "";
+  if (intent === "repair_symptom") {
+    nextBestAction = "ช่วยคัดกรองอาการเบื้องต้น ไม่ฟันธง แล้วเสนอให้ช่างตรวจเช็ค (ค่าตรวจ 700) พร้อมถามพื้นที่/รุ่นถ้ายังไม่มี";
+  } else if (intent === "price_objection") {
+    nextBestAction = "ย้ำคุณค่า/มาตรฐานงาน ไม่ลดราคาเอง แล้วพาไปเช็กคิวหรือเริ่มจากแพ็กเกจปกติ";
+  } else if (stage === "ready_to_book") {
+    nextBestAction = "ข้อมูลพอแล้ว ปิดการขาย: ยืนยันจะเช็กคิวช่างให้ และขอสิ่งที่ขาดชิ้นสุดท้าย (เช่น เบอร์โทร) ถ้ามี";
+  } else if (missing.length) {
+    nextBestAction = `ถามเฉพาะ ${missing.slice(0, 2).join(" + ")} (ห้ามถามข้อมูลที่ลูกค้าให้แล้ว) แล้วบอกว่าจะเช็กคิวให้`;
+  } else {
+    nextBestAction = "พาไปเช็กคิว/นัดหมายให้เร็วที่สุด";
+  }
+
+  return {
+    known_info: known,
+    has,
+    missing_info: missing.slice(0, 3),
+    intent,
+    sales_stage: stage,
+    next_best_action: nextBestAction,
+    already_has_location: !!(has.location || has.address),
+    inbound_turns: inbound.length,
+  };
+}
+
+function formatThreadAnalysisForPrompt(a = {}) {
+  return [
+    "PRE_COMPUTED_THREAD_ANALYSIS (authoritative — trust this over re-deriving):",
+    JSON.stringify({
+      known_info: a.known_info || {},
+      missing_info: a.missing_info || [],
+      intent: a.intent || "general",
+      sales_stage: a.sales_stage || "discovery",
+      next_best_action: a.next_best_action || "",
+      already_has_location: !!a.already_has_location,
+    }, null, 2),
+    "HARD ANTI-LOOP RULES:",
+    "- The fields in known_info are ALREADY given by the customer. NEVER ask for any of them again.",
+    a.already_has_location
+      ? "- Location/address is ALREADY in the thread. Do NOT ask for location/address. Acknowledge it and ask the next missing field instead."
+      : "- Location not yet shared; you may ask for area or a map pin if it is in missing_info.",
+    "- Ask ONLY fields listed in missing_info, at most 1-2, the most important first.",
+    "- Follow next_best_action to move the sale forward. If missing_info is empty, close toward booking / checking the queue.",
+  ].join("\n");
+}
+
 async function saveCoreBrainLesson(pool, input = {}) {
   if (!pool) return null;
   await ensureAiBrainItemsTable(pool);
@@ -266,6 +457,9 @@ module.exports = {
   formatCoreBrainForPrompt,
   saveCoreBrainLesson,
   detectLanguage,
+  detectThreadLanguage,
+  analyzeThread,
+  formatThreadAnalysisForPrompt,
   mapAgentToBrainKey,
   boolValue,
 };
