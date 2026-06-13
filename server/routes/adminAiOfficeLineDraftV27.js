@@ -264,6 +264,14 @@ function sanitizeCustomerReply(text, selectedQuestion) {
   if (hasThai(out)) out = applyThaiReplyTone(out);
   return out;
 }
+function enforcePriceQuoteReply(reply, threadAnalysis = {}) {
+  const quote = threadAnalysis && threadAnalysis.price_quote;
+  if (!quote || !quote.customer_reply) return reply;
+  const text = cleanText(reply, 2400);
+  const requiredTotals = (quote.packages || []).map((p) => p.total).filter(Boolean);
+  const hasAllTotals = requiredTotals.every((n) => text.includes(Number(n).toLocaleString("th-TH")) || text.includes(String(n)));
+  return hasAllTotals ? reply : applyThaiReplyTone(quote.customer_reply);
+}
 async function saveDraft(pool, req, payload) {
   await ensureLineDraftMemorySchema(pool);
   const r = await pool.query(`
@@ -329,6 +337,7 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
         "Return strict JSON only with keys: customer_reply, admin_summary, known_info, missing_info, next_best_action, next_step, customer_language, is_foreign_customer, original_message, thai_translation.",
         "selected_customer_question is the MAIN customer turn, but answer from the whole LINE thread. Treat prior LINE messages as known_info and do not ask for information already given.",
         "A PRE_COMPUTED_THREAD_ANALYSIS block is provided. Its known_info / missing_info / next_best_action are authoritative. Obey them: never ask for anything in known_info; ask only missing_info (max 1-2); follow next_best_action.",
+        "PRICE_QUESTION_RULE: if intent is price_question or the customer asks price/how much/ราคาทั้งหมด, answer the price before asking date/time, queue, or booking. If price_quote exists, include every package line and total first, recommend a package, then ask preferred date/time to close.",
         "Do not answer from the latest customer message alone if selected_customer_question exists.",
         thaiToneInstruction(),
         "No headings, no bullets, no report format, no JSON visible inside customer_reply. Normally 1 short bubble.",
@@ -364,7 +373,7 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
         })), null, 2),
         "",
         "TASK:",
-        "Create one natural customer_reply that moves the sale forward. First infer known_info/missing_info internally. Ask only 1-2 truly missing things. If info is enough, close toward booking/check queue. Do not show internal metadata in customer_reply.", "",
+        "Create one natural customer_reply that moves the sale forward. First infer known_info/missing_info internally. For price_question, answer price first and do not ask schedule before the price. Ask only 1-2 truly missing things. If info is enough, close toward booking/check queue. Do not show internal metadata in customer_reply.", "",
         "CWF facts:",
         JSON.stringify({ wall_under_12000: { normal:550, premium:790, hanging_coil:1290, deep_clean:1850 }, wall_18000_up: { normal:690, premium:990, hanging_coil:1550, deep_clean:2150 }, check_fee:700, warranty_cleaning_days:30, services:["ล้างแอร์","ซ่อมแอร์","ติดตั้งแอร์","ตรวจเช็คแอร์"] }, null, 2)
       ].join("\n");
@@ -378,7 +387,7 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
 
       let parsed = {};
       try { parsed = JSON.parse(raw); } catch (_) { parsed = { customer_reply: raw }; }
-      const customerReply = sanitizeCustomerReply(parsed.customer_reply, selectedQuestion);
+      const customerReply = enforcePriceQuoteReply(sanitizeCustomerReply(parsed.customer_reply, selectedQuestion), threadAnalysis);
       // Merge model output with deterministic analysis: computed facts are the floor,
       // so the admin always sees correct known/missing even if the model under-reports.
       const mergedKnown = Object.assign({}, threadAnalysis.known_info || {}, (parsed.known_info && typeof parsed.known_info === "object" ? parsed.known_info : {}));

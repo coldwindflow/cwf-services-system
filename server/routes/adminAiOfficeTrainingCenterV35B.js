@@ -490,6 +490,14 @@ function sanitizeCustomerReply(text) {
   }
   return out;
 }
+function enforcePriceQuoteReply(reply, threadAnalysis = {}) {
+  const quote = threadAnalysis && threadAnalysis.price_quote;
+  if (!quote || !quote.customer_reply) return reply;
+  const text = cleanText(reply, 2400);
+  const requiredTotals = (quote.packages || []).map((p) => p.total).filter(Boolean);
+  const hasAllTotals = requiredTotals.every((n) => text.includes(Number(n).toLocaleString("th-TH")) || text.includes(String(n)));
+  return hasAllTotals ? reply : quote.customer_reply;
+}
 
 async function buildInternalTrainingAnswer(pool, req, body = {}) {
   if (body.training_mode_enabled !== true && body.training_mode_enabled !== "true" && body.training_mode_enabled !== "1") {
@@ -532,6 +540,7 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
     "This is internal-only. Never claim a message was sent. Never trigger LINE sending.",
     "Infer known_info from the whole LINE thread first. If facts are missing, set decision='AI ยังไม่รู้' or 'ต้องตรวจ' and ask the teacher what should be taught. Never ask the customer for information already present in the thread.",
     "A PRE_COMPUTED_THREAD_ANALYSIS block is provided. Its known_info / missing_info / next_best_action are authoritative: never ask for anything in known_info, ask only missing_info, and if already_has_location is true never ask for location again.",
+    "PRICE_QUESTION_RULE: if intent is price_question or the customer asks price/how much/ราคาทั้งหมด, answer the price before asking date/time, queue, or booking. If price_quote exists, include every package line and total first, recommend a package, then ask preferred date/time to close.",
     "Use CWF Core Brain as the shared source of truth before saved examples. Do not invent tax invoice, discounts, booking confirmation, technician availability, or repair diagnosis.",
     "Use CWF Professional Sales Admin Brain v2.8: natural Thai LINE sales admin style, short, warm, closes the next step. If the customer really uses English, answer simple English; do not infer English from URL/map/display name.",
   ].join(" ");
@@ -545,7 +554,7 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
     "SAVED_TEACHER_EXAMPLES:", JSON.stringify(examples.map((e) => ({ id:e.id, situation_type:e.situation_type, customer_message:e.customer_message, final_admin_reply:e.final_admin_reply, language:e.language, tags:e.tags })), null, 2), "",
     "TRAINING_MEMORY:", JSON.stringify(trainingMemory.map((m) => ({ event_type:m.event_type, action_status:m.action_status, customer_message:m.customer_message, ai_reply:m.ai_reply, final_admin_reply:m.final_admin_reply, situation_type:m.situation_type })), null, 2), "",
     "TASK:",
-    "Generate the internal answer as if the AI were really chatting with this customer, but internal-only. Use conversation turns, known_info/missing_info, and next_best_action. Do not answer like a report or generic AI. If map/location already exists, do not ask for location again.", "",
+    "Generate the internal answer as if the AI were really chatting with this customer, but internal-only. Use conversation turns, known_info/missing_info, and next_best_action. For price_question, answer price first and do not ask schedule before the price. Do not answer like a report or generic AI. If map/location already exists, do not ask for location again.", "",
     "CWF_TRUSTED_FACTS:", JSON.stringify({
       services:["ล้างแอร์","ซ่อมแอร์","ติดตั้งแอร์","ตรวจเช็คแอร์"],
       rainy_promo:{ wall_under_12000:{ normal:550, premium:790, hanging_coil:1290, deep_clean:1850 }, wall_18000_up:{ normal:690, premium:990, hanging_coil:1550, deep_clean:2150 } },
@@ -559,7 +568,7 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
   let parsed = {};
   try { parsed = JSON.parse(raw); } catch (_) { parsed = { customer_reply: raw, confidence: 40, decision:"ต้องตรวจ", decision_reason:"AI returned non-JSON; teacher review required" }; }
   const confidence = clamp(parsed.confidence, 0, 100);
-  const answer = sanitizeCustomerReply(parsed.customer_reply || "");
+  const answer = enforcePriceQuoteReply(sanitizeCustomerReply(parsed.customer_reply || ""), threadAnalysis);
   const decision = normalizeDecision(parsed.decision, confidence);
   const missingInfo = safeJsonArray(parsed.missing_info);
   const draft = {

@@ -82,6 +82,14 @@ function sanitizeCustomerReply(text) {
   }
   return out;
 }
+function enforcePriceQuoteReply(reply, threadAnalysis = {}) {
+  const quote = threadAnalysis && threadAnalysis.price_quote;
+  if (!quote || !quote.customer_reply) return reply;
+  const text = cleanText(reply, 2400);
+  const requiredTotals = (quote.packages || []).map((p) => p.total).filter(Boolean);
+  const hasAllTotals = requiredTotals.every((n) => text.includes(Number(n).toLocaleString("th-TH")) || text.includes(String(n)));
+  return hasAllTotals ? reply : quote.customer_reply;
+}
 
 function callOpenAI({ apiKey, model, messages }) {
   return new Promise((resolve, reject) => {
@@ -425,6 +433,7 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
     "Return strict JSON only.",
     "JSON keys: customer_reply, confidence, decision, decision_reason, known_info, missing_info, next_best_action, skill_category, should_auto_reply, service_type.",
     "A PRE_COMPUTED_THREAD_ANALYSIS block is provided. Its known_info / missing_info / next_best_action are authoritative: never ask for anything in known_info, ask only missing_info (max 1-2), follow next_best_action.",
+    "PRICE_QUESTION_RULE: if intent is price_question or the customer asks price/how much/ราคาทั้งหมด, answer the price before asking for date/time or queue. If price_quote exists, include all package lines and totals first, then close naturally toward checking schedule.",
     "Use CWF Core Brain and CWF Professional Sales Admin Brain v2.8 as the shared source of truth before any role-specific behavior.",
     "Do not invent booking confirmation, queue availability, payment, discount, tax invoice, or repair diagnosis.",
     "Real CWF admin style: natural, concise, warm, 1 short bubble, not robotic, and always move the sale one concrete step forward. Infer known_info from the full thread first.",
@@ -440,7 +449,7 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
     "RECENT_LINE_CONTEXT:", JSON.stringify({ display_name: conversation?.display_name || "", messages: messages.map((m) => ({ direction: m.direction, text: m.message_text, at: m.received_at || m.created_at })).slice(-20) }, null, 2), "",
     "APPROVED_SHARED_REPLY_EXAMPLES:", JSON.stringify(examples.map((e) => ({ id: e.id, situation_type: e.situation_type, customer_message: e.customer_message, final_admin_reply: e.final_admin_reply, language: e.language, service_type: e.service_type, tags: e.tags })), null, 2), "",
     "TASK:",
-    "Auto Internal Training must create the answer immediately for later review. It should look like a real chat reply, not an AI report. First infer known_info/missing_info and next_best_action from RECENT_LINE_CONTEXT. Ask only 1-2 missing fields; if info is enough, close toward booking/check queue.", "",
+    "Auto Internal Training must create the answer immediately for later review. It should look like a real chat reply, not an AI report. First infer known_info/missing_info and next_best_action from RECENT_LINE_CONTEXT. For price_question, answer price first and never ask schedule before the price. Ask only 1-2 missing fields; if info is enough, close toward booking/check queue.", "",
     "CWF_STATIC_SAFETY_FACTS:", JSON.stringify({
       services: ["ล้างแอร์", "ซ่อมแอร์", "ติดตั้งแอร์", "ตรวจเช็คแอร์"],
       rainy_promo: { wall_under_12000: { normal: 550, premium: 790, hanging_coil: 1290, deep_clean: 1850 }, wall_18000_up: { normal: 690, premium: 990, hanging_coil: 1550, deep_clean: 2150 } },
@@ -462,7 +471,7 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
   let parsed = {};
   try { parsed = JSON.parse(raw); } catch (_) { parsed = { customer_reply: raw, confidence: 45, decision: "ต้องตรวจ", decision_reason: "AI returned non JSON" }; }
   const confidence = clamp(parsed.confidence, 0, 100, 45);
-  const aiReply = sanitizeCustomerReply(parsed.customer_reply || "");
+  const aiReply = enforcePriceQuoteReply(sanitizeCustomerReply(parsed.customer_reply || ""), threadAnalysis);
   const decision = normalizeDecision(parsed.decision, confidence);
   const status = decision === "AI ยังไม่รู้" ? "needs_teacher" : "pending_review";
   const autoAnswer = await saveAutoAnswer(pool, {

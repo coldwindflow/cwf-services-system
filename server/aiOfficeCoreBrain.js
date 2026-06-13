@@ -275,6 +275,64 @@ function formatCoreBrainForPrompt(coreBrain = {}) {
 // always knows the single most useful next step. The LLM still writes the
 // natural reply, but it is anchored to these facts instead of re-deriving them.
 
+function parseNumberText(value = "") {
+  const n = Number(String(value || "").replace(/,/g, ""));
+  return Number.isFinite(n) ? n : 0;
+}
+
+function buildWallAcPriceQuote(known = {}) {
+  if (known.aircon_type !== "wall" || !known.btu) return null;
+  const btu = Number(known.btu || 0);
+  const count = Number(known.aircon_count || 0);
+  let tier = null;
+  if (btu <= 12000) {
+    tier = {
+      label: "แอร์ผนังไม่เกิน 12,000 BTU",
+      packages: [
+        ["ล้างปกติ", 550],
+        ["ล้างพรีเมียม", 790],
+        ["แขวนคอยล์", 1290],
+        ["ตัดล้างใหญ่", 1850],
+      ],
+    };
+  } else if (btu >= 18000) {
+    tier = {
+      label: "แอร์ผนัง 18,000 BTU ขึ้นไป",
+      packages: [
+        ["ล้างปกติ", 690],
+        ["ล้างพรีเมียม", 990],
+        ["แขวนคอยล์", 1550],
+        ["ตัดล้างใหญ่", 2150],
+      ],
+    };
+  }
+  if (!tier) return null;
+  const packages = tier.packages.map(([name, unit_price]) => ({
+    name,
+    unit_price,
+    count: count || null,
+    total: count ? unit_price * count : null,
+  }));
+  const lines = packages.map((p) => {
+    if (p.count) return `- ${p.name} ${p.unit_price.toLocaleString("th-TH")} x ${p.count} = ${p.total.toLocaleString("th-TH")} บาท`;
+    return `- ${p.name} ${p.unit_price.toLocaleString("th-TH")} บาท/เครื่อง`;
+  });
+  return {
+    type: "wall_ac_cleaning_promo",
+    btu,
+    count: count || null,
+    tier_label: tier.label,
+    packages,
+    lines,
+    recommendation: "ถ้าแอร์ใช้งานปกติ แนะนำเริ่มจากล้างปกติหรือพรีเมียมก็พอค่ะ ลูกค้าสะดวกให้ช่างเข้าเช็กคิววันไหนคะ",
+    customer_reply: [
+      `${tier.label} ราคาโปรตามนี้ค่ะ`,
+      ...lines,
+      "ถ้าแอร์ใช้งานปกติ แนะนำเริ่มจากล้างปกติหรือพรีเมียมก็พอค่ะ ลูกค้าสะดวกให้ช่างเข้าเช็กคิววันไหนคะ",
+    ].join("\n"),
+  };
+}
+
 function analyzeThread(messages = [], latestText = "") {
   const inbound = (Array.isArray(messages) ? messages : [])
     .filter((m) => m && m.direction === "inbound" && m.message_text)
@@ -285,6 +343,7 @@ function analyzeThread(messages = [], latestText = "") {
 
   const known = {};
   const has = {};
+  const isPriceQuestion = /ราคา|เท่าไหร่|เท่าไร|กี่บาท|ราคาทั้งหมด|price|cost|how much/i.test(low);
 
   // location / map pin already shared?
   has.location = /https?:\/\/\S*(goo\.gl|maps\.app|google\.[a-z.]+\/maps)/i.test(blob)
@@ -301,9 +360,10 @@ function analyzeThread(messages = [], latestText = "") {
   if (countMatch) { has.count = true; known.aircon_count = Number(countMatch[1]); }
 
   // BTU / size
-  const btuMatch = blob.match(/(\d{4,6})\s*(btu|บีทียู)/i);
-  if (btuMatch) { has.btu = true; known.btu = Number(btuMatch[1]); }
-  if (/\b(9000|12000|18000|24000|36000|48000)\b/.test(blob)) { has.btu = true; }
+  const btuMatch = blob.match(/(\d{1,3}(?:,\d{3})+|\d{4,6})\s*(btu|บีทียู)/i);
+  if (btuMatch) { has.btu = true; known.btu = parseNumberText(btuMatch[1]); }
+  const standaloneBtu = blob.match(/\b(9000|9200|12000|18000|24000|36000|48000)\b/);
+  if (!has.btu && standaloneBtu) { has.btu = true; known.btu = parseNumberText(standaloneBtu[1]); }
 
   // aircon type
   if (/ติดผนัง|ผนัง|wall/i.test(low)) { known.aircon_type = "wall"; has.type = true; }
@@ -316,6 +376,7 @@ function analyzeThread(messages = [], latestText = "") {
   else if (/ซ่อม|เสีย|ไม่เย็น|repair|fix/i.test(low)) { known.service_type = "repair"; has.service = true; }
   else if (/ติดตั้ง|install/i.test(low)) { known.service_type = "install"; has.service = true; }
   else if (/ย้าย|move|relocat/i.test(low)) { known.service_type = "relocate"; has.service = true; }
+  else if (isPriceQuestion && (has.type || has.btu)) { known.service_type = "cleaning"; has.service = true; }
 
   // date / time preference
   const datetimeProbe = low.replace(/ไม่ค่อยเย็น|ไม่เย็น|ลมไม่เย็น|แอร์ไม่เย็น|not cold/gi, " ");
@@ -330,7 +391,7 @@ function analyzeThread(messages = [], latestText = "") {
   let intent = "general";
   if (/ร้องเรียน|ไม่พอใจ|เสียหาย|เคลม|คืนเงิน|refund|police|ตำรวจ|ฟ้อง|lawsuit|ทนาย/i.test(low)) intent = "complaint";
   else if (/แพง|ลด|ส่วนลด|ทำไมราคา|expensive|discount/i.test(low)) intent = "price_objection";
-  else if (/ราคา|เท่าไหร่|เท่าไร|กี่บาท|โปร|price|cost|how much/i.test(low)) intent = "price_question";
+  else if (isPriceQuestion) intent = "price_question";
   else if (/ไม่เย็น|น้ำหยด|รั่ว|เสียงดัง|กลิ่น|เหม็น|error|[eEhHfF]\d/i.test(low)) intent = "repair_symptom";
   else if (/นัด|คิว|ว่าง|จอง|book|appointment|reserve/i.test(low)) intent = "booking";
   else if (/แบบไหน|พรีเมียม|ปกติ|แขวนคอยล์|ตัดล้าง|package/i.test(low)) intent = "package_question";
@@ -354,8 +415,8 @@ function analyzeThread(messages = [], latestText = "") {
   } else if (intent === "price_question" || intent === "package_question" || known.service_type === "cleaning") {
     if (!has.count) missing.push("aircon_count");
     if (!has.type && !has.btu) missing.push("aircon_type_or_btu");
-    if (!has.location && !has.address) missing.push("area_or_location");
-    if (!has.datetime && (has.count || has.location)) missing.push("preferred_datetime");
+    if (!isPriceQuestion && !has.location && !has.address) missing.push("area_or_location");
+    if (!isPriceQuestion && !has.datetime && (has.count || has.location)) missing.push("preferred_datetime");
   } else if (intent === "booking" || stage === "ready_to_book") {
     if (!has.count) missing.push("aircon_count");
     if (!has.datetime) missing.push("preferred_datetime");
@@ -373,6 +434,11 @@ function analyzeThread(messages = [], latestText = "") {
     nextBestAction = "ช่วยคัดกรองอาการเบื้องต้น ไม่ฟันธง แล้วเสนอให้ช่างตรวจเช็ค (ค่าตรวจ 700) พร้อมถามพื้นที่/รุ่นถ้ายังไม่มี";
   } else if (intent === "price_objection") {
     nextBestAction = "ย้ำคุณค่า/มาตรฐานงาน ไม่ลดราคาเอง แล้วพาไปเช็กคิวหรือเริ่มจากแพ็กเกจปกติ";
+  } else if (intent === "price_question") {
+    const quote = buildWallAcPriceQuote(known);
+    nextBestAction = quote
+      ? `ตอบราคาโปรก่อนทันที ห้ามถามวันเวลา/เช็กคิวก่อนตอบราคา ใช้รายการนี้: ${quote.lines.join(" | ")} แล้วปิดการขายด้วย: ${quote.recommendation}`
+      : "ตอบราคาเท่าที่คำนวณได้ก่อน ถ้าขาดจำนวนเครื่องหรือ BTU/ประเภทแอร์ ให้ถามเฉพาะข้อมูลนั้นเพื่อคำนวณราคา ห้ามถามวันเวลา/คิวก่อนตอบราคา";
   } else if (stage === "ready_to_book") {
     nextBestAction = "ข้อมูลพอแล้ว ปิดการขาย: ยืนยันจะเช็กคิวช่างให้ และขอสิ่งที่ขาดชิ้นสุดท้าย (เช่น เบอร์โทร) ถ้ามี";
   } else if (missing.length) {
@@ -388,6 +454,7 @@ function analyzeThread(messages = [], latestText = "") {
     intent,
     sales_stage: stage,
     next_best_action: nextBestAction,
+    price_quote: intent === "price_question" ? buildWallAcPriceQuote(known) : null,
     already_has_location: !!(has.location || has.address),
     inbound_turns: inbound.length,
   };
@@ -402,9 +469,12 @@ function formatThreadAnalysisForPrompt(a = {}) {
       intent: a.intent || "general",
       sales_stage: a.sales_stage || "discovery",
       next_best_action: a.next_best_action || "",
+      price_quote: a.price_quote || null,
       already_has_location: !!a.already_has_location,
     }, null, 2),
     "HARD ANTI-LOOP RULES:",
+    "- If intent is price_question, answer the price FIRST. Do not ask date/time, queue, or booking questions before giving the price, unless aircon_count or aircon_type_or_btu is truly missing.",
+    "- If PRE_COMPUTED_THREAD_ANALYSIS.price_quote is present, use every package line exactly as the price basis, include totals when count is present, then naturally ask for preferred service date/time to close.",
     "- The fields in known_info are ALREADY given by the customer. NEVER ask for any of them again.",
     a.already_has_location
       ? "- Location/address is ALREADY in the thread. Do NOT ask for location/address. Acknowledge it and ask the next missing field instead."
