@@ -3,8 +3,63 @@
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
 
+  function renderTrackingResult() {
+    const state = root.state.tracking;
+    if (state.status === "idle") return root.utils.stateBox("", "กรอกเลขงานหรือรหัสติดตามเพื่อดูสถานะจากระบบ");
+    if (state.status === "loading") return root.utils.stateBox("loading", "กำลังค้นหาสถานะงาน...");
+    if (state.status === "error") return root.utils.stateBox("error", state.error || "ไม่พบข้อมูลงาน");
+    const data = state.data || {};
+    const tech = data.technician || {};
+    const photos = Array.isArray(data.photos) ? data.photos : [];
+    return `
+      <div class="data-list">
+        <div class="data-row">
+          <strong>${root.utils.escapeHtml(data.booking_code || "ไม่พบเลขงาน")}</strong>
+          <span class="muted">สถานะ: ${root.utils.escapeHtml(data.job_status || "-")}</span>
+        </div>
+        <div class="data-row">
+          <strong>${root.utils.escapeHtml(data.job_type || "บริการ CWF")}</strong>
+          <span class="muted">นัดหมาย: ${root.utils.formatDateTime(data.appointment_datetime)}</span>
+        </div>
+        <div class="data-row">
+          <strong>ที่อยู่หน้างาน</strong>
+          <span class="muted">${root.utils.escapeHtml(data.address_text || "-")}</span>
+        </div>
+        <div class="data-row">
+          <strong>ช่างผู้ให้บริการ</strong>
+          <span class="muted">${root.utils.escapeHtml(tech.full_name || tech.username || "รอการมอบหมาย")}</span>
+        </div>
+        <div class="data-row">
+          <strong>หลังจบงาน</strong>
+          <span class="muted">รูปงาน ${photos.length} รายการ ${data.receipt_url ? "และมีใบเสร็จพร้อมดู" : ""}</span>
+        </div>
+      </div>
+    `;
+  }
+
+  async function lookup(container) {
+    const input = container.querySelector("#tracking-code");
+    const q = String(input.value || "").trim();
+    root.state.updateDraft("tracking", { trackingCode: q });
+    if (!q) {
+      root.state.setTracking({ status: "error", data: null, error: "กรุณากรอกเลขงานหรือรหัสติดตาม" });
+      container.querySelector("[data-tracking-result]").innerHTML = renderTrackingResult();
+      return;
+    }
+    root.state.setTracking({ status: "loading", data: null, error: "" });
+    container.querySelector("[data-tracking-result]").innerHTML = renderTrackingResult();
+    try {
+      const data = await root.api.trackBooking(q);
+      root.state.setTracking({ status: "success", data, error: "" });
+    } catch (error) {
+      root.state.setTracking({ status: "error", data: null, error: error.message });
+    }
+    container.querySelector("[data-tracking-result]").innerHTML = renderTrackingResult();
+  }
+
   root.tracking = {
     render(container) {
+      const code = root.state.draft.tracking.trackingCode || "";
       container.innerHTML = `
         <section class="screen">
           <div class="hero">
@@ -14,11 +69,15 @@
           <section class="card">
             <div class="field">
               <label for="tracking-code">เลขงาน / รหัสติดตาม</label>
-              <input id="tracking-code" class="input" placeholder="เช่น CWFXXXXXXX" disabled>
+              <input id="tracking-code" class="input" placeholder="เช่น CWFXXXXXXX" value="${root.utils.escapeHtml(code)}">
             </div>
             <div class="button-row">
-              <button class="disabled-btn" type="button" disabled>ตรวจสอบสถานะงาน</button>
+              <button class="secondary-btn" type="button" data-action="track-read">ตรวจสอบสถานะงาน</button>
             </div>
+          </section>
+          <section class="card">
+            <h2>ผลการติดตาม</h2>
+            <div data-tracking-result>${renderTrackingResult()}</div>
           </section>
           <section class="card">
             <h2>สถานะจองล่วงหน้า</h2>
@@ -40,22 +99,13 @@
               { title: "ยกเลิก / หมดเวลา", copy: "แสดงเมื่อคำขอหมดอายุหรือถูกยกเลิก", kind: "muted" },
             ])}
           </section>
-          <section class="tracking-card">
-            <h3>ข้อมูลช่างผู้ให้บริการ</h3>
-            <p class="muted">เมื่อมีช่างรับงาน ลูกค้าจะเห็นข้อมูลที่จำเป็นสำหรับติดตามงานและติดต่อช่วยเหลือ</p>
-          </section>
-          <section class="card">
-            <h2>หลังจบงาน</h2>
-            <div class="tag-row">
-              <span class="tag">ใบเสร็จ</span>
-              <span class="tag">รูปงาน</span>
-              <span class="tag">รีวิว</span>
-              <span class="tag">จองซ้ำ</span>
-            </div>
-          </section>
           ${root.ui.supportButtons()}
         </section>
       `;
+      container.querySelector("[data-action='track-read']").addEventListener("click", () => lookup(container));
+      container.querySelector("#tracking-code").addEventListener("change", (event) => {
+        root.state.updateDraft("tracking", { trackingCode: event.target.value });
+      });
     },
   };
 })();

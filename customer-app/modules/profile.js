@@ -3,6 +3,25 @@
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
 
+  function renderSavedAddress() {
+    const customer = root.state.customer;
+    if (!customer) return root.utils.stateBox("loading", "กำลังโหลดข้อมูลบัญชี...");
+    if (!customer.logged_in) return root.utils.stateBox("", "ใช้งานแบบ Guest ยังไม่มีที่อยู่ที่บันทึกไว้");
+    const profile = customer.profile || {};
+    return `
+      <div class="data-list">
+        <div class="data-row">
+          <strong>ที่อยู่</strong>
+          <span class="muted">${root.utils.escapeHtml(profile.address || "ยังไม่มีที่อยู่ที่บันทึกไว้")}</span>
+        </div>
+        <div class="data-row">
+          <strong>แผนที่</strong>
+          <span class="muted">${root.utils.escapeHtml(profile.maps_url || "ยังไม่มีลิงก์แผนที่")}</span>
+        </div>
+      </div>
+    `;
+  }
+
   root.profile = {
     render(container) {
       container.innerHTML = `
@@ -18,7 +37,7 @@
           </section>
           <section class="card">
             <h2>ที่อยู่ที่บันทึกไว้</h2>
-            <p class="muted">เก็บที่อยู่และตำแหน่งหน้างานสำหรับการจองครั้งถัดไป</p>
+            <div data-profile-address>${renderSavedAddress()}</div>
           </section>
           <section class="card">
             <h2>ประวัติและจองซ้ำ</h2>
@@ -31,6 +50,10 @@
           ${root.ui.supportButtons()}
         </section>
       `;
+      root.auth.loadCustomer(container).then(() => {
+        const mount = container.querySelector("[data-profile-address]");
+        if (mount) mount.innerHTML = renderSavedAddress();
+      });
     },
   };
 })();

@@ -8,10 +8,29 @@
     bookingMode: null,
     guestMode: true,
     selectedService: null,
+    customer: null,
+    catalog: { status: "idle", items: [], error: "" },
+    promotions: { status: "idle", items: [], error: "" },
+    zones: { status: "idle", items: [], error: "" },
+    scheduledPreview: {
+      pricing: { status: "idle", data: null, error: "" },
+      availability: { status: "idle", data: null, error: "" },
+    },
+    tracking: { status: "idle", data: null, error: "" },
     draft: {
-      scheduled: {},
+      scheduled: {
+        job_type: "ล้าง",
+        ac_type: "ผนัง",
+        wash_variant: "ล้างธรรมดา",
+        btu: 12000,
+        machine_count: 1,
+        date: new Date().toISOString().slice(0, 10),
+        tech_type: "company",
+      },
       urgent: {},
-      trackingCode: "",
+      tracking: {
+        trackingCode: "",
+      },
     },
     init() {
       this.currentRoute = this.readRouteFromHash();
@@ -29,6 +48,24 @@
     updateDraft(scope, patch) {
       this.draft[scope] = {
         ...(this.draft[scope] || {}),
+        ...(patch || {}),
+      };
+    },
+    setCollection(name, patch) {
+      this[name] = {
+        ...(this[name] || {}),
+        ...(patch || {}),
+      };
+    },
+    setScheduledPreview(name, patch) {
+      this.scheduledPreview[name] = {
+        ...(this.scheduledPreview[name] || {}),
+        ...(patch || {}),
+      };
+    },
+    setTracking(patch) {
+      this.tracking = {
+        ...(this.tracking || {}),
         ...(patch || {}),
       };
     },

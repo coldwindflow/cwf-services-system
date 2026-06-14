@@ -10,7 +10,7 @@
     // 3. If no partner accepts within timeout, go to Admin Fallback.
     // 4. Admin may help, convert to scheduled booking, or assign company technician manually.
     // 5. Company technicians are not automatic first-round urgent dispatch.
-    // Phase 1.1 must not implement real urgent dispatch.
+    // Phase 2A must not implement real urgent dispatch.
     render(container) {
       container.innerHTML = `
         <section class="screen">
