@@ -9,7 +9,7 @@
       return `
         <section class="card">
           <h2>ประเมินราคา</h2>
-          <p class="muted">Phase 2 จะเชื่อมต่อ /public/pricing_preview เพื่อใช้ราคาจาก backend เท่านั้น</p>
+          <p class="muted">ลูกค้าจะเห็นราคาประมาณการก่อนยืนยันการจอง</p>
         </section>
       `;
     },

@@ -3,7 +3,7 @@
 Date: 2026-06-15
 Branch: `feature/customer-app-v2-spec-and-skeleton`
 
-Phase 1 is skeleton-only. It does not implement real booking, real urgent dispatch, backend route changes, service worker changes, migrations, payment, accounting, tax, payout, receipt mutation, or production tracking logic.
+Phase 1 and Phase 1.1 are skeleton-only. They do not implement real booking, real urgent dispatch, backend route changes, service worker changes, migrations, payment, accounting, tax, payout, receipt mutation, or production tracking logic.
 
 ## What Was Created
 
@@ -14,14 +14,24 @@ Phase 1 is skeleton-only. It does not implement real booking, real urgent dispat
 
 The app is intentionally viewable by opening `customer-app/index.html` directly. The modules attach to `window.CWFCustomerAppV2` instead of using browser ES module imports, so file-open testing does not require a local server.
 
+## Phase 1.1 UI Polish
+
+- Reworked visible copy to be customer-facing Thai instead of developer-facing implementation notes.
+- Improved mobile wrapping rules with viewport-safe width, `box-sizing`, `min-width: 0`, responsive buttons, and `overflow-wrap`.
+- Updated bottom navigation to four customer tabs: `หน้าแรก`, `จองคิว`, `ติดตาม`, `บัญชี`.
+- Improved the Home screen with clearer primary actions and trust/proof content.
+- Improved Booking Mode cards so scheduled booking and urgent booking are visually distinct and easy to understand quickly.
+- Improved the Urgent Waiting Room to feel active and customer-friendly while still clearly not confirming the job before acceptance.
+- Kept all real submit, login, tracking, pricing, and availability actions disabled.
+
 ## Screen Map
 
-- Home: CWF brand header, main actions, guest-friendly copy, secondary login panel.
+- Home: CWF brand header, primary actions, guest-friendly copy, trust/proof section, secondary login panel.
 - Booking Mode Selection: scheduled booking and urgent booking cards.
-- Scheduled Booking Skeleton: service/problem chooser, AC details, address/map, date/slot, price estimate, review/confirm placeholders.
-- Urgent Booking Skeleton: symptom, address/map, photo/video, partner-first explanation, Waiting Room, timeout, admin fallback, and convert-to-scheduled placeholders.
-- Tracking Skeleton: booking code/token input, scheduled timeline, urgent timeline, technician card, support, receipt/photos/review/rebook placeholders.
-- Profile Skeleton: guest mode, LINE login placeholder, Google login placeholder, saved address, history, and rebook placeholders.
+- Scheduled Booking Skeleton: service/problem chooser, AC details, address/map, date/slot, price estimate, review/confirm.
+- Urgent Booking Skeleton: symptom, address/map, photo/video, partner-first explanation, Waiting Room, timeout, admin fallback, and convert-to-scheduled.
+- Tracking Skeleton: booking code/token input, scheduled timeline, urgent timeline, technician card, support, receipt/photos/review/rebook.
+- Profile Skeleton: guest mode, LINE login, Google login, saved address, history, and rebook.
 
 ## Module Responsibilities
 
@@ -29,7 +39,7 @@ The app is intentionally viewable by opening `customer-app/index.html` directly.
 - `modules/state.js`: central in-memory skeleton state.
 - `modules/router.js`: hash navigation and nav state.
 - `modules/api.js`: placeholder API functions only; no real booking/tracking calls.
-- `modules/auth.js`: login/profile panel placeholders.
+- `modules/auth.js`: login/profile panel skeleton.
 - `modules/services.js`: static copy and step definitions.
 - `modules/bookingScheduled.js`: scheduled booking skeleton and rules.
 - `modules/bookingUrgent.js`: partner-first urgent skeleton and rules.
@@ -45,10 +55,10 @@ The app is intentionally viewable by opening `customer-app/index.html` directly.
 - Real booking submission is disabled.
 - Real urgent request submission is disabled.
 - Real tracking lookup is disabled.
-- LINE Login is a placeholder.
-- Google Login is a placeholder.
-- Price estimate and availability slots are placeholders.
-- Waiting Room timeout and admin fallback are placeholders.
+- LINE Login is disabled.
+- Google Login is disabled.
+- Price estimate and availability slots are not connected to backend data.
+- Waiting Room timeout and admin fallback are visual skeleton states only.
 
 ## Phase 2 API Integration Points
 

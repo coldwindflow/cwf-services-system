@@ -8,8 +8,8 @@
     renderSlotPlaceholder() {
       return `
         <section class="card">
-          <h2>เวลาว่าง</h2>
-          <p class="muted">Phase 2 จะเชื่อมต่อ /public/availability_v2 เพื่อแสดงเวลาที่มีช่างว่างจริง</p>
+          <h2>เวลาว่างของช่าง</h2>
+          <p class="muted">ลูกค้าจะเลือกวันและเวลาที่มีช่างพร้อมให้บริการ</p>
         </section>
       `;
     },

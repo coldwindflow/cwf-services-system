@@ -8,13 +8,17 @@
       container.innerHTML = `
         <section class="screen">
           <div class="hero">
-            <h2>โปรไฟล์ลูกค้า</h2>
-            <p>ใช้แบบ Guest ได้ก่อน Login จะช่วยจำที่อยู่ ประวัติ และจองซ้ำใน Phase ถัดไป</p>
+            <h2>บัญชีลูกค้า</h2>
+            <p>ใช้งานแบบ Guest ได้ก่อน เมื่อล็อกอินแล้วจะช่วยจำที่อยู่ ดูประวัติ และจองซ้ำได้สะดวกขึ้น</p>
           </div>
           ${root.auth.renderLoginPanel()}
           <section class="card">
+            <h2>โหมด Guest</h2>
+            <p class="muted">ลูกค้าสามารถเริ่มจองและติดตามงานได้ โดยไม่ต้องเข้าสู่ระบบตั้งแต่หน้าแรก</p>
+          </section>
+          <section class="card">
             <h2>ที่อยู่ที่บันทึกไว้</h2>
-            <p class="muted">Placeholder สำหรับที่อยู่ แผนที่ และข้อมูลติดต่อ</p>
+            <p class="muted">เก็บที่อยู่และตำแหน่งหน้างานสำหรับการจองครั้งถัดไป</p>
           </section>
           <section class="card">
             <h2>ประวัติและจองซ้ำ</h2>

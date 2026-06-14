@@ -8,10 +8,10 @@
       return `
         <section class="card">
           <h2>บัญชีลูกค้า</h2>
-          <p class="muted">เริ่มจองแบบ Guest ได้ก่อน Login ใช้สำหรับบันทึกที่อยู่ ดูประวัติ และจองซ้ำใน Phase ถัดไป</p>
+          <p class="muted">เริ่มจองแบบ Guest ได้ก่อน เข้าสู่บัญชีเมื่อพร้อมเพื่อบันทึกที่อยู่ ดูประวัติ และจองซ้ำได้เร็วขึ้น</p>
           <div class="button-row">
-            <button class="secondary-btn" type="button" disabled>LINE Login Placeholder</button>
-            <button class="secondary-btn" type="button" disabled>Google Login Placeholder</button>
+            <button class="secondary-btn" type="button" disabled>เข้าสู่ระบบด้วย LINE</button>
+            <button class="secondary-btn" type="button" disabled>เข้าสู่ระบบด้วย Google</button>
           </div>
         </section>
       `;
