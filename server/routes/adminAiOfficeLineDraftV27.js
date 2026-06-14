@@ -8,6 +8,7 @@ const {
   detectThreadLanguage,
   buildReplyDecisionGuard,
   formatReplyDecisionGuardForPrompt,
+  enforceRepairCheckReply,
 } = require("../aiOfficeCoreBrain");
 
 const DEFAULT_MODEL = "gpt-4.1-mini";
@@ -34,10 +35,10 @@ function detectLanguage(text) {
 function inferSituation(text) {
   const s = String(text || "").toLowerCase();
   if (/แพง|ลด|ส่วนลด|ทำไมราคา/.test(s)) return "expensive";
+  if (/น้ำหยด|หยดน้ำ|น้ำรั่วจากแอร์|แอร์น้ำรั่ว/.test(s)) return "water_leak_cleaning";
   if (/ราคา|เท่าไหร่|กี่บาท|price|cost/.test(s)) return "price_question";
   if (/กลิ่น|เหม็น|อับ/.test(s)) return "bad_smell";
   if (/ไม่เย็น|ไม่ค่อยเย็น|ลมไม่เย็น/.test(s)) return "air_not_cold";
-  if (/น้ำหยด|หยดน้ำ|รั่ว/.test(s)) return "water_leak";
   if (/นัด|คิว|ว่าง|วันไหน|เวลา/.test(s)) return "appointment";
   if (/ล้างแบบ|แบบไหน|พรีเมียม|ปกติ|แขวนคอยล์|ตัดล้าง/.test(s)) return "cleaning_package";
   return "general";
@@ -252,7 +253,8 @@ function applyThaiReplyTone(text) {
 
 function fallbackReply(selectedQuestion) {
   const q = String(selectedQuestion || "");
-  if (/ไม่เย็น|ซ่อม|น้ำหยด|รั่ว|เสียงดัง|error|เสีย/.test(q)) return applyThaiReplyTone("อาการนี้ต้องให้ช่างเช็กหน้างานก่อนค่ะ ยังไม่ฟันธงว่าอะไหล่ตัวไหนเสียได้ ค่าตรวจเช็ก 700 บาท รบกวนแจ้งพื้นที่หรือโลเคชัน และอาการหลักที่เจอได้เลยค่ะ");
+  if (/น้ำหยด|หยดน้ำ|น้ำรั่วจากแอร์|แอร์น้ำรั่ว/.test(q)) return applyThaiReplyTone("อาการแอร์น้ำหยด เบื้องต้นแนะนำแขวนคอยล์ก่อนค่ะ เพราะมักมีคราบฝังลึก เชื้อรา หรือคราบสะสมบริเวณถาดหลัง/ซอกด้านในที่ล้างปกติออกได้ค่อนข้างยาก รบกวนแจ้ง BTU จำนวนเครื่อง และพื้นที่ เดี๋ยวแอดมินคำนวณราคาและเช็กคิวให้ค่ะ");
+  if (/ไม่เย็น|ซ่อม|รั่ว|เสียงดัง|error|เสีย/.test(q)) return applyThaiReplyTone("อาการนี้ต้องให้ช่างเช็กหน้างานก่อนค่ะ ยังไม่ฟันธงว่าอะไหล่ตัวไหนเสียได้ ค่าตรวจเช็กซ่อม 700 บาท และค่าตรวจนำไปหักลดค่าซ่อมได้ ใช้กับเคสแอร์เสีย/แอร์มีปัญหาที่ไม่ใช่น้ำหยดนะคะ รบกวนแจ้งพื้นที่หรือโลเคชัน และอาการหลักที่เจอได้เลยค่ะ");
   if (/กลิ่น|เหม็น|อับ/.test(q)) return applyThaiReplyTone("สวัสดีค่ะ ถ้าแอร์เริ่มมีกลิ่นอับแต่ยังเย็นปกติ เบื้องต้นแนะนำล้างพรีเมียมค่ะ รบกวนแจ้งขนาด BTU จำนวนเครื่อง และพื้นที่ให้แอดมินเช็กคิวให้นะคะ 🙏");
   if (/ราคา|เท่าไหร่|กี่บาท/.test(q)) return applyThaiReplyTone("สวัสดีค่ะ ราคาล้างแอร์ผนังเริ่มต้น 550 บาทค่ะ รบกวนแจ้งขนาด BTU จำนวนเครื่อง และพื้นที่ให้แอดมินเช็กคิวให้นะคะ 🙏");
   return applyThaiReplyTone("สวัสดีค่ะ รบกวนแจ้งรายละเอียดเพิ่มเติมนิดนึงนะคะ เดี๋ยวแอดมินช่วยตรวจสอบและแนะนำให้เหมาะกับหน้างานค่ะ 🙏");
@@ -271,9 +273,26 @@ function enforcePriceQuoteReply(reply, threadAnalysis = {}) {
   const quote = threadAnalysis && threadAnalysis.price_quote;
   if (!quote || !quote.customer_reply) return reply;
   const text = cleanText(reply, 2400);
+  const hasNum = (n) => n && (text.includes(Number(n).toLocaleString("th-TH")) || text.includes(String(n)));
   const requiredTotals = (quote.packages || []).map((p) => p.total).filter(Boolean);
-  const hasAllTotals = requiredTotals.every((n) => text.includes(Number(n).toLocaleString("th-TH")) || text.includes(String(n)));
-  return hasAllTotals ? reply : applyThaiReplyTone(quote.customer_reply);
+  const requiredUnits = (quote.packages || []).map((p) => p.unit_price).filter(Boolean);
+  let priceOk;
+  if (requiredTotals.length) {
+    // มียอดรวม (รู้จำนวนเครื่อง) → คำตอบต้องมียอดรวมครบทุกแพ็กเกจ
+    priceOk = requiredTotals.every(hasNum);
+  } else {
+    // ไม่มียอดรวม → คำตอบต้องมีราคาต่อเครื่องครบทุกแพ็กเกจที่ระบบคำนวณได้
+    priceOk = requiredUnits.length ? requiredUnits.every(hasNum) : true;
+  }
+  const mustExplainPackages = quote.require_package_explanations === true || (quote.packages || []).some((p) => p.detail);
+  const explanationOk = !mustExplainPackages || [
+    /ล้างฟิลเตอร์|คอยล์เย็น|คอยล์ร้อน|ท่อน้ำทิ้ง/i,
+    /ถอดรางน้ำทิ้ง|โพรงกระรอก|ล้างละเอียด/i,
+    /ถอดแผงไฟ|ถาดหลัง|แขวนคอยล์|ยก\/แขวนคอยล์/i,
+    /ถอดล้างทั้งตัว|ครบระบบ|ตัดล้างใหญ่/i,
+  ].every((re) => re.test(text));
+  priceOk = priceOk && explanationOk;
+  return priceOk ? reply : applyThaiReplyTone(quote.customer_reply);
 }
 async function saveDraft(pool, req, payload) {
   await ensureLineDraftMemorySchema(pool);
@@ -389,10 +408,10 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
         "Return strict JSON only with keys: customer_reply, admin_summary, known_info, missing_info, next_best_action, next_step, customer_language, is_foreign_customer, original_message, thai_translation.",
         "selected_customer_question is the MAIN customer turn, but answer from the whole LINE thread. Treat prior LINE messages as known_info and do not ask for information already given.",
         "A PRE_COMPUTED_THREAD_ANALYSIS block is provided. Its known_info / missing_info / next_best_action are authoritative. Obey them: never ask for anything in known_info; ask only missing_info (max 1-2); follow next_best_action.",
-        "PRICE_QUESTION_RULE: if intent is price_question or the customer asks price/how much/ราคาทั้งหมด, answer the price before asking date/time, queue, or booking. If price_quote exists, include every package line and total first, recommend a package, then ask preferred date/time to close.",
+        "PRICE_QUESTION_RULE: if intent is price_question or the customer asks price/how much/ราคาทั้งหมด, answer the price before asking date/time, queue, or booking. If price_quote exists, include every package line exactly, include totals when present, and explain the difference of each cleaning package before recommending a package.",
         "Do not answer from the latest customer message alone if selected_customer_question exists.",
         thaiToneInstruction(),
-        "No headings, no bullets, no report format, no JSON visible inside customer_reply. Normally 1 short bubble.",
+        "No headings, no report format, no JSON visible inside customer_reply. Bullets are allowed for price_quote because customer must see all packages and service differences.",
         "Never re-ask for location/address/map if already_has_location is true — acknowledge it warmly ('ได้รับโลเคชั่นแล้วค่ะ') and ask the next missing field or move to checking the queue.",
         "Every reply must move the sale one concrete step forward (price→count/area/time, symptom→inspection, booking→missing field, location→time/count). Avoid textbook explanations with no next step.",
         "Do not claim any LINE message was sent or any booking/status was created. Do not promise discounts, tax invoices, or a firm diagnosis.",
@@ -426,9 +445,9 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
         })), null, 2),
         "",
         "TASK:",
-        "Create one natural customer_reply that moves the sale forward. First infer known_info/missing_info internally. For price_question, answer price first and do not ask schedule before the price. Ask only 1-2 truly missing things. If info is enough, close toward booking/check queue. Do not show internal metadata in customer_reply.", "",
+        "Create one natural customer_reply that moves the sale forward. First infer known_info/missing_info internally. For price_question, answer price first, include all computed packages with totals and service differences, and do not ask schedule before the price. Ask only 1-2 truly missing things. If info is enough, close toward booking/check queue. Do not show internal metadata in customer_reply.", "",
         "CWF facts:",
-        JSON.stringify({ wall_under_12000: { normal:550, premium:790, hanging_coil:1290, deep_clean:1850 }, wall_18000_up: { normal:690, premium:990, hanging_coil:1550, deep_clean:2150 }, check_fee:700, warranty_cleaning_days:30, services:["ล้างแอร์","ซ่อมแอร์","ติดตั้งแอร์","ตรวจเช็คแอร์"] }, null, 2)
+        JSON.stringify({ wall_under_15000: { normal:550, premium:790, hanging_coil:1290, deep_clean:1850 }, wall_over_15000: { normal:690, premium:990, hanging_coil:1550, deep_clean:2150 }, check_fee:700, warranty_cleaning_days:30, services:["ล้างแอร์","ซ่อมแอร์","ติดตั้งแอร์","ตรวจเช็คแอร์"] }, null, 2)
       ].join("\n");
 
       let raw = "";
@@ -440,7 +459,7 @@ module.exports = function createAdminAiOfficeLineDraftV27Routes(deps = {}) {
 
       let parsed = {};
       try { parsed = JSON.parse(raw); } catch (_) { parsed = { customer_reply: raw }; }
-      const customerReply = enforcePriceQuoteReply(sanitizeCustomerReply(parsed.customer_reply, selectedQuestion), threadAnalysis);
+      const customerReply = enforceRepairCheckReply(enforcePriceQuoteReply(sanitizeCustomerReply(parsed.customer_reply, selectedQuestion), threadAnalysis), threadAnalysis);
       // Merge model output with deterministic analysis: computed facts are the floor,
       // so the admin always sees correct known/missing even if the model under-reports.
       const mergedKnown = Object.assign({}, threadAnalysis.known_info || {}, (parsed.known_info && typeof parsed.known_info === "object" ? parsed.known_info : {}));

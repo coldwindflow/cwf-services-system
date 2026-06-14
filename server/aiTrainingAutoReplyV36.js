@@ -12,6 +12,7 @@ const {
   buildReplyDecisionGuard,
   formatReplyDecisionGuardForPrompt,
   boolValue,
+  enforceRepairCheckReply,
 } = require("./aiOfficeCoreBrain");
 const {
   createReplyExample,
@@ -58,9 +59,10 @@ function parseSettingValue(value, fallback = null) {
 function inferSituation(text = "") {
   const s = String(text || "").toLowerCase();
   if (/แพง|ลด|ส่วนลด|ทำไมราคา|expensive|discount/.test(s)) return "expensive";
+  if (/น้ำหยด|หยดน้ำ|น้ำรั่วจากแอร์|แอร์น้ำรั่ว/.test(s)) return "water_leak_cleaning";
   if (/ราคา|เท่าไหร่|กี่บาท|โปร|promotion|price|cost/.test(s)) return "price_question";
   if (/กลิ่น|เหม็น|อับ/.test(s)) return "bad_smell";
-  if (/ไม่เย็น|ไม่ค่อยเย็น|ลมไม่เย็น|น้ำหยด|หยดน้ำ|รั่ว|เสียงดัง|เสีย|ซ่อม|error|e\d|h\d|f\d/.test(s)) return "repair_symptom";
+  if (/ไม่เย็น|ไม่ค่อยเย็น|ลมไม่เย็น|รั่ว|เสียงดัง|เสีย|ซ่อม|error|e\d|h\d|f\d/.test(s)) return "repair_symptom";
   if (/นัด|คิว|ว่าง|วันไหน|เวลา|จอง|วันนี้|พรุ่งนี้|appointment|booking/.test(s)) return "appointment";
   if (/ล้างแบบ|แบบไหน|พรีเมียม|ปกติ|แขวนคอยล์|ตัดล้าง/.test(s)) return "cleaning_package";
   if (/โวย|ร้องเรียน|ไม่พอใจ|เสียหาย|ช้า|แย่|refund|police|lawsuit/.test(s)) return "complaint";
@@ -88,9 +90,26 @@ function enforcePriceQuoteReply(reply, threadAnalysis = {}) {
   const quote = threadAnalysis && threadAnalysis.price_quote;
   if (!quote || !quote.customer_reply) return reply;
   const text = cleanText(reply, 2400);
+  const hasNum = (n) => n && (text.includes(Number(n).toLocaleString("th-TH")) || text.includes(String(n)));
   const requiredTotals = (quote.packages || []).map((p) => p.total).filter(Boolean);
-  const hasAllTotals = requiredTotals.every((n) => text.includes(Number(n).toLocaleString("th-TH")) || text.includes(String(n)));
-  return hasAllTotals ? reply : quote.customer_reply;
+  const requiredUnits = (quote.packages || []).map((p) => p.unit_price).filter(Boolean);
+  let priceOk;
+  if (requiredTotals.length) {
+    // มียอดรวม (รู้จำนวนเครื่อง) → คำตอบต้องมียอดรวมครบทุกแพ็กเกจ
+    priceOk = requiredTotals.every(hasNum);
+  } else {
+    // ไม่มียอดรวม → คำตอบต้องมีราคาต่อเครื่องครบทุกแพ็กเกจที่ระบบคำนวณได้
+    priceOk = requiredUnits.length ? requiredUnits.every(hasNum) : true;
+  }
+  const mustExplainPackages = quote.require_package_explanations === true || (quote.packages || []).some((p) => p.detail);
+  const explanationOk = !mustExplainPackages || [
+    /ล้างฟิลเตอร์|คอยล์เย็น|คอยล์ร้อน|ท่อน้ำทิ้ง/i,
+    /ถอดรางน้ำทิ้ง|โพรงกระรอก|ล้างละเอียด/i,
+    /ถอดแผงไฟ|ถาดหลัง|แขวนคอยล์|ยก\/แขวนคอยล์/i,
+    /ถอดล้างทั้งตัว|ครบระบบ|ตัดล้างใหญ่/i,
+  ].every((re) => re.test(text));
+  priceOk = priceOk && explanationOk;
+  return priceOk ? reply : quote.customer_reply;
 }
 
 function callOpenAI({ apiKey, model, messages }) {
@@ -523,7 +542,7 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
     "Return strict JSON only.",
     "JSON keys: customer_reply, confidence, decision, decision_reason, known_info, missing_info, next_best_action, skill_category, should_auto_reply, service_type.",
     "A PRE_COMPUTED_THREAD_ANALYSIS block is provided. Its known_info / missing_info / next_best_action are authoritative: never ask for anything in known_info, ask only missing_info (max 1-2), follow next_best_action.",
-    "PRICE_QUESTION_RULE: if intent is price_question or the customer asks price/how much/ราคาทั้งหมด, answer the price before asking for date/time or queue. If price_quote exists, include all package lines and totals first, then close naturally toward checking schedule.",
+    "PRICE_QUESTION_RULE: if intent is price_question or the customer asks price/how much/ราคาทั้งหมด, answer the price before asking for date/time or queue. If price_quote exists, include every package line exactly, include totals when present, and explain the difference of each cleaning package before closing toward checking schedule.",
     "Use CWF Core Brain and CWF Professional Sales Admin Brain v2.8 as the shared source of truth before any role-specific behavior.",
     "Do not invent booking confirmation, queue availability, payment, discount, tax invoice, or repair diagnosis.",
     "Real CWF admin style: natural, concise, warm, 1 short bubble, not robotic, and always move the sale one concrete step forward. Infer known_info from the full thread first.",
@@ -539,11 +558,11 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
     "RECENT_LINE_CONTEXT:", JSON.stringify({ display_name: conversation?.display_name || "", messages: messages.map((m) => ({ direction: m.direction, text: m.message_text, at: m.received_at || m.created_at })).slice(-20) }, null, 2), "",
     "APPROVED_SHARED_REPLY_EXAMPLES:", JSON.stringify(examples.map((e) => ({ id: e.id, situation_type: e.situation_type, customer_message: e.customer_message, final_admin_reply: e.final_admin_reply, language: e.language, service_type: e.service_type, tags: e.tags })), null, 2), "",
     "TASK:",
-    "Auto Internal Training must create the answer immediately for later review. It should look like a real chat reply, not an AI report. First infer known_info/missing_info and next_best_action from RECENT_LINE_CONTEXT. For price_question, answer price first and never ask schedule before the price. Ask only 1-2 missing fields; if info is enough, close toward booking/check queue.", "",
+    "Auto Internal Training must create the answer immediately for later review. It should look like a real chat reply, not an AI report. First infer known_info/missing_info and next_best_action from RECENT_LINE_CONTEXT. For price_question, answer price first with all computed packages, totals, and service differences; never ask schedule before the price. Ask only 1-2 missing fields; if info is enough, close toward booking/check queue.", "",
     formatReplyDecisionGuardForPrompt(replyGuard), "",
     "CWF_STATIC_SAFETY_FACTS:", JSON.stringify({
       services: ["ล้างแอร์", "ซ่อมแอร์", "ติดตั้งแอร์", "ตรวจเช็คแอร์"],
-      rainy_promo: { wall_under_12000: { normal: 550, premium: 790, hanging_coil: 1290, deep_clean: 1850 }, wall_18000_up: { normal: 690, premium: 990, hanging_coil: 1550, deep_clean: 2150 } },
+      rainy_promo: { wall_under_15000: { normal: 550, premium: 790, hanging_coil: 1290, deep_clean: 1850 }, wall_over_15000: { normal: 690, premium: 990, hanging_coil: 1550, deep_clean: 2150 } },
       check_fee: 700,
       cleaning_warranty_days: 30,
       tax_invoice: "currently_not_available_do_not_offer_unless_customer_asks_then_say_not_available",
@@ -562,7 +581,7 @@ async function buildAndSaveInternalAnswer(pool, input = {}) {
   let parsed = {};
   try { parsed = JSON.parse(raw); } catch (_) { parsed = { customer_reply: raw, confidence: 45, decision: "ต้องตรวจ", decision_reason: "AI returned non JSON" }; }
   const confidence = clamp(parsed.confidence, 0, 100, 45);
-  const aiReply = enforcePriceQuoteReply(sanitizeCustomerReply(parsed.customer_reply || ""), threadAnalysis);
+  const aiReply = enforceRepairCheckReply(enforcePriceQuoteReply(sanitizeCustomerReply(parsed.customer_reply || ""), threadAnalysis), threadAnalysis);
   const decision = normalizeDecision(parsed.decision, confidence);
   const status = decision === "AI ยังไม่รู้" ? "needs_teacher" : "pending_review";
   const autoAnswer = await saveAutoAnswer(pool, {

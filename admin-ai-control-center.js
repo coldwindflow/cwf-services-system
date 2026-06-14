@@ -398,19 +398,16 @@
       .tc5-right-scroll{flex:1;overflow-y:auto;padding:12px;scrollbar-width:thin;scrollbar-color:var(--hair) transparent}
 
       /* Skill bars */
-      .tc5-skill-item{margin-bottom:8px;padding:9px 10px;border-radius:var(--r12);background:var(--paper);border:1px solid var(--hair)}
-      .tc5-skill-head{display:flex;align-items:center;justify-content:space-between;gap:6px;margin-bottom:5px}
-      .tc5-skill-label{font-size:12px;font-weight:700;color:var(--ink);line-height:1.25}
-      .tc5-skill-pct{font-size:12px;font-weight:800}
-      .tc5-skill-bar-bg{height:6px;background:var(--hair);border-radius:999px;overflow:hidden}
-      .tc5-skill-bar-fill{height:100%;border-radius:999px;transition:width .5s ease}
-      .tc5-skill-foot{display:flex;align-items:center;justify-content:space-between;margin-top:5px}
-      .tc5-skill-ready{display:inline-flex;padding:2px 7px;border-radius:999px;font-size:9.5px;font-weight:700;border:1px solid}
-      .tc5-skill-ready.r4{background:var(--ok-w);color:var(--ok);border-color:rgba(22,163,74,.18)}
-      .tc5-skill-ready.r3{background:rgba(20,184,166,.07);color:#0f766e;border-color:rgba(20,184,166,.18)}
-      .tc5-skill-ready.r2{background:var(--warn-w);color:var(--warn);border-color:rgba(217,119,6,.18)}
-      .tc5-skill-ready.r1{background:var(--danger-w);color:var(--danger);border-color:rgba(220,38,38,.15)}
-      .tc5-skill-sub{font-size:9.5px;font-weight:600;color:var(--ink3)}
+      .tc5-skill-item{margin-bottom:6px;padding:9px 10px;border-radius:var(--r12);background:var(--paper);border:1px solid var(--hair)}
+      .tc5-skill-label{font-size:12px;font-weight:700;color:var(--ink);line-height:1.25;margin-bottom:5px}
+      .tc5-skill-counters{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+      .tc5-cnt{display:inline-flex;align-items:center;padding:2px 7px;border-radius:999px;font-size:10px;font-weight:700;border:1px solid}
+      .tc5-cnt.ok{background:var(--ok-w);color:var(--ok);border-color:rgba(22,163,74,.2)}
+      .tc5-cnt.bad{background:var(--danger-w);color:var(--danger);border-color:rgba(220,38,38,.2)}
+      .tc5-cnt.unk{background:rgba(124,58,237,.06);color:#7c3aed;border-color:rgba(124,58,237,.18)}
+      .tc5-cnt.lesson{background:var(--brand-w);color:var(--brand);border-color:rgba(18,87,214,.18)}
+      .tc5-cnt.nodata{background:var(--paper);color:var(--ink3);border-color:var(--hair)}
+      .tc5-skill-passrate{margin-top:5px;font-size:10px;font-weight:700;color:var(--ink3)}
       .tc5-brain-note{border-radius:var(--r12);background:linear-gradient(135deg,rgba(18,87,214,.06),rgba(13,148,136,.06));border:1px solid rgba(18,87,214,.12);padding:10px 12px;margin-top:8px;font-size:11.5px;font-weight:700;color:var(--brand);line-height:1.5}
 
       /* Teach form — right panel */
@@ -1062,35 +1059,17 @@
   }
   function inferTrainingSituation(text){
     const t = String(text || '').toLowerCase();
+    if (/น้ำหยด|หยดน้ำ|น้ำรั่วจากแอร์|แอร์น้ำรั่ว/.test(t)) return 'water_leak_cleaning';
     if (/ราคา|เท่าไหร่|กี่บาท|โปร|promotion|price/.test(t)) return 'price_question';
     if (/คิว|ว่าง|นัด|จอง|พรุ่งนี้|วันนี้|เวลา/.test(t)) return 'appointment';
-    if (/ไม่เย็น|น้ำหยด|รั่ว|เสียงดัง|กลิ่น|เสีย|ซ่อม|error|e\d|h\d|f\d/.test(t)) return 'repair_symptom';
+    if (/ไม่เย็น|รั่ว|เสียงดัง|กลิ่น|เสีย|ซ่อม|error|e\d|h\d|f\d/.test(t)) return 'repair_symptom';
     if (/แพง|ลด|ถูกกว่า|ส่วนลด/.test(t)) return 'expensive';
     if (/โวย|ร้องเรียน|ไม่พอใจ|เสียหาย|แย่|ช้า/.test(t)) return 'complaint';
     if (/[a-z]{4,}/i.test(text || '') && !/[ก-๙]/.test(text || '')) return 'foreign_customer';
     return 'general';
   }
   function trainingSituationLabel(key){
-    return ({ general:'ทั่วไป', price_question:'ราคา / โปรโมชัน', appointment:'นัดหมาย / คิวช่าง', repair_symptom:'อาการเสียแอร์', expensive:'ต่อรองราคา / แพง', complaint:'รับมือคำโวยวาย', foreign_customer:'ภาษาอังกฤษ / ลูกค้าต่างชาติ', safety:'ความปลอดภัย / ไม่มั่ว', closing:'ปิดการขาย' })[key] || key || 'ทั่วไป';
-  }
-  function trainingDecisionForScore(score){
-    if (score >= 85) return 'พร้อมตอบจริง';
-    if (score >= 70) return 'เกือบพร้อม';
-    if (score >= 45) return 'ต้องฝึกเพิ่ม';
-    return 'ห้าม auto reply';
-  }
-  function examplesForSituation(key){
-    return (STATE.examples || []).filter((ex) => String(ex.situation_type || 'general') === key || (String(ex.tags || '').includes(key)));
-  }
-  function skillForSituation(key){
-    return (STATE.trainingSkills || []).find((s) => String(s.key || '') === String(key || '')) || null;
-  }
-  function scoreFromExamples(key){
-    const skill = skillForSituation(key);
-    if (skill && Number.isFinite(Number(skill.score))) return Number(skill.score);
-    const n = examplesForSituation(key).length;
-    if (!n) return 0;
-    return Math.min(95, Math.round(28 + Math.sqrt(n) * 22));
+    return ({ general:'ทั่วไป', price_question:'ราคา / โปรโมชัน', appointment:'นัดหมาย / คิวช่าง', repair_symptom:'อาการเสียแอร์', water_leak_cleaning:'แอร์น้ำหยด / แนะนำแขวนคอยล์', expensive:'ต่อรองราคา / แพง', complaint:'รับมือคำโวยวาย', foreign_customer:'ภาษาอังกฤษ / ลูกค้าต่างชาติ', safety:'ความปลอดภัย / ไม่มั่ว', closing:'ปิดการขาย' })[key] || key || 'ทั่วไป';
   }
   /* ---- TC5 helpers ---- */
   function tc5DecisionClass(decision){
@@ -1107,20 +1086,6 @@
     if (!ts) return '';
     try { const d = new Date(ts); return d.toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}); } catch(_){ return ''; }
   }
-  function tc5SkillReadinessClass(readiness){
-    if (!readiness) return 'r2';
-    if (readiness === 'พร้อมตอบจริง') return 'r4';
-    if (readiness === 'เกือบพร้อม') return 'r3';
-    if (readiness === 'ต้องฝึกเพิ่ม') return 'r2';
-    return 'r1';
-  }
-  function tc5SkillBarColor(score){
-    if (score >= 80) return 'linear-gradient(90deg,#16a34a,#22c55e)';
-    if (score >= 60) return 'linear-gradient(90deg,#0d3d8d,#22c55e)';
-    if (score >= 40) return 'linear-gradient(90deg,#d97706,#f59e0b)';
-    return 'linear-gradient(90deg,#dc2626,#f87171)';
-  }
-
   function renderTC5Controls(){
     const autoReplyOn = getValue('auto_safe_reply_send_enabled', false);
     return `<div class="tc5-controls">
@@ -1426,7 +1391,7 @@
     const rightTab = STATE.tc5RightTab || 'skills';
     return `<div class="tc5-right" ${hide}>
       <div class="tc5-right-tabs">
-        <button class="tc5-right-tab ${rightTab === 'skills' ? 'active' : ''}" type="button" data-tc5-right-tab="skills">📊 คะแนน AI</button>
+        <button class="tc5-right-tab ${rightTab === 'skills' ? 'active' : ''}" type="button" data-tc5-right-tab="skills">📊 สถิติจริง</button>
         <button class="tc5-right-tab ${rightTab === 'teach' ? 'active' : ''}" type="button" data-tc5-right-tab="teach">📝 สอน AI</button>
       </div>
       <div class="tc5-right-scroll">
@@ -1437,29 +1402,37 @@
 
   function renderTC5SkillBars(){
     const skills = STATE.trainingSkills || [];
-    if (!skills.length) return `<div class="ai-empty" style="font-size:12px;padding:20px">ยังไม่มีข้อมูล skill<br><small>โหลดหลังเลือกแชทแล้ว</small></div>`;
     const counts = STATE.trainingCounts || {};
+    const totalExamples = counts.examples || 0;
+    const totalEvents = counts.training_events || 0;
+    if (!skills.length) return `<div class="ai-empty" style="font-size:12px;padding:20px">ยังไม่มีข้อมูลสถิติ<br><small>รอหลังเปิด Auto Training แล้วมีแชทเข้า</small></div>`;
     return `<div>
       <div class="tc5-section-title">
-        <h4>ความพร้อม AI รายหมวด</h4>
-        <span style="font-size:10px;font-weight:800;color:#94a3b8">${counts.examples || 0} บทเรียน</span>
+        <h4>สถิติจริงรายหมวด</h4>
+        <span style="font-size:10px;font-weight:800;color:#94a3b8">${totalEvents} เคส · ${totalExamples} บทเรียน</span>
       </div>
+      <div style="font-size:10.5px;font-weight:700;color:#94a3b8;padding:4px 2px 8px">ตัวเลขมาจากเคสจริงเท่านั้น — ไม่ใช้คะแนนสังเคราะห์</div>
       ${skills.map((s) => {
-        const score = Number(s.score || 0);
-        const rClass = tc5SkillReadinessClass(s.readiness);
-        return `<div class="tc5-skill-item">
-          <div class="tc5-skill-head">
-            <span class="tc5-skill-label">${esc(s.label)}</span>
-            <span class="tc5-skill-pct" style="color:${score >= 80 ? '#16a34a' : score >= 50 ? '#d97706' : '#dc2626'}">${score}%</span>
-          </div>
-          <div class="tc5-skill-bar-bg"><div class="tc5-skill-bar-fill" style="width:${score}%;background:${tc5SkillBarColor(score)}"></div></div>
-          <div class="tc5-skill-foot">
-            <span class="tc5-skill-ready ${rClass}">${esc(s.readiness || 'ต้องฝึกเพิ่ม')}</span>
-            <span class="tc5-skill-sub">${s.passed || 0}✓ ${s.failed || 0}✗ ${s.unknowns || 0}?</span>
+        if (s.no_data) return `<div class="tc5-skill-item">
+          <div class="tc5-skill-label">${esc(s.label)}</div>
+          <div class="tc5-skill-counters">
+            <span class="tc5-cnt nodata">ยังไม่มีเคส</span>
           </div>
         </div>`;
+        const passRate = s.pass_rate !== null && s.pass_rate !== undefined ? `อัตราถูก ${s.pass_rate}% จาก ${s.training_total} เคส` : null;
+        return `<div class="tc5-skill-item">
+          <div class="tc5-skill-label">${esc(s.label)}</div>
+          <div class="tc5-skill-counters">
+            ${s.passed  ? `<span class="tc5-cnt ok">✅ ${s.passed} ถูก</span>` : ''}
+            ${s.failed  ? `<span class="tc5-cnt bad">✗ ${s.failed} สอน</span>` : ''}
+            ${s.unknowns ? `<span class="tc5-cnt unk">❓ ${s.unknowns} ยังไม่รู้</span>` : ''}
+            ${s.examples ? `<span class="tc5-cnt lesson">📚 ${s.examples} บทเรียน</span>` : ''}
+            ${!s.passed && !s.failed && !s.unknowns && !s.examples ? `<span class="tc5-cnt nodata">ยังไม่มีเคส</span>` : ''}
+          </div>
+          ${passRate ? `<div class="tc5-skill-passrate">${esc(passRate)}</div>` : ''}
+        </div>`;
       }).join('')}
-      <div class="tc5-brain-note">🧠 บทเรียนทุกชิ้นกลับเข้าสมองกลางเดียว ทุก AI ในองค์กรจะฉลาดขึ้นร่วมกัน</div>
+      <div class="tc5-brain-note" style="margin-top:8px">🧠 บทเรียนทุกชิ้นกลับเข้าสมองกลางเดียว ทุก AI จะฉลาดขึ้นร่วมกัน</div>
       <button class="cc-btn" type="button" data-ai-tab-go="brain" style="width:100%;margin-top:8px;font-size:12px">เปิดคลังบทเรียน →</button>
     </div>`;
   }
@@ -1511,10 +1484,23 @@
   }
 
   function renderTrainingScoreBars(){
-    const rows = [
-      ['price_question','ราคา / โปรโมชัน'], ['appointment','นัดหมาย / คิวช่าง'], ['repair_symptom','อาการเสียแอร์'], ['general','ทั่วไป / ถามข้อมูล'], ['complaint','รับมือคำโวยวาย'], ['foreign_customer','ภาษาอังกฤษ / ลูกค้าต่างชาติ'], ['closing','ปิดการขาย'], ['safety','ความปลอดภัย / ไม่มั่ว']
-    ];
-    return `<div class="training-score-list">${rows.map(([key,label]) => { const skill = skillForSituation(key); const score = scoreFromExamples(key); const examples = skill ? Number(skill.examples || 0) : examplesForSituation(key).length; const trained = skill ? Number(skill.training_total || 0) : 0; return `<div class="training-score-row"><header><b>${esc(label)}</b><span>${score}% · ${esc(skill?.readiness || trainingDecisionForScore(score))}</span></header><div class="dash-progress"><i style="width:${score}%"></i></div><small style="display:block;margin-top:6px;color:#64748b;font-weight:850">บทเรียน: ${examples} · เคสฝึก: ${trained}</small></div>`; }).join('')}</div>`;
+    // แสดงตัวนับจริงเท่านั้น — ไม่ใช้คะแนนสังเคราะห์
+    const skills = STATE.trainingSkills || [];
+    if (!skills.length) return `<div class="ai-empty" style="font-size:12px;padding:16px">ยังไม่มีข้อมูลสถิติ</div>`;
+    return `<div class="training-score-list">${skills.map((s) => {
+      const hasData = s.passed || s.failed || s.unknowns || s.examples;
+      return `<div class="training-score-row">
+        <header><b>${esc(s.label)}</b>${s.pass_rate !== null && s.pass_rate !== undefined ? `<span style="color:${s.pass_rate >= 80 ? '#16a34a' : s.pass_rate >= 50 ? '#d97706' : '#dc2626'}">${s.pass_rate}% ถูก</span>` : ''}</header>
+        <div style="display:flex;flex-wrap:wrap;gap:3px;margin-top:4px">
+          ${hasData
+            ? [s.passed ? `<span class="tc5-cnt ok">✅ ${s.passed} ถูก</span>` : '',
+               s.failed ? `<span class="tc5-cnt bad">✗ ${s.failed} สอน</span>` : '',
+               s.unknowns ? `<span class="tc5-cnt unk">❓ ${s.unknowns} ยังไม่รู้</span>` : '',
+               s.examples ? `<span class="tc5-cnt lesson">📚 ${s.examples} บทเรียน</span>` : ''].filter(Boolean).join('')
+            : '<span class="tc5-cnt nodata">ยังไม่มีเคส</span>'}
+        </div>
+      </div>`;
+    }).join('')}</div>`;
   }
   function selectedTrainingQuestion(){
     const selectedId = Number(STATE.selectedConversation?.id || 0);

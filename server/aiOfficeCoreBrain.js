@@ -280,58 +280,243 @@ function parseNumberText(value = "") {
   return Number.isFinite(n) ? n : 0;
 }
 
-function buildWallAcPriceQuote(known = {}) {
-  if (known.aircon_type !== "wall" || !known.btu) return null;
-  const btu = Number(known.btu || 0);
-  const count = Number(known.aircon_count || 0);
-  let tier = null;
-  if (btu <= 12000) {
-    tier = {
-      label: "แอร์ผนังไม่เกิน 12,000 BTU",
-      packages: [
-        ["ล้างปกติ", 550],
-        ["ล้างพรีเมียม", 790],
-        ["แขวนคอยล์", 1290],
-        ["ตัดล้างใหญ่", 1850],
-      ],
-    };
-  } else if (btu >= 18000) {
-    tier = {
-      label: "แอร์ผนัง 18,000 BTU ขึ้นไป",
-      packages: [
-        ["ล้างปกติ", 690],
-        ["ล้างพรีเมียม", 990],
-        ["แขวนคอยล์", 1550],
-        ["ตัดล้างใหญ่", 2150],
-      ],
-    };
-  }
-  if (!tier) return null;
-  const packages = tier.packages.map(([name, unit_price]) => ({
+// ─────────────────────────────────────────────────
+// PRICE TABLES (source of truth — edit here only)
+// ─────────────────────────────────────────────────
+const CLEANING_PACKAGE_DETAILS = {
+  "ล้างปกติ": "ล้างฟิลเตอร์ คอยล์เย็น คอยล์ร้อน และฉีดอัดท่อน้ำทิ้ง เหมาะกับแอร์ที่ใช้งานปกติ/ล้างตามรอบ",
+  "ล้างพรีเมียม": "ล้างละเอียดขึ้น ถอดรางน้ำทิ้ง ล้างโพรงกระรอก และฉีดอัดท่อน้ำทิ้ง เหมาะกับแอร์สกปรก มีกลิ่น หรืออยากล้างลึกกว่าแบบปกติ",
+  "แขวนคอยล์": "ถอดแผงไฟ ยก/แขวนคอยล์ ล้างถาดหลังและซอกด้านใน เหมาะกับแอร์น้ำหยดหรือมีคราบสะสมด้านหลัง",
+  "ตัดล้างใหญ่": "ถอดล้างทั้งตัว ทำความสะอาดครบระบบ เหมาะกับแอร์สกปรกหนัก ไม่ได้ล้างนาน หรือมีอาการสะสมมาก",
+};
+
+const WALL_AC_TIERS = {
+  small: {
+    label: "แอร์ผนังไม่เกิน 15,000 BTU",
+    btu_range: "≤15,000",
+    packages: [
+      ["ล้างปกติ",     550],
+      ["ล้างพรีเมียม", 790],
+      ["แขวนคอยล์",   1290],
+      ["ตัดล้างใหญ่", 1850],
+    ],
+    recommend: "ถ้าแอร์ใช้งานปกติ แนะนำเริ่มจากล้างปกติหรือพรีเมียมก็พอค่ะ",
+  },
+  large: {
+    label: "แอร์ผนังมากกว่า 15,000 BTU",
+    btu_range: ">15,000",
+    packages: [
+      ["ล้างปกติ",     690],
+      ["ล้างพรีเมียม", 990],
+      ["แขวนคอยล์",   1550],
+      ["ตัดล้างใหญ่", 2150],
+    ],
+    recommend: "ถ้าแอร์ใช้งานปกติ แนะนำเริ่มจากล้างปกติหรือพรีเมียมก็พอค่ะ",
+  },
+};
+
+
+function buildWallPriceLinesForTier(tier, count = 0) {
+  return tier.packages.map(([name, unit_price]) => {
+    const detail = CLEANING_PACKAGE_DETAILS[name] || "";
+    if (count > 0) {
+      const total = unit_price * count;
+      return `- ${name} ${unit_price.toLocaleString("th-TH")} x ${count} = ${total.toLocaleString("th-TH")} บาท — ${detail}`;
+    }
+    return `- ${name} ${unit_price.toLocaleString("th-TH")} บาท/เครื่อง — ${detail}`;
+  });
+}
+
+function buildWallPackagesForTier(tier, count = 0) {
+  return tier.packages.map(([name, unit_price]) => ({
     name,
     unit_price,
     count: count || null,
-    total: count ? unit_price * count : null,
+    total: count > 0 ? unit_price * count : null,
+    detail: CLEANING_PACKAGE_DETAILS[name] || "",
   }));
-  const lines = packages.map((p) => {
-    if (p.count) return `- ${p.name} ${p.unit_price.toLocaleString("th-TH")} x ${p.count} = ${p.total.toLocaleString("th-TH")} บาท`;
-    return `- ${p.name} ${p.unit_price.toLocaleString("th-TH")} บาท/เครื่อง`;
-  });
+}
+
+function buildWaterLeakCleaningAdvice(known = {}) {
+  const count = Number(known.aircon_count || 0);
+  const btu = Number(known.btu || 0);
+  const intro = "อาการแอร์น้ำหยด เบื้องต้นแนะนำเป็นงานแขวนคอยล์ก่อนค่ะ เพราะมักมีคราบฝังลึก เชื้อรา หรือคราบสะสมบริเวณถาดหลัง/ซอกด้านในที่ล้างปกติออกได้ค่อนข้างยาก";
+  const close = count > 0
+    ? "ลูกค้าสะดวกส่งพื้นที่/โลเคชันให้แอดมินเช็กคิวช่างได้เลยค่ะ"
+    : "รบกวนแจ้งจำนวนเครื่อง BTU และพื้นที่/โลเคชัน เดี๋ยวแอดมินคำนวณยอดรวมและเช็กคิวช่างให้ค่ะ";
+
+  if (btu > 0) {
+    const tier = btu <= 15000 ? WALL_AC_TIERS.small : WALL_AC_TIERS.large;
+    const packages = buildWallPackagesForTier(tier, count);
+    const lines = buildWallPriceLinesForTier(tier, count);
+    return {
+      type: "wall_ac_water_leak_cleaning",
+      type_key: "wall",
+      type_label: tier.label,
+      btu,
+      count: count || null,
+      tier_label: tier.label,
+      packages,
+      lines,
+      require_package_explanations: true,
+      recommendation: "กรณีน้ำหยด แนะนำแขวนคอยล์เป็นหลัก เพราะช่วยล้างถาดหลังและซอกด้านในได้ลึกกว่าแบบปกติค่ะ",
+      customer_reply: [
+        intro,
+        `${tier.label} ราคาโปรตามนี้ค่ะ`,
+        ...lines,
+        "กรณีน้ำหยด แนะนำแขวนคอยล์เป็นหลัก เพราะล้างได้ลึกถึงถาดหลังและซอกด้านในค่ะ",
+        close,
+      ].join("\n"),
+    };
+  }
+
+  const smallLines = buildWallPriceLinesForTier(WALL_AC_TIERS.small, count);
+  const largeLines = buildWallPriceLinesForTier(WALL_AC_TIERS.large, count);
+  const packages = buildWallPackagesForTier(WALL_AC_TIERS.small, count)
+    .concat(buildWallPackagesForTier(WALL_AC_TIERS.large, count).map((p) => Object.assign({}, p, { name: `${p.name} (มากกว่า 15,000 BTU)` })));
+  return {
+    type: "wall_ac_water_leak_cleaning",
+    type_key: "wall",
+    type_label: "แอร์ผนังน้ำหยด",
+    btu: null,
+    count: count || null,
+    tier_label: "ต้องทราบ BTU เพื่อเลือกเรตราคา",
+    packages,
+    lines: ["กลุ่มไม่เกิน 15,000 BTU:", ...smallLines, "กลุ่มมากกว่า 15,000 BTU:", ...largeLines],
+    require_package_explanations: true,
+    recommendation: "กรณีน้ำหยด แนะนำแขวนคอยล์เป็นหลัก เพราะช่วยล้างถาดหลังและซอกด้านในได้ลึกกว่าแบบปกติค่ะ",
+    customer_reply: [
+      intro,
+      "ราคาล้างแอร์ผนังโปรตามนี้ค่ะ",
+      "กลุ่มไม่เกิน 15,000 BTU:",
+      ...smallLines,
+      "กลุ่มมากกว่า 15,000 BTU:",
+      ...largeLines,
+      "กรณีน้ำหยด แนะนำแขวนคอยล์เป็นหลัก เพราะล้างได้ลึกถึงถาดหลังและซอกด้านในค่ะ",
+      close,
+    ].join("\n"),
+  };
+}
+
+const FLAT_RATE_TYPES = {
+  cassette:  { label: "แอร์สี่ทิศทาง",    unit_price: 1500, note: "ราคาเริ่มต้นสำหรับหน้างานมาตรฐานนะคะ ถ้าหน้างานเข้าถึงยากหรืออยู่สูงช่างจะแจ้งก่อนเริ่มงานค่ะ" },
+  hanging:   { label: "แอร์แขวน",          unit_price: 1200, note: "ราคาเริ่มต้นสำหรับหน้างานมาตรฐานนะคะ ถ้าหน้างานเข้าถึงยากหรืออยู่สูงช่างจะแจ้งก่อนเริ่มงานค่ะ" },
+  concealed: { label: "แอร์เปลือย/ใต้ฝ้า", unit_price: 1200, note: "ราคาเริ่มต้นสำหรับหน้างานมาตรฐานนะคะ ถ้าหน้างานเข้าถึงยากช่างจะแจ้งก่อนเริ่มงานค่ะ" },
+  // floor (ตู้ตั้ง) ยังไม่มีราคายืนยันในคลัง → คืน null → guided_reply ถามต่อ
+};
+
+/**
+ * buildPriceQuote — คำนวณราคาทุก type / BTU
+ * คืน null เมื่อข้อมูลไม่พอหรือประเภทไม่รู้ราคา (guard จะ guided_reply ถามต่อ)
+ */
+function buildPriceQuote(known = {}) {
+  const type  = String(known.aircon_type || "").toLowerCase();
+  const count = Number(known.aircon_count || 0);
+  const btu   = Number(known.btu || 0);
+
+  // ── FLAT RATE TYPES (แขวน / สี่ทิศ / เปลือย) ──────────────────────────────
+  if (FLAT_RATE_TYPES[type]) {
+    const { label, unit_price, note } = FLAT_RATE_TYPES[type];
+    const total = count > 0 ? unit_price * count : null;
+    const countLine = count > 0
+      ? `${count} เครื่อง รวม ${total.toLocaleString("th-TH")} บาทค่ะ`
+      : null;
+    const packages = [{ name: `ล้าง${label}`, unit_price, count: count || null, total }];
+    const lines = count > 0
+      ? [`- ล้าง${label} ${unit_price.toLocaleString("th-TH")} x ${count} = ${total.toLocaleString("th-TH")} บาท`]
+      : [`- ล้าง${label} ${unit_price.toLocaleString("th-TH")} บาท/เครื่อง`];
+    const customer_reply = [
+      `${label} ล้างราคา ${unit_price.toLocaleString("th-TH")} บาท/เครื่องค่ะ`,
+      countLine,
+      note,
+      count > 0 ? "ลูกค้าสะดวกให้ช่างเข้าเช็กคิววันไหนคะ" : "ลูกค้าล้างกี่เครื่องคะ",
+    ].filter(Boolean).join("\n");
+    return {
+      type: "flat_rate_cleaning",
+      type_key: type,
+      type_label: label,
+      unit_price,
+      count: count || null,
+      total,
+      packages,
+      lines,
+      recommendation: "ลูกค้าสะดวกให้ช่างเข้าเช็กคิววันไหนคะ",
+      customer_reply,
+    };
+  }
+
+  // ── WALL AC (multi-package, BTU tiers) ────────────────────────────────────
+  if (type !== "wall" && type !== "") return null; // unknown/floor type
+
+  // ไม่มี BTU → แสดงราคาทั้งสองกลุ่ม BTU (ตามสเปก) แล้วค่อยถาม BTU เพื่อเลือก tier
+  if (!btu) {
+    if (type !== "wall") return null; // ต้องรู้ว่าเป็นผนังก่อน (กันคำถามราคาลอย ๆ)
+    const smallLines = buildWallPriceLinesForTier(WALL_AC_TIERS.small, count);
+    const largeLines = buildWallPriceLinesForTier(WALL_AC_TIERS.large, count);
+    const countNote = count > 0 ? `สำหรับ ${count} เครื่อง ` : "";
+    const customer_reply = [
+      `แอร์ผนังมีราคาตาม BTU ${count > 0 ? `(คิดราคา ${count} เครื่องให้แล้ว) ` : ""}2 กลุ่มค่ะ`,
+      ``,
+      `${WALL_AC_TIERS.small.label}`,
+      ...smallLines,
+      ``,
+      `${WALL_AC_TIERS.large.label}`,
+      ...largeLines,
+      ``,
+      `${WALL_AC_TIERS.small.recommend}`,
+      `รบกวนเช็กที่ตัวเครื่องหน่อยนะคะว่ากี่ BTU ${countNote}เดี๋ยวแจ้งราคาที่ตรงรุ่นให้ค่ะ`,
+    ].join("\n");
+    return {
+      type: "wall_ac_cleaning_promo_both_tiers",
+      type_key: "wall",
+      type_label: "แอร์ผนัง (ทั้งสองกลุ่ม BTU)",
+      btu: null,
+      count: count || null,
+      both_tiers: true,
+      require_package_explanations: true,
+      lines: [
+        `[${WALL_AC_TIERS.small.label}]`, ...smallLines,
+        `[${WALL_AC_TIERS.large.label}]`, ...largeLines,
+      ],
+      packages: [
+        ...buildWallPackagesForTier(WALL_AC_TIERS.small, count),
+        ...buildWallPackagesForTier(WALL_AC_TIERS.large, count),
+      ],
+      tiers: [
+        { label: WALL_AC_TIERS.small.label, packages: buildWallPackagesForTier(WALL_AC_TIERS.small, count) },
+        { label: WALL_AC_TIERS.large.label, packages: buildWallPackagesForTier(WALL_AC_TIERS.large, count) },
+      ],
+      needs_btu_to_pick_tier: true,
+      recommendation: `${WALL_AC_TIERS.small.recommend} รบกวนแจ้ง BTU เพื่อเลือกกลุ่มราคาที่ตรงรุ่นค่ะ`,
+      customer_reply,
+    };
+  }
+
+  const tier = btu <= 15000 ? WALL_AC_TIERS.small : WALL_AC_TIERS.large;
+
+  const packages = buildWallPackagesForTier(tier, count);
+  const lines = buildWallPriceLinesForTier(tier, count);
   return {
     type: "wall_ac_cleaning_promo",
+    type_key: "wall",
+    type_label: tier.label,
     btu,
     count: count || null,
     tier_label: tier.label,
     packages,
     lines,
-    recommendation: "ถ้าแอร์ใช้งานปกติ แนะนำเริ่มจากล้างปกติหรือพรีเมียมก็พอค่ะ ลูกค้าสะดวกให้ช่างเข้าเช็กคิววันไหนคะ",
+    require_package_explanations: true,
+    recommendation: `${tier.recommend} ลูกค้าสะดวกให้ช่างเข้าเช็กคิววันไหนคะ`,
     customer_reply: [
       `${tier.label} ราคาโปรตามนี้ค่ะ`,
       ...lines,
-      "ถ้าแอร์ใช้งานปกติ แนะนำเริ่มจากล้างปกติหรือพรีเมียมก็พอค่ะ ลูกค้าสะดวกให้ช่างเข้าเช็กคิววันไหนคะ",
+      `${tier.recommend} ลูกค้าสะดวกให้ช่างเข้าเช็กคิววันไหนคะ`,
     ].join("\n"),
   };
 }
+
+// backward-compat alias (เดิมใช้ชื่อนี้ใน analyzeThread — จะแทนที่ด้านล่างด้วย)
+const buildWallAcPriceQuote = buildPriceQuote;
 
 function analyzeThread(messages = [], latestText = "") {
   const inbound = (Array.isArray(messages) ? messages : [])
@@ -344,6 +529,8 @@ function analyzeThread(messages = [], latestText = "") {
   const known = {};
   const has = {};
   const isPriceQuestion = /ราคา|เท่าไหร่|เท่าไร|กี่บาท|ราคาทั้งหมด|price|cost|how much/i.test(low);
+  const isWaterLeakSymptom = /น้ำหยด|หยดน้ำ|น้ำแอร์หยด|แอร์มีน้ำหยด|น้ำรั่วจากแอร์|แอร์น้ำรั่ว|แอร์มีน้ำรั่ว|แอร์รั่วน้ำ|น้ำแอร์ไหล|แอร์มีน้ำไหล|แอร์น้ำไหล|น้ำแอร์รั่ว/i.test(low);
+  const isRepairCheckFeeQuestion = /ค่าตรวจ|ตรวจเช็ค|ตรวจเช็ก|เช็คอาการ|เช็กอาการ/i.test(low);
 
   // location / map pin already shared?
   has.location = /https?:\/\/\S*(goo\.gl|maps\.app|google\.[a-z.]+\/maps)/i.test(blob)
@@ -362,17 +549,24 @@ function analyzeThread(messages = [], latestText = "") {
   // BTU / size
   const btuMatch = blob.match(/(\d{1,3}(?:,\d{3})+|\d{4,6})\s*(btu|บีทียู)/i);
   if (btuMatch) { has.btu = true; known.btu = parseNumberText(btuMatch[1]); }
-  const standaloneBtu = blob.match(/\b(9000|9200|12000|18000|24000|36000|48000)\b/);
+  const standaloneBtu = blob.match(/\b(9000|9200|12000|15000|17000|18000|24000|36000|48000)\b/);
   if (!has.btu && standaloneBtu) { has.btu = true; known.btu = parseNumberText(standaloneBtu[1]); }
 
-  // aircon type
-  if (/ติดผนัง|ผนัง|wall/i.test(low)) { known.aircon_type = "wall"; has.type = true; }
-  else if (/แขวน|ceiling|hanging/i.test(low)) { known.aircon_type = "hanging"; has.type = true; }
-  else if (/ตู้ตั้ง|ตั้งพื้น|floor/i.test(low)) { known.aircon_type = "floor"; has.type = true; }
-  else if (/สี่ทิศ|4 ?ทิศ|cassette|fourway|four-way/i.test(low)) { known.aircon_type = "cassette"; has.type = true; }
+  // aircon type — ลำดับสำคัญ: เช็ก specific ก่อน generic
+  // หมายเหตุ: "แขวนคอยล์" = ชื่อแพ็กเกจล้าง ไม่ใช่ชนิดแอร์ → ต้องไม่ตีเป็น hanging
+  const mentionsCoilHangPackage = /แขวนคอยล์/i.test(low);
+  const lowNoCoilPackage = low.replace(/แขวนคอยล์/gi, " ");
+  if (/ติดผนัง|ผนัง|wall/i.test(lowNoCoilPackage)) { known.aircon_type = "wall"; has.type = true; }
+  else if (/สี่ทิศ|4 ?ทิศ|cassette|fourway|four-way/i.test(lowNoCoilPackage)) { known.aircon_type = "cassette"; has.type = true; }
+  else if (/แขวนฝ้า|ใต้ฝ้า|เปลือย|concealed|duct/i.test(lowNoCoilPackage)) { known.aircon_type = "concealed"; has.type = true; }
+  else if (/แอร์แขวน|ล้างแอร์แขวน|แขวนเพดาน|ceiling|hanging/i.test(lowNoCoilPackage)) { known.aircon_type = "hanging"; has.type = true; }
+  else if (/ตู้ตั้ง|ตั้งพื้น|floor standing/i.test(lowNoCoilPackage)) { known.aircon_type = "floor"; has.type = true; }
+  // ถ้าพูดถึง "แขวนคอยล์" ลอย ๆ โดยไม่ระบุชนิดแอร์ → ถือเป็นคำถามแพ็กเกจ ไม่กำหนด type
+  if (mentionsCoilHangPackage && !has.type) { known.package_mentioned = "แขวนคอยล์"; }
 
   // service type
-  if (/ล้าง|clean|wash/i.test(low)) { known.service_type = "cleaning"; has.service = true; }
+  if (isWaterLeakSymptom) { known.service_type = "cleaning"; known.aircon_type = known.aircon_type || "wall"; has.service = true; has.type = true; }
+  else if (/ล้าง|clean|wash/i.test(low)) { known.service_type = "cleaning"; has.service = true; }
   else if (/ซ่อม|เสีย|ไม่เย็น|repair|fix/i.test(low)) { known.service_type = "repair"; has.service = true; }
   else if (/ติดตั้ง|install/i.test(low)) { known.service_type = "install"; has.service = true; }
   else if (/ย้าย|move|relocat/i.test(low)) { known.service_type = "relocate"; has.service = true; }
@@ -389,10 +583,12 @@ function analyzeThread(messages = [], latestText = "") {
 
   // ── intent / sales stage ──
   let intent = "general";
-  if (/ร้องเรียน|ไม่พอใจ|เสียหาย|เคลม|คืนเงิน|refund|police|ตำรวจ|ฟ้อง|lawsuit|ทนาย/i.test(low)) intent = "complaint";
+  const looksLikeRepairSymptom = /ไม่เย็น|ไม่ค่อยเย็น|ลมไม่เย็น|รั่ว|เสียงดัง|กลิ่น|เหม็น|error|โค้ด|[eEhHfF]\d|ซ่อม|เสีย|ค่าตรวจ|ตรวจเช็ค|ตรวจเช็ก|เช็คอาการ|เช็กอาการ/i.test(low);
+  if (/ร้องเรียน|ไม่พอใจ|เสียหาย|เคลม|คืนเงิน|เงินคืน|refund|police|ตำรวจ|ฟ้อง|lawsuit|ทนาย|เอาเรื่อง|ดำเนินคดี|ผิดหวัง|แย่มาก|ไม่โอเค|ไม่โอเก|ช่างทำ.*(พัง|เสีย|หัก|แตก|รั่ว)|พังหลังช่าง|เสียหลังช่าง|พังเพราะช่าง/i.test(low)) intent = "complaint";
   else if (/แพง|ลด|ส่วนลด|ทำไมราคา|expensive|discount/i.test(low)) intent = "price_objection";
+  else if (isWaterLeakSymptom) intent = "water_leak_cleaning";
+  else if (looksLikeRepairSymptom) intent = "repair_symptom";
   else if (isPriceQuestion) intent = "price_question";
-  else if (/ไม่เย็น|น้ำหยด|รั่ว|เสียงดัง|กลิ่น|เหม็น|error|[eEhHfF]\d/i.test(low)) intent = "repair_symptom";
   else if (/นัด|คิว|ว่าง|จอง|book|appointment|reserve/i.test(low)) intent = "booking";
   else if (/แบบไหน|พรีเมียม|ปกติ|แขวนคอยล์|ตัดล้าง|package/i.test(low)) intent = "package_question";
 
@@ -401,13 +597,18 @@ function analyzeThread(messages = [], latestText = "") {
   if (has.location || has.address) stage = "has_location";
   if (has.count && (has.service || intent === "price_question")) stage = "qualifying";
   if ((has.count || has.service) && has.datetime) stage = "ready_to_book";
+  if (intent === "water_leak_cleaning") stage = "qualifying";
   if (intent === "repair_symptom") stage = "diagnose";
   if (intent === "complaint") stage = "admin_review";
   if (intent === "price_objection") stage = "objection";
 
   // ── missing_info: only what is TRULY needed for the next step ──
   const missing = [];
-  if (intent === "repair_symptom") {
+  if (intent === "water_leak_cleaning") {
+    if (!has.count) missing.push("aircon_count");
+    if (!has.btu) missing.push("aircon_btu");
+    if (!has.location && !has.address) missing.push("area_or_location");
+  } else if (intent === "repair_symptom") {
     if (!has.type) missing.push("aircon_type");
     if (!has.location && !has.address) missing.push("area_or_location");
   } else if (intent === "complaint") {
@@ -430,12 +631,14 @@ function analyzeThread(messages = [], latestText = "") {
   let nextBestAction = "";
   if (intent === "complaint") {
     nextBestAction = "หยุดตอบเชิงขาย รับเรื่องสั้น ๆ อย่างสุภาพ และส่งให้แอดมินจริงตรวจสอบ";
+  } else if (intent === "water_leak_cleaning") {
+    nextBestAction = "อาการน้ำหยดให้แนะนำแขวนคอยล์ก่อน เพราะมักมีคราบฝังลึก/เชื้อรา/คราบถาดหลังที่ล้างปกติออกยาก ห้ามเสนอค่าตรวจ 700 เว้นแต่เป็นแอร์เสีย/ปัญหาอื่นที่ไม่ใช่น้ำหยด";
   } else if (intent === "repair_symptom") {
-    nextBestAction = "ช่วยคัดกรองอาการเบื้องต้น ไม่ฟันธง แล้วเสนอให้ช่างตรวจเช็ค (ค่าตรวจ 700) พร้อมถามพื้นที่/รุ่นถ้ายังไม่มี";
+    nextBestAction = "ช่วยคัดกรองอาการเบื้องต้น ไม่ฟันธง แล้วเสนอให้ช่างตรวจเช็ค (ค่าตรวจ 700 หักลดค่าซ่อมได้ สำหรับแอร์เสีย/แอร์มีปัญหาที่ไม่ใช่น้ำหยด) พร้อมถามพื้นที่/รุ่นถ้ายังไม่มี";
   } else if (intent === "price_objection") {
     nextBestAction = "ย้ำคุณค่า/มาตรฐานงาน ไม่ลดราคาเอง แล้วพาไปเช็กคิวหรือเริ่มจากแพ็กเกจปกติ";
   } else if (intent === "price_question") {
-    const quote = buildWallAcPriceQuote(known);
+    const quote = buildPriceQuote(known);
     nextBestAction = quote
       ? `ตอบราคาโปรก่อนทันที ห้ามถามวันเวลา/เช็กคิวก่อนตอบราคา ใช้รายการนี้: ${quote.lines.join(" | ")} แล้วปิดการขายด้วย: ${quote.recommendation}`
       : "ตอบราคาเท่าที่คำนวณได้ก่อน ถ้าขาดจำนวนเครื่องหรือ BTU/ประเภทแอร์ ให้ถามเฉพาะข้อมูลนั้นเพื่อคำนวณราคา ห้ามถามวันเวลา/คิวก่อนตอบราคา";
@@ -454,7 +657,12 @@ function analyzeThread(messages = [], latestText = "") {
     intent,
     sales_stage: stage,
     next_best_action: nextBestAction,
-    price_quote: intent === "price_question" ? buildWallAcPriceQuote(known) : null,
+    price_quote: intent === "water_leak_cleaning" ? buildWaterLeakCleaningAdvice(known) : (intent === "price_question" ? buildPriceQuote(known) : null),
+    repair_check_reply: intent === "repair_symptom"
+      ? "อาการนี้ต้องให้ช่างตรวจหน้างานก่อนนะคะ ยังไม่ฟันธงว่าอะไหล่ตัวไหนเสียได้ ค่าตรวจเช็คซ่อมเบื้องต้น 700 บาทค่ะ ค่าตรวจนำไปหักลดค่าซ่อมได้ ใช้กับเคสแอร์เสีย/แอร์มีปัญหาที่ไม่ใช่อาการน้ำหยดนะคะ ถ้าลูกค้าสะดวก รบกวนแจ้งพื้นที่/โลเคชัน และอาการที่เจอเพิ่มเติม เดี๋ยวแอดมินช่วยเช็กคิวช่างให้ค่ะ"
+      : null,
+    // ลูกค้าถามราคา/ค่าตรวจ/ซ่อมเท่าไหร่ ในเคสแอร์เสีย (ไม่ใช่น้ำหยด) → ต้อง enforce 700
+    repair_check_fee_question: intent === "repair_symptom" && (isRepairCheckFeeQuestion || isPriceQuestion || /ซ่อมเท่าไหร่|ซ่อมกี่บาท|ซ่อมราคา|เท่าไหร่|กี่บาท/i.test(low)),
     already_has_location: !!(has.location || has.address),
     inbound_turns: inbound.length,
   };
@@ -470,11 +678,13 @@ function formatThreadAnalysisForPrompt(a = {}) {
       sales_stage: a.sales_stage || "discovery",
       next_best_action: a.next_best_action || "",
       price_quote: a.price_quote || null,
+      repair_check_reply: a.repair_check_reply || null,
       already_has_location: !!a.already_has_location,
     }, null, 2),
     "HARD ANTI-LOOP RULES:",
     "- If intent is price_question, answer the price FIRST. Do not ask date/time, queue, or booking questions before giving the price, unless aircon_count or aircon_type_or_btu is truly missing.",
     "- If PRE_COMPUTED_THREAD_ANALYSIS.price_quote is present, use every package line exactly as the price basis, include totals when count is present, then naturally ask for preferred service date/time to close.",
+    "- If intent is water_leak_cleaning, recommend แขวนคอยล์ first because water leak often comes from deep dirt/mold/hidden drain-tray buildup; do NOT offer the 700 baht repair check fee for water-leak-only cases.",
     "- The fields in known_info are ALREADY given by the customer. NEVER ask for any of them again.",
     a.already_has_location
       ? "- Location/address is ALREADY in the thread. Do NOT ask for location/address. Acknowledge it and ask the next missing field instead."
@@ -526,11 +736,11 @@ function buildReplyDecisionGuard(input = {}) {
   let missingInfo = uniqueArray(threadAnalysis.missing_info || []);
   const nextBestAction = cleanText(threadAnalysis.next_best_action || "", 800);
   const priceQuote = threadAnalysis.price_quote || null;
-  const priceAsk = intent === "price_question" || /ราคา|เท่าไหร่|เท่าไร|กี่บาท|ราคาทั้งหมด|price|how much/i.test(low);
+  const priceAsk = intent === "price_question" || intent === "water_leak_cleaning" || /ราคา|เท่าไหร่|เท่าไร|กี่บาท|ราคาทั้งหมด|price|how much/i.test(low);
 
   const adminOnlyRules = [
-    { key: "complaint_or_claim", re: /ร้องเรียน|ไม่พอใจ|โวย|เสียหาย|เคลม|รับผิดชอบ|งานเสีย|ทำ.*เสีย|complain|complaint|claim|damage/i, reason: "ลูกค้าร้องเรียน/งานเสียหาย/เคลม ต้องให้แอดมินรับเรื่องเอง" },
-    { key: "legal_threat", re: /คืนเงิน|ขอคืนเงิน|แจ้งตำรวจ|ตำรวจ|ฟ้อง|ทนาย|รีวิวเสีย|รีวิวไม่ดี|refund|police|lawsuit|lawyer|bad review/i, reason: "มีความเสี่ยงด้านกฎหมายหรือชื่อเสียง ต้องให้แอดมินจัดการ" },
+    { key: "complaint_or_claim", re: /ร้องเรียน|ไม่พอใจ|โวย|เสียหาย|เคลม|รับผิดชอบ|งานเสีย|ช่างทำ.*(พัง|เสีย|หัก|แตก|รั่ว)|ช่างทำของ.*เสีย|พังหลังช่าง|เสียหลังช่าง|พังเพราะช่าง|ผิดหวัง|แย่มาก|ไม่โอเค|ไม่โอเก|complain|complaint|claim|damage/i, reason: "ลูกค้าร้องเรียน/งานเสียหาย/เคลม ต้องให้แอดมินรับเรื่องเอง" },
+    { key: "legal_threat", re: /คืนเงิน|เงินคืน|ขอคืนเงิน|แจ้งตำรวจ|ตำรวจ|ฟ้อง|ทนาย|เอาเรื่อง|ดำเนินคดี|รีวิวเสีย|รีวิวไม่ดี|refund|police|lawsuit|lawyer|bad review/i, reason: "มีความเสี่ยงด้านกฎหมายหรือชื่อเสียง ต้องให้แอดมินจัดการ" },
     { key: "technician_conflict", re: /ช่าง.*(ผิด|สาย|พูดไม่ดี|ทะเลาะ|ด่า|ไม่สุภาพ)|มาสาย|technician.*(late|rude|wrong)|conflict/i, reason: "เป็นประเด็นช่าง/ความขัดแย้งกับลูกค้า ต้องให้แอดมินตรวจสอบ" },
     { key: "money_exception", re: /โอนเงินผิด|เงินผิด|ยอดผิด|มัดจำ|คืนมัดจำ|deposit|wrong transfer|payment error/i, reason: "เรื่องเงินผิดปกติหรือมัดจำ ห้าม AI เดา ต้องให้แอดมินตรวจสอบ" },
     { key: "tax_invoice", re: /ใบกำกับภาษี|ใบเสร็จภาษี|tax invoice|vat invoice/i, reason: "เรื่องใบกำกับภาษีเป็น policy เฉพาะ ต้องให้แอดมินตอบตามนโยบายจริง" },
@@ -559,19 +769,24 @@ function buildReplyDecisionGuard(input = {}) {
     };
   }
 
-  if (priceAsk) {
+  if (priceAsk && intent !== "repair_symptom") {
     if (priceQuote) {
+      // both-tier quote (ยังไม่รู้ BTU) → ตอบราคาทั้งสองกลุ่มได้ แต่ยังต้องถาม BTU/count ต่อ = guided
+      const stillNeedsInfo = priceQuote.needs_btu_to_pick_tier === true || missingInfo.length > 0;
+      const priceMode = stillNeedsInfo ? "guided_reply" : "safe_reply";
       return {
         can_answer: true,
-        mode: "safe_reply",
-        reason: "ลูกค้าถามราคาและมีข้อมูลพอคำนวณ ต้องตอบราคาโปรก่อนถามวันเวลา",
+        mode: priceMode,
+        reason: stillNeedsInfo
+          ? "ลูกค้าถามราคา ตอบราคาทั้งสองกลุ่ม BTU ได้เลย แต่ยังต้องถาม BTU/จำนวนเครื่องเพื่อระบุกลุ่มที่ตรงรุ่น ห้ามถามวันเวลา"
+          : "ลูกค้าถามราคาและมีข้อมูลพอคำนวณ ต้องตอบราคาโปรก่อนถามวันเวลา",
         missing_info: missingInfo,
         known_info: knownInfo,
         next_best_action: nextBestAction || "ตอบราคาโปรครบทุกประเภท รวมยอดตามจำนวนเครื่อง แล้วถามวันเวลาปิดการขาย",
-        intent: "price_question",
+        intent,
         sales_stage: threadAnalysis.sales_stage || "qualifying",
         price_quote: priceQuote,
-        badge_label: replyDecisionBadge("safe_reply"),
+        badge_label: replyDecisionBadge(priceMode),
       };
     }
     missingInfo = uniqueArray(missingInfo.length ? missingInfo : ["aircon_count", "aircon_type_or_btu"]).slice(0, 2);
@@ -582,7 +797,7 @@ function buildReplyDecisionGuard(input = {}) {
       missing_info: missingInfo,
       known_info: knownInfo,
       next_best_action: "ถามเฉพาะข้อมูลที่ขาดสำหรับคำนวณราคา 1-2 อย่าง ห้ามถามวันเวลา/คิวก่อนตอบราคา",
-      intent: "price_question",
+      intent,
       sales_stage: threadAnalysis.sales_stage || "discovery",
       price_quote: null,
       badge_label: replyDecisionBadge("guided_reply"),
@@ -625,15 +840,31 @@ function buildReplyDecisionGuard(input = {}) {
     };
   }
 
+  if (intent === "water_leak_cleaning") {
+    const guided = missingInfo.length > 0;
+    return {
+      can_answer: true,
+      mode: guided ? "guided_reply" : "safe_reply",
+      reason: "อาการน้ำหยดให้แนะนำแขวนคอยล์ก่อน ไม่ใช้ค่าตรวจ 700 สำหรับน้ำหยดอย่างเดียว",
+      missing_info: missingInfo.slice(0, 2),
+      known_info: knownInfo,
+      next_best_action: nextBestAction || "แนะนำแขวนคอยล์ อธิบายเหตุผล แล้วถาม BTU/จำนวนเครื่อง/พื้นที่เท่าที่ขาด",
+      intent,
+      sales_stage: threadAnalysis.sales_stage || "qualifying",
+      price_quote: priceQuote,
+      badge_label: replyDecisionBadge(guided ? "guided_reply" : "safe_reply"),
+    };
+  }
+
   if (intent === "repair_symptom") {
     const guided = missingInfo.length > 0;
     return {
       can_answer: true,
       mode: guided ? "guided_reply" : "safe_reply",
-      reason: "ตอบคัดกรองอาการสั้น ๆ ได้ แต่ห้ามฟันธงอะไหล่เสีย และต้องเสนอค่าตรวจ 700",
+      reason: "ตอบคัดกรองอาการสั้น ๆ ได้ แต่ห้ามฟันธงอะไหล่เสีย และเสนอค่าตรวจ 700 เฉพาะแอร์เสีย/แอร์มีปัญหาที่ไม่ใช่น้ำหยด",
       missing_info: missingInfo.slice(0, 2),
       known_info: knownInfo,
-      next_best_action: nextBestAction || "คัดกรองอาการสั้น ๆ เสนอค่าตรวจ 700 และถามข้อมูลที่ขาดเท่านั้น",
+      next_best_action: nextBestAction || "คัดกรองอาการสั้น ๆ เสนอค่าตรวจ 700 (หักลดค่าซ่อมได้) และถามข้อมูลที่ขาดเท่านั้น",
       intent,
       sales_stage: threadAnalysis.sales_stage || "diagnose",
       price_quote: priceQuote,
@@ -719,7 +950,37 @@ async function saveCoreBrainLesson(pool, input = {}) {
   return r.rows?.[0] || null;
 }
 
+// ─────────────────────────────────────────────────
+// REPAIR CHECK FEE — deterministic 700 baht enforcement
+// ใช้ตอน intent=repair_symptom และลูกค้าถามราคา/ค่าตรวจ/ซ่อมเท่าไหร่
+// (ไม่ใช้กับน้ำหยด เพราะน้ำหยด = water_leak_cleaning แนะนำแขวนคอยล์)
+// ─────────────────────────────────────────────────
+const REPAIR_CHECK_FEE_REPLY =
+  "เบื้องต้นอาการนี้ต้องให้ช่างตรวจเช็กหน้างานก่อนนะคะ ยังไม่ฟันธงว่าอะไหล่ตัวไหนเสียได้ค่ะ\n" +
+  "ค่าตรวจเช็คซ่อมเบื้องต้น 700 บาทค่ะ และค่าตรวจนำไปหักลดค่าซ่อมได้ด้วยนะคะ\n" +
+  "รบกวนแจ้งพื้นที่/โลเคชัน และอาการที่เจอเพิ่มเติม เดี๋ยวแอดมินช่วยเช็กคิวช่างให้ค่ะ";
+
+/**
+ * enforceRepairCheckReply — ถ้าเป็นเคสถามค่าตรวจ/ซ่อม (ไม่ใช่น้ำหยด)
+ * และคำตอบ LLM ไม่มี "700" → แทนด้วยคำตอบมาตรฐาน
+ * กันทั้งกรณี LLM ลืมบอกราคา และกรณี LLM ฟันธงอะไหล่
+ */
+function enforceRepairCheckReply(reply, threadAnalysis = {}) {
+  if (!threadAnalysis || !threadAnalysis.repair_check_fee_question) return reply;
+  const text = String(reply || "");
+  const has700 = /700/.test(text);
+  const hasDeduct = /หักลด|หักค่าซ่อม|นำไปหัก/.test(text);
+  // ฟันธงอะไหล่ = คำที่บ่งบอกว่า AI วินิจฉัยเองว่าอะไหล่ตัวไหนเสีย (ห้าม)
+  const diagnosesPart = /(คอมเพรสเซอร์|แผงวงจร|คาปาซิเตอร์|มอเตอร์|น้ำยา(หมด|รั่ว)|การ์ด|เมนบอร์ด|อะไหล่.*เสีย).*(เสีย|พัง|ต้องเปลี่ยน|หมด)/.test(text);
+  if (has700 && hasDeduct && !diagnosesPart) return reply;
+  return REPAIR_CHECK_FEE_REPLY;
+}
+
 module.exports = {
+  buildPriceQuote,   // unified price quote (all types)
+  WALL_AC_TIERS,     // price tables (exported for tests)
+  enforceRepairCheckReply,   // deterministic 700 baht repair-check enforcement
+  REPAIR_CHECK_FEE_REPLY,
   buildCoreBrainContext,
   formatCoreBrainForPrompt,
   saveCoreBrainLesson,

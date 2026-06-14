@@ -10,6 +10,7 @@ const {
   formatThreadAnalysisForPrompt,
   buildReplyDecisionGuard,
   formatReplyDecisionGuardForPrompt,
+  enforceRepairCheckReply,
 } = require("../aiOfficeCoreBrain");
 const {
   ensureAutoTrainingSchema,
@@ -42,9 +43,10 @@ function detectLanguage(text) {
 function inferSituation(text) {
   const s = String(text || "").toLowerCase();
   if (/แพง|ลด|ส่วนลด|ทำไมราคา/.test(s)) return "expensive";
+  if (/น้ำหยด|หยดน้ำ|น้ำรั่วจากแอร์|แอร์น้ำรั่ว/.test(s)) return "water_leak_cleaning";
   if (/ราคา|เท่าไหร่|กี่บาท|โปร|promotion|price|cost/.test(s)) return "price_question";
   if (/กลิ่น|เหม็น|อับ/.test(s)) return "bad_smell";
-  if (/ไม่เย็น|ไม่ค่อยเย็น|ลมไม่เย็น|น้ำหยด|หยดน้ำ|รั่ว|เสียงดัง|เสีย|ซ่อม|error|e\d|h\d|f\d/.test(s)) return "repair_symptom";
+  if (/ไม่เย็น|ไม่ค่อยเย็น|ลมไม่เย็น|รั่ว|เสียงดัง|เสีย|ซ่อม|error|e\d|h\d|f\d/.test(s)) return "repair_symptom";
   if (/นัด|คิว|ว่าง|วันไหน|เวลา|จอง|วันนี้|พรุ่งนี้/.test(s)) return "appointment";
   if (/ล้างแบบ|แบบไหน|พรีเมียม|ปกติ|แขวนคอยล์|ตัดล้าง/.test(s)) return "cleaning_package";
   if (/โวย|ร้องเรียน|ไม่พอใจ|เสียหาย|ช้า|แย่/.test(s)) return "complaint";
@@ -496,9 +498,26 @@ function enforcePriceQuoteReply(reply, threadAnalysis = {}) {
   const quote = threadAnalysis && threadAnalysis.price_quote;
   if (!quote || !quote.customer_reply) return reply;
   const text = cleanText(reply, 2400);
+  const hasNum = (n) => n && (text.includes(Number(n).toLocaleString("th-TH")) || text.includes(String(n)));
   const requiredTotals = (quote.packages || []).map((p) => p.total).filter(Boolean);
-  const hasAllTotals = requiredTotals.every((n) => text.includes(Number(n).toLocaleString("th-TH")) || text.includes(String(n)));
-  return hasAllTotals ? reply : quote.customer_reply;
+  const requiredUnits = (quote.packages || []).map((p) => p.unit_price).filter(Boolean);
+  let priceOk;
+  if (requiredTotals.length) {
+    // มียอดรวม (รู้จำนวนเครื่อง) → คำตอบต้องมียอดรวมครบทุกแพ็กเกจ
+    priceOk = requiredTotals.every(hasNum);
+  } else {
+    // ไม่มียอดรวม → คำตอบต้องมีราคาต่อเครื่องครบทุกแพ็กเกจที่ระบบคำนวณได้
+    priceOk = requiredUnits.length ? requiredUnits.every(hasNum) : true;
+  }
+  const mustExplainPackages = quote.require_package_explanations === true || (quote.packages || []).some((p) => p.detail);
+  const explanationOk = !mustExplainPackages || [
+    /ล้างฟิลเตอร์|คอยล์เย็น|คอยล์ร้อน|ท่อน้ำทิ้ง/i,
+    /ถอดรางน้ำทิ้ง|โพรงกระรอก|ล้างละเอียด/i,
+    /ถอดแผงไฟ|ถาดหลัง|แขวนคอยล์|ยก\/แขวนคอยล์/i,
+    /ถอดล้างทั้งตัว|ครบระบบ|ตัดล้างใหญ่/i,
+  ].every((re) => re.test(text));
+  priceOk = priceOk && explanationOk;
+  return priceOk ? reply : quote.customer_reply;
 }
 
 async function buildInternalTrainingAnswer(pool, req, body = {}) {
@@ -609,7 +628,7 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
     "This is internal-only. Never claim a message was sent. Never trigger LINE sending.",
     "Infer known_info from the whole LINE thread first. If facts are missing, set decision='AI ยังไม่รู้' or 'ต้องตรวจ' and ask the teacher what should be taught. Never ask the customer for information already present in the thread.",
     "A PRE_COMPUTED_THREAD_ANALYSIS block is provided. Its known_info / missing_info / next_best_action are authoritative: never ask for anything in known_info, ask only missing_info, and if already_has_location is true never ask for location again.",
-    "PRICE_QUESTION_RULE: if intent is price_question or the customer asks price/how much/ราคาทั้งหมด, answer the price before asking date/time, queue, or booking. If price_quote exists, include every package line and total first, recommend a package, then ask preferred date/time to close.",
+    "PRICE_QUESTION_RULE: if intent is price_question or the customer asks price/how much/ราคาทั้งหมด, answer the price before asking date/time, queue, or booking. If price_quote exists, include every package line exactly, include totals when present, and explain the difference of each cleaning package before recommending a package.",
     "Use CWF Core Brain as the shared source of truth before saved examples. Do not invent tax invoice, discounts, booking confirmation, technician availability, or repair diagnosis.",
     "Use CWF Professional Sales Admin Brain v2.8: natural Thai LINE sales admin style, short, warm, closes the next step. If the customer really uses English, answer simple English; do not infer English from URL/map/display name.",
   ].join(" ");
@@ -624,10 +643,10 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
     "SAVED_TEACHER_EXAMPLES:", JSON.stringify(examples.map((e) => ({ id:e.id, situation_type:e.situation_type, customer_message:e.customer_message, final_admin_reply:e.final_admin_reply, language:e.language, tags:e.tags })), null, 2), "",
     "TRAINING_MEMORY:", JSON.stringify(trainingMemory.map((m) => ({ event_type:m.event_type, action_status:m.action_status, customer_message:m.customer_message, ai_reply:m.ai_reply, final_admin_reply:m.final_admin_reply, situation_type:m.situation_type })), null, 2), "",
     "TASK:",
-    "Generate the internal answer as if the AI were really chatting with this customer, but internal-only. Use conversation turns, known_info/missing_info, and next_best_action. For price_question, answer price first and do not ask schedule before the price. Do not answer like a report or generic AI. If map/location already exists, do not ask for location again.", "",
+    "Generate the internal answer as if the AI were really chatting with this customer, but internal-only. Use conversation turns, known_info/missing_info, and next_best_action. For price_question, answer price first, include all computed packages with totals and service differences, and do not ask schedule before the price. Do not answer like a report or generic AI. If map/location already exists, do not ask for location again.", "",
     "CWF_TRUSTED_FACTS:", JSON.stringify({
       services:["ล้างแอร์","ซ่อมแอร์","ติดตั้งแอร์","ตรวจเช็คแอร์"],
-      rainy_promo:{ wall_under_12000:{ normal:550, premium:790, hanging_coil:1290, deep_clean:1850 }, wall_18000_up:{ normal:690, premium:990, hanging_coil:1550, deep_clean:2150 } },
+      rainy_promo:{ wall_under_15000:{ normal:550, premium:790, hanging_coil:1290, deep_clean:1850 }, wall_over_15000:{ normal:690, premium:990, hanging_coil:1550, deep_clean:2150 } },
       check_fee:700,
       cleaning_warranty_days:30,
       tax_invoice:"currently_not_available_do_not_offer_unless_customer_asks_then_say_not_available",
@@ -638,7 +657,7 @@ async function buildInternalTrainingAnswer(pool, req, body = {}) {
   let parsed = {};
   try { parsed = JSON.parse(raw); } catch (_) { parsed = { customer_reply: raw, confidence: 40, decision:"ต้องตรวจ", decision_reason:"AI returned non-JSON; teacher review required" }; }
   const confidence = clamp(parsed.confidence, 0, 100);
-  const answer = enforcePriceQuoteReply(sanitizeCustomerReply(parsed.customer_reply || ""), threadAnalysis);
+  const answer = enforceRepairCheckReply(enforcePriceQuoteReply(sanitizeCustomerReply(parsed.customer_reply || ""), threadAnalysis), threadAnalysis);
   const decision = normalizeDecision(parsed.decision, confidence);
   const missingInfo = safeJsonArray(parsed.missing_info);
   const draft = {
@@ -746,11 +765,10 @@ async function getTrainingSkills(pool) {
     const passed = Number(ev.passed || 0);
     const failed = Number(ev.failed || 0);
     const unknowns = Number(ev.unknowns || 0);
-    let score = 0;
-    if (examples || total) score = Math.round(Math.min(96, 20 + examples * 9 + passed * 8 + total * 3 - failed * 10 - unknowns * 4));
-    score = clamp(score, 0, 100);
-    const readiness = score >= 85 ? "พร้อมตอบจริง" : score >= 70 ? "เกือบพร้อม" : score >= 45 ? "ต้องฝึกเพิ่ม" : "ห้าม auto reply";
-    return { key, label, score, readiness, examples, training_total: total, passed, failed, unknowns };
+    // ไม่ใช้คะแนนสังเคราะห์อีกต่อไป — ใช้ตัวนับจากเคสจริงเท่านั้น
+    const no_data = !examples && !total;
+    const pass_rate = total > 0 ? Math.round((passed / total) * 100) : null;
+    return { key, label, examples, training_total: total, passed, failed, unknowns, no_data, pass_rate };
   });
   return { ok:true, build:BUILD, skills, counts:{ examples: exampleRows.reduce((n,r)=>n+Number(r.examples||0),0), training_events: eventRows.reduce((n,r)=>n+Number(r.total||0),0) } };
 }
