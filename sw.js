@@ -83,7 +83,6 @@ self.addEventListener("fetch", (e) => {
     pathname === "/admin/ai-office.html" ||
     pathname === "/admin-ai-office.html" ||
     pathname === "/admin-ai-office.js" ||
-    pathname.startsWith("/assets/ai-office-final/") ||
     pathname.startsWith("/admin/ai-office/")
   );
   if (isSameOrigin && isAiOffice) {
