@@ -1,0 +1,85 @@
+# Customer App V2 Phase 1 Notes
+
+Date: 2026-06-15
+Branch: `feature/customer-app-v2-spec-and-skeleton`
+
+Phase 1 is skeleton-only. It does not implement real booking, real urgent dispatch, backend route changes, service worker changes, migrations, payment, accounting, tax, payout, receipt mutation, or production tracking logic.
+
+## What Was Created
+
+- `customer-app/index.html`
+- `customer-app/assets/customer-app.css`
+- `customer-app/assets/customer-app.js`
+- Static classic JS modules under `customer-app/modules/`
+
+The app is intentionally viewable by opening `customer-app/index.html` directly. The modules attach to `window.CWFCustomerAppV2` instead of using browser ES module imports, so file-open testing does not require a local server.
+
+## Screen Map
+
+- Home: CWF brand header, main actions, guest-friendly copy, secondary login panel.
+- Booking Mode Selection: scheduled booking and urgent booking cards.
+- Scheduled Booking Skeleton: service/problem chooser, AC details, address/map, date/slot, price estimate, review/confirm placeholders.
+- Urgent Booking Skeleton: symptom, address/map, photo/video, partner-first explanation, Waiting Room, timeout, admin fallback, and convert-to-scheduled placeholders.
+- Tracking Skeleton: booking code/token input, scheduled timeline, urgent timeline, technician card, support, receipt/photos/review/rebook placeholders.
+- Profile Skeleton: guest mode, LINE login placeholder, Google login placeholder, saved address, history, and rebook placeholders.
+
+## Module Responsibilities
+
+- `assets/customer-app.js`: initializes state and router.
+- `modules/state.js`: central in-memory skeleton state.
+- `modules/router.js`: hash navigation and nav state.
+- `modules/api.js`: placeholder API functions only; no real booking/tracking calls.
+- `modules/auth.js`: login/profile panel placeholders.
+- `modules/services.js`: static copy and step definitions.
+- `modules/bookingScheduled.js`: scheduled booking skeleton and rules.
+- `modules/bookingUrgent.js`: partner-first urgent skeleton and rules.
+- `modules/tracking.js`: tracking and urgent timeline skeleton.
+- `modules/profile.js`: guest/profile/history skeleton.
+- `modules/pricing.js`: pricing integration placeholder.
+- `modules/availability.js`: availability integration placeholder.
+- `modules/ui.js`: shared screen fragments.
+- `modules/utils.js`: escaping, route helper, step cards, timeline rendering.
+
+## Placeholder Areas
+
+- Real booking submission is disabled.
+- Real urgent request submission is disabled.
+- Real tracking lookup is disabled.
+- LINE Login is a placeholder.
+- Google Login is a placeholder.
+- Price estimate and availability slots are placeholders.
+- Waiting Room timeout and admin fallback are placeholders.
+
+## Phase 2 API Integration Points
+
+- `GET /public/me`
+- `POST /public/pricing_preview`
+- `GET /public/availability_v2`
+- `POST /public/book`
+- `GET /public/track?q=...`
+- `POST /public/logout`
+- `PATCH /public/profile/address`
+
+All API calls must stay centralized in `customer-app/modules/api.js`.
+
+## Urgent Partner-First Confirmation
+
+Urgent booking is partner-first.
+
+- Send urgent requests to ready approved partner technicians first.
+- Partners may accept or decline.
+- If no partner accepts within timeout, go to Admin Fallback.
+- Admin may help, convert to scheduled booking, or assign a company technician manually.
+- Company technicians are not automatic first-round urgent dispatch.
+
+The skeleton uses the required safe wording:
+
+`ส่งคำขอคิวด่วนแล้ว กำลังรอช่างพาร์ทเนอร์กดรับงาน ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน`
+
+## Risks Before Connecting Real APIs
+
+- Current `/public/track` does not expose full Waiting Room fields such as timeout, partner round, fallback state, or convert-to-scheduled options.
+- Public tracking currently accepts booking code as well as token, which has privacy implications.
+- `sw.js` currently caches legacy customer pages. Cutover needs a separate cache strategy.
+- Production public routes must remain frozen until Phase 2/3 authorization and rollback checks exist.
+- Google Login must wait for owner-approved identity linking rules.
