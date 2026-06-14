@@ -144,3 +144,24 @@ dist
 # Vite logs files
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
+
+# Cleanup guardrails: keep one-off delivery artifacts out of repo root.
+/*.zip
+/*.7z
+/*.rar
+/*.tar
+/*.tar.gz
+/*.tgz
+/*-patch/
+/*_patch/
+/*-deploy/
+/*_deploy/
+/*_PATCH_NOTES.md
+/*PATCH_NOTES*.md
+/README_*PATCH*.md
+/README_*PATCH*.txt
+/README_CWF_AI_OFFICE_*.txt
+/README_ADVANCE_*.txt
+/README_CALENDAR_*.txt
+/README_WORK_CALENDAR_*.txt
+/README_ADMIN_WORK_READINESS_*.txt

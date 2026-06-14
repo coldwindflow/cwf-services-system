@@ -40,7 +40,9 @@ This document records the current production repository shape after pulling the 
   - `docs/CWF_SOURCE_OF_TRUTH.md`
   - `docs/CWF_SERVICE_AND_PRICING_RULES.md`
   - `docs/INDEX_SPLIT_NOTES.md`
-  - Snapshot copies under `docs/index.js`, `docs/app.js`, `docs/tech.html`, and `docs/sw.js`.
+  - Historical patch notes under `docs/archive/patch-notes-legacy/`.
+
+Note: old snapshot copies under `docs/index.js`, `docs/app.js`, `docs/tech.html`, and `docs/sw.js` were removed during the 2026-06-14 safe cleanup after a reference audit found no runtime references.
 
 ## Risk Notes
 
