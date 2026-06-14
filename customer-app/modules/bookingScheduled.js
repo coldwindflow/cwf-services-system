@@ -3,15 +3,33 @@
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
 
+  function draft() {
+    return root.state.draft.scheduled || {};
+  }
+
   function payloadFromDraft() {
-    const draft = root.state.draft.scheduled || {};
+    const d = draft();
     return {
-      job_type: draft.job_type || "ล้าง",
-      ac_type: draft.ac_type || "ผนัง",
-      wash_variant: draft.wash_variant || "ล้างธรรมดา",
-      btu: Number(draft.btu || 12000),
-      machine_count: Number(draft.machine_count || 1),
+      job_type: d.job_type || "ล้าง",
+      ac_type: d.ac_type || "ผนัง",
+      wash_variant: d.wash_variant || "ล้างธรรมดา",
+      repair_variant: d.repair_variant || "",
+      btu: Number(d.btu || 12000),
+      machine_count: Number(d.machine_count || 1),
     };
+  }
+
+  function finalPrice() {
+    const data = root.state.scheduledPreview.pricing.data;
+    if (!data) return null;
+    if (data.promo && data.promo.total_after_discount != null) return data.promo.total_after_discount;
+    return data.active_price || data.standard_price || null;
+  }
+
+  function appointmentDatetime() {
+    const d = draft();
+    if (!d.date || !d.selectedSlot || !d.selectedSlot.start) return "";
+    return `${d.date}T${d.selectedSlot.start}:00`;
   }
 
   function renderPricing() {
@@ -20,14 +38,11 @@
     if (pricing.status === "error") return root.utils.stateBox("error", `ประเมินราคาไม่สำเร็จ: ${pricing.error}`);
     if (!pricing.data) return root.utils.stateBox("", "กดปุ่มประเมินราคาเพื่อดูราคาประมาณการจากระบบ");
     const data = pricing.data;
-    const finalPrice = data.promo && data.promo.total_after_discount != null
-      ? data.promo.total_after_discount
-      : (data.active_price || data.standard_price);
     return `
       <div class="preview-grid">
         <div class="preview-card">
           <span class="muted">ราคาประมาณการ</span>
-          <strong>${root.utils.formatBaht(finalPrice)}</strong>
+          <strong>${root.utils.formatBaht(finalPrice())}</strong>
         </div>
         <div class="preview-card">
           <span class="muted">เวลาทำงานโดยประมาณ</span>
@@ -42,6 +57,7 @@
 
   function renderAvailability() {
     const availability = root.state.scheduledPreview.availability;
+    const selected = draft().selectedSlot || null;
     if (availability.status === "loading") return root.utils.stateBox("loading", "กำลังโหลดเวลาว่าง...");
     if (availability.status === "error") return root.utils.stateBox("error", `โหลดเวลาว่างไม่สำเร็จ: ${availability.error}`);
     if (!availability.data) return root.utils.stateBox("", "เลือกวันแล้วกดโหลดเวลาว่างเพื่อดูช่วงเวลาจากระบบ");
@@ -51,37 +67,177 @@
     if (!available.length) return root.utils.stateBox("", "วันที่เลือกยังไม่มีช่วงเวลาว่าง");
     return `
       <div class="slot-list">
-        ${available.slice(0, 18).map((slot) => `
-          <span class="slot-chip">${root.utils.escapeHtml(slot.start)}-${root.utils.escapeHtml(slot.end)}</span>
-        `).join("")}
+        ${available.slice(0, 24).map((slot) => {
+          const isSelected = selected && selected.start === slot.start;
+          return `
+            <button class="slot-chip ${isSelected ? "is-selected" : ""}" type="button" data-slot-start="${root.utils.escapeHtml(slot.start)}" data-slot-end="${root.utils.escapeHtml(slot.end)}">
+              ${root.utils.escapeHtml(slot.start)}-${root.utils.escapeHtml(slot.end)}
+            </button>
+          `;
+        }).join("")}
       </div>
-      <p class="muted">แสดง ${available.length} ช่วงเวลาว่างจาก ${slots.length} ช่วงเวลา</p>
+      <p class="muted">เลือกช่วงเวลาที่ต้องการจาก ${available.length} ช่วงเวลาว่าง</p>
     `;
+  }
+
+  function validateDraft() {
+    const d = draft();
+    const service = payloadFromDraft();
+    const errors = [];
+    const pricing = root.state.scheduledPreview.pricing;
+    const availability = root.state.scheduledPreview.availability;
+    const slots = availability.data && Array.isArray(availability.data.slots) ? availability.data.slots : [];
+    const selectedSlot = d.selectedSlot || null;
+    const phoneDigits = String(d.customer_phone || "").replace(/\D/g, "");
+    if (!String(d.customer_name || "").trim()) errors.push("กรุณากรอกชื่อผู้ติดต่อ");
+    if (!(phoneDigits.length >= 9 && phoneDigits.length <= 10)) errors.push("กรุณากรอกเบอร์โทร 9-10 หลัก");
+    if (!String(d.address_text || "").trim()) errors.push("กรุณากรอกที่อยู่หน้างาน");
+    if (!service.job_type) errors.push("กรุณาเลือกประเภทงาน");
+    if (!service.ac_type) errors.push("กรุณาเลือกประเภทแอร์");
+    if (!service.btu) errors.push("กรุณาเลือก BTU");
+    if (!service.machine_count || service.machine_count < 1) errors.push("จำนวนเครื่องต้องมากกว่า 0");
+    if (service.job_type === "ล้าง" && service.ac_type === "ผนัง" && !service.wash_variant) errors.push("กรุณาเลือกประเภทการล้าง");
+    if (service.job_type === "ซ่อม" && !service.repair_variant) errors.push("กรุณาเลือกประเภทงานซ่อม");
+    if (!pricing.data) errors.push("กรุณาประเมินราคาก่อนส่งคำขอจอง");
+    if (!availability.data) errors.push("กรุณาโหลดเวลาว่างก่อนส่งคำขอจอง");
+    if (!appointmentDatetime()) errors.push("กรุณาเลือกช่วงเวลาที่ว่าง");
+    if (selectedSlot && slots.length) {
+      const stillAvailable = slots.some((slot) => (
+        slot
+        && slot.available
+        && slot.start === selectedSlot.start
+        && slot.end === selectedSlot.end
+      ));
+      if (!stillAvailable) errors.push("ช่วงเวลาที่เลือกไม่พร้อมให้จองแล้ว กรุณาเลือกเวลาใหม่");
+    }
+    return errors;
+  }
+
+  function buildSubmitPayload() {
+    const d = draft();
+    const service = payloadFromDraft();
+    const body = {
+      customer_name: String(d.customer_name || "").trim(),
+      customer_phone: String(d.customer_phone || "").trim(),
+      job_type: service.job_type,
+      appointment_datetime: appointmentDatetime(),
+      address_text: String(d.address_text || "").trim(),
+      maps_url: String(d.maps_url || "").trim(),
+      customer_note: String(d.customer_note || "").trim(),
+      booking_mode: "scheduled",
+      job_zone: String(d.job_zone || "").trim(),
+      ...service,
+    };
+    if (Array.isArray(d.items) && d.items.length) body.items = d.items;
+    if (Array.isArray(d.services) && d.services.length) body.services = d.services;
+    return body;
+  }
+
+  function serviceSummary() {
+    const s = payloadFromDraft();
+    const parts = [
+      s.job_type,
+      s.ac_type,
+      s.btu ? `${Number(s.btu).toLocaleString("th-TH")} BTU` : "",
+      `${s.machine_count || 1} เครื่อง`,
+      s.job_type === "ล้าง" && s.ac_type === "ผนัง" ? s.wash_variant : "",
+      s.job_type === "ซ่อม" ? s.repair_variant : "",
+    ].filter(Boolean);
+    return parts.join(" / ");
+  }
+
+  function renderReview() {
+    const d = draft();
+    const submit = root.state.scheduledSubmit;
+    const errors = validateDraft();
+    const slot = d.selectedSlot ? `${d.date} ${d.selectedSlot.start}-${d.selectedSlot.end}` : "ยังไม่ได้เลือก";
+    const price = finalPrice();
+    const pending = submit.status === "validating" || submit.status === "submitting";
+    return `
+      <section class="card">
+        <h2>ตรวจสอบก่อนจอง</h2>
+        <div class="data-list">
+          <div class="data-row"><strong>ผู้ติดต่อ</strong><span class="muted">${root.utils.escapeHtml(d.customer_name || "-")} / ${root.utils.escapeHtml(d.customer_phone || "-")}</span></div>
+          <div class="data-row"><strong>บริการ</strong><span class="muted">${root.utils.escapeHtml(serviceSummary())}</span></div>
+          <div class="data-row"><strong>เวลาที่เลือก</strong><span class="muted">${root.utils.escapeHtml(slot)}</span></div>
+          <div class="data-row"><strong>ที่อยู่</strong><span class="muted">${root.utils.escapeHtml(d.address_text || "-")}</span></div>
+          <div class="data-row"><strong>ราคาประมาณการ</strong><span class="muted">${price ? root.utils.formatBaht(price) : "กรุณาประเมินราคาก่อน"}</span></div>
+        </div>
+        <div class="notice">ราคานี้เป็นราคาประมาณการ หากพบงานเพิ่มเติม CWF จะแจ้งราคาก่อนเริ่มงาน</div>
+        ${errors.length ? `
+          <div class="state-box is-error">
+            ${errors.map((error) => `<div>${root.utils.escapeHtml(error)}</div>`).join("")}
+          </div>
+        ` : root.utils.stateBox("success", "ข้อมูลพร้อมส่งคำขอจองล่วงหน้า")}
+        ${submit.status === "error" ? root.utils.stateBox("error", submit.error || "ส่งคำขอจองไม่สำเร็จ") : ""}
+        <div class="button-row">
+          <button class="primary-btn" type="button" data-action="submit-scheduled" ${pending || errors.length ? "disabled" : ""}>
+            ${pending ? "กำลังส่งคำขอจอง..." : "ส่งคำขอจองล่วงหน้า"}
+          </button>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderSuccess() {
+    const result = root.state.scheduledSubmit.result;
+    if (!result) return "";
+    const trackingKey = result.token || result.booking_code || "";
+    return `
+      <section class="card">
+        <h2>จองสำเร็จ</h2>
+        <div class="state-box is-success">ระบบรับคำขอจองแล้ว รอทีมงานตรวจสอบและดำเนินการต่อ</div>
+        <div class="data-list">
+          <div class="data-row"><strong>เลข Booking</strong><span class="muted">${root.utils.escapeHtml(result.booking_code || "-")}</span></div>
+          <div class="data-row"><strong>ราคาจากระบบ</strong><span class="muted">${root.utils.formatBaht(result.base_total)}</span></div>
+          <div class="data-row"><strong>เวลาทำงานโดยประมาณ</strong><span class="muted">${root.utils.escapeHtml(result.duration_min || "-")} นาที</span></div>
+        </div>
+        <div class="button-row">
+          <button class="secondary-btn" type="button" data-action="track-created" data-tracking-key="${root.utils.escapeHtml(trackingKey)}">ติดตามงานใน Customer App</button>
+        </div>
+      </section>
+    `;
+  }
+
+  function renderSubmitArea() {
+    return root.state.scheduledSubmit.status === "success" ? renderSuccess() : renderReview();
+  }
+
+  function renderAll(container) {
+    const pricingMount = container.querySelector("[data-pricing-preview]");
+    const availabilityMount = container.querySelector("[data-availability-preview]");
+    const submitMount = container.querySelector("[data-submit-area]");
+    if (pricingMount) pricingMount.innerHTML = renderPricing();
+    if (availabilityMount) availabilityMount.innerHTML = renderAvailability();
+    if (submitMount) submitMount.innerHTML = renderSubmitArea();
+    bindDynamic(container);
   }
 
   async function refreshPricing(container) {
     root.state.setScheduledPreview("pricing", { status: "loading", data: null, error: "" });
-    container.querySelector("[data-pricing-preview]").innerHTML = renderPricing();
+    root.state.updateDraft("scheduled", { selectedSlot: null });
+    renderAll(container);
     try {
       const data = await root.api.previewPricing(payloadFromDraft());
       root.state.setScheduledPreview("pricing", { status: "success", data, error: "" });
     } catch (error) {
       root.state.setScheduledPreview("pricing", { status: "error", data: null, error: error.message });
     }
-    container.querySelector("[data-pricing-preview]").innerHTML = renderPricing();
+    renderAll(container);
   }
 
   async function refreshAvailability(container) {
     root.state.setScheduledPreview("availability", { status: "loading", data: null, error: "" });
-    container.querySelector("[data-availability-preview]").innerHTML = renderAvailability();
-    const draft = root.state.draft.scheduled || {};
+    root.state.updateDraft("scheduled", { selectedSlot: null });
+    renderAll(container);
+    const d = draft();
     const duration = root.state.scheduledPreview.pricing.data
       ? Number(root.state.scheduledPreview.pricing.data.duration_min || 60)
       : 60;
     try {
       const data = await root.api.loadAvailability({
-        date: draft.date,
-        tech_type: draft.tech_type || "company",
+        date: d.date,
+        tech_type: "company",
         duration_min: duration,
         ...payloadFromDraft(),
       });
@@ -89,70 +245,185 @@
     } catch (error) {
       root.state.setScheduledPreview("availability", { status: "error", data: null, error: error.message });
     }
-    container.querySelector("[data-availability-preview]").innerHTML = renderAvailability();
+    renderAll(container);
   }
 
-  function bind(container) {
+  async function submit(container) {
+    const current = root.state.scheduledSubmit.status;
+    if (current === "validating" || current === "submitting") return;
+    root.state.setScheduledSubmit({ status: "validating", error: "", result: null });
+    renderAll(container);
+    const errors = validateDraft();
+    if (errors.length) {
+      root.state.setScheduledSubmit({ status: "error", error: errors[0], result: null });
+      renderAll(container);
+      return;
+    }
+    root.state.setScheduledSubmit({ status: "submitting", error: "", result: null });
+    renderAll(container);
+    try {
+      const result = await root.api.submitScheduledBooking(buildSubmitPayload());
+      root.state.setScheduledSubmit({ status: "success", error: "", result });
+    } catch (error) {
+      root.state.setScheduledSubmit({
+        status: "error",
+        error: error.message || "ส่งคำขอจองไม่สำเร็จ กรุณาลองอีกครั้ง",
+        result: null,
+      });
+    }
+    renderAll(container);
+  }
+
+  function bindStatic(container) {
     container.querySelectorAll("[data-scheduled-field]").forEach((field) => {
-      field.addEventListener("change", () => {
+      field.addEventListener("input", () => {
         const patch = {};
         patch[field.getAttribute("data-scheduled-field")] = field.value;
         root.state.updateDraft("scheduled", patch);
+        root.state.setScheduledSubmit({ status: "idle", error: "", result: null });
+        const submitMount = container.querySelector("[data-submit-area]");
+        if (submitMount) {
+          submitMount.innerHTML = renderSubmitArea();
+          bindDynamic(container);
+        }
+      });
+      field.addEventListener("change", () => {
+        const patch = {};
+        patch[field.getAttribute("data-scheduled-field")] = field.value;
+        if (["job_type", "ac_type", "wash_variant", "repair_variant", "btu", "machine_count", "date"].includes(field.getAttribute("data-scheduled-field"))) {
+          patch.selectedSlot = null;
+          root.state.setScheduledPreview("availability", { status: "idle", data: null, error: "" });
+        }
+        root.state.updateDraft("scheduled", patch);
+        root.state.setScheduledSubmit({ status: "idle", error: "", result: null });
+        renderAll(container);
       });
     });
     container.querySelector("[data-action='preview-price']").addEventListener("click", () => refreshPricing(container));
     container.querySelector("[data-action='load-slots']").addEventListener("click", () => refreshAvailability(container));
   }
 
+  function bindDynamic(container) {
+    container.querySelectorAll("[data-slot-start]").forEach((button) => {
+      button.addEventListener("click", () => {
+        root.state.updateDraft("scheduled", {
+          selectedSlot: {
+            start: button.getAttribute("data-slot-start"),
+            end: button.getAttribute("data-slot-end"),
+          },
+        });
+        root.state.setScheduledSubmit({ status: "idle", error: "", result: null });
+        renderAll(container);
+      }, { once: true });
+    });
+    const submitButton = container.querySelector("[data-action='submit-scheduled']");
+    if (submitButton) submitButton.addEventListener("click", () => submit(container), { once: true });
+    const trackButton = container.querySelector("[data-action='track-created']");
+    if (trackButton) {
+      trackButton.addEventListener("click", () => {
+        const key = trackButton.getAttribute("data-tracking-key") || "";
+        root.state.updateDraft("tracking", { trackingCode: key });
+        root.state.setTracking({ status: "idle", data: null, error: "" });
+        root.utils.routeTo("tracking");
+      }, { once: true });
+    }
+  }
+
   root.bookingScheduled = {
     // Scheduled booking rule:
-    // Customer selects date/time from real technician availability in Phase 2A.
-    // Phase 2A must not call /public/book or mutate production booking data.
+    // Customer submits scheduled bookings through existing /public/book only.
+    // This flow always sends booking_mode="scheduled" and never starts urgent dispatch.
     render(container) {
-      const draft = root.state.draft.scheduled || {};
+      const d = draft();
       container.innerHTML = `
         <section class="screen">
           <div class="hero">
             <h2>จองล่วงหน้า</h2>
-            <p>ดูราคาประมาณการและเวลาว่างจากระบบ ก่อนรอบถัดไปที่เปิดส่งคำขอจองจริง</p>
+            <p>เลือกบริการ ดูราคาประมาณการ เลือกเวลาว่าง แล้วส่งคำขอจองให้ CWF ตรวจสอบ</p>
           </div>
           <section class="card">
-            <h2>ข้อมูลสำหรับประเมิน</h2>
+            <h2>ข้อมูลผู้ติดต่อ</h2>
+            <div class="form-grid">
+              <div class="field">
+                <label for="scheduled-name">ชื่อผู้ติดต่อ</label>
+                <input id="scheduled-name" class="input" value="${root.utils.escapeHtml(d.customer_name || "")}" data-scheduled-field="customer_name" autocomplete="name">
+              </div>
+              <div class="field">
+                <label for="scheduled-phone">เบอร์โทร</label>
+                <input id="scheduled-phone" class="input" value="${root.utils.escapeHtml(d.customer_phone || "")}" data-scheduled-field="customer_phone" inputmode="tel" autocomplete="tel">
+              </div>
+              <div class="field">
+                <label for="scheduled-address">ที่อยู่หน้างาน</label>
+                <textarea id="scheduled-address" class="input textarea" data-scheduled-field="address_text" rows="3">${root.utils.escapeHtml(d.address_text || "")}</textarea>
+              </div>
+              <div class="field">
+                <label for="scheduled-maps">ลิงก์แผนที่</label>
+                <input id="scheduled-maps" class="input" value="${root.utils.escapeHtml(d.maps_url || "")}" data-scheduled-field="maps_url" inputmode="url">
+              </div>
+              <div class="field">
+                <label for="scheduled-note">หมายเหตุถึงทีมงาน</label>
+                <textarea id="scheduled-note" class="input textarea" data-scheduled-field="customer_note" rows="3">${root.utils.escapeHtml(d.customer_note || "")}</textarea>
+              </div>
+            </div>
+          </section>
+          <section class="card">
+            <h2>ข้อมูลบริการ</h2>
             <div class="form-grid">
               <div class="field">
                 <label for="scheduled-job-type">ประเภทงาน</label>
                 <select id="scheduled-job-type" class="select" data-scheduled-field="job_type">
-                  <option value="ล้าง" ${draft.job_type === "ล้าง" ? "selected" : ""}>ล้างแอร์</option>
-                  <option value="ซ่อม" ${draft.job_type === "ซ่อม" ? "selected" : ""}>ซ่อมแอร์</option>
-                  <option value="ติดตั้ง" ${draft.job_type === "ติดตั้ง" ? "selected" : ""}>ติดตั้งแอร์</option>
+                  <option value="ล้าง" ${d.job_type === "ล้าง" ? "selected" : ""}>ล้างแอร์</option>
+                  <option value="ซ่อม" ${d.job_type === "ซ่อม" ? "selected" : ""}>ซ่อมแอร์</option>
+                  <option value="ติดตั้ง" ${d.job_type === "ติดตั้ง" ? "selected" : ""}>ติดตั้งแอร์</option>
                 </select>
               </div>
               <div class="field">
                 <label for="scheduled-ac-type">ประเภทแอร์</label>
                 <select id="scheduled-ac-type" class="select" data-scheduled-field="ac_type">
-                  <option value="ผนัง" ${draft.ac_type === "ผนัง" ? "selected" : ""}>ติดผนัง</option>
-                  <option value="สี่ทิศ" ${draft.ac_type === "สี่ทิศ" ? "selected" : ""}>สี่ทิศ</option>
-                  <option value="แขวน" ${draft.ac_type === "แขวน" ? "selected" : ""}>แขวน</option>
+                  <option value="ผนัง" ${d.ac_type === "ผนัง" ? "selected" : ""}>ติดผนัง</option>
+                  <option value="สี่ทิศ" ${d.ac_type === "สี่ทิศ" ? "selected" : ""}>สี่ทิศ</option>
+                  <option value="แขวน" ${d.ac_type === "แขวน" ? "selected" : ""}>แขวน</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="scheduled-wash">ประเภทการล้าง</label>
+                <select id="scheduled-wash" class="select" data-scheduled-field="wash_variant">
+                  <option value="ล้างธรรมดา" ${d.wash_variant === "ล้างธรรมดา" ? "selected" : ""}>ล้างธรรมดา</option>
+                  <option value="ล้างพรีเมียม" ${d.wash_variant === "ล้างพรีเมียม" ? "selected" : ""}>ล้างพรีเมียม</option>
+                  <option value="ล้างแขวนคอยล์" ${d.wash_variant === "ล้างแขวนคอยล์" ? "selected" : ""}>ล้างแขวนคอยล์</option>
+                  <option value="ล้างแบบตัดล้าง" ${d.wash_variant === "ล้างแบบตัดล้าง" ? "selected" : ""}>ตัดล้างใหญ่</option>
+                </select>
+              </div>
+              <div class="field">
+                <label for="scheduled-repair">ประเภทงานซ่อม</label>
+                <select id="scheduled-repair" class="select" data-scheduled-field="repair_variant">
+                  <option value="" ${!d.repair_variant ? "selected" : ""}>ยังไม่เลือก</option>
+                  <option value="ตรวจอาการ" ${d.repair_variant === "ตรวจอาการ" ? "selected" : ""}>ตรวจอาการ</option>
+                  <option value="ซ่อมทั่วไป" ${d.repair_variant === "ซ่อมทั่วไป" ? "selected" : ""}>ซ่อมทั่วไป</option>
                 </select>
               </div>
               <div class="field">
                 <label for="scheduled-btu">BTU</label>
                 <select id="scheduled-btu" class="select" data-scheduled-field="btu">
-                  <option value="9000" ${Number(draft.btu) === 9000 ? "selected" : ""}>9,000 BTU</option>
-                  <option value="12000" ${Number(draft.btu) === 12000 ? "selected" : ""}>12,000 BTU</option>
-                  <option value="18000" ${Number(draft.btu) === 18000 ? "selected" : ""}>18,000 BTU</option>
-                  <option value="24000" ${Number(draft.btu) === 24000 ? "selected" : ""}>24,000 BTU</option>
+                  <option value="9000" ${Number(d.btu) === 9000 ? "selected" : ""}>9,000 BTU</option>
+                  <option value="12000" ${Number(d.btu) === 12000 ? "selected" : ""}>12,000 BTU</option>
+                  <option value="18000" ${Number(d.btu) === 18000 ? "selected" : ""}>18,000 BTU</option>
+                  <option value="24000" ${Number(d.btu) === 24000 ? "selected" : ""}>24,000 BTU</option>
                 </select>
               </div>
               <div class="field">
                 <label for="scheduled-count">จำนวนเครื่อง</label>
                 <select id="scheduled-count" class="select" data-scheduled-field="machine_count">
-                  ${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${Number(draft.machine_count) === n ? "selected" : ""}>${n} เครื่อง</option>`).join("")}
+                  ${[1, 2, 3, 4, 5].map((n) => `<option value="${n}" ${Number(d.machine_count) === n ? "selected" : ""}>${n} เครื่อง</option>`).join("")}
                 </select>
               </div>
               <div class="field">
+                <label for="scheduled-zone">พื้นที่บริการ</label>
+                <input id="scheduled-zone" class="input" value="${root.utils.escapeHtml(d.job_zone || "")}" data-scheduled-field="job_zone">
+              </div>
+              <div class="field">
                 <label for="scheduled-date">วันที่ต้องการ</label>
-                <input id="scheduled-date" class="input" type="date" value="${root.utils.escapeHtml(draft.date)}" data-scheduled-field="date">
+                <input id="scheduled-date" class="input" type="date" value="${root.utils.escapeHtml(d.date)}" data-scheduled-field="date">
               </div>
             </div>
           </section>
@@ -164,23 +435,17 @@
             </div>
           </section>
           <section class="card">
-            <h2>เวลาว่างของช่าง</h2>
+            <h2>เลือกเวลาว่าง</h2>
             <div data-availability-preview>${renderAvailability()}</div>
             <div class="button-row">
               <button class="secondary-btn" type="button" data-action="load-slots">โหลดเวลาว่าง</button>
             </div>
           </section>
-          <section class="card">
-            <h2>ขั้นตอนการจอง</h2>
-            ${root.utils.stepCards(root.services.scheduledSteps)}
-          </section>
-          <div class="sticky-action">
-            <button class="disabled-btn" type="button" disabled>ยังไม่เปิดส่งคำขอจองจริงในรอบนี้</button>
-            <p class="muted">หน้านี้อ่านราคาประมาณการและเวลาว่างเท่านั้น ยังไม่สร้างงานในระบบ</p>
-          </div>
+          <div data-submit-area>${renderSubmitArea()}</div>
         </section>
       `;
-      bind(container);
+      bindStatic(container);
+      bindDynamic(container);
     },
   };
 })();

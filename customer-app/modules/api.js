@@ -84,8 +84,15 @@
       return requestJson("/catalog/items", { query: { customer: 1 } });
     },
 
-    async submitScheduledBooking() {
-      return { disabled: true, message: "ยังไม่เปิดส่งคำขอจองจริงในรอบนี้" };
+    async submitScheduledBooking(payload) {
+      const body = {
+        ...(payload || {}),
+        booking_mode: "scheduled",
+      };
+      return requestJson("/public/book", {
+        method: "POST",
+        body,
+      });
     },
 
     async submitUrgentRequest() {

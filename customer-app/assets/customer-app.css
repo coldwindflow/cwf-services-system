@@ -422,6 +422,12 @@ input,
   color: var(--ink);
 }
 
+.textarea {
+  min-height: 96px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
 .button-row {
   display: flex;
   flex-wrap: wrap;
@@ -455,6 +461,14 @@ input,
   background: #d8e0ea;
   color: #53657a;
   cursor: not-allowed;
+}
+
+.primary-btn:disabled,
+.secondary-btn:disabled {
+  background: #d8e0ea;
+  color: #53657a;
+  cursor: not-allowed;
+  opacity: 1;
 }
 
 .tag-row {
@@ -550,6 +564,13 @@ input,
   background: var(--soft-blue);
   color: var(--blue);
   font-weight: 900;
+}
+
+.slot-chip.is-selected {
+  border-color: var(--blue);
+  background: var(--blue);
+  color: #fff;
+  box-shadow: 0 8px 18px rgba(18, 87, 216, 0.2);
 }
 
 .slot-chip.is-full {

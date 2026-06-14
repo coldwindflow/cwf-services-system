@@ -16,6 +16,11 @@
       pricing: { status: "idle", data: null, error: "" },
       availability: { status: "idle", data: null, error: "" },
     },
+    scheduledSubmit: {
+      status: "idle",
+      error: "",
+      result: null,
+    },
     tracking: { status: "idle", data: null, error: "" },
     draft: {
       scheduled: {
@@ -26,6 +31,13 @@
         machine_count: 1,
         date: new Date().toISOString().slice(0, 10),
         tech_type: "company",
+        selectedSlot: null,
+        customer_name: "",
+        customer_phone: "",
+        address_text: "",
+        maps_url: "",
+        customer_note: "",
+        job_zone: "",
       },
       urgent: {},
       tracking: {
@@ -60,6 +72,12 @@
     setScheduledPreview(name, patch) {
       this.scheduledPreview[name] = {
         ...(this.scheduledPreview[name] || {}),
+        ...(patch || {}),
+      };
+    },
+    setScheduledSubmit(patch) {
+      this.scheduledSubmit = {
+        ...(this.scheduledSubmit || {}),
         ...(patch || {}),
       };
     },
