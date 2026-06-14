@@ -1,65 +1,61 @@
-# CWF AI Office Customer Chat v14
+# CWF Services System
 
-แพ็กนี้เป็น patch สำหรับแก้แอพจริงใน repo CWF โดยไม่สร้าง mock/demo
+CWF Services System is the production web application for Coldwindflow air-service operations. It supports customer booking and tracking, admin job management, technician workflows, partner onboarding, promotions, accounting documents, payout support, and the AI Office admin workspace.
 
-## สิ่งที่แก้
+## Production Entry Points
 
-1. ปุ่ม AI Office บนแถบเมนูจริงของแอดมิน
-   - อยู่ข้างปุ่ม hamburger ใน topbar
-   - ใช้ asset `assets/icons/cwf-ai-office-entry.png`
-   - กดเข้า `/admin/ai-office`
+- Backend: `index.js`
+- Start command: `npm start` or `node index.js`
+- Package manifest: `package.json`
+- PWA service worker: `sw.js`
+- PWA manifests: `manifest.json` and legacy `mainfest.json`
+- AI Office assets: `assets/ai-office-final/`
 
-2. กล่องแชทลูกค้าให้ใช้งานเหมือนแชทจริงมากขึ้น
-   - เลือกลูกค้าแล้วระบบร่างคำตอบให้อัตโนมัติ
-   - เพิ่มช่อง “ถาม AI สำหรับแชทนี้” ให้แอดมินพิมพ์ถามว่า “ควรตอบยังไง”
-   - AI ตอบกลับเป็นข้อความพร้อมส่งลูกค้า
-   - แอดมินคัดลอกไปส่ง LINE เอง
+## Repository Map
 
-3. ข้อความส่งลูกค้าเป็นโทนแอดมินผู้หญิง
-   - ภาษาไทยใช้ “ค่ะ / นะคะ” อย่างเป็นธรรมชาติ
-   - ไม่ใช่รายงาน ไม่ใช่ bullet ไม่ใช่สรุปหลังบ้าน
+- `server/`: extracted backend modules and route helpers.
+- `server/routes/`: route modules used by the production app.
+- `migrations/`: database migration history. Do not rewrite, reorder, or delete existing migrations.
+- `docs/`: architecture notes, source-of-truth docs, route audits, and archived historical patch notes.
+- `assets/`: static application assets, including AI Office artwork and generated documents/media support assets.
+- Root `admin-*.html/js`, `tech.html`, `customer.html`, `partner-*.html/js`: production frontend screens served by Express.
 
-4. คัดลอกเฉพาะข้อความส่งลูกค้า
-   - ไม่ติดสรุป
-   - ไม่ติดคำแปล
-   - ไม่ติดข้อมูลที่ยังขาด
-   - ไม่ติด next step
+## Safety Rules
 
-5. อัปเกรดบุคลิก AI แต่ละตำแหน่ง
-   - Admin AI = Senior Admin Manager
-   - Sales AI = Master Closer
-   - Ops AI = Dispatch & Operations Commander
-   - Ads AI = Elite Performance Marketer
-   - Content AI = Creative Director
-   - Dev AI = Senior Production Engineer
-   - Office Chat = AI Chief of Staff
+This repo runs production workflows. Keep changes narrow and trace the current flow before editing:
 
-## วิธีลง
+- Do not change auth, session, payment, accounting, tax, payout, or migration behavior without a dedicated task.
+- Do not delete `migrations/`, `sw.js`, `manifest.json`, `mainfest.json`, or AI Office assets without a focused reference audit and cache test.
+- Keep historical patch notes under `docs/archive/patch-notes-legacy/` instead of the repository root.
+- Update service-worker cache entries only when the referenced static files are intentionally changed.
 
-แตก ZIP ที่ root repo แล้วรัน:
+## Local Verification
+
+Install dependencies once:
 
 ```bash
-bash cwf-ai-office-customer-chat-v14/tools/apply-cwf-ai-office-customer-chat-v14.sh .
+npm install
 ```
 
-จากนั้น commit/push:
+Run syntax checks for touched JavaScript files:
 
 ```bash
-git add admin-v2-common.js admin-ai-office.js admin-ai-office.html server/routes/adminAiOfficeReadOnly.js assets/icons/cwf-ai-office-entry.png
-git commit -m "Improve AI Office topbar shortcut and customer chat replies"
-git push
+node --check index.js
+node --check sw.js
 ```
 
-แล้วให้ Render deploy ใหม่
+Start the production app locally:
 
-## ทดสอบหลัง deploy
+```bash
+npm start
+```
 
-- ทุกหน้าแอดมินต้องเห็นปุ่ม AI ข้าง hamburger บน topbar
-- กดปุ่ม AI แล้วเข้า `/admin/ai-office`
-- เข้า “กล่องแชทลูกค้า”
-- เลือกลูกค้า 1 คน
-- ระบบร่างข้อความให้อัตโนมัติ
-- แอดมินพิมพ์ในช่อง “ถาม AI สำหรับแชทนี้” ได้
-- กดคัดลอกแล้วได้เฉพาะข้อความส่งลูกค้า
-- ข้อความไทยต้องเป็นโทนผู้หญิง เช่น ค่ะ / นะคะ
-- ระบบยังไม่ส่ง LINE เอง
+## Documentation
+
+Start with:
+
+- `CODEX_INSTRUCTIONS.md`
+- `docs/CWF_SOURCE_OF_TRUTH.md`
+- `docs/CWF_SERVICE_AND_PRICING_RULES.md`
+- `docs/REPO_ARCHITECTURE_AUDIT.md`
+- `docs/archive/patch-notes-legacy/`
