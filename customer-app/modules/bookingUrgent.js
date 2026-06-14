@@ -14,21 +14,28 @@
     render(container) {
       container.innerHTML = `
         <section class="screen">
-          <div class="hero">
+          <div class="hero urgent-hero">
+            <div class="hero-badge">Partner-first urgent request</div>
             <h2>คิวด่วน</h2>
             <p>ส่งคำขอให้พาร์ทเนอร์ช่างที่พร้อมรับงานในพื้นที่กดรับเอง ช่างสามารถรับหรือปฏิเสธได้</p>
           </div>
           <div class="notice is-urgent">คิวด่วนยังไม่ถือว่ายืนยันงาน จนกว่าจะมีช่างพาร์ทเนอร์กดรับ หรือแอดมินยืนยัน</div>
           <section class="card">
-            <h2>ขั้นตอนคิวด่วน</h2>
+            <div class="section-head">
+              <span class="section-kicker">Urgent flow</span>
+              <h2>ขั้นตอนคิวด่วน</h2>
+            </div>
             ${root.utils.stepCards(root.services.urgentSteps)}
           </section>
           <section class="card waiting-room">
-            <h2>Waiting Room คิวด่วน</h2>
+            <div class="section-head">
+              <span class="section-kicker">Waiting room</span>
+              <h2>รอช่างพาร์ทเนอร์ตอบรับ</h2>
+            </div>
             <div class="waiting-status">
               <div class="pulse-row">
                 <span class="pulse-dot" aria-hidden="true"></span>
-                <span>กำลังรอพาร์ทเนอร์ช่างตอบรับ</span>
+                <span>กำลังค้นหาพาร์ทเนอร์ช่างที่พร้อมรับงาน</span>
               </div>
               <div class="notice is-urgent">ส่งคำขอคิวด่วนแล้ว กำลังรอช่างพาร์ทเนอร์กดรับงาน ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน</div>
             </div>
@@ -52,14 +59,17 @@
             </div>
           </section>
           <section class="card">
-            <h2>ทางเลือกเมื่อยังไม่มีช่างรับ</h2>
+            <div class="section-head">
+              <span class="section-kicker">Next best action</span>
+              <h2>ทางเลือกเมื่อยังไม่มีช่างรับ</h2>
+            </div>
             <div class="button-row">
               <button class="secondary-btn" type="button" disabled>ให้แอดมินช่วยจัดคิว</button>
               <button class="secondary-btn" type="button" disabled>เปลี่ยนเป็นจองล่วงหน้า</button>
             </div>
           </section>
           <div class="sticky-action">
-            <button class="disabled-btn" type="button" disabled>ขั้นตอนนี้จะเชื่อมต่อกับระบบคิวด่วนจริงในรอบถัดไป</button>
+            <button class="disabled-btn" type="button" disabled>ยังไม่เปิดส่งคำขอคิวด่วนจริง</button>
             <p class="muted">หน้านี้ยังไม่ส่งคำขอจริง และไม่ยืนยันงานก่อนช่างรับหรือแอดมินยืนยัน</p>
           </div>
         </section>

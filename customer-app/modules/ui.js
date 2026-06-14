@@ -39,9 +39,15 @@
     renderHome(container) {
       container.innerHTML = `
         <section class="screen">
-          <div class="hero">
+          <div class="hero home-hero">
+            <div class="hero-badge">CWF Premium Air Service</div>
             <h2>บริการแอร์ที่จองง่าย ติดตามได้ชัดเจน</h2>
-            <p>เริ่มจองได้ทันทีแบบ Guest แล้วค่อยเข้าสู่บัญชีเพื่อบันทึกที่อยู่ ประวัติ และจองซ้ำภายหลัง</p>
+            <p>เริ่มจองแบบ Guest ได้ทันที เห็นราคาประมาณการ เลือกเวลาว่าง และติดตามสถานะงานในที่เดียว</p>
+            <div class="hero-proof-row" aria-label="จุดเด่น CWF">
+              <span>ราคาชัดเจน</span>
+              <span>ช่างผ่านการทดสอบ</span>
+              <span>รับประกันงานล้าง</span>
+            </div>
           </div>
           <section class="quick-actions">
             ${root.services.primaryActions.map((action) => `
@@ -51,8 +57,11 @@
               </button>
             `).join("")}
           </section>
-          <section class="card">
-            <h2>บริการสำหรับลูกค้า</h2>
+          <section class="card service-card">
+            <div class="section-head">
+              <span class="section-kicker">Services</span>
+              <h2>บริการสำหรับลูกค้า</h2>
+            </div>
             <div data-catalog>
               ${collectionState("catalog", "ยังไม่มีรายการบริการที่เปิดให้แสดง", (items) => `
                 <div class="tag-row">
@@ -62,7 +71,10 @@
             </div>
           </section>
           <section class="card">
-            <h2>โปรโมชันที่ใช้ได้</h2>
+            <div class="section-head">
+              <span class="section-kicker">Smart price</span>
+              <h2>โปรโมชันที่ใช้ได้</h2>
+            </div>
             <div data-promotions>
               ${collectionState("promotions", "ยังไม่มีโปรโมชันสำหรับลูกค้าในตอนนี้", (items) => `
                 <div class="data-list">
@@ -77,7 +89,10 @@
             </div>
           </section>
           <section class="card">
-            <h2>พื้นที่ให้บริการ</h2>
+            <div class="section-head">
+              <span class="section-kicker">Coverage</span>
+              <h2>พื้นที่ให้บริการ</h2>
+            </div>
             <div data-zones>
               ${collectionState("zones", "ยังไม่พบข้อมูลพื้นที่ให้บริการ", (items) => `
                 <div class="tag-row">
@@ -86,8 +101,11 @@
               `)}
             </div>
           </section>
-          <section class="card">
-            <h2>ทำไมลูกค้าเลือก CWF</h2>
+          <section class="card trust-card">
+            <div class="section-head">
+              <span class="section-kicker">Trust</span>
+              <h2>ทำไมลูกค้าเลือก CWF</h2>
+            </div>
             <div class="trust-grid">
               ${root.services.trustItems.map((item) => `
                 <div class="trust-item">
@@ -105,18 +123,23 @@
     renderBookingMode(container) {
       container.innerHTML = `
         <section class="screen">
-          <div class="hero">
+          <div class="hero booking-hero">
+            <div class="hero-badge">เลือกวิธีจอง</div>
             <h2>จองคิวบริการ</h2>
-            <p>เลือกวิธีจองที่ตรงกับความเร่งด่วนของคุณ</p>
+            <p>เลือกแบบที่เหมาะกับสถานการณ์ของคุณ ภายในไม่กี่วินาที</p>
           </div>
           <div class="card-grid">
             <button class="mode-card is-scheduled" type="button" data-route="scheduled">
+              <span class="mode-kicker">เหมาะกับงานวางแผน</span>
               <strong>จองล่วงหน้า</strong>
-              <span>เลือกวันเวลาที่สะดวก เหมาะกับงานล้างแอร์ งานคอนโด หรืองานหลายเครื่อง</span>
+              <span>เลือกวันเวลาที่สะดวกจากคิวช่างที่ว่าง เหมาะกับงานล้างแอร์ คอนโด หรืองานหลายเครื่อง</span>
+              <span class="mode-foot">เลือกวันและเวลาเอง</span>
             </button>
             <button class="mode-card is-urgent" type="button" data-route="urgent">
+              <span class="mode-kicker">ต้องการให้ช่างตอบรับเร็ว</span>
               <strong>คิวด่วน</strong>
               <span>ส่งคำขอให้พาร์ทเนอร์ช่างที่พร้อมรับงานกดรับเอง ช่างอาจรับหรือไม่รับก็ได้</span>
+              <span class="mode-foot">รอพาร์ทเนอร์กดรับ</span>
             </button>
           </div>
           <div class="notice is-urgent">คิวด่วนยังไม่ถือว่ายืนยันงาน จนกว่าจะมีช่างพาร์ทเนอร์กดรับ หรือแอดมินยืนยัน</div>

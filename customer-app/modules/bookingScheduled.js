@@ -34,22 +34,24 @@
 
   function renderPricing() {
     const pricing = root.state.scheduledPreview.pricing;
-    if (pricing.status === "loading") return root.utils.stateBox("loading", "กำลังประเมินราคา...");
-    if (pricing.status === "error") return root.utils.stateBox("error", `ประเมินราคาไม่สำเร็จ: ${pricing.error}`);
-    if (!pricing.data) return root.utils.stateBox("", "กดปุ่มประเมินราคาเพื่อดูราคาประมาณการจากระบบ");
+    if (pricing.status === "loading") return root.utils.stateBox("loading", "กำลังประเมินราคาให้คุณ...");
+    if (pricing.status === "error") return root.utils.stateBox("error", `ยังประเมินราคาไม่ได้: ${pricing.error}`);
+    if (!pricing.data) return root.utils.stateBox("", "กดประเมินราคาเพื่อดูราคาประมาณการก่อนส่งคำขอจอง");
     const data = pricing.data;
     return `
       <div class="preview-grid">
-        <div class="preview-card">
-          <span class="muted">ราคาประมาณการ</span>
+        <div class="preview-card price-card">
+          <span class="muted">ราคาประมาณการวันนี้</span>
           <strong>${root.utils.formatBaht(finalPrice())}</strong>
+          <small>ยังไม่รวมงานเพิ่มเติมที่ต้องแจ้งก่อนเริ่มงาน</small>
         </div>
         <div class="preview-card">
           <span class="muted">เวลาทำงานโดยประมาณ</span>
           <strong>${root.utils.escapeHtml(data.duration_min || "-")} นาที</strong>
+          <small>ใช้สำหรับค้นหาช่วงเวลาว่าง</small>
         </div>
         ${data.promo ? `
-          <div class="state-box is-success">ใช้โปรโมชัน: ${root.utils.escapeHtml(data.promo.promo_name || "-")}</div>
+          <div class="state-box is-success">ระบบเลือกโปรโมชันที่เหมาะสมให้แล้ว: ${root.utils.escapeHtml(data.promo.promo_name || "-")}</div>
         ` : root.utils.stateBox("", "ยังไม่มีโปรโมชันที่ใช้กับรายการนี้")}
       </div>
     `;
@@ -58,9 +60,9 @@
   function renderAvailability() {
     const availability = root.state.scheduledPreview.availability;
     const selected = draft().selectedSlot || null;
-    if (availability.status === "loading") return root.utils.stateBox("loading", "กำลังโหลดเวลาว่าง...");
-    if (availability.status === "error") return root.utils.stateBox("error", `โหลดเวลาว่างไม่สำเร็จ: ${availability.error}`);
-    if (!availability.data) return root.utils.stateBox("", "เลือกวันแล้วกดโหลดเวลาว่างเพื่อดูช่วงเวลาจากระบบ");
+    if (availability.status === "loading") return root.utils.stateBox("loading", "กำลังโหลดเวลาว่างของช่าง...");
+    if (availability.status === "error") return root.utils.stateBox("error", `ยังโหลดเวลาว่างไม่ได้: ${availability.error}`);
+    if (!availability.data) return root.utils.stateBox("", "เลือกวันแล้วกดโหลดเวลาว่างเพื่อดูช่วงเวลาที่จองได้");
     const slots = Array.isArray(availability.data.slots) ? availability.data.slots : [];
     const available = slots.filter((slot) => slot && slot.available);
     if (!slots.length) return root.utils.stateBox("", "ยังไม่พบช่วงเวลาในวันที่เลือก");
@@ -154,8 +156,11 @@
     const price = finalPrice();
     const pending = submit.status === "validating" || submit.status === "submitting";
     return `
-      <section class="card">
-        <h2>ตรวจสอบก่อนจอง</h2>
+      <section class="card review-card">
+        <div class="section-head">
+          <span class="section-kicker">Final check</span>
+          <h2>ตรวจสอบก่อนจอง</h2>
+        </div>
         <div class="data-list">
           <div class="data-row"><strong>ผู้ติดต่อ</strong><span class="muted">${root.utils.escapeHtml(d.customer_name || "-")} / ${root.utils.escapeHtml(d.customer_phone || "-")}</span></div>
           <div class="data-row"><strong>บริการ</strong><span class="muted">${root.utils.escapeHtml(serviceSummary())}</span></div>
@@ -170,7 +175,7 @@
           </div>
         ` : root.utils.stateBox("success", "ข้อมูลพร้อมส่งคำขอจองล่วงหน้า")}
         ${submit.status === "error" ? root.utils.stateBox("error", submit.error || "ส่งคำขอจองไม่สำเร็จ") : ""}
-        <div class="button-row">
+        <div class="button-row sticky-submit-row">
           <button class="primary-btn" type="button" data-action="submit-scheduled" ${pending || errors.length ? "disabled" : ""}>
             ${pending ? "กำลังส่งคำขอจอง..." : "ส่งคำขอจองล่วงหน้า"}
           </button>
@@ -184,16 +189,17 @@
     if (!result) return "";
     const trackingKey = result.token || result.booking_code || "";
     return `
-      <section class="card">
+      <section class="card success-card">
+        <div class="success-mark">✓</div>
         <h2>จองสำเร็จ</h2>
-        <div class="state-box is-success">ระบบรับคำขอจองแล้ว รอทีมงานตรวจสอบและดำเนินการต่อ</div>
+        <div class="state-box is-success">ระบบรับคำขอจองแล้ว ทีมงานจะตรวจสอบคิวและดำเนินการต่อ</div>
         <div class="data-list">
           <div class="data-row"><strong>เลข Booking</strong><span class="muted">${root.utils.escapeHtml(result.booking_code || "-")}</span></div>
           <div class="data-row"><strong>ราคาจากระบบ</strong><span class="muted">${root.utils.formatBaht(result.base_total)}</span></div>
           <div class="data-row"><strong>เวลาทำงานโดยประมาณ</strong><span class="muted">${root.utils.escapeHtml(result.duration_min || "-")} นาที</span></div>
         </div>
         <div class="button-row">
-          <button class="secondary-btn" type="button" data-action="track-created" data-tracking-key="${root.utils.escapeHtml(trackingKey)}">ติดตามงานใน Customer App</button>
+          <button class="primary-btn" type="button" data-action="track-created" data-tracking-key="${root.utils.escapeHtml(trackingKey)}">ติดตามงานในแอป CWF</button>
         </div>
       </section>
     `;
@@ -337,37 +343,51 @@
       const d = draft();
       container.innerHTML = `
         <section class="screen">
-          <div class="hero">
+          <div class="hero scheduled-hero">
+            <div class="hero-badge">Scheduled Booking</div>
             <h2>จองล่วงหน้า</h2>
             <p>เลือกบริการ ดูราคาประมาณการ เลือกเวลาว่าง แล้วส่งคำขอจองให้ CWF ตรวจสอบ</p>
           </div>
-          <section class="card">
-            <h2>ข้อมูลผู้ติดต่อ</h2>
+          <div class="wizard-progress" aria-label="ขั้นตอนการจองล่วงหน้า">
+            <span>ข้อมูลลูกค้า</span>
+            <span>บริการ</span>
+            <span>ราคา</span>
+            <span>เวลา</span>
+            <span>ยืนยัน</span>
+          </div>
+          <section class="card form-card">
+            <div class="section-head">
+              <span class="section-kicker">Customer</span>
+              <h2>ข้อมูลผู้ติดต่อ</h2>
+            </div>
             <div class="form-grid">
               <div class="field">
                 <label for="scheduled-name">ชื่อผู้ติดต่อ</label>
-                <input id="scheduled-name" class="input" value="${root.utils.escapeHtml(d.customer_name || "")}" data-scheduled-field="customer_name" autocomplete="name">
+                <input id="scheduled-name" class="input" value="${root.utils.escapeHtml(d.customer_name || "")}" data-scheduled-field="customer_name" autocomplete="name" placeholder="เช่น คุณสมชาย">
               </div>
               <div class="field">
                 <label for="scheduled-phone">เบอร์โทร</label>
-                <input id="scheduled-phone" class="input" value="${root.utils.escapeHtml(d.customer_phone || "")}" data-scheduled-field="customer_phone" inputmode="tel" autocomplete="tel">
+                <input id="scheduled-phone" class="input" value="${root.utils.escapeHtml(d.customer_phone || "")}" data-scheduled-field="customer_phone" inputmode="tel" autocomplete="tel" placeholder="08X-XXX-XXXX">
               </div>
               <div class="field">
                 <label for="scheduled-address">ที่อยู่หน้างาน</label>
-                <textarea id="scheduled-address" class="input textarea" data-scheduled-field="address_text" rows="3">${root.utils.escapeHtml(d.address_text || "")}</textarea>
+                <textarea id="scheduled-address" class="input textarea" data-scheduled-field="address_text" rows="3" placeholder="บ้าน/คอนโด อาคาร ชั้น ห้อง เขต/อำเภอ">${root.utils.escapeHtml(d.address_text || "")}</textarea>
               </div>
               <div class="field">
                 <label for="scheduled-maps">ลิงก์แผนที่</label>
-                <input id="scheduled-maps" class="input" value="${root.utils.escapeHtml(d.maps_url || "")}" data-scheduled-field="maps_url" inputmode="url">
+                <input id="scheduled-maps" class="input" value="${root.utils.escapeHtml(d.maps_url || "")}" data-scheduled-field="maps_url" inputmode="url" placeholder="วางลิงก์ Google Maps ถ้ามี">
               </div>
               <div class="field">
                 <label for="scheduled-note">หมายเหตุถึงทีมงาน</label>
-                <textarea id="scheduled-note" class="input textarea" data-scheduled-field="customer_note" rows="3">${root.utils.escapeHtml(d.customer_note || "")}</textarea>
+                <textarea id="scheduled-note" class="input textarea" data-scheduled-field="customer_note" rows="3" placeholder="เช่น ที่จอดรถ จุดนัดพบ อาการเพิ่มเติม">${root.utils.escapeHtml(d.customer_note || "")}</textarea>
               </div>
             </div>
           </section>
-          <section class="card">
-            <h2>ข้อมูลบริการ</h2>
+          <section class="card form-card">
+            <div class="section-head">
+              <span class="section-kicker">Service</span>
+              <h2>ข้อมูลบริการ</h2>
+            </div>
             <div class="form-grid">
               <div class="field">
                 <label for="scheduled-job-type">ประเภทงาน</label>
@@ -419,7 +439,7 @@
               </div>
               <div class="field">
                 <label for="scheduled-zone">พื้นที่บริการ</label>
-                <input id="scheduled-zone" class="input" value="${root.utils.escapeHtml(d.job_zone || "")}" data-scheduled-field="job_zone">
+                <input id="scheduled-zone" class="input" value="${root.utils.escapeHtml(d.job_zone || "")}" data-scheduled-field="job_zone" placeholder="เช่น สุขุมวิท อ่อนนุช ลาดพร้าว">
               </div>
               <div class="field">
                 <label for="scheduled-date">วันที่ต้องการ</label>
@@ -427,18 +447,24 @@
               </div>
             </div>
           </section>
-          <section class="card">
-            <h2>ประเมินราคา</h2>
+          <section class="card preview-section-card">
+            <div class="section-head">
+              <span class="section-kicker">Estimate</span>
+              <h2>ประเมินราคา</h2>
+            </div>
             <div data-pricing-preview>${renderPricing()}</div>
             <div class="button-row">
-              <button class="secondary-btn" type="button" data-action="preview-price">ประเมินราคา</button>
+              <button class="secondary-btn action-btn" type="button" data-action="preview-price">ประเมินราคา</button>
             </div>
           </section>
-          <section class="card">
-            <h2>เลือกเวลาว่าง</h2>
+          <section class="card preview-section-card">
+            <div class="section-head">
+              <span class="section-kicker">Available slots</span>
+              <h2>เลือกเวลาว่าง</h2>
+            </div>
             <div data-availability-preview>${renderAvailability()}</div>
             <div class="button-row">
-              <button class="secondary-btn" type="button" data-action="load-slots">โหลดเวลาว่าง</button>
+              <button class="secondary-btn action-btn" type="button" data-action="load-slots">โหลดเวลาว่าง</button>
             </div>
           </section>
           <div data-submit-area>${renderSubmitArea()}</div>

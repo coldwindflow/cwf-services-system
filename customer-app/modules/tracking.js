@@ -12,8 +12,10 @@
     const tech = data.technician || {};
     const photos = Array.isArray(data.photos) ? data.photos : [];
     return `
-      <div class="data-list">
-        <div class="data-row">
+      <div class="tracking-result-card">
+        <div class="tracking-code-pill">${root.utils.escapeHtml(data.booking_code || "ไม่พบเลขงาน")}</div>
+        <div class="data-list">
+        <div class="data-row highlight-row">
           <strong>${root.utils.escapeHtml(data.booking_code || "ไม่พบเลขงาน")}</strong>
           <span class="muted">สถานะ: ${root.utils.escapeHtml(data.job_status || "-")}</span>
         </div>
@@ -32,6 +34,7 @@
         <div class="data-row">
           <strong>หลังจบงาน</strong>
           <span class="muted">รูปงาน ${photos.length} รายการ ${data.receipt_url ? "และมีใบเสร็จพร้อมดู" : ""}</span>
+        </div>
         </div>
       </div>
     `;
@@ -62,25 +65,36 @@
       const code = root.state.draft.tracking.trackingCode || "";
       container.innerHTML = `
         <section class="screen">
-          <div class="hero">
+          <div class="hero tracking-hero">
+            <div class="hero-badge">Live job status</div>
             <h2>ติดตามงาน</h2>
             <p>ใส่เลขงานหรือรหัสติดตาม เพื่อดูสถานะสำคัญตั้งแต่รับคำขอจนจบงาน</p>
           </div>
-          <section class="card">
+          <section class="card lookup-card">
+            <div class="section-head">
+              <span class="section-kicker">Tracking</span>
+              <h2>ค้นหางานของคุณ</h2>
+            </div>
             <div class="field">
               <label for="tracking-code">เลขงาน / รหัสติดตาม</label>
               <input id="tracking-code" class="input" placeholder="เช่น CWFXXXXXXX" value="${root.utils.escapeHtml(code)}">
             </div>
             <div class="button-row">
-              <button class="secondary-btn" type="button" data-action="track-read">ตรวจสอบสถานะงาน</button>
+              <button class="primary-btn" type="button" data-action="track-read">ตรวจสอบสถานะงาน</button>
             </div>
           </section>
           <section class="card">
-            <h2>ผลการติดตาม</h2>
+            <div class="section-head">
+              <span class="section-kicker">Result</span>
+              <h2>ผลการติดตาม</h2>
+            </div>
             <div data-tracking-result>${renderTrackingResult()}</div>
           </section>
           <section class="card">
-            <h2>สถานะจองล่วงหน้า</h2>
+            <div class="section-head">
+              <span class="section-kicker">Scheduled timeline</span>
+              <h2>สถานะจองล่วงหน้า</h2>
+            </div>
             ${root.utils.timeline([
               { title: "รับคำขอจอง", copy: "ได้รับรายละเอียดบริการและที่อยู่หน้างานแล้ว", kind: "" },
               { title: "ตรวจสอบคิว", copy: "ทีมงานตรวจสอบวันเวลาและความพร้อมของช่าง", kind: "muted" },
@@ -89,7 +103,10 @@
             ])}
           </section>
           <section class="card">
-            <h2>สถานะคิวด่วน</h2>
+            <div class="section-head">
+              <span class="section-kicker">Urgent timeline</span>
+              <h2>สถานะคิวด่วน</h2>
+            </div>
             ${root.utils.timeline([
               { title: "ส่งคำขอคิวด่วน", copy: "คำขอยังไม่ถือว่ายืนยันงาน", kind: "" },
               { title: "รอช่างพาร์ทเนอร์", copy: "พาร์ทเนอร์ช่างกำลังพิจารณารับหรือปฏิเสธงาน", kind: "warning" },

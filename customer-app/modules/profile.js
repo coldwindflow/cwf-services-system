@@ -26,21 +26,31 @@
     render(container) {
       container.innerHTML = `
         <section class="screen">
-          <div class="hero">
+          <div class="hero profile-hero">
+            <div class="hero-badge">Guest-friendly account</div>
             <h2>บัญชีลูกค้า</h2>
             <p>ใช้งานแบบ Guest ได้ก่อน เมื่อล็อกอินแล้วจะช่วยจำที่อยู่ ดูประวัติ และจองซ้ำได้สะดวกขึ้น</p>
           </div>
           ${root.auth.renderLoginPanel()}
-          <section class="card">
-            <h2>โหมด Guest</h2>
+          <section class="card guest-card">
+            <div class="section-head">
+              <span class="section-kicker">Guest mode</span>
+              <h2>เริ่มใช้งานได้ทันที</h2>
+            </div>
             <p class="muted">ลูกค้าสามารถเริ่มจองและติดตามงานได้ โดยไม่ต้องเข้าสู่ระบบตั้งแต่หน้าแรก</p>
           </section>
           <section class="card">
-            <h2>ที่อยู่ที่บันทึกไว้</h2>
+            <div class="section-head">
+              <span class="section-kicker">Saved address</span>
+              <h2>ที่อยู่ที่บันทึกไว้</h2>
+            </div>
             <div data-profile-address>${renderSavedAddress()}</div>
           </section>
           <section class="card">
-            <h2>ประวัติและจองซ้ำ</h2>
+            <div class="section-head">
+              <span class="section-kicker">History</span>
+              <h2>ประวัติและจองซ้ำ</h2>
+            </div>
             <div class="tag-row">
               <span class="tag">งานล่าสุด</span>
               <span class="tag">จองซ้ำ</span>
