@@ -805,28 +805,6 @@ function readAiOfficeFile(relativePath) {
   return fs.readFileSync(fullPath, "utf8");
 }
 
-function toLocalAssetPath(assetUrl) {
-  const clean = String(assetUrl || "").split("?")[0].trim();
-  if (!clean.startsWith("/assets/ai-office-final/")) return null;
-  return path.join(AI_OFFICE_ROOT_DIR, clean.replace(/^\//, ""));
-}
-
-function collectManifestAssetPaths(value, out = []) {
-  if (!value) return out;
-  if (typeof value === "string") {
-    if (value.startsWith("/assets/ai-office-final/")) out.push(value);
-    return out;
-  }
-  if (Array.isArray(value)) {
-    value.forEach((item) => collectManifestAssetPaths(item, out));
-    return out;
-  }
-  if (typeof value === "object") {
-    Object.values(value).forEach((item) => collectManifestAssetPaths(item, out));
-  }
-  return out;
-}
-
 function diagnosticItem(id, label, passed, detail, extra = {}) {
   return {
     id,
@@ -847,7 +825,7 @@ function buildDeployFixPrompt(items, risks) {
     ...(failed.length ? failed : ["No failed diagnostics. Review risks only."]),
     ...(riskLines.length ? ["Risks:", ...riskLines] : []),
     "Keep /admin/ai-office protected by admin auth and optional AI Office PIN.",
-    "Run syntax checks and verify final assets, service worker cache bypass, and mobile layout before committing.",
+    "Run syntax checks and verify the lightweight AI Office UI, service worker cache bypass, and mobile layout before committing.",
   ].join("\n");
 }
 
@@ -902,55 +880,31 @@ async function runAiOfficeDiagnostics({ pool, req }) {
     items.push(diagnosticItem("phone", "Phone search", true, "ข้ามการค้นเบอร์ เพราะยังไม่ได้กรอกเบอร์อย่างน้อย 6 ตัวเลข"));
   }
 
-  let manifest = null;
-  let manifestPaths = [];
-  try {
-    manifest = JSON.parse(readAiOfficeFile("assets/ai-office-final/manifest.json"));
-    manifestPaths = collectManifestAssetPaths(manifest);
-    const missing = manifestPaths.filter((assetPath) => {
-      const localPath = toLocalAssetPath(assetPath);
-      return !localPath || !fs.existsSync(localPath);
-    });
-    items.push(diagnosticItem(
-      "manifest",
-      "Asset manifest",
-      missing.length === 0,
-      missing.length ? `พบ asset หาย ${missing.length} ไฟล์` : `manifest พร้อม มี asset ${manifestPaths.length} ไฟล์`,
-      { missing_assets: missing }
-    ));
-  } catch (e) {
-    items.push(diagnosticItem("manifest", "Asset manifest", false, e.message || "อ่าน manifest ไม่สำเร็จ", { missing_assets: [] }));
-  }
-
-  const requiredImages = [
-    "/assets/ai-office-final/maps/office-main-desktop.png",
-    "/assets/ai-office-final/maps/office-main-mobile.png",
-    "/assets/ai-office-final/brand/logo-main.png",
-    "/assets/ai-office-final/ui/selection-ring.png",
-    ...["admin", "sales", "ops", "ads", "content", "dev"].map((role) => `/assets/ai-office-final/characters/${role}/idle.png`),
-  ];
-  const missingImages = requiredImages.filter((assetPath) => {
-    const localPath = toLocalAssetPath(assetPath);
-    return !localPath || !fs.existsSync(localPath);
-  });
+  const retiredVisualAssetDir = path.join(root, "assets", "ai-office-final");
+  const visualAssetPackRemoved = !fs.existsSync(retiredVisualAssetDir);
   items.push(diagnosticItem(
-    "images",
-    "Image asset loading",
-    missingImages.length === 0,
-    missingImages.length ? `พบรูปหลักหาย ${missingImages.length} ไฟล์` : "รูปหลักของ office และ NPC ครบ",
-    { missing_assets: missingImages }
+    "visual_assets",
+    "Retired visual asset pack",
+    visualAssetPackRemoved,
+    visualAssetPackRemoved
+      ? "AI Office is using lightweight production UI; cartoon/map/prop assets are intentionally absent"
+      : "Retired assets/ai-office-final directory still exists and should be removed for the lightweight UI",
+    { retired_asset_dir: "assets/ai-office-final", expected_absent: true }
   ));
 
   try {
     const sw = readAiOfficeFile("sw.js");
     const cacheMatch = sw.match(/CACHE_NAME\s*=\s*"([^"]+)"/);
-    const bypassesAiOffice = sw.includes("/admin/ai-office/") && sw.includes("/assets/ai-office-final/");
+    const bypassesAiOffice = sw.includes("/admin/ai-office/") && sw.includes("/admin-ai-office.html");
+    const referencesRetiredAssets = sw.includes("/assets/ai-office-final/");
     items.push(diagnosticItem(
       "cache",
       "Cache / Service Worker",
-      Boolean(cacheMatch && bypassesAiOffice),
-      cacheMatch && bypassesAiOffice ? `cache version ${cacheMatch[1]} และ bypass AI Office แล้ว` : "ยังไม่พบ cache version หรือ bypass AI Office ใน service worker",
-      { cache_name: cacheMatch?.[1] || "" }
+      Boolean(cacheMatch && bypassesAiOffice && !referencesRetiredAssets),
+      cacheMatch && bypassesAiOffice && !referencesRetiredAssets
+        ? `cache version ${cacheMatch[1]} keeps AI Office pages/API network-first without retired visual assets`
+        : "Service worker should bypass AI Office pages/API and must not reference retired visual assets",
+      { cache_name: cacheMatch?.[1] || "", references_retired_assets: referencesRetiredAssets }
     ));
   } catch (e) {
     items.push(diagnosticItem("cache", "Cache / Service Worker", false, e.message || "อ่าน service worker ไม่สำเร็จ"));
@@ -1004,9 +958,9 @@ async function runAiOfficeDiagnostics({ pool, req }) {
   ));
 
   if (width && width < 360) {
-    risks.push({ label: "Mobile layout", detail: `viewport ${width}px แคบมาก ควรทดสอบการแตะ NPC และ bottom console จริง` });
+    risks.push({ label: "Mobile layout", detail: `viewport ${width}px is very narrow; verify the card dashboard, tabs, and composer on a real device` });
   } else {
-    risks.push({ label: "Mobile layout", detail: width ? `viewport ${width}px อยู่ในช่วงที่รองรับ แต่ควรทดสอบบนเครื่องจริง` : "ยังไม่ได้ส่ง viewport width จาก frontend" });
+    risks.push({ label: "Mobile layout", detail: width ? `viewport ${width}px is in the supported range; still verify on a real device` : "frontend did not send viewport width" });
   }
 
   const failed = items.filter((item) => item.status !== "pass");
