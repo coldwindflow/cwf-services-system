@@ -103,3 +103,29 @@ partner-first = "หลังจากลูกค้าส่งคำขอแ
   ปุ่มส่งจริงยัง disabled, confirm แค่พา UI ไป waiting room (mock/skeleton)
 - ข้อความบังคับ "ส่งคำขอคิวด่วนแล้ว..." ยังอยู่ครบเป๊ะ
 - ไม่แตะ scheduled / tracking / protected files
+# Codex update: service taxonomy and pricing safety
+
+This follow-up keeps the Customer App V2 changes inside the safe frontend scope for PR #38.
+
+## What changed
+- Added shared frontend service taxonomy data in `customer-app/modules/services.js`.
+- Scheduled booking now lets customers choose service type, AC type, wall-wash variant, BTU, and machine count.
+- Urgent booking captures the same service structure, but still does not submit or dispatch urgent jobs.
+- Wall AC cleaning shows exactly four options:
+  - `ล้างธรรมดา` displayed as `ล้างปกติ`
+  - `ล้างพรีเมียม`
+  - `ล้างแขวนคอยล์` displayed as `ล้างแบบแขวนคอยล์`
+  - `ล้างแบบตัดล้าง` displayed as `ตัดล้างใหญ่`
+- Non-wall AC types do not force wall-only cleaning variants.
+- Unknown AC type or unknown BTU is shown as admin-estimate only and cannot submit as a priced scheduled booking.
+
+## Pricing source
+- Customer App V2 does not add a separate price book.
+- Customer App V2 does not hardcode a final customer price.
+- Scheduled price preview still uses only the existing `/public/pricing_preview` endpoint.
+- Scheduled submit still uses the existing `/public/book` wrapper with `booking_mode: "scheduled"`.
+
+## Safety notes
+- `index.js`, `customer.html`, `track.html`, `sw.js`, backend routes, migrations, payment, tax, receipt, and accounting logic remain unchanged.
+- Urgent dispatch remains disabled.
+- Repair, install, inspect, unknown AC, and unknown BTU are treated as admin-estimate cases until owner/backend pricing policy is approved.
