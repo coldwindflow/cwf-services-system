@@ -21,6 +21,10 @@
       error: "",
       result: null,
     },
+    urgentFlow: {
+      step: "form",
+      error: "",
+    },
     tracking: { status: "idle", data: null, error: "" },
     draft: {
       scheduled: {
@@ -39,7 +43,18 @@
         customer_note: "",
         job_zone: "",
       },
-      urgent: {},
+      urgent: {
+        customer_name: "",
+        customer_phone: "",
+        address_text: "",
+        maps_url: "",
+        job_type: "ล้าง",
+        ac_type: "ผนัง",
+        btu: 12000,
+        machine_count: 1,
+        symptom: "",
+        job_zone: "",
+      },
       tracking: {
         trackingCode: "",
       },
@@ -78,6 +93,12 @@
     setScheduledSubmit(patch) {
       this.scheduledSubmit = {
         ...(this.scheduledSubmit || {}),
+        ...(patch || {}),
+      };
+    },
+    setUrgentFlow(patch) {
+      this.urgentFlow = {
+        ...(this.urgentFlow || {}),
         ...(patch || {}),
       };
     },

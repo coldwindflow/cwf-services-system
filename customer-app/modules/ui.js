@@ -50,10 +50,13 @@
             </div>
           </div>
           <section class="quick-actions">
-            ${root.services.primaryActions.map((action) => `
-              <button class="action-card" type="button" data-route="${root.utils.escapeHtml(action.route)}" data-icon="${root.utils.escapeHtml(action.icon)}">
-                <strong>${root.utils.escapeHtml(action.title)}</strong>
-                <span>${root.utils.escapeHtml(action.copy)}</span>
+            ${root.services.primaryActions.map((action, idx) => `
+              <button class="action-card ${idx === 0 ? "is-primary" : ""} ${idx === 2 ? "is-accent" : ""}" type="button" data-route="${root.utils.escapeHtml(action.route)}" data-icon="${root.utils.escapeHtml(action.icon)}">
+                <span class="ico-chip">${root.utils.icon(action.glyph || "sparkle", 24)}</span>
+                <span class="action-text">
+                  <strong>${root.utils.escapeHtml(action.title)}</strong>
+                  <span>${root.utils.escapeHtml(action.copy)}</span>
+                </span>
               </button>
             `).join("")}
           </section>
@@ -109,6 +112,7 @@
             <div class="trust-grid">
               ${root.services.trustItems.map((item) => `
                 <div class="trust-item">
+                  <span class="trust-ico">${root.utils.icon(item.glyph || "shield", 20)}</span>
                   <strong>${root.utils.escapeHtml(item.title)}</strong>
                   <span>${root.utils.escapeHtml(item.copy)}</span>
                 </div>
