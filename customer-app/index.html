@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CWF Customer App V2</title>
+  <link rel="stylesheet" href="./assets/customer-app.css">
+</head>
+<body>
+  <div class="app-shell" data-app-shell>
+    <header class="app-header">
+      <div class="brand-lockup">
+        <div class="brand-mark" aria-hidden="true">CWF</div>
+        <div>
+          <p class="eyebrow">Coldwindflow</p>
+          <h1>CWF Service</h1>
+        </div>
+      </div>
+      <button class="icon-pill" type="button" data-route="profile" aria-label="บัญชีลูกค้า">
+        <span aria-hidden="true">บัญชี</span>
+      </button>
+    </header>
+
+    <main id="app" class="app-main" tabindex="-1"></main>
+
+    <nav class="bottom-nav" aria-label="Customer App V2">
+      <button type="button" data-route="home" class="nav-item is-active">
+        <span>หน้าแรก</span>
+      </button>
+      <button type="button" data-route="booking" class="nav-item">
+        <span>จองคิว</span>
+      </button>
+      <button type="button" data-route="tracking" class="nav-item">
+        <span>ติดตาม</span>
+      </button>
+      <button type="button" data-route="profile" class="nav-item">
+        <span>บัญชี</span>
+      </button>
+    </nav>
+  </div>
+
+  <script src="./modules/state.js"></script>
+  <script src="./modules/utils.js"></script>
+  <script src="./modules/api.js"></script>
+  <script src="./modules/services.js"></script>
+  <script src="./modules/ui.js"></script>
+  <script src="./modules/auth.js"></script>
+  <script src="./modules/pricing.js"></script>
+  <script src="./modules/availability.js"></script>
+  <script src="./modules/bookingScheduled.js"></script>
+  <script src="./modules/bookingUrgent.js"></script>
+  <script src="./modules/tracking.js"></script>
+  <script src="./modules/profile.js"></script>
+  <script src="./modules/router.js"></script>
+  <script src="./assets/customer-app.js"></script>
+</body>
+</html>
