@@ -2,7 +2,7 @@
   "use strict";
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
-  const ADMIN_PHONE = "094-695-6456";
+  const ADMIN_PHONE = "098-877-7321";
   const LINE_URL = "https://lin.ee/fG1Oq7y";
 
   function esc(value) {
