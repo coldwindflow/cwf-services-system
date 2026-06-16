@@ -71,7 +71,7 @@ function buildAdminEditTeamSnapshot(primaryUsername, members){
   const primary = String(primaryUsername||'').trim() || null;
   let list = (Array.isArray(members) ? members : []).map(x=>String(x||'').trim()).filter(Boolean);
   if (primary && !list.includes(primary)) list.unshift(primary);
-  list = Array.from(new Set(list));
+  list = Array.from(new Set(list)).sort((a,b)=>a.localeCompare(b));
   return {
     primary_username: primary && list.includes(primary) ? primary : (list[0] || null),
     members: list,
@@ -1497,7 +1497,7 @@ async function loadJob(){
           if (!Array.isArray(desired)) desired = [];
           desired = desired.map(x=>String(x||'').trim()).filter(Boolean);
           if (primaryU && !desired.includes(primaryU)) desired.unshift(primaryU);
-          desired = Array.from(new Set(desired));
+          desired = buildAdminEditTeamSnapshot(primaryU, desired).members;
 
           // Save everything through one orchestrated backend call.
           // Rationale: avoid the old 3-step save flow that could leave header/items/team out of sync.

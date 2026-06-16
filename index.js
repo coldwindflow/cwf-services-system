@@ -15714,7 +15714,7 @@ function normalizeAdminEditTeamSnapshot(payload) {
   let members = Array.isArray(body.members) ? body.members : [];
   members = members.map((x) => String(x || '').trim()).filter(Boolean);
   if (rawPrimary && !members.includes(rawPrimary)) members.unshift(rawPrimary);
-  members = [...new Set(members)];
+  members = [...new Set(members)].sort((a, b) => a.localeCompare(b));
   const primary_username = rawPrimary && members.includes(rawPrimary) ? rawPrimary : (members[0] || null);
   return { primary_username, members };
 }
