@@ -24,7 +24,8 @@
 
   function appointmentDatetime() {
     const d = draft();
-    if (!d.date || !d.selectedSlot || !d.selectedSlot.start) return "";
+    if (!d.date) return "";
+    if (!d.selectedSlot || !d.selectedSlot.start) return `${d.date}T09:00:00`;
     return `${d.date}T${d.selectedSlot.start}:00`;
   }
 
@@ -150,8 +151,8 @@
     if (!availability.data) return root.utils.stateBox("", "เลือกวันแล้วกดโหลดเวลาว่างเพื่อดูช่วงเวลาที่จองได้");
     const slots = Array.isArray(availability.data.slots) ? availability.data.slots : [];
     const available = slots.filter((slot) => slot && slot.available);
-    if (!slots.length) return root.utils.stateBox("", "ยังไม่พบช่วงเวลาในวันที่เลือก");
-    if (!available.length) return root.utils.stateBox("", "วันที่เลือกยังไม่มีช่วงเวลาว่าง");
+    if (!slots.length) return root.utils.stateBox("warning", "ยังไม่พบช่วงเวลาในวันที่เลือก แต่สามารถส่งคำขอให้แอดมินช่วยจัดคิวได้");
+    if (!available.length) return root.utils.stateBox("warning", "วันที่เลือกยังไม่มีช่วงเวลาว่าง แต่สามารถส่งคำขอให้แอดมินช่วยจัดคิวได้");
     return `
       <div class="slot-list">
         ${available.slice(0, 24).map((slot) => {
@@ -187,8 +188,7 @@
     if (s.job_type === "ล้าง" && s.ac_type === "ผนัง" && !s.wash_variant) errors.push("กรุณาเลือกประเภทการล้าง");
     if (s.needs_admin_estimate || !servicePayload) errors.push(`${s.admin_reason || "รายการนี้ต้องให้แอดมินประเมินราคา"} ก่อนส่งจองอัตโนมัติ`);
     if (!pricing.data) errors.push("กรุณาประเมินราคาก่อนส่งคำขอจอง");
-    if (!availability.data) errors.push("กรุณาโหลดเวลาว่างก่อนส่งคำขอจอง");
-    if (!appointmentDatetime()) errors.push("กรุณาเลือกช่วงเวลาที่ว่าง");
+    if (!appointmentDatetime()) errors.push("กรุณาเลือกวันที่ต้องการจอง");
     if (selectedSlot && slots.length) {
       const stillAvailable = slots.some((slot) => (
         slot
@@ -210,8 +210,13 @@
       appointment_datetime: appointmentDatetime(),
       address_text: String(d.address_text || "").trim(),
       maps_url: String(d.maps_url || "").trim(),
-      customer_note: String(d.customer_note || "").trim(),
+      customer_note: [
+        String(d.customer_note || "").trim(),
+        d.selectedSlot ? "" : "Customer App V2: ลูกค้าส่งคำขอแบบไม่มี slot ว่าง ให้แอดมินช่วยจัดคิว/ยืนยันเวลา",
+      ].filter(Boolean).join("\n"),
       booking_mode: "scheduled",
+      client_app: "customer_app_v2",
+      allow_admin_schedule_fallback: true,
       job_zone: String(d.job_zone || "").trim(),
       ...servicePayload,
     };
@@ -226,7 +231,7 @@
     const d = draft();
     const submit = root.state.scheduledSubmit;
     const errors = validateDraft();
-    const slot = d.selectedSlot ? `${d.date} ${d.selectedSlot.start}-${d.selectedSlot.end}` : "ยังไม่ได้เลือก";
+    const slot = d.selectedSlot ? `${d.date} ${d.selectedSlot.start}-${d.selectedSlot.end}` : `${d.date || "-"} ให้แอดมินช่วยจัดคิว`;
     const price = finalPrice();
     const pending = submit.status === "validating" || submit.status === "submitting";
     return `
@@ -242,7 +247,7 @@
           <div class="data-row"><strong>ที่อยู่</strong><span class="muted">${root.utils.escapeHtml(d.address_text || "-")}</span></div>
           <div class="data-row"><strong>ราคาประมาณการ</strong><span class="muted">${price ? root.utils.formatBaht(price) : "กรุณาประเมินราคาก่อน"}</span></div>
         </div>
-        <div class="notice">ราคานี้เป็นราคาประมาณการ หากพบงานเพิ่มเติม CWF จะแจ้งราคาก่อนเริ่มงาน</div>
+        <div class="notice">ราคานี้เป็นราคาประมาณการ หากพบงานเพิ่มเติม CWF จะแจ้งราคาก่อนเริ่มงาน${d.selectedSlot ? "" : " กรณีไม่มีช่วงเวลาว่าง แอดมินจะช่วยยืนยันเวลานัดอีกครั้ง"}</div>
         ${errors.length ? `
           <div class="state-box is-error">
             ${errors.map((error) => `<div>${root.utils.escapeHtml(error)}</div>`).join("")}
