@@ -95,8 +95,15 @@
       });
     },
 
-    async submitUrgentRequest() {
-      return { disabled: true, message: "ยังไม่เปิดส่งคำขอคิวด่วนจริงในรอบนี้" };
+    async submitUrgentRequest(payload) {
+      const body = {
+        ...(payload || {}),
+        booking_mode: "urgent",
+      };
+      return requestJson("/public/book", {
+        method: "POST",
+        body,
+      });
     },
   };
 

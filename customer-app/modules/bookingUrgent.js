@@ -26,6 +26,85 @@
     return root.services.serviceLabel(service());
   }
 
+  function pad2(n) {
+    return String(n).padStart(2, "0");
+  }
+
+  function nextUrgentAppointmentIso() {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).formatToParts(new Date(Date.now() + 30 * 60 * 1000)).reduce((acc, part) => {
+      if (part.type !== "literal") acc[part.type] = part.value;
+      return acc;
+    }, {});
+    let year = Number(parts.year);
+    let month = Number(parts.month);
+    let day = Number(parts.day);
+    let hour = Number(parts.hour);
+    let minute = Math.ceil(Number(parts.minute || 0) / 30) * 30;
+    if (minute >= 60) {
+      hour += 1;
+      minute = 0;
+    }
+    if (hour < 9) {
+      hour = 9;
+      minute = 0;
+    } else if (hour >= 18) {
+      const next = new Date(Date.UTC(year, month - 1, day + 1, 2, 0, 0));
+      const nextParts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Bangkok",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(next).reduce((acc, part) => {
+        if (part.type !== "literal") acc[part.type] = part.value;
+        return acc;
+      }, {});
+      year = Number(nextParts.year);
+      month = Number(nextParts.month);
+      day = Number(nextParts.day);
+      hour = 9;
+      minute = 0;
+    }
+    return `${year}-${pad2(month)}-${pad2(day)}T${pad2(hour)}:${pad2(minute)}:00+07:00`;
+  }
+
+  function buildSubmitPayload() {
+    const d = draft();
+    const s = service();
+    return {
+      customer_name: String(d.customer_name || "").trim(),
+      customer_phone: String(d.customer_phone || "").trim(),
+      appointment_datetime: nextUrgentAppointmentIso(),
+      address_text: String(d.address_text || "").trim(),
+      maps_url: String(d.maps_url || "").trim(),
+      job_zone: String(d.job_zone || "").trim(),
+      customer_note: String(d.symptom || "").trim(),
+      booking_mode: "urgent",
+      client_app: "customer_app_v2",
+      job_type: s.job_type,
+      ac_type: s.ac_type,
+      btu: s.btu || 0,
+      machine_count: s.machine_count || 1,
+      wash_variant: s.wash_variant || "",
+      repair_variant: s.repair_variant || "",
+      services: [{
+        job_type: s.job_type,
+        ac_type: s.ac_type,
+        btu: s.btu || 0,
+        machine_count: s.machine_count || 1,
+        wash_variant: s.wash_variant || "",
+        repair_variant: s.repair_variant || "",
+      }],
+    };
+  }
+
   function renderChoiceGroup(field, options, selected, extraClass) {
     return `
       <div class="choice-grid ${extraClass || ""}">
@@ -198,6 +277,8 @@
   function renderReview() {
     const d = draft();
     const s = service();
+    const flow = root.state.urgentFlow || {};
+    const submitting = flow.status === "submitting";
     return `
       <section class="card review-card urgent-card-fx">
         <div class="section-head">
@@ -214,9 +295,10 @@
           ${d.maps_url ? `<div class="data-row"><strong>แผนที่</strong><span class="muted">มีลิงก์แผนที่แนบ</span></div>` : ""}
         </div>
         <div class="notice is-urgent">เมื่อกดส่งคำขอ ระบบจะแสดง Waiting Room สำหรับคิวด่วน งานยังไม่ยืนยันจนกว่าจะมีช่างพาร์ทเนอร์รับหรือแอดมินยืนยัน</div>
+        ${flow.error ? `<div class="state-box is-error">${root.utils.escapeHtml(flow.error)}</div>` : ""}
         <div class="button-row">
-          <button class="primary-btn btn-shine" type="button" data-urgent-action="confirm">ส่งคำขอคิวด่วน</button>
-          <button class="secondary-btn" type="button" data-urgent-action="back-form">กลับไปแก้ไข</button>
+          <button class="primary-btn btn-shine" type="button" data-urgent-action="confirm" ${submitting ? "disabled" : ""}>${submitting ? "กำลังส่งคำขอ..." : "ส่งคำขอคิวด่วน"}</button>
+          <button class="secondary-btn" type="button" data-urgent-action="back-form" ${submitting ? "disabled" : ""}>กลับไปแก้ไข</button>
         </div>
       </section>
     `;
@@ -224,6 +306,14 @@
 
   function renderWaiting() {
     const d = draft();
+    const flow = root.state.urgentFlow || {};
+    const result = flow.result || null;
+    const trackingKey = result ? (result.token || result.booking_code || "") : "";
+    const offersCount = result ? Number(result.offers_count || 0) : 0;
+    const offerEnabled = result ? result.urgent_offer_enabled !== false : true;
+    const waitingText = offerEnabled && offersCount > 0
+      ? "ส่งคำขอคิวด่วนแล้ว กำลังรอช่างพาร์ทเนอร์กดรับงาน ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน"
+      : "ส่งคำขอคิวด่วนแล้ว แอดมินกำลังช่วยตรวจสอบคิวด่วน ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน";
     return `
       <section class="card waiting-room waiting-room-fx">
         <div class="radar-wrap" aria-hidden="true">
@@ -243,7 +333,7 @@
             <span class="pulse-dot" aria-hidden="true"></span>
             <span>กำลังส่งคำขอหาช่างพาร์ทเนอร์ที่พร้อมรับงานในพื้นที่</span>
           </div>
-          <div class="notice is-urgent">ส่งคำขอคิวด่วนแล้ว กำลังรอช่างพาร์ทเนอร์กดรับงาน ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน</div>
+          <div class="notice is-urgent">${root.utils.escapeHtml(waitingText)}</div>
         </div>
       </section>
 
@@ -253,9 +343,12 @@
           <h2>สรุปคำขอที่ส่ง</h2>
         </div>
         <div class="data-list">
+          ${result ? `<div class="data-row"><strong>เลข Booking</strong><span class="muted">${root.utils.escapeHtml(result.booking_code || "-")}</span></div>` : ""}
+          ${trackingKey ? `<div class="data-row"><strong>รหัสติดตาม</strong><span class="muted">${root.utils.escapeHtml(trackingKey)}</span></div>` : ""}
           <div class="data-row"><strong>ผู้ติดต่อ</strong><span class="muted">${root.utils.escapeHtml(d.customer_name || "-")} / ${root.utils.escapeHtml(d.customer_phone || "-")}</span></div>
           <div class="data-row"><strong>บริการ</strong><span class="muted">${root.utils.escapeHtml(serviceSummary())}</span></div>
           <div class="data-row"><strong>อาการ</strong><span class="muted">${root.utils.escapeHtml(d.symptom || "-")}</span></div>
+          ${result ? `<div class="data-row"><strong>ส่งข้อเสนอ</strong><span class="muted">${offersCount} ช่าง/พาร์ทเนอร์${offerEnabled ? "" : " (ระบบส่ง offer ปิดอยู่)"}</span></div>` : ""}
         </div>
       </section>
 
@@ -267,11 +360,11 @@
         <div class="status-stack">
           <div class="status-line is-active">
             <span class="status-ic">📨</span>
-            <div><strong>ส่งคำขอแล้ว</strong><span>ระบบแสดงคำขอสำหรับพาร์ทเนอร์ช่างที่พร้อมรับงานในพื้นที่</span></div>
+            <div><strong>ส่งคำขอแล้ว</strong><span>${offerEnabled && offersCount > 0 ? "ระบบแสดงคำขอสำหรับพาร์ทเนอร์ช่างที่พร้อมรับงานในพื้นที่" : "แอดมินจะเห็นคำขอนี้เพื่อช่วยตรวจสอบและจัดคิวต่อ"}</span></div>
           </div>
-          <div class="status-line is-pending">
+          <div class="status-line ${offerEnabled && offersCount > 0 ? "is-pending" : ""}">
             <span class="status-ic">🔔</span>
-            <div><strong>รอช่างพาร์ทเนอร์กดรับ</strong><span>ช่างอาจกดรับหรือปฏิเสธงานได้ตามความพร้อม</span></div>
+            <div><strong>${offerEnabled && offersCount > 0 ? "รอช่างพาร์ทเนอร์กดรับ" : "แอดมินกำลังช่วยตรวจสอบ"}</strong><span>${offerEnabled && offersCount > 0 ? "ช่างอาจกดรับหรือปฏิเสธงานได้ตามความพร้อม" : "กรณียังไม่มีช่างพร้อมรับ ระบบเก็บคำขอไว้ให้แอดมินช่วยต่อ"}</span></div>
           </div>
           <div class="status-line">
             <span class="status-ic">🛟</span>
@@ -292,11 +385,26 @@
       </section>
 
       <div class="sticky-action">
-        <button class="disabled-btn" type="button" disabled>ระบบส่งคำขอจริงยังไม่เปิดในรอบนี้</button>
-        <p class="muted">นี่คือหน้าสถานะตัวอย่าง ยังไม่ส่ง dispatch จริง และไม่ยืนยันงานก่อนช่างรับหรือแอดมินยืนยัน</p>
+        ${trackingKey ? `<button class="primary-btn" type="button" data-urgent-action="track-created" data-tracking-key="${root.utils.escapeHtml(trackingKey)}">ติดตามงานนี้</button>` : ""}
+        <p class="muted">ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน</p>
         <button class="secondary-btn" type="button" data-urgent-action="new-request">เริ่มคำขอใหม่</button>
       </div>
     `;
+  }
+
+  async function submitUrgent(container) {
+    root.state.setUrgentFlow({ step: "review", status: "submitting", error: "", result: null });
+    paint(container);
+    try {
+      const result = await root.api.submitUrgentRequest(buildSubmitPayload());
+      const trackingKey = result.token || result.booking_code || "";
+      if (trackingKey) root.state.updateDraft("tracking", { trackingCode: trackingKey });
+      root.state.setUrgentFlow({ step: "waiting", status: "success", error: "", result });
+      paint(container);
+    } catch (error) {
+      root.state.setUrgentFlow({ step: "review", status: "error", error: error.message || "ส่งคำขอคิวด่วนไม่สำเร็จ", result: null });
+      paint(container);
+    }
   }
 
   function body() {
@@ -352,7 +460,7 @@
     });
 
     container.querySelectorAll("[data-urgent-action]").forEach((btn) => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", async () => {
         const action = btn.getAttribute("data-urgent-action");
         if (action === "to-review") {
           const errors = validate();
@@ -363,12 +471,15 @@
           setStep("form");
           paint(container);
         } else if (action === "confirm") {
-          // No real dispatch - move to mock/skeleton waiting room only.
-          setStep("waiting");
-          paint(container);
+          await submitUrgent(container);
         } else if (action === "new-request") {
-          setStep("form");
+          root.state.setUrgentFlow({ step: "form", status: "idle", error: "", result: null });
           paint(container);
+        } else if (action === "track-created") {
+          const key = btn.getAttribute("data-tracking-key") || "";
+          root.state.updateDraft("tracking", { trackingCode: key });
+          root.state.setTracking({ status: "idle", data: null, error: "" });
+          root.utils.routeTo("tracking");
         } else if (action === "to-scheduled") {
           root.utils.routeTo("scheduled");
         }
@@ -378,8 +489,7 @@
 
   root.bookingUrgent = {
     render(container) {
-      setStep("form");
-      root.state.setUrgentFlow({ error: "" });
+      root.state.setUrgentFlow({ step: "form", status: "idle", error: "", result: null });
       paint(container);
     },
   };

@@ -24601,6 +24601,8 @@ app.post("/public/book", async (req, res) => {
     job_zone,
     items, // [{item_id, qty}] (extras)
     booking_mode,
+    client_app,
+    allow_admin_schedule_fallback,
     ac_type,
     btu,
     machine_count,
@@ -24622,7 +24624,10 @@ app.post("/public/book", async (req, res) => {
   const token = genToken(12);
   // DURATION_PRICE_V2_PUBLIC_BOOK
   let bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
-  if (bm === "urgent" && !ENABLE_URGENT_FLOW) bm = "scheduled"; // safe fallback
+  const clientApp = (client_app || "").toString().trim().toLowerCase();
+  const allowAdminScheduleFallback = allow_admin_schedule_fallback === true || String(allow_admin_schedule_fallback || "").trim() === "true";
+  const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback && clientApp === "customer_app_v2";
+  const urgentOfferEnabled = bm === "urgent" && ENABLE_URGENT_FLOW;
   const payloadV2 = {
     job_type: String(job_type).trim(),
     ac_type: (ac_type || "").toString().trim(),
@@ -24737,7 +24742,11 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
       if (ok) { anyFree = true; break; }
     }
     if (!anyFree) {
-      return res.status(400).json({ error: "ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาอื่น" });
+      if (canUseAdminScheduleFallback || bm === "urgent") {
+        console.warn("[public_book] availability_no_free_slot_continue", { bm, requestedTechType, appointment_datetime, clientApp, allowAdminScheduleFallback });
+      } else {
+        return res.status(400).json({ error: "ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาอื่น" });
+      }
     }
   } catch (e) {
     // fail-open: ถ้าเช็คไม่ได้ไม่ให้จองพัง แต่ log ไว้
@@ -24845,7 +24854,7 @@ if (itemIdQty.length) {
         (customer_note || "").toString(),
         (maps_url || "").toString(),
         (job_zone || "").toString(),
-        bm === 'urgent' ? 'รอช่างยืนยัน' : 'รอตรวจสอบ',
+        bm === 'urgent' ? (urgentOfferEnabled ? 'รอช่างยืนยัน' : 'ไม่พบช่างรับงาน') : 'รอตรวจสอบ',
         duration_min_v2,
         (bm === 'urgent' ? 'urgent' : 'scheduled'),
         dispatchMode,
@@ -24874,7 +24883,8 @@ if (itemIdQty.length) {
     await client.query(`UPDATE public.jobs SET booking_code=$1 WHERE job_id=$2`, [booking_code, job_id]);
 
     // CREATE_URGENT_OFFERS_V2
-    if (bm === "urgent" && ENABLE_URGENT_FLOW) {
+    let urgentOffersCount = 0;
+    if (bm === "urgent" && urgentOfferEnabled) {
       await expireTechnicianAcceptStatuses(client);
       const partners = await client.query(
         `
@@ -24897,22 +24907,25 @@ if (itemIdQty.length) {
       }
 
       if (!availablePartners.length) {
-        const err = new Error('ตอนนี้ไม่มีช่างพาร์ทเนอร์ที่ว่างและเปิดรับงาน ระบบจึงยังไม่ได้ส่งงานออกไปให้ช่างรับ');
-        err.statusCode = 409;
-        err.code = 'NO_URGENT_OFFER_TARGETS';
-        throw err;
-      }
-
-      // ✅ safety: จำกัดไม่เกิน 30 ช่าง/ทีมที่ส่ง offer
-      for (const u of availablePartners) {
         await client.query(
-          `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
-           VALUES ($1,$2,'pending', NOW() + INTERVAL '10 minutes')`,
-          [job_id, u]
+          `UPDATE public.jobs
+              SET job_status='ไม่พบช่างรับงาน'
+            WHERE job_id=$1`,
+          [job_id]
         );
+        console.warn("[public_book] urgent_no_offer_targets", { job_id, booking_code });
+      } else {
+        // ✅ safety: จำกัดไม่เกิน 30 ช่าง/ทีมที่ส่ง offer
+        for (const u of availablePartners) {
+          await client.query(
+            `INSERT INTO public.job_offers (job_id, technician_username, status, expires_at)
+             VALUES ($1,$2,'pending', NOW() + INTERVAL '10 minutes')`,
+            [job_id, u]
+          );
+        }
+        urgentOffersCount = availablePartners.length;
+        console.log("[public_book] urgent_offers", { job_id, booking_code, count: availablePartners.length });
       }
-
-      console.log("[public_book] urgent_offers", { job_id, booking_code, count: availablePartners.length });
     }
 
 
@@ -24955,6 +24968,9 @@ if (itemIdQty.length) {
       booking_code,
       token: r.rows[0].booking_token,
       booking_mode: bm,
+      dispatch_mode: dispatchMode,
+      offers_count: urgentOffersCount,
+      urgent_offer_enabled: urgentOfferEnabled,
       duration_min: duration_min_v2,
       effective_block_min: effectiveBlockMin(duration_min_v2),
       travel_buffer_min: TRAVEL_BUFFER_MIN,
@@ -24990,7 +25006,8 @@ app.get("/public/track", async (req, res) => {
       SELECT
         j.job_id, j.booking_code, j.booking_token,
         j.customer_name, j.customer_phone, j.job_type,
-        j.appointment_datetime, j.job_status,
+        j.appointment_datetime, j.job_status, j.booking_mode, j.dispatch_mode,
+        j.duration_min, j.job_price,
         j.address_text, j.gps_latitude, j.gps_longitude, j.maps_url, j.job_zone,
         j.technician_username, j.technician_team,
         j.travel_started_at, j.checkin_at, j.started_at, j.finished_at, j.canceled_at, j.cancel_reason,
@@ -25097,6 +25114,10 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING) {
       job_type: row.job_type,
       appointment_datetime: row.appointment_datetime,
       job_status: publicStatus,
+      booking_mode: row.booking_mode || null,
+      dispatch_mode: row.dispatch_mode || null,
+      duration_min: row.duration_min == null ? null : Number(row.duration_min),
+      job_price: row.job_price == null ? null : Number(row.job_price),
       address_text: row.address_text,
       maps_url: row.maps_url || null,
       job_zone: row.job_zone || null,
