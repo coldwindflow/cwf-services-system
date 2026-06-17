@@ -96,9 +96,13 @@ BEGIN
       ADD CONSTRAINT jobs_location_id_customer_locations_fk
       FOREIGN KEY (location_id)
       REFERENCES public.customer_locations(location_id)
-      ON DELETE SET NULL;
+      ON DELETE SET NULL
+      NOT VALID;
   END IF;
 END $$;
+
+-- Later maintenance-window validation after production apply:
+-- ALTER TABLE public.jobs VALIDATE CONSTRAINT jobs_location_id_customer_locations_fk;
 
 CREATE INDEX IF NOT EXISTS idx_customer_locations_customer_sub
   ON public.customer_locations(customer_sub)
@@ -117,8 +121,14 @@ CREATE INDEX IF NOT EXISTS idx_customer_locations_job_zone
 CREATE INDEX IF NOT EXISTS idx_customer_location_units_location_id
   ON public.customer_location_units(location_id);
 
-CREATE INDEX IF NOT EXISTS idx_jobs_location_id
-  ON public.jobs(location_id);
+-- Production lock-sensitive index:
+-- If this migration is run by a tool that wraps statements in a transaction,
+-- do not put CREATE INDEX CONCURRENTLY in this file. Create this index manually
+-- outside a transaction after the nullable jobs.location_id column exists.
+--
+-- Recommended production step:
+-- CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_jobs_location_id
+--   ON public.jobs(location_id);
 
 CREATE UNIQUE INDEX IF NOT EXISTS ux_customer_locations_default_by_sub
   ON public.customer_locations(customer_sub)
@@ -179,7 +189,7 @@ COMMENT ON COLUMN public.jobs.address_snapshot IS
 -- Rollback outline (review before use):
 --   DROP INDEX IF EXISTS ux_customer_locations_default_by_phone_guest;
 --   DROP INDEX IF EXISTS ux_customer_locations_default_by_sub;
---   DROP INDEX IF EXISTS idx_jobs_location_id;
+--   DROP INDEX CONCURRENTLY IF EXISTS idx_jobs_location_id; -- run outside transaction
 --   DROP INDEX IF EXISTS idx_customer_location_units_location_id;
 --   DROP INDEX IF EXISTS idx_customer_locations_job_zone;
 --   DROP INDEX IF EXISTS idx_customer_locations_is_active;

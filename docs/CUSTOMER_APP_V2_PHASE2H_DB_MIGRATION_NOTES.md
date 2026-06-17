@@ -71,12 +71,16 @@ Before applying to production:
 - Backup the database.
 - Test the migration on staging or a Render preview database.
 - Inspect lock risk for `ALTER TABLE public.jobs`.
+- Treat the `public.jobs` index/FK work as the only lock-sensitive part of this draft.
+- Create `idx_jobs_location_id` with `CREATE INDEX CONCURRENTLY` outside a transaction, or schedule a manual maintenance window if the migration runner cannot run non-transactional statements.
+- The `jobs.location_id` foreign key is added as `NOT VALID` first; validate it later during a maintenance window with `ALTER TABLE public.jobs VALIDATE CONSTRAINT jobs_location_id_customer_locations_fk`.
 - Confirm the production PostgreSQL version supports all used `IF NOT EXISTS` patterns.
 - Do not run the commented audit/backfill queries automatically.
 
 ## Remaining Risks
 
 - `ALTER TABLE public.jobs ADD COLUMN` and foreign key creation can take locks. Test on a copy of production-sized data first.
+- `public.jobs` FK validation and `jobs(location_id)` index creation must be planned separately for production-scale data.
 - Partial unique default-location indexes enforce one active default by `customer_sub` or guest phone key. Existing data is not backfilled in this phase, so this should not conflict at apply time.
 - Future APIs must explicitly decide precedence when both `location_id` and manual address fields are sent.
 - Future AI/admin flows must not infer "same as before" when multiple active locations exist.
