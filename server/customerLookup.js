@@ -173,6 +173,13 @@ async function buildLookupDebug(db, { digits, candidates }) {
     jobs_address_text_contains_full_digits_count: 0,
     jobs_address_text_contains_last9_count: 0,
     matching_jobs_blank_address_text_count: 0,
+    candidate_rows_exact_count: 0,
+    candidate_rows_last9_count: 0,
+    candidate_rows_note_full_count: 0,
+    candidate_rows_note_last9_count: 0,
+    candidate_rows_address_full_count: 0,
+    candidate_rows_address_last9_count: 0,
+    candidate_query_errors: [],
     newest_matching_job_id: null,
     newest_matching_booking_code: null,
   };
@@ -203,6 +210,25 @@ async function buildLookupDebug(db, { digits, candidates }) {
       `SELECT COUNT(*)::int AS count FROM public.jobs WHERE ${item.clause}`,
       item.params
     );
+  }
+
+  const candidateCountByKey = {
+    jobs_phone_exact: "candidate_rows_exact_count",
+    jobs_phone_last9: "candidate_rows_last9_count",
+    jobs_note_phone: "candidate_rows_note_full_count",
+    jobs_note_last9: "candidate_rows_note_last9_count",
+    jobs_address_phone: "candidate_rows_address_full_count",
+    jobs_address_last9: "candidate_rows_address_last9_count",
+  };
+
+  for (const item of clauses) {
+    if (!item.enabled) continue;
+    try {
+      const rows = await queryJobLocationRows(db, item.clause, item.params, item.key);
+      debug[candidateCountByKey[item.key]] = rows.length;
+    } catch (e) {
+      debug.candidate_query_errors.push({ source: item.key, error: e.message || "QUERY_FAILED" });
+    }
   }
 
   const enabled = clauses.filter((item) => item.enabled);
@@ -247,54 +273,6 @@ async function queryJobLocationRows(db, matchClause, params, lookupSource) {
   const sourceParam = params.length + 1;
   const jobR = await db.query(
     `
-    WITH recent_jobs AS (
-      SELECT
-        customer_name,
-        customer_phone,
-        address_text,
-        maps_url,
-        job_zone,
-        booking_code,
-        job_id,
-        status,
-        COALESCE(finished_at, appointment_datetime, created_at) AS seen_at
-      FROM public.jobs
-      WHERE ${matchClause}
-        AND COALESCE(NULLIF(btrim(address_text), ''), '') <> ''
-      ORDER BY COALESCE(finished_at, appointment_datetime, created_at) DESC NULLS LAST, job_id DESC
-      LIMIT 80
-    ),
-    grouped AS (
-      SELECT
-        lower(regexp_replace(btrim(address_text), '\\s+', ' ', 'g')) AS address_key,
-        lower(regexp_replace(COALESCE(btrim(maps_url), ''), '\\s+', ' ', 'g')) AS maps_key,
-        COUNT(*) AS job_count,
-        MAX(seen_at) AS last_seen_at
-      FROM recent_jobs
-      GROUP BY 1, 2
-    ),
-    ranked AS (
-      SELECT
-        r.customer_name,
-        r.customer_phone,
-        r.address_text,
-        r.maps_url,
-        r.job_zone,
-        r.booking_code,
-        r.job_id,
-        g.job_count,
-        g.last_seen_at,
-        r.status AS last_job_status,
-        ROW_NUMBER() OVER (
-          PARTITION BY g.address_key, g.maps_key
-          ORDER BY r.seen_at DESC NULLS LAST, r.job_id DESC
-        ) AS rn
-      FROM grouped g
-      JOIN recent_jobs r
-        ON lower(regexp_replace(btrim(r.address_text), '\\s+', ' ', 'g')) = g.address_key
-       AND lower(regexp_replace(COALESCE(btrim(r.maps_url), ''), '\\s+', ' ', 'g')) = g.maps_key
-       AND r.seen_at IS NOT DISTINCT FROM g.last_seen_at
-    )
     SELECT
       customer_name,
       customer_phone,
@@ -303,14 +281,19 @@ async function queryJobLocationRows(db, matchClause, params, lookupSource) {
       job_zone,
       booking_code,
       job_id,
-      job_count,
-      last_seen_at,
-      last_job_status,
+      COUNT(*) OVER (
+        PARTITION BY
+          lower(regexp_replace(btrim(address_text), '\\s+', ' ', 'g')),
+          lower(regexp_replace(COALESCE(btrim(maps_url), ''), '\\s+', ' ', 'g'))
+      ) AS job_count,
+      COALESCE(finished_at, appointment_datetime, created_at) AS last_seen_at,
+      status AS last_job_status,
       $${sourceParam}::text AS lookup_source
-    FROM ranked
-    WHERE rn = 1
-    ORDER BY last_seen_at DESC NULLS LAST, job_id DESC
-    LIMIT 8
+    FROM public.jobs
+    WHERE ${matchClause}
+      AND COALESCE(NULLIF(btrim(address_text), ''), '') <> ''
+    ORDER BY COALESCE(finished_at, appointment_datetime, created_at) DESC NULLS LAST, job_id DESC
+    LIMIT 80
     `,
     [...params, lookupSource]
   );
