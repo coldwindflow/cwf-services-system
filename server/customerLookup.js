@@ -48,9 +48,16 @@ function buildJobLocationCandidate(row) {
   const addressText = compactText(row?.address_text);
   const mapsUrl = compactText(row?.maps_url);
   if (!addressText) return null;
+  const source = row.lookup_source || "jobs_phone_exact";
+  const labelBySource = {
+    jobs_phone_exact: "ประวัติงานเดิมจากเบอร์ตรงกัน",
+    jobs_phone_last9: "ประวัติงานเดิมจากเลขท้ายเบอร์ 9 หลัก",
+    jobs_note_phone: "ประวัติงานเดิมจากเบอร์ในหมายเหตุ",
+    jobs_address_phone: "ประวัติงานเดิมจากเบอร์ในที่อยู่",
+  };
   return {
-    source: "jobs",
-    label: "เลือกสถานที่จากประวัติงานเดิม",
+    source,
+    label: labelBySource[source] || "เลือกสถานที่จากประวัติงานเดิม",
     customer_id: null,
     customer_name: row.customer_name || null,
     customer_phone: row.customer_phone || null,
@@ -104,15 +111,102 @@ function buildLookupResultFromDefault(defaultCandidate) {
   };
 }
 
+async function queryJobLocationRows(db, matchClause, params, lookupSource) {
+  const sourceParam = params.length + 1;
+  const jobR = await db.query(
+    `
+    WITH recent_jobs AS (
+      SELECT
+        customer_name,
+        customer_phone,
+        address_text,
+        maps_url,
+        job_zone,
+        booking_code,
+        job_id,
+        status,
+        COALESCE(finished_at, appointment_datetime, created_at) AS seen_at
+      FROM public.jobs
+      WHERE ${matchClause}
+        AND COALESCE(NULLIF(btrim(address_text), ''), '') <> ''
+      ORDER BY COALESCE(finished_at, appointment_datetime, created_at) DESC NULLS LAST, job_id DESC
+      LIMIT 80
+    ),
+    grouped AS (
+      SELECT
+        lower(regexp_replace(btrim(address_text), '\\s+', ' ', 'g')) AS address_key,
+        lower(regexp_replace(COALESCE(btrim(maps_url), ''), '\\s+', ' ', 'g')) AS maps_key,
+        COUNT(*) AS job_count,
+        MAX(seen_at) AS last_seen_at
+      FROM recent_jobs
+      GROUP BY 1, 2
+    ),
+    ranked AS (
+      SELECT
+        r.customer_name,
+        r.customer_phone,
+        r.address_text,
+        r.maps_url,
+        r.job_zone,
+        r.booking_code,
+        r.job_id,
+        g.job_count,
+        g.last_seen_at,
+        r.status AS last_job_status,
+        ROW_NUMBER() OVER (
+          PARTITION BY g.address_key, g.maps_key
+          ORDER BY r.seen_at DESC NULLS LAST, r.job_id DESC
+        ) AS rn
+      FROM grouped g
+      JOIN recent_jobs r
+        ON lower(regexp_replace(btrim(r.address_text), '\\s+', ' ', 'g')) = g.address_key
+       AND lower(regexp_replace(COALESCE(btrim(r.maps_url), ''), '\\s+', ' ', 'g')) = g.maps_key
+       AND r.seen_at IS NOT DISTINCT FROM g.last_seen_at
+    )
+    SELECT
+      customer_name,
+      customer_phone,
+      address_text,
+      maps_url,
+      job_zone,
+      booking_code,
+      job_id,
+      job_count,
+      last_seen_at,
+      last_job_status,
+      $${sourceParam}::text AS lookup_source
+    FROM ranked
+    WHERE rn = 1
+    ORDER BY last_seen_at DESC NULLS LAST, job_id DESC
+    LIMIT 8
+    `,
+    [...params, lookupSource]
+  );
+  return jobR.rows || [];
+}
+
+function addJobRows(locationCandidates, rows) {
+  let usableCount = 0;
+  for (const row of rows || []) {
+    const candidate = buildJobLocationCandidate(row);
+    if (!candidate) continue;
+    usableCount += 1;
+    addLocationCandidate(locationCandidates, candidate);
+  }
+  return usableCount;
+}
+
 async function lookupCustomerByPhoneV2(db, phone) {
   const rawPhone = String(phone || "").trim();
+  const digits = normalizePhone(rawPhone);
   const candidates = buildPhoneLookupCandidates(rawPhone);
-  if (!candidates.length || normalizePhone(rawPhone).length < 8) {
+  if (!candidates.length || digits.length < 8) {
     return { found: false, location_candidates: [] };
   }
 
   let profileRow = null;
   const locationCandidates = [];
+  let jobCandidateCount = 0;
 
   try {
     const profileR = await db.query(
@@ -140,79 +234,57 @@ async function lookupCustomerByPhoneV2(db, phone) {
   }
 
   try {
-    const jobR = await db.query(
-      `
-      WITH recent_jobs AS (
-        SELECT
-          customer_name,
-          customer_phone,
-          address_text,
-          maps_url,
-          job_zone,
-          booking_code,
-          job_id,
-          status,
-          COALESCE(finished_at, appointment_datetime, created_at) AS seen_at
-        FROM public.jobs
-        WHERE regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g') = ANY($1::text[])
-          AND COALESCE(NULLIF(btrim(address_text), ''), '') <> ''
-        ORDER BY COALESCE(finished_at, appointment_datetime, created_at) DESC NULLS LAST, job_id DESC
-        LIMIT 80
-      ),
-      grouped AS (
-        SELECT
-          lower(regexp_replace(btrim(address_text), '\\s+', ' ', 'g')) AS address_key,
-          lower(regexp_replace(COALESCE(btrim(maps_url), ''), '\\s+', ' ', 'g')) AS maps_key,
-          COUNT(*) AS job_count,
-          MAX(seen_at) AS last_seen_at
-        FROM recent_jobs
-        GROUP BY 1, 2
-      ),
-      ranked AS (
-        SELECT
-          r.customer_name,
-          r.customer_phone,
-          r.address_text,
-          r.maps_url,
-          r.job_zone,
-          r.booking_code,
-          r.job_id,
-          g.job_count,
-          g.last_seen_at,
-          r.status AS last_job_status,
-          ROW_NUMBER() OVER (
-            PARTITION BY g.address_key, g.maps_key
-            ORDER BY r.seen_at DESC NULLS LAST, r.job_id DESC
-          ) AS rn
-        FROM grouped g
-        JOIN recent_jobs r
-          ON lower(regexp_replace(btrim(r.address_text), '\\s+', ' ', 'g')) = g.address_key
-         AND lower(regexp_replace(COALESCE(btrim(r.maps_url), ''), '\\s+', ' ', 'g')) = g.maps_key
-         AND r.seen_at IS NOT DISTINCT FROM g.last_seen_at
-      )
-      SELECT
-        customer_name,
-        customer_phone,
-        address_text,
-        maps_url,
-        job_zone,
-        booking_code,
-        job_id,
-        job_count,
-        last_seen_at,
-        last_job_status
-      FROM ranked
-      WHERE rn = 1
-      ORDER BY last_seen_at DESC NULLS LAST, job_id DESC
-      LIMIT 8
-      `,
-      [candidates]
+    const rows = await queryJobLocationRows(
+      db,
+      "regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g') = ANY($1::text[])",
+      [candidates],
+      "jobs_phone_exact"
     );
-    for (const row of jobR.rows || []) {
-      addLocationCandidate(locationCandidates, buildJobLocationCandidate(row));
-    }
+    jobCandidateCount += addJobRows(locationCandidates, rows);
   } catch (e) {
     console.warn("[customer_lookup_by_phone_v2] jobs location candidates lookup failed:", e.message);
+  }
+
+  if (jobCandidateCount === 0 && digits.length >= 9) {
+    try {
+      const rows = await queryJobLocationRows(
+        db,
+        "right(regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g'), 9) = $1",
+        [digits.slice(-9)],
+        "jobs_phone_last9"
+      );
+      jobCandidateCount += addJobRows(locationCandidates, rows);
+    } catch (e) {
+      console.warn("[customer_lookup_by_phone_v2] jobs last9 fallback lookup failed:", e.message);
+    }
+  }
+
+  if (jobCandidateCount === 0 && digits.length >= 9 && digits.length <= 10) {
+    try {
+      const rows = await queryJobLocationRows(
+        db,
+        "regexp_replace(COALESCE(customer_note, ''), '[^0-9]', '', 'g') LIKE '%' || $1 || '%'",
+        [digits],
+        "jobs_note_phone"
+      );
+      jobCandidateCount += addJobRows(locationCandidates, rows);
+    } catch (e) {
+      console.warn("[customer_lookup_by_phone_v2] jobs note phone fallback lookup failed:", e.message);
+    }
+  }
+
+  if (jobCandidateCount === 0 && digits.length >= 9 && digits.length <= 10) {
+    try {
+      const rows = await queryJobLocationRows(
+        db,
+        "regexp_replace(COALESCE(address_text, ''), '[^0-9]', '', 'g') LIKE '%' || $1 || '%'",
+        [digits],
+        "jobs_address_phone"
+      );
+      jobCandidateCount += addJobRows(locationCandidates, rows);
+    } catch (e) {
+      console.warn("[customer_lookup_by_phone_v2] jobs address phone fallback lookup failed:", e.message);
+    }
   }
 
   const defaultCandidate = locationCandidates[0] || (profileRow ? {
