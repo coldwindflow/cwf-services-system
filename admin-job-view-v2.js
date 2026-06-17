@@ -980,16 +980,23 @@ async function loadJob(){
       }
       return `ล้างแอร์${STD_AC_PAYLOAD[ac] || 'สี่ทิศทาง'} • ${btuText} • ${qty} เครื่อง`;
     };
+    const detectAcTypeKeyFromServiceName = (name) => {
+      const s = String(name || '').toLowerCase();
+      if (!s.trim()) return null;
+      const hasWallCoil = s.includes('แขวนคอย') || s.includes('coil');
+      if (s.includes('สี่ทิศ') || s.includes('cassette') || s.includes('four')) return 'fourway';
+      if (s.includes('เปลือย') || s.includes('ใต้ฝ้า') || s.includes('ฝังฝ้า') || s.includes('ceiling') || s.includes('concealed')) return 'ceiling';
+      if ((s.includes('แขวน') || s.includes('ตั้งพื้น') || s.includes('floor') || s.includes('hanging')) && !hasWallCoil) return 'hanging';
+      if (s.includes('ผนัง') || s.includes('wall') || hasWallCoil) return 'wall';
+      return null;
+    };
     const parseStandardItemName = (name) => {
       const raw = String(name || '');
       const s = raw.toLowerCase();
       if (!s.trim()) return null;
       const job_type_key = s.includes('ติดตั้ง') ? 'install' : (s.includes('ซ่อม') ? 'repair' : 'wash');
       const hasWallCoil = s.includes('แขวนคอย') || s.includes('coil');
-      const ac = s.includes('สี่ทิศ') || s.includes('cassette') || s.includes('four') ? 'fourway'
-        : (s.includes('ผนัง') || s.includes('wall') || hasWallCoil || s.includes('ล้างแอร์') ? 'wall'
-        : ((s.includes('แขวน') || s.includes('ตั้งพื้น') || s.includes('floor')) && !hasWallCoil ? 'hanging'
-        : (s.includes('เปลือย') || s.includes('ใต้ฝ้า') || s.includes('ceiling') || s.includes('concealed') ? 'ceiling' : 'wall')));
+      const ac = detectAcTypeKeyFromServiceName(raw) || 'wall';
       const wash = ac !== 'wall' ? 'none'
         : (s.includes('พรีเมียม') || s.includes('พรีเมี่ยม') || s.includes('premium') ? 'premium'
         : (s.includes('แขวนคอย') || s.includes('coil') ? 'coil'
