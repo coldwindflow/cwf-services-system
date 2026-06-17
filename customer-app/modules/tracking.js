@@ -62,9 +62,11 @@
   }
 
   function mapUrl(data) {
-    const lat = Number(data.gps_latitude);
-    const lng = Number(data.gps_longitude);
-    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+    const rawLat = clean(data.gps_latitude);
+    const rawLng = clean(data.gps_longitude);
+    const lat = Number(rawLat);
+    const lng = Number(rawLng);
+    if (rawLat && rawLng && Number.isFinite(lat) && Number.isFinite(lng)) {
       return `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(`${lat},${lng}`)}&travelmode=driving`;
     }
     const direct = clean(data.maps_url || data.map_url);
@@ -74,9 +76,22 @@
   }
 
   function receiptUrl(data) {
+    const fallback = isDone(data) && data.job_id ? `/docs/receipt/${encodeURIComponent(data.job_id)}` : "";
     const raw = clean(data.receipt_url);
-    if (raw) return imageUrl(raw);
-    return isDone(data) && data.job_id ? `/docs/receipt/${encodeURIComponent(data.job_id)}` : "";
+    if (!raw) return fallback;
+
+    const apiBase = clean(root.api.getApiBase()) || window.location.origin;
+    try {
+      const url = new URL(raw, apiBase);
+      const current = new URL(apiBase || window.location.origin, window.location.href);
+      const isLocalHost = url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "0.0.0.0";
+      if (isLocalHost || url.origin !== current.origin) {
+        return `${current.origin}${url.pathname}${url.search}`;
+      }
+      return `${url.pathname}${url.search}`;
+    } catch (_) {
+      return fallback || imageUrl(raw);
+    }
   }
 
   function photoList(data) {
@@ -367,9 +382,11 @@
       form.addEventListener("submit", async (event) => {
         event.preventDefault();
         const status = form.querySelector("[data-review-status]");
+        const submit = form.querySelector("button[type='submit']");
         const payload = Object.fromEntries(new FormData(form).entries());
         payload.rating = Number(payload.rating || 5);
         if (status) status.textContent = "กำลังส่งรีวิว...";
+        if (submit) submit.disabled = true;
         try {
           const response = await fetch(`${root.api.getApiBase()}/public/review`, {
             method: "POST",
@@ -382,8 +399,9 @@
           setTimeout(() => lookup(container), 500);
         } catch (error) {
           if (status) status.textContent = error.message || "ส่งรีวิวไม่สำเร็จ";
+          if (submit) submit.disabled = false;
         }
-      }, { once: true });
+      });
     }
   }
 
