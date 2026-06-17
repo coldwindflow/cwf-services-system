@@ -14717,9 +14717,11 @@ async function handleInternalBookFromAi(req, res) {
 app.get("/admin/customer_lookup_by_phone_v2", requireAdminSoft, async (req, res) => {
   try {
     const rawPhone = String(req.query.phone || "").trim();
-    return res.json(await customerLookupHelpers.lookupCustomerByPhoneV2(pool, rawPhone));
+    const debug = String(req.query.debug || "") === "1";
+    return res.json(await customerLookupHelpers.lookupCustomerByPhoneV2(pool, rawPhone, { debug }));
   } catch (e) {
     console.error("GET /admin/customer_lookup_by_phone_v2", e);
+    if (String(req.query.debug || "") === "1") return res.json({ found: false, location_candidates: [], debug: { error: "LOOKUP_FAILED" } });
     return res.json({ found: false });
   }
 });

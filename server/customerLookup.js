@@ -111,6 +111,138 @@ function buildLookupResultFromDefault(defaultCandidate) {
   };
 }
 
+function buildJobMatchClauses({ candidates, digits }) {
+  const last9 = digits.length >= 9 ? digits.slice(-9) : "";
+  return [
+    {
+      key: "jobs_phone_exact",
+      enabled: candidates.length > 0,
+      clause: "regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g') = ANY($1::text[])",
+      params: [candidates],
+    },
+    {
+      key: "jobs_phone_last9",
+      enabled: digits.length >= 9,
+      clause: "right(regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g'), 9) = $1",
+      params: [last9],
+    },
+    {
+      key: "jobs_note_phone",
+      enabled: digits.length >= 9 && digits.length <= 10,
+      clause: "regexp_replace(COALESCE(customer_note, ''), '[^0-9]', '', 'g') LIKE '%' || $1 || '%'",
+      params: [digits],
+    },
+    {
+      key: "jobs_note_last9",
+      enabled: digits.length >= 9,
+      clause: "regexp_replace(COALESCE(customer_note, ''), '[^0-9]', '', 'g') LIKE '%' || $1 || '%'",
+      params: [last9],
+    },
+    {
+      key: "jobs_address_phone",
+      enabled: digits.length >= 9 && digits.length <= 10,
+      clause: "regexp_replace(COALESCE(address_text, ''), '[^0-9]', '', 'g') LIKE '%' || $1 || '%'",
+      params: [digits],
+    },
+    {
+      key: "jobs_address_last9",
+      enabled: digits.length >= 9,
+      clause: "regexp_replace(COALESCE(address_text, ''), '[^0-9]', '', 'g') LIKE '%' || $1 || '%'",
+      params: [last9],
+    },
+  ];
+}
+
+async function countRows(db, sql, params) {
+  const r = await db.query(sql, params);
+  return Number(r.rows?.[0]?.count || 0) || 0;
+}
+
+async function buildLookupDebug(db, { digits, candidates }) {
+  const clauses = buildJobMatchClauses({ candidates, digits });
+  const debug = {
+    lookup_debug_version: "admin_phone_lookup_debug_v1",
+    input_digits: digits,
+    lookup_candidates_generated: candidates,
+    fallback_enabled: digits.length >= 9,
+    exact_customer_profiles_count: 0,
+    exact_jobs_customer_phone_count: 0,
+    jobs_customer_phone_last9_count: 0,
+    jobs_customer_note_contains_full_digits_count: 0,
+    jobs_customer_note_contains_last9_count: 0,
+    jobs_address_text_contains_full_digits_count: 0,
+    jobs_address_text_contains_last9_count: 0,
+    matching_jobs_blank_address_text_count: 0,
+    newest_matching_job_id: null,
+    newest_matching_booking_code: null,
+  };
+
+  debug.exact_customer_profiles_count = await countRows(
+    db,
+    `
+    SELECT COUNT(*)::int AS count
+    FROM public.customer_profiles
+    WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') = ANY($1::text[])
+    `,
+    [candidates]
+  );
+
+  const countByKey = {
+    jobs_phone_exact: "exact_jobs_customer_phone_count",
+    jobs_phone_last9: "jobs_customer_phone_last9_count",
+    jobs_note_phone: "jobs_customer_note_contains_full_digits_count",
+    jobs_note_last9: "jobs_customer_note_contains_last9_count",
+    jobs_address_phone: "jobs_address_text_contains_full_digits_count",
+    jobs_address_last9: "jobs_address_text_contains_last9_count",
+  };
+
+  for (const item of clauses) {
+    if (!item.enabled) continue;
+    debug[countByKey[item.key]] = await countRows(
+      db,
+      `SELECT COUNT(*)::int AS count FROM public.jobs WHERE ${item.clause}`,
+      item.params
+    );
+  }
+
+  const enabled = clauses.filter((item) => item.enabled);
+  if (enabled.length) {
+    const parts = [];
+    const params = [];
+    for (const item of enabled) {
+      const offsetClause = item.clause.replace(/\$(\d+)/g, (_, n) => `$${params.length + Number(n)}`);
+      parts.push(`(${offsetClause})`);
+      params.push(...item.params);
+    }
+    const whereAny = parts.join(" OR ");
+    const blankR = await db.query(
+      `
+      SELECT COUNT(*)::int AS count
+      FROM public.jobs
+      WHERE (${whereAny})
+        AND COALESCE(NULLIF(btrim(address_text), ''), '') = ''
+      `,
+      params
+    );
+    debug.matching_jobs_blank_address_text_count = Number(blankR.rows?.[0]?.count || 0) || 0;
+
+    const newestR = await db.query(
+      `
+      SELECT job_id, booking_code
+      FROM public.jobs
+      WHERE ${whereAny}
+      ORDER BY COALESCE(finished_at, appointment_datetime, created_at) DESC NULLS LAST, job_id DESC
+      LIMIT 1
+      `,
+      params
+    );
+    debug.newest_matching_job_id = newestR.rows?.[0]?.job_id || null;
+    debug.newest_matching_booking_code = newestR.rows?.[0]?.booking_code || null;
+  }
+
+  return debug;
+}
+
 async function queryJobLocationRows(db, matchClause, params, lookupSource) {
   const sourceParam = params.length + 1;
   const jobR = await db.query(
@@ -196,17 +328,36 @@ function addJobRows(locationCandidates, rows) {
   return usableCount;
 }
 
-async function lookupCustomerByPhoneV2(db, phone) {
+async function lookupCustomerByPhoneV2(db, phone, options = {}) {
   const rawPhone = String(phone || "").trim();
   const digits = normalizePhone(rawPhone);
   const candidates = buildPhoneLookupCandidates(rawPhone);
   if (!candidates.length || digits.length < 8) {
-    return { found: false, location_candidates: [] };
+    const result = { found: false, location_candidates: [] };
+    if (options.debug) {
+      result.debug = {
+        input_digits: digits,
+        lookup_candidates_generated: candidates,
+        fallback_enabled: false,
+        reason: digits.length < 8 ? "INPUT_UNDER_8_DIGITS" : "NO_LOOKUP_CANDIDATES",
+      };
+    }
+    return result;
   }
 
   let profileRow = null;
   const locationCandidates = [];
   let jobCandidateCount = 0;
+  let debug = null;
+
+  if (options.debug) {
+    try {
+      debug = await buildLookupDebug(db, { digits, candidates });
+    } catch (e) {
+      console.warn("[customer_lookup_by_phone_v2] debug lookup failed:", e.message);
+      debug = { input_digits: digits, lookup_candidates_generated: candidates, error: "DEBUG_LOOKUP_FAILED" };
+    }
+  }
 
   try {
     const profileR = await db.query(
@@ -273,6 +424,20 @@ async function lookupCustomerByPhoneV2(db, phone) {
     }
   }
 
+  if (jobCandidateCount === 0 && digits.length >= 9) {
+    try {
+      const rows = await queryJobLocationRows(
+        db,
+        "regexp_replace(COALESCE(customer_note, ''), '[^0-9]', '', 'g') LIKE '%' || $1 || '%'",
+        [digits.slice(-9)],
+        "jobs_note_phone"
+      );
+      jobCandidateCount += addJobRows(locationCandidates, rows);
+    } catch (e) {
+      console.warn("[customer_lookup_by_phone_v2] jobs note last9 fallback lookup failed:", e.message);
+    }
+  }
+
   if (jobCandidateCount === 0 && digits.length >= 9 && digits.length <= 10) {
     try {
       const rows = await queryJobLocationRows(
@@ -287,6 +452,20 @@ async function lookupCustomerByPhoneV2(db, phone) {
     }
   }
 
+  if (jobCandidateCount === 0 && digits.length >= 9) {
+    try {
+      const rows = await queryJobLocationRows(
+        db,
+        "regexp_replace(COALESCE(address_text, ''), '[^0-9]', '', 'g') LIKE '%' || $1 || '%'",
+        [digits.slice(-9)],
+        "jobs_address_phone"
+      );
+      jobCandidateCount += addJobRows(locationCandidates, rows);
+    } catch (e) {
+      console.warn("[customer_lookup_by_phone_v2] jobs address last9 fallback lookup failed:", e.message);
+    }
+  }
+
   const defaultCandidate = locationCandidates[0] || (profileRow ? {
     source: "customer_profiles",
     customer_id: profileRow.customer_id || null,
@@ -297,16 +476,21 @@ async function lookupCustomerByPhoneV2(db, phone) {
   } : null);
 
   const result = buildLookupResultFromDefault(defaultCandidate);
-  if (!result.found) return result;
+  if (!result.found) {
+    if (debug) result.debug = debug;
+    return result;
+  }
   if (profileRow) {
     result.customer_id = result.customer_id || profileRow.customer_id || null;
     result.customer_name = result.customer_name || profileRow.customer_name || null;
     result.customer_phone = result.customer_phone || profileRow.customer_phone || null;
   }
-  return {
+  const response = {
     ...result,
     location_candidates: locationCandidates,
   };
+  if (debug) response.debug = debug;
+  return response;
 }
 
 module.exports = {
