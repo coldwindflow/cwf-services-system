@@ -142,13 +142,53 @@ function normalizePhoneLookupClient(phone){
   return String(phone || "").replace(/\D/g, "").trim();
 }
 
+function escapeHtml(value){
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  }[ch]));
+}
+
+function shortText(value, max = 96){
+  const s = String(value || "").trim().replace(/\s+/g, " ");
+  if (s.length <= max) return s;
+  return `${s.slice(0, max - 1)}…`;
+}
+
+function formatLookupDate(value){
+  const s = String(value || "").trim();
+  if (!s) return "";
+  const d = new Date(s);
+  if (Number.isNaN(d.getTime())) return s.slice(0, 16);
+  try {
+    return d.toLocaleString("th-TH", {
+      timeZone: "Asia/Bangkok",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  } catch(e) {
+    return s.slice(0, 16);
+  }
+}
+
 function resetCustomerLookupUI(message){
   state.customer_lookup = { query: "", data: null };
   const btn = el("btnUseLatestCustomerData");
   const hint = el("customer_lookup_hint");
+  const candidatesBox = el("customer_location_candidates");
   if (el("customer_id")) el("customer_id").value = "";
   if (btn) btn.style.display = "none";
   if (hint) hint.textContent = message || "กรอกเบอร์ลูกค้าเก่าแล้วออกจากช่องนี้ ระบบจะค้นหาข้อมูลล่าสุดให้ก่อน โดยยังไม่เติมค่าให้อัตโนมัติ";
+  if (candidatesBox) {
+    candidatesBox.classList.remove("show");
+    candidatesBox.innerHTML = "";
+  }
 }
 
 async function loadServiceZones(){
@@ -203,13 +243,63 @@ async function detectAdminServiceZone(){
 function renderCustomerLookupUI(result){
   const btn = el("btnUseLatestCustomerData");
   const hint = el("customer_lookup_hint");
+  const candidatesBox = el("customer_location_candidates");
   if (!btn || !hint) return;
+  if (candidatesBox) {
+    candidatesBox.classList.remove("show");
+    candidatesBox.innerHTML = "";
+  }
   if (!result || !result.found) {
     btn.style.display = "none";
     hint.textContent = "ไม่พบข้อมูลลูกค้าเก่าจากเบอร์นี้ ยังสามารถกรอกข้อมูลใหม่ต่อได้ตามปกติ";
     return;
   }
+  const candidates = Array.isArray(result.location_candidates) ? result.location_candidates.filter(c => c && c.address_text) : [];
+  if (candidates.length > 1) {
+    btn.style.display = "none";
+    hint.textContent = `พบลูกค้าเก่า ${candidates.length} สถานที่ กรุณาเลือกสถานที่ให้ถูกต้อง`;
+    if (candidatesBox) {
+      candidatesBox.classList.add("show");
+      candidatesBox.innerHTML = `
+        <div class="customer-location-head">เลือกสถานที่จากประวัติงานเดิม</div>
+        <div class="customer-location-warn">ลูกค้าคนนี้มีหลายสถานที่ อย่าใช้ที่อยู่ล่าสุดโดยไม่ตรวจ</div>
+        <div class="customer-location-list">
+          ${candidates.map((c, index) => {
+            const meta = [
+              c.job_zone ? `โซน: ${c.job_zone}` : "",
+              c.last_seen_at ? `ล่าสุด: ${formatLookupDate(c.last_seen_at)}` : "",
+              c.job_count ? `ใช้แล้ว ${c.job_count} งาน` : "",
+              c.booking_code ? `ใบงาน: ${c.booking_code}` : "",
+            ].filter(Boolean);
+            return `
+              <div class="customer-location-card">
+                <div class="customer-location-title">${escapeHtml(c.label || (c.source === "customer_profiles" ? "ที่อยู่ในโปรไฟล์" : "สถานที่จากประวัติงาน"))}</div>
+                <div class="customer-location-address">${escapeHtml(shortText(c.address_text, 140))}</div>
+                ${meta.length ? `<div class="customer-location-meta">${meta.map(x => `<span>${escapeHtml(x)}</span>`).join("")}</div>` : ""}
+                <button class="secondary btn-mini" type="button" data-customer-location-index="${index}">ใช้สถานที่นี้</button>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    }
+    return;
+  }
   btn.style.display = "";
+  if (candidates.length === 1 && candidatesBox) {
+    const c = candidates[0];
+    const meta = [
+      c.job_zone ? `โซน: ${c.job_zone}` : "",
+      c.last_seen_at ? `ล่าสุด: ${formatLookupDate(c.last_seen_at)}` : "",
+      c.job_count && Number(c.job_count) > 1 ? `ใช้แล้ว ${c.job_count} งาน` : "",
+    ].filter(Boolean).join(" • ");
+    candidatesBox.classList.add("show");
+    candidatesBox.innerHTML = `
+      <div class="customer-location-head">${escapeHtml(c.label || "พบสถานที่จากข้อมูลลูกค้าเดิม")}</div>
+      <div class="customer-location-address">${escapeHtml(shortText(c.address_text, 140))}</div>
+      ${meta ? `<div class="customer-location-meta"><span>${escapeHtml(meta)}</span></div>` : ""}
+    `;
+  }
   if (result.source === "customer_profiles") {
     hint.textContent = 'พบข้อมูลจาก customer_profiles • กด "Use latest customer data" เพื่อเติมชื่อ/เบอร์/ที่อยู่/แผนที่ล่าสุด';
     return;
@@ -252,9 +342,38 @@ function applyLatestCustomerData(){
   if (el("customer_id")) el("customer_id").value = data.customer_id || "";
   if (data.address_text) el("address_text").value = data.address_text;
   if (data.maps_url) el("maps_url").value = data.maps_url;
+  if (data.job_zone && el("job_zone")) el("job_zone").value = data.job_zone;
   try { el("address_text").dispatchEvent(new Event("input", { bubbles: true })); } catch(e){}
   try { el("maps_url").dispatchEvent(new Event("input", { bubbles: true })); } catch(e){}
+  try { el("job_zone").dispatchEvent(new Event("input", { bubbles: true })); } catch(e){}
+  try { detectAdminServiceZone(); } catch(e){}
   showToast(data.source === "customer_profiles" ? "เติมข้อมูลจาก customer_profiles แล้ว" : "เติมข้อมูลจาก latest job แล้ว", "success");
+}
+
+function applyCustomerLocationCandidate(index){
+  const data = state.customer_lookup?.data;
+  const candidates = Array.isArray(data?.location_candidates) ? data.location_candidates : [];
+  const candidate = candidates[Number(index)];
+  if (!data || !candidate) {
+    showToast("ยังไม่มีสถานที่ลูกค้าที่พร้อมใช้", "error");
+    return;
+  }
+  const currentQuery = normalizePhoneLookupClient(el("customer_phone")?.value || "");
+  if (state.customer_lookup?.query && currentQuery !== state.customer_lookup.query) {
+    showToast("เบอร์โทรเปลี่ยนแล้ว กรุณาค้นหาข้อมูลลูกค้าอีกครั้ง", "error");
+    return;
+  }
+  if (candidate.customer_name || data.customer_name) el("customer_name").value = candidate.customer_name || data.customer_name || "";
+  if (candidate.customer_phone || data.customer_phone) el("customer_phone").value = candidate.customer_phone || data.customer_phone || "";
+  if (el("customer_id")) el("customer_id").value = candidate.customer_id || data.customer_id || "";
+  if (candidate.address_text) el("address_text").value = candidate.address_text;
+  if (candidate.maps_url) el("maps_url").value = candidate.maps_url;
+  if (candidate.job_zone && el("job_zone")) el("job_zone").value = candidate.job_zone;
+  try { el("address_text").dispatchEvent(new Event("input", { bubbles: true })); } catch(e){}
+  try { el("maps_url").dispatchEvent(new Event("input", { bubbles: true })); } catch(e){}
+  try { el("job_zone").dispatchEvent(new Event("input", { bubbles: true })); } catch(e){}
+  try { detectAdminServiceZone(); } catch(e){}
+  showToast("เลือกสถานที่ลูกค้าแล้ว", "success");
 }
 
 function maskPII(obj){
@@ -2874,6 +2993,11 @@ function wireEvents() {
     });
   } catch(e){}
   el("btnUseLatestCustomerData")?.addEventListener("click", applyLatestCustomerData);
+  el("customer_location_candidates")?.addEventListener("click", (ev) => {
+    const btn = ev.target?.closest?.("[data-customer-location-index]");
+    if (!btn) return;
+    applyCustomerLocationCandidate(btn.getAttribute("data-customer-location-index"));
+  });
   el("customer_phone")?.addEventListener("blur", lookupLatestCustomerDataByPhone);
   el("customer_phone")?.addEventListener("change", lookupLatestCustomerDataByPhone);
   el("customer_phone")?.addEventListener("input", () => {
