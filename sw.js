@@ -1,7 +1,7 @@
 // ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
 // - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
 // - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v121-ai-office-chat-ux-v17-20260608";
+const CACHE_NAME = "cwf-cache-v122-customer-app-v2-phase2f-20260617";
 
 const ASSETS = [
   "/",
@@ -93,6 +93,24 @@ self.addEventListener("fetch", (e) => {
   const isStaticExt = /\.(?:html|css|js|png|jpg|jpeg|webp|svg|ico|json)$/.test(pathname);
   const isAssetListed = ASSETS.includes(pathname) || (pathname === "/" && ASSETS.includes("/"));
   const shouldCache = isSameOrigin && (isStaticExt || isAssetListed || e.request.mode === "navigate");
+
+  const isCustomerAppV2 = pathname === "/customer-app" || pathname === "/customer-app/" || pathname.startsWith("/customer-app/");
+  if (isSameOrigin && isCustomerAppV2) {
+    e.respondWith(
+      fetch(e.request, { cache: "no-store" })
+        .then((resp) => {
+          if (e.request.mode === "navigate") {
+            const copy = resp.clone();
+            caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
+          }
+          return resp;
+        })
+        .catch(async () => {
+          return (await caches.match(e.request)) || (await caches.match("/customer-app/")) || Response.error();
+        })
+    );
+    return;
+  }
 
   // ถ้าไม่ควร cache → ปล่อยผ่าน network ตรง ๆ
   if (!shouldCache) return;
