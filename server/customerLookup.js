@@ -287,7 +287,7 @@ async function queryJobLocationRows(db, matchClause, params, lookupSource) {
           lower(regexp_replace(COALESCE(btrim(maps_url), ''), '\\s+', ' ', 'g'))
       ) AS job_count,
       COALESCE(finished_at, appointment_datetime, created_at) AS last_seen_at,
-      status AS last_job_status,
+      job_status AS last_job_status,
       $${sourceParam}::text AS lookup_source
     FROM public.jobs
     WHERE ${matchClause}
