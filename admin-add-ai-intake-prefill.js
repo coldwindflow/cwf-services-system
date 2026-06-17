@@ -7,6 +7,8 @@
   function clean(v){ return String(v == null ? "" : v).replace(/\s+/g, " ").trim(); }
   function byId(id){ return document.getElementById(id); }
   function toast(msg, type){ try { if (typeof showToast === "function") showToast(msg, type || "info"); } catch(_){} }
+  function clearPendingIntakeStorage(){ try { localStorage.removeItem("cwf_line_ai_intake_pending_id"); localStorage.removeItem("cwf_line_ai_intake_pending_payload"); } catch(_){} }
+  function isIntentionalLineAiFlow(p){ return p && p.get("source") === "line_ai"; }
   function api(url, options){
     if (typeof apiFetch === "function") return apiFetch(url, options || {});
     return fetch(url, Object.assign({ credentials:"include", headers:{"Content-Type":"application/json"}}, options || {})).then(async (res)=>{
@@ -111,8 +113,16 @@
   }
 
   async function loadAndApply(){
-    const p = qs(); const id = p.get("ai_intake_id") || localStorage.getItem("cwf_line_ai_intake_pending_id");
-    if (p.get("source") !== "line_ai" && !id) return;
+    const p = qs();
+    if (!isIntentionalLineAiFlow(p)) {
+      clearPendingIntakeStorage();
+      return;
+    }
+    const id = p.get("ai_intake_id");
+    if (!id) {
+      toast("ไม่พบรายการ LINE AI ที่เลือก", "error");
+      return;
+    }
     STATE.intakeId = id;
     try {
       await waitFor(()=>typeof apiFetch === "function" && byId("customer_name") && byId("job_type"), 5000);
@@ -129,13 +139,13 @@
   function extractJobId(payload){ if (!payload || typeof payload !== "object") return null; return Number(payload.job_id || payload.id || payload.job_id_v2 || payload.job?.job_id || payload.job?.id || payload.data?.job_id || payload.data?.id || 0) || null; }
 
   async function markJobCreated(jobId, source){
-    const intakeId = STATE.intakeId || localStorage.getItem("cwf_line_ai_intake_pending_id");
+    const intakeId = STATE.intakeId;
     if (!intakeId) return;
     try {
       STATE.markError = "";
       const data = await api(`/admin/ai-office/booking-intakes/${encodeURIComponent(intakeId)}/job-created`, { method:"POST", body: JSON.stringify({ job_id: jobId || STATE.lastJobId || null, admin_note:"แอดมินสร้างงานจาก LINE AI intake แล้ว", source: source || "admin_add" }) });
       STATE.marked = true; STATE.intake = data.intake || STATE.intake; STATE.lastJobId = jobId || STATE.lastJobId || STATE.intake?.job_id || null;
-      try { localStorage.removeItem("cwf_line_ai_intake_pending_id"); localStorage.removeItem("cwf_line_ai_intake_pending_payload"); } catch(_){}
+      clearPendingIntakeStorage();
       ensurePrefillBanner(STATE.intake || {});
       toast("อัปเดต LINE AI เป็นสร้างงานแล้ว", "success");
     } catch(e) {
@@ -152,7 +162,7 @@
       const method = String((init && init.method) || (input && input.method) || "GET").toUpperCase();
       const isBook = /\/admin\/book_v2(?:\?|$)/.test(url) && method === "POST";
       const res = await originalFetch(input, init);
-      const intakeId = STATE.intakeId || localStorage.getItem("cwf_line_ai_intake_pending_id");
+      const intakeId = STATE.intakeId;
       if (isBook && res && res.ok && !STATE.marked && intakeId) {
         let body = null; try { body = await res.clone().json(); } catch(_) {}
         STATE.lastJobId = extractJobId(body);
@@ -161,6 +171,20 @@
       return res;
     };
   }
-  function init(){ const p = qs(); const id = p.get("ai_intake_id") || localStorage.getItem("cwf_line_ai_intake_pending_id"); if (p.get("source") !== "line_ai" && !id) return; STATE.intakeId = id; wrapFetchForJobCreated(); setTimeout(loadAndApply, 700); }
+  function init(){
+    const p = qs();
+    if (!isIntentionalLineAiFlow(p)) {
+      clearPendingIntakeStorage();
+      return;
+    }
+    const id = p.get("ai_intake_id");
+    if (!id) {
+      toast("ไม่พบรายการ LINE AI ที่เลือก", "error");
+      return;
+    }
+    STATE.intakeId = id;
+    wrapFetchForJobCreated();
+    setTimeout(loadAndApply, 700);
+  }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init); else init();
 })();
