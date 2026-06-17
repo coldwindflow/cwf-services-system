@@ -15,6 +15,7 @@
 
 console.info('[admin-job-view] rework UI v3 loaded');
 console.info('[admin-job-edit] service builder v2 loaded');
+console.info('[admin-job-edit] ac type parser fix 20260617 loaded');
 
 function safe(t){ return (t||'').toString(); }
 function fmtDT(iso){
