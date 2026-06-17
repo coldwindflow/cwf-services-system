@@ -49,8 +49,8 @@
   --shadow-press: 0 6px 16px -8px rgba(6, 24, 47, 0.40);
   --ring: 0 0 0 4px rgba(31, 123, 255, 0.16);
 
-  --grad-hero: radial-gradient(120% 120% at 85% -10%, rgba(63, 139, 255, 0.55) 0%, transparent 55%),
-               radial-gradient(90% 90% at 0% 0%, rgba(255, 210, 59, 0.22) 0%, transparent 45%),
+  --grad-hero: radial-gradient(120% 120% at 88% -10%, rgba(255, 210, 59, 0.34) 0%, transparent 52%),
+               radial-gradient(95% 95% at 0% 0%, rgba(63, 139, 255, 0.5) 0%, transparent 50%),
                linear-gradient(155deg, #0a2a57 0%, #06182f 70%);
   --grad-cta: linear-gradient(135deg, var(--blue) 0%, var(--cobalt) 100%);
   --grad-gold: linear-gradient(135deg, #ffd23b 0%, #ffb938 100%);
@@ -132,7 +132,7 @@ p { margin: 0; }
   justify-content: space-between;
   gap: 12px;
   width: 100%;
-  padding: 14px 18px 14px;
+  padding: calc(14px + env(safe-area-inset-top, 0px)) 18px 14px;
   color: #fff;
   background: linear-gradient(180deg, rgba(6, 24, 47, 0.92) 0%, rgba(6, 24, 47, 0.78) 100%);
   backdrop-filter: blur(18px) saturate(140%);
@@ -230,8 +230,9 @@ p { margin: 0; }
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--blue);
-  background: var(--soft-blue);
+  color: #8a5a00;
+  background: var(--soft-yellow);
+  border: 1px solid #ffe79e;
   padding: 4px 10px;
   border-radius: var(--radius-pill);
 }
@@ -271,9 +272,9 @@ p { margin: 0; }
   font-weight: 800;
   letter-spacing: 0.02em;
   border-radius: var(--radius-pill);
-  background: rgba(255, 255, 255, 0.14);
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  color: #fff;
+  background: rgba(255, 210, 59, 0.16);
+  border: 1px solid rgba(255, 210, 59, 0.42);
+  color: var(--yellow-2);
 }
 .hero-badge::before {
   content: "";
@@ -366,6 +367,12 @@ p { margin: 0; }
 /* Icon glyph (svg injected) */
 .cwf-ico { width: 26px; height: 26px; display: block; }
 .cwf-ico svg { width: 100%; height: 100%; display: block; }
+/* Icons must take the colour of the chip/badge that holds them, not the
+   muted body-text colour inherited from broad `.action-card span` /
+   `.trust-item span` rules. Otherwise the glyph blends into its chip. */
+.action-card .ico-chip .cwf-ico { color: inherit; }
+.trust-item .trust-ico,
+.trust-item .trust-ico .cwf-ico { color: var(--blue); }
 
 /* ===================== Tags / chips ===================== */
 .tag-row { display: flex; flex-wrap: wrap; gap: 8px; }
@@ -935,81 +942,6 @@ p { margin: 0; }
   box-shadow: 0 12px 24px -12px rgba(22, 89, 224, 0.8);
 }
 .tracking-code-pill::before { content: "#"; opacity: 0.7; }
-.tracking-topline {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.mode-badge {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  padding: 6px 10px;
-  border-radius: var(--radius-pill);
-  font-size: 12px;
-  font-weight: 900;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-}
-.mode-badge.is-scheduled { color: #075985; background: #e0f2fe; }
-.mode-badge.is-urgent { color: #991b1b; background: #fee2e2; }
-.status-hero {
-  display: grid;
-  gap: 6px;
-  padding: 14px;
-  border-radius: 18px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-}
-.status-hero strong { font-size: 18px; line-height: 1.35; }
-.status-hero span { color: var(--muted); line-height: 1.55; }
-.status-hero.is-scheduled { background: linear-gradient(135deg, #eef7ff, #fff); }
-.status-hero.is-urgent { background: linear-gradient(135deg, #fff1f2, #fff); }
-.tracking-tech-card {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px;
-  border-radius: 18px;
-  border: 1px solid rgba(15, 23, 42, 0.1);
-  background: #fff;
-}
-.tracking-tech-card.is-empty { align-items: flex-start; }
-.tech-avatar {
-  width: 58px;
-  height: 58px;
-  border-radius: 18px;
-  overflow: hidden;
-  flex: 0 0 auto;
-  display: grid;
-  place-items: center;
-  background: #e0f2fe;
-  color: #075985;
-  font-weight: 900;
-}
-.tech-avatar img { width: 100%; height: 100%; object-fit: cover; }
-.tech-main { min-width: 0; display: grid; gap: 4px; }
-.mini-link { color: #0f5fd7; font-weight: 800; text-decoration: none; }
-.team-strip { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
-.team-strip span {
-  padding: 4px 8px;
-  border-radius: var(--radius-pill);
-  background: #f1f5f9;
-  color: #334155;
-  font-size: 12px;
-  font-weight: 800;
-}
-.tracking-result-card .support-strip {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-}
-.tracking-result-card .support-strip .secondary-btn {
-  flex: 1 1 130px;
-  text-align: center;
-  text-decoration: none;
-}
-.support-note { margin-top: 0; }
 
 /* ===================== Profile ===================== */
 .guest-card { background: linear-gradient(180deg, #fff, var(--bg-2)); }
@@ -1574,4 +1506,148 @@ body {
     min-height: 64px;
     padding: 12px;
   }
+}
+
+/* =====================================================================
+   AUTH PANEL — premium account card + authentic provider buttons
+   LINE (#06C755 + LINE bubble) and Google (white + 4-colour G).
+   Both stay disabled / "coming soon": no auth backend is touched.
+   ===================================================================== */
+.auth-card {
+  background: linear-gradient(180deg, #fff, var(--bg-2));
+  border: 1.5px solid var(--soft-blue-2);
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0 12px;
+  color: var(--muted-2);
+  font-size: 12px;
+  font-weight: 700;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--line);
+}
+.auth-divider span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  max-width: 70%;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.auth-providers {
+  display: flex;
+  flex-direction: column;
+  gap: 11px;
+  width: 100%;
+}
+
+.provider-btn {
+  position: relative;
+  display: grid;
+  grid-template-columns: 24px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  max-width: 100%;
+  min-height: 52px;
+  padding: 13px 16px;
+  border-radius: var(--radius-sm);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  transition: transform 0.12s ease, box-shadow 0.2s ease, filter 0.2s ease;
+}
+.provider-btn .prov-ico {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+}
+.provider-btn .prov-ico svg { display: block; }
+.provider-btn .prov-label {
+  min-width: 0;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+.provider-btn .prov-soon {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  border-radius: var(--radius-pill);
+}
+/* Coming-soon state: keep full brand look, signal it's not active yet. */
+.provider-btn[disabled] { cursor: not-allowed; }
+.provider-btn:active:not([disabled]) { transform: scale(0.99); }
+
+/* LINE — official green button with white bubble mark */
+.line-btn {
+  color: #fff;
+  background: #06C755;
+  border: 1px solid #05b34d;
+  box-shadow: 0 12px 24px -14px rgba(6, 199, 85, 0.85);
+}
+.line-btn .prov-ico { filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.12)); }
+.line-btn .prov-soon {
+  color: #ffffff;
+  background: rgba(255, 255, 255, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.32);
+}
+.line-btn[disabled] { background: #06C755; opacity: 0.92; }
+
+/* Google — official white button, neutral grey text, 4-colour G */
+.google-btn {
+  color: #3c4043;
+  background: #ffffff;
+  border: 1px solid #dadce0;
+  box-shadow: 0 6px 16px -12px rgba(60, 64, 67, 0.55);
+}
+.google-btn .prov-label { font-weight: 600; }
+.google-btn .prov-soon {
+  color: var(--muted);
+  background: #f1f3f4;
+  border: 1px solid #e3e6ea;
+}
+.google-btn[disabled] { background: #ffffff; opacity: 0.96; }
+
+.auth-note {
+  margin-top: 12px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 360px) {
+  .provider-btn { gap: 9px; padding: 12px 13px; font-size: 14.5px; }
+  .provider-btn .prov-soon { font-size: 10px; padding: 3px 7px; }
+}
+
+/* =====================================================================
+   DEVICE FIT — centre the mobile frame on tablet/desktop and keep the
+   fixed bottom nav locked to the SAME 390px column as the content.
+   An earlier rule reset .bottom-nav to max-width:100%/left:0, which made
+   the nav span the whole viewport on wide screens while the content
+   stayed left. These rules come last so they win cleanly.
+   ===================================================================== */
+.app-shell {
+  margin-left: auto;
+  margin-right: auto;
+}
+.bottom-nav {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+  width: 100%;
+  max-width: 390px;
 }
