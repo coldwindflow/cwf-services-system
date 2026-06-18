@@ -268,7 +268,160 @@
     return parts.join(" · ");
   }
 
-  function renderUnitPassportCards(units) {
+  function scoreTone(score) {
+    if (score == null) return "unknown";
+    if (score >= 80) return "good";
+    if (score >= 60) return "watch";
+    if (score >= 40) return "warning";
+    return "critical";
+  }
+
+  function toneLabel(score) {
+    const tone = scoreTone(score);
+    if (tone === "good") return "ปกติ";
+    if (tone === "watch") return "เฝ้าระวัง";
+    if (tone === "warning") return "ควรตรวจ";
+    if (tone === "critical") return "วิกฤต";
+    return "รอข้อมูล";
+  }
+
+  function issueScore(issueCount) {
+    if (issueCount >= 3) return 35;
+    if (issueCount >= 1) return 58;
+    return 92;
+  }
+
+  function metricBar(metric) {
+    const score = metric.score == null ? 0 : Math.max(0, Math.min(100, Number(metric.score) || 0));
+    const tone = metric.tone || scoreTone(metric.score);
+    return `
+      <div class="unit-health-row is-${tone}">
+        <div class="unit-health-copy">
+          <span>${esc(metric.label)}</span>
+          <strong>${esc(metric.value)}</strong>
+        </div>
+        <div class="unit-health-meter" aria-label="${esc(metric.label)} ${esc(metric.value)}">
+          <i style="width:${score}%"></i>
+        </div>
+        <p>${esc(metric.detail)}</p>
+        ${metric.meta ? `<small>${esc(metric.meta)}</small>` : ""}
+      </div>
+    `;
+  }
+
+  function unitMetrics(data, unit, context) {
+    const summary = unit.checklist_summary || {};
+    const issueCount = Number(summary.issue_count || 0);
+    const hasChecklist = !!(summary.pre_completed || summary.post_completed);
+    const normal = hasChecklist && issueCount <= 0;
+    const issueBasedScore = hasChecklist ? issueScore(issueCount) : null;
+    const photos = unit.photos || [];
+    const hasPressurePhoto = phaseCount(photos, "pressure") > 0;
+    const hasTempPhoto = phaseCount(photos, "temp") > 0;
+    const coilScore = context.coilScore;
+    const drainScore = context.drainScore == null ? null : Math.max(0, context.drainScore - (issueCount * 12) - (context.drainRisk ? 8 : 0));
+
+    const psiMetric = hasPressurePhoto
+      ? {
+          label: "น้ำยาแอร์ / PSI",
+          value: "มีรูปตรวจวัด",
+          score: null,
+          tone: "unknown",
+          detail: "มีรูปการตรวจวัดน้ำยา",
+          meta: "ยังไม่มีค่าตัวเลข PSI ที่บันทึกเป็นข้อมูล",
+        }
+      : {
+          label: "น้ำยาแอร์ / PSI",
+          value: "ยังไม่มีข้อมูลวัดจริง",
+          score: null,
+          tone: "unknown",
+          detail: "ยังไม่มีข้อมูลวัดจริง",
+          meta: "จะแสดงค่าตัวเลขเมื่อมีฟิลด์ที่ช่างบันทึกเป็นข้อมูลจริง",
+        };
+
+    const tempMetric = hasTempPhoto
+      ? {
+          label: "อุณหภูมิ",
+          value: "มีรูปตรวจวัด",
+          score: null,
+          tone: "unknown",
+          detail: "มีรูปการตรวจวัดอุณหภูมิ",
+          meta: "ยังไม่มีค่าลมส่ง / ลมกลับที่บันทึกเป็นข้อมูล",
+        }
+      : {
+          label: "อุณหภูมิ",
+          value: "ยังไม่มีข้อมูลวัดจริง",
+          score: null,
+          tone: "unknown",
+          detail: "ยังไม่มีข้อมูลวัดจริง",
+          meta: "จะแสดงค่าตัวเลขเมื่อมีฟิลด์ที่ช่างบันทึกเป็นข้อมูลจริง",
+        };
+
+    const airflowMetric = !hasChecklist
+      ? {
+          label: "แรงลม",
+          value: "ยังไม่มีข้อมูลวัดจริง",
+          score: null,
+          tone: "unknown",
+          detail: "สถานะแรงลม: ยังไม่มีข้อมูลวัดจริง",
+          meta: "จะแสดงค่าตัวเลขเมื่อมีฟิลด์ที่ช่างบันทึกเป็นข้อมูลจริง",
+        }
+      : {
+          label: "แรงลม",
+          value: normal ? "ปกติ" : "ควรตรวจ",
+          score: issueBasedScore,
+          tone: scoreTone(issueBasedScore),
+          detail: normal ? "ประเมินจากเช็คลิสต์: ปกติ" : "ประเมินจากเช็คลิสต์: ควรตรวจแรงลมเพิ่มเติม",
+          meta: "ประเมินจากเช็คลิสต์ ไม่ใช่ค่าที่วัดด้วยเครื่องมือ",
+        };
+
+    const coilMetric = {
+      label: "ความสะอาดคอยล์",
+      value: coilScore == null ? "รอข้อมูล" : `${coilScore}%`,
+      score: coilScore,
+      tone: scoreTone(coilScore),
+      detail: coilLabel(coilScore),
+      meta: context.healthEstimateText,
+    };
+
+    const drainMetric = {
+      label: "ระบบน้ำทิ้ง",
+      value: drainScore == null ? "รอข้อมูล" : `${drainScore}%`,
+      score: drainScore,
+      tone: scoreTone(drainScore),
+      detail: drainLabel(drainScore),
+      meta: context.drainRisk ? "พบสัญญาณเกี่ยวกับน้ำหยดหรือการระบาย จึงประเมินเข้มขึ้น" : context.drainEstimateText,
+    };
+
+    const photoEvidenceScore = (hasPressurePhoto || hasTempPhoto) ? 82 : 68;
+    const checklistScore = hasChecklist ? issueBasedScore : null;
+    const usableScores = [coilMetric.score, drainMetric.score, checklistScore, photoEvidenceScore]
+      .filter((score) => score != null && Number.isFinite(score));
+    const overallScore = usableScores.length
+      ? Math.max(0, Math.min(100, Math.round(usableScores.reduce((sum, score) => sum + score, 0) / usableScores.length) - Math.min(issueCount * 4, 16)))
+      : null;
+    const overallMetric = {
+      label: "ภาพรวมสุขภาพเครื่อง",
+      value: overallScore == null ? "รอข้อมูล" : `${overallScore}% — ${toneLabel(overallScore)}`,
+      score: overallScore,
+      tone: scoreTone(overallScore),
+      detail: overallScore == null
+        ? "ยังไม่มีข้อมูลพอสำหรับสรุปสุขภาพเครื่องนี้"
+        : (overallScore >= 80
+            ? "เครื่องนี้ยังอยู่ในสภาพดี แนะนำล้างรอบถัดไปตามกำหนด"
+            : (overallScore >= 60 ? "ควรติดตามอาการและวางแผนตรวจรอบถัดไป" : "ควรให้ช่างตรวจหน้างานเพิ่มเติม")),
+      meta: "ไม่รวมค่าน้ำยาและอุณหภูมิ เพราะยังไม่มีค่าที่วัดจริง",
+    };
+
+    return {
+      overall: overallMetric,
+      rows: [psiMetric, tempMetric, airflowMetric, coilMetric, drainMetric],
+      hasChecklist,
+      issueCount,
+    };
+  }
+
+  function renderUnitPassportCards(data, units, context) {
     if (!units.length) return "";
     return `
       <article class="passport-card passport-units-card">
@@ -276,41 +429,65 @@
           <span>Unit Passport</span>
           <strong>${units.length} เครื่อง</strong>
         </div>
-        <h3>ข้อมูลแยกรายเครื่อง</h3>
-        <p>แสดงจากข้อมูลเครื่องและรูปหน้างานที่ผูกกับใบงานนี้เท่านั้น</p>
-        <div class="passport-unit-list">
-          ${units.map((unit) => {
+        <h3>แดชบอร์ดสุขภาพแยกรายเครื่อง</h3>
+        <p>แต่ละเครื่องมีรายงานสุขภาพของตัวเองจากเช็คลิสต์ รูปงาน และข้อมูลที่ผูกกับใบงานนี้เท่านั้น</p>
+        <div class="passport-unit-accordion">
+          ${units.map((unit, index) => {
             const photos = unit.photos || [];
             const before = phaseCount(photos, "before");
             const after = phaseCount(photos, "after");
-            const measure = measurementSummary(photos);
+            const metrics = unitMetrics(data, unit, context);
             const preview = photos.slice(0, 4);
+            const meta = [unit.service_type, unit.ac_type, unit.btu ? `${unit.btu} BTU` : ""].filter(Boolean).join(" · ") || "เครื่องปรับอากาศ";
             return `
-              <section class="passport-unit-card">
-                <div class="passport-unit-head">
+              <details class="passport-unit-panel is-${metrics.overall.tone}" ${index === 0 ? "open" : ""}>
+                <summary>
                   <div>
                     <b>${esc(unit.label)}</b>
-                    <span>${esc([unit.service_type, unit.ac_type, unit.btu ? `${unit.btu} BTU` : ""].filter(Boolean).join(" · ") || "เครื่องปรับอากาศ")}</span>
+                    <span>${esc(meta)}</span>
                   </div>
-                  ${unit.unit_code ? `<small>${esc(unit.unit_code)}</small>` : ""}
-                </div>
-                <div class="passport-unit-stats">
-                  <span>ก่อนทำ <b>${before}</b></span>
-                  <span>หลังทำ <b>${after}</b></span>
-                  <span>รวม <b>${photos.length}</b></span>
-                </div>
-                <p>${esc(checklistCopy(unit.checklist_summary))}</p>
-                <p>${esc(measure)}</p>
-                ${preview.length ? `
-                  <div class="passport-unit-photos">
-                    ${preview.map((photo) => `
-                      <a href="${esc(photo.url)}" target="_blank" rel="noopener" aria-label="เปิดรูปงานรายเครื่อง">
-                        <img src="${esc(photo.url)}" alt="${esc(photo.phase || "รูปงาน")}" loading="lazy">
-                      </a>
-                    `).join("")}
+                  <strong>${esc(metrics.overall.value)}</strong>
+                </summary>
+                <div class="passport-unit-dashboard">
+                  <div class="unit-overall-card">
+                    ${metricBar(metrics.overall)}
+                    <div class="unit-badges">
+                      ${unit.unit_code ? `<span>${esc(unit.unit_code)}</span>` : ""}
+                      <span>${metrics.hasChecklist ? (metrics.issueCount > 0 ? "ประเมินจากเช็คลิสต์" : "ระบบปกติจากเช็คลิสต์") : "รอเช็คลิสต์"}</span>
+                      ${metrics.issueCount > 0 ? `<span class="is-warning">พบ ${metrics.issueCount} จุดที่ควรตรวจ</span>` : ""}
+                    </div>
                   </div>
-                ` : `<small>ยังไม่มีรูปที่แยกกับเครื่องนี้</small>`}
-              </section>
+                  <div class="unit-health-grid">
+                    ${metrics.rows.map(metricBar).join("")}
+                  </div>
+                  <div class="unit-evidence-grid">
+                    <div class="unit-checklist-box">
+                      <b>เช็คลิสต์</b>
+                      <p>${esc(checklistCopy(unit.checklist_summary))}</p>
+                      <small>ค่าประเมินจากเช็คลิสต์ ยังไม่มีค่าที่ช่างวัดเป็นตัวเลข</small>
+                    </div>
+                    <div class="unit-photo-box">
+                      <b>รูปก่อน / หลัง</b>
+                      <div class="passport-unit-stats">
+                        <span>ก่อนทำ <b>${before}</b></span>
+                        <span>หลังทำ <b>${after}</b></span>
+                        <span>รวม <b>${photos.length}</b></span>
+                      </div>
+                      <p>${esc(measurementSummary(photos))}</p>
+                    </div>
+                  </div>
+                  ${preview.length ? `
+                    <div class="passport-unit-photos">
+                      ${preview.map((photo) => `
+                        <a href="${esc(photo.url)}" target="_blank" rel="noopener" aria-label="เปิดรูปงานรายเครื่อง">
+                          <img src="${esc(photo.url)}" alt="${esc(photo.phase || "รูปงาน")}" loading="lazy">
+                        </a>
+                      `).join("")}
+                    </div>
+                    <a class="unit-photo-link" href="${esc(preview[0].url)}" target="_blank" rel="noopener">ดูรูปเครื่องนี้</a>
+                  ` : `<small>ยังไม่มีรูปที่แยกกับเครื่องนี้</small>`}
+                </div>
+              </details>
             `;
           }).join("")}
         </div>
@@ -484,7 +661,7 @@
             <p>${esc(next.reason)}</p>
           </article>
 
-          ${renderUnitPassportCards(units)}
+          ${renderUnitPassportCards(data, units, { coilScore, drainScore, drainRisk: hasDrainRisk(data), healthEstimateText, drainEstimateText })}
 
           <article class="passport-card passport-photo-card">
             <div class="passport-card-head">
