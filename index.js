@@ -25054,7 +25054,8 @@ app.get("/public/track", async (req, res) => {
         const unitsR = await pool.query(
           `SELECT unit_id, unit_no, unit_code, item_name, ac_type, wash_type, btu, location_label
              FROM public.job_units
-            WHERE job_id=$1 AND ${activeJobUnitWhere()}
+            WHERE job_id=$1
+              AND LOWER(COALESCE(NULLIF(status,''),'pending')) NOT IN ('cancelled','removed','deleted','void','inactive')
             ORDER BY unit_no ASC, unit_id ASC`,
           [row.job_id]
         );
@@ -25077,7 +25078,7 @@ app.get("/public/track", async (req, res) => {
                   OR COALESCE(phase,'') ILIKE '%receipt%'
                   OR COALESCE(phase,'') ILIKE '%tax%'
                 )
-              ORDER BY unit_no NULLS LAST, photo_id ASC`,
+              ORDER BY photo_id ASC`,
             [row.job_id, unitIds]
           );
           for (const photo of unitPhotosR.rows || []) {
