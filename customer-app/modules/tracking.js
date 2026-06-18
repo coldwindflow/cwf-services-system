@@ -225,6 +225,99 @@
     return photos.filter((photo) => clean(photo.phase || photo.label).toLowerCase() === phase).length;
   }
 
+  function unitList(data) {
+    return Array.isArray(data.units)
+      ? data.units.map((unit) => ({
+          unit_id: unit.unit_id,
+          unit_no: unit.unit_no,
+          unit_code: clean(unit.unit_code),
+          label: clean(unit.label) || `เครื่องที่ ${unit.unit_no || "-"}`,
+          btu: clean(unit.btu),
+          ac_type: clean(unit.ac_type),
+          service_type: clean(unit.service_type),
+          checklist_summary: unit.checklist_summary || {},
+          photos: Array.isArray(unit.photos)
+            ? unit.photos.map((photo) => ({
+                url: imageUrl(photo.public_url || photo.url || photo.photo_url || photo.path),
+                phase: clean(photo.phase),
+                photo_category: clean(photo.photo_category),
+              })).filter((photo) => photo.url)
+            : [],
+        })).filter((unit) => unit.unit_id || unit.unit_no || unit.photos.length)
+      : [];
+  }
+
+  function measurementSummary(photos) {
+    const pressure = phaseCount(photos, "pressure");
+    const current = phaseCount(photos, "current");
+    const temp = phaseCount(photos, "temp");
+    const total = pressure + current + temp;
+    if (!total) return "ยังไม่มีข้อมูลวัดจริง";
+    return "มีรูปการตรวจวัด แต่ยังไม่มีค่าตัวเลขที่บันทึกเป็นข้อมูล";
+  }
+
+  function checklistCopy(summary) {
+    const pre = summary && summary.pre_completed;
+    const post = summary && summary.post_completed;
+    const issues = Number(summary && summary.issue_count || 0);
+    if (!pre && !post) return "ยังไม่มีสรุปเช็คลิสต์ที่แสดงได้";
+    const parts = [];
+    if (pre) parts.push("ก่อนทำบันทึกแล้ว");
+    if (post) parts.push("หลังทำบันทึกแล้ว");
+    parts.push(issues > 0 ? `มีรายการให้ตรวจ ${issues} จุด` : "ไม่พบรายการผิดปกติในสรุป");
+    return parts.join(" · ");
+  }
+
+  function renderUnitPassportCards(units) {
+    if (!units.length) return "";
+    return `
+      <article class="passport-card passport-units-card">
+        <div class="passport-card-head">
+          <span>Unit Passport</span>
+          <strong>${units.length} เครื่อง</strong>
+        </div>
+        <h3>ข้อมูลแยกรายเครื่อง</h3>
+        <p>แสดงจากข้อมูลเครื่องและรูปหน้างานที่ผูกกับใบงานนี้เท่านั้น</p>
+        <div class="passport-unit-list">
+          ${units.map((unit) => {
+            const photos = unit.photos || [];
+            const before = phaseCount(photos, "before");
+            const after = phaseCount(photos, "after");
+            const measure = measurementSummary(photos);
+            const preview = photos.slice(0, 4);
+            return `
+              <section class="passport-unit-card">
+                <div class="passport-unit-head">
+                  <div>
+                    <b>${esc(unit.label)}</b>
+                    <span>${esc([unit.service_type, unit.ac_type, unit.btu ? `${unit.btu} BTU` : ""].filter(Boolean).join(" · ") || "เครื่องปรับอากาศ")}</span>
+                  </div>
+                  ${unit.unit_code ? `<small>${esc(unit.unit_code)}</small>` : ""}
+                </div>
+                <div class="passport-unit-stats">
+                  <span>ก่อนทำ <b>${before}</b></span>
+                  <span>หลังทำ <b>${after}</b></span>
+                  <span>รวม <b>${photos.length}</b></span>
+                </div>
+                <p>${esc(checklistCopy(unit.checklist_summary))}</p>
+                <p>${esc(measure)}</p>
+                ${preview.length ? `
+                  <div class="passport-unit-photos">
+                    ${preview.map((photo) => `
+                      <a href="${esc(photo.url)}" target="_blank" rel="noopener" aria-label="เปิดรูปงานรายเครื่อง">
+                        <img src="${esc(photo.url)}" alt="${esc(photo.phase || "รูปงาน")}" loading="lazy">
+                      </a>
+                    `).join("")}
+                  </div>
+                ` : `<small>ยังไม่มีรูปที่แยกกับเครื่องนี้</small>`}
+              </section>
+            `;
+          }).join("")}
+        </div>
+      </article>
+    `;
+  }
+
   function renderHealthBar(score) {
     const value = score == null ? 0 : score;
     return `
@@ -275,6 +368,8 @@
     const drainScore = done ? healthScore(months, drainAlertMonths) : null;
     const warranty = warrantyInfo(data, completedAt);
     const photos = photoList(data);
+    const units = unitList(data);
+    const unitMeasurementPhotos = units.reduce((sum, unit) => sum + phaseCount(unit.photos || [], "pressure") + phaseCount(unit.photos || [], "current") + phaseCount(unit.photos || [], "temp"), 0);
     const beforeCount = phaseCount(photos, "before");
     const afterCount = phaseCount(photos, "after");
     const next = recommendation(data, coilScore, drainScore, profile, done);
@@ -341,9 +436,9 @@
           <article class="passport-card passport-muted-card">
             <div class="passport-card-head">
               <span>Refrigerant / PSI</span>
-              <strong>ไม่มีค่าวัด</strong>
+              <strong>${unitMeasurementPhotos ? "มีรูปตรวจวัด" : "ไม่มีค่าวัด"}</strong>
             </div>
-            <h3>สถานะน้ำยา: ยังไม่มีข้อมูลวัดจริง</h3>
+            <h3>สถานะน้ำยา: ${unitMeasurementPhotos ? "มีรูปการตรวจวัด แต่ยังไม่มีค่าตัวเลข" : "ยังไม่มีข้อมูลวัดจริง"}</h3>
             <p>ค่า PSI จะแสดงเมื่อช่างบันทึกค่าที่วัดจริง</p>
             <small>ค่าแรงดันต้องดูร่วมกับชนิดน้ำยา อุณหภูมิ กระแสไฟ รุ่นเครื่อง และสภาพหน้างาน</small>
           </article>
@@ -351,9 +446,9 @@
           <article class="passport-card passport-muted-card">
             <div class="passport-card-head">
               <span>Temperature</span>
-              <strong>ไม่มีค่าวัด</strong>
+              <strong>${unitMeasurementPhotos ? "มีรูปตรวจวัด" : "ไม่มีค่าวัด"}</strong>
             </div>
-            <h3>สถานะอุณหภูมิ: ยังไม่มีข้อมูลวัดจริง</h3>
+            <h3>สถานะอุณหภูมิ: ${unitMeasurementPhotos ? "มีรูปการตรวจวัด แต่ยังไม่มีค่าตัวเลข" : "ยังไม่มีข้อมูลวัดจริง"}</h3>
             <p>ระบบจะแสดงลมส่ง / ลมกลับ เมื่อมีการบันทึกค่าจากช่าง</p>
             <small>ยังไม่มี delta T เพราะระบบยังไม่ได้รับค่าที่วัดจริง</small>
           </article>
@@ -389,14 +484,16 @@
             <p>${esc(next.reason)}</p>
           </article>
 
+          ${renderUnitPassportCards(units)}
+
           <article class="passport-card passport-photo-card">
             <div class="passport-card-head">
-              <span>Job Photos</span>
+              <span>${units.length ? "Photo Summary" : "Job Photos"}</span>
               <strong>${photos.length} รูป</strong>
             </div>
-            <h3>รูปงานรวมของใบงานนี้</h3>
+            <h3>${units.length ? "มีข้อมูลแยกรายเครื่องใน Passport" : "รูปงานรวมของใบงานนี้"}</h3>
             <p>ก่อนทำ ${beforeCount} รูป · หลังทำ ${afterCount} รูป · รวม ${photos.length} รูป</p>
-            <small>ยังไม่มีข้อมูลแยกรายเครื่องในระบบ จึงไม่แสดงเป็นรูปประจำเครื่อง</small>
+            <small>${units.length ? "รูปเต็มของใบงานยังแสดงในส่วนรูปงานเดิมด้านล่าง" : "ยังไม่มีข้อมูลแยกรายเครื่องในระบบ จึงไม่แสดงเป็นรูปประจำเครื่อง"}</small>
           </article>
         </div>
       </section>

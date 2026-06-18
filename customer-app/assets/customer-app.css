@@ -1185,6 +1185,88 @@ p { margin: 0; }
 .passport-photo-card {
   background: linear-gradient(180deg, #eef6ff, #ffffff);
 }
+.passport-units-card {
+  grid-column: 1 / -1;
+  background: linear-gradient(180deg, #ffffff, #eef6ff);
+}
+.passport-unit-list {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+.passport-unit-card {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid rgba(11, 75, 179, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.86);
+}
+.passport-unit-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.passport-unit-head b {
+  display: block;
+  color: #0a2a57;
+  font-size: 16px;
+  font-weight: 950;
+  line-height: 1.25;
+}
+.passport-unit-head span,
+.passport-unit-head small {
+  display: block;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1.35;
+}
+.passport-unit-head small {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: var(--radius-pill);
+  background: #fffbea;
+  color: #7a5a00;
+}
+.passport-unit-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px;
+}
+.passport-unit-stats span {
+  padding: 8px;
+  border-radius: 12px;
+  background: #f8fbff;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  text-align: center;
+}
+.passport-unit-stats b {
+  color: #0b4bb3;
+  font-size: 15px;
+}
+.passport-unit-photos {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 7px;
+}
+.passport-unit-photos a {
+  display: block;
+  overflow: hidden;
+  aspect-ratio: 1;
+  border: 1px solid rgba(11, 75, 179, 0.12);
+  border-radius: 13px;
+  background: var(--soft-blue);
+}
+.passport-unit-photos img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
 @media (min-width: 720px) {
   .passport-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1195,6 +1277,9 @@ p { margin: 0; }
     grid-column: 1 / -1;
   }
   .passport-warranty-lists {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .passport-unit-list {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -1211,6 +1296,12 @@ p { margin: 0; }
   }
   .passport-card-head {
     align-items: flex-start;
+  }
+  .passport-unit-stats {
+    grid-template-columns: 1fr;
+  }
+  .passport-unit-photos {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 .receipt-card {
