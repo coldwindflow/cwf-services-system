@@ -25048,6 +25048,97 @@ app.get("/public/track", async (req, res) => {
       photos = pr.rows || [];
     }
 
+    let publicUnits = [];
+    if (isDone) {
+      try {
+        const unitsR = await pool.query(
+          `SELECT unit_id, unit_no, unit_code, item_name, ac_type, wash_type, btu, location_label
+             FROM public.job_units
+            WHERE job_id=$1 AND ${activeJobUnitWhere()}
+            ORDER BY unit_no ASC, unit_id ASC`,
+          [row.job_id]
+        );
+        const unitRows = unitsR.rows || [];
+        const unitIds = unitRows.map((u) => Number(u.unit_id)).filter(Number.isFinite);
+        const photosByUnit = new Map();
+        const checksByUnit = new Map();
+
+        if (unitIds.length) {
+          const unitPhotosR = await pool.query(
+            `SELECT photo_id, unit_id, phase, photo_category, created_at, uploaded_at, public_url
+               FROM public.job_photos
+              WHERE job_id=$1
+                AND unit_id = ANY($2::bigint[])
+                AND deleted_at IS NULL
+                AND COALESCE(public_url,'') <> ''
+                AND NOT (
+                  COALESCE(photo_category,'')='payment_slip'
+                  OR COALESCE(phase,'') ILIKE '%slip%'
+                  OR COALESCE(phase,'') ILIKE '%receipt%'
+                  OR COALESCE(phase,'') ILIKE '%tax%'
+                )
+              ORDER BY unit_no NULLS LAST, photo_id ASC`,
+            [row.job_id, unitIds]
+          );
+          for (const photo of unitPhotosR.rows || []) {
+            const key = String(photo.unit_id || "");
+            const arr = photosByUnit.get(key) || [];
+            arr.push({
+              photo_id: photo.photo_id,
+              phase: photo.phase || null,
+              photo_category: photo.photo_category || null,
+              created_at: photo.created_at || null,
+              uploaded_at: photo.uploaded_at || null,
+              public_url: photo.public_url || null,
+            });
+            photosByUnit.set(key, arr);
+          }
+
+          const checklistR = await pool.query(
+            `SELECT unit_id, checklist_type, completed_at, checklist_json
+               FROM public.job_unit_checklists
+              WHERE job_id=$1 AND unit_id = ANY($2::bigint[])`,
+            [row.job_id, unitIds]
+          );
+          for (const check of checklistR.rows || []) {
+            const key = String(check.unit_id || "");
+            const cur = checksByUnit.get(key) || { pre_completed: false, post_completed: false, issue_count: 0 };
+            const type = String(check.checklist_type || "").trim();
+            const rows = Array.isArray(check.checklist_json) ? check.checklist_json : [];
+            const issueCount = rows.reduce((sum, item) => sum + (item && item.issue ? 1 : 0), 0);
+            if (type === "pre") cur.pre_completed = !!check.completed_at;
+            if (type === "post") cur.post_completed = !!check.completed_at;
+            cur.issue_count += issueCount;
+            checksByUnit.set(key, cur);
+          }
+        }
+
+        publicUnits = unitRows.map((unit) => {
+          const labelParts = [`เครื่องที่ ${unit.unit_no || "-"}`];
+          if (unit.location_label) labelParts.push(unit.location_label);
+          const checklist = checksByUnit.get(String(unit.unit_id)) || { pre_completed: false, post_completed: false, issue_count: 0 };
+          return {
+            unit_id: unit.unit_id,
+            unit_no: unit.unit_no,
+            unit_code: unit.unit_code || null,
+            label: labelParts.join(" / "),
+            btu: unit.btu || null,
+            ac_type: unit.ac_type || null,
+            service_type: unit.wash_type || unit.item_name || null,
+            checklist_summary: {
+              pre_completed: !!checklist.pre_completed,
+              post_completed: !!checklist.post_completed,
+              issue_count: Number(checklist.issue_count || 0),
+            },
+            photos: photosByUnit.get(String(unit.unit_id)) || [],
+          };
+        });
+      } catch (e) {
+        console.warn("[public_track_units] load failed", { job_id: row.job_id, error: e.message });
+        publicUnits = [];
+      }
+    }
+
 
 
 // =======================================
@@ -25136,6 +25227,7 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING) {
       // ✅ notes/photos only after done
       technician_note: isDone ? (row.technician_note || "") : null,
       photos,
+      units: publicUnits,
 
       receipt_url: isDone ? `${origin}/docs/receipt/${row.job_id}` : null,
 
