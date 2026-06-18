@@ -111,7 +111,11 @@
   }
 
   function serviceDate(data) {
-    return parseDate(data.finished_at || data.completed_at || data.closed_at || data.appointment_datetime);
+    return completionDate(data) || parseDate(data.appointment_datetime);
+  }
+
+  function completionDate(data) {
+    return parseDate(data.finished_at || data.completed_at || data.closed_at);
   }
 
   function monthsSince(date) {
@@ -262,12 +266,14 @@
   function renderPassport(data) {
     const done = isDone(data);
     const date = serviceDate(data);
+    const completedAt = completionDate(data);
+    const usesAppointmentEstimate = done && !completedAt && !!date;
     const months = done ? monthsSince(date) : null;
     const profile = serviceProfile(data);
     const coilScore = done ? healthScore(months, profile.coilMonths) : null;
     const drainAlertMonths = hasDrainRisk(data) ? 4 : 6;
     const drainScore = done ? healthScore(months, drainAlertMonths) : null;
-    const warranty = warrantyInfo(data, date);
+    const warranty = warrantyInfo(data, completedAt);
     const photos = photoList(data);
     const beforeCount = phaseCount(photos, "before");
     const afterCount = phaseCount(photos, "after");
@@ -279,7 +285,13 @@
       : "แสดงเงื่อนไขประกันงานล้างตามข้อมูลที่มี";
     const warrantyMeta = warranty
       ? `${warranty.active ? `เหลือ ${warranty.daysLeft} วัน` : "ครบ 30 วันแล้ว"} · สิ้นสุด ${root.utils.formatDateTime(warranty.end.toISOString())}`
-      : "ยังไม่มีวันที่ครบถ้วนพอสำหรับนับถอยหลัง";
+      : "ยังไม่มีวันที่ปิดงานที่ชัดเจนสำหรับนับประกัน";
+    const healthEstimateText = usesAppointmentEstimate
+      ? "ประเมินจากวันนัดหมาย เนื่องจากยังไม่มีวันที่ปิดงาน"
+      : "ประเมินจากวันที่ล้างล่าสุด";
+    const drainEstimateText = usesAppointmentEstimate
+      ? "ประเมินจากวันนัดหมาย เนื่องจากยังไม่มีวันที่ปิดงาน"
+      : "ประเมินจากวันที่ล้างล่าสุดและประวัติงาน";
 
     return `
       <section class="passport-shell">
@@ -311,7 +323,7 @@
             </div>
             ${renderHealthBar(coilScore)}
             <h3>${esc(coilLabel(coilScore))}</h3>
-            <p>ประเมินจากวันที่ล้างล่าสุด</p>
+            <p>${esc(healthEstimateText)}</p>
             <small>รอบแนะนำสำหรับ ${esc(profile.label)}: ${esc(profile.nextText)}</small>
           </article>
 
@@ -322,7 +334,7 @@
             </div>
             ${renderHealthBar(drainScore)}
             <h3>${esc(drainLabel(drainScore))}</h3>
-            <p>ประเมินจากวันที่ล้างล่าสุดและประวัติงาน</p>
+            <p>${esc(drainEstimateText)}</p>
             <small>${hasDrainRisk(data) ? "พบสัญญาณเกี่ยวกับระบบน้ำทิ้งในประวัติงาน จึงแนะนำตรวจเร็วขึ้น" : "ยังไม่พบสัญญาณเสี่ยงจากข้อมูลที่เปิดให้ลูกค้าเห็น"}</small>
           </article>
 
