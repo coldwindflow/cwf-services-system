@@ -423,6 +423,11 @@
 
   function renderUnitPassportCards(data, units, context) {
     if (!units.length) return "";
+    const unitTabLabel = (unit) => {
+      const label = clean(unit.label);
+      const room = label.includes("/") ? clean(label.split("/").slice(1).join("/")) : "";
+      return room || `เครื่อง ${unit.unit_no || ""}`.trim() || "เครื่อง";
+    };
     return `
       <article class="passport-card passport-units-card">
         <div class="passport-card-head">
@@ -431,7 +436,19 @@
         </div>
         <h3>แดชบอร์ดสุขภาพแยกรายเครื่อง</h3>
         <p>แต่ละเครื่องมีรายงานสุขภาพของตัวเองจากเช็คลิสต์ รูปงาน และข้อมูลที่ผูกกับใบงานนี้เท่านั้น</p>
-        <div class="passport-unit-accordion">
+        <div class="passport-unit-tabs" role="tablist" aria-label="เลือกเครื่องปรับอากาศ">
+          ${units.map((unit, index) => `
+            <button
+              type="button"
+              class="passport-unit-tab ${index === 0 ? "is-active" : ""}"
+              role="tab"
+              aria-selected="${index === 0 ? "true" : "false"}"
+              data-unit-tab="${index}">
+              ${esc(unitTabLabel(unit))}
+            </button>
+          `).join("")}
+        </div>
+        <div class="passport-unit-pages">
           ${units.map((unit, index) => {
             const photos = unit.photos || [];
             const before = phaseCount(photos, "before");
@@ -440,14 +457,17 @@
             const preview = photos.slice(0, 4);
             const meta = [unit.service_type, unit.ac_type, unit.btu ? `${unit.btu} BTU` : ""].filter(Boolean).join(" · ") || "เครื่องปรับอากาศ";
             return `
-              <details class="passport-unit-panel is-${metrics.overall.tone}" ${index === 0 ? "open" : ""}>
-                <summary>
+              <section
+                class="passport-unit-page is-${metrics.overall.tone} ${index === 0 ? "is-active" : ""}"
+                data-unit-page="${index}"
+                role="tabpanel">
+                <div class="passport-unit-head">
                   <div>
                     <b>${esc(unit.label)}</b>
                     <span>${esc(meta)}</span>
                   </div>
                   <strong>${esc(metrics.overall.value)}</strong>
-                </summary>
+                </div>
                 <div class="passport-unit-dashboard">
                   <div class="unit-overall-card">
                     ${metricBar(metrics.overall)}
@@ -487,7 +507,7 @@
                     <a class="unit-photo-link" href="${esc(preview[0].url)}" target="_blank" rel="noopener">ดูรูปเครื่องนี้</a>
                   ` : `<small>ยังไม่มีรูปที่แยกกับเครื่องนี้</small>`}
                 </div>
-              </details>
+              </section>
             `;
           }).join("")}
         </div>
@@ -921,6 +941,26 @@
   }
 
   function bindResultActions(container) {
+    const result = container.querySelector("[data-tracking-result]");
+    if (result && !result.dataset.unitTabsBound) {
+      result.dataset.unitTabsBound = "1";
+      result.addEventListener("click", (event) => {
+        const tab = event.target.closest("[data-unit-tab]");
+        if (!tab) return;
+        const shell = tab.closest(".passport-units-card");
+        if (!shell) return;
+        const id = tab.getAttribute("data-unit-tab");
+        shell.querySelectorAll("[data-unit-tab]").forEach((btn) => {
+          const active = btn === tab;
+          btn.classList.toggle("is-active", active);
+          btn.setAttribute("aria-selected", active ? "true" : "false");
+        });
+        shell.querySelectorAll("[data-unit-page]").forEach((page) => {
+          page.classList.toggle("is-active", page.getAttribute("data-unit-page") === id);
+        });
+      });
+    }
+
     const refresh = container.querySelector("[data-action='track-refresh']");
     if (refresh) refresh.addEventListener("click", () => lookup(container), { once: true });
     const form = container.querySelector("[data-review-form]");
