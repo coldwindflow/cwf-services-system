@@ -296,15 +296,15 @@
     const tone = metric.tone || scoreTone(metric.score);
     return `
       <div class="unit-health-row is-${tone}">
-        <div class="unit-health-copy">
-          <span>${esc(metric.label)}</span>
-          <strong>${esc(metric.value)}</strong>
+        <div class="unit-health-top">
+          <span class="unit-health-title"><i aria-hidden="true"></i>${esc(metric.label)}</span>
+          <strong class="unit-status-pill">${esc(metric.value)}</strong>
         </div>
         <div class="unit-health-meter" aria-label="${esc(metric.label)} ${esc(metric.value)}">
           <i style="width:${score}%"></i>
         </div>
         <p>${esc(metric.detail)}</p>
-        ${metric.meta ? `<small>${esc(metric.meta)}</small>` : ""}
+        ${metric.meta ? `<small class="unit-helper-text">${esc(metric.meta)}</small>` : ""}
       </div>
     `;
   }
@@ -453,7 +453,7 @@
           <strong>${units.length} เครื่อง</strong>
         </div>
         <h3>แดชบอร์ดสุขภาพแยกรายเครื่อง</h3>
-        <p>แต่ละเครื่องมีรายงานสุขภาพของตัวเองจากเช็คลิสต์ รูปงาน และข้อมูลที่ผูกกับใบงานนี้เท่านั้น</p>
+        <p>เลือกเครื่องเพื่อดูรายงานสุขภาพ รูปงาน และสรุปเช็คลิสต์ของเครื่องนั้น</p>
         <div class="passport-unit-tabs" role="tablist" aria-label="เลือกเครื่องปรับอากาศ">
           ${units.map((unit, index) => `
             <button
@@ -502,7 +502,7 @@
                     <div class="unit-checklist-box">
                       <b>เช็คลิสต์</b>
                       <p>${esc(checklistCopy(unit.checklist_summary))}</p>
-                      <small>ค่าประเมินจากเช็คลิสต์ ยังไม่มีค่าที่ช่างวัดเป็นตัวเลข</small>
+                      <small>ประเมินจากเช็คลิสต์ ยังไม่มีค่าที่ช่างวัดเป็นตัวเลข</small>
                     </div>
                     <div class="unit-photo-box">
                       <b>รูปก่อน / หลัง</b>
