@@ -268,17 +268,6 @@
     return parts.join(" · ");
   }
 
-  function seededNumber(seed, min, max) {
-    const raw = clean(seed) || "cwf";
-    let hash = 2166136261;
-    for (let i = 0; i < raw.length; i += 1) {
-      hash ^= raw.charCodeAt(i);
-      hash = Math.imul(hash, 16777619);
-    }
-    const span = Math.max(0, max - min);
-    return min + (Math.abs(hash) % (span + 1));
-  }
-
   function scoreTone(score) {
     if (score == null) return "unknown";
     if (score >= 80) return "good";
@@ -300,10 +289,6 @@
     if (issueCount >= 3) return 35;
     if (issueCount >= 1) return 58;
     return 92;
-  }
-
-  function unitSeed(data, unit, suffix) {
-    return [data.booking_code, data.job_id, unit.unit_id, unit.unit_no, suffix].filter(Boolean).join("|");
   }
 
   function metricBar(metric) {
@@ -330,85 +315,64 @@
     const hasChecklist = !!(summary.pre_completed || summary.post_completed);
     const normal = hasChecklist && issueCount <= 0;
     const issueBasedScore = hasChecklist ? issueScore(issueCount) : null;
-    const seed = (suffix) => unitSeed(data, unit, suffix);
-    const psi = seededNumber(seed("psi"), 125, 150);
-    const returnAir = seededNumber(seed("return"), 26, 30);
-    const supplyAir = seededNumber(seed("supply"), 14, 18);
-    const delta = Math.max(9, Math.min(12, returnAir - supplyAir));
-    const airflow = normal ? seededNumber(seed("airflow"), 80, 100) : (issueBasedScore == null ? null : Math.max(35, issueBasedScore + 5));
+    const photos = unit.photos || [];
+    const hasPressurePhoto = phaseCount(photos, "pressure") > 0;
+    const hasTempPhoto = phaseCount(photos, "temp") > 0;
     const coilScore = context.coilScore;
     const drainScore = context.drainScore == null ? null : Math.max(0, context.drainScore - (issueCount * 12) - (context.drainRisk ? 8 : 0));
 
-    const psiMetric = !hasChecklist
+    const psiMetric = hasPressurePhoto
       ? {
           label: "น้ำยาแอร์ / PSI",
-          value: "รอข้อมูล",
+          value: "มีรูปตรวจวัด",
           score: null,
           tone: "unknown",
-          detail: "ยังไม่มีข้อมูลเช็คลิสต์สำหรับประเมินน้ำยา",
-          meta: "จะแสดงค่าจริงเมื่อมีการบันทึกแบบตัวเลข",
+          detail: "มีรูปการตรวจวัดน้ำยา",
+          meta: "ยังไม่มีค่าตัวเลข PSI ที่บันทึกเป็นข้อมูล",
         }
-      : normal
-        ? {
-            label: "น้ำยาแอร์ / PSI",
-            value: `${psi} PSI`,
-            score: 92,
-            tone: "good",
-            detail: "น้ำยาอยู่ในช่วงปกติ",
-            meta: "ค่าประเมินจากเช็คลิสต์ ยังไม่มีค่าที่ช่างวัดเป็นตัวเลข",
-          }
-        : {
-            label: "น้ำยาแอร์ / PSI",
-            value: "ประเมินจากเช็คลิสต์",
-            score: issueBasedScore,
-            tone: scoreTone(issueBasedScore),
-            detail: issueCount >= 3 ? "ควรตรวจน้ำยาและระบบทำความเย็นเพิ่มเติม" : "มีสัญญาณให้เฝ้าระวังจากเช็คลิสต์",
-            meta: "ยังไม่มีค่าที่ช่างวัดเป็นตัวเลข",
-          };
+      : {
+          label: "น้ำยาแอร์ / PSI",
+          value: "ยังไม่มีข้อมูลวัดจริง",
+          score: null,
+          tone: "unknown",
+          detail: "ยังไม่มีข้อมูลวัดจริง",
+          meta: "จะแสดงค่าตัวเลขเมื่อมีฟิลด์ที่ช่างบันทึกเป็นข้อมูลจริง",
+        };
 
-    const tempMetric = !hasChecklist
+    const tempMetric = hasTempPhoto
       ? {
           label: "อุณหภูมิ",
-          value: "รอข้อมูล",
+          value: "มีรูปตรวจวัด",
           score: null,
           tone: "unknown",
-          detail: "ยังไม่มีข้อมูลเช็คลิสต์สำหรับประเมินอุณหภูมิ",
-          meta: "จะแสดงค่าจริงเมื่อมีการบันทึกแบบตัวเลข",
+          detail: "มีรูปการตรวจวัดอุณหภูมิ",
+          meta: "ยังไม่มีค่าลมส่ง / ลมกลับที่บันทึกเป็นข้อมูล",
         }
-      : normal
-        ? {
-            label: "อุณหภูมิ",
-            value: `ΔT ประมาณ ${delta}°C`,
-            score: 90,
-            tone: "good",
-            detail: `อุณหภูมิปกติ ประเมินลมกลับ ${returnAir}°C / ลมส่ง ${supplyAir}°C`,
-            meta: "ค่าประเมินจากเช็คลิสต์ ไม่ใช่อุณหภูมิจริง",
-          }
-        : {
-            label: "อุณหภูมิ",
-            value: "ควรตรวจเพิ่ม",
-            score: issueBasedScore,
-            tone: scoreTone(issueBasedScore),
-            detail: "ควรตรวจอุณหภูมิหน้างานเพิ่มเติม",
-            meta: "ยังไม่มีค่าที่ช่างวัดเป็นตัวเลข",
-          };
+      : {
+          label: "อุณหภูมิ",
+          value: "ยังไม่มีข้อมูลวัดจริง",
+          score: null,
+          tone: "unknown",
+          detail: "ยังไม่มีข้อมูลวัดจริง",
+          meta: "จะแสดงค่าตัวเลขเมื่อมีฟิลด์ที่ช่างบันทึกเป็นข้อมูลจริง",
+        };
 
     const airflowMetric = !hasChecklist
       ? {
           label: "แรงลม",
-          value: "รอข้อมูล",
+          value: "ยังไม่มีข้อมูลวัดจริง",
           score: null,
           tone: "unknown",
-          detail: "ยังไม่มีข้อมูลเช็คลิสต์สำหรับประเมินแรงลม",
-          meta: "ระบบจะแสดงค่าจริงเมื่อมีการบันทึกแบบตัวเลข",
+          detail: "สถานะแรงลม: ยังไม่มีข้อมูลวัดจริง",
+          meta: "จะแสดงค่าตัวเลขเมื่อมีฟิลด์ที่ช่างบันทึกเป็นข้อมูลจริง",
         }
       : {
           label: "แรงลม",
-          value: `${airflow}%`,
-          score: airflow,
-          tone: scoreTone(airflow),
-          detail: airflow >= 80 ? "แรงลมอยู่ในเกณฑ์ดี" : (airflow >= 55 ? "แรงลมเริ่มควรเฝ้าระวัง" : "แรงลมต่ำ ควรตรวจหน้างาน"),
-          meta: "ค่าประเมินจากเช็คลิสต์",
+          value: normal ? "ปกติ" : "ควรตรวจ",
+          score: issueBasedScore,
+          tone: scoreTone(issueBasedScore),
+          detail: normal ? "ประเมินจากเช็คลิสต์: ปกติ" : "ประเมินจากเช็คลิสต์: ควรตรวจแรงลมเพิ่มเติม",
+          meta: "ประเมินจากเช็คลิสต์ ไม่ใช่ค่าที่วัดด้วยเครื่องมือ",
         };
 
     const coilMetric = {
@@ -429,8 +393,9 @@
       meta: context.drainRisk ? "พบสัญญาณเกี่ยวกับน้ำหยดหรือการระบาย จึงประเมินเข้มขึ้น" : context.drainEstimateText,
     };
 
-    const usableScores = [psiMetric, tempMetric, airflowMetric, coilMetric, drainMetric]
-      .map((metric) => metric.score)
+    const photoEvidenceScore = (hasPressurePhoto || hasTempPhoto) ? 82 : 68;
+    const checklistScore = hasChecklist ? issueBasedScore : null;
+    const usableScores = [coilMetric.score, drainMetric.score, checklistScore, photoEvidenceScore]
       .filter((score) => score != null && Number.isFinite(score));
     const overallScore = usableScores.length
       ? Math.max(0, Math.min(100, Math.round(usableScores.reduce((sum, score) => sum + score, 0) / usableScores.length) - Math.min(issueCount * 4, 16)))
@@ -445,7 +410,7 @@
         : (overallScore >= 80
             ? "เครื่องนี้ยังอยู่ในสภาพดี แนะนำล้างรอบถัดไปตามกำหนด"
             : (overallScore >= 60 ? "ควรติดตามอาการและวางแผนตรวจรอบถัดไป" : "ควรให้ช่างตรวจหน้างานเพิ่มเติม")),
-      meta: "สรุปจากเช็คลิสต์ รูปงาน และรอบเวลาหลังบริการ",
+      meta: "ไม่รวมค่าน้ำยาและอุณหภูมิ เพราะยังไม่มีค่าที่วัดจริง",
     };
 
     return {
