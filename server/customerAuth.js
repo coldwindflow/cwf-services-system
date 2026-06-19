@@ -2,10 +2,12 @@
 
 const crypto = require("crypto");
 const express = require("express");
+const { OAuth2Client } = require("google-auth-library");
 
 const SESSION_COOKIE = "cwf_token";
 const SESSION_MAX_AGE_SEC = 7 * 24 * 60 * 60;
-const OAUTH_MAX_AGE_SEC = 10 * 60;
+const OAUTH_MAX_AGE_MS = 10 * 60 * 1000;
+const OAUTH_MAX_AGE_SEC = OAUTH_MAX_AGE_MS / 1000;
 const LINE_STATE_COOKIE = "cwf_oauth_line";
 const GOOGLE_STATE_COOKIE = "cwf_oauth_google";
 const CUSTOMER_ROUTE_ALLOWLIST = [
@@ -13,6 +15,8 @@ const CUSTOMER_ROUTE_ALLOWLIST = [
   /^\/customer(?:\.html)?(?:\?|$)/,
   /^\/track(?:\.html)?(?:\?|$)/,
 ];
+
+const defaultOAuthStore = createMemoryOAuthStore();
 
 function clean(value) {
   return String(value == null ? "" : value).trim();
@@ -71,9 +75,8 @@ function parseCookies(header) {
     const idx = part.indexOf("=");
     if (idx < 0) return;
     const key = part.slice(0, idx).trim();
-    let val = part.slice(idx + 1).trim();
+    let val = part.slice(idx + 1).trim().replace(/^"|"$/g, "");
     if (!key) return;
-    val = val.replace(/^"|"$/g, "");
     try { val = decodeURIComponent(val); } catch (_) {}
     out[key] = val;
   });
@@ -126,45 +129,58 @@ function safeReturnTo(value, fallback = "/customer-app/") {
   return CUSTOMER_ROUTE_ALLOWLIST.some((pattern) => pattern.test(raw)) ? raw : fallback;
 }
 
-function callbackUrl(req, provider, env) {
-  const line = clean(env.LINE_CALLBACK_URL || env.LINE_LOGIN_CALLBACK_URL);
+function callbackUrl(req, provider, env = process.env) {
+  if (provider === "line") {
+    const lineV2 = clean(env.LINE_V2_CALLBACK_URL || env.LINE_CUSTOMER_V2_CALLBACK_URL);
+    return lineV2 || `${getReqBaseUrl(req)}/auth/line/v2/callback`;
+  }
   const google = clean(env.GOOGLE_CALLBACK_URL || env.GOOGLE_OAUTH_CALLBACK_URL);
-  if (provider === "line" && line) return line;
-  if (provider === "google" && google) return google;
-  return `${getReqBaseUrl(req)}/auth/${provider}/callback`;
+  return google || `${getReqBaseUrl(req)}/auth/google/callback`;
 }
 
-function providerConfig(env = process.env) {
+function isUsableCallbackUrl(url, req) {
+  const raw = clean(url);
+  if (!raw) return false;
+  if (raw.startsWith("https://")) return true;
+  return raw.startsWith(`${getReqBaseUrl(req)}/`) && isHttpsReq(req);
+}
+
+function baseProviderConfig(env = process.env) {
   const lineClientId = clean(env.LINE_CHANNEL_ID || env.LINE_CLIENT_ID);
   const lineClientSecret = clean(env.LINE_CHANNEL_SECRET || env.LINE_CLIENT_SECRET);
   const googleClientId = clean(env.GOOGLE_CLIENT_ID || env.GOOGLE_OAUTH_CLIENT_ID);
   const googleClientSecret = clean(env.GOOGLE_CLIENT_SECRET || env.GOOGLE_OAUTH_CLIENT_SECRET);
   return {
-    line: {
-      clientId: lineClientId,
-      clientSecret: lineClientSecret,
-      available: !!(lineClientId && lineClientSecret),
-    },
-    google: {
-      clientId: googleClientId,
-      clientSecret: googleClientSecret,
-      available: !!(googleClientId && googleClientSecret),
-    },
+    line: { clientId: lineClientId, clientSecret: lineClientSecret },
+    google: { clientId: googleClientId, clientSecret: googleClientSecret },
     jwtSecret: clean(env.CWF_JWT_SECRET || env.JWT_SECRET),
   };
 }
 
-function encodeOAuthStateCookie(ctx) {
-  return b64urlEncode(JSON.stringify(ctx));
-}
-
-function decodeOAuthStateCookie(value) {
-  try {
-    const ctx = JSON.parse(b64urlDecodeToBuffer(value).toString("utf8"));
-    return ctx && typeof ctx === "object" ? ctx : null;
-  } catch (_) {
-    return null;
-  }
+function createMemoryOAuthStore(nowFn = () => Date.now()) {
+  const map = new Map();
+  return {
+    put(ctx) {
+      const id = randomUrlToken(32);
+      map.set(id, { ...ctx, stateId: id, createdAt: nowFn(), expiresAt: nowFn() + OAUTH_MAX_AGE_MS });
+      return id;
+    },
+    consume(id) {
+      const key = clean(id);
+      const ctx = map.get(key);
+      if (!ctx) return { ok: false, reason: "missing_state" };
+      map.delete(key);
+      if (Number(ctx.expiresAt || 0) < nowFn()) return { ok: false, reason: "expired_state" };
+      return { ok: true, ctx };
+    },
+    peek(id) {
+      return map.get(clean(id)) || null;
+    },
+    clear() {
+      map.clear();
+    },
+    _map: map,
+  };
 }
 
 function currentCustomer(req, jwtSecret) {
@@ -189,6 +205,50 @@ function issueCustomerSession(res, customer, jwtSecret, secureCookie) {
   };
   setCookie(res, SESSION_COOKIE, jwtSign(payload, jwtSecret), { maxAgeSec: SESSION_MAX_AGE_SEC, secure: secureCookie });
   return payload;
+}
+
+async function schemaReady(pool) {
+  try {
+    const result = await pool.query(`
+      SELECT
+        to_regclass('public.customer_identities') IS NOT NULL AS has_identities,
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='customer_profiles' AND column_name='email'
+        ) AS has_email,
+        EXISTS (
+          SELECT 1 FROM information_schema.columns
+          WHERE table_schema='public' AND table_name='customer_profiles' AND column_name='email_verified'
+        ) AS has_email_verified
+    `);
+    const row = result.rows && result.rows[0] ? result.rows[0] : {};
+    return !!(row.has_identities && row.has_email && row.has_email_verified);
+  } catch (_) {
+    return false;
+  }
+}
+
+async function providerAvailability({ pool, req, env }) {
+  const cfg = baseProviderConfig(env);
+  const ready = await schemaReady(pool);
+  const lineCallback = callbackUrl(req, "line", env);
+  const googleCallback = callbackUrl(req, "google", env);
+  return {
+    line: {
+      clientId: cfg.line.clientId,
+      clientSecret: cfg.line.clientSecret,
+      callback: lineCallback,
+      available: !!(cfg.line.clientId && cfg.line.clientSecret && cfg.jwtSecret && ready && isUsableCallbackUrl(lineCallback, req)),
+    },
+    google: {
+      clientId: cfg.google.clientId,
+      clientSecret: cfg.google.clientSecret,
+      callback: googleCallback,
+      available: !!(cfg.google.clientId && cfg.google.clientSecret && cfg.jwtSecret && ready && isUsableCallbackUrl(googleCallback, req)),
+    },
+    jwtSecret: cfg.jwtSecret,
+    schemaReady: ready,
+  };
 }
 
 async function findProfile(pool, customerSub) {
@@ -269,17 +329,12 @@ async function resolveCustomerForIdentity(pool, identity, loggedInCustomer) {
     }
     return { customerSub: existingSub, mode: "existing_identity" };
   }
-
-  if (loggedInCustomer?.sub) {
-    return { customerSub: loggedInCustomer.sub, mode: "linked_to_session" };
-  }
-
+  if (loggedInCustomer?.sub) return { customerSub: loggedInCustomer.sub, mode: "linked_to_session" };
   if (identity.provider === "line") {
     const legacySub = `line:${identity.provider_subject}`;
     const legacy = await findProfile(pool, legacySub);
     if (legacy) return { customerSub: legacySub, mode: "legacy_line_profile" };
   }
-
   if (identity.email && identity.email_verified) {
     const emailMatch = await pool.query(
       `SELECT sub FROM public.customer_profiles
@@ -287,14 +342,9 @@ async function resolveCustomerForIdentity(pool, identity, loggedInCustomer) {
         LIMIT 2`,
       [identity.email]
     );
-    if ((emailMatch.rows || []).length === 1) {
-      return { customerSub: emailMatch.rows[0].sub, mode: "verified_email_match" };
-    }
-    if ((emailMatch.rows || []).length > 1) {
-      return { customerSub: `${identity.provider}:${identity.provider_subject}`, mode: "ambiguous_email_new_customer" };
-    }
+    if ((emailMatch.rows || []).length === 1) return { customerSub: emailMatch.rows[0].sub, mode: "verified_email_match" };
+    if ((emailMatch.rows || []).length > 1) return { customerSub: `${identity.provider}:${identity.provider_subject}`, mode: "ambiguous_email_new_customer" };
   }
-
   return { customerSub: `${identity.provider}:${identity.provider_subject}`, mode: "new_customer" };
 }
 
@@ -324,14 +374,7 @@ async function exchangeLineCode({ fetchImpl, code, redirectUri, clientId, client
   const res = await fetchImpl("https://api.line.me/oauth2/v2.1/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: redirectUri,
-      client_id: clientId,
-      client_secret: clientSecret,
-      code_verifier: codeVerifier,
-    }),
+    body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: redirectUri, client_id: clientId, client_secret: clientSecret, code_verifier: codeVerifier }),
   });
   const text = await res.text().catch(() => "");
   let json = {};
@@ -367,14 +410,7 @@ async function exchangeGoogleCode({ fetchImpl, code, redirectUri, clientId, clie
   const res = await fetchImpl("https://oauth2.googleapis.com/token", {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "authorization_code",
-      code,
-      redirect_uri: redirectUri,
-      client_id: clientId,
-      client_secret: clientSecret,
-      code_verifier: codeVerifier,
-    }),
+    body: new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: redirectUri, client_id: clientId, client_secret: clientSecret, code_verifier: codeVerifier }),
   });
   const text = await res.text().catch(() => "");
   let json = {};
@@ -383,31 +419,15 @@ async function exchangeGoogleCode({ fetchImpl, code, redirectUri, clientId, clie
   return json;
 }
 
-function decodeJwtUnverified(token) {
-  const parts = clean(token).split(".");
-  if (parts.length !== 3) throw new Error("JWT_FORMAT_INVALID");
-  return {
-    header: JSON.parse(b64urlDecodeToBuffer(parts[0]).toString("utf8")),
-    payload: JSON.parse(b64urlDecodeToBuffer(parts[1]).toString("utf8")),
-    signingInput: `${parts[0]}.${parts[1]}`,
-    signature: b64urlDecodeToBuffer(parts[2]),
-  };
-}
-
-async function verifyGoogleIdToken({ fetchImpl, idToken, clientId, nonce }) {
-  const decoded = decodeJwtUnverified(idToken);
-  if (decoded.header.alg !== "RS256") throw new Error("GOOGLE_ALG_INVALID");
-  const certRes = await fetchImpl("https://www.googleapis.com/oauth2/v3/certs");
-  const certJson = await certRes.json();
-  const key = (certJson.keys || []).find((item) => item.kid === decoded.header.kid);
-  if (!key || !key.x5c || !key.x5c[0]) throw new Error("GOOGLE_CERT_NOT_FOUND");
-  const cert = `-----BEGIN CERTIFICATE-----\n${key.x5c[0].match(/.{1,64}/g).join("\n")}\n-----END CERTIFICATE-----\n`;
-  const ok = crypto.verify("RSA-SHA256", Buffer.from(decoded.signingInput), cert, decoded.signature);
-  if (!ok) throw new Error("GOOGLE_SIGNATURE_INVALID");
-  return googleIdentityFromPayload(decoded.payload, clientId, nonce);
+async function verifyGoogleIdToken({ idToken, clientId, nonce, oauthClient }) {
+  const client = oauthClient || new OAuth2Client(clientId);
+  const ticket = await client.verifyIdToken({ idToken, audience: clientId });
+  return googleIdentityFromPayload(ticket.getPayload(), clientId, nonce);
 }
 
 function googleIdentityFromPayload(payload, clientId, nonce, now = Math.floor(Date.now() / 1000)) {
+  if (!payload || typeof payload !== "object") throw new Error("GOOGLE_PAYLOAD_MISSING");
+  if (!clean(payload.sub)) throw new Error("GOOGLE_SUB_MISSING");
   if (!["https://accounts.google.com", "accounts.google.com"].includes(payload.iss)) throw new Error("GOOGLE_ISS_INVALID");
   if (payload.aud !== clientId) throw new Error("GOOGLE_AUD_INVALID");
   if (payload.exp && now > Number(payload.exp)) throw new Error("GOOGLE_TOKEN_EXPIRED");
@@ -438,33 +458,37 @@ function authSuccessRedirect(provider, returnTo, linked) {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
+function getStore(deps) {
+  return deps.oauthStore || defaultOAuthStore;
+}
+
 function createStartHandler(provider, deps) {
-  return (req, res) => {
-    const cfg = providerConfig(deps.env);
-    const providerCfg = cfg[provider];
+  return async (req, res) => {
+    const availability = await providerAvailability({ pool: deps.pool, req, env: deps.env });
+    const providerCfg = availability[provider];
     const returnTo = safeReturnTo(req.query?.returnTo || req.query?.next);
     if (!providerCfg.available) return res.redirect(authErrorRedirect(provider, "provider_unavailable", returnTo));
     const verifier = randomUrlToken(48);
     const state = randomUrlToken(32);
     const nonce = randomUrlToken(32);
-    const ctx = {
+    const current = currentCustomer(req, availability.jwtSecret);
+    const stateId = getStore(deps).put({
       provider,
       state,
       nonce,
       codeVerifier: verifier,
       returnTo,
-      linkCustomerSub: currentCustomer(req, cfg.jwtSecret)?.sub || "",
-      createdAt: Date.now(),
-    };
-    const secureCookie = callbackUrl(req, provider, deps.env).startsWith("https://") || isHttpsReq(req);
-    setCookie(res, provider === "line" ? LINE_STATE_COOKIE : GOOGLE_STATE_COOKIE, encodeOAuthStateCookie(ctx), {
+      linkCustomerSub: current?.sub || "",
+    });
+    const redirectUri = callbackUrl(req, provider, deps.env);
+    setCookie(res, provider === "line" ? LINE_STATE_COOKIE : GOOGLE_STATE_COOKIE, stateId, {
       maxAgeSec: OAUTH_MAX_AGE_SEC,
-      secure: secureCookie,
+      secure: redirectUri.startsWith("https://") || isHttpsReq(req),
     });
     const authorize = new URL(provider === "line" ? "https://access.line.me/oauth2/v2.1/authorize" : "https://accounts.google.com/o/oauth2/v2/auth");
     authorize.searchParams.set("response_type", "code");
     authorize.searchParams.set("client_id", providerCfg.clientId);
-    authorize.searchParams.set("redirect_uri", callbackUrl(req, provider, deps.env));
+    authorize.searchParams.set("redirect_uri", redirectUri);
     authorize.searchParams.set("state", state);
     authorize.searchParams.set("scope", provider === "line" ? "openid profile email" : "openid email profile");
     authorize.searchParams.set("nonce", nonce);
@@ -478,18 +502,29 @@ function createStartHandler(provider, deps) {
 function createCallbackHandler(provider, deps) {
   return async (req, res) => {
     const cookieName = provider === "line" ? LINE_STATE_COOKIE : GOOGLE_STATE_COOKIE;
-    const cfg = providerConfig(deps.env);
-    const providerCfg = cfg[provider];
-    const ctx = decodeOAuthStateCookie(parseCookieValue(req, cookieName));
+    const stateId = parseCookieValue(req, cookieName);
+    const consumed = getStore(deps).consume(stateId);
+    const ctx = consumed.ctx || null;
     const returnTo = safeReturnTo(ctx?.returnTo);
     clearCookie(res, cookieName);
     try {
       if (req.query?.error) return res.redirect(authErrorRedirect(provider, clean(req.query.error), returnTo));
-      if (!ctx || ctx.provider !== provider) return res.redirect(authErrorRedirect(provider, "missing_state", returnTo));
+      if (!consumed.ok) return res.redirect(authErrorRedirect(provider, consumed.reason, returnTo));
+      if (!ctx || ctx.provider !== provider) return res.redirect(authErrorRedirect(provider, "invalid_state", returnTo));
       if (!clean(req.query?.state) || clean(req.query.state) !== ctx.state) return res.redirect(authErrorRedirect(provider, "invalid_state", returnTo));
       if (!clean(req.query?.code)) return res.redirect(authErrorRedirect(provider, "missing_code", returnTo));
+
+      const availability = await providerAvailability({ pool: deps.pool, req, env: deps.env });
+      const providerCfg = availability[provider];
       if (!providerCfg.available) return res.redirect(authErrorRedirect(provider, "provider_unavailable", returnTo));
-      if (!cfg.jwtSecret) return res.redirect(authErrorRedirect(provider, "session_unavailable", returnTo));
+
+      let loggedInCustomer = null;
+      if (ctx.linkCustomerSub) {
+        const current = currentCustomer(req, availability.jwtSecret);
+        if (!current?.sub) return res.redirect(authErrorRedirect(provider, "link_session_missing", returnTo));
+        if (current.sub !== ctx.linkCustomerSub) return res.redirect(authErrorRedirect(provider, "link_session_changed", returnTo));
+        loggedInCustomer = current;
+      }
 
       const redirectUri = callbackUrl(req, provider, deps.env);
       const fetchImpl = deps.fetchImpl || fetch;
@@ -500,12 +535,11 @@ function createCallbackHandler(provider, deps) {
       if (!idToken) return res.redirect(authErrorRedirect(provider, "missing_id_token", returnTo));
       const identity = provider === "line"
         ? await (deps.verifyLineIdToken || verifyLineIdToken)({ fetchImpl, idToken, clientId: providerCfg.clientId, nonce: ctx.nonce })
-        : await (deps.verifyGoogleIdToken || verifyGoogleIdToken)({ fetchImpl, idToken, clientId: providerCfg.clientId, nonce: ctx.nonce });
+        : await (deps.verifyGoogleIdToken || verifyGoogleIdToken)({ idToken, clientId: providerCfg.clientId, nonce: ctx.nonce, oauthClient: deps.googleOAuthClient });
       if (!identity.provider_subject) return res.redirect(authErrorRedirect(provider, "missing_provider_subject", returnTo));
-      const loggedInCustomer = ctx.linkCustomerSub ? { sub: ctx.linkCustomerSub } : currentCustomer(req, cfg.jwtSecret);
       const result = await completeProviderLogin({ pool: deps.pool, identity, loggedInCustomer });
       if (result.error === "PROVIDER_ALREADY_LINKED") return res.redirect(authErrorRedirect(provider, "account_already_linked", returnTo));
-      issueCustomerSession(res, result.customer, cfg.jwtSecret, redirectUri.startsWith("https://") || isHttpsReq(req));
+      issueCustomerSession(res, result.customer, availability.jwtSecret, redirectUri.startsWith("https://") || isHttpsReq(req));
       return res.redirect(authSuccessRedirect(provider, returnTo, result.mode === "linked_to_session"));
     } catch (e) {
       if (deps.logger) deps.logger.error(`[CUSTOMER_${provider.toUpperCase()}_AUTH]`, e);
@@ -540,59 +574,21 @@ async function ensureCustomerAuthSchema(pool) {
 
 function createCustomerAuthRoutes(deps) {
   const router = express.Router();
-  router.get("/auth/line", createStartHandler("line", deps));
   router.get("/auth/line/start", createStartHandler("line", deps));
-  router.get("/auth/line/callback", createCallbackHandler("line", deps));
-  router.get("/auth/google", createStartHandler("google", deps));
+  router.get("/auth/line/v2/callback", createCallbackHandler("line", deps));
   router.get("/auth/google/start", createStartHandler("google", deps));
   router.get("/auth/google/callback", createCallbackHandler("google", deps));
-  router.get("/public/auth/config", (req, res) => {
-    const cfg = providerConfig(deps.env);
+  router.get("/public/auth/config", async (req, res) => {
+    const availability = await providerAvailability({ pool: deps.pool, req, env: deps.env });
     const returnTo = safeReturnTo(req.query?.returnTo);
     res.json({
       ok: true,
+      schema_ready: availability.schemaReady,
       providers: {
-        line: { available: cfg.line.available, start_url: `/auth/line?returnTo=${encodeURIComponent(returnTo)}` },
-        google: { available: cfg.google.available, start_url: `/auth/google?returnTo=${encodeURIComponent(returnTo)}` },
+        line: { available: availability.line.available, start_url: `/auth/line/start?returnTo=${encodeURIComponent(returnTo)}` },
+        google: { available: availability.google.available, start_url: `/auth/google/start?returnTo=${encodeURIComponent(returnTo)}` },
       },
     });
-  });
-  router.get("/public/me", async (req, res) => {
-    try {
-      const cfg = providerConfig(deps.env);
-      const payload = currentCustomer(req, cfg.jwtSecret);
-      if (!payload?.sub) return res.json({ logged_in: false });
-      const profile = await findProfile(deps.pool, payload.sub);
-      const providers = await linkedProviders(deps.pool, payload.sub);
-      return res.json({
-        logged_in: true,
-        user: {
-          name: payload.name || profile?.display_name || "",
-          picture: payload.picture || profile?.picture_url || "",
-          provider: payload.provider || providers[0] || "",
-          email: payload.email || profile?.email || "",
-          email_verified: !!(payload.email_verified || profile?.email_verified),
-          linked_providers: providers,
-        },
-        provider: payload.provider || providers[0] || "",
-        linked_providers: providers,
-        profile: profile ? {
-          phone: profile.phone || "",
-          address: profile.address || "",
-          maps_url: profile.maps_url || "",
-          email: profile.email || "",
-          email_verified: !!profile.email_verified,
-        } : null,
-      });
-    } catch (_) {
-      return res.json({ logged_in: false });
-    }
-  });
-  router.get("/public/logout", (req, res) => {
-    clearCookie(res, SESSION_COOKIE);
-    clearCookie(res, LINE_STATE_COOKIE);
-    clearCookie(res, GOOGLE_STATE_COOKIE);
-    res.redirect(safeReturnTo(req.query?.returnTo, "/customer-app/?logout=1"));
   });
   router.post("/public/logout", (req, res) => {
     clearCookie(res, SESSION_COOKIE);
@@ -608,14 +604,15 @@ module.exports = {
   LINE_STATE_COOKIE,
   GOOGLE_STATE_COOKIE,
   safeReturnTo,
-  providerConfig,
+  baseProviderConfig,
+  providerAvailability,
+  schemaReady,
   b64urlEncode,
   b64urlDecodeToBuffer,
   jwtSign,
   jwtVerify,
-  encodeOAuthStateCookie,
-  decodeOAuthStateCookie,
   sha256Base64Url,
+  createMemoryOAuthStore,
   verifyGoogleIdToken,
   googleIdentityFromPayload,
   verifyLineIdToken,

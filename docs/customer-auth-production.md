@@ -5,6 +5,7 @@
 - `GET /auth/line`
 - `GET /auth/line/start`
 - `GET /auth/line/callback`
+- `GET /auth/line/v2/callback`
 - `GET /auth/google`
 - `GET /auth/google/start`
 - `GET /auth/google/callback`
@@ -13,7 +14,9 @@
 - `GET /public/logout`
 - `POST /public/logout`
 
-Both providers issue the existing `cwf_token` customer session cookie and return to Customer App V2 through a strict same-origin customer-route `returnTo` allowlist.
+Legacy `GET /auth/line` and `GET /auth/line/callback` remain reserved for `customer.html`. Customer App V2 starts LINE through `/auth/line/start` and uses `/auth/line/v2/callback`.
+
+Both V2 providers issue the existing `cwf_token` customer session cookie and return to Customer App V2 through a strict same-origin customer-route `returnTo` allowlist.
 
 ## Required Environment Variables
 
@@ -25,7 +28,8 @@ LINE:
 
 - `LINE_CHANNEL_ID`
 - `LINE_CHANNEL_SECRET`
-- `LINE_CALLBACK_URL=https://app.cwf-air.com/auth/line/callback`
+- `LINE_CALLBACK_URL=https://app.cwf-air.com/auth/line/callback` for legacy `customer.html`
+- `LINE_V2_CALLBACK_URL=https://app.cwf-air.com/auth/line/v2/callback` for Customer App V2
 
 Google:
 
@@ -38,11 +42,13 @@ Do not commit provider secrets, access tokens, refresh tokens, private keys, or 
 ## LINE Developers Setup
 
 1. Create or use a LINE Login channel, not a Messaging API-only channel.
-2. Set callback URL to `https://app.cwf-air.com/auth/line/callback`.
-3. Enable scopes: `openid`, `profile`, `email`.
-4. Map the channel ID to `LINE_CHANNEL_ID`.
-5. Map the channel secret to `LINE_CHANNEL_SECRET`.
-6. LINE Official Account linking is optional for this login flow; the customer login only requires LINE Login.
+2. Keep legacy callback URL `https://app.cwf-air.com/auth/line/callback`.
+3. Add Customer App V2 callback URL `https://app.cwf-air.com/auth/line/v2/callback`.
+4. Enable scopes: `openid`, `profile`, `email`.
+5. Map the channel ID to `LINE_CHANNEL_ID`.
+6. Map the channel secret to `LINE_CHANNEL_SECRET`.
+7. Map the V2 callback to `LINE_V2_CALLBACK_URL`.
+8. LINE Official Account linking is optional for this login flow; the customer login only requires LINE Login.
 
 ## Google Cloud Setup
 
@@ -65,6 +71,8 @@ New normalized table: `public.customer_identities`.
 - Does not store provider access tokens or refresh tokens.
 
 Existing LINE customers keep their legacy customer profile key, e.g. `line:<LINE user id>`. The migration includes a reviewed optional backfill statement to populate `customer_identities` from existing `customer_profiles` rows.
+
+The application does not run DDL at normal startup. The owner must explicitly approve and run `migrations/20260620_customer_identities.sql` as a separate controlled deployment step before enabling providers. Until the schema is present, `/public/auth/config` reports providers as unavailable.
 
 ## Rollback Plan
 

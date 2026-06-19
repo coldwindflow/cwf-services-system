@@ -10960,7 +10960,6 @@ await pool.query(`
   )
 `);
 await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_profiles_phone ON public.customer_profiles(phone)`);
-await customerAuth.ensureCustomerAuthSchema(pool);
 // 3.15) service zones: automatic district/amphoe mapping for dispatch
 await pool.query(`
   CREATE TABLE IF NOT EXISTS public.service_zones (
