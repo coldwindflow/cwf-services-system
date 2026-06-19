@@ -547,45 +547,42 @@
     return current ? "current" : "pending";
   }
 
-  function statusCopy(data, mode) {
-    const status = clean(data.job_status);
-    const assigned = hasAssignedTech(data);
-    const done = isDone(data);
-    const traveling = clean(data.travel_started_at);
-    const started = clean(data.started_at) || clean(data.checkin_at);
-    const noTech = status.includes("ไม่พบช่าง") || status.includes("ตีกลับ");
-
-    if (mode === "urgent") {
-      if (done) return "งานเสร็จแล้ว";
-      if (started) return "กำลังให้บริการ";
-      if (traveling) return "ช่างกำลังเดินทาง";
-      if (assigned) return "ช่างรับงานแล้ว";
-      if (noTech) return "แอดมินกำลังช่วยตรวจสอบคิวด่วน";
-      return "ส่งคำขอคิวด่วนแล้ว กำลังรอช่างพาร์ทเนอร์กดรับงาน ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน";
-    }
-
-    if (done) return "งานเสร็จแล้ว";
-    if (started) return "กำลังให้บริการ";
-    if (traveling) return "ช่างกำลังเดินทาง";
-    if (assigned || status.includes("รอดำเนินการ")) return "ยืนยันคิวแล้ว";
-    return "รับคำขอจองแล้ว รอแอดมินตรวจสอบคิว";
+  function hasPhotoContent(data) {
+    return photoList(data).length > 0 || !!clean(data.technician_note);
   }
 
   function jobPhase(data, mode) {
     const status = clean(data.job_status);
     const noTech = status.includes("ไม่พบช่าง") || status.includes("ตีกลับ");
     if (isDone(data)) return "completed";
+    if (mode === "urgent" && noTech) return "urgent_no_tech";
     if (clean(data.started_at)) return "started";
     if (clean(data.checkin_at)) return "checked_in";
     if (clean(data.travel_started_at)) return "traveling";
     if (hasAssignedTech(data) || status.includes("รอดำเนินการ")) return "assigned";
-    if (mode === "urgent" && noTech) return "urgent_no_tech";
     return mode === "urgent" ? "urgent_waiting" : "waiting";
+  }
+
+  function statusCopy(data, mode) {
+    const phase = jobPhase(data, mode);
+    if (phase === "completed") return "งานเสร็จแล้ว";
+    if (phase === "started") return "กำลังให้บริการ";
+    if (phase === "checked_in") return "ช่างถึงหน้างานแล้ว";
+    if (phase === "traveling") return "ช่างกำลังเดินทาง";
+    if (phase === "assigned") return mode === "urgent" ? "ช่างรับงานแล้ว" : "ยืนยันคิวแล้ว";
+    if (phase === "urgent_no_tech") return "แอดมินกำลังช่วยตรวจสอบคิวด่วน";
+    if (phase === "urgent_waiting") return "ส่งคำขอคิวด่วนแล้ว รอช่างรับงานหรือแอดมินยืนยัน";
+    return "รับคำขอจองแล้ว รอแอดมินตรวจสอบคิว";
   }
 
   function statusDetailCopy(data, mode) {
     const phase = jobPhase(data, mode);
-    if (phase === "completed") return "งานบริการเสร็จสิ้นแล้ว สามารถดูรูปงาน เอกสาร และการรับประกันได้";
+    const hasPhotos = hasPhotoContent(data);
+    if (phase === "completed") {
+      return hasPhotos
+        ? "งานบริการเสร็จสิ้นแล้ว สามารถดูรูปงาน เอกสาร การรับประกัน และรีวิวได้"
+        : "งานบริการเสร็จสิ้นแล้ว สามารถดูเอกสาร การรับประกัน และการให้คะแนนได้";
+    }
     if (phase === "started") return "ทีมช่างกำลังให้บริการ";
     if (phase === "checked_in") return "ทีมช่างถึงหน้างานแล้ว";
     if (phase === "traveling") return "ช่างกำลังเดินทางไปยังสถานที่นัดหมาย";
@@ -597,8 +594,13 @@
 
   function nextActionCopy(data, mode) {
     const phase = jobPhase(data, mode);
-    if (phase === "completed") return "ดูรูปงาน เอกสาร การรับประกัน หรือให้คะแนนงานนี้";
-    if (phase === "started") return "รอทีมช่างทำงานให้เสร็จ หลังจบงานจะเห็นรูปและเอกสาร";
+    const hasPhotos = hasPhotoContent(data);
+    if (phase === "completed") {
+      return hasPhotos
+        ? "ดูรูปงาน เอกสาร การรับประกัน และรีวิวงานนี้"
+        : "ดูเอกสาร การรับประกัน และให้คะแนนงานนี้";
+    }
+    if (phase === "started") return "รอทีมช่างทำงานให้เสร็จ หลังจบงานจะเห็นเอกสารหลังบริการ";
     if (phase === "checked_in") return "เตรียมพื้นที่หน้างานให้พร้อมสำหรับเริ่มบริการ";
     if (phase === "traveling") return "รอรับทีมช่างที่กำลังเดินทางไปหน้างาน";
     if (phase === "assigned") return "รอถึงเวลานัด หรือเปิดแผนที่หากต้องการดูสถานที่งาน";
@@ -1002,7 +1004,7 @@
       });
     }
 
-    if (done && (photos.length || clean(data.technician_note))) {
+    if (done && hasPhotoContent(data)) {
       views.push({
         id: "photos",
         label: "รูปงาน",
