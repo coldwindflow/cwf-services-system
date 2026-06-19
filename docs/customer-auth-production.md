@@ -6,7 +6,6 @@
 - `GET /auth/line/start`
 - `GET /auth/line/callback`
 - `GET /auth/line/v2/callback`
-- `GET /auth/google`
 - `GET /auth/google/start`
 - `GET /auth/google/callback`
 - `GET /public/auth/config`
@@ -30,6 +29,7 @@ LINE:
 - `LINE_CHANNEL_SECRET`
 - `LINE_CALLBACK_URL=https://app.cwf-air.com/auth/line/callback` for legacy `customer.html`
 - `LINE_V2_CALLBACK_URL=https://app.cwf-air.com/auth/line/v2/callback` for Customer App V2
+- `LINE_EMAIL_SCOPE_ENABLED=true` only after LINE email permission is approved
 
 Google:
 
@@ -44,11 +44,13 @@ Do not commit provider secrets, access tokens, refresh tokens, private keys, or 
 1. Create or use a LINE Login channel, not a Messaging API-only channel.
 2. Keep legacy callback URL `https://app.cwf-air.com/auth/line/callback`.
 3. Add Customer App V2 callback URL `https://app.cwf-air.com/auth/line/v2/callback`.
-4. Enable scopes: `openid`, `profile`, `email`.
+4. Enable scopes: `openid`, `profile`.
 5. Map the channel ID to `LINE_CHANNEL_ID`.
 6. Map the channel secret to `LINE_CHANNEL_SECRET`.
 7. Map the V2 callback to `LINE_V2_CALLBACK_URL`.
 8. LINE Official Account linking is optional for this login flow; the customer login only requires LINE Login.
+
+LINE email is optional and disabled by default. Apply for email permission in LINE Developers Console first; after approval, set `LINE_EMAIL_SCOPE_ENABLED=true` and add the `email` scope in the channel settings. Without that env var, Customer App V2 requests only `openid profile`, and LINE login still works without an email address.
 
 ## Google Cloud Setup
 
@@ -72,7 +74,18 @@ New normalized table: `public.customer_identities`.
 
 Existing LINE customers keep their legacy customer profile key, e.g. `line:<LINE user id>`. The migration includes a reviewed optional backfill statement to populate `customer_identities` from existing `customer_profiles` rows.
 
-The application does not run DDL at normal startup. The owner must explicitly approve and run `migrations/20260620_customer_identities.sql` as a separate controlled deployment step before enabling providers. Until the schema is present, `/public/auth/config` reports providers as unavailable.
+The application does not run DDL at normal startup. The owner must explicitly approve and run `migrations/20260620_customer_identities.sql` as a separate controlled deployment step before enabling provider env vars. Until the schema is present, `/public/auth/config` reports providers as unavailable.
+
+Recommended deployment order:
+
+1. Deploy the code with provider env vars unset.
+2. Run and verify `migrations/20260620_customer_identities.sql`.
+3. Add provider client IDs/secrets, safe HTTPS callbacks, and JWT secret.
+4. Enable LINE email scope only after LINE approves the permission.
+
+## OAuth State Store
+
+OAuth state is stored server-side in a bounded in-memory store with expiry cleanup and oldest-entry eviction. This is safe for a single running Node instance. A horizontally scaled deployment needs a shared one-time store, such as Redis or a database-backed state table, so callbacks can be consumed by any instance without losing state.
 
 ## Rollback Plan
 

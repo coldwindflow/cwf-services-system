@@ -84,8 +84,9 @@ function cookieValue(setCookie, name) {
   return match ? decodeURIComponent(match[1]) : "";
 }
 
-async function startFlow(base, provider, cookieName, cookie = "") {
-  const res = await fetch(`${base}/auth/${provider}/start?returnTo=/customer-app/?view=profile`, {
+async function startFlow(base, provider, cookieName, cookie = "", params = "") {
+  const qs = `returnTo=/customer-app/?view=profile${params ? `&${params}` : ""}`;
+  const res = await fetch(`${base}/auth/${provider}/start?${qs}`, {
     redirect: "manual",
     headers: cookie ? { cookie } : undefined,
   });
@@ -122,6 +123,16 @@ test("V2 /auth/line/start creates PKCE state and returns to V2 callback", async 
     assert.match(location, /code_challenge=/);
     assert.match(location, /nonce=/);
     assert.match(location, /redirect_uri=https%3A%2F%2Fapp\.cwf-air\.com%2Fauth%2Fline%2Fv2%2Fcallback/);
+    assert.match(location, /scope=openid\+profile/);
+    assert.doesNotMatch(location, /email/);
+  });
+});
+
+test("LINE email scope is included only when explicitly enabled", async () => {
+  const env = { ...READY_ENV, LINE_EMAIL_SCOPE_ENABLED: "true" };
+  await withServer(makeRouter({ env }), async (base) => {
+    const started = await startFlow(base, "line", customerAuth.LINE_STATE_COOKIE);
+    assert.match(started.res.headers.get("location"), /scope=openid\+profile\+email/);
   });
 });
 
@@ -186,6 +197,31 @@ test("provider unavailable when callback is not HTTPS", async () => {
   });
 });
 
+test("OAuth store cleans abandoned expired states and keeps valid state usable", () => {
+  let now = 1000;
+  const store = customerAuth.createMemoryOAuthStore(() => now, { maxEntries: 5 });
+  store.put({ state: "expired" });
+  now += 11 * 60 * 1000;
+  const valid = store.put({ state: "valid" });
+  assert.equal(store.size(), 1);
+  assert.equal(store.consume(valid).ctx.state, "valid");
+  assert.equal(store.size(), 0);
+});
+
+test("OAuth store enforces maximum size and evicts oldest entries first", () => {
+  let now = 1000;
+  const store = customerAuth.createMemoryOAuthStore(() => now, { maxEntries: 2 });
+  const first = store.put({ state: "first" });
+  now += 1;
+  const second = store.put({ state: "second" });
+  now += 1;
+  const third = store.put({ state: "third" });
+  assert.equal(store.size(), 2);
+  assert.equal(store.consume(first).reason, "missing_state");
+  assert.equal(store.consume(second).ctx.state, "second");
+  assert.equal(store.consume(third).ctx.state, "third");
+});
+
 test("tampered OAuth context cookie is rejected before provider exchange", async () => {
   let called = false;
   await withServer(makeRouter({ exchangeGoogleCode: async () => { called = true; } }), async (base) => {
@@ -228,10 +264,64 @@ test("replayed callback state is rejected after one successful consume", async (
   });
 });
 
+test("logged-in normal login does not silently link a new provider", async () => {
+  const pool = makePool({ profiles: [{ sub: "line:u1", display_name: "Line User" }] });
+  const token = customerAuth.jwtSign({ sub: "line:u1", exp: Math.floor(Date.now() / 1000) + 60 }, READY_ENV.CWF_JWT_SECRET);
+  await withServer(makeRouter({ pool }), async (base) => {
+    const started = await startFlow(base, "google", customerAuth.GOOGLE_STATE_COOKIE, `cwf_token=${encodeURIComponent(token)}`, "mode=login");
+    const res = await fetch(`${base}/auth/google/callback?code=abc&state=${started.state}`, {
+      redirect: "manual",
+      headers: { cookie: `${started.cookie}; cwf_token=${encodeURIComponent(token)}` },
+    });
+    assert.match(res.headers.get("location"), /auth=success/);
+    assert.equal(pool.state.identities[0].customer_sub, "google:g1");
+  });
+});
+
+test("link mode without session is rejected before provider redirect", async () => {
+  await withServer(makeRouter(), async (base) => {
+    const res = await fetch(`${base}/auth/google/start?mode=link&confirm=1&returnTo=/customer-app/`, { redirect: "manual" });
+    assert.match(res.headers.get("location"), /reason=link_session_missing/);
+  });
+});
+
+test("cancelled link confirmation creates no OAuth state and causes no link", async () => {
+  const store = customerAuth.createMemoryOAuthStore();
+  const token = customerAuth.jwtSign({ sub: "line:u1", exp: Math.floor(Date.now() / 1000) + 60 }, READY_ENV.CWF_JWT_SECRET);
+  await withServer(makeRouter({ store }), async (base) => {
+    const res = await fetch(`${base}/auth/google/start?mode=link&returnTo=/customer-app/`, {
+      redirect: "manual",
+      headers: { cookie: `cwf_token=${encodeURIComponent(token)}` },
+    });
+    assert.match(res.headers.get("location"), /reason=link_confirmation_required/);
+    assert.equal(store.size(), 0);
+  });
+});
+
+test("provider already linked is not offered for linking", async () => {
+  const pool = makePool({
+    identities: [{ provider: "google", provider_subject: "g1", customer_sub: "line:u1" }],
+    profiles: [{ sub: "line:u1", display_name: "Line User" }],
+  });
+  const token = customerAuth.jwtSign({ sub: "line:u1", exp: Math.floor(Date.now() / 1000) + 60 }, READY_ENV.CWF_JWT_SECRET);
+  await withServer(makeRouter({ pool }), async (base) => {
+    const cfg = await fetch(`${base}/public/auth/config?returnTo=/customer-app/`, {
+      headers: { cookie: `cwf_token=${encodeURIComponent(token)}` },
+    }).then((r) => r.json());
+    assert.equal(cfg.logged_in, true);
+    assert.equal(cfg.providers.google.linked, true);
+    const res = await fetch(`${base}/auth/google/start?mode=link&confirm=1&returnTo=/customer-app/`, {
+      redirect: "manual",
+      headers: { cookie: `cwf_token=${encodeURIComponent(token)}` },
+    });
+    assert.match(res.headers.get("location"), /reason=account_already_linked/);
+  });
+});
+
 test("linking after session logout is rejected", async () => {
   const token = customerAuth.jwtSign({ sub: "line:u1", exp: Math.floor(Date.now() / 1000) + 60 }, READY_ENV.CWF_JWT_SECRET);
   await withServer(makeRouter(), async (base) => {
-    const started = await startFlow(base, "google", customerAuth.GOOGLE_STATE_COOKIE, `cwf_token=${encodeURIComponent(token)}`);
+    const started = await startFlow(base, "google", customerAuth.GOOGLE_STATE_COOKIE, `cwf_token=${encodeURIComponent(token)}`, "mode=link&confirm=1");
     const res = await fetch(`${base}/auth/google/callback?code=abc&state=${started.state}`, {
       redirect: "manual",
       headers: { cookie: started.cookie },
@@ -244,7 +334,7 @@ test("linking after session changes is rejected", async () => {
   const tokenA = customerAuth.jwtSign({ sub: "line:u1", exp: Math.floor(Date.now() / 1000) + 60 }, READY_ENV.CWF_JWT_SECRET);
   const tokenB = customerAuth.jwtSign({ sub: "line:u2", exp: Math.floor(Date.now() / 1000) + 60 }, READY_ENV.CWF_JWT_SECRET);
   await withServer(makeRouter(), async (base) => {
-    const started = await startFlow(base, "google", customerAuth.GOOGLE_STATE_COOKIE, `cwf_token=${encodeURIComponent(tokenA)}`);
+    const started = await startFlow(base, "google", customerAuth.GOOGLE_STATE_COOKIE, `cwf_token=${encodeURIComponent(tokenA)}`, "mode=link&confirm=1");
     const res = await fetch(`${base}/auth/google/callback?code=abc&state=${started.state}`, {
       redirect: "manual",
       headers: { cookie: `${started.cookie}; cwf_token=${encodeURIComponent(tokenB)}` },
@@ -257,7 +347,7 @@ test("valid same-session provider linking succeeds", async () => {
   const pool = makePool({ profiles: [{ sub: "line:u1", display_name: "Line User" }] });
   const token = customerAuth.jwtSign({ sub: "line:u1", exp: Math.floor(Date.now() / 1000) + 60 }, READY_ENV.CWF_JWT_SECRET);
   await withServer(makeRouter({ pool }), async (base) => {
-    const started = await startFlow(base, "google", customerAuth.GOOGLE_STATE_COOKIE, `cwf_token=${encodeURIComponent(token)}`);
+    const started = await startFlow(base, "google", customerAuth.GOOGLE_STATE_COOKIE, `cwf_token=${encodeURIComponent(token)}`, "mode=link&confirm=1");
     const res = await fetch(`${base}/auth/google/callback?code=abc&state=${started.state}`, {
       redirect: "manual",
       headers: { cookie: `${started.cookie}; cwf_token=${encodeURIComponent(token)}` },
@@ -300,6 +390,7 @@ test("duplicate provider identity linked to another customer is rejected safely"
     pool,
     loggedInCustomer: { sub: "google:g1" },
     identity: { provider: "line", provider_subject: "u1", display_name: "Line User" },
+    mode: "link",
   });
   assert.equal(result.error, "PROVIDER_ALREADY_LINKED");
 });
@@ -317,6 +408,84 @@ test("ambiguous verified email does not auto-link", async () => {
   });
   assert.equal(result.customer.customer_sub, "google:g3");
   assert.equal(result.mode, "ambiguous_email_new_customer");
+});
+
+test("LINE identity without email still creates and signs in the correct customer", async () => {
+  const pool = makePool();
+  const result = await customerAuth.completeProviderLogin({
+    pool,
+    identity: { provider: "line", provider_subject: "line-no-email", display_name: "Line User", email: "", email_verified: false },
+  });
+  assert.equal(result.customer.customer_sub, "line:line-no-email");
+  assert.equal(result.customer.email, "");
+  assert.equal(pool.state.identities[0].provider_subject, "line-no-email");
+});
+
+test("publicMePayload preserves legacy LINE fields and adds email/provider metadata", async () => {
+  const pool = makePool({
+    identities: [{ provider: "line", provider_subject: "u1", customer_sub: "line:u1" }],
+    profiles: [{ sub: "line:u1", phone: "081", address: "Bangkok", maps_url: "https://maps.example", email: "line@example.com", email_verified: true }],
+  });
+  const data = await customerAuth.publicMePayload({
+    pool,
+    payload: { sub: "line:u1", name: "Line User", picture: "pic", provider: "line" },
+  });
+  assert.equal(data.logged_in, true);
+  assert.deepEqual(data.user, {
+    name: "Line User",
+    picture: "pic",
+    provider: "line",
+    email: "line@example.com",
+    email_verified: true,
+    linked_providers: ["line"],
+  });
+  assert.deepEqual(data.profile, {
+    phone: "081",
+    address: "Bangkok",
+    maps_url: "https://maps.example",
+    email: "line@example.com",
+    email_verified: true,
+  });
+  assert.equal(data.provider, "line");
+  assert.deepEqual(data.linked_providers, ["line"]);
+});
+
+test("publicMePayload supports Google session and LINE plus Google linked session", async () => {
+  const pool = makePool({
+    identities: [
+      { provider: "google", provider_subject: "g1", customer_sub: "google:g1" },
+      { provider: "line", provider_subject: "u1", customer_sub: "google:g1" },
+    ],
+    profiles: [{ sub: "google:g1", phone: "", address: "", maps_url: "", email: "g@example.com", email_verified: true }],
+  });
+  const data = await customerAuth.publicMePayload({
+    pool,
+    payload: { sub: "google:g1", name: "Google User", picture: "", provider: "google" },
+  });
+  assert.equal(data.user.email, "g@example.com");
+  assert.equal(data.user.email_verified, true);
+  assert.deepEqual(data.linked_providers, ["google", "line"]);
+  assert.equal(data.profile.email, "g@example.com");
+});
+
+test("publicMePayload falls back to old response when identity schema is unavailable", async () => {
+  const pool = makePool({
+    profiles: [{ sub: "line:u1", phone: "081", address: "Bangkok", maps_url: "map" }],
+  });
+  const originalQuery = pool.query;
+  pool.query = async (sql, params) => {
+    if (/customer_identities/.test(sql) || /SELECT email, email_verified/.test(sql)) throw new Error("schema missing");
+    return originalQuery.call(pool, sql, params);
+  };
+  const data = await customerAuth.publicMePayload({
+    pool,
+    payload: { sub: "line:u1", name: "Legacy", picture: "pic", provider: "line" },
+  });
+  assert.deepEqual(data, {
+    logged_in: true,
+    user: { name: "Legacy", picture: "pic", provider: "line" },
+    profile: { phone: "081", address: "Bangkok", maps_url: "map" },
+  });
 });
 
 test("Google verifier uses official OAuth2Client abstraction with n/e JWKS hidden behind library", async () => {

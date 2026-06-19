@@ -8,6 +8,7 @@ const SESSION_COOKIE = "cwf_token";
 const SESSION_MAX_AGE_SEC = 7 * 24 * 60 * 60;
 const OAUTH_MAX_AGE_MS = 10 * 60 * 1000;
 const OAUTH_MAX_AGE_SEC = OAUTH_MAX_AGE_MS / 1000;
+const DEFAULT_OAUTH_STORE_LIMIT = 5000;
 const LINE_STATE_COOKIE = "cwf_oauth_line";
 const GOOGLE_STATE_COOKIE = "cwf_oauth_google";
 const CUSTOMER_ROUTE_ALLOWLIST = [
@@ -157,20 +158,47 @@ function baseProviderConfig(env = process.env) {
   };
 }
 
-function createMemoryOAuthStore(nowFn = () => Date.now()) {
+function truthyEnv(value) {
+  return /^(1|true|yes|on)$/i.test(clean(value));
+}
+
+function createMemoryOAuthStore(nowFn = () => Date.now(), opts = {}) {
   const map = new Map();
+  const limit = Math.max(1, Math.floor(Number(opts.maxEntries || DEFAULT_OAUTH_STORE_LIMIT)));
+  function sweepExpired(now = nowFn()) {
+    for (const [key, ctx] of map.entries()) {
+      if (Number(ctx.expiresAt || 0) <= now) map.delete(key);
+    }
+  }
+  function enforceLimit() {
+    sweepExpired();
+    while (map.size > limit) {
+      const oldest = map.keys().next();
+      if (oldest.done) break;
+      map.delete(oldest.value);
+    }
+  }
   return {
     put(ctx) {
+      const now = nowFn();
+      sweepExpired(now);
       const id = randomUrlToken(32);
-      map.set(id, { ...ctx, stateId: id, createdAt: nowFn(), expiresAt: nowFn() + OAUTH_MAX_AGE_MS });
+      map.set(id, { ...ctx, stateId: id, createdAt: now, expiresAt: now + OAUTH_MAX_AGE_MS });
+      enforceLimit();
       return id;
     },
     consume(id) {
+      const now = nowFn();
       const key = clean(id);
       const ctx = map.get(key);
+      if (ctx && Number(ctx.expiresAt || 0) <= now) {
+        map.delete(key);
+        sweepExpired(now);
+        return { ok: false, reason: "expired_state" };
+      }
+      sweepExpired(now);
       if (!ctx) return { ok: false, reason: "missing_state" };
       map.delete(key);
-      if (Number(ctx.expiresAt || 0) < nowFn()) return { ok: false, reason: "expired_state" };
       return { ok: true, ctx };
     },
     peek(id) {
@@ -179,6 +207,11 @@ function createMemoryOAuthStore(nowFn = () => Date.now()) {
     clear() {
       map.clear();
     },
+    size() {
+      sweepExpired();
+      return map.size;
+    },
+    limit,
     _map: map,
   };
 }
@@ -268,6 +301,69 @@ async function linkedProviders(pool, customerSub) {
   return (r.rows || []).map((row) => row.provider).filter(Boolean);
 }
 
+async function linkedProvidersSafe(pool, customerSub) {
+  try {
+    return await linkedProviders(pool, customerSub);
+  } catch (_) {
+    return [];
+  }
+}
+
+async function publicMePayload({ pool, payload }) {
+  const sub = clean(payload?.sub);
+  const user = {
+    name: clean(payload?.name),
+    picture: clean(payload?.picture),
+    provider: clean(payload?.provider || "line"),
+  };
+  if (!sub) return { logged_in: true, user, profile: null };
+
+  let profile = null;
+  try {
+    const r = await pool.query(
+      `SELECT phone, address, maps_url FROM public.customer_profiles WHERE sub=$1 LIMIT 1`,
+      [sub]
+    );
+    const row = r.rows && r.rows[0] ? r.rows[0] : null;
+    if (row) {
+      profile = {
+        phone: row.phone || "",
+        address: row.address || "",
+        maps_url: row.maps_url || "",
+      };
+    }
+  } catch (_) {
+    return { logged_in: true, user, profile: null };
+  }
+
+  const response = { logged_in: true, user, profile };
+  try {
+    const enriched = await pool.query(
+      `SELECT email, email_verified FROM public.customer_profiles WHERE sub=$1 LIMIT 1`,
+      [sub]
+    );
+    const row = enriched.rows && enriched.rows[0] ? enriched.rows[0] : {};
+    const providers = await linkedProvidersSafe(pool, sub);
+    const linked = providers.length
+      ? providers
+      : (Array.isArray(payload?.linked_providers) ? payload.linked_providers : [payload?.provider].filter(Boolean));
+    const email = clean(row.email || payload?.email);
+    const emailVerified = !!(row.email_verified || payload?.email_verified);
+    response.user = {
+      ...response.user,
+      email,
+      email_verified: emailVerified,
+      linked_providers: linked,
+    };
+    response.provider = response.user.provider;
+    response.linked_providers = linked;
+    response.profile = response.profile ? { ...response.profile, email, email_verified: emailVerified } : null;
+  } catch (_) {
+    // Keep the legacy response shape when the optional identity schema is not deployed yet.
+  }
+  return response;
+}
+
 async function ensureProfile(pool, identity) {
   await pool.query(
     `INSERT INTO public.customer_profiles
@@ -317,19 +413,20 @@ async function upsertIdentity(pool, identity) {
   );
 }
 
-async function resolveCustomerForIdentity(pool, identity, loggedInCustomer) {
+async function resolveCustomerForIdentity(pool, identity, loggedInCustomer, mode = "login") {
   const existing = await pool.query(
     `SELECT customer_sub FROM public.customer_identities WHERE provider=$1 AND provider_subject=$2 LIMIT 1`,
     [identity.provider, identity.provider_subject]
   );
   const existingSub = existing.rows?.[0]?.customer_sub || "";
+  if (mode === "link") {
+    if (!loggedInCustomer?.sub) return { error: "LINK_SESSION_MISSING" };
+    if (existingSub && existingSub !== loggedInCustomer.sub) return { error: "PROVIDER_ALREADY_LINKED", customerSub: existingSub };
+    return { customerSub: loggedInCustomer.sub, mode: existingSub ? "already_linked_to_session" : "linked_to_session" };
+  }
   if (existingSub) {
-    if (loggedInCustomer?.sub && loggedInCustomer.sub !== existingSub) {
-      return { error: "PROVIDER_ALREADY_LINKED", customerSub: existingSub };
-    }
     return { customerSub: existingSub, mode: "existing_identity" };
   }
-  if (loggedInCustomer?.sub) return { customerSub: loggedInCustomer.sub, mode: "linked_to_session" };
   if (identity.provider === "line") {
     const legacySub = `line:${identity.provider_subject}`;
     const legacy = await findProfile(pool, legacySub);
@@ -348,8 +445,8 @@ async function resolveCustomerForIdentity(pool, identity, loggedInCustomer) {
   return { customerSub: `${identity.provider}:${identity.provider_subject}`, mode: "new_customer" };
 }
 
-async function completeProviderLogin({ pool, identity, loggedInCustomer }) {
-  const resolved = await resolveCustomerForIdentity(pool, identity, loggedInCustomer);
+async function completeProviderLogin({ pool, identity, loggedInCustomer, mode = "login" }) {
+  const resolved = await resolveCustomerForIdentity(pool, identity, loggedInCustomer, mode);
   if (resolved.error) return resolved;
   const fullIdentity = { ...identity, customer_sub: resolved.customerSub };
   await upsertIdentity(pool, fullIdentity);
@@ -458,6 +555,14 @@ function authSuccessRedirect(provider, returnTo, linked) {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
+function flowMode(value) {
+  return clean(value) === "link" ? "link" : "login";
+}
+
+function lineScope(env = process.env) {
+  return truthyEnv(env.LINE_EMAIL_SCOPE_ENABLED) ? "openid profile email" : "openid profile";
+}
+
 function getStore(deps) {
   return deps.oauthStore || defaultOAuthStore;
 }
@@ -467,18 +572,26 @@ function createStartHandler(provider, deps) {
     const availability = await providerAvailability({ pool: deps.pool, req, env: deps.env });
     const providerCfg = availability[provider];
     const returnTo = safeReturnTo(req.query?.returnTo || req.query?.next);
+    const mode = flowMode(req.query?.mode);
     if (!providerCfg.available) return res.redirect(authErrorRedirect(provider, "provider_unavailable", returnTo));
+    const current = currentCustomer(req, availability.jwtSecret);
+    if (mode === "link") {
+      if (!current?.sub) return res.redirect(authErrorRedirect(provider, "link_session_missing", returnTo));
+      if (clean(req.query?.confirm) !== "1") return res.redirect(authErrorRedirect(provider, "link_confirmation_required", returnTo));
+      const providers = await linkedProvidersSafe(deps.pool, current.sub);
+      if (providers.includes(provider)) return res.redirect(authErrorRedirect(provider, "account_already_linked", returnTo));
+    }
     const verifier = randomUrlToken(48);
     const state = randomUrlToken(32);
     const nonce = randomUrlToken(32);
-    const current = currentCustomer(req, availability.jwtSecret);
     const stateId = getStore(deps).put({
       provider,
+      mode,
       state,
       nonce,
       codeVerifier: verifier,
       returnTo,
-      linkCustomerSub: current?.sub || "",
+      linkCustomerSub: mode === "link" ? current?.sub || "" : "",
     });
     const redirectUri = callbackUrl(req, provider, deps.env);
     setCookie(res, provider === "line" ? LINE_STATE_COOKIE : GOOGLE_STATE_COOKIE, stateId, {
@@ -490,7 +603,7 @@ function createStartHandler(provider, deps) {
     authorize.searchParams.set("client_id", providerCfg.clientId);
     authorize.searchParams.set("redirect_uri", redirectUri);
     authorize.searchParams.set("state", state);
-    authorize.searchParams.set("scope", provider === "line" ? "openid profile email" : "openid email profile");
+    authorize.searchParams.set("scope", provider === "line" ? lineScope(deps.env) : "openid email profile");
     authorize.searchParams.set("nonce", nonce);
     authorize.searchParams.set("code_challenge", sha256Base64Url(verifier));
     authorize.searchParams.set("code_challenge_method", "S256");
@@ -519,7 +632,7 @@ function createCallbackHandler(provider, deps) {
       if (!providerCfg.available) return res.redirect(authErrorRedirect(provider, "provider_unavailable", returnTo));
 
       let loggedInCustomer = null;
-      if (ctx.linkCustomerSub) {
+      if (ctx.mode === "link") {
         const current = currentCustomer(req, availability.jwtSecret);
         if (!current?.sub) return res.redirect(authErrorRedirect(provider, "link_session_missing", returnTo));
         if (current.sub !== ctx.linkCustomerSub) return res.redirect(authErrorRedirect(provider, "link_session_changed", returnTo));
@@ -537,7 +650,7 @@ function createCallbackHandler(provider, deps) {
         ? await (deps.verifyLineIdToken || verifyLineIdToken)({ fetchImpl, idToken, clientId: providerCfg.clientId, nonce: ctx.nonce })
         : await (deps.verifyGoogleIdToken || verifyGoogleIdToken)({ idToken, clientId: providerCfg.clientId, nonce: ctx.nonce, oauthClient: deps.googleOAuthClient });
       if (!identity.provider_subject) return res.redirect(authErrorRedirect(provider, "missing_provider_subject", returnTo));
-      const result = await completeProviderLogin({ pool: deps.pool, identity, loggedInCustomer });
+      const result = await completeProviderLogin({ pool: deps.pool, identity, loggedInCustomer, mode: ctx.mode === "link" ? "link" : "login" });
       if (result.error === "PROVIDER_ALREADY_LINKED") return res.redirect(authErrorRedirect(provider, "account_already_linked", returnTo));
       issueCustomerSession(res, result.customer, availability.jwtSecret, redirectUri.startsWith("https://") || isHttpsReq(req));
       return res.redirect(authSuccessRedirect(provider, returnTo, result.mode === "linked_to_session"));
@@ -546,30 +659,6 @@ function createCallbackHandler(provider, deps) {
       return res.redirect(authErrorRedirect(provider, "server", returnTo));
     }
   };
-}
-
-async function ensureCustomerAuthSchema(pool) {
-  await pool.query(`ALTER TABLE public.customer_profiles ADD COLUMN IF NOT EXISTS email TEXT`);
-  await pool.query(`ALTER TABLE public.customer_profiles ADD COLUMN IF NOT EXISTS email_verified BOOLEAN DEFAULT FALSE`);
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS public.customer_identities (
-      identity_id BIGSERIAL PRIMARY KEY,
-      customer_sub TEXT NOT NULL REFERENCES public.customer_profiles(sub) ON DELETE CASCADE,
-      provider TEXT NOT NULL,
-      provider_subject TEXT NOT NULL,
-      email TEXT,
-      email_verified BOOLEAN DEFAULT FALSE,
-      display_name TEXT,
-      picture_url TEXT,
-      linked_at TIMESTAMPTZ DEFAULT NOW(),
-      last_login_at TIMESTAMPTZ DEFAULT NOW(),
-      created_at TIMESTAMPTZ DEFAULT NOW(),
-      updated_at TIMESTAMPTZ DEFAULT NOW(),
-      UNIQUE(provider, provider_subject)
-    )
-  `);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_identities_customer_sub ON public.customer_identities(customer_sub)`);
-  await pool.query(`CREATE INDEX IF NOT EXISTS idx_customer_profiles_verified_email ON public.customer_profiles(lower(email)) WHERE email_verified=TRUE`);
 }
 
 function createCustomerAuthRoutes(deps) {
@@ -581,12 +670,24 @@ function createCustomerAuthRoutes(deps) {
   router.get("/public/auth/config", async (req, res) => {
     const availability = await providerAvailability({ pool: deps.pool, req, env: deps.env });
     const returnTo = safeReturnTo(req.query?.returnTo);
+    const current = currentCustomer(req, availability.jwtSecret);
+    const linked = current?.sub ? await linkedProvidersSafe(deps.pool, current.sub) : [];
     res.json({
       ok: true,
       schema_ready: availability.schemaReady,
+      logged_in: !!current?.sub,
+      linked_providers: linked,
       providers: {
-        line: { available: availability.line.available, start_url: `/auth/line/start?returnTo=${encodeURIComponent(returnTo)}` },
-        google: { available: availability.google.available, start_url: `/auth/google/start?returnTo=${encodeURIComponent(returnTo)}` },
+        line: {
+          available: availability.line.available,
+          linked: linked.includes("line"),
+          start_url: `/auth/line/start?mode=${current?.sub ? "link" : "login"}&returnTo=${encodeURIComponent(returnTo)}`,
+        },
+        google: {
+          available: availability.google.available,
+          linked: linked.includes("google"),
+          start_url: `/auth/google/start?mode=${current?.sub ? "link" : "login"}&returnTo=${encodeURIComponent(returnTo)}`,
+        },
       },
     });
   });
@@ -613,11 +714,12 @@ module.exports = {
   jwtVerify,
   sha256Base64Url,
   createMemoryOAuthStore,
+  lineScope,
   verifyGoogleIdToken,
   googleIdentityFromPayload,
   verifyLineIdToken,
+  publicMePayload,
   resolveCustomerForIdentity,
   completeProviderLogin,
-  ensureCustomerAuthSchema,
   createCustomerAuthRoutes,
 };

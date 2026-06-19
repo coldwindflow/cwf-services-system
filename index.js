@@ -1004,7 +1004,7 @@ app.post('/auth/password-reset/request', async (req, res) => {
   }
 });
 
-app.get('/public/me', (req, res) => {
+app.get('/public/me', async (req, res) => {
   try {
     const jwtSecret = getJwtSecret();
     if (!jwtSecret) return res.json({ logged_in: false });
@@ -1012,33 +1012,7 @@ app.get('/public/me', (req, res) => {
     if (!token) return res.json({ logged_in: false });
     const payload = jwtVerify(token, jwtSecret);
     if (!payload) return res.json({ logged_in: false });
-    // attach customer profile (address/phone/maps) if exists
-    const sub = String(payload.sub || '').trim();
-    const user = {
-      name: String(payload.name || ''),
-      picture: String(payload.picture || ''),
-      provider: String(payload.provider || 'line'),
-    };
-    if (!sub) return res.json({ logged_in: true, user, profile: null });
-
-    pool.query(
-      `SELECT phone, address, maps_url FROM public.customer_profiles WHERE sub=$1 LIMIT 1`,
-      [sub]
-    ).then((r) => {
-      const row = r.rows && r.rows[0] ? r.rows[0] : null;
-      return res.json({
-        logged_in: true,
-        user,
-        profile: row ? {
-          phone: row.phone || '',
-          address: row.address || '',
-          maps_url: row.maps_url || ''
-        } : null
-      });
-    }).catch(() => {
-      return res.json({ logged_in: true, user, profile: null });
-    });
-    return;
+    return res.json(await customerAuth.publicMePayload({ pool, payload }));
   } catch (_) {
     return res.json({ logged_in: false });
   }

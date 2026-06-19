@@ -44,19 +44,25 @@
     const isLine = provider === "line";
     const item = config && config.providers && config.providers[provider] ? config.providers[provider] : {};
     const available = !!item.available;
-    const label = isLine ? "เข้าสู่ระบบด้วย LINE" : "เข้าสู่ระบบด้วย Google";
+    const linked = !!item.linked;
+    const linking = !!(config && config.logged_in);
+    const label = linked
+      ? (isLine ? "เชื่อมบัญชี LINE แล้ว" : "เชื่อมบัญชี Google แล้ว")
+      : linking
+        ? (isLine ? "เชื่อมบัญชี LINE" : "เชื่อมบัญชี Google")
+        : (isLine ? "เข้าสู่ระบบด้วย LINE" : "เข้าสู่ระบบด้วย Google");
     const icon = isLine ? LINE_ICON : GOOGLE_ICON;
     const cls = isLine ? "line-btn" : "google-btn";
     const href = available ? item.start_url : "";
+    const disabled = !available || linked;
     return `
-      <button class="provider-btn ${cls}" type="button" data-auth-provider="${provider}" ${available ? "" : "disabled aria-disabled=\"true\""} data-auth-url="${esc(href)}">
+      <button class="provider-btn ${cls}" type="button" data-auth-provider="${provider}" data-auth-mode="${linking ? "link" : "login"}" ${disabled ? "disabled aria-disabled=\"true\"" : ""} data-auth-url="${esc(href)}">
         <span class="prov-ico">${icon}</span>
         <span class="prov-label">${label}</span>
-        <span class="prov-soon">${available ? "พร้อมใช้งาน" : "ยังไม่พร้อม"}</span>
+        <span class="prov-soon">${linked ? "เชื่อมแล้ว" : available ? "พร้อมใช้งาน" : "ยังไม่พร้อม"}</span>
       </button>
     `;
   }
-
   function renderProviderButtons() {
     const config = root.state.authConfig;
     if (!config) return root.utils.stateBox("loading", "กำลังตรวจสอบช่องทางเข้าสู่ระบบ...");
@@ -131,8 +137,16 @@
     if (!container) return;
     container.querySelectorAll("[data-auth-provider]").forEach((button) => {
       button.addEventListener("click", () => {
-        const url = button.getAttribute("data-auth-url");
+        let url = button.getAttribute("data-auth-url");
         if (!url || button.disabled) return;
+        if (button.getAttribute("data-auth-mode") === "link") {
+          const providerName = (button.getAttribute("data-auth-provider") || "").toUpperCase();
+          if (!window.confirm(`ยืนยันการเชื่อมบัญชี ${providerName} กับบัญชีลูกค้านี้?`)) return;
+          const next = new URL(url, window.location.origin);
+          next.searchParams.set("mode", "link");
+          next.searchParams.set("confirm", "1");
+          url = `${next.pathname}${next.search}${next.hash}`;
+        }
         button.disabled = true;
         button.querySelector(".prov-soon").textContent = "กำลังพาไป...";
         window.location.href = url;
