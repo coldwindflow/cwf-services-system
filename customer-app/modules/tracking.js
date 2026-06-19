@@ -547,28 +547,66 @@
     return current ? "current" : "pending";
   }
 
-  function statusCopy(data, mode) {
+  function hasPhotoContent(data) {
+    return photoList(data).length > 0 || !!clean(data.technician_note);
+  }
+
+  function jobPhase(data, mode) {
     const status = clean(data.job_status);
-    const assigned = hasAssignedTech(data);
-    const done = isDone(data);
-    const traveling = clean(data.travel_started_at);
-    const started = clean(data.started_at) || clean(data.checkin_at);
     const noTech = status.includes("ไม่พบช่าง") || status.includes("ตีกลับ");
+    if (isDone(data)) return "completed";
+    if (mode === "urgent" && noTech) return "urgent_no_tech";
+    if (clean(data.started_at)) return "started";
+    if (clean(data.checkin_at)) return "checked_in";
+    if (clean(data.travel_started_at)) return "traveling";
+    if (hasAssignedTech(data) || status.includes("รอดำเนินการ")) return "assigned";
+    return mode === "urgent" ? "urgent_waiting" : "waiting";
+  }
 
-    if (mode === "urgent") {
-      if (done) return "งานเสร็จแล้ว";
-      if (started) return "กำลังให้บริการ";
-      if (traveling) return "ช่างกำลังเดินทาง";
-      if (assigned) return "ช่างรับงานแล้ว";
-      if (noTech) return "แอดมินกำลังช่วยตรวจสอบคิวด่วน";
-      return "ส่งคำขอคิวด่วนแล้ว กำลังรอช่างพาร์ทเนอร์กดรับงาน ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน";
-    }
-
-    if (done) return "งานเสร็จแล้ว";
-    if (started) return "กำลังให้บริการ";
-    if (traveling) return "ช่างกำลังเดินทาง";
-    if (assigned || status.includes("รอดำเนินการ")) return "ยืนยันคิวแล้ว";
+  function statusCopy(data, mode) {
+    const phase = jobPhase(data, mode);
+    if (phase === "completed") return "งานเสร็จแล้ว";
+    if (phase === "started") return "กำลังให้บริการ";
+    if (phase === "checked_in") return "ช่างถึงหน้างานแล้ว";
+    if (phase === "traveling") return "ช่างกำลังเดินทาง";
+    if (phase === "assigned") return mode === "urgent" ? "ช่างรับงานแล้ว" : "ยืนยันคิวแล้ว";
+    if (phase === "urgent_no_tech") return "แอดมินกำลังช่วยตรวจสอบคิวด่วน";
+    if (phase === "urgent_waiting") return "ส่งคำขอคิวด่วนแล้ว รอช่างรับงานหรือแอดมินยืนยัน";
     return "รับคำขอจองแล้ว รอแอดมินตรวจสอบคิว";
+  }
+
+  function statusDetailCopy(data, mode) {
+    const phase = jobPhase(data, mode);
+    const hasPhotos = hasPhotoContent(data);
+    if (phase === "completed") {
+      return hasPhotos
+        ? "งานบริการเสร็จสิ้นแล้ว สามารถดูรูปงาน เอกสาร การรับประกัน และรีวิวได้"
+        : "งานบริการเสร็จสิ้นแล้ว สามารถดูเอกสาร การรับประกัน และการให้คะแนนได้";
+    }
+    if (phase === "started") return "ทีมช่างกำลังให้บริการ";
+    if (phase === "checked_in") return "ทีมช่างถึงหน้างานแล้ว";
+    if (phase === "traveling") return "ช่างกำลังเดินทางไปยังสถานที่นัดหมาย";
+    if (phase === "assigned") return "มีทีมช่างรับผิดชอบงานนี้แล้ว";
+    if (phase === "urgent_no_tech") return "แอดมินกำลังช่วยตรวจสอบคิวด่วน คำขอยังไม่ถือว่ายืนยันงาน";
+    if (phase === "urgent_waiting") return "กำลังรอช่างรับงานหรือแอดมินยืนยัน คำขอยังไม่ถือว่ายืนยันงาน";
+    return "แอดมินจะตรวจสอบคิวและมอบหมายทีมก่อนถึงเวลานัด";
+  }
+
+  function nextActionCopy(data, mode) {
+    const phase = jobPhase(data, mode);
+    const hasPhotos = hasPhotoContent(data);
+    if (phase === "completed") {
+      return hasPhotos
+        ? "ดูรูปงาน เอกสาร การรับประกัน และรีวิวงานนี้"
+        : "ดูเอกสาร การรับประกัน และให้คะแนนงานนี้";
+    }
+    if (phase === "started") return "รอทีมช่างทำงานให้เสร็จ หลังจบงานจะเห็นเอกสารหลังบริการ";
+    if (phase === "checked_in") return "เตรียมพื้นที่หน้างานให้พร้อมสำหรับเริ่มบริการ";
+    if (phase === "traveling") return "รอรับทีมช่างที่กำลังเดินทางไปหน้างาน";
+    if (phase === "assigned") return "รอถึงเวลานัด หรือเปิดแผนที่หากต้องการดูสถานที่งาน";
+    if (phase === "urgent_no_tech") return "รอแอดมินช่วยตรวจสอบ หรือเปลี่ยนเป็นจองล่วงหน้าถ้าไม่รีบด่วน";
+    if (phase === "urgent_waiting") return "รอช่างรับงาน หรือให้แอดมินช่วยยืนยันคิวด่วน";
+    return "รอแอดมินยืนยันคิว หรือติดต่อ CWF หากต้องการเลื่อนนัด";
   }
 
   function renderPassport(data) {
@@ -582,11 +620,8 @@
     const drainAlertMonths = hasDrainRisk(data) ? 4 : 6;
     const drainScore = done ? healthScore(months, drainAlertMonths) : null;
     const warranty = warrantyInfo(data, completedAt);
-    const photos = photoList(data);
     const units = unitList(data);
     const unitMeasurementPhotos = units.reduce((sum, unit) => sum + phaseCount(unit.photos || [], "pressure") + phaseCount(unit.photos || [], "current") + phaseCount(unit.photos || [], "temp"), 0);
-    const beforeCount = phaseCount(photos, "before");
-    const afterCount = phaseCount(photos, "after");
     const next = recommendation(data, coilScore, drainScore, profile, done);
     const completionText = done ? "งานเสร็จสิ้นแล้ว" : "รอข้อมูลงานเสร็จสิ้น";
     const serviceDateText = date ? root.utils.formatDateTime(date.toISOString()) : "-";
@@ -606,8 +641,8 @@
     return `
       <section class="passport-shell">
         <div class="passport-hero">
-          <span class="passport-kicker">AC Health Passport</span>
-          <h2>CWF AC Health Passport</h2>
+          <span class="passport-kicker">สุขภาพแอร์</span>
+          <h2>รายงานสุขภาพแอร์ CWF</h2>
           <p>สมุดสุขภาพแอร์จากงานบริการ Coldwindflow</p>
         </div>
         <div class="passport-grid">
@@ -618,7 +653,7 @@
             </div>
             <p class="passport-lead">รายงานสุขภาพแอร์จากงานบริการล่าสุด</p>
             <div class="passport-data">
-              <div><b>Booking</b><span>${esc(data.booking_code || "-")}</span></div>
+              <div><b>ข้อมูลงาน</b><span>${esc(data.booking_code || "-")}</span></div>
               <div><b>สถานะ</b><span>${esc(data.job_status || "-")}</span></div>
               <div><b>บริการ</b><span>${esc(serviceSummary(data))}</span></div>
               <div><b>วันที่บริการ</b><span>${esc(serviceDateText)}</span></div>
@@ -701,15 +736,6 @@
 
           ${renderUnitPassportCards(data, units, { coilScore, drainScore, drainRisk: hasDrainRisk(data), healthEstimateText, drainEstimateText })}
 
-          <article class="passport-card passport-photo-card">
-            <div class="passport-card-head">
-              <span>${units.length ? "Photo Summary" : "Job Photos"}</span>
-              <strong>${photos.length} รูป</strong>
-            </div>
-            <h3>${units.length ? "มีข้อมูลแยกรายเครื่องใน Passport" : "รูปงานรวมของใบงานนี้"}</h3>
-            <p>ก่อนทำ ${beforeCount} รูป · หลังทำ ${afterCount} รูป · รวม ${photos.length} รูป</p>
-            <small>${units.length ? "รูปเต็มของใบงานยังแสดงในส่วนรูปงานเดิมด้านล่าง" : "ยังไม่มีข้อมูลแยกรายเครื่องในระบบ จึงไม่แสดงเป็นรูปประจำเครื่อง"}</small>
-          </article>
         </div>
       </section>
     `;
@@ -852,6 +878,60 @@
     `;
   }
 
+  function renderTrackingViewButton(id, label, meta, active) {
+    return `
+      <button
+        class="tracking-view-tab ${active ? "is-active" : ""}"
+        type="button"
+        data-tracking-view="${esc(id)}"
+        aria-selected="${active ? "true" : "false"}">
+        <span>${esc(label)}</span>
+        <small>${esc(meta)}</small>
+      </button>
+    `;
+  }
+
+  function renderTrackingPanel(id, content, active) {
+    return `
+      <section
+        class="tracking-view-panel ${active ? "is-active" : ""}"
+        data-tracking-panel="${esc(id)}"
+        ${active ? "" : "hidden"}>
+        ${content}
+      </section>
+    `;
+  }
+
+  function renderAftercare(data) {
+    const content = [
+      renderReceipt(data),
+      renderReview(data),
+      renderWarranty(data),
+    ].filter(Boolean).join("");
+    return content || root.utils.stateBox("", "รายละเอียดหลังบริการจะแสดงหลังงานเสร็จ");
+  }
+
+  function renderJobDetails(data, photos, maps, trackingKey) {
+    return `
+      <div class="data-list tracking-summary-list">
+        <div class="data-row"><strong>รหัสติดตาม</strong><span class="muted">${esc(trackingKey || "-")}</span></div>
+        <div class="data-row"><strong>นัดหมาย</strong><span class="muted">${root.utils.formatDateTime(data.appointment_datetime)}</span></div>
+        <div class="data-row"><strong>บริการ</strong><span class="muted">${esc(serviceSummary(data))}</span></div>
+        <div class="data-row"><strong>ราคาโดยประมาณ</strong><span class="muted">${esc(money(data.job_price || data.base_total))}</span></div>
+        <div class="data-row"><strong>ระยะเวลา</strong><span class="muted">${data.duration_min ? `${Number(data.duration_min)} นาที` : "-"}</span></div>
+        <div class="data-row"><strong>ที่อยู่</strong><span class="muted">${esc(data.address_text || "-")}</span></div>
+        ${data.job_zone ? `<div class="data-row"><strong>พื้นที่</strong><span class="muted">${esc(data.job_zone)}</span></div>` : ""}
+        ${maps ? `<div class="data-row"><strong>แผนที่</strong><span><a class="mini-link" href="${esc(maps)}" target="_blank" rel="noopener">นำทางไปหน้างาน</a></span></div>` : ""}
+        <div class="data-row"><strong>หลังจบงาน</strong><span class="muted">รูปงาน ${photos.length} รายการ ${data.receipt_url ? "และมีเอกสารหลังบริการ" : ""}</span></div>
+      </div>
+    `;
+  }
+
+  function renderPhotoView(data) {
+    const content = [renderPhotos(data), renderTechnicianNote(data)].filter(Boolean).join("");
+    return content || root.utils.stateBox("", "รูปงานจะแสดงหลังช่างอัปโหลดและงานเสร็จ");
+  }
+
   function renderTrackingResult() {
     const state = root.state.tracking;
     if (state.status === "idle") return root.utils.stateBox("", "กรอกเลขงานหรือรหัสติดตามเพื่อดูสถานะจากระบบ");
@@ -863,26 +943,24 @@
     const photos = photoList(data);
     const maps = mapUrl(data);
     const trackingKey = data.booking_token || data.booking_code || "";
-    return `
-      <div class="tracking-result-card">
-        <div class="tracking-topline">
-          <span class="mode-badge is-${mode}">${mode === "urgent" ? "คิวด่วน" : "จองล่วงหน้า"}</span>
-          <div class="tracking-code-pill">${esc(data.booking_code || "ไม่พบเลขงาน")}</div>
-        </div>
+    const done = isDone(data);
+    const units = unitList(data);
+    const appointmentText = data.appointment_datetime ? root.utils.formatDateTime(data.appointment_datetime) : "-";
+    const overview = `
+      <div class="tracking-premium-overview">
         <div class="status-hero is-${mode}">
           <strong>${esc(statusCopy(data, mode))}</strong>
-          <span>${mode === "urgent" ? "คิวด่วนจะยืนยันเมื่อมีช่างรับงานหรือแอดมินยืนยันเท่านั้น" : "แอดมินจะตรวจสอบคิวและมอบหมายทีมก่อนถึงเวลานัด"}</span>
+          <span>${esc(statusDetailCopy(data, mode))}</span>
         </div>
-        <div class="data-list">
-          <div class="data-row"><strong>รหัสติดตาม</strong><span class="muted">${esc(trackingKey || "-")}</span></div>
-          <div class="data-row"><strong>นัดหมาย</strong><span class="muted">${root.utils.formatDateTime(data.appointment_datetime)}</span></div>
-          <div class="data-row"><strong>บริการ</strong><span class="muted">${esc(serviceSummary(data))}</span></div>
-          <div class="data-row"><strong>ราคาโดยประมาณ</strong><span class="muted">${esc(money(data.job_price || data.base_total))}</span></div>
-          <div class="data-row"><strong>ระยะเวลา</strong><span class="muted">${data.duration_min ? `${Number(data.duration_min)} นาที` : "-"}</span></div>
-          <div class="data-row"><strong>ที่อยู่</strong><span class="muted">${esc(data.address_text || "-")}</span></div>
-          ${data.job_zone ? `<div class="data-row"><strong>พื้นที่</strong><span class="muted">${esc(data.job_zone)}</span></div>` : ""}
-          ${maps ? `<div class="data-row"><strong>แผนที่</strong><span><a class="mini-link" href="${esc(maps)}" target="_blank" rel="noopener">นำทางไปหน้างาน</a></span></div>` : ""}
-          <div class="data-row"><strong>หลังจบงาน</strong><span class="muted">รูปงาน ${photos.length} รายการ ${data.receipt_url ? "และมีเอกสารหลังบริการ" : ""}</span></div>
+        <div class="tracking-quick-grid">
+          <div>
+            <span>นัดหมาย</span>
+            <strong>${esc(appointmentText)}</strong>
+          </div>
+          <div>
+            <span>ขั้นตอนถัดไป</span>
+            <strong>${esc(nextActionCopy(data, mode))}</strong>
+          </div>
         </div>
         ${renderTechnicianCard(data)}
         <div class="support-strip">
@@ -893,12 +971,71 @@
           ${mode === "urgent" && !hasAssignedTech(data) ? `<button class="secondary-btn" type="button" data-route="scheduled">เปลี่ยนเป็นจองล่วงหน้า</button>` : ""}
         </div>
         <p class="muted support-note">ต้องการแก้ไขเวลา เลื่อนนัด หรือยกเลิกงาน กรุณาติดต่อแอดมิน CWF</p>
-        ${renderPassport(data)}
-        ${renderTechnicianNote(data)}
-        ${renderPhotos(data)}
-        ${renderReceipt(data)}
-        ${renderReview(data)}
-        ${renderWarranty(data)}
+      </div>
+    `;
+
+    const views = [
+      {
+        id: "overview",
+        label: "สถานะ",
+        meta: mode === "urgent" ? "คิวด่วน" : "จองล่วงหน้า",
+        content: overview,
+      },
+      {
+        id: "details",
+        label: "รายละเอียด",
+        meta: "ข้อมูลงาน",
+        content: renderJobDetails(data, photos, maps, trackingKey),
+      },
+      {
+        id: "timeline",
+        label: "ไทม์ไลน์",
+        meta: done ? "เสร็จแล้ว" : "ขั้นตอนงาน",
+        content: `<div class="tracking-timeline-panel">${renderTimeline()}</div>`,
+      },
+    ];
+
+    if (done || units.length) {
+      views.push({
+        id: "passport",
+        label: "สุขภาพแอร์",
+        meta: units.length ? `${units.length} เครื่อง` : "สุขภาพแอร์",
+        content: renderPassport(data),
+      });
+    }
+
+    if (done && hasPhotoContent(data)) {
+      views.push({
+        id: "photos",
+        label: "รูปงาน",
+        meta: photos.length ? `${photos.length} รูป` : "หมายเหตุช่าง",
+        content: renderPhotoView(data),
+      });
+    }
+
+    if (done) {
+      views.push({
+        id: "aftercare",
+        label: "เอกสาร",
+        meta: "รีวิว/ประกัน",
+        content: renderAftercare(data),
+      });
+    }
+
+    const activeView = views[0].id;
+
+    return `
+      <div class="tracking-result-card">
+        <div class="tracking-topline">
+          <span class="mode-badge is-${mode}">${mode === "urgent" ? "คิวด่วน" : "จองล่วงหน้า"}</span>
+          <div class="tracking-code-pill">${esc(data.booking_code || "ไม่พบเลขงาน")}</div>
+        </div>
+        <div class="tracking-view-tabs" role="tablist" aria-label="Tracking views">
+          ${views.map((view) => renderTrackingViewButton(view.id, view.label, view.meta, view.id === activeView)).join("")}
+        </div>
+        <div class="tracking-view-stack">
+          ${views.map((view) => renderTrackingPanel(view.id, view.content, view.id === activeView)).join("")}
+        </div>
       </div>
     `;
   }
@@ -963,6 +1100,24 @@
     if (result && !result.dataset.unitTabsBound) {
       result.dataset.unitTabsBound = "1";
       result.addEventListener("click", (event) => {
+        const viewTab = event.target.closest("[data-tracking-view]");
+        if (viewTab) {
+          const id = viewTab.getAttribute("data-tracking-view");
+          const resultCard = viewTab.closest(".tracking-result-card");
+          if (!resultCard) return;
+          resultCard.querySelectorAll("[data-tracking-view]").forEach((btn) => {
+            const active = btn.getAttribute("data-tracking-view") === id;
+            btn.classList.toggle("is-active", active);
+            btn.setAttribute("aria-selected", active ? "true" : "false");
+          });
+          resultCard.querySelectorAll("[data-tracking-panel]").forEach((panel) => {
+            const active = panel.getAttribute("data-tracking-panel") === id;
+            panel.classList.toggle("is-active", active);
+            panel.hidden = !active;
+          });
+          return;
+        }
+
         const tab = event.target.closest("[data-unit-tab]");
         if (!tab) return;
         const shell = tab.closest(".passport-units-card");
@@ -1038,13 +1193,6 @@
               <h2>ผลการติดตาม</h2>
             </div>
             <div data-tracking-result>${renderTrackingResult()}</div>
-          </section>
-          <section class="card">
-            <div class="section-head">
-              <span class="section-kicker">Timeline</span>
-              <h2>ขั้นตอนถัดไป</h2>
-            </div>
-            <div data-tracking-timeline>${root.state.tracking.data ? renderTimeline() : root.utils.stateBox("", "ระบบจะแสดงขั้นตอนตามประเภทงานหลังค้นหา")}</div>
           </section>
         </section>
       `;
