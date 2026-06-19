@@ -298,7 +298,7 @@
       <div class="unit-health-row is-${tone}">
         <div class="unit-health-top">
           <span class="unit-health-title"><i aria-hidden="true"></i>${esc(metric.label)}</span>
-          <strong class="unit-status-pill">${esc(metric.value)}</strong>
+          <strong class="unit-health-value">${esc(metric.value)}</strong>
         </div>
         <div class="unit-health-meter" aria-label="${esc(metric.label)} ${esc(metric.value)}">
           <i style="width:${score}%"></i>
@@ -307,6 +307,16 @@
         ${metric.meta ? `<small class="unit-helper-text">${esc(metric.meta)}</small>` : ""}
       </div>
     `;
+  }
+
+  function overallParts(metric) {
+    const value = clean(metric && metric.value);
+    if (!value) return { score: "รอข้อมูล", label: toneLabel(metric && metric.score) };
+    const parts = value.split(/\s*[—-]\s*/).map(clean).filter(Boolean);
+    return {
+      score: parts[0] || value,
+      label: parts[1] || toneLabel(metric && metric.score),
+    };
   }
 
   function unitMetrics(data, unit, context) {
@@ -447,9 +457,9 @@
       return room || `เครื่อง ${unit.unit_no || ""}`.trim() || "เครื่อง";
     };
     return `
-      <article class="passport-card passport-units-card">
-        <div class="passport-card-head">
-          <span>Unit Passport</span>
+      <article class="passport-units-card">
+        <div class="passport-units-head">
+          <span>สุขภาพแอร์รายเครื่อง</span>
           <strong>${units.length} เครื่อง</strong>
         </div>
         <h3>แดชบอร์ดสุขภาพแยกรายเครื่อง</h3>
@@ -474,26 +484,32 @@
             const metrics = unitMetrics(data, unit, context);
             const preview = photos.slice(0, 4);
             const meta = [unit.service_type, unit.ac_type, unit.btu ? `${unit.btu} BTU` : ""].filter(Boolean).join(" · ") || "เครื่องปรับอากาศ";
+            const overall = overallParts(metrics.overall);
+            const checklistStatus = metrics.hasChecklist
+              ? (metrics.issueCount > 0 ? "ประเมินจากเช็คลิสต์" : "ระบบปกติจากเช็คลิสต์")
+              : "รอเช็คลิสต์";
             return `
               <section
                 class="passport-unit-page is-${metrics.overall.tone} ${index === 0 ? "is-active" : ""}"
                 data-unit-page="${index}"
                 role="tabpanel">
                 <div class="passport-unit-head">
-                  <div>
+                  <div class="unit-title-block">
                     <b>${esc(unit.label)}</b>
                     <span>${esc(meta)}</span>
+                    ${unit.unit_code ? `<small>${esc(unit.unit_code)}</small>` : ""}
                   </div>
-                  <strong>${esc(metrics.overall.value)}</strong>
+                  <div class="unit-score-block">
+                    <strong class="unit-score-number">${esc(overall.score)}</strong>
+                    <span class="unit-score-label">${esc(overall.label)}</span>
+                  </div>
                 </div>
                 <div class="passport-unit-dashboard">
-                  <div class="unit-overall-card">
-                    ${metricBar(metrics.overall)}
-                    <div class="unit-badges">
-                      ${unit.unit_code ? `<span>${esc(unit.unit_code)}</span>` : ""}
-                      <span>${metrics.hasChecklist ? (metrics.issueCount > 0 ? "ประเมินจากเช็คลิสต์" : "ระบบปกติจากเช็คลิสต์") : "รอเช็คลิสต์"}</span>
-                      ${metrics.issueCount > 0 ? `<span class="is-warning">พบ ${metrics.issueCount} จุดที่ควรตรวจ</span>` : ""}
-                    </div>
+                  <div class="unit-overall-summary">
+                    <span>${esc(checklistStatus)}</span>
+                    ${metrics.issueCount > 0 ? `<strong>พบ ${metrics.issueCount} จุดที่ควรตรวจ</strong>` : ""}
+                    <p>${esc(metrics.overall.detail)}</p>
+                    ${metrics.overall.meta ? `<small>${esc(metrics.overall.meta)}</small>` : ""}
                   </div>
                   <div class="unit-health-grid">
                     ${metrics.rows.map(metricBar).join("")}
