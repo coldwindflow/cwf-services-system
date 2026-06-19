@@ -852,6 +852,41 @@
     `;
   }
 
+  function renderTrackingViewButton(id, label, meta, active) {
+    return `
+      <button
+        class="tracking-view-tab ${active ? "is-active" : ""}"
+        type="button"
+        data-tracking-view="${esc(id)}"
+        aria-selected="${active ? "true" : "false"}">
+        <span>${esc(label)}</span>
+        <small>${esc(meta)}</small>
+      </button>
+    `;
+  }
+
+  function renderTrackingPanel(id, content, active) {
+    return `
+      <section
+        class="tracking-view-panel ${active ? "is-active" : ""}"
+        data-tracking-panel="${esc(id)}"
+        ${active ? "" : "hidden"}>
+        ${content}
+      </section>
+    `;
+  }
+
+  function renderAftercare(data) {
+    const content = [
+      renderTechnicianNote(data),
+      renderPhotos(data),
+      renderReceipt(data),
+      renderReview(data),
+      renderWarranty(data),
+    ].filter(Boolean).join("");
+    return content || root.utils.stateBox("", "รายละเอียดหลังบริการจะแสดงหลังงานเสร็จ");
+  }
+
   function renderTrackingResult() {
     const state = root.state.tracking;
     if (state.status === "idle") return root.utils.stateBox("", "กรอกเลขงานหรือรหัสติดตามเพื่อดูสถานะจากระบบ");
@@ -863,17 +898,16 @@
     const photos = photoList(data);
     const maps = mapUrl(data);
     const trackingKey = data.booking_token || data.booking_code || "";
-    return `
-      <div class="tracking-result-card">
-        <div class="tracking-topline">
-          <span class="mode-badge is-${mode}">${mode === "urgent" ? "คิวด่วน" : "จองล่วงหน้า"}</span>
-          <div class="tracking-code-pill">${esc(data.booking_code || "ไม่พบเลขงาน")}</div>
-        </div>
+    const done = isDone(data);
+    const units = unitList(data);
+    const activeView = "overview";
+    const overview = `
+      <div class="tracking-premium-overview">
         <div class="status-hero is-${mode}">
           <strong>${esc(statusCopy(data, mode))}</strong>
           <span>${mode === "urgent" ? "คิวด่วนจะยืนยันเมื่อมีช่างรับงานหรือแอดมินยืนยันเท่านั้น" : "แอดมินจะตรวจสอบคิวและมอบหมายทีมก่อนถึงเวลานัด"}</span>
         </div>
-        <div class="data-list">
+        <div class="data-list tracking-summary-list">
           <div class="data-row"><strong>รหัสติดตาม</strong><span class="muted">${esc(trackingKey || "-")}</span></div>
           <div class="data-row"><strong>นัดหมาย</strong><span class="muted">${root.utils.formatDateTime(data.appointment_datetime)}</span></div>
           <div class="data-row"><strong>บริการ</strong><span class="muted">${esc(serviceSummary(data))}</span></div>
@@ -893,12 +927,27 @@
           ${mode === "urgent" && !hasAssignedTech(data) ? `<button class="secondary-btn" type="button" data-route="scheduled">เปลี่ยนเป็นจองล่วงหน้า</button>` : ""}
         </div>
         <p class="muted support-note">ต้องการแก้ไขเวลา เลื่อนนัด หรือยกเลิกงาน กรุณาติดต่อแอดมิน CWF</p>
-        ${renderPassport(data)}
-        ${renderTechnicianNote(data)}
-        ${renderPhotos(data)}
-        ${renderReceipt(data)}
-        ${renderReview(data)}
-        ${renderWarranty(data)}
+      </div>
+    `;
+
+    return `
+      <div class="tracking-result-card">
+        <div class="tracking-topline">
+          <span class="mode-badge is-${mode}">${mode === "urgent" ? "คิวด่วน" : "จองล่วงหน้า"}</span>
+          <div class="tracking-code-pill">${esc(data.booking_code || "ไม่พบเลขงาน")}</div>
+        </div>
+        <div class="tracking-view-tabs" role="tablist" aria-label="Tracking views">
+          ${renderTrackingViewButton("overview", "สถานะ", mode === "urgent" ? "คิวด่วน" : "จองล่วงหน้า", activeView === "overview")}
+          ${renderTrackingViewButton("timeline", "ไทม์ไลน์", done ? "เสร็จแล้ว" : "Live steps", activeView === "timeline")}
+          ${renderTrackingViewButton("passport", "Passport", units.length ? `${units.length} เครื่อง` : "AC health", activeView === "passport")}
+          ${renderTrackingViewButton("aftercare", "หลังบริการ", done ? `${photos.length} รูป` : "หลังจบงาน", activeView === "aftercare")}
+        </div>
+        <div class="tracking-view-stack">
+          ${renderTrackingPanel("overview", overview, activeView === "overview")}
+          ${renderTrackingPanel("timeline", `<div class="tracking-timeline-panel">${renderTimeline()}</div>`, activeView === "timeline")}
+          ${renderTrackingPanel("passport", renderPassport(data), activeView === "passport")}
+          ${renderTrackingPanel("aftercare", renderAftercare(data), activeView === "aftercare")}
+        </div>
       </div>
     `;
   }
@@ -963,6 +1012,24 @@
     if (result && !result.dataset.unitTabsBound) {
       result.dataset.unitTabsBound = "1";
       result.addEventListener("click", (event) => {
+        const viewTab = event.target.closest("[data-tracking-view]");
+        if (viewTab) {
+          const id = viewTab.getAttribute("data-tracking-view");
+          const resultCard = viewTab.closest(".tracking-result-card");
+          if (!resultCard) return;
+          resultCard.querySelectorAll("[data-tracking-view]").forEach((btn) => {
+            const active = btn.getAttribute("data-tracking-view") === id;
+            btn.classList.toggle("is-active", active);
+            btn.setAttribute("aria-selected", active ? "true" : "false");
+          });
+          resultCard.querySelectorAll("[data-tracking-panel]").forEach((panel) => {
+            const active = panel.getAttribute("data-tracking-panel") === id;
+            panel.classList.toggle("is-active", active);
+            panel.hidden = !active;
+          });
+          return;
+        }
+
         const tab = event.target.closest("[data-unit-tab]");
         if (!tab) return;
         const shell = tab.closest(".passport-units-card");
@@ -1038,13 +1105,6 @@
               <h2>ผลการติดตาม</h2>
             </div>
             <div data-tracking-result>${renderTrackingResult()}</div>
-          </section>
-          <section class="card">
-            <div class="section-head">
-              <span class="section-kicker">Timeline</span>
-              <h2>ขั้นตอนถัดไป</h2>
-            </div>
-            <div data-tracking-timeline>${root.state.tracking.data ? renderTimeline() : root.utils.stateBox("", "ระบบจะแสดงขั้นตอนตามประเภทงานหลังค้นหา")}</div>
           </section>
         </section>
       `;
