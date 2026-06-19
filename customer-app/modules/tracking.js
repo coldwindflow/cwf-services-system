@@ -582,11 +582,8 @@
     const drainAlertMonths = hasDrainRisk(data) ? 4 : 6;
     const drainScore = done ? healthScore(months, drainAlertMonths) : null;
     const warranty = warrantyInfo(data, completedAt);
-    const photos = photoList(data);
     const units = unitList(data);
     const unitMeasurementPhotos = units.reduce((sum, unit) => sum + phaseCount(unit.photos || [], "pressure") + phaseCount(unit.photos || [], "current") + phaseCount(unit.photos || [], "temp"), 0);
-    const beforeCount = phaseCount(photos, "before");
-    const afterCount = phaseCount(photos, "after");
     const next = recommendation(data, coilScore, drainScore, profile, done);
     const completionText = done ? "งานเสร็จสิ้นแล้ว" : "รอข้อมูลงานเสร็จสิ้น";
     const serviceDateText = date ? root.utils.formatDateTime(date.toISOString()) : "-";
@@ -701,15 +698,6 @@
 
           ${renderUnitPassportCards(data, units, { coilScore, drainScore, drainRisk: hasDrainRisk(data), healthEstimateText, drainEstimateText })}
 
-          <article class="passport-card passport-photo-card">
-            <div class="passport-card-head">
-              <span>${units.length ? "Photo Summary" : "Job Photos"}</span>
-              <strong>${photos.length} รูป</strong>
-            </div>
-            <h3>${units.length ? "มีข้อมูลแยกรายเครื่องใน Passport" : "รูปงานรวมของใบงานนี้"}</h3>
-            <p>ก่อนทำ ${beforeCount} รูป · หลังทำ ${afterCount} รูป · รวม ${photos.length} รูป</p>
-            <small>${units.length ? "รูปเต็มของใบงานยังแสดงในส่วนรูปงานเดิมด้านล่าง" : "ยังไม่มีข้อมูลแยกรายเครื่องในระบบ จึงไม่แสดงเป็นรูปประจำเครื่อง"}</small>
-          </article>
         </div>
       </section>
     `;
@@ -878,13 +866,32 @@
 
   function renderAftercare(data) {
     const content = [
-      renderTechnicianNote(data),
-      renderPhotos(data),
       renderReceipt(data),
       renderReview(data),
       renderWarranty(data),
     ].filter(Boolean).join("");
     return content || root.utils.stateBox("", "รายละเอียดหลังบริการจะแสดงหลังงานเสร็จ");
+  }
+
+  function renderJobDetails(data, photos, maps, trackingKey) {
+    return `
+      <div class="data-list tracking-summary-list">
+        <div class="data-row"><strong>รหัสติดตาม</strong><span class="muted">${esc(trackingKey || "-")}</span></div>
+        <div class="data-row"><strong>นัดหมาย</strong><span class="muted">${root.utils.formatDateTime(data.appointment_datetime)}</span></div>
+        <div class="data-row"><strong>บริการ</strong><span class="muted">${esc(serviceSummary(data))}</span></div>
+        <div class="data-row"><strong>ราคาโดยประมาณ</strong><span class="muted">${esc(money(data.job_price || data.base_total))}</span></div>
+        <div class="data-row"><strong>ระยะเวลา</strong><span class="muted">${data.duration_min ? `${Number(data.duration_min)} นาที` : "-"}</span></div>
+        <div class="data-row"><strong>ที่อยู่</strong><span class="muted">${esc(data.address_text || "-")}</span></div>
+        ${data.job_zone ? `<div class="data-row"><strong>พื้นที่</strong><span class="muted">${esc(data.job_zone)}</span></div>` : ""}
+        ${maps ? `<div class="data-row"><strong>แผนที่</strong><span><a class="mini-link" href="${esc(maps)}" target="_blank" rel="noopener">นำทางไปหน้างาน</a></span></div>` : ""}
+        <div class="data-row"><strong>หลังจบงาน</strong><span class="muted">รูปงาน ${photos.length} รายการ ${data.receipt_url ? "และมีเอกสารหลังบริการ" : ""}</span></div>
+      </div>
+    `;
+  }
+
+  function renderPhotoView(data) {
+    const content = [renderPhotos(data), renderTechnicianNote(data)].filter(Boolean).join("");
+    return content || root.utils.stateBox("", "รูปงานจะแสดงหลังช่างอัปโหลดและงานเสร็จ");
   }
 
   function renderTrackingResult() {
@@ -901,22 +908,27 @@
     const done = isDone(data);
     const units = unitList(data);
     const activeView = "overview";
+    const appointmentText = data.appointment_datetime ? root.utils.formatDateTime(data.appointment_datetime) : "-";
+    const nextAction = mode === "urgent" && !hasAssignedTech(data)
+      ? "รอช่างรับงาน หรือให้แอดมินช่วยยืนยันคิวด่วน"
+      : done
+        ? "ตรวจเอกสารหลังบริการ รูปงาน หรือให้คะแนนงานนี้"
+        : "ติดตามสถานะล่าสุด หรือโทร/LINE หา CWF หากต้องการเลื่อนนัด";
     const overview = `
       <div class="tracking-premium-overview">
         <div class="status-hero is-${mode}">
           <strong>${esc(statusCopy(data, mode))}</strong>
           <span>${mode === "urgent" ? "คิวด่วนจะยืนยันเมื่อมีช่างรับงานหรือแอดมินยืนยันเท่านั้น" : "แอดมินจะตรวจสอบคิวและมอบหมายทีมก่อนถึงเวลานัด"}</span>
         </div>
-        <div class="data-list tracking-summary-list">
-          <div class="data-row"><strong>รหัสติดตาม</strong><span class="muted">${esc(trackingKey || "-")}</span></div>
-          <div class="data-row"><strong>นัดหมาย</strong><span class="muted">${root.utils.formatDateTime(data.appointment_datetime)}</span></div>
-          <div class="data-row"><strong>บริการ</strong><span class="muted">${esc(serviceSummary(data))}</span></div>
-          <div class="data-row"><strong>ราคาโดยประมาณ</strong><span class="muted">${esc(money(data.job_price || data.base_total))}</span></div>
-          <div class="data-row"><strong>ระยะเวลา</strong><span class="muted">${data.duration_min ? `${Number(data.duration_min)} นาที` : "-"}</span></div>
-          <div class="data-row"><strong>ที่อยู่</strong><span class="muted">${esc(data.address_text || "-")}</span></div>
-          ${data.job_zone ? `<div class="data-row"><strong>พื้นที่</strong><span class="muted">${esc(data.job_zone)}</span></div>` : ""}
-          ${maps ? `<div class="data-row"><strong>แผนที่</strong><span><a class="mini-link" href="${esc(maps)}" target="_blank" rel="noopener">นำทางไปหน้างาน</a></span></div>` : ""}
-          <div class="data-row"><strong>หลังจบงาน</strong><span class="muted">รูปงาน ${photos.length} รายการ ${data.receipt_url ? "และมีเอกสารหลังบริการ" : ""}</span></div>
+        <div class="tracking-quick-grid">
+          <div>
+            <span>นัดหมาย</span>
+            <strong>${esc(appointmentText)}</strong>
+          </div>
+          <div>
+            <span>ขั้นตอนถัดไป</span>
+            <strong>${esc(nextAction)}</strong>
+          </div>
         </div>
         ${renderTechnicianCard(data)}
         <div class="support-strip">
@@ -938,14 +950,18 @@
         </div>
         <div class="tracking-view-tabs" role="tablist" aria-label="Tracking views">
           ${renderTrackingViewButton("overview", "สถานะ", mode === "urgent" ? "คิวด่วน" : "จองล่วงหน้า", activeView === "overview")}
+          ${renderTrackingViewButton("details", "รายละเอียด", data.job_zone || data.duration_min ? "ข้อมูลงาน" : "Booking", activeView === "details")}
           ${renderTrackingViewButton("timeline", "ไทม์ไลน์", done ? "เสร็จแล้ว" : "Live steps", activeView === "timeline")}
           ${renderTrackingViewButton("passport", "Passport", units.length ? `${units.length} เครื่อง` : "AC health", activeView === "passport")}
-          ${renderTrackingViewButton("aftercare", "หลังบริการ", done ? `${photos.length} รูป` : "หลังจบงาน", activeView === "aftercare")}
+          ${renderTrackingViewButton("photos", "รูปงาน", done ? `${photos.length} รูป` : "หลังจบงาน", activeView === "photos")}
+          ${renderTrackingViewButton("aftercare", "เอกสาร", done ? "รีวิว/ประกัน" : "หลังบริการ", activeView === "aftercare")}
         </div>
         <div class="tracking-view-stack">
           ${renderTrackingPanel("overview", overview, activeView === "overview")}
+          ${renderTrackingPanel("details", renderJobDetails(data, photos, maps, trackingKey), activeView === "details")}
           ${renderTrackingPanel("timeline", `<div class="tracking-timeline-panel">${renderTimeline()}</div>`, activeView === "timeline")}
           ${renderTrackingPanel("passport", renderPassport(data), activeView === "passport")}
+          ${renderTrackingPanel("photos", renderPhotoView(data), activeView === "photos")}
           ${renderTrackingPanel("aftercare", renderAftercare(data), activeView === "aftercare")}
         </div>
       </div>

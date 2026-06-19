@@ -970,7 +970,7 @@ p { margin: 0; }
 .tracking-code-pill::before { content: "#"; opacity: 0.7; }
 .tracking-view-tabs {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
   padding: 8px;
   border: 1px solid rgba(11, 75, 179, 0.12);
@@ -1041,6 +1041,30 @@ p { margin: 0; }
   display: flex;
   flex-direction: column;
   gap: 12px;
+}
+.tracking-quick-grid {
+  display: grid;
+  gap: 10px;
+}
+.tracking-quick-grid div {
+  display: grid;
+  gap: 5px;
+  padding: 13px;
+  border: 1px solid rgba(11, 75, 179, 0.1);
+  border-radius: 17px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+.tracking-quick-grid span {
+  color: #0b4bb3;
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+}
+.tracking-quick-grid strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.45;
 }
 .tracking-summary-list {
   overflow: hidden;
