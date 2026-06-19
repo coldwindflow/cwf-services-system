@@ -2368,7 +2368,7 @@ body {
 /* =====================================================================
    AUTH PANEL — premium account card + authentic provider buttons
    LINE (#06C755 + LINE bubble) and Google (white + 4-colour G).
-   Both stay disabled / "coming soon": no auth backend is touched.
+   Provider availability is driven by /public/auth/config; secrets stay server-side.
    ===================================================================== */
 .auth-card {
   background: linear-gradient(180deg, #fff, var(--bg-2));
@@ -2476,6 +2476,45 @@ body {
   border: 1px solid #e3e6ea;
 }
 .google-btn[disabled] { background: #ffffff; opacity: 0.96; }
+
+.customer-session-card {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+.customer-session-main {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.customer-session-main img {
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid var(--line);
+}
+.customer-session-main strong,
+.customer-session-main span {
+  display: block;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.customer-session-main strong {
+  color: var(--ink);
+  font-size: 16px;
+  font-weight: 800;
+}
+.customer-session-main span {
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+.auth-logout-btn {
+  width: 100%;
+}
 
 .auth-note {
   margin-top: 12px;

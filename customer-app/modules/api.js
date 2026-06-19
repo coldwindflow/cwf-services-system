@@ -57,6 +57,14 @@
       return requestJson("/public/me");
     },
 
+    async getAuthConfig(returnTo) {
+      return requestJson("/public/auth/config", { query: { returnTo } });
+    },
+
+    async logoutCustomer() {
+      return requestJson("/public/logout", { method: "POST" });
+    },
+
     async previewPricing(payload) {
       return requestJson("/public/pricing_preview", {
         method: "POST",
