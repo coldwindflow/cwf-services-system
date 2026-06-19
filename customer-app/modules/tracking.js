@@ -292,16 +292,12 @@
   }
 
   function metricBar(metric) {
-    const score = metric.score == null ? 0 : Math.max(0, Math.min(100, Number(metric.score) || 0));
     const tone = metric.tone || scoreTone(metric.score);
     return `
       <div class="unit-health-row is-${tone}">
         <div class="unit-health-top">
           <span class="unit-health-title"><i aria-hidden="true"></i>${esc(metric.label)}</span>
           <strong class="unit-health-value">${esc(metric.value)}</strong>
-        </div>
-        <div class="unit-health-meter" aria-label="${esc(metric.label)} ${esc(metric.value)}">
-          <i style="width:${score}%"></i>
         </div>
         <p>${esc(metric.detail)}</p>
         ${metric.meta ? `<small class="unit-helper-text">${esc(metric.meta)}</small>` : ""}
