@@ -65,6 +65,16 @@
       return requestJson("/public/logout", { method: "POST" });
     },
 
+    async updateProfileAddress(payload) {
+      return requestJson("/public/profile/address", {
+        method: "PATCH",
+        body: {
+          address: String((payload && payload.address) || "").trim(),
+          maps_url: String((payload && payload.maps_url) || "").trim(),
+        },
+      });
+    },
+
     async previewPricing(payload) {
       return requestJson("/public/pricing_preview", {
         method: "POST",

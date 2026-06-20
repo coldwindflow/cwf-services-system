@@ -1803,6 +1803,16 @@ p { margin: 0; }
 /* ===================== Profile ===================== */
 .guest-card { background: linear-gradient(180deg, #fff, var(--bg-2)); }
 .support-strip { display: flex; flex-direction: column; gap: 10px; }
+.profile-address-summary,
+.profile-address-form {
+  display: grid;
+  gap: 12px;
+}
+.profile-address-summary .secondary-btn,
+.profile-address-form .primary-btn,
+.profile-address-form .secondary-btn {
+  width: 100%;
+}
 
 /* ===================== Commerce home ===================== */
 .commerce-home { gap: 16px; }

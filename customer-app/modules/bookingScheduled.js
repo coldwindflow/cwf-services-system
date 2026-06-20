@@ -447,6 +447,9 @@
     // Customer submits scheduled bookings through existing /public/book only.
     // This flow always sends booking_mode="scheduled" and never starts urgent dispatch.
     render(container) {
+      root.state.ensureSavedAddressPrefill("scheduled", () => {
+        if (root.state.currentRoute === "scheduled") root.bookingScheduled.render(container);
+      });
       const d = draft();
       const s = service();
       container.innerHTML = `

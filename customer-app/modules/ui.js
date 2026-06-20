@@ -118,8 +118,9 @@
   }
 
   async function loadHomeData(container) {
+    const hadCustomer = !!root.state.customer;
     root.auth.loadCustomer(container).then(() => {
-      if (root.state.currentRoute === "home") root.router.render();
+      if (!hadCustomer && root.state.currentRoute === "home") root.router.render();
     });
     const load = async (name, fn, key) => {
       root.state.setCollection(name, { status: "loading", items: [], error: "" });

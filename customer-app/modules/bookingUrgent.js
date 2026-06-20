@@ -489,6 +489,9 @@
 
   root.bookingUrgent = {
     render(container) {
+      root.state.ensureSavedAddressPrefill("urgent", () => {
+        if (root.state.currentRoute === "urgent") root.bookingUrgent.render(container);
+      });
       root.state.setUrgentFlow({ step: "form", status: "idle", error: "", result: null });
       paint(container);
     },
