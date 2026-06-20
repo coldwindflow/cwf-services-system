@@ -130,6 +130,108 @@
     return parts.join(" / ");
   }
 
+  const commerceCategories = [
+    {
+      id: "clean",
+      route: "scheduled",
+      glyph: "sparkle",
+      title: "ล้างแอร์",
+      copy: "เลือกวิธีล้างและดูราคาประเมินจากระบบก่อนจอง",
+      draft: { service_kind: "clean", job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างธรรมดา", btu: "12000", machine_count: 1 },
+    },
+    {
+      id: "repair",
+      route: "urgent",
+      glyph: "tool",
+      title: "ซ่อม / ตรวจอาการ",
+      copy: "ส่งอาการให้ทีมช่วยประเมินและจัดคิวที่เหมาะสม",
+      draft: { service_kind: "inspect", job_type: "ซ่อม", ac_type: UNKNOWN_AC, repair_variant: "ตรวจอาการ", btu: UNKNOWN_BTU, machine_count: 1 },
+    },
+    {
+      id: "install",
+      route: "scheduled",
+      glyph: "shield",
+      title: "ติดตั้งแอร์",
+      copy: "ให้ทีมช่วยประเมินหน้างานและคิวติดตั้ง",
+      draft: { service_kind: "install", job_type: "ติดตั้ง", ac_type: UNKNOWN_AC, btu: UNKNOWN_BTU, machine_count: 1 },
+    },
+    {
+      id: "care",
+      route: "scheduled",
+      glyph: "tag",
+      title: "ดูแลตามรอบ",
+      copy: "เริ่มจากล้างมาตรฐาน แล้วเลือกจำนวนเครื่องในขั้นตอนจอง",
+      draft: { service_kind: "clean", job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างธรรมดา", btu: "12000", machine_count: 2 },
+    },
+  ];
+
+  const quickServices = [
+    {
+      id: "wall-normal",
+      route: "scheduled",
+      title: "ล้างแอร์ผนัง",
+      kicker: "ยอดนิยม",
+      copy: "เหมาะกับบ้านและคอนโดทั่วไป",
+      draft: { service_kind: "clean", job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างธรรมดา", btu: "12000", machine_count: 1 },
+      priceable: true,
+    },
+    {
+      id: "wall-premium",
+      route: "scheduled",
+      title: "ล้างพรีเมียม",
+      kicker: "ดูแลลึกขึ้น",
+      copy: "สำหรับแอร์ใช้งานหนักหรืออยากล้างละเอียดขึ้น",
+      draft: { service_kind: "clean", job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างพรีเมียม", btu: "12000", machine_count: 1 },
+      priceable: true,
+    },
+    {
+      id: "cassette",
+      route: "scheduled",
+      title: "ล้างแอร์สี่ทิศทาง",
+      kicker: "ร้านค้า / ออฟฟิศ",
+      copy: "เลือกชนิดแอร์ไว้ให้ แล้วระบบประเมินจากข้อมูลจริง",
+      draft: { service_kind: "clean", job_type: "ล้าง", ac_type: "สี่ทิศทาง", btu: "24000", machine_count: 1 },
+      priceable: true,
+    },
+    {
+      id: "urgent-inspect",
+      route: "urgent",
+      title: "แอร์ไม่เย็น / มีอาการ",
+      kicker: "คิวด่วน",
+      copy: "ส่งคำขอให้ช่างพาร์ทเนอร์หรือแอดมินช่วยตรวจสอบ ไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน",
+      draft: { service_kind: "inspect", job_type: "ซ่อม", ac_type: UNKNOWN_AC, repair_variant: "ตรวจอาการ", btu: UNKNOWN_BTU, machine_count: 1 },
+      priceable: false,
+    },
+  ];
+
+  const cleaningMethods = [
+    { title: "ล้างปกติ", copy: "ดูแลตามรอบ ใช้กับแอร์ผนังที่อาการปกติ", draft: quickServices[0].draft },
+    { title: "ล้างพรีเมียม", copy: "เพิ่มความละเอียดสำหรับแอร์ใช้งานหนัก", draft: quickServices[1].draft },
+    { title: "ล้างแบบแขวนคอยล์", copy: "ลดการถอดใหญ่ เหมาะกับงานที่ต้องดูหน้างานประกอบ", draft: { service_kind: "clean", job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างแขวนคอยล์", btu: "12000", machine_count: 1 } },
+    { title: "ตัดล้างใหญ่", copy: "งานล้างหนักเมื่อสกปรกมาก ให้ทีมประเมินก่อนยืนยัน", draft: { service_kind: "clean", job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างแบบตัดล้าง", btu: "12000", machine_count: 1 } },
+  ];
+
+  function commerceItem(id) {
+    return [...commerceCategories, ...quickServices, ...cleaningMethods].find((item) => item.id === id || item.title === id) || null;
+  }
+
+  function applyCommerceDraft(scope, item) {
+    const target = item && item.draft ? item.draft : {};
+    root.state.updateDraft(scope, {
+      ...target,
+      selectedSlot: null,
+    });
+    root.state.selectedService = { id: item.id || item.title || "", route: scope };
+    if (scope === "scheduled") {
+      root.state.setScheduledPreview("pricing", { status: "idle", data: null, error: "" });
+      root.state.setScheduledPreview("availability", { status: "idle", data: null, error: "" });
+      root.state.setScheduledSubmit({ status: "idle", error: "", result: null });
+    }
+    if (scope === "urgent") {
+      root.state.setUrgentFlow({ step: "form", status: "idle", error: "", result: null });
+    }
+  }
+
   root.services = {
     UNKNOWN_AC,
     UNKNOWN_BTU,
@@ -165,6 +267,11 @@
       { title: "รอช่างพาร์ทเนอร์กดรับ", copy: "ช่างอาจกดรับหรือปฏิเสธงานได้ตามความพร้อม" },
       { title: "แอดมินช่วยต่อ", copy: "ถ้าไม่มีช่างรับ แอดมินจะช่วยจัดคิวหรือเปลี่ยนเป็นจองล่วงหน้า" },
     ],
+    commerceCategories,
+    quickServices,
+    cleaningMethods,
+    commerceItem,
+    applyCommerceDraft,
     normalizeServiceDraft,
     payloadFromServiceDraft,
     serviceLabel,
