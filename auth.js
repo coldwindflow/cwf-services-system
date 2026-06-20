@@ -3,7 +3,7 @@
 
   const App = window.CWFCustomerAppV2;
   const BOOT_TIMEOUT_MS = 3500;
-  const APP_BUILD = "20260621_mobile_production_v3";
+  const APP_BUILD = "20260621_dual_booking_production_v4";
   console.info(`[CWF Customer App] ${APP_BUILD} loaded`);
 
   function withTimeout(promise, timeoutMs) {
@@ -29,6 +29,7 @@
       home: App.ui.renderHome,
       booking: App.ui.renderBookingMode,
       scheduled: App.bookingScheduled.render,
+      urgent: App.bookingUrgent.render,
       tracking: App.tracking.render,
       profile: App.profile.render,
     });
@@ -54,7 +55,7 @@
 
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js?v=20260621_mobile_production_v3", { scope: "./" }).catch(() => {});
+        navigator.serviceWorker.register("./sw.js?v=20260621_dual_booking_production_v4", { scope: "./" }).catch(() => {});
       }, { once: true });
     }
   }

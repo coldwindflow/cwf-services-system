@@ -9,10 +9,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="CWF Service">
   <title>CWF Customer Service</title>
-  <link rel="manifest" href="./manifest.webmanifest?v=20260621_mobile_production_v3">
+  <link rel="manifest" href="./manifest.webmanifest?v=20260621_dual_booking_production_v4">
   <link rel="icon" type="image/png" sizes="192x192" href="./assets/icons/cwf-customer-192.png">
   <link rel="apple-touch-icon" sizes="180x180" href="./assets/icons/cwf-customer-180.png">
-  <link rel="stylesheet" href="./assets/customer-app.css?v=20260621_mobile_production_v3">
+  <link rel="stylesheet" href="./assets/customer-app.css?v=20260621_dual_booking_production_v4">
 </head>
 <body class="is-app-booting">
   <div class="app-shell" data-app-shell>
@@ -49,18 +49,19 @@
     </nav>
   </div>
 
-  <script src="./modules/state.js?v=20260621_mobile_production_v3"></script>
-  <script src="./modules/utils.js?v=20260621_mobile_production_v3"></script>
-  <script src="./modules/api.js?v=20260621_mobile_production_v3"></script>
-  <script src="./modules/services.js?v=20260621_mobile_production_v3"></script>
-  <script src="./modules/ui.js?v=20260621_mobile_production_v3"></script>
-  <script src="./modules/auth.js?v=20260621_mobile_production_v3"></script>
-  <script src="./modules/pricing.js?v=20260621_mobile_production_v3"></script>
-  <script src="./modules/availability.js?v=20260621_mobile_production_v3"></script>
-  <script src="./modules/bookingScheduled.js?v=20260621_mobile_production_v3"></script>
-  <script src="./modules/tracking.js?v=20260621_mobile_production_v3"></script>
-  <script src="./modules/profile.js?v=20260621_mobile_production_v3"></script>
-  <script src="./modules/router.js?v=20260621_mobile_production_v3"></script>
-  <script src="./assets/customer-app.js?v=20260621_mobile_production_v3"></script>
+  <script src="./modules/state.js?v=20260621_dual_booking_production_v4"></script>
+  <script src="./modules/utils.js?v=20260621_dual_booking_production_v4"></script>
+  <script src="./modules/api.js?v=20260621_dual_booking_production_v4"></script>
+  <script src="./modules/services.js?v=20260621_dual_booking_production_v4"></script>
+  <script src="./modules/ui.js?v=20260621_dual_booking_production_v4"></script>
+  <script src="./modules/auth.js?v=20260621_dual_booking_production_v4"></script>
+  <script src="./modules/pricing.js?v=20260621_dual_booking_production_v4"></script>
+  <script src="./modules/availability.js?v=20260621_dual_booking_production_v4"></script>
+  <script src="./modules/bookingScheduled.js?v=20260621_dual_booking_production_v4"></script>
+  <script src="./modules/bookingUrgent.js?v=20260621_dual_booking_production_v4"></script>
+  <script src="./modules/tracking.js?v=20260621_dual_booking_production_v4"></script>
+  <script src="./modules/profile.js?v=20260621_dual_booking_production_v4"></script>
+  <script src="./modules/router.js?v=20260621_dual_booking_production_v4"></script>
+  <script src="./assets/customer-app.js?v=20260621_dual_booking_production_v4"></script>
 </body>
 </html>
