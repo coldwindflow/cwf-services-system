@@ -2496,14 +2496,16 @@ body {
   content: "บัญชี";
 }
 
-.icon-pill span {
-  font-size: 0;
-}
-
-.icon-pill span::after {
-  content: "บัญชี";
+.icon-pill [data-account-chip-label] {
+  display: inline;
+  max-width: 112px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.82rem;
 }
+
+.icon-pill .account-chip-avatar:empty { display: none; }
 
 .service-taxonomy-grid {
   align-items: start;
@@ -2977,4 +2979,341 @@ body {
 @media (max-width: 360px) {
   .profile-action-grid { grid-template-columns: 1fr; }
   .icon-pill { padding-inline: 10px; }
+}
+
+/* ===================== Customer App V2 cleaning booking wizard ===================== */
+.booking-wizard-page {
+  display: grid;
+  gap: 14px;
+  padding-bottom: 20px;
+}
+
+.page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.page-toolbar .text-btn {
+  display: inline-flex;
+  align-items: center;
+  min-height: 42px;
+  padding: 8px 4px;
+  border: 0;
+  color: var(--blue);
+  background: transparent;
+  font-weight: 800;
+  text-decoration: none;
+}
+
+.booking-wizard-intro {
+  padding: 4px 2px 0;
+}
+
+.booking-wizard-intro h1 {
+  margin-top: 3px;
+  color: var(--navy);
+  font-size: clamp(1.6rem, 7vw, 2rem);
+}
+
+.booking-wizard-intro p {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.92rem;
+  line-height: 1.65;
+}
+
+.booking-stepper {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.booking-stepper li {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 5px;
+  color: var(--muted-2);
+  text-align: center;
+  font-size: 0.68rem;
+}
+
+.booking-stepper li:not(:last-child)::after {
+  position: absolute;
+  top: 15px;
+  left: calc(50% + 19px);
+  width: calc(100% - 38px);
+  height: 2px;
+  background: var(--line-strong);
+  content: "";
+}
+
+.booking-stepper li > span {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--card);
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.booking-stepper li > strong {
+  font-weight: 800;
+}
+
+.booking-stepper li.is-active,
+.booking-stepper li.is-done { color: var(--blue); }
+
+.booking-stepper li.is-active > span {
+  border-color: var(--blue);
+  color: #fff;
+  background: var(--grad-cta);
+  box-shadow: var(--ring);
+}
+
+.booking-stepper li.is-done > span {
+  border-color: var(--success);
+  color: #fff;
+  background: var(--success);
+}
+
+.booking-stepper li.is-done:not(:last-child)::after { background: var(--success); }
+
+.booking-wizard-card {
+  display: grid;
+  gap: 16px;
+}
+
+.booking-wizard-card .section-head p { margin-top: 6px; }
+
+.wizard-price-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 13px;
+  border: 1px solid rgba(22, 89, 224, 0.18);
+  border-radius: var(--radius-sm);
+  background: var(--soft-blue);
+}
+
+.wizard-price-summary > div {
+  display: grid;
+  gap: 2px;
+}
+
+.wizard-price-summary span,
+.wizard-price-summary small {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.wizard-price-summary strong {
+  color: var(--navy);
+  font-size: 1rem;
+}
+
+.wizard-price-summary small { grid-column: 1 / -1; }
+
+.booking-calendar {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.calendar-toolbar {
+  display: grid;
+  grid-template-columns: 44px 1fr 44px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: center;
+}
+
+.calendar-toolbar strong { color: var(--navy); }
+
+.calendar-nav {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  min-height: 44px;
+  border-radius: 12px;
+  color: var(--blue);
+  background: var(--soft-blue);
+  font-size: 1.7rem;
+  font-weight: 900;
+}
+
+.calendar-nav:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.calendar-weekdays,
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+
+.calendar-weekdays {
+  padding: 8px 8px 2px;
+  color: var(--muted);
+  text-align: center;
+  font-size: 0.7rem;
+  font-weight: 800;
+}
+
+.calendar-grid {
+  gap: 4px;
+  padding: 6px 8px 10px;
+}
+
+.calendar-day {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  min-height: 46px;
+  padding: 2px;
+  border: 1px solid transparent;
+  border-radius: 11px;
+  background: transparent;
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.calendar-day small {
+  display: block;
+  color: var(--blue);
+  font-size: 0.52rem;
+  line-height: 1;
+}
+
+.calendar-day.is-today { border-color: var(--soft-blue-2); }
+.calendar-day.is-selected {
+  border-color: var(--blue);
+  color: #fff;
+  background: var(--grad-cta);
+  box-shadow: var(--shadow-press);
+}
+.calendar-day.is-selected small { color: #fff; }
+.calendar-day:disabled { color: #b6c0ce; opacity: 0.58; cursor: not-allowed; }
+.calendar-day.is-empty { visibility: hidden; }
+
+.slot-section { display: grid; gap: 12px; }
+
+.wizard-action-bar {
+  position: sticky;
+  z-index: 20;
+  bottom: calc(var(--nav-h) + var(--safe-b) + 8px);
+  display: grid;
+  grid-template-columns: minmax(108px, 0.72fr) minmax(0, 1.28fr);
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid rgba(205, 217, 236, 0.9);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 14px 38px -18px rgba(6, 24, 47, 0.55);
+  backdrop-filter: blur(12px);
+}
+
+.wizard-action-bar .primary-btn,
+.wizard-action-bar .secondary-btn { min-height: 50px; }
+
+.wizard-submit-btn { width: 100%; min-height: 52px; }
+.review-data-list .data-row { align-items: flex-start; }
+.booking-code-value { color: var(--blue); font-size: 1.1rem; font-weight: 950; letter-spacing: 0.04em; }
+.booking-result-card { text-align: left; }
+.booking-result-card .success-mark { margin-inline: auto; }
+
+.contact-sheet-backdrop {
+  position: fixed;
+  z-index: 200;
+  inset: 0;
+  background: rgba(6, 24, 47, 0.58);
+  backdrop-filter: blur(4px);
+}
+
+.contact-sheet {
+  position: fixed;
+  z-index: 201;
+  right: max(12px, calc((100vw - 480px) / 2 + 12px));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  left: max(12px, calc((100vw - 480px) / 2 + 12px));
+  display: grid;
+  gap: 12px;
+  max-height: min(82vh, 620px);
+  padding: 22px;
+  overflow: auto;
+  border-radius: 24px;
+  background: #fff;
+  box-shadow: 0 30px 70px -20px rgba(6, 24, 47, 0.75);
+}
+
+.contact-sheet h2 { color: var(--navy); }
+.contact-sheet p { color: var(--muted); line-height: 1.65; }
+.contact-sheet-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  color: var(--navy);
+  background: var(--bg-2);
+  font-size: 1.5rem;
+}
+.contact-sheet-actions { display: grid; gap: 10px; }
+.contact-sheet-actions a { text-align: center; text-decoration: none; }
+body.has-contact-sheet { overflow: hidden; }
+
+.commerce-category-card.is-contact-only small {
+  color: var(--warning);
+  background: var(--soft-yellow);
+}
+.commerce-category-card.is-bookable small {
+  color: var(--success);
+  background: var(--soft-green);
+}
+.commerce-category-card small {
+  display: inline-flex;
+  justify-self: start;
+  padding: 4px 8px;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 900;
+}
+
+@media (max-width: 380px) {
+  .booking-stepper li > strong { font-size: 0.61rem; }
+  .booking-stepper li > span { width: 29px; height: 29px; }
+  .booking-stepper li:not(:last-child)::after { top: 14px; left: calc(50% + 17px); width: calc(100% - 34px); }
+  .calendar-day { min-height: 42px; font-size: 0.8rem; }
+  .wizard-price-summary { grid-template-columns: 1fr; }
+  .wizard-price-summary small { grid-column: 1; }
+  .wizard-action-bar { grid-template-columns: 104px minmax(0, 1fr); padding: 8px; }
+}
+
+@media (min-width: 431px) {
+  .calendar-day { min-height: 50px; }
+}
+
+.review-submit-actions {
+  display: grid;
+  grid-template-columns: minmax(108px, 0.72fr) minmax(0, 1.28fr);
+  gap: 10px;
+}
+.review-submit-actions .primary-btn,
+.review-submit-actions .secondary-btn { min-height: 52px; }
+@media (max-width: 360px) {
+  .review-submit-actions { grid-template-columns: 104px minmax(0, 1fr); }
 }

@@ -23898,6 +23898,55 @@ async function isTechFree(username, startIso, durationMin, ignoreJobId) {
   return !conflict;
 }
 
+// Customer scheduled bookings are created before an admin assigns a technician.
+// Treat those unassigned jobs as generic capacity reservations so the public calendar
+// cannot keep selling the same technician capacity.
+async function listUnassignedCustomerReservationsOnDate(dateStr, queryable = pool) {
+  const day = String(dateStr || "").slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return [];
+  const [year, month, date] = day.split("-").map(Number);
+  const next = new Date(Date.UTC(year, month - 1, date));
+  next.setUTCDate(next.getUTCDate() + 1);
+  const nextDay = `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-${String(next.getUTCDate()).padStart(2, "0")}`;
+  const result = await queryable.query(
+    `SELECT j.job_id, j.appointment_datetime, COALESCE(j.duration_min,60) AS duration_min
+       FROM public.jobs j
+      WHERE (j.appointment_datetime::timestamptz) >= $1::timestamptz
+        AND (j.appointment_datetime::timestamptz) <  $2::timestamptz
+        AND COALESCE(j.job_source,'') = 'customer'
+        AND COALESCE(j.booking_mode,'scheduled') = 'scheduled'
+        AND COALESCE(j.job_status,'') NOT IN ('ยกเลิก','เสร็จแล้ว')
+        AND NULLIF(BTRIM(COALESCE(j.technician_username,'')), '') IS NULL
+        AND NULLIF(BTRIM(COALESCE(j.technician_team,'')), '') IS NULL
+        AND NOT EXISTS (SELECT 1 FROM public.job_team_members m WHERE m.job_id=j.job_id)
+        AND NOT EXISTS (SELECT 1 FROM public.job_assignments a WHERE a.job_id=j.job_id)
+        AND NOT EXISTS (
+          SELECT 1 FROM public.job_items i
+           WHERE i.job_id=j.job_id
+             AND NULLIF(BTRIM(COALESCE(i.assigned_technician_username,'')), '') IS NOT NULL
+        )`,
+    [`${day}T00:00:00+07:00`, `${nextDay}T00:00:00+07:00`]
+  );
+  return (result.rows || []).map((row) => {
+    const startMin = bangkokHMToMinFromDate(new Date(row.appointment_datetime));
+    const durationMin = Math.max(1, Number(row.duration_min || 60));
+    return {
+      job_id: row.job_id,
+      startMin,
+      busyEndMin: startMin + durationMin + TRAVEL_BUFFER_MIN,
+      durationMin,
+    };
+  }).filter((row) => Number.isFinite(row.startMin) && Number.isFinite(row.busyEndMin));
+}
+
+function countOverlappingCustomerReservations(reservations, startMin, durationMin) {
+  const newStart = Number(startMin);
+  const newBusyEnd = newStart + Math.max(1, Number(durationMin || 0)) + TRAVEL_BUFFER_MIN;
+  return (Array.isArray(reservations) ? reservations : []).reduce((count, reservation) => {
+    return count + ((newStart < reservation.busyEndMin && reservation.startMin < newBusyEnd) ? 1 : 0);
+  }, 0);
+}
+
 function http409Conflict(res, conflict){
   return res.status(409).json({
     error: "ช่างไม่ว่างช่วงเวลานี้",
@@ -24157,6 +24206,13 @@ app.get("/public/availability_v2", async (req, res) => {
       console.warn("[availability_v2] special slots query failed", e.message);
     }
     const tech_count = techsFiltered.length;
+    const customerReservations = (!forced && tech_type === 'company')
+      ? await listUnassignedCustomerReservationsOnDate(date, pool)
+      : [];
+
+    if (debugFlag && customerReservations.length) {
+      debugReasons.push({ code: 'UNASSIGNED_RESERVATIONS', message: `มีคำขอจองที่รอจัดช่าง ${customerReservations.length} งาน และถูกหักออกจากความจุคิวลูกค้าแล้ว` });
+    }
 
     if (debugFlag && tech_count === 0) {
       debugReasons.push({ code: 'NO_TECH', message: 'ไม่มีช่างที่ตรงเงื่อนไข (tech_type/วันหยุด/สิทธิ์งาน) — หมายเหตุ: โหมดเปิด/ปิดรับงาน (accept_status) ไม่ถูกนำมาใช้กับการจองของลูกค้า' });
@@ -24322,25 +24378,31 @@ app.get("/public/availability_v2", async (req, res) => {
 
       const ids = Array.from(active);
       const ok = ids.length >= crew_size;
-      if (!ok && !include_full) continue;
 
       if (mode === 'start') {
-        // explode "start_range" into fixed step slots so UI shows 09:00-09:30, 09:30-10:00, ...
+        // Explode start ranges into fixed steps. Pending customer bookings are generic
+        // capacity reservations until an admin assigns the actual technician.
         const lastStart = Math.min(segEndOut, uiEndMin - slot_step_min);
         for (let s = segStart; s <= lastStart; s += slot_step_min) {
           const e = Math.min(uiEndMin, s + slot_step_min);
+          const reservedCount = countOverlappingCustomerReservations(customerReservations, s, effective_duration_min);
+          const availableCount = Math.max(0, ids.length - reservedCount);
+          const slotOk = availableCount >= crew_size;
+          if (!slotOk && !include_full) continue;
           slots.push({
             start: minToHHMM(s),
             end: minToHHMM(e),
-            available: ok,
-            available_tech_ids: ok ? ids : [],
+            available: slotOk,
+            available_tech_ids: slotOk ? ids.slice(0, availableCount) : [],
             capacity: tech_count,
-            available_count: ids.length,
+            available_count: availableCount,
+            reserved_count: reservedCount,
             crew_size,
             slot_kind: 'start_step',
           });
         }
       } else {
+        if (!ok && !include_full) continue;
         slots.push({
           start: minToHHMM(segStart),
           end: minToHHMM(segEndOut),
@@ -24596,6 +24658,27 @@ app.post("/public/book", async (req, res) => {
   // DURATION_PRICE_V2_PUBLIC_BOOK
   let bm = (booking_mode || "scheduled").toString().trim().toLowerCase();
   const clientApp = (client_app || "").toString().trim().toLowerCase();
+  if (clientApp === "customer_app_v2") {
+    if (bm !== "scheduled" || String(job_type || "").trim() !== "ล้าง") {
+      return res.status(400).json({ error: "แอปลูกค้าเปิดจองออนไลน์เฉพาะงานล้าง กรุณาติดต่อแอดมินสำหรับบริการอื่น" });
+    }
+    const phoneDigits = String(customer_phone || "").replace(/\D/g, "");
+    if (phoneDigits.length < 9 || phoneDigits.length > 10) {
+      return res.status(400).json({ error: "กรุณากรอกเบอร์โทร 9-10 หลัก" });
+    }
+  }
+  let safeMapsUrl = String(maps_url || "").trim();
+  if (clientApp === "customer_app_v2" && safeMapsUrl) {
+    try {
+      const parsedMapsUrl = new URL(safeMapsUrl);
+      if (parsedMapsUrl.protocol !== "https:" || !MAPS_ALLOW_HOSTS.has(parsedMapsUrl.hostname.toLowerCase())) {
+        return res.status(400).json({ error: "กรุณาใช้ลิงก์ HTTPS ของ Google Maps" });
+      }
+      safeMapsUrl = parsedMapsUrl.toString();
+    } catch (_) {
+      return res.status(400).json({ error: "ลิงก์ Google Maps ไม่ถูกต้อง" });
+    }
+  }
   const allowAdminScheduleFallback = allow_admin_schedule_fallback === true || String(allow_admin_schedule_fallback || "").trim() === "true";
   const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback && clientApp === "customer_app_v2";
   const urgentOfferEnabled = bm === "urgent" && ENABLE_URGENT_FLOW;
@@ -24616,7 +24699,7 @@ app.post("/public/book", async (req, res) => {
   const standard_price = Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
 
 // ✅ Parse lat/lng from maps_url or address_text (fail-open)
-const parsedLL = parseLatLngFromText(maps_url) || parseLatLngFromText(address_text);
+const parsedLL = parseLatLngFromText(safeMapsUrl) || parseLatLngFromText(address_text);
 const parsed_lat = parsedLL ? parsedLL.lat : null;
 const parsed_lng = parsedLL ? parsedLL.lng : null;
 console.log("[latlng_parse]", { ok: !!parsedLL });
@@ -24625,6 +24708,8 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
   // ✅ Server-side validation: ต้องมีอย่างน้อย 1 ช่างว่างจริงในช่วงเวลานี้ (คิด buffer)
   // - scheduled => company, urgent => partner
   const requestedTechType = bm === "urgent" ? "partner" : "company";
+  let eligibleTechUsernames = [];
+  let normalizedBookingStartIso = "";
   try {
     let techs = await listTechniciansByType(requestedTechType, { include_paused: bm === "scheduled" });
 
@@ -24716,6 +24801,8 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
     });
     // Timezone-safe: normalize appointment datetime once (Asia/Bangkok)
     const startIso = normalizeAppointmentDatetime(appointment_datetime);
+    normalizedBookingStartIso = startIso;
+    eligibleTechUsernames = techs.map((tech) => String(tech.username || "").trim()).filter(Boolean);
     const tMin = toMin(String(startIso).slice(11, 16));
     let anyFree = false;
     for (const tech of techs) {
@@ -24747,6 +24834,32 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // Serialize customer scheduled bookings per day and re-check generic capacity in
+    // the same transaction. This prevents two requests from selling the last slot together.
+    if (bm === "scheduled" && clientApp === "customer_app_v2") {
+      const startIso = normalizeBangkokIso(normalizedBookingStartIso || appointment_datetime);
+      const bookingDate = String(startIso || "").slice(0, 10);
+      if (!bookingDate || !eligibleTechUsernames.length) {
+        const err = new Error("ระบบตรวจคิวช่างยังไม่พร้อม กรุณาเลือกคิวใหม่");
+        err.status = 503;
+        throw err;
+      }
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`cwf-public-scheduled:${bookingDate}`]);
+      let freeCount = 0;
+      for (const username of eligibleTechUsernames) {
+        if (await isTechFree(username, startIso, duration_min_v2, null)) freeCount += 1;
+      }
+      const reservations = await listUnassignedCustomerReservationsOnDate(bookingDate, client);
+      const startMin = bangkokHMToMinFromDate(new Date(startIso));
+      const reservedCount = countOverlappingCustomerReservations(reservations, startMin, duration_min_v2);
+      if (freeCount - reservedCount < 1) {
+        const err = new Error("ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาอื่น");
+        err.status = 409;
+        err.code = "CUSTOMER_SLOT_FULL";
+        throw err;
+      }
+    }
 
     // 1) ดึงราคา base_price จาก DB
 const serviceLineItems = await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
@@ -24842,7 +24955,7 @@ if (itemIdQty.length) {
         String(address_text).trim(),
         token,
         (customer_note || "").toString(),
-        (maps_url || "").toString(),
+        safeMapsUrl,
         (job_zone || "").toString(),
         bm === 'urgent' ? (urgentOfferEnabled ? 'รอช่างยืนยัน' : 'ไม่พบช่างรับงาน') : 'รอตรวจสอบ',
         duration_min_v2,

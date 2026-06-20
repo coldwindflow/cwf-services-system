@@ -134,16 +134,61 @@
 
   async function loadHomeData() {
     if (homeLoadPromise) return homeLoadPromise;
-    const tasks = [
-      root.auth.loadCustomer(null),
-      loadCollection("promotions", root.api.loadPromotions, "promotions"),
-      loadCollection("zones", root.api.loadServiceZones, "zones"),
-      loadHomePricingData(),
-    ];
+    const needsAuth = root.state.authStatus === "idle" && !root.state.customer;
+    const needsPromotions = root.state.promotions?.status === "idle";
+    const needsZones = root.state.zones?.status === "idle";
+    const needsPricing = root.state.homePricing?.status === "idle";
+    if (!needsAuth && !needsPromotions && !needsZones && !needsPricing) return Promise.resolve([]);
+    const tasks = [];
+    if (needsAuth) tasks.push(root.auth.loadCustomer(null));
+    if (needsPromotions) tasks.push(loadCollection("promotions", root.api.loadPromotions, "promotions"));
+    if (needsZones) tasks.push(loadCollection("zones", root.api.loadServiceZones, "zones"));
+    if (needsPricing) tasks.push(loadHomePricingData());
     homeLoadPromise = Promise.allSettled(tasks).finally(() => {
+      homeLoadPromise = null;
       if (root.router?.initialized && root.state.currentRoute === "home") root.router.refresh();
     });
     return homeLoadPromise;
+  }
+
+  function contactMessage(serviceTitle) {
+    const title = String(serviceTitle || "บริการแอร์").trim();
+    return `สวัสดีค่ะ สนใจ${title} ต้องการให้แอดมินช่วยประเมินรายละเอียดค่ะ`;
+  }
+
+  function renderContactSheet(item) {
+    const title = item?.title || "บริการนี้";
+    const message = contactMessage(title);
+    return `
+      <div class="contact-sheet-backdrop" data-contact-close></div>
+      <section class="contact-sheet" role="dialog" aria-modal="true" aria-labelledby="contact-sheet-title">
+        <button class="contact-sheet-close" type="button" data-contact-close aria-label="ปิด">×</button>
+        <span class="section-kicker">ติดต่อแอดมิน</span>
+        <h2 id="contact-sheet-title">${root.utils.escapeHtml(title)}</h2>
+        <p>บริการนี้ยังไม่เปิดจองอัตโนมัติในแอป กรุณาติดต่อแอดมินเพื่อสอบถามอาการ ประเมินราคา และนัดหมายให้เหมาะกับหน้างาน</p>
+        <div class="contact-sheet-actions">
+          <a class="primary-btn" href="https://line.me/R/ti/p/@cwfair" target="_blank" rel="noopener noreferrer">แชท LINE @cwfair</a>
+          <a class="secondary-btn" href="tel:0988777321">โทร 098-877-7321</a>
+        </div>
+      </section>
+    `;
+  }
+
+  function openContactSheet(container, item) {
+    let mount = container.querySelector("[data-contact-sheet-mount]");
+    if (!mount) {
+      mount = document.createElement("div");
+      mount.setAttribute("data-contact-sheet-mount", "");
+      container.appendChild(mount);
+    }
+    mount.innerHTML = renderContactSheet(item);
+    document.body.classList.add("has-contact-sheet");
+    const close = () => {
+      mount.innerHTML = "";
+      document.body.classList.remove("has-contact-sheet");
+    };
+    mount.querySelectorAll("[data-contact-close]").forEach((button) => button.addEventListener("click", close, { once: true }));
+    requestAnimationFrame(() => mount.querySelector(".contact-sheet-close")?.focus());
   }
 
   function bindCommerceHome(container) {
@@ -151,16 +196,26 @@
       button.addEventListener("click", () => {
         const item = root.services.commerceItem(button.getAttribute("data-commerce-service"));
         if (!item) return;
-        root.services.applyCommerceDraft(item.route, item);
-        root.utils.routeTo(item.route);
+        if (item.action === "contact") {
+          openContactSheet(container, item);
+          return;
+        }
+        if (!root.services.applyCommerceDraft("scheduled", item)) return;
+        root.utils.routeTo("scheduled");
+      });
+    });
+
+    container.querySelectorAll("[data-contact-service]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const item = root.services.commerceItem(button.getAttribute("data-contact-service"));
+        if (item) openContactSheet(container, item);
       });
     });
 
     container.querySelectorAll("[data-commerce-method]").forEach((button) => {
       button.addEventListener("click", () => {
         const item = root.services.commerceItem(button.getAttribute("data-commerce-method"));
-        if (!item) return;
-        root.services.applyCommerceDraft("scheduled", item);
+        if (!item || !root.services.applyCommerceDraft("scheduled", item)) return;
         root.utils.routeTo("scheduled");
       });
     });
@@ -195,8 +250,8 @@
         <section class="screen commerce-home">
           <div class="hero home-hero">
             <div class="hero-badge">CWF Premium Air Service</div>
-            <h2>เลือกบริการแอร์ที่เหมาะกับคุณ</h2>
-            <p>ดูราคาเมื่อระบบคำนวณได้ เลือกคิว และติดตามสถานะงานได้ในแอปเดียว</p>
+            <h2>จองล้างแอร์ด้วยคิวช่างจริง</h2>
+            <p>เลือกบริการล้าง ดูราคาจากระบบ เลือกวันและช่วงเวลาที่มีช่างว่าง แล้วติดตามงานด้วย Booking Code</p>
             <div class="hero-proof-row" aria-label="จุดเด่น CWF">
               <span>แจ้งราคาก่อนเริ่ม</span>
               <span>ช่างผ่านมาตรฐาน</span>
@@ -207,40 +262,38 @@
           <section class="commerce-primary-cta">
             <button class="primary-btn" type="button" data-commerce-service="wall-normal">จองล้างแอร์</button>
             <button class="secondary-btn" type="button" data-route="tracking">ติดตามงาน</button>
+            <button class="secondary-btn" type="button" data-contact-service="repair">ติดต่อแอดมิน</button>
           </section>
 
           <section class="card commerce-section">
-            <div class="section-head"><h2>เลือกบริการ</h2></div>
+            <div class="section-head">
+              <h2>บริการ CWF</h2>
+              <p class="muted">ขณะนี้เปิดจองอัตโนมัติเฉพาะงานล้าง บริการอื่นติดต่อแอดมินเพื่อประเมินก่อน</p>
+            </div>
             <div class="commerce-category-grid">
               ${root.services.commerceCategories.map((item) => `
-                <button class="commerce-category-card" type="button" data-commerce-service="${root.utils.escapeHtml(item.id)}">
+                <button class="commerce-category-card ${item.action === "contact" ? "is-contact-only" : "is-bookable"}" type="button"
+                  ${item.action === "contact" ? `data-contact-service="${root.utils.escapeHtml(item.id)}"` : `data-commerce-service="${root.utils.escapeHtml(item.id)}"`}>
                   <span class="trust-ico">${root.utils.icon(item.glyph || "sparkle", 20)}</span>
                   <strong>${root.utils.escapeHtml(item.title)}</strong>
                   <span>${root.utils.escapeHtml(item.copy)}</span>
+                  <small>${item.action === "contact" ? "ติดต่อแอดมิน" : "จองในแอปได้"}</small>
                 </button>
               `).join("")}
             </div>
           </section>
 
           <section class="card commerce-section">
-            <div class="section-head"><h2>บริการที่เลือกบ่อย</h2></div>
+            <div class="section-head"><h2>บริการล้างที่เลือกบ่อย</h2></div>
             <div class="quick-service-grid">
               ${root.services.quickServices.map((card) => `
-                <button class="quick-service-card ${card.route === "urgent" ? "is-urgent" : ""}" type="button" data-commerce-service="${root.utils.escapeHtml(card.id)}">
+                <button class="quick-service-card" type="button" data-commerce-service="${root.utils.escapeHtml(card.id)}">
                   <span class="quick-kicker">${root.utils.escapeHtml(card.kicker || "")}</span>
                   <strong>${root.utils.escapeHtml(card.title)}</strong>
                   <span>${root.utils.escapeHtml(card.copy)}</span>
                   <span class="quick-price">${renderQuickPrice(card)}</span>
                 </button>
               `).join("")}
-            </div>
-          </section>
-
-          <section class="card commerce-section">
-            <div class="section-head"><h2>คิวด่วนสำหรับแอร์มีอาการ</h2></div>
-            <div class="urgent-commerce-card">
-              <p>ระบบจะส่งคำขอให้ช่างที่พร้อมรับงานพิจารณา งานจะยืนยันเมื่อมีช่างรับหรือแอดมินยืนยันแล้วเท่านั้น</p>
-              <button class="secondary-btn" type="button" data-commerce-service="urgent-inspect">ส่งคำขอคิวด่วน</button>
             </div>
           </section>
 
@@ -253,7 +306,7 @@
             <div class="section-head"><h2>เลือกระดับการล้าง</h2></div>
             <div class="method-grid">
               ${root.services.cleaningMethods.map((item) => `
-                <button class="method-row" type="button" data-commerce-method="${root.utils.escapeHtml(item.title)}">
+                <button class="method-row" type="button" data-commerce-method="${root.utils.escapeHtml(item.id)}">
                   <strong>${root.utils.escapeHtml(item.title)}</strong>
                   <span>${root.utils.escapeHtml(item.copy)}</span>
                 </button>
@@ -280,6 +333,7 @@
           </section>
 
           ${renderAccountShortcut()}
+          <div data-contact-sheet-mount></div>
         </section>
       `;
       bindCommerceHome(container);
@@ -291,24 +345,25 @@
         <section class="screen">
           <div class="hero booking-hero">
             <div class="hero-badge">จองบริการ</div>
-            <h2>เลือกวิธีจอง</h2>
-            <p>จองล่วงหน้าเพื่อเลือกเวลา หรือส่งคำขอคิวด่วนให้ช่างที่พร้อมรับงาน</p>
+            <h2>จองล้างแอร์ล่วงหน้า</h2>
+            <p>เลือกประเภทการล้าง ดูราคา และเลือกวันเวลาจากคิวช่างที่ว่างจริง</p>
           </div>
           <div class="card-grid">
             <button class="mode-card is-scheduled" type="button" data-route="scheduled">
-              <span class="mode-kicker">เลือกวันและเวลาได้</span>
-              <strong>จองล่วงหน้า</strong>
-              <span>เหมาะกับงานล้าง ติดตั้ง งานคอนโด และงานหลายเครื่อง</span>
-              <span class="mode-foot">ดูคิวว่าง</span>
-            </button>
-            <button class="mode-card is-urgent" type="button" data-route="urgent">
-              <span class="mode-kicker">ส่งคำขอให้ช่างที่พร้อม</span>
-              <strong>คิวด่วน</strong>
-              <span>ช่างอาจรับหรือปฏิเสธได้ตามความพร้อม งานยืนยันเมื่อมีผู้รับงานแล้ว</span>
-              <span class="mode-foot">ส่งคำขอคิวด่วน</span>
+              <span class="mode-kicker">เปิดจองในแอป</span>
+              <strong>จองล้างแอร์</strong>
+              <span>รองรับแอร์ผนัง แอร์สี่ทิศทาง แอร์แขวน และแอร์เปลือยใต้ฝ้า</span>
+              <span class="mode-foot">ดูราคาและคิวว่าง</span>
             </button>
           </div>
-          <div class="notice is-urgent">คิวด่วนยังไม่ถือว่ายืนยันงาน จนกว่าจะมีช่างรับหรือแอดมินยืนยัน</div>
+          <section class="card support-card">
+            <h2>งานซ่อม ติดตั้ง ย้ายแอร์ หรือตรวจอาการ</h2>
+            <p class="muted">ยังไม่เปิดจองอัตโนมัติ กรุณาติดต่อแอดมินเพื่อประเมินอาการ ราคา และเวลาที่เหมาะสม</p>
+            <div class="support-strip">
+              <a class="primary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">แชท LINE @cwfair</a>
+              <a class="secondary-btn" href="tel:0988777321">โทร 098-877-7321</a>
+            </div>
+          </section>
         </section>
       `;
     },

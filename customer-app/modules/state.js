@@ -2,6 +2,8 @@
   "use strict";
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
+  const SCHEDULED_STORAGE_KEY = "cwf_customer_app_v2_scheduled_v1";
+  const SCHEDULED_STORAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
   function bangkokTodayYmd() {
     try {
@@ -16,6 +18,44 @@
     } catch (_) {
       return new Date(Date.now() + (7 * 60 * 60 * 1000)).toISOString().slice(0, 10);
     }
+  }
+
+  function defaultScheduledDraft() {
+    const today = bangkokTodayYmd();
+    return {
+      service_kind: "clean",
+      job_type: "ล้าง",
+      ac_type: "ผนัง",
+      wash_variant: "ล้างธรรมดา",
+      repair_variant: "",
+      btu: "12000",
+      machine_count: 1,
+      date: today,
+      calendar_month: today.slice(0, 7),
+      tech_type: "company",
+      selectedSlot: null,
+      customer_name: "",
+      customer_phone: "",
+      address_text: "",
+      maps_url: "",
+      customer_note: "",
+      job_zone: "",
+    };
+  }
+
+  function safeSessionGet() {
+    try { return window.sessionStorage.getItem(SCHEDULED_STORAGE_KEY); }
+    catch (_) { return null; }
+  }
+
+  function safeSessionSet(value) {
+    try { window.sessionStorage.setItem(SCHEDULED_STORAGE_KEY, value); }
+    catch (_) { /* storage may be blocked; in-memory flow still works */ }
+  }
+
+  function safeSessionRemove() {
+    try { window.sessionStorage.removeItem(SCHEDULED_STORAGE_KEY); }
+    catch (_) { /* ignore */ }
   }
 
   const state = {
@@ -33,6 +73,11 @@
     homePricing: { status: "idle", items: {}, error: "" },
     addressPrefill: { status: "idle", scopes: {}, error: "" },
     profileAddressForm: { editing: false, status: "idle", error: "", success: "" },
+    scheduledWizard: {
+      step: 1,
+      maxStep: 4,
+      error: "",
+    },
     scheduledPreview: {
       pricing: { status: "idle", data: null, error: "" },
       availability: { status: "idle", data: null, error: "", query_key: "", loaded_at: "" },
@@ -48,24 +93,7 @@
     },
     tracking: { status: "idle", data: null, error: "" },
     draft: {
-      scheduled: {
-        service_kind: "clean",
-        job_type: "ล้าง",
-        ac_type: "ผนัง",
-        wash_variant: "ล้างธรรมดา",
-        repair_variant: "",
-        btu: "12000",
-        machine_count: 1,
-        date: bangkokTodayYmd(),
-        tech_type: "company",
-        selectedSlot: null,
-        customer_name: "",
-        customer_phone: "",
-        address_text: "",
-        maps_url: "",
-        customer_note: "",
-        job_zone: "",
-      },
+      scheduled: defaultScheduledDraft(),
       urgent: {
         customer_name: "",
         customer_phone: "",
@@ -87,6 +115,7 @@
     },
     init() {
       this.currentRoute = this.readRouteFromHash();
+      this.restoreScheduledDraft();
     },
     readRouteFromHash() {
       const route = String(window.location.hash || "").replace(/^#\/?/, "").trim();
@@ -103,6 +132,59 @@
         ...(this.draft[scope] || {}),
         ...(patch || {}),
       };
+      if (scope === "scheduled") this.persistScheduledDraft();
+    },
+    resetScheduledDraft() {
+      this.draft.scheduled = defaultScheduledDraft();
+      this.scheduledWizard = { step: 1, maxStep: 4, error: "" };
+      this.scheduledPreview = {
+        pricing: { status: "idle", data: null, error: "" },
+        availability: { status: "idle", data: null, error: "", query_key: "", loaded_at: "" },
+      };
+      this.scheduledSubmit = { status: "idle", error: "", result: null };
+      safeSessionRemove();
+    },
+    persistScheduledDraft() {
+      const payload = {
+        version: 1,
+        saved_at: Date.now(),
+        step: Math.max(1, Math.min(4, Number(this.scheduledWizard?.step || 1))),
+        draft: this.draft.scheduled || defaultScheduledDraft(),
+      };
+      safeSessionSet(JSON.stringify(payload));
+    },
+    restoreScheduledDraft() {
+      const raw = safeSessionGet();
+      if (!raw) return false;
+      try {
+        const parsed = JSON.parse(raw);
+        if (!parsed || parsed.version !== 1 || !parsed.draft) return false;
+        if (!Number.isFinite(parsed.saved_at) || Date.now() - parsed.saved_at > SCHEDULED_STORAGE_TTL_MS) {
+          safeSessionRemove();
+          return false;
+        }
+        const defaults = defaultScheduledDraft();
+        const restored = { ...defaults, ...parsed.draft };
+        restored.service_kind = "clean";
+        restored.job_type = "ล้าง";
+        restored.repair_variant = "";
+        restored.machine_count = Math.max(1, Math.min(10, Number(restored.machine_count || 1)));
+        if (!restored.date || restored.date < bangkokTodayYmd()) {
+          restored.date = bangkokTodayYmd();
+          restored.selectedSlot = null;
+        }
+        restored.calendar_month = String(restored.calendar_month || restored.date.slice(0, 7));
+        this.draft.scheduled = restored;
+        this.scheduledWizard = {
+          ...this.scheduledWizard,
+          step: Math.max(1, Math.min(4, Number(parsed.step || 1))),
+          error: "",
+        };
+        return true;
+      } catch (_) {
+        safeSessionRemove();
+        return false;
+      }
     },
     setCollection(name, patch) {
       this[name] = {
@@ -170,6 +252,14 @@
           ...(patch || {}),
         },
       };
+    },
+    setScheduledWizard(patch) {
+      this.scheduledWizard = {
+        ...(this.scheduledWizard || {}),
+        ...(patch || {}),
+      };
+      this.scheduledWizard.step = Math.max(1, Math.min(4, Number(this.scheduledWizard.step || 1)));
+      this.persistScheduledDraft();
     },
     setScheduledPreview(name, patch) {
       this.scheduledPreview[name] = {

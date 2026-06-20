@@ -4,15 +4,14 @@
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
 
   function getApiBase() {
-    const params = new URLSearchParams(window.location.search || "");
-    const fromQuery = String(params.get("api") || "").trim();
-    const fromStorage = (() => {
-      try { return String(window.localStorage.getItem("cwf_customer_app_api_base") || "").trim(); }
-      catch (_) { return ""; }
-    })();
-    if (fromQuery) return fromQuery.replace(/\/+$/, "");
-    if (fromStorage) return fromStorage.replace(/\/+$/, "");
     if (window.location.protocol === "file:") return "";
+    const host = String(window.location.hostname || "").toLowerCase();
+    const isLocal = host === "localhost" || host === "127.0.0.1" || host.endsWith(".local");
+    if (isLocal) {
+      const params = new URLSearchParams(window.location.search || "");
+      const override = String(params.get("api") || "").trim();
+      if (override && /^https?:\/\//i.test(override)) return override.replace(/\/+$/, "");
+    }
     return window.location.origin;
   }
 

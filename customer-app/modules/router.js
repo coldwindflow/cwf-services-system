@@ -10,15 +10,22 @@
     register(routes) {
       this.routes = routes || {};
     },
+    canonicalRoute(route) {
+      const requested = String(route || "home").trim();
+      if (requested === "urgent") return "booking";
+      return this.routes[requested] ? requested : "home";
+    },
     init() {
       if (this.initialized) return;
       this.initialized = true;
       window.addEventListener("hashchange", () => this.render({ focus: true }));
       document.addEventListener("click", (event) => {
-        const button = event.target.closest("[data-route]");
-        if (!button) return;
+        const target = event.target instanceof Element ? event.target.closest("button[data-route], a[data-route]") : null;
+        if (!target || target.hasAttribute("disabled")) return;
+        const route = target.getAttribute("data-route");
+        if (!route) return;
         event.preventDefault();
-        root.utils.routeTo(button.getAttribute("data-route"));
+        root.utils.routeTo(this.canonicalRoute(route));
       });
       this.render({ focus: false });
     },
@@ -27,23 +34,30 @@
       this.render({ focus: false, refresh: true });
     },
     render(options = {}) {
-      const route = root.state.readRouteFromHash();
+      const requestedRoute = root.state.readRouteFromHash();
+      const route = this.canonicalRoute(requestedRoute);
       const handler = this.routes[route] || this.routes.home;
       const app = document.getElementById("app");
-      if (!app) return;
+      if (!app || typeof handler !== "function") return;
+      if (requestedRoute !== route) {
+        history.replaceState(null, "", `#${route}`);
+      }
       const routeChanged = this.lastRoute !== route;
       this.lastRoute = route;
       root.state.setRoute(route);
       this.updateNav(route);
       handler(app);
-      app.dataset.route = route;
+      app.dataset.currentRoute = route;
       if (options.focus === true && routeChanged) {
         requestAnimationFrame(() => app.focus({ preventScroll: true }));
       }
     },
     updateNav(route) {
-      document.querySelectorAll(".nav-item").forEach((item) => {
-        item.classList.toggle("is-active", item.getAttribute("data-route") === route);
+      document.querySelectorAll(".nav-item[data-route]").forEach((item) => {
+        const active = item.getAttribute("data-route") === route;
+        item.classList.toggle("is-active", active);
+        if (active) item.setAttribute("aria-current", "page");
+        else item.removeAttribute("aria-current");
       });
     },
   };

@@ -27,7 +27,6 @@
       home: App.ui.renderHome,
       booking: App.ui.renderBookingMode,
       scheduled: App.bookingScheduled.render,
-      urgent: App.bookingUrgent.render,
       tracking: App.tracking.render,
       profile: App.profile.render,
     });
@@ -53,7 +52,7 @@
 
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {
-        navigator.serviceWorker.register("/sw.js?v=customer-app-production-real-slots-v2").catch(() => {});
+        navigator.serviceWorker.register("./sw.js?v=20260620_cleaning_calendar_v1", { scope: "./" }).catch(() => {});
       }, { once: true });
     }
   }
