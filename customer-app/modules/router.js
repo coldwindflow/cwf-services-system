@@ -5,27 +5,41 @@
 
   const router = {
     routes: {},
+    initialized: false,
+    lastRoute: "",
     register(routes) {
       this.routes = routes || {};
     },
     init() {
-      window.addEventListener("hashchange", () => this.render());
+      if (this.initialized) return;
+      this.initialized = true;
+      window.addEventListener("hashchange", () => this.render({ focus: true }));
       document.addEventListener("click", (event) => {
         const button = event.target.closest("[data-route]");
         if (!button) return;
         event.preventDefault();
         root.utils.routeTo(button.getAttribute("data-route"));
       });
-      this.render();
+      this.render({ focus: false });
     },
-    render() {
+    refresh() {
+      if (!this.initialized) return;
+      this.render({ focus: false, refresh: true });
+    },
+    render(options = {}) {
       const route = root.state.readRouteFromHash();
       const handler = this.routes[route] || this.routes.home;
+      const app = document.getElementById("app");
+      if (!app) return;
+      const routeChanged = this.lastRoute !== route;
+      this.lastRoute = route;
       root.state.setRoute(route);
       this.updateNav(route);
-      handler(document.getElementById("app"));
-      const app = document.getElementById("app");
-      if (app) app.focus({ preventScroll: true });
+      handler(app);
+      app.dataset.route = route;
+      if (options.focus === true && routeChanged) {
+        requestAnimationFrame(() => app.focus({ preventScroll: true }));
+      }
     },
     updateNav(route) {
       document.querySelectorAll(".nav-item").forEach((item) => {

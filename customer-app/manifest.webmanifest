@@ -1,0 +1,33 @@
+{
+  "name": "CWF Customer Service",
+  "short_name": "CWF Service",
+  "description": "แอปลูกค้า Coldwindflow สำหรับเลือกบริการ จองคิว และติดตามงาน",
+  "start_url": "/customer-app/#home",
+  "scope": "/customer-app/",
+  "id": "/customer-app/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F5F8FC",
+  "theme_color": "#071B38",
+  "lang": "th",
+  "icons": [
+    {
+      "src": "/customer-app/assets/icons/cwf-customer-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/customer-app/assets/icons/cwf-customer-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/customer-app/assets/icons/cwf-customer-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

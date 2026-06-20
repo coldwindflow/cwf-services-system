@@ -3,152 +3,218 @@
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
 
-  function profile() {
-    const customer = root.state.customer || {};
-    return customer.profile || {};
+  function customerProfile() {
+    return root.state.customer?.profile || {};
   }
 
-  function renderSavedAddress() {
+  function normalizeMapsUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    try {
+      const url = new URL(raw);
+      if (url.protocol !== "https:") return "";
+      const host = url.hostname.toLowerCase();
+      const allowed = host === "goo.gl"
+        || host.endsWith(".goo.gl")
+        || host === "google.com"
+        || host.endsWith(".google.com")
+        || host === "google.co.th"
+        || host.endsWith(".google.co.th");
+      return allowed ? url.href : "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  function renderServiceAddress() {
     const customer = root.state.customer;
     const form = root.state.profileAddressForm || {};
-    if (!customer) return root.utils.stateBox("loading", "กำลังโหลดข้อมูลบัญชี...");
-    if (!customer.logged_in) return root.utils.stateBox("", "ใช้งานแบบ Guest ยังไม่มีที่อยู่ที่บันทึกไว้");
-    const p = profile();
-    const address = String(p.address || "").trim();
-    const mapsUrl = String(p.maps_url || "").trim();
+    if (!customer?.logged_in) return "";
+
+    const profile = customerProfile();
+    const address = String(profile.address || "").trim();
+    const storedMaps = String(profile.maps_url || "").trim();
+    const safeMapsUrl = normalizeMapsUrl(storedMaps);
+
     if (form.editing) {
       return `
         <form class="profile-address-form" data-profile-address-form>
           <div class="field field-wide">
-            <label for="profile-address">ที่อยู่หลัก</label>
-            <textarea id="profile-address" class="input textarea" name="address" rows="4" minlength="5" required placeholder="บ้าน/คอนโด อาคาร ชั้น ห้อง เขต/อำเภอ">${root.utils.escapeHtml(address)}</textarea>
+            <label for="profile-address">ที่อยู่สำหรับรับบริการ</label>
+            <textarea id="profile-address" class="input textarea" name="address" rows="4" minlength="5" required
+              placeholder="บ้าน/คอนโด อาคาร ชั้น ห้อง เขต/อำเภอ">${root.utils.escapeHtml(address)}</textarea>
           </div>
           <div class="field field-wide">
             <label for="profile-maps">ลิงก์ Google Maps (ถ้ามี)</label>
-            <input id="profile-maps" class="input" name="maps_url" value="${root.utils.escapeHtml(mapsUrl)}" inputmode="url" placeholder="วางลิงก์ Google Maps">
+            <input id="profile-maps" class="input" name="maps_url" value="${root.utils.escapeHtml(storedMaps)}"
+              inputmode="url" autocomplete="url" placeholder="https://maps.app.goo.gl/...">
           </div>
+          <p class="field-help">รองรับลิงก์ Google Maps แบบ HTTPS เท่านั้น</p>
           ${form.error ? `<div class="state-box is-error">${root.utils.escapeHtml(form.error)}</div>` : ""}
-          ${form.success ? `<div class="state-box is-success">${root.utils.escapeHtml(form.success)}</div>` : ""}
           <div class="button-row">
-            <button class="primary-btn" type="submit" ${form.status === "saving" ? "disabled" : ""}>${form.status === "saving" ? "กำลังบันทึก..." : "บันทึกที่อยู่"}</button>
+            <button class="primary-btn" type="submit" ${form.status === "saving" ? "disabled" : ""}>
+              ${form.status === "saving" ? "กำลังบันทึก..." : "บันทึกที่อยู่"}
+            </button>
             <button class="secondary-btn" type="button" data-profile-address-cancel ${form.status === "saving" ? "disabled" : ""}>ยกเลิก</button>
           </div>
         </form>
       `;
     }
+
     return `
       <div class="profile-address-summary">
-        <div class="data-list">
-          <div class="data-row">
-            <strong>ที่อยู่</strong>
-            <span class="muted">${root.utils.escapeHtml(address || "ยังไม่มีที่อยู่ที่บันทึกไว้")}</span>
-          </div>
-          <div class="data-row">
-            <strong>แผนที่</strong>
-            <span class="muted">${mapsUrl ? `<a href="${root.utils.escapeHtml(mapsUrl)}" target="_blank" rel="noopener">เปิด Google Maps</a>` : "ยังไม่มีลิงก์แผนที่"}</span>
+        <div class="address-status-card ${address ? "has-address" : ""}">
+          <span class="address-status-icon">${root.utils.icon("pin", 22)}</span>
+          <div>
+            <strong>${address ? "ที่อยู่พร้อมใช้งาน" : "ยังไม่มีที่อยู่สำหรับรับบริการ"}</strong>
+            <p>${root.utils.escapeHtml(address || "เพิ่มที่อยู่ครั้งเดียว ระบบจะช่วยเติมให้ตอนจองโดยไม่ทับข้อมูลที่พิมพ์เอง")}</p>
           </div>
         </div>
+        ${safeMapsUrl ? `<a class="secondary-btn" href="${root.utils.escapeHtml(safeMapsUrl)}" target="_blank" rel="noopener noreferrer">เปิด Google Maps</a>` : ""}
         ${form.success ? `<div class="state-box is-success">${root.utils.escapeHtml(form.success)}</div>` : ""}
-        <button class="secondary-btn" type="button" data-profile-address-edit>${address || mapsUrl ? "แก้ไขที่อยู่" : "เพิ่มที่อยู่"}</button>
+        <button class="primary-btn" type="button" data-profile-address-edit>${address ? "แก้ไขที่อยู่" : "เพิ่มที่อยู่"}</button>
       </div>
     `;
   }
 
   function paintAddress(container) {
-    const mount = container.querySelector("[data-profile-address]");
+    const mount = container?.querySelector("[data-profile-address]");
     if (!mount) return;
-    mount.innerHTML = renderSavedAddress();
+    mount.innerHTML = renderServiceAddress();
     bindAddress(container);
   }
 
   function bindAddress(container) {
-    const edit = container.querySelector("[data-profile-address-edit]");
-    if (edit) {
+    const edit = container?.querySelector("[data-profile-address-edit]");
+    if (edit && edit.dataset.bound !== "1") {
+      edit.dataset.bound = "1";
       edit.addEventListener("click", () => {
         root.state.setProfileAddressForm({ editing: true, status: "idle", error: "", success: "" });
         paintAddress(container);
-      }, { once: true });
+      });
     }
-    const cancel = container.querySelector("[data-profile-address-cancel]");
-    if (cancel) {
+
+    const cancel = container?.querySelector("[data-profile-address-cancel]");
+    if (cancel && cancel.dataset.bound !== "1") {
+      cancel.dataset.bound = "1";
       cancel.addEventListener("click", () => {
         root.state.setProfileAddressForm({ editing: false, status: "idle", error: "", success: "" });
         paintAddress(container);
-      }, { once: true });
+      });
     }
-    const form = container.querySelector("[data-profile-address-form]");
-    if (!form) return;
+
+    const form = container?.querySelector("[data-profile-address-form]");
+    if (!form || form.dataset.bound === "1") return;
+    form.dataset.bound = "1";
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       const address = String(form.elements.address.value || "").trim();
-      const mapsUrl = String(form.elements.maps_url.value || "").trim();
+      const mapsRaw = String(form.elements.maps_url.value || "").trim();
+      const mapsUrl = normalizeMapsUrl(mapsRaw);
+
       if (address.length < 5) {
-        root.state.setProfileAddressForm({ editing: true, status: "error", error: "กรุณากรอกที่อยู่อย่างน้อย 5 ตัวอักษร", success: "" });
+        root.state.setProfileAddressForm({ editing: true, status: "error", error: "กรุณากรอกที่อยู่ให้ครบถ้วน", success: "" });
         paintAddress(container);
         return;
       }
-      if (mapsUrl.length > 600) {
-        root.state.setProfileAddressForm({ editing: true, status: "error", error: "ลิงก์แผนที่ยาวเกินไป", success: "" });
+      if (mapsRaw && !mapsUrl) {
+        root.state.setProfileAddressForm({ editing: true, status: "error", error: "กรุณาใช้ลิงก์ Google Maps แบบ HTTPS เท่านั้น", success: "" });
         paintAddress(container);
         return;
       }
+
       root.state.setProfileAddressForm({ editing: true, status: "saving", error: "", success: "" });
       paintAddress(container);
       try {
         const result = await root.api.updateProfileAddress({ address, maps_url: mapsUrl });
-        root.state.updateCustomerProfile((result && result.profile) || { address, maps_url: mapsUrl });
+        root.state.updateCustomerProfile(result?.profile || { address, maps_url: mapsUrl });
+        root.state.addressPrefill.scopes = {};
         root.state.setProfileAddressForm({ editing: false, status: "success", error: "", success: "บันทึกที่อยู่แล้ว" });
+        root.ui?.updateAccountChrome?.();
       } catch (error) {
-        root.state.setProfileAddressForm({ editing: true, status: "error", error: error.message || "บันทึกที่อยู่ไม่สำเร็จ", success: "" });
+        root.state.setProfileAddressForm({ editing: true, status: "error", error: error?.message || "บันทึกที่อยู่ไม่สำเร็จ", success: "" });
       }
       paintAddress(container);
-    }, { once: true });
+    });
+  }
+
+  function renderLoggedOut(container) {
+    container.innerHTML = `
+      <section class="screen profile-screen">
+        <div class="hero profile-hero">
+          <div class="hero-badge">บัญชีลูกค้า CWF</div>
+          <h2>เข้าสู่ระบบเพื่อใช้ข้อมูลของคุณ</h2>
+          <p>บันทึกที่อยู่ ดูสถานะงาน และกลับมาจองครั้งถัดไปได้สะดวกขึ้น</p>
+        </div>
+        <div data-auth-panel>${root.auth.renderLoginPanel()}</div>
+        <section class="card profile-action-card">
+          <h2>ยังไม่เข้าสู่ระบบก็ใช้งานได้</h2>
+          <p class="muted">เลือกบริการ จองคิว และติดตามงานแบบ Guest ได้ตามปกติ</p>
+          <div class="button-row">
+            <button class="primary-btn" type="button" data-route="home">เลือกบริการ</button>
+            <button class="secondary-btn" type="button" data-route="tracking">ติดตามงาน</button>
+          </div>
+        </section>
+        ${root.ui.supportButtons()}
+      </section>
+    `;
+    root.auth.loadCustomer(container).then(() => {
+      if (root.state.customer?.logged_in && root.state.currentRoute === "profile") root.router.refresh();
+    });
+  }
+
+  function renderLoggedIn(container) {
+    const name = root.auth.displayName(root.state.customer);
+    container.innerHTML = `
+      <section class="screen profile-screen">
+        <div class="hero profile-hero is-account">
+          <div class="hero-badge">บัญชีของฉัน</div>
+          <h2>${root.utils.escapeHtml(name)}</h2>
+          <p>จัดการข้อมูลที่ใช้จองบริการและเข้าถึงงานของคุณได้จากหน้านี้</p>
+        </div>
+
+        <div data-auth-panel>${root.auth.renderLoginPanel()}</div>
+
+        <section class="card">
+          <div class="section-head">
+            <h2>ที่อยู่สำหรับรับบริการ</h2>
+            <p class="muted">บัญชีนี้บันทึกที่อยู่ประจำได้ 1 แห่ง และยังเปลี่ยนที่อยู่เฉพาะงานในหน้าจองได้</p>
+          </div>
+          <div data-profile-address>${renderServiceAddress()}</div>
+        </section>
+
+        <section class="card profile-action-card">
+          <div class="section-head"><h2>เมนูใช้งาน</h2></div>
+          <div class="profile-action-grid">
+            <button class="secondary-btn" type="button" data-route="tracking">ติดตามงาน</button>
+            <button class="secondary-btn" type="button" data-route="booking">จองบริการใหม่</button>
+          </div>
+        </section>
+
+        ${root.ui.supportButtons()}
+      </section>
+    `;
+    root.auth.loadCustomer(container);
+    bindAddress(container);
   }
 
   root.profile = {
+    normalizeMapsUrl,
     render(container) {
-      container.innerHTML = `
-        <section class="screen">
-          <div class="hero profile-hero">
-            <div class="hero-badge">Guest-friendly account</div>
-            <h2>บัญชีลูกค้า</h2>
-            <p>ใช้งานแบบ Guest ได้ก่อน เมื่อล็อกอินแล้วจะช่วยจำที่อยู่ ดูประวัติ และจองซ้ำได้สะดวกขึ้น</p>
-          </div>
-          ${root.auth.renderLoginPanel()}
-          <section class="card guest-card">
-            <div class="section-head">
-              <span class="section-kicker">Guest mode</span>
-              <h2>เริ่มใช้งานได้ทันที</h2>
-            </div>
-            <p class="muted">ลูกค้าสามารถเริ่มจองและติดตามงานได้ โดยไม่ต้องเข้าสู่ระบบตั้งแต่หน้าแรก</p>
+      if (root.state.authStatus === "idle" || root.state.authStatus === "loading") {
+        container.innerHTML = `
+          <section class="screen profile-screen">
+            <div class="hero profile-hero"><div class="hero-badge">บัญชีลูกค้า CWF</div><h2>กำลังโหลดบัญชี</h2></div>
+            <section class="card"><div class="account-skeleton"><span></span><span></span><span></span></div></section>
           </section>
-          <section class="card">
-            <div class="section-head">
-              <span class="section-kicker">Saved address</span>
-              <h2>ที่อยู่ที่บันทึกไว้</h2>
-              <p class="muted">ระบบจะเติมที่อยู่นี้ให้ในหน้าจองเมื่อช่องที่อยู่ยังว่าง และจะไม่ทับข้อมูลที่คุณพิมพ์ไว้</p>
-            </div>
-            <div data-profile-address>${renderSavedAddress()}</div>
-          </section>
-          <section class="card">
-            <div class="section-head">
-              <span class="section-kicker">History</span>
-              <h2>ประวัติและจองซ้ำ</h2>
-            </div>
-            <div class="tag-row">
-              <span class="tag">งานล่าสุด</span>
-              <span class="tag">จองซ้ำ</span>
-              <span class="tag">บริการที่ใช้บ่อย</span>
-            </div>
-          </section>
-          ${root.ui.supportButtons()}
-        </section>
-      `;
-      bindAddress(container);
-      root.auth.loadCustomer(container).then(() => {
-        root.state.setProfileAddressForm({ editing: false, status: "idle", error: "", success: "" });
-        paintAddress(container);
-      });
+        `;
+        root.auth.loadCustomer(container).then(() => {
+          if (root.state.currentRoute === "profile") root.router.refresh();
+        });
+        return;
+      }
+      if (root.state.customer?.logged_in) renderLoggedIn(container);
+      else renderLoggedOut(container);
     },
   };
 })();

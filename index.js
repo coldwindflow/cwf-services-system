@@ -24109,39 +24109,32 @@ app.get("/public/availability_v2", async (req, res) => {
       return true;
     });
 
-    // Option B: filter technicians by service matrix + slot visibility (customer booking only)
-    // - Do NOT apply when forced=1 (admin lock) to avoid hiding technicians in admin calendar.
-    // - Strict rule (as requested):
-    //   1) ถ้า "ไม่ติ๊กเลือกอะไรเลย" => ไม่แสดงในสลอตลูกค้า
-    //   2) ถ้าไม่มี record matrix => ไม่แสดงในสลอตลูกค้า
-    //   3) customer_slot_visible=false (ลูกมือ/ฝึกงาน) => ไม่แสดงในสลอตลูกค้า
-    // - If DB loading matrices fails => skip matrix filtering (fail-open) to avoid total outage.
+    // Customer slot policy (strict, fail-closed):
+    // - Admin must explicitly allow the technician through customer_slot_visible=true.
+    // - The technician must have a service matrix record matching every requested service.
+    // - Missing criteria, missing matrix, or matrix read failure returns no customer slots.
+    // - forced=1 is an admin-only calendar view and intentionally bypasses this customer filter.
     let techsFiltered = techs;
-    if (!forced && hasCriteria) {
-      const matrixMap = await loadServiceMatrixMap(techs.map(t => t.username));
-      const matrixOk = (loadServiceMatrixMap._ok !== false);
-      techsFiltered = techs.filter(t => {
-        // hide trainees/assistants from customer slot list
-        if (t && t.customer_slot_visible === false) return false;
-        // If DB read failed -> do not apply strict filter
-        if (!matrixOk) return true;
-        const u = String(t.username);
-        if (!matrixMap.has(u)) return false;
-        const mx = matrixMap.get(u) || null;
-        return techMatchesAllCriteriaStrict(mx, criteriaList || null);
-      });
-      if (debugFlag && techsFiltered.length === 0 && techs.length > 0) {
-        debugReasons.push({ code: 'NO_MATCH_MATRIX', message: 'ไม่มีช่างที่เข้าเงื่อนไขตามสิทธิ์งานที่ตั้งไว้ (service matrix)' });
-      }
-
-      // ✅ Fail-safe for production usability:
-      // ถ้า matrix strict กรองจนเหลือ 0 ทั้งระบบ (เช่นยังไม่ได้ตั้งค่า matrix ใน DB)
-      // ให้ fallback ไปใช้ช่างที่แสดงใน customer slot ได้ (customer_slot_visible != false)
-      // เพื่อให้ “หน้าจองคิวลูกค้า” ไม่ล่มทั้งระบบ
-      if (matrixOk && techsFiltered.length === 0 && techs.length > 0) {
-        techsFiltered = techs.filter(t => (t && t.customer_slot_visible === false) ? false : true);
-        if (debugFlag) {
-          debugReasons.push({ code: 'FALLBACK_MATRIX_EMPTY', message: 'fallback: ไม่มี matrix ตรงเงื่อนไข จึงใช้ช่างทั้งหมดที่อนุญาตให้แสดงในสลอตลูกค้า' });
+    if (!forced) {
+      const visibleTechs = techs.filter(t => t && t.customer_slot_visible === true);
+      if (!hasCriteria) {
+        techsFiltered = [];
+        if (debugFlag) debugReasons.push({ code: 'MISSING_SERVICE_CRITERIA', message: 'ต้องระบุประเภทงานก่อนจึงจะแสดงสลอตลูกค้า' });
+      } else {
+        const matrixMap = await loadServiceMatrixMap(visibleTechs.map(t => t.username));
+        const matrixOk = (loadServiceMatrixMap._ok !== false);
+        techsFiltered = matrixOk
+          ? visibleTechs.filter(t => {
+              const u = String(t.username);
+              if (!matrixMap.has(u)) return false;
+              return techMatchesAllCriteriaStrict(matrixMap.get(u) || null, criteriaList || null);
+            })
+          : [];
+        if (debugFlag && !matrixOk) {
+          debugReasons.push({ code: 'SERVICE_MATRIX_UNAVAILABLE', message: 'โหลดสิทธิ์งานของช่างไม่สำเร็จ จึงปิดสลอตลูกค้าไว้ก่อน' });
+        }
+        if (debugFlag && matrixOk && techsFiltered.length === 0 && visibleTechs.length > 0) {
+          debugReasons.push({ code: 'NO_MATCH_MATRIX', message: 'ไม่มีช่างที่แอดมินอนุญาตและรับงานประเภทนี้' });
         }
       }
     }
@@ -24633,82 +24626,94 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
   // - scheduled => company, urgent => partner
   const requestedTechType = bm === "urgent" ? "partner" : "company";
   try {
-    let techs = await listTechniciansByType(requestedTechType);
+    let techs = await listTechniciansByType(requestedTechType, { include_paused: bm === "scheduled" });
 
-    // Option B strict matrix filter for customer booking (supports multi-services)
-    // - If matrix DB read fails, skip filtering (fail-open) to avoid total outage.
-    // - Enforce customer_slot_visible=true (hide trainees/assistants from customer booking slots).
-    techs = techs.filter(t => t && t.customer_slot_visible !== false);
-    if (Array.isArray(payloadV2.services) && payloadV2.services.length) {
-      const normalizeJobKey = (s) => {
-        const v = String(s || '').toLowerCase();
-        if (!v) return null;
-        if (v.includes('ติดตั้ง')) return 'install';
-        if (v.includes('ซ่อม')) return 'repair';
-        if (v.includes('ล้าง')) return 'wash';
-        return null;
-      };
-      const normalizeAcKey = (s) => {
-        const v = String(s || '').toLowerCase();
-        if (!v) return null;
-        if (v.includes('ผนัง') || v.includes('wall')) return 'wall';
-        if (v.includes('สี่ทิศ') || v.includes('4') || v.includes('four')) return 'fourway';
-        if (v.includes('แขวน')) return 'hanging';
-        if (v.includes('ใต้ฝ้า') || v.includes('เปลือย') || v.includes('ฝัง')) return 'ceiling';
-        return null;
-      };
-      const normalizeWashKey = (s) => {
-        const v = String(s || '').toLowerCase();
-        if (!v) return null;
-        if (v.includes('ธรรมดา') || v.includes('normal')) return 'normal';
-        if (v.includes('พรีเมียม') || v.includes('premium')) return 'premium';
-        if (v.includes('แขวนคอย') || v.includes('coil')) return 'coil';
-        if (v.includes('ตัดล้าง') || v.includes('overhaul') || v.includes('ใหญ่')) return 'overhaul';
-        return null;
-      };
-      const listCriteria = payloadV2.services
-        .map(s => ({ job: normalizeJobKey(s.job_type || payloadV2.job_type), ac: normalizeAcKey(s.ac_type), wash: normalizeWashKey(s.wash_variant), repair_variant: (s.repair_variant || null) }))
-        .filter(c => c.job && c.ac);
-
-      const mustTrue = (obj, key) => {
-        if (!key) return true;
-        if (!obj || typeof obj !== 'object') return false;
-        return Boolean(obj[key]);
-      };
-      const techMatches = (mx, c) => {
-        if (!mx || typeof mx !== 'object') return false;
-        if (!mustTrue(mx.job_types, c.job)) return false;
-        if (!mustTrue(mx.ac_types, c.ac)) return false;
-        if (c.job === 'wash' && c.ac === 'wall') {
-          if (!mustTrue(mx.wash_wall_variants, c.wash)) return false;
-        }
-        return true;
-      };
-
-      // batch load matrices
-      let matrixOk = true;
-      const usernames = techs.map(t => String(t.username));
-      const matrixMap = new Map();
-      try {
-        const rMx = await pool.query(
-          `SELECT username, matrix_json FROM public.technician_service_matrix WHERE username = ANY($1::text[])`,
-          [usernames]
-        );
-        for (const row of (rMx.rows || [])) matrixMap.set(String(row.username), row.matrix_json || {});
-      } catch (e) {
-        matrixOk = false;
-        console.warn('[public_book] loadServiceMatrixMap failed:', e.message);
-      }
-
-      if (matrixOk && listCriteria.length) {
-        techs = techs.filter(t => {
-          const u = String(t.username);
-          if (!matrixMap.has(u)) return false; // strict
-          const mx = matrixMap.get(u) || null;
-          return listCriteria.every(c => techMatches(mx, c));
-        });
-      }
+    // Customer booking must use the same strict technician boundary as the public slot list.
+    // Only admin-visible technicians whose service matrix matches every requested service are eligible.
+    techs = techs.filter(t => t && t.customer_slot_visible === true);
+    const normalizeJobKey = (s) => {
+      const v = String(s || '').toLowerCase();
+      if (!v) return null;
+      if (v.includes('ติดตั้ง')) return 'install';
+      if (v.includes('ซ่อม')) return 'repair';
+      if (v.includes('ล้าง')) return 'wash';
+      return null;
+    };
+    const normalizeAcKey = (s) => {
+      const v = String(s || '').toLowerCase();
+      if (!v) return null;
+      if (v.includes('ผนัง') || v.includes('wall')) return 'wall';
+      if (v.includes('สี่ทิศ') || v.includes('4') || v.includes('four')) return 'fourway';
+      if (v.includes('แขวน')) return 'hanging';
+      if (v.includes('ใต้ฝ้า') || v.includes('เปลือย') || v.includes('ฝัง')) return 'ceiling';
+      return null;
+    };
+    const normalizeWashKey = (s) => {
+      const v = String(s || '').toLowerCase();
+      if (!v) return null;
+      if (v.includes('ธรรมดา') || v.includes('normal')) return 'normal';
+      if (v.includes('พรีเมียม') || v.includes('premium')) return 'premium';
+      if (v.includes('แขวนคอย') || v.includes('coil')) return 'coil';
+      if (v.includes('ตัดล้าง') || v.includes('overhaul') || v.includes('ใหญ่')) return 'overhaul';
+      return null;
+    };
+    const requestedServices = (Array.isArray(payloadV2.services) && payloadV2.services.length)
+      ? payloadV2.services
+      : [{
+          job_type: payloadV2.job_type,
+          ac_type: payloadV2.ac_type,
+          wash_variant: payloadV2.wash_variant,
+          repair_variant: payloadV2.repair_variant,
+        }];
+    const listCriteria = requestedServices
+      .map(s => ({
+        job: normalizeJobKey(s.job_type || payloadV2.job_type),
+        ac: normalizeAcKey(s.ac_type || payloadV2.ac_type),
+        wash: normalizeWashKey(s.wash_variant || payloadV2.wash_variant),
+        repair_variant: String(s.repair_variant || payloadV2.repair_variant || '').trim() || null,
+      }))
+      .filter(c => c.job);
+    if (!listCriteria.length) {
+      const err = new Error('CUSTOMER_SLOT_SERVICE_CRITERIA_REQUIRED');
+      err.status = 400;
+      throw err;
     }
+
+    const mustTrue = (obj, key) => {
+      if (!key) return true;
+      if (!obj || typeof obj !== 'object') return false;
+      return Boolean(obj[key]);
+    };
+    const techMatches = (mx, c) => {
+      if (!mx || typeof mx !== 'object') return false;
+      if (!mustTrue(mx.job_types, c.job)) return false;
+      if (!mustTrue(mx.ac_types, c.ac)) return false;
+      if (c.job === 'wash' && c.ac === 'wall' && !mustTrue(mx.wash_wall_variants, c.wash)) return false;
+      return true;
+    };
+
+    const usernames = techs.map(t => String(t.username));
+    const matrixMap = new Map();
+    try {
+      const rMx = usernames.length
+        ? await pool.query(
+            `SELECT username, matrix_json FROM public.technician_service_matrix WHERE username = ANY($1::text[])`,
+            [usernames]
+          )
+        : { rows: [] };
+      for (const row of (rMx.rows || [])) matrixMap.set(String(row.username), row.matrix_json || {});
+    } catch (e) {
+      console.warn('[public_book] loadServiceMatrixMap failed:', e.message);
+      const err = new Error('CUSTOMER_SLOT_MATRIX_UNAVAILABLE');
+      err.status = 503;
+      throw err;
+    }
+    techs = techs.filter(t => {
+      const u = String(t.username);
+      if (!matrixMap.has(u)) return false;
+      const mx = matrixMap.get(u) || null;
+      return listCriteria.every(c => techMatches(mx, c));
+    });
     // Timezone-safe: normalize appointment datetime once (Asia/Bangkok)
     const startIso = normalizeAppointmentDatetime(appointment_datetime);
     const tMin = toMin(String(startIso).slice(11, 16));
@@ -24727,8 +24732,15 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
       }
     }
   } catch (e) {
-    // fail-open: ถ้าเช็คไม่ได้ไม่ให้จองพัง แต่ log ไว้
-    console.warn("[public_book] availability_check_fail", { bm, err: e.message });
+    console.warn("[public_book] availability_check_fail", { bm, clientApp, err: e.message });
+    if (bm === "scheduled" && clientApp === "customer_app_v2") {
+      const status = Number(e.status || 503);
+      const message = status === 400
+        ? "ข้อมูลบริการไม่ครบสำหรับตรวจคิว กรุณาเลือกบริการใหม่"
+        : "ระบบตรวจคิวช่างยังไม่พร้อม กรุณาลองใหม่อีกครั้ง";
+      return res.status(status).json({ error: message });
+    }
+    // Preserve legacy callers outside Customer App V2.
   }
 
 

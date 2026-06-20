@@ -2,16 +2,24 @@
 <html lang="th">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CWF Customer App V2</title>
-  <link rel="stylesheet" href="./assets/customer-app.css?v=20260620_commerce_home_address_v1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#071B38">
+  <meta name="application-name" content="CWF Service">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="CWF Service">
+  <title>CWF Customer Service</title>
+  <link rel="manifest" href="./manifest.webmanifest?v=20260620_customer_production_real_slots_v3">
+  <link rel="icon" type="image/png" sizes="192x192" href="./assets/icons/cwf-customer-192.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="./assets/icons/cwf-customer-180.png">
+  <link rel="stylesheet" href="./assets/customer-app.css?v=20260620_customer_production_real_slots_v3">
 </head>
-<body>
+<body class="is-app-booting">
   <div class="app-shell" data-app-shell>
     <header class="app-header">
       <div class="brand-lockup">
         <div class="brand-mark" aria-hidden="true">
-          <img src="/logo.png?v=20260620_commerce_home_address_v1" alt="" onerror="this.hidden=true;this.parentElement.classList.add('is-fallback')">
+          <img src="./assets/icons/cwf-customer-192.png" alt="">
           <span>CWF</span>
         </div>
         <div>
@@ -19,42 +27,41 @@
           <h1>CWF Service</h1>
         </div>
       </div>
-      <button class="icon-pill" type="button" data-route="profile" aria-label="บัญชีลูกค้า">
-        <span aria-hidden="true">บัญชี</span>
+      <button class="icon-pill" type="button" data-route="profile" data-account-chip aria-label="เข้าสู่ระบบหรือดูบัญชี">
+        <span class="account-chip-avatar" data-account-chip-avatar aria-hidden="true"></span>
+        <span data-account-chip-label>บัญชี</span>
       </button>
     </header>
 
-    <main id="app" class="app-main" tabindex="-1"></main>
+    <main id="app" class="app-main" tabindex="-1">
+      <section class="app-boot-screen" aria-live="polite">
+        <img src="./assets/icons/cwf-customer-192.png" alt="" width="72" height="72">
+        <strong>กำลังเปิด CWF Service</strong>
+        <span>เตรียมบริการและข้อมูลบัญชีของคุณ</span>
+      </section>
+    </main>
 
-    <nav class="bottom-nav" aria-label="Customer App V2">
-      <button type="button" data-route="home" class="nav-item is-active">
-        <span>หน้าแรก</span>
-      </button>
-      <button type="button" data-route="booking" class="nav-item">
-        <span>จองคิว</span>
-      </button>
-      <button type="button" data-route="tracking" class="nav-item">
-        <span>ติดตาม</span>
-      </button>
-      <button type="button" data-route="profile" class="nav-item">
-        <span>บัญชี</span>
-      </button>
+    <nav class="bottom-nav" aria-label="เมนูแอปลูกค้า">
+      <button type="button" data-route="home" class="nav-item is-active"><span>หน้าแรก</span></button>
+      <button type="button" data-route="booking" class="nav-item"><span>จองคิว</span></button>
+      <button type="button" data-route="tracking" class="nav-item"><span>ติดตาม</span></button>
+      <button type="button" data-route="profile" class="nav-item"><span>บัญชี</span></button>
     </nav>
   </div>
 
-  <script src="./modules/state.js?v=20260620_commerce_home_address_v1"></script>
-  <script src="./modules/utils.js?v=20260620_commerce_home_address_v1"></script>
-  <script src="./modules/api.js?v=20260620_commerce_home_address_v1"></script>
-  <script src="./modules/services.js?v=20260620_commerce_home_address_v1"></script>
-  <script src="./modules/ui.js?v=20260620_commerce_home_address_v1"></script>
-  <script src="./modules/auth.js?v=20260620_commerce_home_address_v1"></script>
-  <script src="./modules/pricing.js?v=20260620_commerce_home_address_v1"></script>
-  <script src="./modules/availability.js?v=20260620_commerce_home_address_v1"></script>
-  <script src="./modules/bookingScheduled.js?v=20260620_commerce_home_address_v1"></script>
-  <script src="./modules/bookingUrgent.js?v=20260620_commerce_home_address_v1"></script>
-  <script src="./modules/tracking.js?v=20260620_commerce_home_address_v1"></script>
-  <script src="./modules/profile.js?v=20260620_commerce_home_address_v1"></script>
-  <script src="./modules/router.js?v=20260620_commerce_home_address_v1"></script>
-  <script src="./assets/customer-app.js?v=20260620_commerce_home_address_v1"></script>
+  <script src="./modules/state.js?v=20260620_customer_production_real_slots_v3"></script>
+  <script src="./modules/utils.js?v=20260620_customer_production_real_slots_v3"></script>
+  <script src="./modules/api.js?v=20260620_customer_production_real_slots_v3"></script>
+  <script src="./modules/services.js?v=20260620_customer_production_real_slots_v3"></script>
+  <script src="./modules/ui.js?v=20260620_customer_production_real_slots_v3"></script>
+  <script src="./modules/auth.js?v=20260620_customer_production_real_slots_v3"></script>
+  <script src="./modules/pricing.js?v=20260620_customer_production_real_slots_v3"></script>
+  <script src="./modules/availability.js?v=20260620_customer_production_real_slots_v3"></script>
+  <script src="./modules/bookingScheduled.js?v=20260620_customer_production_real_slots_v3"></script>
+  <script src="./modules/bookingUrgent.js?v=20260620_customer_production_real_slots_v3"></script>
+  <script src="./modules/tracking.js?v=20260620_customer_production_real_slots_v3"></script>
+  <script src="./modules/profile.js?v=20260620_customer_production_real_slots_v3"></script>
+  <script src="./modules/router.js?v=20260620_customer_production_real_slots_v3"></script>
+  <script src="./assets/customer-app.js?v=20260620_customer_production_real_slots_v3"></script>
 </body>
 </html>

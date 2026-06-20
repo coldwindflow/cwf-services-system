@@ -3,12 +3,30 @@
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
 
+  function bangkokTodayYmd() {
+    try {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Bangkok",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+      }).formatToParts(new Date());
+      const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+      return `${value.year}-${value.month}-${value.day}`;
+    } catch (_) {
+      return new Date(Date.now() + (7 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+    }
+  }
+
   const state = {
     currentRoute: "home",
     bookingMode: null,
     guestMode: true,
     selectedService: null,
     customer: null,
+    authStatus: "idle",
+    authError: "",
+    authConfig: null,
     catalog: { status: "idle", items: [], error: "" },
     promotions: { status: "idle", items: [], error: "" },
     zones: { status: "idle", items: [], error: "" },
@@ -17,7 +35,7 @@
     profileAddressForm: { editing: false, status: "idle", error: "", success: "" },
     scheduledPreview: {
       pricing: { status: "idle", data: null, error: "" },
-      availability: { status: "idle", data: null, error: "" },
+      availability: { status: "idle", data: null, error: "", query_key: "", loaded_at: "" },
     },
     scheduledSubmit: {
       status: "idle",
@@ -38,7 +56,7 @@
         repair_variant: "",
         btu: "12000",
         machine_count: 1,
-        date: new Date().toISOString().slice(0, 10),
+        date: bangkokTodayYmd(),
         tech_type: "company",
         selectedSlot: null,
         customer_name: "",
