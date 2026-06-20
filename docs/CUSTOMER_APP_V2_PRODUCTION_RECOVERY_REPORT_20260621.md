@@ -7,8 +7,9 @@ Build id: `20260621_production_recovery_v1`
 
 ## Scope
 
-This recovery stayed inside the approved Customer App V2 frontend surface, focused tests, and docs:
+This recovery stayed inside the approved Customer App V2 frontend surface, authorized backend public booking routes, focused tests, and docs:
 
+- `index.js`
 - `customer-app/index.html`
 - `customer-app/manifest.webmanifest`
 - `customer-app/sw.js`
@@ -17,9 +18,10 @@ This recovery stayed inside the approved Customer App V2 frontend surface, focus
 - `customer-app/modules/*.js`
 - `test/customerAppRecovery.test.js`
 - `test/customerAppSavedAddress.test.js`
+- `test/customerSlotBoundary.test.js`
 - `docs/customer-app-v2-recovery-screenshots/*.json`
 
-No backend code, migrations, `package.json`, or `package-lock.json` were changed.
+No database migrations, `package.json`, or `package-lock.json` were changed.
 
 ## Recovery Summary
 
@@ -37,6 +39,8 @@ No backend code, migrations, `package.json`, or `package-lock.json` were changed
 - Removed technician identity/count display from customer slot and urgent waiting views.
 - Tightened mobile header/account-chip layout, including narrow-screen avatar-only fallback for logged-in users.
 - Replaced the full home rerender after async data with targeted home data patching to avoid resetting visible state.
+- Restored backend `index.js` from the owner-provided `cwf-services-system-main (7).zip` so the public availability and booking routes are present in this branch.
+- Hardened `GET /public/availability_v2` and `POST /public/book` around the real customer slot boundary.
 
 ## Root Causes Addressed
 
@@ -45,31 +49,31 @@ No backend code, migrations, `package.json`, or `package-lock.json` were changed
 - The urgent route existed as a user-facing concept but was routed back to scheduled booking.
 - Scheduled booking mixed service, pricing, availability, and confirmation in a way that made stale-slot recovery and privacy guarantees fragile.
 - Customer-facing slot UI could expose technician details/counts that should remain hidden until backend assignment.
+- Public slot availability needed server-side filtering by Admin-visible technicians and Service Matrix eligibility, with the same validation repeated during booking submit.
 
-## Backend Scope Mismatch
+## Backend Slot Boundary
 
-The current frontend-only scope can hide technician information and counts from the Customer App UI, and tests now lock that behavior. Full guarantees that `/public/availability_v2` returns only eligible anonymous slots, and that `/public/book` rejects spoofed or stale technician/slot selections, require backend handler enforcement. Those backend modules were not changed because the recovery request restricted backend edits unless explicitly approved.
+The backend route implementation was restored from `C:\Users\ADMIN\Downloads\cwf-services-system-main (7).zip` and then patched in the authorized `index.js` route/helper area.
 
-## Backend Slot Boundary Inspection
+Implemented eligibility rules:
 
-Follow-up inspection on 2026-06-21 found that this checkout does not contain the backend implementations for `GET /public/availability_v2` or `POST /public/book`. The authorized file named in the backend continuation request, `index.js`, is currently a browser-side Customer App script in this repository, not an Express route file. The root `app.js` is also a browser-side Technician App script.
+- Customer slots include only technicians with `customer_slot_visible === true`.
+- `false`, `null`, missing, or malformed visibility does not pass the customer slot filter.
+- Public availability no longer falls back to all technicians when the requested technician type has no matches.
+- Admin forced availability keeps the legacy type fallback for Admin scheduling views only.
+- Service Matrix matching is strict for job type, AC type, wall wash variant, and repair variant when provided.
+- Missing, unreadable, or malformed Service Matrix fails closed for customer slots.
+- Customer public availability returns anonymous slot data only: `date`, `duration_min`, `slot_step_min`, and `slots[{ start, end, available }]`.
+- Public customer response omits technician IDs, names, usernames, phone numbers, available technician lists, capacity, and counts.
 
-What exists in current `origin/main`:
+Booking revalidation:
 
-- `technician_profiles.customer_slot_visible` is referenced by the Admin technician UI.
-- `technician_service_matrix` is referenced by the Admin technician UI and the read-only Admin work-readiness route.
-- Admin UI saves a strict matrix shape with `job_types`, `ac_types`, and `wash_wall_variants`.
-
-What was not found in this checkout:
-
-- Public route code for `GET /public/availability_v2`.
-- Public route code for `POST /public/book`.
-- Server-side strict service-matrix matching for public slots.
-- Fail-closed public availability behavior when the matrix is missing or malformed.
-- Anonymous public slot generation from eligible technicians.
-- Server-side scheduled booking slot revalidation for customer-submitted slots.
-
-Because the public route implementations are absent from the branch, backend slot-boundary enforcement could not be completed without the missing route file or explicit approval to add and mount a new backend route module.
+- `POST /public/book` rebuilds eligibility from the submitted service payload rather than trusting technician fields from the client.
+- The route re-reads technicians, filters `customer_slot_visible === true`, reloads Service Matrix rows, and requires every requested service line to match.
+- Missing or incomplete service criteria is rejected before booking.
+- The selected appointment time is rechecked against technician availability and duration.
+- Stale, spoofed, hidden-technician, or wrong-service Customer App V2 scheduled slots return `409`.
+- Customer-supplied technician username, technician name, candidate list, count, and capacity fields are not read from the booking payload.
 
 ## QA Artifacts
 
@@ -84,11 +88,14 @@ Browser QA covered logged-out and logged-in header states, scheduled flow steps 
 
 ## Automated Verification
 
+- `node --check index.js`
 - `node --check customer-app/assets/customer-app.js`
 - `node --check customer-app/sw.js`
 - `node --check customer-app/modules/*.js`
 - `node --check test/customerAppRecovery.test.js`
+- `node --check test/customerSlotBoundary.test.js`
 - `node --test test/customerAppRecovery.test.js`
+- `node --test test/customerSlotBoundary.test.js`
 - `npm test`
 - `git diff --check`
 
@@ -98,7 +105,7 @@ Final `npm test` result: 62 tests passing.
 
 ## Residual Risks
 
-- Backend eligibility/rejection guarantees still need backend review if the API currently returns technician identity/counts or accepts spoofed slot payloads.
-- The public route implementations needed for backend slot-boundary enforcement are not present in this checkout.
+- The restored `index.js` comes from the owner-provided zip because the checked-out branch did not contain the backend public route implementation.
+- Live production smoke testing still needs owner-approved safe data or staging because `/public/book` writes real booking records.
 - Production deployment should confirm the hosting layer serves `customer-app/sw.js` with JavaScript MIME type and does not strip query strings from versioned asset URLs.
 - Production smoke testing should include a real logged-in customer session because local browser QA used mocked public endpoints.
