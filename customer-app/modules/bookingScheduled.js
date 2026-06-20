@@ -19,7 +19,7 @@
   }
 
   function step() {
-    return Math.max(1, Math.min(4, Number(root.state.scheduledWizard?.step || 1)));
+    return Math.max(1, Math.min(5, Number(root.state.scheduledWizard?.step || 1)));
   }
 
   function finalPrice() {
@@ -143,7 +143,7 @@
   }
 
   function renderProgress() {
-    const labels = ["บริการ", "วันและคิว", "ข้อมูลหน้างาน", "ตรวจสอบ"];
+    const labels = ["ข้อมูลลูกค้า", "บริการ", "ราคา", "วันและเวลา", "ยืนยัน"];
     const current = step();
     return `
       <ol class="booking-stepper" aria-label="ขั้นตอนจองล้างแอร์">
@@ -162,7 +162,7 @@
     return `
       <section class="card booking-wizard-card">
         <div class="section-head">
-          <span class="section-kicker">ขั้นตอน 1 จาก 4</span>
+          <span class="section-kicker">ขั้นตอน 2 จาก 5</span>
           <h2>เลือกรายละเอียดงานล้าง</h2>
           <p class="muted">ระบบเปิดจองออนไลน์เฉพาะงานล้างที่มีราคาและระยะเวลามาตรฐาน</p>
         </div>
@@ -292,13 +292,32 @@
     return `
       <section class="card booking-wizard-card">
         <div class="section-head">
-          <span class="section-kicker">ขั้นตอน 2 จาก 4</span>
+          <span class="section-kicker">ขั้นตอน 4 จาก 5</span>
           <h2>เลือกวันและคิวช่างว่างจริง</h2>
           <p class="muted">เลือกวันจากปฏิทิน แล้วเลือกช่วงเวลาที่ระบบยืนยันว่ามีช่างว่าง</p>
         </div>
-        ${renderPricingSummary()}
         ${renderCalendar()}
         <div class="slot-section" data-availability-preview>${renderSlots()}</div>
+      </section>
+    `;
+  }
+
+  function renderStepPrice() {
+    const pricing = root.state.scheduledPreview.pricing;
+    return `
+      <section class="card booking-wizard-card">
+        <div class="section-head">
+          <span class="section-kicker">ขั้นตอน 3 จาก 5</span>
+          <h2>ราคา</h2>
+          <p class="muted">ราคานี้มาจากระบบหลังบ้านเท่านั้น พร้อมโปรโมชันและเวลาทำงานที่คำนวณได้จริง</p>
+        </div>
+        ${pricing.status === "loading" ? root.utils.stateBox("loading", "กำลังคำนวณราคาจากระบบจริง...") : ""}
+        ${pricing.status === "error" ? root.utils.stateBox("error", pricing.error || "คำนวณราคาไม่สำเร็จ") : ""}
+        ${pricing.data ? renderPricingSummary() : ""}
+        <div class="data-list">
+          <div class="data-row"><strong>บริการ</strong><span class="muted">${root.utils.escapeHtml(root.services.serviceLabel(service()))}</span></div>
+        </div>
+        <button type="button" class="secondary-btn" data-action="edit-service">กลับไปแก้ไขบริการ</button>
       </section>
     `;
   }
@@ -309,8 +328,8 @@
     return `
       <section class="card booking-wizard-card">
         <div class="section-head">
-          <span class="section-kicker">ขั้นตอน 3 จาก 4</span>
-          <h2>ข้อมูลผู้ติดต่อและหน้างาน</h2>
+          <span class="section-kicker">ขั้นตอน 1 จาก 5</span>
+          <h2>ข้อมูลลูกค้า</h2>
           <p class="muted">กรอกข้อมูลที่ช่างใช้เดินทางและติดต่อก่อนเข้าบริการ</p>
         </div>
         <div class="form-grid">
@@ -369,8 +388,8 @@
     return `
       <section class="card booking-wizard-card review-card">
         <div class="section-head">
-          <span class="section-kicker">ขั้นตอน 4 จาก 4</span>
-          <h2>ตรวจสอบก่อนส่งจอง</h2>
+          <span class="section-kicker">ขั้นตอน 5 จาก 5</span>
+          <h2>ยืนยัน</h2>
           <p class="muted">ระบบจะตรวจราคาและคิวช่างซ้ำจาก Server ก่อนสร้าง Booking จริง</p>
         </div>
         ${renderReviewRows()}
@@ -509,10 +528,10 @@
   }
 
   async function recoverPersistedFlow(container) {
-    if (recoveryPromise || step() < 2 || root.state.scheduledPreview.pricing.data) return recoveryPromise;
+    if (recoveryPromise || step() < 3 || root.state.scheduledPreview.pricing.data) return recoveryPromise;
     const payload = payloadFromDraft();
     if (!payload) {
-      root.state.setScheduledWizard({ step: 1, error: "ข้อมูลบริการเดิมไม่สมบูรณ์ กรุณาเลือกบริการใหม่" });
+      root.state.setScheduledWizard({ step: 2, error: "ข้อมูลบริการเดิมไม่สมบูรณ์ กรุณาเลือกบริการใหม่" });
       paint(container);
       return null;
     }
@@ -537,14 +556,14 @@
             root.state.updateDraft("scheduled", { selectedSlot: { ...restored, query_key: queryKey } });
           } else {
             root.state.updateDraft("scheduled", { selectedSlot: null });
-            root.state.setScheduledWizard({ step: 2, error: "คิวเดิมไม่ว่างแล้ว กรุณาเลือกช่วงเวลาใหม่" });
+            root.state.setScheduledWizard({ step: 4, error: "คิวเดิมไม่ว่างแล้ว กรุณาเลือกช่วงเวลาใหม่" });
           }
-        } else if (step() > 2) {
-          root.state.setScheduledWizard({ step: 2, error: "กรุณาเลือกช่วงเวลาที่ว่างอีกครั้ง" });
+        } else if (step() > 4) {
+          root.state.setScheduledWizard({ step: 4, error: "กรุณาเลือกช่วงเวลาที่ว่างอีกครั้ง" });
         }
       } catch (error) {
         root.state.setScheduledPreview("pricing", { status: "error", data: null, error: error.message || "กู้ข้อมูลราคาไม่สำเร็จ" });
-        root.state.setScheduledWizard({ step: 1, error: "ไม่สามารถกู้ข้อมูลการจองล่าสุดได้ กรุณาตรวจบริการและลองใหม่" });
+        root.state.setScheduledWizard({ step: 2, error: "ไม่สามารถกู้ข้อมูลการจองล่าสุดได้ กรุณาตรวจบริการและลองใหม่" });
       } finally {
         recoveryPromise = null;
         paint(container);
@@ -564,7 +583,9 @@
       .find((slot) => slot.key === selected.key && slot.date === selected.date && slot.start === selected.start);
     if (!latest) {
       root.state.updateDraft("scheduled", { selectedSlot: null });
-      throw new Error("คิวนี้ไม่ว่างแล้ว กรุณาเลือกช่วงเวลาใหม่");
+      const error = new Error("คิวนี้ไม่ว่างแล้ว กรุณาเลือกช่วงเวลาใหม่");
+      error.status = 409;
+      throw error;
     }
     root.state.updateDraft("scheduled", { selectedSlot: { ...latest, query_key: expectedKey } });
     return true;
@@ -574,28 +595,37 @@
     const current = step();
     root.state.setScheduledWizard({ error: "" });
     if (current === 1) {
-      const error = validateStepOne();
+      const error = validateStepThree();
       if (error) { root.state.setScheduledWizard({ error }); paint(container); return; }
-      try {
-        await refreshPricing(container);
-        root.state.setScheduledWizard({ step: 2, error: "" });
-        paint(container);
-        await refreshAvailability(container);
-      } catch (_) { /* error is already rendered */ }
-      return;
-    }
-    if (current === 2) {
-      const error = validateStepTwo();
-      if (error) { root.state.setScheduledWizard({ error }); paint(container); return; }
-      root.state.setScheduledWizard({ step: 3, error: "" });
-      prefillContact();
+      root.state.setScheduledWizard({ step: 2, error: "" });
       paint(container);
       return;
     }
-    if (current === 3) {
-      const error = validateStepThree();
+    if (current === 2) {
+      const error = validateStepOne();
       if (error) { root.state.setScheduledWizard({ error }); paint(container); return; }
+      root.state.setScheduledWizard({ step: 3, error: "" });
+      paint(container);
+      try {
+        await refreshPricing(container);
+      } catch (_) { /* error is already rendered */ }
+      return;
+    }
+    if (current === 3) {
+      if (!root.state.scheduledPreview.pricing.data) {
+        root.state.setScheduledWizard({ error: root.state.scheduledPreview.pricing.error || "กรุณารอให้ระบบคำนวณราคาให้สำเร็จ" });
+        paint(container);
+        return;
+      }
       root.state.setScheduledWizard({ step: 4, error: "" });
+      paint(container);
+      await refreshAvailability(container);
+      return;
+    }
+    if (current === 4) {
+      const error = validateStepTwo();
+      if (error) { root.state.setScheduledWizard({ error }); paint(container); return; }
+      root.state.setScheduledWizard({ step: 5, error: "" });
       paint(container);
     }
   }
@@ -617,6 +647,10 @@
     const payload = buildSubmitPayload();
     if (serviceError || slotError || contactError || !payload.appointment_datetime) {
       root.state.setScheduledSubmit({ status: "error", error: serviceError || slotError || contactError || "ข้อมูลจองไม่ครบ", result: null });
+      if (slotError) {
+        root.state.updateDraft("scheduled", { selectedSlot: null });
+        root.state.setScheduledWizard({ step: 4, error: slotError });
+      }
       paint(container);
       return;
     }
@@ -629,14 +663,14 @@
       const result = await root.api.submitScheduledBooking(buildSubmitPayload());
       if (!result?.success || (!result.booking_code && !result.token)) throw new Error("Server ไม่ได้ส่ง Booking Code กลับมา");
       root.state.setScheduledSubmit({ status: "success", error: "", result });
-      try { window.sessionStorage.removeItem("cwf_customer_app_v2_scheduled_v1"); } catch (_) { /* ignore */ }
+      try { window.sessionStorage.removeItem("cwf_customer_app_v2_scheduled_v2"); } catch (_) { /* ignore */ }
       paint(container);
       container.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
       root.state.setScheduledSubmit({ status: "error", error: error.message || "ส่งคำขอจองไม่สำเร็จ", result: null });
       if (Number(error.status) === 400 || Number(error.status) === 409) {
         root.state.updateDraft("scheduled", { selectedSlot: null });
-        root.state.setScheduledWizard({ step: 2, error: "คิวที่เลือกอาจเต็มแล้ว กรุณาเลือกช่วงเวลาใหม่" });
+        root.state.setScheduledWizard({ step: 4, error: "คิวที่เลือกอาจเต็มแล้ว กรุณาเลือกช่วงเวลาใหม่" });
       }
       paint(container);
     }
@@ -645,12 +679,18 @@
   function renderActions() {
     if (root.state.scheduledSubmit.status === "success") return "";
     const current = step();
-    if (current === 4) return "";
-    const nextLabel = current === 1 ? "ดูปฏิทินและคิวว่าง" : current === 2 ? "กรอกข้อมูลหน้างาน" : "ตรวจสอบรายการ";
+    if (current === 5) return "";
+    const nextLabel = current === 1
+      ? "เลือกบริการ"
+      : current === 2
+        ? "ดูราคา"
+        : current === 3
+          ? "เลือกวันและเวลา"
+          : "ตรวจสอบรายการ";
     return `
       <div class="wizard-action-bar">
         <button type="button" class="secondary-btn" data-action="wizard-back">${current === 1 ? "กลับหน้าบริการ" : "ย้อนกลับ"}</button>
-        ${current < 4 ? `<button type="button" class="primary-btn" data-action="wizard-next">${nextLabel}</button>` : ""}
+        ${current < 5 ? `<button type="button" class="primary-btn" data-action="wizard-next">${nextLabel}</button>` : ""}
       </div>
     `;
   }
@@ -662,10 +702,11 @@
     const success = root.state.scheduledSubmit.status === "success";
     const content = success
       ? renderSuccess()
-      : current === 1 ? renderStepOne()
-        : current === 2 ? renderStepTwo()
-          : current === 3 ? renderStepThree()
-            : renderStepFour();
+      : current === 1 ? renderStepThree()
+        : current === 2 ? renderStepOne()
+          : current === 3 ? renderStepPrice()
+            : current === 4 ? renderStepTwo()
+              : renderStepFour();
     container.innerHTML = `
       <div class="page booking-wizard-page">
         <div class="page-toolbar">
@@ -752,6 +793,10 @@
         const action = button.getAttribute("data-action");
         if (action === "wizard-next") await goNext(container);
         if (action === "wizard-back") goBack(container);
+        if (action === "edit-service") {
+          root.state.setScheduledWizard({ step: 2, error: "" });
+          paint(container);
+        }
         if (action === "reload-slots") await refreshAvailability(container);
         if (action === "use-saved-address") {
           root.state.prefillSavedAddress("scheduled");
@@ -773,9 +818,9 @@
 
   function render(container) {
     paint(container);
-    if (step() >= 2 && !root.state.scheduledPreview.pricing.data && root.state.scheduledPreview.pricing.status === "idle") {
+    if (step() >= 3 && !root.state.scheduledPreview.pricing.data && root.state.scheduledPreview.pricing.status === "idle") {
       recoverPersistedFlow(container);
-    } else if (step() === 2 && root.state.scheduledPreview.pricing.data && root.state.scheduledPreview.availability.status === "idle") {
+    } else if (step() === 4 && root.state.scheduledPreview.pricing.data && root.state.scheduledPreview.availability.status === "idle") {
       refreshAvailability(container);
     }
     root.state.ensureSavedAddressPrefill("scheduled", () => paint(container));

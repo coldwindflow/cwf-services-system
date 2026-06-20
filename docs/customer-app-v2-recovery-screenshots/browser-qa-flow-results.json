@@ -1,0 +1,32 @@
+{
+  "results": [
+    {
+      "scenario": "logged-out-header",
+      "label": "เข้าสู่ระบบ",
+      "overflow": false
+    },
+    {
+      "scenario": "logged-in-header-profile",
+      "inHeader": "คุณลูกค้า CW…",
+      "providerButtonsAfterLogin": 0,
+      "overflow": false
+    },
+    {
+      "scenario": "scheduled-flow",
+      "techLeakCount": 0,
+      "staleBack": true,
+      "overflow": false
+    },
+    {
+      "scenario": "urgent-route",
+      "visible": true,
+      "overflow": false
+    },
+    {
+      "scenario": "tracking-route",
+      "visible": true,
+      "overflow": false
+    }
+  ],
+  "consoleErrors": []
+}

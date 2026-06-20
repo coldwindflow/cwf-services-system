@@ -140,7 +140,8 @@ p { margin: 0; }
   border-bottom: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.brand-lockup { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.brand-lockup { display: flex; align-items: center; gap: 12px; min-width: 0; flex: 1 1 auto; }
+.brand-lockup > div:last-child { min-width: 0; }
 
 .brand-mark {
   display: grid;
@@ -180,12 +181,23 @@ p { margin: 0; }
   font-weight: 700;
   letter-spacing: 0.04em;
 }
-.app-header h1 { font-size: 18px; font-weight: 800; color: #fff; }
+.app-header h1 {
+  max-width: 100%;
+  overflow: hidden;
+  color: #fff;
+  font-size: 18px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .icon-pill {
   display: inline-flex;
   align-items: center;
   gap: 6px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 42%;
   padding: 9px 16px;
   border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.12);
@@ -194,6 +206,12 @@ p { margin: 0; }
   font-size: 14px;
   border: 1px solid rgba(255, 255, 255, 0.16);
   transition: background 0.18s ease, transform 0.1s ease;
+}
+.icon-pill [data-account-chip-label] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .icon-pill:active { transform: scale(0.96); background: rgba(255, 255, 255, 0.2); }
 
@@ -2856,7 +2874,7 @@ body {
   border-radius: 0;
 }
 .icon-pill.is-logged-in {
-  max-width: 46%;
+  max-width: 42%;
   padding-inline: 10px 13px;
   background: rgba(255, 255, 255, 0.18);
 }
@@ -2979,6 +2997,24 @@ body {
 @media (max-width: 360px) {
   .profile-action-grid { grid-template-columns: 1fr; }
   .icon-pill { padding-inline: 10px; }
+  .brand-mark { width: 40px; height: 40px; }
+  .app-header { gap: 8px; padding-left: 12px; padding-right: 12px; }
+  .app-header h1 { font-size: 16px; }
+  .eyebrow { font-size: 10px; }
+  .icon-pill.is-logged-in {
+    width: 42px;
+    height: 42px;
+    justify-content: center;
+    padding: 0;
+  }
+  .icon-pill.is-logged-in [data-account-chip-label] {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }
 
 /* ===================== Customer App V2 cleaning booking wizard ===================== */

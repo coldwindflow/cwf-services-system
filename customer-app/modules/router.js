@@ -12,7 +12,6 @@
     },
     canonicalRoute(route) {
       const requested = String(route || "home").trim();
-      if (requested === "urgent") return "booking";
       return this.routes[requested] ? requested : "home";
     },
     init() {
