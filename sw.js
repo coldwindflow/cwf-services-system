@@ -1,184 +1,327 @@
-// ✅ Phase 2: PWA เสถียร + บังคับอัปเดต cache
-// - เพิ่ม icons (192/512/maskable) ให้ Chrome “ติดตั้งเป็นแอพ” ได้จริง
-// - bump cache name เพื่อกันไฟล์ค้าง
-const CACHE_NAME = "cwf-cache-v122-customer-app-v2-phase2f-20260617";
+(function () {
+  "use strict";
 
-const ASSETS = [
-  "/",
-  "/login.html",
-  "/index.html",
-  "/tech.html",
-  "/style.css",
-  "/app.js?v=20260603_tech_map_url_fix",
-  "/logo.png",
-  "/assets/cwf-promptpay-qr.jpg",
-  "/manifest.json",
-  "/mainfest.json",
-  "/icon-cwf-v34-180.png",
-  "/icon-cwf-v34-192.png",
-  "/icon-cwf-v34-512.png",
-  "/icon-cwf-v34-512-maskable.png",
-  "/icon-180.png",
-  "/icon-192.png",
-  "/icon-512.png",
-  "/icon-512-maskable.png",
-  "/edit-profile.html",
-  "/customer.html",
-  "/track.html",
-  "/admin-review-v2.html",
-  "/admin-review-v2.js",
-  "/admin-add-v2.html",
-  "/admin-add-v2.js?v=20260520_generic_price_campaign_v1",
-  "/admin-queue-v2.html",
-  "/admin-queue-v2.js",
-  "/admin-history-v2.html",
-  "/admin-history-v2.js",
-  "/admin-job-view-v2.html",
-  "/admin-job-view-v2.js?v=20260508_edit_service_builder_v2",
-  "/admin-promotions-v2.html",
-  "/admin-promotions-v2.js?v=20260520_generic_price_campaign_v1",
-  "/admin-v2-common.js",
-  "/admin-work-readiness-v2.html",
-  "/admin-work-readiness-v2.js",
-];
+  const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
+  let homeLoadPromise = null;
 
-// ติดตั้งแล้ว cache ไฟล์
-self.addEventListener("install", (e) => {
-  self.skipWaiting(); // ✅ ให้ service worker ใหม่ทำงานทันที
-  e.waitUntil(caches.open(CACHE_NAME).then((c) => c.addAll(ASSETS)));
-});
-
-// ล้าง cache เก่า
-self.addEventListener("activate", (e) => {
-  e.waitUntil(
-    caches
-      .keys()
-      .then((keys) => Promise.all(keys.map((k) => (k !== CACHE_NAME ? caches.delete(k) : null))))
-      .then(() => self.clients.claim())
-  );
-});
-
-// ✅ ให้หน้าเว็บส่งคำสั่งมาได้ (เช่นให้ SW ใหม่ข้าม waiting)
-self.addEventListener("message", (event) => {
-  if (!event.data) return;
-  if (event.data && event.data.type === "SKIP_WAITING") {
-    self.skipWaiting();
-  }
-});
-
-// ดึงจาก network ก่อน ถ้าไม่ได้ค่อยใช้ cache (กันไฟล์เก่าค้าง)
-self.addEventListener("fetch", (e) => {
-  // ✅ อย่าแตะ request แบบ POST/PUT/DELETE
-  if (e.request.method !== "GET") return;
-
-  const url = new URL(e.request.url);
-
-  // ✅ กัน cache API/ข้อมูล dynamic (สำคัญ: ไม่ให้เก็บ response งาน/สถานะไว้ใน cache)
-  // - cache เฉพาะไฟล์ static (html/css/js/png/json) หรือไฟล์ที่อยู่ใน ASSETS
-  const isSameOrigin = url.origin === self.location.origin;
-  const pathname = url.pathname || "/";
-
-  const isAiOffice = (
-    pathname === "/admin/ai-office" ||
-    pathname === "/admin/ai-office.html" ||
-    pathname === "/admin-ai-office.html" ||
-    pathname === "/admin-ai-office.js" ||
-    pathname.startsWith("/admin/ai-office/")
-  );
-  if (isSameOrigin && isAiOffice) {
-    e.respondWith(fetch(e.request));
-    return;
-  }
-
-  const isStaticExt = /\.(?:html|css|js|png|jpg|jpeg|webp|svg|ico|json)$/.test(pathname);
-  const isAssetListed = ASSETS.includes(pathname) || (pathname === "/" && ASSETS.includes("/"));
-  const shouldCache = isSameOrigin && (isStaticExt || isAssetListed || e.request.mode === "navigate");
-
-  const isCustomerAppV2 = pathname === "/customer-app" || pathname === "/customer-app/" || pathname.startsWith("/customer-app/");
-  if (isSameOrigin && isCustomerAppV2) {
-    e.respondWith(
-      fetch(e.request, { cache: "no-store" })
-        .then((resp) => {
-          if (e.request.mode === "navigate") {
-            const copy = resp.clone();
-            caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
-          }
-          return resp;
-        })
-        .catch(async () => {
-          return (await caches.match(e.request)) || (await caches.match("/customer-app/")) || Response.error();
-        })
-    );
-    return;
-  }
-
-  // ถ้าไม่ควร cache → ปล่อยผ่าน network ตรง ๆ
-  if (!shouldCache) return;
-
-  e.respondWith(
-    fetch(e.request)
-      .then((resp) => {
-        const copy = resp.clone();
-        caches.open(CACHE_NAME).then((c) => c.put(e.request, copy));
-        return resp;
-      })
-      .catch(async () => {
-        // Offline fallback (โดยเฉพาะตอนเปิดหน้าแบบ navigate)
-        const cached = await caches.match(e.request);
-        if (cached) return cached;
-
-        if (e.request.mode === "navigate") {
-          // พยายาม fallback ไปหน้าใช้งานหลักที่ถูก cache ไว้
-          return (
-            (await caches.match(url.pathname)) ||
-            (await caches.match("/customer.html")) ||
-            (await caches.match("/track.html")) ||
-            (await caches.match("/login.html")) ||
-            (await caches.match("/index.html"))
-          );
-        }
-        return cached;
-      })
-  );
-});
-
-
-// 🔔 Web Push: แจ้งเตือนงานเข้า แม้ปิดหน้า PWA
-self.addEventListener("push", (event) => {
-  let data = {};
-  try { data = event.data ? event.data.json() : {}; } catch (_) { data = {}; }
-  const title = data.title || "CWF มีงานใหม่";
-  const options = {
-    body: data.body || "มีงานใหม่เข้ามา กรุณาเปิดแอพเพื่อตรวจสอบ",
-    icon: "/icon-cwf-v34-192.png",
-    badge: "/icon-cwf-v34-192.png",
-    tag: data.tag || "cwf-job-notification",
-    renotify: true,
-    requireInteraction: data.kind === "urgent_offer",
-    timestamp: Date.now(),
-    vibrate: [120, 70, 120],
-    actions: [
-      { action: "open", title: data.kind === "urgent_offer" ? "เปิดดูงาน / รับงาน" : "เปิดดูงาน" }
-    ],
-    data: { url: data.url || "/tech.html", job_id: data.job_id || null, kind: data.kind || "job", income_amount_text: data.income_amount_text || "" }
-  };
-  event.waitUntil(self.registration.showNotification(title, options));
-});
-
-self.addEventListener("notificationclick", (event) => {
-  event.notification.close();
-  const targetUrl = (event.notification && event.notification.data && event.notification.data.url) || "/tech.html";
-  event.waitUntil((async () => {
-    const allClients = await clients.matchAll({ type: "window", includeUncontrolled: true });
-    for (const client of allClients) {
-      try {
-        const u = new URL(client.url);
-        if (u.origin === self.location.origin && "focus" in client) {
-          if ("navigate" in client) await client.navigate(targetUrl);
-          return client.focus();
-        }
-      } catch (_) {}
+  function collectionState(name, emptyText, renderItems) {
+    const bucket = root.state[name] || { status: "idle", items: [], error: "" };
+    if (bucket.status === "loading" || bucket.status === "idle") {
+      return `<div class="content-skeleton" aria-label="กำลังโหลดข้อมูล"><span></span><span></span></div>`;
     }
-    return clients.openWindow(targetUrl);
-  })());
-});
+    if (bucket.status === "error") return root.utils.stateBox("error", bucket.error || "โหลดข้อมูลไม่สำเร็จ");
+    if (!bucket.items || !bucket.items.length) return root.utils.stateBox("", emptyText);
+    return renderItems(bucket.items);
+  }
+
+  function priceFromPreview(data) {
+    if (!data) return null;
+    if (data.promo && data.promo.total_after_discount != null) return data.promo.total_after_discount;
+    return data.active_price || data.standard_price || null;
+  }
+
+  function renderQuickPrice(card) {
+    if (!card.priceable) return `<span class="price-text is-estimate">ให้แอดมินประเมินราคา</span>`;
+    const state = root.state.homePricing || { items: {} };
+    const item = (state.items || {})[card.id];
+    if (!item || item.status === "loading" || item.status === "idle") {
+      return `<span class="price-text is-estimate">กำลังตรวจสอบราคา...</span>`;
+    }
+    if (item.status === "error" || !item.data) {
+      return `<span class="price-text is-estimate">ให้แอดมินประเมินราคา</span>`;
+    }
+    const price = priceFromPreview(item.data);
+    if (!price) return `<span class="price-text is-estimate">ให้แอดมินประเมินราคา</span>`;
+    return `
+      <span class="price-text">${root.utils.formatBaht(price)}</span>
+      ${item.data.promo ? `<span class="promo-chip">มีโปรที่ใช้ได้</span>` : ""}
+    `;
+  }
+
+  function renderPromotionSummary() {
+    return collectionState("promotions", "ยังไม่มีโปรโมชันที่เปิดใช้ในขณะนี้", (items) => `
+      <div class="commerce-list">
+        ${items.slice(0, 3).map((promo) => `
+          <div class="commerce-list-row">
+            <strong>${root.utils.escapeHtml(promo.promo_name || "-")}</strong>
+            <span>ระบบจะตรวจเงื่อนไขและใช้โปรที่เหมาะสมตอนประเมินราคา</span>
+          </div>
+        `).join("")}
+      </div>
+    `);
+  }
+
+  function renderCoverageSummary() {
+    return collectionState("zones", "กรอกที่อยู่ในหน้าจองเพื่อให้ระบบตรวจสอบพื้นที่", (items) => `
+      <div class="tag-row commerce-tags">
+        ${items.slice(0, 10).map((zone) => `<span class="tag">${root.utils.escapeHtml(zone.zone_label || zone.zone_name || zone.zone_code || "-")}</span>`).join("")}
+      </div>
+    `);
+  }
+
+  function renderAccountShortcut() {
+    const customer = root.state.customer;
+    if (root.state.authStatus === "loading" && !customer) {
+      return `
+        <section class="card account-shortcut">
+          <div class="account-skeleton"><span></span><span></span></div>
+        </section>
+      `;
+    }
+
+    if (!customer?.logged_in) {
+      return `
+        <section class="card account-shortcut">
+          <h2>จองแบบ Guest ได้ทันที</h2>
+          <p class="muted">เข้าสู่ระบบเมื่อต้องการบันทึกที่อยู่และกลับมาติดตามงานได้สะดวกขึ้น</p>
+          <button class="secondary-btn" type="button" data-route="profile">เข้าสู่ระบบ</button>
+        </section>
+      `;
+    }
+
+    const profile = customer.profile || {};
+    const displayName = root.auth.displayName(customer);
+    const hasAddress = String(profile.address || "").trim();
+    return `
+      <section class="card account-shortcut is-logged-in">
+        <div class="account-shortcut-head">
+          <span class="account-avatar">${root.utils.escapeHtml(displayName.slice(0, 1))}</span>
+          <div>
+            <h2>${root.utils.escapeHtml(displayName)}</h2>
+            <p>บัญชีพร้อมใช้งาน</p>
+          </div>
+        </div>
+        <p class="muted">${hasAddress ? "มีที่อยู่สำหรับรับบริการบันทึกไว้แล้ว" : "เพิ่มที่อยู่สำหรับรับบริการ เพื่อจองครั้งถัดไปได้เร็วขึ้น"}</p>
+        <button class="secondary-btn" type="button" data-route="profile">${hasAddress ? "ดูบัญชีของฉัน" : "เพิ่มที่อยู่"}</button>
+      </section>
+    `;
+  }
+
+  async function loadCollection(name, fn, key) {
+    if (root.state[name]?.status !== "idle") return;
+    root.state.setCollection(name, { status: "loading", items: [], error: "" });
+    try {
+      const data = await fn();
+      root.state.setCollection(name, {
+        status: "success",
+        items: root.utils.normalizeList(data, key),
+        error: "",
+      });
+    } catch (error) {
+      root.state.setCollection(name, { status: "error", items: [], error: error?.message || "โหลดข้อมูลไม่สำเร็จ" });
+    }
+  }
+
+  async function loadHomePricingData() {
+    if (root.state.homePricing.status !== "idle") return;
+    const cards = [...root.services.quickServices, ...(root.services.additionalServices || [])].filter((card) => card.priceable);
+    const loadingItems = Object.fromEntries(cards.map((card) => [card.id, { status: "loading", data: null, error: "" }]));
+    root.state.setHomePricing({ status: "loading", items: loadingItems, error: "" });
+
+    const entries = await Promise.all(cards.map(async (card) => {
+      const payload = root.services.payloadFromServiceDraft(card.draft);
+      if (!payload) return [card.id, { status: "error", data: null, error: "ADMIN_ESTIMATE" }];
+      try {
+        const data = await root.api.previewPricing(payload);
+        return [card.id, { status: "success", data, error: "" }];
+      } catch (error) {
+        return [card.id, { status: "error", data: null, error: error?.message || "PRICE_UNAVAILABLE" }];
+      }
+    }));
+
+    root.state.setHomePricing({ status: "success", items: Object.fromEntries(entries), error: "" });
+  }
+
+  async function loadHomeData() {
+    if (homeLoadPromise) return homeLoadPromise;
+    const tasks = [
+      root.auth.loadCustomer(null),
+      loadCollection("promotions", root.api.loadPromotions, "promotions"),
+      loadCollection("zones", root.api.loadServiceZones, "zones"),
+      loadHomePricingData(),
+    ];
+    homeLoadPromise = Promise.allSettled(tasks).finally(() => {
+      if (root.router?.initialized && root.state.currentRoute === "home") root.router.refresh();
+    });
+    return homeLoadPromise;
+  }
+
+  function updateAccountChrome() {
+    const button = document.querySelector("[data-account-chip]");
+    if (!button) return;
+    const label = button.querySelector("[data-account-chip-label]");
+    const avatar = button.querySelector("[data-account-chip-avatar]");
+    const customer = root.state.customer;
+    if (customer?.logged_in) {
+      const name = root.auth?.displayName?.(customer) || "บัญชีของฉัน";
+      const picture = root.utils.safeHttpsUrl?.(customer?.user?.picture || "") || "";
+      if (label) label.textContent = name.length > 10 ? `${name.slice(0, 10)}…` : name;
+      if (avatar) avatar.innerHTML = picture
+        ? `<img src="${root.utils.escapeHtml(picture)}" alt="" loading="lazy">`
+        : root.utils.escapeHtml(name.slice(0, 1));
+      button.classList.add("is-logged-in");
+      button.setAttribute("aria-label", `บัญชีของ ${name}`);
+    } else {
+      if (label) label.textContent = "เข้าสู่ระบบ";
+      if (avatar) avatar.innerHTML = "";
+      button.classList.remove("is-logged-in");
+      button.setAttribute("aria-label", "เข้าสู่ระบบหรือดูบัญชี");
+    }
+  }
+
+
+  const ui = {
+    prefetchHome: loadHomeData,
+    updateAccountChrome,
+
+    renderHome(container) {
+      container.innerHTML = `
+        <section class="screen commerce-home">
+          <div class="hero home-hero">
+            <div class="hero-badge">CWF Premium Air Service</div>
+            <h2>เลือกบริการแอร์ที่เหมาะกับคุณ</h2>
+            <p>ดูราคาเมื่อระบบคำนวณได้ เลือกคิว และติดตามสถานะงานได้ในแอปเดียว</p>
+            <div class="hero-proof-row" aria-label="จุดเด่น CWF">
+              <span>แจ้งราคาก่อนเริ่ม</span>
+              <span>ช่างผ่านมาตรฐาน</span>
+              <span>รับประกันงานล้าง 30 วัน</span>
+            </div>
+          </div>
+
+          <section class="commerce-primary-cta">
+            <button class="primary-btn" type="button" data-commerce-service="wall-normal">จองล้างแอร์</button>
+            <button class="secondary-btn" type="button" data-route="tracking">ติดตามงาน</button>
+          </section>
+
+          <section class="card commerce-section">
+            <div class="section-head"><h2>เลือกบริการ</h2></div>
+            <div class="commerce-category-grid">
+              ${root.services.commerceCategories.map((item) => `
+                <button class="commerce-category-card" type="button" data-commerce-service="${root.utils.escapeHtml(item.id)}">
+                  <span class="trust-ico">${root.utils.icon(item.glyph || "sparkle", 20)}</span>
+                  <strong>${root.utils.escapeHtml(item.title)}</strong>
+                  <span>${root.utils.escapeHtml(item.copy)}</span>
+                </button>
+              `).join("")}
+            </div>
+          </section>
+
+          <section class="card commerce-section">
+            <div class="section-head"><h2>บริการที่เลือกบ่อย</h2></div>
+            <div class="quick-service-grid">
+              ${root.services.quickServices.map((card) => `
+                <button class="quick-service-card ${card.route === "urgent" ? "is-urgent" : ""}" type="button" data-commerce-service="${root.utils.escapeHtml(card.id)}">
+                  <span class="quick-kicker">${root.utils.escapeHtml(card.kicker || "")}</span>
+                  <strong>${root.utils.escapeHtml(card.title)}</strong>
+                  <span>${root.utils.escapeHtml(card.copy)}</span>
+                  <span class="quick-price">${renderQuickPrice(card)}</span>
+                </button>
+              `).join("")}
+            </div>
+          </section>
+
+          <section class="card commerce-section">
+            <div class="section-head"><h2>บริการเพิ่มเติม</h2><p class="muted">งานที่ต้องประเมินหน้างานจะส่งให้ทีม CWF ตรวจสอบก่อนยืนยัน</p></div>
+            <div class="quick-service-grid">
+              ${root.services.additionalServices.map((card) => `
+                <button class="quick-service-card ${card.route === "urgent" ? "is-urgent" : ""}" type="button" data-commerce-service="${root.utils.escapeHtml(card.id)}">
+                  <span class="quick-kicker">${root.utils.escapeHtml(card.kicker || "")}</span>
+                  <strong>${root.utils.escapeHtml(card.title)}</strong>
+                  <span>${root.utils.escapeHtml(card.copy)}</span>
+                  <span class="quick-price">${renderQuickPrice(card)}</span>
+                </button>
+              `).join("")}
+            </div>
+          </section>
+
+          <section class="card commerce-section">
+            <div class="section-head"><h2>คิวด่วนสำหรับแอร์มีอาการ</h2></div>
+            <div class="urgent-commerce-card">
+              <p>ระบบจะส่งคำขอให้ช่างที่พร้อมรับงานพิจารณา งานจะยืนยันเมื่อมีช่างรับหรือแอดมินยืนยันแล้วเท่านั้น</p>
+              <button class="secondary-btn" type="button" data-commerce-service="urgent-inspect">ส่งคำขอคิวด่วน</button>
+            </div>
+          </section>
+
+          <section class="card commerce-section">
+            <div class="section-head"><h2>โปรโมชันปัจจุบัน</h2></div>
+            <div data-promotions>${renderPromotionSummary()}</div>
+          </section>
+
+          <section class="card commerce-section">
+            <div class="section-head"><h2>เลือกระดับการล้าง</h2></div>
+            <div class="method-grid">
+              ${root.services.cleaningMethods.map((item) => `
+                <button class="method-row" type="button" data-commerce-method="${root.utils.escapeHtml(item.title)}">
+                  <strong>${root.utils.escapeHtml(item.title)}</strong>
+                  <span>${root.utils.escapeHtml(item.copy)}</span>
+                </button>
+              `).join("")}
+            </div>
+          </section>
+
+          <section class="card trust-card commerce-section">
+            <div class="section-head"><h2>มาตรฐานบริการ CWF</h2></div>
+            <div class="trust-grid">
+              ${root.services.trustItems.map((item) => `
+                <div class="trust-item">
+                  <span class="trust-ico">${root.utils.icon(item.glyph || "shield", 20)}</span>
+                  <strong>${root.utils.escapeHtml(item.title)}</strong>
+                  <span>${root.utils.escapeHtml(item.copy)}</span>
+                </div>
+              `).join("")}
+            </div>
+          </section>
+
+          <section class="card commerce-section">
+            <div class="section-head"><h2>พื้นที่ให้บริการ</h2></div>
+            <div data-zones>${renderCoverageSummary()}</div>
+          </section>
+
+          ${renderAccountShortcut()}
+        </section>
+      `;
+      loadHomeData();
+    },
+
+    renderBookingMode(container) {
+      container.innerHTML = `
+        <section class="screen">
+          <div class="hero booking-hero">
+            <div class="hero-badge">จองบริการ</div>
+            <h2>เลือกวิธีจอง</h2>
+            <p>จองล่วงหน้าเพื่อเลือกเวลา หรือส่งคำขอคิวด่วนให้ช่างที่พร้อมรับงาน</p>
+          </div>
+          <div class="card-grid">
+            <button class="mode-card is-scheduled" type="button" data-route="scheduled">
+              <span class="mode-kicker">เลือกวันและเวลาได้</span>
+              <strong>จองล่วงหน้า</strong>
+              <span>เหมาะกับงานล้าง ติดตั้ง งานคอนโด และงานหลายเครื่อง</span>
+              <span class="mode-foot">ดูคิวว่าง</span>
+            </button>
+            <button class="mode-card is-urgent" type="button" data-route="urgent">
+              <span class="mode-kicker">ส่งคำขอให้ช่างที่พร้อม</span>
+              <strong>คิวด่วน</strong>
+              <span>ช่างอาจรับหรือปฏิเสธได้ตามความพร้อม งานยืนยันเมื่อมีผู้รับงานแล้ว</span>
+              <span class="mode-foot">ส่งคำขอคิวด่วน</span>
+            </button>
+          </div>
+          <div class="notice is-urgent">คิวด่วนยังไม่ถือว่ายืนยันงาน จนกว่าจะมีช่างรับหรือแอดมินยืนยัน</div>
+        </section>
+      `;
+    },
+
+    supportButtons() {
+      return `
+        <section class="card support-card">
+          <h2>ติดต่อ CWF</h2>
+          <div class="support-strip">
+            <a class="secondary-btn" href="tel:0988777321">โทร 098-877-7321</a>
+            <a class="secondary-btn" href="https://lin.ee/fG1Oq7y" target="_blank" rel="noopener noreferrer">แชท LINE @cwfair</a>
+          </div>
+        </section>
+      `;
+    },
+  };
+
+  root.ui = ui;
+})();
