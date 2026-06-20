@@ -79,7 +79,15 @@ test("Eligible public availability slots are anonymous", () => {
 });
 
 test("Public availability response omits technician identity and counts", () => {
-  const publicReturn = section("if (isPublicCustomer) {\n      return res.json({", "    res.json({");
+  const marker = "slots: outSlots";
+  const markerAt = availability.indexOf(marker);
+  assert.notEqual(markerAt, -1, `missing public outSlots marker: ${marker}`);
+  const from = availability.lastIndexOf("if (isPublicCustomer)", markerAt);
+  assert.notEqual(from, -1, "missing public customer response branch");
+  const tail = availability.slice(markerAt);
+  const closeMatch = tail.match(/\r?\n\s*}\r?\n\r?\n\s*res\.json\(\{/);
+  assert.ok(closeMatch, "missing end of public customer response branch");
+  const publicReturn = availability.slice(from, markerAt + closeMatch.index);
   assert.doesNotMatch(publicReturn, /available_tech_ids|technician|tech_count|available_count|capacity|crew_size|debug/);
   assert.match(publicReturn, /date/);
   assert.match(publicReturn, /duration_min/);
@@ -88,7 +96,7 @@ test("Public availability response omits technician identity and counts", () => 
 });
 
 test("Client-supplied technician fields cannot influence public booking", () => {
-  const destructure = sectionIn(booking, "const {\n    customer_name", "  } = req.body || {};");
+  const destructure = sectionIn(booking, "const {", "} = req.body || {};");
   assert.doesNotMatch(destructure, /technician_username|technician_name|available_tech_ids|candidate|capacity|available_count/);
   assert.doesNotMatch(booking, /req\.body\.(technician_username|technician_name|available_tech_ids|candidate|capacity|available_count)/);
 });

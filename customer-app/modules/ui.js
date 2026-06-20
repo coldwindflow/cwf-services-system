@@ -192,9 +192,19 @@
   }
 
   function bindCommerceHome(container) {
-    container.querySelectorAll("[data-commerce-service]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const item = root.services.commerceItem(button.getAttribute("data-commerce-service"));
+    if (container.dataset.commerceHomeBound === "1") return;
+    container.dataset.commerceHomeBound = "1";
+    container.addEventListener("click", (event) => {
+      const contactButton = event.target.closest("[data-contact-service]");
+      if (contactButton && container.contains(contactButton)) {
+        const item = root.services.commerceItem(contactButton.getAttribute("data-contact-service"));
+        if (item) openContactSheet(container, item);
+        return;
+      }
+
+      const serviceButton = event.target.closest("[data-commerce-service]");
+      if (serviceButton && container.contains(serviceButton)) {
+        const item = root.services.commerceItem(serviceButton.getAttribute("data-commerce-service"));
         if (!item) return;
         if (item.action === "contact") {
           openContactSheet(container, item);
@@ -206,22 +216,15 @@
         }
         if (!root.services.applyCommerceDraft("scheduled", item)) return;
         root.utils.routeTo("scheduled");
-      });
-    });
+        return;
+      }
 
-    container.querySelectorAll("[data-contact-service]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const item = root.services.commerceItem(button.getAttribute("data-contact-service"));
-        if (item) openContactSheet(container, item);
-      });
-    });
-
-    container.querySelectorAll("[data-commerce-method]").forEach((button) => {
-      button.addEventListener("click", () => {
-        const item = root.services.commerceItem(button.getAttribute("data-commerce-method"));
+      const methodButton = event.target.closest("[data-commerce-method]");
+      if (methodButton && container.contains(methodButton)) {
+        const item = root.services.commerceItem(methodButton.getAttribute("data-commerce-method"));
         if (!item || !root.services.applyCommerceDraft("scheduled", item)) return;
         root.utils.routeTo("scheduled");
-      });
+      }
     });
   }
 
@@ -249,14 +252,17 @@
     const customer = root.state.customer;
     if (customer?.logged_in) {
       const name = root.auth?.displayName?.(customer) || "บัญชีของฉัน";
-      if (label) label.textContent = name.length > 12 ? `${name.slice(0, 12)}…` : name;
+      const shortName = String(name).trim().split(/\s+/)[0] || name;
+      if (label) label.textContent = shortName.length > 10 ? `${shortName.slice(0, 10)}…` : shortName;
       if (avatar) avatar.textContent = name.slice(0, 1);
       button.classList.add("is-logged-in");
+      button.title = name;
       button.setAttribute("aria-label", `บัญชีของ ${name}`);
     } else {
       if (label) label.textContent = "เข้าสู่ระบบ";
       if (avatar) avatar.textContent = "";
       button.classList.remove("is-logged-in");
+      button.removeAttribute("title");
       button.setAttribute("aria-label", "เข้าสู่ระบบหรือดูบัญชี");
     }
   }

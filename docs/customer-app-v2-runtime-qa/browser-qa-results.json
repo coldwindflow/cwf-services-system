@@ -1,0 +1,19 @@
+{
+  "ok": true,
+  "url": "http://127.0.0.1:4177/customer-app/index.html",
+  "service_cards": 6,
+  "submit_enabled_after_valid_review": true,
+  "booking_code": "QA-RUNTIME-001",
+  "login_provider_buttons_after_login": 0,
+  "account_chip_text_after_login": "Somchai",
+  "service_worker_caches": [
+    "cwf-customer-app-v2-20260621_production_runtime_v1"
+  ],
+  "screenshots": [
+    "home-mobile.png",
+    "price-mobile.png",
+    "review-mobile.png",
+    "profile-desktop.png"
+  ],
+  "errors": []
+}

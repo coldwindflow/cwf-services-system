@@ -165,6 +165,15 @@
 
   function renderLoggedIn(container) {
     const name = root.auth.displayName(root.state.customer);
+    const accountSummary = typeof root.auth.renderCustomerSummary === "function"
+      ? root.auth.renderCustomerSummary()
+      : `<div class="customer-session-card">
+          <div class="customer-session-main">
+            <span class="account-avatar">${root.utils.escapeHtml(name.slice(0, 1))}</span>
+            <div><strong>${root.utils.escapeHtml(name)}</strong><span>เข้าสู่ระบบแล้ว</span></div>
+          </div>
+          <button class="secondary-btn auth-logout-btn" type="button" data-auth-logout>ออกจากระบบ</button>
+        </div>`;
     container.innerHTML = `
       <section class="screen profile-screen">
         <div class="hero profile-hero is-account">
@@ -173,12 +182,17 @@
           <p>จัดการข้อมูลที่ใช้จองบริการและเข้าถึงงานของคุณได้จากหน้านี้</p>
         </div>
 
-        <div data-auth-panel>${root.auth.renderLoginPanel()}</div>
+        <section class="card auth-card is-logged-in profile-account-summary">
+          <div class="section-head">
+            <h2>ข้อมูลบัญชี</h2>
+          </div>
+          ${accountSummary}
+        </section>
 
         <section class="card">
           <div class="section-head">
             <h2>ที่อยู่สำหรับรับบริการ</h2>
-            <p class="muted">บัญชีนี้บันทึกที่อยู่ประจำได้ 1 แห่ง และยังเปลี่ยนที่อยู่เฉพาะงานในหน้าจองได้</p>
+            <p class="muted">บันทึกที่อยู่สำหรับรับบริการไว้ใช้เติมข้อมูลในหน้าจอง โดยยังแก้ไขที่อยู่เฉพาะงานได้ก่อนยืนยัน</p>
           </div>
           <div data-profile-address>${renderServiceAddress()}</div>
         </section>
