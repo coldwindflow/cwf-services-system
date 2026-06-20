@@ -569,6 +569,16 @@ function normalizeApprovalRow(row) {
   };
 }
 
+function isApprovedLineSendStatus(status) {
+  return cleanText(status, 80) === "approved";
+}
+
+function safeProviderError(error) {
+  return cleanText(error?.message || error || "LINE_SEND_FAILED", 1000)
+    .replace(/Bearer\s+[A-Za-z0-9._~+/=-]+/gi, "Bearer [redacted]")
+    .replace(/(LINE_CHANNEL_ACCESS_TOKEN|CHANNEL_ACCESS_TOKEN|access_token)[=:]\s*[A-Za-z0-9._~+/=-]+/gi, "$1=[redacted]");
+}
+
 async function loadConversationMeta(pool, conversationId) {
   const id = Number(conversationId || 0);
   if (!id) return null;
@@ -751,7 +761,8 @@ async function pushLineMessageToUser(lineUserId, text) {
   return raw || "OK";
 }
 
-async function sendApprovedLine(pool, id, adminUser = "") {
+async function sendApprovedLine(pool, id, adminUser = "", options = {}) {
+  const lineSender = options.lineSender || pushLineMessageToUser;
   await ensureAiOfficeControlSchema(pool);
   const values = await getControlValues(pool);
   if (boolValue(values.kill_switch, false)) {
@@ -769,33 +780,66 @@ async function sendApprovedLine(pool, id, adminUser = "") {
     err.status = 423;
     throw err;
   }
-  const r = await pool.query(`SELECT * FROM public.ai_auto_reply_approvals WHERE id=$1 LIMIT 1`, [Number(id || 0)]);
-  let approval = normalizeApprovalRow(r.rows?.[0]);
+  const claim = await pool.query(`
+    UPDATE public.ai_auto_reply_approvals
+       SET status='sending',
+           admin_note=COALESCE(NULLIF($2,''), admin_note),
+           updated_at=NOW()
+     WHERE id=$1
+       AND status='approved'
+     RETURNING *
+  `, [Number(id || 0), cleanText(`sending_by:${adminUser || "admin"}`, 1000)]);
+  let approval = normalizeApprovalRow(claim.rows?.[0]);
   if (!approval) {
-    const err = new Error("APPROVAL_NOT_FOUND");
-    err.status = 404;
-    throw err;
-  }
-  if (!["approved","edited","pending"].includes(approval.status)) {
-    const err = new Error("APPROVAL_STATUS_NOT_SENDABLE");
-    err.status = 409;
+    const existing = await pool.query(`SELECT id, status FROM public.ai_auto_reply_approvals WHERE id=$1 LIMIT 1`, [Number(id || 0)]);
+    const err = new Error(existing.rows?.[0] ? "APPROVAL_STATUS_NOT_SENDABLE" : "APPROVAL_NOT_FOUND");
+    err.status = existing.rows?.[0] ? 409 : 404;
     throw err;
   }
   const meta = await loadConversationMeta(pool, approval.conversation_id);
   const lineUserId = approval.line_user_id || pickLineUserId(meta);
-  const text = cleanText(approval.final_reply || approval.ai_draft, 5000);
+  const text = cleanText(approval.final_reply, 5000);
   if (!text) {
+    await pool.query(`
+      UPDATE public.ai_auto_reply_approvals
+         SET status='approved', line_response=$2, updated_at=NOW()
+       WHERE id=$1 AND status='sending'
+    `, [approval.id, "SEND_FAILED:FINAL_REPLY_REQUIRED"]).catch(()=>{});
     const err = new Error("FINAL_REPLY_REQUIRED");
     err.status = 400;
     throw err;
   }
-  const raw = await pushLineMessageToUser(lineUserId, text);
+  let raw = "";
+  try {
+    raw = await lineSender(lineUserId, text);
+  } catch (error) {
+    const safeError = safeProviderError(error);
+    await pool.query(`
+      UPDATE public.ai_auto_reply_approvals
+         SET status='approved', line_response=$2, updated_at=NOW()
+       WHERE id=$1 AND status='sending'
+    `, [approval.id, `SEND_FAILED:${safeError}`]).catch(()=>{});
+    await pool.query(`INSERT INTO public.ai_office_control_events(action, admin_user, note, new_value) VALUES('approval_send_line_failed',$1,$2,$3::jsonb)`, [
+      cleanText(adminUser,160),
+      `approval:${approval.id}`,
+      JSON.stringify({ id:approval.id, error:safeError }),
+    ]).catch(()=>{});
+    const err = new Error("LINE_SEND_FAILED");
+    err.status = error?.status && Number(error.status) >= 400 ? Number(error.status) : 502;
+    throw err;
+  }
   const saved = await pool.query(`
     UPDATE public.ai_auto_reply_approvals
        SET status='sent', sent_by=$2, sent_at=NOW(), line_user_id=COALESCE(NULLIF(line_user_id,''),$3), line_response=$4, updated_at=NOW()
      WHERE id=$1
+       AND status='sending'
      RETURNING *
   `, [approval.id, cleanText(adminUser,160), lineUserId, cleanText(raw, 4000)]);
+  if (!saved.rows?.[0]) {
+    const err = new Error("APPROVAL_SEND_FINALIZE_CONFLICT");
+    err.status = 409;
+    throw err;
+  }
   await pool.query(`INSERT INTO public.ai_office_control_events(action, admin_user, note, new_value) VALUES('approval_send_line',$1,$2,$3::jsonb)`, [cleanText(adminUser,160), `approval:${approval.id}`, JSON.stringify({ id:approval.id, line_user_id:lineUserId })]).catch(()=>{});
   return normalizeApprovalRow(saved.rows?.[0]);
 }
@@ -1753,6 +1797,7 @@ async function getAutoSafeDashboard(pool, values = {}) {
 
 function createAdminAiOfficeControlCenterRoutes(deps = {}) {
   const { pool, requireAdminSession = (req, res, next) => next() } = deps;
+  const lineSender = deps.lineSender || pushLineMessageToUser;
   if (!pool) throw new Error("AI_OFFICE_CONTROL_POOL_REQUIRED");
   const router = express.Router();
 
@@ -1917,8 +1962,7 @@ function createAdminAiOfficeControlCenterRoutes(deps = {}) {
   router.post("/admin/ai-office/control/approvals/:id/send", requireAdminSession, async (req, res) => {
     try {
       const adminUser = req.session?.user?.username || req.session?.user?.email || req.session?.username || "";
-      if (req.body?.final_reply) await updateApproval(pool, req.params.id, { final_reply:req.body.final_reply, status:"edited", admin_note:req.body.admin_note || "" }, adminUser);
-      const approval = await sendApprovedLine(pool, req.params.id, adminUser);
+      const approval = await sendApprovedLine(pool, req.params.id, adminUser, { lineSender });
       return res.json({ ok:true, approval });
     } catch (e) {
       return res.status(e.status || 500).json({ ok:false, error:e.message || "SEND_APPROVED_LINE_REPLY_FAILED" });
@@ -2265,4 +2309,7 @@ function createAdminAiOfficeControlCenterRoutes(deps = {}) {
 createAdminAiOfficeControlCenterRoutes.ensureAiOfficeControlSchema = ensureAiOfficeControlSchema;
 createAdminAiOfficeControlCenterRoutes.getControlValues = getControlValues;
 createAdminAiOfficeControlCenterRoutes.handleAutoSafeLineReplyFromWebhook = handleAutoSafeLineReplyFromWebhook;
+createAdminAiOfficeControlCenterRoutes.sendApprovedLine = sendApprovedLine;
+createAdminAiOfficeControlCenterRoutes.isApprovedLineSendStatus = isApprovedLineSendStatus;
+createAdminAiOfficeControlCenterRoutes.safeProviderError = safeProviderError;
 module.exports = createAdminAiOfficeControlCenterRoutes;
