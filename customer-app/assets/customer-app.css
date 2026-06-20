@@ -195,10 +195,11 @@ p { margin: 0; }
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
-  max-width: 42%;
-  padding: 9px 16px;
+  max-width: min(44%, 150px);
+  min-height: 40px;
+  padding: 8px 12px;
   border-radius: var(--radius-pill);
   background: rgba(255, 255, 255, 0.12);
   color: #fff;
@@ -209,6 +210,7 @@ p { margin: 0; }
 }
 .icon-pill [data-account-chip-label] {
   min-width: 0;
+  max-width: 98px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2516,7 +2518,7 @@ body {
 
 .icon-pill [data-account-chip-label] {
   display: inline;
-  max-width: 112px;
+  max-width: 98px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2581,6 +2583,17 @@ body {
   color: var(--muted, #5f6f89);
   font-size: 0.82rem;
   line-height: 1.45;
+}
+
+.choice-card small {
+  color: var(--blue);
+  font-size: 0.74rem;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.choice-card.is-contact-only small {
+  color: var(--warning);
 }
 
 .choice-card:hover,
@@ -2874,7 +2887,7 @@ body {
   border-radius: 0;
 }
 .icon-pill.is-logged-in {
-  max-width: 42%;
+  max-width: min(44%, 150px);
   padding-inline: 10px 13px;
   background: rgba(255, 255, 255, 0.18);
 }
@@ -2935,6 +2948,10 @@ body {
   color: var(--success);
   font-size: 12px;
   font-weight: 800;
+}
+
+.profile-account-summary .customer-session-card {
+  margin-top: 0;
 }
 
 .profile-screen { gap: 14px; }
@@ -3017,6 +3034,45 @@ body {
   }
 }
 
+@media (max-width: 480px) {
+  .booking-stepper {
+    gap: 2px;
+  }
+  .booking-stepper li {
+    font-size: 0.58rem;
+    line-height: 1.25;
+  }
+  .booking-stepper li > span {
+    width: 26px;
+    height: 26px;
+    font-size: 0.68rem;
+  }
+  .booking-stepper li:not(:last-child)::after {
+    top: 13px;
+    left: calc(50% + 15px);
+    width: calc(100% - 30px);
+  }
+  .service-contact-actions {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 340px) {
+  .icon-pill {
+    width: 42px;
+    justify-content: center;
+    padding-inline: 0;
+  }
+  .icon-pill [data-account-chip-label] {
+    position: absolute;
+    inline-size: 1px;
+    block-size: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
 /* ===================== Customer App V2 cleaning booking wizard ===================== */
 .booking-wizard-page {
   display: grid;
@@ -3062,7 +3118,7 @@ body {
 
 .booking-stepper {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 4px;
   margin: 0;
   padding: 0;
@@ -3105,6 +3161,36 @@ body {
 
 .booking-stepper li > strong {
   font-weight: 800;
+}
+
+.selected-service-summary {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid rgba(34, 155, 91, 0.22);
+  border-radius: var(--radius-sm);
+  background: var(--soft-green);
+}
+
+.selected-service-summary span,
+.selected-service-summary small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+}
+
+.selected-service-summary strong {
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.service-contact-actions {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.service-contact-actions a {
+  text-align: center;
+  text-decoration: none;
 }
 
 .booking-stepper li.is-active,
@@ -3330,9 +3416,11 @@ body.has-contact-sheet { overflow: hidden; }
 }
 
 @media (max-width: 380px) {
-  .booking-stepper li > strong { font-size: 0.61rem; }
-  .booking-stepper li > span { width: 29px; height: 29px; }
-  .booking-stepper li:not(:last-child)::after { top: 14px; left: calc(50% + 17px); width: calc(100% - 34px); }
+  .booking-stepper { gap: 2px; }
+  .booking-stepper li { font-size: 0.58rem; line-height: 1.25; }
+  .booking-stepper li > strong { font-size: 0.58rem; }
+  .booking-stepper li > span { width: 26px; height: 26px; }
+  .booking-stepper li:not(:last-child)::after { top: 13px; left: calc(50% + 15px); width: calc(100% - 30px); }
   .calendar-day { min-height: 42px; font-size: 0.8rem; }
   .wizard-price-summary { grid-template-columns: 1fr; }
   .wizard-price-summary small { grid-column: 1; }

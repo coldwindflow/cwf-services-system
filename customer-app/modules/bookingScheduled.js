@@ -19,7 +19,7 @@
   }
 
   function step() {
-    return Math.max(1, Math.min(5, Number(root.state.scheduledWizard?.step || 1)));
+    return Math.max(1, Math.min(6, Number(root.state.scheduledWizard?.step || 1)));
   }
 
   function finalPrice() {
@@ -143,7 +143,7 @@
   }
 
   function renderProgress() {
-    const labels = ["ข้อมูลลูกค้า", "บริการ", "ราคา", "วันและเวลา", "ยืนยัน"];
+    const labels = ["บริการ", "รายละเอียดแอร์", "ข้อมูลหน้างาน", "วันและเวลา", "ราคา", "ยืนยัน"];
     const current = step();
     return `
       <ol class="booking-stepper" aria-label="ขั้นตอนจองล้างแอร์">
@@ -156,15 +156,54 @@
     `;
   }
 
+  function renderStepService() {
+    const s = service();
+    const selectedKind = s.service_kind || "clean";
+    return `
+      <section class="card booking-wizard-card">
+        <div class="section-head">
+          <span class="section-kicker">ขั้นตอน 1 จาก 6</span>
+          <h2>เลือกบริการ</h2>
+          <p class="muted">ตอนนี้ระบบเปิดให้ลูกค้าจองเองเฉพาะงานล้างแอร์ บริการอื่นให้แอดมินประเมินและจัดคิวก่อน</p>
+        </div>
+        <div class="choice-grid service-kind-grid">
+          ${root.services.serviceKinds.map((kind) => {
+            const active = selectedKind === kind.value;
+            return `
+              <button class="choice-card ${active ? "is-selected" : ""} ${kind.bookable ? "" : "is-contact-only"}" type="button"
+                data-service-kind="${root.utils.escapeHtml(kind.value)}"
+                aria-pressed="${active ? "true" : "false"}">
+                <strong>${root.utils.escapeHtml(kind.label)}</strong>
+                <span>${root.utils.escapeHtml(kind.copy || "")}</span>
+                <small>${kind.bookable ? "จองเองได้ในแอป" : "ติดต่อแอดมินเพื่อประเมิน"}</small>
+              </button>
+            `;
+          }).join("")}
+        </div>
+        ${selectedKind === "clean" ? `
+          <div class="selected-service-summary">
+            <span>บริการที่เลือก</span>
+            <strong>${root.utils.escapeHtml(root.services.serviceKind("clean").label)}</strong>
+            <small>${root.utils.escapeHtml(root.services.serviceLabel(s))}</small>
+          </div>
+        ` : root.utils.stateBox("warning", "บริการนี้ยังไม่เปิดจองอัตโนมัติ กรุณาติดต่อแอดมินเพื่อประเมินหน้างานและจัดคิว")}
+        <div class="button-row service-contact-actions">
+          <a class="secondary-btn" href="https://line.me/R/ti/p/@cwfair" target="_blank" rel="noopener noreferrer">แชท LINE @cwfair</a>
+          <a class="secondary-btn" href="tel:0988777321">โทร 098-877-7321</a>
+        </div>
+      </section>
+    `;
+  }
+
   function renderStepOne() {
     const d = draft();
     const s = service();
     return `
       <section class="card booking-wizard-card">
         <div class="section-head">
-          <span class="section-kicker">ขั้นตอน 2 จาก 5</span>
-          <h2>เลือกรายละเอียดงานล้าง</h2>
-          <p class="muted">ระบบเปิดจองออนไลน์เฉพาะงานล้างที่มีราคาและระยะเวลามาตรฐาน</p>
+          <span class="section-kicker">ขั้นตอน 2 จาก 6</span>
+          <h2>รายละเอียดแอร์</h2>
+          <p class="muted">เลือกชนิดแอร์ รูปแบบการล้าง BTU และจำนวนเครื่องเพื่อให้ระบบคำนวณราคาและระยะเวลางานจริง</p>
         </div>
         <div class="field field-wide">
           <label>ชนิดแอร์</label>
@@ -188,8 +227,6 @@
             ${root.services.machineCounts.map((n) => `<option value="${n}" ${Number(s.machine_count) === n ? "selected" : ""}>${n} เครื่อง</option>`).join("")}
           </select>
         </div>
-        ${root.state.scheduledPreview.pricing.status === "loading" ? root.utils.stateBox("loading", "กำลังคำนวณราคาและเวลาทำงานจากระบบจริง...") : ""}
-        ${root.state.scheduledPreview.pricing.status === "error" ? root.utils.stateBox("error", root.state.scheduledPreview.pricing.error || "คำนวณราคาไม่สำเร็จ") : ""}
       </section>
     `;
   }
@@ -292,9 +329,9 @@
     return `
       <section class="card booking-wizard-card">
         <div class="section-head">
-          <span class="section-kicker">ขั้นตอน 4 จาก 5</span>
-          <h2>เลือกวันและคิวช่างว่างจริง</h2>
-          <p class="muted">เลือกวันจากปฏิทิน แล้วเลือกช่วงเวลาที่ระบบยืนยันว่ามีช่างว่าง</p>
+          <span class="section-kicker">ขั้นตอน 4 จาก 6</span>
+          <h2>เลือกวันและเวลาจริง</h2>
+          <p class="muted">เลือกวันจากปฏิทิน แล้วเลือกช่วงเวลาที่ระบบยืนยันว่ามีช่างว่างจริงสำหรับระยะเวลางานนี้</p>
         </div>
         ${renderCalendar()}
         <div class="slot-section" data-availability-preview>${renderSlots()}</div>
@@ -307,8 +344,8 @@
     return `
       <section class="card booking-wizard-card">
         <div class="section-head">
-          <span class="section-kicker">ขั้นตอน 3 จาก 5</span>
-          <h2>ราคา</h2>
+          <span class="section-kicker">ขั้นตอน 5 จาก 6</span>
+          <h2>ราคาและเงื่อนไข</h2>
           <p class="muted">ราคานี้มาจากระบบหลังบ้านเท่านั้น พร้อมโปรโมชันและเวลาทำงานที่คำนวณได้จริง</p>
         </div>
         ${pricing.status === "loading" ? root.utils.stateBox("loading", "กำลังคำนวณราคาจากระบบจริง...") : ""}
@@ -316,7 +353,9 @@
         ${pricing.data ? renderPricingSummary() : ""}
         <div class="data-list">
           <div class="data-row"><strong>บริการ</strong><span class="muted">${root.utils.escapeHtml(root.services.serviceLabel(service()))}</span></div>
+          <div class="data-row"><strong>ช่วงเวลาที่เลือก</strong><span class="muted">${root.utils.escapeHtml(draft().date || "-")} · ${root.utils.escapeHtml(draft().selectedSlot?.start || "-")}-${root.utils.escapeHtml(draft().selectedSlot?.end || "-")} น.</span></div>
         </div>
+        <div class="notice">ราคาและระยะเวลานี้เป็นค่าประมาณจากระบบ CWF ก่อนเริ่มงานจริง หากหน้างานมีเงื่อนไขเพิ่มเติม แอดมินหรือช่างจะแจ้งให้ยืนยันก่อนดำเนินการ</div>
         <button type="button" class="secondary-btn" data-action="edit-service">กลับไปแก้ไขบริการ</button>
       </section>
     `;
@@ -328,9 +367,9 @@
     return `
       <section class="card booking-wizard-card">
         <div class="section-head">
-          <span class="section-kicker">ขั้นตอน 1 จาก 5</span>
-          <h2>ข้อมูลลูกค้า</h2>
-          <p class="muted">กรอกข้อมูลที่ช่างใช้เดินทางและติดต่อก่อนเข้าบริการ</p>
+          <span class="section-kicker">ขั้นตอน 3 จาก 6</span>
+          <h2>ข้อมูลลูกค้าและหน้างาน</h2>
+          <p class="muted">กรอกข้อมูลติดต่อ ที่อยู่สำหรับรับบริการ ลิงก์แผนที่ และหมายเหตุที่ช่างต้องทราบก่อนเข้าหน้างาน</p>
         </div>
         <div class="form-grid">
           <div class="field">
@@ -342,7 +381,7 @@
             <input id="scheduled-phone" class="input" type="tel" inputmode="tel" autocomplete="tel" value="${root.utils.escapeHtml(d.customer_phone || "")}" data-scheduled-field="customer_phone" placeholder="08x-xxx-xxxx">
           </div>
           <div class="field field-wide">
-            <label for="scheduled-address">ที่อยู่หน้างาน <span aria-hidden="true">*</span></label>
+            <label for="scheduled-address">ที่อยู่สำหรับรับบริการ <span aria-hidden="true">*</span></label>
             <textarea id="scheduled-address" class="textarea" rows="4" data-scheduled-field="address_text" placeholder="บ้าน/คอนโด อาคาร ชั้น ห้อง ซอย ถนน และจุดนัดพบ">${root.utils.escapeHtml(d.address_text || "")}</textarea>
           </div>
           <div class="field field-wide">
@@ -354,8 +393,8 @@
             <input id="scheduled-zone" class="input" value="${root.utils.escapeHtml(d.job_zone || "")}" data-scheduled-field="job_zone" placeholder="เช่น อ่อนนุช บางนา">
           </div>
           <div class="field field-wide">
-            <label for="scheduled-note">หมายเหตุเพิ่มเติม</label>
-            <textarea id="scheduled-note" class="textarea" rows="3" data-scheduled-field="customer_note" placeholder="ที่จอดรถ เวลาเข้าอาคาร จำนวนชั้น หรือข้อมูลอื่นที่ควรทราบ">${root.utils.escapeHtml(d.customer_note || "")}</textarea>
+            <label for="scheduled-note">หมายเหตุหน้างาน / การเข้าอาคาร</label>
+            <textarea id="scheduled-note" class="textarea" rows="3" data-scheduled-field="customer_note" placeholder="ชื่อคอนโด อาคาร ชั้น ห้อง จุดจอดรถ เวลาเข้าอาคาร หรือข้อมูลอื่นที่ควรทราบ">${root.utils.escapeHtml(d.customer_note || "")}</textarea>
           </div>
         </div>
         ${saved.address && !d.address_text ? `<button type="button" class="secondary-btn" data-action="use-saved-address">ใช้ที่อยู่ที่บันทึกไว้</button>` : ""}
@@ -385,21 +424,24 @@
   function renderStepFour() {
     const submit = root.state.scheduledSubmit;
     const pending = ["validating", "checking_slot", "submitting"].includes(submit.status);
+    const readinessError = validateStepService() || validateStepOne() || validateStepThree() || validateStepTwo() || (!root.state.scheduledPreview.pricing.data ? "กรุณารอให้ระบบคำนวณราคาให้สำเร็จ" : "");
+    const canSubmit = !pending && !readinessError;
     return `
       <section class="card booking-wizard-card review-card">
         <div class="section-head">
-          <span class="section-kicker">ขั้นตอน 5 จาก 5</span>
-          <h2>ยืนยัน</h2>
-          <p class="muted">ระบบจะตรวจราคาและคิวช่างซ้ำจาก Server ก่อนสร้าง Booking จริง</p>
+          <span class="section-kicker">ขั้นตอน 6 จาก 6</span>
+          <h2>ตรวจสอบและยืนยัน</h2>
+          <p class="muted">ระบบจะตรวจราคาและคิวช่างซ้ำก่อนสร้างรหัสจองจริง</p>
         </div>
         ${renderReviewRows()}
-        <div class="notice">การส่งรายการนี้เป็นคำขอจองล้างแอร์ล่วงหน้า สถานะและ Booking Code จะแสดงจากผลตอบกลับของ Server เท่านั้น</div>
+        <div class="notice">การส่งรายการนี้เป็นคำขอจองล้างแอร์ล่วงหน้า สถานะและรหัสจองจะแสดงจากผลตอบกลับของระบบเท่านั้น</div>
+        ${readinessError ? root.utils.stateBox("warning", readinessError) : ""}
         ${submit.status === "checking_slot" ? root.utils.stateBox("loading", "กำลังตรวจคิวช่างล่าสุด...") : ""}
         ${submit.status === "submitting" ? root.utils.stateBox("loading", "กำลังส่งข้อมูลจอง...") : ""}
         ${submit.status === "error" ? root.utils.stateBox("error", submit.error || "ส่งคำขอจองไม่สำเร็จ") : ""}
         <div class="button-row review-submit-actions">
           <button type="button" class="secondary-btn" data-action="wizard-back" ${pending ? "disabled" : ""}>ย้อนกลับแก้ไข</button>
-          <button type="button" class="primary-btn wizard-submit-btn" data-action="submit-scheduled" ${pending ? "disabled" : ""}>${pending ? "กำลังตรวจสอบ..." : "ยืนยันส่งคำขอจอง"}</button>
+          <button type="button" class="primary-btn wizard-submit-btn" data-action="submit-scheduled" ${canSubmit ? "" : "disabled"}>${pending ? "กำลังตรวจสอบ..." : "ยืนยันส่งคำขอจอง"}</button>
         </div>
       </section>
     `;
@@ -434,6 +476,14 @@
     if (!payloadFromDraft() || s.job_type !== "ล้าง") return "บริการนี้ยังไม่เปิดจองออนไลน์ กรุณาติดต่อแอดมิน";
     if (!s.ac_type || !s.btu || s.machine_count < 1) return "กรุณาเลือกรายละเอียดงานล้างให้ครบ";
     if (s.ac_type === "ผนัง" && !s.wash_variant) return "กรุณาเลือกรูปแบบการล้าง";
+    return "";
+  }
+
+  function validateStepService() {
+    const s = service();
+    if (s.service_kind !== "clean" || !payloadFromDraft() || s.job_type !== "ล้าง") {
+      return "บริการนี้ยังไม่เปิดจองออนไลน์ กรุณาติดต่อแอดมิน";
+    }
     return "";
   }
 
@@ -595,7 +645,7 @@
     const current = step();
     root.state.setScheduledWizard({ error: "" });
     if (current === 1) {
-      const error = validateStepThree();
+      const error = validateStepService();
       if (error) { root.state.setScheduledWizard({ error }); paint(container); return; }
       root.state.setScheduledWizard({ step: 2, error: "" });
       paint(container);
@@ -612,6 +662,8 @@
       return;
     }
     if (current === 3) {
+      const error = validateStepThree();
+      if (error) { root.state.setScheduledWizard({ error }); paint(container); return; }
       if (!root.state.scheduledPreview.pricing.data) {
         root.state.setScheduledWizard({ error: root.state.scheduledPreview.pricing.error || "กรุณารอให้ระบบคำนวณราคาให้สำเร็จ" });
         paint(container);
@@ -627,6 +679,22 @@
       if (error) { root.state.setScheduledWizard({ error }); paint(container); return; }
       root.state.setScheduledWizard({ step: 5, error: "" });
       paint(container);
+      return;
+    }
+    if (current === 5) {
+      const slotError = validateStepTwo();
+      if (slotError) {
+        root.state.setScheduledWizard({ step: 4, error: slotError });
+        paint(container);
+        return;
+      }
+      if (!root.state.scheduledPreview.pricing.data) {
+        root.state.setScheduledWizard({ error: root.state.scheduledPreview.pricing.error || "กรุณารอให้ระบบคำนวณราคาให้สำเร็จ" });
+        paint(container);
+        return;
+      }
+      root.state.setScheduledWizard({ step: 6, error: "" });
+      paint(container);
     }
   }
 
@@ -641,7 +709,7 @@
 
   async function submit(container) {
     if (["validating", "checking_slot", "submitting"].includes(root.state.scheduledSubmit.status)) return;
-    const serviceError = validateStepOne();
+    const serviceError = validateStepService() || validateStepOne();
     const slotError = validateStepTwo();
     const contactError = validateStepThree();
     const payload = buildSubmitPayload();
@@ -663,7 +731,7 @@
       const result = await root.api.submitScheduledBooking(buildSubmitPayload());
       if (!result?.success || (!result.booking_code && !result.token)) throw new Error("Server ไม่ได้ส่ง Booking Code กลับมา");
       root.state.setScheduledSubmit({ status: "success", error: "", result });
-      try { window.sessionStorage.removeItem("cwf_customer_app_v2_scheduled_v2"); } catch (_) { /* ignore */ }
+      try { window.sessionStorage.removeItem("cwf_customer_app_v2_scheduled_v3"); } catch (_) { /* ignore */ }
       paint(container);
       container.scrollIntoView({ behavior: "smooth", block: "start" });
     } catch (error) {
@@ -679,18 +747,20 @@
   function renderActions() {
     if (root.state.scheduledSubmit.status === "success") return "";
     const current = step();
-    if (current === 5) return "";
+    if (current === 6) return "";
     const nextLabel = current === 1
-      ? "เลือกบริการ"
+      ? "รายละเอียดแอร์"
       : current === 2
-        ? "ดูราคา"
+        ? "ข้อมูลลูกค้า"
         : current === 3
           ? "เลือกวันและเวลา"
-          : "ตรวจสอบรายการ";
+          : current === 4
+            ? "ดูราคาและเงื่อนไข"
+            : "ตรวจสอบและยืนยัน";
     return `
       <div class="wizard-action-bar">
         <button type="button" class="secondary-btn" data-action="wizard-back">${current === 1 ? "กลับหน้าบริการ" : "ย้อนกลับ"}</button>
-        ${current < 5 ? `<button type="button" class="primary-btn" data-action="wizard-next">${nextLabel}</button>` : ""}
+        ${current < 6 ? `<button type="button" class="primary-btn" data-action="wizard-next">${nextLabel}</button>` : ""}
       </div>
     `;
   }
@@ -702,11 +772,12 @@
     const success = root.state.scheduledSubmit.status === "success";
     const content = success
       ? renderSuccess()
-      : current === 1 ? renderStepThree()
+      : current === 1 ? renderStepService()
         : current === 2 ? renderStepOne()
-          : current === 3 ? renderStepPrice()
+          : current === 3 ? renderStepThree()
             : current === 4 ? renderStepTwo()
-              : renderStepFour();
+              : current === 5 ? renderStepPrice()
+                : renderStepFour();
     container.innerHTML = `
       <div class="page booking-wizard-page">
         <div class="page-toolbar">
@@ -716,7 +787,7 @@
         <section class="booking-wizard-intro">
           <span class="section-kicker">Scheduled cleaning</span>
           <h1>จองล้างแอร์ล่วงหน้า</h1>
-          <p>เลือกบริการ ราคา วัน และคิวช่างจากระบบจริง งานซ่อม ติดตั้ง ย้าย และตรวจอาการยังต้องติดต่อแอดมิน</p>
+          <p>เลือกบริการ รายละเอียดแอร์ ข้อมูลหน้างาน วันและเวลาจริง ราคา และยืนยันจากระบบจริง งานซ่อม ติดตั้ง ย้าย และตรวจอาการยังต้องติดต่อแอดมิน</p>
         </section>
         ${success ? "" : renderProgress()}
         ${root.state.scheduledWizard.error ? root.utils.stateBox("error", root.state.scheduledWizard.error) : ""}
@@ -728,6 +799,28 @@
   }
 
   function bind(container) {
+    container.querySelectorAll("[data-service-kind]").forEach((button) => {
+      button.addEventListener("click", () => {
+        const value = button.getAttribute("data-service-kind") || "clean";
+        const kind = root.services.serviceKind(value);
+        const patch = {
+          service_kind: kind.value,
+          job_type: kind.job_type,
+          repair_variant: kind.repair_variant || "",
+        };
+        if (kind.bookable) {
+          patch.ac_type = draft().ac_type || "ผนัง";
+          patch.wash_variant = draft().wash_variant || "ล้างธรรมดา";
+          patch.btu = draft().btu || "12000";
+          patch.machine_count = Math.max(1, Number(draft().machine_count || 1));
+        }
+        root.state.updateDraft("scheduled", patch);
+        resetPriceAndSlots();
+        root.state.setScheduledWizard({ error: kind.bookable ? "" : "บริการนี้ต้องติดต่อแอดมินเพื่อประเมินและจัดคิว" });
+        paint(container);
+      });
+    });
+
     container.querySelectorAll("[data-scheduled-choice]").forEach((button) => {
       button.addEventListener("click", () => {
         const field = button.getAttribute("data-scheduled-choice");

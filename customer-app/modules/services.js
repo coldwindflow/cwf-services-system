@@ -263,6 +263,7 @@
     quickServices,
     cleaningMethods,
     commerceItem,
+    serviceKind,
     applyCommerceDraft,
     normalizeServiceDraft,
     payloadFromServiceDraft,

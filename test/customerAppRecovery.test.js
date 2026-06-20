@@ -58,27 +58,48 @@ class FakeButton {
     this.attrs = attrs;
     this.disabled = false;
     this.listeners = {};
+    this.parent = null;
   }
   getAttribute(name) { return this.attrs[name] || ""; }
   hasAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name); }
   addEventListener(type, listener) { this.listeners[type] = listener; }
+  closest(selector) {
+    const match = selector.match(/^\[([^\]]+)\]$/);
+    if (match && this.hasAttribute(match[1])) return this;
+    return null;
+  }
   async click() {
     if (this.listeners.click) await this.listeners.click({ preventDefault() {} });
+    if (this.parent?.listeners?.click) {
+      await this.parent.listeners.click({ target: this, preventDefault() {} });
+    }
   }
 }
 
 class HomeContainer {
   constructor() {
+    this.dataset = {};
+    this.listeners = {};
     this.buttons = [];
     this._innerHTML = "";
   }
+  addEventListener(type, listener) { this.listeners[type] = listener; }
+  contains(node) { return this.buttons.includes(node); }
   set innerHTML(value) {
     this._innerHTML = String(value || "");
     this.buttons = [];
     const commerce = [...this._innerHTML.matchAll(/data-commerce-service="([^"]+)"/g)];
-    commerce.forEach((match) => this.buttons.push(new FakeButton({ "data-commerce-service": match[1] })));
+    commerce.forEach((match) => {
+      const button = new FakeButton({ "data-commerce-service": match[1] });
+      button.parent = this;
+      this.buttons.push(button);
+    });
     const contact = [...this._innerHTML.matchAll(/data-contact-service="([^"]+)"/g)];
-    contact.forEach((match) => this.buttons.push(new FakeButton({ "data-contact-service": match[1] })));
+    contact.forEach((match) => {
+      const button = new FakeButton({ "data-contact-service": match[1] });
+      button.parent = this;
+      this.buttons.push(button);
+    });
   }
   get innerHTML() { return this._innerHTML; }
   appendChild() {}
@@ -103,6 +124,8 @@ class WizardContainer {
     this.buttons = [];
     this.inputs = [];
     [...this._innerHTML.matchAll(/data-action="([^"]+)"/g)].forEach((match) => this.buttons.push(new FakeButton({ "data-action": match[1] })));
+    [...this._innerHTML.matchAll(/data-service-kind="([^"]+)"/g)]
+      .forEach((match) => this.buttons.push(new FakeButton({ "data-service-kind": match[1] })));
     [...this._innerHTML.matchAll(/data-scheduled-choice="([^"]+)"[^>]*data-choice-value="([^"]+)"/g)]
       .forEach((match) => this.buttons.push(new FakeButton({ "data-scheduled-choice": match[1], "data-choice-value": match[2] })));
   }
@@ -110,6 +133,7 @@ class WizardContainer {
   scrollIntoView() {}
   querySelectorAll(selector) {
     if (selector === "[data-action]") return this.buttons.filter((button) => button.hasAttribute("data-action"));
+    if (selector === "[data-service-kind]") return this.buttons.filter((button) => button.hasAttribute("data-service-kind"));
     if (selector === "[data-scheduled-choice]") return this.buttons.filter((button) => button.hasAttribute("data-scheduled-choice"));
     return [];
   }
@@ -135,7 +159,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260621_production_recovery_v1";
+  const build = "20260621_production_runtime_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`bookingUrgent\\.js\\?v=${build}`));
@@ -182,18 +206,18 @@ test("account chip has narrow-screen avatar-only protection", () => {
   assert.match(css, /text-overflow: ellipsis/);
 });
 
-test("scheduled draft persists and restores five-step state", () => {
+test("scheduled draft persists and restores six-step state", () => {
   const context = makeContext();
   let root = load(context, ["customer-app/modules/state.js"]);
   root.state.updateDraft("scheduled", { customer_name: "Persisted Customer", address_text: "Persisted Address" });
-  root.state.setScheduledWizard({ step: 5 });
+  root.state.setScheduledWizard({ step: 6 });
 
   context.window.CWFCustomerAppV2 = {};
   root = load(context, ["customer-app/modules/state.js"]);
   root.state.init();
 
-  assert.equal(root.state.scheduledWizard.step, 5);
-  assert.equal(root.state.scheduledWizard.maxStep, 5);
+  assert.equal(root.state.scheduledWizard.step, 6);
+  assert.equal(root.state.scheduledWizard.maxStep, 6);
   assert.equal(root.state.draft.scheduled.customer_name, "Persisted Customer");
   assert.equal(root.state.draft.scheduled.address_text, "Persisted Address");
 });
@@ -220,7 +244,7 @@ test("home CTA click writes scheduled draft and routes to scheduled flow", async
   assert.equal(root.state.draft.scheduled.selectedSlot, null);
 });
 
-test("scheduled booking renders one active step and preserves draft across five steps", async () => {
+test("scheduled booking renders one active step and preserves draft across six steps", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.state.customer = { logged_in: false };
@@ -229,8 +253,18 @@ test("scheduled booking renders one active step and preserves draft across five 
 
   const container = new WizardContainer(root);
   root.bookingScheduled.render(container);
-  assert.match(container.innerHTML, /ขั้นตอน 1 จาก 5/);
-  assert.doesNotMatch(container.innerHTML, /ขั้นตอน 2 จาก 5/);
+  assert.match(container.innerHTML, /ขั้นตอน 1 จาก 6/);
+  assert.match(container.innerHTML, /เลือกบริการ/);
+  assert.doesNotMatch(container.innerHTML, /ขั้นตอน 2 จาก 6/);
+
+  await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
+  assert.equal(root.state.scheduledWizard.step, 2);
+  assert.match(container.innerHTML, /ขั้นตอน 2 จาก 6/);
+  assert.match(container.innerHTML, /รายละเอียดแอร์/);
+
+  await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
+  assert.equal(root.state.scheduledWizard.step, 3);
+  assert.match(container.innerHTML, /ขั้นตอน 3 จาก 6/);
 
   root.state.updateDraft("scheduled", {
     customer_name: "Test Customer",
@@ -239,25 +273,22 @@ test("scheduled booking renders one active step and preserves draft across five 
     maps_url: "https://maps.app.goo.gl/test",
   });
   await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
-  assert.equal(root.state.scheduledWizard.step, 2);
-  assert.match(container.innerHTML, /ขั้นตอน 2 จาก 5/);
-  assert.equal(root.state.draft.scheduled.address_text, "123 Test Condo");
-
-  await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
-  assert.equal(root.state.scheduledWizard.step, 3);
-  assert.match(container.innerHTML, /ขั้นตอน 3 จาก 5/);
-
-  await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
   assert.equal(root.state.scheduledWizard.step, 4);
-  assert.match(container.innerHTML, /ขั้นตอน 4 จาก 5/);
+  assert.match(container.innerHTML, /ขั้นตอน 4 จาก 6/);
   assert.match(container.innerHTML, /09:00/);
+  assert.equal(root.state.draft.scheduled.address_text, "123 Test Condo");
 
   const slot = root.availability.normalizePublicSlots(root.state.scheduledPreview.availability.data, 90)[0];
   root.state.updateDraft("scheduled", { selectedSlot: { ...slot, query_key: root.state.scheduledPreview.availability.query_key } });
   await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
   assert.equal(root.state.scheduledWizard.step, 5);
-  assert.match(container.innerHTML, /ขั้นตอน 5 จาก 5/);
-  assert.doesNotMatch(container.innerHTML, /ขั้นตอน 4 จาก 5/);
+  assert.match(container.innerHTML, /ขั้นตอน 5 จาก 6/);
+  assert.match(container.innerHTML, /ราคาและเงื่อนไข/);
+
+  await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
+  assert.equal(root.state.scheduledWizard.step, 6);
+  assert.match(container.innerHTML, /ขั้นตอน 6 จาก 6/);
+  assert.doesNotMatch(container.innerHTML, /ขั้นตอน 4 จาก 6/);
 });
 
 test("anonymous slots render without technician identity or counts", () => {
@@ -282,7 +313,7 @@ test("anonymous slots render without technician identity or counts", () => {
 test("stale slot rejection returns customer to date and time step", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
-  root.state.setScheduledWizard({ step: 5 });
+  root.state.setScheduledWizard({ step: 6 });
   root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 900 }, error: "" });
   const query = root.availability.publicAvailabilityQuery(root.state.draft.scheduled, root.services.payloadFromServiceDraft(root.state.draft.scheduled), root.state.scheduledPreview.pricing.data);
   const queryKey = root.availability.queryKey(query);
@@ -302,6 +333,19 @@ test("stale slot rejection returns customer to date and time step", async () => 
 
   assert.equal(root.state.scheduledWizard.step, 4);
   assert.equal(root.state.draft.scheduled.selectedSlot, null);
+});
+
+test("scheduled review submit is disabled until required data is valid", () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.setScheduledWizard({ step: 6 });
+  root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 900 }, error: "" });
+  const container = new WizardContainer(root);
+
+  root.bookingScheduled.render(container);
+
+  assert.match(container.innerHTML, /data-action="submit-scheduled" disabled/);
+  assert.match(container.innerHTML, /กรุณากรอกชื่อผู้ติดต่อ|กรุณาเลือกช่วงเวลาที่ช่างว่าง/);
 });
 
 test("urgent route is registered and renders distinct urgent screen", () => {
