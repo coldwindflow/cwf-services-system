@@ -348,7 +348,7 @@
           <div class="data-row"><strong>ผู้ติดต่อ</strong><span class="muted">${root.utils.escapeHtml(d.customer_name || "-")} / ${root.utils.escapeHtml(d.customer_phone || "-")}</span></div>
           <div class="data-row"><strong>บริการ</strong><span class="muted">${root.utils.escapeHtml(serviceSummary())}</span></div>
           <div class="data-row"><strong>อาการ</strong><span class="muted">${root.utils.escapeHtml(d.symptom || "-")}</span></div>
-          ${result ? `<div class="data-row"><strong>ส่งข้อเสนอ</strong><span class="muted">${offersCount} ช่าง/พาร์ทเนอร์${offerEnabled ? "" : " (ระบบส่ง offer ปิดอยู่)"}</span></div>` : ""}
+          ${result ? `<div class="data-row"><strong>การส่งคำขอ</strong><span class="muted">${offerEnabled && offersCount > 0 ? "ส่งให้พาร์ทเนอร์ที่พร้อมรับงานในระบบแล้ว" : "แอดมินกำลังช่วยตรวจสอบคิวด่วน"}</span></div>` : ""}
         </div>
       </section>
 

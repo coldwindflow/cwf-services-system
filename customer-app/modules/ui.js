@@ -146,7 +146,7 @@
     if (needsPricing) tasks.push(loadHomePricingData());
     homeLoadPromise = Promise.allSettled(tasks).finally(() => {
       homeLoadPromise = null;
-      if (root.router?.initialized && root.state.currentRoute === "home") root.router.refresh();
+      patchHomeData();
     });
     return homeLoadPromise;
   }
@@ -200,6 +200,10 @@
           openContactSheet(container, item);
           return;
         }
+        if (item.action === "urgent") {
+          root.utils.routeTo("urgent");
+          return;
+        }
         if (!root.services.applyCommerceDraft("scheduled", item)) return;
         root.utils.routeTo("scheduled");
       });
@@ -218,6 +222,22 @@
         if (!item || !root.services.applyCommerceDraft("scheduled", item)) return;
         root.utils.routeTo("scheduled");
       });
+    });
+  }
+
+  function patchHomeData() {
+    if (root.state.currentRoute !== "home") return;
+    const container = document.getElementById("app");
+    if (!container) return;
+    const promotions = container.querySelector("[data-promotions]");
+    if (promotions) promotions.innerHTML = renderPromotionSummary();
+    const zones = container.querySelector("[data-zones]");
+    if (zones) zones.innerHTML = renderCoverageSummary();
+    const account = container.querySelector("[data-home-account]");
+    if (account) account.innerHTML = renderAccountShortcut();
+    container.querySelectorAll("[data-quick-price]").forEach((mount) => {
+      const card = root.services.quickServices.find((item) => item.id === mount.getAttribute("data-quick-price"));
+      if (card) mount.innerHTML = renderQuickPrice(card);
     });
   }
 
@@ -243,6 +263,7 @@
 
   const ui = {
     prefetchHome: loadHomeData,
+    patchHomeData,
     updateAccountChrome,
 
     renderHome(container) {
@@ -277,7 +298,7 @@
                   <span class="trust-ico">${root.utils.icon(item.glyph || "sparkle", 20)}</span>
                   <strong>${root.utils.escapeHtml(item.title)}</strong>
                   <span>${root.utils.escapeHtml(item.copy)}</span>
-                  <small>${item.action === "contact" ? "ติดต่อแอดมิน" : "จองในแอปได้"}</small>
+                  <small>${item.action === "contact" ? "ติดต่อแอดมิน" : item.action === "urgent" ? "ส่งคำขอคิวด่วน" : "จองในแอปได้"}</small>
                 </button>
               `).join("")}
             </div>
@@ -291,7 +312,7 @@
                   <span class="quick-kicker">${root.utils.escapeHtml(card.kicker || "")}</span>
                   <strong>${root.utils.escapeHtml(card.title)}</strong>
                   <span>${root.utils.escapeHtml(card.copy)}</span>
-                  <span class="quick-price">${renderQuickPrice(card)}</span>
+                  <span class="quick-price" data-quick-price="${root.utils.escapeHtml(card.id)}">${renderQuickPrice(card)}</span>
                 </button>
               `).join("")}
             </div>
@@ -332,7 +353,7 @@
             <div data-zones>${renderCoverageSummary()}</div>
           </section>
 
-          ${renderAccountShortcut()}
+          <div data-home-account>${renderAccountShortcut()}</div>
           <div data-contact-sheet-mount></div>
         </section>
       `;
@@ -354,6 +375,12 @@
               <strong>จองล้างแอร์</strong>
               <span>รองรับแอร์ผนัง แอร์สี่ทิศทาง แอร์แขวน และแอร์เปลือยใต้ฝ้า</span>
               <span class="mode-foot">ดูราคาและคิวว่าง</span>
+            </button>
+            <button class="mode-card is-urgent" type="button" data-route="urgent">
+              <span class="mode-kicker">คำขอด่วน</span>
+              <strong>คิวด่วน</strong>
+              <span>ส่งรายละเอียดให้พาร์ทเนอร์ช่างกดรับ และติดตามผลด้วย Booking Code</span>
+              <span class="mode-foot">ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับ</span>
             </button>
           </div>
           <section class="card support-card">
