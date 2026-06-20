@@ -17,7 +17,7 @@ This recovery stayed inside the approved Customer App V2 frontend surface, focus
 - `customer-app/modules/*.js`
 - `test/customerAppRecovery.test.js`
 - `test/customerAppSavedAddress.test.js`
-- `docs/customer-app-v2-recovery-screenshots/*`
+- `docs/customer-app-v2-recovery-screenshots/*.json`
 
 No backend code, migrations, `package.json`, or `package-lock.json` were changed.
 
@@ -50,28 +50,35 @@ No backend code, migrations, `package.json`, or `package-lock.json` were changed
 
 The current frontend-only scope can hide technician information and counts from the Customer App UI, and tests now lock that behavior. Full guarantees that `/public/availability_v2` returns only eligible anonymous slots, and that `/public/book` rejects spoofed or stale technician/slot selections, require backend handler enforcement. Those backend modules were not changed because the recovery request restricted backend edits unless explicitly approved.
 
+## Backend Slot Boundary Inspection
+
+Follow-up inspection on 2026-06-21 found that this checkout does not contain the backend implementations for `GET /public/availability_v2` or `POST /public/book`. The authorized file named in the backend continuation request, `index.js`, is currently a browser-side Customer App script in this repository, not an Express route file. The root `app.js` is also a browser-side Technician App script.
+
+What exists in current `origin/main`:
+
+- `technician_profiles.customer_slot_visible` is referenced by the Admin technician UI.
+- `technician_service_matrix` is referenced by the Admin technician UI and the read-only Admin work-readiness route.
+- Admin UI saves a strict matrix shape with `job_types`, `ac_types`, and `wash_wall_variants`.
+
+What was not found in this checkout:
+
+- Public route code for `GET /public/availability_v2`.
+- Public route code for `POST /public/book`.
+- Server-side strict service-matrix matching for public slots.
+- Fail-closed public availability behavior when the matrix is missing or malformed.
+- Anonymous public slot generation from eligible technicians.
+- Server-side scheduled booking slot revalidation for customer-submitted slots.
+
+Because the public route implementations are absent from the branch, backend slot-boundary enforcement could not be completed without the missing route file or explicit approval to add and mount a new backend route module.
+
 ## QA Artifacts
 
-Screenshots and JSON browser results are committed under:
+Concise JSON browser results are committed under:
 
-- `docs/customer-app-v2-recovery-screenshots/home-320.png`
-- `docs/customer-app-v2-recovery-screenshots/home-360.png`
-- `docs/customer-app-v2-recovery-screenshots/home-390.png`
-- `docs/customer-app-v2-recovery-screenshots/home-430.png`
-- `docs/customer-app-v2-recovery-screenshots/home-desktop.png`
-- `docs/customer-app-v2-recovery-screenshots/logged-in-header.png`
-- `docs/customer-app-v2-recovery-screenshots/logged-in-account.png`
-- `docs/customer-app-v2-recovery-screenshots/scheduled-step-1-customer.png`
-- `docs/customer-app-v2-recovery-screenshots/scheduled-step-2-service.png`
-- `docs/customer-app-v2-recovery-screenshots/scheduled-step-3-price.png`
-- `docs/customer-app-v2-recovery-screenshots/scheduled-step-4-slots.png`
-- `docs/customer-app-v2-recovery-screenshots/scheduled-step-5-review.png`
-- `docs/customer-app-v2-recovery-screenshots/scheduled-stale-slot-return.png`
-- `docs/customer-app-v2-recovery-screenshots/urgent-request-page.png`
-- `docs/customer-app-v2-recovery-screenshots/tracking-route.png`
-- `docs/customer-app-v2-recovery-screenshots/service-worker-refresh.png`
 - `docs/customer-app-v2-recovery-screenshots/browser-qa-flow-results.json`
 - `docs/customer-app-v2-recovery-screenshots/browser-qa-sw-results.json`
+
+Binary browser screenshots were removed from the source branch. Screenshots should be attached to the PR conversation or another review artifact store instead of committed to production source.
 
 Browser QA covered logged-out and logged-in header states, scheduled flow steps 1-5, stale-slot return to step 4, urgent route rendering, tracking route rendering, overflow checks, console errors, service-worker registration, active control, and stale cache removal.
 
@@ -92,5 +99,6 @@ Final `npm test` result: 62 tests passing.
 ## Residual Risks
 
 - Backend eligibility/rejection guarantees still need backend review if the API currently returns technician identity/counts or accepts spoofed slot payloads.
+- The public route implementations needed for backend slot-boundary enforcement are not present in this checkout.
 - Production deployment should confirm the hosting layer serves `customer-app/sw.js` with JavaScript MIME type and does not strip query strings from versioned asset URLs.
 - Production smoke testing should include a real logged-in customer session because local browser QA used mocked public endpoints.
