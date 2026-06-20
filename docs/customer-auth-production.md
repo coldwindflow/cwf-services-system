@@ -28,9 +28,12 @@ LINE Messaging API:
 - `LINE_CHANNEL_ID`
 - `LINE_CHANNEL_SECRET`
 - `LINE_CHANNEL_ACCESS_TOKEN`
+
+Legacy Customer LINE Login:
+
 - `LINE_CALLBACK_URL=https://app.cwf-air.com/auth/line/callback` for legacy `customer.html`
 
-Customer LINE Login:
+Customer App V2 LINE Login:
 
 - `LINE_LOGIN_CHANNEL_ID`
 - `LINE_LOGIN_CHANNEL_SECRET`
