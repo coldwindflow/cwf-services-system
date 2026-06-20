@@ -81,14 +81,47 @@ New normalized table: `public.customer_identities`.
 
 Existing LINE customers keep their legacy customer profile key, e.g. `line:<LINE user id>`. The migration includes a reviewed optional backfill statement to populate `customer_identities` from existing `customer_profiles` rows.
 
-The application does not run DDL at normal startup. The owner must explicitly approve and run `migrations/20260620_customer_identities.sql` as a separate controlled deployment step before enabling provider env vars. Until the schema is present, `/public/auth/config` reports providers as unavailable.
+The application does not run DDL at normal startup. The owner must explicitly approve and run the Customer Auth migration as a separate controlled deployment step before enabling provider env vars. Until the schema is present, `/public/auth/config` reports providers as unavailable.
 
 Recommended deployment order:
 
 1. Deploy the code with provider env vars unset.
-2. Run and verify `migrations/20260620_customer_identities.sql`.
-3. Add provider client IDs/secrets, safe HTTPS callbacks, and JWT secret.
-4. Enable LINE email scope only after LINE approves the permission.
+2. Confirm a recent Render PostgreSQL backup or restore point exists.
+3. Configure the Render Web Service Pre-Deploy Command:
+
+   ```text
+   npm run migrate:customer-auth
+   ```
+
+   In Render this is:
+
+   ```text
+   Render Web Service
+   -> Settings
+   -> Pre-Deploy Command
+   -> npm run migrate:customer-auth
+   ```
+
+4. Deploy. Render must stop the deployment if the migration runner exits non-zero.
+5. Verify `https://app.cwf-air.com/public/auth/config`.
+6. Add provider client IDs/secrets, safe HTTPS callbacks, and JWT secret.
+7. Enable LINE email scope only after LINE approves the permission.
+
+The runner reads and executes the merged SQL file `migrations/20260620_customer_identities.sql` exactly as committed. It uses a PostgreSQL advisory lock, verifies the resulting schema, closes the database connection in success and failure paths, and does not run the optional commented LINE backfill separately. It is intentionally not attached to `npm start`, `prestart`, `postinstall`, application boot, request handlers, or health checks.
+
+After a successful migration and complete provider env configuration, `/public/auth/config` should report:
+
+```json
+{
+  "schema_ready": true,
+  "providers": {
+    "line": { "available": true },
+    "google": { "available": true }
+  }
+}
+```
+
+Provider availability may remain `false` when required provider env vars, JWT secret, or safe HTTPS callback URLs are incomplete, even when `schema_ready` is `true`.
 
 ## OAuth State Store
 
