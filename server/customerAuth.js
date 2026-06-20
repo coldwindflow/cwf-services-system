@@ -132,8 +132,7 @@ function safeReturnTo(value, fallback = "/customer-app/") {
 
 function callbackUrl(req, provider, env = process.env) {
   if (provider === "line") {
-    const lineV2 = clean(env.LINE_V2_CALLBACK_URL || env.LINE_CUSTOMER_V2_CALLBACK_URL);
-    return lineV2 || `${getReqBaseUrl(req)}/auth/line/v2/callback`;
+    return clean(env.LINE_V2_CALLBACK_URL);
   }
   const google = clean(env.GOOGLE_CALLBACK_URL || env.GOOGLE_OAUTH_CALLBACK_URL);
   return google || `${getReqBaseUrl(req)}/auth/google/callback`;
@@ -147,8 +146,8 @@ function isUsableCallbackUrl(url, req) {
 }
 
 function baseProviderConfig(env = process.env) {
-  const lineClientId = clean(env.LINE_CHANNEL_ID || env.LINE_CLIENT_ID);
-  const lineClientSecret = clean(env.LINE_CHANNEL_SECRET || env.LINE_CLIENT_SECRET);
+  const lineClientId = clean(env.LINE_LOGIN_CHANNEL_ID);
+  const lineClientSecret = clean(env.LINE_LOGIN_CHANNEL_SECRET);
   const googleClientId = clean(env.GOOGLE_CLIENT_ID || env.GOOGLE_OAUTH_CLIENT_ID);
   const googleClientSecret = clean(env.GOOGLE_CLIENT_SECRET || env.GOOGLE_OAUTH_CLIENT_SECRET);
   return {

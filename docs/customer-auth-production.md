@@ -23,11 +23,20 @@ Shared:
 
 - `CWF_JWT_SECRET` or existing `JWT_SECRET`
 
-LINE:
+LINE Messaging API:
 
 - `LINE_CHANNEL_ID`
 - `LINE_CHANNEL_SECRET`
+- `LINE_CHANNEL_ACCESS_TOKEN`
+
+Legacy Customer LINE Login:
+
 - `LINE_CALLBACK_URL=https://app.cwf-air.com/auth/line/callback` for legacy `customer.html`
+
+Customer App V2 LINE Login:
+
+- `LINE_LOGIN_CHANNEL_ID`
+- `LINE_LOGIN_CHANNEL_SECRET`
 - `LINE_V2_CALLBACK_URL=https://app.cwf-air.com/auth/line/v2/callback` for Customer App V2
 - `LINE_EMAIL_SCOPE_ENABLED=true` only after LINE email permission is approved
 
@@ -41,14 +50,15 @@ Do not commit provider secrets, access tokens, refresh tokens, private keys, or 
 
 ## LINE Developers Setup
 
-1. Create or use a LINE Login channel, not a Messaging API-only channel.
+1. Create or use a dedicated LINE Login channel, not the Messaging API channel used for webhooks/replies.
 2. Keep legacy callback URL `https://app.cwf-air.com/auth/line/callback`.
 3. Add Customer App V2 callback URL `https://app.cwf-air.com/auth/line/v2/callback`.
 4. Enable scopes: `openid`, `profile`.
-5. Map the channel ID to `LINE_CHANNEL_ID`.
-6. Map the channel secret to `LINE_CHANNEL_SECRET`.
+5. Map the LINE Login channel ID to `LINE_LOGIN_CHANNEL_ID`.
+6. Map the LINE Login channel secret to `LINE_LOGIN_CHANNEL_SECRET`.
 7. Map the V2 callback to `LINE_V2_CALLBACK_URL`.
-8. LINE Official Account linking is optional for this login flow; the customer login only requires LINE Login.
+8. Keep Messaging API values (`LINE_CHANNEL_ID`, `LINE_CHANNEL_SECRET`, `LINE_CHANNEL_ACCESS_TOKEN`) unchanged for webhook, inbox, reply, and customer messaging flows.
+9. LINE Official Account linking is optional for this login flow; the customer login only requires LINE Login.
 
 LINE email is optional and disabled by default. Apply for email permission in LINE Developers Console first; after approval, set `LINE_EMAIL_SCOPE_ENABLED=true` and add the `email` scope in the channel settings. Without that env var, Customer App V2 requests only `openid profile`, and LINE login still works without an email address.
 

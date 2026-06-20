@@ -6,8 +6,8 @@ const customerAuth = require("../server/customerAuth");
 
 const READY_ENV = {
   CWF_JWT_SECRET: "secret",
-  LINE_CHANNEL_ID: "line-id",
-  LINE_CHANNEL_SECRET: "line-secret",
+  LINE_LOGIN_CHANNEL_ID: "line-login-id",
+  LINE_LOGIN_CHANNEL_SECRET: "line-login-secret",
   LINE_V2_CALLBACK_URL: "https://app.cwf-air.com/auth/line/v2/callback",
   GOOGLE_CLIENT_ID: "google-id",
   GOOGLE_CLIENT_SECRET: "google-secret",
@@ -185,6 +185,98 @@ test("provider unavailable when schema is missing", async () => {
     assert.equal(data.schema_ready, false);
     assert.equal(data.providers.line.available, false);
     assert.equal(data.providers.google.available, false);
+  });
+});
+
+test("LINE Login is unavailable when only Messaging API variables exist", async () => {
+  const env = {
+    CWF_JWT_SECRET: "secret",
+    LINE_CHANNEL_ID: "messaging-id",
+    LINE_CHANNEL_SECRET: "messaging-secret",
+    LINE_CHANNEL_ACCESS_TOKEN: "messaging-token",
+    LINE_V2_CALLBACK_URL: "https://app.cwf-air.com/auth/line/v2/callback",
+    GOOGLE_CLIENT_ID: "google-id",
+    GOOGLE_CLIENT_SECRET: "google-secret",
+    GOOGLE_CALLBACK_URL: "https://app.cwf-air.com/auth/google/callback",
+  };
+  await withServer(makeRouter({ env }), async (base) => {
+    const res = await fetch(`${base}/public/auth/config`);
+    const data = await res.json();
+    assert.equal(data.schema_ready, true);
+    assert.equal(data.providers.line.available, false);
+    assert.equal(data.providers.google.available, true);
+    assert.doesNotMatch(JSON.stringify(data), /messaging-secret|messaging-token|google-secret/);
+  });
+});
+
+test("LINE Login becomes available with dedicated LINE Login variables", async () => {
+  const env = {
+    CWF_JWT_SECRET: "secret",
+    LINE_LOGIN_CHANNEL_ID: "line-login-id",
+    LINE_LOGIN_CHANNEL_SECRET: "line-login-secret",
+    LINE_CHANNEL_ID: "messaging-id",
+    LINE_CHANNEL_SECRET: "messaging-secret",
+    LINE_CHANNEL_ACCESS_TOKEN: "messaging-token",
+    LINE_V2_CALLBACK_URL: "https://app.cwf-air.com/auth/line/v2/callback",
+  };
+  await withServer(makeRouter({ env }), async (base) => {
+    const res = await fetch(`${base}/public/auth/config`);
+    const data = await res.json();
+    assert.equal(data.providers.line.available, true);
+    assert.doesNotMatch(JSON.stringify(data), /line-login-secret|messaging-secret|messaging-token/);
+  });
+});
+
+test("Customer Auth V2 does not use Messaging API variable names for LINE Login config", () => {
+  const cfg = customerAuth.baseProviderConfig({
+    CWF_JWT_SECRET: "secret",
+    LINE_CHANNEL_ID: "messaging-id",
+    LINE_CHANNEL_SECRET: "messaging-secret",
+    LINE_CHANNEL_ACCESS_TOKEN: "messaging-token",
+    LINE_LOGIN_CHANNEL_ID: "line-login-id",
+    LINE_LOGIN_CHANNEL_SECRET: "line-login-secret",
+  });
+  assert.equal(cfg.line.clientId, "line-login-id");
+  assert.equal(cfg.line.clientSecret, "line-login-secret");
+
+  const messagingOnly = customerAuth.baseProviderConfig({
+    CWF_JWT_SECRET: "secret",
+    LINE_CHANNEL_ID: "messaging-id",
+    LINE_CHANNEL_SECRET: "messaging-secret",
+    LINE_CHANNEL_ACCESS_TOKEN: "messaging-token",
+  });
+  assert.equal(messagingOnly.line.clientId, "");
+  assert.equal(messagingOnly.line.clientSecret, "");
+});
+
+test("Google availability remains unchanged by LINE credential isolation", async () => {
+  const env = {
+    CWF_JWT_SECRET: "secret",
+    LINE_CHANNEL_ID: "messaging-id",
+    LINE_CHANNEL_SECRET: "messaging-secret",
+    LINE_CHANNEL_ACCESS_TOKEN: "messaging-token",
+    GOOGLE_CLIENT_ID: "google-id",
+    GOOGLE_CLIENT_SECRET: "google-secret",
+    GOOGLE_CALLBACK_URL: "https://app.cwf-air.com/auth/google/callback",
+  };
+  await withServer(makeRouter({ env }), async (base) => {
+    const res = await fetch(`${base}/public/auth/config`);
+    const data = await res.json();
+    assert.equal(data.providers.line.available, false);
+    assert.equal(data.providers.google.available, true);
+  });
+});
+
+test("LINE Login requires explicit V2 callback configuration", async () => {
+  const env = {
+    CWF_JWT_SECRET: "secret",
+    LINE_LOGIN_CHANNEL_ID: "line-login-id",
+    LINE_LOGIN_CHANNEL_SECRET: "line-login-secret",
+  };
+  await withServer(makeRouter({ env }), async (base) => {
+    const res = await fetch(`${base}/public/auth/config`);
+    const data = await res.json();
+    assert.equal(data.providers.line.available, false);
   });
 });
 
