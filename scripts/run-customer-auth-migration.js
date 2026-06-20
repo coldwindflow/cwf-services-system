@@ -98,25 +98,51 @@ async function runMigration(options = {}) {
   const logger = options.logger || console;
   const repoRoot = options.repoRoot || path.resolve(__dirname, "..");
   const clientFactory = options.clientFactory || ((config) => new Client(config));
-  const sql = readMigrationSql(repoRoot);
   const config = createClientConfig(env);
+  const sql = readMigrationSql(repoRoot);
   const client = clientFactory(config);
   let locked = false;
+  let migrationFailed = false;
+  let originalError = null;
 
   logger.log("CUSTOMER_AUTH_MIGRATION_START");
   try {
     await client.connect();
     await client.query("SELECT pg_advisory_lock($1::bigint)", [ADVISORY_LOCK_KEY]);
     locked = true;
-    await client.query(sql);
+    try {
+      await client.query(sql);
+    } catch (error) {
+      migrationFailed = true;
+      throw error;
+    }
     await verifySchema(client);
     logger.log("CUSTOMER_AUTH_MIGRATION_OK");
+  } catch (error) {
+    originalError = error;
+    throw error;
   } finally {
-    try {
-      if (locked) await client.query("SELECT pg_advisory_unlock($1::bigint)", [ADVISORY_LOCK_KEY]);
-    } finally {
-      await client.end();
+    let cleanupError = null;
+    if (migrationFailed) {
+      try {
+        await client.query("ROLLBACK");
+      } catch (error) {
+        cleanupError = cleanupError || error;
+      }
     }
+    if (locked) {
+      try {
+        await client.query("SELECT pg_advisory_unlock($1::bigint)", [ADVISORY_LOCK_KEY]);
+      } catch (error) {
+        cleanupError = cleanupError || error;
+      }
+    }
+    try {
+      await client.end();
+    } catch (error) {
+      cleanupError = cleanupError || error;
+    }
+    if (!originalError && cleanupError) throw cleanupError;
   }
 }
 

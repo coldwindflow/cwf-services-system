@@ -15,6 +15,7 @@ class FakeClient {
     this.connected = false;
     this.ended = false;
     this.queries = [];
+    this.aborted = false;
   }
 
   async connect() {
@@ -24,7 +25,17 @@ class FakeClient {
 
   async query(sql, params) {
     this.queries.push({ sql, params });
-    if (this.options.failSql && String(sql).includes("BEGIN;")) throw new Error(this.options.failSql);
+    if (this.aborted && sql !== "ROLLBACK") throw new Error("current transaction is aborted");
+    if (sql === "ROLLBACK") {
+      if (this.options.failRollback) throw new Error(this.options.failRollback);
+      this.aborted = false;
+      return { rows: [] };
+    }
+    if (String(sql).includes("pg_advisory_unlock") && this.options.failUnlock) throw new Error(this.options.failUnlock);
+    if (this.options.failSql && String(sql).includes("BEGIN;")) {
+      this.aborted = true;
+      throw new Error(this.options.failSql);
+    }
     if (String(sql).includes("to_regclass('public.customer_identities')")) {
       return { rows: [{ customer_identities: this.options.missingTable ? null : "public.customer_identities" }] };
     }
@@ -56,6 +67,7 @@ class FakeClient {
 
   async end() {
     this.ended = true;
+    if (this.options.failEnd) throw new Error(this.options.failEnd);
   }
 }
 
@@ -70,19 +82,30 @@ function makeLogger() {
 
 test("migration runner fails safely when DATABASE_URL is missing", async () => {
   let created = false;
+  let fileRead = false;
   const logger = makeLogger();
-  const code = await runner.runCli({
-    env: {},
-    repoRoot: REPO_ROOT,
-    logger,
-    clientFactory() {
-      created = true;
-      return new FakeClient();
-    },
-  });
-  assert.equal(code, 1);
-  assert.equal(created, false);
-  assert.match(logger.lines.join("\n"), /CUSTOMER_AUTH_MIGRATION_FAILED: DATABASE_URL is required/);
+  const originalRead = fs.readFileSync;
+  fs.readFileSync = (...args) => {
+    fileRead = true;
+    return originalRead(...args);
+  };
+  try {
+    const code = await runner.runCli({
+      env: {},
+      repoRoot: REPO_ROOT,
+      logger,
+      clientFactory() {
+        created = true;
+        return new FakeClient();
+      },
+    });
+    assert.equal(code, 1);
+    assert.equal(created, false);
+    assert.equal(fileRead, false);
+    assert.match(logger.lines.join("\n"), /CUSTOMER_AUTH_MIGRATION_FAILED: DATABASE_URL is required/);
+  } finally {
+    fs.readFileSync = originalRead;
+  }
 });
 
 test("migration runner executes the exact merged SQL file and verifies schema", async () => {
@@ -122,8 +145,62 @@ test("migration runner releases advisory lock and closes connection on SQL failu
   });
   assert.equal(code, 1);
   assert.equal(client.ended, true);
+  assert.equal(client.queries.at(-2).sql, "ROLLBACK");
   assert.equal(client.queries.at(-1).sql, "SELECT pg_advisory_unlock($1::bigint)");
   assert.match(logger.lines.join("\n"), /CUSTOMER_AUTH_MIGRATION_FAILED: migration boom/);
+});
+
+test("migration failure rolls back before unlock and preserves original error", async () => {
+  let client;
+  const logger = makeLogger();
+  const code = await runner.runCli({
+    env: { DATABASE_URL },
+    repoRoot: REPO_ROOT,
+    logger,
+    clientFactory() {
+      client = new FakeClient({ failSql: "migration boom" });
+      return client;
+    },
+  });
+  assert.equal(code, 1);
+  assert.equal(client.ended, true);
+  const migrationIndex = client.queries.findIndex((q) => String(q.sql).includes("BEGIN;"));
+  const rollbackIndex = client.queries.findIndex((q) => q.sql === "ROLLBACK");
+  const unlockIndex = client.queries.findIndex((q) => q.sql === "SELECT pg_advisory_unlock($1::bigint)");
+  assert.ok(migrationIndex >= 0);
+  assert.ok(rollbackIndex > migrationIndex);
+  assert.ok(unlockIndex > rollbackIndex);
+  assert.match(logger.lines.join("\n"), /CUSTOMER_AUTH_MIGRATION_FAILED: migration boom/);
+  assert.doesNotMatch(logger.lines.join("\n"), /current transaction is aborted/);
+});
+
+test("rollback unlock and end cleanup errors do not mask migration failure", async () => {
+  let client;
+  const logger = makeLogger();
+  const code = await runner.runCli({
+    env: { DATABASE_URL },
+    repoRoot: REPO_ROOT,
+    logger,
+    clientFactory() {
+      client = new FakeClient({
+        failSql: "migration boom",
+        failRollback: "rollback boom",
+        failUnlock: "unlock boom",
+        failEnd: "end boom",
+      });
+      return client;
+    },
+  });
+  assert.equal(code, 1);
+  assert.equal(client.ended, true);
+  assert.equal(client.queries.at(-2).sql, "ROLLBACK");
+  assert.equal(client.queries.at(-1).sql, "SELECT pg_advisory_unlock($1::bigint)");
+  const output = logger.lines.join("\n");
+  assert.match(output, /CUSTOMER_AUTH_MIGRATION_FAILED: migration boom/);
+  assert.doesNotMatch(output, /rollback boom/);
+  assert.doesNotMatch(output, /unlock boom/);
+  assert.doesNotMatch(output, /end boom/);
+  assert.doesNotMatch(output, /current transaction is aborted/);
 });
 
 test("migration runner fails non-zero when post-migration verification fails", async () => {
