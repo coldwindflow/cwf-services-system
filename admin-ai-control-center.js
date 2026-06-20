@@ -51,6 +51,7 @@
   let _loadAllBusy = false;
   let _loadApprovalsBusy = false;
   let _trainingDraftBusy = false;
+  const _sendingApprovals = new Set();
 
   const TABS = [
     ["line",      "กล่องแชทลูกค้า"],
@@ -1040,6 +1041,48 @@
     return `<div class="draft-result"><b>AI ร่างคำตอบจาก LINE thread แล้ว</b><p>${esc(answer)}</p><div class="cc-actions" style="margin-top:10px"><button class="cc-btn" type="button" data-copy-text="${esc(answer)}">คัดลอก</button>${draft.saved_draft_id ? `<button class="cc-btn primary" type="button" data-create-approval-from-draft="${esc(draft.saved_draft_id)}">ส่งเข้าคิวอนุมัติ</button><button class="cc-btn soft-danger" type="button" data-dislike-draft="${esc(draft.saved_draft_id)}" data-dislike-conv="${esc(draft.conversation_id || STATE.selectedConversation?.id || '')}" data-dislike-customer="${esc(draft.selected_customer_question || '')}" data-dislike-reply="${esc(answer)}">ไม่ชอบคำตอบนี้</button>` : ''}</div></div>`;
   }
 
+  function humanGuardState(guard){
+    const mode = clean(guard?.mode || guard?.decision || guard?.status || "").toLowerCase();
+    const safeModes = new Set(["safe_reply", "guided_reply"]);
+    const blockedModes = new Set(["admin_only", "needs_teaching", "unknown", "unsupported"]);
+    if (!mode || blockedModes.has(mode) || guard?.can_answer === false) {
+      return { mode: mode || "unknown", label: "ตรวจสอบโดยแอดมินก่อน", canSend: false };
+    }
+    if (safeModes.has(mode)) {
+      return {
+        mode,
+        label: mode === "safe_reply" ? "ร่างคำตอบพร้อมให้แอดมินตรวจ" : "ร่างคำตอบแบบถามต่อให้แอดมินตรวจ",
+        canSend: true,
+      };
+    }
+    return { mode, label: "ตรวจสอบโดยแอดมินก่อน", canSend: false };
+  }
+  function canQueueLineDraft(draft){
+    if (!draft || !draft.saved_draft_id) return false;
+    return humanGuardState(draft.reply_guard || draft.guard || {}).canSend === true;
+  }
+  function reusableApprovalForDraft(approvals, conversationId, savedDraftId){
+    const conv = Number(conversationId || 0);
+    const draftId = Number(savedDraftId || 0);
+    if (!conv || !draftId) return null;
+    return (approvals || []).find((a) => (
+      Number(a.conversation_id || 0) === conv
+      && Number(a.source_draft_id || 0) === draftId
+      && ["pending", "edited", "approved"].includes(clean(a.status).toLowerCase())
+    )) || null;
+  }
+  function approvedLineSendBody(){
+    return { admin_note: 'sent_by_admin_from_control_center' };
+  }
+  function renderLineDraftResult(){
+    const draft = STATE.lineDraftResult?.draft || {};
+    const answer = STATE.lineDraftResult?.answer || draft.customer_reply || '';
+    const guard = humanGuardState(draft.reply_guard || {});
+    const queueAction = canQueueLineDraft(draft)
+      ? `<button class="cc-btn primary" type="button" data-create-approval-from-draft="${esc(draft.saved_draft_id)}">ส่งเข้าคิวอนุมัติ</button>`
+      : "";
+    return `<div class="draft-result"><b>AI ร่างคำตอบจาก LINE thread แล้ว</b><p>${esc(answer)}</p><small>${esc(guard.label)}</small><div class="cc-actions" style="margin-top:10px"><button class="cc-btn" type="button" data-copy-text="${esc(answer)}">คัดลอก</button>${queueAction}${draft.saved_draft_id ? `<button class="cc-btn soft-danger" type="button" data-dislike-draft="${esc(draft.saved_draft_id)}" data-dislike-conv="${esc(draft.conversation_id || STATE.selectedConversation?.id || '')}" data-dislike-customer="${esc(draft.selected_customer_question || '')}" data-dislike-reply="${esc(answer)}">ไม่ชอบคำตอบนี้</button>` : ''}</div></div>`;
+  }
 
   function loadTrainingPrefs(){
     try {
@@ -1620,7 +1663,7 @@
           <button class="cc-btn" type="button" data-save-approval="${esc(a.id)}">บันทึกแก้ไข</button>
           <button class="cc-btn primary" type="button" data-approve-approval="${esc(a.id)}">อนุมัติใช้</button>
           <button class="cc-btn" type="button" data-copy-approval="${esc(a.id)}">คัดลอก</button>
-          <button class="cc-btn secondary" type="button" data-send-approval="${esc(a.id)}" ${canSend ? '' : 'disabled'}>ส่ง LINE ตอนนี้</button>
+          <button class="cc-btn secondary" type="button" data-send-approval="${esc(a.id)}" ${canSend && a.status === 'approved' && !_sendingApprovals.has(String(a.id)) ? '' : 'disabled'}>${_sendingApprovals.has(String(a.id)) ? 'กำลังส่ง...' : 'ส่ง LINE ตอนนี้'}</button>
           <button class="cc-btn" type="button" data-open-line-conv="${esc(a.conversation_id || '')}">เปิดแชท</button>
           <button class="cc-btn" type="button" data-admin-only-approval="${esc(a.id)}">แอดมินตอบเอง</button>
           <button class="cc-btn soft-danger" type="button" data-reject-approval="${esc(a.id)}">ปฏิเสธ</button>
@@ -1701,12 +1744,49 @@
       </div>
     </section>`;
   }
-  async function createApprovalFromDraft(id){ if (!id) return toast('ไม่พบร่างคำตอบ', 'error'); await api(`/admin/ai-office/control/approvals/from-draft/${encodeURIComponent(id)}`, { method:'POST', body:'{}' }); STATE.activeTab = 'approvals'; await loadAll(); toast('ส่งเข้าคิวอนุมัติแล้ว', 'success'); }
+  async function createApprovalFromDraft(id){
+    if (!id) return toast('ไม่พบร่างคำตอบ', 'error');
+    const convId = STATE.lineDraftResult?.draft?.conversation_id || STATE.selectedConversation?.id || "";
+    const existing = reusableApprovalForDraft(STATE.approvals, convId, id);
+    if (existing) {
+      STATE.activeTab = 'approvals';
+      await loadApprovals();
+      render();
+      toast('มีคิวอนุมัติของร่างนี้อยู่แล้ว', 'info');
+      return;
+    }
+    await api(`/admin/ai-office/control/approvals/from-draft/${encodeURIComponent(id)}`, { method:'POST', body:'{}' });
+    STATE.activeTab = 'approvals';
+    await loadAll();
+    toast('ส่งเข้าคิวอนุมัติแล้ว', 'success');
+  }
   async function saveApproval(id){ const final_reply = approvalReply(id); await api(`/admin/ai-office/control/approvals/${encodeURIComponent(id)}`, { method:'PATCH', body:JSON.stringify({ final_reply, status:'edited', admin_note:'edited_from_control_center' }) }); await loadApprovals(); render(); toast('บันทึกข้อความแล้ว', 'success'); }
   async function approveApproval(id){ const final_reply = approvalReply(id); await api(`/admin/ai-office/control/approvals/${encodeURIComponent(id)}/approve`, { method:'POST', body:JSON.stringify({ final_reply, admin_note:'approved_from_control_center' }) }); await loadApprovals(); render(); toast('อนุมัติข้อความแล้ว', 'success'); }
   async function rejectApproval(id){ if (!confirm('ปฏิเสธร่างคำตอบนี้ใช่ไหม')) return; await api(`/admin/ai-office/control/approvals/${encodeURIComponent(id)}/reject`, { method:'POST', body:JSON.stringify({ admin_note:'rejected_from_control_center' }) }); await loadApprovals(); render(); toast('ปฏิเสธแล้ว', 'success'); }
   async function adminOnlyApproval(id){ await api(`/admin/ai-office/control/approvals/${encodeURIComponent(id)}/admin-only`, { method:'POST', body:JSON.stringify({ admin_note:'admin_only_from_control_center' }) }); await loadApprovals(); render(); toast('ย้ายเป็นแอดมินตอบเองแล้ว', 'success'); }
-  async function sendApproval(id){ const final_reply = approvalReply(id); if (!confirm('ส่งข้อความนี้เข้า LINE ลูกค้าตอนนี้ใช่ไหม')) return; await api(`/admin/ai-office/control/approvals/${encodeURIComponent(id)}/send`, { method:'POST', body:JSON.stringify({ final_reply, admin_note:'sent_by_admin_from_control_center' }) }); await loadApprovals(); render(); toast('ส่ง LINE แล้ว', 'success'); }
+  async function sendApproval(id){
+    const key = String(id || "");
+    const approval = (STATE.approvals || []).find((item) => String(item.id) === key);
+    const canSend = getValue("admin_approved_line_send_enabled", false) === true && getValue("kill_switch", false) !== true;
+    if (!approval || approval.status !== "approved" || !canSend) return toast('ส่งได้เฉพาะข้อความที่อนุมัติแล้ว และเมื่อเปิดปุ่มส่งจากคิวอนุมัติ', 'error');
+    if (_sendingApprovals.has(key)) return;
+    if (!confirm('ส่งข้อความที่อนุมัติไว้ในฐานข้อมูลเข้า LINE ลูกค้าตอนนี้ใช่ไหม')) return;
+    _sendingApprovals.add(key);
+    render();
+    try {
+      await api(`/admin/ai-office/control/approvals/${encodeURIComponent(id)}/send`, { method:'POST', body:JSON.stringify(approvedLineSendBody()) });
+      await loadApprovals();
+      render();
+      toast('ส่ง LINE แล้ว', 'success');
+    } catch (error) {
+      if (/409|APPROVAL_STATUS_NOT_SENDABLE|CONFLICT/i.test(error.message || "")) toast('ส่งไม่ได้: สถานะล่าสุดไม่ใช่อนุมัติ หรือถูกส่งไปแล้ว', 'error');
+      else toast(error.message || 'ส่ง LINE ไม่สำเร็จ', 'error');
+      throw error;
+    } finally {
+      _sendingApprovals.delete(key);
+      render();
+    }
+  }
   function copyApproval(id){ const text = approvalReply(id); navigator.clipboard?.writeText(text || ''); toast('คัดลอกแล้ว', 'success'); }
 
   async function analyzeDecision(form){ const fd = new FormData(form); const payload = Object.fromEntries(fd.entries()); if (!clean(payload.customer_message)) return toast('กรุณาวางข้อความลูกค้า', 'error'); const data = await api('/admin/ai-office/control/reply-decision', { method:'POST', body:JSON.stringify(payload) }); STATE.decisionResult = data; await loadDecisionLogs(); render(); toast('วิเคราะห์คำตอบแล้ว', 'success'); }
@@ -2197,6 +2277,20 @@
     const sw = e.target.closest('[data-ai-switch-key]'); if (!sw) return; updateSetting(sw.dataset.aiSwitchKey, !!sw.checked).catch((err) => { toast(err.message, 'error'); loadAll(); });
   }
   function handleSubmit(e){ const autoSafeForm = e.target.closest('[data-auto-safe-config-form]'); if (autoSafeForm) { e.preventDefault(); return saveAutoSafeConfig(autoSafeForm).catch((err) => toast(err.message, 'error')); } const trainingDraftForm = e.target.closest('[data-training-draft-form]'); if (trainingDraftForm) { e.preventDefault(); return draftTrainingFromForm(trainingDraftForm).catch((err) => toast(err.message, 'error')); } const trainingLessonForm = e.target.closest('[data-training-lesson-form]'); if (trainingLessonForm) { e.preventDefault(); return saveTrainingLesson(trainingLessonForm).catch((err) => toast(err.message, 'error')); } const lineDraftForm = e.target.closest('[data-line-draft-form]'); if (lineDraftForm) { e.preventDefault(); return draftFromLineForm(lineDraftForm).catch((err) => toast(err.message, 'error')); } const decisionForm = e.target.closest('[data-decision-form]'); if (decisionForm) { e.preventDefault(); return analyzeDecision(decisionForm).catch((err) => toast(err.message, 'error')); } const playbookForm = e.target.closest('[data-playbook-form]'); if (playbookForm) { e.preventDefault(); return savePlaybookForm(playbookForm).catch((err) => toast(err.message, 'error')); } const form = e.target.closest('[data-brain-form]'); if (!form) return; e.preventDefault(); saveBrainForm(form).catch((err) => toast(err.message, 'error')); }
+
+  try {
+    window.__CWF_LINE_REPLY_WORKBENCH_TEST__ = {
+      STATE,
+      humanGuardState,
+      canQueueLineDraft,
+      reusableApprovalForDraft,
+      approvedLineSendBody,
+      renderLineDraftResult,
+      createApprovalFromDraft,
+      sendApproval,
+      _sendingApprovals,
+    };
+  } catch(_) {}
 
   function init(){
     loadTrainingPrefs();
