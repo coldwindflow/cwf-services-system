@@ -35,6 +35,11 @@ function normWorkDayPayload(input = {}){
   };
 }
 
+const SYSTEM_DEFAULT_MAX_JOBS_PER_DAY = 4;
+const SYSTEM_DEFAULT_MAX_UNITS_PER_DAY = null;
+const LEGACY_DEFAULT_MAX_JOBS_PER_DAY = 1;
+const LEGACY_DEFAULT_MAX_UNITS_PER_DAY = 5;
+
 function normalizeNullableCap(value, max){
   if (value === null || value === undefined || value === '') return null;
   const text = String(value).trim().toLowerCase();
@@ -42,6 +47,41 @@ function normalizeNullableCap(value, max){
   const n = Number(value);
   if (!Number.isFinite(n)) return null;
   return Math.max(1, Math.min(Number(max || 99), Math.floor(n)));
+}
+
+function nullableNumber(value){
+  if (value === null || value === undefined || value === '') return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? n : null;
+}
+
+function resolveTechnicianCalendarCaps(row = {}){
+  const source = String(row?.source || '').trim().toLowerCase();
+  const rawMaxJobs = nullableNumber(row?.max_jobs_per_day);
+  const rawMaxUnits = nullableNumber(row?.max_units_per_day);
+  const hasRawCaps = rawMaxJobs !== null || rawMaxUnits !== null;
+  const isLegacySystemDefault = (
+    source === 'technician' &&
+    rawMaxJobs === LEGACY_DEFAULT_MAX_JOBS_PER_DAY &&
+    rawMaxUnits === LEGACY_DEFAULT_MAX_UNITS_PER_DAY
+  );
+  const isCustom = source === 'technician_custom' || (hasRawCaps && !isLegacySystemDefault && source !== 'technician_default');
+  const capMode = isCustom ? 'technician_custom' : (isLegacySystemDefault ? 'legacy_system_default' : 'system_default');
+  return {
+    cap_mode: capMode,
+    raw_max_jobs: rawMaxJobs,
+    raw_max_units: rawMaxUnits,
+    effective_max_jobs: isCustom ? (rawMaxJobs ?? SYSTEM_DEFAULT_MAX_JOBS_PER_DAY) : SYSTEM_DEFAULT_MAX_JOBS_PER_DAY,
+    effective_max_units: isCustom ? (rawMaxUnits ?? SYSTEM_DEFAULT_MAX_UNITS_PER_DAY) : SYSTEM_DEFAULT_MAX_UNITS_PER_DAY,
+    is_legacy_system_default: isLegacySystemDefault,
+  };
+}
+
+function sourceForWorkDayPayload(payload = {}){
+  if (payload.can_accept_advance_job !== true || payload.day_status !== 'advance_only') return 'technician_default';
+  return (payload.max_jobs_per_day != null || payload.max_units_per_day != null)
+    ? 'technician_custom'
+    : 'technician_default';
 }
 
 function hhmmToMin(value){
@@ -153,6 +193,10 @@ module.exports = {
   toIsoDate,
   normWorkDayPayload,
   normalizeNullableCap,
+  resolveTechnicianCalendarCaps,
+  sourceForWorkDayPayload,
+  SYSTEM_DEFAULT_MAX_JOBS_PER_DAY,
+  SYSTEM_DEFAULT_MAX_UNITS_PER_DAY,
   countLockedAdvanceJobsForDate,
   loadLockedAdvanceUsageForDate,
   validateLockedDaySafeEdit,

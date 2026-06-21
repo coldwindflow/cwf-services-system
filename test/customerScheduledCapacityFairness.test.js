@@ -4,7 +4,8 @@ const assert = require("node:assert/strict");
 const customerAvailability = require("../server/services/public/customerAvailability");
 const {
   normWorkDayPayload,
-  validateLockedDaySafeEdit,
+  resolveTechnicianCalendarCaps,
+  sourceForWorkDayPayload,
 } = require("../server/lib/technicianCalendar");
 const {
   rankCustomerScheduledCandidates,
@@ -53,6 +54,7 @@ function makeDeps({ calendar = {}, usage = {}, busyByTech = {} } = {}) {
             end_time: "18:00",
             max_jobs_per_day: calendar[technician_username]?.max_jobs_per_day ?? null,
             max_units_per_day: calendar[technician_username]?.max_units_per_day ?? null,
+            source: calendar[technician_username]?.source ?? null,
           })) };
         }
         if (text.includes("WITH assigned AS")) {
@@ -75,17 +77,34 @@ function makeDeps({ calendar = {}, usage = {}, busyByTech = {} } = {}) {
   };
 }
 
-test("default advance caps normalize to null, while explicit cap 1 survives", () => {
+test("cap policy resolves null/default, legacy 1/5, and custom 1/5 correctly", () => {
   const open = normWorkDayPayload({ can_accept_advance_job: true });
   assert.equal(open.max_jobs_per_day, null);
   assert.equal(open.max_units_per_day, null);
+  assert.equal(sourceForWorkDayPayload(open), "technician_default");
+  assert.deepEqual(resolveTechnicianCalendarCaps(open), {
+    cap_mode: "system_default",
+    raw_max_jobs: null,
+    raw_max_units: null,
+    effective_max_jobs: 4,
+    effective_max_units: null,
+    is_legacy_system_default: false,
+  });
 
   const capped = normWorkDayPayload({ can_accept_advance_job: true, max_jobs_per_day: 1, max_units_per_day: 1 });
   assert.equal(capped.max_jobs_per_day, 1);
   assert.equal(capped.max_units_per_day, 1);
+  assert.equal(sourceForWorkDayPayload(capped), "technician_custom");
+  assert.equal(resolveTechnicianCalendarCaps({ source: "technician", max_jobs_per_day: 1, max_units_per_day: 5 }).cap_mode, "legacy_system_default");
+  assert.equal(resolveTechnicianCalendarCaps({ source: "technician", max_jobs_per_day: 1, max_units_per_day: 5 }).effective_max_jobs, 4);
+  assert.equal(resolveTechnicianCalendarCaps({ source: "technician", max_jobs_per_day: 1, max_units_per_day: 5 }).effective_max_units, null);
+  const custom = resolveTechnicianCalendarCaps({ source: "technician_custom", max_jobs_per_day: 1, max_units_per_day: 5 });
+  assert.equal(custom.cap_mode, "technician_custom");
+  assert.equal(custom.effective_max_jobs, 1);
+  assert.equal(custom.effective_max_units, 5);
 });
 
-test("null caps do not close a day with existing usage; explicit caps still apply", async () => {
+test("system default allows up to four jobs, while explicit caps still apply", async () => {
   let result = await customerAvailability.computePublicCustomerSlots(makeDeps({
     calendar: { "tech-a": { max_jobs_per_day: null, max_units_per_day: null } },
     usage: { "tech-a": { jobs_count: 3, units_count: 9 } },
@@ -93,13 +112,25 @@ test("null caps do not close a day with existing usage; explicit caps still appl
   assert.ok(result.slots.length > 0);
 
   result = await customerAvailability.computePublicCustomerSlots(makeDeps({
-    calendar: { "tech-a": { max_jobs_per_day: 1, max_units_per_day: null } },
+    calendar: { "tech-a": { source: "technician", max_jobs_per_day: 1, max_units_per_day: 5 } },
+    usage: { "tech-a": { jobs_count: 1, units_count: 99 } },
+  }), CRITERIA);
+  assert.ok(result.slots.length > 0);
+
+  result = await customerAvailability.computePublicCustomerSlots(makeDeps({
+    calendar: { "tech-a": { max_jobs_per_day: null, max_units_per_day: null } },
+    usage: { "tech-a": { jobs_count: 4, units_count: 1 } },
+  }), CRITERIA);
+  assert.equal(result.reason_code, "CAPACITY_FULL");
+
+  result = await customerAvailability.computePublicCustomerSlots(makeDeps({
+    calendar: { "tech-a": { source: "technician_custom", max_jobs_per_day: 1, max_units_per_day: null } },
     usage: { "tech-a": { jobs_count: 1, units_count: 1 } },
   }), CRITERIA);
   assert.equal(result.reason_code, "CAPACITY_FULL");
 
   result = await customerAvailability.computePublicCustomerSlots(makeDeps({
-    calendar: { "tech-a": { max_jobs_per_day: null, max_units_per_day: 2 } },
+    calendar: { "tech-a": { source: "technician_custom", max_jobs_per_day: null, max_units_per_day: 2 } },
     usage: { "tech-a": { jobs_count: 0, units_count: 1 } },
   }), { ...CRITERIA, services: [{ ...CRITERIA.services[0], machine_count: 2 }] });
   assert.equal(result.reason_code, "CAPACITY_FULL");
@@ -132,14 +163,30 @@ test("duration controls slot visibility inside real gaps", async () => {
   assert.equal(twoHours.reason_code, "COLLISION_FULL");
 });
 
-test("locked-day safe validation allows unlimited/increase and rejects unsafe decreases", () => {
-  const usage = { jobs_count: 2, units_count: 4, earliest_start_min: 600, latest_end_min: 780 };
-  assert.equal(validateLockedDaySafeEdit({ day_status: "advance_only", can_accept_advance_job: true, start_time: "09:00", end_time: "18:00", max_jobs_per_day: null, max_units_per_day: null }, usage).ok, true);
-  assert.equal(validateLockedDaySafeEdit({ day_status: "advance_only", can_accept_advance_job: true, start_time: "09:00", end_time: "18:00", max_jobs_per_day: 3, max_units_per_day: 5 }, usage).ok, true);
-  assert.equal(validateLockedDaySafeEdit({ day_status: "unavailable", can_accept_advance_job: false }, usage).code, "LOCKED_DAY_CANNOT_CLOSE");
-  assert.equal(validateLockedDaySafeEdit({ day_status: "advance_only", can_accept_advance_job: true, start_time: "11:00", end_time: "18:00", max_jobs_per_day: null, max_units_per_day: null }, usage).code, "LOCKED_DAY_START_CUTS_JOB");
-  assert.equal(validateLockedDaySafeEdit({ day_status: "advance_only", can_accept_advance_job: true, start_time: "09:00", end_time: "12:00", max_jobs_per_day: null, max_units_per_day: null }, usage).code, "LOCKED_DAY_END_CUTS_JOB");
-  assert.equal(validateLockedDaySafeEdit({ day_status: "advance_only", can_accept_advance_job: true, start_time: "09:00", end_time: "18:00", max_jobs_per_day: 1, max_units_per_day: null }, usage).code, "LOCKED_DAY_MAX_JOBS_BELOW_USAGE");
+test("technician UI disables locked date editing and separates job/unit overrides", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const app = fs.readFileSync(path.join(__dirname, "..", "app.js"), "utf8");
+  assert.match(app, /editBtn\.disabled = locked/);
+  assert.match(app, /workDayJobLimitEnabled/);
+  assert.match(app, /workDayUnitLimitEnabled/);
+  assert.match(app, /bulkDayJobLimitEnabled/);
+  assert.match(app, /bulkDayUnitLimitEnabled/);
+});
+
+test("calendar read API exposes trusted cap metadata while public slots stay anonymous", () => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const readRoute = fs.readFileSync(path.join(__dirname, "..", "server/routes/technicianCalendarReadOnly.js"), "utf8");
+  const publicSvc = fs.readFileSync(path.join(__dirname, "..", "server/services/public/customerAvailability.js"), "utf8");
+  assert.match(readRoute, /resolveTechnicianCalendarCaps/);
+  assert.match(readRoute, /cap_mode/);
+  assert.match(readRoute, /effective_max_jobs_per_day/);
+  assert.match(readRoute, /effective_max_units_per_day/);
+  assert.match(publicSvc, /resolveTechnicianCalendarCaps/);
+  const slotPush = publicSvc.match(/slots\.push\(\{[\s\S]*?\n\s*\}\);/);
+  assert.ok(slotPush, "public slot push block exists");
+  assert.doesNotMatch(slotPush[0], /username|technician/i);
 });
 
 test("fair assignment ranking prioritizes projected minutes, older auto assignment, and non-username rotation", () => {

@@ -9,6 +9,7 @@ module.exports = function createTechnicianCalendarReadOnlyRoutes(deps = {}) {
   const firstDayOfMonthIso = deps.firstDayOfMonthIso;
   const endDayOfMonthIso = deps.endDayOfMonthIso;
   const isStrictIsoDate = deps.isStrictIsoDate;
+  const resolveTechnicianCalendarCaps = deps.resolveTechnicianCalendarCaps || require("../lib/technicianCalendar").resolveTechnicianCalendarCaps;
 
   router.get('/tech/work-calendar', requireTechnicianSession, async (req, res) => {
     try {
@@ -35,10 +36,23 @@ module.exports = function createTechnicianCalendarReadOnlyRoutes(deps = {}) {
                       AND COALESCE(j.job_status,'') NOT IN ('cancelled','canceled')
                     GROUP BY 1`, [username, fromIso, toIso])
       ]);
+      const items = (cal.rows||[]).map(x=>{
+        const caps = resolveTechnicianCalendarCaps(x);
+        return {
+          ...x,
+          work_date: toIsoDate(x.work_date),
+          raw_max_jobs_per_day: caps.raw_max_jobs,
+          raw_max_units_per_day: caps.raw_max_units,
+          cap_mode: caps.cap_mode,
+          effective_max_jobs_per_day: caps.effective_max_jobs,
+          effective_max_units_per_day: caps.effective_max_units,
+          is_legacy_system_default: caps.is_legacy_system_default,
+        };
+      });
       res.json({ ok:true, username, month, from:fromIso, to:toIso,
         employment_type: prof.rows[0]?.employment_type || 'company',
         weekly_off_days: prof.rows[0]?.weekly_off_days || '',
-        items: (cal.rows||[]).map(x=>({ ...x, work_date: toIsoDate(x.work_date) })),
+        items,
         holidays: (hol.rows||[]).map(x=>({ ...x, holiday_date: toIsoDate(x.holiday_date) })),
         job_counts: (jobs.rows||[]).map(x=>({ work_date: toIsoDate(x.work_date), job_count: Number(x.job_count||0) }))
       });
@@ -141,6 +155,7 @@ module.exports = function createTechnicianCalendarReadOnlyRoutes(deps = {}) {
           c.end_time,
           c.max_jobs_per_day,
           c.max_units_per_day,
+          c.source,
           c.note,
           c.updated_at AS calendar_updated_at,
           m.matrix_json,
@@ -158,10 +173,11 @@ module.exports = function createTechnicianCalendarReadOnlyRoutes(deps = {}) {
         const can = !isUnset && row.can_accept_advance_job === true;
         const start = can ? (row.start_time || '09:00') : null;
         const end = can ? (row.end_time || '18:00') : null;
-        const jobs = can ? (row.max_jobs_per_day == null ? null : Number(row.max_jobs_per_day)) : null;
-        const units = can ? (row.max_units_per_day == null ? null : Number(row.max_units_per_day)) : null;
+        const caps = resolveTechnicianCalendarCaps(row);
+        const jobs = can ? caps.raw_max_jobs : null;
+        const units = can ? caps.raw_max_units : null;
         const note = row.note || null;
-        const hasCustom = !!((can && (start !== '09:00' || end !== '18:00' || jobs !== null || units !== null)) || String(note || '').trim());
+        const hasCustom = !!((can && (start !== '09:00' || end !== '18:00' || caps.cap_mode === 'technician_custom')) || String(note || '').trim());
         const zones = [row.home_service_zone_code, row.secondary_service_zone_code, row.preferred_zone, [row.home_province, row.home_district].filter(Boolean).join(' ')].filter(Boolean);
         return {
           username: row.username,
@@ -175,6 +191,12 @@ module.exports = function createTechnicianCalendarReadOnlyRoutes(deps = {}) {
           end_time: end,
           max_jobs_per_day: jobs,
           max_units_per_day: units,
+          raw_max_jobs_per_day: caps.raw_max_jobs,
+          raw_max_units_per_day: caps.raw_max_units,
+          cap_mode: can ? caps.cap_mode : 'system_default',
+          effective_max_jobs_per_day: can ? caps.effective_max_jobs : null,
+          effective_max_units_per_day: can ? caps.effective_max_units : null,
+          is_legacy_system_default: can ? caps.is_legacy_system_default : false,
           note,
           has_assigned_job: Number(row.assigned_job_count || 0) > 0,
           assigned_job_count: Number(row.assigned_job_count || 0),

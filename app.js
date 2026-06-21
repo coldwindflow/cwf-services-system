@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260612_phase34_tech_api_dedup";
+window.__CWF_TECH_APP_VERSION__ = "20260622_legacy_cap_policy_tech_cache_v1";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -1235,7 +1235,7 @@ function setPushUi(state, text) {
 
 async function ensureServiceWorkerForPush() {
   if (!('serviceWorker' in navigator)) throw new Error('เครื่องนี้ไม่รองรับ Service Worker');
-  const reg = await navigator.serviceWorker.register('/sw.js?v=push-v1');
+  const reg = await navigator.serviceWorker.register('/sw.js?v=20260622_legacy_cap_policy_tech_cache_v1', { updateViaCache: 'none' });
   try { await navigator.serviceWorker.ready; } catch (_) {}
   return reg;
 }
@@ -5716,6 +5716,44 @@ function cwfSetCapControls(prefix, limited, jobs, units){
     if (label) label.style.display = limited ? 'grid' : 'none';
   }
 }
+function cwfIsCustomCapMode(it){
+  return String(it?.cap_mode || '').trim() === 'technician_custom';
+}
+function cwfJobCapLimited(it){
+  return cwfIsCustomCapMode(it) && cwfNullableCap(it?.raw_max_jobs_per_day ?? it?.max_jobs_per_day) != null;
+}
+function cwfUnitCapLimited(it){
+  return cwfIsCustomCapMode(it) && cwfNullableCap(it?.raw_max_units_per_day ?? it?.max_units_per_day) != null;
+}
+function cwfJobCapLabel(it){
+  if (!it?.can_accept_advance_job) return '-';
+  if (cwfJobCapLimited(it)) return `ตั้งเอง ${cwfNullableCap(it.raw_max_jobs_per_day ?? it.max_jobs_per_day)} งาน`;
+  return `ค่าเริ่มต้นระบบ ${Number(it.effective_max_jobs_per_day ?? 4)} งาน`;
+}
+function cwfUnitCapLabel(it){
+  if (!it?.can_accept_advance_job) return '-';
+  if (cwfUnitCapLimited(it)) return `ตั้งเอง ${cwfNullableCap(it.raw_max_units_per_day ?? it.max_units_per_day)} เครื่อง`;
+  return 'ไม่จำกัด';
+}
+function cwfCapsLimited(it){
+  return cwfJobCapLimited(it) || cwfUnitCapLimited(it);
+}
+function cwfSetCapControls(prefix, jobLimited, jobs, unitLimited, units){
+  const jobCb = document.getElementById(`${prefix}JobLimitEnabled`);
+  const unitCb = document.getElementById(`${prefix}UnitLimitEnabled`);
+  const j = document.getElementById(`${prefix}MaxJobs`);
+  const u = document.getElementById(`${prefix}MaxUnits`);
+  const jobField = document.getElementById(`${prefix}JobLimitField`);
+  const unitField = document.getElementById(`${prefix}UnitLimitField`);
+  if (jobCb) jobCb.checked = !!jobLimited;
+  if (unitCb) unitCb.checked = !!unitLimited;
+  if (j) j.value = cwfNullableCap(jobs) ?? 4;
+  if (u) u.value = cwfNullableCap(units) ?? 5;
+  if (j) j.disabled = !jobLimited;
+  if (u) u.disabled = !unitLimited;
+  if (jobField) jobField.style.display = jobLimited ? 'grid' : 'none';
+  if (unitField) unitField.style.display = unitLimited ? 'grid' : 'none';
+}
 function cwfIsLockedDay(iso){
   const it = cwfGetCalendarItem(iso);
   return !!it?.is_locked || cwfDayJobCount(iso) > 0;
@@ -5750,8 +5788,14 @@ function cwfEffectiveCalendarItem(iso){
     can_accept_advance_job: isAdvance,
     start_time: raw.start_time || '09:00',
     end_time: raw.end_time || '18:00',
-    max_jobs_per_day: isAdvance ? cwfNullableCap(raw.max_jobs_per_day) : null,
-    max_units_per_day: isAdvance ? cwfNullableCap(raw.max_units_per_day) : null,
+    max_jobs_per_day: isAdvance ? cwfNullableCap(raw.raw_max_jobs_per_day ?? raw.max_jobs_per_day) : null,
+    max_units_per_day: isAdvance ? cwfNullableCap(raw.raw_max_units_per_day ?? raw.max_units_per_day) : null,
+    raw_max_jobs_per_day: isAdvance ? cwfNullableCap(raw.raw_max_jobs_per_day ?? raw.max_jobs_per_day) : null,
+    raw_max_units_per_day: isAdvance ? cwfNullableCap(raw.raw_max_units_per_day ?? raw.max_units_per_day) : null,
+    cap_mode: raw.cap_mode || ((raw.max_jobs_per_day == null && raw.max_units_per_day == null) ? 'system_default' : 'technician_custom'),
+    effective_max_jobs_per_day: isAdvance ? (cwfNullableCap(raw.effective_max_jobs_per_day) ?? 4) : null,
+    effective_max_units_per_day: isAdvance ? cwfNullableCap(raw.effective_max_units_per_day) : null,
+    is_legacy_system_default: raw.is_legacy_system_default === true,
     note: raw.note || ''
   };
 }
@@ -5850,9 +5894,10 @@ function ensureWorkdaysModal(){
               <label>เวลาเลิก <input id="workDayEnd" class="premium-input" type="time" value="18:00"></label>
             </div>
             <div class="cwf-time-grid">
-              <label class="cwf-limit-toggle"><input id="workDayLimitEnabled" type="checkbox"> จำกัดจำนวนงาน/เครื่องต่อวัน</label>
-              <label>งานสูงสุด/วัน <input id="workDayMaxJobs" class="premium-input" type="number" min="1" max="20" value="1"></label>
-              <label>เครื่องสูงสุด/วัน <input id="workDayMaxUnits" class="premium-input" type="number" min="1" max="99" value="5"></label>
+              <label class="cwf-limit-toggle"><input id="workDayJobLimitEnabled" type="checkbox"> Limit jobs per day</label>
+              <label id="workDayJobLimitField">Max jobs/day <input id="workDayMaxJobs" class="premium-input" type="number" min="1" max="20" value="4"></label>
+              <label class="cwf-limit-toggle"><input id="workDayUnitLimitEnabled" type="checkbox"> Limit units per day</label>
+              <label id="workDayUnitLimitField">Max units/day <input id="workDayMaxUnits" class="premium-input" type="number" min="1" max="99" value="5"></label>
             </div>
             <label>หมายเหตุถึงแอดมิน <textarea id="workDayNote" class="premium-input" rows="3" placeholder="เช่น รับได้เฉพาะช่วงบ่าย / โทรคอนเฟิร์มก่อนมอบหมาย"></textarea></label>
             <div class="cwf-quick-grid">
@@ -5875,9 +5920,10 @@ function ensureWorkdaysModal(){
                 <label>เวลาเลิก <input id="bulkDayEnd" class="premium-input" type="time" value="18:00"></label>
               </div>
               <div class="cwf-time-grid">
-                <label class="cwf-limit-toggle"><input id="bulkDayLimitEnabled" type="checkbox"> จำกัดจำนวนงาน/เครื่องต่อวัน</label>
-                <label>งานสูงสุด/วัน <input id="bulkDayMaxJobs" class="premium-input" type="number" min="1" max="20" value="1"></label>
-                <label>เครื่องสูงสุด/วัน <input id="bulkDayMaxUnits" class="premium-input" type="number" min="1" max="99" value="5"></label>
+                <label class="cwf-limit-toggle"><input id="bulkDayJobLimitEnabled" type="checkbox"> Limit jobs per day</label>
+                <label id="bulkDayJobLimitField">Max jobs/day <input id="bulkDayMaxJobs" class="premium-input" type="number" min="1" max="20" value="4"></label>
+                <label class="cwf-limit-toggle"><input id="bulkDayUnitLimitEnabled" type="checkbox"> Limit units per day</label>
+                <label id="bulkDayUnitLimitField">Max units/day <input id="bulkDayMaxUnits" class="premium-input" type="number" min="1" max="99" value="5"></label>
               </div>
               <label>หมายเหตุถึงแอดมิน <textarea id="bulkDayNote" class="premium-input" rows="3" placeholder="หมายเหตุที่จะใส่ให้ทุกวันที่เลือก"></textarea></label>
               <button id="bulkSaveCustomBtn" class="cwf-save-btn full" type="button">💾 บันทึกค่าพิเศษให้วันที่เลือก</button>
@@ -5930,15 +5976,21 @@ function ensureWorkdaysModal(){
   document.getElementById('closeSingleDetailBtn').onclick = () => { const p=document.getElementById('singleEditPanel'); if(p) p.style.display='none'; };
   document.getElementById('saveSingleDetailBtn').onclick = saveSelectedDayCustom;
   document.getElementById('bulkSetAdvanceBtn').onclick = () => saveBulkSelected(false, true);
-  document.getElementById('bulkSetUnlimitedBtn').onclick = () => saveBulkSelected(false, true, { forceUnlimited:true });
+  document.getElementById('bulkSetUnlimitedBtn').onclick = () => saveBulkSelected(false, true);
   document.getElementById('bulkSetUnavailableBtn').onclick = () => saveBulkSelected(false, false);
   document.getElementById('bulkCustomToggleBtn').onclick = () => { const p=document.getElementById('bulkCustomFields'); if(p) p.style.display = p.style.display === 'none' ? 'block' : 'none'; };
   document.getElementById('bulkSaveCustomBtn').onclick = () => saveBulkSelected(true, true);
-  const singleLimit = document.getElementById('workDayLimitEnabled');
-  if (singleLimit) singleLimit.onchange = () => cwfSetCapControls('workDay', singleLimit.checked, document.getElementById('workDayMaxJobs')?.value, document.getElementById('workDayMaxUnits')?.value);
-  const bulkLimit = document.getElementById('bulkDayLimitEnabled');
-  if (bulkLimit) bulkLimit.onchange = () => cwfSetCapControls('bulkDay', bulkLimit.checked, document.getElementById('bulkDayMaxJobs')?.value, document.getElementById('bulkDayMaxUnits')?.value);
-  cwfSetCapControls('bulkDay', false, null, null);
+  const singleJobLimit = document.getElementById('workDayJobLimitEnabled');
+  const singleUnitLimit = document.getElementById('workDayUnitLimitEnabled');
+  const refreshSingleLimits = () => cwfSetCapControls('workDay', singleJobLimit?.checked === true, document.getElementById('workDayMaxJobs')?.value, singleUnitLimit?.checked === true, document.getElementById('workDayMaxUnits')?.value);
+  if (singleJobLimit) singleJobLimit.onchange = refreshSingleLimits;
+  if (singleUnitLimit) singleUnitLimit.onchange = refreshSingleLimits;
+  const bulkJobLimit = document.getElementById('bulkDayJobLimitEnabled');
+  const bulkUnitLimit = document.getElementById('bulkDayUnitLimitEnabled');
+  const refreshBulkLimits = () => cwfSetCapControls('bulkDay', bulkJobLimit?.checked === true, document.getElementById('bulkDayMaxJobs')?.value, bulkUnitLimit?.checked === true, document.getElementById('bulkDayMaxUnits')?.value);
+  if (bulkJobLimit) bulkJobLimit.onchange = refreshBulkLimits;
+  if (bulkUnitLimit) bulkUnitLimit.onchange = refreshBulkLimits;
+  cwfSetCapControls('bulkDay', false, null, false, null);
   document.getElementById('workCalendarRetryBtn').onclick = () => loadCwfAdvanceWorkCalendarMonthSafe();
   return wrap;
 }
@@ -6028,18 +6080,18 @@ function selectWorkCalendarDate(iso, rerender=true){
     summary.innerHTML = `<div class="cwf-detail-grid">
       <div><span>สถานะ</span><b>${statusText}</b></div>
       <div><span>เวลา</span><b>${it.can_accept_advance_job ? `${it.start_time || '09:00'}-${it.end_time || '18:00'}` : '-'}</b></div>
-      <div><span>งานสูงสุด</span><b>${it.can_accept_advance_job ? cwfCapLabel(it.max_jobs_per_day) : '-'}</b></div>
-      <div><span>เครื่องสูงสุด</span><b>${it.can_accept_advance_job ? cwfCapLabel(it.max_units_per_day) : '-'}</b></div>
+      <div><span>งานสูงสุด</span><b>${cwfJobCapLabel(it)}</b></div>
+      <div><span>เครื่องสูงสุด</span><b>${cwfUnitCapLabel(it)}</b></div>
       <div class="cwf-detail-note"><span>หมายเหตุ</span><b>${it.note ? String(it.note) : 'ไม่มี'}</b></div>
     </div>${locked ? '<div style="margin-top:8px;color:#64748b;font-weight:850">วันนี้ล็อกไว้เพราะมีงานที่ได้รับมอบหมายแล้ว</div>' : ''}`;
   }
   const set = (id,val) => { const el=document.getElementById(id); if(el) el.value=val ?? ''; };
-  set('workDayStart', it.start_time || '09:00'); set('workDayEnd', it.end_time || '18:00'); set('workDayMaxJobs', cwfNullableCap(it.max_jobs_per_day) ?? 1); set('workDayMaxUnits', cwfNullableCap(it.max_units_per_day) ?? 5); set('workDayNote', it.note || '');
-  cwfSetCapControls('workDay', cwfCapsLimited(it), it.max_jobs_per_day, it.max_units_per_day);
+  set('workDayStart', it.start_time || '09:00'); set('workDayEnd', it.end_time || '18:00'); set('workDayMaxJobs', cwfNullableCap(it.raw_max_jobs_per_day ?? it.max_jobs_per_day) ?? 4); set('workDayMaxUnits', cwfNullableCap(it.raw_max_units_per_day ?? it.max_units_per_day) ?? 5); set('workDayNote', it.note || '');
+  cwfSetCapControls('workDay', cwfJobCapLimited(it), it.raw_max_jobs_per_day ?? it.max_jobs_per_day, cwfUnitCapLimited(it), it.raw_max_units_per_day ?? it.max_units_per_day);
   const editPanel = document.getElementById('singleEditPanel'); if(editPanel) editPanel.style.display = 'none';
   const openBtn = document.getElementById('singleOpenDayBtn'); if(openBtn) openBtn.disabled = locked || it.can_accept_advance_job;
   const closeBtn = document.getElementById('singleCloseDayBtn'); if(closeBtn) closeBtn.disabled = locked || !it.can_accept_advance_job;
-  const editBtn = document.getElementById('editSelectedDayBtn'); if(editBtn) editBtn.disabled = false;
+  const editBtn = document.getElementById('editSelectedDayBtn'); if(editBtn) editBtn.disabled = locked;
 }
 async function saveCalendarDays(days, label='บันทึก'){
   const clean = days.filter(Boolean).slice(0,62);
@@ -6056,7 +6108,8 @@ async function saveCalendarDays(days, label='บันทึก'){
   return data;
 }
 function buildDayPayload(iso, isAdvance, opts={}){
-  const limitEnabled = opts.limit_enabled === true || opts.limitEnabled === true;
+  const jobLimitEnabled = opts.job_limit_enabled === true || opts.jobLimitEnabled === true || opts.limit_enabled === true || opts.limitEnabled === true;
+  const unitLimitEnabled = opts.unit_limit_enabled === true || opts.unitLimitEnabled === true || opts.limit_enabled === true || opts.limitEnabled === true;
   return {
     work_date: iso,
     day_status: isAdvance ? 'advance_only' : 'unavailable',
@@ -6064,8 +6117,8 @@ function buildDayPayload(iso, isAdvance, opts={}){
     can_accept_urgent_job: false,
     start_time: isAdvance ? (opts.start_time || '09:00') : '09:00',
     end_time: isAdvance ? (opts.end_time || '18:00') : '18:00',
-    max_jobs_per_day: isAdvance && limitEnabled ? cwfNullableCap(opts.max_jobs_per_day) : null,
-    max_units_per_day: isAdvance && limitEnabled ? cwfNullableCap(opts.max_units_per_day) : null,
+    max_jobs_per_day: isAdvance && jobLimitEnabled ? cwfNullableCap(opts.max_jobs_per_day) : null,
+    max_units_per_day: isAdvance && unitLimitEnabled ? cwfNullableCap(opts.max_units_per_day) : null,
     note: opts.note || ''
   };
 }
@@ -6109,16 +6162,19 @@ async function setSelectedDayAdvance(isAdvance){
 function showSingleEditPanel(){
   const iso = __cwfWorkCalendarState.selectedDate;
   if(!iso) return;
+  if(cwfIsLockedDay(iso)){ cwfLockedPopup(iso); return; }
   const p = document.getElementById('singleEditPanel'); if(p) p.style.display = 'grid';
 }
 async function saveSelectedDayCustom(){
   const iso = __cwfWorkCalendarState.selectedDate;
   if(!iso) return;
+  if(cwfIsLockedDay(iso)){ cwfLockedPopup(iso); return; }
   const get = (id, fallback='') => document.getElementById(id)?.value || fallback;
   const body = buildDayPayload(iso, true, {
     start_time: get('workDayStart','09:00'), end_time: get('workDayEnd','18:00'),
-    limit_enabled: document.getElementById('workDayLimitEnabled')?.checked === true,
-    max_jobs_per_day: Number(get('workDayMaxJobs','1')), max_units_per_day: Number(get('workDayMaxUnits','5')),
+    job_limit_enabled: document.getElementById('workDayJobLimitEnabled')?.checked === true,
+    unit_limit_enabled: document.getElementById('workDayUnitLimitEnabled')?.checked === true,
+    max_jobs_per_day: Number(get('workDayMaxJobs','4')), max_units_per_day: Number(get('workDayMaxUnits','5')),
     note: get('workDayNote','')
   });
   try{
@@ -6159,20 +6215,14 @@ function selectWorkCalendarPreset(kind){
   if(skipped) cwfCalendarNotify(`เลือกแล้ว • ข้ามวันที่มีงาน ${skipped} วัน`);
 }
 async function saveBulkSelected(custom=false, isAdvance=true, extraOpts={}){
-  const dates = Array.from(__cwfWorkCalendarState.selectedDates).filter(iso=>!cwfIsLockedDay(iso) || extraOpts.forceUnlimited);
+  const dates = Array.from(__cwfWorkCalendarState.selectedDates).filter(iso=>!cwfIsLockedDay(iso));
   if(!dates.length){ cwfCalendarNotify('❌ ยังไม่ได้เลือกวันที่ หรือวันที่เลือกมีงานอยู่แล้วทั้งหมด', 'error'); return; }
-  const opts = extraOpts.forceUnlimited ? {
-    start_time: '09:00',
-    end_time: '18:00',
-    limit_enabled: false,
-    max_jobs_per_day: null,
-    max_units_per_day: null,
-    note: ''
-  } : custom ? {
+  const opts = custom ? {
     start_time: document.getElementById('bulkDayStart')?.value || '09:00',
     end_time: document.getElementById('bulkDayEnd')?.value || '18:00',
-    limit_enabled: document.getElementById('bulkDayLimitEnabled')?.checked === true,
-    max_jobs_per_day: Number(document.getElementById('bulkDayMaxJobs')?.value || 1),
+    job_limit_enabled: document.getElementById('bulkDayJobLimitEnabled')?.checked === true,
+    unit_limit_enabled: document.getElementById('bulkDayUnitLimitEnabled')?.checked === true,
+    max_jobs_per_day: Number(document.getElementById('bulkDayMaxJobs')?.value || 4),
     max_units_per_day: Number(document.getElementById('bulkDayMaxUnits')?.value || 5),
     note: document.getElementById('bulkDayNote')?.value || ''
   } : {};

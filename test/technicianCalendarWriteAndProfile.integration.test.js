@@ -9,8 +9,7 @@ const {
   toIsoDate,
   normWorkDayPayload,
   countLockedAdvanceJobsForDate,
-  loadLockedAdvanceUsageForDate,
-  validateLockedDaySafeEdit,
+  sourceForWorkDayPayload,
 } = require("../server/lib/technicianCalendar");
 const { upsertTechnicianProfile } = require("../server/services/technicianProfileUpsert");
 
@@ -109,8 +108,7 @@ test.before(async () => {
     toIsoDate,
     normWorkDayPayload,
     countLockedAdvanceJobsForDate,
-    loadLockedAdvanceUsageForDate,
-    validateLockedDaySafeEdit,
+    sourceForWorkDayPayload,
   }));
   app._setSessionUsername = (u) => { sessionUsername = u; };
 
@@ -173,11 +171,14 @@ dbTest("Blocker 2: single-day save via real route persists a real row keyed by r
   assert.equal(data.item.technician_username, "p1");
 
   const row = await pool.query(
-    `SELECT technician_username, work_date::text AS work_date, can_accept_advance_job FROM public.technician_monthly_work_calendar WHERE technician_username='p1'`
+    `SELECT technician_username, work_date::text AS work_date, can_accept_advance_job, source, max_jobs_per_day, max_units_per_day FROM public.technician_monthly_work_calendar WHERE technician_username='p1'`
   );
   assert.equal(row.rows.length, 1);
   assert.equal(row.rows[0].work_date, "2026-07-10");
   assert.equal(row.rows[0].can_accept_advance_job, true);
+  assert.equal(row.rows[0].source, "technician_custom");
+  assert.equal(row.rows[0].max_jobs_per_day, 3);
+  assert.equal(row.rows[0].max_units_per_day, 6);
 });
 
 dbTest("Blocker 2: username is sourced from req.effective.username, not client-supplied body", async () => {
@@ -192,9 +193,12 @@ dbTest("Blocker 2: username is sourced from req.effective.username, not client-s
   assert.equal(data.item.technician_username, "session-user");
 
   const row = await pool.query(
-    `SELECT technician_username FROM public.technician_monthly_work_calendar WHERE work_date='2026-07-11'`
+    `SELECT technician_username, source, max_jobs_per_day, max_units_per_day FROM public.technician_monthly_work_calendar WHERE work_date='2026-07-11'`
   );
   assert.equal(row.rows[0].technician_username, "session-user");
+  assert.equal(row.rows[0].source, "technician_default");
+  assert.equal(row.rows[0].max_jobs_per_day, null);
+  assert.equal(row.rows[0].max_units_per_day, null);
 });
 
 dbTest("Blocker 2: reading the month back after save shows the same saved date", async () => {
@@ -211,7 +215,7 @@ dbTest("Blocker 2: reading the month back after save shows the same saved date",
   assert.equal(monthRows.rows[0].can_accept_advance_job, true);
 });
 
-dbTest("locked day safe edit can increase capacity or switch to unlimited", async () => {
+dbTest("locked single-day edit is rejected with 409 and no row mutation", async () => {
   global.__cwfTestApp._setSessionUsername("p1");
   await pool.query(
     `INSERT INTO public.jobs (technician_username, appointment_datetime, job_status) VALUES ('p1', '2026-07-13 10:00:00+07', 'assigned')`
@@ -224,33 +228,34 @@ dbTest("locked day safe edit can increase capacity or switch to unlimited", asyn
     max_jobs_per_day: null,
     max_units_per_day: null,
   });
-  assert.equal(status, 200);
+  assert.equal(status, 409);
   assert.equal(data.locked, true);
-  const row = await pool.query(`SELECT max_jobs_per_day, max_units_per_day FROM public.technician_monthly_work_calendar WHERE work_date='2026-07-13'`);
-  assert.equal(row.rows.length, 1);
-  assert.equal(row.rows[0].max_jobs_per_day, null);
-  assert.equal(row.rows[0].max_units_per_day, null);
+  assert.equal(data.code, "LOCKED_DAY_HAS_JOBS");
+  const row = await pool.query(`SELECT 1 FROM public.technician_monthly_work_calendar WHERE work_date='2026-07-13'`);
+  assert.equal(row.rows.length, 0);
 });
 
-dbTest("locked day unsafe cap decrease is rejected with 409 and no row mutation", async () => {
+dbTest("locked bulk edit skips locked dates and saves only unlocked dates", async () => {
   global.__cwfTestApp._setSessionUsername("p1");
   const job = await pool.query(
     `INSERT INTO public.jobs (technician_username, appointment_datetime, job_status) VALUES ('p1', '2026-07-14 10:00:00+07', 'assigned') RETURNING job_id`
   );
   await pool.query(`INSERT INTO public.job_items (job_id, qty) VALUES ($1, 3)`, [job.rows[0].job_id]);
-  const { status, data } = await putJson("/tech/work-calendar/day", {
-    work_date: "2026-07-14",
-    can_accept_advance_job: true,
-    start_time: "09:00",
-    end_time: "18:00",
-    max_jobs_per_day: 1,
-    max_units_per_day: 2,
+  const { status, data } = await putJson("/tech/work-calendar/bulk", {
+    days: [
+      { work_date: "2026-07-14", can_accept_advance_job: true },
+      { work_date: "2026-07-15", can_accept_advance_job: true },
+    ],
   });
-  assert.equal(status, 409);
-  assert.equal(data.locked, true);
-  assert.equal(data.code, "LOCKED_DAY_MAX_UNITS_BELOW_USAGE");
-  const row = await pool.query(`SELECT 1 FROM public.technician_monthly_work_calendar WHERE work_date='2026-07-14'`);
-  assert.equal(row.rows.length, 0);
+  assert.equal(status, 200);
+  assert.equal(data.count, 1);
+  assert.equal(data.skipped_locked, 1);
+  assert.equal(data.locked_rejections[0].code, "LOCKED_DAY_HAS_JOBS");
+  const row = await pool.query(`SELECT work_date::text AS work_date, source, max_jobs_per_day, max_units_per_day FROM public.technician_monthly_work_calendar ORDER BY work_date`);
+  assert.deepEqual(row.rows.map((r) => r.work_date), ["2026-07-15"]);
+  assert.equal(row.rows[0].source, "technician_default");
+  assert.equal(row.rows[0].max_jobs_per_day, null);
+  assert.equal(row.rows[0].max_units_per_day, null);
 });
 
 // ============ Blocker 3: admin technician profile UPSERT INSERT path ============

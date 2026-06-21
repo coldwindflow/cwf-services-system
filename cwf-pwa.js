@@ -1,10 +1,11 @@
 (function(){
   'use strict';
-  var VERSION = 'close-panel-hard-clean-v4';
+  var VERSION = '20260622_legacy_cap_policy_tech_cache_v1';
+  try { window.__CWF_PWA_BUILD__ = VERSION; } catch (_) {}
   function register(){
     if (!('serviceWorker' in navigator)) return;
     window.addEventListener('load', function(){
-      navigator.serviceWorker.register('/sw.js?v=' + VERSION).then(function(reg){
+      navigator.serviceWorker.register('/sw.js?v=' + VERSION, { updateViaCache: 'none' }).then(function(reg){
         try {
           if (reg && reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
           if (reg) {
