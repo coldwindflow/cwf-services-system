@@ -3113,6 +3113,7 @@ img.account-avatar {
   height: 2px;
   background: var(--line-strong);
   content: "";
+  transition: background 0.25s ease;
 }
 
 .booking-stepper li > span {
@@ -3127,7 +3128,10 @@ img.account-avatar {
   background: var(--card);
   font-size: 0.78rem;
   font-weight: 900;
+  transition: border-color 0.25s ease, background 0.25s ease, color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
 }
+
+.booking-stepper li.is-done > span { transform: scale(1.04); }
 
 .booking-stepper li > strong {
   font-weight: 800;
@@ -3316,7 +3320,11 @@ img.account-avatar {
   background: transparent;
   font-size: 0.86rem;
   font-weight: 800;
+  transition: border-color 0.18s ease, background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.12s ease;
 }
+
+.calendar-day.is-available:active,
+.calendar-day:not(:disabled):not(.is-empty):active { transform: scale(0.94); }
 
 .calendar-day small {
   display: block;
@@ -3338,7 +3346,9 @@ img.account-avatar {
 }
 .calendar-day.is-loading {
   border-color: #e6edf7;
-  background: linear-gradient(90deg, #f4f7fb 0%, #eef3f9 50%, #f4f7fb 100%);
+  background: linear-gradient(90deg, #f4f7fb 25%, #eef3f9 37%, #f4f7fb 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
   color: var(--muted-2);
 }
 .calendar-day.is-selected {
