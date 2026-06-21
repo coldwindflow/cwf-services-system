@@ -95,11 +95,11 @@ function sampleLines(root) {
   ];
 }
 
-test("scheduled wizard state has exactly five steps", () => {
+test("scheduled wizard state has exactly three steps", () => {
   const { root } = loadBooking();
-  assert.equal(root.state.scheduledWizard.maxStep, 5);
+  assert.equal(root.state.scheduledWizard.maxStep, 3);
   root.state.setScheduledWizard({ step: 99 });
-  assert.equal(root.state.scheduledWizard.step, 5);
+  assert.equal(root.state.scheduledWizard.step, 3);
 });
 
 test("Customer App customer-facing UI does not expose internal public endpoint names", () => {
@@ -121,7 +121,7 @@ test("Customer App customer-facing UI does not expose internal public endpoint n
 
 test("service step omits redundant single-option service-kind selector", () => {
   const { root } = loadBooking();
-  const html = renderInto(root, 2);
+  const html = renderInto(root, 1);
   assert.doesNotMatch(html, /data-scheduled-choice="service_kind"|service-kind-grid|ประเภทบริการ/);
   assert.match(html, /data-line-choice="ac_type"/);
   assert.match(html, /data-line-choice="btu"/);
@@ -196,7 +196,7 @@ test("time preference defaults exact and submit payload sends boolean", () => {
 test("review screen displays selected time preference", () => {
   const { root } = loadBooking();
   root.state.updateDraft("scheduled", { allow_time_proposal: true });
-  const html = renderInto(root, 5);
+  const html = renderInto(root, 3);
   assert.match(html, /สามารถเสนอเวลาใหม่ให้ฉันได้/);
   assert.match(html, /การเสนอเวลา/);
 });
@@ -214,14 +214,14 @@ test("calendar marks available and full dates without technician identity", () =
     error: "",
     query_key: key,
   });
-  const html = renderInto(root, 4);
+  const html = renderInto(root, 2);
   assert.match(html, /มีคิว/);
   assert.doesNotMatch(html, /Hidden|technician_name|technician_id|technician_count|matrix_json/);
 });
 
 test("anonymous slots render complete time range without technician identity or counts", () => {
   const { root } = loadBooking();
-  root.state.setScheduledWizard({ step: 4 });
+  root.state.setScheduledWizard({ step: 2 });
   root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 90, active_price: 900 }, error: "" });
   const query = root.bookingScheduled._test.currentAvailabilityQuery();
   root.state.setScheduledPreview("availability", {
@@ -230,7 +230,7 @@ test("anonymous slots render complete time range without technician identity or 
     error: "",
     query_key: root.availability.queryKey(query),
   });
-  const html = renderInto(root, 4);
+  const html = renderInto(root, 2);
   assert.match(html, /10:00-11:30/);
   assert.doesNotMatch(html, /Hidden Tech|technician_id|42|candidate|คน/);
 });

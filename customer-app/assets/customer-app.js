@@ -3,7 +3,7 @@
 
   const App = window.CWFCustomerAppV2;
   const BOOT_TIMEOUT_MS = 3500;
-  const BUILD_ID = "20260621_three_step_booking_v1";
+  const BUILD_ID = "20260621_advance_slots_three_step_draft_v1";
 
   function withTimeout(promise, timeoutMs) {
     return Promise.race([

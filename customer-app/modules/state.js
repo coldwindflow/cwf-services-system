@@ -2,13 +2,14 @@
   "use strict";
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
-  const SCHEDULED_STORAGE_KEY = "cwf_customer_app_v2_scheduled_v4";
+  const SCHEDULED_STORAGE_KEY = "cwf_customer_app_v2_scheduled_v5";
   const SCHEDULED_LEGACY_STORAGE_KEYS = [
+    "cwf_customer_app_v2_scheduled_v4",
     "cwf_customer_app_v2_scheduled_v3",
     "cwf_customer_app_v2_scheduled_v2",
   ];
   const SCHEDULED_STORAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-  const MAX_SCHEDULED_STEP = 5;
+  const MAX_SCHEDULED_STEP = 3;
 
   function bangkokTodayYmd() {
     try {
@@ -200,7 +201,7 @@
     },
     persistScheduledDraft() {
       const payload = {
-        version: 4,
+        version: 5,
         saved_at: Date.now(),
         step: Math.max(1, Math.min(MAX_SCHEDULED_STEP, Number(this.scheduledWizard?.step || 1))),
         draft: this.draft.scheduled || defaultScheduledDraft(),
@@ -226,7 +227,7 @@
       if (!raw) return false;
       try {
         const parsed = JSON.parse(raw);
-        if (!parsed || (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3 && parsed.version !== 4) || !parsed.draft) return false;
+        if (!parsed || ![1, 2, 3, 4, 5].includes(Number(parsed.version)) || !parsed.draft) return false;
         if (!Number.isFinite(parsed.saved_at) || Date.now() - parsed.saved_at > SCHEDULED_STORAGE_TTL_MS) {
           removeScheduledStorage();
           return false;
@@ -250,9 +251,12 @@
         restored.calendar_month = String(restored.calendar_month || restored.date.slice(0, 7));
         this.draft.scheduled = restored;
         const parsedStep = Number(parsed.step || 1);
-        const nextStep = fromLegacy || parsed.version < 4
-          ? (parsedStep >= 4 ? 1 : Math.max(1, Math.min(3, parsedStep)))
-          : Math.max(1, Math.min(MAX_SCHEDULED_STEP, parsedStep));
+        const nextStep = (() => {
+          if (parsed.version >= 5 && !fromLegacy) return Math.max(1, Math.min(MAX_SCHEDULED_STEP, parsedStep));
+          if (parsedStep <= 2) return 1;
+          if (parsedStep <= 4) return 2;
+          return 3;
+        })();
         this.scheduledWizard = {
           ...this.scheduledWizard,
           step: nextStep,

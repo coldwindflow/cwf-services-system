@@ -4992,6 +4992,7 @@ function buildJobCard(job, historyMode = false) {
   if (job && job.job_id != null) div.setAttribute("data-jobid", String(job.job_id));
 
   const status = normStatus(job.job_status) || "รอดำเนินการ";
+  const isDraftJob = status === "รอตรวจสอบ" || status === "pending_review";
 
   const badge = technicianJobStatusBadge(job);
 
@@ -5011,13 +5012,13 @@ function buildJobCard(job, historyMode = false) {
   const isWorking = status === "กำลังทำ";
   const revisitFlow = isRevisitJob(job);
   const revisitReason = String(job.return_reason || "").trim();
-  const canEdit = !historyMode && (status === "รอดำเนินการ" || status === "กำลังทำ" || status === "งานแก้ไข");
+  const canEdit = !isDraftJob && !historyMode && (status === "รอดำเนินการ" || status === "กำลังทำ" || status === "งานแก้ไข");
   const paymentSettled = revisitFlow ? false : paid;
 
   // ✅ ปุ่มอัปเดตสถานะ (ปุ่มเดียว) + e-slip (ขั้นตอนสุดท้าย)
   // - งานประวัติ: ปุ่มนี้จะกลายเป็น "🧾 e-slip" อย่างเดียว (ดูได้ตลอดถ้าจ่ายแล้ว)
   // - งานแก้ไข: อย่าให้สถานะ paid เดิมจากงานรอบแรก มาบัง flow การกลับไปแก้
-  const workflowDisabled = historyMode
+  const workflowDisabled = isDraftJob || historyMode
     ? !paid
     : (revisitFlow && isWorking
         ? true
@@ -5086,6 +5087,7 @@ function buildJobCard(job, historyMode = false) {
         <span style="width:42px;height:42px;border-radius:14px;background:#ccfbf1;display:flex;align-items:center;justify-content:center;font-size:22px;">🔁</span>
         <div><b style="display:block;color:#0f172a;">งานรับผิดชอบเคสเดิม</b><span class="muted">งานนี้ไม่มีค่าบริการที่ต้องเก็บจากลูกค้า และไม่มีค่าตอบแทนเพิ่มเติม</span></div>
       </div>` : renderTechnicianMoneySummary(job, historyMode ? "history" : "current")}
+    ${isDraftJob ? `<div class="pill" style="margin-top:10px;background:#fff7ed;border-color:rgba(234,88,12,0.18);color:#7c2d12;display:block;border-radius:16px;line-height:1.55;"><b>ร่างงาน — รอแอดมินอนุมัติ</b><br><span>ดูข้อมูลเพื่อเตรียมตัวได้ แต่ยังโทรลูกค้า เปิดแผนที่ เริ่มเดินทาง เช็กอิน เริ่มงาน ลงรูป เก็บเงิน หรือปิดงานไม่ได้</span></div>` : ``}
 
     <p style="margin-top:8px;"><b>ลูกค้า:</b> ${escape(job.customer_name || "-")}</p>
     <p><b>โทร:</b> ${escape(job.customer_phone || "-")}</p>
@@ -5103,12 +5105,12 @@ function buildJobCard(job, historyMode = false) {
       <div style="margin-top:10px;">
         <!-- ✅ แถวปุ่มโทร: กดได้ตลอด -->
         <div class="row" style="gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" style="width:auto;" ${telPhone ? "" : "disabled"} onclick="callCustomer('${jobKeyJs}', '${telPhone}')">📞 โทรลูกค้า</button>
+          <button class="secondary" type="button" style="width:auto;" ${telPhone && !isDraftJob ? "" : "disabled"} onclick="callCustomer('${jobKeyJs}', '${telPhone}')">📞 โทรลูกค้า</button>
         </div>
 
         <!-- ✅ แถวปุ่มแผนที่: อยู่ใต้ปุ่มโทร และกดดูได้ตลอด -->
         <div class="row" style="margin-top:10px;gap:10px;flex-wrap:wrap;">
-          <button class="secondary" type="button" style="width:auto;" data-role="job-map" data-jobkey="${escapeAttr(keyBase)}" ${((job.address_text || job.maps_url || (job.gps_latitude != null && job.gps_longitude != null)) ? "" : "disabled")} onclick="openJobMap(${jobKeyArg})">🧭 แผนที่</button>
+          <button class="secondary" type="button" style="width:auto;" data-role="job-map" data-jobkey="${escapeAttr(keyBase)}" ${(!isDraftJob && (job.address_text || job.maps_url || (job.gps_latitude != null && job.gps_longitude != null)) ? "" : "disabled")} onclick="openJobMap(${jobKeyArg})">🧭 แผนที่</button>
         </div>
 
         <!-- ✅ ปุ่มอัปเดตสถานะ / e-slip (ปุ่มเดียว) -->

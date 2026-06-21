@@ -3,7 +3,7 @@
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
   const MAX_ADVANCE_DAYS = 90;
-  const STEP_MAX = 5;
+  const STEP_MAX = 3;
   let availabilityRequestSeq = 0;
   let calendarRequestSeq = 0;
 
@@ -165,10 +165,10 @@
   }
 
   function renderProgress() {
-    const labels = ["ข้อมูลลูกค้า", "รายการบริการ", "ราคา", "วันและเวลา", "ยืนยัน"];
+    const labels = ["บริการและราคา", "ข้อมูลหน้างานและคิว", "ตรวจสอบและยืนยัน"];
     const current = step();
     return `
-      <ol class="booking-stepper booking-stepper-five" aria-label="ขั้นตอนจองล้างแอร์">
+      <ol class="booking-stepper" aria-label="ขั้นตอนจองล้างแอร์">
         ${labels.map((label, index) => {
           const n = index + 1;
           const status = n < current ? "is-done" : (n === current ? "is-active" : "");
@@ -182,11 +182,11 @@
     const d = draft();
     const saved = root.state.savedAddress();
     return `
-      <section class="card booking-wizard-card" data-booking-step="1">
+      <section class="card booking-wizard-card" data-booking-step="2">
         <div class="section-head">
-          <span class="section-kicker">ขั้นตอน 1 จาก 5</span>
-          <h2>ข้อมูลลูกค้า</h2>
-          <p class="muted">กรอกข้อมูลสำหรับติดต่อ เดินทาง และเตรียมเข้าบริการ</p>
+          <span class="section-kicker">ขั้นตอน 2 จาก 3</span>
+          <h2>ข้อมูลหน้างานและคิว</h2>
+          <p class="muted">กรอกข้อมูลสำหรับติดต่อ เดินทาง เลือกวันที่ และเลือกช่วงเวลาว่างจริง</p>
         </div>
         <div class="form-grid">
           <div class="field">
@@ -215,6 +215,17 @@
           </div>
         </div>
         ${saved.address && !String(d.address_text || "").trim() ? `<button type="button" class="secondary-btn" data-action="use-saved-address">ใช้ที่อยู่ที่บันทึกไว้</button>` : ""}
+        <div class="slot-section-divider"></div>
+        <div class="section-head section-head-compact">
+          <h2>ปฏิทิน วัน เวลา และเงื่อนไขการเสนอเวลา</h2>
+          <p class="muted">เลือกวันที่มีคิวและช่วงเวลาว่างจริงสำหรับรายการทั้งหมด</p>
+        </div>
+        ${renderCalendar()}
+        <div class="slot-section" data-availability-preview>${renderSlots()}</div>
+        <div class="field field-wide">
+          <label>หากเวลาที่เลือกมีการเปลี่ยนแปลง</label>
+          ${renderTimePreference()}
+        </div>
       </section>
     `;
   }
@@ -260,16 +271,38 @@
   function renderStepServices() {
     const lines = services();
     return `
-      <section class="card booking-wizard-card" data-booking-step="2">
+      <section class="card booking-wizard-card" data-booking-step="1">
         <div class="section-head">
-          <span class="section-kicker">ขั้นตอน 2 จาก 5</span>
-          <h2>รายการบริการ/เครื่องทั้งหมด</h2>
+          <span class="section-kicker">ขั้นตอน 1 จาก 3</span>
+          <h2>บริการและราคา</h2>
           <p class="muted">เพิ่มรายการแยกตามชนิดแอร์ BTU จำนวน และวิธีล้าง</p>
         </div>
         <div class="service-line-list">
           ${lines.map(renderServiceLineCard).join("")}
         </div>
         <button type="button" class="secondary-btn" data-action="add-line">+ เพิ่มเครื่อง / เพิ่มรายการ</button>
+        <div class="slot-section-divider"></div>
+        <div class="section-head section-head-compact">
+          <h2>ราคาและระยะเวลารวม</h2>
+          <p class="muted">ราคาเป็นราคาประเมินจากรายการที่เลือก แอดมินจะตรวจสอบอีกครั้งก่อนยืนยันคิว</p>
+        </div>
+        <div class="service-line-review-list">
+          ${lines.map((line, index) => {
+            const summary = root.services.serviceLineSummary(line, index);
+            const priceLine = priceLineFor(index);
+            const linePrice = priceLine && (priceLine.line_total != null || priceLine.total != null)
+              ? root.utils.formatBaht(priceLine.line_total ?? priceLine.total)
+              : "-";
+            return `
+              <div class="service-summary-box">
+                <span>${root.utils.escapeHtml(summary.title)}</span>
+                <strong>${root.utils.escapeHtml(summary.line1)}</strong>
+                <small>${root.utils.escapeHtml(summary.line2)} · ${root.utils.escapeHtml(linePrice)}</small>
+              </div>
+            `;
+          }).join("")}
+        </div>
+        ${renderPricingSummary()}
       </section>
     `;
   }
@@ -503,14 +536,14 @@
     const submit = root.state.scheduledSubmit;
     const pending = ["validating", "checking_slot", "submitting"].includes(submit.status);
     return `
-      <section class="card booking-wizard-card review-card" data-booking-step="5">
+      <section class="card booking-wizard-card review-card" data-booking-step="3">
         <div class="section-head">
-          <span class="section-kicker">ขั้นตอน 5 จาก 5</span>
+          <span class="section-kicker">ขั้นตอน 3 จาก 3</span>
           <h2>ตรวจสอบและยืนยัน</h2>
           <p class="muted">ตรวจข้อมูลทั้งหมดก่อนส่งคำขอจอง</p>
         </div>
         ${renderReviewRows()}
-        <div class="notice">การส่งรายการนี้เป็นคำขอจองล้างแอร์ล่วงหน้า ระบบจะสร้างรหัสติดตามจากข้อมูลจริงหลังส่งสำเร็จ</div>
+        <div class="notice">การส่งรายการนี้เป็นคำขอจองล้างแอร์ล่วงหน้า แอดมินจะตรวจสอบและยืนยันคิวอีกครั้ง</div>
         ${submit.status === "checking_slot" ? root.utils.stateBox("loading", "กำลังตรวจคิวล่าสุด...") : ""}
         ${submit.status === "submitting" ? root.utils.stateBox("loading", "กำลังส่งข้อมูลจอง...") : ""}
         ${submit.status === "error" ? root.utils.stateBox("error", submit.error || "ส่งคำขอจองไม่สำเร็จ") : ""}
@@ -528,7 +561,7 @@
         <div class="success-mark">✓</div>
         <span class="section-kicker">ส่งคำขอแล้ว</span>
         <h2>ส่งคำขอจองเรียบร้อย</h2>
-        <div class="state-box is-success">ระบบสร้างรหัสติดตามจากข้อมูลจริงแล้ว โปรดเก็บรหัสไว้เพื่อติดตามสถานะและการยืนยันงาน</div>
+        <div class="state-box is-success">รอแอดมินตรวจสอบและยืนยันคิว โปรดเก็บรหัสนี้ไว้เพื่อติดตามสถานะงาน</div>
         <div class="data-list">
           <div class="data-row"><strong>Booking Code</strong><span class="booking-code-value">${root.utils.escapeHtml(result.booking_code || "-")}</span></div>
           <div class="data-row"><strong>วันและเวลา</strong><span class="muted">${root.utils.escapeHtml(selected.date || draft().date || "-")} · ${root.utils.escapeHtml(selected.start || "-")}-${root.utils.escapeHtml(selected.end || "-")} น.</span></div>
@@ -704,14 +737,6 @@
     const current = step();
     root.state.setScheduledWizard({ error: "" });
     if (current === 1) {
-      const error = validateContactStep();
-      if (error) { root.state.setScheduledWizard({ error }); paint(container); scrollToWizardTop(container); return; }
-      root.state.setScheduledWizard({ step: 2, error: "" });
-      paint(container);
-      scrollToWizardTop(container);
-      return;
-    }
-    if (current === 2) {
       const error = validateServiceStep();
       if (error) { root.state.setScheduledWizard({ error }); paint(container); scrollToWizardTop(container); return; }
       try { await refreshPricing(container); }
@@ -721,25 +746,17 @@
         scrollToWizardTop(container);
         return;
       }
-      root.state.setScheduledWizard({ step: 3, error: "" });
-      paint(container);
-      scrollToWizardTop(container);
-      return;
-    }
-    if (current === 3) {
-      const error = validatePricingStep();
-      if (error) { root.state.setScheduledWizard({ error }); paint(container); scrollToWizardTop(container); return; }
-      root.state.setScheduledWizard({ step: 4, error: "" });
+      root.state.setScheduledWizard({ step: 2, error: "" });
       paint(container);
       scrollToWizardTop(container);
       await refreshCalendar(container);
       await refreshAvailability(container);
       return;
     }
-    if (current === 4) {
-      const error = validateSlotStep();
+    if (current === 2) {
+      const error = validateContactStep() || validatePricingStep() || validateSlotStep();
       if (error) { root.state.setScheduledWizard({ error }); paint(container); scrollToWizardTop(container); return; }
-      root.state.setScheduledWizard({ step: 5, error: "" });
+      root.state.setScheduledWizard({ step: 3, error: "" });
       paint(container);
       scrollToWizardTop(container);
     }
@@ -765,7 +782,7 @@
     if (contactError || serviceError || pricingError || slotError || !payload.appointment_datetime) {
       const error = contactError || serviceError || pricingError || slotError || "ข้อมูลจองไม่ครบ";
       root.state.setScheduledSubmit({ status: "error", error, result: null });
-      root.state.setScheduledWizard({ step: contactError ? 1 : serviceError ? 2 : pricingError ? 3 : 4, error });
+      root.state.setScheduledWizard({ step: serviceError ? 1 : 2, error });
       if (slotError) root.state.updateDraft("scheduled", { selectedSlot: null });
       paint(container);
       scrollToWizardTop(container);
@@ -780,14 +797,17 @@
       const result = await root.api.submitScheduledBooking(buildSubmitPayload());
       if (!result?.success || (!result.booking_code && !result.token)) throw new Error("ระบบไม่ได้ส่งรหัสติดตามกลับมา");
       root.state.setScheduledSubmit({ status: "success", error: "", result });
-      try { window.sessionStorage.removeItem("cwf_customer_app_v2_scheduled_v4"); } catch (_) { /* ignore */ }
+      try {
+        window.sessionStorage.removeItem("cwf_customer_app_v2_scheduled_v5");
+        window.sessionStorage.removeItem("cwf_customer_app_v2_scheduled_v4");
+      } catch (_) { /* ignore */ }
       paint(container);
       scrollToWizardTop(container);
     } catch (error) {
       root.state.setScheduledSubmit({ status: "error", error: error.message || "ส่งคำขอจองไม่สำเร็จ", result: null });
       if (Number(error.status) === 400 || Number(error.status) === 409) {
         root.state.updateDraft("scheduled", { selectedSlot: null });
-        root.state.setScheduledWizard({ step: 4, error: "คิวที่เลือกอาจเต็มแล้ว กรุณาเลือกช่วงเวลาใหม่" });
+        root.state.setScheduledWizard({ step: 2, error: "คิวที่เลือกอาจเต็มแล้ว กรุณาเลือกช่วงเวลาใหม่" });
       }
       paint(container);
       scrollToWizardTop(container);
@@ -797,14 +817,12 @@
   function renderActions() {
     if (root.state.scheduledSubmit.status === "success") return "";
     const current = step();
-    if (current === 5) {
+    if (current === 3) {
       return `<div class="wizard-action-bar"><button type="button" class="secondary-btn" data-action="wizard-back">ย้อนกลับ</button></div>`;
     }
     const nextLabels = {
-      1: "ต่อไป: รายการบริการ",
-      2: "ต่อไป: ราคา",
-      3: "ต่อไป: เลือกคิว",
-      4: "ต่อไป: ตรวจสอบ",
+      1: "ต่อไป: ข้อมูลหน้างานและคิว",
+      2: "ต่อไป: ตรวจสอบและยืนยัน",
     };
     return `
       <div class="wizard-action-bar">
@@ -821,11 +839,9 @@
     const success = root.state.scheduledSubmit.status === "success";
     const content = success
       ? renderSuccess()
-      : current === 1 ? renderStepContactLocation()
-        : current === 2 ? renderStepServices()
-          : current === 3 ? renderStepPricing()
-            : current === 4 ? renderStepCalendarSlot()
-              : renderStepReview();
+      : current === 1 ? renderStepServices()
+        : current === 2 ? renderStepContactLocation()
+          : renderStepReview();
     container.innerHTML = `
       <div class="page booking-wizard-page">
         <div class="page-toolbar">
@@ -974,9 +990,12 @@
 
   function render(container) {
     paint(container);
-    if (step() === 4 && root.state.scheduledPreview.pricing.data && root.state.scheduledPreview.calendar.status === "idle") {
+    if (step() === 1 && root.state.scheduledPreview.pricing.status === "idle") {
+      refreshPricing(container).catch(() => {});
+    }
+    if (step() === 2 && root.state.scheduledPreview.pricing.data && root.state.scheduledPreview.calendar.status === "idle") {
       refreshCalendar(container);
-    } else if (step() === 4 && root.state.scheduledPreview.pricing.data && root.state.scheduledPreview.availability.status === "idle") {
+    } else if (step() === 2 && root.state.scheduledPreview.pricing.data && root.state.scheduledPreview.availability.status === "idle") {
       refreshAvailability(container);
     }
     root.state.ensureSavedAddressPrefill("scheduled", () => paint(container));

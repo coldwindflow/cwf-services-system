@@ -13,6 +13,7 @@
     const jt = mx.job_types || {};
     const at = mx.ac_types || {};
     const wv = mx.wash_wall_variants || {};
+    const rv = mx.repair_variants || {};
     setCap('cap_job_install', jt.install);
     setCap('cap_job_wash', jt.wash);
     setCap('cap_job_repair', jt.repair);
@@ -24,6 +25,10 @@
     setCap('cap_wash_premium', wv.premium);
     setCap('cap_wash_coil', wv.coil);
     setCap('cap_wash_overhaul', wv.overhaul);
+    setCap('cap_repair_leak_check', rv.leak_check);
+    setCap('cap_repair_inspection', rv.inspection);
+    setCap('cap_repair_parts', rv.parts);
+    setCap('cap_repair_general', rv.general);
     updateMatrixSummary();
   }
 
@@ -32,16 +37,19 @@
     const jt = mx.job_types || {};
     const at = mx.ac_types || {};
     const wv = mx.wash_wall_variants || {};
+    const rv = mx.repair_variants || {};
     const pick = (obj, map) => Object.keys(map).filter(k=>obj && obj[k]).map(k=>map[k]);
     const jobs = pick(jt, {install:'ติดตั้ง', wash:'ล้าง', repair:'ซ่อม'});
     const acs = pick(at, {wall:'ผนัง', fourway:'สี่ทิศทาง', hanging:'แขวน', ceiling:'ใต้ฝ้า/เปลือย'});
     const wss = pick(wv, {normal:'ธรรมดา', premium:'พรีเมียม', coil:'แขวนคอยล์', overhaul:'ตัดล้าง'});
-    const any = jobs.length || acs.length || wss.length;
+    const reps = pick(rv, {leak_check:'เช็ครั่ว', inspection:'ตรวจอาการ', parts:'อะไหล่', general:'ซ่อมทั่วไป'});
+    const any = jobs.length || acs.length || wss.length || reps.length;
     if (!any) return 'ยังไม่ได้เลือกงานที่รับได้ (จะไม่แสดงในสลอตลูกค้า)';
     const parts = [];
     if (jobs.length) parts.push(`งาน: ${jobs.join(', ')}`);
     if (acs.length) parts.push(`แอร์: ${acs.join(', ')}`);
     if (wss.length) parts.push(`ล้างผนัง: ${wss.join(', ')}`);
+    if (reps.length) parts.push(`ซ่อม: ${reps.join(', ')}`);
     return parts.join(' • ');
   }
 
@@ -69,9 +77,21 @@
       coil: getCap('cap_wash_coil'),
       overhaul: getCap('cap_wash_overhaul'),
     };
+    const rv = {
+      leak_check: getCap('cap_repair_leak_check'),
+      inspection: getCap('cap_repair_inspection'),
+      parts: getCap('cap_repair_parts'),
+      general: getCap('cap_repair_general'),
+    };
 
     // ✅ Spec: If not tick anything => DO NOT show in customer slots
-    return { job_types: jt, ac_types: at, wash_wall_variants: wv };
+    return {
+      ...(currentMatrix && typeof currentMatrix === 'object' ? currentMatrix : {}),
+      job_types: { ...((currentMatrix && currentMatrix.job_types) || {}), ...jt },
+      ac_types: { ...((currentMatrix && currentMatrix.ac_types) || {}), ...at },
+      wash_wall_variants: { ...((currentMatrix && currentMatrix.wash_wall_variants) || {}), ...wv },
+      repair_variants: { ...((currentMatrix && currentMatrix.repair_variants) || {}), ...rv },
+    };
   }
 
   function openMatrix(){
@@ -83,7 +103,7 @@
     if ($('matrixModal')) $('matrixModal').style.display = 'none';
   }
   function clearMatrix(){
-    ['cap_job_install','cap_job_wash','cap_job_repair','cap_ac_wall','cap_ac_fourway','cap_ac_hanging','cap_ac_ceiling','cap_wash_normal','cap_wash_premium','cap_wash_coil','cap_wash_overhaul']
+    ['cap_job_install','cap_job_wash','cap_job_repair','cap_ac_wall','cap_ac_fourway','cap_ac_hanging','cap_ac_ceiling','cap_wash_normal','cap_wash_premium','cap_wash_coil','cap_wash_overhaul','cap_repair_leak_check','cap_repair_inspection','cap_repair_parts','cap_repair_general']
       .forEach(id=>{ const el=$(id); if(el) el.checked=false; });
     updateMatrixSummary();
   }
@@ -341,7 +361,7 @@
   if ($('btnClearMatrix')) $('btnClearMatrix').addEventListener('click', clearMatrix);
 
   // update summary when toggling caps
-  ['cap_job_install','cap_job_wash','cap_job_repair','cap_ac_wall','cap_ac_fourway','cap_ac_hanging','cap_ac_ceiling','cap_wash_normal','cap_wash_premium','cap_wash_coil','cap_wash_overhaul']
+    ['cap_job_install','cap_job_wash','cap_job_repair','cap_ac_wall','cap_ac_fourway','cap_ac_hanging','cap_ac_ceiling','cap_wash_normal','cap_wash_premium','cap_wash_coil','cap_wash_overhaul','cap_repair_leak_check','cap_repair_inspection','cap_repair_parts','cap_repair_general']
     .forEach(id=>{ const el=$(id); if(el) el.addEventListener('change', updateMatrixSummary); });
   $('btnUploadPhoto').addEventListener('click', ()=> uploadTechPhoto().catch(e=>showToast(e.message||'อัปโหลดไม่สำเร็จ','error')));
   $('btnOpenSpecial').addEventListener('click', ()=>{
