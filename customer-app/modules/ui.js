@@ -294,6 +294,7 @@
           <button class="primary-btn" type="button" data-commerce-service="wall-normal">จองล้างแอร์</button>
           <button class="secondary-btn" type="button" data-route="urgent">เรียกช่างด่วน</button>
           <button class="secondary-btn" type="button" data-route="tracking">ติดตามงาน</button>
+          <button class="secondary-btn" type="button" data-route="profile">ติดต่อ CWF</button>
         </section>
 
           <section class="card commerce-section">

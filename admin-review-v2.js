@@ -427,7 +427,7 @@ async function openJob(jobId){
 
     // fill
     $("mTitle").textContent = `ตรวจงาน #${CURRENT.job_id}`;
-    $("mSub").textContent = `${safe(CURRENT.booking_code||"")} • สถานะ: ${safe(CURRENT.job_status||"")}`;
+    $("mSub").textContent = `${safe(CURRENT.booking_code||"")} • สถานะ: ${safe(CURRENT.job_status||"")}${CURRENT.job_status === "รอตรวจสอบ" && CURRENT.technician_username ? ` • ร่างจองช่าง: ${safe(CURRENT.technician_username)}` : ""}`;
 
     $("mCustomerName").value = safe(CURRENT.customer_name||"");
     $("mCustomerPhone").value = safe(CURRENT.customer_phone||"");

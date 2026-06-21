@@ -17318,6 +17318,7 @@ app.put("/jobs/:job_id/status", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+    if (status === 'กำลังทำ') await assertJobActionableForTechnician(pool, realId);
 
     // ✅ เมื่อเริ่มงานครั้งแรก ให้บันทึก started_at
     if (status === 'กำลังทำ') {
@@ -17350,7 +17351,7 @@ app.put("/jobs/:job_id/status", async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "อัปเดตสถานะไม่สำเร็จ" });
+    res.status(Number(e.status || 500)).json({ error: e.message || "อัปเดตสถานะไม่สำเร็จ", code: e.code || undefined });
   }
 });
 
@@ -18795,6 +18796,20 @@ app.post("/offers/:offer_id/decline", requireTechnicianSession, async (req, res)
 // =======================================
 // 🚗 TRAVEL START (เริ่มเดินทาง)
 // =======================================
+async function assertJobActionableForTechnician(db, job_id) {
+  const r = await db.query(
+    `SELECT job_status FROM public.jobs WHERE job_id=$1 LIMIT 1`,
+    [job_id]
+  );
+  const status = String(r.rows?.[0]?.job_status || '').trim();
+  if (['รอตรวจสอบ', 'pending_review'].includes(status)) {
+    const err = new Error('ร่างงาน — รอแอดมินอนุมัติ');
+    err.status = 409;
+    err.code = 'TECHNICIAN_DRAFT_JOB_LOCKED';
+    throw err;
+  }
+}
+
 app.post("/jobs/:job_id/travel-start", requireTechnicianSession, async (req, res) => {
   const { job_id } = req.params;
   try {
@@ -18802,6 +18817,7 @@ app.post("/jobs/:job_id/travel-start", requireTechnicianSession, async (req, res
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
     const technician_username = await requireTechOwnsResolvedJob(req, res, realId, pool);
     if (!technician_username) return;
+    await assertJobActionableForTechnician(pool, realId);
 
     await pool.query(
       `UPDATE public.jobs
@@ -18812,7 +18828,7 @@ app.post("/jobs/:job_id/travel-start", requireTechnicianSession, async (req, res
     res.json({ success: true });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "บันทึกเริ่มเดินทางไม่สำเร็จ" });
+    res.status(Number(e.status || 500)).json({ error: e.message || "บันทึกเริ่มเดินทางไม่สำเร็จ", code: e.code || undefined });
   }
 });
 
@@ -18830,6 +18846,7 @@ app.post("/jobs/:job_id/checkin", requireTechnicianSession, async (req, res) => 
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
     const technician_username = await requireTechOwnsResolvedJob(req, res, realId, pool);
     if (!technician_username) return;
+    await assertJobActionableForTechnician(pool, realId);
 
     const r = await pool.query(
       `SELECT gps_latitude, gps_longitude, maps_url FROM public.jobs WHERE job_id=$1`,
@@ -18987,7 +19004,7 @@ app.post("/jobs/:job_id/checkin", requireTechnicianSession, async (req, res) => 
     res.json({ success: true, distance: distance == null ? null : Math.round(distance), site_required: hasSiteLatLng });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "เช็คอินไม่สำเร็จ" });
+    res.status(Number(e.status || 500)).json({ error: e.message || "เช็คอินไม่สำเร็จ", code: e.code || undefined });
   }
 });
 
@@ -19025,6 +19042,7 @@ app.post("/jobs/:job_id/photos/meta", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+    await assertJobActionableForTechnician(pool, realId);
     let unitMeta = { unit_id: null, unit_code: null, unit_no: null };
     if (Number.isFinite(bodyUnitId) && bodyUnitId > 0) {
       const unitR = await pool.query(`SELECT unit_id, unit_code, unit_no FROM public.job_units WHERE job_id=$1 AND unit_id=$2 AND ${activeJobUnitWhere()} LIMIT 1`, [realId, bodyUnitId]);
@@ -19115,6 +19133,7 @@ app.post("/jobs/:job_id/photos/:photo_id/upload", upload.single("photo"), async 
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+    await assertJobActionableForTechnician(pool, realId);
 
     const meta = await pool.query(
       `SELECT photo_id, phase, mime_type FROM public.job_photos WHERE photo_id=$1 AND job_id=$2`,
@@ -19396,6 +19415,7 @@ app.put("/jobs/:job_id/note", async (req, res) => {
   try {
     const realId = await resolveJobIdAny(pool, job_id);
     if (!realId) return res.status(400).json({ error: "job_id ไม่ถูกต้อง" });
+    await assertJobActionableForTechnician(pool, realId);
 
     await pool.query(
       `UPDATE public.jobs SET technician_note=$1, technician_note_at=NOW() WHERE job_id=$2`,
@@ -19404,7 +19424,7 @@ app.put("/jobs/:job_id/note", async (req, res) => {
     res.json({ success: true });
   } catch (e) {
     console.error(e);
-    res.status(500).json({ error: "บันทึกหมายเหตุไม่สำเร็จ" });
+    res.status(Number(e.status || 500)).json({ error: e.message || "บันทึกหมายเหตุไม่สำเร็จ", code: e.code || undefined });
   }
 });
 
@@ -19465,6 +19485,7 @@ app.post("/jobs/:job_id/finalize", requireTechnicianSession, async (req, res) =>
       await client.query("ROLLBACK");
       return;
     }
+    await assertJobActionableForTechnician(client, realId);
     const perUnitEvidenceRequested = req.body?.per_unit_evidence === true || String(req.body?.per_unit_evidence || '').trim().toLowerCase() === 'true' || String(req.body?.per_unit_evidence || '').trim() === '1';
     const perUnitFlagR = await client.query(`SELECT COALESCE(per_unit_evidence_enabled,FALSE) AS enabled FROM public.jobs WHERE job_id=$1 LIMIT 1`, [realId]);
     const perUnitEnabled = perUnitEvidenceRequested || !!perUnitFlagR.rows?.[0]?.enabled;
@@ -23910,9 +23931,10 @@ function http409Conflict(res, conflict){
 // =======================================
 // 💲 Pricing + Duration Preview (public)
 // =======================================
-function publicCustomerAvailabilityDeps() {
+function publicCustomerAvailabilityDeps(db = pool) {
   return {
-    pool,
+    pool: db,
+    db,
     listTechniciansByType,
     buildOffMapForDate,
     isTechOffOnDate,
@@ -24898,6 +24920,21 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
   try {
     await client.query("BEGIN");
 
+    let draftReservationTech = null;
+    if (bm === "scheduled" && clientApp === "customer_app_v2") {
+      const startIso = normalizeAppointmentDatetime(appointment_datetime);
+      draftReservationTech = await customerAvailability.reservePublicCustomerTechnician(
+        publicCustomerAvailabilityDeps(client),
+        {
+          ...payloadV2,
+          date: String(startIso).slice(0, 10),
+          start: String(startIso).slice(11, 16),
+          tech_type: requestedTechType,
+          duration_min: duration_min_v2,
+        }
+      );
+    }
+
     // 1) ดึงราคา base_price จาก DB
 const serviceLineItems = await customerPricingHelpers.buildCustomerServiceLineItemsFromPayload(
   (payloadV2.services && Array.isArray(payloadV2.services))
@@ -24980,7 +25017,7 @@ if (itemIdQty.length) {
        address_text, technician_team, technician_username, job_status,
        booking_token, job_source, dispatch_mode, customer_note,
        maps_url, job_zone, duration_min, booking_mode, allow_time_proposal)
-      VALUES ($1,$2,$3,$4,$5,$6,NULL,NULL,$11,$7,'customer',$14,$8,$9,$10,$12,$13,$15)
+      VALUES ($1,$2,$3,$4,$5,$6,NULL,$16,$11,$7,'customer',$14,$8,$9,$10,$12,$13,$15)
       RETURNING job_id, booking_token
       `,
       [
@@ -24999,6 +25036,7 @@ if (itemIdQty.length) {
         (bm === 'urgent' ? 'urgent' : 'scheduled'),
         dispatchMode,
         allowTimeProposal,
+        draftReservationTech ? draftReservationTech.username : null,
       ]
     );
 
@@ -25174,6 +25212,7 @@ app.get("/public/track", async (req, res) => {
     // ✅ กันลูกค้าสับสน: สถานะ "ตีกลับ" เป็นสถานะภายใน (ให้ลูกค้าเห็นเป็นรอดำเนินการ)
     const rawStatus = String(row.job_status || "").trim();
     const publicStatus = (rawStatus === "ตีกลับ" || rawStatus === "งานแก้ไข") ? "รอดำเนินการ" : rawStatus;
+    const canShowPublicTechnician = !['รอตรวจสอบ', 'pending_review'].includes(rawStatus);
 
     let photos = [];
     if (isDone) {
@@ -25288,7 +25327,7 @@ app.get("/public/track", async (req, res) => {
 // =======================================
 let technician_team = null;
 
-if (FLAG_SHOW_TECH_TEAM_ON_TRACKING) {
+if (FLAG_SHOW_TECH_TEAM_ON_TRACKING && canShowPublicTechnician) {
   try {
     // ดึงสมาชิกทีมจากตารางใหม่ (job_team_members)
     const tmR = await pool.query(
@@ -25379,7 +25418,7 @@ if (FLAG_SHOW_TECH_TEAM_ON_TRACKING) {
         reviewed_at: row.reviewed_at || null,
       },
 
-      technician: row.technician_username
+      technician: row.technician_username && canShowPublicTechnician
         ? {
             username: row.technician_username,
             full_name: row.tech_name,
