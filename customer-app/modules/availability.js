@@ -119,6 +119,8 @@
       map.set(date, {
         date,
         available: day.available === true,
+        status: String(day.status || (day.available === true ? "available" : "no_open_slots")).trim(),
+        reason_code: String(day.reason_code || "").trim(),
         first_available: day.first_available || null,
       });
     });
