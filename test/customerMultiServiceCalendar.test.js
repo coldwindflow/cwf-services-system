@@ -134,8 +134,10 @@ test("calendar summary contains only date availability and first available start
   assert.equal(summary.month, "2026-06");
   assert.equal(summary.days[0].date, "2026-06-01");
   assert.equal(summary.days[0].available, true);
+  assert.equal(summary.days[0].status, "available");
+  assert.equal(summary.days[0].reason_code, "AVAILABLE");
   assert.equal(summary.days[0].first_available, "09:00");
-  assert.deepEqual(Object.keys(summary.days[0]).sort(), ["available", "date", "first_available"]);
+  assert.deepEqual(Object.keys(summary.days[0]).sort(), ["available", "date", "first_available", "reason_code", "status"]);
 });
 
 test("monthly advance calendar is required for customer slots", async () => {
@@ -150,9 +152,13 @@ test("monthly advance calendar is required for customer slots", async () => {
 
   result = await customerAvailability.computePublicCustomerSlots(makeAvailabilityDeps({ calendar: false }), base);
   assert.equal(result.slots.length, 0);
+  assert.equal(result.availability_status, "no_open_slots");
+  assert.equal(result.reason_code, "NO_ADVANCE_CALENDAR_ROW");
 
   result = await customerAvailability.computePublicCustomerSlots(makeAvailabilityDeps({ calendar: "false" }), base);
   assert.equal(result.slots.length, 0);
+  assert.equal(result.availability_status, "no_open_slots");
+  assert.equal(result.reason_code, "ADVANCE_CLOSED");
 });
 
 test("advance calendar daily job and unit caps block public slots", async () => {
@@ -167,12 +173,30 @@ test("advance calendar daily job and unit caps block public slots", async () => 
     usage: { rows: [{ technician_username: "tech-a", jobs_count: 1, units_count: 1 }] },
   }), base);
   assert.equal(result.slots.length, 0);
+  assert.equal(result.availability_status, "full");
+  assert.equal(result.reason_code, "CAPACITY_FULL");
 
   result = await customerAvailability.computePublicCustomerSlots(makeAvailabilityDeps({
     calendar: { max_jobs_per_day: 2, max_units_per_day: 2 },
     usage: { rows: [{ technician_username: "tech-a", jobs_count: 0, units_count: 1 }] },
   }), base);
   assert.equal(result.slots.length, 0);
+  assert.equal(result.availability_status, "full");
+  assert.equal(result.reason_code, "CAPACITY_FULL");
+});
+
+test("collision-only unavailable slots are marked full", async () => {
+  const result = await customerAvailability.computePublicCustomerSlots(makeAvailabilityDeps({
+    busyBlocks: [{ startMin: 540, endMin: 720 }],
+  }), {
+    date: "2026-06-02",
+    duration_min: 60,
+    tech_type: "company",
+    services: [{ job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างธรรมดา", machine_count: 1 }],
+  });
+  assert.equal(result.slots.length, 0);
+  assert.equal(result.availability_status, "full");
+  assert.equal(result.reason_code, "COLLISION_FULL");
 });
 
 test("draft reservation uses advisory lock, rechecks exact slot, and picks anonymous technician", async () => {

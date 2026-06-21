@@ -135,7 +135,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260621_advance_slots_three_step_draft_v1";
+  const build = "20260621_availability_reason_hotfix_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`bookingUrgent\\.js\\?v=${build}`));

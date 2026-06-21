@@ -409,11 +409,16 @@
       const isToday = dateValue === today;
       const status = dayMap.get(dateValue);
       const available = status && status.available === true;
-      const full = status && status.available === false;
-      const disabled = outsideRange || full || (!isLoading && expectedKey && !available);
-      const label = outsideRange ? "" : (isLoading ? "..." : (available ? "มีคิว" : "เต็ม"));
+      const dayStatus = status?.status || (available ? "available" : "");
+      const full = dayStatus === "full";
+      const noOpenSlots = dayStatus === "no_open_slots";
+      const systemIssue = dayStatus === "error";
+      const disabled = outsideRange || !available || (!isLoading && expectedKey && !available);
+      const label = outsideRange
+        ? ""
+        : (isLoading ? "..." : (available ? "มีคิว" : (full ? "เต็ม" : (systemIssue ? "ลองใหม่" : "ยังไม่มีคิวเปิด"))));
       cells.push(`
-        <button type="button" class="calendar-day ${selected ? "is-selected" : ""} ${isToday ? "is-today" : ""} ${available ? "is-available" : ""} ${full ? "is-full" : ""} ${isLoading ? "is-loading" : ""}"
+        <button type="button" class="calendar-day ${selected ? "is-selected" : ""} ${isToday ? "is-today" : ""} ${available ? "is-available" : ""} ${full ? "is-full" : ""} ${noOpenSlots ? "is-no-open-slots" : ""} ${systemIssue ? "is-error" : ""} ${isLoading ? "is-loading" : ""}"
           data-calendar-date="${dateValue}" ${disabled ? "disabled" : ""}
           aria-pressed="${selected ? "true" : "false"}" aria-label="${root.utils.escapeHtml(`${dateValue} ${label}`)}">
           <span>${day}</span>${label ? `<small>${root.utils.escapeHtml(label)}</small>` : ""}
@@ -446,7 +451,14 @@
     if (!availability.data) return root.utils.stateBox("", "เลือกวันที่มีคิว ระบบจะแสดงช่วงเวลาว่างด้านล่าง");
     const slots = normalizedSlots();
     if (!slots.length) {
-      return `${root.utils.stateBox("warning", "วันที่เลือกเต็มแล้ว กรุณาเลือกวันอื่น")}<button type="button" class="secondary-btn" data-action="reload-slots">ตรวจคิววันนี้อีกครั้ง</button>`;
+      const status = String(availability.data.availability_status || "").trim();
+      const message = status === "full"
+        ? "วันที่เลือกเต็มแล้ว กรุณาเลือกวันอื่น"
+        : status === "error"
+          ? "ระบบตรวจคิววันนี้ไม่สำเร็จ กรุณาลองใหม่"
+          : "ยังไม่มีคิวเปิดในวันนี้ กรุณาเลือกวันอื่น";
+      const tone = status === "error" ? "error" : "warning";
+      return `${root.utils.stateBox(tone, message)}<button type="button" class="secondary-btn" data-action="reload-slots">ตรวจคิววันนี้อีกครั้ง</button>`;
     }
     return `
       <div class="availability-meta"><strong>คิวว่างวันที่ ${root.utils.escapeHtml(draft().date)}</strong><span>ระบบจะตรวจซ้ำก่อนส่งคำขอจอง</span></div>

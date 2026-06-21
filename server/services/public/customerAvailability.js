@@ -4,6 +4,59 @@ const SLOT_STEP_MIN = 30;
 const DEFAULT_UI_START = "09:00";
 const DEFAULT_UI_END = "18:00";
 const CANCELLED_STATUSES = new Set(["ยกเลิก", "cancelled", "canceled"]);
+const REASON_STATUS = {
+  AVAILABLE: "available",
+  NO_TECHNICIAN_TYPE: "no_open_slots",
+  NO_CUSTOMER_VISIBLE_TECH: "no_open_slots",
+  TECH_OFF: "no_open_slots",
+  NO_MATCHING_SERVICE_MATRIX: "no_open_slots",
+  NO_ADVANCE_CALENDAR_ROW: "no_open_slots",
+  ADVANCE_CLOSED: "no_open_slots",
+  NO_ADVANCE_TIME_WINDOW: "no_open_slots",
+  INVALID_ADVANCE_WINDOW: "error",
+  CUSTOMER_SLOT_SERVICE_CRITERIA_REQUIRED: "error",
+  CAPACITY_FULL: "full",
+  COLLISION_FULL: "full",
+};
+const REASON_PRIORITY = [
+  "CUSTOMER_SLOT_SERVICE_CRITERIA_REQUIRED",
+  "CAPACITY_FULL",
+  "COLLISION_FULL",
+  "INVALID_ADVANCE_WINDOW",
+  "NO_ADVANCE_TIME_WINDOW",
+  "NO_ADVANCE_CALENDAR_ROW",
+  "ADVANCE_CLOSED",
+  "NO_MATCHING_SERVICE_MATRIX",
+  "TECH_OFF",
+  "NO_CUSTOMER_VISIBLE_TECH",
+  "NO_TECHNICIAN_TYPE",
+];
+
+function makeDiagnostic() {
+  const codes = new Set();
+  return {
+    add(code) {
+      if (code) codes.add(String(code));
+    },
+    primary() {
+      for (const code of REASON_PRIORITY) {
+        if (codes.has(code)) return code;
+      }
+      return codes.values().next().value || "";
+    },
+    codes() {
+      return Array.from(codes);
+    },
+  };
+}
+
+function publicDiagnostic(code) {
+  const reason = code || "NO_ADVANCE_TIME_WINDOW";
+  return {
+    availability_status: REASON_STATUS[reason] || "no_open_slots",
+    reason_code: reason,
+  };
+}
 
 function normalizeJobKey(value) {
   const v = String(value || "").toLowerCase();
@@ -223,41 +276,74 @@ async function eligibleCustomerTechnicians(deps, options) {
   const date = options.date;
   const techType = options.tech_type || "company";
   const criteriaList = buildCriteriaList(options);
+  const diagnostic = options.diagnostic || null;
   if (!validateCriteriaList(criteriaList)) {
+    diagnostic?.add("CUSTOMER_SLOT_SERVICE_CRITERIA_REQUIRED");
     const error = new Error("CUSTOMER_SLOT_SERVICE_CRITERIA_REQUIRED");
     error.status = 400;
     throw error;
   }
 
   const allTechs = await listTechniciansByType(techType, { include_paused: true });
+  if (!(allTechs || []).length) diagnostic?.add("NO_TECHNICIAN_TYPE");
   const visibleTechs = (allTechs || []).filter((tech) => tech && tech.customer_slot_visible === true);
+  if (!visibleTechs.length) diagnostic?.add("NO_CUSTOMER_VISIBLE_TECH");
   const offMap = await buildOffMapForDate(date, visibleTechs.map((tech) => tech.username));
   const notOff = visibleTechs.filter((tech) => !isTechOffOnDate(tech, date, offMap));
+  if (visibleTechs.length && !notOff.length) diagnostic?.add("TECH_OFF");
   const matrixMap = await loadServiceMatrixMap(pool, notOff.map((tech) => tech.username));
   const matrixMatched = notOff.filter((tech) => {
     const username = String(tech.username || "");
     if (!matrixMap.has(username)) return false;
     return techMatchesAllCriteriaStrict(matrixMap.get(username), criteriaList);
   });
+  if (notOff.length && !matrixMatched.length) diagnostic?.add("NO_MATCHING_SERVICE_MATRIX");
   const calendarMap = await loadAdvanceCalendarMap(pool, date, matrixMatched.map((tech) => tech.username), Boolean(options.lock_calendar_rows));
   const requestedUnits = serviceUnitCount(options);
   const usageMap = await loadDailyUsageMap(pool, date, matrixMatched.map((tech) => tech.username), options.ignore_job_id);
-  return matrixMatched.filter((tech) => {
+  let missingCalendar = 0;
+  let closedCalendar = 0;
+  let invalidWindow = 0;
+  let capacityFull = 0;
+  const eligible = matrixMatched.filter((tech) => {
     const username = String(tech.username || "");
     const calendar = calendarMap.get(username);
-    if (!calendar || calendar.can_accept_advance_job !== true) return false;
+    if (!calendar) {
+      missingCalendar += 1;
+      return false;
+    }
+    if (calendar.can_accept_advance_job !== true) {
+      closedCalendar += 1;
+      return false;
+    }
     const start = String(calendar.start_time || "").slice(0, 5);
     const end = String(calendar.end_time || "").slice(0, 5);
-    if (!/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end)) return false;
+    if (!/^\d{2}:\d{2}$/.test(start) || !/^\d{2}:\d{2}$/.test(end)) {
+      invalidWindow += 1;
+      return false;
+    }
     const maxJobs = calendar.max_jobs_per_day == null ? null : Number(calendar.max_jobs_per_day);
     const maxUnits = calendar.max_units_per_day == null ? null : Number(calendar.max_units_per_day);
     const usage = usageMap.get(username) || { jobs_count: 0, units_count: 0 };
-    if (Number.isFinite(maxJobs) && maxJobs >= 0 && usage.jobs_count >= maxJobs) return false;
-    if (Number.isFinite(maxUnits) && maxUnits >= 0 && (usage.units_count + requestedUnits) > maxUnits) return false;
+    if (Number.isFinite(maxJobs) && maxJobs >= 0 && usage.jobs_count >= maxJobs) {
+      capacityFull += 1;
+      return false;
+    }
+    if (Number.isFinite(maxUnits) && maxUnits >= 0 && (usage.units_count + requestedUnits) > maxUnits) {
+      capacityFull += 1;
+      return false;
+    }
     tech.advance_calendar = calendar;
     tech.advance_usage = usage;
     return true;
   });
+  if (matrixMatched.length && !eligible.length) {
+    if (capacityFull) diagnostic?.add("CAPACITY_FULL");
+    if (invalidWindow) diagnostic?.add("INVALID_ADVANCE_WINDOW");
+    if (missingCalendar) diagnostic?.add("NO_ADVANCE_CALENDAR_ROW");
+    if (closedCalendar) diagnostic?.add("ADVANCE_CLOSED");
+  }
+  return eligible;
 }
 
 async function computePublicCustomerSlots(deps, options) {
@@ -274,8 +360,11 @@ async function computePublicCustomerSlots(deps, options) {
   const durationMin = Math.max(15, Number(options.duration_min || 60));
   const uiStartMin = toMin(DEFAULT_UI_START);
   const uiEndMin = toMin(DEFAULT_UI_END);
-  const techs = await eligibleCustomerTechnicians(deps, { ...options, date });
+  const diagnostic = options.diagnostic || makeDiagnostic();
+  const techs = await eligibleCustomerTechnicians(deps, { ...options, date, diagnostic });
   const events = new Map();
+  let sawWindow = false;
+  let sawStartInterval = false;
   const addEvent = (minute, type, username) => {
     const key = Math.round(minute);
     if (!events.has(key)) events.set(key, { add: [], remove: [] });
@@ -301,9 +390,11 @@ async function computePublicCustomerSlots(deps, options) {
       ? [{ startMin: windowStart, endMin: windowEnd }]
       : [];
     if (!windows.length) continue;
+    sawWindow = true;
     const busyBlocks = await listBusyBlocksForTechOnDate(tech.username, date, null);
     for (const window of windows) {
       const intervals = buildStartIntervalsByCollision(busyBlocks, window.startMin, window.endMin, durationMin);
+      if (intervals.length) sawStartInterval = true;
       for (const interval of intervals) {
         addEvent(interval.startMin, "add", tech.username);
         addEvent(interval.endMin + 1, "remove", tech.username);
@@ -343,6 +434,9 @@ async function computePublicCustomerSlots(deps, options) {
     duration_min: durationMin,
     slot_step_min: SLOT_STEP_MIN,
     slots,
+    ...(slots.length
+      ? { availability_status: "available", reason_code: "AVAILABLE" }
+      : publicDiagnostic(diagnostic.primary() || (!sawWindow ? "NO_ADVANCE_TIME_WINDOW" : (!sawStartInterval ? "COLLISION_FULL" : "NO_ADVANCE_TIME_WINDOW")))),
   };
 }
 
@@ -367,11 +461,14 @@ async function computeCalendarSummary(deps, options) {
   const month = String(options.month || "").slice(0, 7);
   const days = [];
   for (const date of monthDays(month)) {
-    const result = await computePublicCustomerSlots(deps, { ...options, date });
+    const diagnostic = makeDiagnostic();
+    const result = await computePublicCustomerSlots(deps, { ...options, date, diagnostic });
     const first = (result.slots || []).find((slot) => slot.available);
     days.push({
       date,
       available: Boolean(first),
+      status: first ? "available" : (result.availability_status || publicDiagnostic(diagnostic.primary()).availability_status),
+      reason_code: first ? "AVAILABLE" : (result.reason_code || publicDiagnostic(diagnostic.primary()).reason_code),
       first_available: first ? first.start : null,
     });
   }
@@ -441,4 +538,5 @@ module.exports = {
   computeCalendarSummary,
   hasAvailableStart,
   reservePublicCustomerTechnician,
+  makeDiagnostic,
 };

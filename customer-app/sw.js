@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260621_advance_slots_three_step_draft_v1";
+const BUILD_ID = "20260621_availability_reason_hotfix_v1";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

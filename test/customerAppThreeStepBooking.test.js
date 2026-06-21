@@ -204,18 +204,25 @@ test("review screen displays selected time preference", () => {
 test("calendar marks available and full dates without technician identity", () => {
   const { root } = loadBooking();
   root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 500 }, error: "" });
+  const month = root.state.draft.scheduled.calendar_month;
+  const [year, monthNumber] = month.split("-").map(Number);
+  const fullDate = `${year}-${String(monthNumber).padStart(2, "0")}-25`;
+  const noOpenDate = `${year}-${String(monthNumber).padStart(2, "0")}-26`;
   const key = root.availability.calendarQueryKey(root.bookingScheduled._test.currentCalendarQuery());
   root.state.setScheduledPreview("calendar", {
     status: "success",
     data: { month: root.state.draft.scheduled.calendar_month, days: [
       { date: root.state.draft.scheduled.date, available: true, first_available: "09:00", technician_name: "Hidden" },
-      { date: "2099-12-31", available: false, first_available: null, technician_count: 3 },
+      { date: fullDate, available: false, status: "full", reason_code: "COLLISION_FULL", first_available: null, technician_count: 3 },
+      { date: noOpenDate, available: false, status: "no_open_slots", reason_code: "NO_ADVANCE_CALENDAR_ROW", first_available: null },
     ] },
     error: "",
     query_key: key,
   });
   const html = renderInto(root, 2);
   assert.match(html, /มีคิว/);
+  assert.match(html, /เต็ม/);
+  assert.match(html, /ยังไม่มีคิวเปิด/);
   assert.doesNotMatch(html, /Hidden|technician_name|technician_id|technician_count|matrix_json/);
 });
 
