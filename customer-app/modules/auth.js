@@ -68,6 +68,22 @@
     return user.name || customer?.display_name || profile.display_name || "ลูกค้า CWF";
   }
 
+  function pictureUrl(customer) {
+    const user = customer?.user || {};
+    const profile = customer?.profile || {};
+    return String(user.picture || user.picture_url || customer?.picture || customer?.picture_url || profile.picture_url || "").trim();
+  }
+
+  function avatarHtml(customer, className) {
+    const name = displayName(customer);
+    const picture = pictureUrl(customer);
+    const safeClass = className || "account-avatar";
+    if (picture) {
+      return `<img class="${safeClass}" src="${esc(picture)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'${safeClass}',textContent:'${esc(name.slice(0, 1))}'}))">`;
+    }
+    return `<span class="${safeClass}">${esc(name.slice(0, 1))}</span>`;
+  }
+
   function renderCustomerSummary() {
     const customer = root.state.customer;
     if (root.state.authStatus === "loading" && !customer) {
@@ -78,9 +94,9 @@
     const profile = customer.profile || {};
     const providers = linkedProviders(customer);
     return `
-      <div class="customer-session-card">
-        <div class="customer-session-main">
-          <span class="account-avatar">${esc(displayName(customer).slice(0, 1))}</span>
+        <div class="customer-session-card">
+          <div class="customer-session-main">
+          ${avatarHtml(customer, "account-avatar")}
           <div>
             <strong>${esc(displayName(customer))}</strong>
             <span>เข้าสู่ระบบแล้ว${providers.length ? ` · ${providers.map((p) => String(p).toUpperCase()).join(" + ")}` : ""}</span>
@@ -232,5 +248,7 @@
     renderCustomerSummary,
     loadCustomer,
     displayName,
+    pictureUrl,
+    avatarHtml,
   };
 })();

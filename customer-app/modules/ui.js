@@ -85,7 +85,7 @@
     return `
       <section class="card account-shortcut is-logged-in">
         <div class="account-shortcut-head">
-          <span class="account-avatar">${root.utils.escapeHtml(displayName.slice(0, 1))}</span>
+          ${root.auth.avatarHtml(customer, "account-avatar")}
           <div>
             <h2>${root.utils.escapeHtml(displayName)}</h2>
             <p>บัญชีพร้อมใช้งาน</p>
@@ -250,7 +250,13 @@
     if (customer?.logged_in) {
       const name = root.auth?.displayName?.(customer) || "บัญชีของฉัน";
       if (label) label.textContent = name.length > 12 ? `${name.slice(0, 12)}…` : name;
-      if (avatar) avatar.textContent = name.slice(0, 1);
+      if (avatar) {
+        const picture = root.auth?.pictureUrl?.(customer) || "";
+        const initial = root.utils.escapeHtml(name.slice(0, 1));
+        avatar.innerHTML = picture
+          ? `<img src="${root.utils.escapeHtml(picture)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.textContent='${initial}'">`
+          : initial;
+      }
       button.classList.add("is-logged-in");
       button.setAttribute("aria-label", `บัญชีของ ${name}`);
     } else {
@@ -280,11 +286,11 @@
             </div>
           </div>
 
-          <section class="commerce-primary-cta">
-            <button class="primary-btn" type="button" data-commerce-service="wall-normal">จองล้างแอร์</button>
-            <button class="secondary-btn" type="button" data-route="tracking">ติดตามงาน</button>
-            <button class="secondary-btn" type="button" data-contact-service="repair">ติดต่อแอดมิน</button>
-          </section>
+        <section class="commerce-primary-cta">
+          <button class="primary-btn" type="button" data-commerce-service="wall-normal">จองล้างแอร์</button>
+          <button class="secondary-btn" type="button" data-route="urgent">เรียกช่างด่วน</button>
+          <button class="secondary-btn" type="button" data-route="tracking">ติดตามงาน</button>
+        </section>
 
           <section class="card commerce-section">
             <div class="section-head">
