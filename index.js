@@ -53,7 +53,13 @@ const createTechnicianBaseStatusDataHelpers = require("./server/helpers/technici
 const createTechnicianBaseStatusReadOnlyRoutes = require("./server/routes/technicianBaseStatusReadOnly");
 const createTechnicianCalendarReadOnlyRoutes = require("./server/routes/technicianCalendarReadOnly");
 const createTechnicianCalendarWriteRoutes = require("./server/routes/technicianCalendarWrite");
-const { toIsoDate, normWorkDayPayload, countLockedAdvanceJobsForDate } = require("./server/lib/technicianCalendar");
+const {
+  toIsoDate,
+  normWorkDayPayload,
+  countLockedAdvanceJobsForDate,
+  loadLockedAdvanceUsageForDate,
+  validateLockedDaySafeEdit,
+} = require("./server/lib/technicianCalendar");
 const { upsertTechnicianProfile } = require("./server/services/technicianProfileUpsert");
 const createTechnicianCountSummaryReadOnlyRoutes = require("./server/routes/technicianCountSummaryReadOnly");
 const createAdminAiOfficeReadOnlyRoutes = require("./server/routes/adminAiOfficeReadOnly");
@@ -13605,6 +13611,14 @@ if (mode === 'forced') try {
 
     await client.query('COMMIT');
 
+    if (mode === 'forced') {
+      try {
+        await _refreshTechnicianIncomePreviewForJob(job_id, safeTeam, { source: 'job_preview' });
+      } catch (e) {
+        try { console.warn('[income_preview] dispatch_v2 refresh failed', { job_id, error: e.message }); } catch {}
+      }
+    }
+
     // notify (best effort)
     if (mode === 'forced') notifyTechnician(technician_username, `📌 มีงานใหม่ (ยืนยันโดยแอดมิน) งาน #${job_id}`);
     else notifyTechnician(technician_username, `📨 มีข้อเสนองานใหม่ งาน #${job_id} (กดรับภายใน 10 นาที)`);
@@ -20133,11 +20147,11 @@ function normalizeCalendarRow(row, iso, jobCount=0){
   const can = row ? (row.can_accept_advance_job === true || ['advance_only','available_advance','working'].includes(String(row.day_status || ''))) : false;
   const start = can ? (row?.start_time || '09:00') : null;
   const end = can ? (row?.end_time || '18:00') : null;
-  const jobs = can ? Number(row?.max_jobs_per_day || 1) : null;
-  const units = can ? Number(row?.max_units_per_day || 5) : null;
+  const jobs = can ? (row?.max_jobs_per_day == null ? null : Number(row.max_jobs_per_day)) : null;
+  const units = can ? (row?.max_units_per_day == null ? null : Number(row.max_units_per_day)) : null;
   const note = row?.note || null;
   const hasCustom = !!(
-    (can && (start !== '09:00' || end !== '18:00' || jobs !== 1 || units !== 5)) ||
+    (can && (start !== '09:00' || end !== '18:00' || jobs !== null || units !== null)) ||
     String(note || '').trim()
   );
   return {
@@ -20362,6 +20376,8 @@ app.use(createTechnicianCalendarWriteRoutes({
   toIsoDate,
   normWorkDayPayload,
   countLockedAdvanceJobsForDate,
+  loadLockedAdvanceUsageForDate,
+  validateLockedDaySafeEdit,
 }));
 
 // Defect 4/6: technician self-service copy uses the session identity (req.effective.username)

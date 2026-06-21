@@ -325,7 +325,7 @@ function renderTeamPickerModal(){
 
   // primary select
   const primarySel = $("mPrimaryTech");
-  const currentPrimary = primarySel.value || CURRENT?.technician_username || "";
+  const currentPrimary = CURRENT?.technician_username || primarySel.value || "";
   primarySel.innerHTML = '<option value="">-- เลือกช่างหลัก --</option>' + group.map(t=>{
     const name = t.full_name || t.username;
     return `<option value="${t.username}">${safe(name)} (${t.username})</option>`;
@@ -380,6 +380,13 @@ function renderTeamPickerModal(){
 // public wrapper called on tech type/search changes
 function renderTechPickers(){
   renderTeamPickerModal();
+}
+
+function technicianTypeForUsername(username){
+  const u = safe(username).trim();
+  if(!u) return "";
+  const row = (TECHS||[]).find(t => safe(t.username).trim() === u);
+  return safe(row?.employment_type || "company").trim().toLowerCase() || "company";
 }
 
 function setModal(show){
@@ -443,8 +450,9 @@ async function openJob(jobId){
 
     $("mNote").value = safe(CURRENT.customer_note||"");
 
-    // tech type default: urgent -> partner, else company (admin can change)
-    $("mTechType").value = (CURRENT.booking_mode === "urgent") ? "partner" : "company";
+    // Draft reservations must keep the reserved technician visible/preselected.
+    const draftType = technicianTypeForUsername(CURRENT.technician_username);
+    $("mTechType").value = draftType || ((CURRENT.booking_mode === "urgent") ? "partner" : "company");
     renderTechPickers();
 
     // pricing

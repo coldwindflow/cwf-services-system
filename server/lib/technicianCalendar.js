@@ -20,8 +20,8 @@ function normWorkDayPayload(input = {}){
   const canAdvance = day_status === 'advance_only';
   const start_time = canAdvance ? (/^\d{2}:\d{2}$/.test(String(input.start_time || '')) ? String(input.start_time) : '09:00') : null;
   const end_time = canAdvance ? (/^\d{2}:\d{2}$/.test(String(input.end_time || '')) ? String(input.end_time) : '18:00') : null;
-  const max_jobs_per_day = canAdvance ? Math.max(1, Math.min(20, Number(input.max_jobs_per_day || 1))) : null;
-  const max_units_per_day = canAdvance ? Math.max(1, Math.min(99, Number(input.max_units_per_day || 5))) : null;
+  const max_jobs_per_day = canAdvance ? normalizeNullableCap(input.max_jobs_per_day, 20) : null;
+  const max_units_per_day = canAdvance ? normalizeNullableCap(input.max_units_per_day, 99) : null;
   return {
     day_status,
     can_accept_advance_job: canAdvance,
@@ -33,6 +33,26 @@ function normWorkDayPayload(input = {}){
     max_units_per_day,
     note: String(input.note || '').slice(0,500)
   };
+}
+
+function normalizeNullableCap(value, max){
+  if (value === null || value === undefined || value === '') return null;
+  const text = String(value).trim().toLowerCase();
+  if (!text || ['null','none','unlimited','auto','available'].includes(text)) return null;
+  const n = Number(value);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(1, Math.min(Number(max || 99), Math.floor(n)));
+}
+
+function hhmmToMin(value){
+  const m = String(value || '').slice(0,5).match(/^(\d{2}):(\d{2})$/);
+  if (!m) return NaN;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
+function minToHHMM(value){
+  const n = Math.max(0, Math.min(24 * 60, Math.floor(Number(value || 0))));
+  return `${String(Math.floor(n / 60)).padStart(2,'0')}:${String(n % 60).padStart(2,'0')}`;
 }
 
 async function countLockedAdvanceJobsForDate(clientOrPool, username, workDate){
@@ -48,4 +68,92 @@ async function countLockedAdvanceJobsForDate(clientOrPool, username, workDate){
   return Number(q.rows?.[0]?.job_count || 0);
 }
 
-module.exports = { toIsoDate, normWorkDayPayload, countLockedAdvanceJobsForDate };
+async function loadLockedAdvanceUsageForDate(clientOrPool, username, workDate){
+  const q = await clientOrPool.query(`
+    WITH assigned AS (
+      SELECT DISTINCT j.job_id,
+             j.appointment_datetime,
+             GREATEST(1, COALESCE(j.duration_min,60))::int AS duration_min
+        FROM public.jobs j
+        LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$1
+       WHERE (j.technician_username=$1 OR ja.technician_username=$1)
+         AND j.appointment_datetime IS NOT NULL
+         AND (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date = $2::date
+         AND COALESCE(j.job_status,'') NOT IN ('cancelled','canceled')
+    ),
+    item_units AS (
+      SELECT a.job_id, COALESCE(SUM(NULLIF(ji.qty,0)),0)::int AS units
+        FROM assigned a
+        LEFT JOIN public.job_items ji ON ji.job_id=a.job_id
+       GROUP BY a.job_id
+    )
+    SELECT a.job_id,
+           ((EXTRACT(HOUR FROM (a.appointment_datetime AT TIME ZONE 'Asia/Bangkok'))::int * 60)
+             + EXTRACT(MINUTE FROM (a.appointment_datetime AT TIME ZONE 'Asia/Bangkok'))::int) AS start_min,
+           (((EXTRACT(HOUR FROM (a.appointment_datetime AT TIME ZONE 'Asia/Bangkok'))::int * 60)
+             + EXTRACT(MINUTE FROM (a.appointment_datetime AT TIME ZONE 'Asia/Bangkok'))::int)
+             + a.duration_min) AS end_min,
+           GREATEST(COALESCE(i.units,0),1)::int AS units
+      FROM assigned a
+      LEFT JOIN item_units i ON i.job_id=a.job_id
+  `, [username, workDate]);
+  const rows = q.rows || [];
+  const usage = rows.reduce((acc, row) => {
+    const start = Number(row.start_min);
+    const end = Number(row.end_min);
+    acc.jobs_count += 1;
+    acc.units_count += Math.max(1, Number(row.units || 0));
+    if (Number.isFinite(start)) acc.earliest_start_min = Math.min(acc.earliest_start_min, start);
+    if (Number.isFinite(end)) acc.latest_end_min = Math.max(acc.latest_end_min, end);
+    return acc;
+  }, { jobs_count: 0, units_count: 0, earliest_start_min: Infinity, latest_end_min: -Infinity });
+  if (!rows.length) {
+    usage.earliest_start_min = null;
+    usage.latest_end_min = null;
+  }
+  return usage;
+}
+
+function validateLockedDaySafeEdit(payload, usage = {}){
+  const jobs = Number(usage.jobs_count || 0);
+  if (jobs <= 0) return { ok: true };
+  if (!payload || payload.can_accept_advance_job !== true || payload.day_status !== 'advance_only') {
+    return { ok: false, code: 'LOCKED_DAY_CANNOT_CLOSE' };
+  }
+  const startMin = hhmmToMin(payload.start_time);
+  const endMin = hhmmToMin(payload.end_time);
+  if (!Number.isFinite(startMin) || !Number.isFinite(endMin) || endMin <= startMin) {
+    return { ok: false, code: 'LOCKED_DAY_INVALID_WINDOW' };
+  }
+  if (usage.earliest_start_min != null && startMin > Number(usage.earliest_start_min)) {
+    return { ok: false, code: 'LOCKED_DAY_START_CUTS_JOB' };
+  }
+  if (usage.latest_end_min != null && endMin < Number(usage.latest_end_min)) {
+    return { ok: false, code: 'LOCKED_DAY_END_CUTS_JOB' };
+  }
+  if (payload.max_jobs_per_day != null && Number(payload.max_jobs_per_day) < jobs) {
+    return { ok: false, code: 'LOCKED_DAY_MAX_JOBS_BELOW_USAGE' };
+  }
+  const units = Number(usage.units_count || 0);
+  if (payload.max_units_per_day != null && Number(payload.max_units_per_day) < units) {
+    return { ok: false, code: 'LOCKED_DAY_MAX_UNITS_BELOW_USAGE' };
+  }
+  return {
+    ok: true,
+    usage: {
+      jobs_count: jobs,
+      units_count: units,
+      earliest_start: usage.earliest_start_min == null ? null : minToHHMM(usage.earliest_start_min),
+      latest_end: usage.latest_end_min == null ? null : minToHHMM(usage.latest_end_min),
+    },
+  };
+}
+
+module.exports = {
+  toIsoDate,
+  normWorkDayPayload,
+  normalizeNullableCap,
+  countLockedAdvanceJobsForDate,
+  loadLockedAdvanceUsageForDate,
+  validateLockedDaySafeEdit,
+};

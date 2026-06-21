@@ -210,7 +210,9 @@ test("draft reservation uses advisory lock, rechecks exact slot, and picks anony
     tech_type: "company",
     services: [{ job_type: "ล้าง", ac_type: "ผนัง", wash_variant: "ล้างธรรมดา" }],
   });
-  assert.deepEqual(Object.keys(picked).sort(), ["jobs_count", "units_count", "username"]);
+  assert.equal(picked.jobs_count, 0);
+  assert.equal(picked.units_count, 0);
+  assert.equal(picked.scheduled_minutes, 0);
   assert.equal(picked.username, "tech-a");
 });
 
@@ -241,7 +243,13 @@ test("admin review displays and preselects the draft technician reservation", ()
   const adminReview = fs.readFileSync(path.join(repoRoot, "admin-review-v2.js"), "utf8");
   assert.match(adminReview, /ร่างจองช่าง/);
   assert.match(adminReview, /CURRENT\.technician_username/);
-  assert.match(adminReview, /currentPrimary = primarySel\.value \|\| CURRENT\?\.technician_username/);
+  assert.match(adminReview, /currentPrimary = CURRENT\?\.technician_username \|\| primarySel\.value/);
+  assert.match(adminReview, /function technicianTypeForUsername/);
+  assert.match(adminReview, /draftType \|\| \(\(CURRENT\.booking_mode === "urgent"\) \? "partner" : "company"\)/);
+});
+
+test("dispatch_v2 refreshes technician income preview after forced approval", () => {
+  assert.match(source, /app\.post\("\/jobs\/:job_id\/dispatch_v2"[\s\S]*await client\.query\('COMMIT'\);[\s\S]*_refreshTechnicianIncomePreviewForJob\(job_id,\s*safeTeam,\s*\{ source: 'job_preview' \}\)/);
 });
 
 test("technician UI marks draft jobs read-only", () => {

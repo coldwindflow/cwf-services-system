@@ -5,7 +5,13 @@ const express = require("express");
 const { Pool } = require("pg");
 
 const createTechnicianCalendarWriteRoutes = require("../server/routes/technicianCalendarWrite");
-const { toIsoDate, normWorkDayPayload, countLockedAdvanceJobsForDate } = require("../server/lib/technicianCalendar");
+const {
+  toIsoDate,
+  normWorkDayPayload,
+  countLockedAdvanceJobsForDate,
+  loadLockedAdvanceUsageForDate,
+  validateLockedDaySafeEdit,
+} = require("../server/lib/technicianCalendar");
 const { upsertTechnicianProfile } = require("../server/services/technicianProfileUpsert");
 
 // These tests exercise the REAL production route module / helper against a real
@@ -21,9 +27,18 @@ const PG_CONFIG = {
 let pool;
 let server;
 let baseUrl;
+let dbUnavailableReason = "";
 
 test.before(async () => {
   pool = new Pool(PG_CONFIG);
+  try {
+    await pool.query("SELECT 1");
+  } catch (e) {
+    dbUnavailableReason = e.message || "Postgres test database is unavailable";
+    await pool.end().catch(() => {});
+    pool = null;
+    return;
+  }
   await pool.query(`
     CREATE TABLE IF NOT EXISTS public.technician_monthly_work_calendar (
       technician_username TEXT NOT NULL,
@@ -54,6 +69,12 @@ test.before(async () => {
     CREATE TABLE IF NOT EXISTS public.job_assignments (
       job_id BIGINT,
       technician_username TEXT
+    )
+  `);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS public.job_items (
+      job_id BIGINT,
+      qty INT
     )
   `);
   await pool.query(`
@@ -88,6 +109,8 @@ test.before(async () => {
     toIsoDate,
     normWorkDayPayload,
     countLockedAdvanceJobsForDate,
+    loadLockedAdvanceUsageForDate,
+    validateLockedDaySafeEdit,
   }));
   app._setSessionUsername = (u) => { sessionUsername = u; };
 
@@ -98,14 +121,19 @@ test.before(async () => {
 });
 
 test.after(async () => {
-  await new Promise((resolve) => server.close(resolve));
-  await pool.end();
+  if (server) await new Promise((resolve) => server.close(resolve));
+  if (pool) await pool.end();
 });
 
-test.beforeEach(async () => {
+test.beforeEach(async (t) => {
+  if (dbUnavailableReason) {
+    t.skip(`Postgres integration database unavailable: ${dbUnavailableReason}`);
+    return;
+  }
   await pool.query("DELETE FROM public.technician_monthly_work_calendar");
   await pool.query("DELETE FROM public.jobs");
   await pool.query("DELETE FROM public.job_assignments");
+  await pool.query("DELETE FROM public.job_items");
   await pool.query("DELETE FROM public.technician_profiles");
 });
 
@@ -119,8 +147,15 @@ async function putJson(path, body) {
   return { status: res.status, data };
 }
 
+function dbTest(name, fn) {
+  test(name, async (t) => {
+    if (dbUnavailableReason) return t.skip(`Postgres integration database unavailable: ${dbUnavailableReason}`);
+    return fn(t);
+  });
+}
+
 // ============ Blocker 2: PUT /tech/work-calendar/day real contract ============
-test("Blocker 2: single-day save via real route persists a real row keyed by req.effective.username", async () => {
+dbTest("Blocker 2: single-day save via real route persists a real row keyed by req.effective.username", async () => {
   global.__cwfTestApp._setSessionUsername("p1");
   const body = {
     work_date: "2026-07-10",
@@ -145,7 +180,7 @@ test("Blocker 2: single-day save via real route persists a real row keyed by req
   assert.equal(row.rows[0].can_accept_advance_job, true);
 });
 
-test("Blocker 2: username is sourced from req.effective.username, not client-supplied body", async () => {
+dbTest("Blocker 2: username is sourced from req.effective.username, not client-supplied body", async () => {
   global.__cwfTestApp._setSessionUsername("session-user");
   const body = {
     // Even if the body carried an unrelated "username"-like field, the route never reads it.
@@ -162,7 +197,7 @@ test("Blocker 2: username is sourced from req.effective.username, not client-sup
   assert.equal(row.rows[0].technician_username, "session-user");
 });
 
-test("Blocker 2: reading the month back after save shows the same saved date", async () => {
+dbTest("Blocker 2: reading the month back after save shows the same saved date", async () => {
   global.__cwfTestApp._setSessionUsername("p1");
   await putJson("/tech/work-calendar/day", { work_date: "2026-07-12", can_accept_advance_job: true });
 
@@ -176,20 +211,50 @@ test("Blocker 2: reading the month back after save shows the same saved date", a
   assert.equal(monthRows.rows[0].can_accept_advance_job, true);
 });
 
-test("Blocker 2: locked day (existing job) is rejected with 409 and no row mutation", async () => {
+dbTest("locked day safe edit can increase capacity or switch to unlimited", async () => {
   global.__cwfTestApp._setSessionUsername("p1");
   await pool.query(
     `INSERT INTO public.jobs (technician_username, appointment_datetime, job_status) VALUES ('p1', '2026-07-13 10:00:00+07', 'assigned')`
   );
-  const { status, data } = await putJson("/tech/work-calendar/day", { work_date: "2026-07-13", can_accept_advance_job: true });
+  const { status, data } = await putJson("/tech/work-calendar/day", {
+    work_date: "2026-07-13",
+    can_accept_advance_job: true,
+    start_time: "09:00",
+    end_time: "18:00",
+    max_jobs_per_day: null,
+    max_units_per_day: null,
+  });
+  assert.equal(status, 200);
+  assert.equal(data.locked, true);
+  const row = await pool.query(`SELECT max_jobs_per_day, max_units_per_day FROM public.technician_monthly_work_calendar WHERE work_date='2026-07-13'`);
+  assert.equal(row.rows.length, 1);
+  assert.equal(row.rows[0].max_jobs_per_day, null);
+  assert.equal(row.rows[0].max_units_per_day, null);
+});
+
+dbTest("locked day unsafe cap decrease is rejected with 409 and no row mutation", async () => {
+  global.__cwfTestApp._setSessionUsername("p1");
+  const job = await pool.query(
+    `INSERT INTO public.jobs (technician_username, appointment_datetime, job_status) VALUES ('p1', '2026-07-14 10:00:00+07', 'assigned') RETURNING job_id`
+  );
+  await pool.query(`INSERT INTO public.job_items (job_id, qty) VALUES ($1, 3)`, [job.rows[0].job_id]);
+  const { status, data } = await putJson("/tech/work-calendar/day", {
+    work_date: "2026-07-14",
+    can_accept_advance_job: true,
+    start_time: "09:00",
+    end_time: "18:00",
+    max_jobs_per_day: 1,
+    max_units_per_day: 2,
+  });
   assert.equal(status, 409);
   assert.equal(data.locked, true);
-  const row = await pool.query(`SELECT 1 FROM public.technician_monthly_work_calendar WHERE work_date='2026-07-13'`);
+  assert.equal(data.code, "LOCKED_DAY_MAX_UNITS_BELOW_USAGE");
+  const row = await pool.query(`SELECT 1 FROM public.technician_monthly_work_calendar WHERE work_date='2026-07-14'`);
   assert.equal(row.rows.length, 0);
 });
 
 // ============ Blocker 3: admin technician profile UPSERT INSERT path ============
-test("Blocker 3: existing profile is updated and read-back matches submitted values", async () => {
+dbTest("Blocker 3: existing profile is updated and read-back matches submitted values", async () => {
   await pool.query(
     `INSERT INTO public.technician_profiles (username, technician_code, employment_type, customer_slot_visible) VALUES ('c1','C001','company',false)`
   );
@@ -215,7 +280,7 @@ test("Blocker 3: existing profile is updated and read-back matches submitted val
   assert.equal(row.rows[0].customer_slot_visible, true);
 });
 
-test("Blocker 3: first-time insert (no existing profile row) sets employment_type and customer_slot_visible on INSERT, not only ON CONFLICT", async () => {
+dbTest("Blocker 3: first-time insert (no existing profile row) sets employment_type and customer_slot_visible on INSERT, not only ON CONFLICT", async () => {
   const before = await pool.query(`SELECT 1 FROM public.technician_profiles WHERE username='new1'`);
   assert.equal(before.rows.length, 0);
 
