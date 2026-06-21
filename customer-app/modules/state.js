@@ -2,11 +2,13 @@
   "use strict";
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
-  const SCHEDULED_STORAGE_KEY = "cwf_customer_app_v2_scheduled_v3";
+  const SCHEDULED_STORAGE_KEY = "cwf_customer_app_v2_scheduled_v4";
   const SCHEDULED_LEGACY_STORAGE_KEYS = [
+    "cwf_customer_app_v2_scheduled_v3",
     "cwf_customer_app_v2_scheduled_v2",
   ];
   const SCHEDULED_STORAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
+  const MAX_SCHEDULED_STEP = 5;
 
   function bangkokTodayYmd() {
     try {
@@ -23,20 +25,59 @@
     }
   }
 
+  function defaultServiceLine(index) {
+    return {
+      line_id: `line-${Date.now().toString(36)}-${index || 1}`,
+      job_type: "ล้าง",
+      ac_type: "ผนัง",
+      btu: 12000,
+      machine_count: 1,
+      wash_variant: "ล้างธรรมดา",
+    };
+  }
+
+  function normalizeRestoredServices(restored) {
+    const raw = Array.isArray(restored.services) && restored.services.length
+      ? restored.services
+      : [{
+          line_id: "line-1",
+          job_type: restored.job_type || "ล้าง",
+          ac_type: restored.ac_type || "ผนัง",
+          btu: restored.btu || 12000,
+          machine_count: restored.machine_count || 1,
+          wash_variant: restored.wash_variant || "ล้างธรรมดา",
+        }];
+    return raw.map((line, index) => {
+      const acType = String(line.ac_type || "ผนัง").trim();
+      const machineCount = Math.max(1, Math.min(10, Number(line.machine_count || 1)));
+      return {
+        line_id: String(line.line_id || `line-${index + 1}`).trim() || `line-${index + 1}`,
+        job_type: "ล้าง",
+        ac_type: acType,
+        btu: Number(line.btu || 12000),
+        machine_count: machineCount,
+        wash_variant: acType === "ผนัง" ? String(line.wash_variant || "ล้างธรรมดา").trim() : "",
+      };
+    });
+  }
+
   function defaultScheduledDraft() {
     const today = bangkokTodayYmd();
+    const firstLine = defaultServiceLine(1);
     return {
       service_kind: "clean",
       job_type: "ล้าง",
-      ac_type: "ผนัง",
-      wash_variant: "ล้างธรรมดา",
+      ac_type: firstLine.ac_type,
+      wash_variant: firstLine.wash_variant,
       repair_variant: "",
-      btu: "12000",
-      machine_count: 1,
+      btu: String(firstLine.btu),
+      machine_count: firstLine.machine_count,
+      services: [firstLine],
       date: today,
       calendar_month: today.slice(0, 7),
       tech_type: "company",
       selectedSlot: null,
+      allow_time_proposal: false,
       customer_name: "",
       customer_phone: "",
       address_text: "",
@@ -61,6 +102,14 @@
     catch (_) { /* ignore */ }
   }
 
+  function removeScheduledStorage() {
+    safeSessionRemove();
+    for (const key of SCHEDULED_LEGACY_STORAGE_KEYS) {
+      try { window.sessionStorage.removeItem(key); }
+      catch (_) { /* ignore */ }
+    }
+  }
+
   const state = {
     currentRoute: "home",
     bookingMode: null,
@@ -78,12 +127,13 @@
     profileAddressForm: { editing: false, status: "idle", error: "", success: "" },
     scheduledWizard: {
       step: 1,
-      maxStep: 3,
+      maxStep: MAX_SCHEDULED_STEP,
       error: "",
     },
     scheduledPreview: {
       pricing: { status: "idle", data: null, error: "" },
       availability: { status: "idle", data: null, error: "", query_key: "", loaded_at: "" },
+      calendar: { status: "idle", data: null, error: "", query_key: "", loaded_at: "" },
     },
     scheduledSubmit: {
       status: "idle",
@@ -139,19 +189,20 @@
     },
     resetScheduledDraft() {
       this.draft.scheduled = defaultScheduledDraft();
-      this.scheduledWizard = { step: 1, maxStep: 3, error: "" };
+      this.scheduledWizard = { step: 1, maxStep: MAX_SCHEDULED_STEP, error: "" };
       this.scheduledPreview = {
         pricing: { status: "idle", data: null, error: "" },
         availability: { status: "idle", data: null, error: "", query_key: "", loaded_at: "" },
+        calendar: { status: "idle", data: null, error: "", query_key: "", loaded_at: "" },
       };
       this.scheduledSubmit = { status: "idle", error: "", result: null };
-      safeSessionRemove();
+      removeScheduledStorage();
     },
     persistScheduledDraft() {
       const payload = {
-        version: 3,
+        version: 4,
         saved_at: Date.now(),
-        step: Math.max(1, Math.min(3, Number(this.scheduledWizard?.step || 1))),
+        step: Math.max(1, Math.min(MAX_SCHEDULED_STEP, Number(this.scheduledWizard?.step || 1))),
         draft: this.draft.scheduled || defaultScheduledDraft(),
       };
       safeSessionSet(JSON.stringify(payload));
@@ -175,9 +226,9 @@
       if (!raw) return false;
       try {
         const parsed = JSON.parse(raw);
-        if (!parsed || (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3) || !parsed.draft) return false;
+        if (!parsed || (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3 && parsed.version !== 4) || !parsed.draft) return false;
         if (!Number.isFinite(parsed.saved_at) || Date.now() - parsed.saved_at > SCHEDULED_STORAGE_TTL_MS) {
-          safeSessionRemove();
+          removeScheduledStorage();
           return false;
         }
         const defaults = defaultScheduledDraft();
@@ -185,7 +236,13 @@
         restored.service_kind = "clean";
         restored.job_type = "ล้าง";
         restored.repair_variant = "";
-        restored.machine_count = Math.max(1, Math.min(10, Number(restored.machine_count || 1)));
+        restored.services = normalizeRestoredServices(restored);
+        const first = restored.services[0] || defaultServiceLine(1);
+        restored.ac_type = first.ac_type;
+        restored.wash_variant = first.wash_variant || "";
+        restored.btu = String(first.btu || 12000);
+        restored.machine_count = Math.max(1, Math.min(10, Number(first.machine_count || 1)));
+        restored.allow_time_proposal = restored.allow_time_proposal === true;
         if (!restored.date || restored.date < bangkokTodayYmd()) {
           restored.date = bangkokTodayYmd();
           restored.selectedSlot = null;
@@ -193,19 +250,19 @@
         restored.calendar_month = String(restored.calendar_month || restored.date.slice(0, 7));
         this.draft.scheduled = restored;
         const parsedStep = Number(parsed.step || 1);
-        const nextStep = fromLegacy || parsed.version < 3
+        const nextStep = fromLegacy || parsed.version < 4
           ? (parsedStep >= 4 ? 1 : Math.max(1, Math.min(3, parsedStep)))
-          : Math.max(1, Math.min(3, parsedStep));
+          : Math.max(1, Math.min(MAX_SCHEDULED_STEP, parsedStep));
         this.scheduledWizard = {
           ...this.scheduledWizard,
           step: nextStep,
-          maxStep: 3,
+          maxStep: MAX_SCHEDULED_STEP,
           error: "",
         };
         this.persistScheduledDraft();
         return true;
       } catch (_) {
-        safeSessionRemove();
+        removeScheduledStorage();
         return false;
       }
     },
@@ -281,8 +338,8 @@
         ...(this.scheduledWizard || {}),
         ...(patch || {}),
       };
-      this.scheduledWizard.maxStep = 3;
-      this.scheduledWizard.step = Math.max(1, Math.min(3, Number(this.scheduledWizard.step || 1)));
+      this.scheduledWizard.maxStep = MAX_SCHEDULED_STEP;
+      this.scheduledWizard.step = Math.max(1, Math.min(MAX_SCHEDULED_STEP, Number(this.scheduledWizard.step || 1)));
       this.persistScheduledDraft();
     },
     setScheduledPreview(name, patch) {

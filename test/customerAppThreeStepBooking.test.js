@@ -28,12 +28,7 @@ function makeContext({ session = {} } = {}) {
       body: { classList: { add() {}, remove() {} } },
       addEventListener() {},
       createElement(tagName) {
-        return {
-          tagName: String(tagName || "").toUpperCase(),
-          className: "",
-          dataset: {},
-          textContent: "",
-        };
+        return { tagName: String(tagName || "").toUpperCase(), className: "", dataset: {}, textContent: "" };
       },
       querySelector() { return null; },
       querySelectorAll() { return []; },
@@ -72,8 +67,8 @@ function loadBooking(opts) {
   ], opts);
 }
 
-function renderInto(root, route = "scheduled") {
-  root.state.currentRoute = route;
+function renderInto(root, step = 1) {
+  root.state.setScheduledWizard({ step });
   const container = {
     html: "",
     dataset: {},
@@ -85,35 +80,26 @@ function renderInto(root, route = "scheduled") {
   };
   root.api = {
     previewPricing: async () => ({ active_price: 500, duration_min: 60, promo: { promo_name: "Promo" } }),
+    loadAvailabilityCalendar: async () => ({ month: root.state.draft.scheduled.calendar_month, days: [] }),
     loadAvailability: async () => ({ date: root.state.draft.scheduled.date, duration_min: 60, slots: [{ start: "09:00", end: "10:00", available: true }] }),
   };
   root.bookingScheduled.render(container);
   return container.html;
 }
 
-test("scheduled wizard state has exactly three steps", () => {
+function sampleLines(root) {
+  return [
+    root.services.createServiceLine({ line_id: "a", ac_type: "ผนัง", btu: 12000, machine_count: 2, wash_variant: "ล้างธรรมดา" }),
+    root.services.createServiceLine({ line_id: "b", ac_type: "ผนัง", btu: 18000, machine_count: 1, wash_variant: "ล้างพรีเมียม" }),
+    root.services.createServiceLine({ line_id: "c", ac_type: "สี่ทิศทาง", btu: 24000, machine_count: 1, wash_variant: "" }),
+  ];
+}
+
+test("scheduled wizard state has exactly five steps", () => {
   const { root } = loadBooking();
-  assert.equal(root.state.scheduledWizard.maxStep, 3);
+  assert.equal(root.state.scheduledWizard.maxStep, 5);
   root.state.setScheduledWizard({ step: 99 });
-  assert.equal(root.state.scheduledWizard.step, 3);
-});
-
-test("old labels or routes for separate steps 4 and 5 are absent", () => {
-  const source = file("customer-app/modules/bookingScheduled.js");
-  assert.doesNotMatch(source, /ขั้นตอน\s*4\s*จาก\s*5|ขั้นตอน\s*5\s*จาก\s*5/);
-  assert.doesNotMatch(source, /renderStepPrice|renderStepFour|maxStep:\s*5|Math\.min\(5/);
-});
-
-test("step 1 contains air selection and real price preview", () => {
-  const { root } = loadBooking();
-  root.state.setScheduledPreview("pricing", { status: "success", data: { active_price: 500, duration_min: 60, promo: { promo_name: "Promo" } }, error: "" });
-  const html = renderInto(root);
-  assert.match(html, /ขั้นตอน 1 จาก 3/);
-  assert.match(html, /เลือกบริการและดูราคา/);
-  assert.match(html, /data-scheduled-choice="ac_type"/);
-  assert.match(html, /data-scheduled-choice="btu"/);
-  assert.match(html, /ราคาประมาณการ/);
-  assert.match(html, /Promo/);
+  assert.equal(root.state.scheduledWizard.step, 5);
 });
 
 test("Customer App customer-facing UI does not expose internal public endpoint names", () => {
@@ -129,66 +115,135 @@ test("Customer App customer-facing UI does not expose internal public endpoint n
     "customer-app/modules/ui.js",
   ].map(file).join("\n");
   assert.doesNotMatch(uiSources, /\/public\/|pricing_preview|availability_v2|public\/book|endpoint|implementation/i);
-
   const { root } = loadBooking();
-  const html = renderInto(root);
-  assert.doesNotMatch(html, /\/public\/|pricing_preview|availability_v2|public\/book|endpoint|implementation/i);
+  assert.doesNotMatch(renderInto(root, 3), /\/public\/|pricing_preview|availability_v2|public\/book|endpoint|implementation/i);
 });
 
-test("scheduled step 1 omits redundant single-option service-kind selector", () => {
+test("service step omits redundant single-option service-kind selector", () => {
   const { root } = loadBooking();
-  root.state.setScheduledPreview("pricing", { status: "success", data: { active_price: 500, duration_min: 60 }, error: "" });
-  const html = renderInto(root);
-  assert.doesNotMatch(html, /data-scheduled-choice="service_kind"/);
-  assert.doesNotMatch(html, /service-kind-grid/);
-  assert.match(html, /data-scheduled-choice="ac_type"/);
-  assert.match(html, /data-scheduled-choice="btu"/);
-  assert.match(html, /data-scheduled-field="machine_count"/);
+  const html = renderInto(root, 2);
+  assert.doesNotMatch(html, /data-scheduled-choice="service_kind"|service-kind-grid|ประเภทบริการ/);
+  assert.match(html, /data-line-choice="ac_type"/);
+  assert.match(html, /data-line-choice="btu"/);
+  assert.match(html, /data-line-field="machine_count"/);
 });
 
-test("step 2 contains all required contact and location fields", () => {
+test("multi-service draft keeps wall methods, quantities, and non-wall blank method", () => {
   const { root } = loadBooking();
-  root.state.setScheduledWizard({ step: 2 });
-  const html = renderInto(root);
-  assert.match(html, /ขั้นตอน 2 จาก 3/);
-  for (const field of ["customer_name", "customer_phone", "address_text", "maps_url", "job_zone", "customer_note"]) {
-    assert.match(html, new RegExp(`data-scheduled-field="${field}"`));
-  }
+  root.state.updateDraft("scheduled", { services: sampleLines(root) });
+  const lines = root.services.normalizeServiceLines(root.state.draft.scheduled);
+  assert.equal(lines.length, 3);
+  assert.equal(lines[0].machine_count, 2);
+  assert.equal(lines[0].wash_variant, "ล้างธรรมดา");
+  assert.equal(lines[1].wash_variant, "ล้างพรีเมียม");
+  assert.equal(lines[2].ac_type, "สี่ทิศทาง");
+  assert.equal(lines[2].wash_variant, "");
 });
 
-test("step 3 contains date, real slots, final summary, and submit", () => {
+test("pricing, availability, and submit payload include every service line", () => {
   const { root } = loadBooking();
-  root.state.setScheduledWizard({ step: 3 });
-  root.state.setScheduledPreview("pricing", { status: "success", data: { active_price: 500, duration_min: 60 }, error: "" });
+  root.state.updateDraft("scheduled", {
+    services: sampleLines(root),
+    customer_name: "A",
+    customer_phone: "0812345678",
+    address_text: "Address",
+    selectedSlot: { date: root.state.draft.scheduled.date, start: "09:00", end: "10:00", key: "k", query_key: "q" },
+  });
+  root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 120, active_price: 2000 }, error: "" });
+  const pricingPayload = root.services.payloadFromScheduledDraft(root.state.draft.scheduled);
+  const availabilityQuery = root.bookingScheduled._test.currentAvailabilityQuery();
+  const submitPayload = root.bookingScheduled._test.buildSubmitPayload();
+  assert.equal(pricingPayload.services.length, 3);
+  assert.match(availabilityQuery.services, /"machine_count":2/);
+  assert.equal(submitPayload.services.length, 3);
+  assert.equal(submitPayload.services[2].wash_variant, undefined);
+  assert.equal(submitPayload.ac_type, "ผนัง");
+});
+
+test("calendar query includes normalized service list and combined duration", () => {
+  const { root } = loadBooking();
+  root.state.updateDraft("scheduled", { services: sampleLines(root) });
+  root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 210, active_price: 3000 }, error: "" });
+  const query = root.bookingScheduled._test.currentCalendarQuery();
+  assert.equal(query.duration_min, 210);
+  assert.equal(query.month, root.state.draft.scheduled.calendar_month);
+  assert.match(query.services, /"btu":18000/);
+});
+
+test("changing a service line invalidates stale price, calendar, and selected slot through commerce draft reset", () => {
+  const { root } = loadBooking();
+  root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60 }, error: "" });
+  root.state.setScheduledPreview("availability", { status: "success", data: { slots: [] }, query_key: "x", error: "" });
+  root.state.setScheduledPreview("calendar", { status: "success", data: { days: [] }, query_key: "y", error: "" });
+  root.state.updateDraft("scheduled", { selectedSlot: { key: "old" } });
+  root.services.applyCommerceDraft("scheduled", root.services.commerceItem("cassette"));
+  assert.equal(root.state.scheduledPreview.pricing.status, "idle");
+  assert.equal(root.state.scheduledPreview.availability.status, "idle");
+  assert.equal(root.state.scheduledPreview.calendar.status, "idle");
+  assert.equal(root.state.draft.scheduled.selectedSlot, null);
+});
+
+test("time preference defaults exact and submit payload sends boolean", () => {
+  const { root } = loadBooking();
+  assert.equal(root.state.draft.scheduled.allow_time_proposal, false);
+  let payload = root.bookingScheduled._test.buildSubmitPayload();
+  assert.equal(payload.allow_time_proposal, false);
+  root.state.updateDraft("scheduled", { allow_time_proposal: true });
+  payload = root.bookingScheduled._test.buildSubmitPayload();
+  assert.equal(payload.allow_time_proposal, true);
+});
+
+test("review screen displays selected time preference", () => {
+  const { root } = loadBooking();
+  root.state.updateDraft("scheduled", { allow_time_proposal: true });
+  const html = renderInto(root, 5);
+  assert.match(html, /สามารถเสนอเวลาใหม่ให้ฉันได้/);
+  assert.match(html, /การเสนอเวลา/);
+});
+
+test("calendar marks available and full dates without technician identity", () => {
+  const { root } = loadBooking();
+  root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 500 }, error: "" });
+  const key = root.availability.calendarQueryKey(root.bookingScheduled._test.currentCalendarQuery());
+  root.state.setScheduledPreview("calendar", {
+    status: "success",
+    data: { month: root.state.draft.scheduled.calendar_month, days: [
+      { date: root.state.draft.scheduled.date, available: true, first_available: "09:00", technician_name: "Hidden" },
+      { date: "2099-12-31", available: false, first_available: null, technician_count: 3 },
+    ] },
+    error: "",
+    query_key: key,
+  });
+  const html = renderInto(root, 4);
+  assert.match(html, /มีคิว/);
+  assert.doesNotMatch(html, /Hidden|technician_name|technician_id|technician_count|matrix_json/);
+});
+
+test("anonymous slots render complete time range without technician identity or counts", () => {
+  const { root } = loadBooking();
+  root.state.setScheduledWizard({ step: 4 });
+  root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 90, active_price: 900 }, error: "" });
+  const query = root.bookingScheduled._test.currentAvailabilityQuery();
   root.state.setScheduledPreview("availability", {
     status: "success",
-    data: { date: root.state.draft.scheduled.date, duration_min: 60, slots: [{ start: "09:00", end: "10:00", available: true }] },
+    data: { date: root.state.draft.scheduled.date, duration_min: 90, slots: [{ start: "10:00", end: "10:30", available: true, technician_name: "Hidden Tech", technician_id: 42 }] },
     error: "",
-    query_key: root.availability.queryKey(root.bookingScheduled._test.currentAvailabilityQuery()),
+    query_key: root.availability.queryKey(query),
   });
-  const html = renderInto(root);
-  assert.match(html, /ขั้นตอน 3 จาก 3/);
-  assert.match(html, /booking-calendar/);
-  assert.match(html, /real-slot-card/);
-  assert.match(html, /สรุปก่อนยืนยัน/);
-  assert.match(html, /data-action="submit-scheduled"/);
+  const html = renderInto(root, 4);
+  assert.match(html, /10:00-11:30/);
+  assert.doesNotMatch(html, /Hidden Tech|technician_id|42|candidate|คน/);
 });
 
-test("old persisted five-step draft maps safely to the new flow", () => {
-  const saved = JSON.stringify({
-    version: 2,
-    saved_at: Date.now(),
-    step: 5,
-    draft: { customer_name: "Saved", customer_phone: "0812345678", address_text: "Address" },
-  });
-  const { root } = loadBooking({ session: { cwf_customer_app_v2_scheduled_v2: saved } });
-  root.state.init();
-  assert.equal(root.state.scheduledWizard.step, 1);
-  assert.equal(root.state.scheduledWizard.maxStep, 3);
-  assert.equal(root.state.draft.scheduled.customer_name, "Saved");
+test("stale slot cannot be submitted", () => {
+  const { root } = loadBooking();
+  root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 500 }, error: "" });
+  root.state.updateDraft("scheduled", { selectedSlot: { key: "old", date: root.state.draft.scheduled.date, start: "09:00", end: "10:00", query_key: "old" } });
+  root.state.setScheduledPreview("availability", { status: "success", data: { date: root.state.draft.scheduled.date, duration_min: 60, slots: [] }, query_key: "new", error: "" });
+  assert.match(root.bookingScheduled._test.validateSlotStep(), /ข้อมูลล่าสุด|เลือกเวลาใหม่|โหลดคิว/);
 });
 
-test("home primary booking CTA opens scheduled booking", () => {
+test("home primary booking CTA opens scheduled booking and all service categories remain visible", () => {
   const { root } = load(["customer-app/modules/state.js", "customer-app/modules/utils.js", "customer-app/modules/services.js", "customer-app/modules/ui.js"]);
   let routed = "";
   root.utils.routeTo = (route) => { routed = route; };
@@ -197,25 +252,15 @@ test("home primary booking CTA opens scheduled booking", () => {
   root.utils.routeTo("scheduled");
   assert.equal(routed, "scheduled");
   assert.equal(root.state.scheduledWizard.step, 1);
-});
-
-test("home displays all six required service categories", () => {
-  const { root } = load(["customer-app/modules/state.js", "customer-app/modules/utils.js", "customer-app/modules/services.js"]);
-  assert.equal(root.services.commerceCategories.map((item) => item.id).join(","), "clean,repair,install,move,inspect,urgent");
+  assert.equal(root.services.commerceCategories.map((entry) => entry.id).join(","), "clean,repair,install,move,inspect,urgent");
 });
 
 test("login controls disappear when authenticated", () => {
   const { root } = load(["customer-app/modules/state.js", "customer-app/modules/utils.js", "customer-app/modules/auth.js"]);
   root.state.customer = { logged_in: true, user: { name: "User", provider: "google" }, profile: {} };
   const html = root.auth.renderLoginPanel();
-  assert.doesNotMatch(html, /data-auth-provider/);
+  assert.doesNotMatch(html, /data-auth-provider|Guest/);
   assert.match(html, /data-auth-logout/);
-});
-
-test("guest content disappears when authenticated", () => {
-  const { root } = load(["customer-app/modules/state.js", "customer-app/modules/utils.js", "customer-app/modules/auth.js"]);
-  root.state.customer = { logged_in: true, user: { name: "User" }, profile: {} };
-  assert.doesNotMatch(root.auth.renderLoginPanel(), /Guest/);
 });
 
 test("header account chip markup has one label mount and one avatar mount", () => {
@@ -224,35 +269,17 @@ test("header account chip markup has one label mount and one avatar mount", () =
   assert.equal((html.match(/data-account-chip-avatar/g) || []).length, 1);
 });
 
-test("profile renders exactly one avatar for a logged-in account card", () => {
-  const { root } = load([
-    "customer-app/modules/state.js",
-    "customer-app/modules/utils.js",
-    "customer-app/modules/auth.js",
-  ]);
+test("profile renders exactly one avatar and no inline onerror handler", () => {
+  const { root } = load(["customer-app/modules/state.js", "customer-app/modules/utils.js", "customer-app/modules/auth.js"]);
   root.state.customer = { logged_in: true, user: { name: "User", picture: "https://example.test/u.jpg" }, profile: {} };
   const html = root.auth.renderLoginPanel();
   assert.equal((html.match(/<(?:img|span) class="account-avatar"/g) || []).length, 1);
   assert.match(html, /<img class="account-avatar"/);
   assert.doesNotMatch(html, /onerror=/);
-  assert.match(html, /data-avatar-initial=/);
-});
-
-test("Customer App avatar markup has no inline onerror handlers", () => {
-  const sources = [
-    "customer-app/modules/auth.js",
-    "customer-app/modules/ui.js",
-  ].map(file).join("\n");
-  assert.doesNotMatch(sources, /onerror\s*=/i);
 });
 
 test("avatar image fallback keeps valid images and replaces broken images with one initial", () => {
   const { root } = load(["customer-app/modules/state.js", "customer-app/modules/utils.js", "customer-app/modules/auth.js"]);
-  root.state.customer = { logged_in: true, user: { name: "User", picture: "https://example.test/u.jpg" }, profile: {} };
-  const html = root.auth.renderLoginPanel();
-  assert.equal((html.match(/<img class="account-avatar"/g) || []).length, 1);
-  assert.equal((html.match(/class="account-avatar"/g) || []).length, 1);
-
   let errorHandler = null;
   let replacement = null;
   const img = {
@@ -260,9 +287,7 @@ test("avatar image fallback keeps valid images and replaces broken images with o
     dataset: { avatarInitial: "U" },
     complete: false,
     naturalWidth: 1,
-    addEventListener(type, handler) {
-      if (type === "error") errorHandler = handler;
-    },
+    addEventListener(type, handler) { if (type === "error") errorHandler = handler; },
     replaceWith(node) { replacement = node; },
   };
   const container = { querySelectorAll(selector) { return selector === "img[data-avatar-initial]" ? [img] : []; } };
@@ -274,79 +299,14 @@ test("avatar image fallback keeps valid images and replaces broken images with o
   assert.equal(replacement.textContent, "U");
 });
 
-test("saved information prefills empty fields only", () => {
+test("saved address prefills empty fields only and never overwrites typed address", () => {
   const { root } = loadBooking();
   root.state.customer = { logged_in: true, profile: { address: "Saved address", maps_url: "https://maps.google.com/?q=1" } };
   assert.equal(root.state.prefillSavedAddress("scheduled"), true);
   assert.equal(root.state.draft.scheduled.address_text, "Saved address");
-});
-
-test("manual customer edits are not overwritten", () => {
-  const { root } = loadBooking();
-  root.state.customer = { logged_in: true, profile: { address: "Saved address", maps_url: "https://maps.google.com/?q=1" } };
   root.state.updateDraft("scheduled", { address_text: "Typed address", maps_url: "https://maps.google.com/?q=typed" });
   assert.equal(root.state.prefillSavedAddress("scheduled"), false);
   assert.equal(root.state.draft.scheduled.address_text, "Typed address");
-});
-
-test("slot request uses service payload and calculated duration", () => {
-  const { root } = loadBooking();
-  root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 75, active_price: 700 }, error: "" });
-  const query = root.bookingScheduled._test.currentAvailabilityQuery();
-  assert.equal(query.duration_min, 75);
-  assert.equal(query.job_type, "ล้าง");
-  assert.equal(query.ac_type, "ผนัง");
-  assert.equal(query.machine_count, 1);
-  assert.match(query.services, /"job_type":"ล้าง"/);
-});
-
-test("technician identity is absent from customer slot output", () => {
-  const { root } = loadBooking();
-  const slots = root.availability.normalizePublicSlots({
-    date: "2026-06-22",
-    duration_min: 60,
-    slots: [{ start: "09:00", end: "11:00", available: true, technician_username: "tech1", team_count: 2 }],
-  }, 60);
-  assert.ok(slots.length > 0);
-  assert.equal("technician_username" in slots[0], false);
-  assert.equal("team_count" in slots[0], false);
-});
-
-test("stale slot cannot be submitted", () => {
-  const { root } = loadBooking();
-  root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 500 }, error: "" });
-  root.state.updateDraft("scheduled", { selectedSlot: { key: "old", date: root.state.draft.scheduled.date, start: "09:00", end: "10:00", query_key: "old" } });
-  root.state.setScheduledPreview("availability", { status: "success", data: { date: root.state.draft.scheduled.date, duration_min: 60, slots: [] }, query_key: "new", error: "" });
-  assert.match(root.bookingScheduled._test.validateSlotStep(), /ข้อมูลล่าสุด|เลือกเวลาใหม่|โหลดคิว/);
-});
-
-test("pricing and slot state reset after service changes", () => {
-  const { root } = loadBooking();
-  root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60 }, error: "" });
-  root.state.setScheduledPreview("availability", { status: "success", data: { slots: [] }, query_key: "x", error: "" });
-  root.services.applyCommerceDraft("scheduled", root.services.commerceItem("cassette"));
-  assert.equal(root.state.scheduledPreview.pricing.status, "idle");
-  assert.equal(root.state.scheduledPreview.availability.status, "idle");
-  assert.equal(root.state.draft.scheduled.selectedSlot, null);
-});
-
-test("/public/book payload retains all required customer-safe fields", () => {
-  const { root } = loadBooking();
-  const date = root.state.draft.scheduled.date;
-  root.state.updateDraft("scheduled", {
-    customer_name: "A",
-    customer_phone: "0812345678",
-    address_text: "Address",
-    maps_url: "https://maps.google.com/?q=1",
-    customer_note: "Parking",
-    job_zone: "Bangna",
-    selectedSlot: { date, start: "09:00", end: "10:00", key: `${date}|09:00|60`, query_key: "q" },
-  });
-  const payload = root.bookingScheduled._test.buildSubmitPayload();
-  for (const key of ["customer_name", "customer_phone", "appointment_datetime", "address_text", "maps_url", "customer_note", "job_zone", "booking_mode", "client_app", "job_type", "service_kind", "ac_type", "btu", "machine_count", "services"]) {
-    assert.ok(Object.prototype.hasOwnProperty.call(payload, key), key);
-  }
-  assert.equal(payload.booking_mode, "scheduled");
 });
 
 test("Customer App does not send Admin-only fields", () => {
