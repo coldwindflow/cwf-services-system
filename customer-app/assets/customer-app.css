@@ -2905,13 +2905,20 @@ body {
   display: block;
   height: 14px;
   border-radius: 999px;
-  background: #e8eef7;
+  background: linear-gradient(90deg, #e8eef7 25%, #f3f7fd 37%, #e8eef7 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
 }
 .account-skeleton span:first-child,
 .content-skeleton span:first-child { width: 68%; }
 .account-skeleton span:nth-child(2),
 .content-skeleton span:nth-child(2) { width: 92%; }
 .account-skeleton span:nth-child(3) { width: 44%; }
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 100% 50%; }
+  100% { background-position: 0 50%; }
+}
 
 /* Logged-in account is an account screen, not a repeated login screen. */
 .auth-card.is-logged-in {
