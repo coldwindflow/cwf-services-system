@@ -115,8 +115,8 @@ test("Admin visibility UI only checks when value is strictly true; save verifies
   const adminJs = read("admin-technicians-v2.js");
   assert.match(adminJs, /const sv = \(t\.customer_slot_visible === true\)/);
   assert.match(adminJs, /persistedVisible !== payload\.customer_slot_visible/);
-  const index = read("index.js");
-  assert.match(index, /RETURNING username, employment_type, customer_slot_visible/);
+  const upsertSvc = read("server/services/technicianProfileUpsert.js");
+  assert.match(upsertSvc, /RETURNING username, employment_type, customer_slot_visible/);
 });
 
 // ============ Defect 7: admin-only eligibility diagnostic ============
