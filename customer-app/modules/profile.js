@@ -196,6 +196,7 @@
     `;
     root.auth.loadCustomer(container);
     bindAddress(container);
+    root.auth.bindAvatarFallbacks?.(container);
   }
 
   root.profile = {

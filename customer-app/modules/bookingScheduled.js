@@ -169,7 +169,7 @@
     const data = pricing.data;
     if (pricing.status === "loading") return root.utils.stateBox("loading", "กำลังคำนวณราคาและเวลาทำงานจากระบบจริง...");
     if (pricing.status === "error") return root.utils.stateBox("error", pricing.error || "คำนวณราคาไม่สำเร็จ");
-    if (!data) return root.utils.stateBox("", "ระบบจะคำนวณราคาและเวลาทำงานจาก /public/pricing_preview หลังเลือกบริการ");
+    if (!data) return root.utils.stateBox("", "ระบบจะคำนวณราคาและเวลาทำงานหลังเลือกบริการ");
     return `
       <div class="wizard-price-summary">
         <div><span>ราคาประมาณการ</span><strong>${root.utils.formatBaht(finalPrice())}</strong></div>
@@ -188,10 +188,6 @@
           <span class="section-kicker">ขั้นตอน 1 จาก 3</span>
           <h2>เลือกบริการและดูราคา</h2>
           <p class="muted">เลือกงานล้างที่ระบบรองรับ ราคา โปรโมชัน และเวลาทำงานจะมาจากระบบจริง</p>
-        </div>
-        <div class="field field-wide">
-          <label>ประเภทบริการ</label>
-          ${choiceGroup("service_kind", root.services.serviceKinds.filter((item) => item.value === "clean"), s.service_kind, "service-kind-grid")}
         </div>
         <div class="field field-wide">
           <label>ชนิดแอร์</label>

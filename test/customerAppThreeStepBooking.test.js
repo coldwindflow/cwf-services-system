@@ -24,7 +24,20 @@ function makeContext({ session = {} } = {}) {
   };
   const context = {
     window,
-    document: { body: { classList: { add() {}, remove() {} } }, addEventListener() {}, querySelector() { return null; }, querySelectorAll() { return []; } },
+    document: {
+      body: { classList: { add() {}, remove() {} } },
+      addEventListener() {},
+      createElement(tagName) {
+        return {
+          tagName: String(tagName || "").toUpperCase(),
+          className: "",
+          dataset: {},
+          textContent: "",
+        };
+      },
+      querySelector() { return null; },
+      querySelectorAll() { return []; },
+    },
     navigator: {},
     history: { replaceState() {} },
     Element: function Element() {},
@@ -91,7 +104,7 @@ test("old labels or routes for separate steps 4 and 5 are absent", () => {
   assert.doesNotMatch(source, /renderStepPrice|renderStepFour|maxStep:\s*5|Math\.min\(5/);
 });
 
-test("step 1 contains service selection and real price preview", () => {
+test("step 1 contains air selection and real price preview", () => {
   const { root } = loadBooking();
   root.state.setScheduledPreview("pricing", { status: "success", data: { active_price: 500, duration_min: 60, promo: { promo_name: "Promo" } }, error: "" });
   const html = renderInto(root);
@@ -101,6 +114,36 @@ test("step 1 contains service selection and real price preview", () => {
   assert.match(html, /data-scheduled-choice="btu"/);
   assert.match(html, /ราคาประมาณการ/);
   assert.match(html, /Promo/);
+});
+
+test("Customer App customer-facing UI does not expose internal public endpoint names", () => {
+  const uiSources = [
+    "customer-app/index.html",
+    "customer-app/assets/customer-app.css",
+    "customer-app/modules/auth.js",
+    "customer-app/modules/bookingScheduled.js",
+    "customer-app/modules/bookingUrgent.js",
+    "customer-app/modules/profile.js",
+    "customer-app/modules/router.js",
+    "customer-app/modules/state.js",
+    "customer-app/modules/ui.js",
+  ].map(file).join("\n");
+  assert.doesNotMatch(uiSources, /\/public\/|pricing_preview|availability_v2|public\/book|endpoint|implementation/i);
+
+  const { root } = loadBooking();
+  const html = renderInto(root);
+  assert.doesNotMatch(html, /\/public\/|pricing_preview|availability_v2|public\/book|endpoint|implementation/i);
+});
+
+test("scheduled step 1 omits redundant single-option service-kind selector", () => {
+  const { root } = loadBooking();
+  root.state.setScheduledPreview("pricing", { status: "success", data: { active_price: 500, duration_min: 60 }, error: "" });
+  const html = renderInto(root);
+  assert.doesNotMatch(html, /data-scheduled-choice="service_kind"/);
+  assert.doesNotMatch(html, /service-kind-grid/);
+  assert.match(html, /data-scheduled-choice="ac_type"/);
+  assert.match(html, /data-scheduled-choice="btu"/);
+  assert.match(html, /data-scheduled-field="machine_count"/);
 });
 
 test("step 2 contains all required contact and location fields", () => {
@@ -191,6 +234,44 @@ test("profile renders exactly one avatar for a logged-in account card", () => {
   const html = root.auth.renderLoginPanel();
   assert.equal((html.match(/<(?:img|span) class="account-avatar"/g) || []).length, 1);
   assert.match(html, /<img class="account-avatar"/);
+  assert.doesNotMatch(html, /onerror=/);
+  assert.match(html, /data-avatar-initial=/);
+});
+
+test("Customer App avatar markup has no inline onerror handlers", () => {
+  const sources = [
+    "customer-app/modules/auth.js",
+    "customer-app/modules/ui.js",
+  ].map(file).join("\n");
+  assert.doesNotMatch(sources, /onerror\s*=/i);
+});
+
+test("avatar image fallback keeps valid images and replaces broken images with one initial", () => {
+  const { root } = load(["customer-app/modules/state.js", "customer-app/modules/utils.js", "customer-app/modules/auth.js"]);
+  root.state.customer = { logged_in: true, user: { name: "User", picture: "https://example.test/u.jpg" }, profile: {} };
+  const html = root.auth.renderLoginPanel();
+  assert.equal((html.match(/<img class="account-avatar"/g) || []).length, 1);
+  assert.equal((html.match(/class="account-avatar"/g) || []).length, 1);
+
+  let errorHandler = null;
+  let replacement = null;
+  const img = {
+    className: "account-avatar",
+    dataset: { avatarInitial: "U" },
+    complete: false,
+    naturalWidth: 1,
+    addEventListener(type, handler) {
+      if (type === "error") errorHandler = handler;
+    },
+    replaceWith(node) { replacement = node; },
+  };
+  const container = { querySelectorAll(selector) { return selector === "img[data-avatar-initial]" ? [img] : []; } };
+  root.auth.bindAvatarFallbacks(container);
+  assert.equal(typeof errorHandler, "function");
+  assert.equal(replacement, null);
+  errorHandler();
+  assert.equal(replacement.className, "account-avatar");
+  assert.equal(replacement.textContent, "U");
 });
 
 test("saved information prefills empty fields only", () => {

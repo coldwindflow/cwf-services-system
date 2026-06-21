@@ -78,10 +78,32 @@
     const name = displayName(customer);
     const picture = pictureUrl(customer);
     const safeClass = className || "account-avatar";
+    const initial = name.slice(0, 1);
     if (picture) {
-      return `<img class="${safeClass}" src="${esc(picture)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'${safeClass}',textContent:'${esc(name.slice(0, 1))}'}))">`;
+      return `<img class="${safeClass}" src="${esc(picture)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-avatar-initial="${esc(initial)}">`;
     }
-    return `<span class="${safeClass}">${esc(name.slice(0, 1))}</span>`;
+    return `<span class="${safeClass}" data-avatar-fallback>${esc(initial)}</span>`;
+  }
+
+  function replaceBrokenAvatar(img) {
+    if (!img || img.dataset.avatarBroken === "1") return;
+    img.dataset.avatarBroken = "1";
+    const fallback = document.createElement("span");
+    fallback.className = img.className || "account-avatar";
+    fallback.dataset.avatarFallback = "1";
+    fallback.textContent = String(img.dataset.avatarInitial || "").slice(0, 1);
+    img.replaceWith(fallback);
+  }
+
+  function bindAvatarFallbacks(container) {
+    const scope = container || document;
+    if (!scope.querySelectorAll) return;
+    scope.querySelectorAll("img[data-avatar-initial]").forEach((img) => {
+      if (img.dataset.avatarBound === "1") return;
+      img.dataset.avatarBound = "1";
+      img.addEventListener("error", () => replaceBrokenAvatar(img), { once: true });
+      if (img.complete && img.naturalWidth === 0) replaceBrokenAvatar(img);
+    });
   }
 
   function renderCustomerSummary() {
@@ -153,6 +175,7 @@
     const mount = container.querySelector("[data-auth-panel]");
     if (mount) mount.innerHTML = renderLoginPanel();
     bindAuthActions(container);
+    bindAvatarFallbacks(container);
   }
 
   async function fetchAuthState() {
@@ -250,5 +273,6 @@
     displayName,
     pictureUrl,
     avatarHtml,
+    bindAvatarFallbacks,
   };
 })();

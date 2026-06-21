@@ -2627,7 +2627,7 @@ body {
 /* =====================================================================
    AUTH PANEL — premium account card + authentic provider buttons
    LINE (#06C755 + LINE bubble) and Google (white + 4-colour G).
-   Provider availability is driven by /public/auth/config; secrets stay server-side.
+   Provider availability is driven by server config; secrets stay server-side.
    ===================================================================== */
 .auth-card {
   background: linear-gradient(180deg, #fff, var(--bg-2));

@@ -234,7 +234,10 @@
     const zones = container.querySelector("[data-zones]");
     if (zones) zones.innerHTML = renderCoverageSummary();
     const account = container.querySelector("[data-home-account]");
-    if (account) account.innerHTML = renderAccountShortcut();
+    if (account) {
+      account.innerHTML = renderAccountShortcut();
+      root.auth?.bindAvatarFallbacks?.(account);
+    }
     container.querySelectorAll("[data-quick-price]").forEach((mount) => {
       const card = root.services.quickServices.find((item) => item.id === mount.getAttribute("data-quick-price"));
       if (card) mount.innerHTML = renderQuickPrice(card);
@@ -254,8 +257,9 @@
         const picture = root.auth?.pictureUrl?.(customer) || "";
         const initial = root.utils.escapeHtml(name.slice(0, 1));
         avatar.innerHTML = picture
-          ? `<img src="${root.utils.escapeHtml(picture)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.parentNode.textContent='${initial}'">`
+          ? `<img src="${root.utils.escapeHtml(picture)}" alt="" loading="lazy" referrerpolicy="no-referrer" data-avatar-initial="${initial}">`
           : initial;
+        root.auth?.bindAvatarFallbacks?.(avatar);
       }
       button.classList.add("is-logged-in");
       button.setAttribute("aria-label", `บัญชีของ ${name}`);
@@ -364,6 +368,7 @@
         </section>
       `;
       bindCommerceHome(container);
+      root.auth?.bindAvatarFallbacks?.(container);
       loadHomeData();
     },
 
