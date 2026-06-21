@@ -2627,7 +2627,7 @@ body {
 /* =====================================================================
    AUTH PANEL — premium account card + authentic provider buttons
    LINE (#06C755 + LINE bubble) and Google (white + 4-colour G).
-   Provider availability is driven by /public/auth/config; secrets stay server-side.
+   Provider availability is driven by server config; secrets stay server-side.
    ===================================================================== */
 .auth-card {
   background: linear-gradient(180deg, #fff, var(--bg-2));
@@ -2863,6 +2863,14 @@ body {
   background: rgba(255, 255, 255, 0.16);
   font-size: 12px;
   font-weight: 900;
+  overflow: hidden;
+}
+.account-chip-avatar img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border-radius: inherit;
 }
 .icon-pill:not(.is-logged-in) .account-chip-avatar {
   width: 18px;
@@ -2922,6 +2930,15 @@ body {
   font-size: 18px;
   font-weight: 900;
   box-shadow: 0 12px 24px -16px rgba(22, 89, 224, 0.9);
+  overflow: hidden;
+}
+.account-avatar img,
+img.account-avatar {
+  width: 46px;
+  height: 46px;
+  display: block;
+  object-fit: cover;
+  border-radius: 50%;
 }
 .account-shortcut-head {
   display: flex;
@@ -3062,7 +3079,7 @@ body {
 
 .booking-stepper {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 4px;
   margin: 0;
   padding: 0;
@@ -3246,9 +3263,8 @@ body {
 .slot-section { display: grid; gap: 12px; }
 
 .wizard-action-bar {
-  position: sticky;
-  z-index: 20;
-  bottom: calc(var(--nav-h) + var(--safe-b) + 8px);
+  position: static;
+  z-index: 1;
   display: grid;
   grid-template-columns: minmax(108px, 0.72fr) minmax(0, 1.28fr);
   gap: 10px;

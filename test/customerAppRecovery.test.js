@@ -135,7 +135,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260621_production_recovery_v1";
+  const build = "20260621_three_step_booking_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`bookingUrgent\\.js\\?v=${build}`));
@@ -182,20 +182,41 @@ test("account chip has narrow-screen avatar-only protection", () => {
   assert.match(css, /text-overflow: ellipsis/);
 });
 
-test("scheduled draft persists and restores five-step state", () => {
+test("scheduled draft persists and restores three-step state", () => {
   const context = makeContext();
   let root = load(context, ["customer-app/modules/state.js"]);
   root.state.updateDraft("scheduled", { customer_name: "Persisted Customer", address_text: "Persisted Address" });
-  root.state.setScheduledWizard({ step: 5 });
+  root.state.setScheduledWizard({ step: 3 });
 
   context.window.CWFCustomerAppV2 = {};
   root = load(context, ["customer-app/modules/state.js"]);
   root.state.init();
 
-  assert.equal(root.state.scheduledWizard.step, 5);
-  assert.equal(root.state.scheduledWizard.maxStep, 5);
+  assert.equal(root.state.scheduledWizard.step, 3);
+  assert.equal(root.state.scheduledWizard.maxStep, 3);
   assert.equal(root.state.draft.scheduled.customer_name, "Persisted Customer");
   assert.equal(root.state.draft.scheduled.address_text, "Persisted Address");
+});
+
+test("legacy scheduled draft from five-step flow is mapped back to the new three-step flow", () => {
+  const context = makeContext();
+  context.window.sessionStorage.setItem("cwf_customer_app_v2_scheduled_v2", JSON.stringify({
+    version: 2,
+    saved_at: Date.now(),
+    step: 5,
+    draft: { customer_name: "Legacy Customer", address_text: "Legacy Address" },
+    wizard: { step: 5, maxStep: 5 },
+    preview: {},
+    submit: {},
+  }));
+
+  const root = load(context, ["customer-app/modules/state.js"]);
+  root.state.init();
+
+  assert.equal(root.state.scheduledWizard.step, 1);
+  assert.equal(root.state.scheduledWizard.maxStep, 3);
+  assert.equal(root.state.draft.scheduled.customer_name, "Legacy Customer");
+  assert.equal(root.state.draft.scheduled.address_text, "Legacy Address");
 });
 
 test("home CTA click writes scheduled draft and routes to scheduled flow", async () => {
@@ -220,7 +241,7 @@ test("home CTA click writes scheduled draft and routes to scheduled flow", async
   assert.equal(root.state.draft.scheduled.selectedSlot, null);
 });
 
-test("scheduled booking renders one active step and preserves draft across five steps", async () => {
+test("scheduled booking renders one active step and preserves draft across three steps", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.state.customer = { logged_in: false };
@@ -229,8 +250,8 @@ test("scheduled booking renders one active step and preserves draft across five 
 
   const container = new WizardContainer(root);
   root.bookingScheduled.render(container);
-  assert.match(container.innerHTML, /ขั้นตอน 1 จาก 5/);
-  assert.doesNotMatch(container.innerHTML, /ขั้นตอน 2 จาก 5/);
+  assert.match(container.innerHTML, /data-booking-step="1"/);
+  assert.doesNotMatch(container.innerHTML, /data-booking-step="4"|data-booking-step="5"/);
 
   root.state.updateDraft("scheduled", {
     customer_name: "Test Customer",
@@ -240,31 +261,25 @@ test("scheduled booking renders one active step and preserves draft across five 
   });
   await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
   assert.equal(root.state.scheduledWizard.step, 2);
-  assert.match(container.innerHTML, /ขั้นตอน 2 จาก 5/);
+  assert.match(container.innerHTML, /data-booking-step="2"/);
   assert.equal(root.state.draft.scheduled.address_text, "123 Test Condo");
 
   await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
   assert.equal(root.state.scheduledWizard.step, 3);
-  assert.match(container.innerHTML, /ขั้นตอน 3 จาก 5/);
-
-  await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
-  assert.equal(root.state.scheduledWizard.step, 4);
-  assert.match(container.innerHTML, /ขั้นตอน 4 จาก 5/);
+  assert.match(container.innerHTML, /data-booking-step="3"/);
   assert.match(container.innerHTML, /09:00/);
 
   const slot = root.availability.normalizePublicSlots(root.state.scheduledPreview.availability.data, 90)[0];
   root.state.updateDraft("scheduled", { selectedSlot: { ...slot, query_key: root.state.scheduledPreview.availability.query_key } });
-  await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
-  assert.equal(root.state.scheduledWizard.step, 5);
-  assert.match(container.innerHTML, /ขั้นตอน 5 จาก 5/);
-  assert.doesNotMatch(container.innerHTML, /ขั้นตอน 4 จาก 5/);
+  root.bookingScheduled.render(container);
+  assert.equal(root.state.scheduledWizard.step, 3);
+  assert.doesNotMatch(container.innerHTML, /data-booking-step="4"|data-booking-step="5"/);
 });
-
 test("anonymous slots render without technician identity or counts", () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   const container = new WizardContainer(root);
-  root.state.setScheduledWizard({ step: 4 });
+  root.state.setScheduledWizard({ step: 3 });
   root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 900 }, error: "" });
   root.state.setScheduledPreview("availability", {
     status: "success",
@@ -282,7 +297,7 @@ test("anonymous slots render without technician identity or counts", () => {
 test("stale slot rejection returns customer to date and time step", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
-  root.state.setScheduledWizard({ step: 5 });
+  root.state.setScheduledWizard({ step: 3 });
   root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 900 }, error: "" });
   const query = root.availability.publicAvailabilityQuery(root.state.draft.scheduled, root.services.payloadFromServiceDraft(root.state.draft.scheduled), root.state.scheduledPreview.pricing.data);
   const queryKey = root.availability.queryKey(query);
@@ -300,7 +315,7 @@ test("stale slot rejection returns customer to date and time step", async () => 
   root.bookingScheduled.render(container);
   await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "submit-scheduled").click();
 
-  assert.equal(root.state.scheduledWizard.step, 4);
+  assert.equal(root.state.scheduledWizard.step, 3);
   assert.equal(root.state.draft.scheduled.selectedSlot, null);
 });
 

@@ -2,7 +2,10 @@
   "use strict";
 
   const root = window.CWFCustomerAppV2 = window.CWFCustomerAppV2 || {};
-  const SCHEDULED_STORAGE_KEY = "cwf_customer_app_v2_scheduled_v2";
+  const SCHEDULED_STORAGE_KEY = "cwf_customer_app_v2_scheduled_v3";
+  const SCHEDULED_LEGACY_STORAGE_KEYS = [
+    "cwf_customer_app_v2_scheduled_v2",
+  ];
   const SCHEDULED_STORAGE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
   function bangkokTodayYmd() {
@@ -75,7 +78,7 @@
     profileAddressForm: { editing: false, status: "idle", error: "", success: "" },
     scheduledWizard: {
       step: 1,
-      maxStep: 5,
+      maxStep: 3,
       error: "",
     },
     scheduledPreview: {
@@ -136,7 +139,7 @@
     },
     resetScheduledDraft() {
       this.draft.scheduled = defaultScheduledDraft();
-      this.scheduledWizard = { step: 1, maxStep: 5, error: "" };
+      this.scheduledWizard = { step: 1, maxStep: 3, error: "" };
       this.scheduledPreview = {
         pricing: { status: "idle", data: null, error: "" },
         availability: { status: "idle", data: null, error: "", query_key: "", loaded_at: "" },
@@ -146,19 +149,33 @@
     },
     persistScheduledDraft() {
       const payload = {
-        version: 2,
+        version: 3,
         saved_at: Date.now(),
-        step: Math.max(1, Math.min(5, Number(this.scheduledWizard?.step || 1))),
+        step: Math.max(1, Math.min(3, Number(this.scheduledWizard?.step || 1))),
         draft: this.draft.scheduled || defaultScheduledDraft(),
       };
       safeSessionSet(JSON.stringify(payload));
     },
     restoreScheduledDraft() {
-      const raw = safeSessionGet();
+      let raw = safeSessionGet();
+      let fromLegacy = false;
+      if (!raw) {
+        for (const key of SCHEDULED_LEGACY_STORAGE_KEYS) {
+          try {
+            raw = window.sessionStorage.getItem(key);
+            if (raw) {
+              fromLegacy = true;
+              break;
+            }
+          } catch (_) {
+            raw = null;
+          }
+        }
+      }
       if (!raw) return false;
       try {
         const parsed = JSON.parse(raw);
-        if (!parsed || (parsed.version !== 1 && parsed.version !== 2) || !parsed.draft) return false;
+        if (!parsed || (parsed.version !== 1 && parsed.version !== 2 && parsed.version !== 3) || !parsed.draft) return false;
         if (!Number.isFinite(parsed.saved_at) || Date.now() - parsed.saved_at > SCHEDULED_STORAGE_TTL_MS) {
           safeSessionRemove();
           return false;
@@ -175,12 +192,17 @@
         }
         restored.calendar_month = String(restored.calendar_month || restored.date.slice(0, 7));
         this.draft.scheduled = restored;
+        const parsedStep = Number(parsed.step || 1);
+        const nextStep = fromLegacy || parsed.version < 3
+          ? (parsedStep >= 4 ? 1 : Math.max(1, Math.min(3, parsedStep)))
+          : Math.max(1, Math.min(3, parsedStep));
         this.scheduledWizard = {
           ...this.scheduledWizard,
-          step: Math.max(1, Math.min(5, Number(parsed.step || 1))),
-          maxStep: 5,
+          step: nextStep,
+          maxStep: 3,
           error: "",
         };
+        this.persistScheduledDraft();
         return true;
       } catch (_) {
         safeSessionRemove();
@@ -259,8 +281,8 @@
         ...(this.scheduledWizard || {}),
         ...(patch || {}),
       };
-      this.scheduledWizard.maxStep = 5;
-      this.scheduledWizard.step = Math.max(1, Math.min(5, Number(this.scheduledWizard.step || 1)));
+      this.scheduledWizard.maxStep = 3;
+      this.scheduledWizard.step = Math.max(1, Math.min(3, Number(this.scheduledWizard.step || 1)));
       this.persistScheduledDraft();
     },
     setScheduledPreview(name, patch) {

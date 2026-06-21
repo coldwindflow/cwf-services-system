@@ -38,6 +38,7 @@
       const handler = this.routes[route] || this.routes.home;
       const app = document.getElementById("app");
       if (!app || typeof handler !== "function") return;
+      document.body.classList.remove("has-contact-sheet");
       if (requestedRoute !== route) {
         history.replaceState(null, "", `#${route}`);
       }

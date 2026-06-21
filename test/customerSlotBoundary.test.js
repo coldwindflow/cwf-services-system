@@ -4,7 +4,7 @@ const path = require("node:path");
 const test = require("node:test");
 
 const root = path.resolve(__dirname, "..");
-const source = fs.readFileSync(path.join(root, "index.js"), "utf8");
+const source = fs.readFileSync(path.join(root, "index.js"), "utf8").replace(/\r\n/g, "\n");
 
 function section(start, end) {
   const from = source.indexOf(start);
@@ -79,16 +79,22 @@ test("Eligible public availability slots are anonymous", () => {
 });
 
 test("Public availability response omits technician identity and counts", () => {
-  const publicReturn = section("if (isPublicCustomer) {\n      return res.json({", "    res.json({");
+  const publicReturn = sectionIn(availability, "if (isPublicCustomer) {\n        return res.json({", "      return res.json({");
+  const finalPublicReturn = sectionIn(availability, "if (isPublicCustomer) {\n      return res.json({", "    res.json({");
   assert.doesNotMatch(publicReturn, /available_tech_ids|technician|tech_count|available_count|capacity|crew_size|debug/);
+  assert.doesNotMatch(finalPublicReturn, /available_tech_ids|technician|tech_count|available_count|capacity|crew_size|debug/);
   assert.match(publicReturn, /date/);
   assert.match(publicReturn, /duration_min/);
   assert.match(publicReturn, /slot_step_min/);
   assert.match(publicReturn, /slots/);
+  assert.match(finalPublicReturn, /date/);
+  assert.match(finalPublicReturn, /duration_min/);
+  assert.match(finalPublicReturn, /slot_step_min/);
+  assert.match(finalPublicReturn, /slots/);
 });
 
 test("Client-supplied technician fields cannot influence public booking", () => {
-  const destructure = sectionIn(booking, "const {\n    customer_name", "  } = req.body || {};");
+  const destructure = sectionIn(booking, "  const {\n    customer_name", "  } = req.body || {};");
   assert.doesNotMatch(destructure, /technician_username|technician_name|available_tech_ids|candidate|capacity|available_count/);
   assert.doesNotMatch(booking, /req\.body\.(technician_username|technician_name|available_tech_ids|candidate|capacity|available_count)/);
 });
