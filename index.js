@@ -33,6 +33,7 @@ const customerLookupHelpers = require("./server/customerLookup");
 const technicianJobIncomeDisplayHelpers = require("./server/technicianJobIncomeDisplay");
 const technicianReworkHelpers = require("./server/technicianRework");
 const adminJobItemsHelpers = require("./server/adminJobItems");
+const customerAvailability = require("./server/services/public/customerAvailability");
 const { createTechnicianJobMoneyHelpers } = require("./server/technicianJobMoneySummary");
 const createSystemRoutes = require("./server/routes/system");
 const createTechnicianDirectoryRoutes = require("./server/routes/users/technicians");
@@ -23909,6 +23910,21 @@ function http409Conflict(res, conflict){
 // =======================================
 // 💲 Pricing + Duration Preview (public)
 // =======================================
+function publicCustomerAvailabilityDeps() {
+  return {
+    pool,
+    listTechniciansByType,
+    buildOffMapForDate,
+    isTechOffOnDate,
+    buildTechWindowsMin,
+    listBusyBlocksForTechOnDate,
+    buildStartIntervalsByCollision,
+    toMin,
+    minToHHMM,
+    getNowBangkokParts,
+  };
+}
+
 app.post("/public/pricing_preview", async (req, res) => {
   try {
     const payload = req.body || {};
@@ -23982,6 +23998,22 @@ app.get("/public/availability_v2", async (req, res) => {
   const debugFree = {};
   const debugReasons = [];
   const debugInfo = { busy_by_tech: debugBusy, free_by_tech: debugFree, reasons: debugReasons };
+
+  if (!forced) {
+    try {
+      const data = await customerAvailability.computePublicCustomerSlots(
+        publicCustomerAvailabilityDeps(),
+        { ...req.query, date, tech_type, duration_min }
+      );
+      return res.json(data);
+    } catch (e) {
+      const status = Number(e.status || 503);
+      const message = status === 400
+        ? "ข้อมูลบริการไม่ครบสำหรับตรวจคิว กรุณาเลือกรายการบริการใหม่"
+        : "โหลดตารางว่างไม่สำเร็จ";
+      return res.status(status >= 400 && status < 600 ? status : 503).json({ error: message });
+    }
+  }
 
   // ===== Service Matrix (Option B) =====
   // criteria from customer booking page (Thai values)
@@ -24432,6 +24464,29 @@ app.get("/public/availability_v2", async (req, res) => {
   }
 });
 
+app.get("/public/availability_calendar_v2", async (req, res) => {
+  if (!ENABLE_AVAILABILITY_V2) return res.status(404).json({ error: "DISABLED" });
+  const month = String(req.query.month || "").slice(0, 7);
+  if (!/^\d{4}-\d{2}$/.test(month)) {
+    return res.status(400).json({ error: "กรุณาระบุเดือนให้ถูกต้อง" });
+  }
+  const duration_min = Math.max(15, Number(req.query.duration_min || 60));
+  const tech_type = String(req.query.tech_type || "company").trim().toLowerCase();
+  try {
+    const data = await customerAvailability.computeCalendarSummary(
+      publicCustomerAvailabilityDeps(),
+      { ...req.query, month, tech_type, duration_min }
+    );
+    res.json(data);
+  } catch (e) {
+    const status = Number(e.status || 503);
+    const message = status === 400
+      ? "ข้อมูลบริการไม่ครบสำหรับตรวจคิว กรุณาเลือกรายการบริการใหม่"
+      : "โหลดปฏิทินคิวไม่สำเร็จ";
+    res.status(status >= 400 && status < 600 ? status : 503).json({ error: message });
+  }
+});
+
 // Admin: availability by technician (v2) - used for colored rows per tech
 app.get("/admin/availability_by_tech_v2", async (req, res) => {
   if (!ENABLE_AVAILABILITY_V2) return res.status(404).json({ error: "DISABLED" });
@@ -24618,6 +24673,7 @@ app.post("/public/book", async (req, res) => {
     booking_mode,
     client_app,
     allow_admin_schedule_fallback,
+    allow_time_proposal,
     ac_type,
     btu,
     machine_count,
@@ -24643,6 +24699,14 @@ app.post("/public/book", async (req, res) => {
   const allowAdminScheduleFallback = allow_admin_schedule_fallback === true || String(allow_admin_schedule_fallback || "").trim() === "true";
   const canUseAdminScheduleFallback = bm === "scheduled" && allowAdminScheduleFallback && clientApp === "customer_app_v2";
   const urgentOfferEnabled = bm === "urgent" && ENABLE_URGENT_FLOW;
+  const allowTimeProposal = allow_time_proposal === true
+    ? true
+    : allow_time_proposal === false || allow_time_proposal == null
+      ? false
+      : null;
+  if (clientApp === "customer_app_v2" && allowTimeProposal == null) {
+    return res.status(400).json({ error: "กรุณาเลือกเงื่อนไขการเสนอเวลา" });
+  }
   const payloadV2 = {
     job_type: String(job_type).trim(),
     ac_type: (ac_type || "").toString().trim(),
@@ -24670,6 +24734,23 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
   // - scheduled => company, urgent => partner
   const requestedTechType = bm === "urgent" ? "partner" : "company";
   try {
+    if (bm === "scheduled" && clientApp === "customer_app_v2") {
+      const startIso = normalizeAppointmentDatetime(appointment_datetime);
+      const start = String(startIso).slice(11, 16);
+      const available = await customerAvailability.hasAvailableStart(
+        publicCustomerAvailabilityDeps(),
+        {
+          ...payloadV2,
+          date: String(startIso).slice(0, 10),
+          start,
+          tech_type: requestedTechType,
+          duration_min: duration_min_v2,
+        }
+      );
+      if (!available) {
+        return res.status(409).json({ error: "ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาอื่น" });
+      }
+    } else {
     let techs = await listTechniciansByType(requestedTechType, { include_paused: bm === "scheduled" });
 
     // Customer booking must use the same strict technician boundary as the public slot list.
@@ -24799,6 +24880,7 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
         return res.status(409).json({ error: "ช่วงเวลานี้เต็มแล้ว กรุณาเลือกเวลาอื่น" });
       }
     }
+    }
   } catch (e) {
     console.warn("[public_book] availability_check_fail", { bm, clientApp, err: e.message });
     if (bm === "scheduled" && clientApp === "customer_app_v2") {
@@ -24897,8 +24979,8 @@ if (itemIdQty.length) {
       (customer_name, customer_phone, job_type, appointment_datetime, job_price,
        address_text, technician_team, technician_username, job_status,
        booking_token, job_source, dispatch_mode, customer_note,
-       maps_url, job_zone, duration_min, booking_mode)
-      VALUES ($1,$2,$3,$4,$5,$6,NULL,NULL,$11,$7,'customer',$14,$8,$9,$10,$12,$13)
+       maps_url, job_zone, duration_min, booking_mode, allow_time_proposal)
+      VALUES ($1,$2,$3,$4,$5,$6,NULL,NULL,$11,$7,'customer',$14,$8,$9,$10,$12,$13,$15)
       RETURNING job_id, booking_token
       `,
       [
@@ -24916,6 +24998,7 @@ if (itemIdQty.length) {
         duration_min_v2,
         (bm === 'urgent' ? 'urgent' : 'scheduled'),
         dispatchMode,
+        allowTimeProposal,
       ]
     );
 

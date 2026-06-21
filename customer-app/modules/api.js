@@ -85,6 +85,10 @@
       return requestJson("/public/availability_v2", { query });
     },
 
+    async loadAvailabilityCalendar(query) {
+      return requestJson("/public/availability_calendar_v2", { query });
+    },
+
     async trackBooking(q) {
       return requestJson("/public/track", { query: { q } });
     },

@@ -3086,6 +3086,8 @@ img.account-avatar {
   list-style: none;
 }
 
+.booking-stepper-five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+
 .booking-stepper li {
   position: relative;
   display: grid;
@@ -3145,6 +3147,65 @@ img.account-avatar {
 .booking-wizard-card {
   display: grid;
   gap: 16px;
+}
+
+.service-line-list,
+.service-line-review-list {
+  display: grid;
+  gap: 12px;
+}
+
+.service-line-card {
+  display: grid;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+}
+
+.service-line-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 10px;
+}
+
+.service-line-head strong,
+.service-line-head small {
+  display: block;
+}
+
+.service-line-head strong {
+  margin-top: 2px;
+  color: var(--navy);
+  font-size: 1rem;
+}
+
+.service-line-head small {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.danger-text {
+  color: var(--danger) !important;
+}
+
+.danger-text[disabled] {
+  color: var(--muted-2) !important;
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.time-preference {
+  display: grid;
+  gap: 10px;
+}
+
+.time-preference-card {
+  width: 100%;
 }
 
 .booking-wizard-card .section-head p { margin-top: 6px; }
@@ -3250,6 +3311,21 @@ img.account-avatar {
 }
 
 .calendar-day.is-today { border-color: var(--soft-blue-2); }
+.calendar-day.is-available {
+  border-color: #bfe8cf;
+  background: var(--soft-green);
+  color: var(--success);
+}
+.calendar-day.is-full {
+  border-color: var(--line);
+  background: #f1f5fa;
+  color: var(--muted-2);
+}
+.calendar-day.is-loading {
+  border-color: #e6edf7;
+  background: linear-gradient(90deg, #f4f7fb 0%, #eef3f9 50%, #f4f7fb 100%);
+  color: var(--muted-2);
+}
 .calendar-day.is-selected {
   border-color: var(--blue);
   color: #fff;
@@ -3347,6 +3423,7 @@ body.has-contact-sheet { overflow: hidden; }
 
 @media (max-width: 380px) {
   .booking-stepper li > strong { font-size: 0.61rem; }
+  .booking-stepper-five li > strong { font-size: 0.54rem; }
   .booking-stepper li > span { width: 29px; height: 29px; }
   .booking-stepper li:not(:last-child)::after { top: 14px; left: calc(50% + 17px); width: calc(100% - 34px); }
   .calendar-day { min-height: 42px; font-size: 0.8rem; }

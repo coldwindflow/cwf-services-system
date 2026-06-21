@@ -182,7 +182,7 @@ test("account chip has narrow-screen avatar-only protection", () => {
   assert.match(css, /text-overflow: ellipsis/);
 });
 
-test("scheduled draft persists and restores three-step state", () => {
+test("scheduled draft persists and restores five-step state", () => {
   const context = makeContext();
   let root = load(context, ["customer-app/modules/state.js"]);
   root.state.updateDraft("scheduled", { customer_name: "Persisted Customer", address_text: "Persisted Address" });
@@ -193,12 +193,12 @@ test("scheduled draft persists and restores three-step state", () => {
   root.state.init();
 
   assert.equal(root.state.scheduledWizard.step, 3);
-  assert.equal(root.state.scheduledWizard.maxStep, 3);
+  assert.equal(root.state.scheduledWizard.maxStep, 5);
   assert.equal(root.state.draft.scheduled.customer_name, "Persisted Customer");
   assert.equal(root.state.draft.scheduled.address_text, "Persisted Address");
 });
 
-test("legacy scheduled draft from five-step flow is mapped back to the new three-step flow", () => {
+test("legacy scheduled draft from older flow is mapped safely into the five-step flow", () => {
   const context = makeContext();
   context.window.sessionStorage.setItem("cwf_customer_app_v2_scheduled_v2", JSON.stringify({
     version: 2,
@@ -214,7 +214,7 @@ test("legacy scheduled draft from five-step flow is mapped back to the new three
   root.state.init();
 
   assert.equal(root.state.scheduledWizard.step, 1);
-  assert.equal(root.state.scheduledWizard.maxStep, 3);
+  assert.equal(root.state.scheduledWizard.maxStep, 5);
   assert.equal(root.state.draft.scheduled.customer_name, "Legacy Customer");
   assert.equal(root.state.draft.scheduled.address_text, "Legacy Address");
 });
@@ -241,17 +241,21 @@ test("home CTA click writes scheduled draft and routes to scheduled flow", async
   assert.equal(root.state.draft.scheduled.selectedSlot, null);
 });
 
-test("scheduled booking renders one active step and preserves draft across three steps", async () => {
+test("scheduled booking renders one active step and preserves draft across five steps", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   root.state.customer = { logged_in: false };
   root.api.previewPricing = async () => ({ duration_min: 90, active_price: 1200, standard_price: 1200 });
+  root.api.loadAvailabilityCalendar = async () => ({
+    month: root.state.draft.scheduled.calendar_month,
+    days: [{ date: root.state.draft.scheduled.date, available: true, first_available: "09:00" }],
+  });
   root.api.loadAvailability = async () => ({ date: root.state.draft.scheduled.date, duration_min: 90, slot_step_min: 30, slots: [{ start: "09:00", end: "12:00", available: true }] });
 
   const container = new WizardContainer(root);
   root.bookingScheduled.render(container);
   assert.match(container.innerHTML, /data-booking-step="1"/);
-  assert.doesNotMatch(container.innerHTML, /data-booking-step="4"|data-booking-step="5"/);
+  assert.doesNotMatch(container.innerHTML, /data-booking-step="2"|data-booking-step="3"|data-booking-step="4"|data-booking-step="5"/);
 
   root.state.updateDraft("scheduled", {
     customer_name: "Test Customer",
@@ -262,24 +266,30 @@ test("scheduled booking renders one active step and preserves draft across three
   await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
   assert.equal(root.state.scheduledWizard.step, 2);
   assert.match(container.innerHTML, /data-booking-step="2"/);
+  assert.doesNotMatch(container.innerHTML, /data-booking-step="1"|data-booking-step="3"|data-booking-step="4"|data-booking-step="5"/);
   assert.equal(root.state.draft.scheduled.address_text, "123 Test Condo");
 
   await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
   assert.equal(root.state.scheduledWizard.step, 3);
   assert.match(container.innerHTML, /data-booking-step="3"/);
+  assert.doesNotMatch(container.innerHTML, /data-booking-step="1"|data-booking-step="2"|data-booking-step="4"|data-booking-step="5"/);
+
+  await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "wizard-next").click();
+  assert.equal(root.state.scheduledWizard.step, 4);
+  assert.match(container.innerHTML, /data-booking-step="4"/);
   assert.match(container.innerHTML, /09:00/);
 
   const slot = root.availability.normalizePublicSlots(root.state.scheduledPreview.availability.data, 90)[0];
   root.state.updateDraft("scheduled", { selectedSlot: { ...slot, query_key: root.state.scheduledPreview.availability.query_key } });
   root.bookingScheduled.render(container);
-  assert.equal(root.state.scheduledWizard.step, 3);
-  assert.doesNotMatch(container.innerHTML, /data-booking-step="4"|data-booking-step="5"/);
+  assert.equal(root.state.scheduledWizard.step, 4);
+  assert.doesNotMatch(container.innerHTML, /data-booking-step="1"|data-booking-step="2"|data-booking-step="3"|data-booking-step="5"/);
 });
 test("anonymous slots render without technician identity or counts", () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
   const container = new WizardContainer(root);
-  root.state.setScheduledWizard({ step: 3 });
+  root.state.setScheduledWizard({ step: 4 });
   root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 900 }, error: "" });
   root.state.setScheduledPreview("availability", {
     status: "success",
@@ -297,7 +307,7 @@ test("anonymous slots render without technician identity or counts", () => {
 test("stale slot rejection returns customer to date and time step", async () => {
   const context = makeContext();
   const root = loadCustomerFrontend(context);
-  root.state.setScheduledWizard({ step: 3 });
+  root.state.setScheduledWizard({ step: 5 });
   root.state.setScheduledPreview("pricing", { status: "success", data: { duration_min: 60, active_price: 900 }, error: "" });
   const query = root.availability.publicAvailabilityQuery(root.state.draft.scheduled, root.services.payloadFromServiceDraft(root.state.draft.scheduled), root.state.scheduledPreview.pricing.data);
   const queryKey = root.availability.queryKey(query);
@@ -315,7 +325,7 @@ test("stale slot rejection returns customer to date and time step", async () => 
   root.bookingScheduled.render(container);
   await container.querySelectorAll("[data-action]").find((button) => button.getAttribute("data-action") === "submit-scheduled").click();
 
-  assert.equal(root.state.scheduledWizard.step, 3);
+  assert.equal(root.state.scheduledWizard.step, 4);
   assert.equal(root.state.draft.scheduled.selectedSlot, null);
 });
 

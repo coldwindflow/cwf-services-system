@@ -56,6 +56,27 @@
     return query;
   }
 
+  function publicCalendarQuery(draft, servicePayload, pricingData) {
+    const d = draft || {};
+    const payload = servicePayload || {};
+    const durationMin = Math.max(15, Number(pricingData && pricingData.duration_min || 0));
+    const query = {
+      month: String(d.calendar_month || d.date?.slice(0, 7) || "").trim(),
+      tech_type: "company",
+      duration_min: durationMin,
+      job_type: payload.job_type || "",
+      ac_type: payload.ac_type || "",
+      btu: payload.btu || "",
+      machine_count: payload.machine_count || "",
+      wash_variant: payload.wash_variant || "",
+      repair_variant: payload.repair_variant || "",
+    };
+    if (Array.isArray(payload.services) && payload.services.length) {
+      query.services = JSON.stringify(payload.services);
+    }
+    return query;
+  }
+
   function queryKey(query) {
     const q = query || {};
     return [
@@ -70,6 +91,38 @@
       q.repair_variant,
       q.services,
     ].map((value) => String(value == null ? "" : value)).join("|");
+  }
+
+  function calendarQueryKey(query) {
+    const q = query || {};
+    return [
+      q.month,
+      q.tech_type,
+      q.duration_min,
+      q.job_type,
+      q.ac_type,
+      q.btu,
+      q.machine_count,
+      q.wash_variant,
+      q.repair_variant,
+      q.services,
+    ].map((value) => String(value == null ? "" : value)).join("|");
+  }
+
+  function normalizeCalendarDays(response) {
+    const data = response || {};
+    const days = Array.isArray(data.days) ? data.days : [];
+    const map = new Map();
+    days.forEach((day) => {
+      const date = String(day && day.date || "").slice(0, 10);
+      if (!date) return;
+      map.set(date, {
+        date,
+        available: day.available === true,
+        first_available: day.first_available || null,
+      });
+    });
+    return map;
   }
 
   function normalizePublicSlots(response, fallbackDurationMin) {
@@ -134,7 +187,10 @@
     minutesToHhmm,
     bangkokTodayYmd,
     publicAvailabilityQuery,
+    publicCalendarQuery,
     queryKey,
+    calendarQueryKey,
+    normalizeCalendarDays,
     normalizePublicSlots,
     selectedSlotIsCurrent,
   };
