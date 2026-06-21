@@ -6,6 +6,7 @@
   const STEP_MAX = 3;
   let availabilityRequestSeq = 0;
   let calendarRequestSeq = 0;
+  let recoveryInFlight = false;
 
   function draft() {
     return root.state.draft.scheduled || {};
@@ -398,8 +399,14 @@
     const daysInMonth = new Date(year, monthNumber, 0).getDate();
     const calendarState = root.state.scheduledPreview.calendar;
     const expectedKey = currentCalendarKey();
-    const dayMap = calendarState.query_key === expectedKey ? root.availability.normalizeCalendarDays(calendarState.data) : new Map();
-    const isLoading = calendarState.status === "loading" || (expectedKey && calendarState.query_key !== expectedKey);
+    // Defect B: only trust calendar day data when the backend successfully answered the CURRENT
+    // query. While pricing/calendar are still resolving (idle, loading, recovering, or a stale key)
+    // we render a neutral pending state and never manufacture "ยังไม่มีคิวเปิด" from missing data.
+    const hasData = Boolean(expectedKey) && calendarState.status === "success" && calendarState.query_key === expectedKey;
+    const isError = Boolean(expectedKey) && calendarState.status === "error" && calendarState.query_key === expectedKey;
+    const isPending = !hasData && !isError;
+    const dayMap = hasData ? root.availability.normalizeCalendarDays(calendarState.data) : new Map();
+    const isLoading = isPending;
     const cells = [];
     for (let i = 0; i < startOffset; i += 1) cells.push(`<span class="calendar-day is-empty" aria-hidden="true"></span>`);
     for (let day = 1; day <= daysInMonth; day += 1) {
@@ -413,10 +420,19 @@
       const full = dayStatus === "full";
       const noOpenSlots = dayStatus === "no_open_slots";
       const systemIssue = dayStatus === "error";
-      const disabled = outsideRange || !available || (!isLoading && expectedKey && !available);
+      // Days are only selectable once a confirmed availability response marks them available.
+      const disabled = outsideRange || isPending || !available;
       const label = outsideRange
         ? ""
-        : (isLoading ? "..." : (available ? "มีคิว" : (full ? "เต็ม" : (systemIssue ? "ลองใหม่" : "ยังไม่มีคิวเปิด"))));
+        : (isPending
+            ? "..."
+            : (available
+                ? "มีคิว"
+                : (full
+                    ? "เต็ม"
+                    : (systemIssue
+                        ? "ลองใหม่"
+                        : (noOpenSlots ? "ยังไม่มีคิวเปิด" : "")))));
       cells.push(`
         <button type="button" class="calendar-day ${selected ? "is-selected" : ""} ${isToday ? "is-today" : ""} ${available ? "is-available" : ""} ${full ? "is-full" : ""} ${noOpenSlots ? "is-no-open-slots" : ""} ${systemIssue ? "is-error" : ""} ${isLoading ? "is-loading" : ""}"
           data-calendar-date="${dateValue}" ${disabled ? "disabled" : ""}
@@ -451,13 +467,22 @@
     if (!availability.data) return root.utils.stateBox("", "เลือกวันที่มีคิว ระบบจะแสดงช่วงเวลาว่างด้านล่าง");
     const slots = normalizedSlots();
     if (!slots.length) {
+      // Defect B: derive the empty message strictly from the backend status. "ยังไม่มีคิวเปิด" is
+      // shown only when the backend explicitly returns no_open_slots; any other/unknown status is
+      // treated as a recoverable condition rather than a manufactured "no open slots".
       const status = String(availability.data.availability_status || "").trim();
-      const message = status === "full"
-        ? "วันที่เลือกเต็มแล้ว กรุณาเลือกวันอื่น"
-        : status === "error"
-          ? "ระบบตรวจคิววันนี้ไม่สำเร็จ กรุณาลองใหม่"
-          : "ยังไม่มีคิวเปิดในวันนี้ กรุณาเลือกวันอื่น";
-      const tone = status === "error" ? "error" : "warning";
+      let message;
+      let tone = "warning";
+      if (status === "full") {
+        message = "วันที่เลือกเต็มแล้ว กรุณาเลือกวันอื่น";
+      } else if (status === "error") {
+        message = "ระบบตรวจคิววันนี้ไม่สำเร็จ กรุณาลองใหม่";
+        tone = "error";
+      } else if (status === "no_open_slots") {
+        message = "ยังไม่มีคิวเปิดในวันนี้ กรุณาเลือกวันอื่น";
+      } else {
+        message = "ไม่พบช่วงเวลาว่างในวันนี้ กรุณาลองใหม่อีกครั้งหรือเลือกวันอื่น";
+      }
       return `${root.utils.stateBox(tone, message)}<button type="button" class="secondary-btn" data-action="reload-slots">ตรวจคิววันนี้อีกครั้ง</button>`;
     }
     return `
@@ -649,13 +674,17 @@
     };
   }
 
-  async function refreshPricing(container) {
+  async function refreshPricing(container, opts = {}) {
     const payload = payloadFromDraft();
     if (!payload) throw new Error("ข้อมูลบริการไม่ครบ");
     root.state.setScheduledPreview("pricing", { status: "loading", data: null, error: "" });
-    root.state.setScheduledPreview("availability", { status: "idle", data: null, error: "", query_key: "", loaded_at: "" });
-    root.state.setScheduledPreview("calendar", { status: "idle", data: null, error: "", query_key: "", loaded_at: "" });
-    root.state.updateDraft("scheduled", { selectedSlot: null });
+    // During recovery the service has not changed, so keep any restored calendar/slot selection
+    // and only recompute the missing pricing. A normal (re)calculation invalidates dependents.
+    if (!opts.preserveDependents) {
+      root.state.setScheduledPreview("availability", { status: "idle", data: null, error: "", query_key: "", loaded_at: "" });
+      root.state.setScheduledPreview("calendar", { status: "idle", data: null, error: "", query_key: "", loaded_at: "" });
+      root.state.updateDraft("scheduled", { selectedSlot: null });
+    }
     paint(container);
     try {
       const data = await root.api.previewPricing(payload);
@@ -695,7 +724,7 @@
     }
   }
 
-  async function refreshAvailability(container) {
+  async function refreshAvailability(container, opts = {}) {
     const query = currentAvailabilityQuery();
     if (!query) {
       root.state.setScheduledPreview("availability", { status: "error", data: null, error: "ข้อมูลบริการ ราคา หรือวันที่ยังไม่พร้อม", query_key: "", loaded_at: "" });
@@ -709,7 +738,11 @@
     }
     const expectedKey = root.availability.queryKey(query);
     const requestId = ++availabilityRequestSeq;
-    root.state.updateDraft("scheduled", { selectedSlot: null });
+    // During recovery a restored slot selection (same service/date) is kept so the customer is not
+    // silently bumped; selectedSlotIsCurrent() still re-validates it against the fresh response.
+    if (!opts.preserveSelection) {
+      root.state.updateDraft("scheduled", { selectedSlot: null });
+    }
     root.state.setScheduledPreview("availability", { status: "loading", data: null, error: "", query_key: expectedKey, loaded_at: "" });
     paint(container);
     try {
@@ -1000,15 +1033,44 @@
     });
   }
 
+  // Defect A: when Step 2/3 is restored from storage (e.g. reload, returning to the tab) the
+  // in-memory pricing/calendar/slot preview is gone because only the draft + step are persisted.
+  // Recover the dependency chain in order pricing -> calendar -> selected-day availability, without
+  // firing competing requests and without bouncing the customer back to Step 1.
+  async function recoverScheduledDependencies(container) {
+    if (recoveryInFlight) return;
+    if (step() < 2) return;
+    const preview = root.state.scheduledPreview;
+    const needPricing = !preview.pricing.data && preview.pricing.status !== "loading";
+    const needCalendar = preview.calendar.status === "idle";
+    const needAvailability = preview.availability.status === "idle";
+    if (!needPricing && !needCalendar && !needAvailability) return;
+    recoveryInFlight = true;
+    try {
+      if (needPricing) {
+        try { await refreshPricing(container, { preserveDependents: true }); }
+        catch (_) { return; }
+      }
+      if (!root.state.scheduledPreview.pricing.data) return;
+      if (root.state.scheduledPreview.calendar.status === "idle") {
+        await refreshCalendar(container);
+      }
+      if (root.state.scheduledPreview.availability.status === "idle") {
+        await refreshAvailability(container, { preserveSelection: true });
+      }
+    } finally {
+      recoveryInFlight = false;
+    }
+  }
+
   function render(container) {
     paint(container);
-    if (step() === 1 && root.state.scheduledPreview.pricing.status === "idle") {
-      refreshPricing(container).catch(() => {});
-    }
-    if (step() === 2 && root.state.scheduledPreview.pricing.data && root.state.scheduledPreview.calendar.status === "idle") {
-      refreshCalendar(container);
-    } else if (step() === 2 && root.state.scheduledPreview.pricing.data && root.state.scheduledPreview.availability.status === "idle") {
-      refreshAvailability(container);
+    if (step() === 1) {
+      if (root.state.scheduledPreview.pricing.status === "idle") {
+        refreshPricing(container).catch(() => {});
+      }
+    } else {
+      recoverScheduledDependencies(container);
     }
     root.state.ensureSavedAddressPrefill("scheduled", () => paint(container));
   }

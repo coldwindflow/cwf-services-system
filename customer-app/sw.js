@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260621_availability_reason_hotfix_v1";
+const BUILD_ID = "20260621_booking_recovery_soT_v2";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,

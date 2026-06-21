@@ -270,8 +270,6 @@ async function eligibleCustomerTechnicians(deps, options) {
   const {
     pool,
     listTechniciansByType,
-    buildOffMapForDate,
-    isTechOffOnDate,
   } = deps;
   const date = options.date;
   const techType = options.tech_type || "company";
@@ -288,16 +286,18 @@ async function eligibleCustomerTechnicians(deps, options) {
   if (!(allTechs || []).length) diagnostic?.add("NO_TECHNICIAN_TYPE");
   const visibleTechs = (allTechs || []).filter((tech) => tech && tech.customer_slot_visible === true);
   if (!visibleTechs.length) diagnostic?.add("NO_CUSTOMER_VISIBLE_TECH");
-  const offMap = await buildOffMapForDate(date, visibleTechs.map((tech) => tech.username));
-  const notOff = visibleTechs.filter((tech) => !isTechOffOnDate(tech, date, offMap));
-  if (visibleTechs.length && !notOff.length) diagnostic?.add("TECH_OFF");
-  const matrixMap = await loadServiceMatrixMap(pool, notOff.map((tech) => tech.username));
-  const matrixMatched = notOff.filter((tech) => {
+  // Defect E: technician_monthly_work_calendar is the single source of truth for scheduled
+  // customer availability. An explicit monthly opt-in (can_accept_advance_job=true for the date)
+  // must NOT be closed by legacy weekly_off_days / technician_workdays_v2. Eligibility for the
+  // date is therefore decided solely by the monthly calendar gate below, not by legacy off-days.
+  // (Urgent Booking keeps its own legacy off-day handling elsewhere and is untouched.)
+  const matrixMap = await loadServiceMatrixMap(pool, visibleTechs.map((tech) => tech.username));
+  const matrixMatched = visibleTechs.filter((tech) => {
     const username = String(tech.username || "");
     if (!matrixMap.has(username)) return false;
     return techMatchesAllCriteriaStrict(matrixMap.get(username), criteriaList);
   });
-  if (notOff.length && !matrixMatched.length) diagnostic?.add("NO_MATCHING_SERVICE_MATRIX");
+  if (visibleTechs.length && !matrixMatched.length) diagnostic?.add("NO_MATCHING_SERVICE_MATRIX");
   const calendarMap = await loadAdvanceCalendarMap(pool, date, matrixMatched.map((tech) => tech.username), Boolean(options.lock_calendar_rows));
   const requestedUnits = serviceUnitCount(options);
   const usageMap = await loadDailyUsageMap(pool, date, matrixMatched.map((tech) => tech.username), options.ignore_job_id);
