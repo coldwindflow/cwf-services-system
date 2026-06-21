@@ -158,10 +158,10 @@ module.exports = function createTechnicianCalendarReadOnlyRoutes(deps = {}) {
         const can = !isUnset && row.can_accept_advance_job === true;
         const start = can ? (row.start_time || '09:00') : null;
         const end = can ? (row.end_time || '18:00') : null;
-        const jobs = can ? Number(row.max_jobs_per_day || 1) : null;
-        const units = can ? Number(row.max_units_per_day || 5) : null;
+        const jobs = can ? (row.max_jobs_per_day == null ? null : Number(row.max_jobs_per_day)) : null;
+        const units = can ? (row.max_units_per_day == null ? null : Number(row.max_units_per_day)) : null;
         const note = row.note || null;
-        const hasCustom = !!((can && (start !== '09:00' || end !== '18:00' || jobs !== 1 || units !== 5)) || String(note || '').trim());
+        const hasCustom = !!((can && (start !== '09:00' || end !== '18:00' || jobs !== null || units !== null)) || String(note || '').trim());
         const zones = [row.home_service_zone_code, row.secondary_service_zone_code, row.preferred_zone, [row.home_province, row.home_district].filter(Boolean).join(' ')].filter(Boolean);
         return {
           username: row.username,

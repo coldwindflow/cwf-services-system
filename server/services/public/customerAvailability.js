@@ -1,5 +1,10 @@
 "use strict";
 
+const {
+  loadCustomerScheduledLoadMap,
+  rankCustomerScheduledCandidates,
+} = require("./customerScheduledAssignment");
+
 const SLOT_STEP_MIN = 30;
 const DEFAULT_UI_START = "09:00";
 const DEFAULT_UI_END = "18:00";
@@ -325,11 +330,11 @@ async function eligibleCustomerTechnicians(deps, options) {
     const maxJobs = calendar.max_jobs_per_day == null ? null : Number(calendar.max_jobs_per_day);
     const maxUnits = calendar.max_units_per_day == null ? null : Number(calendar.max_units_per_day);
     const usage = usageMap.get(username) || { jobs_count: 0, units_count: 0 };
-    if (Number.isFinite(maxJobs) && maxJobs >= 0 && usage.jobs_count >= maxJobs) {
+    if (Number.isFinite(maxJobs) && maxJobs >= 1 && usage.jobs_count >= maxJobs) {
       capacityFull += 1;
       return false;
     }
-    if (Number.isFinite(maxUnits) && maxUnits >= 0 && (usage.units_count + requestedUnits) > maxUnits) {
+    if (Number.isFinite(maxUnits) && maxUnits >= 1 && (usage.units_count + requestedUnits) > maxUnits) {
       capacityFull += 1;
       return false;
     }
@@ -492,7 +497,8 @@ async function reservePublicCustomerTechnician(deps, options) {
     throw error;
   }
   const criteriaList = buildCriteriaList(options);
-  const lockKey = `${date}|${start}|${durationMin}|${options.tech_type || "company"}|${JSON.stringify(criteriaList)}|${serviceUnitCount(options)}`;
+  const requestedUnits = serviceUnitCount(options);
+  const lockKey = `customer_scheduled_auto_assign|${date}`;
   if (typeof db.query === "function") {
     await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [lockKey]);
   }
@@ -501,6 +507,12 @@ async function reservePublicCustomerTechnician(deps, options) {
     { ...options, date, lock_calendar_rows: true }
   );
   const startMin = deps.toMin(start);
+  const loadMap = await loadCustomerScheduledLoadMap(
+    db,
+    date,
+    techs.map((tech) => tech.username),
+    { start_min: startMin }
+  );
   const candidates = [];
   for (const tech of techs) {
     const cal = tech.advance_calendar || {};
@@ -512,14 +524,25 @@ async function reservePublicCustomerTechnician(deps, options) {
     const intervals = deps.buildStartIntervalsByCollision(busyBlocks, windowStart, windowEnd, durationMin);
     const ok = intervals.some((it) => startMin >= it.startMin && startMin <= it.endMin);
     if (!ok) continue;
+    const load = loadMap.get(String(tech.username || "")) || {};
     candidates.push({
       username: tech.username,
-      jobs_count: Number(tech.advance_usage?.jobs_count || 0),
-      units_count: Number(tech.advance_usage?.units_count || 0),
+      jobs_count: Number(load.jobs_count ?? tech.advance_usage?.jobs_count ?? 0),
+      units_count: Number(load.units_count ?? tech.advance_usage?.units_count ?? 0),
+      scheduled_minutes: Number(load.scheduled_minutes || 0),
+      previous_job_end_min: Number(load.previous_job_end_min ?? -1),
+      last_auto_assign_ms: Number(load.last_auto_assign_ms || 0),
     });
   }
-  candidates.sort((a, b) => a.jobs_count - b.jobs_count || a.units_count - b.units_count || String(a.username).localeCompare(String(b.username)));
-  const picked = candidates[0] || null;
+  const ranked = rankCustomerScheduledCandidates(candidates, {
+    date,
+    start,
+    duration_min: durationMin,
+    tech_type: options.tech_type || "company",
+    criteria: criteriaList,
+    requested_units: requestedUnits,
+  });
+  const picked = ranked[0] || null;
   if (!picked) {
     const error = new Error("CUSTOMER_SLOT_STALE");
     error.status = 409;
@@ -594,8 +617,8 @@ async function diagnoseTechnicianEligibility(deps, options) {
   const maxJobs = calendar.max_jobs_per_day == null ? null : Number(calendar.max_jobs_per_day);
   const maxUnits = calendar.max_units_per_day == null ? null : Number(calendar.max_units_per_day);
   let capacityOk = true;
-  if (Number.isFinite(maxJobs) && maxJobs >= 0 && usage.jobs_count >= maxJobs) capacityOk = false;
-  if (Number.isFinite(maxUnits) && maxUnits >= 0 && (usage.units_count + requestedUnits) > maxUnits) capacityOk = false;
+  if (Number.isFinite(maxJobs) && maxJobs >= 1 && usage.jobs_count >= maxJobs) capacityOk = false;
+  if (Number.isFinite(maxUnits) && maxUnits >= 1 && (usage.units_count + requestedUnits) > maxUnits) capacityOk = false;
   gates.capacity_ok = capacityOk;
   gates.usage = { jobs_count: usage.jobs_count, units_count: usage.units_count, requested_units: requestedUnits, max_jobs_per_day: maxJobs, max_units_per_day: maxUnits };
   if (!capacityOk) return { username, date, gates, reason: "CAPACITY_FULL" };
