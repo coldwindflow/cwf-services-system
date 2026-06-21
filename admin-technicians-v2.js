@@ -144,9 +144,11 @@
     if ($('editMonthlySalary')) $('editMonthlySalary').value = (t.monthly_salary_amount!=null ? String(t.monthly_salary_amount) : '');
     $('editWorkStart').value = t.work_start || '09:00';
     $('editWorkEnd').value = t.work_end || '18:00';
-    // slot visibility (default true)
-    const sv = (t.customer_slot_visible === false) ? false : true;
-    if ($('editCustomerSlotVisible')) $('editCustomerSlotVisible').checked = !!sv;
+    // slot visibility (Defect 2: only an explicit true means visible-to-customers).
+    // null / missing / false must render unchecked so the admin sees the SAME fail-closed
+    // state the customer eligibility query enforces (listTechniciansByType requires === true).
+    const sv = (t.customer_slot_visible === true);
+    if ($('editCustomerSlotVisible')) $('editCustomerSlotVisible').checked = sv;
     $('editNewPass').value = '';
     $('editConfirmPass').value = '';
     $('photoStatus').textContent = '—';
@@ -300,10 +302,23 @@
       customer_slot_visible: !!($('editCustomerSlotVisible') && $('editCustomerSlotVisible').checked),
     };
 
-    await apiFetch(`/admin/technicians/${encodeURIComponent(currentTech.username)}`,{
+    const saveResp = await apiFetch(`/admin/technicians/${encodeURIComponent(currentTech.username)}`,{
       method:'PUT',
       body: JSON.stringify(payload)
     });
+
+    // Defect 3: verify the server-persisted record matches what we submitted before reporting
+    // success. Do NOT show "saved" or close the modal until the read-back confirms the value.
+    const persisted = (saveResp && saveResp.technician) || {};
+    const persistedVisible = persisted.customer_slot_visible === true;
+    if (persistedVisible !== payload.customer_slot_visible) {
+      if ($('editCustomerSlotVisible')) $('editCustomerSlotVisible').checked = persistedVisible;
+      showToast('บันทึกการแสดงคิวลูกค้าไม่ตรงกับค่าที่ส่ง กรุณาลองใหม่','error');
+      return;
+    }
+    if (persisted.employment_type) {
+      $('editEmployment').value = persisted.employment_type;
+    }
 
     // save service matrix (Option B - strict)
     const matrix_json = collectMatrixFromUI();
@@ -311,7 +326,7 @@
       method:'PUT',
       body: JSON.stringify({ matrix_json })
     });
-    showToast('บันทึกแล้ว','success');
+    showToast(`บันทึกแล้ว • แสดงคิวลูกค้า: ${persistedVisible ? 'เปิด' : 'ปิด'} • ประเภท: ${persisted.employment_type || $('editEmployment').value}`,'success');
     closeEdit();
     loadTechs();
   }

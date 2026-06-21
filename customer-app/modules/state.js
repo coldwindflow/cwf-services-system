@@ -76,7 +76,8 @@
       services: [firstLine],
       date: today,
       calendar_month: today.slice(0, 7),
-      tech_type: "company",
+      // Defect 1: all admin-enabled employment types (filtered strictly server-side).
+      tech_type: "all",
       selectedSlot: null,
       allow_time_proposal: false,
       customer_name: "",

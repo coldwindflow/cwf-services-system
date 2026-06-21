@@ -5697,9 +5697,11 @@ function cwfCalendarUsername(){
   } catch { return ''; }
 }
 function cwfCalendarApi(path=''){
-  const u = cwfCalendarUsername();
-  if (!u) return `${API_BASE}/tech/work-calendar${path}`;
-  return `${API_BASE}/technicians/${encodeURIComponent(u)}/work-calendar-v2${path}`;
+  // Defect 4/6: technician self-service calendar must always use the session-identity
+  // endpoints (req.effective.username on the server). Never key the calendar off a
+  // client-supplied/localStorage username, which could read or write a different
+  // technician's rows than the customer availability pipeline reads.
+  return `${API_BASE}/tech/work-calendar${path}`;
 }
 function cwfDefaultCalendarItem(iso){
   const h = __cwfWorkCalendarState.holidays.get(iso);
@@ -6001,34 +6003,11 @@ function selectWorkCalendarDate(iso, rerender=true){
 async function saveCalendarDays(days, label='บันทึก'){
   const clean = days.filter(Boolean).slice(0,62);
   if(!clean.length) throw new Error('ไม่มีวันที่ให้บันทึก');
-  const useV2 = !!cwfCalendarUsername();
-  let body;
-  if (useV2 && clean.length === 1) {
-    const d = clean[0];
-    body = {
-      date: d.work_date || d.date,
-      can_accept_advance_job: !!d.can_accept_advance_job,
-      start_time: d.start_time,
-      end_time: d.end_time,
-      max_jobs_per_day: d.max_jobs_per_day,
-      max_units_per_day: d.max_units_per_day,
-      note: d.note || null
-    };
-  } else if (useV2) {
-    const first = clean[0] || {};
-    body = {
-      dates: clean.map(d => d.work_date || d.date).filter(Boolean),
-      can_accept_advance_job: !!first.can_accept_advance_job,
-      start_time: first.start_time,
-      end_time: first.end_time,
-      max_jobs_per_day: first.max_jobs_per_day,
-      max_units_per_day: first.max_units_per_day,
-      note: first.note || null
-    };
-  } else {
-    body = { days: clean };
-  }
-  const endpoint = useV2 ? cwfCalendarApi(clean.length === 1 ? '/day' : '/batch') : `${API_BASE}/tech/work-calendar/bulk`;
+  // Defect 4/6: always persist through the session-identity endpoints
+  // (PUT /tech/work-calendar/day for a single day, /bulk for many).
+  const single = clean.length === 1;
+  const endpoint = cwfCalendarApi(single ? '/day' : '/bulk');
+  const body = single ? clean[0] : { days: clean };
   const res = await fetch(endpoint, { method:'PUT', headers:{'Content-Type':'application/json'}, credentials:'include', body:JSON.stringify(body) });
   const data = await res.json().catch(()=>({}));
   if(!res.ok) throw new Error(data.error || `${label}ไม่สำเร็จ`);
@@ -6057,8 +6036,9 @@ async function toggleAdvanceDay(iso, userAction=false){
   try{
     cwfCalendarNotify(`กำลัง${nextAdvance?'เปิด':'ปิด'}รับงาน ${cwfFormatThaiDate(iso)}...`);
     const data = await saveCalendarDays([body], 'บันทึกวัน');
-    __cwfWorkCalendarState.items.set(iso, body);
-    renderWorkCalendarGrid();
+    // Defect 5: never paint the submitted payload as confirmed. Reload the month from the
+    // server so the grid reflects only persisted rows.
+    await loadWorkdaysModalData(__cwfWorkCalendarState.month);
     selectWorkCalendarDate(iso, false);
     const skipped = Number(data.skipped_locked || 0);
     cwfCalendarNotify(`${nextAdvance?'เปิด':'ปิด'}รับงานล่วงหน้าวันที่ ${cwfFormatThaiDate(iso)} แล้ว${skipped ? ` • ข้ามวันที่มีงาน ${skipped} วัน` : ''}`);
@@ -6077,8 +6057,8 @@ async function setSelectedDayAdvance(isAdvance){
   try{
     cwfCalendarNotify(`กำลัง${isAdvance?'เปิด':'ปิด'}รับงาน ${cwfFormatThaiDate(iso)}...`);
     const data = await saveCalendarDays([body], 'บันทึกวัน');
-    __cwfWorkCalendarState.items.set(iso, body);
-    renderWorkCalendarGrid();
+    // Defect 5: reload from server instead of painting the submitted payload.
+    await loadWorkdaysModalData(__cwfWorkCalendarState.month);
     selectWorkCalendarDate(iso, false);
     const skipped = Number(data.skipped_locked || 0);
     cwfCalendarNotify(`${isAdvance?'เปิด':'ปิด'}รับงานล่วงหน้าวันที่ ${cwfFormatThaiDate(iso)} แล้ว${skipped ? ` • ข้ามวันที่มีงาน ${skipped} วัน` : ''}`);
@@ -6151,10 +6131,11 @@ async function saveBulkSelected(custom=false, isAdvance=true){
   try{
     cwfCalendarNotify('กำลังบันทึกวันที่เลือก...');
     const data = await saveCalendarDays(days, 'บันทึกวันที่เลือก');
-    days.forEach(d=>__cwfWorkCalendarState.items.set(d.work_date, d));
     const skipped = Number(data.skipped_locked || 0) + (Array.from(__cwfWorkCalendarState.selectedDates).length - dates.length);
     __cwfWorkCalendarState.selectedDates.clear();
-    updateMultiModeUI(); renderWorkCalendarGrid();
+    // Defect 5: reload month from server; draw only persisted rows (partial saves reflected).
+    await loadWorkdaysModalData(__cwfWorkCalendarState.month);
+    updateMultiModeUI();
     cwfCalendarNotify(`บันทึกแล้ว ${data.saved ?? data.count ?? days.length} วัน${skipped ? ` ข้าม ${skipped} วันที่มีงานอยู่แล้ว` : ''}`);
   }catch(e){ cwfCalendarNotify(`❌ ${e.message}`, 'error'); }
 }

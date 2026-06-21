@@ -52,6 +52,9 @@ const createAdminDeductionsReadOnlyRoutes = require("./server/routes/adminDeduct
 const createTechnicianBaseStatusDataHelpers = require("./server/helpers/technicianBaseStatusDataHelpers");
 const createTechnicianBaseStatusReadOnlyRoutes = require("./server/routes/technicianBaseStatusReadOnly");
 const createTechnicianCalendarReadOnlyRoutes = require("./server/routes/technicianCalendarReadOnly");
+const createTechnicianCalendarWriteRoutes = require("./server/routes/technicianCalendarWrite");
+const { toIsoDate, normWorkDayPayload, countLockedAdvanceJobsForDate } = require("./server/lib/technicianCalendar");
+const { upsertTechnicianProfile } = require("./server/services/technicianProfileUpsert");
 const createTechnicianCountSummaryReadOnlyRoutes = require("./server/routes/technicianCountSummaryReadOnly");
 const createAdminAiOfficeReadOnlyRoutes = require("./server/routes/adminAiOfficeReadOnly");
 const createAdminAiBookingIntakeRoutes = require("./server/routes/adminAiBookingIntake");
@@ -19967,15 +19970,6 @@ app.put("/technicians/:username/accept-status", async (req, res) => {
 const ENABLE_TECH_WORKDAYS_V2 = (process.env.ENABLE_TECH_WORKDAYS_V2 || "1") === "1";
 const TECH_WORKDAYS_MAX_AHEAD_DAYS = Number(process.env.TECH_WORKDAYS_MAX_AHEAD_DAYS || 14);
 
-function toIsoDate(d){
-  const dt = (d instanceof Date) ? d : new Date(d);
-  if (Number.isNaN(dt.getTime())) return '';
-  const y = dt.getFullYear();
-  const m = String(dt.getMonth()+1).padStart(2,'0');
-  const dd = String(dt.getDate()).padStart(2,'0');
-  return `${y}-${m}-${dd}`;
-}
-
 app.get('/technicians/:username/weekly-off-days', async (req, res) => {
   const { username } = req.params;
   try {
@@ -20098,45 +20092,6 @@ function isStrictIsoDate(value){
 function isStrictMonth(value){
   const s = String(value || '').trim();
   return /^\d{4}-\d{2}$/.test(s) && toIsoDate(`${s}-01`).startsWith(s);
-}
-function normWorkDayPayload(input = {}){
-  // Advance calendar v3 intentionally has only 2 statuses:
-  // advance_only = รับงานล่วงหน้า, unavailable = ไม่รับงานล่วงหน้า
-  // Holiday/leave are treated as unavailable and can be explained in note.
-  let raw = String(input.day_status || '').trim();
-  if (input.can_accept_advance_job === true) raw = 'advance_only';
-  else if (input.can_accept_advance_job === false) raw = 'unavailable';
-  else if (['advance_only','available_advance','working','available','accept'].includes(raw)) raw = 'advance_only';
-  else raw = 'unavailable';
-  const day_status = raw;
-  const canAdvance = day_status === 'advance_only';
-  const start_time = canAdvance ? (/^\d{2}:\d{2}$/.test(String(input.start_time || '')) ? String(input.start_time) : '09:00') : null;
-  const end_time = canAdvance ? (/^\d{2}:\d{2}$/.test(String(input.end_time || '')) ? String(input.end_time) : '18:00') : null;
-  const max_jobs_per_day = canAdvance ? Math.max(1, Math.min(20, Number(input.max_jobs_per_day || 1))) : null;
-  const max_units_per_day = canAdvance ? Math.max(1, Math.min(99, Number(input.max_units_per_day || 5))) : null;
-  return {
-    day_status,
-    can_accept_advance_job: canAdvance,
-    // This calendar is NOT for urgent jobs. Urgent jobs continue using accept_status flow only.
-    can_accept_urgent_job: false,
-    start_time,
-    end_time,
-    max_jobs_per_day,
-    max_units_per_day,
-    note: String(input.note || '').slice(0,500)
-  };
-}
-async function countLockedAdvanceJobsForDate(clientOrPool, username, workDate){
-  const q = await clientOrPool.query(`
-    SELECT COUNT(DISTINCT j.job_id)::int AS job_count
-    FROM public.jobs j
-    LEFT JOIN public.job_assignments ja ON ja.job_id=j.job_id AND ja.technician_username=$1
-    WHERE (j.technician_username=$1 OR ja.technician_username=$1)
-      AND j.appointment_datetime IS NOT NULL
-      AND (j.appointment_datetime AT TIME ZONE 'Asia/Bangkok')::date = $2::date
-      AND COALESCE(j.job_status,'') NOT IN ('cancelled','canceled')
-  `, [username, workDate]);
-  return Number(q.rows?.[0]?.job_count || 0);
 }
 async function getTechTodayJobs(username){
   const r = await pool.query(`
@@ -20401,84 +20356,55 @@ app.use(createTechnicianCalendarReadOnlyRoutes({
   isStrictIsoDate,
 }));
 
-app.put('/tech/work-calendar/day', requireTechnicianSession, async (req, res) => {
-  try {
-    const username = String(req.effective?.username || '').trim();
-    const work_date = toIsoDate(String(req.body?.work_date || '').trim());
-    if (!work_date) return res.status(400).json({ error:'ต้องมี work_date' });
-    const lockedJobs = await countLockedAdvanceJobsForDate(pool, username, work_date);
-    if (lockedJobs > 0) {
-      return res.status(409).json({
-        error:'วันนี้มีงานอยู่แล้ว ช่างไม่สามารถแก้ไขวันทำงานได้ กรุณาติดต่อแอดมิน หากมีความจำเป็น',
-        locked:true,
-        job_count: lockedJobs
-      });
-    }
-    const p = normWorkDayPayload(req.body || {});
-    const r = await pool.query(`
-      INSERT INTO public.technician_monthly_work_calendar
-        (technician_username, work_date, day_status, can_accept_advance_job, can_accept_urgent_job, start_time, end_time, max_jobs_per_day, max_units_per_day, note, source, updated_by, updated_at)
-      VALUES($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,'technician',$1,NOW())
-      ON CONFLICT(technician_username, work_date) DO UPDATE SET
-        day_status=EXCLUDED.day_status,
-        can_accept_advance_job=EXCLUDED.can_accept_advance_job,
-        can_accept_urgent_job=EXCLUDED.can_accept_urgent_job,
-        start_time=EXCLUDED.start_time,
-        end_time=EXCLUDED.end_time,
-        max_jobs_per_day=EXCLUDED.max_jobs_per_day,
-        max_units_per_day=EXCLUDED.max_units_per_day,
-        note=EXCLUDED.note,
-        source='technician', updated_by=$1, updated_at=NOW()
-      RETURNING *
-    `, [username, work_date, p.day_status, p.can_accept_advance_job, p.can_accept_urgent_job, p.start_time, p.end_time, p.max_jobs_per_day, p.max_units_per_day, p.note]);
-    res.json({ ok:true, item:r.rows[0] });
-  } catch (e) {
-    console.error('PUT /tech/work-calendar/day error:', e);
-    res.status(500).json({ error:'บันทึกปฏิทินรับงานไม่สำเร็จ' });
-  }
-});
+app.use(createTechnicianCalendarWriteRoutes({
+  pool,
+  requireTechnicianSession,
+  toIsoDate,
+  normWorkDayPayload,
+  countLockedAdvanceJobsForDate,
+}));
 
-app.put('/tech/work-calendar/bulk', requireTechnicianSession, async (req, res) => {
+// Defect 4/6: technician self-service copy uses the session identity (req.effective.username)
+// so it can never write to a username supplied by the client. Mirrors the admin v2 copy logic.
+app.post('/tech/work-calendar/copy-previous-month', requireTechnicianSession, async (req, res) => {
   const client = await pool.connect();
   try {
     const username = String(req.effective?.username || '').trim();
-    const days = Array.isArray(req.body?.days) ? req.body.days : [];
-    if (!days.length) return res.status(400).json({ error:'ต้องเลือกวันอย่างน้อย 1 วัน' });
+    const targetMonth = String(req.body?.target_month || '').trim();
+    if (!isStrictMonth(targetMonth)) return res.status(400).json({ error:'target_month ต้องเป็นรูปแบบ YYYY-MM' });
+    const [y,m] = targetMonth.split('-').map(Number);
+    const prev = new Date(y, m - 2, 1);
+    const prevMonth = toIsoDate(prev).slice(0,7);
+    const prevData = await loadWorkCalendarV2Month(username, prevMonth);
+    const prevByDay = new Map(prevData.days.map(d => [String(d.date).slice(-2), d]));
     await client.query('BEGIN');
-    let count = 0;
+    let saved = 0;
     let skippedLocked = 0;
-    for (const d of days.slice(0, 62)) {
-      const work_date = toIsoDate(String(d.work_date || '').trim());
-      if (!work_date) continue;
-      const lockedJobs = await countLockedAdvanceJobsForDate(client, username, work_date);
+    for (const workDate of cwfDateRange(firstDayOfMonthIso(targetMonth), endDayOfMonthIso(targetMonth))) {
+      const source = prevByDay.get(workDate.slice(-2));
+      if (!source) continue;
+      const lockedJobs = await countLockedAdvanceJobsForDate(client, username, workDate);
       if (lockedJobs > 0) {
         skippedLocked++;
         continue;
       }
-      const p = normWorkDayPayload(d);
-      await client.query(`
-        INSERT INTO public.technician_monthly_work_calendar
-          (technician_username, work_date, day_status, can_accept_advance_job, can_accept_urgent_job, start_time, end_time, max_jobs_per_day, max_units_per_day, note, source, updated_by, updated_at)
-        VALUES($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,'technician',$1,NOW())
-        ON CONFLICT(technician_username, work_date) DO UPDATE SET
-          day_status=EXCLUDED.day_status,
-          can_accept_advance_job=EXCLUDED.can_accept_advance_job,
-          can_accept_urgent_job=EXCLUDED.can_accept_urgent_job,
-          start_time=EXCLUDED.start_time,
-          end_time=EXCLUDED.end_time,
-          max_jobs_per_day=EXCLUDED.max_jobs_per_day,
-          max_units_per_day=EXCLUDED.max_units_per_day,
-          note=EXCLUDED.note,
-          source='technician', updated_by=$1, updated_at=NOW()
-      `, [username, work_date, p.day_status, p.can_accept_advance_job, p.can_accept_urgent_job, p.start_time, p.end_time, p.max_jobs_per_day, p.max_units_per_day, p.note]);
-      count++;
+      await upsertCalendarDay(client, username, workDate, {
+        work_date: workDate,
+        can_accept_advance_job: !!source.can_accept_advance_job,
+        start_time: source.start_time,
+        end_time: source.end_time,
+        max_jobs_per_day: source.max_jobs_per_day,
+        max_units_per_day: source.max_units_per_day,
+        note: source.note
+      });
+      saved++;
     }
     await client.query('COMMIT');
-    res.json({ ok:true, count, skipped_locked: skippedLocked });
+    res.json({ ok:true, saved, skipped_locked:skippedLocked });
   } catch (e) {
     await client.query('ROLLBACK');
-    console.error('PUT /tech/work-calendar/bulk error:', e);
-    res.status(500).json({ error:'บันทึกทั้งเดือนไม่สำเร็จ' });
+    console.error('POST /tech/work-calendar/copy-previous-month error:', e);
+    res.status(500).json({ error:'ตั้งค่าเหมือนเดือนก่อนไม่สำเร็จ' });
   } finally { client.release(); }
 });
 
@@ -20911,7 +20837,9 @@ app.get("/admin/technicians", requireAdminSession, async (req, res) => {
               COALESCE(p.monthly_salary_amount,0)::numeric AS monthly_salary_amount,
               COALESCE(p.work_start,'09:00') AS work_start,
               COALESCE(p.work_end,'18:00') AS work_end,
-              COALESCE(p.customer_slot_visible, TRUE) AS customer_slot_visible,
+              -- Defect 2: surface the TRUE persisted visibility (null stays null) so the admin UI
+              -- reflects the same fail-closed state the customer eligibility query enforces.
+              p.customer_slot_visible AS customer_slot_visible,
               p.rating, p.grade, p.done_count,
               COALESCE(p.accept_status,'ready') AS accept_status, p.accept_status_updated_at
        FROM public.users u
@@ -21068,37 +20996,21 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
     }
 
     // profile
-    await pool.query(
-      `INSERT INTO public.technician_profiles (username, technician_code, full_name, position, phone)
-       VALUES ($1,$2,$3,$4,$5)
-       ON CONFLICT (username) DO UPDATE SET
-         technician_code = EXCLUDED.technician_code,
-         full_name = COALESCE(EXCLUDED.full_name, public.technician_profiles.full_name),
-         position = COALESCE(EXCLUDED.position, public.technician_profiles.position),
-         phone = COALESCE(EXCLUDED.phone, public.technician_profiles.phone),
-         employment_type = COALESCE($6, public.technician_profiles.employment_type),
-         work_start = COALESCE($7, public.technician_profiles.work_start),
-         work_end = COALESCE($8, public.technician_profiles.work_end),
-         customer_slot_visible = COALESCE($9, public.technician_profiles.customer_slot_visible),
-         compensation_mode = COALESCE($10, public.technician_profiles.compensation_mode),
-         daily_wage_amount = COALESCE($11, public.technician_profiles.daily_wage_amount),
-         monthly_salary_amount = COALESCE($12, public.technician_profiles.monthly_salary_amount),
-         updated_at = CURRENT_TIMESTAMP`,
-      [
-        username,
-        technician_code,
-        full_name || null,
-        position,
-        phoneRaw || null,
-        employment_type ? String(employment_type).toLowerCase() : null,
-        work_start,
-        work_end,
-        hasCustomerSlotVisible ? customer_slot_visible : null,
-        compensation_mode,
-        daily_wage_amount,
-        monthly_salary_amount,
-      ]
-    );
+    const persistedProfile = await upsertTechnicianProfile(pool, {
+      username,
+      technician_code,
+      full_name,
+      position,
+      phone: phoneRaw,
+      employment_type,
+      work_start,
+      work_end,
+      customer_slot_visible: hasCustomerSlotVisible ? customer_slot_visible : null,
+      compensation_mode,
+      daily_wage_amount,
+      monthly_salary_amount,
+    });
+    const profileUpsert = { rows: [persistedProfile] };
 
     // password (optional)
     if (newPassword) {
@@ -21111,7 +21023,19 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
       await pool.query(`UPDATE public.users SET password=$2 WHERE username=$1`, [username, newPassword]);
     }
 
-    res.json({ ok: true });
+    // Defect 3: return the persisted record so the admin UI can verify the read-back
+    // (customer_slot_visible/employment_type) matches what it submitted before reporting success.
+    const persisted = profileUpsert.rows[0] || {};
+    res.json({
+      ok: true,
+      technician: {
+        username: persisted.username || username,
+        employment_type: persisted.employment_type || null,
+        customer_slot_visible: persisted.customer_slot_visible === true
+          ? true
+          : (persisted.customer_slot_visible === false ? false : null),
+      },
+    });
   } catch (e) {
     console.error("PUT admin technician error:", e);
     res.status(500).json({ error: "บันทึกไม่สำเร็จ" });
@@ -24627,6 +24551,30 @@ for (let t = startMin; t < endMin; t += slot_step_min) {
   }
 });
 
+// Defect 7: Admin-only scheduled-availability eligibility diagnostic.
+// Reports each gate (account, employment type, explicit visibility, service matrix,
+// monthly calendar row, advance flag, time window, capacity, collision, final eligible)
+// for a single technician + date + service criteria. Admin-only; never public.
+app.get("/admin/customer-eligibility-diagnostic", requireAdminSession, async (req, res) => {
+  try {
+    const username = String(req.query.username || "").trim();
+    const date = String(req.query.date || "").slice(0, 10);
+    if (!username || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: "ต้องระบุ username และ date (YYYY-MM-DD)" });
+    }
+    const duration_min = Math.max(15, Number(req.query.duration_min || 60));
+    const result = await customerAvailability.diagnoseTechnicianEligibility(
+      publicCustomerAvailabilityDeps(),
+      { ...req.query, username, date, duration_min }
+    );
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    console.error("GET /admin/customer-eligibility-diagnostic error:", e);
+    const status = Number(e.status || 500);
+    res.status(status >= 400 && status < 600 ? status : 500).json({ error: "วิเคราะห์สิทธิ์การแสดงคิวไม่สำเร็จ" });
+  }
+});
+
 app.get("/public/availability", async (req, res) => {
   const date = (req.query.date || getBangkokTodayYMD()).toString();
   const start = (req.query.start || "08:00").toString();
@@ -24753,8 +24701,15 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
 
 
   // ✅ Server-side validation: ต้องมีอย่างน้อย 1 ช่างว่างจริงในช่วงเวลานี้ (คิด buffer)
-  // - scheduled => company, urgent => partner
-  const requestedTechType = bm === "urgent" ? "partner" : "company";
+  // - urgent => partner
+  // - scheduled (Customer App V2) => all employment types the admin opted in (customer_slot_visible)
+  // - scheduled (legacy callers) => company (unchanged)
+  // Defect 1: Customer App V2 scheduled booking must not be limited to company technicians;
+  // it mirrors the public availability query (tech_type=all) and stays strict via the
+  // customer_slot_visible + service matrix + monthly calendar gates below.
+  const requestedTechType = bm === "urgent"
+    ? "partner"
+    : (clientApp === "customer_app_v2" ? "all" : "company");
   try {
     if (bm === "scheduled" && clientApp === "customer_app_v2") {
       const startIso = normalizeAppointmentDatetime(appointment_datetime);
