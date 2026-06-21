@@ -40,7 +40,11 @@
     const durationMin = Math.max(15, Number(pricingData && pricingData.duration_min || 0));
     const query = {
       date: String(d.date || "").trim(),
-      tech_type: "company",
+      // Defect 1: scheduled customer availability must consider every employment type the
+      // admin has explicitly opted in via customer_slot_visible=true (company OR partner).
+      // Hardcoding company silently hid admin-enabled partner technicians. The backend still
+      // filters strictly by customer_slot_visible + service matrix + monthly calendar.
+      tech_type: "all",
       duration_min: durationMin,
       mode: "start",
       job_type: payload.job_type || "",
@@ -62,7 +66,8 @@
     const durationMin = Math.max(15, Number(pricingData && pricingData.duration_min || 0));
     const query = {
       month: String(d.calendar_month || d.date?.slice(0, 7) || "").trim(),
-      tech_type: "company",
+      // Defect 1: see publicAvailabilityQuery — calendar must use the same all-types query.
+      tech_type: "all",
       duration_min: durationMin,
       job_type: payload.job_type || "",
       ac_type: payload.ac_type || "",

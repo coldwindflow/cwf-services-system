@@ -20482,6 +20482,50 @@ app.put('/tech/work-calendar/bulk', requireTechnicianSession, async (req, res) =
   } finally { client.release(); }
 });
 
+// Defect 4/6: technician self-service copy uses the session identity (req.effective.username)
+// so it can never write to a username supplied by the client. Mirrors the admin v2 copy logic.
+app.post('/tech/work-calendar/copy-previous-month', requireTechnicianSession, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    const username = String(req.effective?.username || '').trim();
+    const targetMonth = String(req.body?.target_month || '').trim();
+    if (!isStrictMonth(targetMonth)) return res.status(400).json({ error:'target_month ต้องเป็นรูปแบบ YYYY-MM' });
+    const [y,m] = targetMonth.split('-').map(Number);
+    const prev = new Date(y, m - 2, 1);
+    const prevMonth = toIsoDate(prev).slice(0,7);
+    const prevData = await loadWorkCalendarV2Month(username, prevMonth);
+    const prevByDay = new Map(prevData.days.map(d => [String(d.date).slice(-2), d]));
+    await client.query('BEGIN');
+    let saved = 0;
+    let skippedLocked = 0;
+    for (const workDate of cwfDateRange(firstDayOfMonthIso(targetMonth), endDayOfMonthIso(targetMonth))) {
+      const source = prevByDay.get(workDate.slice(-2));
+      if (!source) continue;
+      const lockedJobs = await countLockedAdvanceJobsForDate(client, username, workDate);
+      if (lockedJobs > 0) {
+        skippedLocked++;
+        continue;
+      }
+      await upsertCalendarDay(client, username, workDate, {
+        work_date: workDate,
+        can_accept_advance_job: !!source.can_accept_advance_job,
+        start_time: source.start_time,
+        end_time: source.end_time,
+        max_jobs_per_day: source.max_jobs_per_day,
+        max_units_per_day: source.max_units_per_day,
+        note: source.note
+      });
+      saved++;
+    }
+    await client.query('COMMIT');
+    res.json({ ok:true, saved, skipped_locked:skippedLocked });
+  } catch (e) {
+    await client.query('ROLLBACK');
+    console.error('POST /tech/work-calendar/copy-previous-month error:', e);
+    res.status(500).json({ error:'ตั้งค่าเหมือนเดือนก่อนไม่สำเร็จ' });
+  } finally { client.release(); }
+});
+
 app.get('/tech/daily-readiness/today', requireTechnicianSession, async (req, res) => {
   try {
     const username = String(req.effective?.username || '').trim();
@@ -20911,7 +20955,9 @@ app.get("/admin/technicians", requireAdminSession, async (req, res) => {
               COALESCE(p.monthly_salary_amount,0)::numeric AS monthly_salary_amount,
               COALESCE(p.work_start,'09:00') AS work_start,
               COALESCE(p.work_end,'18:00') AS work_end,
-              COALESCE(p.customer_slot_visible, TRUE) AS customer_slot_visible,
+              -- Defect 2: surface the TRUE persisted visibility (null stays null) so the admin UI
+              -- reflects the same fail-closed state the customer eligibility query enforces.
+              p.customer_slot_visible AS customer_slot_visible,
               p.rating, p.grade, p.done_count,
               COALESCE(p.accept_status,'ready') AS accept_status, p.accept_status_updated_at
        FROM public.users u
@@ -21068,7 +21114,7 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
     }
 
     // profile
-    await pool.query(
+    const profileUpsert = await pool.query(
       `INSERT INTO public.technician_profiles (username, technician_code, full_name, position, phone)
        VALUES ($1,$2,$3,$4,$5)
        ON CONFLICT (username) DO UPDATE SET
@@ -21083,7 +21129,8 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
          compensation_mode = COALESCE($10, public.technician_profiles.compensation_mode),
          daily_wage_amount = COALESCE($11, public.technician_profiles.daily_wage_amount),
          monthly_salary_amount = COALESCE($12, public.technician_profiles.monthly_salary_amount),
-         updated_at = CURRENT_TIMESTAMP`,
+         updated_at = CURRENT_TIMESTAMP
+       RETURNING username, employment_type, customer_slot_visible`,
       [
         username,
         technician_code,
@@ -21111,7 +21158,19 @@ app.put("/admin/technicians/:username", requireAdminSession, async (req, res) =>
       await pool.query(`UPDATE public.users SET password=$2 WHERE username=$1`, [username, newPassword]);
     }
 
-    res.json({ ok: true });
+    // Defect 3: return the persisted record so the admin UI can verify the read-back
+    // (customer_slot_visible/employment_type) matches what it submitted before reporting success.
+    const persisted = profileUpsert.rows[0] || {};
+    res.json({
+      ok: true,
+      technician: {
+        username: persisted.username || username,
+        employment_type: persisted.employment_type || null,
+        customer_slot_visible: persisted.customer_slot_visible === true
+          ? true
+          : (persisted.customer_slot_visible === false ? false : null),
+      },
+    });
   } catch (e) {
     console.error("PUT admin technician error:", e);
     res.status(500).json({ error: "บันทึกไม่สำเร็จ" });
@@ -24627,6 +24686,30 @@ for (let t = startMin; t < endMin; t += slot_step_min) {
   }
 });
 
+// Defect 7: Admin-only scheduled-availability eligibility diagnostic.
+// Reports each gate (account, employment type, explicit visibility, service matrix,
+// monthly calendar row, advance flag, time window, capacity, collision, final eligible)
+// for a single technician + date + service criteria. Admin-only; never public.
+app.get("/admin/customer-eligibility-diagnostic", requireAdminSession, async (req, res) => {
+  try {
+    const username = String(req.query.username || "").trim();
+    const date = String(req.query.date || "").slice(0, 10);
+    if (!username || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      return res.status(400).json({ error: "ต้องระบุ username และ date (YYYY-MM-DD)" });
+    }
+    const duration_min = Math.max(15, Number(req.query.duration_min || 60));
+    const result = await customerAvailability.diagnoseTechnicianEligibility(
+      publicCustomerAvailabilityDeps(),
+      { ...req.query, username, date, duration_min }
+    );
+    res.json({ ok: true, ...result });
+  } catch (e) {
+    console.error("GET /admin/customer-eligibility-diagnostic error:", e);
+    const status = Number(e.status || 500);
+    res.status(status >= 400 && status < 600 ? status : 500).json({ error: "วิเคราะห์สิทธิ์การแสดงคิวไม่สำเร็จ" });
+  }
+});
+
 app.get("/public/availability", async (req, res) => {
   const date = (req.query.date || getBangkokTodayYMD()).toString();
   const start = (req.query.start || "08:00").toString();
@@ -24753,8 +24836,15 @@ console.log("[latlng_parse]", { ok: !!parsedLL });
 
 
   // ✅ Server-side validation: ต้องมีอย่างน้อย 1 ช่างว่างจริงในช่วงเวลานี้ (คิด buffer)
-  // - scheduled => company, urgent => partner
-  const requestedTechType = bm === "urgent" ? "partner" : "company";
+  // - urgent => partner
+  // - scheduled (Customer App V2) => all employment types the admin opted in (customer_slot_visible)
+  // - scheduled (legacy callers) => company (unchanged)
+  // Defect 1: Customer App V2 scheduled booking must not be limited to company technicians;
+  // it mirrors the public availability query (tech_type=all) and stays strict via the
+  // customer_slot_visible + service matrix + monthly calendar gates below.
+  const requestedTechType = bm === "urgent"
+    ? "partner"
+    : (clientApp === "customer_app_v2" ? "all" : "company");
   try {
     if (bm === "scheduled" && clientApp === "customer_app_v2") {
       const startIso = normalizeAppointmentDatetime(appointment_datetime);

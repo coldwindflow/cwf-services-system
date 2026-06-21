@@ -528,9 +528,104 @@ async function reservePublicCustomerTechnician(deps, options) {
   return picked;
 }
 
+// Defect 7: Admin-only eligibility diagnostic. Runs every scheduled-availability gate for a
+// single technician + date + service criteria and reports exactly where eligibility fails.
+// This must never be exposed via a public route (it reveals technician identity/config).
+async function diagnoseTechnicianEligibility(deps, options) {
+  const { pool, listTechniciansByType } = deps;
+  const username = String(options.username || "").trim();
+  const date = String(options.date || "").slice(0, 10);
+  const durationMin = Math.max(15, Number(options.duration_min || 60));
+  const criteriaList = buildCriteriaList(options);
+  const criteriaValid = validateCriteriaList(criteriaList);
+
+  const gates = {
+    account_exists: false,
+    employment_type: null,
+    criteria_valid: criteriaValid,
+    explicit_visible: false,
+    matrix_exists: false,
+    matrix_matched: false,
+    calendar_row_exists: false,
+    advance_enabled: false,
+    time_window_valid: false,
+    capacity_ok: false,
+    collision_ok: false,
+    final_eligible: false,
+  };
+
+  if (!username || !date) {
+    return { username, date, gates, reason: "USERNAME_AND_DATE_REQUIRED" };
+  }
+
+  const allTechs = await listTechniciansByType("all", { include_paused: true });
+  const tech = (allTechs || []).find((t) => String(t.username || "") === username) || null;
+  gates.account_exists = Boolean(tech);
+  if (!tech) return { username, date, gates, reason: "TECHNICIAN_NOT_FOUND" };
+  gates.employment_type = tech.employment_type || null;
+
+  gates.explicit_visible = tech.customer_slot_visible === true;
+  if (!gates.explicit_visible) return { username, date, gates, reason: "NOT_CUSTOMER_VISIBLE" };
+
+  if (!criteriaValid) return { username, date, gates, reason: "CUSTOMER_SLOT_SERVICE_CRITERIA_REQUIRED" };
+
+  const matrixMap = await loadServiceMatrixMap(pool, [username]);
+  gates.matrix_exists = matrixMap.has(username);
+  if (!gates.matrix_exists) return { username, date, gates, reason: "NO_SERVICE_MATRIX" };
+  gates.matrix_matched = techMatchesAllCriteriaStrict(matrixMap.get(username), criteriaList);
+  if (!gates.matrix_matched) return { username, date, gates, reason: "NO_MATCHING_SERVICE_MATRIX" };
+
+  const calendarMap = await loadAdvanceCalendarMap(pool, date, [username]);
+  const calendar = calendarMap.get(username) || null;
+  gates.calendar_row_exists = Boolean(calendar);
+  if (!calendar) return { username, date, gates, reason: "NO_ADVANCE_CALENDAR_ROW" };
+  gates.advance_enabled = calendar.can_accept_advance_job === true;
+  if (!gates.advance_enabled) return { username, date, gates, reason: "ADVANCE_CLOSED" };
+
+  const start = String(calendar.start_time || "").slice(0, 5);
+  const end = String(calendar.end_time || "").slice(0, 5);
+  gates.time_window_valid = /^\d{2}:\d{2}$/.test(start) && /^\d{2}:\d{2}$/.test(end);
+  gates.calendar_window = { start, end };
+  if (!gates.time_window_valid) return { username, date, gates, reason: "INVALID_ADVANCE_WINDOW" };
+
+  const requestedUnits = serviceUnitCount(options);
+  const usageMap = await loadDailyUsageMap(pool, date, [username], options.ignore_job_id);
+  const usage = usageMap.get(username) || { jobs_count: 0, units_count: 0 };
+  const maxJobs = calendar.max_jobs_per_day == null ? null : Number(calendar.max_jobs_per_day);
+  const maxUnits = calendar.max_units_per_day == null ? null : Number(calendar.max_units_per_day);
+  let capacityOk = true;
+  if (Number.isFinite(maxJobs) && maxJobs >= 0 && usage.jobs_count >= maxJobs) capacityOk = false;
+  if (Number.isFinite(maxUnits) && maxUnits >= 0 && (usage.units_count + requestedUnits) > maxUnits) capacityOk = false;
+  gates.capacity_ok = capacityOk;
+  gates.usage = { jobs_count: usage.jobs_count, units_count: usage.units_count, requested_units: requestedUnits, max_jobs_per_day: maxJobs, max_units_per_day: maxUnits };
+  if (!capacityOk) return { username, date, gates, reason: "CAPACITY_FULL" };
+
+  // Collision: is there at least one startable interval inside the technician window today?
+  try {
+    const uiStart = deps.toMin(DEFAULT_UI_START);
+    const uiEnd = deps.toMin(DEFAULT_UI_END);
+    const windowStart = Math.max(uiStart, deps.toMin(start));
+    const windowEnd = Math.min(uiEnd, deps.toMin(end));
+    if (Number.isFinite(windowStart) && Number.isFinite(windowEnd) && windowEnd > windowStart) {
+      const busyBlocks = await deps.listBusyBlocksForTechOnDate(username, date, options.ignore_job_id || null);
+      const intervals = deps.buildStartIntervalsByCollision(busyBlocks, windowStart, windowEnd, durationMin);
+      gates.collision_ok = Array.isArray(intervals) && intervals.length > 0;
+    } else {
+      gates.collision_ok = false;
+    }
+  } catch (_) {
+    gates.collision_ok = false;
+  }
+  if (!gates.collision_ok) return { username, date, gates, reason: "COLLISION_FULL" };
+
+  gates.final_eligible = true;
+  return { username, date, gates, reason: "AVAILABLE" };
+}
+
 module.exports = {
   buildCriteriaList,
   validateCriteriaList,
+  diagnoseTechnicianEligibility,
   techMatchesMatrixStrict,
   techMatchesAllCriteriaStrict,
   eligibleCustomerTechnicians,
