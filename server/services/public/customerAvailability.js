@@ -4,6 +4,7 @@ const {
   loadCustomerScheduledLoadMap,
   rankCustomerScheduledCandidates,
 } = require("./customerScheduledAssignment");
+const { resolveTechnicianCalendarCaps } = require("../../lib/technicianCalendar");
 
 const SLOT_STEP_MIN = 30;
 const DEFAULT_UI_START = "09:00";
@@ -212,7 +213,7 @@ async function loadAdvanceCalendarMap(db, date, usernames, lockRows = false) {
   if (!names.length) return new Map();
   const result = await db.query(
     `SELECT technician_username, work_date::date AS work_date, day_status, can_accept_advance_job,
-            start_time, end_time, max_jobs_per_day, max_units_per_day
+            start_time, end_time, max_jobs_per_day, max_units_per_day, source
        FROM public.technician_monthly_work_calendar
       WHERE technician_username = ANY($1::text[])
         AND work_date=$2::date
@@ -327,8 +328,9 @@ async function eligibleCustomerTechnicians(deps, options) {
       invalidWindow += 1;
       return false;
     }
-    const maxJobs = calendar.max_jobs_per_day == null ? null : Number(calendar.max_jobs_per_day);
-    const maxUnits = calendar.max_units_per_day == null ? null : Number(calendar.max_units_per_day);
+    const caps = resolveTechnicianCalendarCaps(calendar);
+    const maxJobs = caps.effective_max_jobs;
+    const maxUnits = caps.effective_max_units;
     const usage = usageMap.get(username) || { jobs_count: 0, units_count: 0 };
     if (Number.isFinite(maxJobs) && maxJobs >= 1 && usage.jobs_count >= maxJobs) {
       capacityFull += 1;
@@ -339,6 +341,7 @@ async function eligibleCustomerTechnicians(deps, options) {
       return false;
     }
     tech.advance_calendar = calendar;
+    tech.advance_calendar_caps = caps;
     tech.advance_usage = usage;
     return true;
   });
@@ -614,13 +617,24 @@ async function diagnoseTechnicianEligibility(deps, options) {
   const requestedUnits = serviceUnitCount(options);
   const usageMap = await loadDailyUsageMap(pool, date, [username], options.ignore_job_id);
   const usage = usageMap.get(username) || { jobs_count: 0, units_count: 0 };
-  const maxJobs = calendar.max_jobs_per_day == null ? null : Number(calendar.max_jobs_per_day);
-  const maxUnits = calendar.max_units_per_day == null ? null : Number(calendar.max_units_per_day);
+  const caps = resolveTechnicianCalendarCaps(calendar);
+  const maxJobs = caps.effective_max_jobs;
+  const maxUnits = caps.effective_max_units;
   let capacityOk = true;
   if (Number.isFinite(maxJobs) && maxJobs >= 1 && usage.jobs_count >= maxJobs) capacityOk = false;
   if (Number.isFinite(maxUnits) && maxUnits >= 1 && (usage.units_count + requestedUnits) > maxUnits) capacityOk = false;
   gates.capacity_ok = capacityOk;
-  gates.usage = { jobs_count: usage.jobs_count, units_count: usage.units_count, requested_units: requestedUnits, max_jobs_per_day: maxJobs, max_units_per_day: maxUnits };
+  gates.usage = {
+    jobs_count: usage.jobs_count,
+    units_count: usage.units_count,
+    requested_units: requestedUnits,
+    raw_max_jobs_per_day: caps.raw_max_jobs,
+    raw_max_units_per_day: caps.raw_max_units,
+    cap_mode: caps.cap_mode,
+    effective_max_jobs_per_day: maxJobs,
+    effective_max_units_per_day: maxUnits,
+    is_legacy_system_default: caps.is_legacy_system_default,
+  };
   if (!capacityOk) return { username, date, gates, reason: "CAPACITY_FULL" };
 
   // Collision: is there at least one startable interval inside the technician window today?

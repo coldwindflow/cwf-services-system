@@ -57,8 +57,8 @@ const {
   toIsoDate,
   normWorkDayPayload,
   countLockedAdvanceJobsForDate,
-  loadLockedAdvanceUsageForDate,
-  validateLockedDaySafeEdit,
+  resolveTechnicianCalendarCaps,
+  sourceForWorkDayPayload,
 } = require("./server/lib/technicianCalendar");
 const { upsertTechnicianProfile } = require("./server/services/technicianProfileUpsert");
 const createTechnicianCountSummaryReadOnlyRoutes = require("./server/routes/technicianCountSummaryReadOnly");
@@ -20147,11 +20147,12 @@ function normalizeCalendarRow(row, iso, jobCount=0){
   const can = row ? (row.can_accept_advance_job === true || ['advance_only','available_advance','working'].includes(String(row.day_status || ''))) : false;
   const start = can ? (row?.start_time || '09:00') : null;
   const end = can ? (row?.end_time || '18:00') : null;
-  const jobs = can ? (row?.max_jobs_per_day == null ? null : Number(row.max_jobs_per_day)) : null;
-  const units = can ? (row?.max_units_per_day == null ? null : Number(row.max_units_per_day)) : null;
+  const caps = resolveTechnicianCalendarCaps(row || {});
+  const jobs = can ? caps.raw_max_jobs : null;
+  const units = can ? caps.raw_max_units : null;
   const note = row?.note || null;
   const hasCustom = !!(
-    (can && (start !== '09:00' || end !== '18:00' || jobs !== null || units !== null)) ||
+    (can && (start !== '09:00' || end !== '18:00' || caps.cap_mode === 'technician_custom')) ||
     String(note || '').trim()
   );
   return {
@@ -20162,6 +20163,12 @@ function normalizeCalendarRow(row, iso, jobCount=0){
     end_time: end,
     max_jobs_per_day: jobs,
     max_units_per_day: units,
+    raw_max_jobs_per_day: caps.raw_max_jobs,
+    raw_max_units_per_day: caps.raw_max_units,
+    cap_mode: can ? caps.cap_mode : 'system_default',
+    effective_max_jobs_per_day: can ? caps.effective_max_jobs : null,
+    effective_max_units_per_day: can ? caps.effective_max_units : null,
+    is_legacy_system_default: can ? caps.is_legacy_system_default : false,
     note,
     has_assigned_job: Number(jobCount || 0) > 0,
     assigned_job_count: Number(jobCount || 0),
@@ -20173,7 +20180,7 @@ async function loadWorkCalendarV2Month(username, month){
   const fromIso = firstDayOfMonthIso(month);
   const toIso = endDayOfMonthIso(month);
   const [cal, jobs] = await Promise.all([
-    pool.query(`SELECT work_date::date AS work_date, day_status, can_accept_advance_job, start_time, end_time, max_jobs_per_day, max_units_per_day, note, updated_at
+    pool.query(`SELECT work_date::date AS work_date, day_status, can_accept_advance_job, start_time, end_time, max_jobs_per_day, max_units_per_day, note, source, updated_at
                 FROM public.technician_monthly_work_calendar
                 WHERE technician_username=$1 AND work_date BETWEEN $2::date AND $3::date
                 ORDER BY work_date ASC`, [username, fromIso, toIso]),
@@ -20206,10 +20213,11 @@ function cwfDateRange(fromIso, toIso){
 }
 async function upsertCalendarDay(clientOrPool, username, workDate, input){
   const p = normWorkDayPayload(input || {});
+  const source = sourceForWorkDayPayload(p);
   const r = await clientOrPool.query(`
     INSERT INTO public.technician_monthly_work_calendar
       (technician_username, work_date, day_status, can_accept_advance_job, can_accept_urgent_job, start_time, end_time, max_jobs_per_day, max_units_per_day, note, source, updated_by, updated_at)
-    VALUES($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,'technician',$1,NOW())
+    VALUES($1,$2::date,$3,$4,$5,$6,$7,$8,$9,$10,$11,$1,NOW())
     ON CONFLICT(technician_username, work_date) DO UPDATE SET
       day_status=EXCLUDED.day_status,
       can_accept_advance_job=EXCLUDED.can_accept_advance_job,
@@ -20219,9 +20227,9 @@ async function upsertCalendarDay(clientOrPool, username, workDate, input){
       max_jobs_per_day=EXCLUDED.max_jobs_per_day,
       max_units_per_day=EXCLUDED.max_units_per_day,
       note=EXCLUDED.note,
-      source='technician', updated_by=$1, updated_at=NOW()
+      source=EXCLUDED.source, updated_by=$1, updated_at=NOW()
     RETURNING *
-  `, [username, workDate, p.day_status, p.can_accept_advance_job, p.can_accept_urgent_job, p.start_time, p.end_time, p.max_jobs_per_day, p.max_units_per_day, p.note]);
+  `, [username, workDate, p.day_status, p.can_accept_advance_job, p.can_accept_urgent_job, p.start_time, p.end_time, p.max_jobs_per_day, p.max_units_per_day, p.note, source]);
   return r.rows[0] || null;
 }
 async function ensureDailyReadinessRow(username){
@@ -20345,8 +20353,8 @@ app.post('/technicians/:username/work-calendar-v2/copy-previous-month', async (r
         can_accept_advance_job: !!source.can_accept_advance_job,
         start_time: source.start_time,
         end_time: source.end_time,
-        max_jobs_per_day: source.max_jobs_per_day,
-        max_units_per_day: source.max_units_per_day,
+        max_jobs_per_day: source.cap_mode === 'technician_custom' ? source.max_jobs_per_day : null,
+        max_units_per_day: source.cap_mode === 'technician_custom' ? source.max_units_per_day : null,
         note: source.note
       });
       saved++;
@@ -20376,8 +20384,7 @@ app.use(createTechnicianCalendarWriteRoutes({
   toIsoDate,
   normWorkDayPayload,
   countLockedAdvanceJobsForDate,
-  loadLockedAdvanceUsageForDate,
-  validateLockedDaySafeEdit,
+  sourceForWorkDayPayload,
 }));
 
 // Defect 4/6: technician self-service copy uses the session identity (req.effective.username)
@@ -20409,8 +20416,8 @@ app.post('/tech/work-calendar/copy-previous-month', requireTechnicianSession, as
         can_accept_advance_job: !!source.can_accept_advance_job,
         start_time: source.start_time,
         end_time: source.end_time,
-        max_jobs_per_day: source.max_jobs_per_day,
-        max_units_per_day: source.max_units_per_day,
+        max_jobs_per_day: source.cap_mode === 'technician_custom' ? source.max_jobs_per_day : null,
+        max_units_per_day: source.cap_mode === 'technician_custom' ? source.max_units_per_day : null,
         note: source.note
       });
       saved++;
