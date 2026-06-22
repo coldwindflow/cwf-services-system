@@ -106,3 +106,18 @@ test("admin-store-catalog.css exists and includes responsive rules for 320-360px
   assert.match(catalogCssSource, /@media \(max-width: 360px\)/);
   assert.match(catalogCssSource, /asc-item-card/);
 });
+
+test("openCatalogModalForEdit populates cm_effective_from and cm_effective_to from the item", () => {
+  assert.match(catalogJsSource, /el\("cm_effective_from"\)\.value = toDateInputValue\(item\.effective_from\);/);
+  assert.match(catalogJsSource, /el\("cm_effective_to"\)\.value = toDateInputValue\(item\.effective_to\);/);
+});
+
+test("openCatalogModalForEdit no longer hardcodes cm_pricing_is_active to \"1\" regardless of state", () => {
+  assert.doesNotMatch(catalogJsSource, /cm_pricing_is_active"\)\.value = item\.price_rule_id \? "1" : "1";/);
+  assert.match(catalogJsSource, /cm_pricing_is_active"\)\.value = item\.price_rule_id \? \(item\.pricing_is_active \? "1" : "0"\) : "1";/);
+});
+
+test("catalogModalPayload sends pricing.pricing_is_active, not pricing.is_active", () => {
+  assert.match(catalogJsSource, /pricing_is_active: el\("cm_pricing_is_active"\)\.value === "1",/);
+  assert.doesNotMatch(catalogJsSource, /pricing\.is_active\b/);
+});

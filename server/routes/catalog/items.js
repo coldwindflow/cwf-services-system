@@ -24,6 +24,26 @@ function parseOptionalPositiveNumber(value, fieldLabel) {
   return { ok: true, value: n };
 }
 
+function parseRequiredPositivePrice(value, fieldLabel) {
+  if (value === undefined || value === null) {
+    return { ok: false, error: `${fieldLabel} ต้องระบุและมากกว่า 0` };
+  }
+  const trimmed = typeof value === "string" ? value.trim() : value;
+  if (trimmed === "") return { ok: false, error: `${fieldLabel} ต้องระบุและมากกว่า 0` };
+  const n = Number(trimmed);
+  if (!Number.isFinite(n) || n <= 0) return { ok: false, error: `${fieldLabel} ต้องเป็นตัวเลขมากกว่า 0` };
+  return { ok: true, value: n };
+}
+
+function parseOptionalDate(value, fieldLabel) {
+  if (value === undefined || value === null) return { ok: true, value: null };
+  const trimmed = String(value).trim();
+  if (trimmed === "") return { ok: true, value: null };
+  const ts = Date.parse(trimmed);
+  if (!Number.isFinite(ts)) return { ok: false, error: `${fieldLabel} ไม่ถูกต้อง` };
+  return { ok: true, value: trimmed };
+}
+
 const CATALOG_ITEM_FIELDS = [
   "item_name", "item_category", "base_price", "unit_label",
   "job_category", "ac_type", "btu_min", "btu_max",
@@ -85,7 +105,8 @@ function validateMergedCatalogItem(merged) {
 }
 
 // pricing === undefined  -> field omitted from request, caller must leave existing pricing untouched
-// pricing === null       -> caller asked to explicitly unlink the price rule from this catalog item
+// pricing === null       -> caller explicitly sent no pricing changes; existing linked price rule (if any)
+//                           is preserved as-is and is never unlinked or orphaned by this call
 // pricing === {...}      -> caller asked to create/update the linked price rule
 function validatePricingInput(pricing) {
   if (pricing === undefined) return { ok: true, value: undefined };
@@ -95,15 +116,29 @@ function validatePricingInput(pricing) {
   }
 
   const errors = [];
-  const normal_price = Number(pricing.normal_price);
-  if (!Number.isFinite(normal_price) || normal_price < 0) errors.push("ราคาปกติต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป");
 
-  const active_price = Number(pricing.active_price);
-  if (!Number.isFinite(active_price) || active_price < 0) errors.push("ราคาโปรโมชันต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป");
+  const normalResult = parseRequiredPositivePrice(pricing.normal_price, "ราคาปกติ");
+  if (!normalResult.ok) errors.push(normalResult.error);
+
+  const activeResult = parseRequiredPositivePrice(pricing.active_price, "ราคาโปรโมชัน");
+  if (!activeResult.ok) errors.push(activeResult.error);
+
+  if (normalResult.ok && activeResult.ok && activeResult.value > normalResult.value) {
+    errors.push("ราคาโปรโมชันต้องไม่มากกว่าราคาปกติ");
+  }
+
+  const fromResult = parseOptionalDate(pricing.effective_from, "วันที่เริ่มโปรโมชัน");
+  if (!fromResult.ok) errors.push(fromResult.error);
+  const toResult = parseOptionalDate(pricing.effective_to, "วันที่สิ้นสุดโปรโมชัน");
+  if (!toResult.ok) errors.push(toResult.error);
+
+  if (fromResult.ok && toResult.ok && fromResult.value && toResult.value && Date.parse(fromResult.value) > Date.parse(toResult.value)) {
+    errors.push("วันที่เริ่มโปรโมชันต้องไม่มากกว่าวันที่สิ้นสุดโปรโมชัน");
+  }
 
   const isActiveResult = normalizeBoolean(
-    Object.prototype.hasOwnProperty.call(pricing, "is_active") ? pricing.is_active : true,
-    "pricing.is_active"
+    Object.prototype.hasOwnProperty.call(pricing, "pricing_is_active") ? pricing.pricing_is_active : true,
+    "pricing.pricing_is_active"
   );
   if (!isActiveResult.ok) errors.push(isActiveResult.error);
 
@@ -115,11 +150,11 @@ function validatePricingInput(pricing) {
   return {
     ok: true,
     value: {
-      normal_price: money(normal_price),
-      active_price: money(active_price),
+      normal_price: money(normalResult.value),
+      active_price: money(activeResult.value),
       campaign_name: String(pricing.campaign_name || "").trim() || null,
-      effective_from: String(pricing.effective_from || "").trim() || null,
-      effective_to: String(pricing.effective_to || "").trim() || null,
+      effective_from: fromResult.value,
+      effective_to: toResult.value,
       is_active: isActiveResult.value,
       wash_variant: String(pricing.wash_variant || "").trim() || null,
       label: String(pricing.label || "").trim() || null,
@@ -138,6 +173,15 @@ const CATALOG_SELECT_WITH_PRICING = `
          pr.wash_variant AS rule_wash_variant, pr.label AS rule_label, pr.priority AS rule_priority
   FROM public.catalog_items ci
   LEFT JOIN public.customer_service_price_rules pr ON pr.rule_id = ci.price_rule_id
+`;
+
+// Used until the additive migration (migrations/20260622_catalog_store_media_pricing.sql)
+// has actually been run: catalog_items.image_url/image_public_id/price_rule_id may not exist
+// yet, so this SELECT only ever references columns guaranteed to exist on day one.
+const CATALOG_SELECT_LEGACY = `
+  SELECT ci.item_id, ci.item_name, ci.item_category, ci.base_price, ci.unit_label, ci.is_active,
+         ci.job_category, ci.ac_type, ci.btu_min, ci.btu_max, ci.is_customer_visible
+  FROM public.catalog_items ci
 `;
 
 function computeEffectivePricing(row) {
@@ -183,45 +227,24 @@ function serializeCatalogRow(row) {
     image_url: row.image_url || null,
     price_rule_id: row.price_rule_id || null,
     normal_price: pricing.normal_price,
+    // Canonical public-contract field names (Phase 2A.2 production-blocker fixes):
+    active_price: pricing.sale_price,
+    has_active_promotion: pricing.has_promo,
+    effective_from: row.rule_effective_from || null,
+    effective_to: row.rule_effective_to || null,
+    // Backward-compatible aliases — kept additive, do not remove.
     sale_price: pricing.sale_price,
-    display_price: pricing.display_price,
     has_promo: pricing.has_promo,
+    display_price: pricing.display_price,
     campaign_name: pricing.campaign_name,
     price_label: pricing.price_label,
     wash_variant: row.rule_wash_variant || null,
     priority: row.rule_priority != null ? Number(row.rule_priority) : null,
+    // Raw price-rule active flag (distinct from has_active_promotion, which also
+    // factors in the effective-date window) — needed so the admin Edit UI can
+    // reflect the rule's real stored state instead of guessing/hardcoding it.
+    pricing_is_active: row.price_rule_id ? Boolean(row.rule_is_active) : null,
   };
-}
-
-// Idempotent additive "schema ensure" so this route module never crashes the app
-// before migrations/20260622_catalog_store_media_pricing.sql has actually been run.
-async function ensureCatalogMediaPricingSchema(db) {
-  await db.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS image_url TEXT`);
-  await db.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS image_public_id TEXT`);
-  await db.query(`ALTER TABLE public.catalog_items ADD COLUMN IF NOT EXISTS price_rule_id BIGINT`);
-  await db.query(`CREATE INDEX IF NOT EXISTS idx_catalog_items_price_rule_id ON public.catalog_items(price_rule_id)`);
-  await db.query(`
-    DO $$
-    BEGIN
-      IF NOT EXISTS (
-        SELECT 1
-        FROM pg_constraint con
-        JOIN pg_class rel ON rel.oid = con.conrelid
-        JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
-        WHERE nsp.nspname = 'public'
-          AND rel.relname = 'catalog_items'
-          AND con.contype = 'f'
-          AND con.conname = 'catalog_items_price_rule_id_fkey'
-      ) THEN
-        ALTER TABLE public.catalog_items
-          ADD CONSTRAINT catalog_items_price_rule_id_fkey
-          FOREIGN KEY (price_rule_id)
-          REFERENCES public.customer_service_price_rules(rule_id)
-          ON DELETE SET NULL;
-      END IF;
-    END
-    $$;
-  `);
 }
 
 async function savePriceRuleForCatalogItem(client, { ruleId, pricing, catalogFields, actor }) {
@@ -261,6 +284,14 @@ function actorUsername(req) {
   return (req.actor && req.actor.username) || req.headers["x-admin-username"] || "admin";
 }
 
+// Cloudinary error messages are not expected to carry secrets, but this keeps
+// any defensive-in-depth promise consistent with the migration runner's own
+// safeErrorMessage(): never let a signed-request parameter reach the logs.
+function safeImageErrorMessage(error) {
+  const msg = String(error && error.message ? error.message : error || "unknown error");
+  return msg.replace(/(api_key|api_secret|signature)=[^&\s"']+/gi, "$1=[REDACTED]");
+}
+
 module.exports = function createCatalogItemRoutes(deps = {}) {
   const express = require("express");
   const multer = require("multer");
@@ -277,9 +308,29 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     limits: { fileSize: cloudinaryImageUpload.MAX_IMAGE_BYTES },
   });
 
+  // Read-only capability detection: never issues DDL. Once the additive migration
+  // (migrations/20260622_catalog_store_media_pricing.sql) has been run via the
+  // approved script, this stays true for the lifetime of this router instance —
+  // until then it is re-checked on every call so the app picks up the migration
+  // without needing a restart.
+  let mediaPricingSchemaReadyCache = false;
+  async function isMediaPricingSchemaReady(db) {
+    if (mediaPricingSchemaReadyCache) return true;
+    const r = await db.query(`
+      SELECT COUNT(*)::int AS cnt
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'catalog_items'
+        AND column_name IN ('image_url', 'image_public_id', 'price_rule_id')
+    `);
+    const ready = Number(r.rows?.[0]?.cnt || 0) === 3;
+    if (ready) mediaPricingSchemaReadyCache = true;
+    return ready;
+  }
+
   router.get("/catalog/items", async (req, res) => {
     try {
-      await ensureCatalogMediaPricingSchema(pool);
+      const schemaReady = await isMediaPricingSchemaReady(pool);
+      const select = schemaReady ? CATALOG_SELECT_WITH_PRICING : CATALOG_SELECT_LEGACY;
       const customer = String(req.query.customer || "").trim() === "1";
       const job_category = (req.query.job_category || "").toString().trim();
       const ac_type = (req.query.ac_type || "").toString().trim();
@@ -298,7 +349,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       }
 
       const r = await pool.query(
-        `${CATALOG_SELECT_WITH_PRICING}
+        `${select}
          WHERE ${where.join(" AND ")}
          ORDER BY ci.item_category, ci.item_name`,
         params
@@ -312,10 +363,9 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
   router.get("/admin/catalog/items", requireAdminSession, async (req, res) => {
     try {
-      await ensureCatalogMediaPricingSchema(pool);
-      const r = await pool.query(
-        `${CATALOG_SELECT_WITH_PRICING} ORDER BY ci.item_category, ci.item_name`
-      );
+      const schemaReady = await isMediaPricingSchemaReady(pool);
+      const select = schemaReady ? CATALOG_SELECT_WITH_PRICING : CATALOG_SELECT_LEGACY;
+      const r = await pool.query(`${select} ORDER BY ci.item_category, ci.item_name`);
       res.json(r.rows.map(serializeCatalogRow));
     } catch (e) {
       console.error(e);
@@ -324,24 +374,27 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
   });
 
   router.post("/admin/catalog/items", requireAdminSession, async (req, res) => {
+    const defaults = {
+      item_name: "", item_category: "", base_price: 0, unit_label: "",
+      job_category: "", ac_type: "", btu_min: null, btu_max: null,
+      is_active: true, is_customer_visible: false,
+    };
+    const merged = mergeCatalogItemPayload(defaults, req.body || {});
+    const result = validateMergedCatalogItem(merged);
+    if (!result.ok) return res.status(400).json({ error: result.errors.join(", ") });
+
+    const hasPricingKey = req.body && Object.prototype.hasOwnProperty.call(req.body, "pricing");
+    const pricingResult = hasPricingKey ? validatePricingInput(req.body.pricing) : { ok: true, value: undefined };
+    if (!pricingResult.ok) return res.status(400).json({ error: pricingResult.errors.join(", ") });
+
+    const schemaReady = await isMediaPricingSchemaReady(pool);
+    if (pricingResult.value && !schemaReady) {
+      return res.status(503).json({ error: "ระบบราคาโปรโมชันยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
+    }
+
+    const v = result.value;
     const client = await pool.connect();
     try {
-      await ensureCatalogMediaPricingSchema(client);
-
-      const defaults = {
-        item_name: "", item_category: "", base_price: 0, unit_label: "",
-        job_category: "", ac_type: "", btu_min: null, btu_max: null,
-        is_active: true, is_customer_visible: false,
-      };
-      const merged = mergeCatalogItemPayload(defaults, req.body || {});
-      const result = validateMergedCatalogItem(merged);
-      if (!result.ok) { client.release(); return res.status(400).json({ error: result.errors.join(", ") }); }
-
-      const hasPricingKey = req.body && Object.prototype.hasOwnProperty.call(req.body, "pricing");
-      const pricingResult = hasPricingKey ? validatePricingInput(req.body.pricing) : { ok: true, value: undefined };
-      if (!pricingResult.ok) { client.release(); return res.status(400).json({ error: pricingResult.errors.join(", ") }); }
-
-      const v = result.value;
       await client.query("BEGIN");
       const insertRes = await client.query(
         `INSERT INTO public.catalog_items
@@ -364,7 +417,8 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
       await client.query("COMMIT");
 
-      const final = await pool.query(`${CATALOG_SELECT_WITH_PRICING} WHERE ci.item_id = $1`, [itemId]);
+      const select = schemaReady ? CATALOG_SELECT_WITH_PRICING : CATALOG_SELECT_LEGACY;
+      const final = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
       res.status(201).json(serializeCatalogRow(final.rows[0]));
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
@@ -379,23 +433,26 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
     const itemId = String(req.params.itemId || "").trim();
     if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
 
+    const schemaReady = await isMediaPricingSchemaReady(pool);
+    const select = schemaReady ? CATALOG_SELECT_WITH_PRICING : CATALOG_SELECT_LEGACY;
+    const existingResult = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
+    const existing = existingResult.rows[0];
+    if (!existing) return res.status(404).json({ error: "ไม่พบรายการนี้" });
+
+    const merged = mergeCatalogItemPayload(existing, req.body || {});
+    const result = validateMergedCatalogItem(merged);
+    if (!result.ok) return res.status(400).json({ error: result.errors.join(", ") });
+
+    const hasPricingKey = req.body && Object.prototype.hasOwnProperty.call(req.body, "pricing");
+    const pricingResult = hasPricingKey ? validatePricingInput(req.body.pricing) : { ok: true, value: undefined };
+    if (!pricingResult.ok) return res.status(400).json({ error: pricingResult.errors.join(", ") });
+    if (pricingResult.value && !schemaReady) {
+      return res.status(503).json({ error: "ระบบราคาโปรโมชันยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
+    }
+
+    const v = result.value;
     const client = await pool.connect();
     try {
-      await ensureCatalogMediaPricingSchema(client);
-
-      const existingResult = await client.query(`${CATALOG_SELECT_WITH_PRICING} WHERE ci.item_id = $1`, [itemId]);
-      const existing = existingResult.rows[0];
-      if (!existing) { client.release(); return res.status(404).json({ error: "ไม่พบรายการนี้" }); }
-
-      const merged = mergeCatalogItemPayload(existing, req.body || {});
-      const result = validateMergedCatalogItem(merged);
-      if (!result.ok) { client.release(); return res.status(400).json({ error: result.errors.join(", ") }); }
-
-      const hasPricingKey = req.body && Object.prototype.hasOwnProperty.call(req.body, "pricing");
-      const pricingResult = hasPricingKey ? validatePricingInput(req.body.pricing) : { ok: true, value: undefined };
-      if (!pricingResult.ok) { client.release(); return res.status(400).json({ error: pricingResult.errors.join(", ") }); }
-
-      const v = result.value;
       await client.query("BEGIN");
       await client.query(
         `UPDATE public.catalog_items
@@ -406,7 +463,11 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
         [v.item_name, v.item_category, v.base_price, v.unit_label, v.job_category, v.ac_type, v.btu_min, v.btu_max, v.is_active, v.is_customer_visible, itemId]
       );
 
-      if (hasPricingKey && pricingResult.value) {
+      // pricingResult.value === undefined -> field omitted, leave pricing untouched.
+      // pricingResult.value === null      -> caller sent no pricing changes; the existing
+      //                                       linked price rule (if any) is preserved as-is.
+      // pricingResult.value === {...}     -> create/update the linked price rule.
+      if (pricingResult.value) {
         const ruleId = await savePriceRuleForCatalogItem(client, {
           ruleId: existing.price_rule_id || null,
           pricing: pricingResult.value,
@@ -416,13 +477,11 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
         if (!existing.price_rule_id) {
           await client.query(`UPDATE public.catalog_items SET price_rule_id=$1 WHERE item_id=$2`, [ruleId, itemId]);
         }
-      } else if (hasPricingKey && pricingResult.value === null) {
-        await client.query(`UPDATE public.catalog_items SET price_rule_id=NULL WHERE item_id=$1`, [itemId]);
       }
 
       await client.query("COMMIT");
 
-      const final = await pool.query(`${CATALOG_SELECT_WITH_PRICING} WHERE ci.item_id = $1`, [itemId]);
+      const final = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
       res.json(serializeCatalogRow(final.rows[0]));
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
@@ -450,7 +509,11 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
         const itemId = String(req.params.itemId || "").trim();
         if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
 
-        await ensureCatalogMediaPricingSchema(pool);
+        const schemaReady = await isMediaPricingSchemaReady(pool);
+        if (!schemaReady) {
+          return res.status(503).json({ error: "ระบบรูปภาพยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
+        }
+
         const existingResult = await pool.query(
           `SELECT item_id, image_public_id FROM public.catalog_items WHERE item_id = $1`,
           [itemId]
@@ -475,7 +538,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
         if (existing.image_public_id && existing.image_public_id !== uploaded.public_id) {
           deleteCatalogImage(existing.image_public_id).catch((cleanupError) => {
-            console.error("cleanup old catalog image failed", cleanupError);
+            console.error("cleanup old catalog image failed", safeImageErrorMessage(cleanupError));
           });
         }
 
@@ -496,7 +559,11 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const itemId = String(req.params.itemId || "").trim();
       if (!/^\d+$/.test(itemId)) return res.status(400).json({ error: "item_id ไม่ถูกต้อง" });
 
-      await ensureCatalogMediaPricingSchema(pool);
+      const schemaReady = await isMediaPricingSchemaReady(pool);
+      if (!schemaReady) {
+        return res.status(503).json({ error: "ระบบรูปภาพยังไม่พร้อมใช้งาน (ยังไม่ได้รัน migration)" });
+      }
+
       const existingResult = await pool.query(
         `SELECT item_id, image_public_id FROM public.catalog_items WHERE item_id = $1`,
         [itemId]
@@ -504,22 +571,27 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       const existing = existingResult.rows[0];
       if (!existing) return res.status(404).json({ error: "ไม่พบรายการนี้" });
 
-      if (existing.image_public_id) {
-        await deleteCatalogImage(existing.image_public_id);
-      }
-
+      // DB-first: the catalog item's own image fields are the source of truth for the
+      // app, so they are cleared unconditionally before touching Cloudinary at all.
+      // Cloudinary cleanup is then attempted best-effort — its failure must never block
+      // the already-successful database write or fail this HTTP response.
       await pool.query(
         `UPDATE public.catalog_items SET image_url=NULL, image_public_id=NULL WHERE item_id=$1`,
         [itemId]
       );
 
+      if (existing.image_public_id) {
+        try {
+          await deleteCatalogImage(existing.image_public_id);
+        } catch (cleanupError) {
+          console.error("cloudinary cleanup after image delete failed", safeImageErrorMessage(cleanupError));
+        }
+      }
+
       const final = await pool.query(`${CATALOG_SELECT_WITH_PRICING} WHERE ci.item_id = $1`, [itemId]);
       res.json(serializeCatalogRow(final.rows[0]));
     } catch (e) {
       console.error(e);
-      if (e && e.code === "CLOUDINARY_NOT_CONFIGURED") {
-        return res.status(503).json({ error: "ยังไม่ได้ตั้งค่า Cloudinary" });
-      }
       res.status(500).json({ error: "ลบรูปภาพไม่สำเร็จ" });
     }
   });
@@ -527,7 +599,6 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
   return router;
 };
 
-module.exports.ensureCatalogMediaPricingSchema = ensureCatalogMediaPricingSchema;
 module.exports.computeEffectivePricing = computeEffectivePricing;
 module.exports.serializeCatalogRow = serializeCatalogRow;
 module.exports.validatePricingInput = validatePricingInput;

@@ -797,7 +797,7 @@ test("store shows the real sale price prominently with the normal price struck t
   root.api.loadCatalogItems = async () => [
     {
       item_id: 1, item_name: "ล้างแอร์โปรหน้าฝน", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง",
-      display_price: 500, normal_price: 700, sale_price: 500, has_promo: true, campaign_name: "โปรดูแลแอร์รับหน้าฝน",
+      display_price: 500, normal_price: 700, active_price: 500, has_active_promotion: true, campaign_name: "โปรดูแลแอร์รับหน้าฝน",
     },
   ];
 

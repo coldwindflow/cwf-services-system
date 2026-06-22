@@ -7,11 +7,13 @@ const express = require("express");
 
 const createCatalogItemRoutes = require("../server/routes/catalog/items");
 
-function makePool(initialItems = [], initialRules = []) {
+function makePool(initialItems = [], initialRules = [], { schemaReady = true } = {}) {
   const state = {
     items: initialItems.map((x) => ({ image_url: null, image_public_id: null, price_rule_id: null, ...x })),
     rules: initialRules.map((x) => ({ ...x })),
     queries: [],
+    connectCount: 0,
+    releaseCount: 0,
   };
   let nextItemId = 1 + state.items.reduce((max, x) => Math.max(max, Number(x.item_id) || 0), 0);
   let nextRuleId = 1 + state.rules.reduce((max, x) => Math.max(max, Number(x.rule_id) || 0), 0);
@@ -33,8 +35,12 @@ function makePool(initialItems = [], initialRules = []) {
     state.queries.push({ sql, params });
     const s = String(sql);
 
+    if (s.includes("information_schema.columns") && s.includes("catalog_items")) {
+      return { rows: [{ cnt: schemaReady ? 3 : 0 }] };
+    }
+
     if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*;?\s*$/i.test(s)) return { rows: [] };
-    if (s.includes("ALTER TABLE") || s.includes("CREATE INDEX") || s.includes("DO $$")) return { rows: [] };
+    if (s.includes("ALTER TABLE") || s.includes("CREATE INDEX") || s.includes("ADD CONSTRAINT") || s.includes("DO $$")) return { rows: [] };
 
     if (s.includes("INSERT INTO public.catalog_items")) {
       const [item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible] = params;
@@ -120,7 +126,13 @@ function makePool(initialItems = [], initialRules = []) {
     state,
     query,
     async connect() {
-      return { query, release() {} };
+      state.connectCount += 1;
+      return {
+        query,
+        release() {
+          state.releaseCount += 1;
+        },
+      };
     },
   };
 }
@@ -583,7 +595,7 @@ test("admin POST with a pricing object creates the catalog item and the linked p
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         item_name: "ล้างแอร์โปร", base_price: 700,
-        pricing: { normal_price: 700, active_price: 500, campaign_name: "โปรทดสอบ", is_active: true },
+        pricing: { normal_price: 700, active_price: 500, campaign_name: "โปรทดสอบ", pricing_is_active: true },
       }),
     });
     assert.equal(res.status, 201);
@@ -645,7 +657,7 @@ test("admin PATCH with a pricing object updates the existing linked price rule i
     const res = await fetch(`${base}/admin/catalog/items/1`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pricing: { normal_price: 800, active_price: 600, campaign_name: "ใหม่", is_active: true } }),
+      body: JSON.stringify({ pricing: { normal_price: 800, active_price: 600, campaign_name: "ใหม่", pricing_is_active: true } }),
     });
     assert.equal(res.status, 200);
     const body = await res.json();
@@ -846,7 +858,7 @@ test("deleting an image clears image_url/image_public_id in the database", async
   });
 });
 
-test("a Cloudinary delete failure does not touch the database", async () => {
+test("a Cloudinary delete failure still clears the database (DB-first, Cloudinary best-effort)", async () => {
   const items = sampleItems();
   items[0].image_url = "https://res.cloudinary.com/demo/old.jpg";
   items[0].image_public_id = "cwf/catalog-items/item-1-old";
@@ -855,8 +867,183 @@ test("a Cloudinary delete failure does not touch the database", async () => {
   const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, deleteCatalogImage });
   await withServer(router, async (base) => {
     const res = await fetch(`${base}/admin/catalog/items/1/image`, { method: "DELETE" });
-    assert.equal(res.status, 500);
-    assert.equal(pool.state.items.find((x) => x.item_id === 1).image_url, "https://res.cloudinary.com/demo/old.jpg");
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.image_url, null);
+    assert.equal(pool.state.items.find((x) => x.item_id === 1).image_url, null);
+    assert.equal(pool.state.items.find((x) => x.item_id === 1).image_public_id, null);
+  });
+});
+
+// ---------- Phase 2A.2 production-blocker regression tests ----------
+
+test("no route ever issues DDL during a request", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    await fetch(`${base}/catalog/items`);
+    await fetch(`${base}/admin/catalog/items`);
+    await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ DDL", base_price: 10 }),
+    });
+    const ddl = pool.state.queries.some((q) => /ALTER TABLE|CREATE INDEX|ADD CONSTRAINT/i.test(q.sql));
+    assert.equal(ddl, false);
+  });
+});
+
+test("when the media/pricing schema is not ready, GET falls back to the legacy select with no DDL", async () => {
+  const pool = makePool(sampleItems(), [], { schemaReady: false });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items`);
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.ok(body.length > 0);
+    const ddl = pool.state.queries.some((q) => /ALTER TABLE|CREATE INDEX|ADD CONSTRAINT/i.test(q.sql));
+    assert.equal(ddl, false);
+  });
+});
+
+test("admin PATCH with pricing explicitly set to null preserves the existing linked price rule", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 70;
+  const rules = [{ rule_id: 70, normal_price: 700, active_price: 550, campaign_name: "เดิม", is_active: true, effective_from: null, effective_to: null }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pricing: null }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.price_rule_id, 70);
+    assert.equal(Number(body.normal_price), 700);
+    assert.equal(pool.state.items.find((x) => x.item_id === 1).price_rule_id, 70);
+    assert.equal(pool.state.rules[0].campaign_name, "เดิม");
+  });
+});
+
+test("admin POST rejects pricing.active_price greater than pricing.normal_price", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ", pricing: { normal_price: 500, active_price: 600 } }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(pool.state.rules.length, 0);
+  });
+});
+
+test("admin POST rejects an empty-string normal_price instead of coercing it to 0", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ", pricing: { normal_price: "", active_price: 500 } }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(pool.state.rules.length, 0);
+  });
+});
+
+test("admin POST rejects an effective_from after effective_to", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        item_name: "ทดสอบ",
+        pricing: { normal_price: 500, active_price: 400, effective_from: "2026-12-31", effective_to: "2026-01-01" },
+      }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(pool.state.rules.length, 0);
+  });
+});
+
+test("admin POST rejects an invalid effective_from date string", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        item_name: "ทดสอบ",
+        pricing: { normal_price: 500, active_price: 400, effective_from: "not-a-date" },
+      }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(pool.state.rules.length, 0);
+  });
+});
+
+test("a validation failure never calls pool.connect()", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "" }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(pool.state.connectCount, 0);
+  });
+});
+
+test("a successful admin POST connects exactly once and releases exactly once", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ connect" }),
+    });
+    assert.equal(res.status, 201);
+    assert.equal(pool.state.connectCount, 1);
+    assert.equal(pool.state.releaseCount, 1);
+  });
+});
+
+test("a successful admin PATCH connects exactly once and releases exactly once", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ patch connect" }),
+    });
+    assert.equal(res.status, 200);
+    assert.equal(pool.state.connectCount, 1);
+    assert.equal(pool.state.releaseCount, 1);
+  });
+});
+
+test("an admin PATCH on an unknown item never calls pool.connect()", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/9999`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ไม่มีจริง" }),
+    });
+    assert.equal(res.status, 404);
+    assert.equal(pool.state.connectCount, 0);
   });
 });
 

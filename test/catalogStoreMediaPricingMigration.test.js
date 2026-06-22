@@ -222,6 +222,26 @@ test("migration runner fails non-zero when post-migration verification fails (mi
   assert.doesNotMatch(logger.lines.join("\n"), /CATALOG_STORE_MEDIA_PRICING_MIGRATION_OK/);
 });
 
+test("migration runner does not attempt a misleading post-commit ROLLBACK when verification fails", async () => {
+  let client;
+  const logger = makeLogger();
+  const code = await runner.runCli({
+    env: { DATABASE_URL },
+    repoRoot: REPO_ROOT,
+    logger,
+    clientFactory() {
+      client = new FakeClient({ missingFk: true });
+      return client;
+    },
+  });
+  assert.equal(code, 1);
+  // The migration SQL itself contains its own internal BEGIN/COMMIT, so by the
+  // time post-commit verifySchema() runs and finds a problem, the transaction has
+  // already committed — a ROLLBACK at this point would be a no-op at best and
+  // misleading at worst. The runner correctly does not issue one here.
+  assert.equal(client.queries.some((q) => q.sql === "ROLLBACK"), false);
+});
+
 test("migration runner fails non-zero when the new index is missing", async () => {
   let client;
   const logger = makeLogger();

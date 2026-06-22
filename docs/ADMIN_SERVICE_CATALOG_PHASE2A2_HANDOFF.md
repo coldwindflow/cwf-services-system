@@ -1,5 +1,18 @@
 # Admin Service Catalog — Phase 2A.2 Handoff (Service Media, Real Pricing, Mobile Admin UX)
 
+## Production-blocker fixes (post PR #84 review)
+
+A review of PR #84 found several production blockers, all fixed on the same branch (no new branch, no new PR):
+
+1. **No DDL in any request path.** `ensureCatalogMediaPricingSchema()` (which ran `ALTER TABLE`/`CREATE INDEX`/`ADD CONSTRAINT` on first request) has been removed entirely from `server/routes/catalog/items.js`. Routes now call a read-only `isMediaPricingSchemaReady()` capability check (`information_schema.columns`) and pick between `CATALOG_SELECT_WITH_PRICING` and a column-minimal `CATALOG_SELECT_LEGACY` fallback. The additive migration is the only thing that ever adds the columns/index/FK — see "Run command" below.
+2. **Client lifecycle correctness.** All request validation (and, for PATCH, the pre-existing-row read) now happens via `pool.query()` *before* `pool.connect()` is ever called. `pool.connect()` is called at most once per request, immediately followed by a single `try/catch/finally { client.release(); }` — eliminating any double-release or release-skipped-on-early-return risk.
+3. **Stricter pricing validation.** `normal_price`/`active_price` must be present and `> 0` (empty string no longer silently coerces to `0` and passes); `active_price` must not exceed `normal_price`; `effective_from`/`effective_to` are validated as real dates and `effective_from` must not be after `effective_to`. Any failure returns `400` with no partial DB write.
+4. **`pricing: null` no longer unlinks the existing price rule.** Tri-state semantics: `pricing` omitted → leave untouched; `pricing: null` → no-op, the existing linked rule (if any) is preserved as-is; `pricing: {...}` → create/update the linked rule.
+5. **Admin Edit no longer corrupts promo data.** The admin pricing-input contract field is now `pricing_is_active` (renamed from the ambiguous `is_active`, which collided with the catalog item's own `is_active`). The server now returns a raw `pricing_is_active` flag (the rule's stored `is_active`, independent of the effective-date window) plus `effective_from`/`effective_to`, so `admin-store-catalog.js`'s edit modal can populate all pricing fields instead of guessing — `cm_effective_from`/`cm_effective_to` were previously left blank on every edit, and `cm_pricing_is_active` was hardcoded to `"1"` regardless of the rule's real state. Both are fixed.
+6. **Image delete is DB-first, Cloudinary-cleanup-best-effort.** `DELETE /admin/catalog/items/:itemId/image` now clears `image_url`/`image_public_id` in the database unconditionally first, then attempts the Cloudinary delete in a separate `try/catch` that only logs (with secrets redacted) and never affects the HTTP response — a Cloudinary outage can no longer block clearing a broken/stale image reference.
+7. **Public API contract corrected.** `GET /catalog/items` (and the admin GET) now emit `active_price`, `has_active_promotion`, `effective_from`, `effective_to` as the primary/canonical field names. The previous names `sale_price`/`has_promo` are kept as additive backward-compatible aliases. `customer-app/modules/store.js`'s `hasPromo()` was updated to read the new primary names.
+8. **Migration runner rollback claim corrected (see below).**
+
 ## Status: production migration has **NOT** been run
 
 This branch's migration file (`migrations/20260622_catalog_store_media_pricing.sql`) has only ever been executed against the Node-driven test suite (an in-memory fake client) and, when available locally, a disposable `cwf_test` Postgres database used by the integration test in `test/catalogStoreMediaPricingMigration.test.js`. **It has never been run against staging or production.** Do not run `scripts/run-catalog-store-media-pricing-migration.js` against a real environment until this PR has been reviewed and a deployment window is scheduled.
@@ -20,7 +33,8 @@ This branch's migration file (`migrations/20260622_catalog_store_media_pricing.s
   ```
   DATABASE_URL=... node scripts/run-catalog-store-media-pricing-migration.js
   ```
-- The runner takes a Postgres advisory lock (`ADVISORY_LOCK_KEY`, distinct from the customer-auth migration's lock key) before running, rolls back and unlocks on any failure, and verifies the new columns/index/FK exist afterward — non-zero exit if verification fails.
+- The runner takes a Postgres advisory lock (`ADVISORY_LOCK_KEY`, distinct from the customer-auth migration's lock key) before running, and verifies the new columns/index/FK exist afterward — non-zero exit if verification fails.
+- **Rollback scope, precisely stated:** the migration SQL file itself contains its own internal `BEGIN; ... COMMIT;`. If `client.query(sql)` throws (the migration statement itself fails), the runner rolls back *that* transaction before releasing the advisory lock. However, if the migration SQL succeeds (and therefore already committed) and only the *post-commit* `verifySchema()` check fails, there is nothing left to roll back — the runner does not attempt a `ROLLBACK` in that case, since one would be a no-op at best and misleading at worst. A non-zero exit code on verification failure means "the columns/index/FK could not be confirmed afterward," not "the migration was undone."
 
 ## Required environment variables
 
@@ -86,6 +100,17 @@ If this needs to be rolled back after data has been written to the new columns:
 - `customer-app/modules/store.js` / `customer-app/assets/customer-app.css` — real image rendering with placeholder/lazy-load/error-fallback, real sale price with strikethrough normal price and a promo/label badge, base_price fallback, "สอบถามราคา" when there is no price at all. No mock data, no change to booking draft mapping.
 - `customer-app/index.html`, `customer-app/assets/customer-app.js`, `customer-app/sw.js`, `customer-app/manifest.webmanifest` — build ID bumped to `20260622_catalog_media_pricing_v1` consistently (template-based `${BUILD_ID}` substitutions, no cache strategy change).
 - `test/adminStoreCatalogUi.test.js`, `test/customerAppRecovery.test.js`, `test/customerSameDayTiming.test.js` — expanded/updated to cover the new UI and the new build ID.
+
+### Production-blocker fix pass (post PR #84 review, same branch)
+
+- `server/routes/catalog/items.js` — removed `ensureCatalogMediaPricingSchema()` (and all DDL) from every request path, replaced with read-only `isMediaPricingSchemaReady()` capability detection and a `CATALOG_SELECT_LEGACY` fallback; restructured POST/PATCH so all validation happens before `pool.connect()` and `client.release()` is called exactly once via a single `finally`; rewrote `validatePricingInput` (required positive prices, active<=normal, valid/ordered effective dates, no empty-string-as-zero); removed the `pricing: null` unlink branch from PATCH (now a pure no-op); renamed the pricing input field to `pricing_is_active`; added `active_price`/`has_active_promotion`/`effective_from`/`effective_to` as primary public-contract output fields (keeping `sale_price`/`has_promo` as aliases) and a raw `pricing_is_active` output field; reordered `DELETE .../image` to clear the DB first and treat Cloudinary cleanup as best-effort; added `safeImageErrorMessage()` to redact secrets from logged Cloudinary errors.
+- `admin-store-catalog.js` — `openCatalogModalForEdit()` now populates `cm_effective_from`/`cm_effective_to` (previously left blank) via a new `toDateInputValue()` helper, and reads the item's real `pricing_is_active` instead of hardcoding `"1"`; `catalogModalPayload()` renamed the pricing payload key from `is_active` to `pricing_is_active` to match the server contract.
+- `customer-app/modules/store.js` — `hasPromo()` now reads `item.has_active_promotion`/`item.active_price` (the new primary contract names) instead of `item.has_promo`/`item.sale_price`; no other behavior changed.
+- `test/catalogItemsRoutes.test.js` — fake pool now answers the `information_schema.columns` capability check and tracks `connectCount`/`releaseCount`; renamed `pricing.is_active` to `pricing.pricing_is_active` in existing pricing-bearing test payloads; inverted the Cloudinary-delete-failure test to assert the DB is cleared and the response is `200` (DB-first semantics); added regression tests for no-DDL-in-request-path, schema-not-ready fallback, `pricing: null` preserving the existing rule, the new pricing validation rules, and client-lifecycle correctness (connect/release counts across success and validation-failure paths).
+- `test/adminStoreCatalogUi.test.js` — added tests asserting `cm_effective_from`/`cm_effective_to` population, the no-longer-hardcoded `cm_pricing_is_active`, and the renamed `pricing_is_active` payload key.
+- `test/catalogStoreMediaPricingMigration.test.js` — added a regression test confirming no `ROLLBACK` is issued when post-commit verification fails.
+- `docs/ADMIN_SERVICE_CATALOG_PHASE2A2_HANDOFF.md` — this section, plus the corrected rollback-scope wording above.
+- `migrations/20260622_catalog_store_media_pricing.sql`, `scripts/run-catalog-store-media-pricing-migration.js`, `server/lib/cloudinaryImageUpload.js` — reviewed, no code changes required (the migration runner's transaction/verification ordering was already correct; only the documentation overstated it).
 
 ## Remaining risks / follow-ups
 

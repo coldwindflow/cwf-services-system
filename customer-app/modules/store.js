@@ -33,9 +33,9 @@
   }
 
   function hasPromo(item) {
-    if (!item.has_promo) return false;
+    if (!item.has_active_promotion) return false;
     const normal = Number(item.normal_price);
-    const sale = Number(item.sale_price);
+    const sale = Number(item.active_price);
     return Number.isFinite(normal) && Number.isFinite(sale) && sale < normal;
   }
 

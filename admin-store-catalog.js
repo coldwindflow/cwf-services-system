@@ -228,6 +228,13 @@ function openCatalogModalForNew() {
   el("catalog_modal_backdrop").classList.remove("hidden");
 }
 
+function toDateInputValue(value) {
+  if (!value) return "";
+  const str = String(value);
+  const match = str.match(/^(\d{4}-\d{2}-\d{2})/);
+  return match ? match[1] : "";
+}
+
 function openCatalogModalForEdit(itemId) {
   const item = catalogItems.find((x) => Number(x.item_id) === Number(itemId));
   if (!item) return;
@@ -248,7 +255,9 @@ function openCatalogModalForEdit(itemId) {
   el("cm_label").value = item.price_label || "";
   el("cm_campaign_name").value = item.campaign_name || "";
   el("cm_priority").value = item.priority != null ? item.priority : "1";
-  el("cm_pricing_is_active").value = item.price_rule_id ? "1" : "1";
+  el("cm_effective_from").value = toDateInputValue(item.effective_from);
+  el("cm_effective_to").value = toDateInputValue(item.effective_to);
+  el("cm_pricing_is_active").value = item.price_rule_id ? (item.pricing_is_active ? "1" : "0") : "1";
   el("cm_is_active").value = item.is_active ? "1" : "0";
   el("cm_is_customer_visible").value = item.is_customer_visible ? "1" : "0";
   el("cm_base_price").value = Number(item.base_price) > 0 ? Number(item.base_price) : "";
@@ -286,7 +295,7 @@ function catalogModalPayload() {
       effective_to: trimmedOrEmpty("cm_effective_to"),
       wash_variant: trimmedOrEmpty("cm_wash_variant"),
       priority: trimmedOrEmpty("cm_priority"),
-      is_active: el("cm_pricing_is_active").value === "1",
+      pricing_is_active: el("cm_pricing_is_active").value === "1",
     };
   }
   return payload;
