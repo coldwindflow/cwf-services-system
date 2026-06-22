@@ -130,6 +130,79 @@ class WizardContainer {
   }
 }
 
+class FakeMount {
+  constructor() {
+    this._html = "";
+    this.mountCache = new Map();
+    this.singleCache = new Map();
+  }
+  set innerHTML(value) {
+    this._html = String(value || "");
+    this.mountCache.clear();
+    this.singleCache.clear();
+  }
+  get innerHTML() { return this._html; }
+  appendChild() {}
+  _findOwner(attr) {
+    if (this._html.includes(attr)) return this;
+    for (const child of this.mountCache.values()) {
+      const found = child._findOwner(attr);
+      if (found) return found;
+    }
+    return null;
+  }
+  static parseAttrs(tagHtml) {
+    const attrs = {};
+    [...tagHtml.matchAll(/([a-z-]+)="([^"]*)"/g)].forEach(([, k, v]) => { attrs[k] = v; });
+    return attrs;
+  }
+  querySelector(selector) {
+    const m = selector.match(/\[data-([a-z-]+)\]/);
+    if (!m) return null;
+    const attr = `data-${m[1]}`;
+    if (attr === "data-store-body" || attr === "data-store-grid-mount" || attr === "data-contact-sheet-mount") {
+      const owner = this._findOwner(attr);
+      if (!owner) return null;
+      if (!owner.mountCache.has(attr)) owner.mountCache.set(attr, new FakeMount());
+      return owner.mountCache.get(attr);
+    }
+    const owner = this._findOwner(attr);
+    if (!owner) return null;
+    if (owner.singleCache.has(attr)) return owner.singleCache.get(attr);
+    const tagMatch = owner._html.match(new RegExp(`<(input|select|button)[^>]*${attr}[^>]*>`));
+    if (!tagMatch) return null;
+    const attrs = FakeMount.parseAttrs(tagMatch[0]);
+    const el = tagMatch[1] === "button" ? new FakeButton(attrs) : new FakeInput(attrs);
+    owner.singleCache.set(attr, el);
+    return el;
+  }
+  querySelectorAll(selector) {
+    const m = selector.match(/\[data-([a-z-]+)\]/);
+    if (!m) return [];
+    const attr = `data-${m[1]}`;
+    const owner = this._findOwner(attr);
+    if (!owner) return [];
+    const results = [];
+    for (const match of owner._html.matchAll(new RegExp(`<button[^>]*${attr}="([^"]*)"[^>]*>`, "g"))) {
+      results.push(new FakeButton(FakeMount.parseAttrs(match[0])));
+    }
+    return results;
+  }
+}
+
+class FakeInput {
+  constructor(attrs = {}) {
+    this.attrs = attrs;
+    this.value = attrs.value || "";
+    this.listeners = {};
+  }
+  getAttribute(name) { return this.attrs[name] || ""; }
+  addEventListener(type, listener) { this.listeners[type] = listener; }
+  async dispatch(type) {
+    if (this.listeners[type]) await this.listeners[type]({});
+  }
+}
+
 function loadCustomerFrontend(context = makeContext()) {
   return load(context, [
     "customer-app/modules/utils.js",
@@ -137,6 +210,7 @@ function loadCustomerFrontend(context = makeContext()) {
     "customer-app/modules/api.js",
     "customer-app/modules/services.js",
     "customer-app/modules/ui.js",
+    "customer-app/modules/store.js",
     "customer-app/modules/auth.js",
     "customer-app/modules/availability.js",
     "customer-app/modules/bookingScheduled.js",
@@ -150,7 +224,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260622_urgent_offer_flow_v1";
+  const build = "20260622_store_nav_phase1_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`bookingUrgent\\.js\\?v=${build}`));
@@ -161,6 +235,32 @@ test("Customer App build id is consistent across shell and service worker", () =
   assert.match(sw, /cwf-customer-app-v2-/);
   assert.match(app, /document\.readyState === "complete"/);
   assert.match(app, /window\.addEventListener\("load", registerServiceWorker/);
+});
+
+test("store module is loaded in index.html and precached in the service worker app shell", () => {
+  const index = read("customer-app/index.html");
+  const sw = read("customer-app/sw.js");
+  const build = "20260622_store_nav_phase1_v1";
+
+  assert.match(index, new RegExp(`modules/store\\.js\\?v=${build}`));
+  assert.match(sw, /`\.\/modules\/store\.js\?v=\$\{BUILD_ID\}`/);
+});
+
+test("bottom navigation has exactly 5 items in the required order with a centered primary booking action", () => {
+  const index = read("customer-app/index.html");
+  const navMatch = index.match(/<nav class="bottom-nav"[\s\S]*?<\/nav>/);
+  assert.ok(navMatch, "bottom-nav markup not found");
+  const navHtml = navMatch[0];
+  const routes = [...navHtml.matchAll(/data-route="([^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(routes, ["home", "store", "booking", "tracking", "profile"]);
+  const bookingButtonMatch = navHtml.match(/<button[^>]*data-route="booking"[^>]*>/);
+  assert.ok(bookingButtonMatch, "booking nav button not found");
+  assert.match(bookingButtonMatch[0], /class="[^"]*nav-item-primary[^"]*"/);
+});
+
+test("store route is registered in the router setup", () => {
+  const app = read("customer-app/assets/customer-app.js");
+  assert.match(app, /store:\s*App\.store\.render/);
 });
 
 test("auth rendering separates logged-in account from provider login buttons", () => {
@@ -483,4 +583,163 @@ test("urgent request key is generated once, reused on resubmits, and cleared on 
     .then(() => {
       assert.equal(root.state.draft.urgent.urgent_request_key, "");
     });
+});
+
+test("store contains no hardcoded fake catalog items and only sources data from the real API", () => {
+  const storeSrc = read("customer-app/modules/store.js");
+  assert.match(storeSrc, /root\.api\.loadCatalogItems\(\)/);
+  assert.doesNotMatch(storeSrc, /item_name:\s*"/);
+  assert.doesNotMatch(storeSrc, /base_price:\s*\d/);
+});
+
+test("store loads real catalog items via root.api.loadCatalogItems and renders them", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  let calls = 0;
+  root.api.loadCatalogItems = async () => {
+    calls += 1;
+    return [
+      { item_id: 1, item_name: "ล้างแอร์ผนัง 12000 BTU", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", job_category: "ล้าง", ac_type: "ผนัง", btu_min: 9000, btu_max: 12000 },
+      { item_id: 2, item_name: "ซ่อมแอร์ไม่เย็น", item_category: "ซ่อมแอร์", base_price: 0, unit_label: "งาน" },
+    ];
+  };
+
+  const container = new FakeMount();
+  root.store.render(container);
+  assert.equal(calls, 1);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  assert.match(body.innerHTML, /ล้างแอร์ผนัง 12000 BTU/);
+  assert.match(body.innerHTML, /ราคาเริ่มต้น/);
+  assert.match(body.innerHTML, /สอบถามราคา/);
+});
+
+test("store renders an honest empty state instead of mock products when the API returns no items", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  assert.doesNotMatch(body.innerHTML, /store-card/);
+  assert.match(body.innerHTML, /ยังไม่มีรายการที่เปิดให้ลูกค้าดู/);
+});
+
+test("store renders an error state with a working retry button that re-fetches", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  let calls = 0;
+  root.api.loadCatalogItems = async () => {
+    calls += 1;
+    if (calls === 1) throw new Error("โหลดข้อมูลไม่สำเร็จ");
+    return [{ item_id: 9, item_name: "ล้างแอร์สี่ทิศทาง", item_category: "ล้างแอร์", base_price: 1200, unit_label: "เครื่อง" }];
+  };
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  let body = container.querySelector("[data-store-body]");
+  assert.match(body.innerHTML, /is-error/);
+  const retry = container.querySelector("[data-store-retry]");
+  assert.ok(retry, "retry button not found in error state");
+
+  await retry.click();
+  body = container.querySelector("[data-store-body]");
+  assert.equal(calls, 2);
+  assert.match(body.innerHTML, /ล้างแอร์สี่ทิศทาง/);
+});
+
+test("store search and category filters narrow already-loaded items without extra API calls", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  let calls = 0;
+  root.api.loadCatalogItems = async () => {
+    calls += 1;
+    return [
+      { item_id: 1, item_name: "ล้างแอร์ผนัง", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง" },
+      { item_id: 2, item_name: "ล้างแอร์เปลือย", item_category: "ล้างแอร์", base_price: 800, unit_label: "เครื่อง" },
+      { item_id: 3, item_name: "ซ่อมคอมเพรสเซอร์", item_category: "ซ่อมแอร์", base_price: 0, unit_label: "งาน" },
+    ];
+  };
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const search = container.querySelector("[data-store-search]");
+  assert.ok(search, "search input not found");
+  search.value = "เปลือย";
+  await search.dispatch("input");
+
+  let grid = container.querySelector("[data-store-grid-mount]");
+  assert.match(grid.innerHTML, /ล้างแอร์เปลือย/);
+  assert.doesNotMatch(grid.innerHTML, /ล้างแอร์ผนัง/);
+  assert.doesNotMatch(grid.innerHTML, /ซ่อมคอมเพรสเซอร์/);
+
+  search.value = "";
+  await search.dispatch("input");
+
+  const category = container.querySelector("[data-store-category]");
+  assert.ok(category, "category select not found");
+  category.value = "ซ่อมแอร์";
+  await category.dispatch("change");
+
+  grid = container.querySelector("[data-store-grid-mount]");
+  assert.match(grid.innerHTML, /ซ่อมคอมเพรสเซอร์/);
+  assert.doesNotMatch(grid.innerHTML, /ล้างแอร์ผนัง/);
+  assert.doesNotMatch(grid.innerHTML, /ล้างแอร์เปลือย/);
+
+  assert.equal(calls, 1);
+});
+
+test("store booking button routes to booking without implying the item is already added", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    { item_id: 1, item_name: "ล้างแอร์ผนัง", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง" },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  assert.match(body.innerHTML, /ไปหน้าจองบริการ/);
+  assert.doesNotMatch(body.innerHTML, />จองบริการ</);
+
+  assert.doesNotMatch(container.innerHTML, /ราคาที่แน่นอนตอนจอง/);
+  assert.doesNotMatch(container.innerHTML, /เพิ่มในรายการจอง/);
+  assert.doesNotMatch(container.innerHTML, /เพิ่มลงตะกร้า/);
+});
+
+test("store BTU label formats min/max/range/neither cases correctly", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    { item_id: 1, item_name: "รุ่นช่วงบีทียู", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", btu_min: 9000, btu_max: 12000 },
+    { item_id: 2, item_name: "รุ่นบีทียูเท่ากัน", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", btu_min: 12000, btu_max: 12000 },
+    { item_id: 3, item_name: "รุ่นมีแค่ต่ำสุด", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", btu_min: 18000 },
+    { item_id: 4, item_name: "รุ่นมีแค่สูงสุด", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", btu_max: 12000 },
+    { item_id: 5, item_name: "รุ่นไม่มีบีทียู", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง" },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  assert.match(body.innerHTML, /9,000–12,000 BTU/);
+  assert.match(body.innerHTML, /12,000 BTU/);
+  assert.match(body.innerHTML, /ตั้งแต่ 18,000 BTU/);
+  assert.match(body.innerHTML, /ไม่เกิน 12,000 BTU/);
+
+  const card5 = body.innerHTML.split("รุ่นไม่มีบีทียู")[1] || "";
+  const nextCardBoundary = card5.indexOf("</article>");
+  const card5Scope = nextCardBoundary >= 0 ? card5.slice(0, nextCardBoundary) : card5;
+  assert.doesNotMatch(card5Scope, /BTU/);
 });

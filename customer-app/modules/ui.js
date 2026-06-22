@@ -275,6 +275,7 @@
     prefetchHome: loadHomeData,
     patchHomeData,
     updateAccountChrome,
+    openContactSheet,
 
     renderHome(container) {
       container.innerHTML = `

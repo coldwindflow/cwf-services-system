@@ -1,6 +1,6 @@
 "use strict";
 
-const BUILD_ID = "20260622_urgent_offer_flow_v1";
+const BUILD_ID = "20260622_store_nav_phase1_v1";
 const CACHE_NAME = `cwf-customer-app-v2-${BUILD_ID}`;
 const APP_SHELL = [
   `./index.html?v=${BUILD_ID}`,
@@ -13,6 +13,7 @@ const APP_SHELL = [
   `./modules/api.js?v=${BUILD_ID}`,
   `./modules/services.js?v=${BUILD_ID}`,
   `./modules/ui.js?v=${BUILD_ID}`,
+  `./modules/store.js?v=${BUILD_ID}`,
   `./modules/auth.js?v=${BUILD_ID}`,
   `./modules/pricing.js?v=${BUILD_ID}`,
   `./modules/availability.js?v=${BUILD_ID}`,
