@@ -24,7 +24,10 @@ function parseCloudinaryEnv(env = process.env) {
     if (parsed) return parsed;
   }
   return {
-    cloudName: String(env.CLOUDINARY_CLOUD_NAME || "").trim(),
+    // CLOUDINARY_NAME is the legacy var name already used by the technician
+    // photo system (cwf-revisit-tech-preload.js) — kept as a fallback so the
+    // catalog uploader works off the same Render env without any ENV changes.
+    cloudName: String(env.CLOUDINARY_CLOUD_NAME || env.CLOUDINARY_NAME || "").trim(),
     apiKey: String(env.CLOUDINARY_API_KEY || "").trim(),
     apiSecret: String(env.CLOUDINARY_API_SECRET || "").trim(),
   };
