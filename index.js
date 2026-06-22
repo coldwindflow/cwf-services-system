@@ -11664,15 +11664,6 @@ try {
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_booking_code_unique ON public.jobs(booking_code)`
     );
 
-    // Defense-in-depth for durable urgent-booking idempotency: booking_token
-    // is deterministically derived from urgent_request_key for customer
-    // urgent requests (see deriveUrgentBookingToken), so a unique index here
-    // guarantees at most one job per request key even if the advisory-lock
-    // dedup check in handleAdminBookV2 were ever bypassed or raced.
-    await pool.query(
-      `CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_booking_token_unique ON public.jobs(booking_token) WHERE booking_token IS NOT NULL`
-    );
-
     // backfill booking_code
     await pool.query(`
       UPDATE public.jobs
