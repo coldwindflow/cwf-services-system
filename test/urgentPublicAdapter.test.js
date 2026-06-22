@@ -88,51 +88,28 @@ test("computeCustomerUrgentAppointmentIso rolls month/year boundaries correctly"
   assert.equal(iso, "2027-01-01T09:00:00+07:00");
 });
 
-test("UrgentIdempotencyStore caches a settled result and replays it for the same key", () => {
-  const store = new urgentPublicAdapter.UrgentIdempotencyStore();
-  assert.equal(store.getCached("key1"), null);
-  const settle = store.beginInFlight("key1");
-  assert.equal(store.getInFlight("key1") !== null, true);
-  settle.resolve({ booking_code: "B1", token: "T1" });
-  assert.equal(store.getInFlight("key1"), null);
-  const cached = store.getCached("key1");
-  assert.equal(cached.booking_code, "B1");
-  assert.equal(cached.token, "T1");
+test("deriveUrgentBookingToken is deterministic for the same request key", () => {
+  const a = urgentPublicAdapter.deriveUrgentBookingToken("same-key-123");
+  const b = urgentPublicAdapter.deriveUrgentBookingToken("same-key-123");
+  assert.equal(a, b);
+  assert.equal(typeof a, "string");
+  assert.equal(a.length, 24);
 });
 
-test("UrgentIdempotencyStore exposes the in-flight promise so concurrent duplicates can await the same result", async () => {
-  const store = new urgentPublicAdapter.UrgentIdempotencyStore();
-  const settle = store.beginInFlight("key2");
-  const inFlight = store.getInFlight("key2");
-  assert.ok(inFlight);
-  settle.resolve({ booking_code: "B2", token: "T2" });
-  const result = await inFlight;
-  assert.equal(result.booking_code, "B2");
+test("deriveUrgentBookingToken differs for different request keys", () => {
+  const a = urgentPublicAdapter.deriveUrgentBookingToken("key-one");
+  const b = urgentPublicAdapter.deriveUrgentBookingToken("key-two");
+  assert.notEqual(a, b);
 });
 
-test("UrgentIdempotencyStore does not cache a rejected in-flight request", async () => {
-  const store = new urgentPublicAdapter.UrgentIdempotencyStore();
-  const settle = store.beginInFlight("key3");
-  const inFlight = store.getInFlight("key3");
-  settle.reject(new Error("boom"));
-  await assert.rejects(inFlight);
-  assert.equal(store.getCached("key3"), null);
-  assert.equal(store.getInFlight("key3"), null);
+test("deriveUrgentBookingToken returns null for an empty or missing key", () => {
+  assert.equal(urgentPublicAdapter.deriveUrgentBookingToken(""), null);
+  assert.equal(urgentPublicAdapter.deriveUrgentBookingToken(undefined), null);
+  assert.equal(urgentPublicAdapter.deriveUrgentBookingToken(null), null);
 });
 
-test("UrgentIdempotencyStore keeps different keys independent", () => {
-  const store = new urgentPublicAdapter.UrgentIdempotencyStore();
-  store.beginInFlight("a").resolve({ booking_code: "A" });
-  assert.equal(store.getCached("a").booking_code, "A");
-  assert.equal(store.getCached("b"), null);
-});
-
-test("UrgentIdempotencyStore prunes entries older than the TTL", () => {
-  const store = new urgentPublicAdapter.UrgentIdempotencyStore(1);
-  store.beginInFlight("old").resolve({ booking_code: "OLD" });
-  assert.equal(store.getCached("old").booking_code, "OLD");
-  return new Promise((resolve) => setTimeout(() => {
-    assert.equal(store.getCached("old"), null);
-    resolve();
-  }, 20));
+test("deriveUrgentBookingToken trims whitespace before hashing", () => {
+  const a = urgentPublicAdapter.deriveUrgentBookingToken("  padded-key  ");
+  const b = urgentPublicAdapter.deriveUrgentBookingToken("padded-key");
+  assert.equal(a, b);
 });

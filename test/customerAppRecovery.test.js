@@ -462,9 +462,23 @@ test("urgent request key is generated once, reused on resubmits, and cleared on 
       assert.equal(root.state.draft.urgent.urgent_request_key, firstKey);
 
       root.bookingUrgent.render.onLeave();
+
+      // While the request is still non-terminal (waiting/time_proposed/
+      // admin_review), "new-request" must be a no-op: the key must survive.
       return container.querySelectorAll("[data-urgent-action]")
         .find((button) => button.getAttribute("data-urgent-action") === "new-request")
-        .click();
+        .click()
+        .then(() => {
+          assert.equal(root.state.draft.urgent.urgent_request_key, firstKey);
+
+          // Only once the live status is genuinely terminal does the
+          // "new-request" action clear the key and reset the flow.
+          root.state.setUrgentFlow({ liveStatus: { terminal: true, phase: "closed" } });
+          root.bookingUrgent.render(container);
+          return container.querySelectorAll("[data-urgent-action]")
+            .find((button) => button.getAttribute("data-urgent-action") === "new-request")
+            .click();
+        });
     })
     .then(() => {
       assert.equal(root.state.draft.urgent.urgent_request_key, "");

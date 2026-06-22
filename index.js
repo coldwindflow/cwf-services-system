@@ -11664,6 +11664,15 @@ try {
       `CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_booking_code_unique ON public.jobs(booking_code)`
     );
 
+    // Defense-in-depth for durable urgent-booking idempotency: booking_token
+    // is deterministically derived from urgent_request_key for customer
+    // urgent requests (see deriveUrgentBookingToken), so a unique index here
+    // guarantees at most one job per request key even if the advisory-lock
+    // dedup check in handleAdminBookV2 were ever bypassed or raced.
+    await pool.query(
+      `CREATE UNIQUE INDEX IF NOT EXISTS idx_jobs_booking_token_unique ON public.jobs(booking_token) WHERE booking_token IS NOT NULL`
+    );
+
     // backfill booking_code
     await pool.query(`
       UPDATE public.jobs
@@ -14161,7 +14170,19 @@ async function handleAdminBookV2(req, res) {
     String(allowTimeProposalRaw || "").trim() === "1"
   );
   const createdBySource = req.cwfBookSource === "customer" ? "customer" : "admin";
-  const publicBookingToken = createdBySource === "customer" ? genToken(12) : null;
+  // Customer-sourced urgent requests carry a client-generated
+  // urgent_request_key; deriving booking_token from it deterministically
+  // (instead of a random genToken) lets the dedup check below find a
+  // prior committed row for the exact same key, across restarts/instances.
+  const urgentRequestKey = (isUrgentOffer && createdBySource === "customer")
+    ? String(body.urgent_request_key || "").trim()
+    : "";
+  const urgentDeterministicToken = urgentRequestKey
+    ? urgentPublicAdapter.deriveUrgentBookingToken(urgentRequestKey)
+    : null;
+  const publicBookingToken = createdBySource === "customer"
+    ? (urgentDeterministicToken || genToken(12))
+    : null;
   const zoneDetected = await detectServiceZoneFromText({ address_text, job_zone, service_zone_code, maps_url });
   const detectedZoneCode = zoneDetected?.service_zone_code || null;
   const detectedZoneLabel = zoneDetected?.service_zone_label || null;
@@ -14260,6 +14281,28 @@ console.log("[latlng_parse]", { ok: !!parsedAdminLL });
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // Durable, cross-instance idempotency for customer-sourced urgent
+    // requests: an advisory lock scoped to this transaction serializes any
+    // concurrent/retried requests sharing the same urgent_request_key
+    // (across all app-server instances connected to this Postgres), and
+    // auto-releases on COMMIT/ROLLBACK so it can never be left held by a
+    // crashed process. If a job for this exact key already committed
+    // (found via the deterministic booking_token), short-circuit here and
+    // return that prior result instead of creating a second job/offer set.
+    if (urgentRequestKey && urgentDeterministicToken) {
+      await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [urgentRequestKey]);
+      const dupCheck = await client.query(
+        `SELECT booking_code, booking_token FROM public.jobs WHERE booking_token=$1 LIMIT 1`,
+        [urgentDeterministicToken]
+      );
+      const dupRow = dupCheck.rows[0] || null;
+      if (dupRow && dupRow.booking_code) {
+        await client.query("COMMIT");
+        return res.json({ success: true, booking_code: dupRow.booking_code, token: dupRow.booking_token, duplicate: true });
+      }
+    }
+
     await expireTechnicianAcceptStatuses(client);
 
     // promo
@@ -24652,8 +24695,6 @@ app.get("/public/availability", async (req, res) => {
   }
 });
 
-const customerUrgentIdempotency = new urgentPublicAdapter.UrgentIdempotencyStore();
-
 function isCustomerAppUrgentBook(body = {}) {
   return String(body.booking_mode || "").trim().toLowerCase() === "urgent" &&
     String(body.client_app || "").trim().toLowerCase() === "customer_app_v2";
@@ -24661,27 +24702,17 @@ function isCustomerAppUrgentBook(body = {}) {
 
 // Customer App V2 urgent requests are just another entry point into the
 // existing admin urgent offer engine (handleAdminBookV2): this adapter only
-// (a) strips the request down to a customer-safe allowlist, (b) computes a
-// rounded, business-hours-aware appointment time, and (c) deduplicates
-// retried/duplicate submits by client-generated urgent_request_key. It must
-// never branch into a separate dispatch/state machine.
+// (a) strips the request down to a customer-safe allowlist and (b) computes
+// a rounded, business-hours-aware appointment time. Deduplication of
+// retried/duplicate submits sharing the same client-generated
+// urgent_request_key is handled durably inside handleAdminBookV2's existing
+// transaction (advisory lock + deterministic booking_token lookup), not
+// here, so it survives process restarts and works across instances.
 function handlePublicCustomerUrgentBook(req, res) {
   const incoming = urgentPublicAdapter.sanitizeCustomerUrgentBody(req.body || {});
   const requestKey = incoming.urgent_request_key;
   if (!requestKey || requestKey.length < 16) {
     return res.status(400).json({ error: "MISSING_REQUEST_KEY", code: "MISSING_REQUEST_KEY" });
-  }
-
-  const cached = customerUrgentIdempotency.getCached(requestKey);
-  if (cached) {
-    return res.json({ success: true, booking_code: cached.booking_code, token: cached.token, duplicate: true });
-  }
-
-  const inFlight = customerUrgentIdempotency.getInFlight(requestKey);
-  if (inFlight) {
-    return inFlight
-      .then((result) => res.json({ success: true, booking_code: result.booking_code, token: result.token, duplicate: true }))
-      .catch(() => res.status(409).json({ error: "DUPLICATE_REQUEST_IN_PROGRESS", code: "DUPLICATE_REQUEST_IN_PROGRESS" }));
   }
 
   req.cwfBookSource = "customer";
@@ -24695,15 +24726,6 @@ function handlePublicCustomerUrgentBook(req, res) {
     technician_username: "",
     team_members: [],
     allow_time_proposal: true,
-  };
-
-  const settle = customerUrgentIdempotency.beginInFlight(requestKey);
-  const originalJson = res.json.bind(res);
-  res.json = (payload) => {
-    const ok = res.statusCode < 400 && payload && payload.success && payload.booking_code;
-    if (ok) settle.resolve({ booking_code: payload.booking_code, token: payload.token || null });
-    else settle.reject(new Error("urgent booking failed"));
-    return originalJson(payload);
   };
 
   return handleAdminBookV2(req, res);

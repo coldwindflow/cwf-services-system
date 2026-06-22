@@ -1,11 +1,11 @@
 "use strict";
 
+const crypto = require("crypto");
 const jobTiming = require("./jobTiming");
 
 const URGENT_LEAD_TIME_MIN = 30;
 const UI_START_MIN = 9 * 60; // 09:00, matches the Admin Add locked business window
 const UI_END_MIN = 18 * 60; // 18:00
-const IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
 
 function coerceNumber(value, fallback = 0) {
   const n = Number(value);
@@ -84,62 +84,27 @@ function computeCustomerUrgentAppointmentIso(now = jobTiming.getBangkokNow()) {
 }
 
 // ---------------------------------------------------------------------------
-// Best-effort, single-process idempotency for retried/duplicate urgent
-// requests that share the same client-generated urgent_request_key.
+// Durable, DB-backed idempotency for retried/duplicate urgent requests that
+// share the same client-generated urgent_request_key.
 //
-// SCOPE MISMATCH (reported, not silently worked around): a durable,
-// cross-instance/cross-restart guarantee needs a unique column to lock on
-// (e.g. on public.jobs or public.job_offers), which is a schema change. Per
-// the explicit instruction not to create a migration in this round, this
-// layer is in-memory only: it dedups retries / double-taps / multi-tab
-// submits landing on the same Node process, but does NOT survive a process
-// restart and does NOT protect against two different server instances
-// racing on the same key. That guarantee needs an owner-approved migration.
+// Rather than an in-memory cache (which does not survive a process restart
+// and does not protect against two server instances racing on the same
+// key), the request key is hashed into a deterministic booking_token. The
+// caller (handleAdminBookV2) takes a Postgres advisory lock keyed on the
+// raw request key inside its existing per-request transaction, then looks
+// up an existing public.jobs row by this deterministic token before
+// inserting a new one. Because the lock is transaction-scoped
+// (pg_advisory_xact_lock) it auto-releases on COMMIT/ROLLBACK -- including
+// on a crashed connection -- and is visible to every connection on the same
+// Postgres instance, so restarts, multiple app-server instances, and
+// concurrent requests all converge on a single committed job/offer set
+// without requiring a new table or a separate migration: booking_token
+// already exists on public.jobs.
 // ---------------------------------------------------------------------------
-class UrgentIdempotencyStore {
-  constructor(ttlMs = IDEMPOTENCY_TTL_MS) {
-    this.ttlMs = ttlMs;
-    this.cache = new Map();
-    this.inFlight = new Map();
-  }
-
-  prune() {
-    const cutoff = Date.now() - this.ttlMs;
-    for (const [key, entry] of this.cache.entries()) {
-      if (entry.ts < cutoff) this.cache.delete(key);
-    }
-  }
-
-  getCached(key) {
-    this.prune();
-    return key ? this.cache.get(key) || null : null;
-  }
-
-  getInFlight(key) {
-    return key ? this.inFlight.get(key) || null : null;
-  }
-
-  beginInFlight(key) {
-    let resolveFn;
-    let rejectFn;
-    const promise = new Promise((resolve, reject) => {
-      resolveFn = resolve;
-      rejectFn = reject;
-    });
-    promise.catch(() => {}); // avoid an unhandled rejection when a solo (non-duplicate) request fails
-    this.inFlight.set(key, promise);
-    return {
-      resolve: (result) => {
-        this.inFlight.delete(key);
-        this.cache.set(key, { ...result, ts: Date.now() });
-        resolveFn(result);
-      },
-      reject: (err) => {
-        this.inFlight.delete(key);
-        rejectFn(err);
-      },
-    };
-  }
+function deriveUrgentBookingToken(requestKey) {
+  const key = String(requestKey || "").trim();
+  if (!key) return null;
+  return crypto.createHash("sha256").update(`urgent_v1:${key}`).digest("hex").slice(0, 24);
 }
 
 module.exports = {
@@ -149,5 +114,5 @@ module.exports = {
   sanitizeCustomerServiceLine,
   sanitizeCustomerUrgentBody,
   computeCustomerUrgentAppointmentIso,
-  UrgentIdempotencyStore,
+  deriveUrgentBookingToken,
 };

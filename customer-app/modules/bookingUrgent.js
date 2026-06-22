@@ -294,6 +294,10 @@
     `;
   }
 
+  function isUrgentRequestTerminal(liveStatus) {
+    return !!(liveStatus && liveStatus.terminal === true);
+  }
+
   function renderWaiting() {
     const d = draft();
     const flow = root.state.urgentFlow || {};
@@ -302,6 +306,8 @@
     const trackingKey = trackingKeyFromResult(result);
     const offersCount = result ? Number(result.offers_count || 0) : 0;
     const offerEnabled = result ? result.urgent_offer_enabled !== false : true;
+    const isTerminal = isUrgentRequestTerminal(liveStatus);
+    const lockedAttr = isTerminal ? "" : 'disabled aria-disabled="true" title="ใช้ได้เมื่อคำขอคิวด่วนนี้ปิดแล้ว"';
     let waitingText = offerEnabled && offersCount > 0
       ? "ส่งคำขอคิวด่วนแล้ว กำลังรอช่างพาร์ทเนอร์กดรับงาน ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน"
       : "ส่งคำขอคิวด่วนแล้ว แอดมินกำลังช่วยตรวจสอบคิวด่วน ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน";
@@ -371,14 +377,16 @@
         </div>
         <div class="button-row">
           <button class="secondary-btn" type="button" disabled>ให้แอดมินช่วยจัดคิว</button>
-          <button class="secondary-btn" type="button" data-urgent-action="to-scheduled">เปลี่ยนเป็นจองล่วงหน้า</button>
+          <button class="secondary-btn" type="button" data-urgent-action="to-scheduled" ${lockedAttr}>เปลี่ยนเป็นจองล่วงหน้า</button>
         </div>
+        ${isTerminal ? "" : '<p class="muted">ปุ่มเปลี่ยนเป็นจองล่วงหน้าจะใช้ได้เมื่อคำขอคิวด่วนนี้ปิดแล้ว</p>'}
       </section>
 
       <div class="sticky-action">
         ${trackingKey ? `<button class="primary-btn" type="button" data-urgent-action="track-created" data-tracking-key="${root.utils.escapeHtml(trackingKey)}">ติดตามงานนี้</button>` : ""}
         <p class="muted">ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน</p>
-        <button class="secondary-btn" type="button" data-urgent-action="new-request">เริ่มคำขอใหม่</button>
+        <button class="secondary-btn" type="button" data-urgent-action="new-request" ${lockedAttr}>เริ่มคำขอใหม่</button>
+        ${isTerminal ? "" : '<p class="muted">ปุ่มเริ่มคำขอใหม่จะใช้ได้เมื่อคำขอคิวด่วนนี้ปิดแล้ว</p>'}
       </div>
     `;
   }
@@ -555,6 +563,7 @@
         } else if (action === "confirm") {
           await submitUrgent(container);
         } else if (action === "new-request") {
+          if (root.state.urgentFlow.step === "waiting" && !isUrgentRequestTerminal(root.state.urgentFlow.liveStatus)) return;
           stopPolling();
           stopTick();
           root.state.updateDraft("urgent", { urgent_request_key: "" });
@@ -566,6 +575,7 @@
           root.state.setTracking({ status: "idle", data: null, error: "" });
           root.utils.routeTo("tracking");
         } else if (action === "to-scheduled") {
+          if (root.state.urgentFlow.step === "waiting" && !isUrgentRequestTerminal(root.state.urgentFlow.liveStatus)) return;
           root.utils.routeTo("scheduled");
         }
       });
