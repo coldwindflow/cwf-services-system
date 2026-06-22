@@ -28,6 +28,20 @@
 
   let submitInFlight = false;
   let pollTimer = null;
+  let tickTimer = null;
+  let activeContainer = null;
+  let serverClockOffsetMs = 0;
+
+  // Reused across retries of the SAME request (network retry, double-tap,
+  // multi-tab) so the server can dedup; only cleared when the customer
+  // explicitly starts a genuinely new request ("new-request" action).
+  function ensureRequestKey() {
+    const d = draft();
+    if (d.urgent_request_key) return d.urgent_request_key;
+    const key = root.utils.randomKey();
+    root.state.updateDraft("urgent", { urgent_request_key: key });
+    return key;
+  }
 
   function buildSubmitPayload() {
     const d = draft();
@@ -43,6 +57,7 @@
       dispatch_mode: "offer",
       allow_time_proposal: true,
       client_app: "customer_app_v2",
+      urgent_request_key: ensureRequestKey(),
       job_type: s.job_type,
       ac_type: s.ac_type,
       btu: s.btu || 0,
@@ -144,14 +159,18 @@
     return result ? (result.token || result.booking_token || result.booking_code || "") : "";
   }
 
-  function urgentStatusText(status, result) {
+  function urgentStatusText(status) {
     const phase = String(status?.phase || "").trim();
+    if (status?.terminal) return "คำขอคิวด่วนนี้ปิดแล้ว กรุณาเริ่มคำขอใหม่หรือเปลี่ยนเป็นจองล่วงหน้า";
     if (phase === "accepted") return "มีช่างรับงานแล้ว ระบบกำลังอัปเดตสถานะงานให้ติดตามต่อได้ทันที";
     if (phase === "time_proposed") return "ช่างเสนอเวลาใหม่แล้ว แอดมินกำลังช่วยตรวจสอบและยืนยันกับลูกค้า";
     if (phase === "admin_review") return "ยังไม่มีช่างรับในรอบข้อเสนอ แอดมินกำลังช่วยตรวจสอบคิวด่วน";
-    const expiresAt = status?.next_offer_expires_at || result?.next_offer_expires_at || null;
+    const expiresAt = status?.next_offer_expires_at || null;
     const end = expiresAt ? new Date(expiresAt).getTime() : 0;
-    const remain = end ? Math.max(0, Math.ceil((end - Date.now()) / 1000)) : 0;
+    // Anchor the countdown to the server's clock (server_now), not the
+    // client's, so drift never produces a misleading countdown.
+    const nowOnServer = Date.now() + serverClockOffsetMs;
+    const remain = end ? Math.max(0, Math.ceil((end - nowOnServer) / 1000)) : 0;
     const countdown = remain > 0 ? ` เหลือเวลารับงานประมาณ ${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, "0")} นาที` : "";
     return `ส่งคำขอคิวด่วนแล้ว กำลังรอช่างที่พร้อมรับงานกดรับ${countdown}`;
   }
@@ -305,7 +324,7 @@
             <span class="pulse-dot" aria-hidden="true"></span>
             <span>กำลังส่งคำขอหาช่างพาร์ทเนอร์ที่พร้อมรับงานในพื้นที่</span>
           </div>
-          <div class="notice is-urgent" data-urgent-live-status>${root.utils.escapeHtml(urgentStatusText(liveStatus, result))}</div>
+          <div class="notice is-urgent" data-urgent-live-status>${root.utils.escapeHtml(urgentStatusText(liveStatus))}</div>
         </div>
       </section>
 
@@ -390,22 +409,77 @@
     }
   }
 
+  function stopTick() {
+    if (tickTimer) {
+      clearInterval(tickTimer);
+      tickTimer = null;
+    }
+  }
+
+  function onWaitingScreen() {
+    return root.state.currentRoute === "urgent" && root.state.urgentFlow.step === "waiting";
+  }
+
+  // Updates only the live-status text node every second so the countdown
+  // moves smoothly without re-rendering (and re-binding) the whole screen.
+  function tickLiveStatus() {
+    if (!onWaitingScreen() || !activeContainer) return;
+    const node = activeContainer.querySelector("[data-urgent-live-status]");
+    if (!node) return;
+    node.textContent = urgentStatusText(root.state.urgentFlow?.liveStatus || null);
+  }
+
   async function pollUrgentStatus(container) {
     const key = trackingKeyFromResult(root.state.urgentFlow?.result || null);
     if (!key) return;
     try {
       const status = await root.api.loadUrgentStatus(key);
+      if (status && status.server_now) {
+        serverClockOffsetMs = new Date(status.server_now).getTime() - Date.now();
+      }
       root.state.setUrgentFlow({ liveStatus: status, liveStatusError: "" });
-      if (root.state.currentRoute === "urgent" && root.state.urgentFlow.step === "waiting") paint(container);
+      if (!onWaitingScreen()) return;
+      if (status && status.phase === "accepted") {
+        stopPolling();
+        stopTick();
+        const key2 = trackingKeyFromResult(root.state.urgentFlow?.result || null);
+        if (key2) root.state.updateDraft("tracking", { trackingCode: key2 });
+        root.utils.routeTo("tracking");
+        return;
+      }
+      if (status && status.terminal) {
+        stopPolling();
+        stopTick();
+      }
+      paint(container);
     } catch (error) {
       root.state.setUrgentFlow({ liveStatusError: error.message || "โหลดสถานะคิวด่วนไม่สำเร็จ" });
     }
   }
 
   function startPolling(container) {
-    if (pollTimer) return;
-    pollUrgentStatus(container);
-    pollTimer = setInterval(() => pollUrgentStatus(container), 10000);
+    activeContainer = container;
+    if (!pollTimer) {
+      pollUrgentStatus(container);
+      pollTimer = setInterval(() => pollUrgentStatus(container), 10000);
+    }
+    if (!tickTimer) {
+      tickTimer = setInterval(tickLiveStatus, 1000);
+    }
+  }
+
+  let visibilityBound = false;
+  function bindVisibilityRefresh() {
+    if (visibilityBound) return;
+    visibilityBound = true;
+    const refresh = () => {
+      if (document.visibilityState === "visible" && onWaitingScreen() && activeContainer) {
+        pollUrgentStatus(activeContainer);
+      }
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", refresh);
   }
 
   function body() {
@@ -425,8 +499,13 @@
       </section>
     `;
     bind(container);
-    if (step === "waiting") startPolling(container);
-    else stopPolling();
+    const liveStatus = root.state.urgentFlow.liveStatus || null;
+    if (step === "waiting" && !(liveStatus && liveStatus.terminal)) {
+      startPolling(container);
+    } else {
+      stopPolling();
+      stopTick();
+    }
   }
 
   function servicePatch(field, value) {
@@ -477,6 +556,8 @@
           await submitUrgent(container);
         } else if (action === "new-request") {
           stopPolling();
+          stopTick();
+          root.state.updateDraft("urgent", { urgent_request_key: "" });
           root.state.setUrgentFlow({ step: "form", status: "idle", error: "", result: null, liveStatus: null, liveStatusError: "" });
           paint(container);
         } else if (action === "track-created") {
@@ -491,15 +572,22 @@
     });
   }
 
-  root.bookingUrgent = {
-    render(container) {
-      root.state.ensureSavedAddressPrefill("urgent", () => {
-        if (root.state.currentRoute === "urgent") root.bookingUrgent.render(container);
-      });
-      if (!root.state.urgentFlow || !root.state.urgentFlow.step) {
-        root.state.setUrgentFlow({ step: "form", status: "idle", error: "", result: null, liveStatus: null, liveStatusError: "" });
-      }
-      paint(container);
-    },
+  function render(container) {
+    root.state.ensureSavedAddressPrefill("urgent", () => {
+      if (root.state.currentRoute === "urgent") render(container);
+    });
+    if (!root.state.urgentFlow || !root.state.urgentFlow.step) {
+      root.state.setUrgentFlow({ step: "form", status: "idle", error: "", result: null, liveStatus: null, liveStatusError: "" });
+    }
+    bindVisibilityRefresh();
+    paint(container);
+  }
+
+  render.onLeave = () => {
+    stopPolling();
+    stopTick();
+    activeContainer = null;
   };
+
+  root.bookingUrgent = { render };
 })();

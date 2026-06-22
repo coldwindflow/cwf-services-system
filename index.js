@@ -27,6 +27,7 @@ const fs = require("fs");
 const normalizerHelpers = require("./server/normalizers");
 const pricingHelpers = require("./server/pricing");
 const jobTiming = require("./server/services/jobTiming");
+const urgentPublicAdapter = require("./server/services/urgentPublicAdapter");
 const customerPricingHelpers = require("./server/customerPricing");
 const customerAuth = require("./server/customerAuth");
 const technicianIncomeHelpers = require("./server/technicianIncome");
@@ -24651,21 +24652,42 @@ app.get("/public/availability", async (req, res) => {
   }
 });
 
-function defaultCustomerUrgentAppointmentIso() {
-  return dateToBangkokISO(new Date(Date.now() + 30 * 60 * 1000));
-}
+const customerUrgentIdempotency = new urgentPublicAdapter.UrgentIdempotencyStore();
 
 function isCustomerAppUrgentBook(body = {}) {
   return String(body.booking_mode || "").trim().toLowerCase() === "urgent" &&
     String(body.client_app || "").trim().toLowerCase() === "customer_app_v2";
 }
 
+// Customer App V2 urgent requests are just another entry point into the
+// existing admin urgent offer engine (handleAdminBookV2): this adapter only
+// (a) strips the request down to a customer-safe allowlist, (b) computes a
+// rounded, business-hours-aware appointment time, and (c) deduplicates
+// retried/duplicate submits by client-generated urgent_request_key. It must
+// never branch into a separate dispatch/state machine.
 function handlePublicCustomerUrgentBook(req, res) {
-  const body = req.body || {};
+  const incoming = urgentPublicAdapter.sanitizeCustomerUrgentBody(req.body || {});
+  const requestKey = incoming.urgent_request_key;
+  if (!requestKey || requestKey.length < 16) {
+    return res.status(400).json({ error: "MISSING_REQUEST_KEY", code: "MISSING_REQUEST_KEY" });
+  }
+
+  const cached = customerUrgentIdempotency.getCached(requestKey);
+  if (cached) {
+    return res.json({ success: true, booking_code: cached.booking_code, token: cached.token, duplicate: true });
+  }
+
+  const inFlight = customerUrgentIdempotency.getInFlight(requestKey);
+  if (inFlight) {
+    return inFlight
+      .then((result) => res.json({ success: true, booking_code: result.booking_code, token: result.token, duplicate: true }))
+      .catch(() => res.status(409).json({ error: "DUPLICATE_REQUEST_IN_PROGRESS", code: "DUPLICATE_REQUEST_IN_PROGRESS" }));
+  }
+
   req.cwfBookSource = "customer";
   req.body = {
-    ...body,
-    appointment_datetime: defaultCustomerUrgentAppointmentIso(),
+    ...incoming,
+    appointment_datetime: urgentPublicAdapter.computeCustomerUrgentAppointmentIso(),
     booking_mode: "urgent",
     dispatch_mode: "offer",
     tech_type: "partner",
@@ -24673,10 +24695,17 @@ function handlePublicCustomerUrgentBook(req, res) {
     technician_username: "",
     team_members: [],
     allow_time_proposal: true,
-    override_price: undefined,
-    override_duration_min: undefined,
-    promotion_id: undefined,
   };
+
+  const settle = customerUrgentIdempotency.beginInFlight(requestKey);
+  const originalJson = res.json.bind(res);
+  res.json = (payload) => {
+    const ok = res.statusCode < 400 && payload && payload.success && payload.booking_code;
+    if (ok) settle.resolve({ booking_code: payload.booking_code, token: payload.token || null });
+    else settle.reject(new Error("urgent booking failed"));
+    return originalJson(payload);
+  };
+
   return handleAdminBookV2(req, res);
 }
 
@@ -25209,20 +25238,21 @@ if (itemIdQty.length) {
   }
 });
 
+// 100% read-only status lookup for the Customer App Waiting Room. Must never
+// mutate job_offers/jobs and must never leak job_id, technician identity,
+// offer counts, or admin/zone internals -- the response shape below is the
+// full contract.
 app.get("/public/urgent-status", async (req, res) => {
-  const q = String(req.query.q || req.query.token || req.query.booking_code || "").trim();
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+  const q = String(req.query.token || req.query.q || req.query.booking_code || "").trim();
   if (!q) return res.status(400).json({ error: "missing tracking code" });
   try {
-    await pool.query(`
-      UPDATE public.job_offers
-      SET status='expired'
-      WHERE status='pending' AND expires_at < NOW()
-    `);
-    await autoFinalizeUrgentJobs();
     const r = await pool.query(
       `
-      SELECT job_id, booking_code, booking_token, job_status, booking_mode, dispatch_mode,
-             technician_username, technician_team, appointment_datetime,
+      SELECT job_id, booking_code, booking_token, job_status, booking_mode,
+             technician_username, technician_team,
              COALESCE(allow_time_proposal,FALSE) AS allow_time_proposal
       FROM public.jobs
       WHERE booking_token=$1 OR booking_code=$1
@@ -25257,6 +25287,7 @@ app.get("/public/urgent-status", async (req, res) => {
     const hasAccepted = Boolean(job.technician_username || job.technician_team || offers.has_accepted_offer);
     const hasProposal = Boolean(proposalR.rows[0]?.has_pending_time_proposal) || String(job.job_status || "") === "รอพิจารณาเวลาใหม่";
     const hasPending = Boolean(offers.has_pending_offer);
+    const terminal = ["เสร็จแล้ว", "ยกเลิก"].includes(String(job.job_status || ""));
     const phase = hasAccepted
       ? "accepted"
       : hasProposal
@@ -25264,19 +25295,15 @@ app.get("/public/urgent-status", async (req, res) => {
         : hasPending
           ? "waiting"
           : "admin_review";
-    res.set("Cache-Control", "no-store");
     return res.json({
       success: true,
-      job_id: job.job_id,
       booking_code: job.booking_code || null,
-      booking_mode: job.booking_mode || null,
-      dispatch_mode: job.dispatch_mode || null,
-      job_status: job.job_status || null,
       phase,
-      appointment_datetime: job.appointment_datetime || null,
-      allow_time_proposal: Boolean(job.allow_time_proposal),
-      has_pending_offer: hasPending,
+      confirmed: hasAccepted,
+      terminal,
+      server_now: jobTiming.getBangkokNow().iso,
       next_offer_expires_at: offers.next_offer_expires_at || null,
+      allow_time_proposal: Boolean(job.allow_time_proposal),
     });
   } catch (e) {
     console.error("GET /public/urgent-status error:", e);
