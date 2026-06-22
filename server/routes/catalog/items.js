@@ -446,7 +446,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
       await client.query("COMMIT");
 
       const select = schemaReady ? CATALOG_SELECT_WITH_PRICING : CATALOG_SELECT_LEGACY;
-      const final = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
+      const final = await client.query(`${select} WHERE ci.item_id = $1`, [itemId]);
       res.status(201).json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
@@ -509,7 +509,7 @@ module.exports = function createCatalogItemRoutes(deps = {}) {
 
       await client.query("COMMIT");
 
-      const final = await pool.query(`${select} WHERE ci.item_id = $1`, [itemId]);
+      const final = await client.query(`${select} WHERE ci.item_id = $1`, [itemId]);
       res.json(serializeAdminCatalogRow(final.rows[0]));
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
