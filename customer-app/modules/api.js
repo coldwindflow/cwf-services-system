@@ -28,10 +28,11 @@
   }
 
   async function requestJson(path, options = {}) {
-    const { query, method = "GET", body } = options;
+    const { query, method = "GET", body, cache } = options;
     const response = await fetch(buildUrl(path, query), {
       method,
       credentials: "include",
+      cache: cache || "default",
       headers: body ? { "Content-Type": "application/json" } : undefined,
       body: body ? JSON.stringify(body) : undefined,
     });
@@ -82,11 +83,11 @@
     },
 
     async loadAvailability(query) {
-      return requestJson("/public/availability_v2", { query });
+      return requestJson("/public/availability_v2", { query, cache: "no-store" });
     },
 
     async loadAvailabilityCalendar(query) {
-      return requestJson("/public/availability_calendar_v2", { query });
+      return requestJson("/public/availability_calendar_v2", { query, cache: "no-store" });
     },
 
     async trackBooking(q) {

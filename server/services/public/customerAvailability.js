@@ -5,6 +5,7 @@ const {
   rankCustomerScheduledCandidates,
 } = require("./customerScheduledAssignment");
 const { resolveTechnicianCalendarCaps } = require("../../lib/technicianCalendar");
+const jobTiming = require("../jobTiming");
 
 const SLOT_STEP_MIN = 30;
 const DEFAULT_UI_START = "09:00";
@@ -268,8 +269,25 @@ async function loadDailyUsageMap(db, date, usernames, ignoreJobId) {
 }
 
 function bangkokTodayYmd(nowParts) {
+  if (nowParts && nowParts.ymd) return String(nowParts.ymd).slice(0, 10);
+  if (nowParts && nowParts.dateStr) return String(nowParts.dateStr).slice(0, 10);
   if (nowParts && nowParts.Y && nowParts.M && nowParts.D) return `${nowParts.Y}-${nowParts.M}-${nowParts.D}`;
   return new Date(Date.now() + (7 * 60 * 60 * 1000)).toISOString().slice(0, 10);
+}
+
+function minimumStartForOptions(date, deps, uiStartMin, uiEndMin) {
+  let nowParts = null;
+  try {
+    nowParts = typeof deps.getNowBangkokParts === "function" ? deps.getNowBangkokParts() : jobTiming.getBangkokNow();
+  } catch (_) {
+    nowParts = jobTiming.getBangkokNow();
+  }
+  return jobTiming.minimumStartForDate(date, {
+    ui_start_min: uiStartMin,
+    ui_end_min: uiEndMin,
+    slot_step_min: SLOT_STEP_MIN,
+    now_parts: nowParts,
+  });
 }
 
 async function eligibleCustomerTechnicians(deps, options) {
@@ -379,16 +397,8 @@ async function computePublicCustomerSlots(deps, options) {
     events.get(key)[type].push(username);
   };
 
-  let startFloor = uiStartMin;
-  try {
-    const nowBkk = getNowBangkokParts();
-    if (date === bangkokTodayYmd(nowBkk)) {
-      const nowMin = (Number(nowBkk.hh || 0) * 60) + Number(nowBkk.mm || 0);
-      startFloor = Math.max(startFloor, Math.min(Math.ceil(nowMin / SLOT_STEP_MIN) * SLOT_STEP_MIN, uiEndMin));
-    }
-  } catch (_) {
-    startFloor = uiStartMin;
-  }
+  const cutoff = minimumStartForOptions(date, { getNowBangkokParts }, uiStartMin, uiEndMin);
+  const startFloor = cutoff.minimum_start_min;
 
   for (const tech of techs) {
     const cal = tech.advance_calendar || {};
@@ -401,7 +411,12 @@ async function computePublicCustomerSlots(deps, options) {
     sawWindow = true;
     const busyBlocks = await listBusyBlocksForTechOnDate(tech.username, date, null);
     for (const window of windows) {
-      const intervals = buildStartIntervalsByCollision(busyBlocks, window.startMin, window.endMin, durationMin);
+      const intervals = buildStartIntervalsByCollision(busyBlocks, window.startMin, window.endMin, durationMin)
+        .map((interval) => ({
+          startMin: interval.startMin,
+          endMin: Math.min(interval.endMin, window.endMin - durationMin),
+        }))
+        .filter((interval) => interval.endMin >= interval.startMin);
       if (intervals.length) sawStartInterval = true;
       for (const interval of intervals) {
         addEvent(interval.startMin, "add", tech.username);
@@ -431,7 +446,7 @@ async function computePublicCustomerSlots(deps, options) {
     for (let start = segmentStart; start <= lastStart; start += SLOT_STEP_MIN) {
       slots.push({
         start: minToHHMM(start),
-        end: minToHHMM(Math.min(uiEndMin, start + durationMin)),
+        end: minToHHMM(start + durationMin),
         available: true,
       });
     }
@@ -440,7 +455,14 @@ async function computePublicCustomerSlots(deps, options) {
   return {
     date,
     duration_min: durationMin,
+    service_duration_min: durationMin,
+    travel_buffer_min: jobTiming.TURNAROUND_BUFFER_MIN,
+    turnaround_buffer_min: jobTiming.TURNAROUND_BUFFER_MIN,
+    occupied_duration_min: durationMin + jobTiming.TURNAROUND_BUFFER_MIN,
     slot_step_min: SLOT_STEP_MIN,
+    server_now: cutoff.server_now,
+    timezone: cutoff.timezone,
+    minimum_start: cutoff.minimum_start,
     slots,
     ...(slots.length
       ? { availability_status: "available", reason_code: "AVAILABLE" }
@@ -467,6 +489,7 @@ function monthDays(month) {
 
 async function computeCalendarSummary(deps, options) {
   const month = String(options.month || "").slice(0, 7);
+  const cutoff = minimumStartForOptions(bangkokTodayYmd(typeof deps.getNowBangkokParts === "function" ? deps.getNowBangkokParts() : null), deps, 0, 24 * 60);
   const days = [];
   for (const date of monthDays(month)) {
     const diagnostic = makeDiagnostic();
@@ -480,7 +503,13 @@ async function computeCalendarSummary(deps, options) {
       first_available: first ? first.start : null,
     });
   }
-  return { month, days };
+  return {
+    month,
+    days,
+    server_now: cutoff.server_now,
+    timezone: cutoff.timezone,
+    minimum_start: cutoff.minimum_start,
+  };
 }
 
 async function hasAvailableStart(deps, options) {
@@ -497,6 +526,16 @@ async function reservePublicCustomerTechnician(deps, options) {
   if (!date || !start) {
     const error = new Error("CUSTOMER_SLOT_START_REQUIRED");
     error.status = 400;
+    throw error;
+  }
+  const cutoff = minimumStartForOptions(date, deps, deps.toMin(DEFAULT_UI_START), deps.toMin(DEFAULT_UI_END));
+  const startMinForCutoff = deps.toMin(start);
+  if (cutoff.is_today && Number.isFinite(startMinForCutoff) && startMinForCutoff < cutoff.minimum_start_min) {
+    const error = new Error("SLOT_IN_PAST");
+    error.status = 409;
+    error.code = "SLOT_IN_PAST";
+    error.server_now = cutoff.server_now;
+    error.minimum_start = cutoff.minimum_start;
     throw error;
   }
   const criteriaList = buildCriteriaList(options);
