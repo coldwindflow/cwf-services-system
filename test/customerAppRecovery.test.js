@@ -39,6 +39,14 @@ function makeContext() {
     console,
     setTimeout,
     clearTimeout,
+    // Unref'd so a timer left running by a module under test (e.g. a
+    // forgotten cleanup call) never keeps the test process alive.
+    setInterval(...args) {
+      const timer = setInterval(...args);
+      if (typeof timer.unref === "function") timer.unref();
+      return timer;
+    },
+    clearInterval,
     requestAnimationFrame(fn) { return fn(); },
     fetch: async () => ({ ok: true, text: async () => "{}" }),
   };
@@ -105,12 +113,19 @@ class WizardContainer {
     [...this._innerHTML.matchAll(/data-action="([^"]+)"/g)].forEach((match) => this.buttons.push(new FakeButton({ "data-action": match[1] })));
     [...this._innerHTML.matchAll(/data-scheduled-choice="([^"]+)"[^>]*data-choice-value="([^"]+)"/g)]
       .forEach((match) => this.buttons.push(new FakeButton({ "data-scheduled-choice": match[1], "data-choice-value": match[2] })));
+    [...this._innerHTML.matchAll(/data-urgent-action="([^"]+)"/g)].forEach((match) => this.buttons.push(new FakeButton({ "data-urgent-action": match[1] })));
   }
   get innerHTML() { return this._innerHTML; }
   scrollIntoView() {}
+  querySelector(selector) {
+    if (selector === "[data-urgent-live-status]") return null;
+    return null;
+  }
   querySelectorAll(selector) {
     if (selector === "[data-action]") return this.buttons.filter((button) => button.hasAttribute("data-action"));
     if (selector === "[data-scheduled-choice]") return this.buttons.filter((button) => button.hasAttribute("data-scheduled-choice"));
+    if (selector === "[data-urgent-action]") return this.buttons.filter((button) => button.hasAttribute("data-urgent-action"));
+    if (selector === "[data-urgent-field]" || selector === "[data-urgent-choice]") return [];
     return [];
   }
 }
@@ -135,7 +150,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260622_same_day_timing_v1";
+  const build = "20260622_urgent_offer_flow_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`bookingUrgent\\.js\\?v=${build}`));
@@ -336,4 +351,136 @@ test("urgent route is registered and renders distinct urgent screen", () => {
   root.bookingUrgent.render(container);
   assert.match(container.innerHTML, /data-urgent-step="form"/);
   assert.match(container.innerHTML, /คิวด่วน/);
+});
+
+test("customer urgent booking reuses existing offer flow without client fake appointment", () => {
+  const urgent = read("customer-app/modules/bookingUrgent.js");
+  const api = read("customer-app/modules/api.js");
+  const server = read("index.js");
+
+  assert.doesNotMatch(urgent, /nextUrgentAppointmentIso/);
+  assert.doesNotMatch(urgent, /appointment_datetime:\s*nextUrgentAppointmentIso/);
+  assert.match(urgent, /allow_time_proposal:\s*true/);
+  assert.match(api, /dispatch_mode:\s*"offer"/);
+  assert.match(api, /allow_time_proposal:\s*true/);
+  assert.match(server, /function handlePublicCustomerUrgentBook/);
+  assert.match(server, /return handleAdminBookV2\(req,\s*res\)/);
+  assert.match(server, /req\.cwfBookSource = "customer"/);
+});
+
+test("customer urgent waiting room polls anonymous existing offer status", () => {
+  const urgent = read("customer-app/modules/bookingUrgent.js");
+  const api = read("customer-app/modules/api.js");
+  const server = read("index.js");
+
+  assert.match(api, /loadUrgentStatus/);
+  assert.match(urgent, /pollUrgentStatus/);
+  assert.match(urgent, /data-urgent-live-status/);
+  assert.match(server, /app\.get\("\/public\/urgent-status"/);
+  const statusRoute = server.slice(server.indexOf('app.get("/public/urgent-status"'), server.indexOf('app.get("/public/track"'));
+  assert.match(statusRoute, /next_offer_expires_at/);
+  assert.match(statusRoute, /phase/);
+  assert.doesNotMatch(statusRoute, /tech_name|full_name|matrix_json|technician_count/);
+});
+
+test("urgent waiting room navigates to tracking once the live status reports an accepted offer", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  const routeCalls = [];
+  root.utils.routeTo = (route) => { routeCalls.push(route); root.state.setRoute(route); };
+  root.state.setRoute("urgent");
+  root.state.setUrgentFlow({
+    step: "waiting", status: "success", error: "",
+    result: { booking_code: "BK1", token: "TOK1", offers_count: 1 },
+    liveStatus: null, liveStatusError: "",
+  });
+  root.api.loadUrgentStatus = async () => ({
+    success: true, booking_code: "BK1", phase: "accepted", confirmed: true, terminal: false,
+    server_now: "2026-06-22T10:00:00+07:00", next_offer_expires_at: null, allow_time_proposal: true,
+  });
+
+  const container = new WizardContainer(root);
+  root.bookingUrgent.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(routeCalls, ["tracking"]);
+  assert.equal(root.state.draft.tracking.trackingCode, "TOK1");
+  root.bookingUrgent.render.onLeave();
+});
+
+test("urgent waiting room shows the terminal message and stops polling without navigating", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  const routeCalls = [];
+  root.utils.routeTo = (route) => { routeCalls.push(route); root.state.setRoute(route); };
+  root.state.setRoute("urgent");
+  root.state.setUrgentFlow({
+    step: "waiting", status: "success", error: "",
+    result: { booking_code: "BK2", token: "TOK2", offers_count: 1 },
+    liveStatus: null, liveStatusError: "",
+  });
+  let calls = 0;
+  root.api.loadUrgentStatus = async () => {
+    calls += 1;
+    return {
+      success: true, booking_code: "BK2", phase: "admin_review", confirmed: false, terminal: true,
+      server_now: "2026-06-22T10:00:00+07:00", next_offer_expires_at: null, allow_time_proposal: true,
+    };
+  };
+
+  const container = new WizardContainer(root);
+  root.bookingUrgent.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(routeCalls, []);
+  assert.equal(root.state.urgentFlow.liveStatus.terminal, true);
+  assert.match(container.innerHTML, /คำขอคิวด่วนนี้ปิดแล้ว/);
+  assert.equal(calls, 1);
+  root.bookingUrgent.render.onLeave();
+});
+
+test("urgent request key is generated once, reused on resubmits, and cleared on a genuinely new request", () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.state.updateDraft("urgent", {
+    customer_name: "Somchai", customer_phone: "0812345678", address_text: "123 Rd", symptom: "ไม่เย็น",
+  });
+  const container = new WizardContainer(root);
+  root.bookingUrgent.render(container);
+
+  let capturedPayload = null;
+  root.api.submitUrgentRequest = async (payload) => { capturedPayload = payload; return { success: true, booking_code: "BK3", token: "TOK3" }; };
+
+  root.state.setUrgentFlow({ step: "review" });
+  root.bookingUrgent.render(container);
+  return container.querySelectorAll("[data-urgent-action]")
+    .find((button) => button.getAttribute("data-urgent-action") === "confirm").click()
+    .then(() => {
+      assert.ok(capturedPayload.urgent_request_key);
+      assert.equal(capturedPayload.urgent_request_key.length >= 16, true);
+      const firstKey = capturedPayload.urgent_request_key;
+      assert.equal(root.state.draft.urgent.urgent_request_key, firstKey);
+
+      root.bookingUrgent.render.onLeave();
+
+      // While the request is still non-terminal (waiting/time_proposed/
+      // admin_review), "new-request" must be a no-op: the key must survive.
+      return container.querySelectorAll("[data-urgent-action]")
+        .find((button) => button.getAttribute("data-urgent-action") === "new-request")
+        .click()
+        .then(() => {
+          assert.equal(root.state.draft.urgent.urgent_request_key, firstKey);
+
+          // Only once the live status is genuinely terminal does the
+          // "new-request" action clear the key and reset the flow.
+          root.state.setUrgentFlow({ liveStatus: { terminal: true, phase: "closed" } });
+          root.bookingUrgent.render(container);
+          return container.querySelectorAll("[data-urgent-action]")
+            .find((button) => button.getAttribute("data-urgent-action") === "new-request")
+            .click();
+        });
+    })
+    .then(() => {
+      assert.equal(root.state.draft.urgent.urgent_request_key, "");
+    });
 });

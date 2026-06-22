@@ -26,53 +26,21 @@
     return root.services.serviceLabel(service());
   }
 
-  function pad2(n) {
-    return String(n).padStart(2, "0");
-  }
+  let submitInFlight = false;
+  let pollTimer = null;
+  let tickTimer = null;
+  let activeContainer = null;
+  let serverClockOffsetMs = 0;
 
-  function nextUrgentAppointmentIso() {
-    const parts = new Intl.DateTimeFormat("en-CA", {
-      timeZone: "Asia/Bangkok",
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-    }).formatToParts(new Date(Date.now() + 30 * 60 * 1000)).reduce((acc, part) => {
-      if (part.type !== "literal") acc[part.type] = part.value;
-      return acc;
-    }, {});
-    let year = Number(parts.year);
-    let month = Number(parts.month);
-    let day = Number(parts.day);
-    let hour = Number(parts.hour);
-    let minute = Math.ceil(Number(parts.minute || 0) / 30) * 30;
-    if (minute >= 60) {
-      hour += 1;
-      minute = 0;
-    }
-    if (hour < 9) {
-      hour = 9;
-      minute = 0;
-    } else if (hour >= 18) {
-      const next = new Date(Date.UTC(year, month - 1, day + 1, 2, 0, 0));
-      const nextParts = new Intl.DateTimeFormat("en-CA", {
-        timeZone: "Asia/Bangkok",
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-      }).formatToParts(next).reduce((acc, part) => {
-        if (part.type !== "literal") acc[part.type] = part.value;
-        return acc;
-      }, {});
-      year = Number(nextParts.year);
-      month = Number(nextParts.month);
-      day = Number(nextParts.day);
-      hour = 9;
-      minute = 0;
-    }
-    return `${year}-${pad2(month)}-${pad2(day)}T${pad2(hour)}:${pad2(minute)}:00+07:00`;
+  // Reused across retries of the SAME request (network retry, double-tap,
+  // multi-tab) so the server can dedup; only cleared when the customer
+  // explicitly starts a genuinely new request ("new-request" action).
+  function ensureRequestKey() {
+    const d = draft();
+    if (d.urgent_request_key) return d.urgent_request_key;
+    const key = root.utils.randomKey();
+    root.state.updateDraft("urgent", { urgent_request_key: key });
+    return key;
   }
 
   function buildSubmitPayload() {
@@ -81,13 +49,15 @@
     return {
       customer_name: String(d.customer_name || "").trim(),
       customer_phone: String(d.customer_phone || "").trim(),
-      appointment_datetime: nextUrgentAppointmentIso(),
       address_text: String(d.address_text || "").trim(),
       maps_url: String(d.maps_url || "").trim(),
       job_zone: String(d.job_zone || "").trim(),
       customer_note: String(d.symptom || "").trim(),
       booking_mode: "urgent",
+      dispatch_mode: "offer",
+      allow_time_proposal: true,
       client_app: "customer_app_v2",
+      urgent_request_key: ensureRequestKey(),
       job_type: s.job_type,
       ac_type: s.ac_type,
       btu: s.btu || 0,
@@ -183,6 +153,26 @@
     if (s.job_type === "ซ่อม" && !s.repair_variant) errors.push("กรุณาเลือกประเภทงานซ่อม");
     if (!String(d.symptom || "").trim()) errors.push("กรุณาบอกอาการ/สิ่งที่ต้องการให้ช่างช่วย");
     return errors;
+  }
+
+  function trackingKeyFromResult(result) {
+    return result ? (result.token || result.booking_token || result.booking_code || "") : "";
+  }
+
+  function urgentStatusText(status) {
+    const phase = String(status?.phase || "").trim();
+    if (status?.terminal) return "คำขอคิวด่วนนี้ปิดแล้ว กรุณาเริ่มคำขอใหม่หรือเปลี่ยนเป็นจองล่วงหน้า";
+    if (phase === "accepted") return "มีช่างรับงานแล้ว ระบบกำลังอัปเดตสถานะงานให้ติดตามต่อได้ทันที";
+    if (phase === "time_proposed") return "ช่างเสนอเวลาใหม่แล้ว แอดมินกำลังช่วยตรวจสอบและยืนยันกับลูกค้า";
+    if (phase === "admin_review") return "ยังไม่มีช่างรับในรอบข้อเสนอ แอดมินกำลังช่วยตรวจสอบคิวด่วน";
+    const expiresAt = status?.next_offer_expires_at || null;
+    const end = expiresAt ? new Date(expiresAt).getTime() : 0;
+    // Anchor the countdown to the server's clock (server_now), not the
+    // client's, so drift never produces a misleading countdown.
+    const nowOnServer = Date.now() + serverClockOffsetMs;
+    const remain = end ? Math.max(0, Math.ceil((end - nowOnServer) / 1000)) : 0;
+    const countdown = remain > 0 ? ` เหลือเวลารับงานประมาณ ${Math.floor(remain / 60)}:${String(remain % 60).padStart(2, "0")} นาที` : "";
+    return `ส่งคำขอคิวด่วนแล้ว กำลังรอช่างที่พร้อมรับงานกดรับ${countdown}`;
   }
 
   function hero() {
@@ -304,14 +294,21 @@
     `;
   }
 
+  function isUrgentRequestTerminal(liveStatus) {
+    return !!(liveStatus && liveStatus.terminal === true);
+  }
+
   function renderWaiting() {
     const d = draft();
     const flow = root.state.urgentFlow || {};
     const result = flow.result || null;
-    const trackingKey = result ? (result.token || result.booking_code || "") : "";
+    const liveStatus = flow.liveStatus || null;
+    const trackingKey = trackingKeyFromResult(result);
     const offersCount = result ? Number(result.offers_count || 0) : 0;
     const offerEnabled = result ? result.urgent_offer_enabled !== false : true;
-    const waitingText = offerEnabled && offersCount > 0
+    const isTerminal = isUrgentRequestTerminal(liveStatus);
+    const lockedAttr = isTerminal ? "" : 'disabled aria-disabled="true" title="ใช้ได้เมื่อคำขอคิวด่วนนี้ปิดแล้ว"';
+    let waitingText = offerEnabled && offersCount > 0
       ? "ส่งคำขอคิวด่วนแล้ว กำลังรอช่างพาร์ทเนอร์กดรับงาน ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน"
       : "ส่งคำขอคิวด่วนแล้ว แอดมินกำลังช่วยตรวจสอบคิวด่วน ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน";
     return `
@@ -333,7 +330,7 @@
             <span class="pulse-dot" aria-hidden="true"></span>
             <span>กำลังส่งคำขอหาช่างพาร์ทเนอร์ที่พร้อมรับงานในพื้นที่</span>
           </div>
-          <div class="notice is-urgent">${root.utils.escapeHtml(waitingText)}</div>
+          <div class="notice is-urgent" data-urgent-live-status>${root.utils.escapeHtml(urgentStatusText(liveStatus))}</div>
         </div>
       </section>
 
@@ -380,31 +377,117 @@
         </div>
         <div class="button-row">
           <button class="secondary-btn" type="button" disabled>ให้แอดมินช่วยจัดคิว</button>
-          <button class="secondary-btn" type="button" data-urgent-action="to-scheduled">เปลี่ยนเป็นจองล่วงหน้า</button>
+          <button class="secondary-btn" type="button" data-urgent-action="to-scheduled" ${lockedAttr}>เปลี่ยนเป็นจองล่วงหน้า</button>
         </div>
+        ${isTerminal ? "" : '<p class="muted">ปุ่มเปลี่ยนเป็นจองล่วงหน้าจะใช้ได้เมื่อคำขอคิวด่วนนี้ปิดแล้ว</p>'}
       </section>
 
       <div class="sticky-action">
         ${trackingKey ? `<button class="primary-btn" type="button" data-urgent-action="track-created" data-tracking-key="${root.utils.escapeHtml(trackingKey)}">ติดตามงานนี้</button>` : ""}
         <p class="muted">ยังไม่ถือว่ายืนยันงานจนกว่าจะมีช่างรับหรือแอดมินยืนยัน</p>
-        <button class="secondary-btn" type="button" data-urgent-action="new-request">เริ่มคำขอใหม่</button>
+        <button class="secondary-btn" type="button" data-urgent-action="new-request" ${lockedAttr}>เริ่มคำขอใหม่</button>
+        ${isTerminal ? "" : '<p class="muted">ปุ่มเริ่มคำขอใหม่จะใช้ได้เมื่อคำขอคิวด่วนนี้ปิดแล้ว</p>'}
       </div>
     `;
   }
 
   async function submitUrgent(container) {
+    if (submitInFlight || root.state.urgentFlow.status === "submitting") return;
+    submitInFlight = true;
     root.state.setUrgentFlow({ step: "review", status: "submitting", error: "", result: null });
     paint(container);
     try {
       const result = await root.api.submitUrgentRequest(buildSubmitPayload());
-      const trackingKey = result.token || result.booking_code || "";
+      const trackingKey = trackingKeyFromResult(result);
       if (trackingKey) root.state.updateDraft("tracking", { trackingCode: trackingKey });
       root.state.setUrgentFlow({ step: "waiting", status: "success", error: "", result });
+      submitInFlight = false;
       paint(container);
     } catch (error) {
+      submitInFlight = false;
       root.state.setUrgentFlow({ step: "review", status: "error", error: error.message || "ส่งคำขอคิวด่วนไม่สำเร็จ", result: null });
       paint(container);
     }
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function stopTick() {
+    if (tickTimer) {
+      clearInterval(tickTimer);
+      tickTimer = null;
+    }
+  }
+
+  function onWaitingScreen() {
+    return root.state.currentRoute === "urgent" && root.state.urgentFlow.step === "waiting";
+  }
+
+  // Updates only the live-status text node every second so the countdown
+  // moves smoothly without re-rendering (and re-binding) the whole screen.
+  function tickLiveStatus() {
+    if (!onWaitingScreen() || !activeContainer) return;
+    const node = activeContainer.querySelector("[data-urgent-live-status]");
+    if (!node) return;
+    node.textContent = urgentStatusText(root.state.urgentFlow?.liveStatus || null);
+  }
+
+  async function pollUrgentStatus(container) {
+    const key = trackingKeyFromResult(root.state.urgentFlow?.result || null);
+    if (!key) return;
+    try {
+      const status = await root.api.loadUrgentStatus(key);
+      if (status && status.server_now) {
+        serverClockOffsetMs = new Date(status.server_now).getTime() - Date.now();
+      }
+      root.state.setUrgentFlow({ liveStatus: status, liveStatusError: "" });
+      if (!onWaitingScreen()) return;
+      if (status && status.phase === "accepted") {
+        stopPolling();
+        stopTick();
+        const key2 = trackingKeyFromResult(root.state.urgentFlow?.result || null);
+        if (key2) root.state.updateDraft("tracking", { trackingCode: key2 });
+        root.utils.routeTo("tracking");
+        return;
+      }
+      if (status && status.terminal) {
+        stopPolling();
+        stopTick();
+      }
+      paint(container);
+    } catch (error) {
+      root.state.setUrgentFlow({ liveStatusError: error.message || "โหลดสถานะคิวด่วนไม่สำเร็จ" });
+    }
+  }
+
+  function startPolling(container) {
+    activeContainer = container;
+    if (!pollTimer) {
+      pollUrgentStatus(container);
+      pollTimer = setInterval(() => pollUrgentStatus(container), 10000);
+    }
+    if (!tickTimer) {
+      tickTimer = setInterval(tickLiveStatus, 1000);
+    }
+  }
+
+  let visibilityBound = false;
+  function bindVisibilityRefresh() {
+    if (visibilityBound) return;
+    visibilityBound = true;
+    const refresh = () => {
+      if (document.visibilityState === "visible" && onWaitingScreen() && activeContainer) {
+        pollUrgentStatus(activeContainer);
+      }
+    };
+    document.addEventListener("visibilitychange", refresh);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("pageshow", refresh);
   }
 
   function body() {
@@ -424,6 +507,13 @@
       </section>
     `;
     bind(container);
+    const liveStatus = root.state.urgentFlow.liveStatus || null;
+    if (step === "waiting" && !(liveStatus && liveStatus.terminal)) {
+      startPolling(container);
+    } else {
+      stopPolling();
+      stopTick();
+    }
   }
 
   function servicePatch(field, value) {
@@ -473,7 +563,11 @@
         } else if (action === "confirm") {
           await submitUrgent(container);
         } else if (action === "new-request") {
-          root.state.setUrgentFlow({ step: "form", status: "idle", error: "", result: null });
+          if (root.state.urgentFlow.step === "waiting" && !isUrgentRequestTerminal(root.state.urgentFlow.liveStatus)) return;
+          stopPolling();
+          stopTick();
+          root.state.updateDraft("urgent", { urgent_request_key: "" });
+          root.state.setUrgentFlow({ step: "form", status: "idle", error: "", result: null, liveStatus: null, liveStatusError: "" });
           paint(container);
         } else if (action === "track-created") {
           const key = btn.getAttribute("data-tracking-key") || "";
@@ -481,19 +575,29 @@
           root.state.setTracking({ status: "idle", data: null, error: "" });
           root.utils.routeTo("tracking");
         } else if (action === "to-scheduled") {
+          if (root.state.urgentFlow.step === "waiting" && !isUrgentRequestTerminal(root.state.urgentFlow.liveStatus)) return;
           root.utils.routeTo("scheduled");
         }
       });
     });
   }
 
-  root.bookingUrgent = {
-    render(container) {
-      root.state.ensureSavedAddressPrefill("urgent", () => {
-        if (root.state.currentRoute === "urgent") root.bookingUrgent.render(container);
-      });
-      root.state.setUrgentFlow({ step: "form", status: "idle", error: "", result: null });
-      paint(container);
-    },
+  function render(container) {
+    root.state.ensureSavedAddressPrefill("urgent", () => {
+      if (root.state.currentRoute === "urgent") render(container);
+    });
+    if (!root.state.urgentFlow || !root.state.urgentFlow.step) {
+      root.state.setUrgentFlow({ step: "form", status: "idle", error: "", result: null, liveStatus: null, liveStatusError: "" });
+    }
+    bindVisibilityRefresh();
+    paint(container);
+  }
+
+  render.onLeave = () => {
+    stopPolling();
+    stopTick();
+    activeContainer = null;
   };
+
+  root.bookingUrgent = { render };
 })();

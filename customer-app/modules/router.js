@@ -43,6 +43,10 @@
         history.replaceState(null, "", `#${route}`);
       }
       const routeChanged = this.lastRoute !== route;
+      if (routeChanged) {
+        const prevHandler = this.routes[this.lastRoute];
+        if (typeof prevHandler?.onLeave === "function") prevHandler.onLeave();
+      }
       this.lastRoute = route;
       root.state.setRoute(route);
       this.updateNav(route);

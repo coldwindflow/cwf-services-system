@@ -16,6 +16,22 @@
     window.location.hash = `#${route || "home"}`;
   }
 
+  // Cryptographically random key for client-side idempotency (e.g. urgent
+  // booking request dedup). Falls back gracefully if crypto APIs are absent.
+  function randomKey() {
+    try {
+      if (window.crypto && typeof window.crypto.randomUUID === "function") {
+        return window.crypto.randomUUID().replace(/-/g, "");
+      }
+      if (window.crypto && typeof window.crypto.getRandomValues === "function") {
+        const arr = new Uint8Array(16);
+        window.crypto.getRandomValues(arr);
+        return Array.from(arr).map((b) => b.toString(16).padStart(2, "0")).join("");
+      }
+    } catch (_) { /* fall through to non-crypto fallback */ }
+    return `${Date.now().toString(16)}${Math.random().toString(16).slice(2)}${Math.random().toString(16).slice(2)}`;
+  }
+
   function formatBaht(value) {
     const n = Number(value || 0);
     if (!Number.isFinite(n) || n <= 0) return "-";
@@ -108,6 +124,7 @@
   root.utils = {
     escapeHtml,
     routeTo,
+    randomKey,
     formatBaht,
     formatDateTime,
     stepCards,
