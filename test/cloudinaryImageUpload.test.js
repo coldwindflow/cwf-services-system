@@ -30,6 +30,48 @@ test("discrete CLOUDINARY_CLOUD_NAME/CLOUDINARY_API_KEY/CLOUDINARY_API_SECRET en
   assert.equal(cloudinaryEnabled(env), true);
 });
 
+test("CLOUDINARY_NAME (the legacy technician-photo env var) is accepted as cloudName when CLOUDINARY_CLOUD_NAME is absent", () => {
+  const env = { CLOUDINARY_NAME: "legacy-cloud", CLOUDINARY_API_KEY: "key9", CLOUDINARY_API_SECRET: SECRET };
+  assert.deepEqual(parseCloudinaryEnv(env), { cloudName: "legacy-cloud", apiKey: "key9", apiSecret: SECRET });
+  assert.equal(cloudinaryEnabled(env), true);
+});
+
+test("when both CLOUDINARY_CLOUD_NAME and CLOUDINARY_NAME are set, CLOUDINARY_CLOUD_NAME wins", () => {
+  const env = {
+    CLOUDINARY_CLOUD_NAME: "preferred-cloud",
+    CLOUDINARY_NAME: "legacy-cloud",
+    CLOUDINARY_API_KEY: "key10",
+    CLOUDINARY_API_SECRET: SECRET,
+  };
+  assert.deepEqual(parseCloudinaryEnv(env), { cloudName: "preferred-cloud", apiKey: "key10", apiSecret: SECRET });
+});
+
+test("a valid CLOUDINARY_URL still wins over both CLOUDINARY_CLOUD_NAME and CLOUDINARY_NAME", () => {
+  const env = {
+    CLOUDINARY_URL: `cloudinary://urlkey:${SECRET}@url-cloud`,
+    CLOUDINARY_CLOUD_NAME: "ignored-cloud-name",
+    CLOUDINARY_NAME: "ignored-legacy-name",
+  };
+  assert.deepEqual(parseCloudinaryEnv(env), { cloudName: "url-cloud", apiKey: "urlkey", apiSecret: SECRET });
+});
+
+test("CLOUDINARY_NAME fallback never logs the configured secret to the console", () => {
+  const env = { CLOUDINARY_NAME: "legacy-cloud", CLOUDINARY_API_KEY: "key11", CLOUDINARY_API_SECRET: SECRET };
+  const originalLog = console.log;
+  const originalError = console.error;
+  const logged = [];
+  console.log = (...args) => logged.push(args.join(" "));
+  console.error = (...args) => logged.push(args.join(" "));
+  try {
+    parseCloudinaryEnv(env);
+    cloudinaryEnabled(env);
+  } finally {
+    console.log = originalLog;
+    console.error = originalError;
+  }
+  assert.equal(logged.some((line) => line.includes(SECRET)), false);
+});
+
 test("an incomplete CLOUDINARY_URL is rejected and falls back to (incomplete) discrete env, never partially configured", () => {
   const env = { CLOUDINARY_URL: "cloudinary://onlykey@cloud3" };
   const parsed = parseCloudinaryEnv(env);
