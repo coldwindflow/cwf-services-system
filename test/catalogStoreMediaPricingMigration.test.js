@@ -298,7 +298,89 @@ test("migration SQL uses IF NOT EXISTS / idempotent guards for every additive st
   assert.match(migrationSql, /ADD COLUMN IF NOT EXISTS image_public_id/);
   assert.match(migrationSql, /ADD COLUMN IF NOT EXISTS price_rule_id/);
   assert.match(migrationSql, /CREATE INDEX IF NOT EXISTS idx_catalog_items_price_rule_id/);
-  assert.match(migrationSql, /IF NOT EXISTS \(\s*SELECT 1 FROM pg_constraint/);
+  assert.match(migrationSql, /IF NOT EXISTS \(\s*SELECT 1\s*FROM pg_constraint con/);
+});
+
+test("migration SQL's FK existence check is scoped to schema public + table catalog_items + constraint name, not just conname", () => {
+  const migrationSql = fs.readFileSync(path.join(REPO_ROOT, runner.MIGRATION_RELATIVE_PATH), "utf8");
+  assert.match(migrationSql, /JOIN pg_class rel ON rel\.oid = con\.conrelid/);
+  assert.match(migrationSql, /JOIN pg_namespace nsp ON nsp\.oid = rel\.relnamespace/);
+  assert.match(migrationSql, /nsp\.nspname = 'public'/);
+  assert.match(migrationSql, /rel\.relname = 'catalog_items'/);
+  assert.match(migrationSql, /con\.contype = 'f'/);
+  assert.match(migrationSql, /con\.conname = 'catalog_items_price_rule_id_fkey'/);
+});
+
+// Real-Postgres integration test: the DO block's existence check must be scoped to
+// public.catalog_items, not just "any constraint with this conname anywhere in the DB".
+// Mirrors the test.before()/skip-when-unavailable pattern used by the other
+// *.integration.test.js files in this repo.
+test("real Postgres: migration still adds the FK to catalog_items even when an identically-named constraint already exists on a different table", async (t) => {
+  const { Pool } = require("pg");
+  const PG_CONFIG = {
+    host: process.env.PGHOST || "127.0.0.1",
+    port: Number(process.env.PGPORT || 5432),
+    user: process.env.PGUSER || "postgres",
+    password: process.env.PGPASSWORD || "postgres",
+    database: process.env.PGDATABASE || "cwf_test",
+  };
+  const pool = new Pool(PG_CONFIG);
+  try {
+    await pool.query("SELECT 1");
+  } catch (e) {
+    await pool.end().catch(() => {});
+    t.skip(`Postgres integration database unavailable: ${e.message}`);
+    return;
+  }
+
+  try {
+    await pool.query("DROP TABLE IF EXISTS public.catalog_items_phase2a2_test CASCADE");
+    await pool.query("DROP TABLE IF EXISTS public.customer_service_price_rules_phase2a2_test CASCADE");
+    await pool.query("DROP TABLE IF EXISTS public.catalog_items CASCADE");
+    await pool.query("DROP TABLE IF EXISTS public.customer_service_price_rules CASCADE");
+
+    // A different table that happens to use the exact same constraint name —
+    // this must NOT make the migration think catalog_items already has its FK.
+    await pool.query(`
+      CREATE TABLE public.customer_service_price_rules (rule_id BIGSERIAL PRIMARY KEY)
+    `);
+    await pool.query(`
+      CREATE TABLE public.catalog_items_phase2a2_test (
+        decoy_id BIGINT REFERENCES public.customer_service_price_rules(rule_id)
+      )
+    `);
+    await pool.query(`
+      ALTER TABLE public.catalog_items_phase2a2_test
+        RENAME CONSTRAINT catalog_items_phase2a2_test_decoy_id_fkey TO catalog_items_price_rule_id_fkey
+    `);
+
+    await pool.query(`
+      CREATE TABLE public.catalog_items (
+        item_id BIGSERIAL PRIMARY KEY,
+        item_name TEXT
+      )
+    `);
+
+    const sql = fs.readFileSync(path.join(REPO_ROOT, runner.MIGRATION_RELATIVE_PATH), "utf8");
+    await pool.query(sql);
+
+    const constraints = await pool.query(`
+      SELECT con.conname
+      FROM pg_constraint con
+      JOIN pg_class rel ON rel.oid = con.conrelid
+      JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+      WHERE nsp.nspname = 'public'
+        AND rel.relname = 'catalog_items'
+        AND con.contype = 'f'
+        AND con.conname = 'catalog_items_price_rule_id_fkey'
+    `);
+    assert.equal(constraints.rows.length, 1, "catalog_items should have its own price_rule_id FK despite the decoy on another table");
+  } finally {
+    await pool.query("DROP TABLE IF EXISTS public.catalog_items CASCADE").catch(() => {});
+    await pool.query("DROP TABLE IF EXISTS public.catalog_items_phase2a2_test CASCADE").catch(() => {});
+    await pool.query("DROP TABLE IF EXISTS public.customer_service_price_rules CASCADE").catch(() => {});
+    await pool.end().catch(() => {});
+  }
 });
 
 test("migration runner uses an advisory lock distinct from the customer-auth migration", () => {

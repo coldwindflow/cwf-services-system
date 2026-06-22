@@ -14,14 +14,33 @@
     return Array.from(set).sort((a, b) => a.localeCompare(b, "th"));
   }
 
+  function effectiveSalePrice(item) {
+    const display = Number(item.display_price);
+    if (Number.isFinite(display) && display > 0) return display;
+    const base = Number(item.base_price);
+    if (Number.isFinite(base) && base > 0) return base;
+    return null;
+  }
+
   function priceIsAsk(item) {
-    const price = Number(item.base_price);
-    return !Number.isFinite(price) || price <= 0;
+    return effectiveSalePrice(item) === null;
   }
 
   function priceLabel(item) {
-    if (priceIsAsk(item)) return "สอบถามราคา";
-    return `ราคาเริ่มต้น ${root.utils.formatBaht(item.base_price)}`;
+    const sale = effectiveSalePrice(item);
+    if (sale === null) return "สอบถามราคา";
+    return root.utils.formatBaht(sale);
+  }
+
+  function hasPromo(item) {
+    if (!item.has_promo) return false;
+    const normal = Number(item.normal_price);
+    const sale = Number(item.sale_price);
+    return Number.isFinite(normal) && Number.isFinite(sale) && sale < normal;
+  }
+
+  function promoBadgeText(item) {
+    return item.campaign_name || item.price_label || "โปรโมชัน";
   }
 
   function btuRangeLabel(item) {
@@ -46,6 +65,15 @@
     });
   }
 
+  function renderCardImage(item, name) {
+    const url = item.image_url || "";
+    const altText = root.utils.escapeHtml(name);
+    if (!url) {
+      return `<div class="store-card-image store-card-image-placeholder" aria-hidden="true">ไม่มีรูปภาพ</div>`;
+    }
+    return `<img class="store-card-image" src="${root.utils.escapeHtml(url)}" alt="${altText}" loading="lazy" onerror="this.outerHTML='&lt;div class=&quot;store-card-image store-card-image-placeholder&quot; aria-hidden=&quot;true&quot;&gt;ไม่มีรูปภาพ&lt;/div&gt;';">`;
+  }
+
   function renderCard(item) {
     const id = String(item.item_id || "");
     const name = item.item_name || "-";
@@ -53,16 +81,20 @@
     const unit = item.unit_label || "";
     const btu = btuRangeLabel(item);
     const meta = [item.job_category, item.ac_type, btu].filter(Boolean);
+    const promo = hasPromo(item);
     return `
       <article class="store-card" data-store-item="${root.utils.escapeHtml(id)}">
+        ${renderCardImage(item, name)}
         <div class="store-card-head">
           ${category ? `<span class="tag">${root.utils.escapeHtml(category)}</span>` : ""}
           <strong>${root.utils.escapeHtml(name)}</strong>
         </div>
         ${meta.length ? `<div class="store-card-meta">${meta.map((m) => `<span>${root.utils.escapeHtml(m)}</span>`).join("")}</div>` : ""}
+        ${promo ? `<span class="store-card-badge">${root.utils.escapeHtml(promoBadgeText(item))}</span>` : ""}
         <div class="store-card-price">
           <span class="price-text${priceIsAsk(item) ? " is-estimate" : ""}">${root.utils.escapeHtml(priceLabel(item))}</span>
-          ${unit ? `<span class="muted">/ ${root.utils.escapeHtml(unit)}</span>` : ""}
+          ${promo ? `<span class="price-strike">${root.utils.escapeHtml(root.utils.formatBaht(item.normal_price))}</span>` : ""}
+          ${unit && !priceIsAsk(item) ? `<span class="muted">/ ${root.utils.escapeHtml(unit)}</span>` : ""}
         </div>
         <div class="store-card-actions">
           <button class="primary-btn" type="button" data-store-book="${root.utils.escapeHtml(id)}">ไปหน้าจองบริการ</button>

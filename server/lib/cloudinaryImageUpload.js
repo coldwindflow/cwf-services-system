@@ -2,7 +2,27 @@
 
 const crypto = require("crypto");
 
+// Accepts cloudinary://<api_key>:<api_secret>@<cloud_name> — never logged, only parsed.
+function parseCloudinaryUrl(rawUrl) {
+  try {
+    const u = new URL(rawUrl);
+    if (u.protocol !== "cloudinary:") return null;
+    const cloudName = String(u.hostname || "").trim();
+    const apiKey = String(decodeURIComponent(u.username || "")).trim();
+    const apiSecret = String(decodeURIComponent(u.password || "")).trim();
+    if (!cloudName || !apiKey || !apiSecret) return null;
+    return { cloudName, apiKey, apiSecret };
+  } catch {
+    return null;
+  }
+}
+
 function parseCloudinaryEnv(env = process.env) {
+  const cloudinaryUrl = String(env.CLOUDINARY_URL || "").trim();
+  if (cloudinaryUrl) {
+    const parsed = parseCloudinaryUrl(cloudinaryUrl);
+    if (parsed) return parsed;
+  }
   return {
     cloudName: String(env.CLOUDINARY_CLOUD_NAME || "").trim(),
     apiKey: String(env.CLOUDINARY_API_KEY || "").trim(),
@@ -13,6 +33,15 @@ function parseCloudinaryEnv(env = process.env) {
 function cloudinaryEnabled(env = process.env) {
   const { cloudName, apiKey, apiSecret } = parseCloudinaryEnv(env);
   return Boolean(cloudName && apiKey && apiSecret);
+}
+
+// Folder ids must stay numeric-only so a hostile itemId can never inject path segments.
+function sanitizeCatalogItemIdForFolder(itemId) {
+  const n = Number(String(itemId == null ? "" : itemId).trim());
+  if (!Number.isInteger(n) || n <= 0) {
+    throw new Error("itemId ต้องเป็นจำนวนเต็มบวกสำหรับสร้างโฟลเดอร์รูปภาพ");
+  }
+  return String(n);
 }
 
 function signParams(params, apiSecret) {
@@ -34,8 +63,9 @@ async function uploadCatalogImage({ buffer, mimetype, itemId, env = process.env,
   if (!buffer || !buffer.length) throw new Error("ไม่พบไฟล์รูปภาพ");
 
   const ts = Math.floor(Date.now() / 1000);
-  const folder = "cwf/catalog-items";
-  const publicId = `item-${String(itemId || "new").trim()}-${ts}-${crypto.randomBytes(4).toString("hex")}`;
+  const safeItemId = sanitizeCatalogItemIdForFolder(itemId);
+  const folder = `cwf/catalog/services/${safeItemId}`;
+  const publicId = `img-${ts}-${crypto.randomBytes(4).toString("hex")}`;
   const params = { timestamp: ts, folder, public_id: publicId };
   const signature = signParams(params, apiSecret);
 
@@ -139,6 +169,8 @@ module.exports = {
   MAX_IMAGE_BYTES,
   cloudinaryEnabled,
   parseCloudinaryEnv,
+  parseCloudinaryUrl,
+  sanitizeCatalogItemIdForFolder,
   uploadCatalogImage,
   deleteCatalogImage,
   detectImageSignature,

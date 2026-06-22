@@ -107,6 +107,9 @@ function validatePricingInput(pricing) {
   );
   if (!isActiveResult.ok) errors.push(isActiveResult.error);
 
+  const priorityResult = parseOptionalPositiveNumber(pricing.priority, "priority");
+  if (!priorityResult.ok) errors.push(priorityResult.error);
+
   if (errors.length) return { ok: false, errors };
 
   return {
@@ -118,6 +121,9 @@ function validatePricingInput(pricing) {
       effective_from: String(pricing.effective_from || "").trim() || null,
       effective_to: String(pricing.effective_to || "").trim() || null,
       is_active: isActiveResult.value,
+      wash_variant: String(pricing.wash_variant || "").trim() || null,
+      label: String(pricing.label || "").trim() || null,
+      priority: priorityResult.value !== null ? Math.round(priorityResult.value) : null,
     },
   };
 }
@@ -128,7 +134,8 @@ const CATALOG_SELECT_WITH_PRICING = `
          ci.image_url, ci.image_public_id, ci.price_rule_id,
          pr.normal_price AS rule_normal_price, pr.active_price AS rule_active_price,
          pr.campaign_name AS rule_campaign_name, pr.is_active AS rule_is_active,
-         pr.effective_from AS rule_effective_from, pr.effective_to AS rule_effective_to
+         pr.effective_from AS rule_effective_from, pr.effective_to AS rule_effective_to,
+         pr.wash_variant AS rule_wash_variant, pr.label AS rule_label, pr.priority AS rule_priority
   FROM public.catalog_items ci
   LEFT JOIN public.customer_service_price_rules pr ON pr.rule_id = ci.price_rule_id
 `;
@@ -155,6 +162,7 @@ function computeEffectivePricing(row) {
     display_price,
     has_promo,
     campaign_name: ruleIsCurrentlyActive ? (row.rule_campaign_name || null) : null,
+    price_label: ruleIsCurrentlyActive ? (row.rule_label || null) : null,
   };
 }
 
@@ -179,6 +187,9 @@ function serializeCatalogRow(row) {
     display_price: pricing.display_price,
     has_promo: pricing.has_promo,
     campaign_name: pricing.campaign_name,
+    price_label: pricing.price_label,
+    wash_variant: row.rule_wash_variant || null,
+    priority: row.rule_priority != null ? Number(row.rule_priority) : null,
   };
 }
 
@@ -193,7 +204,14 @@ async function ensureCatalogMediaPricingSchema(db) {
     DO $$
     BEGIN
       IF NOT EXISTS (
-        SELECT 1 FROM pg_constraint WHERE conname = 'catalog_items_price_rule_id_fkey'
+        SELECT 1
+        FROM pg_constraint con
+        JOIN pg_class rel ON rel.oid = con.conrelid
+        JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+        WHERE nsp.nspname = 'public'
+          AND rel.relname = 'catalog_items'
+          AND con.contype = 'f'
+          AND con.conname = 'catalog_items_price_rule_id_fkey'
       ) THEN
         ALTER TABLE public.catalog_items
           ADD CONSTRAINT catalog_items_price_rule_id_fkey
@@ -212,24 +230,29 @@ async function savePriceRuleForCatalogItem(client, { ruleId, pricing, catalogFie
   const btu_min = intOrNull(catalogFields.btu_min);
   const btu_max = intOrNull(catalogFields.btu_max);
 
+  const wash_variant = String(pricing.wash_variant || "").trim() || null;
+  const label = String(pricing.label || "").trim() || null;
+  const priority = pricing.priority != null ? Math.round(Number(pricing.priority)) : null;
+
   if (ruleId) {
     await client.query(
       `UPDATE public.customer_service_price_rules
           SET job_type=$2, ac_type=$3, btu_min=$4, btu_max=$5,
               normal_price=$6, active_price=$7, campaign_name=$8,
-              effective_from=$9, effective_to=$10, is_active=$11, updated_by=$12, updated_at=NOW()
+              effective_from=$9, effective_to=$10, is_active=$11, updated_by=$12, updated_at=NOW(),
+              wash_variant=$13, label=$14, priority=$15
         WHERE rule_id=$1`,
-      [ruleId, job_type, ac_type, btu_min, btu_max, pricing.normal_price, pricing.active_price, pricing.campaign_name, pricing.effective_from, pricing.effective_to, pricing.is_active, actor]
+      [ruleId, job_type, ac_type, btu_min, btu_max, pricing.normal_price, pricing.active_price, pricing.campaign_name, pricing.effective_from, pricing.effective_to, pricing.is_active, actor, wash_variant, label, priority]
     );
     return ruleId;
   }
 
   const r = await client.query(
     `INSERT INTO public.customer_service_price_rules
-       (job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by, updated_at)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW())
+       (job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by, updated_at, wash_variant, label, priority)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),$12,$13,$14)
      RETURNING rule_id`,
-    [job_type, ac_type, btu_min, btu_max, pricing.normal_price, pricing.active_price, pricing.campaign_name, pricing.effective_from, pricing.effective_to, pricing.is_active, actor]
+    [job_type, ac_type, btu_min, btu_max, pricing.normal_price, pricing.active_price, pricing.campaign_name, pricing.effective_from, pricing.effective_to, pricing.is_active, actor, wash_variant, label, priority]
   );
   return r.rows[0].rule_id;
 }

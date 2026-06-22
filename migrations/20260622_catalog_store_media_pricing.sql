@@ -19,8 +19,14 @@ CREATE INDEX IF NOT EXISTS idx_catalog_items_price_rule_id
 DO $$
 BEGIN
   IF NOT EXISTS (
-    SELECT 1 FROM pg_constraint
-    WHERE conname = 'catalog_items_price_rule_id_fkey'
+    SELECT 1
+    FROM pg_constraint con
+    JOIN pg_class rel ON rel.oid = con.conrelid
+    JOIN pg_namespace nsp ON nsp.oid = rel.relnamespace
+    WHERE nsp.nspname = 'public'
+      AND rel.relname = 'catalog_items'
+      AND con.contype = 'f'
+      AND con.conname = 'catalog_items_price_rule_id_fkey'
   ) THEN
     ALTER TABLE public.catalog_items
       ADD CONSTRAINT catalog_items_price_rule_id_fkey
