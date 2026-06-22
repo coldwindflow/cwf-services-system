@@ -12956,7 +12956,7 @@ app.use(createTechnicianDirectoryRoutes({ pool }));
 // =======================================
 // 📦 CATALOG
 // =======================================
-app.use(createCatalogItemRoutes({ pool }));
+app.use(createCatalogItemRoutes({ pool, requireAdminSession }));
 
 
 app.post("/catalog/items", async (req, res) => {
