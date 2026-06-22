@@ -327,7 +327,7 @@
       <div class="wizard-price-summary">
         <div><span>ราคารวมประมาณการ</span><strong>${root.utils.formatBaht(finalPrice())}</strong></div>
         <div><span>เวลาทำงานรวม</span><strong>${root.utils.escapeHtml(data.duration_min || "-")} นาที</strong></div>
-        ${data.promo ? `<small>ใช้โปรโมชัน: ${root.utils.escapeHtml(data.promo.promo_name || "โปรโมชันปัจจุบัน")}</small>` : `<small>ยังไม่มีโปรโมชันที่ระบบเลือกให้สำหรับรายการนี้</small>`}
+        ${data.promo ? `<small>ใช้โปรโมชัน: ${root.utils.escapeHtml(data.promo.promo_name || "โปรโมชันปัจจุบัน")}</small>` : ""}
       </div>
     `;
   }
@@ -913,16 +913,12 @@
     if (root.state.scheduledSubmit.status === "success") return "";
     const current = step();
     if (current === 3) {
-      return `<div class="wizard-action-bar"><button type="button" class="secondary-btn" data-action="wizard-back">ย้อนกลับ</button></div>`;
+      return `<div class="wizard-action-bar"><button type="button" class="secondary-btn btn-tap" data-action="wizard-back">ย้อนกลับ</button></div>`;
     }
-    const nextLabels = {
-      1: "ต่อไป: ข้อมูลหน้างานและคิว",
-      2: "ต่อไป: ตรวจสอบและยืนยัน",
-    };
     return `
       <div class="wizard-action-bar">
-        <button type="button" class="secondary-btn" data-action="wizard-back">${current === 1 ? "กลับหน้าเลือกบริการ" : "ย้อนกลับ"}</button>
-        <button type="button" class="primary-btn" data-action="wizard-next">${nextLabels[current] || "ต่อไป"}</button>
+        <button type="button" class="secondary-btn btn-tap" data-action="wizard-back">ย้อนกลับ</button>
+        <button type="button" class="primary-btn btn-tap" data-action="wizard-next">ถัดไป</button>
       </div>
     `;
   }
