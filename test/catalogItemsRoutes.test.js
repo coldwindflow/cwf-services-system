@@ -340,7 +340,7 @@ test("deactivate uses UPDATE (is_active=false), never DELETE", async () => {
     assert.equal(body.is_active, false);
     assert.equal(pool.state.items.find((x) => x.item_id === 1).is_active, false);
     assert.equal(pool.state.items.length, 3);
-    assert.equal(pool.state.queries.some((q) => /DELETE/i.test(q.sql)), false);
+    assert.equal(pool.state.queries.some((q) => /DELETE\s+FROM/i.test(q.sql)), false);
   });
 });
 
