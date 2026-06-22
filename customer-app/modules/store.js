@@ -29,9 +29,10 @@
     const max = Number(item.btu_max);
     const hasMin = Number.isFinite(min) && min > 0;
     const hasMax = Number.isFinite(max) && max > 0;
-    if (hasMin && hasMax && min !== max) return `${min.toLocaleString("th-TH")}-${max.toLocaleString("th-TH")} BTU`;
-    if (hasMin) return `${min.toLocaleString("th-TH")} BTU`;
-    if (hasMax) return `${max.toLocaleString("th-TH")} BTU`;
+    if (hasMin && hasMax && min !== max) return `${min.toLocaleString("th-TH")}–${max.toLocaleString("th-TH")} BTU`;
+    if (hasMin && hasMax) return `${min.toLocaleString("th-TH")} BTU`;
+    if (hasMin) return `ตั้งแต่ ${min.toLocaleString("th-TH")} BTU`;
+    if (hasMax) return `ไม่เกิน ${max.toLocaleString("th-TH")} BTU`;
     return "";
   }
 
@@ -64,7 +65,7 @@
           ${unit ? `<span class="muted">/ ${root.utils.escapeHtml(unit)}</span>` : ""}
         </div>
         <div class="store-card-actions">
-          <button class="primary-btn" type="button" data-store-book="${root.utils.escapeHtml(id)}">จองบริการ</button>
+          <button class="primary-btn" type="button" data-store-book="${root.utils.escapeHtml(id)}">ไปหน้าจองบริการ</button>
           <button class="secondary-btn" type="button" data-store-contact="${root.utils.escapeHtml(id)}" data-store-contact-name="${root.utils.escapeHtml(name)}">สอบถามรายการนี้</button>
         </div>
       </article>
@@ -179,7 +180,7 @@
           <div class="hero store-hero">
             <div class="hero-badge">ร้านค้า CWF</div>
             <h2>เลือกบริการและอุปกรณ์</h2>
-            <p>รายการที่แสดงมาจากระบบจริงของ CWF ราคาที่เห็นเป็นราคาเริ่มต้น ระบบจะคำนวณราคาที่แน่นอนตอนจอง หรือติดต่อแอดมินเพื่อสอบถามรายการที่ยังไม่เปิดจองอัตโนมัติ</p>
+            <p>รายการที่แสดงมาจากระบบจริงของ CWF ราคาบนการ์ดเป็นราคาฐานหรือราคาเริ่มต้น สำหรับบริการที่รองรับสามารถไปยังหน้าจองได้ ส่วนรายการอื่นกรุณาติดต่อแอดมินเพื่อยืนยันรายละเอียดและราคา</p>
           </div>
           <div data-store-body>${renderBody()}</div>
           <div data-contact-sheet-mount></div>

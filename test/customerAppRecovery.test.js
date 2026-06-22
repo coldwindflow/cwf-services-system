@@ -696,3 +696,50 @@ test("store search and category filters narrow already-loaded items without extr
 
   assert.equal(calls, 1);
 });
+
+test("store booking button routes to booking without implying the item is already added", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    { item_id: 1, item_name: "ล้างแอร์ผนัง", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง" },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  assert.match(body.innerHTML, /ไปหน้าจองบริการ/);
+  assert.doesNotMatch(body.innerHTML, />จองบริการ</);
+
+  assert.doesNotMatch(container.innerHTML, /ราคาที่แน่นอนตอนจอง/);
+  assert.doesNotMatch(container.innerHTML, /เพิ่มในรายการจอง/);
+  assert.doesNotMatch(container.innerHTML, /เพิ่มลงตะกร้า/);
+});
+
+test("store BTU label formats min/max/range/neither cases correctly", async () => {
+  const context = makeContext();
+  const root = loadCustomerFrontend(context);
+  root.api.loadCatalogItems = async () => [
+    { item_id: 1, item_name: "รุ่นช่วงบีทียู", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", btu_min: 9000, btu_max: 12000 },
+    { item_id: 2, item_name: "รุ่นบีทียูเท่ากัน", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", btu_min: 12000, btu_max: 12000 },
+    { item_id: 3, item_name: "รุ่นมีแค่ต่ำสุด", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", btu_min: 18000 },
+    { item_id: 4, item_name: "รุ่นมีแค่สูงสุด", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง", btu_max: 12000 },
+    { item_id: 5, item_name: "รุ่นไม่มีบีทียู", item_category: "ล้างแอร์", base_price: 700, unit_label: "เครื่อง" },
+  ];
+
+  const container = new FakeMount();
+  root.store.render(container);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const body = container.querySelector("[data-store-body]");
+  assert.match(body.innerHTML, /9,000–12,000 BTU/);
+  assert.match(body.innerHTML, /12,000 BTU/);
+  assert.match(body.innerHTML, /ตั้งแต่ 18,000 BTU/);
+  assert.match(body.innerHTML, /ไม่เกิน 12,000 BTU/);
+
+  const card5 = body.innerHTML.split("รุ่นไม่มีบีทียู")[1] || "";
+  const nextCardBoundary = card5.indexOf("</article>");
+  const card5Scope = nextCardBoundary >= 0 ? card5.slice(0, nextCardBoundary) : card5;
+  assert.doesNotMatch(card5Scope, /BTU/);
+});
