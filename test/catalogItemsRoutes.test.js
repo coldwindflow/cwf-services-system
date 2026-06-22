@@ -7,45 +7,120 @@ const express = require("express");
 
 const createCatalogItemRoutes = require("../server/routes/catalog/items");
 
-function makePool(initialItems = []) {
-  const state = { items: initialItems.map((x) => ({ ...x })), queries: [] };
-  let nextId = 1 + state.items.reduce((max, x) => Math.max(max, Number(x.item_id) || 0), 0);
+function makePool(initialItems = [], initialRules = []) {
+  const state = {
+    items: initialItems.map((x) => ({ image_url: null, image_public_id: null, price_rule_id: null, ...x })),
+    rules: initialRules.map((x) => ({ ...x })),
+    queries: [],
+  };
+  let nextItemId = 1 + state.items.reduce((max, x) => Math.max(max, Number(x.item_id) || 0), 0);
+  let nextRuleId = 1 + state.rules.reduce((max, x) => Math.max(max, Number(x.rule_id) || 0), 0);
+
+  function joinedRow(item) {
+    const rule = item.price_rule_id ? state.rules.find((r) => String(r.rule_id) === String(item.price_rule_id)) : null;
+    return {
+      ...item,
+      rule_normal_price: rule ? rule.normal_price : null,
+      rule_active_price: rule ? rule.active_price : null,
+      rule_campaign_name: rule ? rule.campaign_name : null,
+      rule_is_active: rule ? rule.is_active : null,
+      rule_effective_from: rule ? rule.effective_from : null,
+      rule_effective_to: rule ? rule.effective_to : null,
+    };
+  }
+
+  async function query(sql, params = []) {
+    state.queries.push({ sql, params });
+    const s = String(sql);
+
+    if (/^\s*(BEGIN|COMMIT|ROLLBACK)\s*;?\s*$/i.test(s)) return { rows: [] };
+    if (s.includes("ALTER TABLE") || s.includes("CREATE INDEX") || s.includes("DO $$")) return { rows: [] };
+
+    if (s.includes("INSERT INTO public.catalog_items")) {
+      const [item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible] = params;
+      const row = {
+        item_id: nextItemId++, item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max,
+        is_active, is_customer_visible, image_url: null, image_public_id: null, price_rule_id: null,
+      };
+      state.items.push(row);
+      return { rows: [{ item_id: row.item_id }] };
+    }
+
+    if (s.includes("INSERT INTO public.customer_service_price_rules")) {
+      const [job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by] = params;
+      const rule = { rule_id: nextRuleId++, job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by };
+      state.rules.push(rule);
+      return { rows: [{ rule_id: rule.rule_id }] };
+    }
+
+    if (s.includes("UPDATE public.customer_service_price_rules")) {
+      const [rule_id, job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by] = params;
+      const rule = state.rules.find((r) => String(r.rule_id) === String(rule_id));
+      if (rule) Object.assign(rule, { job_type, ac_type, btu_min, btu_max, normal_price, active_price, campaign_name, effective_from, effective_to, is_active, updated_by });
+      return { rows: [] };
+    }
+
+    if (s.includes("SET price_rule_id=$1 WHERE item_id=$2")) {
+      const [price_rule_id, item_id] = params;
+      const row = state.items.find((x) => String(x.item_id) === String(item_id));
+      if (row) row.price_rule_id = price_rule_id;
+      return { rows: [] };
+    }
+
+    if (s.includes("SET price_rule_id=NULL WHERE item_id=$1")) {
+      const [item_id] = params;
+      const row = state.items.find((x) => String(x.item_id) === String(item_id));
+      if (row) row.price_rule_id = null;
+      return { rows: [] };
+    }
+
+    if (s.includes("SET image_url=$1, image_public_id=$2 WHERE item_id=$3")) {
+      const [image_url, image_public_id, item_id] = params;
+      const row = state.items.find((x) => String(x.item_id) === String(item_id));
+      if (row) Object.assign(row, { image_url, image_public_id });
+      return { rows: [] };
+    }
+
+    if (s.includes("SET image_url=NULL, image_public_id=NULL WHERE item_id=$1")) {
+      const [item_id] = params;
+      const row = state.items.find((x) => String(x.item_id) === String(item_id));
+      if (row) Object.assign(row, { image_url: null, image_public_id: null });
+      return { rows: [] };
+    }
+
+    if (s.includes("SET item_name=$1")) {
+      const [item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible, item_id] = params;
+      const row = state.items.find((x) => String(x.item_id) === String(item_id));
+      if (row) Object.assign(row, { item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible });
+      return { rows: [] };
+    }
+
+    if (s.includes("SELECT item_id, image_public_id FROM public.catalog_items")) {
+      const row = state.items.find((x) => String(x.item_id) === String(params[0]));
+      return { rows: row ? [{ item_id: row.item_id, image_public_id: row.image_public_id ?? null }] : [] };
+    }
+
+    if (s.includes("FROM public.catalog_items ci")) {
+      if (s.includes("WHERE ci.item_id = $1")) {
+        const row = state.items.find((x) => String(x.item_id) === String(params[0]));
+        return { rows: row ? [joinedRow(row)] : [] };
+      }
+      if (!s.includes("WHERE")) {
+        return { rows: state.items.map(joinedRow) };
+      }
+      let rows = state.items.filter((x) => x.is_active === true);
+      if (s.includes("ci.is_customer_visible = TRUE")) rows = rows.filter((x) => x.is_customer_visible === true);
+      return { rows: rows.map(joinedRow) };
+    }
+
+    return { rows: [] };
+  }
+
   return {
     state,
-    async query(sql, params = []) {
-      state.queries.push({ sql, params });
-
-      if (/INSERT INTO public\.catalog_items/.test(sql)) {
-        const [item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible] = params;
-        const row = { item_id: nextId++, item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible };
-        state.items.push(row);
-        return { rows: [row] };
-      }
-
-      if (/UPDATE public\.catalog_items/.test(sql)) {
-        const [item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible, item_id] = params;
-        const row = state.items.find((x) => String(x.item_id) === String(item_id));
-        if (!row) return { rows: [] };
-        Object.assign(row, { item_name, item_category, base_price, unit_label, job_category, ac_type, btu_min, btu_max, is_active, is_customer_visible });
-        return { rows: [row] };
-      }
-
-      if (/FROM public\.catalog_items\s*WHERE item_id = \$1/.test(sql)) {
-        const row = state.items.find((x) => String(x.item_id) === String(params[0]));
-        return { rows: row ? [row] : [] };
-      }
-
-      if (/FROM public\.catalog_items\s*ORDER BY item_category, item_name\s*$/.test(sql)) {
-        return { rows: state.items.slice() };
-      }
-
-      if (/FROM public\.catalog_items\s*WHERE/.test(sql)) {
-        let rows = state.items.filter((x) => x.is_active === true);
-        if (/is_customer_visible = TRUE/.test(sql)) rows = rows.filter((x) => x.is_customer_visible === true);
-        return { rows };
-      }
-
-      return { rows: [] };
+    query,
+    async connect() {
+      return { query, release() {} };
     },
   };
 }
@@ -72,6 +147,15 @@ function sampleItems() {
     { item_id: 2, item_name: "ซ่อมแอร์ไม่เย็น", item_category: "ซ่อมแอร์", base_price: 0, unit_label: "งาน", job_category: "ซ่อม", ac_type: null, btu_min: null, btu_max: null, is_active: true, is_customer_visible: false },
     { item_id: 3, item_name: "ล้างแอร์สี่ทิศทาง (ปิดใช้งาน)", item_category: "ล้างแอร์", base_price: 900, unit_label: "เครื่อง", job_category: "ล้าง", ac_type: "สี่ทิศทาง", btu_min: 18000, btu_max: null, is_active: false, is_customer_visible: true },
   ];
+}
+
+const JPEG_BYTES = Buffer.from([0xff, 0xd8, 0xff, 0xd9, 0x00, 0x01, 0x02, 0x03]);
+const PNG_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x01]);
+
+function multipartImageForm(buffer, { filename = "photo.jpg", mimetype = "image/jpeg", fieldName = "image" } = {}) {
+  const fd = new FormData();
+  fd.append(fieldName, new Blob([buffer], { type: mimetype }), filename);
+  return fd;
 }
 
 test("createCatalogItemRoutes throws without a requireAdminSession dependency", () => {
@@ -275,7 +359,7 @@ test("SQL injection attempts cannot change query structure", async () => {
     assert.ok(insertQuery);
     assert.equal(insertQuery.sql.includes(malicious), false);
     assert.ok(insertQuery.params.includes(malicious));
-    assert.equal(pool.state.items.some((x) => x.item_id === 3), true);
+    assert.equal(pool.state.items.some((x) => x.item_id === 4 && x.item_name === malicious), true);
   });
 });
 
@@ -326,7 +410,7 @@ test("admin PATCH rejects an invalid boolean and never writes to the DB", async 
       body: JSON.stringify({ is_active: "มั่ว" }),
     });
     assert.equal(res.status, 400);
-    assert.equal(pool.state.queries.some((q) => /UPDATE public\.catalog_items/.test(q.sql)), false);
+    assert.equal(pool.state.queries.some((q) => q.sql.includes("SET item_name=$1")), false);
     assert.equal(pool.state.items.find((x) => x.item_id === 1).is_active, true);
   });
 });
@@ -408,4 +492,385 @@ test("no unauthenticated catalog write route declaration remains in index.js", (
 test("public GET /catalog/items in index.js is not wrapped in requireAdminSession", () => {
   const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
   assert.doesNotMatch(source, /app\.use\(createCatalogItemRoutes\(\{\s*pool,\s*requireAdminSession\s*\}\)\),\s*requireAdminSession/);
+});
+
+// ---------- Phase 2A.2: pricing (customer_service_price_rules link) ----------
+
+test("an item without a price rule falls back to base_price for display_price and reports no promo", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    const item = body.find((x) => x.item_id === 1);
+    assert.equal(item.normal_price, null);
+    assert.equal(item.sale_price, null);
+    assert.equal(Number(item.display_price), 700);
+    assert.equal(item.has_promo, false);
+  });
+});
+
+test("an active, currently-effective rule drives normal_price/sale_price and display_price", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 50;
+  const rules = [{ rule_id: 50, normal_price: 700, active_price: 550, campaign_name: "โปรหน้าฝน", is_active: true, effective_from: null, effective_to: null }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    const item = body.find((x) => x.item_id === 1);
+    assert.equal(Number(item.normal_price), 700);
+    assert.equal(Number(item.sale_price), 550);
+    assert.equal(Number(item.display_price), 550);
+    assert.equal(item.has_promo, true);
+    assert.equal(item.campaign_name, "โปรหน้าฝน");
+  });
+});
+
+test("an inactive rule is not used; falls back to base_price", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 51;
+  const rules = [{ rule_id: 51, normal_price: 700, active_price: 550, is_active: false, effective_from: null, effective_to: null }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    const item = body.find((x) => x.item_id === 1);
+    assert.equal(item.normal_price, null);
+    assert.equal(Number(item.display_price), 700);
+    assert.equal(item.has_promo, false);
+  });
+});
+
+test("an expired rule is not used; falls back to base_price", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 52;
+  const rules = [{ rule_id: 52, normal_price: 700, active_price: 550, is_active: true, effective_from: "2000-01-01T00:00:00Z", effective_to: "2000-02-01T00:00:00Z" }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    const item = body.find((x) => x.item_id === 1);
+    assert.equal(item.normal_price, null);
+    assert.equal(Number(item.display_price), 700);
+  });
+});
+
+test("a future rule is not used; falls back to base_price", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 53;
+  const rules = [{ rule_id: 53, normal_price: 700, active_price: 550, is_active: true, effective_from: "2999-01-01T00:00:00Z", effective_to: null }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/catalog/items?customer=1`);
+    const body = await res.json();
+    const item = body.find((x) => x.item_id === 1);
+    assert.equal(item.normal_price, null);
+    assert.equal(Number(item.display_price), 700);
+  });
+});
+
+test("admin POST with a pricing object creates the catalog item and the linked price rule transactionally", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        item_name: "ล้างแอร์โปร", base_price: 700,
+        pricing: { normal_price: 700, active_price: 500, campaign_name: "โปรทดสอบ", is_active: true },
+      }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.ok(body.price_rule_id);
+    assert.equal(Number(body.normal_price), 700);
+    assert.equal(Number(body.sale_price), 500);
+    assert.equal(pool.state.rules.length, 1);
+    assert.equal(pool.state.rules[0].rule_id, body.price_rule_id);
+  });
+});
+
+test("admin POST with invalid pricing rejects the whole request and writes nothing", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        item_name: "ล้างแอร์โปร", base_price: 700,
+        pricing: { normal_price: -1, active_price: 500 },
+      }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(pool.state.items.length, 3);
+    assert.equal(pool.state.rules.length, 0);
+    assert.equal(pool.state.queries.some((q) => q.sql.includes("INSERT INTO public.catalog_items")), false);
+  });
+});
+
+test("admin PATCH that omits pricing entirely preserves the existing linked price rule", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 60;
+  const rules = [{ rule_id: 60, normal_price: 700, active_price: 550, campaign_name: "เดิม", is_active: true, effective_from: null, effective_to: null }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ล้างแอร์ผนัง (อัปเดตชื่อ)" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.price_rule_id, 60);
+    assert.equal(Number(body.normal_price), 700);
+    assert.equal(pool.state.rules[0].campaign_name, "เดิม");
+  });
+});
+
+test("admin PATCH with a pricing object updates the existing linked price rule in place", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 61;
+  const rules = [{ rule_id: 61, normal_price: 700, active_price: 550, campaign_name: "เดิม", is_active: true, effective_from: null, effective_to: null }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pricing: { normal_price: 800, active_price: 600, campaign_name: "ใหม่", is_active: true } }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.price_rule_id, 61);
+    assert.equal(Number(body.normal_price), 800);
+    assert.equal(Number(body.sale_price), 600);
+    assert.equal(pool.state.rules.length, 1);
+    assert.equal(pool.state.rules[0].campaign_name, "ใหม่");
+  });
+});
+
+test("admin PATCH with invalid pricing rejects the whole request and changes nothing", async () => {
+  const items = sampleItems();
+  items[0].price_rule_id = 62;
+  const rules = [{ rule_id: 62, normal_price: 700, active_price: 550, campaign_name: "เดิม", is_active: true, effective_from: null, effective_to: null }];
+  const pool = makePool(items, rules);
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "พังตรงนี้", pricing: { normal_price: "ไม่ใช่ตัวเลข", active_price: 600 } }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(pool.state.items.find((x) => x.item_id === 1).item_name, "ล้างแอร์ผนัง");
+    assert.equal(pool.state.rules[0].campaign_name, "เดิม");
+  });
+});
+
+test("admin requests are rejected when unauthorized for pricing-bearing writes too", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "x", pricing: { normal_price: 1, active_price: 1 } }),
+    });
+    assert.equal(res.status, 401);
+    assert.equal(pool.state.items.length, 3);
+  });
+});
+
+// ---------- Phase 2A.2: image upload/delete (Cloudinary via DI) ----------
+
+test("image upload is rejected when unauthorized", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: denyAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/image`, {
+      method: "POST",
+      body: multipartImageForm(JPEG_BYTES),
+    });
+    assert.equal(res.status, 401);
+  });
+});
+
+test("image upload rejects an invalid item id", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/abc/image`, {
+      method: "POST",
+      body: multipartImageForm(JPEG_BYTES),
+    });
+    assert.equal(res.status, 400);
+  });
+});
+
+test("image upload rejects a missing file", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const fd = new FormData();
+    fd.append("note", "no image field here");
+    const res = await fetch(`${base}/admin/catalog/items/1/image`, { method: "POST", body: fd });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.match(body.error, /ไฟล์/);
+  });
+});
+
+test("image upload rejects a file larger than 5MB", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const big = Buffer.concat([JPEG_BYTES, Buffer.alloc(6 * 1024 * 1024)]);
+    const res = await fetch(`${base}/admin/catalog/items/1/image`, {
+      method: "POST",
+      body: multipartImageForm(big),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.match(body.error, /5MB/);
+  });
+});
+
+test("image upload rejects an unsupported MIME type", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/image`, {
+      method: "POST",
+      body: multipartImageForm(Buffer.from("GIF89a"), { mimetype: "image/gif", filename: "x.gif" }),
+    });
+    assert.equal(res.status, 400);
+  });
+});
+
+test("image upload rejects a file whose bytes do not match its declared MIME type", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/image`, {
+      method: "POST",
+      body: multipartImageForm(Buffer.from("not really a jpeg"), { mimetype: "image/jpeg" }),
+    });
+    assert.equal(res.status, 400);
+  });
+});
+
+test("image upload succeeds via the injected uploader and stores url/public_id without calling real Cloudinary", async () => {
+  const pool = makePool(sampleItems());
+  let calledWith = null;
+  const uploadCatalogImage = async (args) => {
+    calledWith = args;
+    return { url: "https://res.cloudinary.com/demo/image/upload/v1/cwf/catalog-items/item-1.jpg", public_id: "cwf/catalog-items/item-1" };
+  };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, uploadCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/image`, {
+      method: "POST",
+      body: multipartImageForm(JPEG_BYTES),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.image_url, "https://res.cloudinary.com/demo/image/upload/v1/cwf/catalog-items/item-1.jpg");
+    assert.equal(pool.state.items.find((x) => x.item_id === 1).image_public_id, "cwf/catalog-items/item-1");
+    assert.ok(calledWith.buffer);
+    assert.equal(calledWith.itemId, "1");
+  });
+});
+
+test("a Cloudinary upload failure does not touch the database", async () => {
+  const pool = makePool(sampleItems());
+  const uploadCatalogImage = async () => { throw new Error("cloudinary down"); };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, uploadCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/image`, {
+      method: "POST",
+      body: multipartImageForm(JPEG_BYTES),
+    });
+    assert.equal(res.status, 500);
+    assert.equal(pool.state.items.find((x) => x.item_id === 1).image_url, null);
+    assert.equal(pool.state.queries.some((q) => q.sql.includes("SET image_url=$1")), false);
+  });
+});
+
+test("replacing an image updates url/public_id and best-effort deletes the previous Cloudinary asset", async () => {
+  const pool = makePool(sampleItems());
+  const deletedIds = [];
+  let uploadCount = 0;
+  const uploadCatalogImage = async () => {
+    uploadCount += 1;
+    return { url: `https://res.cloudinary.com/demo/v${uploadCount}.jpg`, public_id: `cwf/catalog-items/item-1-v${uploadCount}` };
+  };
+  const deleteCatalogImage = async (publicId) => { deletedIds.push(publicId); return { ok: true }; };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, uploadCatalogImage, deleteCatalogImage });
+  await withServer(router, async (base) => {
+    const first = await fetch(`${base}/admin/catalog/items/1/image`, { method: "POST", body: multipartImageForm(JPEG_BYTES) });
+    assert.equal(first.status, 200);
+    const second = await fetch(`${base}/admin/catalog/items/1/image`, { method: "POST", body: multipartImageForm(PNG_BYTES, { mimetype: "image/png", filename: "x.png" }) });
+    assert.equal(second.status, 200);
+    const secondBody = await second.json();
+    assert.equal(secondBody.image_url, "https://res.cloudinary.com/demo/v2.jpg");
+    assert.equal(pool.state.items.find((x) => x.item_id === 1).image_public_id, "cwf/catalog-items/item-1-v2");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    assert.deepEqual(deletedIds, ["cwf/catalog-items/item-1-v1"]);
+  });
+});
+
+test("deleting an image clears image_url/image_public_id in the database", async () => {
+  const items = sampleItems();
+  items[0].image_url = "https://res.cloudinary.com/demo/old.jpg";
+  items[0].image_public_id = "cwf/catalog-items/item-1-old";
+  const pool = makePool(items);
+  let deletedId = null;
+  const deleteCatalogImage = async (publicId) => { deletedId = publicId; return { ok: true }; };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, deleteCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/image`, { method: "DELETE" });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.image_url, null);
+    assert.equal(deletedId, "cwf/catalog-items/item-1-old");
+    assert.equal(pool.state.items.find((x) => x.item_id === 1).image_url, null);
+    assert.equal(pool.state.items.find((x) => x.item_id === 1).image_public_id, null);
+  });
+});
+
+test("a Cloudinary delete failure does not touch the database", async () => {
+  const items = sampleItems();
+  items[0].image_url = "https://res.cloudinary.com/demo/old.jpg";
+  items[0].image_public_id = "cwf/catalog-items/item-1-old";
+  const pool = makePool(items);
+  const deleteCatalogImage = async () => { throw new Error("cloudinary delete down"); };
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, deleteCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/image`, { method: "DELETE" });
+    assert.equal(res.status, 500);
+    assert.equal(pool.state.items.find((x) => x.item_id === 1).image_url, "https://res.cloudinary.com/demo/old.jpg");
+  });
+});
+
+test("image upload SQL is parameterized: a hostile filename/public_id never appears as raw SQL text", async () => {
+  const pool = makePool(sampleItems());
+  const hostilePublicId = "x'); DROP TABLE public.catalog_items;--";
+  const uploadCatalogImage = async () => ({ url: "https://res.cloudinary.com/demo/x.jpg", public_id: hostilePublicId });
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin, uploadCatalogImage });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1/image`, { method: "POST", body: multipartImageForm(JPEG_BYTES) });
+    assert.equal(res.status, 200);
+    const updateQuery = pool.state.queries.find((q) => q.sql.includes("SET image_url=$1, image_public_id=$2"));
+    assert.ok(updateQuery);
+    assert.equal(updateQuery.sql.includes(hostilePublicId), false);
+    assert.ok(updateQuery.params.includes(hostilePublicId));
+  });
 });
