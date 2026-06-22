@@ -12959,7 +12959,7 @@ app.use(createTechnicianDirectoryRoutes({ pool }));
 app.use(createCatalogItemRoutes({ pool, requireAdminSession }));
 
 
-app.post("/catalog/items", async (req, res) => {
+app.post("/catalog/items", requireAdminSession, async (req, res) => {
   const { item_name, item_category, base_price, unit_label } = req.body || {};
   if (!item_name) return res.status(400).json({ error: "กรอกชื่อรายการ" });
 

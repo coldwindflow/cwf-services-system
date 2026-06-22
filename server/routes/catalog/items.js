@@ -1,10 +1,17 @@
-function normalizeBoolean(value, fallback) {
-  if (typeof value === "boolean") return value;
-  if (value === undefined || value === null) return fallback;
-  const s = String(value).trim().toLowerCase();
-  if (s === "1" || s === "true" || s === "yes" || s === "on") return true;
-  if (s === "0" || s === "false" || s === "no" || s === "off" || s === "") return false;
-  return fallback;
+function normalizeBoolean(value, fieldLabel) {
+  if (typeof value === "boolean") return { ok: true, value };
+  if (typeof value === "number") {
+    if (value === 1) return { ok: true, value: true };
+    if (value === 0) return { ok: true, value: false };
+    return { ok: false, error: `${fieldLabel} ไม่ถูกต้อง` };
+  }
+  if (typeof value === "string") {
+    const s = value.trim().toLowerCase();
+    if (s === "true" || s === "1" || s === "yes" || s === "on") return { ok: true, value: true };
+    if (s === "false" || s === "0" || s === "no" || s === "off") return { ok: true, value: false };
+    return { ok: false, error: `${fieldLabel} ไม่ถูกต้อง` };
+  }
+  return { ok: false, error: `${fieldLabel} ไม่ถูกต้อง` };
 }
 
 function parseOptionalPositiveNumber(value, fieldLabel) {
@@ -59,8 +66,13 @@ function validateMergedCatalogItem(merged) {
     errors.push("btu_min ต้องไม่มากกว่า btu_max");
   }
 
-  const is_active = normalizeBoolean(merged.is_active, true);
-  const is_customer_visible = normalizeBoolean(merged.is_customer_visible, false);
+  const isActiveResult = normalizeBoolean(merged.is_active, "is_active");
+  if (!isActiveResult.ok) errors.push(isActiveResult.error);
+  const isVisibleResult = normalizeBoolean(merged.is_customer_visible, "is_customer_visible");
+  if (!isVisibleResult.ok) errors.push(isVisibleResult.error);
+
+  const is_active = isActiveResult.ok ? isActiveResult.value : null;
+  const is_customer_visible = isVisibleResult.ok ? isVisibleResult.value : null;
 
   if (errors.length) return { ok: false, errors };
   return {

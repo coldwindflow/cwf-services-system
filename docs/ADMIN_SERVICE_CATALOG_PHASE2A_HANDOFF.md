@@ -53,6 +53,49 @@ git diff --check                                -> clean
 ## Remaining risks / what Phase 2B should pick up
 
 - **Browser QA not performed** for `admin-store-catalog.html` at any breakpoint — no headless browser tooling is available in this sandbox. The mobile-usable CSS follows the same classes already used by `admin-promotions-v2.html`, but visual verification in a real browser (320/360/390/430px and desktop) is still outstanding.
-- The pre-existing unauthenticated `POST /catalog/items` legacy route in `index.js` was deliberately left as-is (out of scope for this phase) — worth flagging to whoever owns Auth/Production routes, since it currently allows creating catalog rows without any admin session.
 - No server-side search/pagination was added to `GET /admin/catalog/items` — fine for the current catalog size, but if the catalog grows large this endpoint should add filtering/pagination in a later phase.
 - Phase 2B (Air Conditioner Product Phase) was explicitly not started, per scope.
+
+## Correction Pass (post Phase 2A, same branch/PR)
+
+Applied on top of commit `e815ede22ba4cbe5d40e7256fae762eda4502156`, fixing three production blockers identified in review. No new branch, no Phase 2B, no merge.
+
+### Correction 1 — Strict boolean validation
+
+`normalizeBoolean()` in `server/routes/catalog/items.js` previously silently fell back to a default for any unrecognized value (e.g. `"is_active": "มั่ว"` would silently become `true`). It now returns `{ ok, value }` / `{ ok: false, error }` and is wired into `validateMergedCatalogItem`, so an unrecognized value is rejected with `400` and never reaches `INSERT`/`UPDATE`.
+
+Accepted forms: real `true`/`false`, numbers `1`/`0`, and strings `"true"`/`"false"`/`"1"`/`"0"`/`"yes"`/`"no"`/`"on"`/`"off"` (case-insensitive, trimmed). The `"yes"/"no"/"on"/"off"` forms are kept for backward compatibility and are explicitly covered by a test. Empty string is now **rejected** rather than silently treated as `false`. Fields omitted from the request body are unaffected — `mergeCatalogItemPayload` already only substitutes the existing/default value when the client didn't send the key, so the strict check only runs against what the client actually sent.
+
+### Correction 2 — Legacy write route caller audit and auth fix
+
+Searched the repo for every consumer of `/catalog/items`:
+- `POST /catalog/items` declaration: only one, in `index.js` (the legacy route itself).
+- Client callers of `/catalog/items`: `customer-app/modules/api.js:110` (`requestJson("/catalog/items", { query: { customer: 1 } })`) and `admin-add-v2.js:1459` (`apiFetch("/catalog/items")`) — **both are `GET` requests**, neither posts to this route.
+- No fetch/XHR call to `POST /catalog/items` was found anywhere in the repo (admin pages, customer app, or scripts).
+
+Conclusion: no public/internal caller depends on the route being unauthenticated. Per the explicit authorization in this correction pass to change this route's auth behavior, `index.js`'s `app.post("/catalog/items", async (req, res) => {` was changed to `app.post("/catalog/items", requireAdminSession, async (req, res) => {` — middleware only, no change to path, request body contract, SQL, or response shape. The route was not moved or removed.
+
+### Correction 3 — Admin menu entry
+
+Added one link to the shared drawer markup in `admin-v2-common.js`, in the "หน้า Admin ทั้งหมด" group right after the existing Promotions link (same group as other catalog/pricing-adjacent admin pages): `🗂️ รายการบริการในร้านค้า` → `/admin-store-catalog.html`. Same `cwf-link` / `data-href` convention as every other entry; no redesign, no reordering of unrelated items, link appears exactly once.
+
+**Cache/version finding**: `admin-v2-common.js` is referenced with a static `?v=` cache-busting query string from 13 admin HTML pages. Bumping that query string is required for browsers with a cached copy to pick up the new menu link, but only `admin-store-catalog.html` is in this correction pass's authorized file list — the other 12 admin pages (`admin-dashboard-v2.html`, `admin-promotions-v2.html`, etc.) are out of scope and were **not** touched. `admin-store-catalog.html`'s own `?v=` was bumped (`20260428_allpages_ui1` → `20260622_admin_menu_catalog_entry`) since that file is authorized. The other 12 pages will continue serving their previously-cached `admin-v2-common.js` (missing the new menu link) until their own `?v=` is bumped in a separate, properly-scoped pass — flagged here as a known follow-up, not silently dropped.
+
+### Tests added in this pass
+
+`test/catalogItemsRoutes.test.js` (+10 tests, 26 total): invalid `is_active`/`is_customer_visible` rejected with no DB write, real booleans accepted, `"1"`/`"0"` accepted, `"yes"/"no"/"on"/"off"` backward-compat accepted, PATCH omitting booleans preserves existing values, static assertions that the legacy route now has `requireAdminSession`, that no unauthenticated declaration of it remains, and that the public `GET /catalog/items` route is not wrapped in admin auth.
+
+`test/adminStoreCatalogUi.test.js` (new, 5 tests): the shared menu contains the `/admin-store-catalog.html` link with the correct Thai label, the link appears exactly once, and `admin-store-catalog.html` still loads both `admin-v2-common.js` and its own `admin-store-catalog.js`.
+
+### Correction-pass test results
+
+```
+node --check server/routes/catalog/items.js     -> OK
+node --check admin-store-catalog.js             -> OK
+node --check admin-v2-common.js                 -> OK
+node --test test/catalogItemsRoutes.test.js     -> 26/26 pass
+node --test test/adminStoreCatalogUi.test.js    -> 5/5 pass
+node --test test/customerAppRecovery.test.js    -> 25/25 pass (unchanged, regression check)
+npm test                                        -> 213 pass / 10 skipped / 0 fail
+git diff --check                                -> clean
+```

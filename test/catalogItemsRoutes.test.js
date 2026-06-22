@@ -283,3 +283,129 @@ test("index.js passes the real requireAdminSession middleware into createCatalog
   const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
   assert.match(source, /app\.use\(createCatalogItemRoutes\(\{\s*pool,\s*requireAdminSession\s*\}\)\)/);
 });
+
+test("admin POST rejects an invalid is_active value and never writes to the DB", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ", is_active: "มั่ว" }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.match(body.error, /is_active/);
+    assert.equal(pool.state.queries.some((q) => /INSERT INTO public\.catalog_items/.test(q.sql)), false);
+  });
+});
+
+test("admin POST rejects an invalid is_customer_visible value (out-of-range number) and never writes to the DB", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ", is_customer_visible: 2 }),
+    });
+    assert.equal(res.status, 400);
+    const body = await res.json();
+    assert.match(body.error, /is_customer_visible/);
+    assert.equal(pool.state.queries.some((q) => /INSERT INTO public\.catalog_items/.test(q.sql)), false);
+  });
+});
+
+test("admin PATCH rejects an invalid boolean and never writes to the DB", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_active: "มั่ว" }),
+    });
+    assert.equal(res.status, 400);
+    assert.equal(pool.state.queries.some((q) => /UPDATE public\.catalog_items/.test(q.sql)), false);
+    assert.equal(pool.state.items.find((x) => x.item_id === 1).is_active, true);
+  });
+});
+
+test("admin POST accepts real booleans for is_active/is_customer_visible", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ", is_active: true, is_customer_visible: true }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.is_active, true);
+    assert.equal(body.is_customer_visible, true);
+  });
+});
+
+test("admin POST accepts the supported \"1\"/\"0\" string forms for booleans", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ", is_active: "0", is_customer_visible: "1" }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.is_active, false);
+    assert.equal(body.is_customer_visible, true);
+  });
+});
+
+test("admin POST accepts the backward-compatible \"yes\"/\"no\"/\"on\"/\"off\" string forms for booleans", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ทดสอบ", is_active: "off", is_customer_visible: "yes" }),
+    });
+    assert.equal(res.status, 201);
+    const body = await res.json();
+    assert.equal(body.is_active, false);
+    assert.equal(body.is_customer_visible, true);
+  });
+});
+
+test("admin PATCH that does not send boolean fields preserves their existing values", async () => {
+  const pool = makePool(sampleItems());
+  const router = createCatalogItemRoutes({ pool, requireAdminSession: allowAdmin });
+  await withServer(router, async (base) => {
+    const res = await fetch(`${base}/admin/catalog/items/1`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item_name: "ล้างแอร์ผนัง (แก้ชื่อ)" }),
+    });
+    assert.equal(res.status, 200);
+    const body = await res.json();
+    assert.equal(body.is_active, true);
+    assert.equal(body.is_customer_visible, true);
+  });
+});
+
+test("legacy POST /catalog/items in index.js requires requireAdminSession", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+  assert.match(source, /app\.post\("\/catalog\/items",\s*requireAdminSession,\s*async/);
+});
+
+test("no unauthenticated catalog write route declaration remains in index.js", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+  assert.doesNotMatch(source, /app\.post\("\/catalog\/items",\s*async/);
+});
+
+test("public GET /catalog/items in index.js is not wrapped in requireAdminSession", () => {
+  const source = fs.readFileSync(path.join(__dirname, "..", "index.js"), "utf8");
+  assert.doesNotMatch(source, /app\.use\(createCatalogItemRoutes\(\{\s*pool,\s*requireAdminSession\s*\}\)\),\s*requireAdminSession/);
+});
