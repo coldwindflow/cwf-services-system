@@ -489,4 +489,8 @@ module.exports = {
   buildCustomerServiceLineItemsFromPayload,
   seedRainySeasonPromo,
   createCustomerPricingRoutes,
+  money,
+  intOrNull,
+  boolish,
+  cleanRuleBody,
 };

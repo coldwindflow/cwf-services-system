@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Admin • รายการบริการในร้านค้า</title>
   <link rel="stylesheet" href="/style.css"/>
+  <link rel="stylesheet" href="/admin-store-catalog.css?v=20260622_admin_catalog_phase2a2_v1"/>
 </head>
 <body>
   <div class="topbar">
@@ -12,121 +13,33 @@
   </div>
 
   <div class="container">
-    <div class="card" id="catalog_form_card">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+    <div class="card asc-toolbar">
+      <div class="asc-toolbar-row">
         <div>
-          <b id="catalog_form_title">เพิ่มรายการบริการ</b>
-          <div class="muted2 mini">ควบคุมรายการที่จะแสดงในร้านค้าของแอปลูกค้า บันทึกแล้วมีผลทันทีผ่าน API จริง</div>
+          <b>รายการบริการ</b>
+          <div class="muted2 mini">บันทึกแล้วมีผลทันทีผ่าน API จริง</div>
         </div>
-        <button id="btnNewItem" class="secondary" type="button">+ เพิ่มรายการใหม่</button>
+        <button id="btnNewItem" class="primary" type="button">+ เพิ่มบริการ</button>
       </div>
-
-      <div class="grid2" style="margin-top:12px">
-        <div>
-          <label>ชื่อรายการ *</label>
-          <input id="item_name" placeholder="เช่น ล้างแอร์ผนัง">
-        </div>
-        <div>
-          <label>หมวดหมู่</label>
-          <input id="item_category" placeholder="เช่น ล้างแอร์">
-        </div>
-      </div>
-
-      <div class="grid2" style="margin-top:10px">
-        <div>
-          <label>ราคาฐาน/ราคาเริ่มต้น (บาท)</label>
-          <input id="base_price" type="number" step="1" min="0" placeholder="ว่าง = สอบถามราคา">
-        </div>
-        <div>
-          <label>หน่วย</label>
-          <input id="unit_label" placeholder="เช่น เครื่อง, งาน">
-        </div>
-      </div>
-
-      <div class="grid2" style="margin-top:10px">
-        <div>
-          <label>ประเภทงาน</label>
-          <input id="job_category" placeholder="เช่น ล้าง, ซ่อม, ติดตั้ง">
-        </div>
-        <div>
-          <label>ประเภทแอร์</label>
-          <input id="ac_type" placeholder="เช่น ผนัง, สี่ทิศทาง, แขวน">
-        </div>
-      </div>
-
-      <div class="grid2" style="margin-top:10px">
-        <div>
-          <label>BTU ต่ำสุด</label>
-          <input id="btu_min" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด">
-        </div>
-        <div>
-          <label>BTU สูงสุด</label>
-          <input id="btu_max" type="number" step="1" min="1" placeholder="ว่าง = ไม่จำกัด">
-        </div>
-      </div>
-
-      <div class="grid2" style="margin-top:10px">
-        <div>
-          <label>สถานะการใช้งาน</label>
-          <select id="is_active">
-            <option value="1">เปิดใช้งาน</option>
-            <option value="0">ปิดใช้งาน</option>
-          </select>
-        </div>
-        <div>
-          <label>แสดงให้ลูกค้าเห็น</label>
-          <select id="is_customer_visible">
-            <option value="0">ไม่แสดง</option>
-            <option value="1">แสดง</option>
-          </select>
-        </div>
-      </div>
-
-      <div id="catalog_visible_hint" class="muted2 mini" style="margin-top:8px;display:none;color:#15803d;">
-        ✅ รายการนี้จะแสดงในร้านค้าลูกค้า
-      </div>
-
-      <div id="catalog_form_error" class="muted2 mini" style="margin-top:8px;display:none;color:#b91c1c;"></div>
-
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
-        <button id="btnSaveItem" class="primary" type="button">บันทึกรายการ</button>
-        <button id="btnCancelEdit" class="secondary" type="button" style="display:none;">ยกเลิกการแก้ไข</button>
+      <div class="asc-toolbar-row">
+        <input id="catalog_search" class="asc-search" placeholder="ค้นหาชื่อรายการ">
+        <select id="catalog_filter_active" class="asc-filter">
+          <option value="">ทุกสถานะ</option>
+          <option value="1">เปิดใช้งาน</option>
+          <option value="0">ปิดใช้งาน</option>
+        </select>
+        <select id="catalog_filter_visible" class="asc-filter">
+          <option value="">ทั้งหมด</option>
+          <option value="1">แสดงลูกค้า</option>
+          <option value="0">ไม่แสดง</option>
+        </select>
+        <button id="btnReloadCatalog" class="secondary btn-small" type="button">รีเฟรช</button>
       </div>
     </div>
 
     <div class="card" style="margin-top:12px">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
-        <b>รายการทั้งหมด</b>
-        <button id="btnReloadCatalog" class="secondary" type="button">รีเฟรช</button>
-      </div>
-
-      <div class="grid2" style="margin-top:10px">
-        <div>
-          <label>ค้นหาชื่อ</label>
-          <input id="catalog_search" placeholder="ค้นหาชื่อรายการ">
-        </div>
-        <div>
-          <label>สถานะ</label>
-          <select id="catalog_filter_active">
-            <option value="">ทั้งหมด</option>
-            <option value="1">เปิดใช้งาน</option>
-            <option value="0">ปิดใช้งาน</option>
-          </select>
-        </div>
-      </div>
-      <div class="grid2" style="margin-top:10px">
-        <div>
-          <label>แสดงให้ลูกค้าเห็น</label>
-          <select id="catalog_filter_visible">
-            <option value="">ทั้งหมด</option>
-            <option value="1">แสดง</option>
-            <option value="0">ไม่แสดง</option>
-          </select>
-        </div>
-        <div></div>
-      </div>
-
-      <div id="catalog_list" style="margin-top:10px">กำลังโหลดรายการ...</div>
+      <b>รายการทั้งหมด</b>
+      <div id="catalog_list" class="asc-card-list">กำลังโหลดรายการ...</div>
     </div>
 
     <div class="card" style="margin-top:12px">
@@ -137,6 +50,6 @@
   </div>
 
   <script src="/admin-v2-common.js?v=20260622_admin_menu_catalog_entry"></script>
-  <script src="/admin-store-catalog.js?v=20260622_admin_catalog_phase2a_v1"></script>
+  <script src="/admin-store-catalog.js?v=20260622_admin_catalog_phase2a2_v1"></script>
 </body>
 </html>
