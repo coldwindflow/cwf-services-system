@@ -1,5 +1,5 @@
 /* CWF root service worker: Tech App shell/cache refresh */
-const CWF_TECH_BUILD_ID = "20260622_legacy_cap_policy_tech_cache_v1";
+const CWF_TECH_BUILD_ID = "20260622_urgent_offer_session_v1";
 const CACHE_PREFIX = "cwf-root-tech-app-";
 const CACHE_NAME = `${CACHE_PREFIX}${CWF_TECH_BUILD_ID}`;
 const SHELL_ASSETS = [

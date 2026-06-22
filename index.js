@@ -28,6 +28,7 @@ const normalizerHelpers = require("./server/normalizers");
 const pricingHelpers = require("./server/pricing");
 const jobTiming = require("./server/services/jobTiming");
 const urgentPublicAdapter = require("./server/services/urgentPublicAdapter");
+const urgentFinalizer = require("./server/services/urgent/finalizer");
 const customerPricingHelpers = require("./server/customerPricing");
 const customerAuth = require("./server/customerAuth");
 const technicianIncomeHelpers = require("./server/technicianIncome");
@@ -14284,13 +14285,31 @@ console.log("[latlng_parse]", { ok: !!parsedAdminLL });
     if (urgentRequestKey && urgentDeterministicToken) {
       await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [urgentRequestKey]);
       const dupCheck = await client.query(
-        `SELECT booking_code, booking_token FROM public.jobs WHERE booking_token=$1 LIMIT 1`,
+        `SELECT j.job_id, j.booking_code, j.booking_token, COALESCE(j.job_status,'') AS job_status,
+                COUNT(o.offer_id)::int AS offers_count
+           FROM public.jobs j
+           LEFT JOIN public.job_offers o ON o.job_id=j.job_id
+          WHERE j.booking_token=$1
+          GROUP BY j.job_id, j.booking_code, j.booking_token, j.job_status
+          LIMIT 1`,
         [urgentDeterministicToken]
       );
       const dupRow = dupCheck.rows[0] || null;
       if (dupRow && dupRow.booking_code) {
         await client.query("COMMIT");
-        return res.json({ success: true, booking_code: dupRow.booking_code, token: dupRow.booking_token, duplicate: true });
+        const duplicatePayload = {
+          success: true,
+          booking_code: dupRow.booking_code,
+          token: dupRow.booking_token,
+          duplicate: true,
+          offers_count: Number(dupRow.offers_count || 0),
+        };
+        if (dupRow.job_status === "ไม่พบช่างรับงาน") {
+          duplicatePayload.phase = "admin_review";
+          duplicatePayload.admin_review = true;
+          duplicatePayload.message = "ส่งคำขอเข้าคิวแอดมินแล้ว";
+        }
+        return res.json(duplicatePayload);
       }
     }
 
@@ -14612,6 +14631,22 @@ if (coerceNumber(override_price, 0) > 0) {
       }
 
       if (!available.length) {
+        if (createdBySource === "customer" && bm === "urgent" && mode === "offer") {
+          await client.query(
+            `UPDATE public.jobs
+                SET job_status='ไม่พบช่างรับงาน',
+                    technician_username=NULL,
+                    technician_team=NULL,
+                    dispatch_mode='offer'
+              WHERE job_id=$1`,
+            [job_id]
+          );
+          console.warn("[admin_book_v2] customer_urgent_no_offer_targets", {
+            job_id,
+            booking_code,
+            service_zone_code: detectedZoneCode || null,
+          });
+        } else {
         const err = new Error('ยิงงานด่วนไม่สำเร็จ: ตอนนี้ไม่มีช่างที่เปิดรับงาน ว่างจริง และอยู่ในโซนนี้ ระบบจึงยังไม่ได้ส่งงานออกไปให้ช่างรับ');
         err.statusCode = 409;
         err.code = 'NO_URGENT_OFFER_TARGETS';
@@ -14624,6 +14659,7 @@ if (coerceNumber(override_price, 0) > 0) {
           zone_fallback_used,
         };
         throw err;
+        }
       }
 
       for (const u of available) {
@@ -14700,6 +14736,11 @@ if (coerceNumber(override_price, 0) > 0) {
       forced_assignment_zone_warning,
       offers_count: urgentPushTargets.length,
       allow_time_proposal: allowTimeProposal,
+      ...(createdBySource === "customer" && isUrgentOffer && urgentPushTargets.length === 0 ? {
+        phase: "admin_review",
+        admin_review: true,
+        message: "ส่งคำขอเข้าคิวแอดมินแล้ว",
+      } : {}),
     });
   } catch (e) {
     await client.query("ROLLBACK");
@@ -18380,42 +18421,41 @@ app.post('/tech/push_test', requireTechnicianSession, async (req, res) => {
   }
 });
 
-// ✅ Auto finalize urgent jobs when no one accepts
-// - Safe: ไม่กระทบงานปกติ / ไม่ล้มระบบ ถ้า query fail
+// Canonical urgent offer finalizer. Safe to call from existing tech/admin
+// mutation paths; startup runner below makes expiry autonomous.
 async function autoFinalizeUrgentJobs() {
   try {
-    await pool.query(
-      `
-      UPDATE public.jobs j
-      SET job_status = CASE
-        WHEN EXISTS (
-          SELECT 1 FROM public.job_offer_time_proposals p
-          WHERE p.job_id=j.job_id AND p.status='pending'
-        ) THEN 'รอพิจารณาเวลาใหม่'
-        ELSE 'ไม่พบช่างรับงาน'
-      END,
-      technician_username=NULL,
-      technician_team=NULL
-      WHERE COALESCE(j.booking_mode,'scheduled')='urgent'
-        AND j.technician_team IS NULL
-        AND j.technician_username IS NULL
-        AND j.canceled_at IS NULL
-        AND (j.job_status='รอช่างยืนยัน' OR j.job_status='pending_accept' OR j.job_status='รอพิจารณาเวลาใหม่')
-        AND EXISTS (
-          SELECT 1 FROM public.job_offers any_offer
-          WHERE any_offer.job_id=j.job_id
-        )
-        AND NOT EXISTS (
-          SELECT 1 FROM public.job_offers o
-          WHERE o.job_id=j.job_id
-            AND o.status='pending'
-            AND o.expires_at >= NOW()
-        )
-      `
-    );
+    return await urgentFinalizer.autoFinalizeUrgentJobs(pool);
   } catch (e) {
     console.warn('[autoFinalizeUrgentJobs] skip', e.message);
+    return { success: false, error: e.message };
   }
+}
+
+let urgentFinalizerRunnerInFlight = false;
+let urgentFinalizerRunnerTimer = null;
+
+function runUrgentFinalizerOnce(source = 'manual') {
+  if (urgentFinalizerRunnerInFlight) return Promise.resolve({ skipped: true, reason: 'in_flight' });
+  urgentFinalizerRunnerInFlight = true;
+  return urgentFinalizer.autoFinalizeUrgentJobs(pool)
+    .catch((e) => {
+      console.warn('[urgent_finalizer_runner] skip', { source, error: e.message });
+      return { success: false, error: e.message };
+    })
+    .finally(() => {
+      urgentFinalizerRunnerInFlight = false;
+    });
+}
+
+function startUrgentFinalizerRunner() {
+  if (urgentFinalizerRunnerTimer) return urgentFinalizerRunnerTimer;
+  runUrgentFinalizerOnce('startup').catch(() => {});
+  urgentFinalizerRunnerTimer = setInterval(() => {
+    runUrgentFinalizerOnce('interval').catch(() => {});
+  }, 45000);
+  if (typeof urgentFinalizerRunnerTimer.unref === 'function') urgentFinalizerRunnerTimer.unref();
+  return urgentFinalizerRunnerTimer;
 }
 
 app.post("/tech/income-summary-batch", requireTechnicianSession, async (req, res) => {
@@ -18548,67 +18588,108 @@ app.post("/api/super/technician-income-preview/backfill", requireSuperAdmin, asy
   }
 });
 
-app.get("/offers/tech/:username", async (req, res) => {
-  const { username } = req.params;
+async function loadPendingOffersForSessionTechnician(username) {
+  const aliases = await _getTechnicianVisibilityAliases(username);
+  const r = await pool.query(
+    `
+    SELECT
+      o.offer_id, o.job_id, o.status, o.offered_at, o.expires_at,
+      j.job_type, j.appointment_datetime,
+      j.address_text, j.maps_url, j.gps_latitude, j.gps_longitude,
+      j.job_price, j.job_status, j.booking_code, j.customer_note,
+      COALESCE(j.allow_time_proposal,FALSE) AS allow_time_proposal,
+      COALESCE(j.job_zone,'') AS job_zone,
+      COALESCE(sz.zone_label,'') AS job_zone_label,
+      COALESCE((
+        SELECT string_agg(COALESCE(ji.item_name,''), ', ' ORDER BY ji.job_item_id)
+        FROM public.job_items ji
+        WHERE ji.job_id = j.job_id
+      ), '') AS service_items_text
+    FROM public.job_offers o
+    JOIN public.jobs j ON j.job_id = o.job_id
+    LEFT JOIN public.service_zones sz ON sz.zone_code = j.service_zone_code
+    WHERE o.technician_username = ANY($1::text[])
+      AND o.status='pending'
+      AND o.expires_at >= NOW()
+    ORDER BY o.expires_at ASC
+    `,
+    [aliases]
+  );
 
-  const ready = await isTechReady(username);
-  if (!ready) return res.json([]);
-
-  try {
-    await pool.query(`
-      UPDATE public.job_offers
-      SET status='expired'
-      WHERE status='pending' AND expires_at < NOW()
-    `);
-
-    // ถ้า urgent ไม่มีใครรับแล้ว ให้ขึ้นสถานะลูกค้าแบบปลอดภัย
-    await autoFinalizeUrgentJobs();
-
-    const aliases = await _getTechnicianVisibilityAliases(username);
-    const r = await pool.query(
-      `
-      SELECT
-        o.offer_id, o.job_id, o.status, o.offered_at, o.expires_at,
-        j.job_type, j.appointment_datetime,
-        j.address_text, j.maps_url, j.gps_latitude, j.gps_longitude,
-        j.job_price, j.job_status, j.booking_code, j.customer_note,
-        COALESCE(j.allow_time_proposal,FALSE) AS allow_time_proposal,
-        COALESCE(j.job_zone,'') AS job_zone,
-        COALESCE(sz.zone_label,'') AS job_zone_label,
-        COALESCE((
-          SELECT string_agg(COALESCE(ji.item_name,''), ', ' ORDER BY ji.job_item_id)
-          FROM public.job_items ji
-          WHERE ji.job_id = j.job_id
-        ), '') AS service_items_text
-      FROM public.job_offers o
-      JOIN public.jobs j ON j.job_id = o.job_id
-      LEFT JOIN public.service_zones sz ON sz.zone_code = j.service_zone_code
-      WHERE o.technician_username = ANY($1::text[])
-        AND o.status='pending'
-        AND o.expires_at >= NOW()
-      ORDER BY o.expires_at ASC
-      `,
-      [aliases]
-    );
-
-    // Offered job cards read persisted display/preview rows only.
-    // Missing legacy rows stay pending instead of recalculating income during render.
-    const rows = [];
-    for (const row of (r.rows || [])) {
-      const base = { ...row, ..._techJobMoneyFallback(row, username, 'offered') };
-      try {
-        const money = await _buildTechnicianJobMoneySummary(row, username, { context: 'offered' });
-        if (money) Object.assign(base, money);
-      } catch (e) {
-        try { console.warn('[offers_income_preview] skip', { username, job_id: row.job_id, error: e.message }); } catch {}
-      }
-      rows.push(base);
+  const rows = [];
+  for (const row of (r.rows || [])) {
+    const base = { ...row, ..._techJobMoneyFallback(row, username, 'offered') };
+    try {
+      const money = await _buildTechnicianJobMoneySummary(row, username, { context: 'offered' });
+      if (money) Object.assign(base, money);
+    } catch (e) {
+      try { console.warn('[offers_income_preview] skip', { username, job_id: row.job_id, error: e.message }); } catch {}
     }
-    try { console.log('[CWF_TECH_JOBS_DEBUG] api offers with preview', { username, count: rows.length }); } catch {}
-    res.json(rows);
+    rows.push(base);
+  }
+  try { console.log('[CWF_TECH_JOBS_DEBUG] api offers with preview', { username, count: rows.length }); } catch {}
+  return rows;
+}
+
+async function assertRequestedTechnicianMatchesSession(requestedUsername, sessionUsername) {
+  const requested = String(requestedUsername || "").trim();
+  const session = String(sessionUsername || "").trim();
+  if (!session) {
+    const err = new Error("UNAUTHORIZED");
+    err.statusCode = 401;
+    throw err;
+  }
+  if (!requested || requested === "me") return true;
+  const aliases = await _getTechnicianVisibilityAliases(session);
+  const aliasSet = new Set((aliases || []).map((x) => String(x || "").trim().toLowerCase()).filter(Boolean));
+  if (!aliasSet.has(requested.toLowerCase())) {
+    const err = new Error("FORBIDDEN");
+    err.statusCode = 403;
+    throw err;
+  }
+  return true;
+}
+
+async function assertOfferOwnedBySessionTechnician(sessionUsername, offerTechnicianUsername) {
+  const session = String(sessionUsername || "").trim();
+  if (!session) {
+    const err = new Error("UNAUTHORIZED");
+    err.statusCode = 401;
+    throw err;
+  }
+  const aliases = await _getTechnicianVisibilityAliases(session);
+  const aliasSet = new Set((aliases || []).map((x) => String(x || "").trim().toLowerCase()).filter(Boolean));
+  const owner = String(offerTechnicianUsername || "").trim().toLowerCase();
+  if (!owner || !aliasSet.has(owner)) {
+    const err = new Error("FORBIDDEN");
+    err.statusCode = 403;
+    throw err;
+  }
+}
+
+app.get("/offers/tech/me", requireTechnicianSession, async (req, res) => {
+  const username = _authUsername(req);
+  if (!username) return res.status(401).json({ error: "UNAUTHORIZED" });
+  try {
+    const rows = await loadPendingOffersForSessionTechnician(username);
+    return res.json(rows);
   } catch (e) {
-    console.error(e);
-    res.status(500).json({ error: "โหลดข้อเสนองานไม่สำเร็จ" });
+    console.error("GET /offers/tech/me error:", e);
+    return res.status(500).json({ error: "โหลดข้อเสนองานไม่สำเร็จ" });
+  }
+});
+
+app.get("/offers/tech/:username", requireTechnicianSession, async (req, res) => {
+  const username = _authUsername(req);
+  try {
+    await assertRequestedTechnicianMatchesSession(req.params?.username, username);
+    const rows = await loadPendingOffersForSessionTechnician(username);
+    return res.json(rows);
+  } catch (e) {
+    const statusCode = Number(e?.statusCode || e?.status || 500);
+    if (statusCode === 401 || statusCode === 403) return res.status(statusCode).json({ error: e.message });
+    console.error("GET /offers/tech/:username error:", e);
+    return res.status(500).json({ error: "โหลดข้อเสนองานไม่สำเร็จ" });
   }
 });
 
@@ -18633,7 +18714,7 @@ app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) 
     const offer = offerR.rows[0];
     if (offer.status !== "pending") throw new Error("offer นี้ถูกตอบไปแล้ว");
     if (new Date(offer.expires_at) < new Date()) throw new Error("หมดเวลารับงานแล้ว");
-    if (!username || username !== offer.technician_username) throw new Error("username ไม่ตรงกับ offer");
+    await assertOfferOwnedBySessionTechnician(username, offer.technician_username);
 
     const jobR = await client.query(
       `SELECT job_id, technician_team FROM public.jobs WHERE job_id=$1 FOR UPDATE`,
@@ -18698,7 +18779,8 @@ app.post("/offers/:offer_id/accept", requireTechnicianSession, async (req, res) 
   } catch (e) {
     await client.query("ROLLBACK");
     console.error(e);
-    res.status(400).json({ error: e.message || "รับงานไม่สำเร็จ" });
+    const statusCode = Number(e?.statusCode || e?.status || 400);
+    res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 400).json({ error: e.message || "รับงานไม่สำเร็จ" });
   } finally {
     client.release();
   }
@@ -18732,7 +18814,7 @@ app.post("/offers/:offer_id/time-proposal", requireTechnicianSession, async (req
     if (!offer) throw new Error("ไม่พบข้อเสนองานนี้");
     if (offer.status !== "pending") throw new Error("ข้อเสนองานนี้ถูกตอบไปแล้ว");
     if (new Date(offer.expires_at).getTime() < Date.now()) throw new Error("หมดเวลารับงานแล้ว");
-    if (!username || username !== offer.technician_username) throw new Error("บัญชีช่างไม่ตรงกับข้อเสนองาน");
+    await assertOfferOwnedBySessionTechnician(username, offer.technician_username);
 
     const jobR = await client.query(
       `SELECT job_id, appointment_datetime, COALESCE(duration_min,60) AS duration_min,
@@ -18773,7 +18855,8 @@ app.post("/offers/:offer_id/time-proposal", requireTechnicianSession, async (req
   } catch (e) {
     await client.query("ROLLBACK");
     console.error("POST /offers/:offer_id/time-proposal error:", e);
-    return res.status(400).json({ error: e.message || "ส่งเวลาใหม่ไม่สำเร็จ" });
+    const statusCode = Number(e?.statusCode || e?.status || 400);
+    return res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 400).json({ error: e.message || "ส่งเวลาใหม่ไม่สำเร็จ" });
   } finally {
     client.release();
   }
@@ -18799,7 +18882,7 @@ app.post("/offers/:offer_id/decline", requireTechnicianSession, async (req, res)
 
     const offer = offerR.rows[0];
     if (offer.status !== "pending") throw new Error("offer นี้ถูกตอบไปแล้ว");
-    if (!username || username !== offer.technician_username) throw new Error("username ไม่ตรงกับ offer");
+    await assertOfferOwnedBySessionTechnician(username, offer.technician_username);
 
     if (new Date(offer.expires_at) < new Date()) {
       await client.query(`UPDATE public.job_offers SET status='expired', responded_at=NOW() WHERE offer_id=$1`, [offer_id]);
@@ -18845,7 +18928,8 @@ app.post("/offers/:offer_id/decline", requireTechnicianSession, async (req, res)
   } catch (e) {
     await client.query("ROLLBACK");
     console.error(e);
-    res.status(400).json({ error: e.message || "ไม่รับงานไม่สำเร็จ" });
+    const statusCode = Number(e?.statusCode || e?.status || 400);
+    res.status(statusCode >= 400 && statusCode < 600 ? statusCode : 400).json({ error: e.message || "ไม่รับงานไม่สำเร็จ" });
   } finally {
     client.release();
   }
@@ -25899,6 +25983,7 @@ function startServer() {
       https.createServer(options, app).listen(PORT, HOST, () => {
         console.log(`🔒 HTTPS CWF Server running`);
         console.log(`🔒 Local: https://localhost:${PORT}`);
+        startUrgentFinalizerRunner();
       });
       return;
     }
@@ -25908,6 +25993,7 @@ function startServer() {
 
   app.listen(PORT, HOST, () => {
     console.log(`🌐 HTTP CWF Server running at http://localhost:${PORT}`);
+    startUrgentFinalizerRunner();
   });
 }
 

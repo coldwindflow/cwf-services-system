@@ -1,6 +1,6 @@
 (function(){
   'use strict';
-  var VERSION = '20260622_legacy_cap_policy_tech_cache_v1';
+  var VERSION = '20260622_urgent_offer_session_v1';
   try { window.__CWF_PWA_BUILD__ = VERSION; } catch (_) {}
   function register(){
     if (!('serviceWorker' in navigator)) return;

@@ -4,7 +4,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const root = path.join(__dirname, "..");
-const BUILD = "20260622_legacy_cap_policy_tech_cache_v1";
+const BUILD = "20260622_urgent_offer_session_v1";
 
 function read(file) {
   return fs.readFileSync(path.join(root, file), "utf8");

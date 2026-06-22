@@ -1,7 +1,7 @@
 
 
 // CWF Technician App Stable fix12: force real 20-row history page + cache-bust marker
-window.__CWF_TECH_APP_VERSION__ = "20260622_legacy_cap_policy_tech_cache_v1";
+window.__CWF_TECH_APP_VERSION__ = "20260622_urgent_offer_session_v1";
 try { console.info('[CWF_TECH_APP_VERSION]', window.__CWF_TECH_APP_VERSION__); } catch (_) {}
 
 // ✅ งานปัจจุบัน: งานล่วงหน้า (sub-tab)
@@ -1235,7 +1235,7 @@ function setPushUi(state, text) {
 
 async function ensureServiceWorkerForPush() {
   if (!('serviceWorker' in navigator)) throw new Error('เครื่องนี้ไม่รองรับ Service Worker');
-  const reg = await navigator.serviceWorker.register('/sw.js?v=20260622_legacy_cap_policy_tech_cache_v1', { updateViaCache: 'none' });
+  const reg = await navigator.serviceWorker.register('/sw.js?v=20260622_urgent_offer_session_v1', { updateViaCache: 'none' });
   try { await navigator.serviceWorker.ready; } catch (_) {}
   return reg;
 }
@@ -2971,7 +2971,7 @@ function loadOffers() {
   const duplicate = cwfTechShouldSkipDuplicate('offers');
   if (duplicate) return duplicate;
   __CWF_TECH_API_DEDUP__.offersInFlight = true;
-  const promise = fetch(`${API_BASE}/offers/tech/${username}`, { cache: "no-store" })
+  const promise = fetch(`${API_BASE}/offers/tech/me`, { credentials: "include", cache: "no-store" })
     .then((res) => res.json())
     .then((offers) => {
       const list = Array.isArray(offers) ? offers : [];
@@ -3107,7 +3107,7 @@ function submitTimeProposal(offerId, originalIso) {
   fetch(`${API_BASE}/offers/${offerId}/time-proposal`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username, proposed_datetime: value, note: note?.value || "" }),
+    body: JSON.stringify({ proposed_datetime: value, note: note?.value || "" }),
   })
     .then(async (res) => {
       const data = await res.json().catch(() => ({}));
@@ -3208,7 +3208,7 @@ function acceptOffer(offerId) {
   fetch(`${API_BASE}/offers/${offerId}/accept`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username }),
+    body: JSON.stringify({}),
   })
     .then(async (res) => {
       const data = await res.json().catch(() => ({}));
@@ -3231,7 +3231,7 @@ function declineOffer(offerId) {
   fetch(`${API_BASE}/offers/${offerId}/decline`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ username }),
+    body: JSON.stringify({}),
   })
     .then(async (res) => {
       const data = await res.json().catch(() => ({}));
