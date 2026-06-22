@@ -34,6 +34,52 @@
     }
   }
 
+  function bangkokNowParts() {
+    try {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Bangkok",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).formatToParts(new Date());
+      const value = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+      return {
+        ymd: `${value.year}-${value.month}-${value.day}`,
+        hour: Number(value.hour || 0),
+        minute: Number(value.minute || 0),
+      };
+    } catch (_) {
+      const d = new Date(Date.now() + (7 * 60 * 60 * 1000));
+      return {
+        ymd: d.toISOString().slice(0, 10),
+        hour: d.getUTCHours(),
+        minute: d.getUTCMinutes(),
+      };
+    }
+  }
+
+  function ceilToStep(minute, stepMin) {
+    const step = Math.max(1, Number(stepMin || 30));
+    return Math.ceil(Number(minute || 0) / step) * step;
+  }
+
+  function currentSameDayBucket() {
+    const now = bangkokNowParts();
+    const minuteOfDay = (now.hour * 60) + now.minute;
+    return `${now.ymd}-${Math.floor(minuteOfDay / 5)}`;
+  }
+
+  function minimumStartForDate(date, responseMinimumStart, stepMin) {
+    const explicit = hhmmToMinutes(responseMinimumStart);
+    if (explicit != null && String(date || "").slice(0, 10) === bangkokTodayYmd()) return explicit;
+    const now = bangkokNowParts();
+    if (String(date || "").slice(0, 10) !== now.ymd) return null;
+    return ceilToStep((now.hour * 60) + now.minute, stepMin || 30);
+  }
+
   function publicAvailabilityQuery(draft, servicePayload, pricingData) {
     const d = draft || {};
     const payload = servicePayload || {};
@@ -57,6 +103,9 @@
     if (Array.isArray(payload.services) && payload.services.length) {
       query.services = JSON.stringify(payload.services);
     }
+    if (query.date && query.date === bangkokTodayYmd()) {
+      query._slot_bucket = currentSameDayBucket();
+    }
     return query;
   }
 
@@ -79,6 +128,9 @@
     if (Array.isArray(payload.services) && payload.services.length) {
       query.services = JSON.stringify(payload.services);
     }
+    if (query.month && query.month === bangkokTodayYmd().slice(0, 7)) {
+      query._slot_bucket = currentSameDayBucket();
+    }
     return query;
   }
 
@@ -95,6 +147,7 @@
       q.wash_variant,
       q.repair_variant,
       q.services,
+      q._slot_bucket,
     ].map((value) => String(value == null ? "" : value)).join("|");
   }
 
@@ -111,6 +164,7 @@
       q.wash_variant,
       q.repair_variant,
       q.services,
+      q._slot_bucket,
     ].map((value) => String(value == null ? "" : value)).join("|");
   }
 
@@ -138,6 +192,7 @@
     const durationMin = Math.max(15, Number(data.duration_min || fallbackDurationMin || 60));
     const stepMin = Math.max(5, Number(data.slot_step_min || 30));
     const date = String(data.date || "").trim();
+    const minimumStartMin = data.minimum_start ? minimumStartForDate(date, data.minimum_start, stepMin) : null;
     const unique = new Map();
 
     rawSlots.forEach((slot) => {
@@ -158,6 +213,7 @@
       }
 
       starts.forEach((minute) => {
+        if (minimumStartMin != null && minute < minimumStartMin) return;
         const start = minutesToHhmm(minute);
         const end = minutesToHhmm(minute + durationMin);
         if (!start || !end) return;
@@ -193,6 +249,8 @@
     hhmmToMinutes,
     minutesToHhmm,
     bangkokTodayYmd,
+    bangkokNowParts,
+    minimumStartForDate,
     publicAvailabilityQuery,
     publicCalendarQuery,
     queryKey,

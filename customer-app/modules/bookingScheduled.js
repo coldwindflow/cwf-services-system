@@ -7,6 +7,9 @@
   let availabilityRequestSeq = 0;
   let calendarRequestSeq = 0;
   let recoveryInFlight = false;
+  let sameDayRefreshTimer = null;
+  let sameDayRefreshBound = false;
+  let latestContainer = null;
 
   function draft() {
     return root.state.draft.scheduled || {};
@@ -386,6 +389,53 @@
   function normalizedSlots() {
     const state = root.state.scheduledPreview.availability;
     return root.availability.normalizePublicSlots(state.data, root.state.scheduledPreview.pricing.data?.duration_min);
+  }
+
+  function isSelectedDateToday() {
+    return String(draft().date || "").slice(0, 10) === root.availability.bangkokTodayYmd();
+  }
+
+  function shouldRefreshSameDaySlots() {
+    return step() >= 2
+      && isSelectedDateToday()
+      && root.state.scheduledSubmit.status !== "success"
+      && Boolean(currentAvailabilityQuery());
+  }
+
+  async function refreshSameDaySlots(container) {
+    if (!container || !shouldRefreshSameDaySlots()) return;
+    await refreshAvailability(container, { preserveSelection: true });
+  }
+
+  function ensureSameDayRefresh(container) {
+    latestContainer = container || latestContainer;
+    if (sameDayRefreshTimer) {
+      const clearTimer = typeof window.clearInterval === "function"
+        ? window.clearInterval.bind(window)
+        : (typeof globalThis.clearInterval === "function" ? globalThis.clearInterval.bind(globalThis) : null);
+      if (clearTimer) clearTimer(sameDayRefreshTimer);
+      sameDayRefreshTimer = null;
+    }
+    if (shouldRefreshSameDaySlots()) {
+      const setTimer = typeof window.setInterval === "function"
+        ? window.setInterval.bind(window)
+        : (typeof globalThis.setInterval === "function" ? globalThis.setInterval.bind(globalThis) : null);
+      if (setTimer) {
+        sameDayRefreshTimer = setTimer(() => {
+          refreshSameDaySlots(latestContainer).catch(() => {});
+        }, 5 * 60 * 1000);
+      }
+    }
+    if (!sameDayRefreshBound) {
+      sameDayRefreshBound = true;
+      if (typeof document.addEventListener === "function") document.addEventListener("visibilitychange", () => {
+        if (document.visibilityState === "visible") refreshSameDaySlots(latestContainer).catch(() => {});
+      });
+      if (typeof window.addEventListener === "function") {
+        window.addEventListener("pageshow", () => refreshSameDaySlots(latestContainer).catch(() => {}));
+        window.addEventListener("focus", () => refreshSameDaySlots(latestContainer).catch(() => {}));
+      }
+    }
   }
 
   function renderCalendar() {
@@ -905,6 +955,7 @@
       </div>
     `;
     bind(container);
+    ensureSameDayRefresh(container);
   }
 
   function patchLine(lineId, patch, container) {

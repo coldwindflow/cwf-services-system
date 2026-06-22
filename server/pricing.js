@@ -1,10 +1,11 @@
-"use strict";
+﻿"use strict";
 
 const {
   normalizeWashVariantLabel,
   normalizeServiceType,
   normalizeAcType,
 } = require("./normalizers");
+const jobTiming = require("./services/jobTiming");
 
 function coerceMachineCount(value) {
   const n = Number(value || 1);
@@ -33,45 +34,14 @@ function normalizeServiceLine(raw = {}, fallback = {}) {
 }
 
 function computeDurationMin(payload = {}, opts = {}) {
-  const src = opts.source || "unknown";
-  const job_type = normalizeServiceType(payload.job_type || payload.jobType || "");
-  const ac_type = normalizeAcType(payload.ac_type || payload.acType || "");
-  const wash_variant = normalizeWashVariantLabel(payload.wash_variant || payload.washVariant || "");
-  const repair_variant = String(payload.repair_variant || payload.repairVariant || "").trim();
-  const machine_count = coerceMachineCount(payload.machine_count || payload.machineCount || 1);
-  const admin_override = Number(payload.admin_override_duration_min || payload.adminOverrideDurationMin || 0);
-
-  let duration = 0;
-  const step = (first, next) => {
-    const n = machine_count;
-    if (n <= 1) return first;
-    return first + (n - 1) * next;
-  };
-
-  if (job_type === "ล้าง") {
-    if (ac_type === "ผนัง" || !ac_type) {
-      if (wash_variant === "ล้างพรีเมียม") duration = step(80, 50);
-      else if (wash_variant === "ล้างแขวนคอยล์") duration = step(120, 90);
-      else if (wash_variant === "ล้างแบบตัดล้าง") duration = step(180, 120);
-      else duration = step(60, 40);
-    } else {
-      duration = step(120, 90);
-    }
-  } else if (job_type === "ซ่อม") {
-    if (repair_variant === "ซ่อมเปลี่ยนอะไหล่") duration = admin_override > 0 ? admin_override : 0;
-    else duration = 60;
-  } else if (job_type === "ติดตั้ง") {
-    duration = admin_override > 0 ? admin_override : 0;
-  }
-
-  if (!Number.isFinite(duration) || duration <= 0) {
-    if (job_type === "ซ่อม" && repair_variant === "ซ่อมเปลี่ยนอะไหล่") return 0;
-    if (job_type === "ติดตั้ง") return 0;
-    duration = 60;
-  }
-
-  console.log("[computeDurationMin]", { src, job_type, ac_type, wash_variant, repair_variant, machine_count, duration });
-  return Math.round(duration);
+  const timingResult = jobTiming.computeServiceDurationMin(payload, opts);
+  console.log("[computeDurationMin]", {
+    src: opts.source || "unknown",
+    duration: timingResult.service_duration_min,
+    policy: timingResult.policy,
+    machine_count: timingResult.machine_count,
+  });
+  return Math.round(Number(timingResult.service_duration_min || 0));
 }
 
 function computeStandardPrice(payload = {}) {
@@ -122,45 +92,15 @@ function normalizeServicesFromPayload(payload = {}) {
 }
 
 function computeDurationMinMulti(payload = {}, opts = {}) {
-  const services = normalizeServicesFromPayload(payload);
-  if (!services) return computeDurationMin(payload, opts);
-
-  const conservative = opts && opts.conservative === true;
-  const parallel = !conservative && payload && (payload.parallel_by_tech === true || payload.parallel_by_tech === "true" || payload.parallel_by_tech === 1 || payload.parallel_by_tech === "1");
-  const byTech = new Map();
-  let total = 0;
-
-  for (const s of services) {
-    if (s.job_type === "ล้าง" && (s.ac_type === "ผนัง" || !s.ac_type) && !s.wash_variant) s.wash_variant = "ล้างธรรมดา";
-    const d = computeDurationMin(s, opts);
-    if (d <= 0) return 0;
-    total += d;
-
-    const mc = coerceMachineCount(s.machine_count || 1);
-    const allocations = s && (s.allocations || s.allocation || null);
-    if (allocations && typeof allocations === "object") {
-      const perMachine = d / mc;
-      for (const [tech, qty] of Object.entries(allocations)) {
-        const q = Math.max(0, Number(qty || 0));
-        if (!tech || q <= 0) continue;
-        byTech.set(tech, (byTech.get(tech) || 0) + perMachine * q);
-      }
-    } else {
-      const tech = (s.assigned_to || s.assigned_technician_username || "").toString().trim();
-      if (tech) byTech.set(tech, (byTech.get(tech) || 0) + d);
-    }
-  }
-
-  const distinctTech = byTech.size;
-  if (parallel && distinctTech >= 2) {
-    let mx = 0;
-    for (const v of byTech.values()) mx = Math.max(mx, Number(v || 0));
-    console.log("[computeDurationMinMulti]", { src: opts.source || "unknown", lines: services.length, parallel: true, distinctTech, max: mx, sum: total });
-    return Math.round(mx);
-  }
-
-  console.log("[computeDurationMinMulti]", { src: opts.source || "unknown", lines: services.length, parallel: false, conservative, total });
-  return Math.round(total);
+  const timingDuration = jobTiming.computeServiceDurationMinMulti(payload, opts);
+  const timingServices = normalizeServicesFromPayload(payload);
+  console.log("[computeDurationMinMulti]", {
+    src: opts.source || "unknown",
+    lines: timingServices ? timingServices.length : 1,
+    conservative: opts && opts.conservative === true,
+    total: timingDuration,
+  });
+  return Math.round(Number(timingDuration || 0));
 }
 
 function computeStandardPriceMulti(payload = {}) {

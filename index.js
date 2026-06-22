@@ -26,6 +26,7 @@ const crypto = require("crypto");
 const fs = require("fs");
 const normalizerHelpers = require("./server/normalizers");
 const pricingHelpers = require("./server/pricing");
+const jobTiming = require("./server/services/jobTiming");
 const customerPricingHelpers = require("./server/customerPricing");
 const customerAuth = require("./server/customerAuth");
 const technicianIncomeHelpers = require("./server/technicianIncome");
@@ -116,7 +117,7 @@ if (WEB_PUSH_READY) {
   try { webpush.setVapidDetails(WEB_PUSH_SUBJECT, WEB_PUSH_PUBLIC_KEY, WEB_PUSH_PRIVATE_KEY); }
   catch (e) { console.warn("⚠️ web-push VAPID setup failed", e.message); }
 }
-const TRAVEL_BUFFER_MIN = Math.max(0, Number(process.env.TRAVEL_BUFFER_MIN || 30)); // นาที/งาน (Travel Buffer)
+const TRAVEL_BUFFER_MIN = jobTiming.TURNAROUND_BUFFER_MIN; // นาที/งาน (Travel Buffer)
 
 const SERVICE_ZONE_SEEDS = [
   { code: "A", name: "bangkok_east_core", label: "กรุงเทพตะวันออกแกนหลัก", group: "bangkok", color: "#0B4BB3", order: 10, districts: ["พระโขนง", "บางนา", "สวนหลวง", "ประเวศ", "บางกะปิ", "สะพานสูง", "ลาดกระบัง"] },
@@ -23209,25 +23210,7 @@ function minToHHMM(min) {
 }
 
 function getNowBangkokParts() {
-  const parts = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'Asia/Bangkok',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(new Date());
-
-  const map = {};
-  for (const p of parts) {
-    if (p.type !== 'literal') map[p.type] = p.value;
-  }
-  return {
-    dateStr: `${map.year}-${map.month}-${map.day}`,
-    hour: Number(map.hour || 0),
-    minute: Number(map.minute || 0),
-  };
+  return jobTiming.getBangkokNow();
 }
 
 function getNowBangkokMin() {
@@ -23894,11 +23877,18 @@ function publicCustomerAvailabilityDeps(db = pool) {
   };
 }
 
+function setPublicAvailabilityNoStore(res) {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0");
+  res.set("Pragma", "no-cache");
+  res.set("Expires", "0");
+}
+
 app.post("/public/pricing_preview", async (req, res) => {
   try {
     const payload = req.body || {};
     // CWF Spec: pricing preview should match conservative schedule duration
-    const duration_min = computeDurationMinMulti(payload, { source: "pricing_preview", conservative: true });
+    const timing = jobTiming.computeJobTiming(payload, { source: "pricing_preview", conservative: true });
+    const duration_min = Number(timing.service_duration_min || 0);
     if (duration_min <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
     const customerPrice = await customerPricingHelpers.resolveCustomerPricingMulti(payload, pool);
     const standard_price = Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
@@ -23925,8 +23915,12 @@ app.post("/public/pricing_preview", async (req, res) => {
         total_after_discount,
       } : null,
       duration_min,
-      travel_buffer_min: TRAVEL_BUFFER_MIN,
-      effective_block_min: effectiveBlockMin(duration_min),
+      service_duration_min: duration_min,
+      travel_buffer_min: timing.turnaround_buffer_min,
+      turnaround_buffer_min: timing.turnaround_buffer_min,
+      effective_block_min: timing.occupied_duration_min,
+      occupied_duration_min: timing.occupied_duration_min,
+      timing_breakdown: timing.breakdown,
     });
   } catch (e) {
     console.error(e);
@@ -23939,6 +23933,7 @@ app.post("/public/pricing_preview", async (req, res) => {
 // 📅 Availability v2 (รายช่าง + แยก company/partner + ใช้ buffer)
 // =======================================
 app.get("/public/availability_v2", async (req, res) => {
+  setPublicAvailabilityNoStore(res);
   if (!ENABLE_AVAILABILITY_V2) return res.status(404).json({ error: "DISABLED" });
 
   const date = (req.query.date || new Date().toISOString().slice(0, 10)).toString();
@@ -24434,6 +24429,7 @@ app.get("/public/availability_v2", async (req, res) => {
 });
 
 app.get("/public/availability_calendar_v2", async (req, res) => {
+  setPublicAvailabilityNoStore(res);
   if (!ENABLE_AVAILABILITY_V2) return res.status(404).json({ error: "DISABLED" });
   const month = String(req.query.month || "").slice(0, 7);
   if (!/^\d{4}-\d{2}$/.test(month)) {
@@ -24713,6 +24709,28 @@ app.post("/public/book", async (req, res) => {
   // CWF Spec: conservative duration for schedule/collision
   const duration_min_v2 = computeDurationMinMulti(payloadV2, { source: "public_book", conservative: true });
   if (duration_min_v2 <= 0) return res.status(400).json({ error: "งานประเภทนี้ต้องให้แอดมินกำหนดเวลา (duration)" });
+  if (bm === "scheduled" && clientApp === "customer_app_v2") {
+    const startIsoForCutoff = normalizeAppointmentDatetime(appointment_datetime);
+    const requestedDate = String(startIsoForCutoff || "").slice(0, 10);
+    const requestedStart = String(startIsoForCutoff || "").slice(11, 16);
+    const requestedStartMin = toMin(requestedStart);
+    const nowParts = getNowBangkokParts();
+    const minStart = jobTiming.minimumStartForDate(requestedDate, {
+      ui_start_min: toMin("09:00"),
+      ui_end_min: toMin("18:00"),
+      slot_step_min: 30,
+      now_parts: nowParts,
+    });
+    if (requestedDate < nowParts.ymd || (minStart.is_today && requestedStartMin < minStart.minimum_start_min)) {
+      return res.status(409).json({
+        error: "SLOT_IN_PAST",
+        code: "SLOT_IN_PAST",
+        server_now: minStart.server_now,
+        timezone: minStart.timezone,
+        minimum_start: minStart.minimum_start,
+      });
+    }
+  }
   const customerPrice = await customerPricingHelpers.resolveCustomerPricingMulti(payloadV2, pool);
   const standard_price = Number(customerPrice.active_price ?? customerPrice.standard_price ?? 0);
 
