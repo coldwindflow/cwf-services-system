@@ -14159,6 +14159,8 @@ async function handleAdminBookV2(req, res) {
     String(allowTimeProposalRaw || "").trim().toLowerCase() === "true" ||
     String(allowTimeProposalRaw || "").trim() === "1"
   );
+  const createdBySource = req.cwfBookSource === "customer" ? "customer" : "admin";
+  const publicBookingToken = createdBySource === "customer" ? genToken(12) : null;
   const zoneDetected = await detectServiceZoneFromText({ address_text, job_zone, service_zone_code, maps_url });
   const detectedZoneCode = zoneDetected?.service_zone_code || null;
   const detectedZoneLabel = zoneDetected?.service_zone_label || null;
@@ -14418,7 +14420,7 @@ if (coerceNumber(override_price, 0) > 0) {
        booking_token, job_source, dispatch_mode, customer_note,
        maps_url, job_zone, duration_min, booking_mode, admin_override_duration_min,
        gps_latitude, gps_longitude, service_zone_code, service_zone_source, allow_time_proposal)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NULL,'admin',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$22,$23,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)
       RETURNING job_id
       `,
       [
@@ -14443,6 +14445,8 @@ if (coerceNumber(override_price, 0) > 0) {
         detectedZoneCode,
         detectedZoneSource,
         allowTimeProposal,
+        publicBookingToken,
+        createdBySource,
       ]
     );
 
@@ -14640,6 +14644,7 @@ if (coerceNumber(override_price, 0) > 0) {
       success: true,
       job_id,
       booking_code,
+      token: publicBookingToken,
       technician_username: isUrgentOffer ? null : selectedTech,
       tech_type: ttype,
       duration_min,
@@ -24646,6 +24651,35 @@ app.get("/public/availability", async (req, res) => {
   }
 });
 
+function defaultCustomerUrgentAppointmentIso() {
+  return dateToBangkokISO(new Date(Date.now() + 30 * 60 * 1000));
+}
+
+function isCustomerAppUrgentBook(body = {}) {
+  return String(body.booking_mode || "").trim().toLowerCase() === "urgent" &&
+    String(body.client_app || "").trim().toLowerCase() === "customer_app_v2";
+}
+
+function handlePublicCustomerUrgentBook(req, res) {
+  const body = req.body || {};
+  req.cwfBookSource = "customer";
+  req.body = {
+    ...body,
+    appointment_datetime: defaultCustomerUrgentAppointmentIso(),
+    booking_mode: "urgent",
+    dispatch_mode: "offer",
+    tech_type: "partner",
+    assign_mode: "auto",
+    technician_username: "",
+    team_members: [],
+    allow_time_proposal: true,
+    override_price: undefined,
+    override_duration_min: undefined,
+    promotion_id: undefined,
+  };
+  return handleAdminBookV2(req, res);
+}
+
 app.post("/public/book", async (req, res) => {
   // ✅ ลูกค้าจองคิว (ไม่บังคับกรอก lat/lng) + เลือกรายการบริการ/สินค้าได้
   // - โปรโมชั่น: ให้แอดมินเป็นคนใส่/ลบเท่านั้น (ฝั่งลูกค้าไม่รับ promo_id)
@@ -24670,6 +24704,10 @@ app.post("/public/book", async (req, res) => {
     repair_variant,
     services,
   } = req.body || {};
+
+  if (isCustomerAppUrgentBook(req.body || {})) {
+    return handlePublicCustomerUrgentBook(req, res);
+  }
 
   if (!customer_name || !job_type || !appointment_datetime || !address_text) {
     return res.status(400).json({ error: "กรอกข้อมูลไม่ครบ (ชื่อ/ประเภทงาน/วันนัด/ที่อยู่)" });
@@ -25168,6 +25206,81 @@ if (itemIdQty.length) {
     });
   } finally {
     client.release();
+  }
+});
+
+app.get("/public/urgent-status", async (req, res) => {
+  const q = String(req.query.q || req.query.token || req.query.booking_code || "").trim();
+  if (!q) return res.status(400).json({ error: "missing tracking code" });
+  try {
+    await pool.query(`
+      UPDATE public.job_offers
+      SET status='expired'
+      WHERE status='pending' AND expires_at < NOW()
+    `);
+    await autoFinalizeUrgentJobs();
+    const r = await pool.query(
+      `
+      SELECT job_id, booking_code, booking_token, job_status, booking_mode, dispatch_mode,
+             technician_username, technician_team, appointment_datetime,
+             COALESCE(allow_time_proposal,FALSE) AS allow_time_proposal
+      FROM public.jobs
+      WHERE booking_token=$1 OR booking_code=$1
+      LIMIT 1
+      `,
+      [q]
+    );
+    const job = r.rows[0];
+    if (!job) return res.status(404).json({ error: "not found" });
+    if (String(job.booking_mode || "").toLowerCase() !== "urgent") {
+      return res.status(400).json({ error: "not urgent booking" });
+    }
+    const offerR = await pool.query(
+      `
+      SELECT MIN(expires_at) FILTER (WHERE status='pending' AND expires_at >= NOW()) AS next_offer_expires_at,
+             BOOL_OR(status='pending' AND expires_at >= NOW()) AS has_pending_offer,
+             BOOL_OR(status='accepted') AS has_accepted_offer
+      FROM public.job_offers
+      WHERE job_id=$1
+      `,
+      [job.job_id]
+    );
+    const proposalR = await pool.query(
+      `
+      SELECT BOOL_OR(status='pending') AS has_pending_time_proposal
+      FROM public.job_offer_time_proposals
+      WHERE job_id=$1
+      `,
+      [job.job_id]
+    );
+    const offers = offerR.rows[0] || {};
+    const hasAccepted = Boolean(job.technician_username || job.technician_team || offers.has_accepted_offer);
+    const hasProposal = Boolean(proposalR.rows[0]?.has_pending_time_proposal) || String(job.job_status || "") === "รอพิจารณาเวลาใหม่";
+    const hasPending = Boolean(offers.has_pending_offer);
+    const phase = hasAccepted
+      ? "accepted"
+      : hasProposal
+        ? "time_proposed"
+        : hasPending
+          ? "waiting"
+          : "admin_review";
+    res.set("Cache-Control", "no-store");
+    return res.json({
+      success: true,
+      job_id: job.job_id,
+      booking_code: job.booking_code || null,
+      booking_mode: job.booking_mode || null,
+      dispatch_mode: job.dispatch_mode || null,
+      job_status: job.job_status || null,
+      phase,
+      appointment_datetime: job.appointment_datetime || null,
+      allow_time_proposal: Boolean(job.allow_time_proposal),
+      has_pending_offer: hasPending,
+      next_offer_expires_at: offers.next_offer_expires_at || null,
+    });
+  } catch (e) {
+    console.error("GET /public/urgent-status error:", e);
+    return res.status(500).json({ error: "urgent status failed" });
   }
 });
 

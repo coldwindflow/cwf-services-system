@@ -94,6 +94,10 @@
       return requestJson("/public/track", { query: { q } });
     },
 
+    async loadUrgentStatus(q) {
+      return requestJson("/public/urgent-status", { query: { q }, cache: "no-store" });
+    },
+
     async loadPromotions() {
       return requestJson("/promotions", { query: { customer: 1 } });
     },
@@ -121,6 +125,8 @@
       const body = {
         ...(payload || {}),
         booking_mode: "urgent",
+        dispatch_mode: "offer",
+        allow_time_proposal: true,
       };
       return requestJson("/public/book", {
         method: "POST",

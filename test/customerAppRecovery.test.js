@@ -135,7 +135,7 @@ test("Customer App build id is consistent across shell and service worker", () =
   const sw = read("customer-app/sw.js");
   const app = read("customer-app/assets/customer-app.js");
   const manifest = read("customer-app/manifest.webmanifest");
-  const build = "20260622_same_day_timing_v1";
+  const build = "20260622_urgent_offer_flow_v1";
 
   assert.match(index, new RegExp(`customer-app\\.css\\?v=${build}`));
   assert.match(index, new RegExp(`bookingUrgent\\.js\\?v=${build}`));
@@ -336,4 +336,34 @@ test("urgent route is registered and renders distinct urgent screen", () => {
   root.bookingUrgent.render(container);
   assert.match(container.innerHTML, /data-urgent-step="form"/);
   assert.match(container.innerHTML, /คิวด่วน/);
+});
+
+test("customer urgent booking reuses existing offer flow without client fake appointment", () => {
+  const urgent = read("customer-app/modules/bookingUrgent.js");
+  const api = read("customer-app/modules/api.js");
+  const server = read("index.js");
+
+  assert.doesNotMatch(urgent, /nextUrgentAppointmentIso/);
+  assert.doesNotMatch(urgent, /appointment_datetime:\s*nextUrgentAppointmentIso/);
+  assert.match(urgent, /allow_time_proposal:\s*true/);
+  assert.match(api, /dispatch_mode:\s*"offer"/);
+  assert.match(api, /allow_time_proposal:\s*true/);
+  assert.match(server, /function handlePublicCustomerUrgentBook/);
+  assert.match(server, /return handleAdminBookV2\(req,\s*res\)/);
+  assert.match(server, /req\.cwfBookSource = "customer"/);
+});
+
+test("customer urgent waiting room polls anonymous existing offer status", () => {
+  const urgent = read("customer-app/modules/bookingUrgent.js");
+  const api = read("customer-app/modules/api.js");
+  const server = read("index.js");
+
+  assert.match(api, /loadUrgentStatus/);
+  assert.match(urgent, /pollUrgentStatus/);
+  assert.match(urgent, /data-urgent-live-status/);
+  assert.match(server, /app\.get\("\/public\/urgent-status"/);
+  const statusRoute = server.slice(server.indexOf('app.get("/public/urgent-status"'), server.indexOf('app.get("/public/track"'));
+  assert.match(statusRoute, /next_offer_expires_at/);
+  assert.match(statusRoute, /phase/);
+  assert.doesNotMatch(statusRoute, /tech_name|full_name|matrix_json|technician_count/);
 });
